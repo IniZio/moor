@@ -1,7 +1,6 @@
 use std::time::{Duration, Instant};
 
 use parity::adapter::ExitClass;
-use parity::fake::crabbox::Preset;
 use parity::fake::herdr;
 use parity::parity;
 use parity::world::hooks::HookState;
@@ -13,7 +12,7 @@ parity!(
     covers = ["A-85", "A-86"],
     tags = [],
     {
-        let fx = host_fx(Preset::NamespaceDevbox);
+        let fx = box_fx();
         fx.start(false);
         fx.present();
         let o = fx.m.wait(&fx.w, &fx.repo.path, &fx.name, None);

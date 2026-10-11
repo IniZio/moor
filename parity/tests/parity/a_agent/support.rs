@@ -4,6 +4,7 @@ use parity::adapter::{BoxState, EventKind, ExitClass, Moor, TaskState, TaskView}
 use parity::fake::crabbox::{self, Preset};
 use parity::fake::{claude, herdr, Call};
 use parity::world::config::{RepoConfig, UserConfig};
+use parity::world::hooks::HookState;
 use parity::world::repo::Repo;
 use parity::world::World;
 
@@ -41,17 +42,16 @@ pub(super) fn fixture(preset: Preset, location: &str, max_boxes: Option<u32>) ->
     }
 }
 
-pub(super) fn host_fx(preset: Preset) -> Fx {
-    fixture(preset, "host", None)
-}
-
 pub(super) fn box_fx() -> Fx {
     fixture(Preset::NamespaceDevbox, "box", None)
 }
 
-pub(super) fn agents(w: &World, state: &str) {
-    let doc = format!(r#"[{{"id":"a1","sessionId":"a1-full","cwd":"","state":"{state}"}}]"#);
-    claude::agents(w, &doc);
+pub(super) fn box_fx_on(preset: Preset) -> Fx {
+    fixture(preset, "box", None)
+}
+
+pub(super) fn box_fx_max(n: u32) -> Fx {
+    fixture(Preset::NamespaceDevbox, "box", Some(n))
 }
 
 impl Fx {
@@ -109,7 +109,7 @@ impl Fx {
     pub(super) fn put_to_sleep(&self) {
         self.start(true);
         self.present();
-        agents(&self.w, "done");
+        self.w.hook_state(HookState::Idle, 0);
         assert_eq!(self.row().state, TaskState::Idle);
         self.m.age(&self.w, &self.name, 120);
     }
@@ -122,7 +122,7 @@ impl Fx {
     }
 
     pub(super) fn assert_woken(&self) {
-        agents(&self.w, "working");
+        self.w.hook_state(HookState::Working, 0);
         let t = self.row();
         assert_eq!(t.state, TaskState::Working);
         assert_eq!(self.box_state(&t), BoxState::Ready);

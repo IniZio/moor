@@ -14,7 +14,7 @@ parity!(
     covers = ["B-75"],
     tags = [],
     {
-        let fx = host_fx(Preset::NamespaceDevbox);
+        let fx = box_fx();
         fx.start(false);
         let first = fx.slug();
         crabbox::inventory(&fx.w, &["somebody-else"]);
@@ -40,7 +40,7 @@ parity!(
     covers = ["B-97"],
     tags = [],
     {
-        let fx = fixture(Preset::NamespaceDevbox, "host", Some(1));
+        let fx = box_fx_max(1);
         fx.start(false);
         fx.present();
         let queued = fx.w.task_name("queued");
@@ -76,7 +76,7 @@ parity!(
     covers = ["B-85", "REQ-30"],
     tags = [],
     {
-        let fx = host_fx(Preset::NamespaceDevbox);
+        let fx = box_fx();
         std::fs::write(
             fx.repo.path.join(".moor.yaml"),
             r#"{"box":{"provider":"sprites"}}"#,
@@ -94,7 +94,7 @@ parity!(
     covers = ["B-88"],
     tags = [],
     {
-        let fx = host_fx(Preset::NamespaceDevbox);
+        let fx = box_fx();
         let o =
             fx.m.start(&fx.w, &fx.repo.path, &fx.name, &Default::default());
         assert_eq!(o.class, ExitClass::Ok, "{}", o.stderr);
@@ -102,7 +102,7 @@ parity!(
         let warm = &fx.verb("warmup")[0];
         assert!(!warm.env.contains_key("CRABBOX_NAMESPACE_EGRESS_DOMAINS"));
 
-        let other = host_fx(Preset::LocalContainer);
+        let other = box_fx_on(Preset::LocalContainer);
         let o = other
             .m
             .start(&other.w, &other.repo.path, &other.name, &Default::default());
@@ -116,7 +116,7 @@ parity!(
     covers = ["B-91"],
     tags = [],
     {
-        let fx = host_fx(Preset::LocalContainer);
+        let fx = box_fx_on(Preset::LocalContainer);
         user_edit(&fx.w, |d| d["box"]["provider"] = "acme-cloud".into());
         let task = fx.start(true);
         fx.present();
@@ -135,7 +135,7 @@ parity!(
         let runs = fx.verb("run");
         assert_eq!(runs[0].flag("--provider").as_deref(), Some("acme-cloud"));
         assert_eq!(runs[0].flag("--id"), Some(slug.clone()));
-        agents(&fx.w, "done");
+        fx.w.hook_state(HookState::Idle, 0);
         assert_eq!(fx.row().state, TaskState::Idle);
         fx.m.age(&fx.w, &fx.name, 120);
         let t = fx.row();
@@ -148,7 +148,7 @@ parity!(
         assert_eq!(stop.flag("--provider").as_deref(), Some("acme-cloud"));
         assert_eq!(stop.flag("--id"), Some(slug));
 
-        let bad = host_fx(Preset::LocalContainer);
+        let bad = box_fx_on(Preset::LocalContainer);
         user_edit(&bad.w, |d| d["box"]["provider"] = "acme-cloud".into());
         crabbox::fail_quota(&bad.w);
         let o = bad
@@ -229,7 +229,7 @@ parity!(
     covers = ["REQ-01", "REQ-08"],
     tags = [],
     {
-        let fx = host_fx(Preset::NamespaceDevbox);
+        let fx = box_fx();
         fx.start(true);
         fx.present();
         let done = fx.m.run(
@@ -275,7 +275,7 @@ parity!(
     covers = ["B-76"],
     tags = [],
     {
-        let fx = host_fx(Preset::NamespaceDevbox);
+        let fx = box_fx();
         fx.w.prepend_rules("crabbox", [parity::fake::Rule::on(&["warmup"]).block()]);
         let mut start =
             fx.m.start_detached(&fx.w, &fx.repo.path, &fx.name, &Default::default());
@@ -311,8 +311,6 @@ parity!(
         std::os::unix::fs::symlink(".bashrc", dots.join("linked")).unwrap();
         let install = "#!/bin/sh\ntouch \"$HOME/dotfiles-ran\"\n";
         std::fs::write(dots.join("install.sh"), install).unwrap();
-        let repo_cfg = r#"{"setup":["echo hi"],"agent":{"location":"box"}}"#;
-        std::fs::write(fx.repo.path.join(".moor.yaml"), repo_cfg).unwrap();
         user_edit(&fx.w, |d| {
             d["dotfiles"] = serde_json::json!({ "dir": dots.display().to_string() })
         });

@@ -2,22 +2,23 @@ use parity::adapter::{BoxState, EventKind, ExitClass, TaskState};
 use parity::assert::{assert_called, assert_never_called, assert_order};
 use parity::fake::crabbox::{self, Preset};
 use parity::parity;
+use parity::world::hooks::HookState;
 
 use super::support::*;
 
 parity!(
-    host_agent_done_idles_and_busy_returns,
+    box_agent_idle_hook_idles_and_working_returns,
     covers = ["A-60", "A-61", "B-104"],
     tags = [],
     {
-        let fx = host_fx(Preset::NamespaceDevbox);
+        let fx = box_fx_on(Preset::NamespaceDevbox);
         fx.start(true);
         fx.present();
         assert_eq!(fx.row().state, TaskState::Working);
-        agents(&fx.w, "done");
+        fx.w.hook_state(HookState::Idle, 0);
         assert_eq!(fx.row().state, TaskState::Idle);
         assert!(fx.kinds().contains(&EventKind::Idled));
-        agents(&fx.w, "working");
+        fx.w.hook_state(HookState::Working, 0);
         assert_eq!(fx.row().state, TaskState::Working);
         assert!(fx.kinds().contains(&EventKind::Busy));
     }
@@ -28,7 +29,7 @@ parity!(
     covers = ["A-60", "B-82"],
     tags = [],
     {
-        let fx = host_fx(Preset::NamespaceDevbox);
+        let fx = box_fx_on(Preset::NamespaceDevbox);
         fx.start(false);
         assert!(!fx.kinds().contains(&EventKind::Idled));
         fx.start_named(&fx.w.task_name("second"), false);
@@ -41,10 +42,10 @@ parity!(
     covers = ["A-60", "A-75"],
     tags = [],
     {
-        let fx = host_fx(Preset::NamespaceDevbox);
+        let fx = box_fx_on(Preset::NamespaceDevbox);
         fx.start(true);
         fx.present();
-        agents(&fx.w, "done");
+        fx.w.hook_state(HookState::Idle, 0);
         let p = fx.m.pane(&fx.w, &fx.repo.path, &fx.name);
         assert_eq!(p.ok().task.state, TaskState::Working);
         let wt = fx.m.wait(&fx.w, &fx.repo.path, &fx.name, Some(5));
@@ -59,10 +60,10 @@ parity!(
     covers = ["A-62", "B-103", "B-105"],
     tags = [],
     {
-        let fx = host_fx(Preset::NamespaceDevbox);
+        let fx = box_fx_on(Preset::NamespaceDevbox);
         fx.start(true);
         fx.present();
-        agents(&fx.w, "done");
+        fx.w.hook_state(HookState::Idle, 0);
         assert_eq!(fx.row().state, TaskState::Idle);
         assert_eq!(fx.row().state, TaskState::Idle);
         assert!(fx.verb("pause").is_empty(), "no pause before the idle age");
@@ -87,10 +88,10 @@ parity!(
     covers = ["A-62", "A-70", "B-105", "REQ-45"],
     tags = [],
     {
-        let fx = host_fx(Preset::LocalContainer);
+        let fx = box_fx_on(Preset::LocalContainer);
         fx.start(true);
         fx.present();
-        agents(&fx.w, "done");
+        fx.w.hook_state(HookState::Idle, 0);
         assert_eq!(fx.row().state, TaskState::Idle);
         fx.m.age(&fx.w, &fx.name, 120);
         let t = fx.row();
@@ -107,7 +108,7 @@ parity!(
     covers = ["A-62", "A-63", "B-89"],
     tags = [],
     {
-        let fx = host_fx(Preset::Sprites);
+        let fx = box_fx_on(Preset::Sprites);
         fx.asleep();
         assert!(fx.verb("pause").is_empty());
         let o = fx.m.steer(&fx.w, &fx.repo.path, &fx.name, "continue");
@@ -122,7 +123,7 @@ parity!(
     covers = ["A-63", "A-80", "B-106"],
     tags = [],
     {
-        let fx = host_fx(Preset::NamespaceDevbox);
+        let fx = box_fx_on(Preset::NamespaceDevbox);
         fx.asleep();
         let o = fx.m.steer(&fx.w, &fx.repo.path, &fx.name, "continue");
         assert_eq!(o.class, ExitClass::Ok, "{}", o.stderr);
@@ -137,10 +138,7 @@ parity!(
         let calls = fx.w.all_calls();
         assert_order(
             &calls,
-            &[
-                ("crabbox", &["resume"]),
-                ("claude", &["--resume", "a1-full"]),
-            ],
+            &[("crabbox", &["resume"]), ("herdr", &["pane", "send-text"])],
         );
     }
 );
@@ -150,7 +148,7 @@ parity!(
     covers = ["A-63", "A-76", "B-106", "B-107"],
     tags = [],
     {
-        let fx = host_fx(Preset::NamespaceDevbox);
+        let fx = box_fx_on(Preset::NamespaceDevbox);
         fx.asleep();
         let o = fx.m.open(&fx.w, &fx.repo.path, &fx.name);
         assert_eq!(o.class, ExitClass::Ok, "{}", o.stderr);
@@ -171,10 +169,10 @@ parity!(
     covers = ["B-19"],
     tags = [],
     {
-        let fx = host_fx(Preset::NamespaceDevbox);
+        let fx = box_fx_on(Preset::NamespaceDevbox);
         fx.start(true);
         fx.present();
-        agents(&fx.w, "done");
+        fx.w.hook_state(HookState::Idle, 0);
         assert_eq!(fx.row().state, TaskState::Idle);
         let o = fx.m.run(
             &fx.w,
@@ -200,7 +198,7 @@ parity!(
     covers = ["A-63", "A-88", "A-89", "B-19", "B-106"],
     tags = [],
     {
-        let fx = host_fx(Preset::NamespaceDevbox);
+        let fx = box_fx_on(Preset::NamespaceDevbox);
         fx.asleep();
         let o = fx.m.run(
             &fx.w,
@@ -217,7 +215,7 @@ parity!(
         assert_order(&calls, &[("crabbox", &["resume"]), ("crabbox", &["run"])]);
         assert!(fx.kinds().contains(&EventKind::Ran));
 
-        let fx = host_fx(Preset::NamespaceDevbox);
+        let fx = box_fx_on(Preset::NamespaceDevbox);
         fx.asleep();
         let dest = fx.w.root().join("copied.txt");
         let o =
@@ -238,7 +236,7 @@ parity!(
     covers = ["A-63", "B-106"],
     tags = [],
     {
-        let fx = host_fx(Preset::NamespaceDevbox);
+        let fx = box_fx_on(Preset::NamespaceDevbox);
         fx.asleep();
         crabbox::fail(&fx.w, "resume");
         let o = fx.m.steer(&fx.w, &fx.repo.path, &fx.name, "continue");
@@ -246,7 +244,7 @@ parity!(
         let t = fx.row();
         assert_eq!(t.state, TaskState::Asleep);
         assert_eq!(fx.box_state(&t), BoxState::Asleep);
-        assert_never_called(&fx.w.calls("claude"), "claude", &["--resume"]);
+        assert_never_called(&fx.w.calls("herdr"), "herdr", &["pane", "send-text"]);
     }
 );
 
@@ -255,7 +253,7 @@ parity!(
     covers = ["A-64", "B-81"],
     tags = [],
     {
-        let fx = host_fx(Preset::NamespaceDevbox);
+        let fx = box_fx_on(Preset::NamespaceDevbox);
         fx.asleep();
         let t = fx.row();
         assert_eq!(fx.box_state(&t), BoxState::Asleep);
@@ -293,7 +291,7 @@ parity!(
     covers = ["B-107"],
     tags = [],
     {
-        let fx = fixture(Preset::NamespaceDevbox, "host", Some(1));
+        let fx = box_fx_max(1);
         fx.asleep();
         let other = fx.start_named(&fx.w.task_name("queued"), false);
         assert_eq!(other.state, TaskState::WaitingForBox);
@@ -305,7 +303,7 @@ parity!(
     covers = ["A-77", "B-93"],
     tags = [],
     {
-        let fx = host_fx(Preset::NamespaceDevbox);
+        let fx = box_fx_on(Preset::NamespaceDevbox);
         std::fs::write(fx.repo.path.join("crabbox.yaml"), "provider: x\n").unwrap();
         let task = fx.start(false);
         fx.present();
@@ -343,7 +341,7 @@ parity!(
     covers = ["REQ-09"],
     tags = ["new_only(ExplicitSleep)"],
     {
-        let fx = host_fx(Preset::NamespaceDevbox);
+        let fx = box_fx_on(Preset::NamespaceDevbox);
         fx.start(true);
         fx.present();
         let slept = fx.m.sleep_cmd(&fx.w, &fx.repo.path, &fx.name);

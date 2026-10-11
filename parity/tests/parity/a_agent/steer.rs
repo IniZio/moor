@@ -52,7 +52,7 @@ parity!(
     covers = ["A-80"],
     tags = [],
     {
-        let fx = host_fx(Preset::NamespaceDevbox);
+        let fx = box_fx_on(Preset::NamespaceDevbox);
         fx.start(false);
         fx.present();
         let none = fx.m.steer(&fx.w, &fx.repo.path, &fx.name, "hello");
