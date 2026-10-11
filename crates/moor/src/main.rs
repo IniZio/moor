@@ -47,9 +47,13 @@ fn run(env: Env, inv: Invocation) -> Output {
 /// Run `request` against a fresh engine and render the response with `opts`.
 fn render_call(env: &Env, request: Request, opts: &GlobalOpts) -> Output {
     let cmd = request.cmd();
-    let resp = match Moor::from_env(env) {
-        Ok(moor) => moor.call(request),
-        Err(e) => e.into_response(cmd, vec![]),
+    let resp = if matches!(request, Request::Version {}) {
+        Moor::version()
+    } else {
+        match Moor::from_env(env) {
+            Ok(moor) => moor.call(request),
+            Err(e) => e.into_response(cmd, vec![]),
+        }
     };
     cli::render(&resp, opts)
 }

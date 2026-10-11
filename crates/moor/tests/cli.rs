@@ -37,7 +37,17 @@ fn fresh_dir(tag: &str) -> PathBuf {
 
 /// Runs the binary hermetically with optional stdin.
 fn run(args: &[&str], stdin: Option<&str>) -> Run {
+    run_with_config(args, stdin, None)
+}
+
+/// Like `run`, with `config` written to the fresh HOME's default config path.
+fn run_with_config(args: &[&str], stdin: Option<&str>, config: Option<&str>) -> Run {
     let home = fresh_dir("home");
+    if let Some(text) = config {
+        let dir = home.join(".config/moor");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("config.yaml"), text).unwrap();
+    }
     let state = fresh_dir("state");
     let mut child = Command::new(env!("CARGO_BIN_EXE_moor"))
         .args(args)
@@ -98,6 +108,34 @@ fn version_text() {
 #[test]
 fn json_version() {
     envelope(&["--json", "version"], None, 0, "ok");
+}
+
+/// Not valid YAML for the config schema.
+const BAD_CONFIG: &str = "tools: [unterminated\n  : : {";
+
+#[test]
+fn invalid_config_breaks_config_command() {
+    let r = run_with_config(&["--json", "start", "foo"], None, Some(BAD_CONFIG));
+    assert_ne!(r.code, 0);
+    assert!(r.stdout.contains("config"), "stdout: {:?}", r.stdout);
+}
+
+#[test]
+fn version_ignores_invalid_config() {
+    let r = run_with_config(&["--json", "version"], None, Some(BAD_CONFIG));
+    assert_eq!(r.code, 0, "stdout={:?}", r.stdout);
+    let v: Value = serde_json::from_str(&r.stdout).unwrap();
+    assert_eq!(v.get("class").and_then(Value::as_str), Some("ok"));
+    let t = run_with_config(&["version"], None, Some(BAD_CONFIG));
+    assert_eq!(t.code, 0);
+}
+
+#[test]
+fn help_ignores_invalid_config() {
+    for args in [&["help"][..], &["--help"][..]] {
+        let r = run_with_config(args, None, Some(BAD_CONFIG));
+        assert_eq!(r.code, 0, "{args:?}: {:?}", r.stderr);
+    }
 }
 
 #[test]
