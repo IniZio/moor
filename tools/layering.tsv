@@ -9,6 +9,8 @@ moor_core::domain	moor_core::name,moor_core::secret
 moor_core::seam	moor_core::domain,moor_core::name,moor_core::secret,moor_core::config,moor_core::proxy_gate
 moor::env
 moor::error	moor::env,moor::store
+moor::store	moor::env
+moor::adapters::clock	moor::env
 moor::cli	moor::error
 moor::cx	moor::store,moor::adapters::clock,moor::adapters::git,moor::error
 moor::ops	moor::cx,moor::store,moor::error,moor::adapters::git

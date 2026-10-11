@@ -30,3 +30,11 @@ fn unimplemented_command_fails_with_its_cmd() {
     assert_eq!(resp.cmd, "close");
     assert!(resp.error.is_some());
 }
+
+#[test]
+fn invalid_test_now_is_a_usage_error() {
+    let env = Env::from_pairs([("MOOR_TEST_NOW", "yesterday-ish")]);
+    let err = Moor::from_env(&env).err().expect("error");
+    assert_eq!(err.kind, moor_core::ErrorKind::Usage);
+    assert!(err.error.to_string().contains("MOOR_TEST_NOW"));
+}

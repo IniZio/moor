@@ -1,8 +1,17 @@
 //! Tests for `Cx`.
 
 use super::Cx;
+use crate::adapters::clock::FakeClock;
+use moor_core::seam::clock::Ts;
 use moor_core::Warning;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::Duration;
+
+/// Context over a fake clock starting at 1000 ms.
+fn cx(state_dir: Option<PathBuf>) -> Cx {
+    Cx::new(state_dir, Arc::new(FakeClock::new(Ts::from_millis(1000))))
+}
 
 /// Build a warning.
 fn w(code: &str) -> Warning {
@@ -14,7 +23,7 @@ fn w(code: &str) -> Warning {
 
 #[test]
 fn warnings_drain_in_order() {
-    let cx = Cx::new(None);
+    let cx = cx(None);
     cx.warn(w("a"));
     cx.warn(w("b"));
     let got = cx.take_warnings();
@@ -25,7 +34,15 @@ fn warnings_drain_in_order() {
 
 #[test]
 fn state_dir_round_trips() {
-    assert_eq!(Cx::new(None).state_dir(), None);
-    let cx = Cx::new(Some(PathBuf::from("/s")));
+    assert_eq!(cx(None).state_dir(), None);
+    let cx = cx(Some(PathBuf::from("/s")));
     assert_eq!(cx.state_dir(), Some(Path::new("/s")));
+}
+
+#[test]
+fn clock_is_the_injected_one() {
+    let cx = cx(None);
+    assert_eq!(cx.clock().now(), Ts::from_millis(1000));
+    cx.clock().sleep(Duration::from_millis(250));
+    assert_eq!(cx.clock().now(), Ts::from_millis(1250));
 }
