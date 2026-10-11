@@ -163,8 +163,6 @@ pub enum ExtraEvent {
         /// The run id.
         run: RunId,
     },
-    /// A start attached to an existing open task.
-    Attached,
 }
 
 impl From<ExtraEvent> for Event {
@@ -183,7 +181,6 @@ impl From<ExtraEvent> for Event {
             ExtraEvent::SessionStarted { session } => Self::SessionStarted { session },
             ExtraEvent::Checked { credentials } => Self::Checked { credentials },
             ExtraEvent::RunStarted { run } => Self::RunStarted { run },
-            ExtraEvent::Attached => Self::Attached,
         }
     }
 }
@@ -207,7 +204,6 @@ impl TryFrom<Event> for ExtraEvent {
             Event::SessionStarted { session } => Ok(Self::SessionStarted { session }),
             Event::Checked { credentials } => Ok(Self::Checked { credentials }),
             Event::RunStarted { run } => Ok(Self::RunStarted { run }),
-            Event::Attached => Ok(Self::Attached),
             e @ (Event::Started
             | Event::Rejected { .. }
             | Event::WaitingForBox { .. }

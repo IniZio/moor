@@ -4,7 +4,7 @@ use serde::Serialize;
 
 use crate::domain::boxes::{BoxInput, BoxState};
 use crate::domain::task::{SetupOutcome, TaskInput, TaskState};
-use crate::name::{BoxHandle, RunId};
+use crate::name::RunId;
 
 /// The event kinds the event tests pin. Frozen.
 pub const ASSERTED_KINDS: [&str; 20] = [
@@ -87,10 +87,8 @@ pub enum Event {
     BoxReady,
     /// Acquiring the box failed.
     BoxFailed {
-        /// The failure, in moor's words.
-        error: String,
-        /// The attempted Box handle, when the Driver reported one.
-        handle: Option<String>,
+        /// The failure cause.
+        cause: String,
     },
     /// The box went to sleep.
     BoxAsleep,
@@ -100,10 +98,8 @@ pub enum Event {
     BoxDeleted,
     /// Releasing the box failed.
     BoxReleaseFailed {
-        /// The failure, in moor's words.
-        error: String,
-        /// The Box handle kept for manual release.
-        handle: Option<String>,
+        /// The failure cause.
+        cause: String,
     },
     /// A command run finished.
     Ran {
@@ -136,8 +132,6 @@ pub enum Event {
         /// The run id.
         run: RunId,
     },
-    /// A start attached to an existing open task.
-    Attached,
 }
 
 impl Event {
@@ -169,7 +163,6 @@ impl Event {
             Self::SessionStarted { .. } => "session_started",
             Self::Checked { .. } => "checked",
             Self::RunStarted { .. } => "run_started",
-            Self::Attached => "attached",
         }
     }
 
@@ -239,28 +232,20 @@ pub fn task_events(from: Option<TaskState>, to: TaskState, input: &TaskInput) ->
     }
 }
 
-/// The events a box step produces; `handle` is the Box row's current handle.
+/// The events a box step produces.
 #[must_use]
-pub fn box_events(
-    _from: Option<BoxState>,
-    _to: BoxState,
-    input: &BoxInput,
-    handle: Option<&BoxHandle>,
-) -> Vec<Event> {
-    let text = |h: Option<&BoxHandle>| h.map(|h| h.as_str().to_owned());
+pub fn box_events(_from: Option<BoxState>, _to: BoxState, input: &BoxInput) -> Vec<Event> {
     match input {
         BoxInput::Requested => vec![Event::BoxRequested],
         BoxInput::Acquired { .. } | BoxInput::Wake => vec![Event::BoxReady],
-        BoxInput::AcquireFailed { cause, attempted } => vec![Event::BoxFailed {
-            error: cause.clone(),
-            handle: text(attempted.as_ref().or(handle)),
+        BoxInput::AcquireFailed { cause, .. } => vec![Event::BoxFailed {
+            cause: cause.clone(),
         }],
         BoxInput::Sleep => vec![Event::BoxAsleep],
         BoxInput::DriverMissing => vec![Event::BoxGone],
         BoxInput::Released => vec![Event::BoxDeleted],
         BoxInput::ReleaseErr { cause } => vec![Event::BoxReleaseFailed {
-            error: cause.clone(),
-            handle: text(handle),
+            cause: cause.clone(),
         }],
     }
 }

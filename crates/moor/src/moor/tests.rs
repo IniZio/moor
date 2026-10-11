@@ -22,7 +22,7 @@ fn version_is_ok_with_expected_keys() {
 #[test]
 fn unimplemented_command_fails_with_its_cmd() {
     let req = Request::Close(CloseReq {
-        task: "t".into(),
+        task: moor_core::name::TaskName::parse("t").unwrap(),
         force: false,
     });
     let resp = moor().call(req);

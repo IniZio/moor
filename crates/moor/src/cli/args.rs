@@ -5,8 +5,8 @@ use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use moor_core::{
-    CloseReq, CpReq, RemoveReq, ReportReq, Request, RunReq, ShowReq, StartReq, SteerReq, TaskReq,
-    WaitFor, WaitReq,
+    CloseReq, CpReq, RemoveReq, ReportReq, Request, RunReq, ShowReq, StartReq, SteerReq, TaskName,
+    TaskReq, WaitFor, WaitReq,
 };
 
 use super::args_admin::{AdminCmd, GateCmd};
@@ -35,6 +35,11 @@ pub(super) fn parse(args: Vec<OsString>) -> Result<(GlobalOpts, Action), clap::E
         state_dir: cli.state_dir,
     };
     Ok((opts, cli.command.into_action()))
+}
+
+/// clap parser for a Task name.
+fn task_name(s: &str) -> Result<TaskName, String> {
+    TaskName::parse(s).map_err(|e| e.to_string())
 }
 
 /// Top-level command line.
@@ -125,7 +130,8 @@ impl Cmd {
 #[derive(Debug, Args)]
 struct StartArgs {
     /// Task name.
-    name: String,
+    #[arg(value_parser = task_name)]
+    name: TaskName,
     /// Goal for the agent.
     #[arg(long)]
     goal: Option<String>,
@@ -164,7 +170,8 @@ impl From<StartArgs> for StartReq {
 #[derive(Debug, Args)]
 struct RunArgs {
     /// Task name.
-    task: String,
+    #[arg(value_parser = task_name)]
+    task: TaskName,
     /// Skip the pre-run sync.
     #[arg(long)]
     no_sync: bool,
@@ -202,7 +209,8 @@ enum WaitForArg {
 #[derive(Debug, Args)]
 struct WaitArgs {
     /// Task name.
-    task: String,
+    #[arg(value_parser = task_name)]
+    task: TaskName,
     /// State to wait for.
     #[arg(long = "for", value_enum)]
     wait_for: Option<WaitForArg>,
@@ -230,7 +238,8 @@ impl From<WaitArgs> for WaitReq {
 #[derive(Debug, Args)]
 struct SteerArgs {
     /// Task name.
-    task: String,
+    #[arg(value_parser = task_name)]
+    task: TaskName,
     /// Text to send.
     #[arg(conflicts_with = "menu")]
     text: Option<String>,
@@ -253,7 +262,8 @@ impl From<SteerArgs> for SteerReq {
 #[derive(Debug, Args)]
 struct ReportArgs {
     /// Task name.
-    task: String,
+    #[arg(value_parser = task_name)]
+    task: TaskName,
     /// Report kind.
     #[arg(long)]
     kind: String,
@@ -280,7 +290,8 @@ impl From<ReportArgs> for ReportReq {
 #[derive(Debug, Args)]
 struct ShowArgs {
     /// Task name; all open Tasks when absent.
-    task: Option<String>,
+    #[arg(value_parser = task_name)]
+    task: Option<TaskName>,
     /// Include the last N events.
     #[arg(long, value_name = "N")]
     events: Option<u32>,
@@ -311,7 +322,8 @@ impl From<ShowArgs> for ShowReq {
 #[derive(Debug, Args)]
 struct CloseArgs {
     /// Task name.
-    task: String,
+    #[arg(value_parser = task_name)]
+    task: TaskName,
     /// Close despite unsaved work.
     #[arg(long)]
     force: bool,
@@ -330,7 +342,8 @@ impl From<CloseArgs> for CloseReq {
 #[derive(Debug, Args)]
 struct RemoveArgs {
     /// Task name.
-    task: String,
+    #[arg(value_parser = task_name)]
+    task: TaskName,
     /// Discard the Task's work.
     #[arg(long)]
     discard: bool,
@@ -349,7 +362,8 @@ impl From<RemoveArgs> for RemoveReq {
 #[derive(Debug, Args)]
 struct CpArgs {
     /// Task name.
-    task: String,
+    #[arg(value_parser = task_name)]
+    task: TaskName,
     /// Source path (`BOX:path` for the Box).
     src: String,
     /// Destination path (`BOX:path` for the Box).
@@ -370,7 +384,8 @@ impl From<CpArgs> for CpReq {
 #[derive(Debug, Args)]
 struct TaskArg {
     /// Task name.
-    task: String,
+    #[arg(value_parser = task_name)]
+    task: TaskName,
 }
 
 impl From<TaskArg> for TaskReq {

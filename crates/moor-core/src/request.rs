@@ -2,6 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::name::TaskName;
+
 /// One moor command with its arguments.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "cmd", rename_all = "kebab-case", deny_unknown_fields)]
@@ -79,7 +81,7 @@ impl Request {
 #[serde(deny_unknown_fields)]
 pub struct StartReq {
     /// Task name.
-    pub name: String,
+    pub name: TaskName,
     /// Goal text.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub goal: Option<String>,
@@ -105,7 +107,7 @@ pub struct StartReq {
 #[serde(deny_unknown_fields)]
 pub struct RunReq {
     /// Task name.
-    pub task: String,
+    pub task: TaskName,
     /// Skip syncing before the run.
     #[serde(default)]
     pub no_sync: bool,
@@ -122,7 +124,7 @@ pub struct RunReq {
 #[serde(deny_unknown_fields)]
 pub struct WaitReq {
     /// Task name.
-    pub task: String,
+    pub task: TaskName,
     /// Condition to wait for.
     #[serde(rename = "for", default, skip_serializing_if = "Option::is_none")]
     pub wait_for: Option<WaitFor>,
@@ -148,7 +150,7 @@ pub enum WaitFor {
 #[serde(deny_unknown_fields)]
 pub struct SteerReq {
     /// Task name.
-    pub task: String,
+    pub task: TaskName,
     /// Text to send.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
@@ -162,7 +164,7 @@ pub struct SteerReq {
 #[serde(deny_unknown_fields)]
 pub struct ReportReq {
     /// Task name.
-    pub task: String,
+    pub task: TaskName,
     /// Report kind.
     pub kind: String,
     /// Report title.
@@ -179,7 +181,7 @@ pub struct ReportReq {
 pub struct ShowReq {
     /// Task name; all tasks when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub task: Option<String>,
+    pub task: Option<TaskName>,
     /// Number of events to include.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub events: Option<u32>,
@@ -199,7 +201,7 @@ pub struct ShowReq {
 #[serde(deny_unknown_fields)]
 pub struct CloseReq {
     /// Task name.
-    pub task: String,
+    pub task: TaskName,
     /// Close despite unfinished work.
     #[serde(default)]
     pub force: bool,
@@ -210,7 +212,7 @@ pub struct CloseReq {
 #[serde(deny_unknown_fields)]
 pub struct RemoveReq {
     /// Task name.
-    pub task: String,
+    pub task: TaskName,
     /// Discard unmerged work.
     #[serde(default)]
     pub discard: bool,
@@ -221,7 +223,7 @@ pub struct RemoveReq {
 #[serde(deny_unknown_fields)]
 pub struct CpReq {
     /// Task name.
-    pub task: String,
+    pub task: TaskName,
     /// Source path.
     pub src: String,
     /// Destination path.
@@ -233,7 +235,7 @@ pub struct CpReq {
 #[serde(deny_unknown_fields)]
 pub struct TaskReq {
     /// Task name.
-    pub task: String,
+    pub task: TaskName,
 }
 
 /// Arguments of `gate`.

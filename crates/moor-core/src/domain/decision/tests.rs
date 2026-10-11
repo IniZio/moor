@@ -85,10 +85,7 @@ fn derived_events_are_refused() {
             from: TaskState::Idle,
         },
         Event::BoxReady,
-        Event::BoxFailed {
-            error: "c".into(),
-            handle: None,
-        },
+        Event::BoxFailed { cause: "c".into() },
         Event::Idled,
     ] {
         assert_eq!(ExtraEvent::try_from(e.clone()), Err(e));

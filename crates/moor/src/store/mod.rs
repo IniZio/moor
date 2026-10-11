@@ -13,6 +13,7 @@ use moor_core::{BoxHandle, ProviderId, RunId, TaskId, TaskName};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Row, TransactionBehavior};
 
 mod apply;
+mod reads;
 mod runs;
 #[cfg(test)]
 mod tests;

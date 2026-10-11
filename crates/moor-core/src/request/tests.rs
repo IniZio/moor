@@ -3,12 +3,17 @@
 use super::*;
 use serde_json::json;
 
+/// Valid task name.
+fn n(s: &str) -> TaskName {
+    TaskName::parse(s).expect("valid name")
+}
+
 /// Variants carrying a task or arguments.
 fn with_args() -> Vec<Request> {
-    let t = || TaskReq { task: "a".into() };
+    let t = || TaskReq { task: n("a") };
     vec![
         Request::Start(StartReq {
-            name: "a".into(),
+            name: n("a"),
             goal: Some("g".into()),
             issue: None,
             worktree: None,
@@ -17,23 +22,23 @@ fn with_args() -> Vec<Request> {
             no_agent: true,
         }),
         Request::Run(RunReq {
-            task: "a".into(),
+            task: n("a"),
             no_sync: false,
             record: None,
             argv: vec!["ls".into()],
         }),
         Request::Wait(WaitReq {
-            task: "a".into(),
+            task: n("a"),
             wait_for: Some(WaitFor::Idle),
             timeout_secs: Some(3),
         }),
         Request::Steer(SteerReq {
-            task: "a".into(),
+            task: n("a"),
             text: Some("x".into()),
             menu: None,
         }),
         Request::Report(ReportReq {
-            task: "a".into(),
+            task: n("a"),
             kind: "k".into(),
             title: None,
             file: None,
@@ -46,15 +51,15 @@ fn with_args() -> Vec<Request> {
             pane: false,
         }),
         Request::Close(CloseReq {
-            task: "a".into(),
+            task: n("a"),
             force: true,
         }),
         Request::Remove(RemoveReq {
-            task: "a".into(),
+            task: n("a"),
             discard: false,
         }),
         Request::Cp(CpReq {
-            task: "a".into(),
+            task: n("a"),
             src: "s".into(),
             dest: "d".into(),
         }),
@@ -106,7 +111,7 @@ fn close_roundtrips_from_json() {
     assert_eq!(
         r,
         Request::Close(CloseReq {
-            task: "a".into(),
+            task: n("a"),
             force: true
         })
     );
@@ -146,7 +151,7 @@ fn defaults_and_renames() {
     assert_eq!(
         r,
         Request::Wait(WaitReq {
-            task: "a".into(),
+            task: n("a"),
             wait_for: Some(WaitFor::Done),
             timeout_secs: None
         })
@@ -155,7 +160,7 @@ fn defaults_and_renames() {
     assert_eq!(
         r,
         Request::Run(RunReq {
-            task: "a".into(),
+            task: n("a"),
             no_sync: false,
             record: None,
             argv: vec![]
@@ -176,7 +181,7 @@ fn run_argv_roundtrips() {
     assert_eq!(
         r,
         Request::Run(RunReq {
-            task: "a".into(),
+            task: n("a"),
             no_sync: false,
             record: None,
             argv: vec!["ls".into(), "-la".into()],

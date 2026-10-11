@@ -26,7 +26,7 @@ fn version_reports_build_info() {
 fn other_ops_are_not_implemented() {
     let cx = Cx::new(None, Arc::new(FakeClock::new(Ts::from_millis(0))));
     let req = Request::Close(CloseReq {
-        task: "t".to_owned(),
+        task: moor_core::name::TaskName::parse("t").unwrap(),
         force: false,
     });
     let err = dispatch(&cx, req).expect_err("not implemented");
