@@ -176,6 +176,24 @@ fn open_name_attaches_without_effects() {
 }
 
 #[test]
+fn attach_writes_exactly_one_attached_event() {
+    let w = world(FakeDriver::new());
+    let first = run(&w.cx, &req("demo")).unwrap();
+    let count = |w: &World| {
+        w.cx.store()
+            .unwrap()
+            .events(TaskId::new(first.task.id), 100)
+            .unwrap()
+            .iter()
+            .filter(|e| e.kind == "attached")
+            .count()
+    };
+    assert_eq!(count(&w), 0);
+    run(&w.cx, &req("demo")).unwrap();
+    assert_eq!(count(&w), 1);
+}
+
+#[test]
 fn open_name_with_another_worktree_is_refused() {
     let w = world(FakeDriver::new());
     run(&w.cx, &req("demo")).unwrap();

@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
+use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, NewTask};
 use moor_core::seam::surface::{workspace_label, Worktree};
 use moor_core::view::{AgentLaunchView, DotfilesView, SetupView, StartView};
 use moor_core::{ErrorKind, StartReq, TaskId};
@@ -77,7 +77,9 @@ fn attach(
     row: &TaskRow,
 ) -> Result<StartView, CommandError> {
     check_bound(cx, req, row)?;
-    if reprovision(cx, store, row)? {
+    let reprovisioned = reprovision(cx, store, row)?;
+    store.apply(Decision::new(row.id).event(ExtraEvent::Attached))?;
+    if reprovisioned {
         return reread(store, row.id).map(|r| view(&r, true));
     }
     Ok(view(row, true))

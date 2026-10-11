@@ -136,6 +136,8 @@ pub enum Event {
         /// The run id.
         run: RunId,
     },
+    /// A start attached to an existing open task.
+    Attached,
 }
 
 impl Event {
@@ -167,6 +169,7 @@ impl Event {
             Self::SessionStarted { .. } => "session_started",
             Self::Checked { .. } => "checked",
             Self::RunStarted { .. } => "run_started",
+            Self::Attached => "attached",
         }
     }
 
