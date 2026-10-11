@@ -36,8 +36,10 @@ fn branch_of(w: &World) -> String {
 }
 
 fn box_brief_fx(repo_cfg: Value) -> Fx {
-    let mut c = repo_cfg;
-    c["agent"] = json!({ "location": "box" });
+    let mut c = cfg(&[]);
+    for (k, v) in repo_cfg.as_object().expect("object") {
+        c[k] = v.clone();
+    }
     let f = fx(Preset::Sprites, false, json!({}), c);
     let file = f.w.root().join("claude-token");
     std::fs::write(&file, format!("sk-parity-{}", f.w.task_name("tok"))).expect("token file");
@@ -91,11 +93,11 @@ parity!(
         if let Some(nonce) = box_file(&f.w, "proxy-nonce") {
             assert!(!brief.contains(nonce.trim()), "nonce in brief");
         }
-        for host_side in [
+        for outside in [
             f.w.root().to_string_lossy().into_owned(),
             f.repo.path.to_string_lossy().into_owned(),
         ] {
-            assert!(!brief.contains(&host_side), "host path in brief");
+            assert!(!brief.contains(&outside), "world path in brief");
         }
         for sub in ["run", "report", "steer", "cp", "gate", "close", "proxy"] {
             assert!(
@@ -128,46 +130,39 @@ parity!(
     }
 );
 
-fn bg_call(w: &World) -> Call {
-    w.calls("claude")
-        .into_iter()
-        .find(|c| c.argv.iter().any(|a| a == "--bg"))
-        .expect("claude --bg dispatch")
-}
 parity!(
     start_without_goal_dispatches_no_agent_and_no_proxy,
     covers = ["C-141"],
     tags = [],
     {
-        for location in ["host", "box"] {
-            let f = fx(Preset::Sprites, false, json!({}), cfg(location, &[]));
-            let (name, o) = f.start_with("nogoal", None, Some("ABC-7"));
-            assert_eq!(o.class, ExitClass::Ok, "{}", o.stderr);
-            assert!(
-                f.w.calls("claude").is_empty(),
-                "{location}: agent dispatched"
-            );
-            assert!(box_file(&f.w, "brief.md").is_none(), "{location}: brief");
-            assert!(
-                f.w.calls("crabbox")
-                    .iter()
-                    .all(|c| c.argv.first().map(String::as_str) != Some("tunnel")),
-                "{location}: tunnel opened"
-            );
-            let proxy_dir = f.w.state_dir().join("proxy");
-            let proxies = std::fs::read_dir(proxy_dir).map_or(0, |d| d.flatten().count());
-            assert_eq!(proxies, 0, "{location}: proxy state written");
-            f.finish(&name);
-        }
+        let f = fx(Preset::Sprites, false, json!({}), cfg(&[]));
+        let (name, o) = f.start_with("nogoal", None, Some("ABC-7"));
+        assert_eq!(o.class, ExitClass::Ok, "{}", o.stderr);
+        assert!(f.w.calls("claude").is_empty(), "agent launched");
+        assert!(
+            herdr::calls_of(&f.w, "pane", "run").is_empty(),
+            "pane command run"
+        );
+        assert!(box_file(&f.w, "brief.md").is_none(), "brief");
+        assert!(
+            f.w.calls("crabbox")
+                .iter()
+                .all(|c| c.argv.first().map(String::as_str) != Some("tunnel")),
+            "tunnel opened"
+        );
+        let proxy_dir = f.w.state_dir().join("proxy");
+        let proxies = std::fs::read_dir(proxy_dir).map_or(0, |d| d.flatten().count());
+        assert_eq!(proxies, 0, "proxy state written");
+        f.finish(&name);
     }
 );
 
 parity!(
-    goal_and_model_reach_the_dispatched_host_agent,
+    goal_and_model_reach_the_dispatched_box_agent,
     covers = ["C-141"],
     tags = [],
     {
-        let f = fx(Preset::Sprites, false, json!({}), cfg("host", &[]));
+        let f = fx(Preset::Sprites, false, json!({}), cfg(&[]));
         let name = f.w.task_name("mdl");
         let opts = StartOpts {
             goal: Some("tune the widget".to_string()),
@@ -176,9 +171,23 @@ parity!(
         };
         let o = moor().start(&f.w, &f.repo.path, &name, &opts);
         assert_eq!(o.class, ExitClass::Ok, "{}", o.stderr);
-        let call = bg_call(&f.w);
-        assert_eq!(call.flag("--model").as_deref(), Some("sonnet"));
-        assert!(call.argv[0].contains("Goal: tune the widget"));
+        let brief = box_file(&f.w, "brief.md").expect("brief delivered to the Box");
+        assert!(brief.contains("Goal: tune the widget"), "{brief}");
+        let pane = herdr::calls_of(&f.w, "pane", "run")
+            .last()
+            .and_then(|c| c.argv.last().cloned())
+            .expect("pane command");
+        let argv = pane
+            .split("claude --model ")
+            .nth(1)
+            .expect("claude --model");
+        assert!(
+            words(argv)
+                .iter()
+                .find(|w| !w.is_empty())
+                .is_some_and(|w| w == "sonnet"),
+            "{pane}"
+        );
         f.finish(&name);
     }
 );

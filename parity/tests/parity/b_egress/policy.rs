@@ -17,13 +17,13 @@ parity!(
             "*.*.example.com",
         ];
         for entry in bad {
-            f.set_repo(cfg("host", &[entry]));
+            f.set_repo(cfg(&[entry]));
             let (_, o) = f.start("bad", None);
             assert_ne!(o.class, ExitClass::Ok, "{entry} must be rejected");
             assert!(o.stderr.contains(entry), "{entry} not named: {}", o.stderr);
         }
         assert!(f.warmups().is_empty(), "no Box acquired for a bad entry");
-        f.set_repo(cfg("host", &["Example.COM"]));
+        f.set_repo(cfg(&["Example.COM"]));
         let name = f.start_ok("good", None);
         let list = sprites_list(&f.warmup()).expect("allow flag");
         assert!(list.contains(&"example.com".to_string()), "{list:?}");
@@ -44,12 +44,15 @@ parity!(
             "a.example.com",
             "github.com",
         ];
-        let f = fx(Preset::Sprites, false, json!({}), cfg("host", &entries));
+        let f = fx(Preset::Sprites, false, json!({}), cfg(&entries));
         let name = f.start_ok("base", None);
         let list = sprites_list(&f.warmup()).expect("allow flag");
         assert_set(
             &list,
-            &want(&[], &["example.com", "*.example.com", "a.example.com"]),
+            &want(
+                &PROXY_SERVED,
+                &["example.com", "*.example.com", "a.example.com"],
+            ),
         );
         f.finish(&name);
     }
@@ -60,12 +63,7 @@ parity!(
     covers = ["B-99", "C-122"],
     tags = [],
     {
-        let f = fx(
-            Preset::Sprites,
-            false,
-            json!({}),
-            cfg("box", &["a.example.com"]),
-        );
+        let f = fx(Preset::Sprites, false, json!({}), cfg(&["a.example.com"]));
         let name = f.start_ok("px", None);
         let list = sprites_list(&f.warmup()).expect("allow flag");
         assert_set(&list, &want(&PROXY_SERVED, &["a.example.com"]));
@@ -80,7 +78,7 @@ parity!(
         f.finish(&name);
 
         for served in ["api.github.com", "API.Anthropic.com"] {
-            f.set_repo(cfg("box", &[served]));
+            f.set_repo(cfg(&[served]));
             let (_, o) = f.start("rej", None);
             assert_ne!(o.class, ExitClass::Ok, "{served} must be refused");
             assert!(
@@ -90,32 +88,21 @@ parity!(
             );
         }
         assert_eq!(f.warmups().len(), 1, "no Box acquired for refused entries");
-
-        f.set_repo(cfg("host", &["api.github.com"]));
-        let name = f.start_ok("hostok", None);
-        let list = sprites_list(f.warmups().last().expect("warmup")).expect("allow flag");
-        assert_set(&list, &want(&[], &[]));
-        f.finish(&name);
     }
 );
 
 parity!(
-    sprites_policy_is_on_by_default_for_box_agents_only,
+    sprites_policy_always_on,
     covers = ["B-100", "C-123"],
     tags = [],
     {
-        let boxed = fx(Preset::Sprites, false, json!({}), cfg("box", &[]));
+        let boxed = fx(Preset::Sprites, false, json!({}), cfg(&[]));
         let name = boxed.start_ok("bx", None);
         let list = sprites_list(&boxed.warmup()).expect("flag despite empty egress");
         assert_set(&list, &want(&PROXY_SERVED, &[]));
         boxed.finish(&name);
 
-        let host = fx(Preset::Sprites, false, json!({}), cfg("host", &[]));
-        let name = host.start_ok("hs", None);
-        no_policy_anywhere(&host.w);
-        host.finish(&name);
-
-        let ns = fx(Preset::NamespaceDevbox, false, json!({}), cfg("box", &[]));
+        let ns = fx(Preset::NamespaceDevbox, false, json!({}), cfg(&[]));
         let name = ns.start_ok("nsbx", None);
         no_policy_anywhere(&ns.w);
         ns.finish(&name);
@@ -127,12 +114,7 @@ parity!(
     covers = ["B-102", "C-123"],
     tags = [],
     {
-        let f = fx(
-            Preset::Sprites,
-            false,
-            json!({}),
-            cfg("host", &["a.example.com"]),
-        );
+        let f = fx(Preset::Sprites, false, json!({}), cfg(&["a.example.com"]));
         crabbox::fail_quota(&f.w);
         let (_, o) = f.start("fail", None);
         assert_ne!(o.class, ExitClass::Ok, "{}", o.stdout);
@@ -153,13 +135,11 @@ parity!(
     tags = [],
     {
         for preset in [Preset::LocalContainer, Preset::Ssh] {
-            for location in ["host", "box"] {
-                let f = fx(preset, true, json!({}), cfg(location, &["a.example.com"]));
-                let name = f.start_ok("oth", None);
-                f.warmup();
-                no_policy_anywhere(&f.w);
-                f.finish(&name);
-            }
+            let f = fx(preset, true, json!({}), cfg(&["a.example.com"]));
+            let name = f.start_ok("oth", None);
+            f.warmup();
+            no_policy_anywhere(&f.w);
+            f.finish(&name);
         }
     }
 );
@@ -170,39 +150,27 @@ parity!(
     tags = [],
     {
         let entries = ["a.example.com"];
-        for location in ["host", "box"] {
-            let ns = fx(
-                Preset::NamespaceDevbox,
-                true,
-                json!({}),
-                cfg(location, &entries),
-            );
-            let name = ns.start_ok("nsop", None);
-            let warm = ns.warmup();
-            assert!(warm.flag(SPRITES_FLAG).is_none());
-            let ns_set = ns_list(&warm).expect("egress env with opt-in");
-            ns.finish(&name);
+        let ns = fx(Preset::NamespaceDevbox, true, json!({}), cfg(&entries));
+        let name = ns.start_ok("nsop", None);
+        let warm = ns.warmup();
+        assert!(warm.flag(SPRITES_FLAG).is_none());
+        let ns_set = ns_list(&warm).expect("egress env with opt-in");
+        ns.finish(&name);
 
-            let sp = fx(Preset::Sprites, false, json!({}), cfg(location, &entries));
-            let name = sp.start_ok("spcmp", None);
-            let sp_set = sprites_list(&sp.warmup()).expect("flag");
-            sp.finish(&name);
-            assert_eq!(ns_set, sp_set, "{location}: same list as sprites");
-        }
+        let sp = fx(Preset::Sprites, false, json!({}), cfg(&entries));
+        let name = sp.start_ok("spcmp", None);
+        let sp_set = sprites_list(&sp.warmup()).expect("flag");
+        sp.finish(&name);
+        assert_eq!(ns_set, sp_set, "same list as sprites");
 
-        let off = fx(
-            Preset::NamespaceDevbox,
-            false,
-            json!({}),
-            cfg("host", &entries),
-        );
+        let off = fx(Preset::NamespaceDevbox, false, json!({}), cfg(&entries));
         let (name, o) = off.start("nsoff", None);
         assert_eq!(o.class, ExitClass::Ok, "{}", o.stderr);
         assert!(!o.warnings.is_empty(), "unenforced namespace start warns");
         assert!(ns_list(&off.warmup()).is_none());
         off.finish(&name);
 
-        let sp = fx(Preset::Sprites, true, json!({}), cfg("host", &entries));
+        let sp = fx(Preset::Sprites, true, json!({}), cfg(&entries));
         let (name, o) = sp.start("spen", None);
         assert_eq!(o.class, ExitClass::Ok, "{}", o.stderr);
         assert!(o.warnings.is_empty(), "{:?}", o.warnings);
@@ -224,12 +192,8 @@ fn egress_row(o: &Outcome<EnvReport>) -> (String, String) {
     )
 }
 
-fn env_at(f: &Fx, location: &str) -> Outcome<EnvReport> {
-    let opts = EnvOpts {
-        agent_location: Some(location.to_string()),
-        ..Default::default()
-    };
-    moor().env(&f.w, &f.repo.path, &opts)
+fn env_of(f: &Fx) -> Outcome<EnvReport> {
+    moor().env(&f.w, &f.repo.path, &EnvOpts::default())
 }
 
 parity!(
@@ -237,39 +201,27 @@ parity!(
     covers = ["B-102a"],
     tags = [],
     {
-        let f = fx(
-            Preset::Sprites,
-            false,
-            json!({}),
-            cfg("host", &["a.example.com"]),
-        );
-        let (name, detail) = egress_row(&env_at(&f, "host"));
+        let f = fx(Preset::Sprites, false, json!({}), cfg(&["a.example.com"]));
+        let (name, detail) = egress_row(&env_of(&f));
         assert_eq!(name, "allow");
         assert!(detail.contains("a.example.com"), "{detail}");
-        let plain = moor().env(&f.w, &f.repo.path, &EnvOpts::default());
-        let out = plain.stdout.to_lowercase();
+        assert!(detail.contains("github.com"), "{detail}");
+        assert!(!detail.contains("api.anthropic.com"), "{detail}");
+        let out = env_of(&f).stdout.to_lowercase();
         assert!(
             !out.contains("crabbox") && !out.contains("network-allow"),
             "{out}"
         );
 
-        let (name, detail) = egress_row(&env_at(&f, "box"));
-        assert_eq!(name, "allow");
-        assert!(detail.contains("github.com"), "{detail}");
-        assert!(!detail.contains("api.anthropic.com"), "{detail}");
+        f.set_repo(cfg(&[]));
+        let (name, _) = egress_row(&env_of(&f));
+        assert_eq!(name, "allow", "Box agent gets a policy even when empty");
 
-        f.set_repo(cfg("host", &[]));
-        let (open_name, open) = egress_row(&env_at(&f, "host"));
-        assert_eq!(open_name, "policy");
-        let (box_name, _) = egress_row(&env_at(&f, "box"));
-        assert_eq!(box_name, "allow", "Box agent gets a policy even when empty");
-
-        let lc = fx(Preset::LocalContainer, false, json!({}), cfg("host", &[]));
-        let (lc_name, none) = egress_row(&env_at(&lc, "host"));
+        let lc = fx(Preset::LocalContainer, false, json!({}), cfg(&[]));
+        let (lc_name, none) = egress_row(&env_of(&lc));
         assert_eq!(lc_name, "policy");
-        assert_ne!(open, none, "open and unsupported read differently");
-        lc.set_repo(cfg("host", &["a.example.com", "b.example.com"]));
-        let (_, with_entries) = egress_row(&env_at(&lc, "host"));
+        lc.set_repo(cfg(&["a.example.com", "b.example.com"]));
+        let (_, with_entries) = egress_row(&env_of(&lc));
         assert_ne!(with_entries, none);
         assert!(with_entries.contains('2'), "{with_entries}");
 
@@ -277,23 +229,20 @@ parity!(
             Preset::NamespaceDevbox,
             true,
             json!({}),
-            cfg("host", &["a.example.com"]),
+            cfg(&["a.example.com"]),
         );
-        let (ns_name, ns_detail) = egress_row(&env_at(&ns, "host"));
+        let (ns_name, ns_detail) = egress_row(&env_of(&ns));
         assert_eq!(ns_name, "allow");
         assert!(ns_detail.contains("a.example.com"));
-        assert!(env_at(&ns, "host").ok().item("egress", "enforce").is_none());
+        assert!(env_of(&ns).ok().item("egress", "enforce").is_none());
         let off = fx(
             Preset::NamespaceDevbox,
             false,
             json!({}),
-            cfg("host", &["a.example.com"]),
+            cfg(&["a.example.com"]),
         );
-        let (off_name, _) = egress_row(&env_at(&off, "host"));
+        let (off_name, _) = egress_row(&env_of(&off));
         assert_eq!(off_name, "policy");
-        assert!(env_at(&off, "host")
-            .ok()
-            .item("egress", "enforce")
-            .is_some());
+        assert!(env_of(&off).ok().item("egress", "enforce").is_some());
     }
 );

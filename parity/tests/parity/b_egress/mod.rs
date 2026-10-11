@@ -5,6 +5,7 @@ use parity::adapter::{EnvOpts, EnvReport, ExitClass, Outcome, StartOpts, TaskVie
 use parity::fake::crabbox::{self, Preset};
 use parity::fake::{claude, herdr, Call, Rule};
 use parity::parity;
+use parity::world::config::RepoConfig;
 use parity::world::repo::Repo;
 use parity::world::World;
 use serde_json::{json, Value};
@@ -67,8 +68,10 @@ pub(super) fn fx(preset: Preset, enforce: bool, user_extra: Value, repo_cfg: Val
     Fx { w, repo }
 }
 
-pub(super) fn cfg(location: &str, egress: &[&str]) -> Value {
-    json!({ "agent": { "location": location }, "egress": egress })
+pub(super) fn cfg(egress: &[&str]) -> Value {
+    let mut v = RepoConfig::default().agent_location("box").to_value();
+    v["egress"] = json!(egress);
+    v
 }
 
 impl Fx {
