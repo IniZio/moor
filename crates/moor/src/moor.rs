@@ -21,6 +21,15 @@ impl Moor {
         })
     }
 
+    /// The `version` envelope; independent of config and state.
+    #[must_use]
+    pub fn version() -> Response {
+        match ops::version_value() {
+            Ok(value) => Response::ok("version", Some(value)),
+            Err(e) => e.into_response("version", vec![]),
+        }
+    }
+
     /// Run one request to an envelope; never panics, never prints.
     pub fn call(&self, req: Request) -> Response {
         let cmd = req.cmd();
