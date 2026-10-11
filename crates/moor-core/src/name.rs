@@ -48,11 +48,45 @@ impl TaskName {
     }
 }
 
+impl serde::Serialize for TaskName {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&self.0)
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for TaskName {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(d)?;
+        Self::parse(&s).map_err(serde::de::Error::custom)
+    }
+}
+
 /// A store-assigned task id; ordering is promotion order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TaskId(i64);
 
 impl TaskId {
+    /// Wraps a raw id.
+    #[must_use]
+    pub const fn new(v: i64) -> Self {
+        Self(v)
+    }
+
+    /// Returns the raw id.
+    #[must_use]
+    pub const fn get(self) -> i64 {
+        self.0
+    }
+}
+
+/// A store-assigned run id.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
+#[serde(transparent)]
+pub struct RunId(i64);
+
+impl RunId {
     /// Wraps a raw id.
     #[must_use]
     pub const fn new(v: i64) -> Self {

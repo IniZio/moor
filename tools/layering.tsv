@@ -5,6 +5,8 @@ moor_core::secret
 moor_core::name
 moor_core::request	moor_core::name
 moor_core::response	moor_core::name
+moor_core::domain	moor_core::name,moor_core::secret
+moor_core::seam	moor_core::domain,moor_core::name,moor_core::secret,moor_core::config,moor_core::proxy_gate
 moor::env
 moor::error	moor::env,moor::store
 moor::cli	moor::error
