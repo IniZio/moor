@@ -8,8 +8,9 @@ MACHETE_VERSION := 0.9.2
 NEXTEST_VERSION := 0.9.148
 TAPLO_VERSION := 0.10.0
 TYPOS_VERSION := 1.51.1
+LLVM_COV_VERSION := 0.9.1
 
-.PHONY: help setup secret audit lint format format-check fmt-check test unit ci build deploy parity-old-bin parity
+.PHONY: help coverage setup secret audit lint format format-check fmt-check test unit ci build deploy parity-old-bin parity
 
 help:
 	@echo "targets: setup secret audit lint format format-check test ci build deploy parity"
@@ -21,6 +22,7 @@ setup:
 	@cargo nextest --version 2>/dev/null | grep -q '$(NEXTEST_VERSION)' || cargo install --locked cargo-nextest@$(NEXTEST_VERSION)
 	@taplo --version 2>/dev/null | grep -q '$(TAPLO_VERSION)' || cargo install --locked taplo-cli@$(TAPLO_VERSION)
 	@typos --version 2>/dev/null | grep -q '$(TYPOS_VERSION)' || cargo install --locked typos-cli@$(TYPOS_VERSION)
+	@cargo llvm-cov --version 2>/dev/null | grep -q '$(LLVM_COV_VERSION)' || cargo install --locked cargo-llvm-cov@$(LLVM_COV_VERSION)
 	@echo "setup: toolchain and pinned tools present"
 
 secret:
@@ -33,8 +35,8 @@ audit:
 lint:
 	cargo clippy --workspace --all-targets --locked -- -D warnings
 	tools/file-cap.sh
-	tools/layering.sh
-	tools/layering.sh --self-test
+	cargo test -p layering --locked
+	cargo run -q -p layering --locked
 	tools/lint-selftest.sh
 	typos
 	RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items --locked
@@ -55,6 +57,9 @@ unit:
 
 test: unit
 	$(MAKE) parity
+
+coverage: parity-old-bin
+	MOOR_BIN=$(abspath $(OLD_DIR)/moor) MOOR_CLI=old cargo llvm-cov --workspace --locked --ignore-run-fail
 
 ci:
 	$(MAKE) audit
