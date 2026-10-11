@@ -66,6 +66,27 @@ impl TaskId {
     }
 }
 
+/// A store-assigned run id.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
+#[serde(transparent)]
+pub struct RunId(i64);
+
+impl RunId {
+    /// Wraps a raw id.
+    #[must_use]
+    pub const fn new(v: i64) -> Self {
+        Self(v)
+    }
+
+    /// Returns the raw id.
+    #[must_use]
+    pub const fn get(self) -> i64 {
+        self.0
+    }
+}
+
 /// An opaque Box handle; only the Driver adapter interprets it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct BoxHandle(String);
