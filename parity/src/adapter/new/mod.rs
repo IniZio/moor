@@ -39,13 +39,7 @@ impl Moor for NewCli {
     }
 
     fn caps(&self) -> &'static [&'static str] {
-        &[
-            "VersionHash",
-            "CloseGate",
-            "MoorWarning",
-            "RestartClosed",
-            "EnvPreflightScoped",
-        ]
+        &["VersionHash", "CloseGate", "MoorWarning", "RestartClosed"]
     }
 
     fn start(&self, w: &World, cwd: &Path, name: &str, opts: &StartOpts) -> Outcome<TaskView> {

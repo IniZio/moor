@@ -70,6 +70,13 @@ parity!(
             o.stderr
         );
         finish(&f, &name);
+
+        let f = fx();
+        flow_fakes(&f.w);
+        f.user(json!({ "credentials": { "USED": { "file": "/nonexistent/x" } } }));
+        f.repo_cfg(json!({ "credentials": ["USED"] }));
+        let name = f.w.task_name("used");
+        assert_rejected_start(&f, &start_task(&f, &name, None), &name);
     }
 );
 
