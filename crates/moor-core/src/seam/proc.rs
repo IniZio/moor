@@ -201,6 +201,8 @@ pub struct ProcOutput {
     pub stdout: String,
     /// Captured stderr.
     pub stderr: String,
+    /// Output past the per-stream cap was discarded.
+    pub truncated: bool,
 }
 
 /// Why a child did not succeed.

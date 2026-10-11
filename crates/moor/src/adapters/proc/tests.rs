@@ -1,4 +1,5 @@
 //! Tests for `SystemProc` using small shell scripts as fake tools.
+#![expect(clippy::print_stderr, reason = "timing evidence under --nocapture")]
 
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
@@ -139,4 +140,41 @@ fn detached_child_runs_without_waiting() {
         std::thread::sleep(Duration::from_millis(20));
     }
     assert!(marker.exists());
+}
+
+fn sh(script: &str, secs: u64) -> ProcSpec {
+    spec(secs).arg("-c").arg(script)
+}
+
+fn sh_proc() -> SystemProc {
+    proc_with(vec![("MOOR_GIT_BIN", "/bin/sh".into())])
+}
+
+#[test]
+fn escaped_grandchild_holding_pipe_does_not_block() {
+    let t = Instant::now();
+    let out = sh_proc().run(&sh("setsid sleep 8 & echo hi", 2)).unwrap();
+    let el = t.elapsed();
+    eprintln!("escaped_grandchild elapsed: {el:?}");
+    assert_eq!(out.stdout.trim(), "hi");
+    assert!(el < Duration::from_secs(3), "{el:?}");
+}
+
+#[test]
+fn hung_child_times_out_within_grace() {
+    let t = Instant::now();
+    let err = sh_proc().run(&sh("sleep 30", 1)).unwrap_err();
+    let el = t.elapsed();
+    eprintln!("hung_child elapsed: {el:?}");
+    assert!(matches!(err, ProcError::Timeout { .. }), "{err:?}");
+    assert!(el < Duration::from_millis(3500), "{el:?}");
+}
+
+#[test]
+fn oversized_output_is_capped_and_flagged() {
+    let t = Instant::now();
+    let out = sh_proc().run(&sh("head -c 5000000 /dev/zero", 10)).unwrap();
+    eprintln!("oversized elapsed: {:?}", t.elapsed());
+    assert_eq!(out.stdout.len(), super::CAP);
+    assert!(out.truncated);
 }

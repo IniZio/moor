@@ -7,7 +7,8 @@ use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::path::PathBuf;
 use std::process::{Child, Command, ExitStatus, Stdio};
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
@@ -24,6 +25,11 @@ const POLL: Duration = Duration::from_millis(10);
 const SPAWN_TRIES: u32 = 8;
 /// Bytes of stderr kept in `NonZero`.
 const TAIL: usize = 2048;
+/// Longest extra wait for pipe readers after the child exits (an escaped
+/// grandchild may hold the pipe open), shared by both pipes.
+const DRAIN_GRACE: Duration = Duration::from_millis(500);
+/// Bytes kept per stream; the rest is read and discarded.
+const CAP: usize = 4 * 1024 * 1024;
 
 /// Every tool, for program resolution at construction.
 const TOOLS: [Tool; 8] = [
@@ -154,13 +160,60 @@ fn stdin_for(stdin: &Stdin) -> io::Result<(Stdio, Option<&[u8]>)> {
     }
 }
 
-/// Reads a pipe to its end.
-fn drain<R: Read>(pipe: Option<R>) -> Vec<u8> {
-    let mut buf = Vec::new();
-    if let Some(mut r) = pipe {
-        drop(r.read_to_end(&mut buf));
+/// Bytes read so far from one pipe.
+#[derive(Default)]
+struct Capture {
+    /// Kept bytes, at most [`CAP`].
+    buf: Vec<u8>,
+    /// Bytes past [`CAP`] were discarded.
+    truncated: bool,
+}
+
+/// Detached reader: owns the pipe, fills the shared capture, signals EOF on `done`.
+fn drain<R: Read + Send + 'static>(pipe: Option<R>, done: Sender<bool>) -> Arc<Mutex<Capture>> {
+    let cap = Arc::new(Mutex::new(Capture::default()));
+    let shared = Arc::clone(&cap);
+    thread::spawn(move || {
+        if let Some(mut r) = pipe {
+            let mut chunk = [0_u8; 8192];
+            while let Ok(n) = r.read(&mut chunk) {
+                if n == 0 {
+                    break;
+                }
+                if let Ok(mut c) = shared.lock() {
+                    let room = CAP.saturating_sub(c.buf.len());
+                    let take = n.min(room);
+                    c.buf
+                        .extend_from_slice(chunk.get(..take).unwrap_or_default());
+                    c.truncated |= take < n;
+                }
+            }
+        }
+        done.send(true).ok();
+    });
+    cap
+}
+
+/// Waits for both readers' EOF (`true`) or the [`DRAIN_GRACE`] tick (`false`).
+fn wait_eof(events: &Receiver<bool>, tx: Sender<bool>) {
+    thread::spawn(move || {
+        thread::sleep(DRAIN_GRACE);
+        tx.send(false).ok();
+    });
+    let mut eofs = 0;
+    while eofs < 2 {
+        match events.recv() {
+            Ok(true) => eofs += 1,
+            Ok(false) | Err(_) => break,
+        }
     }
-    buf
+}
+
+/// Takes what was read so far.
+fn take(cap: &Mutex<Capture>) -> Capture {
+    cap.lock()
+        .map(|mut c| std::mem::take(&mut *c))
+        .unwrap_or_default()
 }
 
 /// Writes `bytes` to the pipe and closes it.
@@ -206,13 +259,15 @@ fn terminate(pid: u32, rx: &Receiver<Waited>, deadline: Duration) -> io::Result<
 }
 
 /// Maps a finished child plus captured output to the seam result.
-fn finish(status: ExitStatus, out: &[u8], err: &[u8]) -> Result<ProcOutput, ProcError> {
+fn finish(status: ExitStatus, o: &Capture, e: &Capture) -> Result<ProcOutput, ProcError> {
+    let (out, err) = (&o.buf, &e.buf);
     let stdout = String::from_utf8_lossy(out).into_owned();
     match status.code() {
         Some(0) => Ok(ProcOutput {
             code: 0,
             stdout,
             stderr: String::from_utf8_lossy(err).into_owned(),
+            truncated: o.truncated || e.truncated,
         }),
         Some(code) => {
             let tail = err
@@ -238,28 +293,27 @@ impl Proc for SystemProc {
         let mut child = spawn_retrying(&mut cmd).map_err(ProcError::Spawn)?;
         let (w, o, e) = (child.stdin.take(), child.stdout.take(), child.stderr.take());
         let limit = spec.deadline.0;
-        thread::scope(|s| {
-            s.spawn(|| feed(w, payload));
-            let out = s.spawn(|| drain(o));
-            let err = s.spawn(|| drain(e));
-            let pid = child.id();
-            let (tx, rx) = mpsc::channel();
-            s.spawn(move || tx.send(child.wait()).ok());
-            let status = match rx.recv_timeout(limit) {
-                Ok(st) => st.map_err(ProcError::Spawn)?,
-                Err(RecvTimeoutError::Timeout) => {
-                    terminate(pid, &rx, limit).map_err(ProcError::Spawn)?;
-                    return Err(ProcError::Timeout {
-                        tool: spec.tool,
-                        after: limit,
-                    });
-                }
-                Err(RecvTimeoutError::Disconnected) => return Err(ProcError::Spawn(gone())),
-            };
-            let out = out.join().unwrap_or_default();
-            let err = err.join().unwrap_or_default();
-            finish(status, &out, &err)
-        })
+        let payload = payload.map(<[u8]>::to_vec);
+        thread::spawn(move || feed(w, payload.as_deref()));
+        let (etx, erx) = mpsc::channel();
+        let out = drain(o, etx.clone());
+        let err = drain(e, etx.clone());
+        let pid = child.id();
+        let (tx, rx) = mpsc::channel();
+        thread::spawn(move || tx.send(child.wait()).ok());
+        let status = match rx.recv_timeout(limit) {
+            Ok(st) => st.map_err(ProcError::Spawn)?,
+            Err(RecvTimeoutError::Timeout) => {
+                terminate(pid, &rx, limit).map_err(ProcError::Spawn)?;
+                return Err(ProcError::Timeout {
+                    tool: spec.tool,
+                    after: limit,
+                });
+            }
+            Err(RecvTimeoutError::Disconnected) => return Err(ProcError::Spawn(gone())),
+        };
+        wait_eof(&erx, etx);
+        finish(status, &take(&out), &take(&err))
     }
 
     fn spawn_detached(&self, spec: &ProcSpec) -> Result<(), ProcError> {

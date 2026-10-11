@@ -87,6 +87,7 @@ impl ScriptedProc {
                 code: 0,
                 stdout: out.clone(),
                 stderr: String::new(),
+                truncated: false,
             }),
             Some(Reply::Fail {
                 code,
