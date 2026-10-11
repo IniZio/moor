@@ -187,6 +187,11 @@ parity!(
         let name = f.w.task_name("ghtok");
         let started = start_task(&f, &name, None);
         assert_eq!(started.class, ExitClass::Failed, "{}", started.stdout);
+        let said = format!("{} {}", started.stdout, started.stderr);
+        assert!(
+            said.contains("box_credentials.OTHER"),
+            "start must name the rejected config path: {said}"
+        );
         assert!(f.w.calls("ssh").is_empty(), "nothing delivered to a Box");
         assert!(run_calls(&f.w).is_empty(), "no Box script ran");
         assert_secret_absent(&f.w, &secret, &[]);

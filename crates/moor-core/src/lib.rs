@@ -1,6 +1,7 @@
 //! Core domain types and the request/response wire contract for moor.
 #![forbid(unsafe_code)]
 
+pub mod decide;
 pub mod domain;
 pub mod name;
 pub mod request;

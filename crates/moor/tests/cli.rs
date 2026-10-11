@@ -116,6 +116,11 @@ fn json_start_is_failed() {
 }
 
 #[test]
+fn json_start_bad_name_is_usage() {
+    envelope(&["--json", "start", "BAD_Name"], None, 2, "usage");
+}
+
+#[test]
 fn json_run_is_125() {
     envelope(&["--json", "run", "foo", "--", "true"], None, 125, "failed");
 }

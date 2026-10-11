@@ -20,6 +20,9 @@ impl Preset {
     }
 }
 
+const NO_JSON: &str = "flag provided but not defined: -json\n";
+const INSPECT_JSON: &str = "{\"id\":\"{flag:--id}\",\"slug\":\"{flag:--id}\",\"provider\":\"{flag:--provider}\",\"target\":\"linux\",\"workroot\":\"{box}/work\",\"state\":\"active\",\"serverId\":\"1\",\"serverType\":\"fake\",\"host\":\"127.0.0.1\",\"network\":\"public\",\"sshHost\":\"127.0.0.1\",\"sshUser\":\"crabbox\",\"sshPort\":\"22\",\"sshKey\":\"\",\"hasHost\":true,\"ready\":true}\n";
+
 pub fn install(w: &World) {
     install_preset(w, Preset::LocalContainer);
 }
@@ -50,9 +53,20 @@ fn install_defaults(w: &World) {
                 .contains("MOOR_WORKDIR")
                 .stdout("MOOR_WORKDIR={box}/work\n"),
             Rule::on(&["run"]).exec("{post}"),
+            Rule::on(&["warmup"])
+                .contains("--json")
+                .exit(2)
+                .stderr(NO_JSON),
             Rule::on(&["warmup"]).stdout("leased cbx_x slug={flag:--slug}\n"),
             Rule::on(&["list"]).stdout("[]"),
+            Rule::on(&["stop"])
+                .contains("--json")
+                .exit(2)
+                .stderr(NO_JSON),
             Rule::on(&["stop"]).exit(0),
+            Rule::on(&["inspect"])
+                .contains("--json")
+                .stdout(INSPECT_JSON),
         ],
     );
 }
@@ -60,7 +74,14 @@ fn install_defaults(w: &World) {
 pub fn inventory(w: &World, names: &[&str]) {
     let items: Vec<serde_json::Value> = names
         .iter()
-        .map(|n| serde_json::json!({ "name": n }))
+        .enumerate()
+        .map(|(i, n)| {
+            serde_json::json!({
+                "id": i + 1, "name": n, "status": "running",
+                "labels": { "slug": n, "lease": format!("cbx_{n}") },
+                "public_net": { "ipv4": { "ip": "127.0.0.1" } },
+            })
+        })
         .collect();
     let body = serde_json::Value::Array(items).to_string();
     w.prepend_rules("crabbox", [Rule::on(&["list"]).stdout(body)]);
@@ -80,11 +101,18 @@ pub fn slug(w: &World) -> Option<String> {
 }
 
 pub fn providers(w: &World) {
+    let entry = |p: &str, life: &str| {
+        serde_json::json!({
+            "provider": p, "family": p, "aliases": [], "kind": "ssh-lease",
+            "targets": ["linux"], "features": ["ssh"], "lifecycle": [life],
+            "coordinator": "never", "classCatalog": {},
+        })
+    };
     let body = serde_json::json!([
-        {"provider": "local-container", "aliases": [], "lifecycle": ["ephemeral"]},
-        {"provider": "namespace-devbox", "aliases": [], "lifecycle": ["pause-resume"]},
-        {"provider": "sprites", "aliases": [], "lifecycle": ["ephemeral"]},
-        {"provider": "ssh", "aliases": [], "lifecycle": ["static"]},
+        entry("local-container", "ephemeral"),
+        entry("namespace-devbox", "pause-resume"),
+        entry("sprites", "ephemeral"),
+        entry("ssh", "static"),
     ])
     .to_string();
     w.prepend_rules("crabbox", [Rule::on(&["providers"]).stdout(body)]);

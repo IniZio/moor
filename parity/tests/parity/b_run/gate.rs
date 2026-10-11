@@ -205,17 +205,21 @@ parity!(
     tags = [],
     {
         let docs = [
-            json!({ "record": { "keep": ["node_modules"] } }),
-            json!({ "setup": [""] }),
-            json!({ "teardown": ["  "] }),
-            json!({ "tools": [""] }),
-            json!({ "provision": ["../outside"] }),
-            json!({ "provision": ["/etc/hostname"] }),
+            (
+                json!({ "record": { "keep": ["node_modules"] } }),
+                "record.keep",
+            ),
+            (json!({ "setup": [""] }), "setup"),
+            (json!({ "teardown": ["  "] }), "teardown"),
+            (json!({ "tools": [""] }), "tools"),
+            (json!({ "provision": ["../outside"] }), "provision"),
+            (json!({ "provision": ["/etc/hostname"] }), "provision"),
         ];
-        for doc in docs {
+        for (doc, key) in docs {
             let (w, repo) = prepare(Some(doc.clone()), json!({}));
             let o = moor().start(&w, &repo.path, &w.task_name("cfg"), &StartOpts::default());
-            assert!(o.is_err(), "{doc} must be a config error");
+            assert_eq!(o.class, ExitClass::Failed, "{doc}: {}", o.stderr);
+            assert!(o.stderr.contains(key), "{doc}: {}", o.stderr);
             assert!(verb_calls(&w, "warmup").is_empty(), "{doc}");
         }
     }

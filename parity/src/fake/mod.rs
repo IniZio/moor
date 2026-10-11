@@ -213,6 +213,7 @@ pub const RECORDED_ENV_PREFIXES: &[&str] = &[
     "GIT_CONFIG_",
     "ANTHROPIC_",
     "CLAUDE_",
+    "HERDR_",
 ];
 
 pub fn lock(fakes_dir: &Path) -> std::io::Result<fs::File> {

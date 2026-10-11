@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use moor_core::{
     CloseReq, CpReq, EnvReq, GateAction, GateReq, RemoveReq, ReportReq, Request, RunReq, ShowReq,
-    StartReq, SteerReq, TaskReq, WaitFor, WaitReq,
+    StartReq, SteerReq, TaskName, TaskReq, WaitFor, WaitReq,
 };
 
 use super::{parse, Action};
@@ -31,9 +31,14 @@ fn req(args: &[&str]) -> Request {
     }
 }
 
+/// Valid task name.
+fn n(s: &str) -> TaskName {
+    TaskName::parse(s).expect("valid name")
+}
+
 /// Task request helper.
 fn task(t: &str) -> TaskReq {
-    TaskReq { task: t.into() }
+    TaskReq { task: n(t) }
 }
 
 #[test]
@@ -56,7 +61,7 @@ fn start_with_all_flags() {
     assert_eq!(
         r,
         Request::Start(StartReq {
-            name: "t1".into(),
+            name: n("t1"),
             goal: Some("g".into()),
             issue: Some("I-1".into()),
             worktree: Some("/w".into()),
@@ -73,7 +78,7 @@ fn run_with_trailing_command() {
     assert_eq!(
         r,
         Request::Run(RunReq {
-            task: "t1".into(),
+            task: n("t1"),
             no_sync: false,
             record: None,
             argv: vec!["ls".into(), "-la".into()],
@@ -83,7 +88,7 @@ fn run_with_trailing_command() {
     assert_eq!(
         r,
         Request::Run(RunReq {
-            task: "t1".into(),
+            task: n("t1"),
             no_sync: true,
             record: Some("r".into()),
             argv: vec!["make".into()],
@@ -97,7 +102,7 @@ fn wait_for_and_timeout() {
     assert_eq!(
         req(&["wait", "t1", "--for", "idle", "--timeout", "5"]),
         Request::Wait(WaitReq {
-            task: "t1".into(),
+            task: n("t1"),
             wait_for: Some(WaitFor::Idle),
             timeout_secs: Some(5),
         })
@@ -110,7 +115,7 @@ fn steer_text_or_menu() {
     assert_eq!(
         req(&["steer", "t1", "go on"]),
         Request::Steer(SteerReq {
-            task: "t1".into(),
+            task: n("t1"),
             text: Some("go on".into()),
             menu: None
         })
@@ -118,7 +123,7 @@ fn steer_text_or_menu() {
     assert_eq!(
         req(&["steer", "t1", "--menu", "2"]),
         Request::Steer(SteerReq {
-            task: "t1".into(),
+            task: n("t1"),
             text: None,
             menu: Some(2)
         })
@@ -132,7 +137,7 @@ fn report_close_remove_cp() {
     assert_eq!(
         req(&["report", "t1", "--kind", "k", "--title", "T", "--file", "f"]),
         Request::Report(ReportReq {
-            task: "t1".into(),
+            task: n("t1"),
             kind: "k".into(),
             title: Some("T".into()),
             file: Some("f".into()),
@@ -141,21 +146,21 @@ fn report_close_remove_cp() {
     assert_eq!(
         req(&["close", "t1", "--force"]),
         Request::Close(CloseReq {
-            task: "t1".into(),
+            task: n("t1"),
             force: true
         })
     );
     assert_eq!(
         req(&["remove", "t1", "--discard"]),
         Request::Remove(RemoveReq {
-            task: "t1".into(),
+            task: n("t1"),
             discard: true
         })
     );
     assert_eq!(
         req(&["cp", "t1", "a.txt", "BOX:b.txt"]),
         Request::Cp(CpReq {
-            task: "t1".into(),
+            task: n("t1"),
             src: "a.txt".into(),
             dest: "BOX:b.txt".into()
         })
@@ -165,7 +170,7 @@ fn report_close_remove_cp() {
 #[test]
 fn show_and_list_alias() {
     let want = Request::Show(ShowReq {
-        task: Some("t1".into()),
+        task: Some(n("t1")),
         events: Some(3),
         agent: true,
         reports: true,
@@ -265,4 +270,30 @@ fn global_flags_anywhere() {
     assert_eq!(after.ok(), Some(want));
     let quiet = run(&["version", "--quiet"]).map(|(o, _)| o.quiet);
     assert_eq!(quiet.ok(), Some(true));
+}
+
+#[test]
+fn invalid_task_name_is_a_clap_error() {
+    for args in [
+        &["start", "BAD_Name"][..],
+        &["close", "A"],
+        &["run", "Bad", "ls"],
+    ] {
+        let err = run(args).expect_err("rejected");
+        assert_eq!(err.kind(), clap::error::ErrorKind::ValueValidation);
+    }
+}
+
+#[test]
+fn valid_task_name_parses() {
+    assert_eq!(
+        req(&["show", "a-1"]),
+        Request::Show(ShowReq {
+            task: Some(n("a-1")),
+            events: None,
+            agent: false,
+            reports: false,
+            pane: false,
+        })
+    );
 }

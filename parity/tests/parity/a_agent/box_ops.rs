@@ -84,7 +84,8 @@ parity!(
         .unwrap();
         let opts = parity::adapter::StartOpts::default();
         let o = fx.m.start(&fx.w, &fx.repo.path, &fx.name, &opts);
-        assert!(o.is_err(), "{}", o.stdout);
+        assert_eq!(o.class, parity::adapter::ExitClass::Failed, "{}", o.stderr);
+        assert!(o.stderr.contains("box.provider"), "{}", o.stderr);
         assert!(fx.verb("warmup").is_empty());
     }
 );
