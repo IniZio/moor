@@ -3,7 +3,7 @@ OLD_REPO ?= $(REPOS)/moor
 OLD_REF ?= b8e8801
 OLD_DIR := target/parity-old
 
-.PHONY: parity-old-bin parity fmt-check lint ci
+.PHONY: parity-old-bin parity fmt-check lint unit ci
 
 parity-old-bin:
 	@if [ "$$(cat $(OLD_DIR)/REV 2>/dev/null)" = "$(OLD_REF)" ] && [ -x $(OLD_DIR)/moor ]; then \
@@ -26,4 +26,7 @@ fmt-check:
 lint:
 	cargo clippy --all-targets -- -D warnings
 
-ci: fmt-check lint parity
+unit:
+	cargo test -p parity --lib
+
+ci: fmt-check lint unit parity

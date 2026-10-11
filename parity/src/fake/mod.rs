@@ -1,6 +1,7 @@
 pub mod claude;
 pub mod crabbox;
 pub mod herdr;
+pub mod ssh;
 
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
@@ -164,6 +165,10 @@ pub struct Call {
     pub env: BTreeMap<String, String>,
     #[serde(default)]
     pub rule: Option<String>,
+    #[serde(default)]
+    pub pgid: u32,
+    #[serde(default)]
+    pub starttime: u64,
 }
 
 impl Call {
@@ -459,6 +464,8 @@ mod tests {
             stdin: String::new(),
             env: BTreeMap::new(),
             rule: None,
+            pgid: 0,
+            starttime: 0,
         };
         assert_eq!(c.flag("--slug").as_deref(), Some("abc"));
         assert_eq!(c.flag("--x").as_deref(), Some("1"));
@@ -505,6 +512,8 @@ mod tests {
             stdin: String::new(),
             env: BTreeMap::new(),
             rule: None,
+            pgid: 0,
+            starttime: 0,
         };
         let line = |c: &Call| format!("{}\n", serde_json::to_string(c).unwrap());
         fs::write(calls_path(d, "a"), line(&mk(2, "a"))).unwrap();

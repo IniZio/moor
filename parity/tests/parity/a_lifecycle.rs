@@ -1,4 +1,4 @@
-use parity::adapter::{BoxState, ExitClass, StartOpts, TaskState};
+use parity::adapter::{BoxState, EventKind, ExitClass, StartOpts, TaskState};
 use parity::assert::{assert_never_called, assert_order, assert_seq_global};
 use parity::fake::{claude, crabbox, herdr};
 use parity::parity;
@@ -53,15 +53,25 @@ parity!(
         );
 
         let after = m.list(&w, &repo.path);
-        if let Some(row) = after.ok().iter().find(|t| t.name == name) {
-            assert_eq!(row.state, TaskState::Closed);
-        }
+        let after_tasks = after.ok();
+        let row = after_tasks
+            .iter()
+            .find(|t| t.name == name)
+            .expect("closed task still listed");
+        assert_eq!(row.state, TaskState::Closed);
+        assert_eq!(row.boxed.as_ref().expect("box").state, BoxState::Deleted);
 
-        let kinds: Vec<String> = m.events(&w, &name).into_iter().map(|e| e.kind).collect();
-        let mut want = ["started", "box_ready", "session_started", "closed"].iter();
+        let kinds: Vec<EventKind> = m.events(&w, &name).into_iter().map(|e| e.kind).collect();
+        let mut want = [
+            EventKind::Started,
+            EventKind::BoxReady,
+            EventKind::SessionStarted,
+            EventKind::Closed,
+        ]
+        .into_iter();
         let mut next = want.next();
         for k in &kinds {
-            if Some(&k.as_str()) == next {
+            if Some(k) == next.as_ref() {
                 next = want.next();
             }
         }
@@ -110,6 +120,7 @@ parity!(
             Some("1")
         );
         assert_seq_global(&calls);
+        w.assert_no_new_tmp_creds();
     }
 );
 

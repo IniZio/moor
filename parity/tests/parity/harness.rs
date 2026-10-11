@@ -4,6 +4,97 @@ use parity::parity;
 
 use crate::world;
 
+fn wait_for(path: &std::path::Path) {
+    for _ in 0..100 {
+        if path.exists() {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    panic!("timeout waiting for {}", path.display());
+}
+
+fn marked_sleep_pids(w: &parity::world::World, needle: &str) -> Vec<u32> {
+    let marker = format!("PARITY_FAKES={}", w.fakes_dir().display());
+    let mut out = Vec::new();
+    for e in std::fs::read_dir("/proc").expect("proc").flatten() {
+        let Some(pid) = e.file_name().to_str().and_then(|n| n.parse::<u32>().ok()) else {
+            continue;
+        };
+        let cmd = std::fs::read(e.path().join("cmdline")).unwrap_or_default();
+        let env = std::fs::read(e.path().join("environ")).unwrap_or_default();
+        if String::from_utf8_lossy(&cmd).contains(needle)
+            && env.split(|b| *b == 0).any(|x| x == marker.as_bytes())
+        {
+            out.push(pid);
+        }
+    }
+    out
+}
+
+fn bg_leak_case(script: &str, needle: &str) {
+    let w = world();
+    w.add_rules("crabbox", [Rule::on(&["bg"]).exec(script)]);
+    w.command(w.tool_path("crabbox"))
+        .arg("bg")
+        .output()
+        .expect("spawn fake");
+    let mut pids = Vec::new();
+    for _ in 0..100 {
+        pids = marked_sleep_pids(&w, needle);
+        if !pids.is_empty() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(30));
+    }
+    assert!(!pids.is_empty(), "background child not found");
+    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || drop(w)));
+    let err = r.expect_err("drop must panic on leak");
+    let msg = err
+        .downcast_ref::<String>()
+        .cloned()
+        .or_else(|| err.downcast_ref::<&str>().map(|s| s.to_string()))
+        .unwrap_or_default();
+    assert!(msg.contains("leaked processes"), "unexpected panic: {msg}");
+    for pid in pids {
+        let alive =
+            std::fs::read_to_string(format!("/proc/{pid}/stat")).is_ok_and(|s| !s.contains(") Z"));
+        assert!(!alive, "pid {pid} survived teardown");
+    }
+}
+
+parity!(
+    leak_check_catches_background_child,
+    covers = ["REQ-47"],
+    tags = [],
+    { bg_leak_case("sleep 31 >/dev/null 2>&1 &", "sleep") }
+);
+
+parity!(
+    leak_check_catches_setsid_child,
+    covers = ["REQ-47"],
+    tags = [],
+    { bg_leak_case("setsid sleep 30 >/dev/null 2>&1 < /dev/null &", "sleep") }
+);
+
+parity!(
+    tmp_cred_guard_detects_new_entry,
+    covers = ["REQ-47"],
+    tags = [],
+    {
+        let w = world();
+        w.assert_no_new_tmp_creds();
+        let path =
+            std::path::PathBuf::from(format!("/tmp/moor-cred-parity-{}", w.task_name("guard")));
+        std::fs::write(&path, b"x").expect("create entry");
+        let r =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| w.assert_no_new_tmp_creds()));
+        std::fs::remove_file(&path).expect("remove entry");
+        assert!(r.is_err(), "guard must panic on new entry");
+        w.assert_no_new_tmp_creds();
+    }
+);
+
 fn run(w: &parity::world::World, tool: &str, args: &[&str]) -> String {
     let out = w
         .command(w.tool_path(tool))
@@ -23,13 +114,15 @@ parity!(
             .command("sh")
             .args([
                 "-c",
-                "trap '' TERM; while :; do sleep 0.1; done",
-                w.root().to_str().expect("utf8 root"),
+                &format!(
+                    "trap '' TERM; touch {}/tmp/ready; while :; do sleep 0.1; done",
+                    w.root().display()
+                ),
             ])
             .spawn()
             .expect("spawn sh");
         w.track_pid(child.id());
-        std::thread::sleep(std::time::Duration::from_millis(300));
+        wait_for(&w.root().join("tmp/ready"));
         let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || drop(w)));
         let err = r.expect_err("drop must panic on leak");
         let msg = err

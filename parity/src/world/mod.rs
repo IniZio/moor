@@ -19,7 +19,8 @@ const GITCONFIG: &str = "[user]\n\tname = parity\n\temail = parity@example.inval
 
 pub struct World {
     dir: tempfile::TempDir,
-    pids: Mutex<Vec<u32>>,
+    pids: Mutex<Vec<(u32, u64)>>,
+    tmp_creds: Vec<String>,
     suffix: String,
     torn_down: bool,
 }
@@ -58,6 +59,7 @@ impl World {
         World {
             dir,
             pids: Mutex::new(Vec::new()),
+            tmp_creds: tmp_creds(),
             suffix: random_hex6(),
             torn_down: false,
         }
@@ -141,7 +143,16 @@ impl World {
     }
 
     pub fn track_pid(&self, pid: u32) {
-        self.pids.lock().unwrap().push(pid);
+        let start = proc_stat(pid).map_or(0, |s| s.starttime);
+        self.pids.lock().unwrap().push((pid, start));
+    }
+
+    pub fn assert_no_new_tmp_creds(&self) {
+        let fresh: Vec<String> = tmp_creds()
+            .into_iter()
+            .filter(|n| !self.tmp_creds.contains(n))
+            .collect();
+        assert!(fresh.is_empty(), "new /tmp/moor-cred-* entries: {fresh:?}");
     }
 
     pub fn teardown(&mut self) -> Result<(), String> {
@@ -149,27 +160,57 @@ impl World {
             return Ok(());
         }
         self.torn_down = true;
-        let mut pids: Vec<u32> = self.all_calls().iter().map(|c| c.pid).collect();
-        pids.extend(self.pids.lock().unwrap().iter().copied());
-        pids.sort_unstable();
-        pids.dedup();
-        for pid in pids {
-            signal_tree(pid, libc::SIGTERM);
+        let marker = format!("PARITY_FAKES={}", self.fakes_dir().display());
+        let calls = self.all_calls();
+        let tracked: Vec<(u32, u64)> = self.pids.lock().unwrap().clone();
+        let mut known: Vec<u32> = calls.iter().map(|c| c.pid).collect();
+        known.extend(tracked.iter().map(|t| t.0));
+        let mut groups: Vec<u32> = calls.iter().map(|c| c.pgid).collect();
+        groups.extend(tracked.iter().map(|t| t.0));
+        groups.sort_unstable();
+        groups.dedup();
+
+        let initial = find_marked(&marker);
+        let mut leaks: Vec<(u32, String)> = initial
+            .iter()
+            .filter(|m| !known.contains(&m.pid))
+            .map(|m| (m.pid, m.cmdline.clone()))
+            .collect();
+        let own_pgrp = unsafe { libc::getpgrp() };
+        for g in groups {
+            let g = g as libc::pid_t;
+            if g > 1 && g != own_pgrp && initial.iter().any(|m| m.pgrp == g) {
+                // SAFETY: plain syscall; the group holds a process carrying our marker.
+                unsafe { libc::kill(-g, libc::SIGTERM) };
+            }
         }
-        let root = self.root().to_string_lossy().into_owned();
-        let deadline = Instant::now() + Duration::from_secs(2);
-        let mut survivors = find_survivors(&root);
-        while !survivors.is_empty() && Instant::now() < deadline {
-            std::thread::sleep(Duration::from_millis(50));
-            survivors = find_survivors(&root);
+        for (pid, start) in &tracked {
+            let same = proc_stat(*pid).is_some_and(|s| !s.zombie && s.starttime == *start);
+            if same && *pid > 1 && !initial.iter().any(|m| m.pid == *pid) {
+                // SAFETY: plain syscall; starttime proves the pid is still the recorded process.
+                unsafe { libc::kill(-(*pid as libc::pid_t), libc::SIGTERM) };
+            }
         }
-        if survivors.is_empty() {
+        for m in &initial {
+            // SAFETY: plain syscall on a pid whose environ carried our marker.
+            unsafe { libc::kill(m.pid as libc::pid_t, libc::SIGTERM) };
+        }
+        let mut left = wait_marked(&marker, Duration::from_secs(2));
+        if !left.is_empty() {
+            for m in &left {
+                // SAFETY: as above.
+                unsafe { libc::kill(m.pid as libc::pid_t, libc::SIGKILL) };
+                if !leaks.iter().any(|l| l.0 == m.pid) {
+                    leaks.push((m.pid, m.cmdline.clone()));
+                }
+            }
+            left = wait_marked(&marker, Duration::from_millis(500));
+        }
+        let _ = left;
+        if leaks.is_empty() {
             return Ok(());
         }
-        for (pid, _) in &survivors {
-            signal_tree(*pid, libc::SIGKILL);
-        }
-        let list: Vec<String> = survivors.iter().map(|(p, c)| format!("{p} {c}")).collect();
+        let list: Vec<String> = leaks.iter().map(|(p, c)| format!("{p} {c}")).collect();
         Err(format!("leaked processes: {}", list.join("; ")))
     }
 }
@@ -189,22 +230,30 @@ impl Drop for World {
     }
 }
 
-fn signal_tree(pid: u32, sig: i32) {
-    if pid <= 1 || pid > i32::MAX as u32 {
-        return;
-    }
-    let pid = pid as libc::pid_t;
-    // SAFETY: plain syscalls on integer ids; failures (ESRCH, EPERM) are ignored.
-    unsafe {
-        let pgid = libc::getpgid(pid);
-        if pgid > 1 && pgid != libc::getpgrp() {
-            libc::kill(-pgid, sig);
-        }
-        libc::kill(pid, sig);
-    }
+struct Marked {
+    pid: u32,
+    pgrp: libc::pid_t,
+    cmdline: String,
 }
 
-fn find_survivors(root: &str) -> Vec<(u32, String)> {
+struct Stat {
+    zombie: bool,
+    pgrp: libc::pid_t,
+    starttime: u64,
+}
+
+fn proc_stat(pid: u32) -> Option<Stat> {
+    let raw = fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    let (_, rest) = raw.rsplit_once(')')?;
+    let f: Vec<&str> = rest.split_whitespace().collect();
+    Some(Stat {
+        zombie: f.first()? == &"Z",
+        pgrp: f.get(2)?.parse().ok()?,
+        starttime: f.get(19)?.parse().ok()?,
+    })
+}
+
+fn find_marked(marker: &str) -> Vec<Marked> {
     let me = std::process::id();
     let mut out = Vec::new();
     let Ok(entries) = fs::read_dir("/proc") else {
@@ -221,26 +270,46 @@ fn find_survivors(root: &str) -> Vec<(u32, String)> {
         if pid == me {
             continue;
         }
-        let Ok(raw) = fs::read(entry.path().join("cmdline")) else {
+        let Ok(env) = fs::read(entry.path().join("environ")) else {
             continue;
         };
-        let cmdline = String::from_utf8_lossy(&raw).replace('\0', " ");
-        if !cmdline.contains(root) || is_zombie(pid) {
+        if !env.split(|b| *b == 0).any(|e| e == marker.as_bytes()) {
             continue;
         }
-        out.push((pid, cmdline.trim_end().to_string()));
+        let Some(st) = proc_stat(pid) else { continue };
+        if st.zombie {
+            continue;
+        }
+        let raw = fs::read(entry.path().join("cmdline")).unwrap_or_default();
+        let cmdline = String::from_utf8_lossy(&raw).replace('\0', " ");
+        out.push(Marked {
+            pid,
+            pgrp: st.pgrp,
+            cmdline: cmdline.trim_end().to_string(),
+        });
     }
     out
 }
 
-fn is_zombie(pid: u32) -> bool {
-    fs::read_to_string(format!("/proc/{pid}/stat"))
-        .ok()
-        .and_then(|s| {
-            s.rsplit_once(')')
-                .map(|(_, rest)| rest.trim_start().starts_with('Z'))
-        })
-        .unwrap_or(false)
+fn wait_marked(marker: &str, limit: Duration) -> Vec<Marked> {
+    let deadline = Instant::now() + limit;
+    let mut left = find_marked(marker);
+    while !left.is_empty() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(50));
+        left = find_marked(marker);
+    }
+    left
+}
+
+fn tmp_creds() -> Vec<String> {
+    let Ok(entries) = fs::read_dir("/tmp") else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .filter_map(|e| e.file_name().into_string().ok())
+        .filter(|n| n.starts_with("moor-cred-"))
+        .collect()
 }
 
 #[cfg(test)]
@@ -317,6 +386,6 @@ mod tests {
         assert!(err.contains(&child.id().to_string()), "{err}");
         let status = child.wait().unwrap();
         assert!(!status.success());
-        assert!(find_survivors(&w.root().to_string_lossy()).is_empty());
+        assert!(find_marked(&format!("PARITY_FAKES={}", w.fakes_dir().display())).is_empty());
     }
 }

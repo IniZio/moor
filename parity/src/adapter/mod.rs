@@ -6,12 +6,20 @@ use serde_json::Value;
 
 use crate::world::World;
 
+/// Exit classification. The old adapter never yields `Refused`; only the new
+/// adapter does.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExitClass {
     Ok,
     Usage,
     Refused,
     Failed,
+}
+
+impl ExitClass {
+    pub fn is_err(self) -> bool {
+        matches!(self, Self::Usage | Self::Refused | Self::Failed)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -25,6 +33,10 @@ pub struct Outcome<T> {
 }
 
 impl<T> Outcome<T> {
+    pub fn is_err(&self) -> bool {
+        self.class.is_err()
+    }
+
     pub fn ok(&self) -> &T {
         match (&self.class, &self.value) {
             (ExitClass::Ok, Some(v)) => v,
@@ -109,7 +121,7 @@ pub struct TaskView {
     pub boxed: Option<BoxView>,
     pub worktree: Option<String>,
     pub workspace_id: Option<String>,
-    pub raw: Value,
+    raw: Value,
 }
 
 fn opt_str(v: &Value, key: &str) -> Option<String> {
@@ -131,6 +143,11 @@ impl TaskView {
             raw: v.clone(),
         }
     }
+
+    /// Debug-only access to the adapter's raw JSON; never use in `both` tests.
+    pub fn adapter_debug_raw(&self) -> &Value {
+        &self.raw
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -141,9 +158,62 @@ pub struct CloseView {
     pub sessions_stopped: Vec<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EventKind {
+    Started,
+    Rejected,
+    WaitingForBox,
+    SettingUp,
+    Working,
+    SetupFailed,
+    Idled,
+    Busy,
+    Asleep,
+    Woke,
+    Closed,
+    BoxReady,
+    BoxFailed,
+    BoxGone,
+    BoxDeleted,
+    BoxAsleep,
+    SessionStarted,
+    Ran,
+    Copied,
+    CredentialFailed,
+    Other(String),
+}
+
+impl EventKind {
+    pub fn from_old(s: &str) -> Self {
+        match s {
+            "started" => Self::Started,
+            "rejected" => Self::Rejected,
+            "waiting_for_box" => Self::WaitingForBox,
+            "setting_up" => Self::SettingUp,
+            "working" => Self::Working,
+            "setup_failed" => Self::SetupFailed,
+            "idled" => Self::Idled,
+            "busy" => Self::Busy,
+            "asleep" => Self::Asleep,
+            "woke" => Self::Woke,
+            "closed" => Self::Closed,
+            "box_ready" => Self::BoxReady,
+            "box_failed" => Self::BoxFailed,
+            "box_gone" => Self::BoxGone,
+            "box_deleted" => Self::BoxDeleted,
+            "box_asleep" => Self::BoxAsleep,
+            "session_started" => Self::SessionStarted,
+            "ran" => Self::Ran,
+            "copied" => Self::Copied,
+            "credential_failed" => Self::CredentialFailed,
+            other => Self::Other(other.to_string()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Event {
-    pub kind: String,
+    pub kind: EventKind,
     pub payload: Value,
 }
 
@@ -227,6 +297,44 @@ mod tests {
         for (s, want) in cases {
             assert_eq!(BoxState::parse(s), want);
         }
+    }
+
+    #[test]
+    fn event_kind_from_old() {
+        let cases = [
+            ("started", EventKind::Started),
+            ("rejected", EventKind::Rejected),
+            ("waiting_for_box", EventKind::WaitingForBox),
+            ("setting_up", EventKind::SettingUp),
+            ("working", EventKind::Working),
+            ("setup_failed", EventKind::SetupFailed),
+            ("idled", EventKind::Idled),
+            ("busy", EventKind::Busy),
+            ("asleep", EventKind::Asleep),
+            ("woke", EventKind::Woke),
+            ("closed", EventKind::Closed),
+            ("box_ready", EventKind::BoxReady),
+            ("box_failed", EventKind::BoxFailed),
+            ("box_gone", EventKind::BoxGone),
+            ("box_deleted", EventKind::BoxDeleted),
+            ("box_asleep", EventKind::BoxAsleep),
+            ("session_started", EventKind::SessionStarted),
+            ("ran", EventKind::Ran),
+            ("copied", EventKind::Copied),
+            ("credential_failed", EventKind::CredentialFailed),
+            ("weird", EventKind::Other("weird".into())),
+        ];
+        for (s, want) in cases {
+            assert_eq!(EventKind::from_old(s), want);
+        }
+    }
+
+    #[test]
+    fn exit_class_is_err() {
+        assert!(!ExitClass::Ok.is_err());
+        assert!(ExitClass::Usage.is_err());
+        assert!(ExitClass::Refused.is_err());
+        assert!(ExitClass::Failed.is_err());
     }
 
     #[test]

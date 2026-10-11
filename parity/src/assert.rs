@@ -95,6 +95,8 @@ mod tests {
             cwd: String::new(),
             pid: 0,
             ppid: 0,
+            pgid: 0,
+            starttime: 0,
             stdin: String::new(),
             env: BTreeMap::new(),
             rule: None,

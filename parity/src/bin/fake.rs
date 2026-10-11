@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::os::unix::process::ExitStatusExt;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -63,6 +63,80 @@ fn read_stdin(capture_all: bool) -> String {
     String::from_utf8_lossy(&buf).into_owned()
 }
 
+fn starttime() -> u64 {
+    let stat = std::fs::read_to_string("/proc/self/stat").unwrap_or_default();
+    stat.rsplit_once(')')
+        .and_then(|(_, rest)| rest.split_whitespace().nth(19))
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0)
+}
+
+fn record(fakes_dir: &Path, call: &Call) {
+    let Ok(line) = serde_json::to_string(call) else {
+        return;
+    };
+    let _guard = lock(fakes_dir);
+    let file = std::fs::OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(calls_path(fakes_dir, &call.tool));
+    if let Ok(mut f) = file {
+        let _ = writeln!(f, "{line}");
+    }
+}
+
+/// Runs the script with our stdin forwarded to it, teeing the bytes into the returned buffer.
+fn run_exec(script: &str, box_root: &Path, capture_all: bool) -> (i32, String) {
+    let tty = unsafe { libc::isatty(0) } == 1;
+    let mut cmd = Command::new("sh");
+    cmd.arg("-c").arg(script).env("HOME", box_root.join("home"));
+    if !tty {
+        cmd.stdin(Stdio::piped());
+    }
+    let mut child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("fake: exec failed: {e}");
+            return (127, String::new());
+        }
+    };
+    let shared = Arc::new(Mutex::new(Vec::<u8>::new()));
+    let (tx, rx) = mpsc::channel::<()>();
+    if let Some(mut sink) = child.stdin.take() {
+        let tee = Arc::clone(&shared);
+        std::thread::spawn(move || {
+            let mut stdin = std::io::stdin();
+            let mut chunk = [0u8; 8192];
+            while let Ok(k) = stdin.read(&mut chunk) {
+                if k == 0 {
+                    break;
+                }
+                {
+                    let mut buf = tee.lock().unwrap();
+                    let room = if capture_all {
+                        k
+                    } else {
+                        STDIN_CAP.saturating_sub(buf.len()).min(k)
+                    };
+                    buf.extend_from_slice(&chunk[..room]);
+                }
+                if sink.write_all(&chunk[..k]).is_err() {
+                    break;
+                }
+            }
+            drop(sink);
+            let _ = tx.send(());
+        });
+    }
+    let code = match child.wait() {
+        Ok(s) => s.code().unwrap_or_else(|| 128 + s.signal().unwrap_or(0)),
+        Err(_) => 127,
+    };
+    let _ = rx.recv_timeout(Duration::from_millis(500));
+    let buf = shared.lock().unwrap();
+    (code, String::from_utf8_lossy(&buf).into_owned())
+}
+
 fn recorded_env() -> BTreeMap<String, String> {
     std::env::vars()
         .filter(|(k, _)| {
@@ -88,7 +162,7 @@ fn run() -> i32 {
     };
     if !fakes_dir.is_dir() {
         eprintln!("fake {tool}: fakes dir missing: {}", fakes_dir.display());
-        return 0;
+        return 97;
     }
     let root = fakes_dir.parent().unwrap_or(&fakes_dir).to_path_buf();
     let box_root = root.join("box");
@@ -122,29 +196,34 @@ fn run() -> i32 {
             let _ = std::fs::write(&cpath, s);
         }
     }
+    let seq = next_seq_locked(&fakes_dir);
+    drop(guard);
 
-    let stdin = read_stdin(rule.is_some_and(|r| r.capture_stdin));
-    let call = Call {
-        seq: next_seq_locked(&fakes_dir),
+    let mut call = Call {
+        seq,
         tool: tool.clone(),
         argv: argv.clone(),
         cwd: cwd.to_string_lossy().into_owned(),
         pid: std::process::id(),
         ppid: unsafe { libc::getppid() } as u32,
-        stdin,
+        stdin: String::new(),
         env: recorded_env(),
         rule: rule.map(|r| r.id.clone()),
+        pgid: unsafe { libc::getpgrp() } as u32,
+        starttime: starttime(),
     };
-    if let Ok(line) = serde_json::to_string(&call) {
-        let file = std::fs::OpenOptions::new()
-            .append(true)
-            .create(true)
-            .open(calls_path(&fakes_dir, &tool));
-        if let Ok(mut f) = file {
-            let _ = writeln!(f, "{line}");
+    let capture = rule.is_some_and(|r| r.capture_stdin);
+    let has_exec = rule.is_some_and(|r| r.reply.exec.is_some());
+    // An exec child consumes stdin itself: without capture the call is recorded up front
+    // (stdin empty) so a long-running script stays visible; with capture it is recorded after.
+    if has_exec {
+        if !capture {
+            record(&fakes_dir, &call);
         }
+    } else {
+        call.stdin = read_stdin(capture);
+        record(&fakes_dir, &call);
     }
-    drop(guard);
 
     let Some(rule) = rule else { return 0 };
     let reply = &rule.reply;
@@ -174,20 +253,13 @@ fn run() -> i32 {
     if let Some(script) = &reply.exec {
         let mut script = render(script, &ctx);
         for (from, to) in &reply.rewrite {
-            script = script.replace(from, to);
+            script = script.replace(&render(from, &ctx), &render(to, &ctx));
         }
-        let status = Command::new("sh")
-            .arg("-c")
-            .arg(&script)
-            .env("HOME", box_root.join("home"))
-            .status();
-        let child = match status {
-            Ok(s) => s.code().unwrap_or_else(|| 128 + s.signal().unwrap_or(0)),
-            Err(e) => {
-                eprintln!("fake {tool}: exec failed: {e}");
-                127
-            }
-        };
+        let (child, teed) = run_exec(&script, &box_root, capture);
+        if capture {
+            call.stdin = teed;
+            record(&fakes_dir, &call);
+        }
         if code == 0 {
             code = child;
         }

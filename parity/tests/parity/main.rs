@@ -1,4 +1,5 @@
 mod a_lifecycle;
+mod fake_protocol;
 mod harness;
 
 use libtest_mimic::{Arguments, Failed, Trial};
