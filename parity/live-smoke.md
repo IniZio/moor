@@ -1,6 +1,6 @@
 # Live smoke runbook
 
-Behaviour no fake can prove. Run before cutover with the rewritten `moor` binary, a cheap model (haiku) and a throwaway repo. `$REPOS` is the parent directory of local clones; `<repo>` is a disposable clone. Aliases and host details live in the untracked `local notes`. Only delete Boxes this run created (`moor close`); never prune by pattern.
+Behaviour no fake can prove. Run before cutover with the rewritten `moor` binary, a cheap model (haiku) and a throwaway repo. `$REPOS` is the parent directory of local clones; `<repo>` is a disposable clone. Only delete Boxes this run created (`moor close`); never prune by pattern.
 
 Every LIVE exclusion in `parity/exclusions.toml` has `ref = "live-smoke.md: <step>"` and its row id is listed under that step. A coverage check fails when a step name or a listed row is missing here.
 
@@ -35,26 +35,26 @@ Security forwarding (old proxy against real GitHub; the parity suite proves it w
 
 Covers: A-42, B-17, B-37, B-41, B-71, C-70, C-71, C-72, C-73, C-74, C-120.
 
-## ssh-host Box agent
+## static ssh host Box agent
 
-Preconditions: static `ssh` provider pointing at the macOS ssh-host host (host and user from the untracked `local notes`); `box_credentials` listing one dummy secret; the repo clone present on the ssh-host.
+Preconditions: static `ssh` provider pointing at a static ssh host you control; `box_credentials` listing one dummy secret; the repo clone present on that host.
 
 Commands:
-- `moor start live-ssh-host --goal "print the working directory and stop"`
-- `moor run live-ssh-host -- sh -c 'command -v curl awk sed'`
-- `moor close live-ssh-host`
+- `moor start live-ssh --goal "print the working directory and stop"`
+- `moor run live-ssh -- sh -c 'command -v curl awk sed'`
+- `moor close live-ssh`
 
 Expected:
 - the agent starts in the Driver-reported workdir; `brief.md` is delivered and removed from the credential directory after launch.
 - `curl`, `awk` and `sed` exist with the flavours the `gh` shim and the proxy probe need; otherwise the probe error names curl.
 - no listed credential value reaches the agent pane (`env | grep` in the pane is empty).
-- close deletes the credential directory and leaves the ssh-host Box state unchanged (static host is not stopped).
+- close deletes the credential directory and leaves the static ssh host Box state unchanged (static host is not stopped).
 
 Covers: no LIVE row; Box tool flavours (C gap 1) and the static-host Driver path.
 
 ## real Anthropic bearer
 
-Preconditions: a real Claude subscription token as `credentials.CLAUDE_CODE_OAUTH_TOKEN`; Box agent Task started (Namespace or ssh-host step); Proxy running.
+Preconditions: a real Claude subscription token as `credentials.CLAUDE_CODE_OAUTH_TOKEN`; Box agent Task started (Namespace or static ssh host step); Proxy running.
 
 Commands:
 - from the Box: `curl -sS -o /dev/null -w '%{http_code}\n' -H "anthropic-beta: oauth-2025-04-20" "$ANTHROPIC_BASE_URL/v1/models"`
