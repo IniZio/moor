@@ -29,7 +29,7 @@ ref = "parity-plan.md §6 (T9)"
 [A-42]
 code = "LIVE"
 reason = "Pane read ANSI/JSON-envelope tolerance is Surface-internal; herdr pane read format is unverified live. Live-smoke step: read a real Box agent pane through herdr pane read and confirm moor decodes it"
-ref = "a-task-lifecycle.md A-42; BACKLOG herdr pane read format"
+ref = "live-smoke.md: Namespace Box agent"
 
 [A-46]
 code = "PENDING"
@@ -108,12 +108,12 @@ ref = "parity-plan.md §2 (assert exit classes, never strings)"
 [B-37]
 code = "LIVE"
 reason = "a Box-local record file must not satisfy a gate record; needs a real Box. live-smoke step: record on a Box, plant a fake gate file, run gate check"
-ref = "usage-log item 72"
+ref = "live-smoke.md: Namespace Box agent"
 
 [B-41]
 code = "LIVE"
 reason = "root-owned compose output on the Box needs real sudo and root files. live-smoke step: record run after a compose job leaves root-owned files"
-ref = "usage-log drive 3b 23, drive 3h 73"
+ref = "live-smoke.md: Namespace Box agent"
 
 [B-49]
 code = "KNOWN-BUG"
@@ -148,7 +148,7 @@ ref = "b-box-driver.md DESIGN-SMELL flag; parity-plan.md §4"
 [B-71]
 code = "LIVE"
 reason = "warmup chatter routing needs real crabbox warmup banner output"
-ref = "live-smoke: start --quiet on namespace-devbox prints one start-log path and pure JSON with --json"
+ref = "live-smoke.md: Namespace Box agent"
 
 [B-74]
 code = "DOC"
@@ -159,30 +159,6 @@ ref = "parity-plan.md §2 (Outcome asserts exit class, not strings)"
 code = "SMELL-REDESIGNED"
 reason = "Box handle is opaque to moor; provider/name parsing leaves moor"
 ref = "b-box-driver.md B-92; parity-plan.md §4"
-
-[B-98]
-code = "PENDING"
-slice = "T10"
-reason = "B section 10 rows land in T10"
-ref = "parity-plan.md §6"
-
-[B-99]
-code = "PENDING"
-slice = "T10"
-reason = "B section 10 rows land in T10"
-ref = "parity-plan.md §6"
-
-[B-102]
-code = "PENDING"
-slice = "T10"
-reason = "B section 10 rows land in T10"
-ref = "parity-plan.md §6"
-
-[B-102a]
-code = "PENDING"
-slice = "T10"
-reason = "B section 10 rows land in T10"
-ref = "parity-plan.md §6"
 
 [B-108]
 code = "PENDING"
@@ -705,41 +681,10 @@ slice = "T9"
 reason = "C section 10 rows land in T9"
 ref = "parity-plan.md §6"
 
-[C-121]
-code = "PENDING"
-slice = "T10"
-reason = "C section 11 rows land in T10"
-ref = "parity-plan.md §6"
-
-[C-122]
-code = "PENDING"
-slice = "T10"
-reason = "C section 11 rows land in T10"
-ref = "parity-plan.md §6"
-
-[C-123]
-code = "PENDING"
-slice = "T10"
-reason = "C section 11 rows land in T10"
-ref = "parity-plan.md §6"
-
-[C-124]
-code = "PENDING"
-slice = "T10"
-reason = "C section 11 rows land in T10"
-ref = "parity-plan.md §6"
-
-[C-125]
-code = "PENDING"
-slice = "T10"
-reason = "C section 11 rows land in T10"
-ref = "parity-plan.md §6"
-
 [C-126]
-code = "PENDING"
-slice = "T10"
-reason = "C section 11 rows land in T10"
-ref = "parity-plan.md §6"
+code = "KNOWN-BUG"
+reason = "start --agent-location box on a host-configured repo builds the acquire-time egress list as for a host agent (api.github.com and api.anthropic.com kept, no sprites flag when repo egress is empty) although moor env previews the proxy-active list; confirmed PT7 by new_only test start_override_to_box_drops_proxy_domains_from_egress in c_creds.rs"
+ref = "c-credentials-env.md C-126 and section 17 gap 4(a); parity-plan.md §10"
 
 [C-131]
 code = "KNOWN-BUG"
@@ -750,24 +695,6 @@ ref = "parity-plan.md §10 (C gap 5, decision 42)"
 code = "SMELL-REDESIGNED"
 reason = "whether Box agents receive MCP servers is a design-phase policy question, so the current no-MCP-for-Box-agents behaviour is not pinned"
 ref = "parity-plan.md §10 (C gap 7); c-credentials-env.md §17 gap 7"
-
-[C-139]
-code = "PENDING"
-slice = "T10"
-reason = "C section 15 rows land in T10"
-ref = "parity-plan.md §6"
-
-[C-140]
-code = "PENDING"
-slice = "T10"
-reason = "C section 15 rows land in T10"
-ref = "parity-plan.md §6"
-
-[C-141]
-code = "PENDING"
-slice = "T10"
-reason = "C section 15 rows land in T10"
-ref = "parity-plan.md §6"
 
 [D-01]
 code = "PENDING"

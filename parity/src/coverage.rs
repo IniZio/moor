@@ -216,6 +216,59 @@ pub fn check(
     }
 }
 
+const LIVE_REF_PREFIX: &str = "live-smoke.md: ";
+
+pub fn parse_live_steps(text: &str) -> BTreeMap<String, String> {
+    let mut steps: BTreeMap<String, String> = BTreeMap::new();
+    let mut current: Option<String> = None;
+    for line in text.lines() {
+        let heading = line
+            .strip_prefix("### ")
+            .or_else(|| line.strip_prefix("## "));
+        if let Some(h) = heading {
+            let name = h.trim().to_string();
+            steps.entry(name.clone()).or_default();
+            current = Some(name);
+        } else if let Some(body) = current.as_ref().and_then(|c| steps.get_mut(c)) {
+            body.push_str(line);
+            body.push('\n');
+        }
+    }
+    steps
+}
+
+fn lists_row(body: &str, id: &str) -> bool {
+    body.split(|c: char| !(c.is_ascii_alphanumeric() || c == '-'))
+        .any(|tok| tok == id)
+}
+
+pub fn check_live_refs(
+    excl: &BTreeMap<String, Exclusion>,
+    steps: &BTreeMap<String, String>,
+) -> Vec<String> {
+    let mut errs = Vec::new();
+    for (id, e) in excl.iter().filter(|(_, e)| e.code == Code::Live) {
+        let Some(step) = e.r#ref.strip_prefix(LIVE_REF_PREFIX) else {
+            errs.push(format!(
+                "{id}: LIVE ref must start with {LIVE_REF_PREFIX:?}"
+            ));
+            continue;
+        };
+        match steps.get(step.trim()) {
+            None => errs.push(format!("{id}: live-smoke.md has no step {step:?}")),
+            Some(body) if !lists_row(body, id) => {
+                errs.push(format!("{id}: step {step:?} does not list the row"))
+            }
+            Some(_) => {}
+        }
+    }
+    errs
+}
+
+pub fn live_smoke_path() -> PathBuf {
+    repo_root().join(".groundwork/work/v2/live-smoke.md")
+}
+
 pub fn repo_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -359,6 +412,45 @@ mod tests {
         assert_eq!(got, want);
         assert_eq!(inv.ids.len(), 434);
         assert_eq!(inv.security.len(), 52);
+    }
+
+    const SMOKE: &str =
+        "# Live\n\n## host Task\n\nCovers A-42 and B-37.\n\n### egress block\n\nB-102a\n";
+
+    fn live(id: &str, r: &str) -> BTreeMap<String, Exclusion> {
+        let body = format!("[{id}]\ncode = \"LIVE\"\nreason = \"r\"\nref = \"{r}\"\n");
+        excl(&body)
+    }
+
+    #[test]
+    fn live_steps_parse_both_heading_levels() {
+        let steps = parse_live_steps(SMOKE);
+        assert_eq!(
+            steps.keys().cloned().collect::<Vec<_>>(),
+            ["egress block", "host Task"]
+        );
+        assert!(steps["host Task"].contains("A-42"));
+    }
+
+    #[test]
+    fn live_ref_must_name_a_step_listing_the_row() {
+        let steps = parse_live_steps(SMOKE);
+        assert!(check_live_refs(&live("A-42", "live-smoke.md: host Task"), &steps).is_empty());
+        let wrong = check_live_refs(&live("A-42", "live-smoke.md: nope"), &steps);
+        assert!(wrong[0].contains("no step"));
+        let free = check_live_refs(&live("A-42", "usage-log item 1"), &steps);
+        assert!(free[0].contains("must start with"));
+        let unlisted = check_live_refs(&live("B-99", "live-smoke.md: host Task"), &steps);
+        assert!(unlisted[0].contains("does not list"));
+        let not_live = excl(&entry("A-42", "DOC", None));
+        assert!(check_live_refs(&not_live, &steps).is_empty());
+    }
+
+    #[test]
+    fn row_listing_needs_whole_id() {
+        assert!(lists_row("rows B-37, B-41.", "B-37"));
+        assert!(!lists_row("rows B-371", "B-37"));
+        assert!(!lists_row("rows B-102a", "B-102"));
     }
 
     #[test]

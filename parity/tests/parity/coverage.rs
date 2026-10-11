@@ -19,4 +19,7 @@ parity!(coverage_inventory, covers = [], tags = [], {
         }
         Err(errors) => panic!("{}", errors.join("\n")),
     }
+    let smoke = std::fs::read_to_string(coverage::live_smoke_path()).expect("live-smoke.md");
+    let live_errors = coverage::check_live_refs(&exclusions, &coverage::parse_live_steps(&smoke));
+    assert!(live_errors.is_empty(), "{}", live_errors.join("\n"));
 });

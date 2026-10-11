@@ -1,6 +1,7 @@
 mod a_agent;
 mod a_lifecycle;
 mod b_driver;
+mod b_egress;
 mod b_run;
 mod c_creds;
 mod coverage;
