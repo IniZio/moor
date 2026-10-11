@@ -7,14 +7,14 @@ parses but returns an "is not implemented yet" error.
 
 ## Layout
 
-- `crates/moor-core`: pure types shared by the binary and tests: names, the
+- [crates/moor-core](crates/moor-core): pure types shared by the binary and tests: names, the
   `Request` enum, the `Response` envelope, and the `Secret` type.
-- `crates/moor`: the `moor` binary and library: clap argument parsing, text
+- [crates/moor](crates/moor): the `moor` binary and library: clap argument parsing, text
   and JSON rendering, exit codes, and the operation dispatch.
-- `parity/`: the parity suite. It drives a moor binary through an adapter
+- [parity/](parity/): the parity suite. It drives a moor binary through an adapter
   and fake external tools. See below.
-- `tools/layering`: a check that each module only uses the modules listed
-  for it in `tools/layering.tsv`.
+- [tools/layering](tools/layering): a check that each module only uses the
+  modules listed for it in [tools/layering.tsv](tools/layering.tsv).
 
 ## Commands
 
@@ -73,11 +73,10 @@ any non-ok class exits 125 (moor failed before the command ran).
 The suite runs the same cases against a moor binary chosen by `MOOR_CLI`.
 
 - `make parity` builds the old moor from `OLD_REF` in `OLD_REPO` and runs
-  every case against it (`MOOR_CLI=old`). Defaults: `OLD_REPO=$(REPOS)/moor`,
-  with `REPOS` the parent of this checkout; `OLD_REF` is a pinned commit.
+  every case against it (`MOOR_CLI=old`). By default it finds the old
+  checkout next to this one; `OLD_REF` is a pinned commit.
 - `make parity-new` builds this crate's debug binary and runs the cases
   against it (`MOOR_CLI=new`). It is not part of `make ci`. Pass
   `PARITY_ARGS` to filter cases.
 
-The old binary is cached in `target/parity-old` and rebuilt when `OLD_REF`
-changes.
+The old binary is cached under `target/` and rebuilt when `OLD_REF` changes.
