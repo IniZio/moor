@@ -1,6 +1,7 @@
 //! Core domain types and the request/response wire contract for moor.
 #![forbid(unsafe_code)]
 
+pub mod config;
 pub mod decide;
 pub mod domain;
 pub mod name;
@@ -8,6 +9,7 @@ pub mod request;
 pub mod response;
 pub mod seam;
 pub mod secret;
+pub mod view;
 
 pub use name::{BoxHandle, BoxPath, NameError, ProviderId, RunId, Sha, TaskId, TaskName};
 pub use request::{
