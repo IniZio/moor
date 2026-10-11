@@ -1,11 +1,15 @@
 use moor_core::{CloseReq, ErrorKind, Request};
 
+use std::sync::Arc;
+
 use super::dispatch;
+use crate::adapters::clock::FakeClock;
 use crate::cx::Cx;
+use moor_core::seam::clock::Ts;
 
 #[test]
 fn version_reports_build_info() {
-    let cx = Cx::new(None);
+    let cx = Cx::new(None, Arc::new(FakeClock::new(Ts::from_millis(0))));
     let v = dispatch(&cx, Request::Version {}).expect("version ok");
     assert_eq!(
         v.get("version").and_then(serde_json::Value::as_str),
@@ -20,7 +24,7 @@ fn version_reports_build_info() {
 
 #[test]
 fn other_ops_are_not_implemented() {
-    let cx = Cx::new(None);
+    let cx = Cx::new(None, Arc::new(FakeClock::new(Ts::from_millis(0))));
     let req = Request::Close(CloseReq {
         task: "t".to_owned(),
         force: false,

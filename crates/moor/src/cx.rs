@@ -2,7 +2,9 @@
 
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
+use moor_core::seam::clock::Clock;
 use moor_core::Warning;
 
 /// State shared by one command run.
@@ -11,15 +13,24 @@ pub(crate) struct Cx {
     state_dir: Option<PathBuf>,
     /// Warnings recorded so far.
     warnings: RefCell<Vec<Warning>>,
+    /// Time source; the only way ops read time.
+    clock: Arc<dyn Clock>,
 }
 
 impl Cx {
-    /// Create a context with an optional resolved state directory.
-    pub(crate) const fn new(state_dir: Option<PathBuf>) -> Self {
+    /// Create a context with an optional resolved state directory and a clock.
+    pub(crate) const fn new(state_dir: Option<PathBuf>, clock: Arc<dyn Clock>) -> Self {
         Self {
             state_dir,
             warnings: RefCell::new(Vec::new()),
+            clock,
         }
+    }
+
+    /// Time source for this run.
+    #[cfg_attr(not(test), expect(dead_code, reason = "used by ops from S3"))]
+    pub(crate) fn clock(&self) -> &dyn Clock {
+        self.clock.as_ref()
     }
 
     /// Resolved state directory, if any.
