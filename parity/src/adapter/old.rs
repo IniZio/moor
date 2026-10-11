@@ -10,6 +10,9 @@ use super::{
 };
 use crate::world::World;
 
+#[path = "old_reports.rs"]
+mod old_reports;
+
 pub struct OldCli {
     pub bin: PathBuf,
 }
@@ -470,6 +473,24 @@ impl Moor for OldCli {
 
     fn wake_cmd(&self, w: &World, cwd: &Path, name: &str) -> Outcome<TaskView> {
         self.run(w, cwd, &name_args("wake", name), TaskView::from_json)
+    }
+
+    fn report(
+        &self,
+        w: &World,
+        cwd: &Path,
+        name: &str,
+        req: &super::ReportReq,
+    ) -> Outcome<super::ReportRow> {
+        self.report_impl(w, cwd, name, req)
+    }
+
+    fn reports(&self, w: &World, cwd: &Path, name: &str) -> Outcome<Vec<super::ReportRow>> {
+        self.reports_impl(w, cwd, name)
+    }
+
+    fn version(&self, w: &World) -> Outcome<String> {
+        self.version_impl(w)
     }
 }
 

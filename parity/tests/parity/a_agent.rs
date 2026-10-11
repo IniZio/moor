@@ -224,7 +224,7 @@ parity!(
 
 parity!(
     unsupported_provider_stays_up_and_reports_reason,
-    covers = ["A-62", "A-70", "B-105"],
+    covers = ["A-62", "A-70", "B-105", "REQ-45"],
     tags = [],
     {
         let fx = host_fx(Preset::LocalContainer);
@@ -537,7 +537,7 @@ parity!(
 
 parity!(
     wait_host_agent_blocks_until_done,
-    covers = ["A-85", "A-86"],
+    covers = ["A-85", "A-86", "REQ-48"],
     tags = [],
     {
         let fx = host_fx(Preset::NamespaceDevbox);
@@ -554,7 +554,7 @@ parity!(
 
 parity!(
     wait_blocks_while_box_hook_says_working,
-    covers = ["A-73", "A-74", "A-85", "A-86", "A-87", "REQ-02"],
+    covers = ["A-73", "A-74", "A-85", "A-86", "A-87", "REQ-02", "REQ-48"],
     tags = [],
     {
         let fx = box_fx();
@@ -714,7 +714,7 @@ parity!(
 
 parity!(
     hook_read_cut_at_deadline_is_unknown_never_idle,
-    covers = ["A-73", "A-87", "REQ-02", "REQ-03"],
+    covers = ["A-73", "A-87", "REQ-02", "REQ-03", "REQ-52"],
     tags = [],
     {
         let fx = box_fx();
@@ -753,7 +753,7 @@ parity!(
 
 parity!(
     starting_hook_reads_working_only_while_young,
-    covers = ["A-73", "REQ-07"],
+    covers = ["A-73", "REQ-07", "REQ-52"],
     tags = [],
     {
         let fx = box_fx();
@@ -923,7 +923,7 @@ parity!(
 
 parity!(
     steer_host_refuses_a_blocked_agent,
-    covers = ["A-81"],
+    covers = ["A-81", "REQ-36"],
     tags = [],
     {
         let fx = host_fx(Preset::NamespaceDevbox);
@@ -943,7 +943,7 @@ parity!(
 
 parity!(
     steer_box_pane_types_message_and_submits,
-    covers = ["A-80", "A-82"],
+    covers = ["A-80", "A-82", "REQ-36"],
     tags = [],
     {
         let fx = box_fx();
@@ -1111,7 +1111,7 @@ parity!(
 
 parity!(
     repo_layer_box_provider_is_rejected,
-    covers = ["B-85"],
+    covers = ["B-85", "REQ-30"],
     tags = [],
     {
         let fx = host_fx(Preset::NamespaceDevbox);

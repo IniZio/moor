@@ -116,7 +116,7 @@ fn ran_events(w: &World, name: &str) -> usize {
 
 parity!(
     run_exit_code_and_output_propagate,
-    covers = ["B-01", "B-05", "B-11"],
+    covers = ["B-01", "B-05", "B-11", "REQ-23", "REQ-25"],
     tags = [],
     {
         let f = fx();
@@ -150,7 +150,7 @@ parity!(
 
 parity!(
     run_command_quoting_and_shell,
-    covers = ["B-02", "B-03", "B-18"],
+    covers = ["B-02", "B-03", "B-18", "REQ-23"],
     tags = [],
     {
         let f = fx();
@@ -169,7 +169,7 @@ parity!(
 
 parity!(
     run_sync_flag_follows_no_sync,
-    covers = ["B-04"],
+    covers = ["B-04", "REQ-24"],
     tags = [],
     {
         let f = fx();
@@ -193,24 +193,29 @@ parity!(
     }
 );
 
-parity!(run_size_maps_to_class, covers = ["B-07"], tags = [], {
-    let cases = [
-        (None, "standard"),
-        (Some("medium"), "fast"),
-        (Some("large"), "large"),
-        (Some("xlarge"), "beast"),
-    ];
-    for (size, class) in cases {
-        let cfg = size.map(|s| json!({ "box": { "size": s } }));
-        let f = fx_with(cfg);
-        let o = go(&f, &["true"]);
-        assert_eq!(o.class, ExitClass::Ok, "{}", o.stderr);
-        let run = user_runs(&f.w).remove(0);
-        assert_eq!(run.flag("--class").as_deref(), Some(class), "size {size:?}");
-        let warm = verb_calls(&f.w, "warmup").remove(0);
-        assert_eq!(warm.flag("--class").as_deref(), Some(class));
+parity!(
+    run_size_maps_to_class,
+    covers = ["B-07", "REQ-30"],
+    tags = [],
+    {
+        let cases = [
+            (None, "standard"),
+            (Some("medium"), "fast"),
+            (Some("large"), "large"),
+            (Some("xlarge"), "beast"),
+        ];
+        for (size, class) in cases {
+            let cfg = size.map(|s| json!({ "box": { "size": s } }));
+            let f = fx_with(cfg);
+            let o = go(&f, &["true"]);
+            assert_eq!(o.class, ExitClass::Ok, "{}", o.stderr);
+            let run = user_runs(&f.w).remove(0);
+            assert_eq!(run.flag("--class").as_deref(), Some(class), "size {size:?}");
+            let warm = verb_calls(&f.w, "warmup").remove(0);
+            assert_eq!(warm.flag("--class").as_deref(), Some(class));
+        }
     }
-});
+);
 
 parity!(
     run_applies_repo_run_env_and_path,
@@ -304,7 +309,7 @@ parity!(
 
 parity!(
     run_interrupt_marks_run_interrupted,
-    covers = ["B-12"],
+    covers = ["B-12", "REQ-23"],
     tags = [],
     {
         let f = fx();
@@ -364,7 +369,7 @@ fn host_dir(f: &Fx, name: &str) -> PathBuf {
 
 parity!(
     cp_absolute_path_copies_without_sync,
-    covers = ["B-20", "B-23"],
+    covers = ["B-20", "B-23", "REQ-24"],
     tags = [],
     {
         let f = fx();
@@ -523,7 +528,7 @@ fn gate(
 
 parity!(
     record_runs_from_clean_checkout_and_stores_result,
-    covers = ["B-31", "B-32", "B-40"],
+    covers = ["B-31", "B-32", "B-40", "REQ-26"],
     tags = [],
     {
         let f = fx();
@@ -640,24 +645,29 @@ parity!(
     }
 );
 
-parity!(gate_check_sha_forms, covers = ["B-34"], tags = [], {
-    let f = fx();
-    let head = wt_commit(&f, &[("a.txt", "a")]);
-    assert_eq!(rec(&f, "unit", "true").class, ExitClass::Ok);
-    let away = f.w.tmp_dir();
-    let short = &head[..7];
-    assert!(gate(&f, &away, short, "unit").ok().ok);
-    assert!(gate(&f, &away, &short.to_uppercase(), "unit").ok().ok);
-    assert!(gate(&f, &away, &head, "unit").ok().ok);
-    for bad in ["abc", "zzzz", ""] {
-        let o = gate(&f, &away, bad, "unit");
-        assert_eq!(o.class, ExitClass::Usage, "sha {bad:?}");
+parity!(
+    gate_check_sha_forms,
+    covers = ["B-34", "REQ-28"],
+    tags = [],
+    {
+        let f = fx();
+        let head = wt_commit(&f, &[("a.txt", "a")]);
+        assert_eq!(rec(&f, "unit", "true").class, ExitClass::Ok);
+        let away = f.w.tmp_dir();
+        let short = &head[..7];
+        assert!(gate(&f, &away, short, "unit").ok().ok);
+        assert!(gate(&f, &away, &short.to_uppercase(), "unit").ok().ok);
+        assert!(gate(&f, &away, &head, "unit").ok().ok);
+        for bad in ["abc", "zzzz", ""] {
+            let o = gate(&f, &away, bad, "unit");
+            assert_eq!(o.class, ExitClass::Usage, "sha {bad:?}");
+        }
+        let unknown_short = gate(&f, &away, "deadb", "unit");
+        assert_eq!(unknown_short.class, ExitClass::Usage);
+        let unknown_long = gate(&f, &away, "deadbee", "unit");
+        assert_eq!(unknown_long.class, ExitClass::Failed);
     }
-    let unknown_short = gate(&f, &away, "deadb", "unit");
-    assert_eq!(unknown_short.class, ExitClass::Usage);
-    let unknown_long = gate(&f, &away, "deadbee", "unit");
-    assert_eq!(unknown_long.class, ExitClass::Failed);
-});
+);
 
 parity!(gate_check_matching_rules, covers = ["B-35"], tags = [], {
     let f = fx();
@@ -753,7 +763,7 @@ const LOCKS: &[(&str, &str)] = &[
 
 parity!(
     record_keeps_dependency_dirs_by_lockfile,
-    covers = ["B-43", "B-44", "B-45"],
+    covers = ["B-43", "B-44", "B-45", "REQ-27"],
     tags = [],
     {
         let f = fx();
@@ -871,7 +881,7 @@ parity!(
 
 parity!(
     record_failed_run_does_not_vouch_for_the_cache,
-    covers = ["B-45"],
+    covers = ["B-45", "REQ-27"],
     tags = [],
     {
         let f = fx();
@@ -1243,7 +1253,7 @@ fn box_cred_world(secret: &str) -> (World, Repo) {
 
 parity!(
     run_delivers_box_credentials_over_ssh_and_cleans_up,
-    covers = ["B-16"],
+    covers = ["B-16", "REQ-31"],
     tags = [],
     {
         let secret = "PARITY-SECRET-7788";

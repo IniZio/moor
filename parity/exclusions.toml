@@ -696,197 +696,46 @@ code = "SMELL-REDESIGNED"
 reason = "whether Box agents receive MCP servers is a design-phase policy question, so the current no-MCP-for-Box-agents behaviour is not pinned"
 ref = "parity-plan.md §10 (C gap 7); c-credentials-env.md §17 gap 7"
 
-[D-01]
-code = "PENDING"
-slice = "T10"
-reason = "D section 1 rows land in T10"
-ref = "parity-plan.md §6"
-
-[D-02]
-code = "PENDING"
-slice = "T10"
-reason = "D section 1 rows land in T10"
-ref = "parity-plan.md §6"
-
-[D-03]
-code = "PENDING"
-slice = "T10"
-reason = "D section 1 rows land in T10"
-ref = "parity-plan.md §6"
-
-[D-04]
-code = "PENDING"
-slice = "T10"
-reason = "D section 1 rows land in T10"
-ref = "parity-plan.md §6"
-
-[D-05]
-code = "PENDING"
-slice = "T10"
-reason = "D section 1 rows land in T10"
-ref = "parity-plan.md §6"
-
-[D-06]
-code = "PENDING"
-slice = "T10"
-reason = "D section 1 rows land in T10"
-ref = "parity-plan.md §6"
-
-[D-07]
-code = "PENDING"
-slice = "T10"
-reason = "D section 1 rows land in T10"
-ref = "parity-plan.md §6"
-
-[D-08]
-code = "PENDING"
-slice = "T10"
-reason = "D section 1 rows land in T10"
-ref = "parity-plan.md §6"
-
-[D-09]
-code = "PENDING"
-slice = "T10"
-reason = "D section 1 rows land in T10"
-ref = "parity-plan.md §6"
-
-[D-10]
-code = "PENDING"
-slice = "T10"
-reason = "D section 1 rows land in T10"
-ref = "parity-plan.md §6"
-
-[D-11]
-code = "PENDING"
-slice = "T10"
-reason = "D section 1 rows land in T10"
-ref = "parity-plan.md §6"
-
-[D-12]
-code = "PENDING"
-slice = "T10"
-reason = "D section 1 rows land in T10"
-ref = "parity-plan.md §6"
-
-[D-13]
-code = "PENDING"
-slice = "T10"
-reason = "D section 1 rows land in T10"
-ref = "parity-plan.md §6"
-
 [D-14]
-code = "PENDING"
-slice = "T10"
-reason = "D section 1 rows land in T10"
-ref = "parity-plan.md §6"
+code = "DOC"
+reason = "rollback of a copy after a failed registry insert is not reachable through the CLI with fakes; internal unit behaviour"
+ref = "inventory d-reports-contract-lessons.md D-14 (INT)"
 
 [D-15]
-code = "PENDING"
-slice = "T10"
-reason = "D section 1 rows land in T10"
-ref = "parity-plan.md §6"
+code = "DOC"
+reason = "destination collision cannot occur through the CLI because versions only increase; internal unit guard"
+ref = "inventory d-reports-contract-lessons.md D-15 (INT)"
 
 [D-16]
-code = "PENDING"
-slice = "T10"
-reason = "D section 1 rows land in T10"
-ref = "parity-plan.md §6"
-
-[D-17]
-code = "PENDING"
-slice = "T10"
-reason = "D section 1 rows land in T10"
-ref = "parity-plan.md §6"
+code = "DOC"
+reason = "the reported event is not in the asserted event set; the Report rows carry the behaviour (report_file_copies_and_versions_per_kind)"
+ref = "parity-plan.md §8 ruling 3"
 
 [D-18]
-code = "PENDING"
-slice = "T10"
-reason = "D section 1 rows land in T10"
-ref = "parity-plan.md §6"
-
-[D-19]
-code = "PENDING"
-slice = "T10"
-reason = "D section 1 rows land in T10"
-ref = "parity-plan.md §6"
+code = "DOC"
+reason = "human output text is not contractual; the --json row is asserted"
+ref = "parity-plan.md §2 (assert exit classes, never strings); inventory D-18"
 
 [D-20]
-code = "PENDING"
-slice = "T10"
-reason = "D section 1 rows land in T10"
-ref = "parity-plan.md §6"
-
-[D-21]
-code = "PENDING"
-slice = "T10"
-reason = "D section 1 rows land in T10"
-ref = "parity-plan.md §6"
-
-[D-22]
-code = "PENDING"
-slice = "T10"
-reason = "D section 1 rows land in T10"
-ref = "parity-plan.md §6"
-
-[D-23]
-code = "PENDING"
-slice = "T10"
-reason = "D section 1 rows land in T10"
-ref = "parity-plan.md §6"
-
-[D-24]
-code = "PENDING"
-slice = "T10"
-reason = "D section 1 rows land in T10"
-ref = "parity-plan.md §6"
-
-[D-25]
-code = "PENDING"
-slice = "T10"
-reason = "D section 1 rows land in T10"
-ref = "parity-plan.md §6"
-
-[D-26]
-code = "PENDING"
-slice = "T10"
-reason = "D section 1 rows land in T10"
-ref = "parity-plan.md §6"
-
-[D-27]
-code = "PENDING"
-slice = "T10"
-reason = "D section 1 rows land in T10"
-ref = "parity-plan.md §6"
+code = "DOC"
+reason = "human reports listing text is not contractual; the --json list is asserted"
+ref = "parity-plan.md §2 (assert exit classes, never strings); inventory D-20"
 
 [D-28]
 code = "PENDING"
-slice = "T10"
-reason = "D section 1 rows land in T10"
-ref = "parity-plan.md §6"
-
-[D-29]
-code = "PENDING"
-slice = "T10"
-reason = "D section 1 rows land in T10"
-ref = "parity-plan.md §6"
+slice = "T9"
+reason = "Box-agent brief content is part of Box agent launch (T9)"
+ref = "parity-plan.md §6 (T9)"
 
 [D-30]
-code = "PENDING"
-slice = "T10"
-reason = "D section 1 rows land in T10"
-ref = "parity-plan.md §6"
-
-[D-31]
-code = "PENDING"
-slice = "T10"
-reason = "D section 1 rows land in T10"
-ref = "parity-plan.md §6"
+code = "DOC"
+reason = "brief prose telling an agent that a Report never means finished is not asserted literally; state non-effect is asserted by reporting_never_changes_state_or_gates_close"
+ref = "parity-plan.md §2; inventory D-30"
 
 [D-32]
-code = "PENDING"
-slice = "T10"
-reason = "D section 1 rows land in T10"
-ref = "parity-plan.md §6"
+code = "DOC"
+reason = "comment relay from viewers to the agent was never built; nothing to port"
+ref = "inventory d-reports-contract-lessons.md D-32; BACKLOG (a)"
 
 [D-40]
 code = "DROPPED"
@@ -919,286 +768,91 @@ reason = "herdr plugin dropped"
 ref = "parity-plan.md §8 decision 41"
 
 [D-46]
-code = "PENDING"
-slice = "T10"
-reason = "D section 1 rows land in T10"
-ref = "parity-plan.md §6"
+code = "DROPPED"
+reason = "herdr plugin dropped at cutover"
+ref = "parity-plan.md §8 ruling 4"
 
 [D-47]
-code = "PENDING"
-slice = "T10"
-reason = "D section 1 rows land in T10"
-ref = "parity-plan.md §6"
+code = "DROPPED"
+reason = "herdr plugin dropped at cutover"
+ref = "parity-plan.md §8 ruling 4"
 
 [D-48]
-code = "PENDING"
-slice = "T10"
-reason = "D section 1 rows land in T10"
-ref = "parity-plan.md §6"
+code = "DROPPED"
+reason = "herdr plugin dropped at cutover"
+ref = "parity-plan.md §8 ruling 4"
 
 [D-49]
-code = "PENDING"
-slice = "T10"
-reason = "D section 1 rows land in T10"
-ref = "parity-plan.md §6"
+code = "DROPPED"
+reason = "herdr plugin dropped at cutover; the missing remove action was a plugin gap"
+ref = "parity-plan.md §8 ruling 4"
 
 [D-50]
-code = "PENDING"
-slice = "T10"
-reason = "D section 1 rows land in T10"
-ref = "parity-plan.md §6"
-
-[REQ-10]
-code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
-
-[REQ-11]
-code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
-
-[REQ-12]
-code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
-
-[REQ-13]
-code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
-
-[REQ-14]
-code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
+code = "DROPPED"
+reason = "herdr plugin dropped at cutover"
+ref = "parity-plan.md §8 ruling 4"
 
 [REQ-15]
-code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
-
-[REQ-16]
-code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
-
-[REQ-17]
-code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
-
-[REQ-18]
-code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
-
-[REQ-19]
-code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
-
-[REQ-20]
-code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
-
-[REQ-21]
-code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
-
-[REQ-22]
-code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
-
-[REQ-23]
-code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
-
-[REQ-24]
-code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
-
-[REQ-25]
-code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
-
-[REQ-26]
-code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
-
-[REQ-27]
-code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
-
-[REQ-28]
-code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
-
-[REQ-29]
-code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
-
-[REQ-30]
-code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
-
-[REQ-31]
-code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
+code = "KNOWN-BUG"
+reason = "host sync re-seeds the Box .git and can drop unpushed Box commits; the guard belongs to the Driver sync and cannot be modelled with the fake crabbox"
+ref = "inventory d-reports-contract-lessons.md section 4; BACKLOG (re-seeds)"
 
 [REQ-32]
 code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
+slice = "T9"
+reason = "brief delivery and Box brief contents are part of Box agent launch (T9)"
+ref = "parity-plan.md §6 (T9)"
 
 [REQ-33]
 code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
+slice = "T9"
+reason = "Box agent readiness and prompt detection are part of Box agent launch (T9)"
+ref = "parity-plan.md §6 (T9)"
 
 [REQ-34]
 code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
+slice = "T9"
+reason = "Box agent push URL and branch rule are part of Box agent launch (T9)"
+ref = "parity-plan.md §6 (T9)"
 
 [REQ-35]
 code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
-
-[REQ-36]
-code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
+slice = "T9"
+reason = "dead Box agent pane and relaunch are part of Box agent launch (T9)"
+ref = "parity-plan.md §6 (T9)"
 
 [REQ-37]
 code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
+slice = "T9"
+reason = "transcript save is part of Box agent launch (T9)"
+ref = "parity-plan.md §6 (T9)"
 
 [REQ-38]
 code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
+slice = "T9"
+reason = "proxy lifecycle and auth are T9"
+ref = "parity-plan.md §6 (T9)"
 
 [REQ-39]
 code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
+slice = "T9"
+reason = "gh shim and bypass-permissions launch are T9"
+ref = "parity-plan.md §6 (T9)"
 
 [REQ-40]
-code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
-
-[REQ-41]
-code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
-
-[REQ-42]
-code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
-
-[REQ-43]
-code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
+code = "DROPPED"
+reason = "herdr plugin dropped at cutover; the detach requirement was plugin-only"
+ref = "parity-plan.md §8 ruling 4; D-45"
 
 [REQ-44]
-code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
-
-[REQ-45]
-code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
-
-[REQ-46]
-code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
-
-[REQ-48]
-code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
-
-[REQ-49]
-code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
-
-[REQ-50]
-code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
+code = "DOC"
+reason = "skill description discoverability has no CLI behaviour; the skill is rewritten at cutover"
+ref = "inventory d-reports-contract-lessons.md REQ-44 (UL-1)"
 
 [REQ-51]
-code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
-
-[REQ-52]
-code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
+code = "DOC"
+reason = "plan and quota visibility is deferred in the source (UL-35 3c); no behaviour to assert"
+ref = "inventory d-reports-contract-lessons.md REQ-51"
 
 [A-16]
 code = "KNOWN-BUG"

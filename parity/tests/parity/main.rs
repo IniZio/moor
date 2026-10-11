@@ -5,6 +5,7 @@ mod b_egress;
 mod b_run;
 mod c_creds;
 mod coverage;
+mod d_reports;
 mod fake_protocol;
 mod harness;
 

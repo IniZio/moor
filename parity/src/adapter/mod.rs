@@ -1,4 +1,7 @@
 pub mod old;
+pub mod reports;
+
+pub use reports::{ReportReq, ReportRow};
 
 use std::path::{Path, PathBuf};
 
@@ -342,6 +345,9 @@ pub trait Moor {
     fn run_bg(&self, w: &World, cwd: &Path, name: &str, command: &str) -> std::process::Child;
     fn sleep_cmd(&self, w: &World, cwd: &Path, name: &str) -> Outcome<TaskView>;
     fn wake_cmd(&self, w: &World, cwd: &Path, name: &str) -> Outcome<TaskView>;
+    fn report(&self, w: &World, cwd: &Path, name: &str, req: &ReportReq) -> Outcome<ReportRow>;
+    fn reports(&self, w: &World, cwd: &Path, name: &str) -> Outcome<Vec<ReportRow>>;
+    fn version(&self, w: &World) -> Outcome<String>;
 }
 
 /// Options for `Moor::run`. `interrupt` sends SIGINT to moor once the Driver

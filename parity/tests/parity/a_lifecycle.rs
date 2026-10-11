@@ -293,7 +293,7 @@ parity!(start_rejects_invalid_names, covers = ["A-01"], tags = [], {
 
 parity!(
     capacity_queues_and_close_promotes_oldest,
-    covers = ["A-05", "A-23", "A-50", "A-52"],
+    covers = ["A-05", "A-23", "A-50", "A-52", "REQ-20"],
     tags = [],
     {
         let f = fx_with(UserConfig::default().max_boxes(2));
@@ -329,7 +329,7 @@ parity!(
 
 parity!(
     gone_box_does_not_hold_capacity,
-    covers = ["A-05"],
+    covers = ["A-05", "REQ-16"],
     tags = [],
     {
         let f = fx_with(UserConfig::default().max_boxes(1));
@@ -517,7 +517,7 @@ parity!(
 
 parity!(
     start_bound_worktree_binds_branch_workspace_and_base,
-    covers = ["A-14", "A-17", "A-44", "A-95"],
+    covers = ["A-14", "A-17", "A-44", "A-95", "REQ-41"],
     tags = [],
     {
         let f = fx();
@@ -597,7 +597,7 @@ parity!(
 
 parity!(
     worktree_git_exclude_lists_crabbox_and_moor_dirs_once,
-    covers = ["A-18"],
+    covers = ["A-18", "REQ-25"],
     tags = [],
     {
         let f = fx();
@@ -697,7 +697,7 @@ fn is_bg(c: &Call) -> bool {
 
 parity!(
     box_credential_preflight_failure_acquires_no_box,
-    covers = ["A-20"],
+    covers = ["A-20", "REQ-18"],
     tags = [],
     {
         let f = fx();
@@ -727,7 +727,7 @@ parity!(
 
 parity!(
     namespace_without_enforce_egress_warns_at_start,
-    covers = ["A-21"],
+    covers = ["A-21", "REQ-42"],
     tags = [],
     {
         let f = fx_preset(crabbox::Preset::NamespaceDevbox, UserConfig::default());
@@ -742,7 +742,7 @@ parity!(
 
 parity!(
     driver_chatter_never_corrupts_json_or_leaks_vocabulary,
-    covers = ["A-22", "A-103"],
+    covers = ["A-22", "A-103", "REQ-22"],
     tags = [],
     {
         let f = fx();
@@ -833,7 +833,7 @@ parity!(
 
 parity!(
     egress_policy_reaches_only_sprites_and_enforcing_namespace,
-    covers = ["A-27"],
+    covers = ["A-27", "REQ-42"],
     tags = [],
     {
         let egress = json!({ "egress": ["example.com"] });
@@ -879,7 +879,7 @@ fn failed_acquire(f: &Fx, name: &str) -> TaskView {
 
 parity!(
     acquire_failure_releases_attempted_handle_and_marks_box_failed,
-    covers = ["A-28"],
+    covers = ["A-28", "REQ-13"],
     tags = [],
     {
         let f = fx();
@@ -951,7 +951,7 @@ parity!(
 
 parity!(
     failing_setup_keeps_task_working_with_box_and_agent,
-    covers = ["A-03", "A-31", "A-34"],
+    covers = ["A-03", "A-31", "A-34", "REQ-19"],
     tags = [],
     {
         let f = fx();
@@ -1139,7 +1139,7 @@ parity!(
 
 parity!(
     dotfiles_skipped_for_host_agent_tasks,
-    covers = ["A-33"],
+    covers = ["A-33", "REQ-50"],
     tags = [],
     {
         let (f, home) = dotfiles_fx("host");
@@ -1265,7 +1265,7 @@ parity!(
 
 parity!(
     dead_provisioning_is_reported_not_attached,
-    covers = ["A-49"],
+    covers = ["A-49", "REQ-21"],
     tags = [],
     {
         let f = fx();
@@ -1365,7 +1365,7 @@ parity!(
 
 parity!(
     teardown_failure_never_blocks_close_and_absent_teardown_runs_nothing,
-    covers = ["A-92"],
+    covers = ["A-92", "REQ-43"],
     tags = [],
     {
         let f = fx();
@@ -1423,7 +1423,7 @@ parity!(
 
 parity!(
     close_keeps_checkout_branch_and_herdr_worktree,
-    covers = ["A-93", "A-95"],
+    covers = ["A-93", "A-95", "REQ-14"],
     tags = [],
     {
         let f = fx();
@@ -1566,7 +1566,7 @@ fn remove(
 
 parity!(
     remove_refuses_open_unknown_and_bound_tasks,
-    covers = ["A-98"],
+    covers = ["A-98", "REQ-14"],
     tags = [],
     {
         let f = fx();
@@ -1589,7 +1589,7 @@ parity!(
 
 parity!(
     remove_refuses_unpushed_commits_until_discard,
-    covers = ["A-99"],
+    covers = ["A-99", "REQ-14"],
     tags = [],
     {
         let f = fx();
@@ -1719,7 +1719,7 @@ fn contains(hay: &[u8], needle: &str) -> bool {
 
 parity!(
     credential_values_stay_out_of_outputs_registry_logs_and_driver_argv,
-    covers = ["A-102"],
+    covers = ["A-102", "REQ-31"],
     tags = [],
     {
         let f = fx();
@@ -1821,7 +1821,7 @@ parity!(
 
 parity!(
     bound_worktree_config_drives_setup,
-    covers = [],
+    covers = ["REQ-29"],
     tags = ["new_only(WorktreeConfig)"],
     {
         let f = fx();

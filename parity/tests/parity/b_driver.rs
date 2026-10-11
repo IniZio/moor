@@ -251,7 +251,7 @@ parity!(
 
 parity!(
     close_release_deleted_runs_stop_with_delete_env,
-    covers = ["B-77", "B-78"],
+    covers = ["B-77", "B-78", "REQ-11"],
     tags = [],
     {
         let (w, repo) = setup(Preset::LocalContainer, json!({}), false);
@@ -493,7 +493,7 @@ fn inventory_shapes(slug: &str) -> Vec<Value> {
 
 parity!(
     list_reports_box_gone_when_provider_omits_it,
-    covers = ["B-80"],
+    covers = ["B-80", "REQ-16"],
     tags = [],
     {
         let (w, repo) = setup(Preset::LocalContainer, json!({}), false);
