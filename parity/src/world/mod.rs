@@ -129,6 +129,14 @@ impl World {
             ("MOOR_CONFIG".into(), s(self.config_path())),
             ("GIT_CONFIG_GLOBAL".into(), s(home.join(".gitconfig"))),
             ("GIT_CONFIG_NOSYSTEM".into(), "1".into()),
+            (
+                "GIT_CEILING_DIRECTORIES".into(),
+                s(self
+                    .root()
+                    .parent()
+                    .map(Path::to_path_buf)
+                    .unwrap_or_default()),
+            ),
             ("TMPDIR".into(), s(self.tmp_dir())),
             ("PARITY_FAKES".into(), s(self.fakes_dir())),
             ("LANG".into(), "C.UTF-8".into()),

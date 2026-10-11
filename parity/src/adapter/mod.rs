@@ -116,6 +116,8 @@ pub struct BoxView {
 
 #[derive(Debug, Clone)]
 pub struct TaskView {
+    pub id: Option<i64>,
+    pub base: Option<String>,
     pub name: String,
     pub state: TaskState,
     pub boxed: Option<BoxView>,
@@ -135,6 +137,8 @@ impl TaskView {
             handle: opt_str(b, "handle"),
         });
         TaskView {
+            id: v.get("id").and_then(Value::as_i64),
+            base: opt_str(v, "base"),
             name: opt_str(v, "name").unwrap_or_default(),
             state: TaskState::parse(v.get("state").and_then(Value::as_str).unwrap_or("")),
             boxed,
@@ -237,6 +241,17 @@ pub trait Moor {
     fn list(&self, w: &World, cwd: &Path) -> Outcome<Vec<TaskView>>;
     fn close(&self, w: &World, cwd: &Path, name: &str, force: bool) -> Outcome<CloseView>;
     fn events(&self, w: &World, name: &str) -> Vec<Event>;
+    // PT4 ops
+    fn remove(&self, w: &World, cwd: &Path, name: &str, discard: bool) -> Outcome<RemoveView>;
+    fn sessions(&self, w: &World, name: &str) -> Vec<Session>;
+    fn age(&self, w: &World, name: &str, secs: i64);
+    fn start_detached(
+        &self,
+        w: &World,
+        cwd: &Path,
+        name: &str,
+        opts: &StartOpts,
+    ) -> std::process::Child;
     fn run(
         &self,
         w: &World,
@@ -298,6 +313,21 @@ pub struct RunRow {
     pub command: String,
     pub exit: i32,
     pub interrupted: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Session {
+    pub session_id: String,
+    pub box_pane: bool,
+    pub live: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct RemoveView {
+    pub task: TaskView,
+    pub worktree_removed: bool,
+    pub branch_deleted: bool,
+    pub discarded: bool,
 }
 
 pub fn from_env() -> Result<Box<dyn Moor>, String> {

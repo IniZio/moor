@@ -20,3 +20,30 @@ pub fn install(w: &World) {
         ],
     );
 }
+
+// PT4 helpers
+pub fn worktrees(w: &World, entries: &[(&str, &str, Option<&str>)]) {
+    let items: Vec<serde_json::Value> = entries
+        .iter()
+        .map(|(branch, path, ws)| {
+            serde_json::json!({ "branch": branch, "path": path, "open_workspace_id": ws })
+        })
+        .collect();
+    let body = serde_json::json!({ "result": { "worktrees": items } }).to_string();
+    w.prepend_rules("herdr", [Rule::on(&["worktree", "list"]).stdout(body)]);
+}
+
+pub fn workspace_create(w: &World, id: &str) {
+    let body = format!(r#"{{"result":{{"workspace":{{"workspace_id":"{id}"}}}}}}"#);
+    w.prepend_rules("herdr", [Rule::on(&["workspace", "create"]).stdout(body)]);
+}
+
+pub fn calls_of(w: &World, a: &str, b: &str) -> Vec<crate::fake::Call> {
+    w.calls("herdr")
+        .into_iter()
+        .filter(|c| {
+            c.argv.first().map(String::as_str) == Some(a)
+                && c.argv.get(1).map(String::as_str) == Some(b)
+        })
+        .collect()
+}

@@ -82,6 +82,12 @@ pub fn assert_seq_global(calls: &[Call]) {
     }
 }
 
+// PT4 assertions
+pub fn assert_pure_json(stdout: &str) -> serde_json::Value {
+    serde_json::from_str(stdout)
+        .unwrap_or_else(|e| panic!("stdout is not exactly one JSON document ({e}): {stdout}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

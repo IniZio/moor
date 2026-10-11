@@ -5,7 +5,8 @@ use rusqlite::{Connection, OpenFlags};
 use serde_json::Value;
 
 use super::{
-    exit_class, CloseView, Event, EventKind, ExitClass, Moor, Outcome, StartOpts, TaskView,
+    exit_class, CloseView, Event, EventKind, ExitClass, Moor, Outcome, RemoveView, Session,
+    StartOpts, TaskView,
 };
 use crate::world::World;
 
@@ -92,6 +93,14 @@ impl OldCli {
     }
 }
 
+fn open_registry(w: &World) -> Option<Connection> {
+    let db = w.state_dir().join("registry.db");
+    db.exists().then(|| {
+        Connection::open_with_flags(&db, OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .unwrap_or_else(|e| panic!("open {}: {e}", db.display()))
+    })
+}
+
 fn str_list(v: &Value, key: &str) -> Vec<String> {
     v.get(key)
         .and_then(Value::as_array)
@@ -125,35 +134,40 @@ fn merge_box_provider(path: &Path, provider: &str) {
         .unwrap_or_else(|e| panic!("write {}: {e}", path.display()));
 }
 
+fn start_args(w: &World, name: &str, opts: &StartOpts) -> Vec<String> {
+    if opts.size.is_some() {
+        panic!("old adapter: size is a repo .moor.yaml setting; set it via RepoConfig");
+    }
+    if let Some(provider) = &opts.provider {
+        merge_box_provider(&w.config_path(), provider);
+    }
+    let mut args: Vec<String> = vec!["start".into(), name.into(), "--json".into()];
+    let mut flag = |f: &str, v: Option<String>| {
+        if let Some(v) = v {
+            args.push(f.into());
+            args.push(v);
+        }
+    };
+    flag("--issue", opts.issue.clone());
+    flag("--goal", opts.goal.clone());
+    flag("--model", opts.model.clone());
+    flag(
+        "--worktree",
+        opts.worktree
+            .as_ref()
+            .map(|p| p.to_string_lossy().into_owned()),
+    );
+    flag("--agent-location", opts.location.clone());
+    args
+}
+
 impl Moor for OldCli {
     fn name(&self) -> &'static str {
         "old"
     }
 
     fn start(&self, w: &World, cwd: &Path, name: &str, opts: &StartOpts) -> Outcome<TaskView> {
-        if opts.size.is_some() {
-            panic!("old adapter: size is a repo .moor.yaml setting; set it via RepoConfig");
-        }
-        if let Some(provider) = &opts.provider {
-            merge_box_provider(&w.config_path(), provider);
-        }
-        let mut args: Vec<String> = vec!["start".into(), name.into(), "--json".into()];
-        let mut flag = |f: &str, v: Option<String>| {
-            if let Some(v) = v {
-                args.push(f.into());
-                args.push(v);
-            }
-        };
-        flag("--issue", opts.issue.clone());
-        flag("--goal", opts.goal.clone());
-        flag("--model", opts.model.clone());
-        flag(
-            "--worktree",
-            opts.worktree
-                .as_ref()
-                .map(|p| p.to_string_lossy().into_owned()),
-        );
-        flag("--agent-location", opts.location.clone());
+        let args = start_args(w, name, opts);
         let mut o = self.run(w, cwd, &args, |j| {
             TaskView::from_json(j.get("task").unwrap_or(&Value::Null))
         });
@@ -189,12 +203,9 @@ impl Moor for OldCli {
     }
 
     fn events(&self, w: &World, name: &str) -> Vec<Event> {
-        let db = w.state_dir().join("registry.db");
-        if !db.exists() {
+        let Some(conn) = open_registry(w) else {
             return Vec::new();
-        }
-        let conn = Connection::open_with_flags(&db, OpenFlags::SQLITE_OPEN_READ_ONLY)
-            .unwrap_or_else(|e| panic!("open {}: {e}", db.display()));
+        };
         let mut stmt = conn
             .prepare(
                 "SELECT e.kind, e.payload FROM events e JOIN tasks t ON t.id = e.task_id \
@@ -246,6 +257,77 @@ impl Moor for OldCli {
 
     fn seed_run(&self, w: &World, row: &super::RunRow) {
         self.seed_run_impl(w, row)
+    }
+    fn remove(&self, w: &World, cwd: &Path, name: &str, discard: bool) -> Outcome<RemoveView> {
+        let mut args = vec!["remove".to_string(), name.to_string(), "--json".to_string()];
+        if discard {
+            args.push("--discard".into());
+        }
+        let flag = |j: &Value, k: &str| j.get(k).and_then(Value::as_bool).unwrap_or(false);
+        self.run(w, cwd, &args, |j| RemoveView {
+            task: TaskView::from_json(j),
+            worktree_removed: flag(j, "worktree_removed"),
+            branch_deleted: flag(j, "branch_deleted"),
+            discarded: flag(j, "discarded"),
+        })
+    }
+
+    fn sessions(&self, w: &World, name: &str) -> Vec<Session> {
+        let Some(conn) = open_registry(w) else {
+            return Vec::new();
+        };
+        let mut stmt = conn
+            .prepare(
+                "SELECT s.engine, s.session_id, s.state FROM sessions s \
+                 JOIN tasks t ON t.id = s.task_id WHERE t.name = ?1 ORDER BY s.id",
+            )
+            .expect("prepare sessions query");
+        let rows = stmt
+            .query_map([name], |r| {
+                let engine: String = r.get(0)?;
+                let state: String = r.get(2)?;
+                Ok(Session {
+                    box_pane: engine == "box-pane",
+                    session_id: r.get(1)?,
+                    live: state == "live",
+                })
+            })
+            .expect("query sessions");
+        rows.map(|r| r.expect("session row")).collect()
+    }
+
+    fn age(&self, w: &World, name: &str, secs: i64) {
+        let db = db_path(w);
+        let conn = Connection::open(&db).unwrap_or_else(|e| panic!("open {}: {e}", db.display()));
+        let ids = "(SELECT id FROM tasks WHERE name = ?1)";
+        for sql in [
+            "UPDATE tasks SET created_at = created_at - ?2, updated_at = updated_at - ?2 WHERE name = ?1".to_string(),
+            format!("UPDATE events SET ts = ts - ?2 WHERE task_id IN {ids}"),
+            format!("UPDATE sessions SET created_at = created_at - ?2 WHERE task_id IN {ids}"),
+        ] {
+            conn.execute(&sql, rusqlite::params![name, secs])
+                .expect("age registry");
+        }
+    }
+
+    fn start_detached(
+        &self,
+        w: &World,
+        cwd: &Path,
+        name: &str,
+        opts: &StartOpts,
+    ) -> std::process::Child {
+        let child = w
+            .command(&self.bin)
+            .envs(seam_env(w))
+            .current_dir(cwd)
+            .args(start_args(w, name, opts))
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap_or_else(|e| panic!("spawn {}: {e}", self.bin.display()));
+        w.track_pid(child.id());
+        child
     }
 }
 
@@ -424,12 +506,9 @@ impl OldCli {
     }
 
     pub(super) fn runs_impl(&self, w: &World, name: &str) -> Vec<super::RunRow> {
-        let db = db_path(w);
-        if !db.exists() {
+        let Some(conn) = open_registry(w) else {
             return Vec::new();
-        }
-        let conn = Connection::open_with_flags(&db, OpenFlags::SQLITE_OPEN_READ_ONLY)
-            .unwrap_or_else(|e| panic!("open {}: {e}", db.display()));
+        };
         let mut stmt = conn
             .prepare(
                 "SELECT task, sha, name, command, exit, interrupted FROM runs \

@@ -1,278 +1,53 @@
-[A-01]
-code = "PENDING"
-slice = "T4"
-reason = "A section 1 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-05]
-code = "PENDING"
-slice = "T4"
-reason = "A section 1 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-06]
-code = "PENDING"
-slice = "T4"
-reason = "A section 1 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-08]
-code = "PENDING"
-slice = "T4"
-reason = "A section 1 rows land in T4"
-ref = "parity-plan.md §6"
-
 [A-09]
-code = "PENDING"
-slice = "T4"
-reason = "A section 1 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-10]
-code = "PENDING"
-slice = "T4"
-reason = "A section 2 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-11]
-code = "PENDING"
-slice = "T4"
-reason = "A section 2 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-12]
-code = "PENDING"
-slice = "T4"
-reason = "A section 2 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-13]
-code = "PENDING"
-slice = "T4"
-reason = "A section 2 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-14]
-code = "PENDING"
-slice = "T4"
-reason = "A section 2 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-16]
-code = "PENDING"
-slice = "T4"
-reason = "A section 2 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-17]
-code = "PENDING"
-slice = "T4"
-reason = "A section 2 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-18]
-code = "PENDING"
-slice = "T4"
-reason = "A section 2 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-20]
-code = "PENDING"
-slice = "T4"
-reason = "A section 2 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-21]
-code = "PENDING"
-slice = "T4"
-reason = "A section 2 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-22]
-code = "PENDING"
-slice = "T4"
-reason = "A section 2 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-23]
-code = "PENDING"
-slice = "T4"
-reason = "A section 2 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-24]
-code = "PENDING"
-slice = "T4"
-reason = "A section 2 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-25]
-code = "PENDING"
-slice = "T4"
-reason = "A section 2 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-26]
-code = "PENDING"
-slice = "T4"
-reason = "A section 3 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-27]
-code = "PENDING"
-slice = "T4"
-reason = "A section 3 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-28]
-code = "PENDING"
-slice = "T4"
-reason = "A section 3 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-29]
-code = "PENDING"
-slice = "T4"
-reason = "A section 3 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-30]
-code = "PENDING"
-slice = "T4"
-reason = "A section 4 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-31]
-code = "PENDING"
-slice = "T4"
-reason = "A section 4 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-32]
-code = "PENDING"
-slice = "T4"
-reason = "A section 4 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-33]
-code = "PENDING"
-slice = "T4"
-reason = "A section 4 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-34]
-code = "PENDING"
-slice = "T4"
-reason = "A section 4 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-35]
-code = "PENDING"
-slice = "T4"
-reason = "A section 5 rows land in T4"
-ref = "parity-plan.md §6"
+code = "DOC"
+reason = "Config-key catalogue; each key is asserted by its behaviour row (A-26 box.*, A-27 egress, A-30 setup/provision, A-33 dotfiles, A-37 mcp_servers, A-20 github.identity, A-92 teardown). Main-checkout config read is fixed by new_only test bound_worktree_config_drives_setup"
+ref = "a-task-lifecycle.md A-09 (BACKLOG: setup and RepoEnv read from main checkout)"
 
 [A-36]
-code = "PENDING"
-slice = "T4"
-reason = "A section 5 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-37]
-code = "PENDING"
-slice = "T4"
-reason = "A section 5 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-38]
-code = "PENDING"
-slice = "T4"
-reason = "A section 5 rows land in T4"
-ref = "parity-plan.md §6"
+code = "KNOWN-BUG"
+reason = "start --goal on a running goal-less Task with no live session is silently ignored (confirmed T4: no dispatch, no warning); fix test goal_added_to_running_goalless_task_dispatches_agent is new_only(GoalOnAttach)"
+ref = "a-task-lifecycle.md A-36 (DESIGN-SMELL inferred, confirmed T4)"
 
 [A-39]
 code = "PENDING"
-slice = "T4"
-reason = "A section 5 rows land in T4"
-ref = "parity-plan.md §6"
+slice = "T9"
+reason = "Box-pane agent launch, relaunch, transcript and proxy lifecycle are owned by T9 (C section 6-10)"
+ref = "parity-plan.md §6 (T9)"
 
 [A-40]
 code = "PENDING"
-slice = "T4"
-reason = "A section 5 rows land in T4"
-ref = "parity-plan.md §6"
+slice = "T9"
+reason = "Box-pane agent launch, relaunch, transcript and proxy lifecycle are owned by T9 (C section 6-10)"
+ref = "parity-plan.md §6 (T9)"
 
 [A-41]
 code = "PENDING"
-slice = "T4"
-reason = "A section 5 rows land in T4"
-ref = "parity-plan.md §6"
+slice = "T9"
+reason = "Box-pane agent launch, relaunch, transcript and proxy lifecycle are owned by T9 (C section 6-10)"
+ref = "parity-plan.md §6 (T9)"
 
 [A-42]
-code = "PENDING"
-slice = "T4"
-reason = "A section 5 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-43]
-code = "PENDING"
-slice = "T4"
-reason = "A section 6 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-44]
-code = "PENDING"
-slice = "T4"
-reason = "A section 6 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-45]
-code = "PENDING"
-slice = "T4"
-reason = "A section 6 rows land in T4"
-ref = "parity-plan.md §6"
+code = "LIVE"
+reason = "Pane read ANSI/JSON-envelope tolerance is Surface-internal; herdr pane read format is unverified live. Live-smoke step: read a real Box agent pane through herdr pane read and confirm moor decodes it"
+ref = "a-task-lifecycle.md A-42; BACKLOG herdr pane read format"
 
 [A-46]
 code = "PENDING"
-slice = "T4"
-reason = "A section 6 rows land in T4"
-ref = "parity-plan.md §6"
+slice = "T9"
+reason = "Box-pane agent launch, relaunch, transcript and proxy lifecycle are owned by T9 (C section 6-10)"
+ref = "parity-plan.md §6 (T9)"
 
 [A-47]
 code = "PENDING"
-slice = "T4"
-reason = "A section 6 rows land in T4"
-ref = "parity-plan.md §6"
+slice = "T9"
+reason = "Box-pane agent launch, relaunch, transcript and proxy lifecycle are owned by T9 (C section 6-10)"
+ref = "parity-plan.md §6 (T9)"
 
 [A-48]
 code = "PENDING"
-slice = "T4"
-reason = "A section 6 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-49]
-code = "PENDING"
-slice = "T4"
-reason = "A section 6 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-50]
-code = "PENDING"
-slice = "T4"
-reason = "A section 7 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-51]
-code = "PENDING"
-slice = "T4"
-reason = "A section 7 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-52]
-code = "PENDING"
-slice = "T4"
-reason = "A section 7 rows land in T4"
-ref = "parity-plan.md §6"
+slice = "T9"
+reason = "Box-pane agent launch, relaunch, transcript and proxy lifecycle are owned by T9 (C section 6-10)"
+ref = "parity-plan.md §6 (T9)"
 
 [A-60]
 code = "PENDING"
@@ -406,101 +181,11 @@ slice = "T5"
 reason = "A section 12 rows land in T5"
 ref = "parity-plan.md §6"
 
-[A-90]
-code = "PENDING"
-slice = "T4"
-reason = "A section 13 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-91]
-code = "PENDING"
-slice = "T4"
-reason = "A section 13 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-92]
-code = "PENDING"
-slice = "T4"
-reason = "A section 13 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-93]
-code = "PENDING"
-slice = "T4"
-reason = "A section 13 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-94]
-code = "PENDING"
-slice = "T4"
-reason = "A section 13 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-95]
-code = "PENDING"
-slice = "T4"
-reason = "A section 13 rows land in T4"
-ref = "parity-plan.md §6"
-
 [A-96]
 code = "PENDING"
-slice = "T4"
-reason = "A section 13 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-97]
-code = "PENDING"
-slice = "T4"
-reason = "A section 13 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-98]
-code = "PENDING"
-slice = "T4"
-reason = "A section 14 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-99]
-code = "PENDING"
-slice = "T4"
-reason = "A section 14 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-100]
-code = "PENDING"
-slice = "T4"
-reason = "A section 14 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-101]
-code = "PENDING"
-slice = "T4"
-reason = "A section 14 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-102]
-code = "PENDING"
-slice = "T4"
-reason = "A section 15 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-103]
-code = "PENDING"
-slice = "T4"
-reason = "A section 15 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-104]
-code = "PENDING"
-slice = "T4"
-reason = "A section 15 rows land in T4"
-ref = "parity-plan.md §6"
-
-[A-105]
-code = "PENDING"
-slice = "T4"
-reason = "A section 15 rows land in T4"
-ref = "parity-plan.md §6"
+slice = "T9"
+reason = "Box-pane agent launch, relaunch, transcript and proxy lifecycle are owned by T9 (C section 6-10)"
+ref = "parity-plan.md §6 (T9)"
 
 [B-06]
 code = "SMELL-REDESIGNED"
@@ -2218,3 +1903,8 @@ code = "PENDING"
 slice = "T10"
 reason = "REQ section 3 rows land in T10"
 ref = "parity-plan.md §6"
+
+[A-16]
+code = "KNOWN-BUG"
+reason = "Restart of a closed unbound name fails: find skips the closed Workspace, then herdr worktree create hits the existing moor/<name> branch (confirmed in T4 against old; the fix test restart_of_closed_unbound_name_creates_new_task is new_only(RestartClosed))"
+ref = "a-task-lifecycle.md A-16 (DESIGN-SMELL inferred, confirmed T4)"
