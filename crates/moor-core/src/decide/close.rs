@@ -148,8 +148,8 @@ fn failed_close(close: Decision, from: BoxState) -> Decision {
 fn release_warning() -> Warning {
     Warning {
         code: "box_release_failed".to_owned(),
-        message: "the task is closed but its Box was not released; \
-                  release it by hand to stop paying for it"
+        message: "the task is closed but its Box was not deleted; \
+                  its handle kept for manual release"
             .to_owned(),
     }
 }

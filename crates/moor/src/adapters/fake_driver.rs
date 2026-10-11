@@ -108,6 +108,10 @@ impl Driver for FakeDriver {
         })
     }
 
+    fn planned_handle(&self, _req: &AcquireReq) -> BoxHandle {
+        BoxHandle::new(format!("box-{}", self.st().next + 1))
+    }
+
     fn release(&self, handle: &BoxHandle) -> Result<Released, DriverError> {
         let mut s = self.st();
         s.calls.push(format!("release {}", handle.as_str()));

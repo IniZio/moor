@@ -77,8 +77,8 @@ fn classify_text(code: i32, text: &str) -> Option<DriverError> {
     None
 }
 
-/// Maps a failed run of `op` to the one error shape callers see.
-pub(super) fn map_error(op: Op, e: &ProcError) -> DriverError {
+/// Maps a failed run of `op` (on `provider`, when known) to the one error shape callers see.
+pub(super) fn map_error(op: Op, provider: Option<&str>, e: &ProcError) -> DriverError {
     let what = op.phrase();
     match e {
         ProcError::Spawn(_) => DriverError::Unavailable("crabbox could not be started".to_owned()),
@@ -92,7 +92,10 @@ pub(super) fn map_error(op: Op, e: &ProcError) -> DriverError {
             let summary = match *code {
                 EXIT_CONFIG => format!("{what} failed (crabbox configuration problem)"),
                 EXIT_LOST => format!("{what} failed (box lost during warmup)"),
-                _ => format!("{what} failed (crabbox exit {code})"),
+                _ => provider.map_or_else(
+                    || format!("{what} failed (crabbox exit {code})"),
+                    |p| format!("{what} failed on provider {p} (exit {code})"),
+                ),
             };
             DriverError::Failed { summary }
         }),

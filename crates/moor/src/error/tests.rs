@@ -34,6 +34,21 @@ fn usage_kind_is_usage_class() {
     assert_eq!(resp.class, ExitClass::Usage);
 }
 
+#[test]
+fn value_rides_the_failure_envelope() {
+    let resp = CommandError::new(ErrorKind::Failed, "boom")
+        .with_value(serde_json::json!({"task": {"state": "setup_failed"}}))
+        .into_response("start", vec![]);
+    assert_eq!(resp.class, ExitClass::Failed);
+    let value = resp.value.expect("value present");
+    assert_eq!(
+        value.pointer("/task/state"),
+        Some(&serde_json::json!("setup_failed"))
+    );
+    let bare = CommandError::new(ErrorKind::Failed, "boom").into_response("start", vec![]);
+    assert!(bare.value.is_none());
+}
+
 // --- seam conversions: driver, surface ---
 
 mod seam_driver_surface {

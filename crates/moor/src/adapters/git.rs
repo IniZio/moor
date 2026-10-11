@@ -21,13 +21,11 @@ pub(crate) enum GitError {
 }
 
 /// Concrete git client; real git runs through the `Proc` seam.
-#[cfg_attr(not(test), expect(dead_code, reason = "used by ops close/start"))]
 pub(crate) struct Git {
     /// Spawner for every git call.
     proc: Arc<dyn Proc>,
 }
 
-#[cfg_attr(not(test), expect(dead_code, reason = "used by ops close/start"))]
 impl Git {
     /// Builds a client over `proc`.
     pub(crate) fn new(proc: Arc<dyn Proc>) -> Self {
@@ -47,6 +45,15 @@ impl Git {
             ));
         }
         Ok(PathBuf::from(line))
+    }
+
+    /// Commit SHA of HEAD in `dir`.
+    ///
+    /// # Errors
+    /// [`GitError::NotARepo`] outside a repository, [`GitError::Failed`] otherwise.
+    pub(crate) fn head(&self, dir: &Path) -> Result<String, GitError> {
+        let out = self.run(dir, &["rev-parse", "HEAD"])?;
+        Ok(out.trim().to_owned())
     }
 
     /// Commits reachable from HEAD that neither `base` nor any remote-tracking

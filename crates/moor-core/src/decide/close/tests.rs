@@ -136,6 +136,7 @@ fn failed_release_of_a_failed_box_closes_with_release_failed_and_warns() {
     let w = v.warning.expect("warning");
     assert_eq!(w.code, "box_release_failed");
     assert!(!w.message.contains("RAWDRIVER"));
+    assert!(w.message.contains("not deleted") && w.message.contains("handle kept"));
 }
 
 #[test]

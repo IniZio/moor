@@ -6,7 +6,7 @@ CREATE TABLE tasks  (
   state TEXT NOT NULL, state_reason TEXT,
   intent_kind TEXT, intent_pid INTEGER, intent_run INTEGER, intent_at INTEGER, setup_failed_at INTEGER,
   idle_since INTEGER, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
-CREATE INDEX tasks_open ON tasks(name) WHERE state NOT IN ('closed','rejected');
+CREATE UNIQUE INDEX tasks_open ON tasks(name) WHERE state NOT IN ('closed','rejected');
 CREATE TABLE boxes  (
   task INTEGER PRIMARY KEY REFERENCES tasks(id), provider TEXT NOT NULL, handle TEXT, state TEXT NOT NULL,
   attempted_handle TEXT, workdir TEXT, egress_enforced INTEGER, updated_at INTEGER NOT NULL);

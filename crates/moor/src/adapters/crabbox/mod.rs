@@ -9,7 +9,7 @@ mod tests;
 use std::sync::Arc;
 use std::time::Duration;
 
-use moor_core::name::{BoxHandle, BoxPath, ProviderId, TaskId};
+use moor_core::name::{BoxHandle, BoxPath, ProviderId};
 use moor_core::seam::driver::{
     AcquireReq, Acquired, BoxListing, Driver, DriverCaps, DriverError, EgressApplied, EgressPlan,
     Released,
@@ -31,6 +31,11 @@ const ENV_EGRESS_VAR: &str = "CRABBOX_NAMESPACE_EGRESS_DOMAINS";
 /// Environment variable that makes a release delete rather than pause.
 const DELETE_ON_RELEASE: &str = "CRABBOX_NAMESPACE_DELETE_ON_RELEASE";
 
+/// Provider whose Boxes share one slug and need the Box id and port in env.
+const STATIC_PROVIDER: &str = "ssh";
+/// Port the static provider dials (configurable port is S4).
+const DEFAULT_SSH_PORT: u16 = 22;
+
 /// Driver backed by the `crabbox` CLI.
 pub(crate) struct Crabbox {
     /// Spawner for every crabbox call.
@@ -39,14 +44,18 @@ pub(crate) struct Crabbox {
 
 impl Crabbox {
     /// Wraps a spawner.
-    #[cfg_attr(not(test), expect(dead_code, reason = "wired in wire.rs"))]
     pub(crate) fn new(proc: Arc<dyn Proc>) -> Self {
         Self { proc }
     }
 
     /// Runs one crabbox call, mapping failure through `op`.
-    fn exec(&self, op: Op, spec: &ProcSpec) -> Result<ProcOutput, DriverError> {
-        self.proc.run(spec).map_err(|e| map_error(op, &e))
+    fn exec(
+        &self,
+        op: Op,
+        provider: Option<&str>,
+        spec: &ProcSpec,
+    ) -> Result<ProcOutput, DriverError> {
+        self.proc.run(spec).map_err(|e| map_error(op, provider, &e))
     }
 
     /// Starts a crabbox spec.
@@ -55,9 +64,37 @@ impl Crabbox {
     }
 }
 
-/// Per-Task Box name derived from the Task id.
-fn box_name(task: TaskId) -> String {
-    format!("moor-t{}", task.get())
+/// Per-Task Box name: `moor-{name}-{nonce}`.
+fn box_name(req: &AcquireReq) -> String {
+    format!("moor-{}-{}", req.name.as_str(), req.nonce)
+}
+
+/// The handle for a Box named `name` under `provider`.
+fn handle_of(provider: &str, name: &str) -> BoxHandle {
+    BoxHandle::new(format!("{provider}/{name}"))
+}
+
+/// Adds the static provider's Box id and port to a call on `handle`.
+fn static_env(spec: ProcSpec, handle: &BoxHandle) -> ProcSpec {
+    match split_handle(handle) {
+        (Some(STATIC_PROVIDER), name) => spec
+            .env("CRABBOX_STATIC_ID", name)
+            .env("CRABBOX_STATIC_PORT", DEFAULT_SSH_PORT.to_string()),
+        _ => spec,
+    }
+}
+
+/// Maps a moor size to crabbox's machine class and namespace size.
+fn size_of(size: Option<&str>) -> Result<(&'static str, &'static str), DriverError> {
+    match size.unwrap_or("small") {
+        "small" => Ok(("standard", "S")),
+        "medium" => Ok(("fast", "M")),
+        "large" => Ok(("large", "L")),
+        "xlarge" => Ok(("beast", "XL")),
+        other => Err(DriverError::Failed {
+            summary: format!("unknown box size {other:?}"),
+        }),
+    }
 }
 
 /// Splits a handle into optional provider and Box name.
@@ -113,23 +150,26 @@ fn unreadable(what: &str) -> DriverError {
 impl Driver for Crabbox {
     fn caps(&self, provider: &ProviderId) -> Result<DriverCaps, DriverError> {
         let spec = Self::spec(QUICK_DEADLINE).args(["providers", "--json"]);
-        let out = self.exec(Op::Caps, &spec)?;
+        let out = self.exec(Op::Caps, None, &spec)?;
         caps::caps_from(&out.stdout, provider)
     }
 
     fn acquire(&self, req: &AcquireReq) -> Result<Acquired, DriverError> {
         let provider = req.provider.as_str();
-        let name = box_name(req.task);
+        let name = box_name(req);
+        let (class, ns_size) = size_of(req.class.as_deref())?;
         let mut spec = Self::spec(ACQUIRE_DEADLINE).args(["warmup", "--provider", provider]);
-        spec = spec.args(["--slug", &name]);
-        if let Some(class) = &req.class {
-            spec = spec.args(["--class", class]);
+        if let Some(dir) = &req.worktree {
+            spec = spec.cwd(dir);
         }
+        spec = spec
+            .args(["--slug", &name, "--class", class])
+            .env("CRABBOX_NAMESPACE_SIZE", ns_size);
+        let handle = handle_of(provider, &name);
+        let spec = static_env(spec, &handle);
         let (spec, egress) = with_egress(spec, provider, &req.egress);
-        let out = self.exec(Op::Acquire, &spec)?;
-        let warm = parse::parse_warmup(&out.stdout).ok_or_else(|| unreadable("acquire"))?;
-        let handle = BoxHandle::new(format!("{provider}/{name}"));
-        let workdir = match warm.workroot {
+        let out = self.exec(Op::Acquire, Some(provider), &spec)?;
+        let workdir = match parse::parse_warmup(&out.stdout).and_then(|w| w.workroot) {
             Some(root) => workdir_of(&root, &name)?,
             None => self.workdir(&handle)?,
         };
@@ -140,12 +180,17 @@ impl Driver for Crabbox {
         })
     }
 
+    fn planned_handle(&self, req: &AcquireReq) -> BoxHandle {
+        handle_of(req.provider.as_str(), &box_name(req))
+    }
+
     fn release(&self, handle: &BoxHandle) -> Result<Released, DriverError> {
         let spec = Self::spec(QUICK_DEADLINE)
             .arg("stop")
             .args(target_args(handle))
             .env(DELETE_ON_RELEASE, "1");
-        match self.exec(Op::Release, &spec) {
+        let spec = static_env(spec, handle);
+        match self.exec(Op::Release, split_handle(handle).0, &spec) {
             Ok(_) => Ok(Released::Deleted),
             Err(DriverError::NotFound) => Ok(Released::AlreadyGone),
             Err(e) => Err(e),
@@ -155,12 +200,12 @@ impl Driver for Crabbox {
     fn list(&self, provider: &ProviderId) -> Result<Vec<BoxListing>, DriverError> {
         let p = provider.as_str();
         let spec = Self::spec(QUICK_DEADLINE).args(["list", "--provider", p, "--json"]);
-        let out = self.exec(Op::List, &spec)?;
+        let out = self.exec(Op::List, None, &spec)?;
         let items = parse::parse_list(&out.stdout).map_err(|_| unreadable("list"))?;
         Ok(items
             .into_iter()
             .map(|i| BoxListing {
-                handle: BoxHandle::new(format!("{p}/{}", i.name)),
+                handle: handle_of(p, &i.name),
                 provider: Some(provider.clone()),
                 asleep: i.asleep,
             })
@@ -172,7 +217,8 @@ impl Driver for Crabbox {
             .arg("inspect")
             .args(target_args(handle))
             .arg("--json");
-        let out = self.exec(Op::Workdir, &spec)?;
+        let spec = static_env(spec, handle);
+        let out = self.exec(Op::Workdir, None, &spec)?;
         let root = parse::parse_inspect_workroot(&out.stdout)
             .map_err(|_| unreadable("workdir"))?
             .ok_or_else(|| unreadable("workdir"))?;

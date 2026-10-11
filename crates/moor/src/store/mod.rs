@@ -1,5 +1,4 @@
 //! `SQLite` store (WAL): one writer connection behind a mutex, fresh read-only connections for reads.
-#![cfg_attr(not(test), expect(dead_code, reason = "used by ops from S3"))]
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -18,12 +17,7 @@ mod runs;
 #[cfg(test)]
 mod tests;
 
-#[expect(
-    unused_imports,
-    reason = "used by ops from S3; tests name it through apply"
-)]
-pub(crate) use apply::Applied;
-#[cfg_attr(not(test), expect(unused_imports, reason = "used by ops from S3"))]
+#[cfg_attr(not(test), expect(unused_imports, reason = "used by run from S6"))]
 pub(crate) use runs::{NewRun, RunOutcome};
 
 /// Schema version this build reads and writes.
@@ -182,6 +176,7 @@ impl Store {
         load_task(&self.reader()?, id)
     }
 
+    #[cfg_attr(not(test), expect(dead_code, reason = "used by ops from S3"))]
     /// Tasks that are neither closed nor rejected, by id ascending.
     pub(crate) fn open_tasks(&self) -> Result<Vec<TaskRow>, StoreError> {
         let conn = self.reader()?;

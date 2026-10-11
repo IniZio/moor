@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use moor_core::name::{BoxHandle, ProviderId, TaskId};
+use moor_core::name::{BoxHandle, ProviderId, TaskId, TaskName};
 use moor_core::seam::driver::{
     AcquireReq, Driver, DriverError, EgressApplied, EgressPlan, Released,
 };
@@ -19,8 +19,11 @@ fn req(provider: &str, egress: EgressPlan, class: Option<&str>) -> AcquireReq {
     AcquireReq {
         provider: ProviderId::new(provider),
         task: TaskId::new(7),
+        name: TaskName::parse("t7").unwrap(),
         egress,
         class: class.map(str::to_owned),
+        nonce: "ab12cd".to_owned(),
+        worktree: None,
     }
 }
 
@@ -97,8 +100,8 @@ fn acquire_runs_warmup_and_builds_handle() {
     let got = c
         .acquire(&req("sprites", EgressPlan::Open, Some("small")))
         .unwrap();
-    assert_eq!(got.handle.as_str(), "sprites/moor-t7");
-    assert_eq!(got.workdir.as_str(), "/root/crabbox/moor-t7");
+    assert_eq!(got.handle.as_str(), "sprites/moor-t7-ab12cd");
+    assert_eq!(got.workdir.as_str(), "/root/crabbox/moor-t7-ab12cd");
     assert_eq!(got.egress, EgressApplied::Enforced);
     let calls = p.calls();
     let args = &calls.first().unwrap().args;
@@ -109,11 +112,63 @@ fn acquire_runs_warmup_and_builds_handle() {
             "--provider",
             "sprites",
             "--slug",
-            "moor-t7",
+            "moor-t7-ab12cd",
             "--class",
-            "small"
+            "standard"
         ]
     );
+    assert!(calls
+        .first()
+        .unwrap()
+        .env
+        .contains(&("CRABBOX_NAMESPACE_SIZE".into(), "S".into())));
+    assert_eq!(
+        c.planned_handle(&req("sprites", EgressPlan::Open, None)),
+        got.handle
+    );
+}
+
+#[test]
+fn acquire_maps_sizes_and_rejects_unknown() {
+    let (p, c) = fixture();
+    p.on(Tool::Crabbox, &["warmup"], Reply::Ok(WARMUP_OUT.to_owned()));
+    c.acquire(&req("sprites", EgressPlan::Open, Some("large")))
+        .unwrap();
+    let calls = p.calls();
+    let first = calls.first().unwrap();
+    assert!(first.args.contains(&"large".to_owned()));
+    assert!(first
+        .env
+        .contains(&("CRABBOX_NAMESPACE_SIZE".into(), "L".into())));
+    assert!(c
+        .acquire(&req("sprites", EgressPlan::Open, Some("huge")))
+        .is_err());
+}
+
+#[test]
+fn ssh_calls_carry_static_env() {
+    let (p, c) = fixture();
+    p.on(Tool::Crabbox, &["warmup"], Reply::Ok(WARMUP_OUT.to_owned()));
+    p.on(Tool::Crabbox, &["stop"], Reply::Ok(String::new()));
+    c.acquire(&req("ssh", EgressPlan::Open, None)).unwrap();
+    c.release(&BoxHandle::new("ssh/moor-t7-ab12cd")).unwrap();
+    for call in p.calls() {
+        assert!(
+            call.env
+                .contains(&("CRABBOX_STATIC_ID".into(), "moor-t7-ab12cd".into())),
+            "{call:?}"
+        );
+        assert!(call
+            .env
+            .contains(&("CRABBOX_STATIC_PORT".into(), "22".into())));
+    }
+}
+
+#[test]
+fn list_matches_top_level_slug_and_lease_label() {
+    let items = parse_list(r#"[{"slug":"a"},{"labels":{"lease":"b"}}]"#).unwrap();
+    let names: Vec<_> = items.iter().map(|i| i.name.as_str()).collect();
+    assert_eq!(names, ["a", "b"]);
 }
 
 #[test]
@@ -163,7 +218,7 @@ fn acquire_without_workroot_falls_back_to_inspect() {
         Reply::Ok(r#"{"id":"moor-t7","workroot":"/w"}"#.into()),
     );
     let got = c.acquire(&req("ssh", EgressPlan::Open, None)).unwrap();
-    assert_eq!(got.workdir.as_str(), "/w/moor-t7");
+    assert_eq!(got.workdir.as_str(), "/w/moor-t7-ab12cd");
 }
 
 #[test]
@@ -172,6 +227,18 @@ fn acquire_unreadable_output_fails() {
     p.on(Tool::Crabbox, &["warmup"], Reply::Ok("hello\n".into()));
     let err = c.acquire(&req("ssh", EgressPlan::Open, None)).unwrap_err();
     assert!(matches!(err, DriverError::Failed { .. }), "{err:?}");
+}
+
+#[test]
+fn acquire_runs_warmup_in_worktree() {
+    let (p, c) = fixture();
+    p.on(Tool::Crabbox, &["warmup"], Reply::Ok(WARMUP_OUT.to_owned()));
+    let mut r = req("sprites", EgressPlan::Open, None);
+    r.worktree = Some("/wt".into());
+    c.acquire(&r).unwrap();
+    let calls = p.calls();
+    let first = calls.first().expect("one call recorded");
+    assert_eq!(first.cwd.as_deref(), Some(std::path::Path::new("/wt")));
 }
 
 #[test]

@@ -1,5 +1,4 @@
 //! `SystemProc`: the real spawner every adapter shells out through.
-#![cfg_attr(not(test), expect(dead_code, reason = "wired by S3 wire.rs"))]
 
 use std::ffi::OsString;
 use std::fs::File;

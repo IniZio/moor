@@ -1,16 +1,24 @@
 //! Tests for `Cx`.
 
 use super::Cx;
-use crate::adapters::clock::FakeClock;
+use crate::adapters::fake_driver::FakeDriver;
+use crate::adapters::fake_proc::ScriptedProc;
+use crate::adapters::fake_surface::FakeSurface;
 use moor_core::seam::clock::Ts;
 use moor_core::Warning;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-/// Context over a fake clock starting at 1000 ms.
-fn cx(state_dir: Option<PathBuf>) -> Cx {
-    Cx::new(state_dir, Arc::new(FakeClock::new(Ts::from_millis(1000))))
+/// Context over fakes with state under `dir`.
+fn cx(dir: &Path) -> Cx {
+    Cx::fake(
+        dir,
+        Path::new("/w"),
+        Arc::new(FakeDriver::new()),
+        Arc::new(FakeSurface::new("/s")),
+        Arc::new(ScriptedProc::new()),
+    )
 }
 
 /// Build a warning.
@@ -23,7 +31,7 @@ fn w(code: &str) -> Warning {
 
 #[test]
 fn warnings_drain_in_order() {
-    let cx = cx(None);
+    let cx = cx(Path::new("/nonexistent"));
     cx.warn(w("a"));
     cx.warn(w("b"));
     let got = cx.take_warnings();
@@ -33,15 +41,25 @@ fn warnings_drain_in_order() {
 }
 
 #[test]
-fn state_dir_round_trips() {
-    assert_eq!(cx(None).state_dir(), None);
-    let cx = cx(Some(PathBuf::from("/s")));
-    assert_eq!(cx.state_dir(), Some(Path::new("/s")));
+fn store_opens_lazily_at_moor_db() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let cx = cx(dir.path());
+    assert!(!dir.path().join("moor.db").exists());
+    assert!(cx.store().is_ok());
+    assert!(dir.path().join("moor.db").exists());
+    assert!(cx.store().is_ok());
+}
+
+#[test]
+fn accessors_return_injected_values() {
+    let cx = cx(Path::new("/nonexistent"));
+    assert_eq!(cx.cwd(), Path::new("/w"));
+    assert_eq!(cx.config().herdr_session(), "moor");
 }
 
 #[test]
 fn clock_is_the_injected_one() {
-    let cx = cx(None);
+    let cx = cx(Path::new("/nonexistent"));
     assert_eq!(cx.clock().now(), Ts::from_millis(1000));
     cx.clock().sleep(Duration::from_millis(250));
     assert_eq!(cx.clock().now(), Ts::from_millis(1250));

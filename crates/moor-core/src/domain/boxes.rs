@@ -84,6 +84,7 @@ impl BoxState {
         let to = match (self, input) {
             (Self::Starting, I::Acquired { .. }) | (Self::Asleep, I::Wake) => Self::Ready,
             (Self::Starting, I::AcquireFailed { .. }) => Self::Failed,
+            (Self::Failed | Self::Gone, I::Requested) => Self::Starting,
             (Self::Ready, I::Sleep) => Self::Asleep,
             (Self::Ready | Self::Asleep, I::DriverMissing) => Self::Gone,
             (

@@ -50,7 +50,7 @@ impl SystemClock {
     }
 
     /// Unpinned clock reading real time.
-    #[cfg_attr(not(test), expect(dead_code, reason = "used by ops from S3"))]
+    #[cfg_attr(not(test), expect(dead_code, reason = "used by wire"))]
     pub(crate) const fn real() -> Self {
         Self { base: None }
     }
@@ -77,7 +77,7 @@ impl Clock for SystemClock {
 }
 
 /// Deterministic clock that advances only when `sleep` is called.
-#[cfg_attr(not(test), expect(dead_code, reason = "used by ops from S3"))]
+#[cfg_attr(not(test), expect(dead_code, reason = "test fake"))]
 #[derive(Debug)]
 pub(crate) struct FakeClock {
     /// Total time slept so far.
@@ -90,7 +90,7 @@ pub(crate) struct FakeClock {
 
 impl FakeClock {
     /// Create a fake clock starting at `start`.
-    #[cfg_attr(not(test), expect(dead_code, reason = "used by ops from S3"))]
+    #[cfg_attr(not(test), expect(dead_code, reason = "test fake"))]
     pub(crate) fn new(start: Ts) -> Self {
         Self {
             offset: Mutex::new(Duration::ZERO),
@@ -100,7 +100,7 @@ impl FakeClock {
     }
 
     /// Time slept so far.
-    #[cfg_attr(not(test), expect(dead_code, reason = "used by ops from S3"))]
+    #[cfg_attr(not(test), expect(dead_code, reason = "test fake"))]
     fn offset(&self) -> Duration {
         *self.offset.lock().unwrap_or_else(PoisonError::into_inner)
     }

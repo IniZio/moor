@@ -4,9 +4,10 @@
 //! file transfer, sleep, tunnel and connect land with later slices.
 
 use std::fmt;
+use std::path::PathBuf;
 use std::time::Duration;
 
-use crate::name::{BoxHandle, BoxPath, ProviderId, TaskId};
+use crate::name::{BoxHandle, BoxPath, ProviderId, TaskId, TaskName};
 
 /// How a provider keeps an idle Box cheap.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -70,10 +71,16 @@ pub struct AcquireReq {
     pub provider: ProviderId,
     /// Source for the per-Task Box name the adapter derives.
     pub task: TaskId,
+    /// Task name the adapter embeds in the Box name.
+    pub name: TaskName,
     /// Requested egress.
     pub egress: EgressPlan,
-    /// Optional size class.
+    /// Box size (`small`, `medium`, `large`, `xlarge`); `small` when unset.
     pub class: Option<String>,
+    /// Random suffix that keeps the Box name unique.
+    pub nonce: String,
+    /// Host directory to run the warmup in.
+    pub worktree: Option<PathBuf>,
 }
 
 /// A Box the Driver has handed over.
@@ -182,6 +189,10 @@ pub trait Driver: Send + Sync {
     /// # Errors
     /// Returns [`DriverError::Capacity`], `Quota`, `Auth` and the like.
     fn acquire(&self, req: &AcquireReq) -> Result<Acquired, DriverError>;
+
+    /// The handle `acquire` returns for `req`; pure, so a failed acquire can
+    /// still name the half-made Box for release.
+    fn planned_handle(&self, req: &AcquireReq) -> BoxHandle;
 
     /// Releases a Box; an already-gone Box is not an error.
     ///

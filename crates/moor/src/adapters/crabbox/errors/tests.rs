@@ -77,7 +77,7 @@ fn exit_and_text_table() {
         ),
     ];
     for (input, want) in cases {
-        assert_eq!(map_error(Op::Release, &input), want, "{input:?}");
+        assert_eq!(map_error(Op::Release, None, &input), want, "{input:?}");
     }
 }
 
@@ -85,20 +85,32 @@ fn exit_and_text_table() {
 fn op_names_the_summary() {
     let e = nz(1, "x");
     assert_eq!(
-        map_error(Op::Acquire, &e),
+        map_error(Op::Acquire, None, &e),
         failed("box acquire failed (crabbox exit 1)")
     );
     assert_eq!(
-        map_error(Op::List, &e),
+        map_error(Op::List, None, &e),
         failed("box list failed (crabbox exit 1)")
     );
     assert_eq!(
-        map_error(Op::Workdir, &e),
+        map_error(Op::Workdir, None, &e),
         failed("box workdir lookup failed (crabbox exit 1)")
     );
     assert_eq!(
-        map_error(Op::Caps, &e),
+        map_error(Op::Caps, None, &e),
         failed("provider lookup failed (crabbox exit 1)")
+    );
+}
+
+#[test]
+fn provider_named_in_exit_summary() {
+    assert_eq!(
+        map_error(Op::Release, Some("local-container"), &nz(1, "x")),
+        failed("box release failed on provider local-container (exit 1)")
+    );
+    assert_eq!(
+        map_error(Op::Acquire, Some("aws"), &nz(1, "x")),
+        failed("box acquire failed on provider aws (exit 1)")
     );
 }
 
@@ -116,8 +128,8 @@ fn raw_stderr_never_leaks() {
         for t in &texts {
             let out = format!(
                 "{:?} {}",
-                map_error(Op::Acquire, &nz(code, t)),
-                map_error(Op::Acquire, &nz(code, t))
+                map_error(Op::Acquire, None, &nz(code, t)),
+                map_error(Op::Acquire, None, &nz(code, t))
             );
             assert!(!out.contains(token), "{code} {t}: {out}");
         }

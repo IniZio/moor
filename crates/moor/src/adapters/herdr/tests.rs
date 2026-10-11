@@ -73,6 +73,26 @@ fn create_worktree_argv_and_parse() {
 }
 
 #[test]
+fn create_worktree_reuses_the_worktree_already_on_the_branch() {
+    let (p, h) = fixture();
+    p.on(
+        Tool::Herdr,
+        &["worktree", "create"],
+        Reply::Fail {
+            code: 255,
+            stdout: String::new(),
+            stderr: String::new(),
+        },
+    );
+    p.on(Tool::Herdr, &["worktree", "list"], ok(WT_LIST));
+    let wt = h
+        .create_worktree(Path::new("/r"), &name(), None)
+        .expect("reused");
+    assert_eq!(wt.path, PathBuf::from("/r/wt"));
+    assert_eq!(wt.branch, "moor/a");
+}
+
+#[test]
 fn every_call_sets_session_env_and_never_json() {
     let (p, h) = fixture();
     p.on(Tool::Herdr, &["worktree", "list"], ok(WT_LIST));

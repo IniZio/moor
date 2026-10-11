@@ -45,6 +45,8 @@ struct RawItem {
     id: Option<Value>,
     /// Server name.
     name: Option<String>,
+    /// Short name, when top-level.
+    slug: Option<String>,
     /// Server status.
     status: Option<String>,
     /// Provider, when listed.
@@ -60,6 +62,8 @@ struct Labels {
     slug: Option<String>,
     /// Provider label.
     provider: Option<String>,
+    /// Lease label.
+    lease: Option<String>,
 }
 
 /// Status values that mean the Box is not running.
@@ -83,12 +87,14 @@ pub(super) fn parse_list(json: &str) -> Result<Vec<ListItem>, serde_json::Error>
 
 /// Turns one raw entry into a listing, preferring slug over name over id.
 fn item(r: RawItem) -> Option<ListItem> {
-    let (slug, label_provider) = r.labels.map_or((None, None), |l| (l.slug, l.provider));
+    let (label_slug, label_provider, lease) = r
+        .labels
+        .map_or((None, None, None), |l| (l.slug, l.provider, l.lease));
     let id = r.id.map(|v| match v {
         Value::String(s) => s,
         other => other.to_string(),
     });
-    let name = [slug, r.name, id]
+    let name = [r.slug, label_slug, r.name, id, lease]
         .into_iter()
         .flatten()
         .find(|s| !s.is_empty())?;

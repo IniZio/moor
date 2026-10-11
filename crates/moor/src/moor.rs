@@ -1,13 +1,11 @@
 //! Composition root: the single entry every caller uses.
 
-use std::sync::Arc;
-
-use crate::adapters::clock::SystemClock;
 use crate::cx::Cx;
 use crate::env::Env;
 use crate::error::CommandError;
 use crate::ops;
-use moor_core::{ErrorKind, Request, Response};
+use crate::wire;
+use moor_core::{Request, Response};
 
 /// Wired application; `call` is its only operation.
 pub struct Moor {
@@ -18,10 +16,8 @@ pub struct Moor {
 impl Moor {
     /// Build from a captured environment.
     pub fn from_env(env: &Env) -> Result<Self, CommandError> {
-        let clock =
-            SystemClock::from_env(env).map_err(|e| CommandError::new(ErrorKind::Usage, e))?;
         Ok(Self {
-            cx: Cx::new(env.state_dir(), Arc::new(clock)),
+            cx: wire::build(env)?,
         })
     }
 

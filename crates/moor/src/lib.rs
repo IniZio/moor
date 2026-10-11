@@ -9,6 +9,7 @@ pub mod error;
 mod moor;
 mod ops;
 mod store;
+mod wire;
 
 pub use crate::moor::Moor;
 pub use moor_core;

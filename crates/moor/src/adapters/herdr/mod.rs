@@ -29,7 +29,6 @@ const RETRY_DELAYS: [Duration; 3] = [
 ];
 
 /// Surface backed by herdr.
-#[cfg_attr(not(test), expect(dead_code, reason = "wired in wire.rs"))]
 pub(crate) struct Herdr {
     /// Process spawner.
     proc: Arc<dyn Proc>,
@@ -39,7 +38,6 @@ pub(crate) struct Herdr {
     extra_env: Vec<(String, String)>,
 }
 
-#[cfg_attr(not(test), expect(dead_code, reason = "wired in wire.rs"))]
 /// Quotes `s` for a POSIX shell when it needs it.
 fn shell_word(s: &str) -> String {
     let plain = !s.is_empty()
@@ -52,7 +50,6 @@ fn shell_word(s: &str) -> String {
     }
 }
 
-#[cfg_attr(not(test), expect(dead_code, reason = "wired in wire.rs"))]
 impl Herdr {
     /// Creates the adapter for `session`.
     pub(crate) fn new(
@@ -117,6 +114,19 @@ impl Herdr {
         parse::worktree_list(&self.call(&["worktree", "list", "--cwd", dir])?)
     }
 
+    /// The worktree already on `branch`, when herdr lists one.
+    fn existing_worktree(&self, dir: &str, branch: &str) -> Option<Worktree> {
+        let found = self
+            .list_worktrees(dir)
+            .ok()?
+            .into_iter()
+            .find(|e| e.branch.as_deref() == Some(branch))?;
+        Some(Worktree {
+            path: found.path?,
+            branch: branch.to_owned(),
+        })
+    }
+
     /// Gives `ws` the label `label`.
     fn rename(&self, ws: &str, label: &str) -> Result<(), SurfaceError> {
         self.call(&["workspace", "rename", ws, label]).map(drop)
@@ -147,7 +157,11 @@ impl Surface for Herdr {
         if let Some(b) = base {
             args.extend(["--base", b]);
         }
-        let created = parse::worktree_created(&self.call(&args)?)?;
+        let out = match self.call(&args) {
+            Ok(out) => out,
+            Err(e) => return self.existing_worktree(&cwd, &branch).ok_or(e),
+        };
+        let created = parse::worktree_created(&out)?;
         let path = created.entry.path.ok_or_else(|| SurfaceError::Failed {
             summary: "worktree create: missing path".to_owned(),
         })?;
