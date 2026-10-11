@@ -247,7 +247,7 @@ pub fn check_live_refs(
 }
 
 pub fn live_smoke_path() -> PathBuf {
-    repo_root().join(".groundwork/work/v2/live-smoke.md")
+    repo_root().join(".groundwork/work/rewrite/live-smoke.md")
 }
 
 pub fn repo_root() -> PathBuf {
@@ -258,7 +258,7 @@ pub fn repo_root() -> PathBuf {
 }
 
 pub fn inventory_dir() -> PathBuf {
-    repo_root().join(".groundwork/work/v2/inventory")
+    repo_root().join(".groundwork/work/rewrite/inventory")
 }
 
 pub fn exclusions_path() -> PathBuf {
