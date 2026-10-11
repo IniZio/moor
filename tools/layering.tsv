@@ -16,6 +16,8 @@ moor::store	moor::env
 moor::adapters::proc	moor::env
 moor::adapters::clock	moor::env
 moor::adapters::git	moor::adapters::proc
+moor::adapters::crabbox	moor::adapters::proc
+moor::adapters::herdr	moor::adapters::proc
 moor::adapters::fake_proc
 moor::adapters::fake_driver
 moor::adapters::fake_surface
