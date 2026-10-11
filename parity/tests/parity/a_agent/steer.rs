@@ -73,6 +73,8 @@ parity!(
         fx.present();
         fx.w.hook_state(HookState::Blocked, 0);
         herdr::pane_text(&fx.w, "Proceed?\n 1. Yes\n 2. No\n");
+        let before = fx.row().agent().expect("row agent");
+        assert_eq!(states(&before).0, Some("blocked"), "blocked before steer");
         let o = fx.m.steer(&fx.w, &fx.repo.path, &fx.name, "1");
         assert_eq!(o.class, ExitClass::Ok, "{}", o.stderr);
         let sent = fx.w.calls("herdr");

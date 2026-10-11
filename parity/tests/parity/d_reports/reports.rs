@@ -1,3 +1,6 @@
+use parity::fake::crabbox::Preset;
+use parity::world::hooks::HookState;
+
 use super::*;
 
 parity!(
@@ -159,14 +162,31 @@ parity!(
     covers = ["D-17", "REQ-49"],
     tags = [],
     {
-        let f = fx();
+        let preset = Preset::NamespaceDevbox;
+        let w = world();
+        let repo = Repo::create(&w, "widget");
+        UserConfig::default().provider(preset.provider()).write(&w);
+        RepoConfig::default().write(&repo.path);
+        crabbox::install_preset(&w, preset);
+        crabbox::ssh_channel(&w);
+        crabbox::tunnel(&w);
+        crabbox::connect(&w);
+        herdr::install(&w);
+        let f = Fx { w, repo, m: moor() };
         let name = f.name("calm");
         f.start_with(&name, Some("write a plan"));
+        f.w.hook_state(HookState::Working, 0);
         let before = f.row(&name);
+        assert_eq!(
+            before.state,
+            TaskState::Working,
+            "Working before the report"
+        );
         let src = f.src("plan.md", "plan");
         let o = f.report(&name, &ReportReq::file("plan", &src));
         assert_eq!(o.class, ExitClass::Ok, "{}", o.stderr);
         let after = f.row(&name);
+        assert_eq!(after.state, TaskState::Working, "a Report leaves Working");
         assert_eq!(after.state, before.state);
         assert_eq!(
             after.agent().map(|a| a.state),

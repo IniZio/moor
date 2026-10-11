@@ -36,17 +36,13 @@ parity!(
         );
         assert_eq!(started.class, ExitClass::Ok, "{}", started.stderr);
         assert_eq!(super::box_setup::agent_launches(&f), 1);
-        let mcp_file = f.w.state_dir().join("mcp").join(format!("{name}.json"));
         let listed = f.m.list(&f.w, &f.repo.path);
         let mut outputs = vec![started.stdout, started.stderr, listed.stdout, listed.stderr];
         for secret in [host, mcp] {
             for o in &outputs {
                 assert!(!o.contains(secret), "{secret} in output");
             }
-            for p in files_under(&f.w.state_dir())
-                .into_iter()
-                .filter(|p| *p != mcp_file)
-            {
+            for p in files_under(&f.w.state_dir()) {
                 assert!(
                     !contains(&std::fs::read(&p).unwrap(), secret),
                     "{}",
@@ -64,7 +60,6 @@ parity!(
         assert!(outputs
             .iter()
             .all(|o| !o.contains(host) && !o.contains(mcp)));
-        assert!(!mcp_file.exists(), "mcp file survives close");
     }
 );
 
