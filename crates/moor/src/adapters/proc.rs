@@ -14,6 +14,7 @@ use std::time::Duration;
 
 use moor_core::seam::proc::{Proc, ProcError, ProcOutput, ProcSpec, Stdin, Tool, BASE_ENV};
 use rustix::process::{kill_process_group, Pid, Signal};
+use zeroize::Zeroizing;
 
 use crate::env::Env;
 
@@ -293,8 +294,8 @@ impl Proc for SystemProc {
         let mut child = spawn_retrying(&mut cmd).map_err(ProcError::Spawn)?;
         let (w, o, e) = (child.stdin.take(), child.stdout.take(), child.stderr.take());
         let limit = spec.deadline.0;
-        let payload = payload.map(<[u8]>::to_vec);
-        thread::spawn(move || feed(w, payload.as_deref()));
+        let payload = payload.map(|b| Zeroizing::new(b.to_vec()));
+        thread::spawn(move || feed(w, payload.as_ref().map(|p| p.as_slice())));
         let (etx, erx) = mpsc::channel();
         let out = drain(o, etx.clone());
         let err = drain(e, etx.clone());
@@ -305,6 +306,7 @@ impl Proc for SystemProc {
             Ok(st) => st.map_err(ProcError::Spawn)?,
             Err(RecvTimeoutError::Timeout) => {
                 terminate(pid, &rx, limit).map_err(ProcError::Spawn)?;
+                wait_eof(&erx, etx);
                 return Err(ProcError::Timeout {
                     tool: spec.tool,
                     after: limit,

@@ -76,7 +76,14 @@ fn deadline_kills_child_and_grandchild() {
     assert!(start.elapsed() < Duration::from_secs(10));
     let pid = std::fs::read_to_string(&pidfile).unwrap();
     let alive = Path::new("/proc").join(pid.trim()).join("stat");
-    let state = std::fs::read_to_string(alive).unwrap_or_default();
+    let mut state = String::new();
+    for _ in 0..100 {
+        state = std::fs::read_to_string(&alive).unwrap_or_default();
+        if state.is_empty() || state.contains(") Z") {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
     assert!(
         state.is_empty() || state.contains(") Z"),
         "grandchild alive: {state}"

@@ -389,6 +389,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "time",
+ "zeroize",
 ]
 
 [[package]]
