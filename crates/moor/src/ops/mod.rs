@@ -8,6 +8,7 @@ use crate::error::CommandError;
 mod close;
 pub(crate) mod common;
 mod show;
+mod start;
 mod version;
 
 #[cfg(test)]
@@ -17,6 +18,7 @@ mod tests;
 pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, CommandError> {
     match req {
         Request::Version {} => version_value(),
+        Request::Start(r) => to_value(&start::run(cx, &r)?),
         Request::Show(r) => to_value(&show::run(cx, &r)?),
         Request::Close(r) => to_value(&close::run(cx, &r)?),
         other => Err(CommandError::not_implemented(other.cmd())),

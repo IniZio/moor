@@ -3,10 +3,6 @@
 
 mod adapters;
 pub mod cli;
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "used by start, added in a later change")
-)]
 mod cx;
 pub mod env;
 pub mod error;

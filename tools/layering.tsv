@@ -8,6 +8,7 @@ moor_core::response	moor_core::name
 moor_core::domain	moor_core::name,moor_core::secret
 moor_core::decide	moor_core::domain,moor_core::name,moor_core::seam,moor_core::response
 moor_core::config	moor_core::name,moor_core::secret
+moor_core::proxy_gate	moor_core::name,moor_core::secret
 moor_core::seam	moor_core::domain,moor_core::name,moor_core::secret,moor_core::config,moor_core::proxy_gate
 moor_core::view	moor_core::domain,moor_core::name
 moor::env
@@ -18,9 +19,12 @@ moor::adapters::clock	moor::env
 moor::adapters::git	moor::adapters::proc
 moor::adapters::crabbox	moor::adapters::proc
 moor::adapters::herdr	moor::adapters::proc
+moor::adapters::box_agent	moor::adapters::proc
+moor::adapters::github	moor::adapters::proc
 moor::adapters::fake_proc
 moor::adapters::fake_driver
 moor::adapters::fake_surface
+moor::proxy	moor::store,moor::adapters::clock,moor::env
 moor::cli	moor::error
 moor::wire	moor::adapters,moor::proxy,moor::store,moor::cx,moor::env,moor::error
 moor::cx	moor::store,moor::adapters::clock,moor::adapters::git,moor::error

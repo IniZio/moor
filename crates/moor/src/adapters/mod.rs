@@ -8,7 +8,6 @@ pub(crate) mod fake_driver;
 pub(crate) mod fake_proc;
 #[cfg(test)]
 pub(crate) mod fake_surface;
-#[expect(dead_code, reason = "used by start, added in a later change")]
 pub(crate) mod git;
 pub(crate) mod herdr;
 pub(crate) mod proc;
