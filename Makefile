@@ -54,6 +54,7 @@ fmt-check: format-check
 
 unit:
 	cargo nextest run --workspace --lib --locked
+	cargo nextest run -p moor --test cli --locked
 
 test: unit
 	$(MAKE) parity
