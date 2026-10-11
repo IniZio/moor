@@ -1,6 +1,6 @@
 # Area D: Reports, agent-facing contract, lessons
 
-Source: frozen moor `$HOME/magic/moor` main b8e8801 (read-only). Files read: `src/report.rs`, `src/brief.rs`, `src/cli.rs`, `src/pane.rs`, `src/registry.rs` (reports table), `plugins/herdr/**`, `skills/moor/SKILL.md`, `README.md`, `docs/adr/0003`, `tests/task_cli.rs` (report tests), `.groundwork/work/v1/{motive.md,evidence/t07,evidence/t09,evidence/c4/usage-log.md}`, `.groundwork/BACKLOG.md`.
+Source: frozen moor `$REPOS/moor` main b8e8801 (read-only). Files read: `src/report.rs`, `src/brief.rs`, `src/cli.rs`, `src/pane.rs`, `src/registry.rs` (reports table), `plugins/herdr/**`, `skills/moor/SKILL.md`, `README.md`, `docs/adr/0003`, `tests/task_cli.rs` (report tests), `.groundwork/work/v1/{motive.md,evidence/t07,evidence/t09,evidence/c4/usage-log.md}`, `.groundwork/BACKLOG.md`.
 
 Conventions. Coverage: BB = black-box testable through CLI + fake externals; INT = internal/unit only; BB+ = BB plus a live-only residue. UL-n = usage-log item n. The log reuses numbers: sections are first-run (1-57), drive 2 (57-76), drive 3 (1-15), 3b (16-29), 3c (30-37), 3d (38-43), 3e (44-54), 3f (55-61), 3g (62-71), 3h (72-80), 3i (81-84), 3j (85-88), 3j-b (89-99). Where a number is ambiguous the drive is given: `UL-57(d2)`. D# = motive.md decision.
 

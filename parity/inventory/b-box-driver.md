@@ -1,6 +1,6 @@
 # Area B: Box and Driver feature inventory (frozen moor b8e8801)
 
-Source of truth: `$HOME/magic/moor` at main b8e8801. Inputs read: GLOSSARY.md, docs/adr/0001, README.md, skills/moor/SKILL.md, CLAUDE.md, src/driver.rs, src/crabbox.rs, src/hosts.rs, src/config.rs, src/gate.rs, src/policy.rs, src/provision.rs, src/env.rs (setup/teardown/record/cache), src/task.rs (give_box, run_setup, run, cp, close, promote), src/sleep.rs, src/pane.rs (shell), src/proxy_run.rs (tunnel supervisor), tests/task_cli.rs, `.groundwork/BACKLOG.md`, `.groundwork/work/v1/evidence/c4/usage-log.md`.
+Source of truth: `$REPOS/moor` at main b8e8801. Inputs read: GLOSSARY.md, docs/adr/0001, README.md, skills/moor/SKILL.md, CLAUDE.md, src/driver.rs, src/crabbox.rs, src/hosts.rs, src/config.rs, src/gate.rs, src/policy.rs, src/provision.rs, src/env.rs (setup/teardown/record/cache), src/task.rs (give_box, run_setup, run, cp, close, promote), src/sleep.rs, src/pane.rs (shell), src/proxy_run.rs (tunnel supervisor), tests/task_cli.rs, `.groundwork/BACKLOG.md`, `.groundwork/work/v1/evidence/c4/usage-log.md`.
 
 Conventions
 - Parity is behavioural. CLI/JSON shape may change; the observable outcome in the Then column must survive.

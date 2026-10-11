@@ -1,6 +1,6 @@
 # Area A: Task lifecycle (feature inventory for the moor rewrite)
 
-Frozen source: `$HOME/magic/moor` at `b8e8801` (main). Read-only. Inputs: `GLOSSARY.md`, `docs/adr/0001-0005`, `README.md`, `skills/moor/SKILL.md`, `.groundwork/work/v1/spec.md`, `src/{task,sleep,pane,registry,surface,driver,crabbox,claude_bg,agent,provision,worktree,cli,env,hosts}.rs`, `tests/task_cli.rs`, `.groundwork/BACKLOG.md`, `.groundwork/work/v1/evidence/c4/usage-log.md` (cited as `UL-n`), `motive.md` decisions 21, 39.
+Frozen source: `$REPOS/moor` at `b8e8801` (main). Read-only. Inputs: `GLOSSARY.md`, `docs/adr/0001-0005`, `README.md`, `skills/moor/SKILL.md`, `.groundwork/work/v1/spec.md`, `src/{task,sleep,pane,registry,surface,driver,crabbox,claude_bg,agent,provision,worktree,cli,env,hosts}.rs`, `tests/task_cli.rs`, `.groundwork/BACKLOG.md`, `.groundwork/work/v1/evidence/c4/usage-log.md` (cited as `UL-n`), `motive.md` decisions 21, 39.
 
 Scope: `start`, `list`, `close`, `remove`, `open`, `steer`, `wait`, `pane`, `shell`, plus shared machinery (registry, queue, sleep/wake, Box acquire, setup, dotfiles, dispatch, transcript, teardown). `run`/`cp`/`report`/`gate`/`env`/`github`/`proxy` belong to other areas; they appear only where they feed lifecycle state (events `run_started`/`ran`, wake on `run`/`cp`, proxy start at box-agent launch).
 
