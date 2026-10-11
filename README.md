@@ -79,4 +79,8 @@ The suite runs the same cases against a moor binary chosen by `MOOR_CLI`.
   against it (`MOOR_CLI=new`). It is not part of `make ci`. Pass
   `PARITY_ARGS` to filter cases.
 
+`parity-old` needs old moor's source. It is found at `$(REPOS)/moor` (a
+sibling clone) by default; override with `OLD_REPO=/path/to/moor`. Building
+from an extract under `/tmp` needs `PARITY_WORLD_DIR`.
+
 The old binary is cached under `target/` and rebuilt when `OLD_REF` changes.
