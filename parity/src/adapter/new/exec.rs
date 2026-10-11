@@ -1,11 +1,42 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
 use serde_json::Value;
 
-use crate::adapter::old::seam_env;
 use crate::adapter::{ExitClass, Outcome};
 use crate::world::World;
+
+/// Seam environment for the new binary (design §12 names).
+pub(crate) fn seam_env(w: &World) -> Vec<(String, String)> {
+    let config = w.root().join("agent-config.json");
+    if !config.exists() {
+        let doc = serde_json::json!({
+            "projects": { w.root().to_string_lossy(): { "hasTrustDialogAccepted": true } }
+        });
+        std::fs::write(&config, doc.to_string()).expect("write agent-config.json");
+    }
+    let path = |p: PathBuf| p.to_string_lossy().into_owned();
+    let mut pairs = vec![
+        ("MOOR_TEST", "1".to_string()),
+        ("MOOR_AGENT_CONFIG", path(config)),
+    ];
+    for (var, tool) in [
+        ("MOOR_CRABBOX_BIN", "crabbox"),
+        ("MOOR_HERDR_BIN", "herdr"),
+        ("MOOR_CLAUDE_BIN", "claude"),
+        ("MOOR_GH_BIN", "gh"),
+        ("MOOR_SSH_BIN", "ssh"),
+    ] {
+        pairs.push((var, path(w.tool_path(tool))));
+    }
+    let preset = w.base_env();
+    for var in ["MOOR_GITHUB_API", "MOOR_GITHUB_WEB"] {
+        if !preset.iter().any(|(p, _)| p == var) {
+            pairs.push((var, "http://127.0.0.1:9".to_string()));
+        }
+    }
+    pairs.into_iter().map(|(k, v)| (k.to_string(), v)).collect()
+}
 
 fn exit_code(status: std::process::ExitStatus) -> i32 {
     use std::os::unix::process::ExitStatusExt;
@@ -50,6 +81,30 @@ fn reject_not_implemented(envelope: Option<&Value>, args: &[String]) {
     if kind == Some("internal") && msg.contains("not implemented") {
         panic!("not implemented on new: {}", args.join(" "));
     }
+}
+
+/// Append the envelope error message and hints so `stderr.contains(..)` works.
+fn with_error_text(envelope: Option<&Value>, mut stderr: String) -> String {
+    let Some(err) = envelope
+        .and_then(|j| j.get("error"))
+        .filter(|e| e.is_object())
+    else {
+        return stderr;
+    };
+    if let Some(m) = err.get("message").and_then(Value::as_str) {
+        stderr.push_str(&format!("\n{m}"));
+    }
+    for h in err
+        .get("hints")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        if let Some(h) = h.as_str() {
+            stderr.push_str(&format!("\n{h}"));
+        }
+    }
+    stderr
 }
 
 fn warnings_of(envelope: Option<&Value>) -> Vec<String> {
@@ -106,11 +161,22 @@ pub(crate) fn invoke(
         .and_then(|j| j.get("value"))
         .filter(|v| !v.is_null())
         .cloned();
+    let mut stderr = with_error_text(envelope.as_ref(), stderr);
+    let warnings = warnings_of(envelope.as_ref());
+    for m in &warnings {
+        stderr.push_str(&format!("\n{m}"));
+    }
+    // Old CLI prints the command's value on stdout; mirror that, not the envelope.
+    let stdout = match (&value, &envelope) {
+        (Some(v), _) => v.to_string(),
+        (None, Some(_)) => String::new(),
+        (None, None) => stdout,
+    };
     Outcome {
         exit,
         class,
         value,
-        warnings: warnings_of(envelope.as_ref()),
+        warnings,
         stdout,
         stderr,
     }

@@ -4,8 +4,11 @@
 //! class, or an unmapped seam panics, so the case fails instead of passing
 //! on a coincidental error class.
 mod exec;
+mod store;
 
 use std::path::{Path, PathBuf};
+
+use serde_json::Value;
 
 use super::github_ops::{GithubSetupOpts, GithubStore};
 use super::{
@@ -36,15 +39,19 @@ impl Moor for NewCli {
     }
 
     fn caps(&self) -> &'static [&'static str] {
-        &["VersionHash"]
+        &["VersionHash", "CloseGate", "MoorWarning", "RestartClosed"]
     }
 
     fn start(&self, w: &World, cwd: &Path, name: &str, opts: &StartOpts) -> Outcome<TaskView> {
-        self.go(w, cwd, start_args(name, opts))
+        let o = exec::invoke(&self.bin, w, cwd, &start_args(name, opts), None);
+        exec::retype(o, |v| v.get("task").map(task_view))
     }
 
     fn list(&self, w: &World, cwd: &Path) -> Outcome<Vec<TaskView>> {
-        self.go(w, cwd, sv(&["show"]))
+        let o = exec::invoke(&self.bin, w, cwd, &sv(&["show"]), None);
+        exec::retype(o, |v| {
+            Some(v.get("tasks")?.as_array()?.iter().map(task_view).collect())
+        })
     }
 
     fn close(&self, w: &World, cwd: &Path, name: &str, force: bool) -> Outcome<CloseView> {
@@ -52,11 +59,20 @@ impl Moor for NewCli {
         if force {
             a.push("--force".into());
         }
-        self.go(w, cwd, a)
+        let o = exec::invoke(&self.bin, w, cwd, &a, None);
+        exec::retype(o, |v| {
+            let flag = |k: &str| v.get(k).and_then(Value::as_bool).unwrap_or(false);
+            Some(CloseView {
+                task: task_view(v.get("task")?),
+                box_deleted: flag("box_deleted"),
+                workspace_closed: flag("workspace_closed"),
+                sessions_stopped: Vec::new(),
+            })
+        })
     }
 
-    fn events(&self, _w: &World, _name: &str) -> Vec<Event> {
-        exec::unmapped("events")
+    fn events(&self, w: &World, name: &str) -> Vec<Event> {
+        store::events(w, name)
     }
 
     fn env(&self, w: &World, cwd: &Path, _opts: &EnvOpts) -> Outcome<EnvReport> {
@@ -71,8 +87,8 @@ impl Moor for NewCli {
         self.go(w, cwd, a)
     }
 
-    fn sessions(&self, _w: &World, _name: &str) -> Vec<Session> {
-        exec::unmapped("sessions")
+    fn sessions(&self, w: &World, name: &str) -> Vec<Session> {
+        store::sessions(w, name)
     }
 
     fn age(&self, _w: &World, _name: &str, _secs: i64) {
@@ -244,6 +260,15 @@ impl Moor for NewCli {
     fn proxy_endpoint(&self, _w: &World, _name: &str) -> Option<ProxyEndpoint> {
         exec::unmapped("proxy_endpoint")
     }
+}
+
+/// Design key `workspace` feeds parity's `workspace_id`.
+fn task_view(v: &Value) -> TaskView {
+    let mut v = v.clone();
+    if let Some(ws) = v.get("workspace").cloned() {
+        v["workspace_id"] = ws;
+    }
+    TaskView::from_json(&v)
 }
 
 fn start_args(name: &str, opts: &StartOpts) -> Vec<String> {

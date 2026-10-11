@@ -102,7 +102,8 @@ parity!(
         git_in(&f, &wt, &["add", "work.txt"]);
         git_in(&f, &wt, &["commit", "-q", "-m", "unpushed"]);
         std::fs::write(wt.join("dirty.txt"), "d").unwrap();
-        f.close(&name);
+        let closed = f.m.close(&f.w, &f.repo.path, &name, true);
+        assert_eq!(closed.class, ExitClass::Ok, "{}", closed.stderr);
         assert!(wt.join("dirty.txt").exists());
         let branch = git_in(
             &f,
