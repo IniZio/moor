@@ -78,7 +78,7 @@ fn assert_run_targets(w: &World, provider: &str, slug: &str) {
 
 parity!(
     start_local_container_warmup_argv,
-    covers = ["B-70"],
+    covers = ["B-70", "B-90"],
     tags = [],
     {
         let (w, repo) = setup(Preset::LocalContainer, json!({}), false);
@@ -251,7 +251,7 @@ parity!(
 
 parity!(
     close_release_deleted_runs_stop_with_delete_env,
-    covers = [],
+    covers = ["B-77", "B-78"],
     tags = [],
     {
         let (w, repo) = setup(Preset::LocalContainer, json!({}), false);
@@ -288,7 +288,7 @@ parity!(
 
 parity!(
     close_release_not_found_counts_as_deleted,
-    covers = [],
+    covers = ["B-77", "B-78"],
     tags = [],
     {
         let (w, repo) = setup(Preset::LocalContainer, json!({}), false);
@@ -315,7 +315,7 @@ parity!(
 
 parity!(
     close_release_failure_on_ready_box_keeps_task_open,
-    covers = [],
+    covers = ["B-77", "B-79"],
     tags = [],
     {
         let (w, repo) = setup(Preset::LocalContainer, json!({}), false);
@@ -454,7 +454,7 @@ parity!(
 
 parity!(
     close_failed_box_release_error_becomes_release_failed,
-    covers = [],
+    covers = ["B-79"],
     tags = [],
     {
         let (w, repo, name, _) = failed_start(None);
@@ -551,7 +551,7 @@ fn find(tasks: &[TaskView], name: &str) -> TaskView {
 
 parity!(
     max_boxes_queues_and_close_promotes_oldest,
-    covers = ["B-94", "B-95"],
+    covers = ["B-94", "B-95", "B-96"],
     tags = [],
     {
         let (w, repo) = setup(Preset::LocalContainer, json!({ "max_boxes": 1 }), false);

@@ -169,7 +169,27 @@ pub fn call(w: &World, verb: &str) -> Option<Call> {
         .rfind(|c| c.argv.first().map(String::as_str) == Some(verb))
 }
 
-// PT4 helpers
 pub fn ssh_wrapper(w: &World) {
     w.prepend_rules("crabbox", [Rule::on(&["ssh"]).stdout("'{root}/bin/ssh'\n")]);
+}
+
+pub fn ssh_channel(w: &World) {
+    w.prepend_rules(
+        "crabbox",
+        [Rule::on(&["ssh"]).stdout("{root}/bin/ssh -o BatchMode=yes box\n")],
+    );
+    crate::fake::ssh::install(w);
+}
+
+pub fn tunnel(w: &World) {
+    w.prepend_rules(
+        "crabbox",
+        [Rule::on(&["tunnel"])
+            .stdout("{\"box\":20000,\"host\":20000}\n")
+            .block()],
+    );
+}
+
+pub fn deny(w: &World, verb: &str, code: i32) {
+    w.prepend_rules("crabbox", [Rule::on(&[verb]).exit(code)]);
 }

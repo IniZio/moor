@@ -1,4 +1,5 @@
 pub mod config;
+pub mod hooks;
 pub mod repo;
 
 use crate::fake::{self, Call, Rule};
@@ -200,10 +201,13 @@ impl World {
         let marker = format!("PARITY_FAKES={}", self.fakes_dir().display());
         let calls = self.all_calls();
         let tracked: Vec<(u32, u64)> = self.pids.lock().unwrap().clone();
+        let proxies = proxy_pids(&self.state_dir());
         let mut known: Vec<u32> = calls.iter().map(|c| c.pid).collect();
         known.extend(tracked.iter().map(|t| t.0));
+        known.extend(proxies.iter().copied());
         let mut groups: Vec<u32> = calls.iter().map(|c| c.pgid).collect();
         groups.extend(tracked.iter().map(|t| t.0));
+        groups.extend(proxies.iter().copied());
         groups.sort_unstable();
         groups.dedup();
 
@@ -265,6 +269,20 @@ impl Drop for World {
             }
         }
     }
+}
+
+fn proxy_pids(state: &Path) -> Vec<u32> {
+    let Ok(entries) = fs::read_dir(state.join("proxy")) else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .filter_map(|e| fs::read(e.path()).ok())
+        .filter_map(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
+        .filter_map(|v| v["pid"].as_u64())
+        .map(|p| p as u32)
+        .filter(|p| *p > 1)
+        .collect()
 }
 
 struct Marked {

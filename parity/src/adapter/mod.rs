@@ -232,6 +232,56 @@ pub struct StartOpts {
     pub size: Option<String>,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct AgentView {
+    pub state: String,
+    pub agent_state: Option<String>,
+    pub source: Option<String>,
+    pub exit_code: Option<i64>,
+    pub waiting_for: Option<String>,
+}
+
+impl AgentView {
+    pub fn from_json(v: &Value) -> Option<AgentView> {
+        v.is_object().then(|| AgentView {
+            state: opt_str(v, "state").unwrap_or_default(),
+            agent_state: opt_str(v, "agent_state"),
+            source: opt_str(v, "agent_state_source"),
+            exit_code: v.get("exit_code").and_then(Value::as_i64),
+            waiting_for: opt_str(v, "waiting_for"),
+        })
+    }
+}
+
+impl TaskView {
+    pub fn agent(&self) -> Option<AgentView> {
+        self.raw.get("agent").and_then(AgentView::from_json)
+    }
+
+    pub fn sleep_reason(&self) -> Option<String> {
+        opt_str(&self.raw, "sleep")
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct WaitView {
+    pub timed_out: bool,
+    pub run: Option<Value>,
+    pub agent: Option<AgentView>,
+}
+
+#[derive(Debug, Clone)]
+pub struct OpenView {
+    pub task: TaskView,
+    pub woke: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct PaneView {
+    pub task: TaskView,
+    pub agent: Option<AgentView>,
+}
+
 pub trait Moor {
     fn name(&self) -> &'static str;
     fn caps(&self) -> &'static [&'static str] {
@@ -241,7 +291,6 @@ pub trait Moor {
     fn list(&self, w: &World, cwd: &Path) -> Outcome<Vec<TaskView>>;
     fn close(&self, w: &World, cwd: &Path, name: &str, force: bool) -> Outcome<CloseView>;
     fn events(&self, w: &World, name: &str) -> Vec<Event>;
-    // PT4 ops
     fn remove(&self, w: &World, cwd: &Path, name: &str, discard: bool) -> Outcome<RemoveView>;
     fn sessions(&self, w: &World, name: &str) -> Vec<Session>;
     fn age(&self, w: &World, name: &str, secs: i64);
@@ -278,6 +327,20 @@ pub trait Moor {
     ) -> Outcome<GateVerdict>;
     fn runs(&self, w: &World, name: &str) -> Vec<RunRow>;
     fn seed_run(&self, w: &World, row: &RunRow);
+    fn wait(
+        &self,
+        w: &World,
+        cwd: &Path,
+        name: &str,
+        timeout_secs: Option<u64>,
+    ) -> Outcome<WaitView>;
+    fn steer(&self, w: &World, cwd: &Path, name: &str, message: &str) -> Outcome<()>;
+    fn open(&self, w: &World, cwd: &Path, name: &str) -> Outcome<OpenView>;
+    fn shell(&self, w: &World, cwd: &Path, name: &str) -> Outcome<()>;
+    fn pane(&self, w: &World, cwd: &Path, name: &str) -> Outcome<PaneView>;
+    fn run_bg(&self, w: &World, cwd: &Path, name: &str, command: &str) -> std::process::Child;
+    fn sleep_cmd(&self, w: &World, cwd: &Path, name: &str) -> Outcome<TaskView>;
+    fn wake_cmd(&self, w: &World, cwd: &Path, name: &str) -> Outcome<TaskView>;
 }
 
 /// Options for `Moor::run`. `interrupt` sends SIGINT to moor once the Driver

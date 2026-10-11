@@ -5,8 +5,8 @@ use rusqlite::{Connection, OpenFlags};
 use serde_json::Value;
 
 use super::{
-    exit_class, CloseView, Event, EventKind, ExitClass, Moor, Outcome, RemoveView, Session,
-    StartOpts, TaskView,
+    exit_class, AgentView, CloseView, Event, EventKind, ExitClass, Moor, OpenView, Outcome,
+    PaneView, RemoveView, Session, StartOpts, TaskView, WaitView,
 };
 use crate::world::World;
 
@@ -50,6 +50,28 @@ fn exit_code(status: std::process::ExitStatus) -> i32 {
 }
 
 impl OldCli {
+    fn spawn_bg(&self, w: &World, cwd: &Path, args: &[String]) -> std::process::Child {
+        let child = w
+            .command(&self.bin)
+            .envs(seam_env(w))
+            .current_dir(cwd)
+            .args(args)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap_or_else(|e| panic!("spawn {}: {e}", self.bin.display()));
+        w.track_pid(child.id());
+        child
+    }
+
+    fn run_unit(&self, w: &World, cwd: &Path, args: &[String]) -> Outcome<()> {
+        let mut o = self.run(w, cwd, args, |_| ());
+        if o.class == ExitClass::Ok {
+            o.value = Some(());
+        }
+        o
+    }
+
     fn run<T>(
         &self,
         w: &World,
@@ -99,6 +121,42 @@ fn open_registry(w: &World) -> Option<Connection> {
         Connection::open_with_flags(&db, OpenFlags::SQLITE_OPEN_READ_ONLY)
             .unwrap_or_else(|e| panic!("open {}: {e}", db.display()))
     })
+}
+
+fn name_args(verb: &str, name: &str) -> Vec<String> {
+    vec![verb.to_string(), name.to_string(), "--json".to_string()]
+}
+
+fn shift_ts(conn: &Connection, sql: &str, secs: i64, name: &str) {
+    conn.execute(sql, rusqlite::params![secs, name])
+        .unwrap_or_else(|e| panic!("age registry: {e}"));
+}
+
+fn shift_hook_cache(state: &Path, secs: i64) {
+    let mut stack = vec![state.to_path_buf()];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            let is_cache = path
+                .file_name()
+                .is_some_and(|n| n.to_string_lossy().ends_with("agent-state-last.json"));
+            if !is_cache {
+                continue;
+            }
+            let Ok(mut doc) = serde_json::from_slice::<Value>(&std::fs::read(&path).unwrap())
+            else {
+                continue;
+            };
+            if let Some(at) = doc["read_at"].as_i64() {
+                doc["read_at"] = Value::from(at - secs);
+                std::fs::write(&path, doc.to_string()).expect("rewrite hook cache");
+            }
+        }
+    }
 }
 
 fn str_list(v: &Value, key: &str) -> Vec<String> {
@@ -295,21 +353,6 @@ impl Moor for OldCli {
             .expect("query sessions");
         rows.map(|r| r.expect("session row")).collect()
     }
-
-    fn age(&self, w: &World, name: &str, secs: i64) {
-        let db = db_path(w);
-        let conn = Connection::open(&db).unwrap_or_else(|e| panic!("open {}: {e}", db.display()));
-        let ids = "(SELECT id FROM tasks WHERE name = ?1)";
-        for sql in [
-            "UPDATE tasks SET created_at = created_at - ?2, updated_at = updated_at - ?2 WHERE name = ?1".to_string(),
-            format!("UPDATE events SET ts = ts - ?2 WHERE task_id IN {ids}"),
-            format!("UPDATE sessions SET created_at = created_at - ?2 WHERE task_id IN {ids}"),
-        ] {
-            conn.execute(&sql, rusqlite::params![name, secs])
-                .expect("age registry");
-        }
-    }
-
     fn start_detached(
         &self,
         w: &World,
@@ -328,6 +371,78 @@ impl Moor for OldCli {
             .unwrap_or_else(|e| panic!("spawn {}: {e}", self.bin.display()));
         w.track_pid(child.id());
         child
+    }
+
+    fn wait(
+        &self,
+        w: &World,
+        cwd: &Path,
+        name: &str,
+        timeout_secs: Option<u64>,
+    ) -> Outcome<WaitView> {
+        let mut args = name_args("wait", name);
+        if let Some(t) = timeout_secs {
+            args.extend(["--timeout".to_string(), t.to_string()]);
+        }
+        self.run(w, cwd, &args, |j| WaitView {
+            timed_out: j.get("timed_out").and_then(Value::as_bool).unwrap_or(false),
+            run: j.get("run").filter(|r| !r.is_null()).cloned(),
+            agent: j.get("agent").and_then(AgentView::from_json),
+        })
+    }
+
+    fn steer(&self, w: &World, cwd: &Path, name: &str, message: &str) -> Outcome<()> {
+        let mut args = name_args("steer", name);
+        args.insert(2, message.to_string());
+        self.run_unit(w, cwd, &args)
+    }
+
+    fn open(&self, w: &World, cwd: &Path, name: &str) -> Outcome<OpenView> {
+        self.run(w, cwd, &name_args("open", name), |j| OpenView {
+            task: TaskView::from_json(j),
+            woke: j.get("woke").and_then(Value::as_bool).unwrap_or(false),
+        })
+    }
+
+    fn shell(&self, w: &World, cwd: &Path, name: &str) -> Outcome<()> {
+        let args = vec!["shell".to_string(), name.to_string()];
+        self.run_unit(w, cwd, &args)
+    }
+
+    fn pane(&self, w: &World, cwd: &Path, name: &str) -> Outcome<PaneView> {
+        self.run(w, cwd, &name_args("pane", name), |j| PaneView {
+            task: TaskView::from_json(j),
+            agent: j.get("agent").and_then(AgentView::from_json),
+        })
+    }
+
+    fn age(&self, w: &World, name: &str, secs: i64) {
+        let db = db_path(w);
+        let conn = Connection::open(&db).unwrap_or_else(|e| panic!("open {}: {e}", db.display()));
+        let ids = "(SELECT id FROM tasks WHERE name = ?2)";
+        for sql in [
+            format!("UPDATE events SET ts = ts - ?1 WHERE task_id IN {ids}"),
+            format!("UPDATE sessions SET created_at = created_at - ?1 WHERE task_id IN {ids}"),
+            "UPDATE tasks SET updated_at = updated_at - ?1, created_at = created_at - ?1 \
+             WHERE name = ?2"
+                .to_string(),
+        ] {
+            shift_ts(&conn, &sql, secs, name);
+        }
+        shift_hook_cache(&w.state_dir(), secs);
+    }
+
+    fn run_bg(&self, w: &World, cwd: &Path, name: &str, command: &str) -> std::process::Child {
+        let args = ["run", name, "--", command].map(String::from);
+        self.spawn_bg(w, cwd, &args)
+    }
+
+    fn sleep_cmd(&self, w: &World, cwd: &Path, name: &str) -> Outcome<TaskView> {
+        self.run(w, cwd, &name_args("sleep", name), TaskView::from_json)
+    }
+
+    fn wake_cmd(&self, w: &World, cwd: &Path, name: &str) -> Outcome<TaskView> {
+        self.run(w, cwd, &name_args("wake", name), TaskView::from_json)
     }
 }
 

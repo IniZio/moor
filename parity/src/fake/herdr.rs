@@ -21,7 +21,6 @@ pub fn install(w: &World) {
     );
 }
 
-// PT4 helpers
 pub fn worktrees(w: &World, entries: &[(&str, &str, Option<&str>)]) {
     let items: Vec<serde_json::Value> = entries
         .iter()
@@ -46,4 +45,24 @@ pub fn calls_of(w: &World, a: &str, b: &str) -> Vec<crate::fake::Call> {
                 && c.argv.get(1).map(String::as_str) == Some(b)
         })
         .collect()
+}
+
+pub fn pane_list(w: &World, status: Option<&str>) {
+    let pane = match status {
+        Some(s) => format!(r#"{{"pane_id":"p-1","agent_status":"{s}"}}"#),
+        None => r#"{"pane_id":"p-1"}"#.to_string(),
+    };
+    let body = format!(r#"{{"result":{{"panes":[{pane}]}}}}"#);
+    w.prepend_rules("herdr", [Rule::on(&["pane", "list"]).stdout(body)]);
+}
+
+pub fn pane_gone(w: &World) {
+    w.prepend_rules(
+        "herdr",
+        [Rule::on(&["pane", "list"]).stdout(r#"{"result":{"panes":[]}}"#)],
+    );
+}
+
+pub fn pane_text(w: &World, text: &str) {
+    w.prepend_rules("herdr", [Rule::on(&["pane", "read"]).stdout(text)]);
 }

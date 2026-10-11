@@ -49,137 +49,10 @@ slice = "T9"
 reason = "Box-pane agent launch, relaunch, transcript and proxy lifecycle are owned by T9 (C section 6-10)"
 ref = "parity-plan.md §6 (T9)"
 
-[A-60]
-code = "PENDING"
-slice = "T5"
-reason = "A section 8 rows land in T5"
-ref = "parity-plan.md §6"
-
-[A-61]
-code = "PENDING"
-slice = "T5"
-reason = "A section 8 rows land in T5"
-ref = "parity-plan.md §6"
-
-[A-62]
-code = "PENDING"
-slice = "T5"
-reason = "A section 8 rows land in T5"
-ref = "parity-plan.md §6"
-
-[A-63]
-code = "PENDING"
-slice = "T5"
-reason = "A section 8 rows land in T5"
-ref = "parity-plan.md §6"
-
-[A-64]
-code = "PENDING"
-slice = "T5"
-reason = "A section 8 rows land in T5"
-ref = "parity-plan.md §6"
-
 [A-65]
-code = "PENDING"
-slice = "T5"
-reason = "A section 8 rows land in T5"
-ref = "parity-plan.md §6"
-
-[A-70]
-code = "PENDING"
-slice = "T5"
-reason = "A section 9 rows land in T5"
-ref = "parity-plan.md §6"
-
-[A-71]
-code = "PENDING"
-slice = "T5"
-reason = "A section 9 rows land in T5"
-ref = "parity-plan.md §6"
-
-[A-72]
-code = "PENDING"
-slice = "T5"
-reason = "A section 9 rows land in T5"
-ref = "parity-plan.md §6"
-
-[A-73]
-code = "PENDING"
-slice = "T5"
-reason = "A section 9 rows land in T5"
-ref = "parity-plan.md §6"
-
-[A-74]
-code = "PENDING"
-slice = "T5"
-reason = "A section 9 rows land in T5"
-ref = "parity-plan.md §6"
-
-[A-75]
-code = "PENDING"
-slice = "T5"
-reason = "A section 9 rows land in T5"
-ref = "parity-plan.md §6"
-
-[A-76]
-code = "PENDING"
-slice = "T5"
-reason = "A section 9 rows land in T5"
-ref = "parity-plan.md §6"
-
-[A-77]
-code = "PENDING"
-slice = "T5"
-reason = "A section 9 rows land in T5"
-ref = "parity-plan.md §6"
-
-[A-80]
-code = "PENDING"
-slice = "T5"
-reason = "A section 10 rows land in T5"
-ref = "parity-plan.md §6"
-
-[A-81]
-code = "PENDING"
-slice = "T5"
-reason = "A section 10 rows land in T5"
-ref = "parity-plan.md §6"
-
-[A-82]
-code = "PENDING"
-slice = "T5"
-reason = "A section 10 rows land in T5"
-ref = "parity-plan.md §6"
-
-[A-85]
-code = "PENDING"
-slice = "T5"
-reason = "A section 11 rows land in T5"
-ref = "parity-plan.md §6"
-
-[A-86]
-code = "PENDING"
-slice = "T5"
-reason = "A section 11 rows land in T5"
-ref = "parity-plan.md §6"
-
-[A-87]
-code = "PENDING"
-slice = "T5"
-reason = "A section 11 rows land in T5"
-ref = "parity-plan.md §6"
-
-[A-88]
-code = "PENDING"
-slice = "T5"
-reason = "A section 12 rows land in T5"
-ref = "parity-plan.md §6"
-
-[A-89]
-code = "PENDING"
-slice = "T5"
-reason = "A section 12 rows land in T5"
-ref = "parity-plan.md §6"
+code = "KNOWN-BUG"
+reason = "no manual sleep or wake command; explicit path is REQ-09"
+ref = "inventory a-task-lifecycle A-65; UL-94; explicit_sleep_and_wake_commands (new_only ExplicitSleep)"
 
 [A-96]
 code = "PENDING"
@@ -211,12 +84,6 @@ ref = ".groundwork/BACKLOG.md 'Crabbox claim guard for run contention' (old moor
 code = "KNOWN-BUG"
 reason = "first run on a fresh Box died after about 2 min, unexplained and not reproducible with fakes"
 ref = "usage-log drive 3b item 25 (old moor b8e8801)"
-
-[B-19]
-code = "PENDING"
-slice = "T5"
-reason = "wake on run needs the sleep driver (hook_state, age) built by T5"
-ref = "parity-plan.md §6"
 
 [B-24]
 code = "SMELL-REDESIGNED"
@@ -279,112 +146,19 @@ reason = "CRABBOX_CONFIG lookup in worktree/main checkout leaks a crabbox concep
 ref = "docs/adr/0001-crabbox-is-only-a-driver.md; b-box-driver.md DESIGN-SMELL flag"
 
 [B-71]
-code = "PENDING"
-slice = "T5"
-reason = "B section 7 rows land in T5; box driver rows; T3 covers part"
-ref = "parity-plan.md §6"
+code = "LIVE"
+reason = "warmup chatter routing needs real crabbox warmup banner output"
+ref = "live-smoke: start --quiet on namespace-devbox prints one start-log path and pure JSON with --json"
 
 [B-74]
-code = "PENDING"
-slice = "T5"
-reason = "B section 7 rows land in T5; box driver rows; T3 covers part"
-ref = "parity-plan.md §6"
-
-[B-75]
-code = "PENDING"
-slice = "T5"
-reason = "B section 7 rows land in T5; box driver rows; T3 covers part"
-ref = "parity-plan.md §6"
-
-[B-76]
-code = "PENDING"
-slice = "T5"
-reason = "B section 7 rows land in T5; box driver rows; T3 covers part"
-ref = "parity-plan.md §6"
-
-[B-77]
-code = "PENDING"
-slice = "T5"
-reason = "B section 7 rows land in T5; box driver rows; T3 covers part"
-ref = "parity-plan.md §6"
-
-[B-78]
-code = "PENDING"
-slice = "T5"
-reason = "B section 7 rows land in T5; box driver rows; T3 covers part"
-ref = "parity-plan.md §6"
-
-[B-79]
-code = "PENDING"
-slice = "T5"
-reason = "B section 7 rows land in T5; box driver rows; T3 covers part"
-ref = "parity-plan.md §6"
-
-[B-81]
-code = "PENDING"
-slice = "T5"
-reason = "B section 7 rows land in T5; box driver rows; T3 covers part"
-ref = "parity-plan.md §6"
-
-[B-82]
-code = "PENDING"
-slice = "T5"
-reason = "B section 7 rows land in T5; box driver rows; T3 covers part"
-ref = "parity-plan.md §6"
-
-[B-85]
-code = "PENDING"
-slice = "T5"
-reason = "B section 8 rows land in T5; box driver rows; T3 covers part"
-ref = "parity-plan.md §6"
-
-[B-88]
-code = "PENDING"
-slice = "T5"
-reason = "B section 8 rows land in T5; box driver rows; T3 covers part"
-ref = "parity-plan.md §6"
-
-[B-89]
-code = "PENDING"
-slice = "T5"
-reason = "B section 8 rows land in T5; box driver rows; T3 covers part"
-ref = "parity-plan.md §6"
-
-[B-90]
-code = "PENDING"
-slice = "T5"
-reason = "B section 8 rows land in T5; box driver rows; T3 covers part"
-ref = "parity-plan.md §6"
-
-[B-91]
-code = "PENDING"
-slice = "T5"
-reason = "B section 8 rows land in T5; box driver rows; T3 covers part"
-ref = "parity-plan.md §6"
+code = "DOC"
+reason = "failure reason prose; harness asserts exit class and events, never message text"
+ref = "parity-plan.md §2 (Outcome asserts exit class, not strings)"
 
 [B-92]
-code = "PENDING"
-slice = "T5"
-reason = "B section 8 rows land in T5; box driver rows; T3 covers part"
-ref = "parity-plan.md §6"
-
-[B-93]
-code = "PENDING"
-slice = "T5"
-reason = "B section 8 rows land in T5; box driver rows; T3 covers part"
-ref = "parity-plan.md §6"
-
-[B-96]
-code = "PENDING"
-slice = "T5"
-reason = "B section 9 rows land in T5; box driver rows; T3 covers part"
-ref = "parity-plan.md §6"
-
-[B-97]
-code = "PENDING"
-slice = "T5"
-reason = "B section 9 rows land in T5; box driver rows; T3 covers part"
-ref = "parity-plan.md §6"
+code = "SMELL-REDESIGNED"
+reason = "Box handle is opaque to moor; provider/name parsing leaves moor"
+ref = "docs/adr/0001-crabbox-is-only-a-driver.md; inventory b-box-driver B-92"
 
 [B-98]
 code = "PENDING"
@@ -410,94 +184,40 @@ slice = "T10"
 reason = "B section 10 rows land in T10"
 ref = "parity-plan.md §6"
 
-[B-103]
-code = "PENDING"
-slice = "T5"
-reason = "B section 11 rows land in T5; box driver rows; T3 covers part"
-ref = "parity-plan.md §6"
-
-[B-104]
-code = "PENDING"
-slice = "T5"
-reason = "B section 11 rows land in T5; box driver rows; T3 covers part"
-ref = "parity-plan.md §6"
-
-[B-105]
-code = "PENDING"
-slice = "T5"
-reason = "B section 11 rows land in T5; box driver rows; T3 covers part"
-ref = "parity-plan.md §6"
-
-[B-106]
-code = "PENDING"
-slice = "T5"
-reason = "B section 11 rows land in T5; box driver rows; T3 covers part"
-ref = "parity-plan.md §6"
-
-[B-107]
-code = "PENDING"
-slice = "T5"
-reason = "B section 11 rows land in T5; box driver rows; T3 covers part"
-ref = "parity-plan.md §6"
-
 [B-108]
 code = "PENDING"
-slice = "T5"
-reason = "B section 12 rows land in T5; box driver rows; T3 covers part"
+slice = "T9"
+reason = "proxy tunnel, credential dir and Box agent launch land in T9"
 ref = "parity-plan.md §6"
 
 [B-109]
 code = "PENDING"
-slice = "T5"
-reason = "B section 12 rows land in T5; box driver rows; T3 covers part"
+slice = "T9"
+reason = "proxy tunnel, credential dir and Box agent launch land in T9"
 ref = "parity-plan.md §6"
 
 [B-110]
 code = "PENDING"
-slice = "T5"
-reason = "B section 12 rows land in T5; box driver rows; T3 covers part"
+slice = "T9"
+reason = "proxy tunnel, credential dir and Box agent launch land in T9"
 ref = "parity-plan.md §6"
 
 [B-111]
 code = "PENDING"
-slice = "T5"
-reason = "B section 12 rows land in T5; box driver rows; T3 covers part"
-ref = "parity-plan.md §6"
-
-[B-112]
-code = "PENDING"
-slice = "T5"
-reason = "B section 13 rows land in T5; box driver rows; T3 covers part"
-ref = "parity-plan.md §6"
-
-[B-113]
-code = "PENDING"
-slice = "T5"
-reason = "B section 13 rows land in T5; box driver rows; T3 covers part"
-ref = "parity-plan.md §6"
-
-[B-114]
-code = "PENDING"
-slice = "T5"
-reason = "B section 13 rows land in T5; box driver rows; T3 covers part"
-ref = "parity-plan.md §6"
-
-[B-115]
-code = "PENDING"
-slice = "T5"
-reason = "B section 13 rows land in T5; box driver rows; T3 covers part"
+slice = "T9"
+reason = "proxy tunnel, credential dir and Box agent launch land in T9"
 ref = "parity-plan.md §6"
 
 [B-116]
 code = "PENDING"
-slice = "T5"
-reason = "B section 13 rows land in T5; box driver rows; T3 covers part"
+slice = "T9"
+reason = "proxy tunnel, credential dir and Box agent launch land in T9"
 ref = "parity-plan.md §6"
 
 [B-117]
 code = "PENDING"
-slice = "T5"
-reason = "B section 13 rows land in T5; box driver rows; T3 covers part"
+slice = "T9"
+reason = "proxy tunnel, credential dir and Box agent launch land in T9"
 ref = "parity-plan.md §6"
 
 [C-01]
@@ -1596,60 +1316,6 @@ ref = "parity-plan.md §6"
 code = "PENDING"
 slice = "T10"
 reason = "D section 1 rows land in T10"
-ref = "parity-plan.md §6"
-
-[REQ-01]
-code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
-
-[REQ-02]
-code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
-
-[REQ-03]
-code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
-
-[REQ-04]
-code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
-
-[REQ-05]
-code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
-
-[REQ-06]
-code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
-
-[REQ-07]
-code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
-
-[REQ-08]
-code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
-ref = "parity-plan.md §6"
-
-[REQ-09]
-code = "PENDING"
-slice = "T10"
-reason = "REQ section 3 rows land in T10"
 ref = "parity-plan.md §6"
 
 [REQ-10]
