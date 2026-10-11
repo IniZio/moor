@@ -3,6 +3,7 @@ include = [
   "Cargo.toml",
   "parity/Cargo.toml",
   "parity/exclusions.toml",
+  "crates/**/*.toml",
   "deny.toml",
   "_typos.toml",
   "clippy.toml",

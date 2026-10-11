@@ -1,5 +1,5 @@
 [workspace]
-members = ["parity", "tools/layering"]
+members = ["crates/moor", "crates/moor-core", "parity", "tools/layering"]
 exclude = ["target"]
 resolver = "2"
 
