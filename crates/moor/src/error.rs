@@ -2,6 +2,12 @@
 
 use moor_core::{ErrorKind, ErrorView, Response, Warning};
 
+mod close;
+mod store;
+
+mod driver;
+mod surface;
+
 /// Failure of one command, classified once by whoever produced it.
 #[derive(Debug)]
 pub struct CommandError {

@@ -189,11 +189,12 @@ pub trait Driver: Send + Sync {
     /// Returns a [`DriverError`] when the release fails.
     fn release(&self, handle: &BoxHandle) -> Result<Released, DriverError>;
 
-    /// Lists Boxes the Driver knows.
+    /// Lists the Boxes the Driver knows under one provider. Each listing's
+    /// handle equals the handle `acquire` returned for that Box.
     ///
     /// # Errors
     /// Returns a [`DriverError`] when the provider cannot be queried.
-    fn list(&self) -> Result<Vec<BoxListing>, DriverError>;
+    fn list(&self, provider: &ProviderId) -> Result<Vec<BoxListing>, DriverError>;
 
     /// Returns the Box's working directory.
     ///

@@ -1,0 +1,142 @@
+//! Tests for `SystemProc` using small shell scripts as fake tools.
+
+use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
+use std::time::{Duration, Instant};
+
+use moor_core::seam::proc::{Deadline, Proc, ProcError, ProcSpec, Stdin, Tool};
+use tempfile::TempDir;
+
+use super::{SystemProc, ToolPaths};
+use crate::env::Env;
+
+fn script(dir: &Path, name: &str, body: &str) -> String {
+    let path = dir.join(name);
+    std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    path.to_string_lossy().into_owned()
+}
+
+fn proc_with(env: Vec<(&str, String)>) -> SystemProc {
+    let env = Env::from_pairs(env.into_iter().map(|(k, v)| (k.to_owned(), v)));
+    SystemProc::new(&env, &ToolPaths::default())
+}
+
+fn spec(secs: u64) -> ProcSpec {
+    ProcSpec::new(Tool::Git, Deadline(Duration::from_secs(secs)))
+}
+
+#[test]
+fn only_base_env_and_extra_reach_child() {
+    let dir = TempDir::new().unwrap();
+    let bin = script(dir.path(), "git", r#"echo "$GH_TOKEN|$HOME|$FOO|$LANG""#);
+    let p = proc_with(vec![
+        ("MOOR_GIT_BIN", bin),
+        ("GH_TOKEN", "leak".into()),
+        ("HOME", "/h".into()),
+    ]);
+    let out = p.run(&spec(5).env("FOO", "bar")).unwrap();
+    assert_eq!(out.stdout.trim(), "|/h|bar|");
+}
+
+#[test]
+fn bin_var_beats_config_beats_path() {
+    let dir = TempDir::new().unwrap();
+    let a = script(dir.path(), "a", "echo env");
+    let b = script(dir.path(), "b", "echo cfg");
+    let paths = ToolPaths {
+        git: Some(b.into()),
+        ..ToolPaths::default()
+    };
+    let env = Env::from_pairs([("MOOR_GIT_BIN", a)]);
+    let out = SystemProc::new(&env, &paths).run(&spec(5)).unwrap();
+    assert_eq!(out.stdout.trim(), "env");
+    let out = SystemProc::new(&Env::from_pairs([("X", "y")]), &paths)
+        .run(&spec(5))
+        .unwrap();
+    assert_eq!(out.stdout.trim(), "cfg");
+}
+
+#[test]
+fn deadline_kills_child_and_grandchild() {
+    let dir = TempDir::new().unwrap();
+    let pidfile = dir.path().join("pid");
+    let body = format!("sleep 30 &\necho $! > {}\nwait", pidfile.display());
+    let bin = script(dir.path(), "git", &body);
+    let p = proc_with(vec![("MOOR_GIT_BIN", bin)]);
+    let start = Instant::now();
+    let err = p
+        .run(&ProcSpec::new(
+            Tool::Git,
+            Deadline(Duration::from_millis(500)),
+        ))
+        .unwrap_err();
+    assert!(matches!(err, ProcError::Timeout { .. }), "{err:?}");
+    assert!(start.elapsed() < Duration::from_secs(10));
+    let pid = std::fs::read_to_string(&pidfile).unwrap();
+    let alive = Path::new("/proc").join(pid.trim()).join("stat");
+    let state = std::fs::read_to_string(alive).unwrap_or_default();
+    assert!(
+        state.is_empty() || state.contains(") Z"),
+        "grandchild alive: {state}"
+    );
+}
+
+#[test]
+fn nonzero_exit_keeps_stdout_and_stderr_tail() {
+    let dir = TempDir::new().unwrap();
+    let bin = script(dir.path(), "git", "echo out; echo err >&2; exit 3");
+    let p = proc_with(vec![("MOOR_GIT_BIN", bin)]);
+    let err = p.run(&spec(5)).unwrap_err();
+    let ProcError::NonZero {
+        code,
+        stdout,
+        stderr_tail,
+    } = err
+    else {
+        unreachable!("expected NonZero")
+    };
+    assert_eq!(code, 3);
+    assert_eq!(stdout.trim(), "out");
+    assert_eq!(stderr_tail.trim(), "err");
+}
+
+#[test]
+fn signal_death_maps_to_signalled() {
+    let dir = TempDir::new().unwrap();
+    let bin = script(dir.path(), "git", "kill -9 $$");
+    let p = proc_with(vec![("MOOR_GIT_BIN", bin)]);
+    assert!(matches!(p.run(&spec(5)), Err(ProcError::Signalled(9))));
+}
+
+#[test]
+fn missing_program_is_spawn_error() {
+    let p = proc_with(vec![("MOOR_GIT_BIN", "/nonexistent/moor-git".into())]);
+    assert!(matches!(p.run(&spec(5)), Err(ProcError::Spawn(_))));
+}
+
+#[test]
+fn null_stdin_is_eof_and_bytes_reach_child() {
+    let dir = TempDir::new().unwrap();
+    let bin = script(dir.path(), "git", "cat");
+    let p = proc_with(vec![("MOOR_GIT_BIN", bin)]);
+    assert_eq!(p.run(&spec(5)).unwrap().stdout, "");
+    let out = p
+        .run(&spec(5).stdin(Stdin::Bytes(b"hello".to_vec())))
+        .unwrap();
+    assert_eq!(out.stdout, "hello");
+}
+
+#[test]
+fn detached_child_runs_without_waiting() {
+    let dir = TempDir::new().unwrap();
+    let marker = dir.path().join("done");
+    let bin = script(dir.path(), "git", &format!("touch {}", marker.display()));
+    let p = proc_with(vec![("MOOR_GIT_BIN", bin)]);
+    p.spawn_detached(&spec(5)).unwrap();
+    let start = Instant::now();
+    while !marker.exists() && start.elapsed() < Duration::from_secs(5) {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(marker.exists());
+}
