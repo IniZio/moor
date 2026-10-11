@@ -4,6 +4,10 @@ pub mod reports;
 
 pub use reports::{ReportReq, ReportRow};
 pub mod old_github;
+mod old_proxy;
+pub mod proxy;
+
+pub use proxy::{ProxyCheck, ProxyEndpoint};
 
 use std::path::{Path, PathBuf};
 
@@ -358,6 +362,8 @@ pub trait Moor {
     ) -> Outcome<github_ops::GithubStore>;
     fn github_login(&self, w: &World, cwd: &Path) -> Outcome<github_ops::GithubStore>;
     fn github_raw(&self, w: &World, cwd: &Path, args: &[&str]) -> Outcome<github_ops::GithubStore>;
+    fn proxy_check(&self, w: &World, cwd: &Path, name: &str) -> Outcome<ProxyCheck>;
+    fn proxy_endpoint(&self, w: &World, name: &str) -> Option<ProxyEndpoint>;
 }
 
 /// Options for `Moor::run`. `interrupt` sends SIGINT to moor once the Driver

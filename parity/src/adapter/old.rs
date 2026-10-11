@@ -80,7 +80,7 @@ impl OldCli {
         o
     }
 
-    fn run<T>(
+    pub(super) fn run<T>(
         &self,
         w: &World,
         cwd: &Path,
@@ -518,6 +518,14 @@ impl Moor for OldCli {
         args: &[&str],
     ) -> Outcome<super::github_ops::GithubStore> {
         self.github_raw_impl(w, cwd, args)
+    }
+
+    fn proxy_check(&self, w: &World, cwd: &Path, name: &str) -> Outcome<super::ProxyCheck> {
+        self.proxy_check_impl(w, cwd, name)
+    }
+
+    fn proxy_endpoint(&self, w: &World, name: &str) -> Option<super::ProxyEndpoint> {
+        self.proxy_endpoint_impl(w, name)
     }
 }
 
