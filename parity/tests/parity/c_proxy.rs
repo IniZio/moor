@@ -288,12 +288,13 @@ parity!(
 
 parity!(
     proxy_requires_the_task_nonce_else_401,
-    covers = ["C-65"],
+    covers = ["C-65", "REQ-38"],
     tags = [],
     {
         let f = fx();
         let ep = f.up();
-        let near = format!("{}0", &ep.nonce[..ep.nonce.len() - 1]);
+        let last = if ep.nonce.ends_with('0') { '1' } else { '0' };
+        let near = format!("{}{last}", &ep.nonce[..ep.nonce.len() - 1]);
         let basic = format!("Basic {}", ep.nonce);
         let bad = format!("Bearer {near}");
         let denied: Vec<(&str, Vec<(&str, &str)>)> = vec![
@@ -395,7 +396,7 @@ parity!(
 
 parity!(
     proxy_github_routes_deny_everything_without_a_task_repo,
-    covers = ["C-70", "C-73"],
+    covers = ["C-70", "C-73", "REQ-38"],
     tags = [],
     {
         let f = fx();
@@ -693,7 +694,7 @@ parity!(
 
 parity!(
     proxy_restarts_a_tunnel_that_exits,
-    covers = ["C-89", "B-110"],
+    covers = ["C-89", "B-110", "REQ-38"],
     tags = [],
     {
         let f = fx();
@@ -1266,7 +1267,7 @@ parity!(
 
 parity!(
     proxy_rewrites_the_origin_name_to_the_canonical_repo,
-    covers = ["C-76"],
+    covers = ["C-76", "REQ-38"],
     tags = ["new_only(ProxyUpstream)"],
     {
         needs_upstream();

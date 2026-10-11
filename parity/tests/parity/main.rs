@@ -3,6 +3,7 @@ mod a_lifecycle;
 mod b_driver;
 mod b_egress;
 mod b_run;
+mod c_box_agent;
 mod c_creds;
 mod c_github;
 mod c_proxy;

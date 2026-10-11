@@ -8,57 +8,15 @@ code = "KNOWN-BUG"
 reason = "start --goal on a running goal-less Task with no live session is silently ignored (confirmed T4: no dispatch, no warning); fix test goal_added_to_running_goalless_task_dispatches_agent is new_only(GoalOnAttach)"
 ref = "a-task-lifecycle.md A-36 (DESIGN-SMELL inferred, confirmed T4)"
 
-[A-39]
-code = "PENDING"
-slice = "T9"
-reason = "Box-pane agent launch, relaunch, transcript and proxy lifecycle are owned by T9 (C section 6-10)"
-ref = "parity-plan.md §6 (T9)"
-
-[A-40]
-code = "PENDING"
-slice = "T9"
-reason = "Box-pane agent launch, relaunch, transcript and proxy lifecycle are owned by T9 (C section 6-10)"
-ref = "parity-plan.md §6 (T9)"
-
-[A-41]
-code = "PENDING"
-slice = "T9"
-reason = "Box-pane agent launch, relaunch, transcript and proxy lifecycle are owned by T9 (C section 6-10)"
-ref = "parity-plan.md §6 (T9)"
-
 [A-42]
 code = "LIVE"
 reason = "Pane read ANSI/JSON-envelope tolerance is Surface-internal; herdr pane read format is unverified live. Live-smoke step: read a real Box agent pane through herdr pane read and confirm moor decodes it"
 ref = "live-smoke.md: Namespace Box agent"
 
-[A-46]
-code = "PENDING"
-slice = "T9"
-reason = "Box-pane agent launch, relaunch, transcript and proxy lifecycle are owned by T9 (C section 6-10)"
-ref = "parity-plan.md §6 (T9)"
-
-[A-47]
-code = "PENDING"
-slice = "T9"
-reason = "Box-pane agent launch, relaunch, transcript and proxy lifecycle are owned by T9 (C section 6-10)"
-ref = "parity-plan.md §6 (T9)"
-
-[A-48]
-code = "PENDING"
-slice = "T9"
-reason = "Box-pane agent launch, relaunch, transcript and proxy lifecycle are owned by T9 (C section 6-10)"
-ref = "parity-plan.md §6 (T9)"
-
 [A-65]
 code = "KNOWN-BUG"
 reason = "no manual sleep or wake command; explicit path is REQ-09"
 ref = "inventory a-task-lifecycle A-65; UL-94; explicit_sleep_and_wake_commands (new_only ExplicitSleep)"
-
-[A-96]
-code = "PENDING"
-slice = "T9"
-reason = "Box-pane agent launch, relaunch, transcript and proxy lifecycle are owned by T9 (C section 6-10)"
-ref = "parity-plan.md §6 (T9)"
 
 [B-06]
 code = "SMELL-REDESIGNED"
@@ -160,17 +118,10 @@ code = "SMELL-REDESIGNED"
 reason = "Box handle is opaque to moor; provider/name parsing leaves moor"
 ref = "b-box-driver.md B-92; parity-plan.md §4"
 
-[B-116]
-code = "PENDING"
-slice = "T9"
-reason = "proxy tunnel, credential dir and Box agent launch land in T9"
-ref = "parity-plan.md §6"
-
 [B-117]
-code = "PENDING"
-slice = "T9"
-reason = "proxy tunnel, credential dir and Box agent launch land in T9"
-ref = "parity-plan.md §6"
+code = "SMELL-REDESIGNED"
+reason = "Engine launch script lives in the Driver; the rewrite moves Box agent launch behind the Engine seam, so the `ssh -t ... ; echo` host line is not ported. Launch behaviour is asserted at the Box and pane by the C-97..C-106 rows"
+ref = "b-box-driver.md B-117 DESIGN-SMELL flag; parity-plan.md §4"
 
 [C-18]
 code = "KNOWN-BUG"
@@ -192,149 +143,15 @@ code = "SMELL-REDESIGNED"
 reason = "Proxy log is never deleted by close and grows forever; retention is a design-phase policy question, not behaviour to pin"
 ref = "c-credentials-env.md §17 gap 7 (retention of the proxy log)"
 
-[C-97]
-code = "PENDING"
-slice = "T9"
-reason = "C section 9 rows land in T9"
-ref = "parity-plan.md §6"
-
-[C-98]
-code = "PENDING"
-slice = "T9"
-reason = "C section 9 rows land in T9"
-ref = "parity-plan.md §6"
-
-[C-99]
-code = "PENDING"
-slice = "T9"
-reason = "C section 9 rows land in T9"
-ref = "parity-plan.md §6"
-
-[C-100]
-code = "PENDING"
-slice = "T9"
-reason = "C section 9 rows land in T9"
-ref = "parity-plan.md §6"
-
-[C-101]
-code = "PENDING"
-slice = "T9"
-reason = "C section 9 rows land in T9"
-ref = "parity-plan.md §6"
-
-[C-102]
-code = "PENDING"
-slice = "T9"
-reason = "C section 9 rows land in T9"
-ref = "parity-plan.md §6"
-
-[C-103]
-code = "PENDING"
-slice = "T9"
-reason = "C section 9 rows land in T9"
-ref = "parity-plan.md §6"
-
-[C-104]
-code = "PENDING"
-slice = "T9"
-reason = "C section 9 rows land in T9"
-ref = "parity-plan.md §6"
-
-[C-105]
-code = "PENDING"
-slice = "T9"
-reason = "C section 9 rows land in T9"
-ref = "parity-plan.md §6"
-
-[C-106]
-code = "PENDING"
-slice = "T9"
-reason = "C section 9 rows land in T9"
-ref = "parity-plan.md §6"
-
-[C-107]
-code = "PENDING"
-slice = "T9"
-reason = "C section 9 rows land in T9"
-ref = "parity-plan.md §6"
-
 [C-108]
-code = "PENDING"
-slice = "T9"
-reason = "C section 9 rows land in T9"
-ref = "parity-plan.md §6"
-
-[C-109]
-code = "PENDING"
-slice = "T9"
-reason = "C section 9 rows land in T9"
-ref = "parity-plan.md §6"
-
-[C-110]
-code = "PENDING"
-slice = "T9"
-reason = "C section 9 rows land in T9"
-ref = "parity-plan.md §6"
-
-[C-111]
-code = "PENDING"
-slice = "T9"
-reason = "C section 9 rows land in T9"
-ref = "parity-plan.md §6"
-
-[C-112]
-code = "PENDING"
-slice = "T9"
-reason = "C section 10 rows land in T9"
-ref = "parity-plan.md §6"
-
-[C-113]
-code = "PENDING"
-slice = "T9"
-reason = "C section 10 rows land in T9"
-ref = "parity-plan.md §6"
-
-[C-114]
-code = "PENDING"
-slice = "T9"
-reason = "C section 10 rows land in T9"
-ref = "parity-plan.md §6"
-
-[C-115]
-code = "PENDING"
-slice = "T9"
-reason = "C section 10 rows land in T9"
-ref = "parity-plan.md §6"
-
-[C-116]
-code = "PENDING"
-slice = "T9"
-reason = "C section 10 rows land in T9"
-ref = "parity-plan.md §6"
-
-[C-117]
-code = "PENDING"
-slice = "T9"
-reason = "C section 10 rows land in T9"
-ref = "parity-plan.md §6"
-
-[C-118]
-code = "PENDING"
-slice = "T9"
-reason = "C section 10 rows land in T9"
-ref = "parity-plan.md §6"
-
-[C-119]
-code = "PENDING"
-slice = "T9"
-reason = "C section 10 rows land in T9"
-ref = "parity-plan.md §6"
+code = "SMELL-REDESIGNED"
+reason = "CredentialFailed at dispatch or dotfiles is unreachable with the real Driver once the proxy replaces token minting there; only mock Drivers hit it. Preflight credential_failed is asserted by C-107"
+ref = "c-credentials-env.md C-108 DESIGN-SMELL flag; parity-plan.md §4"
 
 [C-120]
-code = "PENDING"
-slice = "T9"
-reason = "C section 10 rows land in T9"
-ref = "parity-plan.md §6"
+code = "LIVE"
+reason = "Claude auto-mode classifier behaviour and a live PR from the Box agent through the gh shim cannot be proven with fakes"
+ref = "live-smoke.md: Namespace Box agent"
 
 [C-126]
 code = "KNOWN-BUG"
@@ -375,12 +192,6 @@ ref = "parity-plan.md §2 (assert exit classes, never strings); inventory D-18"
 code = "DOC"
 reason = "human reports listing text is not contractual; the --json list is asserted"
 ref = "parity-plan.md §2 (assert exit classes, never strings); inventory D-20"
-
-[D-28]
-code = "PENDING"
-slice = "T9"
-reason = "Box-agent brief content is part of Box agent launch (T9)"
-ref = "parity-plan.md §6 (T9)"
 
 [D-30]
 code = "DOC"
@@ -451,48 +262,6 @@ ref = "parity-plan.md §8 ruling 4"
 code = "KNOWN-BUG"
 reason = "host sync re-seeds the Box .git and can drop unpushed Box commits; the guard belongs to the Driver sync and cannot be modelled with the fake crabbox"
 ref = "inventory d-reports-contract-lessons.md section 4; BACKLOG (re-seeds)"
-
-[REQ-32]
-code = "PENDING"
-slice = "T9"
-reason = "brief delivery and Box brief contents are part of Box agent launch (T9)"
-ref = "parity-plan.md §6 (T9)"
-
-[REQ-33]
-code = "PENDING"
-slice = "T9"
-reason = "Box agent readiness and prompt detection are part of Box agent launch (T9)"
-ref = "parity-plan.md §6 (T9)"
-
-[REQ-34]
-code = "PENDING"
-slice = "T9"
-reason = "Box agent push URL and branch rule are part of Box agent launch (T9)"
-ref = "parity-plan.md §6 (T9)"
-
-[REQ-35]
-code = "PENDING"
-slice = "T9"
-reason = "dead Box agent pane and relaunch are part of Box agent launch (T9)"
-ref = "parity-plan.md §6 (T9)"
-
-[REQ-37]
-code = "PENDING"
-slice = "T9"
-reason = "transcript save is part of Box agent launch (T9)"
-ref = "parity-plan.md §6 (T9)"
-
-[REQ-38]
-code = "PENDING"
-slice = "T9"
-reason = "proxy lifecycle and auth are T9"
-ref = "parity-plan.md §6 (T9)"
-
-[REQ-39]
-code = "PENDING"
-slice = "T9"
-reason = "gh shim and bypass-permissions launch are T9"
-ref = "parity-plan.md §6 (T9)"
 
 [REQ-40]
 code = "DROPPED"
