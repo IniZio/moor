@@ -11,12 +11,12 @@ ref = "a-task-lifecycle.md A-36 (DESIGN-SMELL inferred, confirmed T4)"
 [A-37]
 code = "DROPPED"
 reason = "decision 46: no host agent"
-ref = "host-drop-plan.md; motive.md decision 46"
+ref = "motive.md decision 46"
 
 [A-38]
 code = "DROPPED"
 reason = "decision 46: no host agent"
-ref = "host-drop-plan.md; motive.md decision 46"
+ref = "motive.md decision 46"
 
 [A-42]
 code = "LIVE"
@@ -31,22 +31,22 @@ ref = "inventory a-task-lifecycle A-65; UL-94; explicit_sleep_and_wake_commands 
 [A-81]
 code = "DROPPED"
 reason = "decision 46: no host agent"
-ref = "host-drop-plan.md; motive.md decision 46"
+ref = "motive.md decision 46"
 
 [B-06]
 code = "SMELL-REDESIGNED"
 reason = "--reclaim keyed on the moor- Box name couples moor to a crabbox claim flag; claims belong behind the Driver"
-ref = "b-box-driver.md DESIGN-SMELL flag; parity-plan.md §4"
+ref = "b-box-driver.md DESIGN-SMELL flag; plan.md §4"
 
 [B-13]
 code = "SMELL-REDESIGNED"
 reason = "quiet mode scrapes crabbox output by string prefix; the Driver seam owns its own logging"
-ref = "b-box-driver.md DESIGN-SMELL flag; parity-plan.md §4"
+ref = "b-box-driver.md DESIGN-SMELL flag; plan.md §4"
 
 [B-14]
 code = "SMELL-REDESIGNED"
 reason = "dropping the crabbox argv echo is output scraping of Driver chatter"
-ref = "b-box-driver.md DESIGN-SMELL flag; parity-plan.md §4"
+ref = "b-box-driver.md DESIGN-SMELL flag; plan.md §4"
 
 [B-15]
 code = "KNOWN-BUG"
@@ -61,7 +61,7 @@ ref = "live-smoke.md: Namespace Box agent"
 [B-24]
 code = "SMELL-REDESIGNED"
 reason = "the config-dir mode guard encodes a crabbox internal check; fork patch (BACKLOG) removes the need"
-ref = "b-box-driver.md DESIGN-SMELL flag; parity-plan.md §4"
+ref = "b-box-driver.md DESIGN-SMELL flag; plan.md §4"
 
 [B-25]
 code = "DRIVER-SIDE"
@@ -76,7 +76,7 @@ ref = "b-box-driver.md B-27"
 [B-33]
 code = "DOC"
 reason = "advisory stderr hint text only; the suite asserts no literal strings"
-ref = "parity-plan.md §2 (assert exit classes, never strings)"
+ref = "plan.md §2 (assert exit classes, never strings)"
 
 [B-37]
 code = "LIVE"
@@ -116,7 +116,7 @@ ref = ".groundwork/BACKLOG.md 'Host sync re-seeds the Box .git' (old moor b8e880
 [B-66]
 code = "SMELL-REDESIGNED"
 reason = "CRABBOX_CONFIG lookup in worktree/main checkout leaks a crabbox concept into moor behaviour"
-ref = "b-box-driver.md DESIGN-SMELL flag; parity-plan.md §4"
+ref = "b-box-driver.md DESIGN-SMELL flag; plan.md §4"
 
 [B-71]
 code = "LIVE"
@@ -126,27 +126,27 @@ ref = "live-smoke.md: Namespace Box agent"
 [B-74]
 code = "DOC"
 reason = "failure reason prose; harness asserts exit class and events, never message text"
-ref = "parity-plan.md §2 (Outcome asserts exit class, not strings)"
+ref = "plan.md §2 (Outcome asserts exit class, not strings)"
 
 [B-92]
 code = "SMELL-REDESIGNED"
 reason = "Box handle is opaque to moor; provider/name parsing leaves moor"
-ref = "b-box-driver.md B-92; parity-plan.md §4"
+ref = "b-box-driver.md B-92; plan.md §4"
 
 [B-117]
 code = "SMELL-REDESIGNED"
 reason = "Engine launch script lives in the Driver; the rewrite moves Box agent launch behind the Engine seam, so the `ssh -t ... ; echo` host line is not ported. Launch behaviour is asserted at the Box and pane by the C-97..C-106 rows"
-ref = "b-box-driver.md B-117 DESIGN-SMELL flag; parity-plan.md §4"
+ref = "b-box-driver.md B-117 DESIGN-SMELL flag; plan.md §4"
 
 [C-18]
 code = "KNOWN-BUG"
 reason = "repo credentials: [GH_TOKEN] is accepted at parse yet unsatisfiable: the unresolved-ref hint says add credentials.GH_TOKEN, which the user layer then rejects (verified on old); fix test: repo_credentials_gh_token_ref_is_a_hard_error"
-ref = "c-credentials-env.md §17 gap 4(d); parity-plan.md §10"
+ref = "c-credentials-env.md §17 gap 4(d); plan.md §10"
 
 [C-30]
 code = "DROPPED"
 reason = "decision 46: no host agent"
-ref = "host-drop-plan.md; motive.md decision 46"
+ref = "motive.md decision 46"
 
 [C-62]
 code = "SMELL-REDESIGNED"
@@ -166,7 +166,7 @@ ref = "c-credentials-env.md §17 gap 7 (retention of the proxy log)"
 [C-108]
 code = "SMELL-REDESIGNED"
 reason = "CredentialFailed at dispatch or dotfiles is unreachable with the real Driver once the proxy replaces token minting there; only mock Drivers hit it. Preflight credential_failed is asserted by C-107"
-ref = "c-credentials-env.md C-108 DESIGN-SMELL flag; parity-plan.md §4"
+ref = "c-credentials-env.md C-108 DESIGN-SMELL flag; plan.md §4"
 
 [C-120]
 code = "LIVE"
@@ -176,27 +176,27 @@ ref = "live-smoke.md: Namespace Box agent"
 [C-126]
 code = "DROPPED"
 reason = "decision 46: no host agent"
-ref = "host-drop-plan.md; motive.md decision 46"
+ref = "motive.md decision 46"
 
 [C-131]
 code = "KNOWN-BUG"
 reason = "old delivers listed box_credentials to the Box agent pane; ruling: only host-driven commands (run, setup, gate) get them; fix test: box_agent_pane_receives_no_box_credentials"
-ref = "parity-plan.md §10 (C gap 5, decision 42)"
+ref = "plan.md §10 (C gap 5, decision 42)"
 
 [C-137]
 code = "DROPPED"
 reason = "decision 46: no host agent"
-ref = "host-drop-plan.md; motive.md decision 46"
+ref = "motive.md decision 46"
 
 [C-138]
 code = "DROPPED"
 reason = "decision 46: no host agent"
-ref = "host-drop-plan.md; motive.md decision 46"
+ref = "motive.md decision 46"
 
 [C-140]
 code = "DROPPED"
 reason = "decision 46: no host agent"
-ref = "host-drop-plan.md; motive.md decision 46"
+ref = "motive.md decision 46"
 
 [D-14]
 code = "DOC"
@@ -211,32 +211,32 @@ ref = "inventory d-reports-contract-lessons.md D-15 (INT)"
 [D-16]
 code = "DOC"
 reason = "the reported event is not in the asserted event set; the Report rows carry the behaviour (report_file_copies_and_versions_per_kind)"
-ref = "parity-plan.md §8 ruling 3"
+ref = "plan.md §8 ruling 3"
 
 [D-18]
 code = "DOC"
 reason = "human output text is not contractual; the --json row is asserted"
-ref = "parity-plan.md §2 (assert exit classes, never strings); inventory D-18"
+ref = "plan.md §2 (assert exit classes, never strings); inventory D-18"
 
 [D-20]
 code = "DOC"
 reason = "human reports listing text is not contractual; the --json list is asserted"
-ref = "parity-plan.md §2 (assert exit classes, never strings); inventory D-20"
+ref = "plan.md §2 (assert exit classes, never strings); inventory D-20"
 
 [D-26]
 code = "DROPPED"
 reason = "decision 46: no host agent"
-ref = "host-drop-plan.md; motive.md decision 46"
+ref = "motive.md decision 46"
 
 [D-27]
 code = "DROPPED"
 reason = "decision 47: artifacts reports backend dropped; Reports are local only"
-ref = "host-drop-plan.md; motive.md decision 47"
+ref = "motive.md decision 47"
 
 [D-30]
 code = "DOC"
 reason = "brief prose telling an agent that a Report never means finished is not asserted literally; state non-effect is asserted by reporting_never_changes_state_or_gates_close"
-ref = "parity-plan.md §2; inventory D-30"
+ref = "plan.md §2; inventory D-30"
 
 [D-32]
 code = "DOC"
@@ -246,57 +246,57 @@ ref = "inventory d-reports-contract-lessons.md D-32; BACKLOG (a)"
 [D-40]
 code = "DROPPED"
 reason = "herdr plugin dropped"
-ref = "parity-plan.md §8 decision 41"
+ref = "plan.md §8 decision 41"
 
 [D-41]
 code = "DROPPED"
 reason = "herdr plugin dropped"
-ref = "parity-plan.md §8 decision 41"
+ref = "plan.md §8 decision 41"
 
 [D-42]
 code = "DROPPED"
 reason = "herdr plugin dropped"
-ref = "parity-plan.md §8 decision 41"
+ref = "plan.md §8 decision 41"
 
 [D-43]
 code = "DROPPED"
 reason = "herdr plugin dropped"
-ref = "parity-plan.md §8 decision 41"
+ref = "plan.md §8 decision 41"
 
 [D-44]
 code = "DROPPED"
 reason = "herdr plugin dropped"
-ref = "parity-plan.md §8 decision 41"
+ref = "plan.md §8 decision 41"
 
 [D-45]
 code = "DROPPED"
 reason = "herdr plugin dropped"
-ref = "parity-plan.md §8 decision 41"
+ref = "plan.md §8 decision 41"
 
 [D-46]
 code = "DROPPED"
 reason = "herdr plugin dropped at cutover"
-ref = "parity-plan.md §8 ruling 4"
+ref = "plan.md §8 ruling 4"
 
 [D-47]
 code = "DROPPED"
 reason = "herdr plugin dropped at cutover"
-ref = "parity-plan.md §8 ruling 4"
+ref = "plan.md §8 ruling 4"
 
 [D-48]
 code = "DROPPED"
 reason = "herdr plugin dropped at cutover"
-ref = "parity-plan.md §8 ruling 4"
+ref = "plan.md §8 ruling 4"
 
 [D-49]
 code = "DROPPED"
 reason = "herdr plugin dropped at cutover; the missing remove action was a plugin gap"
-ref = "parity-plan.md §8 ruling 4"
+ref = "plan.md §8 ruling 4"
 
 [D-50]
 code = "DROPPED"
 reason = "herdr plugin dropped at cutover"
-ref = "parity-plan.md §8 ruling 4"
+ref = "plan.md §8 ruling 4"
 
 [REQ-15]
 code = "KNOWN-BUG"
@@ -306,7 +306,7 @@ ref = "inventory d-reports-contract-lessons.md section 4; BACKLOG (re-seeds)"
 [REQ-40]
 code = "DROPPED"
 reason = "herdr plugin dropped at cutover; the detach requirement was plugin-only"
-ref = "parity-plan.md §8 ruling 4; D-45"
+ref = "plan.md §8 ruling 4; D-45"
 
 [REQ-44]
 code = "DOC"
