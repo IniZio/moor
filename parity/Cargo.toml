@@ -24,3 +24,6 @@ path = "src/bin/fake.rs"
 name = "parity"
 path = "tests/parity/main.rs"
 harness = false
+
+[lints]
+workspace = true

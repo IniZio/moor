@@ -3,7 +3,70 @@ OLD_REPO ?= $(REPOS)/moor
 OLD_REF ?= b8e8801
 OLD_DIR := target/parity-old
 
-.PHONY: parity-old-bin parity fmt-check lint unit ci
+DENY_VERSION := 0.20.2
+MACHETE_VERSION := 0.9.2
+NEXTEST_VERSION := 0.9.148
+TAPLO_VERSION := 0.10.0
+TYPOS_VERSION := 1.51.1
+
+.PHONY: help setup secret audit lint format format-check fmt-check test unit ci build deploy parity-old-bin parity
+
+help:
+	@echo "targets: setup secret audit lint format format-check test ci build deploy parity"
+
+setup:
+	@rustup show active-toolchain >/dev/null
+	@cargo deny --version 2>/dev/null | grep -q '$(DENY_VERSION)' || cargo install --locked cargo-deny@$(DENY_VERSION)
+	@cargo machete --version 2>/dev/null | grep -q '$(MACHETE_VERSION)' || cargo install --locked cargo-machete@$(MACHETE_VERSION)
+	@cargo nextest --version 2>/dev/null | grep -q '$(NEXTEST_VERSION)' || cargo install --locked cargo-nextest@$(NEXTEST_VERSION)
+	@taplo --version 2>/dev/null | grep -q '$(TAPLO_VERSION)' || cargo install --locked taplo-cli@$(TAPLO_VERSION)
+	@typos --version 2>/dev/null | grep -q '$(TYPOS_VERSION)' || cargo install --locked typos-cli@$(TYPOS_VERSION)
+	@echo "setup: toolchain and pinned tools present"
+
+secret:
+	@echo "secret: moor holds no repo secrets; nothing to decrypt"
+
+audit:
+	cargo deny check
+	cargo machete
+
+lint:
+	cargo clippy --workspace --all-targets --locked -- -D warnings
+	tools/file-cap.sh
+	tools/layering.sh
+	tools/layering.sh --self-test
+	tools/lint-selftest.sh
+	typos
+	RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items --locked
+
+# .editorconfig is honoured through rustfmt.toml and taplo.toml.
+format:
+	cargo fmt --all
+	taplo fmt
+
+format-check:
+	cargo fmt --all --check
+	taplo fmt --check
+
+fmt-check: format-check
+
+unit:
+	cargo nextest run --workspace --lib --locked
+
+test: unit
+	$(MAKE) parity
+
+ci:
+	$(MAKE) audit
+	$(MAKE) lint
+	$(MAKE) format-check
+	$(MAKE) test
+
+build:
+	cargo build --workspace --release --locked
+
+deploy:
+	@echo "deploy: CLI, nothing to deploy"
 
 parity-old-bin:
 	@if [ "$$(cat $(OLD_DIR)/REV 2>/dev/null)" = "$(OLD_REF)" ] && [ -x $(OLD_DIR)/moor ]; then \
@@ -19,14 +82,3 @@ parity-old-bin:
 
 parity: parity-old-bin
 	MOOR_BIN=$(abspath $(OLD_DIR)/moor) MOOR_CLI=old cargo test -p parity --test parity
-
-fmt-check:
-	cargo fmt --all --check
-
-lint:
-	cargo clippy --all-targets -- -D warnings
-
-unit:
-	cargo test -p parity --lib
-
-ci: fmt-check lint unit parity

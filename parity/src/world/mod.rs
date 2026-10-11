@@ -1,5 +1,6 @@
 pub mod config;
 pub mod hooks;
+mod procs;
 pub mod repo;
 
 use crate::fake::{self, Call, Rule};
@@ -12,7 +13,9 @@ use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+
+use procs::*;
 
 pub const TOOLS: &[&str] = &["crabbox", "herdr", "claude", "ssh", "gh"];
 
@@ -330,176 +333,5 @@ impl Drop for World {
     }
 }
 
-fn proxy_pids(state: &Path) -> Vec<u32> {
-    let Ok(entries) = fs::read_dir(state.join("proxy")) else {
-        return Vec::new();
-    };
-    entries
-        .flatten()
-        .filter_map(|e| fs::read(e.path()).ok())
-        .filter_map(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
-        .filter_map(|v| v["pid"].as_u64())
-        .map(|p| p as u32)
-        .filter(|p| *p > 1)
-        .collect()
-}
-
-struct Marked {
-    pid: u32,
-    pgrp: libc::pid_t,
-    cmdline: String,
-}
-
-struct Stat {
-    zombie: bool,
-    pgrp: libc::pid_t,
-    starttime: u64,
-}
-
-fn proc_stat(pid: u32) -> Option<Stat> {
-    let raw = fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
-    let (_, rest) = raw.rsplit_once(')')?;
-    let f: Vec<&str> = rest.split_whitespace().collect();
-    Some(Stat {
-        zombie: f.first()? == &"Z",
-        pgrp: f.get(2)?.parse().ok()?,
-        starttime: f.get(19)?.parse().ok()?,
-    })
-}
-
-fn find_marked(marker: &str) -> Vec<Marked> {
-    let me = std::process::id();
-    let mut out = Vec::new();
-    let Ok(entries) = fs::read_dir("/proc") else {
-        return out;
-    };
-    for entry in entries.flatten() {
-        let Some(pid) = entry
-            .file_name()
-            .to_str()
-            .and_then(|n| n.parse::<u32>().ok())
-        else {
-            continue;
-        };
-        if pid == me {
-            continue;
-        }
-        let Ok(env) = fs::read(entry.path().join("environ")) else {
-            continue;
-        };
-        if !env.split(|b| *b == 0).any(|e| e == marker.as_bytes()) {
-            continue;
-        }
-        let Some(st) = proc_stat(pid) else { continue };
-        if st.zombie {
-            continue;
-        }
-        let raw = fs::read(entry.path().join("cmdline")).unwrap_or_default();
-        let cmdline = String::from_utf8_lossy(&raw).replace('\0', " ");
-        out.push(Marked {
-            pid,
-            pgrp: st.pgrp,
-            cmdline: cmdline.trim_end().to_string(),
-        });
-    }
-    out
-}
-
-fn wait_marked(marker: &str, limit: Duration) -> Vec<Marked> {
-    let deadline = Instant::now() + limit;
-    let mut left = find_marked(marker);
-    while !left.is_empty() && Instant::now() < deadline {
-        std::thread::sleep(Duration::from_millis(50));
-        left = find_marked(marker);
-    }
-    left
-}
-
-fn creds_in(dir: &Path) -> BTreeSet<String> {
-    let Ok(entries) = fs::read_dir(dir) else {
-        return BTreeSet::new();
-    };
-    entries
-        .flatten()
-        .filter_map(|e| e.file_name().into_string().ok())
-        .filter(|n| n.starts_with("moor-cred-"))
-        .collect()
-}
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn world() -> World {
-        World::new("/bin/true")
-    }
-
-    #[test]
-    fn layout_and_env() {
-        let w = world();
-        assert!(w
-            .root()
-            .file_name()
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .starts_with("parity-"));
-        for t in TOOLS {
-            assert!(fs::symlink_metadata(w.tool_path(t))
-                .unwrap()
-                .file_type()
-                .is_symlink());
-        }
-        for d in [
-            "box/work", "box/home", "box/tmp", "state", "fakes", "tmp", "trees", "repos",
-        ] {
-            assert!(w.root().join(d).is_dir(), "{d}");
-        }
-        let mode = fs::metadata(w.home().join(".config"))
-            .unwrap()
-            .permissions()
-            .mode();
-        assert_eq!(mode & 0o777, 0o755);
-        assert!(fs::read_to_string(w.home().join(".gitconfig"))
-            .unwrap()
-            .contains("parity@example.invalid"));
-        let env = w.base_env();
-        assert!(env.contains(&("GIT_CONFIG_NOSYSTEM".to_string(), "1".to_string())));
-        let name = w.task_name("t");
-        let hex = name.strip_prefix("t-").unwrap();
-        assert!(
-            hex.len() == 6
-                && hex
-                    .chars()
-                    .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
-        );
-    }
-
-    #[test]
-    fn clean_teardown_ok_and_idempotent() {
-        let mut w = world();
-        assert_eq!(w.teardown(), Ok(()));
-        assert_eq!(w.teardown(), Ok(()));
-    }
-
-    #[test]
-    fn leak_detected_and_killed() {
-        let mut w = world();
-        let script = r#"trap "" TERM; while :; do sleep 0.1; done"#;
-        let mut child = w
-            .command("sh")
-            .arg("-c")
-            .arg(script)
-            .arg(w.root())
-            .spawn()
-            .unwrap();
-        w.track_pid(child.id());
-        std::thread::sleep(Duration::from_millis(200));
-        let err = w.teardown().unwrap_err();
-        assert!(err.starts_with("leaked processes: "), "{err}");
-        assert!(err.contains(&child.id().to_string()), "{err}");
-        let status = child.wait().unwrap();
-        assert!(!status.success());
-        assert!(find_marked(&format!("PARITY_FAKES={}", w.fakes_dir().display())).is_empty());
-    }
-}
+mod tests;

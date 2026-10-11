@@ -1,0 +1,4 @@
+# Layering rules: <module><TAB><allowed modules, comma-separated>
+# Module paths are crate-relative, e.g. parity::domain; allowed lists the modules it may use via crate::.
+# A module not listed is unconstrained; a module may always use itself.
+# Intentionally empty until the design phase fills it (domain must not import adapter modules).

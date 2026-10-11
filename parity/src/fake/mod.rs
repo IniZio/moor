@@ -2,6 +2,7 @@ pub mod claude;
 pub mod crabbox;
 pub mod herdr;
 pub mod ssh;
+mod template;
 
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
@@ -9,6 +10,8 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+
+pub use template::{render, shell_quote, TemplateCtx};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct Match {
@@ -204,69 +207,6 @@ fn flag_value(argv: &[String], name: &str) -> Option<String> {
     None
 }
 
-pub struct TemplateCtx<'a> {
-    pub argv: &'a [String],
-    pub n: u32,
-    pub box_root: &'a Path,
-    pub root: &'a Path,
-    pub cwd: &'a Path,
-}
-
-pub fn shell_quote(s: &str) -> String {
-    format!("'{}'", s.replace('\'', "'\\''"))
-}
-
-fn placeholder(name: &str, ctx: &TemplateCtx) -> Option<String> {
-    if let Some(rest) = name.strip_prefix("argv[") {
-        let idx = rest.strip_suffix(']')?;
-        let n: usize = idx.parse().ok()?;
-        return Some(ctx.argv.get(n).cloned().unwrap_or_default());
-    }
-    if let Some(flag) = name.strip_prefix("flag:") {
-        return Some(flag_value(ctx.argv, flag).unwrap_or_default());
-    }
-    match name {
-        "n" => Some(ctx.n.to_string()),
-        "box" => Some(ctx.box_root.display().to_string()),
-        "root" => Some(ctx.root.display().to_string()),
-        "cwd" => Some(ctx.cwd.display().to_string()),
-        "last" => Some(ctx.argv.last().cloned().unwrap_or_default()),
-        "post" => {
-            let post = match ctx.argv.iter().position(|a| a == "--") {
-                Some(p) => &ctx.argv[p + 1..],
-                None => &[][..],
-            };
-            Some(
-                post.iter()
-                    .map(|a| shell_quote(a))
-                    .collect::<Vec<_>>()
-                    .join(" "),
-            )
-        }
-        _ => None,
-    }
-}
-
-pub fn render(template: &str, ctx: &TemplateCtx) -> String {
-    let mut out = String::with_capacity(template.len());
-    let mut rest = template;
-    while let Some(open) = rest.find('{') {
-        out.push_str(&rest[..open]);
-        let after = &rest[open + 1..];
-        if let Some(close) = after.find('}') {
-            if let Some(val) = placeholder(&after[..close], ctx) {
-                out.push_str(&val);
-                rest = &after[close + 1..];
-                continue;
-            }
-        }
-        out.push('{');
-        rest = after;
-    }
-    out.push_str(rest);
-    out
-}
-
 pub const RECORDED_ENV_PREFIXES: &[&str] = &[
     "MOOR_",
     "CRABBOX_",
@@ -403,162 +343,4 @@ pub fn next_seq_locked(fakes_dir: &Path) -> u64 {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn s(v: &[&str]) -> Vec<String> {
-        v.iter().map(|x| x.to_string()).collect()
-    }
-
-    fn ctx<'a>(argv: &'a [String]) -> TemplateCtx<'a> {
-        TemplateCtx {
-            argv,
-            n: 3,
-            box_root: Path::new("/w/box"),
-            root: Path::new("/w"),
-            cwd: Path::new("/w/cwd"),
-        }
-    }
-
-    #[test]
-    fn render_json_braces_untouched() {
-        let argv = s(&["x"]);
-        let t = r#"{"a":{"b":1}} {"result":{"n":"{n}"}}"#;
-        assert_eq!(
-            render(t, &ctx(&argv)),
-            r#"{"a":{"b":1}} {"result":{"n":"3"}}"#
-        );
-        assert_eq!(render(r#"{"a":{"b":1}}"#, &ctx(&argv)), r#"{"a":{"b":1}}"#);
-        assert_eq!(render("{unknown} {", &ctx(&argv)), "{unknown} {");
-    }
-
-    #[test]
-    fn render_each_placeholder() {
-        let argv = s(&["run", "--slug", "foo", "--id=7", "--", "echo", "it's"]);
-        let c = ctx(&argv);
-        assert_eq!(render("{argv[0]}/{argv[2]}/{argv[99]}", &c), "run/foo/");
-        assert_eq!(
-            render("{flag:--slug}|{flag:--id}|{flag:--nope}", &c),
-            "foo|7|"
-        );
-        assert_eq!(render("{n} {box} {root} {cwd}", &c), "3 /w/box /w /w/cwd");
-        assert_eq!(render("{last}", &c), "it's");
-        assert_eq!(render("{post}", &c), "'echo' 'it'\\''s'");
-        assert_eq!(render("[{post}]", &ctx(&s(&["a"]))), "[]");
-    }
-
-    #[test]
-    fn shell_quote_escapes() {
-        assert_eq!(shell_quote("a b"), "'a b'");
-        assert_eq!(shell_quote("it's"), "'it'\\''s'");
-    }
-
-    #[test]
-    fn match_semantics() {
-        let none = |_: &str| false;
-        let has = |v: &str| v == "FOO";
-        let argv = s(&["run", "--env", "MOOR_WORKDIR=1"]);
-        assert!(Match::default().matches(&argv, &none));
-        assert!(Rule::on(&["run"]).matcher.matches(&argv, &none));
-        assert!(!Rule::on(&["list"]).matcher.matches(&argv, &none));
-        assert!(!Rule::on(&["run", "a", "b", "c"])
-            .matcher
-            .matches(&argv, &none));
-        assert!(Rule::on(&["run"])
-            .contains("WORKDIR")
-            .matcher
-            .matches(&argv, &none));
-        assert!(!Rule::on(&["run"])
-            .contains("WORKDIR")
-            .contains("zzz")
-            .matcher
-            .matches(&argv, &none));
-        assert!(Rule::any().env_has("FOO").matcher.matches(&argv, &has));
-        assert!(!Rule::any().env_has("FOO").matcher.matches(&argv, &none));
-    }
-
-    #[test]
-    fn call_flag() {
-        let mut c = Call {
-            seq: 1,
-            tool: "t".into(),
-            argv: s(&["warmup", "--slug", "abc", "--x=1"]),
-            cwd: String::new(),
-            pid: 1,
-            ppid: 1,
-            stdin: String::new(),
-            env: BTreeMap::new(),
-            env_digests: BTreeMap::new(),
-            rule: None,
-            pgid: 0,
-            starttime: 0,
-            env_contains_secret: false,
-        };
-        assert_eq!(c.flag("--slug").as_deref(), Some("abc"));
-        assert_eq!(c.flag("--x").as_deref(), Some("1"));
-        assert_eq!(c.flag("--y"), None);
-        c.argv = s(&["--slug"]);
-        assert_eq!(c.flag("--slug"), None);
-    }
-
-    #[test]
-    fn append_prepend_order_and_ids() {
-        let dir = tempfile::tempdir().unwrap();
-        let d = dir.path();
-        assert!(read_rules(d, "t").is_empty());
-        append_rules(d, "t", vec![Rule::on(&["a"]), Rule::on(&["b"])]);
-        prepend_rules(d, "t", vec![Rule::on(&["c"]).stdout("x")]);
-        let mut keep = Rule::on(&["d"]);
-        keep.id = "mine".into();
-        append_rules(d, "t", vec![keep]);
-        let rules = read_rules(d, "t");
-        let order: Vec<_> = rules
-            .iter()
-            .map(|r| r.matcher.argv_prefix.clone().unwrap()[0].clone())
-            .collect();
-        assert_eq!(order, ["c", "a", "b", "d"]);
-        let ids: Vec<_> = rules.iter().map(|r| r.id.as_str()).collect();
-        assert_eq!(ids, ["r3", "r1", "r2", "mine"]);
-        assert_eq!(rules[0].reply.stdout, "x");
-    }
-
-    #[test]
-    fn read_secrets_skips_blank_and_missing() {
-        let dir = tempfile::tempdir().unwrap();
-        let p = secrets_path(dir.path());
-        assert!(read_secrets(&p).is_empty());
-        fs::write(&p, "one\n\ntwo\n\n").unwrap();
-        assert_eq!(read_secrets(&p), ["one", "two"]);
-    }
-
-    #[test]
-    fn seq_and_calls() {
-        let dir = tempfile::tempdir().unwrap();
-        let d = dir.path();
-        let _g = lock(d).unwrap();
-        assert_eq!(next_seq_locked(d), 1);
-        assert_eq!(next_seq_locked(d), 2);
-        let mk = |seq, tool: &str| Call {
-            seq,
-            tool: tool.into(),
-            argv: vec![],
-            cwd: String::new(),
-            pid: 0,
-            ppid: 0,
-            stdin: String::new(),
-            env: BTreeMap::new(),
-            env_digests: BTreeMap::new(),
-            rule: None,
-            pgid: 0,
-            starttime: 0,
-            env_contains_secret: false,
-        };
-        let line = |c: &Call| format!("{}\n", serde_json::to_string(c).unwrap());
-        fs::write(calls_path(d, "a"), line(&mk(2, "a"))).unwrap();
-        fs::write(calls_path(d, "b"), line(&mk(1, "b")) + &line(&mk(3, "b"))).unwrap();
-        let all: Vec<u64> = all_calls(d).iter().map(|c| c.seq).collect();
-        assert_eq!(all, [1, 2, 3]);
-        assert_eq!(read_calls(d, "b").len(), 2);
-        assert!(read_calls(d, "zz").is_empty());
-    }
-}
+mod tests;

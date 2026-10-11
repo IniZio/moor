@@ -1,0 +1,30 @@
+/// RSA test key for signing App JWTs; it protects nothing.
+pub const TEST_KEY_PEM: &str = "-----BEGIN PRIVATE KEY-----\n\
+MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDCcuYfTC8Mvd4H\n\
+kZjCD/oDAMCwXpdK4Gyjn4D0fVT5nrqnaHgkU4Oku2q5iUddCwPolj2HeCiYurB2\n\
+NnAqVCGCQY1ZxEq6SHjQqnVFutTdk1AUyQXYbBBNrQ0f+Vd7de5aTgb5nJNilQsF\n\
+AGXHt2Vi+ZYKHI9n3f/rxV+D7q48pgm+TXFlsdOvCwvQT36FRaUAQPhy7RuweLkb\n\
+8g9t1FgRDV7WKHznyWAHi/1sFpdESogTCl/NsAJlo6+XfWp3mD7Q5WbMIXIhZj3Z\n\
+X8Df78nxE3BrYjo6WOTkYbLf+qj8shi0Z5HchIew61cci3VeQj04jNbIZwYpQ3cW\n\
+RYL4FanTAgMBAAECggEAMsLU8UGtnKlqL1aiZrLOBP+qzb/7xee9ZJ+Mhga76qg1\n\
+uOMsTethV903OLUuJItuG0cxS86h5nECBPIkKOCqmLrtIAx+p4+ovmxpTek+jZNZ\n\
+2fs6Y+ud+/Ebloe8fzXjob5x0rK9xQP8ivM2HsNxG7vlH8Gh7C8HkrCFRUdHQ/xt\n\
+wpl6AwAT051dE0zT2BQ9R/fxxluIqBxSpDkIo3dxRUrt6mRT3/20LKf/5vUK+u3D\n\
+/huerjKDiDVIKIBnlyF4zMTy2Kyu7zI7ed0v2ajzeHHr/LvdJD5YjO9pUzy1G0/E\n\
+GQOHvyrtwlD8Xh6hIG6TGYWYwZnSNiIKa00SbLlLcQKBgQDonfUKxkez4chwOhOQ\n\
+n/2hrU/luPqGLU+uSNUdjMdrfx3PexGezbumjqtjf28XFtOIJs8nPOBGCfSxSqDt\n\
+zQWT1Y5gbcQp+leuiget9oHCkRwW/KJvRONIZeMuVe09N36Lt3Goqi34T9ggCw1R\n\
+TznHVEHqDeGmmhWwwGi4aUPIAwKBgQDV/r3bprU0jZS3VXlrPL+G8hxUFtAV/DqX\n\
+KjwA16jn3E7X4r5ANDsTazaWTc/dfUK0PXzrrAEgUyRtcYznNkyrpssfoeDh9HLL\n\
+6PKU+a7VP9Gx9fXCiGoVzC1HKFGp3il/KlHqn2c1NsrjG4h95cicjjiALoP4M2mX\n\
+AFUOOZ918QKBgFYnksdv0sTD/inayL5LE3RbLXlm/prNk3J4lT5Bkua0iQT8jvUj\n\
+O7ofo0jRvQJvON93iEf/Gw21yEQV4O7SfZtYgEgkv3/QscL6aoe7Aipe9mlpHnxZ\n\
+plh9LBxQRPLkZ+E1i0ot5aLPZ7vOfBs+Xab/BP68L3Q2I4x4ZxDOJAWjAoGAYKUh\n\
+3beWktt2VK43neTbovhpLtj2tVcqpuaeHstHLx/iQ8HVpm1wWL7M8mjF/gP6Qiia\n\
+6FzQTWb/RqZHuoxdaBB2IB0d0S5zQgA8vmddPFYMQFES4v502s9Ri5d7+jmpiBL2\n\
+1/2RwQiz7ImcxS8nwPzCK7HWTBv8DgRKZZhEmiECgYEAjerbV+C43Yx2ucXhUdY+\n\
+q01qMNfEq6+ySaN1fMllK68FwTO6YD8M/WP2CbNHARw/nGwnMVmjE35KnXW7+17r\n\
+abb7PC1AfiOSFSC/sUHQDzYofWtOW9smkd+rekkNDwho0XR49jl3pfcx3qnvIY5u\n\
++9uvTEScVx4SgNaWmuOluR0=\n\
+-----END PRIVATE KEY-----\n\
+";
