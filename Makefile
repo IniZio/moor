@@ -10,10 +10,10 @@ TAPLO_VERSION := 0.10.0
 TYPOS_VERSION := 1.51.1
 LLVM_COV_VERSION := 0.9.1
 
-.PHONY: help coverage setup secret audit lint format format-check fmt-check test unit ci build deploy parity-old-bin parity
+.PHONY: help coverage setup secret audit lint format format-check fmt-check test unit ci build deploy parity-old-bin parity parity-new
 
 help:
-	@echo "targets: setup secret audit lint format format-check test ci build deploy parity"
+	@echo "targets: setup secret audit lint format format-check test ci build deploy parity parity-new"
 
 setup:
 	@rustup show active-toolchain >/dev/null
@@ -87,3 +87,8 @@ parity-old-bin:
 
 parity: parity-old-bin
 	MOOR_BIN=$(abspath $(OLD_DIR)/moor) MOOR_CLI=old cargo test -p parity --test parity
+
+# Parity suite against the new binary; not part of ci/test (most cases need later slices).
+parity-new:
+	cargo build -p moor --locked
+	MOOR_BIN=$(abspath target/debug/moor) MOOR_CLI=new cargo test -p parity --test parity -- $(PARITY_ARGS)

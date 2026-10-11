@@ -1,4 +1,5 @@
 pub mod github_ops;
+pub mod new;
 pub mod old;
 pub mod reports;
 
@@ -101,7 +102,7 @@ pub fn from_env() -> Result<Box<dyn Moor>, String> {
     }
     match std::env::var("MOOR_CLI").as_deref() {
         Err(_) | Ok("old") => Ok(Box::new(old::OldCli { bin })),
-        Ok("new") => Err("new adapter not implemented".to_string()),
+        Ok("new") => Ok(Box::new(new::NewCli { bin })),
         Ok(other) => Err(format!("unknown MOOR_CLI: {other}")),
     }
 }
