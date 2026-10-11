@@ -1,5 +1,5 @@
 use parity::adapter::{RunOpts, StartOpts, TaskState};
-use parity::fake::{crabbox, Rule};
+use parity::fake::{crabbox, herdr, Rule};
 use parity::parity;
 use parity::world::config::UserConfig;
 
@@ -17,14 +17,14 @@ parity!(
             ..Default::default()
         };
         f.start_with(&issue, &opts);
-        assert!(f.bg_calls().is_empty());
+        assert!(herdr::calls_of(&f.w, "pane", "run").is_empty());
         assert!(f.m.sessions(&f.w, &issue).is_empty());
 
         let name = f.name("goal");
         f.goal(&name);
-        assert_eq!(f.bg_calls().len(), 1);
+        assert_eq!(herdr::calls_of(&f.w, "pane", "run").len(), 1);
         f.goal(&name);
-        assert_eq!(f.bg_calls().len(), 1);
+        assert_eq!(herdr::calls_of(&f.w, "pane", "run").len(), 1);
         assert_eq!(f.m.sessions(&f.w, &name).len(), 1);
     }
 );
@@ -38,7 +38,7 @@ parity!(
         let name = f.name("late");
         f.start(&name);
         f.goal(&name);
-        assert_eq!(f.bg_calls().len(), 1);
+        assert_eq!(herdr::calls_of(&f.w, "pane", "run").len(), 1);
         assert_eq!(f.m.sessions(&f.w, &name).len(), 1);
     }
 );

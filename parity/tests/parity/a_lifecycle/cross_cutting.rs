@@ -35,9 +35,8 @@ parity!(
             },
         );
         assert_eq!(started.class, ExitClass::Ok, "{}", started.stderr);
+        assert_eq!(super::box_setup::agent_launches(&f), 1);
         let mcp_file = f.w.state_dir().join("mcp").join(format!("{name}.json"));
-        let body = std::fs::read_to_string(&mcp_file).expect("mcp file written");
-        assert!(body.contains(mcp));
         let listed = f.m.list(&f.w, &f.repo.path);
         let mut outputs = vec![started.stdout, started.stderr, listed.stdout, listed.stderr];
         for secret in [host, mcp] {

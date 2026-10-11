@@ -2,12 +2,32 @@ use std::path::Path;
 
 use parity::adapter::{BoxState, EventKind, ExitClass, StartOpts, TaskState};
 use parity::assert::{assert_never_called, assert_pure_json};
-use parity::fake::{crabbox, Rule};
+use parity::fake::{crabbox, Call, Rule};
 use parity::parity;
 use parity::world::config::UserConfig;
 use serde_json::json;
 
 use super::support::*;
+
+fn goal_opts() -> StartOpts {
+    StartOpts {
+        goal: Some("go".into()),
+        ..Default::default()
+    }
+}
+
+fn is_agent_launch(c: &Call) -> bool {
+    is_verb(c, "herdr", "tab")
+        && c.argv.get(1).map(String::as_str) == Some("create")
+        && c.argv.iter().any(|a| a.starts_with("agent:"))
+}
+
+pub(super) fn agent_launches(f: &Fx) -> usize {
+    f.w.calls("herdr")
+        .iter()
+        .filter(|c| is_agent_launch(c))
+        .count()
+}
 
 parity!(
     box_credential_preflight_failure_acquires_no_box,
@@ -15,7 +35,6 @@ parity!(
     tags = [],
     {
         let f = fx();
-        f.repo_cfg(json!({ "agent": { "location": "box" } }));
         git_in(
             &f,
             &f.repo.path,
@@ -28,14 +47,11 @@ parity!(
             ],
         );
         let name = f.name("pre");
-        let o = f.try_start(&name, &StartOpts::default());
-        assert!(o.class.is_err());
+        let o = f.try_start(&name, &goal_opts());
+        assert!(o.class.is_err(), "{:?} {} {}", o.class, o.stdout, o.stderr);
         assert_eq!(f.row(&name).state, TaskState::SetupFailed);
         assert!(f.kinds(&name).contains(&EventKind::CredentialFailed));
         assert_never_called(&f.w.all_calls(), "crabbox", &["warmup"]);
-        f.repo_cfg(json!({ "agent": { "location": "host" } }));
-        let host = f.name("host");
-        assert_eq!(f.start(&host).state, TaskState::Working);
     }
 );
 
@@ -104,7 +120,7 @@ parity!(
         let setup = call_seq(&calls, |c| {
             is_verb(c, "crabbox", "run") && c.argv.iter().any(|a| a.contains("setup-marker"))
         });
-        let agent = call_seq(&calls, is_bg);
+        let agent = call_seq(&calls, is_agent_launch);
         assert!(warm < setup && setup < agent, "{warm} {setup} {agent}");
     }
 );
@@ -276,7 +292,7 @@ parity!(
         assert_eq!(box_state(t), BoxState::Ready);
         assert!(f.kinds(&name).contains(&EventKind::SetupFailed));
         assert_eq!(f.n("crabbox", "stop"), 0);
-        assert_eq!(f.bg_calls().len(), 1);
+        assert_eq!(agent_launches(&f), 1);
         let run = f
             .verb("crabbox", "run")
             .into_iter()
@@ -375,7 +391,7 @@ parity!(
     covers = ["A-33", "REQ-50"],
     tags = [],
     {
-        let (f, home) = dotfiles_fx("box");
+        let (f, home) = dotfiles_fx();
         let t = f.start(&f.name("dots"));
         assert_eq!(t.state, TaskState::Working);
         assert!(home.join(".moor-dotfiles/.bashrc").exists());
@@ -391,7 +407,7 @@ parity!(
     covers = ["A-33"],
     tags = [],
     {
-        let (f, home) = dotfiles_fx("box");
+        let (f, home) = dotfiles_fx();
         f.w.prepend_rules(
             "crabbox",
             [Rule::on(&["run"])

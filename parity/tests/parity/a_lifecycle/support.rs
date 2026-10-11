@@ -3,7 +3,7 @@ use std::path::Path;
 use parity::adapter::{
     BoxState, CloseView, EventKind, ExitClass, Moor, Outcome, StartOpts, TaskState, TaskView,
 };
-use parity::fake::{claude, crabbox, herdr, Call, Rule};
+use parity::fake::{crabbox, herdr, Call, Rule};
 use parity::world::config::UserConfig;
 use parity::world::repo::Repo;
 use parity::world::World;
@@ -23,9 +23,12 @@ pub(super) fn fx_with(user: UserConfig) -> Fx {
     user.write(&w);
     crabbox::install(&w);
     herdr::install(&w);
-    claude::install(&w);
     follow_warmups(&w);
-    Fx { w, repo, m: moor() }
+    crabbox::ssh_channel(&w);
+    crabbox::tunnel(&w);
+    let f = Fx { w, repo, m: moor() };
+    f.repo_cfg(json!({}));
+    f
 }
 
 pub(super) fn follow_warmups(w: &World) {
@@ -41,7 +44,10 @@ pub(super) fn fx() -> Fx {
     fx_with(UserConfig::default())
 }
 
-pub(super) fn write_json(path: &Path, v: Value) {
+pub(super) fn write_json(path: &Path, mut v: Value) {
+    if path.file_name().is_some_and(|n| n == ".moor.yaml") {
+        v["agent"]["location"] = json!("box");
+    }
     std::fs::write(path, v.to_string()).expect("write config");
 }
 
@@ -107,6 +113,12 @@ impl Fx {
     }
     pub(super) fn repo_cfg(&self, v: Value) {
         write_json(&self.repo.path.join(".moor.yaml"), v);
+        git_in(self, &self.repo.path, &["add", ".moor.yaml"]);
+        git_in(
+            self,
+            &self.repo.path,
+            &["commit", "-q", "--allow-empty", "-m", "config"],
+        );
     }
     pub(super) fn sync_inventory(&self) {
         let slugs: Vec<String> = self
@@ -116,13 +128,6 @@ impl Fx {
             .collect();
         let refs: Vec<&str> = slugs.iter().map(String::as_str).collect();
         crabbox::inventory(&self.w, &refs);
-    }
-    pub(super) fn bg_calls(&self) -> Vec<Call> {
-        self.w
-            .calls("claude")
-            .into_iter()
-            .filter(|c| c.argv.iter().any(|a| a == "--bg"))
-            .collect()
     }
 }
 
@@ -182,10 +187,6 @@ pub(super) fn is_verb(c: &Call, tool: &str, verb: &str) -> bool {
     c.tool == tool && c.argv.first().map(String::as_str) == Some(verb)
 }
 
-pub(super) fn is_bg(c: &Call) -> bool {
-    c.tool == "claude" && c.argv.iter().any(|a| a == "--bg")
-}
-
 pub(super) fn failed_acquire(f: &Fx, name: &str) -> TaskView {
     crabbox::fail_quota(&f.w);
     let o = f.try_start(name, &StartOpts::default());
@@ -196,7 +197,7 @@ pub(super) fn failed_acquire(f: &Fx, name: &str) -> TaskView {
     row
 }
 
-pub(super) fn dotfiles_fx(location: &str) -> (Fx, std::path::PathBuf) {
+pub(super) fn dotfiles_fx() -> (Fx, std::path::PathBuf) {
     let f = fx();
     let dir = f.w.root().join("dots");
     std::fs::create_dir_all(&dir).unwrap();
@@ -210,7 +211,7 @@ pub(super) fn dotfiles_fx(location: &str) -> (Fx, std::path::PathBuf) {
         &f.w.config_path(),
         json!({ "dotfiles": { "dir": dir.to_str().unwrap() } }),
     );
-    f.repo_cfg(json!({ "setup": ["echo setup-marker"], "agent": { "location": location } }));
+    f.repo_cfg(json!({ "setup": ["echo setup-marker"] }));
     crabbox::ssh_wrapper(&f.w);
     parity::fake::ssh::install(&f.w);
     let home = f.w.box_root().join("home");

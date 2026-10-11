@@ -1,6 +1,6 @@
 use parity::adapter::{BoxState, EventKind, ExitClass, TaskState};
 use parity::assert::assert_never_called;
-use parity::fake::{claude, crabbox, Rule};
+use parity::fake::{crabbox, herdr};
 use parity::parity;
 use parity::world::config::UserConfig;
 use serde_json::json;
@@ -36,7 +36,9 @@ parity!(
         f.goal(&name);
         f.close(&name);
         let calls = f.w.all_calls();
-        let stop_agent = call_seq(&calls, |c| is_verb(c, "claude", "stop"));
+        let pane_close = call_seq(&calls, |c| {
+            c.tool == "herdr" && c.argv.starts_with(&["pane".into(), "close".into()])
+        });
         let teardown = call_seq(&calls, |c| {
             is_verb(c, "crabbox", "run") && c.argv.iter().any(|a| a.contains("down-marker"))
         });
@@ -44,7 +46,7 @@ parity!(
         let workspace = call_seq(&calls, |c| {
             c.tool == "herdr" && c.argv.starts_with(&["workspace".into(), "close".into()])
         });
-        assert!(stop_agent < teardown && teardown < release && release < workspace);
+        assert!(pane_close < teardown && teardown < release && release < workspace);
         assert!(f.kinds(&name).contains(&EventKind::Closed));
     }
 );
@@ -73,18 +75,14 @@ parity!(
 );
 
 parity!(
-    close_tolerates_stop_failure_when_agent_already_done,
+    close_tolerates_pane_not_found,
     covers = ["A-91"],
     tags = [],
     {
         let f = fx();
-        f.w.prepend_rules("claude", [Rule::on(&["stop"]).exit(1).stderr("gone\n")]);
-        claude::agents(
-            &f.w,
-            r#"[{"id":"a1","sessionId":"a1-full","cwd":"","state":"done"}]"#,
-        );
         let name = f.name("done");
         f.goal(&name);
+        herdr::pane_gone(&f.w);
         let view = f.close(&name);
         assert_eq!(view.task.state, TaskState::Closed);
         assert_eq!(f.n("crabbox", "stop"), 1);
