@@ -868,25 +868,7 @@ slice = "T6"
 reason = "B section 6 rows land in T6"
 ref = "parity-plan.md §6"
 
-[B-70]
-code = "PENDING"
-slice = "T5"
-reason = "B section 7 rows land in T5; box driver rows; T3 covers part"
-ref = "parity-plan.md §6"
-
 [B-71]
-code = "PENDING"
-slice = "T5"
-reason = "B section 7 rows land in T5; box driver rows; T3 covers part"
-ref = "parity-plan.md §6"
-
-[B-72]
-code = "PENDING"
-slice = "T5"
-reason = "B section 7 rows land in T5; box driver rows; T3 covers part"
-ref = "parity-plan.md §6"
-
-[B-73]
 code = "PENDING"
 slice = "T5"
 reason = "B section 7 rows land in T5; box driver rows; T3 covers part"
@@ -928,12 +910,6 @@ slice = "T5"
 reason = "B section 7 rows land in T5; box driver rows; T3 covers part"
 ref = "parity-plan.md §6"
 
-[B-80]
-code = "PENDING"
-slice = "T5"
-reason = "B section 7 rows land in T5; box driver rows; T3 covers part"
-ref = "parity-plan.md §6"
-
 [B-81]
 code = "PENDING"
 slice = "T5"
@@ -947,18 +923,6 @@ reason = "B section 7 rows land in T5; box driver rows; T3 covers part"
 ref = "parity-plan.md §6"
 
 [B-85]
-code = "PENDING"
-slice = "T5"
-reason = "B section 8 rows land in T5; box driver rows; T3 covers part"
-ref = "parity-plan.md §6"
-
-[B-86]
-code = "PENDING"
-slice = "T5"
-reason = "B section 8 rows land in T5; box driver rows; T3 covers part"
-ref = "parity-plan.md §6"
-
-[B-87]
 code = "PENDING"
 slice = "T5"
 reason = "B section 8 rows land in T5; box driver rows; T3 covers part"
@@ -998,18 +962,6 @@ ref = "parity-plan.md §6"
 code = "PENDING"
 slice = "T5"
 reason = "B section 8 rows land in T5; box driver rows; T3 covers part"
-ref = "parity-plan.md §6"
-
-[B-94]
-code = "PENDING"
-slice = "T5"
-reason = "B section 9 rows land in T5; box driver rows; T3 covers part"
-ref = "parity-plan.md §6"
-
-[B-95]
-code = "PENDING"
-slice = "T5"
-reason = "B section 9 rows land in T5; box driver rows; T3 covers part"
 ref = "parity-plan.md §6"
 
 [B-96]

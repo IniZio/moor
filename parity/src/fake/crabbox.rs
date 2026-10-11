@@ -1,7 +1,48 @@
-use crate::fake::Rule;
+use crate::fake::{Call, Rule};
 use crate::world::World;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Preset {
+    LocalContainer,
+    NamespaceDevbox,
+    Sprites,
+    Ssh,
+}
+
+impl Preset {
+    pub fn provider(self) -> &'static str {
+        match self {
+            Preset::LocalContainer => "local-container",
+            Preset::NamespaceDevbox => "namespace-devbox",
+            Preset::Sprites => "sprites",
+            Preset::Ssh => "ssh",
+        }
+    }
+}
+
 pub fn install(w: &World) {
+    install_preset(w, Preset::LocalContainer);
+}
+
+pub fn install_preset(w: &World, p: Preset) {
+    install_defaults(w);
+    match p {
+        Preset::NamespaceDevbox => pause_resume(w),
+        Preset::Sprites => w.add_rules(
+            "crabbox",
+            [Rule::on(&["resume"]).exit(1).stderr("resume unsupported\n")],
+        ),
+        Preset::LocalContainer | Preset::Ssh => {}
+    }
+    providers(w);
+}
+
+fn pause_resume(w: &World) {
+    pause(w);
+    resume(w);
+}
+
+fn install_defaults(w: &World) {
     w.add_rules(
         "crabbox",
         [
@@ -35,8 +76,53 @@ pub fn fail_quota(w: &World) {
 }
 
 pub fn slug(w: &World) -> Option<String> {
+    call(w, "warmup").and_then(|c| c.flag("--slug"))
+}
+
+pub fn providers(w: &World) {
+    let body = serde_json::json!([
+        {"provider": "local-container", "aliases": [], "lifecycle": ["ephemeral"]},
+        {"provider": "namespace-devbox", "aliases": [], "lifecycle": ["pause-resume"]},
+        {"provider": "sprites", "aliases": [], "lifecycle": ["ephemeral"]},
+        {"provider": "ssh", "aliases": [], "lifecycle": ["static"]},
+    ])
+    .to_string();
+    w.prepend_rules("crabbox", [Rule::on(&["providers"]).stdout(body)]);
+}
+
+pub fn not_found(w: &World) {
+    w.prepend_rules(
+        "crabbox",
+        [Rule::on(&["stop"]).exit(4).stderr("not found\n")],
+    );
+}
+
+pub fn fail(w: &World, verb: &str) {
+    w.prepend_rules(
+        "crabbox",
+        [Rule::on(&[verb]).exit(1).stderr(format!("{verb} failed\n"))],
+    );
+}
+
+pub fn gone(w: &World, box_name: &str) {
+    let _ = box_name;
+    w.prepend_rules("crabbox", [Rule::on(&["list"]).stdout("[]")]);
+}
+
+pub fn pause(w: &World) {
+    w.add_rules("crabbox", [Rule::on(&["pause"]).exit(0)]);
+}
+
+pub fn resume(w: &World) {
+    w.add_rules("crabbox", [Rule::on(&["resume"]).exit(0)]);
+}
+
+pub fn connect(w: &World) {
+    w.add_rules("crabbox", [Rule::on(&["connect"]).exit(0)]);
+}
+
+pub fn call(w: &World, verb: &str) -> Option<Call> {
     w.calls("crabbox")
         .into_iter()
-        .rfind(|c| c.argv.first().map(String::as_str) == Some("warmup"))
-        .and_then(|c| c.flag("--slug"))
+        .rfind(|c| c.argv.first().map(String::as_str) == Some(verb))
 }
