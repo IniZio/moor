@@ -41,7 +41,12 @@ pub fn seam_env(w: &World) -> Vec<(String, String)> {
         ("MOOR_GITHUB_API", "http://127.0.0.1:9".to_string()),
         ("MOOR_GITHUB_WEB", "http://127.0.0.1:9".to_string()),
     ];
-    pairs.into_iter().map(|(k, v)| (k.to_string(), v)).collect()
+    let preset = w.base_env();
+    pairs
+        .into_iter()
+        .filter(|(k, _)| !k.starts_with("MOOR_GITHUB_") || !preset.iter().any(|(p, _)| p == k))
+        .map(|(k, v)| (k.to_string(), v))
+        .collect()
 }
 
 fn exit_code(status: std::process::ExitStatus) -> i32 {
@@ -491,6 +496,28 @@ impl Moor for OldCli {
 
     fn version(&self, w: &World) -> Outcome<String> {
         self.version_impl(w)
+    }
+
+    fn github_setup(
+        &self,
+        w: &World,
+        cwd: &Path,
+        opts: &super::github_ops::GithubSetupOpts,
+    ) -> Outcome<super::github_ops::GithubStore> {
+        self.github_setup_impl(w, cwd, opts)
+    }
+
+    fn github_login(&self, w: &World, cwd: &Path) -> Outcome<super::github_ops::GithubStore> {
+        self.github_login_impl(w, cwd)
+    }
+
+    fn github_raw(
+        &self,
+        w: &World,
+        cwd: &Path,
+        args: &[&str],
+    ) -> Outcome<super::github_ops::GithubStore> {
+        self.github_raw_impl(w, cwd, args)
     }
 }
 

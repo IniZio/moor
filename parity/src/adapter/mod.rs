@@ -1,7 +1,9 @@
+pub mod github_ops;
 pub mod old;
 pub mod reports;
 
 pub use reports::{ReportReq, ReportRow};
+pub mod old_github;
 
 use std::path::{Path, PathBuf};
 
@@ -348,6 +350,14 @@ pub trait Moor {
     fn report(&self, w: &World, cwd: &Path, name: &str, req: &ReportReq) -> Outcome<ReportRow>;
     fn reports(&self, w: &World, cwd: &Path, name: &str) -> Outcome<Vec<ReportRow>>;
     fn version(&self, w: &World) -> Outcome<String>;
+    fn github_setup(
+        &self,
+        w: &World,
+        cwd: &Path,
+        opts: &github_ops::GithubSetupOpts,
+    ) -> Outcome<github_ops::GithubStore>;
+    fn github_login(&self, w: &World, cwd: &Path) -> Outcome<github_ops::GithubStore>;
+    fn github_raw(&self, w: &World, cwd: &Path, args: &[&str]) -> Outcome<github_ops::GithubStore>;
 }
 
 /// Options for `Moor::run`. `interrupt` sends SIGINT to moor once the Driver

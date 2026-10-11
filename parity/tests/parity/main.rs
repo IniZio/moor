@@ -4,6 +4,7 @@ mod b_driver;
 mod b_egress;
 mod b_run;
 mod c_creds;
+mod c_github;
 mod coverage;
 mod d_reports;
 mod fake_protocol;
