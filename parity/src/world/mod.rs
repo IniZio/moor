@@ -25,6 +25,8 @@ pub struct World {
     cred_snaps: BTreeMap<PathBuf, BTreeSet<String>>,
     suffix: String,
     torn_down: bool,
+    extra_env: Mutex<Vec<(String, String)>>,
+    transcript: Mutex<Vec<String>>,
 }
 
 fn random_hex6() -> String {
@@ -79,6 +81,8 @@ impl World {
             cred_snaps: BTreeMap::from([(PathBuf::from("/tmp"), creds_in(Path::new("/tmp")))]),
             suffix: random_hex6(),
             torn_down: false,
+            extra_env: Mutex::new(Vec::new()),
+            transcript: Mutex::new(Vec::new()),
         }
     }
 
@@ -142,6 +146,26 @@ impl World {
             ("PARITY_FAKES".into(), s(self.fakes_dir())),
             ("LANG".into(), "C.UTF-8".into()),
         ]
+        .into_iter()
+        .chain(self.extra_env.lock().unwrap().iter().cloned())
+        .collect()
+    }
+
+    /// Adds a variable to every child command's environment (not recorded by fakes unless the name matches their prefixes).
+    pub fn set_env(&self, key: &str, value: &str) {
+        self.extra_env
+            .lock()
+            .unwrap()
+            .push((key.to_string(), value.to_string()));
+    }
+
+    /// Keeps one moor call's output so the secret scanner can read it later.
+    pub fn log_transcript(&self, entry: String) {
+        self.transcript.lock().unwrap().push(entry);
+    }
+
+    pub fn transcript(&self) -> Vec<String> {
+        self.transcript.lock().unwrap().clone()
     }
 
     pub fn command(&self, program: impl AsRef<OsStr>) -> Command {

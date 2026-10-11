@@ -220,257 +220,22 @@ slice = "T9"
 reason = "proxy tunnel, credential dir and Box agent launch land in T9"
 ref = "parity-plan.md §6"
 
-[C-01]
-code = "PENDING"
-slice = "T7"
-reason = "C section 2 rows land in T7"
-ref = "parity-plan.md §6"
-
-[C-02]
-code = "PENDING"
-slice = "T7"
-reason = "C section 2 rows land in T7"
-ref = "parity-plan.md §6"
-
-[C-03]
-code = "PENDING"
-slice = "T7"
-reason = "C section 2 rows land in T7"
-ref = "parity-plan.md §6"
-
-[C-04]
-code = "PENDING"
-slice = "T7"
-reason = "C section 2 rows land in T7"
-ref = "parity-plan.md §6"
-
-[C-05]
-code = "PENDING"
-slice = "T7"
-reason = "C section 2 rows land in T7"
-ref = "parity-plan.md §6"
-
-[C-06]
-code = "PENDING"
-slice = "T7"
-reason = "C section 2 rows land in T7"
-ref = "parity-plan.md §6"
-
-[C-07]
-code = "PENDING"
-slice = "T7"
-reason = "C section 2 rows land in T7"
-ref = "parity-plan.md §6"
-
-[C-08]
-code = "PENDING"
-slice = "T7"
-reason = "C section 2 rows land in T7"
-ref = "parity-plan.md §6"
-
-[C-09]
-code = "PENDING"
-slice = "T7"
-reason = "C section 2 rows land in T7"
-ref = "parity-plan.md §6"
-
-[C-10]
-code = "PENDING"
-slice = "T7"
-reason = "C section 2 rows land in T7"
-ref = "parity-plan.md §6"
-
-[C-11]
-code = "PENDING"
-slice = "T7"
-reason = "C section 2 rows land in T7"
-ref = "parity-plan.md §6"
-
-[C-12]
-code = "PENDING"
-slice = "T7"
-reason = "C section 2 rows land in T7"
-ref = "parity-plan.md §6"
-
-[C-13]
-code = "PENDING"
-slice = "T7"
-reason = "C section 2 rows land in T7"
-ref = "parity-plan.md §6"
-
-[C-14]
-code = "PENDING"
-slice = "T7"
-reason = "C section 2 rows land in T7"
-ref = "parity-plan.md §6"
-
-[C-15]
-code = "PENDING"
-slice = "T7"
-reason = "C section 2 rows land in T7"
-ref = "parity-plan.md §6"
-
-[C-16]
-code = "PENDING"
-slice = "T7"
-reason = "C section 2 rows land in T7"
-ref = "parity-plan.md §6"
-
-[C-17]
-code = "PENDING"
-slice = "T7"
-reason = "C section 2 rows land in T7"
-ref = "parity-plan.md §6"
-
 [C-18]
-code = "PENDING"
-slice = "T7"
-reason = "C section 2 rows land in T7"
-ref = "parity-plan.md §6"
-
-[C-19]
-code = "PENDING"
-slice = "T7"
-reason = "C section 2 rows land in T7"
-ref = "parity-plan.md §6"
-
-[C-20]
-code = "PENDING"
-slice = "T7"
-reason = "C section 2 rows land in T7"
-ref = "parity-plan.md §6"
-
-[C-21]
-code = "PENDING"
-slice = "T7"
-reason = "C section 2 rows land in T7"
-ref = "parity-plan.md §6"
-
-[C-22]
-code = "PENDING"
-slice = "T7"
-reason = "C section 2 rows land in T7"
-ref = "parity-plan.md §6"
-
-[C-23]
-code = "PENDING"
-slice = "T7"
-reason = "C section 2 rows land in T7"
-ref = "parity-plan.md §6"
-
-[C-24]
-code = "PENDING"
-slice = "T7"
-reason = "C section 3 rows land in T7"
-ref = "parity-plan.md §6"
-
-[C-25]
-code = "PENDING"
-slice = "T7"
-reason = "C section 3 rows land in T7"
-ref = "parity-plan.md §6"
-
-[C-26]
-code = "PENDING"
-slice = "T7"
-reason = "C section 3 rows land in T7"
-ref = "parity-plan.md §6"
-
-[C-27]
-code = "PENDING"
-slice = "T7"
-reason = "C section 3 rows land in T7"
-ref = "parity-plan.md §6"
-
-[C-28]
-code = "PENDING"
-slice = "T7"
-reason = "C section 3 rows land in T7"
-ref = "parity-plan.md §6"
-
-[C-29]
-code = "PENDING"
-slice = "T7"
-reason = "C section 3 rows land in T7"
-ref = "parity-plan.md §6"
-
-[C-30]
-code = "PENDING"
-slice = "T7"
-reason = "C section 3 rows land in T7"
-ref = "parity-plan.md §6"
-
-[C-31]
-code = "PENDING"
-slice = "T7"
-reason = "C section 3 rows land in T7"
-ref = "parity-plan.md §6"
-
-[C-32]
-code = "PENDING"
-slice = "T7"
-reason = "C section 3 rows land in T7"
-ref = "parity-plan.md §6"
-
-[C-33]
-code = "PENDING"
-slice = "T7"
-reason = "C section 3 rows land in T7"
-ref = "parity-plan.md §6"
-
-[C-34]
-code = "PENDING"
-slice = "T7"
-reason = "C section 3 rows land in T7"
-ref = "parity-plan.md §6"
+code = "KNOWN-BUG"
+reason = "repo credentials: [GH_TOKEN] is accepted at parse yet unsatisfiable: the unresolved-ref hint says add credentials.GH_TOKEN, which the user layer then rejects (verified on old); fix test: repo_credentials_gh_token_ref_is_a_hard_error"
+ref = "c-credentials-env.md §17 gap 4(d); parity-plan.md §10"
 
 [C-35]
 code = "PENDING"
-slice = "T7"
-reason = "C section 3 rows land in T7"
-ref = "parity-plan.md §6"
-
-[C-36]
-code = "PENDING"
-slice = "T7"
-reason = "C section 3 rows land in T7"
-ref = "parity-plan.md §6"
+slice = "T8"
+reason = "resolved-identity probes (installed/not installed, token source) need the fake GitHub server"
+ref = "parity-plan.md §6 (T8)"
 
 [C-37]
 code = "PENDING"
-slice = "T7"
-reason = "C section 3 rows land in T7"
-ref = "parity-plan.md §6"
-
-[C-38]
-code = "PENDING"
-slice = "T7"
-reason = "C section 3 rows land in T7"
-ref = "parity-plan.md §6"
-
-[C-39]
-code = "PENDING"
-slice = "T7"
-reason = "C section 3 rows land in T7"
-ref = "parity-plan.md §6"
-
-[C-40]
-code = "PENDING"
-slice = "T7"
-reason = "C section 3 rows land in T7"
-ref = "parity-plan.md §6"
-
-[C-41]
-code = "PENDING"
-slice = "T7"
-reason = "C section 3 rows land in T7"
-ref = "parity-plan.md §6"
-
-[C-42]
-code = "PENDING"
-slice = "T7"
-reason = "C section 3 rows land in T7"
-ref = "parity-plan.md §6"
+slice = "T8"
+reason = "mint check ok/failed/rejected-login needs the fake GitHub server; skipped/failed-offline states are exercised by env_github_status_block"
+ref = "parity-plan.md §6 (T8)"
 
 [C-43]
 code = "PENDING"
@@ -976,77 +741,15 @@ slice = "T10"
 reason = "C section 11 rows land in T10"
 ref = "parity-plan.md §6"
 
-[C-127]
-code = "PENDING"
-slice = "T7"
-reason = "C section 12 rows land in T7"
-ref = "parity-plan.md §6"
-
-[C-128]
-code = "PENDING"
-slice = "T7"
-reason = "C section 12 rows land in T7"
-ref = "parity-plan.md §6"
-
-[C-129]
-code = "PENDING"
-slice = "T7"
-reason = "C section 12 rows land in T7"
-ref = "parity-plan.md §6"
-
-[C-130]
-code = "PENDING"
-slice = "T7"
-reason = "C section 12 rows land in T7"
-ref = "parity-plan.md §6"
-
 [C-131]
-code = "PENDING"
-slice = "T7"
-reason = "C section 12 rows land in T7"
-ref = "parity-plan.md §6"
-
-[C-132]
-code = "PENDING"
-slice = "T7"
-reason = "C section 13 rows land in T7"
-ref = "parity-plan.md §6"
-
-[C-133]
-code = "PENDING"
-slice = "T7"
-reason = "C section 13 rows land in T7"
-ref = "parity-plan.md §6"
-
-[C-134]
-code = "PENDING"
-slice = "T7"
-reason = "C section 13 rows land in T7"
-ref = "parity-plan.md §6"
+code = "KNOWN-BUG"
+reason = "old delivers listed box_credentials to the Box agent pane; ruling: only host-driven commands (run, setup, gate) get them; fix test: box_agent_pane_receives_no_box_credentials"
+ref = "parity-plan.md §10 (C gap 5, decision 42)"
 
 [C-135]
-code = "PENDING"
-slice = "T7"
-reason = "C section 13 rows land in T7"
-ref = "parity-plan.md §6"
-
-[C-136]
-code = "PENDING"
-slice = "T7"
-reason = "C section 13 rows land in T7"
-ref = "parity-plan.md §6"
-
-[C-137]
-code = "PENDING"
-slice = "T7"
-reason = "C section 14 rows land in T7"
-ref = "parity-plan.md §6"
-
-[C-138]
-code = "PENDING"
-slice = "T7"
-reason = "C section 14 rows land in T7"
-ref = "parity-plan.md §6"
+code = "SMELL-REDESIGNED"
+reason = "whether Box agents receive MCP servers is a design-phase policy question, so the current no-MCP-for-Box-agents behaviour is not pinned"
+ref = "parity-plan.md §10 (C gap 7); c-credentials-env.md §17 gap 7"
 
 [C-139]
 code = "PENDING"

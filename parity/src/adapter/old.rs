@@ -5,8 +5,8 @@ use rusqlite::{Connection, OpenFlags};
 use serde_json::Value;
 
 use super::{
-    exit_class, AgentView, CloseView, Event, EventKind, ExitClass, Moor, OpenView, Outcome,
-    PaneView, RemoveView, Session, StartOpts, TaskView, WaitView,
+    exit_class, AgentView, CloseView, EnvOpts, EnvReport, Event, EventKind, ExitClass, Moor,
+    OpenView, Outcome, PaneView, RemoveView, Session, StartOpts, TaskView, WaitView,
 };
 use crate::world::World;
 
@@ -79,9 +79,23 @@ impl OldCli {
         args: &[String],
         parse: impl Fn(&Value) -> T,
     ) -> Outcome<T> {
-        let child = w
-            .command(&self.bin)
-            .envs(seam_env(w))
+        self.run_env(w, cwd, args, &EnvOpts::default(), parse)
+    }
+
+    fn run_env<T>(
+        &self,
+        w: &World,
+        cwd: &Path,
+        args: &[String],
+        env: &EnvOpts,
+        parse: impl Fn(&Value) -> T,
+    ) -> Outcome<T> {
+        let mut cmd = w.command(&self.bin);
+        cmd.envs(seam_env(w)).envs(env.set_env.iter().cloned());
+        for k in &env.unset_env {
+            cmd.env_remove(k);
+        }
+        let child = cmd
             .current_dir(cwd)
             .args(args)
             .stdout(Stdio::piped())
@@ -93,6 +107,7 @@ impl OldCli {
         let exit = exit_code(out.status);
         let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
         let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+        w.log_transcript(format!("moor {}\n{stdout}\n{stderr}", args.join(" ")));
         let json: Option<Value> = serde_json::from_str(&stdout).ok();
         let warnings = json
             .as_ref()
@@ -281,6 +296,18 @@ impl Moor for OldCli {
             })
             .expect("query events");
         rows.map(|r| r.expect("event row")).collect()
+    }
+
+    fn env(&self, w: &World, cwd: &Path, opts: &EnvOpts) -> Outcome<EnvReport> {
+        let mut args = vec!["env".to_string()];
+        if !opts.text {
+            args.push("--json".into());
+        }
+        if let Some(l) = &opts.agent_location {
+            args.push("--agent-location".into());
+            args.push(l.clone());
+        }
+        self.run_env(w, cwd, &args, opts, EnvReport::from_json)
     }
 
     fn run(
@@ -506,11 +533,12 @@ impl OldCli {
             }
             std::thread::sleep(std::time::Duration::from_millis(20));
         };
-        (
-            exit_code(status),
+        let (stdout, stderr) = (
             out.join().unwrap_or_default(),
             err.join().unwrap_or_default(),
-        )
+        );
+        w.log_transcript(format!("moor {}\n{stdout}\n{stderr}", args.join(" ")));
+        (exit_code(status), stdout, stderr)
     }
 
     fn task_events(&self, w: &World, name: &str) -> Vec<Event> {

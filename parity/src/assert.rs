@@ -1,4 +1,8 @@
+use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
+
 use crate::fake::Call;
+use crate::world::World;
 
 fn sorted(calls: &[Call]) -> Vec<&Call> {
     let mut v: Vec<&Call> = calls.iter().collect();
@@ -86,6 +90,90 @@ pub fn assert_seq_global(calls: &[Call]) {
 pub fn assert_pure_json(stdout: &str) -> serde_json::Value {
     serde_json::from_str(stdout)
         .unwrap_or_else(|e| panic!("stdout is not exactly one JSON document ({e}): {stdout}"))
+}
+
+fn has(hay: &[u8], needle: &[u8]) -> bool {
+    !needle.is_empty() && hay.windows(needle.len()).any(|w| w == needle)
+}
+
+fn files_under(dir: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return out;
+    };
+    for entry in rd.flatten() {
+        let path = entry.path();
+        match entry.file_type() {
+            Ok(t) if t.is_dir() => out.extend(files_under(&path)),
+            Ok(t) if t.is_file() => out.push(path),
+            _ => {}
+        }
+    }
+    out.sort();
+    out
+}
+
+/// Fails when `secret` appears anywhere moor or a fake could have exposed it:
+/// fake argv/env, moor call output, `state/` files (except 0600 files under an
+/// `allow` prefix), `registry.db`, the `box/` tree, and `ps` output.
+pub fn assert_secret_absent(w: &World, secret: &str, allow: &[&str]) {
+    let needle = secret.as_bytes();
+    let mut leaks: Vec<String> = Vec::new();
+    for c in crate::fake::all_calls(&w.fakes_dir()) {
+        let in_argv = c.argv.iter().any(|a| a.contains(secret));
+        if in_argv || c.env.values().any(|v| v.contains(secret)) {
+            let place = if in_argv { "argv" } else { "env" };
+            leaks.push(format!("fake call {} {} ({place})", c.seq, c.tool));
+        }
+    }
+    for (i, entry) in w.transcript().iter().enumerate() {
+        if entry.contains(secret) {
+            let head = entry.lines().next().unwrap_or("");
+            leaks.push(format!("moor call #{i} output: {head}"));
+        }
+    }
+    let state = w.state_dir();
+    for f in files_under(&state) {
+        let rel = f
+            .strip_prefix(&state)
+            .unwrap_or(&f)
+            .to_string_lossy()
+            .into_owned();
+        let allowed = allow.iter().any(|a| rel.starts_with(a));
+        let mode = std::fs::metadata(&f).map_or(0, |m| m.permissions().mode() & 0o777);
+        if allowed && mode != 0o600 {
+            leaks.push(format!(
+                "allow-listed state/{rel} has mode {mode:o}, not 600"
+            ));
+        }
+        let bytes = std::fs::read(&f).unwrap_or_default();
+        if !allowed && has(&bytes, needle) {
+            leaks.push(format!("state/{rel}"));
+        }
+    }
+    for f in files_under(&w.box_root()) {
+        if has(&std::fs::read(&f).unwrap_or_default(), needle) {
+            let rel = f
+                .strip_prefix(w.root())
+                .unwrap_or(&f)
+                .to_string_lossy()
+                .into_owned();
+            leaks.push(rel);
+        }
+    }
+    let ps = std::process::Command::new("ps")
+        .args(["-eww", "-o", "args="])
+        .output()
+        .map(|o| o.stdout)
+        .unwrap_or_default();
+    if has(&ps, needle) {
+        leaks.push("ps output".to_string());
+    }
+    assert!(
+        leaks.is_empty(),
+        "secret leaked into:\n  {}",
+        leaks.join("\n  ")
+    );
 }
 
 #[cfg(test)]
