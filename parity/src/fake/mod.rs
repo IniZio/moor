@@ -1,4 +1,3 @@
-pub mod claude;
 pub mod crabbox;
 pub mod herdr;
 pub mod ssh;

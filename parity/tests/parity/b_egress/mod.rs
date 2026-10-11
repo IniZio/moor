@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use parity::adapter::{EnvOpts, EnvReport, ExitClass, Outcome, StartOpts, TaskView};
 use parity::fake::crabbox::{self, Preset};
-use parity::fake::{claude, herdr, Call, Rule};
+use parity::fake::{herdr, Call, Rule};
 use parity::parity;
 use parity::world::config::RepoConfig;
 use parity::world::repo::Repo;
@@ -55,7 +55,6 @@ pub(super) fn fx(preset: Preset, enforce: bool, user_extra: Value, repo_cfg: Val
     std::fs::write(repo.path.join(".moor.yaml"), repo_cfg.to_string()).expect("repo config");
     crabbox::install_preset(&w, preset);
     herdr::install(&w);
-    claude::install(&w);
     crabbox::ssh_channel(&w);
     crabbox::tunnel(&w);
     w.add_rules(

@@ -2,7 +2,7 @@ use std::time::{Duration, Instant};
 
 use parity::adapter::{BoxState, EventKind, ExitClass, Moor, TaskState, TaskView};
 use parity::fake::crabbox::{self, Preset};
-use parity::fake::{claude, herdr, Call};
+use parity::fake::{herdr, Call};
 use parity::world::config::{RepoConfig, UserConfig};
 use parity::world::hooks::HookState;
 use parity::world::repo::Repo;
@@ -30,7 +30,6 @@ pub(super) fn fixture(preset: Preset, max_boxes: Option<u32>) -> Fx {
     crabbox::tunnel(&w);
     crabbox::connect(&w);
     herdr::install(&w);
-    claude::install(&w);
     let name = w.task_name("agt");
     Fx {
         w,

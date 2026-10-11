@@ -3,7 +3,6 @@ use super::*;
 fn flow_fakes(w: &World) {
     crabbox::install(w);
     herdr::install(w);
-    claude::install(w);
     w.add_rules(
         "ssh",
         [Rule::any()

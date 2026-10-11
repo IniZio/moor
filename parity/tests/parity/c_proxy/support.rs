@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use parity::adapter::{ExitClass, Outcome, ProxyEndpoint, StartOpts, TaskView};
 use parity::assert::assert_secret_absent;
-use parity::fake::{claude, crabbox, herdr, Call, Rule};
+use parity::fake::{crabbox, herdr, Call, Rule};
 
 use parity::world::config::RepoConfig;
 use parity::world::repo::Repo;
@@ -62,7 +62,6 @@ pub(super) fn fx() -> Fx {
     crabbox::tunnel(&w);
     crabbox::connect(&w);
     herdr::install(&w);
-    claude::install(&w);
     w.prepend_rules(
         "ssh",
         [Rule::any()

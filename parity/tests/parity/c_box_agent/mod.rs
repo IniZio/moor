@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use parity::adapter::github_ops::GithubSetupOpts;
 use parity::adapter::{EventKind, ExitClass, Outcome, StartOpts, TaskState, TaskView};
 use parity::assert::{assert_never_called, assert_order, assert_secret_absent};
-use parity::fake::{claude, crabbox, herdr, Call, Rule};
+use parity::fake::{crabbox, herdr, Call, Rule};
 use parity::github::{FakeGithub, Reply, RepoFixture, TEST_KEY_PEM};
 use parity::parity;
 use parity::world::repo::Repo;
@@ -134,7 +134,6 @@ fn repo_cfg(b: &Bx, extra: Value) {
 fn flow_fakes(w: &World) {
     crabbox::install(w);
     herdr::install(w);
-    claude::install(w);
     w.add_rules(
         "ssh",
         [Rule::any()

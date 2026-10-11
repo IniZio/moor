@@ -6,7 +6,7 @@ use crate::{moor, world};
 use parity::adapter::github_ops::{GithubSetupOpts, GithubStore};
 use parity::adapter::{EnvOpts, EventKind, ExitClass, Outcome, StartOpts};
 use parity::assert::{assert_never_called, assert_pure_json, assert_secret_absent};
-use parity::fake::{claude, crabbox, herdr, Rule};
+use parity::fake::{crabbox, herdr, Rule};
 use parity::github::{FakeGithub, Reply, RepoFixture, Request, TEST_KEY_PEM};
 use parity::parity;
 use parity::world::repo::Repo;

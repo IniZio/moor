@@ -5,7 +5,7 @@ use parity::adapter::{
     EnvOpts, EnvReport, EventKind, ExitClass, Outcome, StartOpts, TaskState, TaskView,
 };
 use parity::assert::assert_never_called;
-use parity::fake::{claude, crabbox, herdr, Call, Rule};
+use parity::fake::{crabbox, herdr, Call, Rule};
 use parity::world::repo::Repo;
 use parity::world::World;
 use serde_json::{json, Value};
@@ -97,7 +97,6 @@ pub(super) fn json_of(o: &Outcome<EnvReport>) -> Value {
 pub(super) fn flow_fakes(w: &World) {
     crabbox::install(w);
     herdr::install(w);
-    claude::install(w);
     w.add_rules(
         "ssh",
         [Rule::any()
