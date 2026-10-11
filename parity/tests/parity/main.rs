@@ -1,5 +1,6 @@
 mod a_lifecycle;
 mod b_driver;
+mod b_run;
 mod coverage;
 mod fake_protocol;
 mod harness;

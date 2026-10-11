@@ -502,371 +502,96 @@ slice = "T4"
 reason = "A section 15 rows land in T4"
 ref = "parity-plan.md §6"
 
-[B-01]
-code = "PENDING"
-slice = "T6"
-reason = "B section 1 rows land in T6"
-ref = "parity-plan.md §6"
-
-[B-02]
-code = "PENDING"
-slice = "T6"
-reason = "B section 1 rows land in T6"
-ref = "parity-plan.md §6"
-
-[B-03]
-code = "PENDING"
-slice = "T6"
-reason = "B section 1 rows land in T6"
-ref = "parity-plan.md §6"
-
-[B-04]
-code = "PENDING"
-slice = "T6"
-reason = "B section 1 rows land in T6"
-ref = "parity-plan.md §6"
-
-[B-05]
-code = "PENDING"
-slice = "T6"
-reason = "B section 1 rows land in T6"
-ref = "parity-plan.md §6"
-
 [B-06]
-code = "PENDING"
-slice = "T6"
-reason = "B section 1 rows land in T6"
-ref = "parity-plan.md §6"
-
-[B-07]
-code = "PENDING"
-slice = "T6"
-reason = "B section 1 rows land in T6"
-ref = "parity-plan.md §6"
-
-[B-08]
-code = "PENDING"
-slice = "T6"
-reason = "B section 1 rows land in T6"
-ref = "parity-plan.md §6"
-
-[B-09]
-code = "PENDING"
-slice = "T6"
-reason = "B section 1 rows land in T6"
-ref = "parity-plan.md §6"
-
-[B-10]
-code = "PENDING"
-slice = "T6"
-reason = "B section 1 rows land in T6"
-ref = "parity-plan.md §6"
-
-[B-11]
-code = "PENDING"
-slice = "T6"
-reason = "B section 1 rows land in T6"
-ref = "parity-plan.md §6"
-
-[B-12]
-code = "PENDING"
-slice = "T6"
-reason = "B section 1 rows land in T6"
-ref = "parity-plan.md §6"
+code = "SMELL-REDESIGNED"
+reason = "--reclaim keyed on the moor- Box name couples moor to a crabbox claim flag; claims belong behind the Driver"
+ref = "docs/adr/0001-crabbox-is-only-a-driver.md; b-box-driver.md DESIGN-SMELL flag"
 
 [B-13]
-code = "PENDING"
-slice = "T6"
-reason = "B section 1 rows land in T6"
-ref = "parity-plan.md §6"
+code = "SMELL-REDESIGNED"
+reason = "quiet mode scrapes crabbox output by string prefix; the Driver seam owns its own logging"
+ref = "docs/adr/0001-crabbox-is-only-a-driver.md; b-box-driver.md DESIGN-SMELL flag"
 
 [B-14]
-code = "PENDING"
-slice = "T6"
-reason = "B section 1 rows land in T6"
-ref = "parity-plan.md §6"
+code = "SMELL-REDESIGNED"
+reason = "dropping the crabbox argv echo is output scraping of Driver chatter"
+ref = "docs/adr/0001-crabbox-is-only-a-driver.md; b-box-driver.md DESIGN-SMELL flag"
 
 [B-15]
-code = "PENDING"
-slice = "T6"
-reason = "B section 1 rows land in T6"
-ref = "parity-plan.md §6"
-
-[B-16]
-code = "PENDING"
-slice = "T6"
-reason = "B section 1 rows land in T6"
-ref = "parity-plan.md §6"
+code = "KNOWN-BUG"
+reason = "claim contention between host run and Box/state reads; usage-log items 32, 66, 67, 79, 81"
+ref = ".groundwork/BACKLOG.md 'Crabbox claim guard for run contention' (old moor b8e8801)"
 
 [B-17]
-code = "PENDING"
-slice = "T6"
-reason = "B section 1 rows land in T6"
-ref = "parity-plan.md §6"
-
-[B-18]
-code = "PENDING"
-slice = "T6"
-reason = "B section 1 rows land in T6"
-ref = "parity-plan.md §6"
+code = "KNOWN-BUG"
+reason = "first run on a fresh Box died after about 2 min, unexplained and not reproducible with fakes"
+ref = "usage-log drive 3b item 25 (old moor b8e8801)"
 
 [B-19]
 code = "PENDING"
-slice = "T6"
-reason = "B section 1 rows land in T6"
-ref = "parity-plan.md §6"
-
-[B-20]
-code = "PENDING"
-slice = "T6"
-reason = "B section 2 rows land in T6"
-ref = "parity-plan.md §6"
-
-[B-21]
-code = "PENDING"
-slice = "T6"
-reason = "B section 2 rows land in T6"
-ref = "parity-plan.md §6"
-
-[B-22]
-code = "PENDING"
-slice = "T6"
-reason = "B section 2 rows land in T6"
-ref = "parity-plan.md §6"
-
-[B-23]
-code = "PENDING"
-slice = "T6"
-reason = "B section 2 rows land in T6"
+slice = "T5"
+reason = "wake on run needs the sleep driver (hook_state, age) built by T5"
 ref = "parity-plan.md §6"
 
 [B-24]
-code = "PENDING"
-slice = "T6"
-reason = "B section 2 rows land in T6"
-ref = "parity-plan.md §6"
+code = "SMELL-REDESIGNED"
+reason = "the config-dir mode guard encodes a crabbox internal check; fork patch (BACKLOG) removes the need"
+ref = "docs/adr/0001-crabbox-is-only-a-driver.md; b-box-driver.md DESIGN-SMELL flag"
 
 [B-25]
-code = "PENDING"
-slice = "T6"
-reason = "B section 2 rows land in T6"
-ref = "parity-plan.md §6"
-
-[B-26]
-code = "PENDING"
-slice = "T6"
-reason = "B section 2 rows land in T6"
-ref = "parity-plan.md §6"
+code = "DRIVER-SIDE"
+reason = "directory cp replace semantics and the rsync requirement belong to crabbox cp"
+ref = "b-box-driver.md B-25; BACKLOG moor doctor runtime check"
 
 [B-27]
-code = "PENDING"
-slice = "T6"
-reason = "B section 2 rows land in T6"
-ref = "parity-plan.md §6"
-
-[B-30]
-code = "PENDING"
-slice = "T6"
-reason = "B section 3 rows land in T6"
-ref = "parity-plan.md §6"
-
-[B-31]
-code = "PENDING"
-slice = "T6"
-reason = "B section 3 rows land in T6"
-ref = "parity-plan.md §6"
-
-[B-32]
-code = "PENDING"
-slice = "T6"
-reason = "B section 3 rows land in T6"
-ref = "parity-plan.md §6"
+code = "SMELL-REDESIGNED"
+reason = "copy_from quiet_log is dead in production: try_save_transcript passes None (old task.rs), so no user-visible behaviour"
+ref = "docs/adr/0001-crabbox-is-only-a-driver.md; b-box-driver.md DESIGN-SMELL flag"
 
 [B-33]
-code = "PENDING"
-slice = "T6"
-reason = "B section 3 rows land in T6"
-ref = "parity-plan.md §6"
-
-[B-34]
-code = "PENDING"
-slice = "T6"
-reason = "B section 3 rows land in T6"
-ref = "parity-plan.md §6"
-
-[B-35]
-code = "PENDING"
-slice = "T6"
-reason = "B section 3 rows land in T6"
-ref = "parity-plan.md §6"
-
-[B-36]
-code = "PENDING"
-slice = "T6"
-reason = "B section 3 rows land in T6"
-ref = "parity-plan.md §6"
+code = "DOC"
+reason = "advisory stderr hint text only; the suite asserts no literal strings"
+ref = "parity-plan.md §2 (assert exit classes, never strings)"
 
 [B-37]
-code = "PENDING"
-slice = "T6"
-reason = "B section 3 rows land in T6"
-ref = "parity-plan.md §6"
-
-[B-38]
-code = "PENDING"
-slice = "T6"
-reason = "B section 3 rows land in T6"
-ref = "parity-plan.md §6"
-
-[B-40]
-code = "PENDING"
-slice = "T6"
-reason = "B section 4 rows land in T6"
-ref = "parity-plan.md §6"
+code = "LIVE"
+reason = "a Box-local record file must not satisfy a gate record; needs a real Box. live-smoke step: record on a Box, plant a fake gate file, run gate check"
+ref = "usage-log item 72"
 
 [B-41]
-code = "PENDING"
-slice = "T6"
-reason = "B section 4 rows land in T6"
-ref = "parity-plan.md §6"
-
-[B-42]
-code = "PENDING"
-slice = "T6"
-reason = "B section 4 rows land in T6"
-ref = "parity-plan.md §6"
-
-[B-43]
-code = "PENDING"
-slice = "T6"
-reason = "B section 4 rows land in T6"
-ref = "parity-plan.md §6"
-
-[B-44]
-code = "PENDING"
-slice = "T6"
-reason = "B section 4 rows land in T6"
-ref = "parity-plan.md §6"
-
-[B-45]
-code = "PENDING"
-slice = "T6"
-reason = "B section 4 rows land in T6"
-ref = "parity-plan.md §6"
-
-[B-46]
-code = "PENDING"
-slice = "T6"
-reason = "B section 4 rows land in T6"
-ref = "parity-plan.md §6"
-
-[B-47]
-code = "PENDING"
-slice = "T6"
-reason = "B section 4 rows land in T6"
-ref = "parity-plan.md §6"
-
-[B-48]
-code = "PENDING"
-slice = "T6"
-reason = "B section 4 rows land in T6"
-ref = "parity-plan.md §6"
+code = "LIVE"
+reason = "root-owned compose output on the Box needs real sudo and root files. live-smoke step: record run after a compose job leaves root-owned files"
+ref = "usage-log drive 3b 23, drive 3h 73"
 
 [B-49]
-code = "PENDING"
-slice = "T6"
-reason = "B section 4 rows land in T6"
-ref = "parity-plan.md §6"
-
-[B-50]
-code = "PENDING"
-slice = "T6"
-reason = "B section 5 rows land in T6"
-ref = "parity-plan.md §6"
-
-[B-51]
-code = "PENDING"
-slice = "T6"
-reason = "B section 5 rows land in T6"
-ref = "parity-plan.md §6"
-
-[B-52]
-code = "PENDING"
-slice = "T6"
-reason = "B section 5 rows land in T6"
-ref = "parity-plan.md §6"
-
-[B-53]
-code = "PENDING"
-slice = "T6"
-reason = "B section 5 rows land in T6"
-ref = "parity-plan.md §6"
-
-[B-54]
-code = "PENDING"
-slice = "T6"
-reason = "B section 5 rows land in T6"
-ref = "parity-plan.md §6"
-
-[B-55]
-code = "PENDING"
-slice = "T6"
-reason = "B section 5 rows land in T6"
-ref = "parity-plan.md §6"
-
-[B-56]
-code = "PENDING"
-slice = "T6"
-reason = "B section 5 rows land in T6"
-ref = "parity-plan.md §6"
-
-[B-57]
-code = "PENDING"
-slice = "T6"
-reason = "B section 5 rows land in T6"
-ref = "parity-plan.md §6"
-
-[B-60]
-code = "PENDING"
-slice = "T6"
-reason = "B section 6 rows land in T6"
-ref = "parity-plan.md §6"
+code = "KNOWN-BUG"
+reason = "Docker volumes and /tmp on the Box survive fresh-state prep; needs a real Box"
+ref = "usage-log items 43, 72; .groundwork/BACKLOG.md 'Reset Docker volumes in the repo setup:' (old moor b8e8801)"
 
 [B-61]
-code = "PENDING"
-slice = "T6"
-reason = "B section 6 rows land in T6"
-ref = "parity-plan.md §6"
+code = "DRIVER-SIDE"
+reason = "sync deletion of Box files is crabbox run behaviour; moor only passes --no-sync (B-04)"
+ref = "usage-log items 26, 31, 53; BACKLOG C4 re-sync wipe"
 
 [B-62]
-code = "PENDING"
-slice = "T6"
-reason = "B section 6 rows land in T6"
-ref = "parity-plan.md §6"
+code = "DRIVER-SIDE"
+reason = "seed + rsync cost and workspace-owner wait are crabbox timings"
+ref = "usage-log items 39, 91, 92"
 
 [B-63]
-code = "PENDING"
-slice = "T6"
-reason = "B section 6 rows land in T6"
-ref = "parity-plan.md §6"
+code = "DRIVER-SIDE"
+reason = "gitignored files, submodules and info/exclude seeding are crabbox sync behaviour"
+ref = "usage-log items 36, 69, 42; BACKLOG submodules not synced"
 
 [B-64]
-code = "PENDING"
-slice = "T6"
-reason = "B section 6 rows land in T6"
-ref = "parity-plan.md §6"
-
-[B-65]
-code = "PENDING"
-slice = "T6"
-reason = "B section 6 rows land in T6"
-ref = "parity-plan.md §6"
+code = "DRIVER-SIDE"
+reason = "host sync re-seeds the Box .git inside crabbox"
+ref = ".groundwork/BACKLOG.md 'Host sync re-seeds the Box .git' (old moor b8e8801)"
 
 [B-66]
-code = "PENDING"
-slice = "T6"
-reason = "B section 6 rows land in T6"
-ref = "parity-plan.md §6"
+code = "SMELL-REDESIGNED"
+reason = "CRABBOX_CONFIG lookup in worktree/main checkout leaks a crabbox concept into moor behaviour"
+ref = "docs/adr/0001-crabbox-is-only-a-driver.md; b-box-driver.md DESIGN-SMELL flag"
 
 [B-71]
 code = "PENDING"

@@ -213,4 +213,258 @@ impl Moor for OldCli {
             .expect("query events");
         rows.map(|r| r.expect("event row")).collect()
     }
+
+    fn run(
+        &self,
+        w: &World,
+        cwd: &Path,
+        name: &str,
+        argv: &[&str],
+        opts: &super::RunOpts,
+    ) -> Outcome<super::RunResult> {
+        self.run_impl(w, cwd, name, argv, opts)
+    }
+
+    fn cp(&self, w: &World, cwd: &Path, name: &str, box_path: &str, host: &Path) -> Outcome<()> {
+        self.cp_impl(w, cwd, name, box_path, host)
+    }
+
+    fn gate_check(
+        &self,
+        w: &World,
+        cwd: &Path,
+        sha: &str,
+        name: &str,
+        command: Option<&str>,
+    ) -> Outcome<super::GateVerdict> {
+        self.gate_impl(w, cwd, sha, name, command)
+    }
+
+    fn runs(&self, w: &World, name: &str) -> Vec<super::RunRow> {
+        self.runs_impl(w, name)
+    }
+
+    fn seed_run(&self, w: &World, row: &super::RunRow) {
+        self.seed_run_impl(w, row)
+    }
+}
+
+const RUN_DEADLINE: std::time::Duration = std::time::Duration::from_secs(60);
+
+fn crabbox_run_calls(w: &World) -> usize {
+    w.calls("crabbox")
+        .iter()
+        .filter(|c| c.argv.first().map(String::as_str) == Some("run"))
+        .count()
+}
+
+fn read_all(mut r: impl std::io::Read + Send + 'static) -> std::thread::JoinHandle<String> {
+    std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = r.read_to_end(&mut buf);
+        String::from_utf8_lossy(&buf).into_owned()
+    })
+}
+
+fn db_path(w: &World) -> PathBuf {
+    w.state_dir().join("registry.db")
+}
+
+impl OldCli {
+    fn spawn_wait(
+        &self,
+        w: &World,
+        cwd: &Path,
+        args: &[String],
+        interrupt: bool,
+    ) -> (i32, String, String) {
+        let before = crabbox_run_calls(w);
+        let mut child = w
+            .command(&self.bin)
+            .envs(seam_env(w))
+            .current_dir(cwd)
+            .args(args)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap_or_else(|e| panic!("spawn {}: {e}", self.bin.display()));
+        let pid = child.id();
+        w.track_pid(pid);
+        let out = read_all(child.stdout.take().expect("stdout pipe"));
+        let err = read_all(child.stderr.take().expect("stderr pipe"));
+        let start = std::time::Instant::now();
+        let mut signalled = !interrupt;
+        let status = loop {
+            if let Some(st) = child.try_wait().expect("poll moor") {
+                break st;
+            }
+            if !signalled && crabbox_run_calls(w) > before {
+                unsafe { libc::kill(pid as i32, libc::SIGINT) };
+                signalled = true;
+            }
+            if start.elapsed() > RUN_DEADLINE {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!("moor {args:?} did not finish within {RUN_DEADLINE:?}");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        };
+        (
+            exit_code(status),
+            out.join().unwrap_or_default(),
+            err.join().unwrap_or_default(),
+        )
+    }
+
+    fn task_events(&self, w: &World, name: &str) -> Vec<Event> {
+        self.events(w, name)
+    }
+}
+
+fn plain<T>(exit: i32, stdout: String, stderr: String, value: Option<T>) -> Outcome<T> {
+    Outcome {
+        exit,
+        class: exit_class(exit),
+        stdout,
+        stderr,
+        warnings: Vec::new(),
+        value,
+    }
+}
+
+impl OldCli {
+    pub(super) fn run_impl(
+        &self,
+        w: &World,
+        cwd: &Path,
+        name: &str,
+        argv: &[&str],
+        opts: &super::RunOpts,
+    ) -> Outcome<super::RunResult> {
+        let mut args: Vec<String> = vec!["run".into(), name.into()];
+        if opts.no_sync {
+            args.push("--no-sync".into());
+        }
+        if opts.quiet {
+            args.push("--quiet".into());
+        }
+        if let Some(rec) = &opts.record {
+            args.push("--record".into());
+            args.push(rec.clone());
+        }
+        args.push("--".into());
+        args.extend(argv.iter().map(|s| s.to_string()));
+        let ran_before = self
+            .task_events(w, name)
+            .iter()
+            .filter(|e| e.kind == EventKind::Ran)
+            .count();
+        let (exit, stdout, stderr) = self.spawn_wait(w, cwd, &args, opts.interrupt);
+        let ran: Vec<Event> = self
+            .task_events(w, name)
+            .into_iter()
+            .filter(|e| e.kind == EventKind::Ran)
+            .collect();
+        let value = ran
+            .get(ran_before..)
+            .and_then(|new| new.last())
+            .filter(|e| e.payload.get("error").is_none())
+            .map(|e| super::RunResult {
+                exit,
+                interrupted: e.payload["interrupted"].as_bool().unwrap_or(false),
+                sha: e.payload["sha"].as_str().map(str::to_string),
+            });
+        plain(exit, stdout, stderr, value)
+    }
+
+    pub(super) fn cp_impl(
+        &self,
+        w: &World,
+        cwd: &Path,
+        name: &str,
+        box_path: &str,
+        host_path: &Path,
+    ) -> Outcome<()> {
+        let args = vec![
+            "cp".to_string(),
+            name.to_string(),
+            box_path.to_string(),
+            host_path.to_string_lossy().into_owned(),
+        ];
+        let (exit, stdout, stderr) = self.spawn_wait(w, cwd, &args, false);
+        plain(exit, stdout, stderr, (exit == 0).then_some(()))
+    }
+
+    pub(super) fn gate_impl(
+        &self,
+        w: &World,
+        cwd: &Path,
+        sha: &str,
+        name: &str,
+        command: Option<&str>,
+    ) -> Outcome<super::GateVerdict> {
+        let mut args: Vec<String> = ["gate", "check", sha, "--name", name, "--json"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        if let Some(c) = command {
+            args.push("--command".into());
+            args.push(c.into());
+        }
+        let (exit, stdout, stderr) = self.spawn_wait(w, cwd, &args, false);
+        let value = serde_json::from_str::<Value>(&stdout)
+            .ok()
+            .map(|j| super::GateVerdict {
+                ok: j["ok"].as_bool().unwrap_or(false),
+                sha: j["sha"].as_str().map(str::to_string),
+                exit: j["exit"].as_i64().map(|n| n as i32),
+                task: j["task"].as_str().map(str::to_string),
+            });
+        plain(exit, stdout, stderr, value)
+    }
+
+    pub(super) fn runs_impl(&self, w: &World, name: &str) -> Vec<super::RunRow> {
+        let db = db_path(w);
+        if !db.exists() {
+            return Vec::new();
+        }
+        let conn = Connection::open_with_flags(&db, OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .unwrap_or_else(|e| panic!("open {}: {e}", db.display()));
+        let mut stmt = conn
+            .prepare(
+                "SELECT task, sha, name, command, exit, interrupted FROM runs \
+                 WHERE task = ?1 ORDER BY id",
+            )
+            .expect("prepare runs query");
+        let rows = stmt
+            .query_map([name], |r| {
+                Ok(super::RunRow {
+                    task: r.get(0)?,
+                    sha: r.get(1)?,
+                    name: r.get(2)?,
+                    command: r.get(3)?,
+                    exit: r.get(4)?,
+                    interrupted: r.get::<_, i64>(5)? != 0,
+                })
+            })
+            .expect("query runs");
+        rows.map(|r| r.expect("run row")).collect()
+    }
+
+    pub(super) fn seed_run_impl(&self, w: &World, row: &super::RunRow) {
+        let conn = Connection::open(db_path(w)).expect("open registry for seed");
+        conn.execute(
+            "INSERT INTO runs (task, worktree, sha, name, command, exit, interrupted, finished_at) \
+             VALUES (?1, '', ?2, ?3, ?4, ?5, ?6, 1)",
+            rusqlite::params![
+                row.task,
+                row.sha,
+                row.name,
+                row.command,
+                row.exit,
+                row.interrupted as i64
+            ],
+        )
+        .expect("seed run row");
+    }
 }

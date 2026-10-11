@@ -237,6 +237,67 @@ pub trait Moor {
     fn list(&self, w: &World, cwd: &Path) -> Outcome<Vec<TaskView>>;
     fn close(&self, w: &World, cwd: &Path, name: &str, force: bool) -> Outcome<CloseView>;
     fn events(&self, w: &World, name: &str) -> Vec<Event>;
+    fn run(
+        &self,
+        w: &World,
+        cwd: &Path,
+        name: &str,
+        argv: &[&str],
+        opts: &RunOpts,
+    ) -> Outcome<RunResult>;
+    fn cp(
+        &self,
+        w: &World,
+        cwd: &Path,
+        name: &str,
+        box_path: &str,
+        host_path: &Path,
+    ) -> Outcome<()>;
+    fn gate_check(
+        &self,
+        w: &World,
+        cwd: &Path,
+        sha: &str,
+        name: &str,
+        command: Option<&str>,
+    ) -> Outcome<GateVerdict>;
+    fn runs(&self, w: &World, name: &str) -> Vec<RunRow>;
+    fn seed_run(&self, w: &World, row: &RunRow);
+}
+
+/// Options for `Moor::run`. `interrupt` sends SIGINT to moor once the Driver
+/// has recorded its run call, so the test needs no wall-clock sleeps.
+#[derive(Debug, Clone, Default)]
+pub struct RunOpts {
+    pub no_sync: bool,
+    pub quiet: bool,
+    pub record: Option<String>,
+    pub interrupt: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RunResult {
+    pub exit: i32,
+    pub interrupted: bool,
+    pub sha: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GateVerdict {
+    pub ok: bool,
+    pub sha: Option<String>,
+    pub exit: Option<i32>,
+    pub task: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RunRow {
+    pub task: String,
+    pub sha: String,
+    pub name: String,
+    pub command: String,
+    pub exit: i32,
+    pub interrupted: bool,
 }
 
 pub fn from_env() -> Result<Box<dyn Moor>, String> {

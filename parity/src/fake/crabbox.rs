@@ -118,6 +118,39 @@ pub fn gone(w: &World, box_name: &str) {
     w.prepend_rules("crabbox", [Rule::on(&["list"]).stdout(body)]);
 }
 
+const CP_SCRIPT: &str = "src='{argv[5]}'; cp -R \"${src#SANDBOX:}\" '{argv[6]}'";
+
+pub fn cp(w: &World) {
+    w.add_rules("crabbox", [Rule::on(&["cp"]).exec(CP_SCRIPT)]);
+}
+
+pub fn fail_match(w: &World, verb: &str, pat: &str, code: i32) {
+    w.prepend_rules(
+        "crabbox",
+        [Rule::on(&[verb])
+            .contains(pat)
+            .exit(code)
+            .stderr(format!("{verb} failed\n"))],
+    );
+}
+
+pub fn block(w: &World, verb: &str) {
+    w.prepend_rules("crabbox", [Rule::on(&[verb]).block()]);
+}
+
+pub fn die_on_run(w: &World) {
+    w.prepend_rules("crabbox", [Rule::on(&["run"]).exec("kill -KILL $PPID")]);
+}
+
+pub fn run_in(w: &World, dir: &std::path::Path) {
+    let script = format!(
+        "cd '{}' && GIT_CEILING_DIRECTORIES='{}' {{post}}",
+        dir.display(),
+        w.root().display()
+    );
+    w.prepend_rules("crabbox", [Rule::on(&["run"]).exec(script)]);
+}
+
 pub fn pause(w: &World) {
     w.add_rules("crabbox", [Rule::on(&["pause"]).exit(0)]);
 }
