@@ -1,0 +1,4 @@
+[workspace]
+members = ["parity"]
+exclude = ["target"]
+resolver = "2"

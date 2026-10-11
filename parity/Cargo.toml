@@ -1,0 +1,24 @@
+[package]
+name = "parity"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tempfile = "3"
+rusqlite = { version = "0.40", features = ["bundled"] }
+fs2 = "0.4"
+libc = "0.2"
+inventory = "0.3"
+libtest-mimic = "0.8"
+
+[[bin]]
+name = "fake"
+path = "src/bin/fake.rs"
+
+[[test]]
+name = "parity"
+path = "tests/parity/main.rs"
+harness = false
