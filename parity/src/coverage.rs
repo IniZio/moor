@@ -17,8 +17,6 @@ pub enum Code {
     Dropped,
     #[serde(rename = "DOC")]
     Doc,
-    #[serde(rename = "PENDING")]
-    Pending,
 }
 
 impl Code {
@@ -30,7 +28,6 @@ impl Code {
             Code::DriverSide => "DRIVER-SIDE",
             Code::Dropped => "DROPPED",
             Code::Doc => "DOC",
-            Code::Pending => "PENDING",
         }
     }
 }
@@ -41,8 +38,6 @@ pub struct Exclusion {
     pub code: Code,
     pub reason: String,
     pub r#ref: String,
-    #[serde(default)]
-    pub slice: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -153,12 +148,6 @@ impl Summary {
     }
 }
 
-fn slice_ok(s: &str) -> bool {
-    s.strip_prefix('T')
-        .and_then(|n| n.parse::<u32>().ok())
-        .is_some_and(|n| (4..=10).contains(&n))
-}
-
 pub fn check(
     inv: &Inventory,
     excl: &BTreeMap<String, Exclusion>,
@@ -185,19 +174,11 @@ pub fn check(
             continue;
         }
         *counts.entry(e.code.as_str()).or_default() += 1;
-        if inv.security.contains(id) && e.code != Code::Pending {
+        if inv.security.contains(id) {
             errs.push(format!(
-                "{id}: SECURITY-INVARIANT row excluded as {}; only PENDING allowed",
+                "{id}: SECURITY-INVARIANT row excluded as {}; must be covered",
                 e.code.as_str()
             ));
-        }
-        match (&e.code, &e.slice) {
-            (Code::Pending, None) => errs.push(format!("{id}: PENDING requires slice")),
-            (Code::Pending, Some(s)) if !slice_ok(s) => {
-                errs.push(format!("{id}: slice {s:?} outside T4..T10"))
-            }
-            (Code::Pending, Some(_)) | (_, None) => {}
-            (_, Some(_)) => errs.push(format!("{id}: slice only allowed with PENDING")),
         }
         if e.reason.trim().is_empty() {
             errs.push(format!("{id}: empty reason"));
@@ -303,11 +284,8 @@ mod tests {
         parse_exclusions(body).unwrap()
     }
 
-    fn entry(id: &str, code: &str, slice: Option<&str>) -> String {
-        let slice = slice
-            .map(|s| format!("slice = \"{s}\"\n"))
-            .unwrap_or_default();
-        format!("[{id}]\ncode = \"{code}\"\n{slice}reason = \"r\"\nref = \"p\"\n")
+    fn entry(id: &str, code: &str) -> String {
+        format!("[{id}]\ncode = \"{code}\"\nreason = \"r\"\nref = \"p\"\n")
     }
 
     fn errs(e: &str, covers: &[&str]) -> Vec<String> {
@@ -316,7 +294,7 @@ mod tests {
 
     #[test]
     fn missing_id_fails() {
-        let e = errs(&entry("A-01", "DOC", None), &["C-03"]);
+        let e = errs(&entry("A-01", "DOC"), &["C-03"]);
         assert!(e
             .iter()
             .any(|m| m.starts_with("A-02") && m.contains("missing")));
@@ -324,7 +302,7 @@ mod tests {
 
     #[test]
     fn security_row_excluded_as_doc_fails() {
-        let body = entry("C-03", "DOC", None);
+        let body = entry("C-03", "DOC");
         let e = errs(&body, &["A-01", "A-02"]);
         assert!(e
             .iter()
@@ -332,31 +310,25 @@ mod tests {
     }
 
     #[test]
-    fn pending_security_row_passes() {
-        let body = entry("C-03", "PENDING", Some("T5"));
-        let s = check(&inv(), &excl(&body), &set(&["A-01", "A-02"])).unwrap();
-        assert_eq!(s.render(), "covered 2\nPENDING 1\n");
+    fn slice_field_is_rejected() {
+        let body = "[A-01]\ncode = \"DOC\"\nslice = \"T4\"\nreason = \"r\"\nref = \"p\"\n";
+        assert!(parse_exclusions(body).is_err());
     }
 
     #[test]
-    fn pending_slice_rules() {
-        let none = errs(&entry("A-01", "PENDING", None), &["A-02", "C-03"]);
-        assert!(none.iter().any(|m| m.contains("requires slice")));
-        let t3 = errs(&entry("A-01", "PENDING", Some("T3")), &["A-02", "C-03"]);
-        assert!(t3.iter().any(|m| m.contains("outside")));
-        let doc = errs(&entry("A-01", "DOC", Some("T4")), &["A-02", "C-03"]);
-        assert!(doc.iter().any(|m| m.contains("only allowed with PENDING")));
+    fn pending_code_is_rejected() {
+        assert!(parse_exclusions(&entry("A-01", "PENDING")).is_err());
     }
 
     #[test]
     fn id_in_both_fails() {
-        let e = errs(&entry("A-01", "DOC", None), &["A-01", "A-02", "C-03"]);
+        let e = errs(&entry("A-01", "DOC"), &["A-01", "A-02", "C-03"]);
         assert!(e.iter().any(|m| m.contains("both")));
     }
 
     #[test]
     fn unknown_ids_fail() {
-        let body = entry("Z-9", "DOC", None);
+        let body = entry("Z-9", "DOC");
         let e = errs(&body, &["A-01", "A-02", "C-03", "B-77"]);
         assert!(e
             .iter()
@@ -369,7 +341,7 @@ mod tests {
     #[test]
     fn rejects_unknown_field_and_code() {
         assert!(parse_exclusions("[A-01]\ncode=\"DOC\"\nreason=\"r\"\nref=\"p\"\nx=1\n").is_err());
-        assert!(parse_exclusions(&entry("A-01", "NOPE", None)).is_err());
+        assert!(parse_exclusions(&entry("A-01", "NOPE")).is_err());
     }
 
     #[test]
@@ -442,7 +414,7 @@ mod tests {
         assert!(free[0].contains("must start with"));
         let unlisted = check_live_refs(&live("B-99", "live-smoke.md: host Task"), &steps);
         assert!(unlisted[0].contains("does not list"));
-        let not_live = excl(&entry("A-42", "DOC", None));
+        let not_live = excl(&entry("A-42", "DOC"));
         assert!(check_live_refs(&not_live, &steps).is_empty());
     }
 
