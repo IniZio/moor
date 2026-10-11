@@ -1,6 +1,6 @@
 [A-09]
 code = "DOC"
-reason = "Config-key catalogue; each key is asserted by its behaviour row (A-26 box.*, A-27 egress, A-30 setup/provision, A-33 dotfiles, A-37 mcp_servers, A-20 github.identity, A-92 teardown). Main-checkout config read is fixed by new_only test bound_worktree_config_drives_setup"
+reason = "Config-key catalogue; each key is asserted by its behaviour row (A-26 box.*, A-27 egress, A-30 setup/provision, A-33 dotfiles, A-20 github.identity, A-92 teardown, C-133 and C-135 mcp_servers). Main-checkout config read is fixed by new_only test bound_worktree_config_drives_setup"
 ref = "a-task-lifecycle.md A-09 (BACKLOG: setup and RepoEnv read from main checkout)"
 
 [A-36]
