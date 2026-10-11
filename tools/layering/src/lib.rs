@@ -227,9 +227,10 @@ fn crate_dir(root: &Path, name: &str) -> Option<PathBuf> {
         }
     }
     dirs.into_iter().find(|d| {
+        let want = format!("name=\"{}\"", name.replace('-', "_"));
         fs::read_to_string(d.join("Cargo.toml")).is_ok_and(|t| {
             t.lines()
-                .any(|l| l.replace(' ', "") == format!("name=\"{name}\""))
+                .any(|l| l.replace(' ', "").replace('-', "_") == want)
         })
     })
 }

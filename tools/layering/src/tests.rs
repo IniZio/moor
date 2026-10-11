@@ -120,3 +120,15 @@ fn rule_table_parses() {
     assert_eq!(r[0].allowed, vec![m("util"), m("x::y")]);
     assert!(r[1].allowed.is_empty());
 }
+
+#[test]
+fn crate_dir_matches_hyphen_and_underscore() {
+    let root = std::env::temp_dir().join(format!("layering-crate-dir-{}", std::process::id()));
+    let dir = root.join("crates").join("moor-core");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("Cargo.toml"), "[package]\nname = \"moor-core\"\n").unwrap();
+    assert_eq!(crate_dir(&root, "moor_core"), Some(dir.clone()));
+    assert_eq!(crate_dir(&root, "moor-core"), Some(dir));
+    assert_eq!(crate_dir(&root, "other"), None);
+    fs::remove_dir_all(&root).unwrap();
+}
