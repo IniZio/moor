@@ -5,6 +5,7 @@ use parity::assert::assert_secret_absent;
 use parity::parity;
 use serde_json::json;
 
+use super::env_shape::{env, run};
 use super::support::*;
 
 parity!(
@@ -33,8 +34,8 @@ parity!(
             set_env: vec![("PARITY_V_C".into(), sc.clone())],
             ..Default::default()
         };
-        let json_run = f.env_with(&opts(false));
-        let text_run = f.env_with(&opts(true));
+        let json_run = run(&f, opts(false));
+        let text_run = run(&f, opts(true));
         let r = json_run.ok();
         assert_eq!(text_run.class, ExitClass::Ok, "{}", text_run.stderr);
         for (name, resolves) in [("A", true), ("B", true), ("C", true)] {
@@ -73,7 +74,7 @@ parity!(
 
 parity!(env_github_status_block, covers = ["C-36"], tags = [], {
     let f = fx();
-    let status = |f: &Fx| json_of(&f.env())["github"].clone();
+    let status = |f: &Fx| json_of(&env(f))["github"].clone();
     let none = status(&f);
     assert_eq!(none["identity"], "auto");
     assert!(none["app_id"].is_null());
@@ -106,7 +107,7 @@ parity!(env_github_status_block, covers = ["C-36"], tags = [], {
             .status();
     assert!(unset.expect("git config").success());
     f.user(json!({ "github": { "identity": "you" } }));
-    let stored = f.env();
+    let stored = env(&f);
     assert_eq!(stored.class, ExitClass::Ok, "{}", stored.stderr);
     let g = json_of(&stored)["github"].clone();
     assert_eq!(g["identity"], "you");
@@ -134,7 +135,7 @@ parity!(env_user_mcp_items, covers = ["C-39"], tags = [], {
             "broken": { "command": "x", "args": ["${DEAD}"] },
         },
     }));
-    let o = f.env();
+    let o = env(&f);
     let r = o.ok();
     let item = |n: &str| r.item("mcp", n).unwrap_or_else(|| panic!("{n} missing"));
     assert_eq!(item("cmdsrv").source, "user");
@@ -161,7 +162,7 @@ parity!(
         let repo = f.repo.path.clone();
         let servers = json!({ "mcpServers": { "a": {}, "b": {}, "c": {} } });
         assert!(
-            f.env().ok().of_kind("mcp").is_empty(),
+            env(&f).ok().of_kind("mcp").is_empty(),
             "no .mcp.json, no items"
         );
         write_file(
@@ -170,7 +171,7 @@ parity!(
             0o644,
         );
         assert!(
-            f.env().ok().of_kind("mcp").is_empty(),
+            env(&f).ok().of_kind("mcp").is_empty(),
             "no mcpServers, no items"
         );
 
@@ -185,7 +186,7 @@ parity!(
             &json!({ "disabledMcpjsonServers": ["b"] }).to_string(),
             0o644,
         );
-        let o = f.env();
+        let o = env(&f);
         let r = o.ok();
         let state = |n: &str| {
             r.item("mcp", n)
@@ -204,14 +205,14 @@ parity!(
             &json!({ "enableAllProjectMcpServers": true }).to_string(),
             0o644,
         );
-        let all = f.env();
+        let all = env(&f);
         assert_eq!(
             all.ok().item("mcp", "c").and_then(|i| i.resolves),
             Some(true)
         );
 
         write_file(&repo.join(".mcp.json"), "{ not json", 0o644);
-        let bad = f.env();
+        let bad = env(&f);
         let items = bad.ok().of_kind("mcp");
         assert_eq!(items.len(), 1, "invalid JSON is one failed item");
         assert_eq!(items[0].resolves, Some(false));
@@ -226,7 +227,7 @@ parity!(
     {
         let f = fx();
         f.user(json!({ "box": { "provider": "local-container" } }));
-        let o = f.env_at("box");
+        let o = env(&f);
         let items = o.ok().of_kind("egress");
         assert_eq!(items.len(), 1);
         let detail = items[0].detail.clone().unwrap_or_default();
@@ -244,7 +245,6 @@ parity!(
     {
         let f = fx();
         f.repo_cfg(json!({ "credentials": ["GH_TOKEN"] }));
-        assert_rejected(&f.env(), "repo credentials GH_TOKEN");
-        assert_rejected(&f.env_at("box"), "repo credentials GH_TOKEN, box");
+        assert_rejected(&env(&f), "repo credentials GH_TOKEN, box");
     }
 );

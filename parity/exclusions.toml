@@ -183,11 +183,6 @@ code = "KNOWN-BUG"
 reason = "old delivers listed box_credentials to the Box agent pane; ruling: only host-driven commands (run, setup, gate) get them; fix test: box_agent_pane_receives_no_box_credentials"
 ref = "parity-plan.md §10 (C gap 5, decision 42)"
 
-[C-135]
-code = "SMELL-REDESIGNED"
-reason = "whether Box agents receive MCP servers is a design-phase policy question, so the current no-MCP-for-Box-agents behaviour is not pinned"
-ref = "parity-plan.md §10 (C gap 7); c-credentials-env.md §17 gap 7"
-
 [C-137]
 code = "DROPPED"
 reason = "decision 46: no host agent"

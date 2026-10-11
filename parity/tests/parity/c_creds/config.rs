@@ -6,6 +6,16 @@ use serde_json::json;
 use super::support::*;
 use crate::moor;
 
+fn merge_repo_cfg(f: &Fx, doc: serde_json::Value) {
+    let path = f.repo.path.join(".moor.yaml");
+    let mut cur: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).expect("read repo cfg")).expect("repo cfg");
+    cur.as_object_mut()
+        .expect("object")
+        .extend(doc.as_object().expect("object").clone());
+    f.repo_cfg(cur);
+}
+
 parity!(config_path_precedence, covers = ["C-01"], tags = [], {
     let f = fx();
     let root = f.w.root().to_path_buf();
@@ -67,7 +77,6 @@ parity!(
         let report = missing.ok();
         assert_eq!(report.provider(), Some("local-container"));
         assert_eq!(report.size(), Some("small"));
-        assert_eq!(report.location, "host");
 
         let dir = f.w.root().join("config-is-a-dir");
         std::fs::create_dir_all(&dir).expect("mkdir");
@@ -114,10 +123,6 @@ parity!(
         let file = f.secret_file("ghtoken", &secret);
         f.user(json!({ "credentials": { "GH_TOKEN": { "file": file } } }));
         assert_rejected(&f.env(), "env with GH_TOKEN credential");
-        assert_rejected(
-            &f.env_at("box"),
-            "env box location with GH_TOKEN credential",
-        );
         let listed = moor().list(&f.w, &f.repo.path);
         assert_eq!(listed.class, ExitClass::Failed, "{}", listed.stderr);
         assert!(listed.stdout.trim().is_empty(), "{}", listed.stdout);
@@ -199,26 +204,13 @@ parity!(
     }
 );
 
-parity!(
-    repo_agent_location_and_model,
-    covers = ["C-11"],
-    tags = [],
-    {
-        let f = fx();
-        assert_eq!(f.env().ok().location, "host");
-        f.repo_cfg(json!({ "agent": { "location": "box", "model": "haiku" } }));
-        let o = f.env();
-        assert_eq!(o.ok().location, "box");
-        assert_eq!(o.ok().model.as_deref(), Some("haiku"));
-        repo_rejects(
-            &f,
-            &[
-                json!({ "agent": { "location": "cloud" } }),
-                json!({ "agent": { "nope": 1 } }),
-            ],
-        );
-    }
-);
+parity!(repo_agent_model, covers = ["C-11"], tags = [], {
+    let f = fx();
+    f.repo_cfg(json!({ "agent": { "model": "haiku" } }));
+    let o = f.env();
+    assert_eq!(o.ok().model.as_deref(), Some("haiku"));
+    repo_rejects(&f, &[json!({ "agent": { "nope": 1 } })]);
+});
 
 parity!(
     repo_egress_entry_validation,
@@ -272,7 +264,7 @@ parity!(
 );
 
 parity!(
-    box_credentials_gh_token_rejected_every_location,
+    box_credentials_gh_token_rejected,
     covers = ["C-14"],
     tags = [],
     {
@@ -286,13 +278,9 @@ parity!(
             json!({ "OTHER": { "file_env": "GH_TOKEN" } }),
         ];
         for form in forms {
-            for location in ["host", "box"] {
-                f.repo_cfg(json!({ "agent": { "location": location }, "box_credentials": form }));
-                assert_rejected(&f.env(), &format!("{location} {form}"));
-            }
+            f.repo_cfg(json!({ "box_credentials": form }));
+            assert_rejected(&f.env(), &format!("{form}"));
         }
-        f.repo_cfg(json!({ "box_credentials": ["GH_TOKEN"] }));
-        assert_rejected(&f.env_at("box"), "flag override box");
     }
 );
 
@@ -301,7 +289,7 @@ parity!(
     covers = ["C-15"],
     tags = [],
     {
-        let f = fx();
+        let f = box_fx();
         let file = f.secret_file("t", "v");
         f.user(json!({ "credentials": { "OTHER": { "file": file } } }));
         let forms = [
@@ -311,11 +299,8 @@ parity!(
             json!({ "OTHER": { "file_env": "CLAUDE_CODE_OAUTH_TOKEN" } }),
         ];
         for form in forms {
-            f.repo_cfg(json!({ "agent": { "location": "box" }, "box_credentials": form }));
-            assert_rejected(&f.env(), &format!("box {form}"));
-            f.repo_cfg(json!({ "box_credentials": form }));
-            let host = f.env();
-            assert_eq!(host.class, ExitClass::Ok, "host {form}: {}", host.stderr);
+            merge_repo_cfg(&f, json!({ "box_credentials": form }));
+            assert_rejected(&f.env(), &format!("{form}"));
         }
     }
 );
@@ -346,6 +331,19 @@ parity!(
         let o = f.env();
         assert_rejected(&o, "unknown user key");
         assert!(o.stderr.contains("box.providr"), "{}", o.stderr);
+        f.user(json!({}));
+        for (doc, key) in [
+            (json!({ "agent": { "location": "box" } }), "agent.location"),
+            (
+                json!({ "reports": { "backend": "local" } }),
+                "reports.backend",
+            ),
+        ] {
+            f.repo_cfg(doc);
+            let o = f.env();
+            assert_rejected(&o, key);
+            assert!(o.stderr.contains(key), "{key}: {}", o.stderr);
+        }
     }
 );
 

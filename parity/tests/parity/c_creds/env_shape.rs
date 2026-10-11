@@ -6,10 +6,19 @@ use serde_json::{json, Value};
 use super::support::*;
 use crate::moor;
 
+pub(super) fn run(f: &Fx, mut opts: EnvOpts) -> Outcome<EnvReport> {
+    opts.agent_location = Some("box".into());
+    f.env_with(&opts)
+}
+
+pub(super) fn env(f: &Fx) -> Outcome<EnvReport> {
+    run(f, EnvOpts::default())
+}
+
 parity!(env_exit_classes, covers = ["C-24"], tags = [], {
     let f = fx();
     f.user(json!({ "credentials": { "GONE": { "file": "/nonexistent/path" } } }));
-    let unresolved = f.env();
+    let unresolved = env(&f);
     let report = unresolved.ok();
     assert_eq!(
         report.credential("GONE").and_then(|c| c.resolves),
@@ -28,10 +37,6 @@ parity!(env_exit_classes, covers = ["C-24"], tags = [], {
         },
     );
     assert_rejected(&outside, "outside a git repo");
-
-    let usage = f.env_at("cloud");
-    assert_eq!(usage.class, ExitClass::Usage, "{}", usage.stderr);
-    assert!(usage.stdout.trim().is_empty());
 });
 
 parity!(env_json_shape, covers = ["C-25"], tags = [], {
@@ -39,13 +44,13 @@ parity!(env_json_shape, covers = ["C-25"], tags = [], {
     let file = f.secret_file("c", "v");
     f.user(json!({ "credentials": { "C": { "file": file } } }));
     f.repo_cfg(json!({ "agent": { "model": "haiku" }, "egress": ["a.example.com"] }));
-    let o = f.env();
+    let o = env(&f);
     o.ok();
     let v = json_of(&o);
     for key in ["repo", "items", "agent", "github"] {
         assert!(v.get(key).is_some(), "missing top-level {key}");
     }
-    assert!(v["agent"].get("location").is_some() && v["agent"].get("model").is_some());
+    assert!(v["agent"].get("model").is_some());
     for key in ["identity", "app_id", "login", "mint", "resolved"] {
         assert!(v["github"].get(key).is_some(), "missing github.{key}");
     }
@@ -86,10 +91,13 @@ parity!(
         f.user(json!({ "credentials": {
         "GOOD": { "file": file }, "BAD": { "file": "/nonexistent/path" }
     } }));
-        let o = f.env_with(&EnvOpts {
-            text: true,
-            ..Default::default()
-        });
+        let o = run(
+            &f,
+            EnvOpts {
+                text: true,
+                ..Default::default()
+            },
+        );
         assert_eq!(o.class, ExitClass::Ok, "{}", o.stderr);
         assert!(
             serde_json::from_str::<Value>(&o.stdout).is_err(),
@@ -137,7 +145,7 @@ parity!(env_item_order_is_fixed, covers = ["C-27"], tags = [], {
         "egress": ["a.example.com"], "credentials": ["ALPHA"], "box_credentials": ["MID"],
         "box": { "size": "medium" },
     }));
-    let o = f.env_at("box");
+    let o = env(&f);
     let items = &o.ok().items;
     let rank = |k: &str| {
         [
@@ -218,7 +226,7 @@ parity!(
         f.repo_cfg(json!({
             "credentials": ["USERONLY", "REPOREF"], "box_credentials": ["BOXONLY"],
         }));
-        let o = f.env();
+        let o = env(&f);
         let r = o.ok();
         let user_only = r.credential("USERONLY").expect("USERONLY");
         assert_eq!(
@@ -251,34 +259,23 @@ parity!(env_delivery_labels, covers = ["C-29"], tags = [], {
         "CLAUDE_CODE_OAUTH_TOKEN": { "file": file },
     } }));
     f.repo_cfg(json!({ "box_credentials": ["LISTED"] }));
-    for location in ["host", "box"] {
-        let o = f.env_at(location);
-        let r = o.ok();
-        let label = |n: &str| r.credential(n).and_then(|c| c.delivery.clone());
-        assert_eq!(label("LISTED").as_deref(), Some("stdin/file"), "{location}");
-        assert_eq!(label("PLAIN").as_deref(), Some("host only"), "{location}");
-        let claude = if location == "box" {
-            "proxy"
-        } else {
-            "host only"
-        };
-        assert_eq!(
-            label("CLAUDE_CODE_OAUTH_TOKEN").as_deref(),
-            Some(claude),
-            "{location}"
-        );
-        assert!(r
-            .items
-            .iter()
-            .all(|i| i.delivery.as_deref() != Some("injected")));
-    }
+    let o = env(&f);
+    let r = o.ok();
+    let label = |n: &str| r.credential(n).and_then(|c| c.delivery.clone());
+    assert_eq!(label("LISTED").as_deref(), Some("stdin/file"));
+    assert_eq!(label("PLAIN").as_deref(), Some("host only"));
+    assert_eq!(label("CLAUDE_CODE_OAUTH_TOKEN").as_deref(), Some("proxy"));
+    assert!(r
+        .items
+        .iter()
+        .all(|i| i.delivery.as_deref() != Some("injected")));
 });
 
 parity!(env_always_lists_box_gh_row, covers = ["C-31"], tags = [], {
     let f = fx();
     f.user(json!({ "box": { "provider": "sprites" } }));
     f.repo_cfg(json!({ "egress": ["a.example.com"] }));
-    let r = f.env_at("box");
+    let r = env(&f);
     let gh = r.ok().item("box", "gh").expect("box gh row");
     assert_eq!(gh.delivery.as_deref(), Some("proxy"));
     assert!(r.ok().items.iter().all(|i| i.name != "GH_TOKEN"));
@@ -298,24 +295,25 @@ parity!(env_egress_item_variants, covers = ["C-32"], tags = [], {
     };
     f.user(json!({ "box": { "provider": "sprites" } }));
     f.repo_cfg(json!({ "egress": ["a.example.com"] }));
-    let (name, detail) = egress_of(&f.env());
+    let (name, detail) = egress_of(&env(&f));
     assert_eq!(name, "allow");
     assert!(detail.contains("a.example.com"), "{detail}");
 
     f.repo_cfg(json!({}));
-    let (open_name, open_detail) = egress_of(&f.env());
-    assert_eq!(open_name, "policy");
+    let (open_name, open_detail) = egress_of(&env(&f));
+    assert_eq!(open_name, "allow");
+    assert!(open_detail.contains("github.com"), "{open_detail}");
 
     f.user(json!({ "box": { "provider": "local-container" } }));
-    let (none_name, none_detail) = egress_of(&f.env());
+    let (none_name, none_detail) = egress_of(&env(&f));
     assert_eq!(none_name, "policy");
     assert_ne!(
         open_detail, none_detail,
-        "open vs unsupported must read differently"
+        "proxy-active allow vs unsupported must read differently"
     );
 
     f.repo_cfg(json!({ "egress": ["a.example.com", "b.example.com"] }));
-    let (n_name, n_detail) = egress_of(&f.env());
+    let (n_name, n_detail) = egress_of(&env(&f));
     assert_eq!(n_name, "policy");
     assert_ne!(
         n_detail, none_detail,
@@ -330,21 +328,13 @@ parity!(
     tags = [],
     {
         let f = fx();
-        for location in ["host", "box"] {
-            f.user(json!({ "box": { "provider": "namespace-devbox" } }));
-            let o = f.env_at(location);
-            assert!(
-                o.ok().item("egress", "enforce").is_some(),
-                "{location}: note missing"
-            );
-            f.user(json!({ "box": { "provider": "namespace-devbox", "enforce_egress": true } }));
-            assert!(
-                f.env_at(location).ok().item("egress", "enforce").is_none(),
-                "{location}"
-            );
-        }
+        f.user(json!({ "box": { "provider": "namespace-devbox" } }));
+        let o = env(&f);
+        assert!(o.ok().item("egress", "enforce").is_some(), "note missing");
+        f.user(json!({ "box": { "provider": "namespace-devbox", "enforce_egress": true } }));
+        assert!(env(&f).ok().item("egress", "enforce").is_none());
         f.user(json!({ "box": { "provider": "sprites" } }));
-        assert!(f.env().ok().item("egress", "enforce").is_none());
+        assert!(env(&f).ok().item("egress", "enforce").is_none());
     }
 );
 
@@ -356,11 +346,11 @@ parity!(
         let f = fx();
         f.repo_cfg(json!({ "egress": ["api.github.com"] }));
         f.user(json!({ "box": { "provider": "sprites" } }));
-        assert_rejected(&f.env_at("box"), "sprites + box + api.github.com");
+        assert_rejected(&env(&f), "sprites + box + api.github.com");
         f.repo_cfg(json!({ "egress": ["api.anthropic.com"] }));
-        assert_rejected(&f.env_at("box"), "sprites + box + api.anthropic.com");
+        assert_rejected(&env(&f), "sprites + box + api.anthropic.com");
         f.user(json!({ "box": { "provider": "local-container" } }));
-        assert_accepted(&f.env_at("box"), "local-container never checks");
+        assert_accepted(&env(&f), "local-container never checks");
     }
 );
 
@@ -392,13 +382,16 @@ parity!(
         "ENV_UNSET": { "env": "PARITY_V_UNSET" },
         "ENV_EMPTY": { "env": "PARITY_V_EMPTY" },
     } }));
-        let o = f.env_with(&EnvOpts {
-            set_env: vec![
-                ("PARITY_V_SET".into(), secret.clone()),
-                ("PARITY_V_EMPTY".into(), String::new()),
-            ],
-            ..Default::default()
-        });
+        let o = run(
+            &f,
+            EnvOpts {
+                set_env: vec![
+                    ("PARITY_V_SET".into(), secret.clone()),
+                    ("PARITY_V_EMPTY".into(), String::new()),
+                ],
+                ..Default::default()
+            },
+        );
         let r = o.ok();
         let want = [
             ("CMD_OK", true),

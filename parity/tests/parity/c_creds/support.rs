@@ -46,13 +46,6 @@ impl Fx {
         self.env_with(&EnvOpts::default())
     }
 
-    pub(super) fn env_at(&self, location: &str) -> Outcome<EnvReport> {
-        self.env_with(&EnvOpts {
-            agent_location: Some(location.into()),
-            ..Default::default()
-        })
-    }
-
     pub(super) fn secret_file(&self, name: &str, body: &str) -> String {
         let path = self.w.root().join("secrets").join(name);
         write_file(&path, body, 0o600);
@@ -245,17 +238,35 @@ pub(super) fn assert_rejected_start(f: &Fx, o: &Outcome<TaskView>, name: &str) {
     assert!(kinds.contains(&EventKind::Rejected), "{kinds:?}");
 }
 
-pub(super) fn bg_call(w: &World) -> Call {
-    w.calls("claude")
-        .into_iter()
-        .find(|c| c.argv.iter().any(|a| a == "--bg"))
-        .expect("claude --bg dispatched")
+pub(super) fn box_fx() -> Fx {
+    let f = fx();
+    flow_fakes(&f.w);
+    f.repo_cfg(json!({ "agent": { "location": "box" } }));
+    f.w.prepend_rules(
+        "claude",
+        [Rule::any().exec("cp '{flag:--mcp-config}' '{root}/mcp-seen' 2>/dev/null; true")],
+    );
+    f
 }
 
-pub(super) fn mcp_files(w: &World) -> Vec<PathBuf> {
-    std::fs::read_dir(w.state_dir().join("mcp"))
-        .map(|d| d.flatten().map(|e| e.path()).collect())
-        .unwrap_or_default()
+pub(super) fn run_box_agent(w: &World) -> Option<String> {
+    let seen = w.root().join("mcp-seen");
+    let _ = std::fs::remove_file(&seen);
+    let pane = herdr::calls_of(w, "pane", "run")
+        .last()
+        .and_then(|c| c.argv.last().cloned())
+        .expect("herdr pane run recorded");
+    let path = format!("{}:/usr/bin:/bin", w.bin_dir().display());
+    w.command("sh")
+        .env_clear()
+        .env("PATH", path)
+        .env("HOME", w.home())
+        .env("PARITY_FAKES", w.fakes_dir())
+        .arg("-c")
+        .arg(pane)
+        .output()
+        .expect("run pane command");
+    std::fs::read_to_string(seen).ok()
 }
 
 pub(super) fn repo_snapshot(repo: &Path) -> Vec<(String, Vec<u8>)> {

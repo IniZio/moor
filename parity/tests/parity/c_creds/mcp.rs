@@ -1,31 +1,38 @@
-use std::os::unix::fs::PermissionsExt;
-use std::path::PathBuf;
-
 use parity::adapter::{ExitClass, StartOpts};
 use parity::assert::assert_secret_absent;
-use parity::fake::Rule;
 use parity::parity;
+use parity::world::World;
 use serde_json::{json, Value};
 
 use super::support::*;
 use crate::moor;
 
+fn mcp_user_config(f: &Fx, secret: &str) {
+    let file = f.secret_file("mcp", secret);
+    f.user(json!({
+        "credentials": { "T": { "file": file } },
+        "mcp_servers": {
+            "srv": { "command": "npx", "args": ["--tok=${T}"], "env": { "K": "${T}" } },
+            "web": { "url": "http://h.example.com/${T}", "headers": { "X": "${T}" } },
+        },
+    }));
+}
+
+fn mcp_arg(w: &World) -> Option<String> {
+    w.calls("claude")
+        .iter()
+        .rev()
+        .find_map(|c| c.flag("--mcp-config"))
+}
+
 parity!(
-    mcp_config_file_for_dispatched_host_agent,
-    covers = ["C-132", "C-133", "C-134"],
-    tags = [],
+    box_agent_launch_delivers_mcp_config_without_leaking_secrets,
+    covers = ["C-132", "C-133", "C-134", "C-136"],
+    tags = ["new_only(BoxMcp)"],
     {
-        let f = fx();
-        flow_fakes(&f.w);
+        let f = box_fx();
         let secret = f.secret("mcp");
-        let file = f.secret_file("mcp", &secret);
-        f.user(json!({
-            "credentials": { "T": { "file": file } },
-            "mcp_servers": {
-                "srv": { "command": "npx", "args": ["--tok=${T}"], "env": { "K": "${T}" } },
-                "web": { "url": "http://h.example.com/${T}", "headers": { "X": "${T}" } },
-            },
-        }));
+        mcp_user_config(&f, &secret);
         write_file(
             &f.repo.path.join(".mcp.json"),
             &json!({ "mcpServers": { "own": {} } }).to_string(),
@@ -39,84 +46,55 @@ parity!(
         let before = repo_snapshot(&f.repo.path);
         let name = f.w.task_name("mcp");
         started_ok(&f, &name, Some("go"));
-        let path = PathBuf::from(
-            bg_call(&f.w)
-                .flag("--mcp-config")
-                .expect("--mcp-config flag"),
-        );
+        let seen = run_box_agent(&f.w);
         assert!(
-            path.starts_with(f.w.state_dir().join("mcp")),
-            "{}",
-            path.display()
+            mcp_arg(&f.w).is_some(),
+            "Box agent claude invoked without an MCP config"
         );
-        let mode = std::fs::metadata(&path)
-            .expect("mcp file")
-            .permissions()
-            .mode()
-            & 0o777;
-        assert_eq!(mode, 0o600);
-        let doc: Value =
-            serde_json::from_slice(&std::fs::read(&path).expect("read")).expect("json");
-        let servers = &doc["mcpServers"];
-        assert_eq!(servers["srv"]["args"][0], format!("--tok={secret}"));
-        assert_eq!(servers["srv"]["env"]["K"], secret.as_str());
-        assert_eq!(
-            servers["web"]["url"],
-            format!("http://h.example.com/{secret}")
-        );
-        assert_eq!(servers["web"]["headers"]["X"], secret.as_str());
-        assert!(servers["srv"].get("url").is_none() && servers["web"].get("command").is_none());
-        assert_secret_absent(&f.w, &secret, &["mcp/"]);
-        assert_eq!(
-            repo_snapshot(&f.repo.path),
-            before,
-            "moor writes nothing into the repo"
-        );
+        let text = seen.expect("MCP config readable from the Box agent's cwd");
+        let doc: Value = serde_json::from_str(&text).expect("MCP config is JSON");
+        for server in ["srv", "web"] {
+            assert!(doc["mcpServers"].get(server).is_some(), "{server}: {text}");
+        }
+        assert!(!text.contains(&secret), "MCP config holds the secret value");
+        assert_secret_absent(&f.w, &secret, &[]);
+        assert_eq!(repo_snapshot(&f.repo.path), before, "repo untouched");
         finish(&f, &name);
-        assert!(mcp_files(&f.w).is_empty(), "mcp file survives close");
         assert_secret_absent(&f.w, &secret, &[]);
     }
 );
 
 parity!(
-    mcp_config_absent_without_servers_and_removed_on_failed_dispatch,
-    covers = ["C-134"],
-    tags = [],
+    box_agent_gets_mcp_config_only_when_servers_configured,
+    covers = ["C-134", "C-135", "C-136"],
+    tags = ["new_only(BoxMcp)"],
     {
-        let f = fx();
-        flow_fakes(&f.w);
-        let name = f.w.task_name("nomcp");
-        started_ok(&f, &name, Some("go"));
-        assert_eq!(bg_call(&f.w).flag("--mcp-config"), None);
-        assert!(mcp_files(&f.w).is_empty());
-        finish(&f, &name);
+        let f = box_fx();
+        let first = f.w.task_name("nomcp");
+        started_ok(&f, &first, Some("go"));
+        let seen = run_box_agent(&f.w);
+        assert_eq!(mcp_arg(&f.w), None, "no servers, no MCP config");
+        assert!(seen.is_none());
+        finish(&f, &first);
 
-        let f = fx();
-        flow_fakes(&f.w);
-        let secret = f.secret("mcpfail");
-        let file = f.secret_file("mcp", &secret);
+        let secret = f.secret("mcp2");
+        mcp_user_config(&f, &secret);
+        let second = f.w.task_name("withmcp");
+        started_ok(&f, &second, Some("go"));
+        let seen = run_box_agent(&f.w);
+        assert!(
+            mcp_arg(&f.w).is_some(),
+            "servers configured but Box agent got no MCP config"
+        );
+        assert!(seen.is_some_and(|t| t.contains("srv")));
+        finish(&f, &second);
+
         f.user(json!({
-            "credentials": { "T": { "file": file } },
+            "credentials": { "T": { "file": f.w.root().join("secrets/missing") } },
             "mcp_servers": { "srv": { "command": "npx", "args": ["${T}"] } },
         }));
-        f.w.prepend_rules(
-            "claude",
-            [Rule::any()
-                .contains("--bg")
-                .exec("cp '{flag:--mcp-config}' '{root}/mcp-seen'")
-                .exit(1)
-                .stderr("dispatch refused\n")],
-        );
-        let name = f.w.task_name("failmcp");
-        let _ = start_task(&f, &name, Some("go"), None);
-        let seen = std::fs::read_to_string(f.w.root().join("mcp-seen"))
-            .expect("mcp config existed at dispatch time");
-        assert!(seen.contains(&secret), "mcp config lacked the server args");
-        assert!(
-            mcp_files(&f.w).is_empty(),
-            "failed dispatch leaves {:?}",
-            mcp_files(&f.w)
-        );
+        let name = f.w.task_name("badmcp");
+        assert_rejected_start(&f, &start_task(&f, &name, Some("go"), None), &name);
         assert_secret_absent(&f.w, &secret, &[]);
     }
 );
