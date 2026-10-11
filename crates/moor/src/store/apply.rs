@@ -59,7 +59,14 @@ fn apply_in(tx: &Transaction<'_>, now: Ts, d: Decision) -> Result<Applied, Store
         events.extend(task_events(task_step.from, task_step.to, i));
     }
     if let (Some(i), Some(s)) = (&d.box_input, &box_step) {
-        events.extend(box_events(s.from, s.to, i));
+        events.extend(box_events(
+            s.from,
+            s.to,
+            i,
+            existing
+                .as_ref()
+                .and_then(|b| b.handle.as_ref().or(b.attempted_handle.as_ref())),
+        ));
     }
     events.extend(d.events.into_iter().map(Event::from));
     let ids = events

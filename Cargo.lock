@@ -346,11 +346,13 @@ dependencies = [
  "clap",
  "moor-core",
  "rusqlite",
+ "rustix",
  "serde",
  "serde_json",
  "tempfile",
  "thiserror",
  "time",
+ "zeroize",
 ]
 
 [[package]]

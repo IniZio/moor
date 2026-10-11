@@ -13,8 +13,12 @@ moor_core::view	moor_core::domain,moor_core::name
 moor::env
 moor::error	moor::env,moor::store
 moor::store	moor::env
+moor::adapters::proc	moor::env
 moor::adapters::clock	moor::env
+moor::adapters::git	moor::adapters::proc
 moor::adapters::fake_proc
+moor::adapters::fake_driver
+moor::adapters::fake_surface
 moor::cli	moor::error
 moor::cx	moor::store,moor::adapters::clock,moor::adapters::git,moor::error
 moor::ops	moor::cx,moor::store,moor::error,moor::adapters::git

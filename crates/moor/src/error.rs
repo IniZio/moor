@@ -2,6 +2,12 @@
 
 use moor_core::{ErrorKind, ErrorView, Response, Warning};
 
+mod close;
+mod store;
+
+mod driver;
+mod surface;
+
 /// Failure of one command, classified once by whoever produced it.
 #[derive(Debug)]
 pub struct CommandError {
@@ -13,6 +19,8 @@ pub struct CommandError {
     pub hints: Vec<String>,
     /// Extra lines describing where the failure happened.
     pub context: Vec<String>,
+    /// Outcome still reported in the envelope `value`, when the command made one.
+    pub value: Option<serde_json::Value>,
 }
 
 impl CommandError {
@@ -26,6 +34,7 @@ impl CommandError {
             error: error.into(),
             hints: Vec::new(),
             context: Vec::new(),
+            value: None,
         }
     }
 
@@ -45,6 +54,13 @@ impl CommandError {
         self
     }
 
+    /// Attach the outcome the envelope `value` keeps despite the failure.
+    #[must_use]
+    pub fn with_value(mut self, value: serde_json::Value) -> Self {
+        self.value = Some(value);
+        self
+    }
+
     /// Convert to the failure envelope; the only such conversion.
     #[must_use]
     pub fn into_response(self, cmd: &str, warnings: Vec<Warning>) -> Response {
@@ -54,7 +70,9 @@ impl CommandError {
             hints: self.hints,
             context: self.context,
         };
-        Response::err(cmd, view).with_warnings(warnings)
+        let mut resp = Response::err(cmd, view).with_warnings(warnings);
+        resp.value = self.value;
+        resp
     }
 }
 

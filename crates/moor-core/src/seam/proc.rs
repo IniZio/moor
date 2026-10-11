@@ -61,7 +61,13 @@ impl Tool {
 }
 
 /// Environment variables every child inherits; nothing else is inherited.
-pub const BASE_ENV: &[&str] = &["PATH", "HOME", "LANG", "SSH_AUTH_SOCK"];
+pub const BASE_ENV: &[&str] = &[
+    "PATH",
+    "HOME",
+    "LANG",
+    "SSH_AUTH_SOCK",
+    "GIT_CEILING_DIRECTORIES",
+];
 
 /// Per-call environment additions on top of [`BASE_ENV`].
 #[derive(Clone, Debug, Default)]
@@ -195,6 +201,8 @@ pub struct ProcOutput {
     pub stdout: String,
     /// Captured stderr.
     pub stderr: String,
+    /// Output past the per-stream cap was discarded.
+    pub truncated: bool,
 }
 
 /// Why a child did not succeed.
