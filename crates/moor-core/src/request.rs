@@ -37,13 +37,13 @@ pub enum Request {
     /// Show the layered environment.
     Env(EnvReq),
     /// Set up GitHub credentials.
-    GithubSetup,
+    GithubSetup {},
     /// Log in to GitHub.
-    GithubLogin,
+    GithubLogin {},
     /// Check the credential proxy.
-    ProxyCheck,
+    ProxyCheck {},
     /// Print version information.
-    Version,
+    Version {},
 }
 
 impl Request {
@@ -66,10 +66,10 @@ impl Request {
             Self::Wake(_) => "wake",
             Self::Gate(_) => "gate",
             Self::Env(_) => "env",
-            Self::GithubSetup => "github-setup",
-            Self::GithubLogin => "github-login",
-            Self::ProxyCheck => "proxy-check",
-            Self::Version => "version",
+            Self::GithubSetup {} => "github-setup",
+            Self::GithubLogin {} => "github-login",
+            Self::ProxyCheck {} => "proxy-check",
+            Self::Version {} => "version",
         }
     }
 }

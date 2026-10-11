@@ -9,7 +9,7 @@ fn moor() -> Moor {
 
 #[test]
 fn version_is_ok_with_expected_keys() {
-    let resp = moor().call(Request::Version);
+    let resp = moor().call(Request::Version {});
     assert_eq!(resp.class, ExitClass::Ok);
     assert_eq!(resp.cmd, "version");
     let value = resp.value.expect("value");

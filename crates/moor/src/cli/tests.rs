@@ -59,7 +59,7 @@ fn proxy_serve_is_failed_json() {
 fn version_parses_to_request() {
     assert!(matches!(
         parse(argv(&["version"])),
-        Parsed::Request(inv) if inv.request == Request::Version
+        Parsed::Request(inv) if inv.request == Request::Version {}
     ));
 }
 
@@ -72,7 +72,7 @@ fn call_parses_stdin_mode() {
 fn parse_call_good_and_bad() {
     assert_eq!(
         parse_call(r#"{"cmd":"version"}"#).expect("ok"),
-        Request::Version
+        Request::Version {}
     );
     let o = parse_call("{").expect_err("bad json");
     let v: serde_json::Value = serde_json::from_str(&o.stdout).expect("json");

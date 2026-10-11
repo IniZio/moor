@@ -6,7 +6,7 @@ use crate::cx::Cx;
 #[test]
 fn version_reports_build_info() {
     let cx = Cx::new(None);
-    let v = dispatch(&cx, Request::Version).expect("version ok");
+    let v = dispatch(&cx, Request::Version {}).expect("version ok");
     assert_eq!(
         v.get("version").and_then(serde_json::Value::as_str),
         Some(env!("CARGO_PKG_VERSION"))

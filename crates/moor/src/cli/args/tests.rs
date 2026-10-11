@@ -27,7 +27,7 @@ fn req(args: &[&str]) -> Request {
     );
     match action {
         Action::Request(r) => r,
-        _ => Request::Version,
+        _ => Request::Version {},
     }
 }
 
@@ -226,10 +226,10 @@ fn admin_verbs() {
             repo: Some("web-app".into())
         })
     );
-    assert_eq!(req(&["github", "setup"]), Request::GithubSetup);
-    assert_eq!(req(&["github", "login"]), Request::GithubLogin);
-    assert_eq!(req(&["proxy", "check"]), Request::ProxyCheck);
-    assert_eq!(req(&["version"]), Request::Version);
+    assert_eq!(req(&["github", "setup"]), Request::GithubSetup {});
+    assert_eq!(req(&["github", "login"]), Request::GithubLogin {});
+    assert_eq!(req(&["proxy", "check"]), Request::ProxyCheck {});
+    assert_eq!(req(&["version"]), Request::Version {});
 }
 
 #[test]

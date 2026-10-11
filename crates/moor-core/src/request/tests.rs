@@ -75,10 +75,10 @@ fn all() -> Vec<Request> {
             name: "n".into(),
         }),
         Request::Env(EnvReq { repo: None }),
-        Request::GithubSetup,
-        Request::GithubLogin,
-        Request::ProxyCheck,
-        Request::Version,
+        Request::GithubSetup {},
+        Request::GithubLogin {},
+        Request::ProxyCheck {},
+        Request::Version {},
     ]);
     v
 }
@@ -127,7 +127,17 @@ fn unknown_field_rejected() {
 #[test]
 fn unit_variant_accepted() {
     let r: Request = serde_json::from_str(r#"{"cmd":"version"}"#).unwrap();
-    assert_eq!(r, Request::Version);
+    assert_eq!(r, Request::Version {});
+}
+
+#[test]
+fn unit_variants_reject_unknown_fields() {
+    for cmd in ["github-setup", "github-login", "proxy-check", "version"] {
+        let ok = format!(r#"{{"cmd":"{cmd}"}}"#);
+        assert!(serde_json::from_str::<Request>(&ok).is_ok(), "{ok}");
+        let bad = format!(r#"{{"cmd":"{cmd}","bogus":1}}"#);
+        assert!(serde_json::from_str::<Request>(&bad).is_err(), "{bad}");
+    }
 }
 
 #[test]

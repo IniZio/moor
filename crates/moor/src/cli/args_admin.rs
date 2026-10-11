@@ -53,12 +53,12 @@ impl AdminCmd {
     pub(super) fn into_action(self) -> Action {
         match self {
             Self::Env(a) => Action::Request(Request::Env(EnvReq { repo: a.repo })),
-            Self::Github(GithubCmd::Setup) => Action::Request(Request::GithubSetup),
-            Self::Github(GithubCmd::Login) => Action::Request(Request::GithubLogin),
-            Self::Proxy(ProxyCmd::Check) => Action::Request(Request::ProxyCheck),
+            Self::Github(GithubCmd::Setup) => Action::Request(Request::GithubSetup {}),
+            Self::Github(GithubCmd::Login) => Action::Request(Request::GithubLogin {}),
+            Self::Proxy(ProxyCmd::Check) => Action::Request(Request::ProxyCheck {}),
             Self::Proxy(ProxyCmd::Serve) => Action::ProxyServe,
             Self::Call => Action::CallStdin,
-            Self::Version => Action::Request(Request::Version),
+            Self::Version => Action::Request(Request::Version {}),
         }
     }
 }
