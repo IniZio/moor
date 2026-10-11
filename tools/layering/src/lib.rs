@@ -5,7 +5,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use syn::visit::Visit;
-use syn::{ItemMod, ItemUse, UseTree};
+use syn::{Attribute, ImplItemFn, Item, ItemMod, ItemUse, UseTree};
+
+mod ban;
+pub use ban::{clock_violations, Call};
+use ban::{BANNED_CALLS, BAN_ALLOWED, BAN_CRATES, BAN_CRATE_ALLOWED};
 
 /// One `crate::`, `self::` or `super::` mention, resolved to crate-relative segments.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -70,6 +74,37 @@ pub fn parse_rules(table: &str) -> Result<Vec<Rule>, String> {
 struct Collector {
     module: Vec<String>,
     out: Vec<Ref>,
+    calls: Vec<Call>,
+}
+
+/// True for exactly `#[cfg(test)]`; `cfg(not(test))` and `cfg(any(test, ..))` are not.
+fn is_cfg_test(attrs: &[Attribute]) -> bool {
+    attrs.iter().any(|a| {
+        a.path().is_ident("cfg")
+            && a.parse_args::<syn::Path>()
+                .is_ok_and(|p| p.is_ident("test"))
+    })
+}
+
+fn item_attrs(i: &Item) -> &[Attribute] {
+    match i {
+        Item::Const(x) => &x.attrs,
+        Item::Enum(x) => &x.attrs,
+        Item::ExternCrate(x) => &x.attrs,
+        Item::Fn(x) => &x.attrs,
+        Item::ForeignMod(x) => &x.attrs,
+        Item::Impl(x) => &x.attrs,
+        Item::Macro(x) => &x.attrs,
+        Item::Mod(x) => &x.attrs,
+        Item::Static(x) => &x.attrs,
+        Item::Struct(x) => &x.attrs,
+        Item::Trait(x) => &x.attrs,
+        Item::TraitAlias(x) => &x.attrs,
+        Item::Type(x) => &x.attrs,
+        Item::Union(x) => &x.attrs,
+        Item::Use(x) => &x.attrs,
+        _ => &[],
+    }
 }
 
 impl Collector {
@@ -138,6 +173,18 @@ impl Collector {
 }
 
 impl<'ast> Visit<'ast> for Collector {
+    fn visit_item(&mut self, i: &'ast Item) {
+        if !is_cfg_test(item_attrs(i)) {
+            syn::visit::visit_item(self, i);
+        }
+    }
+
+    fn visit_impl_item_fn(&mut self, i: &'ast ImplItemFn) {
+        if !is_cfg_test(&i.attrs) {
+            syn::visit::visit_impl_item_fn(self, i);
+        }
+    }
+
     fn visit_item_use(&mut self, i: &'ast ItemUse) {
         let line = i.use_token.span.start().line;
         self.tree(&mut Vec::new(), line, &i.tree);
@@ -151,6 +198,15 @@ impl<'ast> Visit<'ast> for Collector {
 
     fn visit_path(&mut self, p: &'ast syn::Path) {
         let segs: Vec<String> = p.segments.iter().map(|s| s.ident.to_string()).collect();
+        if let [.., ty, f] = segs.as_slice() {
+            if BANNED_CALLS.iter().any(|(t, n)| ty == t && f == n) {
+                self.calls.push(Call {
+                    line: p.segments[segs.len() - 2].ident.span().start().line,
+                    from: self.module.clone(),
+                    name: format!("{ty}::{f}"),
+                });
+            }
+        }
         if let Some(first) = p.segments.first() {
             self.push(first.ident.span().start().line, &segs);
         }
@@ -163,13 +219,24 @@ impl<'ast> Visit<'ast> for Collector {
 /// # Errors
 /// Returns the syn parse error when `src` is not valid Rust.
 pub fn refs(src: &str, file_module: &[String]) -> Result<Vec<Ref>, syn::Error> {
+    scan(src, file_module).map(|(r, _)| r)
+}
+
+/// Like [`refs`], plus every banned clock call. Test-only code (`#[cfg(test)]`) is skipped.
+///
+/// # Errors
+/// Returns the syn parse error when `src` is not valid Rust.
+pub fn scan(src: &str, file_module: &[String]) -> Result<(Vec<Ref>, Vec<Call>), syn::Error> {
     let file = syn::parse_file(src)?;
     let mut c = Collector {
         module: file_module.to_vec(),
         out: Vec::new(),
+        calls: Vec::new(),
     };
-    c.visit_file(&file);
-    Ok(c.out)
+    if !is_cfg_test(&file.attrs) {
+        c.visit_file(&file);
+    }
+    Ok((c.out, c.calls))
 }
 
 fn starts_with(path: &[String], prefix: &[String]) -> bool {
@@ -179,23 +246,29 @@ fn starts_with(path: &[String], prefix: &[String]) -> bool {
 /// Mentions that break `rule`: from inside its module, to a sibling not allowed.
 #[must_use]
 pub fn violations<'a>(all: &'a [Ref], rule: &Rule) -> Vec<&'a Ref> {
-    let depth = rule.module.len();
     all.iter()
         .filter(|r| starts_with(&r.from, &rule.module))
         .filter(|r| {
-            let to = &r.to[..r.to.len().min(depth)];
-            let related = starts_with(to, &rule.module) || starts_with(&rule.module, to);
-            !related && !rule.allowed.iter().any(|a| a == to)
+            let related = starts_with(&r.to, &rule.module) || starts_with(&rule.module, &r.to);
+            !related && !rule.allowed.iter().any(|a| starts_with(&r.to, a))
         })
         .collect()
+}
+
+/// Test-only sources: a `tests.rs` file or a `tests` directory.
+fn is_test_path(p: &Path) -> bool {
+    p.file_name()
+        .is_some_and(|n| n == "tests.rs" || (n == "tests" && p.is_dir()))
 }
 
 fn rs_files(dir: &Path, out: &mut BTreeSet<PathBuf>) -> std::io::Result<()> {
     for entry in fs::read_dir(dir)? {
         let p = entry?.path();
         if p.is_dir() {
-            rs_files(&p, out)?;
-        } else if p.extension().is_some_and(|e| e == "rs") {
+            if !is_test_path(&p) {
+                rs_files(&p, out)?;
+            }
+        } else if p.extension().is_some_and(|e| e == "rs") && !is_test_path(&p) {
             out.insert(p);
         }
     }
@@ -235,41 +308,65 @@ fn crate_dir(root: &Path, name: &str) -> Option<PathBuf> {
     })
 }
 
-/// Checks every rule against the sources under `root`; returns one message per violation.
+/// Checks every rule and the clock ban against the sources under `root`; returns one message per violation.
 ///
 /// # Errors
 /// Returns a message when a crate directory, a source file or a rule cannot be read or parsed.
 pub fn check(root: &Path, table: &str) -> Result<(usize, Vec<String>), String> {
     let rules = parse_rules(table)?;
+    let mut crates: BTreeSet<&str> = rules.iter().map(|r| r.krate.as_str()).collect();
+    crates.extend(BAN_CRATES);
     let mut bad = Vec::new();
-    for rule in &rules {
-        let dir = crate_dir(root, &rule.krate)
-            .ok_or_else(|| format!("no crate dir for {}", rule.krate))?;
+    for krate in crates {
+        let ruled = rules.iter().any(|r| r.krate == krate);
+        let Some(dir) = crate_dir(root, krate) else {
+            if ruled {
+                return Err(format!("no crate dir for {krate}"));
+            }
+            continue;
+        };
         let src = dir.join("src");
         let mut files = BTreeSet::new();
         rs_files(&src, &mut files).map_err(|e| format!("{}: {e}", src.display()))?;
         let mut all = Vec::new();
         let mut owner = Vec::new();
+        let mut calls = Vec::new();
+        let mut call_owner = Vec::new();
         for f in &files {
             let text = fs::read_to_string(f).map_err(|e| format!("{}: {e}", f.display()))?;
-            let found =
-                refs(&text, &file_module(&src, f)).map_err(|e| format!("{}: {e}", f.display()))?;
+            let (found, clock) =
+                scan(&text, &file_module(&src, f)).map_err(|e| format!("{}: {e}", f.display()))?;
             owner.extend(std::iter::repeat_n(f.clone(), found.len()));
             all.extend(found);
+            call_owner.extend(std::iter::repeat_n(f.clone(), clock.len()));
+            calls.extend(clock);
         }
-        for r in violations(&all, rule) {
-            let idx = all.iter().position(|x| std::ptr::eq(x, r)).unwrap_or(0);
+        let rel = |p: &PathBuf| p.strip_prefix(root).unwrap_or(p).display().to_string();
+        for rule in rules.iter().filter(|r| r.krate == krate) {
+            for r in violations(&all, rule) {
+                let idx = all.iter().position(|x| std::ptr::eq(x, r)).unwrap_or(0);
+                bad.push(format!(
+                    "layering: {}:{} {}::{} uses {}::{}",
+                    rel(&owner[idx]),
+                    r.line,
+                    rule.krate,
+                    rule.module.join("::"),
+                    rule.krate,
+                    r.to.join("::"),
+                ));
+            }
+        }
+        for c in clock_violations(&calls, krate) {
+            let idx = calls.iter().position(|x| std::ptr::eq(x, c)).unwrap_or(0);
+            let mut module = vec![krate.to_owned()];
+            module.extend(c.from.iter().cloned());
             bad.push(format!(
-                "layering: {}:{} {}::{} uses {}::{}",
-                owner[idx]
-                    .strip_prefix(root)
-                    .unwrap_or(&owner[idx])
-                    .display(),
-                r.line,
-                rule.krate,
-                rule.module.join("::"),
-                rule.krate,
-                r.to.join("::"),
+                "layering: {}:{} {} uses {} (only {BAN_CRATE_ALLOWED}::{})",
+                rel(&call_owner[idx]),
+                c.line,
+                module.join("::"),
+                c.name,
+                BAN_ALLOWED.join("::"),
             ));
         }
     }

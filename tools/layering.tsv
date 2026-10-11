@@ -5,13 +5,13 @@ moor_core::secret
 moor_core::name
 moor_core::request	moor_core::name
 moor_core::response	moor_core::name
-moor_core::domain	moor_core::name
-moor_core::seam
+moor_core::domain	moor_core::name,moor_core::secret
+moor_core::seam	moor_core::domain,moor_core::name,moor_core::secret
 moor::env
 moor::error	moor::env
-moor::adapters	moor::env
-moor::store
+moor::adapters::clock	moor::env
+moor::store	moor::env
 moor::cli	moor::error
-moor::moor	moor::cx,moor::wire,moor::ops,moor::store,moor::adapters,moor::error,moor::env
-moor::cx	moor::store,moor::adapters
-moor::ops	moor::cx,moor::store,moor::error,moor::adapters
+moor::moor	moor::cx,moor::wire,moor::ops,moor::store,moor::adapters::clock,moor::error,moor::env
+moor::cx	moor::store,moor::adapters::clock,moor::adapters::git
+moor::ops	moor::cx,moor::store,moor::error,moor::adapters::git
