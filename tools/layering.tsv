@@ -5,3 +5,9 @@ moor_core::secret
 moor_core::name
 moor_core::request	moor_core::name
 moor_core::response	moor_core::name
+moor::env
+moor::error	moor::env,moor::store
+moor::cli	moor::error
+moor::cx	moor::store,moor::adapters::clock,moor::adapters::git,moor::error
+moor::ops	moor::cx,moor::store,moor::error,moor::adapters::git
+moor::moor	moor::cx,moor::wire,moor::ops,moor::store,moor::adapters::clock,moor::error,moor::env

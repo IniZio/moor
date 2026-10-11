@@ -5,7 +5,7 @@ TAPLO_VERSION := 0.10.0
 TYPOS_VERSION := 1.51.1
 LLVM_COV_VERSION := 0.9.1
 
-.PHONY: help setup secret audit lint format format-check fmt-check test unit ci build deploy
+.PHONY: help coverage setup secret audit lint format format-check fmt-check test unit ci build deploy
 
 help:
 	@echo "targets: setup secret audit lint format format-check test ci build deploy"
@@ -48,9 +48,13 @@ fmt-check: format-check
 
 unit:
 	cargo nextest run --workspace --lib --locked
+	cargo nextest run -p moor --test cli --locked
 	cargo test --workspace --doc --locked
 
 test: unit
+
+coverage:
+	cargo llvm-cov --workspace --locked
 
 ci:
 	$(MAKE) audit
