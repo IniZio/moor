@@ -1,7 +1,7 @@
 # Parity crate shared contract (all slices MUST match these signatures exactly)
 
-Repo: $HOME/magic/moor-next (branch `next`). Crate `parity` at $HOME/magic/moor-next/parity.
-Old moor source (READ-ONLY reference): $HOME/magic/moor. Never edit or commit there. Children never commit anywhere.
+Repo: this repo (branch `next`). Crate `parity` at `parity/`.
+Old moor source (READ-ONLY reference): `$REPOS/moor` (the Makefile's OLD_REPO). Never edit or commit there. Children never commit anywhere.
 Plan: .groundwork/work/rewrite/plan.md sections 1-3, 5.
 Rules: edition 2021; `unsafe` only for minimal libc calls; comment density <= 5 comments per 100 lines; `cargo fmt` clean; `cargo clippy --all-targets -- -D warnings` clean for your files.
 Deps (parity/Cargo.toml): serde (derive), serde_json, tempfile, rusqlite (bundled), fs2, libc, inventory 0.3, libtest-mimic 0.8.
