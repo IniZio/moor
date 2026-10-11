@@ -105,8 +105,17 @@ pub fn fail(w: &World, verb: &str) {
 }
 
 pub fn gone(w: &World, box_name: &str) {
-    let _ = box_name;
-    w.prepend_rules("crabbox", [Rule::on(&["list"]).stdout("[]")]);
+    let current = crate::fake::read_rules(&w.fakes_dir(), "crabbox")
+        .into_iter()
+        .find(|r| r.matcher.argv_prefix.as_deref() == Some(&["list".to_string()][..]))
+        .and_then(|r| serde_json::from_str::<Vec<serde_json::Value>>(&r.reply.stdout).ok())
+        .unwrap_or_default();
+    let kept: Vec<_> = current
+        .into_iter()
+        .filter(|i| i["name"].as_str() != Some(box_name))
+        .collect();
+    let body = serde_json::Value::Array(kept).to_string();
+    w.prepend_rules("crabbox", [Rule::on(&["list"]).stdout(body)]);
 }
 
 pub fn pause(w: &World) {

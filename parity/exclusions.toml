@@ -988,19 +988,13 @@ slice = "T10"
 reason = "B section 10 rows land in T10"
 ref = "parity-plan.md §6"
 
-[B-100]
-code = "PENDING"
-slice = "T10"
-reason = "B section 10 rows land in T10"
-ref = "parity-plan.md §6"
-
-[B-101]
-code = "PENDING"
-slice = "T10"
-reason = "B section 10 rows land in T10"
-ref = "parity-plan.md §6"
-
 [B-102]
+code = "PENDING"
+slice = "T10"
+reason = "B section 10 rows land in T10"
+ref = "parity-plan.md §6"
+
+[B-102a]
 code = "PENDING"
 slice = "T10"
 reason = "B section 10 rows land in T10"

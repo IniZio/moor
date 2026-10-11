@@ -63,26 +63,49 @@ fn leading_id(s: &str) -> Option<String> {
     let end = s.find(|c: char| !(c.is_ascii_alphanumeric() || c == '-'))?;
     let id = &s[..end];
     let (prefix, num) = id.rsplit_once('-')?;
-    let ok =
-        PREFIXES.contains(&prefix) && !num.is_empty() && num.bytes().all(|b| b.is_ascii_digit());
+    let digits = num
+        .strip_suffix(|c: char| c.is_ascii_lowercase())
+        .unwrap_or(num);
+    let ok = PREFIXES.contains(&prefix)
+        && !digits.is_empty()
+        && digits.bytes().all(|b| b.is_ascii_digit());
     ok.then(|| id.to_string())
 }
 
-fn parse_inventory_text(text: &str, inv: &mut Inventory) {
+fn looks_like_id(s: &str) -> bool {
+    PREFIXES
+        .iter()
+        .any(|p| s.strip_prefix(p).is_some_and(|rest| rest.starts_with('-')))
+}
+
+fn parse_inventory_text(text: &str, inv: &mut Inventory) -> Result<(), String> {
     let mut in_flag_list = false;
     for line in text.lines() {
         if line.starts_with("## ") {
+            in_flag_list = false;
+        }
+        if in_flag_list
+            && !line.is_empty()
+            && !line.starts_with("- ")
+            && !line.starts_with(char::is_whitespace)
+        {
             in_flag_list = false;
         }
         if line.starts_with("SECURITY-INVARIANT rows (each") {
             in_flag_list = true;
         }
         if let Some(rest) = line.strip_prefix("| ") {
-            if let Some(id) = leading_id(rest) {
-                if line.contains("SECURITY-INVARIANT") {
-                    inv.security.insert(id.clone());
+            match leading_id(rest) {
+                Some(id) => {
+                    if line.contains("SECURITY-INVARIANT") {
+                        inv.security.insert(id.clone());
+                    }
+                    inv.ids.insert(id);
                 }
-                inv.ids.insert(id);
+                None if looks_like_id(rest) => {
+                    return Err(format!("malformed inventory id row: {line}"));
+                }
+                None => {}
             }
         } else if in_flag_list {
             if let Some(id) = line.strip_prefix("- ").and_then(leading_id) {
@@ -90,6 +113,7 @@ fn parse_inventory_text(text: &str, inv: &mut Inventory) {
             }
         }
     }
+    Ok(())
 }
 
 pub fn parse_inventory(dir: &Path) -> Result<Inventory, String> {
@@ -98,7 +122,7 @@ pub fn parse_inventory(dir: &Path) -> Result<Inventory, String> {
         let path = dir.join(name);
         let text =
             std::fs::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
-        parse_inventory_text(&text, &mut inv);
+        parse_inventory_text(&text, &mut inv).map_err(|e| format!("{}: {e}", path.display()))?;
     }
     Ok(inv)
 }
@@ -312,5 +336,46 @@ mod tests {
         }
         assert!(!inv.security.is_empty());
         assert!(inv.security.is_subset(&inv.ids));
+    }
+
+    #[test]
+    fn real_inventory_counts() {
+        let inv = parse_inventory(&inventory_dir()).unwrap();
+        let mut got = BTreeMap::new();
+        for id in &inv.ids {
+            let (p, _) = id.rsplit_once('-').unwrap();
+            *got.entry(p.to_string()).or_insert(0usize) += 1;
+        }
+        println!(
+            "counts {got:?} total {} security {}",
+            inv.ids.len(),
+            inv.security.len()
+        );
+        let want: BTreeMap<String, usize> =
+            [("A", 90), ("B", 108), ("C", 141), ("D", 43), ("REQ", 52)]
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v))
+                .collect();
+        assert_eq!(got, want);
+        assert_eq!(inv.ids.len(), 434);
+        assert_eq!(inv.security.len(), 52);
+    }
+
+    #[test]
+    fn letter_suffix_id_parses_and_malformed_row_errors() {
+        let mut inv = Inventory::default();
+        parse_inventory_text("| B-102a | row |\n", &mut inv).unwrap();
+        assert!(inv.ids.contains("B-102a"));
+        let err = parse_inventory_text("| B-1x2 | row |\n", &mut Inventory::default());
+        assert!(err.unwrap_err().contains("B-1x2"));
+    }
+
+    #[test]
+    fn flag_list_ends_at_next_label() {
+        let text =
+            "SECURITY-INVARIANT rows (each x):\n\n- C-01: a\n\nKNOWN-BUG rows:\n\n- C-02: b\n";
+        let mut inv = Inventory::default();
+        parse_inventory_text(text, &mut inv).unwrap();
+        assert_eq!(inv.security, set(&["C-01"]));
     }
 }

@@ -115,7 +115,7 @@ parity!(
 
 parity!(
     start_namespace_devbox_size_and_egress_env,
-    covers = [],
+    covers = ["B-101"],
     tags = [],
     {
         let (w, repo) = setup(Preset::NamespaceDevbox, json!({}), true);
@@ -142,7 +142,7 @@ parity!(
 
 parity!(
     start_namespace_devbox_without_opt_in_has_no_egress_env,
-    covers = [],
+    covers = ["B-101"],
     tags = [],
     {
         let (w, repo) = setup(Preset::NamespaceDevbox, json!({}), false);
@@ -160,7 +160,7 @@ parity!(
 
 parity!(
     start_sprites_passes_network_allow,
-    covers = [],
+    covers = ["B-100"],
     tags = [],
     {
         let (w, repo) = setup(Preset::Sprites, json!({}), false);
@@ -619,5 +619,25 @@ parity!(
             bad.stderr
         );
         assert_eq!(warmups(&w0), 0);
+    }
+);
+
+parity!(
+    gone_drops_only_the_named_box_from_inventory,
+    covers = [],
+    tags = [],
+    {
+        let (w, repo) = setup(Preset::LocalContainer, json!({}), false);
+        let (a, b) = (w.task_name("pa"), w.task_name("pb"));
+        started(&w, &repo, &a);
+        let slug_a = crabbox::slug(&w).expect("warmup slug");
+        started(&w, &repo, &b);
+        let slug_b = crabbox::slug(&w).expect("warmup slug");
+        crabbox::inventory(&w, &[&slug_a, &slug_b]);
+        crabbox::gone(&w, &slug_a);
+        let listed = moor().list(&w, &repo.path);
+        let tasks = listed.ok();
+        assert_eq!(find(tasks, &a).boxed.expect("box").state, BoxState::Gone);
+        assert_eq!(find(tasks, &b).boxed.expect("box").state, BoxState::Ready);
     }
 );
