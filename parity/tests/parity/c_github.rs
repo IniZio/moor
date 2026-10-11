@@ -26,12 +26,23 @@ fn gx() -> Gx {
     let repo = Repo::create(&w, "widget");
     let gh = FakeGithub::start();
     gh.attach(&w);
-    Gx {
-        w,
-        repo,
-        gh,
-        fx: RepoFixture::new("acme", "widget"),
+    let fx = RepoFixture::new("acme", "widget");
+    for s in [
+        &fx.user_access,
+        &fx.user_refresh,
+        &fx.scoped_token,
+        &fx.bot_token,
+        &fx.probe_token,
+    ] {
+        w.register_secret(s);
     }
+    for s in ["JUNKKEYMARKER", "ghp_HOSTTOKEN", "ghr_NEW"] {
+        w.register_secret(s);
+    }
+    if let Some(body) = TEST_KEY_PEM.lines().nth(1) {
+        w.register_secret(body);
+    }
+    Gx { w, repo, gh, fx }
 }
 
 fn now() -> u64 {
@@ -80,7 +91,9 @@ fn permissions_write() -> Value {
 
 impl Gx {
     fn secret(&self, tag: &str) -> String {
-        format!("SECRET-{tag}-{}", self.w.task_name("v"))
+        let secret = format!("SECRET-{tag}-{}", self.w.task_name("v"));
+        self.w.register_secret(&secret);
+        secret
     }
 
     fn user(&self, doc: Value) {

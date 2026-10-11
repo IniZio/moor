@@ -685,6 +685,7 @@ parity!(
             poll(10, || !alive(tunnel)),
             "tunnel {tunnel} outlived close"
         );
+        assert!(poll(10, || !alive(sup)), "supervisor {sup} outlived close");
         let addr = format!("127.0.0.1:{}", ep.port).parse().expect("addr");
         let refused = TcpStream::connect_timeout(&addr, Duration::from_secs(1));
         assert!(refused.is_err(), "listener still open");
@@ -776,6 +777,7 @@ fn assert_nonce_host_clean(w: &World, nonce: &str) {
     for dir in cred_dirs(w) {
         let _ = std::fs::remove_dir_all(w.box_root().join("tmp").join(dir));
     }
+    w.register_secret(nonce);
     assert_secret_absent(w, nonce, &["proxy/"]);
 }
 
@@ -1059,6 +1061,7 @@ fn secret_file(f: &Fx, name: &str, body: &str) -> String {
 }
 
 fn token_cmd(f: &Fx, token: &str) -> (String, PathBuf) {
+    f.w.register_secret(token);
     let counter = f.w.root().join("mint-count");
     (
         format!("echo x >> '{}'; echo {token}", counter.display()),
@@ -1086,6 +1089,7 @@ parity!(
         let up = upstream(echo_ok());
         use_upstream(&f, &up);
         let real = "real-claude-token-1";
+        f.w.register_secret(real);
         let file = secret_file(&f, "claude", real);
         claude_user(&f, &file);
         let ep = f.up();

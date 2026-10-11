@@ -116,7 +116,14 @@ fn files_under(dir: &Path) -> Vec<PathBuf> {
 /// Fails when `secret` appears anywhere moor or a fake could have exposed it:
 /// fake argv/env, moor call output, `state/` files (except 0600 files under an
 /// `allow` prefix), `registry.db`, the `box/` tree, and `ps` output.
+/// `secret` must be registered via `World::register_secret` before moor runs:
+/// the fake flags calls whose env contains any registered secret as a
+/// substring, so a wrapped secret in env fails every `assert_secret_absent`.
 pub fn assert_secret_absent(w: &World, secret: &str, allow: &[&str]) {
+    assert!(
+        w.secrets().iter().any(|s| s == secret),
+        "register_secret before running moor: the fake can only flag wrapped secrets it knows"
+    );
     let needle = secret.as_bytes();
     let mut leaks: Vec<String> = Vec::new();
     let want = crate::fake::digest(secret);
@@ -127,6 +134,8 @@ pub fn assert_secret_absent(w: &World, secret: &str, allow: &[&str]) {
         if in_argv || in_env {
             let place = if in_argv { "argv" } else { "env" };
             leaks.push(format!("fake call {} {} ({place})", c.seq, c.tool));
+        } else if c.env_contains_secret {
+            leaks.push(format!("fake call {} {} (env, wrapped)", c.seq, c.tool));
         }
     }
     for (i, entry) in w.transcript().iter().enumerate() {
@@ -197,6 +206,7 @@ mod tests {
             stdin: String::new(),
             env: BTreeMap::new(),
             env_digests: BTreeMap::new(),
+            env_contains_secret: false,
             rule: None,
         }
     }
@@ -213,6 +223,7 @@ mod tests {
     #[should_panic(expected = "(env)")]
     fn secret_in_unprefixed_env_is_caught() {
         let w = World::new("/bin/true");
+        w.register_secret("s3cr3t-value");
         let mut c = call(1, "claude", &[]);
         c.env_digests
             .insert("LEAKPROBE".into(), crate::fake::digest("s3cr3t-value"));

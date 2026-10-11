@@ -55,6 +55,17 @@ fn bx_with(github: bool, app: bool) -> Bx {
         fx,
         github,
     };
+    for s in [
+        &b.fx.bot_token,
+        &b.fx.probe_token,
+        &b.fx.scoped_token,
+        &b.fx.user_access,
+        &b.fx.user_refresh,
+    ] {
+        b.w.register_secret(s);
+    }
+    b.w.register_secret(CLIENT_SECRET);
+    b.w.register_secret(TEST_KEY_PEM.lines().nth(1).expect("pem body"));
     repo_cfg(&b, json!({}));
     set_user(&b, json!({}));
     if app {
@@ -599,6 +610,7 @@ parity!(
     {
         let b = bx(true);
         let claude_token = format!("SECRET-claude-{}", b.w.task_name("v"));
+        b.w.register_secret(&claude_token);
         let file = b.w.root().join("secrets/claude");
         write_file(&file, &claude_token, 0o600);
         set_user(
@@ -2081,5 +2093,116 @@ parity!(
         assert!(urls.iter().all(|u| u.starts_with(&base)), "{urls:?}");
         assert!(!s.delivered.contains("GH_TOKEN") && !s.delivered.contains("Authorization"));
         finish(&b, &name);
+    }
+);
+
+fn saved_digests(w: &World) -> Vec<String> {
+    transcripts(w)
+        .iter()
+        .map(|f| {
+            let out = w.command("sha256sum").arg(f).output().expect("sha256sum");
+            String::from_utf8_lossy(&out.stdout)
+                .split_whitespace()
+                .next()
+                .unwrap_or_default()
+                .to_string()
+        })
+        .collect()
+}
+
+parity!(
+    box_task_agent_location_is_fixed_at_first_launch_and_a_different_flag_is_refused,
+    covers = ["A-46"],
+    tags = ["new_only(AgentLocationFixed)"],
+    {
+        let b = bx(false);
+        live_panes(&b.w);
+        let name = b.w.task_name("fixedloc");
+        go_ok(&b, &name, "first goal");
+        let bg = |b: &Bx| {
+            b.w.calls("claude")
+                .iter()
+                .filter(|c| c.argv.iter().any(|a| a == "--bg"))
+                .count()
+        };
+        let refused_with_names = |o: &Outcome<TaskView>| {
+            assert_eq!(o.class, ExitClass::Refused, "{}{}", o.stdout, o.stderr);
+            let text = format!("{}{}", o.stdout, o.stderr).to_lowercase();
+            for want in ["box", "host"] {
+                assert!(text.contains(want), "{want} missing from: {text}");
+            }
+        };
+        let attach = start_with(&b, &name, &start_opts(Some("again"), Some("host"), None));
+        refused_with_names(&attach);
+        herdr::pane_text(&b.w, "bye\nmoor: agent exited 3\n");
+        let exited = start_with(&b, &name, &start_opts(Some("again"), Some("host"), None));
+        refused_with_names(&exited);
+        herdr::pane_gone(&b.w);
+        let gone = start_with(&b, &name, &start_opts(Some("again"), Some("host"), None));
+        refused_with_names(&gone);
+        assert_eq!(count(&b.w, "herdr", &["tab", "create"]), 1, "no new tab");
+        assert_eq!(bg(&b), 0, "no agent dispatched");
+        let sessions = moor().sessions(&b.w, &name);
+        assert_eq!(sessions.len(), 1, "{sessions:?}");
+        assert!(sessions[0].live && sessions[0].box_pane, "{sessions:?}");
+        let same = start_with(&b, &name, &start_opts(Some("again"), Some("box"), None));
+        assert_eq!(same.class, ExitClass::Ok, "{}", same.stderr);
+        assert_eq!(doc(&same)["relaunched"]["goal"], "again", "{}", same.stdout);
+        assert_eq!(count(&b.w, "herdr", &["tab", "create"]), 2);
+        finish(&b, &name);
+    }
+);
+
+parity!(
+    box_transcript_is_saved_when_the_exit_marker_is_observed_and_again_never_duplicated,
+    covers = ["REQ-37"],
+    tags = ["new_only(TranscriptOnExit)"],
+    {
+        let b = bx(false);
+        crabbox::cp(&b.w);
+        crabbox::run_in(&b.w, &workdir(&b.w));
+        live_panes(&b.w);
+        seed_transcript(&b.w);
+        let name = b.w.task_name("exitsave");
+        go_ok(&b, &name, "first goal");
+        assert!(transcripts(&b.w).is_empty(), "nothing saved while running");
+        herdr::pane_text(&b.w, "bye\nmoor: agent exited 3\n");
+        let seen = moor().pane(&b.w, &b.repo.path, &name);
+        assert_eq!(seen.class, ExitClass::Ok, "{}", seen.stderr);
+        let saved = transcripts(&b.w);
+        assert_eq!(saved.len(), 1, "exit saved one archive: {saved:?}");
+        assert_eq!(mode_of(&saved[0]), 0o600);
+        let tar = b.w.command("tar").arg("tzf").arg(&saved[0]).output();
+        let listed = String::from_utf8_lossy(&tar.expect("tar").stdout).into_owned();
+        assert!(listed.contains("session1.jsonl"), "{listed}");
+        let again = moor().pane(&b.w, &b.repo.path, &name);
+        assert_eq!(again.class, ExitClass::Ok, "{}", again.stderr);
+        assert_eq!(transcripts(&b.w).len(), 1, "observing twice saves once");
+        finish(&b, &name);
+    }
+);
+
+parity!(
+    box_close_after_an_exit_save_does_not_write_a_second_identical_transcript,
+    covers = ["REQ-37"],
+    tags = ["new_only(TranscriptDedup)"],
+    {
+        let b = bx(false);
+        crabbox::cp(&b.w);
+        crabbox::run_in(&b.w, &workdir(&b.w));
+        live_panes(&b.w);
+        seed_transcript(&b.w);
+        let name = b.w.task_name("dedup");
+        go_ok(&b, &name, "first goal");
+        herdr::pane_text(&b.w, "bye\nmoor: agent exited 0\n");
+        let seen = moor().pane(&b.w, &b.repo.path, &name);
+        assert_eq!(seen.class, ExitClass::Ok, "{}", seen.stderr);
+        let before = saved_digests(&b.w);
+        assert_eq!(before.len(), 1, "exit saved one archive: {before:?}");
+        let closed = moor().close(&b.w, &b.repo.path, &name, false);
+        assert_eq!(closed.class, ExitClass::Ok, "{}", closed.stderr);
+        wait_proxy_gone(&b.w);
+        assert_eq!(saved_digests(&b.w), before, "close added no duplicate");
+        assert!(closed.ok().box_deleted, "close still released the Box");
     }
 );

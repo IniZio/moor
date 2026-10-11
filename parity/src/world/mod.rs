@@ -118,6 +118,29 @@ impl World {
         format!("{base}-{}", self.suffix)
     }
 
+    pub fn register_secret(&self, secret: &str) {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        assert!(
+            !secret.is_empty() && !secret.contains('\n'),
+            "register_secret: secret must be non-empty and single-line"
+        );
+        let dir = self.fakes_dir();
+        let _lock = fake::lock(&dir).expect("lock fakes dir");
+        let mut f = fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .mode(0o600)
+            .open(fake::secrets_path(&dir))
+            .expect("open secrets file");
+        f.write_all(format!("{secret}\n").as_bytes())
+            .expect("write secret");
+    }
+
+    pub fn secrets(&self) -> Vec<String> {
+        fake::read_secrets(&fake::secrets_path(&self.fakes_dir()))
+    }
+
     pub fn base_env(&self) -> Vec<(String, String)> {
         let s = |p: PathBuf| p.to_string_lossy().into_owned();
         let home = self.home();
@@ -144,6 +167,10 @@ impl World {
             ),
             ("TMPDIR".into(), s(self.tmp_dir())),
             ("PARITY_FAKES".into(), s(self.fakes_dir())),
+            (
+                "PARITY_SECRETS".into(),
+                s(fake::secrets_path(&self.fakes_dir())),
+            ),
             ("LANG".into(), "C.UTF-8".into()),
         ]
         .into_iter()
@@ -175,6 +202,14 @@ impl World {
             .stdin(Stdio::null())
             .current_dir(self.root())
             .process_group(0);
+        // SAFETY: signal() is async-signal-safe; resets SIGINT/SIGQUIT ignored by a bg shell.
+        unsafe {
+            cmd.pre_exec(|| {
+                libc::signal(libc::SIGINT, libc::SIG_DFL);
+                libc::signal(libc::SIGQUIT, libc::SIG_DFL);
+                Ok(())
+            });
+        }
         cmd
     }
 

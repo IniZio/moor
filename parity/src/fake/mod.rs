@@ -171,6 +171,8 @@ pub struct Call {
     pub pgid: u32,
     #[serde(default)]
     pub starttime: u64,
+    #[serde(default)]
+    pub env_contains_secret: bool,
 }
 
 pub fn digest(value: &str) -> String {
@@ -286,6 +288,19 @@ pub fn lock(fakes_dir: &Path) -> std::io::Result<fs::File> {
 
 pub fn rules_path(fakes_dir: &Path, tool: &str) -> PathBuf {
     fakes_dir.join(format!("{tool}.rules.json"))
+}
+
+pub fn secrets_path(fakes_dir: &Path) -> PathBuf {
+    fakes_dir.join("secrets")
+}
+
+pub fn read_secrets(path: &Path) -> Vec<String> {
+    fs::read_to_string(path)
+        .unwrap_or_default()
+        .lines()
+        .filter(|l| !l.is_empty())
+        .map(str::to_string)
+        .collect()
 }
 
 pub fn calls_path(fakes_dir: &Path, tool: &str) -> PathBuf {
@@ -477,6 +492,7 @@ mod tests {
             rule: None,
             pgid: 0,
             starttime: 0,
+            env_contains_secret: false,
         };
         assert_eq!(c.flag("--slug").as_deref(), Some("abc"));
         assert_eq!(c.flag("--x").as_deref(), Some("1"));
@@ -507,6 +523,15 @@ mod tests {
     }
 
     #[test]
+    fn read_secrets_skips_blank_and_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = secrets_path(dir.path());
+        assert!(read_secrets(&p).is_empty());
+        fs::write(&p, "one\n\ntwo\n\n").unwrap();
+        assert_eq!(read_secrets(&p), ["one", "two"]);
+    }
+
+    #[test]
     fn seq_and_calls() {
         let dir = tempfile::tempdir().unwrap();
         let d = dir.path();
@@ -526,6 +551,7 @@ mod tests {
             rule: None,
             pgid: 0,
             starttime: 0,
+            env_contains_secret: false,
         };
         let line = |c: &Call| format!("{}\n", serde_json::to_string(c).unwrap());
         fs::write(calls_path(d, "a"), line(&mk(2, "a"))).unwrap();

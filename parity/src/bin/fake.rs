@@ -8,8 +8,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use parity::fake::{
-    calls_path, counts_path, lock, next_seq_locked, read_rules, render, Call, Rule, TemplateCtx,
-    RECORDED_ENV_PREFIXES,
+    calls_path, counts_path, lock, next_seq_locked, read_rules, read_secrets, render, secrets_path,
+    Call, Rule, TemplateCtx, RECORDED_ENV_PREFIXES,
 };
 
 const STDIN_CAP: usize = 64 * 1024;
@@ -143,6 +143,17 @@ fn env_digests() -> BTreeMap<String, String> {
         .collect()
 }
 
+fn env_contains_secret(fakes_dir: &Path) -> bool {
+    let path = std::env::var_os("PARITY_SECRETS")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| secrets_path(fakes_dir));
+    let secrets = read_secrets(&path);
+    std::env::vars_os().any(|(_, v)| {
+        let v = v.to_string_lossy();
+        secrets.iter().any(|s| v.contains(s.as_str()))
+    })
+}
+
 fn recorded_env() -> BTreeMap<String, String> {
     std::env::vars()
         .filter(|(k, _)| {
@@ -218,6 +229,7 @@ fn run() -> i32 {
         rule: rule.map(|r| r.id.clone()),
         pgid: unsafe { libc::getpgrp() } as u32,
         starttime: starttime(),
+        env_contains_secret: env_contains_secret(&fakes_dir),
     };
     let capture = rule.is_some_and(|r| r.capture_stdin);
     let has_exec = rule.is_some_and(|r| r.reply.exec.is_some());

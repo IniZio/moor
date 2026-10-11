@@ -58,7 +58,9 @@ impl Fx {
     }
 
     fn secret(&self, tag: &str) -> String {
-        format!("SECRET-{tag}-{}", self.w.task_name("v"))
+        let secret = format!("SECRET-{tag}-{}", self.w.task_name("v"));
+        self.w.register_secret(&secret);
+        secret
     }
 }
 

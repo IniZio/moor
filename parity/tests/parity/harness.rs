@@ -208,3 +208,56 @@ parity!(
         assert_seq_global(&w.all_calls());
     }
 );
+
+parity!(
+    fake_flags_wrapped_secret_in_env,
+    covers = ["REQ-47"],
+    tags = [],
+    {
+        let w = world();
+        let secret = format!("sk-{}", w.task_name("wrapped"));
+        w.register_secret(&secret);
+        w.command(w.tool_path("crabbox"))
+            .arg("list")
+            .status()
+            .expect("spawn fake");
+        w.command(w.tool_path("crabbox"))
+            .arg("list")
+            .env("LEAKPROBE", format!("Bearer {secret}"))
+            .status()
+            .expect("spawn fake");
+        let calls = w.calls("crabbox");
+        assert_eq!(calls.len(), 2);
+        assert!(!calls[0].env_contains_secret, "control call flagged");
+        assert!(calls[1].env_contains_secret, "wrapped secret not flagged");
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            parity::assert::assert_secret_absent(&w, &secret, &[])
+        }));
+        let err = r.expect_err("wrapped secret must fail assert_secret_absent");
+        let msg = err
+            .downcast_ref::<String>()
+            .cloned()
+            .or_else(|| err.downcast_ref::<&str>().map(|s| s.to_string()))
+            .unwrap_or_default();
+        assert!(msg.contains("wrapped"), "unexpected panic: {msg}");
+    }
+);
+
+parity!(
+    assert_secret_absent_requires_registration,
+    covers = ["REQ-47"],
+    tags = [],
+    {
+        let w = world();
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            parity::assert::assert_secret_absent(&w, "never-registered", &[])
+        }));
+        let err = r.expect_err("unregistered secret must panic");
+        let msg = err
+            .downcast_ref::<String>()
+            .cloned()
+            .or_else(|| err.downcast_ref::<&str>().map(|s| s.to_string()))
+            .unwrap_or_default();
+        assert!(msg.contains("register_secret"), "unexpected panic: {msg}");
+    }
+);
