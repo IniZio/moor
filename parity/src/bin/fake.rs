@@ -252,9 +252,14 @@ fn run() -> i32 {
     let mut code = reply.exit;
     if let Some(script) = &reply.exec {
         let mut script = render(script, &ctx);
+        let root_str = root.to_string_lossy().into_owned();
+        let sentinel = "\u{0}PARITY_ROOT\u{0}";
+        let protect = |s: String| s.replace(&root_str, sentinel);
+        script = protect(script);
         for (from, to) in &reply.rewrite {
-            script = script.replace(&render(from, &ctx), &render(to, &ctx));
+            script = script.replace(&protect(render(from, &ctx)), &protect(render(to, &ctx)));
         }
+        script = script.replace(sentinel, &root_str);
         let (child, teed) = run_exec(&script, &box_root, capture);
         if capture {
             call.stdin = teed;

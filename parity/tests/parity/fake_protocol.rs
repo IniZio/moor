@@ -73,3 +73,28 @@ parity!(fake_records_pgid_and_starttime, covers = [], tags = [], {
     assert_ne!(calls[0].pgid, 0);
     assert_ne!(calls[0].starttime, 0);
 });
+
+parity!(fake_ssh_redirects_tmp_into_box, covers = [], tags = [], {
+    let w = crate::world();
+    parity::fake::ssh::install(&w);
+    let script = "mkdir -p /tmp/moor-cred-X && cd /tmp/moor-cred-X && pwd && touch f";
+    let out = w
+        .command(w.tool_path("ssh"))
+        .args(["box-host", script])
+        .output()
+        .expect("run fake ssh");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let want = w.box_root().join("tmp/moor-cred-X");
+    let got = std::path::PathBuf::from(String::from_utf8_lossy(&out.stdout).trim());
+    assert_eq!(got.canonicalize().unwrap(), want.canonicalize().unwrap());
+    assert!(want.join("f").exists());
+    assert!(!std::path::Path::new("/tmp/moor-cred-X").exists());
+    let calls = w.calls("ssh");
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].argv, ["box-host", script]);
+    w.assert_no_new_tmp_creds();
+});

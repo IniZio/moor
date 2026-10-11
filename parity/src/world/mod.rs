@@ -2,6 +2,7 @@ pub mod config;
 pub mod repo;
 
 use crate::fake::{self, Call, Rule};
+use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsStr;
 use std::fs;
 use std::io::Read;
@@ -20,7 +21,7 @@ const GITCONFIG: &str = "[user]\n\tname = parity\n\temail = parity@example.inval
 pub struct World {
     dir: tempfile::TempDir,
     pids: Mutex<Vec<(u32, u64)>>,
-    tmp_creds: Vec<String>,
+    cred_snaps: BTreeMap<PathBuf, BTreeSet<String>>,
     suffix: String,
     torn_down: bool,
 }
@@ -35,10 +36,25 @@ fn random_hex6() -> String {
 
 impl World {
     pub fn new(fake_bin: impl AsRef<Path>) -> World {
+        let base = std::env::var_os("PARITY_WORLD_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                PathBuf::from(concat!(
+                    env!("CARGO_MANIFEST_DIR"),
+                    "/../target/parity-worlds"
+                ))
+            });
+        fs::create_dir_all(&base).expect("create world base dir");
+        let base = fs::canonicalize(&base).expect("canonicalize world base dir");
         let dir = tempfile::Builder::new()
             .prefix("parity-")
-            .tempdir()
+            .tempdir_in(&base)
             .expect("create world tempdir");
+        assert!(
+            !dir.path().starts_with("/tmp/"),
+            "world root must not live under /tmp: {}",
+            dir.path().display()
+        );
         let fake_bin = fs::canonicalize(fake_bin.as_ref()).expect("canonicalize fake_bin");
         let root = dir.path();
         for sub in [
@@ -59,7 +75,7 @@ impl World {
         World {
             dir,
             pids: Mutex::new(Vec::new()),
-            tmp_creds: tmp_creds(),
+            cred_snaps: BTreeMap::from([(PathBuf::from("/tmp"), creds_in(Path::new("/tmp")))]),
             suffix: random_hex6(),
             torn_down: false,
         }
@@ -147,12 +163,25 @@ impl World {
         self.pids.lock().unwrap().push((pid, start));
     }
 
+    pub fn watch_creds_in(&mut self, dir: &Path) {
+        self.cred_snaps.insert(dir.to_path_buf(), creds_in(dir));
+    }
+
+    pub fn assert_no_new_creds_in(&self, dir: &Path) {
+        let snap = self
+            .cred_snaps
+            .get(dir)
+            .unwrap_or_else(|| panic!("{} was never watched", dir.display()));
+        let fresh: Vec<String> = creds_in(dir).difference(snap).cloned().collect();
+        assert!(
+            fresh.is_empty(),
+            "new {}/moor-cred-* entries: {fresh:?}",
+            dir.display()
+        );
+    }
+
     pub fn assert_no_new_tmp_creds(&self) {
-        let fresh: Vec<String> = tmp_creds()
-            .into_iter()
-            .filter(|n| !self.tmp_creds.contains(n))
-            .collect();
-        assert!(fresh.is_empty(), "new /tmp/moor-cred-* entries: {fresh:?}");
+        self.assert_no_new_creds_in(Path::new("/tmp"));
     }
 
     pub fn teardown(&mut self) -> Result<(), String> {
@@ -301,9 +330,9 @@ fn wait_marked(marker: &str, limit: Duration) -> Vec<Marked> {
     left
 }
 
-fn tmp_creds() -> Vec<String> {
-    let Ok(entries) = fs::read_dir("/tmp") else {
-        return Vec::new();
+fn creds_in(dir: &Path) -> BTreeSet<String> {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return BTreeSet::new();
     };
     entries
         .flatten()

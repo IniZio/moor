@@ -82,16 +82,19 @@ parity!(
     covers = ["REQ-47"],
     tags = [],
     {
-        let w = world();
-        w.assert_no_new_tmp_creds();
-        let path =
-            std::path::PathBuf::from(format!("/tmp/moor-cred-parity-{}", w.task_name("guard")));
+        let mut w = world();
+        let dir = w.root().join("credscratch");
+        std::fs::create_dir_all(&dir).expect("create scratch");
+        w.watch_creds_in(&dir);
+        w.assert_no_new_creds_in(&dir);
+        let path = dir.join(format!("moor-cred-parity-{}", w.task_name("guard")));
         std::fs::write(&path, b"x").expect("create entry");
-        let r =
-            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| w.assert_no_new_tmp_creds()));
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            w.assert_no_new_creds_in(&dir)
+        }));
         std::fs::remove_file(&path).expect("remove entry");
         assert!(r.is_err(), "guard must panic on new entry");
-        w.assert_no_new_tmp_creds();
+        w.assert_no_new_creds_in(&dir);
     }
 );
 
