@@ -96,3 +96,45 @@ fn render_json_version_is_single_line() {
     assert_eq!(o.stdout.matches('\n').count(), 1);
     assert_eq!(o.code, 0);
 }
+
+#[test]
+fn json_help_is_one_ok_envelope() {
+    let o = done(&["--json", "--help"]);
+    assert_eq!(o.code, 0);
+    assert!(o.stderr.is_empty());
+    assert_eq!(o.stdout.matches('\n').count(), 1);
+    let v: serde_json::Value = serde_json::from_str(&o.stdout).expect("one json object");
+    assert_eq!(v.get("class"), Some(&serde_json::json!("ok")));
+    let text = v
+        .get("value")
+        .and_then(|x| x.as_str())
+        .expect("string value");
+    assert!(text.contains("Usage"));
+}
+
+#[test]
+fn json_subcommand_help_is_one_ok_envelope() {
+    let o = done(&["--json", "version", "--help"]);
+    assert_eq!(o.code, 0);
+    assert!(o.stderr.is_empty());
+    let v: serde_json::Value = serde_json::from_str(&o.stdout).expect("one json object");
+    assert_eq!(v.get("class"), Some(&serde_json::json!("ok")));
+    assert_eq!(v.get("cmd"), Some(&serde_json::json!("version")));
+}
+
+#[test]
+fn json_without_subcommand_is_usage_envelope() {
+    let o = done(&["--json"]);
+    assert_eq!(o.code, 2);
+    assert!(o.stderr.is_empty());
+    assert_eq!(o.stdout.matches('\n').count(), 1);
+    let v: serde_json::Value = serde_json::from_str(&o.stdout).expect("one json object");
+    assert_eq!(v.get("class"), Some(&serde_json::json!("usage")));
+}
+
+#[test]
+fn text_help_stays_plain() {
+    let o = done(&["--help"]);
+    assert!(o.stdout.contains("Usage"));
+    assert!(serde_json::from_str::<serde_json::Value>(&o.stdout).is_err());
+}

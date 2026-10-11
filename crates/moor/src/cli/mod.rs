@@ -118,16 +118,29 @@ pub fn render(resp: &Response, opts: &GlobalOpts) -> Output {
 fn clap_output(err: &clap::Error, cmd: String, opts: &GlobalOpts) -> Output {
     let text = err.render().to_string();
     match err.kind() {
+        ClapKind::DisplayHelp | ClapKind::DisplayVersion if opts.json => render(
+            &Response::ok(cmd, Some(serde_json::Value::String(text))),
+            opts,
+        ),
         ClapKind::DisplayHelp | ClapKind::DisplayVersion => Output {
             stdout: text,
             stderr: String::new(),
             code: 0,
         },
-        ClapKind::DisplayHelpOnMissingArgumentOrSubcommand => Output {
+        ClapKind::DisplayHelpOnMissingArgumentOrSubcommand if !opts.json => Output {
             stdout: String::new(),
             stderr: text,
             code: 2,
         },
+        ClapKind::DisplayHelpOnMissingArgumentOrSubcommand => {
+            let view = ErrorView {
+                kind: ErrorKind::Usage,
+                message: "missing subcommand".to_owned(),
+                hints: text.lines().map(str::to_owned).collect(),
+                context: Vec::new(),
+            };
+            render(&Response::err(cmd, view), opts)
+        }
         _ => {
             let mut lines = text.lines();
             let first = lines.next().unwrap_or_default();
