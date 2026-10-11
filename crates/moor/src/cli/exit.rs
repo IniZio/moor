@@ -11,7 +11,7 @@ pub(crate) fn code(resp: &Response) -> u8 {
     match resp.class {
         ExitClass::Ok if is_run => run_exit(resp),
         ExitClass::Ok => 0,
-        ExitClass::Failed | ExitClass::Refused if is_run => RUN_NOT_STARTED,
+        ExitClass::Failed | ExitClass::Refused | ExitClass::Usage if is_run => RUN_NOT_STARTED,
         ExitClass::Failed => 1,
         ExitClass::Usage => 2,
         ExitClass::Refused => 3,

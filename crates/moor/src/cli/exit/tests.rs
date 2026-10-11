@@ -35,8 +35,8 @@ fn run_failed_and_refused_are_125() {
 }
 
 #[test]
-fn run_usage_is_2() {
-    assert_eq!(code(&err("run", ErrorKind::Usage)), 2);
+fn run_usage_is_125() {
+    assert_eq!(code(&err("run", ErrorKind::Usage)), 125);
 }
 
 #[test]
