@@ -149,11 +149,6 @@ pub(super) fn hook_reads(w: &World) -> usize {
         .count()
 }
 
-pub(super) fn agents_with(w: &World, state: &str, extra: &str) {
-    let doc = format!(r#"[{{"id":"a1","sessionId":"a1-full","cwd":"","state":"{state}"{extra}}}]"#);
-    claude::agents(w, &doc);
-}
-
 pub(super) fn timed_out(fx: &Fx, secs: u64) -> parity::adapter::WaitView {
     let o = fx.m.wait(&fx.w, &fx.repo.path, &fx.name, Some(secs));
     assert_eq!(o.class, ExitClass::Failed, "{}", o.stdout);

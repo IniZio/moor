@@ -113,7 +113,7 @@ fn real_inventory_counts() {
         .collect();
     assert_eq!(got, want);
     assert_eq!(inv.ids.len(), 434);
-    assert_eq!(inv.security.len(), 52);
+    assert_eq!(inv.security.len(), 51);
 }
 
 const SMOKE: &str =

@@ -25,23 +25,6 @@ parity!(
 );
 
 parity!(
-    wait_host_agent_blocks_until_done,
-    covers = ["A-85", "A-86", "REQ-48"],
-    tags = [],
-    {
-        let fx = host_fx(Preset::NamespaceDevbox);
-        fx.start(true);
-        fx.present();
-        let v = timed_out(&fx, 1);
-        assert_eq!(v.agent.expect("agent").state, "working");
-        agents(&fx.w, "done");
-        let o = fx.m.wait(&fx.w, &fx.repo.path, &fx.name, Some(5));
-        assert_eq!(o.class, ExitClass::Ok, "{}", o.stderr);
-        assert_eq!(o.ok().agent.as_ref().expect("agent").state, "done");
-    }
-);
-
-parity!(
     wait_blocks_while_box_hook_says_working,
     covers = ["A-73", "A-74", "A-85", "A-86", "A-87", "REQ-02", "REQ-48"],
     tags = [],

@@ -3,78 +3,9 @@ use parity::assert::{assert_never_called, assert_order};
 use parity::fake::crabbox::Preset;
 use parity::fake::herdr;
 use parity::parity;
+use parity::world::hooks::HookState;
 
 use super::support::*;
-
-parity!(
-    steer_host_resumes_the_same_session,
-    covers = ["A-80", "A-81"],
-    tags = [],
-    {
-        let fx = host_fx(Preset::NamespaceDevbox);
-        fx.start(true);
-        fx.present();
-        let o = fx.m.steer(&fx.w, &fx.repo.path, &fx.name, "keep going");
-        assert_eq!(o.class, ExitClass::Ok, "{}", o.stderr);
-        let resume =
-            fx.w.calls("claude")
-                .into_iter()
-                .find(|c| c.argv.first().map(String::as_str) == Some("--resume"))
-                .expect("claude --resume");
-        assert_eq!(resume.argv[1], "a1-full");
-        assert!(resume.argv.iter().any(|a| a == "--bg"));
-        assert_eq!(resume.argv.last().map(String::as_str), Some("keep going"));
-        assert_never_called(&fx.w.calls("claude"), "claude", &["stop"]);
-    }
-);
-
-parity!(
-    steer_host_stops_a_live_session_before_resuming,
-    covers = ["A-81"],
-    tags = [],
-    {
-        let fx = host_fx(Preset::NamespaceDevbox);
-        fx.start(true);
-        fx.present();
-        fx.w.prepend_rules(
-            "claude",
-            [parity::fake::Rule::on(&["agents"])
-                .stdout(
-                    r#"[{"id":"a1","sessionId":"a1-full","cwd":"","state":"working","pid":4242}]"#,
-                )
-                .times(2)],
-        );
-        let o = fx.m.steer(&fx.w, &fx.repo.path, &fx.name, "keep going");
-        assert_eq!(o.class, ExitClass::Ok, "{}", o.stderr);
-        assert_order(
-            &fx.w.all_calls(),
-            &[
-                ("claude", &["stop", "a1"]),
-                ("claude", &["--resume", "a1-full"]),
-            ],
-        );
-    }
-);
-
-parity!(
-    steer_host_refuses_a_blocked_agent,
-    covers = ["A-81", "REQ-36"],
-    tags = [],
-    {
-        let fx = host_fx(Preset::NamespaceDevbox);
-        fx.start(true);
-        fx.present();
-        agents_with(&fx.w, "blocked", r#","waitingFor":"approval""#);
-        let o = fx.m.steer(&fx.w, &fx.repo.path, &fx.name, "keep going");
-        assert!(o.is_err());
-        let calls = fx.w.calls("claude");
-        assert_never_called(&calls, "claude", &["--resume"]);
-        assert_never_called(&calls, "claude", &["stop"]);
-        let a = fx.row().agent().expect("agent");
-        assert_eq!(a.state, "blocked");
-        assert_eq!(a.waiting_for.as_deref(), Some("approval"));
-    }
-);
 
 parity!(
     steer_box_pane_types_message_and_submits,
@@ -133,22 +64,22 @@ parity!(
 );
 
 parity!(
-    host_agent_state_reaches_list_row,
-    covers = ["A-70", "A-71"],
+    steer_to_blocked_box_agent_answers_the_prompt,
+    covers = ["REQ-36"],
     tags = [],
     {
-        let fx = host_fx(Preset::NamespaceDevbox);
+        let fx = box_fx();
         fx.start(true);
         fx.present();
-        for state in ["working", "done", "failed", "stopped"] {
-            agents(&fx.w, state);
-            let a = fx.row().agent().expect("agent");
-            assert_eq!(a.state, state);
-            assert_eq!(a.waiting_for, None);
-        }
-        agents_with(&fx.w, "blocked", r#","waitingFor":"approval""#);
-        let a = fx.row().agent().expect("agent");
-        assert_eq!(a.state, "blocked");
-        assert_eq!(a.waiting_for.as_deref(), Some("approval"));
+        fx.w.hook_state(HookState::Blocked, 0);
+        herdr::pane_text(&fx.w, "Proceed?\n 1. Yes\n 2. No\n");
+        let o = fx.m.steer(&fx.w, &fx.repo.path, &fx.name, "1");
+        assert_eq!(o.class, ExitClass::Ok, "{}", o.stderr);
+        let sent = fx.w.calls("herdr");
+        let typed = sent.iter().any(|c| {
+            c.argv
+                .starts_with(&["pane".into(), "send-text".into(), "p-1".into(), "1".into()])
+        });
+        assert!(typed, "prompt answer not sent: {sent:?}");
     }
 );

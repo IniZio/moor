@@ -8,6 +8,16 @@ code = "KNOWN-BUG"
 reason = "start --goal on a running goal-less Task with no live session is silently ignored (confirmed T4: no dispatch, no warning); fix test goal_added_to_running_goalless_task_dispatches_agent is new_only(GoalOnAttach)"
 ref = "a-task-lifecycle.md A-36 (DESIGN-SMELL inferred, confirmed T4)"
 
+[A-37]
+code = "DROPPED"
+reason = "decision 46: no host agent"
+ref = "host-drop-plan.md; motive.md decision 46"
+
+[A-38]
+code = "DROPPED"
+reason = "decision 46: no host agent"
+ref = "host-drop-plan.md; motive.md decision 46"
+
 [A-42]
 code = "LIVE"
 reason = "Pane read ANSI/JSON-envelope tolerance is Surface-internal; herdr pane read format is unverified live. Live-smoke step: read a real Box agent pane through herdr pane read and confirm moor decodes it"
@@ -17,6 +27,11 @@ ref = "live-smoke.md: Namespace Box agent"
 code = "KNOWN-BUG"
 reason = "no manual sleep or wake command; explicit path is REQ-09"
 ref = "inventory a-task-lifecycle A-65; UL-94; explicit_sleep_and_wake_commands (new_only ExplicitSleep)"
+
+[A-81]
+code = "DROPPED"
+reason = "decision 46: no host agent"
+ref = "host-drop-plan.md; motive.md decision 46"
 
 [B-06]
 code = "SMELL-REDESIGNED"
@@ -128,6 +143,11 @@ code = "KNOWN-BUG"
 reason = "repo credentials: [GH_TOKEN] is accepted at parse yet unsatisfiable: the unresolved-ref hint says add credentials.GH_TOKEN, which the user layer then rejects (verified on old); fix test: repo_credentials_gh_token_ref_is_a_hard_error"
 ref = "c-credentials-env.md §17 gap 4(d); parity-plan.md §10"
 
+[C-30]
+code = "DROPPED"
+reason = "decision 46: no host agent"
+ref = "host-drop-plan.md; motive.md decision 46"
+
 [C-62]
 code = "SMELL-REDESIGNED"
 reason = "identity is user-level only; the dead Auto arm and stale comment in gh_mint.rs have no observable behaviour to port"
@@ -154,9 +174,9 @@ reason = "Claude auto-mode classifier behaviour and a live PR from the Box agent
 ref = "live-smoke.md: Namespace Box agent"
 
 [C-126]
-code = "KNOWN-BUG"
-reason = "start --agent-location box on a host-configured repo builds the acquire-time egress list as for a host agent (api.github.com and api.anthropic.com kept, no sprites flag when repo egress is empty) although moor env previews the proxy-active list; confirmed PT7 by new_only test start_override_to_box_drops_proxy_domains_from_egress in c_creds.rs"
-ref = "c-credentials-env.md C-126 and section 17 gap 4(a); parity-plan.md §10"
+code = "DROPPED"
+reason = "decision 46: no host agent"
+ref = "host-drop-plan.md; motive.md decision 46"
 
 [C-131]
 code = "KNOWN-BUG"
@@ -167,6 +187,21 @@ ref = "parity-plan.md §10 (C gap 5, decision 42)"
 code = "SMELL-REDESIGNED"
 reason = "whether Box agents receive MCP servers is a design-phase policy question, so the current no-MCP-for-Box-agents behaviour is not pinned"
 ref = "parity-plan.md §10 (C gap 7); c-credentials-env.md §17 gap 7"
+
+[C-137]
+code = "DROPPED"
+reason = "decision 46: no host agent"
+ref = "host-drop-plan.md; motive.md decision 46"
+
+[C-138]
+code = "DROPPED"
+reason = "decision 46: no host agent"
+ref = "host-drop-plan.md; motive.md decision 46"
+
+[C-140]
+code = "DROPPED"
+reason = "decision 46: no host agent"
+ref = "host-drop-plan.md; motive.md decision 46"
 
 [D-14]
 code = "DOC"
@@ -192,6 +227,16 @@ ref = "parity-plan.md §2 (assert exit classes, never strings); inventory D-18"
 code = "DOC"
 reason = "human reports listing text is not contractual; the --json list is asserted"
 ref = "parity-plan.md §2 (assert exit classes, never strings); inventory D-20"
+
+[D-26]
+code = "DROPPED"
+reason = "decision 46: no host agent"
+ref = "host-drop-plan.md; motive.md decision 46"
+
+[D-27]
+code = "DROPPED"
+reason = "decision 47: artifacts reports backend dropped; Reports are local only"
+ref = "host-drop-plan.md; motive.md decision 47"
 
 [D-30]
 code = "DOC"

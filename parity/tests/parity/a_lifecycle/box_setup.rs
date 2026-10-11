@@ -372,7 +372,7 @@ parity!(
 
 parity!(
     dotfiles_dir_uploaded_and_installed_after_setup,
-    covers = ["A-33"],
+    covers = ["A-33", "REQ-50"],
     tags = [],
     {
         let (f, home) = dotfiles_fx("box");
@@ -410,19 +410,5 @@ parity!(
         assert_eq!(again.state, TaskState::Working);
         assert!(home.join("dotfiles-ran").exists());
         assert_eq!(f.n("crabbox", "warmup"), 1);
-    }
-);
-
-parity!(
-    dotfiles_skipped_for_host_agent_tasks,
-    covers = ["A-33", "REQ-50"],
-    tags = [],
-    {
-        let (f, home) = dotfiles_fx("host");
-        assert_eq!(f.start(&f.name("hostdots")).state, TaskState::Working);
-        assert!(run_with(&f, "setup-marker").len() == 1);
-        assert!(run_with(&f, "MOOR_DOTFILES=1").is_empty());
-        assert!(!home.join(".moor-dotfiles").exists());
-        assert_never_called(&f.w.all_calls(), "ssh", &[]);
     }
 );

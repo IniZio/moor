@@ -2,8 +2,8 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
 use parity::adapter::{ExitClass, StartOpts};
-use parity::assert::{assert_never_called, assert_secret_absent};
-use parity::fake::{crabbox, Rule};
+use parity::assert::assert_secret_absent;
+use parity::fake::Rule;
 use parity::parity;
 use serde_json::{json, Value};
 
@@ -122,76 +122,6 @@ parity!(
 );
 
 parity!(
-    host_agent_dispatch_carries_no_credentials,
-    covers = ["C-137", "C-138"],
-    tags = [],
-    {
-        let f = fx();
-        flow_fakes(&f.w);
-        let (tok, claude_tok, mcp) = (f.secret("tok"), f.secret("claude"), f.secret("mcp"));
-        let dots = f.w.root().join("dots");
-        std::fs::create_dir_all(&dots).expect("mkdir");
-        f.user(json!({
-            "credentials": {
-                "TOK": { "file": f.secret_file("tok", &tok) },
-                "CLAUDE_CODE_OAUTH_TOKEN": { "file": f.secret_file("claude", &claude_tok) },
-                "M": { "file": f.secret_file("mcp", &mcp) },
-            },
-            "mcp_servers": { "srv": { "command": "npx", "args": ["${M}"] } },
-            "dotfiles": { "dir": dots.to_string_lossy() },
-        }));
-        f.repo_cfg(json!({ "box_credentials": ["TOK"] }));
-        let name = f.w.task_name("posture");
-        started_ok(&f, &name, Some("go"));
-        let bg = bg_call(&f.w);
-        assert_eq!(bg.flag("--name").as_deref(), Some(name.as_str()));
-        assert_eq!(bg.flag("--permission-mode").as_deref(), Some("acceptEdits"));
-        for flag in ["--model", "--setting-sources", "--allowedTools"] {
-            assert!(bg.flag(flag).is_some(), "missing {flag}: {:?}", bg.argv);
-        }
-        let line = bg.argv.join(" ");
-        assert!(!line.contains("--dangerously-skip-permissions"), "{line}");
-        let tools = bg.flag("--allowedTools").expect("allowed tools");
-        assert!(
-            !tools.contains("git push") && !tools.contains("gh "),
-            "{tools}"
-        );
-        assert!(
-            bg.env
-                .keys()
-                .all(|k| !k.starts_with("ANTHROPIC_") && k != "CLAUDE_CODE_OAUTH_TOKEN"),
-            "{:?}",
-            bg.env.keys()
-        );
-        assert!(
-            !bg.env_digests.contains_key("TOK"),
-            "box_credential name TOK present in claude env"
-        );
-        for v in [&tok, &claude_tok, &mcp] {
-            let d = parity::fake::digest(v);
-            assert!(
-                bg.env_digests.values().all(|x| *x != d),
-                "a credential value reached the claude env"
-            );
-        }
-        assert!(
-            f.w.calls("ssh").is_empty(),
-            "no delivery to a Box for a host agent"
-        );
-        assert_never_called(&f.w.all_calls(), "crabbox", &["tunnel"]);
-        assert!(
-            !f.w.state_dir().join("proxy").exists(),
-            "host agents never use the proxy"
-        );
-        for s in [&tok, &claude_tok] {
-            assert_secret_absent(&f.w, s, &[]);
-        }
-        assert_secret_absent(&f.w, &mcp, &["mcp/"]);
-        finish(&f, &name);
-    }
-);
-
-parity!(
     worktree_moor_yaml_wins_for_box_size_else_main,
     covers = ["C-09"],
     tags = [],
@@ -274,32 +204,6 @@ parity!(
         assert_eq!(o.class, ExitClass::Ok, "{}", o.stderr);
         let task = o.ok().clone();
         assert_eq!(probe_file(&task, &f, "got-env"), tok.len().to_string());
-        finish(&f, &name);
-    }
-);
-
-parity!(
-    start_override_to_box_drops_proxy_domains_from_egress,
-    covers = [],
-    tags = ["new_only(EgressOverride)"],
-    {
-        let f = fx();
-        flow_fakes(&f.w);
-        crabbox::install_preset(&f.w, crabbox::Preset::Sprites);
-        f.user(json!({ "box": { "provider": "sprites" } }));
-        f.repo_cfg(json!({ "egress": ["a.example.com"] }));
-        let name = f.w.task_name("egovr");
-        let o = start_task(&f, &name, Some("go"), Some("box"));
-        assert_eq!(o.class, ExitClass::Ok, "{}", o.stderr);
-        let calls = f.w.calls("crabbox");
-        let warm = calls
-            .iter()
-            .find(|c| c.argv[0] == "warmup")
-            .expect("warmup");
-        let allow = warm.flag("--sprites-network-allow").expect("allow list");
-        let hosts: Vec<&str> = allow.split(',').collect();
-        assert!(hosts.contains(&"a.example.com"));
-        assert!(!hosts.contains(&"api.github.com") && !hosts.contains(&"api.anthropic.com"));
         finish(&f, &name);
     }
 );

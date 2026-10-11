@@ -12,7 +12,7 @@ fn report_command(brief: &str, name: &str) -> String {
 
 parity!(
     local_brief_gives_the_agent_a_working_report_command,
-    covers = ["D-26", "D-31"],
+    covers = ["D-31"],
     tags = [],
     {
         let f = fx();
@@ -56,43 +56,6 @@ parity!(
         let copy = rows[0].copy_path().expect("file url");
         f.assert_stored_under_state(&copy);
         assert_eq!(read(&copy), "agent wrote this");
-    }
-);
-
-parity!(
-    artifacts_brief_publishes_then_reports_the_link,
-    covers = ["D-27"],
-    tags = [],
-    {
-        let doc = json!({ "reports": { "backend": "agentic-artifacts" } });
-        let f = fx_with_config(Some(doc));
-        let name = f.name("art");
-        f.start_with(&name, Some("write a spec"));
-        let call = f.bg_call();
-        let brief = &call.argv[0];
-        for needle in [
-            "publish_artifact",
-            "commit_artifact",
-            "sha256sum",
-            "--link",
-            "--version",
-            "widget",
-            &format!("{name}/"),
-        ] {
-            assert!(brief.contains(needle), "{needle} missing: {brief}");
-        }
-        assert!(
-            brief.contains("--file"),
-            "the local fallback stays available"
-        );
-        let argv = call.argv.join(" ");
-        for tool in [
-            "mcp__agentic-artifacts__publish_artifact",
-            "mcp__agentic-artifacts__commit_artifact",
-        ] {
-            assert!(argv.contains(tool), "{tool} not allowed: {argv}");
-        }
-        assert!(argv.contains(&format!("report {name}")));
     }
 );
 

@@ -73,22 +73,6 @@ parity!(
 );
 
 parity!(
-    close_aborts_when_agent_cannot_be_stopped_and_is_still_active,
-    covers = ["A-91"],
-    tags = [],
-    {
-        let f = fx();
-        f.w.prepend_rules("claude", [Rule::on(&["stop"]).exit(1).stderr("busy\n")]);
-        let name = f.name("stuck");
-        f.goal(&name);
-        assert!(f.try_close(&name).class.is_err());
-        assert_ne!(f.row(&name).state, TaskState::Closed);
-        assert_eq!(f.n("crabbox", "stop"), 0);
-        assert!(f.m.sessions(&f.w, &name)[0].live);
-    }
-);
-
-parity!(
     close_tolerates_stop_failure_when_agent_already_done,
     covers = ["A-91"],
     tags = [],

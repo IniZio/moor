@@ -295,49 +295,6 @@ fn saved_digests(w: &World) -> Vec<String> {
 }
 
 parity!(
-    box_task_agent_location_is_fixed_at_first_launch_and_a_different_flag_is_refused,
-    covers = ["A-46"],
-    tags = ["new_only(AgentLocationFixed)"],
-    {
-        let b = bx(false);
-        live_panes(&b.w);
-        let name = b.w.task_name("fixedloc");
-        go_ok(&b, &name, "first goal");
-        let bg = |b: &Bx| {
-            b.w.calls("claude")
-                .iter()
-                .filter(|c| c.argv.iter().any(|a| a == "--bg"))
-                .count()
-        };
-        let refused_with_names = |o: &Outcome<TaskView>| {
-            assert_eq!(o.class, ExitClass::Refused, "{}{}", o.stdout, o.stderr);
-            let text = format!("{}{}", o.stdout, o.stderr).to_lowercase();
-            for want in ["box", "host"] {
-                assert!(text.contains(want), "{want} missing from: {text}");
-            }
-        };
-        let attach = start_with(&b, &name, &start_opts(Some("again"), Some("host"), None));
-        refused_with_names(&attach);
-        herdr::pane_text(&b.w, "bye\nmoor: agent exited 3\n");
-        let exited = start_with(&b, &name, &start_opts(Some("again"), Some("host"), None));
-        refused_with_names(&exited);
-        herdr::pane_gone(&b.w);
-        let gone = start_with(&b, &name, &start_opts(Some("again"), Some("host"), None));
-        refused_with_names(&gone);
-        assert_eq!(count(&b.w, "herdr", &["tab", "create"]), 1, "no new tab");
-        assert_eq!(bg(&b), 0, "no agent dispatched");
-        let sessions = moor().sessions(&b.w, &name);
-        assert_eq!(sessions.len(), 1, "{sessions:?}");
-        assert!(sessions[0].live && sessions[0].box_pane, "{sessions:?}");
-        let same = start_with(&b, &name, &start_opts(Some("again"), Some("box"), None));
-        assert_eq!(same.class, ExitClass::Ok, "{}", same.stderr);
-        assert_eq!(doc(&same)["relaunched"]["goal"], "again", "{}", same.stdout);
-        assert_eq!(count(&b.w, "herdr", &["tab", "create"]), 2);
-        finish(&b, &name);
-    }
-);
-
-parity!(
     box_transcript_is_saved_when_the_exit_marker_is_observed_and_again_never_duplicated,
     covers = ["REQ-37"],
     tags = ["new_only(TranscriptOnExit)"],

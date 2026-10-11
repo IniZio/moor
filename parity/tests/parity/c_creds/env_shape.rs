@@ -274,37 +274,16 @@ parity!(env_delivery_labels, covers = ["C-29"], tags = [], {
     }
 });
 
-parity!(
-    env_agent_location_flag_previews_without_side_effects,
-    covers = ["C-30", "C-31"],
-    tags = [],
-    {
-        let f = fx();
-        f.user(json!({ "box": { "provider": "sprites" } }));
-        f.repo_cfg(json!({ "egress": ["a.example.com"] }));
-        let host = f.env();
-        assert_eq!(host.ok().location, "host");
-        assert!(host.ok().item("box", "gh").is_none());
-        let boxed = f.env_at("box");
-        assert_eq!(boxed.ok().location, "box");
-        let gh = boxed.ok().item("box", "gh").expect("box gh row");
-        assert_eq!(gh.delivery.as_deref(), Some("proxy"));
-        assert!(boxed.ok().items.iter().all(|i| i.name != "GH_TOKEN"));
-        let host_egress = host.ok().of_kind("egress")[0].detail.clone();
-        let box_egress = boxed.ok().of_kind("egress")[0].detail.clone();
-        assert_ne!(
-            host_egress, box_egress,
-            "box location changes the egress row"
-        );
-
-        f.repo_cfg(json!({ "agent": { "location": "box" } }));
-        assert_eq!(f.env().ok().location, "box");
-        let flag_wins = f.env_at("host");
-        assert_eq!(flag_wins.ok().location, "host");
-        assert!(flag_wins.ok().item("box", "gh").is_none());
-        assert!(f.w.all_calls().is_empty(), "env must not call any tool");
-    }
-);
+parity!(env_always_lists_box_gh_row, covers = ["C-31"], tags = [], {
+    let f = fx();
+    f.user(json!({ "box": { "provider": "sprites" } }));
+    f.repo_cfg(json!({ "egress": ["a.example.com"] }));
+    let r = f.env_at("box");
+    let gh = r.ok().item("box", "gh").expect("box gh row");
+    assert_eq!(gh.delivery.as_deref(), Some("proxy"));
+    assert!(r.ok().items.iter().all(|i| i.name != "GH_TOKEN"));
+    assert!(f.w.all_calls().is_empty(), "env must not call any tool");
+});
 
 parity!(env_egress_item_variants, covers = ["C-32"], tags = [], {
     let f = fx();
