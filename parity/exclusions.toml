@@ -63,17 +63,17 @@ ref = "parity-plan.md §6 (T9)"
 [B-06]
 code = "SMELL-REDESIGNED"
 reason = "--reclaim keyed on the moor- Box name couples moor to a crabbox claim flag; claims belong behind the Driver"
-ref = "docs/adr/0001-crabbox-is-only-a-driver.md; b-box-driver.md DESIGN-SMELL flag"
+ref = "b-box-driver.md DESIGN-SMELL flag; parity-plan.md §4"
 
 [B-13]
 code = "SMELL-REDESIGNED"
 reason = "quiet mode scrapes crabbox output by string prefix; the Driver seam owns its own logging"
-ref = "docs/adr/0001-crabbox-is-only-a-driver.md; b-box-driver.md DESIGN-SMELL flag"
+ref = "b-box-driver.md DESIGN-SMELL flag; parity-plan.md §4"
 
 [B-14]
 code = "SMELL-REDESIGNED"
 reason = "dropping the crabbox argv echo is output scraping of Driver chatter"
-ref = "docs/adr/0001-crabbox-is-only-a-driver.md; b-box-driver.md DESIGN-SMELL flag"
+ref = "b-box-driver.md DESIGN-SMELL flag; parity-plan.md §4"
 
 [B-15]
 code = "KNOWN-BUG"
@@ -81,14 +81,14 @@ reason = "claim contention between host run and Box/state reads; usage-log items
 ref = ".groundwork/BACKLOG.md 'Crabbox claim guard for run contention' (old moor b8e8801)"
 
 [B-17]
-code = "KNOWN-BUG"
-reason = "first run on a fresh Box died after about 2 min, unexplained and not reproducible with fakes"
-ref = "usage-log drive 3b item 25 (old moor b8e8801)"
+code = "LIVE"
+reason = "first run on a fresh Box died after about 2 min (usage-log drive 3b item 25), unexplained and not reproducible with fakes; exercised on a real fresh Box"
+ref = "live-smoke.md: Namespace Box agent"
 
 [B-24]
 code = "SMELL-REDESIGNED"
 reason = "the config-dir mode guard encodes a crabbox internal check; fork patch (BACKLOG) removes the need"
-ref = "docs/adr/0001-crabbox-is-only-a-driver.md; b-box-driver.md DESIGN-SMELL flag"
+ref = "b-box-driver.md DESIGN-SMELL flag; parity-plan.md §4"
 
 [B-25]
 code = "DRIVER-SIDE"
@@ -96,9 +96,9 @@ reason = "directory cp replace semantics and the rsync requirement belong to cra
 ref = "b-box-driver.md B-25; BACKLOG moor doctor runtime check"
 
 [B-27]
-code = "SMELL-REDESIGNED"
-reason = "copy_from quiet_log is dead in production: try_save_transcript passes None (old task.rs), so no user-visible behaviour"
-ref = "docs/adr/0001-crabbox-is-only-a-driver.md; b-box-driver.md DESIGN-SMELL flag"
+code = "DOC"
+reason = "copy_from quiet_log path is dead in production: try_save_transcript passes None (old task.rs), so no user-visible behaviour to assert"
+ref = "b-box-driver.md B-27"
 
 [B-33]
 code = "DOC"
@@ -143,7 +143,7 @@ ref = ".groundwork/BACKLOG.md 'Host sync re-seeds the Box .git' (old moor b8e880
 [B-66]
 code = "SMELL-REDESIGNED"
 reason = "CRABBOX_CONFIG lookup in worktree/main checkout leaks a crabbox concept into moor behaviour"
-ref = "docs/adr/0001-crabbox-is-only-a-driver.md; b-box-driver.md DESIGN-SMELL flag"
+ref = "b-box-driver.md DESIGN-SMELL flag; parity-plan.md §4"
 
 [B-71]
 code = "LIVE"
@@ -158,7 +158,7 @@ ref = "parity-plan.md §2 (Outcome asserts exit class, not strings)"
 [B-92]
 code = "SMELL-REDESIGNED"
 reason = "Box handle is opaque to moor; provider/name parsing leaves moor"
-ref = "docs/adr/0001-crabbox-is-only-a-driver.md; inventory b-box-driver B-92"
+ref = "b-box-driver.md B-92; parity-plan.md §4"
 
 [B-98]
 code = "PENDING"

@@ -137,6 +137,12 @@ fn run_exec(script: &str, box_root: &Path, capture_all: bool) -> (i32, String) {
     (code, String::from_utf8_lossy(&buf).into_owned())
 }
 
+fn env_digests() -> BTreeMap<String, String> {
+    std::env::vars()
+        .map(|(k, v)| (k, parity::fake::digest(&v)))
+        .collect()
+}
+
 fn recorded_env() -> BTreeMap<String, String> {
     std::env::vars()
         .filter(|(k, _)| {
@@ -208,6 +214,7 @@ fn run() -> i32 {
         ppid: unsafe { libc::getppid() } as u32,
         stdin: String::new(),
         env: recorded_env(),
+        env_digests: env_digests(),
         rule: rule.map(|r| r.id.clone()),
         pgid: unsafe { libc::getpgrp() } as u32,
         starttime: starttime(),

@@ -119,9 +119,12 @@ fn files_under(dir: &Path) -> Vec<PathBuf> {
 pub fn assert_secret_absent(w: &World, secret: &str, allow: &[&str]) {
     let needle = secret.as_bytes();
     let mut leaks: Vec<String> = Vec::new();
+    let want = crate::fake::digest(secret);
     for c in crate::fake::all_calls(&w.fakes_dir()) {
         let in_argv = c.argv.iter().any(|a| a.contains(secret));
-        if in_argv || c.env.values().any(|v| v.contains(secret)) {
+        let in_env = c.env.values().any(|v| v.contains(secret))
+            || c.env_digests.values().any(|d| *d == want);
+        if in_argv || in_env {
             let place = if in_argv { "argv" } else { "env" };
             leaks.push(format!("fake call {} {} ({place})", c.seq, c.tool));
         }
@@ -193,6 +196,7 @@ mod tests {
             starttime: 0,
             stdin: String::new(),
             env: BTreeMap::new(),
+            env_digests: BTreeMap::new(),
             rule: None,
         }
     }
@@ -203,6 +207,18 @@ mod tests {
             call(1, "herdr", &["worktree", "create"]),
             call(2, "crabbox", &["warmup", "--slug", "x"]),
         ]
+    }
+
+    #[test]
+    #[should_panic(expected = "(env)")]
+    fn secret_in_unprefixed_env_is_caught() {
+        let w = World::new("/bin/true");
+        let mut c = call(1, "claude", &[]);
+        c.env_digests
+            .insert("LEAKPROBE".into(), crate::fake::digest("s3cr3t-value"));
+        let line = format!("{}\n", serde_json::to_string(&c).unwrap());
+        std::fs::write(crate::fake::calls_path(&w.fakes_dir(), "claude"), line).unwrap();
+        assert_secret_absent(&w, "s3cr3t-value", &[]);
     }
 
     #[test]

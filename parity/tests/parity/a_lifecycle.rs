@@ -1010,6 +1010,32 @@ parity!(
 );
 
 parity!(
+    start_after_setup_failure_reruns_setup_only_once,
+    covers = ["A-31", "B-54"],
+    tags = ["new_only(SetupRetry)"],
+    {
+        let f = fx();
+        f.repo_cfg(json!({ "setup": ["failing-step"] }));
+        crabbox::fail_match(&f.w, "run", "failing-step", 7);
+        let name = f.name("retry");
+        f.start(&name);
+        f.repo_cfg(json!({ "setup": ["fixed-step"] }));
+        let fixed_runs = |f: &Fx| {
+            f.verb("crabbox", "run")
+                .into_iter()
+                .filter(|c| c.argv.iter().any(|a| a.contains("fixed-step")))
+                .count()
+        };
+        let again = f.start(&name);
+        assert_eq!(again.state, TaskState::Working);
+        assert_eq!(fixed_runs(&f), 1);
+        assert_eq!(f.n("crabbox", "warmup"), 1);
+        f.start(&name);
+        assert_eq!(fixed_runs(&f), 1);
+    }
+);
+
+parity!(
     provision_copies_and_symlinks_and_missing_source_does_not_stop_start,
     covers = ["A-32"],
     tags = [],

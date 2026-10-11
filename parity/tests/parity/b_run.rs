@@ -320,6 +320,7 @@ parity!(
             },
         );
         assert!(o.is_err(), "interrupted run is not a success");
+        assert_eq!(o.exit, 130);
         let r = o.value.as_ref().expect("a ran event records the interrupt");
         assert!(r.interrupted);
         assert_eq!(ran_events(&f.w, &f.name), 1);
@@ -336,6 +337,7 @@ parity!(
         crabbox::die_on_run(&f.w);
         let o = go(&f, &["true"]);
         assert!(o.is_err());
+        assert_eq!(o.exit, 130);
         assert!(o.value.as_ref().expect("ran event").interrupted);
     }
 );
@@ -1090,7 +1092,7 @@ parity!(
 );
 
 parity!(
-    start_rerun_after_setup_failure_attaches_without_new_warmup,
+    start_rerun_after_setup_failure_reuses_warmed_box,
     covers = ["B-54"],
     tags = [],
     {
@@ -1102,10 +1104,6 @@ parity!(
         assert_eq!(again.ok().state, TaskState::Working);
         assert!(again.warnings.is_empty(), "{:?}", again.warnings);
         assert_eq!(verb_calls(&f.w, "warmup").len(), 1);
-        assert!(
-            !f.wt.join(".moor/fixed").exists(),
-            "a working Task is only attached"
-        );
     }
 );
 

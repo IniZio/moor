@@ -164,11 +164,21 @@ pub struct Call {
     pub stdin: String,
     pub env: BTreeMap<String, String>,
     #[serde(default)]
+    pub env_digests: BTreeMap<String, String>,
+    #[serde(default)]
     pub rule: Option<String>,
     #[serde(default)]
     pub pgid: u32,
     #[serde(default)]
     pub starttime: u64,
+}
+
+pub fn digest(value: &str) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(value.as_bytes())
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 impl Call {
@@ -463,6 +473,7 @@ mod tests {
             ppid: 1,
             stdin: String::new(),
             env: BTreeMap::new(),
+            env_digests: BTreeMap::new(),
             rule: None,
             pgid: 0,
             starttime: 0,
@@ -511,6 +522,7 @@ mod tests {
             ppid: 0,
             stdin: String::new(),
             env: BTreeMap::new(),
+            env_digests: BTreeMap::new(),
             rule: None,
             pgid: 0,
             starttime: 0,

@@ -401,21 +401,78 @@ parity!(
     }
 );
 
+parity!(repo_record_keys_rejected, covers = ["C-16"], tags = [], {
+    let f = fx();
+    repo_rejects(
+        &f,
+        &[
+            json!({ "record": { "keep": ["node_modules"] } }),
+            json!({ "record": { "other": 1 } }),
+        ],
+    );
+});
+
 parity!(
-    repo_record_keys_and_unknown_top_level,
+    unknown_config_key_fails_parsing_naming_the_key_path,
     covers = ["C-16"],
-    tags = [],
+    tags = ["new_only(StrictConfig)"],
     {
         let f = fx();
-        repo_rejects(
-            &f,
-            &[
-                json!({ "record": { "keep": ["node_modules"] } }),
-                json!({ "record": { "other": 1 } }),
-            ],
+        f.repo_cfg(json!({ "egres": ["a.example.com"] }));
+        let o = f.env();
+        assert_rejected(&o, "unknown repo key");
+        assert!(o.stderr.contains("egres"), "{}", o.stderr);
+        f.repo_cfg(json!({}));
+        f.user(json!({ "box": { "providr": "ssh" } }));
+        let o = f.env();
+        assert_rejected(&o, "unknown user key");
+        assert!(o.stderr.contains("box.providr"), "{}", o.stderr);
+    }
+);
+
+parity!(
+    git_identity_applies_to_worktree_and_box_commits,
+    covers = ["C-17"],
+    tags = ["new_only(GitIdentity)"],
+    {
+        let f = fx();
+        flow_fakes(&f.w);
+        f.user(json!({ "git": { "name": "User Name" } }));
+        f.repo_cfg(json!({
+            "git": { "name": "Repo Name", "email": "repo@example.com" },
+            "setup": [concat!(
+                "mkdir -p bx && cd bx && git init -q && unset GIT_CONFIG_GLOBAL && ",
+                "git commit -q --allow-empty -m x && ",
+                "git log -1 --format=%an/%ae > ../got-author"
+            )],
+        }));
+        let name = f.w.task_name("gitid");
+        let task = started_ok(&f, &name, None);
+        let wt = task.worktree.clone().expect("worktree");
+        let commit = |dir: &str| {
+            let st =
+                f.w.command("git")
+                    .env_remove("GIT_CONFIG_GLOBAL")
+                    .args(["commit", "-q", "--allow-empty", "-m", "x"])
+                    .current_dir(dir)
+                    .status()
+                    .expect("git commit");
+            assert!(st.success(), "commit in {dir} failed");
+            let out =
+                f.w.command("git")
+                    .env_remove("GIT_CONFIG_GLOBAL")
+                    .args(["log", "-1", "--format=%an/%ae"])
+                    .current_dir(dir)
+                    .output()
+                    .expect("git log");
+            String::from_utf8_lossy(&out.stdout).trim().to_string()
+        };
+        assert_eq!(commit(&wt), "User Name/repo@example.com");
+        assert_eq!(
+            probe_file(&task, &f, "got-author"),
+            "User Name/repo@example.com"
         );
-        f.repo_cfg(json!({ "test": "make test", "egres": ["a.example.com"] }));
-        assert_accepted(&f.env(), "unknown top-level keys");
+        finish(&f, &name);
     }
 );
 
@@ -1539,6 +1596,16 @@ parity!(
         assert_accepted(&f.env(), "host location allows it");
         let name = f.w.task_name("claudebox");
         let started = start_task(&f, &name, Some("go"), Some("box"));
+        let reason = serde_json::from_str::<Value>(&started.stdout)
+            .ok()
+            .and_then(|v| v["reason"].as_str().map(str::to_string))
+            .unwrap_or_default();
+        assert!(
+            reason.contains("agent dispatch failed") && reason.contains("CLAUDE_CODE_OAUTH_TOKEN"),
+            "start must report the rejected dispatch: {} {}",
+            started.stdout,
+            started.stderr
+        );
         assert_never_called(&f.w.all_calls(), "herdr", &["pane", "run"]);
         assert!(f.w.calls("ssh").is_empty(), "no delivery");
         assert!(
@@ -1761,6 +1828,8 @@ parity!(
         let name = f.w.task_name("checked");
         started_ok(&f, &name, None);
         let events = moor().events(&f.w, &name);
+        let checked = EventKind::Other("checked".into());
+        let mut seen = 0;
         for e in &events {
             let text = e.payload.to_string();
             assert!(
@@ -1768,11 +1837,13 @@ parity!(
                 "{:?} carries a value",
                 e.kind
             );
-            if e.kind == EventKind::Other("checked".into()) {
-                for c in e.payload["credentials"]
+            if e.kind == checked {
+                let list = e.payload["credentials"]
                     .as_array()
-                    .expect("credentials list")
-                {
+                    .expect("credentials list");
+                assert!(!list.is_empty(), "checked event lists no credentials");
+                seen += 1;
+                for c in list {
                     let keys: Vec<&String> = c.as_object().expect("entry").keys().collect();
                     assert!(keys
                         .iter()
@@ -1780,6 +1851,7 @@ parity!(
                 }
             }
         }
+        assert_eq!(seen, 1, "one checked event expected: {events:?}");
         finish(&f, &name);
         for s in [&tok, &keyf] {
             assert_secret_absent(&f.w, s, &[]);
@@ -1907,11 +1979,15 @@ parity!(
             "claude",
             [Rule::any()
                 .contains("--bg")
+                .exec("cp '{flag:--mcp-config}' '{root}/mcp-seen'")
                 .exit(1)
                 .stderr("dispatch refused\n")],
         );
         let name = f.w.task_name("failmcp");
         let _ = start_task(&f, &name, Some("go"), None);
+        let seen = std::fs::read_to_string(f.w.root().join("mcp-seen"))
+            .expect("mcp config existed at dispatch time");
+        assert!(seen.contains(&secret), "mcp config lacked the server args");
         assert!(
             mcp_files(&f.w).is_empty(),
             "failed dispatch leaves {:?}",
@@ -1963,6 +2039,17 @@ parity!(
             "{:?}",
             bg.env.keys()
         );
+        assert!(
+            !bg.env_digests.contains_key("TOK"),
+            "box_credential name TOK present in claude env"
+        );
+        for v in [&tok, &claude_tok, &mcp] {
+            let d = parity::fake::digest(v);
+            assert!(
+                bg.env_digests.values().all(|x| *x != d),
+                "a credential value reached the claude env"
+            );
+        }
         assert!(
             f.w.calls("ssh").is_empty(),
             "no delivery to a Box for a host agent"
