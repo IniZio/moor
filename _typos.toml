@@ -1,2 +1,7 @@
 [files]
-extend-exclude = ["target/", "Cargo.lock", "parity/inventory/"]
+extend-exclude = [
+  "target/",
+  "Cargo.lock",
+  "parity/inventory/",
+  "crates/moor/src/adapters/herdr/testdata/",
+]

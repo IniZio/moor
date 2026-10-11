@@ -10,11 +10,8 @@ use moor_core::seam::surface::{PaneCmd, PaneRef, Surface, SurfaceError, Workspac
 use super::{parse, Herdr};
 use crate::adapters::fake_proc::{Call, Reply, ScriptedProc};
 
-const WS_CREATE: &str = include_str!(
-    "../../../../../.groundwork/work/rewrite/research/herdr-samples/workspace-create.json"
-);
-const PANE_LIST: &str =
-    include_str!("../../../../../.groundwork/work/rewrite/research/herdr-samples/pane-list.json");
+const WS_CREATE: &str = include_str!("testdata/workspace-create.json");
+const PANE_LIST: &str = include_str!("testdata/pane-list.json");
 
 const WT_CREATED: &str = r#"{"id":"cli:worktree:create","result":{"type":"worktree_created","workspace":{"workspace_id":"w2"},"worktree":{"path":"/r/wt","branch":"moor/a","open_workspace_id":"w2","extra":1}}}"#;
 const WT_LIST: &str = r#"{"id":"cli:worktree:list","result":{"worktrees":[{"path":"/r/wt","branch":"moor/a","open_workspace_id":"w9"},{"path":"/r/other","branch":"x"}]}}"#;
@@ -90,6 +87,48 @@ fn create_worktree_reuses_the_worktree_already_on_the_branch() {
         .expect("reused");
     assert_eq!(wt.path, PathBuf::from("/r/wt"));
     assert_eq!(wt.branch, "moor/a");
+}
+
+#[test]
+fn create_worktree_reuses_on_already_exists_code() {
+    let (p, h) = fixture();
+    p.on(
+        Tool::Herdr,
+        &["worktree", "create"],
+        Reply::Fail {
+            code: 1,
+            stdout: r#"{"error":{"code":"worktree_already_exists","message":"x"}}"#.to_owned(),
+            stderr: String::new(),
+        },
+    );
+    p.on(Tool::Herdr, &["worktree", "list"], ok(WT_LIST));
+    let wt = h
+        .create_worktree(Path::new("/r"), &name(), None)
+        .expect("reused");
+    assert_eq!(wt.path, PathBuf::from("/r/wt"));
+}
+
+#[test]
+fn create_worktree_other_failure_does_not_reuse() {
+    let (p, h) = fixture();
+    p.on(
+        Tool::Herdr,
+        &["worktree", "create"],
+        Reply::Fail {
+            code: 1,
+            stdout: String::new(),
+            stderr: "boom".to_owned(),
+        },
+    );
+    p.on(Tool::Herdr, &["worktree", "list"], ok(WT_LIST));
+    let err = h
+        .create_worktree(Path::new("/r"), &name(), None)
+        .expect_err("no reuse");
+    assert!(matches!(err, SurfaceError::Failed { .. }));
+    assert!(p
+        .calls()
+        .iter()
+        .all(|c| !c.args.iter().any(|a| a == "list")));
 }
 
 #[test]

@@ -8,6 +8,8 @@ use moor_core::seam::surface::SurfaceError;
 pub(super) enum HerdrFailure {
     /// No herdr server runs for this session; the caller may start one.
     ServerNotRunning,
+    /// The target already exists (herdr exit 255 or an `*already_exists` code).
+    AlreadyExists(SurfaceError),
     /// Any other failure, already in Surface terms.
     Surface(SurfaceError),
 }
@@ -51,6 +53,11 @@ fn map_body(body: &ErrorBody) -> HerdrFailure {
             "herdr does not support this request; restart the moor herdr session".to_owned(),
         ));
     }
+    if body.code == "already_exists" || body.code.ends_with("_already_exists") {
+        return HerdrFailure::AlreadyExists(SurfaceError::Failed {
+            summary: format!("herdr {}", body.code),
+        });
+    }
     if is_not_found(&body.code) {
         return HerdrFailure::Surface(SurfaceError::NotFound);
     }
@@ -77,9 +84,14 @@ pub(super) fn map_error(e: &ProcError) -> HerdrFailure {
             .or_else(|| parse_body(stdout))
             .map_or_else(
                 || {
-                    HerdrFailure::Surface(SurfaceError::Failed {
+                    let err = SurfaceError::Failed {
                         summary: format!("herdr exited with code {code}"),
-                    })
+                    };
+                    if *code == 255 {
+                        HerdrFailure::AlreadyExists(err)
+                    } else {
+                        HerdrFailure::Surface(err)
+                    }
                 },
                 |body| map_body(&body),
             ),
