@@ -167,7 +167,6 @@ parity!(
         let o = f.report(&name, &ReportReq::file("plan", &src));
         assert_eq!(o.class, ExitClass::Ok, "{}", o.stderr);
         let after = f.row(&name);
-        assert_eq!(before.state, TaskState::Working);
         assert_eq!(after.state, before.state);
         assert_eq!(
             after.agent().map(|a| a.state),

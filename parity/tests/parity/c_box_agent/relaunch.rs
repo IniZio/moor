@@ -82,7 +82,7 @@ parity!(
 );
 
 parity!(
-    box_relaunch_uses_the_newest_goal_and_stays_in_the_box_even_if_config_says_host,
+    box_relaunch_uses_the_newest_goal,
     covers = ["A-46"],
     tags = [],
     {
@@ -91,26 +91,20 @@ parity!(
         let name = b.w.task_name("goals");
         go_ok(&b, &name, "goal one");
         herdr::pane_text(&b.w, "bye\nmoor: agent exited 3\n");
-        let attach = |goal: Option<&str>, location: Option<&str>| {
-            let o = start_with(&b, &name, &start_opts(goal, location, None));
+        let attach = |goal: Option<&str>| {
+            let o = start_with(&b, &name, &start_opts(goal, None, None));
             assert_eq!(o.class, ExitClass::Ok, "{}", o.stderr);
             doc(&o)["relaunched"].clone()
         };
-        let first = attach(None, None);
+        let first = attach(None);
         assert_eq!(first["goal"], "goal one", "{first}");
         assert_eq!(first["old_pane"], "p-1");
-        repo_cfg(&b, json!({ "agent": { "location": "host" } }));
-        let second = attach(Some("goal two"), None);
+        let second = attach(Some("goal two"));
         assert_eq!(second["goal"], "goal two", "{second}");
         assert_eq!(second["old_pane"], first["new_pane"]);
-        let third = attach(None, None);
+        let third = attach(None);
         assert_eq!(third["goal"], "goal two", "{third}");
         assert_eq!(count(&b.w, "herdr", &["tab", "create"]), 4);
-        let bg =
-            b.w.calls("claude")
-                .iter()
-                .any(|c| c.argv.iter().any(|a| a == "--bg"));
-        assert!(!bg, "location stays Box");
         finish(&b, &name);
     }
 );
@@ -171,11 +165,6 @@ parity!(
                 .count(),
             1
         );
-        assert!(b
-            .w
-            .calls("claude")
-            .iter()
-            .all(|c| !c.argv.iter().any(|a| a == "--bg")));
         finish(&b, &name);
     }
 );

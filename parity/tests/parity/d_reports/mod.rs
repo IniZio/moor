@@ -4,9 +4,9 @@ use parity::adapter::{
     BoxState, CloseView, ExitClass, Moor, Outcome, ReportReq, ReportRow, StartOpts, TaskState,
     TaskView,
 };
-use parity::fake::{claude, crabbox, herdr, Call, Rule};
+use parity::fake::{crabbox, herdr, Rule};
 use parity::parity;
-use parity::world::config::UserConfig;
+use parity::world::config::{RepoConfig, UserConfig};
 use parity::world::repo::Repo;
 use parity::world::World;
 use serde_json::{json, Value};
@@ -26,10 +26,12 @@ pub(super) fn fx_with_config(config: Option<Value>) -> Fx {
         Some(doc) => std::fs::write(w.config_path(), doc.to_string()).expect("write config"),
         None => UserConfig::default().write(&w),
     }
+    RepoConfig::default()
+        .agent_location("box")
+        .write(&repo.path);
     crabbox::install(&w);
     crabbox::cp(&w);
     herdr::install(&w);
-    claude::install(&w);
     Fx { w, repo, m: moor() }
 }
 
@@ -102,14 +104,6 @@ impl Fx {
             "{} not under state",
             real.display()
         );
-    }
-
-    pub(super) fn bg_call(&self) -> Call {
-        self.w
-            .calls("claude")
-            .into_iter()
-            .find(|c| c.argv.iter().any(|a| a == "--bg"))
-            .expect("claude --bg dispatched")
     }
 }
 

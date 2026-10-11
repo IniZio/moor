@@ -1,61 +1,21 @@
 use super::*;
 
-fn report_command(brief: &str, name: &str) -> String {
-    brief
-        .split('`')
-        .skip(1)
-        .step_by(2)
-        .find(|seg| seg.contains(&format!(" report {name} --kind ")))
-        .unwrap_or_else(|| panic!("brief names no report command for {name}: {brief}"))
-        .to_string()
-}
-
 parity!(
-    local_brief_gives_the_agent_a_working_report_command,
+    state_dir_flag_pins_registry,
     covers = ["D-31"],
     tags = [],
     {
         let f = fx();
-        let name = f.name("brief");
-        let t = f.start_with(&name, Some("write a spec"));
-        let call = f.bg_call();
-        let brief = call.argv[0].clone();
-        assert!(brief.contains(".moor/reports/"), "{brief}");
-        assert!(!brief.contains("publish_artifact"), "{brief}");
-        let argv = call.argv.join(" ");
-        assert!(
-            argv.contains(&format!("report {name}")),
-            "report is allowed"
-        );
-        assert!(!argv.contains("mcp__agentic-artifacts"), "{argv}");
-
-        let wt = PathBuf::from(t.worktree.expect("worktree"));
-        std::fs::create_dir_all(wt.join(".moor/reports")).expect("mkdir");
-        std::fs::write(wt.join(".moor/reports/spec.md"), "agent wrote this").expect("report");
-        let cmd = report_command(&brief, &name)
-            .replace("<kind>", "spec")
-            .replace("<short title>", "Agent title");
-        let out =
-            f.w.command("sh")
-                .args(["-c", &cmd])
-                .current_dir(&wt)
-                .env_remove("MOOR_STATE_DIR")
-                .env_remove("MOOR_CONFIG")
-                .output()
-                .expect("run report command");
-        assert!(
-            out.status.success(),
-            "{cmd}: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
+        let name = f.start("pinned");
+        let src = f.src("pin.md", "pinned");
+        let o = f.report(&name, &ReportReq::file("spec", &src));
+        assert_eq!(o.class, ExitClass::Ok, "{}", o.stderr);
         let listed = f.reports(&name);
         let rows = listed.ok();
-        assert_eq!(rows.len(), 1, "the agent's command reached this state dir");
-        assert_eq!(rows[0].kind, "spec");
-        assert_eq!(rows[0].title.as_deref(), Some("Agent title"));
+        assert_eq!(rows.len(), 1, "the report reached this state dir");
         let copy = rows[0].copy_path().expect("file url");
         f.assert_stored_under_state(&copy);
-        assert_eq!(read(&copy), "agent wrote this");
+        assert_eq!(read(&copy), "pinned");
     }
 );
 
@@ -196,11 +156,7 @@ parity!(
                 .exit(1)
                 .stderr(r#"{"error":{"code":"workspace_not_found","message":"gone"}}"#)],
         );
-        f.w.prepend_rules(
-            "claude",
-            [Rule::on(&["stop"]).exit(1).stderr("no such session\n")],
-        );
-        claude::agents(&f.w, "[]");
+        herdr::pane_gone(&f.w);
         crabbox::gone(&f.w, &crabbox::slug(&f.w).expect("slug"));
         let o = f.m.close(&f.w, &f.repo.path, &name, false);
         assert_eq!(o.class, ExitClass::Ok, "{}", o.stderr);

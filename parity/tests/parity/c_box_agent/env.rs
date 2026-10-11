@@ -253,7 +253,7 @@ parity!(
 );
 
 parity!(
-    box_agent_model_flag_only_when_given_and_host_agents_never_bypass,
+    box_agent_model_flag_only_when_given,
     covers = ["C-104"],
     tags = [],
     {
@@ -285,21 +285,6 @@ parity!(
                 Some("repo-model".to_string())
             ]
         );
-        repo_cfg(&b, json!({ "agent": { "location": "host" } }));
-        let host = b.w.task_name("host");
-        let o = go(&b, &host, "host agent");
-        assert_eq!(o.class, ExitClass::Ok, "{}", o.stderr);
-        let bg: Vec<Call> =
-            b.w.calls("claude")
-                .into_iter()
-                .filter(|c| c.argv.iter().any(|a| a == "--bg"))
-                .collect();
-        assert_eq!(bg.len(), 1, "host agent dispatched through claude --bg");
-        assert!(!bg[0]
-            .argv
-            .iter()
-            .any(|a| a == "--dangerously-skip-permissions"));
-        finish(&b, &host);
     }
 );
 

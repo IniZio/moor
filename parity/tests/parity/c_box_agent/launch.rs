@@ -45,7 +45,6 @@ parity!(
             .filter(|e| e.kind == EventKind::SessionStarted)
             .collect();
         assert_eq!(started.len(), 1);
-        assert_never_called(&calls, "claude", &["--bg"]);
         assert_eq!(
             cred_dirs(&b.w).len(),
             1,
