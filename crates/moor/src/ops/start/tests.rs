@@ -116,8 +116,33 @@ fn acquire_failure_keeps_a_failed_task_row() {
             .unwrap()
             .unwrap();
     assert_eq!(row.state, TaskState::SetupFailed);
-    assert_eq!(row.boxed.unwrap().state, BoxState::Failed);
+    assert_eq!(row.boxed.unwrap().state, BoxState::Gone);
     assert!(row.intent.is_none());
+    assert_eq!(w.driver.calls(), ["acquire", "release box-1"]);
+}
+
+#[test]
+fn acquire_failure_with_release_error_keeps_failed_and_original_error() {
+    let w = world(
+        FakeDriver::new()
+            .fail_acquire(DriverError::Failed {
+                summary: "boom".into(),
+            })
+            .fail_release(DriverError::Failed {
+                summary: "stop broke".into(),
+            }),
+    );
+    let err = run(&w.cx, &req("demo")).unwrap_err();
+    assert!(err.error.to_string().contains("boom"), "{err:?}");
+    assert_eq!(
+        err.value.as_ref().unwrap().pointer("/task/state"),
+        Some(&serde_json::json!("setup_failed"))
+    );
+    let name = TaskName::parse("demo").unwrap();
+    let row = w.cx.store().unwrap().open_task_by_name(&name).unwrap();
+    let b = row.unwrap().boxed.unwrap();
+    assert_eq!(b.state, BoxState::Failed);
+    assert_eq!(b.attempted_handle.unwrap().as_str(), "box-1");
 }
 
 #[test]
@@ -192,7 +217,7 @@ fn start_after_acquire_failure_gets_a_new_box() {
     assert_eq!(again.task.state, TaskState::Working);
     let row = w.cx.store().unwrap().task(TaskId::new(again.task.id));
     assert_eq!(row.unwrap().unwrap().boxed.unwrap().state, BoxState::Ready);
-    assert_eq!(w.driver.calls(), ["acquire", "acquire"]);
+    assert_eq!(w.driver.calls(), ["acquire", "release box-1", "acquire"]);
     assert_eq!(w.surface.calls().len(), 2);
 }
 

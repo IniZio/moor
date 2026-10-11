@@ -72,8 +72,8 @@ fn task_view_maps_box() {
         .unwrap();
     let b = task_view(&store.task(id).unwrap().unwrap()).r#box.unwrap();
     assert_eq!(
-        (b.state, b.provider.as_str(), b.handle.as_str()),
-        (BoxState::Ready, "p", "h")
+        (b.state, b.provider.as_str(), b.handle.as_deref()),
+        (BoxState::Ready, "p", Some("h"))
     );
     assert!(b.asleep_since.is_none());
 }

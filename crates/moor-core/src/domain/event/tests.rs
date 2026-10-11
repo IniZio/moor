@@ -54,11 +54,17 @@ fn all_events() -> Vec<Event> {
         },
         Event::BoxRequested,
         Event::BoxReady,
-        Event::BoxFailed { cause: s("c") },
+        Event::BoxFailed {
+            error: s("c"),
+            handle: None,
+        },
         Event::BoxAsleep,
         Event::BoxGone,
         Event::BoxDeleted,
-        Event::BoxReleaseFailed { cause: s("c") },
+        Event::BoxReleaseFailed {
+            error: s("c"),
+            handle: None,
+        },
         Event::Ran {
             run,
             exit: Some(1),
@@ -145,7 +151,11 @@ fn is_asserted_matches_list() {
     }
     .is_asserted());
     assert!(!Event::RunStarted { run: RunId::new(1) }.is_asserted());
-    assert!(!Event::BoxReleaseFailed { cause: s("c") }.is_asserted());
+    assert!(!Event::BoxReleaseFailed {
+        error: s("c"),
+        handle: None
+    }
+    .is_asserted());
     let n = all_events().iter().filter(|e| e.is_asserted()).count();
     assert_eq!(n, 20);
 }
@@ -281,7 +291,7 @@ fn task_events_table_activity() {
 #[test]
 fn box_events_table() {
     use BoxState as B;
-    let ev = |from, to, input: BoxInput| box_events(from, to, &input);
+    let ev = |from, to, input: BoxInput| box_events(from, to, &input, None);
     assert_eq!(
         ev(None, B::Starting, BoxInput::Requested),
         vec![Event::BoxRequested]
@@ -309,7 +319,10 @@ fn box_events_table() {
                 attempted: None
             }
         ),
-        vec![Event::BoxFailed { cause: s("c") }]
+        vec![Event::BoxFailed {
+            error: s("c"),
+            handle: None
+        }]
     );
     assert_eq!(
         ev(Some(B::Ready), B::Asleep, BoxInput::Sleep),
@@ -329,6 +342,37 @@ fn box_events_table() {
             B::ReleaseFailed,
             BoxInput::ReleaseErr { cause: s("c") }
         ),
-        vec![Event::BoxReleaseFailed { cause: s("c") }]
+        vec![Event::BoxReleaseFailed {
+            error: s("c"),
+            handle: None
+        }]
+    );
+}
+
+#[test]
+fn box_failure_events_carry_handle() {
+    let h = BoxHandle::new("p/x");
+    assert_eq!(
+        box_events(
+            Some(BoxState::Ready),
+            BoxState::ReleaseFailed,
+            &BoxInput::ReleaseErr { cause: s("c") },
+            Some(&h)
+        ),
+        vec![Event::BoxReleaseFailed {
+            error: s("c"),
+            handle: Some(s("p/x"))
+        }]
+    );
+    let failed = BoxInput::AcquireFailed {
+        cause: s("c"),
+        attempted: Some(h),
+    };
+    assert_eq!(
+        box_events(Some(BoxState::Starting), BoxState::Failed, &failed, None),
+        vec![Event::BoxFailed {
+            error: s("c"),
+            handle: Some(s("p/x"))
+        }]
     );
 }

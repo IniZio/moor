@@ -6,7 +6,9 @@ use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, Intent, IntentChange};
 use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
 use moor_core::seam::clock::Ts;
-use moor_core::seam::driver::{AcquireReq, Acquired, DriverError, EgressApplied, EgressPlan};
+use moor_core::seam::driver::{
+    AcquireReq, Acquired, DriverError, EgressApplied, EgressPlan, Released,
+};
 use moor_core::{BoxHandle, ProviderId, TaskId};
 
 use super::{reread, task_view};
@@ -141,11 +143,17 @@ fn failed(
     let lost = lost
         .box_input(BoxInput::AcquireFailed {
             cause,
-            attempted: Some(attempted),
+            attempted: Some(attempted.clone()),
         })
         .intent(IntentChange::Clear);
     if let Err(write) = store.apply(lost) {
         return write.into();
+    }
+    if cx.driver().release(&attempted) == Ok(Released::AlreadyGone) {
+        let gone = Decision::new(id).box_input(BoxInput::DriverMissing);
+        if let Err(write) = store.apply(gone) {
+            return write.into();
+        }
     }
     let out = CommandError::from(err);
     match reread(store, id) {

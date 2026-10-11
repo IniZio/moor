@@ -19,7 +19,7 @@ fn task() -> TaskView {
         r#box: Some(BoxView {
             state: BoxState::Ready,
             provider: "p".into(),
-            handle: "h".into(),
+            handle: Some("h".into()),
             egress: Some("enforced".into()),
             asleep_since: None,
         }),

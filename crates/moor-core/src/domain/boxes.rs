@@ -86,7 +86,7 @@ impl BoxState {
             (Self::Starting, I::AcquireFailed { .. }) => Self::Failed,
             (Self::Failed | Self::Gone, I::Requested) => Self::Starting,
             (Self::Ready, I::Sleep) => Self::Asleep,
-            (Self::Ready | Self::Asleep, I::DriverMissing) => Self::Gone,
+            (Self::Ready | Self::Asleep | Self::Failed, I::DriverMissing) => Self::Gone,
             (
                 Self::Ready | Self::Asleep | Self::Failed | Self::Gone | Self::ReleaseFailed,
                 I::Released,

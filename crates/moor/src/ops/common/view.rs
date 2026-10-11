@@ -1,5 +1,6 @@
 //! Store rows to the core views (design §10.2).
 
+use moor_core::domain::boxes::BoxState;
 use moor_core::seam::clock::Ts;
 use moor_core::view::{BoxView, EventView, TaskView};
 
@@ -36,21 +37,28 @@ const fn civil(days: i64) -> (i64, i64, i64) {
     (y, m, d)
 }
 
+/// The handle to show: live, or the attempted one once the Box failed.
+fn box_handle(b: &BoxRow) -> Option<String> {
+    let h = match b.state {
+        BoxState::Gone | BoxState::Deleted => None,
+        BoxState::Failed | BoxState::ReleaseFailed => {
+            b.handle.as_ref().or(b.attempted_handle.as_ref())
+        }
+        _ => b.handle.as_ref(),
+    };
+    h.map(|h| h.as_str().to_owned())
+}
+
 /// Map a Box row to its view.
 fn box_view(b: &BoxRow) -> BoxView {
     BoxView {
         state: b.state,
         provider: b.provider.as_str().to_owned(),
-        handle: b
-            .handle
-            .as_ref()
-            .map(|h| h.as_str().to_owned())
-            .unwrap_or_default(),
+        handle: box_handle(b),
         egress: b
             .egress_enforced
             .map(|e| (if e { "enforced" } else { "not_enforced" }).to_owned()),
-        asleep_since: (b.state == moor_core::domain::boxes::BoxState::Asleep)
-            .then(|| rfc3339(b.updated_at)),
+        asleep_since: (b.state == BoxState::Asleep).then(|| rfc3339(b.updated_at)),
     }
 }
 

@@ -32,8 +32,8 @@ pub struct BoxView {
     pub state: BoxState,
     /// Provider id.
     pub provider: String,
-    /// Box handle.
-    pub handle: String,
+    /// Box handle, when one is known.
+    pub handle: Option<String>,
     /// `enforced`, `not_enforced`, `none` or unknown.
     pub egress: Option<String>,
     /// RFC3339 UTC time the Box went to sleep.
