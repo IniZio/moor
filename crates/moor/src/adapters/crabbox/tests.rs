@@ -347,3 +347,11 @@ fn caps_asks_providers_json() {
     let _ = c.caps(&ProviderId::new("sprites"));
     assert_eq!(p.calls().first().unwrap().args, ["providers", "--json"]);
 }
+
+#[test]
+fn list_of_static_provider_is_unsupported() {
+    let (p, c) = fixture();
+    let err = c.list(&ProviderId::new("ssh")).unwrap_err();
+    assert!(matches!(err, DriverError::Unsupported(_)));
+    assert!(p.calls().is_empty());
+}

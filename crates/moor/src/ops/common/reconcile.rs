@@ -1,6 +1,7 @@
 //! Reconcile stored Boxes against what the Driver still lists.
 
 use moor_core::decide::reconcile::{reconcile, BoxFact};
+use moor_core::seam::driver::DriverError;
 use moor_core::{ProviderId, Warning};
 
 use crate::cx::Cx;
@@ -26,7 +27,8 @@ fn by_provider(
 
 /// Mark Boxes the Driver no longer lists as Gone; never provisions.
 ///
-/// A provider whose listing fails is skipped with a warning; an apply that
+/// A provider that cannot be inventoried is skipped silently; a provider
+/// whose listing fails is skipped with a warning; an apply that
 /// loses a race with another command is ignored.
 pub(crate) fn run(cx: &Cx) {
     let Ok(store) = cx.store() else { return };
@@ -40,6 +42,7 @@ pub(crate) fn run(cx: &Cx) {
                     let _ = store.apply(d);
                 }
             }
+            Err(DriverError::Unsupported(_)) => {}
             Err(_) => cx.warn(Warning {
                 code: "reconcile_skipped".to_owned(),
                 message: format!(

@@ -199,6 +199,9 @@ impl Driver for Crabbox {
 
     fn list(&self, provider: &ProviderId) -> Result<Vec<BoxListing>, DriverError> {
         let p = provider.as_str();
+        if p == STATIC_PROVIDER {
+            return Err(DriverError::Unsupported("box provider has no inventory"));
+        }
         let spec = Self::spec(QUICK_DEADLINE).args(["list", "--provider", p, "--json"]);
         let out = self.exec(Op::List, None, &spec)?;
         let items = parse::parse_list(&out.stdout).map_err(|_| unreadable("list"))?;

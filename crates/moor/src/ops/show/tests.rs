@@ -128,6 +128,20 @@ fn list_failure_leaves_rows_untouched() {
 }
 
 #[test]
+fn unsupported_list_is_skipped_silently() {
+    let dir = tempfile::tempdir().unwrap();
+    let driver = Arc::new(
+        FakeDriver::new().fail_list(DriverError::Unsupported("box provider has no inventory")),
+    );
+    let cx = cx(dir.path(), &driver);
+    let id = add(&cx, "a");
+    let handle = ready_box(&cx, &driver, id);
+    driver.forget(&handle);
+    assert_eq!(box_state(&cx), BoxState::Ready);
+    assert!(cx.take_warnings().is_empty());
+}
+
+#[test]
 fn named_task_returns_last_events() {
     let dir = tempfile::tempdir().unwrap();
     let cx = cx(dir.path(), &Arc::new(FakeDriver::new()));
