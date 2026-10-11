@@ -4,7 +4,7 @@ use std::process::Stdio;
 use serde_json::Value;
 
 use crate::adapter::old::seam_env;
-use crate::adapter::{exit_class, ExitClass, Outcome};
+use crate::adapter::{ExitClass, Outcome};
 use crate::world::World;
 
 fn exit_code(status: std::process::ExitStatus) -> i32 {
@@ -25,7 +25,7 @@ fn full_args(w: &World, args: &[String]) -> Vec<String> {
     all
 }
 
-fn class_of(envelope: Option<&Value>, exit: i32) -> ExitClass {
+fn class_of(envelope: Option<&Value>, exit: i32, stderr: &str) -> ExitClass {
     match envelope
         .and_then(|j| j.get("class"))
         .and_then(Value::as_str)
@@ -34,10 +34,21 @@ fn class_of(envelope: Option<&Value>, exit: i32) -> ExitClass {
         Some("failed") => ExitClass::Failed,
         Some("usage") => ExitClass::Usage,
         Some("refused") => ExitClass::Refused,
-        _ => match exit {
-            3 => ExitClass::Refused,
-            other => exit_class(other),
-        },
+        other => panic!(
+            "new binary gave no usable envelope class ({other:?}): exit {exit}, stderr: {stderr}"
+        ),
+    }
+}
+
+/// Fail the case when the envelope reports an unimplemented command.
+fn reject_not_implemented(envelope: Option<&Value>, args: &[String]) {
+    let Some(err) = envelope.and_then(|j| j.get("error")) else {
+        return;
+    };
+    let kind = err.get("kind").and_then(Value::as_str);
+    let msg = err.get("message").and_then(Value::as_str).unwrap_or("");
+    if kind == Some("internal") && msg.contains("not implemented") {
+        panic!("not implemented on new: {}", args.join(" "));
     }
 }
 
@@ -88,6 +99,8 @@ pub(crate) fn invoke(
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
     w.log_transcript(format!("moor {}\n{stdout}\n{stderr}", all.join(" ")));
     let envelope: Option<Value> = serde_json::from_str(&stdout).ok();
+    reject_not_implemented(envelope.as_ref(), args);
+    let class = class_of(envelope.as_ref(), exit, &stderr);
     let value = envelope
         .as_ref()
         .and_then(|j| j.get("value"))
@@ -95,7 +108,7 @@ pub(crate) fn invoke(
         .cloned();
     Outcome {
         exit,
-        class: class_of(envelope.as_ref(), exit),
+        class,
         value,
         warnings: warnings_of(envelope.as_ref()),
         stdout,
@@ -131,14 +144,7 @@ pub(crate) fn retype<T>(o: Outcome<Value>, f: impl FnOnce(Value) -> Option<T>) -
     }
 }
 
-/// Outcome for a seam the new binary does not implement yet; nothing is spawned.
-pub(crate) fn unmapped<T>(what: &str) -> Outcome<T> {
-    Outcome {
-        exit: 1,
-        class: ExitClass::Failed,
-        stdout: String::new(),
-        stderr: format!("NewCli: {what} not mapped yet"),
-        warnings: Vec::new(),
-        value: None,
-    }
+/// A seam the new binary does not map yet: fail the case, never pass quietly.
+pub(crate) fn unmapped(what: &str) -> ! {
+    panic!("not mapped yet: {what}")
 }

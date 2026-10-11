@@ -1,7 +1,8 @@
 //! Parity adapter for the rewritten `moor` binary (design §10.4). Only
-//! `version` decodes a value; every other method either runs the mapped CLI
-//! verb with no decoded value or reports `unmapped`, so `new_only` cases stay
-//! xfail and nothing passes stale.
+//! `version` decodes a value; other mapped verbs run the CLI and drop the
+//! value. A command the binary reports as not implemented, a missing envelope
+//! class, or an unmapped seam panics, so the case fails instead of passing
+//! on a coincidental error class.
 mod exec;
 
 use std::path::{Path, PathBuf};
@@ -55,7 +56,7 @@ impl Moor for NewCli {
     }
 
     fn events(&self, _w: &World, _name: &str) -> Vec<Event> {
-        Vec::new()
+        exec::unmapped("events")
     }
 
     fn env(&self, w: &World, cwd: &Path, _opts: &EnvOpts) -> Outcome<EnvReport> {
@@ -71,10 +72,12 @@ impl Moor for NewCli {
     }
 
     fn sessions(&self, _w: &World, _name: &str) -> Vec<Session> {
-        Vec::new()
+        exec::unmapped("sessions")
     }
 
-    fn age(&self, _w: &World, _name: &str, _secs: i64) {}
+    fn age(&self, _w: &World, _name: &str, _secs: i64) {
+        exec::unmapped("age")
+    }
 
     fn start_detached(
         &self,
@@ -134,10 +137,12 @@ impl Moor for NewCli {
     }
 
     fn runs(&self, _w: &World, _name: &str) -> Vec<RunRow> {
-        Vec::new()
+        exec::unmapped("runs")
     }
 
-    fn seed_run(&self, _w: &World, _row: &RunRow) {}
+    fn seed_run(&self, _w: &World, _row: &RunRow) {
+        exec::unmapped("seed_run")
+    }
 
     fn wait(
         &self,
@@ -237,7 +242,7 @@ impl Moor for NewCli {
     }
 
     fn proxy_endpoint(&self, _w: &World, _name: &str) -> Option<ProxyEndpoint> {
-        None
+        exec::unmapped("proxy_endpoint")
     }
 }
 
