@@ -29,6 +29,38 @@ check() {
   echo "lint-selftest: $1 ok"
 }
 
+check E fail "missing-docs" <<'RS'
+//! Crate.
+pub const X: u32 = 1;
+RS
+check F fail "unsafe-code" <<'RS'
+//! Crate.
+/// Zero.
+#[must_use]
+pub const fn z() -> u32 { unsafe { core::mem::zeroed() } }
+RS
+check G fail "must_use_candidate" <<'RS'
+//! Crate.
+/// One.
+pub const fn one() -> u32 { 1 }
+RS
+check H fail "missing_const_for_fn" <<'RS'
+//! Crate.
+/// One.
+#[must_use]
+pub fn one() -> u32 { 1 }
+RS
+check I fail "indexing_slicing" <<'RS'
+//! Crate.
+/// First.
+#[must_use]
+pub fn first(v: &[u32]) -> u32 { v[0] }
+RS
+check J fail "missing_errors_doc" <<'RS'
+//! Crate.
+/// Parses.
+pub fn parse(s: &str) -> Result<u32, std::num::ParseIntError> { s.parse() }
+RS
 check A pass "" <<'RS'
 //! Clean crate.
 
@@ -104,4 +136,11 @@ pub fn f(a: u32, b: u32) -> u32 {
     }
     n
 }
+RS
+check K fail "unsafe-code" <<'RS'
+//! Crate.
+/// Zero.
+#[must_use]
+#[allow(unsafe_code, reason = "x")]
+pub const fn z() -> u32 { unsafe { core::mem::zeroed() } }
 RS
