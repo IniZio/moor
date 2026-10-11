@@ -129,6 +129,104 @@ pub enum TaskTarget {
     Existing(TaskId),
 }
 
+/// An event a caller may pass; every other kind is derived from state steps.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExtraEvent {
+    /// A command run finished.
+    Ran {
+        /// The run id.
+        run: RunId,
+        /// The exit code, when known.
+        exit: Option<i32>,
+        /// True when the run was interrupted.
+        interrupted: bool,
+    },
+    /// Files were copied.
+    Copied {
+        /// The copy source.
+        from: String,
+        /// The copy destination.
+        to: String,
+    },
+    /// An agent session started.
+    SessionStarted {
+        /// The session id.
+        session: String,
+    },
+    /// Admission checked credentials.
+    Checked {
+        /// The credential names that were checked.
+        credentials: Vec<String>,
+    },
+    /// A command run started.
+    RunStarted {
+        /// The run id.
+        run: RunId,
+    },
+}
+
+impl From<ExtraEvent> for Event {
+    fn from(e: ExtraEvent) -> Self {
+        match e {
+            ExtraEvent::Ran {
+                run,
+                exit,
+                interrupted,
+            } => Self::Ran {
+                run,
+                exit,
+                interrupted,
+            },
+            ExtraEvent::Copied { from, to } => Self::Copied { from, to },
+            ExtraEvent::SessionStarted { session } => Self::SessionStarted { session },
+            ExtraEvent::Checked { credentials } => Self::Checked { credentials },
+            ExtraEvent::RunStarted { run } => Self::RunStarted { run },
+        }
+    }
+}
+
+impl TryFrom<Event> for ExtraEvent {
+    type Error = Event;
+
+    /// Returns the original event when its kind is derived.
+    fn try_from(e: Event) -> Result<Self, Event> {
+        match e {
+            Event::Ran {
+                run,
+                exit,
+                interrupted,
+            } => Ok(Self::Ran {
+                run,
+                exit,
+                interrupted,
+            }),
+            Event::Copied { from, to } => Ok(Self::Copied { from, to }),
+            Event::SessionStarted { session } => Ok(Self::SessionStarted { session }),
+            Event::Checked { credentials } => Ok(Self::Checked { credentials }),
+            Event::RunStarted { run } => Ok(Self::RunStarted { run }),
+            e @ (Event::Started
+            | Event::Rejected { .. }
+            | Event::WaitingForBox { .. }
+            | Event::SettingUp { .. }
+            | Event::Working
+            | Event::SetupFailed { .. }
+            | Event::CredentialFailed { .. }
+            | Event::Idled
+            | Event::Busy
+            | Event::Asleep { .. }
+            | Event::Woke
+            | Event::Closed { .. }
+            | Event::BoxRequested
+            | Event::BoxReady
+            | Event::BoxFailed { .. }
+            | Event::BoxAsleep
+            | Event::BoxGone
+            | Event::BoxDeleted
+            | Event::BoxReleaseFailed { .. }) => Err(e),
+        }
+    }
+}
+
 /// Everything one store write changes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Decision {
@@ -142,8 +240,9 @@ pub struct Decision {
     pub set: Fields,
     /// Intent change.
     pub intent: IntentChange,
-    /// Extra events appended after the derived ones.
-    pub events: Vec<Event>,
+    /// Caller-supplied events appended after the derived ones. Derived state
+    /// events cannot be passed here; see [`ExtraEvent`].
+    pub events: Vec<ExtraEvent>,
 }
 
 impl Decision {
@@ -214,8 +313,19 @@ impl Decision {
     }
 
     /// Appends an extra event.
+    ///
+    /// Derived state events (closed, idled, `box_*` ...) are not accepted:
+    ///
+    /// ```compile_fail
+    /// use moor_core::domain::decision::Decision;
+    /// use moor_core::domain::event::Event;
+    /// use moor_core::domain::task::TaskState;
+    /// use moor_core::name::TaskId;
+    ///
+    /// let _ = Decision::new(TaskId::new(1)).event(Event::Closed { from: TaskState::Idle });
+    /// ```
     #[must_use]
-    pub fn event(mut self, e: Event) -> Self {
+    pub fn event(mut self, e: ExtraEvent) -> Self {
         self.events.push(e);
         self
     }

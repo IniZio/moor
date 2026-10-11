@@ -1,53 +1,21 @@
 //! Tests for the store: open, `apply`, atomicity, WAL readers, runs.
 
 use std::path::Path;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use moor_core::domain::boxes::{BoxInput, BoxState};
-use moor_core::domain::decision::{Decision, Field, Fields, Intent, IntentChange, NewTask};
-use moor_core::domain::event::Event;
+use moor_core::domain::decision::{
+    Decision, ExtraEvent, Field, Fields, Intent, IntentChange, NewTask,
+};
 use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::{BoxHandle, ProviderId, RunId, TaskId, TaskName};
 
+use crate::adapters::clock::FakeClock;
+
 use super::apply::Applied;
 use super::{NewRun, RunOutcome, Store, StoreError};
-
-/// Test clock: advances only on `sleep`, by exactly the slept duration.
-struct FakeClock {
-    offset: Mutex<Duration>,
-    start: Ts,
-    origin: Instant,
-}
-
-impl FakeClock {
-    fn new(start: Ts) -> Self {
-        Self {
-            offset: Mutex::new(Duration::ZERO),
-            start,
-            origin: Instant::now(),
-        }
-    }
-
-    fn offset(&self) -> Duration {
-        *self.offset.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-}
-
-impl Clock for FakeClock {
-    fn now(&self) -> Ts {
-        self.start.saturating_add(self.offset())
-    }
-
-    fn instant(&self) -> Instant {
-        self.origin + self.offset()
-    }
-
-    fn sleep(&self, d: Duration) {
-        *self.offset.lock().unwrap_or_else(PoisonError::into_inner) += d;
-    }
-}
 
 /// Open a store in a temp dir with a fake clock.
 fn open(dir: &Path) -> (Store, Arc<FakeClock>) {
@@ -169,7 +137,7 @@ fn full_lifecycle_rows_and_events() {
     let d = Decision::new(id)
         .task_input(TaskInput::Close)
         .box_input(BoxInput::Released)
-        .event(Event::Copied {
+        .event(ExtraEvent::Copied {
             from: "a".into(),
             to: "b".into(),
         });
@@ -252,7 +220,7 @@ fn readers_are_not_blocked_by_an_open_writer() {
     let path = dir.path().join("state").join("moor.db");
     let raw = rusqlite::Connection::open(&path).unwrap();
     raw.execute_batch(
-        "BEGIN IMMEDIATE; UPDATE tasks SET goal = 'dirty'; \
+        "BEGIN EXCLUSIVE; UPDATE tasks SET goal = 'dirty'; \
          INSERT INTO tasks (name, repo, state, created_at, updated_at) VALUES ('x', 'r', 'checking', 0, 0); \
          INSERT INTO events (task, kind, payload, ts) VALUES (1, 'busy', '{}', 0);",
     )
@@ -270,18 +238,57 @@ fn readers_are_not_blocked_by_an_open_writer() {
 }
 
 #[test]
+fn box_fields_without_a_box_roll_back_the_task_step() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = open(dir.path());
+    let id = new_task(&store, "t");
+    let before = store.task(id).unwrap().unwrap();
+    assert_eq!(
+        (before.state, before.boxed.is_none()),
+        (TaskState::Checking, true)
+    );
+    let events_before = kinds(&store, id);
+    // step_task (Checking -> SettingUp) and write_task both succeed; only
+    // write_box fails, so the task UPDATE must be rolled back.
+    let d = Decision::new(id)
+        .task_input(TaskInput::Admitted)
+        .set(Fields {
+            box_workdir: Field::Set("/w".into()),
+            ..Fields::default()
+        });
+    let err = store.apply(d).unwrap_err();
+    assert!(matches!(err, StoreError::Invalid(_)), "{err:?}");
+    let after = store.task(id).unwrap().unwrap();
+    assert_eq!(after, before);
+    assert_eq!(after.state, TaskState::Checking);
+    assert_eq!(kinds(&store, id), events_before);
+    let path = dir.path().join("state").join("moor.db");
+    assert_eq!(
+        count(&path, "events"),
+        i64::try_from(events_before.len()).unwrap()
+    );
+}
+
+#[test]
 fn event_ids_increase_and_ts_follows_clock() {
     let dir = tempfile::tempdir().unwrap();
     let (store, clock) = open(dir.path());
     let id = new_task(&store, "t");
     clock.sleep(Duration::from_millis(500));
     let a = store
-        .apply(Decision::new(id).event(Event::SessionStarted {
+        .apply(Decision::new(id).event(ExtraEvent::SessionStarted {
             session: "s".into(),
         }))
         .unwrap();
-    let b = store.apply(Decision::new(id).event(Event::Idled)).unwrap();
-    let c = store.apply(Decision::new(id).event(Event::Busy)).unwrap();
+    let b = store
+        .apply(Decision::new(id).event(ExtraEvent::Copied {
+            from: "a".into(),
+            to: "b".into(),
+        }))
+        .unwrap();
+    let c = store
+        .apply(Decision::new(id).event(ExtraEvent::RunStarted { run: RunId::new(1) }))
+        .unwrap();
     let (ia, ib, ic) = (eid(&a), eid(&b), eid(&c));
     assert!(ia < ib && ib < ic);
     let all = store.events(id, 100).unwrap();

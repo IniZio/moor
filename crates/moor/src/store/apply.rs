@@ -61,7 +61,7 @@ fn apply_in(tx: &Transaction<'_>, now: Ts, d: Decision) -> Result<Applied, Store
     if let (Some(i), Some(s)) = (&d.box_input, &box_step) {
         events.extend(box_events(s.from, s.to, i));
     }
-    events.extend(d.events);
+    events.extend(d.events.into_iter().map(Event::from));
     let ids = events
         .iter()
         .map(|e| insert_event(tx, id, e, now))

@@ -1,8 +1,8 @@
 //! Tests for the decision builder and intents.
 
-use super::{Decision, Field, Fields, Intent, IntentChange, NewTask, TaskTarget};
+use super::{Decision, ExtraEvent, Field, Fields, Intent, IntentChange, NewTask, TaskTarget};
 use crate::domain::event::Event;
-use crate::domain::task::TaskInput;
+use crate::domain::task::{TaskInput, TaskState};
 use crate::name::{RunId, TaskId, TaskName};
 
 /// `new` targets an existing task with nothing else set.
@@ -39,12 +39,22 @@ fn builder_chains() {
         .task_input(TaskInput::Admitted)
         .set(f.clone())
         .intent(IntentChange::Clear)
-        .event(Event::Working)
-        .event(Event::Idled);
+        .event(ExtraEvent::RunStarted { run: RunId::new(1) })
+        .event(ExtraEvent::SessionStarted {
+            session: "s".into(),
+        });
     assert_eq!(d.task_input, Some(TaskInput::Admitted));
     assert_eq!(d.set, f);
     assert_eq!(d.intent, IntentChange::Clear);
-    assert_eq!(d.events, vec![Event::Working, Event::Idled]);
+    assert_eq!(
+        d.events,
+        vec![
+            ExtraEvent::RunStarted { run: RunId::new(1) },
+            ExtraEvent::SessionStarted {
+                session: "s".into()
+            }
+        ]
+    );
 }
 
 /// Intent accessors report kind, pid and run.
@@ -65,4 +75,49 @@ fn intent_accessors() {
         (p.run(), r.run(), s.run()),
         (None, Some(RunId::new(9)), None)
     );
+}
+
+/// Derived kinds are refused and handed back unchanged.
+#[test]
+fn derived_events_are_refused() {
+    for e in [
+        Event::Closed {
+            from: TaskState::Idle,
+        },
+        Event::BoxReady,
+        Event::BoxFailed { cause: "c".into() },
+        Event::Idled,
+    ] {
+        assert_eq!(ExtraEvent::try_from(e.clone()), Err(e));
+    }
+}
+
+/// Every extra event survives a trip through `Event` with the same kind.
+#[test]
+fn extra_events_round_trip() {
+    let all = [
+        ExtraEvent::Ran {
+            run: RunId::new(2),
+            exit: Some(1),
+            interrupted: false,
+        },
+        ExtraEvent::Copied {
+            from: "a".into(),
+            to: "b".into(),
+        },
+        ExtraEvent::SessionStarted {
+            session: "s".into(),
+        },
+        ExtraEvent::Checked {
+            credentials: vec!["c".into()],
+        },
+        ExtraEvent::RunStarted { run: RunId::new(3) },
+    ];
+    for x in all {
+        let e = Event::from(x.clone());
+        let kind = e.kind();
+        let back = ExtraEvent::try_from(e).unwrap();
+        assert_eq!(back, x);
+        assert_eq!(Event::from(back).kind(), kind);
+    }
 }
