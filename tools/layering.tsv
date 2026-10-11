@@ -1,0 +1,3 @@
+# Layering rules: <module><TAB><allowed modules, comma-separated>
+# Module paths are crate-relative, e.g. moor_core::name; allowed lists the modules it may use via crate::.
+# A module not listed is unconstrained; a module may always use itself.
