@@ -13,6 +13,7 @@ fs2 = "0.4"
 libc = "0.2"
 inventory = "0.3"
 libtest-mimic = "0.8"
+toml = "0.8"
 
 [[bin]]
 name = "fake"

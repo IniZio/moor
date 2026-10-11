@@ -230,6 +230,9 @@ pub struct StartOpts {
 
 pub trait Moor {
     fn name(&self) -> &'static str;
+    fn caps(&self) -> &'static [&'static str] {
+        &[]
+    }
     fn start(&self, w: &World, cwd: &Path, name: &str, opts: &StartOpts) -> Outcome<TaskView>;
     fn list(&self, w: &World, cwd: &Path) -> Outcome<Vec<TaskView>>;
     fn close(&self, w: &World, cwd: &Path, name: &str, force: bool) -> Outcome<CloseView>;
