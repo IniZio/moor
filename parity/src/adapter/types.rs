@@ -222,7 +222,6 @@ pub struct StartOpts {
     pub issue: Option<String>,
     pub goal: Option<String>,
     pub worktree: Option<PathBuf>,
-    pub location: Option<String>,
     pub model: Option<String>,
     pub provider: Option<String>,
     pub size: Option<String>,

@@ -70,7 +70,7 @@ parity!(
         fx.start(true);
         fx.present();
         fx.w.hook_state(HookState::Idle, 0);
-        herdr::pane_text(&fx.w, "  2 background agents running\n> \n");
+        herdr::pane_text(&fx.w, "  2 background tasks running\n> \n");
         assert_eq!(states(&fx.pane_agent()), (Some("working"), Some("pane")));
     }
 );

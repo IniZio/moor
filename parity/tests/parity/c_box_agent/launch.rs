@@ -61,7 +61,7 @@ parity!(
     {
         let b = bx(false);
         let name = b.w.task_name("nogoal");
-        let o = start_with(&b, &name, &start_opts(None, None, None));
+        let o = start_with(&b, &name, &start_opts(None, None));
         assert_eq!(o.class, ExitClass::Ok, "{}", o.stderr);
         assert_eq!(o.ok().state, TaskState::Working);
         let calls = b.w.all_calls();

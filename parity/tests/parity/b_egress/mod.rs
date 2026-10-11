@@ -69,7 +69,7 @@ pub(super) fn fx(preset: Preset, enforce: bool, user_extra: Value, repo_cfg: Val
 }
 
 pub(super) fn cfg(egress: &[&str]) -> Value {
-    let mut v = RepoConfig::default().agent_location("box").to_value();
+    let mut v = RepoConfig::default().to_value();
     v["egress"] = json!(egress);
     v
 }

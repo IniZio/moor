@@ -26,9 +26,7 @@ pub(super) fn fx_with_config(config: Option<Value>) -> Fx {
         Some(doc) => std::fs::write(w.config_path(), doc.to_string()).expect("write config"),
         None => UserConfig::default().write(&w),
     }
-    RepoConfig::default()
-        .agent_location("box")
-        .write(&repo.path);
+    RepoConfig::default().write(&repo.path);
     crabbox::install(&w);
     crabbox::cp(&w);
     herdr::install(&w);

@@ -92,7 +92,7 @@ parity!(
         go_ok(&b, &name, "goal one");
         herdr::pane_text(&b.w, "bye\nmoor: agent exited 3\n");
         let attach = |goal: Option<&str>| {
-            let o = start_with(&b, &name, &start_opts(goal, None, None));
+            let o = start_with(&b, &name, &start_opts(goal, None));
             assert_eq!(o.class, ExitClass::Ok, "{}", o.stderr);
             doc(&o)["relaunched"].clone()
         };
@@ -150,7 +150,7 @@ parity!(
             assert!(o.stderr.contains(want), "{want} missing from: {}", o.stderr);
         }
         assert_never_called(&b.w.all_calls(), "herdr", &["pane", "send-text"]);
-        let again = start_with(&b, &name, &start_opts(Some("again"), None, None));
+        let again = start_with(&b, &name, &start_opts(Some("again"), None));
         assert_eq!(again.class, ExitClass::Ok, "{}", again.stderr);
         assert_eq!(
             count(&b.w, "herdr", &["tab", "create"]),

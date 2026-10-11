@@ -1,7 +1,7 @@
 use parity::adapter::{ExitClass, RunOpts, TaskState};
 use parity::assert::{assert_never_called, assert_secret_absent};
 use parity::parity;
-use serde_json::{json, Value};
+use serde_json::json;
 
 use super::support::*;
 use crate::moor;
@@ -17,7 +17,7 @@ parity!(
         creds_config(&f, &tok, &keyf);
         f.repo_cfg(json!({ "setup": [SETUP_PROBE], "box_credentials": pair_credentials() }));
         let name = f.w.task_name("setup");
-        let started = start_task(&f, &name, None, None);
+        let started = start_task(&f, &name, None);
         assert_eq!(started.class, ExitClass::Ok, "{}", started.stderr);
         let task = started.ok().clone();
         assert_eq!(task.state, TaskState::Working);
@@ -58,7 +58,7 @@ parity!(
             "box_credentials": pair_credentials(),
         }));
         let name = f.w.task_name("badsetup");
-        let started = start_task(&f, &name, None, None);
+        let started = start_task(&f, &name, None);
         let state = started.value.as_ref().map(|t| t.state.clone());
         assert_eq!(state, Some(TaskState::Working), "{}", started.stderr);
         assert!(f.w.calls("ssh").iter().any(|c| c.stdin.contains(&tok)));
@@ -80,7 +80,7 @@ parity!(
         flow_fakes(&f.w);
         f.repo_cfg(json!({ "setup": ["echo plain-setup"] }));
         let name = f.w.task_name("plain");
-        let started = start_task(&f, &name, None, None);
+        let started = start_task(&f, &name, None);
         assert_eq!(started.class, ExitClass::Ok, "{}", started.stderr);
         let setup = run_calls(&f.w)
             .into_iter()
@@ -106,7 +106,7 @@ parity!(
         creds_config(&f, &tok, &keyf);
         f.repo_cfg(json!({ "box_credentials": ["TOK"] }));
         let name = f.w.task_name("nosrc");
-        assert_eq!(start_task(&f, &name, None, None).class, ExitClass::Ok);
+        assert_eq!(start_task(&f, &name, None).class, ExitClass::Ok);
         let attempt = |f: &Fx| {
             moor().run(
                 &f.w,
@@ -142,7 +142,7 @@ parity!(
         creds_config(&f, &tok, &keyf);
         f.repo_cfg(json!({ "box_credentials": ["TOK"] }));
         let name = f.w.task_name("wrap");
-        assert_eq!(start_task(&f, &name, None, None).class, ExitClass::Ok);
+        assert_eq!(start_task(&f, &name, None).class, ExitClass::Ok);
         for quiet in [false, true] {
             let opts = RunOpts {
                 quiet,
@@ -185,7 +185,7 @@ parity!(
             json!({ "box_credentials": { "OTHER": { "env": "GH_TOKEN" } }, "setup": ["true"] }),
         );
         let name = f.w.task_name("ghtok");
-        let started = start_task(&f, &name, None, None);
+        let started = start_task(&f, &name, None);
         assert_eq!(started.class, ExitClass::Failed, "{}", started.stdout);
         assert!(f.w.calls("ssh").is_empty(), "nothing delivered to a Box");
         assert!(run_calls(&f.w).is_empty(), "no Box script ran");
@@ -204,19 +204,16 @@ parity!(
         let file = f.secret_file("claude", &secret);
         f.user(json!({ "credentials": { "CLAUDE_CODE_OAUTH_TOKEN": { "file": file } } }));
         f.repo_cfg(json!({ "box_credentials": ["CLAUDE_CODE_OAUTH_TOKEN"] }));
-        assert_accepted(&f.env(), "host location allows it");
         let name = f.w.task_name("claudebox");
-        let started = start_task(&f, &name, Some("go"), Some("box"));
-        let reason = serde_json::from_str::<Value>(&started.stdout)
-            .ok()
-            .and_then(|v| v["reason"].as_str().map(str::to_string))
-            .unwrap_or_default();
+        let started = start_task(&f, &name, Some("go"));
+        assert_eq!(started.class, ExitClass::Failed, "{}", started.stdout);
+        let said = format!("{} {}", started.stdout, started.stderr);
         assert!(
-            reason.contains("agent dispatch failed") && reason.contains("CLAUDE_CODE_OAUTH_TOKEN"),
-            "start must report the rejected dispatch: {} {}",
-            started.stdout,
-            started.stderr
+            said.contains("CLAUDE_CODE_OAUTH_TOKEN"),
+            "start must name the rejected credential: {said}"
         );
+        assert_never_called(&f.w.all_calls(), "crabbox", &["warmup"]);
+        assert_never_called(&f.w.all_calls(), "herdr", &["worktree", "create"]);
         assert_never_called(&f.w.all_calls(), "herdr", &["pane", "run"]);
         assert!(f.w.calls("ssh").is_empty(), "no delivery");
         assert!(
@@ -243,12 +240,11 @@ parity!(
         let (tok, keyf) = (f.secret("tok"), f.secret("keyf"));
         creds_config(&f, &tok, &keyf);
         f.repo_cfg(json!({
-            "agent": { "location": "box" },
             "setup": [SETUP_PROBE],
             "box_credentials": pair_credentials(),
         }));
         let name = f.w.task_name("pane");
-        let started = start_task(&f, &name, Some("go"), None);
+        let started = start_task(&f, &name, Some("go"));
         assert_eq!(started.class, ExitClass::Ok, "{}", started.stderr);
         let task = started.ok().clone();
         let setup_len = probe_file(&task, &f, "got-env");

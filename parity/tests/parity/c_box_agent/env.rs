@@ -271,7 +271,7 @@ parity!(
         for (tag, cfg, flag) in runs {
             repo_cfg(&b, cfg);
             let name = b.w.task_name(tag);
-            let opts = start_opts(Some("model"), None, flag);
+            let opts = start_opts(Some("model"), flag);
             assert_eq!(start_with(&b, &name, &opts).class, ExitClass::Ok);
             ran(&b);
             seen.push(arg_after(&agent_call(&b.w), "--model"));

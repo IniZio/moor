@@ -26,9 +26,7 @@ pub(super) fn fx_with(user: UserConfig) -> Fx {
     follow_warmups(&w);
     crabbox::ssh_channel(&w);
     crabbox::tunnel(&w);
-    let f = Fx { w, repo, m: moor() };
-    f.repo_cfg(json!({}));
-    f
+    Fx { w, repo, m: moor() }
 }
 
 pub(super) fn follow_warmups(w: &World) {
@@ -44,10 +42,7 @@ pub(super) fn fx() -> Fx {
     fx_with(UserConfig::default())
 }
 
-pub(super) fn write_json(path: &Path, mut v: Value) {
-    if path.file_name().is_some_and(|n| n == ".moor.yaml") {
-        v["agent"]["location"] = json!("box");
-    }
+pub(super) fn write_json(path: &Path, v: Value) {
     std::fs::write(path, v.to_string()).expect("write config");
 }
 
@@ -113,12 +108,6 @@ impl Fx {
     }
     pub(super) fn repo_cfg(&self, v: Value) {
         write_json(&self.repo.path.join(".moor.yaml"), v);
-        git_in(self, &self.repo.path, &["add", ".moor.yaml"]);
-        git_in(
-            self,
-            &self.repo.path,
-            &["commit", "-q", "--allow-empty", "-m", "config"],
-        );
     }
     pub(super) fn sync_inventory(&self) {
         let slugs: Vec<String> = self

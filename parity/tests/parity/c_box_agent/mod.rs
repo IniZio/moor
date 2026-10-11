@@ -117,7 +117,7 @@ fn set_user(b: &Bx, extra: Value) {
 }
 
 fn repo_cfg(b: &Bx, extra: Value) {
-    let mut doc = json!({ "agent": { "location": "box" } });
+    let mut doc = json!({});
     for (k, v) in extra.as_object().expect("object") {
         match (k.as_str(), v.as_object()) {
             ("agent", Some(agent)) => {
@@ -180,10 +180,9 @@ fn agent_exit(w: &World, code: i32) {
     );
 }
 
-fn start_opts(goal: Option<&str>, location: Option<&str>, model: Option<&str>) -> StartOpts {
+fn start_opts(goal: Option<&str>, model: Option<&str>) -> StartOpts {
     StartOpts {
         goal: goal.map(str::to_string),
-        location: location.map(str::to_string),
         model: model.map(str::to_string),
         ..Default::default()
     }
@@ -194,7 +193,7 @@ fn start_with(b: &Bx, name: &str, opts: &StartOpts) -> Outcome<TaskView> {
 }
 
 fn go(b: &Bx, name: &str, goal: &str) -> Outcome<TaskView> {
-    start_with(b, name, &start_opts(Some(goal), None, None))
+    start_with(b, name, &start_opts(Some(goal), None))
 }
 
 fn go_ok(b: &Bx, name: &str, goal: &str) -> Outcome<TaskView> {

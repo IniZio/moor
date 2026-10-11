@@ -17,16 +17,14 @@ pub(super) struct Fx {
     pub(super) name: String,
 }
 
-pub(super) fn fixture(preset: Preset, location: &str, max_boxes: Option<u32>) -> Fx {
+pub(super) fn fixture(preset: Preset, max_boxes: Option<u32>) -> Fx {
     let w = world();
     let repo = Repo::create(&w, "widget");
     let mut user = UserConfig::default().provider(preset.provider());
     user.sleep_after_minutes = Some(1);
     user.max_boxes = max_boxes;
     user.write(&w);
-    RepoConfig::default()
-        .agent_location(location)
-        .write(&repo.path);
+    RepoConfig::default().write(&repo.path);
     crabbox::install_preset(&w, preset);
     crabbox::ssh_channel(&w);
     crabbox::tunnel(&w);
@@ -43,15 +41,15 @@ pub(super) fn fixture(preset: Preset, location: &str, max_boxes: Option<u32>) ->
 }
 
 pub(super) fn box_fx() -> Fx {
-    fixture(Preset::NamespaceDevbox, "box", None)
+    fixture(Preset::NamespaceDevbox, None)
 }
 
 pub(super) fn box_fx_on(preset: Preset) -> Fx {
-    fixture(preset, "box", None)
+    fixture(preset, None)
 }
 
 pub(super) fn box_fx_max(n: u32) -> Fx {
-    fixture(Preset::NamespaceDevbox, "box", Some(n))
+    fixture(Preset::NamespaceDevbox, Some(n))
 }
 
 impl Fx {

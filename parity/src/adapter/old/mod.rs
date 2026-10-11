@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::time::Duration;
 
 use rusqlite::Connection;
 use serde_json::Value;
@@ -13,6 +14,7 @@ use crate::world::World;
 mod args;
 mod env;
 mod exec;
+mod location;
 #[path = "../old_reports.rs"]
 mod old_reports;
 mod registry;
@@ -34,10 +36,13 @@ impl Moor for OldCli {
     }
 
     fn start(&self, w: &World, cwd: &Path, name: &str, opts: &StartOpts) -> Outcome<TaskView> {
+        let pin = location::pin_start(w, cwd, name, opts);
         let args = start_args(w, name, opts);
         let mut o = self.run(w, cwd, &args, |j| {
             TaskView::from_json(j.get("task").unwrap_or(&Value::Null))
         });
+        pin.settle_worktree(w, name);
+        drop(pin);
         if o.class == ExitClass::Ok && o.value.as_ref().is_some_and(|t| t.name.is_empty()) {
             o.value = None;
         }
@@ -97,10 +102,8 @@ impl Moor for OldCli {
         if !opts.text {
             args.push("--json".into());
         }
-        if let Some(l) = &opts.agent_location {
-            args.push("--agent-location".into());
-            args.push(l.clone());
-        }
+        let _pin = location::pin_env(cwd);
+        args.extend(["--agent-location".to_string(), "box".to_string()]);
         self.run_env(w, cwd, &args, opts, EnvReport::from_json)
     }
 
@@ -181,7 +184,8 @@ impl Moor for OldCli {
         name: &str,
         opts: &StartOpts,
     ) -> std::process::Child {
-        let child = w
+        let pin = location::pin_start(w, cwd, name, opts);
+        let mut child = w
             .command(&self.bin)
             .envs(seam_env(w))
             .current_dir(cwd)
@@ -191,6 +195,11 @@ impl Moor for OldCli {
             .spawn()
             .unwrap_or_else(|e| panic!("spawn {}: {e}", self.bin.display()));
         w.track_pid(child.id());
+        while !matches!(child.try_wait(), Ok(Some(_))) && !location::registered(w, name) {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        pin.settle_worktree(w, name);
+        drop(pin);
         child
     }
 

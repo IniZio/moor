@@ -6,16 +6,6 @@ use serde_json::json;
 use super::support::*;
 use crate::moor;
 
-fn merge_repo_cfg(f: &Fx, doc: serde_json::Value) {
-    let path = f.repo.path.join(".moor.yaml");
-    let mut cur: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(&path).expect("read repo cfg")).expect("repo cfg");
-    cur.as_object_mut()
-        .expect("object")
-        .extend(doc.as_object().expect("object").clone());
-    f.repo_cfg(cur);
-}
-
 parity!(config_path_precedence, covers = ["C-01"], tags = [], {
     let f = fx();
     let root = f.w.root().to_path_buf();
@@ -64,7 +54,7 @@ parity!(config_path_precedence, covers = ["C-01"], tags = [], {
     let home_only = probe(&[("HOME", &hh)], &["MOOR_CONFIG", "XDG_CONFIG_HOME"]);
     assert_eq!(home_only.ok().provider(), Some("ssh"));
     let none = probe(&[], &["MOOR_CONFIG", "XDG_CONFIG_HOME", "HOME"]);
-    assert_rejected(&none, "no config location");
+    assert_rejected(&none, "no config file");
 });
 
 parity!(
@@ -299,7 +289,7 @@ parity!(
             json!({ "OTHER": { "file_env": "CLAUDE_CODE_OAUTH_TOKEN" } }),
         ];
         for form in forms {
-            merge_repo_cfg(&f, json!({ "box_credentials": form }));
+            f.repo_cfg(json!({ "box_credentials": form }));
             assert_rejected(&f.env(), &format!("{form}"));
         }
     }

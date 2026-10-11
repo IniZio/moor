@@ -46,23 +46,14 @@ impl UserConfig {
 
 #[derive(Debug, Default, Clone)]
 pub struct RepoConfig {
-    pub agent_location: Option<String>,
     pub model: Option<String>,
     pub setup: Option<String>,
 }
 
 impl RepoConfig {
-    pub fn agent_location(mut self, l: &str) -> Self {
-        self.agent_location = Some(l.to_string());
-        self
-    }
-
     pub fn to_value(&self) -> Value {
         let mut root = Map::new();
         let mut agent = Map::new();
-        if let Some(l) = &self.agent_location {
-            agent.insert("location".into(), json!(l));
-        }
         if let Some(m) = &self.model {
             agent.insert("model".into(), json!(m));
         }
@@ -126,11 +117,10 @@ mod tests {
         let c = RepoConfig {
             model: Some("haiku".into()),
             setup: Some("make setup".into()),
-            ..RepoConfig::default().agent_location("box")
         };
         assert_eq!(
             c.to_value(),
-            json!({"agent": {"location": "box", "model": "haiku"}, "setup": ["make setup"]})
+            json!({"agent": {"model": "haiku"}, "setup": ["make setup"]})
         );
         let only_setup = RepoConfig {
             setup: Some("x".into()),

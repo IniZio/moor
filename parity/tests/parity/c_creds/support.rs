@@ -140,15 +140,9 @@ pub(super) fn wait_proxy_gone(w: &World) {
     panic!("proxy supervisor did not exit after close");
 }
 
-pub(super) fn start_task(
-    f: &Fx,
-    name: &str,
-    goal: Option<&str>,
-    location: Option<&str>,
-) -> Outcome<TaskView> {
+pub(super) fn start_task(f: &Fx, name: &str, goal: Option<&str>) -> Outcome<TaskView> {
     let opts = StartOpts {
         goal: goal.map(str::to_string),
-        location: location.map(str::to_string),
         ..Default::default()
     };
     moor().start(&f.w, &f.repo.path, name, &opts)
@@ -218,7 +212,7 @@ pub(super) fn bind_listing(w: &World, wt: &Path, branch: &str) {
 }
 
 pub(super) fn started_ok(f: &Fx, name: &str, goal: Option<&str>) -> TaskView {
-    let o = start_task(f, name, goal, None);
+    let o = start_task(f, name, goal);
     assert_eq!(o.class, ExitClass::Ok, "{}{}", o.stdout, o.stderr);
     o.ok().clone()
 }
@@ -241,7 +235,6 @@ pub(super) fn assert_rejected_start(f: &Fx, o: &Outcome<TaskView>, name: &str) {
 pub(super) fn box_fx() -> Fx {
     let f = fx();
     flow_fakes(&f.w);
-    f.repo_cfg(json!({ "agent": { "location": "box" } }));
     f.w.prepend_rules(
         "claude",
         [Rule::any().exec("cp '{flag:--mcp-config}' '{root}/mcp-seen' 2>/dev/null; true")],

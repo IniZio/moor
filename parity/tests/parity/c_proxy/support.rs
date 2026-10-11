@@ -56,9 +56,7 @@ pub(super) fn fx() -> Fx {
     let user = user_doc(json!({}));
     std::fs::create_dir_all(w.config_path().parent().expect("parent")).expect("mkdir");
     std::fs::write(w.config_path(), user.to_string()).expect("write user config");
-    RepoConfig::default()
-        .agent_location("box")
-        .write(&repo.path);
+    RepoConfig::default().write(&repo.path);
     crabbox::install_preset(&w, crabbox::Preset::NamespaceDevbox);
     crabbox::ssh_channel(&w);
     crabbox::tunnel(&w);

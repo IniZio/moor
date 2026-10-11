@@ -4,7 +4,6 @@ use super::types::opt_str;
 
 #[derive(Debug, Clone, Default)]
 pub struct EnvOpts {
-    pub agent_location: Option<String>,
     pub text: bool,
     pub set_env: Vec<(String, String)>,
     pub unset_env: Vec<String>,
@@ -24,7 +23,6 @@ pub struct EnvItem {
 #[derive(Debug, Clone)]
 pub struct EnvReport {
     pub repo: String,
-    pub location: String,
     pub model: Option<String>,
     pub identity: String,
     pub items: Vec<EnvItem>,
@@ -40,7 +38,6 @@ impl EnvReport {
         let agent = v.get("agent").unwrap_or(&Value::Null);
         EnvReport {
             repo: opt_str(v, "repo").unwrap_or_default(),
-            location: opt_str(agent, "location").unwrap_or_default(),
             model: opt_str(agent, "model"),
             identity: v
                 .get("github")

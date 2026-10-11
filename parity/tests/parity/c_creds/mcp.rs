@@ -94,7 +94,7 @@ parity!(
             "mcp_servers": { "srv": { "command": "npx", "args": ["${T}"] } },
         }));
         let name = f.w.task_name("badmcp");
-        assert_rejected_start(&f, &start_task(&f, &name, Some("go"), None), &name);
+        assert_rejected_start(&f, &start_task(&f, &name, Some("go")), &name);
         assert_secret_absent(&f.w, &secret, &[]);
     }
 );

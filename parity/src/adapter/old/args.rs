@@ -61,6 +61,5 @@ pub(super) fn start_args(w: &World, name: &str, opts: &StartOpts) -> Vec<String>
             .as_ref()
             .map(|p| p.to_string_lossy().into_owned()),
     );
-    flag("--agent-location", opts.location.clone());
     args
 }

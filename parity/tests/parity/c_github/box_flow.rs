@@ -47,14 +47,8 @@ fn wait_proxy_gone(w: &World) {
 }
 
 fn box_start(g: &Gx, name: &str) -> Outcome<parity::adapter::TaskView> {
-    write_file(
-        &g.repo.path.join(".moor.yaml"),
-        &json!({ "agent": { "location": "box" } }).to_string(),
-        0o644,
-    );
     let opts = StartOpts {
         goal: Some("go".into()),
-        location: Some("box".into()),
         ..Default::default()
     };
     moor().start(&g.w, &g.repo.path, name, &opts)

@@ -6,8 +6,7 @@ use serde_json::{json, Value};
 use super::support::*;
 use crate::moor;
 
-pub(super) fn run(f: &Fx, mut opts: EnvOpts) -> Outcome<EnvReport> {
-    opts.agent_location = Some("box".into());
+pub(super) fn run(f: &Fx, opts: EnvOpts) -> Outcome<EnvReport> {
     f.env_with(&opts)
 }
 

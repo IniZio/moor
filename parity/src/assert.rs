@@ -252,7 +252,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "1 herdr worktree create")]
     fn assert_order_failure_lists_calls() {
-        assert_order(&sample(), &[("claude", &["agents"])]);
+        assert_order(&sample(), &[("claude", &["stop"])]);
     }
 
     #[test]

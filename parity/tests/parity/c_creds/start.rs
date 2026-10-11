@@ -16,7 +16,7 @@ parity!(
         flow_fakes(&f.w);
         f.repo_cfg(json!({ "credentials": ["MISSING"] }));
         let name = f.w.task_name("refcred");
-        assert_rejected_start(&f, &start_task(&f, &name, None, None), &name);
+        assert_rejected_start(&f, &start_task(&f, &name, None), &name);
 
         let f = fx();
         flow_fakes(&f.w);
@@ -25,7 +25,7 @@ parity!(
             "mcp_servers": { "srv": { "command": "x", "args": ["${DEAD}"] } },
         }));
         let name = f.w.task_name("mcpcred");
-        assert_rejected_start(&f, &start_task(&f, &name, None, None), &name);
+        assert_rejected_start(&f, &start_task(&f, &name, None), &name);
 
         let f = fx();
         flow_fakes(&f.w);
@@ -35,7 +35,7 @@ parity!(
             0o644,
         );
         let name = f.w.task_name("mcpappr");
-        assert_rejected_start(&f, &start_task(&f, &name, None, None), &name);
+        assert_rejected_start(&f, &start_task(&f, &name, None), &name);
         assert!(
             !f.repo.path.join(".claude").exists(),
             "moor never writes the approval"
@@ -61,7 +61,7 @@ parity!(
         flow_fakes(&f.w);
         f.user(json!({ "credentials": { "UNRELATED": { "file": "/nonexistent/x" } } }));
         let name = f.w.task_name("unrel");
-        let o = start_task(&f, &name, None, None);
+        let o = start_task(&f, &name, None);
         let state = o.value.as_ref().map(|t| t.state.clone());
         assert_eq!(
             state,
@@ -81,7 +81,7 @@ parity!(
         let f = fx();
         flow_fakes(&f.w);
         crabbox::fail_quota(&f.w);
-        let quota = start_task(&f, &f.w.task_name("quota"), None, None);
+        let quota = start_task(&f, &f.w.task_name("quota"), None);
         assert_eq!(quota.class, ExitClass::Failed);
         assert!(
             quota.value.is_some(),
@@ -92,7 +92,7 @@ parity!(
         let f = fx();
         flow_fakes(&f.w);
         f.repo_cfg(json!({ "credentials": ["MISSING"] }));
-        let rejected = start_task(&f, &f.w.task_name("rej"), None, None);
+        let rejected = start_task(&f, &f.w.task_name("rej"), None);
         assert_eq!(rejected.class, ExitClass::Failed);
         assert!(
             rejected.value.is_some(),
@@ -106,7 +106,7 @@ parity!(
         f.user(json!({ "credentials": { "TOK": { "file": blank } } }));
         f.repo_cfg(json!({ "setup": ["true"], "box_credentials": ["TOK"] }));
         let name = f.w.task_name("blank");
-        let setup = start_task(&f, &name, None, None);
+        let setup = start_task(&f, &name, None);
         assert!(
             setup.value.is_some(),
             "credential read failure prints the outcome: {}",
