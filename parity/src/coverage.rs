@@ -247,7 +247,7 @@ pub fn check_live_refs(
 }
 
 pub fn live_smoke_path() -> PathBuf {
-    repo_root().join(".groundwork/work/rewrite/live-smoke.md")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("live-smoke.md")
 }
 
 pub fn repo_root() -> PathBuf {
@@ -258,7 +258,7 @@ pub fn repo_root() -> PathBuf {
 }
 
 pub fn inventory_dir() -> PathBuf {
-    repo_root().join(".groundwork/work/rewrite/inventory")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("inventory")
 }
 
 pub fn exclusions_path() -> PathBuf {
