@@ -116,9 +116,28 @@ fn files_map_to_module_paths() {
 
 #[test]
 fn rule_table_parses() {
-    let r = parse_rules("# c\nfake::domain\tfake::util, fake::x::y\nfake::solo\n").unwrap();
+    let r = parse_rules("module\tallowed\nfake::domain\tfake::util, fake::x::y\nfake::solo\t\n")
+        .unwrap();
     assert_eq!(r[0].allowed, vec![m("util"), m("x::y")]);
     assert!(r[1].allowed.is_empty());
+}
+
+#[test]
+fn header_is_required() {
+    assert!(parse_rules("fake::solo\t\n")
+        .unwrap_err()
+        .contains("header"));
+    assert!(parse_rules("").unwrap_err().contains("header"));
+}
+
+#[test]
+fn bad_column_count_is_rejected() {
+    assert!(parse_rules("module\tallowed\nfake::solo\n")
+        .unwrap_err()
+        .contains("got 1"));
+    assert!(parse_rules("module\tallowed\na::b\tc\td\n")
+        .unwrap_err()
+        .contains("got 3"));
 }
 
 #[test]

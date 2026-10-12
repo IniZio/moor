@@ -40,17 +40,34 @@ fn split(path: &str) -> Vec<String> {
         .collect()
 }
 
-/// Parses the tab-separated rule table; `#` lines and blanks are skipped.
+/// Parses the tab-separated rule table.
+///
+/// The first line must be the header `module<TAB>allowed`. Each later line is
+/// `module<TAB>allowed`: module paths are crate-relative (`moor_core::name`),
+/// `allowed` is a comma-separated list of modules it may use via `crate::`
+/// (empty = none). A module not listed is unconstrained; a module may always
+/// use itself. Blank lines are skipped.
 ///
 /// # Errors
-/// Returns the offending line when a module is not `crate::path` shaped.
+/// Returns the offending line when the header is missing, a row does not have
+/// exactly two columns, or a module is not `crate::path` shaped.
 pub fn parse_rules(table: &str) -> Result<Vec<Rule>, String> {
+    let mut lines = table.lines();
+    if lines.next() != Some("module\tallowed") {
+        return Err("bad header: first line must be `module<TAB>allowed`".to_string());
+    }
     let mut rules = Vec::new();
-    for line in table.lines() {
-        if line.trim().is_empty() || line.starts_with('#') {
+    for line in lines {
+        if line.trim().is_empty() {
             continue;
         }
-        let (module, allowed) = line.split_once('\t').unwrap_or((line, ""));
+        let cols: Vec<&str> = line.split('\t').collect();
+        let [module, allowed] = cols[..] else {
+            return Err(format!(
+                "bad rule (want 2 tab-separated columns, got {}): {line}",
+                cols.len()
+            ));
+        };
         let mut full = split(module.trim());
         if full.is_empty() {
             return Err(format!("bad rule: {line}"));
