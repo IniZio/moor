@@ -13,7 +13,8 @@ use std::thread;
 use std::time::Duration;
 
 use moor_core::seam::proc::{Proc, ProcError, ProcOutput, ProcSpec, Stdin, Tool, BASE_ENV};
-use rustix::process::{kill_process_group, Pid, Signal};
+use rustix::io::Errno;
+use rustix::process::{kill_process_group, test_kill_process, Pid, Signal};
 use zeroize::Zeroizing;
 
 use crate::env::Env;
@@ -225,10 +226,14 @@ fn feed<W: Write>(pipe: Option<W>, bytes: Option<&[u8]>) {
     }
 }
 
+/// Converts a raw pid, rejecting 0 and values beyond `i32`.
+fn to_pid(pid: u32) -> Option<Pid> {
+    i32::try_from(pid).ok().and_then(Pid::from_raw)
+}
+
 /// Sends `sig` to the process group led by `pid`; errors mean the group is gone.
 fn signal_group(pid: u32, sig: Signal) {
-    let pid = i32::try_from(pid).ok().and_then(Pid::from_raw);
-    if let Some(pid) = pid {
+    if let Some(pid) = to_pid(pid) {
         kill_process_group(pid, sig).ok();
     }
 }
@@ -365,6 +370,10 @@ impl Proc for SystemProc {
         let mut child = spawn_retrying(&mut cmd).map_err(ProcError::Spawn)?;
         thread::spawn(move || drop(child.wait()));
         Ok(())
+    }
+
+    fn alive(&self, pid: u32) -> bool {
+        to_pid(pid).is_some_and(|p| matches!(test_kill_process(p), Ok(()) | Err(Errno::PERM)))
     }
 }
 

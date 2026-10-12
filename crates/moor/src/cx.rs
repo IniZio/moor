@@ -7,6 +7,7 @@ use std::sync::Arc;
 use moor_core::config::{RepoConfig, UserConfig};
 use moor_core::seam::clock::Clock;
 use moor_core::seam::driver::Driver;
+use moor_core::seam::proc::Proc;
 use moor_core::seam::rng::Rng;
 use moor_core::seam::surface::Surface;
 use moor_core::{ErrorKind, Warning};
@@ -34,6 +35,8 @@ pub(crate) struct Cx {
     driver: Arc<dyn Driver>,
     /// Workspace backend.
     surface: Arc<dyn Surface>,
+    /// Process runner.
+    proc: Arc<dyn Proc>,
     /// Git adapter.
     git: Git,
     /// User configuration.
@@ -58,6 +61,8 @@ pub(crate) struct CxParts {
     pub driver: Arc<dyn Driver>,
     /// Workspace backend.
     pub surface: Arc<dyn Surface>,
+    /// Process runner.
+    pub proc: Arc<dyn Proc>,
     /// Git adapter.
     pub git: Git,
     /// User configuration.
@@ -78,6 +83,7 @@ impl Cx {
             rng: p.rng,
             driver: p.driver,
             surface: p.surface,
+            proc: p.proc,
             git: p.git,
             config: p.config,
             creds: p.creds,
@@ -114,6 +120,11 @@ impl Cx {
     /// Workspace backend.
     pub(crate) fn surface(&self) -> &dyn Surface {
         self.surface.as_ref()
+    }
+
+    /// Process runner.
+    pub(crate) fn proc(&self) -> &dyn Proc {
+        self.proc.as_ref()
     }
 
     /// Git adapter.

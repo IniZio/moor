@@ -49,6 +49,7 @@ pub(crate) fn build(env: &Env) -> Result<Cx, CommandError> {
         rng: Arc::new(SystemRng),
         driver: Arc::new(Crabbox::new(Arc::clone(&proc))),
         surface: Arc::new(herdr),
+        proc: Arc::clone(&proc),
         git: Git::new(Arc::clone(&proc)),
         config,
         creds: Creds::new(env.clone(), proc),
