@@ -278,12 +278,16 @@ pub trait Proc: Send + Sync {
     /// or output that does not fit the capture limit.
     fn run_secret(&self, spec: &ProcSpec) -> Result<zeroize::Zeroizing<Vec<u8>>, ProcError>;
 
-    /// Runs to completion with output streamed to `out`, and returns the exit
-    /// code whatever it is. Interrupting moor stops the child's process group.
+    /// Runs to completion with output streamed to `out`. Interrupting moor
+    /// stops the child's process group.
+    ///
+    /// A non-zero exit is [`ProcError::NonZero`] with an empty `stdout` and the
+    /// tail of stderr, which is still streamed to `out`.
     ///
     /// # Errors
-    /// Returns [`ProcError`] on spawn failure, timeout, signal or interrupt.
-    fn run_streamed(&self, spec: &ProcSpec, out: &Output) -> Result<i32, ProcError>;
+    /// Returns [`ProcError`] on spawn failure, timeout, signal, interrupt or
+    /// non-zero exit.
+    fn run_streamed(&self, spec: &ProcSpec, out: &Output) -> Result<(), ProcError>;
 
     /// Starts a child and leaves it running.
     ///

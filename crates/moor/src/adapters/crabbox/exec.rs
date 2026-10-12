@@ -51,7 +51,7 @@ pub(super) fn run(
     proc = proc.args(&spec.argv);
     let result = spec.output.as_ref().map_or_else(
         || cb.proc.run(&proc).map(|_| 0),
-        |out| cb.proc.run_streamed(&proc, out),
+        |out| cb.proc.run_streamed(&proc, out).map(|()| 0),
     );
     match result {
         Ok(code) => Ok(ExecOutcome::Exited { code }),

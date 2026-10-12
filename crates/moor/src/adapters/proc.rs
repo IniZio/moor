@@ -362,7 +362,7 @@ impl Proc for SystemProc {
         Ok(out.buf)
     }
 
-    fn run_streamed(&self, spec: &ProcSpec, out: &Output) -> Result<i32, ProcError> {
+    fn run_streamed(&self, spec: &ProcSpec, out: &Output) -> Result<(), ProcError> {
         self.stream_forwarding(spec, out)
     }
 

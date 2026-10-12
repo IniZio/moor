@@ -182,12 +182,19 @@ impl Proc for ScriptedProc {
             })
     }
 
-    /// Non-zero exits come back as `Ok(code)`; the output target is not written.
-    fn run_streamed(&self, spec: &ProcSpec, _out: &Output) -> Result<i32, ProcError> {
+    /// Non-zero exits come back as `NonZero` with empty stdout; the output
+    /// target is not written.
+    fn run_streamed(&self, spec: &ProcSpec, _out: &Output) -> Result<(), ProcError> {
         let args = self.record(spec);
         match self.reply_for(spec, &args) {
-            Ok(o) => Ok(o.code),
-            Err(ProcError::NonZero { code, .. }) => Ok(code),
+            Ok(_) => Ok(()),
+            Err(ProcError::NonZero {
+                code, stderr_tail, ..
+            }) => Err(ProcError::NonZero {
+                code,
+                stdout: String::new(),
+                stderr_tail,
+            }),
             Err(e) => Err(e),
         }
     }

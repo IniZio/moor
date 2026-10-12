@@ -411,7 +411,7 @@ impl Proc for NoSpawn {
     fn run_secret(&self, _: &ProcSpec) -> Result<Zeroizing<Vec<u8>>, ProcError> {
         Err(ProcError::Spawn(std::io::Error::other("missing")))
     }
-    fn run_streamed(&self, _: &ProcSpec, _: &Output) -> Result<i32, ProcError> {
+    fn run_streamed(&self, _: &ProcSpec, _: &Output) -> Result<(), ProcError> {
         Err(ProcError::Spawn(std::io::Error::other("missing")))
     }
     fn spawn_detached(&self, _: &ProcSpec) -> Result<(), ProcError> {
