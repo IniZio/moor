@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 use std::sync::{Mutex, PoisonError};
 
-use moor_core::seam::proc::{Proc, ProcError, ProcOutput, ProcSpec, Tool};
+use moor_core::seam::proc::{Output, Proc, ProcError, ProcOutput, ProcSpec, Tool};
 use zeroize::Zeroizing;
 
 /// A canned reply.
@@ -20,6 +20,10 @@ pub(crate) enum Reply {
     },
     /// Deadline exceeded.
     Timeout,
+    /// Killed by this signal.
+    Signalled(i32),
+    /// moor was interrupted.
+    Interrupted,
 }
 
 /// A recorded invocation.
@@ -119,6 +123,8 @@ impl ScriptedProc {
                 stdout: stdout.clone(),
                 stderr_tail: stderr.clone(),
             }),
+            Some(Reply::Signalled(sig)) => Err(ProcError::Signalled(*sig)),
+            Some(Reply::Interrupted) => Err(ProcError::Interrupted),
             Some(Reply::Timeout) => Err(ProcError::Timeout {
                 tool: spec.tool,
                 after: spec.deadline.0,
@@ -153,7 +159,10 @@ impl Proc for ScriptedProc {
                 .and_then(|r| match &r.reply {
                     Reply::Bytes(b) => Some(b.clone()),
                     Reply::Ok(s) => Some(s.clone().into_bytes()),
-                    Reply::Fail { .. } | Reply::Timeout => None,
+                    Reply::Fail { .. }
+                    | Reply::Timeout
+                    | Reply::Signalled(_)
+                    | Reply::Interrupted => None,
                 })
         });
         bytes
@@ -169,6 +178,16 @@ impl Proc for ScriptedProc {
                 Err(e) => e,
                 Ok(_) => poisoned(),
             })
+    }
+
+    /// Non-zero exits come back as `Ok(code)`; the output target is not written.
+    fn run_streamed(&self, spec: &ProcSpec, _out: &Output) -> Result<i32, ProcError> {
+        let args = self.record(spec);
+        match self.reply_for(spec, &args) {
+            Ok(o) => Ok(o.code),
+            Err(ProcError::NonZero { code, .. }) => Ok(code),
+            Err(e) => Err(e),
+        }
     }
 
     fn spawn_detached(&self, spec: &ProcSpec) -> Result<(), ProcError> {

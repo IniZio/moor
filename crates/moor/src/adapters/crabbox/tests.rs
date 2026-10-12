@@ -8,7 +8,7 @@ use moor_core::name::{BoxHandle, BoxPath, ProviderId, TaskId, TaskName};
 use moor_core::seam::driver::{
     AcquireReq, Driver, DriverError, EgressApplied, EgressPlan, ExecOutcome, ExecSpec, Released,
 };
-use moor_core::seam::proc::{Deadline, Proc, ProcError, ProcOutput, ProcSpec, Tool};
+use moor_core::seam::proc::{Deadline, Output, Proc, ProcError, ProcOutput, ProcSpec, Tool};
 use zeroize::Zeroizing;
 
 use super::parse::{parse_inspect_workroot, parse_list, parse_warmup};
@@ -385,6 +385,9 @@ impl Proc for NoSpawn {
         Err(ProcError::Spawn(std::io::Error::other("missing")))
     }
     fn run_secret(&self, _: &ProcSpec) -> Result<Zeroizing<Vec<u8>>, ProcError> {
+        Err(ProcError::Spawn(std::io::Error::other("missing")))
+    }
+    fn run_streamed(&self, _: &ProcSpec, _: &Output) -> Result<i32, ProcError> {
         Err(ProcError::Spawn(std::io::Error::other("missing")))
     }
     fn spawn_detached(&self, _: &ProcSpec) -> Result<(), ProcError> {

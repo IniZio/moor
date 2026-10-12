@@ -22,6 +22,7 @@ thiserror = "2"
 time = { version = "0.3", features = ["formatting", "parsing"] }
 rustix = { version = "1", features = ["process"] }
 zeroize = "1"
+signal-hook = "=0.4.4"
 getrandom = "=0.4.3"
 
 [dev-dependencies]

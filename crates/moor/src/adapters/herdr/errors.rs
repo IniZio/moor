@@ -76,6 +76,9 @@ pub(super) fn map_error(e: &ProcError) -> HerdrFailure {
         ProcError::Signalled(sig) => HerdrFailure::Surface(SurfaceError::Failed {
             summary: format!("herdr killed by signal {sig}"),
         }),
+        ProcError::Interrupted => HerdrFailure::Surface(SurfaceError::Failed {
+            summary: "herdr interrupted".to_owned(),
+        }),
         ProcError::NonZero {
             code,
             stdout,

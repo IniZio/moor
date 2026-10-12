@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use moor_core::seam::proc::Deadline;
+use moor_core::seam::proc::{Deadline, Output};
 
 use super::*;
 
@@ -96,5 +96,45 @@ fn secret_failure_has_empty_stdout() {
     assert!(matches!(
         p.run_secret(&spec(Tool::Gh, &["f"])),
         Err(ProcError::NonZero { code: 4, stdout, .. }) if stdout.is_empty()
+    ));
+}
+
+#[test]
+fn streamed_passes_exit_codes_through() {
+    let p = ScriptedProc::new();
+    p.on(Tool::Sh, &["ok"], Reply::Ok(String::new())).on(
+        Tool::Sh,
+        &["bad"],
+        Reply::Fail {
+            code: 3,
+            stdout: String::new(),
+            stderr: String::new(),
+        },
+    );
+    assert_eq!(
+        p.run_streamed(&spec(Tool::Sh, &["ok"]), &Output::Inherit)
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        p.run_streamed(&spec(Tool::Sh, &["bad"]), &Output::Inherit)
+            .unwrap(),
+        3
+    );
+    assert_eq!(p.calls().len(), 2);
+}
+
+#[test]
+fn streamed_signal_and_interrupt() {
+    let p = ScriptedProc::new();
+    p.on(Tool::Sh, &["sig"], Reply::Signalled(9))
+        .on(Tool::Sh, &["int"], Reply::Interrupted);
+    assert!(matches!(
+        p.run_streamed(&spec(Tool::Sh, &["sig"]), &Output::Inherit),
+        Err(ProcError::Signalled(9))
+    ));
+    assert!(matches!(
+        p.run_streamed(&spec(Tool::Sh, &["int"]), &Output::Log("/dev/null".into())),
+        Err(ProcError::Interrupted)
     ));
 }
