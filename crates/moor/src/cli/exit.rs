@@ -5,6 +5,9 @@ use moor_core::{ExitClass, Response};
 /// Exit code when moor failed before the `run` command started.
 const RUN_NOT_STARTED: u8 = 125;
 
+/// Exit code when the `run` was interrupted.
+const RUN_INTERRUPTED: u8 = 130;
+
 /// Exit code when `wait` gave up before the Task settled.
 const WAIT_TIMED_OUT: u8 = 124;
 
@@ -31,10 +34,18 @@ fn wait_timed_out(resp: &Response) -> bool {
         .unwrap_or(false)
 }
 
-/// Reads the command's own exit status from a `run` value, defaulting to 0.
+/// Reads the exit code of a `run` value: 130 when interrupted, else the
+/// command's own status, defaulting to 0.
 fn run_exit(resp: &Response) -> u8 {
-    resp.value
-        .as_ref()
+    let value = resp.value.as_ref();
+    let interrupted = value
+        .and_then(|v| v.get("interrupted"))
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    if interrupted {
+        return RUN_INTERRUPTED;
+    }
+    value
         .and_then(|v| v.get("exit"))
         .and_then(serde_json::Value::as_u64)
         .and_then(|n| u8::try_from(n).ok())

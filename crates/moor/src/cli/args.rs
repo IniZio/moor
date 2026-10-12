@@ -179,6 +179,7 @@ impl From<RunArgs> for RunReq {
             no_sync: a.no_sync,
             record: a.record,
             argv: a.cmd,
+            inherit_output: false,
         }
     }
 }

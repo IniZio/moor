@@ -159,3 +159,38 @@ fn env_text_starts_with_agent_and_marks_credentials() {
         .unwrap()
         .starts_with("- egress allow  [default]  2 hosts"));
 }
+
+/// A successful `run` value.
+fn run_value() -> serde_json::Value {
+    json!({"ran": true, "exit": 0, "interrupted": false, "sha": "abc"})
+}
+
+#[test]
+fn ok_run_prints_nothing_on_stdout() {
+    let (out, err) = render(&Response::ok("run", Some(run_value())), false);
+    assert_eq!(out, "");
+    assert_eq!(err, "");
+}
+
+#[test]
+fn failed_run_renders_error_on_stderr() {
+    let e = ErrorView {
+        kind: ErrorKind::Failed,
+        message: "no box".into(),
+        hints: vec![],
+        context: vec![],
+    };
+    let (out, err) = render(&Response::err("run", e), false);
+    assert_eq!(out, "");
+    assert_eq!(err, "moor: no box\n");
+}
+
+#[test]
+fn quiet_run_drops_warnings_and_stays_empty() {
+    let mut resp = Response::ok("run", Some(run_value()));
+    resp.warnings.push(warn("careful"));
+    assert_eq!(render(&resp, true), (String::new(), String::new()));
+    let (out, err) = render(&resp, false);
+    assert_eq!(out, "");
+    assert_eq!(err, "moor: warning: careful\n");
+}
