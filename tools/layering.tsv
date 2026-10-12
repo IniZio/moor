@@ -8,7 +8,7 @@ moor_core::decide	moor_core::domain,moor_core::name,moor_core::seam,moor_core::r
 moor_core::config	moor_core::name,moor_core::secret
 moor_core::proxy_gate	moor_core::name,moor_core::secret
 moor_core::seam	moor_core::domain,moor_core::name,moor_core::secret,moor_core::config,moor_core::proxy_gate
-moor_core::view	moor_core::domain,moor_core::name
+moor_core::view	moor_core::domain,moor_core::name,moor_core::config
 moor::env	
 moor::error	moor::env,moor::store
 moor::store	moor::env

@@ -1,5 +1,7 @@
 //! Typed `value` payloads for `start`, `show` and `close` (design §10.2).
 
+pub mod env;
+
 use crate::domain::boxes::BoxState;
 use crate::domain::task::TaskState;
 
