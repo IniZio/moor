@@ -19,17 +19,17 @@ use crate::testing::driver::FakeDriver;
 use crate::testing::proc::{Reply, ScriptedProc};
 use crate::testing::surface::FakeSurface;
 
-const SHA: &str = "0123456789abcdef0123456789abcdef01234567";
+pub(in crate::ops::run) const SHA: &str = "0123456789abcdef0123456789abcdef01234567";
 
-struct Fx {
-    dir: tempfile::TempDir,
-    cx: Cx,
-    driver: Arc<FakeDriver>,
-    proc: Arc<ScriptedProc>,
-    id: TaskId,
+pub(in crate::ops::run) struct Fx {
+    pub(in crate::ops::run) dir: tempfile::TempDir,
+    pub(in crate::ops::run) cx: Cx,
+    pub(in crate::ops::run) driver: Arc<FakeDriver>,
+    pub(in crate::ops::run) proc: Arc<ScriptedProc>,
+    pub(in crate::ops::run) id: TaskId,
 }
 
-fn req(argv: &[&str]) -> RunReq {
+pub(in crate::ops::run) fn req(argv: &[&str]) -> RunReq {
     RunReq {
         task: TaskName::parse("t").unwrap(),
         no_sync: false,
@@ -89,12 +89,12 @@ fn bare() -> Fx {
     bare_with(FakeDriver::new())
 }
 
-fn ready() -> Fx {
+pub(in crate::ops::run) fn ready() -> Fx {
     ready_with(FakeDriver::new())
 }
 
 /// A Ready Task `t` with a Box from `driver`.
-fn ready_with(driver: FakeDriver) -> Fx {
+pub(in crate::ops::run) fn ready_with(driver: FakeDriver) -> Fx {
     let f = bare_with(driver);
     let store = f.cx.store().unwrap();
     let provider = ProviderId::new("p");
@@ -144,7 +144,7 @@ fn kinds(f: &Fx) -> Vec<String> {
         .collect()
 }
 
-fn ran_events(f: &Fx) -> usize {
+pub(in crate::ops::run) fn ran_events(f: &Fx) -> usize {
     kinds(f).iter().filter(|k| *k == "ran").count()
 }
 
@@ -164,6 +164,7 @@ fn inherited_output_is_streamed_to_moor() {
 #[test]
 fn json_output_goes_to_a_run_log_under_the_state_dir() {
     let f = ready();
+    f.proc.on(Tool::Git, &["status"], Reply::Ok(String::new()));
     let mut r = req(&["true"]);
     r.record = Some("ci".into());
     let v = run(&f.cx, &r).unwrap();
