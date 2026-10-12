@@ -10,6 +10,7 @@ pub(crate) mod common;
 mod cp;
 pub(crate) mod env;
 mod gate;
+mod run;
 mod show;
 mod start;
 mod version;
@@ -27,6 +28,7 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         Request::Close(r) => to_value(&close::run(cx, &r)?),
         Request::Gate(r) => to_value(&gate::run(cx, &r)?),
         Request::Env(r) => to_value(&env::run(cx, &r)?),
+        Request::Run(r) => to_value(&run::run(cx, &r)?),
         Request::Wait(r) => to_value(&wait::run(cx, &r)?),
         Request::Cp(r) => to_value(&cp::run(cx, &r)?),
         other => Err(CommandError::not_implemented(other.cmd())),

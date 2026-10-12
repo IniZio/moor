@@ -18,10 +18,6 @@ mod runs;
 mod tests;
 
 pub(crate) use runs::RunRow;
-#[cfg_attr(
-    not(test),
-    expect(unused_imports, reason = "used by the run command, not yet wired")
-)]
 pub(crate) use runs::{NewRun, RunOutcome};
 
 /// Schema version this build reads and writes.

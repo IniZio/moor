@@ -20,8 +20,8 @@ pub struct RunValue {
     pub exit: Option<i32>,
     /// Whether the run was interrupted.
     pub interrupted: bool,
-    /// Sha the run executed against.
-    pub sha: String,
+    /// Sha the run executed against; null when git could not read it.
+    pub sha: Option<String>,
     /// Sync mode used.
     pub sync: SyncMode,
     /// Record text, when one was captured.

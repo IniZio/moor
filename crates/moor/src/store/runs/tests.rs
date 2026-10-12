@@ -193,3 +193,38 @@ fn recorded_runs_carry_what_the_gate_needs() {
     assert_eq!(last.started_at, Ts::from_millis(1_000));
     assert_eq!(last.finished_at, Some(Ts::from_millis(1_000)));
 }
+
+#[test]
+fn refused_run_emits_one_ran_event_without_a_run() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(dir.path());
+    let task = add(&store, "t");
+    let before = store.task(task).unwrap().unwrap();
+    store.refused_run(task).unwrap();
+    let events = store.events(task, 100).unwrap();
+    let ran: Vec<_> = events.iter().filter(|e| e.kind == "ran").collect();
+    assert_eq!(ran.len(), 1);
+    let payload = &ran.first().unwrap().payload;
+    assert!(payload["run"].is_null(), "{payload}");
+    assert!(payload["exit"].is_null(), "{payload}");
+    assert_eq!(payload["interrupted"], false);
+    assert!(store.last_run(task).unwrap().is_none());
+    assert_eq!(store.task(task).unwrap().unwrap().intent, before.intent);
+}
+
+#[test]
+fn refused_run_leaves_an_in_flight_run_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(dir.path());
+    let task = add(&store, "t");
+    let run = begin(&store, task, None, None, 7);
+    store.refused_run(task).unwrap();
+    let live = store.in_flight_run(task, &|_| true).unwrap().unwrap();
+    assert_eq!(live.id, run);
+    assert_eq!(live.finished_at, None);
+    assert_eq!(
+        store.task(task).unwrap().unwrap().intent,
+        Some(Intent::Running { run, pid: 7 })
+    );
+    assert_eq!(ran_events(&store, task), 1);
+}

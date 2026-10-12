@@ -11,10 +11,6 @@ use super::apply::{insert_event, intent_sets, update};
 use super::{load_task, Store, StoreError};
 
 /// A run to record.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "used by the run command, not yet wired")
-)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct NewRun {
     /// Owning task.
@@ -94,10 +90,6 @@ fn run_from_row(row: &Row<'_>) -> Result<RunRow, StoreError> {
 
 impl Store {
     /// Record a run start: run row, `Running` intent and `run_started` event.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "used by the run command, not yet wired")
-    )]
     pub(crate) fn begin_run(&self, r: NewRun) -> Result<RunId, StoreError> {
         let NewRun {
             task,
@@ -171,9 +163,27 @@ impl Store {
             &clear,
         )?;
         let ran = Event::Ran {
-            run: id,
+            run: Some(id),
             exit: out.exit,
             interrupted: out.interrupted,
+        };
+        insert_event(&tx, task, &ran, now)?;
+        tx.commit()?;
+        drop(conn);
+        Ok(())
+    }
+
+    /// Record a run refused before any run row existed: one `ran` event with no run id.
+    ///
+    /// Writes no run row and leaves the task's intent untouched.
+    pub(crate) fn refused_run(&self, task: TaskId) -> Result<(), StoreError> {
+        let now = self.now();
+        let mut conn = self.writer()?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let ran = Event::Ran {
+            run: None,
+            exit: None,
+            interrupted: false,
         };
         insert_event(&tx, task, &ran, now)?;
         tx.commit()?;

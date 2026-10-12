@@ -118,8 +118,8 @@ pub enum Event {
     },
     /// A command run finished.
     Ran {
-        /// The run id.
-        run: RunId,
+        /// The run id; none when the run was refused before a run row existed.
+        run: Option<RunId>,
         /// The exit code, when known.
         exit: Option<i32>,
         /// True when the run was interrupted.

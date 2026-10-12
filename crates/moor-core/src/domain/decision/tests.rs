@@ -100,8 +100,13 @@ fn derived_events_are_refused() {
 fn extra_events_round_trip() {
     let all = [
         ExtraEvent::Ran {
-            run: RunId::new(2),
+            run: Some(RunId::new(2)),
             exit: Some(1),
+            interrupted: false,
+        },
+        ExtraEvent::Ran {
+            run: None,
+            exit: None,
             interrupted: false,
         },
         ExtraEvent::Copied {
