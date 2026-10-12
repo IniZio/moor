@@ -140,18 +140,38 @@ fn setup_is_one_synced_exec_from_the_worktree() {
 
 #[test]
 fn a_failing_setup_leaves_a_working_task_and_runs_nothing_more() {
-    let driver = FakeDriver::new().exec_results([Ok(exit(1))]);
+    let driver = FakeDriver::new()
+        .exec_results([Ok(exit(1))])
+        .copy_text("moor setup: $ a\nmoor setup: $ b\n");
     let (w, v) = start_with("setup: [a, b, c]\n", driver);
     assert_eq!(v.task.state, TaskState::Working);
     assert!(v.setup.ran && !v.setup.ok);
-    assert_eq!(v.setup.line.as_deref(), Some("a"));
+    assert_eq!(v.setup.line.as_deref(), Some("b"));
     assert_eq!(w.driver.execs().len(), 1);
     assert!(warning_codes(&w).contains(&"setup_failed".to_owned()));
     let id = TaskId::new(v.task.id);
     let events = w.cx.store().unwrap().events(id, 50).unwrap();
     let failed = events.iter().find(|e| e.kind == "setup_failed").unwrap();
-    assert_eq!(failed.payload.get("line"), Some(&serde_json::json!("a")));
+    assert_eq!(failed.payload.get("line"), Some(&serde_json::json!("b")));
     assert!(kinds(&w, id).contains(&"working".to_owned()));
+}
+
+#[test]
+fn a_failed_setup_copies_its_log_out_of_the_box_into_the_worktree() {
+    let driver = FakeDriver::new().exec_results([Ok(exit(1))]);
+    let (w, v) = start_with("setup: [a]\n", driver);
+    let wt =
+        w.cx.store()
+            .unwrap()
+            .task(TaskId::new(v.task.id))
+            .unwrap()
+            .unwrap()
+            .worktree;
+    let wt = std::path::PathBuf::from(wt.unwrap());
+    let (_, from, to, host_cwd) = w.driver.copies().remove(0);
+    assert_eq!(from.as_str(), "/work/box-1/.moor/setup.log");
+    assert_eq!(to, wt.join(".moor/setup.log"));
+    assert_eq!(host_cwd, wt);
 }
 
 #[test]
@@ -193,11 +213,13 @@ fn setup_env_is_exactly_the_repo_env() {
 
 #[test]
 fn a_timed_out_setup_counts_as_a_failing_line() {
-    let driver = FakeDriver::new().exec_results([Err(DriverError::Timeout(LINE_DEADLINE))]);
+    let driver = FakeDriver::new()
+        .exec_results([Err(DriverError::Timeout(LINE_DEADLINE))])
+        .copy_text("moor setup: $ a\nmoor setup: $ b\n");
     let (w, v) = start_with("setup: [a, b, c]\n", driver);
     assert_eq!(v.task.state, TaskState::Working);
     assert!(v.setup.ran && !v.setup.ok);
-    assert_eq!(v.setup.line.as_deref(), Some("a"));
+    assert_eq!(v.setup.line.as_deref(), Some("b"));
     assert_eq!(w.driver.execs().len(), 1);
     assert!(warning_codes(&w).contains(&"setup_failed".to_owned()));
     assert!(failed_at_set(&w, &v));
