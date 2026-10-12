@@ -14,8 +14,8 @@ pub mod view;
 
 pub use name::{BoxHandle, BoxPath, NameError, ProviderId, RunId, Sha, TaskId, TaskName};
 pub use request::{
-    CloseReq, CpReq, EnvReq, GateAction, GateReq, RemoveReq, ReportReq, Request, RunReq, ShowReq,
-    StartReq, SteerReq, TaskReq, WaitFor, WaitReq,
+    CloseReq, CpReq, EnvReq, GateReq, RemoveReq, ReportReq, Request, RunReq, ShowReq, StartReq,
+    SteerReq, TaskReq, WaitFor, WaitReq,
 };
 pub use response::{ErrorKind, ErrorView, ExitClass, Response, Warning, SCHEMA};
 pub use secret::{Digest, Secret};

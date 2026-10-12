@@ -1,7 +1,7 @@
 //! clap definitions for the admin verbs: gate, env, github, proxy, call, version.
 
 use clap::{Args, Subcommand};
-use moor_core::{EnvReq, GateAction, GateReq, Request};
+use moor_core::{EnvReq, GateReq, Request};
 
 use super::args::Action;
 
@@ -66,32 +66,29 @@ impl AdminCmd {
 /// Subcommands of `gate`.
 #[derive(Debug, Subcommand)]
 pub(super) enum GateCmd {
-    /// Record a gate for a commit.
-    Record(GateArgs),
     /// Check a gate for a commit.
     Check(GateArgs),
 }
 
-/// Arguments of `gate record|check`.
+/// Arguments of `gate check`.
 #[derive(Debug, Args)]
 pub(super) struct GateArgs {
     /// Commit sha.
     sha: String,
     /// Gate name.
-    #[arg(long)]
     name: String,
+    /// Command to run for the gate.
+    #[arg(long)]
+    command: Option<String>,
 }
 
 impl From<GateCmd> for GateReq {
     fn from(g: GateCmd) -> Self {
-        let (action, a) = match g {
-            GateCmd::Record(a) => (GateAction::Record, a),
-            GateCmd::Check(a) => (GateAction::Check, a),
-        };
+        let GateCmd::Check(a) = g;
         Self {
-            action,
             sha: a.sha,
             name: a.name,
+            command: a.command,
         }
     }
 }
