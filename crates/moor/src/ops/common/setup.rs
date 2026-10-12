@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use moor_core::config::TaskSettings;
 use moor_core::domain::task::SetupOutcome;
-use moor_core::seam::driver::ExecSpec;
+use moor_core::seam::driver::{ExecOutcome, ExecSpec, SyncMode};
 use moor_core::seam::proc::Deadline;
 use moor_core::view::SetupView;
 use moor_core::{BoxHandle, BoxPath, Warning};
@@ -80,13 +80,18 @@ pub(crate) fn run_setup(
             argv: vec!["sh".to_owned(), "-c".to_owned(), line.clone()],
             env: env.clone(),
             cwd: Some(workdir.clone()),
+            sync: SyncMode::None,
+            output: None,
+            host_cwd: None,
+            class: None,
         };
         let reason = match cx
             .driver()
             .exec(handle, &spec, Deadline(SETUP_LINE_DEADLINE))
         {
-            Ok(out) if out.code == 0 => continue,
-            Ok(out) => format!("exit {}", out.code),
+            Ok(ExecOutcome::Exited { code: 0 }) => continue,
+            Ok(ExecOutcome::Exited { code }) => format!("exit {code}"),
+            Ok(ExecOutcome::Interrupted) => "interrupted".to_owned(),
             Err(e) => e.to_string(),
         };
         cx.warn(Warning {

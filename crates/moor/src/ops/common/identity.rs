@@ -3,7 +3,7 @@
 use std::path::Path;
 use std::time::Duration;
 
-use moor_core::seam::driver::ExecSpec;
+use moor_core::seam::driver::{ExecOutcome, ExecSpec, SyncMode};
 use moor_core::seam::proc::Deadline;
 use moor_core::{BoxHandle, Warning};
 
@@ -28,10 +28,15 @@ pub(crate) fn set_identity(cx: &Cx, handle: &BoxHandle, worktree: &Path) {
                 .to_vec(),
             env: Vec::new(),
             cwd: None,
+            sync: SyncMode::None,
+            output: None,
+            host_cwd: None,
+            class: None,
         };
         let reason = match cx.driver().exec(handle, &spec, Deadline(IDENTITY_DEADLINE)) {
-            Ok(out) if out.code == 0 => continue,
-            Ok(out) => format!("exit {}", out.code),
+            Ok(ExecOutcome::Exited { code: 0 }) => continue,
+            Ok(ExecOutcome::Exited { code }) => format!("exit {code}"),
+            Ok(ExecOutcome::Interrupted) => "interrupted".to_owned(),
             Err(e) => e.to_string(),
         };
         cx.warn(Warning {

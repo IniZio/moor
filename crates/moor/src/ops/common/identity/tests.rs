@@ -3,7 +3,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use moor_core::seam::driver::{AcquireReq, Driver, DriverError, EgressPlan, ExecOutcome};
+use moor_core::seam::driver::{AcquireReq, Driver, DriverError, EgressPlan, ExecOutcome, SyncMode};
 use moor_core::seam::proc::{Deadline, Tool};
 use moor_core::{BoxHandle, ProviderId, TaskId, TaskName};
 
@@ -129,8 +129,10 @@ fn not_a_repo_runs_nothing() {
 #[test]
 fn failing_exec_warns_and_the_email_is_still_attempted() {
     let d = tempfile::tempdir().unwrap();
-    let driver =
-        FakeDriver::new().exec_results([Err(DriverError::NotFound), Ok(ExecOutcome { code: 1 })]);
+    let driver = FakeDriver::new().exec_results([
+        Err(DriverError::NotFound),
+        Ok(ExecOutcome::Exited { code: 1 }),
+    ]);
     let r = rig(d.path(), driver);
     author(&r, Some("Ann Dev"), Some("a@x.io"));
     set_identity(&r.cx, &r.handle, d.path());
@@ -165,4 +167,33 @@ fn only_argv_values_are_sent_without_a_shell_or_config_files() {
     }
     let value = execs.first().and_then(|(_, s, _)| s.argv.last());
     assert_eq!(value.map(String::as_str), Some("$(touch x); `id`"));
+}
+
+#[test]
+fn exec_neither_syncs_nor_redirects_output() {
+    let d = tempfile::tempdir().unwrap();
+    let r = rig(d.path(), FakeDriver::new());
+    author(&r, Some("Ann Dev"), Some("a@x.io"));
+    set_identity(&r.cx, &r.handle, d.path());
+    let execs = r.driver.execs();
+    assert_eq!(execs.len(), 2);
+    for (_, spec, _) in &execs {
+        assert_eq!(spec.sync, SyncMode::None);
+        assert!(spec.output.is_none());
+    }
+}
+
+#[test]
+fn interrupted_exec_warns_and_the_email_is_still_attempted() {
+    let d = tempfile::tempdir().unwrap();
+    let driver = FakeDriver::new().exec_results([Ok(ExecOutcome::Interrupted)]);
+    let r = rig(d.path(), driver);
+    author(&r, Some("Ann Dev"), Some("a@x.io"));
+    set_identity(&r.cx, &r.handle, d.path());
+    assert_eq!(r.driver.execs().len(), 2);
+    let warnings = r.cx.take_warnings();
+    assert_eq!(warnings.len(), 1);
+    let w = warnings.first().unwrap();
+    assert_eq!(w.code, "identity_failed");
+    assert!(w.message.contains("interrupted"));
 }

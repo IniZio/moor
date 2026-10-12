@@ -1,6 +1,6 @@
 //! Driver seam: how moor gets, inspects and releases Boxes.
 //!
-//! Only the provisioning methods and exec exist so far; sync, file transfer,
+//! Only the provisioning methods and exec exist so far; file transfer,
 //! sleep, tunnel and connect are not added yet.
 
 use std::fmt;
@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use crate::name::{BoxHandle, BoxPath, ProviderId, TaskId, TaskName};
-use crate::seam::proc::Deadline;
+use crate::seam::proc::{Deadline, Output};
 
 /// How a provider keeps an idle Box cheap.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -115,7 +115,16 @@ pub struct BoxListing {
     pub asleep: bool,
 }
 
-/// A command to run inside a Box, without syncing the worktree.
+/// Whether the worktree is synced into the Box before a command runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SyncMode {
+    /// Sync the worktree first.
+    Full,
+    /// Run without syncing.
+    None,
+}
+
+/// A command to run inside a Box.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecSpec {
     /// Program and arguments.
@@ -124,13 +133,26 @@ pub struct ExecSpec {
     pub env: Vec<(String, String)>,
     /// Directory to run in; the Box workdir when unset.
     pub cwd: Option<BoxPath>,
+    /// Whether to sync the worktree before running.
+    pub sync: SyncMode,
+    /// Where to stream output; captured when unset.
+    pub output: Option<Output>,
+    /// Host directory (the Task worktree) the driver process runs from.
+    pub host_cwd: Option<PathBuf>,
+    /// Box size (`small`, `medium`, `large`, `xlarge`); none is passed when unset.
+    pub class: Option<String>,
 }
 
 /// How a command inside a Box ended; a non-zero code is not an error.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ExecOutcome {
-    /// Exit code of the command.
-    pub code: i32,
+pub enum ExecOutcome {
+    /// The command finished with this exit code.
+    Exited {
+        /// Exit code of the command.
+        code: i32,
+    },
+    /// The command was stopped by an interrupt or signal before it finished.
+    Interrupted,
 }
 
 /// The only error shape Driver adapters return.

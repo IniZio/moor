@@ -7,6 +7,7 @@ use std::time::Duration;
 use moor_core::name::{BoxHandle, BoxPath, ProviderId, TaskId, TaskName};
 use moor_core::seam::driver::{
     AcquireReq, Driver, DriverError, EgressApplied, EgressPlan, ExecOutcome, ExecSpec, Released,
+    SyncMode,
 };
 use moor_core::seam::proc::{Deadline, Output, Proc, ProcError, ProcOutput, ProcSpec, Tool};
 use zeroize::Zeroizing;
@@ -366,6 +367,10 @@ fn exec_spec(argv: &[&str]) -> ExecSpec {
         argv: argv.iter().map(|a| (*a).to_owned()).collect(),
         env: Vec::new(),
         cwd: None,
+        sync: SyncMode::None,
+        output: None,
+        host_cwd: None,
+        class: None,
     }
 }
 
@@ -403,7 +408,7 @@ fn exec_runs_without_sync_on_the_target() {
     let (p, c) = fixture();
     p.on(Tool::Crabbox, &["run"], Reply::Ok(String::new()));
     let out = exec_on(&c, &exec_spec(&["make", "test"])).unwrap();
-    assert_eq!(out, ExecOutcome { code: 0 });
+    assert_eq!(out, ExecOutcome::Exited { code: 0 });
     let calls = p.calls();
     let call = calls.first().unwrap();
     assert_eq!(
@@ -414,6 +419,7 @@ fn exec_runs_without_sync_on_the_target() {
             "sprites",
             "--id",
             "moor-t7-ab12cd",
+            "--no-hydrate",
             "--no-sync",
             "--",
             "make",
@@ -482,7 +488,7 @@ fn exec_remote_failure_is_an_outcome() {
         fail(17, "boom\nremote command exited 17\n"),
     );
     let out = exec_on(&c, &exec_spec(&["false"])).unwrap();
-    assert_eq!(out, ExecOutcome { code: 17 });
+    assert_eq!(out, ExecOutcome::Exited { code: 17 });
 }
 
 #[test]
