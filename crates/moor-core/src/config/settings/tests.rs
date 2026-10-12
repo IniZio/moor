@@ -97,15 +97,6 @@ fn size_decision_58() {
 }
 
 #[test]
-fn git_identity_from_user_only() {
-    let s = resolve("git: {name: U}", Some("{}"), &Flags::default());
-    assert_eq!(s.git_name, Some(Sourced::new("U".to_string(), Layer::User)));
-    assert_eq!(s.git_email, None);
-    let s = resolve("{}", None, &Flags::default());
-    assert_eq!((s.git_name, s.git_email), (None, None));
-}
-
-#[test]
 fn credentials_union_and_used() {
     let s = resolve(
         "credentials: {UNRELATED: {env: A}, USED: {env: B}, TOK: {env: C}}\n\
@@ -187,6 +178,7 @@ fn layer_names() {
         (Layer::Repo, "repo"),
         (Layer::User, "user"),
         (Layer::Default, "default"),
+        (Layer::Git, "git"),
     ];
     for (l, n) in all {
         assert_eq!(l.as_str(), n);

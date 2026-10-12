@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use moor_core::seam::proc::Tool;
 
-use super::{Git, GitError};
+use super::{Git, GitAuthor, GitError};
 use crate::adapters::proc::{SystemProc, ToolPaths};
 use crate::env::Env;
 use crate::testing::proc::{Reply, ScriptedProc};
@@ -211,68 +211,79 @@ fn real_git_unpushed_excludes_base() {
 }
 
 #[test]
-fn identity_without_fields_runs_no_git() {
+fn author_reads_name_and_email_in_the_worktree() {
     let (p, g) = scripted();
-    g.set_identity(Path::new("/r/wt"), None, None).unwrap();
-    assert!(p.calls().is_empty());
-}
-
-#[test]
-fn real_git_identity_is_a_no_op_on_the_main_checkout() {
-    if Command::new("git").arg("--version").output().is_err() {
-        return;
-    }
-    let dir = tempfile::tempdir().unwrap();
-    let main = dir.path().join("main");
-    std::fs::create_dir(&main).unwrap();
-    git_in(&main, &["init", "-q", "-b", "main"]);
-    git_in(&main, &["commit", "-q", "--allow-empty", "-m", "one"]);
-    real_git()
-        .set_identity(&main, Some("User Name"), Some("u@example.com"))
-        .unwrap();
-    let get = |key: &str| {
-        let out = Command::new("git")
-            .args(["config", "--get", key])
-            .env("GIT_CONFIG_GLOBAL", "/dev/null")
-            .env("GIT_CONFIG_SYSTEM", "/dev/null")
-            .current_dir(&main)
-            .output()
-            .unwrap();
-        String::from_utf8_lossy(&out.stdout).trim().to_owned()
-    };
-    assert_eq!(get("user.name"), "");
-    assert_eq!(get("extensions.worktreeConfig"), "");
-}
-
-#[test]
-fn real_git_identity_stays_in_the_linked_worktree() {
-    if Command::new("git").arg("--version").output().is_err() {
-        return;
-    }
-    let dir = tempfile::tempdir().unwrap();
-    let main = dir.path().join("main");
-    std::fs::create_dir(&main).unwrap();
-    git_in(&main, &["init", "-q", "-b", "main"]);
-    git_in(&main, &["commit", "-q", "--allow-empty", "-m", "one"]);
-    let wt = dir.path().join("wt");
-    git_in(
-        &main,
-        &["worktree", "add", "-q", "-b", "w", wt.to_str().unwrap()],
+    p.on(
+        Tool::Git,
+        &["config", "--get", "user.name"],
+        ok("Ann Dev\n"),
     );
-    real_git()
-        .set_identity(&wt, Some("User Name"), Some("u@example.com"))
-        .unwrap();
-    let read = |d: &Path, key: &str| {
-        let out = Command::new("git")
-            .args(["config", "--get", key])
-            .env("GIT_CONFIG_GLOBAL", "/dev/null")
-            .env("GIT_CONFIG_SYSTEM", "/dev/null")
-            .current_dir(d)
-            .output()
-            .unwrap();
-        String::from_utf8_lossy(&out.stdout).trim().to_owned()
-    };
-    assert_eq!(read(&wt, "user.name"), "User Name");
-    assert_eq!(read(&wt, "user.email"), "u@example.com");
-    assert_eq!(read(&main, "user.name"), "");
+    p.on(
+        Tool::Git,
+        &["config", "--get", "user.email"],
+        ok("a@x.io\n"),
+    );
+    let a = g.author(Path::new("/r/wt")).unwrap();
+    assert_eq!(a.name.as_deref(), Some("Ann Dev"));
+    assert_eq!(a.email.as_deref(), Some("a@x.io"));
+    let calls = p.calls();
+    assert_eq!(
+        calls.first().map(|c| c.cwd.as_deref()),
+        Some(Some(Path::new("/r/wt")))
+    );
+}
+
+#[test]
+fn author_missing_keys_are_none() {
+    let (p, g) = scripted();
+    p.on(
+        Tool::Git,
+        &["config", "--get"],
+        Reply::Fail {
+            code: 1,
+            stdout: String::new(),
+            stderr: String::new(),
+        },
+    );
+    assert_eq!(g.author(Path::new("/r/wt")).unwrap(), GitAuthor::default());
+}
+
+#[test]
+fn author_blank_value_is_none() {
+    let (p, g) = scripted();
+    p.on(Tool::Git, &["config", "--get", "user.name"], ok("  \n"));
+    p.on(Tool::Git, &["config", "--get", "user.email"], ok("a@x.io"));
+    let a = g.author(Path::new("/r/wt")).unwrap();
+    assert_eq!(a.name, None);
+    assert_eq!(a.email.as_deref(), Some("a@x.io"));
+}
+
+#[test]
+fn author_outside_repo_is_not_a_repo() {
+    let (p, g) = scripted();
+    p.on(
+        Tool::Git,
+        &["config", "--get"],
+        Reply::Fail {
+            code: 128,
+            stdout: String::new(),
+            stderr: "fatal: not a git repository".to_owned(),
+        },
+    );
+    assert!(matches!(g.author(Path::new("/x")), Err(GitError::NotARepo)));
+}
+
+#[test]
+fn real_git_author_reads_repo_config() {
+    if Command::new("git").arg("--version").output().is_err() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let d = dir.path();
+    git_in(d, &["init", "-q"]);
+    git_in(d, &["config", "user.name", "Ann Dev"]);
+    git_in(d, &["config", "user.email", "a@x.io"]);
+    let a = real_git().author(d).unwrap();
+    assert_eq!(a.name.as_deref(), Some("Ann Dev"));
+    assert_eq!(a.email.as_deref(), Some("a@x.io"));
 }

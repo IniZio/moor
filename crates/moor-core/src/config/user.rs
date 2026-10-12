@@ -93,16 +93,6 @@ pub struct DriverConfig {
     pub max_boxes: Option<NonZeroU32>,
 }
 
-/// `git:` section: the identity for worktree and Box commits.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
-#[serde(deny_unknown_fields, default)]
-pub struct GitIdentity {
-    /// `user.name`.
-    pub name: Option<String>,
-    /// `user.email`.
-    pub email: Option<String>,
-}
-
 /// `github:` section.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields, default)]
@@ -228,8 +218,6 @@ pub struct ToolsConfig {
 pub struct UserConfig {
     /// Per-provider limits.
     pub drivers: BTreeMap<String, DriverConfig>,
-    /// Commit identity.
-    pub git: GitIdentity,
     /// Named credential sources.
     pub credentials: BTreeMap<String, CredentialSource>,
     /// MCP servers.

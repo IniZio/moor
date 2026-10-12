@@ -3,7 +3,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use moor_core::config::{parse_user, UserConfig};
+use moor_core::config::{parse_user, Layer, UserConfig};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::proc::{Proc, Tool};
 use moor_core::view::env::{EnvKind, EnvView};
@@ -22,7 +22,11 @@ use crate::testing::surface::FakeSurface;
 
 /// Context whose repo root and main checkout are `top`, with user config `config`.
 fn cx_with(top: &Path, config: UserConfig) -> Cx {
-    let proc = ScriptedProc::new();
+    cx_proc(top, config, ScriptedProc::new())
+}
+
+/// Like `cx_with`, over a caller-prepared scripted proc.
+fn cx_proc(top: &Path, config: UserConfig, proc: ScriptedProc) -> Cx {
     proc.on(
         Tool::Git,
         &["rev-parse", "--show-toplevel"],
@@ -143,6 +147,60 @@ fn invalid_mcp_json_is_one_failed_item() {
         .collect();
     assert_eq!(m.len(), 1);
     assert!(m.first().is_some_and(|c| !c.ok));
+}
+
+/// Identity rows as `(name, value, source)`.
+fn identity(v: &EnvView) -> Vec<(&str, &str, Layer)> {
+    v.rows
+        .iter()
+        .filter(|r| r.kind == EnvKind::Identity)
+        .map(|r| (r.name.as_str(), r.note.as_str(), r.source))
+        .collect()
+}
+
+#[test]
+fn identity_rows_come_from_git() {
+    let d = tempfile::tempdir().unwrap();
+    let proc = ScriptedProc::new();
+    proc.on(
+        Tool::Git,
+        &["config", "--get", "user.name"],
+        Reply::Ok("Ada\n".into()),
+    );
+    proc.on(
+        Tool::Git,
+        &["config", "--get", "user.email"],
+        Reply::Ok("ada@example.com\n".into()),
+    );
+    let cx = cx_proc(d.path(), UserConfig::default(), proc);
+    let v = run(&cx, &EnvReq { repo: None }).unwrap();
+    assert_eq!(
+        identity(&v),
+        [
+            ("user.name", "Ada", Layer::Git),
+            ("user.email", "ada@example.com", Layer::Git)
+        ]
+    );
+}
+
+#[test]
+fn missing_git_identity_adds_no_rows() {
+    let d = tempfile::tempdir().unwrap();
+    let proc = ScriptedProc::new();
+    for key in ["user.name", "user.email"] {
+        proc.on(
+            Tool::Git,
+            &["config", "--get", key],
+            Reply::Fail {
+                code: 1,
+                stdout: String::new(),
+                stderr: String::new(),
+            },
+        );
+    }
+    let cx = cx_proc(d.path(), UserConfig::default(), proc);
+    let v = run(&cx, &EnvReq { repo: None }).unwrap();
+    assert!(identity(&v).is_empty());
 }
 
 #[test]

@@ -17,12 +17,14 @@ pub(crate) fn assemble(
     egress: &EgressItem,
 ) -> Vec<EnvItem> {
     let mut items = Vec::new();
-    for (name, val) in [("user.name", &s.git_name), ("user.email", &s.git_email)] {
-        if let Some(v) = val {
-            items.push(EnvItem {
-                source: v.source,
-                ..plain(EnvKind::Identity, name, &v.value)
-            });
+    if let Ok(author) = cx.git().author(worktree) {
+        for (name, val) in [("user.name", author.name), ("user.email", author.email)] {
+            if let Some(v) = val {
+                items.push(EnvItem {
+                    source: Layer::Git,
+                    ..plain(EnvKind::Identity, name, &v)
+                });
+            }
         }
     }
     let Checked { credentials, mcp } = checked(cx, s, worktree);
