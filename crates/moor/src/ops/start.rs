@@ -124,6 +124,7 @@ fn attach(
     row: &TaskRow,
 ) -> Result<StartView, CommandError> {
     check_bound(cx, req, row)?;
+    preflight::dead_provisioning(cx, row)?;
     let reprovisioned = reprovision(cx, store, row, "start")?;
     store.apply(Decision::new(row.id).event(ExtraEvent::Attached))?;
     if reprovisioned {

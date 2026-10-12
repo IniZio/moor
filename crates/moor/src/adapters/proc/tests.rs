@@ -215,3 +215,13 @@ fn run_secret_failure_carries_no_stdout() {
     assert!(stdout.is_empty());
     assert_eq!(stderr_tail.trim(), "err");
 }
+
+#[test]
+fn alive_sees_own_pid_and_rejects_absent_ones() {
+    let p = proc_with(vec![]);
+    assert!(p.alive(std::process::id()));
+    assert!(p.alive(1));
+    assert!(!p.alive(0));
+    assert!(!p.alive(u32::MAX));
+    assert!(!p.alive(0x7fff_ffff));
+}

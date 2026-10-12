@@ -1,7 +1,7 @@
 //! Scripted `Proc` for adapter unit tests.
 
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 
 use moor_core::seam::proc::{Proc, ProcError, ProcOutput, ProcSpec, Tool};
 use zeroize::Zeroizing;
@@ -41,6 +41,8 @@ struct Rule {
 pub(crate) struct ScriptedProc {
     rules: Mutex<Vec<Rule>>,
     calls: Mutex<Vec<Call>>,
+    /// Pids scripted as gone.
+    dead: Mutex<Vec<u32>>,
 }
 
 impl ScriptedProc {
@@ -48,7 +50,17 @@ impl ScriptedProc {
         Self {
             rules: Mutex::new(Vec::new()),
             calls: Mutex::new(Vec::new()),
+            dead: Mutex::new(Vec::new()),
         }
+    }
+
+    /// Script `pid` as gone; every other pid is alive.
+    pub(crate) fn dead(&self, pid: u32) -> &Self {
+        self.dead
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(pid);
+        self
     }
 
     pub(crate) fn on(&self, tool: Tool, prefix: &[&str], reply: Reply) -> &Self {
@@ -165,6 +177,14 @@ impl Proc for ScriptedProc {
             Err(e @ ProcError::NonZero { code, .. }) if code != 127 => Err(e),
             _ => Ok(()),
         }
+    }
+
+    fn alive(&self, pid: u32) -> bool {
+        !self
+            .dead
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .contains(&pid)
     }
 }
 

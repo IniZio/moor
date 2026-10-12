@@ -44,6 +44,7 @@ impl Cx {
             driver,
             surface,
             git: Git::new(Arc::clone(&proc)),
+            proc: Arc::clone(&proc),
             config,
             creds: Creds::new(Env::default(), proc),
             cwd: cwd.to_path_buf(),

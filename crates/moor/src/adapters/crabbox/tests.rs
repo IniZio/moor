@@ -390,6 +390,9 @@ impl Proc for NoSpawn {
     fn spawn_detached(&self, _: &ProcSpec) -> Result<(), ProcError> {
         Err(ProcError::Spawn(std::io::Error::other("missing")))
     }
+    fn alive(&self, _: u32) -> bool {
+        false
+    }
 }
 
 #[test]

@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use moor_core::config::UserConfig;
 use moor_core::domain::boxes::{BoxInput, BoxState};
-use moor_core::domain::decision::Decision;
+use moor_core::domain::decision::{Decision, Field, Fields, Intent, IntentChange};
 use moor_core::domain::task::{TaskInput, TaskState};
 use moor_core::seam::driver::DriverError;
 use moor_core::seam::proc::Tool;
@@ -23,6 +23,7 @@ struct World {
     cx: Cx,
     driver: Arc<FakeDriver>,
     surface: Arc<FakeSurface>,
+    proc: Arc<ScriptedProc>,
     _dir: tempfile::TempDir,
 }
 
@@ -62,13 +63,14 @@ fn world_with(driver: FakeDriver, repo: &Path, config: UserConfig) -> World {
         repo,
         driver.clone(),
         surface.clone(),
-        proc,
+        proc.clone(),
         config,
     );
     World {
         cx,
         driver,
         surface,
+        proc,
         _dir: dir,
     }
 }
@@ -402,4 +404,52 @@ fn reprovision_skips_when_another_start_already_gave_the_box_back() {
     let did = crate::ops::common::provision::reprovision(&w.cx, store, &stale, "start").unwrap();
     assert!(!did);
     assert_eq!(w.driver.calls(), ["acquire", "acquire"]);
+}
+
+/// Starts `demo`, then leaves it as a provisioning that lost its Box handle.
+fn stuck_provisioning(w: &World) {
+    let first = run(&w.cx, &req("demo")).unwrap();
+    let stuck = Decision::new(TaskId::new(first.task.id))
+        .set(Fields {
+            box_handle: Field::Clear,
+            ..Fields::default()
+        })
+        .intent(IntentChange::Set(Intent::Provisioning { pid: 4242 }));
+    w.cx.store().unwrap().apply(stuck).unwrap();
+}
+
+#[test]
+fn dead_provisioning_is_refused_with_a_close_hint() {
+    let w = world(FakeDriver::new());
+    stuck_provisioning(&w);
+    w.proc.dead(4242);
+    w.cx.clock().sleep(Duration::from_secs(121));
+    let before = w.driver.calls().len();
+    let err = run(&w.cx, &req("demo")).unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Failed);
+    assert_eq!(
+        err.error.to_string(),
+        "provisioning dead; run moor close demo"
+    );
+    assert!(err.hints.iter().any(|h| h == "moor close demo"), "{err:?}");
+    assert_eq!(w.driver.calls().len(), before);
+}
+
+#[test]
+fn live_provisioning_pid_attaches() {
+    let w = world(FakeDriver::new());
+    stuck_provisioning(&w);
+    w.cx.clock().sleep(Duration::from_secs(121));
+    assert!(run(&w.cx, &req("demo")).unwrap().attached);
+}
+
+#[test]
+fn dead_provisioning_within_the_grace_period_attaches() {
+    for secs in [119, 120] {
+        let w = world(FakeDriver::new());
+        stuck_provisioning(&w);
+        w.proc.dead(4242);
+        w.cx.clock().sleep(Duration::from_secs(secs));
+        assert!(run(&w.cx, &req("demo")).unwrap().attached, "{secs}s");
+    }
 }

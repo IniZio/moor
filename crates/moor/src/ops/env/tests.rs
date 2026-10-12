@@ -45,6 +45,7 @@ fn cx_proc(top: &Path, config: UserConfig, proc: ScriptedProc) -> Cx {
         driver: Arc::new(FakeDriver::new()),
         surface: Arc::new(FakeSurface::new(top)),
         git: Git::new(Arc::clone(&proc)),
+        proc: Arc::clone(&proc),
         config,
         creds: Creds::new(Env::default(), proc),
         cwd: top.to_path_buf(),

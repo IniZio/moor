@@ -271,6 +271,9 @@ pub trait Proc: Send + Sync {
     /// # Errors
     /// Returns [`ProcError::Spawn`] when the program cannot start.
     fn spawn_detached(&self, spec: &ProcSpec) -> Result<(), ProcError>;
+
+    /// Whether a process with this pid exists.
+    fn alive(&self, pid: u32) -> bool;
 }
 
 #[cfg(test)]
