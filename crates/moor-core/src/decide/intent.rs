@@ -31,5 +31,11 @@ pub fn provisioning_dead(
         && age > PROVISIONING_GRACE
 }
 
+/// True when a Setup intent's process is dead. A live pid is never dead, so there is no grace.
+#[must_use]
+pub const fn setup_dead(intent: &Intent, alive: bool) -> bool {
+    matches!(intent, Intent::Setup { .. }) && !alive
+}
+
 #[cfg(test)]
 mod tests;
