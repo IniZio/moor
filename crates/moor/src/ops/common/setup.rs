@@ -122,7 +122,10 @@ fn fetch_log(cx: &Cx, handle: &BoxHandle, workdir: &BoxPath, worktree: &Path) ->
     let Ok(from) = BoxPath::under(workdir.as_str(), ".moor/setup.log") else {
         return String::new();
     };
-    if cx.driver().copy_out(handle, &from, &to, worktree).is_err() {
+    let made = to
+        .parent()
+        .is_some_and(|dir| std::fs::create_dir_all(dir).is_ok());
+    if !made || cx.driver().copy_out(handle, &from, &to, worktree).is_err() {
         return String::new();
     }
     std::fs::read_to_string(to).unwrap_or_default()
