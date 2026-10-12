@@ -43,15 +43,27 @@ pub struct RepoConfig {
     pub box_credentials: Vec<String>,
 }
 
+/// Reason for any unknown `box.*` key.
+const BOX_KEY_REASON: &str =
+    "only `size` is allowed in repo config; other `box` keys belong in user config";
+
 /// Parses and validates a `.moor.yaml` document.
 ///
 /// # Errors
 /// Returns [`ConfigError`] (with `file` set) for bad YAML, unknown
 /// keys, and invalid values; the error path names the key.
 pub fn parse_repo(file: &str, text: &str) -> Result<RepoConfig, ConfigError> {
-    let cfg: RepoConfig = parse_strict(file, text)?;
+    let cfg: RepoConfig = parse_strict(file, text).map_err(box_key_reason)?;
     cfg.validate().map_err(|e| e.in_file(file))?;
     Ok(cfg)
+}
+
+/// Explains an unknown `box.*` key; other errors pass through.
+fn box_key_reason(mut e: ConfigError) -> ConfigError {
+    if e.path.starts_with("box.") && e.reason.starts_with("unknown field") {
+        BOX_KEY_REASON.clone_into(&mut e.reason);
+    }
+    e
 }
 
 impl RepoConfig {

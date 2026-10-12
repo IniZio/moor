@@ -69,9 +69,19 @@ fn repo_box_only_allows_size() {
         rejects(
             &format!("box: {{{key}}}"),
             &format!("box.{name}"),
-            "unknown field",
+            "only `size` is allowed in repo config; other `box` keys belong in user config",
         );
     }
+}
+
+#[test]
+fn user_only_box_provider_names_size_and_user_config() {
+    rejects(
+        "box: {provider: x}",
+        "box.provider",
+        "only `size` is allowed in repo config",
+    );
+    rejects("box: {provider: x}", "box.provider", "user config");
 }
 
 #[test]
