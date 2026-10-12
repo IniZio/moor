@@ -111,16 +111,14 @@ pub(crate) fn reprovision(
     ) else {
         return Ok(None);
     };
-    let workdir = workdir
-        .rsplit_once('/')
-        .and_then(|(root, name)| BoxPath::under(root, name).ok())
+    let workdir = recorded_workdir(&workdir)
         .ok_or_else(|| CommandError::new(ErrorKind::Internal, "recorded box workdir is invalid"))?;
     let cfg = settings(cx, Path::new(at), &Flags::default())?;
     let held = Decision::new(row.id).intent(IntentChange::Set(Intent::Setup {
         pid: std::process::id(),
     }));
     store.apply(held)?;
-    let advance = !matches!(row.state, TaskState::Working | TaskState::Idle);
+    let advance = row.state == TaskState::SettingUp;
     Ok(Some(run_and_record(
         cx,
         store,
@@ -129,6 +127,13 @@ pub(crate) fn reprovision(
         (&handle, &workdir),
         &cfg,
     )?))
+}
+
+/// Rebuilds the Box path from the workdir text stored on the Task row.
+fn recorded_workdir(stored: &str) -> Option<BoxPath> {
+    stored
+        .strip_prefix('/')
+        .and_then(|rel| BoxPath::under("/", rel).ok())
 }
 
 /// Whether the Task's Box is ready but its repo setup failed or its owner died.
@@ -332,5 +337,29 @@ fn failed(
     match reread(store, id) {
         Ok(row) => out.with_value(serde_json::json!({ "task": task_view(&row) })),
         Err(_) => out,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::recorded_workdir;
+
+    #[test]
+    fn a_workdir_under_the_root_round_trips() {
+        let path = recorded_workdir("/box-1").unwrap();
+        assert_eq!(path.as_str(), "/box-1");
+    }
+
+    #[test]
+    fn a_nested_workdir_round_trips() {
+        let path = recorded_workdir("/work/repos/box-1").unwrap();
+        assert_eq!(path.as_str(), "/work/repos/box-1");
+    }
+
+    #[test]
+    fn a_relative_or_empty_workdir_is_rejected() {
+        assert!(recorded_workdir("work/box-1").is_none());
+        assert!(recorded_workdir("/").is_none());
+        assert!(recorded_workdir("").is_none());
     }
 }
