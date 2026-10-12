@@ -52,7 +52,9 @@ Global flags: `--json`, `--quiet`, `--state-dir DIR`. State lives in
   parsing, text and JSON rendering, exit codes, the state store, and one
   module per command in [ops](crates/moor/src/ops).
 - [tools](tools): [layering](tools/layering), a check that each module only
-  uses the modules listed for it in [tools/layering.tsv](tools/layering.tsv),
+  uses the modules listed for it in [tools/layering.tsv](tools/layering.tsv)
+  (`module` and the comma-separated `allowed` modules; empty means none;
+  an unlisted module is unconstrained),
   plus the file-length and lint self-test scripts.
 
 ## Build and test
