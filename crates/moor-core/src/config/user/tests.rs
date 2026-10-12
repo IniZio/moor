@@ -15,6 +15,8 @@ fn ok(doc: &str) -> UserConfig {
     r.unwrap_or_default()
 }
 
+const CRED: &str = "credentials: {T: {env: X}}";
+
 #[test]
 fn empty_doc_is_defaults() {
     for doc in ["", "{}\n", "null"] {
@@ -57,6 +59,9 @@ fn accepted_docs() {
         "box: {enforce_egress: true}",
         "github: {identity: you}",
         "github: {identity: bot}",
+        "credentials: {A-b_1: {file: /f}}",
+        "credentials: {A: {env: X}}",
+        "credentials: {A: {cmd: [gh, auth, token]}}",
         "drivers: {crabbox: {max_boxes: 2}}",
         "dotfiles: {path: /abs, install: install.sh}",
         "dotfiles: {path: ~/dots}",
@@ -64,7 +69,9 @@ fn accepted_docs() {
         "git: {name: N, email: e@example.com}",
         "agent: {model: haiku}",
         "egress: {allow: [Example.COM, '*.example.org']}",
+        "box_credentials: [A, B]",
         "state_dir: /var/moor",
+        "credentials: {T: {env: X}}\nmcp_servers: {m: {command: '${NOPE}', args: ['${T}'], env: {K: '${T}'}}, u: {url: 'http://h/${T}', headers: {X: '${T}'}}}",
     ];
     for doc in docs {
         ok(doc);
@@ -96,6 +103,11 @@ fn rejected_docs_with_paths() {
         ("git: {nope: 1}", "git.nope"),
         ("dotfiles: {nope: 1}", "dotfiles.nope"),
         ("drivers: {crabbox: {nope: 1}}", "drivers.crabbox.nope"),
+        ("credentials: {A: {env: X, nope: 1}}", "credentials.A.nope"),
+        (
+            "mcp_servers: {m: {command: x, nope: 1}}",
+            "mcp_servers.m.nope",
+        ),
     ];
     check_rejects(cases);
 }
@@ -103,10 +115,27 @@ fn rejected_docs_with_paths() {
 #[test]
 fn rejected_values_with_paths() {
     let cases: &[(&str, &str)] = &[
+        (
+            "credentials: {GH_TOKEN: {file: /f}}",
+            "credentials.GH_TOKEN",
+        ),
+        (
+            "credentials: {bad name: {file: /f}}",
+            "credentials.bad name",
+        ),
+        ("credentials: {A: {}}", "credentials.A"),
+        ("credentials: {A: {file: /f, env: X}}", "credentials.A"),
+        ("credentials: {A: {cmd: ['   ']}}", "credentials.A"),
+        ("credentials: {A: {cmd: []}}", "credentials.A"),
+        ("credentials: {A: {env: ''}}", "credentials.A"),
         ("github: {identity: Bot}", "github.identity"),
         ("github: {identity: other}", "github.identity"),
         ("box: {size: huge}", "box.size"),
         ("box: {enforce_egress: 'yes'}", "box.enforce_egress"),
+        (
+            "credentials: {A: {cmd: gh auth token}}",
+            "credentials.A.cmd",
+        ),
         ("dotfiles: {}", "dotfiles"),
         ("dotfiles: {path: relative/dir}", "dotfiles.path"),
         ("dotfiles: {path: /abs, install: ../x}", "dotfiles.install"),
@@ -119,6 +148,10 @@ fn rejected_values_with_paths() {
         ),
         ("agent: {location: box}", "agent.location"),
         ("egress: {allow: [a.com, 10.0.0.1]}", "egress.allow[1]"),
+        ("box_credentials: [ANTHROPIC_API_KEY]", "box_credentials[0]"),
+        ("box_credentials: [A, GH_TOKEN]", "box_credentials[1]"),
+        ("box_credentials: [bad name]", "box_credentials[0]"),
+        ("box_credentials: [A, A]", "box_credentials[1]"),
         ("box: [unclosed", ""),
         ("box: {max_boxes: many}", "box.max_boxes"),
     ];
@@ -134,13 +167,73 @@ fn check_rejects(cases: &[(&str, &str)]) {
 }
 
 #[test]
+fn mcp_server_rejects() {
+    let cases = [
+        ("m: {command: x, url: 'http://h'}", "mcp_servers.m"),
+        ("m: {args: [a]}", "mcp_servers.m"),
+        (
+            "m: {command: x, args: ['${NOPE}']}",
+            "mcp_servers.m.args[0]",
+        ),
+        (
+            "m: {command: x, args: [a, '${NOPE}']}",
+            "mcp_servers.m.args[1]",
+        ),
+        ("m: {url: 'http://h/${NOPE}'}", "mcp_servers.m.url"),
+        (
+            "m: {url: 'http://h', headers: {A: '${NOPE}'}}",
+            "mcp_servers.m.headers.A",
+        ),
+        (
+            "m: {command: x, env: {K: '${NOPE}'}}",
+            "mcp_servers.m.env.K",
+        ),
+        ("bad name: {command: x}", "mcp_servers.bad name"),
+        (
+            "'${NOPE}': {command: '${NOPE}', args: ['${T}'], env: {'${NOPE}': '${T}'}}",
+            "mcp_servers.${NOPE}",
+        ),
+    ];
+    for (servers, path) in cases {
+        let e = err(&format!("{CRED}\nmcp_servers: {{{servers}}}"));
+        assert_eq!(e.path, path, "{servers}: {e}");
+    }
+}
+
+#[test]
 fn display_names_file_and_key_path() {
     let e = err("box: {providr: ssh}");
     assert!(e.to_string().starts_with("u.yaml:box.providr: "), "{e}");
     let e = err("agent: {location: box}");
     assert!(e.reason.contains("unknown field"), "{e}");
     assert!(e.to_string().contains("agent.location"), "{e}");
+    let e = err("credentials: {GH_TOKEN: {env: X}}");
+    assert_eq!(
+        e.reason,
+        check::not_gh_token("GH_TOKEN").unwrap_err(),
+        "{e}"
+    );
     assert!(err("box: [unclosed").reason.starts_with("invalid yaml"));
+}
+
+#[test]
+fn credential_sources_parse() {
+    let c = ok("credentials: {V: {cmd: [gh, token]}, F: {file: /f}}");
+    assert_eq!(
+        c.credentials.get("V").and_then(|c| c.cmd.clone()),
+        Some(vec!["gh".to_owned(), "token".to_owned()])
+    );
+    assert_eq!(
+        c.credentials.get("F").and_then(|c| c.file.clone()),
+        Some(PathBuf::from("/f"))
+    );
+}
+
+#[test]
+fn string_cmd_is_a_type_error() {
+    let e = err("credentials: {A: {cmd: gh auth token}}");
+    assert_eq!(e.path, "credentials.A.cmd", "{e}");
+    assert!(e.reason.contains("invalid type"), "{e}");
 }
 
 #[test]
@@ -168,8 +261,56 @@ fn github_app_parses_and_is_strict() {
 }
 
 #[test]
+fn mcp_refs() {
+    let s = McpServer {
+        args: vec!["a${X}b${Y}${X}".into(), "${open".into()],
+        ..McpServer::default()
+    };
+    assert_eq!(s.refs(), ["X", "Y"]);
+    let c = ok("credentials: {T: {env: X}, U: {env: Y}}\nmcp_servers: {m: {url: 'h/${U}', headers: {A: '${T}', B: '${U}'}}}");
+    assert_eq!(
+        c.mcp_servers
+            .get("m")
+            .map(McpServer::refs)
+            .unwrap_or_default(),
+        ["T", "U"]
+    );
+}
+
+#[test]
+fn credential_pass_env_parses_and_validates() {
+    let c = ok("credentials: {A: {cmd: [op, read], pass_env: [OP_SESSION, HOME]}}");
+    assert_eq!(
+        c.credentials.get("A").map(|a| a.pass_env.clone()),
+        Some(vec!["OP_SESSION".to_owned(), "HOME".to_owned()])
+    );
+    let e = err("credentials: {A: {cmd: [x], pass_env: [OK, 'bad-name']}}");
+    assert_eq!(e.path, "credentials.A.pass_env[1]");
+    let e = err("credentials: {A: {cmd: [x], pass_env: [X, X]}}");
+    assert_eq!(e.path, "credentials.A.pass_env[1]");
+    assert!(e.reason.contains("twice"), "{e}");
+    let e = err("credentials: {A: {file: /f, pass_env: [X]}}");
+    assert_eq!(e.path, "credentials.A.pass_env");
+    let e = err("credentials: {A: {env: X, pass_env: [X]}}");
+    assert_eq!(e.path, "credentials.A.pass_env");
+    assert!(err("credentials: {A: {cmd: [x], pass_env: X}}")
+        .to_string()
+        .contains("pass_env"));
+}
+
+#[test]
 fn reports_rejection_names_the_key() {
     let e = err("reports: {backend: local}");
     assert_eq!(e.path, "reports");
     assert!(e.reason.contains("unknown field"), "{e}");
+}
+
+#[test]
+fn box_credentials_duplicate_matches_helper() {
+    let e = err("box_credentials: [A, A]");
+    let want = check::box_credentials(&["A".into(), "A".into()]).expect_err("duplicate");
+    assert_eq!(
+        (e.path.as_str(), e.reason.as_str()),
+        ("box_credentials[1]", want.1.as_str())
+    );
 }
