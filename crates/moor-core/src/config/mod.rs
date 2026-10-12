@@ -2,6 +2,7 @@
 
 pub mod check;
 pub mod repo;
+pub mod settings;
 mod user;
 
 pub use repo::{parse_repo, RepoAgent, RepoBox, RepoCompose, RepoConfig};
@@ -11,6 +12,8 @@ pub use user::{
     EgressConfig, GitIdentity, GithubApp, GithubConfig, HerdrConfig, Identity, McpServer,
     SurfaceConfig, ToolsConfig, UserConfig,
 };
+
+pub use settings::{CredPlan, Flags, Layer, Sourced, TaskSettings};
 
 use std::fmt;
 

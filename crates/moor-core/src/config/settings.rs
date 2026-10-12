@@ -1,0 +1,208 @@
+//! Per-command settings resolved once from flags, repo and user config.
+//!
+//! Precedence is flags > repo > user > default, where a field is allowed at
+//! that layer. Each resolved field keeps the layer it came from so `env` and
+//! the credential preflight need not re-read any file. Pure: no IO.
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use super::{
+    BoxSize, CredentialSource, DotfilesConfig, Identity, McpServer, RepoConfig, ToolsConfig,
+    UserConfig,
+};
+
+/// Provider when the user config names none.
+const DEFAULT_PROVIDER: &str = "local-container";
+
+/// The layer a resolved value came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Layer {
+    /// A command-line flag.
+    Flag,
+    /// The repo config (`.moor.yaml`).
+    Repo,
+    /// The user config.
+    User,
+    /// A built-in default.
+    Default,
+}
+
+impl Layer {
+    /// Lowercase name, as printed by `env`.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Flag => "flag",
+            Self::Repo => "repo",
+            Self::User => "user",
+            Self::Default => "default",
+        }
+    }
+}
+
+/// A resolved value and the layer it came from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sourced<T> {
+    /// The value.
+    pub value: T,
+    /// Where it came from.
+    pub source: Layer,
+}
+
+impl<T> Sourced<T> {
+    /// Pairs `value` with its `source`.
+    const fn new(value: T, source: Layer) -> Self {
+        Self { value, source }
+    }
+}
+
+/// Command-line overrides that take part in settings resolution.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Flags {
+    /// `--model`.
+    pub model: Option<String>,
+}
+
+/// One credential the task may need, with how and where it is defined.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CredPlan {
+    /// Credential name.
+    pub name: String,
+    /// How to read the value, from the user layer; `None` if only the repo names it.
+    pub source: Option<CredentialSource>,
+    /// `User` if the user config defines it, else `Repo`.
+    pub layer: Layer,
+    /// Named by a repo or user `box_credentials` entry, or a `${NAME}` ref in a user MCP server.
+    pub used: bool,
+    /// Named by a repo or user `box_credentials` entry, so it is delivered into the Box.
+    pub boxed: bool,
+}
+
+/// Everything a command needs from config, resolved once.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskSettings {
+    /// Agent model: flag > repo > user.
+    pub model: Option<Sourced<String>>,
+    /// Box provider: user > default; never the repo.
+    pub provider: Sourced<String>,
+    /// Box size: repo > user > default `small`.
+    pub size: Sourced<BoxSize>,
+    /// Whether egress is enforced; user only.
+    pub enforce_egress: bool,
+    /// Git author name; user only.
+    pub git_name: Option<Sourced<String>>,
+    /// Git author email; user only.
+    pub git_email: Option<Sourced<String>>,
+    /// GitHub identity mode.
+    pub identity: Identity,
+    /// Sorted union of user credential names, box credential names and MCP refs.
+    pub credentials: Vec<CredPlan>,
+    /// Repo box credential names, in repo order.
+    pub box_credentials: Vec<String>,
+    /// User MCP servers.
+    pub mcp: BTreeMap<String, McpServer>,
+    /// User dotfiles source.
+    pub dotfiles: Option<DotfilesConfig>,
+    /// Repo egress entries.
+    pub egress: Vec<String>,
+    /// User `egress.allow` entries.
+    pub user_egress: Vec<String>,
+    /// Repo setup commands.
+    pub setup: Vec<String>,
+    /// Repo teardown commands.
+    pub teardown: Vec<String>,
+    /// Repo `env`.
+    pub env: BTreeMap<String, String>,
+    /// Repo compose project prefix.
+    pub compose_prefix: Option<String>,
+    /// User tool path overrides.
+    pub tool_paths: ToolsConfig,
+}
+
+/// Builds the sorted credential plan from user, repo and MCP refs.
+fn plan_credentials(uc: &UserConfig, repo: &RepoConfig) -> Vec<CredPlan> {
+    let boxed: BTreeSet<&str> = repo
+        .box_credentials
+        .iter()
+        .chain(&uc.box_credentials)
+        .map(String::as_str)
+        .collect();
+    let mut used = boxed.clone();
+    for server in uc.mcp_servers.values() {
+        used.extend(server.refs());
+    }
+    let mut names: BTreeSet<&str> = used.clone();
+    names.extend(uc.credentials.keys().map(String::as_str));
+    names
+        .into_iter()
+        .map(|name| {
+            let source = uc.credentials.get(name).cloned();
+            CredPlan {
+                name: name.to_string(),
+                layer: if source.is_some() {
+                    Layer::User
+                } else {
+                    Layer::Repo
+                },
+                source,
+                used: used.contains(name),
+                boxed: boxed.contains(name),
+            }
+        })
+        .collect()
+}
+
+impl TaskSettings {
+    /// Resolves settings for one command. `repo` is `None` outside a repo.
+    #[must_use]
+    pub fn resolve(user: &UserConfig, repo: Option<&RepoConfig>, flags: &Flags) -> Self {
+        let empty = RepoConfig::default();
+        let r = repo.unwrap_or(&empty);
+
+        let model = match (&flags.model, &r.agent.model, &user.agent.model) {
+            (Some(m), _, _) => Some(Sourced::new(m.clone(), Layer::Flag)),
+            (None, Some(m), _) => Some(Sourced::new(m.clone(), Layer::Repo)),
+            (None, None, Some(m)) => Some(Sourced::new(m.clone(), Layer::User)),
+            (None, None, None) => None,
+        };
+        let provider = user.box_.provider.as_ref().map_or_else(
+            || Sourced::new(DEFAULT_PROVIDER.to_string(), Layer::Default),
+            |p| Sourced::new(p.clone(), Layer::User),
+        );
+        let size = match (r.box_.size, user.box_.size) {
+            (Some(s), _) => Sourced::new(s, Layer::Repo),
+            (None, Some(s)) => Sourced::new(s, Layer::User),
+            (None, None) => Sourced::new(BoxSize::default(), Layer::Default),
+        };
+
+        Self {
+            model,
+            provider,
+            size,
+            enforce_egress: user.box_.enforce_egress.unwrap_or(false),
+            git_name: user.git.name.clone().map(|n| Sourced::new(n, Layer::User)),
+            git_email: user.git.email.clone().map(|n| Sourced::new(n, Layer::User)),
+            identity: user.github.identity,
+            credentials: plan_credentials(user, r),
+            box_credentials: r.box_credentials.clone(),
+            mcp: user.mcp_servers.clone(),
+            dotfiles: user.dotfiles.clone(),
+            egress: r.egress.clone(),
+            user_egress: user.egress.allow.clone(),
+            setup: r.setup.clone(),
+            teardown: r.teardown.clone(),
+            env: r.env.clone(),
+            compose_prefix: r.compose.project_prefix.clone(),
+            tool_paths: user.tools.clone(),
+        }
+    }
+
+    /// Credentials the task needs, in name order.
+    pub fn used_credentials(&self) -> impl Iterator<Item = &CredPlan> {
+        self.credentials.iter().filter(|c| c.used)
+    }
+}
+
+#[cfg(test)]
+mod tests;
