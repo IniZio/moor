@@ -21,6 +21,38 @@ fn rejects(text: &str, path: &str, needle: &str) {
 }
 
 #[test]
+fn valueless_sections_are_defaults() {
+    for key in [
+        "box",
+        "env",
+        "setup",
+        "teardown",
+        "egress",
+        "compose",
+        "box_credentials",
+    ] {
+        for t in [format!("{key}:"), format!("{key}: ~")] {
+            assert_eq!(ok(&t), RepoConfig::default(), "{t:?}");
+        }
+    }
+}
+
+#[test]
+fn leading_zero_text_needs_quotes() {
+    let c = ok("env: {A: \"0755\"}\nsetup: ['0755']");
+    assert_eq!(c.env.get("A").map(String::as_str), Some("0755"));
+    assert_eq!(c.setup, ["0755"]);
+    rejects("env: {A: 0755}", "env.A", "must be quoted");
+    rejects("setup: [0755]", "setup[0]", "must be quoted");
+}
+
+#[test]
+fn binary_tag_keeps_the_text() {
+    let c = ok("env: {A: !!binary aGVsbG8=}");
+    assert_eq!(c.env.get("A").map(String::as_str), Some("aGVsbG8="));
+}
+
+#[test]
 fn empty_documents_are_default() {
     for t in ["", "  \n", "null", "{}", "~"] {
         assert_eq!(ok(t), RepoConfig::default(), "{t:?}");

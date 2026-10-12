@@ -25,6 +25,42 @@ fn empty_doc_is_defaults() {
 }
 
 #[test]
+fn valueless_sections_are_defaults() {
+    for key in [
+        "box",
+        "egress",
+        "github",
+        "surface",
+        "tools",
+        "drivers",
+        "agent",
+        "credentials",
+        "box_credentials",
+        "state_dir",
+    ] {
+        for doc in [format!("{key}:"), format!("{key}: ~")] {
+            let r = parse_user("u.yaml", &doc);
+            assert_eq!(r, Ok(UserConfig::default()), "{doc:?}");
+        }
+    }
+}
+
+#[test]
+fn leading_zero_text_needs_quotes() {
+    let c = ok("agent: {model: \"0755\"}\nstate_dir: '0755'");
+    assert_eq!(c.agent.model.as_deref(), Some("0755"));
+    assert_eq!(c.state_dir, Some(PathBuf::from("0755")));
+    for (doc, path) in [
+        ("agent: {model: 0755}", "agent.model"),
+        ("state_dir: 0755", "state_dir"),
+    ] {
+        let e = err(doc);
+        assert_eq!(e.path, path, "{e}");
+        assert!(e.reason.contains("must be quoted"), "{e}");
+    }
+}
+
+#[test]
 fn defaults() {
     let c = UserConfig::default();
     assert_eq!(c.herdr_session(), "moor");
@@ -235,7 +271,7 @@ fn credential_sources_parse() {
 fn string_cmd_is_a_type_error() {
     let e = err("credentials: {A: {cmd: gh auth token}}");
     assert_eq!(e.path, "credentials.A.cmd", "{e}");
-    assert!(e.reason.contains("invalid type"), "{e}");
+    assert!(e.reason.contains("expected sequence"), "{e}");
 }
 
 #[test]
