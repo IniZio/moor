@@ -104,7 +104,7 @@ pub(super) fn map_error(op: Op, provider: Option<&str>, e: &ProcError) -> Driver
     match e {
         ProcError::Spawn(_) => DriverError::Unavailable("crabbox could not be started".to_owned()),
         ProcError::Timeout { after, .. } => DriverError::Timeout(*after),
-        ProcError::Signalled(_) => DriverError::Failed {
+        ProcError::Signalled(_) | ProcError::Interrupted => DriverError::Failed {
             summary: format!("{what} failed (crabbox was killed)"),
         },
         ProcError::NonZero {

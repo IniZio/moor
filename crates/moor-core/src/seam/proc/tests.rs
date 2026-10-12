@@ -34,3 +34,8 @@ fn error_display_has_no_stderr() {
     };
     assert_eq!(e.to_string(), "program exited with code 3");
 }
+
+#[test]
+fn interrupted_display_is_plain() {
+    assert_eq!(ProcError::Interrupted.to_string(), "interrupted");
+}

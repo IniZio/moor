@@ -78,7 +78,9 @@ impl Creds {
         match self.proc.run_secret(&spec) {
             Ok(out) => Ok(out),
             Err(ProcError::NonZero { code, .. }) => Err(format!("cmd exited {code}")),
-            Err(ProcError::Signalled(_)) => Err("cmd was killed by a signal".to_owned()),
+            Err(ProcError::Signalled(_) | ProcError::Interrupted) => {
+                Err("cmd was killed by a signal".to_owned())
+            }
             Err(ProcError::Timeout { after, .. }) => {
                 Err(format!("cmd timed out after {}s", after.as_secs()))
             }

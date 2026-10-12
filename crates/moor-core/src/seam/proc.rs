@@ -196,6 +196,15 @@ impl ProcSpec {
     }
 }
 
+/// Where a streamed child's stdout and stderr go; never captured by moor.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Output {
+    /// moor's own stdout and stderr.
+    Inherit,
+    /// One file receiving both streams, created or truncated.
+    Log(PathBuf),
+}
+
 /// Captured result of a child that exited 0.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProcOutput {
@@ -223,6 +232,8 @@ pub enum ProcError {
     },
     /// The child died from a signal.
     Signalled(i32),
+    /// moor was interrupted and the child was stopped.
+    Interrupted,
     /// The child exited non-zero.
     NonZero {
         /// Exit code.
@@ -242,6 +253,7 @@ impl fmt::Display for ProcError {
                 write!(f, "{} timed out after {}s", tool.program(), after.as_secs())
             }
             Self::Signalled(s) => write!(f, "program killed by signal {s}"),
+            Self::Interrupted => f.write_str("interrupted"),
             Self::NonZero { code, .. } => write!(f, "program exited with code {code}"),
         }
     }
@@ -265,6 +277,13 @@ pub trait Proc: Send + Sync {
     /// Returns [`ProcError`] on spawn failure, timeout, signal, non-zero exit
     /// or output that does not fit the capture limit.
     fn run_secret(&self, spec: &ProcSpec) -> Result<zeroize::Zeroizing<Vec<u8>>, ProcError>;
+
+    /// Runs to completion with output streamed to `out`, and returns the exit
+    /// code whatever it is. Interrupting moor stops the child's process group.
+    ///
+    /// # Errors
+    /// Returns [`ProcError`] on spawn failure, timeout, signal or interrupt.
+    fn run_streamed(&self, spec: &ProcSpec, out: &Output) -> Result<i32, ProcError>;
 
     /// Starts a child and leaves it running.
     ///
