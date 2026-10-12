@@ -1,4 +1,5 @@
 module	allowed
+moor_core::boxscript	
 moor_core::secret	
 moor_core::name	
 moor_core::request	moor_core::name
