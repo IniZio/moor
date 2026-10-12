@@ -89,7 +89,7 @@ pub(super) fn provision(
         task: id,
         name: task.name,
         egress: EgressPlan::Open,
-        class: cx.config().box_.size.clone(),
+        class: cx.config().box_.size.map(|s| s.as_str().to_owned()),
         nonce: nonce(cx.rng()),
         worktree: task.worktree.as_deref().map(PathBuf::from),
     };

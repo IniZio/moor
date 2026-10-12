@@ -91,6 +91,6 @@ fn load_config(env: &Env) -> Result<UserConfig, CommandError> {
             ))
         }
     };
-    parse_user(&text)
-        .map_err(|e| CommandError::new(ErrorKind::Failed, format!("{}: {e}", path.display())))
+    parse_user(&path.display().to_string(), &text)
+        .map_err(|e| CommandError::new(ErrorKind::Failed, e.to_string()))
 }

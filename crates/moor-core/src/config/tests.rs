@@ -1,57 +1,100 @@
-//! Tests for user config parsing.
+//! Tests for strict parsing and `ConfigError`.
 
-use std::path::PathBuf;
+use super::{parse_strict, ConfigError};
 
-use super::{parse_user, ConfigError, UserConfig};
+#[derive(Debug, Default, PartialEq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Probe {
+    #[serde(rename = "box")]
+    box_: Option<ProbeBox>,
+    egress: Option<Vec<String>>,
+}
 
-#[test]
-fn empty_doc_is_defaults() {
-    assert_eq!(parse_user(""), Ok(UserConfig::default()));
-    assert_eq!(parse_user("{}\n"), Ok(UserConfig::default()));
+#[derive(Debug, Default, PartialEq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ProbeBox {
+    provider: Option<String>,
+    enforce_egress: Option<bool>,
 }
 
 #[test]
-fn session_defaults_to_moor() {
-    let c = UserConfig::default();
-    assert_eq!(c.herdr_session(), "moor");
-    assert_eq!(c.provider(), None);
-    assert_eq!(c.provider_or_default(), "local-container");
+fn parse_strict_error_paths() {
+    let cases = [
+        ("box: {providr: ssh}", "box.providr", "unknown field"),
+        ("egres: [a]", "egres", "unknown field"),
+        (
+            "box: {enforce_egress: \"yes\"}",
+            "box.enforce_egress",
+            "invalid type",
+        ),
+        ("egress: [a, 1, c]", "egress[1]", "invalid type"),
+        ("box: [unclosed", "", "invalid yaml"),
+        ("- a", "", "invalid type"),
+    ];
+    for (doc, path, why) in cases {
+        let e = parse_strict::<Probe>("f.yaml", doc)
+            .err()
+            .unwrap_or_else(|| ConfigError::new("<ok>", "parsed"));
+        assert_eq!(e.path, path, "{doc:?}: {e}");
+        assert_eq!(e.file, "f.yaml");
+        assert!(e.reason.contains(why), "{doc:?}: {e}");
+    }
 }
 
 #[test]
-fn provider_session_and_tools_parse() {
-    let c = parse_user(
-        "box: {provider: static, size: large, max_boxes: 3}\n\
-         surface: {herdr: {session: work}}\n\
-         tools: {crabbox: /opt/crabbox, git: git2}\n",
-    )
-    .unwrap_or_default();
-    assert_eq!(c.provider(), Some("static"));
-    assert_eq!(c.provider_or_default(), "static");
-    assert_eq!(c.box_.size.as_deref(), Some("large"));
-    assert_eq!(c.box_.max_boxes, Some(3));
-    assert_eq!(c.herdr_session(), "work");
-    assert_eq!(c.tools.crabbox, Some(PathBuf::from("/opt/crabbox")));
-    assert_eq!(c.tools.git, Some(PathBuf::from("git2")));
-    assert_eq!(c.tools.herdr, None);
+fn parse_strict_empty_is_default() {
+    for doc in ["", "  \n", "null", "~", "{}"] {
+        assert_eq!(
+            parse_strict::<Probe>("f", doc),
+            Ok(Probe::default()),
+            "{doc:?}"
+        );
+    }
 }
 
 #[test]
-fn unknown_keys_are_ignored() {
-    let c =
-        parse_user("drivers: {crabbox: {ssh_port: 22}}\nfuture: 1\nbox: {provider: aws, x: 1}\n")
-            .unwrap_or_default();
-    assert_eq!(c.provider(), Some("aws"));
+fn config_error_display() {
+    let e = ConfigError::new("a.b", "bad");
+    assert_eq!(e.to_string(), "a.b: bad");
+    assert_eq!(e.in_file("f.yaml").to_string(), "f.yaml:a.b: bad");
+    assert_eq!(
+        ConfigError::new("", "bad").in_file("f").to_string(),
+        "f: bad"
+    );
+    assert_eq!(ConfigError::new("", "bad").to_string(), "bad");
+}
+
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Item {
+    name: Option<String>,
+}
+
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Outer {
+    a: Option<Item>,
+    items: Option<Vec<Item>>,
 }
 
 #[test]
-fn malformed_yaml_is_config_error() {
-    assert!(matches!(
-        parse_user("box: [unclosed"),
-        Err(ConfigError::Parse(_))
-    ));
-    assert!(matches!(
-        parse_user("box: {max_boxes: many}"),
-        Err(ConfigError::Parse(_))
-    ));
+fn strict_parse_reads_known_fields() {
+    let o = parse_strict::<Outer>("f.yaml", "a: {name: x}\nitems: [{name: y}, {}]").unwrap();
+    assert_eq!(o.a.unwrap().name.as_deref(), Some("x"));
+    let names: Vec<_> = o.items.unwrap().into_iter().map(|i| i.name).collect();
+    assert_eq!(names, [Some("y".to_string()), None]);
+}
+
+#[test]
+fn unknown_field_path_includes_the_key() {
+    let cases = [
+        ("zzz: 1", "zzz"),
+        ("a: {zzz: 1}", "a.zzz"),
+        ("items: [{}, {}, {zzz: 1}]", "items[2].zzz"),
+    ];
+    for (doc, path) in cases {
+        let e = parse_strict::<Outer>("f.yaml", doc).unwrap_err();
+        assert_eq!(e.path, path, "{doc:?}: {e}");
+        assert!(e.reason.starts_with("unknown field `zzz`"), "{doc:?}: {e}");
+    }
 }
