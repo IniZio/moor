@@ -1,6 +1,6 @@
 //! Composition root: the only module that names concrete adapters.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use moor_core::config::{parse_user, UserConfig};
@@ -73,11 +73,7 @@ fn config_path(env: &Env) -> Option<PathBuf> {
     if let Some(p) = set("MOOR_CONFIG") {
         return Some(PathBuf::from(p));
     }
-    let base = match set("XDG_CONFIG_HOME") {
-        Some(x) => PathBuf::from(x),
-        None => Path::new(set("HOME")?).join(".config"),
-    };
-    Some(base.join("moor/config.yaml"))
+    env.xdg("XDG_CONFIG_HOME", ".config", "moor/config.yaml")
 }
 
 /// Read the user config; a missing file means defaults.
