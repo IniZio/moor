@@ -1,6 +1,7 @@
 //! Typed `value` payloads for `start`, `show` and `close` (JSON wire shape).
 
 pub mod env;
+pub mod run;
 
 use crate::domain::boxes::BoxState;
 use crate::domain::task::TaskState;
