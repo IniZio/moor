@@ -111,6 +111,7 @@ fn extra_events_round_trip() {
         ExtraEvent::SessionStarted {
             session: "s".into(),
         },
+        ExtraEvent::SetupFailed { line: "l".into() },
         ExtraEvent::Checked {
             credentials: vec![crate::domain::event::CheckedCred {
                 name: "c".into(),

@@ -55,7 +55,11 @@ fn driver_limit(n: u32) -> UserConfig {
 
 /// A live Box held by task `holder`, bound to `config` and `driver`.
 fn world(config: UserConfig, driver: FakeDriver) -> World {
-    let repo = Path::new("/repo");
+    world_at(config, driver, Path::new("/repo"))
+}
+
+/// Like [`world`], over the repo checked out at `repo`.
+fn world_at(config: UserConfig, driver: FakeDriver, repo: &Path) -> World {
     let dir = tempfile::tempdir().unwrap();
     let proc = ScriptedProc::new();
     let repo_out = |s: &str| Reply::Ok(format!("{}{s}\n", repo.display()));
@@ -337,4 +341,29 @@ fn a_store_read_error_during_promotion_is_a_warning_not_a_failed_close() {
     assert!(v.box_deleted);
     assert!(v.promoted.is_empty());
     assert!(warning_codes(&w).contains(&"promote_failed".to_owned()));
+}
+
+#[test]
+fn promoted_task_runs_the_repo_setup_commands_in_its_new_box() {
+    let repo = tempfile::tempdir().unwrap();
+    std::fs::write(
+        repo.path().join(".moor.yaml"),
+        "setup: [\"echo one\", \"echo two\"]\n",
+    )
+    .unwrap();
+    let w = world_at(limit(1), FakeDriver::new(), repo.path());
+    let id = queue(&w, "first");
+    close_holder(&w);
+    assert_eq!(state_of(&w, id), TaskState::Working);
+    let handle = w.cx.store().unwrap().task(id).unwrap().unwrap();
+    let handle = handle.boxed.unwrap().handle.expect("promoted Box handle");
+    let argvs: Vec<_> = w
+        .driver
+        .execs()
+        .into_iter()
+        .filter(|(h, _, _)| *h == handle)
+        .map(|(_, spec, _)| spec.argv)
+        .collect();
+    let sh = |c: &str| vec!["sh".to_owned(), "-c".to_owned(), c.to_owned()];
+    assert_eq!(argvs, [sh("echo one"), sh("echo two")]);
 }

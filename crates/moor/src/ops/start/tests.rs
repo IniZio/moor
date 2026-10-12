@@ -19,6 +19,7 @@ use crate::testing::proc::{Reply, ScriptedProc};
 use crate::testing::surface::FakeSurface;
 
 mod capacity;
+mod setup;
 
 /// A world of fakes plus the context over them.
 struct World {
@@ -26,7 +27,7 @@ struct World {
     driver: Arc<FakeDriver>,
     surface: Arc<FakeSurface>,
     proc: Arc<ScriptedProc>,
-    _dir: tempfile::TempDir,
+    dir: tempfile::TempDir,
 }
 
 /// Builds a world whose driver is `driver`.
@@ -73,7 +74,7 @@ fn world_with(driver: FakeDriver, repo: &Path, config: UserConfig) -> World {
         driver,
         surface,
         proc,
-        _dir: dir,
+        dir,
     }
 }
 
@@ -403,8 +404,8 @@ fn reprovision_skips_when_another_start_already_gave_the_box_back() {
     let stale = store.task(id).unwrap().unwrap();
     run(&w.cx, &req("demo")).unwrap();
     assert_eq!(w.driver.calls(), ["acquire", "acquire"]);
-    let did = crate::ops::common::provision::reprovision(&w.cx, store, &stale, "start").unwrap();
-    assert!(!did);
+    let run = crate::ops::common::provision::reprovision(&w.cx, store, &stale, "start").unwrap();
+    assert!(run.is_none());
     assert_eq!(w.driver.calls(), ["acquire", "acquire"]);
 }
 

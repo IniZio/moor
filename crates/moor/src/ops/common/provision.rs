@@ -6,7 +6,7 @@ use moor_core::config::egress::{effective_allow_list, provider_applies_policy, u
 use moor_core::config::{Flags, TaskSettings};
 
 use moor_core::domain::boxes::{BoxInput, BoxState};
-use moor_core::domain::decision::{Decision, Field, Fields, Intent, IntentChange};
+use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, Intent, IntentChange};
 use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
 use moor_core::seam::driver::{
     AcquireReq, Acquired, DriverError, EgressApplied, EgressPlan, Released,
@@ -19,6 +19,7 @@ use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::capacity;
 use crate::ops::common::facts::settings;
+use crate::ops::common::setup::{self, SetupRun};
 use crate::ops::common::view::task_view;
 use crate::store::{Store, TaskRow};
 
@@ -74,7 +75,7 @@ pub(crate) fn egress_plan(cfg: &TaskSettings) -> Result<EgressPlan, CommandError
 
 /// Gives a Task with no Box, a failed setup or a lost Box a Box again.
 ///
-/// Returns whether anything was provisioned. The Box lock is held while
+/// Returns the setup outcome, or `None` when nothing was provisioned. The Box lock is held while
 /// provisioning and the row is read again under it; another op holding it is
 /// refused as busy.
 pub(crate) fn reprovision(
@@ -82,7 +83,7 @@ pub(crate) fn reprovision(
     store: &Store,
     row: &TaskRow,
     op: &str,
-) -> Result<bool, CommandError> {
+) -> Result<Option<SetupRun>, CommandError> {
     let ready = row.boxed.as_ref().map(|b| b.state) == Some(BoxState::Ready);
     if row.state == TaskState::SetupFailed && ready {
         store.apply(Decision::new(row.id).task_input(TaskInput::Retry))?;
@@ -90,20 +91,19 @@ pub(crate) fn reprovision(
             setup: SetupOutcome::Ok,
         };
         store.apply(Decision::new(row.id).task_input(ok))?;
-        return Ok(true);
+        return Ok(Some(SetupRun::Skipped));
     }
     if entry_for(row).is_none() {
-        return Ok(false);
+        return Ok(None);
     }
     let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, row.id, op, boxlock::WAIT)?;
     let row = reread(store, row.id)?;
     let Some(entry) = entry_for(&row) else {
-        return Ok(false);
+        return Ok(None);
     };
     let at = row.worktree.as_deref().unwrap_or(&row.repo);
     let cfg = settings(cx, Path::new(at), &Flags::default())?;
-    provision(cx, store, row.id, entry, &cfg)?;
-    Ok(true)
+    provision(cx, store, row.id, entry, &cfg).map(Some)
 }
 
 /// How a Task that wants a Box starts over; `None` when it has one or is being provisioned.
@@ -130,7 +130,7 @@ pub(crate) fn provision(
     id: TaskId,
     entry: Entry,
     cfg: &TaskSettings,
-) -> Result<(), CommandError> {
+) -> Result<SetupRun, CommandError> {
     let task = reread(store, id)?;
     let provider = ProviderId::new(cfg.provider.value.clone());
     let egress = egress_plan(cfg)?;
@@ -161,7 +161,7 @@ pub(crate) fn provision(
             })
         })?;
         if full {
-            return Ok(());
+            return Ok(SetupRun::Skipped);
         }
     } else {
         store.apply(requested)?;
@@ -182,7 +182,7 @@ pub(crate) fn provision(
         worktree: task.worktree.as_deref().map(PathBuf::from),
     };
     match cx.driver().acquire(&req) {
-        Ok(got) => ready(store, id, entry, got),
+        Ok(got) => ready(cx, store, id, entry, &got, cfg),
         Err(e) => Err(failed(cx, store, id, entry, &req, e)),
     }
 }
@@ -192,25 +192,52 @@ pub(crate) fn nonce(rng: &dyn Rng) -> String {
     format!("{:06x}", rng.u32() & 0xFF_FFFF)
 }
 
-/// Records an acquired Box and moves the Task to working.
-fn ready(store: &Store, id: TaskId, entry: Entry, got: Acquired) -> Result<(), CommandError> {
-    let mut done = Decision::new(id);
-    done.task_input = entry.begin().map(|_| TaskInput::BoxReady {
-        setup: SetupOutcome::Ok,
-    });
-    let done = done
+/// Records an acquired Box, runs repo setup in it, then moves the Task to working.
+fn ready(
+    cx: &Cx,
+    store: &Store,
+    id: TaskId,
+    entry: Entry,
+    got: &Acquired,
+    cfg: &TaskSettings,
+) -> Result<SetupRun, CommandError> {
+    let acquired = Decision::new(id)
         .box_input(BoxInput::Acquired {
             handle: got.handle.clone(),
         })
         .set(Fields {
-            box_handle: Field::Set(got.handle),
+            box_handle: Field::Set(got.handle.clone()),
             box_workdir: Field::Set(got.workdir.as_str().to_owned()),
             egress_enforced: Field::Set(got.egress == EgressApplied::Enforced),
             ..Fields::default()
         })
+        .intent(IntentChange::Set(Intent::Setup {
+            pid: std::process::id(),
+        }));
+    store.apply(acquired)?;
+    let run = setup::run_setup(cx, &got.handle, &got.workdir, cfg);
+    let mut done = Decision::new(id);
+    done.task_input = entry.begin().map(|_| TaskInput::BoxReady {
+        setup: run.outcome(),
+    });
+    if entry.begin().is_none() {
+        if let SetupOutcome::Failed { line } = run.outcome() {
+            done = done.event(ExtraEvent::SetupFailed { line });
+        }
+    }
+    let failed_at = if run.failed() {
+        Field::Set(cx.clock().now().as_millis())
+    } else {
+        Field::Clear
+    };
+    let done = done
+        .set(Fields {
+            setup_failed_at: failed_at,
+            ..Fields::default()
+        })
         .intent(IntentChange::Clear);
     store.apply(done)?;
-    Ok(())
+    Ok(run)
 }
 
 /// Records a failed acquire; returns the error, carrying the Task row, to report.
