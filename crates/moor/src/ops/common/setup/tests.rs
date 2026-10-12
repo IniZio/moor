@@ -4,8 +4,9 @@ use std::path::Path;
 use std::sync::Arc;
 
 use moor_core::config::{Flags, TaskSettings, UserConfig};
+use moor_core::domain::run::SyncMode;
 use moor_core::domain::task::SetupOutcome;
-use moor_core::seam::driver::{AcquireReq, Driver, DriverError, EgressPlan, ExecOutcome, SyncMode};
+use moor_core::seam::driver::{AcquireReq, Driver, DriverError, EgressPlan, ExecOutcome};
 use moor_core::seam::proc::Deadline;
 use moor_core::view::SetupView;
 use moor_core::{BoxHandle, BoxPath, ProviderId, TaskId, TaskName};

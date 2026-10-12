@@ -3,6 +3,7 @@
 pub mod boxes;
 pub mod decision;
 pub mod event;
+pub mod run;
 pub mod task;
 
 /// A state machine input that is not legal from the current state.

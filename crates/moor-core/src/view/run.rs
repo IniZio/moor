@@ -1,18 +1,9 @@
 //! Typed `value` payloads for `run`, `wait` and `cp`.
 
+use crate::domain::run::SyncMode;
 use crate::name::RunId;
 use crate::request::WaitFor;
 use crate::view::TaskView;
-
-/// Whether the worktree was synced into the Box before the run.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum SyncMode {
-    /// Full sync.
-    Full,
-    /// No sync.
-    None,
-}
 
 /// Payload of `run`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]

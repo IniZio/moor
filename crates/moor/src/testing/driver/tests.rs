@@ -4,9 +4,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+use moor_core::domain::run::SyncMode;
 use moor_core::name::TaskName;
 use moor_core::seam::driver::{
-    AcquireReq, Driver, DriverError, EgressPlan, ExecOutcome, ExecSpec, Released, SyncMode,
+    AcquireReq, Driver, DriverError, EgressPlan, ExecOutcome, ExecSpec, Released,
 };
 use moor_core::seam::proc::{Deadline, Output};
 use moor_core::{BoxHandle, BoxPath, ProviderId, TaskId};
