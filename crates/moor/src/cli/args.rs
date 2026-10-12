@@ -353,9 +353,10 @@ struct CpArgs {
     /// Task name.
     #[arg(value_parser = task_name)]
     task: TaskName,
-    /// Source path (`BOX:path` for the Box).
+    /// Source path in the Box; relative to its workdir and may not contain
+    /// `..`. Use an absolute Box path to reach outside the workdir.
     src: String,
-    /// Destination path (`BOX:path` for the Box).
+    /// Destination path on the host; relative to the current directory.
     dest: String,
 }
 

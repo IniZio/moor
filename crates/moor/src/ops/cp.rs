@@ -27,9 +27,12 @@ pub(crate) fn run(cx: &Cx, req: &CpReq) -> Result<CpValue, CommandError> {
     }
     let store = cx.store()?;
     let id = store
-        .latest_task_by_name(&req.task)?
+        .open_task_by_name(&req.task)?
         .ok_or_else(|| {
-            CommandError::new(ErrorKind::Failed, format!("no task {}", req.task.as_str()))
+            CommandError::new(
+                ErrorKind::Failed,
+                format!("no open task {}", req.task.as_str()),
+            )
         })?
         .id;
     let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "cp", boxlock::WAIT)?;
@@ -60,7 +63,7 @@ pub(crate) fn run(cx: &Cx, req: &CpReq) -> Result<CpValue, CommandError> {
     })
 }
 
-/// The handle of the Task's live Box, or a refusal.
+/// The handle of the Task's ready Box, or a refusal.
 fn usable_handle(row: &TaskRow) -> Result<BoxHandle, CommandError> {
     let refuse = |why: &str| CommandError::new(ErrorKind::Refused, why.to_owned());
     if row.state == TaskState::WaitingForBox {
@@ -70,8 +73,11 @@ fn usable_handle(row: &TaskRow) -> Result<BoxHandle, CommandError> {
         .boxed
         .as_ref()
         .ok_or_else(|| refuse("the task has no Box"))?;
-    if matches!(b.state, BoxState::Gone | BoxState::Deleted) {
-        return Err(refuse("the Box is gone"));
+    match b.state {
+        BoxState::Ready => {}
+        BoxState::Gone | BoxState::Deleted => return Err(refuse("the Box is gone")),
+        BoxState::Asleep => return Err(refuse("the Box is asleep")),
+        _ => return Err(refuse("the Box is not ready")),
     }
     b.handle
         .clone()
@@ -88,11 +94,12 @@ fn source(cx: &Cx, handle: &BoxHandle, src: &str) -> Result<BoxPath, CommandErro
     BoxPath::under(workdir.as_str(), src).map_err(usage)
 }
 
-/// Bytes at `path`: a file's length, or the total under a directory.
+/// Bytes at `path`: a file's or link's length, or the total under a directory.
 fn size(path: &Path) -> u64 {
-    let Ok(meta) = fs::metadata(path) else {
+    let Ok(meta) = fs::symlink_metadata(path) else {
         return 0;
     };
+    // A link counts as its own length and is never followed.
     if !meta.is_dir() {
         return meta.len();
     }
