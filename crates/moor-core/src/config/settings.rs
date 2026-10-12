@@ -5,6 +5,7 @@
 //! the credential preflight need not re-read any file. Pure: no IO.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::num::NonZeroU32;
 
 use super::{
     BoxSize, CredentialSource, DotfilesConfig, Identity, McpServer, RepoConfig, ToolsConfig,
@@ -91,6 +92,10 @@ pub struct TaskSettings {
     pub provider: Sourced<String>,
     /// Box size: repo > user > default `small`.
     pub size: Sourced<BoxSize>,
+    /// Live Box cap: `drivers.<provider>.max_boxes` > `box.max_boxes` > unlimited.
+    pub max_boxes: Sourced<Option<NonZeroU32>>,
+    /// Config key `max_boxes` came from, for error text; `None` when unlimited.
+    pub max_boxes_key: Option<String>,
     /// Whether egress is enforced; user only.
     pub enforce_egress: bool,
     /// GitHub identity mode.
@@ -173,11 +178,25 @@ impl TaskSettings {
             (None, Some(s)) => Sourced::new(s, Layer::User),
             (None, None) => Sourced::new(BoxSize::default(), Layer::Default),
         };
+        let driver = user.drivers.get(&provider.value).and_then(|d| d.max_boxes);
+        let (max_boxes, max_boxes_key) = match (driver, user.box_.max_boxes) {
+            (Some(n), _) => (
+                Sourced::new(Some(n), Layer::User),
+                Some(format!("drivers.{}.max_boxes", provider.value)),
+            ),
+            (None, Some(n)) => (
+                Sourced::new(Some(n), Layer::User),
+                Some("box.max_boxes".to_string()),
+            ),
+            (None, None) => (Sourced::new(None, Layer::Default), None),
+        };
 
         Self {
             model,
             provider,
             size,
+            max_boxes,
+            max_boxes_key,
             enforce_egress: user.box_.enforce_egress.unwrap_or(false),
             identity: user.github.identity,
             credentials: plan_credentials(user, r),

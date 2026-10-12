@@ -184,3 +184,33 @@ fn layer_names() {
         assert_eq!(l.as_str(), n);
     }
 }
+
+fn max_boxes(u: &str) -> (Sourced<Option<NonZeroU32>>, Option<String>) {
+    let s = resolve(u, None, &Flags::default());
+    (s.max_boxes, s.max_boxes_key)
+}
+
+#[test]
+fn max_boxes_provider_beats_box() {
+    let (got, key) = max_boxes("box: {provider: p, max_boxes: 5}\ndrivers: {p: {max_boxes: 2}}");
+    assert_eq!(got, Sourced::new(NonZeroU32::new(2), Layer::User));
+    assert_eq!(key.as_deref(), Some("drivers.p.max_boxes"));
+    let (got, _) = max_boxes("box: {provider: p, max_boxes: 5}\ndrivers: {q: {max_boxes: 2}}");
+    assert_eq!(got.value, NonZeroU32::new(5));
+}
+
+#[test]
+fn max_boxes_unlimited_when_unset() {
+    let (got, key) = max_boxes("drivers: {p: {}}");
+    assert_eq!(got, Sourced::new(None, Layer::Default));
+    assert_eq!(key, None);
+}
+
+#[test]
+fn max_boxes_records_key_path() {
+    let (got, key) = max_boxes("box: {max_boxes: 3}");
+    assert_eq!(got, Sourced::new(NonZeroU32::new(3), Layer::User));
+    assert_eq!(key.as_deref(), Some("box.max_boxes"));
+    let (_, key) = max_boxes("drivers: {local-container: {max_boxes: 1}}");
+    assert_eq!(key.as_deref(), Some("drivers.local-container.max_boxes"));
+}
