@@ -15,6 +15,8 @@ use crate::testing::driver::FakeDriver;
 use crate::testing::proc::{Reply, ScriptedProc};
 use crate::testing::surface::FakeSurface;
 
+mod promote;
+
 const RAW: &str = "RAWDRIVER-7731";
 
 struct Fx {
