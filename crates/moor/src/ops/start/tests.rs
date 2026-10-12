@@ -18,6 +18,8 @@ use crate::testing::driver::FakeDriver;
 use crate::testing::proc::{Reply, ScriptedProc};
 use crate::testing::surface::FakeSurface;
 
+mod capacity;
+
 /// A world of fakes plus the context over them.
 struct World {
     cx: Cx,

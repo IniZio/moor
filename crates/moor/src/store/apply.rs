@@ -9,7 +9,9 @@ use moor_core::TaskId;
 use rusqlite::types::Value;
 use rusqlite::{params, Transaction, TransactionBehavior};
 
-use super::{load_task, BoxRow, Store, StoreError};
+use super::reads::live_holders_in;
+use super::{load_task, BoxRow, Store, StoreError, TaskRow};
+use moor_core::ProviderId;
 
 /// Result of a committed `apply`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,6 +47,27 @@ impl Store {
         tx.commit()?;
         drop(conn);
         Ok(applied)
+    }
+
+    /// Read the live holders of `provider`, let `decide` pick a decision from them, and apply it.
+    ///
+    /// The read and the write share one transaction, so no other writer can claim a slot between them.
+    /// `decide` returns `None` to write nothing. It runs under the writer lock, so it must not block.
+    pub(crate) fn apply_admitting(
+        &self,
+        provider: &ProviderId,
+        decide: impl FnOnce(Vec<TaskRow>) -> Option<Decision>,
+    ) -> Result<Option<Applied>, StoreError> {
+        let now = self.now();
+        let mut conn = self.writer()?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let Some(d) = decide(live_holders_in(&tx, provider)?) else {
+            return Ok(None);
+        };
+        let applied = apply_in(&tx, now, d)?;
+        tx.commit()?;
+        drop(conn);
+        Ok(Some(applied))
     }
 }
 
