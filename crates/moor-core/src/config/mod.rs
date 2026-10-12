@@ -1,5 +1,6 @@
 //! User and repo configuration: pure parsing, no IO.
 
+pub mod check;
 mod user;
 
 pub use user::{parse_user, BoxConfig, HerdrConfig, SurfaceConfig, ToolsConfig, UserConfig};
