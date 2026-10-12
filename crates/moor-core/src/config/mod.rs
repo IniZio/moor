@@ -1,7 +1,10 @@
 //! User and repo configuration: pure parsing, no IO.
 
 pub mod check;
+pub mod repo;
 mod user;
+
+pub use repo::{parse_repo, RepoAgent, RepoBox, RepoCompose, RepoConfig};
 
 pub use user::{
     parse_user, AgentConfig, BoxConfig, BoxSize, CredentialSource, DotfilesConfig, DriverConfig,
