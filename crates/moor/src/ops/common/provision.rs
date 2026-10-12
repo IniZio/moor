@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use moor_core::config::egress::{effective_allow_list, provider_applies_policy, unenforced_note};
 use moor_core::config::{Flags, TaskSettings};
+use moor_core::decide::intent::setup_dead;
 
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, Intent, IntentChange};
@@ -12,7 +13,7 @@ use moor_core::seam::driver::{
     AcquireReq, Acquired, DriverError, EgressApplied, EgressPlan, Released,
 };
 use moor_core::seam::rng::Rng;
-use moor_core::{BoxHandle, ErrorKind, ProviderId, TaskId, Warning};
+use moor_core::{BoxHandle, BoxPath, ErrorKind, ProviderId, TaskId, Warning};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -93,17 +94,52 @@ pub(crate) fn reprovision(
         store.apply(Decision::new(row.id).task_input(ok))?;
         return Ok(Some(SetupRun::Skipped));
     }
-    if entry_for(row).is_none() {
+    if entry_for(row).is_none() && !setup_wanted(cx, row) {
         return Ok(None);
     }
     let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, row.id, op, boxlock::WAIT)?;
     let row = reread(store, row.id)?;
-    let Some(entry) = entry_for(&row) else {
+    let at = row.worktree.as_deref().unwrap_or(&row.repo);
+    if let Some(entry) = entry_for(&row) {
+        let cfg = settings(cx, Path::new(at), &Flags::default())?;
+        return provision(cx, store, row.id, entry, &cfg).map(Some);
+    }
+    let (true, Some(handle), Some(workdir)) = (
+        setup_wanted(cx, &row),
+        row.boxed.as_ref().and_then(|b| b.handle.clone()),
+        row.boxed.as_ref().and_then(|b| b.workdir.clone()),
+    ) else {
         return Ok(None);
     };
-    let at = row.worktree.as_deref().unwrap_or(&row.repo);
+    let workdir = workdir
+        .rsplit_once('/')
+        .and_then(|(root, name)| BoxPath::under(root, name).ok())
+        .ok_or_else(|| CommandError::new(ErrorKind::Internal, "recorded box workdir is invalid"))?;
     let cfg = settings(cx, Path::new(at), &Flags::default())?;
-    provision(cx, store, row.id, entry, &cfg).map(Some)
+    let held = Decision::new(row.id).intent(IntentChange::Set(Intent::Setup {
+        pid: std::process::id(),
+    }));
+    store.apply(held)?;
+    let advance = !matches!(row.state, TaskState::Working | TaskState::Idle);
+    Ok(Some(run_and_record(
+        cx,
+        store,
+        row.id,
+        advance,
+        (&handle, &workdir),
+        &cfg,
+    )?))
+}
+
+/// Whether the Task's Box is ready but its repo setup failed or its owner died.
+fn setup_wanted(cx: &Cx, row: &TaskRow) -> bool {
+    if row.boxed.as_ref().map(|b| b.state) != Some(BoxState::Ready) {
+        return false;
+    }
+    if let Some(intent) = &row.intent {
+        return setup_dead(intent, cx.proc().alive(intent.pid()));
+    }
+    matches!(row.state, TaskState::Working | TaskState::Idle) && row.setup_failed_at.is_some()
 }
 
 /// How a Task that wants a Box starts over; `None` when it has one or is being provisioned.
@@ -215,12 +251,34 @@ fn ready(
             pid: std::process::id(),
         }));
     store.apply(acquired)?;
-    let run = setup::run_setup(cx, &got.handle, &got.workdir, cfg);
+    run_and_record(
+        cx,
+        store,
+        id,
+        entry.begin().is_some(),
+        (&got.handle, &got.workdir),
+        cfg,
+    )
+}
+
+/// Runs repo setup in a Box under the setup intent and records how it ended, clearing the intent.
+///
+/// `advance` moves the Task on to working; a Task already working gets a `setup_failed` event
+/// instead.
+fn run_and_record(
+    cx: &Cx,
+    store: &Store,
+    id: TaskId,
+    advance: bool,
+    (handle, workdir): (&BoxHandle, &BoxPath),
+    cfg: &TaskSettings,
+) -> Result<SetupRun, CommandError> {
+    let run = setup::run_setup(cx, handle, workdir, cfg);
     let mut done = Decision::new(id);
-    done.task_input = entry.begin().map(|_| TaskInput::BoxReady {
+    done.task_input = advance.then(|| TaskInput::BoxReady {
         setup: run.outcome(),
     });
-    if entry.begin().is_none() {
+    if !advance {
         if let SetupOutcome::Failed { line } = run.outcome() {
             done = done.event(ExtraEvent::SetupFailed { line });
         }

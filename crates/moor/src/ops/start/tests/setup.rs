@@ -3,11 +3,11 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use moor_core::domain::boxes::BoxInput;
-use moor_core::domain::decision::{Decision, Intent};
+use moor_core::domain::decision::{Decision, Intent, IntentChange};
 use moor_core::domain::task::TaskState;
 use moor_core::seam::driver::{DriverError, ExecOutcome};
 use moor_core::seam::proc::Deadline;
-use moor_core::{StartReq, TaskId};
+use moor_core::{BoxHandle, StartReq, TaskId};
 
 use super::{req, world_at, World};
 use crate::adapters::clock::SystemClock;
@@ -199,4 +199,87 @@ fn setup_holds_the_setup_intent_and_clears_it_after() {
     assert_eq!(*seen.lock().unwrap(), [Some(Intent::Setup { pid })]);
     let row = w.cx.store().unwrap().task(TaskId::new(v.task.id));
     assert_eq!(row.unwrap().unwrap().intent, None);
+}
+
+/// Starts `demo` with a failing first setup, then points its worktree at `yaml`.
+fn failed_setup_then(
+    yaml: &str,
+    results: [Result<ExecOutcome, DriverError>; 2],
+) -> (World, TaskId) {
+    let driver = FakeDriver::new().exec_results(results);
+    let (w, v) = start_with("setup: [a]\n", driver);
+    let id = TaskId::new(v.task.id);
+    let wt = w.cx.store().unwrap().task(id).unwrap().unwrap().worktree;
+    let wt = wt.unwrap();
+    std::fs::create_dir_all(&wt).unwrap();
+    std::fs::write(Path::new(&wt).join(".moor.yaml"), yaml).unwrap();
+    (w, id)
+}
+
+#[test]
+fn start_after_a_failed_setup_re_runs_setup_in_the_same_box_and_clears_the_failure() {
+    let (w, id) = failed_setup_then("setup: [a]\n", [Ok(exit(1)), Ok(exit(0))]);
+    let again = run(&w.cx, &start_req()).unwrap();
+    assert_eq!(again.task.state, TaskState::Working);
+    assert!(again.setup.ran && again.setup.ok);
+    assert!(!failed_at_set(&w, &again));
+    assert_eq!(lines(&w), ["a", "a"]);
+    let handles: Vec<_> = w.driver.execs().into_iter().map(|e| e.0).collect();
+    assert_eq!(handles, [BoxHandle::new("box-1"), BoxHandle::new("box-1")]);
+    assert_eq!(kinds(&w, id).iter().filter(|k| *k == "working").count(), 1);
+}
+
+#[test]
+fn start_after_a_failed_setup_that_fails_again_warns_and_stays_working() {
+    let (w, id) = failed_setup_then("setup: [a]\n", [Ok(exit(1)), Ok(exit(1))]);
+    drop(warning_codes(&w));
+    let again = run(&w.cx, &start_req()).unwrap();
+    assert_eq!(again.task.state, TaskState::Working);
+    assert!(again.setup.ran && !again.setup.ok);
+    assert_eq!(again.setup.line.as_deref(), Some("a"));
+    assert!(warning_codes(&w).contains(&"setup_failed".to_owned()));
+    assert!(failed_at_set(&w, &again));
+    let failed = kinds(&w, id)
+        .iter()
+        .filter(|k| *k == "setup_failed")
+        .count();
+    assert_eq!(failed, 2);
+    assert_eq!(w.driver.execs().len(), 2);
+}
+
+/// A started `demo` with a recorded Box whose setup intent belongs to `pid`.
+fn interrupted_setup(pid: u32) -> (World, moor_core::view::StartView) {
+    let (w, v) = start_with("setup: [a]\n", FakeDriver::new());
+    let id = TaskId::new(v.task.id);
+    let wt = w.cx.store().unwrap().task(id).unwrap().unwrap().worktree;
+    let wt = wt.unwrap();
+    std::fs::create_dir_all(&wt).unwrap();
+    std::fs::write(Path::new(&wt).join(".moor.yaml"), "setup: [b]\n").unwrap();
+    let held = Decision::new(id).intent(IntentChange::Set(Intent::Setup { pid }));
+    w.cx.store().unwrap().apply(held).unwrap();
+    (w, v)
+}
+
+#[test]
+fn start_re_runs_setup_when_the_setup_owner_is_dead() {
+    let (w, _) = interrupted_setup(4242);
+    w.proc.dead(4242);
+    let again = run(&w.cx, &start_req()).unwrap();
+    assert!(again.setup.ran && again.setup.ok);
+    assert_eq!(lines(&w), ["a", "b"]);
+    let row = w.cx.store().unwrap().task(TaskId::new(again.task.id));
+    assert_eq!(row.unwrap().unwrap().intent, None);
+}
+
+#[test]
+fn start_leaves_setup_alone_when_the_setup_owner_is_alive() {
+    let (w, _) = interrupted_setup(4242);
+    let again = run(&w.cx, &start_req()).unwrap();
+    assert!(!again.setup.ran);
+    assert_eq!(lines(&w), ["a"]);
+    let row = w.cx.store().unwrap().task(TaskId::new(again.task.id));
+    assert_eq!(
+        row.unwrap().unwrap().intent,
+        Some(Intent::Setup { pid: 4242 })
+    );
 }
