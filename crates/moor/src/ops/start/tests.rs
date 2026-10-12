@@ -25,27 +25,31 @@ struct World {
 
 /// Builds a world whose driver is `driver`.
 fn world(driver: FakeDriver) -> World {
+    world_at(driver, Path::new("/repo"))
+}
+
+/// Builds a world over the repo at `repo`.
+fn world_at(driver: FakeDriver, repo: &Path) -> World {
     let dir = tempfile::tempdir().unwrap();
-    let proc = ScriptedProc::new();
+    let proc = Arc::new(ScriptedProc::new());
     proc.on(
         Tool::Git,
         &["rev-parse", "--show-toplevel"],
-        Reply::Ok("/repo\n".into()),
+        Reply::Ok(format!("{}\n", repo.display())),
     );
     proc.on(
         Tool::Git,
         &["rev-parse", "HEAD"],
         Reply::Ok("abc123\n".into()),
     );
+    proc.on(
+        Tool::Git,
+        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+        Reply::Ok(format!("{}/.git\n", repo.display())),
+    );
     let driver = Arc::new(driver);
     let surface = Arc::new(FakeSurface::new(dir.path()));
-    let cx = Cx::fake(
-        dir.path(),
-        Path::new("/repo"),
-        driver.clone(),
-        surface.clone(),
-        Arc::new(proc),
-    );
+    let cx = Cx::fake(dir.path(), repo, driver.clone(), surface.clone(), proc);
     World {
         cx,
         driver,

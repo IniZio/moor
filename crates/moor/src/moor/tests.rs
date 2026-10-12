@@ -3,7 +3,10 @@ use crate::env::Env;
 use moor_core::{CloseReq, ExitClass, Request};
 
 fn moor() -> Moor {
-    let env = Env::from_pairs([("MOOR_STATE_DIR", "/tmp/x")]);
+    let env = Env::from_pairs([
+        ("MOOR_STATE_DIR", "/tmp/x"),
+        ("MOOR_CONFIG", "/nonexistent/moor.yaml"),
+    ]);
     Moor::from_env(&env).expect("from_env")
 }
 

@@ -47,6 +47,21 @@ impl Git {
         Ok(PathBuf::from(line))
     }
 
+    /// Main checkout of the repository `dir` belongs to (parent of the common git dir).
+    ///
+    /// # Errors
+    /// [`GitError::NotARepo`] outside a repository, [`GitError::Failed`] otherwise.
+    pub(crate) fn main_checkout(&self, dir: &Path) -> Result<PathBuf, GitError> {
+        let out = self.run(
+            dir,
+            &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+        )?;
+        Path::new(out.trim())
+            .parent()
+            .map(Path::to_path_buf)
+            .ok_or_else(|| GitError::Failed("git printed no common directory".to_owned()))
+    }
+
     /// Commit SHA of HEAD in `dir`.
     ///
     /// # Errors

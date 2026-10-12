@@ -29,7 +29,6 @@ fn defaults() {
     let c = UserConfig::default();
     assert_eq!(c.herdr_session(), "moor");
     assert_eq!(c.provider(), None);
-    assert_eq!(c.provider_or_default(), "local-container");
     assert_eq!(c.github.identity, Identity::Auto);
     assert_eq!(BoxSize::default(), BoxSize::Small);
     assert_eq!(c.box_.size, None);
@@ -40,7 +39,7 @@ fn provider_session_and_tools_parse() {
     let c = ok("box: {provider: static, size: large, max_boxes: 3, enforce_egress: true, sleep_after: 30m}\n\
          surface: {herdr: {session: work}}\n\
          tools: {crabbox: /opt/crabbox, git: git2}\n");
-    assert_eq!(c.provider_or_default(), "static");
+    assert_eq!(c.provider(), Some("static"));
     assert_eq!(c.box_.size, Some(BoxSize::Large));
     assert_eq!(c.box_.max_boxes, NonZeroU32::new(3));
     assert_eq!(c.box_.enforce_egress, Some(true));
