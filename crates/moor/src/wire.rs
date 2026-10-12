@@ -12,6 +12,7 @@ use crate::adapters::crabbox::Crabbox;
 use crate::adapters::git::Git;
 use crate::adapters::herdr::Herdr;
 use crate::adapters::proc::{SystemProc, ToolPaths};
+use crate::adapters::rng::SystemRng;
 use crate::cx::{Cx, CxParts};
 use crate::env::Env;
 use crate::error::CommandError;
@@ -44,6 +45,7 @@ pub(crate) fn build(env: &Env) -> Result<Cx, CommandError> {
     Ok(Cx::new(CxParts {
         state_dir: env.state_dir(),
         clock: Arc::new(clock),
+        rng: Arc::new(SystemRng),
         driver: Arc::new(Crabbox::new(Arc::clone(&proc))),
         surface: Arc::new(herdr),
         git: Git::new(proc),
