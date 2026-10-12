@@ -71,7 +71,8 @@ pub(crate) fn setup_deadline(lines: usize) -> Duration {
 
 /// Runs the setup lines as one synced script in `workdir`, stopping at the first failure.
 ///
-/// The script leaves its log in `<worktree>/.moor/setup.log`; the failing line comes from there.
+/// Sync is one-way, so after a failure the script's log is copied back from the Box; the
+/// failing line comes from there.
 pub(crate) fn run_setup(
     cx: &Cx,
     handle: &BoxHandle,
@@ -102,7 +103,7 @@ pub(crate) fn run_setup(
         Ok(ExecOutcome::Interrupted) => "interrupted".to_owned(),
         Err(e) => e.to_string(),
     };
-    let log = std::fs::read_to_string(worktree.join(".moor").join("setup.log")).unwrap_or_default();
+    let log = fetch_log(cx, handle, workdir, worktree);
     let line = cfg
         .setup
         .get(failed_step(&log, cfg.setup.len()))
@@ -115,18 +116,25 @@ pub(crate) fn run_setup(
     SetupRun::Failed { line }
 }
 
-/// Index of the failing step: the one the script reported, else the last one it announced, else
-/// the first.
+/// Copies the script's log out of the Box and reads it; empty when either step fails.
+fn fetch_log(cx: &Cx, handle: &BoxHandle, workdir: &BoxPath, worktree: &Path) -> String {
+    let to = worktree.join(".moor").join("setup.log");
+    let Ok(from) = BoxPath::under(workdir.as_str(), ".moor/setup.log") else {
+        return String::new();
+    };
+    if cx.driver().copy_out(handle, &from, &to, worktree).is_err() {
+        return String::new();
+    }
+    std::fs::read_to_string(to).unwrap_or_default()
+}
+
+/// Index of the failing step: the last one the log announced, else the first.
 fn failed_step(log: &str, steps: usize) -> usize {
-    let reported = log.lines().find_map(|l| {
-        let rest = l.strip_prefix("moor setup: step ")?;
-        rest.split(' ').next()?.parse::<usize>().ok()
-    });
     let announced = log
         .lines()
         .filter(|l| l.starts_with("moor setup: $ "))
         .count();
-    reported.unwrap_or(announced).clamp(1, steps.max(1)) - 1
+    announced.clamp(1, steps.max(1)) - 1
 }
 
 #[cfg(test)]

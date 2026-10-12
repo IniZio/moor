@@ -27,6 +27,7 @@ struct State {
     fail_release_always: Option<DriverError>,
     fail_list: Option<DriverError>,
     fail_copy_out: Option<DriverError>,
+    copy_content: Option<String>,
     exec_results: VecDeque<Result<ExecOutcome, DriverError>>,
     execs: Vec<(BoxHandle, ExecSpec, Deadline)>,
     copies: Vec<CopyCall>,
@@ -90,6 +91,12 @@ impl FakeDriver {
     /// The next `copy_out` fails once with `e`.
     pub(crate) fn fail_copy_out(self, e: DriverError) -> Self {
         self.st().fail_copy_out = Some(e);
+        self
+    }
+
+    /// Makes every `copy_out` write `text` to its destination.
+    pub(crate) fn copy_text(self, text: &str) -> Self {
+        self.st().copy_content = Some(text.to_owned());
         self
     }
 
@@ -253,8 +260,22 @@ impl Driver for FakeDriver {
         if !s.live.iter().any(|h| h == handle.as_str()) {
             return Err(DriverError::NotFound);
         }
-        s.fail_copy_out.take().map_or(Ok(()), Err)
+        if let Some(e) = s.fail_copy_out.take() {
+            return Err(e);
+        }
+        if let Some(text) = &s.copy_content {
+            write_text(to, text);
+        }
+        Ok(())
     }
+}
+
+/// Writes `text` to `to`, creating its directory.
+fn write_text(to: &Path, text: &str) {
+    if let Some(dir) = to.parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let _ = std::fs::write(to, text);
 }
 
 #[cfg(test)]

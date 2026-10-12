@@ -88,6 +88,7 @@ fn all_lines_passing_is_ok() {
         &cfg(&["a", "b"], &[]),
     );
     assert_eq!(got, SetupRun::Ok);
+    assert!(r.driver.copies().is_empty());
     assert!(r.cx.take_warnings().is_empty());
 }
 
@@ -144,24 +145,13 @@ fn the_script_gets_one_line_allowance_per_line() {
     assert_eq!(setup_deadline(0), Duration::ZERO);
 }
 
-/// Makes every exec leave `log` as the script's log in the worktree.
-fn leave_log(r: &Rig, dir: &Path, log: &'static str) {
-    let dir = dir.to_path_buf();
-    r.driver.on_exec(move || {
-        std::fs::create_dir_all(dir.join(".moor")).unwrap();
-        std::fs::write(dir.join(".moor/setup.log"), log).unwrap();
-    });
-}
-
 #[test]
 fn failing_line_comes_from_the_log_and_warns() {
     let d = tempfile::tempdir().unwrap();
-    let r = rig(d.path(), FakeDriver::new().exec_results(exits(&[3])));
-    leave_log(
-        &r,
-        d.path(),
-        "moor setup: $ a\nmoor setup: $ bad\nmoor setup: step 2 exited 3\n",
-    );
+    let driver = FakeDriver::new()
+        .exec_results(exits(&[3]))
+        .copy_text("moor setup: $ a\nmoor setup: $ bad\n");
+    let r = rig(d.path(), driver);
     let got = run_setup(
         &r.cx,
         &r.handle,
@@ -176,6 +166,14 @@ fn failing_line_comes_from_the_log_and_warns() {
         }
     );
     assert_eq!(r.driver.execs().len(), 1);
+    let (h, from, to, host_cwd) = only(r.driver.copies());
+    assert_eq!(h, r.handle);
+    assert_eq!(
+        from.as_str(),
+        format!("{}/.moor/setup.log", r.workdir.as_str())
+    );
+    assert_eq!(to, d.path().join(".moor/setup.log"));
+    assert_eq!(host_cwd, d.path());
     let w = only(r.cx.take_warnings());
     assert_eq!(w.code, "setup_failed");
     assert!(w.message.contains("bad"), "{}", w.message);
@@ -183,10 +181,12 @@ fn failing_line_comes_from_the_log_and_warns() {
 }
 
 #[test]
-fn without_a_failure_marker_the_last_announced_line_fails() {
+fn the_last_announced_line_fails() {
     let d = tempfile::tempdir().unwrap();
-    let r = rig(d.path(), FakeDriver::new().exec_results(exits(&[1])));
-    leave_log(&r, d.path(), "moor setup: $ a\nmoor setup: $ b\n");
+    let driver = FakeDriver::new()
+        .exec_results(exits(&[1]))
+        .copy_text("moor setup: $ a\nmoor setup: $ b\n");
+    let r = rig(d.path(), driver);
     let got = run_setup(
         &r.cx,
         &r.handle,
@@ -203,9 +203,12 @@ fn without_a_failure_marker_the_last_announced_line_fails() {
 }
 
 #[test]
-fn without_a_log_the_first_line_fails() {
+fn a_failed_copy_falls_back_to_the_first_line() {
     let d = tempfile::tempdir().unwrap();
-    let r = rig(d.path(), FakeDriver::new().exec_results(exits(&[1])));
+    let driver = FakeDriver::new()
+        .exec_results(exits(&[1]))
+        .fail_copy_out(DriverError::NotFound);
+    let r = rig(d.path(), driver);
     let got = run_setup(
         &r.cx,
         &r.handle,
@@ -224,11 +227,10 @@ fn without_a_log_the_first_line_fails() {
 #[test]
 fn driver_timeout_fails_the_line() {
     let d = tempfile::tempdir().unwrap();
-    let r = rig(
-        d.path(),
-        FakeDriver::new().exec_results([Err(DriverError::Timeout(SETUP_LINE_DEADLINE))]),
-    );
-    leave_log(&r, d.path(), "moor setup: $ slow\n");
+    let driver = FakeDriver::new()
+        .exec_results([Err(DriverError::Timeout(SETUP_LINE_DEADLINE))])
+        .copy_text("moor setup: $ slow\n");
+    let r = rig(d.path(), driver);
     let got = run_setup(
         &r.cx,
         &r.handle,
@@ -248,6 +250,7 @@ fn driver_timeout_fails_the_line() {
     assert!(w.message.contains("slow"), "{}", w.message);
     let m = w.message.to_lowercase();
     assert!(m.contains("timeout") || m.contains("timed out"), "{m}");
+    assert_eq!(r.driver.copies().len(), 1);
 }
 
 #[test]
@@ -331,9 +334,10 @@ fn exec_is_synced_from_the_worktree_at_the_resolved_size() {
 #[test]
 fn interrupted_line_fails_and_stops_the_run() {
     let d = tempfile::tempdir().unwrap();
-    let driver = FakeDriver::new().exec_results([Ok(ExecOutcome::Interrupted)]);
+    let driver = FakeDriver::new()
+        .exec_results([Ok(ExecOutcome::Interrupted)])
+        .copy_text("moor setup: $ a\n");
     let r = rig(d.path(), driver);
-    leave_log(&r, d.path(), "moor setup: $ a\n");
     let got = run_setup(
         &r.cx,
         &r.handle,
@@ -348,6 +352,7 @@ fn interrupted_line_fails_and_stops_the_run() {
         }
     );
     assert_eq!(r.driver.execs().len(), 1);
+    assert_eq!(r.driver.copies().len(), 1);
     let warnings = r.cx.take_warnings();
     assert_eq!(warnings.len(), 1);
     let w = warnings.first().unwrap();
