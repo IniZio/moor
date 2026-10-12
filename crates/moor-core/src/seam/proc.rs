@@ -26,6 +26,8 @@ pub enum Tool {
     Rsync,
     /// This binary, re-invoked.
     MoorSelf,
+    /// POSIX shell, for credential `cmd` sources.
+    Sh,
 }
 
 impl Tool {
@@ -41,6 +43,7 @@ impl Tool {
             Self::Git => "MOOR_GIT_BIN",
             Self::Rsync => "MOOR_RSYNC_BIN",
             Self::MoorSelf => "MOOR_SELF_BIN",
+            Self::Sh => "MOOR_SH_BIN",
         }
     }
 
@@ -56,6 +59,7 @@ impl Tool {
             Self::Git => "git",
             Self::Rsync => "rsync",
             Self::MoorSelf => "moor",
+            Self::Sh => "sh",
         }
     }
 }
@@ -252,6 +256,15 @@ pub trait Proc: Send + Sync {
     /// # Errors
     /// Returns [`ProcError`] on spawn failure, timeout, signal or non-zero exit.
     fn run(&self, spec: &ProcSpec) -> Result<ProcOutput, ProcError>;
+
+    /// Runs to completion and returns raw stdout bytes, never decoded.
+    ///
+    /// Errors never carry stdout: [`ProcError::NonZero`] has an empty `stdout`.
+    ///
+    /// # Errors
+    /// Returns [`ProcError`] on spawn failure, timeout, signal, non-zero exit
+    /// or output that does not fit the capture limit.
+    fn run_secret(&self, spec: &ProcSpec) -> Result<zeroize::Zeroizing<Vec<u8>>, ProcError>;
 
     /// Starts a child and leaves it running.
     ///

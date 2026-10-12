@@ -189,3 +189,29 @@ fn oversized_output_is_capped_and_flagged() {
     assert_eq!(out.stdout.len(), super::CAP);
     assert!(out.truncated);
 }
+
+#[test]
+fn run_secret_returns_raw_non_utf8_bytes() {
+    let out = sh_proc()
+        .run_secret(&sh("printf '\\377\\376x'", 5))
+        .unwrap();
+    assert_eq!(out.as_slice(), b"\xff\xfex");
+}
+
+#[test]
+fn run_secret_failure_carries_no_stdout() {
+    let err = sh_proc()
+        .run_secret(&sh("echo hunter2; echo err >&2; exit 3", 5))
+        .unwrap_err();
+    let ProcError::NonZero {
+        code,
+        stdout,
+        stderr_tail,
+    } = err
+    else {
+        unreachable!("expected NonZero")
+    };
+    assert_eq!(code, 3);
+    assert!(stdout.is_empty());
+    assert_eq!(stderr_tail.trim(), "err");
+}

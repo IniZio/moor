@@ -33,7 +33,7 @@ const DRAIN_GRACE: Duration = Duration::from_millis(500);
 const CAP: usize = 4 * 1024 * 1024;
 
 /// Every tool, for program resolution at construction.
-const TOOLS: [Tool; 8] = [
+const TOOLS: [Tool; 9] = [
     Tool::Crabbox,
     Tool::Herdr,
     Tool::Agent,
@@ -42,6 +42,7 @@ const TOOLS: [Tool; 8] = [
     Tool::Git,
     Tool::Rsync,
     Tool::MoorSelf,
+    Tool::Sh,
 ];
 
 /// Program paths from config `tools.*`.
@@ -71,7 +72,7 @@ impl ToolPaths {
             Tool::Gh => self.gh.as_ref(),
             Tool::Ssh => self.ssh.as_ref(),
             Tool::Git => self.git.as_ref(),
-            Tool::Rsync | Tool::MoorSelf => None,
+            Tool::Rsync | Tool::MoorSelf | Tool::Sh => None,
         }
     }
 }
@@ -164,8 +165,8 @@ fn stdin_for(stdin: &Stdin) -> io::Result<(Stdio, Option<&[u8]>)> {
 /// Bytes read so far from one pipe.
 #[derive(Default)]
 struct Capture {
-    /// Kept bytes, at most [`CAP`].
-    buf: Vec<u8>,
+    /// Kept bytes, at most [`CAP`]; wiped on drop.
+    buf: Zeroizing<Vec<u8>>,
     /// Bytes past [`CAP`] were discarded.
     truncated: bool,
 }
@@ -259,33 +260,49 @@ fn terminate(pid: u32, rx: &Receiver<Waited>, deadline: Duration) -> io::Result<
     Ok(())
 }
 
-/// Maps a finished child plus captured output to the seam result.
-fn finish(status: ExitStatus, o: &Capture, e: &Capture) -> Result<ProcOutput, ProcError> {
-    let (out, err) = (&o.buf, &e.buf);
-    let stdout = String::from_utf8_lossy(out).into_owned();
-    match status.code() {
-        Some(0) => Ok(ProcOutput {
-            code: 0,
-            stdout,
-            stderr: String::from_utf8_lossy(err).into_owned(),
-            truncated: o.truncated || e.truncated,
-        }),
-        Some(code) => {
+/// Error for a child that exited without success; never carries stdout.
+fn failure(status: ExitStatus, err: &[u8]) -> ProcError {
+    status.code().map_or_else(
+        || ProcError::Signalled(status.signal().unwrap_or(0)),
+        |code| {
             let tail = err
                 .get(err.len().saturating_sub(TAIL)..)
                 .unwrap_or_default();
-            Err(ProcError::NonZero {
+            ProcError::NonZero {
                 code,
-                stdout,
+                stdout: String::new(),
                 stderr_tail: String::from_utf8_lossy(tail).into_owned(),
-            })
-        }
-        None => Err(ProcError::Signalled(status.signal().unwrap_or(0))),
-    }
+            }
+        },
+    )
 }
 
-impl Proc for SystemProc {
-    fn run(&self, spec: &ProcSpec) -> Result<ProcOutput, ProcError> {
+/// Maps a finished child plus captured output to the seam result.
+fn finish(status: ExitStatus, o: &Capture, e: &Capture) -> Result<ProcOutput, ProcError> {
+    if status.code() == Some(0) {
+        return Ok(ProcOutput {
+            code: 0,
+            stdout: String::from_utf8_lossy(&o.buf).into_owned(),
+            stderr: String::from_utf8_lossy(&e.buf).into_owned(),
+            truncated: o.truncated || e.truncated,
+        });
+    }
+    Err(match failure(status, &e.buf) {
+        ProcError::NonZero {
+            code, stderr_tail, ..
+        } => ProcError::NonZero {
+            code,
+            stdout: String::from_utf8_lossy(&o.buf).into_owned(),
+            stderr_tail,
+        },
+        other => other,
+    })
+}
+
+impl SystemProc {
+    /// Spawns, feeds stdin, enforces the deadline and returns the exit status
+    /// with both captured streams.
+    fn exec(&self, spec: &ProcSpec) -> Result<(ExitStatus, Capture, Capture), ProcError> {
         let (stdin, payload) = stdin_for(&spec.stdin).map_err(ProcError::Spawn)?;
         let mut cmd = self.command(spec);
         cmd.stdin(stdin)
@@ -315,7 +332,29 @@ impl Proc for SystemProc {
             Err(RecvTimeoutError::Disconnected) => return Err(ProcError::Spawn(gone())),
         };
         wait_eof(&erx, etx);
-        finish(status, &take(&out), &take(&err))
+        Ok((status, take(&out), take(&err)))
+    }
+}
+
+impl Proc for SystemProc {
+    fn run(&self, spec: &ProcSpec) -> Result<ProcOutput, ProcError> {
+        let (status, out, err) = self.exec(spec)?;
+        finish(status, &out, &err)
+    }
+
+    /// Stdout that hit the capture cap is [`ProcError::Spawn`] (an I/O error),
+    /// never a truncated secret.
+    fn run_secret(&self, spec: &ProcSpec) -> Result<Zeroizing<Vec<u8>>, ProcError> {
+        let (status, out, err) = self.exec(spec)?;
+        if status.code() != Some(0) {
+            return Err(failure(status, &err.buf));
+        }
+        if out.truncated {
+            return Err(ProcError::Spawn(io::Error::other(
+                "secret output exceeds the capture limit",
+            )));
+        }
+        Ok(out.buf)
     }
 
     fn spawn_detached(&self, spec: &ProcSpec) -> Result<(), ProcError> {
