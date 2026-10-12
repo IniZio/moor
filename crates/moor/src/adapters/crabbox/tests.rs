@@ -10,7 +10,7 @@ use moor_core::seam::proc::Tool;
 
 use super::parse::{parse_inspect_workroot, parse_list, parse_warmup};
 use super::Crabbox;
-use crate::adapters::fake_proc::{Reply, ScriptedProc};
+use crate::testing::proc::{Reply, ScriptedProc};
 
 const WARMUP_OUT: &str = "leased cbx_1 slug=moor-t7 provider=sprites server=1 type=t ip=1.2.3.4\n\
 ready ssh=u@h:22 network=public workroot=/root/crabbox\n";

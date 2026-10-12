@@ -1,6 +1,5 @@
-//! Wall-clock adapters: `SystemClock` (honours `MOOR_TEST_NOW`) and `FakeClock`.
+//! Wall-clock adapter: `SystemClock` (honours `MOOR_TEST_NOW`).
 
-use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use moor_core::seam::clock::{Clock, Ts};
@@ -73,51 +72,6 @@ impl Clock for SystemClock {
 
     fn sleep(&self, d: Duration) {
         std::thread::sleep(d);
-    }
-}
-
-/// Deterministic clock that advances only when `sleep` is called.
-#[cfg_attr(not(test), expect(dead_code, reason = "test fake"))]
-#[derive(Debug)]
-pub(crate) struct FakeClock {
-    /// Total time slept so far.
-    offset: Mutex<Duration>,
-    /// Starting timestamp.
-    start: Ts,
-    /// Starting instant.
-    origin: Instant,
-}
-
-impl FakeClock {
-    /// Create a fake clock starting at `start`.
-    #[cfg_attr(not(test), expect(dead_code, reason = "test fake"))]
-    pub(crate) fn new(start: Ts) -> Self {
-        Self {
-            offset: Mutex::new(Duration::ZERO),
-            start,
-            origin: Instant::now(),
-        }
-    }
-
-    /// Time slept so far.
-    #[cfg_attr(not(test), expect(dead_code, reason = "test fake"))]
-    fn offset(&self) -> Duration {
-        *self.offset.lock().unwrap_or_else(PoisonError::into_inner)
-    }
-}
-
-impl Clock for FakeClock {
-    fn now(&self) -> Ts {
-        self.start.saturating_add(self.offset())
-    }
-
-    fn instant(&self) -> Instant {
-        self.origin + self.offset()
-    }
-
-    fn sleep(&self, d: Duration) {
-        let mut off = self.offset.lock().unwrap_or_else(PoisonError::into_inner);
-        *off = off.saturating_add(d);
     }
 }
 

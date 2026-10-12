@@ -2,9 +2,9 @@
 
 use std::time::Duration;
 
-use moor_core::seam::clock::{Clock, Ts};
+use moor_core::seam::clock::Clock;
 
-use super::{parse_test_now, FakeClock, SystemClock, TEST_NOW_VAR};
+use super::{parse_test_now, SystemClock, TEST_NOW_VAR};
 use crate::env::Env;
 
 const BASE: i64 = 1_760_000_000_000;
@@ -58,16 +58,4 @@ fn system_clock_without_var_is_real_time() {
 fn system_clock_invalid_var_errors() {
     let env = Env::from_pairs([(TEST_NOW_VAR, "nope")]);
     assert!(SystemClock::from_env(&env).is_err());
-}
-
-#[test]
-fn fake_clock_advances_only_on_sleep() {
-    let c = FakeClock::new(Ts::from_millis(BASE));
-    let (n0, i0) = (c.now(), c.instant());
-    assert_eq!((c.now(), c.instant()), (n0, i0));
-    let wall = std::time::Instant::now();
-    c.sleep(Duration::from_secs(3600));
-    assert!(wall.elapsed() < Duration::from_secs(5));
-    assert_eq!(c.now().as_millis(), BASE + 3_600_000);
-    assert_eq!(c.instant() - i0, Duration::from_secs(3600));
 }

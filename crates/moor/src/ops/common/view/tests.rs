@@ -6,8 +6,8 @@ use moor_core::seam::clock::Ts;
 use moor_core::{BoxHandle, ProviderId, TaskName};
 
 use super::{event_view, rfc3339, task_view};
-use crate::adapters::clock::FakeClock;
 use crate::store::Store;
+use crate::testing::clock::FakeClock;
 
 #[test]
 fn rfc3339_formats_epoch_and_leap_day() {

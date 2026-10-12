@@ -8,7 +8,7 @@ use moor_core::seam::proc::Tool;
 use moor_core::seam::surface::{PaneCmd, PaneRef, Surface, SurfaceError, WorkspaceRef, Worktree};
 
 use super::{parse, Herdr};
-use crate::adapters::fake_proc::{Call, Reply, ScriptedProc};
+use crate::testing::proc::{Call, Reply, ScriptedProc};
 
 const WS_CREATE: &str = include_str!("testdata/workspace-create.json");
 const PANE_LIST: &str = include_str!("testdata/pane-list.json");

@@ -8,7 +8,7 @@ use moor_core::domain::task::{TaskInput, TaskState};
 use moor_core::seam::clock::Ts;
 use moor_core::{ProviderId, TaskId, TaskName};
 
-use crate::adapters::clock::FakeClock;
+use crate::testing::clock::FakeClock;
 
 use super::Store;
 

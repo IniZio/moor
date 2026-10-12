@@ -7,9 +7,9 @@ use std::sync::Arc;
 use moor_core::seam::proc::Tool;
 
 use super::{Git, GitError};
-use crate::adapters::fake_proc::{Reply, ScriptedProc};
 use crate::adapters::proc::{SystemProc, ToolPaths};
 use crate::env::Env;
+use crate::testing::proc::{Reply, ScriptedProc};
 
 fn scripted() -> (Arc<ScriptedProc>, Git) {
     let p = Arc::new(ScriptedProc::new());
