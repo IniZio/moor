@@ -3,6 +3,7 @@ use std::num::NonZeroU32;
 use std::path::Path;
 use std::sync::Arc;
 
+use moor_core::boxscript::setup::setup_script;
 use moor_core::config::{BoxConfig, DriverConfig, UserConfig};
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
@@ -364,6 +365,7 @@ fn promoted_task_runs_the_repo_setup_commands_in_its_new_box() {
         .filter(|(h, _, _)| *h == handle)
         .map(|(_, spec, _)| spec.argv)
         .collect();
-    let sh = |c: &str| vec!["sh".to_owned(), "-c".to_owned(), c.to_owned()];
-    assert_eq!(argvs, [sh("echo one"), sh("echo two")]);
+    let steps = ["echo one", "echo two"].map(str::to_owned);
+    let want = vec!["sh".to_owned(), "-c".to_owned(), setup_script(&steps)];
+    assert_eq!(argvs, [want]);
 }

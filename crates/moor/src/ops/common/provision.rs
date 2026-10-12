@@ -290,7 +290,7 @@ fn run_and_record(
     cfg: &TaskSettings,
 ) -> Result<SetupRun, CommandError> {
     identity::set_identity(cx, target.handle, target.worktree);
-    let run = setup::run_setup(cx, target.handle, target.workdir, cfg);
+    let run = setup::run_setup(cx, target.handle, target.workdir, target.worktree, cfg);
     let mut done = Decision::new(id);
     done.task_input = advance.then(|| TaskInput::BoxReady {
         setup: run.outcome(),

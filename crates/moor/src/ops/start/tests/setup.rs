@@ -2,8 +2,10 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use moor_core::boxscript::setup::setup_script;
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Intent, IntentChange};
+use moor_core::domain::run::SyncMode;
 use moor_core::domain::task::TaskState;
 use moor_core::seam::driver::{DriverError, ExecOutcome};
 use moor_core::seam::proc::{Deadline, Tool};
@@ -68,12 +70,12 @@ fn start_req() -> StartReq {
     req("demo")
 }
 
-fn lines(w: &World) -> Vec<String> {
-    w.driver
-        .execs()
-        .iter()
-        .filter_map(|(_, spec, _)| spec.argv.last().cloned())
-        .collect()
+/// The argv that runs `steps` as the setup script.
+fn script_argv(steps: &[&str]) -> Vec<String> {
+    let steps: Vec<String> = steps.iter().map(|s| (*s).to_owned()).collect();
+    ["sh", "-c", &setup_script(&steps)]
+        .map(str::to_owned)
+        .to_vec()
 }
 
 fn kinds(w: &World, id: TaskId) -> Vec<String> {
@@ -105,39 +107,50 @@ fn setup_lines_run_in_order_in_the_box_workdir() {
             (h.as_str().to_owned(), spec.argv, cwd)
         })
         .collect();
-    let want = |line: &str| {
-        (
-            "box-1".to_owned(),
-            vec!["sh".to_owned(), "-c".to_owned(), line.to_owned()],
-            Some("/work/box-1".to_owned()),
-        )
-    };
-    assert_eq!(seen, [want("a"), want("b")]);
+    let want = (
+        "box-1".to_owned(),
+        script_argv(&["a", "b"]),
+        Some("/work/box-1".to_owned()),
+    );
+    assert_eq!(seen, [want]);
 }
 
 #[test]
-fn setup_lines_run_under_the_line_deadline() {
+fn setup_runs_under_one_allowance_per_line() {
     let (w, _) = start_with("setup: [a, b]\n", FakeDriver::new());
     let deadlines: Vec<Deadline> = w.driver.execs().into_iter().map(|e| e.2).collect();
-    assert_eq!(
-        deadlines,
-        [Deadline(LINE_DEADLINE), Deadline(LINE_DEADLINE)]
-    );
+    assert_eq!(deadlines, [Deadline(LINE_DEADLINE * 2)]);
 }
 
 #[test]
-fn a_failing_setup_line_leaves_a_working_task_and_stops_later_lines() {
-    let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(1))]);
+fn setup_is_one_synced_exec_from_the_worktree() {
+    let (w, v) = start_with("setup: [a, b]\nbox: {size: large}\n", FakeDriver::new());
+    let wt =
+        w.cx.store()
+            .unwrap()
+            .task(TaskId::new(v.task.id))
+            .unwrap()
+            .unwrap()
+            .worktree;
+    let (_, spec, _) = w.driver.execs().remove(0);
+    assert_eq!(spec.sync, SyncMode::Full);
+    assert_eq!(spec.host_cwd, wt.map(Into::into));
+    assert_eq!(spec.class.as_deref(), Some("large"));
+}
+
+#[test]
+fn a_failing_setup_leaves_a_working_task_and_runs_nothing_more() {
+    let driver = FakeDriver::new().exec_results([Ok(exit(1))]);
     let (w, v) = start_with("setup: [a, b, c]\n", driver);
     assert_eq!(v.task.state, TaskState::Working);
     assert!(v.setup.ran && !v.setup.ok);
-    assert_eq!(v.setup.line.as_deref(), Some("b"));
-    assert_eq!(lines(&w), ["a", "b"]);
+    assert_eq!(v.setup.line.as_deref(), Some("a"));
+    assert_eq!(w.driver.execs().len(), 1);
     assert!(warning_codes(&w).contains(&"setup_failed".to_owned()));
     let id = TaskId::new(v.task.id);
     let events = w.cx.store().unwrap().events(id, 50).unwrap();
     let failed = events.iter().find(|e| e.kind == "setup_failed").unwrap();
-    assert_eq!(failed.payload.get("line"), Some(&serde_json::json!("b")));
+    assert_eq!(failed.payload.get("line"), Some(&serde_json::json!("a")));
     assert!(kinds(&w, id).contains(&"working".to_owned()));
 }
 
@@ -179,14 +192,13 @@ fn setup_env_is_exactly_the_repo_env() {
 }
 
 #[test]
-fn a_timed_out_setup_line_counts_as_a_failing_line() {
-    let driver =
-        FakeDriver::new().exec_results([Ok(exit(0)), Err(DriverError::Timeout(LINE_DEADLINE))]);
+fn a_timed_out_setup_counts_as_a_failing_line() {
+    let driver = FakeDriver::new().exec_results([Err(DriverError::Timeout(LINE_DEADLINE))]);
     let (w, v) = start_with("setup: [a, b, c]\n", driver);
     assert_eq!(v.task.state, TaskState::Working);
     assert!(v.setup.ran && !v.setup.ok);
-    assert_eq!(v.setup.line.as_deref(), Some("b"));
-    assert_eq!(lines(&w), ["a", "b"]);
+    assert_eq!(v.setup.line.as_deref(), Some("a"));
+    assert_eq!(w.driver.execs().len(), 1);
     assert!(warning_codes(&w).contains(&"setup_failed".to_owned()));
     assert!(failed_at_set(&w, &v));
 }
@@ -260,7 +272,8 @@ fn start_after_a_failed_setup_re_runs_setup_in_the_same_box_and_clears_the_failu
     assert_eq!(again.task.state, TaskState::Working);
     assert!(again.setup.ran && again.setup.ok);
     assert!(!failed_at_set(&w, &again));
-    assert_eq!(lines(&w), ["a", "a"]);
+    let scripts: Vec<_> = argvs(&w);
+    assert_eq!(scripts, [script_argv(&["a"]), script_argv(&["a"])]);
     let handles: Vec<_> = w.driver.execs().into_iter().map(|e| e.0).collect();
     assert_eq!(handles, [BoxHandle::new("box-1"), BoxHandle::new("box-1")]);
     assert_eq!(kinds(&w, id).iter().filter(|k| *k == "working").count(), 1);
@@ -321,7 +334,7 @@ fn start_re_runs_setup_when_the_setup_owner_is_dead() {
     w.proc.dead(4242);
     let again = run(&w.cx, &start_req()).unwrap();
     assert!(again.setup.ran && again.setup.ok);
-    assert_eq!(lines(&w), ["a", "b"]);
+    assert_eq!(argvs(&w), [script_argv(&["a"]), script_argv(&["b"])]);
     let row = w.cx.store().unwrap().task(TaskId::new(again.task.id));
     assert_eq!(row.unwrap().unwrap().intent, None);
 }
@@ -331,7 +344,7 @@ fn start_leaves_setup_alone_when_the_setup_owner_is_alive() {
     let (w, _) = interrupted_setup(4242);
     let again = run(&w.cx, &start_req()).unwrap();
     assert!(!again.setup.ran);
-    assert_eq!(lines(&w), ["a"]);
+    assert_eq!(argvs(&w), [script_argv(&["a"])]);
     let row = w.cx.store().unwrap().task(TaskId::new(again.task.id));
     assert_eq!(
         row.unwrap().unwrap().intent,
@@ -372,14 +385,12 @@ fn start_re_runs_setup_for_a_setting_up_task_whose_setup_owner_died() {
 fn identity_is_set_in_the_box_before_the_first_setup_line() {
     let (w, v) = start_as(("Ann Dev", "a@x.io"), "setup: [a, b]\n", FakeDriver::new());
     assert!(v.setup.ran && v.setup.ok);
-    let sh = |l: &str| ["sh", "-c", l].map(str::to_owned).to_vec();
     assert_eq!(
         argvs(&w),
         [
             git_config("user.name", "Ann Dev"),
             git_config("user.email", "a@x.io"),
-            sh("a"),
-            sh("b"),
+            script_argv(&["a", "b"]),
         ]
     );
 }
@@ -422,7 +433,7 @@ fn identity_is_set_before_the_re_run_after_a_failed_setup() {
     let before = argvs(&w).len();
     let again = run(&w.cx, &start_req()).unwrap();
     assert!(again.setup.ran && again.setup.ok);
-    let sh = |l: &str| ["sh", "-c", l].map(str::to_owned).to_vec();
+    let sh = |l: &str| script_argv(&[l]);
     assert_eq!(
         argvs_after(&w, before),
         [
@@ -447,7 +458,7 @@ fn identity_is_set_before_the_re_run_when_the_setup_owner_is_dead() {
     let before = argvs(&w).len();
     let again = run(&w.cx, &start_req()).unwrap();
     assert!(again.setup.ran && again.setup.ok);
-    let sh = |l: &str| ["sh", "-c", l].map(str::to_owned).to_vec();
+    let sh = |l: &str| script_argv(&[l]);
     assert_eq!(
         argvs_after(&w, before),
         [
@@ -463,8 +474,7 @@ fn an_unset_author_runs_setup_without_touching_git_config() {
     let (w, v) = start_with("setup: [a, b]\n", FakeDriver::new());
     assert_eq!(v.task.state, TaskState::Working);
     assert!(v.setup.ran && v.setup.ok);
-    assert_eq!(lines(&w), ["a", "b"]);
-    assert!(argvs(&w).iter().all(|a| is_setup_line(a)));
+    assert_eq!(argvs(&w), [script_argv(&["a", "b"])]);
 }
 
 #[test]
@@ -491,6 +501,6 @@ fn a_failing_identity_exec_warns_and_setup_still_runs() {
     let (w, v) = start_as(("Ann Dev", "a@x.io"), "setup: [a]\n", driver);
     assert_eq!(v.task.state, TaskState::Working);
     assert!(v.setup.ran && v.setup.ok);
-    assert_eq!(lines(&w).last().map(String::as_str), Some("a"));
+    assert_eq!(argvs(&w).last(), Some(&script_argv(&["a"])));
     assert!(warning_codes(&w).contains(&"identity_failed".to_owned()));
 }
