@@ -41,6 +41,7 @@ fn run(env: Env, inv: Invocation) -> Output {
         Some(dir) => env.with_state_dir(dir),
         None => env,
     };
+    let request = cli::inherit_run_output(request, &opts);
     render_call(&env, request, &opts)
 }
 

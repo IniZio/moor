@@ -26,6 +26,7 @@ fn with_args() -> Vec<Request> {
             no_sync: false,
             record: None,
             argv: vec!["ls".into()],
+            inherit_output: false,
         }),
         Request::Wait(WaitReq {
             task: n("a"),
@@ -163,7 +164,8 @@ fn defaults_and_renames() {
             task: n("a"),
             no_sync: false,
             record: None,
-            argv: vec![]
+            argv: vec![],
+            inherit_output: false,
         })
     );
 }
@@ -185,9 +187,25 @@ fn run_argv_roundtrips() {
             no_sync: false,
             record: None,
             argv: vec!["ls".into(), "-la".into()],
+            inherit_output: false,
         })
     );
     assert_eq!(serde_json::to_value(&r).unwrap(), v);
+}
+
+#[test]
+fn run_inherit_output_is_not_settable_from_json() {
+    let v = json!({"cmd":"run","task":"a","inherit_output":true});
+    assert!(serde_json::from_value::<Request>(v).is_err());
+    let r = RunReq {
+        task: n("a"),
+        no_sync: false,
+        record: None,
+        argv: vec![],
+        inherit_output: true,
+    };
+    let v = serde_json::to_value(Request::Run(r)).unwrap();
+    assert!(v.get("inherit_output").is_none());
 }
 
 #[test]

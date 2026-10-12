@@ -4,7 +4,7 @@ use std::ffi::OsString;
 
 use moor_core::{Request, Response};
 
-use super::{parse, parse_call, render, GlobalOpts, Parsed};
+use super::{inherit_run_output, parse, parse_call, render, GlobalOpts, Parsed};
 
 /// Builds argv with a program name.
 fn argv(a: &[&str]) -> Vec<OsString> {
@@ -191,4 +191,40 @@ fn gate_record_and_missing_name_are_usage() {
     ] {
         assert_eq!(done(a).code, 2, "{a:?}");
     }
+}
+
+/// Parses a request from argv, expecting one.
+fn request(a: &[&str]) -> Request {
+    let Parsed::Request(inv) = parse(argv(a)) else {
+        unreachable!("expected Request")
+    };
+    inv.request
+}
+
+/// Whether a run request inherits the output.
+fn inherits(r: &Request) -> bool {
+    matches!(r, Request::Run(run) if run.inherit_output)
+}
+
+#[test]
+fn text_run_inherits_output() {
+    let r = inherit_run_output(request(&["run", "t", "--", "ls"]), &GlobalOpts::default());
+    assert!(inherits(&r));
+}
+
+#[test]
+fn json_run_keeps_output_in_the_log() {
+    let opts = GlobalOpts {
+        json: true,
+        ..GlobalOpts::default()
+    };
+    let r = inherit_run_output(request(&["run", "t", "--", "ls"]), &opts);
+    assert!(!inherits(&r));
+}
+
+#[test]
+fn non_run_requests_are_untouched() {
+    let before = request(&["env"]);
+    let after = inherit_run_output(request(&["env"]), &GlobalOpts::default());
+    assert_eq!(format!("{before:?}"), format!("{after:?}"));
 }

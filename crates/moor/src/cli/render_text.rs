@@ -11,7 +11,10 @@ pub(crate) fn render(resp: &Response, quiet: bool) -> (String, String) {
     let mut out = String::new();
     let mut err = String::new();
     if resp.class == ExitClass::Ok {
-        render_value(resp, &mut out);
+        // stdout of `run` is the program's own output; moor adds none.
+        if resp.cmd != "run" {
+            render_value(resp, &mut out);
+        }
     } else {
         render_error(resp, &mut err);
     }

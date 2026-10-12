@@ -13,7 +13,7 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 
 use clap::error::ErrorKind as ClapKind;
-use moor_core::{ErrorKind, ErrorView, Request, Response};
+use moor_core::{ErrorKind, ErrorView, Request, Response, RunReq};
 
 use crate::error::CommandError;
 
@@ -92,6 +92,21 @@ pub fn parse_call(stdin: &str) -> Result<Request, Output> {
         };
         render(&Response::err("call", view), &opts)
     })
+}
+
+/// Marks a text-mode `run` request to stream program output to the terminal.
+///
+/// With `--json` the output stays in the run log so stdout carries only the
+/// envelope. Other requests pass through unchanged.
+#[must_use]
+pub fn inherit_run_output(request: Request, opts: &GlobalOpts) -> Request {
+    match request {
+        Request::Run(run) if !opts.json => Request::Run(RunReq {
+            inherit_output: true,
+            ..run
+        }),
+        other => other,
+    }
 }
 
 /// Renders a response for the given options.

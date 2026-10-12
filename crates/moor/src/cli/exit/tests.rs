@@ -76,3 +76,29 @@ fn wait_settled_is_0() {
         0
     );
 }
+
+#[test]
+fn run_interrupted_is_130() {
+    let v = json!({"exit": null, "interrupted": true});
+    assert_eq!(code(&Response::ok("run", Some(v))), 130);
+}
+
+#[test]
+fn run_interrupted_wins_over_exit() {
+    let v = json!({"exit": 0, "interrupted": true});
+    assert_eq!(code(&Response::ok("run", Some(v))), 130);
+    let v = json!({"exit": 7, "interrupted": true});
+    assert_eq!(code(&Response::ok("run", Some(v))), 130);
+}
+
+#[test]
+fn run_not_interrupted_passes_exit_through() {
+    let v = json!({"exit": 7, "interrupted": false});
+    assert_eq!(code(&Response::ok("run", Some(v))), 7);
+}
+
+#[test]
+fn non_run_ignores_interrupted() {
+    let v = json!({"interrupted": true});
+    assert_eq!(code(&Response::ok("show", Some(v))), 0);
+}

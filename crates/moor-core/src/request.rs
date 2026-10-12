@@ -117,6 +117,10 @@ pub struct RunReq {
     /// Command and arguments.
     #[serde(default)]
     pub argv: Vec<String>,
+    /// Program output goes to moor's own stdout and stderr instead of the run log.
+    /// Never read from or written to JSON.
+    #[serde(skip)]
+    pub inherit_output: bool,
 }
 
 /// Arguments of `wait`.

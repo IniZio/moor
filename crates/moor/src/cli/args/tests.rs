@@ -82,6 +82,7 @@ fn run_with_trailing_command() {
             no_sync: false,
             record: None,
             argv: vec!["ls".into(), "-la".into()],
+            inherit_output: false,
         })
     );
     let r = req(&["run", "t1", "--no-sync", "--record", "r", "--", "make"]);
@@ -92,6 +93,7 @@ fn run_with_trailing_command() {
             no_sync: true,
             record: Some("r".into()),
             argv: vec!["make".into()],
+            inherit_output: false,
         })
     );
     assert!(run(&["run", "t1"]).is_err());
