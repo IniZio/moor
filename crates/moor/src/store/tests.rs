@@ -12,7 +12,7 @@ use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::{BoxHandle, ProviderId, RunId, TaskId, TaskName};
 
-use crate::adapters::clock::FakeClock;
+use crate::testing::clock::FakeClock;
 
 use super::apply::Applied;
 use super::{NewRun, RunOutcome, Store, StoreError};

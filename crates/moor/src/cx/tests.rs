@@ -1,9 +1,9 @@
 //! Tests for `Cx`.
 
 use super::Cx;
-use crate::adapters::fake_driver::FakeDriver;
-use crate::adapters::fake_proc::ScriptedProc;
-use crate::adapters::fake_surface::FakeSurface;
+use crate::testing::driver::FakeDriver;
+use crate::testing::proc::ScriptedProc;
+use crate::testing::surface::FakeSurface;
 use moor_core::seam::clock::Ts;
 use moor_core::Warning;
 use std::path::Path;

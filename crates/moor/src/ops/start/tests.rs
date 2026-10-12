@@ -10,10 +10,10 @@ use moor_core::seam::surface::Surface;
 use moor_core::{ErrorKind, StartReq, TaskId, TaskName};
 
 use super::run;
-use crate::adapters::fake_driver::FakeDriver;
-use crate::adapters::fake_proc::{Reply, ScriptedProc};
-use crate::adapters::fake_surface::FakeSurface;
 use crate::cx::Cx;
+use crate::testing::driver::FakeDriver;
+use crate::testing::proc::{Reply, ScriptedProc};
+use crate::testing::surface::FakeSurface;
 
 /// A world of fakes plus the context over them.
 struct World {

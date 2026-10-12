@@ -10,10 +10,10 @@ use moor_core::seam::driver::{AcquireReq, Driver, DriverError, EgressPlan};
 use moor_core::{ProviderId, ShowReq, TaskId, TaskName};
 
 use super::run;
-use crate::adapters::fake_driver::FakeDriver;
-use crate::adapters::fake_proc::ScriptedProc;
-use crate::adapters::fake_surface::FakeSurface;
 use crate::cx::Cx;
+use crate::testing::driver::FakeDriver;
+use crate::testing::proc::ScriptedProc;
+use crate::testing::surface::FakeSurface;
 
 /// Context over `driver` with state under `dir`.
 fn cx(dir: &Path, driver: &Arc<FakeDriver>) -> Cx {

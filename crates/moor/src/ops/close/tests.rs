@@ -10,10 +10,10 @@ use moor_core::seam::surface::SurfaceError;
 use moor_core::{CloseReq, ErrorKind, ProviderId, TaskId, TaskName};
 
 use super::run;
-use crate::adapters::fake_driver::FakeDriver;
-use crate::adapters::fake_proc::{Reply, ScriptedProc};
-use crate::adapters::fake_surface::FakeSurface;
 use crate::cx::Cx;
+use crate::testing::driver::FakeDriver;
+use crate::testing::proc::{Reply, ScriptedProc};
+use crate::testing::surface::FakeSurface;
 
 const RAW: &str = "RAWDRIVER-7731";
 

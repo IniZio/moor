@@ -9,6 +9,8 @@ pub mod error;
 mod moor;
 mod ops;
 mod store;
+#[cfg(test)]
+mod testing;
 mod wire;
 
 pub use crate::moor::Moor;

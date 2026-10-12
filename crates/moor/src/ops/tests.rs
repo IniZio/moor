@@ -3,10 +3,10 @@ use moor_core::{ErrorKind, RemoveReq, Request};
 use std::sync::Arc;
 
 use super::dispatch;
-use crate::adapters::fake_driver::FakeDriver;
-use crate::adapters::fake_proc::ScriptedProc;
-use crate::adapters::fake_surface::FakeSurface;
 use crate::cx::Cx;
+use crate::testing::driver::FakeDriver;
+use crate::testing::proc::ScriptedProc;
+use crate::testing::surface::FakeSurface;
 
 /// Context over fakes with no usable state.
 fn cx() -> Cx {

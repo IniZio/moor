@@ -139,30 +139,6 @@ impl Cx {
     pub(crate) fn take_warnings(&self) -> Vec<Warning> {
         std::mem::take(&mut *self.warnings.borrow_mut())
     }
-
-    /// Test context: fake clock, default config, git over `proc`.
-    #[cfg(test)]
-    pub(crate) fn fake(
-        state_dir: &Path,
-        cwd: &Path,
-        driver: Arc<dyn Driver>,
-        surface: Arc<dyn Surface>,
-        proc: Arc<dyn moor_core::seam::proc::Proc>,
-    ) -> Self {
-        use crate::adapters::clock::FakeClock;
-        use crate::adapters::rng::FakeRng;
-        use moor_core::seam::clock::Ts;
-        Self::new(CxParts {
-            state_dir: Some(state_dir.to_path_buf()),
-            clock: Arc::new(FakeClock::new(Ts::from_millis(1000))),
-            rng: Arc::new(FakeRng::default()),
-            driver,
-            surface,
-            git: Git::new(proc),
-            config: UserConfig::default(),
-            cwd: cwd.to_path_buf(),
-        })
-    }
 }
 
 #[cfg(test)]
