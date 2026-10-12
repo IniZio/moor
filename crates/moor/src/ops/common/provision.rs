@@ -1,4 +1,4 @@
-//! The Box step of `start`: acquire for a new Task, or again for a lost Box.
+//! Box provisioning shared by the task ops: acquire for a new Task, or again for a lost Box.
 
 use std::path::{Path, PathBuf};
 
@@ -12,17 +12,28 @@ use moor_core::seam::driver::{
     AcquireReq, Acquired, DriverError, EgressApplied, EgressPlan, Released,
 };
 use moor_core::seam::rng::Rng;
-use moor_core::{BoxHandle, ProviderId, TaskId, Warning};
+use moor_core::{BoxHandle, ErrorKind, ProviderId, TaskId, Warning};
 
-use super::{reread, task_view};
 use crate::cx::Cx;
 use crate::error::CommandError;
+use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::facts::settings;
+use crate::ops::common::view::task_view;
 use crate::store::{Store, TaskRow};
+
+/// Re-reads a Task row that must exist.
+///
+/// # Errors
+/// The row is gone.
+pub(crate) fn reread(store: &Store, id: TaskId) -> Result<TaskRow, CommandError> {
+    store
+        .task(id)?
+        .ok_or_else(|| CommandError::new(ErrorKind::Internal, "started task vanished"))
+}
 
 /// Where the Task stands when its Box is wanted.
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum Entry {
+pub(crate) enum Entry {
     /// A new Task still being checked.
     Fresh,
     /// A Task whose setup failed.
@@ -46,7 +57,7 @@ impl Entry {
 ///
 /// # Errors
 /// A repo `egress` entry that is not a valid domain.
-pub(super) fn egress_plan(cfg: &TaskSettings) -> Result<EgressPlan, CommandError> {
+pub(crate) fn egress_plan(cfg: &TaskSettings) -> Result<EgressPlan, CommandError> {
     if provider_applies_policy(&cfg.provider.value, cfg.enforce_egress) {
         Ok(EgressPlan::Allow(effective_allow_list(
             &cfg.user_egress,
@@ -57,25 +68,33 @@ pub(super) fn egress_plan(cfg: &TaskSettings) -> Result<EgressPlan, CommandError
     }
 }
 
-/// Gives a Task with a failed setup or a lost Box a Box again.
+/// Gives a Task with no Box, a failed setup or a lost Box a Box again.
 ///
-/// Returns whether anything was provisioned.
-pub(super) fn reprovision(cx: &Cx, store: &Store, row: &TaskRow) -> Result<bool, CommandError> {
-    let box_state = row.boxed.as_ref().map(|b| b.state);
-    let entry = match (row.state, box_state) {
-        (TaskState::SetupFailed, Some(BoxState::Ready)) => {
-            store.apply(Decision::new(row.id).task_input(TaskInput::Retry))?;
-            let ok = TaskInput::BoxReady {
-                setup: SetupOutcome::Ok,
-            };
-            store.apply(Decision::new(row.id).task_input(ok))?;
-            return Ok(true);
-        }
-        (TaskState::SetupFailed, Some(BoxState::Failed | BoxState::Gone)) => Entry::Retry,
-        (TaskState::Working | TaskState::Idle, Some(BoxState::Failed | BoxState::Gone)) => {
-            Entry::Stay
-        }
-        _ => return Ok(false),
+/// Returns whether anything was provisioned. The Box lock is held while
+/// provisioning and the row is read again under it; another op holding it is
+/// refused as busy.
+pub(crate) fn reprovision(
+    cx: &Cx,
+    store: &Store,
+    row: &TaskRow,
+    op: &str,
+) -> Result<bool, CommandError> {
+    let ready = row.boxed.as_ref().map(|b| b.state) == Some(BoxState::Ready);
+    if row.state == TaskState::SetupFailed && ready {
+        store.apply(Decision::new(row.id).task_input(TaskInput::Retry))?;
+        let ok = TaskInput::BoxReady {
+            setup: SetupOutcome::Ok,
+        };
+        store.apply(Decision::new(row.id).task_input(ok))?;
+        return Ok(true);
+    }
+    if entry_for(row).is_none() {
+        return Ok(false);
+    }
+    let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, row.id, op, boxlock::WAIT)?;
+    let row = reread(store, row.id)?;
+    let Some(entry) = entry_for(&row) else {
+        return Ok(false);
     };
     let at = row.worktree.as_deref().unwrap_or(&row.repo);
     let cfg = settings(cx, Path::new(at), &Flags::default())?;
@@ -83,8 +102,23 @@ pub(super) fn reprovision(cx: &Cx, store: &Store, row: &TaskRow) -> Result<bool,
     Ok(true)
 }
 
+/// How a Task that wants a Box starts over; `None` when it has one or is being provisioned.
+fn entry_for(row: &TaskRow) -> Option<Entry> {
+    let box_state = row.boxed.as_ref().map(|b| b.state);
+    match (row.state, box_state) {
+        (TaskState::Checking, None) if row.intent.is_none() => Some(Entry::Fresh),
+        (TaskState::SetupFailed, Some(BoxState::Failed | BoxState::Gone)) => Some(Entry::Retry),
+        (TaskState::Working | TaskState::Idle, Some(BoxState::Failed | BoxState::Gone)) => {
+            Some(Entry::Stay)
+        }
+        _ => None,
+    }
+}
+
 /// Admits the Task, acquires its Box and records the outcome.
-pub(super) fn provision(
+///
+/// The caller holds the Box lock.
+pub(crate) fn provision(
     cx: &Cx,
     store: &Store,
     id: TaskId,
@@ -129,7 +163,7 @@ pub(super) fn provision(
 }
 
 /// Six lowercase hex chars drawn from the RNG, so each attempt differs.
-pub(super) fn nonce(rng: &dyn Rng) -> String {
+pub(crate) fn nonce(rng: &dyn Rng) -> String {
     format!("{:06x}", rng.u32() & 0xFF_FFFF)
 }
 

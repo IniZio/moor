@@ -86,17 +86,22 @@ impl Cx {
         }
     }
 
+    /// The resolved state directory.
+    pub(crate) fn state_dir(&self) -> Result<&Path, CommandError> {
+        self.state_dir.as_deref().ok_or_else(|| {
+            CommandError::new(
+                ErrorKind::Failed,
+                "no state directory: set MOOR_STATE_DIR, XDG_STATE_HOME or HOME",
+            )
+        })
+    }
+
     /// The state store at `<state_dir>/moor.db`, opened on first call.
     pub(crate) fn store(&self) -> Result<&Store, CommandError> {
         if let Some(s) = self.store.get() {
             return Ok(s);
         }
-        let dir = self.state_dir.as_deref().ok_or_else(|| {
-            CommandError::new(
-                ErrorKind::Failed,
-                "no state directory: set MOOR_STATE_DIR, XDG_STATE_HOME or HOME",
-            )
-        })?;
+        let dir = self.state_dir()?;
         let store = Store::open(&dir.join(STORE_FILE), Arc::clone(&self.clock))?;
         Ok(self.store.get_or_init(|| store))
     }
@@ -141,7 +146,6 @@ impl Cx {
     }
 
     /// Time source for this run.
-    #[cfg_attr(not(test), expect(dead_code, reason = "read by tests"))]
     pub(crate) fn clock(&self) -> &dyn Clock {
         self.clock.as_ref()
     }
