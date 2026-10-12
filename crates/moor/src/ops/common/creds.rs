@@ -49,7 +49,6 @@ pub(crate) fn checked(cx: &Cx, s: &TaskSettings, worktree: &Path) -> Checked {
 /// Credential and MCP items that do not resolve, limited to what this Task uses
 /// (credentials with `used == true`, every user MCP server, every repo `.mcp.json` server).
 /// Empty means the preflight passes.
-#[cfg_attr(not(test), expect(dead_code, reason = "used by the start preflight"))]
 pub(crate) fn unresolved(cx: &Cx, s: &TaskSettings, worktree: &Path) -> Vec<EnvItem> {
     let memo = Memo::new(cx);
     let used: Vec<EnvItem> = s

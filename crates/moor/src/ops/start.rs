@@ -1,11 +1,13 @@
-//! `start` (minimal): create the Task, its worktree and Workspace, acquire the Box.
+//! `start` (minimal): check credentials, create the Task, its worktree and Workspace, acquire the Box.
 //!
-//! It does not check credentials or capacity, run setup or dotfiles, or launch the agent.
+//! It does not check capacity, run setup or dotfiles, or launch the agent.
 
 use std::path::{Path, PathBuf};
 
 use moor_core::config::Flags;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, NewTask};
+use moor_core::domain::event::CheckedCred;
+use moor_core::domain::task::TaskInput;
 use moor_core::seam::surface::{workspace_label, Worktree};
 use moor_core::view::{AgentLaunchView, DotfilesView, SetupView, StartView};
 use moor_core::{ErrorKind, StartReq, TaskId};
@@ -16,6 +18,7 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::store::{Store, StoreError, TaskRow};
 
+mod preflight;
 mod provision;
 use provision::{egress_plan, provision, reprovision, Entry};
 
@@ -53,16 +56,50 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     };
     let cfg = settings(cx, facts.bound.as_deref().unwrap_or(&facts.repo), &flags)?;
     egress_plan(&cfg)?;
+    if let Some(reason) =
+        preflight::rejection(cx, &cfg, facts.bound.as_deref().unwrap_or(&facts.repo))
+    {
+        return reject(store, req, &facts, &reason);
+    }
     let placed = match place(cx, req, &facts) {
         Ok(placed) => placed,
         Err(e) => return raced(cx, store, req, e),
     };
-    let id = match insert(store, req, &facts, &placed) {
+    let id = match insert(store, req, &facts, &placed, preflight::checked(&cfg)) {
         Ok(id) => id,
         Err(e) => return raced(cx, store, req, e),
     };
     provision(cx, store, id, Entry::Fresh, &cfg)?;
     reread(store, id).map(|row| view(&row, false))
+}
+
+/// Records a rejected Task, with no worktree or Workspace, and fails with the outcome.
+fn reject(
+    store: &Store,
+    req: &StartReq,
+    facts: &Facts,
+    reason: &str,
+) -> Result<StartView, CommandError> {
+    let set = Fields {
+        issue: set_some(req.issue.clone()),
+        goal: set_some(req.goal.clone()),
+        base: Field::Set(facts.base.clone()),
+        bound: Field::Set(facts.bound.is_some()),
+        ..Fields::default()
+    };
+    let new = NewTask {
+        name: req.name.clone(),
+        repo: facts.repo.display().to_string(),
+    };
+    let id = store.apply(Decision::insert(new).set(set))?.task;
+    let rejected = TaskInput::Rejected {
+        reason: reason.to_owned(),
+    };
+    store.apply(Decision::new(id).task_input(rejected))?;
+    let row = reread(store, id)?;
+    let shown = serde_json::to_value(view(&row, false))
+        .map_err(|e| CommandError::new(ErrorKind::Internal, e))?;
+    Err(CommandError::new(ErrorKind::Failed, reason.to_owned()).with_value(shown))
 }
 
 /// Another start made the Task first: attach to it, else report `lost`.
@@ -213,6 +250,7 @@ fn insert(
     req: &StartReq,
     facts: &Facts,
     placed: &Placed,
+    checked: Vec<CheckedCred>,
 ) -> Result<TaskId, StoreError> {
     let branch = Some(placed.wt.branch.clone()).filter(|b| !b.is_empty());
     let set = Fields {
@@ -229,7 +267,13 @@ fn insert(
         name: req.name.clone(),
         repo: facts.repo.display().to_string(),
     };
-    Ok(store.apply(Decision::insert(new).set(set))?.task)
+    let mut decision = Decision::insert(new).set(set);
+    if !checked.is_empty() {
+        decision = decision.event(ExtraEvent::Checked {
+            credentials: checked,
+        });
+    }
+    Ok(store.apply(decision)?.task)
 }
 
 #[cfg(test)]

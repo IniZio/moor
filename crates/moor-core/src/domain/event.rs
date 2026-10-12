@@ -30,6 +30,17 @@ pub const ASSERTED_KINDS: [&str; 20] = [
     "credential_failed",
 ];
 
+/// One credential an admission check looked at; never carries a value.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct CheckedCred {
+    /// The credential name.
+    pub name: String,
+    /// The config layer that defines it.
+    pub source: String,
+    /// Whether it resolved.
+    pub resolves: bool,
+}
+
 /// One recorded fact about a task, serialized with its `kind` tag.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -128,8 +139,8 @@ pub enum Event {
     },
     /// Admission checked credentials.
     Checked {
-        /// The credential names that were checked.
-        credentials: Vec<String>,
+        /// The credentials that were checked.
+        credentials: Vec<CheckedCred>,
     },
     /// A command run started.
     RunStarted {

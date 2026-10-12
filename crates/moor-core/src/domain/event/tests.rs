@@ -76,7 +76,11 @@ fn all_events() -> Vec<Event> {
         },
         Event::SessionStarted { session: s("x") },
         Event::Checked {
-            credentials: vec![s("k")],
+            credentials: vec![CheckedCred {
+                name: s("k"),
+                source: s("user"),
+                resolves: true,
+            }],
         },
         Event::RunStarted { run },
         Event::Attached,

@@ -1,7 +1,7 @@
 //! The single value a store writer applies: inputs, field changes, intent and events.
 
 use super::boxes::BoxInput;
-use super::event::Event;
+use super::event::{CheckedCred, Event};
 use super::task::TaskInput;
 use crate::name::{BoxHandle, ProviderId, RunId, TaskId, TaskName};
 
@@ -155,8 +155,8 @@ pub enum ExtraEvent {
     },
     /// Admission checked credentials.
     Checked {
-        /// The credential names that were checked.
-        credentials: Vec<String>,
+        /// The credentials that were checked.
+        credentials: Vec<CheckedCred>,
     },
     /// A command run started.
     RunStarted {

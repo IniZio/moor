@@ -1,6 +1,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
+use moor_core::config::UserConfig;
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::Decision;
 use moor_core::domain::task::{TaskInput, TaskState};
@@ -30,6 +31,11 @@ fn world(driver: FakeDriver) -> World {
 
 /// Builds a world over the repo at `repo`.
 fn world_at(driver: FakeDriver, repo: &Path) -> World {
+    world_with(driver, repo, UserConfig::default())
+}
+
+/// Builds a world over the repo at `repo` with user config `config`.
+fn world_with(driver: FakeDriver, repo: &Path, config: UserConfig) -> World {
     let dir = tempfile::tempdir().unwrap();
     let proc = Arc::new(ScriptedProc::new());
     proc.on(
@@ -49,7 +55,14 @@ fn world_at(driver: FakeDriver, repo: &Path) -> World {
     );
     let driver = Arc::new(driver);
     let surface = Arc::new(FakeSurface::new(dir.path()));
-    let cx = Cx::fake(dir.path(), repo, driver.clone(), surface.clone(), proc);
+    let cx = Cx::fake_with(
+        dir.path(),
+        repo,
+        driver.clone(),
+        surface.clone(),
+        proc,
+        config,
+    );
     World {
         cx,
         driver,
@@ -283,4 +296,32 @@ fn nonces_at_the_same_clock_instant_differ_and_come_from_the_rng() {
     assert!(a
         .bytes()
         .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+}
+
+#[test]
+fn unresolved_credential_rejects_before_any_side_effect() {
+    let repo = tempfile::tempdir().unwrap();
+    std::fs::write(
+        repo.path().join(".moor.yaml"),
+        "box_credentials: [MISSING]\n",
+    )
+    .unwrap();
+    let w = world_at(FakeDriver::new(), repo.path());
+    let err = run(&w.cx, &req("demo")).unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Failed);
+    assert!(err.error.to_string().contains("MISSING"), "{err:?}");
+    assert_eq!(
+        err.value.as_ref().unwrap().pointer("/task/state"),
+        Some(&serde_json::json!("rejected"))
+    );
+    assert!(w.surface.calls().is_empty());
+    assert!(w.driver.calls().is_empty());
+    let name = TaskName::parse("demo").unwrap();
+    assert!(w
+        .cx
+        .store()
+        .unwrap()
+        .open_task_by_name(&name)
+        .unwrap()
+        .is_none());
 }
