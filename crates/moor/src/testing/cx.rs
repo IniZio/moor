@@ -9,8 +9,10 @@ use moor_core::seam::driver::Driver;
 use moor_core::seam::proc::Proc;
 use moor_core::seam::surface::Surface;
 
+use crate::adapters::creds::Creds;
 use crate::adapters::git::Git;
 use crate::cx::{Cx, CxParts};
+use crate::env::Env;
 use crate::testing::clock::FakeClock;
 use crate::testing::rng::FakeRng;
 
@@ -23,14 +25,27 @@ impl Cx {
         surface: Arc<dyn Surface>,
         proc: Arc<dyn Proc>,
     ) -> Self {
+        Self::fake_with(state_dir, cwd, driver, surface, proc, UserConfig::default())
+    }
+
+    /// Test context like [`Cx::fake`] with user config `config`.
+    pub(crate) fn fake_with(
+        state_dir: &Path,
+        cwd: &Path,
+        driver: Arc<dyn Driver>,
+        surface: Arc<dyn Surface>,
+        proc: Arc<dyn Proc>,
+        config: UserConfig,
+    ) -> Self {
         Self::new(CxParts {
             state_dir: Some(state_dir.to_path_buf()),
             clock: Arc::new(FakeClock::new(Ts::from_millis(1000))),
             rng: Arc::new(FakeRng::default()),
             driver,
             surface,
-            git: Git::new(proc),
-            config: UserConfig::default(),
+            git: Git::new(Arc::clone(&proc)),
+            config,
+            creds: Creds::new(Env::default(), proc),
             cwd: cwd.to_path_buf(),
         })
     }

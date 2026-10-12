@@ -8,6 +8,7 @@ use moor_core::ErrorKind;
 
 use crate::adapters::clock::SystemClock;
 use crate::adapters::crabbox::Crabbox;
+use crate::adapters::creds::Creds;
 use crate::adapters::git::Git;
 use crate::adapters::herdr::Herdr;
 use crate::adapters::proc::{SystemProc, ToolPaths};
@@ -48,8 +49,9 @@ pub(crate) fn build(env: &Env) -> Result<Cx, CommandError> {
         rng: Arc::new(SystemRng),
         driver: Arc::new(Crabbox::new(Arc::clone(&proc))),
         surface: Arc::new(herdr),
-        git: Git::new(proc),
+        git: Git::new(Arc::clone(&proc)),
         config,
+        creds: Creds::new(env.clone(), proc),
         cwd,
     }))
 }
