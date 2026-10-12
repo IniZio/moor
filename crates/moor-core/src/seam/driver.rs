@@ -1,7 +1,7 @@
 //! Driver seam: how moor gets, inspects and releases Boxes.
 //!
-//! Deviation from design 6.1: only the S3 methods and exec exist here; sync,
-//! file transfer, sleep, tunnel and connect land with later slices.
+//! Only the provisioning methods and exec exist so far; sync, file transfer,
+//! sleep, tunnel and connect are not added yet.
 
 use std::fmt;
 use std::path::PathBuf;

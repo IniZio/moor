@@ -34,7 +34,7 @@ const DELETE_ON_RELEASE: &str = "CRABBOX_NAMESPACE_DELETE_ON_RELEASE";
 
 /// Provider whose Boxes share one slug and need the Box id and port in env.
 const STATIC_PROVIDER: &str = "ssh";
-/// Port the static provider dials (configurable port is S4).
+/// Port the static provider dials (not configurable yet).
 const DEFAULT_SSH_PORT: u16 = 22;
 
 /// Driver backed by the `crabbox` CLI.

@@ -2,7 +2,7 @@
 #![allow(
     dead_code,
     clippy::significant_drop_tightening,
-    reason = "test fake; consumers land with the ops slices"
+    reason = "test fake; not yet used by ops"
 )]
 
 use std::path::{Path, PathBuf};

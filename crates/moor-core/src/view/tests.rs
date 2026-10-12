@@ -41,7 +41,7 @@ fn task_json() -> Value {
 }
 
 #[test]
-fn task_row_keys_match_design() {
+fn task_row_keys_match_wire_shape() {
     assert_eq!(serde_json::to_value(task()).ok(), Some(task_json()));
 }
 
@@ -78,7 +78,7 @@ fn agent_and_run_nested_keys() {
 }
 
 #[test]
-fn start_view_keys_match_design() {
+fn start_view_keys_match_wire_shape() {
     let v = StartView {
         task: task(),
         attached: false,
@@ -109,7 +109,7 @@ fn start_view_keys_match_design() {
 }
 
 #[test]
-fn show_view_keys_match_design() {
+fn show_view_keys_match_wire_shape() {
     let v = ShowView {
         tasks: vec![task()],
         task: None,
@@ -158,7 +158,7 @@ fn show_view_absent_sections_are_null() {
 }
 
 #[test]
-fn close_view_keys_match_design() {
+fn close_view_keys_match_wire_shape() {
     let v = CloseView {
         task: task(),
         box_deleted: true,

@@ -1,4 +1,4 @@
-//! Store rows to the core views (design §10.2).
+//! Store rows to the core views.
 
 use moor_core::domain::boxes::BoxState;
 use moor_core::seam::clock::Ts;

@@ -37,7 +37,7 @@ pub enum Admission {
     },
 }
 
-/// Whether a Box in `state` takes a slot (ruling A-05).
+/// Whether a Box in `state` takes a capacity slot.
 #[must_use]
 pub const fn counts(state: BoxState) -> bool {
     matches!(

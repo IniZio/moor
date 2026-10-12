@@ -23,7 +23,7 @@ pub struct BoxFact {
 /// Only `Ready` and `Asleep` rows with a handle can go missing: a `Starting`
 /// row is mid-acquire (its handle may not exist yet), and other states are
 /// already past needing the Box. No task input is emitted: the task machine
-/// has no Box-gone transition. An asleep/awake mismatch is left to S7.
+/// has no Box-gone transition. An asleep/awake mismatch with the provider is not handled yet.
 /// A failed listing must not call this; the op then decides nothing.
 #[must_use]
 pub fn reconcile(rows: &[BoxFact], listing: &[BoxListing]) -> Vec<Decision> {

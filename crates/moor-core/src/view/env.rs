@@ -1,4 +1,4 @@
-//! Typed `value` payload for `env`, following design §10.2.
+//! Typed `value` payload for `env`.
 //!
 //! Carries `rows`, `egress`, `provider` and `credentials`, plus `repo`, `agent`
 //! and `github`, which reports the GitHub identity and token resolution.
