@@ -1,10 +1,10 @@
 //! Driver seam: how moor gets, inspects and releases Boxes.
 //!
-//! Only the provisioning methods and exec exist so far; file transfer,
-//! sleep, tunnel and connect are not added yet.
+//! Only the provisioning methods, exec and copy-out exist so far; sleep,
+//! tunnel and connect are not added yet.
 
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crate::name::{BoxHandle, BoxPath, ProviderId, TaskId, TaskName};
@@ -264,6 +264,19 @@ pub trait Driver: Send + Sync {
         spec: &ExecSpec,
         deadline: Deadline,
     ) -> Result<ExecOutcome, DriverError>;
+
+    /// Copies a file or directory out of the Box to the host. Never syncs the
+    /// worktree. `host_cwd` is the worktree the driver process runs from.
+    ///
+    /// # Errors
+    /// Returns a [`DriverError`] when the copy fails.
+    fn copy_out(
+        &self,
+        handle: &BoxHandle,
+        from: &BoxPath,
+        to: &Path,
+        host_cwd: &Path,
+    ) -> Result<(), DriverError>;
 }
 
 #[cfg(test)]

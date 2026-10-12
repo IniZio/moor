@@ -140,3 +140,35 @@ fn scripted_interrupted_outcome_is_returned() {
         Ok(ExecOutcome::Interrupted)
     );
 }
+
+fn copy(fake: &FakeDriver, h: &BoxHandle) -> Result<(), DriverError> {
+    let from = BoxPath::under("/work", "out").unwrap();
+    fake.copy_out(h, &from, &PathBuf::from("/dst"), &PathBuf::from("/host"))
+}
+
+#[test]
+fn copy_out_records_its_arguments() {
+    let (fake, h) = fake_with_box();
+    assert_eq!(copy(&fake, &h), Ok(()));
+    let from = BoxPath::under("/work", "out").unwrap();
+    let want = (h, from, PathBuf::from("/dst"), PathBuf::from("/host"));
+    assert_eq!(fake.copies(), [want]);
+    assert_eq!(fake.calls(), ["acquire", "copy_out box-1"]);
+}
+
+#[test]
+fn copy_out_on_unknown_handle_is_not_found() {
+    let fake = FakeDriver::new();
+    assert_eq!(
+        copy(&fake, &BoxHandle::new("box-9")),
+        Err(DriverError::NotFound)
+    );
+}
+
+#[test]
+fn scripted_copy_out_failure_is_one_shot() {
+    let (fake, h) = fake_with_box();
+    let fake = fake.fail_copy_out(DriverError::Quota("q".into()));
+    assert_eq!(copy(&fake, &h), Err(DriverError::Quota("q".into())));
+    assert_eq!(copy(&fake, &h), Ok(()));
+}

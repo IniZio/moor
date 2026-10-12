@@ -22,6 +22,8 @@ pub(super) enum Op {
     Caps,
     /// Running a command in a Box.
     Exec,
+    /// Copying a file out of a Box.
+    CopyOut,
 }
 
 impl Op {
@@ -34,6 +36,7 @@ impl Op {
             Self::Workdir => "box workdir lookup",
             Self::Caps => "provider lookup",
             Self::Exec => "box command",
+            Self::CopyOut => "box copy out",
         }
     }
 }

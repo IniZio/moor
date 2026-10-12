@@ -1,12 +1,14 @@
 //! Crabbox adapter: the only code that knows crabbox terms.
 
 mod caps;
+mod cp;
 mod errors;
 mod exec;
 mod parse;
 #[cfg(test)]
 mod tests;
 
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -236,5 +238,15 @@ impl Driver for Crabbox {
         deadline: Deadline,
     ) -> Result<ExecOutcome, DriverError> {
         exec::run(self, handle, spec, deadline)
+    }
+
+    fn copy_out(
+        &self,
+        handle: &BoxHandle,
+        from: &BoxPath,
+        to: &Path,
+        host_cwd: &Path,
+    ) -> Result<(), DriverError> {
+        cp::copy_out(self, handle, from, to, host_cwd)
     }
 }
