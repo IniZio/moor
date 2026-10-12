@@ -4,3 +4,7 @@ too-many-lines-threshold = 60
 too-many-arguments-threshold = 6
 allow-unwrap-in-tests = true
 allow-expect-in-tests = true
+disallowed-methods = [
+  { path = "std::time::Instant::now", reason = "read time through the Clock seam" },
+  { path = "std::time::SystemTime::now", reason = "read time through the Clock seam" },
+]

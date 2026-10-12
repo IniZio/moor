@@ -1,4 +1,8 @@
 //! Tests for the clock fake.
+#![expect(
+    clippy::disallowed_methods,
+    reason = "tests time real elapsed durations"
+)]
 
 use std::time::Duration;
 

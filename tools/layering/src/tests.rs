@@ -168,14 +168,6 @@ fn deep_rule() -> Rule {
     }
 }
 
-fn clock_bad(src: &str, file_mod: &str, krate: &str) -> Vec<String> {
-    let (_, calls) = scan(src, &m(file_mod)).unwrap();
-    clock_violations(&calls, krate)
-        .into_iter()
-        .map(|c| c.name.clone())
-        .collect()
-}
-
 #[test]
 fn deeper_allowed_entry_permits_its_subtree() {
     let got = bad_with("use crate::adapters::git::Repo;", "ops", &deep_rule());
@@ -235,42 +227,4 @@ fn tests_rs_and_tests_dir_are_skipped() {
     rs_files(&root, &mut got).unwrap();
     fs::remove_dir_all(&root).unwrap();
     assert_eq!(got, BTreeSet::from([root.join("a.rs")]));
-}
-
-#[test]
-fn instant_now_flagged_outside_clock() {
-    assert_eq!(
-        clock_bad("fn f() { let _ = Instant::now(); }", "ops", "moor"),
-        vec!["Instant::now"]
-    );
-}
-
-#[test]
-fn system_time_now_flagged_fully_qualified() {
-    let src = "fn f() { let _ = std::time::SystemTime::now(); let _ = time::SystemTime::now(); }";
-    assert_eq!(
-        clock_bad(src, "ops", "moor_core"),
-        vec!["SystemTime::now", "SystemTime::now"]
-    );
-}
-
-#[test]
-fn instant_now_allowed_in_clock_adapter() {
-    let src = "fn f() { let _ = std::time::Instant::now(); }";
-    assert!(clock_bad(src, "adapters::clock", "moor").is_empty());
-    assert!(clock_bad(src, "adapters::clock::sub", "moor").is_empty());
-    assert_eq!(clock_bad(src, "adapters::git", "moor").len(), 1);
-    assert_eq!(clock_bad(src, "adapters::clock", "moor_core").len(), 1);
-}
-
-#[test]
-fn instant_now_in_string_or_comment_not_flagged() {
-    let src = "// Instant::now()\n/* SystemTime::now */\nfn f() -> &'static str { \"Instant::now\" }\nfn g() { println!(\"Instant::now\"); }";
-    assert!(clock_bad(src, "ops", "moor").is_empty());
-}
-
-#[test]
-fn instant_now_in_cfg_test_not_flagged() {
-    let src = "#[cfg(test)]\nmod t { fn f() { Instant::now(); } }\n#[cfg(test)]\nfn g() { SystemTime::now(); }";
-    assert!(clock_bad(src, "ops", "moor").is_empty());
 }
