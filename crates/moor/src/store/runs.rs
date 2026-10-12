@@ -10,7 +10,10 @@ use super::apply::{insert_event, intent_sets, update};
 use super::{load_task, Store, StoreError};
 
 /// A run to record.
-#[cfg_attr(not(test), expect(dead_code, reason = "used by run from S6"))]
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "used by the run command, not yet wired")
+)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct NewRun {
     /// Owning task.
@@ -28,7 +31,10 @@ pub(crate) struct NewRun {
 }
 
 /// How a run ended.
-#[cfg_attr(not(test), expect(dead_code, reason = "used by run from S6"))]
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "used by the run command, not yet wired")
+)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct RunOutcome {
     /// Exit code, if the command exited.
@@ -39,7 +45,10 @@ pub(crate) struct RunOutcome {
 
 impl Store {
     /// Record a run start: run row, `Running` intent and `run_started` event.
-    #[cfg_attr(not(test), expect(dead_code, reason = "used by run from S6"))]
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "used by the run command, not yet wired")
+    )]
     pub(crate) fn begin_run(&self, r: NewRun) -> Result<RunId, StoreError> {
         let NewRun {
             task,
@@ -81,7 +90,10 @@ impl Store {
     }
 
     /// Record a run end: finish the row, clear its intent, emit `ran`.
-    #[cfg_attr(not(test), expect(dead_code, reason = "used by run from S6"))]
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "used by the run command, not yet wired")
+    )]
     pub(crate) fn finish_run(&self, id: RunId, out: RunOutcome) -> Result<(), StoreError> {
         let now = self.now();
         let mut conn = self.writer()?;

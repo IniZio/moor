@@ -61,7 +61,7 @@ impl Store {
     /// How many live boxes this provider holds.
     #[cfg_attr(
         not(test),
-        expect(dead_code, reason = "used by capacity logic from S5")
+        expect(dead_code, reason = "used by start's capacity check, not yet wired")
     )]
     pub(crate) fn live_boxes(&self, provider: &ProviderId) -> Result<u32, StoreError> {
         let sql = "SELECT COUNT(*) FROM boxes WHERE provider = ?1 AND state IN (?2, ?3, ?4)";
@@ -74,7 +74,7 @@ impl Store {
     /// Tasks queued for a box, oldest id first.
     #[cfg_attr(
         not(test),
-        expect(dead_code, reason = "used by capacity logic from S5")
+        expect(dead_code, reason = "used by start's capacity check, not yet wired")
     )]
     pub(crate) fn waiting_tasks(&self) -> Result<Vec<TaskRow>, StoreError> {
         let tail = "WHERE t.state = ?1 ORDER BY t.id";

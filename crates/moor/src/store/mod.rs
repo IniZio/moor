@@ -17,7 +17,10 @@ mod runs;
 #[cfg(test)]
 mod tests;
 
-#[cfg_attr(not(test), expect(unused_imports, reason = "used by run from S6"))]
+#[cfg_attr(
+    not(test),
+    expect(unused_imports, reason = "used by the run command, not yet wired")
+)]
 pub(crate) use runs::{NewRun, RunOutcome};
 
 /// Schema version this build reads and writes.
@@ -178,7 +181,7 @@ impl Store {
         load_task(&self.reader()?, id)
     }
 
-    #[cfg_attr(not(test), expect(dead_code, reason = "used by ops from S3"))]
+    #[cfg_attr(not(test), expect(dead_code, reason = "used by ops, not yet wired"))]
     /// Tasks that are neither closed nor rejected, by id ascending.
     pub(crate) fn open_tasks(&self) -> Result<Vec<TaskRow>, StoreError> {
         let conn = self.reader()?;

@@ -1,4 +1,4 @@
-//! Typed `value` payloads for `start`, `show` and `close` (design §10.2).
+//! Typed `value` payloads for `start`, `show` and `close` (JSON wire shape).
 
 pub mod env;
 
@@ -184,7 +184,7 @@ pub struct ShowView {
 /// `value` of `close`.
 #[allow(
     clippy::struct_excessive_bools,
-    reason = "wire shape fixed by design §10.2"
+    reason = "JSON wire shape is a public contract"
 )]
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct CloseView {
