@@ -6,14 +6,6 @@ use serde::Deserialize;
 
 use super::{check, parse_strict, BoxSize, ConfigError};
 
-/// `agent:` section.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
-#[serde(deny_unknown_fields, default)]
-pub struct RepoAgent {
-    /// Model name override.
-    pub model: Option<String>,
-}
-
 /// `compose:` section.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields, default)]
@@ -34,8 +26,6 @@ pub struct RepoBox {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct RepoConfig {
-    /// `agent:` section.
-    pub agent: RepoAgent,
     /// Setup commands.
     pub setup: Vec<String>,
     /// Teardown commands.

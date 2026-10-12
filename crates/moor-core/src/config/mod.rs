@@ -6,7 +6,7 @@ pub mod repo;
 pub mod settings;
 mod user;
 
-pub use repo::{parse_repo, RepoAgent, RepoBox, RepoCompose, RepoConfig};
+pub use repo::{parse_repo, RepoBox, RepoCompose, RepoConfig};
 
 pub use user::{
     parse_user, AgentConfig, BoxConfig, BoxSize, CredentialSource, DotfilesConfig, DriverConfig,
