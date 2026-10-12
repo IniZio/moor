@@ -1,4 +1,4 @@
-//! Copies one file out of a Box through `crabbox cp`.
+//! Copies a file or directory out of a Box through `crabbox cp`.
 
 use std::path::Path;
 use std::time::Duration;
@@ -14,7 +14,7 @@ const COPY_OUT_DEADLINE: Duration = Duration::from_mins(5);
 
 /// Copies `from` in the Box behind `handle` to the host path `to`.
 ///
-/// `crabbox cp` moves only the named file, so the worktree is never synced.
+/// `crabbox cp` moves only the named path, so the worktree is never synced.
 /// The command runs in `host_cwd`.
 pub(super) fn copy_out(
     cb: &Crabbox,
