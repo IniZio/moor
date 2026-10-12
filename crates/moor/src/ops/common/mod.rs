@@ -3,5 +3,6 @@
 pub(crate) mod boxlock;
 pub(crate) mod creds;
 pub(crate) mod facts;
+pub(crate) mod provision;
 pub(crate) mod reconcile;
 pub(crate) mod view;

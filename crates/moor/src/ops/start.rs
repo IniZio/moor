@@ -12,15 +12,15 @@ use moor_core::seam::surface::{workspace_label, Worktree};
 use moor_core::view::{AgentLaunchView, DotfilesView, SetupView, StartView};
 use moor_core::{ErrorKind, StartReq, TaskId};
 
+use super::common::boxlock::{self, BoxLock};
 use super::common::facts::settings;
+use super::common::provision::{egress_plan, provision, reprovision, reread, Entry};
 use super::common::view::task_view;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::store::{Store, StoreError, TaskRow};
 
 mod preflight;
-mod provision;
-use provision::{egress_plan, provision, reprovision, Entry};
 
 /// What `start` learns before it changes anything.
 struct Facts {
@@ -69,7 +69,10 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
         Ok(id) => id,
         Err(e) => return raced(cx, store, req, e),
     };
-    provision(cx, store, id, Entry::Fresh, &cfg)?;
+    let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "start", boxlock::WAIT)?;
+    if reread(store, id)?.boxed.is_none() {
+        provision(cx, store, id, Entry::Fresh, &cfg)?;
+    }
     reread(store, id).map(|row| view(&row, false))
 }
 
@@ -121,19 +124,12 @@ fn attach(
     row: &TaskRow,
 ) -> Result<StartView, CommandError> {
     check_bound(cx, req, row)?;
-    let reprovisioned = reprovision(cx, store, row)?;
+    let reprovisioned = reprovision(cx, store, row, "start")?;
     store.apply(Decision::new(row.id).event(ExtraEvent::Attached))?;
     if reprovisioned {
         return reread(store, row.id).map(|r| view(&r, true));
     }
     Ok(view(row, true))
-}
-
-/// The stored Task row for `id`.
-fn reread(store: &Store, id: TaskId) -> Result<TaskRow, CommandError> {
-    store
-        .task(id)?
-        .ok_or_else(|| CommandError::new(ErrorKind::Internal, "started task vanished"))
 }
 
 /// The response for `row`; nothing past the Box runs yet.

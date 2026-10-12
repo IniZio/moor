@@ -1,5 +1,6 @@
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 
 use moor_core::config::UserConfig;
 use moor_core::domain::boxes::{BoxInput, BoxState};
@@ -12,6 +13,7 @@ use moor_core::{ErrorKind, StartReq, TaskId, TaskName};
 
 use super::run;
 use crate::cx::Cx;
+use crate::ops::common::boxlock::BoxLock;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::{Reply, ScriptedProc};
 use crate::testing::surface::FakeSurface;
@@ -288,8 +290,8 @@ fn main_worktree_is_refused_before_any_effect() {
 fn nonces_at_the_same_clock_instant_differ_and_come_from_the_rng() {
     let w = world(FakeDriver::new());
     let at = w.cx.clock().now();
-    let a = super::provision::nonce(w.cx.rng());
-    let b = super::provision::nonce(w.cx.rng());
+    let a = crate::ops::common::provision::nonce(w.cx.rng());
+    let b = crate::ops::common::provision::nonce(w.cx.rng());
     assert_eq!(w.cx.clock().now(), at);
     assert_ne!(a, b);
     assert_eq!(a.len(), 6);
@@ -324,4 +326,80 @@ fn unresolved_credential_rejects_before_any_side_effect() {
         .open_task_by_name(&name)
         .unwrap()
         .is_none());
+}
+
+#[test]
+fn start_refuses_while_another_op_holds_the_box_lock() {
+    let w = world(FakeDriver::new());
+    let _held = BoxLock::acquire(
+        w.cx.clock(),
+        w.cx.state_dir().unwrap(),
+        TaskId::new(1),
+        "close",
+        Duration::ZERO,
+    )
+    .unwrap();
+    let err = run(&w.cx, &req("demo")).unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Refused);
+    assert_eq!(err.error.to_string(), "box busy: close in progress");
+    assert!(w.driver.calls().is_empty());
+}
+
+/// Holds the Box lock of task 1 as `op`.
+fn hold(w: &World, op: &str) -> BoxLock {
+    BoxLock::acquire(
+        w.cx.clock(),
+        w.cx.state_dir().unwrap(),
+        TaskId::new(1),
+        op,
+        Duration::ZERO,
+    )
+    .unwrap()
+}
+
+#[test]
+fn refused_start_provisions_when_retried_after_the_lock_is_released() {
+    let w = world(FakeDriver::new());
+    let held = hold(&w, "close");
+    run(&w.cx, &req("demo")).unwrap_err();
+    drop(held);
+    let again = run(&w.cx, &req("demo")).unwrap();
+    assert!(again.attached);
+    assert_eq!(again.task.state, TaskState::Working);
+    let row = w.cx.store().unwrap().task(TaskId::new(again.task.id));
+    assert_eq!(row.unwrap().unwrap().boxed.unwrap().state, BoxState::Ready);
+    assert_eq!(w.driver.calls(), ["acquire"]);
+}
+
+#[test]
+fn start_on_a_lost_box_is_refused_while_another_op_holds_the_lock() {
+    let w = world(FakeDriver::new());
+    let first = run(&w.cx, &req("demo")).unwrap();
+    let id = TaskId::new(first.task.id);
+    w.cx.store()
+        .unwrap()
+        .apply(Decision::new(id).box_input(BoxInput::DriverMissing))
+        .unwrap();
+    let _held = hold(&w, "close");
+    let err = run(&w.cx, &req("demo")).unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Refused);
+    assert_eq!(err.error.to_string(), "box busy: close in progress");
+    assert_eq!(w.driver.calls(), ["acquire"]);
+}
+
+#[test]
+fn reprovision_skips_when_another_start_already_gave_the_box_back() {
+    let w = world(FakeDriver::new());
+    let first = run(&w.cx, &req("demo")).unwrap();
+    let id = TaskId::new(first.task.id);
+    let store = w.cx.store().unwrap();
+    store
+        .apply(Decision::new(id).box_input(BoxInput::DriverMissing))
+        .unwrap();
+    let stale = store.task(id).unwrap().unwrap();
+    run(&w.cx, &req("demo")).unwrap();
+    assert_eq!(w.driver.calls(), ["acquire", "acquire"]);
+    let did = crate::ops::common::provision::reprovision(&w.cx, store, &stale, "start").unwrap();
+    assert!(!did);
+    assert_eq!(w.driver.calls(), ["acquire", "acquire"]);
 }

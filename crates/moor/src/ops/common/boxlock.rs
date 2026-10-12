@@ -13,12 +13,14 @@ use moor_core::ErrorKind;
 
 use crate::error::CommandError;
 
+/// How long an op waits for another holder before refusing as busy.
+pub(crate) const WAIT: Duration = Duration::from_secs(10);
+
 /// Pause between attempts while another holder owns the lock.
 const POLL: Duration = Duration::from_millis(50);
 
 /// Exclusive hold on one Box; released on drop.
 #[derive(Debug)]
-#[cfg_attr(not(test), expect(dead_code, reason = "taken by start and close"))]
 pub(crate) struct BoxLock {
     /// Open file carrying the flock.
     _file: File,
@@ -30,7 +32,6 @@ impl BoxLock {
     /// # Errors
     /// `Refused("box busy: <holder-op> in progress")` when still held after `wait`;
     /// `Failed` when the lock file cannot be opened.
-    #[cfg_attr(not(test), expect(dead_code, reason = "taken by start and close"))]
     pub(crate) fn acquire(
         clock: &dyn Clock,
         state: &Path,
