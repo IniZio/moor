@@ -13,11 +13,23 @@ pub(crate) fn render(resp: &Response) -> String {
     )
 }
 
-/// Hand-built minimal failed envelope used when serialisation fails.
+/// Minimal failed envelope used when serialisation fails; same key order as [`Response`].
 fn fallback(cmd: &str) -> String {
-    let cmd = serde_json::to_string(cmd).unwrap_or_else(|_| "\"\"".to_owned());
-    format!(
-        "{{\"schema\":\"{}\",\"cmd\":{cmd},\"class\":\"failed\",\"value\":null,\"warnings\":[],\"error\":{{\"kind\":\"internal\",\"message\":\"response could not be serialised\",\"hints\":[],\"context\":[]}}}}\n",
-        moor_core::SCHEMA
-    )
+    let envelope = serde_json::json!({
+        "schema": moor_core::SCHEMA,
+        "cmd": cmd,
+        "class": "failed",
+        "value": null,
+        "warnings": [],
+        "error": {
+            "kind": "internal",
+            "message": "response could not be serialised",
+            "hints": [],
+            "context": [],
+        },
+    });
+    format!("{envelope}\n")
 }
+
+#[cfg(test)]
+mod tests;
