@@ -113,7 +113,7 @@ pub struct GithubApp {
     pub key_path: PathBuf,
     /// Installation settings.
     #[serde(default)]
-    pub install: BTreeMap<String, serde_yaml_ng::Value>,
+    pub install: BTreeMap<String, serde_json::Value>,
 }
 
 impl GithubApp {

@@ -15,6 +15,7 @@ struct Probe {
 struct ProbeBox {
     provider: Option<String>,
     enforce_egress: Option<bool>,
+    max_boxes: Option<u32>,
 }
 
 #[test]
@@ -25,11 +26,11 @@ fn parse_strict_error_paths() {
         (
             "box: {enforce_egress: \"yes\"}",
             "box.enforce_egress",
-            "invalid type",
+            "invalid boolean",
         ),
-        ("egress: [a, 1, c]", "egress[1]", "invalid type"),
+        ("egress: [a, 1, c]", "egress[1]", "must be quoted"),
         ("box: [unclosed", "", "invalid yaml"),
-        ("- a", "", "invalid type"),
+        ("- a", "", "expected mapping"),
     ];
     for (doc, path, why) in cases {
         let e = parse_strict::<Probe>("f.yaml", doc)
@@ -97,4 +98,40 @@ fn unknown_field_path_includes_the_key() {
         assert_eq!(e.path, path, "{doc:?}: {e}");
         assert!(e.reason.starts_with("unknown field `zzz`"), "{doc:?}: {e}");
     }
+}
+
+#[derive(Debug, Default, serde::Deserialize)]
+struct Scalars {
+    n: Option<u64>,
+    s: Option<String>,
+}
+
+#[test]
+fn unquoted_leading_zero_asks_for_quotes() {
+    let e = parse_strict::<Scalars>("f", "s: 0755").unwrap_err();
+    assert_eq!(e.path, "s");
+    assert!(e.reason.contains("[0755] must be quoted"), "{e}");
+    for doc in ["s: \"0755\"", "s: '0755'"] {
+        let got = parse_strict::<Scalars>("f", doc).unwrap();
+        assert_eq!(got.s.as_deref(), Some("0755"), "{doc}");
+    }
+    for doc in ["n: 0755", "n: 010"] {
+        let e = parse_strict::<Scalars>("f", doc).unwrap_err();
+        assert_eq!(e.path, "n", "{doc}: {e}");
+    }
+    assert_eq!(parse_strict::<Scalars>("f", "n: 755").unwrap().n, Some(755));
+}
+
+#[test]
+fn invalid_yaml_reason_is_one_line() {
+    let e = parse_strict::<Probe>("f.yaml", "box: [unclosed").unwrap_err();
+    assert!(e.reason.starts_with("invalid yaml: "), "{e}");
+    assert!(!e.reason.contains('\n'), "{e}");
+}
+
+#[test]
+fn typed_error_reason_has_no_location() {
+    let e = parse_strict::<Probe>("f.yaml", "box: {max_boxes: many}").expect_err("typed error");
+    assert_eq!(e.path, "box.max_boxes");
+    assert!(!e.reason.contains(" at line"), "{}", e.reason);
 }

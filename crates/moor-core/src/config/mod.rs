@@ -75,19 +75,52 @@ pub fn parse_strict<T: serde::de::DeserializeOwned + Default>(
     file: &str,
     text: &str,
 ) -> Result<T, ConfigError> {
-    let value: serde_yaml_ng::Value = serde_yaml_ng::from_str(text)
+    let mut opts = serde_saphyr::Options::default();
+    opts.strict_booleans = true;
+    opts.no_schema = true;
+    opts.ignore_binary_tag_for_string = true;
+    opts.with_snippet = false;
+    // Syntax first, so a malformed document is never reported as a type error.
+    serde_saphyr::from_str_with_options::<serde::de::IgnoredAny>(text, opts.clone())
         .map_err(|e| ConfigError::new("", format!("invalid yaml: {e}")).in_file(file))?;
-    if value.is_null() {
-        return Ok(T::default());
-    }
-    serde_path_to_error::deserialize(value).map_err(|e| {
-        let mut path = e.path().to_string();
-        if path == "." {
-            path.clear();
-        }
-        let reason = e.inner().to_string();
-        ConfigError::new(path, reason).in_file(file)
+    let mut path = String::new();
+    serde_saphyr::with_deserializer_from_str_with_options(text, opts, |de| {
+        serde_path_to_error::deserialize::<_, T>(de).map_err(|e| {
+            path = if e.path().iter().next().is_none() {
+                String::new()
+            } else {
+                e.path().to_string()
+            };
+            e.into_inner()
+        })
     })
+    .map_err(|e| {
+        let opts = serde_saphyr::RenderOptions::new(&NoLocation);
+        ConfigError::new(path, e.render_with_options(opts)).in_file(file)
+    })
+}
+
+/// Renders serde-saphyr messages without the `at line L, column C` suffix.
+struct NoLocation;
+
+impl serde_saphyr::Localizer for NoLocation {
+    fn attach_location<'a>(
+        &self,
+        base: std::borrow::Cow<'a, str>,
+        _: serde_saphyr::Location,
+    ) -> std::borrow::Cow<'a, str> {
+        base
+    }
+}
+
+impl serde_saphyr::MessageFormatter for NoLocation {
+    fn localizer(&self) -> &dyn serde_saphyr::Localizer {
+        self
+    }
+
+    fn format_message<'a>(&self, err: &'a serde_saphyr::Error) -> std::borrow::Cow<'a, str> {
+        serde_saphyr::DefaultMessageFormatter.format_message(err)
+    }
 }
 
 #[cfg(test)]
