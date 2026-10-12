@@ -304,6 +304,26 @@ fn event_ids_increase_and_ts_follows_clock() {
 }
 
 #[test]
+fn setup_failed_at_set_and_clear_round_trip() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = open(dir.path());
+    let id = new_task(&store, "t");
+    let set = |f| {
+        Decision::new(id).set(Fields {
+            setup_failed_at: f,
+            ..Fields::default()
+        })
+    };
+    store.apply(set(Field::Set(4_242))).unwrap();
+    assert_eq!(
+        store.task(id).unwrap().unwrap().setup_failed_at,
+        Some(Ts::from_millis(4_242))
+    );
+    store.apply(set(Field::Clear)).unwrap();
+    assert_eq!(store.task(id).unwrap().unwrap().setup_failed_at, None);
+}
+
+#[test]
 fn intent_set_clear_and_run_lifecycle() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());

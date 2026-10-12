@@ -6,7 +6,7 @@ use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::task::{TaskInput, TaskState};
 use moor_core::seam::clock::Ts;
-use moor_core::{ProviderId, TaskId, TaskName};
+use moor_core::{BoxHandle, ProviderId, TaskId, TaskName};
 
 use crate::testing::clock::FakeClock;
 
@@ -99,4 +99,82 @@ fn box_rows_live_skips_deleted_boxes() {
     let rows = store.box_rows_live().unwrap();
     let got: Vec<_> = rows.iter().map(|(id, b)| (*id, b.state)).collect();
     assert_eq!(got, [(live, BoxState::Starting)]);
+}
+
+/// Request a box for `id` on `provider`.
+fn request(store: &Store, id: TaskId, provider: &str) {
+    let fields = Fields {
+        box_provider: Field::Set(ProviderId::new(provider)),
+        ..Fields::default()
+    };
+    let d = Decision::new(id)
+        .task_input(TaskInput::Admitted)
+        .box_input(BoxInput::Requested)
+        .set(fields);
+    store.apply(d).unwrap();
+}
+
+fn box_input(store: &Store, id: TaskId, input: BoxInput) {
+    store.apply(Decision::new(id).box_input(input)).unwrap();
+}
+
+fn acquired() -> BoxInput {
+    BoxInput::Acquired {
+        handle: BoxHandle::new("h"),
+    }
+}
+
+#[test]
+fn live_boxes_counts_only_starting_ready_asleep() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(dir.path());
+    let p = ProviderId::new("p");
+    let q = ProviderId::new("q");
+    assert_eq!(store.live_boxes(&p).unwrap(), 0);
+
+    let [starting, ready, asleep, failed, deleted, other] =
+        ["a", "b", "c", "d", "e", "f"].map(|n| add(&store, n));
+    for id in [starting, ready, asleep, failed, deleted] {
+        request(&store, id, "p");
+    }
+    request(&store, other, "q");
+    for id in [ready, asleep, deleted] {
+        box_input(&store, id, acquired());
+    }
+    box_input(&store, asleep, BoxInput::Sleep);
+    box_input(&store, deleted, BoxInput::Released);
+    let cause = "x".into();
+    let fail = BoxInput::AcquireFailed {
+        attempted: None,
+        cause,
+    };
+    box_input(&store, failed, fail);
+
+    assert_eq!(store.live_boxes(&p).unwrap(), 3);
+    assert_eq!(store.live_boxes(&q).unwrap(), 1);
+    assert_eq!(store.live_boxes(&ProviderId::new("z")).unwrap(), 0);
+}
+
+#[test]
+fn waiting_tasks_returns_waiting_for_box_in_id_order() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(dir.path());
+    let d = add(&store, "d");
+    let b = add(&store, "b");
+    add(&store, "c");
+    let a = add(&store, "a");
+    assert!(store.waiting_tasks().unwrap().is_empty());
+    // An index on (state, name) lets the planner return rows in name order.
+    store
+        .writer()
+        .unwrap()
+        .execute_batch("CREATE INDEX tasks_state_name ON tasks(state, name)")
+        .unwrap();
+    for id in [d, b, a] {
+        let input = TaskInput::AtCapacity { max_boxes: 1 };
+        store.apply(Decision::new(id).task_input(input)).unwrap();
+    }
+    let waiting = store.waiting_tasks().unwrap();
+    assert_eq!(waiting.iter().map(|t| t.id).collect::<Vec<_>>(), [d, b, a]);
+    assert!(waiting.iter().all(|t| t.state == TaskState::WaitingForBox));
 }

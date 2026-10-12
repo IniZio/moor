@@ -29,7 +29,7 @@ const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 /// Column list shared by the task reads; box columns come from a left join.
 const TASK_SELECT: &str = "SELECT t.id, t.name, t.repo, t.issue, t.goal, t.base, t.branch, t.worktree, t.bound, \
     t.workspace_id, t.agent_session_id, t.state, t.state_reason, t.intent_kind, t.intent_pid, t.intent_run, \
-    t.intent_at, t.created_at, t.updated_at, b.provider, b.handle, b.state, b.attempted_handle, b.workdir, \
+    t.intent_at, t.setup_failed_at, t.created_at, t.updated_at, b.provider, b.handle, b.state, b.attempted_handle, b.workdir, \
     b.egress_enforced, b.updated_at FROM tasks t LEFT JOIN boxes b ON b.task = t.id";
 
 /// Store failure.
@@ -118,6 +118,8 @@ pub(crate) struct TaskRow {
     pub(crate) intent: Option<Intent>,
     /// When the intent was recorded.
     pub(crate) intent_at: Option<Ts>,
+    /// When setup last failed, if it has.
+    pub(crate) setup_failed_at: Option<Ts>,
     /// Creation time.
     pub(crate) created_at: Ts,
     /// Last update.
@@ -304,20 +306,20 @@ fn intent_from(
     }
 }
 
-/// Map the joined box columns (offset 19..=25) to a `BoxRow`, if the box exists.
+/// Map the joined box columns (offset 20..=26) to a `BoxRow`, if the box exists.
 fn box_from_row(row: &Row<'_>) -> Result<Option<BoxRow>, StoreError> {
-    let Some(provider) = row.get::<_, Option<String>>(19)? else {
+    let Some(provider) = row.get::<_, Option<String>>(20)? else {
         return Ok(None);
     };
-    let state: String = row.get(21)?;
+    let state: String = row.get(22)?;
     Ok(Some(BoxRow {
         provider: ProviderId::new(provider),
-        handle: row.get::<_, Option<String>>(20)?.map(BoxHandle::new),
+        handle: row.get::<_, Option<String>>(21)?.map(BoxHandle::new),
         state: parsed_opt("box state", &state, BoxState::parse)?,
-        attempted_handle: row.get::<_, Option<String>>(22)?.map(BoxHandle::new),
-        workdir: row.get(23)?,
-        egress_enforced: row.get::<_, Option<i64>>(24)?.map(|v| v != 0),
-        updated_at: Ts::from_millis(row.get(25)?),
+        attempted_handle: row.get::<_, Option<String>>(23)?.map(BoxHandle::new),
+        workdir: row.get(24)?,
+        egress_enforced: row.get::<_, Option<i64>>(25)?.map(|v| v != 0),
+        updated_at: Ts::from_millis(row.get(26)?),
     }))
 }
 
@@ -341,8 +343,9 @@ fn task_from_row(row: &Row<'_>) -> Result<TaskRow, StoreError> {
         state_reason: row.get(12)?,
         intent: intent_from(row.get(13)?, row.get(14)?, row.get(15)?)?,
         intent_at: row.get::<_, Option<i64>>(16)?.map(Ts::from_millis),
-        created_at: Ts::from_millis(row.get(17)?),
-        updated_at: Ts::from_millis(row.get(18)?),
+        setup_failed_at: row.get::<_, Option<i64>>(17)?.map(Ts::from_millis),
+        created_at: Ts::from_millis(row.get(18)?),
+        updated_at: Ts::from_millis(row.get(19)?),
         boxed: box_from_row(row)?,
     })
 }

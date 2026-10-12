@@ -256,6 +256,10 @@ fn task_field_sets(s: &Fields) -> Sets {
         ("workspace_id", text(&s.workspace_id)),
         ("agent_session_id", text(&s.agent_session_id)),
         ("state_reason", text(&s.state_reason)),
+        (
+            "setup_failed_at",
+            field_value(&s.setup_failed_at, |t| Value::Integer(*t)),
+        ),
     ];
     all.into_iter().filter_map(|(c, v)| Some((c, v?))).collect()
 }
