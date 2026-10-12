@@ -69,3 +69,32 @@ fn detached_records_and_ok() {
     );
     assert_eq!(c.cwd.as_deref(), Some(std::path::Path::new("/w")));
 }
+
+#[test]
+fn bytes_reply_is_raw_for_secret_and_lossy_for_run() {
+    let p = ScriptedProc::new();
+    p.on(Tool::Gh, &["s"], Reply::Bytes(vec![0xff, 0xfe, b'x']));
+    let out = p.run_secret(&spec(Tool::Gh, &["s"])).unwrap();
+    assert_eq!(out.as_slice(), [0xff, 0xfe, b'x']);
+    let lossy = p.run(&spec(Tool::Gh, &["s"])).unwrap();
+    assert_eq!(lossy.stdout, "\u{fffd}\u{fffd}x");
+    assert_eq!(p.calls().len(), 2);
+}
+
+#[test]
+fn secret_failure_has_empty_stdout() {
+    let p = ScriptedProc::new();
+    p.on(
+        Tool::Gh,
+        &["f"],
+        Reply::Fail {
+            code: 4,
+            stdout: "leak".into(),
+            stderr: "e".into(),
+        },
+    );
+    assert!(matches!(
+        p.run_secret(&spec(Tool::Gh, &["f"])),
+        Err(ProcError::NonZero { code: 4, stdout, .. }) if stdout.is_empty()
+    ));
+}

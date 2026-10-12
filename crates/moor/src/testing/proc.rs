@@ -4,11 +4,14 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use moor_core::seam::proc::{Proc, ProcError, ProcOutput, ProcSpec, Tool};
+use zeroize::Zeroizing;
 
 /// A canned reply.
 pub(crate) enum Reply {
     /// Exit 0 with this stdout.
     Ok(String),
+    /// Exit 0 with these raw stdout bytes; `run` decodes them lossily.
+    Bytes(Vec<u8>),
     /// Non-zero exit.
     Fail {
         code: i32,
@@ -89,6 +92,12 @@ impl ScriptedProc {
                 stderr: String::new(),
                 truncated: false,
             }),
+            Some(Reply::Bytes(b)) => Ok(ProcOutput {
+                code: 0,
+                stdout: String::from_utf8_lossy(b).into_owned(),
+                stderr: String::new(),
+                truncated: false,
+            }),
             Some(Reply::Fail {
                 code,
                 stdout,
@@ -121,6 +130,33 @@ impl Proc for ScriptedProc {
     fn run(&self, spec: &ProcSpec) -> Result<ProcOutput, ProcError> {
         let args = self.record(spec);
         self.reply_for(spec, &args)
+    }
+
+    fn run_secret(&self, spec: &ProcSpec) -> Result<Zeroizing<Vec<u8>>, ProcError> {
+        let args = self.record(spec);
+        let bytes = self.rules.lock().ok().and_then(|rules| {
+            rules
+                .iter()
+                .find(|r| r.tool == spec.tool && args.starts_with(&r.prefix))
+                .and_then(|r| match &r.reply {
+                    Reply::Bytes(b) => Some(b.clone()),
+                    Reply::Ok(s) => Some(s.clone().into_bytes()),
+                    Reply::Fail { .. } | Reply::Timeout => None,
+                })
+        });
+        bytes
+            .map(Zeroizing::new)
+            .ok_or_else(|| match self.reply_for(spec, &args) {
+                Err(ProcError::NonZero {
+                    code, stderr_tail, ..
+                }) => ProcError::NonZero {
+                    code,
+                    stdout: String::new(),
+                    stderr_tail,
+                },
+                Err(e) => e,
+                Ok(_) => poisoned(),
+            })
     }
 
     fn spawn_detached(&self, spec: &ProcSpec) -> Result<(), ProcError> {
