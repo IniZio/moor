@@ -1,5 +1,10 @@
 //! Tests for text rendering.
 
+use moor_core::config::Layer;
+use moor_core::view::env::{
+    EnvAgent, EnvCredential, EnvEgress, EnvGithub, EnvKind, EnvMint, EnvProvider, EnvResolved,
+    EnvRow, EnvView, ValueKind,
+};
 use moor_core::{ErrorKind, ErrorView, Response, Warning};
 use serde_json::json;
 
@@ -57,4 +62,93 @@ fn warnings_print_unless_quiet() {
     let resp = Response::ok("show", None).with_warnings(vec![warn("careful")]);
     assert_eq!(render(&resp, false).1, "moor: warning: careful\n");
     assert_eq!(render(&resp, true).1, "");
+}
+
+/// Builds a row.
+fn row(kind: EnvKind, name: &str, source: Layer, note: &str) -> EnvRow {
+    EnvRow {
+        kind,
+        name: name.into(),
+        source,
+        value_kind: ValueKind::Plain,
+        delivery: None,
+        note: note.into(),
+    }
+}
+
+/// Builds a credential check.
+fn check(name: &str, ok: bool, reason: Option<&str>) -> EnvCredential {
+    EnvCredential {
+        kind: EnvKind::Credential,
+        which: name.into(),
+        ok,
+        reason: reason.map(Into::into),
+    }
+}
+
+/// Builds an env response from `rows` and `credentials`.
+fn env_view(rows: Vec<EnvRow>, credentials: Vec<EnvCredential>) -> Response {
+    let github = EnvGithub {
+        identity: "auto".into(),
+        app_id: None,
+        login: "logged_out".into(),
+        mint: EnvMint {
+            status: "skipped".into(),
+            error: None,
+            reason: Some("GitHub App not set up".into()),
+        },
+        resolved: EnvResolved {
+            mode: None,
+            app_installed: "n/a".into(),
+            token_source: None,
+            error: Some("no app".into()),
+        },
+    };
+    let view = EnvView {
+        repo: "/r".into(),
+        agent: EnvAgent { model: None },
+        github,
+        rows,
+        egress: EnvEgress {
+            mode: "allow".into(),
+            hosts: vec![],
+            note: String::new(),
+            enforce: None,
+        },
+        provider: EnvProvider {
+            name: "local".into(),
+            source: Layer::Default,
+            size: "small".into(),
+            size_source: Layer::Default,
+        },
+        credentials,
+    };
+    Response::ok("env", Some(serde_json::to_value(view).unwrap()))
+}
+
+#[test]
+fn env_text_starts_with_agent_and_marks_credentials() {
+    let rows = vec![
+        row(EnvKind::Credential, "GOOD", Layer::User, "env: X"),
+        row(EnvKind::Credential, "BAD", Layer::Repo, "file: /x"),
+        row(EnvKind::Egress, "allow", Layer::Default, "2 hosts"),
+    ];
+    let credentials = vec![
+        check("GOOD", true, None),
+        check("BAD", false, Some("missing")),
+    ];
+    let (out, _) = render(&env_view(rows, credentials), false);
+    assert!(out.starts_with("agent"));
+    let lines: Vec<&str> = out.lines().collect();
+    let good = lines.iter().find(|l| l.contains("GOOD")).unwrap();
+    assert!(good.contains('\u{2713}') && !good.contains('\u{2717}'));
+    let bad = lines.iter().find(|l| l.contains("BAD")).unwrap();
+    assert!(bad.contains('\u{2717}') && !bad.contains('\u{2713}'));
+    assert!(bad.ends_with("(missing)"));
+    assert!(out.contains("github token: skipped: GitHub App not set up"));
+    assert!(out.contains("github identity: unknown: no app"));
+    assert!(lines
+        .last()
+        .unwrap()
+        .starts_with("- egress allow  [default]  2 hosts"));
 }

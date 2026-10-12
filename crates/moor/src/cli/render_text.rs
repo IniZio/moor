@@ -2,6 +2,7 @@
 
 use std::fmt::Write as _;
 
+use moor_core::view::env::{EnvCredential, EnvRow, EnvView};
 use moor_core::{ExitClass, Response};
 use serde_json::Value;
 
@@ -33,6 +34,12 @@ fn render_value(resp: &Response, out: &mut String) {
             return;
         }
     }
+    if resp.cmd == "env" {
+        if let Ok(view) = serde_json::from_value::<EnvView>(value.clone()) {
+            out.push_str(&env_text(&view));
+            return;
+        }
+    }
     if let Ok(text) = serde_json::to_string_pretty(value) {
         out.push_str(&text);
         out.push('\n');
@@ -45,6 +52,90 @@ fn version_line(value: &Value) -> Option<String> {
     let commit = value.get("commit")?.as_str()?;
     let schema = value.get("schema")?.as_u64()?;
     Some(format!("moor {version} {commit} schema={schema}\n"))
+}
+
+/// Text form of the `env` view: agent, github, token lines, then one line per item.
+fn env_text(view: &EnvView) -> String {
+    let mut out = String::from("agent:");
+    let _ = writeln!(
+        out,
+        " model={}",
+        view.agent.model.as_deref().unwrap_or("default")
+    );
+    let gh = &view.github;
+    let _ = writeln!(
+        out,
+        "github: identity {}, app {}, {}",
+        gh.identity,
+        gh.app_id.as_deref().unwrap_or("none"),
+        gh.login
+    );
+    let res = &gh.resolved;
+    match (&res.mode, &res.token_source) {
+        (Some(mode), Some(src)) => {
+            let _ = writeln!(
+                out,
+                "github identity: {mode}, app installed {}, token from {src}",
+                res.app_installed
+            );
+        }
+        _ => {
+            let _ = writeln!(
+                out,
+                "github identity: unknown: {}",
+                res.error.as_deref().unwrap_or("unresolved")
+            );
+        }
+    }
+    let mint = &gh.mint;
+    match mint.status.as_str() {
+        "failed" => {
+            let _ = writeln!(
+                out,
+                "github token: failed: {}",
+                mint.error.as_deref().unwrap_or("")
+            );
+        }
+        "skipped" => {
+            let _ = writeln!(
+                out,
+                "github token: skipped: {}",
+                mint.reason.as_deref().unwrap_or("")
+            );
+        }
+        other => {
+            let _ = writeln!(out, "github token: {other}");
+        }
+    }
+    for row in &view.rows {
+        let _ = writeln!(out, "{}", row_line(row, view.check_of(row)));
+    }
+    out
+}
+
+/// One row line: mark, kind, name, layer, then optional note, delivery, reason.
+fn row_line(row: &EnvRow, check: Option<&EnvCredential>) -> String {
+    let mark = match check.map(|c| c.ok) {
+        Some(true) => "\u{2713}",
+        Some(false) => "\u{2717}",
+        None => "-",
+    };
+    let mut line = format!(
+        "{mark} {} {}  [{}]",
+        row.kind.as_str(),
+        row.name,
+        row.source.as_str()
+    );
+    if row.note != row.name {
+        let _ = write!(line, "  {}", row.note);
+    }
+    if let Some(d) = &row.delivery {
+        let _ = write!(line, "  delivery: {d}");
+    }
+    if let Some(reason) = check.filter(|c| !c.ok).and_then(|c| c.reason.as_deref()) {
+        let _ = write!(line, "  ({reason})");
+    }
+    line
 }
 
 /// Writes the error message and hints to `err`.
