@@ -115,6 +115,12 @@ fn provider_named_in_exit_summary() {
 }
 
 #[test]
+fn acquire_failure_renders_moor_wording_alone() {
+    let e = map_error(Op::Acquire, Some("aws"), &nz(1, "SECRETTOKEN123 boom"));
+    assert_eq!(e.to_string(), "box acquire failed on provider aws (exit 1)");
+}
+
+#[test]
 fn raw_stderr_never_leaks() {
     let token = "SECRETTOKEN123";
     let texts = [
