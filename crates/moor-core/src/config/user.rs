@@ -2,6 +2,8 @@
 //!
 //! Strict: unknown keys fail parsing; [`parse_user`] then validates values.
 
+mod creds;
+
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 use std::path::{Component, Path, PathBuf};
@@ -9,6 +11,7 @@ use std::path::{Component, Path, PathBuf};
 use serde::Deserialize;
 
 use super::{check, parse_strict, ConfigError};
+pub use creds::{CredentialSource, McpServer};
 
 /// Provider used when `box.provider` is unset.
 const DEFAULT_PROVIDER: &str = "local-container";
@@ -229,6 +232,10 @@ pub struct UserConfig {
     pub drivers: BTreeMap<String, DriverConfig>,
     /// Commit identity.
     pub git: GitIdentity,
+    /// Named credential sources.
+    pub credentials: BTreeMap<String, CredentialSource>,
+    /// MCP servers.
+    pub mcp_servers: BTreeMap<String, McpServer>,
     /// Box settings.
     #[serde(rename = "box")]
     pub box_: BoxConfig,
@@ -244,6 +251,8 @@ pub struct UserConfig {
     pub tools: ToolsConfig,
     /// Egress allow-list.
     pub egress: EgressConfig,
+    /// Credential names exposed to host-run box commands.
+    pub box_credentials: Vec<String>,
     /// State directory override.
     pub state_dir: Option<PathBuf>,
 }
@@ -279,6 +288,8 @@ impl UserConfig {
         if let Some(app) = &self.github.app {
             app.validate()?;
         }
+        creds::validate_credentials(&self.credentials)?;
+        creds::validate_mcp(&self.mcp_servers, &self.credentials)?;
         if let Some(d) = &self.dotfiles {
             d.validate()?;
         }
@@ -286,7 +297,8 @@ impl UserConfig {
             check::egress_entry(host)
                 .map_err(|why| ConfigError::new(format!("egress.allow[{i}]"), why))?;
         }
-        Ok(())
+        check::box_credentials(&self.box_credentials)
+            .map_err(|(i, m)| ConfigError::new(format!("box_credentials[{i}]"), m))
     }
 }
 

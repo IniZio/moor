@@ -4,9 +4,9 @@ pub mod check;
 mod user;
 
 pub use user::{
-    parse_user, AgentConfig, BoxConfig, BoxSize, DotfilesConfig, DriverConfig, EgressConfig,
-    GitIdentity, GithubApp, GithubConfig, HerdrConfig, Identity, SurfaceConfig, ToolsConfig,
-    UserConfig,
+    parse_user, AgentConfig, BoxConfig, BoxSize, CredentialSource, DotfilesConfig, DriverConfig,
+    EgressConfig, GitIdentity, GithubApp, GithubConfig, HerdrConfig, Identity, McpServer,
+    SurfaceConfig, ToolsConfig, UserConfig,
 };
 
 use std::fmt;
