@@ -1,5 +1,7 @@
 //! Secret bytes that never format, clone, serialise or compare.
 
+use std::fmt::Write as _;
+
 use sha2::{Digest as _, Sha256};
 use zeroize::Zeroize;
 
@@ -23,12 +25,13 @@ impl Secret {
     #[must_use]
     pub fn digest(&self) -> Digest {
         let hash = Sha256::digest(&self.0);
-        let mut hex = String::with_capacity(16);
-        for b in hash.iter().take(8) {
-            for nibble in [b >> 4, b & 0x0f] {
-                hex.push(char::from_digit(u32::from(nibble), 16).unwrap_or('0'));
-            }
-        }
+        let hex = hash
+            .iter()
+            .take(8)
+            .fold(String::with_capacity(16), |mut acc, b| {
+                let _ = write!(acc, "{b:02x}");
+                acc
+            });
         Digest(hex)
     }
 }
