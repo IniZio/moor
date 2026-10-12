@@ -350,3 +350,54 @@ fn failing_setup_stops_before_the_command() {
         .contains("moor: --record fresh-state prep failed (exit 7)"));
     assert!(!sb.exists(".moor/ran"));
 }
+
+fn setup_sandbox(name: &str) -> Sandbox {
+    let sb = Sandbox::new(name, true);
+    sb.write("a", "a");
+    sb.commit();
+    sb
+}
+
+#[test]
+fn first_failing_step_skips_later_steps_and_the_command() {
+    let sb = setup_sandbox("stepfail");
+    let out = sb.run(&["false", "echo c >> setup_ran"], "touch ran");
+    assert_ne!(out.code, 0);
+    assert!(!sb.exists("setup_ran"));
+    assert!(!sb.exists("ran"));
+}
+
+#[test]
+fn and_list_failure_still_stops_setup() {
+    let sb = setup_sandbox("andlist");
+    let out = sb.run(&["false && true", "touch second"], "touch ran");
+    assert_ne!(out.code, 0);
+    assert!(!sb.exists("second"));
+    assert!(!sb.exists("ran"));
+}
+
+#[test]
+fn exit_zero_in_a_step_does_not_skip_later_steps() {
+    let sb = setup_sandbox("exitzero");
+    let out = sb.run(&["exit 0", "touch second"], "touch ran");
+    assert_eq!(out.code, 0);
+    assert!(sb.exists("second"));
+    assert!(sb.exists("ran"));
+}
+
+#[test]
+fn disabling_errexit_in_a_step_does_not_leak_to_later_steps() {
+    let sb = setup_sandbox("seteoff");
+    let out = sb.run(&["set +e", "false"], "touch ran");
+    assert_ne!(out.code, 0);
+    assert!(!sb.exists("ran"));
+}
+
+#[test]
+fn step_with_unbalanced_parens_cannot_break_out() {
+    let sb = setup_sandbox("parens");
+    let out = sb.run(&[") ; touch escaped ; (", "true"], "touch ran");
+    assert_ne!(out.code, 0);
+    assert!(!sb.exists("escaped"));
+    assert!(!sb.exists("ran"));
+}

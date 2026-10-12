@@ -119,11 +119,15 @@ fi
 exit "$__moor_rc"
 "#;
 
-/// POSIX sh text: fresh-checkout prep, `setup` steps, then `command` (shell
-/// text); exits with the command's status.
+/// POSIX sh text: fresh-checkout prep, `setup` steps (each its own `sh -c`,
+/// first failure stops), then `command` (shell text); exits with the command's
+/// status.
 #[must_use]
 pub fn record_script(setup: &[String], command: &str) -> String {
-    let steps: String = setup.iter().flat_map(|s| [s.as_str(), "\n"]).collect();
+    let steps: String = setup
+        .iter()
+        .flat_map(|s| ["sh -c ", &quote(s), " || exit $?\n"].map(str::to_owned))
+        .collect();
     let prep = [
         &format!("__moor_setup={}\n", quote(&setup.join("\n"))),
         OWNERSHIP_FIXUP,
