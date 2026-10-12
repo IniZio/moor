@@ -52,11 +52,57 @@ fn steps_run_in_order() {
 }
 
 #[test]
-fn steps_share_one_shell() {
-    let s = Scratch::new("shared");
-    let code = s.run(&["X=kept", "echo $X > out"]);
+fn variables_do_not_leak_between_steps() {
+    let s = Scratch::new("isolated");
+    let code = s.run(&["X=kept", "echo \"[$X]\" > out"]);
     assert_eq!(code, Some(0));
-    assert_eq!(s.read("out"), "kept\n");
+    assert_eq!(s.read("out"), "[]\n");
+}
+
+#[test]
+fn failing_plain_step_stops_later_steps() {
+    let s = Scratch::new("plain");
+    let code = s.run(&["false", "echo c >> ran"]);
+    assert_eq!(code, Some(1));
+    assert_eq!(s.read("ran"), "");
+    assert_eq!(s.read(".moor/setup.rc").trim(), "1");
+}
+
+#[test]
+fn failed_and_list_still_stops_later_steps() {
+    let s = Scratch::new("andlist");
+    let code = s.run(&["false && true", "touch reached"]);
+    assert_eq!(code, Some(1));
+    assert!(!s.0.join("reached").exists());
+}
+
+#[test]
+fn exit_zero_step_does_not_skip_later_steps() {
+    let s = Scratch::new("exit0");
+    let code = s.run(&["echo a >> ran", "exit 0", "echo c >> ran"]);
+    assert_eq!(code, Some(0));
+    assert_eq!(s.read("ran"), "a\nc\n");
+}
+
+#[test]
+fn disabling_errexit_does_not_stop_failures_from_stopping() {
+    let s = Scratch::new("noerrexit");
+    let code = s.run(&["set +e", "false", "echo c >> ran"]);
+    assert_eq!(code, Some(1));
+    assert_eq!(s.read("ran"), "");
+}
+
+#[test]
+fn unbalanced_step_cannot_escape_logging() {
+    let s = Scratch::new("escape");
+    let code = s.run(&[") ; touch escaped ; (", "true"]);
+    assert_ne!(code, Some(0));
+    assert!(!s.0.join("escaped").exists());
+    let rc = s.read(".moor/setup.rc");
+    assert_ne!(rc.trim(), "0");
+    assert!(s
+        .read(".moor/setup.log")
+        .contains("moor setup: step 1 exited"));
 }
 
 #[test]
