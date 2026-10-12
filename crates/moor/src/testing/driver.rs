@@ -28,12 +28,14 @@ struct State {
     exec_results: VecDeque<Result<ExecOutcome, DriverError>>,
     execs: Vec<(BoxHandle, ExecSpec, Deadline)>,
     on_exec: Option<Arc<ExecHook>>,
+    work_root: Option<String>,
 }
 
 /// Runs inside every `exec`, before its result is served.
 type ExecHook = dyn Fn() + Send + Sync;
 
-/// Scripted Driver: boxes `box-1`, `box-2`, ... with workdir `/work/box-N`.
+/// Scripted Driver: boxes `box-1`, `box-2`, ... with workdir `/work/box-N`
+/// unless [`FakeDriver::work_root`] says otherwise.
 #[derive(Default)]
 pub(crate) struct FakeDriver {
     state: Mutex<State>,
@@ -47,6 +49,12 @@ impl FakeDriver {
 
     fn st(&self) -> MutexGuard<'_, State> {
         self.state.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Puts every box workdir under `root` instead of `/work`.
+    pub(crate) fn work_root(self, root: &str) -> Self {
+        self.st().work_root = Some(root.to_owned());
+        self
     }
 
     /// The next `acquire` fails once with `e`.
@@ -125,7 +133,8 @@ impl Driver for FakeDriver {
         let id = format!("box-{}", s.next);
         s.live.push(id.clone());
         s.providers.push((id.clone(), req.provider.clone()));
-        let workdir = BoxPath::under("/work", &id).map_err(|e| DriverError::Failed {
+        let root = s.work_root.as_deref().unwrap_or("/work");
+        let workdir = BoxPath::under(root, &id).map_err(|e| DriverError::Failed {
             summary: e.to_string(),
         })?;
         Ok(Acquired {
@@ -181,8 +190,10 @@ impl Driver for FakeDriver {
         if !s.live.iter().any(|h| h == handle.as_str()) {
             return Err(DriverError::NotFound);
         }
-        BoxPath::under("/work", handle.as_str()).map_err(|e| DriverError::Failed {
-            summary: e.to_string(),
+        BoxPath::under(s.work_root.as_deref().unwrap_or("/work"), handle.as_str()).map_err(|e| {
+            DriverError::Failed {
+                summary: e.to_string(),
+            }
         })
     }
 

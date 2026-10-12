@@ -239,7 +239,11 @@ fn failed_setup_then(
     yaml: &str,
     results: [Result<ExecOutcome, DriverError>; 2],
 ) -> (World, TaskId) {
-    let driver = FakeDriver::new().exec_results(results);
+    failed_setup_with(yaml, FakeDriver::new().exec_results(results))
+}
+
+/// Like [`failed_setup_then`] with the first setup run on `driver`.
+fn failed_setup_with(yaml: &str, driver: FakeDriver) -> (World, TaskId) {
     let (w, v) = start_with("setup: [a]\n", driver);
     let id = TaskId::new(v.task.id);
     let wt = w.cx.store().unwrap().task(id).unwrap().unwrap().worktree;
@@ -260,6 +264,24 @@ fn start_after_a_failed_setup_re_runs_setup_in_the_same_box_and_clears_the_failu
     let handles: Vec<_> = w.driver.execs().into_iter().map(|e| e.0).collect();
     assert_eq!(handles, [BoxHandle::new("box-1"), BoxHandle::new("box-1")]);
     assert_eq!(kinds(&w, id).iter().filter(|k| *k == "working").count(), 1);
+}
+
+#[test]
+fn start_re_runs_setup_in_a_workdir_whose_root_holds_a_parent_component() {
+    let driver = FakeDriver::new()
+        .work_root("/w/bin/../box")
+        .exec_results([Ok(exit(1)), Ok(exit(0))]);
+    let (w, _) = failed_setup_with("setup: [a]\n", driver);
+    let again = run(&w.cx, &start_req()).unwrap();
+    assert!(again.setup.ran && again.setup.ok);
+    let cwds: Vec<_> = w
+        .driver
+        .execs()
+        .into_iter()
+        .map(|e| e.1.cwd.map(|p| p.as_str().to_owned()))
+        .collect();
+    let stored = Some("/w/bin/../box/box-1".to_owned());
+    assert_eq!(cwds, [stored.clone(), stored]);
 }
 
 #[test]
