@@ -177,3 +177,74 @@ fn is_live_excludes_closed_and_rejected() {
         assert_eq!(state.is_live(), !matches!(state, S::Closed | S::Rejected));
     }
 }
+
+/// Position of a state in `TaskState::ALL`; the exhaustive match fails to compile on a new variant.
+const fn state_index(s: TaskState) -> usize {
+    match s {
+        S::Checking => 0,
+        S::Rejected => 1,
+        S::WaitingForBox => 2,
+        S::SettingUp => 3,
+        S::SetupFailed => 4,
+        S::Working => 5,
+        S::Idle => 6,
+        S::Asleep => 7,
+        S::Closed => 8,
+    }
+}
+
+/// Position of an input in `all_inputs()`; the exhaustive match fails to compile on a new variant.
+const fn input_index(i: &TaskInput) -> usize {
+    match i {
+        I::Insert => 0,
+        I::Rejected { .. } => 1,
+        I::AtCapacity { .. } => 2,
+        I::Admitted => 3,
+        I::Promoted => 4,
+        I::BoxReady { .. } => 5,
+        I::AcquireFailed { .. } => 6,
+        I::CredFailed { .. } => 7,
+        I::DotfilesFailed { .. } => 8,
+        I::Retry => 9,
+        I::AgentQuiet => 10,
+        I::AgentBusy => 11,
+        I::RunStarted => 12,
+        I::SleepDue => 13,
+        I::SleepCmd => 14,
+        I::Wake => 15,
+        I::Close => 16,
+    }
+}
+
+/// `ALL` lists every state once, in match order.
+#[test]
+fn all_states_listed_once_in_order() {
+    assert_eq!(TaskState::ALL.len(), 9);
+    for (pos, s) in TaskState::ALL.into_iter().enumerate() {
+        assert_eq!(state_index(s), pos, "{s:?}");
+    }
+}
+
+/// The hand-written name equals the serde name and parses back.
+#[test]
+fn state_names_match_serde_and_parse() {
+    for s in TaskState::ALL {
+        let json = serde_json::to_value(s).unwrap();
+        assert_eq!(json.as_str(), Some(s.as_str()), "{s:?}");
+        assert_eq!(TaskState::parse(s.as_str()), Some(s), "{s:?}");
+    }
+}
+
+/// The sample inputs cover every variant once, with unique names.
+#[test]
+fn input_samples_cover_every_variant_with_unique_names() {
+    let all = all_inputs();
+    assert_eq!(all.len(), 17);
+    for (pos, i) in all.iter().enumerate() {
+        assert_eq!(input_index(i), pos, "{i:?}");
+    }
+    let mut names: Vec<_> = all.iter().map(TaskInput::name).collect();
+    names.sort_unstable();
+    names.dedup();
+    assert_eq!(names.len(), all.len());
+}

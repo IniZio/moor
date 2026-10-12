@@ -131,3 +131,66 @@ fn capacity() {
         );
     }
 }
+
+/// Position of a state in `BoxState::ALL`; the exhaustive match fails to compile on a new variant.
+const fn state_index(s: BoxState) -> usize {
+    match s {
+        Starting => 0,
+        Ready => 1,
+        Failed => 2,
+        Asleep => 3,
+        Gone => 4,
+        ReleaseFailed => 5,
+        Deleted => 6,
+    }
+}
+
+/// Position of an input in `inputs()`; the exhaustive match fails to compile on a new variant.
+const fn input_index(i: &BoxInput) -> usize {
+    match i {
+        BoxInput::Requested => 0,
+        BoxInput::Acquired { .. } => 1,
+        BoxInput::AcquireFailed { .. } => 2,
+        BoxInput::Sleep => 3,
+        BoxInput::Wake => 4,
+        BoxInput::DriverMissing => 5,
+        BoxInput::Released => 6,
+        BoxInput::ReleaseErr { .. } => 7,
+    }
+}
+
+/// `ALL` lists every state once, in match order.
+#[test]
+fn all_states_listed_once_in_order() {
+    assert_eq!(BoxState::ALL.len(), 7);
+    for (pos, s) in BoxState::ALL.into_iter().enumerate() {
+        assert_eq!(state_index(s), pos, "{s:?}");
+    }
+}
+
+/// The hand-written name equals the serde name and parses back.
+#[test]
+fn state_names_match_serde_and_parse() {
+    for s in BoxState::ALL {
+        let json = serde_json::to_value(s).unwrap();
+        assert_eq!(json.as_str(), Some(s.as_str()), "{s:?}");
+        assert_eq!(BoxState::parse(s.as_str()), Some(s), "{s:?}");
+    }
+}
+
+/// The sample inputs cover every variant once, with unique names.
+#[test]
+fn input_samples_cover_every_variant_with_unique_names() {
+    let all = inputs();
+    assert_eq!(all.len(), 8);
+    for (pos, i) in all.iter().enumerate() {
+        assert_eq!(input_index(i), pos, "{i:?}");
+    }
+    let mut names: Vec<_> = all.iter().map(BoxInput::name).collect();
+    names.sort_unstable();
+    names.dedup();
+    assert_eq!(names.len(), all.len());
+    for n in names {
+        assert_eq!(input(n).name(), n);
+    }
+}

@@ -124,3 +124,37 @@ fn extra_events_round_trip() {
         assert_eq!(Event::from(back).kind(), kind);
     }
 }
+
+/// Position of an intent in `intent_samples()`; the exhaustive match fails to compile on a new variant.
+const fn intent_index(i: &Intent) -> usize {
+    match i {
+        Intent::Provisioning { .. } => 0,
+        Intent::Running { .. } => 1,
+        Intent::Setup { .. } => 2,
+    }
+}
+
+/// One sample of every intent variant.
+fn intent_samples() -> [Intent; 3] {
+    [
+        Intent::Provisioning { pid: 1 },
+        Intent::Running {
+            run: RunId::new(2),
+            pid: 2,
+        },
+        Intent::Setup { pid: 3 },
+    ]
+}
+
+/// The samples cover every intent once, and the kind names are unique.
+#[test]
+fn intent_samples_cover_every_variant_with_unique_kinds() {
+    let all = intent_samples();
+    for (pos, i) in all.iter().enumerate() {
+        assert_eq!(intent_index(i), pos, "{i:?}");
+    }
+    let mut kinds: Vec<_> = all.iter().map(Intent::kind).collect();
+    kinds.sort_unstable();
+    kinds.dedup();
+    assert_eq!(kinds.len(), all.len());
+}
