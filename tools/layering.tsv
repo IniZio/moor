@@ -20,6 +20,7 @@ moor::adapters::crabbox	moor::adapters::proc
 moor::adapters::herdr	moor::adapters::proc
 moor::adapters::box_agent	moor::adapters::proc
 moor::adapters::github	moor::adapters::proc
+moor::adapters::creds	moor::adapters::proc,moor::env
 moor::testing	moor::adapters::clock,moor::adapters::git,moor::cx
 moor::proxy	moor::store,moor::adapters::clock,moor::env
 moor::cli	moor::error

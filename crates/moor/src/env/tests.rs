@@ -54,6 +54,34 @@ fn with_state_dir_overrides() {
 }
 
 #[test]
+fn expand_home_joins_rest_onto_home() {
+    let e = env(&[("HOME", "/h")]);
+    assert_eq!(e.expand_home(Path::new("~/x/y")), PathBuf::from("/h/x/y"));
+}
+
+#[test]
+fn expand_home_bare_tilde_is_home() {
+    let e = env(&[("HOME", "/h")]);
+    assert_eq!(e.expand_home(Path::new("~")), PathBuf::from("/h"));
+}
+
+#[test]
+fn expand_home_without_home_is_unchanged() {
+    assert_eq!(
+        Env::default().expand_home(Path::new("~/x")),
+        PathBuf::from("~/x")
+    );
+}
+
+#[test]
+fn expand_home_leaves_other_paths() {
+    let e = env(&[("HOME", "/h")]);
+    assert_eq!(e.expand_home(Path::new("/a/~")), PathBuf::from("/a/~"));
+    assert_eq!(e.expand_home(Path::new("~x/y")), PathBuf::from("~x/y"));
+    assert_eq!(e.expand_home(Path::new("rel")), PathBuf::from("rel"));
+}
+
+#[test]
 fn get_returns_value() {
     let e = env(&[("K", "v")]);
     assert_eq!(e.get("K"), Some("v"));

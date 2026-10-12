@@ -5,6 +5,7 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 /// Snapshot of environment variables.
+#[derive(Clone, Default)]
 pub struct Env {
     /// Variable name to value.
     vars: BTreeMap<String, String>,
@@ -74,6 +75,17 @@ impl Env {
             None => Path::new(self.non_empty("HOME")?).join(fallback),
         };
         Some(base.join(sub))
+    }
+
+    /// Expand a leading `~` or `~/` using `HOME` from this environment.
+    ///
+    /// Any other path, or any path when `HOME` is unset, is returned unchanged.
+    #[must_use]
+    pub fn expand_home(&self, p: &Path) -> PathBuf {
+        match (p.strip_prefix("~"), self.get("HOME")) {
+            (Ok(rest), Some(home)) => Path::new(home).join(rest),
+            _ => p.to_path_buf(),
+        }
     }
 
     /// Value of `key` when set and non-empty.

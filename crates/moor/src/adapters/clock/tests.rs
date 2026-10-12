@@ -47,7 +47,7 @@ fn system_clock_pinned_base_advances() {
 
 #[test]
 fn system_clock_without_var_is_real_time() {
-    let env = Env::from_pairs::<[(&str, &str); 0], _, _>([]);
+    let env = Env::default();
     let c = SystemClock::from_env(&env).unwrap();
     let real = SystemClock::real().now().as_millis();
     assert!((c.now().as_millis() - real).abs() < 3000);
