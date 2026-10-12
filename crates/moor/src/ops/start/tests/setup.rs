@@ -2,7 +2,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use moor_core::domain::boxes::BoxInput;
+use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Intent, IntentChange};
 use moor_core::domain::task::TaskState;
 use moor_core::seam::driver::{DriverError, ExecOutcome};
@@ -282,4 +282,33 @@ fn start_leaves_setup_alone_when_the_setup_owner_is_alive() {
         row.unwrap().unwrap().intent,
         Some(Intent::Setup { pid: 4242 })
     );
+}
+
+#[test]
+fn start_re_runs_setup_for_a_setting_up_task_whose_setup_owner_died() {
+    let repo = tempfile::tempdir().unwrap();
+    std::fs::write(repo.path().join(".moor.yaml"), "setup: [a]\n").unwrap();
+    let w = world_at(FakeDriver::new(), repo.path());
+    w.driver
+        .on_exec(|| std::panic::resume_unwind(Box::new("process died mid-setup")));
+    let crashed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        drop(run(&w.cx, &start_req()));
+    }));
+    assert!(crashed.is_err());
+    let id = TaskId::new(1);
+    let row = w.cx.store().unwrap().task(id).unwrap().unwrap();
+    assert_eq!(row.state, TaskState::SettingUp);
+    assert_eq!(row.boxed.map(|b| b.state), Some(BoxState::Ready));
+    assert_eq!(
+        row.intent,
+        Some(Intent::Setup {
+            pid: std::process::id()
+        })
+    );
+    w.driver.on_exec(|| {});
+    w.proc.dead(std::process::id());
+    let again = run(&w.cx, &start_req()).unwrap();
+    assert_eq!(again.task.state, TaskState::Working);
+    assert!(again.setup.ran && again.setup.ok);
+    assert_eq!(kinds(&w, id).iter().filter(|k| *k == "working").count(), 1);
 }
