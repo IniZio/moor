@@ -2,7 +2,7 @@
 //!
 //! The Box lock is held from the run row's creation to its completion.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use moor_core::config::Flags;
@@ -20,6 +20,7 @@ use crate::ops::common::provisioning::dead_provisioning;
 use crate::store::{NewRun, RunOutcome, Store, TaskRow};
 
 mod ready;
+mod record;
 
 /// Longest a command may run before the driver gives up on it.
 const RUN_DEADLINE: Duration = Duration::from_hours(24);
@@ -33,6 +34,7 @@ pub(crate) fn run(cx: &Cx, req: &RunReq) -> Result<RunValue, CommandError> {
     if req.argv.is_empty() {
         return Err(CommandError::new(ErrorKind::Usage, "no command to run"));
     }
+    record::usage(req)?;
     let store = cx.store()?;
     let name = req.task.as_str();
     let found = store
@@ -67,11 +69,7 @@ fn launch(
     } else {
         SyncMode::Full
     };
-    let sha = cx
-        .git()
-        .head(&target.worktree)
-        .ok()
-        .and_then(|s| Sha::parse(&s).ok());
+    let (sha, argv) = plan(cx, req, &target.worktree, &cfg.setup)?;
     let id = store.begin_run(NewRun {
         task,
         argv: req.argv.clone(),
@@ -88,7 +86,7 @@ fn launch(
         }
     };
     let spec = ExecSpec {
-        argv: req.argv.clone(),
+        argv,
         env: Vec::new(),
         cwd: target.workdir,
         sync,
@@ -121,6 +119,28 @@ fn launch(
         record: req.record.clone(),
         log,
     })
+}
+
+/// The sha the run is stored under and the argv the Box executes.
+///
+/// A record run is checked first and runs the wrapped script; any other run keeps its argv and
+/// takes HEAD when it can be read.
+fn plan(
+    cx: &Cx,
+    req: &RunReq,
+    worktree: &Path,
+    setup: &[String],
+) -> Result<(Option<Sha>, Vec<String>), CommandError> {
+    if req.record.is_some() {
+        let sha = record::checkout(cx, worktree)?;
+        return Ok((Some(sha), record::wrap(setup, &req.argv)));
+    }
+    let sha = cx
+        .git()
+        .head(worktree)
+        .ok()
+        .and_then(|s| Sha::parse(&s).ok());
+    Ok((sha, req.argv.clone()))
 }
 
 /// Where the command's output goes, and the log path to report (empty when inherited).
