@@ -26,7 +26,7 @@ fn failed_shows_only_summary() {
     let e = DriverError::Failed {
         summary: "boom".into(),
     };
-    assert_eq!(e.to_string(), "box operation failed: boom");
+    assert_eq!(e.to_string(), "boom");
 }
 
 #[test]
