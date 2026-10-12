@@ -1,5 +1,5 @@
 [workspace]
-members = ["tools/layering"]
+members = ["crates/moor", "crates/moor-core", "tools/layering"]
 exclude = ["target"]
 resolver = "2"
 
