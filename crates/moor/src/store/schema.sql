@@ -17,8 +17,6 @@ CREATE TABLE sessions (id INTEGER PRIMARY KEY, task INTEGER NOT NULL, session_re
   ended_at INTEGER, exit INTEGER, transcript_digest TEXT);
 CREATE TABLE runs   (id INTEGER PRIMARY KEY, task INTEGER NOT NULL, argv TEXT NOT NULL, record TEXT, sha TEXT, sync TEXT NOT NULL,
   pid INTEGER NOT NULL, started_at INTEGER NOT NULL, finished_at INTEGER, exit INTEGER, interrupted INTEGER NOT NULL DEFAULT 0);
-CREATE TABLE gates  (sha TEXT NOT NULL, name TEXT NOT NULL, command TEXT NOT NULL, exit INTEGER NOT NULL, at INTEGER NOT NULL,
-  PRIMARY KEY (sha, name));
 CREATE TABLE reports(id INTEGER PRIMARY KEY, task INTEGER NOT NULL, kind TEXT NOT NULL, version INTEGER NOT NULL, path TEXT NOT NULL,
   title TEXT, created_at INTEGER NOT NULL, UNIQUE (task, kind, version));
 CREATE TABLE hook_cache (task INTEGER PRIMARY KEY, record TEXT NOT NULL, at INTEGER NOT NULL);
