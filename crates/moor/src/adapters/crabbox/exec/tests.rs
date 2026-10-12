@@ -2,8 +2,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+use moor_core::domain::run::SyncMode;
 use moor_core::name::BoxHandle;
-use moor_core::seam::driver::{Driver, ExecOutcome, ExecSpec, SyncMode};
+use moor_core::seam::driver::{Driver, ExecOutcome, ExecSpec};
 use moor_core::seam::proc::{Deadline, Output, Tool};
 
 use crate::adapters::crabbox::Crabbox;

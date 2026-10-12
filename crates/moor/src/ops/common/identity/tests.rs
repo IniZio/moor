@@ -3,7 +3,8 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use moor_core::seam::driver::{AcquireReq, Driver, DriverError, EgressPlan, ExecOutcome, SyncMode};
+use moor_core::domain::run::SyncMode;
+use moor_core::seam::driver::{AcquireReq, Driver, DriverError, EgressPlan, ExecOutcome};
 use moor_core::seam::proc::{Deadline, Tool};
 use moor_core::{BoxHandle, ProviderId, TaskId, TaskName};
 

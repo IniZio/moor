@@ -3,8 +3,9 @@
 use std::time::Duration;
 
 use moor_core::config::TaskSettings;
+use moor_core::domain::run::SyncMode;
 use moor_core::domain::task::SetupOutcome;
-use moor_core::seam::driver::{ExecOutcome, ExecSpec, SyncMode};
+use moor_core::seam::driver::{ExecOutcome, ExecSpec};
 use moor_core::seam::proc::Deadline;
 use moor_core::view::SetupView;
 use moor_core::{BoxHandle, BoxPath, Warning};

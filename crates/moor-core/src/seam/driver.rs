@@ -7,6 +7,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use crate::domain::run::SyncMode;
 use crate::name::{BoxHandle, BoxPath, ProviderId, TaskId, TaskName};
 use crate::seam::proc::{Deadline, Output};
 
@@ -113,15 +114,6 @@ pub struct BoxListing {
     pub provider: Option<ProviderId>,
     /// Whether the Box sleeps.
     pub asleep: bool,
-}
-
-/// Whether the worktree is synced into the Box before a command runs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SyncMode {
-    /// Sync the worktree first.
-    Full,
-    /// Run without syncing.
-    None,
 }
 
 /// A command to run inside a Box.

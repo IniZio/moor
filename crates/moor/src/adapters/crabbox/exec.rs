@@ -1,7 +1,8 @@
 //! Runs one command in a Box through `crabbox run`.
 
+use moor_core::domain::run::SyncMode;
 use moor_core::name::BoxHandle;
-use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec, SyncMode};
+use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
 use moor_core::seam::proc::{Deadline, ProcError};
 
 use super::errors::{map_error, remote_exit, Op};

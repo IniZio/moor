@@ -2,7 +2,8 @@
 
 use serde_json::json;
 
-use super::{CpValue, RunValue, SyncMode, WaitRunView, WaitValue};
+use super::{CpValue, RunValue, WaitRunView, WaitValue};
+use crate::domain::run::SyncMode;
 use crate::domain::task::TaskState;
 use crate::name::RunId;
 use crate::request::WaitFor;

@@ -4,10 +4,10 @@ use std::sync::Arc;
 
 use std::time::Duration;
 
+use moor_core::domain::run::SyncMode;
 use moor_core::name::{BoxHandle, BoxPath, ProviderId, TaskId, TaskName};
 use moor_core::seam::driver::{
     AcquireReq, Driver, DriverError, EgressApplied, EgressPlan, ExecOutcome, ExecSpec, Released,
-    SyncMode,
 };
 use moor_core::seam::proc::{Deadline, Output, Proc, ProcError, ProcOutput, ProcSpec, Tool};
 use zeroize::Zeroizing;
