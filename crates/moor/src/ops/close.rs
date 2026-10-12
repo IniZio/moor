@@ -1,35 +1,58 @@
-//! `moor close`: gate, release the Box, then close the Workspace.
+//! `moor close`: gate, tear down and release the Box, then close the Workspace.
 
 use std::path::Path;
+use std::time::Duration;
+
+use moor_core::boxscript::teardown::teardown_script;
+use moor_core::config::Flags;
+use moor_core::domain::boxes::BoxState;
+use moor_core::domain::run::SyncMode;
 
 use moor_core::decide::close::{close_gate, release_outcome, CloseFacts, ClosePlan, ReleaseResult};
-use moor_core::seam::driver::Released;
+use moor_core::seam::driver::{ExecOutcome, ExecSpec, Released};
+use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::WorkspaceRef;
 use moor_core::view::CloseView;
 use moor_core::{BoxHandle, CloseReq, ErrorKind, TaskName, Warning};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
+use crate::ops::common::boxlock::{self, BoxLock};
+use crate::ops::common::facts::settings;
 use crate::ops::common::promote::promote_waiting;
 use crate::ops::common::view::task_view;
 use crate::store::{BoxRow, Store, TaskRow};
 
-/// Closes a task: the data-loss gate, Box release, Workspace close.
+/// Wall-clock allowance for the teardown script.
+const TEARDOWN_DEADLINE: Duration = Duration::from_mins(30);
+
+/// Closes a task: the data-loss gate, Box teardown and release, Workspace close.
 ///
-/// The Box is released before the Workspace closes. The worktree is never
-/// removed; it belongs to the user's checkout. Waiting tasks are then promoted
-/// into the freed slot.
+/// The Box lock is held from the gate to the Workspace close and dropped before
+/// promotion, which takes the locks of the waiting tasks. The Box is released
+/// before the Workspace closes. The worktree is never removed; it belongs to the
+/// user's checkout. Waiting tasks are then promoted into the freed slot.
 pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
     let store = cx.store()?;
+    let first = find(store, &req.task)?;
+    let lock = BoxLock::acquire(
+        cx.clock(),
+        cx.state_dir()?,
+        first.id,
+        "close",
+        boxlock::WAIT,
+    )?;
     let row = find(store, &req.task)?;
     let plan = close_gate(&facts(cx, &row)?, req.force)?;
     let box_deleted = if plan.release_box {
+        teardown(cx, &row);
         release(cx, store, &row)?
     } else {
         store.apply(plan.decision_close.clone())?;
         false
     };
     let workspace_closed = close_workspace(cx, &row, &plan);
+    drop(lock);
     let provider = row.boxed.as_ref().map(|b| b.provider.clone());
     let closed = store.task(row.id)?.unwrap_or(row);
     let promoted = provider.map_or_else(Vec::new, |p| {
@@ -86,6 +109,58 @@ fn facts(cx: &Cx, row: &TaskRow) -> Result<CloseFacts, CommandError> {
         unpushed,
         dirty,
     })
+}
+
+/// Runs the repo `teardown:` lines as one synced script in a ready Box.
+///
+/// Nothing runs without lines or without a live Box. A failure only warns.
+fn teardown(cx: &Cx, row: &TaskRow) {
+    let Some(b) = row.boxed.as_ref().filter(|b| b.state == BoxState::Ready) else {
+        return;
+    };
+    let Some(handle) = held(b) else {
+        return;
+    };
+    let at = row.worktree.as_deref().unwrap_or(&row.repo);
+    let cfg = match settings(cx, Path::new(at), &Flags::default()) {
+        Ok(cfg) => cfg,
+        Err(e) => return warn_teardown(cx, &e.error.to_string()),
+    };
+    if cfg.teardown.is_empty() {
+        return;
+    }
+    let spec = ExecSpec {
+        argv: vec![
+            "sh".to_owned(),
+            "-c".to_owned(),
+            teardown_script(&cfg.teardown),
+        ],
+        env: cfg
+            .env
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect(),
+        cwd: None,
+        sync: SyncMode::Full,
+        output: None,
+        host_cwd: row.worktree.as_ref().map(Into::into),
+        class: Some(cfg.size.value.as_str().to_owned()),
+    };
+    let reason = match cx.driver().exec(handle, &spec, Deadline(TEARDOWN_DEADLINE)) {
+        Ok(ExecOutcome::Exited { code: 0 }) => return,
+        Ok(ExecOutcome::Exited { code }) => format!("exit {code}"),
+        Ok(ExecOutcome::Interrupted) => "interrupted".to_owned(),
+        Err(e) => e.to_string(),
+    };
+    warn_teardown(cx, &reason);
+}
+
+/// Warns that teardown did not finish; the Box is released regardless.
+fn warn_teardown(cx: &Cx, reason: &str) {
+    cx.warn(Warning {
+        code: "teardown_failed".to_owned(),
+        message: format!("teardown did not finish: {reason}; the Box is released anyway"),
+    });
 }
 
 /// Asks the Driver to release the Box and records the verdict.
