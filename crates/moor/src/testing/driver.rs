@@ -6,6 +6,7 @@
 )]
 
 use std::collections::VecDeque;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use moor_core::seam::driver::{
@@ -25,11 +26,16 @@ struct State {
     fail_release: Option<DriverError>,
     fail_release_always: Option<DriverError>,
     fail_list: Option<DriverError>,
+    fail_copy_out: Option<DriverError>,
     exec_results: VecDeque<Result<ExecOutcome, DriverError>>,
     execs: Vec<(BoxHandle, ExecSpec, Deadline)>,
+    copies: Vec<CopyCall>,
     on_exec: Option<Arc<ExecHook>>,
     work_root: Option<String>,
 }
+
+/// One `copy_out` call: handle, source, destination and host cwd.
+type CopyCall = (BoxHandle, BoxPath, PathBuf, PathBuf);
 
 /// Runs inside every `exec`, before its result is served.
 type ExecHook = dyn Fn() + Send + Sync;
@@ -81,6 +87,12 @@ impl FakeDriver {
         self
     }
 
+    /// The next `copy_out` fails once with `e`.
+    pub(crate) fn fail_copy_out(self, e: DriverError) -> Self {
+        self.st().fail_copy_out = Some(e);
+        self
+    }
+
     /// Queues scripted `exec` results, served in order; then exit code 0.
     pub(crate) fn exec_results(
         self,
@@ -108,6 +120,11 @@ impl FakeDriver {
     /// Every `exec` so far: handle, spec and deadline, in call order.
     pub(crate) fn execs(&self) -> Vec<(BoxHandle, ExecSpec, Deadline)> {
         self.st().execs.clone()
+    }
+
+    /// Every `copy_out` so far: handle, source, destination, host cwd.
+    pub(crate) fn copies(&self) -> Vec<CopyCall> {
+        self.st().copies.clone()
     }
 }
 
@@ -216,6 +233,27 @@ impl Driver for FakeDriver {
         s.exec_results
             .pop_front()
             .unwrap_or(Ok(ExecOutcome::Exited { code: 0 }))
+    }
+
+    fn copy_out(
+        &self,
+        handle: &BoxHandle,
+        from: &BoxPath,
+        to: &Path,
+        host_cwd: &Path,
+    ) -> Result<(), DriverError> {
+        let mut s = self.st();
+        s.calls.push(format!("copy_out {}", handle.as_str()));
+        s.copies.push((
+            handle.clone(),
+            from.clone(),
+            to.to_path_buf(),
+            host_cwd.to_path_buf(),
+        ));
+        if !s.live.iter().any(|h| h == handle.as_str()) {
+            return Err(DriverError::NotFound);
+        }
+        s.fail_copy_out.take().map_or(Ok(()), Err)
     }
 }
 
