@@ -1,5 +1,6 @@
 //! Shell script text run on a Box. Pure: builds text, never runs it.
 
+pub mod record;
 pub mod setup;
 
 #[cfg(test)]
