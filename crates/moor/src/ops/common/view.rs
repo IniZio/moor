@@ -3,6 +3,8 @@
 use moor_core::domain::boxes::BoxState;
 use moor_core::seam::clock::Ts;
 use moor_core::view::{BoxView, EventView, TaskView};
+use time::format_description::well_known::Rfc3339;
+use time::OffsetDateTime;
 
 use crate::store::{BoxRow, EventRow, TaskRow};
 
@@ -10,31 +12,15 @@ use crate::store::{BoxRow, EventRow, TaskRow};
 mod tests;
 
 /// Format a timestamp as RFC3339 UTC with second precision.
+///
+/// A timestamp outside years 0..=9999 (a corrupt row) renders as its raw
+/// millisecond count in decimal.
 pub(crate) fn rfc3339(ts: Ts) -> String {
-    let secs = ts.as_millis().div_euclid(1000);
-    let days = secs.div_euclid(86_400);
-    let rem = secs.rem_euclid(86_400);
-    let (y, m, d) = civil(days);
-    format!(
-        "{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z",
-        rem / 3600,
-        rem % 3600 / 60,
-        rem % 60
-    )
-}
-
-/// Civil date from days since 1970-01-01 (proleptic Gregorian).
-const fn civil(days: i64) -> (i64, i64, i64) {
-    let z = days + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z.rem_euclid(146_097);
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = yoe + era * 400 + if m <= 2 { 1 } else { 0 };
-    (y, m, d)
+    let ms = ts.as_millis();
+    OffsetDateTime::from_unix_timestamp(ms.div_euclid(1000))
+        .ok()
+        .and_then(|t| t.format(&Rfc3339).ok())
+        .unwrap_or_else(|| ms.to_string())
 }
 
 /// The handle to show: live, or the attempted one once the Box failed.
