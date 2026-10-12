@@ -11,6 +11,7 @@ use moor_core::seam::rng::Rng;
 use moor_core::seam::surface::Surface;
 use moor_core::{ErrorKind, Warning};
 
+use crate::adapters::creds::Creds;
 use crate::adapters::git::Git;
 use crate::config_load::load_repo;
 use crate::error::CommandError;
@@ -37,6 +38,8 @@ pub(crate) struct Cx {
     git: Git,
     /// User configuration.
     config: UserConfig,
+    /// Credential reader.
+    creds: Creds,
     /// Invocation directory.
     cwd: PathBuf,
     /// State store, opened on first use.
@@ -59,6 +62,8 @@ pub(crate) struct CxParts {
     pub git: Git,
     /// User configuration.
     pub config: UserConfig,
+    /// Credential reader.
+    pub creds: Creds,
     /// Invocation directory.
     pub cwd: PathBuf,
 }
@@ -75,6 +80,7 @@ impl Cx {
             surface: p.surface,
             git: p.git,
             config: p.config,
+            creds: p.creds,
             cwd: p.cwd,
             store: OnceCell::new(),
         }
@@ -113,6 +119,11 @@ impl Cx {
     /// User configuration.
     pub(crate) const fn config(&self) -> &UserConfig {
         &self.config
+    }
+
+    /// Credential reader.
+    pub(crate) const fn creds(&self) -> &Creds {
+        &self.creds
     }
 
     /// Repo config for `worktree`: its own `.moor.yaml`, else the main checkout's.

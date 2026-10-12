@@ -22,10 +22,10 @@ moor::adapters::box_agent	moor::adapters::proc
 moor::adapters::github	moor::adapters::proc
 moor::adapters::creds	moor::adapters::proc,moor::env
 moor::config_load	moor::env,moor::error
-moor::testing	moor::adapters::clock,moor::adapters::git,moor::cx
+moor::testing	moor::adapters::clock,moor::adapters::git,moor::adapters::creds,moor::cx,moor::env
 moor::proxy	moor::store,moor::adapters::clock,moor::env
 moor::cli	moor::error
 moor::wire	moor::config_load,moor::adapters,moor::proxy,moor::store,moor::cx,moor::env,moor::error
-moor::cx	moor::config_load,moor::store,moor::adapters::git,moor::error
-moor::ops	moor::cx,moor::store,moor::error,moor::adapters::git
+moor::cx	moor::config_load,moor::store,moor::adapters::git,moor::adapters::creds,moor::env,moor::error
+moor::ops	moor::cx,moor::store,moor::error,moor::adapters::git,moor::adapters::creds
 moor::moor	moor::cx,moor::wire,moor::ops,moor::store,moor::adapters::clock,moor::error,moor::env

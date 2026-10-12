@@ -27,6 +27,11 @@ impl Creds {
         Self { env, proc }
     }
 
+    /// Host environment snapshot.
+    pub(crate) const fn env(&self) -> &Env {
+        &self.env
+    }
+
     /// Whether `src` yields a non-blank value.
     ///
     /// # Errors
