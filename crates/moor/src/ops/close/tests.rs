@@ -16,6 +16,7 @@ use crate::testing::proc::{Reply, ScriptedProc};
 use crate::testing::surface::FakeSurface;
 
 mod promote;
+mod teardown;
 
 const RAW: &str = "RAWDRIVER-7731";
 
@@ -38,6 +39,11 @@ fn proc(unpushed: u32) -> Arc<ScriptedProc> {
     let p = ScriptedProc::new();
     p.on(Tool::Git, &["rev-list"], Reply::Ok(format!("{unpushed}\n")));
     p.on(Tool::Git, &["status"], Reply::Ok(String::new()));
+    p.on(
+        Tool::Git,
+        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+        Reply::Ok("/main/.git\n".to_owned()),
+    );
     Arc::new(p)
 }
 
