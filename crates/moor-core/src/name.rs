@@ -137,6 +137,20 @@ impl BoxPath {
         Ok(Self(format!("{}/{rel}", workdir.trim_end_matches('/'))))
     }
 
+    /// Rebuilds a path from text stored earlier, keeping it unchanged.
+    ///
+    /// The root a Driver reports is trusted as is, `..` included; `under` guards
+    /// only the relative name.
+    ///
+    /// # Errors
+    /// Returns [`NameError::Workdir`] unless `stored` is absolute and not `/`.
+    pub fn restore(stored: &str) -> Result<Self, NameError> {
+        if stored.len() < 2 || !stored.starts_with('/') {
+            return Err(NameError::Workdir(stored.to_owned()));
+        }
+        Ok(Self(stored.to_owned()))
+    }
+
     /// Returns the path text.
     #[must_use]
     pub fn as_str(&self) -> &str {

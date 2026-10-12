@@ -132,9 +132,7 @@ pub(crate) fn reprovision(
 
 /// Rebuilds the Box path from the workdir text stored on the Task row.
 fn recorded_workdir(stored: &str) -> Option<BoxPath> {
-    stored
-        .strip_prefix('/')
-        .and_then(|rel| BoxPath::under("/", rel).ok())
+    BoxPath::restore(stored).ok()
 }
 
 /// Whether the Task's Box is ready but its repo setup failed or its owner died.
@@ -368,6 +366,12 @@ mod tests {
     fn a_nested_workdir_round_trips() {
         let path = recorded_workdir("/work/repos/box-1").unwrap();
         assert_eq!(path.as_str(), "/work/repos/box-1");
+    }
+
+    #[test]
+    fn a_workdir_whose_root_holds_a_parent_component_round_trips() {
+        let path = recorded_workdir("/p/bin/../box/work/moor-rn-1").unwrap();
+        assert_eq!(path.as_str(), "/p/bin/../box/work/moor-rn-1");
     }
 
     #[test]

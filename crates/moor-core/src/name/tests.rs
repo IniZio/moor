@@ -43,3 +43,13 @@ fn box_path_under() {
     assert_eq!(BoxPath::under("/w", "a/b").unwrap().as_str(), "/w/a/b");
     assert_eq!(BoxPath::under("/w/", "a").unwrap().as_str(), "/w/a");
 }
+
+/// `BoxPath::restore` keeps absolute text unchanged, `..` included.
+#[test]
+fn box_path_restore() {
+    let kept = BoxPath::restore("/p/bin/../box/work/box-1").unwrap();
+    assert_eq!(kept.as_str(), "/p/bin/../box/work/box-1");
+    assert!(BoxPath::restore("").is_err());
+    assert!(BoxPath::restore("work/box-1").is_err());
+    assert!(BoxPath::restore("/").is_err());
+}
