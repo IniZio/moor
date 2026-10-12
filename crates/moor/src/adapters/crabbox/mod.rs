@@ -23,6 +23,8 @@ use errors::{map_error, Op};
 
 /// Time allowed for a warmup.
 const ACQUIRE_DEADLINE: Duration = Duration::from_mins(15);
+/// Time allowed for a provider inventory listing.
+const LIST_DEADLINE: Duration = Duration::from_secs(5);
 /// Time allowed for every other call.
 const QUICK_DEADLINE: Duration = Duration::from_secs(60);
 /// Provider that takes an allow-list flag.
@@ -205,7 +207,7 @@ impl Driver for Crabbox {
         if p == STATIC_PROVIDER {
             return Err(DriverError::Unsupported("box provider has no inventory"));
         }
-        let spec = Self::spec(QUICK_DEADLINE).args(["list", "--provider", p, "--json"]);
+        let spec = Self::spec(LIST_DEADLINE).args(["list", "--provider", p, "--json"]);
         let out = self.call(Op::List, None, &spec)?;
         let items = parse::parse_list(&out.stdout).map_err(|_| unreadable("list"))?;
         Ok(items

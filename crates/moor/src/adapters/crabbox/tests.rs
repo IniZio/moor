@@ -310,6 +310,25 @@ fn list_maps_items_to_handles() {
 }
 
 #[test]
+fn list_is_bounded_to_a_short_deadline() {
+    let (p, c) = fixture();
+    p.on(Tool::Crabbox, &["list"], Reply::Ok("[]".into()));
+    c.list(&ProviderId::new("sprites")).unwrap();
+    let deadline = p.calls().first().unwrap().deadline;
+    assert!(deadline.0 <= Duration::from_secs(5));
+}
+
+#[test]
+fn list_timeout_is_an_error() {
+    let (p, c) = fixture();
+    p.on(Tool::Crabbox, &["list"], Reply::Timeout);
+    assert!(matches!(
+        c.list(&ProviderId::new("sprites")),
+        Err(DriverError::Timeout(_))
+    ));
+}
+
+#[test]
 fn list_bad_json_fails() {
     let (p, c) = fixture();
     p.on(Tool::Crabbox, &["list"], Reply::Ok("nope".into()));

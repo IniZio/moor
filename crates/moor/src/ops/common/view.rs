@@ -2,11 +2,11 @@
 
 use moor_core::domain::boxes::BoxState;
 use moor_core::seam::clock::Ts;
-use moor_core::view::{BoxView, EventView, TaskView};
+use moor_core::view::{BoxView, EventView, RunView, TaskView};
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
-use crate::store::{BoxRow, EventRow, TaskRow};
+use crate::store::{BoxRow, EventRow, RunRow, TaskRow};
 
 #[cfg(test)]
 mod tests;
@@ -48,8 +48,24 @@ fn box_view(b: &BoxRow) -> BoxView {
     }
 }
 
+/// Map an in-flight run to its view.
+fn run_view(r: &RunRow) -> RunView {
+    RunView {
+        id: r.id.get(),
+        argv: r.argv.clone(),
+        started_at: rfc3339(r.started_at),
+    }
+}
+
 /// Map a Task row to the shared Task view; `agent` and `run` stay empty.
 pub(crate) fn task_view(row: &TaskRow) -> TaskView {
+    task_view_with_run(row, None)
+}
+
+/// Map a Task row to the shared Task view, showing `run` when one is in flight.
+///
+/// `agent` stays empty.
+pub(crate) fn task_view_with_run(row: &TaskRow, run: Option<&RunRow>) -> TaskView {
     TaskView {
         id: row.id.get(),
         name: row.name.as_str().to_owned(),
@@ -64,7 +80,7 @@ pub(crate) fn task_view(row: &TaskRow) -> TaskView {
         workspace: row.workspace_id.clone(),
         r#box: row.boxed.as_ref().map(box_view),
         agent: None,
-        run: None,
+        run: run.map(run_view),
         updated_at: rfc3339(row.updated_at),
     }
 }

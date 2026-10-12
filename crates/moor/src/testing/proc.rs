@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 use std::sync::{Mutex, PoisonError};
 
-use moor_core::seam::proc::{Output, Proc, ProcError, ProcOutput, ProcSpec, Tool};
+use moor_core::seam::proc::{Deadline, Output, Proc, ProcError, ProcOutput, ProcSpec, Tool};
 use zeroize::Zeroizing;
 
 /// A canned reply.
@@ -33,6 +33,7 @@ pub(crate) struct Call {
     pub args: Vec<String>,
     pub env: Vec<(String, String)>,
     pub cwd: Option<PathBuf>,
+    pub deadline: Deadline,
 }
 
 struct Rule {
@@ -91,6 +92,7 @@ impl ScriptedProc {
                 args: args.clone(),
                 env: spec.env.extra.clone(),
                 cwd: spec.cwd.clone(),
+                deadline: spec.deadline,
             });
         }
         args
