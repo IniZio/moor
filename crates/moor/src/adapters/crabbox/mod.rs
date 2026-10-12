@@ -2,6 +2,7 @@
 
 mod caps;
 mod errors;
+mod exec;
 mod parse;
 #[cfg(test)]
 mod tests;
@@ -12,7 +13,7 @@ use std::time::Duration;
 use moor_core::name::{BoxHandle, BoxPath, ProviderId};
 use moor_core::seam::driver::{
     AcquireReq, Acquired, BoxListing, Driver, DriverCaps, DriverError, EgressApplied, EgressPlan,
-    Released,
+    ExecOutcome, ExecSpec, Released,
 };
 use moor_core::seam::proc::{Deadline, Proc, ProcOutput, ProcSpec, Tool};
 
@@ -49,7 +50,7 @@ impl Crabbox {
     }
 
     /// Runs one crabbox call, mapping failure through `op`.
-    fn exec(
+    fn call(
         &self,
         op: Op,
         provider: Option<&str>,
@@ -150,7 +151,7 @@ fn unreadable(what: &str) -> DriverError {
 impl Driver for Crabbox {
     fn caps(&self, provider: &ProviderId) -> Result<DriverCaps, DriverError> {
         let spec = Self::spec(QUICK_DEADLINE).args(["providers", "--json"]);
-        let out = self.exec(Op::Caps, None, &spec)?;
+        let out = self.call(Op::Caps, None, &spec)?;
         caps::caps_from(&out.stdout, provider)
     }
 
@@ -168,7 +169,7 @@ impl Driver for Crabbox {
         let handle = handle_of(provider, &name);
         let spec = static_env(spec, &handle);
         let (spec, egress) = with_egress(spec, provider, &req.egress);
-        let out = self.exec(Op::Acquire, Some(provider), &spec)?;
+        let out = self.call(Op::Acquire, Some(provider), &spec)?;
         let workdir = match parse::parse_warmup(&out.stdout).and_then(|w| w.workroot) {
             Some(root) => workdir_of(&root, &name)?,
             None => self.workdir(&handle)?,
@@ -190,7 +191,7 @@ impl Driver for Crabbox {
             .args(target_args(handle))
             .env(DELETE_ON_RELEASE, "1");
         let spec = static_env(spec, handle);
-        match self.exec(Op::Release, split_handle(handle).0, &spec) {
+        match self.call(Op::Release, split_handle(handle).0, &spec) {
             Ok(_) => Ok(Released::Deleted),
             Err(DriverError::NotFound) => Ok(Released::AlreadyGone),
             Err(e) => Err(e),
@@ -203,7 +204,7 @@ impl Driver for Crabbox {
             return Err(DriverError::Unsupported("box provider has no inventory"));
         }
         let spec = Self::spec(QUICK_DEADLINE).args(["list", "--provider", p, "--json"]);
-        let out = self.exec(Op::List, None, &spec)?;
+        let out = self.call(Op::List, None, &spec)?;
         let items = parse::parse_list(&out.stdout).map_err(|_| unreadable("list"))?;
         Ok(items
             .into_iter()
@@ -221,10 +222,19 @@ impl Driver for Crabbox {
             .args(target_args(handle))
             .arg("--json");
         let spec = static_env(spec, handle);
-        let out = self.exec(Op::Workdir, None, &spec)?;
+        let out = self.call(Op::Workdir, None, &spec)?;
         let root = parse::parse_inspect_workroot(&out.stdout)
             .map_err(|_| unreadable("workdir"))?
             .ok_or_else(|| unreadable("workdir"))?;
         workdir_of(&root, split_handle(handle).1)
+    }
+
+    fn exec(
+        &self,
+        handle: &BoxHandle,
+        spec: &ExecSpec,
+        deadline: Deadline,
+    ) -> Result<ExecOutcome, DriverError> {
+        exec::run(self, handle, spec, deadline)
     }
 }

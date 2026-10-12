@@ -5,12 +5,14 @@
     reason = "test fake; consumers land with the ops slices"
 )]
 
+use std::collections::VecDeque;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use moor_core::seam::driver::{
     AcquireReq, Acquired, BoxListing, Driver, DriverCaps, DriverError, EgressApplied,
-    EgressSupport, Released, SleepKind,
+    EgressSupport, ExecOutcome, ExecSpec, Released, SleepKind,
 };
+use moor_core::seam::proc::Deadline;
 use moor_core::{BoxHandle, BoxPath, ProviderId};
 
 #[derive(Default)]
@@ -23,6 +25,8 @@ struct State {
     fail_release: Option<DriverError>,
     fail_release_always: Option<DriverError>,
     fail_list: Option<DriverError>,
+    exec_results: VecDeque<Result<ExecOutcome, DriverError>>,
+    execs: Vec<(BoxHandle, ExecSpec, Deadline)>,
 }
 
 /// Scripted Driver: boxes `box-1`, `box-2`, ... with workdir `/work/box-N`.
@@ -65,6 +69,15 @@ impl FakeDriver {
         self
     }
 
+    /// Queues scripted `exec` results, served in order; then exit code 0.
+    pub(crate) fn exec_results(
+        self,
+        rs: impl IntoIterator<Item = Result<ExecOutcome, DriverError>>,
+    ) -> Self {
+        self.st().exec_results.extend(rs);
+        self
+    }
+
     /// Makes `handle` vanish, as if deleted behind moor's back.
     pub(crate) fn forget(&self, handle: &BoxHandle) {
         self.st().live.retain(|h| h != handle.as_str());
@@ -73,6 +86,11 @@ impl FakeDriver {
     /// Calls so far, like `acquire` or `release box-1`.
     pub(crate) fn calls(&self) -> Vec<String> {
         self.st().calls.clone()
+    }
+
+    /// Every `exec` so far: handle, spec and deadline, in call order.
+    pub(crate) fn execs(&self) -> Vec<(BoxHandle, ExecSpec, Deadline)> {
+        self.st().execs.clone()
     }
 }
 
@@ -157,6 +175,23 @@ impl Driver for FakeDriver {
         BoxPath::under("/work", handle.as_str()).map_err(|e| DriverError::Failed {
             summary: e.to_string(),
         })
+    }
+
+    fn exec(
+        &self,
+        handle: &BoxHandle,
+        spec: &ExecSpec,
+        deadline: Deadline,
+    ) -> Result<ExecOutcome, DriverError> {
+        let mut s = self.st();
+        s.calls.push(format!("exec {}", handle.as_str()));
+        s.execs.push((handle.clone(), spec.clone(), deadline));
+        if !s.live.iter().any(|h| h == handle.as_str()) {
+            return Err(DriverError::NotFound);
+        }
+        s.exec_results
+            .pop_front()
+            .unwrap_or(Ok(ExecOutcome { code: 0 }))
     }
 }
 

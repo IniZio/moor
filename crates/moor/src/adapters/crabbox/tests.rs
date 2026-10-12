@@ -2,11 +2,14 @@
 
 use std::sync::Arc;
 
-use moor_core::name::{BoxHandle, ProviderId, TaskId, TaskName};
+use std::time::Duration;
+
+use moor_core::name::{BoxHandle, BoxPath, ProviderId, TaskId, TaskName};
 use moor_core::seam::driver::{
-    AcquireReq, Driver, DriverError, EgressApplied, EgressPlan, Released,
+    AcquireReq, Driver, DriverError, EgressApplied, EgressPlan, ExecOutcome, ExecSpec, Released,
 };
-use moor_core::seam::proc::Tool;
+use moor_core::seam::proc::{Deadline, Proc, ProcError, ProcOutput, ProcSpec, Tool};
+use zeroize::Zeroizing;
 
 use super::parse::{parse_inspect_workroot, parse_list, parse_warmup};
 use super::Crabbox;
@@ -354,4 +357,171 @@ fn list_of_static_provider_is_unsupported() {
     let err = c.list(&ProviderId::new("ssh")).unwrap_err();
     assert!(matches!(err, DriverError::Unsupported(_)));
     assert!(p.calls().is_empty());
+}
+
+const EXEC_DEADLINE: Deadline = Deadline(Duration::from_secs(90));
+
+fn exec_spec(argv: &[&str]) -> ExecSpec {
+    ExecSpec {
+        argv: argv.iter().map(|a| (*a).to_owned()).collect(),
+        env: Vec::new(),
+        cwd: None,
+    }
+}
+
+fn exec_on(c: &Crabbox, spec: &ExecSpec) -> Result<ExecOutcome, DriverError> {
+    c.exec(
+        &BoxHandle::new("sprites/moor-t7-ab12cd"),
+        spec,
+        EXEC_DEADLINE,
+    )
+}
+
+/// A spawner that never starts anything.
+struct NoSpawn;
+
+impl Proc for NoSpawn {
+    fn run(&self, _: &ProcSpec) -> Result<ProcOutput, ProcError> {
+        Err(ProcError::Spawn(std::io::Error::other("missing")))
+    }
+    fn run_secret(&self, _: &ProcSpec) -> Result<Zeroizing<Vec<u8>>, ProcError> {
+        Err(ProcError::Spawn(std::io::Error::other("missing")))
+    }
+    fn spawn_detached(&self, _: &ProcSpec) -> Result<(), ProcError> {
+        Err(ProcError::Spawn(std::io::Error::other("missing")))
+    }
+}
+
+#[test]
+fn exec_runs_without_sync_on_the_target() {
+    let (p, c) = fixture();
+    p.on(Tool::Crabbox, &["run"], Reply::Ok(String::new()));
+    let out = exec_on(&c, &exec_spec(&["make", "test"])).unwrap();
+    assert_eq!(out, ExecOutcome { code: 0 });
+    let calls = p.calls();
+    let call = calls.first().unwrap();
+    assert_eq!(
+        call.args,
+        [
+            "run",
+            "--provider",
+            "sprites",
+            "--id",
+            "moor-t7-ab12cd",
+            "--no-sync",
+            "--",
+            "make",
+            "test"
+        ]
+    );
+    assert!(call.cwd.is_none());
+}
+
+#[test]
+fn exec_carries_env_by_allow_list_not_argv() {
+    let (p, c) = fixture();
+    p.on(Tool::Crabbox, &["run"], Reply::Ok(String::new()));
+    let mut spec = exec_spec(&["env"]);
+    spec.env.push(("TOKEN".to_owned(), "s3cret".to_owned()));
+    exec_on(&c, &spec).unwrap();
+    let calls = p.calls();
+    let call = calls.first().unwrap();
+    let pos = call.args.iter().position(|a| a == "--allow-env").unwrap();
+    assert_eq!(call.args.get(pos + 1).map(String::as_str), Some("TOKEN"));
+    assert!(pos < call.args.iter().position(|a| a == "--").unwrap());
+    assert!(!call.args.iter().any(|a| a.contains("s3cret")));
+    assert!(call.env.contains(&("TOKEN".into(), "s3cret".into())));
+}
+
+#[test]
+fn exec_cwd_wraps_argv_in_a_cd() {
+    let (p, c) = fixture();
+    p.on(Tool::Crabbox, &["run"], Reply::Ok(String::new()));
+    let mut spec = exec_spec(&["./install.sh", "-q"]);
+    spec.cwd = Some(BoxPath::under("/root/crabbox", "moor-t7-ab12cd").unwrap());
+    exec_on(&c, &spec).unwrap();
+    let calls = p.calls();
+    let args = &calls.first().unwrap().args;
+    let sep = args.iter().position(|a| a == "--").unwrap();
+    let mut tail = args.iter().skip(sep + 1).map(String::as_str);
+    assert_eq!(tail.next(), Some("sh"));
+    assert_eq!(tail.next(), Some("-c"));
+    assert!(tail
+        .next()
+        .is_some_and(|script| script.contains("cd \"$1\"")));
+    let rest: Vec<_> = tail.collect();
+    assert_eq!(
+        rest,
+        ["sh", "/root/crabbox/moor-t7-ab12cd", "./install.sh", "-q"]
+    );
+}
+
+#[test]
+fn exec_ssh_carries_static_env() {
+    let (p, c) = fixture();
+    p.on(Tool::Crabbox, &["run"], Reply::Ok(String::new()));
+    let h = BoxHandle::new("ssh/box1");
+    c.exec(&h, &exec_spec(&["true"]), EXEC_DEADLINE).unwrap();
+    let calls = p.calls();
+    let env = &calls.first().unwrap().env;
+    assert!(env.contains(&("CRABBOX_STATIC_ID".into(), "box1".into())));
+}
+
+#[test]
+fn exec_remote_failure_is_an_outcome() {
+    let (p, c) = fixture();
+    p.on(
+        Tool::Crabbox,
+        &["run"],
+        fail(17, "boom\nremote command exited 17\n"),
+    );
+    let out = exec_on(&c, &exec_spec(&["false"])).unwrap();
+    assert_eq!(out, ExecOutcome { code: 17 });
+}
+
+#[test]
+fn exec_other_failure_maps_through_errors() {
+    let (p, c) = fixture();
+    p.on(
+        Tool::Crabbox,
+        &["run"],
+        fail(2, "unauthorized: invalid token"),
+    );
+    assert!(matches!(
+        exec_on(&c, &exec_spec(&["true"])),
+        Err(DriverError::Auth(_))
+    ));
+}
+
+#[test]
+fn exec_mismatched_exit_code_is_not_remote() {
+    let (p, c) = fixture();
+    p.on(Tool::Crabbox, &["run"], fail(2, "remote command exited 9"));
+    assert!(exec_on(&c, &exec_spec(&["true"])).is_err());
+}
+
+#[test]
+fn exec_remote_exit_code_must_match_whole() {
+    let (p, c) = fixture();
+    p.on(Tool::Crabbox, &["run"], fail(1, "remote command exited 17"));
+    assert!(exec_on(&c, &exec_spec(&["true"])).is_err());
+}
+
+#[test]
+fn exec_timeout_reports_the_deadline() {
+    let (p, c) = fixture();
+    p.on(Tool::Crabbox, &["run"], Reply::Timeout);
+    assert_eq!(
+        exec_on(&c, &exec_spec(&["sleep", "9"])),
+        Err(DriverError::Timeout(EXEC_DEADLINE.0))
+    );
+}
+
+#[test]
+fn exec_spawn_failure_is_unavailable() {
+    let c = Crabbox::new(Arc::new(NoSpawn));
+    assert!(matches!(
+        exec_on(&c, &exec_spec(&["true"])),
+        Err(DriverError::Unavailable(_))
+    ));
 }
