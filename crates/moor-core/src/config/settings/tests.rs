@@ -2,6 +2,7 @@
 #![allow(clippy::panic, clippy::indexing_slicing, reason = "test assertions")]
 
 use super::*;
+use crate::config::repo::SeedMode;
 use crate::config::{parse_repo, parse_user};
 
 fn user(t: &str) -> UserConfig {
@@ -183,4 +184,31 @@ fn layer_names() {
     for (l, n) in all {
         assert_eq!(l.as_str(), n);
     }
+}
+
+#[test]
+fn seed_and_run_come_from_repo() {
+    let s = resolve(
+        "{}",
+        Some("seed: [.env, {path: data, mode: symlink}]\nrun: {env: {CI: '1'}, path: [/opt/bin]}"),
+        &Flags::default(),
+    );
+    let seeds: Vec<(&str, SeedMode)> = s
+        .seed
+        .iter()
+        .map(|e| (e.path.to_str().unwrap_or_default(), e.mode))
+        .collect();
+    assert_eq!(
+        seeds,
+        [(".env", SeedMode::Copy), ("data", SeedMode::Symlink)]
+    );
+    assert_eq!(s.run.env.get("CI").map(String::as_str), Some("1"));
+    assert_eq!(s.run.path, ["/opt/bin"]);
+}
+
+#[test]
+fn seed_and_run_empty_outside_repo() {
+    let s = resolve("{}", None, &Flags::default());
+    assert!(s.seed.is_empty());
+    assert_eq!(s.run, RepoRun::default());
 }

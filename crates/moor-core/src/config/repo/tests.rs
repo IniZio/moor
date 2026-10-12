@@ -1,7 +1,7 @@
 //! Repo config parse and validation tables.
 #![allow(clippy::panic, clippy::indexing_slicing, reason = "test assertions")]
 
-use super::{parse_repo, RepoConfig};
+use super::{parse_repo, RepoConfig, SeedMode};
 use crate::config::BoxSize;
 
 fn ok(text: &str) -> RepoConfig {
@@ -37,7 +37,11 @@ env: {FOO: bar}
 compose: {project_prefix: pp}
 box: {size: large}
 box_credentials: [NPM_TOKEN, other-1]
+seed: [.env]
+run: {env: {CI: '1'}, path: [bin]}
 ");
+    assert_eq!(c.seed.len(), 1);
+    assert_eq!(c.run.path, ["bin"]);
     assert_eq!(c.box_.size, Some(BoxSize::Large));
     assert_eq!(c.compose.project_prefix.as_deref(), Some("pp"));
     assert_eq!(c.env["FOO"], "bar");
@@ -97,11 +101,72 @@ fn unknown_keys_name_the_key() {
 
 #[test]
 fn trimmed_keys_are_unknown() {
-    for key in ["credentials", "tools", "provision", "run", "git"] {
+    for key in ["credentials", "tools", "provision", "git"] {
         rejects(&format!("{key}: []"), key, key);
     }
     rejects("git: {name: R}", "git", "git");
-    rejects("run: {env: {CI: '1'}}", "run", "run");
+}
+
+#[test]
+fn seed_accepts_both_forms() {
+    let c = ok("seed: [.env, {path: data, mode: symlink}, {path: x}]");
+    let got: Vec<_> = c.seed.iter().map(|s| (s.path.to_str(), s.mode)).collect();
+    assert_eq!(
+        got,
+        [
+            (Some(".env"), SeedMode::Copy),
+            (Some("data"), SeedMode::Symlink),
+            (Some("x"), SeedMode::Copy),
+        ]
+    );
+}
+
+#[test]
+fn seed_map_errors_name_the_entry() {
+    rejects("seed: [{path: a, mode: hardlink}]", "seed[0]", "");
+    rejects("seed: [ok, {path: a, nope: 1}]", "seed[1]", "");
+    rejects("seed: [{mode: copy}]", "seed[0]", "");
+}
+
+#[test]
+fn seed_paths_stay_inside_the_repo() {
+    rejects("seed: [/etc/passwd]", "seed[0]", "relative");
+    rejects("seed: [../x]", "seed[0]", "relative");
+    rejects("seed: [{path: a/../../b}]", "seed[0]", "relative");
+    rejects("seed: [ok, /abs]", "seed[1]", "relative");
+    rejects("seed: ['']", "seed[0]", "relative");
+    rejects("seed: [{path: '', mode: symlink}]", "seed[0]", "relative");
+    rejects("seed: [.]", "seed[0]", "relative");
+    rejects("seed: ['./']", "seed[0]", "relative");
+    rejects(
+        "seed: [ok, {path: ., mode: symlink}]",
+        "seed[1]",
+        "relative",
+    );
+    assert_eq!(ok("seed: ['./foo']").seed.len(), 1);
+}
+
+#[test]
+fn seed_type_errors_do_not_leak_internal_names() {
+    rejects(
+        "seed: [1]",
+        "seed[0]",
+        "a path string or a {path, mode} map",
+    );
+}
+
+#[test]
+fn run_section() {
+    let c = ok("run: {env: {CI: '1'}, path: [/opt/bin]}");
+    assert_eq!(c.run.env["CI"], "1");
+    assert_eq!(c.run.path, ["/opt/bin"]);
+    rejects("run: {nope: 1}", "run.nope", "unknown field");
+}
+
+#[test]
+fn run_env_entries() {
+    rejects("run: {env: {PATH: x}}", "run.env.PATH", "PATH");
+    rejects("run: {env: {1BAD: x}}", "run.env.1BAD", "1BAD");
 }
 
 #[test]

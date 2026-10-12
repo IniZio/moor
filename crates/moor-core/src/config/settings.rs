@@ -6,6 +6,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use super::repo::{RepoRun, Seed};
 use super::{
     BoxSize, CredentialSource, DotfilesConfig, Identity, McpServer, RepoConfig, ToolsConfig,
     UserConfig,
@@ -111,6 +112,10 @@ pub struct TaskSettings {
     pub setup: Vec<String>,
     /// Repo teardown commands.
     pub teardown: Vec<String>,
+    /// Repo paths copied or symlinked into the worktree before the Box sync.
+    pub seed: Vec<Seed>,
+    /// Env and extra PATH entries for setup lines and `moor run`.
+    pub run: RepoRun,
     /// Repo `env`.
     pub env: BTreeMap<String, String>,
     /// Repo compose project prefix.
@@ -188,6 +193,8 @@ impl TaskSettings {
             user_egress: user.egress.allow.clone(),
             setup: r.setup.clone(),
             teardown: r.teardown.clone(),
+            seed: r.seed.clone(),
+            run: r.run.clone(),
             env: r.env.clone(),
             compose_prefix: r.compose.project_prefix.clone(),
             tool_paths: user.tools.clone(),
