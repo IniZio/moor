@@ -2,6 +2,7 @@
 
 pub mod record;
 pub mod setup;
+pub mod teardown;
 
 #[cfg(test)]
 mod tests;
