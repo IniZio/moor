@@ -79,6 +79,7 @@ fn all_events() -> Vec<Event> {
             credentials: vec![s("k")],
         },
         Event::RunStarted { run },
+        Event::Attached,
     ]
 }
 
@@ -90,6 +91,65 @@ fn asserted_kinds_are_the_frozen_twenty() {
     want.sort_unstable();
     assert_eq!(got, want);
     assert_eq!(ASSERTED_KINDS, PINNED_KINDS);
+}
+
+/// Position of an event in `all_events()`; the exhaustive match fails to compile on a new variant.
+const fn event_index(e: &Event) -> usize {
+    match e {
+        Event::Started => 0,
+        Event::Rejected { .. } => 1,
+        Event::WaitingForBox { .. } => 2,
+        Event::SettingUp { .. } => 3,
+        Event::Working => 4,
+        Event::SetupFailed { .. } => 5,
+        Event::CredentialFailed { .. } => 6,
+        Event::Idled => 7,
+        Event::Busy => 8,
+        Event::Asleep { .. } => 9,
+        Event::Woke => 10,
+        Event::Closed { .. } => 11,
+        Event::BoxRequested => 12,
+        Event::BoxReady => 13,
+        Event::BoxFailed { .. } => 14,
+        Event::BoxAsleep => 15,
+        Event::BoxGone => 16,
+        Event::BoxDeleted => 17,
+        Event::BoxReleaseFailed { .. } => 18,
+        Event::Ran { .. } => 19,
+        Event::Copied { .. } => 20,
+        Event::SessionStarted { .. } => 21,
+        Event::Checked { .. } => 22,
+        Event::RunStarted { .. } => 23,
+        Event::Attached => 24,
+    }
+}
+
+/// The samples cover every event variant once and the kinds are unique.
+#[test]
+fn event_samples_cover_every_variant_with_unique_kinds() {
+    let all = all_events();
+    assert_eq!(all.len(), 25);
+    for (pos, e) in all.iter().enumerate() {
+        assert_eq!(event_index(e), pos, "{e:?}");
+    }
+    let mut kinds: Vec<_> = all.iter().map(Event::kind).collect();
+    kinds.sort_unstable();
+    kinds.dedup();
+    assert_eq!(kinds.len(), all.len());
+}
+
+/// Every asserted kind is a real kind, listed once, and `is_asserted` agrees.
+#[test]
+fn asserted_kinds_are_real_unique_kinds() {
+    let events = all_events();
+    let kinds: Vec<_> = events.iter().map(Event::kind).collect();
+    for k in ASSERTED_KINDS {
+        assert!(kinds.contains(&k), "{k}");
+        assert_eq!(ASSERTED_KINDS.iter().filter(|x| **x == k).count(), 1, "{k}");
+    }
+    for e in &events {
+        assert_eq!(e.is_asserted(), PINNED_KINDS.contains(&e.kind()), "{e:?}");
+    }
 }
 
 #[test]
