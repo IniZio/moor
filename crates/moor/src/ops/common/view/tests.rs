@@ -3,10 +3,10 @@ use std::sync::Arc;
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::seam::clock::Ts;
-use moor_core::{BoxHandle, ProviderId, TaskName};
+use moor_core::{BoxHandle, ProviderId, RunId, TaskId, TaskName};
 
-use super::{event_view, rfc3339, task_view};
-use crate::store::Store;
+use super::{event_view, rfc3339, task_view, task_view_with_run};
+use crate::store::{RunRow, Store};
 use crate::testing::clock::FakeClock;
 
 #[test]
@@ -82,4 +82,34 @@ fn task_view_maps_box() {
         (BoxState::Ready, "p", Some("h"))
     );
     assert!(b.asleep_since.is_none());
+}
+
+#[test]
+fn task_view_with_run_fills_run() {
+    let dir = tempfile::tempdir().unwrap();
+    let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
+    let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
+    let nt = NewTask {
+        name: TaskName::parse("t").unwrap(),
+        repo: "r".into(),
+    };
+    let id = store.apply(Decision::insert(nt)).unwrap().task;
+    let row = store.task(id).unwrap().unwrap();
+    let run = RunRow {
+        id: RunId::new(5),
+        task: TaskId::new(id.get()),
+        argv: vec!["make".into(), "test".into()],
+        record: None,
+        sha: None,
+        pid: 1,
+        exit: None,
+        interrupted: false,
+        started_at: Ts::from_millis(86_400_000),
+        finished_at: None,
+    };
+    let r = task_view_with_run(&row, Some(&run)).run.unwrap();
+    assert_eq!(r.id, 5);
+    assert_eq!(r.argv, ["make", "test"]);
+    assert_eq!(r.started_at, "1970-01-02T00:00:00Z");
+    assert!(task_view_with_run(&row, None).run.is_none());
 }

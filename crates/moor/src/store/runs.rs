@@ -32,10 +32,6 @@ pub(crate) struct NewRun {
 }
 
 /// How a run ended.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "used by the run command, not yet wired")
-)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct RunOutcome {
     /// Exit code, if the command exited.
@@ -45,10 +41,6 @@ pub(crate) struct RunOutcome {
 }
 
 /// A stored run.
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "used by the run command, not yet wired")
-)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RunRow {
     /// Run id.
@@ -149,10 +141,6 @@ impl Store {
     /// Record a run end: finish the row, clear its intent, emit `ran`.
     ///
     /// A run that already finished is left untouched and emits nothing.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "used by the run command, not yet wired")
-    )]
     pub(crate) fn finish_run(&self, id: RunId, out: RunOutcome) -> Result<(), StoreError> {
         let now = self.now();
         let mut conn = self.writer()?;
@@ -198,10 +186,6 @@ impl Store {
     /// Open runs of the task whose runner is gone are finished as interrupted, so callers never
     /// see them. Older open runs are finished the same way even when their pid is alive: only one
     /// run can be live under the per-Box lock, so a live pid on an older row is a reused pid.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "used by the run command, not yet wired")
-    )]
     pub(crate) fn in_flight_run(
         &self,
         task: TaskId,
@@ -228,6 +212,16 @@ impl Store {
             self.finish_run(run.id, out)?;
         }
         Ok(found)
+    }
+
+    /// The task's most recent run, in flight or finished.
+    pub(crate) fn last_run(&self, task: TaskId) -> Result<Option<RunRow>, StoreError> {
+        let conn = self.reader()?;
+        let mut stmt = conn.prepare(&format!(
+            "{RUN_SELECT} WHERE task = ? ORDER BY id DESC LIMIT 1"
+        ))?;
+        let mut rows = stmt.query_and_then([task.get()], run_from_row)?;
+        rows.next().transpose()
     }
 
     /// Finished recorded runs of every gate name whose sha starts with `sha_prefix`, oldest first.

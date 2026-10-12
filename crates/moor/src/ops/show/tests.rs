@@ -11,6 +11,7 @@ use moor_core::{ProviderId, ShowReq, TaskId, TaskName};
 
 use super::run;
 use crate::cx::Cx;
+use crate::store::NewRun;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
 use crate::testing::surface::FakeSurface;
@@ -161,4 +162,28 @@ fn unknown_task_name_fails() {
     let cx = cx(dir.path(), &Arc::new(FakeDriver::new()));
     let e = run(&cx, &req(Some("nope"), None)).unwrap_err();
     assert!(e.error.to_string().contains("no task nope"));
+}
+
+#[test]
+fn task_shows_its_in_flight_run() {
+    let dir = tempfile::tempdir().unwrap();
+    let cx = cx(dir.path(), &Arc::new(FakeDriver::new()));
+    let id = add(&cx, "a");
+    let before = run(&cx, &req(Some("a"), None)).unwrap();
+    assert!(before.task.unwrap().run.is_none());
+    cx.store()
+        .unwrap()
+        .begin_run(NewRun {
+            task: id,
+            argv: vec!["make".into(), "test".into()],
+            record: None,
+            sha: None,
+            sync: "none".into(),
+            pid: 4242,
+        })
+        .unwrap();
+    let v = run(&cx, &req(Some("a"), None)).unwrap();
+    let r = v.task.unwrap().run.unwrap();
+    assert_eq!(r.argv, ["make", "test"]);
+    assert!(v.tasks.iter().all(|t| t.run.is_some()));
 }

@@ -21,7 +21,7 @@ mod tests;
     not(test),
     expect(unused_imports, reason = "used by the run command, not yet wired")
 )]
-pub(crate) use runs::{NewRun, RunOutcome};
+pub(crate) use runs::{NewRun, RunOutcome, RunRow};
 
 /// Schema version this build reads and writes.
 pub(crate) const SCHEMA_VERSION: &str = "1";

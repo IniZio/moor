@@ -57,3 +57,22 @@ fn run_ok_without_usable_exit_is_0() {
 fn non_run_ignores_exit_field() {
     assert_eq!(code(&Response::ok("show", Some(json!({"exit": 7})))), 0);
 }
+
+#[test]
+fn wait_timed_out_is_124() {
+    let resp = Response::ok("wait", Some(json!({"timed_out": true})));
+    assert_eq!(code(&resp), 124);
+}
+
+#[test]
+fn wait_settled_is_0() {
+    assert_eq!(
+        code(&Response::ok("wait", Some(json!({"timed_out": false})))),
+        0
+    );
+    assert_eq!(code(&Response::ok("wait", None)), 0);
+    assert_eq!(
+        code(&Response::ok("show", Some(json!({"timed_out": true})))),
+        0
+    );
+}

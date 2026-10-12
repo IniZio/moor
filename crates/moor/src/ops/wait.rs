@@ -1,0 +1,77 @@
+//! `wait`: poll a task until it is idle or its run ends, or the timeout elapses.
+//!
+//! Never takes the Box lock: it only reads, and heals dead runs through the store.
+
+use std::time::Duration;
+
+use moor_core::decide::wait::{wait_verdict, WaitFacts, WaitVerdict};
+use moor_core::view::run::{WaitRunView, WaitValue};
+use moor_core::{ErrorKind, WaitFor, WaitReq};
+
+use crate::cx::Cx;
+use crate::error::CommandError;
+use crate::ops::common::reconcile;
+use crate::ops::common::view::task_view_with_run;
+use crate::store::RunRow;
+
+/// Longest pause between polls.
+const POLL: Duration = Duration::from_millis(250);
+
+/// Run `wait`.
+pub(crate) fn run(cx: &Cx, req: &WaitReq) -> Result<WaitValue, CommandError> {
+    let clock = cx.clock();
+    let started = clock.instant();
+    reconcile::run(cx);
+    let store = cx.store()?;
+    let id = store
+        .latest_task_by_name(&req.task)?
+        .ok_or_else(|| {
+            CommandError::new(ErrorKind::Failed, format!("no task {}", req.task.as_str()))
+        })?
+        .id;
+    let want = req.wait_for.unwrap_or(WaitFor::Idle);
+    let timeout = req.timeout_secs.map_or(Duration::MAX, Duration::from_secs);
+    loop {
+        let elapsed = clock.instant().saturating_duration_since(started);
+        let row = store.task(id)?.ok_or_else(|| {
+            CommandError::new(ErrorKind::Failed, format!("no task {}", req.task.as_str()))
+        })?;
+        let in_flight = store.in_flight_run(id, &|pid| cx.proc().alive(pid))?;
+        let facts = WaitFacts {
+            // Agent activity is not read yet, so wait sees runs only.
+            agent_active: false,
+            run_in_flight: in_flight.is_some(),
+        };
+        let verdict = wait_verdict(facts, want, elapsed, timeout);
+        if verdict == WaitVerdict::Keep {
+            clock.sleep(POLL.min(timeout.saturating_sub(elapsed)));
+            continue;
+        }
+        let live = in_flight.is_some();
+        let shown = match &in_flight {
+            Some(r) => Some(r.clone()),
+            None => store.last_run(id)?,
+        };
+        return Ok(WaitValue {
+            task: task_view_with_run(&row, in_flight.as_ref()),
+            timed_out: verdict == WaitVerdict::TimedOut,
+            waited_ms: u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX),
+            wait_for: want,
+            run: shown.as_ref().map(|r| run_view(r, live)),
+        });
+    }
+}
+
+/// The run as the `wait` payload shows it.
+fn run_view(r: &RunRow, in_flight: bool) -> WaitRunView {
+    WaitRunView {
+        id: r.id,
+        argv: r.argv.clone(),
+        in_flight,
+        exit: r.exit,
+        interrupted: r.interrupted,
+    }
+}
+
+#[cfg(test)]
+mod tests;

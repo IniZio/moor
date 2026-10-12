@@ -11,6 +11,7 @@ pub(crate) mod env;
 mod show;
 mod start;
 mod version;
+mod wait;
 
 #[cfg(test)]
 mod tests;
@@ -23,6 +24,7 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         Request::Show(r) => to_value(&show::run(cx, &r)?),
         Request::Close(r) => to_value(&close::run(cx, &r)?),
         Request::Env(r) => to_value(&env::run(cx, &r)?),
+        Request::Wait(r) => to_value(&wait::run(cx, &r)?),
         other => Err(CommandError::not_implemented(other.cmd())),
     }
 }
