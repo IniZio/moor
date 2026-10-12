@@ -20,7 +20,7 @@ serde_json = { version = "1", features = ["preserve_order"] }
 rusqlite = { version = "0.40", features = ["bundled"] }
 thiserror = "2"
 time = { version = "0.3", features = ["formatting", "parsing"] }
-rustix = { version = "1", features = ["fs", "process"] }
+rustix = { version = "1", features = ["process"] }
 zeroize = "1"
 getrandom = "=0.4.3"
 

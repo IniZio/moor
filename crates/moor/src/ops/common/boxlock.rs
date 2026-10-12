@@ -2,7 +2,7 @@
 //!
 //! The kernel drops the flock when the holder dies, so stale lock files never block.
 
-use std::fs::{self, File};
+use std::fs::{self, File, TryLockError};
 use std::io::Write as _;
 use std::path::Path;
 use std::time::Duration;
@@ -10,8 +10,6 @@ use std::time::Duration;
 use moor_core::name::TaskId;
 use moor_core::seam::clock::Clock;
 use moor_core::ErrorKind;
-use rustix::fs::{flock, FlockOperation};
-use rustix::io::Errno;
 
 use crate::error::CommandError;
 
@@ -57,15 +55,15 @@ impl BoxLock {
             .map_err(failed)?;
         let deadline = clock.instant() + wait;
         loop {
-            match flock(&file, FlockOperation::NonBlockingLockExclusive) {
+            match file.try_lock() {
                 Ok(()) => {
                     file.set_len(0)
                         .and_then(|()| file.write_all(op.as_bytes()))
                         .map_err(failed)?;
                     return Ok(Self { _file: file });
                 }
-                Err(Errno::WOULDBLOCK) if clock.instant() < deadline => clock.sleep(POLL),
-                Err(Errno::WOULDBLOCK) => {
+                Err(TryLockError::WouldBlock) if clock.instant() < deadline => clock.sleep(POLL),
+                Err(TryLockError::WouldBlock) => {
                     let holder = fs::read_to_string(&path).unwrap_or_default();
                     let holder = match holder.trim() {
                         "" => "another operation",
@@ -76,7 +74,7 @@ impl BoxLock {
                         format!("box busy: {holder} in progress"),
                     ));
                 }
-                Err(e) => return Err(failed(e.into())),
+                Err(TryLockError::Error(e)) => return Err(failed(e)),
             }
         }
     }
