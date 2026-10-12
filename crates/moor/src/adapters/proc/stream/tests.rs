@@ -15,6 +15,7 @@ use rustix::process::{getpid, kill_process, Signal};
 use tempfile::TempDir;
 
 use super::super::{SystemProc, ToolPaths};
+use super::Signals;
 use crate::env::Env;
 
 fn sh_proc() -> SystemProc {
@@ -194,4 +195,23 @@ fn sigterm_after_streaming_is_default_action() {
         .status()
         .unwrap();
     assert_eq!(status.signal(), Some(15), "{status:?}");
+}
+
+#[test]
+fn idle_tracks_overlapping_streams() {
+    let sig = Signals::new();
+    std::thread::scope(|s| {
+        for _ in 0..8 {
+            s.spawn(|| {
+                for _ in 0..2000 {
+                    let _a = sig.enter();
+                    let _b = sig.enter();
+                    assert!(!sig.idle.load(Ordering::SeqCst));
+                }
+            });
+        }
+    });
+    assert!(sig.idle.load(Ordering::SeqCst));
+    let _a = sig.enter();
+    assert!(!sig.idle.load(Ordering::SeqCst));
 }

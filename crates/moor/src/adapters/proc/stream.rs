@@ -5,9 +5,9 @@ use std::fs::File;
 use std::io;
 use std::os::unix::process::ExitStatusExt;
 use std::process::Stdio;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::thread;
 
 use moor_core::seam::proc::{Output, ProcError, ProcSpec};
@@ -21,8 +21,8 @@ struct Signals {
     interrupted: Arc<AtomicBool>,
     /// True while no streamed child runs; the signals then act as default.
     idle: Arc<AtomicBool>,
-    /// Streamed children currently running.
-    active: AtomicUsize,
+    /// Streamed children currently running; held while `idle` changes with it.
+    active: Mutex<usize>,
 }
 
 /// The one installation; `None` when a handler could not be registered.
@@ -31,25 +31,32 @@ static SIGNALS: OnceLock<Option<Signals>> = OnceLock::new();
 impl Signals {
     /// Registers the handlers for SIGINT and SIGTERM.
     fn install() -> io::Result<Self> {
-        let interrupted = Arc::new(AtomicBool::new(false));
-        let idle = Arc::new(AtomicBool::new(true));
+        let this = Self::new();
         for sig in [SIGINT, SIGTERM] {
-            signal_hook::flag::register_conditional_default(sig, Arc::clone(&idle))?;
-            signal_hook::flag::register(sig, Arc::clone(&interrupted))?;
+            signal_hook::flag::register_conditional_default(sig, Arc::clone(&this.idle))?;
+            signal_hook::flag::register(sig, Arc::clone(&this.interrupted))?;
         }
-        Ok(Self {
-            interrupted,
-            idle,
-            active: AtomicUsize::new(0),
-        })
+        Ok(this)
+    }
+
+    /// Idle state with no streams running.
+    fn new() -> Self {
+        Self {
+            interrupted: Arc::new(AtomicBool::new(false)),
+            idle: Arc::new(AtomicBool::new(true)),
+            active: Mutex::new(0),
+        }
     }
 
     /// Marks one stream running until the guard drops.
     fn enter(&self) -> Active<'_> {
-        if self.active.fetch_add(1, Ordering::SeqCst) == 0 {
+        let mut n = self.active.lock().unwrap_or_else(PoisonError::into_inner);
+        if *n == 0 {
             self.interrupted.store(false, Ordering::SeqCst);
             self.idle.store(false, Ordering::SeqCst);
         }
+        *n += 1;
+        drop(n);
         Active(self)
     }
 }
@@ -59,9 +66,20 @@ struct Active<'a>(&'a Signals);
 
 impl Drop for Active<'_> {
     fn drop(&mut self) {
-        if self.0.active.fetch_sub(1, Ordering::SeqCst) == 1 {
+        let mut n = self.0.active.lock().unwrap_or_else(PoisonError::into_inner);
+        *n = n.saturating_sub(1);
+        if *n == 0 {
             self.0.idle.store(true, Ordering::SeqCst);
         }
+    }
+}
+
+/// Stops the interrupt watcher when dropped.
+struct Done(Arc<AtomicBool>);
+
+impl Drop for Done {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::SeqCst);
     }
 }
 
@@ -119,9 +137,9 @@ impl SystemProc {
             tx.send(child.wait()).ok();
             exited.send(Event::Exited).ok();
         });
-        let done = Arc::new(AtomicBool::new(false));
-        watch(Arc::clone(interrupted), Arc::clone(&done), etx);
-        let res = match erx.recv_timeout(limit) {
+        let done = Done(Arc::new(AtomicBool::new(false)));
+        watch(Arc::clone(interrupted), Arc::clone(&done.0), etx);
+        match erx.recv_timeout(limit) {
             Ok(Event::Exited) => {
                 let st = rx
                     .recv()
@@ -142,9 +160,7 @@ impl SystemProc {
                     after: limit,
                 })),
             Err(RecvTimeoutError::Disconnected) => Err(ProcError::Spawn(gone())),
-        };
-        done.store(true, Ordering::SeqCst);
-        res
+        }
     }
 }
 
