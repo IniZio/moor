@@ -138,3 +138,47 @@ fn text_help_stays_plain() {
     assert!(o.stdout.contains("Usage"));
     assert!(serde_json::from_str::<serde_json::Value>(&o.stdout).is_err());
 }
+
+/// Parses a JSON usage envelope from a `Done` result.
+fn usage_json(a: &[&str]) -> serde_json::Value {
+    let o = done(a);
+    assert_eq!(o.code, 2, "{a:?}: {o:?}");
+    assert!(o.stderr.is_empty());
+    let v: serde_json::Value = serde_json::from_str(&o.stdout).expect("one json object");
+    assert_eq!(v.get("class"), Some(&serde_json::json!("usage")));
+    v
+}
+
+#[test]
+fn state_dir_equals_form_keeps_cmd() {
+    for a in [
+        &["--state-dir=/tmp/x", "--json", "pane"][..],
+        &["--state-dir=/tmp/x", "pane", "--json"][..],
+        &["--state-dir", "/tmp/x", "--json", "pane"][..],
+    ] {
+        let v = usage_json(a);
+        assert_eq!(v.get("cmd"), Some(&serde_json::json!("pane")), "{a:?}");
+    }
+}
+
+#[test]
+fn recovers_globals_after_error() {
+    let (opts, cmd) = super::args_probe::recover(&argv(&[
+        "--state-dir=/tmp/x",
+        "pane",
+        "--bogus",
+        "--quiet",
+        "--json",
+    ]));
+    assert_eq!(cmd, "pane");
+    assert!(opts.json && opts.quiet);
+    assert_eq!(opts.state_dir, Some("/tmp/x".into()));
+}
+
+#[test]
+fn json_after_invalid_arg_is_usage_json() {
+    for c in ["pane", "start"] {
+        let v = usage_json(&[c, "--bogus", "--json"]);
+        assert_eq!(v.get("cmd"), Some(&serde_json::json!(c)));
+    }
+}
