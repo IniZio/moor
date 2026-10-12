@@ -1,6 +1,6 @@
 use std::fs;
 
-use moor_core::domain::boxes::BoxInput;
+use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::Decision;
 use moor_core::domain::run::SyncMode;
 use moor_core::domain::task::TaskState;
@@ -131,7 +131,7 @@ fn close_waits_for_the_box_lock_then_refuses_when_busy() {
     assert!(f.cx.clock().instant() - from >= WAIT);
     assert_eq!(exec_calls(&f), 0);
     assert_ne!(row(&f).state, TaskState::Closed);
-    assert_eq!(box_state(&f), moor_core::domain::boxes::BoxState::Ready);
+    assert_eq!(box_state(&f), BoxState::Ready);
 }
 
 #[test]
@@ -146,4 +146,31 @@ fn close_leaves_the_box_lock_free() {
         std::time::Duration::ZERO,
     );
     assert!(again.is_ok());
+}
+
+#[test]
+fn asleep_box_is_released_without_teardown() {
+    let f = fx_yaml(FakeDriver::new(), YAML);
+    f.cx.store()
+        .unwrap()
+        .apply(Decision::new(f.id).box_input(BoxInput::Sleep))
+        .unwrap();
+    assert_eq!(box_state(&f), BoxState::Asleep);
+    let v = run(&f.cx, &req(false)).unwrap();
+    assert!(v.box_deleted);
+    assert_eq!(exec_calls(&f), 0);
+}
+
+#[test]
+fn invalid_repo_config_warns_and_still_closes_without_teardown() {
+    let f = fx_yaml(FakeDriver::new(), "teardown: [\n");
+    let v = run(&f.cx, &req(false)).unwrap();
+    assert!(v.box_deleted);
+    assert_eq!(v.task.state, TaskState::Closed);
+    assert_eq!(exec_calls(&f), 0);
+    assert!(f
+        .cx
+        .take_warnings()
+        .iter()
+        .any(|w| w.code == "teardown_failed"));
 }

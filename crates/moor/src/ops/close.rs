@@ -42,7 +42,7 @@ pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
         "close",
         boxlock::WAIT,
     )?;
-    let row = find(store, &req.task)?;
+    let row = store.task(first.id)?.unwrap_or(first);
     let plan = close_gate(&facts(cx, &row)?, req.force)?;
     let box_deleted = if plan.release_box {
         teardown(cx, &row);
