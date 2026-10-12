@@ -10,13 +10,15 @@ use moor_core::{BoxHandle, CloseReq, ErrorKind, TaskName, Warning};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
+use crate::ops::common::promote::promote_waiting;
 use crate::ops::common::view::task_view;
 use crate::store::{BoxRow, Store, TaskRow};
 
 /// Closes a task: the data-loss gate, Box release, Workspace close.
 ///
 /// The Box is released before the Workspace closes. The worktree is never
-/// removed; it belongs to the user's checkout.
+/// removed; it belongs to the user's checkout. Waiting tasks are then promoted
+/// into the freed slot.
 pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
     let store = cx.store()?;
     let row = find(store, &req.task)?;
@@ -28,7 +30,14 @@ pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
         false
     };
     let workspace_closed = close_workspace(cx, &row, &plan);
+    let provider = row.boxed.as_ref().map(|b| b.provider.clone());
     let closed = store.task(row.id)?.unwrap_or(row);
+    let promoted = provider.map_or_else(Vec::new, |p| {
+        promote_waiting(cx, store, &p, "close")
+            .iter()
+            .map(|n| n.as_str().to_owned())
+            .collect()
+    });
     Ok(CloseView {
         task: task_view(&closed),
         box_deleted,
@@ -36,7 +45,7 @@ pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
         agent_stopped: false,
         transcript: None,
         worktree_kept: true,
-        promoted: Vec::new(),
+        promoted,
     })
 }
 

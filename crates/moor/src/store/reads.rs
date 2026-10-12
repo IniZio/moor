@@ -69,10 +69,6 @@ impl Store {
     }
 
     /// Tasks queued for a box, oldest id first.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "used by start's capacity check, not yet wired")
-    )]
     pub(crate) fn waiting_tasks(&self) -> Result<Vec<TaskRow>, StoreError> {
         let tail = "WHERE t.state = ?1 ORDER BY t.id";
         query_tasks(&self.reader()?, tail, [TaskState::WaitingForBox.as_str()])
