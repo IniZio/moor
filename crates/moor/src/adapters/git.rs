@@ -20,6 +20,15 @@ pub(crate) enum GitError {
     Failed(String),
 }
 
+/// Effective git author for a worktree; `None` where git has no value.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct GitAuthor {
+    /// `user.name`.
+    pub(crate) name: Option<String>,
+    /// `user.email`.
+    pub(crate) email: Option<String>,
+}
+
 /// Concrete git client; real git runs through the `Proc` seam.
 pub(crate) struct Git {
     /// Spawner for every git call.
@@ -106,61 +115,61 @@ impl Git {
         Ok(out.lines().any(|l| !l.trim().is_empty()))
     }
 
-    /// Sets the author name and email for a linked `worktree` only.
+    /// Effective git author of `worktree`, as git resolves it.
     ///
-    /// It is a no-op on the main checkout. On a linked worktree it sets
-    /// `extensions.worktreeConfig=true` in the repository's shared config (a side
-    /// effect visible to every worktree of that repo, enabling per-worktree
-    /// config) and writes `user.name`/`user.email` to that worktree's own config
-    /// only. `None` leaves a field alone.
+    /// A key git has no value for is `None`.
     ///
     /// # Errors
-    /// [`GitError::Failed`] when git cannot write the config.
-    pub(crate) fn set_identity(
-        &self,
-        worktree: &Path,
-        name: Option<&str>,
-        email: Option<&str>,
-    ) -> Result<(), GitError> {
-        if name.is_none() && email.is_none() {
-            return Ok(());
+    /// [`GitError::NotARepo`] outside a repository, [`GitError::Failed`] otherwise.
+    pub(crate) fn author(&self, worktree: &Path) -> Result<GitAuthor, GitError> {
+        Ok(GitAuthor {
+            name: self.config_value(worktree, "user.name")?,
+            email: self.config_value(worktree, "user.email")?,
+        })
+    }
+
+    /// One config value; git exits 1 for a missing key, which is `None`.
+    fn config_value(&self, cwd: &Path, key: &str) -> Result<Option<String>, GitError> {
+        let args = ["config", "--get", key];
+        match self.exec(cwd, &args) {
+            Ok(out) => Ok(Some(out.trim().to_owned()).filter(|v| !v.is_empty())),
+            Err(ProcError::NonZero { code: 1, .. }) => Ok(None),
+            Err(e) => Err(Self::failure(&args, e)),
         }
-        let main = self.main_checkout(worktree)?;
-        if main.canonicalize().ok() == worktree.canonicalize().ok() {
-            return Ok(());
-        }
-        self.run(worktree, &["config", "extensions.worktreeConfig", "true"])?;
-        for (key, value) in [("user.name", name), ("user.email", email)] {
-            if let Some(v) = value {
-                self.run(worktree, &["config", "--worktree", key, v])?;
-            }
-        }
-        Ok(())
     }
 
     /// Runs git in `cwd` and returns stdout.
     fn run(&self, cwd: &Path, args: &[&str]) -> Result<String, GitError> {
+        self.exec(cwd, args).map_err(|e| Self::failure(args, e))
+    }
+
+    /// Runs git in `cwd`, keeping the raw process error.
+    fn exec(&self, cwd: &Path, args: &[&str]) -> Result<String, ProcError> {
         let spec = ProcSpec::new(Tool::Git, DEADLINE)
             .args(args.iter().copied())
             .cwd(cwd);
-        match self.proc.run(&spec) {
-            Ok(out) => Ok(out.stdout),
-            Err(ProcError::NonZero { stderr_tail, .. })
+        self.proc.run(&spec).map(|out| out.stdout)
+    }
+
+    /// Words a process error as a [`GitError`].
+    fn failure(args: &[&str], err: ProcError) -> GitError {
+        match err {
+            ProcError::NonZero { stderr_tail, .. }
                 if stderr_tail.contains("not a git repository") =>
             {
-                Err(GitError::NotARepo)
+                GitError::NotARepo
             }
-            Err(ProcError::NonZero {
+            ProcError::NonZero {
                 code, stderr_tail, ..
-            }) => Err(GitError::Failed(format!(
+            } => GitError::Failed(format!(
                 "git {} failed (exit {code}): {}",
                 args.first().copied().unwrap_or(""),
                 stderr_tail.trim()
-            ))),
-            Err(e) => Err(GitError::Failed(format!(
+            )),
+            e => GitError::Failed(format!(
                 "git {} could not run: {e}",
                 args.first().copied().unwrap_or("")
-            ))),
+            )),
         }
     }
 }

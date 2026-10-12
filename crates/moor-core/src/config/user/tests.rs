@@ -65,7 +65,6 @@ fn accepted_docs() {
         "dotfiles: {path: /abs, install: install.sh}",
         "dotfiles: {path: ~/dots}",
         "dotfiles: {path: /abs, install: ./i.sh}",
-        "git: {name: N, email: e@example.com}",
         "agent: {model: haiku}",
         "egress: {allow: [Example.COM, '*.example.org']}",
         "box_credentials: [A, B]",
@@ -99,7 +98,6 @@ fn rejected_docs_with_paths() {
             "drivers: {x: {sleep_after_minutes: 5}}",
             "drivers.x.sleep_after_minutes",
         ),
-        ("git: {nope: 1}", "git.nope"),
         ("dotfiles: {nope: 1}", "dotfiles.nope"),
         ("drivers: {crabbox: {nope: 1}}", "drivers.crabbox.nope"),
         ("credentials: {A: {env: X, nope: 1}}", "credentials.A.nope"),
@@ -109,6 +107,11 @@ fn rejected_docs_with_paths() {
         ),
     ];
     check_rejects(cases);
+}
+
+#[test]
+fn git_section_is_unknown() {
+    check_rejects(&[("git:\n  name: U\n", "git")]);
 }
 
 #[test]

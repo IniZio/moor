@@ -26,6 +26,8 @@ pub enum Layer {
     User,
     /// A built-in default.
     Default,
+    /// Read from git itself (the effective config for the Task worktree).
+    Git,
 }
 
 impl Layer {
@@ -37,6 +39,7 @@ impl Layer {
             Self::Repo => "repo",
             Self::User => "user",
             Self::Default => "default",
+            Self::Git => "git",
         }
     }
 }
@@ -90,10 +93,6 @@ pub struct TaskSettings {
     pub size: Sourced<BoxSize>,
     /// Whether egress is enforced; user only.
     pub enforce_egress: bool,
-    /// Git author name; user only.
-    pub git_name: Option<Sourced<String>>,
-    /// Git author email; user only.
-    pub git_email: Option<Sourced<String>>,
     /// GitHub identity mode.
     pub identity: Identity,
     /// Sorted union of user credential names, box credential names and MCP refs.
@@ -180,8 +179,6 @@ impl TaskSettings {
             provider,
             size,
             enforce_egress: user.box_.enforce_egress.unwrap_or(false),
-            git_name: user.git.name.clone().map(|n| Sourced::new(n, Layer::User)),
-            git_email: user.git.email.clone().map(|n| Sourced::new(n, Layer::User)),
             identity: user.github.identity,
             credentials: plan_credentials(user, r),
             box_credentials: r.box_credentials.clone(),

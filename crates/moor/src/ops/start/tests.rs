@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use moor_core::config::{parse_user, UserConfig};
+use moor_core::config::UserConfig;
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::Decision;
 use moor_core::domain::task::{TaskInput, TaskState};
@@ -21,7 +21,6 @@ struct World {
     cx: Cx,
     driver: Arc<FakeDriver>,
     surface: Arc<FakeSurface>,
-    proc: Arc<ScriptedProc>,
     _dir: tempfile::TempDir,
 }
 
@@ -61,14 +60,13 @@ fn world_with(driver: FakeDriver, repo: &Path, config: UserConfig) -> World {
         repo,
         driver.clone(),
         surface.clone(),
-        proc.clone(),
+        proc,
         config,
     );
     World {
         cx,
         driver,
         surface,
-        proc,
         _dir: dir,
     }
 }
@@ -326,25 +324,4 @@ fn unresolved_credential_rejects_before_any_side_effect() {
         .open_task_by_name(&name)
         .unwrap()
         .is_none());
-}
-
-#[test]
-fn identity_from_user_config_is_set_on_the_worktree() {
-    let repo = tempfile::tempdir().unwrap();
-    let user = parse_user("t", "git:\n  name: User Name\n  email: r@example.com\n").unwrap();
-    let w = world_with(FakeDriver::new(), repo.path(), user);
-    w.proc.on(Tool::Git, &["config"], Reply::Ok(String::new()));
-    run(&w.cx, &req("demo")).unwrap();
-    let configs: Vec<Vec<String>> = w
-        .proc
-        .calls()
-        .into_iter()
-        .map(|c| c.args)
-        .filter(|a| a.first().map(String::as_str) == Some("config"))
-        .collect();
-    assert_eq!(
-        configs.last().unwrap(),
-        &["config", "--worktree", "user.email", "r@example.com"]
-    );
-    assert_eq!(configs.len(), 3);
 }

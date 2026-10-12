@@ -10,8 +10,8 @@ pub use repo::{parse_repo, RepoBox, RepoCompose, RepoConfig};
 
 pub use user::{
     parse_user, AgentConfig, BoxConfig, BoxSize, CredentialSource, DotfilesConfig, DriverConfig,
-    EgressConfig, GitIdentity, GithubApp, GithubConfig, HerdrConfig, Identity, McpServer,
-    SurfaceConfig, ToolsConfig, UserConfig,
+    EgressConfig, GithubApp, GithubConfig, HerdrConfig, Identity, McpServer, SurfaceConfig,
+    ToolsConfig, UserConfig,
 };
 
 pub use settings::{CredPlan, Flags, Layer, Sourced, TaskSettings};
