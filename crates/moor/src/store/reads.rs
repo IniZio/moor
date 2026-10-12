@@ -25,6 +25,16 @@ const LIVE_STATES: [&str; 3] = [
     BoxState::Asleep.as_str(),
 ];
 
+/// Tasks holding a live Box of `provider` as seen on `conn`, oldest id first.
+pub(super) fn live_holders_in(
+    conn: &Connection,
+    provider: &ProviderId,
+) -> Result<Vec<TaskRow>, StoreError> {
+    let tail = "WHERE b.provider = ?1 AND b.state IN (?2, ?3, ?4) ORDER BY t.id";
+    let [a, b, c] = LIVE_STATES;
+    query_tasks(conn, tail, (provider.as_str(), a, b, c))
+}
+
 impl Store {
     /// The live (neither closed nor rejected) task with this name.
     pub(crate) fn open_task_by_name(&self, name: &TaskName) -> Result<Option<TaskRow>, StoreError> {
@@ -56,19 +66,6 @@ impl Store {
             .into_iter()
             .filter_map(|t| t.boxed.map(|b| (t.id, b)))
             .collect())
-    }
-
-    /// How many live boxes this provider holds.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "used by start's capacity check, not yet wired")
-    )]
-    pub(crate) fn live_boxes(&self, provider: &ProviderId) -> Result<u32, StoreError> {
-        let sql = "SELECT COUNT(*) FROM boxes WHERE provider = ?1 AND state IN (?2, ?3, ?4)";
-        let [a, b, c] = LIVE_STATES;
-        Ok(self
-            .reader()?
-            .query_row(sql, (provider.as_str(), a, b, c), |r| r.get(0))?)
     }
 
     /// Tasks queued for a box, oldest id first.

@@ -19,6 +19,7 @@ use moor_core::{BoxHandle, ProviderId, RunId, TaskId, TaskName};
 use crate::testing::clock::FakeClock;
 
 use super::apply::Applied;
+use super::reads::live_holders_in;
 use super::{NewRun, RunOutcome, Store, StoreError};
 
 /// Open a store in a temp dir with a fake clock.
@@ -409,4 +410,67 @@ fn open_tasks_excludes_closed_and_rejected() {
         .map(|t| t.id)
         .collect();
     assert_eq!(open_ids, vec![live]);
+}
+
+/// Claim the only slot of provider `p` for `id`, or queue the task when it is taken.
+fn claim_last_slot(store: &Store, id: TaskId) -> Option<Applied> {
+    let provider = ProviderId::new("p");
+    store
+        .apply_admitting(&provider, |holders| {
+            let d = Decision::new(id);
+            Some(if holders.is_empty() {
+                d.task_input(TaskInput::Admitted)
+                    .box_input(BoxInput::Requested)
+                    .set(self::provider())
+            } else {
+                d.task_input(TaskInput::AtCapacity { max_boxes: 1 })
+            })
+        })
+        .unwrap()
+}
+
+#[test]
+fn two_tasks_racing_for_the_last_slot_cannot_both_be_admitted() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = open(dir.path());
+    let (a, b) = (new_task(&store, "a"), new_task(&store, "b"));
+    // A second store on the same file stands in for a second `moor start` process:
+    // only SQLite's write lock, not the in-process writer mutex, can separate the two.
+    let rival_store = Store::open(
+        &dir.path().join("state").join("moor.db"),
+        Arc::new(FakeClock::new(Ts::from_millis(1_000_000))),
+    )
+    .unwrap();
+    let provider = ProviderId::new("p");
+    let (started, rival_started) = std::sync::mpsc::channel::<()>();
+    let admitted = std::thread::scope(|s| {
+        let rival = s.spawn(|| {
+            started.send(()).unwrap();
+            claim_last_slot(&rival_store, b)
+        });
+        let first = store
+            .apply_admitting(&provider, |holders| {
+                assert!(holders.is_empty());
+                rival_started.recv().unwrap();
+                std::thread::sleep(Duration::from_millis(300));
+                Some(
+                    Decision::new(a)
+                        .task_input(TaskInput::Admitted)
+                        .box_input(BoxInput::Requested)
+                        .set(self::provider()),
+                )
+            })
+            .unwrap();
+        let second = rival.join().unwrap();
+        [first, second]
+    });
+    let states = [a, b].map(|id| store.task(id).unwrap().unwrap().state);
+    assert_eq!(admitted.map(|x| x.is_some()), [true, true]);
+    assert_eq!(states, [TaskState::SettingUp, TaskState::WaitingForBox]);
+    assert_eq!(
+        live_holders_in(&store.reader().unwrap(), &provider)
+            .unwrap()
+            .len(),
+        1
+    );
 }

@@ -10,7 +10,7 @@ use moor_core::{BoxHandle, ProviderId, TaskId, TaskName};
 
 use crate::testing::clock::FakeClock;
 
-use super::Store;
+use super::{live_holders_in, Store};
 
 /// Open a store in a temp dir.
 fn open(dir: &std::path::Path) -> Store {
@@ -125,37 +125,6 @@ fn acquired() -> BoxInput {
 }
 
 #[test]
-fn live_boxes_counts_only_starting_ready_asleep() {
-    let dir = tempfile::tempdir().unwrap();
-    let store = open(dir.path());
-    let p = ProviderId::new("p");
-    let q = ProviderId::new("q");
-    assert_eq!(store.live_boxes(&p).unwrap(), 0);
-
-    let [starting, ready, asleep, failed, deleted, other] =
-        ["a", "b", "c", "d", "e", "f"].map(|n| add(&store, n));
-    for id in [starting, ready, asleep, failed, deleted] {
-        request(&store, id, "p");
-    }
-    request(&store, other, "q");
-    for id in [ready, asleep, deleted] {
-        box_input(&store, id, acquired());
-    }
-    box_input(&store, asleep, BoxInput::Sleep);
-    box_input(&store, deleted, BoxInput::Released);
-    let cause = "x".into();
-    let fail = BoxInput::AcquireFailed {
-        attempted: None,
-        cause,
-    };
-    box_input(&store, failed, fail);
-
-    assert_eq!(store.live_boxes(&p).unwrap(), 3);
-    assert_eq!(store.live_boxes(&q).unwrap(), 1);
-    assert_eq!(store.live_boxes(&ProviderId::new("z")).unwrap(), 0);
-}
-
-#[test]
 fn waiting_tasks_returns_waiting_for_box_in_id_order() {
     let dir = tempfile::tempdir().unwrap();
     let store = open(dir.path());
@@ -177,4 +146,38 @@ fn waiting_tasks_returns_waiting_for_box_in_id_order() {
     let waiting = store.waiting_tasks().unwrap();
     assert_eq!(waiting.iter().map(|t| t.id).collect::<Vec<_>>(), [d, b, a]);
     assert!(waiting.iter().all(|t| t.state == TaskState::WaitingForBox));
+}
+
+#[test]
+fn live_holders_lists_only_the_providers_live_boxes_in_id_order() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(dir.path());
+    let p = ProviderId::new("p");
+    assert!(live_holders_in(&store.reader().unwrap(), &p)
+        .unwrap()
+        .is_empty());
+
+    let [starting, ready, failed, deleted, other] =
+        ["e", "b", "c", "d", "a"].map(|n| add(&store, n));
+    for id in [starting, ready, failed, deleted] {
+        request(&store, id, "p");
+    }
+    request(&store, other, "q");
+    for id in [ready, deleted] {
+        box_input(&store, id, acquired());
+    }
+    box_input(&store, deleted, BoxInput::Released);
+    let cause = "x".into();
+    let fail = BoxInput::AcquireFailed {
+        attempted: None,
+        cause,
+    };
+    box_input(&store, failed, fail);
+
+    let holders = live_holders_in(&store.reader().unwrap(), &p).unwrap();
+    assert_eq!(
+        holders.iter().map(|t| t.id).collect::<Vec<_>>(),
+        [starting, ready]
+    );
+    assert!(holders.iter().all(|t| t.boxed.is_some()));
 }

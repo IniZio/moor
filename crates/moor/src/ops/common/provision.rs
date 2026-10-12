@@ -17,6 +17,7 @@ use moor_core::{BoxHandle, ErrorKind, ProviderId, TaskId, Warning};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
+use crate::ops::common::capacity;
 use crate::ops::common::facts::settings;
 use crate::ops::common::view::task_view;
 use crate::store::{Store, TaskRow};
@@ -40,6 +41,8 @@ pub(crate) enum Entry {
     Retry,
     /// A working Task that lost its Box; its state stays.
     Stay,
+    /// A Task queued until a Box slot frees.
+    Waiting,
 }
 
 impl Entry {
@@ -47,6 +50,7 @@ impl Entry {
     const fn begin(self) -> Option<TaskInput> {
         match self {
             Self::Fresh => Some(TaskInput::Admitted),
+            Self::Waiting => Some(TaskInput::Promoted),
             Self::Retry => Some(TaskInput::Retry),
             Self::Stay => None,
         }
@@ -107,6 +111,7 @@ fn entry_for(row: &TaskRow) -> Option<Entry> {
     let box_state = row.boxed.as_ref().map(|b| b.state);
     match (row.state, box_state) {
         (TaskState::Checking, None) if row.intent.is_none() => Some(Entry::Fresh),
+        (TaskState::WaitingForBox, None) if row.intent.is_none() => Some(Entry::Waiting),
         (TaskState::SetupFailed, Some(BoxState::Failed | BoxState::Gone)) => Some(Entry::Retry),
         (TaskState::Working | TaskState::Idle, Some(BoxState::Failed | BoxState::Gone)) => {
             Some(Entry::Stay)
@@ -117,7 +122,8 @@ fn entry_for(row: &TaskRow) -> Option<Entry> {
 
 /// Admits the Task, acquires its Box and records the outcome.
 ///
-/// The caller holds the Box lock.
+/// A new or waiting Task at the Box limit is queued (or left waiting) and the
+/// driver is not called. The caller holds the Box lock.
 pub(crate) fn provision(
     cx: &Cx,
     store: &Store,
@@ -128,12 +134,6 @@ pub(crate) fn provision(
     let task = reread(store, id)?;
     let provider = ProviderId::new(cfg.provider.value.clone());
     let egress = egress_plan(cfg)?;
-    if let Some(note) = unenforced_note(&cfg.provider.value, cfg.enforce_egress) {
-        cx.warn(Warning {
-            code: "egress_unenforced".to_owned(),
-            message: note.to_owned(),
-        });
-    }
     let mut requested = Decision::new(id);
     requested.task_input = entry.begin();
     let requested = requested
@@ -146,7 +146,32 @@ pub(crate) fn provision(
         .intent(IntentChange::Set(Intent::Provisioning {
             pid: std::process::id(),
         }));
-    store.apply(requested)?;
+    if matches!(entry, Entry::Fresh | Entry::Waiting) {
+        let mut full = false;
+        store.apply_admitting(&provider, |holders| {
+            let Some(lim) = capacity::full(cx.config(), &provider, holders) else {
+                return Some(requested);
+            };
+            full = true;
+            (entry == Entry::Fresh).then(|| {
+                let queued = TaskInput::AtCapacity {
+                    max_boxes: lim.max.get(),
+                };
+                Decision::new(id).task_input(queued)
+            })
+        })?;
+        if full {
+            return Ok(());
+        }
+    } else {
+        store.apply(requested)?;
+    }
+    if let Some(note) = unenforced_note(&cfg.provider.value, cfg.enforce_egress) {
+        cx.warn(Warning {
+            code: "egress_unenforced".to_owned(),
+            message: note.to_owned(),
+        });
+    }
     let req = AcquireReq {
         provider,
         task: id,

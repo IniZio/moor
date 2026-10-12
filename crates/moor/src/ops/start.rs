@@ -1,18 +1,20 @@
 //! `start` (minimal): check credentials, create the Task, its worktree and Workspace, acquire the Box.
 //!
-//! It does not check capacity, run setup or dotfiles, or launch the agent.
+//! It queues the Task when the box limit for its provider is reached. It does not run setup or
+//! dotfiles, or launch the agent.
 
 use std::path::{Path, PathBuf};
 
 use moor_core::config::Flags;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, NewTask};
 use moor_core::domain::event::CheckedCred;
-use moor_core::domain::task::TaskInput;
+use moor_core::domain::task::{TaskInput, TaskState};
 use moor_core::seam::surface::{workspace_label, Worktree};
 use moor_core::view::{AgentLaunchView, DotfilesView, SetupView, StartView};
 use moor_core::{ErrorKind, StartReq, TaskId};
 
 use super::common::boxlock::{self, BoxLock};
+use super::common::capacity;
 use super::common::facts::settings;
 use super::common::provision::{egress_plan, provision, reprovision, reread, Entry};
 use super::common::view::task_view;
@@ -73,7 +75,8 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     if reread(store, id)?.boxed.is_none() {
         provision(cx, store, id, Entry::Fresh, &cfg)?;
     }
-    reread(store, id).map(|row| view(&row, false))
+    let row = reread(store, id)?;
+    Ok(queued_view(cx, &row, false, &cfg.provider.value))
 }
 
 /// Records a rejected Task, with no worktree or Workspace, and fails with the outcome.
@@ -128,9 +131,34 @@ fn attach(
     let reprovisioned = reprovision(cx, store, row, "start")?;
     store.apply(Decision::new(row.id).event(ExtraEvent::Attached))?;
     if reprovisioned {
-        return reread(store, row.id).map(|r| view(&r, true));
+        let row = reread(store, row.id)?;
+        return with_provider(cx, &row, true);
     }
-    Ok(view(row, true))
+    with_provider(cx, row, true)
+}
+
+/// [`queued_view`] for a row whose provider is not at hand; resolved only when it is queued.
+fn with_provider(cx: &Cx, row: &TaskRow, attached: bool) -> Result<StartView, CommandError> {
+    if row.state != TaskState::WaitingForBox {
+        return Ok(view(row, attached));
+    }
+    let at = row.worktree.as_deref().unwrap_or(&row.repo);
+    let cfg = settings(cx, Path::new(at), &Flags::default())?;
+    Ok(queued_view(cx, row, attached, &cfg.provider.value))
+}
+
+/// The response for `row`, with the limit that queued it named in a warning.
+fn queued_view(cx: &Cx, row: &TaskRow, attached: bool, provider: &str) -> StartView {
+    let mut v = view(row, attached);
+    if v.queued {
+        if let Some(lim) = capacity::limit(cx.config(), provider) {
+            v.warnings_inline.push(format!(
+                "waiting for a free box: {} allows {} at a time",
+                lim.key, lim.max
+            ));
+        }
+    }
+    v
 }
 
 /// The response for `row`; nothing past the Box runs yet.
@@ -138,7 +166,7 @@ fn view(row: &TaskRow, attached: bool) -> StartView {
     StartView {
         task: task_view(row),
         attached,
-        queued: false,
+        queued: row.state == TaskState::WaitingForBox,
         promoted: Vec::new(),
         setup: SetupView::default(),
         dotfiles: DotfilesView::default(),
