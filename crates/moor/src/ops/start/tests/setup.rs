@@ -20,7 +20,7 @@ use crate::testing::proc::Reply;
 const LINE_DEADLINE: Duration = SETUP_LINE_DEADLINE;
 
 fn exit(code: i32) -> ExecOutcome {
-    ExecOutcome { code }
+    ExecOutcome::Exited { code }
 }
 
 /// Starts `demo` in a repo whose `.moor.yaml` is `yaml`.

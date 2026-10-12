@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use moor_core::config::{Flags, TaskSettings, UserConfig};
 use moor_core::domain::task::SetupOutcome;
-use moor_core::seam::driver::{AcquireReq, Driver, DriverError, EgressPlan, ExecOutcome};
+use moor_core::seam::driver::{AcquireReq, Driver, DriverError, EgressPlan, ExecOutcome, SyncMode};
 use moor_core::seam::proc::Deadline;
 use moor_core::view::SetupView;
 use moor_core::{BoxHandle, BoxPath, ProviderId, TaskId, TaskName};
@@ -62,7 +62,10 @@ fn cfg(setup: &[&str], env: &[(&str, &str)]) -> TaskSettings {
 }
 
 fn exits(codes: &[i32]) -> Vec<Result<ExecOutcome, DriverError>> {
-    codes.iter().map(|&code| Ok(ExecOutcome { code })).collect()
+    codes
+        .iter()
+        .map(|&code| Ok(ExecOutcome::Exited { code }))
+        .collect()
 }
 
 fn only<T>(mut v: Vec<T>) -> T {
@@ -233,4 +236,35 @@ fn failed_is_true_only_for_failed() {
         line: "x".to_owned()
     }
     .failed());
+}
+
+#[test]
+fn exec_neither_syncs_nor_redirects_output() {
+    let d = tempfile::tempdir().unwrap();
+    let r = rig(d.path(), FakeDriver::new());
+    run_setup(&r.cx, &r.handle, &r.workdir, &cfg(&["a"], &[]));
+    let (_, spec, _) = only(r.driver.execs());
+    assert_eq!(spec.sync, SyncMode::None);
+    assert!(spec.output.is_none());
+    assert!(spec.host_cwd.is_none() && spec.class.is_none());
+}
+
+#[test]
+fn interrupted_line_fails_and_stops_the_run() {
+    let d = tempfile::tempdir().unwrap();
+    let driver = FakeDriver::new().exec_results([Ok(ExecOutcome::Interrupted)]);
+    let r = rig(d.path(), driver);
+    let got = run_setup(&r.cx, &r.handle, &r.workdir, &cfg(&["a", "b"], &[]));
+    assert_eq!(
+        got,
+        SetupRun::Failed {
+            line: "a".to_owned()
+        }
+    );
+    assert_eq!(r.driver.execs().len(), 1);
+    let warnings = r.cx.take_warnings();
+    assert_eq!(warnings.len(), 1);
+    let w = warnings.first().unwrap();
+    assert_eq!(w.code, "setup_failed");
+    assert!(w.message.contains("interrupted"));
 }

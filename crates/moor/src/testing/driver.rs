@@ -215,7 +215,7 @@ impl Driver for FakeDriver {
         }
         s.exec_results
             .pop_front()
-            .unwrap_or(Ok(ExecOutcome { code: 0 }))
+            .unwrap_or(Ok(ExecOutcome::Exited { code: 0 }))
     }
 }
 

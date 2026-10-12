@@ -1,13 +1,14 @@
 //! Self-tests for the Driver fake.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::name::TaskName;
 use moor_core::seam::driver::{
-    AcquireReq, Driver, DriverError, EgressPlan, ExecOutcome, ExecSpec, Released,
+    AcquireReq, Driver, DriverError, EgressPlan, ExecOutcome, ExecSpec, Released, SyncMode,
 };
-use moor_core::seam::proc::Deadline;
+use moor_core::seam::proc::{Deadline, Output};
 use moor_core::{BoxHandle, BoxPath, ProviderId, TaskId};
 
 use super::FakeDriver;
@@ -57,6 +58,10 @@ fn spec(argv: &[&str]) -> ExecSpec {
         argv: argv.iter().map(|a| (*a).to_owned()).collect(),
         env: vec![("K".to_owned(), "V".to_owned())],
         cwd: Some(BoxPath::under("/work", "box-1").unwrap()),
+        sync: SyncMode::Full,
+        output: None,
+        host_cwd: None,
+        class: None,
     }
 }
 
@@ -72,8 +77,8 @@ fn fake_with_box() -> (FakeDriver, BoxHandle) {
 fn exec_records_argv_env_cwd_and_deadline_of_each_call() {
     let (fake, h) = fake_with_box();
     let (a, b) = (spec(&["ls", "-l"]), spec(&["true"]));
-    assert_eq!(fake.exec(&h, &a, DL), Ok(ExecOutcome { code: 0 }));
-    assert_eq!(fake.exec(&h, &b, DL), Ok(ExecOutcome { code: 0 }));
+    assert_eq!(fake.exec(&h, &a, DL), Ok(ExecOutcome::Exited { code: 0 }));
+    assert_eq!(fake.exec(&h, &b, DL), Ok(ExecOutcome::Exited { code: 0 }));
     assert_eq!(fake.execs(), [(h, a, DL), (BoxHandle::new("box-1"), b, DL)]);
     assert_eq!(fake.calls(), ["acquire", "exec box-1", "exec box-1"]);
 }
@@ -81,14 +86,14 @@ fn exec_records_argv_env_cwd_and_deadline_of_each_call() {
 #[test]
 fn scripted_exec_outcomes_are_fifo_then_default_to_success() {
     let (fake, h) = fake_with_box();
-    let fake = fake.exec_results([Ok(ExecOutcome { code: 3 })]);
+    let fake = fake.exec_results([Ok(ExecOutcome::Exited { code: 3 })]);
     assert_eq!(
         fake.exec(&h, &spec(&["x"]), DL),
-        Ok(ExecOutcome { code: 3 })
+        Ok(ExecOutcome::Exited { code: 3 })
     );
     assert_eq!(
         fake.exec(&h, &spec(&["x"]), DL),
-        Ok(ExecOutcome { code: 0 })
+        Ok(ExecOutcome::Exited { code: 0 })
     );
 }
 
@@ -112,4 +117,26 @@ fn exec_on_unknown_handle_is_not_found_but_recorded() {
     );
     assert_eq!(fake.execs().len(), 1);
     assert_eq!(fake.calls(), ["exec box-9"]);
+}
+
+#[test]
+fn exec_records_sync_output_host_cwd_and_class() {
+    let (fake, h) = fake_with_box();
+    let mut s = spec(&["x"]);
+    s.sync = SyncMode::None;
+    s.output = Some(Output::Log(PathBuf::from("/log/x")));
+    s.host_cwd = Some(PathBuf::from("/host"));
+    s.class = Some("big".to_owned());
+    fake.exec(&h, &s, DL).unwrap();
+    assert_eq!(fake.execs(), [(h, s, DL)]);
+}
+
+#[test]
+fn scripted_interrupted_outcome_is_returned() {
+    let (fake, h) = fake_with_box();
+    let fake = fake.exec_results([Ok(ExecOutcome::Interrupted)]);
+    assert_eq!(
+        fake.exec(&h, &spec(&["x"]), DL),
+        Ok(ExecOutcome::Interrupted)
+    );
 }
