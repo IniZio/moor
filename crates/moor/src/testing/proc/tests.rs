@@ -100,27 +100,25 @@ fn secret_failure_has_empty_stdout() {
 }
 
 #[test]
-fn streamed_passes_exit_codes_through() {
+fn streamed_reports_nonzero_as_an_error() {
     let p = ScriptedProc::new();
     p.on(Tool::Sh, &["ok"], Reply::Ok(String::new())).on(
         Tool::Sh,
         &["bad"],
         Reply::Fail {
             code: 3,
-            stdout: String::new(),
-            stderr: String::new(),
+            stdout: "out".into(),
+            stderr: "boom".into(),
         },
     );
-    assert_eq!(
-        p.run_streamed(&spec(Tool::Sh, &["ok"]), &Output::Inherit)
-            .unwrap(),
-        0
-    );
-    assert_eq!(
-        p.run_streamed(&spec(Tool::Sh, &["bad"]), &Output::Inherit)
-            .unwrap(),
-        3
-    );
+    assert!(p
+        .run_streamed(&spec(Tool::Sh, &["ok"]), &Output::Inherit)
+        .is_ok());
+    assert!(matches!(
+        p.run_streamed(&spec(Tool::Sh, &["bad"]), &Output::Inherit),
+        Err(ProcError::NonZero { code: 3, stdout, stderr_tail })
+            if stdout.is_empty() && stderr_tail == "boom"
+    ));
     assert_eq!(p.calls().len(), 2);
 }
 

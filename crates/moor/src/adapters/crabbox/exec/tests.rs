@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use moor_core::domain::run::SyncMode;
 use moor_core::name::BoxHandle;
-use moor_core::seam::driver::{Driver, ExecOutcome, ExecSpec};
+use moor_core::seam::driver::{Driver, DriverError, ExecOutcome, ExecSpec};
 use moor_core::seam::proc::{Deadline, Output, Tool};
 
 use crate::adapters::crabbox::Crabbox;
@@ -103,17 +103,67 @@ fn host_cwd_is_the_proc_cwd() {
     assert_eq!(call.cwd, Some(PathBuf::from("/work/tree")));
 }
 
-#[test]
-fn streamed_run_reports_nonzero_exit() {
-    let mut s = spec(SyncMode::Full);
-    s.output = Some(Output::Inherit);
-    let reply = Reply::Fail {
-        code: 3,
+fn streamed(reply: impl Fn() -> Reply) -> Vec<Result<ExecOutcome, DriverError>> {
+    [Output::Inherit, Output::Log("/dev/null".into())]
+        .into_iter()
+        .map(|output| {
+            let mut s = spec(SyncMode::Full);
+            s.output = Some(output);
+            run_with(&s, reply()).0
+        })
+        .collect()
+}
+
+fn fail(code: i32, stderr: &str) -> Reply {
+    Reply::Fail {
+        code,
         stdout: String::new(),
-        stderr: String::new(),
-    };
-    let (out, _) = run_with(&s, reply);
-    assert_eq!(out, Ok(ExecOutcome::Exited { code: 3 }));
+        stderr: stderr.to_owned(),
+    }
+}
+
+#[test]
+fn streamed_remote_exit_is_exited() {
+    for out in streamed(|| fail(3, "sync done\nremote command exited 3\n")) {
+        assert_eq!(out, Ok(ExecOutcome::Exited { code: 3 }));
+    }
+}
+
+#[test]
+fn streamed_success_is_exit_zero() {
+    for out in streamed(ok) {
+        assert_eq!(out, Ok(ExecOutcome::Exited { code: 0 }));
+    }
+}
+
+#[test]
+fn streamed_crabbox_config_failure_is_an_error() {
+    for out in streamed(|| fail(3, "bad config")) {
+        assert!(
+            matches!(&out, Err(DriverError::Failed { summary }) if summary.contains("configuration problem")),
+            "{out:?}"
+        );
+    }
+}
+
+#[test]
+fn streamed_box_not_found_is_not_found() {
+    for out in streamed(|| fail(4, "Error: box not found")) {
+        assert_eq!(out, Err(DriverError::NotFound));
+    }
+}
+
+#[test]
+fn streamed_sync_failure_and_lost_box_are_errors() {
+    for out in streamed(|| fail(5, "box lost during warmup")) {
+        assert!(
+            matches!(&out, Err(DriverError::Failed { summary }) if summary.contains("box lost during warmup")),
+            "{out:?}"
+        );
+    }
+    for out in streamed(|| fail(1, "rsync failed")) {
+        assert!(matches!(out, Err(DriverError::Failed { .. })), "{out:?}");
+    }
 }
 
 #[test]

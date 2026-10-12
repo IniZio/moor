@@ -4,10 +4,11 @@
     reason = "tests time real elapsed durations"
 )]
 
+use std::io::{self, Write};
 use std::os::unix::process::ExitStatusExt;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use moor_core::seam::proc::{Deadline, Output, Proc, ProcError, ProcSpec, Tool};
@@ -41,10 +42,9 @@ fn wait_for(path: &Path) {
 fn log_receives_both_streams_and_zero_exit() {
     let dir = TempDir::new().unwrap();
     let log = dir.path().join("run.log");
-    let code = sh_proc()
+    sh_proc()
         .run_streamed(&sh("echo out; echo err >&2", 5), &Output::Log(log.clone()))
         .unwrap();
-    assert_eq!(code, 0);
     let text = std::fs::read_to_string(&log).unwrap();
     assert!(text.contains("out") && text.contains("err"), "{text}");
 }
@@ -61,14 +61,55 @@ fn log_is_truncated_per_run() {
 }
 
 #[test]
-fn exit_codes_pass_through() {
-    let p = sh_proc();
-    for want in [1, 3, 125] {
-        let got = p
-            .run_streamed(&sh(&format!("exit {want}"), 5), &Output::Inherit)
-            .unwrap();
-        assert_eq!(got, want);
+fn non_zero_exit_carries_stderr_tail() {
+    let r = sh_proc().run_streamed(&sh("echo boom >&2; exit 3", 5), &Output::Inherit);
+    match r {
+        Err(ProcError::NonZero {
+            code,
+            stdout,
+            stderr_tail,
+        }) => {
+            assert_eq!(code, 3);
+            assert!(stdout.is_empty());
+            assert_eq!(stderr_tail, "boom\n");
+        }
+        other => unreachable!("expected NonZero, got {other:?}"),
     }
+}
+
+#[test]
+fn non_zero_exit_still_streams_stderr_to_log() {
+    let dir = TempDir::new().unwrap();
+    let log = dir.path().join("run.log");
+    let r = sh_proc().run_streamed(
+        &sh("echo out; echo boom >&2; exit 2", 5),
+        &Output::Log(log.clone()),
+    );
+    assert!(
+        matches!(r, Err(ProcError::NonZero { code: 2, .. })),
+        "{r:?}"
+    );
+    let text = std::fs::read_to_string(&log).unwrap();
+    assert!(text.contains("out") && text.contains("boom"), "{text}");
+}
+
+#[test]
+fn stderr_tail_is_bounded_to_the_last_bytes() {
+    let body = "i=0; while [ $i -lt 5000 ]; do echo line$i >&2; i=$((i+1)); done; exit 1";
+    let r = sh_proc().run_streamed(&sh(body, 10), &Output::Log("/dev/null".into()));
+    match r {
+        Err(ProcError::NonZero { stderr_tail, .. }) => {
+            assert!(stderr_tail.len() <= 2048, "{}", stderr_tail.len());
+            assert!(stderr_tail.ends_with("line4999\n"), "{stderr_tail}");
+        }
+        other => unreachable!("expected NonZero, got {other:?}"),
+    }
+}
+
+#[test]
+fn zero_exit_is_ok_unit() {
+    let r = sh_proc().run_streamed(&sh("echo hi >&2", 5), &Output::Log("/dev/null".into()));
+    assert!(r.is_ok(), "{r:?}");
 }
 
 #[test]
@@ -214,4 +255,69 @@ fn idle_tracks_overlapping_streams() {
     assert!(sig.idle.load(Ordering::SeqCst));
     let _a = sig.enter();
     assert!(!sig.idle.load(Ordering::SeqCst));
+}
+
+#[test]
+fn stderr_tail_survives_a_lingering_pipe_holder() {
+    let dir = TempDir::new().unwrap();
+    let log = dir.path().join("run.log");
+    let t = Instant::now();
+    let r = sh_proc().run_streamed(
+        &sh("sleep 3 & echo 'remote command exited 3' >&2; exit 3", 10),
+        &Output::Log(log),
+    );
+    match r {
+        Err(ProcError::NonZero {
+            code, stderr_tail, ..
+        }) => {
+            assert_eq!(code, 3);
+            assert!(
+                stderr_tail.contains("remote command exited 3"),
+                "{stderr_tail:?}"
+            );
+        }
+        other => unreachable!("expected NonZero, got {other:?}"),
+    }
+    assert!(
+        t.elapsed() < Duration::from_millis(2500),
+        "{:?}",
+        t.elapsed()
+    );
+}
+
+/// Collects what is written so a test can read it back.
+#[derive(Clone, Default)]
+struct Capture(Arc<Mutex<Vec<u8>>>);
+
+impl Write for Capture {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+#[test]
+fn inherit_sends_child_stderr_to_the_stderr_writer_and_tail() {
+    let cap = Capture::default();
+    let flag = Arc::new(AtomicBool::new(false));
+    let r = sh_proc().stream_to(
+        &sh("echo live >&2; exit 4", 5),
+        &Output::Inherit,
+        &flag,
+        Box::new(cap.clone()),
+    );
+    match r {
+        Err(ProcError::NonZero {
+            code, stderr_tail, ..
+        }) => {
+            assert_eq!(code, 4);
+            assert_eq!(stderr_tail, "live\n");
+        }
+        other => unreachable!("expected NonZero, got {other:?}"),
+    }
+    assert_eq!(cap.0.lock().unwrap().as_slice(), b"live\n");
 }

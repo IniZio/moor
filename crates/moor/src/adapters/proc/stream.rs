@@ -1,9 +1,8 @@
-//! Streamed children: output goes straight to moor's streams or a log file,
-//! and an interrupt of moor stops the child's process group.
+//! Streamed children: output goes to moor's streams or a log file (stderr
+//! passes through moor to keep its tail), and an interrupt of moor stops the child's process group.
 
 use std::fs::File;
-use std::io;
-use std::os::unix::process::ExitStatusExt;
+use std::io::{self, Read, Write};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
@@ -13,7 +12,9 @@ use std::thread;
 use moor_core::seam::proc::{Output, ProcError, ProcSpec};
 use signal_hook::consts::{SIGINT, SIGTERM};
 
-use super::{feed, gone, spawn_retrying, stdin_for, terminate, SystemProc, POLL};
+use super::{
+    failure, feed, gone, spawn_retrying, stdin_for, terminate, SystemProc, DRAIN_GRACE, POLL, TAIL,
+};
 
 /// Process-wide interrupt state, installed once and never unregistered.
 struct Signals {
@@ -83,15 +84,42 @@ impl Drop for Done {
     }
 }
 
-/// Stdout and stderr targets for the child.
-fn sinks(out: &Output) -> io::Result<(Stdio, Stdio)> {
+/// Where the child's stdout goes, and the writer that receives its stderr.
+fn sinks(
+    out: &Output,
+    inherit_err: Box<dyn Write + Send>,
+) -> io::Result<(Stdio, Box<dyn Write + Send>)> {
     match out {
-        Output::Inherit => Ok((Stdio::inherit(), Stdio::inherit())),
+        Output::Inherit => Ok((Stdio::inherit(), inherit_err)),
         Output::Log(path) => {
             let file = File::create(path)?;
             let twin = file.try_clone()?;
-            Ok((file.into(), twin.into()))
+            Ok((file.into(), Box::new(twin)))
         }
+    }
+}
+
+/// Copies `src` to `sink` as it arrives, keeping the last [`TAIL`] bytes in
+/// `tail` as they come so a reader need not wait for EOF.
+/// Keeps draining when the sink fails so the child never blocks on a full pipe.
+fn tee(mut src: impl Read, mut sink: impl Write, tail: &Mutex<Vec<u8>>) {
+    let mut buf = [0u8; 8192];
+    let mut writable = true;
+    loop {
+        let n = match src.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => n,
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+            Err(_) => break,
+        };
+        let chunk = buf.get(..n).unwrap_or_default();
+        if writable {
+            writable = sink.write_all(chunk).and_then(|()| sink.flush()).is_ok();
+        }
+        let mut tail = tail.lock().unwrap_or_else(PoisonError::into_inner);
+        tail.extend_from_slice(chunk);
+        let excess = tail.len().saturating_sub(TAIL);
+        tail.drain(..excess);
     }
 }
 
@@ -99,11 +127,7 @@ impl SystemProc {
     /// Runs with output streamed, treating SIGINT and SIGTERM sent to moor as
     /// an interrupt for the duration of the child; outside it they keep their
     /// default action.
-    pub(super) fn stream_forwarding(
-        &self,
-        spec: &ProcSpec,
-        out: &Output,
-    ) -> Result<i32, ProcError> {
+    pub(super) fn stream_forwarding(&self, spec: &ProcSpec, out: &Output) -> Result<(), ProcError> {
         let sig = SIGNALS
             .get_or_init(|| Signals::install().ok())
             .as_ref()
@@ -118,14 +142,35 @@ impl SystemProc {
         spec: &ProcSpec,
         out: &Output,
         interrupted: &Arc<AtomicBool>,
-    ) -> Result<i32, ProcError> {
+    ) -> Result<(), ProcError> {
+        self.stream_to(spec, out, interrupted, Box::new(io::stderr()))
+    }
+
+    /// As [`Self::stream`], with `inherit_err` receiving stderr under [`Output::Inherit`].
+    fn stream_to(
+        &self,
+        spec: &ProcSpec,
+        out: &Output,
+        interrupted: &Arc<AtomicBool>,
+        inherit_err: Box<dyn Write + Send>,
+    ) -> Result<(), ProcError> {
         let (stdin, payload) = stdin_for(&spec.stdin).map_err(ProcError::Spawn)?;
-        let (stdout, stderr) = sinks(out).map_err(ProcError::Spawn)?;
+        let (stdout, err_sink) = sinks(out, inherit_err).map_err(ProcError::Spawn)?;
         let mut cmd = self.command(spec);
-        cmd.stdin(stdin).stdout(stdout).stderr(stderr);
+        cmd.stdin(stdin).stdout(stdout).stderr(Stdio::piped());
         let mut child = spawn_retrying(&mut cmd).map_err(ProcError::Spawn)?;
         drop(cmd);
         let w = child.stdin.take();
+        let err_pipe = child.stderr.take();
+        let tail = Arc::new(Mutex::new(Vec::new()));
+        let (ttx, trx) = mpsc::channel();
+        let tee_tail = Arc::clone(&tail);
+        thread::spawn(move || {
+            if let Some(p) = err_pipe {
+                tee(p, err_sink, &tee_tail);
+            }
+            ttx.send(()).ok();
+        });
         let payload = payload.map(<[u8]>::to_vec);
         thread::spawn(move || feed(w, payload.as_deref()));
         let limit = spec.deadline.0;
@@ -145,10 +190,14 @@ impl SystemProc {
                     .recv()
                     .map_err(|_| ProcError::Spawn(gone()))?
                     .map_err(ProcError::Spawn);
-                st.and_then(|st| {
-                    st.code()
-                        .ok_or_else(|| ProcError::Signalled(st.signal().unwrap_or(0)))
-                })
+                let st = st?;
+                trx.recv_timeout(DRAIN_GRACE).ok();
+                let tail = tail.lock().unwrap_or_else(PoisonError::into_inner).clone();
+                if st.code() == Some(0) {
+                    Ok(())
+                } else {
+                    Err(failure(st, &tail))
+                }
             }
             Ok(Event::Interrupted) => terminate(pid, &rx, limit)
                 .map_err(ProcError::Spawn)
