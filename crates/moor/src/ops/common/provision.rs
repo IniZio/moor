@@ -20,6 +20,7 @@ use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::capacity;
 use crate::ops::common::facts::settings;
+use crate::ops::common::identity;
 use crate::ops::common::setup::{self, SetupRun};
 use crate::ops::common::view::task_view;
 use crate::store::{Store, TaskRow};
@@ -119,13 +120,13 @@ pub(crate) fn reprovision(
     }));
     store.apply(held)?;
     let advance = row.state == TaskState::SettingUp;
+    let target = SetupTarget {
+        handle: &handle,
+        workdir: &workdir,
+        worktree: Path::new(at),
+    };
     Ok(Some(run_and_record(
-        cx,
-        store,
-        row.id,
-        advance,
-        (&handle, &workdir),
-        &cfg,
+        cx, store, row.id, advance, &target, &cfg,
     )?))
 }
 
@@ -213,6 +214,7 @@ pub(crate) fn provision(
             message: note.to_owned(),
         });
     }
+    let worktree = PathBuf::from(task.worktree.as_deref().unwrap_or(&task.repo));
     let req = AcquireReq {
         provider,
         task: id,
@@ -223,7 +225,11 @@ pub(crate) fn provision(
         worktree: task.worktree.as_deref().map(PathBuf::from),
     };
     match cx.driver().acquire(&req) {
-        Ok(got) => ready(cx, store, id, entry, &got, cfg),
+        Ok(got) => {
+            record_acquired(store, id, &got)?;
+            let target = SetupTarget::new(&got, &worktree);
+            run_and_record(cx, store, id, entry.begin().is_some(), &target, cfg)
+        }
         Err(e) => Err(failed(cx, store, id, entry, &req, e)),
     }
 }
@@ -233,15 +239,8 @@ pub(crate) fn nonce(rng: &dyn Rng) -> String {
     format!("{:06x}", rng.u32() & 0xFF_FFFF)
 }
 
-/// Records an acquired Box, runs repo setup in it, then moves the Task to working.
-fn ready(
-    cx: &Cx,
-    store: &Store,
-    id: TaskId,
-    entry: Entry,
-    got: &Acquired,
-    cfg: &TaskSettings,
-) -> Result<SetupRun, CommandError> {
+/// Records an acquired Box under the setup intent.
+fn record_acquired(store: &Store, id: TaskId, got: &Acquired) -> Result<(), CommandError> {
     let acquired = Decision::new(id)
         .box_input(BoxInput::Acquired {
             handle: got.handle.clone(),
@@ -256,14 +255,28 @@ fn ready(
             pid: std::process::id(),
         }));
     store.apply(acquired)?;
-    run_and_record(
-        cx,
-        store,
-        id,
-        entry.begin().is_some(),
-        (&got.handle, &got.workdir),
-        cfg,
-    )
+    Ok(())
+}
+
+/// Where setup runs: the Box, and the worktree whose author the Box commits as.
+struct SetupTarget<'a> {
+    /// The Box setup runs in.
+    handle: &'a BoxHandle,
+    /// Working directory in the Box.
+    workdir: &'a BoxPath,
+    /// Worktree on the host the Task works in.
+    worktree: &'a Path,
+}
+
+impl<'a> SetupTarget<'a> {
+    /// The target for a freshly acquired Box.
+    const fn new(got: &'a Acquired, worktree: &'a Path) -> Self {
+        Self {
+            handle: &got.handle,
+            workdir: &got.workdir,
+            worktree,
+        }
+    }
 }
 
 /// Runs repo setup in a Box under the setup intent and records how it ended, clearing the intent.
@@ -275,10 +288,11 @@ fn run_and_record(
     store: &Store,
     id: TaskId,
     advance: bool,
-    (handle, workdir): (&BoxHandle, &BoxPath),
+    target: &SetupTarget<'_>,
     cfg: &TaskSettings,
 ) -> Result<SetupRun, CommandError> {
-    let run = setup::run_setup(cx, handle, workdir, cfg);
+    identity::set_identity(cx, target.handle, target.worktree);
+    let run = setup::run_setup(cx, target.handle, target.workdir, cfg);
     let mut done = Decision::new(id);
     done.task_input = advance.then(|| TaskInput::BoxReady {
         setup: run.outcome(),
