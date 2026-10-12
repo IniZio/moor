@@ -1,0 +1,157 @@
+//! `run`: execute a command on the Task's Box, keep a run record, report how it ended.
+//!
+//! The Box lock is held from the run row's creation to its completion.
+
+use std::path::PathBuf;
+use std::time::Duration;
+
+use moor_core::config::Flags;
+use moor_core::domain::run::SyncMode;
+use moor_core::seam::driver::{ExecOutcome, ExecSpec};
+use moor_core::seam::proc::{Deadline, Output};
+use moor_core::view::run::RunValue;
+use moor_core::{ErrorKind, RunId, RunReq, Sha, TaskId};
+
+use crate::cx::Cx;
+use crate::error::CommandError;
+use crate::ops::common::boxlock::{self, BoxLock};
+use crate::ops::common::facts::settings;
+use crate::ops::common::provisioning::dead_provisioning;
+use crate::store::{NewRun, RunOutcome, Store, TaskRow};
+
+mod ready;
+
+/// Longest a command may run before the driver gives up on it.
+const RUN_DEADLINE: Duration = Duration::from_hours(24);
+
+/// Run `run`.
+///
+/// # Errors
+/// [`CommandError`] when the command could not start: unknown Task, no usable Box, a busy Box,
+/// or a failure of the driver or the store before the command ran.
+pub(crate) fn run(cx: &Cx, req: &RunReq) -> Result<RunValue, CommandError> {
+    if req.argv.is_empty() {
+        return Err(CommandError::new(ErrorKind::Usage, "no command to run"));
+    }
+    let store = cx.store()?;
+    let name = req.task.as_str();
+    let found = store
+        .latest_task_by_name(&req.task)?
+        .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no task {name}")))?;
+    dead_provisioning(cx, &found)?;
+    let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, found.id, "run", boxlock::WAIT)?;
+    let row = store
+        .task(found.id)?
+        .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no task {name}")))?;
+    locked(cx, store, req, &row)
+}
+
+/// The part of `run` that needs the Box lock, on the row read after taking it.
+fn locked(cx: &Cx, store: &Store, req: &RunReq, row: &TaskRow) -> Result<RunValue, CommandError> {
+    dead_provisioning(cx, row)?;
+    let target = ready::target(store, row)?;
+    launch(cx, store, req, row.id, target)
+}
+
+/// Records the run, executes the command in the Box and records how it ended.
+fn launch(
+    cx: &Cx,
+    store: &Store,
+    req: &RunReq,
+    task: TaskId,
+    target: ready::Target,
+) -> Result<RunValue, CommandError> {
+    let cfg = settings(cx, &target.worktree, &Flags::default())?;
+    let sync = if req.no_sync {
+        SyncMode::None
+    } else {
+        SyncMode::Full
+    };
+    let sha = cx
+        .git()
+        .head(&target.worktree)
+        .ok()
+        .and_then(|s| Sha::parse(&s).ok());
+    let id = store.begin_run(NewRun {
+        task,
+        argv: req.argv.clone(),
+        record: req.record.clone(),
+        sha: sha.clone(),
+        sync: sync_name(sync).to_owned(),
+        pid: std::process::id(),
+    })?;
+    let (output, log) = match output(cx, req, id) {
+        Ok(got) => got,
+        Err(e) => {
+            finish(store, id, None, false);
+            return Err(e);
+        }
+    };
+    let spec = ExecSpec {
+        argv: req.argv.clone(),
+        env: Vec::new(),
+        cwd: target.workdir,
+        sync,
+        output: Some(output),
+        host_cwd: Some(target.worktree),
+        class: Some(cfg.size.value.as_str().to_owned()),
+    };
+    let outcome = match cx
+        .driver()
+        .exec(&target.handle, &spec, Deadline(RUN_DEADLINE))
+    {
+        Ok(outcome) => outcome,
+        Err(e) => {
+            finish(store, id, None, false);
+            return Err(CommandError::new(ErrorKind::Failed, e.to_string()));
+        }
+    };
+    let (exit, interrupted) = match outcome {
+        ExecOutcome::Exited { code } => (Some(code), false),
+        ExecOutcome::Interrupted => (None, true),
+    };
+    store.finish_run(id, RunOutcome { exit, interrupted })?;
+    Ok(RunValue {
+        ran: true,
+        run: Some(id),
+        exit,
+        interrupted,
+        sha: sha.map(|s| s.as_str().to_owned()),
+        sync,
+        record: req.record.clone(),
+        log,
+    })
+}
+
+/// Where the command's output goes, and the log path to report (empty when inherited).
+fn output(cx: &Cx, req: &RunReq, id: RunId) -> Result<(Output, String), CommandError> {
+    if req.inherit_output {
+        return Ok((Output::Inherit, String::new()));
+    }
+    let dir = cx.state_dir()?.join("runs");
+    std::fs::create_dir_all(&dir).map_err(|e| {
+        CommandError::new(
+            ErrorKind::Failed,
+            format!("cannot create {}: {e}", dir.display()),
+        )
+    })?;
+    let path: PathBuf = dir.join(format!("{}.log", id.get()));
+    let shown = path.display().to_string();
+    Ok((Output::Log(path), shown))
+}
+
+/// Ends a run whose command never reported an exit; a store failure leaves it for healing.
+fn finish(store: &Store, id: RunId, exit: Option<i32>, interrupted: bool) {
+    store.finish_run(id, RunOutcome { exit, interrupted }).ok();
+}
+
+/// The sync mode as the run row stores it.
+const fn sync_name(sync: SyncMode) -> &'static str {
+    match sync {
+        SyncMode::Full => "full",
+        SyncMode::None => "none",
+    }
+}
+
+#[cfg(test)]
+mod tests;

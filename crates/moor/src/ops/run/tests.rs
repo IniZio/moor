@@ -1,0 +1,386 @@
+//! Tests for `run`.
+
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
+
+use moor_core::domain::boxes::BoxInput;
+use moor_core::domain::decision::{Decision, Field, Fields, Intent, IntentChange, NewTask};
+use moor_core::domain::run::SyncMode;
+use moor_core::domain::task::{SetupOutcome, TaskInput};
+use moor_core::seam::driver::{AcquireReq, Driver, DriverError, EgressPlan, ExecOutcome};
+use moor_core::seam::proc::{Output, Tool};
+use moor_core::{ErrorKind, ProviderId, RunReq, TaskId, TaskName};
+
+use super::{locked, run};
+use crate::cx::Cx;
+use crate::ops::common::boxlock::BoxLock;
+use crate::testing::driver::FakeDriver;
+use crate::testing::proc::{Reply, ScriptedProc};
+use crate::testing::surface::FakeSurface;
+
+const SHA: &str = "0123456789abcdef0123456789abcdef01234567";
+
+struct Fx {
+    dir: tempfile::TempDir,
+    cx: Cx,
+    driver: Arc<FakeDriver>,
+    proc: Arc<ScriptedProc>,
+    id: TaskId,
+}
+
+fn req(argv: &[&str]) -> RunReq {
+    RunReq {
+        task: TaskName::parse("t").unwrap(),
+        no_sync: false,
+        record: None,
+        argv: argv.iter().map(|s| (*s).to_owned()).collect(),
+        inherit_output: false,
+    }
+}
+
+/// A context over `dir` with git answering a fixed HEAD.
+fn context(dir: &std::path::Path, driver: &Arc<FakeDriver>) -> (Cx, Arc<ScriptedProc>) {
+    let proc = Arc::new(ScriptedProc::new());
+    proc.on(
+        Tool::Git,
+        &["rev-parse", "HEAD"],
+        Reply::Ok(format!("{SHA}\n")),
+    );
+    proc.on(
+        Tool::Git,
+        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+        Reply::Ok(format!("{}/.git\n", dir.display())),
+    );
+    let cx = Cx::fake(
+        dir,
+        dir,
+        driver.clone(),
+        Arc::new(FakeSurface::new(PathBuf::from("/s"))),
+        proc.clone(),
+    );
+    (cx, proc)
+}
+
+/// A Task `t` with no Box yet.
+fn bare_with(driver: FakeDriver) -> Fx {
+    let dir = tempfile::tempdir().unwrap();
+    let driver = Arc::new(driver);
+    let (cx, proc) = context(dir.path(), &driver);
+    let id = cx
+        .store()
+        .unwrap()
+        .apply(Decision::insert(NewTask {
+            name: TaskName::parse("t").unwrap(),
+            repo: "r".into(),
+        }))
+        .unwrap()
+        .task;
+    Fx {
+        dir,
+        cx,
+        driver,
+        proc,
+        id,
+    }
+}
+
+fn bare() -> Fx {
+    bare_with(FakeDriver::new())
+}
+
+fn ready() -> Fx {
+    ready_with(FakeDriver::new())
+}
+
+/// A Ready Task `t` with a Box from `driver`.
+fn ready_with(driver: FakeDriver) -> Fx {
+    let f = bare_with(driver);
+    let store = f.cx.store().unwrap();
+    let provider = ProviderId::new("p");
+    let fields = Fields {
+        box_provider: Field::Set(provider.clone()),
+        worktree: Field::Set(f.dir.path().display().to_string()),
+        ..Fields::default()
+    };
+    let d = Decision::new(f.id)
+        .task_input(TaskInput::Admitted)
+        .box_input(BoxInput::Requested)
+        .set(fields);
+    store.apply(d).unwrap();
+    let got = f
+        .driver
+        .acquire(&AcquireReq {
+            provider,
+            task: f.id,
+            name: TaskName::parse("t").unwrap(),
+            egress: EgressPlan::Open,
+            class: None,
+            nonce: "n".to_owned(),
+            worktree: None,
+        })
+        .unwrap();
+    let d = Decision::new(f.id)
+        .task_input(TaskInput::BoxReady {
+            setup: SetupOutcome::Ok,
+        })
+        .box_input(BoxInput::Acquired { handle: got.handle })
+        .set(Fields {
+            box_workdir: Field::Set(got.workdir.as_str().to_owned()),
+            ..Fields::default()
+        });
+    store.apply(d).unwrap();
+    f
+}
+
+/// Event kinds recorded for the task, in order.
+fn kinds(f: &Fx) -> Vec<String> {
+    f.cx.store()
+        .unwrap()
+        .events(f.id, 1000)
+        .unwrap()
+        .iter()
+        .map(|e| e.kind.clone())
+        .collect()
+}
+
+fn ran_events(f: &Fx) -> usize {
+    kinds(f).iter().filter(|k| *k == "ran").count()
+}
+
+#[test]
+fn inherited_output_is_streamed_to_moor() {
+    let f = ready_with(FakeDriver::new().exec_results([Ok(ExecOutcome::Exited { code: 3 })]));
+    let mut r = req(&["make", "test"]);
+    r.inherit_output = true;
+    let v = run(&f.cx, &r).unwrap();
+    assert_eq!(v.exit, Some(3));
+    assert!(v.ran && !v.interrupted);
+    let (_, spec, _) = f.driver.execs().remove(0);
+    assert_eq!(spec.output, Some(Output::Inherit));
+    assert_eq!(spec.argv, ["make", "test"]);
+}
+
+#[test]
+fn json_output_goes_to_a_run_log_under_the_state_dir() {
+    let f = ready();
+    let mut r = req(&["true"]);
+    r.record = Some("ci".into());
+    let v = run(&f.cx, &r).unwrap();
+    let id = v.run.unwrap();
+    let want = f.dir.path().join("runs").join(format!("{}.log", id.get()));
+    assert_eq!(v.log, want.display().to_string());
+    assert!(want.parent().unwrap().is_dir());
+    let (handle, spec, _) = f.driver.execs().remove(0);
+    assert_eq!(handle.as_str(), "box-1");
+    assert_eq!(spec.output, Some(Output::Log(want)));
+    assert_eq!(v.exit, Some(0));
+    assert_eq!(v.sha.as_deref(), Some(SHA));
+    assert_eq!(v.record.as_deref(), Some("ci"));
+    assert_eq!(v.sync, SyncMode::Full);
+    assert_eq!(ran_events(&f), 1);
+}
+
+#[test]
+fn sync_class_and_directories_come_from_the_task() {
+    let f = ready();
+    let mut r = req(&["true"]);
+    r.no_sync = true;
+    let v = run(&f.cx, &r).unwrap();
+    assert_eq!(v.sync, SyncMode::None);
+    let (_, spec, _) = f.driver.execs().remove(0);
+    assert_eq!(spec.sync, SyncMode::None);
+    assert_eq!(spec.host_cwd.as_deref(), Some(f.dir.path()));
+    assert_eq!(spec.cwd.unwrap().as_str(), "/work/box-1");
+    assert_eq!(spec.class.as_deref(), Some("small"));
+    let v = run(&f.cx, &req(&["true"])).unwrap();
+    assert_eq!(v.sync, SyncMode::Full);
+}
+
+fn refused(f: &Fx, r: &RunReq, kind: ErrorKind) -> String {
+    let e = run(&f.cx, r).unwrap_err();
+    assert_eq!(e.kind, kind, "{e:?}");
+    assert!(f.driver.calls().iter().all(|c| !c.starts_with("exec")));
+    e.error.to_string()
+}
+
+#[test]
+fn unknown_task_is_refused() {
+    let f = bare();
+    let mut r = req(&["true"]);
+    r.task = TaskName::parse("nope").unwrap();
+    let before = f.driver.calls().len();
+    assert_eq!(refused(&f, &r, ErrorKind::Failed), "no task nope");
+    assert_eq!(f.driver.calls().len(), before);
+}
+
+#[test]
+fn empty_argv_is_usage() {
+    let f = ready();
+    let before = f.driver.calls().len();
+    refused(&f, &req(&[]), ErrorKind::Usage);
+    assert_eq!(f.driver.calls().len(), before);
+}
+
+#[test]
+fn task_without_a_box_is_refused() {
+    let f = bare();
+    assert_eq!(
+        refused(&f, &req(&["true"]), ErrorKind::Failed),
+        "t has no box"
+    );
+    assert!(f.driver.calls().is_empty());
+}
+
+#[test]
+fn task_waiting_for_a_box_is_refused() {
+    let f = bare();
+    f.cx.store()
+        .unwrap()
+        .apply(Decision::new(f.id).task_input(TaskInput::AtCapacity { max_boxes: 1 }))
+        .unwrap();
+    let msg = refused(&f, &req(&["true"]), ErrorKind::Refused);
+    assert_eq!(msg, "t is waiting for a free box");
+    assert!(f.driver.calls().is_empty());
+}
+
+#[test]
+fn gone_box_is_refused_and_recorded() {
+    let f = ready();
+    f.cx.store()
+        .unwrap()
+        .apply(Decision::new(f.id).box_input(BoxInput::DriverMissing))
+        .unwrap();
+    let before = f.driver.calls().len();
+    let msg = refused(&f, &req(&["true"]), ErrorKind::Failed);
+    assert!(msg.contains("gone"), "{msg}");
+    assert_eq!(f.driver.calls().len(), before);
+    assert_eq!(ran_events(&f), 1);
+    assert!(f.cx.store().unwrap().last_run(f.id).unwrap().is_none());
+}
+
+#[test]
+fn dead_provisioning_is_refused_with_a_close_hint() {
+    let f = bare();
+    f.cx.store()
+        .unwrap()
+        .apply(Decision::new(f.id).intent(IntentChange::Set(Intent::Provisioning { pid: 4242 })))
+        .unwrap();
+    f.proc.dead(4242);
+    f.cx.clock().sleep(Duration::from_secs(121));
+    let e = run(&f.cx, &req(&["true"])).unwrap_err();
+    assert_eq!(e.kind, ErrorKind::Failed);
+    assert_eq!(e.error.to_string(), "provisioning dead; run moor close t");
+    assert!(e.hints.iter().any(|h| h == "moor close t"), "{e:?}");
+    assert!(f.driver.calls().is_empty());
+}
+
+#[test]
+fn provisioning_that_died_while_waiting_for_the_lock_is_refused() {
+    let f = bare();
+    let store = f.cx.store().unwrap();
+    store
+        .apply(Decision::new(f.id).intent(IntentChange::Set(Intent::Provisioning { pid: 4242 })))
+        .unwrap();
+    f.proc.dead(4242);
+    f.cx.clock().sleep(Duration::from_secs(121));
+    let row = store.task(f.id).unwrap().unwrap();
+    let e = locked(&f.cx, store, &req(&["true"]), &row).unwrap_err();
+    assert_eq!(e.kind, ErrorKind::Failed);
+    assert_eq!(e.error.to_string(), "provisioning dead; run moor close t");
+    assert!(f.driver.calls().iter().all(|c| !c.starts_with("exec")));
+}
+
+#[test]
+fn busy_box_is_refused() {
+    let f = ready();
+    let _held =
+        BoxLock::acquire(f.cx.clock(), f.dir.path(), f.id, "start", Duration::ZERO).unwrap();
+    let msg = refused(&f, &req(&["true"]), ErrorKind::Refused);
+    assert!(msg.starts_with("box busy"), "{msg}");
+}
+
+#[test]
+fn run_is_recorded_in_flight_while_the_command_runs() {
+    let f = ready();
+    let cx_dir = f.dir.path().to_path_buf();
+    let seen = Arc::new(std::sync::Mutex::new(None));
+    let slot = seen.clone();
+    let id = f.id;
+    f.driver.on_exec(move || {
+        let probe = Cx::fake(
+            &cx_dir,
+            &cx_dir,
+            Arc::new(FakeDriver::new()),
+            Arc::new(FakeSurface::new(PathBuf::from("/s"))),
+            Arc::new(ScriptedProc::new()),
+        );
+        let row = probe.store().unwrap().last_run(id).unwrap();
+        *slot.lock().unwrap() = row.map(|r| (r.argv, r.finished_at.is_none()));
+    });
+    run(&f.cx, &req(&["sleep", "1"])).unwrap();
+    let got = seen.lock().unwrap().clone().unwrap();
+    assert_eq!(got, (vec!["sleep".to_owned(), "1".to_owned()], true));
+    let row = f.cx.store().unwrap().last_run(f.id).unwrap().unwrap();
+    assert!(row.finished_at.is_some());
+    assert_eq!(row.exit, Some(0));
+}
+
+#[test]
+fn interrupted_command_is_recorded_without_an_exit() {
+    let f = ready_with(FakeDriver::new().exec_results([Ok(ExecOutcome::Interrupted)]));
+    let v = run(&f.cx, &req(&["sleep", "9"])).unwrap();
+    assert!(v.interrupted && v.ran);
+    assert_eq!(v.exit, None);
+    let row = f.cx.store().unwrap().last_run(f.id).unwrap().unwrap();
+    assert!(row.interrupted);
+    assert_eq!(row.exit, None);
+    assert_eq!(ran_events(&f), 1);
+}
+
+#[test]
+fn driver_failure_finishes_the_run_and_returns_the_error() {
+    let f = ready_with(FakeDriver::new().exec_results([Err(DriverError::Failed {
+        summary: "sync failed".into(),
+    })]));
+    let e = run(&f.cx, &req(&["true"])).unwrap_err();
+    assert_eq!(e.kind, ErrorKind::Failed);
+    assert_eq!(e.error.to_string(), "sync failed");
+    let row = f.cx.store().unwrap().last_run(f.id).unwrap().unwrap();
+    assert!(row.finished_at.is_some());
+    assert_eq!((row.exit, row.interrupted), (None, false));
+    assert_eq!(ran_events(&f), 1);
+}
+
+#[test]
+fn unusable_repo_config_leaves_no_run_row() {
+    let f = ready();
+    std::fs::write(f.dir.path().join(".moor.yaml"), "box_credentials: [\n").unwrap();
+    let before = f.driver.calls().len();
+    refused(&f, &req(&["true"]), ErrorKind::Failed);
+    assert_eq!(f.driver.calls().len(), before);
+    assert!(f.cx.store().unwrap().last_run(f.id).unwrap().is_none());
+    assert_eq!(ran_events(&f), 0);
+}
+
+#[test]
+fn unreadable_head_records_and_reports_no_sha() {
+    let f = ready();
+    let proc = Arc::new(ScriptedProc::new());
+    proc.on(
+        Tool::Git,
+        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+        Reply::Ok(format!("{}/.git\n", f.dir.path().display())),
+    );
+    let cx = Cx::fake(
+        f.dir.path(),
+        f.dir.path(),
+        f.driver.clone(),
+        Arc::new(FakeSurface::new(PathBuf::from("/s"))),
+        proc,
+    );
+    let v = run(&cx, &req(&["true"])).unwrap();
+    assert_eq!(v.sha, None);
+    let row = cx.store().unwrap().last_run(f.id).unwrap().unwrap();
+    assert_eq!(row.sha, None);
+}

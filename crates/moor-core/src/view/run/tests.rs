@@ -36,7 +36,7 @@ fn run_value_shape() {
         run: Some(RunId::new(7)),
         exit: Some(0),
         interrupted: false,
-        sha: "abcd".into(),
+        sha: Some("abcd".into()),
         sync: SyncMode::Full,
         record: None,
         log: "/l".into(),
@@ -55,7 +55,7 @@ fn refused_run_value_has_null_run_and_exit() {
         run: None,
         exit: None,
         interrupted: false,
-        sha: "abcd".into(),
+        sha: Some("abcd".into()),
         sync: SyncMode::None,
         record: Some("rec".into()),
         log: "/l".into(),
@@ -121,4 +121,20 @@ fn cp_value_shape() {
         serde_json::to_value(&v).unwrap(),
         json!({"copied": true, "from": "a", "to": "b", "bytes": 12, "confirmation": "ok"})
     );
+}
+
+#[test]
+fn run_value_without_a_sha_serializes_null() {
+    let v = RunValue {
+        ran: true,
+        run: Some(RunId::new(7)),
+        exit: Some(0),
+        interrupted: false,
+        sha: None,
+        sync: SyncMode::Full,
+        record: None,
+        log: "/l".into(),
+    };
+    let got = serde_json::to_value(&v).unwrap();
+    assert_eq!(got.get("sha"), Some(&serde_json::Value::Null));
 }
