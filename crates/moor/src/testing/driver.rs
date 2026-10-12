@@ -6,7 +6,7 @@
 )]
 
 use std::collections::VecDeque;
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use moor_core::seam::driver::{
     AcquireReq, Acquired, BoxListing, Driver, DriverCaps, DriverError, EgressApplied,
@@ -27,7 +27,11 @@ struct State {
     fail_list: Option<DriverError>,
     exec_results: VecDeque<Result<ExecOutcome, DriverError>>,
     execs: Vec<(BoxHandle, ExecSpec, Deadline)>,
+    on_exec: Option<Arc<ExecHook>>,
 }
+
+/// Runs inside every `exec`, before its result is served.
+type ExecHook = dyn Fn() + Send + Sync;
 
 /// Scripted Driver: boxes `box-1`, `box-2`, ... with workdir `/work/box-N`.
 #[derive(Default)]
@@ -86,6 +90,11 @@ impl FakeDriver {
     /// Calls so far, like `acquire` or `release box-1`.
     pub(crate) fn calls(&self) -> Vec<String> {
         self.st().calls.clone()
+    }
+
+    /// Runs `f` at the start of every later `exec`, outside the Driver's lock.
+    pub(crate) fn on_exec(&self, f: impl Fn() + Send + Sync + 'static) {
+        self.st().on_exec = Some(Arc::new(f));
     }
 
     /// Every `exec` so far: handle, spec and deadline, in call order.
@@ -183,6 +192,10 @@ impl Driver for FakeDriver {
         spec: &ExecSpec,
         deadline: Deadline,
     ) -> Result<ExecOutcome, DriverError> {
+        let hook = self.st().on_exec.clone();
+        if let Some(hook) = hook {
+            hook();
+        }
         let mut s = self.st();
         s.calls.push(format!("exec {}", handle.as_str()));
         s.execs.push((handle.clone(), spec.clone(), deadline));

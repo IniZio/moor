@@ -17,6 +17,7 @@ use super::common::boxlock::{self, BoxLock};
 use super::common::capacity;
 use super::common::facts::settings;
 use super::common::provision::{egress_plan, provision, reprovision, reread, Entry};
+use super::common::setup::SetupRun;
 use super::common::view::task_view;
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -72,11 +73,15 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
         Err(e) => return raced(cx, store, req, e),
     };
     let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "start", boxlock::WAIT)?;
-    if reread(store, id)?.boxed.is_none() {
-        provision(cx, store, id, Entry::Fresh, &cfg)?;
-    }
+    let run = if reread(store, id)?.boxed.is_none() {
+        provision(cx, store, id, Entry::Fresh, &cfg)?
+    } else {
+        SetupRun::Skipped
+    };
     let row = reread(store, id)?;
-    Ok(queued_view(cx, &row, false, &cfg.provider.value))
+    let mut v = queued_view(cx, &row, false, &cfg.provider.value);
+    v.setup = run.view();
+    Ok(v)
 }
 
 /// Records a rejected Task, with no worktree or Workspace, and fails with the outcome.
@@ -130,9 +135,11 @@ fn attach(
     preflight::dead_provisioning(cx, row)?;
     let reprovisioned = reprovision(cx, store, row, "start")?;
     store.apply(Decision::new(row.id).event(ExtraEvent::Attached))?;
-    if reprovisioned {
+    if let Some(run) = reprovisioned {
         let row = reread(store, row.id)?;
-        return with_provider(cx, &row, true);
+        let mut v = with_provider(cx, &row, true)?;
+        v.setup = run.view();
+        return Ok(v);
     }
     with_provider(cx, row, true)
 }

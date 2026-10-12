@@ -155,6 +155,11 @@ pub enum ExtraEvent {
         /// The session id.
         session: String,
     },
+    /// Setup failed on a Task that stays in its state, so no step derives it.
+    SetupFailed {
+        /// The failing output line.
+        line: String,
+    },
     /// Admission checked credentials.
     Checked {
         /// The credentials that were checked.
@@ -183,6 +188,7 @@ impl From<ExtraEvent> for Event {
             },
             ExtraEvent::Copied { from, to } => Self::Copied { from, to },
             ExtraEvent::SessionStarted { session } => Self::SessionStarted { session },
+            ExtraEvent::SetupFailed { line } => Self::SetupFailed { line },
             ExtraEvent::Checked { credentials } => Self::Checked { credentials },
             ExtraEvent::RunStarted { run } => Self::RunStarted { run },
             ExtraEvent::Attached => Self::Attached,
@@ -207,6 +213,7 @@ impl TryFrom<Event> for ExtraEvent {
             }),
             Event::Copied { from, to } => Ok(Self::Copied { from, to }),
             Event::SessionStarted { session } => Ok(Self::SessionStarted { session }),
+            Event::SetupFailed { line } => Ok(Self::SetupFailed { line }),
             Event::Checked { credentials } => Ok(Self::Checked { credentials }),
             Event::RunStarted { run } => Ok(Self::RunStarted { run }),
             Event::Attached => Ok(Self::Attached),
@@ -215,7 +222,6 @@ impl TryFrom<Event> for ExtraEvent {
             | Event::WaitingForBox { .. }
             | Event::SettingUp { .. }
             | Event::Working
-            | Event::SetupFailed { .. }
             | Event::CredentialFailed { .. }
             | Event::Idled
             | Event::Busy
