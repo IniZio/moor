@@ -106,6 +106,38 @@ impl Git {
         Ok(out.lines().any(|l| !l.trim().is_empty()))
     }
 
+    /// Sets the author name and email for a linked `worktree` only.
+    ///
+    /// It is a no-op on the main checkout. On a linked worktree it sets
+    /// `extensions.worktreeConfig=true` in the repository's shared config (a side
+    /// effect visible to every worktree of that repo, enabling per-worktree
+    /// config) and writes `user.name`/`user.email` to that worktree's own config
+    /// only. `None` leaves a field alone.
+    ///
+    /// # Errors
+    /// [`GitError::Failed`] when git cannot write the config.
+    pub(crate) fn set_identity(
+        &self,
+        worktree: &Path,
+        name: Option<&str>,
+        email: Option<&str>,
+    ) -> Result<(), GitError> {
+        if name.is_none() && email.is_none() {
+            return Ok(());
+        }
+        let main = self.main_checkout(worktree)?;
+        if main.canonicalize().ok() == worktree.canonicalize().ok() {
+            return Ok(());
+        }
+        self.run(worktree, &["config", "extensions.worktreeConfig", "true"])?;
+        for (key, value) in [("user.name", name), ("user.email", email)] {
+            if let Some(v) = value {
+                self.run(worktree, &["config", "--worktree", key, v])?;
+            }
+        }
+        Ok(())
+    }
+
     /// Runs git in `cwd` and returns stdout.
     fn run(&self, cwd: &Path, args: &[&str]) -> Result<String, GitError> {
         let spec = ProcSpec::new(Tool::Git, DEADLINE)

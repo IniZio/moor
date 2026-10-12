@@ -209,3 +209,70 @@ fn real_git_unpushed_excludes_base() {
     assert_eq!(g.unpushed(d, Some("main")).unwrap(), 1);
     assert_eq!(g.unpushed(d, None).unwrap(), 2);
 }
+
+#[test]
+fn identity_without_fields_runs_no_git() {
+    let (p, g) = scripted();
+    g.set_identity(Path::new("/r/wt"), None, None).unwrap();
+    assert!(p.calls().is_empty());
+}
+
+#[test]
+fn real_git_identity_is_a_no_op_on_the_main_checkout() {
+    if Command::new("git").arg("--version").output().is_err() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let main = dir.path().join("main");
+    std::fs::create_dir(&main).unwrap();
+    git_in(&main, &["init", "-q", "-b", "main"]);
+    git_in(&main, &["commit", "-q", "--allow-empty", "-m", "one"]);
+    real_git()
+        .set_identity(&main, Some("User Name"), Some("u@example.com"))
+        .unwrap();
+    let get = |key: &str| {
+        let out = Command::new("git")
+            .args(["config", "--get", key])
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_SYSTEM", "/dev/null")
+            .current_dir(&main)
+            .output()
+            .unwrap();
+        String::from_utf8_lossy(&out.stdout).trim().to_owned()
+    };
+    assert_eq!(get("user.name"), "");
+    assert_eq!(get("extensions.worktreeConfig"), "");
+}
+
+#[test]
+fn real_git_identity_stays_in_the_linked_worktree() {
+    if Command::new("git").arg("--version").output().is_err() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let main = dir.path().join("main");
+    std::fs::create_dir(&main).unwrap();
+    git_in(&main, &["init", "-q", "-b", "main"]);
+    git_in(&main, &["commit", "-q", "--allow-empty", "-m", "one"]);
+    let wt = dir.path().join("wt");
+    git_in(
+        &main,
+        &["worktree", "add", "-q", "-b", "w", wt.to_str().unwrap()],
+    );
+    real_git()
+        .set_identity(&wt, Some("User Name"), Some("u@example.com"))
+        .unwrap();
+    let read = |d: &Path, key: &str| {
+        let out = Command::new("git")
+            .args(["config", "--get", key])
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_SYSTEM", "/dev/null")
+            .current_dir(d)
+            .output()
+            .unwrap();
+        String::from_utf8_lossy(&out.stdout).trim().to_owned()
+    };
+    assert_eq!(read(&wt, "user.name"), "User Name");
+    assert_eq!(read(&wt, "user.email"), "u@example.com");
+    assert_eq!(read(&main, "user.name"), "");
+}
