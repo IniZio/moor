@@ -30,7 +30,6 @@ fn empty_documents_are_default() {
 #[test]
 fn accepts_full_document() {
     let c = ok(r"
-agent: {model: haiku}
 setup: ['true']
 teardown: ['true']
 egress: [Example.COM, '*.example.org']
@@ -39,7 +38,6 @@ compose: {project_prefix: pp}
 box: {size: large}
 box_credentials: [NPM_TOKEN, other-1]
 ");
-    assert_eq!(c.agent.model.as_deref(), Some("haiku"));
     assert_eq!(c.box_.size, Some(BoxSize::Large));
     assert_eq!(c.compose.project_prefix.as_deref(), Some("pp"));
     assert_eq!(c.env["FOO"], "bar");
@@ -78,7 +76,8 @@ fn repo_box_only_allows_size() {
 
 #[test]
 fn removed_keys_are_unknown() {
-    rejects("agent: {location: box}", "agent.location", "unknown field");
+    rejects("agent: {model: haiku}", "agent", "unknown field");
+    rejects("agent: {location: box}", "agent", "unknown field");
     for t in [
         "reports: {backend: local}",
         "reports: {}",
@@ -93,7 +92,6 @@ fn removed_keys_are_unknown() {
 #[test]
 fn unknown_keys_name_the_key() {
     rejects("egres: [a.example.com]", "egres", "egres");
-    rejects("agent: {nope: 1}", "agent.nope", "agent.nope");
     rejects("compose: {nope: 1}", "compose.nope", "compose.nope");
 }
 

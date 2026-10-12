@@ -82,7 +82,7 @@ pub struct CredPlan {
 /// Everything a command needs from config, resolved once.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaskSettings {
-    /// Agent model: flag > repo > user.
+    /// Agent model: flag > user.
     pub model: Option<Sourced<String>>,
     /// Box provider: user > default; never the repo.
     pub provider: Sourced<String>,
@@ -160,11 +160,10 @@ impl TaskSettings {
         let empty = RepoConfig::default();
         let r = repo.unwrap_or(&empty);
 
-        let model = match (&flags.model, &r.agent.model, &user.agent.model) {
-            (Some(m), _, _) => Some(Sourced::new(m.clone(), Layer::Flag)),
-            (None, Some(m), _) => Some(Sourced::new(m.clone(), Layer::Repo)),
-            (None, None, Some(m)) => Some(Sourced::new(m.clone(), Layer::User)),
-            (None, None, None) => None,
+        let model = match (&flags.model, &user.agent.model) {
+            (Some(m), _) => Some(Sourced::new(m.clone(), Layer::Flag)),
+            (None, Some(m)) => Some(Sourced::new(m.clone(), Layer::User)),
+            (None, None) => None,
         };
         let provider = user.box_.provider.as_ref().map_or_else(
             || Sourced::new(DEFAULT_PROVIDER.to_string(), Layer::Default),

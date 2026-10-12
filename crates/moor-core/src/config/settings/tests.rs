@@ -31,21 +31,15 @@ fn model_precedence() {
         Option<&'static str>,
         Option<(&'static str, Layer)>,
     );
-    let cases: [Case; 5] = [
+    let cases: [Case; 4] = [
         (
             "agent: {model: u}",
-            "agent: {model: r}",
+            "{}",
             Some("f"),
             Some(("f", Layer::Flag)),
         ),
-        (
-            "agent: {model: u}",
-            "agent: {model: r}",
-            None,
-            Some(("r", Layer::Repo)),
-        ),
         ("agent: {model: u}", "{}", None, Some(("u", Layer::User))),
-        ("{}", "agent: {model: r}", None, Some(("r", Layer::Repo))),
+        ("{}", "{}", Some("f"), Some(("f", Layer::Flag))),
         ("{}", "{}", None, None),
     ];
     for (u, r, f, want) in cases {
