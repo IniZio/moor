@@ -17,6 +17,7 @@ use super::common::boxlock::{self, BoxLock};
 use super::common::capacity;
 use super::common::facts::settings;
 use super::common::provision::{egress_plan, provision, reprovision, reread, Entry};
+use super::common::provisioning::dead_provisioning;
 use super::common::setup::SetupRun;
 use super::common::view::task_view;
 use crate::cx::Cx;
@@ -132,7 +133,7 @@ fn attach(
     row: &TaskRow,
 ) -> Result<StartView, CommandError> {
     check_bound(cx, req, row)?;
-    preflight::dead_provisioning(cx, row)?;
+    dead_provisioning(cx, row)?;
     let reprovisioned = reprovision(cx, store, row, "start")?;
     store.apply(Decision::new(row.id).event(ExtraEvent::Attached))?;
     if let Some(run) = reprovisioned {

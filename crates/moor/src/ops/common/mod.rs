@@ -7,6 +7,7 @@ pub(crate) mod facts;
 pub(crate) mod identity;
 pub(crate) mod promote;
 pub(crate) mod provision;
+pub(crate) mod provisioning;
 pub(crate) mod reconcile;
 pub(crate) mod setup;
 pub(crate) mod view;
