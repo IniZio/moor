@@ -182,7 +182,7 @@ fn write_task(
     }
     sets.extend(intent_sets(d.intent, now));
     sets.push(("updated_at", Value::Integer(now.as_millis())));
-    update(tx, "tasks", "id", id.get(), &sets)
+    update(tx, "tasks", "id = ?", &[id.get()], &sets)
 }
 
 /// Write box state, fields and handles; box fields without a box are invalid.
@@ -207,7 +207,7 @@ fn write_box(
         sets.extend(input_handle_sets(input, &sets));
     }
     sets.push(("updated_at", Value::Integer(now.as_millis())));
-    update(tx, "boxes", "task", id.get(), &sets)
+    update(tx, "boxes", "task = ?", &[id.get()], &sets)
 }
 
 /// Handles carried by a box input, unless the Fields already set that column.
@@ -297,12 +297,13 @@ pub(super) fn intent_sets(change: IntentChange, now: Ts) -> Sets {
     ]
 }
 
-/// Run `UPDATE table SET .. WHERE key = ?` with static column names.
+/// Run `UPDATE table SET .. WHERE cond` with static table, column and
+/// condition text; `args` bind the `?` placeholders in `cond`.
 pub(super) fn update(
     tx: &Transaction<'_>,
     table: &str,
-    key: &str,
-    id: i64,
+    cond: &str,
+    args: &[i64],
     sets: &Sets,
 ) -> Result<(), StoreError> {
     if sets.is_empty() {
@@ -313,11 +314,11 @@ pub(super) fn update(
         .map(|(c, _)| format!("{c} = ?"))
         .collect::<Vec<_>>()
         .join(", ");
-    let mut args: Vec<Value> = sets.iter().map(|(_, v)| v.clone()).collect();
-    args.push(Value::Integer(id));
+    let mut vals: Vec<Value> = sets.iter().map(|(_, v)| v.clone()).collect();
+    vals.extend(args.iter().map(|&a| Value::Integer(a)));
     tx.execute(
-        &format!("UPDATE {table} SET {cols} WHERE {key} = ?"),
-        rusqlite::params_from_iter(args),
+        &format!("UPDATE {table} SET {cols} WHERE {cond}"),
+        rusqlite::params_from_iter(vals),
     )?;
     Ok(())
 }

@@ -73,7 +73,7 @@ impl Store {
         let intent = IntentChange::Set(Intent::Running { run, pid });
         let mut sets = intent_sets(intent, now);
         sets.push(("updated_at", Value::Integer(now.as_millis())));
-        update(&tx, "tasks", "id", task.get(), &sets)?;
+        update(&tx, "tasks", "id = ?", &[task.get()], &sets)?;
         insert_event(&tx, task, &Event::RunStarted { run }, now)?;
         tx.commit()?;
         drop(conn);
@@ -98,22 +98,15 @@ impl Store {
             "UPDATE runs SET finished_at = ?, exit = ?, interrupted = ? WHERE id = ?",
             params![now.as_millis(), out.exit, out.interrupted, id.get()],
         )?;
-        let clear = intent_sets(IntentChange::Clear, now);
-        let cols = clear
-            .iter()
-            .map(|(c, _)| format!("{c} = ?"))
-            .collect::<Vec<_>>()
-            .join(", ");
-        let sql = format!(
-            "UPDATE tasks SET {cols}, updated_at = ? WHERE id = ? AND intent_kind = 'running' AND intent_run = ?"
-        );
-        let mut args: Vec<Value> = clear.into_iter().map(|(_, v)| v).collect();
-        args.extend([
-            Value::Integer(now.as_millis()),
-            Value::Integer(task.get()),
-            Value::Integer(id.get()),
-        ]);
-        tx.execute(&sql, rusqlite::params_from_iter(args))?;
+        let mut clear = intent_sets(IntentChange::Clear, now);
+        clear.push(("updated_at", Value::Integer(now.as_millis())));
+        update(
+            &tx,
+            "tasks",
+            "id = ? AND intent_kind = 'running' AND intent_run = ?",
+            &[task.get(), id.get()],
+            &clear,
+        )?;
         let ran = Event::Ran {
             run: id,
             exit: out.exit,
