@@ -63,11 +63,17 @@ impl Env {
         if let Some(dir) = self.non_empty("MOOR_STATE_DIR") {
             return Some(PathBuf::from(dir));
         }
-        if let Some(xdg) = self.non_empty("XDG_STATE_HOME") {
-            return Some(Path::new(xdg).join("moor"));
-        }
-        let home = self.non_empty("HOME")?;
-        Some(Path::new(home).join(".local/state/moor"))
+        self.xdg("XDG_STATE_HOME", ".local/state", "moor")
+    }
+
+    /// `$var/sub`, else `$HOME/fallback/sub`; empty values count as unset.
+    #[must_use]
+    pub fn xdg(&self, var: &str, fallback: &str, sub: &str) -> Option<PathBuf> {
+        let base = match self.non_empty(var) {
+            Some(x) => PathBuf::from(x),
+            None => Path::new(self.non_empty("HOME")?).join(fallback),
+        };
+        Some(base.join(sub))
     }
 
     /// Value of `key` when set and non-empty.
