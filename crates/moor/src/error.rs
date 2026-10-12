@@ -20,7 +20,7 @@ pub struct CommandError {
     /// Extra lines describing where the failure happened.
     pub context: Vec<String>,
     /// Outcome still reported in the envelope `value`, when the command made one.
-    pub value: Option<serde_json::Value>,
+    pub value: Option<Box<serde_json::Value>>,
 }
 
 impl CommandError {
@@ -57,7 +57,7 @@ impl CommandError {
     /// Attach the outcome the envelope `value` keeps despite the failure.
     #[must_use]
     pub fn with_value(mut self, value: serde_json::Value) -> Self {
-        self.value = Some(value);
+        self.value = Some(Box::new(value));
         self
     }
 
@@ -71,7 +71,7 @@ impl CommandError {
             context: self.context,
         };
         let mut resp = Response::err(cmd, view).with_warnings(warnings);
-        resp.value = self.value;
+        resp.value = self.value.map(|v| *v);
         resp
     }
 }
