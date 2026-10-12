@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use moor_core::config::Flags;
+use moor_core::config::{Flags, TaskSettings};
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, NewTask};
 use moor_core::domain::event::CheckedCred;
 use moor_core::domain::task::TaskInput;
@@ -61,7 +61,7 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     {
         return reject(store, req, &facts, &reason);
     }
-    let placed = match place(cx, req, &facts) {
+    let placed = match place(cx, req, &facts, &cfg) {
         Ok(placed) => placed,
         Err(e) => return raced(cx, store, req, e),
     };
@@ -220,7 +220,12 @@ fn gather(
 }
 
 /// Creates the worktree unless one is bound, then ensures the Workspace.
-fn place(cx: &Cx, req: &StartReq, facts: &Facts) -> Result<Placed, CommandError> {
+fn place(
+    cx: &Cx,
+    req: &StartReq,
+    facts: &Facts,
+    cfg: &TaskSettings,
+) -> Result<Placed, CommandError> {
     let wt = match &facts.bound {
         Some(path) => Worktree {
             path: path.clone(),
@@ -230,6 +235,11 @@ fn place(cx: &Cx, req: &StartReq, facts: &Facts) -> Result<Placed, CommandError>
             .surface()
             .create_worktree(&facts.repo, &req.name, req.base.as_deref())?,
     };
+    let name = cfg.git_name.as_ref().map(|n| n.value.as_str());
+    let email = cfg.git_email.as_ref().map(|n| n.value.as_str());
+    cx.git()
+        .set_identity(&wt.path, name, email)
+        .map_err(|e| CommandError::new(ErrorKind::Failed, e))?;
     let ws = cx
         .surface()
         .ensure_workspace(&wt, &workspace_label(&req.name))?;
