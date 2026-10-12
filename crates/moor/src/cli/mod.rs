@@ -2,6 +2,7 @@
 
 mod args;
 mod args_admin;
+mod args_probe;
 mod exit;
 mod render_json;
 mod render_text;
@@ -63,8 +64,7 @@ pub enum Parsed {
 /// Parses argv (`args[0]` is the program name).
 #[must_use]
 pub fn parse(args: Vec<OsString>) -> Parsed {
-    let raw = raw_opts(&args);
-    let cmd = detect_cmd(&args);
+    let (raw, cmd) = args_probe::recover(&args);
     match args::parse(args) {
         Ok((opts, Action::Request(request))) => Parsed::Request(Invocation { opts, request }),
         Ok((opts, Action::CallStdin)) => Parsed::CallStdin(GlobalOpts { json: true, ..opts }),
@@ -158,34 +158,4 @@ fn clap_output(err: &clap::Error, cmd: String, opts: &GlobalOpts) -> Output {
             render(&Response::err(cmd, view), opts)
         }
     }
-}
-
-/// Reads `--json`, `--quiet` and `--state-dir` straight from argv.
-fn raw_opts(args: &[OsString]) -> GlobalOpts {
-    let mut opts = GlobalOpts::default();
-    let mut it = args.iter().skip(1);
-    while let Some(a) = it.next() {
-        match a.to_str() {
-            Some("--") => break,
-            Some("--json") => opts.json = true,
-            Some("--quiet") => opts.quiet = true,
-            Some("--state-dir") => opts.state_dir = it.next().map(PathBuf::from),
-            _ => {}
-        }
-    }
-    opts
-}
-
-/// First non-flag argument that is not the value of `--state-dir`.
-fn detect_cmd(args: &[OsString]) -> String {
-    let mut it = args.iter().skip(1);
-    while let Some(a) = it.next() {
-        let s = a.to_string_lossy();
-        if s == "--state-dir" {
-            it.next();
-        } else if !s.starts_with('-') {
-            return s.into_owned();
-        }
-    }
-    String::new()
 }

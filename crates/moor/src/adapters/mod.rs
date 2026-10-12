@@ -11,3 +11,4 @@ pub(crate) mod fake_surface;
 pub(crate) mod git;
 pub(crate) mod herdr;
 pub(crate) mod proc;
+pub(crate) mod rng;

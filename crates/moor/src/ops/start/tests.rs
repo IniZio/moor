@@ -266,3 +266,17 @@ fn main_worktree_is_refused_before_any_effect() {
     assert!(w.surface.calls().is_empty());
     assert!(w.driver.calls().is_empty());
 }
+
+#[test]
+fn nonces_at_the_same_clock_instant_differ_and_come_from_the_rng() {
+    let w = world(FakeDriver::new());
+    let at = w.cx.clock().now();
+    let a = super::provision::nonce(w.cx.rng());
+    let b = super::provision::nonce(w.cx.rng());
+    assert_eq!(w.cx.clock().now(), at);
+    assert_ne!(a, b);
+    assert_eq!(a.len(), 6);
+    assert!(a
+        .bytes()
+        .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+}

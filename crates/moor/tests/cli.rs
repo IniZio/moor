@@ -144,6 +144,17 @@ fn json_pane_is_usage() {
 }
 
 #[test]
+fn json_state_dir_equals_pane_is_usage() {
+    let v = envelope(&["--state-dir=/tmp/x", "pane", "--json"], None, 2, "usage");
+    assert_eq!(v.get("cmd").and_then(Value::as_str), Some("pane"));
+}
+
+#[test]
+fn json_after_invalid_arg_is_usage() {
+    envelope(&["start", "--bogus", "--json"], None, 2, "usage");
+}
+
+#[test]
 fn json_no_subcommand_is_usage() {
     envelope(&["--json"], None, 2, "usage");
 }

@@ -7,6 +7,7 @@ use std::sync::Arc;
 use moor_core::config::UserConfig;
 use moor_core::seam::clock::Clock;
 use moor_core::seam::driver::Driver;
+use moor_core::seam::rng::Rng;
 use moor_core::seam::surface::Surface;
 use moor_core::{ErrorKind, Warning};
 
@@ -25,6 +26,8 @@ pub(crate) struct Cx {
     warnings: RefCell<Vec<Warning>>,
     /// Time source; the only way ops read time.
     clock: Arc<dyn Clock>,
+    /// Randomness source.
+    rng: Arc<dyn Rng>,
     /// Box backend.
     driver: Arc<dyn Driver>,
     /// Workspace backend.
@@ -45,6 +48,8 @@ pub(crate) struct CxParts {
     pub state_dir: Option<PathBuf>,
     /// Time source.
     pub clock: Arc<dyn Clock>,
+    /// Randomness source.
+    pub rng: Arc<dyn Rng>,
     /// Box backend.
     pub driver: Arc<dyn Driver>,
     /// Workspace backend.
@@ -64,6 +69,7 @@ impl Cx {
             state_dir: p.state_dir,
             warnings: RefCell::new(Vec::new()),
             clock: p.clock,
+            rng: p.rng,
             driver: p.driver,
             surface: p.surface,
             git: p.git,
@@ -114,8 +120,14 @@ impl Cx {
     }
 
     /// Time source for this run.
+    #[cfg_attr(not(test), expect(dead_code, reason = "read by tests"))]
     pub(crate) fn clock(&self) -> &dyn Clock {
         self.clock.as_ref()
+    }
+
+    /// Randomness source for this run.
+    pub(crate) fn rng(&self) -> &dyn Rng {
+        self.rng.as_ref()
     }
 
     /// Record a warning for the final response.
@@ -138,10 +150,12 @@ impl Cx {
         proc: Arc<dyn moor_core::seam::proc::Proc>,
     ) -> Self {
         use crate::adapters::clock::FakeClock;
+        use crate::adapters::rng::FakeRng;
         use moor_core::seam::clock::Ts;
         Self::new(CxParts {
             state_dir: Some(state_dir.to_path_buf()),
             clock: Arc::new(FakeClock::new(Ts::from_millis(1000))),
+            rng: Arc::new(FakeRng::default()),
             driver,
             surface,
             git: Git::new(proc),

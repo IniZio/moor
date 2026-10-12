@@ -1,7 +1,6 @@
 //! clap surface for the v2 command set and its conversion to `Request`.
 
 use std::ffi::OsString;
-use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use moor_core::{
@@ -10,6 +9,7 @@ use moor_core::{
 };
 
 use super::args_admin::{AdminCmd, GateCmd};
+use super::args_probe::Flags;
 use super::GlobalOpts;
 
 #[cfg(test)]
@@ -29,12 +29,7 @@ pub(super) enum Action {
 /// Parse argv (program name first) into global options and an action.
 pub(super) fn parse(args: Vec<OsString>) -> Result<(GlobalOpts, Action), clap::Error> {
     let cli = Cli::try_parse_from(args)?;
-    let opts = GlobalOpts {
-        json: cli.json,
-        quiet: cli.quiet,
-        state_dir: cli.state_dir,
-    };
-    Ok((opts, cli.command.into_action()))
+    Ok((cli.flags.into(), cli.command.into_action()))
 }
 
 /// clap parser for a Task name.
@@ -51,15 +46,9 @@ fn task_name(s: &str) -> Result<TaskName, String> {
     arg_required_else_help = true
 )]
 struct Cli {
-    /// Print one JSON envelope on stdout.
-    #[arg(long, global = true)]
-    json: bool,
-    /// Suppress warnings in text mode.
-    #[arg(long, global = true)]
-    quiet: bool,
-    /// Directory holding moor state.
-    #[arg(long, global = true, value_name = "DIR")]
-    state_dir: Option<PathBuf>,
+    /// Global flags.
+    #[command(flatten)]
+    flags: Flags,
     /// The verb.
     #[command(subcommand)]
     command: Cmd,

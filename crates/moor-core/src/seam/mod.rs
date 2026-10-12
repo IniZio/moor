@@ -3,4 +3,5 @@
 pub mod clock;
 pub mod driver;
 pub mod proc;
+pub mod rng;
 pub mod surface;

@@ -5,10 +5,10 @@ use std::path::PathBuf;
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, Intent, IntentChange};
 use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
-use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{
     AcquireReq, Acquired, DriverError, EgressApplied, EgressPlan, Released,
 };
+use moor_core::seam::rng::Rng;
 use moor_core::{BoxHandle, ProviderId, TaskId};
 
 use super::{reread, task_view};
@@ -90,7 +90,7 @@ pub(super) fn provision(
         name: task.name,
         egress: EgressPlan::Open,
         class: cx.config().box_.size.clone(),
-        nonce: nonce(cx.clock().now()),
+        nonce: nonce(cx.rng()),
         worktree: task.worktree.as_deref().map(PathBuf::from),
     };
     match cx.driver().acquire(&req) {
@@ -99,9 +99,9 @@ pub(super) fn provision(
     }
 }
 
-/// Six lowercase hex chars from the clock, so each attempt differs.
-fn nonce(now: Ts) -> String {
-    format!("{:06x}", now.as_millis().rem_euclid(0x100_0000))
+/// Six lowercase hex chars drawn from the RNG, so each attempt differs.
+pub(super) fn nonce(rng: &dyn Rng) -> String {
+    format!("{:06x}", rng.u32() & 0xFF_FFFF)
 }
 
 /// Records an acquired Box and moves the Task to working.
