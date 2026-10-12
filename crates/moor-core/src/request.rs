@@ -242,22 +242,13 @@ pub struct TaskReq {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct GateReq {
-    /// Gate action.
-    pub action: GateAction,
     /// Commit sha.
     pub sha: String,
     /// Gate name.
     pub name: String,
-}
-
-/// Action of `gate`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum GateAction {
-    /// Record a pass.
-    Record,
-    /// Check for a pass.
-    Check,
+    /// Command to run for the gate.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
 }
 
 /// Arguments of `env`.

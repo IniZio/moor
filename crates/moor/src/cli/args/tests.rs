@@ -4,8 +4,8 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 
 use moor_core::{
-    CloseReq, CpReq, EnvReq, GateAction, GateReq, RemoveReq, ReportReq, Request, RunReq, ShowReq,
-    StartReq, SteerReq, TaskName, TaskReq, WaitFor, WaitReq,
+    CloseReq, CpReq, EnvReq, GateReq, RemoveReq, ReportReq, Request, RunReq, ShowReq, StartReq,
+    SteerReq, TaskName, TaskReq, WaitFor, WaitReq,
 };
 
 use super::{parse, Action};
@@ -202,24 +202,25 @@ fn task_verbs() {
 }
 
 #[test]
-fn gate_record_check() {
+fn gate_check() {
     assert_eq!(
-        req(&["gate", "record", "abc123", "--name", "ci"]),
+        req(&["gate", "check", "abc1234", "lint", "--command", "make lint"]),
         Request::Gate(GateReq {
-            action: GateAction::Record,
-            sha: "abc123".into(),
-            name: "ci".into()
+            sha: "abc1234".into(),
+            name: "lint".into(),
+            command: Some("make lint".into())
         })
     );
     assert_eq!(
-        req(&["gate", "check", "abc123", "--name", "ci"]),
+        req(&["gate", "check", "abc1234", "lint"]),
         Request::Gate(GateReq {
-            action: GateAction::Check,
-            sha: "abc123".into(),
-            name: "ci".into()
+            sha: "abc1234".into(),
+            name: "lint".into(),
+            command: None
         })
     );
-    assert!(run(&["gate", "record", "abc123"]).is_err());
+    assert!(run(&["gate", "check", "abc1234"]).is_err());
+    assert!(run(&["gate", "record", "abc1234", "lint"]).is_err());
 }
 
 #[test]

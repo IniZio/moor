@@ -75,9 +75,9 @@ fn all() -> Vec<Request> {
     let mut v = with_args();
     v.extend([
         Request::Gate(GateReq {
-            action: GateAction::Record,
             sha: "abcd".into(),
             name: "n".into(),
+            command: None,
         }),
         Request::Env(EnvReq { repo: None }),
         Request::GithubSetup {},
@@ -188,4 +188,25 @@ fn run_argv_roundtrips() {
         })
     );
     assert_eq!(serde_json::to_value(&r).unwrap(), v);
+}
+
+#[test]
+fn gate_command_is_optional_on_the_wire() {
+    let bare = Request::Gate(GateReq {
+        sha: "abcd".into(),
+        name: "lint".into(),
+        command: None,
+    });
+    let text = serde_json::to_string(&bare).unwrap();
+    assert_eq!(text, r#"{"cmd":"gate","sha":"abcd","name":"lint"}"#);
+    assert_eq!(serde_json::from_str::<Request>(&text).unwrap(), bare);
+
+    let with = Request::Gate(GateReq {
+        sha: "abcd".into(),
+        name: "lint".into(),
+        command: Some("make lint".into()),
+    });
+    let text = serde_json::to_string(&with).unwrap();
+    assert!(text.contains(r#""command":"make lint""#), "{text}");
+    assert_eq!(serde_json::from_str::<Request>(&text).unwrap(), with);
 }

@@ -182,3 +182,13 @@ fn json_after_invalid_arg_is_usage_json() {
         assert_eq!(v.get("cmd"), Some(&serde_json::json!(c)));
     }
 }
+
+#[test]
+fn gate_record_and_missing_name_are_usage() {
+    for a in [
+        &["gate", "record", "abc1234", "lint"][..],
+        &["gate", "check", "abc1234"][..],
+    ] {
+        assert_eq!(done(a).code, 2, "{a:?}");
+    }
+}

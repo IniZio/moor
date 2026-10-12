@@ -225,10 +225,6 @@ impl Store {
     }
 
     /// Finished recorded runs of every gate name whose sha starts with `sha_prefix`, oldest first.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "used by the run command, not yet wired")
-    )]
     pub(crate) fn recorded_runs(&self, sha_prefix: &str) -> Result<Vec<RunRow>, StoreError> {
         let prefix = sha_prefix.to_ascii_lowercase();
         let conn = self.reader()?;
