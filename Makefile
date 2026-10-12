@@ -17,7 +17,6 @@ setup:
 	@cargo nextest --version 2>/dev/null | grep -q '$(NEXTEST_VERSION)' || cargo install --locked cargo-nextest@$(NEXTEST_VERSION)
 	@taplo --version 2>/dev/null | grep -q '$(TAPLO_VERSION)' || cargo install --locked taplo-cli@$(TAPLO_VERSION)
 	@typos --version 2>/dev/null | grep -q '$(TYPOS_VERSION)' || cargo install --locked typos-cli@$(TYPOS_VERSION)
-	@cargo llvm-cov --version 2>/dev/null | grep -q '$(LLVM_COV_VERSION)' || cargo install --locked cargo-llvm-cov@$(LLVM_COV_VERSION)
 	@echo "setup: toolchain and pinned tools present"
 
 secret:
@@ -64,3 +63,8 @@ build:
 
 deploy:
 	@echo "deploy: CLI, nothing to deploy"
+
+# Single source of the pins for CI's install-action step.
+.PHONY: print-tool-versions
+print-tool-versions:
+	@echo "cargo-deny@$(DENY_VERSION),cargo-machete@$(MACHETE_VERSION),cargo-nextest@$(NEXTEST_VERSION),taplo@$(TAPLO_VERSION),typos@$(TYPOS_VERSION)"
