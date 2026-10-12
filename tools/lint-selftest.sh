@@ -144,3 +144,9 @@ check K fail "unsafe-code" <<'RS'
 #[allow(unsafe_code, reason = "x")]
 pub const fn z() -> u32 { unsafe { core::mem::zeroed() } }
 RS
+check L fail "disallowed_methods" <<'RS'
+//! Crate.
+/// Now.
+#[must_use]
+pub fn now() -> std::time::Instant { std::time::Instant::now() }
+RS

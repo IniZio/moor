@@ -1,4 +1,8 @@
 //! Tests for the store: open, `apply`, atomicity, WAL readers, runs.
+#![expect(
+    clippy::disallowed_methods,
+    reason = "tests time real elapsed durations"
+)]
 
 use std::path::Path;
 use std::sync::Arc;

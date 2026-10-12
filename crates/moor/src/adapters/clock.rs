@@ -40,6 +40,10 @@ pub(crate) struct SystemClock {
 
 impl SystemClock {
     /// Build from `MOOR_TEST_NOW` (read once); unset means real time.
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the clock adapter is the one place that reads the clock"
+    )]
     pub(crate) fn from_env(env: &Env) -> Result<Self, ClockError> {
         let base = match env.get(TEST_NOW_VAR) {
             Some(raw) => Some((parse_test_now(raw)?, Instant::now())),
@@ -56,6 +60,10 @@ impl SystemClock {
 }
 
 impl Clock for SystemClock {
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the clock adapter is the one place that reads the clock"
+    )]
     fn now(&self) -> Ts {
         if let Some((ts, at)) = self.base {
             return ts.saturating_add(at.elapsed());
@@ -66,6 +74,10 @@ impl Clock for SystemClock {
         Ts::from_millis(i64::try_from(since.as_millis()).unwrap_or(i64::MAX))
     }
 
+    #[expect(
+        clippy::disallowed_methods,
+        reason = "the clock adapter is the one place that reads the clock"
+    )]
     fn instant(&self) -> Instant {
         Instant::now()
     }

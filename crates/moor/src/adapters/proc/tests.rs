@@ -1,5 +1,9 @@
 //! Tests for `SystemProc` using small shell scripts as fake tools.
 #![expect(clippy::print_stderr, reason = "timing evidence under --nocapture")]
+#![expect(
+    clippy::disallowed_methods,
+    reason = "tests time real elapsed durations"
+)]
 
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
