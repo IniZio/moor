@@ -20,6 +20,12 @@ fn rfc3339_formats_epoch_and_leap_day() {
 }
 
 #[test]
+fn rfc3339_out_of_range_falls_back_to_raw_millis() {
+    assert_eq!(rfc3339(Ts::from_millis(i64::MAX)), i64::MAX.to_string());
+    assert_eq!(rfc3339(Ts::from_millis(i64::MIN)), i64::MIN.to_string());
+}
+
+#[test]
 fn task_view_maps_row_without_box() {
     let dir = tempfile::tempdir().unwrap();
     let clock = Arc::new(FakeClock::new(Ts::from_millis(86_400_000)));
