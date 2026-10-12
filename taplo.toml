@@ -1,4 +1,3 @@
-# taplo settings.
 include = [
   "Cargo.toml",
   "crates/**/*.toml",
