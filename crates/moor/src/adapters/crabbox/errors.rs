@@ -20,6 +20,8 @@ pub(super) enum Op {
     Workdir,
     /// Reading provider facts.
     Caps,
+    /// Running a command in a Box.
+    Exec,
 }
 
 impl Op {
@@ -31,6 +33,7 @@ impl Op {
             Self::List => "box list",
             Self::Workdir => "box workdir lookup",
             Self::Caps => "provider lookup",
+            Self::Exec => "box command",
         }
     }
 }
@@ -75,6 +78,24 @@ fn classify_text(code: i32, text: &str) -> Option<DriverError> {
         });
     }
     None
+}
+
+/// The exit code of the remote command, when `e` reports one.
+///
+/// crabbox prints `remote command exited <code>` on its own line. The line must
+/// end with exactly the process's exit code, so `17` never matches `1`.
+pub(super) fn remote_exit(e: &ProcError) -> Option<i32> {
+    let ProcError::NonZero {
+        code, stderr_tail, ..
+    } = e
+    else {
+        return None;
+    };
+    let line = format!("remote command exited {code}");
+    stderr_tail
+        .lines()
+        .any(|l| l.trim_end().ends_with(&line))
+        .then_some(*code)
 }
 
 /// Maps a failed run of `op` (on `provider`, when known) to the one error shape callers see.

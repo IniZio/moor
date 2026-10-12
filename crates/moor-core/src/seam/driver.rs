@@ -1,6 +1,6 @@
 //! Driver seam: how moor gets, inspects and releases Boxes.
 //!
-//! Deviation from design 6.1: only the S3 methods exist here; exec, sync,
+//! Deviation from design 6.1: only the S3 methods and exec exist here; sync,
 //! file transfer, sleep, tunnel and connect land with later slices.
 
 use std::fmt;
@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use crate::name::{BoxHandle, BoxPath, ProviderId, TaskId, TaskName};
+use crate::seam::proc::Deadline;
 
 /// How a provider keeps an idle Box cheap.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -114,6 +115,24 @@ pub struct BoxListing {
     pub asleep: bool,
 }
 
+/// A command to run inside a Box, without syncing the worktree.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExecSpec {
+    /// Program and arguments.
+    pub argv: Vec<String>,
+    /// Extra environment for the command.
+    pub env: Vec<(String, String)>,
+    /// Directory to run in; the Box workdir when unset.
+    pub cwd: Option<BoxPath>,
+}
+
+/// How a command inside a Box ended; a non-zero code is not an error.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ExecOutcome {
+    /// Exit code of the command.
+    pub code: i32,
+}
+
 /// The only error shape Driver adapters return.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DriverError {
@@ -212,6 +231,17 @@ pub trait Driver: Send + Sync {
     /// # Errors
     /// Returns [`DriverError::NotFound`] when the Box is gone.
     fn workdir(&self, handle: &BoxHandle) -> Result<BoxPath, DriverError>;
+
+    /// Runs one command in the Box and reports its exit code.
+    ///
+    /// # Errors
+    /// Returns a [`DriverError`] when the command cannot be run at all.
+    fn exec(
+        &self,
+        handle: &BoxHandle,
+        spec: &ExecSpec,
+        deadline: Deadline,
+    ) -> Result<ExecOutcome, DriverError>;
 }
 
 #[cfg(test)]
