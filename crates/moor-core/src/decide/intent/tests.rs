@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use super::{age, provisioning_dead, PROVISIONING_GRACE};
+use super::{age, provisioning_dead, setup_dead, PROVISIONING_GRACE};
 use crate::domain::decision::Intent;
 use crate::name::{BoxHandle, RunId};
 use crate::seam::clock::Ts;
@@ -65,6 +65,26 @@ fn running_intent_is_never_dead() {
 fn setup_intent_is_never_dead() {
     let intent = Intent::Setup { pid: 42 };
     assert!(!provisioning_dead(&intent, false, None, secs(1000)));
+}
+
+#[test]
+fn setup_with_dead_pid_is_dead() {
+    assert!(setup_dead(&Intent::Setup { pid: 42 }, false));
+}
+
+#[test]
+fn setup_with_live_pid_is_not_dead() {
+    assert!(!setup_dead(&Intent::Setup { pid: 42 }, true));
+}
+
+#[test]
+fn provisioning_and_running_are_never_setup_dead() {
+    let running = Intent::Running {
+        run: RunId::new(1),
+        pid: 42,
+    };
+    assert!(!setup_dead(&provisioning(), false));
+    assert!(!setup_dead(&running, false));
 }
 
 #[test]
