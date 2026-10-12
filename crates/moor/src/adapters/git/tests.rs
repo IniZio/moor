@@ -36,6 +36,20 @@ fn toplevel_trims_output_and_runs_in_cwd() {
 }
 
 #[test]
+fn main_checkout_is_parent_of_common_dir() {
+    let (p, g) = scripted();
+    p.on(
+        Tool::Git,
+        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+        ok("/r/main/.git\n"),
+    );
+    assert_eq!(
+        g.main_checkout(Path::new("/r/wt")).unwrap(),
+        Path::new("/r/main")
+    );
+}
+
+#[test]
 fn toplevel_outside_repo_is_not_a_repo() {
     let (p, g) = scripted();
     p.on(

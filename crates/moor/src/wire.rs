@@ -1,9 +1,8 @@
 //! Composition root: the only module that names concrete adapters.
 
-use std::path::PathBuf;
 use std::sync::Arc;
 
-use moor_core::config::{parse_user, UserConfig};
+use moor_core::config::UserConfig;
 use moor_core::seam::proc::Proc;
 use moor_core::ErrorKind;
 
@@ -13,6 +12,7 @@ use crate::adapters::git::Git;
 use crate::adapters::herdr::Herdr;
 use crate::adapters::proc::{SystemProc, ToolPaths};
 use crate::adapters::rng::SystemRng;
+use crate::config_load::load_user;
 use crate::cx::{Cx, CxParts};
 use crate::env::Env;
 use crate::error::CommandError;
@@ -29,7 +29,7 @@ const HERDR_PASSTHROUGH: [&str; 5] = [
 /// Wire real adapters from the environment into a context.
 pub(crate) fn build(env: &Env) -> Result<Cx, CommandError> {
     let clock = SystemClock::from_env(env).map_err(|e| CommandError::new(ErrorKind::Usage, e))?;
-    let config = load_config(env)?;
+    let config = load_user(env)?;
     let cwd = std::env::current_dir()
         .map_err(|e| CommandError::new(ErrorKind::Failed, format!("current directory: {e}")))?;
     let proc: Arc<dyn Proc> = Arc::new(SystemProc::new(env, &tool_paths(&config)));
@@ -65,32 +65,4 @@ fn tool_paths(config: &UserConfig) -> ToolPaths {
         ssh: t.ssh.clone(),
         git: t.git.clone(),
     }
-}
-
-/// Config file path: `$MOOR_CONFIG`, else XDG, else `$HOME/.config`.
-fn config_path(env: &Env) -> Option<PathBuf> {
-    let set = |k| env.get(k).filter(|v| !v.is_empty());
-    if let Some(p) = set("MOOR_CONFIG") {
-        return Some(PathBuf::from(p));
-    }
-    env.xdg("XDG_CONFIG_HOME", ".config", "moor/config.yaml")
-}
-
-/// Read the user config; a missing file means defaults.
-fn load_config(env: &Env) -> Result<UserConfig, CommandError> {
-    let Some(path) = config_path(env) else {
-        return Ok(UserConfig::default());
-    };
-    let text = match std::fs::read_to_string(&path) {
-        Ok(t) => t,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(UserConfig::default()),
-        Err(e) => {
-            return Err(CommandError::new(
-                ErrorKind::Failed,
-                format!("read {}: {e}", path.display()),
-            ))
-        }
-    };
-    parse_user(&path.display().to_string(), &text)
-        .map_err(|e| CommandError::new(ErrorKind::Failed, e.to_string()))
 }

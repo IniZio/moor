@@ -13,8 +13,6 @@ use serde::Deserialize;
 use super::{check, parse_strict, ConfigError};
 pub use creds::{CredentialSource, McpServer};
 
-/// Provider used when `box.provider` is unset.
-const DEFAULT_PROVIDER: &str = "local-container";
 /// herdr session used when `surface.herdr.session` is unset.
 const DEFAULT_HERDR_SESSION: &str = "moor";
 
@@ -272,12 +270,6 @@ impl UserConfig {
     #[must_use]
     pub fn provider(&self) -> Option<&str> {
         self.box_.provider.as_deref()
-    }
-
-    /// The configured Box provider, else `local-container`.
-    #[must_use]
-    pub fn provider_or_default(&self) -> &str {
-        self.provider().unwrap_or(DEFAULT_PROVIDER)
     }
 
     /// Checks values the types cannot. Error paths are dotted key paths.

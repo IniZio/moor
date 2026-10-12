@@ -3,6 +3,7 @@
 
 mod adapters;
 pub mod cli;
+mod config_load;
 mod cx;
 pub mod env;
 pub mod error;

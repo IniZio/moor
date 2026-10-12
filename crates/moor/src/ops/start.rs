@@ -1,21 +1,23 @@
 //! `start` (minimal): create the Task, its worktree and Workspace, acquire the Box.
 //!
-//! Capacity, setup, dotfiles, credentials and the agent launch land in later slices.
+//! It does not check credentials or capacity, run setup or dotfiles, or launch the agent.
 
 use std::path::{Path, PathBuf};
 
+use moor_core::config::Flags;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, NewTask};
 use moor_core::seam::surface::{workspace_label, Worktree};
 use moor_core::view::{AgentLaunchView, DotfilesView, SetupView, StartView};
 use moor_core::{ErrorKind, StartReq, TaskId};
 
+use super::common::facts::settings;
 use super::common::view::task_view;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::store::{Store, StoreError, TaskRow};
 
 mod provision;
-use provision::{provision, reprovision, Entry};
+use provision::{egress_plan, provision, reprovision, Entry};
 
 /// What `start` learns before it changes anything.
 struct Facts {
@@ -46,6 +48,11 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
         return attach(cx, store, req, &row);
     }
     let facts = gather(cx, req, repo, bound)?;
+    let flags = Flags {
+        model: req.model.clone(),
+    };
+    let cfg = settings(cx, facts.bound.as_deref().unwrap_or(&facts.repo), &flags)?;
+    egress_plan(&cfg)?;
     let placed = match place(cx, req, &facts) {
         Ok(placed) => placed,
         Err(e) => return raced(cx, store, req, e),
@@ -54,7 +61,7 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
         Ok(id) => id,
         Err(e) => return raced(cx, store, req, e),
     };
-    provision(cx, store, id, Entry::Fresh)?;
+    provision(cx, store, id, Entry::Fresh, &cfg)?;
     reread(store, id).map(|row| view(&row, false))
 }
 

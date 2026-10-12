@@ -3,6 +3,7 @@
 use moor_core::{ErrorKind, ErrorView, Response, Warning};
 
 mod close;
+mod config;
 mod store;
 
 mod driver;

@@ -4,7 +4,7 @@ use std::cell::{OnceCell, RefCell};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use moor_core::config::UserConfig;
+use moor_core::config::{RepoConfig, UserConfig};
 use moor_core::seam::clock::Clock;
 use moor_core::seam::driver::Driver;
 use moor_core::seam::rng::Rng;
@@ -12,6 +12,7 @@ use moor_core::seam::surface::Surface;
 use moor_core::{ErrorKind, Warning};
 
 use crate::adapters::git::Git;
+use crate::config_load::load_repo;
 use crate::error::CommandError;
 use crate::store::Store;
 
@@ -112,6 +113,15 @@ impl Cx {
     /// User configuration.
     pub(crate) const fn config(&self) -> &UserConfig {
         &self.config
+    }
+
+    /// Repo config for `worktree`: its own `.moor.yaml`, else the main checkout's.
+    pub(crate) fn repo_config(&self, worktree: &Path) -> Result<Option<RepoConfig>, CommandError> {
+        let main = self
+            .git
+            .main_checkout(worktree)
+            .map_err(|e| CommandError::new(ErrorKind::Failed, e.to_string()))?;
+        load_repo(worktree, &main)
     }
 
     /// Invocation directory.

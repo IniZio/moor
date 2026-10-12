@@ -1,6 +1,9 @@
 //! The Box step of `start`: acquire for a new Task, or again for a lost Box.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+use moor_core::config::egress::{effective_allow_list, provider_applies_policy, unenforced_note};
+use moor_core::config::{Flags, TaskSettings};
 
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, Intent, IntentChange};
@@ -9,11 +12,12 @@ use moor_core::seam::driver::{
     AcquireReq, Acquired, DriverError, EgressApplied, EgressPlan, Released,
 };
 use moor_core::seam::rng::Rng;
-use moor_core::{BoxHandle, ProviderId, TaskId};
+use moor_core::{BoxHandle, ProviderId, TaskId, Warning};
 
 use super::{reread, task_view};
 use crate::cx::Cx;
 use crate::error::CommandError;
+use crate::ops::common::facts::settings;
 use crate::store::{Store, TaskRow};
 
 /// Where the Task stands when its Box is wanted.
@@ -38,6 +42,21 @@ impl Entry {
     }
 }
 
+/// The egress plan the settings call for.
+///
+/// # Errors
+/// A repo `egress` entry that is not a valid domain.
+pub(super) fn egress_plan(cfg: &TaskSettings) -> Result<EgressPlan, CommandError> {
+    if provider_applies_policy(&cfg.provider.value, cfg.enforce_egress) {
+        Ok(EgressPlan::Allow(effective_allow_list(
+            &cfg.user_egress,
+            &cfg.egress,
+        )?))
+    } else {
+        Ok(EgressPlan::Open)
+    }
+}
+
 /// Gives a Task with a failed setup or a lost Box a Box again.
 ///
 /// Returns whether anything was provisioned.
@@ -58,7 +77,9 @@ pub(super) fn reprovision(cx: &Cx, store: &Store, row: &TaskRow) -> Result<bool,
         }
         _ => return Ok(false),
     };
-    provision(cx, store, row.id, entry)?;
+    let at = row.worktree.as_deref().unwrap_or(&row.repo);
+    let cfg = settings(cx, Path::new(at), &Flags::default())?;
+    provision(cx, store, row.id, entry, &cfg)?;
     Ok(true)
 }
 
@@ -68,9 +89,17 @@ pub(super) fn provision(
     store: &Store,
     id: TaskId,
     entry: Entry,
+    cfg: &TaskSettings,
 ) -> Result<(), CommandError> {
     let task = reread(store, id)?;
-    let provider = ProviderId::new(cx.config().provider_or_default());
+    let provider = ProviderId::new(cfg.provider.value.clone());
+    let egress = egress_plan(cfg)?;
+    if let Some(note) = unenforced_note(&cfg.provider.value, cfg.enforce_egress) {
+        cx.warn(Warning {
+            code: "egress_unenforced".to_owned(),
+            message: note.to_owned(),
+        });
+    }
     let mut requested = Decision::new(id);
     requested.task_input = entry.begin();
     let requested = requested
@@ -88,8 +117,8 @@ pub(super) fn provision(
         provider,
         task: id,
         name: task.name,
-        egress: EgressPlan::Open,
-        class: cx.config().box_.size.map(|s| s.as_str().to_owned()),
+        egress,
+        class: Some(cfg.size.value.as_str().to_owned()),
         nonce: nonce(cx.rng()),
         worktree: task.worktree.as_deref().map(PathBuf::from),
     };
