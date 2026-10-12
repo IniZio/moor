@@ -1,0 +1,109 @@
+//! `cp`: copy a file or directory out of a Task's Box to the host.
+//!
+//! Holds the Box lock for the copy and never syncs the worktree.
+
+use std::fs;
+use std::path::Path;
+
+use moor_core::domain::boxes::BoxState;
+use moor_core::domain::decision::{Decision, ExtraEvent};
+use moor_core::domain::task::TaskState;
+use moor_core::name::{BoxHandle, BoxPath};
+use moor_core::view::run::CpValue;
+use moor_core::{CpReq, ErrorKind};
+
+use crate::cx::Cx;
+use crate::error::CommandError;
+use crate::ops::common::boxlock::{self, BoxLock};
+use crate::store::TaskRow;
+
+/// Run `cp`.
+pub(crate) fn run(cx: &Cx, req: &CpReq) -> Result<CpValue, CommandError> {
+    if req.src.trim().is_empty() {
+        return Err(CommandError::new(
+            ErrorKind::Usage,
+            "the source path is empty",
+        ));
+    }
+    let store = cx.store()?;
+    let id = store
+        .latest_task_by_name(&req.task)?
+        .ok_or_else(|| {
+            CommandError::new(ErrorKind::Failed, format!("no task {}", req.task.as_str()))
+        })?
+        .id;
+    let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "cp", boxlock::WAIT)?;
+    let row = store.task(id)?.ok_or_else(|| {
+        CommandError::new(ErrorKind::Failed, format!("no task {}", req.task.as_str()))
+    })?;
+    let handle = usable_handle(&row)?;
+    let from = source(cx, &handle, &req.src)?;
+    let to = cx.cwd().join(&req.dest);
+    let copied = cx.driver().copy_out(&handle, &from, &to, cx.cwd());
+    let event = ExtraEvent::Copied {
+        from: from.as_str().to_owned(),
+        to: to.display().to_string(),
+    };
+    store.apply(Decision::new(id).event(event))?;
+    copied?;
+    let bytes = size(&to);
+    Ok(CpValue {
+        copied: true,
+        from: from.as_str().to_owned(),
+        to: to.display().to_string(),
+        bytes,
+        confirmation: format!(
+            "copied {} to {} ({bytes} bytes)",
+            from.as_str(),
+            to.display()
+        ),
+    })
+}
+
+/// The handle of the Task's live Box, or a refusal.
+fn usable_handle(row: &TaskRow) -> Result<BoxHandle, CommandError> {
+    let refuse = |why: &str| CommandError::new(ErrorKind::Refused, why.to_owned());
+    if row.state == TaskState::WaitingForBox {
+        return Err(refuse("the task is waiting for a Box"));
+    }
+    let b = row
+        .boxed
+        .as_ref()
+        .ok_or_else(|| refuse("the task has no Box"))?;
+    if matches!(b.state, BoxState::Gone | BoxState::Deleted) {
+        return Err(refuse("the Box is gone"));
+    }
+    b.handle
+        .clone()
+        .ok_or_else(|| refuse("the Box has not been acquired"))
+}
+
+/// The source in the Box: an absolute path as given, else under the Box workdir.
+fn source(cx: &Cx, handle: &BoxHandle, src: &str) -> Result<BoxPath, CommandError> {
+    let usage = |e: moor_core::name::NameError| CommandError::new(ErrorKind::Usage, e);
+    if let Some(rel) = src.strip_prefix('/') {
+        return BoxPath::under("/", rel).map_err(usage);
+    }
+    let workdir = cx.driver().workdir(handle)?;
+    BoxPath::under(workdir.as_str(), src).map_err(usage)
+}
+
+/// Bytes at `path`: a file's length, or the total under a directory.
+fn size(path: &Path) -> u64 {
+    let Ok(meta) = fs::metadata(path) else {
+        return 0;
+    };
+    if !meta.is_dir() {
+        return meta.len();
+    }
+    let Ok(entries) = fs::read_dir(path) else {
+        return 0;
+    };
+    entries
+        .filter_map(Result::ok)
+        .map(|e| size(&e.path()))
+        .sum()
+}
+
+#[cfg(test)]
+mod tests;

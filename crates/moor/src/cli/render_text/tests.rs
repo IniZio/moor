@@ -35,6 +35,13 @@ fn odd_version_value_falls_back_to_json() {
 }
 
 #[test]
+fn cp_prints_its_confirmation() {
+    let v = json!({"copied": true, "confirmation": "copied a to b (3 bytes)"});
+    let (out, _) = render(&Response::ok("cp", Some(v)), false);
+    assert_eq!(out, "copied a to b (3 bytes)\n");
+}
+
+#[test]
 fn other_value_is_pretty_json_and_none_is_empty() {
     let (out, _) = render(&Response::ok("show", Some(json!({"a": 1}))), false);
     assert_eq!(out, "{\n  \"a\": 1\n}\n");

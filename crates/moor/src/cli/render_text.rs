@@ -34,6 +34,13 @@ fn render_value(resp: &Response, out: &mut String) {
             return;
         }
     }
+    if resp.cmd == "cp" {
+        if let Some(text) = value.get("confirmation").and_then(Value::as_str) {
+            out.push_str(text);
+            out.push('\n');
+            return;
+        }
+    }
     if resp.cmd == "env" {
         if let Ok(view) = serde_json::from_value::<EnvView>(value.clone()) {
             out.push_str(&env_text(&view));
