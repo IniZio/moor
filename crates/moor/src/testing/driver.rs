@@ -252,19 +252,17 @@ impl Driver for FakeDriver {
         if let Some(e) = s.fail_copy_out.take() {
             return Err(e);
         }
-        if let Some(text) = &s.copy_content {
-            write_text(to, text);
-        }
-        Ok(())
+        s.copy_content
+            .as_deref()
+            .map_or(Ok(()), |text| write_text(to, text))
     }
 }
 
-/// Writes `text` to `to`, creating its directory.
-fn write_text(to: &Path, text: &str) {
-    if let Some(dir) = to.parent() {
-        let _ = std::fs::create_dir_all(dir);
-    }
-    let _ = std::fs::write(to, text);
+/// Writes `text` to `to`; like a real copy, fails when the destination directory is missing.
+fn write_text(to: &Path, text: &str) -> Result<(), DriverError> {
+    std::fs::write(to, text).map_err(|e| DriverError::Failed {
+        summary: format!("copy destination parent is unavailable: {e}"),
+    })
 }
 
 #[cfg(test)]
