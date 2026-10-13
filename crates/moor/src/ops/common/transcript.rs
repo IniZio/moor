@@ -1,6 +1,7 @@
 //! Saves the agent's transcript to the state directory before its session ends.
 
 use std::fs::{self, DirBuilder, Permissions};
+use std::io::BufReader;
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::path::PathBuf;
 
@@ -78,10 +79,12 @@ fn try_save(
         .map_err(|e| e.to_string())?;
     fs::set_permissions(&dest, Permissions::from_mode(0o600))
         .map_err(|e| format!("chmod {}: {e}", dest.display()))?;
-    let bytes = fs::read(&dest).map_err(|e| format!("read {}: {e}", dest.display()))?;
+    let file = fs::File::open(&dest).map_err(|e| format!("read {}: {e}", dest.display()))?;
+    let digest =
+        digest(BufReader::new(file)).map_err(|e| format!("read {}: {e}", dest.display()))?;
     Ok(Saved {
         path: dest.display().to_string(),
-        digest: digest(&bytes),
+        digest,
     })
 }
 

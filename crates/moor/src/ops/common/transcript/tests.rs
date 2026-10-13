@@ -73,7 +73,7 @@ fn saves_mode_0600_and_records_the_path_and_digest() {
     let saved = save(&cx, cx.store().unwrap(), &row, &session, Trigger::Close).unwrap();
     let want = dir
         .path()
-        .join(format!("transcripts/{}/{}-1", row.id.get(), session.id));
+        .join(format!("transcripts/{}/{}-1.tgz", row.id.get(), session.id));
     assert_eq!(saved.path, want.display().to_string());
     assert_eq!(
         saved.digest,
@@ -82,6 +82,14 @@ fn saves_mode_0600_and_records_the_path_and_digest() {
     assert_eq!(
         fs::metadata(&want).unwrap().permissions().mode() & 0o777,
         0o600
+    );
+    assert_eq!(
+        fs::metadata(want.parent().unwrap())
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777,
+        0o700
     );
     let ev = cx.store().unwrap().events(row.id, 100).unwrap();
     let last = ev.last().unwrap();
@@ -96,7 +104,7 @@ fn a_second_save_takes_the_next_number() {
     let store = cx.store().unwrap();
     save(&cx, store, &row, &session, Trigger::Relaunch).unwrap();
     let again = save(&cx, store, &row, &session, Trigger::Close).unwrap();
-    assert!(again.path.ends_with(&format!("{}-2", session.id)));
+    assert!(again.path.ends_with(&format!("{}-2.tgz", session.id)));
 }
 
 #[test]
