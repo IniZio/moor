@@ -1,4 +1,4 @@
-//! `moor close`: gate, stop the agent, tear down and release the Box, then close the Workspace.
+//! `moor close`: gate, save the agent's transcript, stop the agent, tear down and release the Box, then close the Workspace.
 
 use std::path::Path;
 use std::time::Duration;
@@ -10,6 +10,7 @@ use moor_core::domain::decision::{Decision, ExtraEvent};
 use moor_core::domain::run::SyncMode;
 
 use moor_core::decide::close::{close_gate, release_outcome, CloseFacts, ClosePlan, ReleaseResult};
+use moor_core::decide::transcript::Trigger;
 use moor_core::seam::driver::{ExecOutcome, ExecSpec, Released};
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::{PaneRef, SurfaceError, WorkspaceRef};
@@ -21,13 +22,14 @@ use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::facts::settings;
 use crate::ops::common::promote::promote_waiting;
+use crate::ops::common::transcript::{self, Saved};
 use crate::ops::common::view::task_view;
 use crate::store::{BoxRow, Store, TaskRow};
 
 /// Wall-clock allowance for the teardown script.
 const TEARDOWN_DEADLINE: Duration = Duration::from_mins(30);
 
-/// Closes a task: the data-loss gate, agent stop, Box teardown and release,
+/// Closes a task: the data-loss gate, transcript save, agent stop, Box teardown and release,
 /// Workspace close.
 ///
 /// The Box lock is held from the gate to the Workspace close and dropped before
@@ -47,7 +49,9 @@ pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
     )?;
     let row = store.task(first.id)?.unwrap_or(first);
     let plan = close_gate(&facts(cx, &row)?, req.force)?;
-    let agent_stopped = stop_agent(cx, store, &row)?;
+    let saved = save_transcript(cx, store, &row)?;
+    let digest = saved.as_ref().map(|t| t.digest.as_str());
+    let agent_stopped = stop_agent(cx, store, &row, digest)?;
     let box_deleted = if plan.release_box {
         teardown(cx, &row);
         release(cx, store, &row)?
@@ -70,16 +74,30 @@ pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
         box_deleted,
         workspace_closed,
         agent_stopped,
-        transcript: None,
+        transcript: saved.map(|t| t.path),
         worktree_kept: true,
         promoted,
     })
 }
 
-/// Closes the live agent pane and ends its session; a pane already gone is fine.
+/// Saves the live agent's transcript while the Box is still Ready; a failure only records an event.
+fn save_transcript(cx: &Cx, store: &Store, row: &TaskRow) -> Result<Option<Saved>, CommandError> {
+    let Some(session) = store.live_session(row.id)? else {
+        return Ok(None);
+    };
+    Ok(transcript::save(cx, store, row, &session, Trigger::Close))
+}
+
+/// Closes the live agent pane and ends its session, with the digest of its saved transcript;
+/// a pane already gone is fine.
 ///
 /// Returns whether a session was ended.
-fn stop_agent(cx: &Cx, store: &Store, row: &TaskRow) -> Result<bool, CommandError> {
+fn stop_agent(
+    cx: &Cx,
+    store: &Store,
+    row: &TaskRow,
+    digest: Option<&str>,
+) -> Result<bool, CommandError> {
     let Some(session) = store.live_session(row.id)? else {
         return Ok(false);
     };
@@ -95,7 +113,7 @@ fn stop_agent(cx: &Cx, store: &Store, row: &TaskRow) -> Result<bool, CommandErro
             }
         }
     }
-    store.end_session(session.id, None, None)?;
+    store.end_session(session.id, None, digest)?;
     store.apply(Decision::new(row.id).event(ExtraEvent::SessionsStopped {
         sessions: vec![session.session_ref],
     }))?;

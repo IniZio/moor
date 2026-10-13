@@ -18,6 +18,7 @@ use crate::testing::surface::FakeSurface;
 mod agent;
 mod promote;
 mod teardown;
+mod transcript;
 
 const RAW: &str = "RAWDRIVER-7731";
 
@@ -74,6 +75,7 @@ fn fx_with(driver: FakeDriver, surface: FakeSurface, unpushed: u32) -> Fx {
         box_provider: Field::Set(provider.clone()),
         worktree: Field::Set(dir.path().display().to_string()),
         workspace_id: Field::Set("ws-1".into()),
+        box_workdir: Field::Set("/work/box-1".into()),
         ..Fields::default()
     };
     let d = Decision::new(id)

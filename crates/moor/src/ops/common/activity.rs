@@ -217,7 +217,7 @@ pub(crate) fn settle(store: &Store, row: &TaskRow, reading: &Reading) -> Result<
 
 /// The session as the Engine needs it; none when the Box cannot be reached.
 ///
-fn session_ref(row: &TaskRow, id: String, pane: Option<String>) -> Option<SessionRef> {
+pub(crate) fn session_ref(row: &TaskRow, id: String, pane: Option<String>) -> Option<SessionRef> {
     let b = row.boxed.as_ref()?;
     Some(SessionRef {
         id,
