@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use moor_core::boxscript::command_line;
 use moor_core::config::Flags;
+use moor_core::domain::boxes::BoxState;
 use moor_core::domain::run::SyncMode;
 use moor_core::seam::driver::{ExecOutcome, ExecSpec};
 use moor_core::seam::proc::{Deadline, Output};
@@ -18,6 +19,7 @@ use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::facts::settings;
 use crate::ops::common::provisioning::dead_provisioning;
+use crate::ops::common::wake::wake_if_asleep;
 use crate::store::{NewRun, RunOutcome, Store, TaskRow};
 
 mod ready;
@@ -52,6 +54,19 @@ pub(crate) fn run(cx: &Cx, req: &RunReq) -> Result<RunValue, CommandError> {
 /// The part of `run` that needs the Box lock, on the row read after taking it.
 fn locked(cx: &Cx, store: &Store, req: &RunReq, row: &TaskRow) -> Result<RunValue, CommandError> {
     dead_provisioning(cx, row)?;
+    let gone = row
+        .boxed
+        .as_ref()
+        .is_some_and(|b| matches!(b.state, BoxState::Gone | BoxState::Deleted));
+    let woken;
+    let row = if !gone && wake_if_asleep(cx, store, row)? {
+        woken = store.task(row.id)?.ok_or_else(|| {
+            CommandError::new(ErrorKind::Failed, format!("no task {}", row.name.as_str()))
+        })?;
+        &woken
+    } else {
+        row
+    };
     let target = ready::target(store, row)?;
     launch(cx, store, req, row.id, target)
 }
