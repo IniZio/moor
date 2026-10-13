@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use moor_core::activity::{PaneObs, PaneStatus};
 use moor_core::domain::decision::{Decision, Field, Fields};
-use moor_core::seam::engine::{LaunchReq, SessionRef};
+use moor_core::seam::engine::{EngineError, LaunchReq, SessionRef};
 use moor_core::seam::surface::{PaneRef, SurfaceError};
 use moor_core::{BoxHandle, BoxPath, StartReq, TaskId};
 
@@ -94,6 +94,11 @@ fn exit_of_first_session(w: &World, id: TaskId) -> Option<i32> {
         .unwrap()
 }
 
+/// Makes `p-1` read as gone.
+fn gone(w: &World) {
+    w.surface.push_pane_obs("p-1", Err(SurfaceError::NotFound));
+}
+
 fn warning_codes(w: &World) -> Vec<String> {
     w.cx.take_warnings().into_iter().map(|x| x.code).collect()
 }
@@ -101,6 +106,7 @@ fn warning_codes(w: &World) -> Vec<String> {
 #[test]
 fn a_gone_pane_relaunches_with_the_newest_goal() {
     let (w, engine, id) = started();
+    gone(&w);
     let v = run(&w.cx, &req("demo")).unwrap();
     assert!(v.agent.launched);
     let second = relaunch_of(&engine);
@@ -127,6 +133,7 @@ fn an_exited_pane_relaunches_and_the_old_session_keeps_its_exit() {
 #[test]
 fn a_given_goal_relaunches_with_a_fresh_brief_and_is_stored() {
     let (w, engine, id) = started();
+    gone(&w);
     set_agent_session(&w, id, "agent-1");
     run(&w.cx, &goal_req("new goal")).unwrap();
     let second = relaunch_of(&engine);
@@ -139,6 +146,7 @@ fn a_given_goal_relaunches_with_a_fresh_brief_and_is_stored() {
 #[test]
 fn a_stored_agent_session_relaunches_with_resume() {
     let (w, engine, id) = started();
+    gone(&w);
     set_agent_session(&w, id, "agent-1");
     run(&w.cx, &req("demo")).unwrap();
     let second = relaunch_of(&engine);
@@ -149,6 +157,7 @@ fn a_stored_agent_session_relaunches_with_resume() {
 #[test]
 fn an_empty_stored_agent_session_uses_the_brief() {
     let (w, engine, id) = started();
+    gone(&w);
     set_agent_session(&w, id, "");
     run(&w.cx, &req("demo")).unwrap();
     let second = relaunch_of(&engine);
@@ -196,6 +205,7 @@ fn a_live_pane_without_a_goal_does_not_warn() {
 #[test]
 fn the_relaunched_event_carries_both_panes_and_the_goal() {
     let (w, _engine, id) = started();
+    gone(&w);
     run(&w.cx, &goal_req("new goal")).unwrap();
     let events = w.cx.store().unwrap().events(id, 100).unwrap();
     let e = events.iter().find(|e| e.kind == "relaunched").unwrap();
@@ -203,4 +213,55 @@ fn the_relaunched_event_carries_both_panes_and_the_goal() {
         e.payload,
         serde_json::json!({"old_pane": "p-1", "new_pane": "p-2", "goal": "new goal"})
     );
+}
+
+#[test]
+fn a_failed_relaunch_records_no_relaunched_event_and_sets_the_failure() {
+    let engine = Arc::new(
+        FakeEngine::new()
+            .launch_result(Ok(session("p-1")))
+            .launch_result(Err(EngineError::Failed {
+                step: "pane",
+                message: "no tab".to_owned(),
+            })),
+    );
+    let mut w = world(FakeDriver::new());
+    w.cx = w.cx.with_engine(engine);
+    let id = TaskId::new(run(&w.cx, &goal_req("ship it")).unwrap().task.id);
+    gone(&w);
+    let v = run(&w.cx, &req("demo")).unwrap();
+    assert!(!v.agent.launched);
+    let store = w.cx.store().unwrap();
+    assert!(store.task(id).unwrap().unwrap().launch_failure.is_some());
+    let events = store.events(id, 100).unwrap();
+    assert!(events.iter().all(|e| e.kind != "relaunched"));
+}
+
+#[test]
+fn a_gone_pane_with_no_goal_and_no_agent_session_launches_nothing() {
+    let (w, engine, id) = started();
+    let clear = Fields {
+        goal: Field::Clear,
+        ..Fields::default()
+    };
+    w.cx.store()
+        .unwrap()
+        .apply(Decision::new(id).set(clear))
+        .unwrap();
+    gone(&w);
+    let v = run(&w.cx, &req("demo")).unwrap();
+    assert!(!v.agent.launched);
+    assert_eq!(engine.launches().len(), 1);
+}
+
+#[test]
+fn a_gone_pane_start_is_refused_while_another_op_holds_the_lock() {
+    let (w, engine, _id) = started();
+    gone(&w);
+    let held = super::hold(&w, "close");
+    let err = run(&w.cx, &req("demo")).unwrap_err();
+    assert_eq!(err.error.to_string(), "box busy: close in progress");
+    assert_eq!(engine.launches().len(), 1);
+    drop(held);
+    assert!(run(&w.cx, &req("demo")).unwrap().agent.launched);
 }

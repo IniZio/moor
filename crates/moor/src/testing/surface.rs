@@ -9,7 +9,7 @@ use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
-use moor_core::activity::PaneObs;
+use moor_core::activity::{PaneObs, PaneStatus};
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::{
     Key, PaneCmd, PaneRef, ResumeOutcome, ResumeReg, Surface, SurfaceError, WorkspaceRef, Worktree,
@@ -94,6 +94,7 @@ impl FakeSurface {
     }
 
     /// Scripts the next `pane_obs` answer for `pane`; the last answer repeats.
+    /// An unscripted pane reads as live with no text.
     pub(crate) fn script_pane_obs(self, pane: &str, obs: Result<PaneObs, SurfaceError>) -> Self {
         self.push_pane_obs(pane, obs);
         self
@@ -177,7 +178,14 @@ impl Surface for FakeSurface {
     fn pane_obs(&self, pane: &PaneRef, _deadline: Deadline) -> Result<PaneObs, SurfaceError> {
         let mut s = self.st();
         s.calls.push(format!("pane_obs {}", pane.as_str()));
-        let queue = s.obs.get_mut(pane.as_str()).ok_or(SurfaceError::NotFound)?;
+        let Some(queue) = s.obs.get_mut(pane.as_str()) else {
+            return Ok(PaneObs {
+                status: PaneStatus::Working,
+                tail: String::new(),
+                prompt: None,
+                exit_marker: None,
+            });
+        };
         if queue.len() > 1 {
             queue.pop_front().ok_or(SurfaceError::NotFound)?
         } else {
@@ -293,10 +301,8 @@ mod tests {
         assert_eq!(s.pane_obs(&p, d), Ok(obs("a")));
         assert_eq!(s.pane_obs(&p, d), Err(SurfaceError::Timeout));
         assert_eq!(s.pane_obs(&p, d), Err(SurfaceError::Timeout));
-        assert_eq!(
-            s.pane_obs(&PaneRef::new("p-2"), d),
-            Err(SurfaceError::NotFound)
-        );
+        let unscripted = s.pane_obs(&PaneRef::new("p-2"), d).unwrap();
+        assert_eq!(unscripted.exit_marker, None);
         assert_eq!(s.calls().len(), 4);
         assert_eq!(s.calls().first().map(String::as_str), Some("pane_obs p-1"));
     }
