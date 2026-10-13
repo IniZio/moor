@@ -40,6 +40,8 @@ pub struct Fields {
     pub state_reason: Field<String>,
     /// When setup failed, in milliseconds since the epoch.
     pub setup_failed_at: Field<i64>,
+    /// The recorded launch failure, as JSON.
+    pub launch_failure: Field<String>,
     /// Box provider.
     pub box_provider: Field<ProviderId>,
     /// Box handle.
@@ -296,6 +298,7 @@ impl Decision {
                 agent_session_id: Field::Keep,
                 state_reason: Field::Keep,
                 setup_failed_at: Field::Keep,
+                launch_failure: Field::Keep,
                 box_provider: Field::Keep,
                 box_handle: Field::Keep,
                 box_workdir: Field::Keep,

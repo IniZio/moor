@@ -7,12 +7,38 @@ pub mod sleep;
 use crate::domain::boxes::BoxState;
 use crate::domain::task::TaskState;
 
+/// Why the agent could not be launched.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct LaunchFailure {
+    /// The launch step that failed.
+    pub step: String,
+    /// What went wrong.
+    pub message: String,
+    /// The last lines of output, when the failure printed any.
+    pub tail: Option<String>,
+    /// RFC3339 UTC time of the failure.
+    pub at: String,
+}
+
+impl LaunchFailure {
+    /// The text `start` shows for the failure.
+    #[must_use]
+    pub fn text(&self) -> String {
+        format!(
+            "agent dispatch failed: {}: {}; re-run start to retry",
+            self.step, self.message
+        )
+    }
+}
+
 /// Agent activity on a Task row.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct AgentView {
+    /// Whether the agent was launched.
+    pub launched: bool,
     /// `live`, `exited` or `gone`.
     pub pane: String,
-    /// Agent state name.
+    /// Agent state name; `failed` when the launch failed.
     pub state: String,
     /// Where the state was learned.
     pub source: String,
@@ -20,6 +46,8 @@ pub struct AgentView {
     pub exit_code: Option<i32>,
     /// What the agent waits for, if anything.
     pub waiting_for: Option<String>,
+    /// Why the launch failed, when it did.
+    pub reason: Option<LaunchFailure>,
 }
 
 /// The in-flight run on a Task row.
@@ -123,6 +151,8 @@ pub struct AgentLaunchView {
     pub launched: bool,
     /// Agent session id.
     pub session: Option<String>,
+    /// Why the launch failed, when it did.
+    pub reason: Option<LaunchFailure>,
 }
 
 /// `value` of `start`.

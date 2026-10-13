@@ -37,6 +37,17 @@ pub(crate) fn run(cx: &Cx, req: &WaitReq) -> Result<WaitValue, CommandError> {
             CommandError::new(ErrorKind::Failed, format!("no task {}", req.task.as_str()))
         })?;
         let reading = activity::read(cx, store, &row, clock.now())?;
+        if let Some(failure) = reading
+            .launch_failure
+            .as_ref()
+            .filter(|_| want != WaitFor::Run)
+        {
+            let mut task = task_view_with_run(&row, None, cx.config());
+            task.agent = agent_view(&reading);
+            let shown = serde_json::to_value(&task)
+                .map_err(|e| CommandError::new(ErrorKind::Internal, e))?;
+            return Err(CommandError::new(ErrorKind::Failed, failure.text()).with_value(shown));
+        }
         let in_flight = store.in_flight_run(id, &|pid| cx.proc().alive(pid))?;
         let facts = WaitFacts {
             agent_active: reading.busy(),

@@ -1,7 +1,7 @@
 //! `start` (minimal): check credentials, create the Task, its worktree and Workspace, acquire the Box.
 //!
-//! It queues the Task when the box limit for its provider is reached. It does not run setup or
-//! dotfiles, or launch the agent.
+//! It queues the Task when the box limit for its provider is reached. It does not run dotfiles.
+//! It launches the agent for a Working Task with a goal.
 
 use std::path::{Path, PathBuf};
 
@@ -27,6 +27,7 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::store::{Store, StoreError, TaskRow};
 
+mod launch;
 mod preflight;
 
 /// What `start` learns before it changes anything.
@@ -83,10 +84,13 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     } else {
         SetupRun::Skipped
     };
-    launch_agent(store, id)?;
+    let agent = launch::run(cx, store, req, id, run.exit(), &|| {
+        Ok(cfg.model.as_ref().map(|m| m.value.clone()))
+    })?;
     let row = reread(store, id)?;
     let mut v = queued_view(cx, &row, false, &cfg.provider.value);
     v.setup = run.view();
+    set_agent(&mut v, agent);
     Ok(v)
 }
 
@@ -151,26 +155,31 @@ fn attach(
     }
     let reprovisioned = reprovision(cx, store, row, "start")?;
     store.apply(Decision::new(row.id).event(ExtraEvent::Attached))?;
-    launch_agent(store, row.id)?;
+    let setup_exit = reprovisioned.as_ref().and_then(SetupRun::exit);
+    let model = || {
+        let at = row.worktree.as_deref().unwrap_or(&row.repo);
+        let flags = Flags {
+            model: req.model.clone(),
+        };
+        let cfg = settings(cx, Path::new(at), &flags)?;
+        Ok(cfg.model.map(|m| m.value))
+    };
+    let agent = launch::run(cx, store, req, row.id, setup_exit, &model)?;
     let row = &reread(store, row.id)?;
+    let mut v = with_provider(cx, row, true)?;
     if let Some(run) = reprovisioned {
-        let mut v = with_provider(cx, row, true)?;
         v.setup = run.view();
-        return Ok(v);
     }
-    with_provider(cx, row, true)
+    set_agent(&mut v, agent);
+    Ok(v)
 }
 
-/// Records a session for a Working Task with a goal that never had one.
-///
-/// The session is recorded before any agent launch exists, so the Task reads as live. Without a
-/// goal no agent would launch, so none is recorded.
-fn launch_agent(store: &Store, id: TaskId) -> Result<(), CommandError> {
-    let row = reread(store, id)?;
-    if row.state == TaskState::Working && row.goal.is_some() && !store.has_session(id)? {
-        store.begin_session(id, &format!("moor-{}", id.get()), None)?;
+/// Puts the launch outcome in the view, naming a failure in a warning too.
+fn set_agent(v: &mut StartView, agent: AgentLaunchView) {
+    if let Some(f) = &agent.reason {
+        v.warnings_inline.push(f.text());
     }
-    Ok(())
+    v.agent = agent;
 }
 
 /// Moves each open Task with a ready Box and no failed setup between Working and Idle.

@@ -162,7 +162,8 @@ fn failing_line_comes_from_the_log_and_warns() {
     assert_eq!(
         got,
         SetupRun::Failed {
-            line: "bad".to_owned()
+            line: "bad".to_owned(),
+            exit: Some(3),
         }
     );
     assert_eq!(r.driver.execs().len(), 1);
@@ -197,7 +198,8 @@ fn the_last_announced_line_fails() {
     assert_eq!(
         got,
         SetupRun::Failed {
-            line: "b".to_owned()
+            line: "b".to_owned(),
+            exit: Some(1),
         }
     );
 }
@@ -219,7 +221,8 @@ fn a_failed_copy_falls_back_to_the_first_line() {
     assert_eq!(
         got,
         SetupRun::Failed {
-            line: "a".to_owned()
+            line: "a".to_owned(),
+            exit: Some(1),
         }
     );
 }
@@ -241,7 +244,8 @@ fn driver_timeout_fails_the_line() {
     assert_eq!(
         got,
         SetupRun::Failed {
-            line: "slow".to_owned()
+            line: "slow".to_owned(),
+            exit: None,
         }
     );
     assert_eq!(r.driver.execs().len(), 1);
@@ -275,7 +279,8 @@ fn outcome_maps_skipped_and_ok_to_ok() {
     assert_eq!(SetupRun::Ok.outcome(), SetupOutcome::Ok);
     assert_eq!(
         SetupRun::Failed {
-            line: "x".to_owned()
+            line: "x".to_owned(),
+            exit: None,
         }
         .outcome(),
         SetupOutcome::Failed {
@@ -297,7 +302,8 @@ fn view_maps_each_variant() {
     );
     assert_eq!(
         SetupRun::Failed {
-            line: "x".to_owned()
+            line: "x".to_owned(),
+            exit: None,
         }
         .view(),
         SetupView {
@@ -313,7 +319,8 @@ fn failed_is_true_only_for_failed() {
     assert!(!SetupRun::Skipped.failed());
     assert!(!SetupRun::Ok.failed());
     assert!(SetupRun::Failed {
-        line: "x".to_owned()
+        line: "x".to_owned(),
+        exit: None,
     }
     .failed());
 }
@@ -348,7 +355,8 @@ fn interrupted_line_fails_and_stops_the_run() {
     assert_eq!(
         got,
         SetupRun::Failed {
-            line: "a".to_owned()
+            line: "a".to_owned(),
+            exit: None,
         }
     );
     assert_eq!(r.driver.execs().len(), 1);

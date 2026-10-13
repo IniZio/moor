@@ -306,6 +306,7 @@ fn task_field_sets(s: &Fields) -> Sets {
             "setup_failed_at",
             field_value(&s.setup_failed_at, |t| Value::Integer(*t)),
         ),
+        ("launch_failure", text(&s.launch_failure)),
     ];
     all.into_iter().filter_map(|(c, v)| Some((c, v?))).collect()
 }
