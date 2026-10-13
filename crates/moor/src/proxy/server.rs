@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
-use moor_core::proxy_gate::{decide, GateDecision, GateInput, Plan, RouteTable};
+use moor_core::proxy_gate::{decide, GateDecision, GateInput, Plan, RouteId, RouteTable};
 use moor_core::seam::clock::Clock;
 use moor_core::Secret;
 
@@ -19,6 +19,7 @@ mod deadline;
 mod framing;
 
 use deadline::DeadlineReader;
+use framing::BodyLen;
 
 /// Total time a client gets to send a complete request head, however slowly
 /// it sends the bytes.
@@ -42,6 +43,8 @@ pub(crate) struct ProxyOpts {
     pub(crate) clock: Arc<dyn Clock>,
     /// Total time allowed for reading one request head.
     pub(crate) head_budget: Duration,
+    /// Largest declared request body accepted on a route, in bytes.
+    pub(crate) body_cap: fn(&RouteId) -> u64,
 }
 
 /// An admitted request, ready to be sent upstream.
@@ -53,6 +56,9 @@ pub(crate) struct Forward {
     /// Bytes already read past the head. These may run beyond the declared
     /// body (pipelined data): the handler must cut the body to its declared
     /// framing, `Content-Length` or chunked, and ignore anything after it.
+    ///
+    /// A chunked body has no declared length, so the handler must enforce
+    /// the same per-route size cap while streaming it.
     pub(crate) body_prefix: Vec<u8>,
 }
 
@@ -174,10 +180,10 @@ fn serve(shared: &Shared, mut stream: TcpStream) {
     let Some((head, body_prefix)) = read_request_head(shared, &mut stream) else {
         return;
     };
-    if framing::body_len(&head.headers).is_err() {
-        reject_unread(shared, &mut stream, &head.method, 400);
+    let Ok(len) = framing::body_len(&head.headers) else {
+        reject_unread(shared, &mut stream, &head.method, "-", 400);
         return;
-    }
+    };
     let decision = decide(&GateInput {
         table: &shared.table,
         method: &head.method,
@@ -192,8 +198,16 @@ fn serve(shared: &Shared, mut stream: TcpStream) {
             write_reject(&mut stream, status);
             shared.log.record(&head.method, "-", status);
         }
+        GateDecision::Forward(plan) if over_cap(shared, &plan, len) => {
+            reject_unread(shared, &mut stream, &head.method, plan.route.as_str(), 413);
+        }
         GateDecision::Forward(plan) => hand_off(shared, &mut stream, head, plan, body_prefix),
     }
+}
+
+/// Tells whether the declared body is larger than the route allows.
+fn over_cap(shared: &Shared, plan: &Plan, len: BodyLen) -> bool {
+    matches!(len, BodyLen::Length(n) if n > (shared.opts.body_cap)(&plan.route))
 }
 
 /// Reads the request head within the head budget, answering malformed heads.
@@ -232,9 +246,9 @@ fn hand_off(shared: &Shared, stream: &mut TcpStream, head: Head, plan: Plan, bod
 /// Answers and logs a request refused before its body was read, then drops
 /// the unread part of what the client already sent so closing the socket
 /// does not reset the connection before the client reads the answer.
-fn reject_unread(shared: &Shared, stream: &mut TcpStream, method: &str, status: u16) {
+fn reject_unread(shared: &Shared, stream: &mut TcpStream, method: &str, route: &str, status: u16) {
     write_reject(stream, status);
-    shared.log.record(method, "-", status);
+    shared.log.record(method, route, status);
     drain(shared, stream);
 }
 
@@ -257,6 +271,7 @@ fn write_reject(stream: &mut TcpStream, status: u16) {
             "Request Header Fields Too Large",
             "request header fields too large\n",
         ),
+        413 => ("Content Too Large", "content too large\n"),
         503 => ("Service Unavailable", "busy\n"),
         _ => ("Error", "error\n"),
     };

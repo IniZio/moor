@@ -11,6 +11,7 @@ use moor_core::proxy_gate::{RouteRow, RouteTable};
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::{Secret, TaskId};
 
+use super::framing::body_cap;
 use super::{Forward, ForwardHandler, Proxy, ProxyOpts, HEAD_BUDGET};
 use crate::adapters::clock::SystemClock;
 use crate::proxy::ProxyLog;
@@ -23,11 +24,13 @@ const OK: &str = "HTTP/1.1 200 OK\r\ncontent-length: 0\r\nconnection: close\r\n\
 #[derive(Default)]
 struct Fake {
     calls: Mutex<Vec<(String, String)>>,
+    /// Length of the body bytes each call received with its head.
+    prefixes: Mutex<Vec<usize>>,
 }
 
 impl ForwardHandler for Fake {
     fn forward(&self, req: Forward, stream: &mut TcpStream) -> u16 {
-        assert!(req.body_prefix.is_empty());
+        self.prefixes.lock().unwrap().push(req.body_prefix.len());
         self.calls
             .lock()
             .unwrap()
@@ -70,6 +73,7 @@ fn opts(max_conns: usize, task_repo: Option<String>) -> ProxyOpts {
         task_repo,
         clock: Arc::new(SystemClock::real()),
         head_budget: HEAD_BUDGET,
+        body_cap,
     }
 }
 
@@ -398,4 +402,30 @@ fn it_delivers_the_refusal_even_when_the_client_sent_a_large_body() {
     let reply = send(r.proxy.port(), &req);
     assert!(reply.starts_with("HTTP/1.1 400 "), "{reply}");
     r.proxy.shutdown();
+}
+
+#[test]
+fn it_refuses_declared_bodies_over_the_route_cap() {
+    let dir = tempfile::tempdir().unwrap();
+    let fake = Arc::new(Fake::default());
+    let mut o = opts(8, None);
+    o.body_cap = |_| 10;
+    let table = RouteTable::new(vec![RouteRow::model()]);
+    let proxy = start_forge(fake.clone(), dir.path(), table, o);
+    let post = |len: usize, body: usize| {
+        let req = format!(
+            "POST /v1/x HTTP/1.1\r\nauthorization: Bearer {NONCE}\r\ncontent-length: {len}\r\n\r\n{}",
+            "x".repeat(body)
+        );
+        send(proxy.port(), req.as_bytes())
+    };
+    let over = post(11, 11);
+    assert!(over.starts_with("HTTP/1.1 413 "), "{over}");
+    assert!(over.ends_with("content too large\n"));
+    assert!(fake.calls.lock().unwrap().is_empty());
+    assert_eq!(post(10, 10), OK);
+    assert_eq!(*fake.prefixes.lock().unwrap(), vec![10]);
+    let log = log_when(dir.path(), 2);
+    assert!(log.lines().any(|l| l.ends_with(" POST model 413")), "{log}");
+    proxy.shutdown();
 }
