@@ -367,3 +367,37 @@ fn exclude_scratch_covers_linked_worktree() {
     g.exclude_scratch(&linked).unwrap();
     assert!(!g.dirty(&linked).unwrap());
 }
+
+#[test]
+fn exclude_scratch_works_from_a_worktree_of_a_bare_repo() {
+    if Command::new("git").arg("--version").output().is_err() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let src = dir.path().join("src");
+    std::fs::create_dir(&src).unwrap();
+    committed_repo(&src);
+    let bare = dir.path().join("bare.git");
+    git_in(
+        dir.path(),
+        &[
+            "clone",
+            "-q",
+            "--bare",
+            src.to_str().unwrap(),
+            bare.to_str().unwrap(),
+        ],
+    );
+    let linked = dir.path().join("linked");
+    git_in(
+        &bare,
+        &["worktree", "add", "-q", linked.to_str().unwrap(), "HEAD"],
+    );
+    write_scratch(&linked);
+    let g = real_git();
+    assert!(g.dirty(&linked).unwrap());
+    g.exclude_scratch(&linked).unwrap();
+    assert!(!g.dirty(&linked).unwrap());
+    let text = std::fs::read_to_string(bare.join("info/exclude")).unwrap();
+    assert!(text.lines().any(|l| l == ".crabbox/"), "{text}");
+}

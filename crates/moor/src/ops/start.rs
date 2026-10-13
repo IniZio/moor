@@ -11,7 +11,7 @@ use moor_core::domain::event::CheckedCred;
 use moor_core::domain::task::{TaskInput, TaskState};
 use moor_core::seam::surface::{workspace_label, Worktree};
 use moor_core::view::{AgentLaunchView, DotfilesView, SetupView, StartView};
-use moor_core::{ErrorKind, StartReq, TaskId};
+use moor_core::{ErrorKind, StartReq, TaskId, Warning};
 
 use super::common::boxlock::{self, BoxLock};
 use super::common::capacity;
@@ -134,6 +134,15 @@ fn attach(
 ) -> Result<StartView, CommandError> {
     check_bound(cx, req, row)?;
     dead_provisioning(cx, row)?;
+    if let Err(e) = cx
+        .git()
+        .exclude_scratch(Path::new(row.worktree.as_deref().unwrap_or(&row.repo)))
+    {
+        cx.warn(Warning {
+            code: "exclude_failed".to_owned(),
+            message: format!("could not hide scratch dirs from git: {e}"),
+        });
+    }
     let reprovisioned = reprovision(cx, store, row, "start")?;
     store.apply(Decision::new(row.id).event(ExtraEvent::Attached))?;
     if let Some(run) = reprovisioned {
@@ -252,9 +261,16 @@ fn gather(
     Ok(Facts { repo, bound, base })
 }
 
-/// Creates the worktree unless one is bound, hides scratch dirs from git, then ensures the
+/// Hides scratch dirs from git, creates the worktree unless one is bound, then ensures the
 /// Workspace.
+///
+/// The exclude file lives in the common git dir, so hiding from a bound worktree or the repo covers
+/// every worktree.
+/// Doing it first means a failure leaves no worktree without a Task row.
 fn place(cx: &Cx, req: &StartReq, facts: &Facts) -> Result<Placed, CommandError> {
+    cx.git()
+        .exclude_scratch(facts.bound.as_deref().unwrap_or(&facts.repo))
+        .map_err(|e| CommandError::new(ErrorKind::Failed, e))?;
     let wt = match &facts.bound {
         Some(path) => Worktree {
             path: path.clone(),
@@ -264,9 +280,6 @@ fn place(cx: &Cx, req: &StartReq, facts: &Facts) -> Result<Placed, CommandError>
             .surface()
             .create_worktree(&facts.repo, &req.name, req.base.as_deref())?,
     };
-    cx.git()
-        .exclude_scratch(&wt.path)
-        .map_err(|e| CommandError::new(ErrorKind::Failed, e))?;
     let ws = cx
         .surface()
         .ensure_workspace(&wt, &workspace_label(&req.name))?;
