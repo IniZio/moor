@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use moor_core::activity::{Activity, AgentState, Source};
+use moor_core::config::{parse_user, UserConfig};
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::seam::clock::Ts;
@@ -42,7 +43,7 @@ fn task_view_maps_row_without_box() {
         ..Fields::default()
     };
     store.apply(Decision::new(id).set(fields)).unwrap();
-    let v = task_view(&store.task(id).unwrap().unwrap());
+    let v = task_view(&store.task(id).unwrap().unwrap(), &UserConfig::default());
     assert_eq!(
         (v.id, v.name.as_str(), v.repo.as_str()),
         (id.get(), "t", "r")
@@ -78,7 +79,9 @@ fn task_view_maps_box() {
             handle: BoxHandle::new("h"),
         }))
         .unwrap();
-    let b = task_view(&store.task(id).unwrap().unwrap()).r#box.unwrap();
+    let b = task_view(&store.task(id).unwrap().unwrap(), &UserConfig::default())
+        .r#box
+        .unwrap();
     assert_eq!(
         (b.state, b.provider.as_str(), b.handle.as_deref()),
         (BoxState::Ready, "p", Some("h"))
@@ -103,16 +106,47 @@ fn box_view_maps_sleep_reason() {
     store
         .apply(Decision::new(id).set(fields).box_input(BoxInput::Requested))
         .unwrap();
-    let b = task_view(&store.task(id).unwrap().unwrap()).r#box.unwrap();
-    assert_eq!((b.sleep.after, b.sleep.reason), (None, None));
+    let b = task_view(&store.task(id).unwrap().unwrap(), &UserConfig::default())
+        .r#box
+        .unwrap();
+    assert_eq!(
+        (b.sleep.after.as_deref(), b.sleep.reason),
+        (Some("30m"), None)
+    );
     let fields = Fields {
         box_sleep_reason: Field::Set("provider cannot wake".into()),
         ..Fields::default()
     };
     store.apply(Decision::new(id).set(fields)).unwrap();
-    let b = task_view(&store.task(id).unwrap().unwrap()).r#box.unwrap();
-    assert_eq!(b.sleep.after, None);
+    let b = task_view(&store.task(id).unwrap().unwrap(), &UserConfig::default())
+        .r#box
+        .unwrap();
+    assert_eq!(b.sleep.after.as_deref(), Some("30m"));
     assert_eq!(b.sleep.reason.as_deref(), Some("provider cannot wake"));
+}
+
+#[test]
+fn box_view_shows_configured_sleep_after() {
+    let dir = tempfile::tempdir().unwrap();
+    let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
+    let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
+    let nt = NewTask {
+        name: TaskName::parse("t").unwrap(),
+        repo: "r".into(),
+    };
+    let id = store.apply(Decision::insert(nt)).unwrap().task;
+    let fields = Fields {
+        box_provider: Field::Set(ProviderId::new("p")),
+        ..Fields::default()
+    };
+    store
+        .apply(Decision::new(id).set(fields).box_input(BoxInput::Requested))
+        .unwrap();
+    let config: UserConfig = parse_user("u.yaml", "box: {sleep_after: 45m}").unwrap();
+    let b = task_view(&store.task(id).unwrap().unwrap(), &config)
+        .r#box
+        .unwrap();
+    assert_eq!(b.sleep.after.as_deref(), Some("45m"));
 }
 
 #[test]
@@ -138,11 +172,15 @@ fn task_view_with_run_fills_run() {
         started_at: Ts::from_millis(86_400_000),
         finished_at: None,
     };
-    let r = task_view_with_run(&row, Some(&run)).run.unwrap();
+    let r = task_view_with_run(&row, Some(&run), &UserConfig::default())
+        .run
+        .unwrap();
     assert_eq!(r.id, 5);
     assert_eq!(r.argv, ["make", "test"]);
     assert_eq!(r.started_at, "1970-01-02T00:00:00Z");
-    assert!(task_view_with_run(&row, None).run.is_none());
+    assert!(task_view_with_run(&row, None, &UserConfig::default())
+        .run
+        .is_none());
 }
 
 fn reading(state: AgentState, source: Source, pane: PaneLiveness) -> Reading {

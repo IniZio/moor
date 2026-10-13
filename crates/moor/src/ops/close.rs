@@ -62,7 +62,7 @@ pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
             .collect()
     });
     Ok(CloseView {
-        task: task_view(&closed),
+        task: task_view(&closed, cx.config()),
         box_deleted,
         workspace_closed,
         agent_stopped: false,

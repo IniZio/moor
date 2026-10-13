@@ -204,7 +204,7 @@ fn cannot_sleep_refuses_and_stores_the_reason() {
     assert_eq!(states(&f), (TaskState::Idle, BoxState::Ready));
     assert_eq!(reason(&f).as_deref(), Some("provider cannot wake"));
     let row = f.cx.store().unwrap().task(f.id).unwrap().unwrap();
-    let shown = task_view(&row).r#box.unwrap().sleep.reason;
+    let shown = task_view(&row, f.cx.config()).r#box.unwrap().sleep.reason;
     assert_eq!(shown.as_deref(), Some("provider cannot wake"));
     assert!(!kinds(&f).contains(&"asleep".to_owned()));
 }
