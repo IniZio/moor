@@ -62,8 +62,10 @@ fn task_without_box_serializes_null() {
 fn agent_and_run_nested_keys() {
     let mut t = task();
     t.agent = Some(AgentView {
+        pane: "live".into(),
         state: "idle".into(),
         source: "hook".into(),
+        exit_code: None,
         waiting_for: None,
     });
     t.run = Some(RunView {
@@ -74,7 +76,13 @@ fn agent_and_run_nested_keys() {
     let v = serde_json::to_value(t).ok().unwrap_or(Value::Null);
     assert_eq!(
         v.get("agent"),
-        Some(&json!({"state": "idle", "source": "hook", "waiting_for": null}))
+        Some(&json!({
+            "pane": "live",
+            "state": "idle",
+            "source": "hook",
+            "exit_code": null,
+            "waiting_for": null
+        }))
     );
     assert_eq!(
         v.get("run"),
