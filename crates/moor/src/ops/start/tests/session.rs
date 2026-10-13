@@ -198,6 +198,26 @@ fn restarting_an_idle_task_with_a_goal_and_no_session_wakes_and_launches_once() 
 }
 
 #[test]
+fn restarting_an_idle_task_without_a_goal_or_session_wakes_it_and_launches_nothing() {
+    let engine = Arc::new(FakeEngine::new());
+    let w = with_engine(&engine);
+    let first = run(&w.cx, &req("demo")).unwrap();
+    let id = TaskId::new(first.task.id);
+    let store = w.cx.store().unwrap();
+    store
+        .apply(Decision::new(id).task_input(TaskInput::AgentQuiet))
+        .unwrap();
+    let again = run(&w.cx, &req("demo")).unwrap();
+    assert_eq!(again.task.state, TaskState::Working);
+    assert!(store
+        .events(id, 100)
+        .unwrap()
+        .iter()
+        .any(|e| e.kind == "busy"));
+    assert!(engine.launches().is_empty());
+}
+
+#[test]
 fn rerunning_after_a_failed_launch_launches_once_and_stays_working() {
     let engine = Arc::new(FakeEngine::new().launch_result(Err(launch_error("pane", "no tab"))));
     let w = with_engine(&engine);
