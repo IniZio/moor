@@ -182,8 +182,15 @@ fn settle_all(cx: &Cx, store: &Store) -> Result<(), CommandError> {
         if !ready || row.setup_failed_at.is_some() {
             continue;
         }
-        let reading = activity::read(cx, store, row, cx.clock().now())?;
-        activity::settle(store, row, &reading)?;
+        let settled = activity::read(cx, store, row, cx.clock().now())
+            .and_then(|reading| activity::settle(store, row, &reading));
+        if let Err(e) = settled {
+            cx.warn(Warning {
+                code: "settle_failed".to_owned(),
+                message: format!("could not settle task {}: {}", row.id.get(), e.error),
+            });
+            continue;
+        }
         autosleep::run(cx, store, row.id);
     }
     Ok(())
