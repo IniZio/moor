@@ -1,11 +1,13 @@
 use std::sync::Arc;
+use std::time::Duration;
 
-use moor_core::activity::{HookRead, PaneObs, PaneRead, PaneStatus, Probes};
+use moor_core::activity::{PaneObs, PaneStatus};
 use moor_core::domain::decision::Decision;
 use moor_core::domain::task::{TaskInput, TaskState};
 use moor_core::seam::agent_profile::FirstRunPrompt;
 use moor_core::seam::driver::ExecOutcome;
 use moor_core::seam::engine::EngineError;
+use moor_core::seam::surface::SurfaceError;
 use moor_core::{ErrorKind, ShowReq, StartReq, TaskId, TaskName, WaitFor, WaitReq};
 
 use super::{req, world, world_at, World};
@@ -304,16 +306,13 @@ fn waiting_for_a_run_does_not_return_the_dispatch_failure() {
     assert!(!v.timed_out);
 }
 
-/// Probes whose pane shows `tail`.
-fn pane_tail(tail: &str) -> Probes {
-    Probes {
-        hook: HookRead::Absent,
-        pane: PaneRead::Fresh(PaneObs {
-            status: PaneStatus::Unknown,
-            tail: tail.to_owned(),
-            prompt: None,
-            exit_marker: None,
-        }),
+/// A pane observation showing `tail`.
+fn pane_tail(tail: &str) -> PaneObs {
+    PaneObs {
+        status: PaneStatus::Unknown,
+        tail: tail.to_owned(),
+        prompt: None,
+        exit_marker: None,
     }
 }
 
@@ -328,52 +327,98 @@ fn events_of(w: &World, id: TaskId) -> Vec<(String, serde_json::Value)> {
         .collect()
 }
 
+/// How many times the agent pane was read.
+fn pane_reads(w: &World) -> usize {
+    w.surface
+        .calls()
+        .iter()
+        .filter(|c| *c == "pane_obs p-1")
+        .count()
+}
+
+/// A world whose engine shows the folder-trust prompt for "trust this folder".
+fn prompting() -> World {
+    let engine =
+        Arc::new(FakeEngine::new().prompt("trust this folder", FirstRunPrompt::FolderTrust));
+    with_engine(&engine)
+}
+
 #[test]
 fn a_first_run_prompt_in_the_pane_is_recorded_and_warned() {
-    let engine = Arc::new(
-        FakeEngine::new()
-            .probes("moor-1", pane_tail("Do you trust this folder?"))
-            .prompt("trust this folder", FirstRunPrompt::FolderTrust),
-    );
-    let w = with_engine(&engine);
+    let w = prompting();
+    w.surface
+        .push_pane_obs("p-1", Ok(pane_tail("Do you trust this folder?")));
     let v = run(&w.cx, &goal_req("demo")).unwrap();
     let events = events_of(&w, TaskId::new(v.task.id));
     let blocked = events.iter().find(|(k, _)| k == "agent_prompt_blocked");
     assert_eq!(
         blocked.unwrap().1,
-        serde_json::json!({"prompt": "folder_trust"})
+        serde_json::json!({"pane": "p-1", "prompt": "folder_trust", "line": "trust this folder"})
     );
     assert!(v.agent.launched);
-    assert_eq!(engine.probe_count("moor-1"), 1);
-    assert!(w
-        .cx
-        .take_warnings()
+    assert_eq!(pane_reads(&w), 1);
+    let warnings = w.cx.take_warnings();
+    let warning = warnings
         .iter()
-        .any(|x| x.code == "agent_prompt_blocked" && x.message.contains("folder_trust")));
+        .find(|x| x.code == "agent_prompt_blocked")
+        .unwrap();
+    assert!(warning.message.contains("folder_trust"));
+    assert!(warning.message.contains("\"trust this folder\""));
 }
 
 #[test]
 fn no_prompt_within_the_window_records_nothing_and_polls_a_bounded_number_of_times() {
-    let engine = Arc::new(FakeEngine::new().probes("moor-1", pane_tail("working")));
-    let w = with_engine(&engine);
+    let w = prompting();
+    w.surface.push_pane_obs("p-1", Ok(pane_tail("working")));
     let v = run(&w.cx, &goal_req("demo")).unwrap();
     let events = events_of(&w, TaskId::new(v.task.id));
     assert!(!events.iter().any(|(k, _)| k.starts_with("agent_prompt")));
-    assert_eq!(engine.probe_count("moor-1"), 17);
+    assert_eq!(pane_reads(&w), 17);
     assert!(w.cx.take_warnings().is_empty());
 }
 
 #[test]
+fn a_zero_window_reads_the_pane_once() {
+    let mut w = prompting();
+    w.cx = w.cx.with_prompt_window(Duration::ZERO);
+    w.surface.push_pane_obs("p-1", Ok(pane_tail("working")));
+    run(&w.cx, &goal_req("demo")).unwrap();
+    assert_eq!(pane_reads(&w), 1);
+}
+
+#[test]
 fn a_failed_pane_read_records_a_check_failure_and_start_succeeds() {
-    let probes = Probes {
-        hook: HookRead::Absent,
-        pane: PaneRead::TimedOut,
-    };
-    let engine = Arc::new(FakeEngine::new().probes("moor-1", probes));
-    let w = with_engine(&engine);
+    let w = prompting();
+    w.surface.push_pane_obs("p-1", Err(SurfaceError::Timeout));
     let v = run(&w.cx, &goal_req("demo")).unwrap();
     let events = events_of(&w, TaskId::new(v.task.id));
-    assert!(events.iter().any(|(k, _)| k == "agent_prompt_check_failed"));
+    let failed = events
+        .iter()
+        .find(|(k, _)| k == "agent_prompt_check_failed")
+        .unwrap();
+    assert_eq!(
+        failed.1,
+        serde_json::json!({"pane": "p-1", "error": "timed out"})
+    );
     assert!(v.agent.launched);
-    assert_eq!(engine.probe_count("moor-1"), 1);
+    assert_eq!(pane_reads(&w), 1);
+}
+
+#[test]
+fn a_gone_pane_stops_the_watch_after_one_read() {
+    let w = prompting();
+    let v = run(&w.cx, &goal_req("demo")).unwrap();
+    let events = events_of(&w, TaskId::new(v.task.id));
+    assert!(!events.iter().any(|(k, _)| k.starts_with("agent_prompt")));
+    assert_eq!(pane_reads(&w), 1);
+}
+
+#[test]
+fn the_watch_matches_only_the_last_forty_pane_lines() {
+    let w = prompting();
+    let tail = format!("trust this folder\n{}", "x\n".repeat(40));
+    w.surface.push_pane_obs("p-1", Ok(pane_tail(&tail)));
+    let v = run(&w.cx, &goal_req("demo")).unwrap();
+    let events = events_of(&w, TaskId::new(v.task.id));
+    assert!(!events.iter().any(|(k, _)| k == "agent_prompt_blocked"));
 }

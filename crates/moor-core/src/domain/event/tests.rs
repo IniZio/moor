@@ -98,8 +98,15 @@ fn all_events() -> Vec<Event> {
         Event::SessionsStopped {
             sessions: vec![s("x")],
         },
-        Event::AgentPromptBlocked { prompt: s("p") },
-        Event::AgentPromptCheckFailed { error: s("e") },
+        Event::AgentPromptBlocked {
+            pane: s("p"),
+            prompt: s("t"),
+            line: s("l"),
+        },
+        Event::AgentPromptCheckFailed {
+            pane: s("p"),
+            error: s("e"),
+        },
     ]
 }
 

@@ -79,15 +79,19 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
         Ok(id) => id,
         Err(e) => return raced(cx, store, req, e),
     };
-    let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "start", boxlock::WAIT)?;
-    let run = if reread(store, id)?.boxed.is_none() {
-        provision(cx, store, id, Entry::Fresh, &cfg)?
-    } else {
-        SetupRun::Skipped
+    let (run, agent) = {
+        let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "start", boxlock::WAIT)?;
+        let run = if reread(store, id)?.boxed.is_none() {
+            provision(cx, store, id, Entry::Fresh, &cfg)?
+        } else {
+            SetupRun::Skipped
+        };
+        let agent = launch::run(cx, store, req, id, run.exit(), &|| {
+            Ok(cfg.model.as_ref().map(|m| m.value.clone()))
+        })?;
+        (run, agent)
     };
-    let agent = launch::run(cx, store, req, id, run.exit(), &|| {
-        Ok(cfg.model.as_ref().map(|m| m.value.clone()))
-    })?;
+    launch::watch(cx, store, id, &agent);
     let row = reread(store, id)?;
     let mut v = queued_view(cx, &row, false, &cfg.provider.value);
     v.setup = run.view();
@@ -167,6 +171,7 @@ fn attach(
     };
     wake_idle(store, row.id)?;
     let agent = relaunch::run(cx, store, req, row.id, setup_exit, &model)?;
+    launch::watch(cx, store, row.id, &agent);
     let row = &reread(store, row.id)?;
     let mut v = with_provider(cx, row, true)?;
     if let Some(run) = reprovisioned {
