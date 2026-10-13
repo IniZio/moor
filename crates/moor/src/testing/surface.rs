@@ -24,7 +24,9 @@ struct State {
     panes: Vec<String>,
     calls: Vec<String>,
     obs: HashMap<String, VecDeque<Result<PaneObs, SurfaceError>>>,
+    opens: Vec<PaneCmd>,
     fail_ensure: Option<SurfaceError>,
+    fail_open_pane: Option<SurfaceError>,
     fail_close_pane: Option<SurfaceError>,
     fail_close_ws: Option<SurfaceError>,
     fail_focus_ws: Option<SurfaceError>,
@@ -54,6 +56,17 @@ impl FakeSurface {
     pub(crate) fn fail_ensure_workspace(self, e: SurfaceError) -> Self {
         self.st().fail_ensure = Some(e);
         self
+    }
+
+    /// The next `open_pane` fails once with `e`.
+    pub(crate) fn fail_open_pane(self, e: SurfaceError) -> Self {
+        self.st().fail_open_pane = Some(e);
+        self
+    }
+
+    /// Every command `open_pane` was given, in call order.
+    pub(crate) fn opened(&self) -> Vec<PaneCmd> {
+        self.st().opens.clone()
     }
 
     /// The next `close_pane` fails once with `e`.
@@ -140,9 +153,13 @@ impl Surface for FakeSurface {
         Ok(WorkspaceRef::new(id))
     }
 
-    fn open_pane(&self, ws: &WorkspaceRef, _cmd: &PaneCmd) -> Result<PaneRef, SurfaceError> {
+    fn open_pane(&self, ws: &WorkspaceRef, cmd: &PaneCmd) -> Result<PaneRef, SurfaceError> {
         let mut s = self.st();
         s.calls.push(format!("open_pane {}", ws.as_str()));
+        s.opens.push(cmd.clone());
+        if let Some(e) = s.fail_open_pane.take() {
+            return Err(e);
+        }
         if !s.workspaces.iter().any(|w| w == ws.as_str()) {
             return Err(SurfaceError::NotFound);
         }

@@ -5,11 +5,11 @@
     reason = "test fake; not yet used by ops"
 )]
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use moor_core::activity::{HookRead, PaneRead, Probes};
-use moor_core::seam::engine::{Engine, EngineError, SessionRef};
+use moor_core::seam::engine::{Engine, EngineError, LaunchReq, SessionRef};
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::PaneRef;
 
@@ -19,6 +19,8 @@ struct State {
     fail_probe: HashMap<String, EngineError>,
     counts: HashMap<String, usize>,
     panes: HashMap<String, Option<PaneRef>>,
+    launch_results: VecDeque<Result<SessionRef, EngineError>>,
+    launches: Vec<LaunchReq>,
 }
 
 /// Scripted Engine: probes are served per session id and counted.
@@ -49,6 +51,17 @@ impl FakeEngine {
         self
     }
 
+    /// The next launch returns `r`; launches past the scripted ones succeed with pane `p-1`.
+    pub(crate) fn launch_result(self, r: Result<SessionRef, EngineError>) -> Self {
+        self.st().launch_results.push_back(r);
+        self
+    }
+
+    /// Every launch request so far, in call order.
+    pub(crate) fn launches(&self) -> Vec<LaunchReq> {
+        self.st().launches.clone()
+    }
+
     /// How many times `session` was probed, failures included.
     pub(crate) fn probe_count(&self, session: &str) -> usize {
         self.st().counts.get(session).copied().unwrap_or(0)
@@ -72,6 +85,20 @@ impl Engine for FakeEngine {
             hook: HookRead::Absent,
             pane: PaneRead::Absent,
         }))
+    }
+
+    fn launch(&self, req: &LaunchReq) -> Result<SessionRef, EngineError> {
+        let mut st = self.st();
+        st.launches.push(req.clone());
+        st.launch_results.pop_front().unwrap_or_else(|| {
+            Ok(SessionRef {
+                id: String::new(),
+                handle: req.handle.clone(),
+                workdir: req.workdir.clone(),
+                worktree: req.worktree.clone(),
+                pane: Some(PaneRef::new("p-1")),
+            })
+        })
     }
 }
 
