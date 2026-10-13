@@ -362,3 +362,17 @@ fn a_goal_on_a_goalless_task_with_a_live_pane_warns() {
     assert!(warning_codes(&w).contains(&"goal_ignored".to_owned()));
     assert_eq!(engine.launches().len(), 1);
 }
+
+#[test]
+fn a_given_goal_replaces_the_stored_goal_when_there_is_no_session() {
+    let (w, engine, id) = started();
+    let store = w.cx.store().unwrap();
+    let live = store.live_session(id).unwrap().unwrap();
+    store.end_session(live.id, None, None).unwrap();
+    let v = run(&w.cx, &goal_req("second goal")).unwrap();
+    assert!(v.agent.launched);
+    assert_eq!(engine.launches().len(), 2);
+    assert_eq!(relaunch_of(&engine).goal.as_deref(), Some("second goal"));
+    let row = store.task(id).unwrap().unwrap();
+    assert_eq!(row.goal.as_deref(), Some("second goal"));
+}

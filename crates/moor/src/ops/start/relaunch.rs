@@ -65,14 +65,11 @@ pub(super) fn run(
     relaunch(cx, store, req, &old, &end, model)
 }
 
-/// Stores a given goal on a Task that has none, so the launch brief carries it.
+/// Stores a given goal on the Task, replacing any it holds, so the launch brief carries it.
 fn store_goal(store: &Store, req: &StartReq, id: TaskId) -> Result<(), CommandError> {
     let Some(g) = &req.goal else {
         return Ok(());
     };
-    if reread(store, id)?.goal.is_some() {
-        return Ok(());
-    }
     let set = Fields {
         goal: Field::Set(g.clone()),
         ..Fields::default()
