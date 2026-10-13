@@ -193,3 +193,17 @@ fn the_matched_line_loses_box_edges_and_ansi_codes() {
         .unwrap();
     assert_eq!(m.line, "Security notes");
 }
+
+#[test]
+fn operating_system_commands_are_stripped_from_the_matched_line() {
+    let bell = "\x1b]0;title\x07Press Enter to continue";
+    assert_eq!(
+        Claude.first_run_prompt(bell).unwrap().line,
+        "Press Enter to continue"
+    );
+    let st = "\x1b]8;;http://x\x1b\\Press Enter to continue";
+    assert_eq!(
+        Claude.first_run_prompt(st).unwrap().line,
+        "Press Enter to continue"
+    );
+}

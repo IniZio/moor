@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use moor_core::activity::{PaneObs, PaneStatus};
 use moor_core::domain::decision::{Decision, Field, Fields};
+use moor_core::seam::agent_profile::FirstRunPrompt;
 use moor_core::seam::engine::{EngineError, LaunchReq, SessionRef};
 use moor_core::seam::surface::{PaneRef, SurfaceError};
 use moor_core::{BoxHandle, BoxPath, StartReq, TaskId};
@@ -264,4 +265,35 @@ fn a_gone_pane_start_is_refused_while_another_op_holds_the_lock() {
     assert_eq!(engine.launches().len(), 1);
     drop(held);
     assert!(run(&w.cx, &req("demo")).unwrap().agent.launched);
+}
+
+#[test]
+fn a_relaunch_watches_its_new_pane_for_a_first_run_prompt() {
+    let engine = Arc::new(
+        FakeEngine::new()
+            .launch_result(Ok(session("p-1")))
+            .launch_result(Ok(session("p-2")))
+            .prompt("trust this folder", FirstRunPrompt::FolderTrust),
+    );
+    let mut w = world(FakeDriver::new());
+    w.cx = w.cx.with_engine(engine);
+    let first = run(&w.cx, &goal_req("ship it")).unwrap();
+    let id = TaskId::new(first.task.id);
+    gone(&w);
+    w.surface.push_pane_obs(
+        "p-2",
+        Ok(PaneObs {
+            tail: "Do you trust this folder?".to_owned(),
+            ..obs(None)
+        }),
+    );
+    let v = run(&w.cx, &req("demo")).unwrap();
+    assert!(v.agent.launched);
+    let events = w.cx.store().unwrap().events(id, 50).unwrap();
+    let blocked = events
+        .iter()
+        .find(|e| e.kind == "agent_prompt_blocked")
+        .unwrap();
+    assert_eq!(blocked.payload.get("pane"), Some(&"p-2".into()));
+    assert_eq!(blocked.payload.get("prompt"), Some(&"folder_trust".into()));
 }

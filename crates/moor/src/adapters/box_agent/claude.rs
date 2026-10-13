@@ -91,19 +91,35 @@ impl AgentProfile for Claude {
     }
 }
 
-/// `line` without ANSI escape sequences.
+/// `line` without ANSI escape sequences: CSI, and OSC ended by BEL or `ESC \`.
 fn strip_ansi(line: &str) -> String {
     let mut out = String::with_capacity(line.len());
     let mut chars = line.chars();
     while let Some(c) = chars.next() {
         if c != '\u{1b}' {
             out.push(c);
-        } else if chars.next() == Some('[') {
-            for f in chars.by_ref() {
-                if ('@'..='~').contains(&f) {
-                    break;
+            continue;
+        }
+        match chars.next() {
+            Some('[') => {
+                for f in chars.by_ref() {
+                    if ('@'..='~').contains(&f) {
+                        break;
+                    }
                 }
             }
+            Some(']') => {
+                while let Some(f) = chars.next() {
+                    if f == '\u{7}' {
+                        break;
+                    }
+                    if f == '\u{1b}' {
+                        chars.next();
+                        break;
+                    }
+                }
+            }
+            _ => {}
         }
     }
     out
