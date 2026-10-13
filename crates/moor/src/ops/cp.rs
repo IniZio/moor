@@ -15,6 +15,7 @@ use moor_core::{CpReq, ErrorKind};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
+use crate::ops::common::wake::wake_if_asleep;
 use crate::store::TaskRow;
 
 /// Run `cp`.
@@ -36,9 +37,15 @@ pub(crate) fn run(cx: &Cx, req: &CpReq) -> Result<CpValue, CommandError> {
         })?
         .id;
     let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "cp", boxlock::WAIT)?;
-    let row = store.task(id)?.ok_or_else(|| {
-        CommandError::new(ErrorKind::Failed, format!("no task {}", req.task.as_str()))
-    })?;
+    let reload = || {
+        store.task(id)?.ok_or_else(|| {
+            CommandError::new(ErrorKind::Failed, format!("no task {}", req.task.as_str()))
+        })
+    };
+    let mut row = reload()?;
+    if wake_if_asleep(cx, store, &row)? {
+        row = reload()?;
+    }
     let handle = usable_handle(&row)?;
     let from = source(cx, &handle, &req.src)?;
     let to = cx.cwd().join(&req.dest);
@@ -77,7 +84,6 @@ fn usable_handle(row: &TaskRow) -> Result<BoxHandle, CommandError> {
     match b.state {
         BoxState::Ready => {}
         BoxState::Gone | BoxState::Deleted => return Err(refuse("the Box is gone")),
-        BoxState::Asleep => return Err(refuse("the Box is asleep")),
         _ => return Err(refuse("the Box is not ready")),
     }
     b.handle

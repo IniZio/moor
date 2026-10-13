@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use moor_core::domain::boxes::BoxInput;
+use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::task::{SetupOutcome, TaskInput};
 use moor_core::name::BoxPath;
@@ -288,14 +288,85 @@ fn box_that_is_not_ready_is_refused_without_a_copy() {
         run(&f.cx, &req("a", "a")).unwrap_err().kind,
         ErrorKind::Refused
     );
-    let g = fx();
-    let d = Decision::new(g.id).box_input(BoxInput::Sleep);
-    g.cx.store().unwrap().apply(d).unwrap();
-    assert_eq!(
-        run(&g.cx, &req("a", "a")).unwrap_err().kind,
-        ErrorKind::Refused
-    );
-    assert!(f.driver.copies().is_empty() && g.driver.copies().is_empty());
+    assert!(f.driver.copies().is_empty());
+}
+
+fn sleep(f: &Fx) {
+    let store = f.cx.store().unwrap();
+    store
+        .apply(Decision::new(f.id).task_input(TaskInput::AgentQuiet))
+        .unwrap();
+    store
+        .apply(
+            Decision::new(f.id)
+                .task_input(TaskInput::SleepCmd)
+                .box_input(BoxInput::Sleep),
+        )
+        .unwrap();
+}
+
+fn wake_calls(f: &Fx) -> usize {
+    f.driver
+        .calls()
+        .iter()
+        .filter(|c| c.starts_with("wake"))
+        .count()
+}
+
+fn box_state(f: &Fx) -> BoxState {
+    f.cx.store()
+        .unwrap()
+        .task(f.id)
+        .unwrap()
+        .unwrap()
+        .boxed
+        .unwrap()
+        .state
+}
+
+#[test]
+fn asleep_box_is_woken_before_the_copy() {
+    let f = fx();
+    sleep(&f);
+    run(&f.cx, &req("a", &dest(&f))).unwrap();
+    assert_eq!(wake_calls(&f), 1);
+    assert_eq!(f.driver.copies().len(), 1);
+    assert_eq!(box_state(&f), BoxState::Ready);
+    let k = kinds(&f);
+    assert!(k.contains(&"woke".to_owned()));
+    assert_eq!(copied(&f), 1);
+}
+
+#[test]
+fn failed_wake_leaves_the_box_asleep_and_makes_no_copy() {
+    let f = fx_with(FakeDriver::new().fail_wake(DriverError::NotFound), true);
+    sleep(&f);
+    run(&f.cx, &req("a", &dest(&f))).unwrap_err();
+    assert_eq!(wake_calls(&f), 1);
+    assert_eq!(box_state(&f), BoxState::Asleep);
+    assert!(f.driver.copies().is_empty());
+    assert_eq!(copied(&f), 0);
+}
+
+#[test]
+fn gone_asleep_box_is_refused_without_a_wake_or_copy() {
+    let f = fx();
+    sleep(&f);
+    let d = Decision::new(f.id).box_input(BoxInput::DriverMissing);
+    f.cx.store().unwrap().apply(d).unwrap();
+    let err = run(&f.cx, &req("a", "a")).unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Refused);
+    assert_eq!(wake_calls(&f), 0);
+    assert!(f.driver.copies().is_empty());
+    assert_eq!(copied(&f), 0);
+}
+
+#[test]
+fn ready_box_is_copied_without_a_wake() {
+    let f = fx();
+    run(&f.cx, &req("a", &dest(&f))).unwrap();
+    assert_eq!(wake_calls(&f), 0);
+    assert_eq!(f.driver.copies().len(), 1);
 }
 
 #[test]
