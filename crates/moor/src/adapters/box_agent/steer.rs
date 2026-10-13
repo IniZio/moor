@@ -10,6 +10,8 @@ use moor_core::seam::surface::{Key, PaneRef, Surface, SurfaceError};
 
 /// Time for the pane to take the typed text, and then the submit key.
 const SUBMIT_DELAY: Duration = Duration::from_millis(300);
+/// How many trailing lines of the pane show the input after submitting.
+const CHECK_LINES: usize = 12;
 /// How many trailing characters of the text show that it is still in the input.
 const TAIL_CHARS: usize = 24;
 
@@ -37,6 +39,7 @@ pub(super) fn steer(
             send(surface.send_keys(pane, &keys), "menu")?;
             Ok(SteerOutcome {
                 submit_retried: false,
+                submit_checked: true,
             })
         }
         Steer::Text(text) => {
@@ -45,17 +48,21 @@ pub(super) fn steer(
             clock.sleep(SUBMIT_DELAY);
             send(surface.send_keys(pane, &[Key::CtrlM]), "submit")?;
             clock.sleep(SUBMIT_DELAY);
-            let retry = match surface.pane_obs(pane, deadline) {
+            let (retry, checked) = match surface.pane_obs(pane, deadline) {
                 Ok(obs) if obs.exit_marker.is_some() => return Err(EngineError::PaneGone),
-                Ok(obs) => submit_pending(&obs.tail, text, profile.busy_marker()),
+                Ok(obs) => (
+                    submit_pending(&last_lines(&obs.tail), text, profile.busy_marker()),
+                    true,
+                ),
                 Err(SurfaceError::NotFound) => return Err(EngineError::PaneGone),
-                Err(_) => false,
+                Err(_) => (false, false),
             };
             if retry {
                 send(surface.send_keys(pane, &[Key::CtrlM]), "submit")?;
             }
             Ok(SteerOutcome {
                 submit_retried: retry,
+                submit_checked: checked,
             })
         }
     }
@@ -86,6 +93,13 @@ const fn failed(step: &'static str, message: String) -> EngineError {
 /// The key for a digit character.
 fn digit(c: char) -> Option<Key> {
     u8::try_from(c.to_digit(10)?).ok().map(Key::Digit)
+}
+
+/// The last [`CHECK_LINES`] lines of `tail`.
+fn last_lines(tail: &str) -> String {
+    let mut lines: Vec<&str> = tail.lines().rev().take(CHECK_LINES).collect();
+    lines.reverse();
+    lines.join("\n")
 }
 
 /// Whether the end of `text` is still in the pane's input and the agent shows no busy marker.
