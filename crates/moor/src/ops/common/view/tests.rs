@@ -85,6 +85,35 @@ fn task_view_maps_box() {
 }
 
 #[test]
+fn box_view_maps_sleep_reason() {
+    let dir = tempfile::tempdir().unwrap();
+    let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
+    let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
+    let nt = NewTask {
+        name: TaskName::parse("t").unwrap(),
+        repo: "r".into(),
+    };
+    let id = store.apply(Decision::insert(nt)).unwrap().task;
+    let fields = Fields {
+        box_provider: Field::Set(ProviderId::new("p")),
+        ..Fields::default()
+    };
+    store
+        .apply(Decision::new(id).set(fields).box_input(BoxInput::Requested))
+        .unwrap();
+    let b = task_view(&store.task(id).unwrap().unwrap()).r#box.unwrap();
+    assert_eq!((b.sleep.after, b.sleep.reason), (None, None));
+    let fields = Fields {
+        box_sleep_reason: Field::Set("provider cannot wake".into()),
+        ..Fields::default()
+    };
+    store.apply(Decision::new(id).set(fields)).unwrap();
+    let b = task_view(&store.task(id).unwrap().unwrap()).r#box.unwrap();
+    assert_eq!(b.sleep.after, None);
+    assert_eq!(b.sleep.reason.as_deref(), Some("provider cannot wake"));
+}
+
+#[test]
 fn task_view_with_run_fills_run() {
     let dir = tempfile::tempdir().unwrap();
     let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
