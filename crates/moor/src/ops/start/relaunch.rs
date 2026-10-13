@@ -74,13 +74,13 @@ pub(super) fn run(
 /// Refuses `--resume` for a Task with no stored agent session.
 ///
 /// # Errors
-/// [`ErrorKind::Refused`] when `req` resumes and `row` holds no session id.
+/// [`ErrorKind::Refused`] when `req` resumes without a goal and `row` holds no session id.
 pub(super) fn check_resume(req: &StartReq, row: &TaskRow) -> Result<(), CommandError> {
     let stored = row
         .agent_session_id
         .as_deref()
         .is_some_and(|s| !s.is_empty());
-    if req.resume && !stored {
+    if req.resume && req.goal.is_none() && !stored {
         return Err(nothing_to_resume());
     }
     Ok(())
@@ -102,7 +102,9 @@ fn on_live(cx: &Cx, req: &StartReq, row: &TaskRow, session: &SessionRow) {
         .surface()
         .pane_obs(&PaneRef::new(pane), Deadline(PANE_DEADLINE))
         .map_or(PaneStatus::Unknown, |obs| obs.status);
-    resume::register(cx, &row.name, pane, row.agent_session_id.as_deref(), state);
+    if let Some(agent) = row.agent_session_id.as_deref().filter(|a| !a.is_empty()) {
+        resume::report(cx, &row.name, pane, agent, state);
+    }
 }
 
 /// Stores a given goal on the Task, replacing any it holds, so the launch brief carries it.

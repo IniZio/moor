@@ -8,7 +8,7 @@ use moor_core::activity::{
 use moor_core::domain::decision::Decision;
 use moor_core::domain::task::{TaskInput, TaskState};
 use moor_core::seam::clock::Ts;
-use moor_core::{ShowReq, TaskId};
+use moor_core::{ShowReq, TaskId, TaskName};
 
 use super::{req, world, World};
 use crate::ops::common::activity::read;
@@ -266,15 +266,14 @@ fn a_task_that_cannot_be_settled_warns_and_the_others_still_settle() {
     assert!(codes.contains(&"settle_failed".to_owned()), "{codes:?}");
 }
 
-#[test]
-fn the_first_hook_session_id_is_registered_once() {
+/// A started `demo` whose session sits in pane `p-9` and whose hook reports session `agent-1`.
+fn hooked() -> (World, TaskId) {
     let mut w = world(FakeDriver::new());
     let id = TaskId::new(run(&w.cx, &req("demo")).unwrap().task.id);
     w.cx.store()
         .unwrap()
         .begin_session(id, SESSION, Some("p-9"))
         .unwrap();
-    w.surface.have_pane("p-9");
     let mut p = probes(&w, Some(HookKind::Busy), PaneStatus::Working);
     p.hook = HookRead::Fresh(HookRecord {
         kind: HookKind::Busy,
@@ -284,13 +283,62 @@ fn the_first_hook_session_id_is_registered_once() {
     });
     w.cx =
         w.cx.with_engine(Arc::new(FakeEngine::new().probes(SESSION, p)));
-    run(&w.cx, &req("demo")).unwrap();
-    run(&w.cx, &req("demo")).unwrap();
-    let seen: Vec<String> = w
-        .surface
+    (w, id)
+}
+
+fn registrations(w: &World) -> Vec<String> {
+    w.surface
         .calls()
         .into_iter()
         .filter(|c| c.starts_with("register_resume"))
-        .collect();
-    assert_eq!(seen, ["register_resume p-9 claude agent-1"]);
+        .collect()
+}
+
+fn show_task() -> ShowReq {
+    ShowReq {
+        task: Some(TaskName::parse("demo").unwrap()),
+        events: None,
+        agent: false,
+        reports: false,
+        pane: false,
+    }
+}
+
+#[test]
+fn the_first_hook_session_id_is_registered_once() {
+    let (w, _id) = hooked();
+    w.surface.have_pane("p-9");
+    run(&w.cx, &req("demo")).unwrap();
+    run(&w.cx, &req("demo")).unwrap();
+    assert_eq!(registrations(&w), ["register_resume p-9 claude agent-1"]);
+}
+
+#[test]
+fn an_id_a_show_stored_first_is_still_registered_by_the_next_start() {
+    let (w, id) = hooked();
+    w.surface.have_pane("p-9");
+    show::run(&w.cx, &show_task()).unwrap();
+    assert_eq!(row(&w, id).agent_session_id.as_deref(), Some("agent-1"));
+    assert!(registrations(&w).is_empty());
+    run(&w.cx, &req("demo")).unwrap();
+    assert_eq!(registrations(&w), ["register_resume p-9 claude agent-1"]);
+}
+
+#[test]
+fn a_failed_registration_is_tried_again_by_a_later_start() {
+    let (w, _id) = hooked();
+    run(&w.cx, &req("demo")).unwrap();
+    assert!(w
+        .cx
+        .take_warnings()
+        .iter()
+        .any(|x| x.code == "resume_not_registered"));
+    w.surface.have_pane("p-9");
+    run(&w.cx, &req("demo")).unwrap();
+    run(&w.cx, &req("demo")).unwrap();
+    assert_eq!(registrations(&w).len(), 2);
+    assert_eq!(
+        registrations(&w).last().map(String::as_str),
+        Some("register_resume p-9 claude agent-1")
+    );
 }
