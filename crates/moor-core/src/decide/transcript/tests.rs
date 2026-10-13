@@ -16,13 +16,13 @@ fn numbers_count_earlier_saves_only() {
 
 #[test]
 fn path_names_task_session_and_number() {
-    assert_eq!(relative_path(TaskId::new(4), 9, 2), "transcripts/4/9-2");
+    assert_eq!(relative_path(TaskId::new(4), 9, 2), "transcripts/4/9-2.tgz");
 }
 
 #[test]
 fn digest_is_sha256_hex() {
     assert_eq!(
-        digest(b"abc"),
+        digest(&b"abc"[..]).unwrap(),
         "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
     );
 }
