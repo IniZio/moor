@@ -8,6 +8,7 @@ use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::Intent;
 use moor_core::domain::task::TaskState;
 use moor_core::seam::clock::{Clock, Ts};
+use moor_core::view::LaunchFailure;
 use moor_core::{BoxHandle, ProviderId, RunId, TaskId, TaskName};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Row, TransactionBehavior};
 
@@ -32,7 +33,7 @@ const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 const TASK_SELECT: &str = "SELECT t.id, t.name, t.repo, t.issue, t.goal, t.base, t.branch, t.worktree, t.bound, \
     t.workspace_id, t.agent_session_id, t.state, t.state_reason, t.intent_kind, t.intent_pid, t.intent_run, \
     t.intent_at, t.setup_failed_at, t.created_at, t.updated_at, b.provider, b.handle, b.state, b.attempted_handle, b.workdir, \
-    b.egress_enforced, b.sleep_reason, b.updated_at, t.idle_since FROM tasks t LEFT JOIN boxes b ON b.task = t.id";
+    b.egress_enforced, b.sleep_reason, b.updated_at, t.idle_since, t.launch_failure FROM tasks t LEFT JOIN boxes b ON b.task = t.id";
 
 /// Store failure.
 #[derive(Debug, thiserror::Error)]
@@ -126,6 +127,8 @@ pub(crate) struct TaskRow {
     pub(crate) setup_failed_at: Option<Ts>,
     /// When the task last became Idle; none while it is not Idle.
     pub(crate) idle_since: Option<Ts>,
+    /// Why the last agent launch failed; cleared by a launch that succeeds.
+    pub(crate) launch_failure: Option<LaunchFailure>,
     /// Creation time.
     pub(crate) created_at: Ts,
     /// Last update.
@@ -353,6 +356,10 @@ fn task_from_row(row: &Row<'_>) -> Result<TaskRow, StoreError> {
         created_at: Ts::from_millis(row.get(18)?),
         updated_at: Ts::from_millis(row.get(19)?),
         idle_since: row.get::<_, Option<i64>>(28)?.map(Ts::from_millis),
+        launch_failure: row
+            .get::<_, Option<String>>(29)?
+            .map(|j| serde_json::from_str(&j))
+            .transpose()?,
         boxed: box_from_row(row)?,
     })
 }

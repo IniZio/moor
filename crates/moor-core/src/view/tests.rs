@@ -62,11 +62,13 @@ fn task_without_box_serializes_null() {
 fn agent_and_run_nested_keys() {
     let mut t = task();
     t.agent = Some(AgentView {
+        launched: true,
         pane: "live".into(),
         state: "idle".into(),
         source: "hook".into(),
         exit_code: None,
         waiting_for: None,
+        reason: None,
     });
     t.run = Some(RunView {
         id: 1,
@@ -77,11 +79,13 @@ fn agent_and_run_nested_keys() {
     assert_eq!(
         v.get("agent"),
         Some(&json!({
+            "launched": true,
             "pane": "live",
             "state": "idle",
             "source": "hook",
             "exit_code": null,
-            "waiting_for": null
+            "waiting_for": null,
+            "reason": null
         }))
     );
     assert_eq!(
@@ -106,6 +110,7 @@ fn start_view_keys_match_wire_shape() {
         agent: AgentLaunchView {
             launched: true,
             session: Some("s".into()),
+            reason: None,
         },
         warnings_inline: vec![],
     };
@@ -115,7 +120,7 @@ fn start_view_keys_match_wire_shape() {
             "task": task_json(), "attached": false, "queued": false, "promoted": ["a"],
             "setup": {"ran": true, "ok": true, "line": null},
             "dotfiles": {"ran": false, "ok": false, "ms": null},
-            "agent": {"launched": true, "session": "s"},
+            "agent": {"launched": true, "session": "s", "reason": null},
             "warnings_inline": []
         }))
     );

@@ -12,6 +12,7 @@ use moor_core::seam::clock::Ts;
 use moor_core::seam::engine::SessionRef;
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::PaneRef;
+use moor_core::view::LaunchFailure;
 use moor_core::Warning;
 
 use crate::cx::Cx;
@@ -59,6 +60,8 @@ pub(crate) struct Reading {
     pub(crate) may_quiet: bool,
     /// Whether a run of the Task is in flight.
     run_in_flight: bool,
+    /// Why the agent never launched; the Task has no session then.
+    pub(crate) launch_failure: Option<LaunchFailure>,
 }
 
 impl Reading {
@@ -80,6 +83,7 @@ impl Reading {
             pane,
             may_quiet,
             run_in_flight,
+            launch_failure: None,
         }
     }
 
@@ -90,6 +94,18 @@ impl Reading {
             pane: PaneLiveness::Gone,
             may_quiet: !run_in_flight,
             run_in_flight,
+            launch_failure: None,
+        }
+    }
+
+    /// No agent because its launch failed; the Task is never quiet for that.
+    const fn launch_failed(run_in_flight: bool, failure: LaunchFailure) -> Self {
+        Self {
+            activity: None,
+            pane: PaneLiveness::Gone,
+            may_quiet: false,
+            run_in_flight,
+            launch_failure: Some(failure),
         }
     }
 }
@@ -113,7 +129,10 @@ pub(crate) fn read(
         .in_flight_run(row.id, &|pid| cx.proc().alive(pid))?
         .is_some();
     let Some(session) = store.live_session(row.id)? else {
-        return Ok(Reading::none(in_flight));
+        return Ok(row.launch_failure.clone().map_or_else(
+            || Reading::none(in_flight),
+            |f| Reading::launch_failed(in_flight, f),
+        ));
     };
     let Some(sref) = session_ref(row, session.session_ref, session.pane) else {
         return Ok(Reading::none(in_flight));
@@ -154,6 +173,7 @@ pub(crate) fn read(
         activity: Some(activity),
         may_quiet,
         run_in_flight: in_flight,
+        launch_failure: None,
     })
 }
 

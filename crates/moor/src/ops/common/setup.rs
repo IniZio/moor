@@ -28,6 +28,8 @@ pub(crate) enum SetupRun {
     Failed {
         /// The failing line.
         line: String,
+        /// The script's exit code, when it exited.
+        exit: Option<i32>,
     },
 }
 
@@ -36,7 +38,7 @@ impl SetupRun {
     pub(crate) fn outcome(&self) -> SetupOutcome {
         match self {
             Self::Skipped | Self::Ok => SetupOutcome::Ok,
-            Self::Failed { line } => SetupOutcome::Failed { line: line.clone() },
+            Self::Failed { line, .. } => SetupOutcome::Failed { line: line.clone() },
         }
     }
 
@@ -49,11 +51,19 @@ impl SetupRun {
                 ok: true,
                 line: None,
             },
-            Self::Failed { line } => SetupView {
+            Self::Failed { line, .. } => SetupView {
                 ran: true,
                 ok: false,
                 line: Some(line.clone()),
             },
+        }
+    }
+
+    /// The exit code of a failed script.
+    pub(crate) const fn exit(&self) -> Option<i32> {
+        match self {
+            Self::Failed { exit, .. } => *exit,
+            _ => None,
         }
     }
 
@@ -97,11 +107,11 @@ pub(crate) fn run_setup(
         class: Some(cfg.size.value.as_str().to_owned()),
     };
     let deadline = Deadline(setup_deadline(cfg.setup.len()));
-    let reason = match cx.driver().exec(handle, &spec, deadline) {
+    let (reason, exit) = match cx.driver().exec(handle, &spec, deadline) {
         Ok(ExecOutcome::Exited { code: 0 }) => return SetupRun::Ok,
-        Ok(ExecOutcome::Exited { code }) => format!("exit {code}"),
-        Ok(ExecOutcome::Interrupted) => "interrupted".to_owned(),
-        Err(e) => e.to_string(),
+        Ok(ExecOutcome::Exited { code }) => (format!("exit {code}"), Some(code)),
+        Ok(ExecOutcome::Interrupted) => ("interrupted".to_owned(), None),
+        Err(e) => (e.to_string(), None),
     };
     let log = fetch_log(cx, handle, workdir, worktree);
     let line = cfg
@@ -113,7 +123,7 @@ pub(crate) fn run_setup(
         code: "setup_failed".to_owned(),
         message: format!("setup line `{line}` failed: {reason}"),
     });
-    SetupRun::Failed { line }
+    SetupRun::Failed { line, exit }
 }
 
 /// Copies the script's log out of the Box and reads it; empty when either step fails.

@@ -28,6 +28,17 @@ pub(crate) fn rfc3339(ts: Ts) -> String {
 
 /// Map a reading to the agent view; none when the Task has no agent.
 pub(crate) fn agent_view(reading: &Reading) -> Option<AgentView> {
+    if let Some(failure) = &reading.launch_failure {
+        return Some(AgentView {
+            launched: false,
+            pane: reading.pane.as_str().to_owned(),
+            state: "failed".to_owned(),
+            source: "launch".to_owned(),
+            exit_code: None,
+            waiting_for: None,
+            reason: Some(failure.clone()),
+        });
+    }
     let activity = reading.activity.as_ref()?;
     let (exit_code, waiting_for) = match &activity.state {
         AgentState::Exited { code } => (Some(*code), None),
@@ -35,11 +46,13 @@ pub(crate) fn agent_view(reading: &Reading) -> Option<AgentView> {
         _ => (None, None),
     };
     Some(AgentView {
+        launched: true,
         pane: reading.pane.as_str().to_owned(),
         state: activity.state.as_str().to_owned(),
         source: activity.source.as_str().to_owned(),
         exit_code,
         waiting_for,
+        reason: None,
     })
 }
 
