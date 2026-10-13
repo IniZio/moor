@@ -264,6 +264,10 @@ impl Surface for Herdr {
         self.observe(pane, deadline)
     }
 
+    fn focus_workspace(&self, ws: &WorkspaceRef) -> Result<(), SurfaceError> {
+        self.call(&["workspace", "focus", ws.as_str()]).map(drop)
+    }
+
     fn close_workspace(&self, ws: &WorkspaceRef) -> Result<(), SurfaceError> {
         self.call(&["workspace", "close", ws.as_str()]).map(drop)
     }
