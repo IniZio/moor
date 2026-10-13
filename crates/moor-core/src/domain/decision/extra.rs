@@ -102,6 +102,15 @@ pub enum ExtraEvent {
         /// What went wrong.
         error: String,
     },
+    /// A message or menu choice was sent to the agent.
+    Steered {
+        /// The agent session it went to.
+        session: String,
+        /// What was sent.
+        message: String,
+        /// Whether the submit key was pressed a second time.
+        submit_retried: bool,
+    },
 }
 
 impl From<ExtraEvent> for Event {
@@ -152,6 +161,15 @@ impl From<ExtraEvent> for Event {
             ExtraEvent::TranscriptFailed { trigger, error } => {
                 Self::TranscriptFailed { trigger, error }
             }
+            ExtraEvent::Steered {
+                session,
+                message,
+                submit_retried,
+            } => Self::Steered {
+                session,
+                message,
+                submit_retried,
+            },
         }
     }
 }
@@ -208,6 +226,15 @@ impl TryFrom<Event> for ExtraEvent {
             Event::TranscriptFailed { trigger, error } => {
                 Ok(Self::TranscriptFailed { trigger, error })
             }
+            Event::Steered {
+                session,
+                message,
+                submit_retried,
+            } => Ok(Self::Steered {
+                session,
+                message,
+                submit_retried,
+            }),
             e @ (Event::Started
             | Event::Rejected { .. }
             | Event::WaitingForBox { .. }
