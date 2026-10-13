@@ -11,6 +11,7 @@ mod put;
 mod sleep;
 #[cfg(test)]
 mod tests;
+mod tunnel;
 
 use std::path::Path;
 use std::sync::Arc;
@@ -19,7 +20,7 @@ use std::time::Duration;
 use moor_core::name::{BoxHandle, BoxPath, ProviderId};
 use moor_core::seam::driver::{
     AcquireReq, Acquired, BoxListing, Driver, DriverCaps, DriverError, EgressApplied, EgressPlan,
-    ExecOutcome, ExecSpec, Released, SleepOutcome,
+    ExecOutcome, ExecSpec, Released, SleepOutcome, TunnelHandle,
 };
 use moor_core::seam::proc::{Deadline, Proc, ProcOutput, ProcSpec, Tool};
 
@@ -290,5 +291,15 @@ impl Driver for Crabbox {
 
     fn wake(&self, handle: &BoxHandle) -> Result<(), DriverError> {
         sleep::wake(self, handle)
+    }
+
+    fn reverse_tunnel(
+        &self,
+        handle: &BoxHandle,
+        box_port: u16,
+        host_port: u16,
+        host_cwd: &Path,
+    ) -> Result<Box<dyn TunnelHandle>, DriverError> {
+        tunnel::reverse_tunnel(self, handle, box_port, host_port, host_cwd)
     }
 }
