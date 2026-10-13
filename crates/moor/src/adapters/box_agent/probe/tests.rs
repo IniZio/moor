@@ -3,7 +3,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::activity::{HookKind, HookRead, HookRecord, PaneObs, PaneRead, PaneStatus};
-use moor_core::seam::agent_profile::AgentProfile;
+use moor_core::name::NameError;
+use moor_core::seam::agent_profile::{AgentProfile, BoxSetup, Key, LaunchCtx};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, EgressPlan};
 use moor_core::seam::engine::{Engine, SessionRef};
@@ -34,6 +35,29 @@ impl AgentProfile for Stub {
 
     fn pane_prompt(&self, tail: &str) -> Option<String> {
         tail.strip_prefix("ask ").map(str::to_owned)
+    }
+
+    fn argv(&self, _: &LaunchCtx) -> Vec<String> {
+        Vec::new()
+    }
+
+    fn resume_argv(&self, _: &str, _: &LaunchCtx) -> Vec<String> {
+        Vec::new()
+    }
+
+    fn preseed(&self, _: &LaunchCtx) -> Result<BoxSetup, NameError> {
+        Ok(BoxSetup {
+            files: Vec::new(),
+            step: String::new(),
+        })
+    }
+
+    fn hook_writer(&self, ctx: &LaunchCtx) -> Result<BoxSetup, NameError> {
+        self.preseed(ctx)
+    }
+
+    fn menu_keys(&self, _: u8) -> Vec<Key> {
+        Vec::new()
     }
 }
 
