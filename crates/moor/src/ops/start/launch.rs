@@ -203,6 +203,8 @@ pub(super) fn launch_req(cx: &Cx, row: &TaskRow, setup_exit: Option<i32>) -> Opt
         setup_exit,
         model: None,
         nonce: nonce(cx.rng()),
+        proxy: None,
+        origin: None,
     })
 }
 
