@@ -31,12 +31,18 @@ struct State {
     exec_results: VecDeque<Result<ExecOutcome, DriverError>>,
     execs: Vec<(BoxHandle, ExecSpec, Deadline)>,
     copies: Vec<CopyCall>,
+    files: Vec<(String, String, String)>,
+    peeks: Vec<PeekCall>,
+    fail_peek: Option<DriverError>,
     on_exec: Option<Arc<ExecHook>>,
     work_root: Option<String>,
 }
 
 /// One `copy_out` call: handle, source, destination and host cwd.
 type CopyCall = (BoxHandle, BoxPath, PathBuf, PathBuf);
+
+/// One `peek_file` call: handle, path and host cwd.
+type PeekCall = (BoxHandle, BoxPath, PathBuf);
 
 /// Runs inside every `exec`, before its result is served.
 type ExecHook = dyn Fn() + Send + Sync;
@@ -100,6 +106,20 @@ impl FakeDriver {
         self
     }
 
+    /// Makes `peek_file` of `path` in the Box `handle` return `text`.
+    pub(crate) fn peek_text(self, handle: &str, path: &BoxPath, text: &str) -> Self {
+        self.st()
+            .files
+            .push((handle.to_owned(), path.as_str().to_owned(), text.to_owned()));
+        self
+    }
+
+    /// The next `peek_file` fails once with `e`.
+    pub(crate) fn fail_peek(self, e: DriverError) -> Self {
+        self.st().fail_peek = Some(e);
+        self
+    }
+
     /// Queues scripted `exec` results, served in order; then exit code 0.
     pub(crate) fn exec_results(
         self,
@@ -127,6 +147,11 @@ impl FakeDriver {
     /// Every `exec` so far: handle, spec and deadline, in call order.
     pub(crate) fn execs(&self) -> Vec<(BoxHandle, ExecSpec, Deadline)> {
         self.st().execs.clone()
+    }
+
+    /// Every `peek_file` so far: handle, path and host cwd, in call order.
+    pub(crate) fn peeks(&self) -> Vec<PeekCall> {
+        self.st().peeks.clone()
     }
 
     /// Every `copy_out` so far: handle, source, destination, host cwd.
@@ -266,6 +291,28 @@ impl Driver for FakeDriver {
         s.copy_content
             .as_deref()
             .map_or(Ok(()), |text| write_text(to, text))
+    }
+
+    fn peek_file(
+        &self,
+        handle: &BoxHandle,
+        path: &BoxPath,
+        host_cwd: &Path,
+    ) -> Result<Option<String>, DriverError> {
+        let mut s = self.st();
+        s.calls.push(format!("peek_file {}", handle.as_str()));
+        s.peeks
+            .push((handle.clone(), path.clone(), host_cwd.to_path_buf()));
+        if !s.live.iter().any(|h| h == handle.as_str()) {
+            return Err(DriverError::NotFound);
+        }
+        if let Some(e) = s.fail_peek.take() {
+            return Err(e);
+        }
+        Ok(s.files
+            .iter()
+            .find(|(h, p, _)| h == handle.as_str() && p == path.as_str())
+            .map(|(_, _, text)| text.clone()))
     }
 }
 
