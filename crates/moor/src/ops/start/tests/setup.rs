@@ -375,6 +375,26 @@ fn start_leaves_setup_alone_when_the_setup_owner_is_alive() {
 }
 
 #[test]
+fn start_on_a_setting_up_task_with_a_live_setup_owner_records_no_session() {
+    let repo = tempfile::tempdir().unwrap();
+    std::fs::write(repo.path().join(".moor.yaml"), "setup: [a]\n").unwrap();
+    let w = world_at(FakeDriver::new(), repo.path());
+    w.driver
+        .on_exec(|| std::panic::resume_unwind(Box::new("process died mid-setup")));
+    let crashed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        drop(run(&w.cx, &start_req()));
+    }));
+    assert!(crashed.is_err());
+    w.driver.on_exec(|| {});
+    let again = run(&w.cx, &start_req()).unwrap();
+    assert_eq!(again.task.state, TaskState::SettingUp);
+    let id = TaskId::new(again.task.id);
+    let store = w.cx.store().unwrap();
+    assert!(store.live_session(id).unwrap().is_none());
+    assert!(!store.has_session(id).unwrap());
+}
+
+#[test]
 fn start_re_runs_setup_for_a_setting_up_task_whose_setup_owner_died() {
     let repo = tempfile::tempdir().unwrap();
     std::fs::write(repo.path().join(".moor.yaml"), "setup: [a]\n").unwrap();

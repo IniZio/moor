@@ -2,21 +2,27 @@
 
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 
-use moor_core::activity::{HookKind, HookRead, HookRecord, PaneObs, PaneRead, PaneStatus, Probes};
+use moor_core::activity::{
+    AgentState, HookKind, HookRead, HookRecord, PaneObs, PaneRead, PaneStatus, Probes, Source,
+    STARTUP_GRACE,
+};
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, EgressPlan};
-use moor_core::{ProviderId, ShowReq, TaskId, TaskName};
+use moor_core::seam::proc::Tool;
+use moor_core::{ProviderId, ShowReq, StartReq, TaskId, TaskName};
 
 use super::run;
 use crate::cx::Cx;
-use crate::store::NewRun;
+use crate::ops::common::activity::{self, Reading};
+use crate::store::{NewRun, Store};
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
-use crate::testing::proc::ScriptedProc;
+use crate::testing::proc::{Reply, ScriptedProc};
 use crate::testing::surface::FakeSurface;
 
 /// Context over `driver` with state under `dir`.
@@ -310,10 +316,104 @@ fn show_leaves_the_task_row_untouched() {
     let store = cx.store().unwrap();
     let before = store.task(id).unwrap();
     assert_eq!(before.as_ref().unwrap().state, TaskState::Working);
-    run(&cx, &req(None, None)).unwrap();
-    assert_eq!(store.task(id).unwrap(), before);
     run(&cx, &req(Some("a"), None)).unwrap();
     assert_eq!(store.task(id).unwrap(), before);
+}
+
+/// Probes whose pane alone reports `status`, with no hook report.
+fn pane_only(status: PaneStatus) -> Probes {
+    Probes {
+        hook: HookRead::Absent,
+        pane: PaneRead::Fresh(PaneObs {
+            status,
+            tail: "Allow this edit?".into(),
+            exit_marker: None,
+        }),
+    }
+}
+
+/// The `idle_since` column of a task.
+fn idle_since(store: &Store, id: TaskId) -> Option<i64> {
+    store
+        .reader()
+        .unwrap()
+        .query_row(
+            "SELECT idle_since FROM tasks WHERE id = ?",
+            [id.get()],
+            |r| r.get(0),
+        )
+        .unwrap()
+}
+
+#[test]
+fn list_settles_a_quiet_agent_to_idle() {
+    let dir = tempfile::tempdir().unwrap();
+    let driver = Arc::new(FakeDriver::new());
+    let cx = engine_cx(dir.path(), &driver, &Arc::new(FakeEngine::new()));
+    let id = working(&cx, &driver, "a", Some("s-a"));
+    let engine = Arc::new(FakeEngine::new().probes("s-a", hook(&cx, HookKind::Idle)));
+    let cx = engine_cx(dir.path(), &driver, &engine);
+    let v = run(&cx, &req(None, None)).unwrap();
+    let row = cx.store().unwrap().task(id).unwrap().unwrap();
+    assert_eq!(row.state, TaskState::Idle);
+    assert!(idle_since(cx.store().unwrap(), id).is_some());
+    assert_eq!(v.tasks.first().unwrap().state, TaskState::Idle);
+}
+
+#[test]
+fn list_settles_a_busy_agent_to_working() {
+    let dir = tempfile::tempdir().unwrap();
+    let driver = Arc::new(FakeDriver::new());
+    let cx = engine_cx(dir.path(), &driver, &Arc::new(FakeEngine::new()));
+    let id = working(&cx, &driver, "a", Some("s-a"));
+    cx.store()
+        .unwrap()
+        .apply(Decision::new(id).task_input(TaskInput::AgentQuiet))
+        .unwrap();
+    let engine = Arc::new(FakeEngine::new().probes("s-a", hook(&cx, HookKind::Busy)));
+    let cx = engine_cx(dir.path(), &driver, &engine);
+    run(&cx, &req(None, None)).unwrap();
+    let row = cx.store().unwrap().task(id).unwrap().unwrap();
+    assert_eq!(row.state, TaskState::Working);
+    assert!(idle_since(cx.store().unwrap(), id).is_none());
+}
+
+/// List a Working Task whose session is older than the startup grace and whose only
+/// report is the pane's `status`; return the reading and the task's state afterwards.
+fn pane_only_reading(status: PaneStatus) -> (Reading, TaskState) {
+    let dir = tempfile::tempdir().unwrap();
+    let driver = Arc::new(FakeDriver::new());
+    let cx = engine_cx(dir.path(), &driver, &Arc::new(FakeEngine::new()));
+    let id = working(&cx, &driver, "a", Some("s-a"));
+    let engine = Arc::new(FakeEngine::new().probes("s-a", pane_only(status)));
+    let cx = engine_cx(dir.path(), &driver, &engine);
+    cx.clock().sleep(STARTUP_GRACE + Duration::from_secs(60));
+    run(&cx, &req(None, None)).unwrap();
+    let store = cx.store().unwrap();
+    let row = store.task(id).unwrap().unwrap();
+    let now = cx.clock().now();
+    let reading = activity::read(&cx, store, &row, now).unwrap();
+    (reading, row.state)
+}
+
+#[test]
+fn list_does_not_idle_on_a_pane_only_idle_report() {
+    let (reading, state) = pane_only_reading(PaneStatus::Idle);
+    let a = reading.activity.as_ref().unwrap();
+    assert_eq!(a.source, Source::Herdr);
+    assert_eq!(a.state, AgentState::Idle);
+    assert!(!reading.may_quiet);
+    assert_eq!(state, TaskState::Working);
+}
+
+#[test]
+fn list_does_not_idle_on_a_pane_only_blocked_report() {
+    let (reading, state) = pane_only_reading(PaneStatus::Blocked);
+    let a = reading.activity.as_ref().unwrap();
+    assert_eq!(a.source, Source::Herdr);
+    assert!(matches!(a.state, AgentState::Blocked { .. }));
+    assert!(!reading.may_quiet);
+    assert_eq!(state, TaskState::Working);
 }
 
 #[test]
@@ -325,4 +425,68 @@ fn task_without_a_live_session_has_no_agent() {
     let v = run(&cx, &req(Some("a"), None)).unwrap();
     assert!(v.tasks.first().unwrap().agent.is_none());
     assert!(v.task.unwrap().agent.is_none());
+}
+
+/// Context over `driver` whose git answers a repo at `/repo`, so `start` can run.
+fn start_cx(dir: &Path, driver: &Arc<FakeDriver>) -> Cx {
+    let proc = Arc::new(ScriptedProc::new());
+    proc.on(
+        Tool::Git,
+        &["rev-parse", "--show-toplevel"],
+        Reply::Ok("/repo\n".into()),
+    );
+    proc.on(
+        Tool::Git,
+        &["rev-parse", "HEAD"],
+        Reply::Ok("abc123\n".into()),
+    );
+    proc.on(
+        Tool::Git,
+        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+        Reply::Ok("/repo/.git\n".into()),
+    );
+    proc.on(
+        Tool::Git,
+        &["rev-parse", "--git-path", "info/exclude"],
+        Reply::Ok(format!("{}/exclude\n", dir.display())),
+    );
+    Cx::fake(
+        dir,
+        Path::new("/repo"),
+        driver.clone(),
+        Arc::new(FakeSurface::new(dir)),
+        proc,
+    )
+    .with_engine(Arc::new(FakeEngine::new()))
+}
+
+#[test]
+fn a_task_freshly_started_is_not_idled_by_the_next_list() {
+    let dir = tempfile::tempdir().unwrap();
+    let driver = Arc::new(FakeDriver::new());
+    let cx = start_cx(dir.path(), &driver);
+    let started = crate::ops::start::run(
+        &cx,
+        &StartReq {
+            name: TaskName::parse("demo").unwrap(),
+            goal: None,
+            issue: None,
+            worktree: None,
+            base: None,
+            model: None,
+            no_agent: false,
+        },
+    )
+    .unwrap();
+    assert_eq!(started.task.state, TaskState::Working);
+    let v = run(&cx, &req(None, None)).unwrap();
+    let t = v.tasks.first().unwrap();
+    assert_eq!(t.state, TaskState::Working);
+    assert!(t.agent.is_some());
+    let id = TaskId::new(started.task.id);
+    assert!(cx.store().unwrap().live_session(id).unwrap().is_some());
+    assert_eq!(
+        cx.store().unwrap().task(id).unwrap().unwrap().state,
+        TaskState::Working
+    );
 }
