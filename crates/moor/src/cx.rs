@@ -7,6 +7,7 @@ use std::sync::Arc;
 use moor_core::config::{RepoConfig, UserConfig};
 use moor_core::seam::clock::Clock;
 use moor_core::seam::driver::Driver;
+use moor_core::seam::engine::Engine;
 use moor_core::seam::proc::Proc;
 use moor_core::seam::rng::Rng;
 use moor_core::seam::surface::Surface;
@@ -35,6 +36,8 @@ pub(crate) struct Cx {
     driver: Arc<dyn Driver>,
     /// Workspace backend.
     surface: Arc<dyn Surface>,
+    /// The agent running in a Box.
+    engine: Arc<dyn Engine>,
     /// Process runner.
     proc: Arc<dyn Proc>,
     /// Git adapter.
@@ -61,6 +64,8 @@ pub(crate) struct CxParts {
     pub driver: Arc<dyn Driver>,
     /// Workspace backend.
     pub surface: Arc<dyn Surface>,
+    /// The agent running in a Box.
+    pub engine: Arc<dyn Engine>,
     /// Process runner.
     pub proc: Arc<dyn Proc>,
     /// Git adapter.
@@ -83,6 +88,7 @@ impl Cx {
             rng: p.rng,
             driver: p.driver,
             surface: p.surface,
+            engine: p.engine,
             proc: p.proc,
             git: p.git,
             config: p.config,
@@ -120,6 +126,18 @@ impl Cx {
     /// Workspace backend.
     pub(crate) fn surface(&self) -> &dyn Surface {
         self.surface.as_ref()
+    }
+
+    /// The agent running in a Box.
+    pub(crate) fn engine(&self) -> &dyn Engine {
+        self.engine.as_ref()
+    }
+
+    /// This context with `engine` in place of the current one.
+    #[cfg(test)]
+    pub(crate) fn with_engine(mut self, engine: Arc<dyn Engine>) -> Self {
+        self.engine = engine;
+        self
     }
 
     /// Process runner.

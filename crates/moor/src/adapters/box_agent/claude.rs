@@ -7,7 +7,6 @@ use serde_json::Value;
 
 /// Parses the state file Claude Code's hooks write.
 #[derive(Debug, Default, Clone, Copy)]
-#[cfg_attr(not(test), expect(dead_code, reason = "wired in wire.rs"))]
 pub(crate) struct Claude;
 
 impl AgentProfile for Claude {

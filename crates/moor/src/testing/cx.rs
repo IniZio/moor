@@ -14,10 +14,11 @@ use crate::adapters::git::Git;
 use crate::cx::{Cx, CxParts};
 use crate::env::Env;
 use crate::testing::clock::FakeClock;
+use crate::testing::engine::FakeEngine;
 use crate::testing::rng::FakeRng;
 
 impl Cx {
-    /// Test context: fake clock, default config, git over `proc`.
+    /// Test context: fake clock, a fake engine, default config, git over `proc`.
     pub(crate) fn fake(
         state_dir: &Path,
         cwd: &Path,
@@ -43,6 +44,7 @@ impl Cx {
             rng: Arc::new(FakeRng::default()),
             driver,
             surface,
+            engine: Arc::new(FakeEngine::new()),
             git: Git::new(Arc::clone(&proc)),
             proc: Arc::clone(&proc),
             config,
