@@ -1,11 +1,13 @@
 use std::sync::Arc;
 
+use moor_core::activity::{Activity, AgentState, Source};
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxHandle, ProviderId, RunId, TaskId, TaskName};
 
-use super::{event_view, rfc3339, task_view, task_view_with_run};
+use super::{agent_view, event_view, rfc3339, task_view, task_view_with_run};
+use crate::ops::common::activity::{PaneLiveness, Reading};
 use crate::store::{RunRow, Store};
 use crate::testing::clock::FakeClock;
 
@@ -141,4 +143,73 @@ fn task_view_with_run_fills_run() {
     assert_eq!(r.argv, ["make", "test"]);
     assert_eq!(r.started_at, "1970-01-02T00:00:00Z");
     assert!(task_view_with_run(&row, None).run.is_none());
+}
+
+fn reading(state: AgentState, source: Source, pane: PaneLiveness) -> Reading {
+    Reading::new(Some(Activity { state, source }), pane, false, false)
+}
+
+#[test]
+fn agent_view_is_none_without_activity() {
+    let r = Reading::new(None, PaneLiveness::Gone, true, false);
+    assert_eq!(agent_view(&r), None);
+}
+
+#[test]
+fn agent_view_working_maps_state_source_and_pane() {
+    let v = agent_view(&reading(
+        AgentState::Working,
+        Source::HooksCached,
+        PaneLiveness::Live,
+    ))
+    .unwrap();
+    assert_eq!(v.pane, "live");
+    assert_eq!(v.state, "working");
+    assert_eq!(v.source, "hooks_cached");
+    assert_eq!(v.exit_code, None);
+    assert_eq!(v.waiting_for, None);
+}
+
+#[test]
+fn agent_view_blocked_carries_waiting_for() {
+    let v = agent_view(&reading(
+        AgentState::Blocked {
+            waiting_for: "Proceed?".into(),
+        },
+        Source::Pane,
+        PaneLiveness::Live,
+    ))
+    .unwrap();
+    assert_eq!(v.state, "blocked");
+    assert_eq!(v.source, "pane");
+    assert_eq!(v.waiting_for.as_deref(), Some("Proceed?"));
+    assert_eq!(v.exit_code, None);
+}
+
+#[test]
+fn agent_view_exited_carries_exit_code_and_pane() {
+    let v = agent_view(&reading(
+        AgentState::Exited { code: 3 },
+        Source::Herdr,
+        PaneLiveness::Exited,
+    ))
+    .unwrap();
+    assert_eq!(v.pane, "exited");
+    assert_eq!(v.state, "exited");
+    assert_eq!(v.source, "herdr");
+    assert_eq!(v.exit_code, Some(3));
+    assert_eq!(v.waiting_for, None);
+}
+
+#[test]
+fn agent_view_gone_pane_string() {
+    let v = agent_view(&reading(
+        AgentState::Unknown,
+        Source::Timeout,
+        PaneLiveness::Gone,
+    ))
+    .unwrap();
+    assert_eq!(v.pane, "gone");
+    assert_eq!(v.state, "unknown");
+    assert_eq!(v.source, "timeout");
 }

@@ -10,8 +10,8 @@ use moor_core::{ErrorKind, WaitFor, WaitReq};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::reconcile;
-use crate::ops::common::view::task_view_with_run;
+use crate::ops::common::view::{agent_view, task_view_with_run};
+use crate::ops::common::{activity, reconcile};
 use crate::store::RunRow;
 
 /// Longest pause between polls.
@@ -36,10 +36,10 @@ pub(crate) fn run(cx: &Cx, req: &WaitReq) -> Result<WaitValue, CommandError> {
         let row = store.task(id)?.ok_or_else(|| {
             CommandError::new(ErrorKind::Failed, format!("no task {}", req.task.as_str()))
         })?;
+        let reading = activity::read(cx, store, &row, clock.now())?;
         let in_flight = store.in_flight_run(id, &|pid| cx.proc().alive(pid))?;
         let facts = WaitFacts {
-            // Agent activity is not read yet, so wait sees runs only.
-            agent_active: false,
+            agent_active: reading.busy(),
             run_in_flight: in_flight.is_some(),
         };
         let verdict = wait_verdict(facts, want, elapsed, timeout);
@@ -52,8 +52,10 @@ pub(crate) fn run(cx: &Cx, req: &WaitReq) -> Result<WaitValue, CommandError> {
             Some(r) => Some(r.clone()),
             None => store.last_run(id)?,
         };
+        let mut task = task_view_with_run(&row, in_flight.as_ref());
+        task.agent = agent_view(&reading);
         return Ok(WaitValue {
-            task: task_view_with_run(&row, in_flight.as_ref()),
+            task,
             timed_out: verdict == WaitVerdict::TimedOut,
             waited_ms: u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX),
             wait_for: want,

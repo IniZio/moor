@@ -4,18 +4,25 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use moor_core::domain::decision::{Decision, NewTask};
-use moor_core::{ErrorKind, ShowReq, TaskId, TaskName, WaitFor, WaitReq};
+use moor_core::activity::{HookKind, HookRead, HookRecord, PaneObs, PaneRead, PaneStatus, Probes};
+use moor_core::domain::boxes::BoxInput;
+use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
+use moor_core::domain::task::{SetupOutcome, TaskInput};
+use moor_core::seam::clock::Ts;
+use moor_core::seam::driver::{AcquireReq, EgressPlan};
+use moor_core::{ErrorKind, ProviderId, ShowReq, TaskId, TaskName, WaitFor, WaitReq};
 
 use super::run;
 use crate::cx::Cx;
 use crate::ops::common::boxlock::BoxLock;
 use crate::store::NewRun;
 use crate::testing::driver::FakeDriver;
+use crate::testing::engine::FakeEngine;
 use crate::testing::proc::ScriptedProc;
 use crate::testing::surface::FakeSurface;
 
 const PID: u32 = 4242;
+const SESSION: &str = "sess-1";
 
 /// Context with state under `dir`, plus the scripted proc behind it.
 fn cx(dir: &Path) -> (Cx, Arc<ScriptedProc>) {
@@ -196,4 +203,165 @@ fn never_takes_the_box_lock() {
     run(&cx, &req(None, Some(1))).unwrap();
     proc.dead(PID);
     assert!(cx.clock().now().as_millis() - began.as_millis() < 8000);
+}
+
+/// Context whose engine answers `probes` for the live session.
+fn agent_cx(dir: &Path, probes: Probes) -> (Cx, Arc<FakeEngine>) {
+    let engine = Arc::new(FakeEngine::new().probes(SESSION, probes));
+    let (cx, _) = cx(dir);
+    (cx.with_engine(engine.clone()), engine)
+}
+
+/// Insert task `demo` with a Box the driver lists as live and a live agent session.
+fn add_live(cx: &Cx) -> TaskId {
+    let id = add(cx);
+    let got = cx
+        .driver()
+        .acquire(&AcquireReq {
+            provider: ProviderId::new("p"),
+            task: id,
+            name: TaskName::parse("demo").unwrap(),
+            egress: EgressPlan::Open,
+            class: None,
+            nonce: "abc123".into(),
+            worktree: None,
+        })
+        .unwrap();
+    let store = cx.store().unwrap();
+    let d = Decision::new(id)
+        .task_input(TaskInput::Admitted)
+        .box_input(BoxInput::Requested)
+        .set(Fields {
+            box_provider: Field::Set(ProviderId::new("p")),
+            ..Fields::default()
+        });
+    store.apply(d).unwrap();
+    let d = Decision::new(id)
+        .task_input(TaskInput::BoxReady {
+            setup: SetupOutcome::Ok,
+        })
+        .box_input(BoxInput::Acquired { handle: got.handle })
+        .set(Fields {
+            worktree: Field::Set("/wt".into()),
+            box_workdir: Field::Set("/work".into()),
+            ..Fields::default()
+        });
+    store.apply(d).unwrap();
+    store.begin_session(id, SESSION).unwrap();
+    id
+}
+
+/// Probes with a fresh hook report of `kind` and an unreadable pane status.
+fn hook(kind: HookKind) -> Probes {
+    Probes {
+        hook: HookRead::Fresh(HookRecord {
+            kind,
+            session_id: None,
+            at: Ts::from_millis(0),
+        }),
+        pane: PaneRead::Fresh(PaneObs {
+            status: PaneStatus::Unknown,
+            tail: String::new(),
+            exit_marker: None,
+        }),
+    }
+}
+
+/// Probes that learn nothing from the hook or the pane.
+fn silent(hook: HookRead, pane: PaneRead) -> Probes {
+    Probes { hook, pane }
+}
+
+#[test]
+fn a_busy_agent_keeps_idle_waiting_until_timeout() {
+    let cases = [
+        ("working", hook(HookKind::Busy)),
+        ("starting", silent(HookRead::Absent, PaneRead::Absent)),
+        ("unknown", silent(HookRead::TimedOut, PaneRead::TimedOut)),
+    ];
+    for (name, probes) in cases {
+        let dir = tempfile::tempdir().unwrap();
+        let (cx, _) = agent_cx(dir.path(), probes);
+        add_live(&cx);
+        let before = cx.clock().now();
+        let v = run(&cx, &req(None, Some(1))).unwrap();
+        assert!(v.timed_out, "{name}");
+        let slept = cx.clock().now().as_millis() - before.as_millis();
+        assert!((1000..=3000).contains(&slept), "{name}: slept {slept} ms");
+    }
+}
+
+#[test]
+fn an_idle_or_blocked_agent_returns_at_once() {
+    let blocked = HookKind::Blocked {
+        waiting_for: "Allow edit?".into(),
+    };
+    for kind in [HookKind::Idle, blocked] {
+        let dir = tempfile::tempdir().unwrap();
+        let (cx, _) = agent_cx(dir.path(), hook(kind));
+        add_live(&cx);
+        let v = run(&cx, &req(None, Some(5))).unwrap();
+        assert!(!v.timed_out);
+        assert_eq!(v.waited_ms, 0);
+    }
+}
+
+#[test]
+fn the_payload_carries_the_agent() {
+    let dir = tempfile::tempdir().unwrap();
+    let blocked = HookKind::Blocked {
+        waiting_for: "Allow edit?".into(),
+    };
+    let (cx, _) = agent_cx(dir.path(), hook(blocked));
+    add_live(&cx);
+    let v = run(&cx, &req(None, None)).unwrap();
+    let a = v.task.agent.expect("an agent view");
+    assert_eq!(a.state, "blocked");
+    assert_eq!(a.source, "hooks");
+    assert_eq!(a.pane, "live");
+    assert_eq!(a.waiting_for.as_deref(), Some("Allow edit?"));
+}
+
+#[test]
+fn a_task_without_a_session_has_no_agent_in_the_payload() {
+    let dir = tempfile::tempdir().unwrap();
+    let (cx, _) = cx(dir.path());
+    add(&cx);
+    let v = run(&cx, &req(None, None)).unwrap();
+    assert!(v.task.agent.is_none());
+}
+
+#[test]
+fn waiting_leaves_the_task_row_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    let (cx, _) = agent_cx(dir.path(), hook(HookKind::Idle));
+    let id = add_live(&cx);
+    let before = cx.store().unwrap().task(id).unwrap().unwrap();
+    for _ in 0..3 {
+        let v = run(&cx, &req(None, Some(1))).unwrap();
+        assert!(!v.timed_out);
+        assert_eq!(cx.store().unwrap().task(id).unwrap().unwrap(), before);
+    }
+}
+
+#[test]
+fn each_poll_probes_the_agent_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let (cx, engine) = agent_cx(dir.path(), hook(HookKind::Idle));
+    add_live(&cx);
+    run(&cx, &req(None, None)).unwrap();
+    assert_eq!(engine.probe_count(SESSION), 1);
+}
+
+#[test]
+fn a_working_agent_is_probed_on_every_poll() {
+    let dir = tempfile::tempdir().unwrap();
+    let (cx, engine) = agent_cx(dir.path(), hook(HookKind::Busy));
+    add_live(&cx);
+    let before = cx.clock().now();
+    let v = run(&cx, &req(None, Some(1))).unwrap();
+    assert!(v.timed_out);
+    let polls = usize::try_from((cx.clock().now().as_millis() - before.as_millis()) / 250).unwrap();
+    assert!(polls >= 4, "polled {polls} times");
+    assert_eq!(engine.probe_count(SESSION), polls + 1);
 }

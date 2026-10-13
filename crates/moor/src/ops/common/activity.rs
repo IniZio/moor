@@ -64,6 +64,22 @@ impl Reading {
         self.run_in_flight || self.activity.as_ref().is_some_and(|a| a.state.busy())
     }
 
+    /// A reading of the given parts, for tests.
+    #[cfg(test)]
+    pub(crate) const fn new(
+        activity: Option<Activity>,
+        pane: PaneLiveness,
+        may_quiet: bool,
+        run_in_flight: bool,
+    ) -> Self {
+        Self {
+            activity,
+            pane,
+            may_quiet,
+            run_in_flight,
+        }
+    }
+
     /// No agent to read; a run in flight still keeps the Task busy.
     const fn none(run_in_flight: bool) -> Self {
         Self {
