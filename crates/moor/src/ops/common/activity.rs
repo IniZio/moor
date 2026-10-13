@@ -18,6 +18,7 @@ use moor_core::Warning;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::provision::recorded_workdir;
+use crate::ops::common::transcript;
 use crate::store::{Store, StoreError, TaskRow};
 
 /// Allowance for the pane observation in one probe.
@@ -194,7 +195,7 @@ fn note_agent_session(
     Ok(())
 }
 
-/// Move the Task's state to match `reading`.
+/// Move the Task's state to match `reading`, and save the transcript of an agent first seen exited.
 ///
 /// A Working Task goes Idle only when the reading `may_quiet` and is not busy; an Idle Task
 /// goes back to Working when the reading is busy. Nothing else decides quiet: a gone pane, an
@@ -203,7 +204,15 @@ fn note_agent_session(
 ///
 /// # Errors
 /// A store failure other than a refused step.
-pub(crate) fn settle(store: &Store, row: &TaskRow, reading: &Reading) -> Result<(), CommandError> {
+pub(crate) fn settle(
+    cx: &Cx,
+    store: &Store,
+    row: &TaskRow,
+    reading: &Reading,
+) -> Result<(), CommandError> {
+    if reading.pane == PaneLiveness::Exited {
+        transcript::save_on_exit(cx, store, row)?;
+    }
     let input = match row.state {
         TaskState::Working if !reading.busy() && reading.may_quiet => TaskInput::AgentQuiet,
         TaskState::Idle if reading.busy() => TaskInput::AgentBusy,

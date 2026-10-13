@@ -455,3 +455,48 @@ fn a_session_without_an_id_records_its_pane_in_the_event() {
         Some("p-9")
     );
 }
+
+#[test]
+fn an_exited_agent_has_its_transcript_saved_before_the_session_ends() {
+    let exited = Probes {
+        hook: HookRead::Absent,
+        pane: PaneRead::Fresh(moor_core::activity::PaneObs {
+            status: moor_core::activity::PaneStatus::Idle,
+            tail: String::new(),
+            prompt: None,
+            exit_marker: Some(3),
+        }),
+    };
+    let engine = FakeEngine::new()
+        .probes("agent-1", exited)
+        .transcript_text("abc")
+        .steer_result(Err(EngineError::PaneGone));
+    let f = fx_with(engine, true);
+    run(&f.cx, &text("hi")).unwrap_err();
+    assert_eq!(f.engine.transcripts(), ["agent-1"]);
+    let store = f.cx.store().unwrap();
+    let events = store.events(f.id, 100).unwrap();
+    let saved: Vec<_> = events
+        .iter()
+        .filter(|e| e.kind == "transcript_saved")
+        .collect();
+    assert_eq!(saved.len(), 1);
+    assert_eq!(
+        saved.first().and_then(|e| e.payload.get("trigger")),
+        Some(&serde_json::json!("exit"))
+    );
+    assert!(!live(&f));
+    let digest: Option<String> = store
+        .reader()
+        .unwrap()
+        .query_row(
+            "SELECT transcript_digest FROM sessions WHERE task = ?",
+            [f.id.get()],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(
+        digest.as_deref(),
+        Some("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+    );
+}

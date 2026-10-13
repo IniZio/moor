@@ -6,6 +6,7 @@ use std::sync::Arc;
 use moor_core::seam::engine::EngineError;
 
 use super::{fx_with, req, run, Fx};
+use crate::ops::common::transcript::save_on_exit;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::surface::FakeSurface;
@@ -98,4 +99,44 @@ fn no_session_means_no_save() {
     assert_eq!(v.transcript, None);
     assert!(engine.transcripts().is_empty());
     assert!(kinds(&f).is_empty());
+}
+
+fn files(f: &Fx) -> usize {
+    let dir = f.dir.path().join(format!("transcripts/{}", f.id.get()));
+    fs::read_dir(dir).map_or(0, Iterator::count)
+}
+
+fn exit_saved_engine() -> Arc<FakeEngine> {
+    Arc::new(FakeEngine::new().transcript_text("abc"))
+}
+
+#[test]
+fn a_close_after_an_exit_save_of_the_same_transcript_writes_nothing_more() {
+    let engine = exit_saved_engine();
+    let f = with_engine(&engine, FakeSurface::new("/s"));
+    let store = f.cx.store().unwrap();
+    store.begin_session(f.id, "s-1", Some("p-1")).unwrap();
+    let row = store.task(f.id).unwrap().unwrap();
+    save_on_exit(&f.cx, store, &row).unwrap();
+    let first = files(&f);
+    let v = run(&f.cx, &req(false)).unwrap();
+    assert_eq!((first, files(&f)), (1, 1));
+    assert_eq!(kinds(&f), ["transcript_saved"]);
+    assert_eq!(ended_digest(&f).as_deref(), Some(SHA_ABC));
+    assert!(v.transcript.unwrap().ends_with("-1.tgz"));
+}
+
+#[test]
+fn a_close_after_the_transcript_changed_saves_again() {
+    let engine = exit_saved_engine();
+    let f = with_engine(&engine, FakeSurface::new("/s"));
+    let store = f.cx.store().unwrap();
+    store.begin_session(f.id, "s-1", Some("p-1")).unwrap();
+    let row = store.task(f.id).unwrap().unwrap();
+    save_on_exit(&f.cx, store, &row).unwrap();
+    let live = store.live_session(f.id).unwrap().unwrap();
+    store.set_transcript_digest(live.id, "older").unwrap();
+    run(&f.cx, &req(false)).unwrap();
+    assert_eq!(files(&f), 2);
+    assert_eq!(kinds(&f), ["transcript_saved", "transcript_saved"]);
 }
