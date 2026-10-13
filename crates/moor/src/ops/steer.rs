@@ -1,0 +1,197 @@
+//! `steer`: send a message or a menu choice to the Task's agent.
+//!
+//! The Box lock is held while the agent is read and the send is made.
+
+use std::time::Duration;
+
+use moor_core::activity::AgentState;
+use moor_core::domain::decision::{Decision, ExtraEvent};
+use moor_core::seam::engine::{EngineError, SessionRef, Steer, SteerOutcome};
+use moor_core::seam::proc::Deadline;
+use moor_core::view::steer::SteerValue;
+use moor_core::{ErrorKind, SteerReq, TaskId, Warning};
+
+use crate::cx::Cx;
+use crate::error::CommandError;
+use crate::ops::common::activity::{self, session_ref};
+use crate::ops::common::boxlock::{self, BoxLock};
+use crate::ops::common::wake::wake_if_asleep;
+use crate::store::{SessionRow, Store, TaskRow};
+
+/// Longest the send may take, pane reads included.
+const STEER_DEADLINE: Duration = Duration::from_secs(30);
+
+/// Run `steer`.
+///
+/// # Errors
+/// [`CommandError`] when the Task is unknown or has no live agent, the agent ended, the choice
+/// does not fit what the agent shows, or the send failed.
+pub(crate) fn run(cx: &Cx, req: &SteerReq) -> Result<SteerValue, CommandError> {
+    let store = cx.store()?;
+    let name = req.task.as_str();
+    let id = store
+        .open_task_by_name(&req.task)?
+        .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no open task {name}")))?
+        .id;
+    let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "steer", boxlock::WAIT)?;
+    let no_agent = || {
+        CommandError::new(
+            ErrorKind::Refused,
+            format!(
+                "no live agent session for task {name}; start it with `moor start {name} --goal`"
+            ),
+        )
+    };
+    let reload = || {
+        store
+            .task(id)?
+            .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no task {name}")))
+    };
+    if store.live_session(id)?.is_none() {
+        return Err(no_agent());
+    }
+    wake_if_asleep(cx, store, &reload()?)?;
+    let row = reload()?;
+    let session = store.live_session(id)?.ok_or_else(no_agent)?;
+    let sref = session_ref(&row, session.session_ref.clone(), session.pane.clone())
+        .ok_or_else(no_agent)?;
+    let before = state_of(cx, store, &row)?;
+    let steer = choose(req, before.as_ref())?;
+    let sent = match &steer {
+        Steer::Text(t) => t.clone(),
+        Steer::Menu(n) => n.to_string(),
+    };
+    let outcome = send(cx, store, &session, &sref, &steer, before.as_ref())?;
+    let who = if session.session_ref.is_empty() {
+        session.pane.as_deref().unwrap_or_default()
+    } else {
+        &session.session_ref
+    };
+    record(store, id, who, &sent, outcome.submit_retried)?;
+    let answered_menu = match steer {
+        Steer::Menu(_) => menu_answered(cx, store, &row)?,
+        Steer::Text(_) => {
+            if !outcome.submit_checked {
+                cx.warn(Warning {
+                    code: "steer_unchecked".to_owned(),
+                    message: "could not confirm the message was submitted".to_owned(),
+                });
+            }
+            false
+        }
+    };
+    Ok(SteerValue {
+        task: name.to_owned(),
+        sent,
+        answered_menu,
+    })
+}
+
+/// The agent's state now; none when the Task has no agent to read.
+fn state_of(cx: &Cx, store: &Store, row: &TaskRow) -> Result<Option<AgentState>, CommandError> {
+    let reading = activity::read(cx, store, row, cx.clock().now())?;
+    Ok(reading.activity.map(|a| a.state))
+}
+
+/// Sends `steer`; a pane that ended stops the session and refuses.
+fn send(
+    cx: &Cx,
+    store: &Store,
+    session: &SessionRow,
+    sref: &SessionRef,
+    steer: &Steer,
+    before: Option<&AgentState>,
+) -> Result<SteerOutcome, CommandError> {
+    match cx.engine().steer(sref, steer, Deadline(STEER_DEADLINE)) {
+        Ok(o) => Ok(o),
+        Err(EngineError::PaneGone) => {
+            let code = match before {
+                Some(AgentState::Exited { code }) => Some(*code),
+                _ => None,
+            };
+            store.end_session(session.id, code, None)?;
+            Err(CommandError::new(
+                ErrorKind::Refused,
+                format!(
+                    "agent exited{}; start --goal relaunches it",
+                    code.map_or_else(String::new, |c| format!(" {c}"))
+                ),
+            ))
+        }
+        Err(EngineError::NoSession) => Err(CommandError::new(
+            ErrorKind::Refused,
+            "the agent has no pane; start --goal relaunches it",
+        )),
+        Err(e) => Err(CommandError::new(ErrorKind::Failed, e.to_string())),
+    }
+}
+
+/// Probes the agent once more after a menu choice; warns when it still waits.
+fn menu_answered(cx: &Cx, store: &Store, row: &TaskRow) -> Result<bool, CommandError> {
+    let waiting = matches!(state_of(cx, store, row)?, Some(AgentState::Blocked { .. }));
+    if waiting {
+        cx.warn(Warning {
+            code: "steer_unanswered".to_owned(),
+            message: "the agent still waits at the prompt".to_owned(),
+        });
+    }
+    Ok(!waiting)
+}
+
+/// What to send for `req` given what the agent shows.
+///
+/// A blocked agent takes a menu choice only: `--menu N`, or a lone digit as the text.
+fn choose(req: &SteerReq, state: Option<&AgentState>) -> Result<Steer, CommandError> {
+    let task = req.task.as_str();
+    let waiting = match state {
+        Some(AgentState::Blocked { waiting_for }) => Some(waiting_for),
+        _ => None,
+    };
+    match (req.menu, req.text.as_deref(), waiting) {
+        (Some(n), _, Some(_)) => Ok(Steer::Menu(choice(n)?)),
+        (Some(_), _, None) => Err(CommandError::new(
+            ErrorKind::Refused,
+            format!("the agent of {task} is not waiting at a menu"),
+        )),
+        (None, Some(t), None) => Ok(Steer::Text(t.to_owned())),
+        (None, Some(t), Some(w)) => match t.parse::<u8>() {
+            Ok(n) if t.len() == 1 => Ok(Steer::Menu(n)),
+            _ => Err(CommandError::new(
+                ErrorKind::Refused,
+                format!(
+                    "the agent of {task} is blocked (waiting for: {}); answer with `moor steer {task} --menu N` or open the Workspace with `moor start {task}`",
+                    w.as_deref().unwrap_or("input")
+                ),
+            )),
+        },
+        (None, None, _) => Err(CommandError::new(ErrorKind::Usage, "nothing to send")),
+    }
+}
+
+/// A menu number the pane keys can carry.
+fn choice(n: u32) -> Result<u8, CommandError> {
+    u8::try_from(n)
+        .ok()
+        .filter(|n| *n > 0)
+        .ok_or_else(|| CommandError::new(ErrorKind::Usage, format!("no menu choice {n}")))
+}
+
+/// Append the `steered` event.
+fn record(
+    store: &Store,
+    id: TaskId,
+    session: &str,
+    message: &str,
+    submit_retried: bool,
+) -> Result<(), CommandError> {
+    let event = ExtraEvent::Steered {
+        session: session.to_owned(),
+        message: message.to_owned(),
+        submit_retried,
+    };
+    store.apply(Decision::new(id).event(event))?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests;

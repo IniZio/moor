@@ -18,6 +18,7 @@ use moor_core::seam::surface::PaneRef;
 #[derive(Default)]
 struct State {
     probes: HashMap<String, Probes>,
+    queued: HashMap<String, VecDeque<Probes>>,
     fail_probe: HashMap<String, EngineError>,
     counts: HashMap<String, usize>,
     panes: HashMap<String, Option<PaneRef>>,
@@ -51,6 +52,16 @@ impl FakeEngine {
     /// Every probe of `session` returns `p`.
     pub(crate) fn probes(self, session: &str, p: Probes) -> Self {
         self.st().probes.insert(session.to_owned(), p);
+        self
+    }
+
+    /// The next probe of `session` returns `p`, ahead of the fixed reading.
+    pub(crate) fn then_probes(self, session: &str, p: Probes) -> Self {
+        self.st()
+            .queued
+            .entry(session.to_owned())
+            .or_default()
+            .push_back(p);
         self
     }
 
@@ -128,6 +139,9 @@ impl Engine for FakeEngine {
         st.panes.insert(s.id.clone(), s.pane.clone());
         if let Some(e) = st.fail_probe.remove(&s.id) {
             return Err(e);
+        }
+        if let Some(p) = st.queued.get_mut(&s.id).and_then(VecDeque::pop_front) {
+            return Ok(p);
         }
         Ok(st.probes.get(&s.id).cloned().unwrap_or(Probes {
             hook: HookRead::Absent,

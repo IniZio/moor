@@ -231,3 +231,10 @@ fn quiet_run_drops_warnings_and_stays_empty() {
     assert_eq!(out, "");
     assert_eq!(err, "moor: warning: careful\n");
 }
+
+#[test]
+fn steer_prints_one_line() {
+    let v = json!({"task": "t1", "sent": "hi", "answered_menu": false});
+    let (out, _) = render(&Response::ok("steer", Some(v)), false);
+    assert_eq!(out, "steered t1\n");
+}
