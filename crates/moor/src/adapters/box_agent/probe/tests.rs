@@ -1,0 +1,221 @@
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
+
+use moor_core::activity::{HookKind, HookRead, HookRecord, PaneObs, PaneRead, PaneStatus};
+use moor_core::seam::agent_profile::AgentProfile;
+use moor_core::seam::clock::Ts;
+use moor_core::seam::driver::{AcquireReq, Driver, DriverError, EgressPlan};
+use moor_core::seam::engine::{Engine, SessionRef};
+use moor_core::seam::proc::Deadline;
+use moor_core::seam::surface::{PaneRef, SurfaceError};
+use moor_core::{BoxHandle, BoxPath, ProviderId, TaskId, TaskName};
+
+use crate::adapters::box_agent::BoxAgent;
+use crate::testing::driver::FakeDriver;
+use crate::testing::surface::FakeSurface;
+
+struct Stub;
+
+impl AgentProfile for Stub {
+    fn parse_hook(&self, raw: &[u8]) -> Option<HookRecord> {
+        let kind = match raw {
+            b"busy" => HookKind::Busy,
+            b"idle" => HookKind::Idle,
+            _ => return None,
+        };
+        Some(HookRecord {
+            kind,
+            session_id: None,
+            at: Ts::from_millis(1),
+        })
+    }
+}
+
+const DEADLINE: Deadline = Deadline(Duration::from_secs(3));
+
+fn hook_path() -> BoxPath {
+    BoxPath::under("/work/box-1", ".moor/agent-state.json").unwrap()
+}
+
+fn obs() -> PaneObs {
+    PaneObs {
+        status: PaneStatus::Idle,
+        tail: "tail".to_owned(),
+        exit_marker: None,
+    }
+}
+
+fn session(pane: Option<&str>) -> SessionRef {
+    SessionRef {
+        id: "s1".to_owned(),
+        handle: BoxHandle::new("box-1"),
+        workdir: BoxPath::under("/work", "box-1").unwrap(),
+        worktree: PathBuf::from("/host/wt"),
+        pane: pane.map(PaneRef::new),
+    }
+}
+
+fn live_driver(driver: FakeDriver) -> Arc<FakeDriver> {
+    let d = Arc::new(driver);
+    d.acquire(&AcquireReq {
+        provider: ProviderId::new("fake"),
+        task: TaskId::new(1),
+        name: TaskName::parse("t1").unwrap(),
+        egress: EgressPlan::Open,
+        class: None,
+        nonce: "n0".to_owned(),
+        worktree: None,
+    })
+    .unwrap();
+    d
+}
+
+fn agent(d: &Arc<FakeDriver>, s: &Arc<FakeSurface>) -> BoxAgent {
+    BoxAgent::new(d.clone(), s.clone(), Arc::new(Stub))
+}
+
+fn surface_with(obs: Result<PaneObs, SurfaceError>) -> Arc<FakeSurface> {
+    Arc::new(FakeSurface::new("/r").script_pane_obs("p-1", obs))
+}
+
+#[test]
+fn reads_the_hook_file_once_under_the_workdir_with_the_worktree_as_host_cwd() {
+    let d = live_driver(FakeDriver::new().peek_text("box-1", &hook_path(), "busy"));
+    let s = surface_with(Ok(obs()));
+    agent(&d, &s)
+        .probe(&session(Some("p-1")), DEADLINE)
+        .unwrap();
+    assert_eq!(
+        d.peeks(),
+        [(
+            BoxHandle::new("box-1"),
+            hook_path(),
+            PathBuf::from("/host/wt")
+        )]
+    );
+}
+
+#[test]
+fn observes_the_pane_once() {
+    let d = live_driver(FakeDriver::new());
+    let s = surface_with(Ok(obs()));
+    agent(&d, &s)
+        .probe(&session(Some("p-1")), DEADLINE)
+        .unwrap();
+    assert_eq!(s.calls(), ["pane_obs p-1"]);
+}
+
+#[test]
+fn returns_the_parsed_hook_and_the_pane_observation() {
+    let d = live_driver(FakeDriver::new().peek_text("box-1", &hook_path(), "idle"));
+    let s = surface_with(Ok(obs()));
+    let got = agent(&d, &s)
+        .probe(&session(Some("p-1")), DEADLINE)
+        .unwrap();
+    assert_eq!(
+        got.hook,
+        HookRead::Fresh(HookRecord {
+            kind: HookKind::Idle,
+            session_id: None,
+            at: Ts::from_millis(1),
+        })
+    );
+    assert_eq!(got.pane, PaneRead::Fresh(obs()));
+}
+
+#[test]
+fn unparsable_hook_file_reads_as_absent() {
+    let d = live_driver(FakeDriver::new().peek_text("box-1", &hook_path(), "{\"kind\":"));
+    let s = surface_with(Ok(obs()));
+    let got = agent(&d, &s)
+        .probe(&session(Some("p-1")), DEADLINE)
+        .unwrap();
+    assert_eq!(got.hook, HookRead::Absent);
+}
+
+#[test]
+fn missing_hook_file_reads_as_absent() {
+    let d = live_driver(FakeDriver::new());
+    let s = surface_with(Ok(obs()));
+    let got = agent(&d, &s)
+        .probe(&session(Some("p-1")), DEADLINE)
+        .unwrap();
+    assert_eq!(got.hook, HookRead::Absent);
+}
+
+#[test]
+fn hook_read_timeout_reads_as_timed_out_and_the_pane_is_still_observed() {
+    let d = live_driver(FakeDriver::new().fail_peek(DriverError::Timeout(Duration::from_secs(1))));
+    let s = surface_with(Ok(obs()));
+    let got = agent(&d, &s)
+        .probe(&session(Some("p-1")), DEADLINE)
+        .unwrap();
+    assert_eq!(got.hook, HookRead::TimedOut);
+    assert_eq!(got.pane, PaneRead::Fresh(obs()));
+}
+
+#[test]
+fn failed_hook_read_reads_as_timed_out_and_the_pane_is_still_observed() {
+    for failure in [
+        DriverError::Unavailable("down".to_owned()),
+        DriverError::Failed {
+            summary: "broken".to_owned(),
+        },
+    ] {
+        let d = live_driver(FakeDriver::new().fail_peek(failure));
+        let s = surface_with(Ok(obs()));
+        let got = agent(&d, &s)
+            .probe(&session(Some("p-1")), DEADLINE)
+            .unwrap();
+        assert_eq!(got.hook, HookRead::TimedOut);
+        assert_eq!(got.pane, PaneRead::Fresh(obs()));
+        assert_eq!(s.calls(), ["pane_obs p-1"]);
+    }
+}
+
+#[test]
+fn missing_pane_reads_as_gone() {
+    let d = live_driver(FakeDriver::new());
+    let s = surface_with(Err(SurfaceError::NotFound));
+    let got = agent(&d, &s)
+        .probe(&session(Some("p-1")), DEADLINE)
+        .unwrap();
+    assert_eq!(got.pane, PaneRead::Gone);
+}
+
+#[test]
+fn pane_timeout_reads_as_timed_out() {
+    let d = live_driver(FakeDriver::new());
+    let s = surface_with(Err(SurfaceError::Timeout));
+    let got = agent(&d, &s)
+        .probe(&session(Some("p-1")), DEADLINE)
+        .unwrap();
+    assert_eq!(got.pane, PaneRead::TimedOut);
+}
+
+#[test]
+fn failed_pane_read_reads_as_timed_out() {
+    for failure in [
+        SurfaceError::Unavailable("gone".to_owned()),
+        SurfaceError::Failed {
+            summary: "broken".to_owned(),
+        },
+    ] {
+        let d = live_driver(FakeDriver::new());
+        let s = surface_with(Err(failure));
+        let got = agent(&d, &s)
+            .probe(&session(Some("p-1")), DEADLINE)
+            .unwrap();
+        assert_eq!(got.pane, PaneRead::TimedOut);
+    }
+}
+
+#[test]
+fn no_pane_reads_as_absent_without_touching_the_surface() {
+    let d = live_driver(FakeDriver::new());
+    let s = surface_with(Ok(obs()));
+    let got = agent(&d, &s).probe(&session(None), DEADLINE).unwrap();
+    assert_eq!(got.pane, PaneRead::Absent);
+    assert!(s.calls().is_empty());
+}
