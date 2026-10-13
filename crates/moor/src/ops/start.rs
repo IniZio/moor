@@ -64,7 +64,7 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     if let Some(reason) =
         preflight::rejection(cx, &cfg, facts.bound.as_deref().unwrap_or(&facts.repo))
     {
-        return reject(store, req, &facts, &reason);
+        return reject(cx, store, req, &facts, &reason);
     }
     let placed = match place(cx, req, &facts) {
         Ok(placed) => placed,
@@ -89,6 +89,7 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
 
 /// Records a rejected Task, with no worktree or Workspace, and fails with the outcome.
 fn reject(
+    cx: &Cx,
     store: &Store,
     req: &StartReq,
     facts: &Facts,
@@ -111,7 +112,7 @@ fn reject(
     };
     store.apply(Decision::new(id).task_input(rejected))?;
     let row = reread(store, id)?;
-    let shown = serde_json::to_value(view(&row, false))
+    let shown = serde_json::to_value(view(cx, &row, false))
         .map_err(|e| CommandError::new(ErrorKind::Internal, e))?;
     Err(CommandError::new(ErrorKind::Failed, reason.to_owned()).with_value(shown))
 }
@@ -179,7 +180,7 @@ fn settle_agent(cx: &Cx, store: &Store, id: TaskId) -> Result<TaskRow, CommandEr
 /// [`queued_view`] for a row whose provider is not at hand; resolved only when it is queued.
 fn with_provider(cx: &Cx, row: &TaskRow, attached: bool) -> Result<StartView, CommandError> {
     if row.state != TaskState::WaitingForBox {
-        return Ok(view(row, attached));
+        return Ok(view(cx, row, attached));
     }
     let at = row.worktree.as_deref().unwrap_or(&row.repo);
     let cfg = settings(cx, Path::new(at), &Flags::default())?;
@@ -188,7 +189,7 @@ fn with_provider(cx: &Cx, row: &TaskRow, attached: bool) -> Result<StartView, Co
 
 /// The response for `row`, with the limit that queued it named in a warning.
 fn queued_view(cx: &Cx, row: &TaskRow, attached: bool, provider: &str) -> StartView {
-    let mut v = view(row, attached);
+    let mut v = view(cx, row, attached);
     if v.queued {
         if let Some(lim) = capacity::limit(cx.config(), provider) {
             v.warnings_inline.push(format!(
@@ -201,9 +202,9 @@ fn queued_view(cx: &Cx, row: &TaskRow, attached: bool, provider: &str) -> StartV
 }
 
 /// The response for `row`; nothing past the Box runs yet.
-fn view(row: &TaskRow, attached: bool) -> StartView {
+fn view(cx: &Cx, row: &TaskRow, attached: bool) -> StartView {
     StartView {
-        task: task_view(row),
+        task: task_view(row, cx.config()),
         attached,
         queued: row.state == TaskState::WaitingForBox,
         promoted: Vec::new(),
