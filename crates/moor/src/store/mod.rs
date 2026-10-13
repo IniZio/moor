@@ -11,6 +11,8 @@ use moor_core::seam::clock::{Clock, Ts};
 use moor_core::{BoxHandle, ProviderId, RunId, TaskId, TaskName};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Row, TransactionBehavior};
 
+#[cfg_attr(not(test), expect(dead_code, reason = "used by ops, not yet wired"))]
+mod agent;
 mod apply;
 mod reads;
 mod runs;

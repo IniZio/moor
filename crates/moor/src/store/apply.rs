@@ -202,10 +202,24 @@ fn write_task(
     let mut sets = task_field_sets(&d.set);
     if d.task_input.is_some() {
         sets.push(("state", Value::Text(step.to.as_str().to_owned())));
+        sets.extend(idle_since_sets(step, now));
     }
     sets.extend(intent_sets(d.intent, now));
     sets.push(("updated_at", Value::Integer(now.as_millis())));
     update(tx, "tasks", "id = ?", &[id.get()], &sets)
+}
+
+/// `idle_since` follows the state: stamped on entering Idle, cleared on leaving it.
+fn idle_since_sets(step: &Step<TaskState>, now: Ts) -> Sets {
+    match (step.from, step.to) {
+        (from, TaskState::Idle) if from != Some(TaskState::Idle) => {
+            vec![("idle_since", Value::Integer(now.as_millis()))]
+        }
+        (Some(TaskState::Idle), to) if to != TaskState::Idle => {
+            vec![("idle_since", Value::Null)]
+        }
+        _ => Vec::new(),
+    }
 }
 
 /// Write box state, fields and handles; box fields without a box are invalid.
