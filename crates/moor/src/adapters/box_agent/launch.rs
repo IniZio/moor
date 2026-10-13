@@ -5,14 +5,16 @@ use std::time::Duration;
 use moor_core::boxscript::{command_line, quote};
 use moor_core::domain::run::SyncMode;
 use moor_core::name::{BoxPath, NameError};
-use moor_core::seam::agent_profile::{AgentProfile, BoxSetup, LaunchCtx};
+use moor_core::seam::agent_profile::{AgentProfile, BoxSetup, LaunchCtx, ProxyAddr};
 use moor_core::seam::driver::{Driver, ExecOutcome, ExecSpec};
 use moor_core::seam::engine::{EngineError, LaunchReq, SessionRef};
 use moor_core::seam::proc::{Deadline, Tool};
 use moor_core::seam::surface::{PaneCmd, PaneRef, Surface};
+use moor_core::Secret;
 
 use super::brief::{render, BriefInput};
 use super::probe::HOOK_FILE;
+use super::proxy_env;
 
 /// Where the brief lands, relative to the Box workdir.
 const BRIEF_FILE: &str = ".moor/brief.md";
@@ -50,7 +52,10 @@ pub(super) fn launch(
     let ctx = LaunchCtx {
         model: req.model.clone(),
         workdir: req.workdir.clone(),
-        proxy: None,
+        proxy: req.proxy.as_deref().map(|p| ProxyAddr {
+            box_port: p.box_port,
+            nonce: Secret::new(p.nonce.expose().to_vec()),
+        }),
         home,
     };
     let cred = BoxPath::under(
@@ -122,6 +127,27 @@ struct Launch<'a> {
 }
 
 impl Launch<'_> {
+    /// The agent's arguments: a fresh start, or a resume of the stored session.
+    fn argv(&self) -> Vec<String> {
+        let (profile, ctx) = (self.profile, self.ctx);
+        let resume = self.req.resume.as_deref();
+        resume.map_or_else(|| profile.argv(ctx), |id| profile.resume_argv(id, ctx))
+    }
+
+    /// Stages the nonce and the shim and returns the script lines that export the proxy
+    /// environment; empty when the launch has no Proxy.
+    fn proxy_lines(&self) -> Result<Vec<String>, Failure> {
+        let Some(addr) = &self.ctx.proxy else {
+            return Ok(Vec::new());
+        };
+        let (req, cred) = (self.req, self.cred);
+        proxy_env::stage(self.driver, &req.handle, cred, addr, &req.worktree)
+            .map_err(|e| fail("proxy", &e))?;
+        let env = self.profile.env(self.ctx);
+        proxy_env::script_lines(cred, addr, &env, req.origin.as_deref())
+            .map_err(|e| fail("script", &e))
+    }
+
     /// Puts the files in the Box and opens the tab.
     fn deliver(&self, connect: &[String]) -> Result<PaneRef, Failure> {
         let Self {
@@ -162,11 +188,10 @@ impl Launch<'_> {
                 )
                 .map_err(|e| fail("hooks", &e))?;
         }
-        let argv = req
-            .resume
-            .as_deref()
-            .map_or_else(|| profile.argv(ctx), |id| profile.resume_argv(id, ctx));
-        let script = script(cred, ctx, &hooks, &preseed, &argv).map_err(|e| fail("script", &e))?;
+        let argv = self.argv();
+        let lines = self.proxy_lines()?;
+        let script = script(cred, ctx, &hooks, &preseed, &argv, &lines);
+        let script = script.map_err(|e| fail("script", &e))?;
         let line = format!(
             "{} {}; echo \"moor: agent exited $?\"",
             command_line(connect),
@@ -187,13 +212,16 @@ impl Launch<'_> {
 }
 
 /// The script the Box runs under `sh`; the credential directory goes once the brief is
-/// installed, and at exit or on a hangup, interrupt or terminate before then.
+/// installed, and at exit or on a hangup, interrupt or terminate before then. With
+/// `proxy` lines the directory stays until the agent exits, since the shim lives in it,
+/// and the lines run after the base `PATH` is set so the shim comes first.
 fn script(
     cred: &BoxPath,
     ctx: &LaunchCtx,
     hooks: &BoxSetup,
     preseed: &BoxSetup,
     argv: &[String],
+    proxy: &[String],
 ) -> Result<String, NameError> {
     let workdir = ctx.workdir.as_str();
     let moor = quote(BoxPath::under(workdir, ".moor")?.as_str());
@@ -203,22 +231,26 @@ fn script(
     let agent = std::iter::once(Tool::Agent.program().to_owned())
         .chain(argv.iter().cloned())
         .collect::<Vec<_>>();
-    Ok([
-        format!("trap {} EXIT", quote(&format!("rm -rf {}", quote(cred.as_str())))),
+    let remove = format!("rm -rf {}", quote(cred.as_str()));
+    let mut lines = vec![
+        format!("trap {} EXIT", quote(&remove)),
         "trap 'exit 129' HUP".to_owned(),
         "trap 'exit 130' INT".to_owned(),
         "trap 'exit 143' TERM".to_owned(),
         format!("mkdir -p {moor} && install -m 600 {staged} {brief} || exit 1"),
-        format!("rm -rf {}", quote(cred.as_str())),
         format!(
             "printf '{{\"state\":\"starting\",\"event\":\"Launch\",\"ts\":%s}}\\n' \"$(date +%s)\" > {state} || exit 1"
         ),
         format!("{} || exit 1", hooks.step),
         preseed.step.clone(),
         "export PATH=\"$HOME/.local/bin:$HOME/.bun/bin:$PATH\"".to_owned(),
-        format!("cd {} && {}", quote(workdir), command_line(&agent)),
-    ]
-    .join("\n"))
+    ];
+    if proxy.is_empty() {
+        lines.insert(5, remove);
+    }
+    lines.extend(proxy.iter().cloned());
+    lines.push(format!("cd {} && {}", quote(workdir), command_line(&agent)));
+    Ok(lines.join("\n"))
 }
 
 /// Removes the credential directory on the Box.
