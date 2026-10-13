@@ -88,6 +88,19 @@ impl Env {
         }
     }
 
+    /// True only when `MOOR_TEST` is exactly `1`.
+    pub(crate) fn test_mode(&self) -> bool {
+        self.get("MOOR_TEST") == Some("1")
+    }
+
+    /// Upstream base override for `route`, read from `MOOR_PROXY_UPSTREAM_<ROUTE>`.
+    ///
+    /// `<ROUTE>` is the route id upper-cased with `.` replaced by `_`; empty counts as unset.
+    pub(crate) fn proxy_upstream(&self, route: &str) -> Option<&str> {
+        let suffix = route.to_ascii_uppercase().replace('.', "_");
+        self.non_empty(&format!("MOOR_PROXY_UPSTREAM_{suffix}"))
+    }
+
     /// Value of `key` when set and non-empty.
     fn non_empty(&self, key: &str) -> Option<&str> {
         self.get(key).filter(|v| !v.is_empty())
