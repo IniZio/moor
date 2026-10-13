@@ -1,6 +1,7 @@
 //! Where a saved transcript goes and how it is told apart: pure naming and digesting.
 
 use std::fmt::Write as _;
+use std::io::{self, Read};
 
 use sha2::{Digest, Sha256};
 
@@ -36,21 +37,26 @@ pub fn next_number<'a>(kinds: impl IntoIterator<Item = &'a str>) -> usize {
         + 1
 }
 
-/// The archive path under the state directory: `transcripts/<task>/<session>-<n>`.
+/// The archive path under the state directory: `transcripts/<task>/<session>-<n>.tgz`.
 #[must_use]
 pub fn relative_path(task: TaskId, session: i64, n: usize) -> String {
-    format!("transcripts/{}/{session}-{n}", task.get())
+    format!("transcripts/{}/{session}-{n}.tgz", task.get())
 }
 
-/// Lowercase hex sha256 of the archive bytes.
-#[must_use]
-pub fn digest(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
+/// Lowercase hex sha256 of the archive, read as a stream so its size does not matter.
+///
+/// # Errors
+/// Returns the read error.
+pub fn digest(mut archive: impl Read) -> io::Result<String> {
+    let mut hasher = Sha256::new();
+    io::copy(&mut archive, &mut hasher)?;
+    Ok(hasher
+        .finalize()
         .iter()
         .fold(String::with_capacity(64), |mut acc, b| {
             let _ = write!(acc, "{b:02x}");
             acc
-        })
+        }))
 }
 
 #[cfg(test)]
