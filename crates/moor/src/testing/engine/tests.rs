@@ -115,6 +115,7 @@ fn scripted_launch_results_are_served_in_order() {
 fn steers_are_recorded_and_served_in_order_then_succeed() {
     let retried = SteerOutcome {
         submit_retried: true,
+        submit_checked: true,
     };
     let e = FakeEngine::new()
         .steer_result(Ok(retried))
@@ -128,7 +129,8 @@ fn steers_are_recorded_and_served_in_order_then_succeed() {
     assert_eq!(
         e.steer(&session("b"), &text, DL),
         Ok(SteerOutcome {
-            submit_retried: false
+            submit_retried: false,
+            submit_checked: true
         })
     );
     assert_eq!(
