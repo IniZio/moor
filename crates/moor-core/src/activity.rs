@@ -38,6 +38,19 @@ impl AgentState {
     pub const fn busy(&self) -> bool {
         matches!(self, Self::Starting | Self::Working | Self::Unknown)
     }
+
+    /// The name shown to users.
+    #[must_use]
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Starting => "starting",
+            Self::Working => "working",
+            Self::Blocked { .. } => "blocked",
+            Self::Idle => "idle",
+            Self::Exited { .. } => "exited",
+            Self::Unknown => "unknown",
+        }
+    }
 }
 
 /// Where a reading came from.
@@ -53,6 +66,20 @@ pub enum Source {
     Pane,
     /// A read timed out and no cache stood in.
     Timeout,
+}
+
+impl Source {
+    /// The name shown to users.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Hooks => "hooks",
+            Self::HooksCached => "hooks_cached",
+            Self::Herdr => "herdr",
+            Self::Pane => "pane",
+            Self::Timeout => "timeout",
+        }
+    }
 }
 
 /// An agent state and where it came from.

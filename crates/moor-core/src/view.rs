@@ -10,10 +10,14 @@ use crate::domain::task::TaskState;
 /// Agent activity on a Task row.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct AgentView {
+    /// `live`, `exited` or `gone`.
+    pub pane: String,
     /// Agent state name.
     pub state: String,
     /// Where the state was learned.
     pub source: String,
+    /// The agent's exit code, once it ended.
+    pub exit_code: Option<i32>,
     /// What the agent waits for, if anything.
     pub waiting_for: Option<String>,
 }
