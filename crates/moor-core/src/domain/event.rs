@@ -175,6 +175,16 @@ pub enum Event {
         /// The ended session ids.
         sessions: Vec<String>,
     },
+    /// The agent waits at a first-run prompt.
+    AgentPromptBlocked {
+        /// The prompt, by name.
+        prompt: String,
+    },
+    /// Reading the agent's pane for first-run prompts failed.
+    AgentPromptCheckFailed {
+        /// What went wrong.
+        error: String,
+    },
 }
 
 impl Event {
@@ -211,6 +221,8 @@ impl Event {
             Self::RunStarted { .. } => "run_started",
             Self::Attached => "attached",
             Self::SessionsStopped { .. } => "sessions_stopped",
+            Self::AgentPromptBlocked { .. } => "agent_prompt_blocked",
+            Self::AgentPromptCheckFailed { .. } => "agent_prompt_check_failed",
         }
     }
 
