@@ -1,5 +1,7 @@
 //! The Box agent kit, the one Engine adapter; agent-specific behaviour sits behind an `AgentProfile`.
 
+#[cfg_attr(not(test), expect(dead_code, reason = "used by launch, not yet wired"))]
+mod brief;
 pub(crate) mod claude;
 mod probe;
 
