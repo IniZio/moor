@@ -41,6 +41,19 @@ impl Store {
             .optional()?)
     }
 
+    /// Whether `task` has ever had a session, ended or not.
+    pub(crate) fn has_session(&self, task: TaskId) -> Result<bool, StoreError> {
+        let conn = self.reader()?;
+        Ok(conn
+            .query_row(
+                "SELECT 1 FROM sessions WHERE task = ? LIMIT 1",
+                [task.get()],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some())
+    }
+
     /// Record the start of a session on `task`; task state is not touched.
     pub(crate) fn begin_session(&self, task: TaskId, session_ref: &str) -> Result<i64, StoreError> {
         let now = self.now();

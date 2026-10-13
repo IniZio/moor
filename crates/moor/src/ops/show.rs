@@ -18,9 +18,13 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
     let now = cx.clock().now();
     let mut tasks: Vec<TaskView> = Vec::new();
     let mut agents: HashMap<TaskId, Option<AgentView>> = HashMap::new();
-    for row in store.all_tasks()? {
-        let in_flight = store.in_flight_run(row.id, &|pid| cx.proc().alive(pid))?;
+    for mut row in store.all_tasks()? {
         let reading = activity::read(cx, store, &row, now)?;
+        if req.task.is_none() {
+            activity::settle(store, &row, &reading)?;
+            row = store.task(row.id)?.unwrap_or(row);
+        }
+        let in_flight = store.in_flight_run(row.id, &|pid| cx.proc().alive(pid))?;
         let agent = agent_view(&reading);
         let mut view = task_view_with_run(&row, in_flight.as_ref());
         view.agent.clone_from(&agent);

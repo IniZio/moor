@@ -13,6 +13,7 @@ use moor_core::seam::surface::{workspace_label, Worktree};
 use moor_core::view::{AgentLaunchView, DotfilesView, SetupView, StartView};
 use moor_core::{ErrorKind, StartReq, TaskId, Warning};
 
+use super::common::activity;
 use super::common::boxlock::{self, BoxLock};
 use super::common::capacity;
 use super::common::facts::settings;
@@ -79,6 +80,7 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     } else {
         SetupRun::Skipped
     };
+    launch_agent(store, id)?;
     let row = reread(store, id)?;
     let mut v = queued_view(cx, &row, false, &cfg.provider.value);
     v.setup = run.view();
@@ -145,13 +147,33 @@ fn attach(
     }
     let reprovisioned = reprovision(cx, store, row, "start")?;
     store.apply(Decision::new(row.id).event(ExtraEvent::Attached))?;
+    launch_agent(store, row.id)?;
+    let row = &settle_agent(cx, store, row.id)?;
     if let Some(run) = reprovisioned {
-        let row = reread(store, row.id)?;
-        let mut v = with_provider(cx, &row, true)?;
+        let mut v = with_provider(cx, row, true)?;
         v.setup = run.view();
         return Ok(v);
     }
     with_provider(cx, row, true)
+}
+
+/// Records a session for a Working Task that never had one.
+///
+/// The session is recorded before any agent launch exists, so the Task reads as live.
+fn launch_agent(store: &Store, id: TaskId) -> Result<(), CommandError> {
+    let row = reread(store, id)?;
+    if row.state == TaskState::Working && !store.has_session(id)? {
+        store.begin_session(id, &format!("moor-{}", id.get()))?;
+    }
+    Ok(())
+}
+
+/// The row of `id` after its agent's activity moved the Task between Working and Idle.
+fn settle_agent(cx: &Cx, store: &Store, id: TaskId) -> Result<TaskRow, CommandError> {
+    let row = reread(store, id)?;
+    let reading = activity::read(cx, store, &row, cx.clock().now())?;
+    activity::settle(store, &row, &reading)?;
+    reread(store, id)
 }
 
 /// [`queued_view`] for a row whose provider is not at hand; resolved only when it is queued.
