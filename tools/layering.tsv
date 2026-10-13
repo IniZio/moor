@@ -5,6 +5,7 @@ moor_core::name
 moor_core::request	moor_core::name
 moor_core::response	moor_core::name
 moor_core::domain	moor_core::name,moor_core::secret
+moor_core::activity	moor_core::seam::clock
 moor_core::decide	moor_core::domain,moor_core::name,moor_core::seam,moor_core::response,moor_core::request
 moor_core::config	moor_core::name,moor_core::secret
 moor_core::proxy_gate	moor_core::name,moor_core::secret
