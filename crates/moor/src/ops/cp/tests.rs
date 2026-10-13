@@ -19,6 +19,7 @@ use crate::testing::proc::ScriptedProc;
 use crate::testing::surface::FakeSurface;
 
 const CWD: &str = "/home/me/proj";
+const WORKTREE: &str = "/home/me/wt/t";
 
 struct Fx {
     dir: tempfile::TempDir,
@@ -51,6 +52,7 @@ fn fx_with(driver: FakeDriver, ready: bool) -> Fx {
     let d = if ready {
         let fields = Fields {
             box_provider: Field::Set(provider.clone()),
+            worktree: Field::Set(WORKTREE.to_owned()),
             ..Fields::default()
         };
         Decision::new(id)
@@ -158,7 +160,18 @@ fn relative_destination_is_absolute_from_the_callers_cwd() {
     run(&f.cx, &req("a", "sub/a.txt")).unwrap();
     let (_, _, to, host_cwd) = first_copy(&f);
     assert_eq!(to, Path::new(CWD).join("sub/a.txt"));
-    assert_eq!(host_cwd, Path::new(CWD));
+    assert_eq!(host_cwd, Path::new(WORKTREE));
+}
+
+#[test]
+fn copy_runs_from_the_task_worktree_while_the_destination_stays_under_the_callers_cwd() {
+    let f = fx();
+    run(&f.cx, &req("a", "out/a.txt")).unwrap();
+    let (_, _, to, host_cwd) = first_copy(&f);
+    assert_eq!(host_cwd, Path::new(WORKTREE));
+    assert_ne!(host_cwd, Path::new(CWD));
+    assert!(to.starts_with(CWD));
+    assert!(!to.starts_with(WORKTREE));
 }
 
 #[test]
