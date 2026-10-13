@@ -164,6 +164,7 @@ fn attach(
         let cfg = settings(cx, Path::new(at), &flags)?;
         Ok(cfg.model.map(|m| m.value))
     };
+    wake_idle(store, row.id)?;
     let agent = launch::run(cx, store, req, row.id, setup_exit, &model)?;
     let row = &reread(store, row.id)?;
     let mut v = with_provider(cx, row, true)?;
@@ -172,6 +173,20 @@ fn attach(
     }
     set_agent(&mut v, agent);
     Ok(v)
+}
+
+/// Moves an Idle Task with no live session to Working, so the launch check sees a Working Task.
+///
+/// An Idle Task whose agent is live keeps its state: `settle_all` already woke it if it was busy.
+fn wake_idle(store: &Store, id: TaskId) -> Result<(), CommandError> {
+    let row = reread(store, id)?;
+    if row.state != TaskState::Idle || store.live_session(id)?.is_some() {
+        return Ok(());
+    }
+    match store.apply(Decision::new(id).task_input(TaskInput::AgentBusy)) {
+        Ok(_) | Err(StoreError::Illegal(_)) => Ok(()),
+        Err(e) => Err(e.into()),
+    }
 }
 
 /// Puts the launch outcome in the view, naming a failure in a warning too.

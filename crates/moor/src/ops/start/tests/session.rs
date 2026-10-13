@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
-use moor_core::domain::task::TaskState;
+use moor_core::domain::decision::Decision;
+use moor_core::domain::task::{TaskInput, TaskState};
 use moor_core::seam::driver::ExecOutcome;
 use moor_core::seam::engine::EngineError;
 use moor_core::{ErrorKind, ShowReq, StartReq, TaskId, TaskName, WaitFor, WaitReq};
@@ -172,6 +173,48 @@ fn starting_again_launches_once_and_clears_the_failure() {
     assert!(store.live_session(id).unwrap().is_some());
     run(&w.cx, &goal_req("demo")).unwrap();
     assert_eq!(engine.launches().len(), 2);
+}
+
+#[test]
+fn restarting_an_idle_task_with_a_goal_and_no_session_wakes_and_launches_once() {
+    let engine = Arc::new(FakeEngine::new());
+    let w = with_engine(&engine);
+    let first = run(&w.cx, &goal_req("demo")).unwrap();
+    let id = TaskId::new(first.task.id);
+    let store = w.cx.store().unwrap();
+    while let Some(live) = store.live_session(id).unwrap() {
+        store.end_session(live.id, Some(0), None).unwrap();
+    }
+    store
+        .apply(Decision::new(id).task_input(TaskInput::AgentQuiet))
+        .unwrap();
+    assert_eq!(store.task(id).unwrap().unwrap().state, TaskState::Idle);
+    let again = run(&w.cx, &req("demo")).unwrap();
+    assert_eq!(again.task.state, TaskState::Working);
+    assert!(again.agent.launched);
+    assert_eq!(engine.launches().len(), 2);
+    let events = store.events(id, 100).unwrap();
+    assert!(events.iter().any(|e| e.kind == "busy"));
+}
+
+#[test]
+fn rerunning_after_a_failed_launch_launches_once_and_stays_working() {
+    let engine = Arc::new(FakeEngine::new().launch_result(Err(launch_error("pane", "no tab"))));
+    let w = with_engine(&engine);
+    let first = run(&w.cx, &goal_req("demo")).unwrap();
+    let id = TaskId::new(first.task.id);
+    let again = run(&w.cx, &req("demo")).unwrap();
+    assert_eq!(again.task.state, TaskState::Working);
+    assert!(again.agent.launched);
+    assert_eq!(engine.launches().len(), 2);
+    let store = w.cx.store().unwrap();
+    let busy = store
+        .events(id, 100)
+        .unwrap()
+        .into_iter()
+        .filter(|e| e.kind == "busy")
+        .count();
+    assert_eq!(busy, 0);
 }
 
 #[test]
