@@ -21,7 +21,7 @@ use crate::store::{Store, StoreError, TaskRow};
 /// Sleep the Box of task `id` when its Task has been Idle for `box.sleep_after`.
 ///
 /// A held Box lock, a Box that cannot be slept right now and a step the store refuses leave
-/// everything as it was. Any other failure becomes a warning.
+/// everything as it was. A Box with a recorded refusal is not asked again until the Task has left Idle. Any other failure becomes a warning.
 pub(crate) fn run(cx: &Cx, store: &Store, id: TaskId) {
     match try_sleep(cx, store, id) {
         Err(e) if e.kind != ErrorKind::Refused => cx.warn(Warning {
@@ -58,6 +58,9 @@ fn try_sleep(cx: &Cx, store: &Store, id: TaskId) -> Result<(), CommandError> {
     if !due(cx, &row) {
         return Ok(());
     }
+    if row.boxed.as_ref().is_some_and(|b| b.sleep_reason.is_some()) {
+        return Ok(());
+    }
     let handle = sleep_handle(cx, &row)?;
     let decision = match cx.driver().sleep(&handle)? {
         SleepOutcome::Slept | SleepOutcome::Native => Decision::new(id)
@@ -67,18 +70,12 @@ fn try_sleep(cx: &Cx, store: &Store, id: TaskId) -> Result<(), CommandError> {
                 box_sleep_reason: Field::Clear,
                 ..Fields::default()
             }),
-        SleepOutcome::CannotSleep(reason) => {
-            let known = row.boxed.as_ref().and_then(|b| b.sleep_reason.as_ref()) == Some(&reason);
-            let stays = Decision::new(id).set(Fields {
+        SleepOutcome::CannotSleep(reason) => Decision::new(id)
+            .set(Fields {
                 box_sleep_reason: Field::Set(reason.clone()),
                 ..Fields::default()
-            });
-            if known {
-                stays
-            } else {
-                stays.event(ExtraEvent::StaysUp { reason })
-            }
-        }
+            })
+            .event(ExtraEvent::StaysUp { reason }),
     };
     match store.apply(decision) {
         Ok(_) | Err(StoreError::Illegal(_)) => Ok(()),
