@@ -93,11 +93,11 @@ trap 'exit 1' INT TERM HUP
 http() {
   m=$1 u=$2 d=${3:-}
   if [ -n "$d" ]; then
-    status=$(curl -sS -X "$m" -H 'Accept: application/vnd.github+json' \
+    status=$(curl -q -sS --noproxy '*' -X "$m" -H 'Accept: application/vnd.github+json' \
       -H 'Content-Type: application/json' --data-binary "@$d" \
       -o "$TMP/out" -w '%{http_code}' "$u") || status=curl
   else
-    status=$(curl -sS -X "$m" -H 'Accept: application/vnd.github+json' \
+    status=$(curl -q -sS --noproxy '*' -X "$m" -H 'Accept: application/vnd.github+json' \
       -o "$TMP/out" -w '%{http_code}' "$u") || status=curl
   fi
   case $status in
@@ -106,9 +106,16 @@ http() {
   esac
 }
 
+# Escapes backslash, quote and every control byte (0x01-0x1F, 0x7F) for a JSON
+# string. The byte table uses only POSIX awk (no gawk extensions).
 jesc() {
-  printf '%s' "$1" | awk 'BEGIN{ORS=""} {
-    gsub(/\\/, "\\\\"); gsub(/"/, "\\\""); gsub(/\t/, "\\t"); gsub(/\r/, "\\r")
+  printf '%s' "$1" | awk 'BEGIN{ORS=""
+    for (i = 1; i < 32; i++) if (i != 10) { c[i] = sprintf("%c", i); r[i] = sprintf("\\u%04x", i) }
+    c[127] = sprintf("%c", 127); r[127] = "\\u007f"
+    r[9] = "\\t"; r[13] = "\\r"
+  } {
+    gsub(/\\/, "\\\\"); gsub(/"/, "\\\"")
+    for (i in c) gsub(c[i], r[i])
     if (NR > 1) print "\\n"
     print
   }'

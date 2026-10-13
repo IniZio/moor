@@ -325,6 +325,32 @@ fn gh_shim_create_escapes_json_strings() -> Res {
 }
 
 #[test]
+fn gh_shim_create_escapes_every_control_character() -> Res {
+    let raw = "\x1b[31mred\x1b[0m \x01 end";
+    let want = r#""body":"\u001b[31mred\u001b[0m \u0001 end""#;
+    let fx = Fx::new()?;
+    let file = fx.file("ctl.md", raw)?;
+    for args in [
+        vec!["pr", "create", "--title", "T", "--body", raw],
+        vec!["pr", "create", "--title", "T", "--body-file", &file],
+    ] {
+        let o = fx.run(&args, &[REPO_GET, ("POST", PULLS, 201, CREATED)])?;
+        assert_eq!(o.code, Some(0), "{}", o.stderr);
+        let post = o.reqs.last().ok_or("no request")?;
+        assert!(post.body.contains(want), "{}", post.body);
+        assert!(!post.body.bytes().any(|b| b < 0x20), "{:?}", post.body);
+    }
+    Ok(())
+}
+
+#[test]
+fn gh_shim_curl_ignores_curlrc_and_proxies() {
+    let calls = GH_SHIM.matches("curl ").count();
+    assert!(calls >= 2);
+    assert_eq!(GH_SHIM.matches("curl -q -sS --noproxy '*' ").count(), calls);
+}
+
+#[test]
 fn gh_shim_create_with_explicit_base_head_and_draft_skips_lookup() -> Res {
     let fx = Fx::new()?;
     let o = fx.run(
