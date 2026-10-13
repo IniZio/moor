@@ -52,7 +52,7 @@ pub(crate) fn run(cx: &Cx, req: &WaitReq) -> Result<WaitValue, CommandError> {
             Some(r) => Some(r.clone()),
             None => store.last_run(id)?,
         };
-        let mut task = task_view_with_run(&row, in_flight.as_ref());
+        let mut task = task_view_with_run(&row, in_flight.as_ref(), cx.config());
         task.agent = agent_view(&reading);
         return Ok(WaitValue {
             task,

@@ -1,6 +1,7 @@
 //! Store rows to the core views.
 
 use moor_core::activity::AgentState;
+use moor_core::config::UserConfig;
 use moor_core::domain::boxes::BoxState;
 use moor_core::seam::clock::Ts;
 use moor_core::view::{AgentView, BoxSleepView, BoxView, EventView, RunView, TaskView};
@@ -55,7 +56,7 @@ fn box_handle(b: &BoxRow) -> Option<String> {
 }
 
 /// Map a Box row to its view.
-fn box_view(b: &BoxRow) -> BoxView {
+fn box_view(b: &BoxRow, config: &UserConfig) -> BoxView {
     BoxView {
         state: b.state,
         provider: b.provider.as_str().to_owned(),
@@ -65,7 +66,7 @@ fn box_view(b: &BoxRow) -> BoxView {
             .map(|e| (if e { "enforced" } else { "not_enforced" }).to_owned()),
         asleep_since: (b.state == BoxState::Asleep).then(|| rfc3339(b.updated_at)),
         sleep: BoxSleepView {
-            after: None,
+            after: Some(config.box_.sleep_after_label()),
             reason: b.sleep_reason.clone(),
         },
     }
@@ -81,14 +82,18 @@ fn run_view(r: &RunRow) -> RunView {
 }
 
 /// Map a Task row to the shared Task view; `agent` and `run` stay empty.
-pub(crate) fn task_view(row: &TaskRow) -> TaskView {
-    task_view_with_run(row, None)
+pub(crate) fn task_view(row: &TaskRow, config: &UserConfig) -> TaskView {
+    task_view_with_run(row, None, config)
 }
 
 /// Map a Task row to the shared Task view, showing `run` when one is in flight.
 ///
 /// `agent` stays empty.
-pub(crate) fn task_view_with_run(row: &TaskRow, run: Option<&RunRow>) -> TaskView {
+pub(crate) fn task_view_with_run(
+    row: &TaskRow,
+    run: Option<&RunRow>,
+    config: &UserConfig,
+) -> TaskView {
     TaskView {
         id: row.id.get(),
         name: row.name.as_str().to_owned(),
@@ -101,7 +106,7 @@ pub(crate) fn task_view_with_run(row: &TaskRow, run: Option<&RunRow>) -> TaskVie
         branch: row.branch.clone(),
         worktree: row.worktree.clone(),
         workspace: row.workspace_id.clone(),
-        r#box: row.boxed.as_ref().map(box_view),
+        r#box: row.boxed.as_ref().map(|b| box_view(b, config)),
         agent: None,
         run: run.map(run_view),
         updated_at: rfc3339(row.updated_at),

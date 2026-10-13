@@ -40,7 +40,7 @@ pub(crate) fn run(cx: &Cx, req: &TaskReq) -> Result<SleepValue, CommandError> {
     }
     Ok(SleepValue {
         task: req.task.as_str().to_owned(),
-        r#box: task_view(&reload()?).r#box,
+        r#box: task_view(&reload()?, cx.config()).r#box,
         woke: false,
     })
 }
