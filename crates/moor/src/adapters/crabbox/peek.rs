@@ -30,6 +30,8 @@ pub(super) fn peek_file(
     path: &BoxPath,
     host_cwd: &Path,
 ) -> Result<Option<String>, DriverError> {
+    // `crabbox ssh` touches the lease, so every peek also resets crabbox's idle timer;
+    // idle Boxes are slept by moor's `sleep_after`, not by that timer.
     // Secret-token providers need --show-secret, not yet passed.
     let lookup = static_env(
         Crabbox::spec(LOOKUP_DEADLINE)
