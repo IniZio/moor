@@ -1,11 +1,13 @@
 //! Agent session rows and the last hook report cached per task.
 
 use moor_core::activity::{HookCache, HookKind, HookRecord};
+use moor_core::domain::event::Event;
 use moor_core::seam::clock::Ts;
 use moor_core::TaskId;
 use rusqlite::{params, OptionalExtension, Row, TransactionBehavior};
 use serde_json::{json, Value};
 
+use super::apply::insert_event;
 use super::{load_task, Store, StoreError};
 
 /// A stored agent session.
@@ -17,6 +19,8 @@ pub(crate) struct SessionRow {
     pub(crate) task: TaskId,
     /// The agent's own session reference.
     pub(crate) session_ref: String,
+    /// The agent's pane, if it has one.
+    pub(crate) pane: Option<String>,
     /// When the session began.
     pub(crate) started_at: Ts,
     /// When the session ended; none while live.
@@ -33,7 +37,7 @@ impl Store {
         let conn = self.reader()?;
         Ok(conn
             .query_row(
-                "SELECT id, task, session_ref, started_at, ended_at, exit, transcript_digest \
+                "SELECT id, task, session_ref, pane, started_at, ended_at, exit, transcript_digest \
                  FROM sessions WHERE task = ? AND ended_at IS NULL ORDER BY id DESC LIMIT 1",
                 [task.get()],
                 session_from_row,
@@ -54,8 +58,14 @@ impl Store {
             .is_some())
     }
 
-    /// Record the start of a session on `task`; task state is not touched.
-    pub(crate) fn begin_session(&self, task: TaskId, session_ref: &str) -> Result<i64, StoreError> {
+    /// Record the start of a session on `task` and its `SessionStarted` event; task state is not
+    /// touched.
+    pub(crate) fn begin_session(
+        &self,
+        task: TaskId,
+        session_ref: &str,
+        pane: Option<&str>,
+    ) -> Result<i64, StoreError> {
         let now = self.now();
         let mut conn = self.writer()?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -63,10 +73,14 @@ impl Store {
             return Err(StoreError::NotFound(task));
         }
         tx.execute(
-            "INSERT INTO sessions (task, session_ref, started_at) VALUES (?, ?, ?)",
-            params![task.get(), session_ref, now.as_millis()],
+            "INSERT INTO sessions (task, session_ref, pane, started_at) VALUES (?, ?, ?, ?)",
+            params![task.get(), session_ref, pane, now.as_millis()],
         )?;
         let id = tx.last_insert_rowid();
+        let started = Event::SessionStarted {
+            session: session_ref.to_owned(),
+        };
+        insert_event(&tx, task, &started, now)?;
         tx.commit()?;
         drop(conn);
         Ok(id)
@@ -130,10 +144,11 @@ fn session_from_row(r: &Row<'_>) -> rusqlite::Result<SessionRow> {
         id: r.get(0)?,
         task: TaskId::new(r.get(1)?),
         session_ref: r.get(2)?,
-        started_at: Ts::from_millis(r.get(3)?),
-        ended_at: r.get::<_, Option<i64>>(4)?.map(Ts::from_millis),
-        exit: r.get(5)?,
-        transcript_digest: r.get(6)?,
+        pane: r.get(3)?,
+        started_at: Ts::from_millis(r.get(4)?),
+        ended_at: r.get::<_, Option<i64>>(5)?.map(Ts::from_millis),
+        exit: r.get(6)?,
+        transcript_digest: r.get(7)?,
     })
 }
 

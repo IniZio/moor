@@ -14,7 +14,7 @@ CREATE TABLE boxes  (
 CREATE TABLE events (id INTEGER PRIMARY KEY, task INTEGER NOT NULL REFERENCES tasks(id), kind TEXT NOT NULL,
   payload TEXT NOT NULL, ts INTEGER NOT NULL);
 CREATE INDEX events_task ON events(task, id);
-CREATE TABLE sessions (id INTEGER PRIMARY KEY, task INTEGER NOT NULL, session_ref TEXT NOT NULL, started_at INTEGER NOT NULL,
+CREATE TABLE sessions (id INTEGER PRIMARY KEY, task INTEGER NOT NULL, session_ref TEXT NOT NULL, pane TEXT, started_at INTEGER NOT NULL,
   ended_at INTEGER, exit INTEGER, transcript_digest TEXT);
 CREATE TABLE runs   (id INTEGER PRIMARY KEY, task INTEGER NOT NULL, argv TEXT NOT NULL, record TEXT, sha TEXT, sync TEXT NOT NULL,
   pid INTEGER NOT NULL, started_at INTEGER NOT NULL, finished_at INTEGER, exit INTEGER, interrupted INTEGER NOT NULL DEFAULT 0);

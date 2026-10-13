@@ -168,7 +168,7 @@ fn attach(
 fn launch_agent(store: &Store, id: TaskId) -> Result<(), CommandError> {
     let row = reread(store, id)?;
     if row.state == TaskState::Working && row.goal.is_some() && !store.has_session(id)? {
-        store.begin_session(id, &format!("moor-{}", id.get()))?;
+        store.begin_session(id, &format!("moor-{}", id.get()), None)?;
     }
     Ok(())
 }
