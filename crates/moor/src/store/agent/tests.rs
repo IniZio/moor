@@ -171,15 +171,14 @@ fn hook_cache_round_trips_every_kind_and_keeps_the_latest() {
         HookKind::Starting,
         HookKind::Busy,
         HookKind::Idle,
-        HookKind::Blocked {
-            waiting_for: "ok?".into(),
-        },
+        HookKind::Blocked,
     ];
     for (i, kind) in kinds.into_iter().enumerate() {
         clock.sleep(Duration::from_millis(10));
         let record = HookRecord {
             kind,
             session_id: (i % 2 == 0).then(|| "sess".to_owned()),
+            message: (i == 3).then(|| "ok?".to_owned()),
             at: Ts::from_millis(500 + i64::try_from(i).unwrap()),
         };
         store.put_hook(id, &record).unwrap();

@@ -27,8 +27,13 @@ impl AgentProfile for Stub {
         Some(HookRecord {
             kind,
             session_id: None,
+            message: None,
             at: Ts::from_millis(1),
         })
+    }
+
+    fn pane_prompt(&self, tail: &str) -> Option<String> {
+        tail.strip_prefix("ask ").map(str::to_owned)
     }
 }
 
@@ -42,6 +47,7 @@ fn obs() -> PaneObs {
     PaneObs {
         status: PaneStatus::Idle,
         tail: "tail".to_owned(),
+        prompt: None,
         exit_marker: None,
     }
 }
@@ -118,6 +124,7 @@ fn returns_the_parsed_hook_and_the_pane_observation() {
         HookRead::Fresh(HookRecord {
             kind: HookKind::Idle,
             session_id: None,
+            message: None,
             at: Ts::from_millis(1),
         })
     );

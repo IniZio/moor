@@ -1,6 +1,6 @@
 //! Pane and multiplexer readings.
 
-use super::{exited, fresh, obs, waiting, Case, TASKS};
+use super::{asking, exited, fresh, obs, waiting, Case, SILENT, TASKS};
 use crate::activity::Source as Src;
 use crate::activity::{AgentState as S, HookKind as K, HookRead, PaneRead, PaneStatus as P};
 
@@ -10,11 +10,23 @@ fn absent_hook_uses_herdr_status() {
     Case::new("working", a(), obs(P::Working, "")).expect(S::Working, Src::Herdr);
     Case::new("idle is reported", a(), obs(P::Idle, "")).expect(S::Idle, Src::Herdr);
     Case::new(
-        "blocked takes the last line",
+        "blocked shows the profile's prompt line, not the footer",
         a(),
-        obs(P::Blocked, "out\nAllow edit?\n\n"),
+        asking(P::Blocked, "Allow edit?\n\nesc to interrupt", "Allow edit?"),
     )
     .expect(waiting("Allow edit?"), Src::Herdr);
+    Case::new(
+        "blocked without a prompt line shows nothing",
+        a(),
+        obs(P::Blocked, "out\nesc to interrupt"),
+    )
+    .expect(SILENT, Src::Herdr);
+    Case::new(
+        "blank prompt line shows nothing",
+        a(),
+        asking(P::Blocked, "", "  "),
+    )
+    .expect(SILENT, Src::Herdr);
 }
 
 #[test]
