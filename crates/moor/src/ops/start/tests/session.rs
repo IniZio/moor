@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use moor_core::activity::{PaneObs, PaneStatus};
 use moor_core::domain::decision::Decision;
 use moor_core::domain::task::{TaskInput, TaskState};
 use moor_core::seam::driver::ExecOutcome;
@@ -10,6 +11,16 @@ use super::{req, world, world_at, World};
 use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
+
+/// A pane observation of a running agent.
+fn live_obs() -> PaneObs {
+    PaneObs {
+        status: PaneStatus::Working,
+        tail: String::new(),
+        prompt: None,
+        exit_marker: None,
+    }
+}
 
 /// A start request for `name` with a goal.
 fn goal_req(name: &str) -> StartReq {
@@ -171,6 +182,7 @@ fn starting_again_launches_once_and_clears_the_failure() {
     let store = w.cx.store().unwrap();
     assert!(store.task(id).unwrap().unwrap().launch_failure.is_none());
     assert!(store.live_session(id).unwrap().is_some());
+    w.surface.push_pane_obs("p-1", Ok(live_obs()));
     run(&w.cx, &goal_req("demo")).unwrap();
     assert_eq!(engine.launches().len(), 2);
 }

@@ -20,6 +20,7 @@ mod runs;
 #[cfg(test)]
 mod tests;
 
+pub(crate) use agent::SessionRow;
 pub(crate) use runs::RunRow;
 pub(crate) use runs::{NewRun, RunOutcome};
 

@@ -95,12 +95,17 @@ impl FakeSurface {
 
     /// Scripts the next `pane_obs` answer for `pane`; the last answer repeats.
     pub(crate) fn script_pane_obs(self, pane: &str, obs: Result<PaneObs, SurfaceError>) -> Self {
+        self.push_pane_obs(pane, obs);
+        self
+    }
+
+    /// [`Self::script_pane_obs`] for a surface already shared.
+    pub(crate) fn push_pane_obs(&self, pane: &str, obs: Result<PaneObs, SurfaceError>) {
         self.st()
             .obs
             .entry(pane.to_owned())
             .or_default()
             .push_back(obs);
-        self
     }
 
     /// Calls so far, like `create_worktree a` or `close_pane p-1`.

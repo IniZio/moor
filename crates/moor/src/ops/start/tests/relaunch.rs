@@ -1,0 +1,206 @@
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use moor_core::activity::{PaneObs, PaneStatus};
+use moor_core::domain::decision::{Decision, Field, Fields};
+use moor_core::seam::engine::{LaunchReq, SessionRef};
+use moor_core::seam::surface::{PaneRef, SurfaceError};
+use moor_core::{BoxHandle, BoxPath, StartReq, TaskId};
+
+use super::{req, world, World};
+use crate::ops::start::run;
+use crate::testing::driver::FakeDriver;
+use crate::testing::engine::FakeEngine;
+
+/// A start request for `demo` with `goal`.
+fn goal_req(goal: &str) -> StartReq {
+    StartReq {
+        goal: Some(goal.into()),
+        ..req("demo")
+    }
+}
+
+/// A launched session whose pane is `pane`.
+fn session(pane: &str) -> SessionRef {
+    SessionRef {
+        id: String::new(),
+        handle: BoxHandle::new("box-1"),
+        workdir: BoxPath::under("/work", "box-1").unwrap(),
+        worktree: PathBuf::from("/wt"),
+        pane: Some(PaneRef::new(pane)),
+    }
+}
+
+/// A pane observation of a running agent, or of one that exited with `code`.
+fn obs(exit_marker: Option<i32>) -> PaneObs {
+    PaneObs {
+        status: PaneStatus::Working,
+        tail: String::new(),
+        prompt: None,
+        exit_marker,
+    }
+}
+
+/// A world with a Working task `demo` launched with "ship it" in pane `p-1`; the next launch opens `p-2`.
+fn started() -> (World, Arc<FakeEngine>, TaskId) {
+    let engine = Arc::new(
+        FakeEngine::new()
+            .launch_result(Ok(session("p-1")))
+            .launch_result(Ok(session("p-2"))),
+    );
+    let mut w = world(FakeDriver::new());
+    w.cx = w.cx.with_engine(engine.clone());
+    let first = run(&w.cx, &goal_req("ship it")).unwrap();
+    (w, engine, TaskId::new(first.task.id))
+}
+
+/// The second launch request; fails unless there are exactly two.
+fn relaunch_of(engine: &FakeEngine) -> LaunchReq {
+    let mut all = engine.launches();
+    assert_eq!(all.len(), 2);
+    all.remove(1)
+}
+
+fn set_agent_session(w: &World, id: TaskId, agent: &str) {
+    let set = Fields {
+        agent_session_id: Field::Set(agent.into()),
+        ..Fields::default()
+    };
+    w.cx.store()
+        .unwrap()
+        .apply(Decision::new(id).set(set))
+        .unwrap();
+}
+
+fn live_pane(w: &World, id: TaskId) -> Option<String> {
+    w.cx.store()
+        .unwrap()
+        .live_session(id)
+        .unwrap()
+        .unwrap()
+        .pane
+}
+
+fn exit_of_first_session(w: &World, id: TaskId) -> Option<i32> {
+    w.cx.store()
+        .unwrap()
+        .reader()
+        .unwrap()
+        .query_row(
+            "SELECT exit FROM sessions WHERE task = ? ORDER BY id LIMIT 1",
+            [id.get()],
+            |r| r.get(0),
+        )
+        .unwrap()
+}
+
+fn warning_codes(w: &World) -> Vec<String> {
+    w.cx.take_warnings().into_iter().map(|x| x.code).collect()
+}
+
+#[test]
+fn a_gone_pane_relaunches_with_the_newest_goal() {
+    let (w, engine, id) = started();
+    let v = run(&w.cx, &req("demo")).unwrap();
+    assert!(v.agent.launched);
+    let second = relaunch_of(&engine);
+    assert_eq!(second.goal.as_deref(), Some("ship it"));
+    assert_eq!(second.resume, None);
+    assert_eq!(live_pane(&w, id).as_deref(), Some("p-2"));
+}
+
+#[test]
+fn an_exited_pane_relaunches_and_the_old_session_keeps_its_exit() {
+    let (w, engine, id) = started();
+    w.surface.push_pane_obs("p-1", Ok(obs(Some(3))));
+    run(&w.cx, &req("demo")).unwrap();
+    assert_eq!(engine.launches().len(), 2);
+    assert_eq!(live_pane(&w, id).as_deref(), Some("p-2"));
+    assert_eq!(exit_of_first_session(&w, id), Some(3));
+    assert!(w
+        .surface
+        .calls()
+        .iter()
+        .all(|c| !c.starts_with("close_pane")));
+}
+
+#[test]
+fn a_given_goal_relaunches_with_a_fresh_brief_and_is_stored() {
+    let (w, engine, id) = started();
+    set_agent_session(&w, id, "agent-1");
+    run(&w.cx, &goal_req("new goal")).unwrap();
+    let second = relaunch_of(&engine);
+    assert_eq!(second.goal.as_deref(), Some("new goal"));
+    assert_eq!(second.resume, None);
+    let row = w.cx.store().unwrap().task(id).unwrap().unwrap();
+    assert_eq!(row.goal.as_deref(), Some("new goal"));
+}
+
+#[test]
+fn a_stored_agent_session_relaunches_with_resume() {
+    let (w, engine, id) = started();
+    set_agent_session(&w, id, "agent-1");
+    run(&w.cx, &req("demo")).unwrap();
+    let second = relaunch_of(&engine);
+    assert_eq!(second.resume.as_deref(), Some("agent-1"));
+    assert_eq!(live_pane(&w, id).as_deref(), Some("p-2"));
+}
+
+#[test]
+fn an_empty_stored_agent_session_uses_the_brief() {
+    let (w, engine, id) = started();
+    set_agent_session(&w, id, "");
+    run(&w.cx, &req("demo")).unwrap();
+    let second = relaunch_of(&engine);
+    assert_eq!(second.resume, None);
+    assert_eq!(second.goal.as_deref(), Some("ship it"));
+}
+
+#[test]
+fn a_pane_read_error_counts_as_live() {
+    let (w, engine, id) = started();
+    w.surface.push_pane_obs("p-1", Err(SurfaceError::Timeout));
+    let v = run(&w.cx, &req("demo")).unwrap();
+    assert!(!v.agent.launched);
+    assert_eq!(engine.launches().len(), 1);
+    assert_eq!(live_pane(&w, id).as_deref(), Some("p-1"));
+}
+
+#[test]
+fn a_given_goal_with_a_live_pane_warns_and_changes_nothing() {
+    let (w, engine, id) = started();
+    w.surface.push_pane_obs("p-1", Ok(obs(None)));
+    w.cx.take_warnings();
+    run(&w.cx, &goal_req("new goal")).unwrap();
+    let warned = w.cx.take_warnings();
+    let msg = warned.iter().find(|x| x.code == "goal_ignored").unwrap();
+    assert_eq!(
+        msg.message,
+        "--goal ignored: the agent for demo is live; use moor steer"
+    );
+    assert_eq!(engine.launches().len(), 1);
+    assert_eq!(live_pane(&w, id).as_deref(), Some("p-1"));
+    let row = w.cx.store().unwrap().task(id).unwrap().unwrap();
+    assert_eq!(row.goal.as_deref(), Some("ship it"));
+}
+
+#[test]
+fn a_live_pane_without_a_goal_does_not_warn() {
+    let (w, _engine, _id) = started();
+    w.surface.push_pane_obs("p-1", Ok(obs(None)));
+    w.cx.take_warnings();
+    run(&w.cx, &req("demo")).unwrap();
+    assert!(!warning_codes(&w).contains(&"goal_ignored".to_owned()));
+}
+
+#[test]
+fn the_relaunched_event_carries_both_panes_and_the_goal() {
+    let (w, _engine, id) = started();
+    run(&w.cx, &goal_req("new goal")).unwrap();
+    let events = w.cx.store().unwrap().events(id, 100).unwrap();
+    let e = events.iter().find(|e| e.kind == "relaunched").unwrap();
+    assert_eq!(
+        e.payload,
+        serde_json::json!({"old_pane": "p-1", "new_pane": "p-2", "goal": "new goal"})
+    );
+}
