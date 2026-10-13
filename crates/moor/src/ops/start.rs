@@ -29,6 +29,7 @@ use crate::store::{Store, StoreError, TaskRow};
 
 mod launch;
 mod preflight;
+mod relaunch;
 
 /// What `start` learns before it changes anything.
 struct Facts {
@@ -165,7 +166,7 @@ fn attach(
         Ok(cfg.model.map(|m| m.value))
     };
     wake_idle(store, row.id)?;
-    let agent = launch::run(cx, store, req, row.id, setup_exit, &model)?;
+    let agent = relaunch::run(cx, store, req, row.id, setup_exit, &model)?;
     let row = &reread(store, row.id)?;
     let mut v = with_provider(cx, row, true)?;
     if let Some(run) = reprovisioned {
