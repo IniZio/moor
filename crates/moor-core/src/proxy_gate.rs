@@ -59,6 +59,11 @@ pub enum Inject {
     None,
     /// `Authorization: Bearer <credential of this row>`, resolved outside core.
     Bearer,
+    /// `Authorization: Basic base64(<user>:<credential of this row>)`, resolved outside core.
+    Basic {
+        /// User name sent with the credential as the password.
+        user: &'static str,
+    },
 }
 
 /// One row of the route table.
