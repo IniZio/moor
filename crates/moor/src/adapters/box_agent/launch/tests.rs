@@ -51,6 +51,7 @@ fn req(s: &FakeSurface) -> LaunchReq {
         task: TaskName::parse("t1").unwrap(),
         branch: "moor/t1".to_owned(),
         goal: Some("fix x".to_owned()),
+        resume: None,
         issue: None,
         setup_exit: None,
         model: Some("haiku".to_owned()),
@@ -128,6 +129,22 @@ fn the_pane_line_runs_the_script_without_exec_and_reports_the_exit() {
     assert!(line.starts_with("'ssh' '-t' 'box-1' '"), "{line}");
     assert!(line.ends_with("; echo \"moor: agent exited $?\""), "{line}");
     assert!(!line.contains("exec "), "{line}");
+}
+
+#[test]
+fn a_resume_runs_the_agent_with_the_stored_session_instead_of_the_prompt() {
+    let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new("/r")));
+    let r = LaunchReq {
+        resume: Some("sess-9".to_owned()),
+        ..req(&s)
+    };
+    agent(&d, &s).launch(&r).unwrap();
+    let script = script_of(&pane_line(&s));
+    assert!(
+        script.contains("'claude' '--resume' 'sess-9' '--model' 'haiku'"),
+        "{script}"
+    );
+    assert!(!script.contains("Read and follow"), "{script}");
 }
 
 #[test]

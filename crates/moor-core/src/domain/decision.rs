@@ -171,6 +171,15 @@ pub enum ExtraEvent {
         /// What went wrong.
         message: String,
     },
+    /// The agent was started again after its pane ended.
+    Relaunched {
+        /// The pane of the session that ended.
+        old_pane: Option<String>,
+        /// The pane of the new session.
+        new_pane: Option<String>,
+        /// The goal the new session works on.
+        goal: Option<String>,
+    },
     /// Setup failed on a Task that stays in its state, so no step derives it.
     SetupFailed {
         /// The failing output line.
@@ -211,6 +220,15 @@ impl From<ExtraEvent> for Event {
             ExtraEvent::Copied { from, to } => Self::Copied { from, to },
             ExtraEvent::SessionStarted { session } => Self::SessionStarted { session },
             ExtraEvent::SessionFailed { step, message } => Self::SessionFailed { step, message },
+            ExtraEvent::Relaunched {
+                old_pane,
+                new_pane,
+                goal,
+            } => Self::Relaunched {
+                old_pane,
+                new_pane,
+                goal,
+            },
             ExtraEvent::SetupFailed { line } => Self::SetupFailed { line },
             ExtraEvent::Checked { credentials } => Self::Checked { credentials },
             ExtraEvent::RunStarted { run } => Self::RunStarted { run },
@@ -239,6 +257,15 @@ impl TryFrom<Event> for ExtraEvent {
             Event::Copied { from, to } => Ok(Self::Copied { from, to }),
             Event::SessionStarted { session } => Ok(Self::SessionStarted { session }),
             Event::SessionFailed { step, message } => Ok(Self::SessionFailed { step, message }),
+            Event::Relaunched {
+                old_pane,
+                new_pane,
+                goal,
+            } => Ok(Self::Relaunched {
+                old_pane,
+                new_pane,
+                goal,
+            }),
             Event::SetupFailed { line } => Ok(Self::SetupFailed { line }),
             Event::Checked { credentials } => Ok(Self::Checked { credentials }),
             Event::RunStarted { run } => Ok(Self::RunStarted { run }),
@@ -287,40 +314,23 @@ pub struct Decision {
 impl Decision {
     /// Starts a decision for an existing task.
     #[must_use]
-    pub const fn new(task: TaskId) -> Self {
+    pub fn new(task: TaskId) -> Self {
         Self::base(TaskTarget::Existing(task), None)
     }
 
     /// Starts a decision that inserts a task.
     #[must_use]
-    pub const fn insert(new: NewTask) -> Self {
+    pub fn insert(new: NewTask) -> Self {
         Self::base(TaskTarget::New(new), Some(TaskInput::Insert))
     }
 
     /// Builds a decision with no changes.
-    const fn base(task: TaskTarget, task_input: Option<TaskInput>) -> Self {
+    fn base(task: TaskTarget, task_input: Option<TaskInput>) -> Self {
         Self {
             task,
             task_input,
             box_input: None,
-            set: Fields {
-                issue: Field::Keep,
-                goal: Field::Keep,
-                base: Field::Keep,
-                branch: Field::Keep,
-                worktree: Field::Keep,
-                bound: Field::Keep,
-                workspace_id: Field::Keep,
-                agent_session_id: Field::Keep,
-                state_reason: Field::Keep,
-                setup_failed_at: Field::Keep,
-                launch_failure: Field::Keep,
-                box_provider: Field::Keep,
-                box_handle: Field::Keep,
-                box_workdir: Field::Keep,
-                egress_enforced: Field::Keep,
-                box_sleep_reason: Field::Keep,
-            },
+            set: Fields::default(),
             intent: IntentChange::Keep,
             events: Vec::new(),
         }

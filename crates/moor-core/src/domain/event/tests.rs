@@ -81,6 +81,11 @@ fn all_events() -> Vec<Event> {
             step: s("pane"),
             message: s("m"),
         },
+        Event::Relaunched {
+            old_pane: Some(s("p-1")),
+            new_pane: Some(s("p-2")),
+            goal: Some(s("g")),
+        },
         Event::Checked {
             credentials: vec![CheckedCred {
                 name: s("k"),
@@ -133,10 +138,11 @@ const fn event_index(e: &Event) -> usize {
         Event::Copied { .. } => 21,
         Event::SessionStarted { .. } => 22,
         Event::SessionFailed { .. } => 23,
-        Event::Checked { .. } => 24,
-        Event::RunStarted { .. } => 25,
-        Event::Attached => 26,
-        Event::SessionsStopped { .. } => 27,
+        Event::Relaunched { .. } => 24,
+        Event::Checked { .. } => 25,
+        Event::RunStarted { .. } => 26,
+        Event::Attached => 27,
+        Event::SessionsStopped { .. } => 28,
     }
 }
 
@@ -144,7 +150,7 @@ const fn event_index(e: &Event) -> usize {
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 28);
+    assert_eq!(all.len(), 29);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }
