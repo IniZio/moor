@@ -221,6 +221,14 @@ fn tail_of(pane: &PaneRead) -> &str {
     }
 }
 
+/// The pending question the profile read from the pane, if any.
+fn prompt_of(pane: &PaneRead) -> Option<&str> {
+    match pane {
+        PaneRead::Fresh(obs) => obs.prompt.as_deref(),
+        _ => None,
+    }
+}
+
 /// An ended or vanished pane beats every other reading.
 const fn pane_ended(pane: &PaneRead) -> Option<Activity> {
     match pane {
@@ -234,16 +242,17 @@ const fn pane_ended(pane: &PaneRead) -> Option<Activity> {
 }
 
 /// The state a hook report gives, if it still counts.
-fn from_record(rec: &HookRecord, source: Source, young: bool, tail: &str) -> Option<Activity> {
+fn from_record(rec: &HookRecord, source: Source, young: bool, pane: &PaneRead) -> Option<Activity> {
+    let tail = tail_of(pane);
     match &rec.kind {
         HookKind::Busy => Some(act(AgentState::Working, source)),
         HookKind::Blocked => Some(act(
             AgentState::Blocked {
-                waiting_for: rec
-                    .message
-                    .as_deref()
+                waiting_for: [rec.message.as_deref(), prompt_of(pane)]
+                    .into_iter()
+                    .flatten()
                     .map(str::trim)
-                    .filter(|m| !m.is_empty())
+                    .find(|m| !m.is_empty())
                     .map(str::to_owned),
             },
             source,
@@ -255,9 +264,14 @@ fn from_record(rec: &HookRecord, source: Source, young: bool, tail: &str) -> Opt
 }
 
 /// The state a cached report gives, while it is younger than the TTL.
-fn from_cache(cache: Option<&HookCache>, now: Ts, young: bool, tail: &str) -> Option<Activity> {
+fn from_cache(
+    cache: Option<&HookCache>,
+    now: Ts,
+    young: bool,
+    pane: &PaneRead,
+) -> Option<Activity> {
     let c = cache.filter(|c| age(now, c.at) < HOOK_TTL)?;
-    from_record(&c.record, Source::HooksCached, young, tail)
+    from_record(&c.record, Source::HooksCached, young, pane)
 }
 
 /// The state the pane alone gives.
@@ -298,19 +312,19 @@ pub fn decide(probes: &Probes, cache: Option<&HookCache>, now: Ts, started: Ts) 
         return a;
     }
     let young = age(now, started) < STARTUP_GRACE;
-    let tail = tail_of(&probes.pane);
+    let pane = &probes.pane;
     match &probes.hook {
         HookRead::Fresh(rec) => {
-            if let Some(a) = from_record(rec, Source::Hooks, young, tail) {
+            if let Some(a) = from_record(rec, Source::Hooks, young, pane) {
                 return a;
             }
         }
         HookRead::TimedOut => {
-            return from_cache(cache, now, young, tail)
+            return from_cache(cache, now, young, pane)
                 .unwrap_or_else(|| act(AgentState::Unknown, Source::Timeout));
         }
         HookRead::Absent => {
-            if let Some(a) = from_cache(cache, now, young, tail) {
+            if let Some(a) = from_cache(cache, now, young, pane) {
                 return a;
             }
         }
