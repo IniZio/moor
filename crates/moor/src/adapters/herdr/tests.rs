@@ -5,7 +5,9 @@ use std::sync::Arc;
 
 use moor_core::name::TaskName;
 use moor_core::seam::proc::Tool;
-use moor_core::seam::surface::{PaneCmd, PaneRef, Surface, SurfaceError, WorkspaceRef, Worktree};
+use moor_core::seam::surface::{
+    Key, PaneCmd, PaneRef, Surface, SurfaceError, WorkspaceRef, Worktree,
+};
 
 use super::{parse, Herdr};
 use crate::testing::proc::{Call, Reply, ScriptedProc};
@@ -201,6 +203,7 @@ fn open_pane_creates_tab_then_runs_quoted_command() {
     p.on(Tool::Herdr, &["tab", "create"], ok(TAB_CREATED));
     p.on(Tool::Herdr, &["pane", "run"], ok(""));
     let cmd = PaneCmd {
+        label: "agent:fix".to_owned(),
         argv: vec!["claude".to_owned(), "hi there".to_owned()],
         cwd: Some(PathBuf::from("/r/wt")),
         env: vec![("K".to_owned(), "v".to_owned())],
@@ -216,17 +219,72 @@ fn open_pane_creates_tab_then_runs_quoted_command() {
             "--workspace",
             "w1",
             "--label",
-            "claude",
-            "--no-focus",
+            "agent:fix",
             "--cwd",
             "/r/wt",
             "--env",
-            "K=v"
+            "K=v",
+            "--no-focus"
         ]
     );
     assert_eq!(
         args(&calls, 1),
         ["pane", "run", "w1:p2", "claude 'hi there'"]
+    );
+}
+
+#[test]
+fn send_text_passes_text_as_one_argument() {
+    let (p, h) = fixture();
+    p.on(Tool::Herdr, &["pane", "send-text"], ok(""));
+    h.send_text(&PaneRef::new("p1"), "two words").expect("sent");
+    assert_eq!(
+        args(&p.calls(), 0),
+        ["pane", "send-text", "p1", "two words"]
+    );
+}
+
+#[test]
+fn send_keys_names_each_key_in_one_call() {
+    let (p, h) = fixture();
+    p.on(Tool::Herdr, &["pane", "send-keys"], ok(""));
+    h.send_keys(
+        &PaneRef::new("p1"),
+        &[Key::CtrlU, Key::Digit(2), Key::CtrlM],
+    )
+    .expect("sent");
+    assert_eq!(
+        args(&p.calls(), 0),
+        ["pane", "send-keys", "p1", "ctrl+u", "2", "ctrl+m"]
+    );
+}
+
+#[test]
+fn send_keys_rejects_a_two_digit_key_without_calling_herdr() {
+    let (p, h) = fixture();
+    assert!(matches!(
+        h.send_keys(&PaneRef::new("p1"), &[Key::Digit(12)]),
+        Err(SurfaceError::Failed { .. })
+    ));
+    assert!(p.calls().is_empty());
+}
+
+#[test]
+fn send_to_missing_pane_maps_to_not_found() {
+    let (p, h) = fixture();
+    let body = r#"{"error":{"code":"pane_not_found","message":"x"}}"#;
+    p.on(
+        Tool::Herdr,
+        &["pane", "send-text"],
+        Reply::Fail {
+            code: 1,
+            stdout: String::new(),
+            stderr: body.to_owned(),
+        },
+    );
+    assert_eq!(
+        h.send_text(&PaneRef::new("p1"), "x"),
+        Err(SurfaceError::NotFound)
     );
 }
 

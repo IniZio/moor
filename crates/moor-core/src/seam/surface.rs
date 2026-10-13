@@ -54,12 +54,37 @@ impl PaneRef {
 /// The command a pane runs.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct PaneCmd {
+    /// Label of the tab that holds the pane.
+    pub label: String,
     /// Program and arguments.
     pub argv: Vec<String>,
     /// Working directory; the Workspace's when `None`.
     pub cwd: Option<PathBuf>,
     /// Extra environment variables.
     pub env: Vec<(String, String)>,
+}
+
+/// A key press sent to a pane.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Key {
+    /// Control-U: clears the input line.
+    CtrlU,
+    /// Control-M: submits the input line.
+    CtrlM,
+    /// A digit key, 0 to 9.
+    Digit(u8),
+}
+
+impl Key {
+    /// The key's name as the multiplexer spells it, `None` for a digit above 9.
+    #[must_use]
+    pub fn name(self) -> Option<String> {
+        match self {
+            Self::CtrlU => Some("ctrl+u".to_owned()),
+            Self::CtrlM => Some("ctrl+m".to_owned()),
+            Self::Digit(d) => char::from_digit(u32::from(d), 10).map(String::from),
+        }
+    }
 }
 
 /// A Surface failure.
@@ -132,6 +157,18 @@ pub trait Surface: Send + Sync {
     /// [`SurfaceError::Timeout`] when a call overruns `deadline`. Each of the
     /// backend's two calls gets the full `deadline`, so the worst case is about twice it.
     fn pane_obs(&self, pane: &PaneRef, deadline: Deadline) -> Result<PaneObs, SurfaceError>;
+
+    /// Types `text` into `pane` without submitting it.
+    ///
+    /// # Errors
+    /// Returns [`SurfaceError::NotFound`] when the pane is gone.
+    fn send_text(&self, pane: &PaneRef, text: &str) -> Result<(), SurfaceError>;
+
+    /// Presses `keys` in `pane`, in order.
+    ///
+    /// # Errors
+    /// Returns [`SurfaceError::NotFound`] when the pane is gone.
+    fn send_keys(&self, pane: &PaneRef, keys: &[Key]) -> Result<(), SurfaceError>;
 
     /// Closes `pane`.
     ///
