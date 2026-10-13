@@ -1,7 +1,7 @@
 //! Driver seam: how moor gets, inspects and releases Boxes.
 //!
-//! Only the provisioning methods, exec, copy-out and file peek exist so far; sleep,
-//! tunnel and connect are not added yet.
+//! Provisioning, exec, copy-out, file peek, sleep and wake exist so far; tunnel and
+//! connect are not added yet.
 
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -147,6 +147,17 @@ pub enum ExecOutcome {
     Interrupted,
 }
 
+/// What `Driver::sleep` did for a Box.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SleepOutcome {
+    /// The Driver suspended the Box.
+    Slept,
+    /// The provider sleeps the Box on its own; nothing was called.
+    Native,
+    /// The Box stays up; the reason is worded for people.
+    CannotSleep(String),
+}
+
 /// The only error shape Driver adapters return.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DriverError {
@@ -283,6 +294,18 @@ pub trait Driver: Send + Sync {
         path: &BoxPath,
         host_cwd: &Path,
     ) -> Result<Option<String>, DriverError>;
+
+    /// Puts the Box to sleep when its provider lets the Driver do so.
+    ///
+    /// # Errors
+    /// Returns a [`DriverError`] when the provider cannot be asked or the suspend fails.
+    fn sleep(&self, handle: &BoxHandle) -> Result<SleepOutcome, DriverError>;
+
+    /// Wakes a sleeping Box.
+    ///
+    /// # Errors
+    /// Returns a [`DriverError`] when the resume fails.
+    fn wake(&self, handle: &BoxHandle) -> Result<(), DriverError>;
 }
 
 #[cfg(test)]

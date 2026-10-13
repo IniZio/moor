@@ -6,6 +6,7 @@ mod errors;
 mod exec;
 mod parse;
 mod peek;
+mod sleep;
 #[cfg(test)]
 mod tests;
 
@@ -16,7 +17,7 @@ use std::time::Duration;
 use moor_core::name::{BoxHandle, BoxPath, ProviderId};
 use moor_core::seam::driver::{
     AcquireReq, Acquired, BoxListing, Driver, DriverCaps, DriverError, EgressApplied, EgressPlan,
-    ExecOutcome, ExecSpec, Released,
+    ExecOutcome, ExecSpec, Released, SleepOutcome,
 };
 use moor_core::seam::proc::{Deadline, Proc, ProcOutput, ProcSpec, Tool};
 
@@ -260,5 +261,13 @@ impl Driver for Crabbox {
         host_cwd: &Path,
     ) -> Result<Option<String>, DriverError> {
         peek::peek_file(self, handle, path, host_cwd)
+    }
+
+    fn sleep(&self, handle: &BoxHandle) -> Result<SleepOutcome, DriverError> {
+        sleep::sleep(self, handle)
+    }
+
+    fn wake(&self, handle: &BoxHandle) -> Result<(), DriverError> {
+        sleep::wake(self, handle)
     }
 }

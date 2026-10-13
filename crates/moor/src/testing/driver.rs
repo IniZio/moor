@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use moor_core::seam::driver::{
     AcquireReq, Acquired, BoxListing, Driver, DriverCaps, DriverError, EgressApplied,
-    EgressSupport, ExecOutcome, ExecSpec, Released, SleepKind,
+    EgressSupport, ExecOutcome, ExecSpec, Released, SleepKind, SleepOutcome,
 };
 use moor_core::seam::proc::Deadline;
 use moor_core::{BoxHandle, BoxPath, ProviderId};
@@ -34,6 +34,9 @@ struct State {
     files: Vec<(String, String, String)>,
     peeks: Vec<PeekCall>,
     fail_peek: Option<DriverError>,
+    fail_sleep: Option<DriverError>,
+    fail_wake: Option<DriverError>,
+    sleep_outcome: Option<SleepOutcome>,
     on_exec: Option<Arc<ExecHook>>,
     work_root: Option<String>,
 }
@@ -117,6 +120,24 @@ impl FakeDriver {
     /// The next `peek_file` fails once with `e`.
     pub(crate) fn fail_peek(self, e: DriverError) -> Self {
         self.st().fail_peek = Some(e);
+        self
+    }
+
+    /// The next `sleep` fails once with `e`.
+    pub(crate) fn fail_sleep(self, e: DriverError) -> Self {
+        self.st().fail_sleep = Some(e);
+        self
+    }
+
+    /// The next `wake` fails once with `e`.
+    pub(crate) fn fail_wake(self, e: DriverError) -> Self {
+        self.st().fail_wake = Some(e);
+        self
+    }
+
+    /// Makes every `sleep` report `outcome` instead of `Slept`.
+    pub(crate) fn sleep_outcome(self, outcome: SleepOutcome) -> Self {
+        self.st().sleep_outcome = Some(outcome);
         self
     }
 
@@ -313,6 +334,27 @@ impl Driver for FakeDriver {
             .iter()
             .find(|(h, p, _)| h == handle.as_str() && p == path.as_str())
             .map(|(_, _, text)| text.clone()))
+    }
+
+    fn sleep(&self, handle: &BoxHandle) -> Result<SleepOutcome, DriverError> {
+        let mut s = self.st();
+        s.calls.push(format!("sleep {}", handle.as_str()));
+        if !s.live.iter().any(|h| h == handle.as_str()) {
+            return Err(DriverError::NotFound);
+        }
+        if let Some(e) = s.fail_sleep.take() {
+            return Err(e);
+        }
+        Ok(s.sleep_outcome.clone().unwrap_or(SleepOutcome::Slept))
+    }
+
+    fn wake(&self, handle: &BoxHandle) -> Result<(), DriverError> {
+        let mut s = self.st();
+        s.calls.push(format!("wake {}", handle.as_str()));
+        if !s.live.iter().any(|h| h == handle.as_str()) {
+            return Err(DriverError::NotFound);
+        }
+        s.fail_wake.take().map_or(Ok(()), Err)
     }
 }
 
