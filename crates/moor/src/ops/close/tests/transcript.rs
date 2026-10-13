@@ -155,3 +155,18 @@ fn a_close_after_the_transcript_changed_saves_again() {
     assert_ne!(digests.first(), digests.get(1));
     assert_eq!(ended_digest(&f).as_deref(), Some(SHA_ABCD));
 }
+
+#[test]
+fn a_failed_close_save_keeps_the_exit_digest() {
+    let engine = exit_saved_engine();
+    let f = with_engine(&engine, FakeSurface::new("/s"));
+    let store = f.cx.store().unwrap();
+    store.begin_session(f.id, "s-1", Some("p-1")).unwrap();
+    let row = store.task(f.id).unwrap().unwrap();
+    let live = store.live_session(f.id).unwrap().unwrap();
+    save_on_exit(&f.cx, store, &row, live.id).unwrap();
+    engine.fail_next_transcript(EngineError::Transcript("archive: exit 3".into()));
+    run(&f.cx, &req(false)).unwrap();
+    assert_eq!(kinds(&f), ["transcript_saved", "transcript_failed"]);
+    assert_eq!(ended_digest(&f).as_deref(), Some(SHA_ABC));
+}

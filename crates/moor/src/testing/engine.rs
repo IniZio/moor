@@ -113,6 +113,11 @@ impl FakeEngine {
         self
     }
 
+    /// The next transcript request fails once with `e`, set on an Engine already shared.
+    pub(crate) fn fail_next_transcript(&self, e: EngineError) {
+        self.st().fail_transcript = Some(e);
+    }
+
     /// Runs `f` inside every transcript request, before it is served.
     pub(crate) fn on_transcript(&self, f: impl Fn() + Send + Sync + 'static) {
         self.st().on_transcript = Some(Arc::new(f));
