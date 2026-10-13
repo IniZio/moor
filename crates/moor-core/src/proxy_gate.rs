@@ -46,6 +46,10 @@ impl RouteId {
 pub enum Allow {
     /// Any method and any path under the prefix.
     AnyPath,
+    /// Smart-HTTP git fetch and push for the Task repo only.
+    GitSmartHttp,
+    /// Pull-request list, create and view, plus the repo itself, for the Task repo only.
+    PullsApi,
 }
 
 /// What the proxy adds to the forwarded request.
@@ -116,6 +120,8 @@ pub struct GateInput<'a> {
     pub headers: &'a [(&'a str, &'a str)],
     /// Expected nonce as base64url text bytes.
     pub nonce: &'a Secret,
+    /// Forge repo of the Task as `owner/name`, when it has one.
+    pub task_repo: Option<&'a str>,
 }
 
 /// How to forward an admitted request.
@@ -248,7 +254,7 @@ fn plan(input: &GateInput<'_>) -> Result<Plan, Reject> {
         None => (input.target, None),
     };
     let path = authenticate(input, raw_path)?;
-    let row = input
+    let (len, row) = input
         .table
         .rows()
         .iter()
@@ -257,10 +263,12 @@ fn plan(input: &GateInput<'_>) -> Result<Plan, Reject> {
             Some((len, _)) if len >= cand.0 => best,
             _ => Some(cand),
         })
-        .map(|(_, row)| row)
         .ok_or(Reject::NotFound)?;
+    let rest = path.get(len..).unwrap_or_default();
     match row.allow {
         Allow::AnyPath => {}
+        Allow::GitSmartHttp => forge::admit_git(input.method, rest, query, input.task_repo)?,
+        Allow::PullsApi => forge::admit_api(input.method, rest, query, input.task_repo)?,
     }
     let connection: Vec<String> = input
         .headers
@@ -284,6 +292,8 @@ fn plan(input: &GateInput<'_>) -> Result<Plan, Reject> {
         inject: row.inject,
     })
 }
+
+mod forge;
 
 #[cfg(test)]
 mod tests;
