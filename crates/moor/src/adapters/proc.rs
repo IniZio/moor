@@ -12,7 +12,9 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
-use moor_core::seam::proc::{Output, Proc, ProcError, ProcOutput, ProcSpec, Stdin, Tool, BASE_ENV};
+use moor_core::seam::proc::{
+    ChildHandle, Output, Proc, ProcError, ProcOutput, ProcSpec, Stdin, Tool, BASE_ENV,
+};
 use rustix::io::Errno;
 use rustix::process::{kill_process_group, test_kill_process, Pid, Signal};
 use zeroize::Zeroizing;
@@ -376,11 +378,16 @@ impl Proc for SystemProc {
         Ok(())
     }
 
+    fn spawn_child(&self, spec: &ProcSpec) -> Result<Box<dyn ChildHandle>, ProcError> {
+        self.spawn_long_lived(spec)
+    }
+
     fn alive(&self, pid: u32) -> bool {
         to_pid(pid).is_some_and(|p| matches!(test_kill_process(p), Ok(()) | Err(Errno::PERM)))
     }
 }
 
+mod child;
 mod stream;
 #[cfg(test)]
 mod tests;
