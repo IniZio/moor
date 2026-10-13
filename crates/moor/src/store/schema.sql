@@ -21,5 +21,5 @@ CREATE TABLE runs   (id INTEGER PRIMARY KEY, task INTEGER NOT NULL, argv TEXT NO
 CREATE TABLE reports(id INTEGER PRIMARY KEY, task INTEGER NOT NULL, kind TEXT NOT NULL, version INTEGER NOT NULL, path TEXT NOT NULL,
   title TEXT, created_at INTEGER NOT NULL, UNIQUE (task, kind, version));
 CREATE TABLE hook_cache (task INTEGER PRIMARY KEY, record TEXT NOT NULL, at INTEGER NOT NULL);
-CREATE TABLE proxy  (task INTEGER PRIMARY KEY, pid INTEGER, host_port INTEGER, box_port INTEGER, state TEXT NOT NULL, updated_at INTEGER NOT NULL);
+CREATE TABLE proxy  (task INTEGER PRIMARY KEY REFERENCES tasks(id), nonce BLOB NOT NULL, box_port INTEGER NOT NULL UNIQUE, host_port INTEGER, pid INTEGER, handle TEXT, ready INTEGER NOT NULL DEFAULT 0, lease_owner TEXT, lease_heartbeat INTEGER, updated_at INTEGER NOT NULL);
 INSERT INTO meta (k, v) VALUES ('schema_version', '1');

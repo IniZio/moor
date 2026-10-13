@@ -15,6 +15,12 @@ use rusqlite::{Connection, OpenFlags, OptionalExtension, Row, TransactionBehavio
 #[cfg_attr(not(test), expect(dead_code, reason = "used by ops, not yet wired"))]
 mod agent;
 mod apply;
+mod open;
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "used by the proxy supervisor, not yet wired")
+)]
+mod proxy;
 mod reads;
 mod runs;
 #[cfg(test)]
@@ -45,6 +51,9 @@ pub(crate) enum StoreError {
     /// An event payload failed to (de)serialise.
     #[error("json: {0}")]
     Json(#[from] serde_json::Error),
+    /// The state directory or a database file could not be prepared.
+    #[error("io: {0}")]
+    Io(#[from] std::io::Error),
     /// The file was written by a different schema version.
     #[error("schema version `{found}` does not match `{want}`")]
     Schema {
@@ -164,18 +173,17 @@ pub(crate) struct Store {
 }
 
 impl Store {
-    /// Open (creating if needed) the store at `path`.
+    /// Open (creating if needed) the store at `path`. The state directory is
+    /// created 0700 and the db, `-wal` and `-shm` files are 0600.
     pub(crate) fn open(path: &Path, clock: Arc<dyn Clock>) -> Result<Self, StoreError> {
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| StoreError::Invalid(format!("create {}: {e}", parent.display())))?;
-        }
+        open::prepare(path)?;
         let mut conn = Connection::open(path)?;
         conn.busy_timeout(BUSY_TIMEOUT)?;
         conn.execute_batch(
             "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;",
         )?;
         init_schema(&mut conn)?;
+        open::tighten(path)?;
         Ok(Self {
             path: path.to_path_buf(),
             writer: Mutex::new(conn),
