@@ -377,7 +377,13 @@ fn settle_idles_a_working_task_that_may_quiet() {
     let (cx, _) = cx(dir.path(), &engine);
     let id = task(&cx, true);
     assert_eq!(idle_since(&cx, id), None);
-    settle(cx.store().unwrap(), &row(&cx, id), &reading(false, true)).unwrap();
+    settle(
+        &cx,
+        cx.store().unwrap(),
+        &row(&cx, id),
+        &reading(false, true),
+    )
+    .unwrap();
     assert_eq!(row(&cx, id).state, TaskState::Idle);
     assert!(idle_since(&cx, id).is_some());
 }
@@ -390,7 +396,13 @@ fn settle_returns_an_idle_task_to_working_when_busy() {
     let id = task(&cx, true);
     quiet(&cx, id);
     assert!(idle_since(&cx, id).is_some());
-    settle(cx.store().unwrap(), &row(&cx, id), &reading(true, false)).unwrap();
+    settle(
+        &cx,
+        cx.store().unwrap(),
+        &row(&cx, id),
+        &reading(true, false),
+    )
+    .unwrap();
     assert_eq!(row(&cx, id).state, TaskState::Working);
     assert_eq!(idle_since(&cx, id), None);
 }
@@ -401,7 +413,13 @@ fn settle_leaves_a_working_task_that_may_not_quiet() {
     let engine = Arc::new(FakeEngine::new());
     let (cx, _) = cx(dir.path(), &engine);
     let id = task(&cx, true);
-    settle(cx.store().unwrap(), &row(&cx, id), &reading(false, false)).unwrap();
+    settle(
+        &cx,
+        cx.store().unwrap(),
+        &row(&cx, id),
+        &reading(false, false),
+    )
+    .unwrap();
     assert_eq!(row(&cx, id).state, TaskState::Working);
 }
 
@@ -433,7 +451,7 @@ fn settle_leaves_a_working_task_when_only_the_pane_reports_idle() {
         let r = read(&cx, cx.store().unwrap(), &row(&cx, id), later).unwrap();
         assert_eq!(state(&r), (want, Source::Herdr), "{status:?}");
         assert!(!r.may_quiet, "{status:?}");
-        settle(cx.store().unwrap(), &row(&cx, id), &r).unwrap();
+        settle(&cx, cx.store().unwrap(), &row(&cx, id), &r).unwrap();
         assert_eq!(row(&cx, id).state, TaskState::Working, "{status:?}");
         assert_eq!(idle_since(&cx, id), None);
     }
@@ -450,7 +468,7 @@ fn settle_leaves_a_working_task_when_the_hook_read_is_dropped() {
     let (cx, _) = cx(dir.path(), &engine);
     let id = task(&cx, true);
     let r = run_once(&cx, id);
-    settle(cx.store().unwrap(), &row(&cx, id), &r).unwrap();
+    settle(&cx, cx.store().unwrap(), &row(&cx, id), &r).unwrap();
     assert_eq!(row(&cx, id).state, TaskState::Working);
 }
 
@@ -462,13 +480,13 @@ fn settle_swallows_a_lost_race_and_keeps_the_new_state() {
     let id = task(&cx, true);
     let stale = row(&cx, id);
     quiet(&cx, id);
-    settle(cx.store().unwrap(), &stale, &reading(false, true)).unwrap();
+    settle(&cx, cx.store().unwrap(), &stale, &reading(false, true)).unwrap();
     assert_eq!(row(&cx, id).state, TaskState::Idle);
 
     let stale = row(&cx, id);
     let d = Decision::new(id).task_input(TaskInput::AgentBusy);
     cx.store().unwrap().apply(d).unwrap();
-    settle(cx.store().unwrap(), &stale, &reading(true, false)).unwrap();
+    settle(&cx, cx.store().unwrap(), &stale, &reading(true, false)).unwrap();
     assert_eq!(row(&cx, id).state, TaskState::Working);
 }
 
@@ -507,4 +525,61 @@ fn a_new_hook_session_id_is_stored_once() {
     run_once(&cx, id);
     assert_eq!(cx.store().unwrap().events(id, 100).unwrap().len(), before);
     assert_eq!(row(&cx, id).updated_at, updated);
+}
+
+fn exited_probes() -> Probes {
+    Probes {
+        hook: HookRead::Absent,
+        pane: PaneRead::Fresh(PaneObs {
+            status: PaneStatus::Unknown,
+            tail: String::new(),
+            prompt: None,
+            exit_marker: Some(1),
+        }),
+    }
+}
+
+fn exit_saves(cx: &Cx, id: TaskId) -> usize {
+    let events = cx.store().unwrap().events(id, 100).unwrap();
+    events
+        .iter()
+        .filter(|e| {
+            e.kind == "transcript_saved"
+                && e.payload.get("trigger") == Some(&serde_json::json!("exit"))
+        })
+        .count()
+}
+
+#[test]
+fn the_first_exited_settle_saves_the_transcript_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = Arc::new(
+        FakeEngine::new()
+            .probes(SESSION, exited_probes())
+            .transcript_text("abc"),
+    );
+    let (cx, _) = cx(dir.path(), &engine);
+    let id = task(&cx, true);
+    let reading = run_once(&cx, id);
+    assert_eq!(exit_saves(&cx, id), 0);
+    settle(&cx, cx.store().unwrap(), &row(&cx, id), &reading).unwrap();
+    assert_eq!(exit_saves(&cx, id), 1);
+    let session = cx.store().unwrap().live_session(id).unwrap().unwrap();
+    assert!(session.transcript_digest.is_some());
+    settle(&cx, cx.store().unwrap(), &row(&cx, id), &run_once(&cx, id)).unwrap();
+    assert_eq!(exit_saves(&cx, id), 1);
+    assert_eq!(engine.transcripts().len(), 1);
+}
+
+#[test]
+fn a_live_or_gone_pane_saves_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = Arc::new(FakeEngine::new().transcript_text("abc"));
+    let (cx, _) = cx(dir.path(), &engine);
+    let id = task(&cx, true);
+    for pane in [PaneLiveness::Live, PaneLiveness::Gone] {
+        let r = Reading::new(None, pane, false, false);
+        settle(&cx, cx.store().unwrap(), &row(&cx, id), &r).unwrap();
+    }
+    assert!(engine.transcripts().is_empty());
 }

@@ -211,7 +211,7 @@ fn settle_all(cx: &Cx, store: &Store) -> Result<(), CommandError> {
             continue;
         }
         let settled = activity::read(cx, store, row, cx.clock().now())
-            .and_then(|reading| activity::settle(store, row, &reading));
+            .and_then(|reading| activity::settle(cx, store, row, &reading));
         if let Err(e) = settled {
             cx.warn(Warning {
                 code: "settle_failed".to_owned(),

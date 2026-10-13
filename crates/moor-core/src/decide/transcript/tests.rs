@@ -31,4 +31,12 @@ fn digest_is_sha256_hex() {
 fn triggers_are_named() {
     assert_eq!(Trigger::Relaunch.name(), "relaunch");
     assert_eq!(Trigger::Close.name(), "close");
+    assert_eq!(Trigger::Exit.name(), "exit");
+}
+
+#[test]
+fn an_archive_repeats_only_an_equal_stored_digest() {
+    assert!(is_duplicate(Some("a"), "a"));
+    assert!(!is_duplicate(Some("a"), "b"));
+    assert!(!is_duplicate(None, "a"));
 }
