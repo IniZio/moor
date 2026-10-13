@@ -2,7 +2,7 @@
 
 use moor_core::domain::boxes::BoxState;
 use moor_core::seam::clock::Ts;
-use moor_core::view::{BoxView, EventView, RunView, TaskView};
+use moor_core::view::{BoxSleepView, BoxView, EventView, RunView, TaskView};
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
@@ -45,6 +45,10 @@ fn box_view(b: &BoxRow) -> BoxView {
             .egress_enforced
             .map(|e| (if e { "enforced" } else { "not_enforced" }).to_owned()),
         asleep_since: (b.state == BoxState::Asleep).then(|| rfc3339(b.updated_at)),
+        sleep: BoxSleepView {
+            after: None,
+            reason: b.sleep_reason.clone(),
+        },
     }
 }
 

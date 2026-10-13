@@ -2,6 +2,7 @@
 
 pub mod env;
 pub mod run;
+pub mod sleep;
 
 use crate::domain::boxes::BoxState;
 use crate::domain::task::TaskState;
@@ -28,6 +29,15 @@ pub struct RunView {
     pub started_at: String,
 }
 
+/// Sleep configuration and the reason a Box will not sleep.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct BoxSleepView {
+    /// Configured idle time before the Box sleeps, if any.
+    pub after: Option<String>,
+    /// Why the Box cannot sleep, when known.
+    pub reason: Option<String>,
+}
+
 /// A Task's Box.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct BoxView {
@@ -41,6 +51,8 @@ pub struct BoxView {
     pub egress: Option<String>,
     /// RFC3339 UTC time the Box went to sleep.
     pub asleep_since: Option<String>,
+    /// Sleep configuration and blocking reason.
+    pub sleep: BoxSleepView,
 }
 
 /// The shared Task row.
