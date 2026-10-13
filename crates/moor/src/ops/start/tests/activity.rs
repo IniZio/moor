@@ -206,6 +206,17 @@ fn restarting_an_idle_task_whose_agent_is_busy_ends_working_with_a_busy_event() 
 }
 
 #[test]
+fn restarting_an_idle_task_whose_agent_is_live_and_idle_leaves_it_idle() {
+    let (w, id) = started(true, |w| {
+        probes(w, Some(HookKind::Idle), PaneStatus::Unknown)
+    });
+    let v = run(&w.cx, &req("demo")).unwrap();
+    assert_eq!(v.task.state, TaskState::Idle);
+    assert_eq!(row(&w, id).state, TaskState::Idle);
+    assert!(!kinds(&w, id).contains(&"busy".to_owned()));
+}
+
+#[test]
 fn restarting_a_working_task_whose_agent_is_busy_leaves_it_working() {
     let (w, id) = started(false, |w| {
         probes(w, Some(HookKind::Busy), PaneStatus::Unknown)
