@@ -365,6 +365,22 @@ fn a_clean_run_starts_the_agent_and_removes_the_cred_dir() {
 }
 
 #[test]
+fn the_cred_dir_is_gone_before_the_agent_starts() {
+    let b = Scratch::new();
+    let cred = b.path("home/.moor-cred-t1-x");
+    b.stub(
+        "claude",
+        &format!(
+            "touch \"$MARKER\"; if [ -e '{}' ]; then touch \"$MARKER.cred\"; fi",
+            cred.display()
+        ),
+    );
+    assert!(b.spawn(&b.script("true")).wait().unwrap().success());
+    assert!(b.agent_started());
+    assert!(!b.path("started.cred").exists());
+}
+
+#[test]
 fn a_failed_install_stops_before_the_agent_and_removes_the_cred_dir() {
     let b = Scratch::new();
     std::fs::remove_file(b.path("home/.moor-cred-t1-x/brief.md")).unwrap();
