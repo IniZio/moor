@@ -5,10 +5,13 @@
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::domain::task::{TaskInput, TaskState};
-use moor_core::ErrorKind;
+use moor_core::view::sleep::SleepValue;
+use moor_core::{ErrorKind, TaskReq};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
+use crate::ops::common::boxlock::{self, BoxLock};
+use crate::ops::common::view::task_view;
 use crate::store::{Store, TaskRow};
 
 /// Wake the Task and its Box when either is Asleep; `Ok(true)` when it did.
@@ -54,6 +57,41 @@ pub(crate) fn wake_if_asleep(cx: &Cx, store: &Store, row: &TaskRow) -> Result<bo
     }
     store.apply(d)?;
     Ok(true)
+}
+
+/// Wake the open Task named by `req` under its Box lock and build the value.
+///
+/// `held` runs on the woken row while the lock is still held.
+pub(crate) fn wake_task(
+    cx: &Cx,
+    req: &TaskReq,
+    op: &str,
+    held: impl FnOnce(&TaskRow) -> Result<(), CommandError>,
+) -> Result<SleepValue, CommandError> {
+    let store = cx.store()?;
+    let id = store
+        .open_task_by_name(&req.task)?
+        .ok_or_else(|| {
+            CommandError::new(
+                ErrorKind::Failed,
+                format!("no open task {}", req.task.as_str()),
+            )
+        })?
+        .id;
+    let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, op, boxlock::WAIT)?;
+    let reload = || {
+        store.task(id)?.ok_or_else(|| {
+            CommandError::new(ErrorKind::Failed, format!("no task {}", req.task.as_str()))
+        })
+    };
+    let woke = wake_if_asleep(cx, store, &reload()?)?;
+    let row = reload()?;
+    held(&row)?;
+    Ok(SleepValue {
+        task: req.task.as_str().to_owned(),
+        r#box: task_view(&row, cx.config()).r#box,
+        woke,
+    })
 }
 
 #[cfg(test)]
