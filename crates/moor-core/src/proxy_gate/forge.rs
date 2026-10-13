@@ -3,6 +3,10 @@
 
 use super::{Allow, Inject, Reject, RouteId, RouteRow};
 
+/// Basic-auth user for git over HTTPS: GitHub takes the token as the password for this user and
+/// does not accept a Bearer header on the git transport.
+const GIT_USER: &str = "x-access-token";
+
 impl RouteRow {
     /// Returns a forge git transport route under `prefix`; a trailing slash is dropped.
     #[must_use]
@@ -11,23 +15,30 @@ impl RouteRow {
             RouteId::new("forge.git"),
             &prefix.into(),
             Allow::GitSmartHttp,
+            Inject::Basic { user: GIT_USER },
         )
     }
 
     /// Returns a forge pull-request API route under `prefix`; a trailing slash is dropped.
     #[must_use]
     pub fn forge_api(prefix: impl Into<String>) -> Self {
-        Self::forge(RouteId::new("forge.api"), &prefix.into(), Allow::PullsApi)
+        Self::forge(
+            RouteId::new("forge.api"),
+            &prefix.into(),
+            Allow::PullsApi,
+            Inject::Bearer,
+        )
     }
 
-    /// Builds a forge row that injects the row credential and strips no extra headers.
-    fn forge(id: RouteId, prefix: &str, allow: Allow) -> Self {
+    /// Builds a forge row that injects the row credential as `inject` says and strips no extra
+    /// headers.
+    fn forge(id: RouteId, prefix: &str, allow: Allow, inject: Inject) -> Self {
         Self {
             id,
             prefix: prefix.trim_end_matches('/').to_owned(),
             allow,
             strip: Vec::new(),
-            inject: Inject::Bearer,
+            inject,
         }
     }
 }
