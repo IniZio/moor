@@ -1,17 +1,66 @@
 //! Agent profile seam: turns an agent's hook state file and pane text into neutral readings.
 
+use std::fmt;
+
 use crate::activity::HookRecord;
 use crate::name::{BoxPath, NameError};
+use crate::secret::Secret;
+
+/// The Proxy's address as the Box sees it.
+pub struct ProxyAddr {
+    /// The Proxy's port as seen inside the Box.
+    pub box_port: u16,
+    /// The per-launch nonce the Box presents; its only credential.
+    pub nonce: Secret,
+}
+
+impl fmt::Debug for ProxyAddr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ProxyAddr")
+            .field("box_port", &self.box_port)
+            .field("nonce", &"<redacted>")
+            .finish()
+    }
+}
+
+/// An environment variable for the agent process whose value is secret.
+///
+/// It must be staged into the agent's environment and never put on the command line.
+pub struct EnvVar {
+    /// The variable name.
+    pub name: String,
+    /// The secret value.
+    pub value: Secret,
+}
+
+impl fmt::Debug for EnvVar {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EnvVar")
+            .field("name", &self.name)
+            .field("value", &"<redacted>")
+            .finish()
+    }
+}
+
+/// Where the Proxy forwards model traffic and which host credential it injects.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelRoute {
+    /// The upstream base URL.
+    pub upstream: String,
+    /// The name of the host credential the Proxy injects.
+    pub credential: String,
+}
 
 /// What a launch needs to know.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug)]
 pub struct LaunchCtx {
     /// The model to ask for; the agent's default when `None`.
     pub model: Option<String>,
     /// The Box workdir the agent runs in.
     pub workdir: BoxPath,
-    /// Whether the agent may skip its permission prompts.
-    pub bypass: bool,
+    /// The Proxy the agent reaches its model through; the agent may skip its
+    /// permission prompts only when this is set.
+    pub proxy: Option<ProxyAddr>,
     /// The Box user's home directory.
     pub home: BoxPath,
 }
@@ -97,6 +146,14 @@ pub trait AgentProfile: Send + Sync {
     /// Arguments that continue the stored session `session_id`.
     fn resume_argv(&self, session_id: &str, ctx: &LaunchCtx) -> Vec<String>;
 
+    /// Environment variables the agent needs; empty without a Proxy.
+    ///
+    /// Values never go in argv.
+    fn env(&self, ctx: &LaunchCtx) -> Vec<EnvVar>;
+
+    /// The upstream and credential name the Proxy resolver uses for this agent's model traffic.
+    fn model_route(&self) -> ModelRoute;
+
     /// Records the agent's first-run answers so it opens without prompts.
     ///
     /// The step only warns on failure.
@@ -123,4 +180,47 @@ pub trait AgentProfile: Send + Sync {
     ///
     /// It runs in the Box workdir and exits non-zero when there is nothing to archive.
     fn transcript_script(&self, archive: &str) -> String;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const NONCE: &[u8] = b"sentinel-9c2e";
+
+    fn proxy() -> ProxyAddr {
+        ProxyAddr {
+            box_port: 1,
+            nonce: Secret::new(NONCE.to_vec()),
+        }
+    }
+
+    #[test]
+    fn proxy_addr_debug_hides_nonce() {
+        let text = format!("{:?}", proxy());
+        assert!(text.contains("box_port"));
+        assert!(!text.contains("sentinel-9c2e"));
+    }
+
+    #[test]
+    fn env_var_debug_hides_value() {
+        let var = EnvVar {
+            name: "TOKEN".to_owned(),
+            value: Secret::new(NONCE.to_vec()),
+        };
+        let text = format!("{var:?}");
+        assert!(text.contains("TOKEN"));
+        assert!(!text.contains("sentinel-9c2e"));
+    }
+
+    #[test]
+    fn launch_ctx_debug_hides_nonce() {
+        let ctx = LaunchCtx {
+            model: None,
+            workdir: BoxPath::restore("/work").unwrap(),
+            proxy: Some(proxy()),
+            home: BoxPath::restore("/home/u").unwrap(),
+        };
+        assert!(!format!("{ctx:?}").contains("sentinel-9c2e"));
+    }
 }
