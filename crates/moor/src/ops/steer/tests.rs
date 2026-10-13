@@ -183,7 +183,10 @@ fn a_task_without_a_live_session_is_refused_naming_start_goal() {
     let f = fx_with(FakeEngine::new(), false);
     let err = run(&f.cx, &text("hi")).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Refused);
-    assert!(err.error.to_string().contains("moor start t --goal"));
+    assert!(err
+        .error
+        .to_string()
+        .contains("`moor start t --goal \"...\"`"));
     assert!(f.engine.steers().is_empty());
 }
 
@@ -262,11 +265,10 @@ fn a_gone_pane_stops_the_session_and_refuses() {
     let f = fx_with(engine, true);
     let err = run(&f.cx, &text("hi")).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Refused);
-    assert!(err
-        .error
-        .to_string()
-        .ends_with("; start --goal relaunches it"));
-    assert!(err.error.to_string().starts_with("agent exited"));
+    assert_eq!(
+        err.error.to_string(),
+        "the agent's pane is gone; relaunch with `moor start t --goal \"...\"`"
+    );
     assert!(!live(&f));
     assert!(steered(&f).is_empty());
 }
@@ -289,8 +291,20 @@ fn an_exited_agent_names_its_code() {
     let err = run(&f.cx, &text("hi")).unwrap_err();
     assert_eq!(
         err.error.to_string(),
-        "agent exited 3; start --goal relaunches it"
+        "agent exited 3; relaunch with `moor start t --goal \"...\"`"
     );
+    let exit: Option<i32> =
+        f.cx.store()
+            .unwrap()
+            .reader()
+            .unwrap()
+            .query_row(
+                "SELECT exit FROM sessions WHERE task = ?",
+                [f.id.get()],
+                |r| r.get(0),
+            )
+            .unwrap();
+    assert_eq!(exit, Some(3));
 }
 
 #[test]
@@ -354,18 +368,90 @@ fn a_digit_to_an_agent_that_is_not_blocked_is_text() {
     );
 }
 
-#[test]
-fn a_held_box_lock_refuses_before_anything_is_sent() {
-    let f = fx();
-    let _held = BoxLock::acquire(
+fn hold_lock(f: &Fx) -> BoxLock {
+    BoxLock::acquire(
         f.cx.clock(),
         f.cx.state_dir().unwrap(),
         f.id,
         "run",
         Duration::ZERO,
     )
-    .unwrap();
+    .unwrap()
+}
+
+fn put_to_sleep(f: &Fx) {
+    let store = f.cx.store().unwrap();
+    let quiet = Decision::new(f.id).task_input(TaskInput::AgentQuiet);
+    store.apply(quiet).unwrap();
+    let d = Decision::new(f.id)
+        .task_input(TaskInput::SleepCmd)
+        .box_input(BoxInput::Sleep);
+    store.apply(d).unwrap();
+}
+
+#[test]
+fn steering_during_a_run_is_sent_while_the_box_lock_is_held() {
+    let f = fx();
+    let _held = hold_lock(&f);
+    run(&f.cx, &text("hi")).unwrap();
+    assert_eq!(f.engine.steers().len(), 1);
+}
+
+#[test]
+fn an_asleep_task_under_a_held_lock_is_refused_and_nothing_is_sent() {
+    let f = fx();
+    put_to_sleep(&f);
+    let _held = hold_lock(&f);
     let err = run(&f.cx, &text("hi")).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Refused);
+    assert!(err.error.to_string().contains("busy"), "{}", err.error);
     assert!(f.engine.steers().is_empty());
+}
+
+#[test]
+fn an_asleep_task_without_a_live_session_is_refused_without_a_wake() {
+    let f = fx_with(FakeEngine::new(), false);
+    put_to_sleep(&f);
+    let err = run(&f.cx, &text("hi")).unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Refused);
+    assert!(f.driver.calls().iter().all(|c| !c.starts_with("wake ")));
+}
+
+#[test]
+fn a_two_digit_answer_to_a_blocked_agent_is_refused() {
+    let f = fx_with(
+        FakeEngine::new().probes("agent-1", blocked("Allow edit?")),
+        true,
+    );
+    let err = run(&f.cx, &text("12")).unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Refused);
+    assert!(f.engine.steers().is_empty());
+}
+
+#[test]
+fn menu_zero_is_a_usage_error() {
+    let f = fx_with(
+        FakeEngine::new().probes("agent-1", blocked("Allow edit?")),
+        true,
+    );
+    let err = run(&f.cx, &menu(0)).unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Usage);
+    assert!(f.engine.steers().is_empty());
+}
+
+#[test]
+fn a_session_without_an_id_records_its_pane_in_the_event() {
+    let f = fx_with(FakeEngine::new(), false);
+    f.cx.store()
+        .unwrap()
+        .begin_session(f.id, "", Some("p-9"))
+        .unwrap();
+    run(&f.cx, &text("hi")).unwrap();
+    assert_eq!(
+        steered(&f)
+            .first()
+            .and_then(|p| p.get("session"))
+            .and_then(serde_json::Value::as_str),
+        Some("p-9")
+    );
 }
