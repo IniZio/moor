@@ -42,7 +42,8 @@ pub(crate) fn run(cx: &Cx, req: &CpReq) -> Result<CpValue, CommandError> {
     let handle = usable_handle(&row)?;
     let from = source(cx, &handle, &req.src)?;
     let to = cx.cwd().join(&req.dest);
-    let copied = cx.driver().copy_out(&handle, &from, &to, cx.cwd());
+    let worktree = Path::new(row.worktree.as_deref().unwrap_or(&row.repo));
+    let copied = cx.driver().copy_out(&handle, &from, &to, worktree);
     let event = ExtraEvent::Copied {
         from: from.as_str().to_owned(),
         to: to.display().to_string(),
