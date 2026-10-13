@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
+use moor_core::activity::{HookRead, PaneObs, PaneRead, PaneStatus, Probes};
 use moor_core::domain::decision::Decision;
 use moor_core::domain::task::{TaskInput, TaskState};
+use moor_core::seam::agent_profile::FirstRunPrompt;
 use moor_core::seam::driver::ExecOutcome;
 use moor_core::seam::engine::EngineError;
 use moor_core::{ErrorKind, ShowReq, StartReq, TaskId, TaskName, WaitFor, WaitReq};
@@ -300,4 +302,78 @@ fn waiting_for_a_run_does_not_return_the_dispatch_failure() {
     };
     let v = crate::ops::wait::run(&w.cx, &wait).unwrap();
     assert!(!v.timed_out);
+}
+
+/// Probes whose pane shows `tail`.
+fn pane_tail(tail: &str) -> Probes {
+    Probes {
+        hook: HookRead::Absent,
+        pane: PaneRead::Fresh(PaneObs {
+            status: PaneStatus::Unknown,
+            tail: tail.to_owned(),
+            prompt: None,
+            exit_marker: None,
+        }),
+    }
+}
+
+/// The recorded (kind, payload) pairs of the task.
+fn events_of(w: &World, id: TaskId) -> Vec<(String, serde_json::Value)> {
+    w.cx.store()
+        .unwrap()
+        .events(id, 50)
+        .unwrap()
+        .into_iter()
+        .map(|e| (e.kind, e.payload))
+        .collect()
+}
+
+#[test]
+fn a_first_run_prompt_in_the_pane_is_recorded_and_warned() {
+    let engine = Arc::new(
+        FakeEngine::new()
+            .probes("moor-1", pane_tail("Do you trust this folder?"))
+            .prompt("trust this folder", FirstRunPrompt::FolderTrust),
+    );
+    let w = with_engine(&engine);
+    let v = run(&w.cx, &goal_req("demo")).unwrap();
+    let events = events_of(&w, TaskId::new(v.task.id));
+    let blocked = events.iter().find(|(k, _)| k == "agent_prompt_blocked");
+    assert_eq!(
+        blocked.unwrap().1,
+        serde_json::json!({"prompt": "folder_trust"})
+    );
+    assert!(v.agent.launched);
+    assert_eq!(engine.probe_count("moor-1"), 1);
+    assert!(w
+        .cx
+        .take_warnings()
+        .iter()
+        .any(|x| x.code == "agent_prompt_blocked" && x.message.contains("folder_trust")));
+}
+
+#[test]
+fn no_prompt_within_the_window_records_nothing_and_polls_a_bounded_number_of_times() {
+    let engine = Arc::new(FakeEngine::new().probes("moor-1", pane_tail("working")));
+    let w = with_engine(&engine);
+    let v = run(&w.cx, &goal_req("demo")).unwrap();
+    let events = events_of(&w, TaskId::new(v.task.id));
+    assert!(!events.iter().any(|(k, _)| k.starts_with("agent_prompt")));
+    assert_eq!(engine.probe_count("moor-1"), 17);
+    assert!(w.cx.take_warnings().is_empty());
+}
+
+#[test]
+fn a_failed_pane_read_records_a_check_failure_and_start_succeeds() {
+    let probes = Probes {
+        hook: HookRead::Absent,
+        pane: PaneRead::TimedOut,
+    };
+    let engine = Arc::new(FakeEngine::new().probes("moor-1", probes));
+    let w = with_engine(&engine);
+    let v = run(&w.cx, &goal_req("demo")).unwrap();
+    let events = events_of(&w, TaskId::new(v.task.id));
+    assert!(events.iter().any(|(k, _)| k == "agent_prompt_check_failed"));
+    assert!(v.agent.launched);
+    assert_eq!(engine.probe_count("moor-1"), 1);
 }

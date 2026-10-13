@@ -9,6 +9,7 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use moor_core::activity::{HookRead, PaneRead, Probes};
+use moor_core::seam::agent_profile::FirstRunPrompt;
 use moor_core::seam::engine::{Engine, EngineError, LaunchReq, SessionRef};
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::PaneRef;
@@ -21,6 +22,7 @@ struct State {
     panes: HashMap<String, Option<PaneRef>>,
     launch_results: VecDeque<Result<SessionRef, EngineError>>,
     launches: Vec<LaunchReq>,
+    prompts: Vec<(String, FirstRunPrompt)>,
 }
 
 /// Scripted Engine: probes are served per session id and counted.
@@ -57,6 +59,12 @@ impl FakeEngine {
         self
     }
 
+    /// A pane tail containing `text` shows `prompt`.
+    pub(crate) fn prompt(self, text: &str, prompt: FirstRunPrompt) -> Self {
+        self.st().prompts.push((text.to_owned(), prompt));
+        self
+    }
+
     /// Every launch request so far, in call order.
     pub(crate) fn launches(&self) -> Vec<LaunchReq> {
         self.st().launches.clone()
@@ -85,6 +93,14 @@ impl Engine for FakeEngine {
             hook: HookRead::Absent,
             pane: PaneRead::Absent,
         }))
+    }
+
+    fn first_run_prompt(&self, tail: &str) -> Option<FirstRunPrompt> {
+        let st = self.st();
+        st.prompts
+            .iter()
+            .find(|(t, _)| tail.contains(t.as_str()))
+            .map(|(_, p)| *p)
     }
 
     fn launch(&self, req: &LaunchReq) -> Result<SessionRef, EngineError> {
