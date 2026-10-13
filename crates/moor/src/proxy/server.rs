@@ -1,7 +1,7 @@
 //! Loopback listener: reads a request head, runs the gate, answers rejects
 //! itself and hands admitted requests to a pluggable handler.
 
-use std::io::{self, Write};
+use std::io::{self, Read, Write};
 use std::net::{Ipv4Addr, Shutdown, TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -16,6 +16,7 @@ use super::head::{read_head, Head};
 use super::ProxyLog;
 
 mod deadline;
+mod framing;
 
 use deadline::DeadlineReader;
 
@@ -25,6 +26,12 @@ pub(crate) const HEAD_BUDGET: Duration = Duration::from_secs(10);
 
 /// Longest a client may stall mid-body before the handler gives up.
 const BODY_IDLE: Duration = Duration::from_secs(10);
+
+/// Most unread request bytes discarded after a refusal.
+const DRAIN_LIMIT: u64 = 64 * 1024;
+/// Total time spent discarding unread request bytes after a refusal.
+const DRAIN_BUDGET: Duration = Duration::from_secs(1);
+
 /// Per-listener settings.
 pub(crate) struct ProxyOpts {
     /// Most connections served at once.
@@ -43,7 +50,9 @@ pub(crate) struct Forward {
     pub(crate) head: Head,
     /// What the gate decided to send upstream.
     pub(crate) plan: Plan,
-    /// Body bytes already read past the head.
+    /// Bytes already read past the head. These may run beyond the declared
+    /// body (pipelined data): the handler must cut the body to its declared
+    /// framing, `Content-Length` or chunked, and ignore anything after it.
     pub(crate) body_prefix: Vec<u8>,
 }
 
@@ -162,22 +171,13 @@ fn accept_loop(listener: &TcpListener, shared: &Arc<Shared>, stop: &AtomicBool) 
 
 /// Serves one connection.
 fn serve(shared: &Shared, mut stream: TcpStream) {
-    let read = {
-        let mut reader =
-            DeadlineReader::new(&stream, shared.opts.clock.as_ref(), shared.opts.head_budget);
-        read_head(&mut reader)
+    let Some((head, body_prefix)) = read_request_head(shared, &mut stream) else {
+        return;
     };
-    let (head, body_prefix) = match read {
-        Ok(Some(read)) => read,
-        Ok(None) => return,
-        Err(err) => {
-            if let Some(status) = err.status() {
-                write_reject(&mut stream, status);
-                shared.log.record("-", "-", status);
-            }
-            return;
-        }
-    };
+    if framing::body_len(&head.headers).is_err() {
+        reject_unread(shared, &mut stream, &head.method, 400);
+        return;
+    }
     let decision = decide(&GateInput {
         table: &shared.table,
         method: &head.method,
@@ -192,24 +192,57 @@ fn serve(shared: &Shared, mut stream: TcpStream) {
             write_reject(&mut stream, status);
             shared.log.record(&head.method, "-", status);
         }
-        GateDecision::Forward(plan) => {
-            drop(stream.set_read_timeout(Some(BODY_IDLE)));
-            if head.expects_continue() {
-                drop(stream.write_all(b"HTTP/1.1 100 Continue\r\n\r\n"));
+        GateDecision::Forward(plan) => hand_off(shared, &mut stream, head, plan, body_prefix),
+    }
+}
+
+/// Reads the request head within the head budget, answering malformed heads.
+fn read_request_head(shared: &Shared, stream: &mut TcpStream) -> Option<(Head, Vec<u8>)> {
+    let mut reader =
+        DeadlineReader::new(stream, shared.opts.clock.as_ref(), shared.opts.head_budget);
+    match read_head(&mut reader) {
+        Ok(read) => read,
+        Err(err) => {
+            if let Some(status) = err.status() {
+                write_reject(stream, status);
+                shared.log.record("-", "-", status);
             }
-            let method = head.method.clone();
-            let route = plan.route.as_str().to_owned();
-            let status = shared.handler.forward(
-                Forward {
-                    head,
-                    plan,
-                    body_prefix,
-                },
-                &mut stream,
-            );
-            shared.log.record(&method, &route, status);
+            None
         }
     }
+}
+
+/// Passes an admitted request to the handler and logs the outcome.
+fn hand_off(shared: &Shared, stream: &mut TcpStream, head: Head, plan: Plan, body_prefix: Vec<u8>) {
+    drop(stream.set_read_timeout(Some(BODY_IDLE)));
+    if head.expects_continue() {
+        drop(stream.write_all(b"HTTP/1.1 100 Continue\r\n\r\n"));
+    }
+    let method = head.method.clone();
+    let route = plan.route.as_str().to_owned();
+    let req = Forward {
+        head,
+        plan,
+        body_prefix,
+    };
+    let status = shared.handler.forward(req, stream);
+    shared.log.record(&method, &route, status);
+}
+
+/// Answers and logs a request refused before its body was read, then drops
+/// the unread part of what the client already sent so closing the socket
+/// does not reset the connection before the client reads the answer.
+fn reject_unread(shared: &Shared, stream: &mut TcpStream, method: &str, status: u16) {
+    write_reject(stream, status);
+    shared.log.record(method, "-", status);
+    drain(shared, stream);
+}
+
+/// Discards up to [`DRAIN_LIMIT`] bytes the client has sent, stopping when it
+/// goes quiet or [`DRAIN_BUDGET`] has passed in total.
+fn drain(shared: &Shared, stream: &TcpStream) {
+    let reader = DeadlineReader::new(stream, shared.opts.clock.as_ref(), DRAIN_BUDGET);
+    drop(io::copy(&mut reader.take(DRAIN_LIMIT), &mut io::sink()));
 }
 
 /// Writes a fixed-body reject response and closes the write side.
