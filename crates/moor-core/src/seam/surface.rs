@@ -2,7 +2,9 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::activity::PaneObs;
 use crate::name::TaskName;
+use crate::seam::proc::Deadline;
 
 /// A checked-out worktree and its branch.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -116,6 +118,14 @@ pub trait Surface: Send + Sync {
     /// # Errors
     /// Returns a [`SurfaceError`] when the pane cannot be opened.
     fn open_pane(&self, ws: &WorkspaceRef, cmd: &PaneCmd) -> Result<PaneRef, SurfaceError>;
+
+    /// Observes `pane`: the multiplexer's status and the end of its text.
+    ///
+    /// # Errors
+    /// Returns [`SurfaceError::NotFound`] when the pane is gone and
+    /// [`SurfaceError::Timeout`] when a call overruns `deadline`. Each of the
+    /// backend's two calls gets the full `deadline`, so the worst case is about twice it.
+    fn pane_obs(&self, pane: &PaneRef, deadline: Deadline) -> Result<PaneObs, SurfaceError>;
 
     /// Closes `pane`.
     ///
