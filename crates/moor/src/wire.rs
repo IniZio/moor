@@ -108,6 +108,12 @@ mod tests {
     }
 
     #[test]
+    fn a_built_context_carries_the_prompt_window_from_the_environment() {
+        let env = Env::from_pairs([(PROMPT_WINDOW_ENV, "0")]);
+        assert_eq!(build(&env).unwrap().prompt_window(), Duration::ZERO);
+    }
+
+    #[test]
     fn the_prompt_window_defaults_to_eight_seconds() {
         assert_eq!(window(None), Duration::from_secs(8));
         assert_eq!(window(Some("soon")), Duration::from_secs(8));

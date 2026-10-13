@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -5,13 +6,16 @@ use moor_core::activity::{PaneObs, PaneStatus};
 use moor_core::domain::decision::Decision;
 use moor_core::domain::task::{TaskInput, TaskState};
 use moor_core::seam::agent_profile::FirstRunPrompt;
+use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::ExecOutcome;
 use moor_core::seam::engine::EngineError;
 use moor_core::seam::surface::SurfaceError;
 use moor_core::{ErrorKind, ShowReq, StartReq, TaskId, TaskName, WaitFor, WaitReq};
 
 use super::{req, world, world_at, World};
+use crate::ops::common::boxlock::BoxLock;
 use crate::ops::start::run;
+use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 
@@ -407,6 +411,7 @@ fn a_failed_pane_read_records_a_check_failure_and_start_succeeds() {
 #[test]
 fn a_gone_pane_stops_the_watch_after_one_read() {
     let w = prompting();
+    w.surface.push_pane_obs("p-1", Err(SurfaceError::NotFound));
     let v = run(&w.cx, &goal_req("demo")).unwrap();
     let events = events_of(&w, TaskId::new(v.task.id));
     assert!(!events.iter().any(|(k, _)| k.starts_with("agent_prompt")));
@@ -421,4 +426,68 @@ fn the_watch_matches_only_the_last_forty_pane_lines() {
     let v = run(&w.cx, &goal_req("demo")).unwrap();
     let events = events_of(&w, TaskId::new(v.task.id));
     assert!(!events.iter().any(|(k, _)| k == "agent_prompt_blocked"));
+}
+
+#[test]
+fn a_prompt_exactly_forty_lines_from_the_bottom_is_matched() {
+    let w = prompting();
+    let tail = format!("trust this folder\n{}", "x\n".repeat(39));
+    w.surface.push_pane_obs("p-1", Ok(pane_tail(&tail)));
+    let v = run(&w.cx, &goal_req("demo")).unwrap();
+    let events = events_of(&w, TaskId::new(v.task.id));
+    assert!(events.iter().any(|(k, _)| k == "agent_prompt_blocked"));
+}
+
+#[test]
+fn a_retry_that_launches_after_a_failed_launch_watches_the_new_pane() {
+    let engine = Arc::new(
+        FakeEngine::new()
+            .launch_result(Err(launch_error("pane", "no tab")))
+            .prompt("trust this folder", FirstRunPrompt::FolderTrust),
+    );
+    let w = with_engine(&engine);
+    w.surface
+        .push_pane_obs("p-1", Ok(pane_tail("Do you trust this folder?")));
+    let first = run(&w.cx, &goal_req("demo")).unwrap();
+    assert!(!first.agent.launched);
+    assert_eq!(pane_reads(&w), 0);
+    let again = run(&w.cx, &goal_req("demo")).unwrap();
+    assert!(again.agent.launched);
+    assert_eq!(pane_reads(&w), 1);
+    let events = events_of(&w, TaskId::new(again.task.id));
+    assert!(events.iter().any(|(k, _)| k == "agent_prompt_blocked"));
+}
+
+#[test]
+fn attaching_to_a_live_session_does_not_watch_its_pane() {
+    let w = prompting();
+    w.surface.push_pane_obs("p-1", Ok(pane_tail("working")));
+    run(&w.cx, &goal_req("demo")).unwrap();
+    let before = pane_reads(&w);
+    let again = run(&w.cx, &goal_req("demo")).unwrap();
+    assert!(again.attached);
+    assert!(!again.agent.launched);
+    // The one extra read is the liveness check of the session; the watch adds none.
+    assert_eq!(pane_reads(&w), before + 1);
+}
+
+#[test]
+fn the_box_lock_is_free_while_the_pane_is_watched() {
+    let w = prompting();
+    w.surface.push_pane_obs("p-1", Ok(pane_tail("working")));
+    let free = Arc::new(AtomicBool::new(true));
+    let seen = Arc::new(AtomicBool::new(false));
+    let state = w.dir.path().to_path_buf();
+    let (f, s) = (free.clone(), seen.clone());
+    w.surface.on_pane_obs(move || {
+        let clock = FakeClock::new(Ts::from_millis(0));
+        let got = BoxLock::acquire(&clock, &state, TaskId::new(1), "probe", Duration::ZERO);
+        s.store(true, Ordering::SeqCst);
+        if got.is_err() {
+            f.store(false, Ordering::SeqCst);
+        }
+    });
+    run(&w.cx, &goal_req("demo")).unwrap();
+    assert!(seen.load(Ordering::SeqCst));
+    assert!(free.load(Ordering::SeqCst));
 }
