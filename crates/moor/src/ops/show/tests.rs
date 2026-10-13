@@ -245,7 +245,7 @@ fn working(cx: &Cx, driver: &FakeDriver, name: &str, session: Option<&str>) -> T
         });
     store.apply(d).unwrap();
     if let Some(s) = session {
-        store.begin_session(id, s).unwrap();
+        store.begin_session(id, s, None).unwrap();
     }
     id
 }

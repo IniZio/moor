@@ -90,9 +90,9 @@ fn live_session_is_the_newest_unended_row() {
     let (store, clock) = open(dir.path());
     let id = add(&store, "t");
     assert_eq!(store.live_session(id).unwrap(), None);
-    let first = store.begin_session(id, "s1").unwrap();
+    let first = store.begin_session(id, "s1", None).unwrap();
     clock.sleep(Duration::from_millis(5));
-    let second = store.begin_session(id, "s2").unwrap();
+    let second = store.begin_session(id, "s2", None).unwrap();
     let live = store.live_session(id).unwrap().unwrap();
     assert_eq!((live.id, live.session_ref.as_str()), (second, "s2"));
     assert_eq!(live.started_at, Ts::from_millis(1_005));
@@ -103,13 +103,27 @@ fn live_session_is_the_newest_unended_row() {
 }
 
 #[test]
+fn begin_session_keeps_the_pane_and_appends_session_started() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = add(&store, "t");
+    store.begin_session(id, "s1", Some("p1")).unwrap();
+    let live = store.live_session(id).unwrap().unwrap();
+    assert_eq!(live.pane.as_deref(), Some("p1"));
+    let events = store.events(id, 10).unwrap();
+    let last = events.last().unwrap();
+    assert_eq!(last.kind, "session_started");
+    assert_eq!(last.payload.get("session"), Some(&serde_json::json!("s1")));
+}
+
+#[test]
 fn has_session_stays_true_once_a_session_began() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
     let id = add(&store, "t");
     let other = add(&store, "u");
     assert!(!store.has_session(id).unwrap());
-    let s = store.begin_session(id, "s1").unwrap();
+    let s = store.begin_session(id, "s1", None).unwrap();
     assert!(store.has_session(id).unwrap());
     store.end_session(s, Some(0), None).unwrap();
     assert!(store.has_session(id).unwrap());
@@ -121,7 +135,7 @@ fn end_session_records_outcome_once() {
     let dir = tempfile::tempdir().unwrap();
     let (store, clock) = open(dir.path());
     let id = add(&store, "t");
-    let s = store.begin_session(id, "s1").unwrap();
+    let s = store.begin_session(id, "s1", None).unwrap();
     clock.sleep(Duration::from_millis(10));
     store.end_session(s, Some(3), Some("dg")).unwrap();
     clock.sleep(Duration::from_millis(10));
@@ -144,7 +158,7 @@ fn session_writes_leave_task_columns_alone() {
     let id = working(&store, "t");
     let before = state_cols(&store, id);
     clock.sleep(Duration::from_millis(50));
-    let s = store.begin_session(id, "s1").unwrap();
+    let s = store.begin_session(id, "s1", None).unwrap();
     store.end_session(s, Some(0), None).unwrap();
     assert_eq!(state_cols(&store, id), before);
     assert_eq!(idle_since(&store, id), None);
@@ -154,7 +168,7 @@ fn session_writes_leave_task_columns_alone() {
 fn begin_session_on_unknown_task_is_not_found() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
-    let err = store.begin_session(TaskId::new(7), "s").unwrap_err();
+    let err = store.begin_session(TaskId::new(7), "s", None).unwrap_err();
     assert!(
         matches!(err, crate::store::StoreError::NotFound(_)),
         "{err:?}"
