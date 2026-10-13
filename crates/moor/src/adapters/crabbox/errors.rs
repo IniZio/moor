@@ -26,6 +26,10 @@ pub(super) enum Op {
     CopyOut,
     /// Looking up a Box's ssh target.
     Target,
+    /// Suspending a Box.
+    Sleep,
+    /// Resuming a Box.
+    Wake,
 }
 
 impl Op {
@@ -40,6 +44,8 @@ impl Op {
             Self::Exec => "box command",
             Self::CopyOut => "box copy out",
             Self::Target => "box ssh target lookup",
+            Self::Sleep => "box sleep",
+            Self::Wake => "box wake",
         }
     }
 }

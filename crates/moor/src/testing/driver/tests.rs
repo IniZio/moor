@@ -7,7 +7,7 @@ use std::time::Duration;
 use moor_core::domain::run::SyncMode;
 use moor_core::name::TaskName;
 use moor_core::seam::driver::{
-    AcquireReq, Driver, DriverError, EgressPlan, ExecOutcome, ExecSpec, Released,
+    AcquireReq, Driver, DriverError, EgressPlan, ExecOutcome, ExecSpec, Released, SleepOutcome,
 };
 use moor_core::seam::proc::{Deadline, Output};
 use moor_core::{BoxHandle, BoxPath, ProviderId, TaskId};
@@ -241,4 +241,39 @@ fn peek_returns_while_an_exec_on_the_same_box_is_blocked() {
     );
     release_tx.send(()).unwrap();
     assert_eq!(runner.join().unwrap(), Ok(ExecOutcome::Exited { code: 0 }));
+}
+
+#[test]
+fn sleep_and_wake_are_recorded_and_can_fail_once() {
+    let fake = FakeDriver::new()
+        .fail_sleep(DriverError::Unavailable("x".into()))
+        .fail_wake(DriverError::Timeout(Duration::from_secs(1)));
+    let h = fake.acquire(&req()).unwrap().handle;
+    assert_eq!(fake.sleep(&h), Err(DriverError::Unavailable("x".into())));
+    assert_eq!(fake.sleep(&h), Ok(SleepOutcome::Slept));
+    assert_eq!(
+        fake.wake(&h),
+        Err(DriverError::Timeout(Duration::from_secs(1)))
+    );
+    assert_eq!(fake.wake(&h), Ok(()));
+    assert_eq!(
+        fake.calls(),
+        [
+            "acquire",
+            "sleep box-1",
+            "sleep box-1",
+            "wake box-1",
+            "wake box-1"
+        ]
+    );
+}
+
+#[test]
+fn sleep_outcome_is_scripted_and_gone_box_is_not_found() {
+    let fake = FakeDriver::new().sleep_outcome(SleepOutcome::Native);
+    let h = fake.acquire(&req()).unwrap().handle;
+    assert_eq!(fake.sleep(&h), Ok(SleepOutcome::Native));
+    fake.forget(&h);
+    assert_eq!(fake.sleep(&h), Err(DriverError::NotFound));
+    assert_eq!(fake.wake(&h), Err(DriverError::NotFound));
 }
