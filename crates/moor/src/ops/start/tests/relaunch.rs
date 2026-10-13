@@ -425,13 +425,15 @@ fn resume_on_a_live_pane_registers_again_and_does_not_launch() {
     set_agent_session(&w, id, "agent-1");
     w.surface.have_pane("p-1");
     w.surface.push_pane_obs("p-1", Ok(obs(None)));
+    let live = w.cx.store().unwrap().live_session(id).unwrap().unwrap();
+    w.cx.store()
+        .unwrap()
+        .set_registered_session(live.id, "agent-1")
+        .unwrap();
     let v = run(&w.cx, &resume_req()).unwrap();
     assert!(!v.agent.launched);
     assert_eq!(engine.launches().len(), 1);
-    assert_eq!(
-        registrations(&w).last().map(String::as_str),
-        Some("register_resume p-1 claude agent-1")
-    );
+    assert_eq!(registrations(&w), ["register_resume p-1 claude agent-1"]);
 }
 
 #[test]
@@ -443,10 +445,7 @@ fn resume_on_a_gone_pane_launches_the_resume_and_registers_the_new_pane() {
     let v = run(&w.cx, &resume_req()).unwrap();
     assert!(v.agent.launched);
     assert_eq!(relaunch_of(&engine).resume.as_deref(), Some("agent-1"));
-    assert_eq!(
-        registrations(&w).last().map(String::as_str),
-        Some("register_resume p-2 claude agent-1")
-    );
+    assert_eq!(registrations(&w), ["register_resume p-2 claude agent-1"]);
 }
 
 #[test]
@@ -462,10 +461,7 @@ fn a_relaunch_that_resumes_registers_the_new_pane() {
     w.surface.have_pane("p-2");
     gone(&w);
     run(&w.cx, &req("demo")).unwrap();
-    assert_eq!(
-        registrations(&w).last().map(String::as_str),
-        Some("register_resume p-2 claude agent-1")
-    );
+    assert_eq!(registrations(&w), ["register_resume p-2 claude agent-1"]);
 }
 
 #[test]
