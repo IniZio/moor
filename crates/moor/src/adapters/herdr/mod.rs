@@ -260,7 +260,11 @@ impl Surface for Herdr {
             .map(|a| shell_word(a))
             .collect::<Vec<_>>()
             .join(" ");
-        self.call(&["pane", "run", &pane, &line])?;
+        if let Err(e) = self.call(&["pane", "run", &pane, &line]) {
+            // The empty tab would stay open; the run error is the one to report.
+            _ = self.call(&["pane", "close", &pane]);
+            return Err(e);
+        }
         Ok(PaneRef::new(pane))
     }
 

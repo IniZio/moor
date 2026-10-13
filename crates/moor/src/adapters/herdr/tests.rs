@@ -198,6 +198,31 @@ fn ensure_workspace_creates_when_none_open() {
 }
 
 #[test]
+fn open_pane_closes_the_empty_tab_when_the_run_fails() {
+    let (p, h) = fixture();
+    p.on(Tool::Herdr, &["tab", "create"], ok(TAB_CREATED));
+    p.on(
+        Tool::Herdr,
+        &["pane", "run"],
+        Reply::Fail {
+            code: 1,
+            stdout: String::new(),
+            stderr: "boom".to_owned(),
+        },
+    );
+    p.on(Tool::Herdr, &["pane", "close"], ok(""));
+    let cmd = PaneCmd {
+        label: "agent:fix".to_owned(),
+        argv: vec!["claude".to_owned()],
+        cwd: None,
+        env: Vec::new(),
+    };
+    assert!(h.open_pane(&WorkspaceRef::new("w1"), &cmd).is_err());
+    let calls = p.calls();
+    assert_eq!(args(&calls, 2), ["pane", "close", "w1:p2"]);
+}
+
+#[test]
 fn open_pane_creates_tab_then_runs_quoted_command() {
     let (p, h) = fixture();
     p.on(Tool::Herdr, &["tab", "create"], ok(TAB_CREATED));
