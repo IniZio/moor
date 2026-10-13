@@ -469,7 +469,7 @@ fn a_task_freshly_started_is_not_idled_by_the_next_list() {
         &cx,
         &StartReq {
             name: TaskName::parse("demo").unwrap(),
-            goal: None,
+            goal: Some("ship it".into()),
             issue: None,
             worktree: None,
             base: None,

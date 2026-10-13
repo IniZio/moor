@@ -20,6 +20,7 @@ use crate::testing::surface::FakeSurface;
 
 mod activity;
 mod capacity;
+mod session;
 mod setup;
 
 /// A world of fakes plus the context over them.
@@ -289,29 +290,6 @@ fn open_name_attaches_without_effects() {
     assert_eq!(again.task.id, first.task.id);
     assert_eq!(w.driver.calls(), ["acquire"]);
     assert_eq!(w.surface.calls().len(), 2);
-}
-
-#[test]
-fn start_records_one_live_session_and_attach_adds_none() {
-    let w = world(FakeDriver::new());
-    let first = run(&w.cx, &req("demo")).unwrap();
-    let id = TaskId::new(first.task.id);
-    let store = w.cx.store().unwrap();
-    let sessions = || -> i64 {
-        store
-            .reader()
-            .unwrap()
-            .query_row(
-                "SELECT COUNT(*) FROM sessions WHERE task = ? AND ended_at IS NULL",
-                [id.get()],
-                |r| r.get(0),
-            )
-            .unwrap()
-    };
-    assert_eq!(first.task.state, TaskState::Working);
-    assert_eq!(sessions(), 1);
-    run(&w.cx, &req("demo")).unwrap();
-    assert_eq!(sessions(), 1);
 }
 
 #[test]

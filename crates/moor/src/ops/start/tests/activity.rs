@@ -185,3 +185,41 @@ fn start_sleeps_an_idle_task_past_the_threshold() {
     assert_eq!(v.task.state, TaskState::Asleep);
     assert_eq!(row(&w, id).state, TaskState::Asleep);
 }
+
+/// The kinds of the events of a task.
+fn kinds(w: &World, id: TaskId) -> Vec<String> {
+    let events = w.cx.store().unwrap().events(id, 100).unwrap();
+    events.into_iter().map(|e| e.kind).collect()
+}
+
+#[test]
+fn restarting_an_idle_task_whose_agent_is_busy_ends_working_with_a_busy_event() {
+    let (w, id) = started(true, |w| {
+        probes(w, Some(HookKind::Busy), PaneStatus::Unknown)
+    });
+    let v = run(&w.cx, &req("demo")).unwrap();
+    assert_eq!(v.task.state, TaskState::Working);
+    assert_eq!(row(&w, id).state, TaskState::Working);
+    assert!(kinds(&w, id).contains(&"busy".to_owned()));
+}
+
+#[test]
+fn restarting_a_working_task_whose_agent_is_busy_leaves_it_working() {
+    let (w, id) = started(false, |w| {
+        probes(w, Some(HookKind::Busy), PaneStatus::Unknown)
+    });
+    let v = run(&w.cx, &req("demo")).unwrap();
+    assert_eq!(v.task.state, TaskState::Working);
+    assert_eq!(row(&w, id).state, TaskState::Working);
+    assert!(!kinds(&w, id).contains(&"idled".to_owned()));
+}
+
+#[test]
+fn a_fresh_start_settles_another_task() {
+    let (w, id) = started(false, |w| {
+        probes(w, Some(HookKind::Idle), PaneStatus::Unknown)
+    });
+    run(&w.cx, &req("other")).unwrap();
+    assert_eq!(row(&w, id).state, TaskState::Idle);
+    assert!(kinds(&w, id).contains(&"idled".to_owned()));
+}
