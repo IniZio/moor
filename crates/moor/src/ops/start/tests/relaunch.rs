@@ -297,3 +297,68 @@ fn a_relaunch_watches_its_new_pane_for_a_first_run_prompt() {
     assert_eq!(blocked.payload.get("pane"), Some(&"p-2".into()));
     assert_eq!(blocked.payload.get("prompt"), Some(&"folder_trust".into()));
 }
+
+/// A world whose Working task `demo` has no goal and no session.
+fn goalless() -> (World, Arc<FakeEngine>, TaskId) {
+    let (w, engine, id) = started();
+    let clear = Fields {
+        goal: Field::Clear,
+        ..Fields::default()
+    };
+    let store = w.cx.store().unwrap();
+    store.apply(Decision::new(id).set(clear)).unwrap();
+    let live = store.live_session(id).unwrap().unwrap();
+    store.end_session(live.id, None, None).unwrap();
+    (w, engine, id)
+}
+
+#[test]
+fn a_goal_on_a_goalless_task_without_a_session_is_stored_and_launches_once() {
+    let (w, engine, id) = goalless();
+    let v = run(&w.cx, &goal_req("late goal")).unwrap();
+    assert!(v.agent.launched);
+    assert_eq!(engine.launches().len(), 2);
+    assert_eq!(relaunch_of(&engine).goal.as_deref(), Some("late goal"));
+    let row = w.cx.store().unwrap().task(id).unwrap().unwrap();
+    assert_eq!(row.goal.as_deref(), Some("late goal"));
+}
+
+#[test]
+fn a_second_start_without_a_goal_does_not_launch_again() {
+    let (w, engine, _id) = goalless();
+    run(&w.cx, &goal_req("late goal")).unwrap();
+    w.surface.push_pane_obs("p-2", Ok(obs(None)));
+    let v = run(&w.cx, &req("demo")).unwrap();
+    assert!(!v.agent.launched);
+    assert_eq!(engine.launches().len(), 2);
+}
+
+#[test]
+fn an_issue_alone_does_not_launch_a_goalless_task() {
+    let (w, engine, _id) = goalless();
+    let issue = StartReq {
+        issue: Some("42".into()),
+        ..req("demo")
+    };
+    let v = run(&w.cx, &issue).unwrap();
+    assert!(!v.agent.launched);
+    assert_eq!(engine.launches().len(), 1);
+}
+
+#[test]
+fn a_goal_on_a_goalless_task_with_a_live_pane_warns() {
+    let (w, engine, id) = started();
+    let clear = Fields {
+        goal: Field::Clear,
+        ..Fields::default()
+    };
+    w.cx.store()
+        .unwrap()
+        .apply(Decision::new(id).set(clear))
+        .unwrap();
+    w.surface.push_pane_obs("p-1", Ok(obs(None)));
+    w.cx.take_warnings();
+    run(&w.cx, &goal_req("late goal")).unwrap();
+    assert!(warning_codes(&w).contains(&"goal_ignored".to_owned()));
+    assert_eq!(engine.launches().len(), 1);
+}
