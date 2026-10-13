@@ -31,6 +31,10 @@ pub(super) fn render(b: &BriefInput) -> String {
         "You are running inside the Box, in the project working directory. Run builds, \
          tests and project tooling directly here.\n\n\
          Report the command's real exit code. Do not pipe its output through `tail` or `head`.\n\n\
+         This Box is disposable and yours: you have full control, including sudo. If a tool \
+         the project needs is missing, install it from its official source only (vendor \
+         installer, distro packages, or mise). Never use unofficial mirrors or piped scripts \
+         from unknown hosts. Do not guess paths.\n\n\
          HEAD is detached on the Box. Commit your work with git, following the repo's \
          commit-msg hook and conventions. Push with \
          `git push \"$MOOR_PUSH_URL\" HEAD:refs/heads/{branch}` when the repo's push guard \
@@ -100,6 +104,15 @@ mod tests {
         assert!(out.contains("HEAD is detached"));
         assert!(out.contains("Do not add Co-Authored-By trailers"));
         assert!(out.contains("follow-up messages (steers)"));
+    }
+
+    #[test]
+    fn limits_installs_to_official_sources() {
+        let out = render(&input(Some("g"), None));
+        assert!(out.contains("including sudo"));
+        assert!(out.contains("official source only"));
+        assert!(out.contains("Never use unofficial mirrors or piped scripts"));
+        assert!(out.contains("Do not guess paths."));
     }
 
     #[test]
