@@ -174,3 +174,14 @@ fn start_does_not_revive_a_task_whose_session_ended() {
     show::run(&w.cx, &list).unwrap();
     assert_eq!(row(&w, id).state, TaskState::Idle);
 }
+
+#[test]
+fn start_sleeps_an_idle_task_past_the_threshold() {
+    let (w, id) = started(true, |w| {
+        probes(w, Some(HookKind::Idle), PaneStatus::Unknown)
+    });
+    w.cx.clock().sleep(Duration::from_mins(31));
+    let v = run(&w.cx, &req("demo")).unwrap();
+    assert_eq!(v.task.state, TaskState::Asleep);
+    assert_eq!(row(&w, id).state, TaskState::Asleep);
+}

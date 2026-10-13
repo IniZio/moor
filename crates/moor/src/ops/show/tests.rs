@@ -490,3 +490,55 @@ fn a_task_freshly_started_is_not_idled_by_the_next_list() {
         TaskState::Working
     );
 }
+
+/// A task Idle since just now, with its agent still reporting idle.
+fn idle_task(dir: &Path, driver: &Arc<FakeDriver>) -> (Cx, TaskId) {
+    let cx = engine_cx(dir, driver, &Arc::new(FakeEngine::new()));
+    let id = working(&cx, driver, "a", Some("s-a"));
+    cx.store()
+        .unwrap()
+        .apply(Decision::new(id).task_input(TaskInput::AgentQuiet))
+        .unwrap();
+    let engine = Arc::new(FakeEngine::new().probes("s-a", hook(&cx, HookKind::Idle)));
+    (engine_cx(dir, driver, &engine), id)
+}
+
+const LONG: Duration = Duration::from_mins(31);
+
+#[test]
+fn list_sleeps_a_task_idle_past_the_threshold() {
+    let dir = tempfile::tempdir().unwrap();
+    let driver = Arc::new(FakeDriver::new());
+    let (cx, id) = idle_task(dir.path(), &driver);
+    cx.clock().sleep(LONG);
+    let v = run(&cx, &req(None, None)).unwrap();
+    let row = cx.store().unwrap().task(id).unwrap().unwrap();
+    assert_eq!(row.state, TaskState::Asleep);
+    assert_eq!(v.tasks.first().unwrap().state, TaskState::Asleep);
+    assert_eq!(
+        v.tasks.first().unwrap().r#box.as_ref().unwrap().state,
+        BoxState::Asleep
+    );
+}
+
+#[test]
+fn list_leaves_a_recently_idle_task_up() {
+    let dir = tempfile::tempdir().unwrap();
+    let driver = Arc::new(FakeDriver::new());
+    let (cx, id) = idle_task(dir.path(), &driver);
+    run(&cx, &req(None, None)).unwrap();
+    let row = cx.store().unwrap().task(id).unwrap().unwrap();
+    assert_eq!(row.state, TaskState::Idle);
+}
+
+#[test]
+fn showing_one_task_does_not_sleep_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let driver = Arc::new(FakeDriver::new());
+    let (cx, id) = idle_task(dir.path(), &driver);
+    cx.clock().sleep(LONG);
+    run(&cx, &req(Some("a"), None)).unwrap();
+    let row = cx.store().unwrap().task(id).unwrap().unwrap();
+    assert_eq!(row.state, TaskState::Idle);
+    assert!(!driver.calls().iter().any(|c| c.starts_with("sleep ")));
+}

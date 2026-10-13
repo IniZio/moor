@@ -1,0 +1,233 @@
+//! Tests for auto-sleep.
+
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::Duration;
+
+use moor_core::domain::boxes::{BoxInput, BoxState};
+use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
+use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
+use moor_core::seam::driver::{AcquireReq, Driver, DriverError, EgressPlan, SleepOutcome};
+use moor_core::{ProviderId, TaskId, TaskName};
+
+use super::run;
+use crate::cx::Cx;
+use crate::ops::common::boxlock::BoxLock;
+use crate::ops::common::view::task_view;
+use crate::store::NewRun;
+use crate::testing::driver::FakeDriver;
+use crate::testing::proc::ScriptedProc;
+use crate::testing::surface::FakeSurface;
+
+/// Time enough to pass the default `box.sleep_after`.
+const LONG: Duration = Duration::from_mins(31);
+
+struct Fx {
+    _dir: tempfile::TempDir,
+    cx: Cx,
+    driver: Arc<FakeDriver>,
+    id: TaskId,
+}
+
+/// Task `t` with a live Box and a Working Task.
+fn working_with(driver: FakeDriver) -> Fx {
+    let dir = tempfile::tempdir().unwrap();
+    let driver = Arc::new(driver);
+    let cx = Cx::fake(
+        dir.path(),
+        Path::new("/home/me/proj"),
+        driver.clone(),
+        Arc::new(FakeSurface::new(PathBuf::from("/s"))),
+        Arc::new(ScriptedProc::new()),
+    );
+    let store = cx.store().unwrap();
+    let name = TaskName::parse("t").unwrap();
+    let id = store
+        .apply(Decision::insert(NewTask {
+            name: name.clone(),
+            repo: "r".into(),
+        }))
+        .unwrap()
+        .task;
+    let provider = ProviderId::new("p");
+    let fields = Fields {
+        box_provider: Field::Set(provider.clone()),
+        worktree: Field::Set("/home/me/wt/t".to_owned()),
+        ..Fields::default()
+    };
+    let d = Decision::new(id)
+        .task_input(TaskInput::Admitted)
+        .box_input(BoxInput::Requested)
+        .set(fields);
+    store.apply(d).unwrap();
+    let got = driver
+        .acquire(&AcquireReq {
+            provider,
+            task: id,
+            name,
+            egress: EgressPlan::Open,
+            class: None,
+            nonce: "n".to_owned(),
+            worktree: None,
+        })
+        .unwrap();
+    let d = Decision::new(id)
+        .task_input(TaskInput::BoxReady {
+            setup: SetupOutcome::Ok,
+        })
+        .box_input(BoxInput::Acquired { handle: got.handle });
+    store.apply(d).unwrap();
+    Fx {
+        _dir: dir,
+        cx,
+        driver,
+        id,
+    }
+}
+
+/// A fixture whose Task became Idle just now.
+fn idle_with(driver: FakeDriver) -> Fx {
+    let f = working_with(driver);
+    let d = Decision::new(f.id).task_input(TaskInput::AgentQuiet);
+    f.cx.store().unwrap().apply(d).unwrap();
+    f
+}
+
+fn idle() -> Fx {
+    idle_with(FakeDriver::new())
+}
+
+/// Let `d` pass on the fake clock.
+fn pass(f: &Fx, d: Duration) {
+    f.cx.clock().sleep(d);
+}
+
+fn auto_sleep(f: &Fx) {
+    run(&f.cx, f.cx.store().unwrap(), f.id);
+}
+
+/// Kinds of the events recorded for the task.
+fn kinds(f: &Fx) -> Vec<String> {
+    let rows = f.cx.store().unwrap().events(f.id, 100).unwrap();
+    rows.into_iter().map(|e| e.kind).collect()
+}
+
+/// Task and Box states now.
+fn states(f: &Fx) -> (TaskState, BoxState) {
+    let row = f.cx.store().unwrap().task(f.id).unwrap().unwrap();
+    (row.state, row.boxed.unwrap().state)
+}
+
+fn sleep_calls(f: &Fx) -> usize {
+    f.driver
+        .calls()
+        .iter()
+        .filter(|c| c.starts_with("sleep "))
+        .count()
+}
+
+#[test]
+fn a_task_idle_long_enough_sleeps() {
+    let f = idle();
+    pass(&f, LONG);
+    auto_sleep(&f);
+    assert_eq!(states(&f), (TaskState::Asleep, BoxState::Asleep));
+    let k = kinds(&f);
+    assert!(k.contains(&"asleep".to_owned()), "{k:?}");
+    assert!(k.contains(&"box_asleep".to_owned()), "{k:?}");
+    assert_eq!(sleep_calls(&f), 1);
+}
+
+#[test]
+fn a_native_sleep_counts_as_slept() {
+    let f = idle_with(FakeDriver::new().sleep_outcome(SleepOutcome::Native));
+    pass(&f, LONG);
+    auto_sleep(&f);
+    assert_eq!(states(&f), (TaskState::Asleep, BoxState::Asleep));
+}
+
+#[test]
+fn a_task_not_idle_long_enough_is_left_alone() {
+    let f = idle();
+    pass(&f, Duration::from_mins(29));
+    auto_sleep(&f);
+    assert_eq!(states(&f), (TaskState::Idle, BoxState::Ready));
+    assert_eq!(sleep_calls(&f), 0);
+}
+
+#[test]
+fn a_working_task_never_sleeps() {
+    let f = working_with(FakeDriver::new());
+    pass(&f, LONG);
+    auto_sleep(&f);
+    assert_eq!(states(&f), (TaskState::Working, BoxState::Ready));
+    assert_eq!(sleep_calls(&f), 0);
+}
+
+#[test]
+fn a_held_box_lock_skips_the_sleep_silently() {
+    let f = idle();
+    pass(&f, LONG);
+    let _held = BoxLock::acquire(
+        f.cx.clock(),
+        f.cx.state_dir().unwrap(),
+        f.id,
+        "close",
+        Duration::ZERO,
+    )
+    .unwrap();
+    auto_sleep(&f);
+    assert_eq!(states(&f), (TaskState::Idle, BoxState::Ready));
+    assert_eq!(sleep_calls(&f), 0);
+    assert!(f.cx.take_warnings().is_empty());
+}
+
+#[test]
+fn a_run_in_flight_skips_the_sleep() {
+    let f = idle();
+    f.cx.store()
+        .unwrap()
+        .begin_run(NewRun {
+            task: f.id,
+            argv: vec!["make".into()],
+            record: None,
+            sha: None,
+            sync: "none".into(),
+            pid: 4242,
+        })
+        .unwrap();
+    pass(&f, LONG);
+    auto_sleep(&f);
+    assert_eq!(states(&f).1, BoxState::Ready);
+    assert_eq!(sleep_calls(&f), 0);
+}
+
+#[test]
+fn a_box_that_cannot_sleep_stays_up_and_says_why_once() {
+    let f = idle_with(
+        FakeDriver::new().sleep_outcome(SleepOutcome::CannotSleep("provider cannot wake".into())),
+    );
+    pass(&f, LONG);
+    auto_sleep(&f);
+    auto_sleep(&f);
+    assert_eq!(states(&f), (TaskState::Idle, BoxState::Ready));
+    assert_eq!(sleep_calls(&f), 2);
+    let row = f.cx.store().unwrap().task(f.id).unwrap().unwrap();
+    let shown = task_view(&row, f.cx.config()).r#box.unwrap().sleep.reason;
+    assert_eq!(shown.as_deref(), Some("provider cannot wake"));
+    let stays = kinds(&f).iter().filter(|k| *k == "stays_up").count();
+    assert_eq!(stays, 1);
+}
+
+#[test]
+fn a_driver_failure_warns_and_changes_nothing() {
+    let f = idle_with(FakeDriver::new().fail_sleep(DriverError::Failed {
+        summary: "boom".into(),
+    }));
+    pass(&f, LONG);
+    auto_sleep(&f);
+    assert_eq!(states(&f), (TaskState::Idle, BoxState::Ready));
+    let warned = f.cx.take_warnings();
+    assert_eq!(warned.len(), 1);
+    assert_eq!(warned.first().unwrap().code, "auto_sleep_failed");
+}

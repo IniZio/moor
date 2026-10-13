@@ -14,6 +14,7 @@ use moor_core::view::{AgentLaunchView, DotfilesView, SetupView, StartView};
 use moor_core::{ErrorKind, StartReq, TaskId, Warning};
 
 use super::common::activity;
+use super::common::autosleep;
 use super::common::boxlock::{self, BoxLock};
 use super::common::capacity;
 use super::common::facts::settings;
@@ -174,6 +175,7 @@ fn settle_agent(cx: &Cx, store: &Store, id: TaskId) -> Result<TaskRow, CommandEr
     let row = reread(store, id)?;
     let reading = activity::read(cx, store, &row, cx.clock().now())?;
     activity::settle(store, &row, &reading)?;
+    autosleep::run(cx, store, id);
     reread(store, id)
 }
 
