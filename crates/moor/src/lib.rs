@@ -9,6 +9,11 @@ pub mod env;
 pub mod error;
 mod moor;
 mod ops;
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "the CLI starts the proxy in a later change")
+)]
+mod proxy;
 mod store;
 #[cfg(test)]
 mod testing;

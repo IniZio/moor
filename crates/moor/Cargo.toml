@@ -24,6 +24,7 @@ rustix = { version = "1", features = ["process"] }
 zeroize = "1"
 signal-hook = "=0.4.4"
 getrandom = "=0.4.3"
+httparse = "1"
 
 [dev-dependencies]
 tempfile = "3"
