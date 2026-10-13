@@ -23,12 +23,17 @@ fn forbidden(result: Result<(), Reject>) -> bool {
 }
 
 #[test]
-fn constructors_trim_prefix_and_set_policy() {
+fn constructors_trim_prefix_and_set_policy_and_inject() {
     let git = RouteRow::forge_git("/github/");
     assert_eq!(git.prefix, "/github");
     assert_eq!(git.id, RouteId::new("forge.git"));
     assert_eq!(git.allow, Allow::GitSmartHttp);
-    assert_eq!(git.inject, Inject::Bearer);
+    assert_eq!(
+        git.inject,
+        Inject::Basic {
+            user: "x-access-token"
+        }
+    );
     assert!(git.strip.is_empty());
     let api = RouteRow::forge_api(String::from("/github-api"));
     assert_eq!(api.prefix, "/github-api");
@@ -388,13 +393,19 @@ fn gate_forwards_task_repo_git_and_api_calls() {
         Some("acme/widget"),
     ));
     assert_eq!(planned.route, RouteId::new("forge.git"));
-    assert_eq!(planned.inject, Inject::Bearer);
+    assert_eq!(
+        planned.inject,
+        Inject::Basic {
+            user: "x-access-token"
+        }
+    );
     let planned = forwarded(run(
         "POST",
         "/github-api/repos/acme/widget/pulls",
         Some("acme/widget"),
     ));
     assert_eq!(planned.route, RouteId::new("forge.api"));
+    assert_eq!(planned.inject, Inject::Bearer);
     assert_eq!(planned.upstream_path, "/github-api/repos/acme/widget/pulls");
 }
 
