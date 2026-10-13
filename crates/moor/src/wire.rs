@@ -33,6 +33,16 @@ const HERDR_PASSTHROUGH: [&str; 5] = [
     "TERM",
 ];
 
+/// The herdr adapter, numbering its reports from `clock`.
+fn herdr(
+    proc: &Arc<dyn Proc>,
+    session: &str,
+    extra_env: Vec<(String, String)>,
+    clock: Arc<dyn Clock>,
+) -> Herdr {
+    Herdr::new(Arc::clone(proc), session.to_owned(), extra_env).with_clock(clock)
+}
+
 /// Wire real adapters from the environment into a context.
 pub(crate) fn build(env: &Env) -> Result<Cx, CommandError> {
     let clock = SystemClock::from_env(env).map_err(|e| CommandError::new(ErrorKind::Usage, e))?;
@@ -44,16 +54,14 @@ pub(crate) fn build(env: &Env) -> Result<Cx, CommandError> {
         .iter()
         .filter_map(|k| Some(((*k).to_owned(), env.get(k)?.to_owned())))
         .collect();
-    let surface: Arc<dyn Surface> = Arc::new(
-        Herdr::new(
-            Arc::clone(&proc),
-            config.herdr_session().to_owned(),
-            extra_env,
-        )
-        .seq_from(clock.now()),
-    );
-    let driver: Arc<dyn Driver> = Arc::new(Crabbox::new(Arc::clone(&proc)));
     let clock = Arc::new(clock);
+    let surface: Arc<dyn Surface> = Arc::new(herdr(
+        &proc,
+        config.herdr_session(),
+        extra_env,
+        Arc::clone(&clock) as Arc<dyn Clock>,
+    ));
+    let driver: Arc<dyn Driver> = Arc::new(Crabbox::new(Arc::clone(&proc)));
     let engine = BoxAgent::new(
         Arc::clone(&driver),
         Arc::clone(&surface),
@@ -107,10 +115,39 @@ fn tool_paths(config: &UserConfig) -> ToolPaths {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::testing::clock::FakeClock;
+    use crate::testing::proc::{Reply, ScriptedProc};
+    use moor_core::activity::PaneStatus;
+    use moor_core::name::TaskName;
+    use moor_core::seam::clock::Ts;
+    use moor_core::seam::proc::Tool;
+    use moor_core::seam::surface::{PaneRef, ResumeReg};
 
     fn window(value: Option<&str>) -> Duration {
         let pairs: Vec<(&str, &str)> = value.map(|v| (PROMPT_WINDOW_ENV, v)).into_iter().collect();
         prompt_window(&Env::from_pairs(pairs))
+    }
+
+    #[test]
+    fn the_herdr_adapter_numbers_its_reports_from_the_clock() {
+        let proc = Arc::new(ScriptedProc::new());
+        proc.on(Tool::Herdr, &["pane"], Reply::Ok(String::new()));
+        let clock = Arc::new(FakeClock::new(Ts::from_millis(7_000)));
+        let h = herdr(&(proc.clone() as Arc<dyn Proc>), "s", Vec::new(), clock);
+        let reg = ResumeReg {
+            agent: "claude".to_owned(),
+            state: PaneStatus::Idle,
+            session_id: "abc".to_owned(),
+            task: TaskName::parse("a").unwrap(),
+        };
+        h.register_resume(&PaneRef::new("p"), &reg).unwrap();
+        let calls = proc.calls();
+        assert_eq!(calls.len(), 2);
+        for c in calls {
+            let i = c.args.iter().position(|a| a == "--seq").unwrap();
+            let seq: u64 = c.args.get(i + 1).unwrap().parse().unwrap();
+            assert!(seq >= 7_000_000, "{seq}");
+        }
     }
 
     #[test]

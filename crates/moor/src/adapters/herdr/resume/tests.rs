@@ -1,12 +1,14 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use moor_core::activity::PaneStatus;
 use moor_core::name::TaskName;
-use moor_core::seam::clock::Ts;
+use moor_core::seam::clock::{Clock, Ts};
 use moor_core::seam::proc::Tool;
 use moor_core::seam::surface::{PaneRef, ResumeOutcome, ResumeReg, Surface, SurfaceError};
 
 use crate::adapters::herdr::Herdr;
+use crate::testing::clock::FakeClock;
 use crate::testing::proc::{Reply, ScriptedProc};
 
 fn fixture() -> (Arc<ScriptedProc>, Herdr) {
@@ -89,12 +91,29 @@ fn seq_rises_on_every_call_and_across_registrations() {
     assert!(seqs.is_sorted_by(|a, b| a < b), "{seqs:?}");
 }
 #[test]
-fn seq_starts_above_the_clock_seed() {
+fn seq_never_falls_below_the_clock() {
     let (p, h) = fixture();
-    let h = h.seq_from(Ts::from_millis(5));
+    let clock = Arc::new(FakeClock::new(Ts::from_millis(5)));
+    let h = h.with_clock(clock.clone());
     p.on(Tool::Herdr, &["pane"], Reply::Ok(String::new()));
     h.register_resume(&PaneRef::new("p"), &reg()).unwrap();
-    assert!(p.calls().iter().all(|c| seq_of(&c.args) > 5000));
+    clock.sleep(Duration::from_secs(60));
+    h.register_resume(&PaneRef::new("p"), &reg()).unwrap();
+    let seqs: Vec<u64> = p.calls().iter().map(|c| seq_of(&c.args)).collect();
+    assert!(seqs.iter().take(2).all(|s| *s >= 5000), "{seqs:?}");
+    assert!(seqs.iter().skip(2).all(|s| *s >= 65_000), "{seqs:?}");
+    assert!(seqs.is_sorted_by(|a, b| a < b), "{seqs:?}");
+}
+
+#[test]
+fn seq_keeps_rising_when_the_clock_stands_still() {
+    let (p, h) = fixture();
+    let h = h.with_clock(Arc::new(FakeClock::new(Ts::from_millis(5))));
+    p.on(Tool::Herdr, &["pane"], Reply::Ok(String::new()));
+    h.register_resume(&PaneRef::new("p"), &reg()).unwrap();
+    h.register_resume(&PaneRef::new("p"), &reg()).unwrap();
+    let seqs: Vec<u64> = p.calls().iter().map(|c| seq_of(&c.args)).collect();
+    assert_eq!(seqs, [5000, 5001, 5002, 5003]);
 }
 
 #[test]

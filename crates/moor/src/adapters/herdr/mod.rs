@@ -16,6 +16,7 @@ use std::time::Duration;
 
 use moor_core::activity::PaneObs;
 use moor_core::name::TaskName;
+use moor_core::seam::clock::Clock;
 use moor_core::seam::proc::{Deadline, Proc, ProcSpec, Tool};
 use moor_core::seam::surface::{
     workspace_label, Key, PaneCmd, PaneRef, ResumeOutcome, ResumeReg, Surface, SurfaceError,
@@ -43,6 +44,8 @@ pub(crate) struct Herdr {
     extra_env: Vec<(String, String)>,
     /// Last sequence number sent with a report.
     seq: AtomicU64,
+    /// Where sequence numbers start from, when set.
+    clock: Option<Arc<dyn Clock>>,
 }
 
 /// Quotes `s` for a POSIX shell when it needs it.
@@ -69,6 +72,7 @@ impl Herdr {
             session,
             extra_env,
             seq: AtomicU64::new(0),
+            clock: None,
         }
     }
 
