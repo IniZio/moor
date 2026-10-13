@@ -39,7 +39,7 @@ pub(super) fn steer(
             send(surface.send_keys(pane, &keys), "menu")?;
             Ok(SteerOutcome {
                 submit_retried: false,
-                submit_checked: true,
+                submit_checked: false,
             })
         }
         Steer::Text(text) => {
