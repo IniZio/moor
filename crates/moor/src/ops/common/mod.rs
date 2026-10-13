@@ -12,5 +12,6 @@ pub(crate) mod provision;
 pub(crate) mod provisioning;
 pub(crate) mod reconcile;
 pub(crate) mod setup;
+pub(crate) mod transcript;
 pub(crate) mod view;
 pub(crate) mod wake;
