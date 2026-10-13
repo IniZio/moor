@@ -7,6 +7,7 @@ pub mod config;
 pub mod decide;
 pub mod domain;
 pub mod name;
+pub mod proxy_gate;
 pub mod request;
 pub mod response;
 pub mod seam;
