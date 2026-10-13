@@ -26,6 +26,16 @@ fn valid_get_returns_head_and_body_prefix() {
 }
 
 #[test]
+fn debug_output_omits_target_and_header_values() {
+    let raw = b"GET /t/SENTINELNONCE123/v1/x HTTP/1.1\r\nHost: a\r\nAuthorization: Bearer SENTINELNONCE123\r\n\r\n";
+    let (head, _) = read_head(&mut Cursor::new(&raw[..])).unwrap().unwrap();
+    let shown = format!("{head:?}");
+    assert!(!shown.contains("SENTINELNONCE123"), "{shown}");
+    assert!(shown.contains("GET"), "{shown}");
+    assert!(shown.contains("Authorization"), "{shown}");
+}
+
+#[test]
 fn http_1_0_head_is_accepted() {
     let raw = b"GET / HTTP/1.0\r\n\r\n";
     let (head, rest) = read_head(&mut Cursor::new(&raw[..])).unwrap().unwrap();
