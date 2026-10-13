@@ -25,6 +25,7 @@ struct State {
     fail_ensure: Option<SurfaceError>,
     fail_close_pane: Option<SurfaceError>,
     fail_close_ws: Option<SurfaceError>,
+    fail_focus_ws: Option<SurfaceError>,
 }
 
 /// Scripted Surface: worktrees at `<root>/wt/<name>`, workspaces `ws-N`, panes `p-N`.
@@ -61,6 +62,12 @@ impl FakeSurface {
     /// The next `close_workspace` fails once with `e`.
     pub(crate) fn fail_close_workspace(self, e: SurfaceError) -> Self {
         self.st().fail_close_ws = Some(e);
+        self
+    }
+
+    /// The next `focus_workspace` fails once with `e`.
+    pub(crate) fn fail_focus_workspace(self, e: SurfaceError) -> Self {
+        self.st().fail_focus_ws = Some(e);
         self
     }
 
@@ -160,6 +167,15 @@ impl Surface for FakeSurface {
         } else {
             Err(SurfaceError::NotFound)
         }
+    }
+
+    fn focus_workspace(&self, ws: &WorkspaceRef) -> Result<(), SurfaceError> {
+        let mut s = self.st();
+        s.calls.push(format!("focus_workspace {}", ws.as_str()));
+        if let Some(e) = s.fail_focus_ws.take() {
+            return Err(e);
+        }
+        Ok(())
     }
 
     fn close_workspace(&self, ws: &WorkspaceRef) -> Result<(), SurfaceError> {

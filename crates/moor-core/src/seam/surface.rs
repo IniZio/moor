@@ -113,6 +113,12 @@ pub trait Surface: Send + Sync {
     /// Returns a [`SurfaceError`] when the Workspace cannot be ensured.
     fn ensure_workspace(&self, wt: &Worktree, label: &str) -> Result<WorkspaceRef, SurfaceError>;
 
+    /// Brings the Workspace to the front.
+    ///
+    /// # Errors
+    /// Returns a [`SurfaceError`] when the Workspace cannot be focused.
+    fn focus_workspace(&self, ws: &WorkspaceRef) -> Result<(), SurfaceError>;
+
     /// Opens a pane running `cmd` in `ws`.
     ///
     /// # Errors
