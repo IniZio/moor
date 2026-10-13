@@ -102,7 +102,7 @@ impl TaskState {
                 I::AcquireFailed { .. } | I::CredFailed { .. } | I::DotfilesFailed { .. },
             ) => Self::SetupFailed,
             (Self::Working, I::AgentQuiet) => Self::Idle,
-            (Self::Idle, I::SleepDue | I::SleepCmd) => Self::Asleep,
+            (Self::Idle, I::SleepDue | I::SleepCmd) | (Self::Working, I::SleepCmd) => Self::Asleep,
             (state, I::Close) if state.is_live() => Self::Closed,
             _ => {
                 return Err(Illegal {
@@ -178,7 +178,7 @@ pub enum TaskInput {
     RunStarted,
     /// The auto-sleep age passed.
     SleepDue,
-    /// The user asked to sleep.
+    /// The user asked to sleep, from Idle or Working.
     SleepCmd,
     /// The Task wakes.
     Wake,
