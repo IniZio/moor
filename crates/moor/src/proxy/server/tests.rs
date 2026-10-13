@@ -8,10 +8,11 @@ use std::thread;
 use std::time::Duration;
 
 use moor_core::proxy_gate::{RouteRow, RouteTable};
-use moor_core::seam::clock::Ts;
+use moor_core::seam::clock::{Clock, Ts};
 use moor_core::{Secret, TaskId};
 
-use super::{Forward, ForwardHandler, Proxy};
+use super::{Forward, ForwardHandler, Proxy, ProxyOpts, HEAD_BUDGET};
+use crate::adapters::clock::SystemClock;
 use crate::proxy::ProxyLog;
 use crate::testing::clock::FakeClock;
 
@@ -57,23 +58,31 @@ fn start_with(handler: Arc<dyn ForwardHandler>, dir: &Path, max: usize) -> Proxy
     start_forge(
         handler,
         dir,
-        max,
         RouteTable::new(vec![RouteRow::model()]),
-        None,
+        opts(max, None),
     )
+}
+
+/// Settings with the real clock and a generous head budget.
+fn opts(max_conns: usize, task_repo: Option<String>) -> ProxyOpts {
+    ProxyOpts {
+        max_conns,
+        task_repo,
+        clock: Arc::new(SystemClock::real()),
+        head_budget: HEAD_BUDGET,
+    }
 }
 
 fn start_forge(
     handler: Arc<dyn ForwardHandler>,
     dir: &Path,
-    max: usize,
     table: RouteTable,
-    task_repo: Option<String>,
+    opts: ProxyOpts,
 ) -> Proxy {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
     let log = ProxyLog::open(dir, TaskId::new(1), clock).unwrap();
     let nonce = Secret::new(NONCE.as_bytes().to_vec());
-    Proxy::start(table, nonce, log, handler, max, task_repo).unwrap()
+    Proxy::start(table, nonce, log, handler, opts).unwrap()
 }
 
 fn rig() -> Rig {
@@ -265,7 +274,12 @@ fn it_admits_git_only_for_the_task_repo() {
     let dir = tempfile::tempdir().unwrap();
     let fake = Arc::new(Fake::default());
     let table = RouteTable::new(vec![RouteRow::forge_git("/github")]);
-    let proxy = start_forge(fake.clone(), dir.path(), 8, table, Some("o/n".to_owned()));
+    let proxy = start_forge(
+        fake.clone(),
+        dir.path(),
+        table,
+        opts(8, Some("o/n".to_owned())),
+    );
     let git = |repo: &str| {
         let path = format!("/t/{NONCE}/github/{repo}.git/info/refs?service=git-upload-pack");
         send(proxy.port(), &authed(&path))
@@ -273,5 +287,74 @@ fn it_admits_git_only_for_the_task_repo() {
     assert_eq!(git("o/n"), OK);
     assert!(git("x/y").starts_with("HTTP/1.1 403"));
     assert_eq!(fake.calls.lock().unwrap().len(), 1);
+    proxy.shutdown();
+}
+
+/// Reads one more byte from the client, as a handler reading a body would.
+struct ReadsByte;
+
+impl ForwardHandler for ReadsByte {
+    fn forward(&self, _req: Forward, stream: &mut TcpStream) -> u16 {
+        let mut byte = [0_u8; 1];
+        if stream.read_exact(&mut byte).is_err() {
+            return 500;
+        }
+        stream.write_all(OK.as_bytes()).unwrap();
+        200
+    }
+}
+
+#[test]
+fn it_closes_clients_that_trickle_the_head_past_the_budget() {
+    let dir = tempfile::tempdir().unwrap();
+    let fake = Arc::new(Fake::default());
+    let mut o = opts(8, None);
+    o.head_budget = Duration::from_millis(300);
+    let table = RouteTable::new(vec![RouteRow::model()]);
+    let proxy = start_forge(fake.clone(), dir.path(), table, o);
+    let mut s = TcpStream::connect((Ipv4Addr::LOCALHOST, proxy.port())).unwrap();
+    let mut writer = s.try_clone().unwrap();
+    let trickle = thread::spawn(move || {
+        if writer.write_all(b"GET / HTTP/1.1\r\nx-pad: ").is_err() {
+            return;
+        }
+        for _ in 0..60 {
+            if writer.write_all(b"a").is_err() {
+                break;
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+    });
+    s.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+    let clock = SystemClock::real();
+    let started = clock.instant();
+    let mut out = Vec::new();
+    drop(s.read_to_end(&mut out));
+    assert!(clock.instant().duration_since(started) < Duration::from_secs(2));
+    assert!(out.is_empty());
+    assert!(fake.calls.lock().unwrap().is_empty());
+    drop(s);
+    drop(trickle.join());
+    proxy.shutdown();
+}
+
+#[test]
+fn it_leaves_no_head_timeout_on_the_stream_given_to_the_handler() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut o = opts(8, None);
+    o.head_budget = Duration::from_millis(300);
+    let table = RouteTable::new(vec![RouteRow::model()]);
+    let proxy = start_forge(Arc::new(ReadsByte), dir.path(), table, o);
+    let mut s = TcpStream::connect((Ipv4Addr::LOCALHOST, proxy.port())).unwrap();
+    let head = format!(
+        "GET /v1/messages HTTP/1.1\r\nhost: x\r\ncontent-length: 1\r\nauthorization: Bearer {NONCE}\r\n\r\n"
+    );
+    s.write_all(head.as_bytes()).unwrap();
+    // The body arrives after the head budget has passed.
+    thread::sleep(Duration::from_millis(400));
+    s.write_all(b"x").unwrap();
+    let mut out = Vec::new();
+    drop(s.read_to_end(&mut out));
+    assert_eq!(String::from_utf8_lossy(&out), OK);
     proxy.shutdown();
 }
