@@ -37,6 +37,12 @@ fn render_value(resp: &Response, out: &mut String) {
             return;
         }
     }
+    if resp.cmd == "sleep" || resp.cmd == "wake" {
+        if let Some(line) = sleep_line(&resp.cmd, value) {
+            out.push_str(&line);
+            return;
+        }
+    }
     if resp.cmd == "cp" {
         if let Some(text) = value.get("confirmation").and_then(Value::as_str) {
             out.push_str(text);
@@ -62,6 +68,24 @@ fn version_line(value: &Value) -> Option<String> {
     let commit = value.get("commit")?.as_str()?;
     let schema = value.get("schema")?.as_u64()?;
     Some(format!("moor {version} {commit} schema={schema}\n"))
+}
+
+/// Formats the `sleep`/`wake` line, or `None` when the task name is missing or mistyped.
+fn sleep_line(cmd: &str, value: &Value) -> Option<String> {
+    let task = value.get("task")?.as_str()?;
+    if cmd == "wake" {
+        let woke = value.get("woke")?.as_bool()?;
+        return Some(if woke {
+            format!("{task} woke\n")
+        } else {
+            format!("{task} was not asleep\n")
+        });
+    }
+    let state = value.pointer("/box/state").and_then(Value::as_str);
+    Some(match state {
+        Some(s) if s != "asleep" => format!("{task}: box is {s}\n"),
+        _ => format!("{task} is asleep\n"),
+    })
 }
 
 /// Text form of the `env` view: agent, github, token lines, then one line per item.
