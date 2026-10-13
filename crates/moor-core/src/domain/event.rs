@@ -216,6 +216,24 @@ pub enum Event {
         /// Whether the submit key was pressed a second time.
         submit_retried: bool,
     },
+    /// The Proxy for the task is ready to accept connections.
+    ProxyStarted {
+        /// Port the Box side connects to.
+        box_port: u16,
+        /// Port the Proxy listens on, on the host.
+        host_port: u16,
+        /// Process id of the Proxy.
+        pid: u32,
+        /// Opaque handle that identifies the Proxy process to its runner.
+        handle: String,
+    },
+    /// The tunnel between the Box and the Proxy was restarted.
+    TunnelRestarted {
+        /// Port the Box side connects to.
+        box_port: u16,
+        /// Why the tunnel was restarted.
+        reason: String,
+    },
 }
 
 impl Event {
@@ -257,6 +275,8 @@ impl Event {
             Self::TranscriptSaved { .. } => "transcript_saved",
             Self::TranscriptFailed { .. } => "transcript_failed",
             Self::Steered { .. } => "steered",
+            Self::ProxyStarted { .. } => "proxy_started",
+            Self::TunnelRestarted { .. } => "tunnel_restarted",
         }
     }
 

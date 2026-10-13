@@ -121,6 +121,16 @@ fn all_events() -> Vec<Event> {
             message: s("m"),
             submit_retried: true,
         },
+        Event::ProxyStarted {
+            box_port: 1,
+            host_port: 2,
+            pid: 3,
+            handle: s("h"),
+        },
+        Event::TunnelRestarted {
+            box_port: 1,
+            reason: s("r"),
+        },
     ]
 }
 
@@ -171,6 +181,8 @@ const fn event_index(e: &Event) -> usize {
         Event::TranscriptSaved { .. } => 31,
         Event::TranscriptFailed { .. } => 32,
         Event::Steered { .. } => 33,
+        Event::ProxyStarted { .. } => 34,
+        Event::TunnelRestarted { .. } => 35,
     }
 }
 
@@ -178,7 +190,7 @@ const fn event_index(e: &Event) -> usize {
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 34);
+    assert_eq!(all.len(), 36);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }
@@ -507,4 +519,19 @@ fn box_failure_events_carry_handle() {
             handle: Some(s("p/x"))
         }]
     );
+}
+
+/// The Proxy nonce is a secret; the payload carries exactly these keys.
+#[test]
+fn proxy_started_payload_has_no_nonce() {
+    let e = Event::ProxyStarted {
+        box_port: 1,
+        host_port: 2,
+        pid: 3,
+        handle: s("h"),
+    };
+    let payload = e.payload();
+    let mut keys: Vec<_> = payload.as_object().unwrap().keys().cloned().collect();
+    keys.sort_unstable();
+    assert_eq!(keys, ["box_port", "handle", "host_port", "pid"]);
 }
