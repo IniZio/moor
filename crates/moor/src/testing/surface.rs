@@ -90,8 +90,18 @@ impl FakeSurface {
 
     /// Every `register_resume` answers `outcome` instead of `Registered`.
     pub(crate) fn answer_resume(self, outcome: ResumeOutcome) -> Self {
-        self.st().resume_reply = Some(outcome);
+        self.set_resume_reply(outcome);
         self
+    }
+
+    /// [`Self::answer_resume`] for a surface already shared.
+    pub(crate) fn set_resume_reply(&self, outcome: ResumeOutcome) {
+        self.st().resume_reply = Some(outcome);
+    }
+
+    /// Makes `pane` exist, as one an agent opened.
+    pub(crate) fn have_pane(&self, pane: &str) {
+        self.st().panes.push(pane.to_owned());
     }
 
     /// Scripts the next `pane_obs` answer for `pane`; the last answer repeats.

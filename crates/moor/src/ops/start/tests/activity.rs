@@ -265,3 +265,32 @@ fn a_task_that_cannot_be_settled_warns_and_the_others_still_settle() {
     let codes: Vec<_> = w.cx.take_warnings().into_iter().map(|x| x.code).collect();
     assert!(codes.contains(&"settle_failed".to_owned()), "{codes:?}");
 }
+
+#[test]
+fn the_first_hook_session_id_is_registered_once() {
+    let mut w = world(FakeDriver::new());
+    let id = TaskId::new(run(&w.cx, &req("demo")).unwrap().task.id);
+    w.cx.store()
+        .unwrap()
+        .begin_session(id, SESSION, Some("p-9"))
+        .unwrap();
+    w.surface.have_pane("p-9");
+    let mut p = probes(&w, Some(HookKind::Busy), PaneStatus::Working);
+    p.hook = HookRead::Fresh(HookRecord {
+        kind: HookKind::Busy,
+        session_id: Some("agent-1".into()),
+        message: None,
+        at: Ts::from_millis(w.cx.clock().now().as_millis() - 1000),
+    });
+    w.cx =
+        w.cx.with_engine(Arc::new(FakeEngine::new().probes(SESSION, p)));
+    run(&w.cx, &req("demo")).unwrap();
+    run(&w.cx, &req("demo")).unwrap();
+    let seen: Vec<String> = w
+        .surface
+        .calls()
+        .into_iter()
+        .filter(|c| c.starts_with("register_resume"))
+        .collect();
+    assert_eq!(seen, ["register_resume p-9 claude agent-1"]);
+}

@@ -100,6 +100,9 @@ pub struct StartReq {
     /// Skip starting an agent.
     #[serde(default)]
     pub no_agent: bool,
+    /// Resume the agent's stored session instead of starting a fresh one.
+    #[serde(default)]
+    pub resume: bool,
 }
 
 /// Arguments of `run`.

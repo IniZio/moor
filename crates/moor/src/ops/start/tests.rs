@@ -97,6 +97,7 @@ fn req(name: &str) -> StartReq {
         base: None,
         model: None,
         no_agent: false,
+        resume: false,
     }
 }
 
