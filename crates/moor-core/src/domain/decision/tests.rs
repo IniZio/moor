@@ -126,6 +126,16 @@ fn extra_events_round_trip() {
         },
         ExtraEvent::RunStarted { run: RunId::new(3) },
         ExtraEvent::StaysUp { reason: "r".into() },
+        ExtraEvent::ProxyStarted {
+            box_port: 1080,
+            host_port: 2080,
+            pid: 7,
+            handle: "h".into(),
+        },
+        ExtraEvent::TunnelRestarted {
+            box_port: 1080,
+            reason: "r".into(),
+        },
     ];
     for x in all {
         let e = Event::from(x.clone());
