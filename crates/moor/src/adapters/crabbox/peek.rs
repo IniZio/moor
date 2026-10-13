@@ -30,7 +30,33 @@ pub(super) fn peek_file(
     path: &BoxPath,
     host_cwd: &Path,
 ) -> Result<Option<String>, DriverError> {
-    // `crabbox ssh` touches the lease, so every peek also resets crabbox's idle timer;
+    let words = ssh_target(cb, handle, host_cwd)?;
+    let p = quote(path.as_str());
+    let remote = format!("test -e {p} || exit {MISSING}; cat -- {p}");
+    let read = ProcSpec::new(Tool::Ssh, Deadline(READ_DEADLINE))
+        .args(words)
+        .arg(remote);
+    match cb.proc.run(&read) {
+        Ok(out) => Ok(Some(out.stdout)),
+        Err(ProcError::NonZero { code: MISSING, .. }) => Ok(None),
+        Err(ProcError::Timeout { after, .. }) => Err(DriverError::Timeout(after)),
+        Err(ProcError::Spawn(_)) => Err(DriverError::Unavailable(
+            "ssh could not be started".to_owned(),
+        )),
+        Err(_) => Err(DriverError::Failed {
+            summary: "box file read failed".to_owned(),
+        }),
+    }
+}
+
+/// The ssh arguments that reach the Box behind `handle`, without the leading `ssh`.
+/// The lookup runs in `host_cwd`, so the lease claim matches that repo.
+pub(super) fn ssh_target(
+    cb: &Crabbox,
+    handle: &BoxHandle,
+    host_cwd: &Path,
+) -> Result<Vec<String>, DriverError> {
+    // `crabbox ssh` touches the lease, so every lookup also resets crabbox's idle timer;
     // idle Boxes are slept by moor's `sleep_after`, not by that timer.
     // Secret-token providers need --show-secret, not yet passed.
     let lookup = static_env(
@@ -45,26 +71,12 @@ pub(super) fn peek_file(
         .run(&lookup)
         .map_err(|e| map_error(Op::Target, split_handle(handle).0, &e))?
         .stdout;
-    let words = split_words(&line).filter(|w| w.first().is_some_and(|w| w == "ssh"));
-    let Some(words) = words else {
-        return Err(DriverError::Failed {
+    match split_words(&line) {
+        Some(words) if words.first().is_some_and(|w| w == "ssh") => {
+            Ok(words.into_iter().skip(1).collect())
+        }
+        _ => Err(DriverError::Failed {
             summary: "unreadable box provider output for ssh target".to_owned(),
-        });
-    };
-    let p = quote(path.as_str());
-    let remote = format!("test -e {p} || exit {MISSING}; cat -- {p}");
-    let read = ProcSpec::new(Tool::Ssh, Deadline(READ_DEADLINE))
-        .args(words.into_iter().skip(1))
-        .arg(remote);
-    match cb.proc.run(&read) {
-        Ok(out) => Ok(Some(out.stdout)),
-        Err(ProcError::NonZero { code: MISSING, .. }) => Ok(None),
-        Err(ProcError::Timeout { after, .. }) => Err(DriverError::Timeout(after)),
-        Err(ProcError::Spawn(_)) => Err(DriverError::Unavailable(
-            "ssh could not be started".to_owned(),
-        )),
-        Err(_) => Err(DriverError::Failed {
-            summary: "box file read failed".to_owned(),
         }),
     }
 }

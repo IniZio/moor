@@ -1,7 +1,7 @@
 //! Driver seam: how moor gets, inspects and releases Boxes.
 //!
-//! Provisioning, exec, copy-out, file peek, sleep and wake exist so far; tunnel and
-//! connect are not added yet.
+//! Provisioning, exec, copy-out, file peek and put, connect argv, sleep and wake exist
+//! so far; tunnel is not added yet.
 
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -294,6 +294,32 @@ pub trait Driver: Send + Sync {
         path: &BoxPath,
         host_cwd: &Path,
     ) -> Result<Option<String>, DriverError>;
+
+    /// Writes `bytes` to `path` in the Box, creating missing parent directories,
+    /// and leaves the file at `mode`. The content travels on stdin, never in argv.
+    /// `host_cwd` is the worktree the driver process runs from.
+    ///
+    /// # Errors
+    /// Returns [`DriverError::NotFound`] when the Box is gone,
+    /// [`DriverError::Timeout`] when the write hangs, and another [`DriverError`]
+    /// when the file cannot be written.
+    fn put_file(
+        &self,
+        handle: &BoxHandle,
+        path: &BoxPath,
+        bytes: &[u8],
+        mode: u32,
+        host_cwd: &Path,
+    ) -> Result<(), DriverError>;
+
+    /// The `ssh -t <target>` argv that opens a terminal on the Box, for a pane to run.
+    /// Takes no lease lock. `host_cwd` is the worktree the driver process runs from.
+    ///
+    /// # Errors
+    /// Returns [`DriverError::NotFound`] when the Box is gone, and another
+    /// [`DriverError`] when the target cannot be looked up.
+    fn connect_argv(&self, handle: &BoxHandle, host_cwd: &Path)
+        -> Result<Vec<String>, DriverError>;
 
     /// Puts the Box to sleep when its provider lets the Driver do so.
     ///
