@@ -1,11 +1,13 @@
 //! `steer`: send a message or a menu choice to the Task's agent.
 //!
-//! The Box lock is held while the agent is read and the send is made.
+//! The Box lock is taken only to wake an asleep Task, so a Task can be steered during a run.
 
 use std::time::Duration;
 
 use moor_core::activity::AgentState;
+use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, ExtraEvent};
+use moor_core::domain::task::TaskState;
 use moor_core::seam::engine::{EngineError, SessionRef, Steer, SteerOutcome};
 use moor_core::seam::proc::Deadline;
 use moor_core::view::steer::SteerValue;
@@ -33,12 +35,12 @@ pub(crate) fn run(cx: &Cx, req: &SteerReq) -> Result<SteerValue, CommandError> {
         .open_task_by_name(&req.task)?
         .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no open task {name}")))?
         .id;
-    let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "steer", boxlock::WAIT)?;
     let no_agent = || {
         CommandError::new(
             ErrorKind::Refused,
             format!(
-                "no live agent session for task {name}; start it with `moor start {name} --goal`"
+                "no live agent session for task {name}; start it with {}",
+                relaunch(name)
             ),
         )
     };
@@ -50,7 +52,10 @@ pub(crate) fn run(cx: &Cx, req: &SteerReq) -> Result<SteerValue, CommandError> {
     if store.live_session(id)?.is_none() {
         return Err(no_agent());
     }
-    wake_if_asleep(cx, store, &reload()?)?;
+    if asleep(&reload()?) {
+        let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "steer", boxlock::WAIT)?;
+        wake_if_asleep(cx, store, &reload()?)?;
+    }
     let row = reload()?;
     let session = store.live_session(id)?.ok_or_else(no_agent)?;
     let sref = session_ref(&row, session.session_ref.clone(), session.pane.clone())
@@ -61,13 +66,8 @@ pub(crate) fn run(cx: &Cx, req: &SteerReq) -> Result<SteerValue, CommandError> {
         Steer::Text(t) => t.clone(),
         Steer::Menu(n) => n.to_string(),
     };
-    let outcome = send(cx, store, &session, &sref, &steer, before.as_ref())?;
-    let who = if session.session_ref.is_empty() {
-        session.pane.as_deref().unwrap_or_default()
-    } else {
-        &session.session_ref
-    };
-    record(store, id, who, &sent, outcome.submit_retried)?;
+    let outcome = send(cx, store, (name, &session, &sref), &steer, before.as_ref())?;
+    record(store, id, &session, &sent, outcome.submit_retried)?;
     let answered_menu = match steer {
         Steer::Menu(_) => menu_answered(cx, store, &row)?,
         Steer::Text(_) => {
@@ -87,6 +87,20 @@ pub(crate) fn run(cx: &Cx, req: &SteerReq) -> Result<SteerValue, CommandError> {
     })
 }
 
+/// Whether the Task or its Box is asleep.
+fn asleep(row: &TaskRow) -> bool {
+    row.state == TaskState::Asleep
+        || row
+            .boxed
+            .as_ref()
+            .is_some_and(|b| b.state == BoxState::Asleep)
+}
+
+/// The command that starts the agent again.
+fn relaunch(name: &str) -> String {
+    format!("`moor start {name} --goal \"...\"`")
+}
+
 /// The agent's state now; none when the Task has no agent to read.
 fn state_of(cx: &Cx, store: &Store, row: &TaskRow) -> Result<Option<AgentState>, CommandError> {
     let reading = activity::read(cx, store, row, cx.clock().now())?;
@@ -97,8 +111,7 @@ fn state_of(cx: &Cx, store: &Store, row: &TaskRow) -> Result<Option<AgentState>,
 fn send(
     cx: &Cx,
     store: &Store,
-    session: &SessionRow,
-    sref: &SessionRef,
+    (name, session, sref): (&str, &SessionRow, &SessionRef),
     steer: &Steer,
     before: Option<&AgentState>,
 ) -> Result<SteerOutcome, CommandError> {
@@ -110,17 +123,18 @@ fn send(
                 _ => None,
             };
             store.end_session(session.id, code, None)?;
+            let ended = code.map_or_else(
+                || "the agent's pane is gone".to_owned(),
+                |c| format!("agent exited {c}"),
+            );
             Err(CommandError::new(
                 ErrorKind::Refused,
-                format!(
-                    "agent exited{}; start --goal relaunches it",
-                    code.map_or_else(String::new, |c| format!(" {c}"))
-                ),
+                format!("{ended}; relaunch with {}", relaunch(name)),
             ))
         }
         Err(EngineError::NoSession) => Err(CommandError::new(
             ErrorKind::Refused,
-            "the agent has no pane; start --goal relaunches it",
+            format!("the agent has no pane; relaunch with {}", relaunch(name)),
         )),
         Err(e) => Err(CommandError::new(ErrorKind::Failed, e.to_string())),
     }
@@ -180,12 +194,17 @@ fn choice(n: u32) -> Result<u8, CommandError> {
 fn record(
     store: &Store,
     id: TaskId,
-    session: &str,
+    session: &SessionRow,
     message: &str,
     submit_retried: bool,
 ) -> Result<(), CommandError> {
+    let who = if session.session_ref.is_empty() {
+        session.pane.as_deref().unwrap_or_default()
+    } else {
+        &session.session_ref
+    };
     let event = ExtraEvent::Steered {
-        session: session.to_owned(),
+        session: who.to_owned(),
         message: message.to_owned(),
         submit_retried,
     };
