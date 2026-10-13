@@ -54,11 +54,26 @@ struct Rig {
 }
 
 fn start_with(handler: Arc<dyn ForwardHandler>, dir: &Path, max: usize) -> Proxy {
+    start_forge(
+        handler,
+        dir,
+        max,
+        RouteTable::new(vec![RouteRow::model()]),
+        None,
+    )
+}
+
+fn start_forge(
+    handler: Arc<dyn ForwardHandler>,
+    dir: &Path,
+    max: usize,
+    table: RouteTable,
+    task_repo: Option<String>,
+) -> Proxy {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
     let log = ProxyLog::open(dir, TaskId::new(1), clock).unwrap();
     let nonce = Secret::new(NONCE.as_bytes().to_vec());
-    let table = RouteTable::new(vec![RouteRow::model()]);
-    Proxy::start(table, nonce, log, handler, max).unwrap()
+    Proxy::start(table, nonce, log, handler, max, task_repo).unwrap()
 }
 
 fn rig() -> Rig {
@@ -243,4 +258,20 @@ fn it_never_logs_the_nonce_or_header_data() {
         );
     }
     r.proxy.shutdown();
+}
+
+#[test]
+fn it_admits_git_only_for_the_task_repo() {
+    let dir = tempfile::tempdir().unwrap();
+    let fake = Arc::new(Fake::default());
+    let table = RouteTable::new(vec![RouteRow::forge_git("/github")]);
+    let proxy = start_forge(fake.clone(), dir.path(), 8, table, Some("o/n".to_owned()));
+    let git = |repo: &str| {
+        let path = format!("/t/{NONCE}/github/{repo}.git/info/refs?service=git-upload-pack");
+        send(proxy.port(), &authed(&path))
+    };
+    assert_eq!(git("o/n"), OK);
+    assert!(git("x/y").starts_with("HTTP/1.1 403"));
+    assert_eq!(fake.calls.lock().unwrap().len(), 1);
+    proxy.shutdown();
 }
