@@ -104,6 +104,17 @@ impl Store {
         Ok(())
     }
 
+    /// Keep the digest of the transcript saved for a session that is still live.
+    pub(crate) fn set_transcript_digest(&self, id: i64, digest: &str) -> Result<(), StoreError> {
+        let conn = self.writer()?;
+        conn.execute(
+            "UPDATE sessions SET transcript_digest = ? WHERE id = ? AND ended_at IS NULL",
+            params![digest, id],
+        )?;
+        drop(conn);
+        Ok(())
+    }
+
     /// Cache `record` as the latest hook report of `task`, stamped with the read time.
     pub(crate) fn put_hook(&self, task: TaskId, record: &HookRecord) -> Result<(), StoreError> {
         let now = self.now();

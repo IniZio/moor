@@ -21,7 +21,7 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
     for mut row in store.all_tasks()? {
         let reading = activity::read(cx, store, &row, now)?;
         if req.task.is_none() {
-            activity::settle(store, &row, &reading)?;
+            activity::settle(cx, store, &row, &reading)?;
             autosleep::run(cx, store, row.id);
             row = store.task(row.id)?.unwrap_or(row);
         }

@@ -5,6 +5,7 @@
 use std::time::Duration;
 
 use moor_core::activity::AgentState;
+use moor_core::decide::transcript::Trigger;
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, ExtraEvent};
 use moor_core::domain::task::TaskState;
@@ -17,6 +18,7 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::activity::{self, session_ref};
 use crate::ops::common::boxlock::{self, BoxLock};
+use crate::ops::common::transcript;
 use crate::ops::common::wake::wake_if_asleep;
 use crate::store::{SessionRow, Store, TaskRow};
 
@@ -66,20 +68,16 @@ pub(crate) fn run(cx: &Cx, req: &SteerReq) -> Result<SteerValue, CommandError> {
         Steer::Text(t) => t.clone(),
         Steer::Menu(n) => n.to_string(),
     };
-    let outcome = send(cx, store, (name, &session, &sref), &steer, before.as_ref())?;
+    let outcome = send(
+        cx,
+        store,
+        &row,
+        (name, &session, &sref),
+        &steer,
+        before.as_ref(),
+    )?;
     record(store, id, &session, &sent, outcome.submit_retried)?;
-    let answered_menu = match steer {
-        Steer::Menu(_) => menu_answered(cx, store, &row)?,
-        Steer::Text(_) => {
-            if !outcome.submit_checked {
-                cx.warn(Warning {
-                    code: "steer_unchecked".to_owned(),
-                    message: "could not confirm the message was submitted".to_owned(),
-                });
-            }
-            false
-        }
-    };
+    let answered_menu = answered(cx, store, &row, &steer, outcome)?;
     Ok(SteerValue {
         task: name.to_owned(),
         sent,
@@ -107,10 +105,11 @@ fn state_of(cx: &Cx, store: &Store, row: &TaskRow) -> Result<Option<AgentState>,
     Ok(reading.activity.map(|a| a.state))
 }
 
-/// Sends `steer`; a pane that ended stops the session and refuses.
+/// Sends `steer`; a pane that ended has its transcript saved, stops the session and refuses.
 fn send(
     cx: &Cx,
     store: &Store,
+    row: &TaskRow,
     (name, session, sref): (&str, &SessionRow, &SessionRef),
     steer: &Steer,
     before: Option<&AgentState>,
@@ -122,7 +121,8 @@ fn send(
                 Some(AgentState::Exited { code }) => Some(*code),
                 _ => None,
             };
-            store.end_session(session.id, code, None)?;
+            let saved = transcript::save(cx, store, row, session, Trigger::Exit);
+            store.end_session(session.id, code, saved.as_ref().map(|t| t.digest.as_str()))?;
             let ended = code.map_or_else(
                 || "the agent's pane is gone".to_owned(),
                 |c| format!("agent exited {c}"),
@@ -137,6 +137,28 @@ fn send(
             format!("the agent has no pane; relaunch with {}", relaunch(name)),
         )),
         Err(e) => Err(CommandError::new(ErrorKind::Failed, e.to_string())),
+    }
+}
+
+/// Whether a menu choice was answered; a text steer warns when its submit was not confirmed.
+fn answered(
+    cx: &Cx,
+    store: &Store,
+    row: &TaskRow,
+    steer: &Steer,
+    outcome: SteerOutcome,
+) -> Result<bool, CommandError> {
+    match steer {
+        Steer::Menu(_) => menu_answered(cx, store, row),
+        Steer::Text(_) => {
+            if !outcome.submit_checked {
+                cx.warn(Warning {
+                    code: "steer_unchecked".to_owned(),
+                    message: "could not confirm the message was submitted".to_owned(),
+                });
+            }
+            Ok(false)
+        }
     }
 }
 

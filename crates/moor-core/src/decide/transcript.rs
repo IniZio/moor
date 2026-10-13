@@ -14,6 +14,8 @@ pub enum Trigger {
     Relaunch,
     /// The Task was closed.
     Close,
+    /// The agent was first seen to have exited.
+    Exit,
 }
 
 impl Trigger {
@@ -23,6 +25,7 @@ impl Trigger {
         match self {
             Self::Relaunch => "relaunch",
             Self::Close => "close",
+            Self::Exit => "exit",
         }
     }
 }
@@ -41,6 +44,12 @@ pub fn next_number<'a>(kinds: impl IntoIterator<Item = &'a str>) -> usize {
 #[must_use]
 pub fn relative_path(task: TaskId, session: i64, n: usize) -> String {
     format!("transcripts/{}/{session}-{n}.tgz", task.get())
+}
+
+/// Whether an archive with `digest` repeats the one already stored for the session.
+#[must_use]
+pub fn is_duplicate(stored: Option<&str>, digest: &str) -> bool {
+    stored == Some(digest)
 }
 
 /// Lowercase hex sha256 of the archive, read as a stream so its size does not matter.
