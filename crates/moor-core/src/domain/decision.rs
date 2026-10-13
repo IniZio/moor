@@ -136,6 +136,11 @@ pub enum TaskTarget {
 /// An event a caller may pass; every other kind is derived from state steps.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExtraEvent {
+    /// The driver refused to sleep an idle task's box, so it keeps running.
+    StaysUp {
+        /// The driver's reason.
+        reason: String,
+    },
     /// A command run finished.
     Ran {
         /// The run id; none when the run was refused before a run row existed.
@@ -179,6 +184,7 @@ pub enum ExtraEvent {
 impl From<ExtraEvent> for Event {
     fn from(e: ExtraEvent) -> Self {
         match e {
+            ExtraEvent::StaysUp { reason } => Self::StaysUp { reason },
             ExtraEvent::Ran {
                 run,
                 exit,
@@ -204,6 +210,7 @@ impl TryFrom<Event> for ExtraEvent {
     /// Returns the original event when its kind is derived.
     fn try_from(e: Event) -> Result<Self, Event> {
         match e {
+            Event::StaysUp { reason } => Ok(Self::StaysUp { reason }),
             Event::Ran {
                 run,
                 exit,
