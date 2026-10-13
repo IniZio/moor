@@ -8,7 +8,7 @@ use moor_core::boxscript::command_line;
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, Intent, IntentChange, NewTask};
 use moor_core::domain::run::SyncMode;
-use moor_core::domain::task::{SetupOutcome, TaskInput};
+use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, EgressPlan, ExecOutcome};
 use moor_core::seam::proc::{Output, Tool};
 use moor_core::{ErrorKind, ProviderId, RunReq, TaskId, TaskName};
@@ -472,4 +472,68 @@ fn unreadable_head_records_and_reports_no_sha() {
     assert_eq!(v.sha, None);
     let row = cx.store().unwrap().last_run(f.id).unwrap().unwrap();
     assert_eq!(row.sha, None);
+}
+
+/// The task's `idle_since` column, read over a second connection.
+fn idle_since(f: &Fx) -> Option<i64> {
+    let db = rusqlite::Connection::open(f.dir.path().join("moor.db")).unwrap();
+    db.query_row(
+        "SELECT idle_since FROM tasks WHERE id = ?",
+        [f.id.get()],
+        |r| r.get(0),
+    )
+    .unwrap()
+}
+
+fn state(f: &Fx) -> TaskState {
+    f.cx.store().unwrap().task(f.id).unwrap().unwrap().state
+}
+
+fn go_idle(f: &Fx) {
+    f.cx.store()
+        .unwrap()
+        .apply(Decision::new(f.id).task_input(TaskInput::AgentQuiet))
+        .unwrap();
+}
+
+#[test]
+fn run_on_an_idle_task_leaves_it_working() {
+    let f = ready();
+    go_idle(&f);
+    assert!(idle_since(&f).is_some());
+    run(&f.cx, &req(&["true"])).unwrap();
+    assert_eq!(state(&f), TaskState::Working);
+    assert_eq!(idle_since(&f), None);
+    assert_eq!(kinds(&f).iter().filter(|k| *k == "busy").count(), 1);
+}
+
+#[test]
+fn run_on_a_working_task_applies_nothing() {
+    let f = ready();
+    let busy = |f: &Fx| kinds(f).iter().filter(|k| *k == "busy").count();
+    run(&f.cx, &req(&["true"])).unwrap();
+    assert_eq!(state(&f), TaskState::Working);
+    assert_eq!(busy(&f), 0);
+}
+
+#[test]
+fn run_on_an_asleep_task_wakes_it_without_run_started() {
+    let f = ready();
+    sleep(&f);
+    run(&f.cx, &req(&["true"])).unwrap();
+    assert_eq!(state(&f), TaskState::Working);
+}
+
+#[test]
+fn run_started_losing_a_race_is_ignored() {
+    let f = ready();
+    go_idle(&f);
+    let store = f.cx.store().unwrap();
+    let stale = store.task(f.id).unwrap().unwrap();
+    store
+        .apply(Decision::new(f.id).task_input(TaskInput::AgentBusy))
+        .unwrap();
+    let v = locked(&f.cx, store, &req(&["true"]), &stale).unwrap();
+    assert!(v.ran);
+    assert_eq!(state(&f), TaskState::Working);
 }
