@@ -43,6 +43,7 @@ fn run(
         target,
         headers,
         nonce: secret,
+        task_repo: None,
     })
 }
 
