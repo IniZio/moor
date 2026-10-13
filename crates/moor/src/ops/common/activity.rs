@@ -6,11 +6,12 @@ use std::time::Duration;
 use moor_core::activity::{
     decide, may_apply_quiet, Activity, AgentState, HookRead, PaneRead, Probes,
 };
-use moor_core::domain::decision::Decision;
+use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::domain::task::{TaskInput, TaskState};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::engine::SessionRef;
 use moor_core::seam::proc::Deadline;
+use moor_core::seam::surface::PaneRef;
 use moor_core::Warning;
 
 use crate::cx::Cx;
@@ -114,7 +115,7 @@ pub(crate) fn read(
     let Some(session) = store.live_session(row.id)? else {
         return Ok(Reading::none(in_flight));
     };
-    let Some(sref) = session_ref(row, session.session_ref) else {
+    let Some(sref) = session_ref(row, session.session_ref, session.pane) else {
         return Ok(Reading::none(in_flight));
     };
     let cache = match store.hook(row.id) {
@@ -141,6 +142,7 @@ pub(crate) fn read(
         });
     if let HookRead::Fresh(rec) = &probes.hook {
         store.put_hook(row.id, rec)?;
+        note_agent_session(store, row, rec.session_id.as_deref())?;
     }
     let mut activity = decide(&probes, cache.as_ref(), now, session.started_at);
     if in_flight {
@@ -153,6 +155,23 @@ pub(crate) fn read(
         may_quiet,
         run_in_flight: in_flight,
     })
+}
+
+/// Keep the agent's own session id on the Task; written only when it changed.
+fn note_agent_session(
+    store: &Store,
+    row: &TaskRow,
+    seen: Option<&str>,
+) -> Result<(), CommandError> {
+    let Some(id) = seen.filter(|id| row.agent_session_id.as_deref() != Some(id)) else {
+        return Ok(());
+    };
+    let set = Fields {
+        agent_session_id: Field::Set(id.to_owned()),
+        ..Fields::default()
+    };
+    store.apply(Decision::new(row.id).set(set))?;
+    Ok(())
 }
 
 /// Move the Task's state to match `reading`.
@@ -178,15 +197,14 @@ pub(crate) fn settle(store: &Store, row: &TaskRow, reading: &Reading) -> Result<
 
 /// The session as the Engine needs it; none when the Box cannot be reached.
 ///
-/// No pane is stored for a Task yet, so the reference carries none.
-fn session_ref(row: &TaskRow, id: String) -> Option<SessionRef> {
+fn session_ref(row: &TaskRow, id: String, pane: Option<String>) -> Option<SessionRef> {
     let b = row.boxed.as_ref()?;
     Some(SessionRef {
         id,
         handle: b.handle.clone()?,
         workdir: recorded_workdir(b.workdir.as_deref()?)?,
         worktree: PathBuf::from(row.worktree.as_deref()?),
-        pane: None,
+        pane: pane.map(PaneRef::new),
     })
 }
 

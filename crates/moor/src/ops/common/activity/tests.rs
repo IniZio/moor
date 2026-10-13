@@ -13,6 +13,7 @@ use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::DriverError;
 use moor_core::seam::engine::EngineError;
+use moor_core::seam::surface::PaneRef;
 use moor_core::{BoxHandle, ProviderId, TaskId, TaskName};
 
 use super::{read, settle, PaneLiveness, Reading};
@@ -69,7 +70,7 @@ fn task(cx: &Cx, session: bool) -> TaskId {
         });
     store.apply(d).unwrap();
     if session {
-        store.begin_session(id, SESSION).unwrap();
+        store.begin_session(id, SESSION, None).unwrap();
     }
     id
 }
@@ -215,7 +216,7 @@ fn run_in_flight_with_an_unreachable_box_is_busy_and_not_quiet() {
             ..Fields::default()
         });
     store.apply(d).unwrap();
-    store.begin_session(id, SESSION).unwrap();
+    store.begin_session(id, SESSION, None).unwrap();
     begin(&cx, id);
     let r = run_once(&cx, id);
     assert_eq!(r.activity, None);
@@ -469,4 +470,41 @@ fn settle_swallows_a_lost_race_and_keeps_the_new_state() {
     cx.store().unwrap().apply(d).unwrap();
     settle(cx.store().unwrap(), &stale, &reading(true, false)).unwrap();
     assert_eq!(row(&cx, id).state, TaskState::Working);
+}
+
+#[test]
+fn the_stored_pane_reaches_the_probe() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = Arc::new(FakeEngine::new());
+    let (cx, _) = cx(dir.path(), &engine);
+    let id = task(&cx, false);
+    cx.store()
+        .unwrap()
+        .begin_session(id, SESSION, Some("p1"))
+        .unwrap();
+    run_once(&cx, id);
+    assert_eq!(
+        engine.probed_pane(SESSION).as_ref().map(PaneRef::as_str),
+        Some("p1")
+    );
+}
+
+#[test]
+fn a_new_hook_session_id_is_stored_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut with_id = hook(HookKind::Idle);
+    with_id.hook = HookRead::Fresh(HookRecord {
+        session_id: Some("agent-1".into()),
+        ..rec(HookKind::Idle)
+    });
+    let engine = Arc::new(FakeEngine::new().probes(SESSION, with_id));
+    let (cx, _) = cx(dir.path(), &engine);
+    let id = task(&cx, true);
+    run_once(&cx, id);
+    assert_eq!(row(&cx, id).agent_session_id.as_deref(), Some("agent-1"));
+    let before = cx.store().unwrap().events(id, 100).unwrap().len();
+    let updated = row(&cx, id).updated_at;
+    run_once(&cx, id);
+    assert_eq!(cx.store().unwrap().events(id, 100).unwrap().len(), before);
+    assert_eq!(row(&cx, id).updated_at, updated);
 }

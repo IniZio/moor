@@ -46,7 +46,7 @@ fn started(idle: bool, probes: impl FnOnce(&World) -> Probes) -> (World, TaskId)
     let mut w = world(FakeDriver::new());
     let id = TaskId::new(run(&w.cx, &req("demo")).unwrap().task.id);
     let store = w.cx.store().unwrap();
-    store.begin_session(id, SESSION).unwrap();
+    store.begin_session(id, SESSION, None).unwrap();
     if idle {
         store
             .apply(Decision::new(id).task_input(TaskInput::AgentQuiet))

@@ -247,7 +247,7 @@ fn add_live(cx: &Cx) -> TaskId {
             ..Fields::default()
         });
     store.apply(d).unwrap();
-    store.begin_session(id, SESSION).unwrap();
+    store.begin_session(id, SESSION, None).unwrap();
     id
 }
 
