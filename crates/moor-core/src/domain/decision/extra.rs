@@ -111,9 +111,28 @@ pub enum ExtraEvent {
         /// Whether the submit key was pressed a second time.
         submit_retried: bool,
     },
+    /// The Proxy for the task is ready to accept connections.
+    ProxyStarted {
+        /// Port the Box side connects to.
+        box_port: u16,
+        /// Port the Proxy listens on, on the host.
+        host_port: u16,
+        /// Process id of the Proxy.
+        pid: u32,
+        /// Opaque handle that identifies the Proxy process to its runner.
+        handle: String,
+    },
+    /// The tunnel between the Box and the Proxy was restarted.
+    TunnelRestarted {
+        /// Port the Box side connects to.
+        box_port: u16,
+        /// Why the tunnel was restarted.
+        reason: String,
+    },
 }
 
 impl From<ExtraEvent> for Event {
+    #[allow(clippy::too_many_lines, reason = "one arm per event variant")]
     fn from(e: ExtraEvent) -> Self {
         match e {
             ExtraEvent::StaysUp { reason } => Self::StaysUp { reason },
@@ -170,6 +189,20 @@ impl From<ExtraEvent> for Event {
                 message,
                 submit_retried,
             },
+            ExtraEvent::ProxyStarted {
+                box_port,
+                host_port,
+                pid,
+                handle,
+            } => Self::ProxyStarted {
+                box_port,
+                host_port,
+                pid,
+                handle,
+            },
+            ExtraEvent::TunnelRestarted { box_port, reason } => {
+                Self::TunnelRestarted { box_port, reason }
+            }
         }
     }
 }
@@ -235,6 +268,20 @@ impl TryFrom<Event> for ExtraEvent {
                 message,
                 submit_retried,
             }),
+            Event::ProxyStarted {
+                box_port,
+                host_port,
+                pid,
+                handle,
+            } => Ok(Self::ProxyStarted {
+                box_port,
+                host_port,
+                pid,
+                handle,
+            }),
+            Event::TunnelRestarted { box_port, reason } => {
+                Ok(Self::TunnelRestarted { box_port, reason })
+            }
             e @ (Event::Started
             | Event::Rejected { .. }
             | Event::WaitingForBox { .. }
