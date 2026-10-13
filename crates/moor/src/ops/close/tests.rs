@@ -15,6 +15,7 @@ use crate::testing::driver::FakeDriver;
 use crate::testing::proc::{Reply, ScriptedProc};
 use crate::testing::surface::FakeSurface;
 
+mod agent;
 mod promote;
 mod teardown;
 
@@ -24,6 +25,7 @@ struct Fx {
     dir: tempfile::TempDir,
     cx: Cx,
     driver: Arc<FakeDriver>,
+    surface: Arc<FakeSurface>,
     id: TaskId,
 }
 
@@ -51,11 +53,12 @@ fn proc(unpushed: u32) -> Arc<ScriptedProc> {
 fn fx_with(driver: FakeDriver, surface: FakeSurface, unpushed: u32) -> Fx {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(driver);
+    let surface = Arc::new(surface);
     let cx = Cx::fake(
         dir.path(),
         dir.path(),
         driver.clone(),
-        Arc::new(surface),
+        surface.clone(),
         proc(unpushed),
     );
     let store = cx.store().unwrap();
@@ -99,6 +102,7 @@ fn fx_with(driver: FakeDriver, surface: FakeSurface, unpushed: u32) -> Fx {
         dir,
         cx,
         driver,
+        surface,
         id,
     }
 }
