@@ -43,6 +43,12 @@ fn render_value(resp: &Response, out: &mut String) {
             return;
         }
     }
+    if resp.cmd == "steer" {
+        if let Some(line) = steer_line(value) {
+            out.push_str(&line);
+            return;
+        }
+    }
     if resp.cmd == "cp" {
         if let Some(text) = value.get("confirmation").and_then(Value::as_str) {
             out.push_str(text);
@@ -86,6 +92,12 @@ fn sleep_line(cmd: &str, value: &Value) -> Option<String> {
         Some(s) if s != "asleep" => format!("{task}: box is {s}\n"),
         _ => format!("{task} is asleep\n"),
     })
+}
+
+/// Formats the `steer` line, or `None` when the task name is missing or mistyped.
+fn steer_line(value: &Value) -> Option<String> {
+    let task = value.get("task")?.as_str()?;
+    Some(format!("steered {task}\n"))
 }
 
 /// Text form of the `env` view: agent, github, token lines, then one line per item.
