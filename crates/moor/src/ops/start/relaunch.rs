@@ -51,7 +51,7 @@ pub(super) fn run(
     }
     match store.live_session(id)? {
         Some(s) if ended(cx, &s).is_none() => {
-            on_live(cx, req, &row, &s);
+            on_live(cx, store, req, &row, &s);
             return Ok(AgentLaunchView::default());
         }
         None if row.goal.is_none() && req.goal.is_none() && !req.resume => {
@@ -65,7 +65,7 @@ pub(super) fn run(
         return launch::run(cx, store, req, id, setup_exit, model);
     };
     let Some(end) = ended(cx, &old) else {
-        on_live(cx, req, &row, &old);
+        on_live(cx, store, req, &row, &old);
         return Ok(AgentLaunchView::default());
     };
     relaunch(cx, store, req, &old, &end, model)
@@ -93,7 +93,7 @@ pub(super) fn nothing_to_resume() -> CommandError {
 
 /// Handles a start that finds the agent live: warns of a goal it cannot take, and with
 /// `--resume` registers the session with the multiplexer again.
-fn on_live(cx: &Cx, req: &StartReq, row: &TaskRow, session: &SessionRow) {
+fn on_live(cx: &Cx, store: &Store, req: &StartReq, row: &TaskRow, session: &SessionRow) {
     warn_goal_ignored(cx, req, &row.name);
     let (true, Some(pane)) = (req.resume, session.pane.as_deref()) else {
         return;
@@ -103,7 +103,14 @@ fn on_live(cx: &Cx, req: &StartReq, row: &TaskRow, session: &SessionRow) {
         .pane_obs(&PaneRef::new(pane), Deadline(PANE_DEADLINE))
         .map_or(PaneStatus::Unknown, |obs| obs.status);
     if let Some(agent) = row.agent_session_id.as_deref().filter(|a| !a.is_empty()) {
-        resume::report(cx, &row.name, pane, agent, state);
+        if resume::report(cx, &row.name, pane, agent, state) {
+            if let Err(e) = store.set_registered_session(session.id, agent) {
+                cx.warn(Warning {
+                    code: "resume_not_registered".to_owned(),
+                    message: format!("could not record the resume registration: {e}"),
+                });
+            }
+        }
     }
 }
 

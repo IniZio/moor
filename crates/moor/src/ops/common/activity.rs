@@ -249,7 +249,9 @@ fn register_session(
     row: &TaskRow,
     reading: &Reading,
 ) -> Result<(), CommandError> {
-    if reading.agent_session.as_deref().is_none_or(str::is_empty) {
+    if reading.pane != PaneLiveness::Live
+        || reading.agent_session.as_deref().is_none_or(str::is_empty)
+    {
         return Ok(());
     }
     let Some(session) = store.live_session(row.id)? else {
