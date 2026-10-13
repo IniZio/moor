@@ -11,6 +11,7 @@ use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::surface::FakeSurface;
 
+const SHA_ABCD: &str = "88d4266fd4e6338d13b845fcf289579d209c897823b9217da3e161936f031589";
 const SHA_ABC: &str = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
 
 fn with_engine(engine: &Arc<FakeEngine>, surface: FakeSurface) -> Fx {
@@ -117,7 +118,8 @@ fn a_close_after_an_exit_save_of_the_same_transcript_writes_nothing_more() {
     let store = f.cx.store().unwrap();
     store.begin_session(f.id, "s-1", Some("p-1")).unwrap();
     let row = store.task(f.id).unwrap().unwrap();
-    save_on_exit(&f.cx, store, &row).unwrap();
+    let live = store.live_session(f.id).unwrap().unwrap();
+    save_on_exit(&f.cx, store, &row, live.id).unwrap();
     let first = files(&f);
     let v = run(&f.cx, &req(false)).unwrap();
     assert_eq!((first, files(&f)), (1, 1));
@@ -128,15 +130,28 @@ fn a_close_after_an_exit_save_of_the_same_transcript_writes_nothing_more() {
 
 #[test]
 fn a_close_after_the_transcript_changed_saves_again() {
-    let engine = exit_saved_engine();
+    let engine = Arc::new(
+        FakeEngine::new()
+            .then_transcript_text("abc")
+            .then_transcript_text("abcd"),
+    );
     let f = with_engine(&engine, FakeSurface::new("/s"));
     let store = f.cx.store().unwrap();
     store.begin_session(f.id, "s-1", Some("p-1")).unwrap();
     let row = store.task(f.id).unwrap().unwrap();
-    save_on_exit(&f.cx, store, &row).unwrap();
     let live = store.live_session(f.id).unwrap().unwrap();
-    store.set_transcript_digest(live.id, "older").unwrap();
+    save_on_exit(&f.cx, store, &row, live.id).unwrap();
     run(&f.cx, &req(false)).unwrap();
     assert_eq!(files(&f), 2);
     assert_eq!(kinds(&f), ["transcript_saved", "transcript_saved"]);
+    let digests: Vec<_> = store
+        .events(f.id, 100)
+        .unwrap()
+        .into_iter()
+        .filter(|e| e.kind == "transcript_saved")
+        .map(|e| e.payload.get("digest").cloned())
+        .collect();
+    assert_eq!(digests.len(), 2);
+    assert_ne!(digests.first(), digests.get(1));
+    assert_eq!(ended_digest(&f).as_deref(), Some(SHA_ABCD));
 }
