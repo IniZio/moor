@@ -5,9 +5,12 @@
     reason = "test fake; not yet used by ops"
 )]
 
+use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
+use moor_core::activity::PaneObs;
+use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::{PaneCmd, PaneRef, Surface, SurfaceError, WorkspaceRef, Worktree};
 use moor_core::TaskName;
 
@@ -18,6 +21,7 @@ struct State {
     workspaces: Vec<String>,
     panes: Vec<String>,
     calls: Vec<String>,
+    obs: HashMap<String, VecDeque<Result<PaneObs, SurfaceError>>>,
     fail_ensure: Option<SurfaceError>,
     fail_close_pane: Option<SurfaceError>,
     fail_close_ws: Option<SurfaceError>,
@@ -57,6 +61,16 @@ impl FakeSurface {
     /// The next `close_workspace` fails once with `e`.
     pub(crate) fn fail_close_workspace(self, e: SurfaceError) -> Self {
         self.st().fail_close_ws = Some(e);
+        self
+    }
+
+    /// Scripts the next `pane_obs` answer for `pane`; the last answer repeats.
+    pub(crate) fn script_pane_obs(self, pane: &str, obs: Result<PaneObs, SurfaceError>) -> Self {
+        self.st()
+            .obs
+            .entry(pane.to_owned())
+            .or_default()
+            .push_back(obs);
         self
     }
 
@@ -122,6 +136,17 @@ impl Surface for FakeSurface {
         Ok(PaneRef::new(id))
     }
 
+    fn pane_obs(&self, pane: &PaneRef, _deadline: Deadline) -> Result<PaneObs, SurfaceError> {
+        let mut s = self.st();
+        s.calls.push(format!("pane_obs {}", pane.as_str()));
+        let queue = s.obs.get_mut(pane.as_str()).ok_or(SurfaceError::NotFound)?;
+        if queue.len() > 1 {
+            queue.pop_front().ok_or(SurfaceError::NotFound)?
+        } else {
+            queue.front().cloned().ok_or(SurfaceError::NotFound)?
+        }
+    }
+
     fn close_pane(&self, pane: &PaneRef) -> Result<(), SurfaceError> {
         let mut s = self.st();
         s.calls.push(format!("close_pane {}", pane.as_str()));
@@ -150,5 +175,40 @@ impl Surface for FakeSurface {
         } else {
             Err(SurfaceError::NotFound)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use moor_core::activity::PaneStatus;
+
+    use super::*;
+
+    fn obs(tail: &str) -> PaneObs {
+        PaneObs {
+            status: PaneStatus::Idle,
+            tail: tail.to_owned(),
+            exit_marker: None,
+        }
+    }
+
+    #[test]
+    fn serves_scripted_observations_in_order_and_records_calls() {
+        let s = FakeSurface::new("/r")
+            .script_pane_obs("p-1", Ok(obs("a")))
+            .script_pane_obs("p-1", Err(SurfaceError::Timeout));
+        let p = PaneRef::new("p-1");
+        let d = Deadline(Duration::from_secs(1));
+        assert_eq!(s.pane_obs(&p, d), Ok(obs("a")));
+        assert_eq!(s.pane_obs(&p, d), Err(SurfaceError::Timeout));
+        assert_eq!(s.pane_obs(&p, d), Err(SurfaceError::Timeout));
+        assert_eq!(
+            s.pane_obs(&PaneRef::new("p-2"), d),
+            Err(SurfaceError::NotFound)
+        );
+        assert_eq!(s.calls().len(), 4);
+        assert_eq!(s.calls().first().map(String::as_str), Some("pane_obs p-1"));
     }
 }

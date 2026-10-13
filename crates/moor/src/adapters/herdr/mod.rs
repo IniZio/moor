@@ -1,6 +1,7 @@
 //! Surface adapter over herdr on a dedicated session.
 
 mod errors;
+mod pane;
 #[cfg_attr(not(test), expect(dead_code, reason = "wired in wire.rs"))]
 mod parse;
 #[cfg(test)]
@@ -11,6 +12,7 @@ use std::sync::Arc;
 use std::thread::sleep;
 use std::time::Duration;
 
+use moor_core::activity::PaneObs;
 use moor_core::name::TaskName;
 use moor_core::seam::proc::{Deadline, Proc, ProcSpec, Tool};
 use moor_core::seam::surface::{
@@ -65,8 +67,8 @@ impl Herdr {
     }
 
     /// Builds a herdr spec carrying the session and host env.
-    fn spec(&self, args: &[&str]) -> ProcSpec {
-        let spec = ProcSpec::new(Tool::Herdr, Deadline(CALL_DEADLINE))
+    fn spec(&self, args: &[&str], deadline: Deadline) -> ProcSpec {
+        let spec = ProcSpec::new(Tool::Herdr, deadline)
             .args(args.iter().copied())
             .env("HERDR_SESSION", &self.session);
         self.extra_env
@@ -76,8 +78,13 @@ impl Herdr {
 
     /// Runs one call, mapping failures through the error table.
     fn run_once(&self, args: &[&str]) -> Result<String, HerdrFailure> {
+        self.run_within(args, Deadline(CALL_DEADLINE))
+    }
+
+    /// Runs one call under `deadline`, mapping failures through the error table.
+    fn run_within(&self, args: &[&str], deadline: Deadline) -> Result<String, HerdrFailure> {
         self.proc
-            .run(&self.spec(args))
+            .run(&self.spec(args, deadline))
             .map(|o| o.stdout)
             .map_err(|e| map_error(&e))
     }
@@ -94,7 +101,7 @@ impl Herdr {
     /// Starts the headless server, then retries `args` while it is down.
     fn start_and_retry(&self, args: &[&str]) -> Result<String, SurfaceError> {
         self.proc
-            .spawn_detached(&self.spec(&["server"]))
+            .spawn_detached(&self.spec(&["server"], Deadline(CALL_DEADLINE)))
             .map_err(|e| SurfaceError::Unavailable(e.to_string()))?;
         for delay in RETRY_DELAYS {
             sleep(delay);
@@ -251,6 +258,10 @@ impl Surface for Herdr {
 
     fn close_pane(&self, pane: &PaneRef) -> Result<(), SurfaceError> {
         self.call(&["pane", "close", pane.as_str()]).map(drop)
+    }
+
+    fn pane_obs(&self, pane: &PaneRef, deadline: Deadline) -> Result<PaneObs, SurfaceError> {
+        self.observe(pane, deadline)
     }
 
     fn close_workspace(&self, ws: &WorkspaceRef) -> Result<(), SurfaceError> {
