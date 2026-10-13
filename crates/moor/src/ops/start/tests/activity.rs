@@ -28,12 +28,14 @@ fn probes(w: &World, hook: Option<HookKind>, pane: PaneStatus) -> Probes {
             HookRead::Fresh(HookRecord {
                 kind,
                 session_id: None,
+                message: None,
                 at,
             })
         }),
         pane: PaneRead::Fresh(PaneObs {
             status: pane,
             tail: String::new(),
+            prompt: None,
             exit_marker: None,
         }),
     }

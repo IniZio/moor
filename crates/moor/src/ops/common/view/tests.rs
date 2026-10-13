@@ -212,7 +212,7 @@ fn agent_view_working_maps_state_source_and_pane() {
 fn agent_view_blocked_carries_waiting_for() {
     let v = agent_view(&reading(
         AgentState::Blocked {
-            waiting_for: "Proceed?".into(),
+            waiting_for: Some("Proceed?".into()),
         },
         Source::Pane,
         PaneLiveness::Live,

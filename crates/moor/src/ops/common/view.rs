@@ -31,7 +31,7 @@ pub(crate) fn agent_view(reading: &Reading) -> Option<AgentView> {
     let activity = reading.activity.as_ref()?;
     let (exit_code, waiting_for) = match &activity.state {
         AgentState::Exited { code } => (Some(*code), None),
-        AgentState::Blocked { waiting_for } => (None, Some(waiting_for.clone())),
+        AgentState::Blocked { waiting_for } => (None, waiting_for.clone()),
         _ => (None, None),
     };
     Some(AgentView {

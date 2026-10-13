@@ -230,6 +230,7 @@ mod tests {
         PaneObs {
             status: PaneStatus::Idle,
             tail: tail.to_owned(),
+            prompt: None,
             exit_marker: None,
         }
     }

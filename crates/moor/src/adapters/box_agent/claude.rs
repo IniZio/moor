@@ -19,17 +19,38 @@ impl AgentProfile for Claude {
             "starting" => HookKind::Starting,
             "working" => HookKind::Busy,
             "idle" => HookKind::Idle,
-            "waiting_input" => HookKind::Blocked {
-                waiting_for: text("message").unwrap_or_default().to_owned(),
-            },
+            "waiting_input" => HookKind::Blocked,
             _ => return None,
         };
         let secs = value.get("ts")?.as_i64().filter(|s| *s >= 0)?;
+        let message = if kind == HookKind::Blocked {
+            text("message").map(str::to_owned)
+        } else {
+            None
+        };
         Some(HookRecord {
             kind,
             session_id: text("session_id").map(str::to_owned),
+            message,
             at: Ts::from_millis(secs.checked_mul(1000)?),
         })
+    }
+
+    fn pane_prompt(&self, tail: &str) -> Option<String> {
+        let lines: Vec<&str> = tail.lines().collect();
+        let starts = |c: char| move |l: &&str| l.trim_start().starts_with(c);
+        let top = lines.iter().rposition(starts('╭')).or_else(|| {
+            let mut rules = lines.iter().enumerate().filter(|(_, l)| starts('─')(l));
+            rules.next_back()?;
+            rules.next_back().map(|(i, _)| i)
+        })?;
+        lines
+            .iter()
+            .take(top)
+            .rev()
+            .map(|l| l.trim())
+            .find(|l| !l.is_empty())
+            .map(str::to_owned)
     }
 }
 

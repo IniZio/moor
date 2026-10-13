@@ -1,15 +1,17 @@
 //! Hook reading, cache and startup rules.
 
-use super::{blocked, fresh, obs, waiting, Case, OLD, TASKS};
+use super::{asking, fresh, obs, said, waiting, Case, OLD, SILENT, TASKS};
 use crate::activity::Source as Src;
-use crate::activity::{AgentState as S, HookKind as K, HookRead, PaneRead, PaneStatus as P};
+use crate::activity::{
+    AgentState as S, HookKind as K, HookRead, HookRecord, PaneRead, PaneStatus as P,
+};
 
 #[test]
 fn fresh_hook_states() {
     let none = || PaneRead::Absent;
     Case::new("busy", fresh(K::Busy), none()).expect(S::Working, Src::Hooks);
     Case::new("idle", fresh(K::Idle), none()).expect(S::Idle, Src::Hooks);
-    Case::new("blocked", fresh(blocked("Proceed?")), none())
+    Case::new("blocked", HookRead::Fresh(said("Proceed?")), none())
         .expect(waiting("Proceed?"), Src::Hooks);
     Case::new("beats the cache", fresh(K::Busy), none())
         .cache(K::Idle, 5)
@@ -69,7 +71,7 @@ fn timed_out_read_uses_fresh_cache_only() {
         .cache(K::Idle, 10)
         .expect(S::Idle, Src::HooksCached);
     Case::new("blocked", t(), none())
-        .cache(blocked("ok?"), 10)
+        .cache_record(said("ok?"), 10)
         .expect(waiting("ok?"), Src::HooksCached);
     Case::new("stale", t(), none())
         .cache(K::Busy, 120)
@@ -119,4 +121,33 @@ fn starting_holds_while_young() {
     Case::new("busy hook", fresh(K::Busy), PaneRead::Absent)
         .started(5)
         .expect(S::Working, Src::Hooks);
+}
+
+#[test]
+fn hook_message_wins_over_the_pane_text() {
+    let pane = || asking(P::Blocked, "out\nesc to interrupt", "Allow rm?");
+    Case::new("fresh", HookRead::Fresh(said("Allow edit?")), pane())
+        .expect(waiting("Allow edit?"), Src::Hooks);
+    Case::new("cached", HookRead::TimedOut, pane())
+        .cache_record(said("Allow edit?"), 10)
+        .expect(waiting("Allow edit?"), Src::HooksCached);
+}
+
+#[test]
+fn blocked_hook_without_a_usable_message_waits_for_nothing() {
+    let none = || PaneRead::Absent;
+    let blank = |m: Option<&str>| {
+        HookRead::Fresh(HookRecord {
+            message: m.map(str::to_owned),
+            ..said("")
+        })
+    };
+    Case::new("no message", blank(None), none()).expect(SILENT, Src::Hooks);
+    Case::new("blank message", blank(Some(" \n")), none()).expect(SILENT, Src::Hooks);
+    Case::new(
+        "pane prompt is not borrowed",
+        blank(None),
+        asking(P::Blocked, "", "Allow rm?"),
+    )
+    .expect(SILENT, Src::Hooks);
 }
