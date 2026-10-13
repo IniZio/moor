@@ -1,6 +1,6 @@
 //! Self-tests for the Driver fake.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -172,4 +172,73 @@ fn scripted_copy_out_failure_is_one_shot() {
     let fake = fake.fail_copy_out(DriverError::Quota("q".into()));
     assert_eq!(copy(&fake, &h), Err(DriverError::Quota("q".into())));
     assert_eq!(copy(&fake, &h), Ok(()));
+}
+
+fn host() -> &'static Path {
+    Path::new("/host")
+}
+
+fn peeked(rel: &str) -> BoxPath {
+    BoxPath::under("/work", rel).unwrap()
+}
+
+#[test]
+fn peek_serves_text_per_box_and_records_reads() {
+    let fake = FakeDriver::new();
+    let a = fake.acquire(&req()).unwrap().handle;
+    let b = fake.acquire(&req()).unwrap().handle;
+    let path = peeked("s.json");
+    let fake = fake.peek_text("box-1", &path, "one");
+    assert_eq!(
+        fake.peek_file(&a, &path, host()),
+        Ok(Some("one".to_owned()))
+    );
+    assert_eq!(fake.peek_file(&b, &path, host()), Ok(None));
+    assert_eq!(fake.peek_file(&a, &peeked("other"), host()), Ok(None));
+    assert_eq!(fake.peeks().len(), 3);
+    assert_eq!(
+        fake.peeks().first(),
+        Some(&(a, path, PathBuf::from("/host")))
+    );
+}
+
+#[test]
+fn peek_on_unknown_handle_is_not_found_and_scripted_failure_is_one_shot() {
+    let fake = FakeDriver::new();
+    assert_eq!(
+        fake.peek_file(&BoxHandle::new("box-9"), &peeked("x"), host()),
+        Err(DriverError::NotFound)
+    );
+    let (fake, h) = fake_with_box();
+    let fake = fake.fail_peek(DriverError::Timeout(Duration::from_secs(1)));
+    assert_eq!(
+        fake.peek_file(&h, &peeked("x"), host()),
+        Err(DriverError::Timeout(Duration::from_secs(1)))
+    );
+    assert_eq!(fake.peek_file(&h, &peeked("x"), host()), Ok(None));
+}
+
+#[test]
+fn peek_returns_while_an_exec_on_the_same_box_is_blocked() {
+    let (fake, h) = fake_with_box();
+    let path = peeked("s.json");
+    let fake = Arc::new(fake.peek_text("box-1", &path, "live"));
+    let (entered_tx, entered_rx) = std::sync::mpsc::channel();
+    let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+    let release_rx = std::sync::Mutex::new(release_rx);
+    fake.on_exec(move || {
+        entered_tx.send(()).unwrap();
+        let _ = release_rx.lock().unwrap().recv();
+    });
+    let runner = {
+        let (fake, h) = (fake.clone(), h.clone());
+        std::thread::spawn(move || fake.exec(&h, &spec(&["sleep"]), DL))
+    };
+    entered_rx.recv().unwrap();
+    assert_eq!(
+        fake.peek_file(&h, &path, host()),
+        Ok(Some("live".to_owned()))
+    );
+    release_tx.send(()).unwrap();
+    assert_eq!(runner.join().unwrap(), Ok(ExecOutcome::Exited { code: 0 }));
 }

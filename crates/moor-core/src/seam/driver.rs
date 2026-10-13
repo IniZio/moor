@@ -1,6 +1,6 @@
 //! Driver seam: how moor gets, inspects and releases Boxes.
 //!
-//! Only the provisioning methods, exec and copy-out exist so far; sleep,
+//! Only the provisioning methods, exec, copy-out and file peek exist so far; sleep,
 //! tunnel and connect are not added yet.
 
 use std::fmt;
@@ -269,6 +269,20 @@ pub trait Driver: Send + Sync {
         to: &Path,
         host_cwd: &Path,
     ) -> Result<(), DriverError>;
+
+    /// Reads one file in the Box without queueing behind a running command.
+    /// `Ok(None)` means the file does not exist. `host_cwd` is the worktree the
+    /// driver process runs from.
+    ///
+    /// # Errors
+    /// Returns [`DriverError::Timeout`] when the read hangs, and another
+    /// [`DriverError`] when the Box cannot be reached or the file cannot be read.
+    fn peek_file(
+        &self,
+        handle: &BoxHandle,
+        path: &BoxPath,
+        host_cwd: &Path,
+    ) -> Result<Option<String>, DriverError>;
 }
 
 #[cfg(test)]

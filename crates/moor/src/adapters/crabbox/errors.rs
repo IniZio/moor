@@ -24,6 +24,8 @@ pub(super) enum Op {
     Exec,
     /// Copying a file out of a Box.
     CopyOut,
+    /// Looking up a Box's ssh target.
+    Target,
 }
 
 impl Op {
@@ -37,6 +39,7 @@ impl Op {
             Self::Caps => "provider lookup",
             Self::Exec => "box command",
             Self::CopyOut => "box copy out",
+            Self::Target => "box ssh target lookup",
         }
     }
 }

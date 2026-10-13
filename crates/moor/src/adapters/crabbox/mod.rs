@@ -5,6 +5,7 @@ mod cp;
 mod errors;
 mod exec;
 mod parse;
+mod peek;
 #[cfg(test)]
 mod tests;
 
@@ -250,5 +251,14 @@ impl Driver for Crabbox {
         host_cwd: &Path,
     ) -> Result<(), DriverError> {
         cp::copy_out(self, handle, from, to, host_cwd)
+    }
+
+    fn peek_file(
+        &self,
+        handle: &BoxHandle,
+        path: &BoxPath,
+        host_cwd: &Path,
+    ) -> Result<Option<String>, DriverError> {
+        peek::peek_file(self, handle, path, host_cwd)
     }
 }
