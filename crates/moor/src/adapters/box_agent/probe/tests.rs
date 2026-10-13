@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use moor_core::activity::{HookKind, HookRead, HookRecord, PaneObs, PaneRead, PaneStatus};
 use moor_core::name::NameError;
-use moor_core::seam::agent_profile::{AgentProfile, BoxSetup, FirstRunPrompt, Key, LaunchCtx};
+use moor_core::seam::agent_profile::{AgentProfile, BoxSetup, Key, LaunchCtx, PromptMatch};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, EgressPlan};
 use moor_core::seam::engine::{Engine, SessionRef};
@@ -37,7 +37,7 @@ impl AgentProfile for Stub {
         tail.strip_prefix("ask ").map(str::to_owned)
     }
 
-    fn first_run_prompt(&self, _: &str) -> Option<FirstRunPrompt> {
+    fn first_run_prompt(&self, _: &str) -> Option<PromptMatch> {
         None
     }
 

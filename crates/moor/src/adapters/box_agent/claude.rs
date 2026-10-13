@@ -2,7 +2,9 @@
 
 use moor_core::activity::{HookKind, HookRecord};
 use moor_core::name::NameError;
-use moor_core::seam::agent_profile::{AgentProfile, BoxSetup, FirstRunPrompt, Key, LaunchCtx};
+use moor_core::seam::agent_profile::{
+    AgentProfile, BoxSetup, FirstRunPrompt, Key, LaunchCtx, PromptMatch,
+};
 use moor_core::seam::clock::Ts;
 use serde_json::Value;
 
@@ -56,11 +58,15 @@ impl AgentProfile for Claude {
             .map(str::to_owned)
     }
 
-    fn first_run_prompt(&self, tail: &str) -> Option<FirstRunPrompt> {
+    fn first_run_prompt(&self, tail: &str) -> Option<PromptMatch> {
         let trusting = tail.to_lowercase().contains("trust");
         tail.lines().rev().find_map(|raw| {
-            let line = raw.trim_matches(is_edge).to_lowercase();
-            prompt_of(&line, trusting)
+            let clean = strip_ansi(raw);
+            let line = clean.trim_matches(is_edge);
+            prompt_of(&line.to_lowercase(), trusting).map(|prompt| PromptMatch {
+                prompt,
+                line: line.to_owned(),
+            })
         })
     }
 
@@ -83,6 +89,24 @@ impl AgentProfile for Claude {
     fn menu_keys(&self, n: u8) -> Vec<Key> {
         launch::menu_keys(n)
     }
+}
+
+/// `line` without ANSI escape sequences.
+fn strip_ansi(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut chars = line.chars();
+    while let Some(c) = chars.next() {
+        if c != '\u{1b}' {
+            out.push(c);
+        } else if chars.next() == Some('[') {
+            for f in chars.by_ref() {
+                if ('@'..='~').contains(&f) {
+                    break;
+                }
+            }
+        }
+    }
+    out
 }
 
 /// Whitespace and box-drawing characters around a pane line.

@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use crate::activity::Probes;
 use crate::name::{BoxHandle, BoxPath, TaskName};
-use crate::seam::agent_profile::FirstRunPrompt;
+use crate::seam::agent_profile::PromptMatch;
 use crate::seam::driver::DriverError;
 use crate::seam::proc::Deadline;
 use crate::seam::surface::{PaneRef, WorkspaceRef};
@@ -86,7 +86,7 @@ pub trait Engine: Send + Sync {
     fn probe(&self, s: &SessionRef, deadline: Deadline) -> Result<Probes, EngineError>;
 
     /// The first-run prompt the pane text `tail` shows, when one holds the agent.
-    fn first_run_prompt(&self, tail: &str) -> Option<FirstRunPrompt>;
+    fn first_run_prompt(&self, tail: &str) -> Option<PromptMatch>;
 
     /// Delivers the brief and hooks to the Box and opens the agent's pane. The returned
     /// session has an empty `id` until the agent reports its own.

@@ -138,7 +138,7 @@ fn pane_prompt_needs_an_input_box_and_text_above_it() {
 }
 
 fn first_run(tail: &str) -> Option<FirstRunPrompt> {
-    Claude.first_run_prompt(tail)
+    Claude.first_run_prompt(tail).map(|m| m.prompt)
 }
 
 #[test]
@@ -166,4 +166,30 @@ fn first_run_prompts_are_told_apart() {
 fn ordinary_pane_text_is_no_first_run_prompt() {
     assert_eq!(first_run("● Reading the files\n> "), None);
     assert_eq!(first_run("Yes, proceed"), None);
+}
+
+#[test]
+fn the_bottom_prompt_wins() {
+    let tail = "Security notes:\nPress Enter to continue\n";
+    assert_eq!(first_run(tail), Some(FirstRunPrompt::PressEnter));
+    let tail = "Press Enter to continue\nSecurity notes:\n";
+    assert_eq!(first_run(tail), Some(FirstRunPrompt::SecurityNotes));
+}
+
+#[test]
+fn yes_proceed_is_folder_trust_only_when_the_pane_mentions_trust() {
+    let tail = "Do you want to trust it?\n 1. Yes, proceed\n";
+    assert_eq!(first_run(tail), Some(FirstRunPrompt::FolderTrust));
+}
+
+#[test]
+fn the_matched_line_loses_box_edges_and_ansi_codes() {
+    let tail = "\x1b[1m\x1b[38;5;214m│ Press Enter to continue \x1b[0m│";
+    let m = Claude.first_run_prompt(tail).unwrap();
+    assert_eq!(m.prompt, FirstRunPrompt::PressEnter);
+    assert_eq!(m.line, "Press Enter to continue");
+    let m = Claude
+        .first_run_prompt("╭──╮\n│ Security notes │\n╰──╯")
+        .unwrap();
+    assert_eq!(m.line, "Security notes");
 }

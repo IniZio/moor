@@ -2,6 +2,7 @@
 
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 
 use moor_core::config::UserConfig;
 use moor_core::seam::clock::Ts;
@@ -50,6 +51,7 @@ impl Cx {
             config,
             creds: Creds::new(Env::default(), proc),
             cwd: cwd.to_path_buf(),
+            prompt_window: Duration::from_secs(8),
         })
     }
 }

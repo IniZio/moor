@@ -71,6 +71,15 @@ impl FirstRunPrompt {
     }
 }
 
+/// A first-run prompt found in pane text, with the line that showed it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PromptMatch {
+    /// Which prompt.
+    pub prompt: FirstRunPrompt,
+    /// The matched pane line, without ANSI codes or box-drawing edges.
+    pub line: String,
+}
+
 /// What is specific to one kind of agent.
 pub trait AgentProfile: Send + Sync {
     /// Parses the agent's hook state file; `None` when it is unreadable or partial.
@@ -80,7 +89,7 @@ pub trait AgentProfile: Send + Sync {
     fn pane_prompt(&self, tail: &str) -> Option<String>;
 
     /// The first-run prompt the pane text shows, when one holds the agent.
-    fn first_run_prompt(&self, tail: &str) -> Option<FirstRunPrompt>;
+    fn first_run_prompt(&self, tail: &str) -> Option<PromptMatch>;
 
     /// Arguments for a fresh session that reads its brief.
     fn argv(&self, ctx: &LaunchCtx) -> Vec<String>;

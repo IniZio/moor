@@ -51,6 +51,7 @@ fn cx_proc(top: &Path, config: UserConfig, proc: ScriptedProc) -> Cx {
         config,
         creds: Creds::new(Env::default(), proc),
         cwd: top.to_path_buf(),
+        prompt_window: std::time::Duration::from_secs(8),
     })
 }
 
