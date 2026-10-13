@@ -1,8 +1,8 @@
 //! The Box agent kit, the one Engine adapter; agent-specific behaviour sits behind an `AgentProfile`.
 
-#[cfg_attr(not(test), expect(dead_code, reason = "used by launch, not yet wired"))]
 mod brief;
 pub(crate) mod claude;
+mod launch;
 mod probe;
 
 use std::sync::Arc;
@@ -10,7 +10,7 @@ use std::sync::Arc;
 use moor_core::activity::Probes;
 use moor_core::seam::agent_profile::AgentProfile;
 use moor_core::seam::driver::Driver;
-use moor_core::seam::engine::{Engine, EngineError, SessionRef};
+use moor_core::seam::engine::{Engine, EngineError, LaunchReq, SessionRef};
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::Surface;
 
@@ -18,9 +18,9 @@ use moor_core::seam::surface::Surface;
 pub(crate) struct BoxAgent {
     /// Reads the hook file out of the Box.
     driver: Arc<dyn Driver>,
-    /// Observes the agent's pane.
+    /// Observes and opens the agent's pane.
     surface: Arc<dyn Surface>,
-    /// Parses the agent's hook file.
+    /// Parses the agent's hook file and builds its launch.
     profile: Arc<dyn AgentProfile>,
 }
 
@@ -47,6 +47,15 @@ impl Engine for BoxAgent {
             self.profile.as_ref(),
             s,
             deadline,
+        )
+    }
+
+    fn launch(&self, req: &LaunchReq) -> Result<SessionRef, EngineError> {
+        launch::launch(
+            self.driver.as_ref(),
+            self.surface.as_ref(),
+            self.profile.as_ref(),
+            req,
         )
     }
 }

@@ -9,7 +9,7 @@ use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::{Surface, SurfaceError};
 
 /// Where the agent's hook reports land, relative to the Box workdir.
-const HOOK_FILE: &str = ".moor/agent-state.json";
+pub(super) const HOOK_FILE: &str = ".moor/agent-state.json";
 
 /// Reads the hook file once, then the pane once; the raw reads are returned undecided.
 pub(super) fn probe(

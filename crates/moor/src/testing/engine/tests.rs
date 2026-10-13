@@ -5,9 +5,10 @@ use std::time::Duration;
 
 use moor_core::activity::{HookRead, PaneRead, Probes};
 use moor_core::seam::driver::DriverError;
-use moor_core::seam::engine::{Engine, EngineError, SessionRef};
+use moor_core::seam::engine::{Engine, EngineError, LaunchReq, SessionRef};
 use moor_core::seam::proc::Deadline;
-use moor_core::{BoxHandle, BoxPath};
+use moor_core::seam::surface::{PaneRef, WorkspaceRef};
+use moor_core::{BoxHandle, BoxPath, TaskName};
 
 use super::FakeEngine;
 
@@ -71,4 +72,40 @@ fn counts_are_kept_per_session() {
     assert_eq!(e.probe_count("a"), 2);
     assert_eq!(e.probe_count("b"), 1);
     assert_eq!(e.probe_count("c"), 0);
+}
+
+fn launch_req() -> LaunchReq {
+    LaunchReq {
+        handle: BoxHandle::new("box-1"),
+        workdir: BoxPath::under("/work/box-1", "x").unwrap(),
+        worktree: PathBuf::from("/host/wt"),
+        workspace: WorkspaceRef::new("ws-1"),
+        task: TaskName::parse("t1").unwrap(),
+        branch: "moor/t1".to_owned(),
+        goal: None,
+        issue: None,
+        setup_exit: None,
+        model: None,
+        nonce: "abc123".to_owned(),
+    }
+}
+
+#[test]
+fn launches_are_recorded_and_succeed_with_a_pane_unless_scripted() {
+    let e = FakeEngine::new();
+    let s = e.launch(&launch_req()).unwrap();
+    assert_eq!(s.pane, Some(PaneRef::new("p-1")));
+    assert_eq!(e.launches(), [launch_req()]);
+}
+
+#[test]
+fn scripted_launch_results_are_served_in_order() {
+    let err = EngineError::Failed {
+        step: "pane",
+        message: "x".to_owned(),
+    };
+    let e = FakeEngine::new().launch_result(Err(err.clone()));
+    assert_eq!(e.launch(&launch_req()), Err(err));
+    assert!(e.launch(&launch_req()).is_ok());
+    assert_eq!(e.launches().len(), 2);
 }
