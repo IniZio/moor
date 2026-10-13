@@ -29,6 +29,8 @@ pub(crate) struct SessionRow {
     pub(crate) exit: Option<i32>,
     /// Digest of the saved transcript.
     pub(crate) transcript_digest: Option<String>,
+    /// The agent session id last registered for resume against this session's pane.
+    pub(crate) registered_agent_session: Option<String>,
 }
 
 impl Store {
@@ -37,8 +39,8 @@ impl Store {
         let conn = self.reader()?;
         Ok(conn
             .query_row(
-                "SELECT id, task, session_ref, pane, started_at, ended_at, exit, transcript_digest \
-                 FROM sessions WHERE task = ? AND ended_at IS NULL ORDER BY id DESC LIMIT 1",
+                "SELECT id, task, session_ref, pane, started_at, ended_at, exit, transcript_digest, \
+                 registered_agent_session FROM sessions WHERE task = ? AND ended_at IS NULL ORDER BY id DESC LIMIT 1",
                 [task.get()],
                 session_from_row,
             )
@@ -104,6 +106,17 @@ impl Store {
         Ok(())
     }
 
+    /// Keep the agent session id registered for resume against session `id`.
+    pub(crate) fn set_registered_session(&self, id: i64, agent: &str) -> Result<(), StoreError> {
+        let conn = self.writer()?;
+        conn.execute(
+            "UPDATE sessions SET registered_agent_session = ? WHERE id = ?",
+            params![agent, id],
+        )?;
+        drop(conn);
+        Ok(())
+    }
+
     /// Keep the digest of the transcript saved for a session that is still live.
     pub(crate) fn set_transcript_digest(&self, id: i64, digest: &str) -> Result<(), StoreError> {
         let conn = self.writer()?;
@@ -160,6 +173,7 @@ fn session_from_row(r: &Row<'_>) -> rusqlite::Result<SessionRow> {
         ended_at: r.get::<_, Option<i64>>(5)?.map(Ts::from_millis),
         exit: r.get(6)?,
         transcript_digest: r.get(7)?,
+        registered_agent_session: r.get(8)?,
     })
 }
 

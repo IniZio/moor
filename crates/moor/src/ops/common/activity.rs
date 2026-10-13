@@ -66,8 +66,8 @@ pub(crate) struct Reading {
     pub(crate) session: Option<i64>,
     /// Why the agent never launched; the Task has no session then.
     pub(crate) launch_failure: Option<LaunchFailure>,
-    /// The agent session id this read stored for the first time or changed.
-    new_session: Option<String>,
+    /// The agent's own session id, from the hook seen or the Task.
+    agent_session: Option<String>,
 }
 
 impl Reading {
@@ -91,7 +91,7 @@ impl Reading {
             run_in_flight,
             session: None,
             launch_failure: None,
-            new_session: None,
+            agent_session: None,
         }
     }
 
@@ -104,7 +104,7 @@ impl Reading {
             run_in_flight,
             session: None,
             launch_failure: None,
-            new_session: None,
+            agent_session: None,
         }
     }
 
@@ -117,7 +117,7 @@ impl Reading {
             run_in_flight,
             session: None,
             launch_failure: Some(failure),
-            new_session: None,
+            agent_session: None,
         }
     }
 }
@@ -171,12 +171,12 @@ pub(crate) fn read(
                 pane: PaneRead::TimedOut,
             }
         });
-    let new_session = if let HookRead::Fresh(rec) = &probes.hook {
+    let mut agent_session = row.agent_session_id.clone();
+    if let HookRead::Fresh(rec) = &probes.hook {
         store.put_hook(row.id, rec)?;
-        note_agent_session(store, row, rec.session_id.as_deref())?
-    } else {
-        None
-    };
+        note_agent_session(store, row, rec.session_id.as_deref())?;
+        agent_session = rec.session_id.clone().or(agent_session);
+    }
     let mut activity = decide(&probes, cache.as_ref(), now, session.started_at);
     if in_flight {
         activity.state = AgentState::Working;
@@ -189,30 +189,30 @@ pub(crate) fn read(
         run_in_flight: in_flight,
         session: Some(session.id),
         launch_failure: None,
-        new_session,
+        agent_session,
     })
 }
 
-/// Keep the agent's own session id on the Task; written only when it changed, and then returned.
+/// Keep the agent's own session id on the Task; written only when it changed.
 fn note_agent_session(
     store: &Store,
     row: &TaskRow,
     seen: Option<&str>,
-) -> Result<Option<String>, CommandError> {
+) -> Result<(), CommandError> {
     let Some(id) = seen.filter(|id| row.agent_session_id.as_deref() != Some(id)) else {
-        return Ok(None);
+        return Ok(());
     };
     let set = Fields {
         agent_session_id: Field::Set(id.to_owned()),
         ..Fields::default()
     };
     store.apply(Decision::new(row.id).set(set))?;
-    Ok(Some(id.to_owned()))
+    Ok(())
 }
 
 /// Move the Task's state to match `reading`, and save the transcript of an agent first seen exited.
 ///
-/// A session id the read stored for the first time is registered with the multiplexer.
+/// The agent session id of the live session is registered with the multiplexer when it is not yet.
 ///
 /// A Working Task goes Idle only when the reading `may_quiet` and is not busy; an Idle Task
 /// goes back to Working when the reading is busy. Nothing else decides quiet: a gone pane, an
@@ -230,7 +230,7 @@ pub(crate) fn settle(
     if let (PaneLiveness::Exited, Some(probed)) = (reading.pane, reading.session) {
         transcript::save_on_exit(cx, store, row, probed)?;
     }
-    register_new_session(cx, store, row, reading)?;
+    register_session(cx, store, row, reading)?;
     let input = match row.state {
         TaskState::Working if !reading.busy() && reading.may_quiet => TaskInput::AgentQuiet,
         TaskState::Idle if reading.busy() => TaskInput::AgentBusy,
@@ -242,22 +242,31 @@ pub(crate) fn settle(
     }
 }
 
-/// Registers the session id `reading` stored, with the state the agent shows.
-fn register_new_session(
+/// Registers the agent session id `reading` found against the live session's pane.
+fn register_session(
     cx: &Cx,
     store: &Store,
     row: &TaskRow,
     reading: &Reading,
 ) -> Result<(), CommandError> {
-    let Some(pane) = store.live_session(row.id)?.and_then(|s| s.pane) else {
+    if reading.agent_session.as_deref().is_none_or(str::is_empty) {
+        return Ok(());
+    }
+    let Some(session) = store.live_session(row.id)? else {
         return Ok(());
     };
     let state = reading
         .activity
         .as_ref()
         .map_or(PaneStatus::Unknown, |a| resume::pane_status(&a.state));
-    resume::register(cx, &row.name, &pane, reading.new_session.as_deref(), state);
-    Ok(())
+    resume::ensure(
+        cx,
+        store,
+        &row.name,
+        &session,
+        reading.agent_session.as_deref(),
+        state,
+    )
 }
 
 /// The session as the Engine needs it; none when the Box cannot be reached.

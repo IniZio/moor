@@ -15,7 +15,7 @@ CREATE TABLE events (id INTEGER PRIMARY KEY, task INTEGER NOT NULL REFERENCES ta
   payload TEXT NOT NULL, ts INTEGER NOT NULL);
 CREATE INDEX events_task ON events(task, id);
 CREATE TABLE sessions (id INTEGER PRIMARY KEY, task INTEGER NOT NULL, session_ref TEXT NOT NULL, pane TEXT, started_at INTEGER NOT NULL,
-  ended_at INTEGER, exit INTEGER, transcript_digest TEXT);
+  ended_at INTEGER, exit INTEGER, transcript_digest TEXT, registered_agent_session TEXT);
 CREATE TABLE runs   (id INTEGER PRIMARY KEY, task INTEGER NOT NULL, argv TEXT NOT NULL, record TEXT, sha TEXT, sync TEXT NOT NULL,
   pid INTEGER NOT NULL, started_at INTEGER NOT NULL, finished_at INTEGER, exit INTEGER, interrupted INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE reports(id INTEGER PRIMARY KEY, task INTEGER NOT NULL, kind TEXT NOT NULL, version INTEGER NOT NULL, path TEXT NOT NULL,
