@@ -89,10 +89,18 @@ fn usable_handle(row: &TaskRow) -> Result<BoxHandle, CommandError> {
 fn source(cx: &Cx, handle: &BoxHandle, src: &str) -> Result<BoxPath, CommandError> {
     let usage = |e: moor_core::name::NameError| CommandError::new(ErrorKind::Usage, e);
     if let Some(rel) = src.strip_prefix('/') {
-        return BoxPath::under("/", rel).map_err(usage);
+        return BoxPath::under("/", &without_cur_dir(rel)).map_err(usage);
     }
     let workdir = cx.driver().workdir(handle)?;
-    BoxPath::under(workdir.as_str(), src).map_err(usage)
+    BoxPath::under(workdir.as_str(), &without_cur_dir(src)).map_err(usage)
+}
+
+/// `rel` without its `.` components; a path of only `.` becomes empty and is refused.
+fn without_cur_dir(rel: &str) -> String {
+    rel.split('/')
+        .filter(|c| *c != ".")
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 /// Bytes at `path`: a file's or link's length, or the total under a directory.
