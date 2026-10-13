@@ -10,8 +10,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use moor_core::seam::driver::{
-    AcquireReq, Acquired, BoxListing, Driver, DriverCaps, DriverError, EgressApplied,
-    EgressSupport, ExecOutcome, ExecSpec, Released, SleepKind, SleepOutcome,
+    AcquireReq, Acquired, BoxListing, Driver, DriverCaps, DriverError, EgressApplied, ExecOutcome,
+    ExecSpec, Released, SleepOutcome,
 };
 use moor_core::seam::proc::Deadline;
 use moor_core::{BoxHandle, BoxPath, ProviderId};
@@ -46,6 +46,7 @@ struct State {
     on_exec: Option<Arc<ExecHook>>,
     work_root: Option<String>,
     fail_workdir: Option<DriverError>,
+    tunnel: tunnel::TunnelState,
 }
 
 /// One `copy_out` call: handle, source, destination and host cwd.
@@ -161,13 +162,7 @@ impl FakeDriver {
 impl Driver for FakeDriver {
     fn caps(&self, _provider: &ProviderId) -> Result<DriverCaps, DriverError> {
         self.st().calls.push("caps".to_owned());
-        Ok(DriverCaps {
-            sleep: SleepKind::None,
-            wake: false,
-            egress: EgressSupport::None,
-            reverse_tunnel: false,
-            has_workdir: true,
-        })
+        Ok(self.caps_reply())
     }
 
     fn acquire(&self, req: &AcquireReq) -> Result<Acquired, DriverError> {
@@ -229,6 +224,10 @@ impl Driver for FakeDriver {
                 asleep: false,
             })
             .collect())
+    }
+
+    fn reverse_tunnel(&self, h: &BoxHandle, bp: u16, hp: u16, cwd: &Path) -> tunnel::Opened {
+        self.tunnel_request(h, bp, hp, cwd)
     }
 
     fn workdir(&self, handle: &BoxHandle) -> Result<BoxPath, DriverError> {
@@ -396,3 +395,4 @@ fn write_text(to: &Path, text: &str) -> Result<(), DriverError> {
 mod script;
 #[cfg(test)]
 mod tests;
+mod tunnel;

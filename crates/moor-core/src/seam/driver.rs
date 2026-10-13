@@ -1,7 +1,7 @@
 //! Driver seam: how moor gets, inspects and releases Boxes.
 //!
-//! Provisioning, exec, copy-out, file peek and put, connect argv, sleep and wake exist
-//! so far; tunnel is not added yet.
+//! Provisioning, exec, copy-out, file peek and put, connect argv, reverse tunnel, sleep
+//! and wake. A reverse tunnel is a long-lived child that the caller owns and drops to stop.
 
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -10,6 +10,11 @@ use std::time::Duration;
 use crate::domain::run::SyncMode;
 use crate::name::{BoxHandle, BoxPath, ProviderId, TaskId, TaskName};
 use crate::seam::proc::{Deadline, Output};
+
+mod tunnel;
+
+use tunnel::fmt_tunnel;
+pub use tunnel::{TunnelFailure, TunnelHandle};
 
 /// How a provider keeps an idle Box cheap.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -180,6 +185,13 @@ pub enum DriverError {
     Unavailable(String),
     /// Provider cannot do this.
     Unsupported(&'static str),
+    /// A reverse tunnel stopped or stalled before it was ready.
+    Tunnel {
+        /// What went wrong.
+        failure: TunnelFailure,
+        /// Last lines the tunnel process wrote to stderr.
+        stderr_tail: String,
+    },
     /// Any other failure, summarised by the adapter.
     Failed {
         /// Moor-worded summary.
@@ -197,6 +209,10 @@ impl fmt::Display for DriverError {
             Self::Timeout(d) => write!(f, "box operation timed out after {}s", d.as_secs()),
             Self::Unavailable(m) => write!(f, "box provider unavailable: {m}"),
             Self::Unsupported(what) => write!(f, "not supported by this provider: {what}"),
+            Self::Tunnel {
+                failure,
+                stderr_tail,
+            } => fmt_tunnel(f, *failure, stderr_tail),
             Self::Failed { summary } => f.write_str(summary),
         }
     }
@@ -320,6 +336,22 @@ pub trait Driver: Send + Sync {
     /// [`DriverError`] when the target cannot be looked up.
     fn connect_argv(&self, handle: &BoxHandle, host_cwd: &Path)
         -> Result<Vec<String>, DriverError>;
+
+    /// Exposes host loopback `host_port` inside the Box on loopback `box_port`
+    /// until the returned handle drops. `host_cwd` is the worktree the driver
+    /// process runs from.
+    ///
+    /// # Errors
+    /// Returns [`DriverError::Unsupported`] when the provider has no reverse
+    /// tunnel, [`DriverError::Tunnel`] when the tunnel exits or stalls before it
+    /// is ready, and another [`DriverError`] as for the other calls.
+    fn reverse_tunnel(
+        &self,
+        handle: &BoxHandle,
+        box_port: u16,
+        host_port: u16,
+        host_cwd: &Path,
+    ) -> Result<Box<dyn TunnelHandle>, DriverError>;
 
     /// Puts the Box to sleep when its provider lets the Driver do so.
     ///
