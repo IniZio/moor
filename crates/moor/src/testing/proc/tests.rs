@@ -225,3 +225,58 @@ fn dropping_child_is_recorded() {
     assert_eq!(p.dropped(), [pid]);
     assert!(!p.alive(pid));
 }
+
+#[test]
+fn ready_child_has_not_exited() {
+    let p = ScriptedProc::new();
+    p.on_child(Tool::Crabbox, &[], ChildReply::Ready("x".into()));
+    let mut c = p.spawn_child(&child_spec(&["t"])).unwrap();
+    assert_eq!(c.try_exit(), None);
+}
+
+#[test]
+fn exited_child_reports_code() {
+    let p = ScriptedProc::new();
+    p.on_child(
+        Tool::Crabbox,
+        &[],
+        ChildReply::Exit {
+            code: 3,
+            stderr: String::new(),
+        },
+    );
+    let mut c = p.spawn_child(&child_spec(&["t"])).unwrap();
+    assert_eq!(
+        c.try_exit(),
+        Some(ExitInfo {
+            code: Some(3),
+            signal: None
+        })
+    );
+}
+
+#[test]
+fn ready_then_exit_flips_after_first_line() {
+    let p = ScriptedProc::new();
+    p.on_child(
+        Tool::Crabbox,
+        &[],
+        ChildReply::ReadyThenExit {
+            line: "up".into(),
+            code: 7,
+        },
+    );
+    let mut c = p.spawn_child(&child_spec(&["t"])).unwrap();
+    assert_eq!(c.try_exit(), None);
+    assert_eq!(
+        c.first_line(Deadline(Duration::from_secs(1))).unwrap(),
+        "up"
+    );
+    assert_eq!(
+        c.try_exit(),
+        Some(ExitInfo {
+            code: Some(7),
+            signal: None
+        })
+    );
+}

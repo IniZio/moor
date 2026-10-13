@@ -5,8 +5,8 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use moor_core::seam::proc::{
-    ChildHandle, Deadline, FirstLineError, Output, Proc, ProcError, ProcOutput, ProcSpec, Stdin,
-    Tool,
+    ChildHandle, Deadline, ExitInfo, FirstLineError, Output, Proc, ProcError, ProcOutput, ProcSpec,
+    Stdin, Tool,
 };
 use zeroize::Zeroizing;
 
@@ -39,6 +39,8 @@ pub(crate) enum ChildReply {
     Exit { code: i32, stderr: String },
     /// The child never prints; the first-line wait times out at once.
     Hang,
+    /// Prints this ready line, then exits with `code`.
+    ReadyThenExit { line: String, code: i32 },
 }
 
 /// A recorded invocation.
@@ -72,6 +74,8 @@ struct FakeChild {
     pid: u32,
     tool: Tool,
     reply: ChildReply,
+    /// Set once `first_line` has handed out the ready line.
+    printed: bool,
     dropped: Arc<Mutex<Vec<u32>>>,
 }
 
@@ -83,6 +87,10 @@ impl ChildHandle for FakeChild {
     fn first_line(&mut self, deadline: Deadline) -> Result<String, FirstLineError> {
         match &self.reply {
             ChildReply::Ready(line) => Ok(line.clone()),
+            ChildReply::ReadyThenExit { line, .. } => {
+                self.printed = true;
+                Ok(line.clone())
+            }
             ChildReply::Exit { code, stderr } => Err(FirstLineError::Exited {
                 code: Some(*code),
                 signal: None,
@@ -93,6 +101,20 @@ impl ChildHandle for FakeChild {
                 after: deadline.0,
             }),
         }
+    }
+
+    fn try_exit(&mut self) -> Option<ExitInfo> {
+        let code = match &self.reply {
+            ChildReply::Exit { code, .. } => *code,
+            ChildReply::ReadyThenExit { code, .. } if self.printed => *code,
+            ChildReply::Ready(_) | ChildReply::Hang | ChildReply::ReadyThenExit { .. } => {
+                return None;
+            }
+        };
+        Some(ExitInfo {
+            code: Some(code),
+            signal: None,
+        })
     }
 }
 
@@ -322,6 +344,7 @@ impl Proc for ScriptedProc {
             pid: self.next_pid.fetch_add(1, Ordering::Relaxed),
             tool: spec.tool,
             reply,
+            printed: false,
             dropped: Arc::clone(&self.dropped),
         }))
     }

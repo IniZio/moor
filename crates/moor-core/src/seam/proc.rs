@@ -307,8 +307,17 @@ impl fmt::Display for FirstLineError {
 
 impl std::error::Error for FirstLineError {}
 
+/// How a long-lived child ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ExitInfo {
+    /// Exit code, when the child exited normally.
+    pub code: Option<i32>,
+    /// Signal number, when a signal ended the child.
+    pub signal: Option<i32>,
+}
+
 /// A running child in its own process group. Dropping the handle sends
-/// SIGTERM to the group, then SIGKILL after a short grace, and reaps the
+/// SIGTERM to the group, waits a short grace, sends SIGKILL, then reaps the
 /// leader.
 pub trait ChildHandle: Send {
     /// Leader pid, which is also the process group id.
@@ -322,6 +331,10 @@ pub trait ChildHandle: Send {
     /// [`FirstLineError::Exited`] when the child exits first,
     /// [`FirstLineError::Io`] when stdout cannot be read.
     fn first_line(&mut self, deadline: Deadline) -> Result<String, FirstLineError>;
+
+    /// How the child ended, or `None` while it runs. Never blocks and never
+    /// probes by pid, so a reused pid cannot answer for this child.
+    fn try_exit(&mut self) -> Option<ExitInfo>;
 }
 
 /// Runs external programs; the only place moor spawns processes.
