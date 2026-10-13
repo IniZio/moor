@@ -11,7 +11,7 @@ use moor_core::proxy_gate::{Inject, Plan, RouteId};
 use moor_core::Secret;
 
 use super::chunked::ChunkedReader;
-use super::Relay;
+use super::{body_cap, Relay};
 use crate::proxy::head::Head;
 use crate::proxy::server::{Forward, ForwardHandler};
 use crate::proxy::upstream::{CredError, RouteCredential, Upstreams};
@@ -102,7 +102,8 @@ fn relay(port: u16, creds_ok: bool) -> Relay {
     let ups = Upstreams::new(
         [
             ("model".to_owned(), base.clone()),
-            ("forge.git".to_owned(), base),
+            ("forge.git".to_owned(), base.clone()),
+            ("forge.api".to_owned(), base),
         ],
         true,
     )
@@ -387,4 +388,127 @@ fn chunked_decoder_rejects_bad_framing() {
         .read_to_end(&mut out)
         .unwrap();
     assert_eq!(out, b"abc");
+}
+
+/// Reads raw bytes until the peer is idle or gone, then answers `200`.
+fn raw_then_ok(mut s: TcpStream) -> Vec<u8> {
+    s.set_read_timeout(Some(Duration::from_millis(500)))
+        .unwrap();
+    let mut raw = Vec::new();
+    let mut buf = [0_u8; 4096];
+    while let Ok(n) = s.read(&mut buf) {
+        if n == 0 {
+            break;
+        }
+        raw.extend_from_slice(buf.get(..n).unwrap());
+    }
+    let _ = s.write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\n\r\nok");
+    raw
+}
+
+/// Whether `hay` contains `needle`.
+fn contains(hay: &[u8], needle: &[u8]) -> bool {
+    hay.windows(needle.len()).any(|w| w == needle)
+}
+
+/// Bytes after the declared `content-length` never reach the upstream.
+#[test]
+fn length_body_is_cut_at_declared_length() {
+    let (port, up) = upstream(raw_then_ok);
+    let req = forward(
+        "model",
+        "POST",
+        Inject::Bearer,
+        &[("content-length", "5")],
+        b"helloGET /next HTTP/1.1\r\n\r\n",
+    );
+    let (mut client, done) = spawn(relay(port, true), req);
+    let reply = read_all(&mut client);
+    assert_eq!(done.join().unwrap(), 200, "{reply}");
+    let raw = up.join().unwrap();
+    assert!(raw.ends_with(b"\r\n\r\nhello"), "{raw:?}");
+    assert!(!contains(&raw, b"/next"), "{raw:?}");
+}
+
+/// Bytes after the terminating chunk and trailers never reach the upstream.
+#[test]
+fn chunked_body_is_cut_at_terminating_chunk() {
+    let (port, up) = upstream(raw_then_ok);
+    let req = forward(
+        "model",
+        "POST",
+        Inject::Bearer,
+        &[("transfer-encoding", "chunked")],
+        b"5\r\nhello\r\n0\r\nx-trailer: 1\r\n\r\nGET /next HTTP/1.1\r\n\r\n",
+    );
+    let (mut client, done) = spawn(relay(port, true), req);
+    let reply = read_all(&mut client);
+    assert_eq!(done.join().unwrap(), 200, "{reply}");
+    let raw = up.join().unwrap();
+    assert!(contains(&raw, b"hello"), "{raw:?}");
+    assert!(!contains(&raw, b"/next"), "{raw:?}");
+}
+
+/// A chunked body over the route cap aborts the upstream send and gets 413.
+#[test]
+fn chunked_body_over_cap_is_413_and_upstream_never_completes() {
+    let (port, up) = upstream(|mut s| {
+        s.set_read_timeout(Some(WAIT)).unwrap();
+        let mut tail = Vec::new();
+        let mut buf = vec![0_u8; 64 * 1024];
+        while let Ok(n) = s.read(&mut buf) {
+            if n == 0 {
+                break;
+            }
+            tail.extend_from_slice(buf.get(..n).unwrap());
+            let keep = tail.len().saturating_sub(16);
+            tail.drain(..keep);
+        }
+        tail
+    });
+    let req = forward(
+        "model",
+        "POST",
+        Inject::Bearer,
+        &[("transfer-encoding", "chunked")],
+        b"",
+    );
+    let (mut client, done) = spawn(relay(port, true), req);
+    let mut writer = client.try_clone().unwrap();
+    let sender = thread::spawn(move || {
+        let block = vec![b'q'; 1024 * 1024];
+        for _ in 0..33 {
+            if writer.write_all(b"100000\r\n").is_err()
+                || writer.write_all(&block).is_err()
+                || writer.write_all(b"\r\n").is_err()
+            {
+                return;
+            }
+        }
+        let _ = writer.write_all(b"0\r\n\r\n");
+    });
+    let reply = read_all(&mut client);
+    assert_eq!(done.join().unwrap(), 413, "{reply}");
+    assert!(
+        reply.starts_with("HTTP/1.1 413 Content Too Large\r\n"),
+        "{reply}"
+    );
+    assert!(
+        reply.ends_with("request body exceeds the route limit\n"),
+        "{reply}"
+    );
+    sender.join().unwrap();
+    let tail = up.join().unwrap();
+    assert!(
+        !tail.ends_with(b"0\r\n\r\n"),
+        "upstream saw a complete body"
+    );
+}
+
+/// Caps: 2 GiB for `forge.git`, 32 MiB for every other route.
+#[test]
+fn body_cap_per_route() {
+    assert_eq!(body_cap(&RouteId::new("forge.git")), 2 * 1024 * 1024 * 1024);
+    assert_eq!(body_cap(&RouteId::new("model")), 32 * 1024 * 1024);
+    assert_eq!(body_cap(&RouteId::new("forge.api")), 32 * 1024 * 1024);
 }
