@@ -17,7 +17,7 @@ use crate::proxy::server::{Forward, ForwardHandler};
 use crate::proxy::upstream::{CredError, RouteCredential, Upstreams};
 
 /// Credential every fake lookup returns.
-const SECRET: &str = "tok123";
+const SECRET: &str = "tok456";
 /// Read deadline so a failing test turns red instead of hanging.
 const WAIT: Duration = Duration::from_secs(10);
 
@@ -221,7 +221,7 @@ fn upstream_gets_plan_headers_and_injected_bearer_only() {
         names,
         ["authorization", "content-length", "content-type", "host"]
     );
-    assert_eq!(header(&seen, "authorization"), Some("Bearer tok123"));
+    assert_eq!(header(&seen, "authorization"), Some("Bearer tok456"));
     assert_eq!(header(&seen, "content-length"), Some("5"));
 }
 
@@ -248,7 +248,7 @@ fn basic_injection_for_forge_git() {
     let seen = up.join().unwrap();
     assert_eq!(
         header(&seen, "authorization"),
-        Some("Basic eC1hY2Nlc3MtdG9rZW46dG9rMTIz")
+        Some("Basic eC1hY2Nlc3MtdG9rZW46dG9rNDU2")
     );
     assert!(seen.body.is_empty());
 }

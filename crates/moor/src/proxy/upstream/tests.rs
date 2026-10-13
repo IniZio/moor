@@ -145,16 +145,17 @@ fn trailing_slash_and_url_join() {
 /// Encoder matches the RFC 4648 vectors.
 #[test]
 fn base64_rfc4648_vectors() {
-    for (i, o) in [
-        ("", ""),
-        ("f", "Zg=="),
-        ("fo", "Zm8="),
-        ("foo", "Zm9v"),
-        ("foob", "Zm9vYg=="),
-        ("fooba", "Zm9vYmE="),
-        ("foobar", "Zm9vYmFy"),
+    let input = b"foobar";
+    for (n, o) in [
+        (0, ""),
+        (1, "Zg=="),
+        (2, "Zm8="),
+        (3, "Zm9v"),
+        (4, "Zm9vYg=="),
+        (5, "Zm9vYmE="),
+        (6, "Zm9vYmFy"),
     ] {
-        assert_eq!(base64(i.as_bytes()), o);
+        assert_eq!(base64(input.get(..n).unwrap()), o);
     }
 }
 
