@@ -80,6 +80,7 @@ fn legal() -> Vec<(TaskState, TaskInput, TaskState)> {
         (S::Idle, I::RunStarted, S::Working),
         (S::Idle, I::SleepDue, S::Asleep),
         (S::Idle, I::SleepCmd, S::Asleep),
+        (S::Working, I::SleepCmd, S::Asleep),
         (S::Asleep, I::Wake, S::Working),
     ];
     for state in S::ALL.into_iter().filter(|st| st.is_live()) {
@@ -128,7 +129,18 @@ fn every_other_pair_is_illegal() {
 
 #[test]
 fn legal_table_has_expected_size() {
-    assert_eq!(legal().len(), 16 + 7);
+    assert_eq!(legal().len(), 17 + 7);
+}
+
+#[test]
+fn auto_sleep_is_idle_only() {
+    assert_eq!(
+        S::Working.step(&I::SleepDue),
+        Err(Illegal {
+            from: "working".to_owned(),
+            input: "sleep_due".to_owned(),
+        })
+    );
 }
 
 #[test]
