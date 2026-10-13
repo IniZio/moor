@@ -358,3 +358,44 @@ fn it_leaves_no_head_timeout_on_the_stream_given_to_the_handler() {
     assert_eq!(String::from_utf8_lossy(&out), OK);
     proxy.shutdown();
 }
+
+#[test]
+fn it_refuses_ambiguous_body_framing_before_the_handler() {
+    let r = rig();
+    let cases: [&[&str]; 5] = [
+        &["content-length: 5", "content-length: 5"],
+        &["content-length: 5, 6"],
+        &["transfer-encoding: chunked", "content-length: 5"],
+        &["transfer-encoding: gzip"],
+        &["content-length: abc"],
+    ];
+    for headers in cases {
+        let req = format!(
+            "POST /v1/x HTTP/1.1\r\nauthorization: Bearer {NONCE}\r\n{}\r\n\r\nhello",
+            headers.join("\r\n")
+        );
+        let reply = send(r.proxy.port(), req.as_bytes());
+        assert!(reply.starts_with("HTTP/1.1 400 "), "{headers:?}: {reply}");
+    }
+    assert!(r.fake.calls.lock().unwrap().is_empty());
+    let log = log_when(r.dir.path(), 5);
+    assert_eq!(
+        log.lines().filter(|l| l.ends_with(" POST - 400")).count(),
+        5,
+        "{log}"
+    );
+    r.proxy.shutdown();
+}
+
+#[test]
+fn it_delivers_the_refusal_even_when_the_client_sent_a_large_body() {
+    let r = rig();
+    let mut req = format!(
+        "POST /v1/x HTTP/1.1\r\nauthorization: Bearer {NONCE}\r\ncontent-length: abc\r\n\r\n"
+    )
+    .into_bytes();
+    req.extend(std::iter::repeat_n(b'x', 48 * 1024));
+    let reply = send(r.proxy.port(), &req);
+    assert!(reply.starts_with("HTTP/1.1 400 "), "{reply}");
+    r.proxy.shutdown();
+}
