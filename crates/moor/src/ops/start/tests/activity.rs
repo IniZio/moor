@@ -225,3 +225,29 @@ fn a_fresh_start_settles_another_task() {
     assert_eq!(row(&w, id).state, TaskState::Idle);
     assert!(kinds(&w, id).contains(&"idled".to_owned()));
 }
+
+#[test]
+fn a_task_that_cannot_be_settled_warns_and_the_others_still_settle() {
+    let mut w = world(FakeDriver::new());
+    let bad = TaskId::new(run(&w.cx, &req("bad")).unwrap().task.id);
+    let id = TaskId::new(run(&w.cx, &req("demo")).unwrap().task.id);
+    w.cx.store()
+        .unwrap()
+        .begin_session(id, SESSION, None)
+        .unwrap();
+    let engine = Arc::new(FakeEngine::new().probes(
+        SESSION,
+        probes(&w, Some(HookKind::Idle), PaneStatus::Unknown),
+    ));
+    w.cx = w.cx.with_engine(engine);
+    let raw = rusqlite::Connection::open(w.cx.state_dir().unwrap().join("moor.db")).unwrap();
+    raw.execute(
+        "INSERT INTO runs (task, argv, sync, pid, started_at) VALUES (?, 'not json', 'none', 1, 1)",
+        [bad.get()],
+    )
+    .unwrap();
+    run(&w.cx, &req("other")).unwrap();
+    assert_eq!(row(&w, id).state, TaskState::Idle);
+    let codes: Vec<_> = w.cx.take_warnings().into_iter().map(|x| x.code).collect();
+    assert!(codes.contains(&"settle_failed".to_owned()), "{codes:?}");
+}

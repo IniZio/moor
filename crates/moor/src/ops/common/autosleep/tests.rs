@@ -211,12 +211,78 @@ fn a_box_that_cannot_sleep_stays_up_and_says_why_once() {
     auto_sleep(&f);
     auto_sleep(&f);
     assert_eq!(states(&f), (TaskState::Idle, BoxState::Ready));
-    assert_eq!(sleep_calls(&f), 2);
+    assert_eq!(sleep_calls(&f), 1);
     let row = f.cx.store().unwrap().task(f.id).unwrap().unwrap();
     let shown = task_view(&row, f.cx.config()).r#box.unwrap().sleep.reason;
     assert_eq!(shown.as_deref(), Some("provider cannot wake"));
     let stays = kinds(&f).iter().filter(|k| *k == "stays_up").count();
     assert_eq!(stays, 1);
+}
+
+/// The stored sleep reason of the Box.
+fn reason(f: &Fx) -> Option<String> {
+    let row = f.cx.store().unwrap().task(f.id).unwrap().unwrap();
+    row.boxed.unwrap().sleep_reason
+}
+
+fn step(f: &Fx, input: TaskInput) {
+    f.cx.store()
+        .unwrap()
+        .apply(Decision::new(f.id).task_input(input))
+        .unwrap();
+}
+
+fn refusing() -> Fx {
+    idle_with(
+        FakeDriver::new().sleep_outcome(SleepOutcome::CannotSleep("provider cannot wake".into())),
+    )
+}
+
+#[test]
+fn a_known_refusal_is_not_asked_again_while_idle() {
+    let f = refusing();
+    pass(&f, LONG);
+    auto_sleep(&f);
+    pass(&f, LONG);
+    auto_sleep(&f);
+    assert_eq!(sleep_calls(&f), 1);
+    assert_eq!(reason(&f).as_deref(), Some("provider cannot wake"));
+}
+
+#[test]
+fn leaving_idle_clears_the_refusal() {
+    let f = refusing();
+    pass(&f, LONG);
+    auto_sleep(&f);
+    step(&f, TaskInput::AgentBusy);
+    assert_eq!(states(&f).0, TaskState::Working);
+    assert_eq!(reason(&f), None);
+}
+
+#[test]
+fn the_next_idle_stretch_asks_again() {
+    let f = refusing();
+    pass(&f, LONG);
+    auto_sleep(&f);
+    step(&f, TaskInput::AgentBusy);
+    step(&f, TaskInput::AgentQuiet);
+    pass(&f, LONG);
+    auto_sleep(&f);
+    assert_eq!(sleep_calls(&f), 2);
+    assert_eq!(reason(&f).as_deref(), Some("provider cannot wake"));
+}
+
+#[test]
+fn an_explicit_sleep_still_asks_the_driver() {
+    let f = refusing();
+    pass(&f, LONG);
+    auto_sleep(&f);
+    let req = moor_core::TaskReq {
+        task: TaskName::parse("t").unwrap(),
+    };
+    let err = crate::ops::sleep::run(&f.cx, &req);
+    assert!(err.is_err());
+    assert_eq!(sleep_calls(&f), 2);
 }
 
 #[test]

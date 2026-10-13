@@ -76,7 +76,7 @@ fn apply_in(tx: &Transaction<'_>, now: Ts, d: Decision) -> Result<Applied, Store
     let (id, existing, task_step) = step_task(tx, now, &d)?;
     let box_step = step_box(tx, now, id, existing.as_ref(), &d)?;
     write_task(tx, id, now, &d, &task_step)?;
-    write_box(tx, id, now, &d, box_step.as_ref())?;
+    write_box(tx, id, now, &d, box_step.as_ref(), &task_step)?;
     let mut events = Vec::new();
     if let Some(i) = &d.task_input {
         events.extend(task_events(task_step.from, task_step.to, i));
@@ -223,14 +223,23 @@ fn idle_since_sets(step: &Step<TaskState>, now: Ts) -> Sets {
 }
 
 /// Write box state, fields and handles; box fields without a box are invalid.
+///
+/// A task step out of Idle drops the recorded sleep refusal, so the next Idle stretch asks again.
 fn write_box(
     tx: &Transaction<'_>,
     id: TaskId,
     now: Ts,
     d: &Decision,
     step: Option<&Step<BoxState>>,
+    task: &Step<TaskState>,
 ) -> Result<(), StoreError> {
     let mut sets = box_field_sets(&d.set);
+    if task.from == Some(TaskState::Idle) && task.to != TaskState::Idle {
+        if let Some(i) = sets.iter().position(|(c, _)| *c == "sleep_reason") {
+            sets.remove(i);
+        }
+        sets.push(("sleep_reason", Value::Null));
+    }
     let Some(step) = step else {
         if sets.is_empty() {
             return Ok(());
