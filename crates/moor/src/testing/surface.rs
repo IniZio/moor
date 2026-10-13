@@ -7,7 +7,7 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use moor_core::activity::{PaneObs, PaneStatus};
 use moor_core::seam::proc::Deadline;
@@ -31,6 +31,7 @@ struct State {
     fail_close_ws: Option<SurfaceError>,
     fail_focus_ws: Option<SurfaceError>,
     resume_reply: Option<ResumeOutcome>,
+    on_pane_obs: Option<Arc<dyn Fn() + Send + Sync>>,
 }
 
 /// Scripted Surface: worktrees at `<root>/wt/<name>`, workspaces `ws-N`, panes `p-N`.
@@ -109,6 +110,11 @@ impl FakeSurface {
             .push_back(obs);
     }
 
+    /// Runs `hook` at the start of every `pane_obs`, outside the Surface's own lock.
+    pub(crate) fn on_pane_obs(&self, hook: impl Fn() + Send + Sync + 'static) {
+        self.st().on_pane_obs = Some(Arc::new(hook));
+    }
+
     /// Calls so far, like `create_worktree a` or `close_pane p-1`.
     pub(crate) fn calls(&self) -> Vec<String> {
         self.st().calls.clone()
@@ -176,6 +182,10 @@ impl Surface for FakeSurface {
     }
 
     fn pane_obs(&self, pane: &PaneRef, _deadline: Deadline) -> Result<PaneObs, SurfaceError> {
+        let hook = self.st().on_pane_obs.clone();
+        if let Some(hook) = hook {
+            hook();
+        }
         let mut s = self.st();
         s.calls.push(format!("pane_obs {}", pane.as_str()));
         let Some(queue) = s.obs.get_mut(pane.as_str()) else {
