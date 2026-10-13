@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::boxscript::command_line;
-use moor_core::domain::boxes::BoxInput;
+use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, Intent, IntentChange, NewTask};
 use moor_core::domain::run::SyncMode;
 use moor_core::domain::task::{SetupOutcome, TaskInput};
@@ -271,6 +271,81 @@ fn gone_box_is_refused_and_recorded() {
     assert_eq!(f.driver.calls().len(), before);
     assert_eq!(ran_events(&f), 1);
     assert!(f.cx.store().unwrap().last_run(f.id).unwrap().is_none());
+}
+
+/// Put the Task and Box to sleep.
+fn sleep(f: &Fx) {
+    let store = f.cx.store().unwrap();
+    store
+        .apply(Decision::new(f.id).task_input(TaskInput::AgentQuiet))
+        .unwrap();
+    store
+        .apply(
+            Decision::new(f.id)
+                .task_input(TaskInput::SleepCmd)
+                .box_input(BoxInput::Sleep),
+        )
+        .unwrap();
+}
+
+fn wake_calls(f: &Fx) -> usize {
+    f.driver
+        .calls()
+        .iter()
+        .filter(|c| c.starts_with("wake"))
+        .count()
+}
+
+fn box_state(f: &Fx) -> BoxState {
+    let row = f.cx.store().unwrap().task(f.id).unwrap().unwrap();
+    row.boxed.unwrap().state
+}
+
+#[test]
+fn asleep_box_is_woken_before_the_command_runs() {
+    let f = ready();
+    sleep(&f);
+    let v = run(&f.cx, &req(&["true"])).unwrap();
+    assert!(v.ran);
+    assert_eq!(wake_calls(&f), 1);
+    assert_eq!(f.driver.execs().len(), 1);
+    assert_eq!(box_state(&f), BoxState::Ready);
+    assert!(kinds(&f).contains(&"woke".to_owned()));
+}
+
+#[test]
+fn failed_wake_refuses_the_run_and_leaves_the_box_asleep() {
+    let f = ready_with(FakeDriver::new().fail_wake(DriverError::NotFound));
+    sleep(&f);
+    run(&f.cx, &req(&["true"])).unwrap_err();
+    assert_eq!(wake_calls(&f), 1);
+    assert!(f.driver.execs().is_empty());
+    assert_eq!(box_state(&f), BoxState::Asleep);
+    assert!(f.cx.store().unwrap().last_run(f.id).unwrap().is_none());
+    assert!(!kinds(&f).contains(&"woke".to_owned()));
+}
+
+#[test]
+fn gone_asleep_box_is_refused_without_a_wake() {
+    let f = ready();
+    sleep(&f);
+    f.cx.store()
+        .unwrap()
+        .apply(Decision::new(f.id).box_input(BoxInput::DriverMissing))
+        .unwrap();
+    let msg = refused(&f, &req(&["true"]), ErrorKind::Failed);
+    assert!(msg.contains("gone"), "{msg}");
+    assert_eq!(wake_calls(&f), 0);
+    assert_eq!(ran_events(&f), 1);
+    assert!(f.driver.execs().is_empty());
+    assert!(f.cx.store().unwrap().last_run(f.id).unwrap().is_none());
+}
+
+#[test]
+fn ready_box_is_not_woken() {
+    let f = ready();
+    run(&f.cx, &req(&["true"])).unwrap();
+    assert_eq!(wake_calls(&f), 0);
 }
 
 #[test]
