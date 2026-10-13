@@ -173,3 +173,44 @@ fn gone_box_is_refused_without_a_driver_call() {
     assert_eq!(err.kind, ErrorKind::Refused);
     assert_eq!(wake_calls(&f), 0);
 }
+
+#[test]
+fn asleep_task_with_ready_box_wakes_only_the_task() {
+    let f = fx();
+    let store = f.cx.store().unwrap();
+    store
+        .apply(Decision::new(f.id).task_input(TaskInput::AgentQuiet))
+        .unwrap();
+    store
+        .apply(Decision::new(f.id).task_input(TaskInput::SleepCmd))
+        .unwrap();
+    assert_eq!(row(&f).state, TaskState::Asleep);
+    let ready_before = kinds(&f).iter().filter(|k| *k == "box_ready").count();
+    assert!(wake_if_asleep(&f.cx, store, &row(&f)).unwrap());
+    assert_eq!(wake_calls(&f), 0);
+    let r = row(&f);
+    assert_eq!(r.state, TaskState::Working);
+    assert_eq!(r.boxed.unwrap().state, BoxState::Ready);
+    let after = kinds(&f);
+    assert!(after.contains(&"woke".to_owned()));
+    assert_eq!(
+        after.iter().filter(|k| *k == "box_ready").count(),
+        ready_before
+    );
+}
+
+#[test]
+fn asleep_box_with_working_task_wakes_only_the_box() {
+    let f = fx();
+    let store = f.cx.store().unwrap();
+    store
+        .apply(Decision::new(f.id).box_input(BoxInput::Sleep))
+        .unwrap();
+    assert_eq!(row(&f).boxed.unwrap().state, BoxState::Asleep);
+    assert!(wake_if_asleep(&f.cx, store, &row(&f)).unwrap());
+    assert_eq!(wake_calls(&f), 1);
+    let r = row(&f);
+    assert_eq!(r.state, TaskState::Working);
+    assert_eq!(r.boxed.unwrap().state, BoxState::Ready);
+    assert!(!kinds(&f).contains(&"woke".to_owned()));
+}
