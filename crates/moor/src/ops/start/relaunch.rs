@@ -1,12 +1,13 @@
 //! Starts the agent again for a Working Task whose pane is gone or has exited.
 
+use moor_core::activity::PaneStatus;
 use moor_core::decide::transcript::Trigger;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
 use moor_core::domain::task::TaskState;
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::{PaneRef, SurfaceError};
 use moor_core::view::AgentLaunchView;
-use moor_core::{StartReq, TaskId, Warning};
+use moor_core::{ErrorKind, StartReq, TaskId, Warning};
 use std::time::Duration;
 
 use super::launch;
@@ -14,8 +15,9 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::provision::reread;
+use crate::ops::common::resume;
 use crate::ops::common::transcript;
-use crate::store::{SessionRow, Store};
+use crate::store::{SessionRow, Store, TaskRow};
 
 /// Time allowed for reading a pane to see whether it ended.
 const PANE_DEADLINE: Duration = Duration::from_secs(5);
@@ -49,10 +51,12 @@ pub(super) fn run(
     }
     match store.live_session(id)? {
         Some(s) if ended(cx, &s).is_none() => {
-            warn_goal_ignored(cx, req, &row.name);
+            on_live(cx, req, &row, &s);
             return Ok(AgentLaunchView::default());
         }
-        None if row.goal.is_none() && req.goal.is_none() => return Ok(AgentLaunchView::default()),
+        None if row.goal.is_none() && req.goal.is_none() && !req.resume => {
+            return Ok(AgentLaunchView::default())
+        }
         _ => {}
     }
     let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "start", boxlock::WAIT)?;
@@ -61,10 +65,44 @@ pub(super) fn run(
         return launch::run(cx, store, req, id, setup_exit, model);
     };
     let Some(end) = ended(cx, &old) else {
-        warn_goal_ignored(cx, req, &row.name);
+        on_live(cx, req, &row, &old);
         return Ok(AgentLaunchView::default());
     };
     relaunch(cx, store, req, &old, &end, model)
+}
+
+/// Refuses `--resume` for a Task with no stored agent session.
+///
+/// # Errors
+/// [`ErrorKind::Refused`] when `req` resumes and `row` holds no session id.
+pub(super) fn check_resume(req: &StartReq, row: &TaskRow) -> Result<(), CommandError> {
+    let stored = row
+        .agent_session_id
+        .as_deref()
+        .is_some_and(|s| !s.is_empty());
+    if req.resume && !stored {
+        return Err(nothing_to_resume());
+    }
+    Ok(())
+}
+
+/// The refusal for `--resume` with no agent session to resume.
+pub(super) fn nothing_to_resume() -> CommandError {
+    CommandError::new(ErrorKind::Refused, "no agent session to resume")
+}
+
+/// Handles a start that finds the agent live: warns of a goal it cannot take, and with
+/// `--resume` registers the session with the multiplexer again.
+fn on_live(cx: &Cx, req: &StartReq, row: &TaskRow, session: &SessionRow) {
+    warn_goal_ignored(cx, req, &row.name);
+    let (true, Some(pane)) = (req.resume, session.pane.as_deref()) else {
+        return;
+    };
+    let state = cx
+        .surface()
+        .pane_obs(&PaneRef::new(pane), Deadline(PANE_DEADLINE))
+        .map_or(PaneStatus::Unknown, |obs| obs.status);
+    resume::register(cx, &row.name, pane, row.agent_session_id.as_deref(), state);
 }
 
 /// Stores a given goal on the Task, replacing any it holds, so the launch brief carries it.

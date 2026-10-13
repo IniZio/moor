@@ -139,6 +139,9 @@ struct StartArgs {
     /// Do not launch an agent.
     #[arg(long)]
     no_agent: bool,
+    /// Resume the agent's stored session.
+    #[arg(long)]
+    resume: bool,
 }
 
 impl From<StartArgs> for StartReq {
@@ -151,6 +154,7 @@ impl From<StartArgs> for StartReq {
             base: a.base,
             model: a.model,
             no_agent: a.no_agent,
+            resume: a.resume,
         }
     }
 }

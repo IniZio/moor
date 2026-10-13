@@ -57,6 +57,7 @@ fn start_with_all_flags() {
         "--model",
         "haiku",
         "--no-agent",
+        "--resume",
     ]);
     assert_eq!(
         r,
@@ -68,6 +69,7 @@ fn start_with_all_flags() {
             base: Some("main".into()),
             model: Some("haiku".into()),
             no_agent: true,
+            resume: true,
         })
     );
 }

@@ -4,9 +4,12 @@ use std::path::Path;
 
 use moor_core::config::TaskSettings;
 use moor_core::domain::event::CheckedCred;
+use moor_core::{ErrorKind, StartReq};
 
 use crate::cx::Cx;
+use crate::error::CommandError;
 use crate::ops::common::creds::unresolved;
+use crate::store::TaskRow;
 
 /// Why the Task must be rejected, naming each unresolved item; `None` when all resolve.
 pub(super) fn rejection(cx: &Cx, settings: &TaskSettings, worktree: &Path) -> Option<String> {
@@ -35,4 +38,26 @@ pub(super) fn checked(settings: &TaskSettings) -> Vec<CheckedCred> {
             resolves: true,
         })
         .collect()
+}
+
+/// Refuses a `--worktree` that differs from the open Task's worktree.
+pub(super) fn check_bound(cx: &Cx, req: &StartReq, row: &TaskRow) -> Result<(), CommandError> {
+    let (Some(want), Some(have)) = (&req.worktree, &row.worktree) else {
+        return Ok(());
+    };
+    let want = super::resolve(cx, want);
+    let same = want == Path::new(have)
+        || matches!((want.canonicalize(), Path::new(have).canonicalize()),
+            (Ok(a), Ok(b)) if a == b);
+    if same {
+        return Ok(());
+    }
+    Err(CommandError::new(
+        ErrorKind::Refused,
+        format!(
+            "task {} is already bound to {have}, not {}",
+            req.name.as_str(),
+            want.display()
+        ),
+    ))
 }

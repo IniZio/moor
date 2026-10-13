@@ -20,6 +20,7 @@ fn with_args() -> Vec<Request> {
             base: None,
             model: None,
             no_agent: true,
+            resume: false,
         }),
         Request::Run(RunReq {
             task: n("a"),

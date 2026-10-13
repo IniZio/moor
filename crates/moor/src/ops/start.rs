@@ -60,6 +60,9 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     if let Some(row) = store.open_task_by_name(&req.name)? {
         return attach(cx, store, req, &row);
     }
+    if req.resume {
+        return Err(relaunch::nothing_to_resume());
+    }
     let facts = gather(cx, req, repo, bound)?;
     let flags = Flags {
         model: req.model.clone(),
@@ -147,7 +150,8 @@ fn attach(
     req: &StartReq,
     row: &TaskRow,
 ) -> Result<StartView, CommandError> {
-    check_bound(cx, req, row)?;
+    preflight::check_bound(cx, req, row)?;
+    relaunch::check_resume(req, row)?;
     dead_provisioning(cx, row)?;
     if let Err(e) = cx
         .git()
@@ -265,28 +269,6 @@ fn view(cx: &Cx, row: &TaskRow, attached: bool) -> StartView {
 /// An absolute form of `path`, relative to the invocation directory.
 fn resolve(cx: &Cx, path: &str) -> PathBuf {
     cx.cwd().join(path)
-}
-
-/// Refuses a `--worktree` that differs from the open Task's worktree.
-fn check_bound(cx: &Cx, req: &StartReq, row: &TaskRow) -> Result<(), CommandError> {
-    let (Some(want), Some(have)) = (&req.worktree, &row.worktree) else {
-        return Ok(());
-    };
-    let want = resolve(cx, want);
-    let same = want == Path::new(have)
-        || matches!((want.canonicalize(), Path::new(have).canonicalize()),
-            (Ok(a), Ok(b)) if a == b);
-    if same {
-        return Ok(());
-    }
-    Err(CommandError::new(
-        ErrorKind::Refused,
-        format!(
-            "task {} is already bound to {have}, not {}",
-            req.name.as_str(),
-            want.display()
-        ),
-    ))
 }
 
 /// The repo root and the bound worktree; refuses bad input before any change.
