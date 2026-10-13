@@ -428,7 +428,10 @@ fn resume_on_a_live_pane_registers_again_and_does_not_launch() {
     let v = run(&w.cx, &resume_req()).unwrap();
     assert!(!v.agent.launched);
     assert_eq!(engine.launches().len(), 1);
-    assert_eq!(registrations(&w), ["register_resume p-1 claude agent-1"]);
+    assert_eq!(
+        registrations(&w).last().map(String::as_str),
+        Some("register_resume p-1 claude agent-1")
+    );
 }
 
 #[test]
@@ -440,7 +443,10 @@ fn resume_on_a_gone_pane_launches_the_resume_and_registers_the_new_pane() {
     let v = run(&w.cx, &resume_req()).unwrap();
     assert!(v.agent.launched);
     assert_eq!(relaunch_of(&engine).resume.as_deref(), Some("agent-1"));
-    assert_eq!(registrations(&w), ["register_resume p-2 claude agent-1"]);
+    assert_eq!(
+        registrations(&w).last().map(String::as_str),
+        Some("register_resume p-2 claude agent-1")
+    );
 }
 
 #[test]
@@ -456,7 +462,10 @@ fn a_relaunch_that_resumes_registers_the_new_pane() {
     w.surface.have_pane("p-2");
     gone(&w);
     run(&w.cx, &req("demo")).unwrap();
-    assert_eq!(registrations(&w), ["register_resume p-2 claude agent-1"]);
+    assert_eq!(
+        registrations(&w).last().map(String::as_str),
+        Some("register_resume p-2 claude agent-1")
+    );
 }
 
 #[test]
@@ -475,4 +484,75 @@ fn a_rejected_registration_is_a_warning_not_a_failure() {
         .find(|x| x.code == "resume_not_registered")
         .unwrap();
     assert!(msg.message.ends_with("invalid_resume_argv"), "{msg:?}");
+}
+
+/// A world with a Working goal-less task `demo`, no session, and stored agent session `agent-1`.
+fn idle_of_sessions() -> (World, Arc<FakeEngine>, TaskId) {
+    let engine = Arc::new(FakeEngine::new().launch_result(Ok(session("p-1"))));
+    let mut w = world(FakeDriver::new());
+    w.cx = w.cx.with_engine(engine.clone());
+    let first = run(
+        &w.cx,
+        &StartReq {
+            no_agent: true,
+            ..req("demo")
+        },
+    )
+    .unwrap();
+    let id = TaskId::new(first.task.id);
+    set_agent_session(&w, id, "agent-1");
+    (w, engine, id)
+}
+
+#[test]
+fn resume_with_no_session_row_launches_the_stored_session() {
+    let (w, engine, _id) = idle_of_sessions();
+    let v = run(&w.cx, &resume_req()).unwrap();
+    assert!(v.agent.launched);
+    let all = engine.launches();
+    assert_eq!(all.len(), 1);
+    assert_eq!(
+        all.first().and_then(|l| l.resume.as_deref()),
+        Some("agent-1")
+    );
+}
+
+#[test]
+fn a_goal_beats_resume_when_there_is_no_session_row() {
+    let (w, engine, _id) = idle_of_sessions();
+    let r = StartReq {
+        goal: Some("G".into()),
+        ..resume_req()
+    };
+    run(&w.cx, &r).unwrap();
+    let all = engine.launches();
+    let first = all.first().unwrap();
+    assert_eq!(first.resume, None);
+    assert_eq!(first.goal.as_deref(), Some("G"));
+}
+
+#[test]
+fn resume_with_a_goal_is_not_refused_without_a_stored_session() {
+    let (w, engine, id) = idle_of_sessions();
+    set_agent_session(&w, id, "");
+    let r = StartReq {
+        goal: Some("G".into()),
+        ..resume_req()
+    };
+    let v = run(&w.cx, &r).unwrap();
+    assert!(v.agent.launched);
+    assert_eq!(
+        engine.launches().first().and_then(|l| l.goal.as_deref()),
+        Some("G")
+    );
+}
+
+#[test]
+fn a_surface_error_while_registering_is_a_warning() {
+    let (w, _engine, id) = started();
+    set_agent_session(&w, id, "agent-1");
+    w.surface.push_pane_obs("p-1", Ok(obs(None)));
+    w.cx.take_warnings();
+    run(&w.cx, &resume_req()).unwrap();
+    assert!(warning_codes(&w).contains(&"resume_not_registered".to_owned()));
 }

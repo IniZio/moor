@@ -81,16 +81,16 @@ pub(super) fn begin(
             } else {
                 session.id
             };
-            let pane = session.pane.as_ref().map(PaneRef::as_str);
-            store.begin_session(id, &sref, pane)?;
-            if let Some(pane) = pane {
-                resume::register(
+            store.begin_session(id, &sref, session.pane.as_ref().map(PaneRef::as_str))?;
+            if let Some(live) = store.live_session(id)?.filter(|_| launch.resume.is_some()) {
+                resume::ensure(
                     cx,
+                    store,
                     &row.name,
-                    pane,
+                    &live,
                     launch.resume.as_deref(),
                     PaneStatus::Working,
-                );
+                )?;
             }
             if row.launch_failure.is_some() {
                 record(store, id, Field::Clear, None)?;
