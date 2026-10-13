@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use moor_core::activity::{PaneObs, PaneStatus};
 use moor_core::seam::clock::{Clock, Ts};
@@ -82,7 +82,8 @@ fn text_clears_types_then_submits_with_the_waits() {
     assert_eq!(
         out,
         Ok(SteerOutcome {
-            submit_retried: false
+            submit_retried: false,
+            submit_checked: true
         })
     );
     assert_eq!(
@@ -103,7 +104,8 @@ fn text_still_in_the_input_is_submitted_once_more() {
     assert_eq!(
         out,
         Ok(SteerOutcome {
-            submit_retried: true
+            submit_retried: true,
+            submit_checked: true
         })
     );
     let calls = sends(&s);
@@ -128,7 +130,8 @@ fn a_busy_marker_means_no_retry() {
     assert_eq!(
         out,
         Ok(SteerOutcome {
-            submit_retried: false
+            submit_retried: false,
+            submit_checked: true
         })
     );
     assert_eq!(
@@ -177,9 +180,153 @@ fn menu_sends_the_choice_key() {
     assert_eq!(
         out,
         Ok(SteerOutcome {
-            submit_retried: false
+            submit_retried: false,
+            submit_checked: true
         })
     );
     assert_eq!(sends(&s), ["send_keys p-2 2"]);
     assert_eq!(waited, Duration::ZERO);
+}
+
+/// A clock that logs how many surface calls came before each sleep.
+struct LogClock {
+    surface: Arc<FakeSurface>,
+    time: FakeClock,
+    at: Mutex<Vec<Vec<String>>>,
+}
+
+impl Clock for LogClock {
+    fn now(&self) -> Ts {
+        self.time.now()
+    }
+
+    fn instant(&self) -> Instant {
+        self.time.instant()
+    }
+
+    fn sleep(&self, _d: Duration) {
+        let calls = self.surface.calls();
+        let steer = calls
+            .into_iter()
+            .skip_while(|c| !c.starts_with("pane_obs"))
+            .collect();
+        self.at.lock().unwrap().push(steer);
+    }
+}
+
+#[test]
+fn each_wait_comes_before_the_submit_key_and_before_the_re_read() {
+    let (s, session) = surface(vec![Ok(obs("")), Ok(obs(""))]);
+    let clock = Arc::new(LogClock {
+        surface: s.clone(),
+        time: FakeClock::new(Ts::from_millis(0)),
+        at: Mutex::new(Vec::new()),
+    });
+    let agent = BoxAgent::new(
+        Arc::new(FakeDriver::new()),
+        s,
+        Arc::new(Claude),
+        clock.clone(),
+    );
+    agent.steer(&session, &text("go"), DEADLINE).unwrap();
+    let at = clock.at.lock().unwrap();
+    assert_eq!(
+        *at,
+        [
+            vec!["pane_obs p-2", "send_keys p-2 ctrl+u", "send_text p-2 go"],
+            vec![
+                "pane_obs p-2",
+                "send_keys p-2 ctrl+u",
+                "send_text p-2 go",
+                "send_keys p-2 ctrl+m"
+            ]
+        ]
+    );
+}
+
+#[test]
+fn text_far_above_the_input_is_not_a_pending_submit() {
+    let mut tail = String::from("> fix the build\n");
+    tail.push_str(&"line\n".repeat(12));
+    let (s, session) = surface(vec![Ok(obs("")), Ok(obs(&tail))]);
+    let (out, _) = steer(&s, &session, &text("fix the build"));
+    assert_eq!(
+        out,
+        Ok(SteerOutcome {
+            submit_retried: false,
+            submit_checked: true
+        })
+    );
+    assert_eq!(
+        sends(&s).iter().filter(|c| c.ends_with("ctrl+m")).count(),
+        1
+    );
+}
+
+#[test]
+fn a_failed_re_read_is_reported_unchecked_without_a_retry() {
+    let (s, session) = surface(vec![Ok(obs("")), Err(SurfaceError::Timeout)]);
+    let (out, _) = steer(&s, &session, &text("go"));
+    assert_eq!(
+        out,
+        Ok(SteerOutcome {
+            submit_retried: false,
+            submit_checked: false
+        })
+    );
+    assert_eq!(
+        sends(&s).iter().filter(|c| c.ends_with("ctrl+m")).count(),
+        1
+    );
+}
+
+#[test]
+fn a_long_message_is_found_by_its_last_characters() {
+    let msg = "please look at the failing build and then fix the flaky test";
+    let (s, session) = surface(vec![
+        Ok(obs("")),
+        Ok(obs("> ...uild and then fix the flaky test\n")),
+    ]);
+    let (out, _) = steer(&s, &session, &text(msg));
+    assert!(out.unwrap().submit_retried);
+}
+
+#[test]
+fn an_upper_case_busy_marker_means_no_retry() {
+    let (s, session) = surface(vec![
+        Ok(obs("")),
+        Ok(obs("> fix the build\nESC TO INTERRUPT\n")),
+    ]);
+    let (out, _) = steer(&s, &session, &text("fix the build"));
+    assert!(!out.unwrap().submit_retried);
+}
+
+#[test]
+fn an_exit_marker_after_submitting_is_pane_gone() {
+    let mut exited = obs("moor: agent exited 2");
+    exited.exit_marker = Some(2);
+    let (s, session) = surface(vec![Ok(obs("")), Ok(exited)]);
+    let (out, _) = steer(&s, &session, &text("go"));
+    assert_eq!(out, Err(EngineError::PaneGone));
+}
+
+#[test]
+fn a_failed_read_before_sending_fails_the_read_step_and_sends_nothing() {
+    let (s, session) = surface(vec![Err(SurfaceError::Timeout)]);
+    let (out, _) = steer(&s, &session, &text("go"));
+    assert_eq!(
+        out,
+        Err(EngineError::Failed {
+            step: "read",
+            message: "timed out".to_owned()
+        })
+    );
+    assert!(sends(&s).is_empty());
+}
+
+#[test]
+fn a_blank_message_is_never_a_pending_submit() {
+    let (s, session) = surface(vec![Ok(obs("")), Ok(obs("> \n"))]);
+    let (out, _) = steer(&s, &session, &text("  "));
+    assert!(!out.unwrap().submit_retried);
 }

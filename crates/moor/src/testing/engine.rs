@@ -143,6 +143,7 @@ impl Engine for FakeEngine {
         st.steers.push((s.id.clone(), steer.clone()));
         st.steer_results.pop_front().unwrap_or(Ok(SteerOutcome {
             submit_retried: false,
+            submit_checked: true,
         }))
     }
 }
