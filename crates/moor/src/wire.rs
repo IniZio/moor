@@ -3,9 +3,13 @@
 use std::sync::Arc;
 
 use moor_core::config::UserConfig;
+use moor_core::seam::driver::Driver;
 use moor_core::seam::proc::Proc;
+use moor_core::seam::surface::Surface;
 use moor_core::ErrorKind;
 
+use crate::adapters::box_agent::claude::Claude;
+use crate::adapters::box_agent::BoxAgent;
 use crate::adapters::clock::SystemClock;
 use crate::adapters::crabbox::Crabbox;
 use crate::adapters::creds::Creds;
@@ -38,17 +42,20 @@ pub(crate) fn build(env: &Env) -> Result<Cx, CommandError> {
         .iter()
         .filter_map(|k| Some(((*k).to_owned(), env.get(k)?.to_owned())))
         .collect();
-    let herdr = Herdr::new(
+    let surface: Arc<dyn Surface> = Arc::new(Herdr::new(
         Arc::clone(&proc),
         config.herdr_session().to_owned(),
         extra_env,
-    );
+    ));
+    let driver: Arc<dyn Driver> = Arc::new(Crabbox::new(Arc::clone(&proc)));
+    let engine = BoxAgent::new(Arc::clone(&driver), Arc::clone(&surface), Arc::new(Claude));
     Ok(Cx::new(CxParts {
         state_dir: env.state_dir(),
         clock: Arc::new(clock),
         rng: Arc::new(SystemRng),
-        driver: Arc::new(Crabbox::new(Arc::clone(&proc))),
-        surface: Arc::new(herdr),
+        driver,
+        surface,
+        engine: Arc::new(engine),
         proc: Arc::clone(&proc),
         git: Git::new(Arc::clone(&proc)),
         config,
