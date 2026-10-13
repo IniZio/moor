@@ -13,7 +13,6 @@ pub(crate) const MAX_HEADERS: usize = 64;
 const CHUNK_BYTES: usize = 1024;
 
 /// Parsed request line and header fields.
-#[derive(Debug)]
 pub(crate) struct Head {
     /// Request method, for example `GET` or `CONNECT`.
     pub(crate) method: String,
@@ -21,6 +20,19 @@ pub(crate) struct Head {
     pub(crate) target: String,
     /// Header fields in wire order, name and value as sent.
     pub(crate) headers: Vec<(String, String)>,
+}
+
+/// The target and header values carry secrets, so `Debug` prints the method,
+/// a redacted target, and header names only.
+impl std::fmt::Debug for Head {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let names: Vec<&str> = self.headers.iter().map(|(name, _)| name.as_str()).collect();
+        f.debug_struct("Head")
+            .field("method", &self.method)
+            .field("target", &"<redacted>")
+            .field("header_names", &names)
+            .finish()
+    }
 }
 
 impl Head {
