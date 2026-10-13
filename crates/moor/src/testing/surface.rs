@@ -12,7 +12,7 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 use moor_core::activity::PaneObs;
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::{
-    Key, PaneCmd, PaneRef, Surface, SurfaceError, WorkspaceRef, Worktree,
+    Key, PaneCmd, PaneRef, ResumeOutcome, ResumeReg, Surface, SurfaceError, WorkspaceRef, Worktree,
 };
 use moor_core::TaskName;
 
@@ -28,6 +28,7 @@ struct State {
     fail_close_pane: Option<SurfaceError>,
     fail_close_ws: Option<SurfaceError>,
     fail_focus_ws: Option<SurfaceError>,
+    resume_reply: Option<ResumeOutcome>,
 }
 
 /// Scripted Surface: worktrees at `<root>/wt/<name>`, workspaces `ws-N`, panes `p-N`.
@@ -70,6 +71,12 @@ impl FakeSurface {
     /// The next `focus_workspace` fails once with `e`.
     pub(crate) fn fail_focus_workspace(self, e: SurfaceError) -> Self {
         self.st().fail_focus_ws = Some(e);
+        self
+    }
+
+    /// Every `register_resume` answers `outcome` instead of `Registered`.
+    pub(crate) fn answer_resume(self, outcome: ResumeOutcome) -> Self {
+        self.st().resume_reply = Some(outcome);
         self
     }
 
@@ -173,6 +180,25 @@ impl Surface for FakeSurface {
             .push(format!("send_keys {} {}", pane.as_str(), names.join(" ")));
         if s.panes.iter().any(|p| p == pane.as_str()) {
             Ok(())
+        } else {
+            Err(SurfaceError::NotFound)
+        }
+    }
+
+    fn register_resume(
+        &self,
+        pane: &PaneRef,
+        reg: &ResumeReg,
+    ) -> Result<ResumeOutcome, SurfaceError> {
+        let mut s = self.st();
+        s.calls.push(format!(
+            "register_resume {} {} {}",
+            pane.as_str(),
+            reg.agent,
+            reg.session_id
+        ));
+        if s.panes.iter().any(|p| p == pane.as_str()) {
+            Ok(s.resume_reply.clone().unwrap_or(ResumeOutcome::Registered))
         } else {
             Err(SurfaceError::NotFound)
         }

@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use moor_core::config::UserConfig;
+use moor_core::seam::clock::Clock;
 use moor_core::seam::driver::Driver;
 use moor_core::seam::proc::Proc;
 use moor_core::seam::surface::Surface;
@@ -42,11 +43,14 @@ pub(crate) fn build(env: &Env) -> Result<Cx, CommandError> {
         .iter()
         .filter_map(|k| Some(((*k).to_owned(), env.get(k)?.to_owned())))
         .collect();
-    let surface: Arc<dyn Surface> = Arc::new(Herdr::new(
-        Arc::clone(&proc),
-        config.herdr_session().to_owned(),
-        extra_env,
-    ));
+    let surface: Arc<dyn Surface> = Arc::new(
+        Herdr::new(
+            Arc::clone(&proc),
+            config.herdr_session().to_owned(),
+            extra_env,
+        )
+        .seq_from(clock.now()),
+    );
     let driver: Arc<dyn Driver> = Arc::new(Crabbox::new(Arc::clone(&proc)));
     let engine = BoxAgent::new(Arc::clone(&driver), Arc::clone(&surface), Arc::new(Claude));
     Ok(Cx::new(CxParts {
