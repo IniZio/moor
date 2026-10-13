@@ -243,6 +243,34 @@ fn remove_worktree_uses_open_workspace() {
 }
 
 #[test]
+fn focus_workspace_runs_workspace_focus() {
+    let (p, h) = fixture();
+    p.on(Tool::Herdr, &["workspace", "focus"], ok(""));
+    h.focus_workspace(&WorkspaceRef::new("w1"))
+        .expect("focused");
+    assert_eq!(args(&p.calls(), 0), ["workspace", "focus", "w1"]);
+}
+
+#[test]
+fn focus_not_found_maps_to_not_found() {
+    let (p, h) = fixture();
+    let body = r#"{"error":{"code":"workspace_not_found","message":"x"}}"#;
+    p.on(
+        Tool::Herdr,
+        &["workspace", "focus"],
+        Reply::Fail {
+            code: 1,
+            stdout: String::new(),
+            stderr: body.to_owned(),
+        },
+    );
+    assert_eq!(
+        h.focus_workspace(&WorkspaceRef::new("w1")),
+        Err(SurfaceError::NotFound)
+    );
+}
+
+#[test]
 fn close_not_found_maps_to_not_found() {
     let (p, h) = fixture();
     let body = r#"{"error":{"code":"pane_not_found","message":"x"}}"#;
