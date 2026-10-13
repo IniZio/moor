@@ -1,5 +1,5 @@
 use moor_core::activity::{HookKind, HookRecord};
-use moor_core::seam::agent_profile::AgentProfile;
+use moor_core::seam::agent_profile::{AgentProfile, FirstRunPrompt};
 use moor_core::seam::clock::Ts;
 
 use super::Claude;
@@ -135,4 +135,35 @@ fn pane_prompt_skips_blank_lines_and_the_footer() {
 fn pane_prompt_needs_an_input_box_and_text_above_it() {
     assert_eq!(prompt("esc to interrupt"), None);
     assert_eq!(prompt(&format!("{RULE}\n> \n{RULE}\nfooter")), None);
+}
+
+fn first_run(tail: &str) -> Option<FirstRunPrompt> {
+    Claude.first_run_prompt(tail)
+}
+
+#[test]
+fn first_run_prompts_are_told_apart() {
+    assert_eq!(
+        first_run("Do you trust the files in this folder?"),
+        Some(FirstRunPrompt::FolderTrust)
+    );
+    assert_eq!(
+        first_run("│ Press Enter to continue │"),
+        Some(FirstRunPrompt::PressEnter)
+    );
+    assert_eq!(
+        first_run("Security notes:\n1. It can make mistakes"),
+        Some(FirstRunPrompt::SecurityNotes)
+    );
+    assert_eq!(
+        first_run("Choose the text style that looks best with your terminal"),
+        Some(FirstRunPrompt::Theme)
+    );
+    assert_eq!(first_run("❯ 2. Light mode"), Some(FirstRunPrompt::Theme));
+}
+
+#[test]
+fn ordinary_pane_text_is_no_first_run_prompt() {
+    assert_eq!(first_run("● Reading the files\n> "), None);
+    assert_eq!(first_run("Yes, proceed"), None);
 }

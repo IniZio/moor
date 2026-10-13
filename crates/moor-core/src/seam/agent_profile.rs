@@ -45,6 +45,32 @@ pub enum Key {
     Char(char),
 }
 
+/// A first-run prompt that holds the agent until someone answers it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FirstRunPrompt {
+    /// Asks whether to trust the working folder.
+    FolderTrust,
+    /// Waits for Enter to go on.
+    PressEnter,
+    /// Shows the agent's security notes.
+    SecurityNotes,
+    /// Asks for a colour theme.
+    Theme,
+}
+
+impl FirstRunPrompt {
+    /// The `snake_case` name recorded in events and warnings.
+    #[must_use]
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::FolderTrust => "folder_trust",
+            Self::PressEnter => "press_enter",
+            Self::SecurityNotes => "security_notes",
+            Self::Theme => "theme",
+        }
+    }
+}
+
 /// What is specific to one kind of agent.
 pub trait AgentProfile: Send + Sync {
     /// Parses the agent's hook state file; `None` when it is unreadable or partial.
@@ -52,6 +78,9 @@ pub trait AgentProfile: Send + Sync {
 
     /// The pending question in the pane text, apart from the agent's input box and footer.
     fn pane_prompt(&self, tail: &str) -> Option<String>;
+
+    /// The first-run prompt the pane text shows, when one holds the agent.
+    fn first_run_prompt(&self, tail: &str) -> Option<FirstRunPrompt>;
 
     /// Arguments for a fresh session that reads its brief.
     fn argv(&self, ctx: &LaunchCtx) -> Vec<String>;

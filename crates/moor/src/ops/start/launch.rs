@@ -1,14 +1,18 @@
 //! Launches the agent of a Working Task and records how that ended.
 
 use std::path::PathBuf;
+use std::time::Duration;
+
+use moor_core::activity::PaneRead;
+use moor_core::seam::proc::Deadline;
 
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
 use moor_core::domain::task::TaskState;
-use moor_core::seam::engine::{EngineError, LaunchReq};
+use moor_core::seam::engine::{EngineError, LaunchReq, SessionRef};
 use moor_core::seam::surface::{PaneRef, WorkspaceRef};
 use moor_core::view::{AgentLaunchView, LaunchFailure};
-use moor_core::{StartReq, TaskId};
+use moor_core::{StartReq, TaskId, Warning};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -18,6 +22,15 @@ use crate::store::{Store, TaskRow};
 
 /// Lines of a failure's output kept as its tail.
 const TAIL_LINES: usize = 10;
+
+/// How long a fresh agent pane is watched for first-run prompts.
+const PROMPT_WINDOW: Duration = Duration::from_secs(8);
+
+/// Time between two reads of the pane while watching.
+const PROMPT_POLL: Duration = Duration::from_millis(500);
+
+/// Deadline of one pane read while watching.
+const PROMPT_READ: Duration = Duration::from_secs(5);
 
 /// Launches the agent when the Task is Working with a ready Box, a goal and no live session.
 ///
@@ -59,12 +72,21 @@ pub(super) fn begin(
             let sref = if session.id.is_empty() {
                 format!("moor-{}", id.get())
             } else {
-                session.id
+                session.id.clone()
             };
             store.begin_session(id, &sref, session.pane.as_ref().map(PaneRef::as_str))?;
             if row.launch_failure.is_some() {
                 record(store, id, Field::Clear, None)?;
             }
+            watch_prompts(
+                cx,
+                store,
+                id,
+                &SessionRef {
+                    id: sref.clone(),
+                    ..session
+                },
+            );
             Ok(AgentLaunchView {
                 launched: true,
                 session: Some(sref),
@@ -80,6 +102,52 @@ pub(super) fn begin(
                 reason: Some(failure),
             })
         }
+    }
+}
+
+/// Reads the fresh agent pane for a bounded window and records a first-run prompt.
+///
+/// A prompt becomes an `agent_prompt_blocked` event and a warning; a failed read becomes an
+/// `agent_prompt_check_failed` event. Nothing here fails the start.
+fn watch_prompts(cx: &Cx, store: &Store, id: TaskId, session: &SessionRef) {
+    if session.pane.is_none() {
+        return;
+    }
+    let begin = cx.clock().instant();
+    loop {
+        let probes = cx.engine().probe(session, Deadline(PROMPT_READ));
+        let event = match probes.map(|p| p.pane) {
+            Ok(PaneRead::Fresh(obs)) => cx.engine().first_run_prompt(&obs.tail).map(|prompt| {
+                let name = prompt.name();
+                cx.warn(Warning {
+                    code: "agent_prompt_blocked".to_owned(),
+                    message: format!("the agent waits at a {name} prompt; answer it in its pane"),
+                });
+                ExtraEvent::AgentPromptBlocked {
+                    prompt: name.to_owned(),
+                }
+            }),
+            Ok(PaneRead::Gone | PaneRead::Absent) => return,
+            Ok(PaneRead::TimedOut) => Some(ExtraEvent::AgentPromptCheckFailed {
+                error: "the pane read failed or timed out".to_owned(),
+            }),
+            Err(e) => Some(ExtraEvent::AgentPromptCheckFailed {
+                error: e.to_string(),
+            }),
+        };
+        if let Some(event) = event {
+            if let Err(e) = store.apply(Decision::new(id).event(event)) {
+                cx.warn(Warning {
+                    code: "agent_prompt_record_failed".to_owned(),
+                    message: format!("could not record the first-run prompt check: {e}"),
+                });
+            }
+            return;
+        }
+        if cx.clock().instant().duration_since(begin) + PROMPT_POLL > PROMPT_WINDOW {
+            return;
+        }
+        cx.clock().sleep(PROMPT_POLL);
     }
 }
 
