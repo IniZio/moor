@@ -1,4 +1,4 @@
-//! `moor close`: gate, tear down and release the Box, then close the Workspace.
+//! `moor close`: gate, stop the agent, tear down and release the Box, then close the Workspace.
 
 use std::path::Path;
 use std::time::Duration;
@@ -11,7 +11,7 @@ use moor_core::domain::run::SyncMode;
 use moor_core::decide::close::{close_gate, release_outcome, CloseFacts, ClosePlan, ReleaseResult};
 use moor_core::seam::driver::{ExecOutcome, ExecSpec, Released};
 use moor_core::seam::proc::Deadline;
-use moor_core::seam::surface::WorkspaceRef;
+use moor_core::seam::surface::{PaneRef, SurfaceError, WorkspaceRef};
 use moor_core::view::CloseView;
 use moor_core::{BoxHandle, CloseReq, ErrorKind, TaskName, Warning};
 
@@ -26,12 +26,14 @@ use crate::store::{BoxRow, Store, TaskRow};
 /// Wall-clock allowance for the teardown script.
 const TEARDOWN_DEADLINE: Duration = Duration::from_mins(30);
 
-/// Closes a task: the data-loss gate, Box teardown and release, Workspace close.
+/// Closes a task: the data-loss gate, agent stop, Box teardown and release,
+/// Workspace close.
 ///
 /// The Box lock is held from the gate to the Workspace close and dropped before
 /// promotion, which takes the locks of the waiting tasks. The Box is released
 /// before the Workspace closes. The worktree is never removed; it belongs to the
-/// user's checkout. Waiting tasks are then promoted into the freed slot.
+/// user's checkout. The agent stops first, so the session stays ended when the
+/// release fails and the task stays open. Waiting tasks are then promoted into the freed slot.
 pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
     let store = cx.store()?;
     let first = find(store, &req.task)?;
@@ -44,6 +46,7 @@ pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
     )?;
     let row = store.task(first.id)?.unwrap_or(first);
     let plan = close_gate(&facts(cx, &row)?, req.force)?;
+    let agent_stopped = stop_agent(cx, store, &row)?;
     let box_deleted = if plan.release_box {
         teardown(cx, &row);
         release(cx, store, &row)?
@@ -65,11 +68,34 @@ pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
         task: task_view(&closed, cx.config()),
         box_deleted,
         workspace_closed,
-        agent_stopped: false,
+        agent_stopped,
         transcript: None,
         worktree_kept: true,
         promoted,
     })
+}
+
+/// Closes the live agent pane and ends its session; a pane already gone is fine.
+///
+/// Returns whether a session was ended.
+fn stop_agent(cx: &Cx, store: &Store, row: &TaskRow) -> Result<bool, CommandError> {
+    let Some(session) = store.live_session(row.id)? else {
+        return Ok(false);
+    };
+    if let Some(pane) = session.pane.as_deref() {
+        match cx.surface().close_pane(&PaneRef::new(pane)) {
+            Ok(()) | Err(SurfaceError::NotFound) => {}
+            Err(e) => {
+                return Err(CommandError::new(
+                    ErrorKind::Failed,
+                    format!("could not close the agent pane: {e}; the task stays open"),
+                )
+                .with_hint("try `moor close` again, or close the pane by hand"));
+            }
+        }
+    }
+    store.end_session(session.id, None, None)?;
+    Ok(true)
 }
 
 /// The open task by name, else the newest closed one (the gate refuses it).
@@ -203,7 +229,7 @@ fn close_workspace(cx: &Cx, row: &TaskRow, plan: &ClosePlan) -> bool {
         return false;
     };
     match cx.surface().close_workspace(&WorkspaceRef::new(id)) {
-        Ok(()) | Err(moor_core::seam::surface::SurfaceError::NotFound) => true,
+        Ok(()) | Err(SurfaceError::NotFound) => true,
         Err(_) => {
             cx.warn(Warning {
                 code: "workspace_close_failed".to_owned(),
