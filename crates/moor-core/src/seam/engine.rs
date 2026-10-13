@@ -53,6 +53,22 @@ pub struct LaunchReq {
     pub nonce: String,
 }
 
+/// What to send to the agent.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Steer {
+    /// A message typed into the agent's input and submitted.
+    Text(String),
+    /// A choice in a menu the agent shows.
+    Menu(u8),
+}
+
+/// What a steer did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SteerOutcome {
+    /// Whether the submit key was pressed a second time because the text stayed in the input.
+    pub submit_retried: bool,
+}
+
 /// An Engine failure.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum EngineError {
@@ -95,6 +111,19 @@ pub trait Engine: Send + Sync {
     /// [`EngineError::Failed`] names the step that failed; no pane is open then, and the
     /// credential directory is removed.
     fn launch(&self, req: &LaunchReq) -> Result<SessionRef, EngineError>;
+
+    /// Sends `steer` to the agent's pane. Text is never typed twice.
+    ///
+    /// # Errors
+    /// [`EngineError::NoSession`] when the session has no pane; [`EngineError::PaneGone`]
+    /// when the pane no longer exists or shows that the agent exited;
+    /// [`EngineError::Failed`] when a send fails.
+    fn steer(
+        &self,
+        s: &SessionRef,
+        steer: &Steer,
+        deadline: Deadline,
+    ) -> Result<SteerOutcome, EngineError>;
 }
 
 #[cfg(test)]

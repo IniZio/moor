@@ -86,6 +86,10 @@ impl AgentProfile for Claude {
         launch::hook_writer(ctx)
     }
 
+    fn busy_marker(&self) -> &'static str {
+        "esc to interrupt"
+    }
+
     fn menu_keys(&self, n: u8) -> Vec<Key> {
         launch::menu_keys(n)
     }
