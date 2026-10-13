@@ -125,6 +125,7 @@ fn extra_events_round_trip() {
             }],
         },
         ExtraEvent::RunStarted { run: RunId::new(3) },
+        ExtraEvent::StaysUp { reason: "r".into() },
     ];
     for x in all {
         let e = Event::from(x.clone());

@@ -116,6 +116,11 @@ pub enum Event {
         /// The Box handle kept for manual release.
         handle: Option<String>,
     },
+    /// The driver refused to sleep an idle task's box, so it keeps running.
+    StaysUp {
+        /// The driver's reason.
+        reason: String,
+    },
     /// A command run finished.
     Ran {
         /// The run id; none when the run was refused before a run row existed.
@@ -175,6 +180,7 @@ impl Event {
             Self::BoxGone => "box_gone",
             Self::BoxDeleted => "box_deleted",
             Self::BoxReleaseFailed { .. } => "box_release_failed",
+            Self::StaysUp { .. } => "stays_up",
             Self::Ran { .. } => "ran",
             Self::Copied { .. } => "copied",
             Self::SessionStarted { .. } => "session_started",

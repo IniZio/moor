@@ -65,6 +65,7 @@ fn all_events() -> Vec<Event> {
             error: s("c"),
             handle: None,
         },
+        Event::StaysUp { reason: s("r") },
         Event::Ran {
             run: Some(run),
             exit: Some(1),
@@ -119,12 +120,13 @@ const fn event_index(e: &Event) -> usize {
         Event::BoxGone => 16,
         Event::BoxDeleted => 17,
         Event::BoxReleaseFailed { .. } => 18,
-        Event::Ran { .. } => 19,
-        Event::Copied { .. } => 20,
-        Event::SessionStarted { .. } => 21,
-        Event::Checked { .. } => 22,
-        Event::RunStarted { .. } => 23,
-        Event::Attached => 24,
+        Event::StaysUp { .. } => 19,
+        Event::Ran { .. } => 20,
+        Event::Copied { .. } => 21,
+        Event::SessionStarted { .. } => 22,
+        Event::Checked { .. } => 23,
+        Event::RunStarted { .. } => 24,
+        Event::Attached => 25,
     }
 }
 
@@ -132,7 +134,7 @@ const fn event_index(e: &Event) -> usize {
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 25);
+    assert_eq!(all.len(), 26);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }
@@ -214,6 +216,18 @@ fn payload_carries_fields() {
         from: TaskState::WaitingForBox,
     };
     assert_eq!(e.payload(), serde_json::json!({"from": "waiting_for_box"}));
+}
+
+#[test]
+fn stays_up_payload_carries_reason() {
+    let e = Event::StaysUp { reason: s("busy") };
+    assert_eq!(e.kind(), "stays_up");
+    assert_eq!(e.payload(), serde_json::json!({"reason": "busy"}));
+    assert_eq!(
+        serde_json::to_value(&e).unwrap(),
+        serde_json::json!({"kind": "stays_up", "reason": "busy"})
+    );
+    assert!(!e.is_asserted());
 }
 
 #[test]
