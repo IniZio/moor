@@ -3,6 +3,7 @@
 use std::cell::{OnceCell, RefCell};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use moor_core::config::{RepoConfig, UserConfig};
 use moor_core::seam::clock::Clock;
@@ -48,6 +49,8 @@ pub(crate) struct Cx {
     creds: Creds,
     /// Invocation directory.
     cwd: PathBuf,
+    /// How long a fresh agent pane is watched for first-run prompts.
+    prompt_window: Duration,
     /// State store, opened on first use.
     store: OnceCell<Store>,
 }
@@ -76,6 +79,8 @@ pub(crate) struct CxParts {
     pub creds: Creds,
     /// Invocation directory.
     pub cwd: PathBuf,
+    /// How long a fresh agent pane is watched for first-run prompts.
+    pub prompt_window: Duration,
 }
 
 impl Cx {
@@ -94,6 +99,7 @@ impl Cx {
             config: p.config,
             creds: p.creds,
             cwd: p.cwd,
+            prompt_window: p.prompt_window,
             store: OnceCell::new(),
         }
     }
@@ -131,6 +137,18 @@ impl Cx {
     /// The agent running in a Box.
     pub(crate) fn engine(&self) -> &dyn Engine {
         self.engine.as_ref()
+    }
+
+    /// How long a fresh agent pane is watched for first-run prompts.
+    pub(crate) const fn prompt_window(&self) -> Duration {
+        self.prompt_window
+    }
+
+    /// This context watching for first-run prompts for `window`.
+    #[cfg(test)]
+    pub(crate) const fn with_prompt_window(mut self, window: Duration) -> Self {
+        self.prompt_window = window;
+        self
     }
 
     /// This context with `engine` in place of the current one.

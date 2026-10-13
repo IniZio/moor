@@ -9,7 +9,7 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use moor_core::activity::{HookRead, PaneRead, Probes};
-use moor_core::seam::agent_profile::FirstRunPrompt;
+use moor_core::seam::agent_profile::{FirstRunPrompt, PromptMatch};
 use moor_core::seam::engine::{Engine, EngineError, LaunchReq, SessionRef};
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::PaneRef;
@@ -95,12 +95,15 @@ impl Engine for FakeEngine {
         }))
     }
 
-    fn first_run_prompt(&self, tail: &str) -> Option<FirstRunPrompt> {
+    fn first_run_prompt(&self, tail: &str) -> Option<PromptMatch> {
         let st = self.st();
         st.prompts
             .iter()
             .find(|(t, _)| tail.contains(t.as_str()))
-            .map(|(_, p)| *p)
+            .map(|(t, p)| PromptMatch {
+                prompt: *p,
+                line: t.clone(),
+            })
     }
 
     fn launch(&self, req: &LaunchReq) -> Result<SessionRef, EngineError> {

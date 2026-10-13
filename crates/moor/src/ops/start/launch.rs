@@ -3,14 +3,13 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use moor_core::activity::PaneRead;
 use moor_core::seam::proc::Deadline;
 
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
 use moor_core::domain::task::TaskState;
-use moor_core::seam::engine::{EngineError, LaunchReq, SessionRef};
-use moor_core::seam::surface::{PaneRef, WorkspaceRef};
+use moor_core::seam::engine::{EngineError, LaunchReq};
+use moor_core::seam::surface::{PaneRef, SurfaceError, WorkspaceRef};
 use moor_core::view::{AgentLaunchView, LaunchFailure};
 use moor_core::{StartReq, TaskId, Warning};
 
@@ -23,11 +22,11 @@ use crate::store::{Store, TaskRow};
 /// Lines of a failure's output kept as its tail.
 const TAIL_LINES: usize = 10;
 
-/// How long a fresh agent pane is watched for first-run prompts.
-const PROMPT_WINDOW: Duration = Duration::from_secs(8);
-
 /// Time between two reads of the pane while watching.
 const PROMPT_POLL: Duration = Duration::from_millis(500);
+
+/// Pane lines, from the end, that the watch matches against.
+const PROMPT_LINES: usize = 40;
 
 /// Deadline of one pane read while watching.
 const PROMPT_READ: Duration = Duration::from_secs(5);
@@ -72,21 +71,12 @@ pub(super) fn begin(
             let sref = if session.id.is_empty() {
                 format!("moor-{}", id.get())
             } else {
-                session.id.clone()
+                session.id
             };
             store.begin_session(id, &sref, session.pane.as_ref().map(PaneRef::as_str))?;
             if row.launch_failure.is_some() {
                 record(store, id, Field::Clear, None)?;
             }
-            watch_prompts(
-                cx,
-                store,
-                id,
-                &SessionRef {
-                    id: sref.clone(),
-                    ..session
-                },
-            );
             Ok(AgentLaunchView {
                 launched: true,
                 session: Some(sref),
@@ -107,48 +97,73 @@ pub(super) fn begin(
 
 /// Reads the fresh agent pane for a bounded window and records a first-run prompt.
 ///
-/// A prompt becomes an `agent_prompt_blocked` event and a warning; a failed read becomes an
-/// `agent_prompt_check_failed` event. Nothing here fails the start.
-fn watch_prompts(cx: &Cx, store: &Store, id: TaskId, session: &SessionRef) {
-    if session.pane.is_none() {
+/// A prompt becomes an `agent_prompt_blocked` event and a warning that quotes its line; a
+/// failed read becomes an `agent_prompt_check_failed` event. A pane that is gone ends the
+/// watch quietly. Nothing here fails the start.
+pub(super) fn watch(cx: &Cx, store: &Store, id: TaskId, agent: &AgentLaunchView) {
+    if !agent.launched {
         return;
     }
+    let pane = match store.live_session(id) {
+        Ok(Some(row)) => row.pane,
+        Ok(None) => None,
+        Err(e) => return warn_record(cx, &e),
+    };
+    let Some(pane) = pane else { return };
+    let pane_ref = PaneRef::new(pane.clone());
     let begin = cx.clock().instant();
     loop {
-        let probes = cx.engine().probe(session, Deadline(PROMPT_READ));
-        let event = match probes.map(|p| p.pane) {
-            Ok(PaneRead::Fresh(obs)) => cx.engine().first_run_prompt(&obs.tail).map(|prompt| {
-                let name = prompt.name();
-                cx.warn(Warning {
-                    code: "agent_prompt_blocked".to_owned(),
-                    message: format!("the agent waits at a {name} prompt; answer it in its pane"),
-                });
-                ExtraEvent::AgentPromptBlocked {
-                    prompt: name.to_owned(),
-                }
-            }),
-            Ok(PaneRead::Gone | PaneRead::Absent) => return,
-            Ok(PaneRead::TimedOut) => Some(ExtraEvent::AgentPromptCheckFailed {
-                error: "the pane read failed or timed out".to_owned(),
-            }),
+        let event = match cx.surface().pane_obs(&pane_ref, Deadline(PROMPT_READ)) {
+            Ok(obs) => cx
+                .engine()
+                .first_run_prompt(&last_lines(&obs.tail, PROMPT_LINES))
+                .map(|m| {
+                    let name = m.prompt.name();
+                    cx.warn(Warning {
+                        code: "agent_prompt_blocked".to_owned(),
+                        message: format!(
+                            "the agent in pane {pane} waits at a {name} prompt: \"{}\"; answer it in the pane",
+                            m.line
+                        ),
+                    });
+                    ExtraEvent::AgentPromptBlocked {
+                        pane: pane.clone(),
+                        prompt: name.to_owned(),
+                        line: m.line,
+                    }
+                }),
+            Err(SurfaceError::NotFound) => return,
             Err(e) => Some(ExtraEvent::AgentPromptCheckFailed {
+                pane: pane.clone(),
                 error: e.to_string(),
             }),
         };
         if let Some(event) = event {
             if let Err(e) = store.apply(Decision::new(id).event(event)) {
-                cx.warn(Warning {
-                    code: "agent_prompt_record_failed".to_owned(),
-                    message: format!("could not record the first-run prompt check: {e}"),
-                });
+                warn_record(cx, &e);
             }
             return;
         }
-        if cx.clock().instant().duration_since(begin) + PROMPT_POLL > PROMPT_WINDOW {
+        if cx.clock().instant().duration_since(begin) + PROMPT_POLL > cx.prompt_window() {
             return;
         }
         cx.clock().sleep(PROMPT_POLL);
     }
+}
+
+/// Warns that the first-run prompt check could not be recorded.
+fn warn_record(cx: &Cx, e: &dyn std::fmt::Display) {
+    cx.warn(Warning {
+        code: "agent_prompt_record_failed".to_owned(),
+        message: format!("could not record the first-run prompt check: {e}"),
+    });
+}
+
+/// The last `n` lines of `text`.
+fn last_lines(text: &str, n: usize) -> String {
+    let mut lines: Vec<&str> = text.lines().rev().take(n).collect();
+    lines.reverse();
+    lines.join("\n")
 }
 
 /// What the Engine needs to launch `row`'s agent; none unless the Task is Working with a ready Box.

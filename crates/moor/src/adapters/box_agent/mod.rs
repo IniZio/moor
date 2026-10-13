@@ -8,7 +8,7 @@ mod probe;
 use std::sync::Arc;
 
 use moor_core::activity::Probes;
-use moor_core::seam::agent_profile::{AgentProfile, FirstRunPrompt};
+use moor_core::seam::agent_profile::{AgentProfile, PromptMatch};
 use moor_core::seam::driver::Driver;
 use moor_core::seam::engine::{Engine, EngineError, LaunchReq, SessionRef};
 use moor_core::seam::proc::Deadline;
@@ -50,7 +50,7 @@ impl Engine for BoxAgent {
         )
     }
 
-    fn first_run_prompt(&self, tail: &str) -> Option<FirstRunPrompt> {
+    fn first_run_prompt(&self, tail: &str) -> Option<PromptMatch> {
         self.profile.first_run_prompt(tail)
     }
 

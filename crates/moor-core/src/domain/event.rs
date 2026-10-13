@@ -177,11 +177,17 @@ pub enum Event {
     },
     /// The agent waits at a first-run prompt.
     AgentPromptBlocked {
+        /// The agent's pane.
+        pane: String,
         /// The prompt, by name.
         prompt: String,
+        /// The pane line that showed it.
+        line: String,
     },
     /// Reading the agent's pane for first-run prompts failed.
     AgentPromptCheckFailed {
+        /// The agent's pane.
+        pane: String,
         /// What went wrong.
         error: String,
     },

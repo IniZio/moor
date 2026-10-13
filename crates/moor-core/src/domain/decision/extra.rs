@@ -72,11 +72,17 @@ pub enum ExtraEvent {
     },
     /// The agent waits at a first-run prompt.
     AgentPromptBlocked {
+        /// The agent's pane.
+        pane: String,
         /// The prompt, by name.
         prompt: String,
+        /// The pane line that showed it.
+        line: String,
     },
     /// Reading the agent's pane for first-run prompts failed.
     AgentPromptCheckFailed {
+        /// The agent's pane.
+        pane: String,
         /// What went wrong.
         error: String,
     },
@@ -112,8 +118,12 @@ impl From<ExtraEvent> for Event {
             ExtraEvent::RunStarted { run } => Self::RunStarted { run },
             ExtraEvent::Attached => Self::Attached,
             ExtraEvent::SessionsStopped { sessions } => Self::SessionsStopped { sessions },
-            ExtraEvent::AgentPromptBlocked { prompt } => Self::AgentPromptBlocked { prompt },
-            ExtraEvent::AgentPromptCheckFailed { error } => Self::AgentPromptCheckFailed { error },
+            ExtraEvent::AgentPromptBlocked { pane, prompt, line } => {
+                Self::AgentPromptBlocked { pane, prompt, line }
+            }
+            ExtraEvent::AgentPromptCheckFailed { pane, error } => {
+                Self::AgentPromptCheckFailed { pane, error }
+            }
         }
     }
 }
@@ -151,8 +161,12 @@ impl TryFrom<Event> for ExtraEvent {
             Event::RunStarted { run } => Ok(Self::RunStarted { run }),
             Event::Attached => Ok(Self::Attached),
             Event::SessionsStopped { sessions } => Ok(Self::SessionsStopped { sessions }),
-            Event::AgentPromptBlocked { prompt } => Ok(Self::AgentPromptBlocked { prompt }),
-            Event::AgentPromptCheckFailed { error } => Ok(Self::AgentPromptCheckFailed { error }),
+            Event::AgentPromptBlocked { pane, prompt, line } => {
+                Ok(Self::AgentPromptBlocked { pane, prompt, line })
+            }
+            Event::AgentPromptCheckFailed { pane, error } => {
+                Ok(Self::AgentPromptCheckFailed { pane, error })
+            }
             e @ (Event::Started
             | Event::Rejected { .. }
             | Event::WaitingForBox { .. }
