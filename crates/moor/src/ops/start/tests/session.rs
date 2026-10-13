@@ -253,6 +253,7 @@ fn no_agent_and_no_goal_launch_nothing() {
     let w = with_engine(&engine);
     let flagged = StartReq {
         no_agent: true,
+        resume: false,
         ..goal_req("a")
     };
     run(&w.cx, &flagged).unwrap();

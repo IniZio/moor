@@ -5,8 +5,8 @@ use moor_core::activity::{PaneObs, PaneStatus};
 use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::seam::agent_profile::FirstRunPrompt;
 use moor_core::seam::engine::{EngineError, LaunchReq, SessionRef};
-use moor_core::seam::surface::{PaneRef, SurfaceError};
-use moor_core::{BoxHandle, BoxPath, StartReq, TaskId};
+use moor_core::seam::surface::{PaneRef, ResumeOutcome, SurfaceError};
+use moor_core::{BoxHandle, BoxPath, ErrorKind, StartReq, TaskId};
 
 use super::{req, world, World};
 use crate::ops::start::run;
@@ -375,4 +375,104 @@ fn a_given_goal_replaces_the_stored_goal_when_there_is_no_session() {
     assert_eq!(relaunch_of(&engine).goal.as_deref(), Some("second goal"));
     let row = store.task(id).unwrap().unwrap();
     assert_eq!(row.goal.as_deref(), Some("second goal"));
+}
+
+/// A resume request for `demo`.
+fn resume_req() -> StartReq {
+    StartReq {
+        resume: true,
+        ..req("demo")
+    }
+}
+
+/// The resume registrations the surface saw.
+fn registrations(w: &World) -> Vec<String> {
+    w.surface
+        .calls()
+        .into_iter()
+        .filter(|c| c.starts_with("register_resume"))
+        .collect()
+}
+
+#[test]
+fn resume_without_a_stored_session_is_refused() {
+    let (w, engine, _id) = started();
+    gone(&w);
+    let e = run(&w.cx, &resume_req()).unwrap_err();
+    assert_eq!(e.kind, ErrorKind::Refused);
+    assert_eq!(e.error.to_string(), "no agent session to resume");
+    assert_eq!(engine.launches().len(), 1);
+}
+
+#[test]
+fn resume_with_an_empty_stored_session_is_refused() {
+    let (w, _engine, id) = started();
+    set_agent_session(&w, id, "");
+    let e = run(&w.cx, &resume_req()).unwrap_err();
+    assert_eq!(e.error.to_string(), "no agent session to resume");
+}
+
+#[test]
+fn resume_of_a_task_that_does_not_exist_is_refused() {
+    let w = world(FakeDriver::new());
+    let e = run(&w.cx, &resume_req()).unwrap_err();
+    assert_eq!(e.error.to_string(), "no agent session to resume");
+}
+
+#[test]
+fn resume_on_a_live_pane_registers_again_and_does_not_launch() {
+    let (w, engine, id) = started();
+    set_agent_session(&w, id, "agent-1");
+    w.surface.have_pane("p-1");
+    w.surface.push_pane_obs("p-1", Ok(obs(None)));
+    let v = run(&w.cx, &resume_req()).unwrap();
+    assert!(!v.agent.launched);
+    assert_eq!(engine.launches().len(), 1);
+    assert_eq!(registrations(&w), ["register_resume p-1 claude agent-1"]);
+}
+
+#[test]
+fn resume_on_a_gone_pane_launches_the_resume_and_registers_the_new_pane() {
+    let (w, engine, id) = started();
+    set_agent_session(&w, id, "agent-1");
+    w.surface.have_pane("p-2");
+    gone(&w);
+    let v = run(&w.cx, &resume_req()).unwrap();
+    assert!(v.agent.launched);
+    assert_eq!(relaunch_of(&engine).resume.as_deref(), Some("agent-1"));
+    assert_eq!(registrations(&w), ["register_resume p-2 claude agent-1"]);
+}
+
+#[test]
+fn a_fresh_launch_registers_nothing_without_a_session_id() {
+    let (w, _engine, _id) = started();
+    assert!(registrations(&w).is_empty());
+}
+
+#[test]
+fn a_relaunch_that_resumes_registers_the_new_pane() {
+    let (w, _engine, id) = started();
+    set_agent_session(&w, id, "agent-1");
+    w.surface.have_pane("p-2");
+    gone(&w);
+    run(&w.cx, &req("demo")).unwrap();
+    assert_eq!(registrations(&w), ["register_resume p-2 claude agent-1"]);
+}
+
+#[test]
+fn a_rejected_registration_is_a_warning_not_a_failure() {
+    let (w, _engine, id) = started();
+    set_agent_session(&w, id, "agent-1");
+    w.surface.have_pane("p-1");
+    w.surface.push_pane_obs("p-1", Ok(obs(None)));
+    w.surface
+        .set_resume_reply(ResumeOutcome::Rejected("invalid_resume_argv".into()));
+    w.cx.take_warnings();
+    run(&w.cx, &resume_req()).unwrap();
+    let warned = w.cx.take_warnings();
+    let msg = warned
+        .iter()
+        .find(|x| x.code == "resume_not_registered")
+        .unwrap();
+    assert!(msg.message.ends_with("invalid_resume_argv"), "{msg:?}");
 }

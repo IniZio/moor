@@ -3,6 +3,7 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
+use moor_core::activity::PaneStatus;
 use moor_core::seam::proc::Deadline;
 
 use moor_core::domain::boxes::BoxState;
@@ -16,6 +17,7 @@ use moor_core::{StartReq, TaskId, Warning};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::provision::{nonce, recorded_workdir, reread};
+use crate::ops::common::resume;
 use crate::ops::common::view::rfc3339;
 use crate::store::{Store, TaskRow};
 
@@ -48,12 +50,18 @@ pub(super) fn run(
     model: &dyn Fn() -> Result<Option<String>, CommandError>,
 ) -> Result<AgentLaunchView, CommandError> {
     let row = reread(store, id)?;
-    if req.no_agent || row.goal.is_none() || store.live_session(id)?.is_some() {
+    let resume = row
+        .agent_session_id
+        .clone()
+        .filter(|s| req.resume && req.goal.is_none() && !s.is_empty());
+    if req.no_agent || (row.goal.is_none() && resume.is_none()) || store.live_session(id)?.is_some()
+    {
         return Ok(AgentLaunchView::default());
     }
     let Some(mut launch) = launch_req(cx, &row, setup_exit) else {
         return Ok(AgentLaunchView::default());
     };
+    launch.resume = resume;
     launch.model = model()?;
     begin(cx, store, &row, &launch)
 }
@@ -73,7 +81,17 @@ pub(super) fn begin(
             } else {
                 session.id
             };
-            store.begin_session(id, &sref, session.pane.as_ref().map(PaneRef::as_str))?;
+            let pane = session.pane.as_ref().map(PaneRef::as_str);
+            store.begin_session(id, &sref, pane)?;
+            if let Some(pane) = pane {
+                resume::register(
+                    cx,
+                    &row.name,
+                    pane,
+                    launch.resume.as_deref(),
+                    PaneStatus::Working,
+                );
+            }
             if row.launch_failure.is_some() {
                 record(store, id, Field::Clear, None)?;
             }
