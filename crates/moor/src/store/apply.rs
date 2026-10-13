@@ -314,6 +314,7 @@ fn box_field_sets(s: &Fields) -> Sets {
         ),
         ("workdir", text(&s.box_workdir)),
         ("egress_enforced", flag(&s.egress_enforced)),
+        ("sleep_reason", text(&s.box_sleep_reason)),
     ];
     all.into_iter().filter_map(|(c, v)| Some((c, v?))).collect()
 }
