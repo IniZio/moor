@@ -37,6 +37,8 @@ pub(crate) trait ForwardHandler: Send + Sync {
 struct Shared {
     /// Routes the gate admits.
     table: RouteTable,
+    /// The Task repo (`owner/name`) forge calls are limited to.
+    task_repo: Option<String>,
     /// Per-Task secret clients must present.
     nonce: Secret,
     /// One line per request.
@@ -85,11 +87,13 @@ impl Proxy {
         log: ProxyLog,
         handler: Arc<dyn ForwardHandler>,
         max_conns: usize,
+        task_repo: Option<String>,
     ) -> io::Result<Self> {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))?;
         let port = listener.local_addr()?.port();
         let shared = Arc::new(Shared {
             table,
+            task_repo,
             nonce,
             log,
             handler,
@@ -160,6 +164,7 @@ fn serve(shared: &Shared, mut stream: TcpStream) {
         target: &head.target,
         headers: &head.header_pairs(),
         nonce: &shared.nonce,
+        task_repo: shared.task_repo.as_deref(),
     });
     match decision {
         GateDecision::Reject(reject) => {
