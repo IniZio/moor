@@ -1,11 +1,13 @@
 //! Store rows to the core views.
 
+use moor_core::activity::AgentState;
 use moor_core::domain::boxes::BoxState;
 use moor_core::seam::clock::Ts;
-use moor_core::view::{BoxSleepView, BoxView, EventView, RunView, TaskView};
+use moor_core::view::{AgentView, BoxSleepView, BoxView, EventView, RunView, TaskView};
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
+use crate::ops::common::activity::Reading;
 use crate::store::{BoxRow, EventRow, RunRow, TaskRow};
 
 #[cfg(test)]
@@ -21,6 +23,23 @@ pub(crate) fn rfc3339(ts: Ts) -> String {
         .ok()
         .and_then(|t| t.format(&Rfc3339).ok())
         .unwrap_or_else(|| ms.to_string())
+}
+
+/// Map a reading to the agent view; none when the Task has no agent.
+pub(crate) fn agent_view(reading: &Reading) -> Option<AgentView> {
+    let activity = reading.activity.as_ref()?;
+    let (exit_code, waiting_for) = match &activity.state {
+        AgentState::Exited { code } => (Some(*code), None),
+        AgentState::Blocked { waiting_for } => (None, Some(waiting_for.clone())),
+        _ => (None, None),
+    };
+    Some(AgentView {
+        pane: reading.pane.as_str().to_owned(),
+        state: activity.state.as_str().to_owned(),
+        source: activity.source.as_str().to_owned(),
+        exit_code,
+        waiting_for,
+    })
 }
 
 /// The handle to show: live, or the attempted one once the Box failed.
