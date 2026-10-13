@@ -1,6 +1,6 @@
 //! Engine seam: the agent session running in a Box.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::activity::Probes;
 use crate::name::{BoxHandle, BoxPath, TaskName};
@@ -92,6 +92,9 @@ pub enum EngineError {
     /// The Task has no agent session.
     #[error("no agent session")]
     NoSession,
+    /// The transcript could not be archived or copied out.
+    #[error("transcript: {0}")]
+    Transcript(String),
 }
 
 /// The agent running in a Box.
@@ -127,6 +130,12 @@ pub trait Engine: Send + Sync {
         steer: &Steer,
         deadline: Deadline,
     ) -> Result<SteerOutcome, EngineError>;
+
+    /// Archives the agent's transcript in the Box and copies the archive to `dest` on the host.
+    ///
+    /// # Errors
+    /// [`EngineError::Transcript`] names the step that failed.
+    fn transcript(&self, s: &SessionRef, dest: &Path) -> Result<(), EngineError>;
 }
 
 #[cfg(test)]

@@ -191,6 +191,22 @@ pub enum Event {
         /// What went wrong.
         error: String,
     },
+    /// The agent's transcript was saved on the host.
+    TranscriptSaved {
+        /// What ended the session: `relaunch` or `close`.
+        trigger: String,
+        /// The host path of the archive.
+        path: String,
+        /// The digest of the archive.
+        digest: String,
+    },
+    /// The agent's transcript could not be saved.
+    TranscriptFailed {
+        /// What ended the session: `relaunch` or `close`.
+        trigger: String,
+        /// What went wrong.
+        error: String,
+    },
 }
 
 impl Event {
@@ -229,6 +245,8 @@ impl Event {
             Self::SessionsStopped { .. } => "sessions_stopped",
             Self::AgentPromptBlocked { .. } => "agent_prompt_blocked",
             Self::AgentPromptCheckFailed { .. } => "agent_prompt_check_failed",
+            Self::TranscriptSaved { .. } => "transcript_saved",
+            Self::TranscriptFailed { .. } => "transcript_failed",
         }
     }
 

@@ -107,6 +107,15 @@ fn all_events() -> Vec<Event> {
             pane: s("p"),
             error: s("e"),
         },
+        Event::TranscriptSaved {
+            trigger: s("close"),
+            path: s("p"),
+            digest: s("d"),
+        },
+        Event::TranscriptFailed {
+            trigger: s("close"),
+            error: s("e"),
+        },
     ]
 }
 
@@ -154,6 +163,8 @@ const fn event_index(e: &Event) -> usize {
         Event::SessionsStopped { .. } => 28,
         Event::AgentPromptBlocked { .. } => 29,
         Event::AgentPromptCheckFailed { .. } => 30,
+        Event::TranscriptSaved { .. } => 31,
+        Event::TranscriptFailed { .. } => 32,
     }
 }
 
@@ -161,7 +172,7 @@ const fn event_index(e: &Event) -> usize {
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 31);
+    assert_eq!(all.len(), 33);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }
