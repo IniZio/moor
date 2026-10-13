@@ -6,6 +6,8 @@ use std::time::Duration;
 use moor_core::activity::{
     decide, may_apply_quiet, Activity, AgentState, HookRead, PaneRead, Probes,
 };
+use moor_core::domain::decision::Decision;
+use moor_core::domain::task::{TaskInput, TaskState};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::engine::SessionRef;
 use moor_core::seam::proc::Deadline;
@@ -151,6 +153,27 @@ pub(crate) fn read(
         may_quiet,
         run_in_flight: in_flight,
     })
+}
+
+/// Move the Task's state to match `reading`.
+///
+/// A Working Task goes Idle only when the reading `may_quiet` and is not busy; an Idle Task
+/// goes back to Working when the reading is busy. Nothing else decides quiet: a gone pane, an
+/// idle status or a dropped hook read never idles a Task. If the row changed since the read,
+/// the store refuses the step and the Task is left as the other writer set it.
+///
+/// # Errors
+/// A store failure other than a refused step.
+pub(crate) fn settle(store: &Store, row: &TaskRow, reading: &Reading) -> Result<(), CommandError> {
+    let input = match row.state {
+        TaskState::Working if !reading.busy() && reading.may_quiet => TaskInput::AgentQuiet,
+        TaskState::Idle if reading.busy() => TaskInput::AgentBusy,
+        _ => return Ok(()),
+    };
+    match store.apply(Decision::new(row.id).task_input(input)) {
+        Ok(_) | Err(StoreError::Illegal(_)) => Ok(()),
+        Err(e) => Err(e.into()),
+    }
 }
 
 /// The session as the Engine needs it; none when the Box cannot be reached.
