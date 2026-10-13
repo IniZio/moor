@@ -5,7 +5,9 @@ pub(crate) mod claude;
 mod launch;
 mod probe;
 mod steer;
+mod transcript;
 
+use std::path::Path;
 use std::sync::Arc;
 
 use moor_core::activity::Probes;
@@ -83,5 +85,9 @@ impl Engine for BoxAgent {
             steer,
             deadline,
         )
+    }
+
+    fn transcript(&self, s: &SessionRef, dest: &Path) -> Result<(), EngineError> {
+        transcript::save(self.driver.as_ref(), self.profile.as_ref(), s, dest)
     }
 }

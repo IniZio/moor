@@ -6,7 +6,8 @@
 )]
 
 use std::collections::{HashMap, VecDeque};
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::path::Path;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use moor_core::activity::{HookRead, PaneRead, Probes};
 use moor_core::seam::agent_profile::{FirstRunPrompt, PromptMatch};
@@ -25,6 +26,10 @@ struct State {
     prompts: Vec<(String, FirstRunPrompt)>,
     steer_results: VecDeque<Result<SteerOutcome, EngineError>>,
     steers: Vec<(String, Steer)>,
+    transcripts: Vec<String>,
+    transcript_text: Option<String>,
+    fail_transcript: Option<EngineError>,
+    on_transcript: Option<Arc<dyn Fn() + Send + Sync>>,
 }
 
 /// Scripted Engine: probes are served per session id and counted.
@@ -76,6 +81,28 @@ impl FakeEngine {
     /// Every steer so far as the session id and what was sent, in call order.
     pub(crate) fn steers(&self) -> Vec<(String, Steer)> {
         self.st().steers.clone()
+    }
+
+    /// Every transcript request writes `text` to its destination.
+    pub(crate) fn transcript_text(self, text: &str) -> Self {
+        self.st().transcript_text = Some(text.to_owned());
+        self
+    }
+
+    /// The next transcript request fails once with `e`.
+    pub(crate) fn fail_transcript(self, e: EngineError) -> Self {
+        self.st().fail_transcript = Some(e);
+        self
+    }
+
+    /// Runs `f` inside every transcript request, before it is served.
+    pub(crate) fn on_transcript(&self, f: impl Fn() + Send + Sync + 'static) {
+        self.st().on_transcript = Some(Arc::new(f));
+    }
+
+    /// The session ids transcripts were requested for, in call order.
+    pub(crate) fn transcripts(&self) -> Vec<String> {
+        self.st().transcripts.clone()
     }
 
     /// Every launch request so far, in call order.
@@ -145,6 +172,27 @@ impl Engine for FakeEngine {
             submit_retried: false,
             submit_checked: true,
         }))
+    }
+
+    fn transcript(&self, s: &SessionRef, dest: &Path) -> Result<(), EngineError> {
+        let (hook, fail, text) = {
+            let mut st = self.st();
+            st.transcripts.push(s.id.clone());
+            (
+                st.on_transcript.clone(),
+                st.fail_transcript.take(),
+                st.transcript_text.clone(),
+            )
+        };
+        if let Some(f) = hook {
+            f();
+        }
+        if let Some(e) = fail {
+            return Err(e);
+        }
+        text.map_or(Ok(()), |t| {
+            std::fs::write(dest, t).map_err(|e| EngineError::Transcript(e.to_string()))
+        })
     }
 }
 

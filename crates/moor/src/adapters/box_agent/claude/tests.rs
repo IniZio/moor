@@ -207,3 +207,12 @@ fn operating_system_commands_are_stripped_from_the_matched_line() {
         "Press Enter to continue"
     );
 }
+
+#[test]
+fn transcript_script_archives_the_project_sessions_to_the_given_path() {
+    let script = Claude.transcript_script(".moor/t.tgz");
+    assert!(script.contains("$HOME/.claude/projects/$enc"));
+    assert!(script.contains("*.jsonl"));
+    assert!(script.contains("tar czf \"$OLDPWD/.moor/t.tgz\""));
+    assert!(script.contains("exit 3"));
+}
