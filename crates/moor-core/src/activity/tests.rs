@@ -23,21 +23,27 @@ fn rec(kind: HookKind) -> HookRecord {
     HookRecord {
         kind,
         session_id: None,
+        message: None,
         at: ts(1),
     }
 }
 
-fn blocked(text: &str) -> HookKind {
-    HookKind::Blocked {
-        waiting_for: text.to_owned(),
+/// A blocked report that carries `text` as its message.
+fn said(text: &str) -> HookRecord {
+    HookRecord {
+        message: Some(text.to_owned()),
+        ..rec(HookKind::Blocked)
     }
 }
 
 fn waiting(text: &str) -> AgentState {
     AgentState::Blocked {
-        waiting_for: text.to_owned(),
+        waiting_for: Some(text.to_owned()),
     }
 }
+
+/// Blocked with nothing to show.
+const SILENT: AgentState = AgentState::Blocked { waiting_for: None };
 
 fn fresh(kind: HookKind) -> HookRead {
     HookRead::Fresh(rec(kind))
@@ -47,6 +53,17 @@ fn obs(status: PaneStatus, tail: &str) -> PaneRead {
     PaneRead::Fresh(PaneObs {
         status,
         tail: tail.to_owned(),
+        prompt: None,
+        exit_marker: None,
+    })
+}
+
+/// A pane whose profile read `prompt` as the pending question.
+fn asking(status: PaneStatus, tail: &str, prompt: &str) -> PaneRead {
+    PaneRead::Fresh(PaneObs {
+        status,
+        tail: tail.to_owned(),
+        prompt: Some(prompt.to_owned()),
         exit_marker: None,
     })
 }
@@ -55,6 +72,7 @@ fn exited(code: i32) -> PaneRead {
     PaneRead::Fresh(PaneObs {
         status: PaneStatus::Unknown,
         tail: format!("moor: agent exited {code}"),
+        prompt: None,
         exit_marker: Some(code),
     })
 }
@@ -86,6 +104,14 @@ impl Case {
 
     fn cache(mut self, kind: HookKind, secs_ago: i64) -> Self {
         self.cache = Some(cached(kind, secs_ago));
+        self
+    }
+
+    fn cache_record(mut self, record: HookRecord, secs_ago: i64) -> Self {
+        self.cache = Some(HookCache {
+            record,
+            at: ts(secs_ago),
+        });
         self
     }
 

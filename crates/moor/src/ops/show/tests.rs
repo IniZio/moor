@@ -256,11 +256,13 @@ fn hook(cx: &Cx, kind: HookKind) -> Probes {
         hook: HookRead::Fresh(HookRecord {
             kind,
             session_id: None,
+            message: None,
             at: Ts::from_millis(cx.clock().now().as_millis() - 1000),
         }),
         pane: PaneRead::Fresh(PaneObs {
             status: PaneStatus::Unknown,
             tail: String::new(),
+            prompt: None,
             exit_marker: None,
         }),
     }
@@ -327,6 +329,7 @@ fn pane_only(status: PaneStatus) -> Probes {
         pane: PaneRead::Fresh(PaneObs {
             status,
             tail: "Allow this edit?".into(),
+            prompt: None,
             exit_marker: None,
         }),
     }

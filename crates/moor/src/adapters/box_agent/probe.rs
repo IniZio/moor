@@ -20,7 +20,7 @@ pub(super) fn probe(
     deadline: Deadline,
 ) -> Result<Probes, EngineError> {
     let hook = read_hook(driver, profile, s)?;
-    let pane = read_pane(surface, s, deadline);
+    let pane = read_pane(surface, profile, s, deadline);
     Ok(Probes { hook, pane })
 }
 
@@ -45,12 +45,20 @@ fn read_hook(
 }
 
 /// The pane read; a missing pane is `Gone`, no pane at all is `Absent`, a failed read is `TimedOut`.
-fn read_pane(surface: &dyn Surface, s: &SessionRef, deadline: Deadline) -> PaneRead {
+fn read_pane(
+    surface: &dyn Surface,
+    profile: &dyn AgentProfile,
+    s: &SessionRef,
+    deadline: Deadline,
+) -> PaneRead {
     let Some(pane) = &s.pane else {
         return PaneRead::Absent;
     };
     match surface.pane_obs(pane, deadline) {
-        Ok(obs) => PaneRead::Fresh(obs),
+        Ok(mut obs) => {
+            obs.prompt = profile.pane_prompt(&obs.tail);
+            PaneRead::Fresh(obs)
+        }
         Err(SurfaceError::NotFound) => PaneRead::Gone,
         Err(_) => PaneRead::TimedOut,
     }
