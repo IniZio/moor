@@ -6,6 +6,7 @@ use std::time::Duration;
 use moor_core::boxscript::teardown::teardown_script;
 use moor_core::config::Flags;
 use moor_core::domain::boxes::BoxState;
+use moor_core::domain::decision::{Decision, ExtraEvent};
 use moor_core::domain::run::SyncMode;
 
 use moor_core::decide::close::{close_gate, release_outcome, CloseFacts, ClosePlan, ReleaseResult};
@@ -95,6 +96,9 @@ fn stop_agent(cx: &Cx, store: &Store, row: &TaskRow) -> Result<bool, CommandErro
         }
     }
     store.end_session(session.id, None, None)?;
+    store.apply(Decision::new(row.id).event(ExtraEvent::SessionsStopped {
+        sessions: vec![session.session_ref],
+    }))?;
     Ok(true)
 }
 
