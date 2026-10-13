@@ -131,7 +131,7 @@ pub enum HookRead {
     Fresh(HookRecord),
     /// No report is there.
     Absent,
-    /// The read missed its deadline.
+    /// The read missed its deadline or failed.
     TimedOut,
 }
 
@@ -144,7 +144,7 @@ pub enum PaneRead {
     Gone,
     /// There is no pane to observe.
     Absent,
-    /// The observation missed its deadline.
+    /// The observation missed its deadline or failed.
     TimedOut,
 }
 
