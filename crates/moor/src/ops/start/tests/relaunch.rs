@@ -437,6 +437,19 @@ fn resume_on_a_live_pane_registers_again_and_does_not_launch() {
 }
 
 #[test]
+fn a_live_resume_records_the_registration_and_a_later_settle_sends_no_second_one() {
+    let (w, _engine, id) = started();
+    set_agent_session(&w, id, "agent-1");
+    w.surface.have_pane("p-1");
+    w.surface.push_pane_obs("p-1", Ok(obs(None)));
+    run(&w.cx, &resume_req()).unwrap();
+    let live = w.cx.store().unwrap().live_session(id).unwrap().unwrap();
+    assert_eq!(live.registered_agent_session.as_deref(), Some("agent-1"));
+    run(&w.cx, &req("demo")).unwrap();
+    assert_eq!(registrations(&w), ["register_resume p-1 claude agent-1"]);
+}
+
+#[test]
 fn resume_on_a_gone_pane_launches_the_resume_and_registers_the_new_pane() {
     let (w, engine, id) = started();
     set_agent_session(&w, id, "agent-1");
