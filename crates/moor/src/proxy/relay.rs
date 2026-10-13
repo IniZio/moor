@@ -3,12 +3,14 @@
 //! The client body and the upstream body are both streamed through fixed
 //! buffers. Redirects are returned to the client unchanged, never followed.
 
+mod capped;
 mod chunked;
 #[cfg(test)]
 mod tests;
 
 use std::io::{BufReader, Cursor, Read, Write};
 use std::net::{Shutdown, TcpStream};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -18,6 +20,7 @@ use ureq::http::{HeaderName, HeaderValue, Method, Request, Response};
 use ureq::tls::{RootCerts, TlsConfig, TlsProvider};
 use ureq::{Agent, Body, SendBody};
 
+use self::capped::{is_cap_exceeded, CappedReader};
 use self::chunked::ChunkedReader;
 use super::head::Head;
 use super::server::{Forward, ForwardHandler};
@@ -51,6 +54,18 @@ enum Failure {
     Unreachable,
     /// The client's body framing is unusable.
     Framing,
+    /// The client's body is larger than the route allows.
+    TooLarge,
+}
+
+/// Largest request body the route accepts, in bytes. The listener applies
+/// the same caps to a declared `content-length`.
+fn body_cap(route: &RouteId) -> u64 {
+    if route.as_str() == "forge.git" {
+        2 * 1024 * 1024 * 1024
+    } else {
+        32 * 1024 * 1024
+    }
 }
 
 /// Sends admitted requests to their upstream and streams the answer back.
@@ -89,6 +104,9 @@ impl Relay {
         let method =
             Method::from_bytes(plan.method.as_bytes()).map_err(|_| Failure::Unreachable)?;
         let framing = Framing::of(head).ok_or(Failure::Framing)?;
+        if matches!(framing, Framing::Length(n) if n > body_cap(&plan.route)) {
+            return Err(Failure::TooLarge);
+        }
         let mut builder = Request::builder().method(method).uri(url);
         for (name, value) in &plan.headers {
             if !FRAMING.iter().any(|f| name.eq_ignore_ascii_case(f)) {
@@ -103,21 +121,31 @@ impl Relay {
         }
         let request = builder.body(()).map_err(|_| Failure::Unreachable)?;
         let (parts, ()) = request.into_parts();
-        let source = Cursor::new(prefix).chain(stream);
+        let cap = body_cap(&plan.route);
+        let tripped = Arc::new(AtomicBool::new(false));
         let result = match framing {
             Framing::None => self.agent.run(Request::from_parts(parts, SendBody::none())),
             Framing::Length(n) => {
-                let mut body = source.take(n);
+                let mut body = Cursor::new(prefix).chain(stream).take(n);
                 self.agent
                     .run(Request::from_parts(parts, SendBody::from_reader(&mut body)))
             }
             Framing::Chunked => {
-                let mut body = ChunkedReader::new(BufReader::new(source));
+                let decoded = ChunkedReader::new(BufReader::new(Cursor::new(prefix).chain(stream)));
+                let mut body = CappedReader::new(decoded, cap, tripped.clone());
                 self.agent
                     .run(Request::from_parts(parts, SendBody::from_reader(&mut body)))
             }
         };
-        result.map_err(|_| Failure::Unreachable)
+        result.map_err(|err| {
+            if tripped.load(Ordering::SeqCst)
+                || matches!(&err, ureq::Error::Io(io) if is_cap_exceeded(io))
+            {
+                Failure::TooLarge
+            } else {
+                Failure::Unreachable
+            }
+        })
     }
 
     /// Resolves the credential into a sensitive `Authorization` value.
@@ -284,6 +312,11 @@ fn write_failure(stream: &mut TcpStream, failure: &Failure, route: &RouteId) -> 
             400,
             "Bad Request",
             "unusable request body framing\n".to_owned(),
+        ),
+        Failure::TooLarge => (
+            413,
+            "Content Too Large",
+            "request body exceeds the route limit\n".to_owned(),
         ),
     };
     let text = format!(
