@@ -4,10 +4,12 @@ mod errors;
 mod pane;
 #[cfg_attr(not(test), expect(dead_code, reason = "wired in wire.rs"))]
 mod parse;
+mod resume;
 #[cfg(test)]
 mod tests;
 
 use std::path::Path;
+use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use std::thread::sleep;
 use std::time::Duration;
@@ -16,7 +18,8 @@ use moor_core::activity::PaneObs;
 use moor_core::name::TaskName;
 use moor_core::seam::proc::{Deadline, Proc, ProcSpec, Tool};
 use moor_core::seam::surface::{
-    workspace_label, Key, PaneCmd, PaneRef, Surface, SurfaceError, WorkspaceRef, Worktree,
+    workspace_label, Key, PaneCmd, PaneRef, ResumeOutcome, ResumeReg, Surface, SurfaceError,
+    WorkspaceRef, Worktree,
 };
 
 use self::errors::{map_error, HerdrFailure};
@@ -38,6 +41,8 @@ pub(crate) struct Herdr {
     session: String,
     /// Host variables herdr needs, added to every call.
     extra_env: Vec<(String, String)>,
+    /// Last sequence number sent with a report.
+    seq: AtomicU64,
 }
 
 /// Quotes `s` for a POSIX shell when it needs it.
@@ -63,6 +68,7 @@ impl Herdr {
             proc,
             session,
             extra_env,
+            seq: AtomicU64::new(0),
         }
     }
 
@@ -275,6 +281,14 @@ impl Surface for Herdr {
         let mut args = vec!["pane", "send-keys", pane.as_str()];
         args.extend(names.iter().map(String::as_str));
         self.call(&args).map(drop)
+    }
+
+    fn register_resume(
+        &self,
+        pane: &PaneRef,
+        reg: &ResumeReg,
+    ) -> Result<ResumeOutcome, SurfaceError> {
+        self.register(pane, reg)
     }
 
     fn close_pane(&self, pane: &PaneRef) -> Result<(), SurfaceError> {

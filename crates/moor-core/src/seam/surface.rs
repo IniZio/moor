@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::activity::PaneObs;
+use crate::activity::{PaneObs, PaneStatus};
 use crate::name::TaskName;
 use crate::seam::proc::Deadline;
 
@@ -62,6 +62,28 @@ pub struct PaneCmd {
     pub cwd: Option<PathBuf>,
     /// Extra environment variables.
     pub env: Vec<(String, String)>,
+}
+
+/// What the multiplexer needs to restart an agent session in a pane.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResumeReg {
+    /// Agent label.
+    pub agent: String,
+    /// Status reported with the registration.
+    pub state: PaneStatus,
+    /// The agent's session id.
+    pub session_id: String,
+    /// The task `moor start --resume` restarts.
+    pub task: TaskName,
+}
+
+/// How the multiplexer answered a resume registration.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ResumeOutcome {
+    /// The resume command is registered.
+    Registered,
+    /// The multiplexer declined the registration, with its reason code.
+    Rejected(String),
 }
 
 /// A key press sent to a pane.
@@ -169,6 +191,18 @@ pub trait Surface: Send + Sync {
     /// # Errors
     /// Returns [`SurfaceError::NotFound`] when the pane is gone.
     fn send_keys(&self, pane: &PaneRef, keys: &[Key]) -> Result<(), SurfaceError>;
+
+    /// Registers how to restart the agent session in `pane`.
+    ///
+    /// A refusal by the multiplexer is [`ResumeOutcome::Rejected`], not an error.
+    ///
+    /// # Errors
+    /// Returns [`SurfaceError::NotFound`] when the pane is gone.
+    fn register_resume(
+        &self,
+        pane: &PaneRef,
+        reg: &ResumeReg,
+    ) -> Result<ResumeOutcome, SurfaceError>;
 
     /// Closes `pane`.
     ///
