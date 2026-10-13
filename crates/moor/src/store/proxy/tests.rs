@@ -11,7 +11,7 @@ use moor_core::seam::rng::Rng;
 use moor_core::secret::Secret;
 use moor_core::{TaskId, TaskName};
 
-use super::{Lease, ProxyPorts, BOX_PORT_MAX, BOX_PORT_MIN};
+use super::{Fenced, Lease, ProxyPorts, Reserve, BOX_PORT_MAX, BOX_PORT_MIN};
 use crate::store::{Store, StoreError};
 use crate::testing::clock::FakeClock;
 use crate::testing::rng::FakeRng;
@@ -70,9 +70,10 @@ impl Rng for Scripted {
 fn reserved(dir: &Path) -> (Store, Arc<FakeClock>, TaskId) {
     let (store, clock) = open(dir);
     let id = add(&store, "t");
-    store
-        .reserve(id, &secret(NONCE), &FakeRng::default())
+    let outcome = store
+        .reserve(id, &secret(NONCE), &FakeRng::default(), LEASE)
         .unwrap();
+    assert!(matches!(outcome, Reserve::Reserved(_)), "{outcome:?}");
     (store, clock, id)
 }
 
@@ -92,9 +93,13 @@ fn reserve_returns_port_in_range_and_stores_nonce_unready() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let id = add(&store, "t");
-    let port = store
-        .reserve(id, &secret(NONCE), &FakeRng::default())
+    let outcome = store
+        .reserve(id, &secret(NONCE), &FakeRng::default(), LEASE)
         .unwrap();
+    let port = match outcome {
+        Reserve::Reserved(port) => port,
+        Reserve::Leased { .. } => 0,
+    };
     assert!((BOX_PORT_MIN..=BOX_PORT_MAX).contains(&port), "{port}");
     let row = store.proxy(id).unwrap().unwrap();
     assert_eq!(row.task, id);
@@ -111,26 +116,53 @@ fn reserve_skips_port_held_by_another_task() {
     let a = add(&store, "a");
     let b = add(&store, "b");
     let held = store
-        .reserve(a, &secret(NONCE), &Scripted::new(&[7]))
+        .reserve(a, &secret(NONCE), &Scripted::new(&[7]), LEASE)
         .unwrap();
-    assert_eq!(held, BOX_PORT_MIN + 7);
+    assert_eq!(held, Reserve::Reserved(BOX_PORT_MIN + 7));
     let rng = Scripted::new(&[7, 8]);
-    let port = store.reserve(b, &secret(NONCE), &rng).unwrap();
-    assert_eq!(port, BOX_PORT_MIN + 8);
+    let port = store.reserve(b, &secret(NONCE), &rng, LEASE).unwrap();
+    assert_eq!(port, Reserve::Reserved(BOX_PORT_MIN + 8));
 }
 
 #[test]
 fn rereserve_keeps_port_and_replaces_nonce() {
     let dir = tempfile::tempdir().unwrap();
-    let (store, _, id) = reserved(dir.path());
+    let (store, clock, id) = reserved(dir.path());
     let first = store.proxy(id).unwrap().unwrap().box_port;
-    let again = store
-        .reserve(id, &secret(b"other"), &Scripted::new(&[999]))
+    assert_eq!(store.claim_lease(id, "A", LEASE).unwrap(), Lease::Claimed);
+    rusqlite::Connection::open(dir.path().join("moor.db"))
+        .unwrap()
+        .execute(
+            "UPDATE proxy SET ready = 1, host_port = 4000, pid = 77, handle = 'h' WHERE task = ?",
+            [id.get()],
+        )
         .unwrap();
-    assert_eq!(again, first);
+    clock.sleep(LEASE);
+    let again = store
+        .reserve(id, &secret(b"other"), &Scripted::new(&[999]), LEASE)
+        .unwrap();
+    assert_eq!(again, Reserve::Reserved(first));
     let row = store.proxy(id).unwrap().unwrap();
     assert_eq!(row.box_port, first);
     assert_eq!(row.nonce.expose(), b"other");
+    assert!(!row.ready);
+    assert_eq!((row.host_port, row.pid, row.handle), (None, None, None));
+    assert_eq!((row.lease_owner, row.lease_heartbeat), (None, None));
+}
+
+#[test]
+fn rereserve_refuses_while_lease_is_live() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, clock, id) = reserved(dir.path());
+    assert_eq!(store.claim_lease(id, "A", LEASE).unwrap(), Lease::Claimed);
+    clock.sleep(JUST_UNDER);
+    let again = store
+        .reserve(id, &secret(b"other"), &Scripted::new(&[999]), LEASE)
+        .unwrap();
+    assert_eq!(again, Reserve::Leased { owner: "A".into() });
+    let row = store.proxy(id).unwrap().unwrap();
+    assert_eq!(row.nonce.expose(), NONCE);
+    assert_eq!(row.lease_owner.as_deref(), Some("A"));
 }
 
 #[test]
@@ -140,7 +172,7 @@ fn reserve_on_unknown_task_is_not_found() {
     let id = add(&store, "t");
     let missing = TaskId::new(id.get() + 100);
     let err = store
-        .reserve(missing, &secret(NONCE), &FakeRng::default())
+        .reserve(missing, &secret(NONCE), &FakeRng::default(), LEASE)
         .unwrap_err();
     assert!(
         matches!(err, StoreError::NotFound(t) if t == missing),
@@ -266,13 +298,20 @@ fn mark_ready_records_ports_and_emits_one_event_without_nonce() {
         box_port,
         host_port: 41_234,
     };
-    store.mark_ready(id, ports, 4242, "tunnel-1").unwrap();
+    store.claim_lease(id, "A", LEASE).unwrap();
+    let outcome = store.mark_ready(id, "A", ports, 4242, "tunnel-1").unwrap();
+    assert_eq!(outcome, Fenced::Applied);
     let row = store.proxy(id).unwrap().unwrap();
     assert!(row.ready);
     assert_eq!(row.host_port, Some(41_234));
     assert_eq!(row.pid, Some(4242));
     assert_eq!(row.handle.as_deref(), Some("tunnel-1"));
-    let events = events_of(&store, id, "proxy_started");
+    assert_started_payload(&store, id, box_port);
+}
+
+/// The one `ProxyStarted` event carries the recorded values and no nonce.
+fn assert_started_payload(store: &Store, id: TaskId, box_port: u16) {
+    let events = events_of(store, id, "proxy_started");
     assert_eq!(events.len(), 1);
     let payload = events.first().unwrap();
     assert_eq!(payload["box_port"], box_port);
@@ -297,11 +336,60 @@ fn tunnel_restarted_appends_event_without_nonce() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _, id) = reserved(dir.path());
     let box_port = store.proxy(id).unwrap().unwrap().box_port;
-    store.tunnel_restarted(id, box_port, "ssh exited").unwrap();
+    store.claim_lease(id, "A", LEASE).unwrap();
+    let outcome = store
+        .tunnel_restarted(id, "A", box_port, "ssh exited")
+        .unwrap();
+    assert_eq!(outcome, Fenced::Applied);
     let events = events_of(&store, id, "tunnel_restarted");
     assert_eq!(events.len(), 1);
     let payload = events.first().unwrap();
     assert_eq!(payload["box_port"], box_port);
     assert_eq!(payload["reason"], "ssh exited");
     assert_no_nonce(payload);
+}
+
+/// A claims, stalls past the lease, and B takes over; returns the row's box port.
+fn taken_over(store: &Store, clock: &FakeClock, id: TaskId) -> u16 {
+    store.claim_lease(id, "A", LEASE).unwrap();
+    clock.sleep(LEASE);
+    assert_eq!(store.claim_lease(id, "B", LEASE).unwrap(), Lease::Claimed);
+    store.proxy(id).unwrap().unwrap().box_port
+}
+
+#[test]
+fn stale_owner_mark_ready_loses_lease_and_keeps_new_owners_row() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, clock, id) = reserved(dir.path());
+    let box_port = taken_over(&store, &clock, id);
+    let b = ProxyPorts {
+        box_port,
+        host_port: 41_000,
+    };
+    let a = ProxyPorts {
+        box_port,
+        host_port: 42_000,
+    };
+    let applied = store.mark_ready(id, "B", b, 111, "tunnel-b").unwrap();
+    assert_eq!(applied, Fenced::Applied);
+    let lost = store.mark_ready(id, "A", a, 222, "tunnel-a").unwrap();
+    assert_eq!(lost, Fenced::LostLease);
+    let row = store.proxy(id).unwrap().unwrap();
+    assert_eq!(row.host_port, Some(41_000));
+    assert_eq!(row.pid, Some(111));
+    assert_eq!(row.handle.as_deref(), Some("tunnel-b"));
+    assert_eq!(events_of(&store, id, "proxy_started").len(), 1);
+}
+
+#[test]
+fn stale_owner_tunnel_restarted_loses_lease_and_writes_no_event() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, clock, id) = reserved(dir.path());
+    let box_port = taken_over(&store, &clock, id);
+    let lost = store.tunnel_restarted(id, "A", box_port, "stale").unwrap();
+    assert_eq!(lost, Fenced::LostLease);
+    assert!(events_of(&store, id, "tunnel_restarted").is_empty());
+    let applied = store.tunnel_restarted(id, "B", box_port, "fresh").unwrap();
+    assert_eq!(applied, Fenced::Applied);
+    assert_eq!(events_of(&store, id, "tunnel_restarted").len(), 1);
 }

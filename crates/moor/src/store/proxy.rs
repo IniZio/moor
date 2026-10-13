@@ -6,13 +6,11 @@
 use std::fmt;
 use std::time::Duration;
 
-use moor_core::domain::event::Event;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::rng::Rng;
 use moor_core::{Secret, TaskId};
 use rusqlite::{params, Connection, OptionalExtension, Row, TransactionBehavior};
 
-use super::apply::insert_event;
 use super::{load_task, to_u32, Store, StoreError};
 
 /// Lowest box port a proxy may be given.
@@ -70,13 +68,14 @@ impl fmt::Debug for ProxyRow {
     }
 }
 
-/// Outcome of a lease claim.
+/// Outcome of a reservation.
+#[must_use]
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum Lease {
-    /// The caller now holds the lease.
-    Claimed,
-    /// Another owner holds a live lease.
-    Held {
+pub(crate) enum Reserve {
+    /// The row is reserved on this box port.
+    Reserved(u16),
+    /// A supervisor holds a live lease on the row; nothing changed.
+    Leased {
         /// The current owner.
         owner: String,
     },
@@ -84,35 +83,44 @@ pub(crate) enum Lease {
 
 impl Store {
     /// Reserve a box port for `task` and store `nonce`. Keeps the row's port if no other row
-    /// holds it; otherwise draws from `rng`.
+    /// holds it; otherwise draws from `rng`. An existing row is reset to unready with no
+    /// host port, pid, handle or lease, unless a lease younger than `lease` is live.
     pub(crate) fn reserve(
         &self,
         task: TaskId,
         nonce: &Secret,
         rng: &dyn Rng,
-    ) -> Result<u16, StoreError> {
+        lease: Duration,
+    ) -> Result<Reserve, StoreError> {
         let now = self.now();
         let mut conn = self.writer()?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         if load_task(&tx, task)?.is_none() {
             return Err(StoreError::NotFound(task));
         }
-        let existing: Option<i64> = tx
+        let existing: Option<(i64, Option<String>, Option<i64>)> = tx
             .query_row(
-                "SELECT box_port FROM proxy WHERE task = ?",
+                "SELECT box_port, lease_owner, lease_heartbeat FROM proxy WHERE task = ?",
                 [task.get()],
-                |r| r.get(0),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
             .optional()?;
-        let port = if let Some(raw) = existing {
+        let port = if let Some((raw, owner, beat)) = existing {
             let port = to_port("box_port", raw)?;
             if held_by_other(&tx, task, port)? {
                 return Err(StoreError::Corrupt(format!(
                     "box_port {port} held by two rows"
                 )));
             }
+            let window = i64::try_from(lease.as_millis()).unwrap_or(i64::MAX);
+            if let (Some(owner), Some(beat)) = (owner, beat) {
+                if now.as_millis().saturating_sub(beat) < window {
+                    return Ok(Reserve::Leased { owner });
+                }
+            }
             tx.execute(
-                "UPDATE proxy SET nonce = ?, updated_at = ? WHERE task = ?",
+                "UPDATE proxy SET nonce = ?, ready = 0, host_port = NULL, pid = NULL, handle = NULL, \
+                 lease_owner = NULL, lease_heartbeat = NULL, updated_at = ? WHERE task = ?",
                 params![nonce.expose(), now.as_millis(), task.get()],
             )?;
             port
@@ -126,7 +134,7 @@ impl Store {
         };
         tx.commit()?;
         drop(conn);
-        Ok(port)
+        Ok(Reserve::Reserved(port))
     }
 
     /// The proxy row of `task`, if any.
@@ -149,137 +157,6 @@ impl Store {
         let changed = conn.execute("DELETE FROM proxy WHERE task = ?", [task.get()])?;
         drop(conn);
         Ok(changed > 0)
-    }
-
-    /// Take the lease when it is free, already `owner`'s, or its heartbeat is at least `lease` old.
-    pub(crate) fn claim_lease(
-        &self,
-        task: TaskId,
-        owner: &str,
-        lease: Duration,
-    ) -> Result<Lease, StoreError> {
-        let now = self.now().as_millis();
-        let mut conn = self.writer()?;
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let current: Option<(Option<String>, Option<i64>)> = tx
-            .query_row(
-                "SELECT lease_owner, lease_heartbeat FROM proxy WHERE task = ?",
-                [task.get()],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
-            .optional()?;
-        let Some((current, beat)) = current else {
-            return Err(StoreError::NotFound(task));
-        };
-        let window = i64::try_from(lease.as_millis()).unwrap_or(i64::MAX);
-        let free = match (&current, beat) {
-            (Some(o), Some(beat)) if o != owner => now.saturating_sub(beat) >= window,
-            _ => true,
-        };
-        let outcome = if free {
-            tx.execute(
-                "UPDATE proxy SET lease_owner = ?, lease_heartbeat = ? WHERE task = ?",
-                params![owner, now, task.get()],
-            )?;
-            Lease::Claimed
-        } else {
-            Lease::Held {
-                owner: current.unwrap_or_default(),
-            }
-        };
-        tx.commit()?;
-        drop(conn);
-        Ok(outcome)
-    }
-
-    /// Refresh the heartbeat; `Ok(false)` if `owner` no longer holds the lease.
-    pub(crate) fn heartbeat(&self, task: TaskId, owner: &str) -> Result<bool, StoreError> {
-        let now = self.now().as_millis();
-        let mut conn = self.writer()?;
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let changed = tx.execute(
-            "UPDATE proxy SET lease_heartbeat = ? WHERE task = ? AND lease_owner = ?",
-            params![now, task.get(), owner],
-        )?;
-        if changed == 0 && !proxy_exists(&tx, task)? {
-            return Err(StoreError::NotFound(task));
-        }
-        tx.commit()?;
-        drop(conn);
-        Ok(changed == 1)
-    }
-
-    /// Clear the lease if `owner` holds it; no-op otherwise.
-    pub(crate) fn release(&self, task: TaskId, owner: &str) -> Result<(), StoreError> {
-        let conn = self.writer()?;
-        conn.execute(
-            "UPDATE proxy SET lease_owner = NULL, lease_heartbeat = NULL WHERE task = ? AND lease_owner = ?",
-            params![task.get(), owner],
-        )?;
-        drop(conn);
-        Ok(())
-    }
-
-    /// Record the ports, pid and handle, mark the proxy ready and append `ProxyStarted` in one
-    /// transaction.
-    pub(crate) fn mark_ready(
-        &self,
-        task: TaskId,
-        ports: ProxyPorts,
-        pid: u32,
-        handle: &str,
-    ) -> Result<(), StoreError> {
-        let now = self.now();
-        let mut conn = self.writer()?;
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let changed = tx.execute(
-            "UPDATE proxy SET box_port = ?, host_port = ?, pid = ?, handle = ?, ready = 1, updated_at = ? \
-             WHERE task = ?",
-            params![
-                ports.box_port,
-                ports.host_port,
-                pid,
-                handle,
-                now.as_millis(),
-                task.get()
-            ],
-        )?;
-        if changed == 0 {
-            return Err(StoreError::NotFound(task));
-        }
-        let event = Event::ProxyStarted {
-            box_port: ports.box_port,
-            host_port: ports.host_port,
-            pid,
-            handle: handle.to_owned(),
-        };
-        insert_event(&tx, task, &event, now)?;
-        tx.commit()?;
-        drop(conn);
-        Ok(())
-    }
-
-    /// Append a `TunnelRestarted` event for `task`.
-    pub(crate) fn tunnel_restarted(
-        &self,
-        task: TaskId,
-        box_port: u16,
-        reason: &str,
-    ) -> Result<(), StoreError> {
-        let now = self.now();
-        let mut conn = self.writer()?;
-        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        if load_task(&tx, task)?.is_none() {
-            return Err(StoreError::NotFound(task));
-        }
-        let event = Event::TunnelRestarted {
-            box_port,
-            reason: reason.to_owned(),
-        };
-        insert_event(&tx, task, &event, now)?;
-        tx.commit()?;
-        drop(conn);
-        Ok(())
     }
 }
 
@@ -343,16 +220,6 @@ fn to_port(what: &str, v: i64) -> Result<u16, StoreError> {
     u16::try_from(v).map_err(|_| StoreError::Corrupt(format!("{what} {v} out of range")))
 }
 
-/// Whether `task` has a proxy row.
-fn proxy_exists(conn: &Connection, task: TaskId) -> Result<bool, StoreError> {
-    Ok(conn
-        .query_row("SELECT 1 FROM proxy WHERE task = ?", [task.get()], |_| {
-            Ok(())
-        })
-        .optional()?
-        .is_some())
-}
-
 /// Whether a row other than `task`'s holds `port`.
 fn held_by_other(conn: &Connection, task: TaskId, port: u16) -> Result<bool, StoreError> {
     Ok(conn
@@ -393,6 +260,14 @@ fn port_taken(conn: &Connection, port: u16) -> Result<bool, StoreError> {
         .optional()?
         .is_some())
 }
+
+mod lease;
+
+#[cfg_attr(
+    not(test),
+    expect(unused_imports, reason = "used by the proxy supervisor, not yet wired")
+)]
+pub(crate) use lease::{Fenced, Lease};
 
 #[cfg(test)]
 mod tests;
