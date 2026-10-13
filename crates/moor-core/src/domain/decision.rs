@@ -164,6 +164,13 @@ pub enum ExtraEvent {
         /// The session id.
         session: String,
     },
+    /// The agent launch failed; the Task stays in its state, so no step derives it.
+    SessionFailed {
+        /// The launch step that failed.
+        step: String,
+        /// What went wrong.
+        message: String,
+    },
     /// Setup failed on a Task that stays in its state, so no step derives it.
     SetupFailed {
         /// The failing output line.
@@ -198,6 +205,7 @@ impl From<ExtraEvent> for Event {
             },
             ExtraEvent::Copied { from, to } => Self::Copied { from, to },
             ExtraEvent::SessionStarted { session } => Self::SessionStarted { session },
+            ExtraEvent::SessionFailed { step, message } => Self::SessionFailed { step, message },
             ExtraEvent::SetupFailed { line } => Self::SetupFailed { line },
             ExtraEvent::Checked { credentials } => Self::Checked { credentials },
             ExtraEvent::RunStarted { run } => Self::RunStarted { run },
@@ -224,6 +232,7 @@ impl TryFrom<Event> for ExtraEvent {
             }),
             Event::Copied { from, to } => Ok(Self::Copied { from, to }),
             Event::SessionStarted { session } => Ok(Self::SessionStarted { session }),
+            Event::SessionFailed { step, message } => Ok(Self::SessionFailed { step, message }),
             Event::SetupFailed { line } => Ok(Self::SetupFailed { line }),
             Event::Checked { credentials } => Ok(Self::Checked { credentials }),
             Event::RunStarted { run } => Ok(Self::RunStarted { run }),

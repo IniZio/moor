@@ -142,6 +142,13 @@ pub enum Event {
         /// The session id.
         session: String,
     },
+    /// The agent launch failed, so no session started.
+    SessionFailed {
+        /// The launch step that failed.
+        step: String,
+        /// What went wrong.
+        message: String,
+    },
     /// Admission checked credentials.
     Checked {
         /// The credentials that were checked.
@@ -184,6 +191,7 @@ impl Event {
             Self::Ran { .. } => "ran",
             Self::Copied { .. } => "copied",
             Self::SessionStarted { .. } => "session_started",
+            Self::SessionFailed { .. } => "session_failed",
             Self::Checked { .. } => "checked",
             Self::RunStarted { .. } => "run_started",
             Self::Attached => "attached",

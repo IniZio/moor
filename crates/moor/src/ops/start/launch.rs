@@ -3,7 +3,7 @@
 use std::path::PathBuf;
 
 use moor_core::domain::boxes::BoxState;
-use moor_core::domain::decision::{Decision, Field, Fields};
+use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
 use moor_core::domain::task::TaskState;
 use moor_core::seam::engine::{EngineError, LaunchReq};
 use moor_core::seam::surface::{PaneRef, WorkspaceRef};
@@ -52,7 +52,7 @@ pub(super) fn run(
             };
             store.begin_session(id, &sref, session.pane.as_ref().map(PaneRef::as_str))?;
             if row.launch_failure.is_some() {
-                record(store, id, Field::Clear)?;
+                record(store, id, Field::Clear, None)?;
             }
             Ok(AgentLaunchView {
                 launched: true,
@@ -62,7 +62,7 @@ pub(super) fn run(
         }
         Err(e) => {
             let failure = failure(cx, &e);
-            record(store, id, Field::Set(to_json(&failure)?))?;
+            record(store, id, Field::Set(to_json(&failure)?), Some(&failure))?;
             Ok(AgentLaunchView {
                 launched: false,
                 session: None,
@@ -120,12 +120,24 @@ fn to_json(f: &LaunchFailure) -> Result<String, CommandError> {
     serde_json::to_string(f).map_err(|e| CommandError::new(moor_core::ErrorKind::Internal, e))
 }
 
-/// Writes the Task's launch failure column.
-fn record(store: &Store, id: TaskId, failure: Field<String>) -> Result<(), CommandError> {
+/// Writes the Task's launch failure column, with a `session_failed` event for a new failure.
+fn record(
+    store: &Store,
+    id: TaskId,
+    column: Field<String>,
+    failed: Option<&LaunchFailure>,
+) -> Result<(), CommandError> {
     let set = Fields {
-        launch_failure: failure,
+        launch_failure: column,
         ..Fields::default()
     };
-    store.apply(Decision::new(id).set(set))?;
+    let mut decision = Decision::new(id).set(set);
+    if let Some(f) = failed {
+        decision = decision.event(ExtraEvent::SessionFailed {
+            step: f.step.clone(),
+            message: f.message.clone(),
+        });
+    }
+    store.apply(decision)?;
     Ok(())
 }
