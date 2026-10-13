@@ -136,3 +136,92 @@ fn streamed_signal_and_interrupt() {
         Err(ProcError::Interrupted)
     ));
 }
+
+fn child_spec(args: &[&str]) -> ProcSpec {
+    spec(Tool::Crabbox, args).env("K", "V").cwd("/w")
+}
+
+#[test]
+fn child_records_call_and_ready_replays_line() {
+    let p = ScriptedProc::new();
+    p.on_child(Tool::Crabbox, &["tunnel"], ChildReply::Ready("up".into()));
+    let mut c = p
+        .spawn_child(&child_spec(&["tunnel", "--reverse"]))
+        .unwrap();
+    let d = Deadline(Duration::from_secs(5));
+    assert_eq!(c.first_line(d).unwrap(), "up");
+    assert_eq!(c.first_line(d).unwrap(), "up");
+    let calls = p.calls();
+    let call = calls.first().unwrap();
+    assert_eq!(call.tool, Tool::Crabbox);
+    assert_eq!(call.args, ["tunnel", "--reverse"]);
+    assert_eq!(call.env, [("K".to_owned(), "V".to_owned())]);
+    assert_eq!(call.cwd.as_deref(), Some(std::path::Path::new("/w")));
+    assert_eq!(call.deadline, Deadline(Duration::from_secs(2)));
+}
+
+#[test]
+fn child_pids_are_distinct() {
+    let p = ScriptedProc::new();
+    p.on_child(Tool::Crabbox, &[], ChildReply::Hang);
+    let a = p.spawn_child(&child_spec(&["a"])).unwrap();
+    let b = p.spawn_child(&child_spec(&["b"])).unwrap();
+    assert_ne!(a.pid(), b.pid());
+}
+
+#[test]
+fn child_exit_reports_code_and_stderr() {
+    let p = ScriptedProc::new();
+    p.on_child(
+        Tool::Crabbox,
+        &["tunnel"],
+        ChildReply::Exit {
+            code: 3,
+            stderr: "boom".into(),
+        },
+    );
+    let mut c = p.spawn_child(&child_spec(&["tunnel"])).unwrap();
+    assert!(matches!(
+        c.first_line(Deadline(Duration::from_secs(1))),
+        Err(FirstLineError::Exited { code: Some(3), signal: None, stderr_tail })
+            if stderr_tail == "boom"
+    ));
+}
+
+#[test]
+fn child_hang_times_out_with_passed_deadline() {
+    let p = ScriptedProc::new();
+    p.on_child(Tool::Crabbox, &["tunnel"], ChildReply::Hang);
+    let mut c = p.spawn_child(&child_spec(&["tunnel"])).unwrap();
+    assert!(matches!(
+        c.first_line(Deadline(Duration::from_millis(7))),
+        Err(FirstLineError::Timeout { tool: Tool::Crabbox, after })
+            if after == Duration::from_millis(7)
+    ));
+}
+
+#[test]
+fn unscripted_child_is_spawn_error() {
+    let p = ScriptedProc::new();
+    let e = p.spawn_child(&child_spec(&["tunnel"])).err().unwrap();
+    assert!(matches!(
+        e,
+        ProcError::Spawn(ref io)
+            if io.kind() == std::io::ErrorKind::NotFound
+                && io.to_string() == "unscripted: crabbox tunnel"
+    ));
+    assert_eq!(p.calls().len(), 1);
+}
+
+#[test]
+fn dropping_child_is_recorded() {
+    let p = ScriptedProc::new();
+    p.on_child(Tool::Crabbox, &[], ChildReply::Ready("x".into()));
+    let c = p.spawn_child(&child_spec(&["t"])).unwrap();
+    let pid = c.pid();
+    assert!(p.dropped().is_empty());
+    assert!(p.alive(pid));
+    drop(c);
+    assert_eq!(p.dropped(), [pid]);
+    assert!(!p.alive(pid));
+}
