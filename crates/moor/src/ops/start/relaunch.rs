@@ -106,7 +106,7 @@ fn on_live(cx: &Cx, store: &Store, req: &StartReq, row: &TaskRow, session: &Sess
         if resume::report(cx, &row.name, pane, agent, state) {
             if let Err(e) = store.set_registered_session(session.id, agent) {
                 cx.warn(Warning {
-                    code: "resume_not_registered".to_owned(),
+                    code: "resume_record_failed".to_owned(),
                     message: format!("could not record the resume registration: {e}"),
                 });
             }
