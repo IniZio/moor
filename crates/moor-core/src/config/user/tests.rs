@@ -2,6 +2,7 @@
 
 use std::num::NonZeroU32;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use super::*;
 
@@ -68,6 +69,20 @@ fn defaults() {
     assert_eq!(c.github.identity, Identity::Auto);
     assert_eq!(BoxSize::default(), BoxSize::Small);
     assert_eq!(c.box_.size, None);
+}
+
+#[test]
+fn sleep_after_defaults_and_parses() {
+    let c = UserConfig::default();
+    assert_eq!(c.box_.sleep_after(), DEFAULT_SLEEP_AFTER);
+    assert_eq!(c.box_.sleep_after(), Duration::from_mins(30));
+    assert_eq!(c.box_.sleep_after_label(), "30m");
+    let c = ok("box: {sleep_after: 45m}");
+    assert_eq!(c.box_.sleep_after(), Duration::from_mins(45));
+    assert_eq!(c.box_.sleep_after_label(), "45m");
+    let c = ok("box: {sleep_after: 2h}");
+    assert_eq!(c.box_.sleep_after(), Duration::from_hours(2));
+    assert_eq!(c.box_.sleep_after_label(), "2h");
 }
 
 #[test]
@@ -192,6 +207,19 @@ fn rejected_values_with_paths() {
         ("box_credentials: [A, A]", "box_credentials[1]"),
         ("box: [unclosed", ""),
         ("box: {max_boxes: many}", "box.max_boxes"),
+        ("box: {sleep_after: soon}", "box.sleep_after"),
+        ("box: {sleep_after: 0m}", "box.sleep_after"),
+        ("box: {sleep_after: '10'}", "box.sleep_after"),
+        ("box: {sleep_after: 5x}", "box.sleep_after"),
+        ("box: {sleep_after: ''}", "box.sleep_after"),
+        (
+            "box: {sleep_after: 99999999999999999999d}",
+            "box.sleep_after",
+        ),
+        (
+            "box: {sleep_after: 9999999999999999999d}",
+            "box.sleep_after",
+        ),
     ];
     check_rejects(cases);
 }
