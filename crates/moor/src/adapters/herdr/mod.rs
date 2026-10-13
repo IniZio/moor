@@ -16,7 +16,7 @@ use moor_core::activity::PaneObs;
 use moor_core::name::TaskName;
 use moor_core::seam::proc::{Deadline, Proc, ProcSpec, Tool};
 use moor_core::seam::surface::{
-    workspace_label, PaneCmd, PaneRef, Surface, SurfaceError, WorkspaceRef, Worktree,
+    workspace_label, Key, PaneCmd, PaneRef, Surface, SurfaceError, WorkspaceRef, Worktree,
 };
 
 use self::errors::{map_error, HerdrFailure};
@@ -225,9 +225,11 @@ impl Surface for Herdr {
     }
 
     fn open_pane(&self, ws: &WorkspaceRef, cmd: &PaneCmd) -> Result<PaneRef, SurfaceError> {
-        let program = cmd.argv.first().ok_or_else(|| SurfaceError::Failed {
-            summary: "open pane: empty command".to_owned(),
-        })?;
+        if cmd.argv.is_empty() {
+            return Err(SurfaceError::Failed {
+                summary: "open pane: empty command".to_owned(),
+            });
+        }
         let cwd = cmd.cwd.as_deref().map(Path::to_string_lossy);
         let envs: Vec<String> = cmd.env.iter().map(|(k, v)| format!("{k}={v}")).collect();
         let mut args = vec![
@@ -236,8 +238,7 @@ impl Surface for Herdr {
             "--workspace",
             ws.as_str(),
             "--label",
-            program,
-            "--no-focus",
+            &cmd.label,
         ];
         if let Some(c) = &cwd {
             args.extend(["--cwd", c]);
@@ -245,6 +246,7 @@ impl Surface for Herdr {
         for e in &envs {
             args.extend(["--env", e]);
         }
+        args.push("--no-focus");
         let pane = parse::tab_created(&self.call(&args)?)?;
         let line = cmd
             .argv
@@ -254,6 +256,25 @@ impl Surface for Herdr {
             .join(" ");
         self.call(&["pane", "run", &pane, &line])?;
         Ok(PaneRef::new(pane))
+    }
+
+    fn send_text(&self, pane: &PaneRef, text: &str) -> Result<(), SurfaceError> {
+        self.call(&["pane", "send-text", pane.as_str(), text])
+            .map(drop)
+    }
+
+    fn send_keys(&self, pane: &PaneRef, keys: &[Key]) -> Result<(), SurfaceError> {
+        let names = keys
+            .iter()
+            .map(|k| {
+                k.name().ok_or_else(|| SurfaceError::Failed {
+                    summary: format!("send keys: unknown key {k:?}"),
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let mut args = vec!["pane", "send-keys", pane.as_str()];
+        args.extend(names.iter().map(String::as_str));
+        self.call(&args).map(drop)
     }
 
     fn close_pane(&self, pane: &PaneRef) -> Result<(), SurfaceError> {
