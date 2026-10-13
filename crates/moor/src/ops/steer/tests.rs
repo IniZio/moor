@@ -1,0 +1,371 @@
+//! Tests for `steer`.
+
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use moor_core::activity::{HookKind, HookRead, HookRecord, PaneRead, Probes};
+use moor_core::domain::boxes::{BoxInput, BoxState};
+use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
+use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
+use moor_core::seam::clock::Ts;
+use moor_core::seam::driver::{AcquireReq, Driver, EgressPlan};
+use moor_core::seam::engine::{EngineError, Steer, SteerOutcome};
+use moor_core::{ErrorKind, ProviderId, SteerReq, TaskId, TaskName};
+
+use std::time::Duration;
+
+use super::run;
+use crate::cx::Cx;
+use crate::ops::common::boxlock::BoxLock;
+use crate::testing::driver::FakeDriver;
+use crate::testing::engine::FakeEngine;
+use crate::testing::proc::ScriptedProc;
+use crate::testing::surface::FakeSurface;
+
+struct Fx {
+    _dir: tempfile::TempDir,
+    cx: Cx,
+    engine: Arc<FakeEngine>,
+    driver: Arc<FakeDriver>,
+    id: TaskId,
+}
+
+/// Task `t` with a ready Box, an Idle state and a live session `agent-1` in pane `p-1`.
+fn fx_with(engine: FakeEngine, session: bool) -> Fx {
+    let dir = tempfile::tempdir().unwrap();
+    let driver = Arc::new(FakeDriver::new());
+    let engine = Arc::new(engine);
+    let cx = Cx::fake(
+        dir.path(),
+        Path::new("/home/me/proj"),
+        driver.clone(),
+        Arc::new(FakeSurface::new(PathBuf::from("/s"))),
+        Arc::new(ScriptedProc::new()),
+    )
+    .with_engine(engine.clone());
+    let id = ready_task(&cx, &driver);
+    if session {
+        cx.store()
+            .unwrap()
+            .begin_session(id, "agent-1", Some("p-1"))
+            .unwrap();
+    }
+    Fx {
+        _dir: dir,
+        cx,
+        engine,
+        driver,
+        id,
+    }
+}
+
+/// Task `t` with a ready Box.
+fn ready_task(cx: &Cx, driver: &FakeDriver) -> TaskId {
+    let store = cx.store().unwrap();
+    let name = TaskName::parse("t").unwrap();
+    let id = store
+        .apply(Decision::insert(NewTask {
+            name: name.clone(),
+            repo: "r".into(),
+        }))
+        .unwrap()
+        .task;
+    let provider = ProviderId::new("p");
+    let fields = Fields {
+        box_provider: Field::Set(provider.clone()),
+        worktree: Field::Set("/home/me/wt/t".to_owned()),
+        ..Fields::default()
+    };
+    let d = Decision::new(id)
+        .task_input(TaskInput::Admitted)
+        .box_input(BoxInput::Requested)
+        .set(fields);
+    store.apply(d).unwrap();
+    let got = driver
+        .acquire(&AcquireReq {
+            provider,
+            task: id,
+            name,
+            egress: EgressPlan::Open,
+            class: None,
+            nonce: "n".to_owned(),
+            worktree: None,
+        })
+        .unwrap();
+    let d = Decision::new(id)
+        .task_input(TaskInput::BoxReady {
+            setup: SetupOutcome::Ok,
+        })
+        .box_input(BoxInput::Acquired {
+            handle: got.handle.clone(),
+        })
+        .set(Fields {
+            box_handle: Field::Set(got.handle),
+            box_workdir: Field::Set(got.workdir.as_str().to_owned()),
+            ..Fields::default()
+        });
+    store.apply(d).unwrap();
+    id
+}
+
+fn fx() -> Fx {
+    fx_with(FakeEngine::new(), true)
+}
+
+/// Probes that read a blocked agent waiting on `question`.
+fn blocked(question: &str) -> Probes {
+    Probes {
+        hook: HookRead::Fresh(HookRecord {
+            kind: HookKind::Blocked,
+            session_id: None,
+            message: Some(question.to_owned()),
+            at: Ts::from_millis(0),
+        }),
+        pane: PaneRead::Absent,
+    }
+}
+
+/// Probes that read an agent working.
+fn working() -> Probes {
+    Probes {
+        hook: HookRead::Fresh(HookRecord {
+            kind: HookKind::Busy,
+            session_id: None,
+            message: None,
+            at: Ts::from_millis(0),
+        }),
+        pane: PaneRead::Absent,
+    }
+}
+
+fn text(t: &str) -> SteerReq {
+    SteerReq {
+        task: TaskName::parse("t").unwrap(),
+        text: Some(t.to_owned()),
+        menu: None,
+    }
+}
+
+fn menu(n: u32) -> SteerReq {
+    SteerReq {
+        task: TaskName::parse("t").unwrap(),
+        text: None,
+        menu: Some(n),
+    }
+}
+
+fn live(f: &Fx) -> bool {
+    f.cx.store().unwrap().live_session(f.id).unwrap().is_some()
+}
+
+fn steered(f: &Fx) -> Vec<serde_json::Value> {
+    let rows = f.cx.store().unwrap().events(f.id, 100).unwrap();
+    rows.into_iter()
+        .filter(|e| e.kind == "steered")
+        .map(|e| e.payload)
+        .collect()
+}
+
+#[test]
+fn an_unknown_task_is_refused() {
+    let f = fx();
+    let req = SteerReq {
+        task: TaskName::parse("other").unwrap(),
+        ..text("hi")
+    };
+    let err = run(&f.cx, &req).unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Failed);
+    assert!(err.error.to_string().contains("no open task other"));
+}
+
+#[test]
+fn a_task_without_a_live_session_is_refused_naming_start_goal() {
+    let f = fx_with(FakeEngine::new(), false);
+    let err = run(&f.cx, &text("hi")).unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Refused);
+    assert!(err.error.to_string().contains("moor start t --goal"));
+    assert!(f.engine.steers().is_empty());
+}
+
+#[test]
+fn text_goes_to_the_agent_and_is_recorded() {
+    let f = fx_with(FakeEngine::new().probes("agent-1", working()), true);
+    let v = run(&f.cx, &text("do x")).unwrap();
+    assert_eq!((v.task.as_str(), v.sent.as_str()), ("t", "do x"));
+    assert!(!v.answered_menu);
+    assert_eq!(
+        f.engine.steers(),
+        vec![("agent-1".to_owned(), Steer::Text("do x".into()))]
+    );
+    assert_eq!(
+        steered(&f),
+        vec![serde_json::json!({
+            "session": "agent-1",
+            "message": "do x",
+            "submit_retried": false,
+        })]
+    );
+    assert!(f.cx.take_warnings().is_empty());
+}
+
+#[test]
+fn a_retried_submit_is_recorded() {
+    let engine = FakeEngine::new().steer_result(Ok(SteerOutcome {
+        submit_retried: true,
+        submit_checked: true,
+    }));
+    let f = fx_with(engine, true);
+    run(&f.cx, &text("do x")).unwrap();
+    assert_eq!(
+        steered(&f)
+            .first()
+            .and_then(|p| p.get("submit_retried"))
+            .and_then(serde_json::Value::as_bool),
+        Some(true)
+    );
+}
+
+#[test]
+fn an_unchecked_submit_warns() {
+    let engine = FakeEngine::new().steer_result(Ok(SteerOutcome {
+        submit_retried: false,
+        submit_checked: false,
+    }));
+    let f = fx_with(engine, true);
+    run(&f.cx, &text("do x")).unwrap();
+    let warned = f.cx.take_warnings();
+    let msgs: Vec<_> = warned.iter().map(|w| w.message.as_str()).collect();
+    assert_eq!(msgs, ["could not confirm the message was submitted"]);
+}
+
+#[test]
+fn an_asleep_task_wakes_before_the_send() {
+    let f = fx();
+    let store = f.cx.store().unwrap();
+    let quiet = Decision::new(f.id).task_input(TaskInput::AgentQuiet);
+    store.apply(quiet).unwrap();
+    let d = Decision::new(f.id)
+        .task_input(TaskInput::SleepCmd)
+        .box_input(BoxInput::Sleep);
+    store.apply(d).unwrap();
+    run(&f.cx, &text("hi")).unwrap();
+    let row = store.task(f.id).unwrap().unwrap();
+    assert_ne!(row.state, TaskState::Asleep);
+    assert_eq!(row.boxed.unwrap().state, BoxState::Ready);
+    assert!(f.driver.calls().iter().any(|c| c.starts_with("wake ")));
+    assert_eq!(f.engine.steers().len(), 1);
+}
+
+#[test]
+fn a_gone_pane_stops_the_session_and_refuses() {
+    let engine = FakeEngine::new().steer_result(Err(EngineError::PaneGone));
+    let f = fx_with(engine, true);
+    let err = run(&f.cx, &text("hi")).unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Refused);
+    assert!(err
+        .error
+        .to_string()
+        .ends_with("; start --goal relaunches it"));
+    assert!(err.error.to_string().starts_with("agent exited"));
+    assert!(!live(&f));
+    assert!(steered(&f).is_empty());
+}
+
+#[test]
+fn an_exited_agent_names_its_code() {
+    let exited = Probes {
+        hook: HookRead::Absent,
+        pane: PaneRead::Fresh(moor_core::activity::PaneObs {
+            status: moor_core::activity::PaneStatus::Idle,
+            tail: String::new(),
+            prompt: None,
+            exit_marker: Some(3),
+        }),
+    };
+    let engine = FakeEngine::new()
+        .probes("agent-1", exited)
+        .steer_result(Err(EngineError::PaneGone));
+    let f = fx_with(engine, true);
+    let err = run(&f.cx, &text("hi")).unwrap_err();
+    assert_eq!(
+        err.error.to_string(),
+        "agent exited 3; start --goal relaunches it"
+    );
+}
+
+#[test]
+fn text_to_a_blocked_agent_is_refused_with_its_prompt() {
+    let f = fx_with(
+        FakeEngine::new().probes("agent-1", blocked("Allow edit?")),
+        true,
+    );
+    let err = run(&f.cx, &text("go on")).unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Refused);
+    let msg = err.error.to_string();
+    assert!(msg.contains("waiting for: Allow edit?"), "{msg}");
+    assert!(msg.contains("--menu N"), "{msg}");
+    assert!(f.engine.steers().is_empty());
+}
+
+#[test]
+fn a_digit_to_a_blocked_agent_picks_the_menu_entry_and_probes_again() {
+    let engine = FakeEngine::new()
+        .probes("agent-1", working())
+        .then_probes("agent-1", blocked("Allow edit?"));
+    let f = fx_with(engine, true);
+    let v = run(&f.cx, &text("2")).unwrap();
+    assert!(v.answered_menu);
+    assert_eq!(v.sent, "2");
+    assert_eq!(
+        f.engine.steers(),
+        vec![("agent-1".to_owned(), Steer::Menu(2))]
+    );
+    assert_eq!(f.engine.probe_count("agent-1"), 2);
+    assert!(f.cx.take_warnings().is_empty());
+}
+
+#[test]
+fn a_menu_choice_that_leaves_the_agent_blocked_warns() {
+    let f = fx_with(
+        FakeEngine::new().probes("agent-1", blocked("Allow edit?")),
+        true,
+    );
+    let v = run(&f.cx, &menu(1)).unwrap();
+    assert!(!v.answered_menu);
+    assert_eq!(f.engine.probe_count("agent-1"), 2);
+    assert_eq!(f.cx.take_warnings().len(), 1);
+}
+
+#[test]
+fn menu_on_an_agent_that_is_not_blocked_is_refused() {
+    let f = fx_with(FakeEngine::new().probes("agent-1", working()), true);
+    let err = run(&f.cx, &menu(1)).unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Refused);
+    assert!(f.engine.steers().is_empty());
+}
+
+#[test]
+fn a_digit_to_an_agent_that_is_not_blocked_is_text() {
+    let f = fx_with(FakeEngine::new().probes("agent-1", working()), true);
+    run(&f.cx, &text("2")).unwrap();
+    assert_eq!(
+        f.engine.steers(),
+        vec![("agent-1".to_owned(), Steer::Text("2".into()))]
+    );
+}
+
+#[test]
+fn a_held_box_lock_refuses_before_anything_is_sent() {
+    let f = fx();
+    let _held = BoxLock::acquire(
+        f.cx.clock(),
+        f.cx.state_dir().unwrap(),
+        f.id,
+        "run",
+        Duration::ZERO,
+    )
+    .unwrap();
+    let err = run(&f.cx, &text("hi")).unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Refused);
+    assert!(f.engine.steers().is_empty());
+}
