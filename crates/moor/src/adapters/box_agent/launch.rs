@@ -50,7 +50,7 @@ pub(super) fn launch(
     let ctx = LaunchCtx {
         model: req.model.clone(),
         workdir: req.workdir.clone(),
-        bypass: false,
+        proxy: None,
         home,
     };
     let cred = BoxPath::under(
