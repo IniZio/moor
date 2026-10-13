@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 
+use moor_core::seam::agent_profile::{BoxSetup, LaunchCtx};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, EgressPlan};
 use moor_core::seam::engine::{Engine, EngineError, LaunchReq};
 use moor_core::seam::surface::{Surface, SurfaceError};
@@ -150,13 +151,29 @@ fn the_script_cleans_up_installs_the_brief_and_starts_the_agent() {
     assert!(!line.contains("ANTHROPIC"));
 }
 
-fn script_of(line: &str) -> String {
+fn unquote(q: &str) -> String {
+    let inner = q.strip_prefix('\'').and_then(|q| q.strip_suffix('\''));
+    inner.unwrap().replace("'\\''", "'")
+}
+
+/// The command the Box is asked to run.
+fn remote_of(line: &str) -> String {
     let rest = line.strip_prefix("'ssh' '-t' 'box-1' ").unwrap();
     let quoted = rest
         .strip_suffix("; echo \"moor: agent exited $?\"")
         .unwrap();
-    let inner = quoted.strip_prefix('\'').and_then(|q| q.strip_suffix('\''));
-    inner.unwrap().replace("'\\''", "'")
+    unquote(quoted)
+}
+
+fn script_of(line: &str) -> String {
+    unquote(remote_of(line).strip_prefix("sh -c ").unwrap())
+}
+
+#[test]
+fn the_box_runs_the_script_under_sh_not_the_login_shell() {
+    let (_, s, out) = launch(FakeDriver::new(), FakeSurface::new("/r"));
+    out.unwrap();
+    assert!(remote_of(&pane_line(&s)).starts_with("sh -c '"));
 }
 
 #[test]
@@ -263,4 +280,130 @@ fn a_box_without_a_home_fails_before_delivering() {
     assert!(matches!(out, Err(EngineError::Failed { step: "home", .. })));
     assert!(d.puts().is_empty());
     assert!(s.opened().is_empty());
+}
+
+/// A scratch Box: home, workdir, a credential dir holding a brief, and a stub agent.
+struct Scratch {
+    dir: tempfile::TempDir,
+}
+
+impl Scratch {
+    fn new() -> Self {
+        let dir = tempfile::TempDir::new().unwrap();
+        let s = Self { dir };
+        for d in ["home", "work", "bin", "home/.moor-cred-t1-x"] {
+            std::fs::create_dir_all(s.path(d)).unwrap();
+        }
+        std::fs::write(s.path("home/.moor-cred-t1-x/brief.md"), "brief").unwrap();
+        s.stub("claude", "touch \"$MARKER\"");
+        s
+    }
+
+    fn path(&self, rel: &str) -> PathBuf {
+        self.dir.path().join(rel)
+    }
+
+    fn stub(&self, name: &str, body: &str) {
+        use std::os::unix::fs::PermissionsExt;
+        let p = self.path(&format!("bin/{name}"));
+        std::fs::write(&p, format!("#!/bin/sh\n{body}\n")).unwrap();
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    fn script(&self, hook_step: &str) -> String {
+        let root = self.dir.path().to_str().unwrap();
+        let ctx = LaunchCtx {
+            model: None,
+            workdir: BoxPath::under(root, "work").unwrap(),
+            bypass: false,
+            home: BoxPath::under(root, "home").unwrap(),
+        };
+        let setup = |step: &str| BoxSetup {
+            files: Vec::new(),
+            step: step.to_owned(),
+        };
+        let cred = BoxPath::under(root, "home/.moor-cred-t1-x").unwrap();
+        super::script(&cred, &ctx, &setup(hook_step), &setup("true"), &[]).unwrap()
+    }
+
+    fn spawn(&self, script: &str) -> std::process::Child {
+        use std::os::unix::process::CommandExt;
+        let path = format!(
+            "{}:{}",
+            self.path("bin").display(),
+            std::env::var("PATH").unwrap_or_default()
+        );
+        Command::new("sh")
+            .args(["-c", script])
+            .env("PATH", path)
+            .env("HOME", self.path("home"))
+            .env("MARKER", self.path("started"))
+            .process_group(0)
+            .spawn()
+            .unwrap()
+    }
+
+    fn cred_gone(&self) -> bool {
+        !self.path("home/.moor-cred-t1-x").exists()
+    }
+
+    fn agent_started(&self) -> bool {
+        self.path("started").exists()
+    }
+}
+
+#[test]
+fn a_clean_run_starts_the_agent_and_removes_the_cred_dir() {
+    let b = Scratch::new();
+    assert!(b.spawn(&b.script("true")).wait().unwrap().success());
+    assert!(b.agent_started());
+    assert!(b.cred_gone());
+    assert_eq!(
+        std::fs::read_to_string(b.path("work/.moor/brief.md")).unwrap(),
+        "brief"
+    );
+}
+
+#[test]
+fn a_failed_install_stops_before_the_agent_and_removes_the_cred_dir() {
+    let b = Scratch::new();
+    std::fs::remove_file(b.path("home/.moor-cred-t1-x/brief.md")).unwrap();
+    assert!(!b.spawn(&b.script("true")).wait().unwrap().success());
+    assert!(!b.agent_started());
+    assert!(b.cred_gone());
+}
+
+#[test]
+fn a_failed_state_write_stops_before_the_agent_and_removes_the_cred_dir() {
+    let b = Scratch::new();
+    std::fs::create_dir_all(b.path("work/.moor/agent-state.json")).unwrap();
+    assert!(!b.spawn(&b.script("true")).wait().unwrap().success());
+    assert!(!b.agent_started());
+    assert!(b.cred_gone());
+}
+
+#[test]
+fn a_failed_hook_step_stops_before_the_agent_and_removes_the_cred_dir() {
+    let b = Scratch::new();
+    assert!(!b.spawn(&b.script("false")).wait().unwrap().success());
+    assert!(!b.agent_started());
+    assert!(b.cred_gone());
+}
+
+#[test]
+fn a_hangup_before_the_brief_is_installed_removes_the_cred_dir() {
+    let b = Scratch::new();
+    b.stub("install", "touch \"$MARKER.install\"; sleep 30");
+    let mut sh = b.spawn(&b.script("true"));
+    while !b.path("started.install").exists() {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    let group = format!("-{}", sh.id());
+    Command::new("kill")
+        .args(["-HUP", "--", &group])
+        .status()
+        .unwrap();
+    assert!(!sh.wait().unwrap().success());
+    assert!(!b.agent_started());
+    assert!(b.cred_gone());
 }
