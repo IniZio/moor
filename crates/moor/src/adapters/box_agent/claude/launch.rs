@@ -2,7 +2,8 @@
 
 use moor_core::boxscript::quote;
 use moor_core::name::{BoxPath, NameError};
-use moor_core::seam::agent_profile::{BoxFile, BoxSetup, Key, LaunchCtx};
+use moor_core::seam::agent_profile::{BoxFile, BoxSetup, EnvVar, Key, LaunchCtx, ModelRoute};
+use moor_core::Secret;
 use serde_json::{json, Value};
 
 #[cfg(test)]
@@ -141,13 +142,42 @@ fn flags(ctx: &LaunchCtx) -> Vec<String> {
     if let Some(model) = &ctx.model {
         flags.extend(["--model".to_owned(), model.clone()]);
     }
-    if ctx.bypass {
+    if ctx.proxy.is_some() {
         flags.extend([
             "--permission-mode".to_owned(),
             "bypassPermissions".to_owned(),
         ]);
     }
     flags
+}
+
+/// Environment that points Claude Code at the Proxy with the launch nonce as its only credential;
+/// empty without a Proxy address.
+pub(super) fn env(ctx: &LaunchCtx) -> Vec<EnvVar> {
+    let Some(proxy) = &ctx.proxy else {
+        return Vec::new();
+    };
+    let nonce = proxy.nonce.expose();
+    let mut url = format!("http://127.0.0.1:{}/t/", proxy.box_port).into_bytes();
+    url.extend_from_slice(nonce);
+    vec![
+        EnvVar {
+            name: "ANTHROPIC_BASE_URL".to_owned(),
+            value: Secret::new(url),
+        },
+        EnvVar {
+            name: "CLAUDE_CODE_OAUTH_TOKEN".to_owned(),
+            value: Secret::new(nonce.to_vec()),
+        },
+    ]
+}
+
+/// The upstream the Proxy forwards to and the host credential entry it injects.
+pub(super) fn model_route() -> ModelRoute {
+    ModelRoute {
+        upstream: "https://api.anthropic.com".to_owned(),
+        credential: "CLAUDE_CODE_OAUTH_TOKEN".to_owned(),
+    }
 }
 
 /// The digits of `n`.

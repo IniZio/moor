@@ -339,7 +339,7 @@ impl Scratch {
         let ctx = LaunchCtx {
             model: None,
             workdir: BoxPath::under(root, "work").unwrap(),
-            bypass: false,
+            proxy: None,
             home: BoxPath::under(root, "home").unwrap(),
         };
         let setup = |step: &str| BoxSetup {

@@ -11,7 +11,10 @@ use std::process::{Command, Stdio};
 
 use moor_core::activity::HookKind;
 use moor_core::name::BoxPath;
-use moor_core::seam::agent_profile::{AgentProfile, BoxSetup, Key, LaunchCtx};
+use moor_core::seam::agent_profile::{
+    AgentProfile, BoxSetup, Key, LaunchCtx, ModelRoute, ProxyAddr,
+};
+use moor_core::Secret;
 use serde_json::{json, Value};
 use tempfile::TempDir;
 
@@ -22,8 +25,18 @@ fn ctx(dir: &Path) -> LaunchCtx {
     LaunchCtx {
         model: None,
         workdir: BoxPath::under(root, "work").unwrap(),
-        bypass: false,
+        proxy: None,
         home: BoxPath::under(root, "home").unwrap(),
+    }
+}
+
+fn proxied(dir: &Path) -> LaunchCtx {
+    LaunchCtx {
+        proxy: Some(ProxyAddr {
+            box_port: 41234,
+            nonce: Secret::new(b"sentinel-7f3a".to_vec()),
+        }),
+        ..ctx(dir)
     }
 }
 
@@ -135,14 +148,10 @@ fn argv_names_the_model_before_the_prompt() {
 }
 
 #[test]
-fn argv_asks_for_bypass_only_when_allowed() {
+fn argv_asks_for_bypass_only_behind_a_proxy() {
     let t = TempDir::new().unwrap();
-    let c = LaunchCtx {
-        bypass: true,
-        ..ctx(t.path())
-    };
     assert_eq!(
-        Claude.argv(&c),
+        Claude.argv(&proxied(t.path())),
         strings(&[
             "--permission-mode",
             "bypassPermissions",
@@ -154,12 +163,61 @@ fn argv_asks_for_bypass_only_when_allowed() {
 }
 
 #[test]
+fn env_points_claude_at_the_proxy_with_the_nonce() {
+    let t = TempDir::new().unwrap();
+    let env = Claude.env(&proxied(t.path()));
+    let pairs: Vec<(&str, &[u8])> = env
+        .iter()
+        .map(|e| (e.name.as_str(), e.value.expose()))
+        .collect();
+    assert_eq!(
+        pairs,
+        vec![
+            (
+                "ANTHROPIC_BASE_URL",
+                b"http://127.0.0.1:41234/t/sentinel-7f3a".as_slice()
+            ),
+            ("CLAUDE_CODE_OAUTH_TOKEN", b"sentinel-7f3a".as_slice()),
+        ]
+    );
+}
+
+#[test]
+fn env_is_empty_without_a_proxy() {
+    let t = TempDir::new().unwrap();
+    assert!(Claude.env(&ctx(t.path())).is_empty());
+}
+
+#[test]
+fn nonce_stays_out_of_argv_and_debug_output() {
+    let t = TempDir::new().unwrap();
+    let c = proxied(t.path());
+    assert!(!Claude.argv(&c).join(" ").contains("sentinel-7f3a"));
+    assert!(!Claude
+        .resume_argv("s-1", &c)
+        .join(" ")
+        .contains("sentinel-7f3a"));
+    assert!(!format!("{c:?}").contains("sentinel-7f3a"));
+    assert!(!format!("{:?}", Claude.env(&c)).contains("sentinel-7f3a"));
+}
+
+#[test]
+fn model_route_targets_anthropic_with_the_oauth_credential() {
+    assert_eq!(
+        Claude.model_route(),
+        ModelRoute {
+            upstream: "https://api.anthropic.com".into(),
+            credential: "CLAUDE_CODE_OAUTH_TOKEN".into(),
+        }
+    );
+}
+
+#[test]
 fn resume_argv_keeps_the_flags_and_drops_the_prompt() {
     let t = TempDir::new().unwrap();
     let c = LaunchCtx {
         model: Some("opus".into()),
-        bypass: true,
-        ..ctx(t.path())
+        ..proxied(t.path())
     };
     assert_eq!(
         Claude.resume_argv("s-1", &c),
