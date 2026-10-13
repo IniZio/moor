@@ -59,6 +59,11 @@ fn world_with(driver: FakeDriver, repo: &Path, config: UserConfig) -> World {
         &["rev-parse", "--path-format=absolute", "--git-common-dir"],
         Reply::Ok(format!("{}/.git\n", repo.display())),
     );
+    proc.on(
+        Tool::Git,
+        &["rev-parse", "--git-path", "info/exclude"],
+        Reply::Ok(format!("{}/exclude\n", dir.path().display())),
+    );
     let driver = Arc::new(driver);
     let surface = Arc::new(FakeSurface::new(dir.path()));
     let cx = Cx::fake_with(
@@ -118,6 +123,35 @@ fn happy_path_calls_seams_in_order_and_clears_intent() {
         ["create_worktree demo", "ensure_workspace moor:demo"]
     );
     assert_eq!(w.driver.calls(), ["acquire"]);
+}
+
+#[test]
+fn start_excludes_scratch_dirs_in_the_created_worktree() {
+    let w = world(FakeDriver::new());
+    let v = run(&w.cx, &req("demo")).unwrap();
+    let wt = std::path::PathBuf::from(v.task.worktree.unwrap());
+    assert_exclude_call(&w, &wt);
+}
+
+#[test]
+fn start_excludes_scratch_dirs_in_a_bound_worktree() {
+    let w = world(FakeDriver::new());
+    let made = w
+        .surface
+        .create_worktree(Path::new("/repo"), &TaskName::parse("pre").unwrap(), None)
+        .unwrap();
+    let mut r = req("demo");
+    r.worktree = Some(made.path.display().to_string());
+    run(&w.cx, &r).unwrap();
+    assert_exclude_call(&w, &made.path);
+}
+
+/// Asserts git was asked for `info/exclude` from inside `wt`.
+fn assert_exclude_call(w: &World, wt: &Path) {
+    let hit = w.proc.calls().into_iter().any(|c| {
+        c.args == ["rev-parse", "--git-path", "info/exclude"] && c.cwd.as_deref() == Some(wt)
+    });
+    assert!(hit, "no exclude lookup in {}", wt.display());
 }
 
 #[test]

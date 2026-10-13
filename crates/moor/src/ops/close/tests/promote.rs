@@ -75,6 +75,11 @@ fn world_at(config: UserConfig, driver: FakeDriver, repo: &Path) -> World {
         &["rev-parse", "--path-format=absolute", "--git-common-dir"],
         repo_out("/.git"),
     );
+    proc.on(
+        Tool::Git,
+        &["rev-parse", "--git-path", "info/exclude"],
+        Reply::Ok(format!("{}/exclude\n", dir.path().display())),
+    );
     proc.on(Tool::Git, &["rev-list"], Reply::Ok("0\n".into()));
     proc.on(Tool::Git, &["status"], Reply::Ok(String::new()));
     let driver = Arc::new(driver);

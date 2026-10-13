@@ -45,6 +45,11 @@ fn world(config: UserConfig) -> World {
         &["rev-parse", "--path-format=absolute", "--git-common-dir"],
         Reply::Ok(format!("{}/.git\n", repo.display())),
     );
+    proc.on(
+        Tool::Git,
+        &["rev-parse", "--git-path", "info/exclude"],
+        Reply::Ok(format!("{}/exclude\n", dir.path().display())),
+    );
     let driver = Arc::new(FakeDriver::new());
     let surface = Arc::new(FakeSurface::new(dir.path()));
     let cx = Cx::fake_with(
