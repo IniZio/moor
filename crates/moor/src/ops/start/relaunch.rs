@@ -1,5 +1,6 @@
 //! Starts the agent again for a Working Task whose pane is gone or has exited.
 
+use moor_core::decide::transcript::Trigger;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
 use moor_core::domain::task::TaskState;
 use moor_core::seam::proc::Deadline;
@@ -13,6 +14,7 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::provision::reread;
+use crate::ops::common::transcript;
 use crate::store::{SessionRow, Store};
 
 /// Time allowed for reading a pane to see whether it ended.
@@ -117,7 +119,9 @@ fn relaunch(
         Ended::Gone => None,
         Ended::Exited(code) => Some(*code),
     };
-    store.end_session(old.id, exit, None)?;
+    let saved = transcript::save(cx, store, &row, old, Trigger::Relaunch);
+    let digest = saved.as_ref().map(|t| t.digest.as_str());
+    store.end_session(old.id, exit, digest)?;
     let view = launch::begin(cx, store, &row, &launch)?;
     if view.launched {
         let new_pane = store.live_session(id)?.and_then(|s| s.pane);

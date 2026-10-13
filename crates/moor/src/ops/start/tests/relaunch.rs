@@ -22,7 +22,7 @@ fn goal_req(goal: &str) -> StartReq {
 }
 
 /// A launched session whose pane is `pane`.
-fn session(pane: &str) -> SessionRef {
+pub(super) fn session(pane: &str) -> SessionRef {
     SessionRef {
         id: String::new(),
         handle: BoxHandle::new("box-1"),
@@ -43,7 +43,7 @@ fn obs(exit_marker: Option<i32>) -> PaneObs {
 }
 
 /// A world with a Working task `demo` launched with "ship it" in pane `p-1`; the next launch opens `p-2`.
-fn started() -> (World, Arc<FakeEngine>, TaskId) {
+pub(super) fn started() -> (World, Arc<FakeEngine>, TaskId) {
     let engine = Arc::new(
         FakeEngine::new()
             .launch_result(Ok(session("p-1")))
@@ -96,7 +96,7 @@ fn exit_of_first_session(w: &World, id: TaskId) -> Option<i32> {
 }
 
 /// Makes `p-1` read as gone.
-fn gone(w: &World) {
+pub(super) fn gone(w: &World) {
     w.surface.push_pane_obs("p-1", Err(SurfaceError::NotFound));
 }
 

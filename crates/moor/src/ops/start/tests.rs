@@ -23,6 +23,7 @@ mod capacity;
 mod relaunch;
 mod session;
 mod setup;
+mod transcript;
 
 /// A world of fakes plus the context over them.
 struct World {
