@@ -207,6 +207,15 @@ pub enum Event {
         /// What went wrong.
         error: String,
     },
+    /// A message or menu choice was sent to the agent.
+    Steered {
+        /// The agent session it went to.
+        session: String,
+        /// What was sent.
+        message: String,
+        /// Whether the submit key was pressed a second time.
+        submit_retried: bool,
+    },
 }
 
 impl Event {
@@ -247,6 +256,7 @@ impl Event {
             Self::AgentPromptCheckFailed { .. } => "agent_prompt_check_failed",
             Self::TranscriptSaved { .. } => "transcript_saved",
             Self::TranscriptFailed { .. } => "transcript_failed",
+            Self::Steered { .. } => "steered",
         }
     }
 

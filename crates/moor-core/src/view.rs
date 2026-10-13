@@ -3,6 +3,7 @@
 pub mod env;
 pub mod run;
 pub mod sleep;
+pub mod steer;
 
 use crate::domain::boxes::BoxState;
 use crate::domain::task::TaskState;

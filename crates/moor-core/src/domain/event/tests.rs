@@ -116,6 +116,11 @@ fn all_events() -> Vec<Event> {
             trigger: s("close"),
             error: s("e"),
         },
+        Event::Steered {
+            session: s("x"),
+            message: s("m"),
+            submit_retried: true,
+        },
     ]
 }
 
@@ -165,6 +170,7 @@ const fn event_index(e: &Event) -> usize {
         Event::AgentPromptCheckFailed { .. } => 30,
         Event::TranscriptSaved { .. } => 31,
         Event::TranscriptFailed { .. } => 32,
+        Event::Steered { .. } => 33,
     }
 }
 
@@ -172,7 +178,7 @@ const fn event_index(e: &Event) -> usize {
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 33);
+    assert_eq!(all.len(), 34);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }
