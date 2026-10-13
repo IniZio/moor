@@ -261,6 +261,69 @@ impl fmt::Display for ProcError {
 
 impl std::error::Error for ProcError {}
 
+/// Why a long-lived child gave no first stdout line.
+#[derive(Debug)]
+pub enum FirstLineError {
+    /// No full line arrived before the deadline; the child keeps running.
+    Timeout {
+        /// Program.
+        tool: Tool,
+        /// Deadline that elapsed.
+        after: Duration,
+    },
+    /// The child exited before writing a full line.
+    Exited {
+        /// Exit code, if it exited normally.
+        code: Option<i32>,
+        /// Signal, if killed by one.
+        signal: Option<i32>,
+        /// Last ~2 KiB of stderr.
+        stderr_tail: String,
+    },
+    /// Reading the child's stdout failed.
+    Io(std::io::Error),
+}
+
+impl fmt::Display for FirstLineError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Timeout { tool, after } => write!(
+                f,
+                "{} gave no first line within {}s",
+                tool.program(),
+                after.as_secs()
+            ),
+            Self::Exited { code: Some(c), .. } => {
+                write!(f, "program exited with code {c} before its first line")
+            }
+            Self::Exited {
+                signal: Some(s), ..
+            } => write!(f, "program killed by signal {s} before its first line"),
+            Self::Exited { .. } => f.write_str("program exited before its first line"),
+            Self::Io(e) => write!(f, "could not read program output: {e}"),
+        }
+    }
+}
+
+impl std::error::Error for FirstLineError {}
+
+/// A running child in its own process group. Dropping the handle sends
+/// SIGTERM to the group, then SIGKILL after a short grace, and reaps the
+/// leader.
+pub trait ChildHandle: Send {
+    /// Leader pid, which is also the process group id.
+    fn pid(&self) -> u32;
+
+    /// First stdout line without its line ending. Once a line arrived, later
+    /// calls return the same line at once.
+    ///
+    /// # Errors
+    /// [`FirstLineError::Timeout`] when no line arrives within `deadline`,
+    /// [`FirstLineError::Exited`] when the child exits first,
+    /// [`FirstLineError::Io`] when stdout cannot be read.
+    fn first_line(&mut self, deadline: Deadline) -> Result<String, FirstLineError>;
+}
+
 /// Runs external programs; the only place moor spawns processes.
 pub trait Proc: Send + Sync {
     /// Runs to completion; `Ok` only on exit 0.
@@ -294,6 +357,21 @@ pub trait Proc: Send + Sync {
     /// # Errors
     /// Returns [`ProcError::Spawn`] when the program cannot start.
     fn spawn_detached(&self, spec: &ProcSpec) -> Result<(), ProcError>;
+
+    /// Starts a long-lived child in its own process group with stdout piped
+    /// for [`ChildHandle::first_line`] and stderr kept for its tail.
+    /// `spec.deadline` does not limit the child's lifetime.
+    ///
+    /// # Errors
+    /// Returns [`ProcError::Spawn`] when the program cannot start, or when
+    /// this spawner cannot run long-lived children.
+    fn spawn_child(&self, spec: &ProcSpec) -> Result<Box<dyn ChildHandle>, ProcError> {
+        let _ = spec;
+        Err(ProcError::Spawn(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "long-lived children are not supported",
+        )))
+    }
 
     /// Whether a process with this pid exists.
     fn alive(&self, pid: u32) -> bool;
