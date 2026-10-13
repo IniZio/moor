@@ -175,12 +175,10 @@ fn attach(
     Ok(v)
 }
 
-/// Moves an Idle Task with no live session to Working, so the launch check sees a Working Task.
-///
-/// An Idle Task whose agent is live keeps its state: `settle_all` already woke it if it was busy.
+/// Moves an Idle Task being started to Working, so the launch check sees a Working Task.
 fn wake_idle(store: &Store, id: TaskId) -> Result<(), CommandError> {
     let row = reread(store, id)?;
-    if row.state != TaskState::Idle || store.live_session(id)?.is_some() {
+    if row.state != TaskState::Idle {
         return Ok(());
     }
     match store.apply(Decision::new(id).task_input(TaskInput::AgentBusy)) {
