@@ -6,6 +6,7 @@
 use std::path::{Path, PathBuf};
 
 use moor_core::config::Flags;
+use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, NewTask};
 use moor_core::domain::event::CheckedCred;
 use moor_core::domain::task::{TaskInput, TaskState};
@@ -53,6 +54,7 @@ struct Placed {
 pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     let store = cx.store()?;
     let (repo, bound) = locate(cx, req)?;
+    settle_all(cx, store)?;
     if let Some(row) = store.open_task_by_name(&req.name)? {
         return attach(cx, store, req, &row);
     }
@@ -150,7 +152,7 @@ fn attach(
     let reprovisioned = reprovision(cx, store, row, "start")?;
     store.apply(Decision::new(row.id).event(ExtraEvent::Attached))?;
     launch_agent(store, row.id)?;
-    let row = &settle_agent(cx, store, row.id)?;
+    let row = &reread(store, row.id)?;
     if let Some(run) = reprovisioned {
         let mut v = with_provider(cx, row, true)?;
         v.setup = run.view();
@@ -159,24 +161,32 @@ fn attach(
     with_provider(cx, row, true)
 }
 
-/// Records a session for a Working Task that never had one.
+/// Records a session for a Working Task with a goal that never had one.
 ///
-/// The session is recorded before any agent launch exists, so the Task reads as live.
+/// The session is recorded before any agent launch exists, so the Task reads as live. Without a
+/// goal no agent would launch, so none is recorded.
 fn launch_agent(store: &Store, id: TaskId) -> Result<(), CommandError> {
     let row = reread(store, id)?;
-    if row.state == TaskState::Working && !store.has_session(id)? {
+    if row.state == TaskState::Working && row.goal.is_some() && !store.has_session(id)? {
         store.begin_session(id, &format!("moor-{}", id.get()))?;
     }
     Ok(())
 }
 
-/// The row of `id` after its agent's activity moved the Task between Working and Idle.
-fn settle_agent(cx: &Cx, store: &Store, id: TaskId) -> Result<TaskRow, CommandError> {
-    let row = reread(store, id)?;
-    let reading = activity::read(cx, store, &row, cx.clock().now())?;
-    activity::settle(store, &row, &reading)?;
-    autosleep::run(cx, store, id);
-    reread(store, id)
+/// Moves each open Task with a ready Box and no failed setup between Working and Idle.
+///
+/// Runs before the start, which may then leave the Task it starts in another state.
+fn settle_all(cx: &Cx, store: &Store) -> Result<(), CommandError> {
+    for row in &store.open_tasks()? {
+        let ready = row.boxed.as_ref().map(|b| b.state) == Some(BoxState::Ready);
+        if !ready || row.setup_failed_at.is_some() {
+            continue;
+        }
+        let reading = activity::read(cx, store, row, cx.clock().now())?;
+        activity::settle(store, row, &reading)?;
+        autosleep::run(cx, store, row.id);
+    }
+    Ok(())
 }
 
 /// [`queued_view`] for a row whose provider is not at hand; resolved only when it is queued.
