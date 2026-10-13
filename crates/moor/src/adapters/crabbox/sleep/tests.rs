@@ -83,6 +83,14 @@ fn provider_that_cannot_wake_stays_up() {
 }
 
 #[test]
+fn unknown_provider_stays_up_with_a_reason_and_no_pause() {
+    let (p, c) = fixture();
+    let got = c.sleep(&BoxHandle::new("nope/box"));
+    assert!(matches!(&got, Ok(SleepOutcome::CannotSleep(r)) if r.contains("nope")));
+    assert_eq!(verbs(&p), ["providers"]);
+}
+
+#[test]
 fn handle_without_provider_cannot_sleep() {
     let (p, c) = fixture();
     let got = c.sleep(&BoxHandle::new("box"));
@@ -150,5 +158,9 @@ fn wake_is_unsupported_without_sleep_or_provider() {
         c.wake(&BoxHandle::new("box")),
         Err(DriverError::Unsupported(_))
     ));
-    assert_eq!(verbs(&p), ["providers"]);
+    assert!(matches!(
+        c.wake(&BoxHandle::new("nope/box")),
+        Err(DriverError::Unsupported(_))
+    ));
+    assert_eq!(verbs(&p), ["providers", "providers"]);
 }

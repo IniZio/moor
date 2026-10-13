@@ -23,7 +23,15 @@ pub(super) fn sleep(cb: &Crabbox, handle: &BoxHandle) -> Result<SleepOutcome, Dr
     let Some(provider) = split_handle(handle).0 else {
         return Ok(SleepOutcome::CannotSleep(NO_PROVIDER.to_owned()));
     };
-    let caps = cb.caps(&ProviderId::new(provider))?;
+    let caps = match cb.caps(&ProviderId::new(provider)) {
+        Ok(caps) => caps,
+        Err(DriverError::Unsupported(_)) => {
+            return Ok(SleepOutcome::CannotSleep(format!(
+                "provider {provider} is unknown; box stays up"
+            )));
+        }
+        Err(e) => return Err(e),
+    };
     match caps.sleep {
         SleepKind::Native => Ok(SleepOutcome::Native),
         SleepKind::None => Ok(SleepOutcome::CannotSleep(format!(
