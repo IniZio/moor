@@ -86,6 +86,22 @@ pub enum ExtraEvent {
         /// What went wrong.
         error: String,
     },
+    /// The agent's transcript was saved on the host.
+    TranscriptSaved {
+        /// What ended the session: `relaunch` or `close`.
+        trigger: String,
+        /// The host path of the archive.
+        path: String,
+        /// The digest of the archive.
+        digest: String,
+    },
+    /// The agent's transcript could not be saved.
+    TranscriptFailed {
+        /// What ended the session: `relaunch` or `close`.
+        trigger: String,
+        /// What went wrong.
+        error: String,
+    },
 }
 
 impl From<ExtraEvent> for Event {
@@ -124,6 +140,18 @@ impl From<ExtraEvent> for Event {
             ExtraEvent::AgentPromptCheckFailed { pane, error } => {
                 Self::AgentPromptCheckFailed { pane, error }
             }
+            ExtraEvent::TranscriptSaved {
+                trigger,
+                path,
+                digest,
+            } => Self::TranscriptSaved {
+                trigger,
+                path,
+                digest,
+            },
+            ExtraEvent::TranscriptFailed { trigger, error } => {
+                Self::TranscriptFailed { trigger, error }
+            }
         }
     }
 }
@@ -132,6 +160,7 @@ impl TryFrom<Event> for ExtraEvent {
     type Error = Event;
 
     /// Returns the original event when its kind is derived.
+    #[allow(clippy::too_many_lines, reason = "one arm per event variant")]
     fn try_from(e: Event) -> Result<Self, Event> {
         match e {
             Event::StaysUp { reason } => Ok(Self::StaysUp { reason }),
@@ -166,6 +195,18 @@ impl TryFrom<Event> for ExtraEvent {
             }
             Event::AgentPromptCheckFailed { pane, error } => {
                 Ok(Self::AgentPromptCheckFailed { pane, error })
+            }
+            Event::TranscriptSaved {
+                trigger,
+                path,
+                digest,
+            } => Ok(Self::TranscriptSaved {
+                trigger,
+                path,
+                digest,
+            }),
+            Event::TranscriptFailed { trigger, error } => {
+                Ok(Self::TranscriptFailed { trigger, error })
             }
             e @ (Event::Started
             | Event::Rejected { .. }

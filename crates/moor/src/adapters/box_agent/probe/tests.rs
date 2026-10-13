@@ -68,6 +68,10 @@ impl AgentProfile for Stub {
     fn menu_keys(&self, _: u8) -> Vec<Key> {
         Vec::new()
     }
+
+    fn transcript_script(&self, _: &str) -> String {
+        String::new()
+    }
 }
 
 const DEADLINE: Deadline = Deadline(Duration::from_secs(3));

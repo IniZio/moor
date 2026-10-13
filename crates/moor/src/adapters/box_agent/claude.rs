@@ -93,6 +93,21 @@ impl AgentProfile for Claude {
     fn menu_keys(&self, n: u8) -> Vec<Key> {
         launch::menu_keys(n)
     }
+
+    fn transcript_script(&self, archive: &str) -> String {
+        format!(
+            r#"set -e
+enc=$(pwd | sed 's/[^A-Za-z0-9]/-/g')
+d="$HOME/.claude/projects/$enc"
+mkdir -p "$(dirname {archive})"
+if ! ls "$d"/*.jsonl >/dev/null 2>&1; then
+  echo "no transcript jsonl in $d" >&2
+  exit 3
+fi
+(cd "$d" && tar czf "$OLDPWD/{archive}" *.jsonl)
+"#
+        )
+    }
 }
 
 /// `line` without ANSI escape sequences: CSI, and OSC ended by BEL or `ESC \`.

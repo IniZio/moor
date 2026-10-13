@@ -118,4 +118,9 @@ pub trait AgentProfile: Send + Sync {
 
     /// The keys that pick menu option `n`.
     fn menu_keys(&self, n: u8) -> Vec<Key>;
+
+    /// POSIX sh text that archives the agent's session transcripts to `archive`.
+    ///
+    /// It runs in the Box workdir and exits non-zero when there is nothing to archive.
+    fn transcript_script(&self, archive: &str) -> String;
 }
