@@ -41,6 +41,43 @@ fn cp_prints_its_confirmation() {
     assert_eq!(out, "copied a to b (3 bytes)\n");
 }
 
+/// Builds a sleep/wake value for task `task` with an optional Box state.
+fn sleep_value(task: &str, state: Option<&str>, woke: bool) -> serde_json::Value {
+    let b = state.map(|s| json!({"state": s, "sleep": {"after": null, "reason": null}}));
+    json!({"task": task, "box": b, "woke": woke})
+}
+
+#[test]
+fn sleep_prints_one_line() {
+    let v = sleep_value("t1", Some("asleep"), false);
+    let (out, _) = render(&Response::ok("sleep", Some(v)), false);
+    assert_eq!(out, "t1 is asleep\n");
+    let v = sleep_value("t1", Some("ready"), false);
+    let (out, _) = render(&Response::ok("sleep", Some(v)), false);
+    assert_eq!(out, "t1: box is ready\n");
+    let v = sleep_value("t1", None, false);
+    let (out, _) = render(&Response::ok("sleep", Some(v)), false);
+    assert_eq!(out, "t1 is asleep\n");
+}
+
+#[test]
+fn wake_prints_whether_it_woke() {
+    let v = sleep_value("t1", Some("ready"), true);
+    let (out, _) = render(&Response::ok("wake", Some(v)), false);
+    assert_eq!(out, "t1 woke\n");
+    let v = sleep_value("t1", Some("ready"), false);
+    let (out, _) = render(&Response::ok("wake", Some(v)), false);
+    assert_eq!(out, "t1 was not asleep\n");
+}
+
+#[test]
+fn malformed_sleep_value_falls_back_to_json() {
+    let (out, _) = render(&Response::ok("sleep", Some(json!({"woke": false}))), false);
+    assert!(out.contains("\"woke\": false"));
+    let (out, _) = render(&Response::ok("wake", Some(json!({"task": 3}))), false);
+    assert!(out.contains("\"task\": 3"));
+}
+
 #[test]
 fn other_value_is_pretty_json_and_none_is_empty() {
     let (out, _) = render(&Response::ok("show", Some(json!({"a": 1}))), false);

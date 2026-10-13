@@ -1,0 +1,50 @@
+//! Wake an Asleep Task and Box before an op acts on them.
+//!
+//! The caller holds the Box lock and passes a row read after taking it.
+
+use moor_core::domain::boxes::{BoxInput, BoxState};
+use moor_core::domain::decision::Decision;
+use moor_core::domain::task::{TaskInput, TaskState};
+use moor_core::ErrorKind;
+
+use crate::cx::Cx;
+use crate::error::CommandError;
+use crate::store::{Store, TaskRow};
+
+/// Wake the Task and its Box when either is Asleep; `Ok(true)` when it did.
+///
+/// A Gone Box is never resumed. When the Driver fails to resume the Box,
+/// nothing is applied and the Task and Box stay Asleep.
+pub(crate) fn wake_if_asleep(cx: &Cx, store: &Store, row: &TaskRow) -> Result<bool, CommandError> {
+    let task_asleep = row.state == TaskState::Asleep;
+    let box_asleep = row
+        .boxed
+        .as_ref()
+        .is_some_and(|b| b.state == BoxState::Asleep);
+    if !task_asleep && !box_asleep {
+        return Ok(false);
+    }
+    if let Some(b) = &row.boxed {
+        if matches!(b.state, BoxState::Gone | BoxState::Deleted) {
+            return Err(CommandError::new(ErrorKind::Refused, "the Box is gone"));
+        }
+        if box_asleep {
+            let handle = b.handle.as_ref().ok_or_else(|| {
+                CommandError::new(ErrorKind::Refused, "the Box has not been acquired")
+            })?;
+            cx.driver().wake(handle)?;
+        }
+    }
+    let mut d = Decision::new(row.id);
+    if task_asleep {
+        d = d.task_input(TaskInput::Wake);
+    }
+    if box_asleep {
+        d = d.box_input(BoxInput::Wake);
+    }
+    store.apply(d)?;
+    Ok(true)
+}
+
+#[cfg(test)]
+mod tests;
