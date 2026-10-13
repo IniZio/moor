@@ -7,6 +7,7 @@ mod creds;
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 use std::path::{Component, Path, PathBuf};
+use std::time::Duration;
 
 use serde::Deserialize;
 
@@ -15,6 +16,12 @@ pub use creds::{CredentialSource, McpServer};
 
 /// herdr session used when `surface.herdr.session` is unset.
 const DEFAULT_HERDR_SESSION: &str = "moor";
+
+/// Idle time before a Box sleeps when `box.sleep_after` is unset.
+pub const DEFAULT_SLEEP_AFTER: Duration = Duration::from_mins(30);
+
+/// Label shown for [`DEFAULT_SLEEP_AFTER`].
+const DEFAULT_SLEEP_AFTER_LABEL: &str = "30m";
 
 /// Box size class.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
@@ -83,6 +90,59 @@ pub struct BoxConfig {
     pub enforce_egress: Option<bool>,
     /// Idle time before a Box sleeps.
     pub sleep_after: Option<String>,
+}
+
+impl BoxConfig {
+    /// Idle time before a Box sleeps: the configured value or the default.
+    #[must_use]
+    pub fn sleep_after(&self) -> Duration {
+        self.sleep_after
+            .as_deref()
+            .and_then(|t| parse_duration(t).ok())
+            .unwrap_or(DEFAULT_SLEEP_AFTER)
+    }
+
+    /// The idle time as text: as configured (trimmed), or `30m` when unset.
+    #[must_use]
+    pub fn sleep_after_label(&self) -> String {
+        self.sleep_after.as_deref().map_or_else(
+            || DEFAULT_SLEEP_AFTER_LABEL.to_owned(),
+            |t| t.trim().to_owned(),
+        )
+    }
+
+    /// `sleep_after` parses as a duration.
+    fn validate(&self) -> Result<(), ConfigError> {
+        if let Some(t) = &self.sleep_after {
+            parse_duration(t).map_err(|why| ConfigError::new("box.sleep_after", why))?;
+        }
+        Ok(())
+    }
+}
+
+/// Parses `<positive integer><s|m|h|d>`, e.g. `45m`.
+fn parse_duration(text: &str) -> Result<Duration, &'static str> {
+    const MSG: &str = "must be a positive duration like 30s, 45m, 2h or 1d";
+    let text = text.trim();
+    let unit = text.chars().next_back().ok_or(MSG)?;
+    let secs_per = match unit {
+        's' => 1,
+        'm' => 60,
+        'h' => 3600,
+        'd' => 86400,
+        _ => return Err(MSG),
+    };
+    let digits = text.strip_suffix(unit).ok_or(MSG)?;
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return Err(MSG);
+    }
+    let n: u64 = digits.parse().map_err(|_| "duration is too large")?;
+    if n == 0 {
+        return Err("must be greater than zero");
+    }
+    n.checked_mul(secs_per)
+        .map(Duration::from_secs)
+        .ok_or("duration is too large")
 }
 
 /// `drivers.<name>:` section.
@@ -268,6 +328,7 @@ impl UserConfig {
         if let Some(app) = &self.github.app {
             app.validate()?;
         }
+        self.box_.validate()?;
         creds::validate_credentials(&self.credentials)?;
         creds::validate_mcp(&self.mcp_servers, &self.credentials)?;
         if let Some(d) = &self.dotfiles {
