@@ -5,4 +5,5 @@ pub mod close;
 pub mod gate;
 pub mod intent;
 pub mod reconcile;
+pub mod sleep;
 pub mod wait;
