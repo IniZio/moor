@@ -3,6 +3,7 @@
 //! Strict: unknown keys fail parsing; [`parse_user`] then validates values.
 
 mod creds;
+mod github;
 
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
@@ -13,6 +14,7 @@ use serde::Deserialize;
 
 use super::{check, parse_strict, ConfigError};
 pub use creds::{CredentialSource, McpServer};
+pub use github::DEFAULT_YOU_TOKEN_CMD;
 
 /// herdr session used when `surface.herdr.session` is unset.
 const DEFAULT_HERDR_SESSION: &str = "moor";
@@ -161,6 +163,10 @@ pub struct GithubConfig {
     pub identity: Identity,
     /// The GitHub App moor mints tokens from.
     pub app: Option<GithubApp>,
+    /// Host command (argv) that prints a GitHub token; `gh auth token` when unset.
+    pub you_token_cmd: Option<Vec<String>>,
+    /// Environment variable names passed through to the token command.
+    pub pass_env: Vec<String>,
 }
 
 /// `github.app:` section.
@@ -328,6 +334,7 @@ impl UserConfig {
         if let Some(app) = &self.github.app {
             app.validate()?;
         }
+        self.github.validate()?;
         self.box_.validate()?;
         creds::validate_credentials(&self.credentials)?;
         creds::validate_mcp(&self.mcp_servers, &self.credentials)?;
