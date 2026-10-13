@@ -4,6 +4,7 @@ pub mod agent_profile;
 pub mod clock;
 pub mod driver;
 pub mod engine;
+pub mod forge;
 pub mod proc;
 pub mod rng;
 pub mod surface;
