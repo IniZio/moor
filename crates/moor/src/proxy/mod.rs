@@ -5,9 +5,19 @@
 //! bodies.
 
 mod head;
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "the CLI starts the proxy in a later change")
+)]
+mod relay;
 mod server;
 #[cfg(test)]
 mod tests;
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "the CLI starts the proxy in a later change")
+)]
+mod upstream;
 
 #[expect(unused_imports, reason = "the CLI starts the proxy in a later change")]
 pub(crate) use server::{Forward, ForwardHandler, Proxy};
