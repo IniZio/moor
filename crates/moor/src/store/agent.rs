@@ -166,7 +166,10 @@ fn record_from_json(v: &Value) -> Result<HookRecord, StoreError> {
     Ok(HookRecord {
         kind,
         session_id: v["session_id"].as_str().map(str::to_owned),
-        message: v["message"].as_str().map(str::to_owned),
+        message: v["message"]
+            .as_str()
+            .or_else(|| v["waiting_for"].as_str())
+            .map(str::to_owned),
         at: Ts::from_millis(v["at"].as_i64().ok_or_else(|| bad("missing at"))?),
     })
 }

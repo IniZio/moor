@@ -134,20 +134,19 @@ fn hook_message_wins_over_the_pane_text() {
 }
 
 #[test]
-fn blocked_hook_without_a_usable_message_waits_for_nothing() {
-    let none = || PaneRead::Absent;
+fn blocked_hook_without_a_usable_message_falls_back_to_the_pane_prompt() {
     let blank = |m: Option<&str>| {
         HookRead::Fresh(HookRecord {
             message: m.map(str::to_owned),
             ..said("")
         })
     };
-    Case::new("no message", blank(None), none()).expect(SILENT, Src::Hooks);
-    Case::new("blank message", blank(Some(" \n")), none()).expect(SILENT, Src::Hooks);
-    Case::new(
-        "pane prompt is not borrowed",
-        blank(None),
-        asking(P::Blocked, "", "Allow rm?"),
-    )
-    .expect(SILENT, Src::Hooks);
+    let none = PaneRead::Absent;
+    Case::new("no message", blank(None), none).expect(SILENT, Src::Hooks);
+    Case::new("no prompt", blank(None), obs(P::Blocked, "x")).expect(SILENT, Src::Hooks);
+    Case::new("blank message", blank(Some(" \n")), obs(P::Blocked, "x")).expect(SILENT, Src::Hooks);
+    let ask = || asking(P::Blocked, "", "Pick one?");
+    Case::new("no message, prompt", blank(None), ask()).expect(waiting("Pick one?"), Src::Hooks);
+    Case::new("blank message, prompt", blank(Some(" ")), ask())
+        .expect(waiting("Pick one?"), Src::Hooks);
 }

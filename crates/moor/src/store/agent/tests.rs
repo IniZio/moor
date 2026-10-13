@@ -236,3 +236,22 @@ fn rejected_step_leaves_idle_since_unchanged() {
         .is_err());
     assert_eq!(idle_since(&store, id), want);
 }
+
+#[test]
+fn hook_cache_reads_a_legacy_blocked_row_as_its_message() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = add(&store, "t");
+    let c = rusqlite::Connection::open(dir.path().join("moor.db")).unwrap();
+    c.execute(
+        "INSERT INTO hook_cache (task, record, at) VALUES (?1, ?2, 1)",
+        rusqlite::params![
+            id.get(),
+            r#"{"kind":"blocked","waiting_for":"X","session_id":null,"at":5}"#
+        ],
+    )
+    .unwrap();
+    let rec = store.hook(id).unwrap().unwrap().record;
+    assert_eq!(rec.kind, HookKind::Blocked);
+    assert_eq!(rec.message.as_deref(), Some("X"));
+}
