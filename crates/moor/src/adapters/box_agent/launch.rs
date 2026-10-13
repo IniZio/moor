@@ -162,7 +162,10 @@ impl Launch<'_> {
                 )
                 .map_err(|e| fail("hooks", &e))?;
         }
-        let argv = profile.argv(ctx);
+        let argv = req
+            .resume
+            .as_deref()
+            .map_or_else(|| profile.argv(ctx), |id| profile.resume_argv(id, ctx));
         let script = script(cred, ctx, &hooks, &preseed, &argv).map_err(|e| fail("script", &e))?;
         let line = format!(
             "{} {}; echo \"moor: agent exited $?\"",
