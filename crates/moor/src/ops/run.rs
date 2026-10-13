@@ -5,6 +5,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use moor_core::boxscript::command_line;
 use moor_core::config::Flags;
 use moor_core::domain::run::SyncMode;
 use moor_core::seam::driver::{ExecOutcome, ExecSpec};
@@ -123,8 +124,8 @@ fn launch(
 
 /// The sha the run is stored under and the argv the Box executes.
 ///
-/// A record run is checked first and runs the wrapped script; any other run keeps its argv and
-/// takes HEAD when it can be read.
+/// A record run is checked first and runs the wrapped script; any other run
+/// runs as shell text and takes HEAD when it can be read.
 fn plan(
     cx: &Cx,
     req: &RunReq,
@@ -140,7 +141,11 @@ fn plan(
         .head(worktree)
         .ok()
         .and_then(|s| Sha::parse(&s).ok());
-    Ok((sha, req.argv.clone()))
+    let script = match req.argv.as_slice() {
+        [text] => text.clone(),
+        argv => command_line(argv),
+    };
+    Ok((sha, vec!["sh".into(), "-c".into(), script]))
 }
 
 /// Where the command's output goes, and the log path to report (empty when inherited).
