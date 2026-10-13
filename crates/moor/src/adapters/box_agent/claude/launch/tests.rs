@@ -1,4 +1,8 @@
-#![allow(clippy::indexing_slicing, reason = "test assertions")]
+#![allow(
+    clippy::indexing_slicing,
+    clippy::print_stderr,
+    reason = "test assertions and skip notices"
+)]
 use std::fs;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
@@ -37,11 +41,71 @@ fn install(setup: &BoxSetup) {
 }
 
 fn run_step(setup: &BoxSetup) -> std::process::Output {
-    Command::new("sh")
-        .args(["-c", &setup.step])
-        .stdin(Stdio::null())
+    run_step_on(setup, None)
+}
+
+/// Runs the step with `PATH` replaced when given.
+fn run_step_on(setup: &BoxSetup, path: Option<&str>) -> std::process::Output {
+    let mut cmd = Command::new("/bin/sh");
+    cmd.args(["-c", &setup.step]).stdin(Stdio::null());
+    if let Some(path) = path {
+        cmd.env("PATH", path);
+    }
+    cmd.output().unwrap()
+}
+
+/// Which interpreter a forced `PATH` offers.
+#[derive(Clone, Copy)]
+enum Interp {
+    Python,
+    Node,
+    Neither,
+}
+
+impl Interp {
+    fn tool(self) -> Option<&'static str> {
+        match self {
+            Self::Python => Some("python3"),
+            Self::Node => Some("node"),
+            Self::Neither => None,
+        }
+    }
+}
+
+fn on_host_path(tool: &str) -> Option<String> {
+    let out = Command::new("/bin/sh")
+        .args(["-c", &format!("command -v {tool}")])
         .output()
-        .unwrap()
+        .unwrap();
+    out.status
+        .success()
+        .then(|| String::from_utf8(out.stdout).unwrap().trim().to_owned())
+}
+
+/// A `PATH` of symlinks to the shell tools the steps use, plus only the wanted interpreter.
+/// `None`, after saying why, when the host lacks a needed tool.
+fn forced_path(interp: Interp, bin: &Path) -> Option<String> {
+    let wanted = ["head", "timeout", "date", "mv", "rm", "mkdir", "cp"]
+        .into_iter()
+        .chain(interp.tool());
+    for tool in wanted {
+        let Some(real) = on_host_path(tool) else {
+            eprintln!("skipped: {tool} is not on the host PATH");
+            return None;
+        };
+        std::os::unix::fs::symlink(real, bin.join(tool)).unwrap();
+    }
+    Some(bin.to_str().unwrap().to_owned())
+}
+
+fn any_interpreter() -> bool {
+    let found = ["python3", "node"]
+        .iter()
+        .any(|t| on_host_path(t).is_some());
+    if !found {
+        eprintln!("skipped: neither python3 nor node is on the host PATH");
+    }
+    found
 }
 
 fn read_json(path: &str) -> Value {
@@ -144,8 +208,7 @@ fn hook_fragment_covers_the_five_events() {
     assert!(hooks["Stop"][0].get("matcher").is_none());
 }
 
-#[test]
-fn merge_keeps_existing_settings_and_is_idempotent() {
+fn check_merge_keeps_and_is_idempotent(path: Option<&str>) {
     let t = TempDir::new().unwrap();
     let c = ctx(t.path());
     let settings = format!("{}/.claude/settings.json", c.home.as_str());
@@ -158,7 +221,7 @@ fn merge_keeps_existing_settings_and_is_idempotent() {
     .unwrap();
     let setup = Claude.hook_writer(&c).unwrap();
     install(&setup);
-    let first = run_step(&setup);
+    let first = run_step_on(&setup, path);
     assert!(first.status.success(), "{first:?}");
     let once = read_json(&settings);
     assert_eq!(once["model"], "x");
@@ -166,8 +229,50 @@ fn merge_keeps_existing_settings_and_is_idempotent() {
     assert_eq!(once["hooks"]["Stop"].as_array().unwrap().len(), 2);
     assert_eq!(once["hooks"]["Stop"][0], other);
     assert_eq!(once["hooks"]["PostToolUse"].as_array().unwrap().len(), 1);
-    assert!(run_step(&setup).status.success());
+    assert!(run_step_on(&setup, path).status.success());
     assert_eq!(read_json(&settings), once);
+}
+
+#[test]
+fn merge_keeps_existing_settings_and_is_idempotent() {
+    if any_interpreter() {
+        check_merge_keeps_and_is_idempotent(None);
+    }
+}
+
+fn forced(interp: Interp, check: fn(Option<&str>)) {
+    let bin = TempDir::new().unwrap();
+    if let Some(path) = forced_path(interp, bin.path()) {
+        check(Some(&path));
+    }
+}
+
+#[test]
+fn merge_keeps_existing_settings_with_python3_only() {
+    forced(Interp::Python, check_merge_keeps_and_is_idempotent);
+}
+
+#[test]
+fn merge_keeps_existing_settings_with_node_only() {
+    forced(Interp::Node, check_merge_keeps_and_is_idempotent);
+}
+
+fn check_merge_without_interpreter(path: Option<&str>) {
+    let t = TempDir::new().unwrap();
+    let c = ctx(t.path());
+    let settings = format!("{}/.claude/settings.json", c.home.as_str());
+    let setup = Claude.hook_writer(&c).unwrap();
+    install(&setup);
+    assert!(run_step_on(&setup, path).status.success());
+    assert_eq!(read_json(&settings)["hooks"].as_object().unwrap().len(), 5);
+    fs::write(&settings, r#"{"model":"x"}"#).unwrap();
+    assert!(!run_step_on(&setup, path).status.success());
+    assert_eq!(fs::read_to_string(&settings).unwrap(), r#"{"model":"x"}"#);
+}
+
+#[test]
+fn merge_without_an_interpreter_creates_settings_but_never_edits_them() {
+    forced(Interp::Neither, check_merge_without_interpreter);
 }
 
 #[test]
@@ -195,9 +300,16 @@ fn merge_fails_and_keeps_settings_that_are_not_json() {
 }
 
 fn run_hook(c: &LaunchCtx, state: &str, event: &str, stdin: Option<&str>) {
+    run_hook_on(c, state, event, stdin, None);
+}
+
+fn run_hook_on(c: &LaunchCtx, state: &str, event: &str, stdin: Option<&str>, path: Option<&str>) {
     let script = format!("{}/.moor/hook.sh", c.workdir.as_str());
-    let mut cmd = Command::new("sh");
+    let mut cmd = Command::new("/bin/sh");
     cmd.args([&script, state, event]).stdout(Stdio::null());
+    if let Some(path) = path {
+        cmd.env("PATH", path);
+    }
     match stdin {
         Some(text) => {
             let mut child = cmd.stdin(Stdio::piped()).spawn().unwrap();
@@ -217,8 +329,7 @@ fn state_file(c: &LaunchCtx) -> Vec<u8> {
     fs::read(format!("{}/.moor/agent-state.json", c.workdir.as_str())).unwrap()
 }
 
-#[test]
-fn hook_state_round_trips_through_parse_hook() {
+fn check_hook_round_trip(path: Option<&str>) {
     let t = TempDir::new().unwrap();
     let c = ctx(t.path());
     install(&Claude.hook_writer(&c).unwrap());
@@ -228,7 +339,7 @@ fn hook_state_round_trips_through_parse_hook() {
         "notification_type": "permission_prompt",
     })
     .to_string();
-    run_hook(&c, "waiting_input", "Notification", Some(&payload));
+    run_hook_on(&c, "waiting_input", "Notification", Some(&payload), path);
     let raw = state_file(&c);
     let value: Value = serde_json::from_slice(&raw).unwrap();
     assert_eq!(value["event"], "Notification");
@@ -243,6 +354,44 @@ fn hook_state_round_trips_through_parse_hook() {
         .filter(|n| n.contains(".tmp"))
         .collect();
     assert!(leftovers.is_empty(), "{leftovers:?}");
+}
+
+#[test]
+fn hook_state_round_trips_through_parse_hook() {
+    if any_interpreter() {
+        check_hook_round_trip(None);
+    }
+}
+
+#[test]
+fn hook_state_round_trips_with_python3_only() {
+    forced(Interp::Python, check_hook_round_trip);
+}
+
+#[test]
+fn hook_state_round_trips_with_node_only() {
+    forced(Interp::Node, check_hook_round_trip);
+}
+
+fn check_hook_without_interpreter(path: Option<&str>) {
+    let t = TempDir::new().unwrap();
+    let c = ctx(t.path());
+    install(&Claude.hook_writer(&c).unwrap());
+    let payload = json!({"session_id": "s-42", "message": "m"}).to_string();
+    run_hook_on(&c, "waiting_input", "Notification", Some(&payload), path);
+    let raw = state_file(&c);
+    let value: Value = serde_json::from_slice(&raw).unwrap();
+    assert_eq!(value["state"], "waiting_input");
+    assert_eq!(value["event"], "Notification");
+    assert!(value["ts"].as_i64().unwrap() > 0);
+    assert_eq!(value.as_object().unwrap().len(), 3);
+    let rec = Claude.parse_hook(&raw).unwrap();
+    assert_eq!(rec.session_id, None);
+}
+
+#[test]
+fn hook_without_an_interpreter_falls_back_to_state_event_and_ts() {
+    forced(Interp::Neither, check_hook_without_interpreter);
 }
 
 #[test]
@@ -284,31 +433,70 @@ fn hook_does_not_wait_for_a_stdin_that_never_closes() {
     assert!(Claude.parse_hook(&state_file(&c)).is_some());
 }
 
-#[test]
-fn preseed_creates_and_merges_claude_json() {
+fn check_preseed_creates_and_merges(path: Option<&str>) {
     let t = TempDir::new().unwrap();
     let c = ctx(t.path());
-    let path = format!("{}/.claude.json", c.home.as_str());
+    let file = format!("{}/.claude.json", c.home.as_str());
     let setup = Claude.preseed(&c).unwrap();
     fs::create_dir_all(c.home.as_str()).unwrap();
-    assert!(run_step(&setup).status.success());
+    assert!(run_step_on(&setup, path).status.success());
     let wd = c.workdir.as_str();
-    let fresh = read_json(&path);
+    let fresh = read_json(&file);
     assert_eq!(fresh["hasCompletedOnboarding"], true);
     assert_eq!(fresh["theme"], "dark");
     assert_eq!(fresh["projects"][wd]["hasTrustDialogAccepted"], true);
 
     fs::write(
-        &path,
+        &file,
         json!({"userID": "u", "projects": {wd: {"allowedTools": ["x"]}, "/o": {}}}).to_string(),
     )
     .unwrap();
-    assert!(run_step(&setup).status.success());
-    let merged = read_json(&path);
+    assert!(run_step_on(&setup, path).status.success());
+    let merged = read_json(&file);
     assert_eq!(merged["userID"], "u");
     assert_eq!(merged["projects"]["/o"], json!({}));
     assert_eq!(merged["projects"][wd]["allowedTools"], json!(["x"]));
     assert_eq!(merged["projects"][wd]["hasTrustDialogAccepted"], true);
+}
+
+#[test]
+fn preseed_creates_and_merges_claude_json() {
+    if any_interpreter() {
+        check_preseed_creates_and_merges(None);
+    }
+}
+
+#[test]
+fn preseed_merges_with_python3_only() {
+    forced(Interp::Python, check_preseed_creates_and_merges);
+}
+
+#[test]
+fn preseed_merges_with_node_only() {
+    forced(Interp::Node, check_preseed_creates_and_merges);
+}
+
+fn check_preseed_without_interpreter(path: Option<&str>) {
+    let t = TempDir::new().unwrap();
+    let c = ctx(t.path());
+    let file = format!("{}/.claude.json", c.home.as_str());
+    let setup = Claude.preseed(&c).unwrap();
+    fs::create_dir_all(c.home.as_str()).unwrap();
+    assert!(run_step_on(&setup, path).status.success());
+    assert_eq!(
+        read_json(&file)["projects"][c.workdir.as_str()]["hasTrustDialogAccepted"],
+        true
+    );
+    fs::write(&file, r#"{"keep":1}"#).unwrap();
+    let out = run_step_on(&setup, path);
+    assert!(out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("warning"));
+    assert_eq!(fs::read_to_string(&file).unwrap(), r#"{"keep":1}"#);
+}
+
+#[test]
+fn preseed_without_an_interpreter_writes_fresh_or_warns() {
+    forced(Interp::Neither, check_preseed_without_interpreter);
 }
 
 #[test]
