@@ -61,6 +61,8 @@ pub(crate) struct Reading {
     pub(crate) may_quiet: bool,
     /// Whether a run of the Task is in flight.
     run_in_flight: bool,
+    /// The live session this reading probed.
+    pub(crate) session: Option<i64>,
     /// Why the agent never launched; the Task has no session then.
     pub(crate) launch_failure: Option<LaunchFailure>,
 }
@@ -84,6 +86,7 @@ impl Reading {
             pane,
             may_quiet,
             run_in_flight,
+            session: None,
             launch_failure: None,
         }
     }
@@ -95,6 +98,7 @@ impl Reading {
             pane: PaneLiveness::Gone,
             may_quiet: !run_in_flight,
             run_in_flight,
+            session: None,
             launch_failure: None,
         }
     }
@@ -106,6 +110,7 @@ impl Reading {
             pane: PaneLiveness::Gone,
             may_quiet: false,
             run_in_flight,
+            session: None,
             launch_failure: Some(failure),
         }
     }
@@ -174,6 +179,7 @@ pub(crate) fn read(
         activity: Some(activity),
         may_quiet,
         run_in_flight: in_flight,
+        session: Some(session.id),
         launch_failure: None,
     })
 }
@@ -210,8 +216,8 @@ pub(crate) fn settle(
     row: &TaskRow,
     reading: &Reading,
 ) -> Result<(), CommandError> {
-    if reading.pane == PaneLiveness::Exited {
-        transcript::save_on_exit(cx, store, row)?;
+    if let (PaneLiveness::Exited, Some(probed)) = (reading.pane, reading.session) {
+        transcript::save_on_exit(cx, store, row, probed)?;
     }
     let input = match row.state {
         TaskState::Working if !reading.busy() && reading.may_quiet => TaskInput::AgentQuiet,
