@@ -67,7 +67,8 @@ pub enum Steer {
 pub struct SteerOutcome {
     /// Whether the submit key was pressed a second time because the text stayed in the input.
     pub submit_retried: bool,
-    /// Whether the pane was read again after submitting; `false` means the submit is unconfirmed.
+    /// Whether the pane was read again after submitting text; `false` means the send is unconfirmed,
+    /// as for a menu choice or a failed read.
     pub submit_checked: bool,
 }
 

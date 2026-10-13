@@ -181,7 +181,7 @@ fn menu_sends_the_choice_key() {
         out,
         Ok(SteerOutcome {
             submit_retried: false,
-            submit_checked: true
+            submit_checked: false
         })
     );
     assert_eq!(sends(&s), ["send_keys p-2 2"]);
@@ -329,4 +329,24 @@ fn a_blank_message_is_never_a_pending_submit() {
     let (s, session) = surface(vec![Ok(obs("")), Ok(obs("> \n"))]);
     let (out, _) = steer(&s, &session, &text("  "));
     assert!(!out.unwrap().submit_retried);
+}
+
+#[test]
+fn a_short_end_of_a_long_message_is_not_a_pending_submit() {
+    let msg = "please look at the failing build and then fix the flaky test";
+    let (s, session) = surface(vec![Ok(obs("")), Ok(obs("> the flaky test\n"))]);
+    let (out, _) = steer(&s, &session, &text(msg));
+    assert!(!out.unwrap().submit_retried);
+    assert_eq!(
+        sends(&s).iter().filter(|c| c.ends_with("ctrl+m")).count(),
+        1
+    );
+}
+
+#[test]
+fn the_twelfth_line_from_the_bottom_still_counts() {
+    let tail = format!("> fix the build\n{}", "line\n".repeat(11));
+    let (s, session) = surface(vec![Ok(obs("")), Ok(obs(&tail))]);
+    let (out, _) = steer(&s, &session, &text("fix the build"));
+    assert!(out.unwrap().submit_retried);
 }
