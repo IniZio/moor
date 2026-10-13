@@ -4,6 +4,7 @@ use std::process::{Command, Stdio};
 use std::sync::Arc;
 
 use moor_core::seam::agent_profile::{BoxSetup, LaunchCtx};
+use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, EgressPlan};
 use moor_core::seam::engine::{Engine, EngineError, LaunchReq};
 use moor_core::seam::surface::{Surface, SurfaceError};
@@ -11,6 +12,7 @@ use moor_core::{BoxHandle, BoxPath, ProviderId, TaskId, TaskName};
 
 use crate::adapters::box_agent::claude::Claude;
 use crate::adapters::box_agent::BoxAgent;
+use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
 use crate::testing::surface::FakeSurface;
 
@@ -60,7 +62,12 @@ fn req(s: &FakeSurface) -> LaunchReq {
 }
 
 fn agent(d: &Arc<FakeDriver>, s: &Arc<FakeSurface>) -> BoxAgent {
-    BoxAgent::new(d.clone(), s.clone(), Arc::new(Claude))
+    BoxAgent::new(
+        d.clone(),
+        s.clone(),
+        Arc::new(Claude),
+        Arc::new(FakeClock::new(Ts::from_millis(0))),
+    )
 }
 
 fn launch(
