@@ -83,6 +83,7 @@ fn launch_req() -> LaunchReq {
         task: TaskName::parse("t1").unwrap(),
         branch: "moor/t1".to_owned(),
         goal: None,
+        resume: None,
         issue: None,
         setup_exit: None,
         model: None,

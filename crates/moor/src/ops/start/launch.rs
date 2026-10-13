@@ -36,14 +36,25 @@ pub(super) fn run(
     model: &dyn Fn() -> Result<Option<String>, CommandError>,
 ) -> Result<AgentLaunchView, CommandError> {
     let row = reread(store, id)?;
-    if req.no_agent || store.live_session(id)?.is_some() {
+    if req.no_agent || row.goal.is_none() || store.live_session(id)?.is_some() {
         return Ok(AgentLaunchView::default());
     }
     let Some(mut launch) = launch_req(cx, &row, setup_exit) else {
         return Ok(AgentLaunchView::default());
     };
     launch.model = model()?;
-    match cx.engine().launch(&launch) {
+    begin(cx, store, &row, &launch)
+}
+
+/// Launches `launch` and records the session, or the failure, on the Task `row`.
+pub(super) fn begin(
+    cx: &Cx,
+    store: &Store,
+    row: &TaskRow,
+    launch: &LaunchReq,
+) -> Result<AgentLaunchView, CommandError> {
+    let id = row.id;
+    match cx.engine().launch(launch) {
         Ok(session) => {
             let sref = if session.id.is_empty() {
                 format!("moor-{}", id.get())
@@ -72,8 +83,8 @@ pub(super) fn run(
     }
 }
 
-/// What the Engine needs to launch `row`'s agent; none unless the launch conditions hold.
-fn launch_req(cx: &Cx, row: &TaskRow, setup_exit: Option<i32>) -> Option<LaunchReq> {
+/// What the Engine needs to launch `row`'s agent; none unless the Task is Working with a ready Box.
+pub(super) fn launch_req(cx: &Cx, row: &TaskRow, setup_exit: Option<i32>) -> Option<LaunchReq> {
     let b = row.boxed.as_ref().filter(|b| b.state == BoxState::Ready)?;
     if row.state != TaskState::Working {
         return None;
@@ -85,7 +96,8 @@ fn launch_req(cx: &Cx, row: &TaskRow, setup_exit: Option<i32>) -> Option<LaunchR
         workspace: WorkspaceRef::new(row.workspace_id.as_deref()?),
         task: row.name.clone(),
         branch: row.branch.clone().unwrap_or_default(),
-        goal: Some(row.goal.clone()?),
+        goal: row.goal.clone(),
+        resume: None,
         issue: row.issue.clone(),
         setup_exit,
         model: None,

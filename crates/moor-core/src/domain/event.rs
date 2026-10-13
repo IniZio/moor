@@ -149,6 +149,15 @@ pub enum Event {
         /// What went wrong.
         message: String,
     },
+    /// The agent was started again after its pane ended.
+    Relaunched {
+        /// The pane of the session that ended.
+        old_pane: Option<String>,
+        /// The pane of the new session.
+        new_pane: Option<String>,
+        /// The goal the new session works on.
+        goal: Option<String>,
+    },
     /// Admission checked credentials.
     Checked {
         /// The credentials that were checked.
@@ -197,6 +206,7 @@ impl Event {
             Self::Copied { .. } => "copied",
             Self::SessionStarted { .. } => "session_started",
             Self::SessionFailed { .. } => "session_failed",
+            Self::Relaunched { .. } => "relaunched",
             Self::Checked { .. } => "checked",
             Self::RunStarted { .. } => "run_started",
             Self::Attached => "attached",

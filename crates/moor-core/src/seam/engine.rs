@@ -40,6 +40,8 @@ pub struct LaunchReq {
     pub branch: String,
     /// What the agent is asked to do.
     pub goal: Option<String>,
+    /// The stored agent session to continue instead of reading the brief.
+    pub resume: Option<String>,
     /// The Issue text, when the Task came from one.
     pub issue: Option<String>,
     /// The exit code of a failed setup, if setup failed.
