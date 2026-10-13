@@ -16,6 +16,9 @@ use moor_core::seam::driver::{
 use moor_core::seam::proc::Deadline;
 use moor_core::{BoxHandle, BoxPath, ProviderId};
 
+use script::PeekCall;
+pub(crate) use script::PutCall;
+
 #[derive(Default)]
 struct State {
     next: u32,
@@ -33,6 +36,9 @@ struct State {
     copies: Vec<CopyCall>,
     files: Vec<(String, String, String)>,
     peeks: Vec<PeekCall>,
+    puts: Vec<PutCall>,
+    fail_put: Option<DriverError>,
+    fail_connect: Option<DriverError>,
     fail_peek: Option<DriverError>,
     fail_sleep: Option<DriverError>,
     fail_wake: Option<DriverError>,
@@ -44,9 +50,6 @@ struct State {
 
 /// One `copy_out` call: handle, source, destination and host cwd.
 type CopyCall = (BoxHandle, BoxPath, PathBuf, PathBuf);
-
-/// One `peek_file` call: handle, path and host cwd.
-type PeekCall = (BoxHandle, BoxPath, PathBuf);
 
 /// Runs inside every `exec`, before its result is served.
 type ExecHook = dyn Fn() + Send + Sync;
@@ -120,38 +123,6 @@ impl FakeDriver {
         self
     }
 
-    /// Makes `peek_file` of `path` in the Box `handle` return `text`.
-    pub(crate) fn peek_text(self, handle: &str, path: &BoxPath, text: &str) -> Self {
-        self.st()
-            .files
-            .push((handle.to_owned(), path.as_str().to_owned(), text.to_owned()));
-        self
-    }
-
-    /// The next `peek_file` fails once with `e`.
-    pub(crate) fn fail_peek(self, e: DriverError) -> Self {
-        self.st().fail_peek = Some(e);
-        self
-    }
-
-    /// The next `sleep` fails once with `e`.
-    pub(crate) fn fail_sleep(self, e: DriverError) -> Self {
-        self.st().fail_sleep = Some(e);
-        self
-    }
-
-    /// The next `wake` fails once with `e`.
-    pub(crate) fn fail_wake(self, e: DriverError) -> Self {
-        self.st().fail_wake = Some(e);
-        self
-    }
-
-    /// Makes every `sleep` report `outcome` instead of `Slept`.
-    pub(crate) fn sleep_outcome(self, outcome: SleepOutcome) -> Self {
-        self.st().sleep_outcome = Some(outcome);
-        self
-    }
-
     /// Queues scripted `exec` results, served in order; then exit code 0.
     pub(crate) fn exec_results(
         self,
@@ -179,11 +150,6 @@ impl FakeDriver {
     /// Every `exec` so far: handle, spec and deadline, in call order.
     pub(crate) fn execs(&self) -> Vec<(BoxHandle, ExecSpec, Deadline)> {
         self.st().execs.clone()
-    }
-
-    /// Every `peek_file` so far: handle, path and host cwd, in call order.
-    pub(crate) fn peeks(&self) -> Vec<PeekCall> {
-        self.st().peeks.clone()
     }
 
     /// Every `copy_out` so far: handle, source, destination, host cwd.
@@ -350,6 +316,54 @@ impl Driver for FakeDriver {
             .map(|(_, _, text)| text.clone()))
     }
 
+    fn put_file(
+        &self,
+        handle: &BoxHandle,
+        path: &BoxPath,
+        bytes: &[u8],
+        mode: u32,
+        host_cwd: &Path,
+    ) -> Result<(), DriverError> {
+        let mut s = self.st();
+        s.calls.push(format!("put_file {}", handle.as_str()));
+        s.puts.push((
+            handle.clone(),
+            path.clone(),
+            bytes.to_vec(),
+            mode,
+            host_cwd.to_path_buf(),
+        ));
+        if !s.live.iter().any(|h| h == handle.as_str()) {
+            return Err(DriverError::NotFound);
+        }
+        if let Some(e) = s.fail_put.take() {
+            return Err(e);
+        }
+        let (h, p) = (handle.as_str(), path.as_str());
+        let text = String::from_utf8_lossy(bytes).into_owned();
+        match s.files.iter_mut().find(|(fh, fp, _)| fh == h && fp == p) {
+            Some(f) => f.2 = text,
+            None => s.files.push((h.to_owned(), p.to_owned(), text)),
+        }
+        Ok(())
+    }
+
+    fn connect_argv(
+        &self,
+        handle: &BoxHandle,
+        _host_cwd: &Path,
+    ) -> Result<Vec<String>, DriverError> {
+        let mut s = self.st();
+        s.calls.push(format!("connect_argv {}", handle.as_str()));
+        if !s.live.iter().any(|h| h == handle.as_str()) {
+            return Err(DriverError::NotFound);
+        }
+        if let Some(e) = s.fail_connect.take() {
+            return Err(e);
+        }
+        Ok(["ssh", "-t", handle.as_str()].map(str::to_owned).to_vec())
+    }
+
     fn sleep(&self, handle: &BoxHandle) -> Result<SleepOutcome, DriverError> {
         let mut s = self.st();
         s.calls.push(format!("sleep {}", handle.as_str()));
@@ -379,5 +393,6 @@ fn write_text(to: &Path, text: &str) -> Result<(), DriverError> {
     })
 }
 
+mod script;
 #[cfg(test)]
 mod tests;
