@@ -148,6 +148,17 @@ fn start_queues_when_box_limit_reached() {
 }
 
 #[test]
+fn queued_start_records_no_session() {
+    let (w, _) = with_live_box(box_limit(1));
+    let v = run(&w.cx, &req("waiter")).unwrap();
+    assert_eq!(v.task.state, TaskState::WaitingForBox);
+    let id = TaskId::new(v.task.id);
+    let store = w.cx.store().unwrap();
+    assert!(store.live_session(id).unwrap().is_none());
+    assert!(!store.has_session(id).unwrap());
+}
+
+#[test]
 fn queued_start_records_the_limit_and_keeps_worktree_and_workspace() {
     let (w, _) = with_live_box(box_limit(1));
     let v = run(&w.cx, &req("waiter")).unwrap();

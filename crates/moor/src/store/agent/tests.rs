@@ -103,6 +103,20 @@ fn live_session_is_the_newest_unended_row() {
 }
 
 #[test]
+fn has_session_stays_true_once_a_session_began() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = add(&store, "t");
+    let other = add(&store, "u");
+    assert!(!store.has_session(id).unwrap());
+    let s = store.begin_session(id, "s1").unwrap();
+    assert!(store.has_session(id).unwrap());
+    store.end_session(s, Some(0), None).unwrap();
+    assert!(store.has_session(id).unwrap());
+    assert!(!store.has_session(other).unwrap());
+}
+
+#[test]
 fn end_session_records_outcome_once() {
     let dir = tempfile::tempdir().unwrap();
     let (store, clock) = open(dir.path());
