@@ -11,7 +11,7 @@ use moor_core::seam::clock::Ts;
 use moor_core::{ShowReq, TaskId, TaskName};
 
 use super::{req, world, World};
-use crate::ops::common::activity::read;
+use crate::ops::common::activity::{read, settle};
 use crate::ops::show;
 use crate::ops::start::run;
 use crate::store::TaskRow;
@@ -361,4 +361,33 @@ fn a_stored_id_is_registered_when_the_hook_is_absent() {
     w.surface.have_pane("p-9");
     run(&w.cx, &req("demo")).unwrap();
     assert_eq!(registrations(&w), ["register_resume p-9 claude agent-1"]);
+}
+
+#[test]
+fn an_exited_pane_with_a_stored_id_registers_nothing() {
+    let (w, id) = started(false, |w| {
+        let mut p = probes(w, None, PaneStatus::Working);
+        if let PaneRead::Fresh(obs) = &mut p.pane {
+            obs.exit_marker = Some(0);
+        }
+        p
+    });
+    let store = w.cx.store().unwrap();
+    store.begin_session(id, SESSION, Some("p-9")).unwrap();
+    let set = Fields {
+        agent_session_id: Field::Set("agent-1".into()),
+        ..Fields::default()
+    };
+    store.apply(Decision::new(id).set(set)).unwrap();
+    w.surface.have_pane("p-9");
+    let r = row(&w, id);
+    let reading = read(&w.cx, store, &r, w.cx.clock().now()).unwrap();
+    assert_eq!(reading.pane.as_str(), "exited");
+    settle(&w.cx, store, &r, &reading).unwrap();
+    assert!(registrations(&w).is_empty());
+    let codes: Vec<_> = w.cx.take_warnings().into_iter().map(|x| x.code).collect();
+    assert!(
+        !codes.contains(&"resume_not_registered".to_owned()),
+        "{codes:?}"
+    );
 }
