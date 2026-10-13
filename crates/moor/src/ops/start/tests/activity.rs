@@ -5,7 +5,7 @@ use moor_core::activity::{
     AgentState, HookKind, HookRead, HookRecord, PaneObs, PaneRead, PaneStatus, Probes, Source,
     STARTUP_GRACE,
 };
-use moor_core::domain::decision::Decision;
+use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::domain::task::{TaskInput, TaskState};
 use moor_core::seam::clock::Ts;
 use moor_core::{ShowReq, TaskId, TaskName};
@@ -341,4 +341,24 @@ fn a_failed_registration_is_tried_again_by_a_later_start() {
         registrations(&w).last().map(String::as_str),
         Some("register_resume p-9 claude agent-1")
     );
+}
+
+#[test]
+fn a_stored_id_is_registered_when_the_hook_is_absent() {
+    let (w, id) = started(false, |w| probes(w, None, PaneStatus::Working));
+    let set = Fields {
+        agent_session_id: Field::Set("agent-1".into()),
+        ..Fields::default()
+    };
+    w.cx.store()
+        .unwrap()
+        .apply(Decision::new(id).set(set))
+        .unwrap();
+    w.cx.store()
+        .unwrap()
+        .begin_session(id, SESSION, Some("p-9"))
+        .unwrap();
+    w.surface.have_pane("p-9");
+    run(&w.cx, &req("demo")).unwrap();
+    assert_eq!(registrations(&w), ["register_resume p-9 claude agent-1"]);
 }
