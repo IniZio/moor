@@ -1,9 +1,13 @@
 //! Scripted `Proc` for adapter unit tests.
 
 use std::path::PathBuf;
-use std::sync::{Mutex, PoisonError};
+use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
 
-use moor_core::seam::proc::{Deadline, Output, Proc, ProcError, ProcOutput, ProcSpec, Stdin, Tool};
+use moor_core::seam::proc::{
+    ChildHandle, Deadline, FirstLineError, Output, Proc, ProcError, ProcOutput, ProcSpec, Stdin,
+    Tool,
+};
 use zeroize::Zeroizing;
 
 /// A canned reply.
@@ -26,6 +30,17 @@ pub(crate) enum Reply {
     Interrupted,
 }
 
+/// A canned outcome for a long-lived child started with `spawn_child`.
+#[derive(Clone)]
+pub(crate) enum ChildReply {
+    /// The first stdout line is this text (without line ending).
+    Ready(String),
+    /// The child exits before printing a line.
+    Exit { code: i32, stderr: String },
+    /// The child never prints; the first-line wait times out at once.
+    Hang,
+}
+
 /// A recorded invocation.
 #[derive(Clone, Debug)]
 pub(crate) struct Call {
@@ -43,12 +58,63 @@ struct Rule {
     reply: Reply,
 }
 
+struct ChildRule {
+    tool: Tool,
+    prefix: Vec<String>,
+    reply: ChildReply,
+}
+
+/// First fake pid handed out by `spawn_child`.
+const FIRST_CHILD_PID: u32 = 40_000;
+
+/// Fake child; records its pid in the shared list when dropped.
+struct FakeChild {
+    pid: u32,
+    tool: Tool,
+    reply: ChildReply,
+    dropped: Arc<Mutex<Vec<u32>>>,
+}
+
+impl ChildHandle for FakeChild {
+    fn pid(&self) -> u32 {
+        self.pid
+    }
+
+    fn first_line(&mut self, deadline: Deadline) -> Result<String, FirstLineError> {
+        match &self.reply {
+            ChildReply::Ready(line) => Ok(line.clone()),
+            ChildReply::Exit { code, stderr } => Err(FirstLineError::Exited {
+                code: Some(*code),
+                signal: None,
+                stderr_tail: stderr.clone(),
+            }),
+            ChildReply::Hang => Err(FirstLineError::Timeout {
+                tool: self.tool,
+                after: deadline.0,
+            }),
+        }
+    }
+}
+
+impl Drop for FakeChild {
+    fn drop(&mut self) {
+        self.dropped
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(self.pid);
+    }
+}
+
 /// Matches calls against rules in order; first match wins.
 pub(crate) struct ScriptedProc {
     rules: Mutex<Vec<Rule>>,
     calls: Mutex<Vec<Call>>,
     /// Pids scripted as gone.
     dead: Mutex<Vec<u32>>,
+    child_rules: Mutex<Vec<ChildRule>>,
+    next_pid: AtomicU32,
+    /// Pids of spawned children that were dropped.
+    dropped: Arc<Mutex<Vec<u32>>>,
 }
 
 impl ScriptedProc {
@@ -57,6 +123,9 @@ impl ScriptedProc {
             rules: Mutex::new(Vec::new()),
             calls: Mutex::new(Vec::new()),
             dead: Mutex::new(Vec::new()),
+            child_rules: Mutex::new(Vec::new()),
+            next_pid: AtomicU32::new(FIRST_CHILD_PID),
+            dropped: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -79,6 +148,28 @@ impl ScriptedProc {
             });
         }
         self
+    }
+
+    /// Script the child started by `spawn_child` for calls matching `prefix`.
+    pub(crate) fn on_child(&self, tool: Tool, prefix: &[&str], reply: ChildReply) -> &Self {
+        let prefix = prefix.iter().map(|s| (*s).to_owned()).collect();
+        self.child_rules
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(ChildRule {
+                tool,
+                prefix,
+                reply,
+            });
+        self
+    }
+
+    /// Pids of spawned children that have been dropped.
+    pub(crate) fn dropped(&self) -> Vec<u32> {
+        self.dropped
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 
     pub(crate) fn calls(&self) -> Vec<Call> {
@@ -212,12 +303,40 @@ impl Proc for ScriptedProc {
         }
     }
 
+    fn spawn_child(&self, spec: &ProcSpec) -> Result<Box<dyn ChildHandle>, ProcError> {
+        let args = self.record(spec);
+        let reply = self
+            .child_rules
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter()
+            .find(|r| r.tool == spec.tool && args.starts_with(&r.prefix))
+            .map(|r| r.reply.clone())
+            .ok_or_else(|| {
+                ProcError::Spawn(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("unscripted: {} {}", spec.tool.program(), args.join(" ")),
+                ))
+            })?;
+        Ok(Box::new(FakeChild {
+            pid: self.next_pid.fetch_add(1, Ordering::Relaxed),
+            tool: spec.tool,
+            reply,
+            dropped: Arc::clone(&self.dropped),
+        }))
+    }
+
     fn alive(&self, pid: u32) -> bool {
         !self
             .dead
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .contains(&pid)
+            && !self
+                .dropped
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .contains(&pid)
     }
 }
 
