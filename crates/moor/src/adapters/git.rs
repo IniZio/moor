@@ -9,6 +9,9 @@ use moor_core::seam::proc::{Deadline, Proc, ProcError, ProcSpec, Tool};
 /// Time limit for each git call.
 const DEADLINE: Deadline = Deadline(Duration::from_secs(30));
 
+/// Scratch directories kept out of a Task worktree's status.
+const SCRATCH_DIRS: [&str; 2] = [".crabbox/", ".moor/"];
+
 /// Why a git query failed.
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum GitError {
@@ -113,6 +116,44 @@ impl Git {
         }
         let out = self.run(worktree, &["status", "--porcelain"])?;
         Ok(out.lines().any(|l| !l.trim().is_empty()))
+    }
+
+    /// Hides crabbox and moor scratch directories from `git status` in `worktree`.
+    ///
+    /// Appends `.crabbox/` and `.moor/` to the repository's `info/exclude`,
+    /// skipping lines already there. Linked worktrees share that file.
+    ///
+    /// # Errors
+    /// [`GitError::Failed`] when git cannot answer or the file cannot be written.
+    pub(crate) fn exclude_scratch(&self, worktree: &Path) -> Result<(), GitError> {
+        let out = self.run(worktree, &["rev-parse", "--git-path", "info/exclude"])?;
+        let path = worktree.join(out.trim());
+        let io =
+            |e: std::io::Error| GitError::Failed(format!("cannot update {}: {e}", path.display()));
+        let mut text = match std::fs::read_to_string(&path) {
+            Ok(t) => t,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
+            Err(e) => return Err(io(e)),
+        };
+        let mut changed = false;
+        for line in SCRATCH_DIRS {
+            if text.lines().any(|l| l == line) {
+                continue;
+            }
+            if !text.is_empty() && !text.ends_with('\n') {
+                text.push('\n');
+            }
+            text.push_str(line);
+            text.push('\n');
+            changed = true;
+        }
+        if !changed {
+            return Ok(());
+        }
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).map_err(io)?;
+        }
+        std::fs::write(&path, text).map_err(io)
     }
 
     /// Effective git author of `worktree`, as git resolves it.

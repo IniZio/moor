@@ -252,7 +252,8 @@ fn gather(
     Ok(Facts { repo, bound, base })
 }
 
-/// Creates the worktree unless one is bound, then ensures the Workspace.
+/// Creates the worktree unless one is bound, hides scratch dirs from git, then ensures the
+/// Workspace.
 fn place(cx: &Cx, req: &StartReq, facts: &Facts) -> Result<Placed, CommandError> {
     let wt = match &facts.bound {
         Some(path) => Worktree {
@@ -263,6 +264,9 @@ fn place(cx: &Cx, req: &StartReq, facts: &Facts) -> Result<Placed, CommandError>
             .surface()
             .create_worktree(&facts.repo, &req.name, req.base.as_deref())?,
     };
+    cx.git()
+        .exclude_scratch(&wt.path)
+        .map_err(|e| CommandError::new(ErrorKind::Failed, e))?;
     let ws = cx
         .surface()
         .ensure_workspace(&wt, &workspace_label(&req.name))?;

@@ -287,3 +287,83 @@ fn real_git_author_reads_repo_config() {
     assert_eq!(a.name.as_deref(), Some("Ann Dev"));
     assert_eq!(a.email.as_deref(), Some("a@x.io"));
 }
+
+fn committed_repo(d: &Path) {
+    git_in(d, &["init", "-q"]);
+    std::fs::write(d.join("a.txt"), "a").unwrap();
+    git_in(d, &["add", "a.txt"]);
+    git_in(d, &["commit", "-q", "-m", "one"]);
+}
+
+fn write_scratch(d: &Path) {
+    std::fs::create_dir_all(d.join(".crabbox")).unwrap();
+    std::fs::write(d.join(".crabbox/x"), "x").unwrap();
+    std::fs::create_dir_all(d.join(".moor")).unwrap();
+    std::fs::write(d.join(".moor/setup.log"), "log").unwrap();
+}
+
+#[test]
+fn exclude_scratch_hides_scratch_but_not_real_files() {
+    if Command::new("git").arg("--version").output().is_err() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let d = dir.path();
+    committed_repo(d);
+    write_scratch(d);
+    let g = real_git();
+    assert!(g.dirty(d).unwrap());
+    g.exclude_scratch(d).unwrap();
+    assert!(!g.dirty(d).unwrap());
+    std::fs::write(d.join("real.txt"), "r").unwrap();
+    assert!(g.dirty(d).unwrap());
+}
+
+#[test]
+fn exclude_scratch_is_idempotent() {
+    if Command::new("git").arg("--version").output().is_err() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let d = dir.path();
+    committed_repo(d);
+    let g = real_git();
+    g.exclude_scratch(d).unwrap();
+    g.exclude_scratch(d).unwrap();
+    let text = std::fs::read_to_string(d.join(".git/info/exclude")).unwrap();
+    for line in [".crabbox/", ".moor/"] {
+        assert_eq!(text.lines().filter(|l| *l == line).count(), 1, "{line}");
+    }
+}
+
+#[test]
+fn exclude_scratch_keeps_content_without_trailing_newline() {
+    if Command::new("git").arg("--version").output().is_err() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let d = dir.path();
+    committed_repo(d);
+    let path = d.join(".git/info/exclude");
+    std::fs::write(&path, "*.swp").unwrap();
+    real_git().exclude_scratch(d).unwrap();
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert_eq!(text, "*.swp\n.crabbox/\n.moor/\n");
+}
+
+#[test]
+fn exclude_scratch_covers_linked_worktree() {
+    if Command::new("git").arg("--version").output().is_err() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let d = dir.path().join("main");
+    std::fs::create_dir(&d).unwrap();
+    committed_repo(&d);
+    let linked = dir.path().join("linked");
+    git_in(&d, &["worktree", "add", "-q", linked.to_str().unwrap()]);
+    write_scratch(&linked);
+    let g = real_git();
+    g.exclude_scratch(&linked).unwrap();
+    assert!(!g.dirty(&linked).unwrap());
+}
