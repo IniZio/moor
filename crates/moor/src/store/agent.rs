@@ -96,7 +96,7 @@ impl Store {
         let now = self.now();
         let conn = self.writer()?;
         conn.execute(
-            "UPDATE sessions SET ended_at = ?, exit = ?, transcript_digest = ? \
+            "UPDATE sessions SET ended_at = ?, exit = ?, transcript_digest = COALESCE(?, transcript_digest) \
              WHERE id = ? AND ended_at IS NULL",
             params![now.as_millis(), exit, transcript_digest, id],
         )?;

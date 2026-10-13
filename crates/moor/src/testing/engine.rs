@@ -29,6 +29,7 @@ struct State {
     steers: Vec<(String, Steer)>,
     transcripts: Vec<String>,
     transcript_text: Option<String>,
+    later_texts: VecDeque<String>,
     fail_transcript: Option<EngineError>,
     on_transcript: Option<Arc<dyn Fn() + Send + Sync>>,
 }
@@ -97,6 +98,12 @@ impl FakeEngine {
     /// Every transcript request writes `text` to its destination.
     pub(crate) fn transcript_text(self, text: &str) -> Self {
         self.st().transcript_text = Some(text.to_owned());
+        self
+    }
+
+    /// The next transcript request without a queued text of its own writes `text`, ahead of the fixed one.
+    pub(crate) fn then_transcript_text(self, text: &str) -> Self {
+        self.st().later_texts.push_back(text.to_owned());
         self
     }
 
@@ -195,7 +202,9 @@ impl Engine for FakeEngine {
             (
                 st.on_transcript.clone(),
                 st.fail_transcript.take(),
-                st.transcript_text.clone(),
+                st.later_texts
+                    .pop_front()
+                    .or_else(|| st.transcript_text.clone()),
             )
         };
         if let Some(f) = hook {
