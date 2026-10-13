@@ -5,16 +5,17 @@ use std::sync::Arc;
 
 use moor_core::activity::{
     AgentState, HookKind, HookRead, HookRecord, PaneObs, PaneRead, PaneStatus, Probes, Source,
+    STARTUP_GRACE,
 };
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
-use moor_core::domain::task::{SetupOutcome, TaskInput};
+use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::DriverError;
 use moor_core::seam::engine::EngineError;
 use moor_core::{BoxHandle, ProviderId, TaskId, TaskName};
 
-use super::{read, PaneLiveness, Reading};
+use super::{read, settle, PaneLiveness, Reading};
 use crate::cx::Cx;
 use crate::store::{NewRun, TaskRow};
 use crate::testing::driver::FakeDriver;
@@ -341,4 +342,129 @@ fn unformable_hook_path_degrades_with_a_warning() {
     let r = run_once(&cx, id);
     assert_eq!(state(&r), (AgentState::Unknown, Source::Timeout));
     assert_eq!(cx.take_warnings().len(), 1);
+}
+
+fn idle_since(cx: &Cx, id: TaskId) -> Option<i64> {
+    cx.store()
+        .unwrap()
+        .reader()
+        .unwrap()
+        .query_row(
+            "SELECT idle_since FROM tasks WHERE id = ?",
+            [id.get()],
+            |r| r.get(0),
+        )
+        .unwrap()
+}
+
+fn reading(busy: bool, may_quiet: bool) -> Reading {
+    Reading::new(None, PaneLiveness::Live, may_quiet, busy)
+}
+
+fn quiet(cx: &Cx, id: TaskId) {
+    let d = Decision::new(id).task_input(TaskInput::AgentQuiet);
+    cx.store().unwrap().apply(d).unwrap();
+}
+
+#[test]
+fn settle_idles_a_working_task_that_may_quiet() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = Arc::new(FakeEngine::new());
+    let (cx, _) = cx(dir.path(), &engine);
+    let id = task(&cx, true);
+    assert_eq!(idle_since(&cx, id), None);
+    settle(cx.store().unwrap(), &row(&cx, id), &reading(false, true)).unwrap();
+    assert_eq!(row(&cx, id).state, TaskState::Idle);
+    assert!(idle_since(&cx, id).is_some());
+}
+
+#[test]
+fn settle_returns_an_idle_task_to_working_when_busy() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = Arc::new(FakeEngine::new());
+    let (cx, _) = cx(dir.path(), &engine);
+    let id = task(&cx, true);
+    quiet(&cx, id);
+    assert!(idle_since(&cx, id).is_some());
+    settle(cx.store().unwrap(), &row(&cx, id), &reading(true, false)).unwrap();
+    assert_eq!(row(&cx, id).state, TaskState::Working);
+    assert_eq!(idle_since(&cx, id), None);
+}
+
+#[test]
+fn settle_leaves_a_working_task_that_may_not_quiet() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = Arc::new(FakeEngine::new());
+    let (cx, _) = cx(dir.path(), &engine);
+    let id = task(&cx, true);
+    settle(cx.store().unwrap(), &row(&cx, id), &reading(false, false)).unwrap();
+    assert_eq!(row(&cx, id).state, TaskState::Working);
+}
+
+#[test]
+fn settle_leaves_a_working_task_when_only_the_pane_reports_idle() {
+    let cases = [
+        (PaneStatus::Idle, AgentState::Idle),
+        (
+            PaneStatus::Blocked,
+            AgentState::Blocked {
+                waiting_for: ">".into(),
+            },
+        ),
+    ];
+    for (status, want) in cases {
+        let dir = tempfile::tempdir().unwrap();
+        let p = Probes {
+            hook: HookRead::Absent,
+            pane: PaneRead::Fresh(PaneObs {
+                status,
+                tail: "> ".into(),
+                exit_marker: None,
+            }),
+        };
+        let engine = Arc::new(FakeEngine::new().probes(SESSION, p));
+        let (cx, _) = cx(dir.path(), &engine);
+        let id = task(&cx, true);
+        let grace = i64::try_from(STARTUP_GRACE.as_millis()).unwrap();
+        let later = Ts::from_millis(NOW.as_millis() + 2 * grace);
+        let r = read(&cx, cx.store().unwrap(), &row(&cx, id), later).unwrap();
+        assert_eq!(state(&r), (want, Source::Herdr), "{status:?}");
+        assert!(!r.may_quiet, "{status:?}");
+        settle(cx.store().unwrap(), &row(&cx, id), &r).unwrap();
+        assert_eq!(row(&cx, id).state, TaskState::Working, "{status:?}");
+        assert_eq!(idle_since(&cx, id), None);
+    }
+}
+
+#[test]
+fn settle_leaves_a_working_task_when_the_hook_read_is_dropped() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = Probes {
+        hook: HookRead::TimedOut,
+        pane: PaneRead::TimedOut,
+    };
+    let engine = Arc::new(FakeEngine::new().probes(SESSION, p));
+    let (cx, _) = cx(dir.path(), &engine);
+    let id = task(&cx, true);
+    let r = run_once(&cx, id);
+    settle(cx.store().unwrap(), &row(&cx, id), &r).unwrap();
+    assert_eq!(row(&cx, id).state, TaskState::Working);
+}
+
+#[test]
+fn settle_swallows_a_lost_race_and_keeps_the_new_state() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = Arc::new(FakeEngine::new());
+    let (cx, _) = cx(dir.path(), &engine);
+    let id = task(&cx, true);
+    let stale = row(&cx, id);
+    quiet(&cx, id);
+    settle(cx.store().unwrap(), &stale, &reading(false, true)).unwrap();
+    assert_eq!(row(&cx, id).state, TaskState::Idle);
+
+    let stale = row(&cx, id);
+    let d = Decision::new(id).task_input(TaskInput::AgentBusy);
+    cx.store().unwrap().apply(d).unwrap();
+    settle(cx.store().unwrap(), &stale, &reading(true, false)).unwrap();
+    assert_eq!(row(&cx, id).state, TaskState::Working);
 }
