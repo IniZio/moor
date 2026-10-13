@@ -16,6 +16,7 @@ use crate::cx::{Cx, CxParts};
 use crate::env::Env;
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
+use crate::testing::engine::FakeEngine;
 use crate::testing::proc::{Reply, ScriptedProc};
 use crate::testing::rng::FakeRng;
 use crate::testing::surface::FakeSurface;
@@ -44,6 +45,7 @@ fn cx_proc(top: &Path, config: UserConfig, proc: ScriptedProc) -> Cx {
         rng: Arc::new(FakeRng::default()),
         driver: Arc::new(FakeDriver::new()),
         surface: Arc::new(FakeSurface::new(top)),
+        engine: Arc::new(FakeEngine::new()),
         git: Git::new(Arc::clone(&proc)),
         proc: Arc::clone(&proc),
         config,

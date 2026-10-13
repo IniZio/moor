@@ -131,7 +131,7 @@ pub(crate) fn reprovision(
 }
 
 /// Rebuilds the Box path from the workdir text stored on the Task row.
-fn recorded_workdir(stored: &str) -> Option<BoxPath> {
+pub(crate) fn recorded_workdir(stored: &str) -> Option<BoxPath> {
     BoxPath::restore(stored).ok()
 }
 

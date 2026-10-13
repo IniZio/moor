@@ -1,5 +1,10 @@
 //! Helpers shared by the task ops.
 
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "no op reads agent activity yet")
+)]
+pub(crate) mod activity;
 pub(crate) mod boxlock;
 pub(crate) mod capacity;
 pub(crate) mod creds;
