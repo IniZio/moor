@@ -12,7 +12,8 @@ use crate::ops::common::boxlock::{BoxLock, WAIT};
 use crate::testing::driver::FakeDriver;
 use crate::testing::surface::FakeSurface;
 
-const YAML: &str = "teardown: ['echo bye', 'rm -rf cache']\nenv: {K: v}\nbox: {size: large}\n";
+pub(super) const YAML: &str =
+    "teardown: ['echo bye', 'rm -rf cache']\nenv: {K: v}\nbox: {size: large}\n";
 
 fn fx_yaml(driver: FakeDriver, yaml: &str) -> Fx {
     let f = fx_with(driver, FakeSurface::new("/s"), 0);
@@ -20,7 +21,7 @@ fn fx_yaml(driver: FakeDriver, yaml: &str) -> Fx {
     f
 }
 
-fn exec_calls(f: &Fx) -> usize {
+pub(super) fn exec_calls(f: &Fx) -> usize {
     f.driver
         .calls()
         .iter()
