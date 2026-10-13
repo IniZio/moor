@@ -210,6 +210,17 @@ fn cannot_sleep_refuses_and_stores_the_reason() {
 }
 
 #[test]
+fn unknown_provider_refuses_naming_the_provider() {
+    let why = "provider nope is unknown; box stays up";
+    let f = idle_with(FakeDriver::new().sleep_outcome(SleepOutcome::CannotSleep(why.into())));
+    let err = run(&f.cx, &req()).unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Refused);
+    assert!(err.error.to_string().contains(why), "{}", err.error);
+    assert_eq!(states(&f), (TaskState::Idle, BoxState::Ready));
+    assert_eq!(reason(&f).as_deref(), Some(why));
+}
+
+#[test]
 fn a_later_successful_sleep_clears_the_reason() {
     let f = idle();
     let d = Decision::new(f.id).set(Fields {
