@@ -50,11 +50,12 @@ pub(super) fn run(
             warn_goal_ignored(cx, req, &row.name);
             return Ok(AgentLaunchView::default());
         }
-        None if row.goal.is_none() => return Ok(AgentLaunchView::default()),
+        None if row.goal.is_none() && req.goal.is_none() => return Ok(AgentLaunchView::default()),
         _ => {}
     }
     let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "start", boxlock::WAIT)?;
     let Some(old) = store.live_session(id)? else {
+        store_goal(store, req, id)?;
         return launch::run(cx, store, req, id, setup_exit, model);
     };
     let Some(end) = ended(cx, &old) else {
@@ -62,6 +63,22 @@ pub(super) fn run(
         return Ok(AgentLaunchView::default());
     };
     relaunch(cx, store, req, &old, &end, model)
+}
+
+/// Stores a given goal on a Task that has none, so the launch brief carries it.
+fn store_goal(store: &Store, req: &StartReq, id: TaskId) -> Result<(), CommandError> {
+    let Some(g) = &req.goal else {
+        return Ok(());
+    };
+    if reread(store, id)?.goal.is_some() {
+        return Ok(());
+    }
+    let set = Fields {
+        goal: Field::Set(g.clone()),
+        ..Fields::default()
+    };
+    store.apply(Decision::new(id).set(set))?;
+    Ok(())
 }
 
 /// Replaces the ended session `old` with a new one.
