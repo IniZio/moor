@@ -125,3 +125,23 @@ fn a_session_other_than_the_probed_one_is_not_archived() {
     settle(&cx, cx.store().unwrap(), &row(&cx, id), &r).unwrap();
     assert!(engine.transcripts().is_empty());
 }
+
+#[test]
+fn a_failed_exit_save_of_one_session_does_not_block_the_next() {
+    let fail = EngineError::Transcript("archive: exit 3".into());
+    let (_dir, engine, cx, id) = exited_fx(
+        FakeEngine::new()
+            .fail_transcript(fail)
+            .probes("sess-2", exited_probes())
+            .transcript_text("abc"),
+    );
+    let store = cx.store().unwrap();
+    let r = run_once(&cx, id);
+    settle(&cx, store, &row(&cx, id), &r).unwrap();
+    let first = store.live_session(id).unwrap().unwrap();
+    store.end_session(first.id, None, None).unwrap();
+    store.begin_session(id, "sess-2", None).unwrap();
+    let r = run_once(&cx, id);
+    settle(&cx, store, &row(&cx, id), &r).unwrap();
+    assert_eq!(engine.transcripts(), [SESSION, "sess-2"]);
+}
