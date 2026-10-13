@@ -13,6 +13,7 @@ use moor_core::seam::surface::{PaneRef, SurfaceError};
 use moor_core::{BoxHandle, BoxPath, ProviderId, TaskId, TaskName};
 
 use crate::adapters::box_agent::BoxAgent;
+use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
 use crate::testing::surface::FakeSurface;
 
@@ -58,6 +59,10 @@ impl AgentProfile for Stub {
 
     fn hook_writer(&self, ctx: &LaunchCtx) -> Result<BoxSetup, NameError> {
         self.preseed(ctx)
+    }
+
+    fn busy_marker(&self) -> &'static str {
+        "busy"
     }
 
     fn menu_keys(&self, _: u8) -> Vec<Key> {
@@ -106,7 +111,12 @@ fn live_driver(driver: FakeDriver) -> Arc<FakeDriver> {
 }
 
 fn agent(d: &Arc<FakeDriver>, s: &Arc<FakeSurface>) -> BoxAgent {
-    BoxAgent::new(d.clone(), s.clone(), Arc::new(Stub))
+    BoxAgent::new(
+        d.clone(),
+        s.clone(),
+        Arc::new(Stub),
+        Arc::new(FakeClock::new(Ts::from_millis(0))),
+    )
 }
 
 fn surface_with(obs: Result<PaneObs, SurfaceError>) -> Arc<FakeSurface> {

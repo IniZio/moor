@@ -1,0 +1,104 @@
+//! One steer: text typed and submitted, or a menu choice, into the agent's pane.
+
+use std::time::Duration;
+
+use moor_core::seam::agent_profile::{AgentProfile, Key as AgentKey};
+use moor_core::seam::clock::Clock;
+use moor_core::seam::engine::{EngineError, SessionRef, Steer, SteerOutcome};
+use moor_core::seam::proc::Deadline;
+use moor_core::seam::surface::{Key, PaneRef, Surface, SurfaceError};
+
+/// Time for the pane to take the typed text, and then the submit key.
+const SUBMIT_DELAY: Duration = Duration::from_millis(300);
+/// How many trailing characters of the text show that it is still in the input.
+const TAIL_CHARS: usize = 24;
+
+/// Sends `steer` to the agent's pane; the text is typed once.
+pub(super) fn steer(
+    surface: &dyn Surface,
+    profile: &dyn AgentProfile,
+    clock: &dyn Clock,
+    s: &SessionRef,
+    steer: &Steer,
+    deadline: Deadline,
+) -> Result<SteerOutcome, EngineError> {
+    let pane = s.pane.as_ref().ok_or(EngineError::NoSession)?;
+    if ended(surface, pane, deadline)? {
+        return Err(EngineError::PaneGone);
+    }
+    match steer {
+        Steer::Menu(n) => {
+            let keys: Vec<Key> = profile
+                .menu_keys(*n)
+                .into_iter()
+                .map(|AgentKey::Char(c)| digit(c))
+                .collect::<Option<_>>()
+                .ok_or_else(|| failed("menu", "the choice has no key".to_owned()))?;
+            send(surface.send_keys(pane, &keys), "menu")?;
+            Ok(SteerOutcome {
+                submit_retried: false,
+            })
+        }
+        Steer::Text(text) => {
+            send(surface.send_keys(pane, &[Key::CtrlU]), "clear")?;
+            send(surface.send_text(pane, text), "type")?;
+            clock.sleep(SUBMIT_DELAY);
+            send(surface.send_keys(pane, &[Key::CtrlM]), "submit")?;
+            clock.sleep(SUBMIT_DELAY);
+            let retry = match surface.pane_obs(pane, deadline) {
+                Ok(obs) if obs.exit_marker.is_some() => return Err(EngineError::PaneGone),
+                Ok(obs) => submit_pending(&obs.tail, text, profile.busy_marker()),
+                Err(SurfaceError::NotFound) => return Err(EngineError::PaneGone),
+                Err(_) => false,
+            };
+            if retry {
+                send(surface.send_keys(pane, &[Key::CtrlM]), "submit")?;
+            }
+            Ok(SteerOutcome {
+                submit_retried: retry,
+            })
+        }
+    }
+}
+
+/// Whether the pane is gone or shows that the agent exited.
+fn ended(surface: &dyn Surface, pane: &PaneRef, deadline: Deadline) -> Result<bool, EngineError> {
+    match surface.pane_obs(pane, deadline) {
+        Ok(obs) => Ok(obs.exit_marker.is_some()),
+        Err(SurfaceError::NotFound) => Ok(true),
+        Err(e) => Err(failed("read", e.to_string())),
+    }
+}
+
+/// A send's result as an Engine error; a missing pane is `PaneGone`.
+fn send(r: Result<(), SurfaceError>, step: &'static str) -> Result<(), EngineError> {
+    r.map_err(|e| match e {
+        SurfaceError::NotFound => EngineError::PaneGone,
+        e => failed(step, e.to_string()),
+    })
+}
+
+/// A failed `step` as an Engine error.
+const fn failed(step: &'static str, message: String) -> EngineError {
+    EngineError::Failed { step, message }
+}
+
+/// The key for a digit character.
+fn digit(c: char) -> Option<Key> {
+    u8::try_from(c.to_digit(10)?).ok().map(Key::Digit)
+}
+
+/// Whether the end of `text` is still in the pane's input and the agent shows no busy marker.
+fn submit_pending(tail: &str, text: &str, busy: &str) -> bool {
+    if tail.to_lowercase().contains(busy) {
+        return false;
+    }
+    let squash = |s: &str| s.chars().filter(|c| !c.is_whitespace()).collect::<String>();
+    let text = squash(text);
+    let skip = text.chars().count().saturating_sub(TAIL_CHARS);
+    let end: String = text.chars().skip(skip).collect();
+    !end.is_empty() && squash(tail).contains(&end)
+}
+
+#[cfg(test)]
+mod tests;

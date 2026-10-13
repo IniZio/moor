@@ -53,10 +53,16 @@ pub(crate) fn build(env: &Env) -> Result<Cx, CommandError> {
         .seq_from(clock.now()),
     );
     let driver: Arc<dyn Driver> = Arc::new(Crabbox::new(Arc::clone(&proc)));
-    let engine = BoxAgent::new(Arc::clone(&driver), Arc::clone(&surface), Arc::new(Claude));
+    let clock = Arc::new(clock);
+    let engine = BoxAgent::new(
+        Arc::clone(&driver),
+        Arc::clone(&surface),
+        Arc::new(Claude),
+        Arc::clone(&clock) as Arc<dyn Clock>,
+    );
     Ok(Cx::new(CxParts {
         state_dir: env.state_dir(),
-        clock: Arc::new(clock),
+        clock,
         rng: Arc::new(SystemRng),
         driver,
         surface,

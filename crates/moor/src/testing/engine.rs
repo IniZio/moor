@@ -10,7 +10,7 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use moor_core::activity::{HookRead, PaneRead, Probes};
 use moor_core::seam::agent_profile::{FirstRunPrompt, PromptMatch};
-use moor_core::seam::engine::{Engine, EngineError, LaunchReq, SessionRef};
+use moor_core::seam::engine::{Engine, EngineError, LaunchReq, SessionRef, Steer, SteerOutcome};
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::PaneRef;
 
@@ -23,6 +23,8 @@ struct State {
     launch_results: VecDeque<Result<SessionRef, EngineError>>,
     launches: Vec<LaunchReq>,
     prompts: Vec<(String, FirstRunPrompt)>,
+    steer_results: VecDeque<Result<SteerOutcome, EngineError>>,
+    steers: Vec<(String, Steer)>,
 }
 
 /// Scripted Engine: probes are served per session id and counted.
@@ -63,6 +65,17 @@ impl FakeEngine {
     pub(crate) fn prompt(self, text: &str, prompt: FirstRunPrompt) -> Self {
         self.st().prompts.push((text.to_owned(), prompt));
         self
+    }
+
+    /// The next steer returns `r`; steers past the scripted ones succeed without a retry.
+    pub(crate) fn steer_result(self, r: Result<SteerOutcome, EngineError>) -> Self {
+        self.st().steer_results.push_back(r);
+        self
+    }
+
+    /// Every steer so far as the session id and what was sent, in call order.
+    pub(crate) fn steers(&self) -> Vec<(String, Steer)> {
+        self.st().steers.clone()
     }
 
     /// Every launch request so far, in call order.
@@ -118,6 +131,19 @@ impl Engine for FakeEngine {
                 pane: Some(PaneRef::new("p-1")),
             })
         })
+    }
+
+    fn steer(
+        &self,
+        s: &SessionRef,
+        steer: &Steer,
+        _deadline: Deadline,
+    ) -> Result<SteerOutcome, EngineError> {
+        let mut st = self.st();
+        st.steers.push((s.id.clone(), steer.clone()));
+        st.steer_results.pop_front().unwrap_or(Ok(SteerOutcome {
+            submit_retried: false,
+        }))
     }
 }
 

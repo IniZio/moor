@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use moor_core::activity::{HookRead, PaneRead, Probes};
 use moor_core::seam::driver::DriverError;
-use moor_core::seam::engine::{Engine, EngineError, LaunchReq, SessionRef};
+use moor_core::seam::engine::{Engine, EngineError, LaunchReq, SessionRef, Steer, SteerOutcome};
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::{PaneRef, WorkspaceRef};
 use moor_core::{BoxHandle, BoxPath, TaskName};
@@ -109,4 +109,34 @@ fn scripted_launch_results_are_served_in_order() {
     assert_eq!(e.launch(&launch_req()), Err(err));
     assert!(e.launch(&launch_req()).is_ok());
     assert_eq!(e.launches().len(), 2);
+}
+
+#[test]
+fn steers_are_recorded_and_served_in_order_then_succeed() {
+    let retried = SteerOutcome {
+        submit_retried: true,
+    };
+    let e = FakeEngine::new()
+        .steer_result(Ok(retried))
+        .steer_result(Err(EngineError::PaneGone));
+    let text = Steer::Text("go".to_owned());
+    assert_eq!(e.steer(&session("a"), &text, DL), Ok(retried));
+    assert_eq!(
+        e.steer(&session("a"), &Steer::Menu(2), DL),
+        Err(EngineError::PaneGone)
+    );
+    assert_eq!(
+        e.steer(&session("b"), &text, DL),
+        Ok(SteerOutcome {
+            submit_retried: false
+        })
+    );
+    assert_eq!(
+        e.steers(),
+        [
+            ("a".to_owned(), text.clone()),
+            ("a".to_owned(), Steer::Menu(2)),
+            ("b".to_owned(), text)
+        ]
+    );
 }

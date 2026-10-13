@@ -113,6 +113,9 @@ pub trait AgentProfile: Send + Sync {
     /// Returns a [`NameError`] when a path cannot be formed.
     fn hook_writer(&self, ctx: &LaunchCtx) -> Result<BoxSetup, NameError>;
 
+    /// The pane text, in lower case, that shows the agent is working on a prompt.
+    fn busy_marker(&self) -> &str;
+
     /// The keys that pick menu option `n`.
     fn menu_keys(&self, n: u8) -> Vec<Key>;
 }
