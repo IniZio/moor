@@ -1,10 +1,11 @@
 //! Engine seam: the agent session running in a Box.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use crate::activity::Probes;
 use crate::name::{BoxHandle, BoxPath, TaskName};
-use crate::seam::agent_profile::PromptMatch;
+use crate::seam::agent_profile::{PromptMatch, ProxyAddr};
 use crate::seam::driver::DriverError;
 use crate::seam::proc::Deadline;
 use crate::seam::surface::{PaneRef, WorkspaceRef};
@@ -25,7 +26,7 @@ pub struct SessionRef {
 }
 
 /// What a launch needs to start the agent in a Box.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct LaunchReq {
     /// The Box to run in.
     pub handle: BoxHandle,
@@ -51,7 +52,34 @@ pub struct LaunchReq {
     pub model: Option<String>,
     /// Random hex that keeps the credential directory name unique.
     pub nonce: String,
+    /// The Proxy the agent reaches GitHub and its model through; none means no Proxy env and no bypass.
+    pub proxy: Option<Arc<ProxyAddr>>,
+    /// The task repo's git origin URL; GitHub push and `gh` routing apply only when it names a GitHub repo.
+    pub origin: Option<String>,
 }
+
+impl PartialEq for LaunchReq {
+    /// Proxies compare by port and nonce digest, since the nonce itself is not comparable.
+    fn eq(&self, other: &Self) -> bool {
+        let proxy = |p: &Option<Arc<ProxyAddr>>| p.as_ref().map(|a| (a.box_port, a.nonce.digest()));
+        self.handle == other.handle
+            && self.workdir == other.workdir
+            && self.worktree == other.worktree
+            && self.workspace == other.workspace
+            && self.task == other.task
+            && self.branch == other.branch
+            && self.goal == other.goal
+            && self.resume == other.resume
+            && self.issue == other.issue
+            && self.setup_exit == other.setup_exit
+            && self.model == other.model
+            && self.nonce == other.nonce
+            && proxy(&self.proxy) == proxy(&other.proxy)
+            && self.origin == other.origin
+    }
+}
+
+impl Eq for LaunchReq {}
 
 /// What to send to the agent.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -3,14 +3,16 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 
-use moor_core::seam::agent_profile::{BoxSetup, LaunchCtx};
+use moor_core::seam::agent_profile::{AgentProfile, BoxSetup, LaunchCtx, ProxyAddr};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, EgressPlan};
 use moor_core::seam::engine::{Engine, EngineError, LaunchReq};
 use moor_core::seam::surface::{Surface, SurfaceError};
-use moor_core::{BoxHandle, BoxPath, ProviderId, TaskId, TaskName};
+use moor_core::{BoxHandle, BoxPath, ProviderId, Secret, TaskId, TaskName};
 
 use crate::adapters::box_agent::claude::Claude;
+use crate::adapters::box_agent::gh_shim::gh_shim;
+use crate::adapters::box_agent::proxy_env;
 use crate::adapters::box_agent::BoxAgent;
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
@@ -58,6 +60,8 @@ fn req(s: &FakeSurface) -> LaunchReq {
         setup_exit: None,
         model: Some("haiku".to_owned()),
         nonce: "abc123".to_owned(),
+        proxy: None,
+        origin: None,
     }
 }
 
@@ -335,6 +339,28 @@ impl Scratch {
     }
 
     fn script(&self, hook_step: &str) -> String {
+        self.script_with(hook_step, &[])
+    }
+
+    fn proxy_ctx(&self) -> LaunchCtx {
+        let root = self.dir.path().to_str().unwrap();
+        LaunchCtx {
+            model: None,
+            workdir: BoxPath::under(root, "work").unwrap(),
+            proxy: Some(proxy_addr()),
+            home: BoxPath::under(root, "home").unwrap(),
+        }
+    }
+
+    fn proxy_lines(&self) -> Vec<String> {
+        let root = self.dir.path().to_str().unwrap();
+        let cred = BoxPath::under(root, "home/.moor-cred-t1-x").unwrap();
+        let env = Claude.env(&self.proxy_ctx());
+        let origin = Some("git@github.com:o/n.git");
+        proxy_env::script_lines(&cred, &proxy_addr(), &env, origin).unwrap()
+    }
+
+    fn script_with(&self, hook_step: &str, proxy: &[String]) -> String {
         let root = self.dir.path().to_str().unwrap();
         let ctx = LaunchCtx {
             model: None,
@@ -347,7 +373,7 @@ impl Scratch {
             step: step.to_owned(),
         };
         let cred = BoxPath::under(root, "home/.moor-cred-t1-x").unwrap();
-        super::script(&cred, &ctx, &setup(hook_step), &setup("true"), &[]).unwrap()
+        super::script(&cred, &ctx, &setup(hook_step), &setup("true"), &[], proxy).unwrap()
     }
 
     fn spawn(&self, script: &str) -> std::process::Child {
@@ -362,6 +388,7 @@ impl Scratch {
             .env("PATH", path)
             .env("HOME", self.path("home"))
             .env("MARKER", self.path("started"))
+            .env("GH_TOKEN", "parent-token")
             .process_group(0)
             .spawn()
             .unwrap()
@@ -445,5 +472,124 @@ fn a_hangup_before_the_brief_is_installed_removes_the_cred_dir() {
         .unwrap();
     assert!(!sh.wait().unwrap().success());
     assert!(!b.agent_started());
+    assert!(b.cred_gone());
+}
+
+fn proxy_addr() -> ProxyAddr {
+    ProxyAddr {
+        box_port: 4567,
+        nonce: Secret::new(NONCE.to_vec()),
+    }
+}
+
+const NONCE: &[u8] = b"sentinel-9c2e";
+
+fn req_with_proxy(s: &FakeSurface) -> LaunchReq {
+    LaunchReq {
+        proxy: Some(Arc::new(proxy_addr())),
+        origin: Some("git@github.com:o/n.git".to_owned()),
+        ..req(s)
+    }
+}
+
+fn launch_with_proxy() -> (Arc<FakeDriver>, Arc<FakeSurface>) {
+    let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new("/r")));
+    agent(&d, &s).launch(&req_with_proxy(&s)).unwrap();
+    (d, s)
+}
+
+fn has_nonce(text: &str) -> bool {
+    text.contains("sentinel-9c2e")
+}
+
+#[test]
+fn the_nonce_reaches_the_box_only_through_its_staged_file() {
+    let (d, s) = launch_with_proxy();
+    assert!(s.opened().iter().all(|c| !has_nonce(&format!("{c:?}"))));
+    assert!(s.calls().iter().all(|c| !has_nonce(c)));
+    assert!(d.execs().iter().all(|e| !has_nonce(&format!("{e:?}"))));
+    assert!(d.calls().iter().all(|c| !has_nonce(c)));
+    let holders: Vec<_> = d
+        .puts()
+        .into_iter()
+        .filter(|p| has_nonce(&String::from_utf8_lossy(&p.2)))
+        .map(|p| (p.1.as_str().to_owned(), p.3))
+        .collect();
+    assert_eq!(holders, [(format!("{CRED}/proxy-nonce"), 0o600)]);
+}
+
+#[test]
+fn a_proxy_launch_installs_the_gh_shim_first_on_the_box() {
+    let (d, _) = launch_with_proxy();
+    let (bytes, mode) = gh_shim();
+    let put = d
+        .puts()
+        .into_iter()
+        .find(|p| p.1.as_str() == format!("{CRED}/bin/gh"))
+        .unwrap();
+    assert_eq!((put.2.as_slice(), put.3), (bytes, mode));
+    assert_eq!(mode, 0o755);
+}
+
+#[test]
+fn a_proxy_launch_keeps_the_cred_dir_for_the_agent_and_exports_the_proxy_env() {
+    let (_, s) = launch_with_proxy();
+    let script = script_of(&pane_line(&s));
+    assert!(!has_nonce(&script), "{script}");
+    assert!(!script.contains(&format!("\nrm -rf '{CRED}'")), "{script}");
+    for want in [
+        "GIT_CONFIG_COUNT=1",
+        "MOOR_GH_REPO",
+        "MOOR_PUSH_URL",
+        "unset GH_TOKEN GITHUB_TOKEN",
+    ] {
+        assert!(script.contains(want), "{want}: {script}");
+    }
+    let at = |needle: &str| script.find(needle).unwrap();
+    let shim = at(&format!("{CRED}/bin"));
+    assert!(at("$HOME/.local/bin") < shim && shim < at("cd '/work/box-1'"));
+}
+
+#[test]
+fn a_failed_proxy_stage_removes_the_cred_dir() {
+    let (d, s) = (
+        driver(FakeDriver::new().fail_put(DriverError::NotFound)),
+        surface(FakeSurface::new("/r")),
+    );
+    let out = agent(&d, &s).launch(&req_with_proxy(&s));
+    assert!(matches!(out, Err(EngineError::Failed { .. })));
+    assert!(s.opened().is_empty());
+    assert_eq!(d.execs().remove(0).1.argv, ["rm", "-rf", CRED]);
+}
+
+#[test]
+fn the_agent_gets_the_proxy_env_and_the_shim_while_the_cred_dir_lives_until_exit() {
+    let b = Scratch::new();
+    let cred = b.path("home/.moor-cred-t1-x");
+    std::fs::write(cred.join("proxy-nonce"), NONCE).unwrap();
+    b.stub(
+        "claude",
+        &format!(
+            "touch \"$MARKER\"; env > \"$MARKER.env\"; \
+             if [ -d '{c}' ]; then touch \"$MARKER.dir\"; fi; \
+             if [ -e '{c}/proxy-nonce' ]; then touch \"$MARKER.nonce\"; fi",
+            c = cred.display()
+        ),
+    );
+    let script = b.script_with("true", &b.proxy_lines());
+    assert!(b.spawn(&script).wait().unwrap().success());
+    let env = std::fs::read_to_string(b.path("started.env")).unwrap();
+    let line = |name: &str| env.lines().find(|l| l.starts_with(name)).unwrap_or("");
+    assert!(
+        line("ANTHROPIC_BASE_URL=").contains("sentinel-9c2e"),
+        "{env}"
+    );
+    assert!(!env.contains("GH_TOKEN"), "{env}");
+    assert!(
+        line("PATH=").starts_with(&format!("PATH={}/bin:", cred.display())),
+        "{env}"
+    );
+    assert!(b.path("started.dir").exists());
+    assert!(!b.path("started.nonce").exists());
     assert!(b.cred_gone());
 }

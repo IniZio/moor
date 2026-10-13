@@ -88,6 +88,8 @@ fn launch_req() -> LaunchReq {
         setup_exit: None,
         model: None,
         nonce: "abc123".to_owned(),
+        proxy: None,
+        origin: None,
     }
 }
 
