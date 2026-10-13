@@ -76,16 +76,19 @@ fn idle_since(w: &World, id: TaskId) -> Option<i64> {
 }
 
 #[test]
-fn start_idles_a_working_task_whose_hook_reports_idle() {
+fn start_idles_a_working_task_whose_hook_reports_idle_then_wakes_it() {
     let (w, id) = started(false, |w| {
         probes(w, Some(HookKind::Idle), PaneStatus::Unknown)
     });
     assert_eq!(row(&w, id).state, TaskState::Working);
     let v = run(&w.cx, &req("demo")).unwrap();
     assert!(v.attached);
-    assert_eq!(v.task.state, TaskState::Idle);
-    assert_eq!(row(&w, id).state, TaskState::Idle);
-    assert!(idle_since(&w, id).is_some());
+    assert_eq!(v.task.state, TaskState::Working);
+    assert_eq!(row(&w, id).state, TaskState::Working);
+    let k = kinds(&w, id);
+    let idled = k.iter().position(|x| x == "idled").unwrap();
+    assert!(k.iter().rposition(|x| x == "busy").unwrap() > idled);
+    assert!(idle_since(&w, id).is_none());
 }
 
 #[test]
@@ -206,14 +209,14 @@ fn restarting_an_idle_task_whose_agent_is_busy_ends_working_with_a_busy_event() 
 }
 
 #[test]
-fn restarting_an_idle_task_whose_agent_is_live_and_idle_leaves_it_idle() {
+fn restarting_an_idle_task_whose_agent_is_live_and_idle_ends_working_with_a_busy_event() {
     let (w, id) = started(true, |w| {
         probes(w, Some(HookKind::Idle), PaneStatus::Unknown)
     });
     let v = run(&w.cx, &req("demo")).unwrap();
-    assert_eq!(v.task.state, TaskState::Idle);
-    assert_eq!(row(&w, id).state, TaskState::Idle);
-    assert!(!kinds(&w, id).contains(&"busy".to_owned()));
+    assert_eq!(v.task.state, TaskState::Working);
+    assert_eq!(row(&w, id).state, TaskState::Working);
+    assert!(kinds(&w, id).contains(&"busy".to_owned()));
 }
 
 #[test]
