@@ -48,6 +48,8 @@ pub struct Fields {
     pub box_workdir: Field<String>,
     /// Whether egress is enforced in the box.
     pub egress_enforced: Field<bool>,
+    /// Why the box cannot sleep, as last reported by the driver.
+    pub box_sleep_reason: Field<String>,
 }
 
 /// A recorded in-flight operation, kept so a crash can be recovered.
@@ -291,6 +293,7 @@ impl Decision {
                 box_handle: Field::Keep,
                 box_workdir: Field::Keep,
                 egress_enforced: Field::Keep,
+                box_sleep_reason: Field::Keep,
             },
             intent: IntentChange::Keep,
             events: Vec::new(),
