@@ -188,6 +188,11 @@ pub enum ExtraEvent {
     },
     /// A start attached to an existing open task.
     Attached,
+    /// Close ended the live agent sessions.
+    SessionsStopped {
+        /// The ended session ids.
+        sessions: Vec<String>,
+    },
 }
 
 impl From<ExtraEvent> for Event {
@@ -210,6 +215,7 @@ impl From<ExtraEvent> for Event {
             ExtraEvent::Checked { credentials } => Self::Checked { credentials },
             ExtraEvent::RunStarted { run } => Self::RunStarted { run },
             ExtraEvent::Attached => Self::Attached,
+            ExtraEvent::SessionsStopped { sessions } => Self::SessionsStopped { sessions },
         }
     }
 }
@@ -237,6 +243,7 @@ impl TryFrom<Event> for ExtraEvent {
             Event::Checked { credentials } => Ok(Self::Checked { credentials }),
             Event::RunStarted { run } => Ok(Self::RunStarted { run }),
             Event::Attached => Ok(Self::Attached),
+            Event::SessionsStopped { sessions } => Ok(Self::SessionsStopped { sessions }),
             e @ (Event::Started
             | Event::Rejected { .. }
             | Event::WaitingForBox { .. }

@@ -161,6 +161,11 @@ pub enum Event {
     },
     /// A start attached to an existing open task.
     Attached,
+    /// Close ended the live agent sessions.
+    SessionsStopped {
+        /// The ended session ids.
+        sessions: Vec<String>,
+    },
 }
 
 impl Event {
@@ -195,6 +200,7 @@ impl Event {
             Self::Checked { .. } => "checked",
             Self::RunStarted { .. } => "run_started",
             Self::Attached => "attached",
+            Self::SessionsStopped { .. } => "sessions_stopped",
         }
     }
 
