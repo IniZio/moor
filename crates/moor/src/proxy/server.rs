@@ -9,13 +9,33 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use moor_core::proxy_gate::{decide, GateDecision, GateInput, Plan, RouteTable};
+use moor_core::seam::clock::Clock;
 use moor_core::Secret;
 
 use super::head::{read_head, Head};
 use super::ProxyLog;
 
-/// How long a connection may stall while sending its request head.
-const READ_TIMEOUT: Duration = Duration::from_secs(10);
+mod deadline;
+
+use deadline::DeadlineReader;
+
+/// Total time a client gets to send a complete request head, however slowly
+/// it sends the bytes.
+pub(crate) const HEAD_BUDGET: Duration = Duration::from_secs(10);
+
+/// Longest a client may stall mid-body before the handler gives up.
+const BODY_IDLE: Duration = Duration::from_secs(10);
+/// Per-listener settings.
+pub(crate) struct ProxyOpts {
+    /// Most connections served at once.
+    pub(crate) max_conns: usize,
+    /// The Task repo (`owner/name`) forge calls are limited to.
+    pub(crate) task_repo: Option<String>,
+    /// Source of time for the head deadline.
+    pub(crate) clock: Arc<dyn Clock>,
+    /// Total time allowed for reading one request head.
+    pub(crate) head_budget: Duration,
+}
 
 /// An admitted request, ready to be sent upstream.
 pub(crate) struct Forward {
@@ -37,8 +57,8 @@ pub(crate) trait ForwardHandler: Send + Sync {
 struct Shared {
     /// Routes the gate admits.
     table: RouteTable,
-    /// The Task repo (`owner/name`) forge calls are limited to.
-    task_repo: Option<String>,
+    /// Per-listener settings.
+    opts: ProxyOpts,
     /// Per-Task secret clients must present.
     nonce: Secret,
     /// One line per request.
@@ -47,8 +67,6 @@ struct Shared {
     handler: Arc<dyn ForwardHandler>,
     /// Connections currently being served.
     active: AtomicUsize,
-    /// Most connections served at once.
-    max_conns: usize,
 }
 
 /// Holds one connection slot until dropped.
@@ -59,7 +77,7 @@ impl Slot {
     fn acquire(shared: &Arc<Shared>) -> Option<Self> {
         let before = shared.active.fetch_add(1, Ordering::SeqCst);
         let slot = Self(Arc::clone(shared));
-        (before < shared.max_conns).then_some(slot)
+        (before < shared.opts.max_conns).then_some(slot)
     }
 }
 
@@ -86,19 +104,17 @@ impl Proxy {
         nonce: Secret,
         log: ProxyLog,
         handler: Arc<dyn ForwardHandler>,
-        max_conns: usize,
-        task_repo: Option<String>,
+        opts: ProxyOpts,
     ) -> io::Result<Self> {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0))?;
         let port = listener.local_addr()?.port();
         let shared = Arc::new(Shared {
             table,
-            task_repo,
+            opts,
             nonce,
             log,
             handler,
             active: AtomicUsize::new(0),
-            max_conns,
         });
         let stop = Arc::new(AtomicBool::new(false));
         let flag = Arc::clone(&stop);
@@ -146,8 +162,12 @@ fn accept_loop(listener: &TcpListener, shared: &Arc<Shared>, stop: &AtomicBool) 
 
 /// Serves one connection.
 fn serve(shared: &Shared, mut stream: TcpStream) {
-    drop(stream.set_read_timeout(Some(READ_TIMEOUT)));
-    let (head, body_prefix) = match read_head(&mut stream) {
+    let read = {
+        let mut reader =
+            DeadlineReader::new(&stream, shared.opts.clock.as_ref(), shared.opts.head_budget);
+        read_head(&mut reader)
+    };
+    let (head, body_prefix) = match read {
         Ok(Some(read)) => read,
         Ok(None) => return,
         Err(err) => {
@@ -164,7 +184,7 @@ fn serve(shared: &Shared, mut stream: TcpStream) {
         target: &head.target,
         headers: &head.header_pairs(),
         nonce: &shared.nonce,
-        task_repo: shared.task_repo.as_deref(),
+        task_repo: shared.opts.task_repo.as_deref(),
     });
     match decision {
         GateDecision::Reject(reject) => {
@@ -173,6 +193,7 @@ fn serve(shared: &Shared, mut stream: TcpStream) {
             shared.log.record(&head.method, "-", status);
         }
         GateDecision::Forward(plan) => {
+            drop(stream.set_read_timeout(Some(BODY_IDLE)));
             if head.expects_continue() {
                 drop(stream.write_all(b"HTTP/1.1 100 Continue\r\n\r\n"));
             }
