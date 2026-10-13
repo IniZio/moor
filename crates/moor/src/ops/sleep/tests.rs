@@ -263,3 +263,108 @@ fn an_asleep_task_is_left_alone() {
     assert_eq!(sleep_calls(&f), 1);
     assert_eq!(states(&f), (TaskState::Asleep, BoxState::Asleep));
 }
+
+/// A Task and Box seeded through `Requested`: Task `SettingUp`, Box Starting.
+fn starting() -> Fx {
+    let dir = tempfile::tempdir().unwrap();
+    let driver = Arc::new(FakeDriver::new());
+    let cx = Cx::fake(
+        dir.path(),
+        Path::new("/home/me/proj"),
+        driver.clone(),
+        Arc::new(FakeSurface::new(PathBuf::from("/s"))),
+        Arc::new(ScriptedProc::new()),
+    );
+    let store = cx.store().unwrap();
+    let id = store
+        .apply(Decision::insert(NewTask {
+            name: TaskName::parse("t").unwrap(),
+            repo: "r".into(),
+        }))
+        .unwrap()
+        .task;
+    let d = Decision::new(id)
+        .task_input(TaskInput::Admitted)
+        .box_input(BoxInput::Requested)
+        .set(Fields {
+            box_provider: Field::Set(ProviderId::new("p")),
+            ..Fields::default()
+        });
+    store.apply(d).unwrap();
+    Fx {
+        _dir: dir,
+        cx,
+        driver,
+        id,
+    }
+}
+
+/// Fields that give the Box a handle, so only its state can make `sleep` refuse.
+fn with_handle() -> Fields {
+    Fields {
+        box_handle: Field::Set(moor_core::name::BoxHandle::new("box-1")),
+        ..Fields::default()
+    }
+}
+
+/// Assert `run` refuses without a Driver sleep call and leaves the states alone.
+fn assert_refused_untouched(f: &Fx) {
+    let before = states(f);
+    let err = run(&f.cx, &req()).unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Refused, "{}", err.error);
+    assert_eq!(sleep_calls(f), 0);
+    assert_eq!(states(f), before);
+}
+
+#[test]
+fn refuses_a_task_that_is_still_setting_up() {
+    let f = starting();
+    let d = Decision::new(f.id).box_input(BoxInput::Acquired {
+        handle: moor_core::name::BoxHandle::new("box-1"),
+    });
+    f.cx.store().unwrap().apply(d).unwrap();
+    assert_eq!(states(&f), (TaskState::SettingUp, BoxState::Ready));
+    assert_refused_untouched(&f);
+}
+
+#[test]
+fn refuses_a_working_task_whose_box_is_starting() {
+    let f = starting();
+    let d = Decision::new(f.id)
+        .task_input(TaskInput::BoxReady {
+            setup: SetupOutcome::Ok,
+        })
+        .set(with_handle());
+    f.cx.store().unwrap().apply(d).unwrap();
+    assert_eq!(states(&f), (TaskState::Working, BoxState::Starting));
+    assert_refused_untouched(&f);
+}
+
+#[test]
+fn refuses_a_working_task_whose_box_failed() {
+    let f = starting();
+    let d = Decision::new(f.id)
+        .task_input(TaskInput::BoxReady {
+            setup: SetupOutcome::Ok,
+        })
+        .box_input(BoxInput::AcquireFailed {
+            cause: "no capacity".to_owned(),
+            attempted: None,
+        })
+        .set(with_handle());
+    f.cx.store().unwrap().apply(d).unwrap();
+    assert_eq!(states(&f), (TaskState::Working, BoxState::Failed));
+    assert_refused_untouched(&f);
+}
+
+#[test]
+fn refuses_an_idle_task_whose_ready_box_has_no_handle() {
+    let f = idle();
+    let d = Decision::new(f.id).set(Fields {
+        box_handle: Field::Clear,
+        ..Fields::default()
+    });
+    f.cx.store().unwrap().apply(d).unwrap();
+    assert_eq!(states(&f), (TaskState::Idle, BoxState::Ready));
+    assert_refused_untouched(&f);
+}
