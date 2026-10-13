@@ -6,7 +6,8 @@
 
 use std::time::{Duration, Instant};
 
-use moor_core::seam::proc::{Deadline, FirstLineError, Proc, ProcSpec, Tool};
+use moor_core::seam::proc::{Deadline, ExitInfo, FirstLineError, Proc, ProcSpec, Tool};
+use rustix::process::{kill_process_group, waitid, Pid, Signal, WaitId, WaitIdOptions};
 use tempfile::TempDir;
 
 use super::SystemProc;
@@ -132,5 +133,64 @@ fn cwd_and_env_reach_child() {
     assert_eq!(
         c.first_line(secs(5)).unwrap(),
         format!("{}|bar", cwd.display())
+    );
+}
+
+fn wait_exit(c: &mut dyn moor_core::seam::proc::ChildHandle) -> ExitInfo {
+    let start = Instant::now();
+    loop {
+        if let Some(x) = c.try_exit() {
+            return x;
+        }
+        assert!(start.elapsed() < Duration::from_secs(5), "no exit seen");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+fn zombie_visible(pid: u32) -> bool {
+    let id = WaitId::Pid(Pid::from_raw(i32::try_from(pid).unwrap()).unwrap());
+    matches!(
+        waitid(
+            id,
+            WaitIdOptions::EXITED | WaitIdOptions::NOWAIT | WaitIdOptions::NOHANG
+        ),
+        Ok(Some(_))
+    )
+}
+
+#[test]
+fn exited_leader_stays_unreaped_until_drop() {
+    let p = sys();
+    let mut c = p.spawn_child(&sh("exit 3")).unwrap();
+    let pid = c.pid();
+    assert_eq!(
+        wait_exit(&mut *c),
+        ExitInfo {
+            code: Some(3),
+            signal: None
+        }
+    );
+    assert!(zombie_visible(pid), "leader was reaped before drop");
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).unwrap();
+    assert!(stat.rsplit(") ").next().unwrap().starts_with('Z'), "{stat}");
+    drop(c);
+    assert!(!zombie_visible(pid));
+    assert!(!std::path::Path::new(&format!("/proc/{pid}")).exists());
+}
+
+#[test]
+fn try_exit_none_while_running_then_reports_signal() {
+    let p = sys();
+    let mut c = p.spawn_child(&sh("sleep 300")).unwrap();
+    std::thread::sleep(Duration::from_millis(100));
+    assert_eq!(c.try_exit(), None);
+    let pg = Pid::from_raw(i32::try_from(c.pid()).unwrap()).unwrap();
+    kill_process_group(pg, Signal::KILL).unwrap();
+    assert_eq!(
+        wait_exit(&mut *c),
+        ExitInfo {
+            code: None,
+            signal: Some(9)
+        }
     );
 }

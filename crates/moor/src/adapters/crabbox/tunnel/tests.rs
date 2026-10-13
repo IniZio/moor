@@ -73,11 +73,21 @@ fn ready_line_gives_live_handle_that_kills_on_drop() {
 }
 
 #[test]
-fn dead_child_is_not_alive() {
+fn exited_child_is_not_alive() {
+    let (_p, c) = fixture(ChildReply::ReadyThenExit {
+        line: r#"{"box":8080,"host":9090}"#.to_owned(),
+        code: 1,
+    });
+    let t = open(&c, "sprites/moor-t7").unwrap();
+    assert!(!t.alive());
+}
+
+#[test]
+fn pid_probe_does_not_decide_liveness() {
     let (p, c) = fixture(ready());
     let t = open(&c, "sprites/moor-t7").unwrap();
     p.dead(t.pid());
-    assert!(!t.alive());
+    assert!(t.alive());
 }
 
 #[test]

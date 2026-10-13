@@ -4,12 +4,12 @@
 //! long-lived child; the returned handle owns it and dropping the handle kills it.
 
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
 use moor_core::name::BoxHandle;
 use moor_core::seam::driver::{DriverError, TunnelFailure, TunnelHandle};
-use moor_core::seam::proc::{ChildHandle, Deadline, FirstLineError, Proc};
+use moor_core::seam::proc::{ChildHandle, Deadline, FirstLineError};
 use serde::Deserialize;
 
 use super::{static_env, target_args, Crabbox};
@@ -32,19 +32,26 @@ struct Ready {
 
 /// A running tunnel child.
 struct Tunnel {
-    /// The crabbox process; dropping it kills its process group.
-    child: Box<dyn ChildHandle>,
-    /// Spawner, asked whether the child still lives.
-    proc: Arc<dyn Proc>,
+    /// The crabbox process; dropping it kills its process group. Behind a lock
+    /// because `alive` takes `&self` while the exit check needs `&mut`.
+    child: Mutex<Box<dyn ChildHandle>>,
 }
 
 impl TunnelHandle for Tunnel {
     fn pid(&self) -> u32 {
-        self.child.pid()
+        self.child
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .pid()
     }
 
+    /// Asks the child handle's own exit state, never the pid, which can be reused.
     fn alive(&self) -> bool {
-        self.proc.alive(self.child.pid())
+        self.child
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .try_exit()
+            .is_none()
     }
 }
 
@@ -73,8 +80,7 @@ pub(super) fn reverse_tunnel(
     match child.first_line(Deadline(TUNNEL_READY_DEADLINE)) {
         Ok(line) => match serde_json::from_str::<Ready>(&line) {
             Ok(r) if r.r#box == box_port && r.host == host_port => Ok(Box::new(Tunnel {
-                child,
-                proc: Arc::clone(&cb.proc),
+                child: Mutex::new(child),
             })),
             _ => Err(DriverError::Failed {
                 summary: UNEXPECTED_READY.to_owned(),

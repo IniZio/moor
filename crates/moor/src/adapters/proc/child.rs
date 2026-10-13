@@ -2,19 +2,21 @@
 //! child, with every process in its group, stops when the handle drops.
 
 use std::io::{self, BufRead, BufReader, Read};
-use std::os::unix::process::ExitStatusExt;
-use std::process::{ExitStatus, Stdio};
+use std::process::{self, Stdio};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
 
-use moor_core::seam::proc::{ChildHandle, Deadline, FirstLineError, ProcError, ProcSpec, Tool};
-use rustix::process::Signal;
+use moor_core::seam::proc::{
+    ChildHandle, Deadline, ExitInfo, FirstLineError, ProcError, ProcSpec, Tool,
+};
+use rustix::io::Errno;
+use rustix::process::{waitid, Signal, WaitId, WaitIdOptions};
 use zeroize::Zeroizing;
 
 use super::{
-    feed, gone, signal_group, spawn_retrying, stdin_for, terminate, SystemProc, Waited,
-    DRAIN_GRACE, GRACE, TAIL,
+    feed, gone, signal_group, spawn_retrying, stdin_for, to_pid, SystemProc, DRAIN_GRACE, GRACE,
+    TAIL,
 };
 
 /// What the stdout reader found first: a full line, or the end of output.
@@ -26,8 +28,10 @@ struct Child {
     tool: Tool,
     /// Leader pid, equal to the process group id.
     pid: u32,
-    /// Exit status of the leader, sent once by the waiter thread.
-    exit: Receiver<Waited>,
+    /// The unreaped leader; Drop reaps it after the group is signalled.
+    proc: process::Child,
+    /// How the leader ended, sent once by the waiter thread.
+    exit: Receiver<io::Result<ExitInfo>>,
     /// First stdout line or the reason there is none.
     line: Receiver<FirstRead>,
     /// Fires when the stderr reader reaches end of stream.
@@ -36,8 +40,8 @@ struct Child {
     tail: Arc<Mutex<Vec<u8>>>,
     /// Ready line once read.
     cached: Option<String>,
-    /// True once the exit status has been taken from `exit`.
-    reaped: bool,
+    /// Exit recorded from `exit`.
+    done: Option<io::Result<ExitInfo>>,
 }
 
 impl SystemProc {
@@ -67,17 +71,41 @@ impl SystemProc {
         }
         let pid = child.id();
         let (tx, exit) = mpsc::channel();
-        thread::spawn(move || tx.send(child.wait()).ok());
+        thread::spawn(move || tx.send(observe_exit(pid)).ok());
         Ok(Box::new(Child {
             tool: spec.tool,
             pid,
+            proc: child,
             exit,
             line,
             err_done,
             tail,
             cached: None,
-            reaped: false,
+            done: None,
         }))
+    }
+}
+
+/// Blocks until the leader has exited, without reaping it: the unreaped zombie
+/// keeps the pgid reserved so the group signal in Drop cannot reach a reused
+/// group.
+fn observe_exit(pid: u32) -> io::Result<ExitInfo> {
+    let id = to_pid(pid).ok_or_else(gone)?;
+    loop {
+        match waitid(
+            WaitId::Pid(id),
+            WaitIdOptions::EXITED | WaitIdOptions::NOWAIT,
+        ) {
+            Ok(Some(st)) => {
+                return Ok(ExitInfo {
+                    code: st.exit_status(),
+                    signal: st.terminating_signal(),
+                })
+            }
+            Ok(None) => return Err(gone()),
+            Err(Errno::INTR) => {}
+            Err(e) => return Err(e.into()),
+        }
     }
 }
 
@@ -111,30 +139,39 @@ fn keep_tail<R: Read>(mut pipe: R, tail: &Mutex<Vec<u8>>, done: &Sender<()>) {
 }
 
 impl Child {
+    /// Takes the waiter's result if it has arrived.
+    fn poll(&mut self) {
+        if self.done.is_none() {
+            self.done = self.exit.try_recv().ok();
+        }
+    }
+
     /// Exit status and stderr tail for a child that ended before a full line.
     fn exited(&mut self) -> FirstLineError {
-        let status: Result<ExitStatus, io::Error> = match self.exit.recv_timeout(GRACE) {
-            Ok(st) => {
-                self.reaped = true;
-                st
-            }
-            Err(RecvTimeoutError::Timeout) => {
-                return FirstLineError::Io(io::Error::other("child closed stdout but kept running"))
-            }
-            Err(RecvTimeoutError::Disconnected) => Err(gone()),
-        };
+        if self.done.is_none() {
+            self.done = Some(match self.exit.recv_timeout(GRACE) {
+                Ok(r) => r,
+                Err(RecvTimeoutError::Timeout) => {
+                    return FirstLineError::Io(io::Error::other(
+                        "child closed stdout but kept running",
+                    ))
+                }
+                Err(RecvTimeoutError::Disconnected) => Err(gone()),
+            });
+        }
         self.err_done.recv_timeout(DRAIN_GRACE).ok();
         let stderr_tail = {
             let tail = self.tail.lock().unwrap_or_else(PoisonError::into_inner);
             String::from_utf8_lossy(&tail).into_owned()
         };
-        match status {
-            Ok(st) => FirstLineError::Exited {
-                code: st.code(),
-                signal: st.signal(),
+        match &self.done {
+            Some(Ok(x)) => FirstLineError::Exited {
+                code: x.code,
+                signal: x.signal,
                 stderr_tail,
             },
-            Err(e) => FirstLineError::Io(e),
+            Some(Err(e)) => FirstLineError::Io(io::Error::new(e.kind(), e.to_string())),
+            None => FirstLineError::Io(gone()),
         }
     }
 }
@@ -162,17 +199,27 @@ impl ChildHandle for Child {
             }),
         }
     }
+
+    fn try_exit(&mut self) -> Option<ExitInfo> {
+        self.poll();
+        self.done.as_ref().and_then(|r| r.as_ref().ok().copied())
+    }
 }
 
 impl Drop for Child {
-    /// Stops the whole group; the kill also reaches grandchildren that outlive
-    /// an already exited leader.
+    /// Stops the whole group, including grandchildren that outlive an already
+    /// exited leader, then reaps the leader.
     fn drop(&mut self) {
-        if self.reaped {
-            signal_group(self.pid, Signal::KILL);
-        } else {
-            terminate(self.pid, &self.exit, GRACE).ok();
+        signal_group(self.pid, Signal::TERM);
+        self.poll();
+        if self.done.is_none() {
+            self.done = self.exit.recv_timeout(GRACE).ok();
         }
+        signal_group(self.pid, Signal::KILL);
+        if self.done.is_none() {
+            self.exit.recv().ok();
+        }
+        self.proc.wait().ok();
     }
 }
 
