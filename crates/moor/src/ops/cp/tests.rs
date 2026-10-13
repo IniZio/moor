@@ -307,3 +307,32 @@ fn size_does_not_follow_directory_links() {
     let total = super::size(dir.path());
     assert!((3..1000).contains(&total), "{total}");
 }
+
+#[test]
+fn leading_current_dir_is_dropped_from_the_source() {
+    let f = fx();
+    run(&f.cx, &req("./rel.txt", "rel.txt")).unwrap();
+    assert_eq!(first_copy(&f).1.as_str(), "/work/box-1/rel.txt");
+}
+
+#[test]
+fn interior_current_dir_is_dropped_from_the_source() {
+    let f = fx();
+    run(&f.cx, &req("./a/./b.txt", "b.txt")).unwrap();
+    assert_eq!(first_copy(&f).1.as_str(), "/work/box-1/a/b.txt");
+}
+
+#[test]
+fn parent_dir_after_current_dir_is_still_a_usage_error() {
+    let f = fx();
+    let e = run(&f.cx, &req("./../x", "x")).unwrap_err();
+    assert_eq!(e.kind, ErrorKind::Usage);
+    assert!(f.driver.copies().is_empty());
+}
+
+#[test]
+fn source_of_only_current_dir_is_a_usage_error() {
+    let f = fx();
+    let e = run(&f.cx, &req(".", "x")).unwrap_err();
+    assert_eq!(e.kind, ErrorKind::Usage);
+}
