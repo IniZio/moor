@@ -167,7 +167,7 @@ impl Launch<'_> {
         let line = format!(
             "{} {}; echo \"moor: agent exited $?\"",
             command_line(connect),
-            quote(&script)
+            quote(&command_line(&[script]))
         );
         surface
             .open_pane(
@@ -183,7 +183,8 @@ impl Launch<'_> {
     }
 }
 
-/// The script the pane runs on the Box; the credential directory goes when it exits.
+/// The script the Box runs under `sh`; the credential directory goes once the brief is
+/// installed, and at exit or on a hangup, interrupt or terminate before then.
 fn script(
     cred: &BoxPath,
     ctx: &LaunchCtx,
@@ -201,7 +202,11 @@ fn script(
         .collect::<Vec<_>>();
     Ok([
         format!("trap {} EXIT", quote(&format!("rm -rf {}", quote(cred.as_str())))),
+        "trap 'exit 129' HUP".to_owned(),
+        "trap 'exit 130' INT".to_owned(),
+        "trap 'exit 143' TERM".to_owned(),
         format!("mkdir -p {moor} && install -m 600 {staged} {brief} || exit 1"),
+        format!("rm -rf {}", quote(cred.as_str())),
         format!(
             "printf '{{\"state\":\"starting\",\"event\":\"Launch\",\"ts\":%s}}\\n' \"$(date +%s)\" > {state} || exit 1"
         ),
