@@ -200,3 +200,39 @@ fn a_failed_setup_still_launches_with_its_exit_code() {
     assert!(v.agent.launched);
     assert_eq!(engine.launches().first().unwrap().setup_exit, Some(3));
 }
+
+#[test]
+fn a_launch_failure_stays_in_the_events_after_a_successful_retry() {
+    let engine = Arc::new(FakeEngine::new().launch_result(Err(launch_error("pane", "no tab"))));
+    let w = with_engine(&engine);
+    let id = TaskId::new(run(&w.cx, &goal_req("demo")).unwrap().task.id);
+    run(&w.cx, &goal_req("demo")).unwrap();
+    let kinds: Vec<_> =
+        w.cx.store()
+            .unwrap()
+            .events(id, 50)
+            .unwrap()
+            .into_iter()
+            .map(|e| (e.kind, e.payload))
+            .collect();
+    let failed = kinds.iter().find(|(k, _)| k == "session_failed").unwrap();
+    assert_eq!(
+        failed.1,
+        serde_json::json!({"step": "pane", "message": "no tab"})
+    );
+    assert!(kinds.iter().any(|(k, _)| k == "session_started"));
+}
+
+#[test]
+fn waiting_for_a_run_does_not_return_the_dispatch_failure() {
+    let engine = Arc::new(FakeEngine::new().launch_result(Err(launch_error("pane", "no tab"))));
+    let w = with_engine(&engine);
+    run(&w.cx, &goal_req("demo")).unwrap();
+    let wait = WaitReq {
+        task: TaskName::parse("demo").unwrap(),
+        wait_for: Some(WaitFor::Run),
+        timeout_secs: Some(60),
+    };
+    let v = crate::ops::wait::run(&w.cx, &wait).unwrap();
+    assert!(!v.timed_out);
+}
