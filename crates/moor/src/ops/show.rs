@@ -9,7 +9,7 @@ use moor_core::{ErrorKind, ShowReq, TaskId};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::view::{agent_view, event_view, task_view_with_run};
-use crate::ops::common::{activity, reconcile};
+use crate::ops::common::{activity, autosleep, reconcile};
 
 /// Run `show`.
 pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
@@ -22,6 +22,7 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
         let reading = activity::read(cx, store, &row, now)?;
         if req.task.is_none() {
             activity::settle(store, &row, &reading)?;
+            autosleep::run(cx, store, row.id);
             row = store.task(row.id)?.unwrap_or(row);
         }
         let in_flight = store.in_flight_run(row.id, &|pid| cx.proc().alive(pid))?;

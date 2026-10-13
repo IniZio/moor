@@ -317,3 +317,16 @@ fn driver_limit_of_one_queues_despite_a_larger_box_limit() {
     assert!(v.queued);
     assert_eq!(w.driver.calls(), ["acquire"]);
 }
+
+#[test]
+fn asleep_box_still_counts_toward_the_limit() {
+    let (w, holder) = with_live_box(box_limit(1));
+    w.cx.store()
+        .unwrap()
+        .apply(Decision::new(holder).box_input(BoxInput::Sleep))
+        .unwrap();
+    let v = run(&w.cx, &req("waiter")).unwrap();
+    assert!(v.queued);
+    assert_eq!(v.task.state, TaskState::WaitingForBox);
+    assert_eq!(w.driver.calls(), ["acquire"]);
+}

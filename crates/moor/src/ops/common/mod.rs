@@ -1,6 +1,7 @@
 //! Helpers shared by the task ops.
 
 pub(crate) mod activity;
+pub(crate) mod autosleep;
 pub(crate) mod boxlock;
 pub(crate) mod capacity;
 pub(crate) mod creds;
