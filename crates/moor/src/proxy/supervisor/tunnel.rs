@@ -1,0 +1,83 @@
+//! Restarting a dead reverse tunnel with a fixed backoff.
+
+use std::time::Duration;
+
+use super::run::{say, Running, Stop};
+use crate::store::Fenced;
+
+/// Waits before each successive restart attempt; running out of them gives up.
+const BACKOFF: [Duration; 5] = [
+    Duration::from_secs(1),
+    Duration::from_secs(2),
+    Duration::from_secs(4),
+    Duration::from_secs(8),
+    Duration::from_secs(16),
+];
+
+/// Why a restart is recorded.
+const REASON: &str = "tunnel exited";
+
+impl Running<'_> {
+    /// Replaces the dead tunnel; `None` means a new one is up and recorded.
+    ///
+    /// The lease is extended before every wait, so the waits never let it lapse.
+    pub(super) fn revive(&self) -> Option<Stop> {
+        let sink = &self.deps.stderr;
+        say(
+            sink,
+            format_args!("the tunnel into the box exited; restarting"),
+        );
+        let mut last = String::new();
+        for wait in BACKOFF {
+            if let stop @ Some(_) = self.beat() {
+                return stop;
+            }
+            self.deps.clock.sleep(wait);
+            match self.deps.driver.reverse_tunnel(
+                &self.handle,
+                self.box_port,
+                self.proxy.port(),
+                &self.worktree,
+            ) {
+                Ok(tunnel) => {
+                    *self.tunnel.borrow_mut() = tunnel;
+                    return self.record();
+                }
+                Err(err) => {
+                    last = err.to_string();
+                    say(sink, format_args!("cannot restart the tunnel: {last}"));
+                }
+            }
+        }
+        say(
+            sink,
+            format_args!(
+                "the tunnel into the box did not restart after {} attempts ({last}); stopping",
+                BACKOFF.len()
+            ),
+        );
+        Some(Stop::TunnelDead)
+    }
+
+    /// Records the restart; `None` unless the lease was lost or the store failed.
+    fn record(&self) -> Option<Stop> {
+        match self
+            .deps
+            .store
+            .tunnel_restarted(self.task, &self.owner, self.box_port, REASON)
+        {
+            Ok(Fenced::Applied) => None,
+            Ok(Fenced::LostLease) => Some(Stop::LostLease),
+            Err(err) => {
+                say(
+                    &self.deps.stderr,
+                    format_args!("cannot record the restart: {err}"),
+                );
+                Some(Stop::Failed)
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests;
