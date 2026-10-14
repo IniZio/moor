@@ -32,3 +32,6 @@ moor::wire	moor::config_load,moor::adapters,moor::proxy,moor::store,moor::cx,moo
 moor::cx	moor::config_load,moor::store,moor::adapters::git,moor::adapters::creds,moor::env,moor::error
 moor::ops	moor::cx,moor::store,moor::error,moor::adapters::git,moor::adapters::creds
 moor::moor	moor::cx,moor::wire,moor::ops,moor::store,moor::adapters::clock,moor::error,moor::env
+extern:nono_proxy	moor::proxy
+extern:nono	moor::proxy
+extern:tokio	moor::proxy

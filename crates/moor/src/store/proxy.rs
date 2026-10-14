@@ -279,6 +279,7 @@ fn port_taken(conn: &Connection, port: u16) -> Result<bool, StoreError> {
         .is_some())
 }
 
+mod egress;
 mod lease;
 
 pub(crate) use lease::{Fenced, Lease};
