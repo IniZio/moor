@@ -5,6 +5,7 @@ pub(crate) mod autosleep;
 pub(crate) mod boxlock;
 pub(crate) mod capacity;
 pub(crate) mod creds;
+pub(crate) mod dotfiles;
 pub(crate) mod facts;
 pub(crate) mod identity;
 pub(crate) mod promote;
