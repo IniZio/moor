@@ -1,11 +1,10 @@
 use std::time::Duration;
 
 use moor_core::domain::task::TaskState;
-use moor_core::seam::proc::Tool;
+use moor_core::seam::proc::Signal;
 
 use super::{fx, req, run, Fx};
 use crate::ops::common::proxy::{new_nonce, LEASE};
-use crate::testing::proc::Reply;
 
 const PID: u32 = 4242;
 
@@ -22,16 +21,6 @@ fn with_proxy(f: &Fx) {
             [i64::from(PID), f.id.get()],
         )
         .unwrap();
-    f.proc.on(Tool::Sh, &["-c"], Reply::Ok(String::new()));
-}
-
-fn kills(f: &Fx) -> Vec<String> {
-    f.proc
-        .calls()
-        .iter()
-        .filter(|c| c.tool == Tool::Sh)
-        .map(|c| c.args.join(" "))
-        .collect()
 }
 
 fn has_row(f: &Fx) -> bool {
@@ -46,7 +35,7 @@ fn live_lease_signals_the_group_and_removes_the_row() {
     let v = run(&f.cx, &req(false)).unwrap();
 
     assert_eq!(v.task.state, TaskState::Closed);
-    assert_eq!(kills(&f), [format!("-c kill -TERM -- -{PID}")]);
+    assert_eq!(f.proc.signals(), [(PID, Signal::Term)]);
     assert!(!has_row(&f));
 }
 
@@ -58,7 +47,7 @@ fn stale_lease_sends_no_signal_and_removes_the_row() {
 
     run(&f.cx, &req(false)).unwrap();
 
-    assert!(kills(&f).is_empty());
+    assert!(f.proc.signals().is_empty());
     assert!(!has_row(&f));
     assert!(f.cx.take_warnings().is_empty());
 }
@@ -69,7 +58,7 @@ fn no_row_is_a_no_op() {
 
     run(&f.cx, &req(false)).unwrap();
 
-    assert!(kills(&f).is_empty());
+    assert!(f.proc.signals().is_empty());
     assert!(f.cx.take_warnings().is_empty());
 }
 

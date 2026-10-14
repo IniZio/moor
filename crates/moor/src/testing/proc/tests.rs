@@ -280,3 +280,26 @@ fn ready_then_exit_flips_after_first_line() {
         })
     );
 }
+
+#[test]
+fn signal_group_records_calls_in_order() {
+    let p = ScriptedProc::new();
+    p.signal_group(500, Signal::Term).unwrap();
+    p.signal_group(500, Signal::Kill).unwrap();
+    assert_eq!(p.signals(), vec![(500, Signal::Term), (500, Signal::Kill)]);
+}
+
+#[test]
+fn signal_group_refuses_pgid_0_and_1_without_recording() {
+    let p = ScriptedProc::new();
+    assert!(p.signal_group(0, Signal::Kill).is_err());
+    assert!(p.signal_group(1, Signal::Kill).is_err());
+    assert!(p.signals().is_empty());
+}
+
+#[test]
+fn signal_group_fails_once_groups_are_gone() {
+    let p = ScriptedProc::new();
+    p.groups_gone();
+    assert!(p.signal_group(500, Signal::Term).is_err());
+}

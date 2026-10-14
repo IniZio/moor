@@ -6,13 +6,15 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use moor_core::seam::proc::{
     ChildHandle, Deadline, ExitInfo, FirstLineError, Output, Proc, ProcError, ProcOutput, ProcSpec,
-    Tool,
+    Signal, Tool,
 };
 use zeroize::Zeroizing;
 
 mod detached;
 pub(crate) use detached::DaemonCall;
 use detached::{call_of, Daemons};
+mod signal;
+use signal::Signals;
 
 /// A canned reply.
 pub(crate) enum Reply {
@@ -142,6 +144,7 @@ pub(crate) struct ScriptedProc {
     /// Pids of spawned children that were dropped.
     dropped: Arc<Mutex<Vec<u32>>>,
     daemons: Daemons,
+    signals: Signals,
 }
 
 impl ScriptedProc {
@@ -154,6 +157,7 @@ impl ScriptedProc {
             next_pid: AtomicU32::new(FIRST_CHILD_PID),
             dropped: Arc::new(Mutex::new(Vec::new())),
             daemons: Daemons::default(),
+            signals: Signals::default(),
         }
     }
 
@@ -347,6 +351,10 @@ impl Proc for ScriptedProc {
             printed: false,
             dropped: Arc::clone(&self.dropped),
         }))
+    }
+
+    fn signal_group(&self, pgid: u32, sig: Signal) -> Result<(), ProcError> {
+        self.send_signal(pgid, sig)
     }
 
     fn alive(&self, pid: u32) -> bool {

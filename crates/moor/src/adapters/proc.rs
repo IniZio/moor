@@ -13,13 +13,15 @@ use std::thread;
 use std::time::Duration;
 
 use moor_core::seam::proc::{
-    ChildHandle, Output, Proc, ProcError, ProcOutput, ProcSpec, Stdin, Tool, BASE_ENV,
+    ChildHandle, Output, Proc, ProcError, ProcOutput, ProcSpec, Signal as GroupSignal, Stdin, Tool,
+    BASE_ENV,
 };
 use rustix::io::Errno;
-use rustix::process::{kill_process_group, test_kill_process, Pid, Signal};
+use rustix::process::{test_kill_process, Signal};
 use zeroize::Zeroizing;
 
 use crate::env::Env;
+use signal::{send_group, signal_group, to_pid};
 
 /// Longest wait between SIGTERM and SIGKILL.
 const GRACE: Duration = Duration::from_secs(2);
@@ -228,18 +230,6 @@ fn feed<W: Write>(pipe: Option<W>, bytes: Option<&[u8]>) {
     }
 }
 
-/// Converts a raw pid, rejecting 0 and values beyond `i32`.
-fn to_pid(pid: u32) -> Option<Pid> {
-    i32::try_from(pid).ok().and_then(Pid::from_raw)
-}
-
-/// Sends `sig` to the process group led by `pid`; errors mean the group is gone.
-fn signal_group(pid: u32, sig: Signal) {
-    if let Some(pid) = to_pid(pid) {
-        kill_process_group(pid, sig).ok();
-    }
-}
-
 /// Result of reaping the child.
 type Waited = io::Result<ExitStatus>;
 
@@ -386,6 +376,10 @@ impl Proc for SystemProc {
         self.daemon(spec, log)
     }
 
+    fn signal_group(&self, pgid: u32, sig: GroupSignal) -> Result<(), ProcError> {
+        send_group(pgid, sig)
+    }
+
     fn alive(&self, pid: u32) -> bool {
         to_pid(pid).is_some_and(|p| matches!(test_kill_process(p), Ok(()) | Err(Errno::PERM)))
     }
@@ -393,6 +387,7 @@ impl Proc for SystemProc {
 
 mod child;
 mod detached;
+mod signal;
 mod stream;
 #[cfg(test)]
 mod tests;
