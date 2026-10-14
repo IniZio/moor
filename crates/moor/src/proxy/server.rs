@@ -19,6 +19,10 @@ mod deadline;
 mod framing;
 
 pub(crate) use deadline::DeadlineReader;
+#[cfg_attr(
+    not(test),
+    expect(unused_imports, reason = "the CLI starts the proxy in a later change")
+)]
 pub(crate) use framing::body_cap;
 use framing::BodyLen;
 
