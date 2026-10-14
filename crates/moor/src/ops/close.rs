@@ -19,6 +19,7 @@ use moor_core::seam::surface::{PaneRef, SurfaceError, WorkspaceRef};
 use moor_core::view::CloseView;
 use moor_core::{BoxHandle, CloseReq, ErrorKind, TaskName, Warning};
 
+use crate::adapters::git::BranchSync;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
@@ -73,6 +74,7 @@ pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
         store.apply(plan.decision_close.clone())?;
         false
     };
+    sync_branch(cx, &row);
     let workspace_closed = close_workspace(cx, &row, &plan);
     drop(lock);
     stop_proxy(cx, store, row.id);
@@ -333,6 +335,38 @@ fn release(cx: &Cx, store: &Store, row: &TaskRow) -> Result<bool, CommandError> 
         );
     }
     Ok(result == ReleaseResult::Deleted)
+}
+
+/// Brings the kept worktree and its local Task branch up to the remote tip, so they show the
+/// work the agent pushed from the Box.
+///
+/// Only a fast-forward moves anything; every other outcome leaves the checkout alone and warns.
+fn sync_branch(cx: &Cx, row: &TaskRow) {
+    let (Some(wt), Some(branch)) = (row.worktree.as_deref(), row.branch.as_deref()) else {
+        return;
+    };
+    let wt = Path::new(wt);
+    if !wt.is_dir() {
+        return;
+    }
+    let why = match cx.git().sync_branch(wt, branch) {
+        Ok(BranchSync::FastForwarded | BranchSync::UpToDate | BranchSync::NotPushed) => return,
+        Ok(BranchSync::Diverged) => format!(
+            "the local branch {branch} and the remote one have each moved on; \
+             merge or rebase by hand"
+        ),
+        Ok(BranchSync::Dirty) => {
+            format!("the worktree has uncommitted changes; update {branch} by hand")
+        }
+        Ok(BranchSync::OffBranch) => {
+            format!("the worktree does not have {branch} checked out; update it by hand")
+        }
+        Err(e) => format!("could not fetch {branch} from the remote: {e}"),
+    };
+    cx.warn(Warning {
+        code: "branch_not_synced".to_owned(),
+        message: format!("the worktree was left as it was: {why}"),
+    });
 }
 
 /// Closes the Workspace; a missing one is success, other failures warn.
