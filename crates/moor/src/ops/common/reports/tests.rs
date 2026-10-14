@@ -6,13 +6,15 @@ use super::{parse_index, valid_name, Entry};
 fn names_accept_plain_markdown_files() {
     assert!(valid_name("plan.md"));
     assert!(valid_name("a-b_c.1.md"));
-    assert!(valid_name("..md"));
+    assert!(valid_name("x.md.md"));
+    assert!(valid_name("1.md"));
 }
 
 #[test]
 fn names_reject_unsafe_or_empty_stems() {
     for bad in [
-        ".md", "", "plan", "plan.txt", "a b.md", "a/b.md", "é.md", "a\n.md", "x.md.bak",
+        ".md", "", "plan", "plan.txt", "a b.md", "a/b.md", "é.md", "a\n.md", "x.md.bak", "..md",
+        "...md", ".md.md", ".a.md", "_a.md", "-a.md",
     ] {
         assert!(!valid_name(bad), "{bad:?}");
     }
