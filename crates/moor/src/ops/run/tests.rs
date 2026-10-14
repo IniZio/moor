@@ -20,6 +20,8 @@ use crate::testing::driver::FakeDriver;
 use crate::testing::proc::{Reply, ScriptedProc};
 use crate::testing::surface::FakeSurface;
 
+mod sync;
+
 pub(in crate::ops::run) const SHA: &str = "0123456789abcdef0123456789abcdef01234567";
 
 pub(in crate::ops::run) struct Fx {
@@ -34,6 +36,7 @@ pub(in crate::ops::run) fn req(argv: &[&str]) -> RunReq {
     RunReq {
         task: TaskName::parse("t").unwrap(),
         no_sync: false,
+        sync: false,
         record: None,
         argv: argv.iter().map(|s| (*s).to_owned()).collect(),
         inherit_output: false,
