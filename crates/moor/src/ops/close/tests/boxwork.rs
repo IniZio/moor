@@ -1,5 +1,6 @@
 //! Close checks the Box for work that exists nowhere else.
 
+use moor_core::boxscript::boxwork::BOXWORK_FILE;
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::task::{TaskInput, TaskState};
@@ -77,6 +78,15 @@ fn count(f: &Fx, prefix: &str) -> usize {
         .count()
 }
 
+/// Execs that ran the unsaved-work probe, as opposed to other closing steps.
+fn probes(f: &Fx) -> usize {
+    f.driver
+        .execs()
+        .iter()
+        .filter(|(_, spec, _)| spec.argv.iter().any(|a| a.contains(BOXWORK_FILE)))
+        .count()
+}
+
 /// The error message with its hints, as a user reads them.
 fn text(e: &CommandError) -> String {
     format!("{}\n{}", e.error, e.hints.join("\n"))
@@ -125,11 +135,7 @@ fn close_proceeds_when_the_box_probe_is_clean() {
     let v = run(&f.cx, &req(false)).unwrap();
     assert_eq!(v.task.state, TaskState::Closed);
     assert_eq!(box_state(&f), BoxState::Deleted);
-    assert_eq!(
-        count(&f, "exec"),
-        2,
-        "the probe ran before and after the stop"
-    );
+    assert_eq!(probes(&f), 2, "the probe ran before and after the stop");
 }
 
 #[test]
@@ -163,7 +169,7 @@ fn close_wakes_a_sleeping_box_and_proceeds_when_it_is_clean() {
     let v = run(&f.cx, &req(false)).unwrap();
     assert_eq!(v.task.state, TaskState::Closed);
     assert_eq!(count(&f, "wake"), 1);
-    assert_eq!(count(&f, "exec"), 2);
+    assert_eq!(probes(&f), 2);
 }
 
 #[test]
@@ -202,7 +208,7 @@ fn force_closes_a_box_with_unsaved_work_without_probing() {
     let f = fx_probe(Some("ahead=4 dirty=1"));
     let v = run(&f.cx, &req(true)).unwrap();
     assert_eq!(v.task.state, TaskState::Closed);
-    assert_eq!(count(&f, "exec"), 0);
+    assert_eq!(probes(&f), 0);
     assert_eq!(count(&f, "wake"), 0);
 }
 

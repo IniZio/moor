@@ -18,6 +18,7 @@ mod apply;
 mod open;
 mod proxy;
 mod reads;
+mod reports;
 mod runs;
 #[cfg(test)]
 mod tests;
