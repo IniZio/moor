@@ -538,7 +538,8 @@ fn a_proxy_launch_keeps_the_cred_dir_for_the_agent_and_exports_the_proxy_env() {
     assert!(!has_nonce(&script), "{script}");
     assert!(!script.contains(&format!("\nrm -rf '{CRED}'")), "{script}");
     for want in [
-        "GIT_CONFIG_COUNT=1",
+        "GIT_CONFIG_COUNT=3",
+        "remote.moor.url",
         "MOOR_GH_REPO",
         "MOOR_PUSH_URL",
         "unset GH_TOKEN GITHUB_TOKEN",

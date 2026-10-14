@@ -92,9 +92,13 @@ fn the_lines_never_contain_the_nonce_and_carry_the_exports() {
         "unset GH_TOKEN GITHUB_TOKEN",
         "export ANTHROPIC_BASE_URL='http://127.0.0.1:4321/t/'\"$moor_nonce\"",
         "export CLAUDE_CODE_OAUTH_TOKEN=\"$moor_nonce\"",
-        "export GIT_CONFIG_COUNT=1",
+        "export GIT_CONFIG_COUNT=3",
         "export GIT_CONFIG_KEY_0='url.http://127.0.0.1:4321/t/'\"$moor_nonce\"'/github/.insteadOf'",
         "export GIT_CONFIG_VALUE_0=https://github.com/",
+        "export GIT_CONFIG_KEY_1=remote.moor.url",
+        "export GIT_CONFIG_VALUE_1='https://github.com/o/n.git'",
+        "export GIT_CONFIG_KEY_2=remote.moor.fetch",
+        "export GIT_CONFIG_VALUE_2='+refs/heads/*:refs/remotes/moor/*'",
         "export MOOR_GH_API='http://127.0.0.1:4321/t/'\"$moor_nonce\"'/github-api'",
         "export MOOR_PUSH_URL='https://github.com/o/n.git'",
         "export MOOR_GH_REPO='o/n'",
@@ -165,7 +169,15 @@ fn the_shell_builds_the_proxy_variables_from_the_staged_nonce() {
     let base = format!("http://127.0.0.1:{PORT}/t/sentinel-9c2e");
     is(&env, "ANTHROPIC_BASE_URL", &base);
     is(&env, "CLAUDE_CODE_OAUTH_TOKEN", "sentinel-9c2e");
-    is(&env, "GIT_CONFIG_COUNT", "1");
+    is(&env, "GIT_CONFIG_COUNT", "3");
+    is(&env, "GIT_CONFIG_KEY_1", "remote.moor.url");
+    is(&env, "GIT_CONFIG_VALUE_1", "https://github.com/o/n.git");
+    is(&env, "GIT_CONFIG_KEY_2", "remote.moor.fetch");
+    is(
+        &env,
+        "GIT_CONFIG_VALUE_2",
+        "+refs/heads/*:refs/remotes/moor/*",
+    );
     is(
         &env,
         "GIT_CONFIG_KEY_0",
@@ -197,6 +209,76 @@ fn no_origin_leaves_the_push_url_and_repo_unset() {
     let (env, _dir) = run(None);
     assert!(!env.contains_key("MOOR_PUSH_URL"));
     assert!(!env.contains_key("MOOR_GH_REPO"));
+    is(&env, "GIT_CONFIG_COUNT", "1");
+    assert!(!env.contains_key("GIT_CONFIG_KEY_1"));
+}
+
+/// Runs git with `args` in `dir` with the config environment from `env`; returns stdout.
+fn git(dir: &Path, env: &[(String, String)], args: &[&str]) -> String {
+    let out = Command::new("git")
+        .args(args)
+        .current_dir(dir)
+        .env_clear()
+        .env("PATH", std::env::var("PATH").unwrap())
+        .env("HOME", dir)
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .envs(env.iter().map(|(k, v)| (k, v)))
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "git {args:?}: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8(out.stdout).unwrap()
+}
+
+#[test]
+fn pushing_through_the_moor_remote_records_the_tracking_ref() {
+    let (launch, _cred) = run(Some("https://github.com/o/n"));
+    let tmp = tempfile::TempDir::new().unwrap();
+    let root = tmp.path().join("remote");
+    let bare = root.join("o/n.git");
+    std::fs::create_dir_all(&root).unwrap();
+    let work = tmp.path().join("work");
+    std::fs::create_dir(&work).unwrap();
+    git(
+        tmp.path(),
+        &[],
+        &["init", "--bare", "-q", bare.to_str().unwrap()],
+    );
+    git(&work, &[], &["init", "-q"]);
+    git(
+        &work,
+        &[],
+        &[
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "c",
+        ],
+    );
+    // The launch script's entries, with the proxy route swapped for the bare repo's path.
+    let mut env: Vec<(String, String)> = launch
+        .into_iter()
+        .filter(|(k, _)| k.starts_with("GIT_CONFIG_"))
+        .collect();
+    let rewrite = format!("url.{}/.insteadOf", root.display());
+    for (k, v) in &mut env {
+        match k.as_str() {
+            "GIT_CONFIG_KEY_0" => v.clone_from(&rewrite),
+            "GIT_CONFIG_VALUE_0" => "https://github.com/".clone_into(v),
+            _ => {}
+        }
+    }
+    git(&work, &env, &["push", "-q", "moor", "HEAD:refs/heads/x"]);
+    let refs = git(&work, &env, &["for-each-ref", "--format=%(refname)"]);
+    assert!(refs.lines().any(|r| r == "refs/remotes/moor/x"), "{refs}");
 }
 
 #[test]

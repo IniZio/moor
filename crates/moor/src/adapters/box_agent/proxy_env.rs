@@ -17,6 +17,9 @@ const NONCE_VAR: &str = "moor_nonce";
 /// Where the gh shim goes, relative to the credential directory.
 const SHIM_DIR: &str = "bin";
 
+/// The fetch refspec of the `moor` remote; a push records `refs/remotes/moor/<branch>` through it.
+const MOOR_FETCH: &str = "+refs/heads/*:refs/remotes/moor/*";
+
 /// One piece of a shell word: literal text or the nonce.
 enum Part<'a> {
     /// Text quoted as-is.
@@ -127,17 +130,24 @@ pub(super) fn script_lines(
         Part::Lit("/github/.insteadOf"),
     ];
     let api = [Part::Lit(&base), Part::Nonce, Part::Lit("/github-api")];
-    lines.push("export GIT_CONFIG_COUNT=1".to_owned());
+    let pushable = origin.and_then(push_url).zip(origin.and_then(github_repo));
+    let count = if pushable.is_some() { 3 } else { 1 };
+    lines.push(format!("export GIT_CONFIG_COUNT={count}"));
     lines.push(format!("export GIT_CONFIG_KEY_0={}", word(&key)));
     lines.push("export GIT_CONFIG_VALUE_0=https://github.com/".to_owned());
     lines.push(format!("export MOOR_GH_API={}", word(&api)));
-    match (origin.and_then(push_url), origin.and_then(github_repo)) {
-        (Some(url), Some(repo)) => {
+    match pushable {
+        Some((url, repo)) => {
+            // The remote URL stays nonce-free; the insteadOf entry rewrites it when git uses it.
+            lines.push("export GIT_CONFIG_KEY_1=remote.moor.url".to_owned());
+            lines.push(format!("export GIT_CONFIG_VALUE_1={}", quote(&url)));
+            lines.push("export GIT_CONFIG_KEY_2=remote.moor.fetch".to_owned());
+            lines.push(format!("export GIT_CONFIG_VALUE_2={}", quote(MOOR_FETCH)));
             lines.push(format!("export MOOR_PUSH_URL={}", quote(&url)));
             let slug = format!("{}/{}", repo.owner, repo.name);
             lines.push(format!("export MOOR_GH_REPO={}", quote(&slug)));
         }
-        _ => lines.push("unset MOOR_PUSH_URL MOOR_GH_REPO".to_owned()),
+        None => lines.push("unset MOOR_PUSH_URL MOOR_GH_REPO".to_owned()),
     }
     for name in ["NO_PROXY", "no_proxy"] {
         lines.push(format!(
