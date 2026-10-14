@@ -18,6 +18,23 @@ pub struct BoxworkCounts {
     pub dirty: u32,
 }
 
+/// Directories of regenerable build output; paths under them never count as unsaved work.
+///
+/// Each entry matches as whole path components at any depth, so `.turbo` skips `a/.turbo/x` but
+/// not `src/.turbo.rs`.
+const CACHE_DIRS: [&str; 4] = [
+    ".next/cache",
+    "node_modules/.cache",
+    ".turbo",
+    ".pnpm-store",
+];
+
+/// Extended regex for status lines whose path does not count: `.moor/` and the cache dirs.
+fn ignored_status_pattern() -> String {
+    let dirs = CACHE_DIRS.map(|d| d.replace('.', "\\.")).join("|");
+    format!(r#"^.. "?(\.moor/|(.*/)?({dirs})/)"#)
+}
+
 /// True when `s` is exactly 40 ASCII hex chars.
 #[must_use]
 pub fn is_full_sha(s: &str) -> bool {
@@ -42,7 +59,9 @@ pub fn boxwork_script(saved: &[&str]) -> Option<String> {
     // Lazy fetch is off because a partial clone with an unreachable origin would hang the probe.
     // Saved shas absent from the Box are dropped so rev-list never looks for a missing object.
     // `--no-renames` splits a rename into delete and add, so a move out of `.moor/` still counts.
-    // A status line is `XY path`; paths under `.moor/` are moor's own and never count.
+    // A status line is `XY path`; paths under `.moor/` are moor's own and never count, and
+    // neither do cache dirs, which a package install rewrites even when the repo tracks them.
+    let ignored = quote(&ignored_status_pattern());
     Some(format!(
         r#"export GIT_NO_LAZY_FETCH=1
 rm -f {BOXWORK_FILE}
@@ -56,7 +75,7 @@ st=$(git status --porcelain --no-renames) || exit 1
 if [ -z "$st" ]; then
   dirty=0
 else
-  dirty=$(printf '%s\n' "$st" | grep -vc '^.. \.moor/' || true)
+  dirty=$(printf '%s\n' "$st" | grep -vcE {ignored} || true)
 fi
 ahead=$((ahead + 0))
 dirty=$((dirty + 0))
