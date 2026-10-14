@@ -3,29 +3,23 @@
 //! The log is the only file the proxy writes. It records the time, method,
 //! route name and status of each request, and never the nonce, headers or
 //! bodies.
+//!
+//! The supervisor owns the proxy's lifetime and wires the listener, the
+//! resolver and the upstream client together.
 
 mod head;
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the CLI starts the proxy in a later change")
-)]
 mod relay;
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the CLI starts the proxy in a later change")
-)]
 mod resolver;
 mod server;
+mod supervisor;
 #[cfg(test)]
 mod tests;
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the CLI starts the proxy in a later change")
-)]
 mod upstream;
 
-#[expect(unused_imports, reason = "the CLI starts the proxy in a later change")]
-pub(crate) use server::{Forward, ForwardHandler, Proxy};
+pub(crate) use resolver::ModelToken;
+pub(crate) use server::Proxy;
+pub(crate) use supervisor::{serve, Deps, OriginOf, Sink};
+pub(crate) use upstream::Upstreams;
 
 use std::fs::{DirBuilder, File, OpenOptions, Permissions};
 use std::io::Write as _;

@@ -1,7 +1,7 @@
 //! clap definitions for the admin verbs: gate, env, github, proxy, call, version.
 
 use clap::{Args, Subcommand};
-use moor_core::{EnvReq, GateReq, Request};
+use moor_core::{EnvReq, GateReq, Request, TaskId};
 
 use super::args::Action;
 
@@ -45,7 +45,14 @@ pub(super) enum ProxyCmd {
     Check,
     /// Serve the credential proxy.
     #[command(hide = true)]
-    Serve,
+    Serve(ServeArgs),
+}
+
+/// Arguments of `proxy serve`.
+#[derive(Debug, Args)]
+pub(super) struct ServeArgs {
+    /// Task id to serve.
+    task: i64,
 }
 
 impl AdminCmd {
@@ -56,7 +63,7 @@ impl AdminCmd {
             Self::Github(GithubCmd::Setup) => Action::Request(Request::GithubSetup {}),
             Self::Github(GithubCmd::Login) => Action::Request(Request::GithubLogin {}),
             Self::Proxy(ProxyCmd::Check) => Action::Request(Request::ProxyCheck {}),
-            Self::Proxy(ProxyCmd::Serve) => Action::ProxyServe,
+            Self::Proxy(ProxyCmd::Serve(a)) => Action::ProxyServe(TaskId::new(a.task)),
             Self::Call => Action::CallStdin,
             Self::Version => Action::Request(Request::Version {}),
         }

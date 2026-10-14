@@ -1,4 +1,5 @@
-//! `moor` binary: the only place that writes to stdout and stderr.
+//! `moor` binary: the only place that opens stdout and stderr. It writes rendered
+//! output itself and hands stderr to the proxy supervisor, which streams lines live.
 #![forbid(unsafe_code)]
 
 use std::io::{Read, Write};
@@ -16,6 +17,13 @@ fn main() -> ExitCode {
         Parsed::Done(out) => out,
         Parsed::Request(inv) => run(env, inv),
         Parsed::CallStdin(opts) => run_call(env, opts),
+        Parsed::ProxyServe { opts, task } => {
+            let env = match &opts.state_dir {
+                Some(dir) => env.with_state_dir(dir),
+                None => env,
+            };
+            return ExitCode::from(moor::serve_proxy(&env, task, std::io::stderr()));
+        }
     };
     emit(&output)
 }

@@ -4,8 +4,8 @@ use std::ffi::OsString;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use moor_core::{
-    CloseReq, CpReq, RemoveReq, ReportReq, Request, RunReq, ShowReq, StartReq, SteerReq, TaskName,
-    TaskReq, WaitFor, WaitReq,
+    CloseReq, CpReq, RemoveReq, ReportReq, Request, RunReq, ShowReq, StartReq, SteerReq, TaskId,
+    TaskName, TaskReq, WaitFor, WaitReq,
 };
 
 use super::args_admin::{AdminCmd, GateCmd};
@@ -22,8 +22,8 @@ pub(super) enum Action {
     Request(Request),
     /// `call`: read a JSON request from stdin.
     CallStdin,
-    /// Hidden `proxy serve`.
-    ProxyServe,
+    /// Hidden `proxy serve <task>`: serve the credential proxy for that Task.
+    ProxyServe(TaskId),
 }
 
 /// Parse argv (program name first) into global options and an action.
