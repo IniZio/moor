@@ -75,9 +75,7 @@ fn box_view(b: &BoxRow, config: &UserConfig) -> BoxView {
         provider: b.provider.as_str().to_owned(),
         handle: box_handle(b),
         workdir: b.workdir.clone(),
-        egress: b
-            .egress_enforced
-            .map(|e| (if e { "enforced" } else { "not_enforced" }).to_owned()),
+        egress: b.egress.clone(),
         asleep_since: (b.state == BoxState::Asleep).then(|| rfc3339(b.updated_at)),
         sleep: BoxSleepView {
             after: Some(config.box_.sleep_after_label()),

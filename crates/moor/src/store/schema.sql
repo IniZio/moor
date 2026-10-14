@@ -9,7 +9,7 @@ CREATE TABLE tasks  (
 CREATE UNIQUE INDEX tasks_open ON tasks(name) WHERE state NOT IN ('closed','rejected');
 CREATE TABLE boxes  (
   task INTEGER PRIMARY KEY REFERENCES tasks(id), provider TEXT NOT NULL, handle TEXT, state TEXT NOT NULL,
-  attempted_handle TEXT, workdir TEXT, egress_enforced INTEGER,
+  attempted_handle TEXT, workdir TEXT, egress TEXT,
   sleep_reason TEXT, updated_at INTEGER NOT NULL);
 CREATE TABLE events (id INTEGER PRIMARY KEY, task INTEGER NOT NULL REFERENCES tasks(id), kind TEXT NOT NULL,
   payload TEXT NOT NULL, ts INTEGER NOT NULL);
