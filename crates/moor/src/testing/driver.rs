@@ -16,8 +16,8 @@ use moor_core::seam::driver::{
 use moor_core::seam::proc::Deadline;
 use moor_core::{BoxHandle, BoxPath, ProviderId};
 
-use script::PeekCall;
 pub(crate) use script::PutCall;
+use script::{layout, PeekCall};
 pub(crate) use tunnel::TunnelReply;
 
 #[derive(Default)]
@@ -56,8 +56,9 @@ type CopyCall = (BoxHandle, BoxPath, PathBuf, PathBuf);
 /// Runs inside every `exec`, before its result is served.
 type ExecHook = dyn Fn() + Send + Sync;
 
-/// Scripted Driver: boxes `box-1`, `box-2`, ... with workdir `/work/box-N`
-/// unless [`FakeDriver::work_root`] says otherwise.
+/// Scripted Driver: boxes `box-1`, `box-2`, ... with workdir `/work/cbx_N/<repo>`
+/// unless [`FakeDriver::work_root`] says otherwise; the lease id differs from
+/// the handle so a path rebuilt from the handle is caught.
 #[derive(Default)]
 pub(crate) struct FakeDriver {
     state: Mutex<State>,
@@ -176,10 +177,7 @@ impl Driver for FakeDriver {
         let id = format!("box-{}", s.next);
         s.live.push(id.clone());
         s.providers.push((id.clone(), req.provider.clone()));
-        let root = s.work_root.as_deref().unwrap_or("/work");
-        let workdir = BoxPath::under(root, &id).map_err(|e| DriverError::Failed {
-            summary: e.to_string(),
-        })?;
+        let workdir = layout(s.work_root.as_deref(), &id, req.worktree.as_deref())?;
         Ok(Acquired {
             handle: BoxHandle::new(id),
             workdir,
@@ -231,7 +229,7 @@ impl Driver for FakeDriver {
         self.tunnel_request(h, bp, hp, cwd)
     }
 
-    fn workdir(&self, handle: &BoxHandle) -> Result<BoxPath, DriverError> {
+    fn workdir(&self, handle: &BoxHandle, worktree: &Path) -> Result<BoxPath, DriverError> {
         let mut s = self.st();
         s.calls.push(format!("workdir {}", handle.as_str()));
         if let Some(e) = s.fail_workdir.take() {
@@ -240,11 +238,7 @@ impl Driver for FakeDriver {
         if !s.live.iter().any(|h| h == handle.as_str()) {
             return Err(DriverError::NotFound);
         }
-        BoxPath::under(s.work_root.as_deref().unwrap_or("/work"), handle.as_str()).map_err(|e| {
-            DriverError::Failed {
-                summary: e.to_string(),
-            }
-        })
+        layout(s.work_root.as_deref(), handle.as_str(), Some(worktree))
     }
 
     fn exec(

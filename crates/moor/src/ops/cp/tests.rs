@@ -72,7 +72,7 @@ fn fx_with(driver: FakeDriver, ready: bool) -> Fx {
                 egress: EgressPlan::Open,
                 class: None,
                 nonce: "n".to_owned(),
-                worktree: None,
+                worktree: Some(PathBuf::from(WORKTREE)),
             })
             .unwrap();
         let d = Decision::new(id)
@@ -127,7 +127,7 @@ fn relative_source_resolves_against_the_box_workdir() {
     let f = fx();
     run(&f.cx, &req("out/a.txt", "a.txt")).unwrap();
     assert_eq!(f.driver.copies().len(), 1);
-    assert_eq!(first_copy(&f).1.as_str(), "/work/box-1/out/a.txt");
+    assert_eq!(first_copy(&f).1.as_str(), "/work/cbx_1/t/out/a.txt");
 }
 
 #[test]
@@ -383,14 +383,14 @@ fn size_does_not_follow_directory_links() {
 fn leading_current_dir_is_dropped_from_the_source() {
     let f = fx();
     run(&f.cx, &req("./rel.txt", "rel.txt")).unwrap();
-    assert_eq!(first_copy(&f).1.as_str(), "/work/box-1/rel.txt");
+    assert_eq!(first_copy(&f).1.as_str(), "/work/cbx_1/t/rel.txt");
 }
 
 #[test]
 fn interior_current_dir_is_dropped_from_the_source() {
     let f = fx();
     run(&f.cx, &req("./a/./b.txt", "b.txt")).unwrap();
-    assert_eq!(first_copy(&f).1.as_str(), "/work/box-1/a/b.txt");
+    assert_eq!(first_copy(&f).1.as_str(), "/work/cbx_1/t/a/b.txt");
 }
 
 #[test]

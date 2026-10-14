@@ -12,6 +12,7 @@ mod sleep;
 #[cfg(test)]
 mod tests;
 mod tunnel;
+mod workdir;
 
 use std::path::Path;
 use std::sync::Arc;
@@ -143,13 +144,6 @@ fn with_egress(spec: ProcSpec, provider: &str, plan: &EgressPlan) -> (ProcSpec, 
     }
 }
 
-/// Builds the workdir from a work root and the Box name.
-fn workdir_of(root: &str, name: &str) -> Result<BoxPath, DriverError> {
-    BoxPath::under(root, name).map_err(|_| DriverError::Failed {
-        summary: "box reported an unusable work root".to_owned(),
-    })
-}
-
 /// Error for output moor cannot read.
 fn unreadable(what: &str) -> DriverError {
     DriverError::Failed {
@@ -179,10 +173,8 @@ impl Driver for Crabbox {
         let spec = static_env(spec, &handle);
         let (spec, egress) = with_egress(spec, provider, &req.egress);
         let out = self.call(Op::Acquire, Some(provider), &spec)?;
-        let workdir = match parse::parse_warmup(&out.stdout).and_then(|w| w.workroot) {
-            Some(root) => workdir_of(&root, &name)?,
-            None => self.workdir(&handle)?,
-        };
+        parse::parse_warmup(&out.stdout).ok_or_else(|| unreadable("acquire"))?;
+        let workdir = workdir::probe(self, &handle, req.worktree.as_deref())?;
         Ok(Acquired {
             handle,
             workdir,
@@ -225,17 +217,8 @@ impl Driver for Crabbox {
             .collect())
     }
 
-    fn workdir(&self, handle: &BoxHandle) -> Result<BoxPath, DriverError> {
-        let spec = Self::spec(QUICK_DEADLINE)
-            .arg("inspect")
-            .args(target_args(handle))
-            .arg("--json");
-        let spec = static_env(spec, handle);
-        let out = self.call(Op::Workdir, None, &spec)?;
-        let root = parse::parse_inspect_workroot(&out.stdout)
-            .map_err(|_| unreadable("workdir"))?
-            .ok_or_else(|| unreadable("workdir"))?;
-        workdir_of(&root, split_handle(handle).1)
+    fn workdir(&self, handle: &BoxHandle, worktree: &Path) -> Result<BoxPath, DriverError> {
+        workdir::probe(self, handle, Some(worktree))
     }
 
     fn exec(

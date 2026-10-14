@@ -238,8 +238,8 @@ impl Driver for Slow<'_> {
         self.inner.list(p)
     }
 
-    fn workdir(&self, h: &BoxHandle) -> Result<BoxPath, DriverError> {
-        self.inner.workdir(h)
+    fn workdir(&self, h: &BoxHandle, w: &Path) -> Result<BoxPath, DriverError> {
+        self.inner.workdir(h, w)
     }
 
     fn exec(&self, h: &BoxHandle, s: &ExecSpec, d: Deadline) -> Result<ExecOutcome, DriverError> {

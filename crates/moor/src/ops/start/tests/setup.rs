@@ -110,7 +110,7 @@ fn setup_lines_run_in_order_in_the_box_workdir() {
     let want = (
         "box-1".to_owned(),
         script_argv(&["a", "b"]),
-        Some("/work/box-1".to_owned()),
+        Some("/work/cbx_1/demo".to_owned()),
     );
     assert_eq!(seen, [want]);
 }
@@ -169,7 +169,7 @@ fn a_failed_setup_copies_its_log_out_of_the_box_into_the_worktree() {
             .worktree;
     let wt = std::path::PathBuf::from(wt.unwrap());
     let (_, from, to, host_cwd) = w.driver.copies().remove(0);
-    assert_eq!(from.as_str(), "/work/box-1/.moor/setup.log");
+    assert_eq!(from.as_str(), "/work/cbx_1/demo/.moor/setup.log");
     assert_eq!(to, wt.join(".moor/setup.log"));
     assert_eq!(host_cwd, wt);
 }
@@ -315,7 +315,7 @@ fn start_re_runs_setup_in_a_workdir_whose_root_holds_a_parent_component() {
         .into_iter()
         .map(|e| e.1.cwd.map(|p| p.as_str().to_owned()))
         .collect();
-    let stored = Some("/w/bin/../box/box-1".to_owned());
+    let stored = Some("/w/bin/../box/cbx_1/demo".to_owned());
     assert_eq!(cwds, [stored.clone(), stored]);
 }
 
