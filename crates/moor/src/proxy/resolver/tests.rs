@@ -274,6 +274,24 @@ fn forge_error_names_source_without_token() {
     assert!(!text.contains("sentinel-4b1d"), "{text}");
 }
 
+/// A source that returns nothing or only whitespace is a failure, never an
+/// empty credential, and the failure is not cached.
+#[test]
+fn empty_token_is_an_error() {
+    for blank in [&b""[..], b"  \n\t"] {
+        let forge = forge_with(blank);
+        let (r, _) = resolver_with(model_ok("m").0, forge.clone(), true);
+        let err = r.resolve(&route("forge.git")).err().unwrap().to_string();
+        assert!(err.starts_with(FORGE_SOURCE), "{err}");
+        assert!(err.contains("empty"), "{err}");
+        assert!(r.resolve(&route("forge.api")).is_err());
+        assert_eq!(token_calls(&forge), 2);
+    }
+    let (r, _) = resolver_with(model_ok("  ").0, forge_with(b"f"), true);
+    let err = r.resolve(&route("model")).err().unwrap().to_string();
+    assert!(err.starts_with(MODEL_SOURCE), "{err}");
+}
+
 /// Debug output never shows cached token bytes.
 #[test]
 fn debug_output_hides_tokens() {
