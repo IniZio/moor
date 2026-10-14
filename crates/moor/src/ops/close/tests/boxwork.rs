@@ -164,13 +164,33 @@ fn close_wakes_a_sleeping_box_and_proceeds_when_it_is_clean() {
 
 #[test]
 fn close_refuses_and_leaves_the_box_asleep_when_it_cannot_be_woken() {
-    let driver = FakeDriver::new().fail_wake(DriverError::NotFound);
+    let driver = FakeDriver::new().fail_wake(DriverError::Failed {
+        summary: "boom".into(),
+    });
     let f = fx_box(driver, surface(), 0, Some("ahead=0 dirty=0"));
     put_to_sleep(&f);
     let t = text(&refused(&f));
     assert!(t.contains("could not wake the Box"), "{t}");
     assert_eq!(box_state(&f), BoxState::Asleep);
     assert_eq!(count(&f, "exec"), 0);
+}
+
+#[test]
+fn close_proceeds_when_the_driver_no_longer_has_the_box_on_probe() {
+    let f = fx_probe(Some("ahead=1 dirty=1"));
+    let h = row(&f).boxed.unwrap().handle.unwrap();
+    f.driver.forget(&h);
+    let v = run(&f.cx, &req(false)).unwrap();
+    assert_eq!(v.task.state, TaskState::Closed);
+}
+
+#[test]
+fn close_proceeds_when_the_driver_no_longer_has_the_box_on_wake() {
+    let driver = FakeDriver::new().fail_wake(DriverError::NotFound);
+    let f = fx_box(driver, surface(), 0, Some("ahead=0 dirty=0"));
+    put_to_sleep(&f);
+    let v = run(&f.cx, &req(false)).unwrap();
+    assert_eq!(v.task.state, TaskState::Closed);
 }
 
 #[test]
