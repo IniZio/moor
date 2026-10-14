@@ -8,7 +8,7 @@ use moor_core::view::env::{
 use moor_core::{ErrorKind, ErrorView, Response, Warning};
 use serde_json::json;
 
-use super::render;
+use super::{duration_text, render};
 
 /// Builds a warning with `msg`.
 fn warn(msg: &str) -> Warning {
@@ -340,4 +340,34 @@ fn close_prints_transcript_and_promotions() {
         out,
         "closed alpha (#7), box deleted\ntranscript: /t/alpha.md\nstarted from the queue: beta\n"
     );
+}
+
+fn wait_value(cond: &str, timed_out: bool, waited_ms: u64) -> serde_json::Value {
+    json!({
+        "task": lifecycle_task("alpha", "working", Some("ready")),
+        "timed_out": timed_out,
+        "waited_ms": waited_ms,
+        "for": cond,
+        "run": null,
+    })
+}
+
+#[test]
+fn wait_prints_one_line_when_the_condition_held() {
+    let v = wait_value("idle", false, 252_000);
+    let (out, _) = render(&Response::ok("wait", Some(v)), false);
+    assert_eq!(out, "alpha (#7): idle after 4m12s\n");
+}
+
+#[test]
+fn wait_says_timed_out() {
+    let v = wait_value("done", true, 30_000);
+    let (out, _) = render(&Response::ok("wait", Some(v)), false);
+    assert_eq!(out, "alpha (#7): timed out waiting for done after 30s\n");
+}
+
+#[test]
+fn wait_durations_scale_from_milliseconds_to_hours() {
+    assert_eq!(duration_text(250), "250ms");
+    assert_eq!(duration_text(3_723_000), "1h02m03s");
 }

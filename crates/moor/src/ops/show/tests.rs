@@ -107,11 +107,14 @@ fn box_state(cx: &Cx) -> BoxState {
 }
 
 #[test]
-fn show_lists_all_tasks_with_no_selection() {
+fn show_lists_open_tasks_with_no_selection() {
     let dir = tempfile::tempdir().unwrap();
     let cx = cx(dir.path(), &Arc::new(FakeDriver::new()));
     add(&cx, "a");
     add(&cx, "b");
+    let closed = add(&cx, "c");
+    let close = Decision::new(closed).task_input(TaskInput::Close);
+    cx.store().unwrap().apply(close).unwrap();
     let v = run(&cx, &req(None, None)).unwrap();
     let names: Vec<_> = v.tasks.iter().flatten().map(|t| t.name.clone()).collect();
     assert_eq!(names, ["a", "b"]);

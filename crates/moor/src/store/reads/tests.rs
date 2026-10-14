@@ -58,22 +58,6 @@ fn name_lookups_distinguish_open_from_latest() {
 }
 
 #[test]
-fn all_tasks_lists_closed_too_in_id_order() {
-    let dir = tempfile::tempdir().unwrap();
-    let store = open(dir.path());
-    let a = add(&store, "a");
-    let b = add(&store, "b");
-    close(&store, a);
-    let ids: Vec<_> = store
-        .all_tasks()
-        .unwrap()
-        .into_iter()
-        .map(|t| t.id)
-        .collect();
-    assert_eq!(ids, [a, b]);
-}
-
-#[test]
 fn box_rows_live_skips_deleted_boxes() {
     let dir = tempfile::tempdir().unwrap();
     let store = open(dir.path());
