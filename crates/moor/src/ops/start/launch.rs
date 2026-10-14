@@ -17,6 +17,7 @@ use moor_core::{StartReq, TaskId, Warning};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::provision::{nonce, recorded_workdir, reread};
+use crate::ops::common::proxy::{ensure_proxy, origin};
 use crate::ops::common::resume;
 use crate::ops::common::view::rfc3339;
 use crate::store::{Store, TaskRow};
@@ -74,6 +75,14 @@ pub(super) fn begin(
     launch: &LaunchReq,
 ) -> Result<AgentLaunchView, CommandError> {
     let id = row.id;
+    let addr = match ensure_proxy(cx, store, id) {
+        Ok(addr) => addr,
+        Err(e) => return record_failure(cx, store, id, &e),
+    };
+    let mut launch = launch.clone();
+    launch.proxy = Some(addr);
+    launch.origin = origin(cx, &launch.worktree);
+    let launch = &launch;
     match cx.engine().launch(launch) {
         Ok(session) => {
             let sref = if session.id.is_empty() {
@@ -101,16 +110,24 @@ pub(super) fn begin(
                 reason: None,
             })
         }
-        Err(e) => {
-            let failure = failure(cx, &e);
-            record(store, id, Field::Set(to_json(&failure)?), Some(&failure))?;
-            Ok(AgentLaunchView {
-                launched: false,
-                session: None,
-                reason: Some(failure),
-            })
-        }
+        Err(e) => record_failure(cx, store, id, &e),
     }
+}
+
+/// Records a failed launch on the Task, which stays Working with no session, and reports it.
+fn record_failure(
+    cx: &Cx,
+    store: &Store,
+    id: TaskId,
+    e: &EngineError,
+) -> Result<AgentLaunchView, CommandError> {
+    let failure = failure(cx, e);
+    record(store, id, Field::Set(to_json(&failure)?), Some(&failure))?;
+    Ok(AgentLaunchView {
+        launched: false,
+        session: None,
+        reason: Some(failure),
+    })
 }
 
 /// Reads the fresh agent pane for a bounded window and records a first-run prompt.
@@ -216,9 +233,14 @@ fn failure(cx: &Cx, e: &EngineError) -> LaunchFailure {
     };
     let (message, rest) = text.split_once('\n').unwrap_or((&text, ""));
     let lines: Vec<&str> = rest.lines().collect();
+    let keep = if step == "proxy" {
+        crate::ops::common::proxy::TAIL_LINES
+    } else {
+        TAIL_LINES
+    };
     let tail = lines
         .iter()
-        .skip(lines.len().saturating_sub(TAIL_LINES))
+        .skip(lines.len().saturating_sub(keep))
         .copied()
         .collect::<Vec<_>>()
         .join("\n");

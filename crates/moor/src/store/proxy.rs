@@ -13,32 +13,11 @@ use rusqlite::{params, Connection, OptionalExtension, Row, TransactionBehavior};
 
 use super::{load_task, to_u32, Store, StoreError};
 
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the start operation reserves the row in a later change"
-    )
-)]
 /// Lowest box port a proxy may be given.
 pub(crate) const BOX_PORT_MIN: u16 = 20000;
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the start operation reserves the row in a later change"
-    )
-)]
 /// Highest box port a proxy may be given (inclusive).
 pub(crate) const BOX_PORT_MAX: u16 = 39999;
 
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the start operation reserves the row in a later change"
-    )
-)]
 /// Number of random draws before falling back to a linear scan.
 const DRAWS: u32 = 64;
 
@@ -89,13 +68,6 @@ impl fmt::Debug for ProxyRow {
     }
 }
 
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the start operation reserves the row in a later change"
-    )
-)]
 /// Outcome of a reservation.
 #[must_use]
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -110,13 +82,6 @@ pub(crate) enum Reserve {
 }
 
 impl Store {
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the start operation reserves the row in a later change"
-        )
-    )]
     /// Reserve a box port for `task` and store `nonce`. Keeps the row's port if no other row
     /// holds it; otherwise draws from `rng`. An existing row is reset to unready with no
     /// host port, pid, handle or lease, unless a lease younger than `lease` is live.
@@ -255,13 +220,6 @@ fn to_port(what: &str, v: i64) -> Result<u16, StoreError> {
     u16::try_from(v).map_err(|_| StoreError::Corrupt(format!("{what} {v} out of range")))
 }
 
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the start operation reserves the row in a later change"
-    )
-)]
 /// Whether a row other than `task`'s holds `port`.
 fn held_by_other(conn: &Connection, task: TaskId, port: u16) -> Result<bool, StoreError> {
     Ok(conn
@@ -274,13 +232,6 @@ fn held_by_other(conn: &Connection, task: TaskId, port: u16) -> Result<bool, Sto
         .is_some())
 }
 
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the start operation reserves the row in a later change"
-    )
-)]
 /// Draw a free port from `rng`, falling back to a linear scan from the last draw.
 fn free_port(conn: &Connection, rng: &dyn Rng) -> Result<u16, StoreError> {
     let span = u32::from(BOX_PORT_MAX - BOX_PORT_MIN) + 1;
@@ -302,13 +253,6 @@ fn free_port(conn: &Connection, rng: &dyn Rng) -> Result<u16, StoreError> {
     Err(StoreError::Invalid("no free box port".into()))
 }
 
-#[cfg_attr(
-    not(test),
-    expect(
-        dead_code,
-        reason = "the start operation reserves the row in a later change"
-    )
-)]
 /// Whether any row holds `port`.
 fn port_taken(conn: &Connection, port: u16) -> Result<bool, StoreError> {
     Ok(conn
