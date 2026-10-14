@@ -31,7 +31,7 @@ struct State {
     fail_release_always: Option<DriverError>,
     fail_list: Option<DriverError>,
     fail_copy_out: Option<DriverError>,
-    copy_content: Option<String>,
+    copy_content: Option<Vec<u8>>,
     exec_results: VecDeque<Result<ExecOutcome, DriverError>>,
     execs: Vec<(BoxHandle, ExecSpec, Deadline)>,
     copies: Vec<CopyCall>,
@@ -120,9 +120,9 @@ impl FakeDriver {
         self
     }
 
-    /// Makes every `copy_out` write `text` to its destination.
-    pub(crate) fn copy_text(self, text: &str) -> Self {
-        self.st().copy_content = Some(text.to_owned());
+    /// Makes every `copy_out` write `content` to its destination.
+    pub(crate) fn copy_text(self, content: impl AsRef<[u8]>) -> Self {
+        self.st().copy_content = Some(content.as_ref().to_vec());
         self
     }
 
@@ -288,7 +288,7 @@ impl Driver for FakeDriver {
         }
         s.copy_content
             .as_deref()
-            .map_or(Ok(()), |text| write_text(to, text))
+            .map_or(Ok(()), |bytes| write_bytes(to, bytes))
     }
 
     fn peek_file(
@@ -383,9 +383,9 @@ impl Driver for FakeDriver {
     }
 }
 
-/// Writes `text` to `to`; like a real copy, fails when the destination directory is missing.
-fn write_text(to: &Path, text: &str) -> Result<(), DriverError> {
-    std::fs::write(to, text).map_err(|e| DriverError::Failed {
+/// Writes `bytes` to `to`; like a real copy, fails when the destination directory is missing.
+fn write_bytes(to: &Path, bytes: &[u8]) -> Result<(), DriverError> {
+    std::fs::write(to, bytes).map_err(|e| DriverError::Failed {
         summary: format!("copy destination parent is unavailable: {e}"),
     })
 }

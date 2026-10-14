@@ -1,5 +1,6 @@
 //! Runs the repo `setup:` lines inside a freshly acquired Box.
 
+use std::fmt::Write as _;
 use std::path::Path;
 use std::time::Duration;
 
@@ -16,6 +17,15 @@ use crate::cx::Cx;
 
 /// Wall-clock allowance for one setup line.
 pub(crate) const SETUP_LINE_DEADLINE: Duration = Duration::from_mins(30);
+
+/// How many trailing log lines a failure warning carries.
+const LOG_TAIL_LINES: usize = 20;
+
+/// Longest tail line kept, in characters; progress bars can emit huge ones.
+const LOG_LINE_CHARS: usize = 300;
+
+/// Where the setup script writes its log, relative to the Box workdir.
+const LOG_REL: &str = ".moor/setup.log";
 
 /// How the setup lines ended.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -121,15 +131,70 @@ pub(crate) fn run_setup(
         .unwrap_or_default();
     cx.warn(Warning {
         code: "setup_failed".to_owned(),
-        message: format!("setup line `{line}` failed: {reason}"),
+        message: failure_message(&line, &reason, workdir, &log),
     });
     SetupRun::Failed { line, exit }
+}
+
+/// The warning text: the failing line, where the full log lives in the Box, and its tail.
+fn failure_message(line: &str, reason: &str, workdir: &BoxPath, log: &str) -> String {
+    let path = format!("{}/{LOG_REL}", workdir.as_str());
+    let mut msg = format!("setup line `{line}` failed: {reason}\nfull log in the Box: {path}");
+    // A terminal shows only the last frame of a line redrawn with `\r`.
+    let lines: Vec<&str> = log
+        .lines()
+        .filter_map(|l| l.rsplit('\r').find(|seg| !seg.is_empty()))
+        .collect();
+    if lines.is_empty() {
+        return msg;
+    }
+    let tail: Vec<String> = lines
+        .iter()
+        .skip(lines.len().saturating_sub(LOG_TAIL_LINES))
+        .map(|l| tidy(l))
+        .collect();
+    let _ = write!(msg, "\nlast {} lines:\n{}", tail.len(), tail.join("\n"));
+    msg
+}
+
+/// Drops ANSI escape sequences and other control characters, and caps the length.
+fn tidy(line: &str) -> String {
+    let mut clean = String::new();
+    let mut chars = line.chars().peekable();
+    while let Some(c) = chars.next() {
+        match (c, chars.peek()) {
+            ('\u{1b}', Some('[')) => {
+                chars.next();
+                while chars
+                    .next_if(|p| ('\u{20}'..='\u{3f}').contains(p))
+                    .is_some()
+                {}
+                chars.next_if(|p| ('\u{40}'..='\u{7e}').contains(p));
+            }
+            ('\u{1b}', Some(']')) => {
+                chars.next();
+                while let Some(o) = chars.next() {
+                    if o == '\u{7}' || (o == '\u{1b}' && chars.next_if_eq(&'\\').is_some()) {
+                        break;
+                    }
+                }
+            }
+            _ if c == '\t' || !c.is_control() => clean.push(c),
+            _ => {}
+        }
+    }
+    if clean.chars().count() <= LOG_LINE_CHARS {
+        return clean;
+    }
+    let mut cut: String = clean.chars().take(LOG_LINE_CHARS - 1).collect();
+    cut.push('…');
+    cut
 }
 
 /// Copies the script's log out of the Box and reads it; empty when either step fails.
 fn fetch_log(cx: &Cx, handle: &BoxHandle, workdir: &BoxPath, worktree: &Path) -> String {
     let to = worktree.join(".moor").join("setup.log");
-    let Ok(from) = BoxPath::under(workdir.as_str(), ".moor/setup.log") else {
+    let Ok(from) = BoxPath::under(workdir.as_str(), LOG_REL) else {
         return String::new();
     };
     let made = to
@@ -138,7 +203,7 @@ fn fetch_log(cx: &Cx, handle: &BoxHandle, workdir: &BoxPath, worktree: &Path) ->
     if !made || cx.driver().copy_out(handle, &from, &to, worktree).is_err() {
         return String::new();
     }
-    std::fs::read_to_string(to).unwrap_or_default()
+    String::from_utf8_lossy(&std::fs::read(to).unwrap_or_default()).into_owned()
 }
 
 /// Index of the failing step: the last one the log announced, else the first.
