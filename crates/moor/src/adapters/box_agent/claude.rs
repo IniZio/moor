@@ -1,9 +1,12 @@
-//! The Claude Code profile: hook state file parsing.
+//! The Claude Code profile: launch arguments, hook setup and hook state file parsing.
 
 use moor_core::activity::{HookKind, HookRecord};
-use moor_core::seam::agent_profile::AgentProfile;
+use moor_core::name::NameError;
+use moor_core::seam::agent_profile::{AgentProfile, BoxSetup, Key, LaunchCtx};
 use moor_core::seam::clock::Ts;
 use serde_json::Value;
+
+mod launch;
 
 /// Parses the state file Claude Code's hooks write.
 #[derive(Debug, Default, Clone, Copy)]
@@ -51,6 +54,26 @@ impl AgentProfile for Claude {
             .map(|l| l.trim())
             .find(|l| !l.is_empty())
             .map(str::to_owned)
+    }
+
+    fn argv(&self, ctx: &LaunchCtx) -> Vec<String> {
+        launch::argv(ctx)
+    }
+
+    fn resume_argv(&self, session_id: &str, ctx: &LaunchCtx) -> Vec<String> {
+        launch::resume_argv(session_id, ctx)
+    }
+
+    fn preseed(&self, ctx: &LaunchCtx) -> Result<BoxSetup, NameError> {
+        launch::preseed(ctx)
+    }
+
+    fn hook_writer(&self, ctx: &LaunchCtx) -> Result<BoxSetup, NameError> {
+        launch::hook_writer(ctx)
+    }
+
+    fn menu_keys(&self, n: u8) -> Vec<Key> {
+        launch::menu_keys(n)
     }
 }
 
