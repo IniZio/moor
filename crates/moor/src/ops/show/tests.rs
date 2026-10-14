@@ -16,6 +16,8 @@ use moor_core::seam::driver::{AcquireReq, Driver, DriverError, EgressPlan};
 use moor_core::seam::proc::Tool;
 use moor_core::{ProviderId, ShowReq, StartReq, TaskId, TaskName};
 
+mod pane;
+
 use super::run;
 use crate::cx::Cx;
 use crate::ops::common::activity::{self, Reading};
