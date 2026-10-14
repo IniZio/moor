@@ -1,5 +1,7 @@
 //! Delivers the user's dotfiles into a freshly acquired Box.
 
+use std::fs::{self, DirBuilder, OpenOptions, Permissions};
+use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::path::Path;
 use std::time::Duration;
 
@@ -57,7 +59,9 @@ pub(crate) struct DotfilesFailed {
 
 /// The Box script that unpacks the archive at `archive` into `~/.moor-dotfiles` and runs the
 /// install script: `install` relative to the dotfiles root, else `install.sh` when present.
-pub(crate) fn box_script(archive: &str, install: Option<&str>) -> String {
+/// The upload directory `stage` is removed on exit, whether or not the unpack succeeds.
+pub(crate) fn box_script(stage: &str, archive: &str, install: Option<&str>) -> String {
+    let qs = quote(stage);
     let qa = quote(archive);
     let tmp = "\"$HOME/.moor-dotfiles.moor-tmp\"";
     let dir = "\"$HOME/.moor-dotfiles\"";
@@ -70,7 +74,7 @@ pub(crate) fn box_script(archive: &str, install: Option<&str>) -> String {
         },
     );
     format!(
-        "set -e; rm -rf {tmp}; mkdir -p {tmp}; tar -xzf {qa} -C {tmp}; rm -f {qa}; \
+        "set -e; trap \"rm -rf {qs}\" EXIT; rm -rf {tmp}; mkdir -p {tmp}; tar -xzf {qa} -C {tmp}; \
          rm -rf {dir}; mv {tmp} {dir}; cd {dir}; {install}"
     )
 }
@@ -82,8 +86,26 @@ fn tail(log: &str) -> String {
     lines.into_iter().skip(skip).collect::<Vec<_>>().join("\n")
 }
 
+/// Creates the host log owner-only, in an owner-only directory: install output may hold secrets.
+fn private_log(log: &Path) -> std::io::Result<()> {
+    if let Some(dir) = log.parent() {
+        DirBuilder::new().recursive(true).mode(0o700).create(dir)?;
+        fs::set_permissions(dir, Permissions::from_mode(0o700))?;
+    }
+    OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(log)?;
+    fs::set_permissions(log, Permissions::from_mode(0o600))
+}
+
 /// Packs the configured dotfiles on the host, uploads them, and runs the install script in
 /// the Box. Does nothing when no dotfiles are configured.
+///
+/// Symlinks inside the dotfiles directory are followed (`tar -h`), so the files they point to
+/// are copied into the Box, even when they live outside that directory.
 pub(crate) fn apply(
     cx: &Cx,
     handle: &BoxHandle,
@@ -105,7 +127,9 @@ pub(crate) fn apply(
         .run_secret(&spec)
         .map_err(|e| fail(format!("could not pack dotfiles: {e}")))?;
     let n = id.get();
-    let archive = BoxPath::under("/tmp", &format!("moor-dotfiles-{n}.tgz"))
+    let (hi, lo) = (cx.rng().u32(), cx.rng().u32());
+    let stage = format!("/tmp/moor-dotfiles-{n}-{hi:08x}{lo:08x}");
+    let archive = BoxPath::under(&stage, "dotfiles.tgz")
         .map_err(|e| fail(format!("could not upload dotfiles: {e}")))?;
     cx.driver()
         .put_file(handle, &archive, &bytes, 0o600, host_cwd)
@@ -115,15 +139,12 @@ pub(crate) fn apply(
         .map_err(|e| fail(e.error.to_string()))?
         .join("dotfiles")
         .join(format!("{n}.log"));
-    if let Some(dir) = log.parent() {
-        std::fs::create_dir_all(dir)
-            .map_err(|e| fail(format!("could not create dotfiles log directory: {e}")))?;
-    }
+    private_log(&log).map_err(|e| fail(format!("could not create dotfiles log: {e}")))?;
     let exec = ExecSpec {
         argv: vec![
             "sh".to_owned(),
             "-c".to_owned(),
-            box_script(archive.as_str(), d.install.as_deref()),
+            box_script(&stage, archive.as_str(), d.install.as_deref()),
         ],
         env: vec![],
         cwd: None,
@@ -152,14 +173,15 @@ pub(crate) fn apply(
 mod tests {
     use super::*;
 
-    const ARCHIVE: &str = "/tmp/moor-dotfiles-1.tgz";
-    const HEAD: &str = "set -e; rm -rf \"$HOME/.moor-dotfiles.moor-tmp\"; mkdir -p \"$HOME/.moor-dotfiles.moor-tmp\"; tar -xzf '/tmp/moor-dotfiles-1.tgz' -C \"$HOME/.moor-dotfiles.moor-tmp\"; rm -f '/tmp/moor-dotfiles-1.tgz'; rm -rf \"$HOME/.moor-dotfiles\"; mv \"$HOME/.moor-dotfiles.moor-tmp\" \"$HOME/.moor-dotfiles\"; cd \"$HOME/.moor-dotfiles\"; ";
+    const STAGE: &str = "/tmp/moor-dotfiles-1-0123456789abcdef";
+    const ARCHIVE: &str = "/tmp/moor-dotfiles-1-0123456789abcdef/dotfiles.tgz";
+    const HEAD: &str = "set -e; trap \"rm -rf '/tmp/moor-dotfiles-1-0123456789abcdef'\" EXIT; rm -rf \"$HOME/.moor-dotfiles.moor-tmp\"; mkdir -p \"$HOME/.moor-dotfiles.moor-tmp\"; tar -xzf '/tmp/moor-dotfiles-1-0123456789abcdef/dotfiles.tgz' -C \"$HOME/.moor-dotfiles.moor-tmp\"; rm -rf \"$HOME/.moor-dotfiles\"; mv \"$HOME/.moor-dotfiles.moor-tmp\" \"$HOME/.moor-dotfiles\"; cd \"$HOME/.moor-dotfiles\"; ";
 
     #[test]
     fn script_defaults_to_install_sh() {
         let want =
             format!("{HEAD}if [ -f install.sh ]; then MOOR_DOTFILES=1 bash ./install.sh; fi");
-        assert_eq!(box_script(ARCHIVE, None), want);
+        assert_eq!(box_script(STAGE, ARCHIVE, None), want);
     }
 
     #[test]
@@ -167,7 +189,7 @@ mod tests {
         let want = format!(
             "{HEAD}[ -f './my setup.sh' ] || {{ echo 'dotfiles install script my setup.sh not found' >&2; exit 1; }}; MOOR_DOTFILES=1 bash './my setup.sh'"
         );
-        assert_eq!(box_script(ARCHIVE, Some("my setup.sh")), want);
+        assert_eq!(box_script(STAGE, ARCHIVE, Some("my setup.sh")), want);
     }
 
     #[test]
