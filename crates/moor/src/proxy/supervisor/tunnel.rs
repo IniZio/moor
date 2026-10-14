@@ -37,7 +37,7 @@ impl Running<'_> {
             match self.deps.driver.reverse_tunnel(
                 &self.handle,
                 self.box_port,
-                self.live.proxy.port(),
+                self.live.port(),
                 &self.worktree,
             ) {
                 Ok(tunnel) => {

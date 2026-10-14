@@ -1,5 +1,6 @@
 //! Tests for the nono config builder.
 
+mod chain;
 mod e2e;
 mod passthrough;
 pub(crate) mod upstream;
@@ -34,6 +35,15 @@ fn bearer() -> ResolvedInject {
 }
 
 fn cfg_for(rules: &[ResolvedRule], allow: &[String], upstream_ca: Option<&Path>) -> NonoConfig {
+    cfg_chained(rules, allow, upstream_ca, None)
+}
+
+fn cfg_chained(
+    rules: &[ResolvedRule],
+    allow: &[String],
+    upstream_ca: Option<&Path>,
+    chain: Option<Chain<'_>>,
+) -> NonoConfig {
     let state = tempfile::tempdir().unwrap();
     let ca = ca::load_or_create(state.path(), TaskId::new(3)).unwrap();
     let dir = ca::ca_dir(state.path(), TaskId::new(3));
@@ -45,6 +55,7 @@ fn cfg_for(rules: &[ResolvedRule], allow: &[String], upstream_ca: Option<&Path>)
         ca: &ca,
         ca_dir: &dir,
         upstream_ca,
+        chain,
     })
 }
 
@@ -193,6 +204,7 @@ fn non_utf8_nonce_is_refused_without_echoing_it() {
         ca: &ca,
         ca_dir: &dir,
         upstream_ca: None,
+        chain: None,
     });
     assert!(cfg.inner().session_token.is_none());
     let capture = Arc::new(capture::MoorCapture::new(
@@ -203,4 +215,66 @@ fn non_utf8_nonce_is_refused_without_echoing_it() {
     ));
     let err = NonoProxy::start(cfg, capture).unwrap_err();
     assert_eq!(err.to_string(), "proxy start: session token is not utf-8");
+}
+
+fn chain_cfg(rules: &[ResolvedRule], allow: &[String]) -> NonoConfig {
+    let chain = Chain {
+        proxy: "127.0.0.1:9911".parse().unwrap(),
+        host: GITHUB_API_HOST,
+        ca_pem: Path::new("/tmp/task-ca.pem"),
+    };
+    cfg_chained(rules, allow, Some(Path::new("/tmp/up.pem")), Some(chain))
+}
+
+#[test]
+fn no_chain_means_no_external_proxy() {
+    let rules = [rule("gh", &[GITHUB_API_HOST], bearer())];
+    assert!(cfg_for(&rules, &[], None).inner().external_proxy.is_none());
+}
+
+#[test]
+fn chain_sends_every_host_through_the_proxy_with_no_bypass() {
+    let rules = [
+        rule(
+            "gh",
+            &["api.github.com", "uploads.github.com:443"],
+            bearer(),
+        ),
+        rule("o", &["o.test:8443"], bearer()),
+    ];
+    let allow = vec!["a.test:443".to_owned(), "API.GitHub.com".to_owned()];
+    let cfg = chain_cfg(&rules, &allow);
+    let ext = cfg.inner().external_proxy.as_ref().unwrap();
+    assert_eq!(ext.address, "127.0.0.1:9911");
+    assert!(ext.auth.is_none());
+    assert!(ext.bypass_hosts.is_empty());
+}
+
+#[test]
+fn chained_host_routes_trust_the_task_ca_and_others_keep_upstream() {
+    let rules = [
+        rule(
+            "gh",
+            &["api.github.com", "uploads.github.com:443"],
+            bearer(),
+        ),
+        rule("o", &["o.test:8443"], bearer()),
+    ];
+    let cfg = chain_cfg(&rules, &[]);
+    let by_host = |h: &str| {
+        cfg.inner()
+            .routes
+            .iter()
+            .find(|r| r.upstream == format!("https://{h}"))
+            .and_then(|r| r.tls_ca.clone())
+    };
+    assert_eq!(
+        by_host("api.github.com").as_deref(),
+        Some("/tmp/task-ca.pem")
+    );
+    assert_eq!(by_host("o.test:8443").as_deref(), Some("/tmp/up.pem"));
+    assert_eq!(
+        by_host("uploads.github.com:443").as_deref(),
+        Some("/tmp/up.pem")
+    );
 }

@@ -55,6 +55,7 @@ fn fetch(path: &str) -> (Result<u16, String>, Vec<upstream::Seen>) {
         ca: &ca,
         ca_dir: &ca::ca_dir(&state, TASK),
         upstream_ca: Some(&up.ca_path),
+        chain: None,
     });
     // Unmatched requests use the proxy's default trust store, which honours this variable.
     std::env::set_var("SSL_CERT_FILE", &up.ca_path);
