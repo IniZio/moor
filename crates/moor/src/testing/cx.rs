@@ -16,6 +16,7 @@ use crate::cx::{Cx, CxParts};
 use crate::env::Env;
 use crate::testing::clock::FakeClock;
 use crate::testing::engine::FakeEngine;
+use crate::testing::forge::FakeForge;
 use crate::testing::rng::FakeRng;
 
 impl Cx {
@@ -46,6 +47,7 @@ impl Cx {
             driver,
             surface,
             engine: Arc::new(FakeEngine::new()),
+            forge: Arc::new(FakeForge::new()),
             git: Git::new(Arc::clone(&proc)),
             proc: Arc::clone(&proc),
             config,

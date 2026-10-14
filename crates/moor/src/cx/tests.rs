@@ -64,3 +64,12 @@ fn clock_is_the_injected_one() {
     cx.clock().sleep(Duration::from_millis(250));
     assert_eq!(cx.clock().now(), Ts::from_millis(1250));
 }
+
+#[test]
+fn the_fake_context_returns_the_scripted_forge() {
+    use crate::testing::forge::FakeForge;
+    use moor_core::seam::forge::ForgeRepo;
+    let forge = FakeForge::new().with_repo("o", ForgeRepo::new("a", "b"));
+    let cx = cx(Path::new("/s")).with_forge(Arc::new(forge));
+    assert_eq!(cx.forge().repo_of("o"), Some(ForgeRepo::new("a", "b")));
+}

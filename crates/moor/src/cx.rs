@@ -9,6 +9,7 @@ use moor_core::config::{RepoConfig, UserConfig};
 use moor_core::seam::clock::Clock;
 use moor_core::seam::driver::Driver;
 use moor_core::seam::engine::Engine;
+use moor_core::seam::forge::Forge;
 use moor_core::seam::proc::Proc;
 use moor_core::seam::rng::Rng;
 use moor_core::seam::surface::Surface;
@@ -41,6 +42,12 @@ pub(crate) struct Cx {
     engine: Arc<dyn Engine>,
     /// Process runner.
     proc: Arc<dyn Proc>,
+    /// Code forge.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "no operation reads the forge yet")
+    )]
+    forge: Arc<dyn Forge>,
     /// Git adapter.
     git: Git,
     /// User configuration.
@@ -71,6 +78,8 @@ pub(crate) struct CxParts {
     pub engine: Arc<dyn Engine>,
     /// Process runner.
     pub proc: Arc<dyn Proc>,
+    /// Code forge.
+    pub forge: Arc<dyn Forge>,
     /// Git adapter.
     pub git: Git,
     /// User configuration.
@@ -95,6 +104,7 @@ impl Cx {
             surface: p.surface,
             engine: p.engine,
             proc: p.proc,
+            forge: p.forge,
             git: p.git,
             config: p.config,
             creds: p.creds,
@@ -161,6 +171,22 @@ impl Cx {
     /// Process runner.
     pub(crate) fn proc(&self) -> &dyn Proc {
         self.proc.as_ref()
+    }
+
+    /// Code forge.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "no operation reads the forge yet")
+    )]
+    pub(crate) fn forge(&self) -> &dyn Forge {
+        self.forge.as_ref()
+    }
+
+    /// This context with `forge` in place of the current one.
+    #[cfg(test)]
+    pub(crate) fn with_forge(mut self, forge: Arc<dyn Forge>) -> Self {
+        self.forge = forge;
+        self
     }
 
     /// Git adapter.
