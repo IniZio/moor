@@ -380,11 +380,16 @@ impl Proc for SystemProc {
         send_group(pgid, sig)
     }
 
+    fn boot_id(&self) -> Option<String> {
+        boot::read()
+    }
+
     fn alive(&self, pid: u32) -> bool {
         to_pid(pid).is_some_and(|p| matches!(test_kill_process(p), Ok(()) | Err(Errno::PERM)))
     }
 }
 
+mod boot;
 mod child;
 mod detached;
 mod signal;

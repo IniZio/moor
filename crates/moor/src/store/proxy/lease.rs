@@ -9,7 +9,7 @@ use moor_core::domain::event::Event;
 use moor_core::TaskId;
 use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 
-use super::ProxyPorts;
+use super::{ProxyPorts, ReadyProc};
 use crate::store::apply::insert_event;
 use crate::store::{Store, StoreError};
 
@@ -105,27 +105,28 @@ impl Store {
         Ok(())
     }
 
-    /// Record the ports, pid and handle, mark the proxy ready and append `ProxyStarted` in one
-    /// transaction, provided `owner` holds the lease.
+    /// Record the ports, pid, handle and host boot id, mark the proxy ready and append
+    /// `ProxyStarted` in one transaction, provided `owner` holds the lease.
     pub(crate) fn mark_ready(
         &self,
         task: TaskId,
         owner: &str,
         ports: ProxyPorts,
-        pid: u32,
-        handle: &str,
+        proc: ReadyProc<'_>,
     ) -> Result<Fenced, StoreError> {
         let now = self.now();
         let mut conn = self.writer()?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let changed = tx.execute(
-            "UPDATE proxy SET box_port = ?, host_port = ?, pid = ?, handle = ?, ready = 1, updated_at = ? \
+            "UPDATE proxy SET box_port = ?, host_port = ?, pid = ?, handle = ?, ready = 1, boot_id = ?, \
+             updated_at = ? \
              WHERE task = ? AND lease_owner = ?",
             params![
                 ports.box_port,
                 ports.host_port,
-                pid,
-                handle,
+                proc.pid,
+                proc.handle,
+                proc.boot_id,
                 now.as_millis(),
                 task.get(),
                 owner
@@ -140,8 +141,8 @@ impl Store {
         let event = Event::ProxyStarted {
             box_port: ports.box_port,
             host_port: ports.host_port,
-            pid,
-            handle: handle.to_owned(),
+            pid: proc.pid,
+            handle: proc.handle.to_owned(),
         };
         insert_event(&tx, task, &event, now)?;
         tx.commit()?;

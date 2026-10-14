@@ -59,6 +59,8 @@ pub(crate) struct Deps<'a> {
     pub(crate) state_dir: &'a Path,
     /// Looks up a worktree's git origin URL.
     pub(crate) origin_of: OriginOf,
+    /// Host boot id recorded in the row at readiness; `None` where the host has none.
+    pub(crate) boot_id: Option<String>,
     /// Set when a signal asks the supervisor to stop.
     pub(crate) stop: Arc<AtomicBool>,
     /// Where status lines go.

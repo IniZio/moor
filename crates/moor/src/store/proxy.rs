@@ -30,6 +30,17 @@ pub(crate) struct ProxyPorts {
     pub(crate) host_port: u16,
 }
 
+/// The supervisor process a ready proxy runs in.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ReadyProc<'a> {
+    /// Supervisor process id.
+    pub(crate) pid: u32,
+    /// Handle of the running proxy.
+    pub(crate) handle: &'a str,
+    /// Host boot the supervisor runs in; `None` where the host has no boot id.
+    pub(crate) boot_id: Option<&'a str>,
+}
+
 /// A stored proxy row.
 pub(crate) struct ProxyRow {
     /// Owning task.
@@ -50,6 +61,8 @@ pub(crate) struct ProxyRow {
     pub(crate) lease_owner: Option<String>,
     /// When the lease holder last proved it was alive.
     pub(crate) lease_heartbeat: Option<Ts>,
+    /// Host boot the supervisor marked the row ready in.
+    pub(crate) boot_id: Option<String>,
 }
 
 impl fmt::Debug for ProxyRow {
@@ -64,6 +77,7 @@ impl fmt::Debug for ProxyRow {
             .field("ready", &self.ready)
             .field("lease_owner", &self.lease_owner)
             .field("lease_heartbeat", &self.lease_heartbeat)
+            .field("boot_id", &self.boot_id)
             .finish()
     }
 }
@@ -120,7 +134,7 @@ impl Store {
             }
             tx.execute(
                 "UPDATE proxy SET nonce = ?, ready = 0, host_port = NULL, pid = NULL, handle = NULL, \
-                 lease_owner = NULL, lease_heartbeat = NULL, updated_at = ? WHERE task = ?",
+                 lease_owner = NULL, lease_heartbeat = NULL, boot_id = NULL, updated_at = ? WHERE task = ?",
                 params![nonce.expose(), now.as_millis(), task.get()],
             )?;
             port
@@ -141,7 +155,7 @@ impl Store {
     pub(crate) fn proxy(&self, task: TaskId) -> Result<Option<ProxyRow>, StoreError> {
         let conn = self.reader()?;
         conn.query_row(
-            "SELECT task, nonce, box_port, host_port, pid, handle, ready, lease_owner, lease_heartbeat \
+            "SELECT task, nonce, box_port, host_port, pid, handle, ready, lease_owner, lease_heartbeat, boot_id \
              FROM proxy WHERE task = ?",
             [task.get()],
             raw_from_row,
@@ -180,6 +194,8 @@ struct RawRow {
     lease_owner: Option<String>,
     /// Lease heartbeat column.
     lease_heartbeat: Option<i64>,
+    /// Boot id column.
+    boot_id: Option<String>,
 }
 
 /// Read a proxy row without range checks.
@@ -194,6 +210,7 @@ fn raw_from_row(r: &Row<'_>) -> rusqlite::Result<RawRow> {
         ready: r.get(6)?,
         lease_owner: r.get(7)?,
         lease_heartbeat: r.get(8)?,
+        boot_id: r.get(9)?,
     })
 }
 
@@ -211,6 +228,7 @@ impl TryFrom<RawRow> for ProxyRow {
             ready: r.ready != 0,
             lease_owner: r.lease_owner,
             lease_heartbeat: r.lease_heartbeat.map(Ts::from_millis),
+            boot_id: r.boot_id,
         })
     }
 }

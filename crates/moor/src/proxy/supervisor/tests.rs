@@ -26,6 +26,7 @@ use crate::testing::forge::FakeForge;
 use crate::testing::rng::FakeRng;
 
 const NONCE: &[u8] = b"NONCE-abc123";
+const BOOT: &str = "boot-1";
 pub(super) const NONCE_TEXT: &str = "NONCE-abc123";
 pub(super) const ORIGIN: &str = "git@example.invalid:o/n.git";
 const WORKTREE: &str = "/wt";
@@ -101,6 +102,7 @@ impl World {
             model: Arc::new(|| Ok(Secret::new(b"tok".to_vec()))),
             upstreams,
             state_dir: self.dir.path(),
+            boot_id: Some(BOOT.to_owned()),
             origin_of: Box::new(|_: &Path| Some(ORIGIN.to_owned())),
             stop: self.stop.clone(),
             stderr: err,
@@ -253,6 +255,7 @@ fn successful_start_marks_ready_and_records_ports_without_the_nonce() {
 
     let row = w.row();
     assert!(row.ready);
+    assert_eq!(row.boot_id.as_deref(), Some(BOOT));
     assert_eq!(row.host_port, Some(run.host_port()));
     assert_eq!(row.lease_owner.as_deref(), Some(run.owner()));
     assert_started_event(&w, &row, run.host_port());

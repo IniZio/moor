@@ -8,8 +8,16 @@ use crate::ops::common::proxy::{new_nonce, LEASE};
 
 const PID: u32 = 4242;
 
-/// A proxy row with a supervisor pid; its lease is held now.
+const BOOT: &str = "boot-a";
+
+/// A proxy row with a supervisor pid; its lease is held now and it was written in this boot.
 fn with_proxy(f: &Fx) {
+    f.proc.with_boot_id(BOOT);
+    proxy_row(f);
+}
+
+/// The same row on a host that reports no boot id.
+fn proxy_row(f: &Fx) {
     let store = f.cx.store().unwrap();
     let nonce = new_nonce(f.cx.rng());
     let _ = store.reserve(f.id, &nonce, f.cx.rng(), LEASE).unwrap();
@@ -17,8 +25,8 @@ fn with_proxy(f: &Fx) {
     rusqlite::Connection::open(f.dir.path().join("moor.db"))
         .unwrap()
         .execute(
-            "UPDATE proxy SET ready = 1, host_port = 4000, pid = ? WHERE task = ?",
-            [i64::from(PID), f.id.get()],
+            "UPDATE proxy SET ready = 1, host_port = 4000, pid = ?, boot_id = ? WHERE task = ?",
+            rusqlite::params![PID, BOOT, f.id.get()],
         )
         .unwrap();
 }
@@ -116,4 +124,59 @@ fn a_vanished_group_is_stopped_without_a_warning() {
     assert_eq!(f.proc.signals(), [(PID, Signal::Term)]);
     assert!(!has_row(&f));
     assert!(f.cx.take_warnings().is_empty());
+}
+
+fn exec(f: &Fx, sql: &str) {
+    rusqlite::Connection::open(f.dir.path().join("moor.db"))
+        .unwrap()
+        .execute(sql, [])
+        .unwrap();
+}
+
+#[test]
+fn a_row_from_another_boot_sends_no_signal_and_is_removed() {
+    let f = fx();
+    with_proxy(&f);
+    f.proc.with_boot_id("boot-b");
+
+    run(&f.cx, &req(false)).unwrap();
+
+    assert!(f.proc.signals().is_empty());
+    assert!(!has_row(&f));
+    assert!(f.cx.take_warnings().is_empty());
+}
+
+#[test]
+fn a_row_without_a_boot_id_is_not_signalled_when_the_host_has_one() {
+    let f = fx();
+    with_proxy(&f);
+    exec(&f, "UPDATE proxy SET boot_id = NULL");
+
+    run(&f.cx, &req(false)).unwrap();
+
+    assert!(f.proc.signals().is_empty());
+    assert!(!has_row(&f));
+}
+
+#[test]
+fn a_host_without_a_boot_id_still_signals_a_live_lease() {
+    let f = fx();
+    proxy_row(&f);
+
+    run(&f.cx, &req(false)).unwrap();
+
+    assert_eq!(f.proc.signals(), [(PID, Signal::Term)]);
+}
+
+#[test]
+fn a_heartbeat_far_in_the_future_sends_no_signal() {
+    let f = fx();
+    with_proxy(&f);
+    let ahead = f.cx.clock().now().as_millis() + 60_000;
+    exec(&f, &format!("UPDATE proxy SET lease_heartbeat = {ahead}"));
+
+    run(&f.cx, &req(false)).unwrap();
+
+    assert!(f.proc.signals().is_empty());
+    assert!(!has_row(&f));
 }
