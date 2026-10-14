@@ -27,6 +27,7 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::store::{Store, StoreError, TaskRow};
 
+mod base;
 mod launch;
 mod preflight;
 mod relaunch;
@@ -39,6 +40,8 @@ struct Facts {
     bound: Option<PathBuf>,
     /// Base ref or the HEAD commit it starts from.
     base: String,
+    /// Ref the new worktree branches from; `None` leaves it to the Surface.
+    from: Option<String>,
 }
 
 /// Where the Task works.
@@ -305,14 +308,13 @@ fn gather(
     repo: PathBuf,
     bound: Option<PathBuf>,
 ) -> Result<Facts, CommandError> {
-    let base = match &req.base {
-        Some(b) => b.clone(),
-        None => cx
-            .git()
-            .head(bound.as_deref().unwrap_or(&repo))
-            .map_err(|e| CommandError::new(ErrorKind::Failed, e))?,
-    };
-    Ok(Facts { repo, bound, base })
+    let (base, from) = base::resolve(cx, req, &repo, bound.as_deref())?;
+    Ok(Facts {
+        repo,
+        bound,
+        base,
+        from,
+    })
 }
 
 /// Hides scratch dirs from git, creates the worktree unless one is bound, then ensures the
@@ -332,7 +334,7 @@ fn place(cx: &Cx, req: &StartReq, facts: &Facts) -> Result<Placed, CommandError>
         },
         None => cx
             .surface()
-            .create_worktree(&facts.repo, &req.name, req.base.as_deref())?,
+            .create_worktree(&facts.repo, &req.name, facts.from.as_deref())?,
     };
     let ws = cx
         .surface()
