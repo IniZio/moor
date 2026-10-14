@@ -479,6 +479,8 @@ fn proxy_addr() -> ProxyAddr {
     ProxyAddr {
         box_port: 4567,
         nonce: Secret::new(NONCE.to_vec()),
+        ca_pem: String::new(),
+        box_env: Vec::new(),
     }
 }
 

@@ -55,6 +55,8 @@ pub(super) fn launch(
         proxy: req.proxy.as_deref().map(|p| ProxyAddr {
             box_port: p.box_port,
             nonce: Secret::new(p.nonce.expose().to_vec()),
+            ca_pem: p.ca_pem.clone(),
+            box_env: p.box_env.clone(),
         }),
         home,
     };

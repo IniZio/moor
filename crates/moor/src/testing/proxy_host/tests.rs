@@ -13,6 +13,8 @@ fn spec(id: i64) -> ProxySpec {
         box_handle: None,
         host_cwd: PathBuf::from("/work"),
         task_repo: None,
+        rules: Vec::new(),
+        allow: Vec::new(),
     }
 }
 

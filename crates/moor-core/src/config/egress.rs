@@ -2,6 +2,7 @@
 
 use super::ConfigError;
 use crate::config::check;
+use crate::config::proxy::default_rules;
 
 /// Provider that takes the allow-list as a flag; always enforces.
 pub const FLAG_PROVIDER: &str = "sprites";
@@ -10,15 +11,12 @@ pub const ENV_PROVIDER: &str = "namespace-devbox";
 
 /// Hosts every Box may reach.
 pub const BASE_ALLOW: &[&str] = &[
-    "github.com",
-    "api.github.com",
     "*.githubusercontent.com",
     "registry.npmjs.org",
     "mise.jdx.dev",
     "mise-versions.jdx.dev",
     "mise.run",
     "nodejs.org",
-    "api.anthropic.com",
     "registry-1.docker.io",
     "auth.docker.io",
     "production.cloudflare.docker.com",
@@ -28,9 +26,6 @@ pub const BASE_ALLOW: &[&str] = &[
     "archive.ubuntu.com",
     "security.ubuntu.com",
 ];
-
-/// Hosts a Box agent reaches only through the moor proxy.
-const PROXY_SERVED: &[&str] = &["api.github.com", "api.anthropic.com"];
 
 /// Note text for namespace-devbox without the opt-in.
 const UNENFORCED: &str = "egress not enforced on namespace-devbox (allow-list is fixed at Box creation; set box.enforce_egress)";
@@ -49,17 +44,18 @@ pub struct EgressItem {
 /// Base list, then user `egress.allow`, then repo entries; trimmed, lower-cased,
 /// de-duplicated by exact string.
 ///
-/// `*.x` never absorbs `x`. The proxy-served base hosts are dropped and an
-/// entry for one is an error.
+/// `*.x` never absorbs `x`. The hosts of the default tool rules are served by
+/// the moor proxy, so they are not in the base list and an entry for one is an error.
 ///
 /// # Errors
-/// An entry that is not a domain or `*.domain`, or that the proxy serves.
+/// An entry that is not a domain or `*.domain`, or that a default tool rule serves.
 /// The error path is `egress.allow[i]` for user entries and `egress[i]` for repo entries.
 pub fn effective_allow_list(user: &[String], repo: &[String]) -> Result<Vec<String>, ConfigError> {
-    let mut out: Vec<String> = BASE_ALLOW
-        .iter()
-        .filter(|h| !PROXY_SERVED.contains(h))
-        .map(|s| (*s).to_string())
+    let mut out: Vec<String> = BASE_ALLOW.iter().map(|s| (*s).to_string()).collect();
+    let served: Vec<String> = default_rules()
+        .into_values()
+        .flat_map(|rule| rule.hosts)
+        .map(|h| h.to_ascii_lowercase())
         .collect();
     let entries = user
         .iter()
@@ -73,7 +69,7 @@ pub fn effective_allow_list(user: &[String], repo: &[String]) -> Result<Vec<Stri
     for (path, raw) in entries {
         check::egress_entry(raw).map_err(|msg| ConfigError::new(path.clone(), msg))?;
         let entry = raw.trim().to_ascii_lowercase();
-        if PROXY_SERVED.contains(&entry.as_str()) {
+        if served.contains(&entry) {
             return Err(ConfigError::new(
                 path,
                 format!(

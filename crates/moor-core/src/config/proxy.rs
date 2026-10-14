@@ -124,6 +124,24 @@ impl ToolRule {
         ))
     }
 
+    /// Like [`Self::check_credential`] for a default rule the user did not write.
+    pub(super) fn check_default_credential(
+        &self,
+        name: &str,
+        credentials: &BTreeMap<String, CredentialSource>,
+    ) -> Result<(), ConfigError> {
+        if self.credential == FORGE_CREDENTIAL || credentials.contains_key(&self.credential) {
+            return Ok(());
+        }
+        Err(ConfigError::new(
+            "credentials",
+            format!(
+                "the default {name} rule needs credentials.{}; add it under credentials:",
+                self.credential
+            ),
+        ))
+    }
+
     /// Checks everything the types cannot except cross-references.
     fn validate(&self, at: &str) -> Result<(), ConfigError> {
         if self.hosts.is_empty() {

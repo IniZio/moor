@@ -2,6 +2,8 @@
 
 use std::collections::BTreeMap;
 
+use serde::{Deserialize, Serialize};
+
 use super::template::{check_slots, fill_repo, REPO_SLOTS};
 use super::{parse_rules, ProxyConfig, ToolRule, DEFAULT_HEADER};
 use crate::config::{ConfigError, CredentialSource};
@@ -10,7 +12,7 @@ use crate::config::{ConfigError, CredentialSource};
 const DEFAULTS: &str = include_str!("defaults.yaml");
 
 /// A method and path glob the proxy lets through.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EndpointRule {
     /// Upper-case method, or `*` for any.
     pub method: String,
@@ -19,7 +21,7 @@ pub struct EndpointRule {
 }
 
 /// How a resolved rule adds its credential.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ResolvedInject {
     /// Set `header` to `form` with `{secret}` replaced.
     Header {
@@ -36,7 +38,7 @@ pub enum ResolvedInject {
 }
 
 /// A rule with the Task repo filled in.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResolvedRule {
     /// Rule name.
     pub name: String,
@@ -127,13 +129,22 @@ pub fn resolve_rules(
         check_repo_part("name", name)?;
     }
     let mut merged = default_rules();
+    let defaults: Vec<String> = merged
+        .keys()
+        .filter(|k| !user.rules.contains_key(*k))
+        .cloned()
+        .collect();
     merged.extend(user.rules.clone());
     let mut out = Vec::new();
     for (name, rule) in merged {
         if rule.needs_repo() && repo.is_none() {
             continue;
         }
-        rule.check_credential(&format!("proxy.rules.{name}"), credentials)?;
+        if defaults.contains(&name) {
+            rule.check_default_credential(&name, credentials)?;
+        } else {
+            rule.check_credential(&format!("proxy.rules.{name}"), credentials)?;
+        }
         out.push(resolve_one(name, &rule, repo)?);
     }
     Ok(out)

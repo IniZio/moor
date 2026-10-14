@@ -9,6 +9,8 @@ fn spec(full: bool) -> ProxySpec {
             owner: "acme".into(),
             name: "widget".into(),
         }),
+        rules: Vec::new(),
+        allow: Vec::new(),
     }
 }
 
@@ -19,6 +21,29 @@ fn spec_round_trips_through_json() {
         let text = serde_json::to_string(&s).unwrap();
         assert_eq!(serde_json::from_str::<ProxySpec>(&text).unwrap(), s);
     }
+}
+
+#[test]
+fn spec_with_rule_round_trips_through_json() {
+    use crate::config::proxy::{EndpointRule, ResolvedInject};
+    let mut s = spec(true);
+    s.rules = vec![ResolvedRule {
+        name: "gh".into(),
+        hosts: vec!["api.github.com".into()],
+        credential: "forge".into(),
+        inject: ResolvedInject::Header {
+            header: "Authorization".into(),
+            form: "Bearer {secret}".into(),
+        },
+        endpoint_rules: vec![EndpointRule {
+            method: "GET".into(),
+            path: "/repos/**".into(),
+        }],
+        box_env: [("GH_HOST".to_string(), "github.com".to_string())].into(),
+    }];
+    s.allow = vec!["crates.io".into()];
+    let text = serde_json::to_string(&s).unwrap();
+    assert_eq!(serde_json::from_str::<ProxySpec>(&text).unwrap(), s);
 }
 
 #[test]
@@ -37,6 +62,7 @@ fn endpoint_debug_redacts_nonce() {
     let ep = ProxyEndpoint {
         box_port: 4000,
         nonce: Secret::new(b"hunter2-nonce".to_vec()),
+        ca_pem: String::new(),
     };
     let text = format!("{ep:?}");
     assert!(!text.contains("hunter2-nonce"));

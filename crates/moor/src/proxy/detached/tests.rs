@@ -1,8 +1,10 @@
 //! Tests for the detached proxy supervisor adapter and its helpers.
 
+mod spec;
 mod stop;
 
 use std::fmt::Write as _;
+use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -41,7 +43,7 @@ pub(super) struct Fx {
 
 /// Simulates a healthy supervisor for each spawned daemon: it takes the lease on the
 /// task named in the daemon's arguments and marks the proxy ready.
-fn supervise(state: PathBuf) -> impl Fn(&DaemonCall) + Send + Sync + 'static {
+pub(super) fn supervise(state: PathBuf) -> impl Fn(&DaemonCall) + Send + Sync + 'static {
     move |d| {
         let clock = Arc::new(FakeClock::new(Ts::from_millis(1000)));
         let store = Store::open(&state.join(STORE_FILE), clock).unwrap();
@@ -115,6 +117,8 @@ impl Fx {
             box_handle: None,
             host_cwd: PathBuf::from("/work"),
             task_repo: None,
+            rules: Vec::new(),
+            allow: Vec::new(),
         }
     }
 
@@ -178,8 +182,14 @@ fn the_first_ensure_spawns_one_supervisor_and_returns_its_address() {
     assert_eq!(d.call.tool, Tool::MoorSelf);
     assert_eq!(d.call.args, ["proxy", "serve", &f.id.get().to_string()]);
     assert_eq!(d.log, log_path(f.dir.path(), f.id));
-    // Creating the log directory is the spawner's job, so it can pick the mode.
-    assert!(!d.log.parent().unwrap().exists());
+    // Creating the log file is the spawner's job, so it can pick the mode.
+    assert!(!d.log.exists());
+    // The directory holding every Task's spec, CA and log is owner-only.
+    let mode = std::fs::metadata(d.log.parent().unwrap())
+        .unwrap()
+        .permissions()
+        .mode();
+    assert_eq!(mode & 0o777, 0o700);
     let row = f.store.proxy(f.id).unwrap().unwrap();
     assert!(row.ready);
     assert_eq!(ep.box_port, row.box_port);

@@ -9,24 +9,19 @@ fn has(list: &[String], h: &str) -> bool {
 }
 
 #[test]
-fn served_hosts_dropped_downloads_kept() {
+fn rule_hosts_absent_downloads_kept() {
     let got = effective_allow_list(&[], &[]).unwrap();
-    for gone in ["api.github.com", "api.anthropic.com"] {
+    for gone in ["github.com", "api.github.com", "api.anthropic.com"] {
         assert!(!has(&got, gone), "{gone}");
     }
-    for want in [
-        "github.com",
-        "*.githubusercontent.com",
-        "mise.run",
-        "nodejs.org",
-    ] {
+    for want in ["*.githubusercontent.com", "mise.run", "nodejs.org"] {
         assert!(has(&got, want), "{want}");
     }
 }
 
 #[test]
 fn served_repo_entries_rejected_with_path() {
-    for host in ["api.github.com", "API.Anthropic.com"] {
+    for host in ["api.github.com", "API.Anthropic.com", "GitHub.com"] {
         let e = effective_allow_list(&[], &s(&["a.example.com", host])).unwrap_err();
         assert_eq!(e.path, "egress[1]");
         assert!(e.reason.contains("moor proxy serves it"), "{e}");
@@ -77,11 +72,11 @@ fn unenforced_note_only_namespace_without_opt_in() {
 fn item_applied_lists_allow() {
     let it = egress_item(&[], &s(&["a.example.com"]), true).unwrap();
     assert_eq!(it.name, "allow");
-    assert!(it.detail.contains("a.example.com") && it.detail.contains("github.com"));
+    assert!(it.detail.contains("a.example.com") && it.detail.contains("githubusercontent.com"));
     assert!(!it.detail.contains("api.anthropic.com"));
     let empty = egress_item(&[], &[], true).unwrap();
     assert_eq!(empty.name, "allow");
-    assert!(empty.detail.contains("github.com"));
+    assert!(empty.detail.contains("githubusercontent.com"));
     assert_eq!(empty.hosts, effective_allow_list(&[], &[]).unwrap());
 }
 
@@ -109,7 +104,7 @@ fn item_unsupported_never_counts_zero() {
 
 #[test]
 fn served_domains_rejected_only_when_provider_applies_policy() {
-    for host in ["api.github.com", "api.anthropic.com"] {
+    for host in ["api.github.com", "api.anthropic.com", "github.com"] {
         assert!(egress_item(&[], &s(&[host]), true).is_err(), "{host}");
         assert!(egress_item(&[], &s(&[host]), false).is_ok(), "{host}");
     }
@@ -118,13 +113,13 @@ fn served_domains_rejected_only_when_provider_applies_policy() {
 #[test]
 fn effective_list_is_base_user_repo_deduplicated() {
     let got = effective_allow_list(
-        &s(&["U.example.com", "github.com"]),
+        &s(&["U.example.com", "mise.run"]),
         &s(&["r.example.com", "u.example.com"]),
     )
     .unwrap();
     let tail: Vec<&str> = got.iter().rev().take(2).map(String::as_str).collect();
     assert_eq!(tail, ["r.example.com", "u.example.com"]);
-    assert_eq!(got.iter().filter(|h| *h == "github.com").count(), 1);
+    assert_eq!(got.iter().filter(|h| *h == "mise.run").count(), 1);
     let bad = effective_allow_list(&s(&["nope"]), &[]).unwrap_err();
     assert!(bad.to_string().contains("egress.allow[0]"), "{bad}");
 }

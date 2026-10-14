@@ -41,8 +41,28 @@ fn creds() -> BTreeMap<String, CredentialSource> {
 #[test]
 fn default_rule_without_its_credential_errors_on_resolve() {
     let e = resolve_rules(&ProxyConfig::default(), &BTreeMap::new(), None).expect_err("missing");
+    assert_eq!(e.path, "credentials");
+    assert_eq!(
+        e.reason,
+        "the default claude rule needs credentials.CLAUDE_CODE_OAUTH_TOKEN; add it under credentials:"
+    );
+}
+
+#[test]
+fn user_rule_without_its_credential_keeps_the_rule_path() {
+    let e = err(
+        "proxy:\n  rules:\n    mine:\n      hosts: [api.example.com]\n      credential: MINE\n      inject: {form: 'Bearer {secret}'}\n",
+    );
+    assert_eq!(e.path, "proxy.rules.mine.credential");
+    assert!(e.reason.starts_with("unknown credential \"MINE\""), "{e}");
+}
+
+#[test]
+fn overridden_default_rule_keeps_the_rule_path() {
+    let e = err(
+        "proxy:\n  rules:\n    claude:\n      hosts: [api.example.com]\n      credential: OTHER\n      inject: {form: 'Bearer {secret}'}\n",
+    );
     assert_eq!(e.path, "proxy.rules.claude.credential");
-    assert!(e.reason.contains("CLAUDE_CODE_OAUTH_TOKEN"), "{e}");
 }
 
 #[test]
@@ -193,8 +213,8 @@ fn resolve_fills_repo() {
         Some("acme/widgets")
     );
     assert!(api.endpoint_rules.contains(&EndpointRule {
-        method: "*".into(),
-        path: "/repos/acme/widgets/pulls/**".into()
+        method: "PATCH".into(),
+        path: "/repos/acme/widgets/pulls/*".into()
     }));
     assert!(api.endpoint_rules.contains(&EndpointRule {
         method: "POST".into(),
@@ -270,5 +290,69 @@ fn unsafe_repo_parts_rejected() {
             e.reason.contains(&format!("{owner:?}")) || e.reason.contains(&format!("{name:?}")),
             "{owner}/{name}: {e}"
         );
+    }
+}
+
+fn path_matches(glob: &str, path: &str) -> bool {
+    fn go(g: &[&str], p: &[&str]) -> bool {
+        match (g.split_first(), p.split_first()) {
+            (None, None) => true,
+            (Some((&"**", gr)), _) => go(gr, p) || p.split_first().is_some_and(|(_, pr)| go(g, pr)),
+            (Some((&"*", gr)), Some((_, pr))) => go(gr, pr),
+            (Some((a, gr)), Some((b, pr))) => a == b && go(gr, pr),
+            _ => false,
+        }
+    }
+    let g: Vec<_> = glob.split('/').collect();
+    let p: Vec<_> = path.split('/').collect();
+    go(&g, &p)
+}
+
+fn github_api_allows(method: &str, path: &str) -> bool {
+    let rules = resolve_rules(&ProxyConfig::default(), &creds(), Some(repo())).expect("resolves");
+    let api = rules.iter().find(|r| r.name == "github-api").expect("api");
+    api.endpoint_rules
+        .iter()
+        .any(|r| (r.method == "*" || r.method == method) && path_matches(&r.path, path))
+}
+
+#[test]
+fn github_api_leaves_merge_and_ref_writes_unmatched() {
+    let r = "/repos/acme/widgets";
+    for (m, p) in [
+        ("PUT", format!("{r}/pulls/7/merge")),
+        ("POST", format!("{r}/pulls/7/merge")),
+        ("DELETE", format!("{r}/pulls/7")),
+        ("POST", format!("{r}/merges")),
+        ("POST", format!("{r}/git/refs")),
+        ("PATCH", format!("{r}/git/refs/heads/main")),
+        ("DELETE", format!("{r}/git/refs/heads/topic")),
+        ("PUT", format!("{r}/pulls/7/merge/extra")),
+    ] {
+        assert!(!github_api_allows(m, &p), "{m} {p}");
+    }
+}
+
+#[test]
+fn github_api_matches_pr_and_stack_calls() {
+    let r = "/repos/acme/widgets";
+    for (m, p) in [
+        ("GET", r.to_owned()),
+        ("POST", format!("{r}/pulls")),
+        ("GET", format!("{r}/pulls")),
+        ("PATCH", format!("{r}/pulls/7")),
+        ("GET", format!("{r}/pulls/7/files")),
+        ("POST", format!("{r}/pulls/7/requested_reviewers")),
+        ("DELETE", format!("{r}/pulls/7/requested_reviewers")),
+        ("POST", format!("{r}/issues/7/comments")),
+        ("GET", format!("{r}/commits/abc/check-runs")),
+        ("GET", format!("{r}/stacks")),
+        ("POST", format!("{r}/stacks")),
+        ("GET", format!("{r}/stacks/3")),
+        ("POST", format!("{r}/stacks/3/add")),
+        ("POST", format!("{r}/stacks/3/unstack")),
+        ("POST", "/graphql".to_owned()),
+    ] {
+        assert!(github_api_allows(m, &p), "{m} {p}");
     }
 }

@@ -112,6 +112,7 @@ impl ProxyHost for FakeProxyHost {
         Ok(ProxyEndpoint {
             box_port: s.box_port,
             nonce: Secret::new(s.nonce.to_vec()),
+            ca_pem: String::new(),
         })
     }
 

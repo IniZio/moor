@@ -41,10 +41,6 @@ pub(crate) struct Cx {
     /// Process runner.
     proc: Arc<dyn Proc>,
     /// Code forge.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "no operation reads the forge yet")
-    )]
     forge: Arc<dyn Forge>,
     /// Credential proxy host.
     proxy_host: Arc<dyn ProxyHost>,
@@ -177,10 +173,6 @@ impl Cx {
     }
 
     /// Code forge.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "no operation reads the forge yet")
-    )]
     pub(crate) fn forge(&self) -> &dyn Forge {
         self.forge.as_ref()
     }
