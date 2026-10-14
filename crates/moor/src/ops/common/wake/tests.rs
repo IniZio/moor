@@ -23,6 +23,18 @@ struct Fx {
     id: TaskId,
 }
 
+fn acquire_req(provider: ProviderId, task: TaskId, name: TaskName) -> AcquireReq {
+    AcquireReq {
+        provider,
+        task,
+        name,
+        egress: EgressPlan::Open,
+        class: None,
+        nonce: "n".to_owned(),
+        worktree: None,
+    }
+}
+
 /// Task `t` Working with a Ready Box.
 fn fx_with(driver: FakeDriver) -> Fx {
     let dir = tempfile::tempdir().unwrap();
@@ -57,24 +69,18 @@ fn fx_with(driver: FakeDriver) -> Fx {
                 .set(fields),
         )
         .unwrap();
-    let got = driver
-        .acquire(&AcquireReq {
-            provider,
-            task: id,
-            name,
-            egress: EgressPlan::Open,
-            class: None,
-            nonce: "n".to_owned(),
-            worktree: None,
-        })
-        .unwrap();
+    let got = driver.acquire(&acquire_req(provider, id, name)).unwrap();
     store
         .apply(
             Decision::new(id)
                 .task_input(TaskInput::BoxReady {
                     setup: SetupOutcome::Ok,
                 })
-                .box_input(BoxInput::Acquired { handle: got.handle }),
+                .box_input(BoxInput::Acquired { handle: got.handle })
+                .set(Fields {
+                    box_workdir: Field::Set(got.workdir.as_str().to_owned()),
+                    ..Fields::default()
+                }),
         )
         .unwrap();
     Fx {
@@ -116,6 +122,18 @@ fn row(f: &Fx) -> TaskRow {
 fn kinds(f: &Fx) -> Vec<String> {
     let rows = f.cx.store().unwrap().events(f.id, 100).unwrap();
     rows.into_iter().map(|e| e.kind).collect()
+}
+
+fn workdir_calls(f: &Fx) -> usize {
+    f.driver
+        .calls()
+        .iter()
+        .filter(|c| c.starts_with("workdir"))
+        .count()
+}
+
+fn stored_workdir(f: &Fx) -> Option<String> {
+    row(f).boxed.unwrap().workdir
 }
 
 fn wake_calls(f: &Fx) -> usize {
@@ -213,4 +231,46 @@ fn asleep_box_with_working_task_wakes_only_the_box() {
     assert_eq!(r.state, TaskState::Working);
     assert_eq!(r.boxed.unwrap().state, BoxState::Ready);
     assert!(!kinds(&f).contains(&"woke".to_owned()));
+}
+
+#[test]
+fn waking_a_box_stores_the_workdir_the_driver_reports_now() {
+    let f = fx();
+    sleep(&f);
+    assert_eq!(stored_workdir(&f).as_deref(), Some("/work/box-1"));
+    assert_eq!(workdir_calls(&f), 0);
+    f.driver.set_work_root("/moved");
+    let store = f.cx.store().unwrap();
+    assert!(wake_if_asleep(&f.cx, store, &row(&f)).unwrap());
+    assert_eq!(workdir_calls(&f), 1);
+    assert_eq!(stored_workdir(&f).as_deref(), Some("/moved/box-1"));
+}
+
+#[test]
+fn failed_workdir_lookup_after_wake_leaves_task_and_box_asleep() {
+    let f = fx();
+    sleep(&f);
+    f.driver.fail_workdir(DriverError::NotFound);
+    let store = f.cx.store().unwrap();
+    assert!(wake_if_asleep(&f.cx, store, &row(&f)).is_err());
+    let r = row(&f);
+    assert_eq!(r.state, TaskState::Asleep);
+    assert_eq!(r.boxed.unwrap().state, BoxState::Asleep);
+    assert_eq!(stored_workdir(&f).as_deref(), Some("/work/box-1"));
+    assert!(wake_if_asleep(&f.cx, store, &row(&f)).unwrap());
+    assert_eq!(workdir_calls(&f), 2);
+}
+
+#[test]
+fn waking_only_the_task_does_not_look_the_workdir_up() {
+    let f = fx();
+    let store = f.cx.store().unwrap();
+    store
+        .apply(Decision::new(f.id).task_input(TaskInput::AgentQuiet))
+        .unwrap();
+    store
+        .apply(Decision::new(f.id).task_input(TaskInput::SleepCmd))
+        .unwrap();
+    assert!(wake_if_asleep(&f.cx, store, &row(&f)).unwrap());
+    assert_eq!(workdir_calls(&f), 0);
 }

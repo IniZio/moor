@@ -8,6 +8,7 @@ use moor_core::name::{BoxHandle, BoxPath};
 use moor_core::ErrorKind;
 
 use crate::error::CommandError;
+use crate::ops::common::provision::recorded_workdir;
 use crate::store::{Store, TaskRow};
 
 /// Where a run executes.
@@ -52,17 +53,11 @@ pub(super) fn target(store: &Store, row: &TaskRow) -> Result<Target, CommandErro
         .handle
         .clone()
         .ok_or_else(|| failed(format!("box of {name} has no handle")))?;
-    let workdir = boxed.workdir.as_deref().and_then(workdir_path);
+    let workdir = boxed.workdir.as_deref().and_then(recorded_workdir);
     let worktree = PathBuf::from(row.worktree.as_deref().unwrap_or(&row.repo));
     Ok(Target {
         handle,
         workdir,
         worktree,
     })
-}
-
-/// The Box path recorded as text on the Task row.
-fn workdir_path(stored: &str) -> Option<BoxPath> {
-    let rel = stored.strip_prefix('/')?;
-    BoxPath::under("/", rel).ok()
 }

@@ -229,6 +229,14 @@ fn unknown_task_is_refused() {
 }
 
 #[test]
+fn stored_workdir_with_dot_dot_is_the_command_cwd() {
+    let f = ready_with(FakeDriver::new().work_root("/p/bin/../box/work"));
+    run(&f.cx, &req(&["true"])).unwrap();
+    let (_, spec, _) = f.driver.execs().remove(0);
+    assert_eq!(spec.cwd.unwrap().as_str(), "/p/bin/../box/work/box-1");
+}
+
+#[test]
 fn empty_argv_is_usage() {
     let f = ready();
     let before = f.driver.calls().len();

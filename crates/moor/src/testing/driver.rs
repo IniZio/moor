@@ -39,6 +39,7 @@ struct State {
     sleep_outcome: Option<SleepOutcome>,
     on_exec: Option<Arc<ExecHook>>,
     work_root: Option<String>,
+    fail_workdir: Option<DriverError>,
 }
 
 /// One `copy_out` call: handle, source, destination and host cwd.
@@ -71,6 +72,16 @@ impl FakeDriver {
     pub(crate) fn work_root(self, root: &str) -> Self {
         self.st().work_root = Some(root.to_owned());
         self
+    }
+
+    /// Moves where later `workdir` lookups report every box.
+    pub(crate) fn set_work_root(&self, root: &str) {
+        self.st().work_root = Some(root.to_owned());
+    }
+
+    /// The next `workdir` fails once with `e`.
+    pub(crate) fn fail_workdir(&self, e: DriverError) {
+        self.st().fail_workdir = Some(e);
     }
 
     /// The next `acquire` fails once with `e`.
@@ -257,6 +268,9 @@ impl Driver for FakeDriver {
     fn workdir(&self, handle: &BoxHandle) -> Result<BoxPath, DriverError> {
         let mut s = self.st();
         s.calls.push(format!("workdir {}", handle.as_str()));
+        if let Some(e) = s.fail_workdir.take() {
+            return Err(e);
+        }
         if !s.live.iter().any(|h| h == handle.as_str()) {
             return Err(DriverError::NotFound);
         }
