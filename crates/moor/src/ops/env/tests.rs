@@ -46,6 +46,7 @@ fn cx_proc(top: &Path, config: UserConfig, proc: ScriptedProc) -> Cx {
         driver: Arc::new(FakeDriver::new()),
         surface: Arc::new(FakeSurface::new(top)),
         engine: Arc::new(FakeEngine::new()),
+        forge: Arc::new(crate::testing::forge::FakeForge::new()),
         git: Git::new(Arc::clone(&proc)),
         proc: Arc::clone(&proc),
         config,
