@@ -10,19 +10,65 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::view::{agent_view, event_view, task_view_with_run};
 use crate::ops::common::{activity, autosleep, reconcile};
+use crate::store::Store;
 
 /// Lines of the pane kept as the tail.
 const PANE_LINES: usize = 40;
 
+/// Stand-in for a proxy nonce in pane text.
+const REDACTED: &str = "<nonce>";
+
+/// Length of a base64url-encoded 32-byte nonce.
+const NONCE_LEN: usize = 43;
+
+/// `text` with the task's proxy nonce, and any `/t/<43 base64url chars>/` path segment,
+/// replaced by `<nonce>`. Git prints the proxied remote URL, which carries the nonce.
+fn redact_nonce(text: &str, nonce: Option<&[u8]>) -> String {
+    let known = nonce
+        .and_then(|n| std::str::from_utf8(n).ok())
+        .filter(|n| !n.is_empty());
+    let text = known.map_or_else(|| text.to_owned(), |n| text.replace(n, REDACTED));
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text.as_str();
+    while let Some(at) = rest.find("/t/") {
+        let (head, tail) = rest.split_at(at + 3);
+        out.push_str(head);
+        let seg = tail.as_bytes();
+        let is_nonce = seg.get(NONCE_LEN) == Some(&b'/')
+            && seg
+                .iter()
+                .take(NONCE_LEN)
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'));
+        if is_nonce {
+            out.push_str(REDACTED);
+            // The first 43 bytes are ASCII, so the split is on a char boundary.
+            rest = tail.split_at(NONCE_LEN).1;
+        } else {
+            rest = tail;
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
 /// The pane section of a reading: its last lines and liveness; none without an observation.
-fn pane_view(reading: &activity::Reading) -> Option<PaneView> {
-    let text = reading.pane_text.as_deref()?;
+/// The task's proxy nonce is redacted from the tail.
+fn pane_view(
+    reading: &activity::Reading,
+    store: &Store,
+    task: TaskId,
+) -> Result<Option<PaneView>, CommandError> {
+    let Some(text) = reading.pane_text.as_deref() else {
+        return Ok(None);
+    };
+    let row = store.proxy(task)?;
     let skip = text.lines().count().saturating_sub(PANE_LINES);
     let tail = text.lines().skip(skip).collect::<Vec<_>>().join("\n");
-    Some(PaneView {
+    let tail = redact_nonce(&tail, row.as_ref().map(|r| r.nonce.expose()));
+    Ok(Some(PaneView {
         tail,
         status: reading.pane.as_str().to_owned(),
-    })
+    }))
 }
 
 /// Run `show`.
@@ -43,7 +89,7 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
         let agent = agent_view(&reading);
         let mut view = task_view_with_run(&row, in_flight.as_ref(), cx.config());
         view.agent.clone_from(&agent);
-        agents.insert(row.id, (agent, pane_view(&reading)));
+        agents.insert(row.id, (agent, pane_view(&reading, store, row.id)?));
         tasks.push(view);
     }
     let Some(name) = &req.task else {
@@ -63,7 +109,7 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
         found
     } else {
         let reading = activity::read(cx, store, &row, now)?;
-        (agent_view(&reading), pane_view(&reading))
+        (agent_view(&reading), pane_view(&reading, store, row.id)?)
     };
     let mut detail = task_view_with_run(&row, in_flight.as_ref(), cx.config());
     detail.agent = agent;
