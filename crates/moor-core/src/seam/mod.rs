@@ -6,5 +6,6 @@ pub mod driver;
 pub mod engine;
 pub mod forge;
 pub mod proc;
+pub mod proxy_host;
 pub mod rng;
 pub mod surface;

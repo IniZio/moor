@@ -1,6 +1,6 @@
 //! Tests for name validation.
 
-use super::{BoxPath, Sha, TaskName};
+use super::{BoxHandle, BoxPath, Sha, TaskId, TaskName};
 
 /// Valid task names parse.
 #[test]
@@ -52,4 +52,15 @@ fn box_path_restore() {
     assert!(BoxPath::restore("").is_err());
     assert!(BoxPath::restore("work/box-1").is_err());
     assert!(BoxPath::restore("/").is_err());
+}
+
+/// `TaskId` is a bare integer and `BoxHandle` a bare string in JSON.
+#[test]
+fn task_id_and_box_handle_serde_shape() {
+    let id = TaskId::new(7);
+    assert_eq!(serde_json::to_string(&id).unwrap(), "7");
+    assert_eq!(serde_json::from_str::<TaskId>("7").unwrap(), id);
+    let h = BoxHandle::new("box-1");
+    assert_eq!(serde_json::to_string(&h).unwrap(), "\"box-1\"");
+    assert_eq!(serde_json::from_str::<BoxHandle>("\"box-1\"").unwrap(), h);
 }

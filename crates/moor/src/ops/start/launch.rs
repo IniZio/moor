@@ -1,10 +1,13 @@
 //! Launches the agent of a Working Task and records how that ended.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::activity::PaneStatus;
+use moor_core::seam::agent_profile::ProxyAddr;
 use moor_core::seam::proc::Deadline;
+use moor_core::seam::proxy_host::ProxySpec;
 
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
@@ -17,7 +20,7 @@ use moor_core::{StartReq, TaskId, Warning};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::provision::{nonce, recorded_workdir, reread};
-use crate::ops::common::proxy::{ensure_proxy, origin};
+use crate::ops::common::proxy::origin;
 use crate::ops::common::resume;
 use crate::ops::common::view::rfc3339;
 use crate::store::{Store, TaskRow};
@@ -75,12 +78,27 @@ pub(super) fn begin(
     launch: &LaunchReq,
 ) -> Result<AgentLaunchView, CommandError> {
     let id = row.id;
-    let addr = match ensure_proxy(cx, store, id) {
-        Ok(addr) => addr,
-        Err(e) => return record_failure(cx, store, id, &e),
+    let spec = ProxySpec {
+        task: id,
+        box_handle: row.boxed.as_ref().and_then(|b| b.handle.clone()),
+        host_cwd: launch.worktree.clone(),
+        task_repo: None,
+    };
+    let ep = match cx.proxy_host().ensure(&spec) {
+        Ok(ep) => ep,
+        Err(e) => {
+            let e = EngineError::Failed {
+                step: "proxy",
+                message: e.to_string(),
+            };
+            return record_failure(cx, store, id, &e);
+        }
     };
     let mut launch = launch.clone();
-    launch.proxy = Some(addr);
+    launch.proxy = Some(Arc::new(ProxyAddr {
+        box_port: ep.box_port,
+        nonce: ep.nonce,
+    }));
     launch.origin = origin(cx, &launch.worktree);
     let launch = &launch;
     match cx.engine().launch(launch) {

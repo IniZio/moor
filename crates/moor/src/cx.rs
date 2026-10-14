@@ -11,6 +11,7 @@ use moor_core::seam::driver::Driver;
 use moor_core::seam::engine::Engine;
 use moor_core::seam::forge::Forge;
 use moor_core::seam::proc::Proc;
+use moor_core::seam::proxy_host::ProxyHost;
 use moor_core::seam::rng::Rng;
 use moor_core::seam::surface::Surface;
 use moor_core::{ErrorKind, Warning};
@@ -19,10 +20,7 @@ use crate::adapters::creds::Creds;
 use crate::adapters::git::Git;
 use crate::config_load::load_repo;
 use crate::error::CommandError;
-use crate::store::Store;
-
-/// File name of the state store inside the state directory.
-const STORE_FILE: &str = "moor.db";
+use crate::store::{Store, STORE_FILE};
 
 /// State shared by one command run.
 pub(crate) struct Cx {
@@ -48,6 +46,8 @@ pub(crate) struct Cx {
         expect(dead_code, reason = "no operation reads the forge yet")
     )]
     forge: Arc<dyn Forge>,
+    /// Credential proxy host.
+    proxy_host: Arc<dyn ProxyHost>,
     /// Git adapter.
     git: Git,
     /// User configuration.
@@ -80,6 +80,8 @@ pub(crate) struct CxParts {
     pub proc: Arc<dyn Proc>,
     /// Code forge.
     pub forge: Arc<dyn Forge>,
+    /// Credential proxy host.
+    pub proxy_host: Arc<dyn ProxyHost>,
     /// Git adapter.
     pub git: Git,
     /// User configuration.
@@ -105,6 +107,7 @@ impl Cx {
             engine: p.engine,
             proc: p.proc,
             forge: p.forge,
+            proxy_host: p.proxy_host,
             git: p.git,
             config: p.config,
             creds: p.creds,
@@ -186,6 +189,18 @@ impl Cx {
     #[cfg(test)]
     pub(crate) fn with_forge(mut self, forge: Arc<dyn Forge>) -> Self {
         self.forge = forge;
+        self
+    }
+
+    /// Credential proxy host.
+    pub(crate) fn proxy_host(&self) -> &dyn ProxyHost {
+        self.proxy_host.as_ref()
+    }
+
+    /// This context with `host` in place of the current proxy host.
+    #[cfg(test)]
+    pub(crate) fn with_proxy_host(mut self, host: Arc<dyn ProxyHost>) -> Self {
+        self.proxy_host = host;
         self
     }
 

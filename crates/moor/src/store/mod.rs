@@ -12,6 +12,9 @@ use moor_core::view::LaunchFailure;
 use moor_core::{BoxHandle, ProviderId, RunId, TaskId, TaskName};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Row, TransactionBehavior};
 
+/// File name of the state database inside the state directory.
+pub(crate) const STORE_FILE: &str = "moor.db";
+
 #[cfg_attr(not(test), expect(dead_code, reason = "used by ops, not yet wired"))]
 mod agent;
 mod apply;

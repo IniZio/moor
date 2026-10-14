@@ -7,7 +7,7 @@ use moor_core::{Secret, ShowReq};
 
 use super::super::run;
 use super::{engine_cx, pane_only, req, working};
-use crate::ops::common::proxy::LEASE;
+use crate::proxy::supervisor::LEASE;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 

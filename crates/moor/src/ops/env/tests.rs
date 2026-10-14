@@ -18,6 +18,7 @@ use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::proc::{Reply, ScriptedProc};
+use crate::testing::proxy_host::FakeProxyHost;
 use crate::testing::rng::FakeRng;
 use crate::testing::surface::FakeSurface;
 
@@ -49,6 +50,7 @@ fn cx_proc(top: &Path, config: UserConfig, proc: ScriptedProc) -> Cx {
         forge: Arc::new(crate::testing::forge::FakeForge::new()),
         git: Git::new(Arc::clone(&proc)),
         proc: Arc::clone(&proc),
+        proxy_host: Arc::new(FakeProxyHost::new()),
         config,
         creds: Creds::new(Env::default(), proc),
         cwd: top.to_path_buf(),

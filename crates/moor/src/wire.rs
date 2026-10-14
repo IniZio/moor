@@ -14,6 +14,7 @@ use moor_core::config::UserConfig;
 use moor_core::seam::clock::Clock;
 use moor_core::seam::driver::Driver;
 use moor_core::seam::proc::Proc;
+use moor_core::seam::rng::Rng;
 use moor_core::seam::surface::Surface;
 use moor_core::ErrorKind;
 
@@ -31,6 +32,7 @@ use crate::config_load::load_user;
 use crate::cx::{Cx, CxParts};
 use crate::env::Env;
 use crate::error::CommandError;
+use crate::proxy::detached::DetachedSupervisor;
 use crate::proxy::{serve, Deps, ModelToken, OriginOf, Sink, Upstreams};
 
 /// Host variables herdr needs to find its socket and terminal.
@@ -85,15 +87,24 @@ fn parts(env: &Env) -> Result<CxParts, CommandError> {
         Arc::new(Claude),
         Arc::clone(&clock) as Arc<dyn Clock>,
     );
+    let rng: Arc<dyn Rng> = Arc::new(SystemRng);
+    let state_dir = env.state_dir();
+    let proxy_host = Arc::new(DetachedSupervisor::new(
+        Arc::clone(&proc),
+        Arc::clone(&clock) as Arc<dyn Clock>,
+        Arc::clone(&rng),
+        state_dir.clone(),
+    ));
     Ok(CxParts {
-        state_dir: env.state_dir(),
+        state_dir,
         clock,
-        rng: Arc::new(SystemRng),
+        rng,
         driver,
         surface,
         engine: Arc::new(engine),
         proc: Arc::clone(&proc),
         forge: Arc::new(github(&proc, &config, env)),
+        proxy_host,
         git: Git::new(Arc::clone(&proc)),
         config,
         creds: Creds::new(env.clone(), proc),

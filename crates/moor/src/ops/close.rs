@@ -26,7 +26,6 @@ use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::boxwork::{probe, BoxWork};
 use crate::ops::common::facts::settings;
 use crate::ops::common::promote::promote_waiting;
-use crate::ops::common::proxy::stop_proxy;
 use crate::ops::common::reports;
 use crate::ops::common::transcript::{self, Saved};
 use crate::ops::common::view::task_view;
@@ -77,7 +76,12 @@ pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
     sync_branch(cx, &row);
     let workspace_closed = close_workspace(cx, &row, &plan);
     drop(lock);
-    stop_proxy(cx, store, row.id);
+    if let Err(e) = cx.proxy_host().stop(row.id) {
+        cx.warn(Warning {
+            code: "proxy_stop_failed".to_owned(),
+            message: format!("{e}; the task is closed anyway"),
+        });
+    }
     let provider = row.boxed.as_ref().map(|b| b.provider.clone());
     let closed = store.task(row.id)?.unwrap_or(row);
     let promoted = provider.map_or_else(Vec::new, |p| {

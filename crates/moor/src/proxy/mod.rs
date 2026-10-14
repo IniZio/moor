@@ -7,6 +7,7 @@
 //! The supervisor owns the proxy's lifetime and wires the listener, the
 //! resolver and the upstream client together.
 
+pub(crate) mod detached;
 mod head;
 mod relay;
 mod resolver;
