@@ -31,7 +31,7 @@ pub(crate) fn set_identity(cx: &Cx, handle: &BoxHandle, worktree: &Path) {
             cwd: None,
             sync: SyncMode::None,
             output: None,
-            host_cwd: None,
+            host_cwd: Some(worktree.to_path_buf()),
             class: None,
         };
         let reason = match cx.driver().exec(handle, &spec, Deadline(IDENTITY_DEADLINE)) {
