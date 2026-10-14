@@ -6,6 +6,8 @@ use moor_core::view::env::{EnvCredential, EnvRow, EnvView};
 use moor_core::{ExitClass, Response};
 use serde_json::Value;
 
+mod show;
+
 /// Renders `resp` as `(stdout, stderr)` text; warnings are dropped when `quiet`.
 pub(crate) fn render(resp: &Response, quiet: bool) -> (String, String) {
     let mut out = String::new();
@@ -56,15 +58,24 @@ fn render_value(resp: &Response, out: &mut String) {
             return;
         }
     }
-    if resp.cmd == "env" {
-        if let Ok(view) = serde_json::from_value::<EnvView>(value.clone()) {
-            out.push_str(&env_text(&view));
-            return;
-        }
+    if let Some(text) = structured_text(&resp.cmd, value) {
+        out.push_str(&text);
+        return;
     }
     if let Ok(text) = serde_json::to_string_pretty(value) {
         out.push_str(&text);
         out.push('\n');
+    }
+}
+
+/// Text form of the commands whose value is a structured view, or `None` to fall back.
+fn structured_text(cmd: &str, value: &Value) -> Option<String> {
+    match cmd {
+        "env" => serde_json::from_value::<EnvView>(value.clone())
+            .ok()
+            .map(|view| env_text(&view)),
+        "show" => show::show_text(value),
+        _ => None,
     }
 }
 
