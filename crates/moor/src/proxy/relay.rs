@@ -5,6 +5,7 @@
 
 mod capped;
 mod chunked;
+mod response;
 #[cfg(test)]
 mod tests;
 
@@ -17,18 +18,17 @@ use std::time::Duration;
 use moor_core::proxy_gate::{Inject, Plan, RouteId};
 use moor_core::seam::clock::Clock;
 use ureq::config::Config;
-use ureq::http::{HeaderName, HeaderValue, Method, Request, Response};
+use ureq::http::{HeaderValue, Method, Request, Response};
 use ureq::tls::{RootCerts, TlsConfig, TlsProvider};
 use ureq::{Agent, Body, SendBody};
 
 use self::capped::{is_cap_exceeded, CappedReader};
 use self::chunked::ChunkedReader;
+use self::response::{write_response, Written};
 use super::head::Head;
 use super::server::{DeadlineReader, Forward, ForwardHandler};
 use super::upstream::{auth_value, RouteCredential, Upstreams};
 
-/// Size of the buffer the response body is copied through.
-const COPY_BUF: usize = 8 * 1024;
 /// How long connecting and resolving may take.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 /// How long the upstream may take to answer with a response head.
@@ -37,17 +37,6 @@ const RESPONSE_TIMEOUT: Duration = Duration::from_secs(600);
 const DRAIN_LIMIT: u64 = 64 * 1024;
 /// Total time the drain before an over-cap answer may take.
 const DRAIN_BUDGET: Duration = Duration::from_secs(1);
-/// Response headers that never cross the proxy.
-const HOP_BY_HOP: [&str; 8] = [
-    "connection",
-    "keep-alive",
-    "proxy-authenticate",
-    "proxy-authorization",
-    "te",
-    "trailer",
-    "transfer-encoding",
-    "upgrade",
-];
 /// Request headers the relay sets itself from the body framing.
 const FRAMING: [&str; 2] = ["content-length", "expect"];
 
@@ -194,7 +183,12 @@ impl ForwardHandler for Relay {
         } = req;
         let route = plan.route.clone();
         let status = match self.call(&head, &plan, body_prefix, stream) {
-            Ok(response) => write_response(stream, response),
+            Ok(response) => match write_response(stream, response) {
+                Written::Complete(code) => code,
+                // The connection is already reset; a FIN now would only
+                // let the client see a clean end.
+                Written::Aborted => return 502,
+            },
             Err(failure) => {
                 if matches!(failure, Failure::TooLarge) {
                     self.drain(stream);
@@ -257,61 +251,6 @@ fn build_agent() -> Agent {
         .timeout_recv_response(Some(RESPONSE_TIMEOUT))
         .build();
     Agent::new_with_config(config)
-}
-
-/// Writes the upstream response head and streams its body; returns the status.
-fn write_response(stream: &mut TcpStream, response: Response<Body>) -> u16 {
-    let (parts, mut body) = response.into_parts();
-    let code = parts.status.as_u16();
-    let named: Vec<String> = parts
-        .headers
-        .get_all("connection")
-        .iter()
-        .filter_map(|v| v.to_str().ok())
-        .flat_map(|v| v.split(','))
-        .map(|t| t.trim().to_ascii_lowercase())
-        .collect();
-    let mut head = format!(
-        "HTTP/1.1 {} {}\r\n",
-        code,
-        parts.status.canonical_reason().unwrap_or("Unknown")
-    )
-    .into_bytes();
-    for (name, value) in &parts.headers {
-        if !is_hop(name, &named) {
-            head.extend_from_slice(name.as_str().as_bytes());
-            head.extend_from_slice(b": ");
-            head.extend_from_slice(value.as_bytes());
-            head.extend_from_slice(b"\r\n");
-        }
-    }
-    head.extend_from_slice(b"connection: close\r\n\r\n");
-    if stream.write_all(&head).is_err() || stream.flush().is_err() {
-        return code;
-    }
-    copy_body(&mut body.as_reader(), stream);
-    code
-}
-
-/// Whether `name` is hop-by-hop or listed in the `connection` header.
-fn is_hop(name: &HeaderName, named: &[String]) -> bool {
-    HOP_BY_HOP.contains(&name.as_str()) || named.iter().any(|t| t == name.as_str())
-}
-
-/// Copies `from` to `to` through a fixed buffer, flushing after every read.
-fn copy_body(from: &mut impl Read, to: &mut TcpStream) {
-    let mut buf = [0_u8; COPY_BUF];
-    loop {
-        match from.read(&mut buf) {
-            Ok(0) | Err(_) => return,
-            Ok(n) => {
-                let Some(chunk) = buf.get(..n) else { return };
-                if to.write_all(chunk).is_err() || to.flush().is_err() {
-                    return;
-                }
-            }
-        }
-    }
 }
 
 /// Writes a fixed-text error response; returns its status.

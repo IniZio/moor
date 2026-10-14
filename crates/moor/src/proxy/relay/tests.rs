@@ -510,3 +510,76 @@ fn chunked_body_over_cap_is_413_and_upstream_never_completes() {
         "upstream saw a complete body"
     );
 }
+
+/// Reads until EOF or error; returns the bytes and whether the read failed.
+fn read_raw(client: &mut TcpStream) -> (Vec<u8>, bool) {
+    let mut out = Vec::new();
+    let mut buf = [0_u8; 512];
+    loop {
+        match client.read(&mut buf) {
+            Ok(0) => return (out, false),
+            Ok(n) => out.extend_from_slice(buf.get(..n).unwrap()),
+            Err(_) => return (out, true),
+        }
+    }
+}
+
+/// An upstream that dies mid-chunk is a reset or an unterminated body, and
+/// is never logged as the upstream's 200.
+#[test]
+fn truncated_chunked_upstream_never_looks_complete() {
+    let (port, up) = upstream(|mut s| {
+        read_request(&mut s);
+        s.write_all(
+            b"HTTP/1.1 200 OK\r\ntransfer-encoding: chunked\r\n\r\n5\r\nhello\r\n10\r\nabc",
+        )
+        .unwrap();
+    });
+    let req = forward("model", "GET", Inject::Bearer, &[], b"");
+    let (mut client, done) = spawn(relay(port, true), req);
+    let (raw, failed) = read_raw(&mut client);
+    let status = done.join().unwrap();
+    up.join().unwrap();
+    assert!(failed || !contains(&raw, b"0\r\n\r\n"), "{raw:?}");
+    assert_ne!(status, 200);
+}
+
+/// An upstream that closes before its declared length delivers fewer bytes
+/// than the client was told to expect.
+#[test]
+fn short_content_length_upstream_is_not_completed() {
+    let (port, up) = upstream(|mut s| {
+        read_request(&mut s);
+        s.write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 10\r\n\r\nabc")
+            .unwrap();
+    });
+    let req = forward("model", "GET", Inject::Bearer, &[], b"");
+    let (mut client, done) = spawn(relay(port, true), req);
+    let (raw, _) = read_raw(&mut client);
+    let status = done.join().unwrap();
+    up.join().unwrap();
+    let text = String::from_utf8_lossy(&raw);
+    assert!(
+        text.is_empty() || text.contains("content-length: 10"),
+        "{text}"
+    );
+    let body = text.split("\r\n\r\n").nth(1).unwrap_or("");
+    assert!(body.len() < 10, "{text}");
+    assert_ne!(status, 200);
+}
+
+/// A clean close-delimited upstream is re-chunked and terminated.
+#[test]
+fn close_delimited_upstream_is_rechunked_and_terminated() {
+    let (port, up) = upstream(|mut s| {
+        read_request(&mut s);
+        s.write_all(b"HTTP/1.1 200 OK\r\n\r\nhello").unwrap();
+    });
+    let req = forward("model", "GET", Inject::Bearer, &[], b"");
+    let (mut client, done) = spawn(relay(port, true), req);
+    let reply = read_all(&mut client);
+    assert_eq!(done.join().unwrap(), 200, "{reply}");
+    up.join().unwrap();
+    assert!(reply.contains("transfer-encoding: chunked"), "{reply}");
+    assert!(reply.ends_with("5\r\nhello\r\n0\r\n\r\n"), "{reply}");
+}
