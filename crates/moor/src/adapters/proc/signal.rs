@@ -3,6 +3,7 @@
 use std::io;
 
 use moor_core::seam::proc::{check_group, ProcError, Signal as GroupSignal};
+use rustix::io::Errno;
 use rustix::process::{kill_process_group, Pid, Signal};
 
 /// Converts a raw pid, rejecting 0 and values beyond `i32`.
@@ -27,8 +28,13 @@ pub(super) fn send_group(pgid: u32, sig: GroupSignal) -> Result<(), ProcError> {
         GroupSignal::Term => Signal::TERM,
         GroupSignal::Kill => Signal::KILL,
     };
-    kill_process_group(group, sig)
-        .map_err(|e| ProcError::Spawn(io::Error::from_raw_os_error(e.raw_os_error())))
+    kill_process_group(group, sig).map_err(|e| {
+        ProcError::Spawn(if e == Errno::SRCH {
+            io::Error::new(io::ErrorKind::NotFound, "no such process group")
+        } else {
+            io::Error::from_raw_os_error(e.raw_os_error())
+        })
+    })
 }
 
 #[cfg(test)]
@@ -72,6 +78,9 @@ mod tests {
         let pid = child.id();
         child.kill().unwrap();
         child.wait().unwrap();
-        assert!(send_group(pid, GroupSignal::Term).is_err());
+        let Err(ProcError::Spawn(e)) = send_group(pid, GroupSignal::Term) else {
+            panic!("expected a spawn error");
+        };
+        assert_eq!(e.kind(), io::ErrorKind::NotFound);
     }
 }

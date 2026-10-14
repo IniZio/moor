@@ -1,13 +1,14 @@
 //! Make sure a Task's proxy supervisor runs and is ready before an agent launches.
 
 use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::seam::agent_profile::ProxyAddr;
 use moor_core::seam::engine::EngineError;
-use moor_core::seam::proc::{Deadline, ProcSpec, Signal, Tool};
+use moor_core::seam::proc::{Deadline, ProcError, ProcSpec, Signal, Tool};
 use moor_core::seam::rng::Rng;
 use moor_core::{Secret, TaskId, Warning};
 
@@ -149,7 +150,11 @@ pub(crate) fn stop_proxy(cx: &Cx, store: &Store, task: TaskId) {
     };
     // Pids 0 and 1 would address every process or init's group.
     let pid = row.pid.filter(|p| *p > 1 && live(cx, &row));
-    let exited = pid.is_none_or(|p| signal_group(cx, p) && wait_gone(cx, store, task));
+    let exited = pid.is_none_or(|p| match signal_group(cx, p) {
+        Sent::Delivered => wait_gone(cx, store, task),
+        Sent::Gone => true,
+        Sent::Failed => false,
+    });
     if let Err(e) = store.remove_proxy(task) {
         return warn_stop(cx, &format!("the proxy row could not be removed: {e}"));
     }
@@ -158,9 +163,23 @@ pub(crate) fn stop_proxy(cx: &Cx, store: &Store, task: TaskId) {
     }
 }
 
-/// Send SIGTERM to the process group led by `pid`; false when the group is already gone.
-fn signal_group(cx: &Cx, pid: u32) -> bool {
-    cx.proc().signal_group(pid, Signal::Term).is_ok()
+/// What happened to a SIGTERM sent to a process group.
+enum Sent {
+    /// The signal was delivered.
+    Delivered,
+    /// No such group: the supervisor is already gone.
+    Gone,
+    /// The group was refused or could not be signalled.
+    Failed,
+}
+
+/// Send SIGTERM to the process group led by `pid`.
+fn signal_group(cx: &Cx, pid: u32) -> Sent {
+    match cx.proc().signal_group(pid, Signal::Term) {
+        Ok(()) => Sent::Delivered,
+        Err(ProcError::Spawn(e)) if e.kind() == io::ErrorKind::NotFound => Sent::Gone,
+        Err(_) => Sent::Failed,
+    }
 }
 
 /// Poll until the row is gone; false when it outlasts [`STOP_WAIT`].
