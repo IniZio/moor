@@ -44,7 +44,7 @@ fn list_two_tasks_aligns_columns_and_dashes_missing_box() {
 
 #[test]
 fn detail_with_box() {
-    let out = show(json!({"tasks": [], "task": task("alpha", true)}));
+    let out = show(json!({"task": task("alpha", true)}));
     assert_eq!(
         out,
         "name:     alpha\nstate:    running\nrepo:     /r\nworktree: /w/x\nbranch:   moor/x\n\
@@ -54,14 +54,14 @@ fn detail_with_box() {
 
 #[test]
 fn detail_without_box() {
-    let out = show(json!({"tasks": [], "task": task("alpha", false)}));
+    let out = show(json!({"task": task("alpha", false)}));
     assert!(out.contains("box:      none\n"));
 }
 
 #[test]
 fn detail_with_events_setup_and_pane() {
     let out = show(json!({
-        "tasks": [], "task": task("alpha", true),
+        "task": task("alpha", true),
         "setup": {"ran": true, "ok": true},
         "dotfiles": {"ran": true, "ok": false},
         "events": [{"id": 1, "kind": "started", "payload": {}, "ts": "2026-01-01T00:00:00Z"}],

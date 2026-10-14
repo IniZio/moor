@@ -1,9 +1,7 @@
 //! `show`: reconcile, then report tasks, one task's detail and its events.
-//! Each task's agent is read once and the list and detail share that read.
+//! Each task's agent is read once per command; a named task reads only its own.
 
-use std::collections::HashMap;
-
-use moor_core::view::{AgentView, EventView, PaneView, ShowView, TaskView};
+use moor_core::view::{EventView, PaneView, ShowView, TaskView};
 use moor_core::{ErrorKind, ShowReq, TaskId};
 
 use crate::cx::Cx;
@@ -76,25 +74,20 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
     reconcile::run(cx);
     let store = cx.store()?;
     let now = cx.clock().now();
-    let mut tasks: Vec<TaskView> = Vec::new();
-    let mut agents: HashMap<TaskId, (Option<AgentView>, Option<PaneView>)> = HashMap::new();
-    for mut row in store.all_tasks()? {
-        let reading = activity::read(cx, store, &row, now)?;
-        if req.task.is_none() {
+    let Some(name) = &req.task else {
+        let mut tasks: Vec<TaskView> = Vec::new();
+        for mut row in store.all_tasks()? {
+            let reading = activity::read(cx, store, &row, now)?;
             activity::settle(cx, store, &row, &reading)?;
             autosleep::run(cx, store, row.id);
             row = store.task(row.id)?.unwrap_or(row);
+            let in_flight = store.in_flight_run(row.id, &|pid| cx.proc().alive(pid))?;
+            let mut view = task_view_with_run(&row, in_flight.as_ref(), cx.config());
+            view.agent = agent_view(&reading);
+            tasks.push(view);
         }
-        let in_flight = store.in_flight_run(row.id, &|pid| cx.proc().alive(pid))?;
-        let agent = agent_view(&reading);
-        let mut view = task_view_with_run(&row, in_flight.as_ref(), cx.config());
-        view.agent.clone_from(&agent);
-        agents.insert(row.id, (agent, pane_view(&reading, store, row.id)?));
-        tasks.push(view);
-    }
-    let Some(name) = &req.task else {
         return Ok(ShowView {
-            tasks,
+            tasks: Some(tasks),
             task: None,
             events: None,
             pane: None,
@@ -105,12 +98,8 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
         CommandError::new(ErrorKind::Failed, format!("no task {}", name.as_str()))
     })?;
     let in_flight = store.in_flight_run(row.id, &|pid| cx.proc().alive(pid))?;
-    let (agent, pane) = if let Some(found) = agents.remove(&row.id) {
-        found
-    } else {
-        let reading = activity::read(cx, store, &row, now)?;
-        (agent_view(&reading), pane_view(&reading, store, row.id)?)
-    };
+    let reading = activity::read(cx, store, &row, now)?;
+    let (agent, pane) = (agent_view(&reading), pane_view(&reading, store, row.id)?);
     let mut detail = task_view_with_run(&row, in_flight.as_ref(), cx.config());
     detail.agent = agent;
     let events = match req.events {
@@ -122,7 +111,7 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
         None => None,
     };
     Ok(ShowView {
-        tasks,
+        tasks: None,
         task: Some(detail),
         events,
         pane: pane.filter(|_| req.pane),

@@ -219,8 +219,9 @@ pub struct ReportView {
 /// `value` of `show`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ShowView {
-    /// Per-Task rows.
-    pub tasks: Vec<TaskView>,
+    /// Per-Task rows; absent when a single Task is selected.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tasks: Option<Vec<TaskView>>,
     /// The selected Task.
     pub task: Option<TaskView>,
     /// Events, when requested.

@@ -95,10 +95,15 @@ fn ready_box(cx: &Cx, driver: &FakeDriver, id: TaskId) -> moor_core::BoxHandle {
     got.handle
 }
 
+/// The first row of a list-mode view.
+fn first(v: &moor_core::view::ShowView) -> &moor_core::view::TaskView {
+    v.tasks.as_ref().unwrap().first().unwrap()
+}
+
 /// Box state of the only task, as the view reports it.
 fn box_state(cx: &Cx) -> BoxState {
     let v = run(cx, &req(None, None)).unwrap();
-    v.tasks.first().unwrap().r#box.as_ref().unwrap().state
+    first(&v).r#box.as_ref().unwrap().state
 }
 
 #[test]
@@ -108,7 +113,7 @@ fn show_lists_all_tasks_with_no_selection() {
     add(&cx, "a");
     add(&cx, "b");
     let v = run(&cx, &req(None, None)).unwrap();
-    let names: Vec<_> = v.tasks.iter().map(|t| t.name.clone()).collect();
+    let names: Vec<_> = v.tasks.iter().flatten().map(|t| t.name.clone()).collect();
     assert_eq!(names, ["a", "b"]);
     assert!(v.task.is_none() && v.events.is_none());
 }
@@ -165,6 +170,7 @@ fn named_task_returns_last_events() {
         .apply(Decision::new(id).task_input(TaskInput::Admitted))
         .unwrap();
     let v = run(&cx, &req(Some("a"), Some(1))).unwrap();
+    assert!(v.tasks.is_none());
     assert_eq!(v.task.unwrap().name, "a");
     assert_eq!(v.events.unwrap().len(), 1);
 }
@@ -198,7 +204,9 @@ fn task_shows_its_in_flight_run() {
     let v = run(&cx, &req(Some("a"), None)).unwrap();
     let r = v.task.unwrap().run.unwrap();
     assert_eq!(r.argv, ["make", "test"]);
-    assert!(v.tasks.iter().all(|t| t.run.is_some()));
+    assert!(v.tasks.is_none());
+    let listed = run(&cx, &req(None, None)).unwrap();
+    assert!(first(&listed).run.is_some());
 }
 
 /// Context over `driver` with a scripted engine.
@@ -280,9 +288,16 @@ fn list_and_detail_report_the_same_agent() {
     working(&cx, &driver, "a", Some("s-a"));
     let engine = Arc::new(FakeEngine::new().probes("s-a", hook(&cx, HookKind::Idle)));
     let cx = engine_cx(dir.path(), &driver, &engine);
-    let v = run(&cx, &req(Some("a"), None)).unwrap();
-    let listed = v.tasks.first().unwrap().agent.clone().unwrap();
-    let detail = v.task.unwrap().agent.unwrap();
+    let listed = first(&run(&cx, &req(None, None)).unwrap())
+        .agent
+        .clone()
+        .unwrap();
+    let detail = run(&cx, &req(Some("a"), None))
+        .unwrap()
+        .task
+        .unwrap()
+        .agent
+        .unwrap();
     assert_eq!(listed, detail);
     assert_eq!(
         (detail.state.as_str(), detail.source.as_str()),
@@ -308,7 +323,7 @@ fn each_task_is_probed_once_per_command() {
     assert_eq!(engine.probe_count("s-b"), 1);
     run(&cx, &req(Some("a"), Some(5))).unwrap();
     assert_eq!(engine.probe_count("s-a"), 2);
-    assert_eq!(engine.probe_count("s-b"), 2);
+    assert_eq!(engine.probe_count("s-b"), 1);
 }
 
 #[test]
@@ -364,7 +379,7 @@ fn list_settles_a_quiet_agent_to_idle() {
     let row = cx.store().unwrap().task(id).unwrap().unwrap();
     assert_eq!(row.state, TaskState::Idle);
     assert!(idle_since(cx.store().unwrap(), id).is_some());
-    assert_eq!(v.tasks.first().unwrap().state, TaskState::Idle);
+    assert_eq!(first(&v).state, TaskState::Idle);
 }
 
 #[test]
@@ -430,7 +445,6 @@ fn task_without_a_live_session_has_no_agent() {
     let cx = engine_cx(dir.path(), &driver, &Arc::new(FakeEngine::new()));
     working(&cx, &driver, "a", None);
     let v = run(&cx, &req(Some("a"), None)).unwrap();
-    assert!(v.tasks.first().unwrap().agent.is_none());
     assert!(v.task.unwrap().agent.is_none());
 }
 
@@ -513,7 +527,7 @@ fn a_task_freshly_started_is_not_idled_by_the_next_list() {
     .unwrap();
     assert_eq!(started.task.state, TaskState::Working);
     let v = run(&cx, &req(None, None)).unwrap();
-    let t = v.tasks.first().unwrap();
+    let t = first(&v);
     assert_eq!(t.state, TaskState::Working);
     assert!(t.agent.is_some());
     let id = TaskId::new(started.task.id);
@@ -547,11 +561,8 @@ fn list_sleeps_a_task_idle_past_the_threshold() {
     let v = run(&cx, &req(None, None)).unwrap();
     let row = cx.store().unwrap().task(id).unwrap().unwrap();
     assert_eq!(row.state, TaskState::Asleep);
-    assert_eq!(v.tasks.first().unwrap().state, TaskState::Asleep);
-    assert_eq!(
-        v.tasks.first().unwrap().r#box.as_ref().unwrap().state,
-        BoxState::Asleep
-    );
+    assert_eq!(first(&v).state, TaskState::Asleep);
+    assert_eq!(first(&v).r#box.as_ref().unwrap().state, BoxState::Asleep);
 }
 
 #[test]
