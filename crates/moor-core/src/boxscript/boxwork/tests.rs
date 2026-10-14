@@ -341,3 +341,56 @@ fn partial_clone_probe_stays_offline_with_missing_path_origin() {
     }
     assert_offline_probe("lazy-path", "/nonexistent/moor-boxwork/x.git");
 }
+
+#[test]
+fn changes_confined_to_cache_dirs_are_not_dirty() {
+    if !git_available() {
+        return;
+    }
+    let r = Repo::new("cache");
+    for f in [
+        ".next/cache/a",
+        "apps/web/.next/cache/b",
+        "node_modules/.cache/c",
+        ".turbo/d",
+        "pkg/.pnpm-store/e",
+        "src/keep",
+    ] {
+        r.write(f, "1");
+    }
+    r.git(&["add", "-f", "."]);
+    r.git(&["commit", "-q", "-m", "all"]);
+    for f in [
+        ".next/cache/a",
+        "apps/web/.next/cache/b",
+        "node_modules/.cache/c",
+        ".turbo/d",
+        "pkg/.pnpm-store/e",
+    ] {
+        fs::remove_file(r.root.join(f)).unwrap();
+    }
+    r.write("pkg/.pnpm-store/new", "untracked");
+    assert!(r.probe(&[]).status.success());
+    assert_eq!(r.result(), Some(BoxworkCounts { ahead: 1, dirty: 0 }));
+}
+
+#[test]
+fn source_edits_next_to_cache_dirs_still_count() {
+    if !git_available() {
+        return;
+    }
+    let r = Repo::new("cache-source");
+    r.write(".next/cache/a", "1");
+    r.write("src/keep", "1");
+    r.write("src/turbo.rs", "1");
+    r.write("deploy/target/x", "1");
+    r.git(&["add", "-f", "."]);
+    r.git(&["commit", "-q", "-m", "all"]);
+    r.write(".next/cache/a", "2");
+    r.write("src/keep", "2");
+    r.write("src/turbo.rs", "2");
+    r.write("deploy/target/x", "2");
+    r.write("untracked", "u");
+    assert!(r.probe(&[]).status.success());
+    assert_eq!(r.result(), Some(BoxworkCounts { ahead: 1, dirty: 4 }));
+}
