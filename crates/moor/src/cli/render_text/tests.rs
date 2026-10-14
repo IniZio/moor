@@ -256,6 +256,35 @@ fn start_prints_name_state_box_and_how_to_open() {
 }
 
 #[test]
+fn start_says_setup_failed_and_keeps_the_open_hint() {
+    let v = json!({
+        "task": lifecycle_task("alpha", "working", Some("ready")),
+        "setup": {"ran": true, "ok": false, "line": "make: *** [deps] Error 2"},
+        "warnings_inline": []
+    });
+    let (out, _) = render(&Response::ok("start", Some(v)), false);
+    assert_eq!(
+        out,
+        "started alpha (#7): working, box ready, setup failed\nopen it with: moor open alpha\n"
+    );
+}
+
+#[test]
+fn start_does_not_say_setup_failed_when_setup_passed_or_did_not_run() {
+    for setup in [
+        json!({"ran": true, "ok": true}),
+        json!({"ran": false, "ok": false}),
+    ] {
+        let v = json!({"task": lifecycle_task("alpha", "working", Some("ready")), "setup": setup});
+        let (out, _) = render(&Response::ok("start", Some(v)), false);
+        assert_eq!(
+            out,
+            "started alpha (#7): working, box ready\nopen it with: moor open alpha\n"
+        );
+    }
+}
+
+#[test]
 fn start_says_attached_and_queued() {
     let v = json!({"task": lifecycle_task("alpha", "working", Some("ready")), "attached": true});
     let (out, _) = render(&Response::ok("start", Some(v)), false);
