@@ -518,16 +518,17 @@ fn two_tasks_racing_for_the_last_slot_cannot_both_be_admitted() {
     )
     .unwrap();
     let provider = ProviderId::new("p");
-    let (started, rival_started) = std::sync::mpsc::channel::<()>();
+    let (lock_held, rival_may_claim) = std::sync::mpsc::channel::<()>();
     let admitted = std::thread::scope(|s| {
-        let rival = s.spawn(|| {
-            started.send(()).unwrap();
-            claim_last_slot(&rival_store, b)
+        let rival_store = &rival_store;
+        let rival = s.spawn(move || {
+            rival_may_claim.recv().unwrap();
+            claim_last_slot(rival_store, b)
         });
         let first = store
             .apply_admitting(&provider, |holders| {
                 assert!(holders.is_empty());
-                rival_started.recv().unwrap();
+                lock_held.send(()).unwrap();
                 std::thread::sleep(Duration::from_millis(300));
                 Some(
                     Decision::new(a)
