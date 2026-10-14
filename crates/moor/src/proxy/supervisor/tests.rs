@@ -1,5 +1,7 @@
 //! Tests for the per-task proxy supervisor, run against fakes with no real sleeps.
 
+use std::io::{Read, Write};
+use std::net::{Ipv4Addr, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -11,6 +13,7 @@ use moor_core::domain::task::{SetupOutcome, TaskInput};
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::seam::driver::{AcquireReq, Driver, EgressPlan};
 use moor_core::seam::forge::ForgeRepo;
+use moor_core::seam::rng::Rng;
 use moor_core::secret::Secret;
 use moor_core::{ProviderId, TaskId, TaskName};
 
@@ -26,6 +29,8 @@ const NONCE: &[u8] = b"NONCE-abc123";
 pub(super) const NONCE_TEXT: &str = "NONCE-abc123";
 pub(super) const ORIGIN: &str = "git@example.invalid:o/n.git";
 const WORKTREE: &str = "/wt";
+const NEW_NONCE: &[u8] = b"NONCE-fresh-9";
+const NEW_NONCE_TEXT: &str = "NONCE-fresh-9";
 pub(super) const FIRST_TUNNEL_PID: u32 = 50_000;
 
 /// Everything a supervisor run needs, owned in one place.
@@ -462,6 +467,64 @@ fn task_without_a_box_handle_is_refused_with_a_stderr_line() {
 
     assert!(!w.stderr().trim().is_empty());
     assert!(w.driver.tunnels().is_empty());
+}
+
+/// Random source that re-reserves the proxy row with a new nonce just before the lease claim.
+struct ReserveBeforeClaim<'a> {
+    /// Underlying draws.
+    inner: &'a FakeRng,
+    /// Store whose row gets re-reserved.
+    store: &'a Store,
+    /// Task whose row changes.
+    task: TaskId,
+    /// Draws so far.
+    drawn: AtomicUsize,
+}
+
+impl Rng for ReserveBeforeClaim<'_> {
+    fn u32(&self) -> u32 {
+        // The claim draws four times for the owner token, then claims the lease.
+        if self.drawn.fetch_add(1, Ordering::SeqCst) == 3 {
+            let fresh = Secret::new(NEW_NONCE.to_vec());
+            drop(
+                self.store
+                    .reserve(self.task, &fresh, self.inner, LEASE)
+                    .unwrap(),
+            );
+        }
+        self.inner.u32()
+    }
+}
+
+/// Sends an authenticated request with `nonce` and returns the reply text.
+fn probe(port: u16, nonce: &str) -> String {
+    let mut s = TcpStream::connect((Ipv4Addr::LOCALHOST, port)).unwrap();
+    let req = format!("GET /nope HTTP/1.1\r\nhost: x\r\nauthorization: Bearer {nonce}\r\n\r\n");
+    s.write_all(req.as_bytes()).unwrap();
+    let mut out = Vec::new();
+    drop(s.read_to_end(&mut out));
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+#[test]
+fn nonce_reserved_between_preflight_and_claim_is_the_one_served() {
+    let w = World::new([]);
+    let hook = ReserveBeforeClaim {
+        inner: &w.rng,
+        store: &w.store,
+        task: w.id,
+        drawn: AtomicUsize::new(0),
+    };
+    let mut deps = w.deps();
+    deps.rng = &hook;
+
+    let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
+
+    let old = probe(run.host_port(), NONCE_TEXT);
+    let new = probe(run.host_port(), NEW_NONCE_TEXT);
+    assert!(old.starts_with("HTTP/1.1 401 "), "old nonce: {old}");
+    assert!(!new.starts_with("HTTP/1.1 401 "), "new nonce: {new}");
+    assert_eq!(run.finish(Stop::Signal), 0);
 }
 
 /// The first tunnel comes up; every restart attempt fails.
