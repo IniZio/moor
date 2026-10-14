@@ -1,11 +1,13 @@
 //! Crabbox adapter: the only code that knows crabbox terms.
 
 mod caps;
+mod connect;
 mod cp;
 mod errors;
 mod exec;
 mod parse;
 mod peek;
+mod put;
 mod sleep;
 #[cfg(test)]
 mod tests;
@@ -261,6 +263,25 @@ impl Driver for Crabbox {
         host_cwd: &Path,
     ) -> Result<Option<String>, DriverError> {
         peek::peek_file(self, handle, path, host_cwd)
+    }
+
+    fn put_file(
+        &self,
+        handle: &BoxHandle,
+        path: &BoxPath,
+        bytes: &[u8],
+        mode: u32,
+        host_cwd: &Path,
+    ) -> Result<(), DriverError> {
+        put::put_file(self, handle, path, bytes, mode, host_cwd)
+    }
+
+    fn connect_argv(
+        &self,
+        handle: &BoxHandle,
+        host_cwd: &Path,
+    ) -> Result<Vec<String>, DriverError> {
+        connect::connect_argv(self, handle, host_cwd)
     }
 
     fn sleep(&self, handle: &BoxHandle) -> Result<SleepOutcome, DriverError> {

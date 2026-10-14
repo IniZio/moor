@@ -277,3 +277,44 @@ fn sleep_outcome_is_scripted_and_gone_box_is_not_found() {
     assert_eq!(fake.sleep(&h), Err(DriverError::NotFound));
     assert_eq!(fake.wake(&h), Err(DriverError::NotFound));
 }
+
+#[test]
+fn put_is_served_back_by_peek_per_box_and_recorded() {
+    let (fake, a) = fake_with_box();
+    let b = fake.acquire(&req()).unwrap().handle;
+    let path = BoxPath::restore("/home/u/.moor-cred-x/brief.md").unwrap();
+    assert_eq!(fake.put_file(&a, &path, b"one", 0o600, host()), Ok(()));
+    assert_eq!(fake.put_file(&a, &path, b"two", 0o600, host()), Ok(()));
+    assert_eq!(
+        fake.peek_file(&a, &path, host()),
+        Ok(Some("two".to_owned()))
+    );
+    assert_eq!(fake.peek_file(&b, &path, host()), Ok(None));
+    assert_eq!(
+        fake.puts().first(),
+        Some(&(a, path, b"one".to_vec(), 0o600, PathBuf::from("/host")))
+    );
+}
+
+#[test]
+fn put_and_connect_on_unknown_box_are_not_found_and_failures_are_one_shot() {
+    let fake = FakeDriver::new();
+    let gone = BoxHandle::new("box-9");
+    let path = BoxPath::restore("/h/f").unwrap();
+    assert_eq!(
+        fake.put_file(&gone, &path, b"x", 0o600, host()),
+        Err(DriverError::NotFound)
+    );
+    assert_eq!(fake.connect_argv(&gone, host()), Err(DriverError::NotFound));
+    let (fake, h) = fake_with_box();
+    let fake = fake
+        .fail_put(DriverError::Quota("q".into()))
+        .fail_connect(DriverError::Quota("q".into()));
+    assert!(fake.put_file(&h, &path, b"x", 0o600, host()).is_err());
+    assert!(fake.put_file(&h, &path, b"x", 0o600, host()).is_ok());
+    assert!(fake.connect_argv(&h, host()).is_err());
+    assert_eq!(
+        fake.connect_argv(&h, host()),
+        Ok(vec!["ssh".to_owned(), "-t".to_owned(), "box-1".to_owned()])
+    );
+}
