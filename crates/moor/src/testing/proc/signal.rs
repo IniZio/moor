@@ -7,11 +7,15 @@ use moor_core::seam::proc::{check_group, ProcError, Signal};
 
 use super::ScriptedProc;
 
+/// Runs when a group signal is delivered.
+type Hook = Box<dyn Fn(u32, Signal) + Send + Sync>;
+
 /// Recorded group signals and whether the groups still exist.
 #[derive(Default)]
 pub(super) struct Signals {
     sent: Mutex<Vec<(u32, Signal)>>,
     gone: AtomicBool,
+    hook: Mutex<Option<Hook>>,
 }
 
 impl ScriptedProc {
@@ -30,6 +34,16 @@ impl ScriptedProc {
         self
     }
 
+    /// Runs `hook` whenever a group signal is delivered, as a group member reacting to it.
+    pub(crate) fn on_signal(&self, hook: impl Fn(u32, Signal) + Send + Sync + 'static) -> &Self {
+        *self
+            .signals
+            .hook
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = Some(Box::new(hook));
+        self
+    }
+
     pub(super) fn send_signal(&self, pgid: u32, sig: Signal) -> Result<(), ProcError> {
         check_group(pgid)?;
         self.signals
@@ -41,6 +55,15 @@ impl ScriptedProc {
             return Err(ProcError::Spawn(std::io::Error::from(
                 std::io::ErrorKind::NotFound,
             )));
+        }
+        if let Some(hook) = self
+            .signals
+            .hook
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_ref()
+        {
+            hook(pgid, sig);
         }
         Ok(())
     }
