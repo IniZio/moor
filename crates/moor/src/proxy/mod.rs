@@ -11,7 +11,7 @@ mod head;
 mod relay;
 mod resolver;
 mod server;
-mod supervisor;
+pub(crate) mod supervisor;
 #[cfg(test)]
 mod tests;
 mod upstream;
