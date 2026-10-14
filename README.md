@@ -6,7 +6,7 @@ the agent runs in.
 
 ## Commands
 
-Four commands work today:
+Five commands work today:
 
 - `moor version` prints the crate version, the git commit, and the envelope
   schema version (`1`).
@@ -17,8 +17,13 @@ Four commands work today:
   adds the last N events. `list` is an alias.
 - `moor close NAME` checks for unsaved work, releases the Box, and closes the
   Workspace. The worktree is kept. `--force` closes despite unsaved work.
+- `moor run NAME -- CMD...` runs a command in the Task's Box. It syncs the
+  host worktree first only until an agent has launched for the Task. `--sync`
+  syncs only if the Box has no unsaved work; otherwise, or if that cannot be
+  checked, it exits 125 and does not run: save the work first or use
+  `--no-sync`, which never syncs. Not both. `--record NAME` records the run.
 
-The other verbs parse (for example `run`, `wait`, `steer`, `remove`) but
+The other verbs parse (for example `wait`, `steer`, `remove`) but
 return the error "`moor <cmd>` is not implemented yet".
 
 Global flags: `--json`, `--quiet`, `--state-dir DIR`. State lives in

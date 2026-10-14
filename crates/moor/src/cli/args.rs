@@ -168,6 +168,9 @@ struct RunArgs {
     /// Skip the pre-run sync.
     #[arg(long)]
     no_sync: bool,
+    /// Sync before the run, after checking the Box holds no unsaved work.
+    #[arg(long, conflicts_with = "no_sync")]
+    sync: bool,
     /// Record the run under this name.
     #[arg(long, value_name = "NAME")]
     record: Option<String>,
@@ -181,6 +184,7 @@ impl From<RunArgs> for RunReq {
         Self {
             task: a.task,
             no_sync: a.no_sync,
+            sync: a.sync,
             record: a.record,
             argv: a.cmd,
             inherit_output: false,
