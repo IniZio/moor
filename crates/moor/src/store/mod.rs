@@ -37,7 +37,7 @@ const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 const TASK_SELECT: &str = "SELECT t.id, t.name, t.repo, t.issue, t.goal, t.base, t.branch, t.worktree, t.bound, \
     t.workspace_id, t.agent_session_id, t.state, t.state_reason, t.intent_kind, t.intent_pid, t.intent_run, \
     t.intent_at, t.setup_failed_at, t.created_at, t.updated_at, b.provider, b.handle, b.state, b.attempted_handle, b.workdir, \
-    b.egress_enforced, b.sleep_reason, b.updated_at, t.idle_since, t.launch_failure FROM tasks t LEFT JOIN boxes b ON b.task = t.id";
+    b.egress, b.sleep_reason, b.updated_at, t.idle_since, t.launch_failure FROM tasks t LEFT JOIN boxes b ON b.task = t.id";
 
 /// Store failure.
 #[derive(Debug, thiserror::Error)]
@@ -89,8 +89,8 @@ pub(crate) struct BoxRow {
     pub(crate) attempted_handle: Option<BoxHandle>,
     /// Working directory in the box.
     pub(crate) workdir: Option<String>,
-    /// Whether egress enforcement was confirmed.
-    pub(crate) egress_enforced: Option<bool>,
+    /// Box egress: `none`, `enforced` or `not_enforced`; unset when unknown.
+    pub(crate) egress: Option<String>,
     /// Why the box cannot sleep, if the driver said so.
     pub(crate) sleep_reason: Option<String>,
     /// Last update.
@@ -332,7 +332,7 @@ fn box_from_row(row: &Row<'_>) -> Result<Option<BoxRow>, StoreError> {
         state: parsed_opt("box state", &state, BoxState::parse)?,
         attempted_handle: row.get::<_, Option<String>>(23)?.map(BoxHandle::new),
         workdir: row.get(24)?,
-        egress_enforced: row.get::<_, Option<i64>>(25)?.map(|v| v != 0),
+        egress: row.get(25)?,
         sleep_reason: row.get(26)?,
         updated_at: Ts::from_millis(row.get(27)?),
     }))

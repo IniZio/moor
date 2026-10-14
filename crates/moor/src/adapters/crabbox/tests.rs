@@ -109,7 +109,6 @@ fn acquire_runs_warmup_and_builds_handle() {
         .unwrap();
     assert_eq!(got.handle.as_str(), "sprites/moor-t7-ab12cd");
     assert_eq!(got.workdir.as_str(), PROBE_DIR);
-    assert_eq!(got.egress, EgressApplied::Enforced);
     let calls = p.calls();
     let args = &calls.first().unwrap().args;
     assert_eq!(
@@ -133,6 +132,15 @@ fn acquire_runs_warmup_and_builds_handle() {
         c.planned_handle(&req("sprites", EgressPlan::Open, None)),
         got.handle
     );
+}
+
+#[test]
+fn open_plan_reports_open_egress() {
+    let (p, c) = fixture();
+    p.on(Tool::Crabbox, &["warmup"], Reply::Ok(WARMUP_OUT.to_owned()));
+    probe(&p);
+    let got = c.acquire(&req("sprites", EgressPlan::Open, None)).unwrap();
+    assert_eq!(got.egress, EgressApplied::Open);
 }
 
 #[test]

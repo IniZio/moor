@@ -131,7 +131,7 @@ fn target_args(handle: &BoxHandle) -> Vec<String> {
 /// Adds the egress plan to a warmup when the provider can take it.
 fn with_egress(spec: ProcSpec, provider: &str, plan: &EgressPlan) -> (ProcSpec, EgressApplied) {
     let EgressPlan::Allow(hosts) = plan else {
-        return (spec, EgressApplied::Enforced);
+        return (spec, EgressApplied::Open);
     };
     let list = hosts.join(",");
     match provider {

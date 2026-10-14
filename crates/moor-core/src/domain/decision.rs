@@ -51,8 +51,8 @@ pub struct Fields {
     pub box_handle: Field<BoxHandle>,
     /// Box workdir.
     pub box_workdir: Field<String>,
-    /// Whether egress is enforced in the box.
-    pub egress_enforced: Field<bool>,
+    /// Box egress: `none`, `enforced` or `not_enforced`.
+    pub egress: Field<String>,
     /// Why the box cannot sleep, as last reported by the driver.
     pub box_sleep_reason: Field<String>,
 }

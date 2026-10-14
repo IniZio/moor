@@ -10,8 +10,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use moor_core::seam::driver::{
-    AcquireReq, Acquired, BoxListing, Driver, DriverCaps, DriverError, EgressApplied, ExecOutcome,
-    ExecSpec, Released, SleepOutcome,
+    AcquireReq, Acquired, BoxListing, Driver, DriverCaps, DriverError, EgressApplied, EgressPlan,
+    ExecOutcome, ExecSpec, Released, SleepOutcome,
 };
 use moor_core::seam::proc::Deadline;
 use moor_core::{BoxHandle, BoxPath, ProviderId};
@@ -181,7 +181,10 @@ impl Driver for FakeDriver {
         Ok(Acquired {
             handle: BoxHandle::new(id),
             workdir,
-            egress: EgressApplied::NotEnforced,
+            egress: match req.egress {
+                EgressPlan::Open => EgressApplied::Open,
+                EgressPlan::Allow(_) => EgressApplied::Enforced,
+            },
         })
     }
 
