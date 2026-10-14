@@ -1,8 +1,7 @@
-//! Forge seam: the code host that supplies proxy routes, names repos and mints repo tokens.
+//! Forge seam: the code host that names repos and mints repo tokens.
 
 use std::fmt;
 
-use crate::proxy_gate::RouteRow;
 use crate::secret::Secret;
 
 /// A repository on a forge, named by owner and repo name.
@@ -58,9 +57,6 @@ impl std::error::Error for ForgeError {}
 
 /// A code host, behind whichever implementation is wired.
 pub trait Forge: Send + Sync {
-    /// Returns the proxy route rows this forge needs.
-    fn routes(&self) -> Vec<RouteRow>;
-
     /// Maps a git origin URL to a forge repo, or `None` when the URL is not on this forge.
     fn repo_of(&self, origin: &str) -> Option<ForgeRepo>;
 

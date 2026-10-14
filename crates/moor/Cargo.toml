@@ -24,7 +24,6 @@ rustix = { version = "1", features = ["net", "process"] }
 zeroize = "1"
 signal-hook = "=0.4.4"
 getrandom = "=0.4.3"
-httparse = "1"
 ureq = { version = "3", default-features = false, features = [
   "rustls-no-provider",
   "platform-verifier",

@@ -9,18 +9,8 @@
 //! The supervisor owns the proxy's lifetime.
 
 pub(crate) mod detached;
-#[cfg_attr(not(test), allow(dead_code, reason = "removed in the next change"))]
-mod head;
 pub(crate) mod nono;
-#[cfg_attr(not(test), allow(dead_code, reason = "removed in the next change"))]
-mod relay;
-#[cfg_attr(not(test), allow(dead_code, reason = "removed in the next change"))]
-mod resolver;
-#[cfg_attr(not(test), allow(dead_code, reason = "removed in the next change"))]
-mod server;
 pub(crate) mod supervisor;
-#[cfg_attr(not(test), allow(dead_code, reason = "removed in the next change"))]
-mod upstream;
 
 pub(crate) use supervisor::{serve, Deps, Sink};
 
