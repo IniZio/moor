@@ -17,6 +17,7 @@ use crate::env::Env;
 use crate::testing::clock::FakeClock;
 use crate::testing::engine::FakeEngine;
 use crate::testing::forge::FakeForge;
+use crate::testing::proxy_host::FakeProxyHost;
 use crate::testing::rng::FakeRng;
 
 impl Cx {
@@ -63,6 +64,7 @@ impl Cx {
             surface,
             engine: Arc::new(FakeEngine::new()),
             forge: Arc::new(FakeForge::new()),
+            proxy_host: Arc::new(FakeProxyHost::new()),
             git: Git::new(Arc::clone(&proc)),
             proc: Arc::clone(&proc),
             config,

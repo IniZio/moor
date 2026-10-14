@@ -6,7 +6,7 @@ use crate::proxy_gate::RouteRow;
 use crate::secret::Secret;
 
 /// A repository on a forge, named by owner and repo name.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct ForgeRepo {
     /// Account or organisation that owns the repo.
     pub owner: String,
@@ -81,6 +81,14 @@ mod tests {
             ForgeRepo::new("acme", "widgets").to_string(),
             "acme/widgets"
         );
+    }
+
+    #[test]
+    fn forge_repo_serde_shape() {
+        let repo = ForgeRepo::new("acme", "widgets");
+        let json = serde_json::to_string(&repo).unwrap();
+        assert_eq!(json, r#"{"owner":"acme","name":"widgets"}"#);
+        assert_eq!(serde_json::from_str::<ForgeRepo>(&json).unwrap(), repo);
     }
 
     #[test]

@@ -62,7 +62,10 @@ impl<'de> serde::Deserialize<'de> for TaskName {
 }
 
 /// A store-assigned task id; ordering is promotion order.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
+#[serde(transparent)]
 pub struct TaskId(i64);
 
 impl TaskId {
@@ -101,7 +104,8 @@ impl RunId {
 }
 
 /// An opaque Box handle; only the Driver adapter interprets it.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 pub struct BoxHandle(String);
 
 impl BoxHandle {
