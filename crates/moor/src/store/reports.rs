@@ -1,7 +1,8 @@
 //! Report versions kept per task; contents live as files, rows hold the path.
 
-use std::fs;
-use std::io;
+use std::fs::{self, DirBuilder, OpenOptions, Permissions};
+use std::io::{self, Write};
+use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::path::Path;
 
 use moor_core::seam::clock::Ts;
@@ -63,10 +64,13 @@ impl Store {
         }
         let version = latest.map_or(1, |(v, _)| v + 1);
         let task_dir = dir.join(task.get().to_string());
-        fs::create_dir_all(&task_dir)?;
+        DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(&task_dir)?;
         let file = task_dir.join(format!("{kind}.v{version}.md"));
         let path = file.to_string_lossy().into_owned();
-        fs::write(&file, content)?;
+        write_private(&file, content)?;
         let stored = tx
             .execute(
                 "INSERT INTO reports (task, kind, version, path, title, created_at) \
@@ -110,6 +114,18 @@ impl Store {
             .collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
     }
+}
+
+/// Writes `content` to `file`, readable by the owner only.
+fn write_private(file: &Path, content: &str) -> io::Result<()> {
+    OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(file)?
+        .write_all(content.as_bytes())?;
+    fs::set_permissions(file, Permissions::from_mode(0o600))
 }
 
 /// Map a `reports` row selected in column order.

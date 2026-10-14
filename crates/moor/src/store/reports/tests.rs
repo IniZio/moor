@@ -109,3 +109,16 @@ fn bad_kind_is_refused() {
     }
     assert!(store.reports(t).unwrap().is_empty());
 }
+
+#[test]
+fn stored_reports_are_private() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(dir.path());
+    let t = add(&store, "a");
+    let reports = dir.path().join("reports");
+    let row = store.add_report(t, "plan", "x", &reports).unwrap().unwrap();
+    let mode = |p: &Path| fs::metadata(p).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode(&reports.join(t.get().to_string())), 0o700);
+    assert_eq!(mode(Path::new(&row.path)), 0o600);
+}
