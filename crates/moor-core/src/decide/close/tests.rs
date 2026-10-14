@@ -277,3 +277,31 @@ fn failed_release_of_a_release_failed_box_stays_release_failed() {
         (TaskState::Closed, B::ReleaseFailed)
     );
 }
+
+#[test]
+fn box_with_only_uncommitted_changes_is_not_offered_a_bundle() {
+    let f = CloseFacts {
+        box_check: BoxCheck::Unsaved { ahead: 0, dirty: 3 },
+        ..facts()
+    };
+    let text = close_gate(&f, false).expect_err("refused").to_string();
+    for want in [
+        "3 uncommitted file(s)",
+        "`git push moor HEAD:refs/heads/moor/fix-bug`",
+        "`moor run fix-bug --no-sync -- git status`",
+        "`moor close fix-bug --force`",
+    ] {
+        assert!(text.contains(want), "{want}: {text}");
+    }
+    assert!(!text.contains("bundle"), "{text}");
+}
+
+#[test]
+fn box_with_unpushed_commits_keeps_the_bundle_hint() {
+    let f = CloseFacts {
+        box_check: BoxCheck::Unsaved { ahead: 1, dirty: 3 },
+        ..facts()
+    };
+    let text = close_gate(&f, false).expect_err("refused").to_string();
+    assert!(text.contains("git bundle create"), "{text}");
+}

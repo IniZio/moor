@@ -79,11 +79,21 @@ pub enum Refusal {
     /// The Box holds work that is not on the host.
     #[error(
         "the Box holds work that is not on the host ({ahead} unpushed commit(s), \
-         {dirty} uncommitted file(s)); to keep it run \
-         `moor run {task} --no-sync -- git bundle create .moor/rescue.bundle HEAD --not --remotes`, \
-         then `moor cp {task} .moor/rescue.bundle .`, \
-         then `git fetch ./rescue.bundle HEAD:{branch}`; \
-         or push from the Box; or run `moor close {task} --force` to discard it"
+         {dirty} uncommitted file(s)); to keep it {}; \
+         or run `moor close {task} --force` to discard it",
+        if *ahead == 0 {
+            format!(
+                "commit it in the Box and, if the Box has the moor remote, run \
+                 `git push moor HEAD:refs/heads/{branch}` there \
+                 (inspect it first with `moor run {task} --no-sync -- git status`)"
+            )
+        } else {
+            format!(
+                "run `moor run {task} --no-sync -- git bundle create .moor/rescue.bundle HEAD --not --remotes`, \
+                 then `moor cp {task} .moor/rescue.bundle .`, \
+                 then `git fetch ./rescue.bundle HEAD:{branch}`; or push from the Box"
+            )
+        }
     )]
     UnsavedInBox {
         /// The task name.
