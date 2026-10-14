@@ -75,8 +75,8 @@ fn give_up(deps: &Deps<'_>, task: TaskId, owner: &str) {
     }
 }
 
-/// Reads the Task, the proxy row's nonce and Box port, and the Box handle, refusing with exit code 1 when any is missing.
-fn preflight(deps: &Deps<'_>, task: TaskId) -> Result<(TaskRow, Secret, u16, BoxHandle), u8> {
+/// Checks the Task, the proxy row and the Box handle, refusing with exit code 1 when any is missing.
+fn preflight(deps: &Deps<'_>, task: TaskId) -> Result<(TaskRow, BoxHandle), u8> {
     let sink = &deps.stderr;
     let task_row = match deps.store.task(task) {
         Ok(Some(row)) if !terminal(row.state) => row,
@@ -92,22 +92,33 @@ fn preflight(deps: &Deps<'_>, task: TaskId) -> Result<(TaskRow, Secret, u16, Box
             return Err(1);
         }
     };
-    let row = match deps.store.proxy(task) {
-        Ok(Some(row)) => row,
-        Ok(None) => {
-            say(sink, format_args!("task {} has no proxy row", task.get()));
-            return Err(1);
-        }
-        Err(err) => {
-            say(sink, format_args!("cannot read the proxy row: {err}"));
-            return Err(1);
-        }
-    };
+    reload(deps, task)?;
     let Some(handle) = task_row.boxed.as_ref().and_then(|b| b.handle.clone()) else {
         say(sink, format_args!("task {} has no box", task.get()));
         return Err(1);
     };
-    Ok((task_row, row.nonce, row.box_port, handle))
+    Ok((task_row, handle))
+}
+
+/// Reads the proxy row's nonce and Box port, refusing with exit code 1 when the row is missing.
+fn reload(deps: &Deps<'_>, task: TaskId) -> Result<(Secret, u16), u8> {
+    match deps.store.proxy(task) {
+        Ok(Some(row)) => Ok((row.nonce, row.box_port)),
+        Ok(None) => {
+            say(
+                &deps.stderr,
+                format_args!("task {} has no proxy row", task.get()),
+            );
+            Err(1)
+        }
+        Err(err) => {
+            say(
+                &deps.stderr,
+                format_args!("cannot read the proxy row: {err}"),
+            );
+            Err(1)
+        }
+    }
 }
 
 /// Claims the lease and returns the owner token; `Err(0)` means another supervisor holds it.
@@ -166,8 +177,16 @@ fn listen(deps: &Deps<'_>, task: TaskId, nonce: Secret, worktree: &Path) -> Resu
 /// Claims the lease, starts the listener and tunnel, and marks the row ready.
 pub(super) fn begin<'d>(deps: &'d Deps<'d>, task: TaskId) -> Result<Running<'d>, u8> {
     let sink = &deps.stderr;
-    let (task_row, nonce, box_port, handle) = preflight(deps, task)?;
+    let (task_row, handle) = preflight(deps, task)?;
     let owner = claim(deps, task)?;
+    // Another `moor start` may have re-reserved the row before the claim, so read it again.
+    let (nonce, box_port) = match reload(deps, task) {
+        Ok(found) => found,
+        Err(code) => {
+            give_up(deps, task, &owner);
+            return Err(code);
+        }
+    };
     let worktree = PathBuf::from(task_row.worktree.as_deref().unwrap_or(&task_row.repo));
     let proxy = match listen(deps, task, nonce, &worktree) {
         Ok(proxy) => proxy,
