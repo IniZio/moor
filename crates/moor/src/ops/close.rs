@@ -13,7 +13,7 @@ use moor_core::decide::close::{
     close_gate, release_outcome, BoxCheck, CloseFacts, ClosePlan, ReleaseResult,
 };
 use moor_core::decide::transcript::Trigger;
-use moor_core::seam::driver::{ExecOutcome, ExecSpec, Released};
+use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec, Released};
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::{PaneRef, SurfaceError, WorkspaceRef};
 use moor_core::view::CloseView;
@@ -179,6 +179,10 @@ fn box_check(
             }
         }
         Ok(false) => {}
+        // The driver has forgotten the Box: nothing to save, and release treats it as deleted.
+        Err(e) if e.error.downcast_ref::<DriverError>() == Some(&DriverError::NotFound) => {
+            return Ok(BoxCheck::Skipped)
+        }
         Err(e) => {
             return Ok(BoxCheck::Unknown(format!(
                 "could not wake the Box: {}",
@@ -193,6 +197,7 @@ fn box_check(
     Ok(match probe(cx, row, b) {
         BoxWork::Clean => BoxCheck::Clean,
         BoxWork::Unsaved { ahead, dirty } => BoxCheck::Unsaved { ahead, dirty },
+        BoxWork::Gone => BoxCheck::Skipped,
         BoxWork::Unknown(why) => BoxCheck::Unknown(why),
     })
 }
