@@ -74,6 +74,7 @@ fn failing_teardown_warns_and_still_releases() {
         FakeDriver::new().exec_results([
             Ok(ExecOutcome::Exited { code: 0 }),
             Ok(ExecOutcome::Exited { code: 0 }),
+            Ok(ExecOutcome::Exited { code: 0 }),
             Ok(ExecOutcome::Exited { code: 3 }),
         ]),
         YAML,
@@ -89,6 +90,7 @@ fn failing_teardown_warns_and_still_releases() {
 fn teardown_driver_error_warns_and_still_releases() {
     let f = fx_yaml(
         FakeDriver::new().exec_results([
+            Ok(ExecOutcome::Exited { code: 0 }),
             Ok(ExecOutcome::Exited { code: 0 }),
             Ok(ExecOutcome::Exited { code: 0 }),
             Err(DriverError::Failed {
