@@ -26,6 +26,7 @@ use crate::store::{NewRun, RunOutcome, Store, StoreError, TaskRow};
 
 mod ready;
 mod record;
+mod sync;
 
 /// Longest a command may run before the driver gives up on it.
 const RUN_DEADLINE: Duration = Duration::from_hours(24);
@@ -40,6 +41,7 @@ pub(crate) fn run(cx: &Cx, req: &RunReq) -> Result<RunValue, CommandError> {
         return Err(CommandError::new(ErrorKind::Usage, "no command to run"));
     }
     record::usage(req)?;
+    sync::usage(req)?;
     let store = cx.store()?;
     let name = req.task.as_str();
     let found = store
@@ -82,11 +84,7 @@ fn launch(
     target: ready::Target,
 ) -> Result<RunValue, CommandError> {
     let cfg = settings(cx, &target.worktree, &Flags::default())?;
-    let sync = if req.no_sync {
-        SyncMode::None
-    } else {
-        SyncMode::Full
-    };
+    let sync = sync::choose(cx, store, req, row)?;
     let (sha, argv) = plan(cx, req, &target.worktree, &cfg.setup)?;
     let id = store.begin_run(NewRun {
         task: row.id,

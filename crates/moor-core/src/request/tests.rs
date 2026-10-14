@@ -9,6 +9,7 @@ fn n(s: &str) -> TaskName {
 }
 
 /// Variants carrying a task or arguments.
+#[allow(clippy::too_many_lines, reason = "one sample per request variant")]
 fn with_args() -> Vec<Request> {
     let t = || TaskReq { task: n("a") };
     vec![
@@ -25,6 +26,7 @@ fn with_args() -> Vec<Request> {
         Request::Run(RunReq {
             task: n("a"),
             no_sync: false,
+            sync: false,
             record: None,
             argv: vec!["ls".into()],
             inherit_output: false,
@@ -164,6 +166,7 @@ fn defaults_and_renames() {
         Request::Run(RunReq {
             task: n("a"),
             no_sync: false,
+            sync: false,
             record: None,
             argv: vec![],
             inherit_output: false,
@@ -179,13 +182,14 @@ fn none_fields_omitted() {
 
 #[test]
 fn run_argv_roundtrips() {
-    let v = json!({"cmd":"run","task":"a","no_sync":false,"argv":["ls","-la"]});
+    let v = json!({"cmd":"run","task":"a","no_sync":false,"sync":false,"argv":["ls","-la"]});
     let r: Request = serde_json::from_value(v.clone()).unwrap();
     assert_eq!(
         r,
         Request::Run(RunReq {
             task: n("a"),
             no_sync: false,
+            sync: false,
             record: None,
             argv: vec!["ls".into(), "-la".into()],
             inherit_output: false,
@@ -201,6 +205,7 @@ fn run_inherit_output_is_not_settable_from_json() {
     let r = RunReq {
         task: n("a"),
         no_sync: false,
+        sync: false,
         record: None,
         argv: vec![],
         inherit_output: true,
@@ -228,4 +233,31 @@ fn gate_command_is_optional_on_the_wire() {
     let text = serde_json::to_string(&with).unwrap();
     assert!(text.contains(r#""command":"make lint""#), "{text}");
     assert_eq!(serde_json::from_str::<Request>(&text).unwrap(), with);
+}
+
+#[test]
+fn run_sync_flag_parses_and_defaults_off() {
+    let with: Request =
+        serde_json::from_str(r#"{"cmd":"run","task":"a","sync":true,"argv":["ls"]}"#).unwrap();
+    assert_eq!(
+        with,
+        Request::Run(RunReq {
+            task: n("a"),
+            no_sync: false,
+            sync: true,
+            record: None,
+            argv: vec!["ls".into()],
+            inherit_output: false,
+        })
+    );
+    let without: Request = serde_json::from_str(r#"{"cmd":"run","task":"a"}"#).unwrap();
+    let want = Request::Run(RunReq {
+        task: n("a"),
+        no_sync: false,
+        sync: false,
+        record: None,
+        argv: vec![],
+        inherit_output: false,
+    });
+    assert_eq!(without, want);
 }
