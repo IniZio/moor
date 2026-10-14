@@ -78,9 +78,7 @@ mod tests {
         let pid = child.id();
         child.kill().unwrap();
         child.wait().unwrap();
-        let Err(ProcError::Spawn(e)) = send_group(pid, GroupSignal::Term) else {
-            panic!("expected a spawn error");
-        };
-        assert_eq!(e.kind(), io::ErrorKind::NotFound);
+        let err = send_group(pid, GroupSignal::Term).unwrap_err();
+        assert!(matches!(err, ProcError::Spawn(ref e) if e.kind() == io::ErrorKind::NotFound));
     }
 }

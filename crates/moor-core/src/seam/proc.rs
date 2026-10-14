@@ -364,6 +364,11 @@ pub trait Proc: Send + Sync {
         )))
     }
 
+    /// Identifier of the current host boot; `None` where the host has none.
+    fn boot_id(&self) -> Option<String> {
+        None
+    }
+
     /// Whether a process with this pid exists.
     fn alive(&self, pid: u32) -> bool;
 }

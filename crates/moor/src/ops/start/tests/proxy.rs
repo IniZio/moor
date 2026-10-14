@@ -14,7 +14,7 @@ use super::relaunch::{gone, started};
 use super::{req, world, World};
 use crate::ops::common::proxy::{log_path, LEASE, TAIL_LINES, WAIT};
 use crate::ops::start::run;
-use crate::store::{Fenced, ProxyPorts, Store};
+use crate::store::{Fenced, ProxyPorts, ReadyProc, Store};
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
@@ -37,7 +37,16 @@ pub(super) fn supervise(state: PathBuf) -> impl Fn(&DaemonCall) + Send + Sync + 
             host_port: HOST_PORT,
         };
         let applied = store
-            .mark_ready(task, owner, ports, d.pid, "fake-handle")
+            .mark_ready(
+                task,
+                owner,
+                ports,
+                ReadyProc {
+                    pid: d.pid,
+                    handle: "fake-handle",
+                    boot_id: None,
+                },
+            )
             .unwrap();
         assert_eq!(applied, Fenced::Applied);
     }

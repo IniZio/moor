@@ -152,6 +152,7 @@ fn run_proxy(env: &Env, task: TaskId, sink: &Sink) -> Result<u8, String> {
         model,
         upstreams,
         state_dir,
+        boot_id: proc.boot_id(),
         origin_of: origin_of(proc),
         stop,
         stderr: Arc::clone(sink),

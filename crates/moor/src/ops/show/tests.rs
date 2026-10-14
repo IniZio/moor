@@ -20,7 +20,7 @@ use super::run;
 use crate::cx::Cx;
 use crate::ops::common::activity::{self, Reading};
 use crate::ops::common::proxy::LEASE;
-use crate::store::{Fenced, NewRun, ProxyPorts, Store};
+use crate::store::{Fenced, NewRun, ProxyPorts, ReadyProc, Store};
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
@@ -447,7 +447,16 @@ fn start_cx(dir: &Path, driver: &Arc<FakeDriver>) -> Cx {
             host_port: 41000,
         };
         let applied = store
-            .mark_ready(task, "fake-supervisor", ports, d.pid, "fake-handle")
+            .mark_ready(
+                task,
+                "fake-supervisor",
+                ports,
+                ReadyProc {
+                    pid: d.pid,
+                    handle: "fake-handle",
+                    boot_id: None,
+                },
+            )
             .unwrap();
         assert_eq!(applied, Fenced::Applied);
     });
