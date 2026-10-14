@@ -1,5 +1,6 @@
 //! Startup, heartbeat and shutdown of one supervised proxy.
 
+use std::cell::RefCell;
 use std::fmt::Arguments;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, PoisonError};
@@ -34,19 +35,25 @@ pub(super) enum Stop {
 /// A proxy that is up: lease held, listener bound, tunnel open, row ready.
 pub(super) struct Running<'d> {
     /// Collaborators.
-    deps: &'d Deps<'d>,
+    pub(super) deps: &'d Deps<'d>,
     /// The supervised Task.
-    task: TaskId,
+    pub(super) task: TaskId,
     /// Lease owner token.
-    owner: String,
+    pub(super) owner: String,
     /// The loopback listener.
-    proxy: Proxy,
+    pub(super) proxy: Proxy,
     /// The reverse tunnel; dropping it stops the tunnel.
-    tunnel: Box<dyn TunnelHandle>,
+    pub(super) tunnel: RefCell<Box<dyn TunnelHandle>>,
+    /// The Box the tunnel leads into.
+    pub(super) handle: BoxHandle,
+    /// The Box port the tunnel exposes.
+    pub(super) box_port: u16,
+    /// Host working directory for the tunnel process.
+    pub(super) worktree: PathBuf,
 }
 
 /// Writes one `moor proxy: ` line to `sink`, ignoring write errors and a poisoned lock.
-fn say(sink: &Sink, args: Arguments<'_>) {
+pub(super) fn say(sink: &Sink, args: Arguments<'_>) {
     drop(writeln!(
         sink.lock().unwrap_or_else(PoisonError::into_inner),
         "moor proxy: {args}"
@@ -170,6 +177,10 @@ pub(super) fn begin<'d>(deps: &'d Deps<'d>, task: TaskId) -> Result<Running<'d>,
             return Err(1);
         }
     };
+    if let Err(code) = renew(deps, task, &owner) {
+        proxy.shutdown();
+        return Err(code);
+    }
     let tunnel = match deps
         .driver
         .reverse_tunnel(&handle, box_port, proxy.port(), &worktree)
@@ -189,42 +200,91 @@ pub(super) fn begin<'d>(deps: &'d Deps<'d>, task: TaskId) -> Result<Running<'d>,
         box_port,
         host_port: proxy.port(),
     };
-    match deps
-        .store
-        .mark_ready(task, &owner, ports, std::process::id(), handle.as_str())
-    {
-        Ok(Fenced::Applied) => Ok(Running {
-            deps,
-            task,
-            owner,
-            proxy,
-            tunnel,
-        }),
-        Ok(Fenced::LostLease) => {
-            drop(tunnel);
-            proxy.shutdown();
+    if let Err(code) = mark(deps, task, &owner, ports, &handle) {
+        drop(tunnel);
+        proxy.shutdown();
+        return Err(code);
+    }
+    Ok(Running {
+        deps,
+        task,
+        owner,
+        proxy,
+        tunnel: RefCell::new(tunnel),
+        handle,
+        box_port,
+        worktree,
+    })
+}
+
+/// Extends the lease during startup; `Err` carries the exit code, with the lease given up unless it was lost.
+fn renew(deps: &Deps<'_>, task: TaskId, owner: &str) -> Result<(), u8> {
+    match deps.store.heartbeat(task, owner) {
+        Ok(true) => Ok(()),
+        Ok(false) => {
+            say(
+                &deps.stderr,
+                format_args!("another supervisor took the lease; stopping"),
+            );
             Err(1)
         }
         Err(err) => {
-            say(sink, format_args!("cannot mark the proxy ready: {err}"));
-            drop(tunnel);
-            proxy.shutdown();
-            give_up(deps, task, &owner);
+            say(&deps.stderr, format_args!("heartbeat failed: {err}"));
+            give_up(deps, task, owner);
+            Err(1)
+        }
+    }
+}
+
+/// Marks the row ready; `Err` carries the exit code, with the lease given up unless it was lost.
+fn mark(
+    deps: &Deps<'_>,
+    task: TaskId,
+    owner: &str,
+    ports: ProxyPorts,
+    handle: &BoxHandle,
+) -> Result<(), u8> {
+    renew(deps, task, owner)?;
+    match deps
+        .store
+        .mark_ready(task, owner, ports, std::process::id(), handle.as_str())
+    {
+        Ok(Fenced::Applied) => Ok(()),
+        Ok(Fenced::LostLease) => {
+            say(
+                &deps.stderr,
+                format_args!("another supervisor took the lease; stopping"),
+            );
+            Err(1)
+        }
+        Err(err) => {
+            say(
+                &deps.stderr,
+                format_args!("cannot mark the proxy ready: {err}"),
+            );
+            give_up(deps, task, owner);
             Err(1)
         }
     }
 }
 
 impl Running<'_> {
-    /// Heartbeats and checks the Task and tunnel; `None` means keep running.
-    pub(super) fn tick(&self) -> Option<Stop> {
+    /// Extends the lease; `None` means it is still held.
+    pub(super) fn beat(&self) -> Option<Stop> {
         match self.deps.store.heartbeat(self.task, &self.owner) {
-            Ok(true) => {}
-            Ok(false) => return Some(Stop::LostLease),
+            Ok(true) => None,
+            Ok(false) => Some(Stop::LostLease),
             Err(err) => {
                 say(&self.deps.stderr, format_args!("heartbeat failed: {err}"));
-                return Some(Stop::Failed);
+                Some(Stop::Failed)
             }
+        }
+    }
+
+    /// Heartbeats and checks the Task and tunnel; `None` means keep running.
+    pub(super) fn tick(&self) -> Option<Stop> {
+        if let stop @ Some(_) = self.beat() {
+            return stop;
         }
         match self.deps.store.task(self.task) {
             Ok(Some(row)) if !terminal(row.state) => {}
@@ -237,14 +297,10 @@ impl Running<'_> {
                 return Some(Stop::Failed);
             }
         }
-        if !self.tunnel.alive() {
-            say(
-                &self.deps.stderr,
-                format_args!("the tunnel into the box exited; stopping"),
-            );
-            return Some(Stop::TunnelDead);
+        if self.tunnel.borrow().alive() {
+            return None;
         }
-        None
+        self.revive()
     }
 
     /// Stops the tunnel and listener, tidies the row for `stop` and returns the exit code.
@@ -255,6 +311,7 @@ impl Running<'_> {
             owner,
             proxy,
             tunnel,
+            ..
         } = self;
         drop(tunnel);
         proxy.shutdown();

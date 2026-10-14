@@ -23,34 +23,34 @@ use crate::testing::forge::FakeForge;
 use crate::testing::rng::FakeRng;
 
 const NONCE: &[u8] = b"NONCE-abc123";
-const NONCE_TEXT: &str = "NONCE-abc123";
-const ORIGIN: &str = "git@example.invalid:o/n.git";
+pub(super) const NONCE_TEXT: &str = "NONCE-abc123";
+pub(super) const ORIGIN: &str = "git@example.invalid:o/n.git";
 const WORKTREE: &str = "/wt";
-const FIRST_TUNNEL_PID: u32 = 50_000;
+pub(super) const FIRST_TUNNEL_PID: u32 = 50_000;
 
 /// Everything a supervisor run needs, owned in one place.
-struct World {
+pub(super) struct World {
     /// Keeps the state directory alive.
-    dir: tempfile::TempDir,
+    pub(super) dir: tempfile::TempDir,
     /// Shared with the store and the supervisor.
-    clock: Arc<FakeClock>,
+    pub(super) clock: Arc<FakeClock>,
     /// Task and proxy storage.
-    store: Store,
+    pub(super) store: Store,
     /// Fake box driver with reverse tunnels enabled.
-    driver: FakeDriver,
+    pub(super) driver: FakeDriver,
     /// Random source for port draws.
-    rng: FakeRng,
+    pub(super) rng: FakeRng,
     /// Stop flag handed to the supervisor.
-    stop: Arc<AtomicBool>,
+    pub(super) stop: Arc<AtomicBool>,
     /// Bytes the supervisor wrote to stderr.
-    err: Arc<Mutex<Vec<u8>>>,
+    pub(super) err: Arc<Mutex<Vec<u8>>>,
     /// The task under test.
-    id: TaskId,
+    pub(super) id: TaskId,
 }
 
 impl World {
     /// A working task with a live box, a worktree and a reserved proxy row.
-    fn new(replies: impl IntoIterator<Item = TunnelReply>) -> Self {
+    pub(super) fn new(replies: impl IntoIterator<Item = TunnelReply>) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
         let store = Store::open(&dir.path().join("moor.db"), clock.clone()).unwrap();
@@ -75,12 +75,12 @@ impl World {
     }
 
     /// Dependencies wired to this world's fakes.
-    fn deps(&self) -> Deps<'_> {
+    pub(super) fn deps(&self) -> Deps<'_> {
         self.deps_with(self.clock.clone())
     }
 
     /// Dependencies using `clock` instead of the plain fake clock.
-    fn deps_with(&self, clock: Arc<dyn Clock>) -> Deps<'_> {
+    pub(super) fn deps_with(&self, clock: Arc<dyn Clock>) -> Deps<'_> {
         let forge = FakeForge::new()
             .with_repo(ORIGIN, ForgeRepo::new("o", "n"))
             .with_token(ForgeRepo::new("o", "n"), b"gh-token");
@@ -103,17 +103,17 @@ impl World {
     }
 
     /// The proxy row, which must exist.
-    fn row(&self) -> ProxyRow {
+    pub(super) fn row(&self) -> ProxyRow {
         self.store.proxy(self.id).unwrap().unwrap()
     }
 
     /// Everything written to stderr so far.
-    fn stderr(&self) -> String {
+    pub(super) fn stderr(&self) -> String {
         String::from_utf8_lossy(&self.err.lock().unwrap()).into_owned()
     }
 
     /// Mark the task closed and its box released.
-    fn close_task(&self) {
+    pub(super) fn close_task(&self) {
         let d = Decision::new(self.id)
             .task_input(TaskInput::Close)
             .box_input(BoxInput::Released);
@@ -121,7 +121,7 @@ impl World {
     }
 
     /// The proxy log file contents, empty when none was written.
-    fn log(&self) -> String {
+    pub(super) fn log(&self) -> String {
         let path: PathBuf = self
             .dir
             .path()
@@ -131,7 +131,7 @@ impl World {
     }
 
     /// Proxy events recorded for the task.
-    fn started_events(&self) -> Vec<serde_json::Value> {
+    pub(super) fn started_events(&self) -> Vec<serde_json::Value> {
         let events = self.store.events(self.id, 50).unwrap();
         let started = events.into_iter().filter(|e| e.kind == "proxy_started");
         started.map(|e| e.payload).collect()
@@ -348,7 +348,7 @@ fn lost_lease_exits_one_and_leaves_the_new_owners_row_untouched() {
 
 #[test]
 fn dead_tunnel_releases_the_lease_keeps_the_row_and_exits_one() {
-    let w = World::new([]);
+    let w = World::new(unrestartable());
     let deps = w.deps();
     let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
 
@@ -462,4 +462,15 @@ fn task_without_a_box_handle_is_refused_with_a_stderr_line() {
 
     assert!(!w.stderr().trim().is_empty());
     assert!(w.driver.tunnels().is_empty());
+}
+
+/// The first tunnel comes up; every restart attempt fails.
+pub(super) fn unrestartable() -> Vec<TunnelReply> {
+    let fail = TunnelReply::EarlyExit {
+        code: 1,
+        stderr: "refused".into(),
+    };
+    std::iter::once(TunnelReply::Ready)
+        .chain(std::iter::repeat_n(fail, 5))
+        .collect()
 }

@@ -8,6 +8,7 @@ mod creds;
 mod run;
 #[cfg(test)]
 mod tests;
+mod tunnel;
 
 use std::io::Write;
 use std::path::Path;
