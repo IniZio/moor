@@ -1,21 +1,29 @@
 //! Module layering check: which crate modules may name which others.
 
+mod confine;
+
+pub use confine::{escapes, Confine};
+
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use syn::visit::Visit;
+
 use syn::{Attribute, ImplItemFn, Item, ItemMod, ItemUse, UseTree};
 
-/// One `crate::`, `self::` or `super::` mention, resolved to crate-relative segments.
+/// One path mention: `crate::`/`self::`/`super::` resolved to crate-relative
+/// segments, or any other first segment kept as an external identifier.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ref {
     /// Source line of the first path segment.
     pub line: usize,
     /// Module containing the mention.
     pub from: Vec<String>,
-    /// Module path the mention names, below the crate root.
+    /// Module path the mention names, below the crate root (empty when `ext` is set).
     pub to: Vec<String>,
+    /// First segment when it is neither `crate`, `self` nor `super`.
+    pub ext: Option<String>,
 }
 
 /// A layering rule: `module` may use only `allowed` (plus its own tree).
@@ -29,7 +37,12 @@ pub struct Rule {
     pub allowed: Vec<Vec<String>>,
 }
 
-fn split(path: &str) -> Vec<String> {
+/// Splits a comma-separated module list, dropping blanks.
+pub(crate) fn list(cell: &str) -> impl Iterator<Item = &str> {
+    cell.split(',').map(str::trim).filter(|s| !s.is_empty())
+}
+
+pub(crate) fn split(path: &str) -> Vec<String> {
     path.split("::")
         .filter(|s| !s.is_empty())
         .map(str::to_owned)
@@ -44,15 +57,22 @@ fn split(path: &str) -> Vec<String> {
 /// (empty = none). A module not listed is unconstrained; a module may always
 /// use itself. Blank lines are skipped.
 ///
+/// A row `extern:<ident><TAB>a::b,c::d` confines the external crate `<ident>`
+/// (`nono_proxy`): any path starting with it, in the crate of the listed
+/// modules, is a violation outside those modules and their trees. The list
+/// must be non-empty and name one crate.
+///
 /// # Errors
 /// Returns the offending line when the header is missing, a row does not have
-/// exactly two columns, or a module is not `crate::path` shaped.
-pub fn parse_rules(table: &str) -> Result<Vec<Rule>, String> {
+/// exactly two columns, a module is not `crate::path` shaped, or an `extern:`
+/// row has an empty ident, an empty list or modules from several crates.
+pub fn parse_rules(table: &str) -> Result<(Vec<Rule>, Vec<Confine>), String> {
     let mut lines = table.lines();
     if lines.next() != Some("module\tallowed") {
         return Err("bad header: first line must be `module<TAB>allowed`".to_string());
     }
     let mut rules = Vec::new();
+    let mut confines = Vec::new();
     for line in lines {
         if line.trim().is_empty() {
             continue;
@@ -64,15 +84,17 @@ pub fn parse_rules(table: &str) -> Result<Vec<Rule>, String> {
                 cols.len()
             ));
         };
+        if let Some(ident) = module.trim().strip_prefix("extern:") {
+            confines
+                .push(Confine::parse(ident, allowed).ok_or(format!("bad extern rule: {line}"))?);
+            continue;
+        }
         let mut full = split(module.trim());
         if full.is_empty() {
             return Err(format!("bad rule: {line}"));
         }
         let krate = full.remove(0);
-        let allowed = allowed
-            .split(',')
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
+        let allowed = list(allowed)
             .map(|s| split(s).into_iter().skip(1).collect())
             .collect();
         rules.push(Rule {
@@ -81,7 +103,7 @@ pub fn parse_rules(table: &str) -> Result<Vec<Rule>, String> {
             allowed,
         });
     }
-    Ok(rules)
+    Ok((rules, confines))
 }
 
 struct Collector {
@@ -144,13 +166,16 @@ impl Collector {
     }
 
     fn push(&mut self, line: usize, segs: &[String]) {
-        if let Some(to) = self.resolve(segs) {
-            self.out.push(Ref {
-                line,
-                from: self.module.clone(),
-                to,
-            });
-        }
+        let (to, ext) = match self.resolve(segs) {
+            Some(to) => (to, None),
+            None => (Vec::new(), segs.first().cloned()),
+        };
+        self.out.push(Ref {
+            line,
+            from: self.module.clone(),
+            to,
+            ext,
+        });
     }
 
     fn tree(&mut self, prefix: &mut Vec<String>, line: usize, t: &UseTree) {
@@ -234,7 +259,7 @@ pub fn refs(src: &str, file_module: &[String]) -> Result<Vec<Ref>, syn::Error> {
     Ok(c.out)
 }
 
-fn starts_with(path: &[String], prefix: &[String]) -> bool {
+pub(crate) fn starts_with(path: &[String], prefix: &[String]) -> bool {
     path.len() >= prefix.len() && path.iter().zip(prefix).all(|(a, b)| a == b)
 }
 
@@ -242,7 +267,7 @@ fn starts_with(path: &[String], prefix: &[String]) -> bool {
 #[must_use]
 pub fn violations<'a>(all: &'a [Ref], rule: &Rule) -> Vec<&'a Ref> {
     all.iter()
-        .filter(|r| starts_with(&r.from, &rule.module))
+        .filter(|r| r.ext.is_none() && starts_with(&r.from, &rule.module))
         .filter(|r| {
             let related = starts_with(&r.to, &rule.module) || starts_with(&rule.module, &r.to);
             !related && !rule.allowed.iter().any(|a| starts_with(&r.to, a))
@@ -308,16 +333,16 @@ fn crate_dir(root: &Path, name: &str) -> Option<PathBuf> {
 /// # Errors
 /// Returns a message when a crate directory, a source file or a rule cannot be read or parsed.
 pub fn check(root: &Path, table: &str) -> Result<(usize, Vec<String>), String> {
-    let rules = parse_rules(table)?;
-    let crates: BTreeSet<&str> = rules.iter().map(|r| r.krate.as_str()).collect();
+    let (rules, confines) = parse_rules(table)?;
+    let all_krates = rules
+        .iter()
+        .map(|r| &r.krate)
+        .chain(confines.iter().map(|c| &c.krate));
+    let crates: BTreeSet<&str> = all_krates.map(String::as_str).collect();
     let mut bad = Vec::new();
     for krate in crates {
-        let ruled = rules.iter().any(|r| r.krate == krate);
         let Some(dir) = crate_dir(root, krate) else {
-            if ruled {
-                return Err(format!("no crate dir for {krate}"));
-            }
-            continue;
+            return Err(format!("no crate dir for {krate}"));
         };
         let src = dir.join("src");
         let mut files = BTreeSet::new();
@@ -331,23 +356,30 @@ pub fn check(root: &Path, table: &str) -> Result<(usize, Vec<String>), String> {
             owner.extend(std::iter::repeat_n(f.clone(), found.len()));
             all.extend(found);
         }
-        let rel = |p: &PathBuf| p.strip_prefix(root).unwrap_or(p).display().to_string();
+        let mut report = |r: &Ref, what: String| {
+            let idx = all.iter().position(|x| std::ptr::eq(x, r)).unwrap_or(0);
+            let file = owner[idx].strip_prefix(root).unwrap_or(&owner[idx]);
+            bad.push(format!("layering: {}:{} {what}", file.display(), r.line));
+        };
+        for c in confines.iter().filter(|c| c.krate == krate) {
+            let within: Vec<String> = c.within.iter().map(|w| w.join("::")).collect();
+            for r in escapes(&all, c) {
+                let from = r.from.join("::");
+                let to = within.join(", ");
+                report(
+                    r,
+                    format!("{krate}::{from} names {}, confined to {to}", c.ident),
+                );
+            }
+        }
         for rule in rules.iter().filter(|r| r.krate == krate) {
             for r in violations(&all, rule) {
-                let idx = all.iter().position(|x| std::ptr::eq(x, r)).unwrap_or(0);
-                bad.push(format!(
-                    "layering: {}:{} {}::{} uses {}::{}",
-                    rel(&owner[idx]),
-                    r.line,
-                    rule.krate,
-                    rule.module.join("::"),
-                    rule.krate,
-                    r.to.join("::"),
-                ));
+                let (m, to) = (rule.module.join("::"), r.to.join("::"));
+                report(r, format!("{krate}::{m} uses {krate}::{to}"));
             }
         }
     }
-    Ok((rules.len(), bad))
+    Ok((rules.len() + confines.len(), bad))
 }
 
 #[cfg(test)]

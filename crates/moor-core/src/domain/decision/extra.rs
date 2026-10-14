@@ -303,6 +303,8 @@ impl TryFrom<Event> for ExtraEvent {
             | Event::SettingUp { .. }
             | Event::Working
             | Event::CredentialFailed { .. }
+            | Event::EgressRefused { .. }
+            | Event::ProxyCredentialFailed { .. }
             | Event::Idled
             | Event::Busy
             | Event::Asleep { .. }
