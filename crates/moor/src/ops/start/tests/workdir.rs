@@ -64,3 +64,22 @@ fn a_custom_work_root_is_the_root_of_the_probed_workdir() {
     assert_eq!(stored, "/w/cbx_1/demo");
     assert!(setup.iter().all(|c| c.as_deref() == Some("/w/cbx_1/demo")));
 }
+
+#[test]
+fn every_box_exec_runs_from_the_task_worktree() {
+    // crabbox derives its claim root from the host cwd, so a stray cwd gets the lease refused.
+    let (w, v) = start(FakeDriver::new());
+    let row = w.cx.store().unwrap().task(TaskId::new(v.task.id));
+    let worktree = std::path::PathBuf::from(row.unwrap().unwrap().worktree.unwrap());
+    let execs = w.driver.execs();
+    assert!(execs.iter().any(|(_, s, _)| s.argv[0] == "git"));
+    assert!(execs.iter().any(|(_, s, _)| s.argv[0] == "sh"));
+    for (_, spec, _) in &execs {
+        assert_eq!(
+            spec.host_cwd.as_deref(),
+            Some(worktree.as_path()),
+            "{:?}",
+            spec.argv
+        );
+    }
+}
