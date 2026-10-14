@@ -19,6 +19,7 @@ use crate::testing::proc::{Reply, ScriptedProc};
 use crate::testing::surface::FakeSurface;
 
 mod activity;
+mod base;
 mod capacity;
 mod dotfiles;
 mod egress;

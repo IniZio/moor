@@ -23,6 +23,7 @@ struct State {
     workspaces: Vec<String>,
     panes: Vec<String>,
     calls: Vec<String>,
+    bases: Vec<Option<String>>,
     obs: HashMap<String, VecDeque<Result<PaneObs, SurfaceError>>>,
     opens: Vec<PaneCmd>,
     fail_ensure: Option<SurfaceError>,
@@ -125,6 +126,11 @@ impl FakeSurface {
         self.st().on_pane_obs = Some(Arc::new(hook));
     }
 
+    /// The base each `create_worktree` was given.
+    pub(crate) fn bases(&self) -> Vec<Option<String>> {
+        self.st().bases.clone()
+    }
+
     /// Calls so far, like `create_worktree a` or `close_pane p-1`.
     pub(crate) fn calls(&self) -> Vec<String> {
         self.st().calls.clone()
@@ -136,10 +142,11 @@ impl Surface for FakeSurface {
         &self,
         _repo: &Path,
         name: &TaskName,
-        _base: Option<&str>,
+        base: Option<&str>,
     ) -> Result<Worktree, SurfaceError> {
         let mut s = self.st();
         s.calls.push(format!("create_worktree {}", name.as_str()));
+        s.bases.push(base.map(str::to_owned));
         let path = self.root.join("wt").join(name.as_str());
         s.worktrees.push(path.clone());
         Ok(Worktree {

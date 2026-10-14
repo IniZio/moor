@@ -9,6 +9,12 @@ use moor_core::seam::proc::{Deadline, Proc, ProcError, ProcSpec, Tool};
 /// Time limit for each git call.
 const DEADLINE: Deadline = Deadline(Duration::from_secs(30));
 
+/// Time limit for fetching the remote default branch.
+const FETCH_DEADLINE: Deadline = Deadline(Duration::from_secs(20));
+
+/// The remote moor bases new Tasks on.
+const REMOTE: &str = "origin";
+
 /// Scratch directories kept out of a Task worktree's status.
 const SCRATCH_DIRS: [&str; 2] = [".crabbox/", ".moor/"];
 
@@ -81,6 +87,32 @@ impl Git {
     pub(crate) fn head(&self, dir: &Path) -> Result<String, GitError> {
         let out = self.run(dir, &["rev-parse", "HEAD"])?;
         Ok(out.trim().to_owned())
+    }
+
+    /// Fetches the remote's default branch and returns the remote-tracking ref and its commit.
+    ///
+    /// `None` when the repository has no remote default branch to follow.
+    ///
+    /// # Errors
+    /// [`GitError::Failed`] when the fetch fails or times out.
+    pub(crate) fn fetch_default(&self, repo: &Path) -> Result<Option<(String, String)>, GitError> {
+        let head = format!("refs/remotes/{REMOTE}/HEAD");
+        let Ok(out) = self.exec(repo, &["symbolic-ref", "--short", &head], DEADLINE) else {
+            return Ok(None);
+        };
+        let tracking = out.trim();
+        let Some(branch) = tracking
+            .strip_prefix(REMOTE)
+            .and_then(|b| b.strip_prefix('/'))
+            .filter(|b| !b.is_empty())
+        else {
+            return Ok(None);
+        };
+        let args = ["fetch", REMOTE, branch];
+        self.exec(repo, &args, FETCH_DEADLINE)
+            .map_err(|e| Self::failure(&args, e))?;
+        let sha = self.run(repo, &["rev-parse", tracking])?;
+        Ok(Some((tracking.to_owned(), sha.trim().to_owned())))
     }
 
     /// Commits reachable from HEAD that neither `base` nor any remote-tracking
@@ -172,7 +204,7 @@ impl Git {
     /// One config value; git exits 1 for a missing key, which is `None`.
     fn config_value(&self, cwd: &Path, key: &str) -> Result<Option<String>, GitError> {
         let args = ["config", "--get", key];
-        match self.exec(cwd, &args) {
+        match self.exec(cwd, &args, DEADLINE) {
             Ok(out) => Ok(Some(out.trim().to_owned()).filter(|v| !v.is_empty())),
             Err(ProcError::NonZero { code: 1, .. }) => Ok(None),
             Err(e) => Err(Self::failure(&args, e)),
@@ -181,12 +213,13 @@ impl Git {
 
     /// Runs git in `cwd` and returns stdout.
     fn run(&self, cwd: &Path, args: &[&str]) -> Result<String, GitError> {
-        self.exec(cwd, args).map_err(|e| Self::failure(args, e))
+        self.exec(cwd, args, DEADLINE)
+            .map_err(|e| Self::failure(args, e))
     }
 
-    /// Runs git in `cwd`, keeping the raw process error.
-    fn exec(&self, cwd: &Path, args: &[&str]) -> Result<String, ProcError> {
-        let spec = ProcSpec::new(Tool::Git, DEADLINE)
+    /// Runs git in `cwd` within `deadline`, keeping the raw process error.
+    fn exec(&self, cwd: &Path, args: &[&str], deadline: Deadline) -> Result<String, ProcError> {
+        let spec = ProcSpec::new(Tool::Git, deadline)
             .args(args.iter().copied())
             .cwd(cwd);
         self.proc.run(&spec).map(|out| out.stdout)
