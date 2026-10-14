@@ -19,15 +19,16 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::capacity;
-use crate::ops::common::dotfiles::{self, DotfilesRun};
+use crate::ops::common::dotfiles;
 use crate::ops::common::facts::settings;
 use crate::ops::common::identity;
-use crate::ops::common::setup::{self, SetupRun};
+use crate::ops::common::setup;
 use crate::ops::common::view::task_view;
 use crate::store::{Store, TaskRow};
 
 use self::outcome::dotfiles_failed;
 pub(crate) use self::outcome::Provisioned;
+use self::retry::retry_dotfiles;
 
 /// Re-reads a Task row that must exist.
 ///
@@ -90,33 +91,14 @@ pub(crate) fn reprovision(
     row: &TaskRow,
     op: &str,
 ) -> Result<Option<Provisioned>, CommandError> {
-    let ready = row.boxed.as_ref().map(|b| b.state) == Some(BoxState::Ready);
-    if row.state == TaskState::SetupFailed && ready {
-        store.apply(Decision::new(row.id).task_input(TaskInput::Retry))?;
-        let at = row.worktree.as_deref().unwrap_or(&row.repo);
-        let cfg = settings(cx, Path::new(at), &Flags::default())?;
-        let handle = row.boxed.as_ref().and_then(|b| b.handle.as_ref());
-        let run = handle.map_or(Ok(DotfilesRun::Skipped), |h| {
-            dotfiles::apply(cx, h, row.id, Path::new(at), &cfg)
-        });
-        let dotfiles = match run {
-            Ok(run) => run,
-            Err(f) => return Err(dotfiles_failed(cx, store, row.id, true, f)),
-        };
-        let ok = TaskInput::BoxReady {
-            setup: SetupOutcome::Ok,
-        };
-        store.apply(Decision::new(row.id).task_input(ok))?;
-        return Ok(Some(Provisioned {
-            setup: SetupRun::Skipped,
-            dotfiles,
-        }));
-    }
-    if entry_for(row).is_none() && !setup_wanted(cx, row) {
+    if entry_for(row).is_none() && !setup_wanted(cx, row) && !dotfiles_retry(row) {
         return Ok(None);
     }
     let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, row.id, op, boxlock::WAIT)?;
     let row = reread(store, row.id)?;
+    if dotfiles_retry(&row) {
+        return retry_dotfiles(cx, store, &row).map(Some);
+    }
     let at = row.worktree.as_deref().unwrap_or(&row.repo);
     if let Some(entry) = entry_for(&row) {
         let cfg = settings(cx, Path::new(at), &Flags::default())?;
@@ -145,6 +127,12 @@ pub(crate) fn reprovision(
     Ok(Some(run_and_record(
         cx, store, row.id, advance, &target, &cfg,
     )?))
+}
+
+/// Whether the Task failed setup on a Box that is still ready, so only the dotfiles run again.
+fn dotfiles_retry(row: &TaskRow) -> bool {
+    row.state == TaskState::SetupFailed
+        && row.boxed.as_ref().map(|b| b.state) == Some(BoxState::Ready)
 }
 
 /// Rebuilds the Box path from the workdir text stored on the Task row.
@@ -377,5 +365,6 @@ fn failed(
 }
 
 mod outcome;
+mod retry;
 #[cfg(test)]
 mod tests;
