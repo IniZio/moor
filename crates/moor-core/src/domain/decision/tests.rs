@@ -103,11 +103,13 @@ fn extra_events_round_trip() {
             run: Some(RunId::new(2)),
             exit: Some(1),
             interrupted: false,
+            error: None,
         },
         ExtraEvent::Ran {
             run: None,
             exit: None,
             interrupted: false,
+            error: None,
         },
         ExtraEvent::Copied {
             from: "a".into(),

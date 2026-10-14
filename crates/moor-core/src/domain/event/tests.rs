@@ -71,6 +71,7 @@ fn all_events() -> Vec<Event> {
             run: Some(run),
             exit: Some(1),
             interrupted: false,
+            error: None,
         },
         Event::Copied {
             from: s("a"),
@@ -255,6 +256,7 @@ fn payload_carries_fields() {
         run: Some(RunId::new(7)),
         exit: None,
         interrupted: true,
+        error: None,
     };
     assert_eq!(
         e.payload(),
@@ -264,11 +266,22 @@ fn payload_carries_fields() {
         run: None,
         exit: None,
         interrupted: false,
+        error: None,
     };
     assert_eq!(e.kind(), "ran");
     assert_eq!(
         e.payload(),
         serde_json::json!({"run": null, "exit": null, "interrupted": false})
+    );
+    let e = Event::Ran {
+        run: Some(RunId::new(7)),
+        exit: None,
+        interrupted: false,
+        error: Some("busy".to_owned()),
+    };
+    assert_eq!(
+        e.payload(),
+        serde_json::json!({"run": 7, "exit": null, "interrupted": false, "error": "busy"})
     );
     let e = Event::Closed {
         from: TaskState::WaitingForBox,

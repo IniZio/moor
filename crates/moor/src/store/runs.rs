@@ -28,12 +28,25 @@ pub(crate) struct NewRun {
 }
 
 /// How a run ended.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RunOutcome {
     /// Exit code, if the command exited.
     pub(crate) exit: Option<i32>,
     /// True when the run was cut short.
     pub(crate) interrupted: bool,
+    /// Why the run failed before the command reported an exit.
+    pub(crate) error: Option<String>,
+}
+
+impl RunOutcome {
+    /// A run whose command reported `exit`, or was cut short.
+    pub(crate) const fn ended(exit: Option<i32>, interrupted: bool) -> Self {
+        Self {
+            exit,
+            interrupted,
+            error: None,
+        }
+    }
 }
 
 /// A stored run.
@@ -166,6 +179,7 @@ impl Store {
             run: Some(id),
             exit: out.exit,
             interrupted: out.interrupted,
+            error: out.error,
         };
         insert_event(&tx, task, &ran, now)?;
         tx.commit()?;
@@ -184,6 +198,7 @@ impl Store {
             run: None,
             exit: None,
             interrupted: false,
+            error: None,
         };
         insert_event(&tx, task, &ran, now)?;
         tx.commit()?;
@@ -215,11 +230,7 @@ impl Store {
                 found = Some(run);
                 continue;
             }
-            let out = RunOutcome {
-                exit: None,
-                interrupted: true,
-            };
-            self.finish_run(run.id, out)?;
+            self.finish_run(run.id, RunOutcome::ended(None, true))?;
         }
         Ok(found)
     }

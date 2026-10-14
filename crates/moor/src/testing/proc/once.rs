@@ -1,0 +1,25 @@
+//! One-shot scripted replies.
+
+use moor_core::seam::proc::Tool;
+
+use super::{Reply, Rule, ScriptedProc};
+
+impl ScriptedProc {
+    /// Like [`Self::on`], but the reply answers one call only; later calls fall to the next rule.
+    pub(crate) fn once(&self, tool: Tool, prefix: &[&str], reply: Reply) -> &Self {
+        self.push_rule(tool, prefix, reply, true)
+    }
+
+    pub(super) fn push_rule(&self, tool: Tool, prefix: &[&str], reply: Reply, once: bool) -> &Self {
+        let prefix = prefix.iter().map(|s| (*s).to_owned()).collect();
+        if let Ok(mut r) = self.rules.lock() {
+            r.push(Rule {
+                tool,
+                prefix,
+                reply,
+                once,
+            });
+        }
+        self
+    }
+}

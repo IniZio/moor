@@ -49,6 +49,7 @@ fn finish(store: &Store, run: RunId, exit: i32) {
     let out = RunOutcome {
         exit: Some(exit),
         interrupted: false,
+        error: None,
     };
     store.finish_run(run, out).unwrap();
 }
@@ -125,6 +126,7 @@ fn finishing_a_finished_run_changes_nothing() {
         RunOutcome {
             exit: None,
             interrupted: true,
+            error: None,
         },
     );
     assert!(unknown.is_err());

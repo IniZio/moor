@@ -13,7 +13,7 @@ const SSH_LINE: &str = "ssh -i '/k/id' -p '22' 'u@10.0.0.1'\n";
 const SECRET: &[u8] = b"token-123 it's $(x)\n";
 
 fn put(p: &Arc<ScriptedProc>, path: &str) -> Result<(), DriverError> {
-    Crabbox::new(p.clone()).put_file(
+    Crabbox::fake(p.clone()).put_file(
         &BoxHandle::new("p/box"),
         &BoxPath::restore(path).unwrap(),
         SECRET,

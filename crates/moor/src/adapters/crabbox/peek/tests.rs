@@ -13,7 +13,7 @@ const SSH_LINE: &str = "ssh -i '/k/id' -o 'BatchMode=yes' -p '22' -o 'ProxyComma
 
 fn fixture() -> (Arc<ScriptedProc>, Crabbox) {
     let p = Arc::new(ScriptedProc::new());
-    let c = Crabbox::new(p.clone());
+    let c = Crabbox::fake(p.clone());
     (p, c)
 }
 

@@ -75,7 +75,10 @@ fn parts(env: &Env) -> Result<CxParts, CommandError> {
         extra_env,
         Arc::clone(&clock) as Arc<dyn Clock>,
     ));
-    let driver: Arc<dyn Driver> = Arc::new(Crabbox::new(Arc::clone(&proc)));
+    let driver: Arc<dyn Driver> = Arc::new(Crabbox::new(
+        Arc::clone(&proc),
+        Arc::clone(&clock) as Arc<dyn Clock>,
+    ));
     let engine = BoxAgent::new(
         Arc::clone(&driver),
         Arc::clone(&surface),

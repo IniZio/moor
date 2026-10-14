@@ -19,13 +19,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::name::{BoxHandle, BoxPath, ProviderId};
+use moor_core::seam::clock::Clock;
 use moor_core::seam::driver::{
     AcquireReq, Acquired, BoxListing, Driver, DriverCaps, DriverError, EgressApplied, EgressPlan,
     ExecOutcome, ExecSpec, Released, SleepOutcome, TunnelHandle,
 };
-use moor_core::seam::proc::{Deadline, Proc, ProcOutput, ProcSpec, Tool};
+use moor_core::seam::proc::{Deadline, Proc, ProcError, ProcOutput, ProcSpec, Tool};
 
-use errors::{map_error, Op};
+use errors::{is_claim_race, map_error, Op};
 
 /// Time allowed for a warmup.
 const ACQUIRE_DEADLINE: Duration = Duration::from_mins(15);
@@ -51,12 +52,39 @@ const DEFAULT_SSH_PORT: u16 = 22;
 pub(crate) struct Crabbox {
     /// Spawner for every crabbox call.
     proc: Arc<dyn Proc>,
+    /// Source of the waits between claim race retries.
+    clock: Arc<dyn Clock>,
 }
 
 impl Crabbox {
     /// Wraps a spawner.
-    pub(crate) fn new(proc: Arc<dyn Proc>) -> Self {
-        Self { proc }
+    pub(crate) fn new(proc: Arc<dyn Proc>, clock: Arc<dyn Clock>) -> Self {
+        Self { proc, clock }
+    }
+
+    /// A driver whose waits advance a fake clock.
+    #[cfg(test)]
+    pub(crate) fn fake(proc: Arc<dyn Proc>) -> Self {
+        use crate::testing::clock::FakeClock;
+        use moor_core::seam::clock::Ts;
+        Self::new(proc, Arc::new(FakeClock::new(Ts::from_millis(0))))
+    }
+
+    /// Runs `call`, trying again while crabbox reports a claim race, up to three attempts.
+    fn retry_claim_race<T>(
+        &self,
+        mut call: impl FnMut() -> Result<T, ProcError>,
+    ) -> Result<T, ProcError> {
+        let mut attempt = 1;
+        loop {
+            match call() {
+                Err(e) if attempt < CLAIM_RACE_ATTEMPTS && is_claim_race(&e) => {
+                    self.clock.sleep(CLAIM_RACE_PAUSE * attempt);
+                    attempt += 1;
+                }
+                result => return result,
+            }
+        }
     }
 
     /// Runs one crabbox call, mapping failure through `op`.
@@ -74,6 +102,11 @@ impl Crabbox {
         ProcSpec::new(Tool::Crabbox, Deadline(deadline))
     }
 }
+
+/// Attempts a call gets when crabbox reports a claim race.
+const CLAIM_RACE_ATTEMPTS: u32 = 3;
+/// Pause before the first retry; each later retry waits one step longer.
+const CLAIM_RACE_PAUSE: Duration = Duration::from_millis(300);
 
 /// Per-Task Box name: `moor-{name}-{nonce}`.
 fn box_name(req: &AcquireReq) -> String {
