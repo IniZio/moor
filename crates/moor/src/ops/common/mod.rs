@@ -14,6 +14,7 @@ pub(crate) mod provision;
 pub(crate) mod provisioning;
 pub(crate) mod proxy;
 pub(crate) mod reconcile;
+pub(crate) mod reports;
 pub(crate) mod resume;
 pub(crate) mod setup;
 pub(crate) mod transcript;

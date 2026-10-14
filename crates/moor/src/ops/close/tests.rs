@@ -19,6 +19,7 @@ mod agent;
 mod boxwork;
 mod promote;
 mod proxy;
+mod reports;
 mod teardown;
 mod transcript;
 
