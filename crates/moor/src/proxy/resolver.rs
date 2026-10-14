@@ -126,6 +126,15 @@ impl Resolver {
             return Ok(hit);
         }
         let fresh = self.fetch(group)?;
+        if fresh.expose().trim_ascii().is_empty() {
+            return Err(ResolveError::Source {
+                origin: match group {
+                    Group::Model => MODEL_SOURCE,
+                    Group::Forge => FORGE_SOURCE,
+                },
+                reason: "the source returned an empty token".to_owned(),
+            });
+        }
         let copy = Secret::new(fresh.expose().to_vec());
         let now = self.clock.instant();
         *self.lock().slot(group) = Some((fresh, now));
