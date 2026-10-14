@@ -22,7 +22,6 @@ These commands work today:
   syncs only if the Box has no unsaved work; otherwise, or if that cannot be
   checked, it exits 125 and does not run: save the work first or use
   `--no-sync`, which never syncs. Not both. `--record NAME` records the run.
-
 - `moor wait NAME` waits for the Task to be idle, done, or finished with a
   run (`--for idle|done|run`). `--timeout S` bounds the wait.
 - `moor steer NAME TEXT` sends text, or `--menu N` a menu choice, to the
