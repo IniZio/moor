@@ -117,7 +117,8 @@ fn files_map_to_module_paths() {
 #[test]
 fn rule_table_parses() {
     let r = parse_rules("module\tallowed\nfake::domain\tfake::util, fake::x::y\nfake::solo\t\n")
-        .unwrap();
+        .unwrap()
+        .0;
     assert_eq!(r[0].allowed, vec![m("util"), m("x::y")]);
     assert!(r[1].allowed.is_empty());
 }
@@ -227,4 +228,67 @@ fn tests_rs_and_tests_dir_are_skipped() {
     rs_files(&root, &mut got).unwrap();
     fs::remove_dir_all(&root).unwrap();
     assert_eq!(got, BTreeSet::from([root.join("a.rs")]));
+}
+
+const ROW: &str = "module\tallowed\nextern:nono_proxy\tfake::proxy, fake::x::y\n";
+
+fn confine() -> Confine {
+    parse_rules(ROW).unwrap().1.remove(0)
+}
+
+fn escaped(src: &str, file_mod: &str) -> Vec<usize> {
+    let all = refs(src, &m(file_mod)).unwrap();
+    escapes(&all, &confine()).iter().map(|r| r.line).collect()
+}
+
+#[test]
+fn extern_row_parses() {
+    let c = confine();
+    assert_eq!((c.krate.as_str(), c.ident.as_str()), ("fake", "nono_proxy"));
+    assert_eq!(c.within, vec![m("proxy"), m("x::y")]);
+}
+
+#[test]
+fn extern_use_and_path_allowed_inside_module_tree() {
+    let src = "use nono_proxy::Config;\nfn f() { nono_proxy::start(); }";
+    assert!(escaped(src, "proxy").is_empty());
+    assert!(escaped(src, "proxy::nono").is_empty());
+    assert!(escaped(src, "x::y::z").is_empty());
+}
+
+#[test]
+fn extern_use_and_path_flagged_elsewhere() {
+    let src = "use nono_proxy::{A, B};\nfn f() { nono_proxy::start(); }\nuse other::C;";
+    assert_eq!(escaped(src, "wire"), vec![1, 1, 2]);
+    assert_eq!(escaped(src, "x"), vec![1, 1, 2]);
+}
+
+#[test]
+fn extern_absolute_path_is_flagged() {
+    assert_eq!(escaped("fn f() { ::nono_proxy::go(); }", "wire"), vec![1]);
+}
+
+#[test]
+fn extern_in_cfg_test_is_skipped() {
+    let src =
+        "#[cfg(test)]\nmod t { use nono_proxy::A; }\n#[cfg(test)]\nfn f() { nono_proxy::go(); }";
+    assert!(escaped(src, "wire").is_empty());
+}
+
+#[test]
+fn extern_does_not_trip_module_rules() {
+    assert!(bad("use nono_proxy::A;", "domain").is_empty());
+}
+
+#[test]
+fn bad_extern_rows_are_rejected() {
+    for row in [
+        "extern:\tfake::proxy",
+        "extern:nono\t",
+        "extern:nono\tfake",
+        "extern:nono\tfake::a, other::b",
+    ] {
+        let err = parse_rules(&format!("module\tallowed\n{row}\n")).unwrap_err();
+        assert!(err.contains("bad extern rule"), "{row}: {err}");
+    }
 }
