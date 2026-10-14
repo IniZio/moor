@@ -39,13 +39,20 @@ pub fn boxwork_script(saved: &[&str]) -> Option<String> {
         acc
     });
     // A result file from an earlier probe is removed first so it is never read as fresh.
-    // `--ignore-missing` makes a saved sha absent from the Box object db harmless.
+    // Lazy fetch is off because a partial clone with an unreachable origin would hang the probe.
+    // Saved shas absent from the Box are dropped so rev-list never looks for a missing object.
+    // `--no-renames` splits a rename into delete and add, so a move out of `.moor/` still counts.
     // A status line is `XY path`; paths under `.moor/` are moor's own and never count.
     Some(format!(
-        r#"rm -f {BOXWORK_FILE}
+        r#"export GIT_NO_LAZY_FETCH=1
+rm -f {BOXWORK_FILE}
 mkdir -p .moor || exit 1
-ahead=$(git rev-list --count --ignore-missing HEAD --not --remotes{shas}) || exit 1
-st=$(git status --porcelain) || exit 1
+keep=
+for s in{shas}; do
+  git cat-file -e "$s^{{commit}}" 2>/dev/null && keep="$keep $s"
+done
+ahead=$(git rev-list --count HEAD --not --remotes $keep) || exit 1
+st=$(git status --porcelain --no-renames) || exit 1
 if [ -z "$st" ]; then
   dirty=0
 else
