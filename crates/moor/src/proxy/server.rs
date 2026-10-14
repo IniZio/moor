@@ -19,6 +19,7 @@ mod deadline;
 mod framing;
 
 use deadline::DeadlineReader;
+pub(crate) use framing::body_cap;
 use framing::BodyLen;
 
 /// Total time a client gets to send a complete request head, however slowly

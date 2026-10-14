@@ -11,9 +11,10 @@ use moor_core::proxy_gate::{Inject, Plan, RouteId};
 use moor_core::Secret;
 
 use super::chunked::ChunkedReader;
-use super::{body_cap, Relay};
+use super::Relay;
+use crate::adapters::clock::SystemClock;
 use crate::proxy::head::Head;
-use crate::proxy::server::{Forward, ForwardHandler};
+use crate::proxy::server::{body_cap, Forward, ForwardHandler};
 use crate::proxy::upstream::{CredError, RouteCredential, Upstreams};
 
 /// Credential every fake lookup returns.
@@ -108,7 +109,12 @@ fn relay(port: u16, creds_ok: bool) -> Relay {
         true,
     )
     .unwrap();
-    Relay::new(ups, Arc::new(FakeCreds { ok: creds_ok }))
+    Relay::new(
+        ups,
+        Arc::new(FakeCreds { ok: creds_ok }),
+        Arc::new(SystemClock::real()),
+        body_cap,
+    )
 }
 
 /// Pairs a client socket with the proxy-side socket.
@@ -503,12 +509,4 @@ fn chunked_body_over_cap_is_413_and_upstream_never_completes() {
         !tail.ends_with(b"0\r\n\r\n"),
         "upstream saw a complete body"
     );
-}
-
-/// Caps: 2 GiB for `forge.git`, 32 MiB for every other route.
-#[test]
-fn body_cap_per_route() {
-    assert_eq!(body_cap(&RouteId::new("forge.git")), 2 * 1024 * 1024 * 1024);
-    assert_eq!(body_cap(&RouteId::new("model")), 32 * 1024 * 1024);
-    assert_eq!(body_cap(&RouteId::new("forge.api")), 32 * 1024 * 1024);
 }

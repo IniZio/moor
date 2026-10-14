@@ -51,7 +51,7 @@ pub(super) fn body_len(headers: &[(String, String)]) -> Result<BodyLen, Ambiguou
 }
 
 /// Largest declared body accepted on `route`, in bytes.
-pub(super) fn body_cap(route: &RouteId) -> u64 {
+pub(crate) fn body_cap(route: &RouteId) -> u64 {
     if route.as_str() == GIT_ROUTE {
         GIT_BODY_CAP
     } else {
