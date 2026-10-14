@@ -103,6 +103,17 @@ fn sync_is_refused_when_the_probe_cannot_tell() {
 }
 
 #[test]
+fn sync_is_refused_when_the_box_is_gone() {
+    let gone = probe_result("ahead=0 dirty=0").fail_peek(DriverError::NotFound);
+    let f = ready_with(gone);
+    let e = run(&f.cx, &sync_req()).unwrap_err();
+    assert_eq!(e.kind, ErrorKind::Refused, "{e:?}");
+    assert!(e.error.to_string().contains("gone"), "{e:?}");
+    assert_eq!(user_execs(&f), 0);
+    assert!(f.cx.store().unwrap().last_run(f.id).unwrap().is_none());
+}
+
+#[test]
 fn sync_with_no_sync_is_usage() {
     let f = ready_with(probe_result("ahead=0 dirty=0"));
     let mut r = sync_req();

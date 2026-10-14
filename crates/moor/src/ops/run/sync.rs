@@ -59,6 +59,10 @@ pub(super) fn choose(
         BoxWork::Unsaved { ahead, dirty } => Err(refused(format!(
             "the Box has unsaved work: {ahead} commits the host lacks, {dirty} changed paths"
         ))),
+        BoxWork::Gone => Err(CommandError::new(
+            ErrorKind::Refused,
+            "the Box is gone, so there is nothing to sync into",
+        )),
         BoxWork::Unknown(reason) => Err(refused(format!(
             "cannot tell whether the Box has unsaved work: {reason}"
         ))),
