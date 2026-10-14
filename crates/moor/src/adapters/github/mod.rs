@@ -1,11 +1,6 @@
 //! GitHub forge adapter: routes and repo naming come from the route table, and
 //! the repo token comes from a host command run through the `Proc` seam.
 
-#![cfg_attr(
-    not(test),
-    expect(dead_code, reason = "wired in by the composition root later")
-)]
-
 mod routes;
 #[cfg(test)]
 mod tests;
@@ -27,10 +22,6 @@ const KEY: &str = "github.you_token_cmd";
 const EXEC_FAILED: [i32; 2] = [126, 127];
 
 /// GitHub as a [`Forge`].
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "wired in by the composition root later")
-)]
 pub(crate) struct GitHub {
     /// Runs the token command.
     proc: Arc<dyn Proc>,
@@ -40,10 +31,6 @@ pub(crate) struct GitHub {
     env: Vec<(String, String)>,
 }
 
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "wired in by the composition root later")
-)]
 impl GitHub {
     /// `env` holds the already-resolved name/value pairs passed to the token command.
     pub(crate) fn new(
