@@ -19,11 +19,15 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::capacity;
+use crate::ops::common::dotfiles::{self, DotfilesRun};
 use crate::ops::common::facts::settings;
 use crate::ops::common::identity;
 use crate::ops::common::setup::{self, SetupRun};
 use crate::ops::common::view::task_view;
 use crate::store::{Store, TaskRow};
+
+use self::outcome::dotfiles_failed;
+pub(crate) use self::outcome::Provisioned;
 
 /// Re-reads a Task row that must exist.
 ///
@@ -77,7 +81,7 @@ pub(crate) fn egress_plan(cfg: &TaskSettings) -> Result<EgressPlan, CommandError
 
 /// Gives a Task with no Box, a failed setup or a lost Box a Box again.
 ///
-/// Returns the setup outcome, or `None` when nothing was provisioned. The Box lock is held while
+/// Returns what ran, or `None` when nothing was provisioned. The Box lock is held while
 /// provisioning and the row is read again under it; another op holding it is
 /// refused as busy.
 pub(crate) fn reprovision(
@@ -85,15 +89,28 @@ pub(crate) fn reprovision(
     store: &Store,
     row: &TaskRow,
     op: &str,
-) -> Result<Option<SetupRun>, CommandError> {
+) -> Result<Option<Provisioned>, CommandError> {
     let ready = row.boxed.as_ref().map(|b| b.state) == Some(BoxState::Ready);
     if row.state == TaskState::SetupFailed && ready {
         store.apply(Decision::new(row.id).task_input(TaskInput::Retry))?;
+        let at = row.worktree.as_deref().unwrap_or(&row.repo);
+        let cfg = settings(cx, Path::new(at), &Flags::default())?;
+        let handle = row.boxed.as_ref().and_then(|b| b.handle.as_ref());
+        let run = handle.map_or(Ok(DotfilesRun::Skipped), |h| {
+            dotfiles::apply(cx, h, row.id, Path::new(at), &cfg)
+        });
+        let dotfiles = match run {
+            Ok(run) => run,
+            Err(f) => return Err(dotfiles_failed(cx, store, row.id, true, f)),
+        };
         let ok = TaskInput::BoxReady {
             setup: SetupOutcome::Ok,
         };
         store.apply(Decision::new(row.id).task_input(ok))?;
-        return Ok(Some(SetupRun::Skipped));
+        return Ok(Some(Provisioned {
+            setup: SetupRun::Skipped,
+            dotfiles,
+        }));
     }
     if entry_for(row).is_none() && !setup_wanted(cx, row) {
         return Ok(None);
@@ -170,7 +187,7 @@ pub(crate) fn provision(
     id: TaskId,
     entry: Entry,
     cfg: &TaskSettings,
-) -> Result<SetupRun, CommandError> {
+) -> Result<Provisioned, CommandError> {
     let task = reread(store, id)?;
     let provider = ProviderId::new(cfg.provider.value.clone());
     let egress = egress_plan(cfg)?;
@@ -201,7 +218,7 @@ pub(crate) fn provision(
             })
         })?;
         if full {
-            return Ok(SetupRun::Skipped);
+            return Ok(Provisioned::skipped());
         }
     } else {
         store.apply(requested)?;
@@ -288,9 +305,13 @@ fn run_and_record(
     advance: bool,
     target: &SetupTarget<'_>,
     cfg: &TaskSettings,
-) -> Result<SetupRun, CommandError> {
+) -> Result<Provisioned, CommandError> {
     identity::set_identity(cx, target.handle, target.worktree);
     let run = setup::run_setup(cx, target.handle, target.workdir, target.worktree, cfg);
+    let dotfiles = match dotfiles::apply(cx, target.handle, id, target.worktree, cfg) {
+        Ok(d) => d,
+        Err(f) => return Err(dotfiles_failed(cx, store, id, advance, f)),
+    };
     let mut done = Decision::new(id);
     done.task_input = advance.then(|| TaskInput::BoxReady {
         setup: run.outcome(),
@@ -312,7 +333,10 @@ fn run_and_record(
         })
         .intent(IntentChange::Clear);
     store.apply(done)?;
-    Ok(run)
+    Ok(Provisioned {
+        setup: run,
+        dotfiles,
+    })
 }
 
 /// Records a failed acquire; returns the error, carrying the Task row, to report.
@@ -352,32 +376,6 @@ fn failed(
     }
 }
 
+mod outcome;
 #[cfg(test)]
-mod tests {
-    use super::recorded_workdir;
-
-    #[test]
-    fn a_workdir_under_the_root_round_trips() {
-        let path = recorded_workdir("/box-1").unwrap();
-        assert_eq!(path.as_str(), "/box-1");
-    }
-
-    #[test]
-    fn a_nested_workdir_round_trips() {
-        let path = recorded_workdir("/work/repos/box-1").unwrap();
-        assert_eq!(path.as_str(), "/work/repos/box-1");
-    }
-
-    #[test]
-    fn a_workdir_whose_root_holds_a_parent_component_round_trips() {
-        let path = recorded_workdir("/p/bin/../box/work/moor-rn-1").unwrap();
-        assert_eq!(path.as_str(), "/p/bin/../box/work/moor-rn-1");
-    }
-
-    #[test]
-    fn a_relative_or_empty_workdir_is_rejected() {
-        assert!(recorded_workdir("work/box-1").is_none());
-        assert!(recorded_workdir("/").is_none());
-        assert!(recorded_workdir("").is_none());
-    }
-}
+mod tests;

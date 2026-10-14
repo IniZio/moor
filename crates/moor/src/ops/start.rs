@@ -1,6 +1,7 @@
 //! `start` (minimal): check credentials, create the Task, its worktree and Workspace, acquire the Box.
 //!
-//! It queues the Task when the box limit for its provider is reached. It does not run dotfiles.
+//! It queues the Task when the box limit for its provider is reached. On a new Box it runs the repo
+//! setup, then the dotfiles, before the agent launches.
 //! It launches the agent for a Working Task with a goal.
 
 use std::path::{Path, PathBuf};
@@ -19,9 +20,8 @@ use super::common::autosleep;
 use super::common::boxlock::{self, BoxLock};
 use super::common::capacity;
 use super::common::facts::settings;
-use super::common::provision::{egress_plan, provision, reprovision, reread, Entry};
+use super::common::provision::{egress_plan, provision, reprovision, reread, Entry, Provisioned};
 use super::common::provisioning::dead_provisioning;
-use super::common::setup::SetupRun;
 use super::common::view::task_view;
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -82,22 +82,23 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
         Ok(id) => id,
         Err(e) => return raced(cx, store, req, e),
     };
-    let (run, agent) = {
+    let (done, agent) = {
         let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "start", boxlock::WAIT)?;
-        let run = if reread(store, id)?.boxed.is_none() {
+        let done = if reread(store, id)?.boxed.is_none() {
             provision(cx, store, id, Entry::Fresh, &cfg)?
         } else {
-            SetupRun::Skipped
+            Provisioned::skipped()
         };
-        let agent = launch::run(cx, store, req, id, run.exit(), &|| {
+        let agent = launch::run(cx, store, req, id, done.setup.exit(), &|| {
             Ok(cfg.model.as_ref().map(|m| m.value.clone()))
         })?;
-        (run, agent)
+        (done, agent)
     };
     launch::watch(cx, store, id, &agent);
     let row = reread(store, id)?;
     let mut v = queued_view(cx, &row, false, &cfg.provider.value);
-    v.setup = run.view();
+    v.setup = done.setup.view();
+    v.dotfiles = done.dotfiles.view();
     set_agent(&mut v, agent);
     Ok(v)
 }
@@ -164,7 +165,7 @@ fn attach(
     }
     let reprovisioned = reprovision(cx, store, row, "start")?;
     store.apply(Decision::new(row.id).event(ExtraEvent::Attached))?;
-    let setup_exit = reprovisioned.as_ref().and_then(SetupRun::exit);
+    let setup_exit = reprovisioned.as_ref().and_then(|p| p.setup.exit());
     let model = || {
         let at = row.worktree.as_deref().unwrap_or(&row.repo);
         let flags = Flags {
@@ -178,8 +179,9 @@ fn attach(
     launch::watch(cx, store, row.id, &agent);
     let row = &reread(store, row.id)?;
     let mut v = with_provider(cx, row, true)?;
-    if let Some(run) = reprovisioned {
-        v.setup = run.view();
+    if let Some(p) = reprovisioned {
+        v.setup = p.setup.view();
+        v.dotfiles = p.dotfiles.view();
     }
     set_agent(&mut v, agent);
     Ok(v)
