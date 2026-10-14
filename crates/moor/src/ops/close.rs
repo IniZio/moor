@@ -56,10 +56,14 @@ pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
     )?;
     let mut row = store.task(first.id)?.unwrap_or(first);
     let box_check = box_check(cx, store, &mut row, req.force)?;
+    let probed_clean = matches!(box_check, BoxCheck::Clean);
     let plan = close_gate(&facts(cx, &row, box_check)?, req.force)?;
     let saved = save_transcript(cx, store, &row)?;
     let digest = saved.as_ref().map(|t| t.digest.as_str());
     let agent_stopped = stop_agent(cx, store, &row, digest)?;
+    if probed_clean {
+        recheck_box(cx, &row)?;
+    }
     let box_deleted = if plan.release_box {
         teardown(cx, &row);
         release(cx, store, &row)?
@@ -200,6 +204,26 @@ fn box_check(
         BoxWork::Gone => BoxCheck::Skipped,
         BoxWork::Unknown(why) => BoxCheck::Unknown(why),
     })
+}
+
+/// Probes the Box again once the agent is stopped; a live agent can write between the first
+/// probe and the stop. The agent stays stopped when this refuses.
+fn recheck_box(cx: &Cx, row: &TaskRow) -> Result<(), CommandError> {
+    let Some(b) = row.boxed.as_ref().filter(|b| b.state == BoxState::Ready) else {
+        return Ok(());
+    };
+    let check = match probe(cx, row, b) {
+        BoxWork::Clean | BoxWork::Gone => return Ok(()),
+        BoxWork::Unsaved { ahead, dirty } => BoxCheck::Unsaved { ahead, dirty },
+        BoxWork::Unknown(why) => BoxCheck::Unknown(why),
+    };
+    match close_gate(&facts(cx, row, check)?, false) {
+        Ok(_) => Ok(()),
+        Err(refusal) => Err(CommandError::from(refusal).with_hint(format!(
+            "the agent was stopped; `moor start {} --resume` continues it",
+            row.name.as_str()
+        ))),
+    }
 }
 
 /// Reads the unsaved-work facts the gate decides on.

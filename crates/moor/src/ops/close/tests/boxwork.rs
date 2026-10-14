@@ -125,7 +125,11 @@ fn close_proceeds_when_the_box_probe_is_clean() {
     let v = run(&f.cx, &req(false)).unwrap();
     assert_eq!(v.task.state, TaskState::Closed);
     assert_eq!(box_state(&f), BoxState::Deleted);
-    assert_eq!(count(&f, "exec"), 1, "the probe ran in the Box");
+    assert_eq!(
+        count(&f, "exec"),
+        2,
+        "the probe ran before and after the stop"
+    );
 }
 
 #[test]
@@ -159,7 +163,7 @@ fn close_wakes_a_sleeping_box_and_proceeds_when_it_is_clean() {
     let v = run(&f.cx, &req(false)).unwrap();
     assert_eq!(v.task.state, TaskState::Closed);
     assert_eq!(count(&f, "wake"), 1);
-    assert_eq!(count(&f, "exec"), 1);
+    assert_eq!(count(&f, "exec"), 2);
 }
 
 #[test]
@@ -271,5 +275,45 @@ fn close_skips_the_probe_for_a_box_that_never_got_a_handle() {
     )
     .unwrap();
     assert_eq!(v.task.state, TaskState::Closed);
+    assert_eq!(count(&f, "exec"), 0);
+}
+
+#[test]
+fn close_refuses_when_the_agent_writes_between_the_probe_and_the_stop() {
+    let f = fx_probe(Some("ahead=0 dirty=0"));
+    f.cx.store()
+        .unwrap()
+        .begin_session(f.id, "s-1", Some("p-gone"))
+        .unwrap();
+    let driver = f.driver.clone();
+    let runs = std::sync::atomic::AtomicU32::new(0);
+    f.driver.on_exec(move || {
+        if runs.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 1 {
+            let path = BoxPath::under("/work/box-1", ".moor/boxwork").unwrap();
+            driver.set_peek_text("box-1", &path, "ahead=1 dirty=2");
+        }
+    });
+    let e = run(&f.cx, &req(false)).unwrap_err();
+    assert_eq!(e.kind, ErrorKind::Refused);
+    let t = text(&e);
+    assert!(t.contains("the Box holds work"), "{t}");
+    assert!(t.contains("the agent was stopped"), "{t}");
+    assert!(t.contains("moor start t --resume"), "{t}");
+    assert_eq!(count(&f, "exec"), 2);
+    assert_eq!(count(&f, "release"), 0);
+    assert_ne!(row(&f).state, TaskState::Closed);
+    assert_ne!(box_state(&f), BoxState::Deleted);
+    assert!(f.cx.store().unwrap().live_session(f.id).unwrap().is_none());
+}
+
+#[test]
+fn force_does_not_probe_before_or_after_stopping_the_agent() {
+    let f = fx_probe(Some("ahead=4 dirty=1"));
+    f.cx.store()
+        .unwrap()
+        .begin_session(f.id, "s-1", Some("p-gone"))
+        .unwrap();
+    let v = run(&f.cx, &req(true)).unwrap();
+    assert!(v.agent_stopped);
     assert_eq!(count(&f, "exec"), 0);
 }

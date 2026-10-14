@@ -35,10 +35,17 @@ pub(super) fn layout(
 impl FakeDriver {
     /// Makes `peek_file` of `path` in the Box `handle` return `text`.
     pub(crate) fn peek_text(self, handle: &str, path: &BoxPath, text: &str) -> Self {
-        self.st()
-            .files
-            .push((handle.to_owned(), path.as_str().to_owned(), text.to_owned()));
+        self.set_peek_text(handle, path, text);
         self
+    }
+
+    /// Replaces what `peek_file` of `path` in the Box `handle` returns, even mid-run.
+    pub(crate) fn set_peek_text(&self, handle: &str, path: &BoxPath, text: &str) {
+        let mut s = self.st();
+        s.files
+            .retain(|(h, p, _)| h != handle || p != path.as_str());
+        s.files
+            .push((handle.to_owned(), path.as_str().to_owned(), text.to_owned()));
     }
 
     /// The next `peek_file` fails once with `e`.
