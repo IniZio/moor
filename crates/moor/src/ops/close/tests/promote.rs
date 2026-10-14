@@ -8,9 +8,9 @@ use moor_core::config::{BoxConfig, DriverConfig, UserConfig};
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
-use moor_core::seam::driver::DriverError;
+use moor_core::seam::driver::{AcquireReq, Driver, DriverError, EgressPlan};
 use moor_core::seam::proc::Tool;
-use moor_core::{BoxHandle, CloseReq, ProviderId, ShowReq, StartReq, TaskId, TaskName};
+use moor_core::{BoxHandle, BoxPath, CloseReq, ProviderId, ShowReq, StartReq, TaskId, TaskName};
 
 use crate::cx::Cx;
 use crate::ops::close::run as close;
@@ -23,7 +23,10 @@ use crate::testing::proc::{Reply, ScriptedProc};
 use crate::testing::surface::FakeSurface;
 
 const PROVIDER: &str = "local-container";
-const HOLDER_BOX: &str = "holder-box";
+const HOLDER_BOX: &str = "box-1";
+const HOLDER_WORKDIR: &str = "/work/box-1";
+/// The host commit id the close probe compares against.
+const HEAD: &str = "0123456789abcdef0123456789abcdef01234567";
 
 struct World {
     cx: Cx,
@@ -61,14 +64,27 @@ fn world(config: UserConfig, driver: FakeDriver) -> World {
 
 /// Like [`world`], over the repo checked out at `repo`.
 fn world_at(config: UserConfig, driver: FakeDriver, repo: &Path) -> World {
+    world_failing(config, driver, None, repo)
+}
+
+/// Like [`world_at`]; the next acquire after the holder's fails with `acquire_err`.
+fn world_failing(
+    config: UserConfig,
+    driver: FakeDriver,
+    acquire_err: Option<DriverError>,
+    repo: &Path,
+) -> World {
     let dir = tempfile::tempdir().unwrap();
+    // The holder is the driver's first Box, so close probes `box-1` at its recorded workdir.
+    let probe = BoxPath::under(HOLDER_WORKDIR, ".moor/boxwork").unwrap();
+    let driver = driver.peek_text(HOLDER_BOX, &probe, "ahead=0 dirty=0");
     let proc = ScriptedProc::new();
     let repo_out = |s: &str| Reply::Ok(format!("{}{s}\n", repo.display()));
     proc.on(Tool::Git, &["rev-parse", "--show-toplevel"], repo_out(""));
     proc.on(
         Tool::Git,
         &["rev-parse", "HEAD"],
-        Reply::Ok("abc123\n".into()),
+        Reply::Ok(format!("{HEAD}\n")),
     );
     proc.on(
         Tool::Git,
@@ -82,7 +98,11 @@ fn world_at(config: UserConfig, driver: FakeDriver, repo: &Path) -> World {
     );
     proc.on(Tool::Git, &["rev-list"], Reply::Ok("0\n".into()));
     proc.on(Tool::Git, &["status"], Reply::Ok(String::new()));
-    let driver = Arc::new(driver);
+    let handle = acquire_holder(&driver);
+    let driver = Arc::new(match acquire_err {
+        Some(e) => driver.fail_acquire(e),
+        None => driver,
+    });
     let cx = Cx::fake_with(
         dir.path(),
         repo,
@@ -91,7 +111,7 @@ fn world_at(config: UserConfig, driver: FakeDriver, repo: &Path) -> World {
         Arc::new(proc),
         config,
     );
-    let holder = insert_holder(&cx, dir.path());
+    let holder = insert_holder(&cx, handle, dir.path());
     World {
         cx,
         driver,
@@ -100,7 +120,24 @@ fn world_at(config: UserConfig, driver: FakeDriver, repo: &Path) -> World {
     }
 }
 
-fn insert_holder(cx: &Cx, worktree: &Path) -> TaskId {
+/// Acquires the holder's Box, so the driver knows it and can run the close probe in it.
+fn acquire_holder(driver: &FakeDriver) -> BoxHandle {
+    let got = driver
+        .acquire(&AcquireReq {
+            provider: ProviderId::new(PROVIDER),
+            task: TaskId::new(1),
+            name: TaskName::parse("holder").unwrap(),
+            egress: EgressPlan::Open,
+            class: None,
+            nonce: "n".to_owned(),
+            worktree: None,
+        })
+        .unwrap();
+    assert_eq!(got.handle.as_str(), HOLDER_BOX);
+    got.handle
+}
+
+fn insert_holder(cx: &Cx, handle: BoxHandle, worktree: &Path) -> TaskId {
     let store = cx.store().unwrap();
     let id = store
         .apply(Decision::insert(NewTask {
@@ -112,6 +149,7 @@ fn insert_holder(cx: &Cx, worktree: &Path) -> TaskId {
     let fields = Fields {
         box_provider: Field::Set(ProviderId::new(PROVIDER)),
         worktree: Field::Set(worktree.display().to_string()),
+        box_workdir: Field::Set(HOLDER_WORKDIR.into()),
         ..Fields::default()
     };
     let d = Decision::new(id)
@@ -123,9 +161,7 @@ fn insert_holder(cx: &Cx, worktree: &Path) -> TaskId {
         .task_input(TaskInput::BoxReady {
             setup: SetupOutcome::Ok,
         })
-        .box_input(BoxInput::Acquired {
-            handle: BoxHandle::new(HOLDER_BOX),
-        });
+        .box_input(BoxInput::Acquired { handle });
     store.apply(d).unwrap();
     id
 }
@@ -183,7 +219,8 @@ fn kinds(w: &World, id: TaskId) -> Vec<String> {
 }
 
 fn acquires(w: &World) -> usize {
-    w.driver.calls().iter().filter(|c| *c == "acquire").count()
+    // The holder's own acquire is not counted.
+    w.driver.calls().iter().filter(|c| *c == "acquire").count() - 1
 }
 
 fn warning_codes(w: &World) -> Vec<String> {
@@ -226,9 +263,16 @@ fn promoted_task_goes_through_setting_up_and_gets_a_ready_box() {
     let b = row.boxed.expect("promoted task has a Box row");
     assert_eq!(b.state, BoxState::Ready);
     assert!(b.handle.is_some());
+    // The holder's acquire and close probe come first; the probe is one exec and one peek.
     assert_eq!(
         w.driver.calls(),
-        [format!("release {HOLDER_BOX}"), "acquire".into()]
+        [
+            "acquire".to_owned(),
+            format!("exec {HOLDER_BOX}"),
+            format!("peek_file {HOLDER_BOX}"),
+            format!("release {HOLDER_BOX}"),
+            "acquire".into(),
+        ]
     );
 }
 
@@ -242,10 +286,15 @@ fn driver_limit_frees_a_slot_for_the_waiter_too() {
 
 #[test]
 fn failed_acquire_of_the_promoted_task_does_not_fail_the_close() {
-    let driver = FakeDriver::new().fail_acquire(DriverError::Failed {
+    let failure = DriverError::Failed {
         summary: "no capacity".into(),
-    });
-    let w = world(limit(1), driver);
+    };
+    let w = world_failing(
+        limit(1),
+        FakeDriver::new(),
+        Some(failure),
+        Path::new("/repo"),
+    );
     let id = queue(&w, "first");
     let v = close_holder(&w);
     assert!(v.box_deleted);
