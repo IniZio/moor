@@ -34,12 +34,14 @@ impl Provisioned {
 /// Records a failed dotfiles step and returns the error, carrying the Task row, to report.
 ///
 /// The Box is kept. `advance` moves the Task to setup-failed; a Task already working gets a
-/// `setup_failed` event instead.
+/// `setup_failed` event instead. A repo setup line that failed earlier in the same step is
+/// kept as its own `setup_failed` event and named in the error, so neither failure is lost.
 pub(super) fn dotfiles_failed(
     cx: &Cx,
     store: &Store,
     id: TaskId,
     advance: bool,
+    setup_line: Option<String>,
     failure: DotfilesFailed,
 ) -> CommandError {
     let tail = failure.tail;
@@ -48,7 +50,11 @@ pub(super) fn dotfiles_failed(
         done.task_input = Some(TaskInput::DotfilesFailed {
             error: tail.clone(),
         });
-    } else {
+    }
+    if let Some(line) = &setup_line {
+        done = done.event(ExtraEvent::SetupFailed { line: line.clone() });
+    }
+    if !advance {
         done = done.event(ExtraEvent::SetupFailed { line: tail.clone() });
     }
     let done = done
@@ -60,7 +66,11 @@ pub(super) fn dotfiles_failed(
     if let Err(write) = store.apply(done) {
         return write.into();
     }
-    let out = CommandError::new(ErrorKind::Failed, format!("dotfiles failed:\n{tail}"));
+    let setup = setup_line.map_or_else(String::new, |l| format!("setup failed: {l}\n"));
+    let out = CommandError::new(
+        ErrorKind::Failed,
+        format!("{setup}dotfiles failed:\n{tail}"),
+    );
     match reread(store, id) {
         Ok(row) => out.with_value(serde_json::json!({ "task": task_view(&row, cx.config()) })),
         Err(_) => out,
