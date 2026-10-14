@@ -18,7 +18,7 @@ use super::ProxyLog;
 mod deadline;
 mod framing;
 
-use deadline::DeadlineReader;
+pub(crate) use deadline::DeadlineReader;
 pub(crate) use framing::body_cap;
 use framing::BodyLen;
 
