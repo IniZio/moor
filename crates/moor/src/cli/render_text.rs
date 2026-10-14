@@ -117,7 +117,11 @@ fn start_text(value: &Value) -> Option<String> {
             "started"
         };
         let box_text = box_state.map_or_else(|| "no box".to_owned(), |s| format!("box {s}"));
-        format!("{verb} {head}: {state}, {box_text}\n")
+        let setup = value.get("setup");
+        let setup_flag = |key| setup.and_then(|s| s.get(key)).and_then(Value::as_bool);
+        let failed = setup_flag("ran") == Some(true) && setup_flag("ok") == Some(false);
+        let suffix = if failed { ", setup failed" } else { "" };
+        format!("{verb} {head}: {state}, {box_text}{suffix}\n")
     };
     if matches!(box_state, Some("ready" | "starting" | "asleep")) {
         let name = task.get("name")?.as_str()?;
