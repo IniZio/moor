@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 
 use moor_core::proxy_gate::{Inject, RouteId};
 use moor_core::Secret;
+use zeroize::Zeroizing;
 
 use crate::env::Env;
 
@@ -116,39 +117,55 @@ fn check_base(route: &str, base: &str, allow_http: bool) -> Result<String, Upstr
 ///
 /// Returned as a [`Secret`] so the value has no `Debug` or `Display` path.
 pub(crate) fn auth_value(inject: Inject, secret: &Secret) -> Option<Secret> {
-    let mut out = Vec::new();
+    let secret = secret.expose();
     match inject {
-        Inject::None => return None,
+        Inject::None => None,
         Inject::Bearer => {
+            let mut out = Vec::with_capacity(b"Bearer ".len() + secret.len());
             out.extend_from_slice(b"Bearer ");
-            out.extend_from_slice(secret.expose());
+            out.extend_from_slice(secret);
+            Some(Secret::new(out))
         }
         Inject::Basic { user } => {
-            let mut raw = user.as_bytes().to_vec();
+            // Both buffers hold secret material. `raw` is wiped on drop and
+            // `out` is moved into the `Secret`; each is sized up front so
+            // growing never leaves an unwiped copy in a freed allocation.
+            let mut raw = Zeroizing::new(Vec::with_capacity(user.len() + 1 + secret.len()));
+            raw.extend_from_slice(user.as_bytes());
             raw.push(b':');
-            raw.extend_from_slice(secret.expose());
+            raw.extend_from_slice(secret);
+            let mut out = Vec::with_capacity(b"Basic ".len() + raw.len().div_ceil(3) * 4);
             out.extend_from_slice(b"Basic ");
-            out.extend_from_slice(base64(&raw).as_bytes());
+            base64_into(&raw, &mut out);
+            Some(Secret::new(out))
         }
     }
-    Some(Secret::new(out))
 }
 
 /// Standard-alphabet base64 with `=` padding.
+#[cfg(test)]
 fn base64(data: &[u8]) -> String {
+    let mut out = Vec::new();
+    base64_into(data, &mut out);
+    String::from_utf8(out).unwrap_or_default()
+}
+
+/// Appends the standard-alphabet base64 of `data`, `=` padded, to `out`.
+///
+/// Writes bytes straight into the caller's buffer so no intermediate copy of
+/// `data`'s encoding is left unwiped.
+fn base64_into(data: &[u8], out: &mut Vec<u8>) {
     const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let sym = |n: u32| char::from(ALPHABET.get((n & 63) as usize).copied().unwrap_or(b'='));
-    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
+    let sym = |n: u32| ALPHABET.get((n & 63) as usize).copied().unwrap_or(b'=');
     for chunk in data.chunks(3) {
         let mut it = chunk.iter().map(|&b| u32::from(b));
         let (a, b, c) = (it.next().unwrap_or(0), it.next(), it.next());
         let n = (a << 16) | (b.unwrap_or(0) << 8) | c.unwrap_or(0);
         out.push(sym(n >> 18));
         out.push(sym(n >> 12));
-        out.push(if b.is_some() { sym(n >> 6) } else { '=' });
-        out.push(if c.is_some() { sym(n) } else { '=' });
+        out.push(if b.is_some() { sym(n >> 6) } else { b'=' });
+        out.push(if c.is_some() { sym(n) } else { b'=' });
     }
-    out
 }
 
 #[cfg(test)]
