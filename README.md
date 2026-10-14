@@ -6,7 +6,7 @@ the agent runs in.
 
 ## Commands
 
-Five commands work today:
+These commands work today:
 
 - `moor version` prints the crate version, the git commit, and the envelope
   schema version (`1`).
@@ -23,8 +23,18 @@ Five commands work today:
   checked, it exits 125 and does not run: save the work first or use
   `--no-sync`, which never syncs. Not both. `--record NAME` records the run.
 
-The other verbs parse (for example `wait`, `steer`, `remove`) but
-return the error "`moor <cmd>` is not implemented yet".
+- `moor wait NAME` waits for the Task to be idle, done, or finished with a
+  run (`--for idle|done|run`). `--timeout S` bounds the wait.
+- `moor steer NAME TEXT` sends text, or `--menu N` a menu choice, to the
+  Task's agent.
+- `moor cp`, `moor open`, `moor sleep` and `moor wake` copy a file into the
+  Box, open the Workspace, and sleep or wake the Box.
+- `moor gate` records or checks a gate; `moor env [REPO]` previews the
+  layered agent environment.
+- `moor call` runs a JSON request read from stdin.
+
+`report`, `remove`, `shell`, `github setup`, `github login` and `proxy check`
+parse but return the error "`moor <cmd>` is not implemented yet".
 
 Global flags: `--json`, `--quiet`, `--state-dir DIR`. State lives in
 `moor.db` inside the state directory, set by `--state-dir`, `MOOR_STATE_DIR`,
