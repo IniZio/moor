@@ -84,7 +84,7 @@ enum Cmd {
     Sleep(TaskArg),
     /// Wake a sleeping Task.
     Wake(TaskArg),
-    /// Record or check a gate.
+    /// Check a gate; record one with `moor run --record <name>`.
     #[command(subcommand)]
     Gate(GateCmd),
     /// Admin verbs.

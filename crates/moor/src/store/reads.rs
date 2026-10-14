@@ -53,11 +53,6 @@ impl Store {
         Ok(rows.into_iter().next())
     }
 
-    /// Every task, by id ascending.
-    pub(crate) fn all_tasks(&self) -> Result<Vec<TaskRow>, StoreError> {
-        query_tasks(&self.reader()?, "ORDER BY t.id", [])
-    }
-
     /// Boxes whose state counts toward capacity (starting, ready, asleep), with their task.
     pub(crate) fn box_rows_live(&self) -> Result<Vec<(TaskId, BoxRow)>, StoreError> {
         let tail = "WHERE b.state IN (?1, ?2, ?3) ORDER BY t.id";

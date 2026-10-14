@@ -76,7 +76,7 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
     let now = cx.clock().now();
     let Some(name) = &req.task else {
         let mut tasks: Vec<TaskView> = Vec::new();
-        for mut row in store.all_tasks()? {
+        for mut row in store.open_tasks()? {
             let reading = activity::read(cx, store, &row, now)?;
             activity::settle(cx, store, &row, &reading)?;
             autosleep::run(cx, store, row.id);

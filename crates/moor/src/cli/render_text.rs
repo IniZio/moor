@@ -77,6 +77,7 @@ fn structured_text(cmd: &str, value: &Value) -> Option<String> {
         "show" => show::show_text(value),
         "start" => start_text(value),
         "close" => close_text(value),
+        "wait" => wait_text(value),
         _ => None,
     }
 }
@@ -151,6 +152,30 @@ fn close_text(value: &Value) -> Option<String> {
     }
     promoted_line(value, &mut out);
     Some(out)
+}
+
+/// Compact duration such as `250ms`, `42s`, `4m12s` or `1h02m03s`.
+fn duration_text(ms: u64) -> String {
+    let secs = ms / 1000;
+    match secs {
+        0 => format!("{ms}ms"),
+        1..=59 => format!("{secs}s"),
+        60..=3599 => format!("{}m{:02}s", secs / 60, secs % 60),
+        _ => format!("{}h{:02}m{:02}s", secs / 3600, secs % 3600 / 60, secs % 60),
+    }
+}
+
+/// Text form of `wait`: one line naming the condition, whether it held, and the time spent.
+fn wait_text(value: &Value) -> Option<String> {
+    let (head, _) = task_head(value)?;
+    let cond = value.get("for")?.as_str()?;
+    let after = duration_text(value.get("waited_ms")?.as_u64()?);
+    if value.get("timed_out")?.as_bool()? {
+        return Some(format!(
+            "{head}: timed out waiting for {cond} after {after}\n"
+        ));
+    }
+    Some(format!("{head}: {cond} after {after}\n"))
 }
 
 /// Formats the version line, or `None` when a field is missing or mistyped.

@@ -34,7 +34,7 @@ pub enum Request {
     Sleep(TaskReq),
     /// Wake a task's box.
     Wake(TaskReq),
-    /// Record or check a gate.
+    /// Check a gate.
     Gate(GateReq),
     /// Show the layered environment.
     Env(EnvReq),
