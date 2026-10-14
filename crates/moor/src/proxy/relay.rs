@@ -15,6 +15,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::proxy_gate::{Inject, Plan, RouteId};
+use moor_core::seam::clock::Clock;
 use ureq::config::Config;
 use ureq::http::{HeaderName, HeaderValue, Method, Request, Response};
 use ureq::tls::{RootCerts, TlsConfig, TlsProvider};
@@ -58,16 +59,6 @@ enum Failure {
     TooLarge,
 }
 
-/// Largest request body the route accepts, in bytes. The listener applies
-/// the same caps to a declared `content-length`.
-fn body_cap(route: &RouteId) -> u64 {
-    if route.as_str() == "forge.git" {
-        2 * 1024 * 1024 * 1024
-    } else {
-        32 * 1024 * 1024
-    }
-}
-
 /// Sends admitted requests to their upstream and streams the answer back.
 pub(crate) struct Relay {
     /// Base URL per route.
@@ -76,15 +67,28 @@ pub(crate) struct Relay {
     creds: Arc<dyn RouteCredential>,
     /// Upstream client; follows no redirects and uses no proxy.
     agent: Agent,
+    /// Largest request body a route accepts, in bytes.
+    body_cap: fn(&RouteId) -> u64,
+    /// Time source for the drain before an over-cap answer.
+    clock: Arc<dyn Clock>,
 }
 
 impl Relay {
-    /// Builds a relay over `upstreams` that injects `creds`.
-    pub(crate) fn new(upstreams: Upstreams, creds: Arc<dyn RouteCredential>) -> Self {
+    /// Builds a relay over `upstreams` that injects `creds` and limits request
+    /// bodies to `body_cap`; the listener applies the same function to a
+    /// declared `content-length`.
+    pub(crate) fn new(
+        upstreams: Upstreams,
+        creds: Arc<dyn RouteCredential>,
+        clock: Arc<dyn Clock>,
+        body_cap: fn(&RouteId) -> u64,
+    ) -> Self {
         Self {
             upstreams,
             creds,
             agent: build_agent(),
+            body_cap,
+            clock,
         }
     }
 
@@ -104,7 +108,7 @@ impl Relay {
         let method =
             Method::from_bytes(plan.method.as_bytes()).map_err(|_| Failure::Unreachable)?;
         let framing = Framing::of(head).ok_or(Failure::Framing)?;
-        if matches!(framing, Framing::Length(n) if n > body_cap(&plan.route)) {
+        if matches!(framing, Framing::Length(n) if n > (self.body_cap)(&plan.route)) {
             return Err(Failure::TooLarge);
         }
         let mut builder = Request::builder().method(method).uri(url);
@@ -121,7 +125,7 @@ impl Relay {
         }
         let request = builder.body(()).map_err(|_| Failure::Unreachable)?;
         let (parts, ()) = request.into_parts();
-        let cap = body_cap(&plan.route);
+        let cap = (self.body_cap)(&plan.route);
         let tripped = Arc::new(AtomicBool::new(false));
         let result = match framing {
             Framing::None => self.agent.run(Request::from_parts(parts, SendBody::none())),
