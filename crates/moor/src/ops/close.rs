@@ -37,7 +37,9 @@ const TEARDOWN_DEADLINE: Duration = Duration::from_mins(30);
 /// promotion, which takes the locks of the waiting tasks. The Box is released
 /// before the Workspace closes. The worktree is never removed; it belongs to the
 /// user's checkout. The agent stops first, so the session stays ended when the
-/// release fails and the task stays open. Waiting tasks are then promoted into the freed slot.
+/// release fails and the task stays open. The Task's proxy supervisor stops after the lock is
+/// dropped, because the wait for it can take seconds and a closed Task cannot get a new proxy
+/// row. Waiting tasks are then promoted into the freed slot.
 pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
     let store = cx.store()?;
     let first = find(store, &req.task)?;
@@ -61,8 +63,8 @@ pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
         false
     };
     let workspace_closed = close_workspace(cx, &row, &plan);
-    stop_proxy(cx, store, row.id);
     drop(lock);
+    stop_proxy(cx, store, row.id);
     let provider = row.boxed.as_ref().map(|b| b.provider.clone());
     let closed = store.task(row.id)?.unwrap_or(row);
     let promoted = provider.map_or_else(Vec::new, |p| {
