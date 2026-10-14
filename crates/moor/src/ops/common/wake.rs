@@ -2,6 +2,8 @@
 //!
 //! The caller holds the Box lock and passes a row read after taking it.
 
+use std::path::Path;
+
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::domain::task::{TaskInput, TaskState};
@@ -39,7 +41,8 @@ pub(crate) fn wake_if_asleep(cx: &Cx, store: &Store, row: &TaskRow) -> Result<bo
                 CommandError::new(ErrorKind::Refused, "the Box has not been acquired")
             })?;
             cx.driver().wake(handle)?;
-            workdir = Some(cx.driver().workdir(handle)?);
+            let worktree = Path::new(row.worktree.as_deref().unwrap_or(&row.repo));
+            workdir = Some(cx.driver().workdir(handle, worktree)?);
         }
     }
     let mut d = Decision::new(row.id);
