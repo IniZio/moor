@@ -68,6 +68,8 @@ pub(crate) struct Reading {
     pub(crate) launch_failure: Option<LaunchFailure>,
     /// The agent's own session id, from the hook seen or the Task.
     agent_session: Option<String>,
+    /// The pane text this reading observed; none when the pane gave no observation.
+    pub(crate) pane_text: Option<String>,
 }
 
 impl Reading {
@@ -92,6 +94,7 @@ impl Reading {
             session: None,
             launch_failure: None,
             agent_session: None,
+            pane_text: None,
         }
     }
 
@@ -105,6 +108,7 @@ impl Reading {
             session: None,
             launch_failure: None,
             agent_session: None,
+            pane_text: None,
         }
     }
 
@@ -118,6 +122,7 @@ impl Reading {
             session: None,
             launch_failure: Some(failure),
             agent_session: None,
+            pane_text: None,
         }
     }
 }
@@ -182,6 +187,10 @@ pub(crate) fn read(
         activity.state = AgentState::Working;
     }
     let may_quiet = !in_flight && may_apply_quiet(&activity, Some(&probes));
+    let pane_text = match &probes.pane {
+        PaneRead::Fresh(obs) => Some(obs.tail.clone()),
+        _ => None,
+    };
     Ok(Reading {
         pane: liveness(&probes.pane, &activity),
         activity: Some(activity),
@@ -190,6 +199,7 @@ pub(crate) fn read(
         session: Some(session.id),
         launch_failure: None,
         agent_session,
+        pane_text,
     })
 }
 
