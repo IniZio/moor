@@ -1,5 +1,7 @@
 //! Tests for the per-Task proxy log.
 
+mod forge_e2e;
+
 use std::os::unix::fs::PermissionsExt as _;
 use std::path::Path;
 use std::sync::Arc;
