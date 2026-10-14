@@ -38,7 +38,7 @@ pub(super) fn retry_dotfiles(
     });
     let dotfiles = match run {
         Ok(run) => run,
-        Err(f) => return Err(dotfiles_failed(cx, store, row.id, true, f)),
+        Err(f) => return Err(dotfiles_failed(cx, store, row.id, true, None, f)),
     };
     let ok = TaskInput::BoxReady {
         setup: SetupOutcome::Ok,
