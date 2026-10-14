@@ -187,6 +187,40 @@ fn read_from_env_and_file() {
 }
 
 #[test]
+fn secret_from_env_keeps_bytes() {
+    let c = creds(
+        Env::from_pairs([("E", "ev")]),
+        Arc::new(ScriptedProc::new()),
+    );
+    assert_eq!(c.secret(&var("E")).unwrap().expose(), b"ev".as_slice());
+}
+
+#[test]
+fn secret_missing_or_blank_errors_without_value() {
+    let c = creds(
+        Env::from_pairs([("B", "  ")]),
+        Arc::new(ScriptedProc::new()),
+    );
+    assert_eq!(
+        c.secret(&var("NOPE")).err(),
+        Some("env NOPE is not set".to_owned())
+    );
+    assert_eq!(c.secret(&var("B")).err(), Some("env B is empty".to_owned()));
+}
+
+#[test]
+fn secret_trims_one_trailing_newline_from_file_and_cmd() {
+    let d = tempfile::TempDir::new().unwrap();
+    let f = d.path().join("f");
+    std::fs::write(&f, "tok\n").unwrap();
+    let p = Arc::new(ScriptedProc::new());
+    p.on(Tool::Sh, &exec(&["t"]), Reply::Ok("tk\r\n".into()));
+    let c = creds(Env::from_pairs([("X", "y")]), p);
+    assert_eq!(c.secret(&file(&f)).unwrap().expose(), b"tok".as_slice());
+    assert_eq!(c.secret(&cmd(&["t"])).unwrap().expose(), b"tk".as_slice());
+}
+
+#[test]
 fn real_argv_cmd_runs() {
     let c = real();
     let src = cmd(&["echo", "hi"]);
