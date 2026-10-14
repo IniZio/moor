@@ -11,7 +11,9 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use moor_core::activity::PaneObs;
 use moor_core::seam::proc::Deadline;
-use moor_core::seam::surface::{PaneCmd, PaneRef, Surface, SurfaceError, WorkspaceRef, Worktree};
+use moor_core::seam::surface::{
+    Key, PaneCmd, PaneRef, Surface, SurfaceError, WorkspaceRef, Worktree,
+};
 use moor_core::TaskName;
 
 #[derive(Default)]
@@ -154,6 +156,28 @@ impl Surface for FakeSurface {
         }
     }
 
+    fn send_text(&self, pane: &PaneRef, text: &str) -> Result<(), SurfaceError> {
+        let mut s = self.st();
+        s.calls.push(format!("send_text {} {text}", pane.as_str()));
+        if s.panes.iter().any(|p| p == pane.as_str()) {
+            Ok(())
+        } else {
+            Err(SurfaceError::NotFound)
+        }
+    }
+
+    fn send_keys(&self, pane: &PaneRef, keys: &[Key]) -> Result<(), SurfaceError> {
+        let mut s = self.st();
+        let names: Vec<String> = keys.iter().filter_map(|k| k.name()).collect();
+        s.calls
+            .push(format!("send_keys {} {}", pane.as_str(), names.join(" ")));
+        if s.panes.iter().any(|p| p == pane.as_str()) {
+            Ok(())
+        } else {
+            Err(SurfaceError::NotFound)
+        }
+    }
+
     fn close_pane(&self, pane: &PaneRef) -> Result<(), SurfaceError> {
         let mut s = self.st();
         s.calls.push(format!("close_pane {}", pane.as_str()));
@@ -226,5 +250,33 @@ mod tests {
         );
         assert_eq!(s.calls().len(), 4);
         assert_eq!(s.calls().first().map(String::as_str), Some("pane_obs p-1"));
+    }
+
+    #[test]
+    fn records_sends_and_reports_a_missing_pane() {
+        let s = FakeSurface::new("/r");
+        let wt = s
+            .create_worktree(Path::new("/repo"), &TaskName::parse("a").unwrap(), None)
+            .unwrap();
+        let ws = s.ensure_workspace(&wt, "moor:a").unwrap();
+        let pane = s.open_pane(&ws, &PaneCmd::default()).unwrap();
+        assert_eq!(s.send_text(&pane, "hi"), Ok(()));
+        assert_eq!(s.send_keys(&pane, &[Key::CtrlU, Key::Digit(3)]), Ok(()));
+        let gone = PaneRef::new("p-9");
+        assert_eq!(s.send_text(&gone, "x"), Err(SurfaceError::NotFound));
+        assert_eq!(
+            s.send_keys(&gone, &[Key::CtrlM]),
+            Err(SurfaceError::NotFound)
+        );
+        let sent: Vec<String> = s.calls().into_iter().skip(3).collect();
+        assert_eq!(
+            sent,
+            [
+                "send_text p-2 hi",
+                "send_keys p-2 ctrl+u 3",
+                "send_text p-9 x",
+                "send_keys p-9 ctrl+m"
+            ]
+        );
     }
 }
