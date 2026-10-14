@@ -10,6 +10,7 @@ pub(crate) mod identity;
 pub(crate) mod promote;
 pub(crate) mod provision;
 pub(crate) mod provisioning;
+pub(crate) mod proxy;
 pub(crate) mod reconcile;
 pub(crate) mod resume;
 pub(crate) mod setup;

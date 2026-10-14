@@ -20,6 +20,7 @@ use crate::testing::surface::FakeSurface;
 
 mod activity;
 mod capacity;
+mod proxy;
 mod relaunch;
 mod session;
 mod setup;
@@ -68,6 +69,7 @@ fn world_with(driver: FakeDriver, repo: &Path, config: UserConfig) -> World {
         &["rev-parse", "--git-path", "info/exclude"],
         Reply::Ok(format!("{}/exclude\n", dir.path().display())),
     );
+    proc.on_daemon(proxy::supervise(dir.path().to_path_buf()));
     let driver = Arc::new(driver);
     let surface = Arc::new(FakeSurface::new(dir.path()));
     let cx = Cx::fake_with(

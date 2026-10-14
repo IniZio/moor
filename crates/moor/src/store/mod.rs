@@ -23,9 +23,7 @@ mod runs;
 mod tests;
 
 pub(crate) use agent::SessionRow;
-#[cfg(test)]
-pub(crate) use proxy::ProxyRow;
-pub(crate) use proxy::{Fenced, Lease, ProxyPorts};
+pub(crate) use proxy::{Fenced, Lease, ProxyPorts, ProxyRow, Reserve};
 pub(crate) use runs::RunRow;
 pub(crate) use runs::{NewRun, RunOutcome};
 

@@ -19,7 +19,9 @@ use moor_core::{ProviderId, ShowReq, StartReq, TaskId, TaskName};
 use super::run;
 use crate::cx::Cx;
 use crate::ops::common::activity::{self, Reading};
-use crate::store::{NewRun, Store};
+use crate::ops::common::proxy::LEASE;
+use crate::store::{Fenced, NewRun, ProxyPorts, Store};
+use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::proc::{Reply, ScriptedProc};
@@ -433,6 +435,22 @@ fn task_without_a_live_session_has_no_agent() {
 /// Context over `driver` whose git answers a repo at `/repo`, so `start` can run.
 fn start_cx(dir: &Path, driver: &Arc<FakeDriver>) -> Cx {
     let proc = Arc::new(ScriptedProc::new());
+    let state = dir.to_path_buf();
+    proc.on_daemon(move |d| {
+        let clock = Arc::new(FakeClock::new(Ts::from_millis(1000)));
+        let store = Store::open(&state.join("moor.db"), clock).unwrap();
+        let task = TaskId::new(d.call.args.get(2).unwrap().parse().unwrap());
+        store.claim_lease(task, "fake-supervisor", LEASE).unwrap();
+        let row = store.proxy(task).unwrap().unwrap();
+        let ports = ProxyPorts {
+            box_port: row.box_port,
+            host_port: 41000,
+        };
+        let applied = store
+            .mark_ready(task, "fake-supervisor", ports, d.pid, "fake-handle")
+            .unwrap();
+        assert_eq!(applied, Fenced::Applied);
+    });
     proc.on(
         Tool::Git,
         &["rev-parse", "--show-toplevel"],
