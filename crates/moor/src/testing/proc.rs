@@ -1,14 +1,18 @@
 //! Scripted `Proc` for adapter unit tests.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use moor_core::seam::proc::{
     ChildHandle, Deadline, ExitInfo, FirstLineError, Output, Proc, ProcError, ProcOutput, ProcSpec,
-    Stdin, Tool,
+    Tool,
 };
 use zeroize::Zeroizing;
+
+mod detached;
+pub(crate) use detached::DaemonCall;
+use detached::{call_of, Daemons};
 
 /// A canned reply.
 pub(crate) enum Reply {
@@ -137,6 +141,7 @@ pub(crate) struct ScriptedProc {
     next_pid: AtomicU32,
     /// Pids of spawned children that were dropped.
     dropped: Arc<Mutex<Vec<u32>>>,
+    daemons: Daemons,
 }
 
 impl ScriptedProc {
@@ -148,6 +153,7 @@ impl ScriptedProc {
             child_rules: Mutex::new(Vec::new()),
             next_pid: AtomicU32::new(FIRST_CHILD_PID),
             dropped: Arc::new(Mutex::new(Vec::new())),
+            daemons: Daemons::default(),
         }
     }
 
@@ -201,17 +207,7 @@ impl ScriptedProc {
     fn record(&self, spec: &ProcSpec) -> Vec<String> {
         let args = spec.arg_strings();
         if let Ok(mut c) = self.calls.lock() {
-            c.push(Call {
-                tool: spec.tool,
-                args: args.clone(),
-                env: spec.env.extra.clone(),
-                cwd: spec.cwd.clone(),
-                deadline: spec.deadline,
-                stdin: match &spec.stdin {
-                    Stdin::Bytes(b) => b.clone(),
-                    _ => Vec::new(),
-                },
-            });
+            c.push(call_of(spec));
         }
         args
     }
@@ -323,6 +319,10 @@ impl Proc for ScriptedProc {
             Err(e @ ProcError::NonZero { code, .. }) if code != 127 => Err(e),
             _ => Ok(()),
         }
+    }
+
+    fn spawn_daemon(&self, spec: &ProcSpec, log: &Path) -> Result<u32, ProcError> {
+        Ok(self.spawn_daemon_call(spec, log))
     }
 
     fn spawn_child(&self, spec: &ProcSpec) -> Result<Box<dyn ChildHandle>, ProcError> {
