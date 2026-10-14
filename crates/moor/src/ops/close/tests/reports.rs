@@ -154,6 +154,7 @@ fn changed_content_adds_a_new_version() {
 fn failure_warns_and_close_proceeds() {
     let f = fx(driver_with(&[("result.md", "SECRET-BODY")]).exec_results([
         Ok(ExecOutcome::Exited { code: 0 }),
+        Ok(ExecOutcome::Exited { code: 0 }),
         Err(DriverError::Failed {
             summary: "boom".into(),
         }),
@@ -171,6 +172,7 @@ fn failure_warns_and_close_proceeds() {
 #[test]
 fn nonzero_exit_warns_and_close_proceeds() {
     let f = fx(driver_with(&[("result.md", "x")]).exec_results([
+        Ok(ExecOutcome::Exited { code: 0 }),
         Ok(ExecOutcome::Exited { code: 0 }),
         Ok(ExecOutcome::Exited { code: 2 }),
     ]));
@@ -232,10 +234,14 @@ fn collection_runs_before_teardown_and_release() {
     run(&f.cx, &req(false)).unwrap();
     let calls = f.driver.calls();
     let execs = exec_at(&f);
-    assert_eq!(execs.len(), 3, "probe, collection, teardown: {calls:?}");
-    let (collect, teardown) = (execs.get(1).unwrap(), execs.get(2).unwrap());
+    assert_eq!(
+        execs.len(),
+        4,
+        "probe, recheck, collection, teardown: {calls:?}"
+    );
+    let (collect, teardown) = (execs.get(2).unwrap(), execs.get(3).unwrap());
     let specs = f.driver.execs();
-    let (c, t) = (&specs.get(1).unwrap().1, &specs.get(2).unwrap().1);
+    let (c, t) = (&specs.get(2).unwrap().1, &specs.get(3).unwrap().1);
     assert_eq!(c.sync, SyncMode::None);
     assert!(c.argv.iter().any(|a| a.contains("reports.index")));
     assert_eq!(t.sync, SyncMode::Full);
