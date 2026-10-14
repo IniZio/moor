@@ -134,6 +134,8 @@ pub struct SetupView {
     pub ok: bool,
     /// Last output line.
     pub line: Option<String>,
+    /// Duration in milliseconds.
+    pub ms: Option<u64>,
 }
 
 /// Outcome of dotfiles delivery.

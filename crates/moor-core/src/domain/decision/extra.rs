@@ -53,6 +53,13 @@ pub enum ExtraEvent {
         /// The failing output line.
         line: String,
     },
+    /// The repo setup script ended.
+    SetupFinished {
+        /// Time the script took, in milliseconds.
+        ms: u64,
+        /// Whether every line passed.
+        ok: bool,
+    },
     /// Admission checked credentials.
     Checked {
         /// The credentials that were checked.
@@ -158,6 +165,7 @@ impl From<ExtraEvent> for Event {
                 goal,
             },
             ExtraEvent::SetupFailed { line } => Self::SetupFailed { line },
+            ExtraEvent::SetupFinished { ms, ok } => Self::SetupFinished { ms, ok },
             ExtraEvent::Checked { credentials } => Self::Checked { credentials },
             ExtraEvent::RunStarted { run } => Self::RunStarted { run },
             ExtraEvent::Attached => Self::Attached,
@@ -237,6 +245,7 @@ impl TryFrom<Event> for ExtraEvent {
                 goal,
             }),
             Event::SetupFailed { line } => Ok(Self::SetupFailed { line }),
+            Event::SetupFinished { ms, ok } => Ok(Self::SetupFinished { ms, ok }),
             Event::Checked { credentials } => Ok(Self::Checked { credentials }),
             Event::RunStarted { run } => Ok(Self::RunStarted { run }),
             Event::Attached => Ok(Self::Attached),

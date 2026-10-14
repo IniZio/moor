@@ -546,3 +546,32 @@ fn a_failing_identity_exec_warns_and_setup_still_runs() {
     assert_eq!(argvs(&w).last(), Some(&script_argv(&["a"])));
     assert!(warning_codes(&w).contains(&"identity_failed".to_owned()));
 }
+
+#[test]
+fn a_setup_run_records_its_duration_on_a_setup_finished_event() {
+    let driver = FakeDriver::new().exec_results([Ok(exit(0))]);
+    let (w, v) = start_with("setup: [a]\n", driver);
+    assert_eq!(v.setup.ms, Some(0));
+    let id = TaskId::new(v.task.id);
+    let events = w.cx.store().unwrap().events(id, 50).unwrap();
+    let got: Vec<_> = events
+        .iter()
+        .filter(|e| e.kind == "setup_finished")
+        .map(|e| e.payload.clone())
+        .collect();
+    assert_eq!(got, [serde_json::json!({ "ms": 0, "ok": true })]);
+}
+
+#[test]
+fn a_failed_setup_records_its_duration_too() {
+    let driver = FakeDriver::new().exec_results([Ok(exit(1))]);
+    let (w, v) = start_with("setup: [a]\n", driver);
+    let id = TaskId::new(v.task.id);
+    let events = w.cx.store().unwrap().events(id, 50).unwrap();
+    let got: Vec<_> = events
+        .iter()
+        .filter(|e| e.kind == "setup_finished")
+        .map(|e| e.payload.clone())
+        .collect();
+    assert_eq!(got, [serde_json::json!({ "ms": 0, "ok": false })]);
+}

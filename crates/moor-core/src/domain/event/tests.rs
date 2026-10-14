@@ -131,6 +131,7 @@ fn all_events() -> Vec<Event> {
             box_port: 1,
             reason: s("r"),
         },
+        Event::SetupFinished { ms: 5, ok: true },
     ]
 }
 
@@ -183,6 +184,7 @@ const fn event_index(e: &Event) -> usize {
         Event::Steered { .. } => 33,
         Event::ProxyStarted { .. } => 34,
         Event::TunnelRestarted { .. } => 35,
+        Event::SetupFinished { .. } => 36,
     }
 }
 
@@ -190,7 +192,7 @@ const fn event_index(e: &Event) -> usize {
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 36);
+    assert_eq!(all.len(), 37);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }
