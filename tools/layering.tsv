@@ -34,3 +34,4 @@ moor::moor	moor::cx,moor::wire,moor::ops,moor::store,moor::adapters::clock,moor:
 extern:nono_proxy	moor::proxy
 extern:nono	moor::proxy
 extern:tokio	moor::proxy
+extern:webpki_roots	moor::proxy
