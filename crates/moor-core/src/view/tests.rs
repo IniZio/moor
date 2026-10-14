@@ -130,7 +130,7 @@ fn start_view_keys_match_wire_shape() {
 #[test]
 fn show_view_keys_match_wire_shape() {
     let v = ShowView {
-        tasks: vec![task()],
+        tasks: Some(vec![task()]),
         task: None,
         events: Some(vec![EventView {
             id: 1,
@@ -164,7 +164,7 @@ fn show_view_keys_match_wire_shape() {
 #[test]
 fn show_view_absent_sections_are_null() {
     let v = ShowView {
-        tasks: vec![],
+        tasks: Some(vec![]),
         task: None,
         events: None,
         pane: None,
@@ -173,6 +173,21 @@ fn show_view_absent_sections_are_null() {
     assert_eq!(
         serde_json::to_value(v).ok(),
         Some(json!({"tasks": [], "task": null, "events": null, "pane": null, "reports": null}))
+    );
+}
+
+#[test]
+fn show_view_single_task_omits_tasks() {
+    let v = ShowView {
+        tasks: None,
+        task: Some(task()),
+        events: None,
+        pane: None,
+        reports: None,
+    };
+    assert_eq!(
+        serde_json::to_value(v).ok(),
+        Some(json!({"task": task_json(), "events": null, "pane": null, "reports": null}))
     );
 }
 

@@ -143,7 +143,7 @@ fn a_launch_failure_shows_as_failed_and_is_not_idled_by_the_next_list() {
         pane: false,
     };
     let shown = crate::ops::show::run(&w.cx, &req).unwrap();
-    let t = shown.tasks.first().unwrap();
+    let t = shown.tasks.as_ref().unwrap().first().unwrap();
     assert_eq!(t.state, TaskState::Working);
     let a = t.agent.as_ref().unwrap();
     assert_eq!(a.state, "failed");
