@@ -1,6 +1,6 @@
 //! Which readings may apply quiet.
 
-use super::{blocked, exited, fresh, obs, Case, TASKS};
+use super::{exited, fresh, obs, Case, TASKS};
 use crate::activity::{
     may_apply_quiet, Activity, AgentState as S, HookKind as K, HookRead, PaneRead, PaneStatus as P,
     Source,
@@ -17,14 +17,14 @@ fn hook_idle_and_blocked_apply() {
     assert!(quiet(&Case::new("fresh idle", fresh(K::Idle), none())));
     assert!(quiet(&Case::new(
         "fresh blocked",
-        fresh(blocked("q")),
+        fresh(K::Blocked),
         none()
     )));
     assert!(quiet(
         &Case::new("cached idle", t(), none()).cache(K::Idle, 5)
     ));
     assert!(quiet(
-        &Case::new("cached blocked", t(), none()).cache(blocked("q"), 5)
+        &Case::new("cached blocked", t(), none()).cache(K::Blocked, 5)
     ));
 }
 

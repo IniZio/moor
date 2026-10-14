@@ -253,15 +253,18 @@ fn add_live(cx: &Cx) -> TaskId {
 
 /// Probes with a fresh hook report of `kind` and an unreadable pane status.
 fn hook(kind: HookKind) -> Probes {
+    let message = (kind == HookKind::Blocked).then(|| "Allow edit?".to_owned());
     Probes {
         hook: HookRead::Fresh(HookRecord {
             kind,
             session_id: None,
+            message,
             at: Ts::from_millis(0),
         }),
         pane: PaneRead::Fresh(PaneObs {
             status: PaneStatus::Unknown,
             tail: String::new(),
+            prompt: None,
             exit_marker: None,
         }),
     }
@@ -293,10 +296,7 @@ fn a_busy_agent_keeps_idle_waiting_until_timeout() {
 
 #[test]
 fn an_idle_or_blocked_agent_returns_at_once() {
-    let blocked = HookKind::Blocked {
-        waiting_for: "Allow edit?".into(),
-    };
-    for kind in [HookKind::Idle, blocked] {
+    for kind in [HookKind::Idle, HookKind::Blocked] {
         let dir = tempfile::tempdir().unwrap();
         let (cx, _) = agent_cx(dir.path(), hook(kind));
         add_live(&cx);
@@ -309,10 +309,7 @@ fn an_idle_or_blocked_agent_returns_at_once() {
 #[test]
 fn the_payload_carries_the_agent() {
     let dir = tempfile::tempdir().unwrap();
-    let blocked = HookKind::Blocked {
-        waiting_for: "Allow edit?".into(),
-    };
-    let (cx, _) = agent_cx(dir.path(), hook(blocked));
+    let (cx, _) = agent_cx(dir.path(), hook(HookKind::Blocked));
     add_live(&cx);
     let v = run(&cx, &req(None, None)).unwrap();
     let a = v.task.agent.expect("an agent view");

@@ -97,6 +97,7 @@ fn rec(kind: HookKind) -> HookRecord {
     HookRecord {
         kind,
         session_id: None,
+        message: None,
         at: Ts::from_millis(NOW.as_millis() - 1000),
     }
 }
@@ -107,6 +108,7 @@ fn hook(kind: HookKind) -> Probes {
         pane: PaneRead::Fresh(PaneObs {
             status: PaneStatus::Unknown,
             tail: String::new(),
+            prompt: None,
             exit_marker: None,
         }),
     }
@@ -311,6 +313,7 @@ fn pane_liveness_tells_gone_from_exited_from_live() {
             PaneRead::Fresh(PaneObs {
                 status: PaneStatus::Unknown,
                 tail: String::new(),
+                prompt: None,
                 exit_marker: Some(3),
             }),
             PaneLiveness::Exited,
@@ -407,9 +410,7 @@ fn settle_leaves_a_working_task_when_only_the_pane_reports_idle() {
         (PaneStatus::Idle, AgentState::Idle),
         (
             PaneStatus::Blocked,
-            AgentState::Blocked {
-                waiting_for: ">".into(),
-            },
+            AgentState::Blocked { waiting_for: None },
         ),
     ];
     for (status, want) in cases {
@@ -419,6 +420,7 @@ fn settle_leaves_a_working_task_when_only_the_pane_reports_idle() {
             pane: PaneRead::Fresh(PaneObs {
                 status,
                 tail: "> ".into(),
+                prompt: None,
                 exit_marker: None,
             }),
         };

@@ -35,22 +35,16 @@ fn starting_state_is_starting() {
 
 #[test]
 fn waiting_input_carries_the_message() {
-    assert_eq!(
-        kind(r#"{"state":"waiting_input","message":"Allow rm?","ts":1}"#),
-        Some(HookKind::Blocked {
-            waiting_for: "Allow rm?".into()
-        })
-    );
+    let rec = parse(r#"{"state":"waiting_input","message":"Allow rm?","ts":1}"#).unwrap();
+    assert_eq!(rec.kind, HookKind::Blocked);
+    assert_eq!(rec.message.as_deref(), Some("Allow rm?"));
 }
 
 #[test]
-fn waiting_input_without_message_has_empty_waiting_for() {
-    assert_eq!(
-        kind(r#"{"state":"waiting_input","ts":1}"#),
-        Some(HookKind::Blocked {
-            waiting_for: String::new()
-        })
-    );
+fn waiting_input_without_message_has_none() {
+    let rec = parse(r#"{"state":"waiting_input","ts":1}"#).unwrap();
+    assert_eq!(rec.kind, HookKind::Blocked);
+    assert_eq!(rec.message, None);
 }
 
 #[test]
@@ -115,4 +109,30 @@ fn string_ts_is_absent() {
 fn negative_or_overflowing_ts_is_absent() {
     assert_eq!(parse(r#"{"state":"idle","ts":-1}"#), None);
     assert_eq!(parse(r#"{"state":"idle","ts":9223372036854775807}"#), None);
+}
+
+const RULE: &str = "────────────────";
+
+fn prompt(tail: &str) -> Option<String> {
+    Claude.pane_prompt(tail)
+}
+
+#[test]
+fn pane_prompt_is_the_line_above_the_input_box() {
+    let tail = format!("Allow rm?\n\n{RULE}\n> \n{RULE}\n  ? for shortcuts");
+    assert_eq!(prompt(&tail).as_deref(), Some("Allow rm?"));
+    let boxed = "Allow rm?\n╭──────╮\n│ >    │\n╰──────╯\n  esc to interrupt";
+    assert_eq!(prompt(boxed).as_deref(), Some("Allow rm?"));
+}
+
+#[test]
+fn pane_prompt_skips_blank_lines_and_the_footer() {
+    let tail = format!("Allow rm?\n  \n\n{RULE}\n> \n{RULE}\n  esc to interrupt");
+    assert_eq!(prompt(&tail).as_deref(), Some("Allow rm?"));
+}
+
+#[test]
+fn pane_prompt_needs_an_input_box_and_text_above_it() {
+    assert_eq!(prompt("esc to interrupt"), None);
+    assert_eq!(prompt(&format!("{RULE}\n> \n{RULE}\nfooter")), None);
 }

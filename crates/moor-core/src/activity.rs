@@ -18,8 +18,8 @@ pub enum AgentState {
     Working,
     /// Waiting on an answer.
     Blocked {
-        /// The prompt text.
-        waiting_for: String,
+        /// The prompt text, when one could be read.
+        waiting_for: Option<String>,
     },
     /// Done and waiting for input.
     Idle,
@@ -101,10 +101,7 @@ pub enum HookKind {
     /// The agent finished and waits for input.
     Idle,
     /// The agent waits on an answer.
-    Blocked {
-        /// The prompt text.
-        waiting_for: String,
-    },
+    Blocked,
 }
 
 /// One hook report, neutral across agents.
@@ -114,6 +111,8 @@ pub struct HookRecord {
     pub kind: HookKind,
     /// The agent session it came from.
     pub session_id: Option<String>,
+    /// The text the agent attached, such as the question it waits on.
+    pub message: Option<String>,
     /// When the agent wrote it.
     pub at: Ts,
 }
@@ -147,6 +146,8 @@ pub struct PaneObs {
     pub status: PaneStatus,
     /// The end of the pane text.
     pub tail: String,
+    /// The line the agent shows as its pending question, as its profile reads it from the text.
+    pub prompt: Option<String>,
     /// The exit code from the exit marker line, when the agent ended.
     pub exit_marker: Option<i32>,
 }
@@ -220,6 +221,14 @@ fn tail_of(pane: &PaneRead) -> &str {
     }
 }
 
+/// The pending question the profile read from the pane, if any.
+fn prompt_of(pane: &PaneRead) -> Option<&str> {
+    match pane {
+        PaneRead::Fresh(obs) => obs.prompt.as_deref(),
+        _ => None,
+    }
+}
+
 /// An ended or vanished pane beats every other reading.
 const fn pane_ended(pane: &PaneRead) -> Option<Activity> {
     match pane {
@@ -233,12 +242,18 @@ const fn pane_ended(pane: &PaneRead) -> Option<Activity> {
 }
 
 /// The state a hook report gives, if it still counts.
-fn from_record(rec: &HookRecord, source: Source, young: bool, tail: &str) -> Option<Activity> {
+fn from_record(rec: &HookRecord, source: Source, young: bool, pane: &PaneRead) -> Option<Activity> {
+    let tail = tail_of(pane);
     match &rec.kind {
         HookKind::Busy => Some(act(AgentState::Working, source)),
-        HookKind::Blocked { waiting_for } => Some(act(
+        HookKind::Blocked => Some(act(
             AgentState::Blocked {
-                waiting_for: waiting_for.clone(),
+                waiting_for: [rec.message.as_deref(), prompt_of(pane)]
+                    .into_iter()
+                    .flatten()
+                    .map(str::trim)
+                    .find(|m| !m.is_empty())
+                    .map(str::to_owned),
             },
             source,
         )),
@@ -249,9 +264,14 @@ fn from_record(rec: &HookRecord, source: Source, young: bool, tail: &str) -> Opt
 }
 
 /// The state a cached report gives, while it is younger than the TTL.
-fn from_cache(cache: Option<&HookCache>, now: Ts, young: bool, tail: &str) -> Option<Activity> {
+fn from_cache(
+    cache: Option<&HookCache>,
+    now: Ts,
+    young: bool,
+    pane: &PaneRead,
+) -> Option<Activity> {
     let c = cache.filter(|c| age(now, c.at) < HOOK_TTL)?;
-    from_record(&c.record, Source::HooksCached, young, tail)
+    from_record(&c.record, Source::HooksCached, young, pane)
 }
 
 /// The state the pane alone gives.
@@ -272,17 +292,12 @@ fn from_obs(obs: &PaneObs) -> Activity {
     match obs.status {
         PaneStatus::Working => act(AgentState::Working, Source::Herdr),
         PaneStatus::Idle => act(AgentState::Idle, Source::Herdr),
-        PaneStatus::Blocked => {
-            let waiting_for = obs
-                .tail
-                .lines()
-                .rev()
-                .map(str::trim)
-                .find(|l| !l.is_empty())
-                .unwrap_or_default()
-                .to_owned();
-            act(AgentState::Blocked { waiting_for }, Source::Herdr)
-        }
+        PaneStatus::Blocked => act(
+            AgentState::Blocked {
+                waiting_for: obs.prompt.clone().filter(|p| !p.trim().is_empty()),
+            },
+            Source::Herdr,
+        ),
         PaneStatus::Unknown => act(AgentState::Unknown, Source::Pane),
     }
 }
@@ -297,19 +312,19 @@ pub fn decide(probes: &Probes, cache: Option<&HookCache>, now: Ts, started: Ts) 
         return a;
     }
     let young = age(now, started) < STARTUP_GRACE;
-    let tail = tail_of(&probes.pane);
+    let pane = &probes.pane;
     match &probes.hook {
         HookRead::Fresh(rec) => {
-            if let Some(a) = from_record(rec, Source::Hooks, young, tail) {
+            if let Some(a) = from_record(rec, Source::Hooks, young, pane) {
                 return a;
             }
         }
         HookRead::TimedOut => {
-            return from_cache(cache, now, young, tail)
+            return from_cache(cache, now, young, pane)
                 .unwrap_or_else(|| act(AgentState::Unknown, Source::Timeout));
         }
         HookRead::Absent => {
-            if let Some(a) = from_cache(cache, now, young, tail) {
+            if let Some(a) = from_cache(cache, now, young, pane) {
                 return a;
             }
         }

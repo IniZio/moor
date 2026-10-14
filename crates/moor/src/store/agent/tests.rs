@@ -171,15 +171,14 @@ fn hook_cache_round_trips_every_kind_and_keeps_the_latest() {
         HookKind::Starting,
         HookKind::Busy,
         HookKind::Idle,
-        HookKind::Blocked {
-            waiting_for: "ok?".into(),
-        },
+        HookKind::Blocked,
     ];
     for (i, kind) in kinds.into_iter().enumerate() {
         clock.sleep(Duration::from_millis(10));
         let record = HookRecord {
             kind,
             session_id: (i % 2 == 0).then(|| "sess".to_owned()),
+            message: (i == 3).then(|| "ok?".to_owned()),
             at: Ts::from_millis(500 + i64::try_from(i).unwrap()),
         };
         store.put_hook(id, &record).unwrap();
@@ -236,4 +235,23 @@ fn rejected_step_leaves_idle_since_unchanged() {
         .apply(Decision::new(id).task_input(TaskInput::Wake))
         .is_err());
     assert_eq!(idle_since(&store, id), want);
+}
+
+#[test]
+fn hook_cache_reads_a_legacy_blocked_row_as_its_message() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = add(&store, "t");
+    let c = rusqlite::Connection::open(dir.path().join("moor.db")).unwrap();
+    c.execute(
+        "INSERT INTO hook_cache (task, record, at) VALUES (?1, ?2, 1)",
+        rusqlite::params![
+            id.get(),
+            r#"{"kind":"blocked","waiting_for":"X","session_id":null,"at":5}"#
+        ],
+    )
+    .unwrap();
+    let rec = store.hook(id).unwrap().unwrap().record;
+    assert_eq!(rec.kind, HookKind::Blocked);
+    assert_eq!(rec.message.as_deref(), Some("X"));
 }

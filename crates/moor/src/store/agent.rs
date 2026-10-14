@@ -139,15 +139,15 @@ fn session_from_row(r: &Row<'_>) -> rusqlite::Result<SessionRow> {
 
 /// The stored form of a hook report.
 fn record_json(rec: &HookRecord) -> Value {
-    let (kind, waiting_for) = match &rec.kind {
-        HookKind::Starting => ("starting", None),
-        HookKind::Busy => ("busy", None),
-        HookKind::Idle => ("idle", None),
-        HookKind::Blocked { waiting_for } => ("blocked", Some(waiting_for)),
+    let kind = match &rec.kind {
+        HookKind::Starting => "starting",
+        HookKind::Busy => "busy",
+        HookKind::Idle => "idle",
+        HookKind::Blocked => "blocked",
     };
     json!({
         "kind": kind,
-        "waiting_for": waiting_for,
+        "message": rec.message,
         "session_id": rec.session_id,
         "at": rec.at.as_millis(),
     })
@@ -160,17 +160,16 @@ fn record_from_json(v: &Value) -> Result<HookRecord, StoreError> {
         Some("starting") => HookKind::Starting,
         Some("busy") => HookKind::Busy,
         Some("idle") => HookKind::Idle,
-        Some("blocked") => HookKind::Blocked {
-            waiting_for: v["waiting_for"]
-                .as_str()
-                .ok_or_else(|| bad("blocked without waiting_for"))?
-                .to_owned(),
-        },
+        Some("blocked") => HookKind::Blocked,
         _ => return Err(bad("unknown kind")),
     };
     Ok(HookRecord {
         kind,
         session_id: v["session_id"].as_str().map(str::to_owned),
+        message: v["message"]
+            .as_str()
+            .or_else(|| v["waiting_for"].as_str())
+            .map(str::to_owned),
         at: Ts::from_millis(v["at"].as_i64().ok_or_else(|| bad("missing at"))?),
     })
 }

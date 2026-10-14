@@ -97,6 +97,7 @@ impl Herdr {
         )?;
         Ok(PaneObs {
             status,
+            prompt: None,
             exit_marker: exit_marker(&text),
             tail: text.trim_end().to_owned(),
         })
