@@ -187,8 +187,7 @@ fn release_not_found_counts_as_deleted() {
     let f = fx();
     let h = row(&f).boxed.unwrap().handle.unwrap();
     f.driver.forget(&h);
-    // A forgotten Box cannot be probed, so only --force gets past the check.
-    let v = run(&f.cx, &req(true)).unwrap();
+    let v = run(&f.cx, &req(false)).unwrap();
     assert!(v.box_deleted);
     assert_eq!(box_state(&f), BoxState::Deleted);
 }
