@@ -235,6 +235,8 @@ fn serve_injects_the_credential_audits_requests_and_stops() {
             Ok(Secret::new(SECRET.as_bytes().to_vec()))
         }),
         upstream_ca: Some(up.ca_path.clone()),
+        upstream_dial: None,
+        guard_exempt: vec![SocketAddr::from((Ipv4Addr::LOCALHOST, up.port))],
         state_dir: dir.path(),
         boot_id: None,
         stop: Arc::clone(&stop),

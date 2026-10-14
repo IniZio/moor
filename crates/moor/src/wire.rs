@@ -159,6 +159,8 @@ fn run_proxy(env: &Env, task: TaskId, sink: &Sink) -> Result<u8, String> {
         rng: cx.rng(),
         creds,
         upstream_ca: None,
+        upstream_dial: None,
+        guard_exempt: Vec::new(),
         state_dir,
         boot_id: proc.boot_id(),
         stop,

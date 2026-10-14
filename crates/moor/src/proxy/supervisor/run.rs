@@ -165,12 +165,12 @@ pub(super) fn begin<'d>(deps: &'d Deps<'d>, task: TaskId) -> Result<Running<'d>,
         }
     };
     if let Err(code) = renew(deps, task, &owner) {
-        live.proxy.stop();
+        live.stop();
         return Err(code);
     }
     let tunnel = match deps
         .driver
-        .reverse_tunnel(&handle, box_port, live.proxy.port(), &worktree)
+        .reverse_tunnel(&handle, box_port, live.port(), &worktree)
     {
         Ok(tunnel) => tunnel,
         Err(err) => {
@@ -178,18 +178,18 @@ pub(super) fn begin<'d>(deps: &'d Deps<'d>, task: TaskId) -> Result<Running<'d>,
                 sink,
                 format_args!("cannot open the tunnel into the box: {err}"),
             );
-            live.proxy.stop();
+            live.stop();
             give_up(deps, task, &owner);
             return Err(1);
         }
     };
     let ports = ProxyPorts {
         box_port,
-        host_port: live.proxy.port(),
+        host_port: live.port(),
     };
     if let Err(code) = mark(deps, task, &owner, ports, &handle) {
         drop(tunnel);
-        live.proxy.stop();
+        live.stop();
         return Err(code);
     }
     Ok(Running {
@@ -308,7 +308,7 @@ impl Running<'_> {
             ..
         } = self;
         live.drain(deps, task);
-        live.proxy.stop();
+        live.stop();
         drop(tunnel);
         if stop != Stop::LostLease {
             give_up(deps, task, &owner);
@@ -333,9 +333,9 @@ impl Running<'_> {
         &self.owner
     }
 
-    /// The port the proxy is bound to.
+    /// The port of the CONNECT-only front the Box reaches.
     #[cfg(test)]
     pub(super) const fn host_port(&self) -> u16 {
-        self.live.proxy.port()
+        self.live.port()
     }
 }

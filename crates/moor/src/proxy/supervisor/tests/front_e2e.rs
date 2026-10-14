@@ -1,0 +1,249 @@
+//! The front listener passes only `CONNECT`: origin-form and absolute-form requests never reach nono or any upstream.
+//!
+//! The `CONNECT` path through the front is covered by `graphql_e2e`, whose client goes through the front port.
+
+use std::collections::BTreeMap;
+use std::fmt::Write as _;
+use std::io::{ErrorKind, Read, Write};
+use std::net::{Ipv4Addr, TcpStream};
+use std::time::Duration;
+
+use moor_core::config::proxy::{EndpointRule, ResolvedInject, ResolvedRule};
+
+use super::graphql_e2e::{rig_with, Rig, NONCE, SECRET};
+use crate::proxy::nono::tests::upstream::{self, Upstream};
+
+/// `base64("moor:" + NONCE)`, the `Proxy-Authorization` credential of a sandbox client.
+const BASIC: &str = "bW9vcjpub25jZV9ncWwtMDEyMzQ1Njc4OQ==";
+/// The body the front answers every non-`CONNECT` request with.
+const REFUSAL: &str = r#"{"message":"moor: only CONNECT is allowed"}"#;
+/// A GraphQL query for a repository that is not the Task's.
+const OTHER_REPO: &str = r#"{"query":"query{repository(owner:\"victim\",name:\"secrets\"){id}}"}"#;
+
+/// Rig plus fake upstreams for the two hosts nono dials itself.
+struct Front {
+    /// The supervisor listener and the fake `api.github.com`.
+    rig: Rig,
+    /// Fake host of the `claude` rule.
+    claude: Upstream,
+    /// Fake host of the `github-git` rule.
+    git: Upstream,
+}
+
+/// A header-injecting rule for `localhost:<port>`.
+fn rule(name: &str, port: u16, form: &str) -> ResolvedRule {
+    ResolvedRule {
+        name: name.to_owned(),
+        hosts: vec![format!("localhost:{port}")],
+        credential: "TOOL_TOKEN".to_owned(),
+        inject: ResolvedInject::Header {
+            header: "authorization".to_owned(),
+            form: form.to_owned(),
+        },
+        endpoint_rules: vec![EndpointRule {
+            method: "POST".to_owned(),
+            path: "/v1/messages".to_owned(),
+        }],
+        box_env: BTreeMap::new(),
+    }
+}
+
+/// Starts the supervisor with GitHub, `claude` and `github-git` rules, each host a recording fake.
+fn front() -> Front {
+    let dir = tempfile::tempdir().unwrap();
+    let claude = upstream::start(dir.path());
+    let git = claude.twin();
+    let rules = vec![
+        rule("claude", claude.port, "Bearer {secret}"),
+        rule("github-git", git.port, "Basic {secret}"),
+    ];
+    Front {
+        rig: rig_with(rules),
+        claude,
+        git,
+    }
+}
+
+/// What the front answered.
+struct Reply {
+    /// Status code.
+    status: u16,
+    /// Response body.
+    body: String,
+}
+
+/// Sends `raw` to `port` and reads the answer until the peer closes or goes quiet.
+fn send(port: u16, raw: &str) -> Reply {
+    let mut tcp = TcpStream::connect((Ipv4Addr::LOCALHOST, port)).unwrap();
+    tcp.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+    tcp.set_write_timeout(Some(Duration::from_secs(5))).unwrap();
+    tcp.write_all(raw.as_bytes()).unwrap();
+    let mut got = Vec::new();
+    let mut buf = [0u8; 1024];
+    loop {
+        match tcp.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => got.extend_from_slice(buf.get(..n).unwrap_or_default()),
+            Err(e) if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => break,
+            Err(e) if e.kind() == ErrorKind::ConnectionReset => break,
+            Err(e) => unreachable!("read failed: {e}"),
+        }
+    }
+    let text = String::from_utf8_lossy(&got).into_owned();
+    let (head, body) = text.split_once("\r\n\r\n").unwrap_or((&text, ""));
+    let status = head
+        .split_whitespace()
+        .nth(1)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    Reply {
+        status,
+        body: body.to_owned(),
+    }
+}
+
+/// A request with the given target and headers, closing after the answer.
+fn request(method: &str, target: &str, host: &str, extra: &[String], body: &str) -> String {
+    let mut out = format!("{method} {target} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n");
+    for h in extra {
+        out.push_str(h);
+        out.push_str("\r\n");
+    }
+    let _ = write!(
+        out,
+        "Content-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+        body.len()
+    );
+    out
+}
+
+/// The credential header variants a sandbox client can present.
+fn credentials() -> Vec<Vec<String>> {
+    vec![
+        vec![format!("Proxy-Authorization: Basic {BASIC}")],
+        vec![format!("Authorization: Bearer {NONCE}")],
+        vec![
+            format!("Proxy-Authorization: Basic {BASIC}"),
+            format!("Authorization: Bearer {NONCE}"),
+        ],
+    ]
+}
+
+impl Front {
+    /// Sends `raw` to the front port and expects the refusal.
+    fn refused(&self, raw: &str) {
+        let port = self.rig.live.as_ref().unwrap().port();
+        let reply = send(port, raw);
+        assert_eq!(reply.status, 403, "unexpected answer: {}", reply.body);
+        assert_eq!(reply.body, REFUSAL);
+        assert!(!reply.body.contains(SECRET));
+        assert!(!reply.body.contains(NONCE));
+    }
+
+    /// Nothing was dialled upstream and nothing reached nono.
+    fn assert_untouched(&self) {
+        std::thread::sleep(Duration::from_millis(200));
+        assert!(self.rig.seen().is_empty(), "api.github.com was reached");
+        assert!(self.claude.seen().is_empty(), "claude host was reached");
+        assert!(self.git.seen().is_empty(), "github-git host was reached");
+        let rig = &self.rig;
+        rig.live.as_ref().unwrap().drain(&rig.deps(), rig.task);
+        let events = rig.store.events(rig.task, 100).unwrap();
+        let noisy: Vec<_> = events
+            .iter()
+            .filter(|e| e.kind.contains("egress") || e.kind.contains("credential"))
+            .map(|e| e.kind.as_str())
+            .collect();
+        assert!(noisy.is_empty(), "nono audited {noisy:?}");
+    }
+
+    /// Stops the supervisor listeners.
+    fn stop(mut self) {
+        self.rig.live.take().unwrap().stop();
+    }
+}
+
+#[test]
+fn front_is_not_the_nono_port() {
+    let f = front();
+    assert_ne!(
+        f.rig.live.as_ref().unwrap().port(),
+        f.rig.live.as_ref().unwrap().nono_port()
+    );
+    f.stop();
+}
+
+#[test]
+fn origin_form_graphql_route_is_refused_before_nono() {
+    let f = front();
+    for extra in credentials() {
+        f.refused(&request(
+            "POST",
+            "/github-api__0/graphql",
+            "api.github.com",
+            &extra,
+            OTHER_REPO,
+        ));
+    }
+    f.assert_untouched();
+    f.stop();
+}
+
+#[test]
+fn origin_form_claude_route_is_refused_before_nono() {
+    let f = front();
+    for extra in credentials() {
+        f.refused(&request(
+            "POST",
+            "/claude__0/v1/messages",
+            "api.anthropic.com",
+            &extra,
+            r#"{"model":"m"}"#,
+        ));
+    }
+    f.assert_untouched();
+    f.stop();
+}
+
+#[test]
+fn origin_form_git_route_is_refused_before_nono() {
+    let f = front();
+    for extra in credentials() {
+        f.refused(&request(
+            "GET",
+            "/github-git__0/info/refs?service=git-upload-pack",
+            "github.com",
+            &extra,
+            "",
+        ));
+    }
+    f.assert_untouched();
+    f.stop();
+}
+
+#[test]
+fn absolute_form_requests_are_refused_before_nono() {
+    let f = front();
+    let nono = f.rig.live.as_ref().unwrap().nono_port();
+    let nono_url = format!("http://127.0.0.1:{nono}/github-api__0/graphql");
+    let host = format!("127.0.0.1:{nono}");
+    for extra in credentials() {
+        f.refused(&request("GET", &nono_url, &host, &extra, ""));
+        f.refused(&request(
+            "POST",
+            "http://api.github.com/graphql",
+            "api.github.com",
+            &extra,
+            OTHER_REPO,
+        ));
+        f.refused(&request(
+            "POST",
+            &format!("http://localhost:{}/v1/messages", f.claude.port),
+            "localhost",
+            &extra,
+            "{}",
+        ));
+    }
+    f.assert_untouched();
+    f.stop();
+}

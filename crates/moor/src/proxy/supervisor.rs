@@ -50,6 +50,10 @@ pub(crate) struct Deps<'a> {
     pub(crate) creds: CredsFn,
     /// Extra upstream root PEM the proxy trusts; `None` in production.
     pub(crate) upstream_ca: Option<PathBuf>,
+    /// Address the GraphQL filter dials instead of resolving the GitHub API host; `None` in production.
+    pub(crate) upstream_dial: Option<std::net::SocketAddr>,
+    /// Loopback addresses the egress guard lets through; empty in production.
+    pub(crate) guard_exempt: Vec<std::net::SocketAddr>,
     /// Directory holding the proxy logs, CA and spec.
     pub(crate) state_dir: &'a Path,
     /// Host boot id recorded in the row at readiness; `None` where the host has none.

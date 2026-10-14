@@ -4,8 +4,8 @@
 //! nono needs three things for a rule host such as `127.0.0.1:4433`: the
 //! `host:port` entry in `allowed_hosts` (its filter matches `host:port`
 //! entries by the CONNECT port), an `https://host:port` route upstream, and
-//! the route credential key. The session token is the Task Nonce; neither the
-//! token nor any credential is ever printed.
+//! the route credential key. Neither the session token nor any credential is
+//! ever printed.
 
 pub(crate) mod audit;
 pub(crate) mod ca;
@@ -13,14 +13,14 @@ pub(crate) mod capture;
 
 use std::collections::BTreeSet;
 use std::fmt;
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::config::proxy::{ResolvedInject, ResolvedRule};
 use moor_core::Secret;
-use nono_proxy::config::{EndpointRule, InjectMode, RouteConfig};
+use nono_proxy::config::{EndpointRule, ExternalProxyConfig, InjectMode, RouteConfig};
 use nono_proxy::ProxyConfig;
 use zeroize::Zeroizing;
 
@@ -30,7 +30,9 @@ pub(crate) struct NonoSpec<'a> {
     pub(crate) rules: &'a [ResolvedRule],
     /// Extra passthrough hosts (no credential).
     pub(crate) allow: &'a [String],
-    /// Task Nonce, base64url text; becomes the session token.
+    /// The internal session token nono checks, base64url text. The Box never
+    /// sees it: the front listener checks the Box's own nonce and swaps it
+    /// for this one.
     pub(crate) nonce: &'a Secret,
     /// The Task's interception CA.
     pub(crate) ca: &'a ca::TaskCa,
@@ -38,6 +40,29 @@ pub(crate) struct NonoSpec<'a> {
     pub(crate) ca_dir: &'a Path,
     /// Extra upstream root PEM for every route; `None` in production.
     pub(crate) upstream_ca: Option<&'a Path>,
+    /// Sends every CONNECT through an external proxy with no bypass; `None` keeps all direct.
+    pub(crate) chain: Option<Chain<'a>>,
+}
+
+/// The host whose TLS the filter terminates and whose GraphQL it judges.
+pub(crate) const GITHUB_API_HOST: &str = "api.github.com";
+
+/// The external proxy that receives all of nono's egress.
+pub(crate) struct Chain<'a> {
+    /// The external proxy (the loopback filter). Every CONNECT goes here.
+    pub(crate) proxy: SocketAddr,
+    /// Hostname (no port) whose TLS the filter terminates.
+    pub(crate) host: &'a str,
+    /// Task CA certificate PEM that signs the filter's leaf for `host`.
+    pub(crate) ca_pem: &'a Path,
+}
+
+/// `host` without a trailing `:port`; route hosts may carry a port; the chained host is a bare hostname.
+fn bare_host(host: &str) -> &str {
+    match host.rsplit_once(':') {
+        Some((h, port)) if !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit()) => h,
+        _ => host,
+    }
 }
 
 /// Route prefix for (rule, host index).
@@ -84,7 +109,13 @@ fn route_for(spec: &NonoSpec<'_>, rule: &ResolvedRule, index: usize, host: &str)
                 path: r.path.clone(),
             })
             .collect(),
-        tls_ca: spec.upstream_ca.map(|p| p.to_string_lossy().into_owned()),
+        tls_ca: spec
+            .chain
+            .as_ref()
+            .filter(|c| bare_host(host).eq_ignore_ascii_case(c.host))
+            .map(|c| c.ca_pem)
+            .or(spec.upstream_ca)
+            .map(|p| p.to_string_lossy().into_owned()),
         ..RouteConfig::default()
     };
     match &rule.inject {
@@ -114,7 +145,15 @@ pub(crate) fn build_config(spec: &NonoSpec<'_>) -> NonoConfig {
             routes.push(route_for(spec, rule, i, host));
         }
     }
+    // An empty bypass list sends every CONNECT to the external proxy, so the
+    // filter vets every destination.
+    let external_proxy = spec.chain.as_ref().map(|c| ExternalProxyConfig {
+        address: c.proxy.to_string(),
+        auth: None,
+        bypass_hosts: Vec::new(),
+    });
     NonoConfig(ProxyConfig {
+        external_proxy,
         bind_addr: IpAddr::V4(Ipv4Addr::LOCALHOST),
         bind_port: 0,
         allowed_hosts: hosts.into_iter().collect(),

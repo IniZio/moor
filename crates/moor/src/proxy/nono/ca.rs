@@ -43,6 +43,12 @@ impl TaskCa {
         &self.cert_pem
     }
 
+    /// The CA as a signer for the GraphQL filter's TLS listener.
+    pub(crate) fn ephemeral(&self) -> std::io::Result<EphemeralCa> {
+        EphemeralCa::from_existing(&self.key_der, &self.cert_pem)
+            .map_err(|_| Error::other("proxy CA is not usable"))
+    }
+
     /// The key and certificate in the form the proxy config takes.
     pub(crate) fn preloaded(&self) -> PreloadedCa {
         PreloadedCa {
@@ -55,6 +61,11 @@ impl TaskCa {
 /// `<state_dir>/proxy/<task>/`, where the Task's CA lives.
 pub(crate) fn ca_dir(state_dir: &Path, task: TaskId) -> PathBuf {
     state_dir.join("proxy").join(task.get().to_string())
+}
+
+/// Path of the Task's CA certificate, which the Box trusts.
+pub(crate) fn cert_path(state_dir: &Path, task: TaskId) -> PathBuf {
+    ca_dir(state_dir, task).join(CERT_FILE)
 }
 
 /// Loads the Task's CA, or generates and persists one when neither file

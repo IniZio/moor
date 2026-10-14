@@ -16,6 +16,9 @@ use moor_core::seam::proxy_host::ProxySpec;
 use moor_core::secret::Secret;
 use moor_core::{ProviderId, TaskId, TaskName};
 
+mod front_e2e;
+mod graphql_e2e;
+mod hairpin_e2e;
 mod nono_e2e;
 
 use super::{serve, start, Deps, Sink, Stop, LEASE, TICK};
@@ -124,6 +127,8 @@ impl World {
             clock,
             rng: &self.rng,
             creds,
+            upstream_dial: None,
+            guard_exempt: Vec::new(),
             upstream_ca,
             state_dir: self.dir.path(),
             boot_id: Some(BOOT.to_owned()),
