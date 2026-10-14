@@ -127,6 +127,8 @@ fn close_refuses_a_box_with_only_uncommitted_changes() {
     let t = text(&refused(&f));
     assert!(t.contains("the Box holds work"), "{t}");
     assert!(t.contains("3 uncommitted file"), "{t}");
+    assert!(t.contains("git push moor HEAD:refs/heads/"), "{t}");
+    assert!(!t.contains("bundle"), "{t}");
 }
 
 #[test]
