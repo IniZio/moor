@@ -39,10 +39,25 @@ enum Out {
     Length(u64),
     /// Re-chunked, because the upstream gave no length.
     Chunked,
+    /// No body follows the head; a `content-length` is only forwarded.
+    Bodiless(Option<u64>),
+}
+
+/// Whether a response to `method` with `code` carries no body.
+const fn is_bodiless(method: &str, code: u16) -> bool {
+    method.eq_ignore_ascii_case("HEAD") || matches!(code, 100..=199 | 204 | 304)
 }
 
 /// Writes the upstream response head and streams its body.
-pub(super) fn write_response(stream: &mut TcpStream, response: Response<Body>) -> Written {
+///
+/// Responses to `HEAD` and `1xx`, `204` and `304` responses have no body: their
+/// `content-length` describes the representation and is forwarded as is, and
+/// no framing is added.
+pub(super) fn write_response(
+    stream: &mut TcpStream,
+    response: Response<Body>,
+    method: &str,
+) -> Written {
     let (parts, mut body) = response.into_parts();
     let code = parts.status.as_u16();
     let named: Vec<String> = parts
@@ -58,7 +73,11 @@ pub(super) fn write_response(stream: &mut TcpStream, response: Response<Body>) -
         .get("content-length")
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.trim().parse::<u64>().ok());
-    let out = length.map_or(Out::Chunked, Out::Length);
+    let out = if is_bodiless(method, code) {
+        Out::Bodiless(length)
+    } else {
+        length.map_or(Out::Chunked, Out::Length)
+    };
     let mut head = format!(
         "HTTP/1.1 {} {}\r\n",
         code,
@@ -76,9 +95,16 @@ pub(super) fn write_response(stream: &mut TcpStream, response: Response<Body>) -
     match out {
         Out::Length(n) => head.extend_from_slice(format!("content-length: {n}\r\n").as_bytes()),
         Out::Chunked => head.extend_from_slice(b"transfer-encoding: chunked\r\n"),
+        Out::Bodiless(Some(n)) => {
+            head.extend_from_slice(format!("content-length: {n}\r\n").as_bytes());
+        }
+        Out::Bodiless(None) => {}
     }
     head.extend_from_slice(b"connection: close\r\n\r\n");
     if stream.write_all(&head).is_err() || stream.flush().is_err() {
+        return Written::Complete(code);
+    }
+    if matches!(out, Out::Bodiless(_)) {
         return Written::Complete(code);
     }
     if copy_body(&mut body.as_reader(), stream, out).is_err() {
@@ -113,7 +139,7 @@ fn copy_body(from: &mut impl Read, to: &mut TcpStream, out: Out) -> io::Result<(
                 Out::Length(want) if sent < want => {
                     Err(io::Error::from(io::ErrorKind::UnexpectedEof))
                 }
-                Out::Length(_) => Ok(()),
+                Out::Length(_) | Out::Bodiless(_) => Ok(()),
                 Out::Chunked => {
                     let _ = to.write_all(b"0\r\n\r\n").and_then(|()| to.flush());
                     Ok(())
@@ -125,7 +151,7 @@ fn copy_body(from: &mut impl Read, to: &mut TcpStream, out: Out) -> io::Result<(
         };
         sent += n as u64;
         let wrote = match out {
-            Out::Length(_) => to.write_all(chunk),
+            Out::Length(_) | Out::Bodiless(_) => to.write_all(chunk),
             Out::Chunked => to
                 .write_all(format!("{n:x}\r\n").as_bytes())
                 .and_then(|()| to.write_all(chunk))

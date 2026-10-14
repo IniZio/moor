@@ -39,7 +39,7 @@ impl RouteCredential for FakeCreds {
 }
 
 /// A request as the fake upstream saw it.
-struct Seen {
+pub(super) struct Seen {
     /// Request line.
     line: String,
     /// Lowercased header names with values, in arrival order.
@@ -49,7 +49,7 @@ struct Seen {
 }
 
 /// Reads one request, decoding a chunked or length-delimited body.
-fn read_request(stream: &mut TcpStream) -> Seen {
+pub(super) fn read_request(stream: &mut TcpStream) -> Seen {
     stream.set_read_timeout(Some(WAIT)).unwrap();
     let mut reader = BufReader::new(stream);
     let mut line = String::new();
@@ -88,7 +88,7 @@ fn read_request(stream: &mut TcpStream) -> Seen {
 }
 
 /// Starts a fake upstream that serves one connection with `serve`.
-fn upstream<T: Send + 'static>(
+pub(super) fn upstream<T: Send + 'static>(
     serve: impl FnOnce(TcpStream) -> T + Send + 'static,
 ) -> (u16, JoinHandle<T>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -98,7 +98,7 @@ fn upstream<T: Send + 'static>(
 }
 
 /// Builds a relay whose `model` and `forge.git` routes point at `port`.
-fn relay(port: u16, creds_ok: bool) -> Relay {
+pub(super) fn relay(port: u16, creds_ok: bool) -> Relay {
     let base = format!("http://127.0.0.1:{port}");
     let ups = Upstreams::new(
         [
@@ -127,7 +127,7 @@ fn pair() -> (TcpStream, TcpStream) {
 }
 
 /// An admitted request for `route`.
-fn forward(
+pub(super) fn forward(
     route: &str,
     method: &str,
     inject: Inject,
@@ -167,7 +167,7 @@ fn forward(
 }
 
 /// Runs the relay on a thread; returns the client socket and the join handle.
-fn spawn(relay: Relay, req: Forward) -> (TcpStream, JoinHandle<u16>) {
+pub(super) fn spawn(relay: Relay, req: Forward) -> (TcpStream, JoinHandle<u16>) {
     let (client, mut server) = pair();
     let handle = thread::spawn(move || relay.forward(req, &mut server));
     (client, handle)
@@ -413,7 +413,7 @@ fn raw_then_ok(mut s: TcpStream) -> Vec<u8> {
 }
 
 /// Whether `hay` contains `needle`.
-fn contains(hay: &[u8], needle: &[u8]) -> bool {
+pub(super) fn contains(hay: &[u8], needle: &[u8]) -> bool {
     hay.windows(needle.len()).any(|w| w == needle)
 }
 
@@ -512,7 +512,7 @@ fn chunked_body_over_cap_is_413_and_upstream_never_completes() {
 }
 
 /// Reads until EOF or error; returns the bytes and whether the read failed.
-fn read_raw(client: &mut TcpStream) -> (Vec<u8>, bool) {
+pub(super) fn read_raw(client: &mut TcpStream) -> (Vec<u8>, bool) {
     let mut out = Vec::new();
     let mut buf = [0_u8; 512];
     loop {
@@ -583,3 +583,5 @@ fn close_delimited_upstream_is_rechunked_and_terminated() {
     assert!(reply.contains("transfer-encoding: chunked"), "{reply}");
     assert!(reply.ends_with("5\r\nhello\r\n0\r\n\r\n"), "{reply}");
 }
+
+mod bodiless;
