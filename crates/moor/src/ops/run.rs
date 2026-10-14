@@ -95,13 +95,13 @@ fn launch(
         pid: std::process::id(),
     })?;
     if let Err(e) = mark_working(store, row) {
-        finish(store, id, None, false);
+        finish(store, id, None);
         return Err(e);
     }
     let (output, log) = match output(cx, req, id) {
         Ok(got) => got,
         Err(e) => {
-            finish(store, id, None, false);
+            finish(store, id, None);
             return Err(e);
         }
     };
@@ -120,15 +120,16 @@ fn launch(
     {
         Ok(outcome) => outcome,
         Err(e) => {
-            finish(store, id, None, false);
-            return Err(CommandError::new(ErrorKind::Failed, e.to_string()));
+            let message = e.to_string();
+            finish(store, id, Some(message.clone()));
+            return Err(CommandError::new(ErrorKind::Failed, message));
         }
     };
     let (exit, interrupted) = match outcome {
         ExecOutcome::Exited { code } => (Some(code), false),
         ExecOutcome::Interrupted => (None, true),
     };
-    store.finish_run(id, RunOutcome { exit, interrupted })?;
+    store.finish_run(id, RunOutcome::ended(exit, interrupted))?;
     Ok(RunValue {
         ran: true,
         run: Some(id),
@@ -196,8 +197,12 @@ fn output(cx: &Cx, req: &RunReq, id: RunId) -> Result<(Output, String), CommandE
 }
 
 /// Ends a run whose command never reported an exit; a store failure leaves it for healing.
-fn finish(store: &Store, id: RunId, exit: Option<i32>, interrupted: bool) {
-    store.finish_run(id, RunOutcome { exit, interrupted }).ok();
+fn finish(store: &Store, id: RunId, error: Option<String>) {
+    let out = RunOutcome {
+        error,
+        ..RunOutcome::ended(None, false)
+    };
+    store.finish_run(id, out).ok();
 }
 
 /// The sync mode as the run row stores it.

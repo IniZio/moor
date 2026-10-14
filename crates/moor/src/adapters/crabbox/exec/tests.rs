@@ -4,10 +4,12 @@ use std::time::Duration;
 
 use moor_core::domain::run::SyncMode;
 use moor_core::name::BoxHandle;
+use moor_core::seam::clock::{Clock, Ts};
 use moor_core::seam::driver::{Driver, DriverError, ExecOutcome, ExecSpec};
 use moor_core::seam::proc::{Deadline, Output, Tool};
 
 use crate::adapters::crabbox::Crabbox;
+use crate::testing::clock::FakeClock;
 use crate::testing::proc::{Call, Reply, ScriptedProc};
 
 fn spec(sync: SyncMode) -> ExecSpec {
@@ -31,7 +33,7 @@ fn run_with(
 ) {
     let p = Arc::new(ScriptedProc::new());
     p.on(Tool::Crabbox, &["run"], reply);
-    let c = Crabbox::new(p.clone());
+    let c = Crabbox::fake(p.clone());
     let out = c.exec(
         &BoxHandle::new("sprites/moor-t7-ab12cd"),
         spec,
@@ -176,4 +178,70 @@ fn interrupt_and_signal_are_interrupted() {
             assert_eq!(out, Ok(ExecOutcome::Interrupted));
         }
     }
+}
+
+const RACE: &str = "lease cbx_1 claim changed; retry";
+
+fn race() -> Reply {
+    Reply::Fail {
+        code: 2,
+        stdout: String::new(),
+        stderr: RACE.to_owned(),
+    }
+}
+
+fn run_calls(p: &ScriptedProc) -> usize {
+    p.calls()
+        .iter()
+        .filter(|c| c.args.first().is_some_and(|a| a == "run"))
+        .count()
+}
+
+fn exec_once(c: &Crabbox) -> Result<ExecOutcome, DriverError> {
+    c.exec(
+        &BoxHandle::new("sprites/moor-t7-ab12cd"),
+        &spec(SyncMode::None),
+        Deadline(Duration::from_secs(90)),
+    )
+}
+
+#[test]
+fn claim_race_is_retried_until_the_call_succeeds() {
+    let p = Arc::new(ScriptedProc::new());
+    p.once(Tool::Crabbox, &["run"], race());
+    p.on(Tool::Crabbox, &["run"], ok());
+    let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
+    let c = Crabbox::new(p.clone(), clock.clone());
+    assert_eq!(exec_once(&c), Ok(ExecOutcome::Exited { code: 0 }));
+    assert_eq!(run_calls(&p), 2);
+    assert_eq!(clock.now(), Ts::from_millis(300));
+}
+
+#[test]
+fn claim_race_gives_up_after_three_attempts() {
+    let p = Arc::new(ScriptedProc::new());
+    p.on(Tool::Crabbox, &["run"], race());
+    let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
+    let c = Crabbox::new(p.clone(), clock.clone());
+    let err = exec_once(&c).unwrap_err();
+    assert_eq!(run_calls(&p), 3);
+    assert_eq!(clock.now(), Ts::from_millis(900));
+    assert_eq!(err.to_string(), "the Box lease was busy; try again");
+}
+
+#[test]
+fn other_failures_are_not_retried() {
+    let p = Arc::new(ScriptedProc::new());
+    p.on(
+        Tool::Crabbox,
+        &["run"],
+        Reply::Fail {
+            code: 2,
+            stdout: String::new(),
+            stderr: "claim changed\nremote command exited 2\n".to_owned(),
+        },
+    );
+    let c = Crabbox::fake(p.clone());
+    assert_eq!(exec_once(&c), Ok(ExecOutcome::Exited { code: 2 }));
+    assert_eq!(run_calls(&p), 1);
 }

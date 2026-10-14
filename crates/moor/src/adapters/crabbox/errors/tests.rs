@@ -4,7 +4,7 @@ use std::time::Duration;
 use moor_core::seam::driver::DriverError;
 use moor_core::seam::proc::{ProcError, Tool};
 
-use super::{map_error, Op};
+use super::{is_claim_race, map_error, Op};
 
 fn nz(code: i32, stderr: &str) -> ProcError {
     ProcError::NonZero {
@@ -140,4 +140,30 @@ fn raw_stderr_never_leaks() {
             assert!(!out.contains(token), "{code} {t}: {out}");
         }
     }
+}
+
+#[test]
+fn claim_race_is_a_clear_message() {
+    assert_eq!(
+        map_error(
+            Op::Exec,
+            Some("p"),
+            &nz(2, "lease cbx_1 claim changed; retry")
+        ),
+        failed("the Box lease was busy; try again")
+    );
+}
+
+#[test]
+fn claim_race_needs_exit_two_and_the_words() {
+    assert!(is_claim_race(&nz(2, "lease cbx_1 claim changed; retry\n")));
+    assert!(!is_claim_race(&nz(1, "lease cbx_1 claim changed; retry")));
+    assert!(!is_claim_race(&nz(2, "something else")));
+    assert!(!is_claim_race(&ProcError::Interrupted));
+}
+
+#[test]
+fn claim_race_text_after_a_remote_exit_is_not_a_race() {
+    let e = nz(2, "claim changed\nremote command exited 2\n");
+    assert!(!is_claim_race(&e));
 }

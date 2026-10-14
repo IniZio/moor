@@ -453,6 +453,25 @@ fn driver_failure_finishes_the_run_and_returns_the_error() {
 }
 
 #[test]
+fn driver_failure_is_kept_on_the_ran_event() {
+    let f = ready_with(FakeDriver::new().exec_results([Err(DriverError::Failed {
+        summary: "the Box lease was busy; try again".into(),
+    })]));
+    run(&f.cx, &req(&["true"])).unwrap_err();
+    let events = f.cx.store().unwrap().events(f.id, 1000).unwrap();
+    let ran = events.iter().find(|e| e.kind == "ran").unwrap();
+    assert_eq!(
+        ran.payload,
+        serde_json::json!({
+            "run": f.cx.store().unwrap().last_run(f.id).unwrap().unwrap().id.get(),
+            "exit": null,
+            "interrupted": false,
+            "error": "the Box lease was busy; try again",
+        })
+    );
+}
+
+#[test]
 fn unusable_repo_config_leaves_no_run_row() {
     let f = ready();
     std::fs::write(f.dir.path().join(".moor.yaml"), "box_credentials: [\n").unwrap();

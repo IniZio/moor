@@ -13,6 +13,7 @@ use zeroize::Zeroizing;
 mod detached;
 pub(crate) use detached::DaemonCall;
 use detached::{call_of, Daemons};
+mod once;
 mod signal;
 use signal::Signals;
 
@@ -64,6 +65,8 @@ struct Rule {
     tool: Tool,
     prefix: Vec<String>,
     reply: Reply,
+    /// True when the rule is dropped after its first match.
+    once: bool,
 }
 
 struct ChildRule {
@@ -179,15 +182,7 @@ impl ScriptedProc {
     }
 
     pub(crate) fn on(&self, tool: Tool, prefix: &[&str], reply: Reply) -> &Self {
-        let prefix = prefix.iter().map(|s| (*s).to_owned()).collect();
-        if let Ok(mut r) = self.rules.lock() {
-            r.push(Rule {
-                tool,
-                prefix,
-                reply,
-            });
-        }
-        self
+        self.push_rule(tool, prefix, reply, false)
     }
 
     /// Script the child started by `spawn_child` for calls matching `prefix`.
@@ -225,10 +220,14 @@ impl ScriptedProc {
     }
 
     fn reply_for(&self, spec: &ProcSpec, args: &[String]) -> Result<ProcOutput, ProcError> {
-        let rules = self.rules.lock().map_err(|_| poisoned())?;
-        let hit = rules
+        let mut rules = self.rules.lock().map_err(|_| poisoned())?;
+        let at = rules
             .iter()
-            .find(|r| r.tool == spec.tool && args.starts_with(&r.prefix));
+            .position(|r| r.tool == spec.tool && args.starts_with(&r.prefix));
+        let taken = at
+            .filter(|i| rules.get(*i).is_some_and(|r| r.once))
+            .map(|i| rules.remove(i));
+        let hit = taken.as_ref().or_else(|| at.and_then(|i| rules.get(i)));
         let out = match hit.map(|r| &r.reply) {
             Some(Reply::Ok(out)) => Ok(ProcOutput {
                 code: 0,

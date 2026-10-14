@@ -432,13 +432,7 @@ fn intent_set_clear_and_run_lifecycle() {
         Some(Intent::Running { run, pid: 9 })
     );
     store
-        .finish_run(
-            run,
-            RunOutcome {
-                exit: Some(3),
-                interrupted: false,
-            },
-        )
+        .finish_run(run, RunOutcome::ended(Some(3), false))
         .unwrap();
     assert_eq!(store.task(id).unwrap().unwrap().intent, None);
     let events = store.events(id, 100).unwrap();
@@ -453,13 +447,7 @@ fn intent_set_clear_and_run_lifecycle() {
         Some("run_started")
     );
     let err = store
-        .finish_run(
-            RunId::new(999),
-            RunOutcome {
-                exit: None,
-                interrupted: true,
-            },
-        )
+        .finish_run(RunId::new(999), RunOutcome::ended(None, true))
         .unwrap_err();
     assert!(matches!(err, StoreError::Invalid(_)), "{err:?}");
 }

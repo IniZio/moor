@@ -46,7 +46,7 @@ fn req(provider: &str, egress: EgressPlan, class: Option<&str>) -> AcquireReq {
 
 fn fixture() -> (Arc<ScriptedProc>, Crabbox) {
     let p = Arc::new(ScriptedProc::new());
-    let c = Crabbox::new(p.clone());
+    let c = Crabbox::fake(p.clone());
     (p, c)
 }
 
@@ -585,7 +585,7 @@ fn exec_timeout_reports_the_deadline() {
 
 #[test]
 fn exec_spawn_failure_is_unavailable() {
-    let c = Crabbox::new(Arc::new(NoSpawn));
+    let c = Crabbox::fake(Arc::new(NoSpawn));
     assert!(matches!(
         exec_on(&c, &exec_spec(&["true"])),
         Err(DriverError::Unavailable(_))

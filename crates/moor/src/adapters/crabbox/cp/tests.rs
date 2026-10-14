@@ -11,7 +11,7 @@ use crate::testing::proc::{Reply, ScriptedProc};
 
 fn fixture() -> (Arc<ScriptedProc>, Crabbox) {
     let p = Arc::new(ScriptedProc::new());
-    let c = Crabbox::new(p.clone());
+    let c = Crabbox::fake(p.clone());
     (p, c)
 }
 

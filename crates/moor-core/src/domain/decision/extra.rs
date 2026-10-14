@@ -19,6 +19,8 @@ pub enum ExtraEvent {
         exit: Option<i32>,
         /// True when the run was interrupted.
         interrupted: bool,
+        /// Why the run failed before the command reported an exit.
+        error: Option<String>,
     },
     /// Files were copied.
     Copied {
@@ -147,10 +149,12 @@ impl From<ExtraEvent> for Event {
                 run,
                 exit,
                 interrupted,
+                error,
             } => Self::Ran {
                 run,
                 exit,
                 interrupted,
+                error,
             },
             ExtraEvent::Copied { from, to } => Self::Copied { from, to },
             ExtraEvent::SessionStarted { session } => Self::SessionStarted { session },
@@ -227,10 +231,12 @@ impl TryFrom<Event> for ExtraEvent {
                 run,
                 exit,
                 interrupted,
+                error,
             } => Ok(Self::Ran {
                 run,
                 exit,
                 interrupted,
+                error,
             }),
             Event::Copied { from, to } => Ok(Self::Copied { from, to }),
             Event::SessionStarted { session } => Ok(Self::SessionStarted { session }),

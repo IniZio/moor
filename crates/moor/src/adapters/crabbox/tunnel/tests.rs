@@ -12,7 +12,7 @@ use crate::testing::proc::{ChildReply, ScriptedProc};
 fn fixture(reply: ChildReply) -> (Arc<ScriptedProc>, Crabbox) {
     let p = Arc::new(ScriptedProc::new());
     p.on_child(Tool::Crabbox, &["tunnel"], reply);
-    let c = Crabbox::new(p.clone());
+    let c = Crabbox::fake(p.clone());
     (p, c)
 }
 
@@ -145,7 +145,7 @@ fn silent_child_times_out_and_is_killed() {
 #[test]
 fn unspawnable_crabbox_is_unavailable() {
     let p = Arc::new(ScriptedProc::new());
-    let c = Crabbox::new(p);
+    let c = Crabbox::fake(p);
     let err = open(&c, "sprites/moor-t7").err().unwrap();
     assert!(matches!(err, DriverError::Unavailable(_)));
 }

@@ -22,7 +22,7 @@ fn fixture() -> (Arc<ScriptedProc>, Crabbox) {
         &["providers"],
         Reply::Ok(PROVIDERS.to_owned()),
     );
-    let c = Crabbox::new(p.clone());
+    let c = Crabbox::fake(p.clone());
     (p, c)
 }
 

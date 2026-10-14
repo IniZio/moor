@@ -136,6 +136,9 @@ pub enum Event {
         exit: Option<i32>,
         /// True when the run was interrupted.
         interrupted: bool,
+        /// Why the run failed before the command reported an exit.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
     },
     /// Files were copied.
     Copied {

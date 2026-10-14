@@ -57,6 +57,11 @@ const EXIT_LOST: i32 = 5;
 /// Exit code for a configuration problem.
 const EXIT_CONFIG: i32 = 3;
 
+/// Exit code crabbox uses for a lease claim that changed during the call.
+const EXIT_CLAIM_RACE: i32 = 2;
+/// Words crabbox prints when another call rewrote the lease claim.
+const CLAIM_RACE: &str = "claim changed";
+
 /// Whether `hay` contains any of `needles`.
 fn has_any(hay: &str, needles: &[&str]) -> bool {
     needles.iter().any(|n| hay.contains(n))
@@ -66,6 +71,11 @@ fn has_any(hay: &str, needles: &[&str]) -> bool {
 fn classify_text(code: i32, text: &str) -> Option<DriverError> {
     if code == EXIT_REFUSED && text.contains("not found") {
         return Some(DriverError::NotFound);
+    }
+    if code == EXIT_CLAIM_RACE && text.contains(CLAIM_RACE) {
+        return Some(DriverError::Failed {
+            summary: "the Box lease was busy; try again".to_owned(),
+        });
     }
     if text.contains("quota") {
         return Some(DriverError::Quota("the plan limit was reached".to_owned()));
@@ -108,6 +118,22 @@ pub(super) fn remote_exit(e: &ProcError) -> Option<i32> {
         .lines()
         .any(|l| l.trim_end().ends_with(&line))
         .then_some(*code)
+}
+
+/// Whether `e` is crabbox giving up because another call rewrote the lease claim.
+///
+/// crabbox reports this while it resolves the lease, before the remote command
+/// starts, so a remote exit line rules the failure out.
+pub(super) fn is_claim_race(e: &ProcError) -> bool {
+    let ProcError::NonZero {
+        code, stderr_tail, ..
+    } = e
+    else {
+        return false;
+    };
+    *code == EXIT_CLAIM_RACE
+        && remote_exit(e).is_none()
+        && stderr_tail.to_lowercase().contains(CLAIM_RACE)
 }
 
 /// Maps a failed run of `op` (on `provider`, when known) to the one error shape callers see.

@@ -57,6 +57,7 @@ fn record(cx: &Cx, task: TaskId, name: &str, sha: &str, command: &str, exit: i32
     let out = RunOutcome {
         exit: Some(exit),
         interrupted: false,
+        error: None,
     };
     store.finish_run(id, out).unwrap();
 }
