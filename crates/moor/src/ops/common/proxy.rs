@@ -9,7 +9,7 @@ use moor_core::seam::agent_profile::ProxyAddr;
 use moor_core::seam::engine::EngineError;
 use moor_core::seam::proc::{Deadline, ProcSpec, Tool};
 use moor_core::seam::rng::Rng;
-use moor_core::{Secret, TaskId};
+use moor_core::{Secret, TaskId, Warning};
 
 use crate::cx::Cx;
 use crate::store::{ProxyRow, Reserve, Store, StoreError};
@@ -27,6 +27,12 @@ pub(crate) const WAIT: Duration = Duration::from_secs(30);
 
 /// Log lines kept when a start fails.
 pub(crate) const TAIL_LINES: usize = 20;
+
+/// How long close waits for a signalled supervisor to remove its row.
+const STOP_WAIT: Duration = Duration::from_secs(3);
+
+/// Allowance for the signal command.
+const SIGNAL_DEADLINE: Duration = Duration::from_secs(5);
 
 /// Allowance for reading the origin URL.
 const ORIGIN_DEADLINE: Duration = Duration::from_secs(5);
@@ -131,6 +137,57 @@ pub(crate) fn ensure_proxy(
         }
         cx.clock().sleep(POLL);
     }
+}
+
+/// Stop the Task's proxy supervisor and remove its row; never fails the caller.
+///
+/// SIGTERM goes to the supervisor's process group only while its lease is live, because a pid
+/// alone may have been reused. The row is removed whether or not the supervisor exited in
+/// time; a supervisor that outlasts the wait only produces a warning. No row is a no-op.
+pub(crate) fn stop_proxy(cx: &Cx, store: &Store, task: TaskId) {
+    let row = match store.proxy(task) {
+        Ok(Some(row)) => row,
+        Ok(None) => return,
+        Err(e) => return warn_stop(cx, &format!("the proxy state could not be read: {e}")),
+    };
+    // Pids 0 and 1 would address every process or init's group.
+    let pid = row.pid.filter(|p| *p > 1 && live(cx, &row));
+    let exited = pid.is_none_or(|p| signal_group(cx, p) && wait_gone(cx, store, task));
+    if let Err(e) = store.remove_proxy(task) {
+        return warn_stop(cx, &format!("the proxy row could not be removed: {e}"));
+    }
+    if !exited {
+        warn_stop(cx, "the proxy supervisor did not exit within 3s");
+    }
+}
+
+/// Send SIGTERM to the process group led by `pid`; false when the group is already gone.
+fn signal_group(cx: &Cx, pid: u32) -> bool {
+    let spec = ProcSpec::new(Tool::Sh, Deadline(SIGNAL_DEADLINE))
+        .args(["-c", &format!("kill -TERM -- -{pid}")]);
+    cx.proc().run(&spec).is_ok()
+}
+
+/// Poll until the row is gone; false when it outlasts [`STOP_WAIT`].
+fn wait_gone(cx: &Cx, store: &Store, task: TaskId) -> bool {
+    let start = cx.clock().instant();
+    loop {
+        if !matches!(store.proxy(task), Ok(Some(_))) {
+            return true;
+        }
+        if cx.clock().instant().saturating_duration_since(start) >= STOP_WAIT {
+            return false;
+        }
+        cx.clock().sleep(POLL);
+    }
+}
+
+/// Warn that stopping the proxy was incomplete; close still succeeds.
+fn warn_stop(cx: &Cx, reason: &str) {
+    cx.warn(Warning {
+        code: "proxy_stop_failed".to_owned(),
+        message: format!("{reason}; the task is closed anyway"),
+    });
 }
 
 /// The `origin` remote URL of the worktree, when it has one.

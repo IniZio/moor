@@ -22,6 +22,7 @@ use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::facts::settings;
 use crate::ops::common::promote::promote_waiting;
+use crate::ops::common::proxy::stop_proxy;
 use crate::ops::common::transcript::{self, Saved};
 use crate::ops::common::view::task_view;
 use crate::store::{BoxRow, Store, TaskRow};
@@ -60,6 +61,7 @@ pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
         false
     };
     let workspace_closed = close_workspace(cx, &row, &plan);
+    stop_proxy(cx, store, row.id);
     drop(lock);
     let provider = row.boxed.as_ref().map(|b| b.provider.clone());
     let closed = store.task(row.id)?.unwrap_or(row);
