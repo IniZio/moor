@@ -6,13 +6,18 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use moor_core::seam::clock::{Clock, Ts};
-use moor_core::TaskId;
+use moor_core::seam::driver::{
+    AcquireReq, Acquired, BoxListing, Driver, DriverCaps, DriverError, ExecOutcome, ExecSpec,
+    Released, SleepOutcome, TunnelHandle,
+};
+use moor_core::seam::proc::Deadline;
+use moor_core::{BoxHandle, BoxPath, ProviderId, TaskId};
 
 use super::super::tests::{unrestartable, World, FIRST_TUNNEL_PID, NONCE_TEXT, ORIGIN};
 use super::super::{start, Stop, LEASE};
 use crate::store::{Lease, Store};
 use crate::testing::clock::FakeClock;
-use crate::testing::driver::TunnelReply;
+use crate::testing::driver::{FakeDriver, TunnelReply};
 
 /// Events of one kind recorded for the task.
 fn events_of(w: &World, kind: &str) -> usize {
@@ -200,4 +205,112 @@ fn slow_startup_extends_the_lease_before_the_row_is_marked_ready() {
     assert!(matches!(rival, Lease::Held { .. }));
     assert_eq!(w.row().lease_owner.as_deref(), Some(run.owner()));
     assert!(w.row().ready);
+}
+
+/// Driver whose tunnel attempts take a long time on the fake clock.
+struct Slow<'a> {
+    /// Driver that does the work.
+    inner: &'a FakeDriver,
+    /// Clock advanced by every tunnel attempt.
+    clock: Arc<FakeClock>,
+    /// How long one attempt takes.
+    took: Duration,
+}
+
+impl Driver for Slow<'_> {
+    fn caps(&self, p: &ProviderId) -> Result<DriverCaps, DriverError> {
+        self.inner.caps(p)
+    }
+
+    fn acquire(&self, req: &AcquireReq) -> Result<Acquired, DriverError> {
+        self.inner.acquire(req)
+    }
+
+    fn planned_handle(&self, req: &AcquireReq) -> BoxHandle {
+        self.inner.planned_handle(req)
+    }
+
+    fn release(&self, h: &BoxHandle) -> Result<Released, DriverError> {
+        self.inner.release(h)
+    }
+
+    fn list(&self, p: &ProviderId) -> Result<Vec<BoxListing>, DriverError> {
+        self.inner.list(p)
+    }
+
+    fn workdir(&self, h: &BoxHandle) -> Result<BoxPath, DriverError> {
+        self.inner.workdir(h)
+    }
+
+    fn exec(&self, h: &BoxHandle, s: &ExecSpec, d: Deadline) -> Result<ExecOutcome, DriverError> {
+        self.inner.exec(h, s, d)
+    }
+
+    fn copy_out(&self, h: &BoxHandle, f: &BoxPath, t: &Path, c: &Path) -> Result<(), DriverError> {
+        self.inner.copy_out(h, f, t, c)
+    }
+
+    fn peek_file(
+        &self,
+        h: &BoxHandle,
+        p: &BoxPath,
+        c: &Path,
+    ) -> Result<Option<String>, DriverError> {
+        self.inner.peek_file(h, p, c)
+    }
+
+    fn put_file(
+        &self,
+        h: &BoxHandle,
+        path: &BoxPath,
+        bytes: &[u8],
+        mode: u32,
+        cwd: &Path,
+    ) -> Result<(), DriverError> {
+        self.inner.put_file(h, path, bytes, mode, cwd)
+    }
+
+    fn connect_argv(&self, h: &BoxHandle, c: &Path) -> Result<Vec<String>, DriverError> {
+        self.inner.connect_argv(h, c)
+    }
+
+    fn reverse_tunnel(
+        &self,
+        h: &BoxHandle,
+        bp: u16,
+        hp: u16,
+        c: &Path,
+    ) -> Result<Box<dyn TunnelHandle>, DriverError> {
+        self.clock.sleep(self.took);
+        self.inner.reverse_tunnel(h, bp, hp, c)
+    }
+
+    fn sleep(&self, h: &BoxHandle) -> Result<SleepOutcome, DriverError> {
+        self.inner.sleep(h)
+    }
+
+    fn wake(&self, h: &BoxHandle) -> Result<(), DriverError> {
+        self.inner.wake(h)
+    }
+}
+
+#[test]
+fn slow_restart_attempt_renews_the_lease_after_it_returns() {
+    let w = World::new([]);
+    let slow = Slow {
+        inner: &w.driver,
+        clock: w.clock.clone(),
+        took: Duration::from_secs(29),
+    };
+    let mut deps = w.deps();
+    deps.driver = &slow;
+    let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
+
+    w.driver.end_tunnel(FIRST_TUNNEL_PID);
+    assert!(run.tick().is_none());
+    w.clock.sleep(Duration::from_secs(5));
+
+    let rival = w.store.claim_lease(w.id, "other-owner", LEASE).unwrap();
+    assert!(matches!(rival, Lease::Held { .. }));
+    assert_eq!(w.row().lease_owner.as_deref(), Some(run.owner()));
 }
