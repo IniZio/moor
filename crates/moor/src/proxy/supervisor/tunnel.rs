@@ -20,7 +20,8 @@ const REASON: &str = "tunnel exited";
 impl Running<'_> {
     /// Replaces the dead tunnel; `None` means a new one is up and recorded.
     ///
-    /// The lease is extended before every wait, so the waits never let it lapse.
+    /// The lease is renewed before each backoff wait and after each restart attempt,
+    /// so neither the wait nor a slow attempt lets it lapse.
     pub(super) fn revive(&self) -> Option<Stop> {
         let sink = &self.deps.stderr;
         say(
@@ -41,11 +42,17 @@ impl Running<'_> {
             ) {
                 Ok(tunnel) => {
                     *self.tunnel.borrow_mut() = tunnel;
+                    if let stop @ Some(_) = self.beat() {
+                        return stop;
+                    }
                     return self.record();
                 }
                 Err(err) => {
                     last = err.to_string();
                     say(sink, format_args!("cannot restart the tunnel: {last}"));
+                    if let stop @ Some(_) = self.beat() {
+                        return stop;
+                    }
                 }
             }
         }
