@@ -213,7 +213,20 @@ fn path_nonce_requests_route_after_the_nonce_is_removed() {
         &nonce(),
     ));
     assert_eq!(got.route.as_str(), "forge.git");
-    assert_eq!(got.upstream_path, "/github/o/r");
+    assert_eq!(got.upstream_path, "/o/r");
+}
+
+#[test]
+fn bare_route_prefix_maps_to_the_upstream_root() {
+    let table = with_forge("/github");
+    let got = plan(run(
+        &table,
+        "GET",
+        &format!("/t/{NONCE}/github"),
+        &[],
+        &nonce(),
+    ));
+    assert_eq!(got.upstream_path, "/");
 }
 
 #[test]

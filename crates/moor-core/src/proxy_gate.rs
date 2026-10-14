@@ -288,7 +288,9 @@ fn plan(input: &GateInput<'_>) -> Result<Plan, Reject> {
         .filter(|(name, _)| !stripped(row, &connection, name))
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
         .collect();
-    let upstream_path = query.map_or_else(|| path.clone(), |q| format!("{path}?{q}"));
+    // The route prefix selects the upstream and is not part of its path.
+    let base = if rest.is_empty() { "/" } else { rest };
+    let upstream_path = query.map_or_else(|| base.to_owned(), |q| format!("{base}?{q}"));
     Ok(Plan {
         route: row.id.clone(),
         method: input.method.to_owned(),
