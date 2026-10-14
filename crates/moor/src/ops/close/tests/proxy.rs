@@ -81,3 +81,16 @@ fn a_supervisor_that_ignores_the_signal_only_warns() {
     assert_eq!(stops, 1);
     assert!(warnings.iter().all(|w| !w.message.contains(&secret)));
 }
+
+#[test]
+fn a_vanished_group_is_stopped_without_a_warning() {
+    let f = fx();
+    f.proc.groups_gone();
+    with_proxy(&f);
+
+    run(&f.cx, &req(false)).unwrap();
+
+    assert_eq!(f.proc.signals(), [(PID, Signal::Term)]);
+    assert!(!has_row(&f));
+    assert!(f.cx.take_warnings().is_empty());
+}
