@@ -296,9 +296,13 @@ fn run_and_record(
 ) -> Result<Provisioned, CommandError> {
     identity::set_identity(cx, target.handle, target.worktree);
     let run = setup::run_setup(cx, target.handle, target.workdir, target.worktree, cfg);
+    let setup_line = match run.outcome() {
+        SetupOutcome::Failed { line } => Some(line),
+        SetupOutcome::Ok => None,
+    };
     let dotfiles = match dotfiles::apply(cx, target.handle, id, target.worktree, cfg) {
         Ok(d) => d,
-        Err(f) => return Err(dotfiles_failed(cx, store, id, advance, f)),
+        Err(f) => return Err(dotfiles_failed(cx, store, id, advance, setup_line, f)),
     };
     let mut done = Decision::new(id);
     done.task_input = advance.then(|| TaskInput::BoxReady {

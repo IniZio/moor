@@ -328,3 +328,25 @@ fn a_failed_retry_clears_the_setup_intent() {
     assert_eq!(row.state, TaskState::SetupFailed);
     assert!(row.intent.is_none());
 }
+
+#[test]
+fn a_setup_failure_is_kept_when_the_dotfiles_fail_too() {
+    let src = tempfile::tempdir().unwrap();
+    let driver = FakeDriver::new().exec_results([Ok(exit(1)), Ok(exit(1))]);
+    let (w, engine, _repo) = dotfiles_world("setup: [make-it]\n", Some(src.path()), None, driver);
+    log_writer(&w);
+    let err = run(&w.cx, &goal_req()).unwrap_err();
+    let msg = err.error.to_string();
+    assert!(msg.contains("setup failed: make-it"), "{msg}");
+    assert!(msg.contains("dotfiles failed:") && msg.contains("row-25"), "{msg}");
+    assert!(engine.launches().is_empty());
+    let events = w.cx.store().unwrap().events(TaskId::new(1), 50).unwrap();
+    let lines: Vec<_> = events
+        .iter()
+        .filter(|e| e.kind == "setup_failed")
+        .filter_map(|e| e.payload.get("line").and_then(|l| l.as_str()))
+        .collect();
+    assert_eq!(lines.len(), 2, "{lines:?}");
+    assert!(lines.iter().any(|l| l.contains("make-it")), "{lines:?}");
+    assert!(lines.iter().any(|l| l.contains("row-25")), "{lines:?}");
+}
