@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use moor_core::seam::agent_profile::ProxyAddr;
 use moor_core::seam::engine::EngineError;
-use moor_core::seam::proc::{Deadline, ProcSpec, Tool};
+use moor_core::seam::proc::{Deadline, ProcSpec, Signal, Tool};
 use moor_core::seam::rng::Rng;
 use moor_core::{Secret, TaskId, Warning};
 
@@ -30,9 +30,6 @@ pub(crate) const TAIL_LINES: usize = 20;
 
 /// How long close waits for a signalled supervisor to remove its row.
 const STOP_WAIT: Duration = Duration::from_secs(3);
-
-/// Allowance for the signal command.
-const SIGNAL_DEADLINE: Duration = Duration::from_secs(5);
 
 /// Allowance for reading the origin URL.
 const ORIGIN_DEADLINE: Duration = Duration::from_secs(5);
@@ -163,9 +160,7 @@ pub(crate) fn stop_proxy(cx: &Cx, store: &Store, task: TaskId) {
 
 /// Send SIGTERM to the process group led by `pid`; false when the group is already gone.
 fn signal_group(cx: &Cx, pid: u32) -> bool {
-    let spec = ProcSpec::new(Tool::Sh, Deadline(SIGNAL_DEADLINE))
-        .args(["-c", &format!("kill -TERM -- -{pid}")]);
-    cx.proc().run(&spec).is_ok()
+    cx.proc().signal_group(pid, Signal::Term).is_ok()
 }
 
 /// Poll until the row is gone; false when it outlasts [`STOP_WAIT`].
