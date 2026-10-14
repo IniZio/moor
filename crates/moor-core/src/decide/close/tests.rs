@@ -1,6 +1,8 @@
 //! Tests for the close decider.
 
-use super::{close_gate, release_outcome, CloseFacts, Refusal, ReleaseResult, ReleaseVerdict};
+use super::{
+    close_gate, release_outcome, BoxCheck, CloseFacts, Refusal, ReleaseResult, ReleaseVerdict,
+};
 use crate::domain::boxes::BoxState;
 use crate::domain::task::{TaskInput, TaskState};
 use crate::name::TaskId;
@@ -15,9 +17,136 @@ fn facts() -> CloseFacts {
         state: TaskState::Working,
         box_state: Some(B::Ready),
         has_handle: true,
+        name: "fix-bug".to_owned(),
+        branch: Some("moor/fix-bug".to_owned()),
         unpushed: 0,
         dirty: false,
+        box_check: BoxCheck::Clean,
     }
+}
+
+#[test]
+fn box_with_unsaved_work_is_refused_with_recovery_commands() {
+    let f = CloseFacts {
+        box_check: BoxCheck::Unsaved { ahead: 2, dirty: 3 },
+        ..facts()
+    };
+    let err = close_gate(&f, false).expect_err("refused");
+    assert_eq!(
+        err,
+        Refusal::UnsavedInBox {
+            task: "fix-bug".to_owned(),
+            branch: "moor/fix-bug".to_owned(),
+            ahead: 2,
+            dirty: 3,
+        }
+    );
+    let text = err.to_string();
+    for want in [
+        "2 unpushed commit(s)",
+        "3 uncommitted file(s)",
+        "not on the host",
+        "`moor run fix-bug --no-sync -- git bundle create .moor/rescue.bundle HEAD --not --remotes`",
+        "`moor cp fix-bug .moor/rescue.bundle .`",
+        "`git fetch ./rescue.bundle HEAD:moor/fix-bug`",
+        "`moor close fix-bug --force`",
+    ] {
+        assert!(text.contains(want), "{want}: {text}");
+    }
+}
+
+#[test]
+fn unsaved_box_with_one_side_nonzero_is_refused() {
+    for (ahead, dirty) in [(1, 0), (0, 1)] {
+        let f = CloseFacts {
+            box_check: BoxCheck::Unsaved { ahead, dirty },
+            ..facts()
+        };
+        assert!(matches!(
+            close_gate(&f, false),
+            Err(Refusal::UnsavedInBox { .. })
+        ));
+    }
+}
+
+#[test]
+fn unsaved_box_with_zero_counts_clean_and_skipped_pass() {
+    for box_check in [
+        BoxCheck::Unsaved { ahead: 0, dirty: 0 },
+        BoxCheck::Clean,
+        BoxCheck::Skipped,
+    ] {
+        let f = CloseFacts {
+            box_check,
+            ..facts()
+        };
+        assert!(close_gate(&f, false).is_ok());
+    }
+}
+
+#[test]
+fn unknown_box_check_is_refused_with_its_reason() {
+    let f = CloseFacts {
+        box_check: BoxCheck::Unknown("ssh timed out".to_owned()),
+        ..facts()
+    };
+    let err = close_gate(&f, false).expect_err("refused");
+    assert_eq!(
+        err,
+        Refusal::BoxUnchecked {
+            reason: "ssh timed out".to_owned()
+        }
+    );
+    let text = err.to_string();
+    assert!(
+        text.contains("ssh timed out") && text.contains("--force"),
+        "{text}"
+    );
+}
+
+#[test]
+fn force_ignores_the_box_check() {
+    for box_check in [
+        BoxCheck::Unsaved { ahead: 4, dirty: 1 },
+        BoxCheck::Unknown("boom".to_owned()),
+    ] {
+        let f = CloseFacts {
+            box_check,
+            ..facts()
+        };
+        assert!(close_gate(&f, true).is_ok());
+    }
+}
+
+#[test]
+fn missing_branch_uses_a_placeholder() {
+    let f = CloseFacts {
+        branch: None,
+        box_check: BoxCheck::Unsaved { ahead: 1, dirty: 0 },
+        ..facts()
+    };
+    let err = close_gate(&f, false).expect_err("refused");
+    assert!(
+        matches!(&err, Refusal::UnsavedInBox { branch, .. } if branch == "<branch>"),
+        "{err:?}"
+    );
+    assert!(err.to_string().contains("HEAD:<branch>"));
+}
+
+#[test]
+fn host_unpushed_is_checked_before_the_box() {
+    let f = CloseFacts {
+        unpushed: 1,
+        box_check: BoxCheck::Unsaved { ahead: 5, dirty: 5 },
+        ..facts()
+    };
+    assert_eq!(
+        close_gate(&f, false).err(),
+        Some(Refusal::UnpushedWork {
+            unpushed: 1,
+            dirty: false
+        })
+    );
 }
 
 #[test]

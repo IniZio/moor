@@ -1,7 +1,5 @@
 //! Finds out whether a Box holds work that exists nowhere else.
 
-#![allow(dead_code, reason = "the close and run ops call this in later changes")]
-
 use std::path::Path;
 use std::time::Duration;
 

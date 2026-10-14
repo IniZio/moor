@@ -1,13 +1,15 @@
 use std::fs;
+use std::sync::Arc;
 
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::Decision;
 use moor_core::domain::run::SyncMode;
 use moor_core::domain::task::TaskState;
 use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
-use moor_core::ErrorKind;
+use moor_core::{BoxPath, ErrorKind};
 
-use super::{box_state, fx_with, req, row, run, Fx};
+use super::{admit, box_state, fx_with, proc, req, row, run, Fx};
+use crate::cx::Cx;
 use crate::ops::common::boxlock::{BoxLock, WAIT};
 use crate::testing::driver::FakeDriver;
 use crate::testing::surface::FakeSurface;
@@ -21,19 +23,25 @@ fn fx_yaml(driver: FakeDriver, yaml: &str) -> Fx {
     f
 }
 
-pub(super) fn exec_calls(f: &Fx) -> usize {
+/// Teardown runs; the unsynced unsaved-work probe is not counted.
+fn teardown_execs(f: &Fx) -> Vec<ExecSpec> {
     f.driver
-        .calls()
-        .iter()
-        .filter(|c| c.starts_with("exec"))
-        .count()
+        .execs()
+        .into_iter()
+        .map(|(_, spec, _)| spec)
+        .filter(|spec| spec.sync == SyncMode::Full)
+        .collect()
 }
 
-/// The single exec the close made.
+pub(super) fn exec_calls(f: &Fx) -> usize {
+    teardown_execs(f).len()
+}
+
+/// The single teardown exec the close made.
 fn only_exec(f: &Fx) -> ExecSpec {
-    let mut execs = f.driver.execs();
+    let mut execs = teardown_execs(f);
     assert_eq!(execs.len(), 1);
-    execs.remove(0).1
+    execs.remove(0)
 }
 
 #[test]
@@ -63,7 +71,10 @@ fn teardown_runs_before_the_box_is_released() {
 #[test]
 fn failing_teardown_warns_and_still_releases() {
     let f = fx_yaml(
-        FakeDriver::new().exec_results([Ok(ExecOutcome::Exited { code: 3 })]),
+        FakeDriver::new().exec_results([
+            Ok(ExecOutcome::Exited { code: 0 }),
+            Ok(ExecOutcome::Exited { code: 3 }),
+        ]),
         YAML,
     );
     let v = run(&f.cx, &req(false)).unwrap();
@@ -76,9 +87,12 @@ fn failing_teardown_warns_and_still_releases() {
 #[test]
 fn teardown_driver_error_warns_and_still_releases() {
     let f = fx_yaml(
-        FakeDriver::new().exec_results([Err(DriverError::Failed {
-            summary: "boom".into(),
-        })]),
+        FakeDriver::new().exec_results([
+            Ok(ExecOutcome::Exited { code: 0 }),
+            Err(DriverError::Failed {
+                summary: "boom".into(),
+            }),
+        ]),
         YAML,
     );
     let v = run(&f.cx, &req(false)).unwrap();
@@ -149,9 +163,38 @@ fn close_leaves_the_box_lock_free() {
     assert!(again.is_ok());
 }
 
+/// A Ready Box in a worktree named `repo`, so a woken Box (which the fake driver
+/// places at `/work/cbx_1/repo`) probes clean.
+fn fx_woken_yaml(yaml: &str) -> Fx {
+    let dir = tempfile::tempdir().unwrap();
+    let worktree = dir.path().join("repo");
+    fs::create_dir(&worktree).unwrap();
+    let path = BoxPath::under("/work/cbx_1/repo", ".moor/boxwork").unwrap();
+    let driver = Arc::new(FakeDriver::new().peek_text("box-1", &path, "ahead=0 dirty=0"));
+    let surface = Arc::new(FakeSurface::new("/s"));
+    let proc = proc(0);
+    let cx = Cx::fake(
+        dir.path(),
+        dir.path(),
+        driver.clone(),
+        surface.clone(),
+        proc.clone(),
+    );
+    let id = admit(&cx, &driver, &worktree);
+    fs::write(worktree.join(".moor.yaml"), yaml).unwrap();
+    Fx {
+        dir,
+        cx,
+        driver,
+        surface,
+        proc,
+        id,
+    }
+}
+
 #[test]
-fn asleep_box_is_released_without_teardown() {
-    let f = fx_yaml(FakeDriver::new(), YAML);
+fn asleep_box_is_woken_probed_and_released() {
+    let f = fx_woken_yaml(YAML);
     f.cx.store()
         .unwrap()
         .apply(Decision::new(f.id).box_input(BoxInput::Sleep))
@@ -159,7 +202,9 @@ fn asleep_box_is_released_without_teardown() {
     assert_eq!(box_state(&f), BoxState::Asleep);
     let v = run(&f.cx, &req(false)).unwrap();
     assert!(v.box_deleted);
-    assert_eq!(exec_calls(&f), 0);
+    assert!(f.driver.calls().iter().any(|c| c.starts_with("wake")));
+    // The woken Box is Ready again, so teardown runs on it like on any Ready Box.
+    assert_eq!(exec_calls(&f), 1);
 }
 
 #[test]

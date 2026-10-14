@@ -9,7 +9,9 @@ use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, ExtraEvent};
 use moor_core::domain::run::SyncMode;
 
-use moor_core::decide::close::{close_gate, release_outcome, CloseFacts, ClosePlan, ReleaseResult};
+use moor_core::decide::close::{
+    close_gate, release_outcome, BoxCheck, CloseFacts, ClosePlan, ReleaseResult,
+};
 use moor_core::decide::transcript::Trigger;
 use moor_core::seam::driver::{ExecOutcome, ExecSpec, Released};
 use moor_core::seam::proc::Deadline;
@@ -20,11 +22,13 @@ use moor_core::{BoxHandle, CloseReq, ErrorKind, TaskName, Warning};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
+use crate::ops::common::boxwork::{probe, BoxWork};
 use crate::ops::common::facts::settings;
 use crate::ops::common::promote::promote_waiting;
 use crate::ops::common::proxy::stop_proxy;
 use crate::ops::common::transcript::{self, Saved};
 use crate::ops::common::view::task_view;
+use crate::ops::common::wake::wake_if_asleep;
 use crate::store::{BoxRow, Store, TaskRow};
 
 /// Wall-clock allowance for the teardown script.
@@ -50,8 +54,9 @@ pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
         "close",
         boxlock::WAIT,
     )?;
-    let row = store.task(first.id)?.unwrap_or(first);
-    let plan = close_gate(&facts(cx, &row)?, req.force)?;
+    let mut row = store.task(first.id)?.unwrap_or(first);
+    let box_check = box_check(cx, store, &mut row, req.force)?;
+    let plan = close_gate(&facts(cx, &row, box_check)?, req.force)?;
     let saved = save_transcript(cx, store, &row)?;
     let digest = saved.as_ref().map(|t| t.digest.as_str());
     let agent_stopped = stop_agent(cx, store, &row, digest)?;
@@ -145,8 +150,55 @@ const fn held(b: &BoxRow) -> Option<&BoxHandle> {
     }
 }
 
+/// Looks for work that exists only in the Box, waking a sleeping Box to read it.
+///
+/// `row` is reloaded when the wake changed it, so teardown sees a Ready Box. A Box that
+/// cannot be woken or read gives [`BoxCheck::Unknown`], which the gate refuses.
+fn box_check(
+    cx: &Cx,
+    store: &Store,
+    row: &mut TaskRow,
+    force: bool,
+) -> Result<BoxCheck, CommandError> {
+    // --force discards Box work, so the Box is neither woken nor probed.
+    if force {
+        return Ok(BoxCheck::Skipped);
+    }
+    let live = |r: &TaskRow| {
+        r.boxed.as_ref().is_some_and(|b| {
+            b.handle.is_some() && !matches!(b.state, BoxState::Gone | BoxState::Deleted)
+        })
+    };
+    if !live(row) {
+        return Ok(BoxCheck::Skipped);
+    }
+    match wake_if_asleep(cx, store, row) {
+        Ok(true) => {
+            if let Some(fresh) = store.task(row.id)? {
+                *row = fresh;
+            }
+        }
+        Ok(false) => {}
+        Err(e) => {
+            return Ok(BoxCheck::Unknown(format!(
+                "could not wake the Box: {}",
+                e.error
+            )))
+        }
+    }
+    // A Box that never got ready, or whose release already failed, has no reachable work tree.
+    let Some(b) = row.boxed.as_ref().filter(|b| b.state == BoxState::Ready) else {
+        return Ok(BoxCheck::Skipped);
+    };
+    Ok(match probe(cx, row, b) {
+        BoxWork::Clean => BoxCheck::Clean,
+        BoxWork::Unsaved { ahead, dirty } => BoxCheck::Unsaved { ahead, dirty },
+        BoxWork::Unknown(why) => BoxCheck::Unknown(why),
+    })
+}
+
 /// Reads the unsaved-work facts the gate decides on.
-fn facts(cx: &Cx, row: &TaskRow) -> Result<CloseFacts, CommandError> {
+fn facts(cx: &Cx, row: &TaskRow, box_check: BoxCheck) -> Result<CloseFacts, CommandError> {
     let (mut unpushed, mut dirty) = (0, false);
     if let Some(wt) = row.worktree.as_deref().map(Path::new) {
         let failed = |e| CommandError::new(ErrorKind::Failed, e);
@@ -155,11 +207,14 @@ fn facts(cx: &Cx, row: &TaskRow) -> Result<CloseFacts, CommandError> {
     }
     Ok(CloseFacts {
         task: row.id,
+        name: row.name.as_str().to_owned(),
+        branch: row.branch.clone(),
         state: row.state,
         box_state: row.boxed.as_ref().map(|b| b.state),
         has_handle: row.boxed.as_ref().is_some_and(|b| held(b).is_some()),
         unpushed,
         dirty,
+        box_check,
     })
 }
 

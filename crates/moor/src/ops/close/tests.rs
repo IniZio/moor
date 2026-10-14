@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use moor_core::domain::boxes::{BoxInput, BoxState};
@@ -7,7 +7,7 @@ use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, EgressPlan};
 use moor_core::seam::proc::Tool;
 use moor_core::seam::surface::SurfaceError;
-use moor_core::{CloseReq, ErrorKind, ProviderId, TaskId, TaskName};
+use moor_core::{BoxPath, CloseReq, ErrorKind, ProviderId, TaskId, TaskName};
 
 use super::run;
 use crate::cx::Cx;
@@ -16,23 +16,26 @@ use crate::testing::proc::{Reply, ScriptedProc};
 use crate::testing::surface::FakeSurface;
 
 mod agent;
+mod boxwork;
 mod promote;
 mod proxy;
 mod teardown;
 mod transcript;
 
 const RAW: &str = "RAWDRIVER-7731";
+/// The host commit id the probe compares against.
+const HEAD: &str = "0123456789abcdef0123456789abcdef01234567";
 
-struct Fx {
-    dir: tempfile::TempDir,
-    cx: Cx,
-    driver: Arc<FakeDriver>,
-    surface: Arc<FakeSurface>,
-    proc: Arc<ScriptedProc>,
-    id: TaskId,
+pub(super) struct Fx {
+    pub(super) dir: tempfile::TempDir,
+    pub(super) cx: Cx,
+    pub(super) driver: Arc<FakeDriver>,
+    pub(super) surface: Arc<FakeSurface>,
+    pub(super) proc: Arc<ScriptedProc>,
+    pub(super) id: TaskId,
 }
 
-fn req(force: bool) -> CloseReq {
+pub(super) fn req(force: bool) -> CloseReq {
     CloseReq {
         task: TaskName::parse("t").unwrap(),
         force,
@@ -40,10 +43,15 @@ fn req(force: bool) -> CloseReq {
 }
 
 /// Git answers: `unpushed` commits and a clean tree.
-fn proc(unpushed: u32) -> Arc<ScriptedProc> {
+pub(super) fn proc(unpushed: u32) -> Arc<ScriptedProc> {
     let p = ScriptedProc::new();
     p.on(Tool::Git, &["rev-list"], Reply::Ok(format!("{unpushed}\n")));
     p.on(Tool::Git, &["status"], Reply::Ok(String::new()));
+    p.on(
+        Tool::Git,
+        &["rev-parse", "HEAD"],
+        Reply::Ok(format!("{HEAD}\n")),
+    );
     p.on(
         Tool::Git,
         &["rev-parse", "--path-format=absolute", "--git-common-dir"],
@@ -52,8 +60,29 @@ fn proc(unpushed: u32) -> Arc<ScriptedProc> {
     Arc::new(p)
 }
 
+/// A Ready task with a Box from `driver` that probes clean.
+pub(super) fn fx_with(driver: FakeDriver, surface: FakeSurface, unpushed: u32) -> Fx {
+    fx_box(driver, surface, unpushed, Some("ahead=0 dirty=0"))
+}
+
 /// A Ready task with a Box from `driver`; the worktree is a real directory.
-fn fx_with(driver: FakeDriver, surface: FakeSurface, unpushed: u32) -> Fx {
+///
+/// `boxwork` is what the probe reads back from the first Box's recorded workdir
+/// (`/work/box-1`); `None` leaves it unscripted, so the probe cannot tell.
+pub(super) fn fx_box(
+    driver: FakeDriver,
+    surface: FakeSurface,
+    unpushed: u32,
+    boxwork: Option<&str>,
+) -> Fx {
+    let driver = match boxwork {
+        Some(text) => driver.peek_text(
+            "box-1",
+            &BoxPath::under("/work/box-1", ".moor/boxwork").unwrap(),
+            text,
+        ),
+        None => driver,
+    };
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(driver);
     let surface = Arc::new(surface);
@@ -65,6 +94,19 @@ fn fx_with(driver: FakeDriver, surface: FakeSurface, unpushed: u32) -> Fx {
         surface.clone(),
         proc.clone(),
     );
+    let id = admit(&cx, &driver, dir.path());
+    Fx {
+        dir,
+        cx,
+        driver,
+        surface,
+        proc,
+        id,
+    }
+}
+
+/// Admits task `t` with a Ready Box acquired from `driver`.
+fn admit(cx: &Cx, driver: &FakeDriver, dir: &Path) -> TaskId {
     let store = cx.store().unwrap();
     let id = store
         .apply(Decision::insert(NewTask {
@@ -76,7 +118,7 @@ fn fx_with(driver: FakeDriver, surface: FakeSurface, unpushed: u32) -> Fx {
     let provider = ProviderId::new("p");
     let fields = Fields {
         box_provider: Field::Set(provider.clone()),
-        worktree: Field::Set(dir.path().display().to_string()),
+        worktree: Field::Set(dir.display().to_string()),
         workspace_id: Field::Set("ws-1".into()),
         box_workdir: Field::Set("/work/box-1".into()),
         ..Fields::default()
@@ -103,25 +145,18 @@ fn fx_with(driver: FakeDriver, surface: FakeSurface, unpushed: u32) -> Fx {
         })
         .box_input(BoxInput::Acquired { handle: got.handle });
     store.apply(d).unwrap();
-    Fx {
-        dir,
-        cx,
-        driver,
-        surface,
-        proc,
-        id,
-    }
+    id
 }
 
-fn fx() -> Fx {
+pub(super) fn fx() -> Fx {
     fx_with(FakeDriver::new(), FakeSurface::new(PathBuf::from("/s")), 0)
 }
 
-fn row(f: &Fx) -> crate::store::TaskRow {
+pub(super) fn row(f: &Fx) -> crate::store::TaskRow {
     f.cx.store().unwrap().task(f.id).unwrap().unwrap()
 }
 
-fn box_state(f: &Fx) -> BoxState {
+pub(super) fn box_state(f: &Fx) -> BoxState {
     row(f).boxed.unwrap().state
 }
 
@@ -152,7 +187,8 @@ fn release_not_found_counts_as_deleted() {
     let f = fx();
     let h = row(&f).boxed.unwrap().handle.unwrap();
     f.driver.forget(&h);
-    let v = run(&f.cx, &req(false)).unwrap();
+    // A forgotten Box cannot be probed, so only --force gets past the check.
+    let v = run(&f.cx, &req(true)).unwrap();
     assert!(v.box_deleted);
     assert_eq!(box_state(&f), BoxState::Deleted);
 }
