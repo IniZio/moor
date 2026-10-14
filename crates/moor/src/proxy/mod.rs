@@ -4,11 +4,18 @@
 //! route name and status of each request, and never the nonce, headers or
 //! bodies.
 //!
+//! The nono module embeds nono-proxy as each Task's egress proxy.
+//!
 //! The supervisor owns the proxy's lifetime and wires the listener, the
 //! resolver and the upstream client together.
 
 pub(crate) mod detached;
 mod head;
+#[cfg_attr(
+    not(test),
+    allow(dead_code, reason = "the supervisor does not start the nono proxy yet")
+)]
+pub(crate) mod nono;
 mod relay;
 mod resolver;
 mod server;

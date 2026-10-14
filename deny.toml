@@ -31,6 +31,21 @@ crate = "rustls-webpki"
 allow = ["ISC"]
 crate = "untrusted"
 
+# aws-lc-rs is ISC; pulled by nono-proxy's aws stack
+[[licenses.exceptions]]
+allow = ["ISC"]
+crate = "aws-lc-rs"
+
+# aws-lc-sys is ISC and MIT-0; pulled by nono-proxy's aws stack
+[[licenses.exceptions]]
+allow = ["ISC", "MIT-0"]
+crate = "aws-lc-sys"
+
+# webpki-roots ships Mozilla root data under CDLA-Permissive-2.0; pulled by hyper-rustls
+[[licenses.exceptions]]
+allow = ["CDLA-Permissive-2.0"]
+crate = "webpki-roots"
+
 [licenses.private]
 ignore = true
 
@@ -38,10 +53,10 @@ ignore = true
 multiple-versions = "deny"
 wildcards = "deny"
 allow-wildcard-paths = true
-skip = [
-  { crate = "getrandom@0.2.17", reason = "ring needs getrandom 0.2; moor pins 0.4" },
+skip = []
+skip-tree = [
+  { crate = "nono-proxy@0.80.0", reason = "nono-proxy's aws and sigstore stack duplicates many crates; versions are not ours to align" },
 ]
-skip-tree = []
 
 [sources]
 unknown-registry = "deny"
