@@ -65,7 +65,7 @@ pub(crate) enum HeadError {
     /// Transport failure other than a reset before any byte arrived.
     #[cfg_attr(
         not(test),
-        expect(dead_code, reason = "only tests inspect the wrapped error")
+        allow(dead_code, reason = "only tests inspect the wrapped error")
     )]
     Io(std::io::Error),
 }

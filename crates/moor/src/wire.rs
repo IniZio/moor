@@ -1,12 +1,10 @@
 //! Composition root: the only module that names concrete adapters.
 
 use std::io::Write;
-use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use moor_core::seam::proc::{Deadline, ProcSpec, Tool};
 use moor_core::TaskId;
 use signal_hook::consts::{SIGINT, SIGTERM};
 
@@ -33,7 +31,8 @@ use crate::cx::{Cx, CxParts};
 use crate::env::Env;
 use crate::error::CommandError;
 use crate::proxy::detached::DetachedSupervisor;
-use crate::proxy::{serve, Deps, ModelToken, OriginOf, Sink, Upstreams};
+use crate::proxy::nono::capture::CredsFn;
+use crate::proxy::{serve, Deps, Sink};
 
 /// Host variables herdr needs to find its socket and terminal.
 const HERDR_PASSTHROUGH: [&str; 5] = [
@@ -113,12 +112,6 @@ fn parts(env: &Env) -> Result<CxParts, CommandError> {
     })
 }
 
-/// Time limit for the origin lookup.
-const ORIGIN_DEADLINE: Deadline = Deadline(Duration::from_secs(30));
-
-/// Credential key holding the model token.
-const MODEL_TOKEN_KEY: &str = "CLAUDE_CODE_OAUTH_TOKEN";
-
 /// Run the credential proxy for `task` until a stop signal; returns the exit code.
 ///
 /// Setup failures are written to `stderr` as one `moor proxy: <error>` line.
@@ -146,16 +139,17 @@ fn run_proxy(env: &Env, task: TaskId, sink: &Sink) -> Result<u8, String> {
     let cx = Cx::new(parts);
     let store = cx.store().map_err(|e| e.error.to_string())?;
     let state_dir = cx.state_dir().map_err(|e| e.error.to_string())?;
-    let upstreams = Upstreams::from_env(env).map_err(|e| e.to_string())?;
     let stop = Arc::new(AtomicBool::new(false));
     for sig in [SIGTERM, SIGINT] {
         signal_hook::flag::register(sig, Arc::clone(&stop)).map_err(|e| e.to_string())?;
     }
-    let src = cx.config().credentials.get(MODEL_TOKEN_KEY).cloned();
-    let creds = Creds::new(env.clone(), Arc::clone(&proc));
-    let model: ModelToken = Arc::new(move || {
-        src.as_ref()
-            .map_or_else(|| Err("not configured".to_owned()), |s| creds.secret(s))
+    let sources = cx.config().credentials.clone();
+    let reader = Creds::new(env.clone(), Arc::clone(&proc));
+    let creds: CredsFn = Arc::new(move |name: &str| {
+        sources.get(name).map_or_else(
+            || Err(format!("credential {name} is not configured")),
+            |src| reader.secret(src),
+        )
     });
     let deps = Deps {
         store,
@@ -163,27 +157,14 @@ fn run_proxy(env: &Env, task: TaskId, sink: &Sink) -> Result<u8, String> {
         forge,
         clock,
         rng: cx.rng(),
-        model,
-        upstreams,
+        creds,
+        upstream_ca: None,
         state_dir,
         boot_id: proc.boot_id(),
-        origin_of: origin_of(proc),
         stop,
         stderr: Arc::clone(sink),
     };
     Ok(serve(&deps, task))
-}
-
-/// Looks up a worktree's `origin` remote URL through git.
-fn origin_of(proc: Arc<dyn Proc>) -> OriginOf {
-    Box::new(move |worktree: &Path| {
-        let spec = ProcSpec::new(Tool::Git, ORIGIN_DEADLINE)
-            .args(["remote", "get-url", "origin"])
-            .cwd(worktree);
-        let out = proc.run(&spec).ok()?.stdout;
-        let url = out.trim();
-        (!url.is_empty()).then(|| url.to_owned())
-    })
 }
 
 /// The GitHub forge; `pass_env` names unset in `env` are skipped.

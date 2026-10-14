@@ -19,6 +19,10 @@ mod deadline;
 mod framing;
 
 pub(crate) use deadline::DeadlineReader;
+#[cfg_attr(
+    not(test),
+    allow(unused_imports, reason = "removed in the next change")
+)]
 pub(crate) use framing::body_cap;
 use framing::BodyLen;
 

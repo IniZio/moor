@@ -1,4 +1,4 @@
-//! Loopback HTTP/1.1 proxy listener and its per-Task request log.
+//! Per-Task egress proxy and its request log.
 //!
 //! The log is the only file the proxy writes. It records the time, method,
 //! route name and status of each request, and never the nonce, headers or
@@ -6,28 +6,23 @@
 //!
 //! The nono module embeds nono-proxy as each Task's egress proxy.
 //!
-//! The supervisor owns the proxy's lifetime and wires the listener, the
-//! resolver and the upstream client together.
+//! The supervisor owns the proxy's lifetime.
 
 pub(crate) mod detached;
+#[cfg_attr(not(test), allow(dead_code, reason = "removed in the next change"))]
 mod head;
-#[cfg_attr(
-    not(test),
-    allow(dead_code, reason = "the supervisor does not start the nono proxy yet")
-)]
 pub(crate) mod nono;
+#[cfg_attr(not(test), allow(dead_code, reason = "removed in the next change"))]
 mod relay;
+#[cfg_attr(not(test), allow(dead_code, reason = "removed in the next change"))]
 mod resolver;
+#[cfg_attr(not(test), allow(dead_code, reason = "removed in the next change"))]
 mod server;
 pub(crate) mod supervisor;
-#[cfg(test)]
-mod tests;
+#[cfg_attr(not(test), allow(dead_code, reason = "removed in the next change"))]
 mod upstream;
 
-pub(crate) use resolver::ModelToken;
-pub(crate) use server::Proxy;
-pub(crate) use supervisor::{serve, Deps, OriginOf, Sink};
-pub(crate) use upstream::Upstreams;
+pub(crate) use supervisor::{serve, Deps, Sink};
 
 use std::fs::{DirBuilder, File, OpenOptions, Permissions};
 use std::io::Write as _;

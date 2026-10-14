@@ -250,6 +250,10 @@ pub enum Event {
         host: String,
         /// The tool rule the host belongs to, when it belongs to one.
         rule: Option<String>,
+        /// The HTTP method of the refused request, when one was seen.
+        method: Option<String>,
+        /// Why the Proxy refused the connection, as the Proxy names it.
+        category: Option<String>,
     },
     /// The Proxy could not obtain the credential of a tool rule.
     ProxyCredentialFailed {

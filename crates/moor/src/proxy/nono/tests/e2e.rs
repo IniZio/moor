@@ -12,8 +12,7 @@ use moor_core::domain::decision::{Decision, NewTask};
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::{Secret, TaskId, TaskName};
 use tempfile::TempDir;
-use ureq::tls::{Certificate, RootCerts, TlsConfig, TlsProvider};
-use ureq::{Agent, Proxy};
+use ureq::Agent;
 
 use super::upstream::{self, Upstream};
 use crate::proxy::nono::audit::{self, EgressSink, TaskSink};
@@ -210,20 +209,7 @@ fn rig() -> Rig {
 
 /// A client that goes through the proxy and trusts only `ca_pem`.
 fn client(proxy_port: u16, ca_pem: &str) -> Agent {
-    let cert = Certificate::from_pem(ca_pem.as_bytes()).unwrap().to_owned();
-    let tls = TlsConfig::builder()
-        .provider(TlsProvider::Rustls)
-        .root_certs(RootCerts::Specific(Arc::new(vec![cert])))
-        .unversioned_rustls_crypto_provider(Arc::new(rustls::crypto::ring::default_provider()))
-        .build();
-    let proxy = Proxy::new(&format!("http://moor:{NONCE}@127.0.0.1:{proxy_port}")).unwrap();
-    let config = Agent::config_builder()
-        .proxy(Some(proxy))
-        .tls_config(tls)
-        .http_status_as_error(false)
-        .timeout_global(Some(Duration::from_secs(10)))
-        .build();
-    Agent::new_with_config(config)
+    upstream::client(proxy_port, NONCE, ca_pem)
 }
 
 /// GETs `url` with the placeholder credential; status or error text.
@@ -263,7 +249,7 @@ impl EgressSink for Recorder {
         self.push(format!("allowed({method}, {route}, {status})"));
     }
 
-    fn refused(&self, host: &str, rule: Option<&str>) {
+    fn refused(&self, host: &str, rule: Option<&str>, _: Option<&str>, _: Option<&str>) {
         self.push(format!("refused({host}, {rule:?})"));
     }
 

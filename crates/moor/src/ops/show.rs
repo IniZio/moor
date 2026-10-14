@@ -19,20 +19,21 @@ const REDACTED: &str = "<nonce>";
 /// Length of a base64url-encoded 32-byte nonce.
 const NONCE_LEN: usize = 43;
 
-/// `text` with the task's proxy nonce, and any `/t/<43 base64url chars>/` path segment,
-/// replaced by `<nonce>`. Git prints the proxied remote URL, which carries the nonce.
+/// `text` with the task's proxy nonce, and any `moor:<43 base64url chars>@` userinfo,
+/// replaced by `<nonce>`. The proxy URL in the agent's environment carries the nonce.
 fn redact_nonce(text: &str, nonce: Option<&[u8]>) -> String {
+    const USER: &str = "moor:";
     let known = nonce
         .and_then(|n| std::str::from_utf8(n).ok())
         .filter(|n| !n.is_empty());
     let text = known.map_or_else(|| text.to_owned(), |n| text.replace(n, REDACTED));
     let mut out = String::with_capacity(text.len());
     let mut rest = text.as_str();
-    while let Some(at) = rest.find("/t/") {
-        let (head, tail) = rest.split_at(at + 3);
+    while let Some(at) = rest.find(USER) {
+        let (head, tail) = rest.split_at(at + USER.len());
         out.push_str(head);
         let seg = tail.as_bytes();
-        let is_nonce = seg.get(NONCE_LEN) == Some(&b'/')
+        let is_nonce = seg.get(NONCE_LEN) == Some(&b'@')
             && seg
                 .iter()
                 .take(NONCE_LEN)

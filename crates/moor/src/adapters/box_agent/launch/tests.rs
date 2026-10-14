@@ -11,7 +11,6 @@ use moor_core::seam::surface::{Surface, SurfaceError};
 use moor_core::{BoxHandle, BoxPath, ProviderId, Secret, TaskId, TaskName};
 
 use crate::adapters::box_agent::claude::Claude;
-use crate::adapters::box_agent::gh_shim::gh_shim;
 use crate::adapters::box_agent::proxy_env;
 use crate::adapters::box_agent::BoxAgent;
 use crate::testing::clock::FakeClock;
@@ -479,7 +478,7 @@ fn proxy_addr() -> ProxyAddr {
     ProxyAddr {
         box_port: 4567,
         nonce: Secret::new(NONCE.to_vec()),
-        ca_pem: String::new(),
+        ca_pem: "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n".to_owned(),
         box_env: Vec::new(),
     }
 }
@@ -521,16 +520,17 @@ fn the_nonce_reaches_the_box_only_through_its_staged_file() {
 }
 
 #[test]
-fn a_proxy_launch_installs_the_gh_shim_first_on_the_box() {
+fn a_proxy_launch_stages_only_the_nonce_and_the_public_ca() {
     let (d, _) = launch_with_proxy();
-    let (bytes, mode) = gh_shim();
-    let put = d
+    let staged: Vec<_> = d
         .puts()
         .into_iter()
-        .find(|p| p.1.as_str() == format!("{CRED}/bin/gh"))
-        .unwrap();
-    assert_eq!((put.2.as_slice(), put.3), (bytes, mode));
-    assert_eq!(mode, 0o755);
+        .filter(|p| p.1.as_str().starts_with(&format!("{CRED}/")))
+        .map(|p| (p.1.as_str().to_owned(), p.3))
+        .collect();
+    assert!(staged.contains(&(format!("{CRED}/proxy-nonce"), 0o600)));
+    assert!(staged.contains(&(format!("{CRED}/proxy-ca.pem"), 0o644)));
+    assert!(staged.iter().all(|(path, _)| !path.contains("/bin/")));
 }
 
 #[test]
@@ -540,17 +540,14 @@ fn a_proxy_launch_keeps_the_cred_dir_for_the_agent_and_exports_the_proxy_env() {
     assert!(!has_nonce(&script), "{script}");
     assert!(!script.contains(&format!("\nrm -rf '{CRED}'")), "{script}");
     for want in [
-        "GIT_CONFIG_COUNT=3",
+        "GIT_CONFIG_COUNT=2",
         "remote.moor.url",
-        "MOOR_GH_REPO",
-        "MOOR_PUSH_URL",
+        "HTTPS_PROXY",
+        "SSL_CERT_FILE",
         "unset GH_TOKEN GITHUB_TOKEN",
     ] {
         assert!(script.contains(want), "{want}: {script}");
     }
-    let at = |needle: &str| script.find(needle).unwrap();
-    let shim = at(&format!("{CRED}/bin"));
-    assert!(at("$HOME/.local/bin") < shim && shim < at("cd '/work/box-1'"));
 }
 
 #[test]
@@ -566,10 +563,11 @@ fn a_failed_proxy_stage_removes_the_cred_dir() {
 }
 
 #[test]
-fn the_agent_gets_the_proxy_env_and_the_shim_while_the_cred_dir_lives_until_exit() {
+fn the_agent_gets_the_proxy_env_while_the_cred_dir_lives_until_exit() {
     let b = Scratch::new();
     let cred = b.path("home/.moor-cred-t1-x");
     std::fs::write(cred.join("proxy-nonce"), NONCE).unwrap();
+    std::fs::write(cred.join("proxy-ca.pem"), proxy_addr().ca_pem).unwrap();
     b.stub(
         "claude",
         &format!(
@@ -579,19 +577,17 @@ fn the_agent_gets_the_proxy_env_and_the_shim_while_the_cred_dir_lives_until_exit
             c = cred.display()
         ),
     );
-    let script = b.script_with("true", &b.proxy_lines());
+    let lines: Vec<_> = b
+        .proxy_lines()
+        .into_iter()
+        .filter(|l| !l.contains("sudo"))
+        .collect();
+    let script = b.script_with("true", &lines);
     assert!(b.spawn(&script).wait().unwrap().success());
     let env = std::fs::read_to_string(b.path("started.env")).unwrap();
     let line = |name: &str| env.lines().find(|l| l.starts_with(name)).unwrap_or("");
-    assert!(
-        line("ANTHROPIC_BASE_URL=").contains("sentinel-9c2e"),
-        "{env}"
-    );
+    assert!(line("HTTPS_PROXY=").contains("sentinel-9c2e"), "{env}");
     assert!(!env.contains("GH_TOKEN"), "{env}");
-    assert!(
-        line("PATH=").starts_with(&format!("PATH={}/bin:", cred.display())),
-        "{env}"
-    );
     assert!(b.path("started.dir").exists());
     assert!(!b.path("started.nonce").exists());
     assert!(b.cred_gone());

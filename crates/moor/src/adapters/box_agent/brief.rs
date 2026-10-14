@@ -38,8 +38,8 @@ pub(super) fn render(b: &BriefInput) -> String {
          HEAD is detached on the Box. Commit your work with git, following the repo's \
          commit-msg hook and conventions. Push with \
          `git push moor HEAD:refs/heads/{branch}` when the repo's push guard \
-         allows it, not after each commit. If `$MOOR_PUSH_URL` is empty or unset, commit \
-         only and do not push. Push to the branch named in the Goal if it names one, else \
+         allows it, not after each commit. If `git remote get-url moor` fails, commit \
+         only, do not push, and say so. Push to the branch named in the Goal if it names one, else \
          to `{branch}`. Do not switch branches. Do not add Co-Authored-By trailers to \
          commits.\n\n\
          You may receive follow-up messages (steers) typed into this session.\n\n"

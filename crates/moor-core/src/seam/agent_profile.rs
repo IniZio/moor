@@ -47,15 +47,6 @@ impl fmt::Debug for EnvVar {
     }
 }
 
-/// Where the Proxy forwards model traffic and which host credential it injects.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ModelRoute {
-    /// The upstream base URL.
-    pub upstream: String,
-    /// The name of the host credential the Proxy injects.
-    pub credential: String,
-}
-
 /// What a launch needs to know.
 #[derive(Debug)]
 pub struct LaunchCtx {
@@ -155,9 +146,6 @@ pub trait AgentProfile: Send + Sync {
     ///
     /// Values never go in argv.
     fn env(&self, ctx: &LaunchCtx) -> Vec<EnvVar>;
-
-    /// The upstream and credential name the Proxy resolver uses for this agent's model traffic.
-    fn model_route(&self) -> ModelRoute;
 
     /// Records the agent's first-run answers so it opens without prompts.
     ///

@@ -3,7 +3,7 @@
 use moor_core::activity::{HookKind, HookRecord};
 use moor_core::name::NameError;
 use moor_core::seam::agent_profile::{
-    AgentProfile, BoxSetup, EnvVar, FirstRunPrompt, Key, LaunchCtx, ModelRoute, PromptMatch,
+    AgentProfile, BoxSetup, EnvVar, FirstRunPrompt, Key, LaunchCtx, PromptMatch,
 };
 use moor_core::seam::clock::Ts;
 use serde_json::Value;
@@ -88,10 +88,6 @@ impl AgentProfile for Claude {
 
     fn env(&self, ctx: &LaunchCtx) -> Vec<EnvVar> {
         launch::env(ctx)
-    }
-
-    fn model_route(&self) -> ModelRoute {
-        launch::model_route()
     }
 
     fn busy_marker(&self) -> &'static str {

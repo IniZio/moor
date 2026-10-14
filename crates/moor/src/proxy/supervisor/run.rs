@@ -2,19 +2,17 @@
 
 use std::cell::RefCell;
 use std::fmt::Arguments;
-use std::path::{Path, PathBuf};
-use std::sync::{Arc, PoisonError};
+use std::path::PathBuf;
+use std::sync::PoisonError;
 
 use moor_core::domain::task::TaskState;
-use moor_core::proxy_gate::{RouteRow, RouteTable};
 use moor_core::seam::driver::TunnelHandle;
+use moor_core::seam::proxy_host::ProxySpec;
 use moor_core::{BoxHandle, Secret, TaskId};
 
-use super::{creds, Deps, Sink, LEASE, MAX_CONNS};
-use crate::proxy::relay::Relay;
-use crate::proxy::resolver::Resolver;
-use crate::proxy::server::{body_cap, ProxyOpts, HEAD_BUDGET};
-use crate::proxy::{Proxy, ProxyLog};
+use super::listen::{listen, Live};
+use super::{Deps, Sink, LEASE};
+use crate::proxy::detached::read_spec;
 use crate::store::{Fenced, Lease, ProxyPorts, ReadyProc, TaskRow};
 
 /// Why the supervisor stops.
@@ -32,7 +30,7 @@ pub(super) enum Stop {
     Failed,
 }
 
-/// A proxy that is up: lease held, listener bound, tunnel open, row ready.
+/// A proxy that is up: lease held, proxy listening, tunnel open, row ready.
 pub(super) struct Running<'d> {
     /// Collaborators.
     pub(super) deps: &'d Deps<'d>,
@@ -40,8 +38,8 @@ pub(super) struct Running<'d> {
     pub(super) task: TaskId,
     /// Lease owner token.
     pub(super) owner: String,
-    /// The loopback listener.
-    pub(super) proxy: Proxy,
+    /// The nono proxy with its capture and log.
+    pub(super) live: Live,
     /// The reverse tunnel; dropping it stops the tunnel.
     pub(super) tunnel: RefCell<Box<dyn TunnelHandle>>,
     /// The Box the tunnel leads into.
@@ -75,8 +73,8 @@ fn give_up(deps: &Deps<'_>, task: TaskId, owner: &str) {
     }
 }
 
-/// Checks the Task, the proxy row and the Box handle, refusing with exit code 1 when any is missing.
-fn preflight(deps: &Deps<'_>, task: TaskId) -> Result<(TaskRow, BoxHandle), u8> {
+/// Checks the Task, the proxy row, the spec and the Box handle, refusing with exit code 1 when any is missing.
+fn preflight(deps: &Deps<'_>, task: TaskId) -> Result<(TaskRow, BoxHandle, ProxySpec), u8> {
     let sink = &deps.stderr;
     let task_row = match deps.store.task(task) {
         Ok(Some(row)) if !terminal(row.state) => row,
@@ -97,7 +95,11 @@ fn preflight(deps: &Deps<'_>, task: TaskId) -> Result<(TaskRow, BoxHandle), u8> 
         say(sink, format_args!("task {} has no box", task.get()));
         return Err(1);
     };
-    Ok((task_row, handle))
+    let Ok(spec) = read_spec(deps.state_dir, task) else {
+        say(sink, format_args!("no proxy spec for task {}", task.get()));
+        return Err(1);
+    };
+    Ok((task_row, handle, spec))
 }
 
 /// Reads the proxy row's nonce and Box port, refusing with exit code 1 when the row is missing.
@@ -140,44 +142,10 @@ fn claim(deps: &Deps<'_>, task: TaskId) -> Result<String, u8> {
     }
 }
 
-/// Opens the proxy log and binds the listener; the caller still holds the lease on failure.
-fn listen(deps: &Deps<'_>, task: TaskId, nonce: Secret, worktree: &Path) -> Result<Proxy, String> {
-    let repo = (deps.origin_of)(worktree).and_then(|origin| deps.forge.repo_of(&origin));
-    let mut rows = vec![RouteRow::model()];
-    if repo.is_some() {
-        rows.extend(deps.forge.routes());
-    }
-    let task_repo = repo.as_ref().map(ToString::to_string);
-    let resolver = Resolver::new(
-        Arc::clone(&deps.model),
-        Arc::clone(&deps.forge),
-        repo,
-        Arc::clone(&deps.clock),
-    );
-    let creds = Arc::new(creds::Logged::new(resolver, Arc::clone(&deps.stderr)));
-    let relay = Relay::new(
-        deps.upstreams.clone(),
-        creds,
-        Arc::clone(&deps.clock),
-        body_cap,
-    );
-    let log = ProxyLog::open(deps.state_dir, task, Arc::clone(&deps.clock))
-        .map_err(|err| format!("cannot open the proxy log: {err}"))?;
-    let opts = ProxyOpts {
-        max_conns: MAX_CONNS,
-        task_repo,
-        clock: Arc::clone(&deps.clock),
-        head_budget: HEAD_BUDGET,
-        body_cap,
-    };
-    Proxy::start(RouteTable::new(rows), nonce, log, Arc::new(relay), opts)
-        .map_err(|err| format!("cannot start the listener: {err}"))
-}
-
-/// Claims the lease, starts the listener and tunnel, and marks the row ready.
+/// Claims the lease, starts the proxy and tunnel, and marks the row ready.
 pub(super) fn begin<'d>(deps: &'d Deps<'d>, task: TaskId) -> Result<Running<'d>, u8> {
     let sink = &deps.stderr;
-    let (task_row, handle) = preflight(deps, task)?;
+    let (task_row, handle, spec) = preflight(deps, task)?;
     let owner = claim(deps, task)?;
     // Another `moor start` may have re-reserved the row before the claim, so read it again.
     let (nonce, box_port) = match reload(deps, task) {
@@ -188,8 +156,8 @@ pub(super) fn begin<'d>(deps: &'d Deps<'d>, task: TaskId) -> Result<Running<'d>,
         }
     };
     let worktree = PathBuf::from(task_row.worktree.as_deref().unwrap_or(&task_row.repo));
-    let proxy = match listen(deps, task, nonce, &worktree) {
-        Ok(proxy) => proxy,
+    let live = match listen(deps, task, &nonce, &spec) {
+        Ok(live) => live,
         Err(msg) => {
             say(sink, format_args!("{msg}"));
             give_up(deps, task, &owner);
@@ -197,12 +165,12 @@ pub(super) fn begin<'d>(deps: &'d Deps<'d>, task: TaskId) -> Result<Running<'d>,
         }
     };
     if let Err(code) = renew(deps, task, &owner) {
-        proxy.shutdown();
+        live.proxy.stop();
         return Err(code);
     }
     let tunnel = match deps
         .driver
-        .reverse_tunnel(&handle, box_port, proxy.port(), &worktree)
+        .reverse_tunnel(&handle, box_port, live.proxy.port(), &worktree)
     {
         Ok(tunnel) => tunnel,
         Err(err) => {
@@ -210,25 +178,25 @@ pub(super) fn begin<'d>(deps: &'d Deps<'d>, task: TaskId) -> Result<Running<'d>,
                 sink,
                 format_args!("cannot open the tunnel into the box: {err}"),
             );
-            proxy.shutdown();
+            live.proxy.stop();
             give_up(deps, task, &owner);
             return Err(1);
         }
     };
     let ports = ProxyPorts {
         box_port,
-        host_port: proxy.port(),
+        host_port: live.proxy.port(),
     };
     if let Err(code) = mark(deps, task, &owner, ports, &handle) {
         drop(tunnel);
-        proxy.shutdown();
+        live.proxy.stop();
         return Err(code);
     }
     Ok(Running {
         deps,
         task,
         owner,
-        proxy,
+        live,
         tunnel: RefCell::new(tunnel),
         handle,
         box_port,
@@ -311,6 +279,7 @@ impl Running<'_> {
         if let stop @ Some(_) = self.beat() {
             return stop;
         }
+        self.live.drain(self.deps, self.task);
         match self.deps.store.task(self.task) {
             Ok(Some(row)) if !terminal(row.state) => {}
             Ok(_) => return Some(Stop::Closed),
@@ -334,12 +303,13 @@ impl Running<'_> {
             deps,
             task,
             owner,
-            proxy,
+            live,
             tunnel,
             ..
         } = self;
+        live.drain(deps, task);
+        live.proxy.stop();
         drop(tunnel);
-        proxy.shutdown();
         if stop != Stop::LostLease {
             give_up(deps, task, &owner);
         }
@@ -351,6 +321,9 @@ impl Running<'_> {
                 );
             }
         }
+        if stop == Stop::Closed {
+            Live::forget(deps, task);
+        }
         u8::from(!matches!(stop, Stop::Closed | Stop::Signal))
     }
 
@@ -360,9 +333,9 @@ impl Running<'_> {
         &self.owner
     }
 
-    /// The port the listener is bound to.
+    /// The port the proxy is bound to.
     #[cfg(test)]
     pub(super) const fn host_port(&self) -> u16 {
-        self.proxy.port()
+        self.live.proxy.port()
     }
 }

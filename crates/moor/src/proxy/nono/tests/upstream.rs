@@ -13,20 +13,23 @@ use rcgen::{
 };
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls::{ServerConfig, ServerConnection, StreamOwned};
+use std::time::Duration;
+use ureq::tls::{Certificate, RootCerts, TlsConfig, TlsProvider};
+use ureq::{Agent, Proxy};
 
 /// What the upstream saw for one request.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct Seen {
+pub(crate) struct Seen {
     /// Request line, e.g. `GET /ok HTTP/1.1`.
-    pub(super) line: String,
+    pub(crate) line: String,
     /// `Authorization` header value, if any.
-    pub(super) authorization: Option<String>,
+    pub(crate) authorization: Option<String>,
 }
 
 /// A running fake upstream; stops its accept thread on drop.
-pub(super) struct Upstream {
+pub(crate) struct Upstream {
     /// Loopback port it listens on.
-    pub(super) port: u16,
+    pub(crate) port: u16,
     /// Requests seen so far.
     seen: Arc<Mutex<Vec<Seen>>>,
     /// Set to ask the accept loop to exit.
@@ -36,14 +39,14 @@ pub(super) struct Upstream {
     /// TLS server settings shared with twins.
     config: Arc<ServerConfig>,
     /// Test CA certificate PEM file for `RouteConfig.tls_ca`.
-    pub(super) ca_path: PathBuf,
+    pub(crate) ca_path: PathBuf,
     /// Test CA certificate PEM.
-    pub(super) ca_pem: String,
+    pub(crate) ca_pem: String,
 }
 
 impl Upstream {
     /// Requests recorded so far.
-    pub(super) fn seen(&self) -> Vec<Seen> {
+    pub(crate) fn seen(&self) -> Vec<Seen> {
         self.seen
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -139,7 +142,7 @@ fn serve(stream: TcpStream, config: &Arc<ServerConfig>, seen: &Mutex<Vec<Seen>>)
 }
 
 /// Starts the fake upstream; the CA PEM is written under `dir` as `upstream-ca.pem`.
-pub(super) fn start(dir: &Path) -> Upstream {
+pub(crate) fn start(dir: &Path) -> Upstream {
     let (ca_pem, leaf, key) = make_certs();
     let config =
         ServerConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
@@ -155,7 +158,7 @@ pub(super) fn start(dir: &Path) -> Upstream {
 
 impl Upstream {
     /// A second upstream on another port with the same certificates.
-    pub(super) fn twin(&self) -> Self {
+    pub(crate) fn twin(&self) -> Self {
         spawn(
             Arc::clone(&self.config),
             self.ca_path.clone(),
@@ -192,4 +195,22 @@ fn spawn(config: Arc<ServerConfig>, ca_path: PathBuf, ca_pem: String) -> Upstrea
         ca_path,
         ca_pem,
     }
+}
+
+/// A client that goes through the proxy on `proxy_port` as `moor:<nonce>` and trusts only `ca_pem`.
+pub(crate) fn client(proxy_port: u16, nonce: &str, ca_pem: &str) -> Agent {
+    let cert = Certificate::from_pem(ca_pem.as_bytes()).unwrap().to_owned();
+    let tls = TlsConfig::builder()
+        .provider(TlsProvider::Rustls)
+        .root_certs(RootCerts::Specific(Arc::new(vec![cert])))
+        .unversioned_rustls_crypto_provider(Arc::new(rustls::crypto::ring::default_provider()))
+        .build();
+    let proxy = Proxy::new(&format!("http://moor:{nonce}@127.0.0.1:{proxy_port}")).unwrap();
+    let config = Agent::config_builder()
+        .proxy(Some(proxy))
+        .tls_config(tls)
+        .http_status_as_error(false)
+        .timeout_global(Some(Duration::from_secs(10)))
+        .build();
+    Agent::new_with_config(config)
 }
