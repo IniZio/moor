@@ -20,6 +20,7 @@ fn task() -> TaskView {
             state: BoxState::Ready,
             provider: "p".into(),
             handle: Some("h".into()),
+            workdir: Some("/work/repo".into()),
             egress: Some("enforced".into()),
             asleep_since: None,
             sleep: BoxSleepView {
@@ -39,7 +40,7 @@ fn task_json() -> Value {
         "state": "working", "state_reason": null, "base": null, "branch": "b",
         "worktree": null, "workspace": null,
         "box": {"state": "ready", "provider": "p", "handle": "h",
-                "egress": "enforced", "asleep_since": null,
+                "workdir": "/work/repo", "egress": "enforced", "asleep_since": null,
                 "sleep": {"after": null, "reason": null}},
         "agent": null, "run": null, "updated_at": "2026-01-01T00:00:00Z"
     })
@@ -370,6 +371,7 @@ fn box_view(after: Option<&str>, reason: Option<&str>) -> BoxView {
         state: BoxState::Ready,
         provider: "p".into(),
         handle: None,
+        workdir: None,
         egress: None,
         asleep_since: None,
         sleep: BoxSleepView {
