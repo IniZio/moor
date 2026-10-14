@@ -1,7 +1,14 @@
 //! Composition root: the only module that names concrete adapters.
 
-use std::sync::Arc;
+use std::io::Write;
+use std::path::Path;
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
+
+use moor_core::seam::proc::{Deadline, ProcSpec, Tool};
+use moor_core::TaskId;
+use signal_hook::consts::{SIGINT, SIGTERM};
 
 use moor_core::config::UserConfig;
 use moor_core::seam::clock::Clock;
@@ -24,6 +31,7 @@ use crate::config_load::load_user;
 use crate::cx::{Cx, CxParts};
 use crate::env::Env;
 use crate::error::CommandError;
+use crate::proxy::{serve, Deps, ModelToken, OriginOf, Sink, Upstreams};
 
 /// Host variables herdr needs to find its socket and terminal.
 const HERDR_PASSTHROUGH: [&str; 5] = [
@@ -46,6 +54,11 @@ fn herdr(
 
 /// Wire real adapters from the environment into a context.
 pub(crate) fn build(env: &Env) -> Result<Cx, CommandError> {
+    Ok(Cx::new(parts(env)?))
+}
+
+/// Real adapters from the environment, not yet assembled into a context.
+fn parts(env: &Env) -> Result<CxParts, CommandError> {
     let clock = SystemClock::from_env(env).map_err(|e| CommandError::new(ErrorKind::Usage, e))?;
     let config = load_user(env)?;
     let cwd = std::env::current_dir()
@@ -69,7 +82,7 @@ pub(crate) fn build(env: &Env) -> Result<Cx, CommandError> {
         Arc::new(Claude),
         Arc::clone(&clock) as Arc<dyn Clock>,
     );
-    Ok(Cx::new(CxParts {
+    Ok(CxParts {
         state_dir: env.state_dir(),
         clock,
         rng: Arc::new(SystemRng),
@@ -83,7 +96,79 @@ pub(crate) fn build(env: &Env) -> Result<Cx, CommandError> {
         creds: Creds::new(env.clone(), proc),
         cwd,
         prompt_window: prompt_window(env),
-    }))
+    })
+}
+
+/// Time limit for the origin lookup.
+const ORIGIN_DEADLINE: Deadline = Deadline(Duration::from_secs(30));
+
+/// Credential key holding the model token.
+const MODEL_TOKEN_KEY: &str = "CLAUDE_CODE_OAUTH_TOKEN";
+
+/// Run the credential proxy for `task` until a stop signal; returns the exit code.
+///
+/// Setup failures are written to `stderr` as one `moor proxy: <error>` line.
+pub fn serve_proxy(env: &Env, task: TaskId, stderr: impl Write + Send + 'static) -> u8 {
+    let sink: Sink = Arc::new(Mutex::new(stderr));
+    match run_proxy(env, task, &sink) {
+        Ok(code) => code,
+        Err(e) => {
+            // The sink is the only channel left; a failed write has nowhere to go.
+            let _ = writeln!(
+                sink.lock().unwrap_or_else(PoisonError::into_inner),
+                "moor proxy: {e}"
+            );
+            1
+        }
+    }
+}
+
+/// Builds the proxy's dependencies and serves; `Err` is a setup failure.
+fn run_proxy(env: &Env, task: TaskId, sink: &Sink) -> Result<u8, String> {
+    let parts = parts(env).map_err(|e| e.error.to_string())?;
+    let forge = Arc::clone(&parts.forge);
+    let clock = Arc::clone(&parts.clock);
+    let proc = Arc::clone(&parts.proc);
+    let cx = Cx::new(parts);
+    let store = cx.store().map_err(|e| e.error.to_string())?;
+    let state_dir = cx.state_dir().map_err(|e| e.error.to_string())?;
+    let upstreams = Upstreams::from_env(env).map_err(|e| e.to_string())?;
+    let stop = Arc::new(AtomicBool::new(false));
+    for sig in [SIGTERM, SIGINT] {
+        signal_hook::flag::register(sig, Arc::clone(&stop)).map_err(|e| e.to_string())?;
+    }
+    let src = cx.config().credentials.get(MODEL_TOKEN_KEY).cloned();
+    let creds = Creds::new(env.clone(), Arc::clone(&proc));
+    let model: ModelToken = Arc::new(move || {
+        src.as_ref()
+            .map_or_else(|| Err("not configured".to_owned()), |s| creds.secret(s))
+    });
+    let deps = Deps {
+        store,
+        driver: cx.driver(),
+        forge,
+        clock,
+        rng: cx.rng(),
+        model,
+        upstreams,
+        state_dir,
+        origin_of: origin_of(proc),
+        stop,
+        stderr: Arc::clone(sink),
+    };
+    Ok(serve(&deps, task))
+}
+
+/// Looks up a worktree's `origin` remote URL through git.
+fn origin_of(proc: Arc<dyn Proc>) -> OriginOf {
+    Box::new(move |worktree: &Path| {
+        let spec = ProcSpec::new(Tool::Git, ORIGIN_DEADLINE)
+            .args(["remote", "get-url", "origin"])
+            .cwd(worktree);
+        let out = proc.run(&spec).ok()?.stdout;
+        let url = out.trim();
+        (!url.is_empty()).then(|| url.to_owned())
+    })
 }
 
 /// The GitHub forge; `pass_env` names unset in `env` are skipped.
@@ -188,6 +273,40 @@ mod tests {
     fn a_built_context_carries_the_prompt_window_from_the_environment() {
         let env = Env::from_pairs([(PROMPT_WINDOW_ENV, "0")]);
         assert_eq!(build(&env).unwrap().prompt_window(), Duration::ZERO);
+    }
+
+    /// A writer whose bytes the test can read back after the proxy owns it.
+    struct Shared(Arc<Mutex<Vec<u8>>>);
+
+    impl Write for Shared {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn serving_an_unknown_task_fails_with_one_stderr_line() {
+        let home = tempfile::tempdir().unwrap();
+        let root = home.path().to_str().unwrap();
+        let state = home.path().join("state");
+        let env = Env::from_pairs([
+            ("HOME", root),
+            ("XDG_CONFIG_HOME", root),
+            ("XDG_STATE_HOME", root),
+            ("MOOR_CONFIG", &format!("{root}/absent.yaml")),
+            ("MOOR_STATE_DIR", state.to_str().unwrap()),
+        ]);
+        let out = Arc::new(Mutex::new(Vec::new()));
+        let code = serve_proxy(&env, TaskId::new(1), Shared(Arc::clone(&out)));
+        assert_ne!(code, 0);
+        let text = String::from_utf8(out.lock().unwrap().clone()).unwrap();
+        assert!(text.starts_with("moor proxy: "), "{text}");
+        assert_eq!(text.lines().count(), 1, "{text}");
     }
 
     #[test]

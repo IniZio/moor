@@ -9,10 +9,6 @@ pub mod env;
 pub mod error;
 mod moor;
 mod ops;
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the CLI starts the proxy in a later change")
-)]
 mod proxy;
 mod store;
 #[cfg(test)]
@@ -20,4 +16,6 @@ mod testing;
 mod wire;
 
 pub use crate::moor::Moor;
+/// Run the credential proxy for a Task until a stop signal; returns the exit code.
+pub use crate::wire::serve_proxy;
 pub use moor_core;

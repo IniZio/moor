@@ -19,10 +19,6 @@ mod deadline;
 mod framing;
 
 pub(crate) use deadline::DeadlineReader;
-#[cfg_attr(
-    not(test),
-    expect(unused_imports, reason = "the CLI starts the proxy in a later change")
-)]
 pub(crate) use framing::body_cap;
 use framing::BodyLen;
 
@@ -32,6 +28,10 @@ pub(crate) const HEAD_BUDGET: Duration = Duration::from_secs(10);
 
 /// Longest a client may stall mid-body before the handler gives up.
 const BODY_IDLE: Duration = Duration::from_secs(10);
+
+/// Pause after a failed `accept`. Persistent failures such as fd exhaustion
+/// return at once, so without it the accept thread would spin a core.
+const ACCEPT_BACKOFF: Duration = Duration::from_millis(50);
 
 /// Most unread request bytes discarded after a refusal.
 const DRAIN_LIMIT: u64 = 64 * 1024;
@@ -163,7 +163,10 @@ fn accept_loop(listener: &TcpListener, shared: &Arc<Shared>, stop: &AtomicBool) 
         if stop.load(Ordering::SeqCst) {
             break;
         }
-        let Ok(stream) = stream else { continue };
+        let Ok(stream) = stream else {
+            thread::sleep(ACCEPT_BACKOFF);
+            continue;
+        };
         let Some(slot) = Slot::acquire(shared) else {
             let mut stream = stream;
             write_reject(&mut stream, 503);

@@ -149,6 +149,13 @@ impl Store {
         Ok(Fenced::Applied)
     }
 
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "the start operation reserves the row in a later change"
+        )
+    )]
     /// Append a `TunnelRestarted` event for `task`, provided `owner` holds the lease.
     pub(crate) fn tunnel_restarted(
         &self,

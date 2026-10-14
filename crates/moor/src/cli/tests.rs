@@ -49,10 +49,21 @@ fn help_exits_zero() {
 }
 
 #[test]
-fn proxy_serve_is_failed_json() {
-    let o = done(&["--json", "proxy", "serve"]);
-    let v: serde_json::Value = serde_json::from_str(&o.stdout).expect("json");
-    assert_eq!(v.get("class"), Some(&serde_json::json!("failed")));
+fn proxy_serve_parses_task() {
+    assert!(matches!(
+        parse(argv(&["proxy", "serve", "7"])),
+        Parsed::ProxyServe { task, .. } if task == moor_core::TaskId::new(7)
+    ));
+}
+
+#[test]
+fn proxy_serve_without_task_is_usage() {
+    assert_eq!(done(&["proxy", "serve"]).code, 2);
+}
+
+#[test]
+fn proxy_serve_non_numeric_task_is_usage() {
+    assert_eq!(done(&["proxy", "serve", "abc"]).code, 2);
 }
 
 #[test]
