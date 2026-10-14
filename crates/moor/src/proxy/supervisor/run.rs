@@ -15,7 +15,7 @@ use crate::proxy::relay::Relay;
 use crate::proxy::resolver::Resolver;
 use crate::proxy::server::{body_cap, ProxyOpts, HEAD_BUDGET};
 use crate::proxy::{Proxy, ProxyLog};
-use crate::store::{Fenced, Lease, ProxyPorts, TaskRow};
+use crate::store::{Fenced, Lease, ProxyPorts, ReadyProc, TaskRow};
 
 /// Why the supervisor stops.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -264,10 +264,16 @@ fn mark(
     handle: &BoxHandle,
 ) -> Result<(), u8> {
     renew(deps, task, owner)?;
-    match deps
-        .store
-        .mark_ready(task, owner, ports, std::process::id(), handle.as_str())
-    {
+    match deps.store.mark_ready(
+        task,
+        owner,
+        ports,
+        ReadyProc {
+            pid: std::process::id(),
+            handle: handle.as_str(),
+            boot_id: deps.boot_id.as_deref(),
+        },
+    ) {
         Ok(Fenced::Applied) => Ok(()),
         Ok(Fenced::LostLease) => {
             say(

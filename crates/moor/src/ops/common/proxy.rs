@@ -20,6 +20,9 @@ use crate::store::{ProxyRow, Reserve, Store, StoreError};
 /// Must equal the supervisor's own lease window.
 pub(crate) const LEASE: Duration = Duration::from_secs(30);
 
+/// How far ahead of the clock a heartbeat may be and still count as live.
+const SKEW: Duration = Duration::from_secs(5);
+
 /// Pause between two looks at the proxy row.
 pub(crate) const POLL: Duration = Duration::from_millis(200);
 
@@ -52,17 +55,31 @@ fn store_failed(e: &StoreError, log: &Path) -> EngineError {
 }
 
 /// Whether the row's supervisor holds a live lease now.
+///
+/// A heartbeat further ahead than [`SKEW`] means the clock stepped back, so the row is stale.
 fn live(cx: &Cx, row: &ProxyRow) -> bool {
     match (&row.lease_owner, row.lease_heartbeat) {
         (Some(_), Some(beat)) => {
-            cx.clock()
+            let age = cx
+                .clock()
                 .now()
                 .as_millis()
-                .saturating_sub(beat.as_millis())
-                < LEASE.as_millis().try_into().unwrap_or(i64::MAX)
+                .saturating_sub(beat.as_millis());
+            let skew = SKEW.as_millis().try_into().unwrap_or(i64::MAX);
+            let window = LEASE.as_millis().try_into().unwrap_or(i64::MAX);
+            age > -skew && age < window
         }
         _ => false,
     }
+}
+
+/// Whether the row was written in the current host boot.
+///
+/// A host without a boot id cannot tell, so every row counts as current there.
+fn same_boot(cx: &Cx, row: &ProxyRow) -> bool {
+    cx.proc()
+        .boot_id()
+        .is_none_or(|now| row.boot_id.as_deref() == Some(now.as_str()))
 }
 
 /// The address a ready row describes.
@@ -139,8 +156,8 @@ pub(crate) fn ensure_proxy(
 
 /// Stop the Task's proxy supervisor and remove its row; never fails the caller.
 ///
-/// SIGTERM goes to the supervisor's process group only while its lease is live, because a pid
-/// alone may have been reused. The row is removed whether or not the supervisor exited in
+/// SIGTERM goes to the supervisor's process group only while its lease is live and the row
+/// was written in the current host boot, because a pid alone may have been reused. The row is removed whether or not the supervisor exited in
 /// time; a supervisor that outlasts the wait only produces a warning. No row is a no-op.
 pub(crate) fn stop_proxy(cx: &Cx, store: &Store, task: TaskId) {
     let row = match store.proxy(task) {
@@ -148,8 +165,11 @@ pub(crate) fn stop_proxy(cx: &Cx, store: &Store, task: TaskId) {
         Ok(None) => return,
         Err(e) => return warn_stop(cx, &format!("the proxy state could not be read: {e}")),
     };
-    // Pids 0 and 1 would address every process or init's group.
-    let pid = row.pid.filter(|p| *p > 1 && live(cx, &row));
+    // Pids 0 and 1 would address every process or init's group. After a reboot the pid may
+    // belong to an unrelated group even though the heartbeat looks fresh.
+    let pid = row
+        .pid
+        .filter(|p| *p > 1 && live(cx, &row) && same_boot(cx, &row));
     let exited = pid.is_none_or(|p| match signal_group(cx, p) {
         Sent::Delivered => wait_gone(cx, store, task),
         Sent::Gone => true,

@@ -145,6 +145,7 @@ pub(crate) struct ScriptedProc {
     dropped: Arc<Mutex<Vec<u32>>>,
     daemons: Daemons,
     signals: Signals,
+    boot_id: Mutex<Option<String>>,
 }
 
 impl ScriptedProc {
@@ -158,7 +159,14 @@ impl ScriptedProc {
             dropped: Arc::new(Mutex::new(Vec::new())),
             daemons: Daemons::default(),
             signals: Signals::default(),
+            boot_id: Mutex::new(None),
         }
+    }
+
+    /// Report `id` as the host boot id; none by default.
+    pub(crate) fn with_boot_id(&self, id: &str) -> &Self {
+        *self.boot_id.lock().unwrap_or_else(PoisonError::into_inner) = Some(id.to_owned());
+        self
     }
 
     /// Script `pid` as gone; every other pid is alive.
@@ -355,6 +363,13 @@ impl Proc for ScriptedProc {
 
     fn signal_group(&self, pgid: u32, sig: Signal) -> Result<(), ProcError> {
         self.send_signal(pgid, sig)
+    }
+
+    fn boot_id(&self) -> Option<String> {
+        self.boot_id
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
     }
 
     fn alive(&self, pid: u32) -> bool {

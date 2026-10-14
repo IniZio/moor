@@ -11,7 +11,7 @@ use moor_core::seam::rng::Rng;
 use moor_core::secret::Secret;
 use moor_core::{TaskId, TaskName};
 
-use super::{Fenced, Lease, ProxyPorts, Reserve, BOX_PORT_MAX, BOX_PORT_MIN};
+use super::{Fenced, Lease, ProxyPorts, ReadyProc, Reserve, BOX_PORT_MAX, BOX_PORT_MIN};
 use crate::store::{Store, StoreError};
 use crate::testing::clock::FakeClock;
 use crate::testing::rng::FakeRng;
@@ -299,13 +299,25 @@ fn mark_ready_records_ports_and_emits_one_event_without_nonce() {
         host_port: 41_234,
     };
     store.claim_lease(id, "A", LEASE).unwrap();
-    let outcome = store.mark_ready(id, "A", ports, 4242, "tunnel-1").unwrap();
+    let outcome = store
+        .mark_ready(
+            id,
+            "A",
+            ports,
+            ReadyProc {
+                pid: 4242,
+                handle: "tunnel-1",
+                boot_id: Some("boot-1"),
+            },
+        )
+        .unwrap();
     assert_eq!(outcome, Fenced::Applied);
     let row = store.proxy(id).unwrap().unwrap();
     assert!(row.ready);
     assert_eq!(row.host_port, Some(41_234));
     assert_eq!(row.pid, Some(4242));
     assert_eq!(row.handle.as_deref(), Some("tunnel-1"));
+    assert_eq!(row.boot_id.as_deref(), Some("boot-1"));
     assert_started_payload(&store, id, box_port);
 }
 
@@ -370,9 +382,9 @@ fn stale_owner_mark_ready_loses_lease_and_keeps_new_owners_row() {
         box_port,
         host_port: 42_000,
     };
-    let applied = store.mark_ready(id, "B", b, 111, "tunnel-b").unwrap();
+    let applied = store.mark_ready(id, "B", b, proc(111, "tunnel-b")).unwrap();
     assert_eq!(applied, Fenced::Applied);
-    let lost = store.mark_ready(id, "A", a, 222, "tunnel-a").unwrap();
+    let lost = store.mark_ready(id, "A", a, proc(222, "tunnel-a")).unwrap();
     assert_eq!(lost, Fenced::LostLease);
     let row = store.proxy(id).unwrap().unwrap();
     assert_eq!(row.host_port, Some(41_000));
@@ -392,4 +404,12 @@ fn stale_owner_tunnel_restarted_loses_lease_and_writes_no_event() {
     let applied = store.tunnel_restarted(id, "B", box_port, "fresh").unwrap();
     assert_eq!(applied, Fenced::Applied);
     assert_eq!(events_of(&store, id, "tunnel_restarted").len(), 1);
+}
+
+fn proc(pid: u32, handle: &str) -> ReadyProc<'_> {
+    ReadyProc {
+        pid,
+        handle,
+        boot_id: None,
+    }
 }
