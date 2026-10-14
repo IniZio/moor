@@ -81,7 +81,7 @@ fn rows(dir: &Path, handle: BoxHandle) -> (TaskRow, BoxRow) {
         state: BoxState::Ready,
         attempted_handle: None,
         workdir: Some(WORKDIR.to_owned()),
-        egress_enforced: None,
+        egress: None,
         sleep_reason: None,
         updated_at: Ts::from_millis(0),
     };
