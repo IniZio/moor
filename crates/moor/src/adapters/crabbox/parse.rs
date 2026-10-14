@@ -107,17 +107,3 @@ fn item(r: RawItem) -> Option<ListItem> {
         asleep,
     })
 }
-
-/// Parses `inspect --json` and returns its `workroot`, when set.
-///
-/// # Errors
-/// Returns the JSON error when the text is not a JSON object.
-pub(super) fn parse_inspect_workroot(json: &str) -> Result<Option<String>, serde_json::Error> {
-    #[derive(Deserialize)]
-    struct View {
-        /// Remote work root.
-        workroot: Option<String>,
-    }
-    let v: View = serde_json::from_str(json)?;
-    Ok(v.workroot.filter(|w| w.starts_with('/')))
-}

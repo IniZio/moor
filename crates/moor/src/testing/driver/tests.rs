@@ -318,3 +318,15 @@ fn put_and_connect_on_unknown_box_are_not_found_and_failures_are_one_shot() {
         Ok(vec!["ssh".to_owned(), "-t".to_owned(), "box-1".to_owned()])
     );
 }
+
+#[test]
+fn workdir_uses_a_lease_id_that_differs_from_the_handle() {
+    let fake = FakeDriver::new();
+    let mut r = req();
+    r.worktree = Some("/x/wt/demo".into());
+    let got = fake.acquire(&r).unwrap();
+    assert_eq!(got.workdir.as_str(), "/work/cbx_1/demo");
+    let again = fake.workdir(&got.handle, Path::new("/x/wt/demo")).unwrap();
+    assert_eq!(again, got.workdir);
+    assert_ne!(again.as_str(), "/work/box-1");
+}

@@ -25,6 +25,7 @@ mod relaunch;
 mod session;
 mod setup;
 mod transcript;
+mod workdir;
 
 /// A world of fakes plus the context over them.
 struct World {
@@ -116,7 +117,7 @@ fn happy_path_makes_a_working_task_with_a_ready_box() {
     let b = row.unwrap().unwrap().boxed.unwrap();
     assert_eq!(b.state, BoxState::Ready);
     assert_eq!(b.handle.unwrap().as_str(), "box-1");
-    assert_eq!(b.workdir.as_deref(), Some("/work/box-1"));
+    assert_eq!(b.workdir.as_deref(), Some("/work/cbx_1/demo"));
 }
 
 #[test]

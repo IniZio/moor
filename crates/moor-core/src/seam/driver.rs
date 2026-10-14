@@ -267,11 +267,13 @@ pub trait Driver: Send + Sync {
     /// Returns a [`DriverError`] when the provider cannot be queried.
     fn list(&self, provider: &ProviderId) -> Result<Vec<BoxListing>, DriverError>;
 
-    /// Returns the Box's working directory.
+    /// Returns the Box's working directory. `worktree` is the host worktree
+    /// the driver process runs from; the Box workdir depends on it.
     ///
     /// # Errors
-    /// Returns [`DriverError::NotFound`] when the Box is gone.
-    fn workdir(&self, handle: &BoxHandle) -> Result<BoxPath, DriverError>;
+    /// Returns [`DriverError::NotFound`] when the Box is gone, and
+    /// [`DriverError::Failed`] when the provider cannot answer the lookup.
+    fn workdir(&self, handle: &BoxHandle, worktree: &Path) -> Result<BoxPath, DriverError>;
 
     /// Runs one command in the Box and reports its exit code.
     ///

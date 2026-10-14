@@ -205,7 +205,7 @@ fn sync_class_and_directories_come_from_the_task() {
     let (_, spec, _) = f.driver.execs().remove(0);
     assert_eq!(spec.sync, SyncMode::None);
     assert_eq!(spec.host_cwd.as_deref(), Some(f.dir.path()));
-    assert_eq!(spec.cwd.unwrap().as_str(), "/work/box-1");
+    assert_eq!(spec.cwd.unwrap().as_str(), "/work/cbx_1/repo");
     assert_eq!(spec.class.as_deref(), Some("small"));
     let v = run(&f.cx, &req(&["true"])).unwrap();
     assert_eq!(v.sync, SyncMode::Full);
@@ -233,7 +233,7 @@ fn stored_workdir_with_dot_dot_is_the_command_cwd() {
     let f = ready_with(FakeDriver::new().work_root("/p/bin/../box/work"));
     run(&f.cx, &req(&["true"])).unwrap();
     let (_, spec, _) = f.driver.execs().remove(0);
-    assert_eq!(spec.cwd.unwrap().as_str(), "/p/bin/../box/work/box-1");
+    assert_eq!(spec.cwd.unwrap().as_str(), "/p/bin/../box/work/cbx_1/repo");
 }
 
 #[test]

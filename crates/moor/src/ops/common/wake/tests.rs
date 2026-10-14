@@ -31,7 +31,7 @@ fn acquire_req(provider: ProviderId, task: TaskId, name: TaskName) -> AcquireReq
         egress: EgressPlan::Open,
         class: None,
         nonce: "n".to_owned(),
-        worktree: None,
+        worktree: Some(PathBuf::from("/home/me/wt/t")),
     }
 }
 
@@ -237,13 +237,13 @@ fn asleep_box_with_working_task_wakes_only_the_box() {
 fn waking_a_box_stores_the_workdir_the_driver_reports_now() {
     let f = fx();
     sleep(&f);
-    assert_eq!(stored_workdir(&f).as_deref(), Some("/work/box-1"));
+    assert_eq!(stored_workdir(&f).as_deref(), Some("/work/cbx_1/t"));
     assert_eq!(workdir_calls(&f), 0);
     f.driver.set_work_root("/moved");
     let store = f.cx.store().unwrap();
     assert!(wake_if_asleep(&f.cx, store, &row(&f)).unwrap());
     assert_eq!(workdir_calls(&f), 1);
-    assert_eq!(stored_workdir(&f).as_deref(), Some("/moved/box-1"));
+    assert_eq!(stored_workdir(&f).as_deref(), Some("/moved/cbx_1/t"));
 }
 
 #[test]
@@ -256,7 +256,7 @@ fn failed_workdir_lookup_after_wake_leaves_task_and_box_asleep() {
     let r = row(&f);
     assert_eq!(r.state, TaskState::Asleep);
     assert_eq!(r.boxed.unwrap().state, BoxState::Asleep);
-    assert_eq!(stored_workdir(&f).as_deref(), Some("/work/box-1"));
+    assert_eq!(stored_workdir(&f).as_deref(), Some("/work/cbx_1/t"));
     assert!(wake_if_asleep(&f.cx, store, &row(&f)).unwrap());
     assert_eq!(workdir_calls(&f), 2);
 }

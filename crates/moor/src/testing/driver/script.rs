@@ -1,6 +1,6 @@
 //! Scripted failures and recorded calls for the Driver fake.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use moor_core::seam::driver::{DriverError, SleepOutcome};
 use moor_core::{BoxHandle, BoxPath};
@@ -12,6 +12,25 @@ pub(super) type PeekCall = (BoxHandle, BoxPath, PathBuf);
 
 /// One `put_file` call: handle, path, content, mode and host cwd.
 pub(crate) type PutCall = (BoxHandle, BoxPath, Vec<u8>, u32, PathBuf);
+
+/// Where the fake runs a Box's commands: `<root>/<lease id>/<repo name>`.
+/// The lease id (`box-N` becomes `cbx_N`) differs from the handle, so a path
+/// rebuilt from the handle is caught.
+pub(super) fn layout(
+    root: Option<&str>,
+    handle: &str,
+    worktree: Option<&Path>,
+) -> Result<BoxPath, DriverError> {
+    let lease = format!("cbx_{}", handle.strip_prefix("box-").unwrap_or(handle));
+    let repo = worktree
+        .and_then(Path::file_name)
+        .map_or_else(|| "repo".into(), |n| n.to_string_lossy());
+    BoxPath::under(root.unwrap_or("/work"), &format!("{lease}/{repo}")).map_err(|e| {
+        DriverError::Failed {
+            summary: e.to_string(),
+        }
+    })
+}
 
 impl FakeDriver {
     /// Makes `peek_file` of `path` in the Box `handle` return `text`.
