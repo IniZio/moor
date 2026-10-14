@@ -12,6 +12,7 @@ use std::time::Duration;
 
 use serde::Deserialize;
 
+use super::proxy::ProxyConfig;
 use super::{check, parse_strict, ConfigError};
 pub use creds::{CredentialSource, McpServer};
 pub use github::DEFAULT_YOU_TOKEN_CMD;
@@ -303,6 +304,8 @@ pub struct UserConfig {
     pub tools: ToolsConfig,
     /// Egress allow-list.
     pub egress: EgressConfig,
+    /// Proxy tool rules.
+    pub proxy: ProxyConfig,
     /// Credential names exposed to host-run box commands.
     pub box_credentials: Vec<String>,
     /// State directory override.
@@ -345,6 +348,7 @@ impl UserConfig {
             check::egress_entry(host)
                 .map_err(|why| ConfigError::new(format!("egress.allow[{i}]"), why))?;
         }
+        self.proxy.validate(&self.credentials, &self.egress.allow)?;
         check::box_credentials(&self.box_credentials)
             .map_err(|(i, m)| ConfigError::new(format!("box_credentials[{i}]"), m))
     }

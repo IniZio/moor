@@ -1,0 +1,35 @@
+claude:
+  hosts: [api.anthropic.com]
+  credential: CLAUDE_CODE_OAUTH_TOKEN
+  inject:
+    header: Authorization
+    form: "Bearer {secret}"
+  box_env:
+    CLAUDE_CODE_OAUTH_TOKEN: moor-proxy
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
+github-api:
+  hosts: [api.github.com]
+  credential: forge
+  inject:
+    header: Authorization
+    form: "token {secret}"
+  allow:
+    - "* /repos/{repo}/pulls"
+    - "* /repos/{repo}/pulls/**"
+    - "* /repos/{repo}/stacks"
+    - "* /repos/{repo}/stacks/**"
+    - "POST /graphql"
+  box_env:
+    GH_TOKEN: moor-proxy
+    GH_REPO: "{repo}"
+    GH_NO_UPDATE_NOTIFIER: "1"
+    GH_TELEMETRY: disabled
+github-git:
+  hosts: [github.com]
+  credential: forge
+  inject:
+    basic_user: x-access-token
+  allow:
+    - "GET /{repo}.git/info/refs"
+    - "POST /{repo}.git/git-upload-pack"
+    - "POST /{repo}.git/git-receive-pack"
