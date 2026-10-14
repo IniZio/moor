@@ -72,8 +72,12 @@ fn every_box_exec_runs_from_the_task_worktree() {
     let row = w.cx.store().unwrap().task(TaskId::new(v.task.id));
     let worktree = std::path::PathBuf::from(row.unwrap().unwrap().worktree.unwrap());
     let execs = w.driver.execs();
-    assert!(execs.iter().any(|(_, s, _)| s.argv[0] == "git"));
-    assert!(execs.iter().any(|(_, s, _)| s.argv[0] == "sh"));
+    assert!(execs
+        .iter()
+        .any(|(_, s, _)| s.argv.first().map(String::as_str) == Some("git")));
+    assert!(execs
+        .iter()
+        .any(|(_, s, _)| s.argv.first().map(String::as_str) == Some("sh")));
     for (_, spec, _) in &execs {
         assert_eq!(
             spec.host_cwd.as_deref(),
