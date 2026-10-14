@@ -394,6 +394,10 @@ fn gate_forwards_task_repo_git_and_api_calls() {
     ));
     assert_eq!(planned.route, RouteId::new("forge.git"));
     assert_eq!(
+        planned.upstream_path,
+        "/acme/widget.git/info/refs?service=git-upload-pack"
+    );
+    assert_eq!(
         planned.inject,
         Inject::Basic {
             user: "x-access-token"
@@ -406,7 +410,7 @@ fn gate_forwards_task_repo_git_and_api_calls() {
     ));
     assert_eq!(planned.route, RouteId::new("forge.api"));
     assert_eq!(planned.inject, Inject::Bearer);
-    assert_eq!(planned.upstream_path, "/github-api/repos/acme/widget/pulls");
+    assert_eq!(planned.upstream_path, "/repos/acme/widget/pulls");
 }
 
 #[test]
