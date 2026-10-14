@@ -18,15 +18,7 @@ use crate::proxy::nono::ca::load_or_create;
 use crate::store::{ProxyRow, Reserve, Store, StoreError, STORE_FILE};
 
 pub(crate) use super::supervisor::LEASE;
-#[cfg_attr(
-    not(test),
-    allow(
-        unused_imports,
-        reason = "the supervisor reads the spec in the next change"
-    )
-)]
-pub(crate) use spec::read_spec;
-pub(crate) use spec::write_spec;
+pub(crate) use spec::{read_spec, write_spec};
 
 mod spec;
 
@@ -265,12 +257,12 @@ impl ProxyHost for DetachedSupervisor {
         })
     }
 
-    /// Stop the Task's proxy supervisor and remove its row.
+    /// Stop the Task's proxy supervisor, then remove its row and CA directory.
     ///
     /// SIGTERM goes to the supervisor's process group only while its lease is live and the row
     /// was written in the current host boot, because a pid alone may have been reused. The row is
     /// removed whether or not the supervisor exited in time; a supervisor that outlasts the wait
-    /// is reported as incomplete. No row is a no-op.
+    /// is reported as incomplete and keeps its CA directory. With no row only the CA directory is removed.
     fn stop(&self, task: TaskId) -> Result<(), ProxyHostError> {
         let incomplete = |reason: String| Err(ProxyHostError::Incomplete(reason));
         let store = match self.store() {
@@ -279,7 +271,16 @@ impl ProxyHost for DetachedSupervisor {
         };
         let row = match store.proxy(task) {
             Ok(Some(row)) => row,
-            Ok(None) => return Ok(()),
+            Ok(None) => {
+                // A retried stop finds no row after an earlier one timed out past removing it;
+                // with no row there is no lease, so no live supervisor holds the directory.
+                if let Some(state) = self.state_dir.as_deref() {
+                    if let Err(e) = super::nono::ca::remove(state, task) {
+                        return incomplete(format!("the proxy CA could not be removed: {e}"));
+                    }
+                }
+                return Ok(());
+            }
             Err(e) => return incomplete(format!("the proxy state could not be read: {e}")),
         };
         // Pids 0 and 1 would address every process or init's group. After a reboot the pid may
@@ -296,6 +297,11 @@ impl ProxyHost for DetachedSupervisor {
             return incomplete(format!("the proxy row could not be removed: {e}"));
         }
         if exited {
+            if let Some(state) = self.state_dir.as_deref() {
+                if let Err(e) = super::nono::ca::remove(state, task) {
+                    return incomplete(format!("the proxy CA could not be removed: {e}"));
+                }
+            }
             Ok(())
         } else {
             incomplete("the proxy supervisor did not exit within 3s".to_owned())

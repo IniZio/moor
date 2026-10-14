@@ -1,7 +1,8 @@
 //! Tests for the nono config builder.
 
 mod e2e;
-mod upstream;
+mod passthrough;
+pub(crate) mod upstream;
 
 use moor_core::config::proxy::{EndpointRule, ResolvedInject, ResolvedRule};
 use moor_core::{Secret, TaskId};

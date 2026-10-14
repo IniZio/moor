@@ -8,62 +8,20 @@ use moor_core::seam::driver::Driver;
 use moor_core::seam::forge::ForgeRepo;
 use moor_core::{BoxHandle, BoxPath};
 
-use super::gh_shim::gh_shim;
-
 /// The staged nonce file name inside the credential directory.
 pub(super) const NONCE_FILE: &str = "proxy-nonce";
 /// The shell variable that holds the nonce while the environment is built; never exported.
 const NONCE_VAR: &str = "moor_nonce";
-/// Where the gh shim goes, relative to the credential directory.
-const SHIM_DIR: &str = "bin";
+/// The staged public CA certificate file name inside the credential directory.
+pub(super) const CA_FILE: &str = "proxy-ca.pem";
+/// The CA bundle built in the credential directory when the system bundle cannot be edited.
+const BUNDLE_FILE: &str = "ca-bundle.pem";
+/// System CA bundles, first existing one wins.
+const SYSTEM_BUNDLES: &str =
+    "/etc/ssl/certs/ca-certificates.crt /etc/pki/tls/certs/ca-bundle.crt /etc/ssl/cert.pem";
 
 /// The fetch refspec of the `moor` remote; a push records `refs/remotes/moor/<branch>` through it.
 const MOOR_FETCH: &str = "+refs/heads/*:refs/remotes/moor/*";
-
-/// One piece of a shell word: literal text or the nonce.
-enum Part<'a> {
-    /// Text quoted as-is.
-    Lit(&'a str),
-    /// The nonce, read back from the shell variable.
-    Nonce,
-}
-
-/// The shell word for `parts`; the nonce comes from the shell variable and never as text.
-fn word(parts: &[Part<'_>]) -> String {
-    if parts.is_empty() {
-        return "''".to_owned();
-    }
-    parts
-        .iter()
-        .map(|p| match p {
-            Part::Lit(s) => quote(s),
-            Part::Nonce => format!("\"${NONCE_VAR}\""),
-        })
-        .collect()
-}
-
-/// Splits `value` around every occurrence of `nonce` into shell word parts.
-fn split_on_nonce<'a>(value: &'a [u8], nonce: &[u8]) -> Result<Vec<Part<'a>>, String> {
-    let mut parts = Vec::new();
-    let mut rest = value;
-    loop {
-        let split = rest
-            .windows(nonce.len())
-            .position(|w| w == nonce)
-            .and_then(|i| rest.split_at_checked(i))
-            .and_then(|(lit, tail)| Some((lit, tail.get(nonce.len()..)?)));
-        let lit = split.map_or(rest, |(lit, _)| lit);
-        if !lit.is_empty() {
-            let text = std::str::from_utf8(lit).map_err(|_| "env value is not UTF-8".to_owned())?;
-            parts.push(Part::Lit(text));
-        }
-        let Some((_, tail)) = split else {
-            return Ok(parts);
-        };
-        parts.push(Part::Nonce);
-        rest = tail;
-    }
-}
 
 /// True when `name` is a shell identifier.
 fn is_identifier(name: &str) -> bool {
@@ -74,8 +32,8 @@ fn is_identifier(name: &str) -> bool {
         && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
-/// Stages the nonce at `<cred>/proxy-nonce` (mode 0600, raw nonce bytes, no newline) and the gh shim at
-/// `<cred>/bin/gh` (bytes and mode from `gh_shim()`), both via `put_file`.
+/// Stages the nonce at `<cred>/proxy-nonce` (mode 0600, raw nonce bytes, no newline) and the public CA
+/// certificate at `<cred>/proxy-ca.pem` (mode 0644), both via `put_file`.
 pub(super) fn stage(
     driver: &dyn Driver,
     handle: &BoxHandle,
@@ -87,11 +45,10 @@ pub(super) fn stage(
     driver
         .put_file(handle, &nonce_path, proxy.nonce.expose(), 0o600, host_cwd)
         .map_err(|e| format!("could not stage the proxy nonce: {e}"))?;
-    let shim_path = cred_file(cred, &format!("{SHIM_DIR}/gh"))?;
-    let (bytes, mode) = gh_shim();
+    let ca_path = cred_file(cred, CA_FILE)?;
     driver
-        .put_file(handle, &shim_path, bytes, mode, host_cwd)
-        .map_err(|e| format!("could not stage the gh shim: {e}"))
+        .put_file(handle, &ca_path, proxy.ca_pem.as_bytes(), 0o644, host_cwd)
+        .map_err(|e| format!("could not stage the proxy CA: {e}"))
 }
 
 /// `rel` under the credential directory.
@@ -106,58 +63,77 @@ pub(super) fn script_lines(
     env: &[EnvVar],
     origin: Option<&str>,
 ) -> Result<Vec<String>, String> {
-    let nonce = proxy.nonce.expose();
-    if nonce.is_empty() {
+    if proxy.nonce.expose().is_empty() {
         return Err("the proxy nonce is empty".to_owned());
     }
     let file = quote(cred_file(cred, NONCE_FILE)?.as_str());
+    let ca = quote(cred_file(cred, CA_FILE)?.as_str());
+    let built = quote(cred_file(cred, BUNDLE_FILE)?.as_str());
     let mut lines = vec![
         format!("{NONCE_VAR}=$(cat {file}) && rm -f {file} && [ -n \"${NONCE_VAR}\" ] || exit 1"),
         "unset GH_TOKEN GITHUB_TOKEN".to_owned(),
+        "moor_sys=; for moor_f in ".to_owned() + SYSTEM_BUNDLES + "; do [ -f \"$moor_f\" ] && { moor_sys=$moor_f; break; }; done",
+        format!("moor_mark=$(sed -n 2p {ca})"),
+        format!(
+            "if [ -n \"$moor_sys\" ] && sudo -n true 2>/dev/null && {{ grep -qF \"$moor_mark\" \"$moor_sys\" || sudo -n tee -a \"$moor_sys\" <{ca} >/dev/null; }}; then moor_bundle=$moor_sys; else moor_bundle={built}; {{ if [ -n \"$moor_sys\" ]; then cat \"$moor_sys\"; fi; cat {ca}; }} >\"$moor_bundle\" && chmod 644 \"$moor_bundle\"; fi"
+        ),
     ];
-    for var in env {
-        if !is_identifier(&var.name) {
-            return Err(format!("{:?} is not a shell variable name", var.name));
-        }
-        let parts = split_on_nonce(var.value.expose(), nonce)?;
-        lines.push(format!("export {}={}", var.name, word(&parts)));
+    for name in [
+        "SSL_CERT_FILE",
+        "CURL_CA_BUNDLE",
+        "REQUESTS_CA_BUNDLE",
+        "GIT_SSL_CAINFO",
+    ] {
+        lines.push(format!("export {name}=\"$moor_bundle\""));
     }
-    let base = format!("http://127.0.0.1:{}/t/", proxy.box_port);
-    let key_base = format!("url.{base}");
-    let key = [
-        Part::Lit(&key_base),
-        Part::Nonce,
-        Part::Lit("/github/.insteadOf"),
-    ];
-    let api = [Part::Lit(&base), Part::Nonce, Part::Lit("/github-api")];
-    let pushable = origin.and_then(push_url).zip(origin.and_then(github_repo));
-    let count = if pushable.is_some() { 3 } else { 1 };
-    lines.push(format!("export GIT_CONFIG_COUNT={count}"));
-    lines.push(format!("export GIT_CONFIG_KEY_0={}", word(&key)));
-    lines.push("export GIT_CONFIG_VALUE_0=https://github.com/".to_owned());
-    lines.push(format!("export MOOR_GH_API={}", word(&api)));
-    match pushable {
-        Some((url, repo)) => {
-            // The remote URL stays nonce-free; the insteadOf entry rewrites it when git uses it.
-            lines.push("export GIT_CONFIG_KEY_1=remote.moor.url".to_owned());
-            lines.push(format!("export GIT_CONFIG_VALUE_1={}", quote(&url)));
-            lines.push("export GIT_CONFIG_KEY_2=remote.moor.fetch".to_owned());
-            lines.push(format!("export GIT_CONFIG_VALUE_2={}", quote(MOOR_FETCH)));
-            lines.push(format!("export MOOR_PUSH_URL={}", quote(&url)));
-            let slug = format!("{}/{}", repo.owner, repo.name);
-            lines.push(format!("export MOOR_GH_REPO={}", quote(&slug)));
-        }
-        None => lines.push("unset MOOR_PUSH_URL MOOR_GH_REPO".to_owned()),
+    lines.push(format!("export NODE_EXTRA_CA_CERTS={ca}"));
+    for name in ["HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy"] {
+        lines.push(format!(
+            "export {name}=\"http://moor:${{{NONCE_VAR}}}@127.0.0.1:{}\"",
+            proxy.box_port
+        ));
     }
     for name in ["NO_PROXY", "no_proxy"] {
         lines.push(format!(
             "export {name}=\"127.0.0.1,localhost${{{name}:+,${name}}}\""
         ));
     }
-    let bin = cred_file(cred, SHIM_DIR)?;
-    lines.push(format!("export PATH={}:\"$PATH\"", quote(bin.as_str())));
-    lines.push(format!("unset {NONCE_VAR}"));
+    lines.push("export NODE_USE_ENV_PROXY=1".to_owned());
+    for var in env {
+        if !is_identifier(&var.name) {
+            return Err(format!("{:?} is not a shell variable name", var.name));
+        }
+        let value = std::str::from_utf8(var.value.expose())
+            .map_err(|_| "env value is not UTF-8".to_owned())?;
+        lines.push(format!("export {}={}", var.name, quote(value)));
+    }
+    for (name, value) in &proxy.box_env {
+        if !is_identifier(name) {
+            return Err(format!("{name:?} is not a shell variable name"));
+        }
+        lines.push(format!("export {name}={}", quote(value)));
+    }
+    lines.extend(git_remote_lines(origin));
+    lines.push(format!(
+        "unset {NONCE_VAR} moor_bundle moor_sys moor_mark moor_f"
+    ));
     Ok(lines)
+}
+
+/// Shell lines that point the `moor` git remote at the push URL for `origin`, or clear the git config env.
+fn git_remote_lines(origin: Option<&str>) -> Vec<String> {
+    origin.and_then(push_url).map_or_else(
+        || vec!["unset GIT_CONFIG_COUNT".to_owned()],
+        |url| {
+            vec![
+                "export GIT_CONFIG_COUNT=2".to_owned(),
+                "export GIT_CONFIG_KEY_0=remote.moor.url".to_owned(),
+                format!("export GIT_CONFIG_VALUE_0={}", quote(&url)),
+                "export GIT_CONFIG_KEY_1=remote.moor.fetch".to_owned(),
+                format!("export GIT_CONFIG_VALUE_1={}", quote(MOOR_FETCH)),
+            ]
+        },
+    )
 }
 
 /// The GitHub repo an origin names: `https://github.com/o/n(.git)`, `ssh://git@github.com/o/n(.git)`,
@@ -181,7 +157,7 @@ pub(super) fn github_repo(origin: &str) -> Option<ForgeRepo> {
     (plain(owner) && plain(name)).then(|| ForgeRepo::new(owner, name))
 }
 
-/// `https://github.com/<owner>/<name>.git` for a GitHub origin, so the git `insteadOf` rewrite applies to pushes.
+/// `https://github.com/<owner>/<name>.git` for a GitHub origin, for the `moor` remote.
 pub(super) fn push_url(origin: &str) -> Option<String> {
     let repo = github_repo(origin)?;
     Some(format!(

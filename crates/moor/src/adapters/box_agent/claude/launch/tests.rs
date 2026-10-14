@@ -11,9 +11,7 @@ use std::process::{Command, Stdio};
 
 use moor_core::activity::HookKind;
 use moor_core::name::BoxPath;
-use moor_core::seam::agent_profile::{
-    AgentProfile, BoxSetup, Key, LaunchCtx, ModelRoute, ProxyAddr,
-};
+use moor_core::seam::agent_profile::{AgentProfile, BoxSetup, Key, LaunchCtx, ProxyAddr};
 use moor_core::Secret;
 use serde_json::{json, Value};
 use tempfile::TempDir;
@@ -165,7 +163,7 @@ fn argv_asks_for_bypass_only_behind_a_proxy() {
 }
 
 #[test]
-fn env_points_claude_at_the_proxy_with_the_nonce() {
+fn env_is_only_the_login_placeholder_behind_a_proxy() {
     let t = TempDir::new().unwrap();
     let env = Claude.env(&proxied(t.path()));
     let pairs: Vec<(&str, &[u8])> = env
@@ -174,14 +172,14 @@ fn env_points_claude_at_the_proxy_with_the_nonce() {
         .collect();
     assert_eq!(
         pairs,
-        vec![
-            (
-                "ANTHROPIC_BASE_URL",
-                b"http://127.0.0.1:41234/t/sentinel-7f3a".as_slice()
-            ),
-            ("CLAUDE_CODE_OAUTH_TOKEN", b"sentinel-7f3a".as_slice()),
-        ]
+        vec![("CLAUDE_CODE_OAUTH_TOKEN", b"moor-proxy".as_slice())]
     );
+    assert!(env.iter().all(|e| e.name != "ANTHROPIC_BASE_URL"));
+    assert!(!format!(
+        "{:?}",
+        env.iter().map(|e| e.value.expose()).collect::<Vec<_>>()
+    )
+    .contains("sentinel-7f3a"));
 }
 
 #[test]
@@ -201,17 +199,6 @@ fn nonce_stays_out_of_argv_and_debug_output() {
         .contains("sentinel-7f3a"));
     assert!(!format!("{c:?}").contains("sentinel-7f3a"));
     assert!(!format!("{:?}", Claude.env(&c)).contains("sentinel-7f3a"));
-}
-
-#[test]
-fn model_route_targets_anthropic_with_the_oauth_credential() {
-    assert_eq!(
-        Claude.model_route(),
-        ModelRoute {
-            upstream: "https://api.anthropic.com".into(),
-            credential: "CLAUDE_CODE_OAUTH_TOKEN".into(),
-        }
-    );
 }
 
 #[test]

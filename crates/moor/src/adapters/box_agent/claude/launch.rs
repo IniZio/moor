@@ -2,7 +2,7 @@
 
 use moor_core::boxscript::quote;
 use moor_core::name::{BoxPath, NameError};
-use moor_core::seam::agent_profile::{BoxFile, BoxSetup, EnvVar, Key, LaunchCtx, ModelRoute};
+use moor_core::seam::agent_profile::{BoxFile, BoxSetup, EnvVar, Key, LaunchCtx};
 use moor_core::Secret;
 use serde_json::{json, Value};
 
@@ -151,33 +151,20 @@ fn flags(ctx: &LaunchCtx) -> Vec<String> {
     flags
 }
 
-/// Environment that points Claude Code at the Proxy with the launch nonce as its only credential;
-/// empty without a Proxy address.
-pub(super) fn env(ctx: &LaunchCtx) -> Vec<EnvVar> {
-    let Some(proxy) = &ctx.proxy else {
-        return Vec::new();
-    };
-    let nonce = proxy.nonce.expose();
-    let mut url = format!("http://127.0.0.1:{}/t/", proxy.box_port).into_bytes();
-    url.extend_from_slice(nonce);
-    vec![
-        EnvVar {
-            name: "ANTHROPIC_BASE_URL".to_owned(),
-            value: Secret::new(url),
-        },
-        EnvVar {
-            name: "CLAUDE_CODE_OAUTH_TOKEN".to_owned(),
-            value: Secret::new(nonce.to_vec()),
-        },
-    ]
-}
+/// Fixed non-secret token that keeps Claude Code from prompting for login; it matches the claude
+/// tool rule's `box_env`, and the Proxy swaps in the real credential on the wire.
+const OAUTH_PLACEHOLDER: &str = "moor-proxy";
 
-/// The upstream the Proxy forwards to and the host credential entry it injects.
-pub(super) fn model_route() -> ModelRoute {
-    ModelRoute {
-        upstream: "https://api.anthropic.com".to_owned(),
-        credential: "CLAUDE_CODE_OAUTH_TOKEN".to_owned(),
+/// Environment that stops Claude Code prompting for login; its traffic reaches the Proxy through
+/// the Box's `HTTPS_PROXY`. Empty without a Proxy address.
+pub(super) fn env(ctx: &LaunchCtx) -> Vec<EnvVar> {
+    if ctx.proxy.is_none() {
+        return Vec::new();
     }
+    vec![EnvVar {
+        name: "CLAUDE_CODE_OAUTH_TOKEN".to_owned(),
+        value: Secret::new(OAUTH_PLACEHOLDER.as_bytes().to_vec()),
+    }]
 }
 
 /// The digits of `n`.

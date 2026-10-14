@@ -39,10 +39,6 @@ pub(crate) fn write_spec(state_dir: &Path, spec: &ProxySpec) -> io::Result<()> {
 }
 
 /// Read the spec the host wrote for `task`.
-#[cfg_attr(
-    not(test),
-    allow(dead_code, reason = "the supervisor reads the spec in the next change")
-)]
 pub(crate) fn read_spec(state_dir: &Path, task: TaskId) -> io::Result<ProxySpec> {
     let bytes = fs::read(spec_path(state_dir, task))?;
     serde_json::from_slice(&bytes).map_err(io::Error::from)

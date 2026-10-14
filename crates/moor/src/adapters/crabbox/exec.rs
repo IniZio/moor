@@ -8,8 +8,20 @@ use moor_core::seam::proc::{Deadline, ProcError};
 use super::errors::{map_error, remote_exit, Op};
 use super::{size_of, split_handle, static_env, target_args, Crabbox};
 
+/// Unsets the shell variables crabbox's workspace wrapper exports before it
+/// execs, so they stay out of the command's environment.
+macro_rules! unset_workspace_vars {
+    () => {
+        "unset -f owner_gate_function 2>/dev/null\n\
+unset -v state child gate token command_umask run_dir owner_gate_function child_pid child_identity 2>/dev/null\n"
+    };
+}
+
 /// Shell wrapper that enters the directory in `$1`, then runs the rest.
-const CD_THEN_EXEC: &str = r#"cd "$1" && shift && exec "$@""#;
+const CD_THEN_EXEC: &str = concat!(unset_workspace_vars!(), r#"cd "$1" && shift && exec "$@""#);
+
+/// Shell wrapper that runs its arguments with the workspace variables unset.
+pub(super) const UNSET_THEN_EXEC: &str = concat!(unset_workspace_vars!(), r#"exec "$@""#);
 
 /// Runs `spec` in the Box behind `handle`.
 ///
@@ -18,9 +30,9 @@ const CD_THEN_EXEC: &str = r#"cd "$1" && shift && exec "$@""#;
 /// child streams there instead of being captured.
 ///
 /// Env travels in the child's environment and is named by `--allow-env`, so
-/// values stay out of argv. A `cwd` is entered by a `sh -c` wrapper because
-/// `crabbox run` has no remote directory flag; without one it runs in the
-/// Box workdir.
+/// values stay out of argv. The command always runs under a `sh -c` wrapper;
+/// a `cwd` is entered there because `crabbox run` has no remote directory
+/// flag, and without one it runs in the Box workdir.
 pub(super) fn run(
     cb: &Crabbox,
     handle: &BoxHandle,
@@ -45,9 +57,10 @@ pub(super) fn run(
         proc = proc.args(["--allow-env", k]).env(k, v);
     }
     proc = static_env(proc, handle).arg("--");
-    if let Some(cwd) = &spec.cwd {
-        proc = proc.args(["sh", "-c", CD_THEN_EXEC, "sh", cwd.as_str()]);
-    }
+    proc = match &spec.cwd {
+        Some(cwd) => proc.args(["sh", "-c", CD_THEN_EXEC, "sh", cwd.as_str()]),
+        None => proc.args(["sh", "-c", UNSET_THEN_EXEC, "sh"]),
+    };
     proc = proc.args(&spec.argv);
     let result = cb.retry_claim_race(|| {
         spec.output.as_ref().map_or_else(

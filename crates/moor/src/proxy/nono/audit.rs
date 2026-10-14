@@ -1,11 +1,12 @@
 //! Drains nono's network audit into per-Task proxy log lines and Task events.
 //!
-//! Only the method, the rule name (or host) and the status leave this module.
+//! Only the method, the rule name (or host), the status and the denial category leave this module.
 //! Headers, bodies, paths and query strings in the audit are never read.
 
 use moor_core::domain::event::Event;
 use moor_core::TaskId;
 use nono::undo::{NetworkAuditDecision, NetworkAuditDenialCategory, NetworkAuditEvent};
+use serde_json::Value;
 
 use super::capture::MoorCapture;
 use super::rule_of_route;
@@ -16,8 +17,9 @@ use crate::store::Store;
 pub(crate) trait EgressSink {
     /// Records one allowed request as a proxy log line.
     fn allowed(&self, method: &str, route: &str, status: u16);
-    /// Records a refused egress attempt to `host`, with the rule when known.
-    fn refused(&self, host: &str, rule: Option<&str>);
+    /// Records a refused egress attempt to `host`, with the rule, request
+    /// method and denial category when known.
+    fn refused(&self, host: &str, rule: Option<&str>, method: Option<&str>, category: Option<&str>);
     /// Records that the credential for `rule` could not be obtained.
     fn credential_failed(&self, rule: &str);
 }
@@ -37,10 +39,18 @@ impl EgressSink for TaskSink<'_> {
         self.log.record(method, route, status);
     }
 
-    fn refused(&self, host: &str, rule: Option<&str>) {
+    fn refused(
+        &self,
+        host: &str,
+        rule: Option<&str>,
+        method: Option<&str>,
+        category: Option<&str>,
+    ) {
         let event = Event::EgressRefused {
             host: host.to_owned(),
             rule: rule.map(str::to_owned),
+            method: method.map(str::to_owned),
+            category: category.map(str::to_owned),
         };
         // Draining must not fail; a lost event is not worth stopping the proxy.
         let _ = self.store.record_proxy_event(self.task, &event);
@@ -115,7 +125,24 @@ fn deny(event: &NetworkAuditEvent, sink: &dyn EgressSink) {
             return;
         }
     }
-    sink.refused(&event.target, rule(event));
+    sink.refused(
+        &event.target,
+        rule(event),
+        event.method.as_deref(),
+        event
+            .denial_category
+            .as_ref()
+            .and_then(category_name)
+            .as_deref(),
+    );
+}
+
+/// The `snake_case` name nono gives a denial category.
+fn category_name(category: &NetworkAuditDenialCategory) -> Option<String> {
+    match serde_json::to_value(category).ok()? {
+        Value::String(name) => Some(name),
+        _ => None,
+    }
 }
 
 #[cfg(test)]

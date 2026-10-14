@@ -1,17 +1,19 @@
 //! The per-Task proxy supervisor run by `moor proxy serve <task>`.
 //!
-//! It claims the lease on the Task's proxy row, starts the loopback listener, opens the reverse
+//! It claims the lease on the Task's proxy row, starts the nono proxy, opens the reverse
 //! tunnel into the Box and marks the row ready. It then heartbeats until the Task closes, the
 //! lease is lost, the tunnel dies or a signal arrives.
 
+#[cfg_attr(not(test), allow(dead_code, reason = "removed in the next change"))]
 mod creds;
+mod listen;
 mod run;
 #[cfg(test)]
 mod tests;
 mod tunnel;
 
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -22,8 +24,7 @@ use moor_core::seam::forge::Forge;
 use moor_core::seam::rng::Rng;
 use moor_core::TaskId;
 
-use super::resolver::ModelToken;
-use super::upstream::Upstreams;
+use super::nono::capture::CredsFn;
 use crate::store::Store;
 use run::{Running, Stop};
 
@@ -31,13 +32,9 @@ use run::{Running, Stop};
 pub(crate) const LEASE: Duration = Duration::from_secs(30);
 /// Pause between heartbeats.
 pub(crate) const TICK: Duration = Duration::from_secs(2);
-/// Most connections the listener serves at once.
-pub(crate) const MAX_CONNS: usize = 64;
 
 /// Shared line sink; the lock keeps each line whole.
 pub(crate) type Sink = Arc<Mutex<dyn Write + Send>>;
-/// Maps a worktree to the git origin URL of its repository.
-pub(crate) type OriginOf = Box<dyn Fn(&Path) -> Option<String>>;
 
 /// Everything the supervisor needs from the outside.
 pub(crate) struct Deps<'a> {
@@ -51,14 +48,12 @@ pub(crate) struct Deps<'a> {
     pub(crate) clock: Arc<dyn Clock>,
     /// Source of the lease owner token.
     pub(crate) rng: &'a dyn Rng,
-    /// Yields the model credential.
-    pub(crate) model: ModelToken,
-    /// Base URL per route.
-    pub(crate) upstreams: Upstreams,
-    /// Directory holding the proxy logs.
+    /// Yields the secret behind a named credential.
+    pub(crate) creds: CredsFn,
+    /// Extra upstream root PEM the proxy trusts; `None` in production.
+    pub(crate) upstream_ca: Option<PathBuf>,
+    /// Directory holding the proxy logs, CA and spec.
     pub(crate) state_dir: &'a Path,
-    /// Looks up a worktree's git origin URL.
-    pub(crate) origin_of: OriginOf,
     /// Host boot id recorded in the row at readiness; `None` where the host has none.
     pub(crate) boot_id: Option<String>,
     /// Set when a signal asks the supervisor to stop.

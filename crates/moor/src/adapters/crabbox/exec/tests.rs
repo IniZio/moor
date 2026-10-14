@@ -245,3 +245,74 @@ fn other_failures_are_not_retried() {
     assert_eq!(exec_once(&c), Ok(ExecOutcome::Exited { code: 2 }));
     assert_eq!(run_calls(&p), 1);
 }
+
+const WRAPPER_NAMES: [&str; 9] = [
+    "state",
+    "child",
+    "gate",
+    "token",
+    "command_umask",
+    "run_dir",
+    "owner_gate_function",
+    "child_pid",
+    "child_identity",
+];
+
+#[test]
+fn cd_wrapper_unsets_workspace_variables_before_exec() {
+    let script = super::CD_THEN_EXEC;
+    let unset = script
+        .find(&format!("unset -v {}", WRAPPER_NAMES.join(" ")))
+        .unwrap();
+    assert!(unset < script.find("exec ").unwrap());
+    assert!(super::CD_THEN_EXEC.contains("unset -f owner_gate_function"));
+}
+
+#[test]
+fn cd_wrapper_hides_workspace_variables_from_the_command() {
+    let mut cmd = std::process::Command::new("sh");
+    cmd.args(["-c", super::CD_THEN_EXEC, "sh", "/", "env"]);
+    for name in WRAPPER_NAMES {
+        cmd.env(name, "leak");
+    }
+    cmd.env("KEEP_ME", "yes");
+    let out = cmd.output().unwrap();
+    let text = String::from_utf8(out.stdout).unwrap();
+    for name in WRAPPER_NAMES {
+        assert!(
+            !text.lines().any(|l| l.starts_with(&format!("{name}="))),
+            "{name} leaked"
+        );
+    }
+    assert!(text.lines().any(|l| l == "KEEP_ME=yes"));
+}
+
+#[test]
+fn plain_wrapper_hides_workspace_variables_and_keeps_arguments() {
+    let mut cmd = std::process::Command::new("sh");
+    cmd.args([
+        "-c",
+        super::UNSET_THEN_EXEC,
+        "sh",
+        "sh",
+        "-c",
+        r#"env; printf '[%s]' "$1" "$2""#,
+        "sh",
+        "a b  c",
+        "it's \"q\" $HOME",
+    ]);
+    for name in WRAPPER_NAMES {
+        cmd.env(name, "leak");
+    }
+    cmd.env("KEEP_ME", "yes");
+    let out = cmd.output().unwrap();
+    let text = String::from_utf8(out.stdout).unwrap();
+    for name in WRAPPER_NAMES {
+        assert!(
+            !text.lines().any(|l| l.starts_with(&format!("{name}="))),
+            "{name} leaked"
+        );
+    }
+    assert!(text.lines().any(|l| l == "KEEP_ME=yes"));
+    assert!(text.ends_with(r#"[a b  c][it's "q" $HOME]"#), "{text}");
+}

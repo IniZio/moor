@@ -2,7 +2,6 @@
 
 mod brief;
 pub(crate) mod claude;
-mod gh_shim;
 mod launch;
 mod probe;
 mod proxy_env;

@@ -30,11 +30,16 @@ fn egress_refused_is_appended() {
     let e = Event::EgressRefused {
         host: "evil.example".into(),
         rule: Some("gh".into()),
+        method: None,
+        category: None,
     };
     store.record_proxy_event(id, &e).unwrap();
     let rows = store.events(id, 100).unwrap();
     let row = rows.iter().find(|r| r.kind == "egress_refused").unwrap();
-    assert_eq!(row.payload, json!({"host": "evil.example", "rule": "gh"}));
+    assert_eq!(
+        row.payload,
+        json!({"host": "evil.example", "rule": "gh", "method": null, "category": null})
+    );
     assert_eq!(row.ts, Ts::from_millis(1_000));
 }
 

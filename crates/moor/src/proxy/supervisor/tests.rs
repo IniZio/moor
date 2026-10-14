@@ -1,8 +1,7 @@
 //! Tests for the per-task proxy supervisor, run against fakes with no real sleeps.
 
-use std::io::{Read, Write};
 use std::net::{Ipv4Addr, TcpStream};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -13,12 +12,16 @@ use moor_core::domain::task::{SetupOutcome, TaskInput};
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::seam::driver::{AcquireReq, Driver, EgressPlan};
 use moor_core::seam::forge::ForgeRepo;
-use moor_core::seam::rng::Rng;
+use moor_core::seam::proxy_host::ProxySpec;
 use moor_core::secret::Secret;
 use moor_core::{ProviderId, TaskId, TaskName};
 
-use super::super::upstream::Upstreams;
+mod nono_e2e;
+
 use super::{serve, start, Deps, Sink, Stop, LEASE, TICK};
+use crate::proxy::detached::{read_spec, write_spec};
+use crate::proxy::nono::ca::ca_dir;
+use crate::proxy::nono::capture::CredsFn;
 use crate::store::{Lease, ProxyRow, Store};
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::{FakeDriver, TunnelReply};
@@ -28,10 +31,7 @@ use crate::testing::rng::FakeRng;
 const NONCE: &[u8] = b"NONCE-abc123";
 const BOOT: &str = "boot-1";
 pub(super) const NONCE_TEXT: &str = "NONCE-abc123";
-pub(super) const ORIGIN: &str = "git@example.invalid:o/n.git";
 const WORKTREE: &str = "/wt";
-const NEW_NONCE: &[u8] = b"NONCE-fresh-9";
-const NEW_NONCE_TEXT: &str = "NONCE-fresh-9";
 pub(super) const FIRST_TUNNEL_PID: u32 = 50_000;
 
 /// Everything a supervisor run needs, owned in one place.
@@ -57,6 +57,14 @@ pub(super) struct World {
 impl World {
     /// A working task with a live box, a worktree and a reserved proxy row.
     pub(super) fn new(replies: impl IntoIterator<Item = TunnelReply>) -> Self {
+        Self::with_spec(replies, |_| {})
+    }
+
+    /// Like [`World::new`], with `edit` applied to the spec written for the task.
+    pub(super) fn with_spec(
+        replies: impl IntoIterator<Item = TunnelReply>,
+        edit: impl FnOnce(&mut ProxySpec),
+    ) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
         let store = Store::open(&dir.path().join("moor.db"), clock.clone()).unwrap();
@@ -68,6 +76,16 @@ impl World {
                 .reserve(id, &nonce, &FakeRng::default(), LEASE)
                 .unwrap(),
         );
+        let mut spec = ProxySpec {
+            task: id,
+            box_handle: None,
+            host_cwd: PathBuf::from(WORKTREE),
+            task_repo: Some(ForgeRepo::new("o", "n")),
+            rules: Vec::new(),
+            allow: Vec::new(),
+        };
+        edit(&mut spec);
+        write_spec(dir.path(), &spec).unwrap();
         Self {
             dir,
             clock,
@@ -80,18 +98,24 @@ impl World {
         }
     }
 
-    /// Dependencies wired to this world's fakes.
+    /// Dependencies wired to this world's fakes; the credential lookup always fails.
     pub(super) fn deps(&self) -> Deps<'_> {
         self.deps_with(self.clock.clone())
     }
 
     /// Dependencies using `clock` instead of the plain fake clock.
     pub(super) fn deps_with(&self, clock: Arc<dyn Clock>) -> Deps<'_> {
-        let forge = FakeForge::new()
-            .with_repo(ORIGIN, ForgeRepo::new("o", "n"))
-            .with_token(ForgeRepo::new("o", "n"), b"gh-token");
-        let upstreams =
-            Upstreams::new([("model".into(), "https://example.invalid".into())], true).unwrap();
+        self.deps_full(clock, no_creds(), None)
+    }
+
+    /// Dependencies with the given credential lookup and extra upstream root PEM.
+    pub(super) fn deps_full(
+        &self,
+        clock: Arc<dyn Clock>,
+        creds: CredsFn,
+        upstream_ca: Option<PathBuf>,
+    ) -> Deps<'_> {
+        let forge = FakeForge::new().with_token(ForgeRepo::new("o", "n"), b"gh-token");
         let err: Sink = self.err.clone();
         Deps {
             store: &self.store,
@@ -99,11 +123,10 @@ impl World {
             forge: Arc::new(forge),
             clock,
             rng: &self.rng,
-            model: Arc::new(|| Ok(Secret::new(b"tok".to_vec()))),
-            upstreams,
+            creds,
+            upstream_ca,
             state_dir: self.dir.path(),
             boot_id: Some(BOOT.to_owned()),
-            origin_of: Box::new(|_: &Path| Some(ORIGIN.to_owned())),
             stop: self.stop.clone(),
             stderr: err,
         }
@@ -143,6 +166,11 @@ impl World {
         let started = events.into_iter().filter(|e| e.kind == "proxy_started");
         started.map(|e| e.payload).collect()
     }
+}
+
+/// A credential lookup that has no credentials.
+pub(super) fn no_creds() -> CredsFn {
+    Arc::new(|_: &str| Err("no credential in tests".to_owned()))
 }
 
 /// Insert a task, give it a live box from `driver` and a worktree.
@@ -472,64 +500,6 @@ fn task_without_a_box_handle_is_refused_with_a_stderr_line() {
     assert!(w.driver.tunnels().is_empty());
 }
 
-/// Random source that re-reserves the proxy row with a new nonce just before the lease claim.
-struct ReserveBeforeClaim<'a> {
-    /// Underlying draws.
-    inner: &'a FakeRng,
-    /// Store whose row gets re-reserved.
-    store: &'a Store,
-    /// Task whose row changes.
-    task: TaskId,
-    /// Draws so far.
-    drawn: AtomicUsize,
-}
-
-impl Rng for ReserveBeforeClaim<'_> {
-    fn u32(&self) -> u32 {
-        // The claim draws four times for the owner token, then claims the lease.
-        if self.drawn.fetch_add(1, Ordering::SeqCst) == 3 {
-            let fresh = Secret::new(NEW_NONCE.to_vec());
-            drop(
-                self.store
-                    .reserve(self.task, &fresh, self.inner, LEASE)
-                    .unwrap(),
-            );
-        }
-        self.inner.u32()
-    }
-}
-
-/// Sends an authenticated request with `nonce` and returns the reply text.
-fn probe(port: u16, nonce: &str) -> String {
-    let mut s = TcpStream::connect((Ipv4Addr::LOCALHOST, port)).unwrap();
-    let req = format!("GET /nope HTTP/1.1\r\nhost: x\r\nauthorization: Bearer {nonce}\r\n\r\n");
-    s.write_all(req.as_bytes()).unwrap();
-    let mut out = Vec::new();
-    drop(s.read_to_end(&mut out));
-    String::from_utf8_lossy(&out).into_owned()
-}
-
-#[test]
-fn nonce_reserved_between_preflight_and_claim_is_the_one_served() {
-    let w = World::new([]);
-    let hook = ReserveBeforeClaim {
-        inner: &w.rng,
-        store: &w.store,
-        task: w.id,
-        drawn: AtomicUsize::new(0),
-    };
-    let mut deps = w.deps();
-    deps.rng = &hook;
-
-    let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
-
-    let old = probe(run.host_port(), NONCE_TEXT);
-    let new = probe(run.host_port(), NEW_NONCE_TEXT);
-    assert!(old.starts_with("HTTP/1.1 401 "), "old nonce: {old}");
-    assert!(!new.starts_with("HTTP/1.1 401 "), "new nonce: {new}");
-    assert_eq!(run.finish(Stop::Signal), 0);
-}
-
 /// The first tunnel comes up; every restart attempt fails.
 pub(super) fn unrestartable() -> Vec<TunnelReply> {
     let fail = TunnelReply::EarlyExit {
@@ -539,4 +509,86 @@ pub(super) fn unrestartable() -> Vec<TunnelReply> {
     std::iter::once(TunnelReply::Ready)
         .chain(std::iter::repeat_n(fail, 5))
         .collect()
+}
+
+#[test]
+fn missing_spec_is_refused_before_the_lease_is_claimed() {
+    let w = World::new([]);
+    std::fs::remove_file(ca_dir(w.dir.path(), w.id).join("spec.json")).unwrap();
+    let deps = w.deps();
+
+    assert_eq!(start(&deps, w.id).err(), Some(1));
+
+    assert!(w.stderr().contains("no proxy spec"));
+    assert_eq!(w.row().lease_owner, None);
+    assert!(w.driver.tunnels().is_empty());
+}
+
+#[test]
+fn lost_lease_stops_the_proxy_from_accepting() {
+    let w = World::new([]);
+    let deps = w.deps();
+    let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
+    let port = run.host_port();
+    assert!(TcpStream::connect((Ipv4Addr::LOCALHOST, port)).is_ok());
+    w.clock.sleep(LEASE);
+    let taken = w.store.claim_lease(w.id, "other-owner", LEASE).unwrap();
+    assert!(matches!(taken, Lease::Claimed));
+    assert!(matches!(run.tick(), Some(Stop::LostLease)));
+    assert_eq!(run.finish(Stop::LostLease), 1);
+
+    let refused = (0..100).any(|_| {
+        let down = TcpStream::connect((Ipv4Addr::LOCALHOST, port)).is_err();
+        if !down {
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        down
+    });
+    assert!(refused, "proxy port {port} still accepts");
+}
+
+#[test]
+fn closed_removes_the_ca_and_spec() {
+    let w = World::new([]);
+    let deps = w.deps();
+    let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
+    let dir = ca_dir(w.dir.path(), w.id);
+    assert!(dir.exists());
+
+    w.close_task();
+    assert!(matches!(run.tick(), Some(Stop::Closed)));
+    assert_eq!(run.finish(Stop::Closed), 0);
+
+    assert!(!dir.exists());
+    assert!(read_spec(w.dir.path(), w.id).is_err());
+}
+
+#[test]
+fn signal_keeps_the_ca_and_spec() {
+    let w = World::new([]);
+    let deps = w.deps();
+    let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
+
+    assert_eq!(run.finish(Stop::Signal), 0);
+
+    assert!(ca_dir(w.dir.path(), w.id).exists());
+    assert!(read_spec(w.dir.path(), w.id).is_ok());
+}
+
+#[test]
+fn a_tick_without_traffic_records_nothing() {
+    let w = World::new([]);
+    let deps = w.deps();
+    let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
+    w.clock.sleep(TICK);
+
+    assert!(run.tick().is_none());
+
+    let events = w.store.events(w.id, 50).unwrap();
+    let noisy = events
+        .iter()
+        .filter(|e| e.kind.contains("egress") || e.kind.contains("credential"));
+    assert_eq!(noisy.count(), 0);
+    assert!(w.log().is_empty());
+    assert_eq!(run.finish(Stop::Signal), 0);
 }

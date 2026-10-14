@@ -156,3 +156,70 @@ fn a_heartbeat_far_in_the_future_sends_no_signal() {
     assert!(f.proc.signals().is_empty());
     assert!(!f.has_row());
 }
+
+fn ca_file(f: &Fx) -> std::path::PathBuf {
+    let dir = crate::proxy::nono::ca::ca_dir(f.dir.path(), f.id);
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("ca.key");
+    std::fs::write(&file, b"key").unwrap();
+    file
+}
+
+#[test]
+fn stopping_removes_the_ca_directory_with_the_row() {
+    let f = fx();
+    with_proxy(&f);
+    let file = ca_file(&f);
+    f.proc.groups_gone();
+
+    assert_eq!(f.sup.stop(f.id), Ok(()));
+
+    assert!(!f.has_row());
+    assert!(!file.parent().unwrap().exists());
+}
+
+#[test]
+fn a_stale_lease_stop_removes_the_ca_directory() {
+    let f = fx();
+    with_proxy(&f);
+    let file = ca_file(&f);
+    f.clock.sleep(LEASE + Duration::from_secs(1));
+
+    assert_eq!(f.sup.stop(f.id), Ok(()));
+
+    assert!(!file.parent().unwrap().exists());
+}
+
+#[test]
+fn a_supervisor_that_outlasts_the_wait_keeps_its_ca_directory() {
+    let f = fx();
+    with_proxy(&f);
+    let file = ca_file(&f);
+
+    f.sup.stop(f.id).unwrap_err();
+
+    assert!(file.exists());
+}
+
+#[test]
+fn stopping_without_a_ca_directory_succeeds() {
+    let f = fx();
+    with_proxy(&f);
+    f.proc.groups_gone();
+
+    assert_eq!(f.sup.stop(f.id), Ok(()));
+
+    assert!(!f.has_row());
+}
+
+#[test]
+fn a_retried_stop_without_a_row_removes_the_ca_directory() {
+    let f = fx();
+    let file = ca_file(&f);
+    assert!(!f.has_row());
+
+    assert_eq!(f.sup.stop(f.id), Ok(()));
+
+    assert!(!file.parent().unwrap().exists());
+    assert_eq!(f.sup.stop(f.id), Ok(()));
+}

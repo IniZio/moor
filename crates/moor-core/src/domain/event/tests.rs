@@ -136,6 +136,8 @@ fn all_events() -> Vec<Event> {
         Event::EgressRefused {
             host: s("h"),
             rule: Some(s("r")),
+            method: None,
+            category: None,
         },
         Event::ProxyCredentialFailed { rule: s("r") },
     ]
@@ -566,17 +568,11 @@ fn egress_events_serialize_with_kind_tag() {
             Event::EgressRefused {
                 host: s("h"),
                 rule: Some(s("r")),
+                method: Some(s("GET")),
+                category: Some(s("host_denied")),
             },
             "egress_refused",
-            serde_json::json!({"host": "h", "rule": "r"}),
-        ),
-        (
-            Event::EgressRefused {
-                host: s("h"),
-                rule: None,
-            },
-            "egress_refused",
-            serde_json::json!({"host": "h", "rule": null}),
+            serde_json::json!({"host": "h", "rule": "r", "method": "GET", "category": "host_denied"}),
         ),
         (
             Event::ProxyCredentialFailed { rule: s("r") },

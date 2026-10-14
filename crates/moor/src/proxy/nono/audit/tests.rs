@@ -37,11 +37,17 @@ impl EgressSink for Recorder {
             .push(format!("allowed {method} {route} {status}"));
     }
 
-    fn refused(&self, host: &str, rule: Option<&str>) {
+    fn refused(
+        &self,
+        host: &str,
+        rule: Option<&str>,
+        method: Option<&str>,
+        category: Option<&str>,
+    ) {
         self.0
             .lock()
             .unwrap()
-            .push(format!("refused {host} {rule:?}"));
+            .push(format!("refused {host} {rule:?} {method:?} {category:?}"));
     }
 
     fn credential_failed(&self, rule: &str) {
@@ -161,7 +167,10 @@ fn capture_bookkeeping_and_policy_allows_are_not_logged() {
 #[test]
 fn host_denied_is_refused_without_rule() {
     let e = event("deny", &json!({"denial_category": "host_denied"}));
-    assert_eq!(run(&[e]), ["refused api.example.com None"]);
+    assert_eq!(
+        run(&[e]),
+        ["refused api.example.com None None Some(\"host_denied\")"]
+    );
 }
 
 #[test]
@@ -170,13 +179,19 @@ fn deny_on_a_route_names_the_rule() {
         "deny",
         &json!({"route_id": "gh__1", "denial_category": "endpoint_policy"}),
     );
-    assert_eq!(run(&[e]), ["refused api.example.com Some(\"gh\")"]);
+    assert_eq!(
+        run(&[e]),
+        ["refused api.example.com Some(\"gh\") None Some(\"endpoint_policy\")"]
+    );
 }
 
 #[test]
 fn authentication_failure_is_refused() {
     let e = event("deny", &json!({"denial_category": "authentication_failed"}));
-    assert_eq!(run(&[e]), ["refused api.example.com None"]);
+    assert_eq!(
+        run(&[e]),
+        ["refused api.example.com None None Some(\"authentication_failed\")"]
+    );
 }
 
 #[test]
@@ -276,7 +291,7 @@ fn task_sink_writes_events_and_a_path_free_log() {
     };
     assert_eq!(
         of("egress_refused"),
-        [json!({"host": "evil.test", "rule": null})]
+        [json!({"host": "evil.test", "rule": null, "method": null, "category": "host_denied"})]
     );
     assert_eq!(of("proxy_credential_failed"), [json!({"rule": "gh"})]);
 
@@ -285,6 +300,46 @@ fn task_sink_writes_events_and_a_path_free_log() {
             .unwrap();
     assert!(text.trim_end().ends_with("POST gh 200"), "{text}");
     assert!(!text.contains("repos") && !text.contains("token"), "{text}");
+}
+
+#[test]
+fn task_sink_records_method_and_category_without_the_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, log, task) = task_sink_parts(dir.path());
+    let sink = TaskSink {
+        log: &log,
+        store: &store,
+        task,
+    };
+    let (capture, _) = counting_capture();
+    let denied = event(
+        "deny",
+        &json!({
+            "denial_category": "host_denied",
+            "target": "evil.test",
+            "method": "GET",
+            "path": "/secret/path?k=v",
+        }),
+    );
+    apply(
+        &[denied, event("deny", &json!({"target": "bare.test"}))],
+        &capture,
+        &sink,
+    );
+
+    let rows = store.events(task, 100).unwrap();
+    let got: Vec<_> = rows.iter().map(|r| r.payload.clone()).collect();
+    assert!(got.contains(&json!(
+        {"host": "evil.test", "rule": null, "method": "GET", "category": "host_denied"}
+    )));
+    assert!(got.contains(&json!(
+        {"host": "bare.test", "rule": null, "method": null, "category": null}
+    )));
+    let stored = serde_json::to_string(&got).unwrap();
+    assert!(
+        !stored.contains("secret") && !stored.contains("k=v"),
+        "{stored}"
+    );
 }
 
 #[test]
@@ -297,6 +352,6 @@ fn task_sink_swallows_store_errors() {
         store: &store,
         task: missing,
     };
-    sink.refused("h.test", None);
+    sink.refused("h.test", None, None, None);
     sink.credential_failed("gh");
 }

@@ -136,7 +136,7 @@ impl Launch<'_> {
         resume.map_or_else(|| profile.argv(ctx), |id| profile.resume_argv(id, ctx))
     }
 
-    /// Stages the nonce and the shim and returns the script lines that export the proxy
+    /// Stages the nonce and the CA certificate and returns the script lines that export the proxy
     /// environment; empty when the launch has no Proxy.
     fn proxy_lines(&self) -> Result<Vec<String>, Failure> {
         let Some(addr) = &self.ctx.proxy else {
@@ -215,8 +215,8 @@ impl Launch<'_> {
 
 /// The script the Box runs under `sh`; the credential directory goes once the brief is
 /// installed, and at exit or on a hangup, interrupt or terminate before then. With
-/// `proxy` lines the directory stays until the agent exits, since the shim lives in it,
-/// and the lines run after the base `PATH` is set so the shim comes first.
+/// `proxy` lines the directory stays until the agent exits, since the CA bundle and the CA
+/// certificate live in it.
 fn script(
     cred: &BoxPath,
     ctx: &LaunchCtx,

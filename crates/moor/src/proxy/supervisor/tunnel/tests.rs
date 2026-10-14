@@ -13,7 +13,7 @@ use moor_core::seam::driver::{
 use moor_core::seam::proc::Deadline;
 use moor_core::{BoxHandle, BoxPath, ProviderId, TaskId};
 
-use super::super::tests::{unrestartable, World, FIRST_TUNNEL_PID, NONCE_TEXT, ORIGIN};
+use super::super::tests::{unrestartable, World, FIRST_TUNNEL_PID, NONCE_TEXT};
 use super::super::{start, Stop, LEASE};
 use crate::store::{Lease, Store};
 use crate::testing::clock::FakeClock;
@@ -172,15 +172,19 @@ fn lost_lease_during_the_backoff_exits_without_touching_the_row() {
 #[test]
 fn lost_lease_at_startup_writes_a_stderr_line() {
     let w = World::new([]);
-    let mut deps = w.deps();
     let (path, clock, id) = (w.dir.path().join("moor.db"), w.clock.clone(), w.id);
-    deps.origin_of = Box::new(move |_: &Path| {
-        clock.sleep(LEASE);
-        let other = Store::open(&path, clock.clone()).unwrap();
-        let taken = other.claim_lease(id, "other-owner", LEASE).unwrap();
-        assert!(matches!(taken, Lease::Claimed));
-        Some(ORIGIN.to_owned())
-    });
+    let slow = Slow {
+        inner: &w.driver,
+        clock: w.clock.clone(),
+        took: LEASE,
+        after: Box::new(move || {
+            let other = Store::open(&path, clock.clone()).unwrap();
+            let taken = other.claim_lease(id, "other-owner", LEASE).unwrap();
+            assert!(matches!(taken, Lease::Claimed));
+        }),
+    };
+    let mut deps = w.deps();
+    deps.driver = &slow;
 
     assert_eq!(start(&deps, w.id).err(), Some(1));
 
@@ -191,12 +195,14 @@ fn lost_lease_at_startup_writes_a_stderr_line() {
 #[test]
 fn slow_startup_extends_the_lease_before_the_row_is_marked_ready() {
     let w = World::new([]);
+    let slow = Slow {
+        inner: &w.driver,
+        clock: w.clock.clone(),
+        took: Duration::from_secs(20),
+        after: Box::new(|| {}),
+    };
     let mut deps = w.deps();
-    let clock = w.clock.clone();
-    deps.origin_of = Box::new(move |_: &Path| {
-        clock.sleep(Duration::from_secs(20));
-        Some(ORIGIN.to_owned())
-    });
+    deps.driver = &slow;
 
     let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
 
@@ -215,6 +221,8 @@ struct Slow<'a> {
     clock: Arc<FakeClock>,
     /// How long one attempt takes.
     took: Duration,
+    /// Runs after each attempt has taken its time.
+    after: Box<dyn Fn() + Send + Sync>,
 }
 
 impl Driver for Slow<'_> {
@@ -282,6 +290,7 @@ impl Driver for Slow<'_> {
         c: &Path,
     ) -> Result<Box<dyn TunnelHandle>, DriverError> {
         self.clock.sleep(self.took);
+        (self.after)();
         self.inner.reverse_tunnel(h, bp, hp, c)
     }
 
@@ -301,6 +310,7 @@ fn slow_restart_attempt_renews_the_lease_after_it_returns() {
         inner: &w.driver,
         clock: w.clock.clone(),
         took: Duration::from_secs(29),
+        after: Box::new(|| {}),
     };
     let mut deps = w.deps();
     deps.driver = &slow;

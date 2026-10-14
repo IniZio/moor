@@ -476,6 +476,10 @@ fn exec_runs_without_sync_on_the_target() {
             "--no-hydrate",
             "--no-sync",
             "--",
+            "sh",
+            "-c",
+            super::exec::UNSET_THEN_EXEC,
+            "sh",
             "make",
             "test"
         ]
