@@ -26,16 +26,19 @@ fn script_quotes_shas_and_keeps_fragments() {
     let s = boxwork_script(&[SHA_A, SHA_B]).unwrap();
     assert!(s.contains(&format!("'{SHA_A}'")));
     assert!(s.contains(&format!("'{SHA_B}'")));
-    assert!(s.contains("--not --remotes"));
+    assert!(s.contains("--not --remotes $keep"));
+    assert!(s.contains("for s in '"));
+    assert!(s.contains("--no-renames"));
     assert!(s.contains(BOXWORK_FILE));
     assert!(s.contains(BOXWORK_MARKER));
-    assert!(s.starts_with(&format!("rm -f {BOXWORK_FILE}\n")));
+    assert!(s.starts_with("export GIT_NO_LAZY_FETCH=1\n"));
+    assert!(s.contains(&format!("\nrm -f {BOXWORK_FILE}\n")));
 }
 
 #[test]
 fn script_accepts_empty_saved() {
     let s = boxwork_script(&[]).unwrap();
-    assert!(s.contains("--not --remotes)"));
+    assert!(s.contains("for s in; do"));
 }
 
 #[test]
@@ -249,4 +252,92 @@ fn stale_result_is_removed_and_git_failure_exits_nonzero() {
     let out = r.probe(&[]);
     assert!(!out.status.success());
     assert_eq!(r.result(), None);
+}
+
+#[test]
+fn staged_rename_out_of_moor_is_dirty() {
+    if !git_available() {
+        return;
+    }
+    let r = Repo::new("rename");
+    r.write(".moor/f", "some content\n");
+    r.git(&["add", "-f", ".moor/f"]);
+    r.git(&["commit", "-q", "-m", "f"]);
+    r.git(&["mv", ".moor/f", "src_f"]);
+    let out = r.probe(&[]);
+    assert!(out.status.success());
+    let counts = r.result().unwrap();
+    assert!(counts.dirty >= 1, "{counts:?}");
+}
+
+/// Clones a blob-less single-branch copy of a fresh origin, adds one agent commit, then points
+/// origin at `url`; returns the clone.
+fn partial_clone(name: &str, url: &str) -> Repo {
+    let origin = Repo::new(&format!("{name}-origin"));
+    origin.git(&["config", "uploadpack.allowFilter", "true"]);
+    origin.commit("base", "b");
+    let clone = Repo::new(&format!("{name}-clone"));
+    fs::remove_dir_all(&clone.root).unwrap();
+    let src = format!("file://{}", origin.root.display());
+    let out = Command::new("git")
+        .args(["clone", "-q", "--filter=blob:none", "--single-branch"])
+        .arg(&src)
+        .arg(&clone.root)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(clone.git(&["config", "remote.origin.promisor"]), "true");
+    clone.commit("agent", "a");
+    clone.git(&["remote", "set-url", "origin", url]);
+    clone
+}
+
+fn assert_offline_probe(name: &str, url: &str) {
+    let r = partial_clone(name, url);
+    let script = boxwork_script(&[SHA_A]).unwrap();
+    let mut child = Command::new("sh")
+        .args(["-c", &script])
+        .current_dir(&r.root)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut status = None;
+    for _ in 0..200 {
+        status = child.try_wait().unwrap();
+        if status.is_some() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    if status.is_none() {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+    let status = status.expect("probe did not finish in 10s");
+    assert!(status.success());
+    assert_eq!(r.result(), Some(BoxworkCounts { ahead: 1, dirty: 0 }));
+}
+
+#[test]
+fn partial_clone_probe_stays_offline_with_silent_origin() {
+    if !git_available() {
+        return;
+    }
+    // Accepts connections (kernel backlog) but never answers, like a blackholed address.
+    let silent = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}/x.git", silent.local_addr().unwrap());
+    assert_offline_probe("lazy-port", &url);
+}
+
+#[test]
+fn partial_clone_probe_stays_offline_with_missing_path_origin() {
+    if !git_available() {
+        return;
+    }
+    assert_offline_probe("lazy-path", "/nonexistent/moor-boxwork/x.git");
 }
