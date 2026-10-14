@@ -27,8 +27,9 @@ These commands work today:
   run (`--for idle|done|run`). `--timeout S` bounds the wait.
 - `moor steer NAME TEXT` sends text, or `--menu N` a menu choice, to the
   Task's agent.
-- `moor cp`, `moor open`, `moor sleep` and `moor wake` copy a file into the
-  Box, open the Workspace, and sleep or wake the Box.
+- `moor cp` copies a file or directory out of the Task's Box to the host.
+  `moor open`, `moor sleep` and `moor wake` open the Workspace, and sleep or
+  wake the Box.
 - `moor gate` records or checks a gate; `moor env [REPO]` previews the
   layered agent environment.
 - `moor call` runs a JSON request read from stdin.
