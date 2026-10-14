@@ -80,7 +80,9 @@ pub struct BoxView {
     pub provider: String,
     /// Box handle, when one is known.
     pub handle: Option<String>,
-    /// `enforced`, `not_enforced`, `none` or unknown.
+    /// Working directory inside the Box, when known.
+    pub workdir: Option<String>,
+    /// `none` (open egress), `enforced` (allow-list applied) or `not_enforced` (allow-list not applied); unset when unknown.
     pub egress: Option<String>,
     /// RFC3339 UTC time the Box went to sleep.
     pub asleep_since: Option<String>,

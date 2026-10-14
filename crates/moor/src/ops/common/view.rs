@@ -74,6 +74,7 @@ fn box_view(b: &BoxRow, config: &UserConfig) -> BoxView {
         state: b.state,
         provider: b.provider.as_str().to_owned(),
         handle: box_handle(b),
+        workdir: b.workdir.clone(),
         egress: b
             .egress_enforced
             .map(|e| (if e { "enforced" } else { "not_enforced" }).to_owned()),
