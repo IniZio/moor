@@ -38,6 +38,23 @@ pub(crate) struct GitAuthor {
     pub(crate) email: Option<String>,
 }
 
+/// What [`Git::sync_branch`] did to the local Task branch.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum BranchSync {
+    /// The branch and its worktree moved forward to the remote tip.
+    FastForwarded,
+    /// The local branch already contains the remote tip.
+    UpToDate,
+    /// The local and remote branches each have commits the other lacks; nothing changed.
+    Diverged,
+    /// The worktree has uncommitted changes; nothing changed.
+    Dirty,
+    /// The worktree has another branch checked out; nothing changed.
+    OffBranch,
+    /// The remote has no such branch, so there is nothing to sync.
+    NotPushed,
+}
+
 /// Concrete git client; real git runs through the `Proc` seam.
 pub(crate) struct Git {
     /// Spawner for every git call.
@@ -148,6 +165,58 @@ impl Git {
         }
         let out = self.run(worktree, &["status", "--porcelain"])?;
         Ok(out.lines().any(|l| !l.trim().is_empty()))
+    }
+
+    /// Fetches `branch` from `origin`, if the remote has it, and fast-forwards the worktree's checked-out `branch` to it.
+    ///
+    /// Only a remote tip that descends from the local tip moves the branch; local commits
+    /// and uncommitted changes are never rewritten or discarded.
+    ///
+    /// # Errors
+    /// [`GitError::Failed`] when the fetch or any git query fails.
+    pub(crate) fn sync_branch(
+        &self,
+        worktree: &Path,
+        branch: &str,
+    ) -> Result<BranchSync, GitError> {
+        let head_ref = format!("refs/heads/{branch}");
+        let probe = ["ls-remote", "--exit-code", "origin", &head_ref];
+        match self.exec(worktree, &probe, DEADLINE) {
+            Ok(_) => {}
+            Err(ProcError::NonZero { code: 2, .. }) => return Ok(BranchSync::NotPushed),
+            Err(e) => return Err(Self::failure(&probe, e)),
+        }
+        let tracking = format!("refs/remotes/origin/{branch}");
+        let refspec = format!("+refs/heads/{branch}:{tracking}");
+        self.run(worktree, &["fetch", "origin", &refspec])?;
+        let current = self.run(worktree, &["symbolic-ref", "--short", "HEAD"])?;
+        if current.trim() != branch {
+            return Ok(BranchSync::OffBranch);
+        }
+        let local = self.head(worktree)?;
+        let remote = self.run(worktree, &["rev-parse", &tracking])?;
+        let (local, remote) = (local.trim(), remote.trim());
+        if self.is_ancestor(worktree, remote, local)? {
+            return Ok(BranchSync::UpToDate);
+        }
+        if !self.is_ancestor(worktree, local, remote)? {
+            return Ok(BranchSync::Diverged);
+        }
+        if self.dirty(worktree)? {
+            return Ok(BranchSync::Dirty);
+        }
+        self.run(worktree, &["merge", "--ff-only", &tracking])?;
+        Ok(BranchSync::FastForwarded)
+    }
+
+    /// Whether commit `old` is `new` or one of its ancestors; git exits 1 when it is not.
+    fn is_ancestor(&self, cwd: &Path, old: &str, new: &str) -> Result<bool, GitError> {
+        let args = ["merge-base", "--is-ancestor", old, new];
+        match self.exec(cwd, &args, DEADLINE) {
+            Ok(_) => Ok(true),
+            Err(ProcError::NonZero { code: 1, .. }) => Ok(false),
+            Err(e) => Err(Self::failure(&args, e)),
+        }
     }
 
     /// Hides crabbox and moor scratch directories from `git status` in `worktree`.
