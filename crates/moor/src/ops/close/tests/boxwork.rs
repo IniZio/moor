@@ -321,5 +321,5 @@ fn force_does_not_probe_before_or_after_stopping_the_agent() {
         .unwrap();
     let v = run(&f.cx, &req(true)).unwrap();
     assert!(v.agent_stopped);
-    assert_eq!(count(&f, "exec"), 0);
+    assert_eq!(probes(&f), 0);
 }
