@@ -8,6 +8,7 @@ use moor_core::boxscript::setup::setup_script;
 use moor_core::config::{Flags, TaskSettings, UserConfig};
 use moor_core::domain::run::SyncMode;
 use moor_core::domain::task::SetupOutcome;
+use moor_core::seam::clock::{Clock, Ts};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, EgressPlan, ExecOutcome};
 use moor_core::seam::proc::Deadline;
 use moor_core::view::SetupView;
@@ -15,6 +16,7 @@ use moor_core::{BoxHandle, BoxPath, ProviderId, TaskId, TaskName};
 
 use super::{run_setup, setup_deadline, SetupRun, SETUP_LINE_DEADLINE};
 use crate::cx::Cx;
+use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
 use crate::testing::surface::FakeSurface;
@@ -27,13 +29,19 @@ struct Rig {
 }
 
 fn rig(dir: &Path, driver: FakeDriver) -> Rig {
+    rig_on(dir, driver, Arc::new(FakeClock::new(Ts::from_millis(1000))))
+}
+
+fn rig_on(dir: &Path, driver: FakeDriver, clock: Arc<FakeClock>) -> Rig {
     let driver = Arc::new(driver);
-    let cx = Cx::fake(
+    let cx = Cx::fake_with_clock(
         dir,
         dir,
         Arc::clone(&driver) as Arc<_>,
         Arc::new(FakeSurface::new(dir)),
         Arc::new(ScriptedProc::new()),
+        UserConfig::default(),
+        clock,
     );
     let got = driver
         .acquire(&AcquireReq {
@@ -87,7 +95,7 @@ fn all_lines_passing_is_ok() {
         d.path(),
         &cfg(&["a", "b"], &[]),
     );
-    assert_eq!(got, SetupRun::Ok);
+    assert_eq!(got, SetupRun::Ok { ms: 0 });
     assert!(r.driver.copies().is_empty());
     assert!(r.cx.take_warnings().is_empty());
 }
@@ -164,6 +172,7 @@ fn failing_line_comes_from_the_log_and_warns() {
         SetupRun::Failed {
             line: "bad".to_owned(),
             exit: Some(3),
+            ms: 0,
         }
     );
     assert_eq!(r.driver.execs().len(), 1);
@@ -303,6 +312,7 @@ fn the_last_announced_line_fails() {
         SetupRun::Failed {
             line: "b".to_owned(),
             exit: Some(1),
+            ms: 0,
         }
     );
 }
@@ -326,6 +336,7 @@ fn a_failed_copy_falls_back_to_the_first_line() {
         SetupRun::Failed {
             line: "a".to_owned(),
             exit: Some(1),
+            ms: 0,
         }
     );
 }
@@ -349,6 +360,7 @@ fn driver_timeout_fails_the_line() {
         SetupRun::Failed {
             line: "slow".to_owned(),
             exit: None,
+            ms: 0,
         }
     );
     assert_eq!(r.driver.execs().len(), 1);
@@ -379,11 +391,12 @@ fn empty_setup_is_skipped_without_exec() {
 #[test]
 fn outcome_maps_skipped_and_ok_to_ok() {
     assert_eq!(SetupRun::Skipped.outcome(), SetupOutcome::Ok);
-    assert_eq!(SetupRun::Ok.outcome(), SetupOutcome::Ok);
+    assert_eq!(SetupRun::Ok { ms: 0 }.outcome(), SetupOutcome::Ok);
     assert_eq!(
         SetupRun::Failed {
             line: "x".to_owned(),
             exit: None,
+            ms: 0,
         }
         .outcome(),
         SetupOutcome::Failed {
@@ -396,23 +409,26 @@ fn outcome_maps_skipped_and_ok_to_ok() {
 fn view_maps_each_variant() {
     assert_eq!(SetupRun::Skipped.view(), SetupView::default());
     assert_eq!(
-        SetupRun::Ok.view(),
+        SetupRun::Ok { ms: 0 }.view(),
         SetupView {
             ran: true,
             ok: true,
-            line: None
+            line: None,
+            ms: Some(0)
         }
     );
     assert_eq!(
         SetupRun::Failed {
             line: "x".to_owned(),
             exit: None,
+            ms: 0,
         }
         .view(),
         SetupView {
             ran: true,
             ok: false,
-            line: Some("x".to_owned())
+            line: Some("x".to_owned()),
+            ms: Some(0)
         }
     );
 }
@@ -420,10 +436,11 @@ fn view_maps_each_variant() {
 #[test]
 fn failed_is_true_only_for_failed() {
     assert!(!SetupRun::Skipped.failed());
-    assert!(!SetupRun::Ok.failed());
+    assert!(!SetupRun::Ok { ms: 0 }.failed());
     assert!(SetupRun::Failed {
         line: "x".to_owned(),
         exit: None,
+        ms: 0,
     }
     .failed());
 }
@@ -460,6 +477,7 @@ fn interrupted_line_fails_and_stops_the_run() {
         SetupRun::Failed {
             line: "a".to_owned(),
             exit: None,
+            ms: 0,
         }
     );
     assert_eq!(r.driver.execs().len(), 1);
@@ -469,4 +487,28 @@ fn interrupted_line_fails_and_stops_the_run() {
     let w = warnings.first().unwrap();
     assert_eq!(w.code, "setup_failed");
     assert!(w.message.contains("interrupted"));
+}
+
+#[test]
+fn duration_is_measured_with_the_clock_on_success_and_failure() {
+    let d = tempfile::tempdir().unwrap();
+    for (code, ok) in [(0, true), (1, false)] {
+        let clock = Arc::new(FakeClock::new(Ts::from_millis(1000)));
+        let r = rig_on(
+            d.path(),
+            FakeDriver::new().exec_results(exits(&[code])),
+            Arc::clone(&clock),
+        );
+        r.driver
+            .on_exec(move || clock.sleep(Duration::from_millis(1500)));
+        let got = run_setup(&r.cx, &r.handle, &r.workdir, d.path(), &cfg(&["a"], &[]));
+        assert_eq!(got.ms(), Some(1500));
+        assert_eq!(got.failed(), !ok);
+        assert_eq!(got.view().ms, Some(1500));
+    }
+}
+
+#[test]
+fn skipped_setup_has_no_duration() {
+    assert_eq!(SetupRun::Skipped.ms(), None);
 }

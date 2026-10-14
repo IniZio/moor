@@ -69,6 +69,13 @@ pub enum Event {
         /// The failing output line or cause.
         line: String,
     },
+    /// The repo setup script ended.
+    SetupFinished {
+        /// Time the script took, in milliseconds.
+        ms: u64,
+        /// Whether every line passed.
+        ok: bool,
+    },
     /// A credential could not be delivered.
     CredentialFailed {
         /// Which credential failed.
@@ -247,6 +254,7 @@ impl Event {
             Self::SettingUp { .. } => "setting_up",
             Self::Working => "working",
             Self::SetupFailed { .. } => "setup_failed",
+            Self::SetupFinished { .. } => "setup_finished",
             Self::CredentialFailed { .. } => "credential_failed",
             Self::Idled => "idled",
             Self::Busy => "busy",

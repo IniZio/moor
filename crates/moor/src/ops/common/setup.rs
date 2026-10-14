@@ -33,13 +33,18 @@ pub(crate) enum SetupRun {
     /// The repo declares no setup lines.
     Skipped,
     /// Every line exited 0.
-    Ok,
+    Ok {
+        /// Time the script took, in milliseconds.
+        ms: u64,
+    },
     /// A line failed; later lines did not run.
     Failed {
         /// The failing line.
         line: String,
         /// The script's exit code, when it exited.
         exit: Option<i32>,
+        /// Time the script took, in milliseconds.
+        ms: u64,
     },
 }
 
@@ -47,7 +52,7 @@ impl SetupRun {
     /// The outcome recorded on the Task.
     pub(crate) fn outcome(&self) -> SetupOutcome {
         match self {
-            Self::Skipped | Self::Ok => SetupOutcome::Ok,
+            Self::Skipped | Self::Ok { .. } => SetupOutcome::Ok,
             Self::Failed { line, .. } => SetupOutcome::Failed { line: line.clone() },
         }
     }
@@ -56,15 +61,17 @@ impl SetupRun {
     pub(crate) fn view(&self) -> SetupView {
         match self {
             Self::Skipped => SetupView::default(),
-            Self::Ok => SetupView {
+            Self::Ok { ms } => SetupView {
                 ran: true,
                 ok: true,
                 line: None,
+                ms: Some(*ms),
             },
-            Self::Failed { line, .. } => SetupView {
+            Self::Failed { line, ms, .. } => SetupView {
                 ran: true,
                 ok: false,
                 line: Some(line.clone()),
+                ms: Some(*ms),
             },
         }
     }
@@ -74,6 +81,14 @@ impl SetupRun {
         match self {
             Self::Failed { exit, .. } => *exit,
             _ => None,
+        }
+    }
+
+    /// How long the script took, in milliseconds; none when no setup ran.
+    pub(crate) const fn ms(&self) -> Option<u64> {
+        match self {
+            Self::Skipped => None,
+            Self::Ok { ms } | Self::Failed { ms, .. } => Some(*ms),
         }
     }
 
@@ -117,8 +132,12 @@ pub(crate) fn run_setup(
         class: Some(cfg.size.value.as_str().to_owned()),
     };
     let deadline = Deadline(setup_deadline(cfg.setup.len()));
-    let (reason, exit) = match cx.driver().exec(handle, &spec, deadline) {
-        Ok(ExecOutcome::Exited { code: 0 }) => return SetupRun::Ok,
+    let started = cx.clock().instant();
+    let result = cx.driver().exec(handle, &spec, deadline);
+    let elapsed = cx.clock().instant().saturating_duration_since(started);
+    let ms = u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX);
+    let (reason, exit) = match result {
+        Ok(ExecOutcome::Exited { code: 0 }) => return SetupRun::Ok { ms },
         Ok(ExecOutcome::Exited { code }) => (format!("exit {code}"), Some(code)),
         Ok(ExecOutcome::Interrupted) => ("interrupted".to_owned(), None),
         Err(e) => (e.to_string(), None),
@@ -133,7 +152,7 @@ pub(crate) fn run_setup(
         code: "setup_failed".to_owned(),
         message: failure_message(&line, &reason, workdir, &log),
     });
-    SetupRun::Failed { line, exit }
+    SetupRun::Failed { line, exit, ms }
 }
 
 /// The warning text: the failing line, where the full log lives in the Box, and its tail.

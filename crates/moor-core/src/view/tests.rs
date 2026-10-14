@@ -106,6 +106,7 @@ fn start_view_keys_match_wire_shape() {
             ran: true,
             ok: true,
             line: None,
+            ms: Some(7),
         },
         dotfiles: DotfilesView::default(),
         agent: AgentLaunchView {
@@ -119,7 +120,7 @@ fn start_view_keys_match_wire_shape() {
         serde_json::to_value(v).ok(),
         Some(json!({
             "task": task_json(), "attached": false, "queued": false, "promoted": ["a"],
-            "setup": {"ran": true, "ok": true, "line": null},
+            "setup": {"ran": true, "ok": true, "line": null, "ms": 7},
             "dotfiles": {"ran": false, "ok": false, "ms": null},
             "agent": {"launched": true, "session": "s", "reason": null},
             "warnings_inline": []

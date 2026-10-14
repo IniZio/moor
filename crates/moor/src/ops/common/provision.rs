@@ -325,6 +325,12 @@ fn run_and_record(
     done.task_input = advance.then(|| TaskInput::BoxReady {
         setup: run.outcome(),
     });
+    if let Some(ms) = run.ms() {
+        done = done.event(ExtraEvent::SetupFinished {
+            ms,
+            ok: !run.failed(),
+        });
+    }
     if !advance {
         if let SetupOutcome::Failed { line } = run.outcome() {
             done = done.event(ExtraEvent::SetupFailed { line });
