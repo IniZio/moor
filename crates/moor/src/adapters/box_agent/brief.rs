@@ -37,7 +37,7 @@ pub(super) fn render(b: &BriefInput) -> String {
          from unknown hosts. Do not guess paths.\n\n\
          HEAD is detached on the Box. Commit your work with git, following the repo's \
          commit-msg hook and conventions. Push with \
-         `git push \"$MOOR_PUSH_URL\" HEAD:refs/heads/{branch}` when the repo's push guard \
+         `git push moor HEAD:refs/heads/{branch}` when the repo's push guard \
          allows it, not after each commit. If `$MOOR_PUSH_URL` is empty or unset, commit \
          only and do not push. Push to the branch named in the Goal if it names one, else \
          to `{branch}`. Do not switch branches. Do not add Co-Authored-By trailers to \
@@ -100,7 +100,7 @@ mod tests {
     #[test]
     fn states_the_box_contract() {
         let out = render(&input(Some("g"), None));
-        assert!(out.contains("git push \"$MOOR_PUSH_URL\" HEAD:refs/heads/moor/t1"));
+        assert!(out.contains("git push moor HEAD:refs/heads/moor/t1"));
         assert!(out.contains("HEAD is detached"));
         assert!(out.contains("Do not add Co-Authored-By trailers"));
         assert!(out.contains("follow-up messages (steers)"));
