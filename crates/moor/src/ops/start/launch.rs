@@ -7,7 +7,7 @@ use std::time::Duration;
 use moor_core::activity::PaneStatus;
 use moor_core::seam::agent_profile::ProxyAddr;
 use moor_core::seam::proc::Deadline;
-use moor_core::seam::proxy_host::ProxySpec;
+use moor_core::seam::proxy_host::{ProxyEndpoint, ProxySpec};
 
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
@@ -20,7 +20,7 @@ use moor_core::{StartReq, TaskId, Warning};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::provision::{nonce, recorded_workdir, reread};
-use crate::ops::common::proxy::origin;
+use crate::ops::common::proxy::{box_env, origin, plan, ProxyPlan};
 use crate::ops::common::resume;
 use crate::ops::common::view::rfc3339;
 use crate::store::{Store, TaskRow};
@@ -70,6 +70,25 @@ pub(super) fn run(
     begin(cx, store, &row, &launch)
 }
 
+/// Starts or reuses the Task's proxy for `plan`, returning the spec it was given and its endpoint.
+fn ensure_proxy(
+    cx: &Cx,
+    row: &TaskRow,
+    launch: &LaunchReq,
+    plan: ProxyPlan,
+) -> Result<(ProxySpec, ProxyEndpoint), String> {
+    let spec = ProxySpec {
+        task: row.id,
+        box_handle: row.boxed.as_ref().and_then(|b| b.handle.clone()),
+        host_cwd: launch.worktree.clone(),
+        task_repo: plan.repo,
+        rules: plan.rules,
+        allow: plan.allow,
+    };
+    let ep = cx.proxy_host().ensure(&spec).map_err(|e| e.to_string())?;
+    Ok((spec, ep))
+}
+
 /// Launches `launch` and records the session, or the failure, on the Task `row`.
 pub(super) fn begin(
     cx: &Cx,
@@ -78,18 +97,23 @@ pub(super) fn begin(
     launch: &LaunchReq,
 ) -> Result<AgentLaunchView, CommandError> {
     let id = row.id;
-    let spec = ProxySpec {
-        task: id,
-        box_handle: row.boxed.as_ref().and_then(|b| b.handle.clone()),
-        host_cwd: launch.worktree.clone(),
-        task_repo: None,
-    };
-    let ep = match cx.proxy_host().ensure(&spec) {
-        Ok(ep) => ep,
-        Err(e) => {
+    let origin = origin(cx, &launch.worktree);
+    let plan = match plan(cx, &launch.worktree, origin.as_deref()) {
+        Ok(p) => p,
+        Err(message) => {
             let e = EngineError::Failed {
                 step: "proxy",
-                message: e.to_string(),
+                message,
+            };
+            return record_failure(cx, store, id, &e);
+        }
+    };
+    let (spec, ep) = match ensure_proxy(cx, row, launch, plan) {
+        Ok(pair) => pair,
+        Err(message) => {
+            let e = EngineError::Failed {
+                step: "proxy",
+                message,
             };
             return record_failure(cx, store, id, &e);
         }
@@ -98,8 +122,10 @@ pub(super) fn begin(
     launch.proxy = Some(Arc::new(ProxyAddr {
         box_port: ep.box_port,
         nonce: ep.nonce,
+        ca_pem: ep.ca_pem,
+        box_env: box_env(&spec.rules),
     }));
-    launch.origin = origin(cx, &launch.worktree);
+    launch.origin = origin;
     let launch = &launch;
     match cx.engine().launch(launch) {
         Ok(session) => {

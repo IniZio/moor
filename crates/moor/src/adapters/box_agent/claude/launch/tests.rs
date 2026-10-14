@@ -35,6 +35,8 @@ fn proxied(dir: &Path) -> LaunchCtx {
         proxy: Some(ProxyAddr {
             box_port: 41234,
             nonce: Secret::new(b"sentinel-7f3a".to_vec()),
+            ca_pem: String::new(),
+            box_env: Vec::new(),
         }),
         ..ctx(dir)
     }

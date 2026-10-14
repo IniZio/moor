@@ -12,6 +12,10 @@ pub struct ProxyAddr {
     pub box_port: u16,
     /// The per-launch nonce the Box presents; its only credential.
     pub nonce: Secret,
+    /// The public Task CA certificate in PEM form; not secret.
+    pub ca_pem: String,
+    /// Non-secret environment pairs from the tool rules, already resolved.
+    pub box_env: Vec<(String, String)>,
 }
 
 impl fmt::Debug for ProxyAddr {
@@ -19,7 +23,8 @@ impl fmt::Debug for ProxyAddr {
         f.debug_struct("ProxyAddr")
             .field("box_port", &self.box_port)
             .field("nonce", &"<redacted>")
-            .finish()
+            .field("box_env", &self.box_env)
+            .finish_non_exhaustive()
     }
 }
 
@@ -192,6 +197,8 @@ mod tests {
         ProxyAddr {
             box_port: 1,
             nonce: Secret::new(NONCE.to_vec()),
+            ca_pem: String::new(),
+            box_env: Vec::new(),
         }
     }
 

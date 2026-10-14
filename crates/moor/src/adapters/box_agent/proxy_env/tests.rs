@@ -17,6 +17,8 @@ fn proxy() -> ProxyAddr {
     ProxyAddr {
         box_port: PORT,
         nonce: Secret::new(SENTINEL.to_vec()),
+        ca_pem: String::new(),
+        box_env: Vec::new(),
     }
 }
 
@@ -115,6 +117,8 @@ fn an_empty_nonce_or_bad_name_is_refused() {
     let empty = ProxyAddr {
         box_port: PORT,
         nonce: Secret::new(Vec::new()),
+        ca_pem: String::new(),
+        box_env: Vec::new(),
     };
     assert!(script_lines(&c, &empty, &[], None).is_err());
     let bad = [EnvVar {

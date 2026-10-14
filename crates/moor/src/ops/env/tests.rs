@@ -229,7 +229,7 @@ fn json_hosts_are_the_effective_allow_list() {
         .and_then(|h| h.as_array())
         .map(|a| a.iter().filter_map(|h| h.as_str()).collect())
         .unwrap_or_default();
-    assert!(hosts.contains(&"github.com"), "{hosts:?}");
+    assert!(hosts.contains(&"*.githubusercontent.com"), "{hosts:?}");
     assert_eq!(hosts.last(), Some(&"example.com"), "{hosts:?}");
 }
 

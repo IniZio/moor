@@ -46,7 +46,7 @@ fn world(driver: FakeDriver) -> World {
 
 /// Builds a world over the repo at `repo`.
 fn world_at(driver: FakeDriver, repo: &Path) -> World {
-    world_with(driver, repo, UserConfig::default())
+    world_with(driver, repo, crate::testing::cx::fake_config())
 }
 
 /// Builds a world over the repo at `repo` with user config `config`.

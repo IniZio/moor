@@ -4,7 +4,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use moor_core::config::UserConfig;
+use moor_core::config::{parse_user, UserConfig};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::Driver;
 use moor_core::seam::proc::Proc;
@@ -20,8 +20,17 @@ use crate::testing::forge::FakeForge;
 use crate::testing::proxy_host::FakeProxyHost;
 use crate::testing::rng::FakeRng;
 
+/// User config of the test context: only the credential the default Claude rule names.
+pub(crate) fn fake_config() -> UserConfig {
+    parse_user(
+        "test",
+        "credentials:\n  CLAUDE_CODE_OAUTH_TOKEN: {cmd: [echo, token]}\n",
+    )
+    .unwrap()
+}
+
 impl Cx {
-    /// Test context: fake clock, a fake engine, default config, git over `proc`.
+    /// Test context: fake clock, a fake engine, one default credential, git over `proc`.
     pub(crate) fn fake(
         state_dir: &Path,
         cwd: &Path,
@@ -29,7 +38,7 @@ impl Cx {
         surface: Arc<dyn Surface>,
         proc: Arc<dyn Proc>,
     ) -> Self {
-        Self::fake_with(state_dir, cwd, driver, surface, proc, UserConfig::default())
+        Self::fake_with(state_dir, cwd, driver, surface, proc, fake_config())
     }
 
     /// Test context like [`Cx::fake`] with user config `config`.

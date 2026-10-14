@@ -14,9 +14,21 @@ use moor_core::seam::proxy_host::{
 use moor_core::seam::rng::Rng;
 use moor_core::{Secret, TaskId};
 
+use crate::proxy::nono::ca::load_or_create;
 use crate::store::{ProxyRow, Reserve, Store, StoreError, STORE_FILE};
 
 pub(crate) use super::supervisor::LEASE;
+#[cfg_attr(
+    not(test),
+    allow(
+        unused_imports,
+        reason = "the supervisor reads the spec in the next change"
+    )
+)]
+pub(crate) use spec::read_spec;
+pub(crate) use spec::write_spec;
+
+mod spec;
 
 /// How far ahead of the clock a heartbeat may be and still count as live.
 const SKEW: Duration = Duration::from_secs(5);
@@ -154,11 +166,17 @@ fn store_failed(e: &StoreError, log: &Path) -> ProxyHostError {
     fail(&format!("the proxy state could not be used: {e}"), log)
 }
 
+/// Map a spec or CA file failure to a one-line launch failure.
+fn spec_failed(e: &io::Error, log: &Path) -> ProxyHostError {
+    fail(&format!("the proxy files could not be written: {e}"), log)
+}
+
 /// The endpoint a ready row describes.
-fn endpoint(row: &ProxyRow) -> ProxyEndpoint {
+fn endpoint(row: &ProxyRow, ca_pem: &str) -> ProxyEndpoint {
     ProxyEndpoint {
         box_port: row.box_port,
         nonce: Secret::new(row.nonce.expose().to_vec()),
+        ca_pem: ca_pem.to_owned(),
     }
 }
 
@@ -178,10 +196,13 @@ impl ProxyHost for DetachedSupervisor {
             ));
         };
         let log = log_path(state, task);
+        write_spec(state, spec).map_err(|e| spec_failed(&e, &log))?;
+        let ca = load_or_create(state, task).map_err(|e| spec_failed(&e, &log))?;
+        let ca_pem = ca.cert_pem();
         let store = self.store().map_err(|e| store_failed(&e, &log))?;
         let row = store.proxy(task).map_err(|e| store_failed(&e, &log))?;
         if let Some(row) = row.filter(|r| r.ready && self.live(r)) {
-            return Ok(endpoint(&row));
+            return Ok(endpoint(&row, ca_pem));
         }
 
         let nonce = new_nonce(self.rng.as_ref());
@@ -209,7 +230,7 @@ impl ProxyHost for DetachedSupervisor {
             if let Some(row) = &row {
                 let lease = self.live(row);
                 if row.ready && lease {
-                    return Ok(endpoint(row));
+                    return Ok(endpoint(row, ca_pem));
                 }
                 if !lease && pid.is_some_and(|p| !self.proc.alive(p)) {
                     return Err(fail(

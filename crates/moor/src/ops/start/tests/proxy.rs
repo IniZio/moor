@@ -3,8 +3,9 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use moor_core::seam::forge::ForgeRepo;
 use moor_core::seam::proc::Tool;
-use moor_core::seam::proxy_host::{ProxyHostError, ProxySpec};
+use moor_core::seam::proxy_host::ProxyHostError;
 use moor_core::{BoxHandle, StartReq, TaskId};
 
 use super::relaunch::{gone, session};
@@ -13,6 +14,7 @@ use crate::ops::common::proxy::TAIL_LINES;
 use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
+use crate::testing::forge::FakeForge;
 use crate::testing::proc::Reply;
 use crate::testing::proxy_host::{FakeProxyHost, ProxyHostCall, FAKE_BOX_PORT, FAKE_NONCE};
 
@@ -50,13 +52,11 @@ fn the_first_launch_ensures_the_proxy_once_and_hands_the_agent_its_address() {
     let v = run(&w.cx, &goal_req()).unwrap();
     let id = TaskId::new(v.task.id);
     let row = w.cx.store().unwrap().task(id).unwrap().unwrap();
-    let spec = ProxySpec {
-        task: id,
-        box_handle: Some(BoxHandle::new("box-1")),
-        host_cwd: PathBuf::from(row.worktree.unwrap()),
-        task_repo: None,
-    };
-    assert_eq!(fake.calls(), [ProxyHostCall::Ensure(spec)]);
+    assert_eq!(fake.calls().len(), 1);
+    let spec = spec_of(&fake);
+    assert_eq!(spec.task, id);
+    assert_eq!(spec.box_handle, Some(BoxHandle::new("box-1")));
+    assert_eq!(spec.host_cwd, PathBuf::from(row.worktree.unwrap()));
     let launches = engine.launches();
     let addr = launches.first().unwrap().proxy.as_ref().unwrap();
     assert_eq!(addr.box_port, FAKE_BOX_PORT);
@@ -128,6 +128,25 @@ fn a_proxy_that_cannot_be_ensured_fails_the_launch_at_the_proxy_step() {
 }
 
 #[test]
+fn a_missing_default_credential_fails_the_proxy_step_naming_the_key() {
+    let mut w = super::world_with(
+        FakeDriver::new(),
+        std::path::Path::new("/repo"),
+        moor_core::config::UserConfig::default(),
+    );
+    w.cx = w.cx.with_proxy_host(Arc::new(FakeProxyHost::new()));
+    let v = run(&w.cx, &goal_req()).unwrap();
+    let (step, message, _) = failure_step(&w, TaskId::new(v.task.id));
+    assert_eq!(step, "proxy");
+    assert!(
+        message.contains(
+            "the default claude rule needs credentials.CLAUDE_CODE_OAUTH_TOKEN; add it under credentials:"
+        ),
+        "{message}"
+    );
+}
+
+#[test]
 fn only_the_last_lines_of_a_long_proxy_failure_are_kept() {
     let mut text = String::from("boom");
     text.extend((1..=25).map(|n| format!("\nline {n}")));
@@ -157,4 +176,70 @@ fn the_nonce_stays_out_of_every_record_and_the_spec() {
     for text in seen {
         assert!(!text.contains(&nonce), "{text}");
     }
+}
+
+fn spec_of(fake: &FakeProxyHost) -> moor_core::seam::proxy_host::ProxySpec {
+    fake.calls()
+        .into_iter()
+        .find_map(|c| match c {
+            ProxyHostCall::Ensure(spec) => Some(spec),
+            _ => None,
+        })
+        .unwrap()
+}
+
+fn env_of<'a>(env: &'a [(String, String)], key: &str) -> Option<&'a str> {
+    env.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str())
+}
+
+#[test]
+fn the_spec_carries_the_task_repo_resolved_rules_and_the_box_allow_list() {
+    let (mut w, engine, fake) = host_world(FakeProxyHost::new());
+    w.cx = w.cx.with_forge(Arc::new(
+        FakeForge::new().with_repo("git@github.com:o/r.git", ForgeRepo::new("o", "r")),
+    ));
+    w.proc.on(
+        Tool::Git,
+        &["remote", "get-url", "origin"],
+        Reply::Ok("git@github.com:o/r.git\n".into()),
+    );
+    run(&w.cx, &goal_req()).unwrap();
+    let spec = spec_of(&fake);
+    assert_eq!(spec.task_repo, Some(ForgeRepo::new("o", "r")));
+    let names: Vec<&str> = spec.rules.iter().map(|r| r.name.as_str()).collect();
+    assert_eq!(names, ["claude", "github-api", "github-git"]);
+    let api = spec.rules.iter().find(|r| r.name == "github-api").unwrap();
+    assert_eq!(api.box_env.get("GH_REPO").map(String::as_str), Some("o/r"));
+    assert!(
+        !spec.allow.iter().any(|h| h == "github.com"),
+        "{:?}",
+        spec.allow
+    );
+    let launches = engine.launches();
+    let addr = launches.first().unwrap().proxy.as_ref().unwrap();
+    assert_eq!(env_of(&addr.box_env, "GH_REPO"), Some("o/r"));
+    assert_eq!(
+        env_of(&addr.box_env, "CLAUDE_CODE_OAUTH_TOKEN"),
+        Some("moor-proxy")
+    );
+    let nonce = String::from_utf8(FAKE_NONCE.to_vec()).unwrap();
+    assert!(!format!("{:?}", addr.box_env).contains(&nonce));
+}
+
+#[test]
+fn without_an_origin_only_the_rules_that_need_no_repo_remain() {
+    let (w, engine, fake) = host_world(FakeProxyHost::new());
+    run(&w.cx, &goal_req()).unwrap();
+    let spec = spec_of(&fake);
+    assert_eq!(spec.task_repo, None);
+    let names: Vec<&str> = spec.rules.iter().map(|r| r.name.as_str()).collect();
+    assert!(names.contains(&"claude"), "{names:?}");
+    assert!(!names.contains(&"github-api"), "{names:?}");
+    let launches = engine.launches();
+    let addr = launches.first().unwrap().proxy.as_ref().unwrap();
+    assert_eq!(env_of(&addr.box_env, "GH_REPO"), None);
+    assert_eq!(
+        env_of(&addr.box_env, "CLAUDE_CODE_OAUTH_TOKEN"),
+        Some("moor-proxy")
+    );
 }

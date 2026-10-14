@@ -14,10 +14,22 @@ github-api:
     header: Authorization
     form: "token {secret}"
   allow:
-    - "* /repos/{repo}/pulls"
-    - "* /repos/{repo}/pulls/**"
-    - "* /repos/{repo}/stacks"
-    - "* /repos/{repo}/stacks/**"
+    - "GET /repos/{repo}"
+    - "GET|POST /repos/{repo}/pulls"
+    - "GET|PATCH /repos/{repo}/pulls/*"
+    - "GET /repos/{repo}/pulls/*/files"
+    - "GET /repos/{repo}/pulls/*/commits"
+    - "GET /repos/{repo}/pulls/*/comments"
+    - "GET|POST /repos/{repo}/pulls/*/reviews"
+    - "POST|DELETE /repos/{repo}/pulls/*/requested_reviewers"
+    - "PUT /repos/{repo}/pulls/*/update-branch"
+    - "GET|POST /repos/{repo}/issues/*/comments"
+    - "GET /repos/{repo}/commits/*/check-runs"
+    - "GET /repos/{repo}/commits/*/status"
+    - "GET|POST /repos/{repo}/stacks"
+    - "GET /repos/{repo}/stacks/*"
+    - "POST /repos/{repo}/stacks/*/add"
+    - "POST /repos/{repo}/stacks/*/unstack"
     - "POST /graphql"
   box_env:
     GH_TOKEN: moor-proxy

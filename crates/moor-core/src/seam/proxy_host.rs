@@ -5,6 +5,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use crate::config::proxy::ResolvedRule;
 use crate::name::{BoxHandle, TaskId};
 use crate::seam::forge::ForgeRepo;
 use crate::secret::Secret;
@@ -20,6 +21,12 @@ pub struct ProxySpec {
     pub host_cwd: PathBuf,
     /// The forge repo the Task works on, when known.
     pub task_repo: Option<ForgeRepo>,
+    /// The resolved tool rules the Proxy enforces.
+    #[serde(default)]
+    pub rules: Vec<ResolvedRule>,
+    /// The Box egress allow-list, without the rule hosts.
+    #[serde(default)]
+    pub allow: Vec<String>,
 }
 
 /// A running Proxy's address as the Box sees it, with its credential.
@@ -28,6 +35,8 @@ pub struct ProxyEndpoint {
     pub box_port: u16,
     /// The per-launch nonce the Box presents; its only credential.
     pub nonce: Secret,
+    /// The public Task CA certificate in PEM form; not secret.
+    pub ca_pem: String,
 }
 
 impl fmt::Debug for ProxyEndpoint {
@@ -35,6 +44,7 @@ impl fmt::Debug for ProxyEndpoint {
         f.debug_struct("ProxyEndpoint")
             .field("box_port", &self.box_port)
             .field("nonce", &"<redacted>")
+            .field("ca_pem_len", &self.ca_pem.len())
             .finish()
     }
 }
