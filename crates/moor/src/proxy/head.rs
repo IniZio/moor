@@ -63,6 +63,10 @@ pub(crate) enum HeadError {
     /// Syntax error, non-UTF-8 text, or EOF in the middle of a head.
     Malformed,
     /// Transport failure other than a reset before any byte arrived.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "only tests inspect the wrapped error")
+    )]
     Io(std::io::Error),
 }
 

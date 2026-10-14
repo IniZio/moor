@@ -15,8 +15,6 @@ use std::path::PathBuf;
 use clap::error::ErrorKind as ClapKind;
 use moor_core::{ErrorKind, ErrorView, Request, Response, RunReq};
 
-use crate::error::CommandError;
-
 use args::Action;
 
 /// Options shared by every command.
@@ -57,6 +55,13 @@ pub enum Parsed {
     Request(Invocation),
     /// Read a request from stdin.
     CallStdin(GlobalOpts),
+    /// Run the proxy supervisor for a task.
+    ProxyServe {
+        /// Global options.
+        opts: GlobalOpts,
+        /// Task to serve.
+        task: moor_core::TaskId,
+    },
     /// Nothing to run; print this.
     Done(Output),
 }
@@ -68,11 +73,7 @@ pub fn parse(args: Vec<OsString>) -> Parsed {
     match args::parse(args) {
         Ok((opts, Action::Request(request))) => Parsed::Request(Invocation { opts, request }),
         Ok((opts, Action::CallStdin)) => Parsed::CallStdin(GlobalOpts { json: true, ..opts }),
-        Ok((opts, Action::ProxyServe)) => {
-            let resp =
-                CommandError::not_implemented("proxy-serve").into_response("proxy-serve", vec![]);
-            Parsed::Done(render(&resp, &opts))
-        }
+        Ok((opts, Action::ProxyServe(task))) => Parsed::ProxyServe { opts, task },
         Err(err) => Parsed::Done(clap_output(&err, cmd, &raw)),
     }
 }

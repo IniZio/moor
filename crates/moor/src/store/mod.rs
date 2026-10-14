@@ -16,10 +16,6 @@ use rusqlite::{Connection, OpenFlags, OptionalExtension, Row, TransactionBehavio
 mod agent;
 mod apply;
 mod open;
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "used by the proxy supervisor, not yet wired")
-)]
 mod proxy;
 mod reads;
 mod runs;
@@ -27,6 +23,9 @@ mod runs;
 mod tests;
 
 pub(crate) use agent::SessionRow;
+#[cfg(test)]
+pub(crate) use proxy::ProxyRow;
+pub(crate) use proxy::{Fenced, Lease, ProxyPorts};
 pub(crate) use runs::RunRow;
 pub(crate) use runs::{NewRun, RunOutcome};
 

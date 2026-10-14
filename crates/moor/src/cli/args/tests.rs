@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use moor_core::{
     CloseReq, CpReq, EnvReq, GateReq, RemoveReq, ReportReq, Request, RunReq, ShowReq, StartReq,
-    SteerReq, TaskName, TaskReq, WaitFor, WaitReq,
+    SteerReq, TaskId, TaskName, TaskReq, WaitFor, WaitReq,
 };
 
 use super::{parse, Action};
@@ -245,8 +245,8 @@ fn admin_verbs() {
 #[test]
 fn special_actions() {
     assert!(matches!(
-        run(&["proxy", "serve"]),
-        Ok((_, Action::ProxyServe))
+        run(&["proxy", "serve", "7"]),
+        Ok((_, Action::ProxyServe(t))) if t == TaskId::new(7)
     ));
     assert!(matches!(run(&["call"]), Ok((_, Action::CallStdin))));
 }

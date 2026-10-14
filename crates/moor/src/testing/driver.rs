@@ -18,6 +18,7 @@ use moor_core::{BoxHandle, BoxPath, ProviderId};
 
 use script::PeekCall;
 pub(crate) use script::PutCall;
+pub(crate) use tunnel::TunnelReply;
 
 #[derive(Default)]
 struct State {
