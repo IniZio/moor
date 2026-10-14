@@ -8,7 +8,7 @@ mod chunked;
 #[cfg(test)]
 mod tests;
 
-use std::io::{BufReader, Cursor, Read, Write};
+use std::io::{self, BufReader, Cursor, Read, Write};
 use std::net::{Shutdown, TcpStream};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -24,7 +24,7 @@ use ureq::{Agent, Body, SendBody};
 use self::capped::{is_cap_exceeded, CappedReader};
 use self::chunked::ChunkedReader;
 use super::head::Head;
-use super::server::{Forward, ForwardHandler};
+use super::server::{DeadlineReader, Forward, ForwardHandler};
 use super::upstream::{auth_value, RouteCredential, Upstreams};
 
 /// Size of the buffer the response body is copied through.
@@ -33,6 +33,10 @@ const COPY_BUF: usize = 8 * 1024;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 /// How long the upstream may take to answer with a response head.
 const RESPONSE_TIMEOUT: Duration = Duration::from_secs(600);
+/// Most client body bytes discarded before an over-cap answer.
+const DRAIN_LIMIT: u64 = 64 * 1024;
+/// Total time the drain before an over-cap answer may take.
+const DRAIN_BUDGET: Duration = Duration::from_secs(1);
 /// Response headers that never cross the proxy.
 const HOP_BY_HOP: [&str; 8] = [
     "connection",
@@ -152,6 +156,15 @@ impl Relay {
         })
     }
 
+    /// Discards up to [`DRAIN_LIMIT`] bytes the client is still sending,
+    /// stopping when it goes quiet or [`DRAIN_BUDGET`] has passed in total, so
+    /// closing the socket after the answer does not reset the connection
+    /// before the client reads it.
+    fn drain(&self, stream: &TcpStream) {
+        let reader = DeadlineReader::new(stream, self.clock.as_ref(), DRAIN_BUDGET);
+        drop(io::copy(&mut reader.take(DRAIN_LIMIT), &mut io::sink()));
+    }
+
     /// Resolves the credential into a sensitive `Authorization` value.
     fn authorization(
         &self,
@@ -182,7 +195,12 @@ impl ForwardHandler for Relay {
         let route = plan.route.clone();
         let status = match self.call(&head, &plan, body_prefix, stream) {
             Ok(response) => write_response(stream, response),
-            Err(failure) => write_failure(stream, &failure, &route),
+            Err(failure) => {
+                if matches!(failure, Failure::TooLarge) {
+                    self.drain(stream);
+                }
+                write_failure(stream, &failure, &route)
+            }
         };
         let _ = stream.shutdown(Shutdown::Write);
         status

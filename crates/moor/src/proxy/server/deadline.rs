@@ -12,7 +12,7 @@ const FAR_FUTURE: Duration = Duration::from_hours(365 * 24);
 /// Reads from a TCP stream until a fixed point in time, however many reads
 /// that takes. A per-read timeout alone lets a peer that sends one byte just
 /// before each timeout keep the connection open indefinitely.
-pub(super) struct DeadlineReader<'a> {
+pub(crate) struct DeadlineReader<'a> {
     /// The connection being read.
     stream: &'a TcpStream,
     /// Source of the current time.
@@ -23,7 +23,7 @@ pub(super) struct DeadlineReader<'a> {
 
 impl<'a> DeadlineReader<'a> {
     /// Starts a reader whose deadline is `budget` from now.
-    pub(super) fn new(stream: &'a TcpStream, clock: &'a dyn Clock, budget: Duration) -> Self {
+    pub(crate) fn new(stream: &'a TcpStream, clock: &'a dyn Clock, budget: Duration) -> Self {
         let now = clock.instant();
         let deadline = now
             .checked_add(budget)
