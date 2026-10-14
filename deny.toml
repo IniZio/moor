@@ -19,6 +19,18 @@ allow = [
 ]
 confidence-threshold = 0.93
 
+[[licenses.exceptions]]
+allow = ["ISC"]
+crate = "ring"
+
+[[licenses.exceptions]]
+allow = ["ISC"]
+crate = "rustls-webpki"
+
+[[licenses.exceptions]]
+allow = ["ISC"]
+crate = "untrusted"
+
 [licenses.private]
 ignore = true
 
@@ -26,7 +38,9 @@ ignore = true
 multiple-versions = "deny"
 wildcards = "deny"
 allow-wildcard-paths = true
-skip = []
+skip = [
+  { crate = "getrandom@0.2.17", reason = "ring needs getrandom 0.2; moor pins 0.4" },
+]
 skip-tree = []
 
 [sources]
