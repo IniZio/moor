@@ -1953,6 +1953,7 @@ dependencies = [
  "time",
  "tokio",
  "ureq",
+ "webpki-roots",
  "zeroize",
 ]
 

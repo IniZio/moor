@@ -11,6 +11,8 @@
 pub(crate) mod detached;
 #[cfg_attr(not(test), allow(dead_code, reason = "wired up in a following change"))]
 pub(crate) mod front;
+#[allow(dead_code, reason = "wired up in a following change")]
+pub(crate) mod graphql;
 #[cfg_attr(not(test), allow(dead_code, reason = "wired up in a following change"))]
 pub(crate) mod guard;
 pub(crate) mod nono;
