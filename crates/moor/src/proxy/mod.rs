@@ -10,6 +10,11 @@ mod head;
     expect(dead_code, reason = "the CLI starts the proxy in a later change")
 )]
 mod relay;
+#[cfg_attr(
+    not(test),
+    expect(dead_code, reason = "the CLI starts the proxy in a later change")
+)]
+mod resolver;
 mod server;
 #[cfg(test)]
 mod tests;
