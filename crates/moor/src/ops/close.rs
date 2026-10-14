@@ -26,6 +26,7 @@ use crate::ops::common::boxwork::{probe, BoxWork};
 use crate::ops::common::facts::settings;
 use crate::ops::common::promote::promote_waiting;
 use crate::ops::common::proxy::stop_proxy;
+use crate::ops::common::reports;
 use crate::ops::common::transcript::{self, Saved};
 use crate::ops::common::view::task_view;
 use crate::ops::common::wake::wake_if_asleep;
@@ -64,6 +65,7 @@ pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
     if probed_clean {
         recheck_box(cx, &row)?;
     }
+    reports::collect(cx, store, &row);
     let box_deleted = if plan.release_box {
         teardown(cx, &row);
         release(cx, store, &row)?
