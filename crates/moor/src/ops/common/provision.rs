@@ -211,12 +211,7 @@ pub(crate) fn provision(
     } else {
         store.apply(requested)?;
     }
-    if let Some(note) = unenforced_note(&cfg.provider.value, cfg.enforce_egress) {
-        cx.warn(Warning {
-            code: "egress_unenforced".to_owned(),
-            message: note.to_owned(),
-        });
-    }
+    let unenforced = warn_unenforced(cx, cfg);
     let worktree = PathBuf::from(task.worktree.as_deref().unwrap_or(&task.repo));
     let req = AcquireReq {
         provider,
@@ -229,12 +224,29 @@ pub(crate) fn provision(
     };
     match cx.driver().acquire(&req) {
         Ok(got) => {
-            record_acquired(store, id, &got)?;
+            let applied = if unenforced {
+                EgressApplied::NotEnforced
+            } else {
+                got.egress
+            };
+            record_acquired(store, id, &got, applied)?;
             let target = SetupTarget::new(&got, &worktree);
             run_and_record(cx, store, id, entry.begin().is_some(), &target, cfg)
         }
         Err(e) => Err(failed(cx, store, id, entry, &req, e)),
     }
+}
+
+/// Warns when the provider cannot apply the allow-list; returns whether it warned.
+fn warn_unenforced(cx: &Cx, cfg: &TaskSettings) -> bool {
+    let note = unenforced_note(&cfg.provider.value, cfg.enforce_egress);
+    if let Some(note) = note {
+        cx.warn(Warning {
+            code: "egress_unenforced".to_owned(),
+            message: note.to_owned(),
+        });
+    }
+    note.is_some()
 }
 
 /// Six lowercase hex chars drawn from the RNG, so each attempt differs.
@@ -243,7 +255,12 @@ pub(crate) fn nonce(rng: &dyn Rng) -> String {
 }
 
 /// Records an acquired Box under the setup intent.
-fn record_acquired(store: &Store, id: TaskId, got: &Acquired) -> Result<(), CommandError> {
+fn record_acquired(
+    store: &Store,
+    id: TaskId,
+    got: &Acquired,
+    applied: EgressApplied,
+) -> Result<(), CommandError> {
     let acquired = Decision::new(id)
         .box_input(BoxInput::Acquired {
             handle: got.handle.clone(),
@@ -251,7 +268,7 @@ fn record_acquired(store: &Store, id: TaskId, got: &Acquired) -> Result<(), Comm
         .set(Fields {
             box_handle: Field::Set(got.handle.clone()),
             box_workdir: Field::Set(got.workdir.as_str().to_owned()),
-            egress_enforced: Field::Set(got.egress == EgressApplied::Enforced),
+            egress: Field::Set(applied.as_str().to_owned()),
             ..Fields::default()
         })
         .intent(IntentChange::Set(Intent::Setup {

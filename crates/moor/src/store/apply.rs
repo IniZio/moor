@@ -323,7 +323,7 @@ fn box_field_sets(s: &Fields) -> Sets {
             field_value(&s.box_handle, |h| Value::Text(h.as_str().to_owned())),
         ),
         ("workdir", text(&s.box_workdir)),
-        ("egress_enforced", flag(&s.egress_enforced)),
+        ("egress", text(&s.egress)),
         ("sleep_reason", text(&s.box_sleep_reason)),
     ];
     all.into_iter().filter_map(|(c, v)| Some((c, v?))).collect()

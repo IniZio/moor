@@ -65,10 +65,24 @@ pub enum EgressPlan {
 /// Whether the provider applied the requested egress plan.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EgressApplied {
+    /// No allow-list was requested; egress is open.
+    Open,
     /// The plan is in force.
     Enforced,
     /// The provider ignored the plan.
     NotEnforced,
+}
+
+impl EgressApplied {
+    /// The stored and displayed name: `none`, `enforced` or `not_enforced`.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Open => "none",
+            Self::Enforced => "enforced",
+            Self::NotEnforced => "not_enforced",
+        }
+    }
 }
 
 /// A request for a new Box.

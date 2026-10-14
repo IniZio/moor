@@ -21,6 +21,7 @@ use crate::testing::surface::FakeSurface;
 mod activity;
 mod capacity;
 mod dotfiles;
+mod egress;
 mod proxy;
 mod relaunch;
 mod session;
