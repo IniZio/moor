@@ -5,7 +5,7 @@ use std::fs::File;
 use std::io::{self, Read, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::{CommandExt, ExitStatusExt};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
@@ -382,12 +382,17 @@ impl Proc for SystemProc {
         self.spawn_long_lived(spec)
     }
 
+    fn spawn_daemon(&self, spec: &ProcSpec, log: &Path) -> Result<u32, ProcError> {
+        self.daemon(spec, log)
+    }
+
     fn alive(&self, pid: u32) -> bool {
         to_pid(pid).is_some_and(|p| matches!(test_kill_process(p), Ok(()) | Err(Errno::PERM)))
     }
 }
 
 mod child;
+mod detached;
 mod stream;
 #[cfg(test)]
 mod tests;

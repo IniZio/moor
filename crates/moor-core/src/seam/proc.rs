@@ -316,15 +316,13 @@ pub struct ExitInfo {
     pub signal: Option<i32>,
 }
 
-/// A running child in its own process group. Dropping the handle sends
-/// SIGTERM to the group, waits a short grace, sends SIGKILL, then reaps the
-/// leader.
+/// A running child in its own process group. Dropping the handle sends SIGTERM
+/// to the group, waits a short grace, sends SIGKILL, then reaps the leader.
 pub trait ChildHandle: Send {
     /// Leader pid, which is also the process group id.
     fn pid(&self) -> u32;
 
-    /// First stdout line without its line ending. Once a line arrived, later
-    /// calls return the same line at once.
+    /// First stdout line without its line ending; later calls return it at once.
     ///
     /// # Errors
     /// [`FirstLineError::Timeout`] when no line arrives within `deadline`,
@@ -332,8 +330,8 @@ pub trait ChildHandle: Send {
     /// [`FirstLineError::Io`] when stdout cannot be read.
     fn first_line(&mut self, deadline: Deadline) -> Result<String, FirstLineError>;
 
-    /// How the child ended, or `None` while it runs. Never blocks and never
-    /// probes by pid, so a reused pid cannot answer for this child.
+    /// How the child ended, or `None` while it runs. Never blocks or probes by
+    /// pid, so a reused pid cannot answer for this child.
     fn try_exit(&mut self) -> Option<ExitInfo>;
 }
 
@@ -345,24 +343,19 @@ pub trait Proc: Send + Sync {
     /// Returns [`ProcError`] on spawn failure, timeout, signal or non-zero exit.
     fn run(&self, spec: &ProcSpec) -> Result<ProcOutput, ProcError>;
 
-    /// Runs to completion and returns raw stdout bytes, never decoded.
-    ///
-    /// Errors never carry stdout: [`ProcError::NonZero`] has an empty `stdout`.
+    /// Runs to completion and returns raw stdout bytes, never decoded. Errors
+    /// never carry stdout: [`ProcError::NonZero`] has an empty `stdout`.
     ///
     /// # Errors
-    /// Returns [`ProcError`] on spawn failure, timeout, signal, non-zero exit
-    /// or output that does not fit the capture limit.
+    /// [`ProcError`] on spawn failure, timeout, signal, non-zero exit or oversize output.
     fn run_secret(&self, spec: &ProcSpec) -> Result<zeroize::Zeroizing<Vec<u8>>, ProcError>;
 
-    /// Runs to completion with output streamed to `out`. Interrupting moor
-    /// stops the child's process group.
-    ///
-    /// A non-zero exit is [`ProcError::NonZero`] with an empty `stdout` and the
-    /// tail of stderr, which is still streamed to `out`.
+    /// Runs to completion with output streamed to `out`; interrupting moor
+    /// stops the child's process group. A non-zero exit is
+    /// [`ProcError::NonZero`] with empty `stdout` and the stderr tail.
     ///
     /// # Errors
-    /// Returns [`ProcError`] on spawn failure, timeout, signal, interrupt or
-    /// non-zero exit.
+    /// [`ProcError`] on spawn failure, timeout, signal, interrupt or non-zero exit.
     fn run_streamed(&self, spec: &ProcSpec, out: &Output) -> Result<(), ProcError>;
 
     /// Starts a child and leaves it running.
@@ -371,13 +364,26 @@ pub trait Proc: Send + Sync {
     /// Returns [`ProcError::Spawn`] when the program cannot start.
     fn spawn_detached(&self, spec: &ProcSpec) -> Result<(), ProcError>;
 
+    /// Starts a child in its own process group with stdin and stdout null and
+    /// stderr appended to `log`, without waiting, so it outlives moor; returns
+    /// its pid.
+    ///
+    /// # Errors
+    /// [`ProcError::Spawn`] when it cannot start or daemons are unsupported.
+    fn spawn_daemon(&self, spec: &ProcSpec, log: &std::path::Path) -> Result<u32, ProcError> {
+        let _ = (spec, log);
+        Err(ProcError::Spawn(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "detached daemons are not supported",
+        )))
+    }
+
     /// Starts a long-lived child in its own process group with stdout piped
     /// for [`ChildHandle::first_line`] and stderr kept for its tail.
     /// `spec.deadline` does not limit the child's lifetime.
     ///
     /// # Errors
-    /// Returns [`ProcError::Spawn`] when the program cannot start, or when
-    /// this spawner cannot run long-lived children.
+    /// [`ProcError::Spawn`] when it cannot start or children are unsupported.
     fn spawn_child(&self, spec: &ProcSpec) -> Result<Box<dyn ChildHandle>, ProcError> {
         let _ = spec;
         Err(ProcError::Spawn(std::io::Error::new(
