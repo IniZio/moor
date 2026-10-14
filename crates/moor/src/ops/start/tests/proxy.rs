@@ -202,3 +202,10 @@ fn the_nonce_stays_out_of_every_record_but_the_store_row_and_the_launch_address(
         assert!(!text.contains(&nonce), "{text}");
     }
 }
+
+/// The ops layer may not import the proxy module in production, so each side keeps
+/// its own copy of the lease; they must agree.
+#[test]
+fn ops_and_supervisor_share_one_lease() {
+    assert_eq!(LEASE, crate::proxy::supervisor::LEASE);
+}
