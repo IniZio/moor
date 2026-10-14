@@ -40,14 +40,20 @@ pub(crate) struct Entry {
     pub(crate) size: u64,
 }
 
-/// Whether `name` is `[A-Za-z0-9._-]+\.md` with a non-empty stem.
+/// The kind of a Report file: its name minus one `.md`, when the name is
+/// `[A-Za-z0-9][A-Za-z0-9._-]*\.md`.
+pub(crate) fn kind_of(name: &str) -> Option<&str> {
+    let stem = name.strip_suffix(".md")?;
+    let mut bytes = stem.bytes();
+    let first = bytes.next()?;
+    (first.is_ascii_alphanumeric()
+        && bytes.all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-')))
+    .then_some(stem)
+}
+
+/// Whether `name` is a valid Report file name.
 pub(crate) fn valid_name(name: &str) -> bool {
-    name.strip_suffix(".md").is_some_and(|stem| {
-        !stem.is_empty()
-            && stem
-                .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
-    })
+    kind_of(name).is_some()
 }
 
 /// Parses the index into entries sorted by name, and counts the malformed lines.
@@ -136,18 +142,25 @@ fn run(
         .join("reports");
     for entry in accepted(cx, entries) {
         let rel = format!("{REPORTS_DIR}/{}", entry.name);
-        let Some(text) = peek(cx, handle, &workdir, &rel, host)? else {
+        let Some(kind) = kind_of(&entry.name) else {
             continue;
+        };
+        let text = match peek(cx, handle, &workdir, &rel, host) {
+            Ok(Some(text)) => text,
+            Ok(None) => continue,
+            Err(_) => {
+                skipped(cx, "a report could not be read and was skipped");
+                continue;
+            }
         };
         if text.len() as u64 > MAX_BYTES {
             skipped(cx, &too_big(&entry.name));
             continue;
         }
-        let kind = entry.name.trim_end_matches(".md");
         match store.add_report(row.id, kind, &text, &dir) {
             Ok(Some(_)) => *stored += 1,
             Ok(None) => {}
-            Err(e) => return Err(format!("cannot store a report: {e}")),
+            Err(_) => skipped(cx, "a report could not be stored and was skipped"),
         }
     }
     Ok(())

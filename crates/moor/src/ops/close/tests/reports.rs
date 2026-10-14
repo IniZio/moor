@@ -291,3 +291,53 @@ fn asleep_box_under_force_is_not_woken_to_collect() {
     assert!(!f.driver.calls().iter().any(|c| c.starts_with("wake")));
     assert!(kinds(&f).is_empty());
 }
+
+#[test]
+fn dot_led_names_are_skipped_and_later_reports_still_stored() {
+    let f = fx(driver_with(&[
+        ("..md", "d"),
+        ("...md", "d"),
+        (".md.md", "d"),
+        ("result.md", "R"),
+    ]));
+    run(&f.cx, &req(false)).unwrap();
+    assert_eq!(kinds(&f), [("result".to_owned(), 1)]);
+    let skips =
+        f.cx.take_warnings()
+            .iter()
+            .filter(|w| w.code == "report_skipped")
+            .count();
+    assert_eq!(skips, 3);
+}
+
+#[test]
+fn double_suffix_is_its_own_kind() {
+    let f = fx(driver_with(&[("x.md", "one"), ("x.md.md", "two")]));
+    run(&f.cx, &req(false)).unwrap();
+    assert_eq!(kinds(&f), [("x".to_owned(), 1), ("x.md".to_owned(), 1)]);
+    assert_eq!(stored(&f, "x", 1), "one");
+    assert_eq!(stored(&f, "x.md", 1), "two");
+}
+
+#[test]
+fn one_failed_store_does_not_stop_the_rest() {
+    let f = fx(driver_with(&[
+        ("a.md", "A"),
+        ("b.md", "SECRET-BODY"),
+        ("c.md", "C"),
+    ]));
+    let blocker = reports_dir(&f).join(f.id.get().to_string()).join("b.v1.md");
+    fs::create_dir_all(&blocker).unwrap();
+    let v = run(&f.cx, &req(false)).unwrap();
+    assert_eq!(v.task.state, TaskState::Closed);
+    assert_eq!(kinds(&f), [("a".to_owned(), 1), ("c".to_owned(), 1)]);
+    let warnings = f.cx.take_warnings();
+    let skips = warnings
+        .iter()
+        .filter(|w| w.code == "report_skipped")
+        .count();
+    assert_eq!(skips, 1);
+    assert!(warnings
+        .iter()
+        .all(|w| !w.message.contains("SECRET-BODY") && !w.message.contains("b.md")));
+}
