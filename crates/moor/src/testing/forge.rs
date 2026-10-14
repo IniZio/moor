@@ -4,7 +4,6 @@ use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Mutex, PoisonError};
 
-use moor_core::proxy_gate::RouteRow;
 use moor_core::seam::forge::{Forge, ForgeError, ForgeRepo};
 use moor_core::Secret;
 use zeroize::Zeroizing;
@@ -12,7 +11,6 @@ use zeroize::Zeroizing;
 /// A recorded `Forge` call.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ForgeCall {
-    Routes,
     RepoOf(String),
     RepoToken(ForgeRepo),
 }
@@ -25,7 +23,6 @@ enum TokenReply {
 
 #[derive(Default)]
 struct State {
-    routes: Vec<RouteRow>,
     repos: HashMap<String, ForgeRepo>,
     tokens: HashMap<ForgeRepo, TokenReply>,
     calls: Vec<ForgeCall>,
@@ -45,11 +42,6 @@ impl FakeForge {
     fn with_state(mut self, f: impl FnOnce(&mut State)) -> Self {
         f(self.state.get_mut().unwrap_or_else(PoisonError::into_inner));
         self
-    }
-
-    /// Sets the rows returned by `routes`.
-    pub(crate) fn with_routes(self, routes: Vec<RouteRow>) -> Self {
-        self.with_state(|s| s.routes = routes)
     }
 
     /// Maps `origin` to `repo` for `repo_of`.
@@ -89,7 +81,6 @@ impl fmt::Debug for FakeForge {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = self.lock();
         f.debug_struct("FakeForge")
-            .field("routes", &s.routes)
             .field("repos", &s.repos)
             .field("tokens", &s.tokens.keys().collect::<Vec<_>>())
             .field("calls", &s.calls)
@@ -98,12 +89,6 @@ impl fmt::Debug for FakeForge {
 }
 
 impl Forge for FakeForge {
-    fn routes(&self) -> Vec<RouteRow> {
-        let mut s = self.lock();
-        s.calls.push(ForgeCall::Routes);
-        s.routes.clone()
-    }
-
     fn repo_of(&self, origin: &str) -> Option<ForgeRepo> {
         let mut s = self.lock();
         s.calls.push(ForgeCall::RepoOf(origin.to_owned()));
@@ -129,13 +114,6 @@ mod tests {
 
     fn repo() -> ForgeRepo {
         ForgeRepo::new("acme", "widgets")
-    }
-
-    #[test]
-    fn routes_default_empty_and_scripted() {
-        assert!(FakeForge::new().routes().is_empty());
-        let fake = FakeForge::new().with_routes(vec![RouteRow::model()]);
-        assert_eq!(fake.routes(), vec![RouteRow::model()]);
     }
 
     #[test]
@@ -181,13 +159,11 @@ mod tests {
     fn calls_recorded_in_order() {
         let fake = FakeForge::new();
         let _ = fake.repo_of("o");
-        let _ = fake.routes();
         let _ = fake.repo_token(&repo());
         assert_eq!(
             fake.calls(),
             vec![
                 ForgeCall::RepoOf("o".to_owned()),
-                ForgeCall::Routes,
                 ForgeCall::RepoToken(repo()),
             ]
         );
@@ -199,7 +175,7 @@ mod tests {
         let dynamic: Arc<dyn Forge> = fake.clone();
         let by_ref: &dyn Forge = &*fake;
         assert_eq!(dynamic.repo_token(&repo()).expect("token").expose(), b"t");
-        assert!(by_ref.routes().is_empty());
+        assert!(by_ref.repo_of("o").is_none());
         assert_eq!(fake.calls().len(), 2);
     }
 

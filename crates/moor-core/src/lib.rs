@@ -8,7 +8,6 @@ pub mod decide;
 pub mod domain;
 pub mod graphql_scope;
 pub mod name;
-pub mod proxy_gate;
 pub mod request;
 pub mod response;
 pub mod seam;

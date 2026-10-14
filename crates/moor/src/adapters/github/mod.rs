@@ -1,14 +1,13 @@
-//! GitHub forge adapter: routes and repo naming come from the route table, and
+//! GitHub forge adapter: repo naming comes from origin URL parsing, and
 //! the repo token comes from a host command run through the `Proc` seam.
 
-mod routes;
+mod origin;
 #[cfg(test)]
 mod tests;
 
 use std::sync::Arc;
 use std::time::Duration;
 
-use moor_core::proxy_gate::RouteRow;
 use moor_core::seam::forge::{Forge, ForgeError, ForgeRepo};
 use moor_core::seam::proc::{Deadline, Proc, ProcError, ProcSpec, Tool};
 use moor_core::secret::Secret;
@@ -47,12 +46,8 @@ impl GitHub {
 }
 
 impl Forge for GitHub {
-    fn routes(&self) -> Vec<RouteRow> {
-        routes::routes()
-    }
-
     fn repo_of(&self, origin: &str) -> Option<ForgeRepo> {
-        routes::parse_origin(origin)
+        origin::parse_origin(origin)
     }
 
     /// Runs the token command and returns its trimmed stdout.

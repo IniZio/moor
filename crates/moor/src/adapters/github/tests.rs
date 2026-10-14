@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use moor_core::proxy_gate::RouteRow;
 use moor_core::seam::forge::{Forge, ForgeError, ForgeRepo};
 use moor_core::seam::proc::Tool;
 
@@ -103,24 +102,10 @@ fn timeout_signal_and_interrupt_are_failed() {
 }
 
 #[test]
-fn routes_and_repo_of_delegate() {
+fn repo_of_delegates() {
     let (g, _) = gh(Reply::Ok(String::new()));
-    assert_eq!(g.routes().len(), 2);
     assert_eq!(
         g.repo_of("git@github.com:o/n.git"),
         Some(ForgeRepo::new("o", "n"))
-    );
-}
-
-/// The proxy end-to-end test builds these same rows by hand.
-#[test]
-fn routes_are_the_forge_rows_for_the_github_prefixes() {
-    let (g, _) = gh(Reply::Ok(String::new()));
-    assert_eq!(
-        g.routes(),
-        vec![
-            RouteRow::forge_git("/github"),
-            RouteRow::forge_api("/github-api"),
-        ]
     );
 }

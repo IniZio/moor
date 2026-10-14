@@ -1,18 +1,9 @@
-//! GitHub proxy route rows and origin URL parsing.
+//! GitHub origin URL parsing.
 
-use moor_core::proxy_gate::RouteRow;
 use moor_core::seam::forge::ForgeRepo;
 
 /// The only host whose origins are accepted; GitHub Enterprise hosts are not.
 const HOST: &str = "github.com";
-
-/// Returns the git transport row and the pull-request API row for GitHub.
-pub(super) fn routes() -> Vec<RouteRow> {
-    vec![
-        RouteRow::forge_git("/github"),
-        RouteRow::forge_api("/github-api"),
-    ]
-}
 
 /// Parses a git origin URL into its owner and repo name.
 ///

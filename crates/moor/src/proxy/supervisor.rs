@@ -4,8 +4,6 @@
 //! tunnel into the Box and marks the row ready. It then heartbeats until the Task closes, the
 //! lease is lost, the tunnel dies or a signal arrives.
 
-#[cfg_attr(not(test), allow(dead_code, reason = "removed in the next change"))]
-mod creds;
 mod listen;
 mod run;
 #[cfg(test)]

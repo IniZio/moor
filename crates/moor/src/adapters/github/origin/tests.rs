@@ -1,19 +1,6 @@
-//! Route rows and origin parsing tests.
+//! Origin parsing tests.
 
-use moor_core::proxy_gate::RouteRow;
-
-use super::{parse_origin, routes};
-
-#[test]
-fn routes_are_git_then_api() {
-    assert_eq!(
-        routes(),
-        vec![
-            RouteRow::forge_git("/github"),
-            RouteRow::forge_api("/github-api")
-        ]
-    );
-}
+use super::parse_origin;
 
 #[test]
 fn parse_origin_table() {
