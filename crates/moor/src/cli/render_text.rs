@@ -75,8 +75,78 @@ fn structured_text(cmd: &str, value: &Value) -> Option<String> {
             .ok()
             .map(|view| env_text(&view)),
         "show" => show::show_text(value),
+        "start" => start_text(value),
+        "close" => close_text(value),
         _ => None,
     }
+}
+
+/// `(name (#id), state)` for a task row, or `None` when name, id or state is missing.
+fn task_head(value: &Value) -> Option<(String, String)> {
+    let task = value.get("task")?;
+    let name = task.get("name")?.as_str()?;
+    let id = task.get("id")?.as_i64()?;
+    let state = task.get("state")?.as_str()?;
+    Some((format!("{name} (#{id})"), state.to_owned()))
+}
+
+/// Writes `started from the queue: a, b` when the `promoted` names are non-empty.
+fn promoted_line(value: &Value, out: &mut String) {
+    let names: Vec<&str> = value
+        .get("promoted")
+        .and_then(Value::as_array)
+        .map(|a| a.iter().filter_map(Value::as_str).collect())
+        .unwrap_or_default();
+    if !names.is_empty() {
+        let _ = writeln!(out, "started from the queue: {}", names.join(", "));
+    }
+}
+
+/// Text form of `start`: a status line, how to open a Task that has a Box, then notes.
+fn start_text(value: &Value) -> Option<String> {
+    let (head, state) = task_head(value)?;
+    let flag = |key| value.get(key).and_then(Value::as_bool).unwrap_or(false);
+    let task = value.get("task")?;
+    let box_state = task.pointer("/box/state").and_then(Value::as_str);
+    let mut out = if flag("queued") {
+        format!("queued {head}: waiting for a free box\n")
+    } else {
+        let verb = if flag("attached") {
+            "attached"
+        } else {
+            "started"
+        };
+        let box_text = box_state.map_or_else(|| "no box".to_owned(), |s| format!("box {s}"));
+        format!("{verb} {head}: {state}, {box_text}\n")
+    };
+    if matches!(box_state, Some("ready" | "starting" | "asleep")) {
+        let name = task.get("name")?.as_str()?;
+        let _ = writeln!(out, "open it with: moor open {name}");
+    }
+    promoted_line(value, &mut out);
+    for w in value
+        .get("warnings_inline")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+    {
+        let _ = writeln!(out, "warning: {w}");
+    }
+    Some(out)
+}
+
+/// Text form of `close`: a status line, the transcript path, then queue promotions.
+fn close_text(value: &Value) -> Option<String> {
+    let (head, _) = task_head(value)?;
+    let deleted = value.get("box_deleted")?.as_bool()?;
+    let outcome = if deleted { "box deleted" } else { "box kept" };
+    let mut out = format!("closed {head}, {outcome}\n");
+    if let Some(path) = value.get("transcript").and_then(Value::as_str) {
+        let _ = writeln!(out, "transcript: {path}");
+    }
+    promoted_line(value, &mut out);
+    Some(out)
 }
 
 /// Formats the version line, or `None` when a field is missing or mistyped.

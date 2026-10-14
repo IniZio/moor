@@ -238,3 +238,77 @@ fn steer_prints_one_line() {
     let (out, _) = render(&Response::ok("steer", Some(v)), false);
     assert_eq!(out, "steered t1\n");
 }
+
+/// A task row named `name` in `state`, with an optional Box state.
+fn lifecycle_task(name: &str, state: &str, box_state: Option<&str>) -> serde_json::Value {
+    let b = box_state.map(|s| json!({"state": s, "provider": "local"}));
+    json!({"id": 7, "name": name, "state": state, "box": b})
+}
+
+#[test]
+fn start_prints_name_state_box_and_how_to_open() {
+    let v = json!({"task": lifecycle_task("alpha", "working", Some("ready")), "attached": false});
+    let (out, _) = render(&Response::ok("start", Some(v)), false);
+    assert_eq!(
+        out,
+        "started alpha (#7): working, box ready\nopen it with: moor open alpha\n"
+    );
+}
+
+#[test]
+fn start_says_attached_and_queued() {
+    let v = json!({"task": lifecycle_task("alpha", "working", Some("ready")), "attached": true});
+    let (out, _) = render(&Response::ok("start", Some(v)), false);
+    assert!(out.starts_with("attached alpha (#7): working, box ready\n"));
+    let v = json!({"task": lifecycle_task("alpha", "waiting_for_box", None), "queued": true});
+    let (out, _) = render(&Response::ok("start", Some(v)), false);
+    assert_eq!(out, "queued alpha (#7): waiting for a free box\n");
+}
+
+#[test]
+fn start_omits_open_hint_for_a_box_that_cannot_be_opened() {
+    let v = json!({"task": lifecycle_task("alpha", "working", Some("failed"))});
+    let (out, _) = render(&Response::ok("start", Some(v)), false);
+    assert_eq!(out, "started alpha (#7): working, box failed\n");
+}
+
+#[test]
+fn start_prints_inline_warnings_and_promotions() {
+    let v = json!({
+        "task": lifecycle_task("alpha", "working", Some("ready")),
+        "promoted": ["beta", "gamma"],
+        "warnings_inline": ["agent dispatch failed: no pane"]
+    });
+    let (out, _) = render(&Response::ok("start", Some(v)), false);
+    assert_eq!(
+        out,
+        "started alpha (#7): working, box ready\nopen it with: moor open alpha\n\
+         started from the queue: beta, gamma\nwarning: agent dispatch failed: no pane\n"
+    );
+}
+
+#[test]
+fn close_prints_name_and_box_outcome() {
+    let v = json!({
+        "task": lifecycle_task("alpha", "closed", None),
+        "box_deleted": true, "worktree_kept": true, "promoted": []
+    });
+    let (out, _) = render(&Response::ok("close", Some(v)), false);
+    assert_eq!(out, "closed alpha (#7), box deleted\n");
+    let v = json!({"task": lifecycle_task("alpha", "closed", None), "box_deleted": false});
+    let (out, _) = render(&Response::ok("close", Some(v)), false);
+    assert_eq!(out, "closed alpha (#7), box kept\n");
+}
+
+#[test]
+fn close_prints_transcript_and_promotions() {
+    let v = json!({
+        "task": lifecycle_task("alpha", "closed", None),
+        "box_deleted": true, "transcript": "/t/alpha.md", "promoted": ["beta"]
+    });
+    let (out, _) = render(&Response::ok("close", Some(v)), false);
+    assert_eq!(
+        out,
+        "closed alpha (#7), box deleted\ntranscript: /t/alpha.md\nstarted from the queue: beta\n"
+    );
+}
