@@ -1,20 +1,24 @@
 use std::fmt::Write as _;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use moor_core::boxscript::quote;
 use moor_core::config::{DotfilesConfig, UserConfig};
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::run::SyncMode;
+use moor_core::domain::decision::Intent;
 use moor_core::domain::task::TaskState;
 use moor_core::seam::driver::ExecOutcome;
 use moor_core::seam::proc::{Deadline, Tool};
 use moor_core::view::{DotfilesView, StartView};
-use moor_core::{StartReq, TaskId};
+use moor_core::seam::clock::Ts;
+use moor_core::{ErrorKind, StartReq, TaskId};
 
-use super::{req, world_with, World};
+use super::{hold, req, world_with, World};
 use crate::ops::start::run;
+use crate::store::Store;
+use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::proc::Reply;
@@ -274,4 +278,53 @@ fn dotfiles_still_run_when_a_setup_line_fails() {
     let (_, spec, _) = w.driver.execs().pop().unwrap();
     assert_eq!(spec.sync, SyncMode::None);
     assert_eq!(engine.launches().len(), 1);
+}
+
+#[test]
+fn a_retry_is_refused_while_another_op_holds_the_box_lock() {
+    let (w, engine, _repo, _src) = failed_start();
+    run(&w.cx, &goal_req()).unwrap_err();
+    let _held = hold(&w, "sleep");
+    let err = run(&w.cx, &goal_req()).unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Refused);
+    assert_eq!(err.error.to_string(), "box busy: sleep in progress");
+    assert_eq!(dotfiles_execs(&w).len(), 1);
+    assert!(engine.launches().is_empty());
+    let row = w.cx.store().unwrap().task(TaskId::new(1)).unwrap().unwrap();
+    assert_eq!(row.state, TaskState::SetupFailed);
+    assert!(row.intent.is_none());
+}
+
+#[test]
+fn a_retry_holds_the_setup_intent_while_the_install_runs() {
+    let (w, _, _repo, _src) = failed_start();
+    run(&w.cx, &goal_req()).unwrap_err();
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let (sink, db) = (seen.clone(), w.dir.path().join("moor.db"));
+    w.driver.on_exec(move || {
+        let clock = Arc::new(FakeClock::new(Ts::from_millis(1)));
+        let row = Store::open(&db, clock).unwrap().task(TaskId::new(1));
+        sink.lock().unwrap().push(row.unwrap().unwrap());
+    });
+    run(&w.cx, &goal_req()).unwrap();
+    let mut rows = seen.lock().unwrap().split_off(0);
+    assert_eq!(rows.len(), 1);
+    let during = rows.pop().unwrap();
+    assert_eq!(during.state, TaskState::SettingUp);
+    assert!(matches!(&during.intent, Some(Intent::Setup { pid }) if *pid == std::process::id()));
+    let row = w.cx.store().unwrap().task(TaskId::new(1)).unwrap().unwrap();
+    assert_eq!(row.state, TaskState::Working);
+    assert!(row.intent.is_none());
+}
+
+#[test]
+fn a_failed_retry_clears_the_setup_intent() {
+    let src = tempfile::tempdir().unwrap();
+    let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(1)), Ok(exit(1))]);
+    let (w, _, _repo) = dotfiles_world("setup: [a]\n", Some(src.path()), None, driver);
+    run(&w.cx, &goal_req()).unwrap_err();
+    run(&w.cx, &goal_req()).unwrap_err();
+    let row = w.cx.store().unwrap().task(TaskId::new(1)).unwrap().unwrap();
+    assert_eq!(row.state, TaskState::SetupFailed);
+    assert!(row.intent.is_none());
 }
