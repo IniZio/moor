@@ -6,13 +6,13 @@ use std::time::Duration;
 use moor_core::boxscript::quote;
 use moor_core::config::{DotfilesConfig, UserConfig};
 use moor_core::domain::boxes::BoxState;
-use moor_core::domain::run::SyncMode;
 use moor_core::domain::decision::Intent;
+use moor_core::domain::run::SyncMode;
 use moor_core::domain::task::TaskState;
+use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::ExecOutcome;
 use moor_core::seam::proc::{Deadline, Tool};
 use moor_core::view::{DotfilesView, StartView};
-use moor_core::seam::clock::Ts;
 use moor_core::{ErrorKind, StartReq, TaskId};
 
 use super::{hold, req, world_with, World};
@@ -24,7 +24,6 @@ use crate::testing::engine::FakeEngine;
 use crate::testing::proc::Reply;
 
 const TAR_SCRIPT: &str = "exec tar -C \"$1\" -czhf - .";
-const ARCHIVE: &str = "/tmp/moor-dotfiles-1.tgz";
 
 fn exit(code: i32) -> ExecOutcome {
     ExecOutcome::Exited { code }
@@ -37,12 +36,14 @@ fn goal_req() -> StartReq {
     }
 }
 
-/// The Box script text for `archive` with install line `install`.
+/// The Box script text for the upload at `archive` with install line `install`.
 fn script(archive: &str, install: &str) -> String {
     let qa = quote(archive);
+    let qs = quote(archive.strip_suffix("/dotfiles.tgz").unwrap());
     format!(
-        "set -e; rm -rf \"$HOME/.moor-dotfiles.moor-tmp\"; mkdir -p \"$HOME/.moor-dotfiles.moor-tmp\"; \
-         tar -xzf {qa} -C \"$HOME/.moor-dotfiles.moor-tmp\"; rm -f {qa}; \
+        "set -e; trap \"rm -rf {qs}\" EXIT; rm -rf \"$HOME/.moor-dotfiles.moor-tmp\"; \
+         mkdir -p \"$HOME/.moor-dotfiles.moor-tmp\"; \
+         tar -xzf {qa} -C \"$HOME/.moor-dotfiles.moor-tmp\"; \
          rm -rf \"$HOME/.moor-dotfiles\"; mv \"$HOME/.moor-dotfiles.moor-tmp\" \"$HOME/.moor-dotfiles\"; \
          cd \"$HOME/.moor-dotfiles\"; {install}"
     )
@@ -91,20 +92,30 @@ fn started(w: &World) -> StartView {
     run(&w.cx, &goal_req()).unwrap()
 }
 
-/// The one upload: the scripted tar bytes at the `.tgz` path, owner-only.
-fn assert_archive_put(w: &World) {
+/// The one upload: the scripted tar bytes in a per-run random directory, owner-only.
+/// Returns the archive path.
+fn assert_archive_put(w: &World) -> String {
     let puts = w.driver.puts();
     assert_eq!(puts.len(), 1);
     let (handle, path, bytes, mode, _) = puts.first().unwrap();
     assert_eq!(handle.as_str(), "box-1");
-    assert_eq!(path.as_str(), ARCHIVE);
+    let hex = path
+        .as_str()
+        .strip_prefix("/tmp/moor-dotfiles-1-")
+        .and_then(|p| p.strip_suffix("/dotfiles.tgz"))
+        .unwrap();
+    assert!(
+        hex.len() == 16 && hex.bytes().all(|b| b.is_ascii_hexdigit()),
+        "{hex}"
+    );
     assert_eq!(bytes, &[0x1f, 0x8b, 1, 2, 3]);
     assert_eq!(*mode, 0o600);
+    path.as_str().to_owned()
 }
 
 /// The second exec (after setup) is the dotfiles script.
-fn assert_dotfiles_exec(w: &World) {
-    let want = ["sh", "-c", &script(ARCHIVE, DEFAULT_INSTALL)].map(str::to_owned);
+fn assert_dotfiles_exec(w: &World, archive: &str) {
+    let want = ["sh", "-c", &script(archive, DEFAULT_INSTALL)].map(str::to_owned);
     let execs = w.driver.execs();
     assert_eq!(execs.len(), 2);
     let (_, spec, deadline) = execs.last().unwrap();
@@ -138,8 +149,8 @@ fn dotfiles_run_after_setup_and_before_the_agent_launches() {
     assert!(v.agent.launched);
     assert_eq!(engine.launches().len(), 1);
 
-    assert_archive_put(&w);
-    assert_dotfiles_exec(&w);
+    let archive = assert_archive_put(&w);
+    assert_dotfiles_exec(&w, &archive);
     assert_tar_call(&w, src.path());
 
     let calls = w.driver.calls();
@@ -161,8 +172,9 @@ fn a_configured_install_script_with_a_space_is_quoted_and_guarded() {
         FakeDriver::new(),
     );
     started(&w);
+    let archive = w.driver.puts().first().unwrap().1.as_str().to_owned();
     let install = "[ -f './my setup.sh' ] || { echo 'dotfiles install script my setup.sh not found' >&2; exit 1; }; MOOR_DOTFILES=1 bash './my setup.sh'";
-    let want = ["sh", "-c", &script(ARCHIVE, install)].map(str::to_owned);
+    let want = ["sh", "-c", &script(&archive, install)].map(str::to_owned);
     let argvs: Vec<_> = dotfiles_execs(&w).into_iter().map(|e| e.0).collect();
     assert_eq!(argvs, [want]);
 }
@@ -338,7 +350,10 @@ fn a_setup_failure_is_kept_when_the_dotfiles_fail_too() {
     let err = run(&w.cx, &goal_req()).unwrap_err();
     let msg = err.error.to_string();
     assert!(msg.contains("setup failed: make-it"), "{msg}");
-    assert!(msg.contains("dotfiles failed:") && msg.contains("row-25"), "{msg}");
+    assert!(
+        msg.contains("dotfiles failed:") && msg.contains("row-25"),
+        "{msg}"
+    );
     assert!(engine.launches().is_empty());
     let events = w.cx.store().unwrap().events(TaskId::new(1), 50).unwrap();
     let lines: Vec<_> = events
@@ -349,4 +364,26 @@ fn a_setup_failure_is_kept_when_the_dotfiles_fail_too() {
     assert_eq!(lines.len(), 2, "{lines:?}");
     assert!(lines.iter().any(|l| l.contains("make-it")), "{lines:?}");
     assert!(lines.iter().any(|l| l.contains("row-25")), "{lines:?}");
+}
+
+#[test]
+fn the_host_log_and_its_directory_are_owner_only() {
+    use std::os::unix::fs::PermissionsExt;
+    let (w, _, _repo, _src) = failed_start();
+    run(&w.cx, &goal_req()).unwrap_err();
+    let dir = w.dir.path().join("dotfiles");
+    let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode(&dir), 0o700);
+    assert_eq!(mode(&dir.join("1.log")), 0o600);
+}
+
+#[test]
+fn each_run_uploads_to_a_different_directory() {
+    let (w, _, _repo, _src) = failed_start();
+    run(&w.cx, &goal_req()).unwrap_err();
+    run(&w.cx, &goal_req()).unwrap();
+    let puts = w.driver.puts();
+    let paths: Vec<_> = puts.iter().map(|p| p.1.as_str()).collect();
+    assert_eq!(paths.len(), 2);
+    assert_ne!(paths.first(), paths.last());
 }
