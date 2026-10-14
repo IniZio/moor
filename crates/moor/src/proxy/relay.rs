@@ -183,7 +183,7 @@ impl ForwardHandler for Relay {
         } = req;
         let route = plan.route.clone();
         let status = match self.call(&head, &plan, body_prefix, stream) {
-            Ok(response) => match write_response(stream, response) {
+            Ok(response) => match write_response(stream, response, &head.method) {
                 Written::Complete(code) => code,
                 // The connection is already reset; a FIN now would only
                 // let the client see a clean end.
