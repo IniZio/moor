@@ -40,6 +40,29 @@ fn live_lease_signals_the_group_and_removes_the_row() {
 }
 
 #[test]
+fn a_supervisor_that_exits_on_the_signal_ends_the_wait_early() {
+    let f = fx();
+    with_proxy(&f);
+    let db = f.dir.path().join("moor.db");
+    let id = f.id.get();
+    f.proc.on_signal(move |_, _| {
+        rusqlite::Connection::open(&db)
+            .unwrap()
+            .execute("DELETE FROM proxy WHERE task = ?", [id])
+            .unwrap();
+    });
+    let start = f.cx.clock().instant();
+
+    run(&f.cx, &req(false)).unwrap();
+
+    assert_eq!(f.proc.signals(), [(PID, Signal::Term)]);
+    assert!(!has_row(&f));
+    assert!(f.cx.take_warnings().is_empty());
+    let waited = f.cx.clock().instant().saturating_duration_since(start);
+    assert!(waited < Duration::from_secs(1), "waited {waited:?}");
+}
+
+#[test]
 fn stale_lease_sends_no_signal_and_removes_the_row() {
     let f = fx();
     with_proxy(&f);
