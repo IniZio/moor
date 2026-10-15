@@ -32,6 +32,7 @@ use crate::config_load::load_user;
 use crate::cx::{Cx, CxParts};
 use crate::env::Env;
 use crate::error::CommandError;
+use crate::proxy::adopt;
 use crate::proxy::detached::DetachedSupervisor;
 use crate::proxy::nono::capture::CredsFn;
 use crate::proxy::{serve, Deps, Sink};
@@ -71,6 +72,30 @@ fn lookup_deadlines(drivers: &BTreeMap<String, DriverConfig>) -> BTreeMap<String
 /// Wire real adapters from the environment into a context.
 pub(crate) fn build(env: &Env) -> Result<Cx, CommandError> {
     Ok(Cx::new(parts(env)?))
+}
+
+/// Settles the Proxy supervisors recorded in the state store; one line per failure.
+pub(crate) fn reconcile_proxies(env: &Env) -> Vec<String> {
+    let Some(state_dir) = env.state_dir() else {
+        return Vec::new();
+    };
+    let clock = match SystemClock::from_env(env) {
+        Ok(clock) => Arc::new(clock),
+        Err(e) => return vec![e.to_string()],
+    };
+    let config = match load_user(env) {
+        Ok(config) => config,
+        Err(e) => return vec![e.error.to_string()],
+    };
+    let proc: Arc<dyn Proc> = Arc::new(SystemProc::new(env, &tool_paths(&config)));
+    let host = DetachedSupervisor::new(
+        Arc::clone(&proc),
+        Arc::clone(&clock) as Arc<dyn Clock>,
+        Arc::new(SystemRng),
+        Some(state_dir.clone()),
+    )
+    .keeping_nonce();
+    adopt::reconcile(&host, proc.as_ref(), clock, &state_dir)
 }
 
 /// Real adapters from the environment, not yet assembled into a context.

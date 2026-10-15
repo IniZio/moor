@@ -16,6 +16,7 @@ pub(super) struct Signals {
     sent: Mutex<Vec<(u32, Signal)>>,
     gone: AtomicBool,
     hook: Mutex<Option<Hook>>,
+    followers: Mutex<Vec<u32>>,
 }
 
 impl ScriptedProc {
@@ -42,6 +43,24 @@ impl ScriptedProc {
             .lock()
             .unwrap_or_else(PoisonError::into_inner) = Some(Box::new(hook));
         self
+    }
+
+    /// Marks `pid` as alive but belonging to another process's group.
+    pub(crate) fn follower(&self, pid: u32) -> &Self {
+        self.signals
+            .followers
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(pid);
+        self
+    }
+
+    pub(super) fn is_follower(&self, pid: u32) -> bool {
+        self.signals
+            .followers
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .contains(&pid)
     }
 
     pub(super) fn send_signal(&self, pgid: u32, sig: Signal) -> Result<(), ProcError> {

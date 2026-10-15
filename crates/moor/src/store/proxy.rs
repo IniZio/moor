@@ -165,6 +165,31 @@ impl Store {
         .transpose()
     }
 
+    /// Every proxy row, by task ascending.
+    pub(crate) fn proxies(&self) -> Result<Vec<ProxyRow>, StoreError> {
+        let conn = self.reader()?;
+        let mut stmt = conn.prepare(
+            "SELECT task, nonce, box_port, host_port, pid, handle, ready, lease_owner, lease_heartbeat, boot_id \
+             FROM proxy ORDER BY task",
+        )?;
+        let rows = stmt.query_and_then([], |r| ProxyRow::try_from(raw_from_row(r)?))?;
+        rows.collect()
+    }
+
+    /// Reset the row of `task` to unready with no host port, pid, handle or lease, keeping its
+    /// nonce and box port, so the next reservation restarts it on the same port.
+    pub(crate) fn expire_proxy(&self, task: TaskId) -> Result<bool, StoreError> {
+        let now = self.now();
+        let conn = self.writer()?;
+        let changed = conn.execute(
+            "UPDATE proxy SET ready = 0, host_port = NULL, pid = NULL, handle = NULL, \
+             lease_owner = NULL, lease_heartbeat = NULL, boot_id = NULL, updated_at = ? WHERE task = ?",
+            params![now.as_millis(), task.get()],
+        )?;
+        drop(conn);
+        Ok(changed > 0)
+    }
+
     /// Delete the proxy row of `task`; returns whether a row was deleted.
     pub(crate) fn remove_proxy(&self, task: TaskId) -> Result<bool, StoreError> {
         let conn = self.writer()?;

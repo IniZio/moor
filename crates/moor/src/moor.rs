@@ -21,6 +21,18 @@ impl Moor {
         })
     }
 
+    /// Wrap an already built context, as tests do over fakes.
+    #[cfg(test)]
+    pub(crate) const fn from_cx(cx: Cx) -> Self {
+        Self { cx }
+    }
+
+    /// Settles the Proxy supervisors recorded in the state store; one line per failure.
+    #[must_use]
+    pub fn reconcile_proxies(env: &Env) -> Vec<String> {
+        wire::reconcile_proxies(env)
+    }
+
     /// The `version` envelope; independent of config and state.
     #[must_use]
     pub fn version() -> Response {

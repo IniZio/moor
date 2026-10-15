@@ -371,6 +371,10 @@ impl Proc for ScriptedProc {
             .clone()
     }
 
+    fn group_leader(&self, pid: u32) -> bool {
+        self.alive(pid) && !self.is_follower(pid)
+    }
+
     fn alive(&self, pid: u32) -> bool {
         !self
             .dead

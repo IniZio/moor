@@ -26,7 +26,7 @@ const NONCE_LEN: usize = 43;
 
 /// `text` with the task's proxy nonce, and any `moor:<43 base64url chars>@` userinfo,
 /// replaced by `<nonce>`. The proxy URL in the agent's environment carries the nonce.
-fn redact_nonce(text: &str, nonce: Option<&[u8]>) -> String {
+pub(crate) fn redact_nonce(text: &str, nonce: Option<&[u8]>) -> String {
     const USER: &str = "moor:";
     let known = nonce
         .and_then(|n| std::str::from_utf8(n).ok())

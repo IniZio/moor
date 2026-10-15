@@ -4,7 +4,7 @@ use std::io;
 
 use moor_core::seam::proc::{check_group, ProcError, Signal as GroupSignal};
 use rustix::io::Errno;
-use rustix::process::{kill_process_group, Pid, Signal};
+use rustix::process::{getpgid, kill_process_group, Pid, Signal};
 
 /// Converts a raw pid, rejecting 0 and values beyond `i32`.
 pub(super) fn to_pid(pid: u32) -> Option<Pid> {
@@ -16,6 +16,11 @@ pub(super) fn signal_group(pid: u32, sig: Signal) {
     if let Some(pid) = to_pid(pid) {
         kill_process_group(pid, sig).ok();
     }
+}
+
+/// Whether `pid` exists and leads its own process group.
+pub(super) fn is_group_leader(pid: u32) -> bool {
+    to_pid(pid).is_some_and(|p| getpgid(Some(p)).is_ok_and(|g| g == p))
 }
 
 /// Sends `sig` to group `pgid`, refusing the init and caller-wide groups and
@@ -50,6 +55,19 @@ mod tests {
             .process_group(0)
             .spawn()
             .unwrap()
+    }
+
+    #[test]
+    fn leader_is_recognised_and_follower_is_not() {
+        let mut child = sleeper();
+        assert!(is_group_leader(child.id()));
+        let mut follower = Command::new("sleep").arg("30").spawn().unwrap();
+        assert!(!is_group_leader(follower.id()));
+        follower.kill().unwrap();
+        follower.wait().unwrap();
+        child.kill().unwrap();
+        child.wait().unwrap();
+        assert!(!is_group_leader(child.id()));
     }
 
     #[test]

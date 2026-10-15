@@ -22,6 +22,7 @@ use crate::ops::common::provision::{nonce, recorded_workdir, reread};
 use crate::ops::common::proxy::{box_env, origin, plan, ProxyPlan};
 use crate::ops::common::resume;
 use crate::ops::common::view::rfc3339;
+use crate::ops::show::redact_nonce;
 use crate::store::{Store, TaskRow};
 
 /// Lines of a failure's output kept as its tail.
@@ -182,7 +183,12 @@ fn record_failure(
     id: TaskId,
     e: &EngineError,
 ) -> Result<AgentLaunchView, CommandError> {
-    let failure = failure(cx, e);
+    let mut failure = failure(cx, e);
+    // A proxy log tail can quote the proxy URL, whose userinfo is the nonce.
+    let nonce = store.proxy(id).ok().flatten();
+    let nonce = nonce.as_ref().map(|r| r.nonce.expose());
+    failure.message = redact_nonce(&failure.message, nonce);
+    failure.tail = failure.tail.map(|t| redact_nonce(&t, nonce));
     record(store, id, Field::Set(to_json(&failure)?), Some(&failure))?;
     Ok(AgentLaunchView {
         launched: false,

@@ -52,6 +52,8 @@ pub(crate) struct DetachedSupervisor {
     state_dir: Option<PathBuf>,
     /// The state store, opened on first use.
     store: OnceLock<Store>,
+    /// Restart an unready row under its stored nonce instead of drawing a new one.
+    keep_nonce: bool,
 }
 
 impl DetachedSupervisor {
@@ -68,7 +70,15 @@ impl DetachedSupervisor {
             rng,
             state_dir,
             store: OnceLock::new(),
+            keep_nonce: false,
         }
+    }
+
+    /// Make [`ensure`](ProxyHost::ensure) reuse an existing row's nonce when it restarts the
+    /// supervisor: a Box started before a controller restart still holds that nonce.
+    pub(crate) const fn keeping_nonce(mut self) -> Self {
+        self.keep_nonce = true;
+        self
     }
 
     /// The state store, opened on first call.
@@ -89,7 +99,7 @@ impl DetachedSupervisor {
     /// Whether the row's supervisor holds a live lease now.
     ///
     /// A heartbeat further ahead than [`SKEW`] means the clock stepped back, so the row is stale.
-    fn live(&self, row: &ProxyRow) -> bool {
+    pub(crate) fn live(&self, row: &ProxyRow) -> bool {
         match (&row.lease_owner, row.lease_heartbeat) {
             (Some(_), Some(beat)) => {
                 let age = self
@@ -108,7 +118,7 @@ impl DetachedSupervisor {
     /// Whether the row was written in the current host boot.
     ///
     /// A host without a boot id cannot tell, so every row counts as current there.
-    fn same_boot(&self, row: &ProxyRow) -> bool {
+    pub(crate) fn same_boot(&self, row: &ProxyRow) -> bool {
         self.proc
             .boot_id()
             .is_none_or(|now| row.boot_id.as_deref() == Some(now.as_str()))
@@ -193,21 +203,23 @@ impl ProxyHost for DetachedSupervisor {
         let ca_pem = ca.cert_pem();
         let store = self.store().map_err(|e| store_failed(&e, &log))?;
         let row = store.proxy(task).map_err(|e| store_failed(&e, &log))?;
+        let kept = row.as_ref().map(|r| Secret::new(r.nonce.expose().to_vec()));
         if let Some(row) = row.filter(|r| r.ready && self.live(r)) {
             return Ok(endpoint(&row, ca_pem));
         }
 
-        let nonce = new_nonce(self.rng.as_ref());
+        let nonce = kept
+            .filter(|_| self.keep_nonce)
+            .unwrap_or_else(|| new_nonce(self.rng.as_ref()));
         let reserved = store
             .reserve(task, &nonce, self.rng.as_ref(), LEASE)
             .map_err(|e| store_failed(&e, &log))?;
         let pid = match reserved {
             Reserve::Reserved(_) => {
-                let spec = ProcSpec::new(Tool::MoorSelf, Deadline(WAIT)).args([
-                    "proxy",
-                    "serve",
-                    &task.get().to_string(),
-                ]);
+                let spec = ProcSpec::new(Tool::MoorSelf, Deadline(WAIT))
+                    .args(["proxy", "serve", &task.get().to_string()])
+                    // The controller may run on a state dir its own config chose.
+                    .env("MOOR_STATE_DIR", state.to_string_lossy());
                 let pid = self.proc.spawn_daemon(&spec, &log).map_err(|e| {
                     fail(&format!("the proxy supervisor could not start: {e}"), &log)
                 })?;

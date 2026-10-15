@@ -386,6 +386,12 @@ pub trait Proc: Send + Sync {
         None
     }
 
+    /// Whether `pid` exists and leads its own process group (its pgid is its pid).
+    fn group_leader(&self, pid: u32) -> bool {
+        let _ = pid;
+        false
+    }
+
     /// Whether a process with this pid exists.
     fn alive(&self, pid: u32) -> bool;
 }

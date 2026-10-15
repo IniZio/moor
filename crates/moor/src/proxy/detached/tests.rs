@@ -196,6 +196,18 @@ fn the_first_ensure_spawns_one_supervisor_and_returns_its_address() {
 }
 
 #[test]
+fn the_supervisor_is_told_the_state_dir_this_host_uses() {
+    let f = fx();
+
+    f.sup.ensure(&f.spec()).unwrap();
+
+    let daemons = f.proc.daemons();
+    let env = &daemons.first().unwrap().call.env;
+    let dir = f.dir.path().to_string_lossy().into_owned();
+    assert!(env.contains(&("MOOR_STATE_DIR".to_owned(), dir)), "{env:?}");
+}
+
+#[test]
 fn a_second_ensure_reuses_the_running_supervisor() {
     let f = fx();
     let first = f.sup.ensure(&f.spec()).unwrap();
