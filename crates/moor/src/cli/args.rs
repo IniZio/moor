@@ -217,6 +217,8 @@ enum WaitForArg {
     Idle,
     /// Task done.
     Done,
+    /// Agent needs input, or is idle.
+    Input,
     /// Run finished.
     Run,
 }
@@ -240,6 +242,7 @@ impl From<WaitArgs> for WaitReq {
         let wait_for = a.wait_for.map(|w| match w {
             WaitForArg::Idle => WaitFor::Idle,
             WaitForArg::Done => WaitFor::Done,
+            WaitForArg::Input => WaitFor::Input,
             WaitForArg::Run => WaitFor::Run,
         });
         Self {

@@ -136,7 +136,7 @@ fn start_does_not_quiet_a_task_on_a_pane_only_idle_report() {
 fn start_does_not_quiet_a_task_on_a_pane_only_blocked_report() {
     assert!(matches!(
         start_on_pane_only(PaneStatus::Blocked),
-        AgentState::Blocked { .. }
+        AgentState::NeedsInput { .. }
     ));
 }
 

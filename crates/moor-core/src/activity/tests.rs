@@ -37,13 +37,17 @@ fn said(text: &str) -> HookRecord {
 }
 
 fn waiting(text: &str) -> AgentState {
-    AgentState::Blocked {
-        waiting_for: Some(text.to_owned()),
+    AgentState::NeedsInput {
+        question: Some(text.to_owned()),
+        options: Vec::new(),
     }
 }
 
-/// Blocked with nothing to show.
-const SILENT: AgentState = AgentState::Blocked { waiting_for: None };
+/// Needs input with nothing to show.
+const SILENT: AgentState = AgentState::NeedsInput {
+    question: None,
+    options: Vec::new(),
+};
 
 fn fresh(kind: HookKind) -> HookRead {
     HookRead::Fresh(rec(kind))

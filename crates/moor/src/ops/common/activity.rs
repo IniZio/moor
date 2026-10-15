@@ -6,7 +6,8 @@ use std::time::Duration;
 use moor_core::activity::{
     decide, may_apply_quiet, Activity, AgentState, HookRead, PaneRead, PaneStatus, Probes,
 };
-use moor_core::domain::decision::{Decision, Field, Fields};
+use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
+use moor_core::domain::event::Event;
 use moor_core::domain::task::{TaskInput, TaskState};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::engine::SessionRef;
@@ -241,6 +242,7 @@ pub(crate) fn settle(
         transcript::save_on_exit(cx, store, row, probed)?;
     }
     register_session(cx, store, row, reading)?;
+    note_needs_input(store, row, reading)?;
     let input = match row.state {
         TaskState::Working if !reading.busy() && reading.may_quiet => TaskInput::AgentQuiet,
         TaskState::Idle if reading.busy() => TaskInput::AgentBusy,
@@ -250,6 +252,33 @@ pub(crate) fn settle(
         Ok(_) | Err(StoreError::Illegal(_)) => Ok(()),
         Err(e) => Err(e.into()),
     }
+}
+
+/// Append a `needs_input` event when the agent starts waiting for the user.
+///
+/// A waiting episode ends when the Task turns busy or working again, so the event is skipped
+/// while the latest of those markers is a `needs_input` with the same question and options.
+/// It is written before any state step so a refused step cannot lose it.
+fn note_needs_input(store: &Store, row: &TaskRow, reading: &Reading) -> Result<(), CommandError> {
+    let Some(AgentState::NeedsInput { question, options }) =
+        reading.activity.as_ref().map(|a| &a.state)
+    else {
+        return Ok(());
+    };
+    let event = Event::NeedsInput {
+        question: question.clone(),
+        options: options.clone(),
+    };
+    if let Some(last) = store.last_waiting_marker(row.id)? {
+        if last.kind == event.kind() && last.payload == event.payload() {
+            return Ok(());
+        }
+    }
+    store.apply(Decision::new(row.id).event(ExtraEvent::NeedsInput {
+        question: question.clone(),
+        options: options.clone(),
+    }))?;
+    Ok(())
 }
 
 /// Registers the agent session id `reading` found against the live session's pane.

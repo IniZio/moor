@@ -323,16 +323,33 @@ fn an_idle_or_blocked_agent_returns_at_once() {
 }
 
 #[test]
+fn input_returns_at_once_for_a_blocked_agent_and_waits_for_a_busy_one() {
+    let dir = tempfile::tempdir().unwrap();
+    let (cx, _) = agent_cx(dir.path(), hook(HookKind::Blocked));
+    add_live(&cx);
+    let v = run(&cx, &req(Some(WaitFor::Input), Some(5))).unwrap();
+    assert!(!v.timed_out);
+    assert_eq!(v.waited_ms, 0);
+    assert_eq!(v.wait_for, WaitFor::Input);
+
+    let dir = tempfile::tempdir().unwrap();
+    let (cx, _) = agent_cx(dir.path(), hook(HookKind::Busy));
+    add_live(&cx);
+    let v = run(&cx, &req(Some(WaitFor::Input), Some(1))).unwrap();
+    assert!(v.timed_out);
+}
+
+#[test]
 fn the_payload_carries_the_agent() {
     let dir = tempfile::tempdir().unwrap();
     let (cx, _) = agent_cx(dir.path(), hook(HookKind::Blocked));
     add_live(&cx);
     let v = run(&cx, &req(None, None)).unwrap();
     let a = v.task.agent.expect("an agent view");
-    assert_eq!(a.state, "blocked");
+    assert_eq!(a.state, "needs_input");
     assert_eq!(a.source, "hooks");
     assert_eq!(a.pane, "live");
-    assert_eq!(a.waiting_for.as_deref(), Some("Allow edit?"));
+    assert_eq!(a.question.as_deref(), Some("Allow edit?"));
 }
 
 #[test]

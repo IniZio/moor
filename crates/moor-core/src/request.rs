@@ -169,6 +169,8 @@ pub enum WaitFor {
     Done,
     /// Run finished.
     Run,
+    /// Agent needs the owner's input, or is idle.
+    Input,
 }
 
 /// Arguments of `steer`.

@@ -187,6 +187,14 @@ fn wait_for_and_timeout() {
             timeout_secs: Some(5),
         })
     );
+    assert_eq!(
+        req(&["wait", "t1", "--for", "input"]),
+        Request::Wait(WaitReq {
+            task: n("t1"),
+            wait_for: Some(WaitFor::Input),
+            timeout_secs: None,
+        })
+    );
     assert!(run(&["wait", "t1", "--for", "bogus"]).is_err());
 }
 
