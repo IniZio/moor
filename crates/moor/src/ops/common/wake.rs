@@ -2,6 +2,7 @@
 //!
 //! The caller holds the Box lock and passes a row read after taking it.
 
+use std::collections::HashMap;
 use std::path::Path;
 
 use moor_core::domain::boxes::{BoxInput, BoxState};
@@ -13,7 +14,7 @@ use moor_core::{ErrorKind, TaskReq};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
-use crate::ops::common::view::task_view;
+use crate::ops::common::view::{hide_unsupported_box_sleep, task_view};
 use crate::store::{Store, TaskRow};
 
 /// Wake the Task and its Box when either is Asleep; `Ok(true)` when it did.
@@ -90,9 +91,11 @@ pub(crate) fn wake_task(
     let woke = wake_if_asleep(cx, store, &reload()?)?;
     let row = reload()?;
     held(&row)?;
+    let mut boxed = task_view(&row, cx.config()).r#box;
+    hide_unsupported_box_sleep(boxed.as_mut(), cx, &mut HashMap::new());
     Ok(SleepValue {
         task: req.task.as_str().to_owned(),
-        r#box: task_view(&row, cx.config()).r#box,
+        r#box: boxed,
         woke,
     })
 }

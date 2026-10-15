@@ -7,7 +7,7 @@ use std::time::Duration;
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
-use moor_core::seam::driver::{AcquireReq, Driver, EgressPlan, SleepOutcome};
+use moor_core::seam::driver::{AcquireReq, Driver, EgressPlan, SleepKind, SleepOutcome};
 use moor_core::{ErrorKind, ProviderId, TaskId, TaskName, TaskReq};
 
 use super::run;
@@ -378,4 +378,13 @@ fn refuses_an_idle_task_whose_ready_box_has_no_handle() {
     f.cx.store().unwrap().apply(d).unwrap();
     assert_eq!(states(&f), (TaskState::Idle, BoxState::Ready));
     assert_refused_untouched(&f);
+}
+
+#[test]
+fn sleep_label_follows_provider_sleep_support() {
+    for (kind, after) in [(SleepKind::None, None), (SleepKind::Suspend, Some("30m"))] {
+        let f = idle_with(FakeDriver::new().sleep_kind(kind));
+        let v = run(&f.cx, &req()).unwrap();
+        assert_eq!(v.r#box.unwrap().sleep.after.as_deref(), after);
+    }
 }

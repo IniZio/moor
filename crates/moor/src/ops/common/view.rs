@@ -143,7 +143,16 @@ pub(crate) fn hide_unsupported_sleep_cached(
     cx: &Cx,
     cache: &mut HashMap<String, bool>,
 ) {
-    let Some(b) = view.r#box.as_mut() else {
+    hide_unsupported_box_sleep(view.r#box.as_mut(), cx, cache);
+}
+
+/// Drop the idle-sleep label from `b` when its provider cannot sleep.
+pub(crate) fn hide_unsupported_box_sleep(
+    b: Option<&mut BoxView>,
+    cx: &Cx,
+    cache: &mut HashMap<String, bool>,
+) {
+    let Some(b) = b else {
         return;
     };
     let cannot_sleep = *cache.entry(b.provider.clone()).or_insert_with(|| {

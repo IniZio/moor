@@ -11,7 +11,8 @@ use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::task::{SetupOutcome, TaskInput};
 use moor_core::seam::clock::Ts;
-use moor_core::seam::driver::{AcquireReq, EgressPlan};
+use moor_core::seam::driver::{AcquireReq, EgressPlan, SleepKind};
+use moor_core::view::LaunchFailure;
 use moor_core::{ErrorKind, ProviderId, ShowReq, TaskId, TaskName, WaitFor, WaitReq};
 
 use super::run;
@@ -28,11 +29,16 @@ const SESSION: &str = "sess-1";
 
 /// Context with state under `dir`, plus the scripted proc behind it.
 fn cx(dir: &Path) -> (Cx, Arc<ScriptedProc>) {
+    cx_with(dir, FakeDriver::new())
+}
+
+/// Like [`cx`], over `driver`.
+fn cx_with(dir: &Path, driver: FakeDriver) -> (Cx, Arc<ScriptedProc>) {
     let proc = Arc::new(ScriptedProc::new());
     let cx = Cx::fake(
         dir,
         dir,
-        Arc::new(FakeDriver::new()),
+        Arc::new(driver),
         Arc::new(FakeSurface::new(dir)),
         proc.clone(),
     );
@@ -216,6 +222,16 @@ fn agent_cx(dir: &Path, probes: Probes) -> (Cx, Arc<FakeEngine>) {
 
 /// Insert task `demo` with a Box the driver lists as live and a live agent session.
 fn add_live(cx: &Cx) -> TaskId {
+    let id = add_boxed(cx);
+    cx.store()
+        .unwrap()
+        .begin_session(id, SESSION, None)
+        .unwrap();
+    id
+}
+
+/// Insert task `demo` with a Box the driver lists as live and no agent session.
+fn add_boxed(cx: &Cx) -> TaskId {
     let id = add(cx);
     let got = cx
         .driver()
@@ -249,7 +265,6 @@ fn add_live(cx: &Cx) -> TaskId {
             ..Fields::default()
         });
     store.apply(d).unwrap();
-    store.begin_session(id, SESSION, None).unwrap();
     id
 }
 
@@ -385,4 +400,47 @@ fn a_busy_agent_times_out_at_the_default_bound() {
     let v = run(&cx, &req(None, None)).unwrap();
     assert!(v.timed_out);
     assert_eq!(v.waited_ms, 1_800_000);
+}
+
+const SLEEP_LABELS: [(SleepKind, Option<&str>); 2] =
+    [(SleepKind::None, None), (SleepKind::Suspend, Some("30m"))];
+
+#[test]
+fn sleep_label_follows_provider_sleep_support() {
+    for (kind, after) in SLEEP_LABELS {
+        let dir = tempfile::tempdir().unwrap();
+        let (cx, _) = cx_with(dir.path(), FakeDriver::new().sleep_kind(kind));
+        add_boxed(&cx);
+        let v = run(&cx, &req(None, None)).unwrap();
+        assert_eq!(v.task.r#box.unwrap().sleep.after.as_deref(), after);
+    }
+}
+
+#[test]
+fn launch_failure_sleep_label_follows_provider_sleep_support() {
+    for (kind, after) in SLEEP_LABELS {
+        let dir = tempfile::tempdir().unwrap();
+        let (cx, _) = cx_with(dir.path(), FakeDriver::new().sleep_kind(kind));
+        let id = add_boxed(&cx);
+        let failure = LaunchFailure {
+            step: "pane".into(),
+            message: "no tab".into(),
+            tail: None,
+            at: "2026-01-01T00:00:00Z".into(),
+        };
+        let set = Fields {
+            launch_failure: Field::Set(serde_json::to_string(&failure).unwrap()),
+            ..Fields::default()
+        };
+        cx.store()
+            .unwrap()
+            .apply(Decision::new(id).set(set))
+            .unwrap();
+        let e = run(&cx, &req(None, None)).unwrap_err();
+        let shown = e.value.unwrap();
+        assert_eq!(
+            shown.pointer("/box/sleep/after").and_then(|v| v.as_str()),
+            after
+        );
+    }
 }
