@@ -1,11 +1,13 @@
 //! User and repo configuration: pure parsing, no IO.
 
 pub mod check;
+pub mod controller;
 pub mod proxy;
 pub mod repo;
 pub mod settings;
 mod user;
 
+pub use controller::{parse_controller, ControllerConfig};
 pub use repo::{parse_repo, RepoBox, RepoCompose, RepoConfig};
 
 pub use user::{

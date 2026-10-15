@@ -62,6 +62,13 @@ pub enum Parsed {
         /// Task to serve.
         task: moor_core::TaskId,
     },
+    /// Run the controller daemon from a config file.
+    ControllerServe {
+        /// Global options.
+        opts: GlobalOpts,
+        /// Controller config file.
+        config: std::path::PathBuf,
+    },
     /// Nothing to run; print this.
     Done(Output),
 }
@@ -74,6 +81,7 @@ pub fn parse(args: Vec<OsString>) -> Parsed {
         Ok((opts, Action::Request(request))) => Parsed::Request(Invocation { opts, request }),
         Ok((opts, Action::CallStdin)) => Parsed::CallStdin(GlobalOpts { json: true, ..opts }),
         Ok((opts, Action::ProxyServe(task))) => Parsed::ProxyServe { opts, task },
+        Ok((opts, Action::ControllerServe(config))) => Parsed::ControllerServe { opts, config },
         Err(err) => Parsed::Done(clap_output(&err, cmd, &raw)),
     }
 }

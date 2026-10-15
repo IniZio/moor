@@ -1,5 +1,6 @@
 //! `moor` binary: the only place that opens stdout and stderr. It writes rendered
-//! output itself and hands stderr to the proxy supervisor, which streams lines live.
+//! output itself and hands stderr to the proxy supervisor and the controller
+//! daemon, which stream lines live.
 #![forbid(unsafe_code)]
 
 use std::io::{Read, Write};
@@ -23,6 +24,13 @@ fn main() -> ExitCode {
                 None => env,
             };
             return ExitCode::from(moor::serve_proxy(&env, task, std::io::stderr()));
+        }
+        Parsed::ControllerServe { opts, config } => {
+            let env = match &opts.state_dir {
+                Some(dir) => env.with_state_dir(dir),
+                None => env,
+            };
+            return ExitCode::from(moor::controller::serve(&env, &config, std::io::stderr()));
         }
     };
     emit(&output)

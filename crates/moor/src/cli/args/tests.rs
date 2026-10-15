@@ -336,6 +336,15 @@ fn special_actions() {
 }
 
 #[test]
+fn controller_serve_takes_config() {
+    assert!(matches!(
+        run(&["controller", "serve", "--config", "/x.yaml"]),
+        Ok((_, Action::ControllerServe(p))) if p.as_path() == std::path::Path::new("/x.yaml")
+    ));
+    assert!(run(&["controller", "serve"]).is_err());
+}
+
+#[test]
 fn removed_verbs_are_errors() {
     assert!(run(&["pane", "x"]).is_err());
     assert!(run(&["reports", "x"]).is_err());
