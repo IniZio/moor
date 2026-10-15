@@ -19,6 +19,17 @@ fn user_path(env: &Env) -> Option<PathBuf> {
     env.xdg("XDG_CONFIG_HOME", ".config", "moor/config.yaml")
 }
 
+/// The moor controller's own state directory and config directory, which a Box on this host
+/// must not reach. Empty when neither location is known.
+pub(crate) fn private_paths(env: &Env) -> Vec<String> {
+    let config = user_path(env).and_then(|p| p.parent().map(Path::to_path_buf));
+    [env.state_dir(), config]
+        .into_iter()
+        .flatten()
+        .map(|p| p.to_string_lossy().into_owned())
+        .collect()
+}
+
 /// Read the user config; no known config location or a missing file means defaults.
 pub(crate) fn load_user(env: &Env) -> Result<UserConfig, CommandError> {
     let Some(path) = user_path(env) else {

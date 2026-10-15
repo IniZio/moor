@@ -71,6 +71,9 @@ pub(crate) struct SandboxInput<'a> {
     pub(crate) env_names: Vec<String>,
     /// Variables the sandbox sets for the agent alone: repo `env` and rule `box_env`.
     pub(crate) set_vars: Vec<(String, String)>,
+    /// Host-resolved paths of the controller's own state and config, denied to the agent on
+    /// macOS. May be empty; ignored on Linux, where Landlock cannot deny.
+    pub(crate) moor_paths: &'a [String],
 }
 
 /// True when `name` may be passed into the sandbox.
@@ -150,6 +153,49 @@ fn read_grants(input: &SandboxInput) -> (Vec<String>, Vec<String>) {
     (read, read_file)
 }
 
+/// Every path the profile grants, whatever the access.
+fn granted(doc: &serde_json::Value) -> Vec<String> {
+    ["allow", "allow_file", "read", "read_file"]
+        .iter()
+        .filter_map(|k| doc.pointer(&format!("/filesystem/{k}"))?.as_array())
+        .flatten()
+        .filter_map(|v| v.as_str().map(str::to_owned))
+        .collect()
+}
+
+/// The macOS deny list: the controller's state and config under the login home plus the host
+/// `moor_paths`. A path equal to or containing a grant is skipped: Seatbelt would let the deny
+/// override that grant and break the agent.
+fn deny_paths(input: &SandboxInput, grants: &[String]) -> Vec<String> {
+    let login = input.login_home.as_str();
+    let defaults = [
+        ".local/state/moor",
+        ".config/moor",
+        ".config/agent37",
+        ".config/crabbox",
+    ]
+    .map(|rel| format!("{login}/{rel}"));
+    let extra = input
+        .moor_paths
+        .iter()
+        .filter(|p| p.starts_with('/'))
+        .map(|p| p.trim_end_matches('/').to_owned())
+        .filter(|p| !p.is_empty());
+    let covers = |deny: &str| {
+        grants
+            .iter()
+            .any(|g| g == deny || g.strip_prefix(deny).is_some_and(|r| r.starts_with('/')))
+    };
+    let mut deny: Vec<String> = defaults
+        .into_iter()
+        .chain(extra)
+        .filter(|p| !covers(p))
+        .collect();
+    deny.sort();
+    deny.dedup();
+    deny
+}
+
 /// The nono profile as pretty JSON text.
 pub(crate) fn profile(input: &SandboxInput) -> String {
     let home = input.home.as_str();
@@ -187,11 +233,15 @@ pub(crate) fn profile(input: &SandboxInput) -> String {
         // Seatbelt's `(allow network-outbound)` also permits connecting to any unix socket, so
         // the Docker socket would be a root-equivalent escape. Blocking the network leaves
         // loopback TCP, which reaches the Proxy, and the DNS socket nono keeps open.
+        let deny = deny_paths(input, &granted(&doc));
         if let Some(d) = doc.as_object_mut() {
             d.insert(
                 "network".to_owned(),
                 json!({ "block": true, "open_port": [0] }),
             );
+            if let Some(f) = d.get_mut("filesystem").and_then(|f| f.as_object_mut()) {
+                f.insert("deny".to_owned(), json!(deny));
+            }
         }
     }
     if input.os != "Linux" {

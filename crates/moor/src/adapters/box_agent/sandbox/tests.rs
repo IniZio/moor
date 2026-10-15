@@ -20,6 +20,11 @@ fn doc(env_names: &[&str]) -> Value {
 }
 
 fn text(os: &str, env_names: &[&str]) -> String {
+    text_with(os, env_names, &[])
+}
+
+fn text_with(os: &str, env_names: &[&str], moor_paths: &[&str]) -> String {
+    let moor_paths: Vec<String> = moor_paths.iter().map(|s| (*s).to_owned()).collect();
     let (w, c) = (path("/work/p"), path("/tmp/cred"));
     let (login, h) = if os == "Darwin" {
         (path(LOGIN), path(TASK_HOME))
@@ -36,6 +41,7 @@ fn text(os: &str, env_names: &[&str]) -> String {
         tmp: &tmp,
         env_names: env_names.iter().map(|s| (*s).to_owned()).collect(),
         set_vars: vec![("APP_MODE".to_owned(), "it's".to_owned())],
+        moor_paths: &moor_paths,
     };
     profile(&input)
 }
@@ -344,4 +350,88 @@ fn darwin_profile_blocks_unix_sockets_by_blocking_non_loopback_network() {
     assert_eq!(at(&d, "/network/block"), true);
     assert_eq!(at(&d, "/network/open_port"), &serde_json::json!([0]));
     assert!(doc(&[]).pointer("/network").is_none());
+}
+
+fn denies(os: &str, moor_paths: &[&str]) -> Option<Vec<String>> {
+    let d: Value = serde_json::from_str(&text_with(os, &[], moor_paths)).unwrap();
+    d.pointer("/filesystem/deny").map(strings)
+}
+
+#[test]
+fn darwin_profile_denies_the_default_moor_paths() {
+    let deny = denies("Darwin", &[]).unwrap();
+    for rel in [
+        ".local/state/moor",
+        ".config/moor",
+        ".config/agent37",
+        ".config/crabbox",
+    ] {
+        assert!(deny.contains(&format!("{LOGIN}/{rel}")), "{rel}: {deny:?}");
+    }
+}
+
+#[test]
+fn darwin_profile_denies_absolute_moor_paths_once() {
+    let deny = denies(
+        "Darwin",
+        &[
+            "/srv/moor-state",
+            "/srv/moor-state/",
+            "relative/dir",
+            "",
+            "/Users/u/.config/moor",
+        ],
+    )
+    .unwrap();
+    assert_eq!(
+        deny.iter().filter(|p| *p == "/srv/moor-state").count(),
+        1,
+        "{deny:?}"
+    );
+    assert_eq!(
+        deny.iter()
+            .filter(|p| *p == "/Users/u/.config/moor")
+            .count(),
+        1
+    );
+    assert!(
+        !deny.iter().any(|p| p.is_empty() || !p.starts_with('/')),
+        "{deny:?}"
+    );
+    let mut sorted = deny.clone();
+    sorted.sort();
+    assert_eq!(deny, sorted);
+}
+
+#[test]
+fn darwin_profile_skips_a_moor_path_that_contains_a_grant() {
+    let deny = denies(
+        "Darwin",
+        &[LOGIN, "/", "/work", "/work/p", "/tmp/cred", "/srv/x"],
+    )
+    .unwrap();
+    for p in [LOGIN, "/", "/work", "/work/p", "/tmp/cred"] {
+        assert!(!deny.contains(&p.to_owned()), "{p}: {deny:?}");
+    }
+    assert!(deny.contains(&"/srv/x".to_owned()));
+    assert!(deny.contains(&format!("{LOGIN}/.config/moor")));
+}
+
+#[test]
+fn linux_profile_has_no_deny_key() {
+    assert!(denies("Linux", &["/srv/moor-state"]).is_none());
+}
+
+#[test]
+fn darwin_profile_grants_nothing_covering_another_tasks_credential_directory() {
+    let d = darwin();
+    for other in [".moor-cred-other-1", ".moor-tmp-other-1"] {
+        let target = format!("{LOGIN}/{other}/proxy-ca.pem");
+        for p in fs_lists(&d) {
+            assert!(
+                target != p && !target.starts_with(&format!("{p}/")),
+                "{p} covers {target}"
+            );
+        }
+    }
 }

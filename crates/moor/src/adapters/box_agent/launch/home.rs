@@ -186,6 +186,7 @@ mod tests {
             tmp: &path("/work/t.tmp"),
             env_names: Vec::new(),
             set_vars: Vec::new(),
+            moor_paths: &[],
         };
         let doc: serde_json::Value = serde_json::from_str(&profile(&input)).unwrap();
         let allow = doc

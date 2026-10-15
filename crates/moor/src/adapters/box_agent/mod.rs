@@ -35,6 +35,8 @@ pub(crate) struct BoxAgent {
     clock: Arc<dyn Clock>,
     /// Fetches the sandbox tool for a Box that lacks it.
     release: Arc<NonoRelease>,
+    /// The moor controller's own state and config paths, kept out of a macOS sandbox.
+    moor_paths: Vec<String>,
 }
 
 impl BoxAgent {
@@ -52,7 +54,15 @@ impl BoxAgent {
             profile,
             clock,
             release,
+            moor_paths: Vec::new(),
         }
+    }
+
+    /// Paths of the moor controller's own state and config, which the sandbox denies.
+    #[must_use]
+    pub(crate) fn with_moor_paths(mut self, paths: Vec<String>) -> Self {
+        self.moor_paths = paths;
+        self
     }
 }
 
@@ -78,6 +88,7 @@ impl Engine for BoxAgent {
             self.profile.as_ref(),
             req,
             &self.release,
+            &self.moor_paths,
         )
     }
 

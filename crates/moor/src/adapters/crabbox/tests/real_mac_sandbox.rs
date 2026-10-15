@@ -39,6 +39,7 @@ fn ssh_sh(target: &str, script: &str) -> (i32, String) {
 #[test]
 #[expect(
     clippy::too_many_lines,
+    clippy::cognitive_complexity,
     reason = "one linear scenario: install, probe, clean up, assert"
 )]
 fn seatbelt_profile_with_per_task_home_denies_the_owners_credentials() {
@@ -83,6 +84,96 @@ fn seatbelt_profile_with_per_task_home_denies_the_owners_credentials() {
         .collect::<Vec<_>>()
         .join(" ");
     assert_eq!(ssh_sh(&target, &format!("mkdir -p {dirs}")).0, 0);
+    let nonce: String = repo
+        .path()
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .collect();
+    let marker = format!(".moor-probe-{nonce}");
+    let alt_dir = format!("{login_home}/.local/state/moor-probe-alt-{nonce}");
+    let other_cred_dir = format!("{login_home}/.moor-cred-0-{nonce}");
+    let own_ca = format!("{}/proxy-ca.pem", cred.as_str());
+    let sock = format!("{login_home}/.local/state/moor/probe-{nonce}.sock");
+    // Each target is a directory plus a file in it that exists and is readable outside the sandbox,
+    // so a denial inside it means something. Existing directories only get the marker file.
+    let targets: [(String, String); 6] = [
+        (
+            format!("{login_home}/.config/moor"),
+            format!("{login_home}/.config/moor/{marker}"),
+        ),
+        (
+            format!("{login_home}/.local/state/moor"),
+            format!("{login_home}/.local/state/moor/{marker}"),
+        ),
+        (alt_dir.clone(), format!("{alt_dir}/{marker}")),
+        (
+            format!("{login_home}/.config/agent37"),
+            format!("{login_home}/.config/agent37/{marker}"),
+        ),
+        (
+            format!("{login_home}/.config/crabbox"),
+            format!("{login_home}/.config/crabbox/{marker}"),
+        ),
+        (
+            other_cred_dir.clone(),
+            format!("{other_cred_dir}/proxy-ca.pem"),
+        ),
+    ];
+    let setup = targets
+        .iter()
+        .enumerate()
+        .fold(String::new(), |mut acc, (i, (dir, file))| {
+            let _ = writeln!(
+                acc,
+                "p={d}; top=; while [ ! -e \"$p\" ]; do top=$p; p=$(dirname \"$p\"); done; echo \"top{i} $top\"; \
+                 mkdir -p {d} && touch {f}; test -r {f}; echo \"outside{i} $?\"",
+                d = quote(dir),
+                f = quote(file),
+            );
+            acc
+        });
+    let (_, setup_out) = ssh_sh(
+        &target,
+        &format!(
+            "{setup}touch {}; test -r {}; echo \"outside_own $?\"",
+            quote(&own_ca),
+            quote(&own_ca)
+        ),
+    );
+    // Outermost directory the test created for each target; empty when it already existed.
+    let tops: Vec<String> = (0..targets.len())
+        .map(|i| {
+            setup_out
+                .lines()
+                .find_map(|l| l.strip_prefix(&format!("top{i} ")))
+                .unwrap_or("")
+                .to_owned()
+        })
+        .collect();
+    let outside_ok = |key: &str| setup_out.lines().any(|l| l.trim() == format!("{key} 0"));
+    let listener = ssh_sh(
+        &target,
+        &format!(
+            "nohup /usr/bin/nc -lkU {s} >/dev/null 2>&1 </dev/null & echo $!; sleep 1",
+            s = quote(&sock)
+        ),
+    );
+    let listener_pid: String = listener
+        .1
+        .trim()
+        .chars()
+        .filter(char::is_ascii_digit)
+        .collect();
+    let socket_outside = ssh_sh(
+        &target,
+        &format!("/usr/bin/nc -U {} </dev/null >/dev/null 2>&1", quote(&sock)),
+    )
+    .0;
+    let moor_paths = vec![alt_dir];
+
     let bytes = NonoRelease::new(Arc::new(UreqFetch), None)
         .binary(&acq.platform.os, &acq.platform.arch)
         .unwrap();
@@ -96,6 +187,7 @@ fn seatbelt_profile_with_per_task_home_denies_the_owners_credentials() {
         login_home: &BoxPath::restore(&login_home).unwrap(),
         cred: &cred,
         tmp: &tmp,
+        moor_paths: &moor_paths,
         env_names: Vec::new(),
         set_vars: vec![("IS_SANDBOX".to_owned(), "1".to_owned())],
     });
@@ -110,7 +202,7 @@ fn seatbelt_profile_with_per_task_home_denies_the_owners_credentials() {
         .unwrap();
 
     let owner = |rel: &str| quote(&format!("{login_home}/{rel}"));
-    let probes: [(&str, String, bool); 10] = [
+    let mut probes: Vec<(&str, String, bool)> = vec![
         (
             "gh_hosts_test_r",
             format!("test -r {}", owner(".config/gh/hosts.yml")),
@@ -158,6 +250,60 @@ fn seatbelt_profile_with_per_task_home_denies_the_owners_credentials() {
         ),
         ("is_sandbox", "[ \"$IS_SANDBOX\" = 1 ]".to_owned(), true),
     ];
+    let [(cfg_dir, cfg_file), (state_dir, state_file), (_, alt_file), (_, a37_file), (_, cb_file), (_, other_file)] =
+        &targets;
+    probes.extend([
+        (
+            "moor_config_test_r",
+            format!("test -r {}", quote(cfg_file)),
+            false,
+        ),
+        (
+            "moor_config_ls",
+            format!("ls {} >/dev/null 2>&1", quote(cfg_dir)),
+            false,
+        ),
+        (
+            "moor_state_test_r",
+            format!("test -r {}", quote(state_file)),
+            false,
+        ),
+        (
+            "moor_state_ls",
+            format!("ls {} >/dev/null 2>&1", quote(state_dir)),
+            false,
+        ),
+        (
+            "moor_state_override_test_r",
+            format!("test -r {}", quote(alt_file)),
+            false,
+        ),
+        (
+            "agent37_config_test_r",
+            format!("test -r {}", quote(a37_file)),
+            false,
+        ),
+        (
+            "crabbox_config_test_r",
+            format!("test -r {}", quote(cb_file)),
+            false,
+        ),
+        (
+            "other_task_cred_test_r",
+            format!("test -r {}", quote(other_file)),
+            false,
+        ),
+        (
+            "own_cred_test_r",
+            format!("test -r {}", quote(&own_ca)),
+            true,
+        ),
+        (
+            "controller_socket_connect",
+            format!("/usr/bin/nc -U {} </dev/null >/dev/null 2>&1", quote(&sock)),
+            false,
+        ),
+    ]);
     let docker_outside = ssh_sh(
         &target,
         "/usr/local/bin/docker info >/dev/null 2>&1; echo $?",
@@ -200,7 +346,52 @@ fn seatbelt_profile_with_per_task_home_denies_the_owners_credentials() {
         ),
     );
     let cleanup_bin = ssh_sh(&target, &format!("rm -rf -- {}", quote(bin_dir.as_str())));
-    assert_eq!((cleanup.0, cleanup_bin.0), (0, 0));
+    let removals = targets
+        .iter()
+        .zip(&tops)
+        .map(|((_, file), top)| {
+            if top.is_empty() {
+                format!("rm -f -- {}", quote(file))
+            } else {
+                format!("rm -rf -- {}", quote(top))
+            }
+        })
+        .chain([format!("rm -f -- {} {}", quote(&own_ca), quote(&sock))])
+        .collect::<Vec<_>>()
+        .join("; ");
+    let kill = if listener_pid.is_empty() {
+        String::new()
+    } else {
+        format!("kill {listener_pid} 2>/dev/null; ")
+    };
+    let cleanup_probes = ssh_sh(&target, &format!("{kill}{removals}"));
+    assert_eq!((cleanup.0, cleanup_bin.0, cleanup_probes.0), (0, 0, 0));
+
+    for i in 0..targets.len() {
+        eprintln!(
+            "setup target {i}: outside test -r ok = {}",
+            outside_ok(&format!("outside{i}"))
+        );
+    }
+    eprintln!(
+        "setup own_ca: outside test -r ok = {}",
+        outside_ok("outside_own")
+    );
+    eprintln!("setup socket: outside nc -U exit {socket_outside}");
+    for i in 0..targets.len() {
+        assert!(
+            outside_ok(&format!("outside{i}")),
+            "target {i} not readable outside the sandbox"
+        );
+    }
+    assert!(
+        outside_ok("outside_own"),
+        "own CA not readable outside the sandbox"
+    );
+    assert_eq!(
+        socket_outside, 0,
+        "listener not connectable outside the sandbox"
+    );
 
     for (label, _, allowed) in &probes {
         let code = codes.get(label).copied();

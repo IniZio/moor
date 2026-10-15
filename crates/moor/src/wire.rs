@@ -27,7 +27,7 @@ use crate::adapters::github::GitHub;
 use crate::adapters::herdr::Herdr;
 use crate::adapters::proc::{SystemProc, ToolPaths};
 use crate::adapters::rng::SystemRng;
-use crate::config_load::load_user;
+use crate::config_load::{load_user, private_paths};
 use crate::cx::{Cx, CxParts};
 use crate::env::Env;
 use crate::error::CommandError;
@@ -90,7 +90,8 @@ fn parts(env: &Env) -> Result<CxParts, CommandError> {
             Arc::new(UreqFetch),
             env.xdg("XDG_CACHE_HOME", ".cache", "moor"),
         )),
-    );
+    )
+    .with_moor_paths(private_paths(env));
     let rng: Arc<dyn Rng> = Arc::new(SystemRng);
     let state_dir = env.state_dir();
     let proxy_host = Arc::new(DetachedSupervisor::new(

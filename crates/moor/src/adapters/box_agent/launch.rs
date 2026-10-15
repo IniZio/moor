@@ -3,12 +3,11 @@
 use std::time::Duration;
 
 use moor_core::boxscript::{command_line, quote};
-use moor_core::domain::run::SyncMode;
 use moor_core::name::{BoxPath, NameError};
 use moor_core::seam::agent_profile::{AgentProfile, BoxSetup, LaunchCtx, ProxyAddr};
-use moor_core::seam::driver::{Driver, ExecOutcome, ExecSpec};
+use moor_core::seam::driver::Driver;
 use moor_core::seam::engine::{EngineError, LaunchReq, SessionRef};
-use moor_core::seam::proc::{Deadline, Tool};
+use moor_core::seam::proc::Tool;
 use moor_core::seam::surface::{PaneCmd, PaneRef, Surface};
 use moor_core::Secret;
 
@@ -20,8 +19,6 @@ use super::sandbox::{self, SandboxInput};
 
 /// Where the brief lands, relative to the Box workdir.
 const BRIEF_FILE: &str = ".moor/brief.md";
-/// Time allowed for removing the credential directory.
-const CLEANUP_DEADLINE: Duration = Duration::from_secs(30);
 /// Time allowed for checking and installing the sandbox tool on the Box.
 const INSTALL_DEADLINE: Duration = Duration::from_secs(300);
 
@@ -50,6 +47,7 @@ pub(super) fn launch(
     profile: &dyn AgentProfile,
     req: &LaunchReq,
     release: &NonoRelease,
+    moor_paths: &[String],
 ) -> Result<SessionRef, EngineError> {
     let connect = driver
         .connect_argv(&req.handle, &req.worktree)
@@ -66,9 +64,10 @@ pub(super) fn launch(
         profile,
         req,
         release,
+        moor_paths,
     };
     run.start(&login, (&cred, &tmp), &connect).map_err(|mut f| {
-        if let Err(c) = remove_cred(driver, req, (&cred, &tmp)) {
+        if let Err(c) = cleanup::remove_cred(driver, req, (&cred, &tmp)) {
             f.message = format!("{}; could not remove {}: {c}", f.message, cred.as_str());
         }
         failed(f)
@@ -87,6 +86,8 @@ struct Run<'a> {
     req: &'a LaunchReq,
     /// Fetches the sandbox tool for a Box that lacks it.
     release: &'a NonoRelease,
+    /// The moor controller's own state and config paths, which a macOS sandbox denies.
+    moor_paths: &'a [String],
 }
 
 impl Run<'_> {
@@ -121,6 +122,7 @@ impl Run<'_> {
             tmp,
             login: &login.home,
             os: os.as_deref(),
+            moor_paths: self.moor_paths,
         };
         let pane = launch.deliver(connect)?;
         Ok(SessionRef {
@@ -165,6 +167,8 @@ struct Launch<'a> {
     login: &'a BoxPath,
     /// The Box OS, known once the sandbox tool is checked.
     os: Option<&'a str>,
+    /// The moor controller's own state and config paths, which a macOS sandbox denies.
+    moor_paths: &'a [String],
 }
 
 /// What a sandboxed launch stages on the Box.
@@ -216,6 +220,7 @@ impl Launch<'_> {
             tmp: self.tmp,
             env_names,
             set_vars: addr.box_env.clone(),
+            moor_paths: self.moor_paths,
         });
         let at = BoxPath::under(cred.as_str(), sandbox::PROFILE_FILE)
             .map_err(|e| fail("sandbox", &e))?;
@@ -365,31 +370,7 @@ fn script(
     Ok(lines.join("\n"))
 }
 
-/// Removes the credential and temp directories on the Box.
-fn remove_cred(
-    driver: &dyn Driver,
-    req: &LaunchReq,
-    (cred, tmp): (&BoxPath, &BoxPath),
-) -> Result<(), String> {
-    let spec = ExecSpec {
-        argv: ["rm", "-rf", cred.as_str(), tmp.as_str()]
-            .map(str::to_owned)
-            .to_vec(),
-        env: Vec::new(),
-        cwd: None,
-        sync: SyncMode::None,
-        output: None,
-        host_cwd: Some(req.worktree.clone()),
-        class: None,
-    };
-    match driver.exec(&req.handle, &spec, Deadline(CLEANUP_DEADLINE)) {
-        Ok(ExecOutcome::Exited { code: 0 }) => Ok(()),
-        Ok(ExecOutcome::Exited { code }) => Err(format!("rm exited {code}")),
-        Ok(ExecOutcome::Interrupted) => Err("rm was interrupted".to_owned()),
-        Err(e) => Err(e.to_string()),
-    }
-}
-
+mod cleanup;
 mod home;
 mod install;
 

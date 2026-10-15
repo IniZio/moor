@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use moor_core::config::UserConfig;
 use moor_core::ErrorKind;
 
-use super::{load_repo, load_user, user_path};
+use super::{load_repo, load_user, private_paths, user_path};
 use crate::env::Env;
 
 type Case<'a> = (&'a [(&'a str, &'a str)], Option<&'a str>);
@@ -85,4 +85,16 @@ fn repo_worktree_first_then_main_then_none() {
     std::fs::write(wt.path().join(".moor.yaml"), "bogus_key: 1\n").unwrap();
     let e = load_repo(wt.path(), main.path()).unwrap_err();
     assert!(e.error.to_string().starts_with(wt.path().to_str().unwrap()));
+}
+
+#[test]
+fn private_paths_are_the_state_dir_and_the_config_dir() {
+    let got = private_paths(&env(&[("HOME", "/Users/o")]));
+    assert_eq!(got, ["/Users/o/.local/state/moor", "/Users/o/.config/moor"]);
+    let got = private_paths(&env(&[
+        ("MOOR_STATE_DIR", "/s"),
+        ("MOOR_CONFIG", "/c/x.yaml"),
+    ]));
+    assert_eq!(got, ["/s", "/c"]);
+    assert!(private_paths(&env(&[])).is_empty());
 }
