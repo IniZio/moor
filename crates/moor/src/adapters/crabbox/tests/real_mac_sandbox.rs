@@ -188,6 +188,7 @@ fn seatbelt_profile_with_per_task_home_denies_the_owners_credentials() {
         cred: &cred,
         tmp: &tmp,
         moor_paths: &moor_paths,
+        sim_udid: None,
         env_names: Vec::new(),
         set_vars: vec![("IS_SANDBOX".to_owned(), "1".to_owned())],
     });

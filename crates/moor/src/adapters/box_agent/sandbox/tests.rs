@@ -24,6 +24,10 @@ fn text(os: &str, env_names: &[&str]) -> String {
 }
 
 fn text_with(os: &str, env_names: &[&str], moor_paths: &[&str]) -> String {
+    text_sim(os, env_names, moor_paths, None)
+}
+
+fn text_sim(os: &str, env_names: &[&str], moor_paths: &[&str], sim_udid: Option<&str>) -> String {
     let moor_paths: Vec<String> = moor_paths.iter().map(|s| (*s).to_owned()).collect();
     let (w, c) = (path("/work/p"), path("/tmp/cred"));
     let (login, h) = if os == "Darwin" {
@@ -42,6 +46,7 @@ fn text_with(os: &str, env_names: &[&str], moor_paths: &[&str]) -> String {
         env_names: env_names.iter().map(|s| (*s).to_owned()).collect(),
         set_vars: vec![("APP_MODE".to_owned(), "it's".to_owned())],
         moor_paths: &moor_paths,
+        sim_udid,
     };
     profile(&input)
 }
@@ -434,4 +439,66 @@ fn darwin_profile_grants_nothing_covering_another_tasks_credential_directory() {
             );
         }
     }
+}
+
+const UDID: &str = "0A1B2C3D-4E5F-6789-ABCD-EF0123456789";
+const DEVICES: &str = "/Users/u/Library/Developer/CoreSimulator/Devices";
+
+fn sim(os: &str, udid: Option<&str>) -> Value {
+    serde_json::from_str(&text_sim(os, &[], &[], udid)).unwrap()
+}
+
+#[test]
+fn darwin_profile_grants_exactly_the_tasks_simulator_device_dir_and_sets_its_udid() {
+    let d = sim("Darwin", Some(UDID));
+    let device = format!("{DEVICES}/{UDID}");
+    let allow = strings(at(&d, "/filesystem/allow"));
+    assert!(allow.contains(&device), "{allow:?}");
+    let under_devices: Vec<_> = fs_lists(&d)
+        .into_iter()
+        .filter(|p| p.starts_with(DEVICES))
+        .collect();
+    assert_eq!(under_devices, std::slice::from_ref(&device));
+    assert_eq!(at(&d, "/environment/set_vars/MOOR_SIM_UDID"), UDID);
+    let deny = strings(at(&d, "/filesystem/deny"));
+    assert!(
+        !deny.iter().any(|p| device.starts_with(p.as_str())),
+        "{deny:?}"
+    );
+}
+
+#[test]
+fn darwin_profile_with_a_simulator_grants_nothing_covering_the_devices_dir_or_a_sibling() {
+    let d = sim("Darwin", Some(UDID));
+    let sibling = format!("{DEVICES}/11111111-2222-3333-4444-555555555555");
+    for p in fs_lists(&d) {
+        for target in [DEVICES, sibling.as_str()] {
+            assert!(
+                p != target && !target.starts_with(&format!("{p}/")),
+                "{p} covers {target}"
+            );
+        }
+    }
+}
+
+#[test]
+fn darwin_profile_ignores_a_malformed_simulator_udid() {
+    let plain = sim("Darwin", None);
+    for bad in [
+        "",
+        "../..",
+        "0a1b2c3d-4e5f-6789-abcd-ef0123456789",
+        "0A1B2C3D-4E5F-6789-ABCD-EF012345678",
+        "0A1B2C3D-4E5F-6789-ABCD-EF0123456789/..",
+        "GA1B2C3D-4E5F-6789-ABCD-EF0123456789",
+    ] {
+        let d = sim("Darwin", Some(bad));
+        assert_eq!(d, plain, "{bad:?} must grant nothing");
+        assert_eq!(at(&d, "/environment/set_vars/MOOR_SIM_UDID"), &Value::Null);
+    }
+}
+
+#[test]
+fn linux_profile_ignores_the_simulator_udid() {
+    assert_eq!(sim("Linux", Some(UDID)), sim("Linux", None));
 }

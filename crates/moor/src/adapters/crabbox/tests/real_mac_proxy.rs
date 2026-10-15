@@ -273,6 +273,7 @@ fn sandboxed_mac_reaches_https_only_through_the_proxy_and_its_ca_file() {
         moor_paths: &[],
         env_names: Vec::new(),
         set_vars: Vec::new(),
+        sim_udid: None,
     });
     put(&target, &profile_at, text.as_bytes(), "600");
     let (c, _) = ssh_sh(

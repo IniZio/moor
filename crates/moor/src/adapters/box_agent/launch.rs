@@ -112,6 +112,9 @@ impl Run<'_> {
             }),
             home: task_home.unwrap_or_else(|| login.home.clone()),
         };
+        let sim = (os.as_deref() == Some("Darwin"))
+            .then(|| simulator::create(driver, req, cred))
+            .flatten();
         let launch = Launch {
             driver,
             surface: self.surface,
@@ -123,8 +126,13 @@ impl Run<'_> {
             login: &login.home,
             os: os.as_deref(),
             moor_paths: self.moor_paths,
+            sim: sim.as_deref(),
         };
-        let pane = launch.deliver(connect)?;
+        let pane = launch.deliver(connect).inspect_err(|_| {
+            if let Some(line) = sim.as_deref().and_then(simulator::delete_line) {
+                let _ = cleanup::run_line(driver, req, &line);
+            }
+        })?;
         Ok(SessionRef {
             id: String::new(),
             handle: req.handle.clone(),
@@ -169,6 +177,8 @@ struct Launch<'a> {
     os: Option<&'a str>,
     /// The moor controller's own state and config paths, which a macOS sandbox denies.
     moor_paths: &'a [String],
+    /// The UDID of this Task's simulator, when the Box made one.
+    sim: Option<&'a str>,
 }
 
 /// What a sandboxed launch stages on the Box.
@@ -222,6 +232,7 @@ impl Launch<'_> {
             env_names,
             set_vars: addr.box_env.clone(),
             moor_paths: self.moor_paths,
+            sim_udid: self.sim,
         });
         let at = BoxPath::under(cred.as_str(), sandbox::PROFILE_FILE)
             .map_err(|e| fail("sandbox", &e))?;
@@ -246,6 +257,7 @@ impl Launch<'_> {
             issue: req.issue.as_deref(),
             branch: &req.branch,
             setup_exit: req.setup_exit,
+            sim_udid: self.sim,
         });
         let brief_at = BoxPath::under(cred.as_str(), "brief.md").map_err(|e| fail("brief", &e))?;
         self.driver
@@ -294,7 +306,7 @@ impl Launch<'_> {
             &hooks,
             &preseed,
             &argv,
-            (&lines, sandboxed.as_ref()),
+            (&lines, sandboxed.as_ref(), self.sim),
         );
         let script = script.map_err(|e| fail("script", &e))?;
         let line = format!(
@@ -326,7 +338,7 @@ fn script(
     hooks: &BoxSetup,
     preseed: &BoxSetup,
     argv: &[String],
-    (proxy, sandbox): (&[String], Option<&Sandboxed>),
+    (proxy, sandbox, sim): (&[String], Option<&Sandboxed>, Option<&str>),
 ) -> Result<String, NameError> {
     let workdir = ctx.workdir.as_str();
     let moor = quote(BoxPath::under(workdir, ".moor")?.as_str());
@@ -337,14 +349,19 @@ fn script(
         .chain(argv.iter().cloned())
         .collect::<Vec<_>>();
     let remove = format!("rm -rf {}", quote(cred.as_str()));
-    let remove_all = format!("{remove} {}", quote(tmp.as_str()));
+    let mut remove_all = format!("{remove} {}", quote(tmp.as_str()));
+    remove_all.extend(
+        sim.and_then(simulator::delete_line)
+            .map(|d| format!("; {d}")),
+    );
+    let proof = quote(BoxPath::under(workdir, simulator::PROOF_DIR)?.as_str());
     let tmp = quote(tmp.as_str());
     let mut lines = vec![
         format!("trap {} EXIT", quote(&remove_all)),
         "trap 'exit 129' HUP".to_owned(),
         "trap 'exit 130' INT".to_owned(),
         "trap 'exit 143' TERM".to_owned(),
-        format!("mkdir -p -m 700 {tmp} && mkdir -p {moor} && install -m 600 {staged} {brief} || exit 1"),
+        format!("mkdir -p -m 700 {tmp} && mkdir -p {moor} {proof} && install -m 600 {staged} {brief} || exit 1"),
         format!(
             "printf '{{\"state\":\"starting\",\"event\":\"Launch\",\"ts\":%s}}\\n' \"$(date +%s)\" > {state} || exit 1"
         ),
@@ -374,6 +391,7 @@ fn script(
 mod cleanup;
 mod home;
 mod install;
+mod simulator;
 
 #[cfg(test)]
 mod tests;

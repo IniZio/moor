@@ -74,6 +74,48 @@ pub(crate) struct SandboxInput<'a> {
     /// Host-resolved paths of the controller's own state and config, denied to the agent on
     /// macOS. May be empty; ignored on Linux, where Landlock cannot deny.
     pub(crate) moor_paths: &'a [String],
+    /// UDID of the iOS simulator owned by this Task. On macOS the profile grants that device's
+    /// data directory and sets `MOOR_SIM_UDID`; ignored on Linux and when not a valid UDID.
+    pub(crate) sim_udid: Option<&'a str>,
+}
+
+/// True when `s` is a UDID: 8-4-4-4-12 uppercase hex digits.
+fn is_udid(s: &str) -> bool {
+    let groups: Vec<&str> = s.split('-').collect();
+    groups.len() == 5
+        && groups
+            .iter()
+            .zip([8, 4, 4, 4, 12])
+            .all(|(g, n)| g.len() == n && g.bytes().all(|b| matches!(b, b'0'..=b'9' | b'A'..=b'F')))
+}
+
+/// Simulator data root, relative to the Box login user's home.
+pub(crate) const SIM_DEVICES_DIR: &str = "Library/Developer/CoreSimulator/Devices";
+
+/// On macOS, grants the Task's own simulator data directory read-write and sets `MOOR_SIM_UDID`.
+/// Only that one device directory is granted, never the Devices directory or a sibling device.
+/// An invalid UDID, which could escape the Devices directory, grants nothing. Must run before the
+/// deny list is computed so no deny entry overrides the grant.
+fn grant_simulator(doc: &mut serde_json::Value, input: &SandboxInput) {
+    let Some(udid) = input
+        .sim_udid
+        .filter(|u| input.os == "Darwin" && is_udid(u))
+    else {
+        return;
+    };
+    let dir = format!("{}/{SIM_DEVICES_DIR}/{udid}", input.login_home.as_str());
+    if let Some(a) = doc
+        .pointer_mut("/filesystem/allow")
+        .and_then(|a| a.as_array_mut())
+    {
+        a.push(json!(dir));
+    }
+    if let Some(v) = doc
+        .pointer_mut("/environment/set_vars")
+        .and_then(|v| v.as_object_mut())
+    {
+        v.insert("MOOR_SIM_UDID".to_owned(), json!(udid));
+    }
 }
 
 /// True when `name` may be passed into the sandbox.
@@ -229,6 +271,7 @@ pub(crate) fn profile(input: &SandboxInput) -> String {
             "set_vars": set_vars,
         },
     });
+    grant_simulator(&mut doc, input);
     if input.os == "Darwin" {
         // Seatbelt's `(allow network-outbound)` also permits connecting to any unix socket, so
         // the Docker socket would be a root-equivalent escape. Blocking the network leaves

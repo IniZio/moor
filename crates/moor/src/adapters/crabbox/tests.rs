@@ -19,6 +19,7 @@ mod real_mac;
 mod real_mac_backend;
 mod real_mac_proxy;
 mod real_mac_sandbox;
+mod real_mac_simulator;
 mod workdir;
 
 const PROBE_SCRIPT: &str = r#"printf "MOOR_WORKDIR=%s\n" "$(pwd)"; printf "MOOR_UNAME=%s %s\n" "$(uname -s)" "$(uname -m)""#;

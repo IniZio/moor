@@ -14,6 +14,8 @@ pub(super) struct BriefInput<'a> {
     pub(super) branch: &'a str,
     /// The exit code of a failed setup, if setup failed.
     pub(super) setup_exit: Option<i32>,
+    /// The Task's own simulator device, on macOS.
+    pub(super) sim_udid: Option<&'a str>,
 }
 
 /// The brief text for a Task.
@@ -56,6 +58,19 @@ pub(super) fn render(b: &BriefInput) -> String {
              `.moor/reports/<kind>.md`.\n\n"
         );
     }
+    if let Some(udid) = b.sim_udid {
+        _ = write!(
+            out,
+            "This Task has its own iOS simulator, already booted: UDID `{udid}`, also in \
+             `$MOOR_SIM_UDID`. Use only this device: pass the UDID to `xcrun simctl` and \
+             `xcodebuild -destination id={udid}`; never use `booted` and never touch other \
+             simulators. Put proof under `.moor/proof/` (git ignores it): \
+             `xcrun simctl io \"$MOOR_SIM_UDID\" screenshot \"$PWD/.moor/proof/<name>.png\"`, \
+             and for video `xcrun simctl io \"$MOOR_SIM_UDID\" recordVideo --codec=h264 \
+             \"$PWD/.moor/proof/<name>.mp4\"`, stopped with Ctrl-C (SIGINT). simctl needs an \
+             absolute output path, so build it from `$PWD` as shown.\n\n"
+        );
+    }
     out.push_str(
         "Reports are how you show work to a human: a spec, a checkpoint, a result. \
          Kind is a free-form label (e.g. `spec`, `result`). To present a Report, write it as \
@@ -78,6 +93,7 @@ mod tests {
             issue,
             branch: "moor/t1",
             setup_exit: None,
+            sim_udid: None,
         }
     }
 
@@ -130,6 +146,22 @@ mod tests {
         assert!(out.contains("Setup failed (exit 3)"));
         assert!(out.contains(".moor/setup.log"));
         assert!(out.contains(".moor/reports/<kind>.md"));
+    }
+
+    #[test]
+    fn simulator_is_named_only_when_the_task_has_one() {
+        let plain = render(&input(Some("g"), None));
+        assert!(!plain.to_lowercase().contains("simulator"));
+        assert!(!plain.contains(".moor/proof/"));
+        let mut b = input(Some("g"), None);
+        b.sim_udid = Some("ABCD-1234");
+        let out = render(&b);
+        assert!(out.contains("UDID `ABCD-1234`"));
+        assert!(out.contains("id=ABCD-1234"));
+        assert!(out.contains("\"$PWD/.moor/proof/<name>.png\""));
+        assert!(out.contains("\"$PWD/.moor/proof/<name>.mp4\""));
+        assert!(out.contains("simctl needs an absolute output path"));
+        assert!(out.contains("never use `booted`"));
     }
 
     #[test]

@@ -37,3 +37,6 @@ fn a_macos_profile_denies_the_controller_paths() {
         assert!(deny.contains(&p), "{p}: {deny:?}");
     }
 }
+
+#[path = "simulator_launch_tests.rs"]
+mod simulator_launch_tests;

@@ -7,3 +7,6 @@ extend-exclude = [
 
 [default.extend-words]
 certifi = "certifi"
+# Apple's simulator device identifier.
+udid = "udid"
+UDID = "UDID"

@@ -101,7 +101,7 @@ fn a_lease_dir_is_never_a_shallow_or_dotted_path() {
         "/moor-a-x",
     ] {
         let s = script("1", "moor-a-x", w).unwrap();
-        assert_eq!(s.lines().count(), 3, "{w}: {s}");
+        assert_eq!(s.lines().count(), 4, "{w}: {s}");
     }
 }
 
@@ -170,9 +170,80 @@ fn the_lease_removal_is_guarded_by_home() {
             "[ -n \"$HOME\" ] && [ \"$HOME\" != / ] || exit 1\n",
             "rm -rf -- \"$HOME\"/.moor-cred-7-* \"$HOME\"/.moor-tmp-7-*\n",
             "case \"$HOME/\" in '/srv/crabbox/moor-t-n1/repo.moor-home'/*) ;; *) rm -rf -- '/srv/crabbox/moor-t-n1/repo.moor-home' ;; esac\n",
-            "case \"$HOME/\" in '/srv/crabbox/moor-t-n1'/*) ;; *) rm -rf -- '/srv/crabbox/moor-t-n1' ;; esac"
+            "case \"$HOME/\" in '/srv/crabbox/moor-t-n1'/*) ;; *) rm -rf -- '/srv/crabbox/moor-t-n1' ;; esac\n",
+            "command -v xcrun >/dev/null 2>&1 && xcrun simctl list devices 2>/dev/null | sed -n 's/^ *moor-7 (\\([0-9A-Fa-f-]\\{36\\}\\)).*/\\1/p' | while read -r u; do xcrun simctl delete \"$u\" || true; done || true"
         )
     );
+}
+
+const LISTING: &str = "\
+== Devices ==
+-- iOS 26.0 --
+    iPhone 17 Pro (11111111-1111-1111-1111-111111111111) (Shutdown)
+    fc791-s6 (22222222-2222-2222-2222-222222222222) (Booted)
+    moor-421 (33333333-3333-3333-3333-333333333333) (Shutdown)
+    xmoor-42 (44444444-4444-4444-4444-444444444444) (Shutdown)
+    moor-42 (55555555-5555-5555-5555-555555555555) (Booted)
+";
+
+/// Runs the script for task 42 with a fake `xcrun`; returns what it was asked
+/// to do, one call per line.
+fn xcrun_calls(simctl_fails: bool) -> String {
+    let h = Host::new();
+    let bin = h.dir.path().join("bin");
+    fs::create_dir_all(&bin).unwrap();
+    let log = h.dir.path().join("calls");
+    let fake = format!(
+        "#!/bin/sh\necho \"$*\" >> '{}'\n\
+         if [ \"$2\" = list ]; then cat <<'EOF'\n{LISTING}EOF\nfi\n\
+         [ \"{simctl_fails}\" = false ]\n",
+        log.display()
+    );
+    let path = bin.join("xcrun");
+    fs::write(&path, fake).unwrap();
+    fs::set_permissions(&path, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    let w = h.task("42", "moor-a-x");
+    let st = Command::new("sh")
+        .arg("-c")
+        .arg(script("42", "moor-a-x", &w).unwrap())
+        .env("HOME", h.home())
+        .env("PATH", format!("{}:/usr/bin:/bin", bin.display()))
+        .status()
+        .unwrap();
+    assert!(st.success());
+    assert_eq!(h.alive("42", "moor-a-x"), [false; 3]);
+    fs::read_to_string(log).unwrap()
+}
+
+#[test]
+fn deletes_only_the_tasks_exactly_named_simulator() {
+    let calls = xcrun_calls(false);
+    assert!(calls.contains("simctl delete 55555555-5555-5555-5555-555555555555"));
+    assert_eq!(calls.matches("delete").count(), 1, "{calls}");
+    assert!(
+        !calls.contains("booted") && !calls.contains("all"),
+        "{calls}"
+    );
+}
+
+#[test]
+fn a_failing_simctl_does_not_fail_the_cleanup() {
+    let calls = xcrun_calls(true);
+    assert!(calls.contains("simctl delete 55555555"), "{calls}");
+}
+
+#[test]
+fn a_host_without_xcrun_is_not_a_failure() {
+    let h = Host::new();
+    let w = h.task("42", "moor-a-x");
+    let st = Command::new("sh")
+        .arg("-c")
+        .arg(script("42", "moor-a-x", &w).unwrap())
+        .env("HOME", h.home())
+        .env("PATH", "/usr/bin:/bin")
+        .status()
+        .unwrap();
+    assert!(st.success());
 }
 
 #[test]
