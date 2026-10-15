@@ -149,7 +149,7 @@ fn serve_one(shared: &Shared, client: &mut Client, up: &mut Up) -> Flow {
     }
     match classify(&head.target) {
         Route::Passthrough => match request_framing(&head) {
-            Ok(f) => forward(shared, client, up, &head, &Payload::Stream(f)),
+            Ok(f) => forward(shared, client, up, &head, &Payload::Stream(f), false),
             Err(_) => bad(client, 400, "moor: malformed request"),
         },
         Route::Graphql if head.target != "/graphql" => {
@@ -163,11 +163,12 @@ fn serve_one(shared: &Shared, client: &mut Client, up: &mut Up) -> Flow {
             )
         }
         Route::Graphql => match gate(shared, &head, client) {
-            Gate::Forward(body) => forward(shared, client, up, &head, &Payload::Raw(&body)),
+            Gate::Forward(body) => forward(shared, client, up, &head, &Payload::Raw(&body), false),
             Gate::Anonymous(body) => {
                 // The one place a request leaves without its credential.
-                let bare = without_credential(&head);
-                forward(shared, client, up, &bare, &Payload::Raw(&body))
+                shared.withhold(&head.method);
+                let bare = without_credential(&head, &shared.credential_headers);
+                forward(shared, client, up, &bare, &Payload::Raw(&body), true)
             }
             Gate::Refuse(s, m) => refuse(shared, client, &head.method, s, &m),
             Gate::Abort => Flow::Close,
@@ -264,6 +265,7 @@ fn forward(
     up: &mut Up,
     head: &Head,
     payload: &Payload<'_>,
+    anonymous: bool,
 ) -> Flow {
     if up.is_none() {
         *up = shared.upstream.connect().ok().map(BufReader::new);
@@ -276,7 +278,9 @@ fn forward(
         return unavailable(client);
     }
     let mut sent = false;
-    let flow = relay(conn, client, head, &mut sent);
+    let carried = !anonymous && head.header("authorization").is_some();
+    let on_401 = carried.then_some(&*shared.on_credentialed_401);
+    let flow = relay(conn, client, head, &mut sent, on_401);
     if flow == Flow::Close {
         *up = None;
     }
@@ -313,6 +317,7 @@ fn relay(
     client: &mut Client,
     head: &Head,
     sent: &mut bool,
+    on_401: Option<&(dyn Fn() + Send + Sync)>,
 ) -> Flow {
     let resp = loop {
         let Ok(resp) = read_response_head(conn) else {
@@ -328,6 +333,9 @@ fn relay(
         }
         break resp;
     };
+    if let (Some(evict), 401) = (on_401, resp.status) {
+        evict();
+    }
     *sent = true;
     let Ok(framing) = response_framing(&resp, &head.method) else {
         return Flow::Close;

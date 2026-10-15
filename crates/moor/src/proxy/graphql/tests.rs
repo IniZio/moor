@@ -250,6 +250,8 @@ struct Rig {
     up: Up,
     /// PEM of the Task CA the client trusts.
     ca_pem: String,
+    /// How many times the filter asked for the cached credential to be dropped.
+    evictions: Arc<AtomicUsize>,
 }
 
 /// The repo every test scopes the Task to.
@@ -268,17 +270,30 @@ fn rig_with(f: Responder, guard: Guard) -> Rig {
     let ca_pem = ca.cert_pem().to_owned();
     let up = Up::start(f);
     let upstream = Upstream::new("api.github.com", 443, Some(up.addr), Some(&up.ca)).unwrap();
+    let evictions = Arc::new(AtomicUsize::new(0));
     let filter = GraphqlFilter::start(FilterSpec {
         ca,
         repo: Some(task()),
         host: "api.github.com".to_owned(),
         port: 443,
         rule: RULE.to_owned(),
+        credential_headers: vec!["X-Gh-Auth".to_owned()],
+        on_credentialed_401: {
+            let evictions = Arc::clone(&evictions);
+            Box::new(move || {
+                evictions.fetch_add(1, Ordering::SeqCst);
+            })
+        },
         upstream,
         guard,
     })
     .unwrap();
-    Rig { filter, up, ca_pem }
+    Rig {
+        filter,
+        up,
+        ca_pem,
+        evictions,
+    }
 }
 
 impl Rig {
@@ -495,14 +510,15 @@ fn fixed(reply: Vec<u8>) -> Responder {
     Arc::new(move |_| reply.clone())
 }
 
-/// Asserts a refusal response: status, `moor: ` message, and no leak of the credential.
 /// Asserts `w` reached upstream with no credential of any kind.
 fn assert_anonymous(w: &Wire) {
     assert!(w.header("authorization").is_none(), "{}", w.head);
+    assert!(w.header("x-gh-auth").is_none(), "{}", w.head);
     assert!(!w.head.contains(TOKEN), "{}", w.head);
     assert!(!String::from_utf8_lossy(&w.raw).contains(TOKEN));
 }
 
+/// Asserts a refusal response: status, `moor: ` message, and no leak of the credential.
 fn assert_refused(resp: &Wire, status: u16) {
     assert_eq!(resp.status(), status, "{}", resp.head);
     let message = resp.message().expect("json message");

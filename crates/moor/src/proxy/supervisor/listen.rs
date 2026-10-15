@@ -3,7 +3,7 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use moor_core::config::proxy::ResolvedRule;
+use moor_core::config::proxy::{ResolvedInject, ResolvedRule};
 use moor_core::graphql_scope::RepoRef;
 use moor_core::seam::proxy_host::ProxySpec;
 use moor_core::{Secret, TaskId};
@@ -52,9 +52,11 @@ pub(super) fn listen(
         spec.task_repo.clone(),
     );
     let withheld = Withheld::new(&spec.rules, spec.task_repo.clone());
-    let capture = Arc::new(MoorCapture::new(sources, Arc::clone(&deps.clock)));
+    let mut capture = MoorCapture::new(sources, Arc::clone(&deps.clock));
+    capture.defer_evictions(github_rules(spec));
+    let capture = Arc::new(capture);
     let internal = internal_token()?;
-    let graphql = start_filter(deps, spec, &ca)?;
+    let graphql = start_filter(deps, spec, &ca, &capture)?;
     let ca_pem = ca::cert_path(deps.state_dir, task);
     let cfg = build_config(&NonoSpec {
         rules: &spec.rules,
@@ -123,11 +125,21 @@ fn lists_host(rule: &ResolvedRule, host: &str) -> bool {
     })
 }
 
+/// Names of the rules that inject a credential for the GitHub API host.
+fn github_rules(spec: &ProxySpec) -> Vec<String> {
+    spec.rules
+        .iter()
+        .filter(|r| lists_host(r, GITHUB_API_HOST))
+        .map(|r| r.name.clone())
+        .collect()
+}
+
 /// Starts the filter nono chains every CONNECT through; it resolves each destination once and refuses non-public ones.
 fn start_filter(
     deps: &Deps<'_>,
     spec: &ProxySpec,
     ca: &ca::TaskCa,
+    capture: &Arc<MoorCapture>,
 ) -> Result<Option<GraphqlFilter>, String> {
     let rule = spec
         .rules
@@ -154,6 +166,19 @@ fn start_filter(
         host: GITHUB_API_HOST.to_owned(),
         port: 443,
         rule,
+        on_credentialed_401: {
+            let (capture, rules) = (Arc::clone(capture), github_rules(spec));
+            Box::new(move || rules.iter().for_each(|r| capture.evict(r)))
+        },
+        credential_headers: spec
+            .rules
+            .iter()
+            .filter(|r| lists_host(r, GITHUB_API_HOST))
+            .filter_map(|r| match &r.inject {
+                ResolvedInject::Header { header, .. } => Some(header.clone()),
+                ResolvedInject::BasicAuth { .. } => None,
+            })
+            .collect(),
         upstream,
         guard,
     })
@@ -206,6 +231,11 @@ impl Live {
             &self.withheld,
             &sink,
         );
+        let sink: &dyn EgressSink = &sink;
+        for method in self.graphql.iter().flat_map(GraphqlFilter::drain_withheld) {
+            self.withheld
+                .note(GITHUB_API_HOST, &method, "/graphql", sink);
+        }
         for r in self.graphql.iter().flat_map(GraphqlFilter::drain_refusals) {
             sink.refused(&r.host, Some(&r.rule), Some(&r.method), Some(r.category));
         }

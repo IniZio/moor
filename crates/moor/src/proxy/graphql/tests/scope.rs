@@ -190,3 +190,94 @@ fn error_bodies_and_debug_output_carry_no_secrets() {
     assert!(!text.contains(marker));
     assert!(!text.contains("gho_"));
 }
+
+/// A request to `/graphql` whose head carries `headers` verbatim.
+fn with_headers(headers: &[&str], body: &str) -> Vec<u8> {
+    let mut out = String::from("POST /graphql HTTP/1.1\r\nhost: api.github.com\r\n");
+    for h in headers {
+        out.push_str(h);
+        out.push_str("\r\n");
+    }
+    let len = body.len();
+    (out + &format!("content-length: {len}\r\n\r\n{body}")).into_bytes()
+}
+
+#[test]
+fn every_spelling_and_duplicate_of_the_credential_header_is_stripped() {
+    let rig = rig(fixed(json_reply("200 OK", OK_BODY)));
+    let headers = [
+        "AUTHORIZATION: token SECRET_A",
+        "authorization: token SECRET_B",
+        "Authorization: token SECRET_C",
+        "X-GH-AUTH: SECRET_D",
+        "x-gh-auth: SECRET_E",
+        "x-keep: yes",
+    ];
+    let sent = with_headers(&headers, &repo_query("victim", "secrets", "Q"));
+    assert_eq!(rig.client().call(&sent).status(), 200);
+    let seen = rig.requests();
+    let w = seen.first().unwrap();
+    assert_anonymous(w);
+    assert!(!w.head.contains("SECRET_"), "{}", w.head);
+    assert_eq!(w.header("x-keep"), Some("yes"));
+}
+
+/// An upstream that answers 401 to every request, with or without credential.
+fn always_401() -> Responder {
+    fixed(json_reply(
+        "401 Unauthorized",
+        r#"{"message":"Bad credentials"}"#,
+    ))
+}
+
+fn evictions(rig: &Rig) -> usize {
+    rig.evictions.load(Ordering::SeqCst)
+}
+
+#[test]
+fn anonymous_401_never_evicts() {
+    let rig = rig(always_401());
+    for _ in 0..3 {
+        let foreign = post("/graphql", &repo_query("victim", "secrets", "Q"));
+        assert_eq!(rig.client().call(&foreign).status(), 401);
+    }
+    assert_eq!(evictions(&rig), 0);
+}
+
+#[test]
+fn credentialed_401_evicts_after_earlier_anonymous_401s() {
+    let rig = rig(always_401());
+    for _ in 0..5 {
+        let foreign = post("/graphql", &repo_query("victim", "secrets", "Q"));
+        assert_eq!(rig.client().call(&foreign).status(), 401);
+    }
+    let in_scope = post("/graphql", &repo_query("IniZio", "moor", "Q"));
+    assert_eq!(rig.client().call(&in_scope).status(), 401);
+    assert_eq!(evictions(&rig), 1);
+}
+
+#[test]
+fn credentialed_rest_401_evicts_but_one_without_credential_does_not() {
+    let rig = rig(always_401());
+    let mut client = rig.client();
+    let get = format!(
+        "GET /repos/o/r HTTP/1.1\r\nHost: api.github.com\r\nAuthorization: token {TOKEN}\r\n\r\n"
+    );
+    assert_eq!(client.call(get.as_bytes()).status(), 401);
+    assert_eq!(evictions(&rig), 1);
+    let bare = "GET /repos/o/r HTTP/1.1\r\nHost: api.github.com\r\n\r\n";
+    assert_eq!(client.call(bare.as_bytes()).status(), 401);
+    assert_eq!(evictions(&rig), 1);
+}
+
+#[test]
+fn only_requests_forwarded_without_credential_are_reported_as_withheld() {
+    let rig = rig(fixed(json_reply("200 OK", OK_BODY)));
+    let in_scope = post("/graphql", &repo_query("IniZio", "moor", "Q"));
+    assert_eq!(rig.client().call(&in_scope).status(), 200);
+    assert!(rig.filter.drain_withheld().is_empty());
+    let foreign = post("/graphql", &repo_query("victim", "secrets", "Q"));
+    assert_eq!(rig.client().call(&foreign).status(), 200);
+    assert_eq!(rig.filter.drain_withheld(), ["POST"]);
+    assert!(rig.filter.drain_withheld().is_empty());
+}

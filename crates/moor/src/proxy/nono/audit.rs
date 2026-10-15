@@ -90,20 +90,35 @@ impl Withheld {
             return;
         };
         let rule = rule(event).unwrap_or(host_rule);
-        let Some(method) = event
-            .method
-            .as_deref()
-            .filter(|m| !m.is_empty() && m.bytes().all(|b| b.is_ascii_uppercase()))
-        else {
+        let Some(method) = event.method.as_deref() else {
             return;
         };
-        let shape = self.repo.as_ref().and_then(|repo| {
-            request_shape(
-                method,
-                event.path.as_deref().unwrap_or("/"),
-                (&repo.owner, &repo.name),
-            )
-        });
+        self.record(
+            host,
+            rule,
+            method,
+            event.path.as_deref().unwrap_or("/"),
+            sink,
+        );
+    }
+
+    /// Reports a request to credential `host` that was forwarded without the
+    /// credential, as the GraphQL filter saw it.
+    pub(crate) fn note(&self, host: &str, method: &str, path: &str, sink: &dyn EgressSink) {
+        if let Some(rule) = self.hosts.get(&bare_host(host).to_ascii_lowercase()) {
+            self.record(host, rule, method, path, sink);
+        }
+    }
+
+    /// Reports one withheld request once per `(rule, method, shape)`.
+    fn record(&self, host: &str, rule: &str, method: &str, path: &str, sink: &dyn EgressSink) {
+        if method.is_empty() || !method.bytes().all(|b| b.is_ascii_uppercase()) {
+            return;
+        }
+        let shape = self
+            .repo
+            .as_ref()
+            .and_then(|repo| request_shape(method, path, (&repo.owner, &repo.name)));
         let key = (rule.to_owned(), method.to_owned(), shape.clone());
         let mut seen = self
             .seen
@@ -237,7 +252,7 @@ fn allow(event: &NetworkAuditEvent, capture: &MoorCapture, sink: &dyn EgressSink
     // A passthrough carries no managed credential, so its 401 says nothing about the cache.
     if event.status == Some(401) && event.managed_credential_active != Some(false) {
         if let Some(rule) = rule {
-            capture.evict(rule);
+            capture.evict_audited(rule);
         }
     }
 }

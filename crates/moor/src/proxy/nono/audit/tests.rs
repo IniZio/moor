@@ -588,3 +588,5 @@ fn withheld_matches_the_host_ignoring_case_and_port() {
     let got = run_withheld(&[passthrough("API.GitHub.com:443", "GET", "/user")]);
     assert_eq!(got, [r#"withheld API.GitHub.com gh GET Some("GET /user")"#]);
 }
+
+mod filtered;
