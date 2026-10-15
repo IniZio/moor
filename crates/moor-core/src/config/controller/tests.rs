@@ -154,6 +154,32 @@ fn bad_repo_entries_are_rejected() {
 }
 
 #[test]
+fn url_credentials_are_rejected_without_echo() {
+    for url in [
+        "https://user:s3cr3ttok@github.com/o/r",
+        "https://s3cr3ttok@github.com/o/r",
+        "user:s3cr3ttok@github.com:o/r.git",
+    ] {
+        let e = err(&format!("repos:\n  a:\n    url: '{url}'\n"));
+        let msg = e.to_string();
+        assert!(msg.contains("repos.a.url"), "{url}: {msg}");
+        assert!(!msg.contains("s3cr3t"), "{url}: {msg}");
+    }
+}
+
+#[test]
+fn credential_free_urls_are_accepted() {
+    for url in [
+        "git@github.com:o/r.git",
+        "ssh://git@host/o/r.git",
+        "https://github.com/o/r",
+    ] {
+        let text = format!("repos:\n  a:\n    url: '{url}'\n");
+        parse_controller("c.yaml", &text).unwrap_or_else(|e| panic!("{url}: {e}"));
+    }
+}
+
+#[test]
 fn find_repo_by_name_and_url() {
     let r = repos();
     assert_eq!(find_repo(&r, "app").map(|(n, _)| n), Some("app"));
