@@ -9,6 +9,10 @@
 
 #[path = "cli/controller.rs"]
 mod controller;
+#[path = "cli/slack.rs"]
+mod slack;
+#[path = "cli/slack_fake.rs"]
+mod slack_fake;
 #[path = "cli/ssh_controller.rs"]
 mod ssh_controller;
 #[path = "cli/via_controller.rs"]
