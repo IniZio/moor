@@ -205,22 +205,25 @@ fn agent_view_working_maps_state_source_and_pane() {
     assert_eq!(v.state, "working");
     assert_eq!(v.source, "hooks_cached");
     assert_eq!(v.exit_code, None);
-    assert_eq!(v.waiting_for, None);
+    assert_eq!(v.question, None);
+    assert!(v.options.is_empty());
 }
 
 #[test]
-fn agent_view_blocked_carries_waiting_for() {
+fn agent_view_needs_input_carries_question_and_options() {
     let v = agent_view(&reading(
-        AgentState::Blocked {
-            waiting_for: Some("Proceed?".into()),
+        AgentState::NeedsInput {
+            question: Some("Proceed?".into()),
+            options: vec!["Yes".into(), "No".into()],
         },
         Source::Pane,
         PaneLiveness::Live,
     ))
     .unwrap();
-    assert_eq!(v.state, "blocked");
+    assert_eq!(v.state, "needs_input");
     assert_eq!(v.source, "pane");
-    assert_eq!(v.waiting_for.as_deref(), Some("Proceed?"));
+    assert_eq!(v.question.as_deref(), Some("Proceed?"));
+    assert_eq!(v.options, ["Yes", "No"]);
     assert_eq!(v.exit_code, None);
 }
 
@@ -236,7 +239,8 @@ fn agent_view_exited_carries_exit_code_and_pane() {
     assert_eq!(v.state, "exited");
     assert_eq!(v.source, "herdr");
     assert_eq!(v.exit_code, Some(3));
-    assert_eq!(v.waiting_for, None);
+    assert_eq!(v.question, None);
+    assert!(v.options.is_empty());
 }
 
 #[test]

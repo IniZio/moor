@@ -4,6 +4,10 @@ use std::time::Duration;
 
 use crate::seam::clock::Ts;
 
+mod menu;
+
+pub use menu::menu_options;
+
 /// How long a cached hook reading stands in for a dropped read.
 pub const HOOK_TTL: Duration = Duration::from_secs(120);
 /// How long a session counts as starting while no hook has reported.
@@ -16,10 +20,12 @@ pub enum AgentState {
     Starting,
     /// Working on a prompt.
     Working,
-    /// Waiting on an answer.
-    Blocked {
+    /// Waiting on an explicit prompt: a permission, a question menu or an elicitation dialog.
+    NeedsInput {
         /// The prompt text, when one could be read.
-        waiting_for: Option<String>,
+        question: Option<String>,
+        /// The menu choices on screen, in order; empty when there is no menu.
+        options: Vec<String>,
     },
     /// Done and waiting for input.
     Idle,
@@ -45,7 +51,7 @@ impl AgentState {
         match self {
             Self::Starting => "starting",
             Self::Working => "working",
-            Self::Blocked { .. } => "blocked",
+            Self::NeedsInput { .. } => "needs_input",
             Self::Idle => "idle",
             Self::Exited { .. } => "exited",
             Self::Unknown => "unknown",
@@ -247,13 +253,14 @@ fn from_record(rec: &HookRecord, source: Source, young: bool, pane: &PaneRead) -
     match &rec.kind {
         HookKind::Busy => Some(act(AgentState::Working, source)),
         HookKind::Blocked => Some(act(
-            AgentState::Blocked {
-                waiting_for: [rec.message.as_deref(), prompt_of(pane)]
+            AgentState::NeedsInput {
+                question: [rec.message.as_deref(), prompt_of(pane)]
                     .into_iter()
                     .flatten()
                     .map(str::trim)
                     .find(|m| !m.is_empty())
                     .map(str::to_owned),
+                options: menu_options(tail),
             },
             source,
         )),
@@ -293,8 +300,9 @@ fn from_obs(obs: &PaneObs) -> Activity {
         PaneStatus::Working => act(AgentState::Working, Source::Herdr),
         PaneStatus::Idle => act(AgentState::Idle, Source::Herdr),
         PaneStatus::Blocked => act(
-            AgentState::Blocked {
-                waiting_for: obs.prompt.clone().filter(|p| !p.trim().is_empty()),
+            AgentState::NeedsInput {
+                question: obs.prompt.clone().filter(|p| !p.trim().is_empty()),
+                options: menu_options(&obs.tail),
             },
             Source::Herdr,
         ),
@@ -352,7 +360,7 @@ pub const fn may_apply_quiet(activity: &Activity, probes: Option<&Probes>) -> bo
     matches!(activity.source, Source::Hooks | Source::HooksCached)
         && matches!(
             activity.state,
-            AgentState::Idle | AgentState::Blocked { .. }
+            AgentState::Idle | AgentState::NeedsInput { .. }
         )
 }
 

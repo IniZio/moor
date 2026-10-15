@@ -196,7 +196,10 @@ fn answered(
 
 /// Probes the agent once more after a menu choice; warns when it still waits.
 fn menu_answered(cx: &Cx, store: &Store, row: &TaskRow) -> Result<bool, CommandError> {
-    let waiting = matches!(state_of(cx, store, row)?, Some(AgentState::Blocked { .. }));
+    let waiting = matches!(
+        state_of(cx, store, row)?,
+        Some(AgentState::NeedsInput { .. })
+    );
     if waiting {
         cx.warn(Warning {
             code: "steer_unanswered".to_owned(),
@@ -212,7 +215,7 @@ fn menu_answered(cx: &Cx, store: &Store, row: &TaskRow) -> Result<bool, CommandE
 fn choose(req: &SteerReq, state: Option<&AgentState>) -> Result<Steer, CommandError> {
     let task = req.task.as_str();
     let waiting = match state {
-        Some(AgentState::Blocked { waiting_for }) => Some(waiting_for),
+        Some(AgentState::NeedsInput { question, .. }) => Some(question),
         _ => None,
     };
     match (req.menu, req.text.as_deref(), waiting) {

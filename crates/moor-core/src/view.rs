@@ -45,8 +45,10 @@ pub struct AgentView {
     pub source: String,
     /// The agent's exit code, once it ended.
     pub exit_code: Option<i32>,
-    /// What the agent waits for, if anything.
-    pub waiting_for: Option<String>,
+    /// The prompt the agent waits on, if any.
+    pub question: Option<String>,
+    /// The numbered choices the prompt offers; empty when none.
+    pub options: Vec<String>,
     /// Why the launch failed, when it did.
     pub reason: Option<LaunchFailure>,
 }

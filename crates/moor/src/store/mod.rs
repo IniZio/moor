@@ -219,6 +219,17 @@ impl Store {
         rows.collect()
     }
 
+    /// The task's latest `needs_input`, `busy` or `working` event; none when it has had none.
+    pub(crate) fn last_waiting_marker(&self, id: TaskId) -> Result<Option<EventRow>, StoreError> {
+        let conn = self.reader()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, task, kind, payload, ts FROM events \
+             WHERE task = ?1 AND kind IN ('needs_input', 'busy', 'working') ORDER BY id DESC LIMIT 1",
+        )?;
+        let mut rows = stmt.query_and_then([id.get()], event_from_row)?;
+        rows.next().transpose()
+    }
+
     /// A new read-only connection; never blocks on the writer.
     pub(super) fn reader(&self) -> Result<Connection, StoreError> {
         let conn = Connection::open_with_flags(

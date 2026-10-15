@@ -40,15 +40,16 @@ pub(crate) fn agent_view(reading: &Reading) -> Option<AgentView> {
             state: "failed".to_owned(),
             source: "launch".to_owned(),
             exit_code: None,
-            waiting_for: None,
+            question: None,
+            options: Vec::new(),
             reason: Some(failure.clone()),
         });
     }
     let activity = reading.activity.as_ref()?;
-    let (exit_code, waiting_for) = match &activity.state {
-        AgentState::Exited { code } => (Some(*code), None),
-        AgentState::Blocked { waiting_for } => (None, waiting_for.clone()),
-        _ => (None, None),
+    let (exit_code, question, options) = match &activity.state {
+        AgentState::Exited { code } => (Some(*code), None, Vec::new()),
+        AgentState::NeedsInput { question, options } => (None, question.clone(), options.clone()),
+        _ => (None, None, Vec::new()),
     };
     Some(AgentView {
         launched: true,
@@ -56,7 +57,8 @@ pub(crate) fn agent_view(reading: &Reading) -> Option<AgentView> {
         state: activity.state.as_str().to_owned(),
         source: activity.source.as_str().to_owned(),
         exit_code,
-        waiting_for,
+        question,
+        options,
         reason: None,
     })
 }

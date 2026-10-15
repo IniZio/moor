@@ -11,6 +11,8 @@ pub struct WaitFacts {
     pub agent_active: bool,
     /// A run is in flight.
     pub run_in_flight: bool,
+    /// The agent waits on an explicit prompt.
+    pub needs_input: bool,
 }
 
 /// Outcome of one wait poll.
@@ -36,6 +38,7 @@ pub const fn wait_verdict(
     let met = match want {
         WaitFor::Idle | WaitFor::Done => !facts.agent_active && !facts.run_in_flight,
         WaitFor::Run => !facts.run_in_flight,
+        WaitFor::Input => facts.needs_input || (!facts.agent_active && !facts.run_in_flight),
     };
     if met {
         WaitVerdict::Done

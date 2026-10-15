@@ -53,6 +53,24 @@ fn detail_with_box() {
 }
 
 #[test]
+fn detail_lists_the_question_and_numbered_options() {
+    let mut t = task("alpha", false);
+    t.as_object_mut().expect("task is an object").insert(
+        "agent".into(),
+        json!({
+            "state": "needs_input", "pane": "live",
+            "question": "Do you want to proceed?",
+            "options": ["Yes", "No, and tell Claude what to do differently (esc)"]
+        }),
+    );
+    let out = show(json!({"task": t}));
+    assert!(out.contains(
+        "agent:    needs_input pane=live\n  question: Do you want to proceed?\n  1. Yes\n  \
+         2. No, and tell Claude what to do differently (esc)\n"
+    ));
+}
+
+#[test]
 fn detail_without_box() {
     let out = show(json!({"task": task("alpha", false)}));
     assert!(out.contains("box:      none\n"));
