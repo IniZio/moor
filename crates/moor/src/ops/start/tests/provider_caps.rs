@@ -1,37 +1,23 @@
 use moor_core::config::parse_user;
-use moor_core::seam::driver::EgressSupport;
 use moor_core::TaskId;
 
 use super::{req, world_with};
 use crate::testing::driver::FakeDriver;
 
-/// Starts `demo` on a provider reporting `support`; returns the stored egress and the warning codes.
-fn start_on(support: EgressSupport) -> (Option<String>, Vec<String>) {
+#[test]
+fn the_box_egress_is_left_unrecorded_and_never_warned_about() {
     let config = parse_user("config.yaml", "box: {provider: p}").unwrap();
     let repo = tempfile::tempdir().unwrap();
-    let w = world_with(
-        FakeDriver::new().egress_support(support),
-        repo.path(),
-        config,
-    );
+    let w = world_with(FakeDriver::new(), repo.path(), config);
     let v = crate::ops::start::run(&w.cx, &req("demo")).unwrap();
     let row = w.cx.store().unwrap().task(TaskId::new(v.task.id));
     let egress = row.unwrap().unwrap().boxed.unwrap().egress;
-    let codes = w.cx.take_warnings().into_iter().map(|x| x.code).collect();
-    (egress, codes)
-}
-
-#[test]
-fn the_box_egress_is_left_unrecorded_and_never_warned_about() {
-    for support in [
-        EgressSupport::None,
-        EgressSupport::Enforced,
-        EgressSupport::OptIn,
-    ] {
-        let (egress, codes) = start_on(support);
-        assert_eq!(egress, None);
-        assert!(!codes.contains(&"egress_unenforced".to_owned()));
-    }
+    assert_eq!(egress, None);
+    assert!(!w
+        .cx
+        .take_warnings()
+        .iter()
+        .any(|x| x.code == "egress_unenforced"));
 }
 
 #[test]

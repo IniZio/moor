@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use moor_core::domain::run::SyncMode;
 use moor_core::name::{BoxHandle, BoxPath, ProviderId, TaskId, TaskName};
-use moor_core::seam::driver::{AcquireReq, Driver, DriverError, EgressPlan, ExecSpec};
+use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecSpec};
 use moor_core::seam::proc::{Deadline, Tool};
 
 use super::{check, Version};
@@ -118,7 +118,6 @@ fn ops() -> Vec<(&'static str, Op)> {
                 provider: ProviderId::new("sprites"),
                 task: TaskId::new(7),
                 name: TaskName::parse("t7").unwrap(),
-                egress: EgressPlan::Open,
                 class: None,
                 nonce: "ab12cd".to_owned(),
                 worktree: None,

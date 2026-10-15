@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use moor_core::name::BoxHandle;
-use moor_core::seam::driver::{Driver, DriverError, EgressPlan};
+use moor_core::seam::driver::{Driver, DriverError};
 use moor_core::seam::proc::Tool;
 
 use super::{fail, fixture, req, Reply};
@@ -52,7 +52,7 @@ fn acquire_learns_the_workdir_from_the_probe() {
         &["run"],
         Reply::Ok("MOOR_WORKDIR=/w/cbx_X/app\n".to_owned()),
     );
-    let mut r = req("sprites", EgressPlan::Open, None);
+    let mut r = req("sprites", None);
     r.worktree = Some(PathBuf::from("/wt/app"));
     let got = c.acquire(&r).unwrap();
     assert_eq!(got.workdir.as_str(), "/w/cbx_X/app");
@@ -120,7 +120,7 @@ fn acquire_fails_when_the_probe_fails() {
     let (p, c) = fixture();
     p.on(Tool::Crabbox, &["warmup"], Reply::Ok(LEASE_OUT.to_owned()));
     p.on(Tool::Crabbox, &["run"], fail(1, "boom"));
-    let mut r = req("sprites", EgressPlan::Open, None);
+    let mut r = req("sprites", None);
     r.worktree = Some(PathBuf::from("/wt/app"));
     let err = c.acquire(&r).unwrap_err();
     assert!(matches!(err, DriverError::Failed { .. }), "{err:?}");

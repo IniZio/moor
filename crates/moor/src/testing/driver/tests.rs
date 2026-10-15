@@ -7,7 +7,7 @@ use std::time::Duration;
 use moor_core::domain::run::SyncMode;
 use moor_core::name::TaskName;
 use moor_core::seam::driver::{
-    AcquireReq, Driver, DriverError, EgressPlan, ExecOutcome, ExecSpec, Released, SleepOutcome,
+    AcquireReq, Driver, DriverError, ExecOutcome, ExecSpec, Released, SleepOutcome,
 };
 use moor_core::seam::proc::{Deadline, Output};
 use moor_core::{BoxHandle, BoxPath, ProviderId, TaskId};
@@ -19,7 +19,6 @@ fn req() -> AcquireReq {
         provider: ProviderId::new("fake"),
         task: TaskId::new(1),
         name: TaskName::parse("t1").unwrap(),
-        egress: EgressPlan::Open,
         class: None,
         nonce: "n0".to_owned(),
         worktree: None,

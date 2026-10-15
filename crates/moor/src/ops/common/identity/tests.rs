@@ -4,7 +4,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use moor_core::domain::run::SyncMode;
-use moor_core::seam::driver::{AcquireReq, Driver, DriverError, EgressPlan, ExecOutcome};
+use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
 use moor_core::seam::proc::{Deadline, Tool};
 use moor_core::{BoxHandle, ProviderId, TaskId, TaskName};
 
@@ -36,7 +36,6 @@ fn rig(dir: &Path, driver: FakeDriver) -> Rig {
             provider: ProviderId::new("p"),
             task: TaskId::new(1),
             name: TaskName::parse("demo").unwrap(),
-            egress: EgressPlan::Open,
             class: None,
             nonce: "n".to_owned(),
             worktree: None,

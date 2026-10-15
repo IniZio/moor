@@ -12,7 +12,7 @@ use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::task::{SetupOutcome, TaskInput};
 use moor_core::seam::clock::{Clock, Ts};
-use moor_core::seam::driver::{AcquireReq, Driver, EgressPlan};
+use moor_core::seam::driver::{AcquireReq, Driver};
 use moor_core::seam::proxy_host::ProxySpec;
 use moor_core::{BoxHandle, ProviderId, Secret, TaskId, TaskName};
 use ureq::Agent;
@@ -75,7 +75,6 @@ fn task_with_box(store: &Store, driver: &FakeDriver) -> (TaskId, BoxHandle) {
             provider: provider.clone(),
             task: id,
             name: TaskName::parse("demo").unwrap(),
-            egress: EgressPlan::Open,
             class: None,
             nonce: "abc123".into(),
             worktree: None,

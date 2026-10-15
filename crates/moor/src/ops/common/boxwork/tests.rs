@@ -8,7 +8,7 @@ use moor_core::domain::boxes::BoxState;
 use moor_core::domain::run::SyncMode;
 use moor_core::domain::task::TaskState;
 use moor_core::seam::clock::Ts;
-use moor_core::seam::driver::{AcquireReq, Driver, DriverError, EgressPlan, ExecOutcome, ExecSpec};
+use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome, ExecSpec};
 use moor_core::seam::proc::Tool;
 use moor_core::{BoxHandle, BoxPath, ProviderId, TaskId, TaskName};
 
@@ -52,7 +52,6 @@ fn rig(dir: &Path, driver: FakeDriver) -> Rig {
             provider: ProviderId::new("p"),
             task: TaskId::new(1),
             name: TaskName::parse("demo").unwrap(),
-            egress: EgressPlan::Open,
             class: None,
             nonce: "n".to_owned(),
             worktree: None,

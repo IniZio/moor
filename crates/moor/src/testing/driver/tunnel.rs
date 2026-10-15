@@ -7,9 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use moor_core::seam::driver::{
-    DriverCaps, DriverError, EgressSupport, SleepKind, TunnelFailure, TunnelHandle,
-};
+use moor_core::seam::driver::{DriverCaps, DriverError, SleepKind, TunnelFailure, TunnelHandle};
 use moor_core::BoxHandle;
 
 use super::FakeDriver;
@@ -126,12 +124,6 @@ impl FakeDriver {
         dropped.clone()
     }
 
-    /// Reports `support` as the provider's egress capability.
-    pub(crate) fn egress_support(self, support: EgressSupport) -> Self {
-        self.st().egress = Some(support);
-        self
-    }
-
     /// Reports `kind` as the provider's sleep capability.
     pub(crate) fn sleep_kind(self, kind: SleepKind) -> Self {
         self.st().sleep_kind = Some(kind);
@@ -143,7 +135,6 @@ impl FakeDriver {
         DriverCaps {
             sleep: st.sleep_kind.unwrap_or(SleepKind::None),
             wake: false,
-            egress: st.egress.unwrap_or(EgressSupport::None),
             reverse_tunnel: !st.tunnel.lacks_cap,
             has_workdir: true,
         }

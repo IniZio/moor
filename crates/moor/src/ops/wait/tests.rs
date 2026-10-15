@@ -11,7 +11,7 @@ use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::task::{SetupOutcome, TaskInput};
 use moor_core::seam::clock::Ts;
-use moor_core::seam::driver::{AcquireReq, EgressPlan, SleepKind};
+use moor_core::seam::driver::{AcquireReq, SleepKind};
 use moor_core::view::LaunchFailure;
 use moor_core::{ErrorKind, ProviderId, ShowReq, TaskId, TaskName, WaitFor, WaitReq};
 
@@ -239,7 +239,6 @@ fn add_boxed(cx: &Cx) -> TaskId {
             provider: ProviderId::new("p"),
             task: id,
             name: TaskName::parse("demo").unwrap(),
-            egress: EgressPlan::Open,
             class: None,
             nonce: "abc123".into(),
             worktree: None,

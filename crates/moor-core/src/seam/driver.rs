@@ -35,44 +35,10 @@ pub struct DriverCaps {
     pub sleep: SleepKind,
     /// Whether a sleeping Box can wake.
     pub wake: bool,
-    /// Egress restriction support.
-    pub egress: EgressSupport,
     /// Box-to-host tunnel support.
     pub reverse_tunnel: bool,
     /// Whether the Box reports a working directory.
     pub has_workdir: bool,
-}
-
-/// The egress policy a new Box should get.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum EgressPlan {
-    /// No restriction.
-    Open,
-    /// Only these hosts.
-    Allow(Vec<String>),
-}
-
-/// Whether the provider applied the requested egress plan.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EgressApplied {
-    /// No allow-list was requested; egress is open.
-    Open,
-    /// The plan is in force.
-    Enforced,
-    /// The provider ignored the plan.
-    NotEnforced,
-}
-
-impl EgressApplied {
-    /// The stored and displayed name: `none`, `enforced` or `not_enforced`.
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Open => "none",
-            Self::Enforced => "enforced",
-            Self::NotEnforced => "not_enforced",
-        }
-    }
 }
 
 /// A request for a new Box.
@@ -84,8 +50,6 @@ pub struct AcquireReq {
     pub task: TaskId,
     /// Task name the adapter embeds in the Box name.
     pub name: TaskName,
-    /// Requested egress.
-    pub egress: EgressPlan,
     /// Box size (`small`, `medium`, `large`, `xlarge`); `small` when unset.
     pub class: Option<String>,
     /// Random suffix that keeps the Box name unique.
@@ -101,8 +65,6 @@ pub struct Acquired {
     pub handle: BoxHandle,
     /// Working directory.
     pub workdir: BoxPath,
-    /// Egress outcome.
-    pub egress: EgressApplied,
 }
 
 /// Result of releasing a Box.

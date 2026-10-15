@@ -9,7 +9,7 @@ use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, Intent, IntentChange, NewTask};
 use moor_core::domain::run::SyncMode;
 use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
-use moor_core::seam::driver::{AcquireReq, Driver, DriverError, EgressPlan, ExecOutcome};
+use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
 use moor_core::seam::proc::{Output, Tool};
 use moor_core::{ErrorKind, ProviderId, RunReq, TaskId, TaskName};
 
@@ -118,7 +118,6 @@ pub(in crate::ops::run) fn ready_with(driver: FakeDriver) -> Fx {
             provider,
             task: f.id,
             name: TaskName::parse("t").unwrap(),
-            egress: EgressPlan::Open,
             class: None,
             nonce: "n".to_owned(),
             worktree: None,

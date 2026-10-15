@@ -1,7 +1,7 @@
 //! Provider facts: derived from the feature tokens in `crabbox providers --json`.
 
 use moor_core::name::ProviderId;
-use moor_core::seam::driver::{DriverCaps, DriverError, EgressSupport, SleepKind};
+use moor_core::seam::driver::{DriverCaps, DriverError, SleepKind};
 use serde::Deserialize;
 
 /// One provider entry; unknown fields are ignored.
@@ -54,7 +54,6 @@ fn derive(entry: &Entry) -> DriverCaps {
     DriverCaps {
         sleep,
         wake: sleep != SleepKind::None && !entry.has(ROTATES_HOST_KEY),
-        egress: EgressSupport::None,
         reverse_tunnel: entry.has(SSH),
         has_workdir: true,
     }

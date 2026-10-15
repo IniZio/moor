@@ -9,7 +9,7 @@ use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, Intent, IntentChange};
 use moor_core::domain::run::SyncMode;
 use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
-use moor_core::seam::driver::{AcquireReq, Acquired, DriverError, EgressPlan, Released};
+use moor_core::seam::driver::{AcquireReq, Acquired, DriverError, Released};
 use moor_core::seam::rng::Rng;
 use moor_core::{BoxHandle, BoxPath, ErrorKind, ProviderId, TaskId};
 
@@ -195,7 +195,6 @@ pub(crate) fn provision(
         provider,
         task: id,
         name: task.name,
-        egress: EgressPlan::Open,
         class: Some(cfg.size.value.as_str().to_owned()),
         nonce: nonce(cx.rng()),
         worktree: task.worktree.as_deref().map(PathBuf::from),
@@ -224,7 +223,6 @@ fn record_acquired(store: &Store, id: TaskId, got: &Acquired) -> Result<(), Comm
         .set(Fields {
             box_handle: Field::Set(got.handle.clone()),
             box_workdir: Field::Set(got.workdir.as_str().to_owned()),
-            egress: Field::Clear,
             ..Fields::default()
         })
         .intent(IntentChange::Set(Intent::Setup {

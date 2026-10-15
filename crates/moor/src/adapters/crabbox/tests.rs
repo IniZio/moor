@@ -7,9 +7,7 @@ use std::time::Duration;
 
 use moor_core::domain::run::SyncMode;
 use moor_core::name::{BoxHandle, BoxPath, ProviderId, TaskId, TaskName};
-use moor_core::seam::driver::{
-    AcquireReq, Driver, DriverError, EgressApplied, EgressPlan, ExecOutcome, ExecSpec, Released,
-};
+use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome, ExecSpec, Released};
 use moor_core::seam::proc::{Deadline, Output, Proc, ProcError, ProcOutput, ProcSpec, Tool};
 use zeroize::Zeroizing;
 
@@ -32,12 +30,11 @@ fn probe(p: &ScriptedProc) {
 const WARMUP_OUT: &str = "leased cbx_1 slug=moor-t7 provider=sprites server=1 type=t ip=1.2.3.4\n\
 ready ssh=u@h:22 network=public workroot=/root/crabbox\n";
 
-fn req(provider: &str, egress: EgressPlan, class: Option<&str>) -> AcquireReq {
+fn req(provider: &str, class: Option<&str>) -> AcquireReq {
     AcquireReq {
         provider: ProviderId::new(provider),
         task: TaskId::new(7),
         name: TaskName::parse("t7").unwrap(),
-        egress,
         class: class.map(str::to_owned),
         nonce: "ab12cd".to_owned(),
         worktree: None,
@@ -104,9 +101,7 @@ fn acquire_runs_warmup_and_builds_handle() {
     let (p, c) = fixture();
     p.on(Tool::Crabbox, &["warmup"], Reply::Ok(WARMUP_OUT.to_owned()));
     probe(&p);
-    let got = c
-        .acquire(&req("sprites", EgressPlan::Open, Some("small")))
-        .unwrap();
+    let got = c.acquire(&req("sprites", Some("small"))).unwrap();
     assert_eq!(got.handle.as_str(), "sprites/moor-t7-ab12cd");
     assert_eq!(got.workdir.as_str(), PROBE_DIR);
     let calls = p.calls();
@@ -124,19 +119,7 @@ fn acquire_runs_warmup_and_builds_handle() {
         ]
     );
     assert!(calls.first().unwrap().env.is_empty());
-    assert_eq!(
-        c.planned_handle(&req("sprites", EgressPlan::Open, None)),
-        got.handle
-    );
-}
-
-#[test]
-fn open_plan_reports_open_egress() {
-    let (p, c) = fixture();
-    p.on(Tool::Crabbox, &["warmup"], Reply::Ok(WARMUP_OUT.to_owned()));
-    probe(&p);
-    let got = c.acquire(&req("sprites", EgressPlan::Open, None)).unwrap();
-    assert_eq!(got.egress, EgressApplied::Open);
+    assert_eq!(c.planned_handle(&req("sprites", None)), got.handle);
 }
 
 #[test]
@@ -144,15 +127,12 @@ fn acquire_maps_sizes_and_rejects_unknown() {
     let (p, c) = fixture();
     p.on(Tool::Crabbox, &["warmup"], Reply::Ok(WARMUP_OUT.to_owned()));
     probe(&p);
-    c.acquire(&req("sprites", EgressPlan::Open, Some("large")))
-        .unwrap();
+    c.acquire(&req("sprites", Some("large"))).unwrap();
     let calls = p.calls();
     let first = calls.first().unwrap();
     assert!(first.args.contains(&"large".to_owned()));
     assert!(first.env.is_empty());
-    assert!(c
-        .acquire(&req("sprites", EgressPlan::Open, Some("huge")))
-        .is_err());
+    assert!(c.acquire(&req("sprites", Some("huge"))).is_err());
 }
 
 #[test]
@@ -161,7 +141,7 @@ fn ssh_calls_carry_static_env() {
     p.on(Tool::Crabbox, &["warmup"], Reply::Ok(WARMUP_OUT.to_owned()));
     p.on(Tool::Crabbox, &["stop"], Reply::Ok(String::new()));
     probe(&p);
-    c.acquire(&req("ssh", EgressPlan::Open, None)).unwrap();
+    c.acquire(&req("ssh", None)).unwrap();
     c.release(&BoxHandle::new("ssh/moor-t7-ab12cd")).unwrap();
     for call in p.calls() {
         assert!(
@@ -182,27 +162,6 @@ fn list_matches_top_level_slug_and_lease_label() {
     assert_eq!(names, ["a", "b"]);
 }
 
-const EGRESS_PROVIDERS: &str =
-    r#"[{"provider":"sprites","features":["egress-allow","ssh"]},{"provider":"ssh"}]"#;
-
-#[test]
-fn acquire_never_passes_egress_allow() {
-    let (p, c) = fixture();
-    p.on(
-        Tool::Crabbox,
-        &["providers"],
-        Reply::Ok(EGRESS_PROVIDERS.to_owned()),
-    );
-    p.on(Tool::Crabbox, &["warmup"], Reply::Ok(WARMUP_OUT.to_owned()));
-    probe(&p);
-    let plan = EgressPlan::Allow(vec!["a.com".into()]);
-    let got = c.acquire(&req("sprites", plan, None)).unwrap();
-    assert_eq!(got.egress, EgressApplied::Open);
-    for call in p.calls() {
-        assert!(!call.args.contains(&"--egress-allow".to_owned()));
-    }
-}
-
 #[test]
 fn acquire_without_workroot_still_gets_workdir_from_probe() {
     let (p, c) = fixture();
@@ -212,7 +171,7 @@ fn acquire_without_workroot_still_gets_workdir_from_probe() {
         Reply::Ok("leased cbx_1 slug=-\n".into()),
     );
     probe(&p);
-    let got = c.acquire(&req("ssh", EgressPlan::Open, None)).unwrap();
+    let got = c.acquire(&req("ssh", None)).unwrap();
     assert_eq!(got.workdir.as_str(), PROBE_DIR);
     assert!(p
         .calls()
@@ -224,7 +183,7 @@ fn acquire_without_workroot_still_gets_workdir_from_probe() {
 fn acquire_unreadable_output_fails() {
     let (p, c) = fixture();
     p.on(Tool::Crabbox, &["warmup"], Reply::Ok("hello\n".into()));
-    let err = c.acquire(&req("ssh", EgressPlan::Open, None)).unwrap_err();
+    let err = c.acquire(&req("ssh", None)).unwrap_err();
     assert!(matches!(err, DriverError::Failed { .. }), "{err:?}");
 }
 
@@ -233,7 +192,7 @@ fn acquire_runs_warmup_in_worktree() {
     let (p, c) = fixture();
     p.on(Tool::Crabbox, &["warmup"], Reply::Ok(WARMUP_OUT.to_owned()));
     probe(&p);
-    let mut r = req("sprites", EgressPlan::Open, None);
+    let mut r = req("sprites", None);
     r.worktree = Some("/wt".into());
     c.acquire(&r).unwrap();
     let calls = p.calls();
@@ -245,7 +204,7 @@ fn acquire_runs_warmup_in_worktree() {
 fn acquire_failure_maps_through_errors() {
     let (p, c) = fixture();
     p.on(Tool::Crabbox, &["warmup"], fail(1, "boom"));
-    assert!(c.acquire(&req("ssh", EgressPlan::Open, None)).is_err());
+    assert!(c.acquire(&req("ssh", None)).is_err());
 }
 
 #[test]

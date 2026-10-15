@@ -8,7 +8,7 @@ use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::task::{SetupOutcome, TaskInput};
 use moor_core::name::BoxPath;
-use moor_core::seam::driver::{AcquireReq, Driver, DriverError, EgressPlan};
+use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
 use moor_core::{BoxHandle, CpReq, ErrorKind, ProviderId, TaskId, TaskName};
 
 use super::run;
@@ -69,7 +69,6 @@ fn fx_with(driver: FakeDriver, ready: bool) -> Fx {
                 provider,
                 task: id,
                 name,
-                egress: EgressPlan::Open,
                 class: None,
                 nonce: "n".to_owned(),
                 worktree: Some(PathBuf::from(WORKTREE)),

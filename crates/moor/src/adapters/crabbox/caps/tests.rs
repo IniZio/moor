@@ -1,5 +1,5 @@
 use moor_core::name::ProviderId;
-use moor_core::seam::driver::{DriverCaps, DriverError, EgressSupport, SleepKind};
+use moor_core::seam::driver::{DriverCaps, DriverError, SleepKind};
 
 use super::caps_from;
 
@@ -41,11 +41,10 @@ fn caps(id: &str) -> Result<DriverCaps, DriverError> {
     caps_from(&json(), &ProviderId::new(id))
 }
 
-fn want(sleep: SleepKind, wake: bool, egress: EgressSupport) -> DriverCaps {
+fn want(sleep: SleepKind, wake: bool) -> DriverCaps {
     DriverCaps {
         sleep,
         wake,
-        egress,
         reverse_tunnel: true,
         has_workdir: true,
     }
@@ -59,23 +58,11 @@ fn no_tunnel(mut caps: DriverCaps) -> DriverCaps {
 #[test]
 fn table() {
     let cases = [
-        (
-            "local-container",
-            want(SleepKind::None, false, EgressSupport::None),
-        ),
-        (
-            "namespace-devbox",
-            want(SleepKind::Suspend, false, EgressSupport::None),
-        ),
-        (
-            "sprites",
-            want(SleepKind::Native, true, EgressSupport::None),
-        ),
-        ("ssh", want(SleepKind::None, false, EgressSupport::None)),
-        (
-            "pauser",
-            no_tunnel(want(SleepKind::Suspend, true, EgressSupport::None)),
-        ),
+        ("local-container", want(SleepKind::None, false)),
+        ("namespace-devbox", want(SleepKind::Suspend, false)),
+        ("sprites", want(SleepKind::Native, true)),
+        ("ssh", want(SleepKind::None, false)),
+        ("pauser", no_tunnel(want(SleepKind::Suspend, true))),
     ];
     for (id, w) in cases {
         assert_eq!(caps(id), Ok(w), "{id}");
@@ -107,6 +94,6 @@ fn missing_optional_fields_tolerated() {
     let j = r#"[{"provider":"bare"}]"#;
     assert_eq!(
         caps_from(j, &ProviderId::new("bare")),
-        Ok(no_tunnel(want(SleepKind::None, false, EgressSupport::None)))
+        Ok(no_tunnel(want(SleepKind::None, false)))
     );
 }
