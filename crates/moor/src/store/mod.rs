@@ -29,7 +29,9 @@ mod slack;
 mod tests;
 
 pub(crate) use agent::SessionRow;
-pub(crate) use proxy::{Fenced, Lease, ProxyPorts, ProxyRow, ReadyProc, Reserve};
+pub(crate) use proxy::{
+    Fenced, Lease, ProxyPorts, ProxyRow, ReadyProc, Reserve, TunnelAck, TunnelRequest, TunnelWant,
+};
 pub(crate) use runs::RunRow;
 pub(crate) use runs::{NewRun, RunOutcome};
 pub(crate) use slack::{SlackPrompt, SlackThread};

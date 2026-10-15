@@ -1,6 +1,6 @@
 //! Startup, heartbeat and shutdown of one supervised proxy.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::fmt::Arguments;
 use std::path::PathBuf;
 use std::sync::PoisonError;
@@ -42,6 +42,8 @@ pub(super) struct Running<'d> {
     pub(super) live: Live,
     /// The reverse tunnel; dropping it stops the tunnel.
     pub(super) tunnel: RefCell<Box<dyn TunnelHandle>>,
+    /// Whether the tunnel is parked on purpose because the Box sleeps.
+    pub(super) parked: Cell<bool>,
     /// The Box the tunnel leads into.
     pub(super) handle: BoxHandle,
     /// The Box port the tunnel exposes.
@@ -198,6 +200,7 @@ pub(super) fn begin<'d>(deps: &'d Deps<'d>, task: TaskId) -> Result<Running<'d>,
         owner,
         live,
         tunnel: RefCell::new(tunnel),
+        parked: Cell::new(false),
         handle,
         box_port,
         worktree,
@@ -291,7 +294,8 @@ impl Running<'_> {
                 return Some(Stop::Failed);
             }
         }
-        if self.tunnel.borrow().alive() {
+        self.follow_request();
+        if self.parked.get() || self.tunnel.borrow().alive() {
             return None;
         }
         self.revive()

@@ -10,6 +10,7 @@ pub(crate) mod creds;
 pub(crate) mod dotfiles;
 pub(crate) mod facts;
 pub(crate) mod identity;
+pub(crate) mod park;
 pub(crate) mod promote;
 pub(crate) mod provision;
 pub(crate) mod provisioning;

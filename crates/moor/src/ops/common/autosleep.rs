@@ -16,6 +16,7 @@ use moor_core::{ErrorKind, Warning};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::BoxLock;
+use crate::ops::common::park::{park_tunnel, restore_tunnel};
 use crate::store::{Store, StoreError, TaskRow};
 
 /// Sleep the Box of task `id` when its Task has been Idle for `box.sleep_after`.
@@ -62,7 +63,7 @@ fn try_sleep(cx: &Cx, store: &Store, id: TaskId) -> Result<(), CommandError> {
         return Ok(());
     }
     let handle = sleep_handle(cx, &row)?;
-    let decision = match cx.driver().sleep(&handle)? {
+    let decision = match sleep_parked(cx, store, id, &handle)? {
         SleepOutcome::Slept | SleepOutcome::Native => Decision::new(id)
             .task_input(TaskInput::SleepDue)
             .box_input(BoxInput::Sleep)
@@ -81,6 +82,24 @@ fn try_sleep(cx: &Cx, store: &Store, id: TaskId) -> Result<(), CommandError> {
         Ok(_) | Err(StoreError::Illegal(_)) => Ok(()),
         Err(e) => Err(e.into()),
     }
+}
+
+/// Park the Task's Proxy tunnel, then ask the Driver to sleep the Box.
+///
+/// A Box that stays awake gets its tunnel back. That restore is best effort: the sleep
+/// result is what the caller needs to see.
+pub(crate) fn sleep_parked(
+    cx: &Cx,
+    store: &Store,
+    id: TaskId,
+    handle: &BoxHandle,
+) -> Result<SleepOutcome, CommandError> {
+    park_tunnel(cx, store, id)?;
+    let slept = cx.driver().sleep(handle);
+    if !matches!(slept, Ok(SleepOutcome::Slept | SleepOutcome::Native)) {
+        let _ = restore_tunnel(cx, store, id);
+    }
+    Ok(slept?)
 }
 
 /// A refusal with `why`.

@@ -8,15 +8,19 @@ use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, SleepOutcome};
+use moor_core::secret::Secret;
 use moor_core::{ProviderId, TaskId, TaskName};
 
 use super::run;
 use crate::cx::Cx;
 use crate::ops::common::boxlock::BoxLock;
 use crate::ops::common::view::task_view;
-use crate::store::NewRun;
+use crate::store::{
+    Fenced, NewRun, ProxyPorts, ReadyProc, Reserve, TunnelAck, TunnelRequest, TunnelWant,
+};
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
+use crate::testing::rng::FakeRng;
 use crate::testing::surface::FakeSurface;
 
 /// Time enough to pass the default `box.sleep_after`.
@@ -123,6 +127,39 @@ fn sleep_calls(f: &Fx) -> usize {
         .iter()
         .filter(|c| c.starts_with("sleep "))
         .count()
+}
+
+/// Make the Task's Proxy supervisor look live: ready, leased and just beating.
+fn live_proxy(f: &Fx) {
+    let store = f.cx.store().unwrap();
+    let lease = Duration::from_secs(30);
+    let got = store
+        .reserve(
+            f.id,
+            &Secret::new(b"n".to_vec()),
+            &FakeRng::default(),
+            lease,
+        )
+        .unwrap();
+    assert!(matches!(got, Reserve::Reserved(_)), "{got:?}");
+    store.claim_lease(f.id, "A", lease).unwrap();
+    let box_port = store.proxy(f.id).unwrap().unwrap().box_port;
+    let ports = ProxyPorts {
+        box_port,
+        host_port: 41_234,
+    };
+    let proc = ReadyProc {
+        pid: 4242,
+        handle: "tunnel-1",
+        boot_id: None,
+    };
+    let ready = store.mark_ready(f.id, "A", ports, proc).unwrap();
+    assert_eq!(ready, Fenced::Applied);
+}
+
+/// The stored tunnel request for the Task.
+fn tunnel_request(f: &Fx) -> Option<TunnelRequest> {
+    f.cx.store().unwrap().tunnel_request(f.id).unwrap()
 }
 
 #[test]
@@ -307,4 +344,19 @@ fn a_driver_failure_warns_and_changes_nothing() {
     let warned = f.cx.take_warnings();
     assert_eq!(warned.len(), 1);
     assert_eq!(warned.first().unwrap().code, "auto_sleep_failed");
+}
+
+#[test]
+fn auto_sleep_parks_a_live_proxy_tunnel_first() {
+    let f = idle();
+    pass(&f, LONG);
+    live_proxy(&f);
+    let store = f.cx.store().unwrap();
+    store
+        .ack_tunnel(f.id, &TunnelAck::Parked { seq: 1 })
+        .unwrap();
+    auto_sleep(&f);
+    let r = tunnel_request(&f).unwrap();
+    assert_eq!((r.want, r.seq), (TunnelWant::Parked, 1));
+    assert_eq!(states(&f), (TaskState::Asleep, BoxState::Asleep));
 }
