@@ -5,7 +5,9 @@ use moor_core::domain::task::TaskState;
 use moor_core::{ProviderId, TaskId, TaskName};
 use rusqlite::Connection;
 
-use super::{task_from_row, BoxRow, Store, StoreError, TaskRow, TASK_SELECT};
+use super::{
+    event_from_row, task_from_row, BoxRow, EventRow, Store, StoreError, TaskRow, TASK_SELECT,
+};
 
 /// Run a task query and map every row.
 fn query_tasks(
@@ -35,7 +37,37 @@ pub(super) fn live_holders_in(
     query_tasks(conn, tail, (provider.as_str(), a, b, c))
 }
 
+/// An event with the name of the Task that owns it.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct NamedEvent {
+    /// The stored event.
+    pub(crate) row: EventRow,
+    /// Name of the owning Task.
+    pub(crate) task_name: String,
+}
+
 impl Store {
+    /// Events with id greater than `after`, ascending by id, at most `limit`.
+    pub(crate) fn events_after(
+        &self,
+        after: i64,
+        limit: usize,
+    ) -> Result<Vec<NamedEvent>, StoreError> {
+        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+        let conn = self.reader()?;
+        let mut stmt = conn.prepare(
+            "SELECT e.id, e.task, e.kind, e.payload, e.ts, t.name FROM events e \
+             JOIN tasks t ON t.id = e.task WHERE e.id > ?1 ORDER BY e.id LIMIT ?2",
+        )?;
+        let rows = stmt.query_and_then((after, limit), |r| {
+            Ok(NamedEvent {
+                row: event_from_row(r)?,
+                task_name: r.get(5)?,
+            })
+        })?;
+        rows.collect()
+    }
+
     /// The live (neither closed nor rejected) task with this name.
     pub(crate) fn open_task_by_name(&self, name: &TaskName) -> Result<Option<TaskRow>, StoreError> {
         let tail = "WHERE t.name = ?1 AND t.state NOT IN ('closed', 'rejected') ORDER BY t.id DESC LIMIT 1";

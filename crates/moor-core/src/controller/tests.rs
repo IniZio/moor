@@ -72,3 +72,45 @@ fn server_error_shape() {
         "{\"frame\":\"error\",\"kind\":\"hello-required\",\"message\":\"m\"}\n"
     );
 }
+
+#[test]
+fn parses_watch() {
+    let got = parse_frame(r#"{"frame":"watch","since":0}"#);
+    assert_eq!(got, Ok(ClientFrame::Watch { since: 0 }));
+}
+
+#[test]
+fn watch_unknown_field_is_malformed() {
+    let (id, kind) = err_parts(r#"{"frame":"watch","since":0,"extra":1}"#);
+    assert_eq!(id, None);
+    assert_eq!(kind, FrameErrorKind::Malformed);
+}
+
+#[test]
+fn event_frame_serializes() {
+    let frame = ServerFrame::Event {
+        cursor: 7,
+        task: "fix-login".to_owned(),
+        kind: "idled".to_owned(),
+        payload: serde_json::json!({"a": 1}),
+        ts: 123,
+    };
+    let got = serde_json::to_string(&frame).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(
+        got,
+        r#"{"frame":"event","cursor":7,"task":"fix-login","kind":"idled","payload":{"a":1},"ts":123}"#
+    );
+}
+
+#[test]
+fn slow_client_kind_serializes() {
+    let got = serde_json::to_string(&FrameErrorKind::SlowClient).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(got, r#""slow-client""#);
+}
+
+#[test]
+fn store_unavailable_kind_serializes() {
+    let got =
+        serde_json::to_string(&FrameErrorKind::StoreUnavailable).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(got, r#""store-unavailable""#);
+}

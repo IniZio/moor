@@ -52,5 +52,7 @@ impl Moor {
     }
 }
 
+mod feed;
+
 #[cfg(test)]
 mod tests;

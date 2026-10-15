@@ -5,6 +5,7 @@ use std::io::{BufRead, Write};
 use moor_core::controller::{parse_frame, ClientFrame, FrameErrorKind, ServerFrame, PROTOCOL};
 use moor_core::{Request, Response};
 
+use super::watch;
 use crate::env::Env;
 use crate::Moor;
 
@@ -12,11 +13,22 @@ use crate::Moor;
 ///
 /// Frame-level problems get an error frame and leave the connection open.
 pub(crate) fn handle(reader: impl BufRead, writer: impl Write, env: &Env) {
-    serve(reader, writer, |request| respond(env, request));
+    serve(
+        reader,
+        writer,
+        |request| respond(env, request),
+        |writer, since| watch::stream(writer, env, since, watch::Limits::default()),
+    );
 }
 
-/// [`handle`] with the engine behind `answer`, so tests can serve over fakes.
-fn serve(reader: impl BufRead, mut writer: impl Write, answer: impl Fn(Request) -> Response) {
+/// [`handle`] with the engine behind `answer` and the event stream behind `watch`,
+/// so tests can serve over fakes.
+fn serve<W: Write>(
+    reader: impl BufRead,
+    mut writer: W,
+    answer: impl Fn(Request) -> Response,
+    watch: impl Fn(&mut W, i64),
+) {
     let mut handshaken = false;
     for line in reader.lines() {
         let Ok(line) = line else { return };
@@ -34,6 +46,15 @@ fn serve(reader: impl BufRead, mut writer: impl Write, answer: impl Fn(Request) 
                 kind: FrameErrorKind::UnsupportedProtocol,
                 message: format!("client speaks protocol {protocol}, controller speaks {PROTOCOL}"),
             },
+            Ok(ClientFrame::Watch { .. }) if !handshaken => ServerFrame::Error {
+                id: None,
+                kind: FrameErrorKind::HelloRequired,
+                message: "watch arrived before hello".to_owned(),
+            },
+            Ok(ClientFrame::Watch { since }) => {
+                watch(&mut writer, since);
+                return;
+            }
             Ok(ClientFrame::Request { id, .. }) if !handshaken => ServerFrame::Error {
                 message: format!("request {id} arrived before hello"),
                 id: Some(id),

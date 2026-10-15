@@ -18,12 +18,14 @@ use moor_core::{BoxHandle, ProviderId, RunId, TaskId, TaskName};
 
 use crate::testing::clock::FakeClock;
 
+mod events_after;
+
 use super::apply::Applied;
 use super::reads::live_holders_in;
 use super::{NewRun, RunOutcome, Store, StoreError};
 
 /// Open a store in a temp dir with a fake clock.
-fn open(dir: &Path) -> (Store, Arc<FakeClock>) {
+pub(super) fn open(dir: &Path) -> (Store, Arc<FakeClock>) {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000_000)));
     let store = Store::open(&dir.join("state").join("moor.db"), clock.clone()).unwrap();
     (store, clock)
@@ -38,7 +40,7 @@ fn insert(name: &str) -> Decision {
 }
 
 /// Insert a task and return its id.
-fn new_task(store: &Store, name: &str) -> TaskId {
+pub(super) fn new_task(store: &Store, name: &str) -> TaskId {
     store.apply(insert(name)).unwrap().task
 }
 

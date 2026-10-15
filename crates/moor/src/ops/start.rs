@@ -224,7 +224,7 @@ fn set_agent(v: &mut StartView, agent: AgentLaunchView) {
 /// Moves each open Task with a ready Box and no failed setup between Working and Idle.
 ///
 /// Runs before the start, which may then leave the Task it starts in another state.
-fn settle_all(cx: &Cx, store: &Store) -> Result<(), CommandError> {
+pub(crate) fn settle_all(cx: &Cx, store: &Store) -> Result<(), CommandError> {
     for row in &store.open_tasks()? {
         let ready = row.boxed.as_ref().map(|b| b.state) == Some(BoxState::Ready);
         if !ready || row.setup_failed_at.is_some() {

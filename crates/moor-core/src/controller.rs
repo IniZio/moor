@@ -24,6 +24,11 @@ pub enum ClientFrame {
         /// The command to run.
         request: Request,
     },
+    /// Streams every stored event whose cursor is greater than `since`; 0 means from the start.
+    Watch {
+        /// Last cursor the client has seen.
+        since: i64,
+    },
 }
 
 /// A frame sent by the controller.
@@ -52,6 +57,19 @@ pub enum ServerFrame {
         /// Human-readable detail.
         message: String,
     },
+    /// One stored event, sent to a watching client.
+    Event {
+        /// The event's store id; resume a watch from the last one seen.
+        cursor: i64,
+        /// Name of the Task the event belongs to.
+        task: String,
+        /// Event kind.
+        kind: String,
+        /// Kind-specific data.
+        payload: serde_json::Value,
+        /// Event timestamp.
+        ts: i64,
+    },
 }
 
 /// Why the controller rejected a frame.
@@ -64,6 +82,12 @@ pub enum FrameErrorKind {
     UnsupportedProtocol,
     /// A request arrived before the hello.
     HelloRequired,
+    /// The client did not read fast enough and the bounded buffer filled; the controller
+    /// closed the stream, so reconnect with the last cursor.
+    SlowClient,
+    /// The controller could not read its event store; the stream closed, so retry with
+    /// the last cursor.
+    StoreUnavailable,
 }
 
 /// Parses one line.

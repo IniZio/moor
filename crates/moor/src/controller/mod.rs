@@ -1,6 +1,8 @@
 //! `moor controller serve`: a long-running process answering moor requests on a Unix socket.
 
 mod conn;
+mod settle;
+mod watch;
 
 use std::fs::{self, File, TryLockError};
 use std::io::{BufReader, Write};
@@ -9,6 +11,7 @@ use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
+use std::time::Duration;
 
 use moor_core::config::parse_controller;
 
@@ -32,6 +35,7 @@ pub fn serve(env: &Env, config: &Path, stderr: impl Write + Send + 'static) -> u
             for line in Moor::reconcile_proxies(&running.env) {
                 log(&sink, &format!("proxy: {line}"));
             }
+            settle::spawn(&running.env, running.settle_every, &sink);
             running.accept_loop(&sink);
             0
         }
@@ -61,6 +65,8 @@ struct Running {
     _lock: File,
     /// Environment shared by every connection.
     env: Arc<Env>,
+    /// Time between settle passes.
+    settle_every: Duration,
 }
 
 /// Loads `config`, takes the instance lock and binds the socket.
@@ -94,6 +100,7 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
         listener,
         _lock: lock,
         env: Arc::new(env),
+        settle_every: cfg.settle_every(),
     })
 }
 

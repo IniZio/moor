@@ -1,5 +1,7 @@
 //! The controller process config file: strict parse plus validation, no IO.
 
+use std::time::Duration;
+
 use serde::Deserialize;
 
 use super::{parse_strict, ConfigError};
@@ -12,6 +14,20 @@ pub struct ControllerConfig {
     pub socket: Option<String>,
     /// moor state directory override; `~` allowed. None means the process default.
     pub state_dir: Option<String>,
+    /// Seconds between passes that settle every open Task's agent state; must be above 0.
+    /// None means 5.
+    pub settle_every_secs: Option<u64>,
+}
+
+/// Seconds between settle passes when the config does not say.
+const DEFAULT_SETTLE_SECS: u64 = 5;
+
+impl ControllerConfig {
+    /// The time between settle passes.
+    #[must_use]
+    pub fn settle_every(&self) -> Duration {
+        Duration::from_secs(self.settle_every_secs.unwrap_or(DEFAULT_SETTLE_SECS))
+    }
 }
 
 /// Parses and validates a controller config document.
@@ -25,6 +41,9 @@ pub fn parse_controller(file: &str, text: &str) -> Result<ControllerConfig, Conf
         if value.as_deref().is_some_and(|v| v.trim().is_empty()) {
             return Err(ConfigError::new(key, "must not be empty").in_file(file));
         }
+    }
+    if cfg.settle_every_secs == Some(0) {
+        return Err(ConfigError::new("settle_every_secs", "must be above 0").in_file(file));
     }
     Ok(cfg)
 }
