@@ -104,8 +104,6 @@ pub struct TaskSettings {
     pub mcp: BTreeMap<String, McpServer>,
     /// User dotfiles source.
     pub dotfiles: Option<DotfilesConfig>,
-    /// Repo egress entries.
-    pub egress: Vec<String>,
     /// Repo setup commands.
     pub setup: Vec<String>,
     /// Repo teardown commands.
@@ -182,7 +180,6 @@ impl TaskSettings {
             box_credentials: r.box_credentials.clone(),
             mcp: user.mcp_servers.clone(),
             dotfiles: user.dotfiles.clone(),
-            egress: r.egress.clone(),
             setup: r.setup.clone(),
             teardown: r.teardown.clone(),
             env: r.env.clone(),

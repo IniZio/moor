@@ -158,10 +158,9 @@ fn boxed_from_repo_and_user() {
 fn repo_fields_and_user_fields_pass_through() {
     let s = resolve(
         "github: {identity: bot}",
-        Some("egress: [r.io]\nsetup: [a]\nenv: {K: v}"),
+        Some("setup: [a]\nenv: {K: v}"),
         &Flags::default(),
     );
-    assert_eq!(s.egress, ["r.io"]);
     assert_eq!(s.identity, Identity::Bot);
     assert_eq!(s.setup, ["a"]);
     assert_eq!(s.env["K"], "v");

@@ -30,8 +30,6 @@ pub struct RepoConfig {
     pub setup: Vec<String>,
     /// Teardown commands.
     pub teardown: Vec<String>,
-    /// Extra egress domains (`domain` or `*.domain`).
-    pub egress: Vec<String>,
     /// Plain environment variables for the Box.
     pub env: BTreeMap<String, String>,
     /// `compose:` section.
@@ -61,7 +59,6 @@ impl RepoConfig {
         [
             ("setup", self.setup != other.setup),
             ("teardown", self.teardown != other.teardown),
-            ("egress", self.egress != other.egress),
             ("env", self.env != other.env),
             ("compose", self.compose != other.compose),
             ("box", self.box_ != other.box_),
@@ -80,9 +77,6 @@ impl RepoConfig {
         non_blank("setup", &self.setup)?;
         non_blank("teardown", &self.teardown)?;
         self.validate_box_credentials()?;
-        for (i, e) in self.egress.iter().enumerate() {
-            check::egress_entry(e).map_err(|r| ConfigError::new(format!("egress[{i}]"), r))?;
-        }
         for name in self.env.keys() {
             let path = format!("env.{name}");
             check::env_name(name)
