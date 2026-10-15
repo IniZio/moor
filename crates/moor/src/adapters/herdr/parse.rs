@@ -36,6 +36,8 @@ pub(super) struct WorktreeEntry {
     pub branch: Option<String>,
     /// Workspace currently open on the worktree.
     pub open_workspace_id: Option<String>,
+    /// Whether the checkout is a linked worktree rather than the main one.
+    pub is_linked_worktree: Option<bool>,
 }
 
 /// `worktree create` result.
