@@ -1,7 +1,5 @@
 //! What provisioning ran in a Box, and how a failed dotfiles step is recorded.
 
-use moor_core::config::egress::provider_applies_policy;
-use moor_core::config::TaskSettings;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, IntentChange};
 use moor_core::domain::task::TaskInput;
 use moor_core::ErrorKind;
@@ -11,7 +9,6 @@ use super::reread;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::dotfiles::{DotfilesFailed, DotfilesRun};
-use crate::ops::common::facts::egress_support;
 use crate::ops::common::setup::SetupRun;
 use crate::ops::common::view::task_view;
 use crate::store::Store;
@@ -32,23 +29,6 @@ impl Provisioned {
             dotfiles: DotfilesRun::Skipped,
         }
     }
-}
-
-/// `failure` with a line naming where to allow more hosts, when the Box egress is restricted.
-pub(super) fn with_egress_hint(
-    cx: &Cx,
-    cfg: &TaskSettings,
-    mut failure: DotfilesFailed,
-) -> DotfilesFailed {
-    let enforced = egress_support(cx, cfg)
-        .is_ok_and(|support| provider_applies_policy(support, cfg.enforce_egress));
-    if enforced {
-        failure.tail.push_str(
-            "\nBox egress is restricted: add hosts the dotfiles fetch to `egress.allow` in the user config; \
-             hosts the Proxy serves (such as github.com) cannot be fetched during setup, so turn box.enforce_egress off",
-        );
-    }
-    failure
 }
 
 /// Records a failed dotfiles step and returns the error, carrying the Task row, to report.

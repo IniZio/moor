@@ -10,7 +10,7 @@ use moor_core::domain::decision::Intent;
 use moor_core::domain::run::SyncMode;
 use moor_core::domain::task::TaskState;
 use moor_core::seam::clock::Ts;
-use moor_core::seam::driver::{EgressSupport, ExecOutcome};
+use moor_core::seam::driver::ExecOutcome;
 use moor_core::seam::proc::{Deadline, Tool};
 use moor_core::view::{DotfilesView, StartView};
 use moor_core::{ErrorKind, StartReq, TaskId};
@@ -386,22 +386,4 @@ fn each_run_uploads_to_a_different_directory() {
     let paths: Vec<_> = puts.iter().map(|p| p.1.as_str()).collect();
     assert_eq!(paths.len(), 2);
     assert_ne!(paths.first(), paths.last());
-}
-
-#[test]
-fn a_dotfiles_failure_under_restricted_egress_names_the_allow_key() {
-    let src = tempfile::tempdir().unwrap();
-    for (support, hint) in [
-        (EgressSupport::Enforced, true),
-        (EgressSupport::None, false),
-    ] {
-        let driver = FakeDriver::new()
-            .egress_support(support)
-            .exec_results([Ok(exit(1))]);
-        let (w, _, _repo) = dotfiles_world("", Some(src.path()), None, driver);
-        let err = run(&w.cx, &goal_req()).unwrap_err();
-        let msg = err.error.to_string();
-        assert!(msg.contains("dotfiles failed:"), "{msg}");
-        assert_eq!(msg.contains("`egress.allow`"), hint, "{msg}");
-    }
 }
