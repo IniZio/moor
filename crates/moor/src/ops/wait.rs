@@ -4,7 +4,6 @@
 
 use std::time::Duration;
 
-use moor_core::activity::AgentState;
 use moor_core::decide::wait::{wait_verdict, WaitFacts, WaitVerdict};
 use moor_core::view::run::{WaitRunView, WaitValue};
 use moor_core::{ErrorKind, WaitFor, WaitReq};
@@ -59,7 +58,6 @@ pub(crate) fn run(cx: &Cx, req: &WaitReq) -> Result<WaitValue, CommandError> {
         let facts = WaitFacts {
             agent_active: reading.busy(),
             run_in_flight: in_flight.is_some(),
-            needs_input: needs_input(&reading),
         };
         let verdict = wait_verdict(facts, want, elapsed, timeout);
         if verdict == WaitVerdict::Keep {
@@ -82,14 +80,6 @@ pub(crate) fn run(cx: &Cx, req: &WaitReq) -> Result<WaitValue, CommandError> {
             run: shown.as_ref().map(|r| run_view(r, live)),
         });
     }
-}
-
-/// Whether the agent is asking the owner for input.
-fn needs_input(reading: &activity::Reading) -> bool {
-    reading
-        .activity
-        .as_ref()
-        .is_some_and(|a| matches!(a.state, AgentState::NeedsInput { .. }))
 }
 
 /// The run as the `wait` payload shows it.
