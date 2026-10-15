@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use moor_core::seam::driver::{
     AcquireReq, Acquired, BoxListing, Driver, DriverCaps, DriverError, EgressApplied, EgressPlan,
-    ExecOutcome, ExecSpec, Released, SleepOutcome,
+    EgressSupport, ExecOutcome, ExecSpec, Released, SleepOutcome,
 };
 use moor_core::seam::proc::Deadline;
 use moor_core::{BoxHandle, BoxPath, ProviderId};
@@ -48,6 +48,7 @@ struct State {
     work_root: Option<String>,
     fail_workdir: Option<DriverError>,
     tunnel: tunnel::TunnelState,
+    egress: Option<EgressSupport>,
 }
 
 /// One `copy_out` call: handle, source, destination and host cwd.
@@ -163,7 +164,6 @@ impl FakeDriver {
 
 impl Driver for FakeDriver {
     fn caps(&self, _provider: &ProviderId) -> Result<DriverCaps, DriverError> {
-        self.st().calls.push("caps".to_owned());
         Ok(self.caps_reply())
     }
 

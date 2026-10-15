@@ -19,8 +19,8 @@ use super::common::activity;
 use super::common::autosleep;
 use super::common::boxlock::{self, BoxLock};
 use super::common::capacity;
-use super::common::facts::settings;
-use super::common::provision::{egress_plan, provision, reprovision, reread, Entry, Provisioned};
+use super::common::facts::{egress_plan, egress_support, settings};
+use super::common::provision::{provision, reprovision, reread, Entry, Provisioned};
 use super::common::provisioning::dead_provisioning;
 use super::common::view::task_view;
 use crate::cx::Cx;
@@ -71,7 +71,7 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
         model: req.model.clone(),
     };
     let cfg = settings(cx, facts.bound.as_deref().unwrap_or(&facts.repo), &flags)?;
-    egress_plan(&cfg)?;
+    egress_plan(&cfg, egress_support(cx, &cfg)?)?;
     if let Some(reason) =
         preflight::rejection(cx, &cfg, facts.bound.as_deref().unwrap_or(&facts.repo))
     {

@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use moor_core::config::egress::{effective_allow_list, provider_applies_policy, unenforced_note};
+use moor_core::config::egress::unenforced_note;
 use moor_core::config::{Flags, TaskSettings};
 use moor_core::decide::intent::setup_dead;
 
@@ -10,7 +10,7 @@ use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, Intent, IntentChange};
 use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
 use moor_core::seam::driver::{
-    AcquireReq, Acquired, DriverError, EgressApplied, EgressPlan, Released,
+    AcquireReq, Acquired, DriverError, EgressApplied, EgressSupport, Released,
 };
 use moor_core::seam::rng::Rng;
 use moor_core::{BoxHandle, BoxPath, ErrorKind, ProviderId, TaskId, Warning};
@@ -20,7 +20,7 @@ use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::capacity;
 use crate::ops::common::dotfiles;
-use crate::ops::common::facts::settings;
+use crate::ops::common::facts::{egress_plan, egress_support, settings};
 use crate::ops::common::identity;
 use crate::ops::common::setup;
 use crate::ops::common::view::task_view;
@@ -62,21 +62,6 @@ impl Entry {
             Self::Retry => Some(TaskInput::Retry),
             Self::Stay => None,
         }
-    }
-}
-
-/// The egress plan the settings call for.
-///
-/// # Errors
-/// A repo `egress` entry that is not a valid domain.
-pub(crate) fn egress_plan(cfg: &TaskSettings) -> Result<EgressPlan, CommandError> {
-    if provider_applies_policy(&cfg.provider.value, cfg.enforce_egress) {
-        Ok(EgressPlan::Allow(effective_allow_list(
-            &cfg.user_egress,
-            &cfg.egress,
-        )?))
-    } else {
-        Ok(EgressPlan::Open)
     }
 }
 
@@ -178,7 +163,8 @@ pub(crate) fn provision(
 ) -> Result<Provisioned, CommandError> {
     let task = reread(store, id)?;
     let provider = ProviderId::new(cfg.provider.value.clone());
-    let egress = egress_plan(cfg)?;
+    let support = egress_support(cx, cfg)?;
+    let egress = egress_plan(cfg, support)?;
     let mut requested = Decision::new(id);
     requested.task_input = entry.begin();
     let requested = requested
@@ -211,7 +197,7 @@ pub(crate) fn provision(
     } else {
         store.apply(requested)?;
     }
-    let unenforced = warn_unenforced(cx, cfg);
+    let unenforced = warn_unenforced(cx, cfg, support);
     let worktree = PathBuf::from(task.worktree.as_deref().unwrap_or(&task.repo));
     let req = AcquireReq {
         provider,
@@ -238,15 +224,15 @@ pub(crate) fn provision(
 }
 
 /// Warns when the provider cannot apply the allow-list; returns whether it warned.
-fn warn_unenforced(cx: &Cx, cfg: &TaskSettings) -> bool {
-    let note = unenforced_note(&cfg.provider.value, cfg.enforce_egress);
-    if let Some(note) = note {
-        cx.warn(Warning {
-            code: "egress_unenforced".to_owned(),
-            message: note.to_owned(),
-        });
-    }
-    note.is_some()
+fn warn_unenforced(cx: &Cx, cfg: &TaskSettings, support: EgressSupport) -> bool {
+    let Some(note) = unenforced_note(support, cfg.enforce_egress) else {
+        return false;
+    };
+    cx.warn(Warning {
+        code: "egress_unenforced".to_owned(),
+        message: note.to_owned(),
+    });
+    true
 }
 
 /// Six lowercase hex chars drawn from the RNG, so each attempt differs.

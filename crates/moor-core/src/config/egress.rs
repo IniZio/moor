@@ -4,10 +4,16 @@ use super::ConfigError;
 use crate::config::check;
 use crate::config::proxy::default_rules;
 
-/// Provider that takes the allow-list as a flag; always enforces.
-pub const FLAG_PROVIDER: &str = "sprites";
-/// Provider that takes the allow-list as an env var; enforces only on opt-in.
-pub const ENV_PROVIDER: &str = "namespace-devbox";
+/// How far a provider can restrict Box egress.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EgressSupport {
+    /// Always enforced.
+    Enforced,
+    /// Enforced when requested.
+    OptIn,
+    /// Not available.
+    None,
+}
 
 /// Hosts every Box may reach.
 pub const BASE_ALLOW: &[&str] = &[
@@ -27,8 +33,8 @@ pub const BASE_ALLOW: &[&str] = &[
     "security.ubuntu.com",
 ];
 
-/// Note text for namespace-devbox without the opt-in.
-const UNENFORCED: &str = "egress not enforced on namespace-devbox (allow-list is fixed at Box creation; set box.enforce_egress)";
+/// Note text for a provider that fixes the allow-list at creation, without the opt-in.
+const UNENFORCED: &str = "egress not enforced: this provider fixes the allow-list at Box creation; set box.enforce_egress";
 
 /// One `moor env` egress row.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -84,16 +90,23 @@ pub fn effective_allow_list(user: &[String], repo: &[String]) -> Result<Vec<Stri
     Ok(out)
 }
 
-/// Whether `provider` can apply an allow-list; namespace needs `enforce_egress`.
+/// Whether a provider with `support` applies an allow-list; opt-in support needs `enforce_egress`.
 #[must_use]
-pub fn provider_applies_policy(provider: &str, enforce_egress: bool) -> bool {
-    provider == FLAG_PROVIDER || (provider == ENV_PROVIDER && enforce_egress)
+pub const fn provider_applies_policy(support: EgressSupport, enforce_egress: bool) -> bool {
+    match support {
+        EgressSupport::Enforced => true,
+        EgressSupport::OptIn => enforce_egress,
+        EgressSupport::None => false,
+    }
 }
 
-/// Warning when namespace-devbox runs without the egress opt-in.
+/// Warning when a provider with opt-in support runs without the egress opt-in.
 #[must_use]
-pub fn unenforced_note(provider: &str, enforce_egress: bool) -> Option<&'static str> {
-    (provider == ENV_PROVIDER && !enforce_egress).then_some(UNENFORCED)
+pub const fn unenforced_note(support: EgressSupport, enforce_egress: bool) -> Option<&'static str> {
+    match support {
+        EgressSupport::OptIn if !enforce_egress => Some(UNENFORCED),
+        _ => None,
+    }
 }
 
 /// The single egress row for `moor env`; `hosts` is [`effective_allow_list`].
