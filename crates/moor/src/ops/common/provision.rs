@@ -17,7 +17,7 @@ use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::capacity;
 use crate::ops::common::dotfiles;
-use crate::ops::common::facts::{provider_caps, require_reverse_tunnel, settings};
+use crate::ops::common::facts::{provider_caps, require_reverse_tunnel, resolved};
 use crate::ops::common::identity;
 use crate::ops::common::setup;
 use crate::ops::common::view::task_view;
@@ -87,15 +87,16 @@ pub(crate) fn reprovision(
         return retry_dotfiles(cx, store, &row).map(Some);
     }
     let at = row.worktree.as_deref().unwrap_or(&row.repo);
-    if entry_for(&row).is_some() || setup_wanted(cx, &row) {
-        moor_yaml::guard(cx, &row, trusted)?;
+    let entry = entry_for(&row);
+    if entry.is_none() && !setup_wanted(cx, &row) {
+        return Ok(None);
     }
-    if let Some(entry) = entry_for(&row) {
-        let cfg = settings(cx, Path::new(at), &Flags::default())?;
+    let repo = moor_yaml::guard(cx, &row, trusted)?;
+    let cfg = resolved(cx, repo.as_ref(), &Flags::default());
+    if let Some(entry) = entry {
         return provision(cx, store, row.id, entry, &cfg).map(Some);
     }
-    let (true, Some(handle), Some(workdir)) = (
-        setup_wanted(cx, &row),
+    let (Some(handle), Some(workdir)) = (
         row.boxed.as_ref().and_then(|b| b.handle.clone()),
         row.boxed.as_ref().and_then(|b| b.workdir.clone()),
     ) else {
@@ -103,7 +104,6 @@ pub(crate) fn reprovision(
     };
     let workdir = recorded_workdir(&workdir)
         .ok_or_else(|| CommandError::new(ErrorKind::Internal, "recorded box workdir is invalid"))?;
-    let cfg = settings(cx, Path::new(at), &Flags::default())?;
     let held = Decision::new(row.id).intent(IntentChange::Set(Intent::Setup {
         pid: std::process::id(),
     }));

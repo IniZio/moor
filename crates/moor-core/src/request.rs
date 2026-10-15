@@ -225,6 +225,9 @@ pub struct CloseReq {
     /// Close despite unfinished work.
     #[serde(default)]
     pub force: bool,
+    /// Run teardown with the worktree's `.moor.yaml` even when it differs from the base commit.
+    #[serde(default)]
+    pub trust_moor_yaml: bool,
 }
 
 /// Arguments of `remove`.

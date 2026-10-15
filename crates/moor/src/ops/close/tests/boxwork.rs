@@ -279,6 +279,7 @@ fn close_skips_the_probe_for_a_box_that_never_got_a_handle() {
         &CloseReq {
             task: name,
             force: false,
+            trust_moor_yaml: false,
         },
     )
     .unwrap();

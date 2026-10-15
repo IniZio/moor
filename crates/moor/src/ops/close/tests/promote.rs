@@ -98,6 +98,7 @@ fn world_failing(
     );
     proc.on(Tool::Git, &["rev-list"], Reply::Ok("0\n".into()));
     proc.on(Tool::Git, &["status"], Reply::Ok(String::new()));
+    proc.on(Tool::Git, &["ls-tree"], Reply::Ok(String::new()));
     let handle = acquire_holder(&driver);
     let driver = Arc::new(match acquire_err {
         Some(e) => driver.fail_acquire(e),
@@ -205,6 +206,7 @@ fn close_holder(w: &World) -> moor_core::view::CloseView {
     let req = CloseReq {
         task: TaskName::parse("holder").unwrap(),
         force: false,
+        trust_moor_yaml: false,
     };
     close(&w.cx, &req).unwrap()
 }

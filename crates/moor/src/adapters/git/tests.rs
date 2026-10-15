@@ -445,3 +445,39 @@ fn file_at_propagates_git_failure() {
     );
     assert!(g.file_at(Path::new("/r"), "abc", ".moor.yaml").is_err());
 }
+
+#[test]
+fn commit_of_returns_the_trimmed_sha() {
+    let (p, g) = scripted();
+    p.on(Tool::Git, &["rev-parse", "--verify"], ok("abc123\n"));
+    assert_eq!(g.commit_of(Path::new("/r"), "main").unwrap(), "abc123");
+}
+
+#[test]
+fn commit_of_ends_options_and_peels_to_a_commit() {
+    let (p, g) = scripted();
+    p.on(Tool::Git, &["rev-parse", "--verify"], ok("abc123\n"));
+    g.commit_of(Path::new("/r"), "-x").unwrap();
+    let calls = p.calls();
+    let call = calls.first().unwrap();
+    assert_eq!(
+        call.args,
+        ["rev-parse", "--verify", "--end-of-options", "-x^{commit}"]
+    );
+    assert_eq!(call.cwd.as_deref(), Some(Path::new("/r")));
+}
+
+#[test]
+fn commit_of_propagates_git_failure() {
+    let (p, g) = scripted();
+    p.on(
+        Tool::Git,
+        &["rev-parse", "--verify"],
+        Reply::Fail {
+            code: 128,
+            stdout: String::new(),
+            stderr: "fatal: Needed a single revision".to_owned(),
+        },
+    );
+    assert!(g.commit_of(Path::new("/r"), "nope").is_err());
+}

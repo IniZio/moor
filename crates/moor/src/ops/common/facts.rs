@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use moor_core::config::{Flags, TaskSettings};
+use moor_core::config::{Flags, RepoConfig, TaskSettings};
 use moor_core::seam::driver::DriverCaps;
 use moor_core::ProviderId;
 
@@ -19,8 +19,12 @@ pub(crate) fn settings(
     worktree: &Path,
     flags: &Flags,
 ) -> Result<TaskSettings, CommandError> {
-    let repo = cx.repo_config(worktree)?;
-    Ok(TaskSettings::resolve(cx.config(), repo.as_ref(), flags))
+    Ok(resolved(cx, cx.repo_config(worktree)?.as_ref(), flags))
+}
+
+/// Settings for one command from an already-read repo config, user config from Cx, and flags.
+pub(crate) fn resolved(cx: &Cx, repo: Option<&RepoConfig>, flags: &Flags) -> TaskSettings {
+    TaskSettings::resolve(cx.config(), repo, flags)
 }
 
 /// The capabilities of the settings' provider.

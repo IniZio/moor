@@ -6,13 +6,12 @@ use std::time::Duration;
 use moor_core::config::check::{agent_env_reserved, credential_like_env};
 use moor_core::config::egress::effective_allow_list;
 use moor_core::config::proxy::{resolve_rules, ResolvedRule};
-use moor_core::config::Flags;
+use moor_core::config::TaskSettings;
 use moor_core::seam::forge::ForgeRepo;
 use moor_core::seam::proc::{Deadline, ProcSpec, Tool};
 use moor_core::Warning;
 
 use crate::cx::Cx;
-use crate::ops::common::facts::settings;
 
 /// Log lines kept when a start fails.
 pub(crate) const TAIL_LINES: usize = 20;
@@ -42,11 +41,15 @@ pub(crate) struct ProxyPlan {
     pub(crate) env: Vec<(String, String)>,
 }
 
-/// Resolves the proxy plan of the worktree whose `origin` is `origin`.
+/// Resolves the proxy plan of a worktree whose `origin` is `origin` and whose settings are `task`.
 ///
 /// # Errors
-/// The message of a settings, rule or egress entry that does not resolve.
-pub(crate) fn plan(cx: &Cx, worktree: &Path, origin: Option<&str>) -> Result<ProxyPlan, String> {
+/// The message of a rule or egress entry that does not resolve.
+pub(crate) fn plan(
+    cx: &Cx,
+    origin: Option<&str>,
+    task: &TaskSettings,
+) -> Result<ProxyPlan, String> {
     let repo = origin.and_then(|o| cx.forge().repo_of(o));
     let cfg = cx.config();
     let rules = resolve_rules(
@@ -55,7 +58,6 @@ pub(crate) fn plan(cx: &Cx, worktree: &Path, origin: Option<&str>) -> Result<Pro
         repo.as_ref().map(|r| (r.owner.as_str(), r.name.as_str())),
     )
     .map_err(|e| e.to_string())?;
-    let task = settings(cx, worktree, &Flags::default()).map_err(|e| e.error.to_string())?;
     let allow = effective_allow_list(cx.engine().egress_hosts(), &task.user_egress, &task.egress)
         .map_err(|e| e.to_string())?;
     let (kept, dropped): (Vec<_>, Vec<_>) = task

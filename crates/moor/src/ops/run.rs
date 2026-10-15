@@ -19,7 +19,7 @@ use moor_core::{ErrorKind, RunId, RunReq, Sha};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
-use crate::ops::common::facts::settings;
+use crate::ops::common::facts::resolved;
 use crate::ops::common::provision::moor_yaml;
 use crate::ops::common::provisioning::dead_provisioning;
 use crate::ops::common::wake::wake_if_asleep;
@@ -84,8 +84,8 @@ fn launch(
     row: &TaskRow,
     target: ready::Target,
 ) -> Result<RunValue, CommandError> {
-    moor_yaml::guard(cx, row, req.trust_moor_yaml)?;
-    let cfg = settings(cx, &target.worktree, &Flags::default())?;
+    let repo = moor_yaml::guard(cx, row, req.trust_moor_yaml)?;
+    let cfg = resolved(cx, repo.as_ref(), &Flags::default());
     let sync = sync::choose(cx, store, req, row)?;
     let (sha, argv) = plan(cx, req, &target.worktree, &cfg.setup)?;
     let id = store.begin_run(NewRun {

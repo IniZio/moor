@@ -218,7 +218,24 @@ fn report_close_remove_cp() {
         req(&["close", "t1", "--force"]),
         Request::Close(CloseReq {
             task: n("t1"),
-            force: true
+            force: true,
+            trust_moor_yaml: false
+        })
+    );
+    assert_eq!(
+        req(&["close", "demo", "--trust-moor-yaml"]),
+        Request::Close(CloseReq {
+            task: n("demo"),
+            force: false,
+            trust_moor_yaml: true
+        })
+    );
+    assert_eq!(
+        req(&["close", "demo"]),
+        Request::Close(CloseReq {
+            task: n("demo"),
+            force: false,
+            trust_moor_yaml: false
         })
     );
     assert_eq!(

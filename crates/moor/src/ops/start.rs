@@ -19,8 +19,8 @@ use super::common::activity;
 use super::common::autosleep;
 use super::common::boxlock::{self, BoxLock};
 use super::common::capacity;
-use super::common::facts::{provider_caps, require_reverse_tunnel, settings};
-use super::common::provision::{provision, reprovision, reread, Entry, Provisioned};
+use super::common::facts::{provider_caps, require_reverse_tunnel, resolved, settings};
+use super::common::provision::{moor_yaml, provision, reprovision, reread, Entry, Provisioned};
 use super::common::provisioning::dead_provisioning;
 use super::common::view::{hide_unsupported_sleep, task_view};
 use crate::cx::Cx;
@@ -94,9 +94,7 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
         } else {
             Provisioned::skipped()
         };
-        let agent = launch::run(cx, store, req, id, done.setup.exit(), &|| {
-            Ok(cfg.model.as_ref().map(|m| m.value.clone()))
-        })?;
+        let agent = launch::run(cx, store, req, id, done.setup.exit(), &|| Ok(cfg.clone()))?;
         (done, agent)
     };
     launch::watch(cx, store, id, &agent);
@@ -171,16 +169,18 @@ fn attach(
     let reprovisioned = reprovision(cx, store, row, "start", req.trust_moor_yaml)?;
     store.apply(Decision::new(row.id).event(ExtraEvent::Attached))?;
     let setup_exit = reprovisioned.as_ref().and_then(|p| p.setup.exit());
-    let model = || {
-        let at = row.worktree.as_deref().unwrap_or(&row.repo);
-        let flags = Flags {
-            model: req.model.clone(),
-        };
-        let cfg = settings(cx, Path::new(at), &flags)?;
-        Ok(cfg.model.map(|m| m.value))
+    let settings = || {
+        let repo = moor_yaml::guard(cx, row, req.trust_moor_yaml)?;
+        Ok(resolved(
+            cx,
+            repo.as_ref(),
+            &Flags {
+                model: req.model.clone(),
+            },
+        ))
     };
     wake_idle(store, row.id)?;
-    let agent = relaunch::run(cx, store, req, row.id, setup_exit, &model)?;
+    let agent = relaunch::run(cx, store, req, row.id, setup_exit, &settings)?;
     launch::watch(cx, store, row.id, &agent);
     let row = &reread(store, row.id)?;
     let mut v = with_provider(cx, row, true)?;

@@ -9,6 +9,8 @@ use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::Reply;
 
+const SHA: &str = "0123456789abcdef0123456789abcdef01234567\n";
+
 fn ok(s: &str) -> Reply {
     Reply::Ok(s.to_owned())
 }
@@ -35,6 +37,8 @@ fn a_clean_leftover_worktree_is_removed_and_recreated_from_the_base() {
     w.surface.add_worktree(stale.path());
     w.proc.on(Tool::Git, &["rev-list"], ok("0\n"));
     w.proc.on(Tool::Git, &["status"], ok(""));
+    w.proc
+        .before(Tool::Git, &["rev-parse", "--verify"], ok(SHA));
     let request = crate::ops::start::StartReq {
         base: Some("main".into()),
         ..req("demo")
@@ -51,8 +55,43 @@ fn a_clean_leftover_worktree_is_removed_and_recreated_from_the_base() {
     );
     assert_eq!(
         w.surface.bases(),
-        [Some("main".to_owned()), Some("main".to_owned())]
+        [Some(SHA.trim().to_owned()), Some(SHA.trim().to_owned())]
     );
+}
+
+#[test]
+fn an_explicit_base_is_recorded_and_branched_from_as_its_commit() {
+    let w = world(FakeDriver::new());
+    w.proc
+        .before(Tool::Git, &["rev-parse", "--verify"], ok(SHA));
+    let request = crate::ops::start::StartReq {
+        base: Some("main".into()),
+        ..req("demo")
+    };
+    let v = run(&w.cx, &request).unwrap();
+    let stored =
+        w.cx.store()
+            .unwrap()
+            .task(moor_core::TaskId::new(v.task.id))
+            .unwrap()
+            .unwrap();
+    assert_eq!(stored.base.as_deref(), Some(SHA.trim()));
+    assert_eq!(w.surface.bases(), [Some(SHA.trim().to_owned())]);
+}
+
+#[test]
+fn an_unknown_base_is_refused_without_creating_a_task() {
+    let w = world(FakeDriver::new());
+    w.proc
+        .before(Tool::Git, &["rev-parse", "--verify"], failing());
+    let request = crate::ops::start::StartReq {
+        base: Some("nope".into()),
+        ..req("demo")
+    };
+    let err = run(&w.cx, &request).unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Usage);
+    assert!(w.surface.calls().is_empty());
+    assert!(w.cx.store().unwrap().open_tasks().unwrap().is_empty());
 }
 
 #[test]

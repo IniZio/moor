@@ -1,10 +1,12 @@
-//! Refuses work outside the sandbox that would use a `.moor.yaml` edited since the Task started.
+//! Settles which `.moor.yaml` moor uses for a Task, and refuses one edited since the Task started.
 //!
-//! Setup re-runs, agent relaunches and `moor run` all share this check.
+//! Setup re-runs, agent relaunches and `moor run` share [`guard`]; close's teardown uses
+//! [`for_teardown`], which never refuses. Both return the config parsed from the exact bytes they
+//! compared, so callers never read the file again after the check.
 
 use std::path::Path;
 
-use moor_core::config::parse_repo;
+use moor_core::config::{parse_repo, RepoConfig};
 use moor_core::{ErrorKind, Warning};
 
 use crate::cx::Cx;
@@ -14,11 +16,94 @@ use crate::store::TaskRow;
 /// File name of the repo config.
 const REPO_FILE: &str = ".moor.yaml";
 
+/// The worktree copy and the base-commit copy of the repo config, as read once.
+struct Copies<'a> {
+    /// Directory holding the worktree copy.
+    at: &'a str,
+    /// Base commit, or a placeholder when the Task has none.
+    rev: &'a str,
+    /// Worktree text; `None` when the file is absent.
+    current: Option<String>,
+    /// Text at the base commit; `None` when the commit has no such file.
+    base: Option<String>,
+}
+
+impl Copies<'_> {
+    /// Whether the worktree copy matches the base copy byte for byte.
+    fn same(&self) -> bool {
+        self.current == self.base
+    }
+
+    /// What differs between the two copies, in words.
+    fn what(&self) -> String {
+        describe(self.at, self.current.as_deref(), self.base.as_deref())
+    }
+}
+
 /// Lets setup, relaunch and run use the worktree's `.moor.yaml` only when it matches the base commit.
 ///
 /// The agent can edit that file, and these commands run work outside the agent sandbox. A
 /// difference is refused unless the owner confirmed it with `trusted`, which warns once instead.
-pub(crate) fn guard(cx: &Cx, row: &TaskRow, trusted: bool) -> Result<(), CommandError> {
+/// On success it returns the repo config to use, parsed from the bytes that were compared.
+///
+/// # Errors
+/// A refused difference, an unreadable file or base commit, or a config that does not parse.
+pub(crate) fn guard(
+    cx: &Cx,
+    row: &TaskRow,
+    trusted: bool,
+) -> Result<Option<RepoConfig>, CommandError> {
+    let copies = read_copies(cx, row)?;
+    if !copies.same() {
+        let what = copies.what();
+        if !trusted {
+            return Err(CommandError::new(
+                ErrorKind::Refused,
+                format!(
+                    "{}/{REPO_FILE} differs from base commit {}: {what}; moor will not run work outside the sandbox with it unconfirmed",
+                    copies.at, copies.rev
+                ),
+            )
+            .with_hint("review the change, then repeat the command with --trust-moor-yaml"));
+        }
+        warn_trusted(cx, &copies, &what);
+    }
+    config_of(cx, &copies, copies.current.as_deref())
+}
+
+/// Like [`guard`] for close's teardown, which must not be blocked by an edited `.moor.yaml`.
+///
+/// A difference the owner confirmed uses the worktree copy. Otherwise it uses the base-commit copy
+/// and warns once.
+///
+/// # Errors
+/// An unreadable file or base commit, or a config that does not parse.
+pub(crate) fn for_teardown(
+    cx: &Cx,
+    row: &TaskRow,
+    trusted: bool,
+) -> Result<Option<RepoConfig>, CommandError> {
+    let copies = read_copies(cx, row)?;
+    if copies.same() {
+        return config_of(cx, &copies, copies.current.as_deref());
+    }
+    let what = copies.what();
+    if trusted {
+        warn_trusted(cx, &copies, &what);
+        return config_of(cx, &copies, copies.current.as_deref());
+    }
+    cx.warn_once(Warning {
+        code: "moor_yaml_untrusted".to_owned(),
+        message: format!(
+            "{}/{REPO_FILE} differs from base commit {}: {what}; using the copy at the base commit (repeat with --trust-moor-yaml to use the worktree's)",
+            copies.at, copies.rev
+        ),
+    });
+    config_of(cx, &copies, copies.base.as_deref())
+}
+
+/// Reads the worktree copy and the base-commit copy once.
+fn read_copies<'a>(cx: &Cx, row: &'a TaskRow) -> Result<Copies<'a>, CommandError> {
     let at = row.worktree.as_deref().unwrap_or(&row.repo);
     let path = Path::new(at).join(REPO_FILE);
     let current = match std::fs::read_to_string(&path) {
@@ -43,27 +128,36 @@ pub(crate) fn guard(cx: &Cx, row: &TaskRow, trusted: bool) -> Result<(), Command
             })?,
         None => None,
     };
-    if current == base {
-        return Ok(());
+    Ok(Copies {
+        at,
+        rev: row.base.as_deref().unwrap_or("(none)"),
+        current,
+        base,
+    })
+}
+
+/// Parses `text`; with no text, falls back to the main checkout's file as `load_repo` would.
+fn config_of(
+    cx: &Cx,
+    copies: &Copies<'_>,
+    text: Option<&str>,
+) -> Result<Option<RepoConfig>, CommandError> {
+    if let Some(text) = text {
+        let file = format!("{}/{REPO_FILE}", copies.at);
+        return Ok(Some(parse_repo(&file, text)?));
     }
-    let what = describe(at, current.as_deref(), base.as_deref());
-    let rev = row.base.as_deref().unwrap_or("(none)");
-    if trusted {
-        cx.warn_once(Warning {
-            code: "moor_yaml_trusted".to_owned(),
-            message: format!(
-                "{at}/{REPO_FILE} differs from base commit {rev}: {what}; running with it as confirmed by --trust-moor-yaml"
-            ),
-        });
-        return Ok(());
-    }
-    Err(CommandError::new(
-        ErrorKind::Refused,
-        format!(
-            "{at}/{REPO_FILE} differs from base commit {rev}: {what}; moor will not run work outside the sandbox with it unconfirmed"
+    cx.main_repo_config(Path::new(copies.at))
+}
+
+/// Warns once that the worktree copy is used because the owner confirmed it.
+fn warn_trusted(cx: &Cx, copies: &Copies<'_>, what: &str) {
+    cx.warn_once(Warning {
+        code: "moor_yaml_trusted".to_owned(),
+        message: format!(
+            "{}/{REPO_FILE} differs from base commit {}: {what}; running with it as confirmed by --trust-moor-yaml",
+            copies.at, copies.rev
         ),
-    )
-    .with_hint("review the change, then repeat the command with --trust-moor-yaml"))
+    });
 }
 
 /// What differs between the worktree copy and the base copy, in words.

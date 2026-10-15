@@ -14,6 +14,9 @@ pub(super) struct CloseArgs {
     /// Close despite unsaved work.
     #[arg(long)]
     pub(super) force: bool,
+    /// Run teardown even when the Task's .moor.yaml differs from its base commit.
+    #[arg(long)]
+    pub(super) trust_moor_yaml: bool,
 }
 
 impl From<CloseArgs> for CloseReq {
@@ -21,6 +24,7 @@ impl From<CloseArgs> for CloseReq {
         Self {
             task: a.task,
             force: a.force,
+            trust_moor_yaml: a.trust_moor_yaml,
         }
     }
 }

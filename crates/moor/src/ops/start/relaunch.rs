@@ -1,6 +1,7 @@
 //! Starts the agent again for a Working Task whose pane is gone or has exited.
 
 use moor_core::activity::PaneStatus;
+use moor_core::config::TaskSettings;
 use moor_core::decide::transcript::Trigger;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
 use moor_core::domain::task::TaskState;
@@ -14,7 +15,7 @@ use super::launch;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
-use crate::ops::common::provision::{moor_yaml, reread};
+use crate::ops::common::provision::reread;
 use crate::ops::common::resume;
 use crate::ops::common::transcript;
 use crate::store::{SessionRow, Store, TaskRow};
@@ -38,17 +39,19 @@ enum Ended {
 /// # Errors
 /// A store failure, a busy Box, a model that cannot be resolved, or a `.moor.yaml` that changed
 /// since the base commit when an agent is about to launch and the owner has not trusted it.
+///
+/// `settings` is evaluated once, before anything changes, and holds the config the launch uses.
 pub(super) fn run(
     cx: &Cx,
     store: &Store,
     req: &StartReq,
     id: TaskId,
     setup_exit: Option<i32>,
-    model: &dyn Fn() -> Result<Option<String>, CommandError>,
+    settings: &dyn Fn() -> Result<TaskSettings, CommandError>,
 ) -> Result<AgentLaunchView, CommandError> {
     let row = reread(store, id)?;
     if req.no_agent || row.state != TaskState::Working {
-        return launch::run(cx, store, req, id, setup_exit, model);
+        return launch::run(cx, store, req, id, setup_exit, settings);
     }
     match store.live_session(id)? {
         Some(s) if ended(cx, &s).is_none() => {
@@ -63,16 +66,18 @@ pub(super) fn run(
     let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "start", boxlock::WAIT)?;
     let Some(old) = store.live_session(id)? else {
         if req.goal.is_some() || row.goal.is_some() || resumes(req, &row) {
-            moor_yaml::guard(cx, &row, req.trust_moor_yaml)?;
+            let cfg = settings()?;
+            store_goal(store, req, id)?;
+            return launch::run(cx, store, req, id, setup_exit, &|| Ok(cfg.clone()));
         }
         store_goal(store, req, id)?;
-        return launch::run(cx, store, req, id, setup_exit, model);
+        return launch::run(cx, store, req, id, setup_exit, settings);
     };
     let Some(end) = ended(cx, &old) else {
         on_live(cx, store, req, &row, &old);
         return Ok(AgentLaunchView::default());
     };
-    relaunch(cx, store, req, &old, &end, model)
+    relaunch(cx, store, req, &old, &end, settings)
 }
 
 /// Whether `req` resumes the stored agent session of `row`.
@@ -151,7 +156,7 @@ fn relaunch(
     req: &StartReq,
     old: &SessionRow,
     end: &Ended,
-    model: &dyn Fn() -> Result<Option<String>, CommandError>,
+    settings: &dyn Fn() -> Result<TaskSettings, CommandError>,
 ) -> Result<AgentLaunchView, CommandError> {
     let id = old.task;
     let mut row = reread(store, id)?;
@@ -167,9 +172,9 @@ fn relaunch(
     let Some(mut launch) = launch::launch_req(cx, &row, None) else {
         return Ok(AgentLaunchView::default());
     };
-    moor_yaml::guard(cx, &row, req.trust_moor_yaml)?;
+    let cfg = settings()?;
     launch.resume = resume;
-    launch.model = model()?;
+    launch.model = cfg.model.clone().map(|m| m.value);
     if let Some(g) = &req.goal {
         let set = Fields {
             goal: Field::Set(g.clone()),
@@ -184,7 +189,7 @@ fn relaunch(
     let saved = transcript::save(cx, store, &row, old, Trigger::Relaunch);
     let digest = saved.as_ref().map(|t| t.digest.as_str());
     store.end_session(old.id, exit, digest)?;
-    let view = launch::begin(cx, store, &row, &launch)?;
+    let view = launch::begin(cx, store, &row, &launch, &cfg)?;
     if view.launched {
         let new_pane = store.live_session(id)?.and_then(|s| s.pane);
         let event = ExtraEvent::Relaunched {

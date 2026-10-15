@@ -27,6 +27,7 @@ fn unimplemented_command_fails_with_its_cmd() {
     let req = Request::Close(CloseReq {
         task: moor_core::name::TaskName::parse("t").unwrap(),
         force: false,
+        trust_moor_yaml: false,
     });
     let resp = moor().call(req);
     assert_eq!(resp.class, ExitClass::Failed);

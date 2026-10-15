@@ -59,6 +59,7 @@ fn with_args() -> Vec<Request> {
         Request::Close(CloseReq {
             task: n("a"),
             force: true,
+            trust_moor_yaml: true,
         }),
         Request::Remove(RemoveReq {
             task: n("a"),
@@ -118,13 +119,25 @@ fn close_roundtrips_from_json() {
         r,
         Request::Close(CloseReq {
             task: n("a"),
-            force: true
+            force: true,
+            trust_moor_yaml: false
         })
     );
     assert_eq!(
         serde_json::to_value(&r).unwrap(),
-        json!({"cmd":"close","task":"a","force":true})
+        json!({"cmd":"close","task":"a","force":true,"trust_moor_yaml":false})
     );
+}
+
+#[test]
+fn close_trust_moor_yaml_defaults_false_and_roundtrips() {
+    let r: Request = serde_json::from_str(r#"{"cmd":"close","task":"a"}"#).unwrap();
+    assert!(matches!(&r, Request::Close(c) if !c.trust_moor_yaml));
+    let r: Request =
+        serde_json::from_str(r#"{"cmd":"close","task":"a","trust_moor_yaml":true}"#).unwrap();
+    assert!(matches!(&r, Request::Close(c) if c.trust_moor_yaml));
+    let back: Request = serde_json::from_str(&serde_json::to_string(&r).unwrap()).unwrap();
+    assert_eq!(back, r);
 }
 
 #[test]
