@@ -4,7 +4,7 @@ use std::path::Path;
 
 use moor_core::config::egress::{effective_allow_list, provider_applies_policy};
 use moor_core::config::{Flags, TaskSettings};
-use moor_core::seam::driver::{EgressPlan, EgressSupport};
+use moor_core::seam::driver::{DriverCaps, EgressPlan, EgressSupport};
 use moor_core::ProviderId;
 
 use crate::cx::Cx;
@@ -29,8 +29,37 @@ pub(crate) fn settings(
 /// # Errors
 /// The driver cannot report the provider's capabilities.
 pub(crate) fn egress_support(cx: &Cx, cfg: &TaskSettings) -> Result<EgressSupport, CommandError> {
+    Ok(provider_caps(cx, cfg)?.egress)
+}
+
+/// The capabilities of the settings' provider.
+///
+/// # Errors
+/// The driver cannot report the provider's capabilities.
+pub(crate) fn provider_caps(cx: &Cx, cfg: &TaskSettings) -> Result<DriverCaps, CommandError> {
     let provider = ProviderId::new(cfg.provider.value.clone());
-    Ok(cx.driver().caps(&provider)?.egress)
+    Ok(cx.driver().caps(&provider)?)
+}
+
+/// Refuses a provider that cannot carry the reverse tunnel the Box reaches the Proxy through.
+///
+/// Returns `caps` unchanged when they allow it.
+///
+/// # Errors
+/// The provider's `caps` lack `reverse_tunnel`.
+pub(crate) fn require_reverse_tunnel(
+    cfg: &TaskSettings,
+    caps: DriverCaps,
+) -> Result<DriverCaps, CommandError> {
+    let provider = &cfg.provider.value;
+    if caps.reverse_tunnel {
+        return Ok(caps);
+    }
+    Err(CommandError::new(
+        ErrorKind::Refused,
+        format!("provider {provider} lacks the reverse_tunnel capability the Box needs to reach the Proxy"),
+    )
+    .with_hint("choose a provider with reverse tunnel support (for crabbox, one that offers the ssh feature)"))
 }
 
 /// The egress plan the settings call for.
