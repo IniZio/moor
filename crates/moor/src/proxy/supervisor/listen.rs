@@ -12,6 +12,7 @@ use super::run::say;
 use super::Deps;
 use crate::proxy::detached::base64url;
 use crate::proxy::front::Front;
+use crate::proxy::graphql::http::Head;
 use crate::proxy::graphql::upstream::Upstream;
 use crate::proxy::graphql::{FilterSpec, GraphqlFilter};
 use crate::proxy::guard::Guard;
@@ -45,16 +46,8 @@ pub(super) fn listen(
 ) -> Result<Live, String> {
     let ca = ca::load_or_create(deps.state_dir, task)
         .map_err(|err| format!("cannot load the proxy CA: {err}"))?;
-    let sources = sources_for(
-        &spec.rules,
-        Arc::clone(&deps.creds),
-        Arc::clone(&deps.forge),
-        spec.task_repo.clone(),
-    );
     let withheld = Withheld::new(&spec.rules, spec.task_repo.clone());
-    let mut capture = MoorCapture::new(sources, Arc::clone(&deps.clock));
-    capture.defer_evictions(github_rules(spec));
-    let capture = Arc::new(capture);
+    let capture = new_capture(deps, spec);
     let internal = internal_token()?;
     let graphql = start_filter(deps, spec, &ca, &capture)?;
     let ca_pem = ca::cert_path(deps.state_dir, task);
@@ -104,6 +97,23 @@ pub(super) fn listen(
     })
 }
 
+/// The credential cache for `spec`'s rules; the GitHub rules' evictions are left to the filter.
+fn new_capture(deps: &Deps<'_>, spec: &ProxySpec) -> Arc<MoorCapture> {
+    let sources = sources_for(
+        &spec.rules,
+        Arc::clone(&deps.creds),
+        Arc::clone(&deps.forge),
+        spec.task_repo.clone(),
+    );
+    let mut capture = MoorCapture::new(sources, Arc::clone(&deps.clock));
+    capture.defer_evictions(
+        github_rules(spec)
+            .into_iter()
+            .map(|(name, _, inject)| (name, inject)),
+    );
+    Arc::new(capture)
+}
+
 /// A fresh token nono authenticates with: 32 random bytes as base64url text.
 /// It is never the Box nonce, so a request looped back into nono's own port cannot authenticate.
 fn internal_token() -> Result<Secret, String> {
@@ -125,13 +135,38 @@ fn lists_host(rule: &ResolvedRule, host: &str) -> bool {
     })
 }
 
-/// Names of the rules that inject a credential for the GitHub API host.
-fn github_rules(spec: &ProxySpec) -> Vec<String> {
+/// For each rule that injects a credential for the GitHub API host: its
+/// name, the header carrying the credential, and how it is injected.
+pub(super) fn github_rules(spec: &ProxySpec) -> Vec<(String, String, ResolvedInject)> {
     spec.rules
         .iter()
         .filter(|r| lists_host(r, GITHUB_API_HOST))
-        .map(|r| r.name.clone())
+        .map(|r| {
+            let header = match &r.inject {
+                ResolvedInject::Header { header, .. } => header.clone(),
+                ResolvedInject::BasicAuth { .. } => "authorization".to_owned(),
+            };
+            (r.name.clone(), header, r.inject.clone())
+        })
         .collect()
+}
+
+/// Drops a rule's cached credential when `head`, which just drew a 401,
+/// carries exactly what nono injects for it in the rule's header.
+pub(super) fn evict_credentialed(
+    capture: &MoorCapture,
+    rules: &[(String, String, ResolvedInject)],
+    head: &Head,
+) {
+    for (rule, header, _) in rules {
+        for (_, value) in head
+            .headers
+            .iter()
+            .filter(|(name, _)| name.eq_ignore_ascii_case(header))
+        {
+            capture.evict_if_current(rule, value);
+        }
+    }
 }
 
 /// Starts the filter nono chains every CONNECT through; it resolves each destination once and refuses non-public ones.
@@ -168,7 +203,7 @@ fn start_filter(
         rule,
         on_credentialed_401: {
             let (capture, rules) = (Arc::clone(capture), github_rules(spec));
-            Box::new(move || rules.iter().for_each(|r| capture.evict(r)))
+            Box::new(move |head| evict_credentialed(&capture, &rules, head))
         },
         credential_headers: spec
             .rules

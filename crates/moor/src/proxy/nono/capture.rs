@@ -5,7 +5,7 @@
 //! [`CACHE_TTL`], and dropped when the upstream answers 401. Failed fetches are
 //! never cached. Errors name the config key and never contain secret bytes.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
@@ -19,6 +19,9 @@ use nono_proxy::capture::{
     CredentialCaptureMetadata, CredentialCaptureRequest, CredentialCaptureResponse,
 };
 use zeroize::Zeroizing;
+
+/// Where an inject form puts the secret.
+const SECRET_MARK: &str = "{secret}";
 
 /// Config key the forge token command comes from.
 const FORGE_KEY: &str = "github.you_token_cmd";
@@ -109,8 +112,9 @@ pub(crate) struct MoorCapture {
     clock: Arc<dyn Clock>,
     /// Cached secrets by rule; never held while a source runs.
     cache: Mutex<BTreeMap<String, Slot>>,
-    /// Rules whose evictions the GraphQL filter drives; audit 401s are ignored.
-    filtered: BTreeSet<String>,
+    /// Rules whose evictions the GraphQL filter drives, with how each injects
+    /// its credential; audit 401s are ignored for them.
+    filtered: BTreeMap<String, ResolvedInject>,
 }
 
 impl MoorCapture {
@@ -120,21 +124,48 @@ impl MoorCapture {
             sources,
             clock,
             cache: Mutex::new(BTreeMap::new()),
-            filtered: BTreeSet::new(),
+            filtered: BTreeMap::new(),
         }
     }
 
-    /// Leaves evictions for `rules` to [`Self::evict`] callers: the audit drain
-    /// cannot tell a credentialed 401 from an anonymous one for them.
-    pub(crate) fn defer_evictions(&mut self, rules: impl IntoIterator<Item = String>) {
+    /// Leaves evictions for `rules` to [`Self::evict_if_current`] callers: the
+    /// audit drain cannot tell a credentialed 401 from an anonymous one for them.
+    pub(crate) fn defer_evictions(
+        &mut self,
+        rules: impl IntoIterator<Item = (String, ResolvedInject)>,
+    ) {
         self.filtered.extend(rules);
     }
 
     /// Drops the cached credential for `rule` on an audited upstream 401,
     /// unless the filter owns that rule's evictions.
     pub(crate) fn evict_audited(&self, rule: &str) {
-        if !self.filtered.contains(rule) {
+        if !self.filtered.contains_key(rule) {
             self.evict(rule);
+        }
+    }
+
+    /// Drops the cached credential for `rule` only if `presented` is exactly
+    /// what nono injects for it now, so a forged header cannot force a refetch.
+    pub(crate) fn evict_if_current(&self, rule: &str, presented: &str) {
+        let Some(inject) = self.filtered.get(rule) else {
+            return;
+        };
+        let mut cache = self.lock();
+        let Some((secret, _)) = cache.get(rule) else {
+            return;
+        };
+        let Ok(text) = std::str::from_utf8(secret.expose()) else {
+            return;
+        };
+        let expected = Zeroizing::new(match inject {
+            ResolvedInject::Header { form, .. } => form.replace(SECRET_MARK, text),
+            ResolvedInject::BasicAuth { user } => {
+                format!("Basic {}", base64(format!("{user}:{text}").as_bytes()))
+            }
+        });
+        if ct_eq(expected.as_bytes(), presented.as_bytes()) {
+            cache.remove(rule);
         }
     }
 
@@ -171,6 +202,33 @@ impl MoorCapture {
         self.lock().insert(rule.to_owned(), (fresh, now));
         Ok(text)
     }
+}
+
+/// Whether `a` and `b` are equal, without stopping at the first difference.
+fn ct_eq(a: &[u8], b: &[u8]) -> bool {
+    let diff = a.iter().zip(b).fold(0_u8, |d, (x, y)| d | (x ^ y));
+    a.len() == b.len() && diff == 0
+}
+
+/// Standard padded base64.
+pub(crate) fn base64(data: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
+    for chunk in data.chunks(3) {
+        let n = chunk
+            .iter()
+            .enumerate()
+            .fold(0_u32, |n, (i, b)| n | (u32::from(*b) << (16 - 8 * i)));
+        for i in 0..4 {
+            if i <= chunk.len() {
+                let idx = usize::try_from((n >> (18 - 6 * i)) & 63).unwrap_or(0);
+                out.push(char::from(ALPHABET.get(idx).copied().unwrap_or(b'A')));
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    out
 }
 
 /// The text nono injects: the secret, or `user:secret` for basic auth.

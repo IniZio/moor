@@ -260,3 +260,90 @@ fn default_rules_map_to_expected_keys() {
     assert!(sources.values().any(|s| s.basic_user.is_some()));
     assert_eq!(sources.len(), rules.len());
 }
+
+fn header_inject(form: &str) -> ResolvedInject {
+    ResolvedInject::Header {
+        header: "authorization".to_owned(),
+        form: form.to_owned(),
+    }
+}
+
+/// Fetches count after a cached credential met `presented` on a 401.
+fn fetches_after(inject: ResolvedInject, user: Option<&str>, presented: &str) -> usize {
+    let (fetch, calls) = counting(vec![Ok(SECRET)]);
+    let mut cap = capture_with(fetch, user, &clock());
+    cap.defer_evictions([("r".to_owned(), inject)]);
+    secret_of(&cap, "r").unwrap();
+    cap.evict_if_current("r", presented);
+    secret_of(&cap, "r").unwrap();
+    calls.load(Ordering::SeqCst)
+}
+
+#[test]
+fn evict_if_current_ignores_a_value_nono_did_not_inject() {
+    for bogus in [
+        "token bogus",
+        "token",
+        "",
+        "Token s3cr3t-value",
+        "token s3cr3t-valuex",
+    ] {
+        assert_eq!(
+            fetches_after(header_inject("token {secret}"), None, bogus),
+            1,
+            "{bogus}"
+        );
+    }
+}
+
+#[test]
+fn evict_if_current_evicts_on_the_injected_header_form() {
+    assert_eq!(
+        fetches_after(header_inject("token {secret}"), None, "token s3cr3t-value"),
+        2
+    );
+    assert_eq!(
+        fetches_after(
+            header_inject("Bearer {secret}"),
+            None,
+            "Bearer s3cr3t-value"
+        ),
+        2
+    );
+}
+
+#[test]
+fn evict_if_current_evicts_on_the_basic_auth_value() {
+    let basic = ResolvedInject::BasicAuth {
+        user: "u".to_owned(),
+    };
+    assert_eq!(
+        fetches_after(basic.clone(), Some("u"), "Basic dTpzM2NyM3QtdmFsdWU="),
+        2
+    );
+    assert_eq!(fetches_after(basic.clone(), Some("u"), "Basic bogus"), 1);
+    assert_eq!(fetches_after(basic, Some("u"), "token s3cr3t-value"), 1);
+}
+
+#[test]
+fn evict_if_current_ignores_rules_the_filter_does_not_own() {
+    let (fetch, calls) = counting(vec![Ok(SECRET)]);
+    let cap = capture_with(fetch, None, &clock());
+    secret_of(&cap, "r").unwrap();
+    cap.evict_if_current("r", "token s3cr3t-value");
+    secret_of(&cap, "r").unwrap();
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn base64_matches_known_vectors() {
+    for (raw, want) in [
+        ("", ""),
+        ("M", "TQ=="),
+        ("Ma", "TWE="),
+        ("Man", "TWFu"),
+        ("u:", "dTo="),
+    ] {
+        assert_eq!(super::base64(raw.as_bytes()), want);
+    }
+}

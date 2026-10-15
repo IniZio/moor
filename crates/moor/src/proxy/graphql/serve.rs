@@ -278,8 +278,7 @@ fn forward(
         return unavailable(client);
     }
     let mut sent = false;
-    let carried = !anonymous && head.header("authorization").is_some();
-    let on_401 = carried.then_some(&*shared.on_credentialed_401);
+    let on_401 = (!anonymous).then_some(&*shared.on_credentialed_401);
     let flow = relay(conn, client, head, &mut sent, on_401);
     if flow == Flow::Close {
         *up = None;
@@ -317,7 +316,7 @@ fn relay(
     client: &mut Client,
     head: &Head,
     sent: &mut bool,
-    on_401: Option<&(dyn Fn() + Send + Sync)>,
+    on_401: Option<&(dyn Fn(&Head) + Send + Sync)>,
 ) -> Flow {
     let resp = loop {
         let Ok(resp) = read_response_head(conn) else {
@@ -334,7 +333,7 @@ fn relay(
         break resp;
     };
     if let (Some(evict), 401) = (on_401, resp.status) {
-        evict();
+        evict(head);
     }
     *sent = true;
     let Ok(framing) = response_framing(&resp, &head.method) else {
