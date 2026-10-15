@@ -7,6 +7,7 @@ use serde_json::{json, Value};
 use super::{judge, NodeId, RepoRef, Verdict};
 
 mod extra;
+mod gh_repo;
 
 fn repo() -> RepoRef {
     RepoRef::new("IniZio", "moor")
@@ -533,7 +534,7 @@ fn reaching_other_repos_through_the_task_repo_is_denied() {
                issueComments { nodes { body } } } }",
             "actor.issues",
         ),
-        ("parent { issues { nodes { title } } }", "repoid.issues"),
+        ("parent { issues { nodes { title } } }", "parent.issues"),
         (
             r#"templateRepository { object(expression: "HEAD:x") { ... on Blob { text } } }"#,
             "repo.templateRepository",

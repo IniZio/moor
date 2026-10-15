@@ -91,7 +91,7 @@ pub(super) const SHAPES: &[Shape] = &[
         ],
         links: &[
             ("owner", C("actor")),
-            ("parent", C("repoid")),
+            ("parent", C("parent")),
             ("defaultBranchRef", C("ref")),
             ("ref", C("ref")),
             ("refs", N("ref")),
@@ -105,6 +105,7 @@ pub(super) const SHAPES: &[Shape] = &[
             ("pullRequestTemplates", C("template")),
             ("issueTemplates", C("template")),
             ("mergeQueue", C("mqentry")),
+            ("issues", N("listissue")),
         ],
     },
     Shape {
@@ -119,6 +120,29 @@ pub(super) const SHAPES: &[Shape] = &[
             "viewerPermission",
         ],
         links: &[("owner", C("actor"))],
+    },
+    Shape {
+        name: "parent",
+        leaves: &[
+            "id",
+            "databaseId",
+            "name",
+            "nameWithOwner",
+            "url",
+            "sshUrl",
+            "description",
+            "isPrivate",
+            "isFork",
+            "hasIssuesEnabled",
+            "hasWikiEnabled",
+            "viewerPermission",
+        ],
+        links: &[("owner", C("actor")), ("defaultBranchRef", C("refname"))],
+    },
+    Shape {
+        name: "refname",
+        leaves: &["name"],
+        links: &[],
     },
     Shape {
         name: "actor",
@@ -141,6 +165,7 @@ pub(super) const SHAPES: &[Shape] = &[
             ("target", C("commit")),
             ("associatedPullRequests", N("prref")),
             ("rules", N("rule")),
+            ("branchProtectionRule", C("protection")),
         ],
     },
     Shape {
@@ -266,6 +291,11 @@ pub(super) const SHAPES: &[Shape] = &[
     Shape {
         name: "statecount",
         leaves: &["state", "count"],
+        links: &[],
+    },
+    Shape {
+        name: "protection",
+        leaves: &["requiresStrictStatusChecks", "requiredApprovingReviewCount"],
         links: &[],
     },
     Shape {
