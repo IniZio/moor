@@ -34,13 +34,12 @@ fn bearer() -> ResolvedInject {
     }
 }
 
-fn cfg_for(rules: &[ResolvedRule], allow: &[String], upstream_ca: Option<&Path>) -> NonoConfig {
-    cfg_chained(rules, allow, upstream_ca, None)
+fn cfg_for(rules: &[ResolvedRule], upstream_ca: Option<&Path>) -> NonoConfig {
+    cfg_chained(rules, upstream_ca, None)
 }
 
 fn cfg_chained(
     rules: &[ResolvedRule],
-    allow: &[String],
     upstream_ca: Option<&Path>,
     chain: Option<Chain<'_>>,
 ) -> NonoConfig {
@@ -50,7 +49,6 @@ fn cfg_chained(
     let nonce = Secret::new(NONCE.as_bytes().to_vec());
     build_config(&NonoSpec {
         rules,
-        allow,
         nonce: &nonce,
         ca: &ca,
         ca_dir: &dir,
@@ -73,7 +71,7 @@ fn one_route_per_rule_and_host() {
         rule("gh", &["api.github.com", "github.com"], bearer()),
         rule("ant", &["api.anthropic.com"], bearer()),
     ];
-    let cfg = cfg_for(&rules, &[], None);
+    let cfg = cfg_for(&rules, None);
     let routes = &cfg.inner().routes;
     let got: Vec<_> = routes
         .iter()
@@ -104,7 +102,7 @@ fn one_route_per_rule_and_host() {
 
 #[test]
 fn flags_are_hardened() {
-    let cfg = cfg_for(&[], &[], None);
+    let cfg = cfg_for(&[], None);
     let c = cfg.inner();
     assert!(c.strict_filter && c.require_auth && c.strict_connect_auth);
     assert!(!c.enable_h2);
@@ -125,7 +123,7 @@ fn header_form_maps_to_nono_format() {
         rule("a", &["a.test"], bearer()),
         rule("b", &["b.test"], token),
     ];
-    let cfg = cfg_for(&rules, &[], None);
+    let cfg = cfg_for(&rules, None);
     let got: Vec<_> = cfg
         .inner()
         .routes
@@ -152,21 +150,19 @@ fn basic_auth_maps_to_basic_mode() {
     let basic = ResolvedInject::BasicAuth {
         user: "x-access-token".to_owned(),
     };
-    let cfg = cfg_for(&[rule("g", &["g.test"], basic)], &[], None);
+    let cfg = cfg_for(&[rule("g", &["g.test"], basic)], None);
     let r = cfg.inner().routes.first().unwrap();
     assert_eq!(r.inject_mode, InjectMode::BasicAuth);
     assert_eq!(r.inject_header, "Authorization");
 }
 
 #[test]
-fn allowed_hosts_union_rule_hosts_and_extras() {
+fn every_host_passes_nono_filter_and_only_rule_hosts_get_routes() {
     let rules = [rule("a", &["127.0.0.1:4433", "a.test"], bearer())];
-    let allow = vec!["pypi.org".to_owned(), "a.test".to_owned()];
-    let cfg = cfg_for(&rules, &allow, None);
-    assert_eq!(
-        cfg.inner().allowed_hosts,
-        ["127.0.0.1:4433", "a.test", "pypi.org"]
-    );
+    let cfg = cfg_for(&rules, None);
+    assert_eq!(cfg.inner().allowed_hosts, ["*"]);
+    let filter = nono::net_filter::HostFilter::new_strict(&cfg.inner().allowed_hosts);
+    assert!(filter.check_host("unlisted.example", &[]).is_allowed());
     assert_eq!(
         cfg.inner().routes.first().unwrap().upstream,
         "https://127.0.0.1:4433"
@@ -176,7 +172,7 @@ fn allowed_hosts_union_rule_hosts_and_extras() {
 #[test]
 fn upstream_ca_applies_to_every_route() {
     let rules = [rule("a", &["a.test", "b.test"], bearer())];
-    let cfg = cfg_for(&rules, &[], Some(Path::new("/tmp/up.pem")));
+    let cfg = cfg_for(&rules, Some(Path::new("/tmp/up.pem")));
     assert!(cfg
         .inner()
         .routes
@@ -186,10 +182,10 @@ fn upstream_ca_applies_to_every_route() {
 
 #[test]
 fn debug_hides_the_nonce() {
-    let cfg = cfg_for(&[rule("a", &["a.test"], bearer())], &[], None);
+    let cfg = cfg_for(&[rule("a", &["a.test"], bearer())], None);
     let text = format!("{cfg:?}");
     assert!(!text.contains(NONCE), "{text}");
-    assert!(text.contains("a.test"));
+    assert!(text.contains("allowed_hosts"), "{text}");
 }
 
 #[test]
@@ -200,7 +196,6 @@ fn non_utf8_nonce_is_refused_without_echoing_it() {
     let nonce = Secret::new(vec![0xff, 0xfe, b'k']);
     let cfg = build_config(&NonoSpec {
         rules: &[],
-        allow: &[],
         nonce: &nonce,
         ca: &ca,
         ca_dir: &dir,
@@ -218,19 +213,19 @@ fn non_utf8_nonce_is_refused_without_echoing_it() {
     assert_eq!(err.to_string(), "proxy start: session token is not utf-8");
 }
 
-fn chain_cfg(rules: &[ResolvedRule], allow: &[String]) -> NonoConfig {
+fn chain_cfg(rules: &[ResolvedRule]) -> NonoConfig {
     let chain = Chain {
         proxy: "127.0.0.1:9911".parse().unwrap(),
         host: GITHUB_API_HOST,
         ca_pem: Path::new("/tmp/task-ca.pem"),
     };
-    cfg_chained(rules, allow, Some(Path::new("/tmp/up.pem")), Some(chain))
+    cfg_chained(rules, Some(Path::new("/tmp/up.pem")), Some(chain))
 }
 
 #[test]
 fn no_chain_means_no_external_proxy() {
     let rules = [rule("gh", &[GITHUB_API_HOST], bearer())];
-    assert!(cfg_for(&rules, &[], None).inner().external_proxy.is_none());
+    assert!(cfg_for(&rules, None).inner().external_proxy.is_none());
 }
 
 #[test]
@@ -243,8 +238,7 @@ fn chain_sends_every_host_through_the_proxy_with_no_bypass() {
         ),
         rule("o", &["o.test:8443"], bearer()),
     ];
-    let allow = vec!["a.test:443".to_owned(), "API.GitHub.com".to_owned()];
-    let cfg = chain_cfg(&rules, &allow);
+    let cfg = chain_cfg(&rules);
     let ext = cfg.inner().external_proxy.as_ref().unwrap();
     assert_eq!(ext.address, "127.0.0.1:9911");
     assert!(ext.auth.is_none());
@@ -261,7 +255,7 @@ fn chained_host_routes_trust_the_task_ca_and_others_keep_upstream() {
         ),
         rule("o", &["o.test:8443"], bearer()),
     ];
-    let cfg = chain_cfg(&rules, &[]);
+    let cfg = chain_cfg(&rules);
     let by_host = |h: &str| {
         cfg.inner()
             .routes
@@ -284,7 +278,7 @@ fn chained_host_routes_trust_the_task_ca_and_others_keep_upstream() {
 fn chained_config_trusts_the_filter_ca_for_every_upstream() {
     let rules = [rule("gh", &[GITHUB_API_HOST], bearer())];
     assert_eq!(
-        chain_cfg(&rules, &[]).inner().upstream_extra_ca_pems,
+        chain_cfg(&rules).inner().upstream_extra_ca_pems,
         vec!["/tmp/task-ca.pem".to_owned()]
     );
 }
@@ -292,7 +286,7 @@ fn chained_config_trusts_the_filter_ca_for_every_upstream() {
 #[test]
 fn unchained_config_adds_no_extra_ca() {
     let rules = [rule("gh", &[GITHUB_API_HOST], bearer())];
-    assert!(cfg_for(&rules, &[], None)
+    assert!(cfg_for(&rules, None)
         .inner()
         .upstream_extra_ca_pems
         .is_empty());

@@ -50,7 +50,6 @@ fn fetch(path: &str) -> (Result<u16, String>, Vec<upstream::Seen>) {
     let nonce = Secret::new(NONCE.as_bytes().to_vec());
     let mut cfg = build_config(&NonoSpec {
         rules: &rules,
-        allow: &[],
         nonce: &nonce,
         ca: &ca,
         ca_dir: &ca::ca_dir(&state, TASK),

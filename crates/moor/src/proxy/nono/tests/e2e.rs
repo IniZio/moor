@@ -160,7 +160,6 @@ fn start_proxy(
     let rules = rules(ups[0].port, ups[1].port);
     let cfg = build_config(&NonoSpec {
         rules: &rules,
-        allow: &[],
         nonce,
         ca,
         ca_dir: &ca_dir,
@@ -517,7 +516,6 @@ fn secret_bytes_never_appear_in_logs_debug_or_errors() {
     let rules = rules(rig.up.port, rig.up2.port);
     let cfg = build_config(&NonoSpec {
         rules: &rules,
-        allow: &[],
         nonce: &rig.nonce,
         ca: &rig.ca,
         ca_dir: &ca::ca_dir(&rig.state(), TASK),
