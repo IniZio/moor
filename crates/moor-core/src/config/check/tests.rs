@@ -142,3 +142,9 @@ fn box_credentials_duplicate() {
         Err((1, r#"box credential "a" is listed twice"#.to_owned()))
     );
 }
+
+#[test]
+fn repo_env_may_not_set_the_sandbox_signal() {
+    assert!(agent_env_reserved("IS_SANDBOX"));
+    assert!(!agent_env_reserved("IS_SANDBOXED"));
+}
