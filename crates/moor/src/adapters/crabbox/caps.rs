@@ -43,6 +43,8 @@ const EGRESS_ALLOW: &str = "egress-allow";
 const EGRESS_CREATE_ONLY: &str = "egress-allow-create-only";
 /// Feature token: a wake changes the host key.
 const ROTATES_HOST_KEY: &str = "resume-rotates-host-key";
+/// Feature token: the Box is reached over SSH, which carries the reverse tunnel.
+const SSH: &str = "ssh";
 
 /// Facts for `entry`, read from its feature tokens.
 fn derive(entry: &Entry) -> DriverCaps {
@@ -64,7 +66,7 @@ fn derive(entry: &Entry) -> DriverCaps {
         sleep,
         wake: sleep != SleepKind::None && !entry.has(ROTATES_HOST_KEY),
         egress,
-        reverse_tunnel: true,
+        reverse_tunnel: entry.has(SSH),
         has_workdir: true,
     }
 }

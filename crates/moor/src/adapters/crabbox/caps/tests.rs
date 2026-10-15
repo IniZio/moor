@@ -51,6 +51,11 @@ fn want(sleep: SleepKind, wake: bool, egress: EgressSupport) -> DriverCaps {
     }
 }
 
+fn no_tunnel(mut caps: DriverCaps) -> DriverCaps {
+    caps.reverse_tunnel = false;
+    caps
+}
+
 #[test]
 fn table() {
     let cases = [
@@ -69,7 +74,7 @@ fn table() {
         ("ssh", want(SleepKind::None, false, EgressSupport::None)),
         (
             "pauser",
-            want(SleepKind::Suspend, true, EgressSupport::None),
+            no_tunnel(want(SleepKind::Suspend, true, EgressSupport::None)),
         ),
     ];
     for (id, w) in cases {
@@ -102,6 +107,6 @@ fn missing_optional_fields_tolerated() {
     let j = r#"[{"provider":"bare"}]"#;
     assert_eq!(
         caps_from(j, &ProviderId::new("bare")),
-        Ok(want(SleepKind::None, false, EgressSupport::None))
+        Ok(no_tunnel(want(SleepKind::None, false, EgressSupport::None)))
     );
 }
