@@ -64,6 +64,7 @@ pub(crate) fn tarball(content: &[u8]) -> Vec<u8> {
 pub(crate) fn release_of(fetch: &Arc<FakeFetch>, tarball: &[u8]) -> NonoRelease {
     let sha256: &'static str = Box::leak(sha256_hex(tarball).into_boxed_str());
     let asset = Asset {
+        release: "https://example.test/release",
         os: "Linux",
         arch: "x86_64",
         name: "nono-test.tar.gz",

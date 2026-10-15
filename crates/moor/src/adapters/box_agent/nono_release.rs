@@ -13,8 +13,12 @@ use ureq::Agent;
 
 use super::sandbox::NONO_VERSION;
 
-/// Where the pinned release assets are published.
-const RELEASE_URL: &str = "https://github.com/nolabs-ai/nono/releases/download/v0.80.0";
+/// Where the upstream release assets are published.
+const UPSTREAM_RELEASE: &str = "https://github.com/nolabs-ai/nono/releases/download/v0.80.0";
+
+/// Where the fork's release assets are published. The fork carries the passthrough phantom-header
+/// strip and the upstream extra CA that moor needs.
+const FORK_RELEASE: &str = "https://github.com/IniZio/nono/releases/download/v0.80.0-moor.1";
 
 /// Largest download or unpacked binary accepted.
 const MAX_BYTES: u64 = 64 * 1024 * 1024;
@@ -22,6 +26,8 @@ const MAX_BYTES: u64 = 64 * 1024 * 1024;
 /// One release asset: the Box platform it serves, its file name and sha256.
 #[derive(Debug, Clone, Copy)]
 pub(super) struct Asset {
+    /// Release URL the file is published under.
+    pub(super) release: &'static str,
     /// `uname -s` of the Box.
     pub(super) os: &'static str,
     /// `uname -m` of the Box.
@@ -35,34 +41,39 @@ pub(super) struct Asset {
 /// The pinned assets by Box platform.
 const ASSETS: &[Asset] = &[
     Asset {
+        release: UPSTREAM_RELEASE,
         os: "Linux",
         arch: "x86_64",
         name: "nono-v0.80.0-x86_64-unknown-linux-gnu.tar.gz",
         sha256: "6da665b61999570c10dffc7da78828fe1fb7f3cac53319e505cebecaef17037f",
     },
     Asset {
+        release: UPSTREAM_RELEASE,
         os: "Linux",
         arch: "aarch64",
         name: "nono-v0.80.0-aarch64-unknown-linux-gnu.tar.gz",
         sha256: "d2a24c8c37714f85c829b5586ffd81fc2acf336c95372d881ba62140884f22cb",
     },
     Asset {
+        release: UPSTREAM_RELEASE,
         os: "Linux",
         arch: "arm64",
         name: "nono-v0.80.0-aarch64-unknown-linux-gnu.tar.gz",
         sha256: "d2a24c8c37714f85c829b5586ffd81fc2acf336c95372d881ba62140884f22cb",
     },
     Asset {
+        release: UPSTREAM_RELEASE,
         os: "Darwin",
         arch: "x86_64",
         name: "nono-v0.80.0-x86_64-apple-darwin.tar.gz",
         sha256: "b354e674e6b4643ad5c572d148ae367bb0c5c103410fbc22923c5593a6f7d0b2",
     },
     Asset {
+        release: FORK_RELEASE,
         os: "Darwin",
         arch: "arm64",
         name: "nono-v0.80.0-aarch64-apple-darwin.tar.gz",
-        sha256: "ae824167b3d90531b830429ba92b7781379b1c2d79f9b11fdd88b0fd267e4e32",
+        sha256: "ff84a3a50bce1781f3f89b62e8760c30ee187d22ec1239374bfb6771b7bf7658",
     },
 ];
 
@@ -176,7 +187,7 @@ impl NonoRelease {
 
     /// Fetches and verifies `asset`, then stores it at `cached`.
     fn download(&self, asset: &Asset, cached: Option<&Path>) -> Result<Vec<u8>, ReleaseError> {
-        let url = format!("{RELEASE_URL}/{}", asset.name);
+        let url = format!("{}/{}", asset.release, asset.name);
         let bytes = self.fetch.get(&url).map_err(ReleaseError::Download)?;
         if !matches_sum(&bytes, asset) {
             return Err(ReleaseError::Checksum {
