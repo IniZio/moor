@@ -12,10 +12,11 @@ mod sleep;
 #[cfg(test)]
 mod tests;
 mod tunnel;
+mod version;
 mod workdir;
 
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 
 use moor_core::name::{BoxHandle, BoxPath, ProviderId};
@@ -45,17 +46,43 @@ pub(crate) struct Crabbox {
     proc: Arc<dyn Proc>,
     /// Source of the waits between claim race retries.
     clock: Arc<dyn Clock>,
+    /// Set once crabbox has passed the version check.
+    version_ok: OnceLock<()>,
 }
 
 impl Crabbox {
     /// Wraps a spawner.
     pub(crate) fn new(proc: Arc<dyn Proc>, clock: Arc<dyn Clock>) -> Self {
-        Self { proc, clock }
+        Self {
+            proc,
+            clock,
+            version_ok: OnceLock::new(),
+        }
     }
 
-    /// A driver whose waits advance a fake clock.
+    /// Refuses a crabbox older than moor supports; asks once and remembers a pass.
+    fn require_version(&self) -> Result<(), DriverError> {
+        if self.version_ok.get().is_some() {
+            return Ok(());
+        }
+        let spec = Self::spec(QUICK_DEADLINE).arg("--version");
+        let out = self.call(Op::Caps, None, &spec)?;
+        version::check(&out.stdout)?;
+        let _ = self.version_ok.set(());
+        Ok(())
+    }
+
+    /// A driver whose waits advance a fake clock and whose version check is already passed.
     #[cfg(test)]
     pub(crate) fn fake(proc: Arc<dyn Proc>) -> Self {
+        let driver = Self::fake_unchecked(proc);
+        let _ = driver.version_ok.set(());
+        driver
+    }
+
+    /// Like [`Self::fake`], but still asks crabbox for its version.
+    #[cfg(test)]
+    pub(crate) fn fake_unchecked(proc: Arc<dyn Proc>) -> Self {
         use crate::testing::clock::FakeClock;
         use moor_core::seam::clock::Ts;
         Self::new(proc, Arc::new(FakeClock::new(Ts::from_millis(0))))
@@ -182,12 +209,14 @@ impl Crabbox {
 
 impl Driver for Crabbox {
     fn caps(&self, provider: &ProviderId) -> Result<DriverCaps, DriverError> {
+        self.require_version()?;
         let spec = Self::spec(QUICK_DEADLINE).args(["providers", "--json"]);
         let out = self.call(Op::Caps, None, &spec)?;
         caps::caps_from(&out.stdout, provider)
     }
 
     fn acquire(&self, req: &AcquireReq) -> Result<Acquired, DriverError> {
+        self.require_version()?;
         let provider = req.provider.as_str();
         let name = box_name(req);
         let class = size_of(req.class.as_deref())?;
@@ -214,6 +243,7 @@ impl Driver for Crabbox {
     }
 
     fn release(&self, handle: &BoxHandle) -> Result<Released, DriverError> {
+        self.require_version()?;
         let spec = Self::spec(QUICK_DEADLINE)
             .arg("stop")
             .args(target_args(handle))
@@ -227,6 +257,7 @@ impl Driver for Crabbox {
     }
 
     fn list(&self, provider: &ProviderId) -> Result<Vec<BoxListing>, DriverError> {
+        self.require_version()?;
         let p = provider.as_str();
         if p == STATIC_PROVIDER {
             return Err(DriverError::Unsupported("box provider has no inventory"));
@@ -245,6 +276,7 @@ impl Driver for Crabbox {
     }
 
     fn workdir(&self, handle: &BoxHandle, worktree: &Path) -> Result<BoxPath, DriverError> {
+        self.require_version()?;
         workdir::probe(self, handle, Some(worktree))
     }
 
@@ -254,6 +286,7 @@ impl Driver for Crabbox {
         spec: &ExecSpec,
         deadline: Deadline,
     ) -> Result<ExecOutcome, DriverError> {
+        self.require_version()?;
         exec::run(self, handle, spec, deadline)
     }
 
@@ -264,6 +297,7 @@ impl Driver for Crabbox {
         to: &Path,
         host_cwd: &Path,
     ) -> Result<(), DriverError> {
+        self.require_version()?;
         cp::copy_out(self, handle, from, to, host_cwd)
     }
 
@@ -273,6 +307,7 @@ impl Driver for Crabbox {
         path: &BoxPath,
         host_cwd: &Path,
     ) -> Result<Option<String>, DriverError> {
+        self.require_version()?;
         peek::peek_file(self, handle, path, host_cwd)
     }
 
@@ -284,6 +319,7 @@ impl Driver for Crabbox {
         mode: u32,
         host_cwd: &Path,
     ) -> Result<(), DriverError> {
+        self.require_version()?;
         put::put_file(self, handle, path, bytes, mode, host_cwd)
     }
 
@@ -292,6 +328,7 @@ impl Driver for Crabbox {
         handle: &BoxHandle,
         host_cwd: &Path,
     ) -> Result<Vec<String>, DriverError> {
+        self.require_version()?;
         connect::connect_argv(self, handle, host_cwd)
     }
 
@@ -310,6 +347,7 @@ impl Driver for Crabbox {
         host_port: u16,
         host_cwd: &Path,
     ) -> Result<Box<dyn TunnelHandle>, DriverError> {
+        self.require_version()?;
         tunnel::reverse_tunnel(self, handle, box_port, host_port, host_cwd)
     }
 }
