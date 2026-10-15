@@ -86,7 +86,6 @@ impl World {
             host_cwd: PathBuf::from(WORKTREE),
             task_repo: Some(ForgeRepo::new("o", "n")),
             rules: Vec::new(),
-            allow: Vec::new(),
         };
         edit(&mut spec);
         write_spec(dir.path(), &spec).unwrap();

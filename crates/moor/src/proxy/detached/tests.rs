@@ -118,7 +118,6 @@ impl Fx {
             host_cwd: PathBuf::from("/work"),
             task_repo: None,
             rules: Vec::new(),
-            allow: Vec::new(),
         }
     }
 

@@ -216,7 +216,6 @@ fn serve_injects_the_credential_audits_requests_and_stops() {
         host_cwd: "/wt".into(),
         task_repo: None,
         rules: vec![rule(up.port)],
-        allow: Vec::new(),
     };
     write_spec(dir.path(), &spec).unwrap();
 

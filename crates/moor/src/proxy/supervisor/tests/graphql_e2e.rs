@@ -298,11 +298,6 @@ fn rig() -> Rig {
 
 /// Like `rig`, with `extra` rules after the GitHub one.
 pub(super) fn rig_with(extra: Vec<ResolvedRule>) -> Rig {
-    rig_allowing(extra, Vec::new())
-}
-
-/// Like `rig_with`, with `allow` as the Box egress allow-list.
-pub(super) fn rig_allowing(extra: Vec<ResolvedRule>, allow: Vec<String>) -> Rig {
     let dir = tempfile::tempdir().unwrap();
     let up = start_github(dir.path());
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
@@ -321,7 +316,6 @@ pub(super) fn rig_allowing(extra: Vec<ResolvedRule>, allow: Vec<String>) -> Rig 
             name: "r".to_owned(),
         }),
         rules: std::iter::once(github_rule()).chain(extra).collect(),
-        allow,
     };
     let mut rig = Rig {
         dir,

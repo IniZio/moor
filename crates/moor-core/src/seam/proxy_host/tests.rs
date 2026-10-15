@@ -10,7 +10,6 @@ fn spec(full: bool) -> ProxySpec {
             name: "widget".into(),
         }),
         rules: Vec::new(),
-        allow: Vec::new(),
     }
 }
 
@@ -41,7 +40,6 @@ fn spec_with_rule_round_trips_through_json() {
         }],
         box_env: [("GH_HOST".to_string(), "github.com".to_string())].into(),
     }];
-    s.allow = vec!["crates.io".into()];
     let text = serde_json::to_string(&s).unwrap();
     assert_eq!(serde_json::from_str::<ProxySpec>(&text).unwrap(), s);
 }
