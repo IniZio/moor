@@ -70,8 +70,21 @@ fn start_with_all_flags() {
             model: Some("haiku".into()),
             no_agent: true,
             resume: true,
+            trust_moor_yaml: false,
         })
     );
+}
+
+#[test]
+fn start_trust_moor_yaml_flag() {
+    assert!(matches!(
+        req(&["start", "demo", "--trust-moor-yaml"]),
+        Request::Start(s) if s.trust_moor_yaml
+    ));
+    assert!(matches!(
+        req(&["start", "demo"]),
+        Request::Start(s) if !s.trust_moor_yaml
+    ));
 }
 
 #[test]

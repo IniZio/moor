@@ -11,6 +11,7 @@ use moor_core::seam::driver::{DriverError, ExecOutcome};
 use moor_core::seam::proc::{Deadline, Tool};
 use moor_core::{BoxHandle, StartReq, TaskId};
 
+use super::moor_yaml::script_base_yaml;
 use super::{req, world_at, World};
 use crate::adapters::clock::SystemClock;
 use crate::ops::common::setup::SETUP_LINE_DEADLINE;
@@ -26,10 +27,11 @@ pub(super) fn exit(code: i32) -> ExecOutcome {
 }
 
 /// Starts `demo` in a repo whose `.moor.yaml` is `yaml`.
-fn start_with(yaml: &str, driver: FakeDriver) -> (World, moor_core::view::StartView) {
+pub(super) fn start_with(yaml: &str, driver: FakeDriver) -> (World, moor_core::view::StartView) {
     let repo = tempfile::tempdir().unwrap();
     std::fs::write(repo.path().join(".moor.yaml"), yaml).unwrap();
     let w = world_at(driver, repo.path());
+    script_base_yaml(&w, Some(yaml));
     let v = run(&w.cx, &start_req()).unwrap();
     (w, v)
 }
@@ -234,6 +236,7 @@ fn a_failing_setup_on_a_re_provisioned_working_task_records_the_failing_line() {
     let wt = store.task(id).unwrap().unwrap().worktree.unwrap();
     std::fs::create_dir_all(&wt).unwrap();
     std::fs::write(Path::new(&wt).join(".moor.yaml"), "setup: [a]\n").unwrap();
+    script_base_yaml(&w, Some("setup: [a]\n"));
     store
         .apply(Decision::new(id).box_input(BoxInput::DriverMissing))
         .unwrap();
@@ -284,6 +287,7 @@ pub(super) fn failed_setup_with(yaml: &str, driver: FakeDriver) -> (World, TaskI
     let wt = wt.unwrap();
     std::fs::create_dir_all(&wt).unwrap();
     std::fs::write(Path::new(&wt).join(".moor.yaml"), yaml).unwrap();
+    script_base_yaml(&w, Some(yaml));
     (w, id)
 }
 
@@ -345,6 +349,7 @@ fn interrupted_setup(pid: u32) -> (World, moor_core::view::StartView) {
     let wt = wt.unwrap();
     std::fs::create_dir_all(&wt).unwrap();
     std::fs::write(Path::new(&wt).join(".moor.yaml"), "setup: [b]\n").unwrap();
+    script_base_yaml(&w, Some("setup: [b]\n"));
     let held = Decision::new(id).intent(IntentChange::Set(Intent::Setup { pid }));
     w.cx.store().unwrap().apply(held).unwrap();
     (w, v)
@@ -445,6 +450,7 @@ fn identity_is_set_again_when_the_box_is_re_provisioned() {
     let wt = store.task(id).unwrap().unwrap().worktree.unwrap();
     std::fs::create_dir_all(&wt).unwrap();
     std::fs::write(Path::new(&wt).join(".moor.yaml"), "setup: [a]\n").unwrap();
+    script_base_yaml(&w, Some("setup: [a]\n"));
     store
         .apply(Decision::new(id).box_input(BoxInput::DriverMissing))
         .unwrap();
@@ -472,6 +478,7 @@ fn identity_is_set_before_the_re_run_after_a_failed_setup() {
     let wt = wt.unwrap();
     std::fs::create_dir_all(&wt).unwrap();
     std::fs::write(Path::new(&wt).join(".moor.yaml"), "setup: [b]\n").unwrap();
+    script_base_yaml(&w, Some("setup: [b]\n"));
     let before = argvs(&w).len();
     let again = run(&w.cx, &start_req()).unwrap();
     assert!(again.setup.ran && again.setup.ok);
@@ -494,6 +501,7 @@ fn identity_is_set_before_the_re_run_when_the_setup_owner_is_dead() {
     let wt = wt.unwrap();
     std::fs::create_dir_all(&wt).unwrap();
     std::fs::write(Path::new(&wt).join(".moor.yaml"), "setup: [b]\n").unwrap();
+    script_base_yaml(&w, Some("setup: [b]\n"));
     let held = Decision::new(id).intent(IntentChange::Set(Intent::Setup { pid: 4242 }));
     w.cx.store().unwrap().apply(held).unwrap();
     w.proc.dead(4242);

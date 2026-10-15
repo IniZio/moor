@@ -106,6 +106,24 @@ impl Git {
         Ok(out.trim().to_owned())
     }
 
+    /// Text of `path` at revision `rev` of the repository at `repo`; `None` when `rev` has no such file.
+    ///
+    /// # Errors
+    /// [`GitError::NotARepo`] outside a repository, [`GitError::Failed`] otherwise.
+    pub(crate) fn file_at(
+        &self,
+        repo: &Path,
+        rev: &str,
+        path: &str,
+    ) -> Result<Option<String>, GitError> {
+        let listed = self.run(repo, &["ls-tree", "--name-only", rev, "--", path])?;
+        if listed.trim().is_empty() {
+            return Ok(None);
+        }
+        self.run(repo, &["show", &format!("{rev}:{path}")])
+            .map(Some)
+    }
+
     /// Fetches the remote's default branch and returns the remote-tracking ref and its commit.
     ///
     /// `None` when the repository has no remote default branch to follow.

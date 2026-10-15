@@ -1,6 +1,9 @@
-//! Chooses how a setup re-run syncs the worktree into a Box that already exists.
+//! Decides whether a setup re-run is wanted, and how it syncs the worktree into a Box that already exists.
 
+use moor_core::decide::intent::setup_dead;
+use moor_core::domain::boxes::BoxState;
 use moor_core::domain::run::SyncMode;
+use moor_core::domain::task::TaskState;
 use moor_core::Warning;
 
 use crate::cx::Cx;
@@ -21,4 +24,15 @@ pub(super) fn rerun_sync(cx: &Cx, store: &Store, row: &TaskRow) -> Result<SyncMo
         message: "setup re-ran without syncing: the Box keeps its own commits and files".to_owned(),
     });
     Ok(SyncMode::None)
+}
+
+/// Whether the Task's Box is ready but its repo setup failed or its owner died.
+pub(super) fn setup_wanted(cx: &Cx, row: &TaskRow) -> bool {
+    if row.boxed.as_ref().map(|b| b.state) != Some(BoxState::Ready) {
+        return false;
+    }
+    if let Some(intent) = &row.intent {
+        return setup_dead(intent, cx.proc().alive(intent.pid()));
+    }
+    matches!(row.state, TaskState::Working | TaskState::Idle) && row.setup_failed_at.is_some()
 }

@@ -3,7 +3,6 @@
 use std::path::{Path, PathBuf};
 
 use moor_core::config::{Flags, TaskSettings};
-use moor_core::decide::intent::setup_dead;
 
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, Intent, IntentChange};
@@ -26,7 +25,7 @@ use crate::store::{Store, TaskRow};
 
 use self::outcome::dotfiles_failed;
 pub(crate) use self::outcome::Provisioned;
-use self::rerun::rerun_sync;
+use self::rerun::{rerun_sync, setup_wanted};
 use self::retry::{dotfiles_retry, retry_dotfiles};
 
 /// Re-reads a Task row that must exist.
@@ -69,11 +68,15 @@ impl Entry {
 /// Returns what ran, or `None` when nothing was provisioned. The Box lock is held while
 /// provisioning and the row is read again under it; another op holding it is
 /// refused as busy.
+///
+/// A `.moor.yaml` that differs from the base commit is refused unless `trusted`, before any
+/// setup or Box work starts.
 pub(crate) fn reprovision(
     cx: &Cx,
     store: &Store,
     row: &TaskRow,
     op: &str,
+    trusted: bool,
 ) -> Result<Option<Provisioned>, CommandError> {
     if entry_for(row).is_none() && !setup_wanted(cx, row) && !dotfiles_retry(row) {
         return Ok(None);
@@ -84,6 +87,9 @@ pub(crate) fn reprovision(
         return retry_dotfiles(cx, store, &row).map(Some);
     }
     let at = row.worktree.as_deref().unwrap_or(&row.repo);
+    if entry_for(&row).is_some() || setup_wanted(cx, &row) {
+        moor_yaml::guard(cx, &row, trusted)?;
+    }
     if let Some(entry) = entry_for(&row) {
         let cfg = settings(cx, Path::new(at), &Flags::default())?;
         return provision(cx, store, row.id, entry, &cfg).map(Some);
@@ -117,17 +123,6 @@ pub(crate) fn reprovision(
 /// Rebuilds the Box path from the workdir text stored on the Task row.
 pub(crate) fn recorded_workdir(stored: &str) -> Option<BoxPath> {
     BoxPath::restore(stored).ok()
-}
-
-/// Whether the Task's Box is ready but its repo setup failed or its owner died.
-fn setup_wanted(cx: &Cx, row: &TaskRow) -> bool {
-    if row.boxed.as_ref().map(|b| b.state) != Some(BoxState::Ready) {
-        return false;
-    }
-    if let Some(intent) = &row.intent {
-        return setup_dead(intent, cx.proc().alive(intent.pid()));
-    }
-    matches!(row.state, TaskState::Working | TaskState::Idle) && row.setup_failed_at.is_some()
 }
 
 /// How a Task that wants a Box starts over; `None` when it has one or is being provisioned.
@@ -355,6 +350,7 @@ fn failed(
     }
 }
 
+pub(crate) mod moor_yaml;
 mod outcome;
 mod rerun;
 mod retry;
