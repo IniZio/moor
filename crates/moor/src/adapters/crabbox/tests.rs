@@ -539,3 +539,22 @@ fn exec_spawn_failure_is_unavailable() {
         Err(DriverError::Unavailable(_))
     ));
 }
+
+#[test]
+fn lookup_deadline_defaults_by_provider() {
+    let c = Crabbox::fake(Arc::new(ScriptedProc::new()));
+    assert_eq!(c.lookup_deadline("aws"), Duration::from_secs(5));
+    assert_eq!(c.lookup_deadline("external"), Duration::from_secs(20));
+}
+
+#[test]
+fn lookup_deadline_override_wins() {
+    let c = Crabbox::fake(Arc::new(ScriptedProc::new())).with_lookup_deadlines(
+        [("aws", 9), ("external", 40)]
+            .map(|(k, s)| (k.to_owned(), Duration::from_secs(s)))
+            .into(),
+    );
+    assert_eq!(c.lookup_deadline("aws"), Duration::from_secs(9));
+    assert_eq!(c.lookup_deadline("external"), Duration::from_secs(40));
+    assert_eq!(c.lookup_deadline("ssh"), Duration::from_secs(5));
+}

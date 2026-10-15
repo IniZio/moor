@@ -15,6 +15,7 @@ mod tunnel;
 mod version;
 mod workdir;
 
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
@@ -35,6 +36,10 @@ const ACQUIRE_DEADLINE: Duration = Duration::from_mins(15);
 const LIST_DEADLINE: Duration = Duration::from_secs(5);
 /// Time allowed for every other call.
 const QUICK_DEADLINE: Duration = Duration::from_secs(60);
+/// Time allowed for an ssh target lookup unless the provider has its own.
+const LOOKUP_DEADLINE: Duration = Duration::from_secs(5);
+/// An external provider's ssh lookup runs through the adapter and was measured at ~6 s.
+const EXTERNAL_LOOKUP_DEADLINE: Duration = Duration::from_secs(20);
 /// Provider whose Boxes share one slug and need the Box id and port in env.
 const STATIC_PROVIDER: &str = "ssh";
 /// Port the static provider dials (not configurable yet).
@@ -48,6 +53,8 @@ pub(crate) struct Crabbox {
     clock: Arc<dyn Clock>,
     /// Set once crabbox has passed the version check.
     version_ok: OnceLock<()>,
+    /// Lookup deadlines that replace the built-in ones, keyed by provider id.
+    lookup_deadlines: BTreeMap<String, Duration>,
 }
 
 impl Crabbox {
@@ -57,7 +64,26 @@ impl Crabbox {
             proc,
             clock,
             version_ok: OnceLock::new(),
+            lookup_deadlines: BTreeMap::new(),
         }
+    }
+
+    /// Sets per-provider ssh lookup deadlines that override the built-in ones.
+    pub(crate) fn with_lookup_deadlines(mut self, deadlines: BTreeMap<String, Duration>) -> Self {
+        self.lookup_deadlines = deadlines;
+        self
+    }
+
+    /// Time allowed for an ssh target lookup on `provider`.
+    pub(super) fn lookup_deadline(&self, provider: &str) -> Duration {
+        self.lookup_deadlines
+            .get(provider)
+            .copied()
+            .unwrap_or(if provider == "external" {
+                EXTERNAL_LOOKUP_DEADLINE
+            } else {
+                LOOKUP_DEADLINE
+            })
     }
 
     /// Refuses a crabbox older than moor supports; asks once and remembers a pass.

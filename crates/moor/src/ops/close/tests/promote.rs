@@ -51,6 +51,7 @@ fn driver_limit(n: u32) -> UserConfig {
             PROVIDER.to_owned(),
             DriverConfig {
                 max_boxes: NonZeroU32::new(n),
+                lookup_timeout_secs: None,
             },
         )]),
         ..UserConfig::default()

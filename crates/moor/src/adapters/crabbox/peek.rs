@@ -15,8 +15,6 @@ use moor_core::seam::proc::{Deadline, ProcError, ProcSpec, Tool};
 use super::errors::{map_error, Op};
 use super::{split_handle, static_env, target_args, Crabbox};
 
-/// Time allowed for the target lookup.
-const LOOKUP_DEADLINE: Duration = Duration::from_secs(5);
 /// Time allowed for the read.
 const READ_DEADLINE: Duration = Duration::from_secs(5);
 /// Remote exit code that means the file does not exist.
@@ -59,8 +57,9 @@ pub(super) fn ssh_target(
     // `crabbox ssh` touches the lease, so every lookup also resets crabbox's idle timer;
     // idle Boxes are slept by moor's `sleep_after`, not by that timer.
     // Secret-token providers need --show-secret, not yet passed.
+    let (provider, _) = split_handle(handle);
     let lookup = static_env(
-        Crabbox::spec(LOOKUP_DEADLINE)
+        Crabbox::spec(cb.lookup_deadline(provider.unwrap_or_default()))
             .arg("ssh")
             .args(target_args(handle))
             .cwd(host_cwd),

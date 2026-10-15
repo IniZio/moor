@@ -152,6 +152,9 @@ fn parse_duration(text: &str) -> Result<Duration, &'static str> {
 pub struct DriverConfig {
     /// Cap on live Boxes for this provider (at least 1).
     pub max_boxes: Option<NonZeroU32>,
+    /// Seconds allowed to look up a Box's ssh target (at least 1); 5 by default,
+    /// 20 for the `external` provider.
+    pub lookup_timeout_secs: Option<NonZeroU32>,
 }
 
 /// `github:` section.

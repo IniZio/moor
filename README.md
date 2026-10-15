@@ -61,6 +61,11 @@ drivers:
 Set `max_boxes` to the number of instances your provider workspace allows.
 5 is an example. It takes precedence over `box.max_boxes`.
 
+`drivers.<provider>.lookup_timeout_secs` sets how many seconds moor waits for
+crabbox to look up a Box's ssh target. The default is 5, or 20 for `external`,
+because an external provider's lookup goes through its adapter. Raise it if
+commands fail with "box operation timed out".
+
 The external provider for agent37 VMs is
 [crabbox-agent37](https://github.com/IniZio/crabbox-agent37). Its README lists
 the crabbox user config it needs, including `external.capabilities.pauseResume:

@@ -1,5 +1,6 @@
 //! Composition root: the only module that names concrete adapters.
 
+use std::collections::BTreeMap;
 use std::io::Write;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -8,7 +9,7 @@ use std::time::Duration;
 use moor_core::TaskId;
 use signal_hook::consts::{SIGINT, SIGTERM};
 
-use moor_core::config::UserConfig;
+use moor_core::config::{DriverConfig, UserConfig};
 use moor_core::seam::clock::Clock;
 use moor_core::seam::driver::Driver;
 use moor_core::seam::proc::Proc;
@@ -54,6 +55,19 @@ fn herdr(
     Herdr::new(Arc::clone(proc), session.to_owned(), extra_env).with_clock(clock)
 }
 
+/// Per-provider lookup deadlines for the providers that configure one.
+fn lookup_deadlines(drivers: &BTreeMap<String, DriverConfig>) -> BTreeMap<String, Duration> {
+    drivers
+        .iter()
+        .filter_map(|(provider, d)| {
+            Some((
+                provider.clone(),
+                Duration::from_secs(u64::from(d.lookup_timeout_secs?.get())),
+            ))
+        })
+        .collect()
+}
+
 /// Wire real adapters from the environment into a context.
 pub(crate) fn build(env: &Env) -> Result<Cx, CommandError> {
     Ok(Cx::new(parts(env)?))
@@ -77,10 +91,10 @@ fn parts(env: &Env) -> Result<CxParts, CommandError> {
         extra_env,
         Arc::clone(&clock) as Arc<dyn Clock>,
     ));
-    let driver: Arc<dyn Driver> = Arc::new(Crabbox::new(
-        Arc::clone(&proc),
-        Arc::clone(&clock) as Arc<dyn Clock>,
-    ));
+    let driver: Arc<dyn Driver> = Arc::new(
+        Crabbox::new(Arc::clone(&proc), Arc::clone(&clock) as Arc<dyn Clock>)
+            .with_lookup_deadlines(lookup_deadlines(&config.drivers)),
+    );
     let engine = BoxAgent::new(
         Arc::clone(&driver),
         Arc::clone(&surface),
@@ -310,6 +324,24 @@ mod tests {
         let text = String::from_utf8(out.lock().unwrap().clone()).unwrap();
         assert!(text.starts_with("moor proxy: "), "{text}");
         assert_eq!(text.lines().count(), 1, "{text}");
+    }
+
+    #[test]
+    fn lookup_deadlines_cover_only_providers_that_set_one() {
+        let drivers = BTreeMap::from([
+            (
+                "external".to_owned(),
+                DriverConfig {
+                    lookup_timeout_secs: std::num::NonZeroU32::new(30),
+                    ..DriverConfig::default()
+                },
+            ),
+            ("aws".to_owned(), DriverConfig::default()),
+        ]);
+        assert_eq!(
+            lookup_deadlines(&drivers),
+            BTreeMap::from([("external".to_owned(), Duration::from_secs(30))])
+        );
     }
 
     #[test]

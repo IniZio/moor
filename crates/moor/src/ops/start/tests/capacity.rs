@@ -88,6 +88,7 @@ fn driver_limit(provider: &str, n: u32) -> BTreeMap<String, DriverConfig> {
         provider.to_owned(),
         DriverConfig {
             max_boxes: Some(limit(n)),
+            lookup_timeout_secs: None,
         },
     )])
 }
