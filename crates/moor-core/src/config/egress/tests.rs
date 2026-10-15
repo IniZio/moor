@@ -74,6 +74,13 @@ fn unenforced_note_only_for_opt_in_without_opt_in() {
 }
 
 #[test]
+fn conflict_note_for_enforce_without_provider_support() {
+    let note = unenforced_note(EgressSupport::None, true).unwrap();
+    assert!(note.contains("cannot enforce egress") && note.contains("refuse"));
+    assert!(unenforced_note(EgressSupport::Enforced, true).is_none());
+}
+
+#[test]
 fn item_applied_lists_allow() {
     let it = egress_item(&[], &[], &s(&["a.example.com"]), true).unwrap();
     assert_eq!(it.name, "allow");

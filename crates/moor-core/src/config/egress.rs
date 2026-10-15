@@ -36,6 +36,10 @@ pub const BASE_ALLOW: &[&str] = &[
 /// Note text for a provider that fixes the allow-list at creation, without the opt-in.
 const UNENFORCED: &str = "egress not enforced: this provider fixes the allow-list at Box creation; set box.enforce_egress";
 
+/// Note text for a provider with no egress control when `box.enforce_egress` is set.
+const CONFLICT: &str =
+    "box.enforce_egress is set but this provider cannot enforce egress; start will refuse";
+
 /// One `moor env` egress row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EgressItem {
@@ -108,11 +112,13 @@ pub const fn provider_applies_policy(support: EgressSupport, enforce_egress: boo
     }
 }
 
-/// Warning when a provider with opt-in support runs without the egress opt-in.
+/// Note when egress is not enforced as configured: opt-in support without the opt-in, or the
+/// opt-in on a provider with no support.
 #[must_use]
 pub const fn unenforced_note(support: EgressSupport, enforce_egress: bool) -> Option<&'static str> {
     match support {
         EgressSupport::OptIn if !enforce_egress => Some(UNENFORCED),
+        EgressSupport::None if enforce_egress => Some(CONFLICT),
         _ => None,
     }
 }
