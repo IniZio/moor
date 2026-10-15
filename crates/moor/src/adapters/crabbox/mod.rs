@@ -22,7 +22,7 @@ use moor_core::name::{BoxHandle, BoxPath, ProviderId};
 use moor_core::seam::clock::Clock;
 use moor_core::seam::driver::{
     AcquireReq, Acquired, BoxListing, Driver, DriverCaps, DriverError, EgressApplied, EgressPlan,
-    ExecOutcome, ExecSpec, Released, SleepOutcome, TunnelHandle,
+    EgressSupport, ExecOutcome, ExecSpec, Released, SleepOutcome, TunnelHandle,
 };
 use moor_core::seam::proc::{Deadline, Proc, ProcError, ProcOutput, ProcSpec, Tool};
 
@@ -34,15 +34,6 @@ const ACQUIRE_DEADLINE: Duration = Duration::from_mins(15);
 const LIST_DEADLINE: Duration = Duration::from_secs(5);
 /// Time allowed for every other call.
 const QUICK_DEADLINE: Duration = Duration::from_secs(60);
-/// Provider that takes an allow-list flag.
-const FLAG_EGRESS_PROVIDER: &str = "sprites";
-/// Provider that takes an allow-list environment variable.
-const ENV_EGRESS_PROVIDER: &str = "namespace-devbox";
-/// Environment variable carrying the allow-list.
-const ENV_EGRESS_VAR: &str = "CRABBOX_NAMESPACE_EGRESS_DOMAINS";
-/// Environment variable that makes a release delete rather than pause.
-const DELETE_ON_RELEASE: &str = "CRABBOX_NAMESPACE_DELETE_ON_RELEASE";
-
 /// Provider whose Boxes share one slug and need the Box id and port in env.
 const STATIC_PROVIDER: &str = "ssh";
 /// Port the static provider dials (not configurable yet).
@@ -128,13 +119,13 @@ fn static_env(spec: ProcSpec, handle: &BoxHandle) -> ProcSpec {
     }
 }
 
-/// Maps a moor size to crabbox's machine class and namespace size.
-fn size_of(size: Option<&str>) -> Result<(&'static str, &'static str), DriverError> {
+/// Maps a moor size to crabbox's machine class.
+fn size_of(size: Option<&str>) -> Result<&'static str, DriverError> {
     match size.unwrap_or("small") {
-        "small" => Ok(("standard", "S")),
-        "medium" => Ok(("fast", "M")),
-        "large" => Ok(("large", "L")),
-        "xlarge" => Ok(("beast", "XL")),
+        "small" => Ok("standard"),
+        "medium" => Ok("fast"),
+        "large" => Ok("large"),
+        "xlarge" => Ok("beast"),
         other => Err(DriverError::Failed {
             summary: format!("unknown box size {other:?}"),
         }),
@@ -161,26 +152,31 @@ fn target_args(handle: &BoxHandle) -> Vec<String> {
     args
 }
 
-/// Adds the egress plan to a warmup when the provider can take it.
-fn with_egress(spec: ProcSpec, provider: &str, plan: &EgressPlan) -> (ProcSpec, EgressApplied) {
-    let EgressPlan::Allow(hosts) = plan else {
-        return (spec, EgressApplied::Open);
-    };
-    let list = hosts.join(",");
-    match provider {
-        FLAG_EGRESS_PROVIDER => (
-            spec.args(["--sprites-network-allow", &list]),
-            EgressApplied::Enforced,
-        ),
-        ENV_EGRESS_PROVIDER => (spec.env(ENV_EGRESS_VAR, list), EgressApplied::Enforced),
-        _ => (spec, EgressApplied::NotEnforced),
-    }
-}
-
 /// Error for output moor cannot read.
 fn unreadable(what: &str) -> DriverError {
     DriverError::Failed {
         summary: format!("unreadable box provider output for {what}"),
+    }
+}
+
+impl Crabbox {
+    /// Adds the egress plan to a warmup when the provider can enforce it.
+    fn with_egress(
+        &self,
+        spec: ProcSpec,
+        provider: &ProviderId,
+        plan: &EgressPlan,
+    ) -> Result<(ProcSpec, EgressApplied), DriverError> {
+        let EgressPlan::Allow(hosts) = plan else {
+            return Ok((spec, EgressApplied::Open));
+        };
+        if self.caps(provider)?.egress == EgressSupport::None {
+            return Ok((spec, EgressApplied::NotEnforced));
+        }
+        Ok((
+            spec.args(["--egress-allow", &hosts.join(",")]),
+            EgressApplied::Enforced,
+        ))
     }
 }
 
@@ -194,17 +190,15 @@ impl Driver for Crabbox {
     fn acquire(&self, req: &AcquireReq) -> Result<Acquired, DriverError> {
         let provider = req.provider.as_str();
         let name = box_name(req);
-        let (class, ns_size) = size_of(req.class.as_deref())?;
+        let class = size_of(req.class.as_deref())?;
         let mut spec = Self::spec(ACQUIRE_DEADLINE).args(["warmup", "--provider", provider]);
         if let Some(dir) = &req.worktree {
             spec = spec.cwd(dir);
         }
-        spec = spec
-            .args(["--slug", &name, "--class", class])
-            .env("CRABBOX_NAMESPACE_SIZE", ns_size);
+        spec = spec.args(["--slug", &name, "--class", class]);
         let handle = handle_of(provider, &name);
         let spec = static_env(spec, &handle);
-        let (spec, egress) = with_egress(spec, provider, &req.egress);
+        let (spec, egress) = self.with_egress(spec, &req.provider, &req.egress)?;
         let out = self.call(Op::Acquire, Some(provider), &spec)?;
         parse::parse_warmup(&out.stdout).ok_or_else(|| unreadable("acquire"))?;
         let workdir = workdir::probe(self, &handle, req.worktree.as_deref())?;
@@ -223,7 +217,7 @@ impl Driver for Crabbox {
         let spec = Self::spec(QUICK_DEADLINE)
             .arg("stop")
             .args(target_args(handle))
-            .env(DELETE_ON_RELEASE, "1");
+            .arg("--delete");
         let spec = static_env(spec, handle);
         match self.call(Op::Release, split_handle(handle).0, &spec) {
             Ok(_) => Ok(Released::Deleted),
