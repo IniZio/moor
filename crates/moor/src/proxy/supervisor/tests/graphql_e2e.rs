@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -35,10 +35,10 @@ use crate::testing::rng::FakeRng;
 pub(super) const NONCE: &str = "nonce_gql-0123456789";
 /// The credential the fake credential source returns.
 pub(super) const SECRET: &str = "gh-fake-token-77";
-/// Longest the test waits for the drain.
-const DEADLINE: Duration = Duration::from_secs(20);
 /// What the fake upstream answers to a GraphQL request.
 const GRAPHQL_REPLY: &str = r#"{"data":{"repository":{"id":"R_1"}}}"#;
+/// What the fake upstream answers to a request without `Authorization`.
+const UNAUTHORIZED_REPLY: &str = r#"{"message":"Requires authentication"}"#;
 /// What the fake upstream answers to a REST request.
 const PULLS_REPLY: &str = r#"[{"number":1}]"#;
 
@@ -47,6 +47,8 @@ const PULLS_REPLY: &str = r#"[{"number":1}]"#;
 pub(super) struct Seen {
     /// Request line, e.g. `POST /graphql HTTP/1.1`.
     pub(super) line: String,
+    /// The request head as received.
+    pub(super) head: String,
     /// `Authorization` header value, if any.
     pub(super) authorization: Option<String>,
     /// Request body as text.
@@ -98,6 +100,17 @@ fn tls_config() -> (Arc<ServerConfig>, String) {
     (Arc::new(config), ca_cert.pem())
 }
 
+/// What the fake upstream answers.
+fn reply_for(authorized: bool, request_line: &str) -> &'static str {
+    if !authorized {
+        UNAUTHORIZED_REPLY
+    } else if request_line.starts_with("POST ") {
+        GRAPHQL_REPLY
+    } else {
+        PULLS_REPLY
+    }
+}
+
 /// Reads one request, records it and answers; the connection then closes.
 fn serve_one(tcp: TcpStream, config: Arc<ServerConfig>, seen: &Mutex<Vec<Seen>>) {
     tcp.set_nonblocking(false).unwrap();
@@ -131,21 +144,20 @@ fn serve_one(tcp: TcpStream, config: Arc<ServerConfig>, seen: &Mutex<Vec<Seen>>)
         return;
     }
     let request_line = head.lines().next().unwrap_or_default().to_owned();
-    let reply = if request_line.starts_with("POST ") {
-        GRAPHQL_REPLY
-    } else {
-        PULLS_REPLY
-    };
+    let authorized = header("authorization").is_some();
+    let reply = reply_for(authorized, &request_line);
     seen.lock()
         .unwrap_or_else(PoisonError::into_inner)
         .push(Seen {
             line: request_line,
+            head: head.clone(),
             authorization: header("authorization"),
             body: String::from_utf8_lossy(&body).into_owned(),
         });
     let tls = r.get_mut();
     let wire = format!(
-        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{reply}",
+        "HTTP/1.1 {} \r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{reply}",
+        if authorized { "200" } else { "401" },
         reply.len()
     );
     if tls
@@ -198,7 +210,7 @@ pub(super) fn github_rule() -> ResolvedRule {
         hosts: vec!["api.github.com".to_owned()],
         credential: "GH_TOKEN".to_owned(),
         inject: ResolvedInject::Header {
-            header: "authorization".to_owned(),
+            header: "Authorization".to_owned(),
             form: "token {secret}".to_owned(),
         },
         endpoint_rules: vec![allow("POST", "/graphql"), allow("GET", "/repos/o/r/pulls")],
@@ -228,6 +240,8 @@ pub(super) struct Rig {
     filter_port: u16,
     /// PEM of the Task CA the client trusts.
     pub(super) ca_pem: String,
+    /// How many times the credential source ran.
+    pub(super) fetches: Arc<AtomicUsize>,
 }
 
 impl Rig {
@@ -240,7 +254,13 @@ impl Rig {
             forge: Arc::new(FakeForge::new()),
             clock: self.clock.clone(),
             rng: &self.rng,
-            creds: Arc::new(|_: &str| Ok(Secret::new(SECRET.as_bytes().to_vec()))),
+            creds: {
+                let fetches = Arc::clone(&self.fetches);
+                Arc::new(move |_: &str| {
+                    fetches.fetch_add(1, Ordering::SeqCst);
+                    Ok(Secret::new(SECRET.as_bytes().to_vec()))
+                })
+            },
             upstream_ca: Some(self.up.ca_path.clone()),
             upstream_dial: Some(self.up.addr),
             guard_exempt: Vec::new(),
@@ -268,25 +288,6 @@ impl Rig {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
-    }
-
-    /// Drains until an `egress_refused` payload shows up; its JSON text.
-    fn refusal(&self) -> String {
-        let step = Duration::from_millis(50);
-        for _ in 0..DEADLINE.as_millis() / step.as_millis() {
-            self.live.as_ref().unwrap().drain(&self.deps(), self.task);
-            let found = self
-                .store
-                .events(self.task, 100)
-                .unwrap()
-                .into_iter()
-                .find(|e| e.kind == "egress_refused");
-            if let Some(e) = found {
-                return e.payload.to_string();
-            }
-            std::thread::sleep(step);
-        }
-        unreachable!("timed out waiting for an egress_refused event")
     }
 }
 
@@ -333,6 +334,7 @@ pub(super) fn rig_allowing(extra: Vec<ResolvedRule>, allow: Vec<String>) -> Rig 
         live: None,
         filter_port: 0,
         ca_pem: String::new(),
+        fetches: Arc::new(AtomicUsize::new(0)),
     };
     let nonce = Secret::new(NONCE.as_bytes().to_vec());
     let live = listen(&rig.deps(), task, &nonce, &spec).unwrap();
@@ -380,14 +382,16 @@ fn task_repo_query_reaches_github_with_the_credential() {
 #[test]
 fn other_repo_query_reaches_github_without_any_credential() {
     let rig = rig();
-    let (status, body) = query(&rig.client(), "victim", "secrets");
-    assert_eq!((status, body.as_str()), (200, GRAPHQL_REPLY));
+    let (status, _) = query(&rig.client(), "victim", "secrets");
+    assert_eq!(status, 401, "the fake upstream refuses anonymous requests");
     let seen = rig.seen();
     let [only] = seen.as_slice() else {
         unreachable!("{seen:?}")
     };
     assert_eq!(only.line, "POST /graphql HTTP/1.1");
     assert_eq!(only.authorization, None);
+    assert!(!only.head.contains(SECRET), "{}", only.head);
+    assert!(!only.head.contains("placeholder"), "{}", only.head);
     rig.live.as_ref().unwrap().drain(&rig.deps(), rig.task);
     let refused = rig
         .store
@@ -396,6 +400,41 @@ fn other_repo_query_reaches_github_without_any_credential() {
         .into_iter()
         .any(|e| e.kind == "egress_refused");
     assert!(!refused, "out-of-scope forwarding is not a refusal");
+    rig.live.unwrap().stop();
+}
+
+#[test]
+fn anonymous_401_does_not_evict_the_cached_credential() {
+    let rig = rig();
+    let (status, _) = query(&rig.client(), "victim", "secrets");
+    assert_eq!(status, 401);
+    let (status, _) = query(&rig.client(), "victim", "other");
+    assert_eq!(status, 401);
+    rig.live.as_ref().unwrap().drain(&rig.deps(), rig.task);
+    let withheld: Vec<String> = rig
+        .store
+        .events(rig.task, 100)
+        .unwrap()
+        .into_iter()
+        .filter(|e| e.kind == "credential_withheld")
+        .map(|e| e.payload.to_string())
+        .collect();
+    let [one] = withheld.as_slice() else {
+        unreachable!("one deduplicated event expected: {withheld:?}")
+    };
+    for want in ["api.github.com", "github-api", "POST", "/graphql"] {
+        assert!(one.contains(want), "{want} missing from {one}");
+    }
+    for leak in ["victim", "secrets", "other", "repository("] {
+        assert!(!one.contains(leak), "{leak} leaked into {one}");
+    }
+    let (status, body) = query(&rig.client(), "o", "r");
+    assert_eq!((status, body.as_str()), (200, GRAPHQL_REPLY));
+    assert_eq!(
+        rig.fetches.load(Ordering::SeqCst),
+        1,
+        "credential refetched"
+    );
     rig.live.unwrap().stop();
 }
 
@@ -435,7 +474,16 @@ fn unmatched_rest_request_is_forwarded_not_refused() {
         .build()
         .call()
         .unwrap();
-    assert_eq!(resp.status().as_u16(), 200);
+    assert_eq!(
+        resp.status().as_u16(),
+        401,
+        "forwarded without a credential"
+    );
+    let seen = rig.seen();
+    let [only] = seen.as_slice() else {
+        unreachable!("{seen:?}")
+    };
+    assert_eq!(only.authorization, None);
     rig.live.unwrap().stop();
 }
 

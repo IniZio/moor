@@ -60,12 +60,19 @@ pub(super) fn gate(shared: &Shared, head: &Head, r: &mut impl BufRead) -> Gate {
     }
 }
 
-/// `head` without any `Authorization` header, in both `raw` and `headers`.
-pub(crate) fn without_credential(head: &Head) -> Head {
+/// `head` without `Authorization` or any of the `injected` header names, in
+/// both `raw` and `headers`.
+pub(super) fn without_credential(head: &Head, injected: &[String]) -> Head {
+    let strip = |name: &[u8]| {
+        name.eq_ignore_ascii_case(b"authorization")
+            || injected
+                .iter()
+                .any(|h| name.eq_ignore_ascii_case(h.as_bytes()))
+    };
     let mut raw = Vec::with_capacity(head.raw.len());
     for (i, line) in head.raw.split_inclusive(|&b| b == b'\n').enumerate() {
         let name = line.split(|&b| b == b':').next().unwrap_or_default();
-        if i > 0 && name.eq_ignore_ascii_case(b"authorization") {
+        if i > 0 && strip(name) {
             continue;
         }
         raw.extend_from_slice(line);
@@ -75,7 +82,7 @@ pub(crate) fn without_credential(head: &Head) -> Head {
         headers: head
             .headers
             .iter()
-            .filter(|(n, _)| !n.eq_ignore_ascii_case("authorization"))
+            .filter(|(n, _)| !strip(n.as_bytes()))
             .cloned()
             .collect(),
         ..head.clone()

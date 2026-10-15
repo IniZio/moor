@@ -42,7 +42,8 @@ const MAX_REFUSALS: usize = 1024;
 pub(crate) struct FilterSpec {
     /// The Task CA the filter presents to nono.
     pub(crate) ca: EphemeralCa,
-    /// The Task repo, if known; without it every GraphQL request is refused.
+    /// The Task repo, if known; without it every GraphQL request goes out
+    /// without its credential.
     pub(crate) repo: Option<RepoRef>,
     /// The only host the filter tunnels to, such as `api.github.com`.
     pub(crate) host: String,
@@ -50,6 +51,13 @@ pub(crate) struct FilterSpec {
     pub(crate) port: u16,
     /// Name of the proxy rule, reported with each refusal.
     pub(crate) rule: String,
+    /// Header names the proxy injects the credential into; removed, together
+    /// with `Authorization`, from requests forwarded without it.
+    pub(crate) credential_headers: Vec<String>,
+    /// Called when upstream answers 401 to a request that carried the
+    /// credential, so the cached credential can be dropped. Never called for
+    /// requests forwarded without it.
+    pub(crate) on_credentialed_401: Box<dyn Fn() + Send + Sync>,
     /// Connections to the real upstream.
     pub(crate) upstream: Upstream,
     /// Vets every other tunnel destination.
@@ -90,6 +98,12 @@ pub(super) struct Shared {
     pub(super) port: u16,
     /// Rule name for refusals.
     pub(super) rule: String,
+    /// Header names stripped from requests forwarded without credential.
+    pub(super) credential_headers: Vec<String>,
+    /// Called when upstream answers 401 to a request that carried the credential.
+    pub(super) on_credentialed_401: Box<dyn Fn() + Send + Sync>,
+    /// Methods of requests forwarded without credential, not yet drained.
+    withheld: Mutex<VecDeque<String>>,
     /// The real upstream.
     pub(super) upstream: Upstream,
     /// Vets destinations other than the judged host.
@@ -122,6 +136,20 @@ impl Shared {
             method: method.to_owned(),
             category,
         });
+    }
+
+    /// Notes a request to `/graphql` forwarded without its credential.
+    pub(super) fn withhold(&self, method: &str) {
+        let mut q = self.lock_withheld();
+        if q.len() >= MAX_REFUSALS {
+            q.pop_front();
+        }
+        q.push_back(method.to_owned());
+    }
+
+    /// Locks the withheld buffer, recovering from poisoning.
+    fn lock_withheld(&self) -> MutexGuard<'_, VecDeque<String>> {
+        self.withheld.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Locks the refusal buffer, recovering from poisoning.
@@ -160,6 +188,9 @@ impl GraphqlFilter {
             host: spec.host,
             port: spec.port,
             rule: spec.rule,
+            credential_headers: spec.credential_headers,
+            on_credentialed_401: spec.on_credentialed_401,
+            withheld: Mutex::new(VecDeque::new()),
             upstream: spec.upstream,
             guard: spec.guard,
             tls,
@@ -187,6 +218,11 @@ impl GraphqlFilter {
     /// Takes the refusals recorded since the last call.
     pub(crate) fn drain_refusals(&self) -> Vec<Refusal> {
         self.shared.lock_refusals().drain(..).collect()
+    }
+
+    /// Takes the methods of requests forwarded without credential since the last call.
+    pub(crate) fn drain_withheld(&self) -> Vec<String> {
+        self.shared.lock_withheld().drain(..).collect()
     }
 
     /// Stops accepting and joins the acceptor; open connections end on their

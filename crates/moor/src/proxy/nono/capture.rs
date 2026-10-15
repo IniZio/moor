@@ -5,7 +5,7 @@
 //! [`CACHE_TTL`], and dropped when the upstream answers 401. Failed fetches are
 //! never cached. Errors name the config key and never contain secret bytes.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
@@ -109,6 +109,8 @@ pub(crate) struct MoorCapture {
     clock: Arc<dyn Clock>,
     /// Cached secrets by rule; never held while a source runs.
     cache: Mutex<BTreeMap<String, Slot>>,
+    /// Rules whose evictions the GraphQL filter drives; audit 401s are ignored.
+    filtered: BTreeSet<String>,
 }
 
 impl MoorCapture {
@@ -118,6 +120,21 @@ impl MoorCapture {
             sources,
             clock,
             cache: Mutex::new(BTreeMap::new()),
+            filtered: BTreeSet::new(),
+        }
+    }
+
+    /// Leaves evictions for `rules` to [`Self::evict`] callers: the audit drain
+    /// cannot tell a credentialed 401 from an anonymous one for them.
+    pub(crate) fn defer_evictions(&mut self, rules: impl IntoIterator<Item = String>) {
+        self.filtered.extend(rules);
+    }
+
+    /// Drops the cached credential for `rule` on an audited upstream 401,
+    /// unless the filter owns that rule's evictions.
+    pub(crate) fn evict_audited(&self, rule: &str) {
+        if !self.filtered.contains(rule) {
+            self.evict(rule);
         }
     }
 
