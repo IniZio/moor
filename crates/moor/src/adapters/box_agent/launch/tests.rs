@@ -275,13 +275,7 @@ fn a_failed_cleanup_is_named_in_the_error() {
             .exec_results([Ok(moor_core::seam::driver::ExecOutcome::Exited { code: 1 })]),
         FakeSurface::new("/r"),
     );
-    let message = match out {
-        Err(EngineError::Failed {
-            step: "brief",
-            message,
-        }) => message,
-        other => format!("unexpected {other:?}"),
-    };
+    let message = format!("{out:?}");
     assert!(
         message.contains(&format!("could not remove {CRED}")),
         "{message}"
@@ -372,7 +366,15 @@ impl Scratch {
             step: step.to_owned(),
         };
         let cred = BoxPath::under(root, "home/.moor-cred-t1-x").unwrap();
-        super::script(&cred, &ctx, &setup(hook_step), &setup("true"), &[], proxy).unwrap()
+        super::script(
+            &cred,
+            &ctx,
+            &setup(hook_step),
+            &setup("true"),
+            &[],
+            (proxy, None),
+        )
+        .unwrap()
     }
 
     fn spawn(&self, script: &str) -> std::process::Child {
@@ -559,7 +561,7 @@ fn a_failed_proxy_stage_removes_the_cred_dir() {
     let out = agent(&d, &s).launch(&req_with_proxy(&s));
     assert!(matches!(out, Err(EngineError::Failed { .. })));
     assert!(s.opened().is_empty());
-    assert_eq!(d.execs().remove(0).1.argv, ["rm", "-rf", CRED]);
+    assert_eq!(d.execs().pop().unwrap().1.argv, ["rm", "-rf", CRED]);
 }
 
 #[test]
@@ -592,3 +594,6 @@ fn the_agent_gets_the_proxy_env_while_the_cred_dir_lives_until_exit() {
     assert!(!b.path("started.nonce").exists());
     assert!(b.cred_gone());
 }
+
+#[path = "sandbox_tests.rs"]
+mod sandbox_tests;
