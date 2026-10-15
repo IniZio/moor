@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use moor_core::domain::decision::{Decision, NewTask};
 use moor_core::seam::clock::Ts;
-use moor_core::seam::driver::Acquired;
+use moor_core::seam::driver::{Acquired, BoxPlatform};
 use moor_core::{BoxHandle, BoxPath, TaskId, TaskName};
 
 use crate::ops::common::provision::hold_root;
@@ -33,6 +33,10 @@ fn state_after_hold(got: &str, key: &str) -> Option<LeaseState> {
     let got = Acquired {
         handle: BoxHandle::new(got),
         workdir: BoxPath::restore("/work").unwrap(),
+        platform: BoxPlatform {
+            os: "Linux".into(),
+            arch: "x86_64".into(),
+        },
     };
     hold_root(&store, id, root, &planned, &got).unwrap();
     store

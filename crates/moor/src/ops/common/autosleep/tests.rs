@@ -374,3 +374,17 @@ fn auto_sleep_of_a_box_that_cannot_sleep_asks_for_a_clearing_restore() {
     let r = tunnel_request(&f).unwrap();
     assert_eq!((r.want, r.seq), (TunnelWant::UpAwake, 2));
 }
+
+#[test]
+fn a_static_host_is_never_asked_to_sleep_and_says_why_once() {
+    let f = idle_with(FakeDriver::new().static_host());
+    pass(&f, LONG);
+    auto_sleep(&f);
+    auto_sleep(&f);
+    assert_eq!(states(&f), (TaskState::Idle, BoxState::Ready));
+    assert_eq!(sleep_calls(&f), 0);
+    let why = "the Box is a static SSH host; moor never sleeps it";
+    assert_eq!(reason(&f).as_deref(), Some(why));
+    let stays = kinds(&f).iter().filter(|k| *k == "stays_up").count();
+    assert_eq!(stays, 1);
+}

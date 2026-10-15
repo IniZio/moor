@@ -39,3 +39,16 @@ fn timeout_shows_seconds() {
 fn driver_is_object_safe() {
     fn _takes(_: &dyn Driver) {}
 }
+
+#[test]
+fn platform_parses_os_and_arch() {
+    let p = BoxPlatform::parse("Darwin arm64\n").unwrap();
+    assert_eq!((p.os.as_str(), p.arch.as_str()), ("Darwin", "arm64"));
+}
+
+#[test]
+fn platform_rejects_wrong_word_count() {
+    assert_eq!(BoxPlatform::parse(""), None);
+    assert_eq!(BoxPlatform::parse("Linux"), None);
+    assert_eq!(BoxPlatform::parse("Linux x86_64 extra"), None);
+}

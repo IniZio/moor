@@ -47,6 +47,8 @@ const GATE_VARS: [&str; 8] = [
 
 /// What the profile is built from.
 pub(super) struct SandboxInput<'a> {
+    /// The Box's operating system as `uname -s` reports it.
+    pub(super) os: &'a str,
     /// Project working directory.
     pub(super) workdir: &'a BoxPath,
     /// The Box user's home.
@@ -124,7 +126,7 @@ pub(super) fn profile(input: &SandboxInput) -> String {
         // Claude Code refuses bypassPermissions as root unless it is told it is sandboxed.
         set_vars.insert(ROOT_SANDBOX_VAR.to_owned(), "1".to_owned());
     }
-    let doc = json!({
+    let mut doc = json!({
         "meta": { "name": "moor-agent" },
         "groups": { "include": DEFAULT_GROUPS },
         "security": { "signal_mode": "isolated" },
@@ -157,6 +159,15 @@ pub(super) fn profile(input: &SandboxInput) -> String {
             "set_vars": set_vars,
         },
     });
+    if input.os != "Linux" {
+        // Only Linux has pathname socket mediation and a userdb socket to reach.
+        if let Some(d) = doc.as_object_mut() {
+            d.shift_remove("linux");
+            if let Some(f) = d.get_mut("filesystem").and_then(|f| f.as_object_mut()) {
+                f.shift_remove("unix_socket_dir");
+            }
+        }
+    }
     serde_json::to_string_pretty(&doc).unwrap_or_default()
 }
 
@@ -175,12 +186,20 @@ sum=$(sha256sum "$dest" 2>/dev/null || shasum -a 256 "$dest" 2>/dev/null)
 }
 
 /// A human message for a non-zero exit of the check script.
-pub(super) fn check_failure(code: i32) -> String {
+pub(super) fn check_failure(os: &str, code: i32) -> String {
     let v = NONO_VERSION;
     match code {
-        5 => "the Box kernel cannot run the nono sandbox (Landlock is missing); \
-              `nono setup --check-only` failed"
-            .to_owned(),
+        5 => {
+            let missing = if os == "Darwin" {
+                "Seatbelt is unavailable"
+            } else {
+                "Landlock is missing"
+            };
+            format!(
+                "the Box kernel cannot run the nono sandbox ({missing}); \
+                 `nono setup --check-only` failed"
+            )
+        }
         NOT_INSTALLED => format!("nono {v} on the Box is missing or is not the pinned binary"),
         _ => format!("checking nono {v} exited {code}"),
     }
