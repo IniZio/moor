@@ -31,10 +31,12 @@ pub(super) fn render(b: &BriefInput) -> String {
         "You are running inside the Box, in the project working directory. Run builds, \
          tests and project tooling directly here.\n\n\
          Report the command's real exit code. Do not pipe its output through `tail` or `head`.\n\n\
-         This Box is disposable and yours: you have full control, including sudo. If a tool \
-         the project needs is missing, install it from its official source only (vendor \
-         installer, distro packages, or mise). Never use unofficial mirrors or piped scripts \
-         from unknown hosts. Do not guess paths.\n\n\
+         You run in a sandbox. You have no sudo and no direct network access. Network \
+         traffic goes only through the preset proxy (HTTPS_PROXY); do not unset or bypass it. \
+         You can write only in the working directory and your own tool state. If a tool the \
+         project needs is missing, do not try to install it: say which tool is missing and that \
+         it belongs in the repo's setup commands, then continue with what is available. \
+         Do not guess paths.\n\n\
          HEAD is detached on the Box. Commit your work with git, following the repo's \
          commit-msg hook and conventions. Push with \
          `git push moor HEAD:refs/heads/{branch}` when the repo's push guard \
@@ -107,11 +109,12 @@ mod tests {
     }
 
     #[test]
-    fn limits_installs_to_official_sources() {
+    fn states_sandbox_limits_and_points_missing_tools_at_setup() {
         let out = render(&input(Some("g"), None));
-        assert!(out.contains("including sudo"));
-        assert!(out.contains("official source only"));
-        assert!(out.contains("Never use unofficial mirrors or piped scripts"));
+        assert!(out.contains("no sudo"));
+        assert!(!out.contains("including sudo"));
+        assert!(out.contains("no direct network"));
+        assert!(out.contains("belongs in the repo's setup commands"));
         assert!(out.contains("Do not guess paths."));
     }
 
