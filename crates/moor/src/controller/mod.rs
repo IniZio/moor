@@ -17,9 +17,12 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
 use std::time::Duration;
 
-use moor_core::config::{parse_controller, parse_repo, MoorYamlSource, RepoTable, WebConfig};
+use moor_core::config::{
+    parse_controller, parse_repo, MoorYamlSource, RepoTable, SlackConfig, WebConfig,
+};
 
 use crate::env::Env;
+use crate::slack::Slack;
 use crate::Moor;
 
 /// Shared destination for diagnostics.
@@ -34,7 +37,7 @@ const USAGE: u8 = 2;
 pub fn serve(env: &Env, config: &Path, stderr: impl Write + Send + 'static) -> u8 {
     let sink: Sink = Arc::new(Mutex::new(stderr));
     match start(env, config) {
-        Ok(running) => {
+        Ok(mut running) => {
             log(&sink, &format!("listening on {}", running.socket.display()));
             if let Some(web) = &running.web {
                 log(&sink, &format!("web ui on http://{}", web.addr()));
@@ -43,6 +46,11 @@ pub fn serve(env: &Env, config: &Path, stderr: impl Write + Send + 'static) -> u
                 log(&sink, &format!("proxy: {line}"));
             }
             settle::spawn(&running.env, running.settle_every, &sink);
+            if let Some(slack) = running.slack.take() {
+                let out = Sink::clone(&sink);
+                slack.spawn(&running.env, Arc::new(move |line| log(&out, line)));
+                log(&sink, "slack: socket mode on");
+            }
             running.accept_loop(&sink);
             0
         }
@@ -72,6 +80,8 @@ struct Running {
     _lock: File,
     /// Loopback web UI, served until the process exits.
     web: Option<web::Web>,
+    /// Slack app, started once the controller is serving.
+    slack: Option<Slack>,
     /// Environment shared by every connection.
     env: Arc<Env>,
     /// Time between settle passes.
@@ -104,12 +114,18 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
         code: 1,
         message: format!("cannot bind {}: {e}", socket.display()),
     })?;
+    let slack = cfg
+        .slack
+        .as_ref()
+        .map(|s| load_slack(&env, s))
+        .transpose()?;
     let web = cfg.web.as_ref().map(|w| start_web(&env, w)).transpose()?;
     Ok(Running {
         socket,
         listener,
         _lock: lock,
         web,
+        slack,
         env: Arc::new(env),
         settle_every: cfg.settle_every(),
     })
@@ -136,6 +152,20 @@ fn resolve_repos(env: &Env, config: &Path, mut repos: RepoTable) -> Result<RepoT
         *p = path.to_string_lossy().into_owned();
     }
     Ok(repos)
+}
+
+/// Reads both Slack token files and builds the client, so a bad file stops startup.
+fn load_slack(env: &Env, slack: &SlackConfig) -> Result<Slack, Stop> {
+    let stop = |message: String| Stop {
+        code: USAGE,
+        message,
+    };
+    let read = |path: &Path, label: &str| {
+        web_feed::read_secret(&env.expand_home(path), label).map_err(stop)
+    };
+    let app = read(&slack.app_token_file, "slack app token file")?;
+    let bot = read(&slack.bot_token_file, "slack bot token file")?;
+    Slack::new(slack, app, bot).map_err(|e| stop(format!("slack: {e}")))
 }
 
 /// Reads the token and binds the web UI on loopback.

@@ -23,7 +23,6 @@ mod proxy;
 mod reads;
 mod reports;
 mod runs;
-#[cfg_attr(not(test), expect(dead_code, reason = "read by the Slack worker"))]
 mod slack;
 #[cfg(test)]
 mod tests;

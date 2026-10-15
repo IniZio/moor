@@ -14,7 +14,6 @@ pub mod error;
 mod moor;
 mod ops;
 mod proxy;
-#[cfg_attr(not(test), expect(dead_code, reason = "started by the controller"))]
 mod slack;
 mod store;
 #[cfg(test)]
