@@ -1,10 +1,22 @@
 //! Environment snapshot handed to spawned children.
 
+use std::ffi::OsString;
 use std::process::Command;
 
 use moor_core::seam::proc::{Tool, BASE_ENV, CRABBOX_ENV, CRABBOX_ENV_PREFIX};
 
+use super::ToolPaths;
 use crate::env::Env;
+
+/// Program for `tool`: `MOOR_<TOOL>_BIN`, then config, then the default name.
+pub(super) fn resolve(env: &Env, tools: &ToolPaths, tool: Tool) -> OsString {
+    if let Some(v) = env.get(tool.bin_var()).filter(|v| !v.is_empty()) {
+        return v.into();
+    }
+    tools
+        .get(tool)
+        .map_or_else(|| tool.program().into(), |p| p.clone().into_os_string())
+}
 
 /// Name and value pairs.
 type Vars = Vec<(String, String)>;

@@ -1,0 +1,266 @@
+//! Adopting or restarting recorded Proxy supervisors when the controller starts.
+
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
+
+use moor_core::domain::decision::{Decision, NewTask};
+use moor_core::seam::clock::{Clock as _, Ts};
+use moor_core::seam::proxy_host::{ProxyHost as _, ProxySpec, ProxyStatus};
+use moor_core::{Secret, TaskId, TaskName};
+
+use super::reconcile;
+use crate::proxy::detached::{write_spec, DetachedSupervisor, LEASE};
+use crate::store::{ProxyPorts, ReadyProc, Store, STORE_FILE};
+use crate::testing::clock::FakeClock;
+use crate::testing::proc::ScriptedProc;
+use crate::testing::rng::FakeRng;
+
+const PID: u32 = 4242;
+const BOOT: &str = "boot-a";
+/// The nonce the Box was started with; it differs from any nonce the host would draw.
+const BOX_NONCE: &[u8] = b"nonce-held-by-the-box";
+
+struct Fx {
+    dir: tempfile::TempDir,
+    proc: Arc<ScriptedProc>,
+    clock: Arc<FakeClock>,
+    store: Store,
+    host: DetachedSupervisor,
+    id: TaskId,
+}
+
+/// A Task with a ready Box and a recorded Proxy whose supervisor is `PID` in boot `BOOT`.
+fn fx() -> Fx {
+    let dir = tempfile::tempdir().unwrap();
+    let proc = Arc::new(ScriptedProc::new());
+    proc.with_boot_id(BOOT);
+    let clock = Arc::new(FakeClock::new(Ts::from_millis(1000)));
+    let rng = Arc::new(FakeRng::default());
+    let store = Store::open(&dir.path().join(STORE_FILE), clock.clone()).unwrap();
+    let id = store
+        .apply(Decision::insert(NewTask {
+            name: TaskName::parse("t").unwrap(),
+            repo: "r".into(),
+        }))
+        .unwrap()
+        .task;
+    let host = DetachedSupervisor::new(
+        proc.clone(),
+        clock.clone(),
+        rng,
+        Some(dir.path().to_path_buf()),
+    )
+    .keeping_nonce();
+    let f = Fx {
+        dir,
+        proc,
+        clock,
+        store,
+        host,
+        id,
+    };
+    f.exec(&format!(
+        "INSERT INTO boxes (task, provider, state, updated_at) VALUES ({}, 'crabbox', 'ready', 0)",
+        id.get()
+    ));
+    write_spec(f.dir.path(), &f.spec()).unwrap();
+    let state = f.dir.path().to_path_buf();
+    let shared = f.clock.clone();
+    f.proc.on_daemon(move |d| {
+        let store = Store::open(&state.join(STORE_FILE), shared.clone()).unwrap();
+        let task = TaskId::new(d.call.args.get(2).unwrap().parse().unwrap());
+        store.claim_lease(task, "new-supervisor", LEASE).unwrap();
+        let box_port = store.proxy(task).unwrap().unwrap().box_port;
+        let ports = ProxyPorts {
+            box_port,
+            host_port: 41000,
+        };
+        let proc = ReadyProc {
+            pid: d.pid,
+            handle: "h",
+            boot_id: Some(BOOT),
+        };
+        let _ = store
+            .mark_ready(task, "new-supervisor", ports, proc)
+            .unwrap();
+    });
+    f
+}
+
+impl Fx {
+    fn spec(&self) -> ProxySpec {
+        ProxySpec {
+            task: self.id,
+            box_handle: None,
+            host_cwd: PathBuf::from("/work"),
+            task_repo: None,
+            rules: Vec::new(),
+        }
+    }
+
+    fn exec(&self, sql: &str) {
+        rusqlite::Connection::open(self.dir.path().join(STORE_FILE))
+            .unwrap()
+            .execute(sql, [])
+            .unwrap();
+    }
+
+    /// Records a ready Proxy held by a supervisor with `PID` written in `boot`.
+    fn record(&self, boot: &str) -> u16 {
+        let nonce = Secret::new(BOX_NONCE.to_vec());
+        let _ = self
+            .store
+            .reserve(self.id, &nonce, &FakeRng::default(), LEASE)
+            .unwrap();
+        self.store.claim_lease(self.id, "old", LEASE).unwrap();
+        let box_port = self.store.proxy(self.id).unwrap().unwrap().box_port;
+        let ports = ProxyPorts {
+            box_port,
+            host_port: 40000,
+        };
+        let proc = ReadyProc {
+            pid: PID,
+            handle: "old-handle",
+            boot_id: Some(boot),
+        };
+        let _ = self.store.mark_ready(self.id, "old", ports, proc).unwrap();
+        box_port
+    }
+
+    fn settle(&self) -> Vec<String> {
+        reconcile(
+            &self.host,
+            self.proc.as_ref(),
+            self.clock.clone(),
+            self.dir.path(),
+        )
+    }
+
+    fn row(&self) -> crate::store::ProxyRow {
+        self.store.proxy(self.id).unwrap().unwrap()
+    }
+}
+
+#[test]
+fn a_live_group_leader_in_this_boot_is_adopted_untouched() {
+    let f = fx();
+    let port = f.record(BOOT);
+
+    assert_eq!(f.settle(), Vec::<String>::new());
+
+    assert!(f.proc.daemons().is_empty());
+    assert!(f.proc.signals().is_empty());
+    let row = f.row();
+    assert_eq!(row.pid, Some(PID));
+    assert_eq!(row.box_port, port);
+}
+
+#[test]
+fn a_dead_pid_is_restarted_on_the_same_box_port() {
+    let f = fx();
+    let port = f.record(BOOT);
+    f.proc.dead(PID);
+
+    assert_eq!(f.settle(), Vec::<String>::new());
+
+    assert_eq!(f.proc.daemons().len(), 1);
+    assert!(f.proc.signals().is_empty());
+    let row = f.row();
+    assert_eq!(row.box_port, port);
+    assert!(row.ready);
+    assert_ne!(row.pid, Some(PID));
+    assert_eq!(row.nonce.expose(), BOX_NONCE);
+}
+
+#[test]
+fn a_row_from_another_boot_is_restarted_without_a_signal() {
+    let f = fx();
+    let port = f.record("boot-before-reboot");
+
+    assert_eq!(f.settle(), Vec::<String>::new());
+
+    assert_eq!(f.proc.daemons().len(), 1);
+    assert!(f.proc.signals().is_empty());
+    assert_eq!(f.row().box_port, port);
+    assert_eq!(f.row().boot_id.as_deref(), Some(BOOT));
+    assert_eq!(f.row().nonce.expose(), BOX_NONCE);
+}
+
+#[test]
+fn a_live_pid_that_is_not_a_group_leader_is_never_signalled() {
+    let f = fx();
+    let port = f.record(BOOT);
+    f.proc.follower(PID);
+
+    assert_eq!(f.settle(), Vec::<String>::new());
+
+    assert!(f.proc.signals().is_empty());
+    assert_eq!(f.proc.daemons().len(), 1);
+    assert_eq!(f.row().box_port, port);
+    assert_ne!(f.row().pid, Some(PID));
+}
+
+#[test]
+fn a_stale_lease_is_restarted_on_the_same_box_port() {
+    let f = fx();
+    let port = f.record(BOOT);
+    f.clock.sleep(LEASE + Duration::from_secs(1));
+
+    assert_eq!(f.settle(), Vec::<String>::new());
+
+    assert_eq!(f.proc.daemons().len(), 1);
+    assert_eq!(f.row().box_port, port);
+    assert_eq!(f.row().nonce.expose(), BOX_NONCE);
+    assert_eq!(
+        f.host.status(f.id).unwrap(),
+        ProxyStatus::Ready { box_port: port }
+    );
+}
+
+#[test]
+fn a_task_without_a_usable_box_has_its_proxy_stopped_not_restarted() {
+    let f = fx();
+    f.record(BOOT);
+    f.clock.sleep(LEASE + Duration::from_secs(1));
+    f.exec("UPDATE boxes SET state = 'deleted'");
+
+    assert_eq!(f.settle(), Vec::<String>::new());
+
+    assert!(f.proc.daemons().is_empty());
+    assert!(f.store.proxy(f.id).unwrap().is_none());
+}
+
+#[test]
+fn a_missing_spec_is_reported_and_leaves_the_row_stale() {
+    let f = fx();
+    let port = f.record(BOOT);
+    f.proc.dead(PID);
+    std::fs::remove_dir_all(f.dir.path().join("proxy")).unwrap();
+
+    let errors = f.settle();
+
+    assert_eq!(errors.len(), 1);
+    assert!(errors.iter().all(|e| e.contains("without its spec")));
+    assert!(f.proc.daemons().is_empty());
+    assert_eq!(f.row().box_port, port);
+    assert_eq!(f.host.status(f.id).unwrap(), ProxyStatus::Stale);
+}
+
+#[test]
+fn an_ordinary_ensure_on_a_stale_row_draws_a_new_nonce() {
+    let f = fx();
+    let port = f.record(BOOT);
+    f.clock.sleep(LEASE + Duration::from_secs(1));
+    let host = DetachedSupervisor::new(
+        f.proc.clone(),
+        f.clock.clone(),
+        Arc::new(FakeRng::default()),
+        Some(f.dir.path().to_path_buf()),
+    );
+
+    let endpoint = host.ensure(&f.spec()).unwrap();
+
+    assert_ne!(endpoint.nonce.expose(), BOX_NONCE);
+    assert_eq!(endpoint.box_port, port);
+}

@@ -20,8 +20,8 @@ use rustix::process::{test_kill_process, Signal};
 use zeroize::Zeroizing;
 
 use crate::env::Env;
-use env::Snapshot;
-use signal::{send_group, signal_group, to_pid};
+use env::{resolve, Snapshot};
+use signal::{is_group_leader, send_group, signal_group, to_pid};
 
 /// Longest wait between SIGTERM and SIGKILL.
 const GRACE: Duration = Duration::from_secs(2);
@@ -135,16 +135,6 @@ fn spawn_retrying(cmd: &mut Command) -> io::Result<Child> {
             r => return r,
         }
     }
-}
-
-/// Program for `tool`: `MOOR_<TOOL>_BIN`, then config, then the default name.
-fn resolve(env: &Env, tools: &ToolPaths, tool: Tool) -> OsString {
-    if let Some(v) = env.get(tool.bin_var()).filter(|v| !v.is_empty()) {
-        return v.into();
-    }
-    tools
-        .get(tool)
-        .map_or_else(|| tool.program().into(), |p| p.clone().into_os_string())
 }
 
 /// Stdio for the child plus bytes to write to its pipe, if any.
@@ -381,6 +371,10 @@ impl Proc for SystemProc {
 
     fn boot_id(&self) -> Option<String> {
         boot::read()
+    }
+
+    fn group_leader(&self, pid: u32) -> bool {
+        is_group_leader(pid)
     }
 
     fn alive(&self, pid: u32) -> bool {

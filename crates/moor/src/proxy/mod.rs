@@ -8,6 +8,7 @@
 //!
 //! The supervisor owns the proxy's lifetime.
 
+pub(crate) mod adopt;
 pub(crate) mod detached;
 pub(crate) mod front;
 pub(crate) mod graphql;

@@ -11,7 +11,12 @@ use crate::Moor;
 /// Serve frames from `reader` until EOF or an I/O error on either side.
 ///
 /// Frame-level problems get an error frame and leave the connection open.
-pub(crate) fn handle(reader: impl BufRead, mut writer: impl Write, env: &Env) {
+pub(crate) fn handle(reader: impl BufRead, writer: impl Write, env: &Env) {
+    serve(reader, writer, |request| respond(env, request));
+}
+
+/// [`handle`] with the engine behind `answer`, so tests can serve over fakes.
+fn serve(reader: impl BufRead, mut writer: impl Write, answer: impl Fn(Request) -> Response) {
     let mut handshaken = false;
     for line in reader.lines() {
         let Ok(line) = line else { return };
@@ -36,7 +41,7 @@ pub(crate) fn handle(reader: impl BufRead, mut writer: impl Write, env: &Env) {
             },
             Ok(ClientFrame::Request { id, request }) => ServerFrame::Response {
                 id,
-                envelope: respond(env, request),
+                envelope: answer(request),
             },
         };
         if writer.write_all(reply.to_line().as_bytes()).is_err() || writer.flush().is_err() {
@@ -60,6 +65,9 @@ pub(crate) fn respond(env: &Env, request: Request) -> Response {
     }
 }
 
+#[cfg(test)]
+#[path = "secret/tests.rs"]
+mod secret;
 #[cfg(test)]
 #[path = "conn_tests.rs"]
 mod tests;

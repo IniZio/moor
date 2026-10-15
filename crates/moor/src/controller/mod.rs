@@ -13,6 +13,7 @@ use std::thread;
 use moor_core::config::parse_controller;
 
 use crate::env::Env;
+use crate::Moor;
 
 /// Shared destination for diagnostics.
 type Sink = Arc<Mutex<dyn Write + Send>>;
@@ -28,6 +29,9 @@ pub fn serve(env: &Env, config: &Path, stderr: impl Write + Send + 'static) -> u
     match start(env, config) {
         Ok(running) => {
             log(&sink, &format!("listening on {}", running.socket.display()));
+            for line in Moor::reconcile_proxies(&running.env) {
+                log(&sink, &format!("proxy: {line}"));
+            }
             running.accept_loop(&sink);
             0
         }
