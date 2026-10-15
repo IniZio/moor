@@ -22,8 +22,8 @@ use std::time::Duration;
 use moor_core::name::{BoxHandle, BoxPath, ProviderId};
 use moor_core::seam::clock::Clock;
 use moor_core::seam::driver::{
-    AcquireReq, Acquired, BoxListing, Driver, DriverCaps, DriverError, EgressApplied, ExecOutcome,
-    ExecSpec, Released, SleepOutcome, TunnelHandle,
+    AcquireReq, Acquired, BoxListing, Driver, DriverCaps, DriverError, ExecOutcome, ExecSpec,
+    Released, SleepOutcome, TunnelHandle,
 };
 use moor_core::seam::proc::{Deadline, Proc, ProcError, ProcOutput, ProcSpec, Tool};
 
@@ -209,11 +209,7 @@ impl Driver for Crabbox {
         let out = self.call(Op::Acquire, Some(provider), &spec)?;
         parse::parse_warmup(&out.stdout).ok_or_else(|| unreadable("acquire"))?;
         let workdir = workdir::probe(self, &handle, req.worktree.as_deref())?;
-        Ok(Acquired {
-            handle,
-            workdir,
-            egress: EgressApplied::Open,
-        })
+        Ok(Acquired { handle, workdir })
     }
 
     fn planned_handle(&self, req: &AcquireReq) -> BoxHandle {

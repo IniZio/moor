@@ -8,7 +8,7 @@ use moor_core::config::{BoxConfig, DriverConfig, UserConfig};
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
-use moor_core::seam::driver::{AcquireReq, Driver, DriverError, EgressPlan};
+use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
 use moor_core::seam::proc::Tool;
 use moor_core::{BoxHandle, BoxPath, CloseReq, ProviderId, ShowReq, StartReq, TaskId, TaskName};
 
@@ -127,7 +127,6 @@ fn acquire_holder(driver: &FakeDriver) -> BoxHandle {
             provider: ProviderId::new(PROVIDER),
             task: TaskId::new(1),
             name: TaskName::parse("holder").unwrap(),
-            egress: EgressPlan::Open,
             class: None,
             nonce: "n".to_owned(),
             worktree: None,

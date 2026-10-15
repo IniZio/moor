@@ -12,7 +12,7 @@ use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
 use moor_core::seam::clock::Ts;
-use moor_core::seam::driver::{AcquireReq, Driver, DriverError, EgressPlan, SleepKind};
+use moor_core::seam::driver::{AcquireReq, Driver, DriverError, SleepKind};
 use moor_core::seam::proc::Tool;
 use moor_core::{ProviderId, ShowReq, StartReq, TaskId, TaskName};
 
@@ -70,7 +70,6 @@ fn ready_box(cx: &Cx, driver: &FakeDriver, id: TaskId) -> moor_core::BoxHandle {
             provider: p.clone(),
             task: id,
             name: TaskName::parse("demo").unwrap(),
-            egress: EgressPlan::Open,
             class: None,
             nonce: "abc123".into(),
             worktree: None,
@@ -248,7 +247,6 @@ fn working(cx: &Cx, driver: &FakeDriver, name: &str, session: Option<&str>) -> T
             provider: ProviderId::new("p"),
             task: id,
             name: TaskName::parse(name).unwrap(),
-            egress: EgressPlan::Open,
             class: None,
             nonce: "abc123".into(),
             worktree: None,

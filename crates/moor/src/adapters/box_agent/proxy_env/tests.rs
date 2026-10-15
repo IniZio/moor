@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use moor_core::seam::agent_profile::{EnvVar, ProxyAddr};
-use moor_core::seam::driver::{AcquireReq, Driver, EgressPlan};
+use moor_core::seam::driver::{AcquireReq, Driver};
 use moor_core::seam::forge::ForgeRepo;
 use moor_core::{BoxHandle, BoxPath, ProviderId, Secret, TaskId, TaskName};
 
@@ -277,7 +277,6 @@ fn stage_puts_the_nonce_and_the_ca_under_the_credential_directory() {
         provider: ProviderId::new("fake"),
         task: TaskId::new(1),
         name: TaskName::parse("t1").unwrap(),
-        egress: EgressPlan::Open,
         class: None,
         nonce: "n0".to_owned(),
         worktree: None,

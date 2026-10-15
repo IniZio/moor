@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use moor_core::seam::agent_profile::{AgentProfile, BoxSetup, LaunchCtx, ProxyAddr};
 use moor_core::seam::clock::Ts;
-use moor_core::seam::driver::{AcquireReq, Driver, DriverError, EgressPlan};
+use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
 use moor_core::seam::engine::{Engine, EngineError, LaunchReq};
 use moor_core::seam::surface::{Surface, SurfaceError};
 use moor_core::{BoxHandle, BoxPath, ProviderId, Secret, TaskId, TaskName};
@@ -37,7 +37,6 @@ fn driver(d: FakeDriver) -> Arc<FakeDriver> {
         provider: ProviderId::new("fake"),
         task: TaskId::new(1),
         name: TaskName::parse("t1").unwrap(),
-        egress: EgressPlan::Open,
         class: None,
         nonce: "n0".to_owned(),
         worktree: None,
@@ -299,7 +298,6 @@ fn a_box_without_a_home_fails_before_delivering() {
         provider: ProviderId::new("fake"),
         task: TaskId::new(1),
         name: TaskName::parse("t1").unwrap(),
-        egress: EgressPlan::Open,
         class: None,
         nonce: "n0".to_owned(),
         worktree: None,

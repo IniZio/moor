@@ -9,7 +9,7 @@ use moor_core::config::{Flags, TaskSettings, UserConfig};
 use moor_core::domain::run::SyncMode;
 use moor_core::domain::task::SetupOutcome;
 use moor_core::seam::clock::{Clock, Ts};
-use moor_core::seam::driver::{AcquireReq, Driver, DriverError, EgressPlan, ExecOutcome};
+use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
 use moor_core::seam::proc::Deadline;
 use moor_core::view::SetupView;
 use moor_core::{BoxHandle, BoxPath, ProviderId, TaskId, TaskName};
@@ -48,7 +48,6 @@ fn rig_on(dir: &Path, driver: FakeDriver, clock: Arc<FakeClock>) -> Rig {
             provider: ProviderId::new("p"),
             task: TaskId::new(1),
             name: TaskName::parse("demo").unwrap(),
-            egress: EgressPlan::Open,
             class: None,
             nonce: "n".to_owned(),
             worktree: None,

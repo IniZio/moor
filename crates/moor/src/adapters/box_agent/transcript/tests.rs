@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use moor_core::seam::clock::Ts;
-use moor_core::seam::driver::{AcquireReq, Driver, DriverError, EgressPlan, ExecOutcome};
+use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
 use moor_core::seam::engine::{Engine, EngineError, SessionRef};
 use moor_core::{BoxHandle, BoxPath, ProviderId, TaskId, TaskName};
 
@@ -19,7 +19,6 @@ fn live(driver: FakeDriver) -> Arc<FakeDriver> {
         provider: ProviderId::new("fake"),
         task: TaskId::new(1),
         name: TaskName::parse("t1").unwrap(),
-        egress: EgressPlan::Open,
         class: None,
         nonce: "n0".to_owned(),
         worktree: None,

@@ -4,7 +4,7 @@ use std::sync::Arc;
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
-use moor_core::seam::driver::{AcquireReq, Driver, DriverError, EgressPlan};
+use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
 use moor_core::seam::proc::Tool;
 use moor_core::seam::surface::SurfaceError;
 use moor_core::{BoxPath, CloseReq, ErrorKind, ProviderId, TaskId, TaskName};
@@ -136,7 +136,6 @@ fn admit(cx: &Cx, driver: &FakeDriver, dir: &Path) -> TaskId {
             provider,
             task: id,
             name: TaskName::parse("t").unwrap(),
-            egress: EgressPlan::Open,
             class: None,
             nonce: "n".to_owned(),
             worktree: None,

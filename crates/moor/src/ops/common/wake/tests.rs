@@ -6,7 +6,7 @@ use std::sync::Arc;
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
-use moor_core::seam::driver::{AcquireReq, Driver, DriverError, EgressPlan};
+use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
 use moor_core::{ErrorKind, ProviderId, TaskId, TaskName};
 
 use super::wake_if_asleep;
@@ -28,7 +28,6 @@ fn acquire_req(provider: ProviderId, task: TaskId, name: TaskName) -> AcquireReq
         provider,
         task,
         name,
-        egress: EgressPlan::Open,
         class: None,
         nonce: "n".to_owned(),
         worktree: Some(PathBuf::from("/home/me/wt/t")),

@@ -7,7 +7,7 @@ use std::time::Duration;
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
-use moor_core::seam::driver::{AcquireReq, Driver, EgressPlan, SleepKind, SleepOutcome};
+use moor_core::seam::driver::{AcquireReq, Driver, SleepKind, SleepOutcome};
 use moor_core::{ErrorKind, ProviderId, TaskId, TaskName, TaskReq};
 
 use super::run;
@@ -62,7 +62,6 @@ fn fx_with(driver: FakeDriver) -> Fx {
             provider,
             task: id,
             name,
-            egress: EgressPlan::Open,
             class: None,
             nonce: "n".to_owned(),
             worktree: None,

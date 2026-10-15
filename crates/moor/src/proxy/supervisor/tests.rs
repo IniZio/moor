@@ -10,7 +10,7 @@ use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::task::{SetupOutcome, TaskInput};
 use moor_core::seam::clock::{Clock, Ts};
-use moor_core::seam::driver::{AcquireReq, Driver, EgressPlan};
+use moor_core::seam::driver::{AcquireReq, Driver};
 use moor_core::seam::forge::ForgeRepo;
 use moor_core::seam::proxy_host::ProxySpec;
 use moor_core::secret::Secret;
@@ -191,7 +191,6 @@ fn working_task(store: &Store, driver: &FakeDriver) -> TaskId {
             provider: provider.clone(),
             task: id,
             name: TaskName::parse("demo").unwrap(),
-            egress: EgressPlan::Open,
             class: None,
             nonce: "abc123".into(),
             worktree: None,

@@ -6,7 +6,7 @@ use moor_core::activity::{HookKind, HookRead, HookRecord, PaneObs, PaneRead, Pan
 use moor_core::name::NameError;
 use moor_core::seam::agent_profile::{AgentProfile, BoxSetup, EnvVar, Key, LaunchCtx, PromptMatch};
 use moor_core::seam::clock::Ts;
-use moor_core::seam::driver::{AcquireReq, Driver, DriverError, EgressPlan};
+use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
 use moor_core::seam::engine::{Engine, SessionRef};
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::{PaneRef, SurfaceError};
@@ -115,7 +115,6 @@ fn live_driver(driver: FakeDriver) -> Arc<FakeDriver> {
         provider: ProviderId::new("fake"),
         task: TaskId::new(1),
         name: TaskName::parse("t1").unwrap(),
-        egress: EgressPlan::Open,
         class: None,
         nonce: "n0".to_owned(),
         worktree: None,
