@@ -356,3 +356,26 @@ fn github_api_matches_pr_and_stack_calls() {
         assert!(github_api_allows(m, &p), "{m} {p}");
     }
 }
+
+#[test]
+fn github_api_allows_run_reads_and_nothing_else_under_actions() {
+    let r = "/repos/acme/widgets";
+    for p in [
+        format!("{r}/actions/runs"),
+        format!("{r}/actions/runs/9/jobs"),
+        format!("{r}/actions/jobs/4/logs"),
+        format!("{r}/check-runs/4/annotations"),
+        "/rate_limit".to_owned(),
+    ] {
+        assert!(github_api_allows("GET", &p), "GET {p}");
+    }
+    for (m, p) in [
+        ("POST", format!("{r}/actions/runs/9/rerun")),
+        ("POST", format!("{r}/actions/runs/9/cancel")),
+        ("DELETE", format!("{r}/actions/runs/9")),
+        ("PUT", format!("{r}/actions/secrets/X")),
+        ("GET", "/repos/other/repo/actions/runs".to_owned()),
+    ] {
+        assert!(!github_api_allows(m, &p), "{m} {p}");
+    }
+}

@@ -1,4 +1,4 @@
-//! A request no endpoint rule matches is forwarded without the injected credential.
+//! A request no endpoint rule matches is refused and never reaches the upstream.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -57,8 +57,6 @@ fn fetch(path: &str) -> (Result<u16, String>, Vec<upstream::Seen>) {
         upstream_ca: Some(&up.ca_path),
         chain: None,
     });
-    // Unmatched requests use the proxy's default trust store, which honours this variable.
-    std::env::set_var("SSL_CERT_FILE", &up.ca_path);
     let proxy = NonoProxy::start(cfg, capture).unwrap();
     let agent = upstream::client(proxy.port(), NONCE, ca.cert_pem());
     let status = agent
@@ -71,12 +69,20 @@ fn fetch(path: &str) -> (Result<u16, String>, Vec<upstream::Seen>) {
 }
 
 #[test]
-fn request_matching_no_endpoint_rule_is_forwarded_without_credential() {
+fn request_matching_no_endpoint_rule_is_refused_before_the_upstream() {
     let (status, seen) = fetch("/release/asset");
+    assert_eq!(status, Ok(403));
+    assert!(seen.is_empty(), "{seen:?}");
+}
+
+#[test]
+fn request_matching_an_endpoint_rule_gets_the_credential() {
+    let (status, seen) = fetch("/ok");
     assert_eq!(status, Ok(200));
     let last = seen.last().unwrap();
-    assert_eq!(last.line, "GET /release/asset HTTP/1.1");
-    // The Box's fixed placeholder passes through unchanged; the real token is never added.
-    assert_eq!(last.authorization.as_deref(), Some("Bearer moor-proxy"));
-    assert!(!last.authorization.as_deref().unwrap().contains(SECRET));
+    assert_eq!(last.line, "GET /ok HTTP/1.1");
+    assert_eq!(
+        last.authorization.as_deref(),
+        Some(format!("Bearer {SECRET}").as_str())
+    );
 }

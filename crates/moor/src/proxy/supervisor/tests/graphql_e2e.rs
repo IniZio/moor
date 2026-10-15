@@ -426,6 +426,28 @@ fn rest_request_passes_through_unchanged() {
 }
 
 #[test]
+fn unmatched_rest_request_is_refused_audited_and_never_forwarded() {
+    let rig = rig();
+    let resp = rig
+        .client()
+        .get("https://api.github.com/repos/cli/cli")
+        .header("Authorization", "token placeholder-not-real")
+        .config()
+        .http_status_as_error(false)
+        .build()
+        .call()
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 403);
+    assert!(rig.seen().is_empty());
+
+    let event = rig.refusal();
+    for want in ["api.github.com", "endpoint_policy", "GET"] {
+        assert!(event.contains(want), "{want} missing from {event}");
+    }
+    rig.live.unwrap().stop();
+}
+
+#[test]
 fn stop_closes_both_listeners() {
     let mut rig = rig();
     let ports = [

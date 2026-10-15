@@ -93,7 +93,12 @@ fn one_route_per_rule_and_host() {
             ("ant__0", "https://api.anthropic.com", Some("cmd://ant")),
         ]
     );
-    let first = routes.first().unwrap().endpoint_rules.first().unwrap();
+    let policy = routes.first().unwrap().endpoint_policy.as_ref().unwrap();
+    assert_eq!(
+        policy.default.decision,
+        nono_proxy::config::EndpointPolicyDecision::Deny
+    );
+    let first = policy.allow.first().unwrap();
     assert_eq!(
         (first.method.as_str(), first.path.as_str()),
         ("GET", "/v1/*/items/**")

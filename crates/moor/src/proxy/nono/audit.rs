@@ -46,6 +46,8 @@ impl EgressSink for TaskSink<'_> {
         method: Option<&str>,
         category: Option<&str>,
     ) {
+        self.log
+            .record(method.unwrap_or("-"), rule.unwrap_or(host), 403);
         let event = Event::EgressRefused {
             host: host.to_owned(),
             rule: rule.map(str::to_owned),
