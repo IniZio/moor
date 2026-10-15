@@ -64,9 +64,10 @@ fn a_proxy_launch_wraps_the_agent_in_the_sandbox() {
     let nono = script
         .find("'/home/box/.local/bin/nono' '-s' 'run' '--profile'")
         .expect(&script);
-    let port = script.find("'--open-port' '4567'").expect(&script);
     let agent = script.rfind("'claude'").expect(&script);
-    assert!(nono < port && port < agent, "{script}");
+    assert!(nono < agent, "{script}");
+    assert!(!script.contains("--block-net"), "{script}");
+    assert!(!script.contains("--open-port"), "{script}");
 }
 
 #[test]

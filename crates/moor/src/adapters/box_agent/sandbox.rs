@@ -54,8 +54,6 @@ const GATE_VARS: [&str; 8] = [
 
 /// What the profile is built from.
 pub(super) struct SandboxInput<'a> {
-    /// Proxy tunnel port on the Box.
-    pub(super) box_port: u16,
     /// Project working directory.
     pub(super) workdir: &'a BoxPath,
     /// The Box user's home.
@@ -122,7 +120,6 @@ pub(super) fn profile(input: &SandboxInput) -> String {
         "groups": { "include": DEFAULT_GROUPS },
         "security": { "signal_mode": "isolated" },
         "linux": { "af_unix_mediation": "pathname" },
-        "network": { "block": true, "open_port": [input.box_port] },
         "workdir": { "access": "readwrite" },
         "filesystem": {
             "unix_socket_dir": ["/run/systemd/userdb"],
@@ -190,23 +187,12 @@ pub(super) fn harden_lines() -> Vec<String> {
     ]
 }
 
-/// The argv that runs `agent` under the sandbox tool at `launcher` with the profile and the Proxy port.
-pub(super) fn wrap(
-    launcher: &BoxPath,
-    profile_path: &BoxPath,
-    box_port: u16,
-    agent: &[String],
-) -> Vec<String> {
+/// The argv that runs `agent` under the sandbox tool at `launcher` with the profile.
+pub(super) fn wrap(launcher: &BoxPath, profile_path: &BoxPath, agent: &[String]) -> Vec<String> {
     [launcher.as_str(), "-s", "run", "--profile"]
         .into_iter()
         .map(str::to_owned)
-        .chain([
-            profile_path.as_str().to_owned(),
-            "--block-net".to_owned(),
-            "--open-port".to_owned(),
-            box_port.to_string(),
-            "--".to_owned(),
-        ])
+        .chain([profile_path.as_str().to_owned(), "--".to_owned()])
         .chain(agent.iter().cloned())
         .collect()
 }

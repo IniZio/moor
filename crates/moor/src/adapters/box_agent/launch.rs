@@ -170,9 +170,9 @@ impl Launch<'_> {
             .map_err(|e| fail("script", &e))
     }
 
-    /// Makes sure the sandbox tool is on the Box and stages its profile, returning the profile's path and the
-    /// tunnel port to open; a launch without a Proxy has no tunnel port, so the agent runs unsandboxed.
-    fn sandbox(&self) -> Result<Option<(BoxPath, u16)>, Failure> {
+    /// Makes sure the sandbox tool is on the Box and stages its profile, returning the profile's path; a
+    /// launch without a Proxy runs the agent unsandboxed.
+    fn sandbox(&self) -> Result<Option<BoxPath>, Failure> {
         let Some(addr) = &self.ctx.proxy else {
             return Ok(None);
         };
@@ -180,7 +180,6 @@ impl Launch<'_> {
         install::ensure(self.driver, req, (&self.ctx.home, cred), self.release)?;
         let env_names = (self.profile.env(self.ctx).into_iter().map(|v| v.name)).collect();
         let profile = sandbox::profile(&SandboxInput {
-            box_port: addr.box_port,
             workdir: &self.ctx.workdir,
             home: &self.ctx.home,
             cred,
@@ -193,7 +192,7 @@ impl Launch<'_> {
         self.driver
             .put_file(&req.handle, &at, profile.as_bytes(), 0o600, &req.worktree)
             .map_err(|e| fail("sandbox", &e))?;
-        Ok(Some((at, addr.box_port)))
+        Ok(Some(at))
     }
 
     /// Puts the brief in the credential directory.
@@ -278,14 +277,14 @@ impl Launch<'_> {
 /// The script the Box runs under `sh`; the credential directory goes once the brief is
 /// installed, and at exit or on a hangup, interrupt or terminate before then. With
 /// `proxy` lines the directory stays until the agent exits, since the CA bundle and the CA
-/// certificate live in it. With a `sandbox` profile and port the agent runs under `nono`.
+/// certificate live in it. With a `sandbox` profile the agent runs under `nono`.
 fn script(
     (cred, tmp): (&BoxPath, &BoxPath),
     ctx: &LaunchCtx,
     hooks: &BoxSetup,
     preseed: &BoxSetup,
     argv: &[String],
-    (proxy, sandbox): (&[String], Option<&(BoxPath, u16)>),
+    (proxy, sandbox): (&[String], Option<&BoxPath>),
 ) -> Result<String, NameError> {
     let workdir = ctx.workdir.as_str();
     let moor = quote(BoxPath::under(workdir, ".moor")?.as_str());
@@ -320,10 +319,7 @@ fn script(
     if sandbox.is_some() {
         lines.extend(sandbox::harden_lines());
     }
-    let agent = sandbox.map_or_else(
-        || agent.clone(),
-        |(at, port)| sandbox::wrap(&launcher, at, *port, &agent),
-    );
+    let agent = sandbox.map_or_else(|| agent.clone(), |at| sandbox::wrap(&launcher, at, &agent));
     lines.push(format!("cd {} && {}", quote(workdir), command_line(&agent)));
     Ok(lines.join("\n"))
 }
