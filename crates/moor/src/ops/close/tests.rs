@@ -24,6 +24,7 @@ mod proxy;
 mod reports;
 mod teardown;
 mod transcript;
+mod wake;
 mod worktree;
 
 const RAW: &str = "RAWDRIVER-7731";

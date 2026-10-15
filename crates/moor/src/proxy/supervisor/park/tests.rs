@@ -1,5 +1,8 @@
 //! Tests for parking and reopening the tunnel, run against fakes.
 
+use moor_core::domain::boxes::BoxInput;
+use moor_core::domain::decision::Decision;
+use moor_core::domain::task::TaskInput;
 use moor_core::seam::clock::Clock;
 
 use super::super::tests::{World, FIRST_TUNNEL_PID};
@@ -110,4 +113,62 @@ fn failed_reopen_acks_the_error_and_keeps_the_proxy_running() {
         "{ack:?}"
     );
     assert!(w.row().lease_owner.is_some());
+}
+
+/// Puts the Task and its Box to sleep, as the sleep command does.
+fn sleep_box(w: &World) {
+    let quiet = Decision::new(w.id).task_input(TaskInput::AgentQuiet);
+    w.store.apply(quiet).unwrap();
+    let d = Decision::new(w.id)
+        .task_input(TaskInput::SleepCmd)
+        .box_input(BoxInput::Sleep);
+    w.store.apply(d).unwrap();
+}
+
+#[test]
+fn restarted_supervisor_with_a_parked_request_opens_no_tunnel() {
+    let w = World::new([]);
+    let deps = w.deps();
+    let seq = request(&w, TunnelWant::Parked);
+    let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
+
+    for _ in 0..5 {
+        assert!(run.tick().is_none());
+        w.clock.sleep(TICK);
+    }
+
+    assert!(w.driver.tunnels().is_empty());
+    assert!(w.row().ready);
+    assert_eq!(
+        w.store.tunnel_ack(w.id).unwrap(),
+        Some(TunnelAck::Parked { seq })
+    );
+
+    let seq = request(&w, TunnelWant::Up);
+    assert!(run.tick().is_none());
+
+    let calls = w.driver.tunnels();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls.first().unwrap().box_port, w.row().box_port);
+    assert_eq!(
+        w.store.tunnel_ack(w.id).unwrap(),
+        Some(TunnelAck::Up { seq })
+    );
+}
+
+#[test]
+fn an_asleep_box_starts_parked_without_a_request() {
+    let w = World::new([]);
+    sleep_box(&w);
+    let deps = w.deps();
+    let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
+
+    for _ in 0..10 {
+        assert!(run.tick().is_none());
+        w.clock.sleep(TICK);
+    }
+
+    assert!(w.driver.tunnels().is_empty());
+    assert!(w.row().ready);
+    assert!(!w.stderr().contains("restarting"));
 }

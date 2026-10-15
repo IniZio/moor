@@ -1,8 +1,10 @@
 //! Parking the reverse tunnel while the Box sleeps and reopening it on wake.
 
 use moor_core::seam::driver::TunnelHandle;
+use moor_core::TaskId;
 
 use super::run::{say, Running};
+use super::Deps;
 use crate::store::{TunnelAck, TunnelRequest, TunnelWant};
 
 /// Stands in for the tunnel while parked; it never runs, so it is never alive.
@@ -18,6 +20,27 @@ impl TunnelHandle for Parked {
     }
 }
 
+/// The dead stand-in that holds the tunnel slot while parked.
+pub(super) fn parked_tunnel() -> Box<dyn TunnelHandle> {
+    Box::new(Parked)
+}
+
+/// Whether a starting supervisor leaves the tunnel closed: the Box is asleep or the latest request is Parked.
+///
+/// A store error is reported and the Box state decides alone.
+pub(super) fn starts_parked(deps: &Deps<'_>, task: TaskId, asleep: bool) -> bool {
+    match deps.store.tunnel_request(task) {
+        Ok(request) => asleep || request.is_some_and(|r| r.want == TunnelWant::Parked),
+        Err(err) => {
+            say(
+                &deps.stderr,
+                format_args!("cannot read the tunnel request: {err}"),
+            );
+            asleep
+        }
+    }
+}
+
 impl Running<'_> {
     /// Acts on a tunnel request that has not been answered yet.
     ///
@@ -30,7 +53,7 @@ impl Running<'_> {
             TunnelWant::Parked => {
                 if !self.parked.get() {
                     // Replacing the handle drops the old one, which kills the tunnel.
-                    *self.tunnel.borrow_mut() = Box::new(Parked);
+                    *self.tunnel.borrow_mut() = parked_tunnel();
                     self.parked.set(true);
                 }
                 self.answer(&TunnelAck::Parked { seq: request.seq });

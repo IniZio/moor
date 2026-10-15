@@ -28,7 +28,7 @@ fn fx_probe(text: Option<&str>) -> Fx {
 
 /// A Ready Box in a worktree named `repo`, so a woken Box (which the fake driver
 /// places at `/work/cbx_1/repo`) reads `text` from its probe result.
-fn fx_woken(text: &str) -> Fx {
+pub(super) fn fx_woken(text: &str) -> Fx {
     let dir = tempfile::tempdir().unwrap();
     let worktree = dir.path().join("repo");
     std::fs::create_dir(&worktree).unwrap();
@@ -62,7 +62,7 @@ fn fx_woken(text: &str) -> Fx {
 }
 
 /// Puts the Task and its Box to sleep.
-fn put_to_sleep(f: &Fx) {
+pub(super) fn put_to_sleep(f: &Fx) {
     let store = f.cx.store().unwrap();
     store
         .apply(Decision::new(f.id).task_input(TaskInput::AgentQuiet))

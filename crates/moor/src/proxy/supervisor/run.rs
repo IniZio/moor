@@ -2,15 +2,17 @@
 
 use std::cell::{Cell, RefCell};
 use std::fmt::Arguments;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::PoisonError;
 
+use moor_core::domain::boxes::BoxState;
 use moor_core::domain::task::TaskState;
 use moor_core::seam::driver::TunnelHandle;
 use moor_core::seam::proxy_host::ProxySpec;
 use moor_core::{BoxHandle, Secret, TaskId};
 
 use super::listen::{listen, Live};
+use super::park::{parked_tunnel, starts_parked};
 use super::{Deps, Sink, LEASE};
 use crate::proxy::detached::read_spec;
 use crate::store::{Fenced, Lease, ProxyPorts, ReadyProc, TaskRow};
@@ -144,7 +146,36 @@ fn claim(deps: &Deps<'_>, task: TaskId) -> Result<String, u8> {
     }
 }
 
+/// Whether the Task's Box is stored as Asleep.
+fn asleep(row: &TaskRow) -> bool {
+    row.boxed
+        .as_ref()
+        .is_some_and(|b| b.state == BoxState::Asleep)
+}
+
+/// Opens the first tunnel into the Box, reporting a failure.
+fn open_tunnel(
+    deps: &Deps<'_>,
+    (handle, box_port, host_port, worktree): (&BoxHandle, u16, u16, &Path),
+) -> Option<Box<dyn TunnelHandle>> {
+    match deps
+        .driver
+        .reverse_tunnel(handle, box_port, host_port, worktree)
+    {
+        Ok(tunnel) => Some(tunnel),
+        Err(err) => {
+            say(
+                &deps.stderr,
+                format_args!("cannot open the tunnel into the box: {err}"),
+            );
+            None
+        }
+    }
+}
+
 /// Claims the lease, starts the proxy and tunnel, and marks the row ready.
+///
+/// A sleeping Box refuses connections, so a Box that is Asleep or was asked to park starts without a tunnel.
 pub(super) fn begin<'d>(deps: &'d Deps<'d>, task: TaskId) -> Result<Running<'d>, u8> {
     let sink = &deps.stderr;
     let (task_row, handle, spec) = preflight(deps, task)?;
@@ -170,20 +201,17 @@ pub(super) fn begin<'d>(deps: &'d Deps<'d>, task: TaskId) -> Result<Running<'d>,
         live.stop();
         return Err(code);
     }
-    let tunnel = match deps
-        .driver
-        .reverse_tunnel(&handle, box_port, live.port(), &worktree)
-    {
-        Ok(tunnel) => tunnel,
-        Err(err) => {
-            say(
-                sink,
-                format_args!("cannot open the tunnel into the box: {err}"),
-            );
+    let parked = starts_parked(deps, task, asleep(&task_row));
+    let tunnel = if parked {
+        parked_tunnel()
+    } else {
+        let ends = (&handle, box_port, live.port(), worktree.as_path());
+        let Some(tunnel) = open_tunnel(deps, ends) else {
             live.stop();
             give_up(deps, task, &owner);
             return Err(1);
-        }
+        };
+        tunnel
     };
     let ports = ProxyPorts {
         box_port,
@@ -194,17 +222,22 @@ pub(super) fn begin<'d>(deps: &'d Deps<'d>, task: TaskId) -> Result<Running<'d>,
         live.stop();
         return Err(code);
     }
-    Ok(Running {
+    let run = Running {
         deps,
         task,
         owner,
         live,
         tunnel: RefCell::new(tunnel),
-        parked: Cell::new(false),
+        parked: Cell::new(parked),
         handle,
         box_port,
         worktree,
-    })
+    };
+    if parked {
+        // Answers a pending request: Parked is acked, Up reopens the tunnel.
+        run.follow_request();
+    }
+    Ok(run)
 }
 
 /// Extends the lease during startup; `Err` carries the exit code, with the lease given up unless it was lost.
