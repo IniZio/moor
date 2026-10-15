@@ -2,27 +2,27 @@
 //! progress, and run interactive commands locally.
 
 use std::io::Write;
-use std::path::Path;
 use std::process::Command;
 
 use moor_core::seam::proc::Tool;
 use moor_core::{ErrorKind, ErrorView, Request, Response};
 
+use super::Target;
 use crate::cli::{render, GlobalOpts, Output};
 use crate::env::Env;
 
-/// Sends `request` to the controller at `socket` and renders its answer.
+/// Sends `request` to the controller at `target` and renders its answer.
 ///
 /// Text mode prints progress frames to stderr as they arrive; `--json` keeps
 /// stderr quiet so stdout stays one envelope.
 #[must_use]
-pub fn run(env: &Env, socket: &Path, request: Request, opts: &GlobalOpts) -> Output {
+pub fn run(env: &Env, target: &Target, request: Request, opts: &GlobalOpts) -> Output {
     let interactive = matches!(request, Request::Open(_));
     let request = match request {
         Request::Open(t) => Request::Connect(t),
         other => other,
     };
-    let result = super::call(socket, &request, |msg| {
+    let result = super::call(env, target, &request, |msg| {
         if !opts.json {
             let mut err = std::io::stderr();
             let _ = writeln!(err, "moor: {msg}");

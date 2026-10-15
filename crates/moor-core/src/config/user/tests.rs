@@ -443,3 +443,30 @@ fn controller_unknown_key_is_named() {
 fn controller_empty_socket_is_rejected() {
     assert_eq!(err("controller: {socket: ''}").path, "controller.socket");
 }
+
+#[test]
+fn controller_ssh_parses() {
+    let c = ok("controller: {ssh: newman@minion}");
+    assert_eq!(c.controller.ssh.as_deref(), Some("newman@minion"));
+    assert_eq!(ok("{}").controller.ssh, None);
+}
+
+#[test]
+fn controller_bad_ssh_is_rejected() {
+    for doc in [
+        "controller: {ssh: ''}",
+        "controller: {ssh: '-oProxyCommand=x'}",
+        "controller: {ssh: 'a b'}",
+        "controller: {ssh: \"a\\tb\"}",
+        "controller: {ssh: \"a\\nb\"}",
+    ] {
+        assert_eq!(err(doc).path, "controller.ssh", "{doc}");
+    }
+}
+
+#[test]
+fn controller_socket_and_ssh_together_are_rejected() {
+    let e = err("controller: {socket: /tmp/x.sock, ssh: newman@minion}");
+    assert_eq!(e.path, "controller");
+    assert!(e.reason.contains("only one"), "{e}");
+}

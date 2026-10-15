@@ -58,6 +58,16 @@ pub(super) enum ProxyCmd {
 pub(super) enum ControllerCmd {
     /// Serve moor requests on a local socket.
     Serve(ControllerServeArgs),
+    /// Bridge stdin/stdout to the controller socket (used over ssh).
+    Attach(ControllerAttachArgs),
+}
+
+/// Arguments of `controller attach`.
+#[derive(Debug, Args)]
+pub(super) struct ControllerAttachArgs {
+    /// Controller socket path.
+    #[arg(long, value_name = "PATH")]
+    socket: Option<PathBuf>,
 }
 
 /// Arguments of `controller serve`.
@@ -85,6 +95,7 @@ impl AdminCmd {
             Self::Proxy(ProxyCmd::Check) => Action::Request(Request::ProxyCheck {}),
             Self::Proxy(ProxyCmd::Serve(a)) => Action::ProxyServe(TaskId::new(a.task)),
             Self::Controller(ControllerCmd::Serve(a)) => Action::ControllerServe(a.config),
+            Self::Controller(ControllerCmd::Attach(a)) => Action::ControllerAttach(a.socket),
             Self::Call => Action::CallStdin,
             Self::Version => Action::Request(Request::Version {}),
         }

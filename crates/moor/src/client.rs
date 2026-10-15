@@ -1,11 +1,15 @@
-//! Client for the controller socket: runs one request through a configured daemon.
+//! Client for the controller: runs one request through a configured daemon, reached over its
+//! socket or through `ssh <host> moor controller attach`.
 
 use std::fmt;
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+use std::process::{Child, Command, Stdio};
+use std::time::Duration;
 
 use moor_core::controller::{parse_server_frame, ClientFrame, ServerFrame, PROTOCOL};
+use moor_core::seam::proc::Tool;
 use moor_core::{ErrorKind, Request, Response};
 
 use crate::config_load::load_user;
@@ -17,15 +21,38 @@ pub mod remote;
 /// Id carried by the single request of a session.
 const REQUEST_ID: &str = "1";
 
+/// Polls of a failed ssh for its exit status, [`EXIT_POLL`] apart.
+const EXIT_POLLS: u32 = 50;
+/// Pause between exit status polls.
+const EXIT_POLL: Duration = Duration::from_millis(10);
+
+/// Where the controller is reached.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Target {
+    /// Unix socket of a local daemon.
+    Socket(PathBuf),
+    /// `ssh` destination that runs `moor controller attach`.
+    Ssh(String),
+}
+
+impl fmt::Display for Target {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Socket(path) => write!(f, "controller at {}", path.display()),
+            Self::Ssh(host) => write!(f, "controller over ssh at {host}"),
+        }
+    }
+}
+
 /// Why a request could not be answered by the controller.
 #[derive(Debug)]
 pub enum ClientError {
-    /// The socket could not be connected.
+    /// The controller could not be reached.
     Unreachable {
-        /// Socket that was tried.
-        socket: PathBuf,
-        /// Connect failure.
-        source: std::io::Error,
+        /// Target that was tried.
+        target: Target,
+        /// Connect or spawn failure.
+        detail: String,
     },
     /// The controller broke the protocol or refused the session.
     Protocol(String),
@@ -34,81 +61,170 @@ pub enum ClientError {
 impl fmt::Display for ClientError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Unreachable { socket, source } => {
-                write!(
-                    f,
-                    "controller at {} is unreachable: {source}",
-                    socket.display()
-                )
-            }
+            Self::Unreachable { target, detail } => write!(f, "{target} is unreachable: {detail}"),
             Self::Protocol(msg) => write!(f, "controller protocol error: {msg}"),
         }
     }
 }
 
-impl std::error::Error for ClientError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Unreachable { source, .. } => Some(source),
-            Self::Protocol(_) => None,
-        }
+impl std::error::Error for ClientError {}
+
+/// How a session ended without a response.
+enum SessionError {
+    /// The transport failed before the controller's hello reply.
+    LostBeforeHello(String),
+    /// Any other failure.
+    Client(ClientError),
+}
+
+impl From<ClientError> for SessionError {
+    fn from(e: ClientError) -> Self {
+        Self::Client(e)
     }
 }
 
-/// Controller socket to use: `MOOR_CONTROLLER`, else `controller.socket` of the user config.
+/// Controller to use: `MOOR_CONTROLLER` (a socket), else `controller.ssh`, else
+/// `controller.socket` of the user config.
 ///
 /// A user config that fails to load yields `None`; the local path reports that error.
 #[must_use]
-pub fn configured_socket(env: &Env) -> Option<PathBuf> {
-    let path = match env.get("MOOR_CONTROLLER").filter(|v| !v.is_empty()) {
-        Some(p) => PathBuf::from(p),
-        None => load_user(env).ok()?.controller.socket?,
+pub fn configured_target(env: &Env) -> Option<Target> {
+    let path = if let Some(p) = env.get("MOOR_CONTROLLER").filter(|v| !v.is_empty()) {
+        PathBuf::from(p)
+    } else {
+        let controller = load_user(env).ok()?.controller;
+        if let Some(host) = controller.ssh {
+            return Some(Target::Ssh(host));
+        }
+        controller.socket?
     };
-    Some(env.expand_home(&path))
+    Some(Target::Socket(env.expand_home(&path)))
 }
 
-/// Run `request` on the controller at `socket`, passing progress messages to `on_progress`.
+/// Run `request` on the controller at `target`, passing progress messages to `on_progress`.
 ///
 /// # Errors
-/// [`ClientError::Unreachable`] when the connect fails, [`ClientError::Protocol`] for any
-/// failure after it.
+/// [`ClientError::Unreachable`] when the transport cannot be opened (or, over ssh, dies before
+/// the controller's hello reply), [`ClientError::Protocol`] for any other failure.
 pub fn call(
-    socket: &Path,
+    env: &Env,
+    target: &Target,
+    request: &Request,
+    on_progress: impl FnMut(&str),
+) -> Result<Response, ClientError> {
+    match target {
+        Target::Socket(socket) => {
+            let unreachable = |e: std::io::Error| ClientError::Unreachable {
+                target: target.clone(),
+                detail: e.to_string(),
+            };
+            let stream = UnixStream::connect(socket).map_err(unreachable)?;
+            let mut writer = stream
+                .try_clone()
+                .map_err(|e| ClientError::Protocol(format!("clone socket: {e}")))?;
+            session(BufReader::new(stream), &mut writer, request, on_progress).map_err(
+                |e| match e {
+                    SessionError::LostBeforeHello(msg) => ClientError::Protocol(msg),
+                    SessionError::Client(e) => e,
+                },
+            )
+        }
+        Target::Ssh(host) => call_ssh(env, target, host, request, on_progress),
+    }
+}
+
+/// Session over `ssh -T <host> moor controller attach`.
+fn call_ssh(
+    env: &Env,
+    target: &Target,
+    host: &str,
+    request: &Request,
+    on_progress: impl FnMut(&str),
+) -> Result<Response, ClientError> {
+    let unreachable = |detail: String| ClientError::Unreachable {
+        target: target.clone(),
+        detail,
+    };
+    let mut child = Command::new(ssh_program(env))
+        .args(["-T", host, "moor", "controller", "attach"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .map_err(|e| unreachable(format!("cannot run ssh: {e}")))?;
+    let (Some(mut stdin), Some(stdout)) = (child.stdin.take(), child.stdout.take()) else {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(ClientError::Protocol("ssh pipes unavailable".to_owned()));
+    };
+    let result = session(BufReader::new(stdout), &mut stdin, request, on_progress);
+    drop(stdin);
+    let result = result.map_err(|e| match e {
+        SessionError::LostBeforeHello(msg) => {
+            unreachable(format!("{msg}{}", exit_note(&mut child)))
+        }
+        SessionError::Client(e) => e,
+    });
+    let _ = child.kill();
+    let _ = child.wait();
+    result
+}
+
+/// ssh program: `MOOR_SSH_BIN`, then `tools.ssh` of the user config, then `ssh` on `PATH`.
+fn ssh_program(env: &Env) -> PathBuf {
+    if let Some(v) = env.get(Tool::Ssh.bin_var()).filter(|v| !v.is_empty()) {
+        return v.into();
+    }
+    load_user(env)
+        .ok()
+        .and_then(|c| c.tools.ssh)
+        .unwrap_or_else(|| Tool::Ssh.program().into())
+}
+
+/// `" (ssh <status>)"` once `child` has exited, else empty.
+fn exit_note(child: &mut Child) -> String {
+    for _ in 0..EXIT_POLLS {
+        if let Ok(Some(status)) = child.try_wait() {
+            return format!(" (ssh {status})");
+        }
+        std::thread::sleep(EXIT_POLL);
+    }
+    String::new()
+}
+
+/// The hello, request and progress exchange over an open transport.
+fn session(
+    mut reader: impl BufRead,
+    writer: &mut impl Write,
     request: &Request,
     mut on_progress: impl FnMut(&str),
-) -> Result<Response, ClientError> {
-    let stream = UnixStream::connect(socket).map_err(|source| ClientError::Unreachable {
-        socket: socket.to_path_buf(),
-        source,
-    })?;
-    let mut writer = stream
-        .try_clone()
-        .map_err(|e| ClientError::Protocol(format!("clone socket: {e}")))?;
-    let mut reader = BufReader::new(stream);
-
-    send(&mut writer, &ClientFrame::Hello { protocol: PROTOCOL })?;
-    match next_frame(&mut reader)? {
+) -> Result<Response, SessionError> {
+    send(writer, &ClientFrame::Hello { protocol: PROTOCOL })
+        .map_err(SessionError::LostBeforeHello)?;
+    let line = read_line(&mut reader).map_err(SessionError::LostBeforeHello)?;
+    match parse_frame(&line)? {
         ServerFrame::Hello { protocol } if protocol == PROTOCOL => {}
         ServerFrame::Hello { protocol } => {
             return Err(ClientError::Protocol(format!(
                 "controller speaks protocol {protocol}, this client speaks {PROTOCOL}"
-            )));
+            ))
+            .into());
         }
-        other => return Err(unexpected(&other, "hello")),
+        other => return Err(unexpected(&other, "hello").into()),
     }
 
     send(
-        &mut writer,
+        writer,
         &ClientFrame::Request {
             id: REQUEST_ID.to_owned(),
             request: request.clone(),
         },
-    )?;
+    )
+    .map_err(ClientError::Protocol)?;
     loop {
         match next_frame(&mut reader)? {
             ServerFrame::Progress { id, message } if id == REQUEST_ID => on_progress(&message),
             ServerFrame::Response { id, envelope } if id == REQUEST_ID => return Ok(envelope),
-            other => return Err(unexpected(&other, "progress or response")),
+            other => return Err(unexpected(&other, "progress or response").into()),
         }
     }
 }
@@ -117,36 +233,51 @@ pub fn call(
 #[must_use]
 pub fn failure_response(cmd: &str, err: &ClientError) -> Response {
     let mut e = CommandError::new(ErrorKind::Failed, err.to_string());
-    if let ClientError::Unreachable { .. } = err {
-        e = e.with_hint(
-            "start it with `moor controller serve --config <file>`, or unset MOOR_CONTROLLER \
-             and controller.socket to run locally",
-        );
+    if let ClientError::Unreachable { target, .. } = err {
+        e = e.with_hint(match target {
+            Target::Socket(_) => {
+                "start it with `moor controller serve --config <file>`, or unset MOOR_CONTROLLER \
+                 and controller.socket to run locally"
+                    .to_owned()
+            }
+            Target::Ssh(host) => format!(
+                "check `ssh {host} moor controller attach` works, or remove controller.ssh to \
+                 run locally"
+            ),
+        });
     }
     e.into_response(cmd, Vec::new())
 }
 
 /// Write one frame and flush.
-fn send(writer: &mut UnixStream, frame: &ClientFrame) -> Result<(), ClientError> {
+fn send(writer: &mut impl Write, frame: &ClientFrame) -> Result<(), String> {
     writer
         .write_all(frame.to_line().as_bytes())
         .and_then(|()| writer.flush())
-        .map_err(|e| ClientError::Protocol(format!("write to controller: {e}")))
+        .map_err(|e| format!("write to controller: {e}"))
+}
+
+/// Read one line; EOF is an error.
+fn read_line(reader: &mut impl BufRead) -> Result<String, String> {
+    let mut line = String::new();
+    let n = reader
+        .read_line(&mut line)
+        .map_err(|e| format!("read from controller: {e}"))?;
+    if n == 0 {
+        return Err("controller closed the connection before answering".to_owned());
+    }
+    Ok(line)
+}
+
+/// Parse one received line.
+fn parse_frame(line: &str) -> Result<ServerFrame, ClientError> {
+    parse_server_frame(line.trim_end())
+        .map_err(|e| ClientError::Protocol(format!("malformed frame from controller: {e}")))
 }
 
 /// Read and parse the next frame; EOF is a protocol error.
 fn next_frame(reader: &mut impl BufRead) -> Result<ServerFrame, ClientError> {
-    let mut line = String::new();
-    let n = reader
-        .read_line(&mut line)
-        .map_err(|e| ClientError::Protocol(format!("read from controller: {e}")))?;
-    if n == 0 {
-        return Err(ClientError::Protocol(
-            "controller closed the connection before answering".to_owned(),
-        ));
-    }
-    parse_server_frame(line.trim_end())
-        .map_err(|e| ClientError::Protocol(format!("malformed frame from controller: {e}")))
+    parse_frame(&read_line(reader).map_err(ClientError::Protocol)?)
 }
 
 /// Error for a frame that does not fit the exchange; surfaces a controller error frame.
