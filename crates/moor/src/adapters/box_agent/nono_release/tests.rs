@@ -14,10 +14,13 @@ struct Fake {
     body: Vec<u8>,
     /// Calls so far.
     calls: AtomicUsize,
+    /// URLs asked for.
+    urls: std::sync::Mutex<Vec<String>>,
 }
 
 impl Fetch for Fake {
-    fn get(&self, _url: &str) -> Result<Vec<u8>, String> {
+    fn get(&self, url: &str) -> Result<Vec<u8>, String> {
+        self.urls.lock().unwrap().push(url.to_owned());
         self.calls.fetch_add(1, Ordering::SeqCst);
         Ok(self.body.clone())
     }
@@ -50,6 +53,7 @@ fn sum(bytes: &[u8]) -> String {
 fn table(bytes: &[u8]) -> &'static [Asset] {
     let sha256: &'static str = Box::leak(sum(bytes).into_boxed_str());
     let row = |arch| Asset {
+        release: "https://example.test/release",
         os: "Linux",
         arch,
         name: "nono-test.tar.gz",
@@ -67,6 +71,7 @@ fn setup(
     let fake = Arc::new(Fake {
         body: served,
         calls: AtomicUsize::new(0),
+        urls: std::sync::Mutex::new(Vec::new()),
     });
     let release = NonoRelease::with_assets(fake.clone(), cache, table(expected));
     (fake, release)
@@ -146,6 +151,11 @@ fn unsupported_platform_fetches_nothing() {
     let (fake, release) = setup(tgz.clone(), &tgz, None);
     let err = release.binary("Linux", "riscv64").unwrap_err();
     assert!(matches!(err, ReleaseError::Unsupported { .. }), "{err}");
+    let message = err.to_string();
+    assert!(
+        message.contains("Linux") && message.contains("riscv64"),
+        "{message}"
+    );
     assert_eq!(fake.calls.load(Ordering::SeqCst), 0);
 }
 
@@ -167,5 +177,53 @@ fn pinned_table_covers_the_four_platforms() {
         ("Darwin", "arm64"),
     ] {
         assert!(super::ASSETS.iter().any(|a| a.os == os && a.arch == arch));
+    }
+}
+
+/// A release over the pinned table whose every download returns `body`.
+fn pinned(body: Vec<u8>) -> (Arc<Fake>, NonoRelease) {
+    let fake = Arc::new(Fake {
+        body,
+        calls: AtomicUsize::new(0),
+        urls: std::sync::Mutex::new(Vec::new()),
+    });
+    (fake.clone(), NonoRelease::new(fake, None))
+}
+
+#[test]
+fn darwin_arm64_comes_from_the_fork() {
+    let (fake, release) = pinned(b"junk".to_vec());
+    let err = release.binary("Darwin", "arm64").unwrap_err();
+    assert!(matches!(err, ReleaseError::Checksum { .. }), "{err}");
+    assert_eq!(
+        fake.urls.lock().unwrap().as_slice(),
+        ["https://github.com/IniZio/nono/releases/download/v0.80.0-moor.1/nono-v0.80.0-aarch64-apple-darwin.tar.gz"]
+    );
+    let asset = super::ASSETS
+        .iter()
+        .find(|a| a.os == "Darwin" && a.arch == "arm64")
+        .unwrap();
+    assert_eq!(
+        asset.sha256,
+        "ff84a3a50bce1781f3f89b62e8760c30ee187d22ec1239374bfb6771b7bf7658"
+    );
+}
+
+#[test]
+fn linux_and_darwin_x86_64_stay_on_upstream() {
+    for (os, arch) in [
+        ("Linux", "x86_64"),
+        ("Linux", "aarch64"),
+        ("Darwin", "x86_64"),
+    ] {
+        let (fake, release) = pinned(b"junk".to_vec());
+        let _ = release.binary(os, arch);
+        let urls = fake.urls.lock().unwrap().clone();
+        assert!(
+            urls.first()
+                .is_some_and(|u| u
+                    .starts_with("https://github.com/nolabs-ai/nono/releases/download/v0.80.0/")),
+            "{os} {arch}: {urls:?}"
+        );
     }
 }
