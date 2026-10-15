@@ -23,6 +23,8 @@ mod proxy;
 mod reads;
 mod reports;
 mod runs;
+#[cfg_attr(not(test), expect(dead_code, reason = "read by the Slack worker"))]
+mod slack;
 #[cfg(test)]
 mod tests;
 
@@ -260,20 +262,18 @@ fn init_schema(conn: &mut Connection) -> Result<(), StoreError> {
         |r| r.get(0),
     )?;
     if has_meta {
-        let found: Option<String> = tx
-            .query_row("SELECT v FROM meta WHERE k = 'schema_version'", [], |r| {
-                r.get(0)
-            })
-            .optional()?;
-        return match found.as_deref() {
-            Some(SCHEMA_VERSION) => Ok(()),
-            other => Err(StoreError::Schema {
-                found: other.unwrap_or("none").to_owned(),
+        let sql = "SELECT v FROM meta WHERE k = 'schema_version'";
+        let found: Option<String> = tx.query_row(sql, [], |r| r.get(0)).optional()?;
+        if found.as_deref() != Some(SCHEMA_VERSION) {
+            return Err(StoreError::Schema {
+                found: found.unwrap_or_else(|| "none".to_owned()),
                 want: SCHEMA_VERSION,
-            }),
-        };
+            });
+        }
+    } else {
+        tx.execute_batch(SCHEMA_SQL)?;
     }
-    tx.execute_batch(SCHEMA_SQL)?;
+    tx.execute_batch(slack::SLACK_SQL)?;
     tx.commit()?;
     Ok(())
 }
