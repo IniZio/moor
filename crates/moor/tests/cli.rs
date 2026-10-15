@@ -7,6 +7,9 @@
     reason = "test code"
 )]
 
+#[path = "cli/controller.rs"]
+mod controller;
+
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -201,4 +204,11 @@ fn call_unknown_field_is_usage() {
 fn json_help_is_one_envelope() {
     let v = envelope(&["--json", "--help"], None, 0, "ok");
     assert!(v.get("value").is_some_and(Value::is_string));
+}
+
+#[test]
+fn controller_serve_without_config_is_usage() {
+    let r = run(&["controller", "serve"], None);
+    assert_eq!(r.code, 2);
+    assert!(r.stderr.contains("--config"), "{}", r.stderr);
 }

@@ -1,6 +1,7 @@
 //! clap surface for the v2 command set and its conversion to `Request`.
 
 use std::ffi::OsString;
+use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use moor_core::{
@@ -25,6 +26,8 @@ pub(super) enum Action {
     CallStdin,
     /// Hidden `proxy serve <task>`: serve the credential proxy for that Task.
     ProxyServe(TaskId),
+    /// `controller serve --config <file>`: run the controller daemon.
+    ControllerServe(PathBuf),
 }
 
 /// Parse argv (program name first) into global options and an action.

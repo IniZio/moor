@@ -1,4 +1,6 @@
-//! clap definitions for the admin verbs: gate, env, github, proxy, call, version.
+//! clap definitions for the admin verbs: gate, env, github, proxy, controller, call, version.
+
+use std::path::PathBuf;
 
 use clap::{Args, Subcommand};
 use moor_core::{EnvReq, GateReq, Request, TaskId};
@@ -16,6 +18,9 @@ pub(super) enum AdminCmd {
     /// Proxy commands.
     #[command(subcommand)]
     Proxy(ProxyCmd),
+    /// Controller commands.
+    #[command(subcommand)]
+    Controller(ControllerCmd),
     /// Run a JSON request read from stdin.
     Call,
     /// Print version information.
@@ -48,6 +53,21 @@ pub(super) enum ProxyCmd {
     Serve(ServeArgs),
 }
 
+/// Subcommands of `controller`.
+#[derive(Debug, Subcommand)]
+pub(super) enum ControllerCmd {
+    /// Serve moor requests on a local socket.
+    Serve(ControllerServeArgs),
+}
+
+/// Arguments of `controller serve`.
+#[derive(Debug, Args)]
+pub(super) struct ControllerServeArgs {
+    /// Controller config file.
+    #[arg(long)]
+    config: PathBuf,
+}
+
 /// Arguments of `proxy serve`.
 #[derive(Debug, Args)]
 pub(super) struct ServeArgs {
@@ -64,6 +84,7 @@ impl AdminCmd {
             Self::Github(GithubCmd::Login) => Action::Request(Request::GithubLogin {}),
             Self::Proxy(ProxyCmd::Check) => Action::Request(Request::ProxyCheck {}),
             Self::Proxy(ProxyCmd::Serve(a)) => Action::ProxyServe(TaskId::new(a.task)),
+            Self::Controller(ControllerCmd::Serve(a)) => Action::ControllerServe(a.config),
             Self::Call => Action::CallStdin,
             Self::Version => Action::Request(Request::Version {}),
         }

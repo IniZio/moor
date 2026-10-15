@@ -4,6 +4,7 @@
 pub mod activity;
 pub mod boxscript;
 pub mod config;
+pub mod controller;
 pub mod decide;
 pub mod domain;
 pub mod graphql_scope;

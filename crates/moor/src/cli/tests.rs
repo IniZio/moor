@@ -67,6 +67,19 @@ fn proxy_serve_non_numeric_task_is_usage() {
 }
 
 #[test]
+fn controller_serve_parses_config() {
+    assert!(matches!(
+        parse(argv(&["controller", "serve", "--config", "/etc/c.yaml"])),
+        Parsed::ControllerServe { config, .. } if config == std::path::Path::new("/etc/c.yaml")
+    ));
+}
+
+#[test]
+fn controller_serve_without_config_is_usage() {
+    assert_eq!(done(&["controller", "serve"]).code, 2);
+}
+
+#[test]
 fn version_parses_to_request() {
     assert!(matches!(
         parse(argv(&["version"])),
