@@ -4,7 +4,9 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use moor_core::activity::{HookKind, HookRead, HookRecord, PaneObs, PaneRead, PaneStatus, Probes};
+use moor_core::activity::{
+    HookKind, HookRead, HookRecord, PaneObs, PaneRead, PaneStatus, Probes, STARTUP_GRACE,
+};
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::task::{SetupOutcome, TaskInput};
@@ -361,4 +363,26 @@ fn a_working_agent_is_probed_on_every_poll() {
     let polls = usize::try_from((cx.clock().now().as_millis() - before.as_millis()) / 250).unwrap();
     assert!(polls >= 4, "polled {polls} times");
     assert_eq!(engine.probe_count(SESSION), polls + 1);
+}
+
+#[test]
+fn a_resumed_agent_is_idle_only_once_session_start_records_it() {
+    for (kind, timed_out) in [(HookKind::Starting, true), (HookKind::Idle, false)] {
+        let dir = tempfile::tempdir().unwrap();
+        let (cx, _) = agent_cx(dir.path(), hook(kind));
+        add_live(&cx);
+        cx.clock().sleep(STARTUP_GRACE + Duration::from_secs(60));
+        let v = run(&cx, &req(None, Some(2))).unwrap();
+        assert_eq!(v.timed_out, timed_out);
+    }
+}
+
+#[test]
+fn a_busy_agent_times_out_at_the_default_bound() {
+    let dir = tempfile::tempdir().unwrap();
+    let (cx, _) = agent_cx(dir.path(), hook(HookKind::Busy));
+    add_live(&cx);
+    let v = run(&cx, &req(None, None)).unwrap();
+    assert!(v.timed_out);
+    assert_eq!(v.waited_ms, 1_800_000);
 }

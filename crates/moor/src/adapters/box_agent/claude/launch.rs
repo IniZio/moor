@@ -269,6 +269,7 @@ fn hooks(script: &str) -> Value {
     json!({ "hooks": {
         "UserPromptSubmit": hook("working", "UserPromptSubmit", None),
         "Stop": hook("idle", "Stop", None),
+        "SessionStart": hook("idle", "SessionStart", Some("resume")),
         "PostToolUse": hook("working", "PostToolUse", None),
         "Notification": hook("waiting_input", "Notification", Some(NOTIFY_MATCHER)),
         "PreToolUse": hook("waiting_input", "PreToolUse", Some(ASK_MATCHER)),

@@ -228,7 +228,7 @@ fn menu_keys_are_the_digits() {
 }
 
 #[test]
-fn hook_fragment_covers_the_five_events() {
+fn hook_fragment_covers_the_hook_events() {
     let t = TempDir::new().unwrap();
     let setup = Claude.hook_writer(&ctx(t.path())).unwrap();
     let fragment: Value = serde_json::from_str(&setup.files[1].content).unwrap();
@@ -255,6 +255,19 @@ fn hook_fragment_covers_the_five_events() {
     assert!(hooks["Stop"][0].get("matcher").is_none());
 }
 
+#[test]
+fn a_resumed_session_is_recorded_idle() {
+    let t = TempDir::new().unwrap();
+    let setup = Claude.hook_writer(&ctx(t.path())).unwrap();
+    let fragment: Value = serde_json::from_str(&setup.files[1].content).unwrap();
+    let entry = &fragment["hooks"]["SessionStart"][0];
+    assert!(entry["hooks"][0]["command"]
+        .as_str()
+        .unwrap()
+        .ends_with(" idle SessionStart"));
+    assert_eq!(entry["matcher"], "resume");
+}
+
 fn check_merge_keeps_and_is_idempotent(path: Option<&str>) {
     let t = TempDir::new().unwrap();
     let c = ctx(t.path());
@@ -263,7 +276,7 @@ fn check_merge_keeps_and_is_idempotent(path: Option<&str>) {
     let other = json!({"hooks": [{"type": "command", "command": "echo mine"}]});
     fs::write(
         &settings,
-        json!({"model": "x", "hooks": {"Stop": [&other], "SessionStart": [&other]}}).to_string(),
+        json!({"model": "x", "hooks": {"Stop": [&other], "PreCompact": [&other]}}).to_string(),
     )
     .unwrap();
     let setup = Claude.hook_writer(&c).unwrap();
@@ -272,7 +285,7 @@ fn check_merge_keeps_and_is_idempotent(path: Option<&str>) {
     assert!(first.status.success(), "{first:?}");
     let once = read_json(&settings);
     assert_eq!(once["model"], "x");
-    assert_eq!(once["hooks"]["SessionStart"], json!([&other]));
+    assert_eq!(once["hooks"]["PreCompact"], json!([&other]));
     assert_eq!(once["hooks"]["Stop"].as_array().unwrap().len(), 2);
     assert_eq!(once["hooks"]["Stop"][0], other);
     assert_eq!(once["hooks"]["PostToolUse"].as_array().unwrap().len(), 1);
@@ -311,7 +324,7 @@ fn check_merge_without_interpreter(path: Option<&str>) {
     let setup = Claude.hook_writer(&c).unwrap();
     install(&setup);
     assert!(run_step_on(&setup, path).status.success());
-    assert_eq!(read_json(&settings)["hooks"].as_object().unwrap().len(), 5);
+    assert_eq!(read_json(&settings)["hooks"].as_object().unwrap().len(), 6);
     fs::write(&settings, r#"{"model":"x"}"#).unwrap();
     assert!(!run_step_on(&setup, path).status.success());
     assert_eq!(fs::read_to_string(&settings).unwrap(), r#"{"model":"x"}"#);
@@ -330,7 +343,7 @@ fn merge_creates_settings_when_absent() {
     install(&setup);
     assert!(run_step(&setup).status.success());
     let settings = read_json(&format!("{}/.claude/settings.json", c.home.as_str()));
-    assert_eq!(settings["hooks"].as_object().unwrap().len(), 5);
+    assert_eq!(settings["hooks"].as_object().unwrap().len(), 6);
 }
 
 #[test]
