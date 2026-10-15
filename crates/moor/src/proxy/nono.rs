@@ -1,17 +1,17 @@
 //! The embedded nono-proxy: config built from resolved tool rules, and the
 //! runtime that serves it.
 //!
-//! nono needs three things for a rule host such as `127.0.0.1:4433`: the
-//! `host:port` entry in `allowed_hosts` (its filter matches `host:port`
-//! entries by the CONNECT port), an `https://host:port` route upstream, and
-//! the route credential key. Neither the session token nor any credential is
-//! ever printed.
+//! nono's own host filter allows every host (`*`); the destination guard in
+//! the chained filter is what refuses loopback, private and link-local
+//! targets. Hosts with a credential rule are intercepted; every other host is
+//! a blind CONNECT tunnel. A rule host such as `127.0.0.1:4433` needs an
+//! `https://host:port` route upstream and the route credential key. Neither
+//! the session token nor any credential is ever printed.
 
 pub(crate) mod audit;
 pub(crate) mod ca;
 pub(crate) mod capture;
 
-use std::collections::BTreeSet;
 use std::fmt;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::Path;
@@ -28,8 +28,6 @@ use zeroize::Zeroizing;
 pub(crate) struct NonoSpec<'a> {
     /// Resolved tool rules; one route per (rule, host).
     pub(crate) rules: &'a [ResolvedRule],
-    /// Extra passthrough hosts (no credential).
-    pub(crate) allow: &'a [String],
     /// The internal session token nono checks, base64url text. The Box never
     /// sees it: the front listener checks the Box's own nonce and swaps it
     /// for this one.
@@ -137,11 +135,9 @@ fn route_for(spec: &NonoSpec<'_>, rule: &ResolvedRule, index: usize, host: &str)
 /// A nonce that is not UTF-8 leaves the session token unset; `start` refuses
 /// such a config.
 pub(crate) fn build_config(spec: &NonoSpec<'_>) -> NonoConfig {
-    let mut hosts: BTreeSet<String> = spec.allow.iter().cloned().collect();
     let mut routes = Vec::new();
     for rule in spec.rules {
         for (i, host) in rule.hosts.iter().enumerate() {
-            hosts.insert(host.clone());
             routes.push(route_for(spec, rule, i, host));
         }
     }
@@ -165,7 +161,7 @@ pub(crate) fn build_config(spec: &NonoSpec<'_>) -> NonoConfig {
         upstream_extra_ca_pems,
         bind_addr: IpAddr::V4(Ipv4Addr::LOCALHOST),
         bind_port: 0,
-        allowed_hosts: hosts.into_iter().collect(),
+        allowed_hosts: vec!["*".to_owned()],
         strict_filter: true,
         require_auth: true,
         strict_connect_auth: true,

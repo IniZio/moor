@@ -77,6 +77,16 @@ fn loopback_targets_are_refused_with_an_empty_guard() {
 }
 
 #[test]
+fn private_and_link_local_literals_are_refused() {
+    let rig = rig(fixed(json_reply("200 OK", OK_BODY)));
+    for host in ["127.0.0.1", "10.1.2.3", "169.254.169.254"] {
+        let (mut tcp, status) = raw_connect(rig.filter.addr(), &format!("{host}:443")).unwrap();
+        assert_eq!(status, 403, "{host}");
+        assert_guard_refusal(&rig, host, &mut tcp);
+    }
+}
+
+#[test]
 fn exempt_loopback_is_spliced_both_ways_including_pipelined_bytes() {
     let echo = probe(true);
     let guard = Guard::new(vec![echo.addr]);

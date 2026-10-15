@@ -58,7 +58,6 @@ pub(super) fn listen(
     let ca_pem = ca::cert_path(deps.state_dir, task);
     let cfg = build_config(&NonoSpec {
         rules: &spec.rules,
-        allow: &spec.allow,
         nonce: &internal,
         ca: &ca,
         ca_dir: &ca::ca_dir(deps.state_dir, task),
