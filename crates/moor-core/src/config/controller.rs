@@ -1,5 +1,6 @@
 //! The controller process config file: strict parse plus validation, no IO.
 
+use std::path::PathBuf;
 use std::time::Duration;
 
 use serde::Deserialize;
@@ -17,6 +18,18 @@ pub struct ControllerConfig {
     /// Seconds between passes that settle every open Task's agent state; must be above 0.
     /// None means 5.
     pub settle_every_secs: Option<u64>,
+    /// Loopback-only web UI; None means it is not served.
+    pub web: Option<WebConfig>,
+}
+
+/// The optional web UI section of the controller config.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WebConfig {
+    /// TCP port on the loopback interface; must be above 0.
+    pub port: u16,
+    /// File holding the bearer token; must not be empty.
+    pub token_file: PathBuf,
 }
 
 /// Seconds between settle passes when the config does not say.
@@ -44,6 +57,14 @@ pub fn parse_controller(file: &str, text: &str) -> Result<ControllerConfig, Conf
     }
     if cfg.settle_every_secs == Some(0) {
         return Err(ConfigError::new("settle_every_secs", "must be above 0").in_file(file));
+    }
+    if let Some(web) = &cfg.web {
+        if web.port == 0 {
+            return Err(ConfigError::new("web.port", "must be above 0").in_file(file));
+        }
+        if web.token_file.as_os_str().is_empty() {
+            return Err(ConfigError::new("web.token_file", "must not be empty").in_file(file));
+        }
     }
     Ok(cfg)
 }
