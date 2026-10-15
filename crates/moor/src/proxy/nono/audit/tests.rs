@@ -298,7 +298,12 @@ fn task_sink_writes_events_and_a_path_free_log() {
     let text =
         std::fs::read_to_string(dir.path().join("proxy").join(format!("{}.log", task.get())))
             .unwrap();
-    assert!(text.trim_end().ends_with("POST gh 200"), "{text}");
+    let lines: Vec<_> = text.lines().collect();
+    assert!(lines.iter().any(|l| l.ends_with("POST gh 200")), "{text}");
+    assert!(
+        lines.iter().any(|l| l.ends_with("- evil.test 403")),
+        "{text}"
+    );
     assert!(!text.contains("repos") && !text.contains("token"), "{text}");
 }
 
