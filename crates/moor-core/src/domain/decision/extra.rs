@@ -304,6 +304,7 @@ impl TryFrom<Event> for ExtraEvent {
             | Event::Working
             | Event::CredentialFailed { .. }
             | Event::EgressRefused { .. }
+            | Event::CredentialWithheld { .. }
             | Event::ProxyCredentialFailed { .. }
             | Event::Idled
             | Event::Busy

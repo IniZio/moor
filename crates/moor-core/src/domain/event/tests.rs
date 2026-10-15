@@ -139,6 +139,12 @@ fn all_events() -> Vec<Event> {
             method: None,
             category: None,
         },
+        Event::CredentialWithheld {
+            host: s("h"),
+            rule: s("r"),
+            method: s("GET"),
+            shape: None,
+        },
         Event::ProxyCredentialFailed { rule: s("r") },
     ]
 }
@@ -194,7 +200,8 @@ const fn event_index(e: &Event) -> usize {
         Event::TunnelRestarted { .. } => 35,
         Event::SetupFinished { .. } => 36,
         Event::EgressRefused { .. } => 37,
-        Event::ProxyCredentialFailed { .. } => 38,
+        Event::CredentialWithheld { .. } => 38,
+        Event::ProxyCredentialFailed { .. } => 39,
     }
 }
 
@@ -202,7 +209,7 @@ const fn event_index(e: &Event) -> usize {
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 39);
+    assert_eq!(all.len(), 40);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }
@@ -558,35 +565,4 @@ fn proxy_started_payload_has_no_nonce() {
     let mut keys: Vec<_> = payload.as_object().unwrap().keys().cloned().collect();
     keys.sort_unstable();
     assert_eq!(keys, ["box_port", "handle", "host_port", "pid"]);
-}
-
-/// The egress and proxy credential events serialize with their kind tag and payload.
-#[test]
-fn egress_events_serialize_with_kind_tag() {
-    let cases = [
-        (
-            Event::EgressRefused {
-                host: s("h"),
-                rule: Some(s("r")),
-                method: Some(s("GET")),
-                category: Some(s("host_denied")),
-            },
-            "egress_refused",
-            serde_json::json!({"host": "h", "rule": "r", "method": "GET", "category": "host_denied"}),
-        ),
-        (
-            Event::ProxyCredentialFailed { rule: s("r") },
-            "proxy_credential_failed",
-            serde_json::json!({"rule": "r"}),
-        ),
-    ];
-    for (e, kind, payload) in cases {
-        assert_eq!(e.kind(), kind);
-        assert_eq!(e.payload(), payload);
-        assert!(!e.is_asserted());
-        let mut full = payload.as_object().cloned().unwrap();
-        full.insert("kind".into(), kind.into());
-        let full = serde_json::Value::Object(full);
-        assert_eq!(serde_json::to_value(&e).unwrap(), full);
-    }
 }

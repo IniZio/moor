@@ -255,6 +255,18 @@ pub enum Event {
         /// Why the Proxy refused the connection, as the Proxy names it.
         category: Option<String>,
     },
+    /// The Proxy forwarded a request to a credential host without the credential.
+    CredentialWithheld {
+        /// The credential host the request was for.
+        host: String,
+        /// The tool rule the host belongs to.
+        rule: String,
+        /// The HTTP method of the request.
+        method: String,
+        /// A templated allow entry such as `GET /repos/{repo}/pulls/*` that would let
+        /// the request through; never a raw path, query, header, body or token.
+        shape: Option<String>,
+    },
     /// The Proxy could not obtain the credential of a tool rule.
     ProxyCredentialFailed {
         /// The tool rule whose credential failed.
@@ -337,5 +349,7 @@ pub fn box_events(
 
 mod kind;
 
+#[cfg(test)]
+mod proxy_tests;
 #[cfg(test)]
 mod tests;

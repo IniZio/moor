@@ -8,13 +8,15 @@ use crate::store::apply::insert_event;
 use crate::store::{load_task, Store, StoreError};
 
 impl Store {
-    /// Append an `EgressRefused` or `ProxyCredentialFailed` event for `task`.
+    /// Append an `EgressRefused`, `CredentialWithheld` or `ProxyCredentialFailed` event for `task`.
     ///
     /// Any other event kind is rejected, and so is a task that does not exist.
     pub(crate) fn record_proxy_event(&self, task: TaskId, event: &Event) -> Result<(), StoreError> {
         if !matches!(
             event,
-            Event::EgressRefused { .. } | Event::ProxyCredentialFailed { .. }
+            Event::EgressRefused { .. }
+                | Event::CredentialWithheld { .. }
+                | Event::ProxyCredentialFailed { .. }
         ) {
             return Err(StoreError::Invalid(format!(
                 "`{}` is not a proxy audit event",

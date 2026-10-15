@@ -44,6 +44,28 @@ fn egress_refused_is_appended() {
 }
 
 #[test]
+fn credential_withheld_is_appended() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, id) = setup(dir.path());
+    let e = Event::CredentialWithheld {
+        host: "api.github.com".into(),
+        rule: "gh".into(),
+        method: "GET".into(),
+        shape: Some("GET /repos/{repo}/pulls/*".into()),
+    };
+    store.record_proxy_event(id, &e).unwrap();
+    let rows = store.events(id, 100).unwrap();
+    let row = rows
+        .iter()
+        .find(|r| r.kind == "credential_withheld")
+        .unwrap();
+    assert_eq!(
+        row.payload,
+        json!({"host": "api.github.com", "rule": "gh", "method": "GET", "shape": "GET /repos/{repo}/pulls/*"})
+    );
+}
+
+#[test]
 fn credential_failure_is_appended() {
     let dir = tempfile::tempdir().unwrap();
     let (store, id) = setup(dir.path());
