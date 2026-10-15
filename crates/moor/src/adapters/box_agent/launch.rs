@@ -53,7 +53,7 @@ pub(super) fn launch(
     let connect = driver
         .connect_argv(&req.handle, &req.worktree)
         .map_err(|e| failed(fail("connect", &e)))?;
-    let home = box_home(driver, req).map_err(failed)?;
+    let (home, root) = box_user(driver, req).map_err(failed)?;
     let ctx = LaunchCtx {
         model: req.model.clone(),
         workdir: req.workdir.clone(),
@@ -84,6 +84,7 @@ pub(super) fn launch(
         cred: &cred,
         tmp: &tmp,
         release,
+        root,
     };
     match launch.deliver(&connect) {
         Ok(pane) => Ok(SessionRef {
@@ -114,18 +115,21 @@ fn failed(f: Failure) -> EngineError {
     }
 }
 
-/// The Box user's home, read from the environment of a process on the Box.
-fn box_home(driver: &dyn Driver, req: &LaunchReq) -> Result<BoxPath, Failure> {
+/// The Box user's home, and whether that user is root, read from the environment of a process on
+/// the Box.
+fn box_user(driver: &dyn Driver, req: &LaunchReq) -> Result<(BoxPath, bool), Failure> {
     let environ = BoxPath::restore("/proc/self/environ").map_err(|e| fail("home", &e))?;
     let text = driver
         .peek_file(&req.handle, &environ, &req.worktree)
         .map_err(|e| fail("home", &e))?
         .ok_or_else(|| fail("home", &"the Box has no process environment"))?;
-    let home = text
-        .split('\0')
-        .find_map(|kv| kv.strip_prefix("HOME="))
-        .ok_or_else(|| fail("home", &"the Box user has no home directory"))?;
-    BoxPath::restore(home).map_err(|e| fail("home", &e))
+    let var = |name: &str| {
+        let prefix = format!("{name}=");
+        text.split('\0').find_map(|kv| kv.strip_prefix(&prefix))
+    };
+    let home = var("HOME").ok_or_else(|| fail("home", &"the Box user has no home directory"))?;
+    let home = BoxPath::restore(home).map_err(|e| fail("home", &e))?;
+    Ok((home, var("USER") == Some("root")))
 }
 
 /// What one launch works with.
@@ -146,6 +150,8 @@ struct Launch<'a> {
     tmp: &'a BoxPath,
     /// Fetches the sandbox tool for a Box that lacks it.
     release: &'a NonoRelease,
+    /// The Box user is root.
+    root: bool,
 }
 
 impl Launch<'_> {
@@ -186,6 +192,7 @@ impl Launch<'_> {
             tmp: self.tmp,
             env_names,
             set_vars: addr.box_env.clone(),
+            root: self.root,
         });
         let at = BoxPath::under(cred.as_str(), sandbox::PROFILE_FILE)
             .map_err(|e| fail("sandbox", &e))?;
