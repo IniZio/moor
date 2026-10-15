@@ -260,12 +260,10 @@ impl ProxyConfig {
         merged
     }
 
-    /// Checks each rule, its credential against `credentials`, and its hosts
-    /// against the `egress.allow` list.
+    /// Checks each rule and its credential against `credentials`.
     pub(super) fn validate(
         &self,
         credentials: &BTreeMap<String, CredentialSource>,
-        egress_allow: &[String],
     ) -> Result<(), ConfigError> {
         let defaults = default_rules();
         let served = self.merged_rules();
@@ -284,31 +282,8 @@ impl ProxyConfig {
                 rule.check_credential(&at, credentials)?;
             }
         }
-        for (name, rule) in &served {
-            for (j, host) in rule.hosts.iter().enumerate() {
-                if let Some(i) = covering_entry(host, egress_allow) {
-                    return Err(ConfigError::new(
-                        format!("proxy.rules.{name}.hosts[{j}]"),
-                        format!(
-                            "host {host:?} is also in egress.allow[{i}]; the proxy serves it, remove one"
-                        ),
-                    ));
-                }
-            }
-        }
         Ok(())
     }
-}
-
-/// Index of the first allow entry equal to, or a wildcard covering, `host`.
-fn covering_entry(host: &str, allow: &[String]) -> Option<usize> {
-    let host = host.trim().to_ascii_lowercase();
-    allow.iter().position(|e| {
-        let e = e.trim().to_ascii_lowercase();
-        e == host
-            || e.strip_prefix('*')
-                .is_some_and(|suffix| host.ends_with(suffix))
-    })
 }
 
 /// Parses and validates a standalone rules document (name to rule).

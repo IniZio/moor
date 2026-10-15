@@ -94,8 +94,6 @@ pub struct TaskSettings {
     pub provider: Sourced<String>,
     /// Box size: repo > user > default `small`.
     pub size: Sourced<BoxSize>,
-    /// Whether egress is enforced; user only.
-    pub enforce_egress: bool,
     /// GitHub identity mode.
     pub identity: Identity,
     /// Sorted union of user credential names, box credential names and MCP refs.
@@ -108,8 +106,6 @@ pub struct TaskSettings {
     pub dotfiles: Option<DotfilesConfig>,
     /// Repo egress entries.
     pub egress: Vec<String>,
-    /// User `egress.allow` entries.
-    pub user_egress: Vec<String>,
     /// Repo setup commands.
     pub setup: Vec<String>,
     /// Repo teardown commands.
@@ -181,14 +177,12 @@ impl TaskSettings {
             model,
             provider,
             size,
-            enforce_egress: user.box_.enforce_egress.unwrap_or(false),
             identity: user.github.identity,
             credentials: plan_credentials(user, r),
             box_credentials: r.box_credentials.clone(),
             mcp: user.mcp_servers.clone(),
             dotfiles: user.dotfiles.clone(),
             egress: r.egress.clone(),
-            user_egress: user.egress.allow.clone(),
             setup: r.setup.clone(),
             teardown: r.teardown.clone(),
             env: r.env.clone(),

@@ -11,8 +11,8 @@ pub use repo::{parse_repo, RepoBox, RepoCompose, RepoConfig};
 
 pub use user::{
     parse_user, AgentConfig, BoxConfig, BoxSize, CredentialSource, DotfilesConfig, DriverConfig,
-    EgressConfig, GithubApp, GithubConfig, HerdrConfig, Identity, McpServer, SurfaceConfig,
-    ToolsConfig, UserConfig, DEFAULT_SLEEP_AFTER, DEFAULT_YOU_TOKEN_CMD,
+    GithubApp, GithubConfig, HerdrConfig, Identity, McpServer, SurfaceConfig, ToolsConfig,
+    UserConfig, DEFAULT_SLEEP_AFTER, DEFAULT_YOU_TOKEN_CMD,
 };
 
 pub use settings::{CredPlan, Flags, Layer, Sourced, TaskSettings};

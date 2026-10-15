@@ -89,8 +89,6 @@ pub struct BoxConfig {
     pub size: Option<BoxSize>,
     /// Cap on live Boxes (at least 1).
     pub max_boxes: Option<NonZeroU32>,
-    /// Whether egress is enforced.
-    pub enforce_egress: Option<bool>,
     /// Idle time before a Box sleeps.
     pub sleep_after: Option<String>,
 }
@@ -201,15 +199,6 @@ pub struct AgentConfig {
     pub model: Option<String>,
 }
 
-/// `egress:` section.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
-#[serde(deny_unknown_fields, default)]
-pub struct EgressConfig {
-    /// Allowed hosts: `domain` or `*.domain`. The agent's own hosts are built in; hosts that
-    /// dotfiles or setup fetch from belong here.
-    pub allow: Vec<String>,
-}
-
 /// `dotfiles:` section.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -303,8 +292,6 @@ pub struct UserConfig {
     pub surface: SurfaceConfig,
     /// Tool path overrides.
     pub tools: ToolsConfig,
-    /// Egress allow-list.
-    pub egress: EgressConfig,
     /// Proxy tool rules.
     pub proxy: ProxyConfig,
     /// Credential names exposed to host-run box commands.
@@ -345,11 +332,7 @@ impl UserConfig {
         if let Some(d) = &self.dotfiles {
             d.validate()?;
         }
-        for (i, host) in self.egress.allow.iter().enumerate() {
-            check::egress_entry(host)
-                .map_err(|why| ConfigError::new(format!("egress.allow[{i}]"), why))?;
-        }
-        self.proxy.validate(&self.credentials, &self.egress.allow)?;
+        self.proxy.validate(&self.credentials)?;
         check::box_credentials(&self.box_credentials)
             .map_err(|(i, m)| ConfigError::new(format!("box_credentials[{i}]"), m))
     }

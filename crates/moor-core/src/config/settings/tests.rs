@@ -157,15 +157,11 @@ fn boxed_from_repo_and_user() {
 #[test]
 fn repo_fields_and_user_fields_pass_through() {
     let s = resolve(
-        "box: {enforce_egress: true}\negress: {allow: [u.io]}\ngithub: {identity: bot}",
+        "github: {identity: bot}",
         Some("egress: [r.io]\nsetup: [a]\nenv: {K: v}"),
         &Flags::default(),
     );
-    assert!(s.enforce_egress);
-    assert_eq!(
-        (s.egress, s.user_egress),
-        (vec!["r.io".into()], vec!["u.io".into()])
-    );
+    assert_eq!(s.egress, ["r.io"]);
     assert_eq!(s.identity, Identity::Bot);
     assert_eq!(s.setup, ["a"]);
     assert_eq!(s.env["K"], "v");
