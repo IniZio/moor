@@ -3,6 +3,7 @@
 //! Pure data and validation; the proxy turns [`ResolvedRule`]s into routes.
 
 mod resolve;
+mod shape;
 mod template;
 
 use std::collections::BTreeMap;
@@ -11,6 +12,7 @@ use serde::Deserialize;
 
 use super::{check, parse_strict, ConfigError, CredentialSource};
 pub use resolve::{default_rules, resolve_rules, EndpointRule, ResolvedInject, ResolvedRule};
+pub use shape::request_shape;
 use template::{check_slots, FORM_SLOTS, REPO_SLOTS};
 
 /// Credential name that means the Task's forge token rather than a `credentials:` entry.
