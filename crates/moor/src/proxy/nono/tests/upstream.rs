@@ -24,6 +24,8 @@ pub(crate) struct Seen {
     pub(crate) line: String,
     /// `Authorization` header value, if any.
     pub(crate) authorization: Option<String>,
+    /// Whole request head, request line and every header.
+    pub(crate) head: String,
 }
 
 /// A running fake upstream; stops its accept thread on drop.
@@ -124,6 +126,7 @@ fn serve(stream: TcpStream, config: &Arc<ServerConfig>, seen: &Mutex<Vec<Seen>>)
             .push(Seen {
                 line,
                 authorization,
+                head: head.clone(),
             });
         let (status, body) = if path.starts_with("/expired") {
             ("401 Unauthorized", "no")

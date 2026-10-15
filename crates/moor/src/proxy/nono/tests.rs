@@ -279,3 +279,21 @@ fn chained_host_routes_trust_the_task_ca_and_others_keep_upstream() {
         Some("/tmp/up.pem")
     );
 }
+
+#[test]
+fn chained_config_trusts_the_filter_ca_for_every_upstream() {
+    let rules = [rule("gh", &[GITHUB_API_HOST], bearer())];
+    assert_eq!(
+        chain_cfg(&rules, &[]).inner().upstream_extra_ca_pems,
+        vec!["/tmp/task-ca.pem".to_owned()]
+    );
+}
+
+#[test]
+fn unchained_config_adds_no_extra_ca() {
+    let rules = [rule("gh", &[GITHUB_API_HOST], bearer())];
+    assert!(cfg_for(&rules, &[], None)
+        .inner()
+        .upstream_extra_ca_pems
+        .is_empty());
+}

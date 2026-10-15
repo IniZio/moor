@@ -437,9 +437,7 @@ fn unmatched_rest_request_is_forwarded_not_refused() {
         .build()
         .call()
         .unwrap();
-    // The proxy tries the upstream (which this rig does not trust) instead of
-    // refusing the request itself.
-    assert_eq!(resp.status().as_u16(), 502);
+    assert_eq!(resp.status().as_u16(), 200);
     rig.live.unwrap().stop();
 }
 
