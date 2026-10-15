@@ -5,6 +5,8 @@ use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::Reply;
 
+const SHA: &str = "0123456789abcdef0123456789abcdef01234567";
+
 fn ok(v: &str) -> Reply {
     Reply::Ok(format!("{v}\n"))
 }
@@ -65,12 +67,14 @@ fn a_failed_fetch_falls_back_to_the_local_branch_with_a_warning() {
 fn an_explicit_base_is_not_fetched() {
     let w = world(FakeDriver::new());
     follow_origin(&w);
+    w.proc
+        .before(Tool::Git, &["rev-parse", "--verify"], ok(SHA));
     let mut r = req("demo");
     r.base = Some("release".into());
     let v = run(&w.cx, &r).unwrap();
     assert!(!fetched(&w));
-    assert_eq!(w.surface.bases(), [Some("release".to_owned())]);
-    assert_eq!(v.task.base.as_deref(), Some("release"));
+    assert_eq!(w.surface.bases(), [Some(SHA.to_owned())]);
+    assert_eq!(v.task.base.as_deref(), Some(SHA));
 }
 
 #[test]

@@ -8,7 +8,7 @@ use moor_core::{ErrorKind, StartReq, TaskId};
 use super::moor_yaml::script_base_yaml;
 use super::relaunch::{gone, session, started};
 use super::setup::{exit, start_req};
-use super::{req, world_at, World};
+use super::{req, world, world_at, World};
 use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
@@ -107,5 +107,64 @@ fn a_start_that_re_runs_setup_and_launches_warns_once() {
     assert!(again.setup.ran && again.setup.ok);
     assert!(again.agent.launched);
     assert_eq!(engine.launches().len(), 2);
+    assert_eq!(trusted_warnings(&w), 1);
+}
+
+/// A Task with a finished setup, no session ever launched and no goal, over a `BASE` base,
+/// with `yaml` in its worktree.
+fn idle_with(yaml: &str) -> (World, Arc<FakeEngine>, TaskId) {
+    let engine = Arc::new(FakeEngine::new().launch_result(Ok(session("p-1"))));
+    let mut w = world(FakeDriver::new());
+    w.cx = w.cx.with_engine(engine.clone());
+    let first = run(
+        &w.cx,
+        &StartReq {
+            no_agent: true,
+            ..req("demo")
+        },
+    )
+    .unwrap();
+    let id = TaskId::new(first.task.id);
+    script_base_yaml(&w, Some(BASE));
+    write_worktree_yaml(&w, id, yaml);
+    (w, engine, id)
+}
+
+fn goal_of(w: &World, id: TaskId) -> Option<String> {
+    w.cx.store().unwrap().task(id).unwrap().unwrap().goal
+}
+
+#[test]
+fn a_changed_moor_yaml_refuses_a_first_launch_and_stores_no_goal() {
+    let (w, engine, id) = idle_with(CHANGED);
+    let err = run(
+        &w.cx,
+        &StartReq {
+            goal: Some("new goal".into()),
+            ..req("demo")
+        },
+    )
+    .unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Refused);
+    assert!(err.error.to_string().contains("env"), "{}", err.error);
+    assert!(engine.launches().is_empty());
+    assert_eq!(goal_of(&w, id), None);
+}
+
+#[test]
+fn a_changed_moor_yaml_launches_a_first_goal_when_trusted() {
+    let (w, engine, id) = idle_with(CHANGED);
+    drop(w.cx.take_warnings());
+    let v = run(
+        &w.cx,
+        &StartReq {
+            goal: Some("new goal".into()),
+            ..trusted()
+        },
+    )
+    .unwrap();
+    assert!(v.agent.launched);
+    assert_eq!(engine.launches().len(), 1);
+    assert_eq!(goal_of(&w, id).as_deref(), Some("new goal"));
     assert_eq!(trusted_warnings(&w), 1);
 }

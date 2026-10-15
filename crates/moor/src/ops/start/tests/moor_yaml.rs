@@ -6,7 +6,7 @@ use moor_core::seam::proc::Tool;
 use moor_core::{ErrorKind, StartReq, TaskId};
 
 use super::setup::{exit, is_setup_line, start_req, start_with, warning_codes};
-use super::World;
+use super::{world_at, World};
 use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::Reply;
@@ -125,4 +125,56 @@ fn an_added_moor_yaml_is_refused() {
 fn a_changed_env_is_refused() {
     let w = failed_with(Some("setup: [a]\nenv:\n  A: \"2\"\n"));
     assert_refused(&w, &start_req(), "env");
+}
+
+#[test]
+fn the_base_copy_is_read_by_host_git_in_the_main_checkout() {
+    let w = failed_with(Some(BASE));
+    run(&w.cx, &start_req()).unwrap();
+    let row = w.cx.store().unwrap().task(TaskId::new(1)).unwrap().unwrap();
+    let base = row.base.clone().unwrap();
+    let wt = std::path::PathBuf::from(row.worktree.unwrap());
+    let repo = std::path::PathBuf::from(&row.repo);
+    assert_ne!(repo, wt);
+    let want = format!("{base}:.moor.yaml");
+    let calls = w.proc.calls();
+    for sub in ["ls-tree", "show"] {
+        let hit: Vec<_> = calls
+            .iter()
+            .filter(|c| c.tool == Tool::Git && c.args.iter().any(|a| a == sub))
+            .filter(|c| c.args.iter().any(|a| a.contains(".moor.yaml")))
+            .collect();
+        assert!(!hit.is_empty(), "no git {sub} call");
+        for c in hit {
+            assert_eq!(
+                c.cwd.as_deref(),
+                Some(repo.as_path()),
+                "{sub}: {:?}",
+                c.args
+            );
+        }
+    }
+    let show = calls
+        .iter()
+        .find(|c| c.args.iter().any(|a| a == "show"))
+        .unwrap();
+    assert!(show.args.contains(&want), "{:?}", show.args);
+}
+
+#[test]
+fn a_worktree_copy_equal_to_the_base_passes_when_the_main_checkout_file_differs() {
+    let repo = tempfile::tempdir().unwrap();
+    std::fs::write(repo.path().join(".moor.yaml"), BASE).unwrap();
+    let driver = FakeDriver::new().exec_results([Ok(exit(1))]);
+    let w = world_at(driver, repo.path());
+    script_base_yaml(&w, Some(BASE));
+    let first = run(&w.cx, &start_req()).unwrap();
+    let id = TaskId::new(first.task.id);
+    let wt = w.cx.store().unwrap().task(id).unwrap().unwrap().worktree;
+    std::fs::write(Path::new(&wt.unwrap()).join(".moor.yaml"), BASE).unwrap();
+    std::fs::write(repo.path().join(".moor.yaml"), "setup: [evil]\n").unwrap();
+    script_base_yaml(&w, Some(BASE));
+    let again = run(&w.cx, &start_req()).unwrap();
+    assert!(again.setup.ran && again.setup.ok);
+    assert!(!warning_codes(&w).contains(&"moor_yaml_trusted".to_owned()));
 }

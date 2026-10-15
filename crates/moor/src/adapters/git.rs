@@ -106,6 +106,23 @@ impl Git {
         Ok(out.trim().to_owned())
     }
 
+    /// Commit SHA that `rev` names in the repository at `dir`.
+    ///
+    /// # Errors
+    /// [`GitError::NotARepo`] outside a repository, [`GitError::Failed`] when `rev` names no commit.
+    pub(crate) fn commit_of(&self, dir: &Path, rev: &str) -> Result<String, GitError> {
+        let out = self.run(
+            dir,
+            &[
+                "rev-parse",
+                "--verify",
+                "--end-of-options",
+                &format!("{rev}^{{commit}}"),
+            ],
+        )?;
+        Ok(out.trim().to_owned())
+    }
+
     /// Text of `path` at revision `rev` of the repository at `repo`; `None` when `rev` has no such file.
     ///
     /// # Errors

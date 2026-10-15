@@ -42,6 +42,7 @@ pub(super) fn req(force: bool) -> CloseReq {
     CloseReq {
         task: TaskName::parse("t").unwrap(),
         force,
+        trust_moor_yaml: false,
     }
 }
 
@@ -50,6 +51,7 @@ pub(super) fn proc(unpushed: u32) -> Arc<ScriptedProc> {
     let p = ScriptedProc::new();
     p.on(Tool::Git, &["rev-list"], Reply::Ok(format!("{unpushed}\n")));
     p.on(Tool::Git, &["status"], Reply::Ok(String::new()));
+    p.on(Tool::Git, &["ls-tree"], Reply::Ok(String::new()));
     p.on(
         Tool::Git,
         &["rev-parse", "HEAD"],

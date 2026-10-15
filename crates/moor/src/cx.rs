@@ -220,6 +220,18 @@ impl Cx {
         load_repo(worktree, &main)
     }
 
+    /// Repo config of the main checkout `worktree` belongs to, ignoring the worktree's own file.
+    pub(crate) fn main_repo_config(
+        &self,
+        worktree: &Path,
+    ) -> Result<Option<RepoConfig>, CommandError> {
+        let main = self
+            .git
+            .main_checkout(worktree)
+            .map_err(|e| CommandError::new(ErrorKind::Failed, e.to_string()))?;
+        load_repo(&main, &main)
+    }
+
     /// Invocation directory.
     pub(crate) fn cwd(&self) -> &Path {
         &self.cwd

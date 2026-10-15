@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::activity::PaneStatus;
+use moor_core::config::TaskSettings;
 use moor_core::seam::agent_profile::ProxyAddr;
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::proxy_host::{ProxyEndpoint, ProxySpec};
@@ -41,17 +42,18 @@ const PROMPT_READ: Duration = Duration::from_secs(5);
 ///
 /// `setup_exit` is the exit code of a setup that just failed; the agent still launches then.
 /// A launch that fails is recorded on the Task, which stays Working with no session, and
-/// is reported in the view; a later launch that succeeds clears it.
+/// is reported in the view; a later launch that succeeds clears it. `settings` yields the
+/// Task's settings, which supply both the model and the proxy's egress.
 ///
 /// # Errors
-/// A store failure, or a model that cannot be resolved.
+/// A store failure, or settings that cannot be resolved.
 pub(super) fn run(
     cx: &Cx,
     store: &Store,
     req: &StartReq,
     id: TaskId,
     setup_exit: Option<i32>,
-    model: &dyn Fn() -> Result<Option<String>, CommandError>,
+    settings: &dyn Fn() -> Result<TaskSettings, CommandError>,
 ) -> Result<AgentLaunchView, CommandError> {
     let row = reread(store, id)?;
     let resume = row
@@ -66,8 +68,9 @@ pub(super) fn run(
         return Ok(AgentLaunchView::default());
     };
     launch.resume = resume;
-    launch.model = model()?;
-    begin(cx, store, &row, &launch)
+    let cfg = settings()?;
+    launch.model = cfg.model.clone().map(|m| m.value);
+    begin(cx, store, &row, &launch, &cfg)
 }
 
 /// Starts or reuses the Task's proxy for `plan`, returning the spec it was given and its endpoint.
@@ -90,15 +93,18 @@ fn ensure_proxy(
 }
 
 /// Launches `launch` and records the session, or the failure, on the Task `row`.
+///
+/// `cfg` supplies the egress the proxy plan allows.
 pub(super) fn begin(
     cx: &Cx,
     store: &Store,
     row: &TaskRow,
     launch: &LaunchReq,
+    cfg: &TaskSettings,
 ) -> Result<AgentLaunchView, CommandError> {
     let id = row.id;
     let origin = origin(cx, &launch.worktree);
-    let plan = match plan(cx, &launch.worktree, origin.as_deref()) {
+    let plan = match plan(cx, origin.as_deref(), cfg) {
         Ok(p) => p,
         Err(message) => {
             let e = EngineError::Failed {

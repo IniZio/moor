@@ -23,8 +23,9 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::boxwork::{probe, BoxWork};
-use crate::ops::common::facts::settings;
+use crate::ops::common::facts::resolved;
 use crate::ops::common::promote::promote_waiting;
+use crate::ops::common::provision::moor_yaml::for_teardown;
 use crate::ops::common::reports;
 use crate::ops::common::transcript::{self, Saved};
 use crate::ops::common::view::task_view;
@@ -66,7 +67,7 @@ pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
     }
     reports::collect(cx, store, &row);
     let box_deleted = if plan.release_box {
-        teardown(cx, &row);
+        teardown(cx, &row, req.trust_moor_yaml);
         release(cx, store, &row)?
     } else {
         store.apply(plan.decision_close.clone())?;
@@ -257,19 +258,21 @@ fn facts(cx: &Cx, row: &TaskRow, box_check: BoxCheck) -> Result<CloseFacts, Comm
 
 /// Runs the repo `teardown:` lines as one synced script in a ready Box.
 ///
-/// Nothing runs without lines or without a live Box. A failure only warns.
-fn teardown(cx: &Cx, row: &TaskRow) {
+/// Nothing runs without lines or without a live Box. A failure only warns. The agent can edit
+/// the worktree `.moor.yaml`, so a copy that differs from the base commit is not used unless
+/// `trusted`.
+fn teardown(cx: &Cx, row: &TaskRow, trusted: bool) {
     let Some(b) = row.boxed.as_ref().filter(|b| b.state == BoxState::Ready) else {
         return;
     };
     let Some(handle) = held(b) else {
         return;
     };
-    let at = row.worktree.as_deref().unwrap_or(&row.repo);
-    let cfg = match settings(cx, Path::new(at), &Flags::default()) {
-        Ok(cfg) => cfg,
+    let repo = match for_teardown(cx, row, trusted) {
+        Ok(repo) => repo,
         Err(e) => return warn_teardown(cx, &e.error.to_string()),
     };
+    let cfg = resolved(cx, repo.as_ref(), &Flags::default());
     if cfg.teardown.is_empty() {
         return;
     }
