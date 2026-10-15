@@ -13,6 +13,14 @@ fn ok(s: &str) -> Reply {
     Reply::Ok(s.to_owned())
 }
 
+fn failing() -> Reply {
+    Reply::Fail {
+        code: 128,
+        stdout: String::new(),
+        stderr: "fatal: bad revision".to_owned(),
+    }
+}
+
 fn leftover(path: &Path) -> SurfaceError {
     SurfaceError::Leftover {
         path: path.to_path_buf(),
@@ -69,6 +77,33 @@ fn a_leftover_worktree_with_uncommitted_files_refuses_the_start() {
     w.surface.set_fail_create(leftover(stale.path()));
     w.proc.on(Tool::Git, &["rev-list"], ok("0\n"));
     w.proc.on(Tool::Git, &["status"], ok(" M a.txt\n"));
+    let err = run(&w.cx, &req("demo")).unwrap_err();
+    let text = err.error.to_string();
+    assert!(text.contains("uncommitted"), "{text}");
+    assert!(text.contains(&*stale.path().to_string_lossy()), "{text}");
+    assert!(!w.surface.calls().iter().any(|c| c.starts_with("remove")));
+}
+
+#[test]
+fn a_leftover_worktree_whose_unpushed_check_fails_refuses_the_start() {
+    let w = world(FakeDriver::new());
+    let stale = tempfile::tempdir().unwrap();
+    w.surface.set_fail_create(leftover(stale.path()));
+    w.proc.on(Tool::Git, &["rev-list"], failing());
+    let err = run(&w.cx, &req("demo")).unwrap_err();
+    let text = err.error.to_string();
+    assert!(text.contains("unpushed"), "{text}");
+    assert!(text.contains(&*stale.path().to_string_lossy()), "{text}");
+    assert!(!w.surface.calls().iter().any(|c| c.starts_with("remove")));
+}
+
+#[test]
+fn a_leftover_worktree_whose_dirty_check_fails_refuses_the_start() {
+    let w = world(FakeDriver::new());
+    let stale = tempfile::tempdir().unwrap();
+    w.surface.set_fail_create(leftover(stale.path()));
+    w.proc.on(Tool::Git, &["rev-list"], ok("0\n"));
+    w.proc.on(Tool::Git, &["status"], failing());
     let err = run(&w.cx, &req("demo")).unwrap_err();
     let text = err.error.to_string();
     assert!(text.contains("uncommitted"), "{text}");
