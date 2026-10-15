@@ -9,7 +9,7 @@ use crate::response::Response;
 pub const PROTOCOL: u32 = 1;
 
 /// A frame sent by a client.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "frame", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum ClientFrame {
     /// Opens the session; must be the first frame.
@@ -32,13 +32,20 @@ pub enum ClientFrame {
 }
 
 /// A frame sent by the controller.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "frame", rename_all = "kebab-case")]
 pub enum ServerFrame {
     /// Answers the client hello.
     Hello {
         /// Protocol revision the controller speaks.
         protocol: u32,
+    },
+    /// A progress note for a request still running; zero or more precede its response.
+    Progress {
+        /// Id of the request this note belongs to.
+        id: String,
+        /// Human-readable progress text.
+        message: String,
     },
     /// Result of one request.
     Response {
@@ -73,7 +80,7 @@ pub enum ServerFrame {
 }
 
 /// Why the controller rejected a frame.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum FrameErrorKind {
     /// The line is not a valid client frame.
@@ -110,6 +117,14 @@ pub fn parse_frame(line: &str) -> Result<ClientFrame, ServerFrame> {
     })
 }
 
+/// Parses one controller line.
+///
+/// # Errors
+/// Returns the JSON error when the line is not a valid [`ServerFrame`].
+pub fn parse_server_frame(line: &str) -> Result<ServerFrame, serde_json::Error> {
+    serde_json::from_str(line)
+}
+
 /// Reads a string `id` from a JSON object line, if present.
 fn recover_id(line: &str) -> Option<String> {
     match serde_json::from_str::<serde_json::Value>(line).ok()? {
@@ -118,6 +133,20 @@ fn recover_id(line: &str) -> Option<String> {
             _ => None,
         },
         _ => None,
+    }
+}
+
+impl ClientFrame {
+    /// Renders the frame as one JSON object followed by a newline.
+    #[must_use]
+    pub fn to_line(&self) -> String {
+        serde_json::to_string(self).map_or_else(
+            |_| String::from("\n"),
+            |mut s| {
+                s.push('\n');
+                s
+            },
+        )
     }
 }
 

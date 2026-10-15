@@ -286,6 +286,28 @@ pub struct ToolsConfig {
     pub git: Option<PathBuf>,
 }
 
+/// `controller:` section.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct ControllerClientConfig {
+    /// Socket of a controller daemon; when set, CLI verbs run there instead of in-process.
+    pub socket: Option<PathBuf>,
+}
+
+impl ControllerClientConfig {
+    /// `socket` is not blank.
+    fn validate(&self) -> Result<(), ConfigError> {
+        if self
+            .socket
+            .as_ref()
+            .is_some_and(|s| s.as_os_str().is_empty())
+        {
+            return Err(ConfigError::new("controller.socket", "must not be empty"));
+        }
+        Ok(())
+    }
+}
+
 /// The user config.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields, default)]
@@ -311,6 +333,8 @@ pub struct UserConfig {
     pub tools: ToolsConfig,
     /// Proxy tool rules.
     pub proxy: ProxyConfig,
+    /// Controller daemon to run CLI verbs on.
+    pub controller: ControllerClientConfig,
     /// Credential names exposed to host-run box commands.
     pub box_credentials: Vec<String>,
     /// State directory override.
@@ -353,6 +377,7 @@ impl UserConfig {
             d.validate()?;
         }
         self.proxy.validate(&self.credentials)?;
+        self.controller.validate()?;
         check::box_credentials(&self.box_credentials)
             .map_err(|(i, m)| ConfigError::new(format!("box_credentials[{i}]"), m))
     }

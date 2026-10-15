@@ -40,6 +40,7 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         Request::Sleep(r) => to_value(&sleep::run(cx, &r)?),
         Request::Wake(r) => to_value(&wake::run(cx, &r)?),
         Request::Open(r) => to_value(&open::run(cx, &r)?),
+        Request::Connect(r) => to_value(&open::connect(cx, &r)?),
         Request::Steer(r) => to_value(&steer::run(cx, &r)?),
         other => Err(CommandError::not_implemented(other.cmd())),
     }

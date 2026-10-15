@@ -57,6 +57,9 @@ fn run(env: Env, inv: Invocation) -> Output {
         Some(dir) => env.with_state_dir(dir),
         None => env,
     };
+    if let Some(socket) = moor::client::configured_socket(&env) {
+        return moor::client::remote::run(&env, &socket, request, &opts);
+    }
     let request = cli::inherit_run_output(request, &opts);
     render_call(&env, request, &opts)
 }
