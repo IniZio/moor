@@ -1,9 +1,15 @@
 //! Drains nono's network audit into per-Task proxy log lines and Task events.
 //!
 //! Only the method, the rule name (or host), the status and the denial category leave this module.
-//! Headers, bodies, paths and query strings in the audit are never read.
+//! Headers and bodies in the audit are never read. The path is read only to
+//! build a withheld-credential template; it is never stored or logged.
 
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Mutex;
+
+use moor_core::config::proxy::{request_shape, ResolvedRule};
 use moor_core::domain::event::Event;
+use moor_core::seam::forge::ForgeRepo;
 use moor_core::TaskId;
 use nono::undo::{NetworkAuditDecision, NetworkAuditDenialCategory, NetworkAuditEvent};
 use serde_json::Value;
@@ -22,6 +28,80 @@ pub(crate) trait EgressSink {
     fn refused(&self, host: &str, rule: Option<&str>, method: Option<&str>, category: Option<&str>);
     /// Records that the credential for `rule` could not be obtained.
     fn credential_failed(&self, rule: &str);
+    /// Records a request to a credential host that was forwarded without
+    /// the credential, with its templated shape when one is sound.
+    fn withheld(&self, host: &str, rule: &str, method: &str, shape: Option<&str>);
+}
+
+/// What the drain needs to spot requests forwarded without a credential.
+#[derive(Default)]
+pub(crate) struct Withheld {
+    /// Rule name by lower-case bare host.
+    hosts: BTreeMap<String, String>,
+    /// The Task repo the shapes are templated against.
+    repo: Option<ForgeRepo>,
+    /// `(rule, method, shape)` already reported for this Task.
+    seen: Mutex<BTreeSet<(String, String, Option<String>)>>,
+}
+
+impl Withheld {
+    /// Watches every host the `rules` list; shapes are templated against `repo`.
+    pub(crate) fn new(rules: &[ResolvedRule], repo: Option<ForgeRepo>) -> Self {
+        let mut hosts = BTreeMap::new();
+        for rule in rules {
+            for host in &rule.hosts {
+                hosts
+                    .entry(bare_host(host).to_ascii_lowercase())
+                    .or_insert_with(|| rule.name.clone());
+            }
+        }
+        Self {
+            hosts,
+            repo,
+            seen: Mutex::default(),
+        }
+    }
+
+    /// Reports `event` to `sink` once per `(rule, method, shape)` when it is a
+    /// credential-less passthrough to a credential host.
+    fn report(&self, event: &NetworkAuditEvent, sink: &dyn EgressSink) {
+        if event.managed_credential_active != Some(false)
+            || event.status.is_none()
+            || event.credential_capture_action.is_some()
+        {
+            return;
+        }
+        let host = bare_host(&event.target);
+        let Some(host_rule) = self.hosts.get(&host.to_ascii_lowercase()) else {
+            return;
+        };
+        let rule = rule(event).unwrap_or(host_rule);
+        let method = event.method.as_deref().unwrap_or("-");
+        let shape = self.repo.as_ref().and_then(|repo| {
+            request_shape(
+                method,
+                event.path.as_deref().unwrap_or("/"),
+                (&repo.owner, &repo.name),
+            )
+        });
+        let key = (rule.to_owned(), method.to_owned(), shape.clone());
+        let first = self
+            .seen
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(key);
+        if first {
+            sink.withheld(host, rule, method, shape.as_deref());
+        }
+    }
+}
+
+/// `host` without a trailing `:port`.
+fn bare_host(host: &str) -> &str {
+    match host.rsplit_once(':') {
+        Some((name, port)) if !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit()) => name,
+        _ => host,
+    }
 }
 
 /// Production sink: proxy log lines and store events for one Task.
@@ -64,6 +144,16 @@ impl EgressSink for TaskSink<'_> {
         };
         let _ = self.store.record_proxy_event(self.task, &event);
     }
+
+    fn withheld(&self, host: &str, rule: &str, method: &str, shape: Option<&str>) {
+        let event = Event::CredentialWithheld {
+            host: host.to_owned(),
+            rule: rule.to_owned(),
+            method: method.to_owned(),
+            shape: shape.map(str::to_owned),
+        };
+        let _ = self.store.record_proxy_event(self.task, &event);
+    }
 }
 
 /// Applies one drained batch of audit events.
@@ -71,11 +161,20 @@ impl EgressSink for TaskSink<'_> {
 /// An allowed request becomes a log line, and an upstream 401 also evicts the
 /// rule's cached credential. A denial caused by an unavailable credential
 /// becomes a credential failure; any other denial becomes a refused egress.
-/// Approval-flow decisions are ignored.
-pub(crate) fn apply(events: &[NetworkAuditEvent], capture: &MoorCapture, sink: &dyn EgressSink) {
+/// Approval-flow decisions are ignored. A request forwarded without a
+/// credential to a credential host is also reported through `withheld`.
+pub(crate) fn apply(
+    events: &[NetworkAuditEvent],
+    capture: &MoorCapture,
+    withheld: &Withheld,
+    sink: &dyn EgressSink,
+) {
     for event in events {
         match event.decision {
-            NetworkAuditDecision::Allow => allow(event, capture, sink),
+            NetworkAuditDecision::Allow => {
+                allow(event, capture, sink);
+                withheld.report(event, sink);
+            }
             NetworkAuditDecision::Deny => deny(event, sink),
             _ => {}
         }

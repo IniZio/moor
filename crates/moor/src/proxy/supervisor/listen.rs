@@ -15,7 +15,7 @@ use crate::proxy::front::Front;
 use crate::proxy::graphql::upstream::Upstream;
 use crate::proxy::graphql::{FilterSpec, GraphqlFilter};
 use crate::proxy::guard::Guard;
-use crate::proxy::nono::audit::{apply, EgressSink, TaskSink};
+use crate::proxy::nono::audit::{apply, EgressSink, TaskSink, Withheld};
 use crate::proxy::nono::capture::{sources_for, MoorCapture};
 use crate::proxy::nono::{build_config, ca, Chain, NonoProxy, NonoSpec, GITHUB_API_HOST};
 use crate::proxy::ProxyLog;
@@ -30,6 +30,8 @@ pub(super) struct Live {
     graphql: Option<GraphqlFilter>,
     /// Credential cache the proxy and the audit drain share.
     pub(super) capture: Arc<MoorCapture>,
+    /// Credential hosts watched for requests forwarded without a credential.
+    withheld: Withheld,
     /// The Task's request log.
     pub(super) log: ProxyLog,
 }
@@ -49,6 +51,7 @@ pub(super) fn listen(
         Arc::clone(&deps.forge),
         spec.task_repo.clone(),
     );
+    let withheld = Withheld::new(&spec.rules, spec.task_repo.clone());
     let capture = Arc::new(MoorCapture::new(sources, Arc::clone(&deps.clock)));
     let internal = internal_token()?;
     let graphql = start_filter(deps, spec, &ca)?;
@@ -95,6 +98,7 @@ pub(super) fn listen(
         front,
         graphql,
         capture,
+        withheld,
         log,
     })
 }
@@ -197,7 +201,12 @@ impl Live {
             store: deps.store,
             task,
         };
-        apply(&self.proxy.drain_audit(), &self.capture, &sink);
+        apply(
+            &self.proxy.drain_audit(),
+            &self.capture,
+            &self.withheld,
+            &sink,
+        );
         for r in self.graphql.iter().flat_map(GraphqlFilter::drain_refusals) {
             sink.refused(&r.host, Some(&r.rule), Some(&r.method), Some(r.category));
         }

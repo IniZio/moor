@@ -15,7 +15,7 @@ use tempfile::TempDir;
 use ureq::Agent;
 
 use super::upstream::{self, Upstream};
-use crate::proxy::nono::audit::{self, EgressSink, TaskSink};
+use crate::proxy::nono::audit::{self, EgressSink, TaskSink, Withheld};
 use crate::proxy::nono::capture::{MoorCapture, RuleSource, CACHE_TTL};
 use crate::proxy::nono::{build_config, ca, NonoProxy, NonoSpec};
 use crate::proxy::ProxyLog;
@@ -257,12 +257,21 @@ impl EgressSink for Recorder {
     fn credential_failed(&self, rule: &str) {
         self.push(format!("credential_failed({rule})"));
     }
+
+    fn withheld(&self, host: &str, rule: &str, method: &str, _: Option<&str>) {
+        self.push(format!("withheld({host}, {rule}, {method})"));
+    }
 }
 
 /// Drains and applies audit events until `done` holds for the recorded calls.
 fn settle(rig: &Rig, sink: &Recorder, done: impl Fn(&[String]) -> bool) -> Vec<String> {
     for _ in 0..100 {
-        audit::apply(&rig.proxy().drain_audit(), &rig.capture, sink);
+        audit::apply(
+            &rig.proxy().drain_audit(),
+            &rig.capture,
+            &Withheld::default(),
+            sink,
+        );
         if done(&sink.calls()) {
             break;
         }
@@ -354,7 +363,12 @@ fn unlisted_host_is_refused_and_reaches_the_sinks() {
     let again = rig.client();
     assert!(get(&again, "https://example.invalid/anything").is_err());
     for _ in 0..100 {
-        audit::apply(&rig.proxy().drain_audit(), &rig.capture, &task_sink);
+        audit::apply(
+            &rig.proxy().drain_audit(),
+            &rig.capture,
+            &Withheld::default(),
+            &task_sink,
+        );
         if kinds(&store, task).iter().any(|k| k == "egress_refused") {
             break;
         }
@@ -480,7 +494,12 @@ fn secret_bytes_never_appear_in_logs_debug_or_errors() {
     texts.push(format!("{:?}", get(&agent, &rig.url("/ok"))));
 
     for _ in 0..40 {
-        audit::apply(&rig.proxy().drain_audit(), &rig.capture, &sink);
+        audit::apply(
+            &rig.proxy().drain_audit(),
+            &rig.capture,
+            &Withheld::default(),
+            &sink,
+        );
         std::thread::sleep(Duration::from_millis(25));
     }
     let log_path = rig
