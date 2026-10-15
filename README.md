@@ -88,3 +88,32 @@ Global flags: `--json`, `--quiet`, `--state-dir DIR`. State lives in
 
 CI runs `format-check`, `lint`, `audit`, and `unit` in
 [.github/workflows/ci.yaml](.github/workflows/ci.yaml).
+
+## macOS Box: Proxy trust
+
+The agent environment carries `HTTPS_PROXY`, `NODE_EXTRA_CA_CERTS`,
+`SSL_CERT_FILE`, `CURL_CA_BUNDLE`, `REQUESTS_CA_BUNDLE`, and `GIT_SSL_CAINFO`.
+The CA files live in the per-Task credential directory: `proxy-ca.pem` (the
+Proxy CA) and `ca-bundle.pem` (`/etc/ssl/cert.pem` plus the Proxy CA). moor
+never changes the macOS system keychain or trust settings and never writes the
+system certificate file. The sandbox blocks non-loopback network, so a tool
+that ignores the proxy fails; it does not bypass it.
+
+| Tool | Trust path on macOS | Variable that reaches it | Status |
+| --- | --- | --- | --- |
+| `curl` (`/usr/bin/curl`, SecureTransport) | CA file when one is given, else Security.framework | `SSL_CERT_FILE`, `CURL_CA_BUNDLE` | covered |
+| `git` (Apple Git, system libcurl) | CA file when one is given | `GIT_SSL_CAINFO` | covered |
+| `swift package resolve` | `git` subprocess | `GIT_SSL_CAINFO` | covered |
+| `xcodebuild -resolvePackageDependencies -scmProvider system` | `git` subprocess | `GIT_SSL_CAINFO` | covered; without `-scmProvider system` Xcode's built-in Git is used and is not covered |
+| `node`, `npm`, Claude Code | bundled CAs plus extra file | `NODE_EXTRA_CA_CERTS` | covered |
+| `pip`, Python `requests` | `certifi` bundle or the given file | `REQUESTS_CA_BUNDLE` | covered |
+| Apple system Python `urllib` / `ssl` | Security.framework; `SSL_CERT_FILE` has no effect | none | not covered |
+| Apple system Ruby (`gem`, CocoaPods) | Security.framework; `SSL_CERT_FILE` has no effect | none | not covered; a Ruby built against upstream OpenSSL honours `SSL_CERT_FILE` |
+| `gh` and other Go binaries | Security.framework; Go ignores `SSL_CERT_FILE` on macOS | none | not covered |
+| Dart and Flutter `pub` | Security.framework; Dart has no CA environment variable on macOS | none | not covered |
+| Swift `URLSession` (registry and binary-target downloads, app code) | Security.framework | none | not covered |
+
+Tools marked not covered cannot trust the Proxy CA without adding it to a
+keychain, which moor does not do. Fetch their inputs outside the Box (for
+example a prefilled pub cache or `.build` directory) or use a covered
+alternative from the table.

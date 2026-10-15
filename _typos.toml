@@ -4,3 +4,6 @@ extend-exclude = [
   "Cargo.lock",
   "crates/moor/src/adapters/herdr/testdata/",
 ]
+
+[default.extend-words]
+certifi = "certifi"
