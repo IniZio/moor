@@ -34,6 +34,8 @@ pub enum Request {
     Sleep(TaskReq),
     /// Wake a task's box.
     Wake(TaskReq),
+    /// Wake a task's box and return the command that attaches to its workspace; the caller runs it.
+    Connect(TaskReq),
     /// Check a gate.
     Gate(GateReq),
     /// Show the layered environment.
@@ -66,6 +68,7 @@ impl Request {
             Self::Shell(_) => "shell",
             Self::Sleep(_) => "sleep",
             Self::Wake(_) => "wake",
+            Self::Connect(_) => "connect",
             Self::Gate(_) => "gate",
             Self::Env(_) => "env",
             Self::GithubSetup {} => "github-setup",

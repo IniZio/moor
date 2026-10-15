@@ -11,7 +11,7 @@ use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
 use moor_core::seam::surface::SurfaceError;
 use moor_core::{ErrorKind, ProviderId, TaskId, TaskName, TaskReq};
 
-use super::run;
+use super::{connect, run};
 use crate::cx::Cx;
 use crate::ops::common::boxlock::BoxLock;
 use crate::testing::driver::FakeDriver;
@@ -252,4 +252,36 @@ fn failed_focus_after_a_wake_leaves_the_box_awake() {
     assert!(!v.woke);
     assert_eq!(wakes(&f), 1);
     assert_eq!(focuses(&f).len(), 2);
+}
+
+#[test]
+fn connect_wakes_and_returns_focus_command_without_focusing() {
+    let f = fx();
+    asleep(&f);
+    let v = connect(&f.cx, &req()).unwrap();
+    assert!(v.woke);
+    assert_eq!(wakes(&f), 1);
+    assert!(focuses(&f).is_empty());
+    assert_eq!(
+        serde_json::to_value(&v).unwrap(),
+        serde_json::json!({"tool":"herdr","args":["workspace","focus","ws-9"],"woke":true})
+    );
+}
+
+#[test]
+fn connect_without_a_workspace_is_refused() {
+    let f = fx_placed(FakeDriver::new(), None);
+    let err = connect(&f.cx, &req()).unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Refused);
+}
+
+#[test]
+fn connect_unknown_task_is_failed() {
+    let f = fx();
+    let r = TaskReq {
+        task: TaskName::parse("nope").unwrap(),
+    };
+    let err = connect(&f.cx, &r).unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Failed);
+    assert!(err.error.to_string().contains("no open task"));
 }

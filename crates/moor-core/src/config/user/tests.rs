@@ -421,3 +421,25 @@ fn removed_keys_are_unknown() {
         assert!(e.reason.contains("unknown field"), "{e}");
     }
 }
+
+#[test]
+fn controller_socket_parses() {
+    let c = ok("controller: {socket: /tmp/x.sock}");
+    assert_eq!(c.controller.socket, Some(PathBuf::from("/tmp/x.sock")));
+}
+
+#[test]
+fn controller_section_is_optional() {
+    assert_eq!(ok("{}").controller.socket, None);
+    assert_eq!(ok("controller: {}").controller.socket, None);
+}
+
+#[test]
+fn controller_unknown_key_is_named() {
+    assert!(err("controller: {path: x}").to_string().contains("path"));
+}
+
+#[test]
+fn controller_empty_socket_is_rejected() {
+    assert_eq!(err("controller: {socket: ''}").path, "controller.socket");
+}

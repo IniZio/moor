@@ -74,6 +74,7 @@ fn with_args() -> Vec<Request> {
         Request::Shell(t()),
         Request::Sleep(t()),
         Request::Wake(t()),
+        Request::Connect(t()),
     ]
 }
 
@@ -98,7 +99,7 @@ fn all() -> Vec<Request> {
 #[test]
 fn cmd_equals_serde_tag_and_roundtrips() {
     let reqs = all();
-    assert_eq!(reqs.len(), 19);
+    assert_eq!(reqs.len(), 20);
     for r in reqs {
         let text = serde_json::to_string(&r).unwrap();
         assert!(
@@ -302,6 +303,14 @@ fn run_trust_moor_yaml_defaults_false_and_roundtrips() {
     let r: Request =
         serde_json::from_str(r#"{"cmd":"run","task":"a","trust_moor_yaml":true}"#).unwrap();
     assert!(matches!(r, Request::Run(ref s) if s.trust_moor_yaml));
+    let back: Request = serde_json::from_value(serde_json::to_value(&r).unwrap()).unwrap();
+    assert_eq!(back, r);
+}
+
+#[test]
+fn connect_parses_and_roundtrips() {
+    let r: Request = serde_json::from_str(r#"{"cmd":"connect","task":"t1"}"#).unwrap();
+    assert_eq!(r, Request::Connect(TaskReq { task: n("t1") }));
     let back: Request = serde_json::from_value(serde_json::to_value(&r).unwrap()).unwrap();
     assert_eq!(back, r);
 }
