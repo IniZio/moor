@@ -23,6 +23,7 @@ mod base;
 mod capacity;
 mod dotfiles;
 mod leftover;
+mod moor_yaml;
 mod provider_caps;
 mod proxy;
 mod relaunch;
@@ -60,6 +61,7 @@ fn world_with(driver: FakeDriver, repo: &Path, config: UserConfig) -> World {
         &["rev-parse", "--show-toplevel"],
         Reply::Ok(format!("{}\n", repo.display())),
     );
+    proc.on(Tool::Git, &["ls-tree"], Reply::Ok(String::new()));
     proc.on(
         Tool::Git,
         &["rev-parse", "HEAD"],
@@ -105,6 +107,7 @@ fn req(name: &str) -> StartReq {
         model: None,
         no_agent: false,
         resume: false,
+        trust_moor_yaml: false,
     }
 }
 
@@ -507,7 +510,8 @@ fn reprovision_skips_when_another_start_already_gave_the_box_back() {
     let stale = store.task(id).unwrap().unwrap();
     run(&w.cx, &req("demo")).unwrap();
     assert_eq!(w.driver.calls(), ["acquire", "acquire"]);
-    let run = crate::ops::common::provision::reprovision(&w.cx, store, &stale, "start").unwrap();
+    let run =
+        crate::ops::common::provision::reprovision(&w.cx, store, &stale, "start", false).unwrap();
     assert!(run.is_none());
     assert_eq!(w.driver.calls(), ["acquire", "acquire"]);
 }

@@ -103,6 +103,9 @@ pub struct StartReq {
     /// Resume the agent's stored session instead of starting a fresh one.
     #[serde(default)]
     pub resume: bool,
+    /// Run setup and launch the agent even when the Task's `.moor.yaml` differs from its base commit.
+    #[serde(default)]
+    pub trust_moor_yaml: bool,
 }
 
 /// Arguments of `run`.

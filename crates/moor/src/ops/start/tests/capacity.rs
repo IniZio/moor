@@ -50,6 +50,7 @@ fn world(config: UserConfig) -> World {
         &["rev-parse", "--git-path", "info/exclude"],
         Reply::Ok(format!("{}/exclude\n", dir.path().display())),
     );
+    proc.on(Tool::Git, &["ls-tree"], Reply::Ok(String::new()));
     let driver = Arc::new(FakeDriver::new());
     let surface = Arc::new(FakeSurface::new(dir.path()));
     let cx = Cx::fake_with(
@@ -101,6 +102,7 @@ fn req(name: &str) -> StartReq {
         model: None,
         no_agent: false,
         resume: false,
+        trust_moor_yaml: false,
     }
 }
 

@@ -14,7 +14,7 @@ use super::launch;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
-use crate::ops::common::provision::reread;
+use crate::ops::common::provision::{moor_yaml, reread};
 use crate::ops::common::resume;
 use crate::ops::common::transcript;
 use crate::store::{SessionRow, Store, TaskRow};
@@ -36,7 +36,8 @@ enum Ended {
 /// launch; it is released on return, before anything waits on the agent.
 ///
 /// # Errors
-/// A store failure, a busy Box, or a model that cannot be resolved.
+/// A store failure, a busy Box, a model that cannot be resolved, or a `.moor.yaml` that changed
+/// since the base commit when an agent is about to launch and the owner has not trusted it.
 pub(super) fn run(
     cx: &Cx,
     store: &Store,
@@ -61,6 +62,9 @@ pub(super) fn run(
     }
     let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "start", boxlock::WAIT)?;
     let Some(old) = store.live_session(id)? else {
+        if req.goal.is_some() || row.goal.is_some() || resumes(req, &row) {
+            moor_yaml::guard(cx, &row, req.trust_moor_yaml)?;
+        }
         store_goal(store, req, id)?;
         return launch::run(cx, store, req, id, setup_exit, model);
     };
@@ -69,6 +73,16 @@ pub(super) fn run(
         return Ok(AgentLaunchView::default());
     };
     relaunch(cx, store, req, &old, &end, model)
+}
+
+/// Whether `req` resumes the stored agent session of `row`.
+fn resumes(req: &StartReq, row: &TaskRow) -> bool {
+    req.resume
+        && req.goal.is_none()
+        && row
+            .agent_session_id
+            .as_deref()
+            .is_some_and(|s| !s.is_empty())
 }
 
 /// Refuses `--resume` for a Task with no stored agent session.
@@ -153,6 +167,7 @@ fn relaunch(
     let Some(mut launch) = launch::launch_req(cx, &row, None) else {
         return Ok(AgentLaunchView::default());
     };
+    moor_yaml::guard(cx, &row, req.trust_moor_yaml)?;
     launch.resume = resume;
     launch.model = model()?;
     if let Some(g) = &req.goal {

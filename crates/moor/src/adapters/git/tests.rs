@@ -401,3 +401,47 @@ fn exclude_scratch_works_from_a_worktree_of_a_bare_repo() {
     let text = std::fs::read_to_string(bare.join("info/exclude")).unwrap();
     assert!(text.lines().any(|l| l == ".crabbox/"), "{text}");
 }
+
+#[test]
+fn file_at_returns_the_committed_text_verbatim() {
+    let (p, g) = scripted();
+    p.on(
+        Tool::Git,
+        &["ls-tree", "--name-only", "abc", "--", ".moor.yaml"],
+        ok(".moor.yaml\n"),
+    );
+    p.on(Tool::Git, &["show", "abc:.moor.yaml"], ok("setup: x\n"));
+    let text = g.file_at(Path::new("/r"), "abc", ".moor.yaml").unwrap();
+    assert_eq!(text.as_deref(), Some("setup: x\n"));
+}
+
+#[test]
+fn file_at_is_none_without_showing_when_the_path_is_absent() {
+    let (p, g) = scripted();
+    p.on(
+        Tool::Git,
+        &["ls-tree", "--name-only", "abc", "--", ".moor.yaml"],
+        ok("\n"),
+    );
+    let text = g.file_at(Path::new("/r"), "abc", ".moor.yaml").unwrap();
+    assert_eq!(text, None);
+    assert!(p
+        .calls()
+        .iter()
+        .all(|c| c.args.first().map(String::as_str) != Some("show")));
+}
+
+#[test]
+fn file_at_propagates_git_failure() {
+    let (p, g) = scripted();
+    p.on(
+        Tool::Git,
+        &["ls-tree"],
+        Reply::Fail {
+            code: 128,
+            stdout: String::new(),
+            stderr: "fatal: not a valid object name abc".to_owned(),
+        },
+    );
+    assert!(g.file_at(Path::new("/r"), "abc", ".moor.yaml").is_err());
+}

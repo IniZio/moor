@@ -22,6 +22,7 @@ fn with_args() -> Vec<Request> {
             model: None,
             no_agent: true,
             resume: false,
+            trust_moor_yaml: false,
         }),
         Request::Run(RunReq {
             task: n("a"),
@@ -172,6 +173,18 @@ fn defaults_and_renames() {
             inherit_output: false,
         })
     );
+}
+
+#[test]
+fn start_trust_moor_yaml_defaults_false_and_roundtrips() {
+    let r: Request = serde_json::from_str(r#"{"cmd":"start","name":"a"}"#).unwrap();
+    assert!(matches!(r, Request::Start(ref s) if !s.trust_moor_yaml));
+
+    let r: Request =
+        serde_json::from_str(r#"{"cmd":"start","name":"a","trust_moor_yaml":true}"#).unwrap();
+    assert!(matches!(r, Request::Start(ref s) if s.trust_moor_yaml));
+    let back: Request = serde_json::from_value(serde_json::to_value(&r).unwrap()).unwrap();
+    assert_eq!(back, r);
 }
 
 #[test]
