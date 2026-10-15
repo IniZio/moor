@@ -159,7 +159,7 @@ impl EgressSink for TaskSink<'_> {
 /// Applies one drained batch of audit events.
 ///
 /// An allowed request becomes a log line, and an upstream 401 also evicts the
-/// rule's cached credential. A denial caused by an unavailable credential
+/// rule's cached credential unless the request was a passthrough. A denial caused by an unavailable credential
 /// becomes a credential failure; any other denial becomes a refused egress.
 /// Approval-flow decisions are ignored. A request forwarded without a
 /// credential to a credential host is also reported through `withheld`.
@@ -201,7 +201,8 @@ fn allow(event: &NetworkAuditEvent, capture: &MoorCapture, sink: &dyn EgressSink
         rule.unwrap_or(&event.target),
         event.status.unwrap_or(0),
     );
-    if event.status == Some(401) {
+    // A passthrough carries no managed credential, so its 401 says nothing about the cache.
+    if event.status == Some(401) && event.managed_credential_active != Some(false) {
         if let Some(rule) = rule {
             capture.evict(rule);
         }
