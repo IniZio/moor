@@ -57,6 +57,7 @@ pub(super) const SHAPES: &[Shape] = &[
             ("mergeCommit", C("commit")),
             ("labels", N("label")),
             ("assignees", N("actor")),
+            ("assignedActors", N("actor")),
             ("milestone", C("milestone")),
             ("reviewRequests", N("reviewreq")),
             ("reviews", N("review")),
@@ -164,6 +165,18 @@ pub(super) const SHAPES: &[Shape] = &[
         name: "issue",
         leaves: &["id", "number", "url"],
         links: &[("repository", C("repoid"))],
+    },
+    Shape {
+        name: "listissue",
+        leaves: &[
+            "number",
+            "url",
+            "title",
+            "state",
+            "updatedAt",
+            "stateReason",
+        ],
+        links: &[("labels", N("label"))],
     },
     Shape {
         name: "file",
