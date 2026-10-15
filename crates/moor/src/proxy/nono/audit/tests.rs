@@ -586,6 +586,5 @@ fn withheld_needs_a_response_status() {
 #[test]
 fn withheld_matches_the_host_ignoring_case_and_port() {
     let got = run_withheld(&[passthrough("API.GitHub.com:443", "GET", "/user")]);
-    assert_eq!(got.len(), 1, "{got:?}");
-    assert!(got[0].contains(" gh GET "), "{got:?}");
+    assert_eq!(got, [r#"withheld API.GitHub.com gh GET Some("GET /user")"#]);
 }
