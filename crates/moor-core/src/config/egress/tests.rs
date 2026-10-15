@@ -67,7 +67,7 @@ fn capability_table() {
 #[test]
 fn unenforced_note_only_for_opt_in_without_opt_in() {
     let note = unenforced_note(EgressSupport::OptIn, false).unwrap();
-    assert!(note.contains("box.enforce_egress"));
+    assert!(note.contains("open egress") && note.contains("only the Proxy"));
     assert!(unenforced_note(EgressSupport::OptIn, true).is_none());
     assert!(unenforced_note(EgressSupport::Enforced, false).is_none());
     assert!(unenforced_note(EgressSupport::None, false).is_none());

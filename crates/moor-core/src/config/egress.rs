@@ -34,7 +34,7 @@ pub const BASE_ALLOW: &[&str] = &[
 ];
 
 /// Note text for a provider that fixes the allow-list at creation, without the opt-in.
-const UNENFORCED: &str = "egress not enforced: this provider fixes the allow-list at Box creation; set box.enforce_egress";
+const UNENFORCED: &str = "setup and moor run have open egress; the agent reaches only the Proxy";
 
 /// Note text for a provider with no egress control when `box.enforce_egress` is set.
 const CONFLICT: &str =

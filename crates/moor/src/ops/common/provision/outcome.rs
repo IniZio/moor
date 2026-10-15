@@ -44,7 +44,8 @@ pub(super) fn with_egress_hint(
         .is_ok_and(|support| provider_applies_policy(support, cfg.enforce_egress));
     if enforced {
         failure.tail.push_str(
-            "\nBox egress is restricted: add hosts the dotfiles fetch to `egress.allow` in the user config",
+            "\nBox egress is restricted: add hosts the dotfiles fetch to `egress.allow` in the user config; \
+             hosts the Proxy serves (such as github.com) cannot be fetched during setup, so turn box.enforce_egress off",
         );
     }
     failure
