@@ -2,8 +2,8 @@
 
 use moor_core::config::Layer;
 use moor_core::view::env::{
-    EnvAgent, EnvCredential, EnvEgress, EnvGithub, EnvKind, EnvMint, EnvProvider, EnvResolved,
-    EnvRow, EnvView, ValueKind,
+    EnvAgent, EnvCredential, EnvGithub, EnvKind, EnvMint, EnvProvider, EnvResolved, EnvRow,
+    EnvView, ValueKind,
 };
 use moor_core::view::LaunchFailure;
 use moor_core::{ErrorKind, ErrorView, Response, Warning};
@@ -154,12 +154,6 @@ fn env_view(rows: Vec<EnvRow>, credentials: Vec<EnvCredential>) -> Response {
         agent: EnvAgent { model: None },
         github,
         rows,
-        egress: EnvEgress {
-            mode: "allow".into(),
-            hosts: vec![],
-            note: String::new(),
-            enforce: None,
-        },
         provider: EnvProvider {
             name: "local".into(),
             source: Layer::Default,
@@ -176,7 +170,7 @@ fn env_text_starts_with_agent_and_marks_credentials() {
     let rows = vec![
         row(EnvKind::Credential, "GOOD", Layer::User, "env: X"),
         row(EnvKind::Credential, "BAD", Layer::Repo, "file: /x"),
-        row(EnvKind::Egress, "allow", Layer::Default, "2 hosts"),
+        row(EnvKind::Box, "size", Layer::Default, "small"),
     ];
     let credentials = vec![
         check("GOOD", true, None),
@@ -195,7 +189,7 @@ fn env_text_starts_with_agent_and_marks_credentials() {
     assert!(lines
         .last()
         .unwrap()
-        .starts_with("- egress allow  [default]  2 hosts"));
+        .starts_with("- box size  [default]  small"));
 }
 
 /// A successful `run` value.

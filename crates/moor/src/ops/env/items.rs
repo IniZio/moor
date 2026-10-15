@@ -2,22 +2,14 @@
 
 use std::path::Path;
 
-use moor_core::config::egress::{unenforced_note, EgressItem};
 use moor_core::config::{DotfilesConfig, Identity, Layer, TaskSettings};
-use moor_core::seam::driver::EgressSupport;
 use moor_core::view::env::{EnvGithub, EnvItem, EnvKind, EnvMint, EnvResolved};
 
 use crate::cx::Cx;
 use crate::ops::common::creds::{checked, plain, Checked};
 
 /// All items in display order.
-pub(crate) fn assemble(
-    cx: &Cx,
-    s: &TaskSettings,
-    worktree: &Path,
-    egress: &EgressItem,
-    support: EgressSupport,
-) -> Vec<EnvItem> {
+pub(crate) fn assemble(cx: &Cx, s: &TaskSettings, worktree: &Path) -> Vec<EnvItem> {
     let mut items = Vec::new();
     if let Ok(author) = cx.git().author(worktree) {
         for (name, val) in [("user.name", author.name), ("user.email", author.email)] {
@@ -35,17 +27,6 @@ pub(crate) fn assemble(
     items.extend(mcp);
 
     let provider = s.provider.value.as_str();
-    let agent_hosts = cx.engine().egress_hosts();
-    items.push(plain(EnvKind::Egress, egress.name, &egress.detail));
-    if egress.name == "allow" && !agent_hosts.is_empty() {
-        items.push(EnvItem {
-            source: Layer::Agent,
-            ..plain(EnvKind::Egress, "agent", &agent_hosts.join(", "))
-        });
-    }
-    if let Some(note) = unenforced_note(support, s.enforce_egress) {
-        items.push(plain(EnvKind::Egress, "enforce", note));
-    }
     items.push(EnvItem {
         source: s.provider.source,
         ..plain(EnvKind::Box, "provider", provider)
