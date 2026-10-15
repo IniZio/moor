@@ -197,10 +197,11 @@ fn child_ignoring_term_is_killed_after_grace() {
     assert!(t.elapsed() < Duration::from_secs(5), "{:?}", t.elapsed());
 }
 
-// Signals the whole test process, so it relies on nextest running each test in
-// its own process.
+/// Body of the child process run by [`sigterm_sent_to_moor_is_forwarded_as_interrupt`].
+/// Signals the whole process, so it must not share one with other tests.
 #[test]
-fn sigterm_sent_to_moor_is_forwarded_as_interrupt() {
+#[ignore = "runs only as the child of another test"]
+fn forwarded_sigterm_interrupts_stream() {
     let dir = TempDir::new().unwrap();
     let ready = dir.path().join("ready");
     let body = format!("touch {}\nsleep 30", ready.display());
@@ -212,6 +213,19 @@ fn sigterm_sent_to_moor_is_forwarded_as_interrupt() {
         sh_proc().run_streamed(&sh(&body, 30), &Output::Inherit)
     });
     assert!(matches!(r, Err(ProcError::Interrupted)), "{r:?}");
+}
+
+#[test]
+fn sigterm_sent_to_moor_is_forwarded_as_interrupt() {
+    let status = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--ignored",
+            "--exact",
+            "adapters::proc::stream::tests::forwarded_sigterm_interrupts_stream",
+        ])
+        .status()
+        .unwrap();
+    assert!(status.success(), "{status:?}");
 }
 
 /// Body of the child process run by [`sigterm_after_streaming_is_default_action`].
