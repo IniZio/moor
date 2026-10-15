@@ -22,7 +22,7 @@ use super::common::capacity;
 use super::common::facts::{egress_plan, egress_support, settings};
 use super::common::provision::{provision, reprovision, reread, Entry, Provisioned};
 use super::common::provisioning::dead_provisioning;
-use super::common::view::task_view;
+use super::common::view::{hide_unsupported_sleep, task_view};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::store::{Store, StoreError, TaskRow};
@@ -259,8 +259,10 @@ fn queued_view(cx: &Cx, row: &TaskRow, attached: bool, provider: &str) -> StartV
 
 /// The response for `row`; nothing past the Box runs yet.
 fn view(cx: &Cx, row: &TaskRow, attached: bool) -> StartView {
+    let mut task = task_view(row, cx.config());
+    hide_unsupported_sleep(&mut task, cx);
     StartView {
-        task: task_view(row, cx.config()),
+        task,
         attached,
         queued: row.state == TaskState::WaitingForBox,
         promoted: Vec::new(),

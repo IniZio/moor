@@ -125,10 +125,16 @@ impl FakeDriver {
         self
     }
 
+    /// Reports `kind` as the provider's sleep capability.
+    pub(crate) fn sleep_kind(self, kind: SleepKind) -> Self {
+        self.st().sleep_kind = Some(kind);
+        self
+    }
+
     pub(super) fn caps_reply(&self) -> DriverCaps {
         let st = self.st();
         DriverCaps {
-            sleep: SleepKind::None,
+            sleep: st.sleep_kind.unwrap_or(SleepKind::None),
             wake: false,
             egress: st.egress.unwrap_or(EgressSupport::None),
             reverse_tunnel: st.tunnel.enabled,

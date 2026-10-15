@@ -1,12 +1,17 @@
 //! `show`: reconcile, then report tasks, one task's detail and its events.
 //! Each task's agent is read once per command; a named task reads only its own.
 
+use std::collections::HashMap;
+
 use moor_core::view::{EventView, PaneView, ShowView, TaskView};
 use moor_core::{ErrorKind, ShowReq, TaskId};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::view::{agent_view, event_view, task_view_with_run};
+use crate::ops::common::view::{
+    agent_view, event_view, hide_unsupported_sleep, hide_unsupported_sleep_cached,
+    task_view_with_run,
+};
 use crate::ops::common::{activity, autosleep, reconcile};
 use crate::store::Store;
 
@@ -77,6 +82,7 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
     let now = cx.clock().now();
     let Some(name) = &req.task else {
         let mut tasks: Vec<TaskView> = Vec::new();
+        let mut sleep_caps = HashMap::new();
         for mut row in store.open_tasks()? {
             let reading = activity::read(cx, store, &row, now)?;
             activity::settle(cx, store, &row, &reading)?;
@@ -85,6 +91,7 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
             let in_flight = store.in_flight_run(row.id, &|pid| cx.proc().alive(pid))?;
             let mut view = task_view_with_run(&row, in_flight.as_ref(), cx.config());
             view.agent = agent_view(&reading);
+            hide_unsupported_sleep_cached(&mut view, cx, &mut sleep_caps);
             tasks.push(view);
         }
         return Ok(ShowView {
@@ -103,6 +110,7 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
     let (agent, pane) = (agent_view(&reading), pane_view(&reading, store, row.id)?);
     let mut detail = task_view_with_run(&row, in_flight.as_ref(), cx.config());
     detail.agent = agent;
+    hide_unsupported_sleep(&mut detail, cx);
     let events = match req.events {
         Some(n) => {
             let last = usize::try_from(n).unwrap_or(usize::MAX);
