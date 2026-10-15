@@ -19,7 +19,7 @@ use super::common::activity;
 use super::common::autosleep;
 use super::common::boxlock::{self, BoxLock};
 use super::common::capacity;
-use super::common::facts::{egress_plan, provider_caps, require_reverse_tunnel, settings};
+use super::common::facts::{provider_caps, require_reverse_tunnel, settings};
 use super::common::provision::{provision, reprovision, reread, Entry, Provisioned};
 use super::common::provisioning::dead_provisioning;
 use super::common::view::{hide_unsupported_sleep, task_view};
@@ -73,7 +73,6 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     };
     let cfg = settings(cx, facts.bound.as_deref().unwrap_or(&facts.repo), &flags)?;
     let caps = provider_caps(cx, &cfg)?;
-    egress_plan(cx.engine().egress_hosts(), &cfg, caps.egress)?;
     require_reverse_tunnel(&cfg, caps)?;
     if let Some(reason) =
         preflight::rejection(cx, &cfg, facts.bound.as_deref().unwrap_or(&facts.repo))

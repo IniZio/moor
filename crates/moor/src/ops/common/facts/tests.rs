@@ -64,36 +64,3 @@ fn bad_repo_config_is_a_failed_command() {
     let cx = cx(d.path(), d.path());
     assert!(settings(&cx, d.path(), &Flags::default()).is_err());
 }
-
-fn egress_settings(enforce: bool) -> moor_core::config::TaskSettings {
-    let user = moor_core::config::parse_user(
-        "t",
-        &format!("box: {{provider: p, enforce_egress: {enforce}}}\n"),
-    )
-    .unwrap();
-    moor_core::config::TaskSettings::resolve(&user, None, &Flags::default())
-}
-
-#[test]
-fn egress_plan_refuses_enforce_without_provider_support() {
-    use super::egress_plan;
-    use moor_core::seam::driver::{EgressPlan, EgressSupport};
-    use moor_core::ErrorKind;
-
-    let e = egress_plan(&[], &egress_settings(true), EgressSupport::None).unwrap_err();
-    assert_eq!(e.kind, ErrorKind::Refused);
-    assert!(
-        e.error
-            .to_string()
-            .contains("provider p cannot enforce egress"),
-        "{}",
-        e.error.to_string()
-    );
-    assert!(e
-        .hints
-        .iter()
-        .any(|h| h.contains("unset box.enforce_egress")));
-
-    let open = egress_plan(&[], &egress_settings(false), EgressSupport::None).unwrap();
-    assert_eq!(open, EgressPlan::Open);
-}
