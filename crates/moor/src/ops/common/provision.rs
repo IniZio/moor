@@ -8,6 +8,7 @@ use moor_core::decide::intent::setup_dead;
 
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, Intent, IntentChange};
+use moor_core::domain::run::SyncMode;
 use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
 use moor_core::seam::driver::{
     AcquireReq, Acquired, DriverError, EgressApplied, EgressSupport, Released,
@@ -28,7 +29,8 @@ use crate::store::{Store, TaskRow};
 
 pub(crate) use self::outcome::Provisioned;
 use self::outcome::{dotfiles_failed, with_egress_hint};
-use self::retry::retry_dotfiles;
+use self::rerun::rerun_sync;
+use self::retry::{dotfiles_retry, retry_dotfiles};
 
 /// Re-reads a Task row that must exist.
 ///
@@ -108,16 +110,11 @@ pub(crate) fn reprovision(
         handle: &handle,
         workdir: &workdir,
         worktree: Path::new(at),
+        sync: rerun_sync(cx, store, &row)?,
     };
     Ok(Some(run_and_record(
         cx, store, row.id, advance, &target, &cfg,
     )?))
-}
-
-/// Whether the Task failed setup on a Box that is still ready, so only the dotfiles run again.
-fn dotfiles_retry(row: &TaskRow) -> bool {
-    row.state == TaskState::SetupFailed
-        && row.boxed.as_ref().map(|b| b.state) == Some(BoxState::Ready)
 }
 
 /// Rebuilds the Box path from the workdir text stored on the Task row.
@@ -272,6 +269,8 @@ struct SetupTarget<'a> {
     workdir: &'a BoxPath,
     /// Worktree on the host the Task works in.
     worktree: &'a Path,
+    /// How the worktree is synced into the Box before setup runs.
+    sync: SyncMode,
 }
 
 impl<'a> SetupTarget<'a> {
@@ -281,6 +280,7 @@ impl<'a> SetupTarget<'a> {
             handle: &got.handle,
             workdir: &got.workdir,
             worktree,
+            sync: SyncMode::Full,
         }
     }
 }
@@ -298,7 +298,14 @@ fn run_and_record(
     cfg: &TaskSettings,
 ) -> Result<Provisioned, CommandError> {
     identity::set_identity(cx, target.handle, target.worktree);
-    let run = setup::run_setup(cx, target.handle, target.workdir, target.worktree, cfg);
+    let run = setup::run_setup(
+        cx,
+        target.handle,
+        target.workdir,
+        target.worktree,
+        cfg,
+        target.sync,
+    );
     let setup_line = match run.outcome() {
         SetupOutcome::Failed { line } => Some(line),
         SetupOutcome::Ok => None,
@@ -387,6 +394,7 @@ fn failed(
 }
 
 mod outcome;
+mod rerun;
 mod retry;
 #[cfg(test)]
 mod tests;

@@ -94,6 +94,7 @@ fn all_lines_passing_is_ok() {
         &r.workdir,
         d.path(),
         &cfg(&["a", "b"], &[]),
+        SyncMode::Full,
     );
     assert_eq!(got, SetupRun::Ok { ms: 0 });
     assert!(r.driver.copies().is_empty());
@@ -105,7 +106,7 @@ fn lines_run_as_one_generated_script_under_sh() {
     let d = tempfile::tempdir().unwrap();
     let r = rig(d.path(), FakeDriver::new());
     let c = cfg(&["one", "two", "three"], &[]);
-    run_setup(&r.cx, &r.handle, &r.workdir, d.path(), &c);
+    run_setup(&r.cx, &r.handle, &r.workdir, d.path(), &c, SyncMode::Full);
     let (h, spec, _) = only(r.driver.execs());
     assert_eq!(h, r.handle);
     assert_eq!(
@@ -124,6 +125,7 @@ fn runs_in_workdir_with_exactly_the_repo_env() {
         &r.workdir,
         d.path(),
         &cfg(&["a"], &[("B", "2"), ("A", "1")]),
+        SyncMode::Full,
     );
     let (_, spec, _) = only(r.driver.execs());
     assert_eq!(spec.cwd.as_ref(), Some(&r.workdir));
@@ -146,6 +148,7 @@ fn the_script_gets_one_line_allowance_per_line() {
         &r.workdir,
         d.path(),
         &cfg(&["a", "b", "c"], &[]),
+        SyncMode::Full,
     );
     let (_, _, dl) = only(r.driver.execs());
     assert_eq!(dl, Deadline(SETUP_LINE_DEADLINE * 3));
@@ -166,6 +169,7 @@ fn failing_line_comes_from_the_log_and_warns() {
         &r.workdir,
         d.path(),
         &cfg(&["a", "bad", "c"], &[]),
+        SyncMode::Full,
     );
     assert_eq!(
         got,
@@ -197,7 +201,14 @@ fn the_warning_names_the_box_log_and_ends_with_its_tail() {
     let log = format!("moor setup: $ bad\n{}\n", body.join("\n"));
     let driver = FakeDriver::new().exec_results(exits(&[2])).copy_text(&log);
     let r = rig(d.path(), driver);
-    run_setup(&r.cx, &r.handle, &r.workdir, d.path(), &cfg(&["bad"], &[]));
+    run_setup(
+        &r.cx,
+        &r.handle,
+        &r.workdir,
+        d.path(),
+        &cfg(&["bad"], &[]),
+        SyncMode::Full,
+    );
     let w = only(r.cx.take_warnings());
     let path = format!("{}/.moor/setup.log", r.workdir.as_str());
     assert!(w.message.contains(&path), "{}", w.message);
@@ -219,6 +230,7 @@ fn a_log_with_invalid_utf8_still_finds_the_failing_line_and_tail() {
         &r.workdir,
         d.path(),
         &cfg(&["a", "b", "c"], &[]),
+        SyncMode::Full,
     );
     assert_eq!(got.view().line.as_deref(), Some("b"));
     let w = only(r.cx.take_warnings());
@@ -232,7 +244,14 @@ fn a_redrawn_line_shows_only_its_final_frame() {
         .exec_results(exits(&[1]))
         .copy_text("moor setup: $ a\n10%\r50%\r100%\n");
     let r = rig(d.path(), driver);
-    run_setup(&r.cx, &r.handle, &r.workdir, d.path(), &cfg(&["a"], &[]));
+    run_setup(
+        &r.cx,
+        &r.handle,
+        &r.workdir,
+        d.path(),
+        &cfg(&["a"], &[]),
+        SyncMode::Full,
+    );
     let w = only(r.cx.take_warnings());
     assert!(w.message.ends_with("\n100%"), "{}", w.message);
     assert!(!w.message.contains("50%"), "{}", w.message);
@@ -246,7 +265,14 @@ fn a_progress_line_does_not_push_earlier_context_out_of_the_tail() {
     let log = format!("moor setup: $ a\n{}\n1%\r2%\r3%\r4%\r5%\n", body.join("\n"));
     let driver = FakeDriver::new().exec_results(exits(&[1])).copy_text(log);
     let r = rig(d.path(), driver);
-    run_setup(&r.cx, &r.handle, &r.workdir, d.path(), &cfg(&["a"], &[]));
+    run_setup(
+        &r.cx,
+        &r.handle,
+        &r.workdir,
+        d.path(),
+        &cfg(&["a"], &[]),
+        SyncMode::Full,
+    );
     let w = only(r.cx.take_warnings());
     assert!(w.message.contains("last 20 lines"), "{}", w.message);
     assert!(w.message.contains("out 1\n"), "{}", w.message);
@@ -260,7 +286,14 @@ fn long_tail_lines_are_capped() {
         .exec_results(exits(&[1]))
         .copy_text(format!("moor setup: $ a\n{}\n", "x".repeat(1000)));
     let r = rig(d.path(), driver);
-    run_setup(&r.cx, &r.handle, &r.workdir, d.path(), &cfg(&["a"], &[]));
+    run_setup(
+        &r.cx,
+        &r.handle,
+        &r.workdir,
+        d.path(),
+        &cfg(&["a"], &[]),
+        SyncMode::Full,
+    );
     let w = only(r.cx.take_warnings());
     let last = w.message.lines().last().unwrap();
     assert_eq!(last.chars().count(), 300);
@@ -274,7 +307,14 @@ fn control_characters_are_stripped_but_tabs_stay() {
         .exec_results(exits(&[1]))
         .copy_text("moor setup: $ a\n\u{1b}[31mred\u{1b}[0m\u{1b}]0;title\u{7}\tok\u{7}\n");
     let r = rig(d.path(), driver);
-    run_setup(&r.cx, &r.handle, &r.workdir, d.path(), &cfg(&["a"], &[]));
+    run_setup(
+        &r.cx,
+        &r.handle,
+        &r.workdir,
+        d.path(),
+        &cfg(&["a"], &[]),
+        SyncMode::Full,
+    );
     let w = only(r.cx.take_warnings());
     assert!(w.message.ends_with("\nred\tok"), "{}", w.message);
     assert!(!w.message.contains('\u{1b}'), "{}", w.message);
@@ -287,7 +327,14 @@ fn an_unreadable_log_still_gets_its_path_in_the_warning() {
         .exec_results(exits(&[1]))
         .fail_copy_out(DriverError::NotFound);
     let r = rig(d.path(), driver);
-    run_setup(&r.cx, &r.handle, &r.workdir, d.path(), &cfg(&["a"], &[]));
+    run_setup(
+        &r.cx,
+        &r.handle,
+        &r.workdir,
+        d.path(),
+        &cfg(&["a"], &[]),
+        SyncMode::Full,
+    );
     let w = only(r.cx.take_warnings());
     let path = format!("{}/.moor/setup.log", r.workdir.as_str());
     assert!(w.message.contains(&path), "{}", w.message);
@@ -306,6 +353,7 @@ fn the_last_announced_line_fails() {
         &r.workdir,
         d.path(),
         &cfg(&["a", "b", "c"], &[]),
+        SyncMode::Full,
     );
     assert_eq!(
         got,
@@ -330,6 +378,7 @@ fn a_failed_copy_falls_back_to_the_first_line() {
         &r.workdir,
         d.path(),
         &cfg(&["a", "b"], &[]),
+        SyncMode::Full,
     );
     assert_eq!(
         got,
@@ -354,6 +403,7 @@ fn driver_timeout_fails_the_line() {
         &r.workdir,
         d.path(),
         &cfg(&["slow", "next"], &[]),
+        SyncMode::Full,
     );
     assert_eq!(
         got,
@@ -382,6 +432,7 @@ fn empty_setup_is_skipped_without_exec() {
         &r.workdir,
         d.path(),
         &cfg(&[], &[("A", "1")]),
+        SyncMode::Full,
     );
     assert_eq!(got, SetupRun::Skipped);
     assert!(r.driver.execs().is_empty());
@@ -450,7 +501,7 @@ fn exec_is_synced_from_the_worktree_at_the_resolved_size() {
     let d = tempfile::tempdir().unwrap();
     let r = rig(d.path(), FakeDriver::new());
     let c = cfg(&["a"], &[]);
-    run_setup(&r.cx, &r.handle, &r.workdir, d.path(), &c);
+    run_setup(&r.cx, &r.handle, &r.workdir, d.path(), &c, SyncMode::Full);
     let (_, spec, _) = only(r.driver.execs());
     assert_eq!(spec.sync, SyncMode::Full);
     assert!(spec.output.is_none());
@@ -471,6 +522,7 @@ fn interrupted_line_fails_and_stops_the_run() {
         &r.workdir,
         d.path(),
         &cfg(&["a", "b"], &[]),
+        SyncMode::Full,
     );
     assert_eq!(
         got,
@@ -501,7 +553,14 @@ fn duration_is_measured_with_the_clock_on_success_and_failure() {
         );
         r.driver
             .on_exec(move || clock.sleep(Duration::from_millis(1500)));
-        let got = run_setup(&r.cx, &r.handle, &r.workdir, d.path(), &cfg(&["a"], &[]));
+        let got = run_setup(
+            &r.cx,
+            &r.handle,
+            &r.workdir,
+            d.path(),
+            &cfg(&["a"], &[]),
+            SyncMode::Full,
+        );
         assert_eq!(got.ms(), Some(1500));
         assert_eq!(got.failed(), !ok);
         assert_eq!(got.view().ms, Some(1500));

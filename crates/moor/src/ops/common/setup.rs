@@ -104,7 +104,8 @@ pub(crate) fn setup_deadline(lines: usize) -> Duration {
     SETUP_LINE_DEADLINE.saturating_mul(n)
 }
 
-/// Runs the setup lines as one synced script in `workdir`, stopping at the first failure.
+/// Runs the setup lines as one script in `workdir` after syncing the worktree as `sync` says,
+/// stopping at the first failure.
 ///
 /// Sync is one-way, so after a failure the script's log is copied back from the Box; the
 /// failing line comes from there.
@@ -114,6 +115,7 @@ pub(crate) fn run_setup(
     workdir: &BoxPath,
     worktree: &Path,
     cfg: &TaskSettings,
+    sync: SyncMode,
 ) -> SetupRun {
     if cfg.setup.is_empty() {
         return SetupRun::Skipped;
@@ -126,7 +128,7 @@ pub(crate) fn run_setup(
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect(),
         cwd: Some(workdir.clone()),
-        sync: SyncMode::Full,
+        sync,
         output: None,
         host_cwd: Some(worktree.to_path_buf()),
         class: Some(cfg.size.value.as_str().to_owned()),

@@ -25,6 +25,7 @@ mod dotfiles;
 mod egress;
 mod proxy;
 mod relaunch;
+mod rerun;
 mod session;
 mod setup;
 mod transcript;

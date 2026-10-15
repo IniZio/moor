@@ -21,7 +21,7 @@ use crate::testing::proc::Reply;
 
 const LINE_DEADLINE: Duration = SETUP_LINE_DEADLINE;
 
-fn exit(code: i32) -> ExecOutcome {
+pub(super) fn exit(code: i32) -> ExecOutcome {
     ExecOutcome::Exited { code }
 }
 
@@ -56,7 +56,7 @@ fn argvs(w: &World) -> Vec<Vec<String>> {
     w.driver.execs().into_iter().map(|e| e.1.argv).collect()
 }
 
-fn is_setup_line(argv: &[String]) -> bool {
+pub(super) fn is_setup_line(argv: &[String]) -> bool {
     argv.first().map(String::as_str) == Some("sh")
 }
 
@@ -66,7 +66,7 @@ fn git_config(key: &str, value: &str) -> Vec<String> {
         .to_vec()
 }
 
-fn start_req() -> StartReq {
+pub(super) fn start_req() -> StartReq {
     req("demo")
 }
 
@@ -83,7 +83,7 @@ fn kinds(w: &World, id: TaskId) -> Vec<String> {
     events.into_iter().map(|e| e.kind).collect()
 }
 
-fn warning_codes(w: &World) -> Vec<String> {
+pub(super) fn warning_codes(w: &World) -> Vec<String> {
     w.cx.take_warnings().into_iter().map(|x| x.code).collect()
 }
 
@@ -277,7 +277,7 @@ fn failed_setup_then(
 }
 
 /// Like [`failed_setup_then`] with the first setup run on `driver`.
-fn failed_setup_with(yaml: &str, driver: FakeDriver) -> (World, TaskId) {
+pub(super) fn failed_setup_with(yaml: &str, driver: FakeDriver) -> (World, TaskId) {
     let (w, v) = start_with("setup: [a]\n", driver);
     let id = TaskId::new(v.task.id);
     let wt = w.cx.store().unwrap().task(id).unwrap().unwrap().worktree;
