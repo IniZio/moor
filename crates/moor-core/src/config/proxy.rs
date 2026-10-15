@@ -124,6 +124,69 @@ impl ToolRule {
         ))
     }
 
+    /// This user rule laid over the default rule of the same name.
+    ///
+    /// `hosts` and `credential` always stay the default's (validation rejects
+    /// a user value). `inject` is the user's when it sets any part, else the
+    /// default's. `allow` is the default's entries then the
+    /// user's, without duplicates. `box_env` is the union, the user's value
+    /// winning per variable.
+    fn over(&self, default: &Self) -> Self {
+        let mut allow = default.allow.clone();
+        for entry in &self.allow {
+            if !allow.contains(entry) {
+                allow.push(entry.clone());
+            }
+        }
+        let mut box_env = default.box_env.clone();
+        box_env.extend(self.box_env.clone());
+        Self {
+            hosts: default.hosts.clone(),
+            credential: default.credential.clone(),
+            inject: if self.inject == Inject::default() {
+                default.inject.clone()
+            } else {
+                self.inject.clone()
+            },
+            allow,
+            box_env,
+        }
+    }
+
+    /// A user rule named like `default` may only add to it: no `hosts` or
+    /// `credential`, and `*` only where the default has no path list.
+    fn check_extends(&self, default: &Self, name: &str) -> Result<(), ConfigError> {
+        let at = format!("proxy.rules.{name}");
+        for (key, set) in [
+            ("hosts", !self.hosts.is_empty()),
+            ("credential", !self.credential.is_empty()),
+        ] {
+            if set {
+                return Err(ConfigError::new(
+                    format!("{at}.{key}"),
+                    format!("cannot change {key} of the default {name} rule; use a new rule name"),
+                ));
+            }
+        }
+        resolve::validate_allow(&self.allow, &at)?;
+        let limited = !default.allow.is_empty();
+        // On a limited default `*` is the offender; on an unlimited one every other entry is.
+        let bad = self.allow.iter().position(|a| (a == "*") == limited);
+        if let Some(i) = bad {
+            let why = if limited {
+                format!(
+                    "\"*\" cannot extend the default {name} rule, which limits paths; use a new rule name for unrestricted access"
+                )
+            } else {
+                format!(
+                    "the default {name} rule already applies to every path; remove allow or use a new rule name"
+                )
+            };
+            return Err(ConfigError::new(format!("{at}.allow[{i}]"), why));
+        }
+        Ok(())
+    }
+
     /// Like [`Self::check_credential`] for a default rule the user did not write.
     pub(super) fn check_default_credential(
         &self,
@@ -178,11 +241,23 @@ impl ToolRule {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct ProxyConfig {
-    /// Rules by name; a rule named like a default replaces it.
+    /// Rules by name; a rule named like a default extends it.
     pub rules: BTreeMap<String, ToolRule>,
 }
 
 impl ProxyConfig {
+    /// The default rules with each user rule laid over its same-named default.
+    pub(super) fn merged_rules(&self) -> BTreeMap<String, ToolRule> {
+        let mut merged = default_rules();
+        for (name, rule) in &self.rules {
+            let rule = merged
+                .get(name)
+                .map_or_else(|| rule.clone(), |d| rule.over(d));
+            merged.insert(name.clone(), rule);
+        }
+        merged
+    }
+
     /// Checks each rule, its credential against `credentials`, and its hosts
     /// against the `egress.allow` list.
     pub(super) fn validate(
@@ -190,14 +265,23 @@ impl ProxyConfig {
         credentials: &BTreeMap<String, CredentialSource>,
         egress_allow: &[String],
     ) -> Result<(), ConfigError> {
-        for (name, rule) in &self.rules {
+        let defaults = default_rules();
+        let served = self.merged_rules();
+        for name in self.rules.keys() {
+            let Some(rule) = served.get(name) else {
+                continue;
+            };
             let at = format!("proxy.rules.{name}");
             check::credential_name(name).map_err(|w| ConfigError::new(at.clone(), w))?;
-            rule.validate(&at)?;
-            rule.check_credential(&at, credentials)?;
+            if let (Some(default), Some(user_rule)) = (defaults.get(name), self.rules.get(name)) {
+                user_rule.check_extends(default, name)?;
+                rule.validate(&at)?;
+                rule.check_default_credential(name, credentials)?;
+            } else {
+                rule.validate(&at)?;
+                rule.check_credential(&at, credentials)?;
+            }
         }
-        let mut served = default_rules();
-        served.extend(self.rules.clone());
         for (name, rule) in &served {
             for (j, host) in rule.hosts.iter().enumerate() {
                 if let Some(i) = covering_entry(host, egress_allow) {

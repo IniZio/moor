@@ -58,11 +58,46 @@ fn user_rule_without_its_credential_keeps_the_rule_path() {
 }
 
 #[test]
-fn overridden_default_rule_keeps_the_rule_path() {
-    let e = err(
-        "proxy:\n  rules:\n    claude:\n      hosts: [api.example.com]\n      credential: OTHER\n      inject: {form: 'Bearer {secret}'}\n",
+fn default_rule_hosts_and_credential_cannot_change() {
+    let e = err("proxy:\n  rules:\n    github-api:\n      hosts: [evil.example.com]\n");
+    assert_eq!(e.path, "proxy.rules.github-api.hosts");
+    assert_eq!(
+        e.reason,
+        "cannot change hosts of the default github-api rule; use a new rule name"
     );
+    let e = err("proxy:\n  rules:\n    claude:\n      credential: OTHER\n");
     assert_eq!(e.path, "proxy.rules.claude.credential");
+}
+
+#[test]
+fn default_rule_star_allow_rejected_at_user_index() {
+    let e = err("proxy:\n  rules:\n    github-api:\n      allow: ['*']\n");
+    assert_eq!(e.path, "proxy.rules.github-api.allow[0]");
+    assert!(
+        e.reason
+            .contains("cannot extend the default github-api rule"),
+        "{e}"
+    );
+}
+
+#[test]
+fn default_rule_without_paths_rejects_allow() {
+    let e = err("proxy:\n  rules:\n    claude:\n      allow: ['POST /v1/messages']\n");
+    assert_eq!(e.path, "proxy.rules.claude.allow[0]");
+    assert!(e.reason.contains("already applies to every path"), "{e}");
+}
+
+#[test]
+fn default_rule_bad_allow_reports_user_index() {
+    let e = err("proxy:\n  rules:\n    github-api:\n      allow: ['nope']\n");
+    assert_eq!(e.path, "proxy.rules.github-api.allow[0]");
+}
+
+#[test]
+fn extended_default_rule_missing_credential_uses_default_wording() {
+    let e = err("proxy:\n  rules:\n    claude:\n      box_env: {A: b}\n");
+    assert_eq!(e.path, "credentials");
+    assert!(e.reason.starts_with("the default claude rule needs"), "{e}");
 }
 
 #[test]
@@ -232,14 +267,22 @@ fn resolve_fills_repo() {
 }
 
 #[test]
-fn user_rule_replaces_default_and_adds() {
+fn user_rule_overrides_default_inject_and_adds() {
+    let doc = GOOD.replace("{tok:", "{CLAUDE_CODE_OAUTH_TOKEN: {env: Y}, tok:");
     let cfg = user(&format!(
-        "{GOOD}\n    claude: {{hosts: [llm.example.com], credential: tok, inject: {{form: '{{secret}}'}}}}"
+        "{doc}\n    claude: {{inject: {{header: X-Key, form: '{{secret}}'}}}}"
     ));
     let rules = resolve_rules(&cfg.proxy, &cfg.credentials, Some(repo())).expect("resolves");
     let claude = rules.iter().find(|r| r.name == "claude").expect("claude");
-    assert_eq!(claude.hosts, ["llm.example.com"]);
-    assert!(claude.box_env.is_empty());
+    assert_eq!(claude.hosts, ["api.anthropic.com"]);
+    assert_eq!(
+        claude.inject,
+        ResolvedInject::Header {
+            header: "X-Key".into(),
+            form: "{secret}".into()
+        }
+    );
+    assert_eq!(claude.box_env.len(), 2);
     let gl = rules.iter().find(|r| r.name == "gitlab").expect("gitlab");
     assert_eq!(gl.endpoint_rules.len(), 2);
     assert_eq!(
@@ -251,6 +294,65 @@ fn user_rule_replaces_default_and_adds() {
         Some("acme/widgets")
     );
     assert_eq!(rules.len(), 4);
+}
+
+fn github_api_paths(allow: Option<&str>) -> Vec<String> {
+    let doc = allow.map_or_else(String::new, |a| {
+        format!("proxy:\n  rules:\n    github-api:\n      allow: ['{a}']\n")
+    });
+    let cfg = user(&doc);
+    let rules = resolve_rules(&cfg.proxy, &creds(), Some(repo())).expect("resolves");
+    let gh = rules.iter().find(|r| r.name == "github-api").expect("gh");
+    assert_eq!(gh.hosts, ["api.github.com"]);
+    assert_eq!(gh.credential, "forge");
+    gh.endpoint_rules
+        .iter()
+        .map(|r| format!("{} {}", r.method, r.path))
+        .collect()
+}
+
+#[test]
+fn user_allow_extends_default_rule() {
+    let base = github_api_paths(None);
+    let got = github_api_paths(Some("PUT /repos/{repo}/pulls/*/merge"));
+    assert_eq!(got.len(), base.len() + 1);
+    assert!(got.starts_with(&base));
+    assert_eq!(
+        got.last().map(String::as_str),
+        Some("PUT /repos/acme/widgets/pulls/*/merge")
+    );
+}
+
+#[test]
+fn user_box_env_overrides_default_var() {
+    let doc = "proxy:\n  rules:\n    github-api:\n      box_env: {GH_REPO: fixed, MORE: x}\n";
+    let cfg = user(doc);
+    let rules = resolve_rules(&cfg.proxy, &creds(), Some(repo())).expect("resolves");
+    let gh = rules.iter().find(|r| r.name == "github-api").expect("gh");
+    assert_eq!(gh.box_env.get("GH_REPO").map(String::as_str), Some("fixed"));
+    assert_eq!(gh.box_env.get("MORE").map(String::as_str), Some("x"));
+    assert_eq!(
+        gh.box_env.get("GH_TOKEN").map(String::as_str),
+        Some("moor-proxy")
+    );
+}
+
+#[test]
+fn duplicate_user_allow_collapses() {
+    let base = github_api_paths(None);
+    assert_eq!(github_api_paths(Some("GET /repos/{repo}")), base);
+}
+
+#[test]
+fn new_name_rule_stays_whole() {
+    let cfg = user(GOOD);
+    let mut all = creds();
+    all.extend(cfg.credentials.clone());
+    let rules = resolve_rules(&cfg.proxy, &all, Some(repo())).expect("resolves");
+    let gl = rules.iter().find(|r| r.name == "gitlab").expect("gitlab");
+    assert_eq!(gl.hosts, ["gitlab.com"]);
+    assert_eq!(gl.credential, "tok");
+    assert_eq!(gl.endpoint_rules.len(), 2);
 }
 
 #[test]
@@ -267,7 +369,6 @@ fn default_hosts_conflict_with_egress_allow() {
         assert!(e.path.starts_with("proxy.rules."), "{allow}: {e}");
         assert!(e.reason.contains("egress.allow[0]"), "{e}");
     }
-    user("proxy: {rules: {github-api: {hosts: [gh.example.com], credential: forge, inject: {basic_user: u}}}}\negress: {allow: [api.github.com]}");
 }
 
 #[test]

@@ -111,7 +111,7 @@ pub(super) fn validate_allow(allow: &[String], at: &str) -> Result<(), ConfigErr
 
 /// Defaults overlaid with the user's rules, filled for `repo` (owner, name).
 ///
-/// A user rule replaces the default of the same name. Rules that use
+/// A user rule named like a default extends it: see `ToolRule::over`. Rules that use
 /// `{repo}` are left out when there is no repo. Rules come out sorted by name.
 ///
 /// # Errors
@@ -128,19 +128,14 @@ pub fn resolve_rules(
         check_repo_part("owner", owner)?;
         check_repo_part("name", name)?;
     }
-    let mut merged = default_rules();
-    let defaults: Vec<String> = merged
-        .keys()
-        .filter(|k| !user.rules.contains_key(*k))
-        .cloned()
-        .collect();
-    merged.extend(user.rules.clone());
+    let merged = user.merged_rules();
+    let defaults = default_rules();
     let mut out = Vec::new();
     for (name, rule) in merged {
         if rule.needs_repo() && repo.is_none() {
             continue;
         }
-        if defaults.contains(&name) {
+        if defaults.contains_key(&name) {
             rule.check_default_credential(&name, credentials)?;
         } else {
             rule.check_credential(&format!("proxy.rules.{name}"), credentials)?;
