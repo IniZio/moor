@@ -11,6 +11,7 @@ use moor_core::seam::surface::{Surface, SurfaceError};
 use moor_core::{BoxHandle, BoxPath, ProviderId, Secret, TaskId, TaskName};
 
 use crate::adapters::box_agent::claude::Claude;
+use crate::adapters::box_agent::nono_release::fake::offline_release;
 use crate::adapters::box_agent::proxy_env;
 use crate::adapters::box_agent::BoxAgent;
 use crate::testing::clock::FakeClock;
@@ -19,6 +20,7 @@ use crate::testing::surface::FakeSurface;
 
 const ENVIRON: &str = "PATH=/usr/bin\0HOME=/home/box\0LANG=C\0";
 const CRED: &str = "/home/box/.moor-cred-t1-abc123";
+const TMP: &str = "/home/box/.moor-tmp-t1-abc123";
 
 fn environ_path() -> BoxPath {
     BoxPath::restore("/proc/self/environ").unwrap()
@@ -70,6 +72,7 @@ fn agent(d: &Arc<FakeDriver>, s: &Arc<FakeSurface>) -> BoxAgent {
         s.clone(),
         Arc::new(Claude),
         Arc::new(FakeClock::new(Ts::from_millis(0))),
+        offline_release(),
     )
 }
 
@@ -164,7 +167,9 @@ fn the_script_cleans_up_installs_the_brief_and_starts_the_agent() {
     let line = pane_line(&s);
     let script = script_of(&line);
     for want in [
-        &format!("trap 'rm -rf '\\''{CRED}'\\''' EXIT"),
+        &format!("trap 'rm -rf '\\''{CRED}'\\'' '\\''{TMP}'\\''' EXIT"),
+        &format!("mkdir -p -m 700 '{TMP}' && mkdir -p '/work/box-1/.moor'"),
+        &format!("export TMPDIR='{TMP}' CLAUDE_CODE_TMPDIR='{TMP}'"),
         &format!("install -m 600 '{CRED}/brief.md' '/work/box-1/.moor/brief.md'"),
         r#""state":"starting","event":"Launch""#,
         "> '/work/box-1/.moor/agent-state.json'",
@@ -253,7 +258,7 @@ fn a_failed_brief_write_removes_the_cred_dir() {
     assert_eq!(execs.len(), 1);
     assert_eq!(
         execs.into_iter().next().unwrap().1.argv,
-        ["rm", "-rf", CRED]
+        ["rm", "-rf", CRED, TMP]
     );
 }
 
@@ -264,7 +269,7 @@ fn a_failed_pane_open_removes_the_cred_dir() {
         FakeSurface::new("/r").fail_open_pane(SurfaceError::Timeout),
     );
     assert!(matches!(out, Err(EngineError::Failed { step: "pane", .. })));
-    assert_eq!(d.execs().remove(0).1.argv, ["rm", "-rf", CRED]);
+    assert_eq!(d.execs().remove(0).1.argv, ["rm", "-rf", CRED, TMP]);
 }
 
 #[test]
@@ -366,8 +371,9 @@ impl Scratch {
             step: step.to_owned(),
         };
         let cred = BoxPath::under(root, "home/.moor-cred-t1-x").unwrap();
+        let tmp = BoxPath::under(root, "home/.moor-tmp-t1-x").unwrap();
         super::script(
-            &cred,
+            (&cred, &tmp),
             &ctx,
             &setup(hook_step),
             &setup("true"),
@@ -550,18 +556,6 @@ fn a_proxy_launch_keeps_the_cred_dir_for_the_agent_and_exports_the_proxy_env() {
     ] {
         assert!(script.contains(want), "{want}: {script}");
     }
-}
-
-#[test]
-fn a_failed_proxy_stage_removes_the_cred_dir() {
-    let (d, s) = (
-        driver(FakeDriver::new().fail_put(DriverError::NotFound)),
-        surface(FakeSurface::new("/r")),
-    );
-    let out = agent(&d, &s).launch(&req_with_proxy(&s));
-    assert!(matches!(out, Err(EngineError::Failed { .. })));
-    assert!(s.opened().is_empty());
-    assert_eq!(d.execs().pop().unwrap().1.argv, ["rm", "-rf", CRED]);
 }
 
 #[test]

@@ -492,3 +492,33 @@ fn the_box_lock_is_free_while_the_pane_is_watched() {
     assert!(seen.load(Ordering::SeqCst));
     assert!(free.load(Ordering::SeqCst));
 }
+
+#[test]
+fn the_view_carries_the_sandbox_the_engine_reports() {
+    let mut sandboxed = super::relaunch::session("p-1");
+    sandboxed.sandbox = Some("nono 0.80.0".to_owned());
+    let mut w = world(FakeDriver::new());
+    w.cx =
+        w.cx.with_engine(Arc::new(FakeEngine::new().launch_result(Ok(sandboxed))));
+    let v = run(&w.cx, &goal_req("demo")).unwrap();
+    assert!(v.agent.launched);
+    assert_eq!(v.agent.sandbox.as_deref(), Some("nono 0.80.0"));
+}
+
+#[test]
+fn the_view_has_no_sandbox_for_an_unsandboxed_or_failed_launch() {
+    let w = world(FakeDriver::new());
+    let v = run(&w.cx, &goal_req("demo")).unwrap();
+    assert!(v.agent.launched);
+    assert_eq!(v.agent.sandbox, None);
+
+    let failing = FakeEngine::new().launch_result(Err(EngineError::Failed {
+        step: "sandbox",
+        message: "nono missing".to_owned(),
+    }));
+    let mut w = world(FakeDriver::new());
+    w.cx = w.cx.with_engine(Arc::new(failing));
+    let v = run(&w.cx, &goal_req("demo")).unwrap();
+    assert!(!v.agent.launched);
+    assert_eq!(v.agent.sandbox, None);
+}

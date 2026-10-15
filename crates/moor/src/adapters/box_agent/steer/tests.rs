@@ -10,6 +10,7 @@ use moor_core::seam::surface::{PaneCmd, Surface, SurfaceError};
 use moor_core::{BoxHandle, BoxPath, TaskName};
 
 use crate::adapters::box_agent::claude::Claude;
+use crate::adapters::box_agent::nono_release::fake::offline_release;
 use crate::adapters::box_agent::BoxAgent;
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
@@ -43,6 +44,7 @@ fn surface(reads: Vec<Result<PaneObs, SurfaceError>>) -> (Arc<FakeSurface>, Sess
         workdir: BoxPath::under("/work", "box-1").unwrap(),
         worktree: PathBuf::from("/host/wt"),
         pane: Some(pane),
+        sandbox: None,
     };
     (Arc::new(s), session)
 }
@@ -59,6 +61,7 @@ fn steer(
         s.clone(),
         Arc::new(Claude),
         clock.clone(),
+        offline_release(),
     );
     let out = agent.steer(session, what, DEADLINE);
     (out, clock.instant() - start)
@@ -227,6 +230,7 @@ fn each_wait_comes_before_the_submit_key_and_before_the_re_read() {
         s,
         Arc::new(Claude),
         clock.clone(),
+        offline_release(),
     );
     agent.steer(&session, &text("go"), DEADLINE).unwrap();
     let at = clock.at.lock().unwrap();

@@ -5,6 +5,7 @@ use moor_core::view::env::{
     EnvAgent, EnvCredential, EnvEgress, EnvGithub, EnvKind, EnvMint, EnvProvider, EnvResolved,
     EnvRow, EnvView, ValueKind,
 };
+use moor_core::view::LaunchFailure;
 use moor_core::{ErrorKind, ErrorView, Response, Warning};
 use serde_json::json;
 
@@ -314,6 +315,53 @@ fn start_prints_inline_warnings_and_promotions() {
         "started alpha (#7): working, box ready\nopen it with: moor open alpha\n\
          started from the queue: beta, gamma\nwarning: agent dispatch failed: no pane\n"
     );
+}
+
+#[test]
+fn start_names_the_sandbox_a_launched_agent_runs_under() {
+    let v = json!({
+        "task": lifecycle_task("alpha", "working", Some("ready")),
+        "agent": {"launched": true, "session": "s", "sandbox": "nono 0.80.0", "reason": null}
+    });
+    let (out, _) = render(&Response::ok("start", Some(v)), false);
+    assert_eq!(
+        out,
+        "started alpha (#7): working, box ready\nopen it with: moor open alpha\n\
+         agent: launched under nono 0.80.0\n"
+    );
+}
+
+#[test]
+fn start_keeps_its_output_for_an_unsandboxed_agent() {
+    let v = json!({
+        "task": lifecycle_task("alpha", "working", Some("ready")),
+        "agent": {"launched": true, "session": "s", "sandbox": null, "reason": null}
+    });
+    let (out, _) = render(&Response::ok("start", Some(v)), false);
+    assert_eq!(
+        out,
+        "started alpha (#7): working, box ready\nopen it with: moor open alpha\n"
+    );
+}
+
+#[test]
+fn start_shows_a_sandbox_step_failure_as_a_warning() {
+    let reason = LaunchFailure {
+        step: "sandbox".to_owned(),
+        message: "nono install failed".to_owned(),
+        tail: None,
+        at: "2026-01-01T00:00:00Z".to_owned(),
+    };
+    let v = json!({
+        "task": lifecycle_task("alpha", "working", Some("ready")),
+        "agent": {"launched": false, "session": null, "sandbox": null, "reason": reason},
+        "warnings_inline": [reason.text()]
+    });
+    let (out, _) = render(&Response::ok("start", Some(v)), false);
+    assert!(!out.contains("launched under"));
+    assert!(out.ends_with(
+        "warning: agent dispatch failed: sandbox: nono install failed; re-run start to retry\n"
+    ));
 }
 
 #[test]

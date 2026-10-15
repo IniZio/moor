@@ -23,6 +23,8 @@ pub struct SessionRef {
     pub worktree: PathBuf,
     /// The agent's pane, if one exists.
     pub pane: Option<PaneRef>,
+    /// The sandbox the agent runs under, such as `nono 0.80.0`; none when unsandboxed.
+    pub sandbox: Option<String>,
 }
 
 /// What a launch needs to start the agent in a Box.

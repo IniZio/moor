@@ -3,7 +3,7 @@ use std::process::Command;
 use moor_core::name::BoxPath;
 use serde_json::Value;
 
-use super::{install_failure, install_script, profile, wrap, SandboxInput, ASSETS};
+use super::{check_failure, check_script, profile, wrap, SandboxInput, NOT_INSTALLED};
 
 fn path(s: &str) -> BoxPath {
     BoxPath::restore(s).unwrap()
@@ -11,11 +11,13 @@ fn path(s: &str) -> BoxPath {
 
 fn doc(env_names: &[&str]) -> Value {
     let (w, h, c) = (path("/work/p"), path("/home/u"), path("/tmp/cred"));
+    let tmp = path("/home/u/.moor-tmp-t-n");
     let input = SandboxInput {
         box_port: 4321,
         workdir: &w,
         home: &h,
         cred: &c,
+        tmp: &tmp,
         env_names: env_names.iter().map(|s| (*s).to_owned()).collect(),
     };
     serde_json::from_str(&profile(&input)).unwrap()
@@ -86,21 +88,39 @@ fn env_allow_list_drops_provider_and_gate_names() {
 }
 
 #[test]
-fn install_script_pins_version_and_checksums() {
-    let s = install_script();
-    assert!(s.contains("!= \"nono 0.80.0\""));
-    for (_, _, asset, sum) in ASSETS {
-        assert!(s.contains(asset) && s.contains(sum), "{asset}");
-    }
-    assert!(s.contains("sha256sum -c"));
-    assert!(s.contains("setup --check-only"));
-    assert!(!s.contains("sudo"));
+fn profile_grants_the_task_tmp_dir() {
+    let d = doc(&[]);
+    assert!(strings(at(&d, "/filesystem/allow")).contains(&"/home/u/.moor-tmp-t-n".to_owned()));
 }
 
 #[test]
-fn install_script_is_valid_sh() {
+fn profile_never_grants_the_nono_state_root() {
+    let d = doc(&[]);
+    let state = "/home/u/.local/state";
+    for key in ["allow", "allow_file", "read", "read_file"] {
+        for p in strings(at(&d, &format!("/filesystem/{key}"))) {
+            assert!(
+                p != state && !state.starts_with(&format!("{}/", p.trim_end_matches('/'))),
+                "{key}: {p}"
+            );
+        }
+    }
+    assert!(strings(at(&d, "/filesystem/allow")).contains(&format!("{state}/claude")));
+}
+
+#[test]
+fn check_script_pins_version_and_checks_sandbox() {
+    let s = check_script();
+    assert!(s.contains("= \"nono 0.80.0\""));
+    assert!(s.contains("exit 6"));
+    assert!(s.contains("setup --check-only"));
+    assert!(!s.contains("curl") && !s.contains("sudo"));
+}
+
+#[test]
+fn check_script_is_valid_sh() {
     let out = Command::new("sh")
-        .args(["-n", "-c", &install_script()])
+        .args(["-n", "-c", &check_script()])
         .output()
         .unwrap();
     assert!(
@@ -108,6 +128,19 @@ fn install_script_is_valid_sh() {
         "{}",
         String::from_utf8_lossy(&out.stderr)
     );
+}
+
+#[test]
+fn check_script_exits_not_installed_without_nono() {
+    let home = std::env::temp_dir().join(format!("moor-check-script-{}", std::process::id()));
+    std::fs::create_dir_all(&home).unwrap();
+    let out = Command::new("sh")
+        .args(["-c", &check_script()])
+        .env("HOME", &home)
+        .output()
+        .unwrap();
+    std::fs::remove_dir_all(&home).unwrap();
+    assert_eq!(out.status.code(), Some(NOT_INSTALLED));
 }
 
 #[test]
@@ -136,8 +169,8 @@ fn wrap_puts_agent_after_separator() {
 }
 
 #[test]
-fn install_failure_names_the_cause() {
-    assert!(install_failure(5).contains("Landlock"));
-    assert!(install_failure(3).contains("sha256"));
-    assert!(install_failure(9).contains("exited 9"));
+fn check_failure_names_the_cause() {
+    assert!(check_failure(5).contains("Landlock"));
+    assert!(check_failure(NOT_INSTALLED).contains("nono 0.80.0 is not installed"));
+    assert!(check_failure(9).contains("exited 9"));
 }

@@ -23,6 +23,9 @@ webpki-roots = "1"
 time = { version = "0.3", features = ["formatting", "parsing"] }
 rustix = { version = "1", features = ["net", "process"] }
 zeroize = "1"
+sha2 = "0.10"
+flate2 = "1"
+tar = "0.4"
 signal-hook = "=0.4.4"
 getrandom = "=0.4.3"
 ureq = { version = "3", default-features = false, features = [
