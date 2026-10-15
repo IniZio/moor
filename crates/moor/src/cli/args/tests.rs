@@ -71,6 +71,7 @@ fn start_with_all_flags() {
             no_agent: true,
             resume: true,
             trust_moor_yaml: false,
+            repo: None,
         })
     );
 }
@@ -84,6 +85,14 @@ fn start_trust_moor_yaml_flag() {
     assert!(matches!(
         req(&["start", "demo"]),
         Request::Start(s) if !s.trust_moor_yaml
+    ));
+}
+
+#[test]
+fn start_repo_flag() {
+    assert!(matches!(
+        req(&["start", "t", "--repo", "doorlock-app"]),
+        Request::Start(s) if s.repo.as_deref() == Some("doorlock-app")
     ));
 }
 

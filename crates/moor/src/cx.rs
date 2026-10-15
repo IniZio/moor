@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use moor_core::config::{RepoConfig, UserConfig};
+use moor_core::config::{RepoConfig, RepoTable, UserConfig};
 use moor_core::seam::clock::Clock;
 use moor_core::seam::driver::Driver;
 use moor_core::seam::engine::Engine;
@@ -56,6 +56,8 @@ pub(crate) struct Cx {
     prompt_window: Duration,
     /// State store, opened on first use.
     store: OnceCell<Store>,
+    /// Repos the controller knows.
+    repos: Arc<RepoTable>,
 }
 
 /// Everything a context is built from.
@@ -110,6 +112,7 @@ impl Cx {
             cwd: p.cwd,
             prompt_window: p.prompt_window,
             store: OnceCell::new(),
+            repos: Arc::new(RepoTable::new()),
         }
     }
 
@@ -217,7 +220,7 @@ impl Cx {
             .git
             .main_checkout(worktree)
             .map_err(|e| CommandError::new(ErrorKind::Failed, e.to_string()))?;
-        load_repo(worktree, &main)
+        load_repo(worktree, &main)?.map_or_else(|| self.overlay_config(&main), |c| Ok(Some(c)))
     }
 
     /// Repo config of the main checkout `worktree` belongs to, ignoring the worktree's own file.
@@ -229,7 +232,7 @@ impl Cx {
             .git
             .main_checkout(worktree)
             .map_err(|e| CommandError::new(ErrorKind::Failed, e.to_string()))?;
-        load_repo(&main, &main)
+        load_repo(&main, &main)?.map_or_else(|| self.overlay_config(&main), |c| Ok(Some(c)))
     }
 
     /// Invocation directory.
@@ -266,5 +269,6 @@ impl Cx {
     }
 }
 
+mod repos;
 #[cfg(test)]
 mod tests;

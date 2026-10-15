@@ -139,6 +139,9 @@ struct StartArgs {
     /// Base ref.
     #[arg(long)]
     base: Option<String>,
+    /// Repo known to the controller, by name or url; resolved on the controller host instead of the current directory.
+    #[arg(long, value_name = "NAME|URL")]
+    repo: Option<String>,
     /// Agent model.
     #[arg(long)]
     model: Option<String>,
@@ -161,6 +164,7 @@ impl From<StartArgs> for StartReq {
             issue: a.issue,
             worktree: a.worktree,
             base: a.base,
+            repo: a.repo,
             model: a.model,
             no_agent: a.no_agent,
             resume: a.resume,

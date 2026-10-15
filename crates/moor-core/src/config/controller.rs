@@ -1,11 +1,12 @@
 //! The controller process config file: strict parse plus validation, no IO.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
 use serde::Deserialize;
 
-use super::{parse_strict, ConfigError};
+use super::{parse_repo, parse_strict, ConfigError};
 
 /// The `moor controller serve` config. Build it with [`parse_controller`].
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
@@ -20,6 +21,102 @@ pub struct ControllerConfig {
     pub settle_every_secs: Option<u64>,
     /// Loopback-only web UI; None means it is not served.
     pub web: Option<WebConfig>,
+    /// Repos the controller may clone on its own host, keyed by name.
+    pub repos: RepoTable,
+}
+
+/// A repo the controller can clone and start Tasks in.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RepoEntry {
+    /// Clone URL, handed to the host's own `git clone`.
+    pub url: String,
+    /// Branch new Tasks start from; None means the repo's default branch.
+    #[serde(default)]
+    pub default_branch: Option<String>,
+    /// `.moor.yaml` to use when the repo has none.
+    #[serde(default)]
+    pub moor_yaml: Option<MoorYamlSource>,
+}
+
+/// Where a repo's fallback `.moor.yaml` text comes from.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MoorYamlSource {
+    /// A file on the controller host.
+    Path(String),
+    /// The YAML text itself.
+    Inline(String),
+}
+
+/// Known repos by name.
+pub type RepoTable = BTreeMap<String, RepoEntry>;
+
+/// Finds an entry by exact name, else by url (a trailing `/` and `.git` are ignored).
+#[must_use]
+pub fn find_repo<'a>(repos: &'a RepoTable, key: &str) -> Option<(&'a str, &'a RepoEntry)> {
+    if let Some((name, entry)) = repos.get_key_value(key) {
+        return Some((name.as_str(), entry));
+    }
+    let want = normalize_url(key);
+    repos
+        .iter()
+        .find(|(_, e)| normalize_url(&e.url) == want)
+        .map(|(name, e)| (name.as_str(), e))
+}
+
+/// Drops a trailing `/` and `.git` so equivalent clone URLs compare equal.
+fn normalize_url(url: &str) -> &str {
+    let url = url.trim_end_matches('/');
+    url.strip_suffix(".git")
+        .unwrap_or(url)
+        .trim_end_matches('/')
+}
+
+/// A repo name becomes a directory name, so it must not carry path syntax.
+fn valid_repo_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars.next().is_some_and(|c| c.is_ascii_alphanumeric())
+        && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+}
+
+/// Checks every repo entry; error paths are `repos.<name>[.key]`.
+fn validate_repos(file: &str, repos: &RepoTable) -> Result<(), ConfigError> {
+    for (name, entry) in repos {
+        let at = |leaf: &str| format!("repos.{name}{leaf}");
+        let fail = |leaf: &str, why: &str| Err(ConfigError::new(at(leaf), why).in_file(file));
+        if !valid_repo_name(name) {
+            return fail("", "name must match [A-Za-z0-9][A-Za-z0-9._-]*");
+        }
+        if entry.url.trim().is_empty() {
+            return fail(".url", "must not be empty");
+        }
+        if let Some(b) = &entry.default_branch {
+            if b.trim().is_empty() || b.starts_with('-') {
+                return fail(
+                    ".default_branch",
+                    "must be non-empty and not start with '-'",
+                );
+            }
+        }
+        match &entry.moor_yaml {
+            Some(MoorYamlSource::Path(p)) if p.trim().is_empty() => {
+                return fail(".moor_yaml", "path must not be empty");
+            }
+            Some(MoorYamlSource::Inline(text)) => {
+                parse_repo("", text).map_err(|e| {
+                    let leaf = if e.path.is_empty() {
+                        at(".moor_yaml")
+                    } else {
+                        at(&format!(".moor_yaml.{}", e.path))
+                    };
+                    ConfigError::new(leaf, e.reason).in_file(file)
+                })?;
+            }
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 /// The optional web UI section of the controller config.
@@ -66,6 +163,7 @@ pub fn parse_controller(file: &str, text: &str) -> Result<ControllerConfig, Conf
             return Err(ConfigError::new("web.token_file", "must not be empty").in_file(file));
         }
     }
+    validate_repos(file, &cfg.repos)?;
     Ok(cfg)
 }
 

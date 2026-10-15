@@ -12,29 +12,31 @@ use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, NewTask};
 use moor_core::domain::event::CheckedCred;
 use moor_core::domain::task::{TaskInput, TaskState};
 use moor_core::seam::surface::{workspace_label, Worktree};
-use moor_core::view::{AgentLaunchView, DotfilesView, SetupView, StartView};
+use moor_core::view::StartView;
 use moor_core::{ErrorKind, StartReq, TaskId, Warning};
 
 use super::common::activity;
 use super::common::autosleep;
 use super::common::boxlock::{self, BoxLock};
-use super::common::capacity;
 use super::common::facts::{provider_caps, require_reverse_tunnel, resolved, settings};
 use super::common::provision::{
     moor_yaml, provision, reprovision, reread, Entry, Provisioned, ResyncGates,
 };
 use super::common::provisioning::dead_provisioning;
-use super::common::view::{hide_unsupported_sleep, task_view};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::store::{Store, StoreError, TaskRow};
 
 mod base;
+mod known_repo;
 mod launch;
 mod leftover;
 mod preflight;
 mod relaunch;
+mod response;
 mod watch;
+
+use response::{queued_view, set_agent, view, with_provider};
 
 /// What `start` learns before it changes anything.
 struct Facts {
@@ -62,7 +64,8 @@ struct Placed {
 /// [`CommandError`] when a read, a seam call or a store write fails.
 pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     let store = cx.store()?;
-    let (repo, bound) = locate(cx, req)?;
+    let (repo, bound, req) = locate(cx, req)?;
+    let req = &req;
     settle_all(cx, store)?;
     if let Some(row) = store.open_task_by_name(&req.name)? {
         return attach(cx, store, req, &row);
@@ -213,14 +216,6 @@ fn wake_idle(store: &Store, id: TaskId) -> Result<(), CommandError> {
     }
 }
 
-/// Puts the launch outcome in the view, naming a failure in a warning too.
-fn set_agent(v: &mut StartView, agent: AgentLaunchView) {
-    if let Some(f) = &agent.reason {
-        v.warnings_inline.push(f.text());
-    }
-    v.agent = agent;
-}
-
 /// Moves each open Task with a ready Box and no failed setup between Working and Idle.
 ///
 /// Runs before the start, which may then leave the Task it starts in another state.
@@ -244,53 +239,17 @@ pub(crate) fn settle_all(cx: &Cx, store: &Store) -> Result<(), CommandError> {
     Ok(())
 }
 
-/// [`queued_view`] for a row whose provider is not at hand; resolved only when it is queued.
-fn with_provider(cx: &Cx, row: &TaskRow, attached: bool) -> Result<StartView, CommandError> {
-    if row.state != TaskState::WaitingForBox {
-        return Ok(view(cx, row, attached));
-    }
-    let at = row.worktree.as_deref().unwrap_or(&row.repo);
-    let cfg = settings(cx, Path::new(at), &Flags::default())?;
-    Ok(queued_view(cx, row, attached, &cfg.provider.value))
-}
-
-/// The response for `row`, with the limit that queued it named in a warning.
-fn queued_view(cx: &Cx, row: &TaskRow, attached: bool, provider: &str) -> StartView {
-    let mut v = view(cx, row, attached);
-    if v.queued {
-        if let Some(lim) = capacity::limit(cx.config(), provider) {
-            v.warnings_inline.push(format!(
-                "waiting for a free box: {} allows {} at a time",
-                lim.key, lim.max
-            ));
-        }
-    }
-    v
-}
-
-/// The response for `row`; nothing past the Box runs yet.
-fn view(cx: &Cx, row: &TaskRow, attached: bool) -> StartView {
-    let mut task = task_view(row, cx.config());
-    hide_unsupported_sleep(&mut task, cx);
-    StartView {
-        task,
-        attached,
-        queued: row.state == TaskState::WaitingForBox,
-        promoted: Vec::new(),
-        setup: SetupView::default(),
-        dotfiles: DotfilesView::default(),
-        agent: AgentLaunchView::default(),
-        warnings_inline: Vec::new(),
-    }
-}
-
 /// An absolute form of `path`, relative to the invocation directory.
 fn resolve(cx: &Cx, path: &str) -> PathBuf {
     cx.cwd().join(path)
 }
 
-/// The repo root and the bound worktree; refuses bad input before any change.
-fn locate(cx: &Cx, req: &StartReq) -> Result<(PathBuf, Option<PathBuf>), CommandError> {
+/// The repo root, the bound worktree and the effective request; refuses bad input before any change.
+fn locate(cx: &Cx, req: &StartReq) -> Result<(PathBuf, Option<PathBuf>, StartReq), CommandError> {
+    if let Some(key) = &req.repo {
+        let (repo, eff) = known_repo::prepare(cx, req, key)?;
+        return Ok((repo, None, eff));
+    }
     let git = |e: crate::adapters::git::GitError| CommandError::new(ErrorKind::Failed, e);
     let repo = cx.git().toplevel(cx.cwd()).map_err(git)?;
     let bound = req.worktree.as_deref().map(|w| resolve(cx, w));
@@ -311,7 +270,7 @@ fn locate(cx: &Cx, req: &StartReq) -> Result<(PathBuf, Option<PathBuf>), Command
             )
         })?;
     }
-    Ok((repo, bound))
+    Ok((repo, bound, req.clone()))
 }
 
 /// Reads the base the Task starts from; changes nothing.

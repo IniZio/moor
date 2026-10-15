@@ -109,6 +109,9 @@ pub struct StartReq {
     /// Launch the agent with the Task's `.moor.yaml` even when it differs from its base commit.
     #[serde(default)]
     pub trust_moor_yaml: bool,
+    /// Repo known to the controller, by name or url; resolved on the controller host instead of the invocation directory.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repo: Option<String>,
 }
 
 /// Arguments of `run`.
