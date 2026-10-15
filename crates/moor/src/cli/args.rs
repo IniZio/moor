@@ -212,7 +212,7 @@ struct WaitArgs {
     /// State to wait for.
     #[arg(long = "for", value_enum)]
     wait_for: Option<WaitForArg>,
-    /// Timeout in seconds.
+    /// Timeout in seconds (default 1800).
     #[arg(long, value_name = "S")]
     timeout: Option<u64>,
 }

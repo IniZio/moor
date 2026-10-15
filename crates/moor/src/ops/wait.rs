@@ -17,6 +17,9 @@ use crate::store::RunRow;
 /// Longest pause between polls.
 const POLL: Duration = Duration::from_millis(250);
 
+/// How long `wait` polls when the request sets no timeout.
+const DEFAULT_TIMEOUT: Duration = Duration::from_mins(30);
+
 /// Run `wait`.
 pub(crate) fn run(cx: &Cx, req: &WaitReq) -> Result<WaitValue, CommandError> {
     let clock = cx.clock();
@@ -30,7 +33,9 @@ pub(crate) fn run(cx: &Cx, req: &WaitReq) -> Result<WaitValue, CommandError> {
         })?
         .id;
     let want = req.wait_for.unwrap_or(WaitFor::Idle);
-    let timeout = req.timeout_secs.map_or(Duration::MAX, Duration::from_secs);
+    let timeout = req
+        .timeout_secs
+        .map_or(DEFAULT_TIMEOUT, Duration::from_secs);
     loop {
         let elapsed = clock.instant().saturating_duration_since(started);
         let row = store.task(id)?.ok_or_else(|| {
