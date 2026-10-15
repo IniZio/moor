@@ -112,38 +112,34 @@ fn create_worktree_reuses_on_already_exists_code() {
 
 const CREATE_FAILED: &str = r#"{"error":{"code":"worktree_create_failed","message":"x"}}"#;
 
+fn create_failed() -> Reply {
+    Reply::Fail {
+        code: 1,
+        stdout: CREATE_FAILED.to_owned(),
+        stderr: String::new(),
+    }
+}
+
 #[test]
-fn create_worktree_reuses_stale_worktree_after_create_failed() {
+fn create_worktree_reports_leftover_when_create_fails_with_one_listed() {
     let (p, h) = fixture();
-    p.on(
-        Tool::Herdr,
-        &["worktree", "create"],
-        Reply::Fail {
-            code: 1,
-            stdout: CREATE_FAILED.to_owned(),
-            stderr: String::new(),
-        },
-    );
+    p.on(Tool::Herdr, &["worktree", "create"], create_failed());
     p.on(Tool::Herdr, &["worktree", "list"], ok(WT_LIST));
-    let wt = h
+    let err = h
         .create_worktree(Path::new("/r"), &name(), None)
-        .expect("reused");
-    assert_eq!(wt.path, PathBuf::from("/r/wt"));
-    assert_eq!(wt.branch, "moor/a");
+        .expect_err("leftover");
+    assert_eq!(
+        err,
+        SurfaceError::Leftover {
+            path: PathBuf::from("/r/wt")
+        }
+    );
 }
 
 #[test]
 fn create_worktree_create_failed_without_listed_worktree_errors() {
     let (p, h) = fixture();
-    p.on(
-        Tool::Herdr,
-        &["worktree", "create"],
-        Reply::Fail {
-            code: 1,
-            stdout: CREATE_FAILED.to_owned(),
-            stderr: String::new(),
-        },
-    );
+    p.on(Tool::Herdr, &["worktree", "create"], create_failed());
     p.on(
         Tool::Herdr,
         &["worktree", "list"],
@@ -151,7 +147,7 @@ fn create_worktree_create_failed_without_listed_worktree_errors() {
     );
     let err = h
         .create_worktree(Path::new("/r"), &name(), None)
-        .expect_err("no worktree to reuse");
+        .expect_err("nothing to replace");
     assert!(
         matches!(&err, SurfaceError::Failed { summary } if summary == "herdr worktree_create_failed")
     );

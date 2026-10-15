@@ -76,7 +76,11 @@ impl Herdr {
     fn call_within(&self, args: &[&str], deadline: Deadline) -> Result<String, SurfaceError> {
         match self.run_within(args, deadline) {
             Ok(out) => Ok(out),
-            Err(HerdrFailure::Surface(e) | HerdrFailure::AlreadyExists(e)) => Err(e),
+            Err(
+                HerdrFailure::Surface(e)
+                | HerdrFailure::AlreadyExists(e)
+                | HerdrFailure::CreateFailed(e),
+            ) => Err(e),
             Err(HerdrFailure::ServerNotRunning) => Err(SurfaceError::Unavailable(
                 "herdr server not running".to_owned(),
             )),

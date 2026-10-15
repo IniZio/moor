@@ -29,6 +29,7 @@ use crate::store::{Store, StoreError, TaskRow};
 
 mod base;
 mod launch;
+mod leftover;
 mod preflight;
 mod relaunch;
 
@@ -334,9 +335,7 @@ fn place(cx: &Cx, req: &StartReq, facts: &Facts) -> Result<Placed, CommandError>
             path: path.clone(),
             branch: String::new(),
         },
-        None => cx
-            .surface()
-            .create_worktree(&facts.repo, &req.name, facts.from.as_deref())?,
+        None => leftover::create_worktree(cx, req, facts)?,
     };
     let ws = cx
         .surface()

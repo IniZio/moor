@@ -103,7 +103,11 @@ impl Herdr {
     fn call(&self, args: &[&str]) -> Result<String, SurfaceError> {
         match self.run_once(args) {
             Ok(out) => Ok(out),
-            Err(HerdrFailure::Surface(e) | HerdrFailure::AlreadyExists(e)) => Err(e),
+            Err(
+                HerdrFailure::Surface(e)
+                | HerdrFailure::AlreadyExists(e)
+                | HerdrFailure::CreateFailed(e),
+            ) => Err(e),
             Err(HerdrFailure::ServerNotRunning) => self.start_and_retry(args),
         }
     }
@@ -117,7 +121,11 @@ impl Herdr {
             sleep(delay);
             match self.run_once(args) {
                 Ok(out) => return Ok(out),
-                Err(HerdrFailure::Surface(e) | HerdrFailure::AlreadyExists(e)) => return Err(e),
+                Err(
+                    HerdrFailure::Surface(e)
+                    | HerdrFailure::AlreadyExists(e)
+                    | HerdrFailure::CreateFailed(e),
+                ) => return Err(e),
                 Err(HerdrFailure::ServerNotRunning) => {}
             }
         }
@@ -178,6 +186,11 @@ impl Surface for Herdr {
             Ok(out) => out,
             Err(HerdrFailure::AlreadyExists(e)) => {
                 return self.existing_worktree(&cwd, &branch).ok_or(e)
+            }
+            Err(HerdrFailure::CreateFailed(e)) => {
+                return Err(self
+                    .existing_worktree(&cwd, &branch)
+                    .map_or(e, |w| SurfaceError::Leftover { path: w.path }))
             }
             Err(HerdrFailure::Surface(e)) => return Err(e),
             Err(HerdrFailure::ServerNotRunning) => self.start_and_retry(&args)?,
