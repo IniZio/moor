@@ -46,8 +46,13 @@ pub(super) fn factory(env: &Env) -> FeedFactory {
 
 /// Reads the bearer token from `path`, which must be owner-only and non-empty.
 pub(super) fn read_token(path: &Path) -> Result<String, String> {
+    read_secret(path, "web token file")
+}
+
+/// Reads a trimmed secret from `path`, which must be owner-only and non-empty; errors start with `label`.
+pub(super) fn read_secret(path: &Path, label: &str) -> Result<String, String> {
     let shown = path.display();
-    let fail = |why: &dyn std::fmt::Display| format!("web token file {shown}: {why}");
+    let fail = |why: &dyn std::fmt::Display| format!("{label} {shown}: {why}");
     let read = || -> io::Result<Result<String, &'static str>> {
         let mut file = File::open(path)?;
         if file.metadata()?.permissions().mode() & 0o077 != 0 {
