@@ -10,9 +10,9 @@ use crate::testing::proc::{Reply, ScriptedProc};
 
 const PROVIDERS: &str = r#"[
  {"provider":"pauser","features":["pause-resume"]},
- {"provider":"sprites"},
+ {"provider":"sprites","features":["native-sleep"]},
  {"provider":"plain"},
- {"provider":"namespace-devbox","lifecycle":["pause-resume"]}
+ {"provider":"namespace-devbox","features":["resume-rotates-host-key"],"lifecycle":["pause-resume"]}
 ]"#;
 
 fn fixture() -> (Arc<ScriptedProc>, Crabbox) {
