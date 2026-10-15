@@ -2,7 +2,6 @@
 
 use std::path::{Path, PathBuf};
 
-use moor_core::config::egress::unenforced_note;
 use moor_core::config::{Flags, TaskSettings};
 use moor_core::decide::intent::setup_dead;
 
@@ -10,25 +9,23 @@ use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, Intent, IntentChange};
 use moor_core::domain::run::SyncMode;
 use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
-use moor_core::seam::driver::{
-    AcquireReq, Acquired, DriverError, EgressApplied, EgressSupport, Released,
-};
+use moor_core::seam::driver::{AcquireReq, Acquired, DriverError, EgressPlan, Released};
 use moor_core::seam::rng::Rng;
-use moor_core::{BoxHandle, BoxPath, ErrorKind, ProviderId, TaskId, Warning};
+use moor_core::{BoxHandle, BoxPath, ErrorKind, ProviderId, TaskId};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::capacity;
 use crate::ops::common::dotfiles;
-use crate::ops::common::facts::{egress_plan, provider_caps, require_reverse_tunnel, settings};
+use crate::ops::common::facts::{provider_caps, require_reverse_tunnel, settings};
 use crate::ops::common::identity;
 use crate::ops::common::setup;
 use crate::ops::common::view::task_view;
 use crate::store::{Store, TaskRow};
 
+use self::outcome::dotfiles_failed;
 pub(crate) use self::outcome::Provisioned;
-use self::outcome::{dotfiles_failed, with_egress_hint};
 use self::rerun::rerun_sync;
 use self::retry::{dotfiles_retry, retry_dotfiles};
 
@@ -160,8 +157,7 @@ pub(crate) fn provision(
 ) -> Result<Provisioned, CommandError> {
     let task = reread(store, id)?;
     let provider = ProviderId::new(cfg.provider.value.clone());
-    let caps = require_reverse_tunnel(cfg, provider_caps(cx, cfg)?)?;
-    let egress = egress_plan(cx.engine().egress_hosts(), cfg, caps.egress)?;
+    require_reverse_tunnel(cfg, provider_caps(cx, cfg)?)?;
     let mut requested = Decision::new(id);
     requested.task_input = entry.begin();
     let requested = requested
@@ -194,42 +190,24 @@ pub(crate) fn provision(
     } else {
         store.apply(requested)?;
     }
-    let unenforced = warn_unenforced(cx, cfg, caps.egress);
     let worktree = PathBuf::from(task.worktree.as_deref().unwrap_or(&task.repo));
     let req = AcquireReq {
         provider,
         task: id,
         name: task.name,
-        egress,
+        egress: EgressPlan::Open,
         class: Some(cfg.size.value.as_str().to_owned()),
         nonce: nonce(cx.rng()),
         worktree: task.worktree.as_deref().map(PathBuf::from),
     };
     match cx.driver().acquire(&req) {
         Ok(got) => {
-            let applied = if unenforced {
-                EgressApplied::NotEnforced
-            } else {
-                got.egress
-            };
-            record_acquired(store, id, &got, applied)?;
+            record_acquired(store, id, &got)?;
             let target = SetupTarget::new(&got, &worktree);
             run_and_record(cx, store, id, entry.begin().is_some(), &target, cfg)
         }
         Err(e) => Err(failed(cx, store, id, entry, &req, e)),
     }
-}
-
-/// Warns when the provider cannot apply the allow-list; returns whether it warned.
-fn warn_unenforced(cx: &Cx, cfg: &TaskSettings, support: EgressSupport) -> bool {
-    let Some(note) = unenforced_note(support, cfg.enforce_egress) else {
-        return false;
-    };
-    cx.warn(Warning {
-        code: "egress_unenforced".to_owned(),
-        message: note.to_owned(),
-    });
-    true
 }
 
 /// Six lowercase hex chars drawn from the RNG, so each attempt differs.
@@ -238,12 +216,7 @@ pub(crate) fn nonce(rng: &dyn Rng) -> String {
 }
 
 /// Records an acquired Box under the setup intent.
-fn record_acquired(
-    store: &Store,
-    id: TaskId,
-    got: &Acquired,
-    applied: EgressApplied,
-) -> Result<(), CommandError> {
+fn record_acquired(store: &Store, id: TaskId, got: &Acquired) -> Result<(), CommandError> {
     let acquired = Decision::new(id)
         .box_input(BoxInput::Acquired {
             handle: got.handle.clone(),
@@ -251,7 +224,7 @@ fn record_acquired(
         .set(Fields {
             box_handle: Field::Set(got.handle.clone()),
             box_workdir: Field::Set(got.workdir.as_str().to_owned()),
-            egress: Field::Set(applied.as_str().to_owned()),
+            egress: Field::Clear,
             ..Fields::default()
         })
         .intent(IntentChange::Set(Intent::Setup {
@@ -312,16 +285,7 @@ fn run_and_record(
     };
     let dotfiles = match dotfiles::apply(cx, target.handle, id, target.worktree, cfg) {
         Ok(d) => d,
-        Err(f) => {
-            return Err(dotfiles_failed(
-                cx,
-                store,
-                id,
-                advance,
-                setup_line,
-                with_egress_hint(cx, cfg, f),
-            ))
-        }
+        Err(f) => return Err(dotfiles_failed(cx, store, id, advance, setup_line, f)),
     };
     let mut done = Decision::new(id);
     done.task_input = advance.then(|| TaskInput::BoxReady {

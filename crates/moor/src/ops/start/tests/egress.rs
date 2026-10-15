@@ -22,24 +22,16 @@ fn start_on(support: EgressSupport) -> (Option<String>, Vec<String>) {
 }
 
 #[test]
-fn a_provider_without_a_policy_stores_open_egress() {
-    let (egress, codes) = start_on(EgressSupport::None);
-    assert_eq!(egress.as_deref(), Some("none"));
-    assert!(!codes.contains(&"egress_unenforced".to_owned()));
-}
-
-#[test]
-fn an_applied_allow_list_stores_enforced() {
-    let (egress, codes) = start_on(EgressSupport::Enforced);
-    assert_eq!(egress.as_deref(), Some("enforced"));
-    assert!(!codes.contains(&"egress_unenforced".to_owned()));
-}
-
-#[test]
-fn a_create_only_provider_without_the_opt_in_stores_not_enforced_and_warns() {
-    let (egress, codes) = start_on(EgressSupport::OptIn);
-    assert_eq!(egress.as_deref(), Some("not_enforced"));
-    assert!(codes.contains(&"egress_unenforced".to_owned()));
+fn the_box_egress_is_left_unrecorded_and_never_warned_about() {
+    for support in [
+        EgressSupport::None,
+        EgressSupport::Enforced,
+        EgressSupport::OptIn,
+    ] {
+        let (egress, codes) = start_on(support);
+        assert_eq!(egress, None);
+        assert!(!codes.contains(&"egress_unenforced".to_owned()));
+    }
 }
 
 #[test]
