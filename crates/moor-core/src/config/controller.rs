@@ -80,6 +80,24 @@ fn valid_repo_name(name: &str) -> bool {
         && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
 }
 
+/// True when the url embeds a password or token. Urls reach clients inside
+/// clone errors, so secrets must not live in them. A bare user (`git@host`)
+/// is allowed for ssh forms only.
+fn url_has_credentials(url: &str) -> bool {
+    let url = url.trim();
+    if let Some((scheme, rest)) = url.split_once("://") {
+        let authority = rest.split('/').next().unwrap_or("");
+        let Some((userinfo, _)) = authority.rsplit_once('@') else {
+            return false;
+        };
+        let ssh = scheme.eq_ignore_ascii_case("ssh") || scheme.eq_ignore_ascii_case("git+ssh");
+        return !ssh || userinfo.contains(':');
+    }
+    // scp-like `user:pass@host:path`
+    url.split_once('@')
+        .is_some_and(|(userinfo, _)| !userinfo.contains('/') && userinfo.contains(':'))
+}
+
 /// Checks every repo entry; error paths are `repos.<name>[.key]`.
 fn validate_repos(file: &str, repos: &RepoTable) -> Result<(), ConfigError> {
     for (name, entry) in repos {
@@ -90,6 +108,12 @@ fn validate_repos(file: &str, repos: &RepoTable) -> Result<(), ConfigError> {
         }
         if entry.url.trim().is_empty() {
             return fail(".url", "must not be empty");
+        }
+        if url_has_credentials(&entry.url) {
+            return fail(
+                ".url",
+                "credentials must not be in the url; use the host's git credential setup",
+            );
         }
         if let Some(b) = &entry.default_branch {
             if b.trim().is_empty() || b.starts_with('-') {

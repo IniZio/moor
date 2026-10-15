@@ -1,4 +1,6 @@
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 use moor_core::config::{RepoEntry, RepoTable};
 use moor_core::seam::proc::Tool;
@@ -148,5 +150,25 @@ fn a_repo_is_found_by_url() {
     let w = known(table(&[("app", entry(URL, None))]));
     let v = run(&w.cx, &repo_req("https://example.com/acme/app")).unwrap();
     assert_eq!(v.task.repo, cache(&w, "app").display().to_string());
+    assert_eq!(cloned(&w).len(), 1);
+}
+
+#[test]
+fn a_start_waits_for_the_repo_lock_and_then_clones_once() {
+    let w = known(table(&[("app", entry(URL, None))]));
+    let dest = cache(&w, "app");
+    std::fs::create_dir_all(dest.parent().unwrap()).unwrap();
+    let held = std::fs::File::create(dest.with_file_name("app.lock")).unwrap();
+    held.lock().unwrap();
+    let released = AtomicBool::new(false);
+    std::thread::scope(|s| {
+        s.spawn(|| {
+            std::thread::sleep(Duration::from_millis(150));
+            released.store(true, Ordering::SeqCst);
+            held.unlock().unwrap();
+        });
+        run(&w.cx, &repo_req("app")).unwrap();
+        assert!(released.load(Ordering::SeqCst), "start ran under the lock");
+    });
     assert_eq!(cloned(&w).len(), 1);
 }

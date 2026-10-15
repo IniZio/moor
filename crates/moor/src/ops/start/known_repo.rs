@@ -1,7 +1,8 @@
 //! A repo the controller knows: it is cloned and kept on the controller host, not read from the
 //! invocation directory.
 
-use std::path::PathBuf;
+use std::fs::File;
+use std::path::{Path, PathBuf};
 
 use moor_core::config::find_repo;
 use moor_core::{ErrorKind, StartReq};
@@ -41,6 +42,8 @@ pub(super) fn prepare(
         ));
     };
     let dest = cx.repo_cache(name)?;
+    // Concurrent starts on one controller must not race the clone; held until return.
+    let _lock = lock_repo(&dest)?;
     if !dest.join(".git").exists() {
         let failed = |e: &dyn std::fmt::Display| {
             CommandError::new(
@@ -66,4 +69,28 @@ pub(super) fn prepare(
         eff.base = Some(sha);
     }
     Ok((dest, eff))
+}
+
+/// Exclusive flock on `<dest>.lock`, blocking until any other holder is done.
+fn lock_repo(dest: &Path) -> Result<File, CommandError> {
+    let mut path = dest.as_os_str().to_owned();
+    path.push(".lock");
+    let path = PathBuf::from(path);
+    let failed = |e: std::io::Error| {
+        CommandError::new(
+            ErrorKind::Failed,
+            format!("cannot lock {}: {e}", path.display()),
+        )
+    };
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(failed)?;
+    }
+    let file = File::options()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(&path)
+        .map_err(failed)?;
+    file.lock().map_err(failed)?;
+    Ok(file)
 }
