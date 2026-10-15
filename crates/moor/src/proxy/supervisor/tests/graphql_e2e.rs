@@ -378,26 +378,24 @@ fn task_repo_query_reaches_github_with_the_credential() {
 }
 
 #[test]
-fn other_repo_query_is_refused_audited_and_never_forwarded() {
+fn other_repo_query_reaches_github_without_any_credential() {
     let rig = rig();
     let (status, body) = query(&rig.client(), "victim", "secrets");
-    assert_eq!(status, 403);
-    let message: serde_json::Value = serde_json::from_str(&body).unwrap();
-    let text = message
-        .get("message")
-        .and_then(serde_json::Value::as_str)
-        .unwrap();
-    assert!(text.starts_with("moor: "), "{text}");
-    assert!(!body.contains(SECRET));
-    assert!(rig.seen().is_empty());
-
-    let event = rig.refusal();
-    for want in ["api.github.com", "graphql_scope", "POST"] {
-        assert!(event.contains(want), "{want} missing from {event}");
-    }
-    for leak in [SECRET, "victim", "secrets", "repository("] {
-        assert!(!event.contains(leak), "{leak} leaked into {event}");
-    }
+    assert_eq!((status, body.as_str()), (200, GRAPHQL_REPLY));
+    let seen = rig.seen();
+    let [only] = seen.as_slice() else {
+        unreachable!("{seen:?}")
+    };
+    assert_eq!(only.line, "POST /graphql HTTP/1.1");
+    assert_eq!(only.authorization, None);
+    rig.live.as_ref().unwrap().drain(&rig.deps(), rig.task);
+    let refused = rig
+        .store
+        .events(rig.task, 100)
+        .unwrap()
+        .into_iter()
+        .any(|e| e.kind == "egress_refused");
+    assert!(!refused, "out-of-scope forwarding is not a refusal");
     rig.live.unwrap().stop();
 }
 

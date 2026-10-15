@@ -19,15 +19,13 @@ const MAX_LOOKUP: usize = 1024 * 1024;
 pub(super) enum Gate {
     /// Forward the request head and these exact body bytes.
     Forward(Vec<u8>),
+    /// Forward the request without its credential, with these exact body
+    /// bytes. The request is outside the Task repo or could not be judged.
+    Anonymous(Vec<u8>),
     /// Refuse with this status and message; the reason is recorded.
     Refuse(u16, String),
     /// Close without a reply.
     Abort,
-}
-
-/// A refusal for `reason`.
-pub(super) fn deny(reason: &str) -> Gate {
-    Gate::Refuse(403, format!("moor: {reason}"))
 }
 
 /// Reads the body of a request to `/graphql` and judges it.
@@ -50,41 +48,55 @@ pub(super) fn gate(shared: &Shared, head: &Head, r: &mut impl BufRead) -> Gate {
         Err(_) => return Gate::Abort,
     };
     let Some(repo) = shared.repo.as_ref() else {
-        return deny("no Task repo");
+        return Gate::Anonymous(body.raw);
     };
     match judge(&body.decoded, repo) {
         Verdict::Allow => Gate::Forward(body.raw),
-        Verdict::Deny(reason) => deny(reason.as_str()),
+        Verdict::Deny(_) => Gate::Anonymous(body.raw),
         Verdict::NeedsNodeCheck(ids) => match nodes_in_repo(shared, head, repo, &ids) {
-            Ok(true) => Gate::Forward(body.raw),
-            Ok(false) => deny("node id outside the Task repo"),
-            Err(why) => deny(why),
+            Some(true) => Gate::Forward(body.raw),
+            Some(false) | None => Gate::Anonymous(body.raw),
         },
     }
 }
 
+/// `head` without any `Authorization` header, in both `raw` and `headers`.
+pub(crate) fn without_credential(head: &Head) -> Head {
+    let mut raw = Vec::with_capacity(head.raw.len());
+    for (i, line) in head.raw.split_inclusive(|&b| b == b'\n').enumerate() {
+        let name = line.split(|&b| b == b':').next().unwrap_or_default();
+        if i > 0 && name.eq_ignore_ascii_case(b"authorization") {
+            continue;
+        }
+        raw.extend_from_slice(line);
+    }
+    Head {
+        raw,
+        headers: head
+            .headers
+            .iter()
+            .filter(|(n, _)| !n.eq_ignore_ascii_case("authorization"))
+            .cloned()
+            .collect(),
+        ..head.clone()
+    }
+}
+
 /// Whether every id belongs to `repo`, asking upstream about uncached ones.
-fn nodes_in_repo(
-    shared: &Shared,
-    head: &Head,
-    repo: &RepoRef,
-    ids: &[NodeId],
-) -> Result<bool, &'static str> {
+fn nodes_in_repo(shared: &Shared, head: &Head, repo: &RepoRef, ids: &[NodeId]) -> Option<bool> {
     let uncached: Vec<NodeId> = ids
         .iter()
         .filter(|id| shared.cache.get(id).is_none())
         .cloned()
         .collect();
     if !uncached.is_empty() {
-        let auth = head
-            .header("authorization")
-            .ok_or("node lookup needs credentials")?;
-        let verdicts = lookup(shared, repo, auth, &uncached).ok_or("node lookup failed")?;
+        let auth = head.header("authorization")?;
+        let verdicts = lookup(shared, repo, auth, &uncached)?;
         for (id, belongs) in uncached.iter().zip(verdicts) {
             shared.cache.put(id, belongs);
         }
     }
-    Ok(ids.iter().all(|id| shared.cache.get(id) == Some(true)))
+    Some(ids.iter().all(|id| shared.cache.get(id) == Some(true)))
 }
 
 /// Asks upstream, on a new connection, which of `ids` are in `repo`.

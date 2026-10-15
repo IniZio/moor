@@ -496,6 +496,13 @@ fn fixed(reply: Vec<u8>) -> Responder {
 }
 
 /// Asserts a refusal response: status, `moor: ` message, and no leak of the credential.
+/// Asserts `w` reached upstream with no credential of any kind.
+fn assert_anonymous(w: &Wire) {
+    assert!(w.header("authorization").is_none(), "{}", w.head);
+    assert!(!w.head.contains(TOKEN), "{}", w.head);
+    assert!(!String::from_utf8_lossy(&w.raw).contains(TOKEN));
+}
+
 fn assert_refused(resp: &Wire, status: u16) {
     assert_eq!(resp.status(), status, "{}", resp.head);
     let message = resp.message().expect("json message");
