@@ -150,6 +150,12 @@ fn a_diverged_branch_is_left_alone_with_a_warning() {
     assert_eq!(v.task.state, TaskState::Closed);
     assert!(!merged(&f));
     assert_eq!(warning_codes(&f), ["branch_not_synced"]);
+    assert!(v.worktree_kept);
+    assert!(!f
+        .surface
+        .calls()
+        .iter()
+        .any(|c| c.starts_with("remove_worktree")));
 }
 
 #[test]
