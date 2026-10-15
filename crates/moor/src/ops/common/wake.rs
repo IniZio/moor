@@ -20,30 +20,46 @@ use crate::ops::common::view::{hide_unsupported_box_sleep, task_view};
 use crate::ops::start::revive_after_wake;
 use crate::store::{Store, TaskRow};
 
-/// Wake the Task and its Box when either is Asleep; `Ok(true)` when it did.
+/// Wake the Task and its Box when either is Asleep, leaving the Proxy tunnel parked.
 ///
+/// For callers that need the Box awake but not reachable through the Proxy.
 /// A Gone Box is never resumed. A Box keeps its working directory across
 /// pause and resume, so a usable stored workdir is reused without asking the
 /// Driver. Only a Box with no usable stored workdir is looked up and stored
 /// with the wake. When the Driver fails to resume the Box or to find its
 /// workdir, nothing is applied and the Task and Box stay Asleep, so the next
-/// call tries both again. A woken Box with a live Proxy waits for its tunnel;
-/// when that fails the Box stays awake and the call fails.
-pub(crate) fn wake_if_asleep(cx: &Cx, store: &Store, row: &TaskRow) -> Result<bool, CommandError> {
+/// call tries both again.
+/// `Ok(true)` when it woke anything. The Proxy tunnel stays parked and no agent
+/// is relaunched; close uses this since it needs neither.
+pub(crate) fn wake_box_if_asleep(
+    cx: &Cx,
+    store: &Store,
+    row: &TaskRow,
+) -> Result<bool, CommandError> {
     wake(cx, store, row).map(|w| w.any)
 }
 
-/// Like `wake_if_asleep`, then relaunches the agent when waking the Box left it gone.
+/// Like `wake_box_if_asleep`, then restores the tunnel and relaunches a gone agent.
 ///
-/// A Box can cold-boot on resume and lose its agent process. Close uses
-/// `wake_if_asleep` instead, since it has no use for a fresh agent. When the
-/// relaunch fails the Box stays awake and the error is returned.
+/// A Box can cold-boot on resume and lose its agent process. The tunnel comes
+/// back first because the agent reaches the model through the Proxy. When the
+/// tunnel or the relaunch fails the Box stays awake and the error is returned.
 pub(crate) fn wake_and_revive(cx: &Cx, store: &Store, row: &TaskRow) -> Result<bool, CommandError> {
-    let woke = wake(cx, store, row)?;
+    let woke = wake_with_tunnel(cx, store, row)?;
     if woke.box_resumed {
         revive_after_wake(cx, store, row.id)?;
     }
     Ok(woke.any)
+}
+
+/// Wake the Task and Box, then restore the tunnel when the Box was resumed.
+fn wake_with_tunnel(cx: &Cx, store: &Store, row: &TaskRow) -> Result<Woke, CommandError> {
+    let woke = wake(cx, store, row)?;
+    if woke.box_resumed {
+        // The Box stays awake when the tunnel cannot return; the op fails instead.
+        restore_tunnel(cx, store, row.id)?;
+    }
+    Ok(woke)
 }
 
 /// What `wake` did.
@@ -100,10 +116,6 @@ fn wake(cx: &Cx, store: &Store, row: &TaskRow) -> Result<Woke, CommandError> {
         });
     }
     store.apply(d)?;
-    if box_asleep {
-        // The Box stays awake when the tunnel cannot return; the op fails instead.
-        restore_tunnel(cx, store, row.id)?;
-    }
     Ok(Woke {
         any: true,
         box_resumed: box_asleep,

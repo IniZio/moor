@@ -22,7 +22,7 @@ use crate::ops::common::promote::promote_waiting;
 use crate::ops::common::reports;
 use crate::ops::common::transcript::{self, Saved};
 use crate::ops::common::view::task_view;
-use crate::ops::common::wake::wake_if_asleep;
+use crate::ops::common::wake::wake_box_if_asleep;
 use crate::store::{BoxRow, Store, TaskRow};
 
 /// Closes a task: gate, transcript save, agent stop, Box teardown and release, Workspace close.
@@ -174,7 +174,8 @@ fn box_check(
     if !live(row) {
         return Ok(BoxCheck::Skipped);
     }
-    match wake_if_asleep(cx, store, row) {
+    // The tunnel stays parked: close needs the Box awake, not reachable through the Proxy.
+    match wake_box_if_asleep(cx, store, row) {
         Ok(true) => {
             if let Some(fresh) = store.task(row.id)? {
                 *row = fresh;

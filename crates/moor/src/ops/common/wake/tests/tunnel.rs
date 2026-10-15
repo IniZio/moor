@@ -4,7 +4,9 @@ use std::time::Duration;
 
 use moor_core::domain::boxes::BoxState;
 
-use super::{fx, row, sleep, wake_if_asleep, Fx};
+use moor_core::seam::surface::SurfaceError;
+
+use super::{fx, row, sleep, wake_and_revive, wake_box_if_asleep, wake_if_asleep, with_agent, Fx};
 use crate::store::{ProxyPorts, ReadyProc, TunnelAck, TunnelWant};
 use crate::testing::rng::FakeRng;
 
@@ -73,4 +75,52 @@ fn wake_without_a_proxy_makes_no_tunnel_request() {
     let store = f.cx.store().unwrap();
     assert!(wake_if_asleep(&f.cx, store, &row(&f)).unwrap());
     assert!(store.tunnel_request(f.id).unwrap().is_none());
+}
+
+#[test]
+fn the_tunnel_is_up_before_the_agent_relaunches() {
+    let f = fx();
+    with_agent(&f);
+    sleep(&f);
+    live_proxy(&f);
+    f.surface.push_pane_obs("p-1", Err(SurfaceError::NotFound));
+    let store = f.cx.store().unwrap();
+    store.ack_tunnel(f.id, &TunnelAck::Up { seq: 1 }).unwrap();
+    assert!(wake_and_revive(&f.cx, store, &row(&f)).unwrap());
+    let req = store.tunnel_request(f.id).unwrap().unwrap();
+    assert_eq!(req.want, TunnelWant::Up);
+    assert_eq!(f.engine.launches().len(), 1);
+}
+
+#[test]
+fn tunnel_failure_attempts_no_relaunch() {
+    let f = fx();
+    with_agent(&f);
+    sleep(&f);
+    live_proxy(&f);
+    f.surface.push_pane_obs("p-1", Err(SurfaceError::NotFound));
+    let store = f.cx.store().unwrap();
+    let failed = TunnelAck::Failed {
+        seq: 1,
+        error: "tunnel boom".into(),
+    };
+    store.ack_tunnel(f.id, &failed).unwrap();
+    let err = wake_and_revive(&f.cx, store, &row(&f)).unwrap_err();
+    assert!(err.error.to_string().contains("tunnel boom"), "{err:?}");
+    assert_eq!(box_state(&f), BoxState::Ready);
+    assert!(f.engine.launches().is_empty());
+}
+
+#[test]
+fn waking_only_the_box_leaves_the_tunnel_and_the_agent_alone() {
+    let f = fx();
+    with_agent(&f);
+    sleep(&f);
+    live_proxy(&f);
+    f.surface.push_pane_obs("p-1", Err(SurfaceError::NotFound));
+    let store = f.cx.store().unwrap();
+    assert!(wake_box_if_asleep(&f.cx, store, &row(&f)).unwrap());
+    assert!(store.tunnel_request(f.id).unwrap().is_none());
+    assert!(f.engine.launches().is_empty());
+    assert_eq!(box_state(&f), BoxState::Ready);
 }

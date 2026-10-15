@@ -1,4 +1,4 @@
-//! Tests for `wake_if_asleep`.
+//! Tests for waking an Asleep Task and Box.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -12,15 +12,21 @@ use moor_core::seam::proc::Tool;
 use moor_core::seam::surface::{PaneRef, SurfaceError};
 use moor_core::{BoxHandle, BoxPath, ErrorKind, ProviderId, TaskId, TaskName};
 
-use super::{wake_and_revive, wake_if_asleep};
+use super::{wake_and_revive, wake_box_if_asleep, wake_with_tunnel};
 use crate::cx::Cx;
-use crate::store::TaskRow;
+use crate::error::CommandError;
+use crate::store::{Store, TaskRow};
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::proc::{Reply, ScriptedProc};
 use crate::testing::surface::FakeSurface;
 
 mod tunnel;
+
+/// Wake and restore the tunnel, without relaunching the agent.
+fn wake_if_asleep(cx: &Cx, store: &Store, row: &TaskRow) -> Result<bool, CommandError> {
+    wake_with_tunnel(cx, store, row).map(|w| w.any)
+}
 
 struct Fx {
     _dir: tempfile::TempDir,
@@ -409,6 +415,6 @@ fn plain_wake_leaves_a_gone_agent_alone() {
     sleep(&f);
     f.surface.push_pane_obs("p-1", Err(SurfaceError::NotFound));
     let store = f.cx.store().unwrap();
-    assert!(wake_if_asleep(&f.cx, store, &row(&f)).unwrap());
+    assert!(wake_box_if_asleep(&f.cx, store, &row(&f)).unwrap());
     assert!(f.engine.launches().is_empty());
 }
