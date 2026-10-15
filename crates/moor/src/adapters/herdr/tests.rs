@@ -137,6 +137,40 @@ fn create_worktree_reports_leftover_when_create_fails_with_one_listed() {
 }
 
 #[test]
+fn create_worktree_never_reports_the_repo_checkout_as_leftover() {
+    let (p, h) = fixture();
+    p.on(Tool::Herdr, &["worktree", "create"], create_failed());
+    p.on(
+        Tool::Herdr,
+        &["worktree", "list"],
+        ok(r#"{"id":"cli:worktree:list","result":{"worktrees":[{"path":"/r","branch":"moor/a"}]}}"#),
+    );
+    let err = h
+        .create_worktree(Path::new("/r"), &name(), None)
+        .expect_err("main checkout is not a leftover");
+    assert!(
+        matches!(&err, SurfaceError::Failed { summary } if summary == "herdr worktree_create_failed")
+    );
+}
+
+#[test]
+fn create_worktree_never_reports_the_main_checkout_as_leftover_from_a_linked_repo() {
+    let (p, h) = fixture();
+    p.on(Tool::Herdr, &["worktree", "create"], create_failed());
+    p.on(
+        Tool::Herdr,
+        &["worktree", "list"],
+        ok(r#"{"id":"cli:worktree:list","result":{"worktrees":[{"path":"/main","branch":"moor/a","is_linked_worktree":false}]}}"#),
+    );
+    let err = h
+        .create_worktree(Path::new("/r/wt"), &name(), None)
+        .expect_err("main checkout is not a leftover");
+    assert!(
+        matches!(&err, SurfaceError::Failed { summary } if summary == "herdr worktree_create_failed")
+    );
+}
+
+#[test]
 fn create_worktree_create_failed_without_listed_worktree_errors() {
     let (p, h) = fixture();
     p.on(Tool::Herdr, &["worktree", "create"], create_failed());

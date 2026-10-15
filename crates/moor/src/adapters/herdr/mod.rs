@@ -8,7 +8,7 @@ mod resume;
 #[cfg(test)]
 mod tests;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use std::thread::sleep;
@@ -139,13 +139,17 @@ impl Herdr {
         parse::worktree_list(&self.call(&["worktree", "list", "--cwd", dir])?)
     }
 
-    /// The worktree already on `branch`, when herdr lists one.
+    /// The worktree already on `branch`, when herdr lists one that is neither
+    /// flagged as the main checkout nor the checkout at `dir` itself.
     fn existing_worktree(&self, dir: &str, branch: &str) -> Option<Worktree> {
-        let found = self
-            .list_worktrees(dir)
-            .ok()?
-            .into_iter()
-            .find(|e| e.branch.as_deref() == Some(branch))?;
+        let root = std::fs::canonicalize(dir).unwrap_or_else(|_| PathBuf::from(dir));
+        let found = self.list_worktrees(dir).ok()?.into_iter().find(|e| {
+            e.branch.as_deref() == Some(branch)
+                && e.is_linked_worktree != Some(false)
+                && e.path.as_deref().is_some_and(|p| {
+                    std::fs::canonicalize(p).unwrap_or_else(|_| p.to_owned()) != root
+                })
+        })?;
         Some(Worktree {
             path: found.path?,
             branch: branch.to_owned(),
