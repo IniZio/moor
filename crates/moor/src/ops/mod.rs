@@ -20,6 +20,8 @@ mod version;
 mod wait;
 mod wake;
 
+pub(crate) use start::settle_all;
+
 #[cfg(test)]
 mod tests;
 

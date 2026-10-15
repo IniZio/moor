@@ -49,3 +49,20 @@ fn empty_string_is_rejected() {
         assert_eq!(e.file, "c.yaml");
     }
 }
+
+#[test]
+fn settle_interval_parses_and_defaults_to_five_seconds() {
+    let c = parse_controller("c.yaml", "settle_every_secs: 30\n").unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(c.settle_every(), std::time::Duration::from_secs(30));
+    assert_eq!(
+        ControllerConfig::default().settle_every(),
+        std::time::Duration::from_secs(5)
+    );
+}
+
+#[test]
+fn zero_settle_interval_names_key() {
+    let e = err("settle_every_secs: 0\n");
+    assert_eq!(e.path, "settle_every_secs");
+    assert_eq!(e.file, "c.yaml");
+}

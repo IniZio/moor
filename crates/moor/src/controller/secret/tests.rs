@@ -95,9 +95,12 @@ fn exchange(cx: Cx, requests: &[Request]) -> (String, String, Vec<Value>) {
         .join("\n")
         + "\n";
     let mut out = Vec::new();
-    serve(Cursor::new(input.clone().into_bytes()), &mut out, |r| {
-        moor.call(r)
-    });
+    serve(
+        Cursor::new(input.clone().into_bytes()),
+        &mut out,
+        |r| moor.call(r),
+        |_, _| {},
+    );
     let out = String::from_utf8(out).expect("utf8");
     let frames = out
         .lines()
