@@ -66,6 +66,7 @@ pub(super) const SHAPES: &[Shape] = &[
             ("statusCheckRollup", C("rollup")),
             ("autoMergeRequest", C("automerge")),
             ("projectItems", N("projitem")),
+            ("projectCards", N("projcard")),
             ("comments", N("comment")),
             ("closingIssuesReferences", N("issue")),
             ("files", N("file")),
@@ -94,6 +95,21 @@ pub(super) const SHAPES: &[Shape] = &[
     Shape {
         name: "project",
         leaves: &["id", "title", "number", "url", "closed"],
+        links: &[],
+    },
+    Shape {
+        name: "projcard",
+        leaves: &["id"],
+        links: &[("project", C("classicproj")), ("column", C("projcol"))],
+    },
+    Shape {
+        name: "classicproj",
+        leaves: &["id", "name"],
+        links: &[],
+    },
+    Shape {
+        name: "projcol",
+        leaves: &["id", "name"],
         links: &[],
     },
     Shape {
