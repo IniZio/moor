@@ -52,14 +52,6 @@ const GATE_VARS: [&str; 8] = [
     "token",
 ];
 
-/// Platform secrets that hosting platforms put in the Box environment. The agent must never
-/// inherit them, whatever env names the repo or rules ask for.
-pub(super) const PLATFORM_SECRET_VARS: [&str; 3] = [
-    "AGENT37_STARTER_TOKEN",
-    "OPENCLAW_STARTER_TOKEN",
-    "AGENT37_MANAGED_TOKEN",
-];
-
 /// What the profile is built from.
 pub(super) struct SandboxInput<'a> {
     /// Project working directory.
@@ -74,23 +66,25 @@ pub(super) struct SandboxInput<'a> {
     pub(super) env_names: Vec<String>,
     /// Variables the sandbox sets for the agent alone: repo `env` and rule `box_env`.
     pub(super) set_vars: Vec<(String, String)>,
+    /// Names that never reach the sandbox, whatever the repo or rules ask for.
+    pub strip_env: &'a [String],
 }
 
 /// True when `name` may be passed into the sandbox.
-fn passable(name: &str) -> bool {
+fn passable(name: &str, strip_env: &[String]) -> bool {
     !name.is_empty()
         && !name.starts_with("NSC_")
         && !name.eq_ignore_ascii_case("token")
         && !GATE_VARS.contains(&name)
-        && !PLATFORM_SECRET_VARS.contains(&name)
+        && !strip_env.iter().any(|s| s == name)
 }
 
 /// The sorted, deduplicated environment allow list.
-fn allow_vars(env_names: &[String]) -> Vec<String> {
+fn allow_vars(env_names: &[String], strip_env: &[String]) -> Vec<String> {
     let mut vars: Vec<String> = BASE_VARS
         .iter()
         .map(|n| (*n).to_owned())
-        .chain(env_names.iter().filter(|n| passable(n)).cloned())
+        .chain(env_names.iter().filter(|n| passable(n, strip_env)).cloned())
         .collect();
     vars.sort();
     vars.dedup();
@@ -153,11 +147,11 @@ pub(super) fn profile(input: &SandboxInput) -> String {
             "read_file": ["/etc/gitconfig", at(".gitconfig")],
         },
         "environment": {
-            "allow_vars": allow_vars(&input.env_names),
+            "allow_vars": allow_vars(&input.env_names, input.strip_env),
             "set_vars": input
                 .set_vars
                 .iter()
-                .filter(|(n, _)| !PLATFORM_SECRET_VARS.contains(&n.as_str()))
+                .filter(|(n, _)| !input.strip_env.contains(n))
                 .cloned()
                 .collect::<BTreeMap<_, _>>(),
         },

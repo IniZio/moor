@@ -5,7 +5,6 @@ use serde_json::Value;
 
 use super::{
     check_failure, check_script, harden_lines, profile, wrap, SandboxInput, NOT_INSTALLED,
-    PLATFORM_SECRET_VARS,
 };
 
 const SUM: &str = "6da665b61999570c10dffc7da78828fe1fb7f3cac53319e505cebecaef17037f";
@@ -24,6 +23,7 @@ fn doc(env_names: &[&str]) -> Value {
         tmp: &tmp,
         env_names: env_names.iter().map(|s| (*s).to_owned()).collect(),
         set_vars: vec![("APP_MODE".to_owned(), "it's".to_owned())],
+        strip_env: &[],
     };
     serde_json::from_str(&profile(&input)).unwrap()
 }
@@ -110,7 +110,11 @@ fn env_allow_list_drops_provider_and_gate_names() {
     }
 }
 
-fn doc_with_set_vars(env_names: &[&str], set_vars: Vec<(String, String)>) -> Value {
+fn doc_with_set_vars(
+    env_names: &[&str],
+    set_vars: Vec<(String, String)>,
+    strip_env: &[String],
+) -> Value {
     let (w, h, c) = (path("/work/p"), path("/home/u"), path("/tmp/cred"));
     let tmp = path("/home/u/.moor-tmp-t-n");
     let input = SandboxInput {
@@ -120,25 +124,48 @@ fn doc_with_set_vars(env_names: &[&str], set_vars: Vec<(String, String)>) -> Val
         tmp: &tmp,
         env_names: env_names.iter().map(|s| (*s).to_owned()).collect(),
         set_vars,
+        strip_env,
     };
     serde_json::from_str(&profile(&input)).unwrap()
 }
 
 #[test]
-fn platform_secret_names_never_reach_the_sandbox_environment() {
-    let set_vars = PLATFORM_SECRET_VARS
-        .iter()
-        .map(|n| ((*n).to_owned(), "secret".to_owned()))
-        .chain([("APP_MODE".to_owned(), "x".to_owned())])
-        .collect();
-    let d = doc_with_set_vars(&PLATFORM_SECRET_VARS, set_vars);
+fn stripped_names_never_reach_the_sandbox_environment() {
+    let strip = ["PLATFORM_TOKEN".to_owned()];
+    let set_vars = vec![
+        ("PLATFORM_TOKEN".to_owned(), "secret".to_owned()),
+        ("APP_MODE".to_owned(), "x".to_owned()),
+    ];
+    let d = doc_with_set_vars(&["PLATFORM_TOKEN", "APP_ENV"], set_vars, &strip);
     let allowed = strings(at(&d, "/environment/allow_vars"));
     let set = at(&d, "/environment/set_vars").as_object().unwrap();
-    for name in PLATFORM_SECRET_VARS {
-        assert!(!allowed.contains(&name.to_owned()), "allow_vars: {name}");
-        assert!(!set.contains_key(name), "set_vars: {name}");
-    }
+    assert!(
+        !allowed.contains(&"PLATFORM_TOKEN".to_owned()),
+        "allow_vars"
+    );
+    assert!(allowed.contains(&"APP_ENV".to_owned()));
+    assert!(!set.contains_key("PLATFORM_TOKEN"), "set_vars");
     assert!(set.contains_key("APP_MODE"));
+}
+
+#[test]
+fn stripped_names_are_dropped_from_set_vars_alone() {
+    let strip = ["PLATFORM_TOKEN".to_owned()];
+    let set_vars = vec![("PLATFORM_TOKEN".to_owned(), "secret".to_owned())];
+    let d = doc_with_set_vars(&[], set_vars, &strip);
+    let set = at(&d, "/environment/set_vars").as_object().unwrap();
+    assert!(!set.contains_key("PLATFORM_TOKEN"));
+}
+
+#[test]
+fn names_pass_when_strip_env_is_empty() {
+    let set_vars = vec![("PLATFORM_TOKEN".to_owned(), "v".to_owned())];
+    let d = doc_with_set_vars(&["PLATFORM_TOKEN"], set_vars, &[]);
+    assert!(strings(at(&d, "/environment/allow_vars")).contains(&"PLATFORM_TOKEN".to_owned()));
+    assert!(at(&d, "/environment/set_vars")
+        .as_object()
+        .unwrap()
+        .contains_key("PLATFORM_TOKEN"));
 }
 
 #[test]

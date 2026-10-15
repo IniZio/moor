@@ -67,6 +67,7 @@ fn req(s: &FakeSurface) -> LaunchReq {
         nonce: "abc123".to_owned(),
         proxy: None,
         origin: None,
+        strip_env: Vec::new(),
     }
 }
 

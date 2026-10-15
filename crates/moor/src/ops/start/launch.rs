@@ -280,6 +280,11 @@ pub(super) fn launch_req(cx: &Cx, row: &TaskRow, setup_exit: Option<i32>) -> Opt
     if row.state != TaskState::Working {
         return None;
     }
+    let strip_env = cx
+        .config()
+        .drivers
+        .get(b.provider.as_str())
+        .map_or_else(Vec::new, |d| d.strip_env.clone());
     Some(LaunchReq {
         handle: b.handle.clone()?,
         workdir: recorded_workdir(b.workdir.as_deref()?)?,
@@ -295,6 +300,7 @@ pub(super) fn launch_req(cx: &Cx, row: &TaskRow, setup_exit: Option<i32>) -> Opt
         nonce: nonce(cx.rng()),
         proxy: None,
         origin: None,
+        strip_env,
     })
 }
 

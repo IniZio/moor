@@ -52,6 +52,7 @@ fn driver_limit(n: u32) -> UserConfig {
             DriverConfig {
                 max_boxes: NonZeroU32::new(n),
                 lookup_timeout_secs: None,
+                strip_env: Vec::new(),
             },
         )]),
         ..UserConfig::default()

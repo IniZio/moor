@@ -58,6 +58,8 @@ pub struct LaunchReq {
     pub proxy: Option<Arc<ProxyAddr>>,
     /// The task repo's git origin URL; GitHub push and `gh` routing apply only when it names a GitHub repo.
     pub origin: Option<String>,
+    /// Env var names removed from the agent's environment before hooks and the agent run.
+    pub strip_env: Vec<String>,
 }
 
 impl PartialEq for LaunchReq {
@@ -78,6 +80,7 @@ impl PartialEq for LaunchReq {
             && self.nonce == other.nonce
             && proxy(&self.proxy) == proxy(&other.proxy)
             && self.origin == other.origin
+            && self.strip_env == other.strip_env
     }
 }
 

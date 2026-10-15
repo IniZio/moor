@@ -66,6 +66,18 @@ crabbox to look up a Box's ssh target. The default is 5, or 20 for `external`,
 because an external provider's lookup goes through its adapter. Raise it if
 commands fail with "box operation timed out".
 
+`drivers.<provider>.strip_env` lists env var names that the provider's
+platform puts in the Box, such as platform tokens. moor removes them from the
+agent's environment before hooks and the agent run. The sandbox never passes
+them through. The external provider adapter's README lists the names its
+platform injects (for agent37, see crabbox-agent37 below).
+
+```yaml
+drivers:
+  external:
+    strip_env: [PLATFORM_TOKEN]
+```
+
 The external provider for agent37 VMs is
 [crabbox-agent37](https://github.com/IniZio/crabbox-agent37). Its README lists
 the crabbox user config it needs, including `external.capabilities.pauseResume:

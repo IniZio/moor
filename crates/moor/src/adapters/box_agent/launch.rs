@@ -186,6 +186,7 @@ impl Launch<'_> {
             tmp: self.tmp,
             env_names,
             set_vars: addr.box_env.clone(),
+            strip_env: &req.strip_env,
         });
         let at = BoxPath::under(cred.as_str(), sandbox::PROFILE_FILE)
             .map_err(|e| fail("sandbox", &e))?;
@@ -246,13 +247,13 @@ impl Launch<'_> {
         }
         let argv = self.argv();
         let lines = self.proxy_lines()?;
-        let script = script(
+        let script = script_stripping(
             (cred, self.tmp),
             ctx,
             &hooks,
             &preseed,
             &argv,
-            (&lines, sandboxed.as_ref()),
+            (&lines, sandboxed.as_ref(), &req.strip_env),
         );
         let script = script.map_err(|e| fail("script", &e))?;
         let line = format!(
@@ -274,17 +275,31 @@ impl Launch<'_> {
     }
 }
 
-/// The script the Box runs under `sh`; the credential directory goes once the brief is
-/// installed, and at exit or on a hangup, interrupt or terminate before then. With
-/// `proxy` lines the directory stays until the agent exits, since the CA bundle and the CA
-/// certificate live in it. With a `sandbox` profile the agent runs under `nono`.
+/// [`script_stripping`] with no names to strip.
+#[cfg(test)]
 fn script(
-    (cred, tmp): (&BoxPath, &BoxPath),
+    paths: (&BoxPath, &BoxPath),
     ctx: &LaunchCtx,
     hooks: &BoxSetup,
     preseed: &BoxSetup,
     argv: &[String],
     (proxy, sandbox): (&[String], Option<&BoxPath>),
+) -> Result<String, NameError> {
+    script_stripping(paths, ctx, hooks, preseed, argv, (proxy, sandbox, &[]))
+}
+
+/// The script the Box runs under `sh`; the credential directory goes once the brief is
+/// installed, and at exit or on a hangup, interrupt or terminate before then. With
+/// `proxy` lines the directory stays until the agent exits, since the CA bundle and the CA
+/// certificate live in it. With a `sandbox` profile the agent runs under `nono`.
+/// The `strip_env` names are unset before anything else runs.
+fn script_stripping(
+    (cred, tmp): (&BoxPath, &BoxPath),
+    ctx: &LaunchCtx,
+    hooks: &BoxSetup,
+    preseed: &BoxSetup,
+    argv: &[String],
+    (proxy, sandbox, strip_env): (&[String], Option<&BoxPath>, &[String]),
 ) -> Result<String, NameError> {
     let workdir = ctx.workdir.as_str();
     let moor = quote(BoxPath::under(workdir, ".moor")?.as_str());
@@ -302,7 +317,6 @@ fn script(
         "trap 'exit 129' HUP".to_owned(),
         "trap 'exit 130' INT".to_owned(),
         "trap 'exit 143' TERM".to_owned(),
-        format!("unset {}", sandbox::PLATFORM_SECRET_VARS.join(" ")),
         format!("mkdir -p -m 700 {tmp} && mkdir -p {moor} && install -m 600 {staged} {brief} || exit 1"),
         format!(
             "printf '{{\"state\":\"starting\",\"event\":\"Launch\",\"ts\":%s}}\\n' \"$(date +%s)\" > {state} || exit 1"
@@ -312,8 +326,15 @@ fn script(
         "export PATH=\"$HOME/.local/bin:$HOME/.bun/bin:$PATH\"".to_owned(),
         format!("export TMPDIR={tmp} CLAUDE_CODE_TMPDIR={tmp}"),
     ];
+    // The platform's secrets go before anything else runs, sandboxed or not.
+    let mut at = 4;
+    if !strip_env.is_empty() {
+        let names = strip_env.iter().map(|n| quote(n)).collect::<Vec<_>>();
+        lines.insert(at, format!("unset {}", names.join(" ")));
+        at += 1;
+    }
     if proxy.is_empty() {
-        lines.insert(6, remove);
+        lines.insert(at + 1, remove);
     }
     lines.extend(proxy.iter().cloned());
     let launcher = BoxPath::under(ctx.home.as_str(), ".local/bin/nono")?;

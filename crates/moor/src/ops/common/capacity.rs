@@ -81,6 +81,7 @@ mod tests {
                 DriverConfig {
                     max_boxes: Some(n(*max)),
                     lookup_timeout_secs: None,
+                    strip_env: Vec::new(),
                 },
             );
         }

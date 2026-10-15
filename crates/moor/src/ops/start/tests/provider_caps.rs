@@ -39,3 +39,27 @@ fn a_provider_without_reverse_tunnel_is_refused_before_any_acquire() {
     assert!(e.hints.iter().any(|h| h.contains("reverse tunnel support")));
     assert!(!w.driver.calls().iter().any(|c| c == "acquire"));
 }
+
+fn launch_strip_env(config_yaml: &str) -> Vec<String> {
+    let config = parse_user("config.yaml", config_yaml).unwrap();
+    let repo = tempfile::tempdir().unwrap();
+    let w = world_with(FakeDriver::new(), repo.path(), config);
+    let v = crate::ops::start::run(&w.cx, &req("demo")).unwrap();
+    let row = w.cx.store().unwrap().task(TaskId::new(v.task.id));
+    let row = row.unwrap().unwrap();
+    super::super::launch::launch_req(&w.cx, &row, None)
+        .unwrap()
+        .strip_env
+}
+
+#[test]
+fn the_box_providers_strip_env_reaches_the_launch_request() {
+    let yaml = "box: {provider: external}\ndrivers: {external: {strip_env: [PLATFORM_TOKEN]}}";
+    assert_eq!(launch_strip_env(yaml), ["PLATFORM_TOKEN"]);
+}
+
+#[test]
+fn another_providers_strip_env_is_not_applied() {
+    let yaml = "box: {provider: p}\ndrivers: {external: {strip_env: [PLATFORM_TOKEN]}}";
+    assert!(launch_strip_env(yaml).is_empty());
+}

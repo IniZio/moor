@@ -316,6 +316,27 @@ fn zero_counts_are_rejected_by_type() {
 }
 
 #[test]
+fn strip_env_parses() {
+    let c = ok("drivers: {external: {strip_env: [PLATFORM_TOKEN]}}");
+    let got = c.drivers.get("external").map(|d| d.strip_env.clone());
+    assert_eq!(got, Some(vec!["PLATFORM_TOKEN".to_owned()]));
+}
+
+#[test]
+fn strip_env_rejects_bad_names() {
+    for doc in [
+        r#"drivers: {external: {strip_env: ["1BAD"]}}"#,
+        r#"drivers: {external: {strip_env: [OK, "A-B"]}}"#,
+    ] {
+        let e = err(doc);
+        assert!(
+            e.path.starts_with("drivers.external.strip_env["),
+            "{doc}: {e}"
+        );
+    }
+}
+
+#[test]
 fn lookup_timeout_secs_parses() {
     let c = ok("drivers: {crabbox: {lookup_timeout_secs: 30}}");
     let timeout = c.drivers.get("crabbox").and_then(|d| d.lookup_timeout_secs);

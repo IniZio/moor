@@ -89,6 +89,7 @@ fn driver_limit(provider: &str, n: u32) -> BTreeMap<String, DriverConfig> {
         DriverConfig {
             max_boxes: Some(limit(n)),
             lookup_timeout_secs: None,
+            strip_env: Vec::new(),
         },
     )])
 }
