@@ -48,7 +48,11 @@ pub fn serve(env: &Env, config: &Path, stderr: impl Write + Send + 'static) -> u
             settle::spawn(&running.env, running.settle_every, &sink);
             if let Some(slack) = running.slack.take() {
                 let out = Sink::clone(&sink);
-                slack.spawn(&running.env, Arc::new(move |line| log(&out, line)));
+                slack.spawn(
+                    &running.env,
+                    Arc::new(move |line| log(&out, line)),
+                    running.web.as_ref().map(web::Web::addr),
+                );
                 log(&sink, "slack: socket mode on");
             }
             running.accept_loop(&sink);

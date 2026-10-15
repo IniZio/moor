@@ -14,6 +14,11 @@ const TOKEN: &str = "xoxb-super-secret-token";
 
 /// Serves one HTTP reply on loopback; the handle yields the raw request received.
 fn serve(reply: &'static str) -> (String, JoinHandle<String>) {
+    serve_status("200 OK", reply)
+}
+
+/// Like [`serve`] but with an explicit HTTP status line.
+fn serve_status(status: &'static str, reply: &'static str) -> (String, JoinHandle<String>) {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
     let base = format!("http://{}", listener.local_addr().expect("addr"));
     let handle = std::thread::spawn(move || {
@@ -28,7 +33,7 @@ fn serve(reply: &'static str) -> (String, JoinHandle<String>) {
             request.extend_from_slice(buf.get(..n).expect("slice"));
         }
         let response = format!(
-            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}",
+            "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}",
             reply.len()
         );
         conn.write_all(response.as_bytes()).expect("write");
@@ -89,15 +94,17 @@ fn ok_false_maps_to_a_slack_error() {
 
 #[test]
 fn post_message_sends_the_bot_token_and_json_body() {
-    let (base, handle) = serve(r#"{"ok":true}"#);
+    let (base, handle) = serve(r#"{"ok":true,"ts":"1730000000.2"}"#);
     let api = Api::new(&base).expect("api");
-    api.post_message(
-        &Secret::new(TOKEN.as_bytes().to_vec()),
-        "C1",
-        "1730000000.1",
-        "hi \"there\"",
-    )
-    .expect("post");
+    let ts = api
+        .post_message(
+            &Secret::new(TOKEN.as_bytes().to_vec()),
+            "C1",
+            "1730000000.1",
+            "hi \"there\"",
+        )
+        .expect("post");
+    assert_eq!(ts, "1730000000.2");
     let request = handle.join().expect("server");
     assert!(request.starts_with("POST /chat.postMessage "), "{request}");
     assert!(
@@ -119,6 +126,57 @@ fn post_message_sends_the_bot_token_and_json_body() {
 }
 
 #[test]
+fn post_message_without_ts_is_a_slack_error() {
+    let (base, handle) = serve(r#"{"ok":true}"#);
+    let api = Api::new(&base).expect("api");
+    let err = api
+        .post_message(&Secret::new(TOKEN.as_bytes().to_vec()), "C1", "1.2", "x")
+        .expect_err("no ts");
+    handle.join().expect("server");
+    assert!(matches!(err, ApiError::Slack(_)), "{err:?}");
+}
+
+#[test]
+fn update_message_sends_the_bot_token_and_json_body() {
+    let (base, handle) = serve(r#"{"ok":true,"ts":"1730000000.2"}"#);
+    let api = Api::new(&base).expect("api");
+    api.update_message(
+        &Secret::new(TOKEN.as_bytes().to_vec()),
+        "C1",
+        "1730000000.2",
+        "done",
+    )
+    .expect("update");
+    let request = handle.join().expect("server");
+    assert!(request.starts_with("POST /chat.update "), "{request}");
+    assert!(
+        request.contains(&format!("authorization: Bearer {TOKEN}")),
+        "{request}"
+    );
+    let body = request.split_once("\r\n\r\n").expect("body").1;
+    let value: serde_json::Value = serde_json::from_str(body).expect("json");
+    assert_eq!(
+        value,
+        serde_json::json!({"channel":"C1","ts":"1730000000.2","text":"done"})
+    );
+}
+
+#[test]
+fn http_429_maps_to_rate_limited() {
+    let (base, handle) = serve_status(
+        "429 Too Many Requests",
+        r#"{"ok":false,"error":"ratelimited"}"#,
+    );
+    let api = Api::new(&base).expect("api");
+    let err = api
+        .update_message(&Secret::new(TOKEN.as_bytes().to_vec()), "C1", "1.2", "x")
+        .expect_err("limited");
+    handle.join().expect("server");
+    assert!(matches!(err, ApiError::RateLimited), "{err:?}");
+    assert!(err.to_string().contains("rate limited"));
+}
+
+#[test]
 fn errors_never_contain_the_token() {
     let (base, handle) = serve("not json");
     let api = Api::new(&base).expect("api");
@@ -129,7 +187,16 @@ fn errors_never_contain_the_token() {
     let refused = dead
         .post_message(&token, "C1", "1.2", "x")
         .expect_err("refused");
-    for err in [garbled, refused, ApiError::Slack("invalid_auth".into())] {
+    let refused_update = dead
+        .update_message(&token, "C1", "1.2", "x")
+        .expect_err("refused");
+    for err in [
+        garbled,
+        refused,
+        refused_update,
+        ApiError::Slack("invalid_auth".into()),
+        ApiError::RateLimited,
+    ] {
         assert!(!format!("{err} {err:?}").contains(TOKEN));
     }
 }
