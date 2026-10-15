@@ -13,15 +13,6 @@ const fn facts(agent_active: bool, run_in_flight: bool) -> WaitFacts {
     WaitFacts {
         agent_active,
         run_in_flight,
-        needs_input: false,
-    }
-}
-
-const fn asking() -> WaitFacts {
-    WaitFacts {
-        agent_active: false,
-        run_in_flight: false,
-        needs_input: true,
     }
 }
 
@@ -48,7 +39,6 @@ fn verdict_table() {
         (facts(false, false), Done, 10, 10, V::Done),
         (facts(false, false), Run, 99, 10, V::Done),
         (facts(true, false), Idle, 0, 0, V::TimedOut),
-        (asking(), Input, 0, 10, V::Done),
         (facts(false, false), Input, 0, 10, V::Done),
         (facts(true, false), Input, 0, 10, V::Keep),
         (facts(true, false), Input, 10, 10, V::TimedOut),
