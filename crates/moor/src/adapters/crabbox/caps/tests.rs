@@ -97,3 +97,42 @@ fn missing_optional_fields_tolerated() {
         Ok(no_tunnel(want(SleepKind::None, false)))
     );
 }
+
+fn external_json(features: &[&str], life: &[&str]) -> String {
+    serde_json::json!([entry("external", &["exec-provider"], features, life)]).to_string()
+}
+
+const EXTERNAL_BASE: [&str; 6] = [
+    "ssh",
+    "crabbox-sync",
+    "cleanup",
+    "desktop",
+    "browser",
+    "code",
+];
+
+#[test]
+fn external_with_pause_resume_opted_in_suspends_and_wakes() {
+    let mut features = EXTERNAL_BASE.to_vec();
+    features.push("pause-resume");
+    let j = external_json(&features, &["cleanup", "pause-resume"]);
+    for id in ["external", "exec-provider"] {
+        assert_eq!(
+            caps_from(&j, &ProviderId::new(id)),
+            Ok(want(SleepKind::Suspend, true)),
+            "{id}"
+        );
+    }
+}
+
+#[test]
+fn external_without_pause_resume_cannot_sleep() {
+    let j = external_json(&EXTERNAL_BASE, &["cleanup"]);
+    for id in ["external", "exec-provider"] {
+        assert_eq!(
+            caps_from(&j, &ProviderId::new(id)),
+            Ok(want(SleepKind::None, false)),
+            "{id}"
+        );
+    }
+}

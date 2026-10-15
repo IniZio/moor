@@ -214,7 +214,7 @@ fn claim_race_is_retried_until_the_call_succeeds() {
     p.on(
         Tool::Crabbox,
         &["--version"],
-        Reply::Ok("crabbox 0.72.0-moor.5\n".into()),
+        Reply::Ok("crabbox 0.72.0-moor.7\n".into()),
     );
     let c = Crabbox::new(p.clone(), clock.clone());
     assert_eq!(exec_once(&c), Ok(ExecOutcome::Exited { code: 0 }));
@@ -230,7 +230,7 @@ fn claim_race_gives_up_after_three_attempts() {
     p.on(
         Tool::Crabbox,
         &["--version"],
-        Reply::Ok("crabbox 0.72.0-moor.5\n".into()),
+        Reply::Ok("crabbox 0.72.0-moor.7\n".into()),
     );
     let c = Crabbox::new(p.clone(), clock.clone());
     let err = exec_once(&c).unwrap_err();

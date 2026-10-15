@@ -40,6 +40,39 @@ Global flags: `--json`, `--quiet`, `--state-dir DIR`. State lives in
 `moor.db` inside the state directory, set by `--state-dir`, `MOOR_STATE_DIR`,
 `XDG_STATE_HOME`, or `HOME`.
 
+## Box provider
+
+moor runs Boxes through crabbox. The provider is `box.provider` in your user
+config, `$XDG_CONFIG_HOME/moor/config.yaml`. A repo cannot set it. When
+unset, the provider is `local-container`.
+
+To switch from Namespace (`provider: namespace`) to an external provider,
+change the provider. Then cap live Boxes for that provider with
+`drivers.external.max_boxes`:
+
+```yaml
+box:
+  provider: external
+drivers:
+  external:
+    max_boxes: 5
+```
+
+Set `max_boxes` to the number of instances your provider workspace allows.
+5 is an example. It takes precedence over `box.max_boxes`.
+
+The external provider for agent37 VMs is
+[crabbox-agent37](https://github.com/IniZio/crabbox-agent37). Its README lists
+the crabbox user config it needs, including `external.capabilities.pauseResume:
+true`. moor needs crabbox 0.72.0-moor.7 or newer, and asks you to upgrade
+if yours is older.
+
+With `pauseResume` on, moor sleeps an idle Box after `box.sleep_after`
+(default `30m`). It pauses the instance, and resumes it on wake. Keep
+agent37's own auto-sleep off: moor sleeps the Box itself, and a Box with a
+live tunnel never looks idle to agent37. Without `pauseResume`, the Box
+cannot sleep and stays up.
+
 ## JSON envelope
 
 `--json` prints one envelope on stdout:

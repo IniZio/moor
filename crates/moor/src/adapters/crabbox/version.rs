@@ -20,11 +20,11 @@ pub(super) const REQUIRED: Version = Version {
     major: 0,
     minor: 72,
     patch: 0,
-    moor: 5,
+    moor: 7,
 };
 
 impl Version {
-    /// Reads the version from `crabbox --version` output, such as `crabbox 0.72.0-moor.5`.
+    /// Reads the version from `crabbox --version` output, such as `crabbox 0.72.0-moor.7`.
     pub(super) fn parse(output: &str) -> Option<Self> {
         let token = output
             .split_whitespace()
