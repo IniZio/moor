@@ -212,3 +212,23 @@ fn box_credentials_proxied_claude_names() {
         );
     }
 }
+
+#[test]
+fn changed_keys_empty_when_equal() {
+    let a = ok("setup: [make]\nenv:\n  A: b\n");
+    assert!(a.changed_keys(&a.clone()).is_empty());
+}
+
+#[test]
+fn changed_keys_names_setup() {
+    let a = ok("setup: [make]\n");
+    let b = ok("setup: [make, test]\n");
+    assert_eq!(a.changed_keys(&b), ["setup"]);
+}
+
+#[test]
+fn changed_keys_lists_env_and_box_in_file_order() {
+    let a = ok("env:\n  A: b\nbox:\n  size: small\n");
+    let b = ok("env:\n  A: c\nbox:\n  size: large\n");
+    assert_eq!(a.changed_keys(&b), ["env", "box"]);
+}
