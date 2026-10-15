@@ -214,7 +214,7 @@ impl ToolRule {
         }
         for (i, h) in self.hosts.iter().enumerate() {
             let exact = !h.contains('*');
-            check::egress_entry(h)
+            check::host_entry(h)
                 .and_then(|()| {
                     if exact {
                         Ok(())

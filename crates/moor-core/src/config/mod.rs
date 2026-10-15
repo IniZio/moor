@@ -1,7 +1,6 @@
 //! User and repo configuration: pure parsing, no IO.
 
 pub mod check;
-pub mod egress;
 pub mod proxy;
 pub mod repo;
 pub mod settings;

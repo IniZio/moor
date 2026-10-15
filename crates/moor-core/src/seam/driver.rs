@@ -7,7 +7,6 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-pub use crate::config::egress::EgressSupport;
 use crate::domain::run::SyncMode;
 use crate::name::{BoxHandle, BoxPath, ProviderId, TaskId, TaskName};
 use crate::seam::proc::{Deadline, Output};
