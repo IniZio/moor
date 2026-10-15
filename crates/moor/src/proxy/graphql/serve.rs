@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use rustls::{ServerConnection, StreamOwned};
 
-use super::gate::{gate, Gate};
+use super::gate::{gate, without_credential, Gate};
 use super::http::{
     copy_body, read_head, read_response_head, request_framing, response_framing, wants_close,
     write_refusal, Framing, Head, HttpError,
@@ -164,6 +164,11 @@ fn serve_one(shared: &Shared, client: &mut Client, up: &mut Up) -> Flow {
         }
         Route::Graphql => match gate(shared, &head, client) {
             Gate::Forward(body) => forward(shared, client, up, &head, &Payload::Raw(&body)),
+            Gate::Anonymous(body) => {
+                // The one place a request leaves without its credential.
+                let bare = without_credential(&head);
+                forward(shared, client, up, &bare, &Payload::Raw(&body))
+            }
             Gate::Refuse(s, m) => refuse(shared, client, &head.method, s, &m),
             Gate::Abort => Flow::Close,
         },

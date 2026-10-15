@@ -68,13 +68,16 @@ fn chunked_body_within_cap_is_judged_and_forwarded_verbatim() {
 }
 
 #[test]
-fn chunked_other_repo_query_is_refused() {
+fn chunked_other_repo_query_is_forwarded_without_credential() {
     let rig = rig(fixed(json_reply("200 OK", OK_BODY)));
     let body = repo_query("victim", "secrets", "Q");
     let parts = halves(&body);
     let resp = rig.client().call(&chunked_post("/graphql", &parts));
-    assert_refused(&resp, 403);
-    assert!(rig.requests().is_empty());
+    assert_eq!(resp.status(), 200);
+    let seen = rig.requests();
+    assert_eq!(seen.len(), 1);
+    assert_anonymous(seen.first().unwrap());
+    assert_eq!(seen.first().unwrap().body, body.as_bytes());
 }
 
 #[test]
@@ -136,21 +139,25 @@ fn connect_to_another_target_is_refused_and_recorded() {
 }
 
 #[test]
-fn keep_alive_serves_allowed_requests_then_closes_on_a_denied_one() {
+fn keep_alive_strips_credential_only_from_out_of_scope_requests() {
     let rig = rig(fixed(json_reply("200 OK", OK_BODY)));
     let mut client = rig.client();
     let allowed = post("/graphql", &repo_query("IniZio", "moor", "Q"));
     for _ in 0..2 {
         assert_eq!(client.call(&allowed).status(), 200);
     }
-    let denied = client.call(&post("/graphql", &repo_query("victim", "secrets", "Q")));
-    assert_refused(&denied, 403);
-    assert!(client.closed(), "connection must close after a refusal");
-    assert_eq!(
-        rig.requests().len(),
-        2,
-        "denied request must not go upstream"
-    );
+    let foreign = client.call(&post("/graphql", &repo_query("victim", "secrets", "Q")));
+    assert_eq!(foreign.status(), 200);
+    assert_eq!(client.call(&allowed).status(), 200);
+    let seen = rig.requests();
+    assert_eq!(seen.len(), 4);
+    for (i, w) in seen.iter().enumerate() {
+        if i == 2 {
+            assert_anonymous(w);
+        } else {
+            assert_eq!(w.header("authorization"), Some(&*format!("token {TOKEN}")));
+        }
+    }
 }
 
 #[test]

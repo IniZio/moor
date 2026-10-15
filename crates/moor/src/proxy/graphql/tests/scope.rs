@@ -1,7 +1,6 @@
 //! Which GraphQL requests reach the upstream, and what the upstream sees.
 
 use super::*;
-use crate::proxy::graphql::SCOPE_CATEGORY;
 
 /// Whether `Wire` carries the real credential in its `Authorization` header.
 fn has_token(w: &Wire) -> bool {
@@ -28,34 +27,29 @@ fn task_repo_query_is_forwarded_verbatim_and_reply_returned_unchanged() {
 }
 
 #[test]
-fn other_repo_query_is_refused_and_never_forwarded() {
+fn other_repo_query_is_forwarded_without_credential() {
     let rig = rig(standard(nodes_reply(&[])));
     let mut client = rig.client();
-    let resp = client.call(&post("/graphql", &repo_query("victim", "secrets", "Q")));
-    assert_refused(&resp, 403);
-    assert!(client.closed());
-    assert!(rig.requests().is_empty());
-    let refusals = rig.refusals(1);
-    assert_eq!(
-        refusals,
-        vec![Refusal {
-            host: "api.github.com".to_owned(),
-            rule: RULE.to_owned(),
-            method: "POST".to_owned(),
-            category: SCOPE_CATEGORY,
-        }]
-    );
-    assert_eq!(SCOPE_CATEGORY, "graphql_scope");
+    let sent = post("/graphql", &repo_query("victim", "secrets", "Q"));
+    let resp = client.call(&sent);
+    assert_eq!(resp.status(), 200);
+    let seen = rig.requests();
+    assert_eq!(seen.len(), 1);
+    let w = seen.first().unwrap();
+    assert_anonymous(w);
+    assert_eq!(w.body, sent.split_at(sent.len() - w.body.len()).1);
+    assert!(rig.refusals(0).is_empty());
+    assert!(!client.closed(), "forwarding keeps the connection");
 }
 
 #[test]
-fn node_id_of_another_repo_is_refused_after_one_lookup() {
+fn node_id_of_another_repo_is_forwarded_anonymously_after_one_lookup() {
     let rig = rig(standard(nodes_reply(&["victim/secrets"])));
     let mut client = rig.client();
     let resp = client.call(&post("/graphql", &create_pr("R_other")));
-    assert_refused(&resp, 403);
+    assert_eq!(resp.status(), 200);
     let seen = rig.requests();
-    assert_eq!(seen.len(), 1, "only the lookup may reach upstream");
+    assert_eq!(seen.len(), 2);
     let lookup = seen.first().expect("lookup");
     assert!(lookup.is_lookup() && has_token(lookup));
     let body: Value = serde_json::from_slice(&lookup.body).unwrap();
@@ -64,13 +58,10 @@ fn node_id_of_another_repo_is_refused_after_one_lookup() {
         .get("query")
         .and_then(Value::as_str)
         .is_some_and(|q| q.contains("nodes(ids:$ids)")));
-    assert!(seen
-        .iter()
-        .all(|w| !String::from_utf8_lossy(&w.body).contains("createPullRequest")));
-    let refusals = rig.refusals(1);
-    assert_eq!(refusals.len(), 1);
-    assert_eq!(refusals.first().map(|r| r.method.as_str()), Some("POST"));
-    assert_eq!(refusals.first().map(|r| r.category), Some(SCOPE_CATEGORY));
+    let sent = seen.get(1).expect("forwarded");
+    assert!(!sent.is_lookup());
+    assert_anonymous(sent);
+    assert!(rig.refusals(0).is_empty());
 }
 
 #[test]
@@ -108,89 +99,94 @@ fn foreign_node_verdict_is_cached_too() {
     let rig = rig(standard(nodes_reply(&["victim/secrets"])));
     let sent = post("/graphql", &create_pr("R_other"));
     for _ in 0..2 {
-        assert_refused(&rig.client().call(&sent), 403);
+        assert_eq!(rig.client().call(&sent).status(), 200);
     }
     assert_eq!(rig.lookups(), 1);
-    assert_eq!(rig.requests().len(), 1);
+    let seen = rig.requests();
+    assert_eq!(seen.len(), 3);
+    assert!(seen.iter().filter(|w| !w.is_lookup()).all(|w| {
+        assert_anonymous(w);
+        true
+    }));
 }
 
 /// Runs a node-check request against an upstream whose lookup answer is `bad`.
-fn failed_lookup_is_refused_and_not_cached(bad: Vec<u8>) {
+fn failed_lookup_goes_anonymous_and_is_not_cached(bad: Vec<u8>) {
     let rig = rig(standard(bad));
     let sent = post("/graphql", &create_pr("R_task"));
     for _ in 0..2 {
-        assert_refused(&rig.client().call(&sent), 403);
+        assert_eq!(rig.client().call(&sent).status(), 200);
     }
     assert_eq!(rig.lookups(), 2, "a failed lookup must not be cached");
-    assert_eq!(
-        rig.requests().len(),
-        2,
-        "the mutation must never go upstream"
-    );
-    assert_eq!(rig.refusals(2).len(), 2);
+    let seen = rig.requests();
+    assert_eq!(seen.len(), 4);
+    for w in seen.iter().filter(|w| !w.is_lookup()) {
+        assert_anonymous(w);
+    }
 }
 
 #[test]
-fn lookup_answered_with_server_error_is_refused_and_not_cached() {
-    failed_lookup_is_refused_and_not_cached(json_reply(
+fn lookup_answered_with_server_error_goes_anonymous() {
+    failed_lookup_goes_anonymous_and_is_not_cached(json_reply(
         "500 Internal Server Error",
         r#"{"message":"boom"}"#,
     ));
 }
 
 #[test]
-fn lookup_answered_with_garbage_is_refused_and_not_cached() {
-    failed_lookup_is_refused_and_not_cached(json_reply("200 OK", "this is not json"));
+fn lookup_answered_with_garbage_goes_anonymous() {
+    failed_lookup_goes_anonymous_and_is_not_cached(json_reply("200 OK", "this is not json"));
 }
 
 #[test]
-fn lookup_answered_with_wrong_node_count_is_refused() {
-    failed_lookup_is_refused_and_not_cached(nodes_reply(&["IniZio/moor", "IniZio/moor"]));
+fn lookup_answered_with_wrong_node_count_goes_anonymous() {
+    failed_lookup_goes_anonymous_and_is_not_cached(nodes_reply(&["IniZio/moor", "IniZio/moor"]));
 }
 
 #[test]
-fn lookup_answered_with_null_node_is_refused() {
+fn lookup_answered_with_null_node_goes_anonymous() {
     let null = json_reply("200 OK", r#"{"data":{"nodes":[null]}}"#);
     let rig = rig(standard(null));
-    assert_refused(
-        &rig.client().call(&post("/graphql", &create_pr("R_gone"))),
-        403,
-    );
-    assert_eq!(rig.requests().len(), 1);
+    let resp = rig.client().call(&post("/graphql", &create_pr("R_gone")));
+    assert_eq!(resp.status(), 200);
+    let seen = rig.requests();
+    assert_eq!(seen.len(), 2);
+    assert_anonymous(seen.get(1).unwrap());
 }
 
 #[test]
-fn lookup_with_graphql_errors_is_refused() {
+fn lookup_with_graphql_errors_goes_anonymous() {
     let errors = json_reply(
         "200 OK",
         r#"{"data":{"nodes":[{"__typename":"Repository","nameWithOwner":"IniZio/moor"}]},"errors":[{"message":"x"}]}"#,
     );
     let rig = rig(standard(errors));
-    assert_refused(
-        &rig.client().call(&post("/graphql", &create_pr("R_task"))),
-        403,
-    );
-    assert_eq!(rig.requests().len(), 1);
+    let resp = rig.client().call(&post("/graphql", &create_pr("R_task")));
+    assert_eq!(resp.status(), 200);
+    let seen = rig.requests();
+    assert_eq!(seen.len(), 2);
+    assert_anonymous(seen.get(1).unwrap());
 }
 
 #[test]
-fn nothing_leaks_into_refusals_debug_output_or_error_body() {
+fn unparsable_body_goes_anonymous() {
+    let rig = rig(fixed(json_reply("200 OK", OK_BODY)));
+    let resp = rig.client().call(&post("/graphql", "not json at all"));
+    assert_eq!(resp.status(), 200);
+    assert_anonymous(rig.requests().first().unwrap());
+}
+
+#[test]
+fn error_bodies_and_debug_output_carry_no_secrets() {
     let marker = "MARKER_zq81";
     let rig = rig(standard(nodes_reply(&[])));
     let before = format!("{:?}", rig.filter);
     let resp = rig
         .client()
         .call(&post("/graphql", &repo_query("victim", "secrets", marker)));
-    assert_refused(&resp, 403);
-    let refusals = rig.refusals(1);
-    assert_eq!(refusals.len(), 1);
-    let text = format!("{refusals:?} {before} {:?}", rig.filter);
+    assert_eq!(resp.status(), 200);
+    let text = format!("{before} {:?}", rig.filter);
     assert!(!text.contains(TOKEN), "credential leaked into debug output");
-    assert!(
-        !text.contains(marker),
-        "request body leaked into debug output"
-    );
+    assert!(!text.contains(marker));
     assert!(!text.contains("gho_"));
-    let body = String::from_utf8_lossy(&resp.raw);
-    assert!(!body.contains(marker), "request body echoed in the error");
 }
