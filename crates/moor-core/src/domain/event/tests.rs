@@ -87,6 +87,7 @@ fn all_events() -> Vec<Event> {
             old_pane: Some(s("p-1")),
             new_pane: Some(s("p-2")),
             goal: Some(s("g")),
+            cause: None,
         },
         Event::Checked {
             credentials: vec![CheckedCred {
@@ -596,4 +597,27 @@ fn proxy_started_payload_has_no_nonce() {
     let mut keys: Vec<_> = payload.as_object().unwrap().keys().cloned().collect();
     keys.sort_unstable();
     assert_eq!(keys, ["box_port", "handle", "host_port", "pid"]);
+}
+
+#[test]
+fn relaunched_cause_is_omitted_when_none() {
+    let e = Event::Relaunched {
+        old_pane: None,
+        new_pane: None,
+        goal: None,
+        cause: None,
+    };
+    assert!(e.payload().get("cause").is_none());
+}
+
+#[test]
+fn relaunched_cause_is_in_payload_when_set() {
+    let e = Event::Relaunched {
+        old_pane: None,
+        new_pane: None,
+        goal: None,
+        cause: Some(s("wake")),
+    };
+    assert_eq!(e.payload().get("cause"), Some(&serde_json::json!("wake")));
+    assert_eq!(e.kind(), "relaunched");
 }

@@ -48,6 +48,7 @@ struct State {
     fail_wake: Option<DriverError>,
     sleep_outcome: Option<SleepOutcome>,
     on_exec: Option<Arc<ExecHook>>,
+    on_wake: Option<Arc<ExecHook>>,
     work_root: Option<String>,
     fail_workdir: Option<DriverError>,
     tunnel: tunnel::TunnelState,
@@ -115,11 +116,6 @@ impl FakeDriver {
     /// Calls so far, like `acquire` or `release box-1`.
     pub(crate) fn calls(&self) -> Vec<String> {
         self.st().calls.clone()
-    }
-
-    /// Runs `f` at the start of every later `exec`, outside the Driver's lock.
-    pub(crate) fn on_exec(&self, f: impl Fn() + Send + Sync + 'static) {
-        self.st().on_exec = Some(Arc::new(f));
     }
 
     /// Every `exec` so far: handle, spec and deadline, in call order.
@@ -366,7 +362,15 @@ impl Driver for FakeDriver {
         if !s.live.iter().any(|h| h == handle.as_str()) {
             return Err(DriverError::NotFound);
         }
-        s.fail_wake.take().map_or(Ok(()), Err)
+        if let Some(e) = s.fail_wake.take() {
+            return Err(e);
+        }
+        let hook = s.on_wake.clone();
+        drop(s);
+        if let Some(hook) = hook {
+            hook();
+        }
+        Ok(())
     }
 }
 

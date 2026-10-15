@@ -10,6 +10,7 @@ use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver};
 use moor_core::seam::engine::{EngineError, Steer, SteerOutcome};
+use moor_core::seam::proc::Tool;
 use moor_core::{ErrorKind, ProviderId, SteerReq, TaskId, TaskName};
 
 use std::time::Duration;
@@ -19,7 +20,7 @@ use crate::cx::Cx;
 use crate::ops::common::boxlock::BoxLock;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
-use crate::testing::proc::ScriptedProc;
+use crate::testing::proc::{Reply, ScriptedProc};
 use crate::testing::surface::FakeSurface;
 
 struct Fx {
@@ -27,6 +28,7 @@ struct Fx {
     cx: Cx,
     engine: Arc<FakeEngine>,
     driver: Arc<FakeDriver>,
+    surface: Arc<FakeSurface>,
     id: TaskId,
 }
 
@@ -35,12 +37,19 @@ fn fx_with(engine: FakeEngine, session: bool) -> Fx {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(FakeDriver::new());
     let engine = Arc::new(engine);
+    let surface = Arc::new(FakeSurface::new(PathBuf::from("/s")));
+    let proc = Arc::new(ScriptedProc::new());
+    proc.on(
+        Tool::Git,
+        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+        Reply::Ok("/home/me/proj/.git\n".into()),
+    );
     let cx = Cx::fake(
         dir.path(),
         Path::new("/home/me/proj"),
         driver.clone(),
-        Arc::new(FakeSurface::new(PathBuf::from("/s"))),
-        Arc::new(ScriptedProc::new()),
+        surface.clone(),
+        proc,
     )
     .with_engine(engine.clone());
     let id = ready_task(&cx, &driver);
@@ -55,6 +64,7 @@ fn fx_with(engine: FakeEngine, session: bool) -> Fx {
         cx,
         engine,
         driver,
+        surface,
         id,
     }
 }
@@ -517,3 +527,5 @@ fn an_exited_agent_has_its_transcript_saved_before_the_session_ends() {
         Some("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
     );
 }
+
+mod cold_boot;

@@ -35,6 +35,7 @@ mod proxy;
 mod relaunch;
 mod relaunch_yaml;
 mod rerun;
+mod revive;
 mod session;
 mod setup;
 mod setup_rerun;

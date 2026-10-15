@@ -16,6 +16,7 @@ use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::provision::recorded_workdir;
 use crate::ops::common::view::{hide_unsupported_box_sleep, task_view};
+use crate::ops::start::revive_after_wake;
 use crate::store::{Store, TaskRow};
 
 /// Wake the Task and its Box when either is Asleep; `Ok(true)` when it did.
@@ -27,13 +28,42 @@ use crate::store::{Store, TaskRow};
 /// workdir, nothing is applied and the Task and Box stay Asleep, so the next
 /// call tries both again.
 pub(crate) fn wake_if_asleep(cx: &Cx, store: &Store, row: &TaskRow) -> Result<bool, CommandError> {
+    wake(cx, store, row).map(|w| w.any)
+}
+
+/// Like `wake_if_asleep`, then relaunches the agent when waking the Box left it gone.
+///
+/// A Box can cold-boot on resume and lose its agent process. Close uses
+/// `wake_if_asleep` instead, since it has no use for a fresh agent. When the
+/// relaunch fails the Box stays awake and the error is returned.
+pub(crate) fn wake_and_revive(cx: &Cx, store: &Store, row: &TaskRow) -> Result<bool, CommandError> {
+    let woke = wake(cx, store, row)?;
+    if woke.box_resumed {
+        revive_after_wake(cx, store, row.id)?;
+    }
+    Ok(woke.any)
+}
+
+/// What `wake` did.
+struct Woke {
+    /// The Task or the Box was Asleep and is awake now.
+    any: bool,
+    /// The Driver resumed the Box.
+    box_resumed: bool,
+}
+
+/// Wake the Task and Box when Asleep and report what was woken.
+fn wake(cx: &Cx, store: &Store, row: &TaskRow) -> Result<Woke, CommandError> {
     let task_asleep = row.state == TaskState::Asleep;
     let box_asleep = row
         .boxed
         .as_ref()
         .is_some_and(|b| b.state == BoxState::Asleep);
     if !task_asleep && !box_asleep {
-        return Ok(false);
+        return Ok(Woke {
+            any: false,
+            box_resumed: false,
+        });
     }
     let mut workdir = None;
     if let Some(b) = &row.boxed {
@@ -68,7 +98,10 @@ pub(crate) fn wake_if_asleep(cx: &Cx, store: &Store, row: &TaskRow) -> Result<bo
         });
     }
     store.apply(d)?;
-    Ok(true)
+    Ok(Woke {
+        any: true,
+        box_resumed: box_asleep,
+    })
 }
 
 /// Wake the open Task named by `req` under its Box lock and build the value.
@@ -96,7 +129,7 @@ pub(crate) fn wake_task(
             CommandError::new(ErrorKind::Failed, format!("no task {}", req.task.as_str()))
         })
     };
-    let woke = wake_if_asleep(cx, store, &reload()?)?;
+    let woke = wake_and_revive(cx, store, &reload()?)?;
     let row = reload()?;
     held(&row)?;
     let mut boxed = task_view(&row, cx.config()).r#box;

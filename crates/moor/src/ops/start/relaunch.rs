@@ -1,7 +1,7 @@
 //! Starts the agent again for a Working Task whose pane is gone or has exited.
 
 use moor_core::activity::PaneStatus;
-use moor_core::config::TaskSettings;
+use moor_core::config::{Flags, TaskSettings};
 use moor_core::decide::transcript::Trigger;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
 use moor_core::domain::task::TaskState;
@@ -9,12 +9,14 @@ use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::{PaneRef, SurfaceError};
 use moor_core::view::AgentLaunchView;
 use moor_core::{ErrorKind, StartReq, TaskId, Warning};
+use std::path::Path;
 use std::time::Duration;
 
 use super::launch;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
+use crate::ops::common::facts::settings;
 use crate::ops::common::provision::reread;
 use crate::ops::common::resume;
 use crate::ops::common::transcript;
@@ -79,7 +81,7 @@ pub(super) fn run(
         on_live(cx, store, req, &row, &old);
         return Ok(AgentLaunchView::default());
     };
-    relaunch(cx, store, req, (&old, &end), recreated, settings)
+    relaunch(cx, store, req, (&old, &end), recreated, settings, None)
 }
 
 /// Whether [`run`] is about to launch or relaunch the agent of `row`.
@@ -188,6 +190,7 @@ fn relaunch(
     (old, end): (&SessionRow, &Ended),
     recreated: bool,
     settings: &dyn Fn() -> Result<TaskSettings, CommandError>,
+    cause: Option<&str>,
 ) -> Result<AgentLaunchView, CommandError> {
     let id = old.task;
     let mut row = reread(store, id)?;
@@ -233,10 +236,48 @@ fn relaunch(
             old_pane: old.pane.clone(),
             new_pane,
             goal,
+            cause: cause.map(str::to_owned),
         };
         store.apply(Decision::new(id).event(event))?;
     }
     Ok(view)
+}
+
+/// Starts the agent again after a Box wake when its pane did not survive.
+///
+/// The caller holds the Box lock. A live agent, or a Task with no live session or not Working, is
+/// left alone. The stored agent session is resumed; a Task with neither one nor a goal stays as is.
+///
+/// # Errors
+/// A store failure, or settings that cannot be resolved.
+pub(crate) fn revive_after_wake(cx: &Cx, store: &Store, id: TaskId) -> Result<(), CommandError> {
+    let row = reread(store, id)?;
+    if row.state != TaskState::Working {
+        return Ok(());
+    }
+    let Some(old) = store.live_session(id)? else {
+        return Ok(());
+    };
+    let Some(end) = ended(cx, &old) else {
+        return Ok(());
+    };
+    let req = StartReq {
+        name: row.name.clone(),
+        goal: None,
+        issue: None,
+        worktree: None,
+        base: None,
+        model: None,
+        no_agent: false,
+        resume: false,
+        trust_moor_yaml: false,
+    };
+    let settings = || {
+        let at = row.worktree.as_deref().unwrap_or(&row.repo);
+        settings(cx, Path::new(at), &Flags::default())
+    };
+    relaunch(cx, store, &req, (&old, &end), false, &settings, Some("wake"))?;
+    Ok(())
 }
 
 /// How the pane of `session` ended; none while it is live, or when it cannot be read.

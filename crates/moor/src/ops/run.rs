@@ -23,7 +23,7 @@ use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::facts::resolved;
 use crate::ops::common::provision::moor_yaml;
 use crate::ops::common::provisioning::dead_provisioning;
-use crate::ops::common::wake::wake_if_asleep;
+use crate::ops::common::wake::wake_and_revive;
 use crate::store::{NewRun, RunOutcome, Store, StoreError, TaskRow};
 
 mod ready;
@@ -62,7 +62,7 @@ fn locked(cx: &Cx, store: &Store, req: &RunReq, row: &TaskRow) -> Result<RunValu
         .as_ref()
         .is_some_and(|b| matches!(b.state, BoxState::Gone | BoxState::Deleted));
     let woken;
-    let row = if !gone && wake_if_asleep(cx, store, row)? {
+    let row = if !gone && wake_and_revive(cx, store, row)? {
         woken = store.task(row.id)?.ok_or_else(|| {
             CommandError::new(ErrorKind::Failed, format!("no task {}", row.name.as_str()))
         })?;

@@ -49,6 +49,8 @@ pub enum ExtraEvent {
         new_pane: Option<String>,
         /// The goal the new session works on.
         goal: Option<String>,
+        /// Why the agent was relaunched; `None` for a plain `moor start`.
+        cause: Option<String>,
     },
     /// Setup failed on a Task that stays in its state, so no step derives it.
     SetupFailed {
@@ -188,10 +190,12 @@ impl From<ExtraEvent> for Event {
                 old_pane,
                 new_pane,
                 goal,
+                cause,
             } => Self::Relaunched {
                 old_pane,
                 new_pane,
                 goal,
+                cause,
             },
             ExtraEvent::SetupFailed { line } => Self::SetupFailed { line },
             ExtraEvent::SetupFinished { ms, ok } => Self::SetupFinished { ms, ok },
@@ -285,10 +289,12 @@ impl TryFrom<Event> for ExtraEvent {
                 old_pane,
                 new_pane,
                 goal,
+                cause,
             } => Ok(Self::Relaunched {
                 old_pane,
                 new_pane,
                 goal,
+                cause,
             }),
             Event::SetupFailed { line } => Ok(Self::SetupFailed { line }),
             Event::SetupFinished { ms, ok } => Ok(Self::SetupFinished { ms, ok }),

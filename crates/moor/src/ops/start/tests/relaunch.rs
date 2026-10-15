@@ -34,7 +34,7 @@ pub(super) fn session(pane: &str) -> SessionRef {
 }
 
 /// A pane observation of a running agent, or of one that exited with `code`.
-fn obs(exit_marker: Option<i32>) -> PaneObs {
+pub(super) fn obs(exit_marker: Option<i32>) -> PaneObs {
     PaneObs {
         status: PaneStatus::Working,
         tail: String::new(),
