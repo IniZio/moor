@@ -1,5 +1,6 @@
 //! Optional loopback web UI: a live Task list behind a token.
 
+mod actions;
 mod http;
 #[cfg(test)]
 mod tests;
@@ -11,10 +12,12 @@ use std::thread;
 use std::time::Duration;
 
 use moor_core::controller::ServerFrame;
+use moor_core::request::Request;
+use moor_core::response::Response;
 use moor_core::view::TaskView;
 use sha2::{Digest, Sha256};
 
-use http::{begin_stream, read_request, respond, Request};
+use http::{begin_stream, read_request, respond, Request as Http};
 
 /// Source of the data the page shows.
 pub(crate) trait Feed {
@@ -28,6 +31,10 @@ pub(crate) trait Feed {
     /// # Errors
     /// Returns a message when the store cannot be read.
     fn events_after(&self, after: i64, limit: usize) -> Result<Vec<ServerFrame>, String>;
+    /// Names of the controller's known repos (`repos:` config keys), sorted.
+    fn repos(&self) -> Vec<String>;
+    /// Runs `req` exactly as a socket `request` frame would; the CLI's envelope.
+    fn call(&self, req: Request) -> Response;
 }
 
 /// Builds a [`Feed`] on the connection thread; the real feed is not `Send`.
@@ -95,14 +102,26 @@ pub(crate) fn start(
 fn serve(mut stream: TcpStream, ctx: &Ctx) -> io::Result<()> {
     stream.set_read_timeout(Some(IO_TIMEOUT))?;
     stream.set_write_timeout(Some(IO_TIMEOUT))?;
-    let Ok(req) = read_request(&mut stream) else {
-        return respond(
-            &mut stream,
-            "400 Bad Request",
-            "text/plain",
-            &[],
-            "bad request",
-        );
+    let req = match read_request(&mut stream) {
+        Ok(req) => req,
+        Err(e) if e.kind() == io::ErrorKind::InvalidInput => {
+            return respond(
+                &mut stream,
+                "413 Payload Too Large",
+                "text/plain",
+                &[],
+                "payload too large",
+            );
+        }
+        Err(_) => {
+            return respond(
+                &mut stream,
+                "400 Bad Request",
+                "text/plain",
+                &[],
+                "bad request",
+            );
+        }
     };
     let Some(via_query) = authenticate(&req, &ctx.token) else {
         return respond(
@@ -113,20 +132,40 @@ fn serve(mut stream: TcpStream, ctx: &Ctx) -> io::Result<()> {
             "unauthorized",
         );
     };
-    if req.method != "GET" {
-        return respond(
-            &mut stream,
-            "405 Method Not Allowed",
-            "text/plain",
-            &[("Allow", "GET")],
-            "method not allowed",
-        );
+    match (req.method.as_str(), req.path.as_str()) {
+        ("GET", "/" | "/app.js" | "/tasks" | "/events" | "/repos") => {}
+        ("POST", p) if actions::is_action(p) => return post(&mut stream, &req, ctx),
+        (_, "/" | "/app.js" | "/tasks" | "/events" | "/repos") => {
+            return not_allowed(&mut stream, "GET");
+        }
+        (_, p) if actions::is_action(p) => return not_allowed(&mut stream, "POST"),
+        _ => return respond(&mut stream, "404 Not Found", "text/plain", &[], "not found"),
     }
     route(&mut stream, &req, ctx, via_query)
 }
 
+/// Answers a wrong-method request on a known path.
+fn not_allowed(out: &mut TcpStream, allow: &str) -> io::Result<()> {
+    respond(
+        out,
+        "405 Method Not Allowed",
+        "text/plain",
+        &[("Allow", allow)],
+        "method not allowed",
+    )
+}
+
+/// Answers an authenticated POST.
+fn post(out: &mut TcpStream, req: &Http, ctx: &Ctx) -> io::Result<()> {
+    let reply = match (ctx.feed)() {
+        Ok(feed) => actions::handle(req, feed.as_ref()),
+        Err(e) => actions::Reply::text("500 Internal Server Error", e),
+    };
+    respond(out, reply.status, reply.content_type, &[], &reply.body)
+}
+
 /// Checks the request's credentials; `Some(true)` when it authenticated by query token.
-fn authenticate(req: &Request, token: &str) -> Option<bool> {
+fn authenticate(req: &Http, token: &str) -> Option<bool> {
     let bearer = req
         .header("authorization")
         .and_then(|v| v.strip_prefix("Bearer "));
@@ -156,7 +195,7 @@ fn token_matches(expected: &str, given: &str) -> bool {
 }
 
 /// Dispatches an authenticated GET.
-fn route(out: &mut TcpStream, req: &Request, ctx: &Ctx, via_query: bool) -> io::Result<()> {
+fn route(out: &mut TcpStream, req: &Http, ctx: &Ctx, via_query: bool) -> io::Result<()> {
     match req.path.as_str() {
         "/" => {
             let cookie = format!(
@@ -184,6 +223,7 @@ fn route(out: &mut TcpStream, req: &Request, ctx: &Ctx, via_query: bool) -> io::
             include_str!("web/app.js"),
         ),
         "/tasks" => tasks(out, ctx),
+        "/repos" => repos(out, ctx),
         "/events" => events(out, req, ctx),
         _ => respond(out, "404 Not Found", "text/plain", &[], "not found"),
     }
@@ -200,8 +240,19 @@ fn tasks(out: &mut TcpStream, ctx: &Ctx) -> io::Result<()> {
     }
 }
 
+/// Answers `/repos`.
+fn repos(out: &mut TcpStream, ctx: &Ctx) -> io::Result<()> {
+    match (ctx.feed)() {
+        Ok(f) => {
+            let body = serde_json::json!({ "repos": f.repos() }).to_string();
+            respond(out, "200 OK", "application/json", &[], &body)
+        }
+        Err(e) => respond(out, "500 Internal Server Error", "text/plain", &[], &e),
+    }
+}
+
 /// Answers `/events` with a server-sent event stream.
-fn events(out: &mut TcpStream, req: &Request, ctx: &Ctx) -> io::Result<()> {
+fn events(out: &mut TcpStream, req: &Http, ctx: &Ctx) -> io::Result<()> {
     let start = req
         .header("last-event-id")
         .or_else(|| req.query_param("since"))

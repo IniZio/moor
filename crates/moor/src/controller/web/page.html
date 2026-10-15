@@ -22,6 +22,17 @@
   .sub { display: block; color: var(--muted); font-size: .85rem; }
   #empty, #error { margin: 1rem 0; }
   #error { font-weight: 600; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  form.row { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin: .3rem 0; }
+  #start { border: 1px solid var(--line); padding: .5rem .8rem; margin: 0 0 1rem; display: grid; gap: .5rem; max-width: 36rem; }
+  #start label { display: grid; gap: .15rem; font-weight: 600; }
+  #start textarea { min-height: 4rem; }
+  #result { margin: .5rem 0 1rem; min-height: 1.5em; }
+  #result div { white-space: pre-wrap; }
+  #result .fail { font-weight: 600; }
+  input[type=text], select, textarea { font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--line); padding: .2rem .4rem; }
+  button { font: inherit; padding: .2rem .7rem; }
+  .opts button { margin: .1rem .3rem .1rem 0; }
   [hidden] { display: none; }
 </style>
 </head>
@@ -33,6 +44,19 @@
     <p id="last-event">Last event: none yet</p>
   </div>
   <p id="error" role="alert" hidden></p>
+  <form id="start">
+    <label for="start-repo">Repo
+      <select id="start-repo" required></select>
+    </label>
+    <label for="start-task">Task name
+      <input type="text" id="start-task" required autocomplete="off">
+    </label>
+    <label for="start-goal">Goal
+      <textarea id="start-goal"></textarea>
+    </label>
+    <div><button type="submit" id="start-submit">Start Task</button> <span id="repos-note"></span></div>
+  </form>
+  <div id="result" aria-live="polite"></div>
   <p id="empty" hidden>No open Tasks</p>
   <div class="wrap">
     <table id="tasks" hidden>
@@ -44,6 +68,7 @@
           <th scope="col">Activity</th>
           <th scope="col">Box</th>
           <th scope="col">Updated</th>
+          <th scope="col">Actions</th>
         </tr>
       </thead>
       <tbody></tbody>

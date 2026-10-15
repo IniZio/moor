@@ -42,6 +42,11 @@ impl Moor {
         }
     }
 
+    /// Names of the repos the controller knows, sorted.
+    pub(crate) fn known_repo_names(&self) -> Vec<String> {
+        self.cx.known_repos().keys().cloned().collect()
+    }
+
     /// Run one request to an envelope; never panics, never prints.
     pub fn call(&self, req: Request) -> Response {
         let cmd = req.cmd();
