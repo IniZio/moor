@@ -5,14 +5,16 @@ use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
+use moor_core::config::proxy::{ResolvedInject, ResolvedRule};
 use moor_core::domain::decision::{Decision, NewTask};
 use moor_core::seam::clock::Ts;
+use moor_core::seam::forge::ForgeRepo;
 use moor_core::{Secret, TaskId, TaskName};
 use nono::undo::NetworkAuditEvent;
 use nono_proxy::capture::{CredentialCaptureBackend as _, CredentialCaptureRequest};
 use serde_json::{json, Value};
 
-use super::{apply, EgressSink, TaskSink};
+use super::{apply, EgressSink, TaskSink, Withheld};
 use crate::proxy::nono::capture::{MoorCapture, RuleSource};
 use crate::proxy::ProxyLog;
 use crate::store::Store;
@@ -52,6 +54,13 @@ impl EgressSink for Recorder {
 
     fn credential_failed(&self, rule: &str) {
         self.0.lock().unwrap().push(format!("failed {rule}"));
+    }
+
+    fn withheld(&self, host: &str, rule: &str, method: &str, shape: Option<&str>) {
+        self.0
+            .lock()
+            .unwrap()
+            .push(format!("withheld {host} {rule} {method} {shape:?}"));
     }
 }
 
@@ -109,7 +118,7 @@ fn fetch(capture: &MoorCapture) {
 fn run(events: &[NetworkAuditEvent]) -> Vec<String> {
     let (capture, _) = counting_capture();
     let sink = Recorder::default();
-    apply(events, &capture, &sink);
+    apply(events, &capture, &Withheld::default(), &sink);
     sink.calls()
 }
 
@@ -141,7 +150,7 @@ fn allow_401_evicts_the_cached_credential() {
         &json!({"route_id": "gh__0", "method": "GET", "status": 401}),
     );
     let sink = Recorder::default();
-    apply(&[e], &capture, &sink);
+    apply(&[e], &capture, &Withheld::default(), &sink);
     fetch(&capture);
     assert_eq!(count.load(Ordering::SeqCst), 2);
     assert_eq!(sink.calls(), ["allowed GET gh 401"]);
@@ -152,7 +161,12 @@ fn allow_401_without_a_rule_evicts_nothing() {
     let (capture, count) = counting_capture();
     fetch(&capture);
     let sink = Recorder::default();
-    apply(&[event("allow", &json!({"status": 401}))], &capture, &sink);
+    apply(
+        &[event("allow", &json!({"status": 401}))],
+        &capture,
+        &Withheld::default(),
+        &sink,
+    );
     fetch(&capture);
     assert_eq!(count.load(Ordering::SeqCst), 1);
 }
@@ -280,7 +294,7 @@ fn task_sink_writes_events_and_a_path_free_log() {
             }),
         ),
     ];
-    apply(&events, &capture, &sink);
+    apply(&events, &capture, &Withheld::default(), &sink);
 
     let rows = store.events(task, 100).unwrap();
     let of = |kind: &str| {
@@ -329,6 +343,7 @@ fn task_sink_records_method_and_category_without_the_path() {
     apply(
         &[denied, event("deny", &json!({"target": "bare.test"}))],
         &capture,
+        &Withheld::default(),
         &sink,
     );
 
@@ -359,4 +374,129 @@ fn task_sink_swallows_store_errors() {
     };
     sink.refused("h.test", None, None, None);
     sink.credential_failed("gh");
+}
+
+/// A rule `gh` for `api.github.com:443`.
+fn gh_rule() -> ResolvedRule {
+    ResolvedRule {
+        name: "gh".to_owned(),
+        hosts: vec!["api.github.com:443".to_owned()],
+        credential: "forge".to_owned(),
+        inject: ResolvedInject::BasicAuth {
+            user: "x".to_owned(),
+        },
+        endpoint_rules: Vec::new(),
+        box_env: BTreeMap::new(),
+    }
+}
+
+/// A passthrough response event for `method` `path` on `host`.
+fn passthrough(host: &str, method: &str, path: &str) -> NetworkAuditEvent {
+    event(
+        "allow",
+        &json!({
+            "target": host,
+            "method": method,
+            "path": path,
+            "status": 200,
+            "managed_credential_active": false,
+        }),
+    )
+}
+
+/// Applies `events` against the `gh` rule and returns the sink's calls.
+fn run_withheld(events: &[NetworkAuditEvent]) -> Vec<String> {
+    let (capture, _) = counting_capture();
+    let watch = Withheld::new(&[gh_rule()], Some(ForgeRepo::new("acme", "widgets")));
+    let sink = Recorder::default();
+    apply(events, &capture, &watch, &sink);
+    sink.calls()
+        .into_iter()
+        .filter(|c| c.starts_with("withheld"))
+        .collect()
+}
+
+#[test]
+fn passthrough_on_a_credential_host_is_withheld_with_a_shape() {
+    let got = run_withheld(&[passthrough(
+        "api.github.com",
+        "GET",
+        "/repos/other/thing/issues/42?access=1",
+    )]);
+    assert_eq!(
+        got,
+        [r#"withheld api.github.com gh GET Some("GET /repos/other/thing/issues/*")"#]
+    );
+}
+
+#[test]
+fn repeated_shapes_are_withheld_once() {
+    let got = run_withheld(&[
+        passthrough("api.github.com", "GET", "/repos/other/thing/issues/1"),
+        passthrough("api.github.com", "GET", "/repos/other/thing/issues/2"),
+        passthrough("api.github.com", "POST", "/repos/other/thing/issues/2"),
+    ]);
+    assert_eq!(got.len(), 2, "{got:?}");
+}
+
+#[test]
+fn non_credential_hosts_and_injected_requests_are_not_withheld() {
+    let injected = event(
+        "allow",
+        &json!({
+            "target": "api.github.com",
+            "method": "GET",
+            "status": 200,
+            "managed_credential_active": true,
+        }),
+    );
+    let got = run_withheld(&[passthrough("tunnel.test", "GET", "/x"), injected]);
+    assert!(got.is_empty(), "{got:?}");
+}
+
+#[test]
+fn withheld_event_and_log_never_hold_the_raw_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, log, task) = task_sink_parts(dir.path());
+    let sink = TaskSink {
+        log: &log,
+        store: &store,
+        task,
+    };
+    let (capture, _) = counting_capture();
+    let watch = Withheld::new(&[gh_rule()], Some(ForgeRepo::new("acme", "widgets")));
+    apply(
+        &[passthrough(
+            "api.github.com",
+            "GET",
+            "/repos/other/thing/issues/42?token=hunter2",
+        )],
+        &capture,
+        &watch,
+        &sink,
+    );
+
+    let rows = store.events(task, 100).unwrap();
+    let withheld: Vec<_> = rows
+        .iter()
+        .filter(|r| r.kind == "credential_withheld")
+        .map(|r| r.payload.clone())
+        .collect();
+    assert_eq!(
+        withheld,
+        [json!({
+            "host": "api.github.com",
+            "rule": "gh",
+            "method": "GET",
+            "shape": "GET /repos/other/thing/issues/*",
+        })]
+    );
+    let stored =
+        serde_json::to_string(&rows.iter().map(|r| r.payload.clone()).collect::<Vec<_>>()).unwrap();
+    let text =
+        std::fs::read_to_string(dir.path().join("proxy").join(format!("{}.log", task.get())))
+            .unwrap();
+    for seen in [stored, text] {
+        assert!(!seen.contains("hunter2") && !seen.contains("42"), "{seen}");
+    }
 }
