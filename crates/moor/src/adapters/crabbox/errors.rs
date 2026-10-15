@@ -1,8 +1,8 @@
 //! Maps a failed `crabbox` run to a `DriverError`, once.
 //!
 //! crabbox never prints JSON errors: the message is free text on stderr and
-//! the exit code is coarse. Raw text is read for classification only and is
-//! never copied into the returned error.
+//! the exit code is coarse. Raw text is read for classification; only the
+//! generic acquire and release failures carry a short stderr tail.
 
 use moor_core::seam::driver::DriverError;
 use moor_core::seam::proc::ProcError;
@@ -136,6 +136,31 @@ pub(super) fn is_claim_race(e: &ProcError) -> bool {
         && stderr_tail.to_lowercase().contains(CLAIM_RACE)
 }
 
+/// Longest stderr tail, in characters, appended to a summary.
+const TAIL_MAX: usize = 300;
+
+/// The end of `stderr` as one line: trimmed non-empty lines joined by `; `, cut from the front to `TAIL_MAX`.
+fn stderr_suffix(op: Op, stderr: &str) -> String {
+    if !matches!(op, Op::Acquire | Op::Release) {
+        return String::new();
+    }
+    let lines: Vec<&str> = stderr
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .collect();
+    let joined = lines.join("; ");
+    let count = joined.chars().count();
+    if count == 0 {
+        return String::new();
+    }
+    if count <= TAIL_MAX {
+        return format!(": {joined}");
+    }
+    let tail: String = joined.chars().skip(count - (TAIL_MAX - 1)).collect();
+    format!(": …{}", tail.trim_start())
+}
+
 /// Maps a failed run of `op` (on `provider`, when known) to the one error shape callers see.
 pub(super) fn map_error(op: Op, provider: Option<&str>, e: &ProcError) -> DriverError {
     let what = op.phrase();
@@ -148,12 +173,13 @@ pub(super) fn map_error(op: Op, provider: Option<&str>, e: &ProcError) -> Driver
         ProcError::NonZero {
             code, stderr_tail, ..
         } => classify_text(*code, &stderr_tail.to_lowercase()).unwrap_or_else(|| {
+            let tail = stderr_suffix(op, stderr_tail);
             let summary = match *code {
-                EXIT_CONFIG => format!("{what} failed (crabbox configuration problem)"),
+                EXIT_CONFIG => format!("{what} failed (crabbox configuration problem){tail}"),
                 EXIT_LOST => format!("{what} failed (box lost during warmup)"),
                 _ => provider.map_or_else(
-                    || format!("{what} failed (crabbox exit {code})"),
-                    |p| format!("{what} failed on provider {p} (exit {code})"),
+                    || format!("{what} failed (crabbox exit {code}){tail}"),
+                    |p| format!("{what} failed on provider {p} (exit {code}){tail}"),
                 ),
             };
             DriverError::Failed { summary }
