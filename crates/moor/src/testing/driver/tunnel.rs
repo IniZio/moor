@@ -48,6 +48,7 @@ pub(crate) struct TunnelCall {
 #[derive(Default)]
 pub(super) struct TunnelState {
     enabled: bool,
+    lacks_cap: bool,
     replies: VecDeque<TunnelReply>,
     calls: Vec<TunnelCall>,
     issued: u32,
@@ -86,6 +87,12 @@ impl FakeDriver {
     /// Reports the reverse-tunnel capability and accepts tunnel requests.
     pub(crate) fn reverse_tunnels(self) -> Self {
         self.st().tunnel.enabled = true;
+        self
+    }
+
+    /// Reports the provider as lacking the reverse-tunnel capability.
+    pub(crate) fn without_reverse_tunnel_cap(self) -> Self {
+        self.st().tunnel.lacks_cap = true;
         self
     }
 
@@ -137,7 +144,7 @@ impl FakeDriver {
             sleep: st.sleep_kind.unwrap_or(SleepKind::None),
             wake: false,
             egress: st.egress.unwrap_or(EgressSupport::None),
-            reverse_tunnel: st.tunnel.enabled,
+            reverse_tunnel: !st.tunnel.lacks_cap,
             has_workdir: true,
         }
     }

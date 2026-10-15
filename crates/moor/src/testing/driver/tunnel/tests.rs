@@ -49,15 +49,23 @@ fn request_fields_are_recorded() {
 }
 
 #[test]
-fn unsupported_by_default_and_caps_false() {
+fn requests_are_unsupported_by_default() {
     let fake = FakeDriver::new();
     let h = boxed(&fake);
-    assert!(!caps(&fake));
+    assert!(caps(&fake));
     assert_eq!(
         open(&fake, &h).err(),
         Some(DriverError::Unsupported("reverse tunnel"))
     );
     assert_eq!(fake.tunnels().len(), 1);
+}
+
+#[test]
+fn caps_report_false_when_the_capability_is_withheld() {
+    let fake = FakeDriver::new()
+        .reverse_tunnels()
+        .without_reverse_tunnel_cap();
+    assert!(!caps(&fake));
 }
 
 #[test]

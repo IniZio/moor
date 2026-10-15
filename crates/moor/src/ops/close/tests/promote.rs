@@ -281,6 +281,16 @@ fn promoted_task_goes_through_setting_up_and_gets_a_ready_box() {
 }
 
 #[test]
+fn a_waiter_on_a_provider_without_reverse_tunnel_is_not_provisioned() {
+    let w = world(limit(1), FakeDriver::new().without_reverse_tunnel_cap());
+    let id = waiting_directly(&w, "first");
+    let v = close_holder(&w);
+    assert!(v.promoted.is_empty());
+    assert_eq!(acquires(&w), 0);
+    assert_ne!(state_of(&w, id), TaskState::Working);
+}
+
+#[test]
 fn driver_limit_frees_a_slot_for_the_waiter_too() {
     let w = world(driver_limit(1), FakeDriver::new());
     queue(&w, "first");

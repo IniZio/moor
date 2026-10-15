@@ -41,3 +41,23 @@ fn a_create_only_provider_without_the_opt_in_stores_not_enforced_and_warns() {
     assert_eq!(egress.as_deref(), Some("not_enforced"));
     assert!(codes.contains(&"egress_unenforced".to_owned()));
 }
+
+#[test]
+fn a_provider_without_reverse_tunnel_is_refused_before_any_acquire() {
+    let config = parse_user("config.yaml", "box: {provider: p}").unwrap();
+    let repo = tempfile::tempdir().unwrap();
+    let w = world_with(
+        FakeDriver::new().without_reverse_tunnel_cap(),
+        repo.path(),
+        config,
+    );
+    let e = crate::ops::start::run(&w.cx, &req("demo")).unwrap_err();
+    assert_eq!(e.kind, moor_core::ErrorKind::Refused);
+    let msg = e.error.to_string();
+    assert!(
+        msg.contains("provider p") && msg.contains("reverse_tunnel"),
+        "{msg}"
+    );
+    assert!(e.hints.iter().any(|h| h.contains("reverse tunnel support")));
+    assert!(!w.driver.calls().iter().any(|c| c == "acquire"));
+}

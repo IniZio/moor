@@ -21,7 +21,7 @@ use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::capacity;
 use crate::ops::common::dotfiles;
-use crate::ops::common::facts::{egress_plan, egress_support, settings};
+use crate::ops::common::facts::{egress_plan, provider_caps, require_reverse_tunnel, settings};
 use crate::ops::common::identity;
 use crate::ops::common::setup;
 use crate::ops::common::view::task_view;
@@ -160,8 +160,8 @@ pub(crate) fn provision(
 ) -> Result<Provisioned, CommandError> {
     let task = reread(store, id)?;
     let provider = ProviderId::new(cfg.provider.value.clone());
-    let support = egress_support(cx, cfg)?;
-    let egress = egress_plan(cx.engine().egress_hosts(), cfg, support)?;
+    let caps = require_reverse_tunnel(cfg, provider_caps(cx, cfg)?)?;
+    let egress = egress_plan(cx.engine().egress_hosts(), cfg, caps.egress)?;
     let mut requested = Decision::new(id);
     requested.task_input = entry.begin();
     let requested = requested
@@ -194,7 +194,7 @@ pub(crate) fn provision(
     } else {
         store.apply(requested)?;
     }
-    let unenforced = warn_unenforced(cx, cfg, support);
+    let unenforced = warn_unenforced(cx, cfg, caps.egress);
     let worktree = PathBuf::from(task.worktree.as_deref().unwrap_or(&task.repo));
     let req = AcquireReq {
         provider,
