@@ -17,6 +17,7 @@ use moor_core::seam::surface::Surface;
 use moor_core::ErrorKind;
 
 use crate::adapters::box_agent::claude::Claude;
+use crate::adapters::box_agent::nono_release::{NonoRelease, UreqFetch};
 use crate::adapters::box_agent::BoxAgent;
 use crate::adapters::clock::SystemClock;
 use crate::adapters::crabbox::Crabbox;
@@ -85,6 +86,10 @@ fn parts(env: &Env) -> Result<CxParts, CommandError> {
         Arc::clone(&surface),
         Arc::new(Claude),
         Arc::clone(&clock) as Arc<dyn Clock>,
+        Arc::new(NonoRelease::new(
+            Arc::new(UreqFetch),
+            env.xdg("XDG_CACHE_HOME", ".cache", "moor"),
+        )),
     );
     let rng: Arc<dyn Rng> = Arc::new(SystemRng);
     let state_dir = env.state_dir();

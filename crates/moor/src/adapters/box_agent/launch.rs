@@ -13,6 +13,7 @@ use moor_core::seam::surface::{PaneCmd, PaneRef, Surface};
 use moor_core::Secret;
 
 use super::brief::{render, BriefInput};
+use super::nono_release::NonoRelease;
 use super::probe::HOOK_FILE;
 use super::proxy_env;
 use super::sandbox::{self, SandboxInput};
@@ -21,7 +22,7 @@ use super::sandbox::{self, SandboxInput};
 const BRIEF_FILE: &str = ".moor/brief.md";
 /// Time allowed for removing the credential directory.
 const CLEANUP_DEADLINE: Duration = Duration::from_secs(30);
-/// Time allowed for installing the sandbox tool on the Box.
+/// Time allowed for checking and installing the sandbox tool on the Box.
 const INSTALL_DEADLINE: Duration = Duration::from_secs(300);
 
 /// A failed step and why.
@@ -47,6 +48,7 @@ pub(super) fn launch(
     surface: &dyn Surface,
     profile: &dyn AgentProfile,
     req: &LaunchReq,
+    release: &NonoRelease,
 ) -> Result<SessionRef, EngineError> {
     let connect = driver
         .connect_argv(&req.handle, &req.worktree)
@@ -68,6 +70,11 @@ pub(super) fn launch(
         &format!(".moor-cred-{}-{}", req.task.as_str(), req.nonce),
     )
     .map_err(|e| failed(fail("brief", &e)))?;
+    let tmp = BoxPath::under(
+        ctx.home.as_str(),
+        &format!(".moor-tmp-{}-{}", req.task.as_str(), req.nonce),
+    )
+    .map_err(|e| failed(fail("brief", &e)))?;
     let launch = Launch {
         driver,
         surface,
@@ -75,6 +82,8 @@ pub(super) fn launch(
         req,
         ctx: &ctx,
         cred: &cred,
+        tmp: &tmp,
+        release,
     };
     match launch.deliver(&connect) {
         Ok(pane) => Ok(SessionRef {
@@ -83,9 +92,13 @@ pub(super) fn launch(
             workdir: req.workdir.clone(),
             worktree: req.worktree.clone(),
             pane: Some(pane),
+            sandbox: ctx
+                .proxy
+                .is_some()
+                .then(|| format!("nono {}", sandbox::NONO_VERSION)),
         }),
         Err(mut f) => {
-            if let Err(c) = remove_cred(driver, req, &cred) {
+            if let Err(c) = remove_cred(driver, req, (&cred, &tmp)) {
                 f.message = format!("{}; could not remove {}: {c}", f.message, cred.as_str());
             }
             Err(failed(f))
@@ -129,6 +142,10 @@ struct Launch<'a> {
     ctx: &'a LaunchCtx,
     /// The credential directory on the Box.
     cred: &'a BoxPath,
+    /// The agent's own temp directory on the Box.
+    tmp: &'a BoxPath,
+    /// Fetches the sandbox tool for a Box that lacks it.
+    release: &'a NonoRelease,
 }
 
 impl Launch<'_> {
@@ -153,35 +170,14 @@ impl Launch<'_> {
             .map_err(|e| fail("script", &e))
     }
 
-    /// Installs the sandbox tool and stages its profile, returning the profile's path and the
+    /// Makes sure the sandbox tool is on the Box and stages its profile, returning the profile's path and the
     /// tunnel port to open; a launch without a Proxy has no tunnel port, so the agent runs unsandboxed.
     fn sandbox(&self) -> Result<Option<(BoxPath, u16)>, Failure> {
         let Some(addr) = &self.ctx.proxy else {
             return Ok(None);
         };
         let (req, cred) = (self.req, self.cred);
-        let spec = ExecSpec {
-            argv: vec!["sh".to_owned(), "-c".to_owned(), sandbox::install_script()],
-            env: Vec::new(),
-            cwd: None,
-            sync: SyncMode::None,
-            output: None,
-            host_cwd: Some(req.worktree.clone()),
-            class: None,
-        };
-        match self
-            .driver
-            .exec(&req.handle, &spec, Deadline(INSTALL_DEADLINE))
-        {
-            Ok(ExecOutcome::Exited { code: 0 }) => {}
-            Ok(ExecOutcome::Exited { code }) => {
-                return Err(fail("sandbox", &sandbox::install_failure(code)));
-            }
-            Ok(ExecOutcome::Interrupted) => {
-                return Err(fail("sandbox", &"the sandbox install was interrupted"));
-            }
-            Err(e) => return Err(fail("sandbox", &format!("the sandbox install failed: {e}"))),
-        }
+        install::ensure(self.driver, req, (&self.ctx.home, cred), self.release)?;
         let env_names = (self.profile.env(self.ctx).into_iter().map(|v| v.name))
             .chain(addr.box_env.iter().map(|(name, _)| name.clone()))
             .collect();
@@ -190,6 +186,7 @@ impl Launch<'_> {
             workdir: &self.ctx.workdir,
             home: &self.ctx.home,
             cred,
+            tmp: self.tmp,
             env_names,
         });
         let at = BoxPath::under(cred.as_str(), sandbox::PROFILE_FILE)
@@ -198,6 +195,29 @@ impl Launch<'_> {
             .put_file(&req.handle, &at, profile.as_bytes(), 0o600, &req.worktree)
             .map_err(|e| fail("sandbox", &e))?;
         Ok(Some((at, addr.box_port)))
+    }
+
+    /// Puts the brief in the credential directory.
+    fn put_brief(&self) -> Result<(), Failure> {
+        let (req, cred) = (self.req, self.cred);
+        let brief = render(&BriefInput {
+            task: req.task.as_str(),
+            goal: req.goal.as_deref(),
+            issue: req.issue.as_deref(),
+            branch: &req.branch,
+            setup_exit: req.setup_exit,
+        });
+        let brief_at = BoxPath::under(cred.as_str(), "brief.md").map_err(|e| fail("brief", &e))?;
+        self.driver
+            .put_file(
+                &req.handle,
+                &brief_at,
+                brief.as_bytes(),
+                0o600,
+                &req.worktree,
+            )
+            .map_err(|e| fail("brief", &e))?;
+        Ok(())
     }
 
     /// Puts the files in the Box and opens the tab.
@@ -209,27 +229,12 @@ impl Launch<'_> {
             req,
             ctx,
             cred,
+            ..
         } = self;
         let sandboxed = self.sandbox()?;
         let hooks = profile.hook_writer(ctx).map_err(|e| fail("hooks", &e))?;
         let preseed = profile.preseed(ctx).map_err(|e| fail("preseed", &e))?;
-        let brief = render(&BriefInput {
-            task: req.task.as_str(),
-            goal: req.goal.as_deref(),
-            issue: req.issue.as_deref(),
-            branch: &req.branch,
-            setup_exit: req.setup_exit,
-        });
-        let brief_at = BoxPath::under(cred.as_str(), "brief.md").map_err(|e| fail("brief", &e))?;
-        driver
-            .put_file(
-                &req.handle,
-                &brief_at,
-                brief.as_bytes(),
-                0o600,
-                &req.worktree,
-            )
-            .map_err(|e| fail("brief", &e))?;
+        self.put_brief()?;
         for file in hooks.files.iter().chain(&preseed.files) {
             driver
                 .put_file(
@@ -243,8 +248,14 @@ impl Launch<'_> {
         }
         let argv = self.argv();
         let lines = self.proxy_lines()?;
-        let wrap = sandboxed.as_ref().map(|(at, port)| (at, *port));
-        let script = script(cred, ctx, &hooks, &preseed, &argv, (&lines, wrap));
+        let script = script(
+            (cred, self.tmp),
+            ctx,
+            &hooks,
+            &preseed,
+            &argv,
+            (&lines, sandboxed.as_ref()),
+        );
         let script = script.map_err(|e| fail("script", &e))?;
         let line = format!(
             "{} {}; echo \"moor: agent exited $?\"",
@@ -270,12 +281,12 @@ impl Launch<'_> {
 /// `proxy` lines the directory stays until the agent exits, since the CA bundle and the CA
 /// certificate live in it. With a `sandbox` profile and port the agent runs under `nono`.
 fn script(
-    cred: &BoxPath,
+    (cred, tmp): (&BoxPath, &BoxPath),
     ctx: &LaunchCtx,
     hooks: &BoxSetup,
     preseed: &BoxSetup,
     argv: &[String],
-    (proxy, sandbox): (&[String], Option<(&BoxPath, u16)>),
+    (proxy, sandbox): (&[String], Option<&(BoxPath, u16)>),
 ) -> Result<String, NameError> {
     let workdir = ctx.workdir.as_str();
     let moor = quote(BoxPath::under(workdir, ".moor")?.as_str());
@@ -286,18 +297,21 @@ fn script(
         .chain(argv.iter().cloned())
         .collect::<Vec<_>>();
     let remove = format!("rm -rf {}", quote(cred.as_str()));
+    let remove_all = format!("{remove} {}", quote(tmp.as_str()));
+    let tmp = quote(tmp.as_str());
     let mut lines = vec![
-        format!("trap {} EXIT", quote(&remove)),
+        format!("trap {} EXIT", quote(&remove_all)),
         "trap 'exit 129' HUP".to_owned(),
         "trap 'exit 130' INT".to_owned(),
         "trap 'exit 143' TERM".to_owned(),
-        format!("mkdir -p {moor} && install -m 600 {staged} {brief} || exit 1"),
+        format!("mkdir -p -m 700 {tmp} && mkdir -p {moor} && install -m 600 {staged} {brief} || exit 1"),
         format!(
             "printf '{{\"state\":\"starting\",\"event\":\"Launch\",\"ts\":%s}}\\n' \"$(date +%s)\" > {state} || exit 1"
         ),
         format!("{} || exit 1", hooks.step),
         preseed.step.clone(),
         "export PATH=\"$HOME/.local/bin:$HOME/.bun/bin:$PATH\"".to_owned(),
+        format!("export TMPDIR={tmp} CLAUDE_CODE_TMPDIR={tmp}"),
     ];
     if proxy.is_empty() {
         lines.insert(5, remove);
@@ -305,16 +319,22 @@ fn script(
     lines.extend(proxy.iter().cloned());
     let agent = sandbox.map_or_else(
         || agent.clone(),
-        |(at, port)| sandbox::wrap(at, port, &agent),
+        |(at, port)| sandbox::wrap(at, *port, &agent),
     );
     lines.push(format!("cd {} && {}", quote(workdir), command_line(&agent)));
     Ok(lines.join("\n"))
 }
 
-/// Removes the credential directory on the Box.
-fn remove_cred(driver: &dyn Driver, req: &LaunchReq, cred: &BoxPath) -> Result<(), String> {
+/// Removes the credential and temp directories on the Box.
+fn remove_cred(
+    driver: &dyn Driver,
+    req: &LaunchReq,
+    (cred, tmp): (&BoxPath, &BoxPath),
+) -> Result<(), String> {
     let spec = ExecSpec {
-        argv: vec!["rm".to_owned(), "-rf".to_owned(), cred.as_str().to_owned()],
+        argv: ["rm", "-rf", cred.as_str(), tmp.as_str()]
+            .map(str::to_owned)
+            .to_vec(),
         env: Vec::new(),
         cwd: None,
         sync: SyncMode::None,
@@ -329,6 +349,8 @@ fn remove_cred(driver: &dyn Driver, req: &LaunchReq, cred: &BoxPath) -> Result<(
         Err(e) => Err(e.to_string()),
     }
 }
+
+mod install;
 
 #[cfg(test)]
 mod tests;

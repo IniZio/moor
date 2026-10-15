@@ -3,6 +3,7 @@
 mod brief;
 pub(crate) mod claude;
 mod launch;
+pub(crate) mod nono_release;
 mod probe;
 mod proxy_env;
 mod sandbox;
@@ -20,6 +21,8 @@ use moor_core::seam::engine::{Engine, EngineError, LaunchReq, SessionRef, Steer,
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::Surface;
 
+use self::nono_release::NonoRelease;
+
 /// An agent running in a Box, read through the Driver and the Surface.
 pub(crate) struct BoxAgent {
     /// Reads the hook file out of the Box.
@@ -30,21 +33,25 @@ pub(crate) struct BoxAgent {
     profile: Arc<dyn AgentProfile>,
     /// Paces the submit key after typing.
     clock: Arc<dyn Clock>,
+    /// Fetches the sandbox tool for a Box that lacks it.
+    release: Arc<NonoRelease>,
 }
 
 impl BoxAgent {
-    /// A kit over the given Driver, Surface, agent profile and clock.
+    /// A kit over the given Driver, Surface, agent profile, clock and sandbox tool source.
     pub(crate) fn new(
         driver: Arc<dyn Driver>,
         surface: Arc<dyn Surface>,
         profile: Arc<dyn AgentProfile>,
         clock: Arc<dyn Clock>,
+        release: Arc<NonoRelease>,
     ) -> Self {
         Self {
             driver,
             surface,
             profile,
             clock,
+            release,
         }
     }
 }
@@ -70,6 +77,7 @@ impl Engine for BoxAgent {
             self.surface.as_ref(),
             self.profile.as_ref(),
             req,
+            &self.release,
         )
     }
 

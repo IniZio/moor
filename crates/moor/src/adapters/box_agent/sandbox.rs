@@ -1,4 +1,4 @@
-//! The nono sandbox the Box agent runs under: the install script, the profile and the wrapping argv.
+//! The nono sandbox the Box agent runs under: the check script, the profile and the wrapping argv.
 
 use moor_core::name::BoxPath;
 use serde_json::json;
@@ -8,35 +8,8 @@ pub(super) const NONO_VERSION: &str = "0.80.0";
 /// File name of the generated profile inside the credential directory.
 pub(super) const PROFILE_FILE: &str = "nono-profile.json";
 
-/// Release download base URL.
-const RELEASE_URL: &str = "https://github.com/nolabs-ai/nono/releases/download/v0.80.0";
-/// Each supported platform: `uname -s`, `uname -m` pattern, asset and sha256.
-const ASSETS: [(&str, &str, &str, &str); 4] = [
-    (
-        "Linux",
-        "x86_64",
-        "nono-v0.80.0-x86_64-unknown-linux-gnu.tar.gz",
-        "6da665b61999570c10dffc7da78828fe1fb7f3cac53319e505cebecaef17037f",
-    ),
-    (
-        "Linux",
-        "aarch64|arm64",
-        "nono-v0.80.0-aarch64-unknown-linux-gnu.tar.gz",
-        "d2a24c8c37714f85c829b5586ffd81fc2acf336c95372d881ba62140884f22cb",
-    ),
-    (
-        "Darwin",
-        "x86_64",
-        "nono-v0.80.0-x86_64-apple-darwin.tar.gz",
-        "b354e674e6b4643ad5c572d148ae367bb0c5c103410fbc22923c5593a6f7d0b2",
-    ),
-    (
-        "Darwin",
-        "arm64",
-        "nono-v0.80.0-aarch64-apple-darwin.tar.gz",
-        "ae824167b3d90531b830429ba92b7781379b1c2d79f9b11fdd88b0fd267e4e32",
-    ),
-];
+/// Exit code of the check script when the Box lacks the pinned nono.
+pub(super) const NOT_INSTALLED: i32 = 6;
 
 /// Environment names every agent keeps: terminal, proxy and CA variables, plus two globs.
 const BASE_VARS: [&str; 23] = [
@@ -87,6 +60,8 @@ pub(super) struct SandboxInput<'a> {
     pub(super) home: &'a BoxPath,
     /// Credential directory holding the CA files; granted read-only.
     pub(super) cred: &'a BoxPath,
+    /// Per-Task temp directory; granted read-write.
+    pub(super) tmp: &'a BoxPath,
     /// Extra names to pass: agent env and rule `box_env` names.
     pub(super) env_names: Vec<String>,
 }
@@ -124,10 +99,11 @@ pub(super) fn profile(input: &SandboxInput) -> String {
         "filesystem": {
             "allow": [
                 input.workdir.as_str(),
+                input.tmp.as_str(),
                 at(".claude"),
                 at(".cache"),
                 at(".config/gh"),
-                at(".local/state"),
+                at(".local/state/claude"),
                 at(".local/share/claude"),
             ],
             "allow_file": [at(".claude.json")],
@@ -146,59 +122,26 @@ pub(super) fn profile(input: &SandboxInput) -> String {
     serde_json::to_string_pretty(&doc).unwrap_or_default()
 }
 
-/// The shell `case` arms that map the platform to its asset and sha256.
-fn platform_arms() -> String {
-    ASSETS
-        .iter()
-        .map(|(os, arch, asset, sum)| format!("  {os}:{arch}) asset={asset}; sum={sum} ;;"))
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-/// The POSIX shell script that installs the pinned nono for the Box user; run via `sh -c`.
-pub(super) fn install_script() -> String {
-    let arms = platform_arms();
-    let v = NONO_VERSION;
+/// The POSIX shell script that checks the pinned nono is installed and can run; run via `sh -c`.
+pub(super) fn check_script() -> String {
+    let (v, missing) = (NONO_VERSION, NOT_INSTALLED);
     format!(
         r#"dest="$HOME/.local/bin/nono"
-if [ "$("$dest" --version 2>/dev/null)" != "nono {v}" ]; then
-  case "$(uname -s):$(uname -m)" in
-{arms}
-  *) echo "no nono {v} release for $(uname -s) $(uname -m)" >&2; exit 2 ;;
-  esac
-  tmp="$(mktemp -d)" || exit 4
-  trap 'rm -rf "$tmp"' EXIT
-  url="{RELEASE_URL}/$asset"
-  if command -v curl >/dev/null 2>&1; then
-    curl -fsSL -o "$tmp/$asset" "$url" || exit 4
-  else
-    wget -qO "$tmp/$asset" "$url" || exit 4
-  fi
-  if command -v sha256sum >/dev/null 2>&1; then
-    (cd "$tmp" && echo "$sum  $asset" | sha256sum -c - >/dev/null 2>&1) || exit 3
-  else
-    (cd "$tmp" && echo "$sum  $asset" | shasum -a 256 -c - >/dev/null 2>&1) || exit 3
-  fi
-  tar -xzf "$tmp/$asset" -C "$tmp" nono || exit 4
-  mkdir -p "$(dirname "$dest")" || exit 4
-  install -m 755 "$tmp/nono" "$dest" || exit 4
-fi
+[ "$("$dest" --version 2>/dev/null)" = "nono {v}" ] || exit {missing}
 "$dest" setup --check-only >/dev/null 2>&1 || exit 5
 "#
     )
 }
 
-/// A human message for a non-zero exit of the install script.
-pub(super) fn install_failure(code: i32) -> String {
+/// A human message for a non-zero exit of the check script.
+pub(super) fn check_failure(code: i32) -> String {
     let v = NONO_VERSION;
     match code {
-        2 => format!("nono {v} has no release for this Box's OS and CPU"),
-        3 => format!("the nono {v} download failed its sha256 check"),
-        4 => format!("could not download nono {v} into the Box"),
         5 => "the Box kernel cannot run the nono sandbox (Landlock is missing); \
               `nono setup --check-only` failed"
             .to_owned(),
-        _ => format!("installing nono {v} exited {code}"),
+        NOT_INSTALLED => format!("nono {v} is not installed on the Box"),
+        _ => format!("checking nono {v} exited {code}"),
     }
 }
 

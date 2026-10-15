@@ -112,6 +112,7 @@ fn start_view_keys_match_wire_shape() {
         agent: AgentLaunchView {
             launched: true,
             session: Some("s".into()),
+            sandbox: None,
             reason: None,
         },
         warnings_inline: vec![],
@@ -122,7 +123,7 @@ fn start_view_keys_match_wire_shape() {
             "task": task_json(), "attached": false, "queued": false, "promoted": ["a"],
             "setup": {"ran": true, "ok": true, "line": null, "ms": 7},
             "dotfiles": {"ran": false, "ok": false, "ms": null},
-            "agent": {"launched": true, "session": "s", "reason": null},
+            "agent": {"launched": true, "session": "s", "sandbox": null, "reason": null},
             "warnings_inline": []
         }))
     );

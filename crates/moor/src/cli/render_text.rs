@@ -128,6 +128,13 @@ fn start_text(value: &Value) -> Option<String> {
         let name = task.get("name")?.as_str()?;
         let _ = writeln!(out, "open it with: moor open {name}");
     }
+    if let Some(sandbox) = value
+        .pointer("/agent/sandbox")
+        .and_then(Value::as_str)
+        .filter(|_| value.pointer("/agent/launched").and_then(Value::as_bool) == Some(true))
+    {
+        let _ = writeln!(out, "agent: launched under {sandbox}");
+    }
     promoted_line(value, &mut out);
     for w in value
         .get("warnings_inline")

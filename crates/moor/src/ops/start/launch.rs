@@ -12,7 +12,7 @@ use moor_core::seam::proxy_host::{ProxyEndpoint, ProxySpec};
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
 use moor_core::domain::task::TaskState;
-use moor_core::seam::engine::{EngineError, LaunchReq};
+use moor_core::seam::engine::{EngineError, LaunchReq, SessionRef};
 use moor_core::seam::surface::{PaneRef, SurfaceError, WorkspaceRef};
 use moor_core::view::{AgentLaunchView, LaunchFailure};
 use moor_core::{StartReq, TaskId, Warning};
@@ -128,34 +128,46 @@ pub(super) fn begin(
     launch.origin = origin;
     let launch = &launch;
     match cx.engine().launch(launch) {
-        Ok(session) => {
-            let sref = if session.id.is_empty() {
-                format!("moor-{}", id.get())
-            } else {
-                session.id
-            };
-            store.begin_session(id, &sref, session.pane.as_ref().map(PaneRef::as_str))?;
-            if let Some(live) = store.live_session(id)?.filter(|_| launch.resume.is_some()) {
-                resume::ensure(
-                    cx,
-                    store,
-                    &row.name,
-                    &live,
-                    launch.resume.as_deref(),
-                    PaneStatus::Working,
-                )?;
-            }
-            if row.launch_failure.is_some() {
-                record(store, id, Field::Clear, None)?;
-            }
-            Ok(AgentLaunchView {
-                launched: true,
-                session: Some(sref),
-                reason: None,
-            })
-        }
+        Ok(session) => record_session(cx, store, row, launch, session),
         Err(e) => record_failure(cx, store, id, &e),
     }
+}
+
+/// Records the launched `session` on the Task `row` and reports it.
+fn record_session(
+    cx: &Cx,
+    store: &Store,
+    row: &TaskRow,
+    launch: &LaunchReq,
+    session: SessionRef,
+) -> Result<AgentLaunchView, CommandError> {
+    let id = row.id;
+    let sandbox = session.sandbox.clone();
+    let sref = if session.id.is_empty() {
+        format!("moor-{}", id.get())
+    } else {
+        session.id
+    };
+    store.begin_session(id, &sref, session.pane.as_ref().map(PaneRef::as_str))?;
+    if let Some(live) = store.live_session(id)?.filter(|_| launch.resume.is_some()) {
+        resume::ensure(
+            cx,
+            store,
+            &row.name,
+            &live,
+            launch.resume.as_deref(),
+            PaneStatus::Working,
+        )?;
+    }
+    if row.launch_failure.is_some() {
+        record(store, id, Field::Clear, None)?;
+    }
+    Ok(AgentLaunchView {
+        launched: true,
+        session: Some(sref),
+        sandbox,
+        reason: None,
+    })
 }
 
 /// Records a failed launch on the Task, which stays Working with no session, and reports it.
@@ -170,6 +182,7 @@ fn record_failure(
     Ok(AgentLaunchView {
         launched: false,
         session: None,
+        sandbox: None,
         reason: Some(failure),
     })
 }
