@@ -274,6 +274,21 @@ fn a_gone_pane_stops_the_session_and_refuses() {
 }
 
 #[test]
+fn an_exit_steer_on_a_gone_pane_succeeds_and_ends_the_session() {
+    let engine = FakeEngine::new().steer_result(Err(EngineError::PaneGone));
+    let f = fx_with(engine, true);
+    let v = run(&f.cx, &text(" /exit ")).unwrap();
+    assert_eq!(v.sent, " /exit ");
+    assert!(!v.answered_menu);
+    assert!(!live(&f));
+    let warned = f.cx.take_warnings();
+    assert_eq!(
+        warned.first().map(|w| w.code.as_str()),
+        Some("agent_exited")
+    );
+}
+
+#[test]
 fn an_exited_agent_names_its_code() {
     let exited = Probes {
         hook: HookRead::Absent,

@@ -68,20 +68,43 @@ pub(crate) fn run(cx: &Cx, req: &SteerReq) -> Result<SteerValue, CommandError> {
         Steer::Text(t) => t.clone(),
         Steer::Menu(n) => n.to_string(),
     };
-    let outcome = send(
+    let Some(outcome) = send(
         cx,
         store,
         &row,
         (name, &session, &sref),
         &steer,
         before.as_ref(),
-    )?;
+    )?
+    else {
+        return exited(cx, store, (id, name), &session, sent);
+    };
     record(store, id, &session, &sent, outcome.submit_retried)?;
     let answered_menu = answered(cx, store, &row, &steer, outcome)?;
     Ok(SteerValue {
         task: name.to_owned(),
         sent,
         answered_menu,
+    })
+}
+
+/// The result of an exit steer whose pane was already gone: recorded, with a warning.
+fn exited(
+    cx: &Cx,
+    store: &Store,
+    (id, name): (TaskId, &str),
+    session: &SessionRow,
+    sent: String,
+) -> Result<SteerValue, CommandError> {
+    record(store, id, session, &sent, false)?;
+    cx.warn(Warning {
+        code: "agent_exited".to_owned(),
+        message: "the agent exited and its session ended".to_owned(),
+    });
+    Ok(SteerValue {
+        task: name.to_owned(),
+        sent,
+        answered_menu: false,
     })
 }
 
@@ -105,7 +128,13 @@ fn state_of(cx: &Cx, store: &Store, row: &TaskRow) -> Result<Option<AgentState>,
     Ok(reading.activity.map(|a| a.state))
 }
 
-/// Sends `steer`; a pane that ended has its transcript saved, stops the session and refuses.
+/// Whether `steer` asks the agent to exit.
+fn is_exit(steer: &Steer) -> bool {
+    matches!(steer, Steer::Text(t) if t.trim() == "/exit")
+}
+
+/// Sends `steer`; a pane that ended has its transcript saved and its session stopped, then an
+/// exit steer yields `None` and any other steer refuses.
 fn send(
     cx: &Cx,
     store: &Store,
@@ -113,9 +142,9 @@ fn send(
     (name, session, sref): (&str, &SessionRow, &SessionRef),
     steer: &Steer,
     before: Option<&AgentState>,
-) -> Result<SteerOutcome, CommandError> {
+) -> Result<Option<SteerOutcome>, CommandError> {
     match cx.engine().steer(sref, steer, Deadline(STEER_DEADLINE)) {
-        Ok(o) => Ok(o),
+        Ok(o) => Ok(Some(o)),
         Err(EngineError::PaneGone) => {
             let code = match before {
                 Some(AgentState::Exited { code }) => Some(*code),
@@ -123,6 +152,9 @@ fn send(
             };
             let saved = transcript::save(cx, store, row, session, Trigger::Exit);
             store.end_session(session.id, code, saved.as_ref().map(|t| t.digest.as_str()))?;
+            if is_exit(steer) {
+                return Ok(None);
+            }
             let ended = code.map_or_else(
                 || "the agent's pane is gone".to_owned(),
                 |c| format!("agent exited {c}"),
