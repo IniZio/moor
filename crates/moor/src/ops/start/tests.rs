@@ -24,6 +24,7 @@ mod capacity;
 mod dead_agent;
 mod dotfiles;
 mod identity;
+mod known_repo;
 mod leftover;
 mod moor_yaml;
 mod provider_caps;
@@ -112,6 +113,7 @@ fn req(name: &str) -> StartReq {
         no_agent: false,
         resume: false,
         trust_moor_yaml: false,
+        repo: None,
     }
 }
 

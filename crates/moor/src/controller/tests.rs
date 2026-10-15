@@ -4,6 +4,8 @@ use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::sync::Arc;
 
+use moor_core::config::MoorYamlSource;
+
 use super::{serve, start};
 use crate::env::Env;
 
@@ -102,4 +104,35 @@ fn client_gets_a_reply_to_hello() {
     let mut line = String::new();
     BufReader::new(stream).read_line(&mut line).expect("read");
     assert!(!line.is_empty());
+}
+
+#[test]
+fn missing_repo_moor_yaml_names_key() {
+    let tmp = tempfile::tempdir().expect("tmp");
+    let cfg = config(
+        tmp.path(),
+        "repos:\n  app:\n    url: https://example.com/app.git\n    moor_yaml:\n      path: nope.yaml\n",
+    );
+    let stop = start(&env(tmp.path()), &cfg).err().expect("stop");
+    assert_eq!(stop.code, 2);
+    assert!(
+        stop.message.contains("repos.app.moor_yaml"),
+        "{}",
+        stop.message
+    );
+    assert!(stop.message.contains("nope.yaml"), "{}", stop.message);
+}
+
+#[test]
+fn relative_repo_moor_yaml_resolves_against_config_dir() {
+    let tmp = tempfile::tempdir().expect("tmp");
+    std::fs::write(tmp.path().join("app.yaml"), "{}\n").expect("write overlay");
+    let cfg = config(
+        tmp.path(),
+        "repos:\n  app:\n    url: https://example.com/app.git\n    moor_yaml:\n      path: app.yaml\n",
+    );
+    let running = start(&env(tmp.path()), &cfg).expect("start");
+    let entry = &running.env.repos()["app"];
+    let want = tmp.path().join("app.yaml").to_string_lossy().into_owned();
+    assert_eq!(entry.moor_yaml, Some(MoorYamlSource::Path(want)));
 }

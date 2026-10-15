@@ -12,6 +12,9 @@ const DEADLINE: Deadline = Deadline(Duration::from_secs(30));
 /// Time limit for fetching the remote default branch.
 const FETCH_DEADLINE: Deadline = Deadline(Duration::from_secs(20));
 
+/// Time limit for cloning a repository.
+const CLONE_DEADLINE: Deadline = Deadline(Duration::from_secs(600));
+
 /// The remote moor bases new Tasks on.
 const REMOTE: &str = "origin";
 
@@ -165,6 +168,34 @@ impl Git {
             .map_err(|e| Self::failure(&args, e))?;
         let sha = self.run(repo, &["rev-parse", tracking])?;
         Ok(Some((tracking.to_owned(), sha.trim().to_owned())))
+    }
+
+    /// Clones `url` into `dest` with the host's own git credentials.
+    ///
+    /// # Errors
+    /// [`GitError::Failed`] when the clone fails or times out.
+    pub(crate) fn clone_repo(&self, url: &str, dest: &Path) -> Result<(), GitError> {
+        let dest = dest.to_string_lossy();
+        let args = ["clone", "--", url, &dest];
+        let cwd = Path::new(dest.as_ref())
+            .parent()
+            .unwrap_or_else(|| Path::new("."));
+        self.exec(cwd, &args, CLONE_DEADLINE)
+            .map(drop)
+            .map_err(|e| Self::failure(&args, e))
+    }
+
+    /// Fetches `branch` from `origin` and returns the commit of its remote-tracking ref.
+    ///
+    /// # Errors
+    /// [`GitError::Failed`] when the fetch fails or times out, or the branch is absent.
+    pub(crate) fn fetch_branch(&self, repo: &Path, branch: &str) -> Result<String, GitError> {
+        let tracking = format!("refs/remotes/{REMOTE}/{branch}");
+        let refspec = format!("+refs/heads/{branch}:{tracking}");
+        let args = ["fetch", REMOTE, &refspec];
+        self.exec(repo, &args, FETCH_DEADLINE)
+            .map_err(|e| Self::failure(&args, e))?;
+        Ok(self.run(repo, &["rev-parse", &tracking])?.trim().to_owned())
     }
 
     /// Commits reachable from HEAD that neither `base` nor any remote-tracking
