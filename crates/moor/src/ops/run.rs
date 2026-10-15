@@ -20,6 +20,7 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::facts::settings;
+use crate::ops::common::provision::moor_yaml;
 use crate::ops::common::provisioning::dead_provisioning;
 use crate::ops::common::wake::wake_if_asleep;
 use crate::store::{NewRun, RunOutcome, Store, StoreError, TaskRow};
@@ -35,7 +36,7 @@ const RUN_DEADLINE: Duration = Duration::from_hours(24);
 ///
 /// # Errors
 /// [`CommandError`] when the command could not start: unknown Task, no usable Box, a busy Box,
-/// or a failure of the driver or the store before the command ran.
+/// a `.moor.yaml` that differs from the base commit without trust, or a failure of the driver or the store before the command ran.
 pub(crate) fn run(cx: &Cx, req: &RunReq) -> Result<RunValue, CommandError> {
     if req.argv.is_empty() {
         return Err(CommandError::new(ErrorKind::Usage, "no command to run"));
@@ -83,6 +84,7 @@ fn launch(
     row: &TaskRow,
     target: ready::Target,
 ) -> Result<RunValue, CommandError> {
+    moor_yaml::guard(cx, row, req.trust_moor_yaml)?;
     let cfg = settings(cx, &target.worktree, &Flags::default())?;
     let sync = sync::choose(cx, store, req, row)?;
     let (sha, argv) = plan(cx, req, &target.worktree, &cfg.setup)?;

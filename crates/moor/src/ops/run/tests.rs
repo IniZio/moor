@@ -20,6 +20,7 @@ use crate::testing::driver::FakeDriver;
 use crate::testing::proc::{Reply, ScriptedProc};
 use crate::testing::surface::FakeSurface;
 
+mod moor_yaml;
 mod sync;
 
 pub(in crate::ops::run) const SHA: &str = "0123456789abcdef0123456789abcdef01234567";
@@ -40,6 +41,7 @@ pub(in crate::ops::run) fn req(argv: &[&str]) -> RunReq {
         record: None,
         argv: argv.iter().map(|s| (*s).to_owned()).collect(),
         inherit_output: false,
+        trust_moor_yaml: false,
     }
 }
 
@@ -51,6 +53,7 @@ fn context(dir: &std::path::Path, driver: &Arc<FakeDriver>) -> (Cx, Arc<Scripted
         &["rev-parse", "HEAD"],
         Reply::Ok(format!("{SHA}\n")),
     );
+    proc.on(Tool::Git, &["ls-tree"], Reply::Ok(String::new()));
     proc.on(
         Tool::Git,
         &["rev-parse", "--path-format=absolute", "--git-common-dir"],
@@ -105,6 +108,7 @@ pub(in crate::ops::run) fn ready_with(driver: FakeDriver) -> Fx {
     let fields = Fields {
         box_provider: Field::Set(provider.clone()),
         worktree: Field::Set(f.dir.path().display().to_string()),
+        base: Field::Set(SHA.to_owned()),
         ..Fields::default()
     };
     let d = Decision::new(f.id)
@@ -473,7 +477,11 @@ fn driver_failure_is_kept_on_the_ran_event() {
 #[test]
 fn unusable_repo_config_leaves_no_run_row() {
     let f = ready();
-    std::fs::write(f.dir.path().join(".moor.yaml"), "box_credentials: [\n").unwrap();
+    let text = "box_credentials: [\n";
+    std::fs::write(f.dir.path().join(".moor.yaml"), text).unwrap();
+    f.proc
+        .before(Tool::Git, &["ls-tree"], Reply::Ok(".moor.yaml\n".into()));
+    f.proc.before(Tool::Git, &["show"], Reply::Ok(text.into()));
     let before = f.driver.calls().len();
     refused(&f, &req(&["true"]), ErrorKind::Failed);
     assert_eq!(f.driver.calls().len(), before);
@@ -485,6 +493,7 @@ fn unusable_repo_config_leaves_no_run_row() {
 fn unreadable_head_records_and_reports_no_sha() {
     let f = ready();
     let proc = Arc::new(ScriptedProc::new());
+    proc.on(Tool::Git, &["ls-tree"], Reply::Ok(String::new()));
     proc.on(
         Tool::Git,
         &["rev-parse", "--path-format=absolute", "--git-common-dir"],

@@ -98,6 +98,7 @@ fn run_with_trailing_command() {
             sync: false,
             record: None,
             argv: vec!["ls".into(), "-la".into()],
+            trust_moor_yaml: false,
             inherit_output: false,
         })
     );
@@ -110,6 +111,7 @@ fn run_with_trailing_command() {
             sync: false,
             record: Some("r".into()),
             argv: vec!["make".into()],
+            trust_moor_yaml: false,
             inherit_output: false,
         })
     );
@@ -126,9 +128,28 @@ fn run_sync_flag() {
             sync: true,
             record: None,
             argv: vec!["make".into()],
+            trust_moor_yaml: false,
             inherit_output: false,
         })
     );
+}
+
+#[test]
+fn run_trust_moor_yaml_flag() {
+    assert!(matches!(
+        req(&["run", "demo", "--trust-moor-yaml", "--", "make", "test"]),
+        Request::Run(RunReq {
+            trust_moor_yaml: true,
+            ..
+        })
+    ));
+    assert!(matches!(
+        req(&["run", "demo", "--", "make", "test"]),
+        Request::Run(RunReq {
+            trust_moor_yaml: false,
+            ..
+        })
+    ));
 }
 
 #[test]

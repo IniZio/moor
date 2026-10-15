@@ -114,6 +114,13 @@ fn record_run_wraps_the_command_in_the_record_script() {
 fn repo_setup_lines_precede_the_command() {
     let f = clean();
     std::fs::write(f.dir.path().join(".moor.yaml"), "setup: ['make deps']\n").unwrap();
+    f.proc
+        .before(Tool::Git, &["ls-tree"], Reply::Ok(".moor.yaml\n".into()));
+    f.proc.before(
+        Tool::Git,
+        &["show"],
+        Reply::Ok("setup: ['make deps']\n".into()),
+    );
     run(&f.cx, &record_req(&["make", "test"])).unwrap();
     let (_, spec, _) = f.driver.execs().remove(0);
     let line = command_line(&["make".to_owned(), "test".to_owned()]);

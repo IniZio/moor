@@ -109,7 +109,7 @@ fn a_changed_setup_runs_when_trusted_and_warns() {
 #[test]
 fn a_deleted_moor_yaml_is_refused() {
     let w = failed_with(None);
-    assert_refused(&w, &start_req(), "setup");
+    assert_refused(&w, &start_req(), "deleted");
 }
 
 #[test]
@@ -118,7 +118,7 @@ fn an_added_moor_yaml_is_refused() {
     let (w, _) = failed_setup_on_base(BASE, Some(BASE), driver);
     script_base_yaml(&w, None);
     drop(warning_codes(&w));
-    assert_refused(&w, &start_req(), "setup");
+    assert_refused(&w, &start_req(), "added");
 }
 
 #[test]

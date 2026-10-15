@@ -30,6 +30,7 @@ fn with_args() -> Vec<Request> {
             sync: false,
             record: None,
             argv: vec!["ls".into()],
+            trust_moor_yaml: false,
             inherit_output: false,
         }),
         Request::Wait(WaitReq {
@@ -170,6 +171,7 @@ fn defaults_and_renames() {
             sync: false,
             record: None,
             argv: vec![],
+            trust_moor_yaml: false,
             inherit_output: false,
         })
     );
@@ -195,7 +197,7 @@ fn none_fields_omitted() {
 
 #[test]
 fn run_argv_roundtrips() {
-    let v = json!({"cmd":"run","task":"a","no_sync":false,"sync":false,"argv":["ls","-la"]});
+    let v = json!({"cmd":"run","task":"a","no_sync":false,"sync":false,"argv":["ls","-la"],"trust_moor_yaml":false});
     let r: Request = serde_json::from_value(v.clone()).unwrap();
     assert_eq!(
         r,
@@ -205,6 +207,7 @@ fn run_argv_roundtrips() {
             sync: false,
             record: None,
             argv: vec!["ls".into(), "-la".into()],
+            trust_moor_yaml: false,
             inherit_output: false,
         })
     );
@@ -221,6 +224,7 @@ fn run_inherit_output_is_not_settable_from_json() {
         sync: false,
         record: None,
         argv: vec![],
+        trust_moor_yaml: false,
         inherit_output: true,
     };
     let v = serde_json::to_value(Request::Run(r)).unwrap();
@@ -260,6 +264,7 @@ fn run_sync_flag_parses_and_defaults_off() {
             sync: true,
             record: None,
             argv: vec!["ls".into()],
+            trust_moor_yaml: false,
             inherit_output: false,
         })
     );
@@ -270,7 +275,20 @@ fn run_sync_flag_parses_and_defaults_off() {
         sync: false,
         record: None,
         argv: vec![],
+        trust_moor_yaml: false,
         inherit_output: false,
     });
     assert_eq!(without, want);
+}
+
+#[test]
+fn run_trust_moor_yaml_defaults_false_and_roundtrips() {
+    let r: Request = serde_json::from_str(r#"{"cmd":"run","task":"a"}"#).unwrap();
+    assert!(matches!(r, Request::Run(ref s) if !s.trust_moor_yaml));
+
+    let r: Request =
+        serde_json::from_str(r#"{"cmd":"run","task":"a","trust_moor_yaml":true}"#).unwrap();
+    assert!(matches!(r, Request::Run(ref s) if s.trust_moor_yaml));
+    let back: Request = serde_json::from_value(serde_json::to_value(&r).unwrap()).unwrap();
+    assert_eq!(back, r);
 }

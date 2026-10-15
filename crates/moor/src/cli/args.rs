@@ -4,14 +4,15 @@ use std::ffi::OsString;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use moor_core::{
-    CloseReq, CpReq, RemoveReq, ReportReq, Request, RunReq, ShowReq, StartReq, SteerReq, TaskId,
-    TaskName, TaskReq, WaitFor, WaitReq,
+    ReportReq, Request, RunReq, ShowReq, StartReq, SteerReq, TaskId, TaskName, WaitFor, WaitReq,
 };
 
 use super::args_admin::{AdminCmd, GateCmd};
 use super::args_probe::Flags;
 use super::GlobalOpts;
+use task_ops::{CloseArgs, CpArgs, RemoveArgs, TaskArg};
 
+mod task_ops;
 #[cfg(test)]
 mod tests;
 
@@ -33,7 +34,7 @@ pub(super) fn parse(args: Vec<OsString>) -> Result<(GlobalOpts, Action), clap::E
 }
 
 /// clap parser for a Task name.
-fn task_name(s: &str) -> Result<TaskName, String> {
+pub(super) fn task_name(s: &str) -> Result<TaskName, String> {
     TaskName::parse(s).map_err(|e| e.to_string())
 }
 
@@ -178,6 +179,9 @@ struct RunArgs {
     /// Record the run under this name.
     #[arg(long, value_name = "NAME")]
     record: Option<String>,
+    /// Run even when the Task's .moor.yaml differs from its base commit.
+    #[arg(long)]
+    trust_moor_yaml: bool,
     /// Command and its arguments.
     #[arg(required = true, trailing_var_arg = true, allow_hyphen_values = true)]
     cmd: Vec<String>,
@@ -191,6 +195,7 @@ impl From<RunArgs> for RunReq {
             sync: a.sync,
             record: a.record,
             argv: a.cmd,
+            trust_moor_yaml: a.trust_moor_yaml,
             inherit_output: false,
         }
     }
@@ -317,82 +322,5 @@ impl From<ShowArgs> for ShowReq {
             reports: a.reports,
             pane: a.pane,
         }
-    }
-}
-
-/// Arguments of `close`.
-#[derive(Debug, Args)]
-struct CloseArgs {
-    /// Task name.
-    #[arg(value_parser = task_name)]
-    task: TaskName,
-    /// Close despite unsaved work.
-    #[arg(long)]
-    force: bool,
-}
-
-impl From<CloseArgs> for CloseReq {
-    fn from(a: CloseArgs) -> Self {
-        Self {
-            task: a.task,
-            force: a.force,
-        }
-    }
-}
-
-/// Arguments of `remove`.
-#[derive(Debug, Args)]
-struct RemoveArgs {
-    /// Task name.
-    #[arg(value_parser = task_name)]
-    task: TaskName,
-    /// Discard the Task's work.
-    #[arg(long)]
-    discard: bool,
-}
-
-impl From<RemoveArgs> for RemoveReq {
-    fn from(a: RemoveArgs) -> Self {
-        Self {
-            task: a.task,
-            discard: a.discard,
-        }
-    }
-}
-
-/// Arguments of `cp`.
-#[derive(Debug, Args)]
-struct CpArgs {
-    /// Task name.
-    #[arg(value_parser = task_name)]
-    task: TaskName,
-    /// Source path in the Box; relative to its workdir and may not contain
-    /// `..`. Use an absolute Box path to reach outside the workdir.
-    src: String,
-    /// Destination path on the host; relative to the current directory.
-    dest: String,
-}
-
-impl From<CpArgs> for CpReq {
-    fn from(a: CpArgs) -> Self {
-        Self {
-            task: a.task,
-            src: a.src,
-            dest: a.dest,
-        }
-    }
-}
-
-/// A lone Task argument.
-#[derive(Debug, Args)]
-struct TaskArg {
-    /// Task name.
-    #[arg(value_parser = task_name)]
-    task: TaskName,
-}
-
-impl From<TaskArg> for TaskReq {
-    fn from(a: TaskArg) -> Self {
-        Self { task: a.task }
     }
 }

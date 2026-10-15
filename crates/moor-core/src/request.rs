@@ -111,6 +111,10 @@ pub struct StartReq {
 /// Arguments of `run`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "JSON wire shape is a public contract"
+)]
 pub struct RunReq {
     /// Task name.
     pub task: TaskName,
@@ -126,6 +130,9 @@ pub struct RunReq {
     /// Command and arguments.
     #[serde(default)]
     pub argv: Vec<String>,
+    /// Run even when the Task's `.moor.yaml` differs from its base commit.
+    #[serde(default)]
+    pub trust_moor_yaml: bool,
     /// Program output goes to moor's own stdout and stderr instead of the run log.
     /// Never read from or written to JSON.
     #[serde(skip)]

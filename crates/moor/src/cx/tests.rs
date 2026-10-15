@@ -41,6 +41,17 @@ fn warnings_drain_in_order() {
 }
 
 #[test]
+fn warn_once_keeps_first_warning_per_code() {
+    let cx = cx(Path::new("/nonexistent"));
+    cx.warn_once(w("a"));
+    cx.warn_once(w("a"));
+    cx.warn_once(w("b"));
+    let got = cx.take_warnings();
+    assert_eq!(got.len(), 2);
+    assert_eq!(got.get(1).map(|x| x.code.as_str()), Some("b"));
+}
+
+#[test]
 fn store_opens_lazily_at_moor_db() {
     let dir = tempfile::tempdir().expect("tempdir");
     let cx = cx(dir.path());
