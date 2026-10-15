@@ -1,11 +1,27 @@
 //! Event stream and settle pass for the controller, behind the `Moor` facade.
 
 use moor_core::controller::ServerFrame;
+use moor_core::view::TaskView;
+use moor_core::ShowReq;
 
 use super::Moor;
 use crate::ops;
 
 impl Moor {
+    /// Rows of every open Task, as `show` lists them.
+    pub(crate) fn open_tasks(&self) -> Result<Vec<TaskView>, String> {
+        let req = ShowReq {
+            task: None,
+            events: None,
+            agent: false,
+            reports: false,
+            pane: false,
+        };
+        ops::show::run(&self.cx, &req)
+            .map(|v| v.tasks.unwrap_or_default())
+            .map_err(|e| e.error.to_string())
+    }
+
     /// Stored events with cursor above `after`, oldest first, at most `limit`, as wire frames.
     pub(crate) fn events_after(
         &self,

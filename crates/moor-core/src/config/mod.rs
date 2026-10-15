@@ -7,7 +7,7 @@ pub mod repo;
 pub mod settings;
 mod user;
 
-pub use controller::{parse_controller, ControllerConfig};
+pub use controller::{parse_controller, ControllerConfig, WebConfig};
 pub use repo::{parse_repo, RepoBox, RepoCompose, RepoConfig};
 
 pub use user::{
