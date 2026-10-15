@@ -261,6 +261,10 @@ impl EgressSink for Recorder {
     fn withheld(&self, host: &str, rule: &str, method: &str, _: Option<&str>) {
         self.push(format!("withheld({host}, {rule}, {method})"));
     }
+
+    fn withheld_overflow(&self) {
+        self.push("withheld_overflow".to_owned());
+    }
 }
 
 /// Drains and applies audit events until `done` holds for the recorded calls.

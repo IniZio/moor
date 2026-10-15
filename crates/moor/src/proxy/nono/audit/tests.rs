@@ -62,6 +62,10 @@ impl EgressSink for Recorder {
             .unwrap()
             .push(format!("withheld {host} {rule} {method} {shape:?}"));
     }
+
+    fn withheld_overflow(&self) {
+        self.0.lock().unwrap().push("overflow".to_owned());
+    }
 }
 
 /// An audit event from `extra` fields laid over a base of `decision` to `host`.
@@ -535,4 +539,53 @@ fn withheld_event_and_log_never_hold_the_raw_path() {
     for seen in [stored, text] {
         assert!(!seen.contains("hunter2") && !seen.contains("42"), "{seen}");
     }
+}
+
+#[test]
+fn withheld_reports_stop_at_the_cap_with_one_overflow_line() {
+    let events: Vec<_> = (0..300)
+        .map(|i| passthrough("api.github.com", "GET", &format!("/user/thing{i}")))
+        .collect();
+    let (capture, _) = counting_capture();
+    let watch = Withheld::new(&[gh_rule()], Some(ForgeRepo::new("acme", "widgets")));
+    let sink = Recorder::default();
+    apply(&events, &capture, &watch, &sink);
+    let calls = sink.calls();
+    let reported = calls.iter().filter(|c| c.starts_with("withheld ")).count();
+    let overflow = calls.iter().filter(|c| *c == "overflow").count();
+    assert_eq!((reported, overflow), (256, 1));
+}
+
+#[test]
+fn withheld_skips_a_method_that_is_not_upper_case_letters() {
+    let got = run_withheld(&[
+        passthrough("api.github.com", "get", "/user"),
+        passthrough("api.github.com", "G;T", "/user"),
+        event(
+            "allow",
+            &json!({"target": "api.github.com", "status": 200, "managed_credential_active": false}),
+        ),
+    ]);
+    assert!(got.is_empty(), "{got:?}");
+}
+
+#[test]
+fn withheld_needs_a_response_status() {
+    let pending = event(
+        "allow",
+        &json!({
+            "target": "api.github.com",
+            "method": "GET",
+            "path": "/user",
+            "managed_credential_active": false,
+        }),
+    );
+    assert!(run_withheld(&[pending]).is_empty());
+}
+
+#[test]
+fn withheld_matches_the_host_ignoring_case_and_port() {
+    let got = run_withheld(&[passthrough("API.GitHub.com:443", "GET", "/user")]);
+    assert_eq!(got.len(), 1, "{got:?}");
+    assert!(got[0].contains(" gh GET "), "{got:?}");
 }

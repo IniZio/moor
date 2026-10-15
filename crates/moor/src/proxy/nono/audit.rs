@@ -31,6 +31,20 @@ pub(crate) trait EgressSink {
     /// Records a request to a credential host that was forwarded without
     /// the credential, with its templated shape when one is sound.
     fn withheld(&self, host: &str, rule: &str, method: &str, shape: Option<&str>);
+    /// Records, once, that further distinct withheld requests are not reported.
+    fn withheld_overflow(&self);
+}
+
+/// Distinct withheld requests reported per Task before reporting stops.
+const MAX_WITHHELD: usize = 256;
+
+/// What has been reported for one Task.
+#[derive(Default)]
+struct Reported {
+    /// `(rule, method, shape)` already reported.
+    keys: BTreeSet<(String, String, Option<String>)>,
+    /// Whether the overflow line has been written.
+    overflowed: bool,
 }
 
 /// What the drain needs to spot requests forwarded without a credential.
@@ -40,8 +54,8 @@ pub(crate) struct Withheld {
     hosts: BTreeMap<String, String>,
     /// The Task repo the shapes are templated against.
     repo: Option<ForgeRepo>,
-    /// `(rule, method, shape)` already reported for this Task.
-    seen: Mutex<BTreeSet<(String, String, Option<String>)>>,
+    /// What has been reported for this Task.
+    seen: Mutex<Reported>,
 }
 
 impl Withheld {
@@ -76,7 +90,13 @@ impl Withheld {
             return;
         };
         let rule = rule(event).unwrap_or(host_rule);
-        let method = event.method.as_deref().unwrap_or("-");
+        let Some(method) = event
+            .method
+            .as_deref()
+            .filter(|m| !m.is_empty() && m.bytes().all(|b| b.is_ascii_uppercase()))
+        else {
+            return;
+        };
         let shape = self.repo.as_ref().and_then(|repo| {
             request_shape(
                 method,
@@ -85,14 +105,23 @@ impl Withheld {
             )
         });
         let key = (rule.to_owned(), method.to_owned(), shape.clone());
-        let first = self
+        let mut seen = self
             .seen
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert(key);
-        if first {
-            sink.withheld(host, rule, method, shape.as_deref());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if seen.keys.contains(&key) {
+            return;
         }
+        if seen.keys.len() >= MAX_WITHHELD {
+            if !seen.overflowed {
+                seen.overflowed = true;
+                sink.withheld_overflow();
+            }
+            return;
+        }
+        seen.keys.insert(key);
+        drop(seen);
+        sink.withheld(host, rule, method, shape.as_deref());
     }
 }
 
@@ -153,6 +182,10 @@ impl EgressSink for TaskSink<'_> {
             shape: shape.map(str::to_owned),
         };
         let _ = self.store.record_proxy_event(self.task, &event);
+    }
+
+    fn withheld_overflow(&self) {
+        self.log.record("-", "withheld-overflow", 0);
     }
 }
 
