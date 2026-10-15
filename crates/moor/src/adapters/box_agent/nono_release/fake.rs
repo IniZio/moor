@@ -1,8 +1,9 @@
 //! A scripted release download for box agent tests.
 
+use std::io::Write;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use super::{Fetch, NonoRelease};
+use super::{sha256_hex, Asset, Fetch, NonoRelease};
 
 /// Answers every download with one scripted body and records the URLs asked for.
 pub(crate) struct FakeFetch {
@@ -44,4 +45,41 @@ impl Fetch for FakeFetch {
 pub(crate) fn offline_release() -> Arc<NonoRelease> {
     let fetch = Arc::new(FakeFetch::new(Err("offline".to_owned())));
     Arc::new(NonoRelease::new(fetch, None))
+}
+
+/// A gzip tarball holding one `nono` file.
+pub(crate) fn tarball(content: &[u8]) -> Vec<u8> {
+    let mut builder = tar::Builder::new(Vec::new());
+    let mut header = tar::Header::new_gnu();
+    header.set_size(u64::try_from(content.len()).unwrap());
+    header.set_mode(0o755);
+    header.set_cksum();
+    builder.append_data(&mut header, "nono", content).unwrap();
+    let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+    gz.write_all(&builder.into_inner().unwrap()).unwrap();
+    gz.finish().unwrap()
+}
+
+/// A release whose only asset, for Linux `x86_64`, is `tarball`.
+pub(crate) fn release_of(fetch: &Arc<FakeFetch>, tarball: &[u8]) -> NonoRelease {
+    let sha256: &'static str = Box::leak(sha256_hex(tarball).into_boxed_str());
+    let asset = Asset {
+        os: "Linux",
+        arch: "x86_64",
+        name: "nono-test.tar.gz",
+        sha256,
+    };
+    let assets: &'static [Asset] = Box::leak(Box::new([asset]));
+    let fetch: Arc<dyn Fetch> = fetch.clone();
+    NonoRelease::with_assets(fetch, None, assets)
+}
+
+/// The `nono` binary that `ready_release` serves.
+pub(crate) const READY_BINARY: &[u8] = b"the binary";
+
+/// A release that serves `READY_BINARY` for Linux `x86_64`.
+pub(crate) fn ready_release() -> Arc<NonoRelease> {
+    let tarball = tarball(READY_BINARY);
+    let fetch = Arc::new(FakeFetch::new(Ok(tarball.clone())));
+    Arc::new(release_of(&fetch, &tarball))
 }

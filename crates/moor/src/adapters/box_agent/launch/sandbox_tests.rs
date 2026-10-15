@@ -1,49 +1,17 @@
 //! A launch with a Proxy runs the agent under the sandbox.
 
 use super::*;
-use crate::adapters::box_agent::nono_release::fake::FakeFetch;
-use crate::adapters::box_agent::nono_release::{Asset, Fetch, NonoRelease};
+use crate::adapters::box_agent::nono_release::fake::{
+    ready_release, release_of, tarball, FakeFetch, READY_BINARY,
+};
+use crate::adapters::box_agent::nono_release::{sha256_hex, NonoRelease};
 use moor_core::seam::driver::ExecOutcome;
 use moor_core::seam::engine::SessionRef;
-use sha2::{Digest, Sha256};
 
 const NOT_INSTALLED: i32 = 6;
 
 fn uname_path() -> BoxPath {
     BoxPath::under(CRED, "uname").unwrap()
-}
-
-/// A gzip tarball holding one `nono` file.
-fn tarball(content: &[u8]) -> Vec<u8> {
-    let mut builder = tar::Builder::new(Vec::new());
-    let mut header = tar::Header::new_gnu();
-    header.set_size(u64::try_from(content.len()).unwrap());
-    header.set_mode(0o755);
-    header.set_cksum();
-    builder.append_data(&mut header, "nono", content).unwrap();
-    let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
-    gz.write_all(&builder.into_inner().unwrap()).unwrap();
-    gz.finish().unwrap()
-}
-
-/// A release whose only asset, for Linux `x86_64`, is `tarball`.
-fn release_of(fetch: &Arc<FakeFetch>, tarball: &[u8]) -> NonoRelease {
-    let sum = Sha256::digest(tarball)
-        .iter()
-        .fold(String::new(), |mut s, b| {
-            let _ = std::fmt::Write::write_fmt(&mut s, format_args!("{b:02x}"));
-            s
-        });
-    let sha256: &'static str = Box::leak(sum.into_boxed_str());
-    let asset = Asset {
-        os: "Linux",
-        arch: "x86_64",
-        name: "nono-test.tar.gz",
-        sha256,
-    };
-    let assets: &'static [Asset] = Box::leak(Box::new([asset]));
-    let fetch: Arc<dyn Fetch> = fetch.clone();
-    NonoRelease::with_assets(fetch, None, assets)
 }
 
 /// The outcome of a proxy launch on a Box whose checks return `codes`, whose `uname` says
@@ -59,9 +27,9 @@ fn launch_missing(
 ) {
     let d = driver(
         FakeDriver::new()
-            .exec_results([codes[0], 0, codes[1]].map(|code| Ok(ExecOutcome::Exited { code })))
-            .peek_text("box-1", &uname_path(), platform),
+            .exec_results([0, codes[0], codes[1]].map(|code| Ok(ExecOutcome::Exited { code }))),
     );
+    d.set_peek_text("box-1", &uname_path(), platform);
     let s = surface(FakeSurface::new("/r"));
     let a = BoxAgent::new(
         d.clone(),
@@ -108,23 +76,24 @@ fn the_check_runs_before_the_hooks_are_put() {
     let exec = calls.iter().position(|c| c.starts_with("exec")).unwrap();
     let hooks = calls.iter().position(|c| c.starts_with("put")).unwrap();
     assert!(exec < hooks, "{calls:?}");
-    let script = d.execs().remove(0).1.argv.pop().unwrap();
+    let script = d.execs().remove(1).1.argv.pop().unwrap();
     assert!(script.contains("--version"), "{script}");
+    assert!(script.contains(&sha256_hex(READY_BINARY)), "{script}");
     assert!(script.contains("setup --check-only"), "{script}");
 }
 
 #[test]
-fn an_installed_tool_is_neither_fetched_nor_uploaded() {
-    let fetch = Arc::new(FakeFetch::new(Ok(Vec::new())));
-    let (d, _, out) = launch_missing([0, 0], "Linux x86_64", release_of(&fetch, b"x"));
+fn an_installed_tool_with_the_pinned_digest_is_not_uploaded() {
+    let fetch = Arc::new(FakeFetch::new(Ok(tarball(b"the binary"))));
+    let release = release_of(&fetch, &tarball(b"the binary"));
+    let (d, _, out) = launch_missing([0, 0], "Linux x86_64", release);
     out.unwrap();
-    assert!(fetch.urls().is_empty());
     assert!(nono_put(&d).is_none());
-    assert_eq!(d.execs().len(), 1);
+    assert_eq!(d.execs().len(), 2);
 }
 
 #[test]
-fn a_missing_tool_is_uploaded_executable_and_checked_again() {
+fn a_missing_or_replaced_tool_is_uploaded_executable_and_checked_again() {
     let fetch = Arc::new(FakeFetch::new(Ok(tarball(b"the binary"))));
     let release = release_of(&fetch, &tarball(b"the binary"));
     let (d, _, out) = launch_missing([NOT_INSTALLED, 0], "Linux x86_64\n", release);
@@ -136,8 +105,33 @@ fn a_missing_tool_is_uploaded_executable_and_checked_again() {
     assert_eq!(fetch.urls().len(), 1);
     let execs = d.execs();
     let script = |i: usize| execs.get(i).unwrap().1.argv.last().unwrap().clone();
-    assert!(script(1).contains("uname -s -m"), "{}", script(1));
-    assert_eq!(script(0), script(2));
+    assert!(script(0).contains("uname -s -m"), "{}", script(0));
+    assert!(
+        script(1).contains(&sha256_hex(b"the binary")),
+        "{}",
+        script(1)
+    );
+    assert_eq!(script(1), script(2));
+}
+
+#[test]
+fn a_replaced_tool_whose_upload_fails_is_refused() {
+    let d = driver(
+        FakeDriver::new()
+            .exec_results([0, NOT_INSTALLED].map(|code| Ok(ExecOutcome::Exited { code })))
+            .fail_put(DriverError::NotFound),
+    );
+    let s = surface(FakeSurface::new("/r"));
+    let out = BoxAgent::new(
+        d,
+        s.clone(),
+        Arc::new(Claude),
+        Arc::new(FakeClock::new(Ts::from_millis(0))),
+        ready_release(),
+    )
+    .launch(&req_with_proxy(&s));
+    sandbox_message(out);
+    assert!(s.opened().is_empty());
 }
 
 #[test]
@@ -189,7 +183,7 @@ fn the_profile_lands_in_the_cred_dir_and_grants_the_temp_dir() {
 #[test]
 fn a_failed_check_fails_the_sandbox_step_and_opens_no_pane() {
     let (d, s) = (
-        driver(FakeDriver::new().exec_results([Ok(ExecOutcome::Exited { code: 5 })])),
+        driver(FakeDriver::new().exec_results([0, 5].map(|code| Ok(ExecOutcome::Exited { code })))),
         surface(FakeSurface::new("/r")),
     );
     let message = sandbox_message(agent(&d, &s).launch(&req_with_proxy(&s)));
