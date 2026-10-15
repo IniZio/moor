@@ -12,7 +12,7 @@ use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
 use moor_core::seam::clock::Ts;
-use moor_core::seam::driver::{AcquireReq, Driver, DriverError, EgressPlan};
+use moor_core::seam::driver::{AcquireReq, Driver, DriverError, EgressPlan, SleepKind};
 use moor_core::seam::proc::Tool;
 use moor_core::{ProviderId, ShowReq, StartReq, TaskId, TaskName};
 
@@ -117,6 +117,23 @@ fn show_lists_open_tasks_with_no_selection() {
     let names: Vec<_> = v.tasks.iter().flatten().map(|t| t.name.clone()).collect();
     assert_eq!(names, ["a", "b"]);
     assert!(v.task.is_none() && v.events.is_none());
+}
+
+#[test]
+fn sleep_label_follows_provider_sleep_support() {
+    for (kind, after) in [(SleepKind::None, None), (SleepKind::Suspend, Some("30m"))] {
+        let dir = tempfile::tempdir().unwrap();
+        let driver = Arc::new(FakeDriver::new().sleep_kind(kind));
+        let cx = cx(dir.path(), &driver);
+        let id = add(&cx, "a");
+        ready_box(&cx, &driver, id);
+        let v = run(&cx, &req(Some("a"), None)).unwrap();
+        let shown = v.task.unwrap().r#box.unwrap().sleep.after;
+        assert_eq!(shown.as_deref(), after);
+        let v = run(&cx, &req(None, None)).unwrap();
+        let listed = first(&v).r#box.as_ref().unwrap().sleep.after.clone();
+        assert_eq!(listed.as_deref(), after);
+    }
 }
 
 #[test]
