@@ -252,22 +252,12 @@ fn env_items() -> Vec<super::env::EnvItem> {
     let mut mcp = env_item(K::Mcp, "srv", "npx srv");
     mcp.resolves = Some(true);
     vec![
-        env_item(K::Egress, "allowlist", "only listed"),
         env_item(K::Box, "provider", "docker"),
         env_item(K::Box, "size", "large"),
         cred,
         mcp,
         env_item(K::Setup, "make", "make"),
     ]
-}
-
-fn egress() -> super::env::EnvEgress {
-    super::env::EnvEgress {
-        mode: "allowlist".into(),
-        hosts: vec!["a.com".into()],
-        note: "only listed".into(),
-        enforce: Some("strict".into()),
-    }
 }
 
 fn settings(user: &str, repo: Option<&str>) -> crate::config::TaskSettings {
@@ -285,7 +275,6 @@ fn env_view() -> super::env::EnvView {
         ),
         env_github(),
         env_items(),
-        egress(),
     )
 }
 
@@ -300,10 +289,10 @@ fn env_view_round_trips_json() {
 fn env_view_check_of_matches_kind_and_name() {
     let v = env_view();
     let row = |i: usize| v.rows.get(i).unwrap();
-    let c = v.check_of(row(3)).unwrap();
+    let c = v.check_of(row(2)).unwrap();
     assert_eq!((c.ok, c.reason.as_deref()), (false, Some("unset")));
-    assert!(v.check_of(row(4)).unwrap().ok);
-    assert!(v.check_of(row(5)).is_none());
+    assert!(v.check_of(row(3)).unwrap().ok);
+    assert!(v.check_of(row(4)).is_none());
 }
 
 #[test]
@@ -313,15 +302,7 @@ fn env_view_json_shape() {
     keys.sort();
     assert_eq!(
         keys,
-        [
-            "agent",
-            "credentials",
-            "egress",
-            "github",
-            "provider",
-            "repo",
-            "rows"
-        ]
+        ["agent", "credentials", "github", "provider", "repo", "rows"]
     );
     assert_eq!(j.pointer("/agent/model"), Some(&Value::Null));
     assert_eq!(j.pointer("/github/app_id"), Some(&Value::Null));
@@ -330,16 +311,13 @@ fn env_view_json_shape() {
 }
 
 #[test]
-fn env_view_rows_credentials_egress_json() {
+fn env_view_rows_credentials_json() {
     let j = serde_json::to_value(env_view()).unwrap();
     assert_eq!(j.pointer("/rows/0/delivery"), Some(&Value::Null));
-    assert_eq!(j.pointer("/rows/3/delivery"), Some(&json!("env")));
+    assert_eq!(j.pointer("/rows/2/delivery"), Some(&json!("env")));
     assert_eq!(j.pointer("/credentials/1/reason"), Some(&Value::Null));
     assert_eq!(j.pointer("/credentials/0/reason"), Some(&json!("unset")));
-    assert_eq!(
-        j.pointer("/egress").unwrap(),
-        &json!({"mode": "allowlist", "hosts": ["a.com"], "note": "only listed", "enforce": "strict"})
-    );
+    assert_eq!(j.pointer("/egress"), None);
     assert_eq!(
         j.pointer("/provider").unwrap(),
         &json!({"name": "docker", "source": "user", "size": "large", "size_source": "repo"})
@@ -348,13 +326,7 @@ fn env_view_rows_credentials_egress_json() {
 
 #[test]
 fn env_view_missing_facts_default() {
-    let bare = super::env::EnvView::new(
-        "/r".into(),
-        &settings("", None),
-        env_github(),
-        vec![],
-        egress(),
-    );
+    let bare = super::env::EnvView::new("/r".into(), &settings("", None), env_github(), vec![]);
     let j = serde_json::to_value(bare).unwrap();
     assert_eq!(j.pointer("/agent/model"), Some(&Value::Null));
     assert_eq!(j.pointer("/provider/size_source"), Some(&json!("default")));
@@ -366,7 +338,7 @@ fn env_row_value_kind() {
     let kinds: Vec<_> = v.rows.iter().map(|r| r.value_kind).collect();
     assert_eq!(
         kinds
-            .get(3)
+            .get(2)
             .copied()
             .unwrap_or(super::env::ValueKind::Plain),
         super::env::ValueKind::Ref
@@ -379,8 +351,8 @@ fn env_row_value_kind() {
         1
     );
     let j = serde_json::to_value(&v).unwrap();
-    assert_eq!(j.pointer("/rows/3/value_kind"), Some(&json!("ref")));
-    assert_eq!(j.pointer("/rows/5/value_kind"), Some(&json!("plain")));
+    assert_eq!(j.pointer("/rows/2/value_kind"), Some(&json!("ref")));
+    assert_eq!(j.pointer("/rows/4/value_kind"), Some(&json!("plain")));
 }
 
 fn box_view(after: Option<&str>, reason: Option<&str>) -> BoxView {

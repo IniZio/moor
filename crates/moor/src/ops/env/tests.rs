@@ -3,9 +3,8 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use moor_core::config::{parse_user, Layer, UserConfig};
+use moor_core::config::{Layer, UserConfig};
 use moor_core::seam::clock::Ts;
-use moor_core::seam::driver::EgressSupport;
 use moor_core::seam::proc::{Proc, Tool};
 use moor_core::view::env::{EnvKind, EnvView};
 use moor_core::{EnvReq, ErrorKind};
@@ -98,11 +97,10 @@ fn outside_a_repo_fails() {
 
 #[test]
 fn item_order_is_fixed() {
-    let (_d, _cx, v) = env_with("setup: [make]\negress: [example.com]\n");
+    let (_d, _cx, v) = env_with("setup: [make]\n");
     let k = kinds(&v);
     let pos = |kind| k.iter().position(|x| *x == kind).unwrap();
-    assert!(pos(EnvKind::Setup) < pos(EnvKind::Egress));
-    assert!(pos(EnvKind::Egress) < pos(EnvKind::Box));
+    assert!(pos(EnvKind::Setup) < pos(EnvKind::Box));
     let boxes: Vec<_> = v
         .rows
         .iter()
@@ -224,88 +222,4 @@ fn github_block_without_app() {
     assert_eq!(v.github.login, "logged_out");
     assert_eq!(v.github.mint.status, "skipped");
     assert_eq!(v.github.resolved.mode.as_deref(), Some("gh-you"));
-}
-
-#[test]
-fn json_hosts_are_the_effective_allow_list() {
-    let (_d, _cx, v) = env_with("egress: [example.com]\n");
-    let j = serde_json::to_value(&v).unwrap();
-    let hosts: Vec<&str> = j
-        .pointer("/egress/hosts")
-        .and_then(|h| h.as_array())
-        .map(|a| a.iter().filter_map(|h| h.as_str()).collect())
-        .unwrap_or_default();
-    assert!(hosts.contains(&"*.githubusercontent.com"), "{hosts:?}");
-    assert_eq!(hosts.last(), Some(&"example.com"), "{hosts:?}");
-}
-
-#[test]
-fn egress_note_lists_the_hosts_with_user_allow() {
-    let d = tempfile::tempdir().unwrap();
-    std::fs::write(d.path().join(".moor.yaml"), "egress: [repo.example.com]\n").unwrap();
-    let user = parse_user("t", "egress:\n  allow: [user.example.com]\n").unwrap();
-    let driver = FakeDriver::new().egress_support(EgressSupport::Enforced);
-    let cx = cx_full(d.path(), user, ScriptedProc::new(), driver);
-    let v = run(&cx, &EnvReq { repo: None }).unwrap();
-    assert!(v.egress.hosts.iter().any(|h| h == "user.example.com"));
-    for h in &v.egress.hosts {
-        assert!(
-            v.egress.note.contains(h.as_str()),
-            "{h} not in {:?}",
-            v.egress.note
-        );
-    }
-}
-
-/// Runs `env` against a provider reporting `support`.
-fn env_on(support: EgressSupport, enforce: bool) -> EnvView {
-    let d = tempfile::tempdir().unwrap();
-    let flag = if enforce {
-        "\n  enforce_egress: true"
-    } else {
-        ""
-    };
-    let user = parse_user("t", &format!("box:\n  provider: p{flag}\n")).unwrap();
-    let driver = FakeDriver::new().egress_support(support);
-    run(
-        &cx_full(d.path(), user, ScriptedProc::new(), driver),
-        &EnvReq { repo: None },
-    )
-    .unwrap()
-}
-
-#[test]
-fn agent_hosts_row_names_the_agent_as_its_source() {
-    let d = tempfile::tempdir().unwrap();
-    let driver = FakeDriver::new().egress_support(EgressSupport::Enforced);
-    let mut cx = cx_full(d.path(), UserConfig::default(), ScriptedProc::new(), driver);
-    let none = run(&cx, &EnvReq { repo: None }).unwrap();
-    assert!(!none.rows.iter().any(|r| r.name == "agent"));
-    let engine = FakeEngine::new().egress_hosts(&["a.example.com", "b.example.com"]);
-    cx = cx.with_engine(Arc::new(engine));
-    let v = run(&cx, &EnvReq { repo: None }).unwrap();
-    let row = v
-        .rows
-        .iter()
-        .find(|r| r.kind == EnvKind::Egress && r.name == "agent");
-    let row = row.expect("agent row");
-    assert_eq!(row.source, Layer::Agent);
-    assert_eq!(row.note, "a.example.com, b.example.com");
-    assert!(v.egress.hosts.iter().any(|h| h == "a.example.com"));
-}
-
-#[test]
-fn egress_row_follows_the_provider_capability() {
-    let cases = [
-        (EgressSupport::Enforced, false, "allow", false),
-        (EgressSupport::OptIn, false, "policy", true),
-        (EgressSupport::OptIn, true, "allow", false),
-        (EgressSupport::None, true, "policy", true),
-        (EgressSupport::None, false, "policy", false),
-    ];
-    for (support, enforce, mode, warns) in cases {
-        let v = env_on(support, enforce);
-        assert_eq!(v.egress.mode, mode, "{support:?} {enforce}");
-        assert_eq!(v.egress.enforce.is_some(), warns, "{support:?} {enforce}");
-    }
 }

@@ -1,6 +1,6 @@
 //! Typed `value` payload for `env`.
 //!
-//! Carries `rows`, `egress`, `provider` and `credentials`, plus `repo`, `agent`
+//! Carries `rows`, `provider` and `credentials`, plus `repo`, `agent`
 //! and `github`, which reports the GitHub identity and token resolution.
 //! Layers are [`crate::config::Layer`]; `agent` and `provider` come straight from
 //! the resolved task settings.
@@ -21,8 +21,6 @@ pub enum EnvKind {
     Setup,
     /// MCP server.
     Mcp,
-    /// Egress policy.
-    Egress,
     /// Box setting.
     Box,
     /// Dotfiles.
@@ -38,7 +36,6 @@ impl EnvKind {
             Self::Credential => "credential",
             Self::Setup => "setup",
             Self::Mcp => "mcp",
-            Self::Egress => "egress",
             Self::Box => "box",
             Self::Dotfiles => "dotfiles",
         }
@@ -142,19 +139,6 @@ pub struct EnvRow {
     pub note: String,
 }
 
-/// Egress policy summary.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct EnvEgress {
-    /// Egress mode.
-    pub mode: String,
-    /// Allowed hosts.
-    pub hosts: Vec<String>,
-    /// Mode detail.
-    pub note: String,
-    /// Enforcement detail; null when absent.
-    pub enforce: Option<String>,
-}
-
 /// Box provider and size.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EnvProvider {
@@ -192,8 +176,6 @@ pub struct EnvView {
     pub github: EnvGithub,
     /// Layered rows in display order.
     pub rows: Vec<EnvRow>,
-    /// Egress summary.
-    pub egress: EnvEgress,
     /// Provider and size.
     pub provider: EnvProvider,
     /// Resolution checks.
@@ -208,7 +190,6 @@ impl EnvView {
         settings: &TaskSettings,
         github: EnvGithub,
         items: Vec<EnvItem>,
-        egress: EnvEgress,
     ) -> Self {
         let agent = EnvAgent {
             model: settings.model.as_ref().map(|m| m.value.clone()),
@@ -250,7 +231,6 @@ impl EnvView {
             agent,
             github,
             rows,
-            egress,
             provider,
             credentials,
         }
