@@ -20,10 +20,7 @@ use std::time::Duration;
 
 use moor_core::config::proxy::{ResolvedInject, ResolvedRule};
 use moor_core::Secret;
-use nono_proxy::config::{
-    EndpointPolicyConfig, EndpointPolicyDefault, EndpointPolicyRule, ExternalProxyConfig,
-    InjectMode, RouteConfig,
-};
+use nono_proxy::config::{EndpointRule, ExternalProxyConfig, InjectMode, RouteConfig};
 use nono_proxy::ProxyConfig;
 use zeroize::Zeroizing;
 
@@ -104,22 +101,14 @@ fn route_for(spec: &NonoSpec<'_>, rule: &ResolvedRule, index: usize, host: &str)
         prefix: route_prefix(&rule.name, index),
         upstream: format!("https://{host}"),
         credential_key: Some(format!("cmd://{}", rule.name)),
-        endpoint_policy: (!rule.endpoint_rules.is_empty()).then(|| EndpointPolicyConfig {
-            default: EndpointPolicyDefault::default(),
-            deny: Vec::new(),
-            approve: Vec::new(),
-            allow: rule
-                .endpoint_rules
-                .iter()
-                .map(|r| EndpointPolicyRule {
-                    method: r.method.clone(),
-                    path: r.path.clone(),
-                    backend: None,
-                    reason: None,
-                    timeout_secs: None,
-                })
-                .collect(),
-        }),
+        endpoint_rules: rule
+            .endpoint_rules
+            .iter()
+            .map(|r| EndpointRule {
+                method: r.method.clone(),
+                path: r.path.clone(),
+            })
+            .collect(),
         tls_ca: spec
             .chain
             .as_ref()
