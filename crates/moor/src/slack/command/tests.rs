@@ -123,3 +123,41 @@ fn replies_name_the_task() {
     assert_eq!(started(&name), "Started Task `slack-1-2`.");
     assert!(failed(&name, "boom").contains("boom"));
 }
+
+#[test]
+fn reply_from_owner_steers() {
+    assert_eq!(
+        reply_action("U1", "U1", " <@UBOT> use tokio "),
+        ReplyAction::Steer("use tokio".to_owned())
+    );
+}
+
+#[test]
+fn reply_from_other_user_is_refused_with_owner_mention() {
+    assert_eq!(
+        reply_action("U1", "U2", "use tokio"),
+        ReplyAction::Refuse("Only <@U1> can steer this Task.".to_owned())
+    );
+}
+
+#[test]
+fn reply_close_closes_ignoring_case() {
+    assert_eq!(reply_action("U1", "U1", "Close"), ReplyAction::Close);
+    assert_eq!(
+        reply_action("U1", "U1", "<@UBOT> close "),
+        ReplyAction::Close
+    );
+}
+
+#[test]
+fn reply_with_no_text_is_ignored() {
+    assert_eq!(reply_action("U1", "U1", " <@UBOT> "), ReplyAction::Ignore);
+}
+
+#[test]
+fn reply_close_from_other_user_is_refused() {
+    assert!(matches!(
+        reply_action("U1", "U2", "close"),
+        ReplyAction::Refuse(_)
+    ));
+}

@@ -31,6 +31,8 @@ pub(crate) struct Recorded {
     pub(crate) auth: String,
     /// The JSON body, `Null` when empty.
     pub(crate) body: Value,
+    /// The JSON the fake answered with.
+    pub(crate) reply: Value,
 }
 
 /// A message the controller posted with a valid bot token.
@@ -42,6 +44,41 @@ pub(crate) struct Post {
     pub(crate) thread_ts: String,
     /// Message text.
     pub(crate) text: String,
+    /// The ts the fake assigned to the message.
+    pub(crate) ts: String,
+}
+
+/// A `chat.update` the controller made with a valid bot token.
+#[derive(Clone, Debug)]
+pub(crate) struct Update {
+    /// Channel id.
+    pub(crate) channel: String,
+    /// Ts of the message edited.
+    pub(crate) ts: String,
+    /// New message text.
+    pub(crate) text: String,
+}
+
+/// A plain message to push to the controller.
+pub(crate) struct Reply<'a> {
+    /// Event id Slack would deduplicate on.
+    pub(crate) event_id: &'a str,
+    /// Envelope id the controller must ack.
+    pub(crate) envelope_id: &'a str,
+    /// Channel the message was posted in.
+    pub(crate) channel: &'a str,
+    /// Author's user id.
+    pub(crate) user: &'a str,
+    /// Message text.
+    pub(crate) text: &'a str,
+    /// Message ts.
+    pub(crate) ts: &'a str,
+    /// Thread root ts.
+    pub(crate) thread_ts: &'a str,
+    /// Message subtype, such as `message_changed`.
+    pub(crate) subtype: Option<&'a str>,
+    /// Bot id when a bot wrote the message.
+    pub(crate) bot_id: Option<&'a str>,
 }
 
 /// An app mention to push to the controller.
@@ -73,6 +110,8 @@ struct State {
     outbox: VecDeque<String>,
     /// Socket connections accepted so far.
     connections: usize,
+    /// Messages posted so far, used to hand out unique ts values.
+    posted: usize,
 }
 
 /// The fake Slack: a Web API on one port and a Socket Mode endpoint on another.
@@ -124,10 +163,37 @@ impl FakeSlack {
         if let Some(thread) = mention.thread_ts {
             event["thread_ts"] = json!(thread);
         }
+        self.queue(mention.envelope_id, mention.event_id, &event);
+    }
+
+    /// Queues an `events_api` envelope carrying a plain `message` event.
+    pub(crate) fn send_reply(&self, reply: &Reply<'_>) {
+        let mut event = json!({
+            "type": "message",
+            "user": reply.user,
+            "text": reply.text,
+            "ts": reply.ts,
+            "channel": reply.channel,
+            "thread_ts": reply.thread_ts,
+        });
+        if let Some(subtype) = reply.subtype {
+            event["subtype"] = json!(subtype);
+        }
+        if let Some(bot_id) = reply.bot_id {
+            event["bot_id"] = json!(bot_id);
+        }
+        self.queue(reply.envelope_id, reply.event_id, &event);
+    }
+
+    fn queue(&self, envelope_id: &str, event_id: &str, event: &Value) {
         let envelope = json!({
             "type": "events_api",
-            "envelope_id": mention.envelope_id,
-            "payload": {"event_id": mention.event_id, "event": event},
+            "envelope_id": envelope_id,
+            "payload": {
+                "event_id": event_id,
+                "event": event,
+                "authorizations": [{"user_id": "UBOT"}],
+            },
         });
         self.lock().outbox.push_back(envelope.to_string());
     }
@@ -148,9 +214,51 @@ impl FakeSlack {
                     channel: text("channel"),
                     thread_ts: text("thread_ts"),
                     text: text("text"),
+                    ts: r.reply["ts"].as_str().unwrap_or_default().to_owned(),
                 }
             })
             .collect()
+    }
+
+    /// Message edits made with the bot token, in order.
+    pub(crate) fn updates(&self) -> Vec<Update> {
+        self.requests()
+            .iter()
+            .filter(|r| r.path == "/chat.update" && r.auth == format!("Bearer {BOT_TOKEN}"))
+            .map(|r| {
+                let text = |key: &str| r.body[key].as_str().unwrap_or_default().to_owned();
+                Update {
+                    channel: text("channel"),
+                    ts: text("ts"),
+                    text: text("text"),
+                }
+            })
+            .collect()
+    }
+
+    /// Waits until at least `n` updates exist and returns all of them.
+    pub(crate) fn wait_updates(&self, n: usize) -> Vec<Update> {
+        Self::wait(|| Some(self.updates()).filter(|u| u.len() >= n))
+            .unwrap_or_else(|| panic!("expected {n} updates, saw {:?}", self.updates()))
+    }
+
+    /// Waits until some post or update satisfies `want`; returns the posts and updates then seen.
+    pub(crate) fn wait_until(
+        &self,
+        what: &str,
+        want: impl Fn(&[Post], &[Update]) -> bool,
+    ) -> (Vec<Post>, Vec<Update>) {
+        Self::wait(|| {
+            let (posts, updates) = (self.posts(), self.updates());
+            want(&posts, &updates).then_some((posts, updates))
+        })
+        .unwrap_or_else(|| {
+            panic!(
+                "never saw {what}; posts {:?}, updates {:?}",
+                self.posts(),
+                self.updates()
+            )
+        })
     }
 
     /// Envelope ids acknowledged so far.
@@ -238,26 +346,38 @@ fn serve_http(mut stream: TcpStream, state: &Mutex<State>, ws_port: u16) {
     let Some((path, auth, body)) = read_request(&mut stream) else {
         return;
     };
+    let mut guard = state.lock().unwrap();
     let reply = match path.as_str() {
         "/apps.connections.open" if auth == format!("Bearer {APP_TOKEN}") => {
             json!({"ok": true, "url": format!("ws://127.0.0.1:{ws_port}/")})
         }
         "/chat.postMessage" if auth == format!("Bearer {BOT_TOKEN}") => {
-            json!({"ok": true, "ts": "1730000099.000200"})
+            guard.posted += 1;
+            json!({"ok": true, "ts": message_ts(guard.posted)})
+        }
+        "/chat.update" if auth == format!("Bearer {BOT_TOKEN}") => {
+            json!({"ok": true, "channel": body["channel"], "ts": body["ts"]})
         }
         _ => json!({"ok": false, "error": "invalid_auth"}),
     };
-    state
-        .lock()
-        .unwrap()
-        .requests
-        .push(Recorded { path, auth, body });
+    guard.requests.push(Recorded {
+        path,
+        auth,
+        body,
+        reply: reply.clone(),
+    });
+    drop(guard);
     let text = reply.to_string();
     let response = format!(
         "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{text}",
         text.len()
     );
     let _ = stream.write_all(response.as_bytes());
+}
+
+/// The ts the fake gives the `n`th posted message.
+fn message_ts(n: usize) -> String {
+    format!("9000000000.{n:06}")
 }
 
 /// Reads the request line, headers and body; returns path, authorization and JSON body.

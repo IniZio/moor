@@ -30,7 +30,7 @@ const READ_TICK: Duration = Duration::from_millis(500);
 /// Consecutive silent read ticks (about 120 s) after which the connection is dead; Slack pings far more often.
 const IDLE_TICKS: u32 = 240;
 
-/// An app mention received over Socket Mode.
+/// An app mention or thread reply received over Socket Mode.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct Mention {
     /// Slack's event id, unique per delivered event.
@@ -45,6 +45,8 @@ pub(super) struct Mention {
     pub ts: String,
     /// Thread the message belongs to, if it is a reply.
     pub thread_ts: Option<String>,
+    /// True for a plain thread reply, false for an app mention.
+    pub(crate) reply: bool,
 }
 
 /// Why a Socket Mode session ended abnormally; never carries the URL or a token.
@@ -243,14 +245,36 @@ fn handle_envelope(
     }
 }
 
-/// The mention inside an `events_api` envelope, if it is a well-formed one.
+/// The mention or thread reply inside an `events_api` envelope, if it is a well-formed one.
 fn parse_mention(envelope: &Value) -> Option<Mention> {
     let payload = envelope.get("payload")?;
     let event = payload.get("event")?;
-    if event.get("type")?.as_str()? != "app_mention" {
-        return None;
-    }
     let field = |value: &Value, key: &str| value.get(key)?.as_str().map(str::to_owned);
+    let reply = match event.get("type")?.as_str()? {
+        "app_mention" => false,
+        "message" => {
+            // Subtyped events (edits, deletes, joins) and bot posts are not user replies.
+            if event.get("subtype").is_some() || event.get("bot_id").is_some() {
+                return None;
+            }
+            let thread_ts = field(event, "thread_ts")?;
+            if thread_ts == field(event, "ts")? {
+                return None;
+            }
+            // Slack also delivers a message naming the bot as `app_mention`, which handles it.
+            let bot = payload
+                .get("authorizations")
+                .and_then(|a| a.get(0))
+                .and_then(|a| field(a, "user_id"));
+            if let Some(bot) = bot {
+                if field(event, "text")?.contains(&format!("<@{bot}")) {
+                    return None;
+                }
+            }
+            true
+        }
+        _ => return None,
+    };
     Some(Mention {
         event_id: field(payload, "event_id")?,
         channel: field(event, "channel")?,
@@ -258,6 +282,7 @@ fn parse_mention(envelope: &Value) -> Option<Mention> {
         text: field(event, "text")?,
         ts: field(event, "ts")?,
         thread_ts: field(event, "thread_ts"),
+        reply,
     })
 }
 

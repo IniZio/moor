@@ -1,5 +1,7 @@
 //! Tests for the Socket Mode loop against an in-test WebSocket server on loopback.
 
+#![allow(clippy::indexing_slicing, reason = "tests build JSON fixtures by key")]
+
 use std::cell::RefCell;
 use std::io::{Read, Write};
 use std::net::TcpListener;
@@ -11,7 +13,7 @@ use moor_core::secret::Secret;
 use serde_json::json;
 use tungstenite::Message;
 
-use super::{next_delay, run, session, Mention, SocketError};
+use super::{next_delay, parse_mention, run, session, Mention, SocketError};
 use crate::slack::api::Api;
 
 /// Serves one WebSocket client with `script`, returning every text frame it sent back.
@@ -92,6 +94,7 @@ fn acks_every_envelope_and_forwards_only_the_mention() {
             text: "<@UBOT> start x".into(),
             ts: "1730000000.1".into(),
             thread_ts: Some("1730000000.0".into()),
+            reply: false,
         }]
     );
 }
@@ -215,4 +218,57 @@ fn run_returns_once_the_receiver_is_gone() {
     http.join().expect("http");
     server.join().expect("server");
     assert!(slept.borrow().is_empty());
+}
+
+/// An `events_api` envelope whose payload names the bot user `UBOT`.
+fn envelope_for(event: &serde_json::Value) -> serde_json::Value {
+    let mut envelope = events_api("env", "Ev9", event);
+    envelope["payload"]["authorizations"] = json!([{"user_id":"UBOT"}]);
+    envelope
+}
+
+#[test]
+fn thread_reply_is_parsed_as_reply() {
+    let event = json!({"type":"message","user":"U1","text":"steer","ts":"2.0","thread_ts":"1.0","channel":"C1"});
+    let mention = parse_mention(&envelope_for(&event)).expect("reply");
+    assert!(mention.reply);
+    assert_eq!(mention.thread_ts.as_deref(), Some("1.0"));
+    assert_eq!(mention.text, "steer");
+}
+
+#[test]
+fn app_mention_is_not_a_reply() {
+    let event = json!({"type":"app_mention","user":"U1","text":"<@UBOT> hi","ts":"2.0","thread_ts":"1.0","channel":"C1"});
+    assert!(!parse_mention(&envelope_for(&event)).expect("mention").reply);
+}
+
+#[test]
+fn ignores_messages_that_are_not_user_thread_replies() {
+    let base = json!({"type":"message","user":"U1","text":"hi","ts":"2.0","thread_ts":"1.0","channel":"C1"});
+    let with = |key: &str, value: serde_json::Value| {
+        let mut event = base.clone();
+        event[key] = value;
+        event
+    };
+    for event in [
+        with("thread_ts", json!("2.0")),
+        with("subtype", json!("message_changed")),
+        with("subtype", json!("channel_join")),
+        with("bot_id", json!("B1")),
+        with("text", json!("hey <@UBOT> look")),
+    ] {
+        assert!(parse_mention(&envelope_for(&event)).is_none(), "{event}");
+    }
+    let mut top_level = base.clone();
+    top_level
+        .as_object_mut()
+        .expect("object")
+        .remove("thread_ts");
+    assert!(parse_mention(&envelope_for(&top_level)).is_none());
+}
+
+#[test]
+fn bot_mention_filter_is_skipped_without_authorizations() {
+    let event = json!({"type":"message","user":"U1","text":"<@UBOT> hi","ts":"2.0","thread_ts":"1.0","channel":"C1"});
+    assert!(parse_mention(&events_api("env", "Ev9", &event)).is_some());
 }
