@@ -24,12 +24,31 @@ fn warning_codes(f: &Fx) -> Vec<String> {
 }
 
 fn fx_status(status: &str) -> Fx {
+    fx_git(None, status)
+}
+
+fn fail() -> Reply {
+    Reply::Fail {
+        code: 128,
+        stdout: String::new(),
+        stderr: "fatal: bad revision".to_owned(),
+    }
+}
+
+/// A close whose first git reads succeed; `failing` names the git command that errors afterwards.
+fn fx_git(failing: Option<&str>, status: &str) -> Fx {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(FakeDriver::new());
     let surface = Arc::new(FakeSurface::new("/s"));
     let p = ScriptedProc::new();
-    p.on(Tool::Git, &["rev-list"], Reply::Ok("0\n".to_owned()));
-    p.on(Tool::Git, &["status"], Reply::Ok(status.to_owned()));
+    for (cmd, out) in [("rev-list", "0\n"), ("status", status)] {
+        if failing == Some(cmd) {
+            p.once(Tool::Git, &[cmd], Reply::Ok(out.to_owned()));
+            p.on(Tool::Git, &[cmd], fail());
+        } else {
+            p.on(Tool::Git, &[cmd], Reply::Ok(out.to_owned()));
+        }
+    }
     p.on(
         Tool::Git,
         &["rev-parse", "HEAD"],
@@ -82,6 +101,22 @@ fn a_forced_close_with_unpushed_work_keeps_the_worktree() {
 #[test]
 fn a_forced_close_with_dirty_work_keeps_the_worktree() {
     let f = fx_status(" M a.txt\n");
+    let v = run(&f.cx, &req(true)).unwrap();
+    assert!(removed(&f).is_empty() && v.worktree_kept);
+    assert!(warning_codes(&f).contains(&"worktree_kept".to_owned()));
+}
+
+#[test]
+fn a_forced_close_keeps_the_worktree_when_the_unpushed_check_fails() {
+    let f = fx_git(Some("rev-list"), "");
+    let v = run(&f.cx, &req(true)).unwrap();
+    assert!(removed(&f).is_empty() && v.worktree_kept);
+    assert!(warning_codes(&f).contains(&"worktree_kept".to_owned()));
+}
+
+#[test]
+fn a_forced_close_keeps_the_worktree_when_the_dirty_check_fails() {
+    let f = fx_git(Some("status"), "");
     let v = run(&f.cx, &req(true)).unwrap();
     assert!(removed(&f).is_empty() && v.worktree_kept);
     assert!(warning_codes(&f).contains(&"worktree_kept".to_owned()));
