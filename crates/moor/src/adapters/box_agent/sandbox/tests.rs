@@ -17,7 +17,6 @@ fn doc(env_names: &[&str]) -> Value {
     let (w, h, c) = (path("/work/p"), path("/home/u"), path("/tmp/cred"));
     let tmp = path("/home/u/.moor-tmp-t-n");
     let input = SandboxInput {
-        box_port: 4321,
         workdir: &w,
         home: &h,
         cred: &c,
@@ -41,11 +40,10 @@ fn strings(v: &Value) -> Vec<String> {
 }
 
 #[test]
-fn profile_blocks_pathname_sockets_and_network() {
+fn profile_blocks_pathname_sockets_and_leaves_the_network_open() {
     let d = doc(&[]);
     assert_eq!(at(&d, "/linux/af_unix_mediation"), "pathname");
-    assert_eq!(at(&d, "/network/block"), &Value::Bool(true));
-    assert_eq!(at(&d, "/network/open_port"), &serde_json::json!([4321]));
+    assert_eq!(at(&d, "/network"), &Value::Null);
 }
 
 #[test]
@@ -198,7 +196,6 @@ fn wrap_puts_agent_after_separator() {
     let argv = wrap(
         &path("/home/u/.local/bin/nono"),
         &path("/tmp/cred/nono-profile.json"),
-        4321,
         &["claude".to_owned(), "-p".to_owned()],
     );
     assert_eq!(
@@ -209,9 +206,6 @@ fn wrap_puts_agent_after_separator() {
             "run",
             "--profile",
             "/tmp/cred/nono-profile.json",
-            "--block-net",
-            "--open-port",
-            "4321",
             "--",
             "claude",
             "-p"
