@@ -193,7 +193,7 @@ fn env_of<'a>(env: &'a [(String, String)], key: &str) -> Option<&'a str> {
 }
 
 #[test]
-fn the_spec_carries_the_task_repo_resolved_rules_and_the_box_allow_list() {
+fn the_spec_carries_the_task_repo_and_resolved_rules() {
     let (mut w, engine, fake) = host_world(FakeProxyHost::new());
     w.cx = w.cx.with_forge(Arc::new(
         FakeForge::new().with_repo("git@github.com:o/r.git", ForgeRepo::new("o", "r")),
@@ -210,11 +210,6 @@ fn the_spec_carries_the_task_repo_resolved_rules_and_the_box_allow_list() {
     assert_eq!(names, ["claude", "github-api", "github-git"]);
     let api = spec.rules.iter().find(|r| r.name == "github-api").unwrap();
     assert_eq!(api.box_env.get("GH_REPO").map(String::as_str), Some("o/r"));
-    assert!(
-        !spec.allow.iter().any(|h| h == "github.com"),
-        "{:?}",
-        spec.allow
-    );
     let launches = engine.launches();
     let addr = launches.first().unwrap().proxy.as_ref().unwrap();
     assert_eq!(env_of(&addr.box_env, "GH_REPO"), Some("o/r"));

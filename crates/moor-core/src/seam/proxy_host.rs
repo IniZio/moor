@@ -24,9 +24,6 @@ pub struct ProxySpec {
     /// The resolved tool rules the Proxy enforces.
     #[serde(default)]
     pub rules: Vec<ResolvedRule>,
-    /// The Box egress allow-list, without the rule hosts.
-    #[serde(default)]
-    pub allow: Vec<String>,
 }
 
 /// A running Proxy's address as the Box sees it, with its credential.

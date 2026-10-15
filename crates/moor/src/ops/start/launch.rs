@@ -86,7 +86,6 @@ fn ensure_proxy(
         host_cwd: launch.worktree.clone(),
         task_repo: plan.repo,
         rules: plan.rules,
-        allow: plan.allow,
     };
     let ep = cx.proxy_host().ensure(&spec).map_err(|e| e.to_string())?;
     Ok((spec, ep))

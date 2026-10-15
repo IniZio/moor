@@ -4,7 +4,6 @@ use std::path::Path;
 use std::time::Duration;
 
 use moor_core::config::check::{agent_env_reserved, credential_like_env};
-use moor_core::config::egress::effective_allow_list;
 use moor_core::config::proxy::{resolve_rules, ResolvedRule};
 use moor_core::config::TaskSettings;
 use moor_core::seam::forge::ForgeRepo;
@@ -29,14 +28,12 @@ pub(crate) fn origin(cx: &Cx, worktree: &Path) -> Option<String> {
     (!url.is_empty()).then(|| url.to_owned())
 }
 
-/// What the proxy needs to know about a Task: its repo, tool rules and Box egress allow-list.
+/// What the proxy needs to know about a Task: its repo, tool rules and agent env.
 pub(crate) struct ProxyPlan {
     /// The repo `origin` names, when the forge recognises it.
     pub(crate) repo: Option<ForgeRepo>,
     /// The tool rules with `{repo}` resolved.
     pub(crate) rules: Vec<ResolvedRule>,
-    /// The Box egress allow-list, without the rules' hosts.
-    pub(crate) allow: Vec<String>,
     /// The repo `env` the agent may see: credential-looking names are dropped.
     pub(crate) env: Vec<(String, String)>,
 }
@@ -44,7 +41,7 @@ pub(crate) struct ProxyPlan {
 /// Resolves the proxy plan of a worktree whose `origin` is `origin` and whose settings are `task`.
 ///
 /// # Errors
-/// The message of a rule or egress entry that does not resolve.
+/// The message of a rule that does not resolve.
 pub(crate) fn plan(
     cx: &Cx,
     origin: Option<&str>,
@@ -58,8 +55,6 @@ pub(crate) fn plan(
         repo.as_ref().map(|r| (r.owner.as_str(), r.name.as_str())),
     )
     .map_err(|e| e.to_string())?;
-    let allow = effective_allow_list(cx.engine().egress_hosts(), &task.user_egress, &task.egress)
-        .map_err(|e| e.to_string())?;
     let (kept, dropped): (Vec<_>, Vec<_>) = task
         .env
         .iter()
@@ -74,12 +69,7 @@ pub(crate) fn plan(
         .into_iter()
         .map(|(k, v)| (k.clone(), v.clone()))
         .collect();
-    Ok(ProxyPlan {
-        repo,
-        rules,
-        allow,
-        env,
-    })
+    Ok(ProxyPlan { repo, rules, env })
 }
 
 /// The non-secret Box env of `rules` in rule order; a later rule's value replaces an earlier one.

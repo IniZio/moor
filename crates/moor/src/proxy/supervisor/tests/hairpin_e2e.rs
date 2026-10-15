@@ -7,25 +7,22 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use super::graphql_e2e::{rig_allowing, Rig, NONCE, SECRET};
+use super::graphql_e2e::{rig_with, Rig, NONCE, SECRET};
 
 /// `base64("moor:" + NONCE)`, the `Proxy-Authorization` credential of a sandbox client.
 const BASIC: &str = "bW9vcjpub25jZV9ncWwtMDEyMzQ1Njc4OQ==";
 /// `base64("moor:wrong-nonce-0000")`.
 const WRONG_BASIC: &str = "bW9vcjp3cm9uZy1ub25jZS0wMDAw";
-/// Loopback spellings a Box can name in a `CONNECT` authority; the allow-list takes them verbatim, IPv6 bracketed, so nono passes each on to the guard.
+/// Loopback spellings a Box can name in a `CONNECT` authority, IPv6 bracketed.
 const LOOPBACK_TARGETS: [&str; 3] = ["127.0.0.1", "[::1]", "localhost"];
 /// A GraphQL query for a repository that is not the Task's.
 const OTHER_REPO: &str = r#"{"query":"query{repository(owner:\"victim\",name:\"secrets\"){id}}"}"#;
 /// Longest any single read waits.
 const IO: Duration = Duration::from_secs(5);
 
-/// Starts the supervisor listener with every loopback spelling allowed.
+/// Starts the supervisor listener.
 fn rig() -> Rig {
-    rig_allowing(
-        Vec::new(),
-        LOOPBACK_TARGETS.iter().map(|h| (*h).to_owned()).collect(),
-    )
+    rig_with(Vec::new())
 }
 
 /// The `Proxy-Authorization` header line of a valid sandbox client.
