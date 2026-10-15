@@ -8,7 +8,7 @@ use serde_json::json;
 /// The pinned nono release.
 pub(super) const NONO_VERSION: &str = "0.80.0";
 /// File name of the generated profile inside the credential directory.
-pub(super) const PROFILE_FILE: &str = "nono-profile.json";
+pub(crate) const PROFILE_FILE: &str = "nono-profile.json";
 
 /// Exit code of the check script when the Box lacks the pinned nono binary.
 pub(super) const NOT_INSTALLED: i32 = 6;
@@ -53,21 +53,24 @@ const GATE_VARS: [&str; 8] = [
 ];
 
 /// What the profile is built from.
-pub(super) struct SandboxInput<'a> {
+pub(crate) struct SandboxInput<'a> {
     /// The Box's operating system as `uname -s` reports it.
-    pub(super) os: &'a str,
+    pub(crate) os: &'a str,
     /// Project working directory.
-    pub(super) workdir: &'a BoxPath,
-    /// The Box user's home.
-    pub(super) home: &'a BoxPath,
+    pub(crate) workdir: &'a BoxPath,
+    /// The agent's HOME: a per-Task directory on macOS, the Box user's home on Linux.
+    pub(crate) home: &'a BoxPath,
+    /// The Box login user's real home. Equals `home` on Linux. On macOS it holds credentials, so
+    /// only toolchain paths under it are granted, read-only.
+    pub(crate) login_home: &'a BoxPath,
     /// Credential directory holding the CA files; granted read-only.
-    pub(super) cred: &'a BoxPath,
+    pub(crate) cred: &'a BoxPath,
     /// Per-Task temp directory; granted read-write.
-    pub(super) tmp: &'a BoxPath,
+    pub(crate) tmp: &'a BoxPath,
     /// Extra names to pass: agent env and rule `box_env` names.
-    pub(super) env_names: Vec<String>,
+    pub(crate) env_names: Vec<String>,
     /// Variables the sandbox sets for the agent alone: repo `env` and rule `box_env`.
-    pub(super) set_vars: Vec<(String, String)>,
+    pub(crate) set_vars: Vec<(String, String)>,
 }
 
 /// True when `name` may be passed into the sandbox.
@@ -113,10 +116,47 @@ const DEFAULT_GROUPS: [&str; 18] = [
     "dangerous_commands_linux",
 ];
 
+/// The read-only directories and files the profile grants.
+fn read_grants(input: &SandboxInput) -> (Vec<String>, Vec<String>) {
+    let mut read = vec![
+        input.cred.as_str().to_owned(),
+        "/usr/local/bin".to_owned(),
+        "/usr/local/lib".to_owned(),
+    ];
+    let mut read_file = vec!["/etc/gitconfig".to_owned()];
+    let (home, login) = (input.home.as_str(), input.login_home.as_str());
+    if input.os == "Darwin" {
+        // The login home is never granted wholesale or writable: it holds the owner's gh token,
+        // ssh keys and docker auth. Only toolchains are readable from it.
+        let under = |rel: &str| format!("{login}/{rel}");
+        read.extend(
+            [
+                ".local/share/mise",
+                ".bun",
+                ".npm-global",
+                ".local/bin",
+                ".local/share/claude",
+                "Library/Developer/Xcode",
+            ]
+            .map(under),
+        );
+        read.push("/Applications/Xcode.app".to_owned());
+        read_file.push(under(".gitconfig"));
+    } else {
+        let under = |rel: &str| format!("{home}/{rel}");
+        read.extend([".local/share/mise", ".bun", ".npm-global"].map(under));
+        read_file.push(under(".gitconfig"));
+    }
+    (read, read_file)
+}
+
 /// The nono profile as pretty JSON text.
-pub(super) fn profile(input: &SandboxInput) -> String {
+pub(crate) fn profile(input: &SandboxInput) -> String {
     let home = input.home.as_str();
     let at = |rel: &str| format!("{home}/{rel}");
+    let (read, read_file) = read_grants(input);
+    let mut set_vars: BTreeMap<String, String> = input.set_vars.iter().cloned().collect();
+    set_vars.insert("IS_SANDBOX".to_owned(), "1".to_owned());
     let mut doc = json!({
         "meta": { "name": "moor-agent" },
         "groups": { "include": DEFAULT_GROUPS },
@@ -135,21 +175,25 @@ pub(super) fn profile(input: &SandboxInput) -> String {
                 at(".local/share/claude"),
             ],
             "allow_file": [at(".claude.json")],
-            "read": [
-                input.cred.as_str(),
-                "/usr/local/bin",
-                "/usr/local/lib",
-                at(".local/share/mise"),
-                at(".bun"),
-                at(".npm-global"),
-            ],
-            "read_file": ["/etc/gitconfig", at(".gitconfig")],
+            "read": read,
+            "read_file": read_file,
         },
         "environment": {
             "allow_vars": allow_vars(&input.env_names),
-            "set_vars": input.set_vars.iter().cloned().collect::<BTreeMap<_, _>>(),
+            "set_vars": set_vars,
         },
     });
+    if input.os == "Darwin" {
+        // Seatbelt's `(allow network-outbound)` also permits connecting to any unix socket, so
+        // the Docker socket would be a root-equivalent escape. Blocking the network leaves
+        // loopback TCP, which reaches the Proxy, and the DNS socket nono keeps open.
+        if let Some(d) = doc.as_object_mut() {
+            d.insert(
+                "network".to_owned(),
+                json!({ "block": true, "open_port": [0] }),
+            );
+        }
+    }
     if input.os != "Linux" {
         // Only Linux has pathname socket mediation and a userdb socket to reach.
         if let Some(d) = doc.as_object_mut() {

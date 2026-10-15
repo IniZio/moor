@@ -1,8 +1,9 @@
 //! A launch with a Proxy runs the agent under the sandbox.
 
+use super::super::home::{self, task_home};
 use super::*;
 use crate::adapters::box_agent::nono_release::fake::{
-    ready_release, release_of, tarball, FakeFetch, READY_BINARY,
+    ready_release, release_for, release_of, tarball, FakeFetch, READY_BINARY,
 };
 use crate::adapters::box_agent::nono_release::{sha256_hex, NonoRelease};
 use moor_core::seam::driver::ExecOutcome;
@@ -302,4 +303,98 @@ fn repo_env_reaches_the_agent_only_through_the_profile() {
         doc.pointer("/environment/set_vars/APP_NOTE"),
         Some(&serde_json::Value::from(value))
     );
+}
+
+/// A proxy launch on an installed-tool Box whose `uname` says `platform`.
+fn launch_on(platform: &str, os: &'static str) -> (Arc<FakeDriver>, String) {
+    let fetch = Arc::new(FakeFetch::new(Ok(tarball(READY_BINARY))));
+    let release = release_for(&fetch, &tarball(READY_BINARY), (os, "arm64"));
+    let (d, s, out) = launch_missing([0, 0], platform, release);
+    out.unwrap();
+    let script = script_of(&pane_line(&s));
+    (d, script)
+}
+
+fn profile_text(d: &FakeDriver) -> String {
+    let put = (d.puts().into_iter()).find(|p| p.1.as_str().ends_with("nono-profile.json"));
+    String::from_utf8(put.unwrap().2).unwrap()
+}
+
+#[test]
+fn a_macos_agent_runs_with_a_home_of_its_own() {
+    let (d, script) = launch_on("Darwin arm64", "Darwin");
+    let home = task_home(&BoxPath::under("/work", "box-1").unwrap()).unwrap();
+    assert_eq!(home.as_str(), "/work/box-1.moor-home");
+    let make = script
+        .find("mkdir -p -m 700 '/work/box-1.moor-home' && mkdir -p -m 700 '/work/box-1.moor-home/.config'")
+        .expect(&script);
+    let export = script
+        .find("export HOME='/work/box-1.moor-home'")
+        .expect(&script);
+    let pin = script.find("XDG_CONFIG_HOME").expect(&script);
+    let path = script.find("export PATH=").expect(&script);
+    assert!(path < make && make < export && export < pin, "{script}");
+    let nono = script.find("'/home/box/.local/bin/nono'").expect(&script);
+    assert!(export < nono, "{script}");
+    assert!(!profile_text(&d).contains("/home/box/.config/gh"));
+}
+
+#[test]
+fn a_linux_agent_keeps_the_login_home() {
+    let (_, script) = launch_on("Linux arm64", "Linux");
+    assert!(!script.contains("export HOME="), "{script}");
+    assert!(!script.contains(".moor-home"), "{script}");
+}
+
+fn macos_box() -> Arc<FakeDriver> {
+    let d = Arc::new(FakeDriver::new().peek_text(
+        "box-1",
+        &BoxPath::restore("/work/box-1.moor-login-home").unwrap(),
+        "/Users/owner",
+    ));
+    d.acquire(&AcquireReq {
+        provider: ProviderId::new("fake"),
+        task: TaskId::new(1),
+        name: TaskName::parse("t1").unwrap(),
+        class: None,
+        nonce: "n0".to_owned(),
+        worktree: None,
+    })
+    .unwrap();
+    d
+}
+
+#[test]
+fn a_box_without_a_process_environment_reports_its_home_through_the_shell() {
+    let d = macos_box();
+    let login = home::login(&*d, &req(&surface(FakeSurface::new("/r")))).unwrap();
+    assert_eq!(login.home.as_str(), "/Users/owner");
+    assert!(!login.linux);
+    assert_eq!(d.execs().len(), 2);
+}
+
+#[test]
+fn macos_hooks_and_preseed_land_in_the_agents_home_not_the_owners() {
+    let (d, script) = launch_on("Darwin arm64", "Darwin");
+    let home = "/work/box-1.moor-home";
+    for file in [".claude.json", ".claude/settings.json"] {
+        assert!(script.contains(&format!("{home}/{file}")), "{script}");
+    }
+    assert!(!script.contains("/home/box/.claude"), "{script}");
+    assert!(d.puts().iter().all(|p| !p.1.as_str().contains("/.claude")));
+    let made = (d.execs().into_iter()).filter_map(|mut e| e.1.argv.pop());
+    let made: Vec<_> = made.filter(|l| l.contains(home)).collect();
+    assert_eq!(made.len(), 1);
+    let made = made.first().expect("one mkdir");
+    for dir in home::GRANTED_DIRS {
+        assert!(made.contains(&format!(" '{home}/{dir}'")), "{dir}");
+    }
+}
+
+#[test]
+fn a_macos_launch_without_a_proxy_fails_before_any_upload() {
+    let (d, s) = (macos_box(), surface(FakeSurface::new("/r")));
+    let message = sandbox_message(agent(&d, &s).launch(&req(&s)));
+    assert!(message.contains("sandboxed"), "{message}");
+    assert!(d.puts().is_empty());
 }

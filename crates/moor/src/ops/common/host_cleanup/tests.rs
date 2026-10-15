@@ -101,7 +101,7 @@ fn a_lease_dir_is_never_a_shallow_or_dotted_path() {
         "/moor-a-x",
     ] {
         let s = script("1", "moor-a-x", w).unwrap();
-        assert!(!s.contains("rm -rf -- '"), "{w}: {s}");
+        assert_eq!(s.lines().count(), 3, "{w}: {s}");
     }
 }
 
@@ -169,6 +169,7 @@ fn the_lease_removal_is_guarded_by_home() {
         concat!(
             "[ -n \"$HOME\" ] && [ \"$HOME\" != / ] || exit 1\n",
             "rm -rf -- \"$HOME\"/.moor-cred-7-* \"$HOME\"/.moor-tmp-7-*\n",
+            "case \"$HOME/\" in '/srv/crabbox/moor-t-n1/repo.moor-home'/*) ;; *) rm -rf -- '/srv/crabbox/moor-t-n1/repo.moor-home' ;; esac\n",
             "case \"$HOME/\" in '/srv/crabbox/moor-t-n1'/*) ;; *) rm -rf -- '/srv/crabbox/moor-t-n1' ;; esac"
         )
     );
@@ -216,4 +217,53 @@ fn a_lease_that_contains_home_survives() {
         .unwrap();
     assert!(st.success());
     assert!(home.join("keep").exists());
+}
+
+#[test]
+fn removes_the_per_task_home_even_when_the_lease_is_kept() {
+    let h = Host::new();
+    let w = h.task("1", "moor-a-x");
+    let agent_home = format!("{w}.moor-home");
+    fs::create_dir_all(Path::new(&agent_home).join(".claude")).unwrap();
+    fs::write(Path::new(&agent_home).join(".claude/s"), "secret").unwrap();
+    h.sh(&script("1", "moor-other-x", &w).unwrap());
+    assert!(!Path::new(&agent_home).exists());
+    assert!(Path::new(&w).is_dir());
+}
+
+#[test]
+fn removes_the_per_task_home_with_the_lease() {
+    let h = Host::new();
+    let w = h.task("1", "moor-a-x");
+    fs::create_dir_all(format!("{w}.moor-home")).unwrap();
+    h.sh(&script("1", "moor-a-x", &w).unwrap());
+    assert_eq!(h.alive("1", "moor-a-x"), [false; 3]);
+}
+
+#[test]
+fn a_relative_or_empty_workdir_emits_no_home_removal() {
+    for w in ["", "repo", "r/moor-a-x/repo"] {
+        assert!(script("1", "moor-a-x", w).is_none(), "{w:?}");
+    }
+}
+
+#[test]
+fn a_per_task_home_that_is_or_contains_home_survives() {
+    for sub in ["", "inner"] {
+        let h = Host::new();
+        let work = h.root().join("moor-x").join("repo");
+        let agent_home = h.root().join("moor-x").join("repo.moor-home");
+        let home = agent_home.join(sub);
+        fs::create_dir_all(&work).unwrap();
+        fs::create_dir_all(&home).unwrap();
+        fs::write(home.join("keep"), "mine").unwrap();
+        let st = Command::new("sh")
+            .arg("-c")
+            .arg(script("1", "moor-x", &work.display().to_string()).unwrap())
+            .env("HOME", &home)
+            .status()
+            .unwrap();
+        assert!(st.success());
+        assert!(home.join("keep").exists(), "{sub:?}");
+    }
 }

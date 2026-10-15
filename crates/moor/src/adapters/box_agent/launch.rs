@@ -26,6 +26,7 @@ const CLEANUP_DEADLINE: Duration = Duration::from_secs(30);
 const INSTALL_DEADLINE: Duration = Duration::from_secs(300);
 
 /// A failed step and why.
+#[derive(Debug)]
 struct Failure {
     /// The step that failed.
     step: &'static str,
@@ -53,40 +54,76 @@ pub(super) fn launch(
     let connect = driver
         .connect_argv(&req.handle, &req.worktree)
         .map_err(|e| failed(fail("connect", &e)))?;
-    let home = box_home(driver, req).map_err(failed)?;
-    let ctx = LaunchCtx {
-        model: req.model.clone(),
-        workdir: req.workdir.clone(),
-        proxy: req.proxy.as_deref().map(|p| ProxyAddr {
-            box_port: p.box_port,
-            nonce: Secret::new(p.nonce.expose().to_vec()),
-            ca_pem: p.ca_pem.clone(),
-            box_env: p.box_env.clone(),
-        }),
-        home,
+    let login = home::login(driver, req).map_err(failed)?;
+    let under = |kind: &str| {
+        let name = format!(".moor-{kind}-{}-{}", req.task.as_str(), req.nonce);
+        BoxPath::under(login.home.as_str(), &name).map_err(|e| failed(fail("brief", &e)))
     };
-    let cred = BoxPath::under(
-        ctx.home.as_str(),
-        &format!(".moor-cred-{}-{}", req.task.as_str(), req.nonce),
-    )
-    .map_err(|e| failed(fail("brief", &e)))?;
-    let tmp = BoxPath::under(
-        ctx.home.as_str(),
-        &format!(".moor-tmp-{}-{}", req.task.as_str(), req.nonce),
-    )
-    .map_err(|e| failed(fail("brief", &e)))?;
-    let launch = Launch {
+    let (cred, tmp) = (under("cred")?, under("tmp")?);
+    let run = Run {
         driver,
         surface,
         profile,
         req,
-        ctx: &ctx,
-        cred: &cred,
-        tmp: &tmp,
         release,
     };
-    match launch.deliver(&connect) {
-        Ok(pane) => Ok(SessionRef {
+    run.start(&login, (&cred, &tmp), &connect).map_err(|mut f| {
+        if let Err(c) = remove_cred(driver, req, (&cred, &tmp)) {
+            f.message = format!("{}; could not remove {}: {c}", f.message, cred.as_str());
+        }
+        failed(f)
+    })
+}
+
+/// The collaborators of one launch, before the Box is probed.
+struct Run<'a> {
+    /// Reads and writes the Box.
+    driver: &'a dyn Driver,
+    /// Opens the tab.
+    surface: &'a dyn Surface,
+    /// Builds the agent's arguments and hook files.
+    profile: &'a dyn AgentProfile,
+    /// The launch asked for.
+    req: &'a LaunchReq,
+    /// Fetches the sandbox tool for a Box that lacks it.
+    release: &'a NonoRelease,
+}
+
+impl Run<'_> {
+    /// Finds the agent's home, then delivers; a macOS Box gets a home of its own so the profile's
+    /// files never touch the owner's, and refuses a launch that would run unsandboxed.
+    fn start(
+        &self,
+        login: &home::Login,
+        (cred, tmp): (&BoxPath, &BoxPath),
+        connect: &[String],
+    ) -> Result<SessionRef, Failure> {
+        let (driver, req) = (self.driver, self.req);
+        let (os, task_home) = home::agent(driver, req, login, cred, self.release)?;
+        let ctx = LaunchCtx {
+            model: req.model.clone(),
+            workdir: req.workdir.clone(),
+            proxy: req.proxy.as_deref().map(|p| ProxyAddr {
+                box_port: p.box_port,
+                nonce: Secret::new(p.nonce.expose().to_vec()),
+                ca_pem: p.ca_pem.clone(),
+                box_env: p.box_env.clone(),
+            }),
+            home: task_home.unwrap_or_else(|| login.home.clone()),
+        };
+        let launch = Launch {
+            driver,
+            surface: self.surface,
+            profile: self.profile,
+            req,
+            ctx: &ctx,
+            cred,
+            tmp,
+            login: &login.home,
+            os: os.as_deref(),
+        };
+        let pane = launch.deliver(connect)?;
+        Ok(SessionRef {
             id: String::new(),
             handle: req.handle.clone(),
             workdir: req.workdir.clone(),
@@ -96,13 +133,7 @@ pub(super) fn launch(
                 .proxy
                 .is_some()
                 .then(|| format!("nono {}", sandbox::NONO_VERSION)),
-        }),
-        Err(mut f) => {
-            if let Err(c) = remove_cred(driver, req, (&cred, &tmp)) {
-                f.message = format!("{}; could not remove {}: {c}", f.message, cred.as_str());
-            }
-            Err(failed(f))
-        }
+        })
     }
 }
 
@@ -112,20 +143,6 @@ fn failed(f: Failure) -> EngineError {
         step: f.step,
         message: f.message,
     }
-}
-
-/// The Box user's home, read from the environment of a process on the Box.
-fn box_home(driver: &dyn Driver, req: &LaunchReq) -> Result<BoxPath, Failure> {
-    let environ = BoxPath::restore("/proc/self/environ").map_err(|e| fail("home", &e))?;
-    let text = driver
-        .peek_file(&req.handle, &environ, &req.worktree)
-        .map_err(|e| fail("home", &e))?
-        .ok_or_else(|| fail("home", &"the Box has no process environment"))?;
-    let home = text
-        .split('\0')
-        .find_map(|kv| kv.strip_prefix("HOME="))
-        .ok_or_else(|| fail("home", &"the Box user has no home directory"))?;
-    BoxPath::restore(home).map_err(|e| fail("home", &e))
 }
 
 /// What one launch works with.
@@ -144,8 +161,20 @@ struct Launch<'a> {
     cred: &'a BoxPath,
     /// The agent's own temp directory on the Box.
     tmp: &'a BoxPath,
-    /// Fetches the sandbox tool for a Box that lacks it.
-    release: &'a NonoRelease,
+    /// The Box user's own home, where the sandbox tool lives.
+    login: &'a BoxPath,
+    /// The Box OS, known once the sandbox tool is checked.
+    os: Option<&'a str>,
+}
+
+/// What a sandboxed launch stages on the Box.
+struct Sandboxed {
+    /// The sandbox tool, which lives in the Box user's own home.
+    launcher: BoxPath,
+    /// The staged sandbox profile.
+    profile: BoxPath,
+    /// The agent's own home, where the Box keeps the owner's home out of its reach.
+    task_home: Option<BoxPath>,
 }
 
 impl Launch<'_> {
@@ -170,19 +199,19 @@ impl Launch<'_> {
             .map_err(|e| fail("script", &e))
     }
 
-    /// Makes sure the sandbox tool is on the Box and stages its profile, returning the profile's path; a
-    /// launch without a Proxy runs the agent unsandboxed.
-    fn sandbox(&self) -> Result<Option<BoxPath>, Failure> {
-        let Some(addr) = &self.ctx.proxy else {
+    /// Stages the sandbox profile; a launch without a Proxy runs the agent unsandboxed.
+    fn sandbox(&self) -> Result<Option<Sandboxed>, Failure> {
+        let (Some(addr), Some(os)) = (&self.ctx.proxy, self.os) else {
             return Ok(None);
         };
         let (req, cred) = (self.req, self.cred);
-        let os = install::ensure(self.driver, req, (&self.ctx.home, cred), self.release)?;
+        let task_home = (self.ctx.home != *self.login).then(|| self.ctx.home.clone());
         let env_names = (self.profile.env(self.ctx).into_iter().map(|v| v.name)).collect();
         let profile = sandbox::profile(&SandboxInput {
-            os: &os,
+            os,
             workdir: &self.ctx.workdir,
             home: &self.ctx.home,
+            login_home: self.login,
             cred,
             tmp: self.tmp,
             env_names,
@@ -193,7 +222,13 @@ impl Launch<'_> {
         self.driver
             .put_file(&req.handle, &at, profile.as_bytes(), 0o600, &req.worktree)
             .map_err(|e| fail("sandbox", &e))?;
-        Ok(Some(at))
+        let launcher = BoxPath::under(self.login.as_str(), ".local/bin/nono")
+            .map_err(|e| fail("sandbox", &e))?;
+        Ok(Some(Sandboxed {
+            launcher,
+            profile: at,
+            task_home,
+        }))
     }
 
     /// Puts the brief in the credential directory.
@@ -285,7 +320,7 @@ fn script(
     hooks: &BoxSetup,
     preseed: &BoxSetup,
     argv: &[String],
-    (proxy, sandbox): (&[String], Option<&BoxPath>),
+    (proxy, sandbox): (&[String], Option<&Sandboxed>),
 ) -> Result<String, NameError> {
     let workdir = ctx.workdir.as_str();
     let moor = quote(BoxPath::under(workdir, ".moor")?.as_str());
@@ -316,11 +351,16 @@ fn script(
         lines.insert(5, remove);
     }
     lines.extend(proxy.iter().cloned());
-    let launcher = BoxPath::under(ctx.home.as_str(), ".local/bin/nono")?;
+    if let Some(home) = sandbox.and_then(|s| s.task_home.as_ref()) {
+        lines.extend(home::lines(home));
+    }
     if sandbox.is_some() {
         lines.extend(sandbox::harden_lines());
     }
-    let agent = sandbox.map_or_else(|| agent.clone(), |at| sandbox::wrap(&launcher, at, &agent));
+    let agent = sandbox.map_or_else(
+        || agent.clone(),
+        |s| sandbox::wrap(&s.launcher, &s.profile, &agent),
+    );
     lines.push(format!("cd {} && {}", quote(workdir), command_line(&agent)));
     Ok(lines.join("\n"))
 }
@@ -350,6 +390,7 @@ fn remove_cred(
     }
 }
 
+mod home;
 mod install;
 
 #[cfg(test)]

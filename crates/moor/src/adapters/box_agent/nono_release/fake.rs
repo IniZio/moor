@@ -62,11 +62,20 @@ pub(crate) fn tarball(content: &[u8]) -> Vec<u8> {
 
 /// A release whose only asset, for Linux `x86_64`, is `tarball`.
 pub(crate) fn release_of(fetch: &Arc<FakeFetch>, tarball: &[u8]) -> NonoRelease {
+    release_for(fetch, tarball, ("Linux", "x86_64"))
+}
+
+/// A release whose only asset, for the `os` and `arch` platform, is `tarball`.
+pub(crate) fn release_for(
+    fetch: &Arc<FakeFetch>,
+    tarball: &[u8],
+    (os, arch): (&'static str, &'static str),
+) -> NonoRelease {
     let sha256: &'static str = Box::leak(sha256_hex(tarball).into_boxed_str());
     let asset = Asset {
         release: "https://example.test/release",
-        os: "Linux",
-        arch: "x86_64",
+        os,
+        arch,
         name: "nono-test.tar.gz",
         sha256,
     };

@@ -7,6 +7,8 @@ use super::{
     check_failure, check_script, harden_lines, profile, wrap, SandboxInput, NOT_INSTALLED,
 };
 
+const LOGIN: &str = "/Users/u";
+const TASK_HOME: &str = "/Users/u/.moor-boxes/moor-x/w.moor-home";
 const SUM: &str = "6da665b61999570c10dffc7da78828fe1fb7f3cac53319e505cebecaef17037f";
 
 fn path(s: &str) -> BoxPath {
@@ -18,12 +20,18 @@ fn doc(env_names: &[&str]) -> Value {
 }
 
 fn text(os: &str, env_names: &[&str]) -> String {
-    let (w, h, c) = (path("/work/p"), path("/home/u"), path("/tmp/cred"));
+    let (w, c) = (path("/work/p"), path("/tmp/cred"));
+    let (login, h) = if os == "Darwin" {
+        (path(LOGIN), path(TASK_HOME))
+    } else {
+        (path("/home/u"), path("/home/u"))
+    };
     let tmp = path("/home/u/.moor-tmp-t-n");
     let input = SandboxInput {
         os,
         workdir: &w,
         home: &h,
+        login_home: &login,
         cred: &c,
         tmp: &tmp,
         env_names: env_names.iter().map(|s| (*s).to_owned()).collect(),
@@ -251,4 +259,89 @@ fn harden_lines_unset_nono_names_and_pin_the_config_home() {
         text.contains("export XDG_CONFIG_HOME=\"$HOME/.config\""),
         "{text}"
     );
+}
+
+fn fs_lists(d: &Value) -> Vec<String> {
+    ["allow", "allow_file", "read", "read_file"]
+        .iter()
+        .flat_map(|k| strings(at(d, &format!("/filesystem/{k}"))))
+        .collect()
+}
+
+fn darwin() -> Value {
+    serde_json::from_str(&text("Darwin", &[])).unwrap()
+}
+
+#[test]
+fn darwin_profile_never_grants_the_login_users_gh_config() {
+    let d = darwin();
+    let gh = format!("{LOGIN}/.config/gh");
+    for p in fs_lists(&d) {
+        assert!(!p.starts_with(&gh), "{p}");
+        assert_ne!(p, LOGIN);
+    }
+    let allow = strings(at(&d, "/filesystem/allow"));
+    assert!(
+        allow.contains(&format!("{TASK_HOME}/.config/gh")),
+        "{allow:?}"
+    );
+}
+
+#[test]
+fn darwin_profile_grants_no_write_under_the_login_home() {
+    let d = darwin();
+    let mut writable = strings(at(&d, "/filesystem/allow"));
+    writable.extend(strings(at(&d, "/filesystem/allow_file")));
+    for p in writable {
+        assert!(
+            !p.starts_with(&format!("{LOGIN}/")) || p.starts_with(TASK_HOME),
+            "{p}"
+        );
+    }
+}
+
+#[test]
+fn darwin_profile_grants_nothing_in_login_credential_directories() {
+    let d = darwin();
+    for dir in [".ssh", ".docker", ".orbstack", "Library/Keychains"] {
+        let bad = format!("{LOGIN}/{dir}");
+        for p in fs_lists(&d) {
+            assert!(!p.starts_with(&bad), "{p}");
+        }
+    }
+    let groups = strings(at(&d, "/groups/include"));
+    assert!(groups.contains(&"deny_keychains_macos".to_owned()));
+    assert!(groups.contains(&"deny_credentials".to_owned()));
+}
+
+#[test]
+fn darwin_profile_reads_xcode_and_login_toolchains_read_only() {
+    let d = darwin();
+    let read = strings(at(&d, "/filesystem/read"));
+    for p in [
+        "/Applications/Xcode.app",
+        "/Users/u/Library/Developer/Xcode",
+        "/Users/u/.local/share/mise",
+        "/Users/u/.local/bin",
+    ] {
+        assert!(read.contains(&p.to_owned()), "{read:?}");
+    }
+    assert!(strings(at(&d, "/filesystem/read_file")).contains(&"/Users/u/.gitconfig".to_owned()));
+}
+
+#[test]
+fn profile_marks_the_environment_as_sandboxed_and_keeps_repo_vars() {
+    for os in ["Linux", "Darwin"] {
+        let d: Value = serde_json::from_str(&text(os, &[])).unwrap();
+        assert_eq!(at(&d, "/environment/set_vars/IS_SANDBOX"), "1");
+        assert_eq!(at(&d, "/environment/set_vars/APP_MODE"), "it's");
+    }
+}
+
+#[test]
+fn darwin_profile_blocks_unix_sockets_by_blocking_non_loopback_network() {
+    let d = darwin();
+    assert_eq!(at(&d, "/network/block"), true);
+    assert_eq!(at(&d, "/network/open_port"), &serde_json::json!([0]));
+    assert!(doc(&[]).pointer("/network").is_none());
 }

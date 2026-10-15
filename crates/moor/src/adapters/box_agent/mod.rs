@@ -6,7 +6,7 @@ mod launch;
 pub(crate) mod nono_release;
 mod probe;
 mod proxy_env;
-mod sandbox;
+pub(crate) mod sandbox;
 mod steer;
 mod transcript;
 

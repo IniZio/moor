@@ -125,7 +125,7 @@ pub(super) fn crabbox_env(target: &str) -> Env {
 }
 
 /// The lease directory above a Box's workdir.
-fn lease_of(acq: &Acquired) -> String {
+pub(super) fn lease_of(acq: &Acquired) -> String {
     let (lease, _) = acq.workdir.as_str().rsplit_once('/').unwrap();
     lease.to_owned()
 }

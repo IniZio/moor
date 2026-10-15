@@ -60,7 +60,7 @@ fn lease_dir<'a>(workdir: &'a str, box_name: &str) -> Option<&'a str> {
 }
 
 /// The `sh -c` script that removes the Task's credential and temp directories
-/// and, when `workdir` sits in the Box's own lease directory, that directory.
+/// and per-Task home and, when `workdir` sits in the Box's own lease directory, that directory.
 ///
 /// Returns `None` when `task` is not all ASCII digits, `box_name` is not a plain name or `workdir` is
 /// not an absolute path, because the paths are built from them.
@@ -72,6 +72,12 @@ pub(crate) fn script(task: &str, box_name: &str, workdir: &str) -> Option<String
         r#"[ -n "$HOME" ] && [ "$HOME" != / ] || exit 1"#.to_owned(),
         format!(r#"rm -rf -- "$HOME"/.moor-cred-{task}-* "$HOME"/.moor-tmp-{task}-*"#),
     ];
+    // The agent's per-Task HOME sits beside the workdir, so it goes even when
+    // the lease directory below is kept.
+    let home = quote(&format!("{workdir}.moor-home"));
+    lines.push(format!(
+        r#"case "$HOME/" in {home}/*) ;; *) rm -rf -- {home} ;; esac"#
+    ));
     if let Some(lease) = lease_dir(workdir, box_name) {
         let lease = quote(lease);
         // Never remove `$HOME` or a directory that contains it.
