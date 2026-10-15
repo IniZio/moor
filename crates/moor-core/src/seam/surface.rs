@@ -121,6 +121,12 @@ pub enum SurfaceError {
     /// The surface backend cannot be reached.
     #[error("surface unavailable: {0}")]
     Unavailable(String),
+    /// Creating the worktree failed because one is left on the Task's branch.
+    #[error("a worktree is left at {}", path.display())]
+    Leftover {
+        /// Where the leftover worktree is.
+        path: PathBuf,
+    },
     /// The backend refused or failed the call.
     #[error("surface call failed: {summary}")]
     Failed {

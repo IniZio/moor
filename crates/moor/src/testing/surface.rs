@@ -26,6 +26,7 @@ struct State {
     bases: Vec<Option<String>>,
     obs: HashMap<String, VecDeque<Result<PaneObs, SurfaceError>>>,
     opens: Vec<PaneCmd>,
+    fail_create: Option<SurfaceError>,
     fail_ensure: Option<SurfaceError>,
     fail_open_pane: Option<SurfaceError>,
     fail_close_pane: Option<SurfaceError>,
@@ -52,6 +53,16 @@ impl FakeSurface {
 
     fn st(&self) -> MutexGuard<'_, State> {
         self.state.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Registers a worktree already at `path`.
+    pub(crate) fn add_worktree(&self, path: &Path) {
+        self.st().worktrees.push(path.to_path_buf());
+    }
+
+    /// The next `create_worktree` fails once with `e`.
+    pub(crate) fn set_fail_create(&self, e: SurfaceError) {
+        self.st().fail_create = Some(e);
     }
 
     /// The next `ensure_workspace` fails once with `e`.
@@ -147,6 +158,9 @@ impl Surface for FakeSurface {
         let mut s = self.st();
         s.calls.push(format!("create_worktree {}", name.as_str()));
         s.bases.push(base.map(str::to_owned));
+        if let Some(e) = s.fail_create.take() {
+            return Err(e);
+        }
         let path = self.root.join("wt").join(name.as_str());
         s.worktrees.push(path.clone());
         Ok(Worktree {

@@ -10,6 +10,8 @@ pub(super) enum HerdrFailure {
     ServerNotRunning,
     /// The target already exists (herdr exit 255 or an `*already_exists` code).
     AlreadyExists(SurfaceError),
+    /// herdr could not create a worktree, which a leftover worktree on the branch can cause.
+    CreateFailed(SurfaceError),
     /// Any other failure, already in Surface terms.
     Surface(SurfaceError),
 }
@@ -53,10 +55,12 @@ fn map_body(body: &ErrorBody) -> HerdrFailure {
             "herdr does not support this request; restart the moor herdr session".to_owned(),
         ));
     }
-    if body.code == "already_exists"
-        || body.code.ends_with("_already_exists")
-        || body.code == "worktree_create_failed"
-    {
+    if body.code == "worktree_create_failed" {
+        return HerdrFailure::CreateFailed(SurfaceError::Failed {
+            summary: format!("herdr {}", body.code),
+        });
+    }
+    if body.code == "already_exists" || body.code.ends_with("_already_exists") {
         return HerdrFailure::AlreadyExists(SurfaceError::Failed {
             summary: format!("herdr {}", body.code),
         });
