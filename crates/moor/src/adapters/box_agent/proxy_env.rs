@@ -14,7 +14,8 @@ pub(super) const NONCE_FILE: &str = "proxy-nonce";
 const NONCE_VAR: &str = "moor_nonce";
 /// The staged public CA certificate file name inside the credential directory.
 pub(super) const CA_FILE: &str = "proxy-ca.pem";
-/// The CA bundle built in the credential directory when the system bundle cannot be edited.
+/// The CA bundle built in the credential directory when the system bundle cannot be edited, and always on macOS,
+/// where moor never writes the system trust file.
 const BUNDLE_FILE: &str = "ca-bundle.pem";
 /// System CA bundles, first existing one wins.
 const SYSTEM_BUNDLES: &str =
@@ -75,7 +76,7 @@ pub(super) fn script_lines(
         "moor_sys=; for moor_f in ".to_owned() + SYSTEM_BUNDLES + "; do [ -f \"$moor_f\" ] && { moor_sys=$moor_f; break; }; done",
         format!("moor_mark=$(sed -n 2p {ca})"),
         format!(
-            "if [ -n \"$moor_sys\" ] && sudo -n true 2>/dev/null && {{ grep -qF \"$moor_mark\" \"$moor_sys\" || sudo -n tee -a \"$moor_sys\" <{ca} >/dev/null; }}; then moor_bundle=$moor_sys; else moor_bundle={built}; {{ if [ -n \"$moor_sys\" ]; then cat \"$moor_sys\"; fi; cat {ca}; }} >\"$moor_bundle\" && chmod 644 \"$moor_bundle\"; fi"
+            "if [ \"$(uname -s)\" != Darwin ] && [ -n \"$moor_sys\" ] && sudo -n true 2>/dev/null && {{ grep -qF \"$moor_mark\" \"$moor_sys\" || sudo -n tee -a \"$moor_sys\" <{ca} >/dev/null; }}; then moor_bundle=$moor_sys; else moor_bundle={built}; {{ if [ -n \"$moor_sys\" ]; then cat \"$moor_sys\"; fi; cat {ca}; }} >\"$moor_bundle\" && chmod 644 \"$moor_bundle\"; fi"
         ),
     ];
     for name in [

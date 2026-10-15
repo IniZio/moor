@@ -227,6 +227,59 @@ fn the_script_runs_and_builds_the_environment_from_the_staged_nonce() {
     }
 }
 
+#[test]
+fn on_macos_the_system_bundle_is_never_touched_and_no_sudo_runs() {
+    let dir = tempfile::TempDir::new().unwrap();
+    std::fs::write(dir.path().join(NONCE_FILE), SENTINEL).unwrap();
+    std::fs::write(dir.path().join("proxy-ca.pem"), CA).unwrap();
+    let bin = dir.path().join("fakebin");
+    std::fs::create_dir(&bin).unwrap();
+    let calls = dir.path().join("sudo-calls");
+    for (name, body) in [
+        ("uname", "#!/bin/sh\necho Darwin\n".to_owned()),
+        (
+            "sudo",
+            format!("#!/bin/sh\necho \"$@\" >>{}\nexit 0\n", calls.display()),
+        ),
+    ] {
+        let tool = bin.join(name);
+        std::fs::write(&tool, body).unwrap();
+        std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let system = [
+        "/etc/ssl/certs/ca-certificates.crt",
+        "/etc/pki/tls/certs/ca-bundle.crt",
+        "/etc/ssl/cert.pem",
+    ]
+    .into_iter()
+    .find(|p| Path::new(p).is_file());
+    let before = system.map(|p| std::fs::read(p).unwrap());
+    let lines = script_lines(&cred(dir.path()), &proxy(), &[], None).unwrap();
+    assert!(lines.iter().all(|l| !l.contains("sentinel-9c2e")));
+    let script_path = dir.path().join("launch.sh");
+    std::fs::write(&script_path, format!("{}\nenv", lines.join("\n"))).unwrap();
+    let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
+    let out = Command::new("sh")
+        .arg(&script_path)
+        .env("PATH", path)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(!calls.exists(), "sudo was invoked");
+    assert_eq!(before, system.map(|p| std::fs::read(p).unwrap()));
+    let bundle = dir.path().join("ca-bundle.pem");
+    assert_ca_vars(&parse_env(&out.stdout), dir.path(), &bundle);
+    let built = std::fs::read(&bundle).unwrap();
+    assert!(built.ends_with(CA.as_bytes()));
+    if let Some(sys) = before {
+        assert!(built.starts_with(&sys));
+    }
+}
+
 /// A directory holding a `sudo` that always refuses.
 fn fake_sudo(dir: &Path) -> PathBuf {
     let fake = dir.join("fakebin");
