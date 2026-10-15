@@ -37,10 +37,6 @@ impl Entry {
 
 /// Feature token: the Box sleeps on its own.
 const NATIVE_SLEEP: &str = "native-sleep";
-/// Feature token: the provider can apply an egress allow-list.
-const EGRESS_ALLOW: &str = "egress-allow";
-/// Feature token: the allow-list is fixed at Box creation, so enforcement is opt-in.
-const EGRESS_CREATE_ONLY: &str = "egress-allow-create-only";
 /// Feature token: a wake changes the host key.
 const ROTATES_HOST_KEY: &str = "resume-rotates-host-key";
 /// Feature token: the Box is reached over SSH, which carries the reverse tunnel.
@@ -55,17 +51,10 @@ fn derive(entry: &Entry) -> DriverCaps {
     } else {
         SleepKind::None
     };
-    let egress = if !entry.has(EGRESS_ALLOW) {
-        EgressSupport::None
-    } else if entry.has(EGRESS_CREATE_ONLY) {
-        EgressSupport::OptIn
-    } else {
-        EgressSupport::Enforced
-    };
     DriverCaps {
         sleep,
         wake: sleep != SleepKind::None && !entry.has(ROTATES_HOST_KEY),
-        egress,
+        egress: EgressSupport::None,
         reverse_tunnel: entry.has(SSH),
         has_workdir: true,
     }

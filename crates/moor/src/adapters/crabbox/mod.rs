@@ -22,8 +22,8 @@ use std::time::Duration;
 use moor_core::name::{BoxHandle, BoxPath, ProviderId};
 use moor_core::seam::clock::Clock;
 use moor_core::seam::driver::{
-    AcquireReq, Acquired, BoxListing, Driver, DriverCaps, DriverError, EgressApplied, EgressPlan,
-    EgressSupport, ExecOutcome, ExecSpec, Released, SleepOutcome, TunnelHandle,
+    AcquireReq, Acquired, BoxListing, Driver, DriverCaps, DriverError, EgressApplied, ExecOutcome,
+    ExecSpec, Released, SleepOutcome, TunnelHandle,
 };
 use moor_core::seam::proc::{Deadline, Proc, ProcError, ProcOutput, ProcSpec, Tool};
 
@@ -186,27 +186,6 @@ fn unreadable(what: &str) -> DriverError {
     }
 }
 
-impl Crabbox {
-    /// Adds the egress plan to a warmup when the provider can enforce it.
-    fn with_egress(
-        &self,
-        spec: ProcSpec,
-        provider: &ProviderId,
-        plan: &EgressPlan,
-    ) -> Result<(ProcSpec, EgressApplied), DriverError> {
-        let EgressPlan::Allow(hosts) = plan else {
-            return Ok((spec, EgressApplied::Open));
-        };
-        if self.caps(provider)?.egress == EgressSupport::None {
-            return Ok((spec, EgressApplied::NotEnforced));
-        }
-        Ok((
-            spec.args(["--egress-allow", &hosts.join(",")]),
-            EgressApplied::Enforced,
-        ))
-    }
-}
-
 impl Driver for Crabbox {
     fn caps(&self, provider: &ProviderId) -> Result<DriverCaps, DriverError> {
         self.require_version()?;
@@ -227,14 +206,13 @@ impl Driver for Crabbox {
         spec = spec.args(["--slug", &name, "--class", class]);
         let handle = handle_of(provider, &name);
         let spec = static_env(spec, &handle);
-        let (spec, egress) = self.with_egress(spec, &req.provider, &req.egress)?;
         let out = self.call(Op::Acquire, Some(provider), &spec)?;
         parse::parse_warmup(&out.stdout).ok_or_else(|| unreadable("acquire"))?;
         let workdir = workdir::probe(self, &handle, req.worktree.as_deref())?;
         Ok(Acquired {
             handle,
             workdir,
-            egress,
+            egress: EgressApplied::Open,
         })
     }
 

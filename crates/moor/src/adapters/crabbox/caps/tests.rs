@@ -65,11 +65,11 @@ fn table() {
         ),
         (
             "namespace-devbox",
-            want(SleepKind::Suspend, false, EgressSupport::OptIn),
+            want(SleepKind::Suspend, false, EgressSupport::None),
         ),
         (
             "sprites",
-            want(SleepKind::Native, true, EgressSupport::Enforced),
+            want(SleepKind::Native, true, EgressSupport::None),
         ),
         ("ssh", want(SleepKind::None, false, EgressSupport::None)),
         (
