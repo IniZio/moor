@@ -594,3 +594,6 @@ fn the_agent_gets_the_proxy_env_while_the_cred_dir_lives_until_exit() {
 
 #[path = "sandbox_tests.rs"]
 mod sandbox_tests;
+
+#[path = "secret_tests.rs"]
+mod secret_tests;

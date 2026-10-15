@@ -5,6 +5,7 @@ use serde_json::Value;
 
 use super::{
     check_failure, check_script, harden_lines, profile, wrap, SandboxInput, NOT_INSTALLED,
+    PLATFORM_SECRET_VARS,
 };
 
 const SUM: &str = "6da665b61999570c10dffc7da78828fe1fb7f3cac53319e505cebecaef17037f";
@@ -106,6 +107,88 @@ fn env_allow_list_drops_provider_and_gate_names() {
     assert!(!vars.iter().any(|v| v.starts_with("NSC_")));
     for bad in ["token", "TOKEN", "gate", "run_dir"] {
         assert!(!vars.contains(&bad.to_owned()), "{bad}");
+    }
+}
+
+fn doc_with_set_vars(env_names: &[&str], set_vars: Vec<(String, String)>) -> Value {
+    let (w, h, c) = (path("/work/p"), path("/home/u"), path("/tmp/cred"));
+    let tmp = path("/home/u/.moor-tmp-t-n");
+    let input = SandboxInput {
+        workdir: &w,
+        home: &h,
+        cred: &c,
+        tmp: &tmp,
+        env_names: env_names.iter().map(|s| (*s).to_owned()).collect(),
+        set_vars,
+    };
+    serde_json::from_str(&profile(&input)).unwrap()
+}
+
+#[test]
+fn platform_secret_names_never_reach_the_sandbox_environment() {
+    let set_vars = PLATFORM_SECRET_VARS
+        .iter()
+        .map(|n| ((*n).to_owned(), "secret".to_owned()))
+        .chain([("APP_MODE".to_owned(), "x".to_owned())])
+        .collect();
+    let d = doc_with_set_vars(&PLATFORM_SECRET_VARS, set_vars);
+    let allowed = strings(at(&d, "/environment/allow_vars"));
+    let set = at(&d, "/environment/set_vars").as_object().unwrap();
+    for name in PLATFORM_SECRET_VARS {
+        assert!(!allowed.contains(&name.to_owned()), "allow_vars: {name}");
+        assert!(!set.contains_key(name), "set_vars: {name}");
+    }
+    assert!(set.contains_key("APP_MODE"));
+}
+
+#[test]
+fn profile_never_grants_proc_run_or_root() {
+    let d = doc(&[]);
+    let fs = at(&d, "/filesystem").as_object().unwrap();
+    let mut seen = 0;
+    for (key, value) in fs {
+        let Some(list) = value.as_array() else {
+            continue;
+        };
+        for p in strings(&Value::Array(list.clone())) {
+            seen += 1;
+            let p = p.trim_end_matches('/');
+            assert!(!p.is_empty(), "{key}: grants /");
+            let exposed = ["/proc", "/run"]
+                .iter()
+                .any(|r| p == *r || p.starts_with(&format!("{r}/")));
+            let userdb = key == "unix_socket_dir" && p == "/run/systemd/userdb";
+            assert!(!exposed || userdb, "{key}: {p}");
+        }
+    }
+    assert!(seen > 5);
+}
+
+#[test]
+fn profile_groups_stay_within_the_pinned_set() {
+    let groups = strings(at(&doc(&[]), "/groups/include"));
+    let pinned = [
+        "deny_credentials",
+        "deny_keychains_macos",
+        "deny_keychains_linux",
+        "deny_browser_data_macos",
+        "deny_browser_data_linux",
+        "deny_macos_private",
+        "deny_shell_history",
+        "deny_shell_configs",
+        "system_read_macos",
+        "system_read_linux_core",
+        "system_write_macos",
+        "system_write_linux",
+        "user_tools",
+        "homebrew_macos",
+        "homebrew_linux",
+        "dangerous_commands",
+        "dangerous_commands_macos",
+        "dangerous_commands_linux",
+    ];
+    for g in &groups {
+        assert!(pinned.contains(&g.as_str()), "unpinned group {g}");
     }
 }
 

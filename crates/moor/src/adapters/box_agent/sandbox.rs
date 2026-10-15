@@ -52,6 +52,14 @@ const GATE_VARS: [&str; 8] = [
     "token",
 ];
 
+/// Platform secrets that hosting platforms put in the Box environment. The agent must never
+/// inherit them, whatever env names the repo or rules ask for.
+pub(super) const PLATFORM_SECRET_VARS: [&str; 3] = [
+    "AGENT37_STARTER_TOKEN",
+    "OPENCLAW_STARTER_TOKEN",
+    "AGENT37_MANAGED_TOKEN",
+];
+
 /// What the profile is built from.
 pub(super) struct SandboxInput<'a> {
     /// Project working directory.
@@ -74,6 +82,7 @@ fn passable(name: &str) -> bool {
         && !name.starts_with("NSC_")
         && !name.eq_ignore_ascii_case("token")
         && !GATE_VARS.contains(&name)
+        && !PLATFORM_SECRET_VARS.contains(&name)
 }
 
 /// The sorted, deduplicated environment allow list.
@@ -145,7 +154,12 @@ pub(super) fn profile(input: &SandboxInput) -> String {
         },
         "environment": {
             "allow_vars": allow_vars(&input.env_names),
-            "set_vars": input.set_vars.iter().cloned().collect::<BTreeMap<_, _>>(),
+            "set_vars": input
+                .set_vars
+                .iter()
+                .filter(|(n, _)| !PLATFORM_SECRET_VARS.contains(&n.as_str()))
+                .cloned()
+                .collect::<BTreeMap<_, _>>(),
         },
     });
     serde_json::to_string_pretty(&doc).unwrap_or_default()

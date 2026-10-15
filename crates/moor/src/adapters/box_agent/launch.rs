@@ -302,6 +302,7 @@ fn script(
         "trap 'exit 129' HUP".to_owned(),
         "trap 'exit 130' INT".to_owned(),
         "trap 'exit 143' TERM".to_owned(),
+        format!("unset {}", sandbox::PLATFORM_SECRET_VARS.join(" ")),
         format!("mkdir -p -m 700 {tmp} && mkdir -p {moor} && install -m 600 {staged} {brief} || exit 1"),
         format!(
             "printf '{{\"state\":\"starting\",\"event\":\"Launch\",\"ts\":%s}}\\n' \"$(date +%s)\" > {state} || exit 1"
@@ -312,7 +313,7 @@ fn script(
         format!("export TMPDIR={tmp} CLAUDE_CODE_TMPDIR={tmp}"),
     ];
     if proxy.is_empty() {
-        lines.insert(5, remove);
+        lines.insert(6, remove);
     }
     lines.extend(proxy.iter().cloned());
     let launcher = BoxPath::under(ctx.home.as_str(), ".local/bin/nono")?;
