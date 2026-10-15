@@ -47,8 +47,8 @@ pub struct EgressItem {
     pub hosts: Vec<String>,
 }
 
-/// Base list, then user `egress.allow`, then repo entries; trimmed, lower-cased,
-/// de-duplicated by exact string.
+/// Base list, then the agent's hosts, then user `egress.allow`, then repo entries; trimmed,
+/// lower-cased, de-duplicated by exact string.
 ///
 /// `*.x` never absorbs `x`. The hosts of the default tool rules are served by
 /// the moor proxy, so they are not in the base list and an entry for one is an error.
@@ -56,8 +56,16 @@ pub struct EgressItem {
 /// # Errors
 /// An entry that is not a domain or `*.domain`, or that a default tool rule serves.
 /// The error path is `egress.allow[i]` for user entries and `egress[i]` for repo entries.
-pub fn effective_allow_list(user: &[String], repo: &[String]) -> Result<Vec<String>, ConfigError> {
-    let mut out: Vec<String> = BASE_ALLOW.iter().map(|s| (*s).to_string()).collect();
+pub fn effective_allow_list(
+    agent: &[&str],
+    user: &[String],
+    repo: &[String],
+) -> Result<Vec<String>, ConfigError> {
+    let mut out: Vec<String> = BASE_ALLOW
+        .iter()
+        .chain(agent)
+        .map(|s| (*s).to_string())
+        .collect();
     let served: Vec<String> = default_rules()
         .into_values()
         .flat_map(|rule| rule.hosts)
@@ -114,11 +122,12 @@ pub const fn unenforced_note(support: EgressSupport, enforce_egress: bool) -> Op
 /// # Errors
 /// Same as [`effective_allow_list`]; returned only when the provider applies a policy.
 pub fn egress_item(
+    agent: &[&str],
     user: &[String],
     repo: &[String],
     provider_applies_policy: bool,
 ) -> Result<EgressItem, ConfigError> {
-    let list = effective_allow_list(user, repo);
+    let list = effective_allow_list(agent, user, repo);
     if provider_applies_policy {
         let hosts = list?;
         let detail = hosts.join(", ");

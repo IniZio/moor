@@ -14,7 +14,14 @@ mod launch;
 #[derive(Debug, Default, Clone, Copy)]
 pub(crate) struct Claude;
 
+/// The installer script and the release downloads the installer and updater fetch.
+const HOSTS: &[&str] = &["claude.ai", "downloads.claude.ai"];
+
 impl AgentProfile for Claude {
+    fn egress_hosts(&self) -> &'static [&'static str] {
+        HOSTS
+    }
+
     fn parse_hook(&self, raw: &[u8]) -> Option<HookRecord> {
         let value: Value = serde_json::from_slice(raw).ok()?;
         let text = |key: &str| value.get(key).and_then(Value::as_str);

@@ -52,7 +52,8 @@ pub(crate) fn plan(cx: &Cx, worktree: &Path, origin: Option<&str>) -> Result<Pro
     )
     .map_err(|e| e.to_string())?;
     let task = settings(cx, worktree, &Flags::default()).map_err(|e| e.error.to_string())?;
-    let allow = effective_allow_list(&task.user_egress, &task.egress).map_err(|e| e.to_string())?;
+    let allow = effective_allow_list(cx.engine().egress_hosts(), &task.user_egress, &task.egress)
+        .map_err(|e| e.to_string())?;
     Ok(ProxyPlan { repo, rules, allow })
 }
 

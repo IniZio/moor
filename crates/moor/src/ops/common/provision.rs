@@ -26,8 +26,8 @@ use crate::ops::common::setup;
 use crate::ops::common::view::task_view;
 use crate::store::{Store, TaskRow};
 
-use self::outcome::dotfiles_failed;
 pub(crate) use self::outcome::Provisioned;
+use self::outcome::{dotfiles_failed, with_egress_hint};
 use self::retry::retry_dotfiles;
 
 /// Re-reads a Task row that must exist.
@@ -164,7 +164,7 @@ pub(crate) fn provision(
     let task = reread(store, id)?;
     let provider = ProviderId::new(cfg.provider.value.clone());
     let support = egress_support(cx, cfg)?;
-    let egress = egress_plan(cfg, support)?;
+    let egress = egress_plan(cx.engine().egress_hosts(), cfg, support)?;
     let mut requested = Decision::new(id);
     requested.task_input = entry.begin();
     let requested = requested
@@ -305,7 +305,16 @@ fn run_and_record(
     };
     let dotfiles = match dotfiles::apply(cx, target.handle, id, target.worktree, cfg) {
         Ok(d) => d,
-        Err(f) => return Err(dotfiles_failed(cx, store, id, advance, setup_line, f)),
+        Err(f) => {
+            return Err(dotfiles_failed(
+                cx,
+                store,
+                id,
+                advance,
+                setup_line,
+                with_egress_hint(cx, cfg, f),
+            ))
+        }
     };
     let mut done = Decision::new(id);
     done.task_input = advance.then(|| TaskInput::BoxReady {

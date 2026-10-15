@@ -275,6 +275,26 @@ fn env_on(support: EgressSupport, enforce: bool) -> EnvView {
 }
 
 #[test]
+fn agent_hosts_row_names_the_agent_as_its_source() {
+    let d = tempfile::tempdir().unwrap();
+    let driver = FakeDriver::new().egress_support(EgressSupport::Enforced);
+    let mut cx = cx_full(d.path(), UserConfig::default(), ScriptedProc::new(), driver);
+    let none = run(&cx, &EnvReq { repo: None }).unwrap();
+    assert!(!none.rows.iter().any(|r| r.name == "agent"));
+    let engine = FakeEngine::new().egress_hosts(&["a.example.com", "b.example.com"]);
+    cx = cx.with_engine(Arc::new(engine));
+    let v = run(&cx, &EnvReq { repo: None }).unwrap();
+    let row = v
+        .rows
+        .iter()
+        .find(|r| r.kind == EnvKind::Egress && r.name == "agent");
+    let row = row.expect("agent row");
+    assert_eq!(row.source, Layer::Agent);
+    assert_eq!(row.note, "a.example.com, b.example.com");
+    assert!(v.egress.hosts.iter().any(|h| h == "a.example.com"));
+}
+
+#[test]
 fn egress_row_follows_the_provider_capability() {
     let cases = [
         (EgressSupport::Enforced, false, "allow", false),

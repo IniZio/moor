@@ -216,3 +216,10 @@ fn transcript_script_archives_the_project_sessions_to_the_given_path() {
     assert!(script.contains("tar czf \"$OLDPWD/.moor/t.tgz\""));
     assert!(script.contains("exit 3"));
 }
+
+#[test]
+fn egress_hosts_are_the_installer_hosts_without_the_proxy_host() {
+    let hosts = Claude.egress_hosts();
+    assert!(hosts.contains(&"claude.ai") && hosts.contains(&"downloads.claude.ai"));
+    assert!(!hosts.contains(&"api.anthropic.com"));
+}

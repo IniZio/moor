@@ -205,7 +205,8 @@ pub struct AgentConfig {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct EgressConfig {
-    /// Allowed hosts: `domain` or `*.domain`.
+    /// Allowed hosts: `domain` or `*.domain`. The agent's own hosts are built in; hosts that
+    /// dotfiles or setup fetch from belong here.
     pub allow: Vec<String>,
 }
 
