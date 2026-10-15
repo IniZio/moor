@@ -31,6 +31,34 @@ pub(super) enum Action {
     },
 }
 
+/// What a plain thread reply in a bound thread should cause.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum ReplyAction {
+    /// Nothing to send; post nothing.
+    Ignore,
+    /// Steer the Task with this text.
+    Steer(String),
+    /// Close the Task.
+    Close,
+    /// Post this text in the thread and change nothing.
+    Refuse(String),
+}
+
+/// Decides what a reply in a bound thread does; only the Task `owner` may steer or close.
+pub(crate) fn reply_action(owner: &str, user: &str, text: &str) -> ReplyAction {
+    if user != owner {
+        return ReplyAction::Refuse(format!("Only <@{owner}> can steer this Task."));
+    }
+    let text = strip_mentions(text).trim();
+    if text.is_empty() {
+        ReplyAction::Ignore
+    } else if text.eq_ignore_ascii_case("close") {
+        ReplyAction::Close
+    } else {
+        ReplyAction::Steer(text.to_owned())
+    }
+}
+
 /// Decides what one app mention does. `thread` is the thread root ts (`thread_ts`, else the
 /// message ts); `bound` is the Task already bound to that thread.
 pub(super) fn decide(

@@ -20,6 +20,9 @@ pub(super) enum ApiError {
     /// Slack answered `ok: false` with this `error` code.
     #[error("slack rejected the call: {0}")]
     Slack(String),
+    /// Slack answered HTTP 429; the caller should back off.
+    #[error("slack rate limited the call")]
+    RateLimited,
 }
 
 /// A Slack Web API client rooted at one base URL.
@@ -67,16 +70,38 @@ impl Api {
             .ok_or_else(|| ApiError::Transport("reply has no url".into()))
     }
 
-    /// Posts `text` into the thread `thread_ts` of `channel`.
+    /// Posts `text` into the thread `thread_ts` of `channel`; returns the new message `ts`.
     pub(super) fn post_message(
         &self,
         bot_token: &Secret,
         channel: &str,
         thread_ts: &str,
         text: &str,
-    ) -> Result<(), ApiError> {
+    ) -> Result<String, ApiError> {
         let url = format!("{}/chat.postMessage", self.base);
         let body = json!({"channel": channel, "thread_ts": thread_ts, "text": text}).to_string();
+        let request = self
+            .agent
+            .post(&url)
+            .header("Authorization", bearer(bot_token)?)
+            .header("Content-Type", "application/json; charset=utf-8");
+        read_reply(request.send(body))?
+            .get("ts")
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+            .ok_or_else(|| ApiError::Slack("reply has no ts".into()))
+    }
+
+    /// Replaces the text of the message `ts` in `channel`.
+    pub(super) fn update_message(
+        &self,
+        bot_token: &Secret,
+        channel: &str,
+        ts: &str,
+        text: &str,
+    ) -> Result<(), ApiError> {
+        let url = format!("{}/chat.update", self.base);
+        let body = json!({"channel": channel, "ts": ts, "text": text}).to_string();
         let request = self
             .agent
             .post(&url)
@@ -99,6 +124,9 @@ fn read_reply(
 ) -> Result<Value, ApiError> {
     let mut response = response.map_err(|e| ApiError::Transport(e.to_string()))?;
     let status = response.status();
+    if status.as_u16() == 429 {
+        return Err(ApiError::RateLimited);
+    }
     let body = response
         .body_mut()
         .with_config()

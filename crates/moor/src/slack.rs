@@ -3,13 +3,15 @@
 mod api;
 mod command;
 mod socket;
+mod status;
 
+use std::net::SocketAddr;
 use std::sync::mpsc::{self, Receiver};
 use std::sync::Arc;
 use std::thread;
 
 use moor_core::config::SlackConfig;
-use moor_core::request::{Request, StartReq};
+use moor_core::request::{CloseReq, Request, StartReq, SteerReq};
 use moor_core::secret::Secret;
 
 use crate::adapters::clock::SystemClock;
@@ -17,7 +19,7 @@ use crate::env::Env;
 use crate::store::{Store, STORE_FILE};
 use crate::Moor;
 use api::Api;
-use command::{decide, failed, started, Action, Allow};
+use command::{decide, failed, reply_action, started, Action, Allow, ReplyAction};
 use socket::Mention;
 
 /// Diagnostic sink for the controller log.
@@ -31,6 +33,8 @@ pub(crate) struct Slack {
     app_token: Secret,
     /// Bot token for posting replies.
     bot_token: Secret,
+    /// Bot token for the status follower, which runs on its own thread.
+    status_token: Secret,
     /// Channel ids where mentions are answered.
     channels: Vec<String>,
     /// User ids who may start Tasks.
@@ -46,20 +50,29 @@ impl Slack {
         Ok(Self {
             api: Api::new(&cfg.api_base).map_err(|e| e.to_string())?,
             app_token: Secret::new(app.into_bytes()),
+            status_token: Secret::new(bot.clone().into_bytes()),
             bot_token: Secret::new(bot.into_bytes()),
             channels: cfg.channels.clone(),
             users: cfg.users.clone(),
         })
     }
 
-    /// Starts the socket thread and the worker for the life of the process.
+    /// Starts the socket thread, the worker and the status follower for the life of the process.
     ///
     /// Starting a Task can take minutes, so the socket thread only queues mentions.
-    pub(crate) fn spawn(self, env: &Env, log: Log) {
+    /// `web` is the controller's web address, used for links in status messages.
+    pub(crate) fn spawn(self, env: &Env, log: Log, web: Option<SocketAddr>) {
         let (tx, rx) = mpsc::channel();
         let api = Arc::new(self.api);
         let socket_api = Arc::clone(&api);
         let app_token = self.app_token;
+        let status_api = Arc::clone(&api);
+        let status_env = env.clone();
+        let status_token = self.status_token;
+        let status_log = Arc::clone(&log);
+        thread::spawn(move || {
+            status::follow(&status_env, &status_api, &status_token, web, &*status_log);
+        });
         thread::spawn(move || socket::run(&socket_api, &app_token, &tx, &thread::sleep));
         let worker = Worker {
             env: env.clone(),
@@ -104,7 +117,7 @@ impl Worker {
                     continue;
                 }
             };
-            let mut start = |req: &StartReq| self.start(req);
+            let mut call = |req: Request| self.call(req);
             let mut reply = |channel: &str, thread: &str, text: &str| {
                 if let Err(e) = self
                     .api
@@ -113,7 +126,7 @@ impl Worker {
                     (self.log)(&format!("slack: reply failed: {e}"));
                 }
             };
-            handle(&mention, &store, &allow, &mut start, &mut reply, &*self.log);
+            handle(&mention, &store, &allow, &mut call, &mut reply, &*self.log);
         }
     }
 
@@ -127,20 +140,20 @@ impl Worker {
         Store::open(&dir.join(STORE_FILE), Arc::new(clock)).map_err(|e| e.to_string())
     }
 
-    /// Starts a Task on a fresh engine; `Moor` is not `Send`.
-    fn start(&self, req: &StartReq) -> Result<(), String> {
+    /// Runs `req` on a fresh engine; `Moor` is not `Send`.
+    fn call(&self, req: Request) -> Result<(), String> {
         let moor = Moor::from_env(&self.env).map_err(|e| e.error.to_string())?;
-        let response = moor.call(Request::Start(req.clone()));
+        let response = moor.call(req);
         response.error.map_or(Ok(()), |e| Err(e.message))
     }
 }
 
-/// Applies one mention: dedupe, decide, then start and bind or reply.
+/// Applies one event: dedupe, then steer or close a bound Task, or decide, start and bind.
 fn handle(
     mention: &Mention,
     store: &Store,
     allow: &Allow<'_>,
-    start: &mut dyn FnMut(&StartReq) -> Result<(), String>,
+    call: &mut dyn FnMut(Request) -> Result<(), String>,
     reply: &mut dyn FnMut(&str, &str, &str),
     log: &dyn Fn(&str),
 ) {
@@ -150,6 +163,9 @@ fn handle(
         Err(e) => return log(&format!("slack: {e}")),
     }
     let channel = mention.channel.as_str();
+    if mention.reply {
+        return handle_reply(mention, store, allow, call, reply, log);
+    }
     let thread = mention.thread_ts.as_deref().unwrap_or(&mention.ts);
     let bound = match store.slack_thread(channel, thread) {
         Ok(bound) => bound,
@@ -179,9 +195,9 @@ fn handle(
                 trust_moor_yaml: false,
                 repo: Some(repo),
             };
-            match start(&req) {
+            match call(Request::Start(req)) {
                 Ok(()) => {
-                    if let Err(e) = store.bind_slack_thread(channel, thread, &name) {
+                    if let Err(e) = store.bind_slack_thread(channel, thread, &name, &mention.user) {
                         log(&format!("slack: {e}"));
                     }
                     reply(channel, thread, &started(&name));
@@ -189,6 +205,50 @@ fn handle(
                 Err(message) => reply(channel, thread, &failed(&name, &message)),
             }
         }
+    }
+}
+
+/// Applies a plain thread reply: the Task owner steers or closes, anyone else is refused.
+fn handle_reply(
+    mention: &Mention,
+    store: &Store,
+    allow: &Allow<'_>,
+    call: &mut dyn FnMut(Request) -> Result<(), String>,
+    reply: &mut dyn FnMut(&str, &str, &str),
+    log: &dyn Fn(&str),
+) {
+    let channel = mention.channel.as_str();
+    let Some(thread) = mention.thread_ts.as_deref() else {
+        return;
+    };
+    if !allow.channels.iter().any(|c| c == channel) {
+        return;
+    }
+    let found = store.slack_thread(channel, thread).and_then(|task| {
+        let owner = store.slack_thread_owner(channel, thread)?;
+        Ok(task.zip(owner))
+    });
+    let (task, owner) = match found {
+        Ok(Some(pair)) => pair,
+        Ok(None) => return,
+        Err(e) => return log(&format!("slack: {e}")),
+    };
+    let result = match reply_action(&owner, &mention.user, &mention.text) {
+        ReplyAction::Ignore => return,
+        ReplyAction::Refuse(text) => return reply(channel, thread, &text),
+        ReplyAction::Steer(text) => call(Request::Steer(SteerReq {
+            task,
+            text: Some(text),
+            menu: None,
+        })),
+        ReplyAction::Close => call(Request::Close(CloseReq {
+            task,
+            force: false,
+            trust_moor_yaml: false,
+        })),
+    };
+    if let Err(message) = result {
+        reply(channel, thread, &message);
     }
 }
 

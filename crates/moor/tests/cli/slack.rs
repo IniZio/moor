@@ -15,22 +15,22 @@ use super::fresh_dir;
 use super::slack_fake::{FakeSlack, Mention, APP_TOKEN, BOT_TOKEN};
 
 /// Channel the controller is configured to answer in.
-const CHANNEL: &str = "C0ALLOWED";
+pub(crate) const CHANNEL: &str = "C0ALLOWED";
 /// User the controller is configured to obey.
-const USER: &str = "U0ALLOWED";
+pub(crate) const USER: &str = "U0ALLOWED";
 /// Ts of the first mention in most tests.
-const TS: &str = "1730000000.000100";
+pub(crate) const TS: &str = "1730000000.000100";
 /// Task name the first mention maps to.
-const TASK: &str = "slack-1730000000-000100";
+pub(crate) const TASK: &str = "slack-1730000000-000100";
 /// Pause that lets a wrongly emitted second reply arrive before the test counts replies.
-const QUIET: Duration = Duration::from_millis(600);
+pub(crate) const QUIET: Duration = Duration::from_millis(600);
 
 /// A running controller wired to a fake Slack, killed on drop.
-struct Rig {
+pub(crate) struct Rig {
     /// Root holding home, state, tokens and the socket.
-    root: PathBuf,
+    pub(crate) root: PathBuf,
     /// The fake Slack the controller talks to.
-    fake: FakeSlack,
+    pub(crate) fake: FakeSlack,
     /// The controller process.
     child: Child,
     /// Controller socket path.
@@ -63,8 +63,18 @@ fn make_repo(dir: &Path) {
 }
 
 impl Rig {
-    fn start() -> Self {
+    pub(crate) fn start() -> Self {
+        Self::start_with(None)
+    }
+
+    /// Starts a controller that also serves the web UI on loopback `web_port` when given.
+    pub(crate) fn start_with(web_port: Option<u16>) -> Self {
         let root = fresh_dir("slack");
+        let web = web_port.map_or_else(String::new, |port| {
+            let token = root.join("web.token");
+            secret_file(&token, "web-secret");
+            format!("web:\n  port: {port}\n  token_file: {}\n", token.display())
+        });
         let fake = FakeSlack::start();
         let (app, bot) = (root.join("app.token"), root.join("bot.token"));
         secret_file(&app, APP_TOKEN);
@@ -77,7 +87,7 @@ impl Rig {
         std::fs::write(
             &config,
             format!(
-                "socket: {}\nstate_dir: {}\nrepos:\n  demo:\n    url: {}\nslack:\n  app_token_file: {}\n  bot_token_file: {}\n  channels: [{CHANNEL}]\n  users: [{USER}]\n  api_base: {}\n",
+                "socket: {}\nstate_dir: {}\nrepos:\n  demo:\n    url: {}\nslack:\n  app_token_file: {}\n  bot_token_file: {}\n  channels: [{CHANNEL}]\n  users: [{USER}]\n  api_base: {}\n{web}",
                 socket.display(),
                 root.join("state").display(),
                 repo.display(),
@@ -110,7 +120,14 @@ impl Rig {
     }
 
     /// Pushes a mention in the allowed channel from `user`, with event and envelope ids derived from `n`.
-    fn mention(&self, n: u32, user: &str, text: &str, ts: &str, thread_ts: Option<&str>) {
+    pub(crate) fn mention(
+        &self,
+        n: u32,
+        user: &str,
+        text: &str,
+        ts: &str,
+        thread_ts: Option<&str>,
+    ) {
         self.fake.send_mention(&Mention {
             event_id: &format!("Ev{n}"),
             envelope_id: &format!("env-{n}"),
@@ -123,7 +140,7 @@ impl Rig {
     }
 
     /// The `show` envelope for `task` as the controller socket answers it.
-    fn show(&self, task: &str) -> Value {
+    pub(crate) fn show(&self, task: &str) -> Value {
         let writer = UnixStream::connect(&self.socket).unwrap();
         writer
             .set_read_timeout(Some(Duration::from_secs(10)))
@@ -143,12 +160,12 @@ impl Rig {
     }
 
     /// True when the controller knows a Task called `task`.
-    fn has_task(&self, task: &str) -> bool {
+    pub(crate) fn has_task(&self, task: &str) -> bool {
         self.show(task)["class"] != "failed"
     }
 
     /// Kills the controller and returns everything it wrote to stderr.
-    fn stderr(&mut self) -> String {
+    pub(crate) fn stderr(&mut self) -> String {
         let _ = self.child.kill();
         let _ = self.child.wait();
         let mut text = String::new();

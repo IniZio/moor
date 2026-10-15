@@ -13,6 +13,8 @@ mod controller;
 mod slack;
 #[path = "cli/slack_fake.rs"]
 mod slack_fake;
+#[path = "cli/slack_steer.rs"]
+mod slack_steer;
 #[path = "cli/ssh_controller.rs"]
 mod ssh_controller;
 #[path = "cli/via_controller.rs"]
