@@ -157,6 +157,42 @@ fn allow_401_evicts_the_cached_credential() {
 }
 
 #[test]
+fn passthrough_401_does_not_evict_the_cached_credential() {
+    let (capture, count) = counting_capture();
+    fetch(&capture);
+    let e = event(
+        "allow",
+        &json!({
+            "route_id": "gh__0",
+            "method": "GET",
+            "status": 401,
+            "managed_credential_active": false,
+        }),
+    );
+    apply(&[e], &capture, &Withheld::default(), &Recorder::default());
+    fetch(&capture);
+    assert_eq!(count.load(Ordering::SeqCst), 1);
+
+    let injected = event(
+        "allow",
+        &json!({
+            "route_id": "gh__0",
+            "method": "GET",
+            "status": 401,
+            "managed_credential_active": true,
+        }),
+    );
+    apply(
+        &[injected],
+        &capture,
+        &Withheld::default(),
+        &Recorder::default(),
+    );
+    fetch(&capture);
+    assert_eq!(count.load(Ordering::SeqCst), 2);
+}
+
+#[test]
 fn allow_401_without_a_rule_evicts_nothing() {
     let (capture, count) = counting_capture();
     fetch(&capture);
