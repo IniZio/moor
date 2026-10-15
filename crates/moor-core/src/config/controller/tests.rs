@@ -1,7 +1,7 @@
 //! Controller config parse tables.
 #![allow(clippy::panic, reason = "test assertions")]
 
-use super::{parse_controller, ControllerConfig};
+use super::{find_repo, parse_controller, ControllerConfig, MoorYamlSource, RepoTable};
 
 fn err(text: &str) -> crate::config::ConfigError {
     match parse_controller("c.yaml", text) {
@@ -84,4 +84,91 @@ fn web_unknown_key_and_zero_port_are_rejected() {
     assert!(e.to_string().contains("bogus"), "{e}");
     let e = err("web: {port: 0, token_file: /t}\n");
     assert_eq!(e.path, "web.port");
+}
+
+const REPOS: &str = "repos:
+  app:
+    url: https://example.com/o/app.git
+    default_branch: main
+    moor_yaml: {path: ~/cfg/app.yaml}
+  lib:
+    url: git@example.com:o/lib/
+    moor_yaml:
+      inline: |
+        box:
+          size: small
+";
+
+fn repos() -> RepoTable {
+    parse_controller("c.yaml", REPOS)
+        .unwrap_or_else(|e| panic!("{e}"))
+        .repos
+}
+
+#[test]
+fn repos_block_parses_path_and_inline() {
+    let r = repos();
+    let (app, lib) = (r.get("app").expect("app"), r.get("lib").expect("lib"));
+    assert_eq!(app.default_branch.as_deref(), Some("main"));
+    assert_eq!(
+        app.moor_yaml,
+        Some(MoorYamlSource::Path("~/cfg/app.yaml".into()))
+    );
+    assert!(matches!(&lib.moor_yaml, Some(MoorYamlSource::Inline(t)) if t.contains("small")));
+    assert_eq!(lib.default_branch, None);
+}
+
+#[test]
+fn repo_entry_unknown_key_names_path() {
+    let e = err("repos:\n  app:\n    url: u\n    bogus: 1\n");
+    assert!(e.to_string().contains("bogus"), "{e}");
+    assert!(e.to_string().contains("repos.app"), "{e}");
+}
+
+#[test]
+fn bad_repo_entries_are_rejected() {
+    for (text, path) in [
+        ("repos:\n  ../x:\n    url: u\n", "repos.../x"),
+        ("repos:\n  '':\n    url: u\n", "repos."),
+        ("repos:\n  a:\n    url: ' '\n", "repos.a.url"),
+        (
+            "repos:\n  a:\n    url: u\n    default_branch: -x\n",
+            "repos.a.default_branch",
+        ),
+        (
+            "repos:\n  a:\n    url: u\n    default_branch: ''\n",
+            "repos.a.default_branch",
+        ),
+        (
+            "repos:\n  a:\n    url: u\n    moor_yaml: {path: ''}\n",
+            "repos.a.moor_yaml",
+        ),
+        (
+            "repos:\n  a:\n    url: u\n    moor_yaml: {inline: 'bogus: 1'}\n",
+            "repos.a.moor_yaml",
+        ),
+    ] {
+        let e = err(text);
+        assert!(e.to_string().contains(path), "{text}: {e}");
+    }
+}
+
+#[test]
+fn find_repo_by_name_and_url() {
+    let r = repos();
+    assert_eq!(find_repo(&r, "app").map(|(n, _)| n), Some("app"));
+    for key in [
+        "https://example.com/o/app.git",
+        "https://example.com/o/app",
+        "https://example.com/o/app/",
+        "https://example.com/o/app.git/",
+    ] {
+        assert_eq!(find_repo(&r, key).map(|(n, _)| n), Some("app"), "{key}");
+    }
+    assert_eq!(
+        find_repo(&r, "git@example.com:o/lib.git").map(|(n, _)| n),
+        Some("lib")
+    );
+    assert!(find_repo(&r, "nope").is_none());
+    assert!(find_repo(&r, "https://example.com/o/other").is_none());
 }

@@ -71,7 +71,7 @@ fn lookup_deadlines(drivers: &BTreeMap<String, DriverConfig>) -> BTreeMap<String
 
 /// Wire real adapters from the environment into a context.
 pub(crate) fn build(env: &Env) -> Result<Cx, CommandError> {
-    Ok(Cx::new(parts(env)?))
+    Ok(Cx::new(parts(env)?).with_repos(env.repos().clone()))
 }
 
 /// Settles the Proxy supervisors recorded in the state store; one line per failure.

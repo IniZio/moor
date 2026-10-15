@@ -1,16 +1,21 @@
 //! Tests for refusing a Box setup when the worktree `.moor.yaml` differs from the base.
 
+use std::collections::BTreeMap;
 use std::path::Path;
+use std::sync::Arc;
 
+use moor_core::config::{MoorYamlSource, RepoEntry};
 use moor_core::seam::driver::DriverError;
 use moor_core::seam::proc::Tool;
 use moor_core::{ErrorKind, StartReq, TaskId, TaskName};
 
 use super::setup::{is_setup_line, start_req, warning_codes};
 use super::{world_at, World};
+use crate::cx::Cx;
 use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
-use crate::testing::proc::Reply;
+use crate::testing::proc::{Reply, ScriptedProc};
+use crate::testing::surface::FakeSurface;
 
 /// Scripts the base commit's `.moor.yaml` as `yaml`, or as absent when `None`.
 pub(super) fn script_base_yaml(w: &World, yaml: Option<&str>) {
@@ -188,4 +193,117 @@ fn a_replacement_box_starts_when_the_worktree_copy_equals_the_base_but_the_main_
     let again = run(&w.cx, &start_req()).unwrap();
     assert!(again.setup.ran && again.setup.ok);
     assert!(!warning_codes(&w).contains(&"moor_yaml_trusted".to_owned()));
+}
+
+const OVERLAY: &str = "setup: [from-overlay]\n";
+
+/// A world whose repo is the controller cache for `demo`, whose entry carries `OVERLAY`.
+fn overlay_world(driver: FakeDriver, repo_file: Option<&str>) -> World {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path().join("repos").join("demo");
+    std::fs::create_dir_all(&repo).unwrap();
+    if let Some(text) = repo_file {
+        std::fs::write(repo.join(".moor.yaml"), text).unwrap();
+    }
+    let proc = Arc::new(ScriptedProc::new());
+    let ok = |v: String| Reply::Ok(v);
+    proc.on(
+        Tool::Git,
+        &["rev-parse", "--show-toplevel"],
+        ok(format!("{}\n", repo.display())),
+    );
+    proc.on(Tool::Git, &["ls-tree"], ok(String::new()));
+    proc.on(Tool::Git, &["rev-parse", "HEAD"], ok("abc123\n".into()));
+    proc.on(
+        Tool::Git,
+        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+        ok(format!("{}/.git\n", repo.display())),
+    );
+    proc.on(
+        Tool::Git,
+        &["rev-parse", "--git-path", "info/exclude"],
+        ok(format!("{}/exclude\n", dir.path().display())),
+    );
+    let driver = Arc::new(driver);
+    let surface = Arc::new(FakeSurface::new(dir.path()));
+    let table = BTreeMap::from([(
+        "demo".to_owned(),
+        RepoEntry {
+            url: "https://example.test/demo.git".to_owned(),
+            default_branch: None,
+            moor_yaml: Some(MoorYamlSource::Inline(OVERLAY.to_owned())),
+        },
+    )]);
+    let cx = Cx::fake_with(
+        dir.path(),
+        &repo,
+        driver.clone(),
+        surface.clone(),
+        proc.clone(),
+        crate::testing::cx::fake_config(),
+    )
+    .with_repos(table);
+    World {
+        cx,
+        driver,
+        surface,
+        proc,
+        dir,
+    }
+}
+
+/// Whether some setup script run in the box mentions `needle`.
+fn setup_mentions(w: &World, needle: &str) -> bool {
+    w.driver
+        .execs()
+        .iter()
+        .filter(|e| is_setup_line(&e.1.argv))
+        .any(|e| e.1.argv.iter().any(|a| a.contains(needle)))
+}
+
+#[test]
+fn an_overlay_supplies_setup_without_trust_when_the_repo_has_no_moor_yaml() {
+    let w = overlay_world(FakeDriver::new(), None);
+    script_base_yaml(&w, None);
+    let v = run(&w.cx, &start_req()).unwrap();
+    assert!(v.setup.ran && v.setup.ok);
+    assert!(setup_mentions(&w, "from-overlay"));
+}
+
+#[test]
+fn a_worktree_moor_yaml_added_over_an_overlay_is_refused_without_trust() {
+    let driver = FakeDriver::new().fail_acquire(DriverError::Failed {
+        summary: "boom".into(),
+    });
+    let w = overlay_world(driver, None);
+    script_base_yaml(&w, None);
+    let err = run(&w.cx, &start_req()).unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Failed);
+    let name = TaskName::parse("demo").unwrap();
+    let row = w.cx.store().unwrap().open_task_by_name(&name).unwrap();
+    let wt = row.unwrap().worktree.unwrap();
+    std::fs::create_dir_all(&wt).unwrap();
+    std::fs::write(Path::new(&wt).join(".moor.yaml"), "setup: [curl evil]\n").unwrap();
+    drop(warning_codes(&w));
+    script_base_yaml(&w, None);
+    assert_refused(&w, &start_req(), "differs");
+    script_base_yaml(&w, None);
+    let trusted = StartReq {
+        trust_moor_yaml: true,
+        ..start_req()
+    };
+    let again = run(&w.cx, &trusted).unwrap();
+    assert!(again.setup.ran && again.setup.ok);
+    assert!(setup_mentions(&w, "curl evil"));
+    assert!(warning_codes(&w).contains(&"moor_yaml_trusted".to_owned()));
+}
+
+#[test]
+fn a_repo_moor_yaml_wins_over_the_overlay() {
+    let w = overlay_world(FakeDriver::new(), Some(BASE));
+    script_base_yaml(&w, Some(BASE));
+    let v = run(&w.cx, &start_req()).unwrap();
+    assert!(v.setup.ran && v.setup.ok);
+    assert!(setup_mentions(&w, "a"));
+    assert!(!setup_mentions(&w, "from-overlay"));
 }

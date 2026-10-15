@@ -23,6 +23,7 @@ fn with_args() -> Vec<Request> {
             no_agent: true,
             resume: false,
             trust_moor_yaml: false,
+            repo: None,
         }),
         Request::Run(RunReq {
             task: n("a"),
@@ -139,6 +140,18 @@ fn close_trust_moor_yaml_defaults_false_and_roundtrips() {
     assert!(matches!(&r, Request::Close(c) if c.trust_moor_yaml));
     let back: Request = serde_json::from_str(&serde_json::to_string(&r).unwrap()).unwrap();
     assert_eq!(back, r);
+}
+
+#[test]
+fn start_repo_roundtrips_and_defaults_none() {
+    let r: Request =
+        serde_json::from_str(r#"{"cmd":"start","name":"a","repo":"doorlock-app"}"#).unwrap();
+    assert!(matches!(&r, Request::Start(s) if s.repo.as_deref() == Some("doorlock-app")));
+    let back: Request = serde_json::from_str(&serde_json::to_string(&r).unwrap()).unwrap();
+    assert_eq!(back, r);
+    let r: Request = serde_json::from_str(r#"{"cmd":"start","name":"a"}"#).unwrap();
+    assert!(matches!(&r, Request::Start(s) if s.repo.is_none()));
+    assert!(!serde_json::to_string(&r).unwrap().contains("repo"));
 }
 
 #[test]

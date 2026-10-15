@@ -481,3 +481,56 @@ fn commit_of_propagates_git_failure() {
     );
     assert!(g.commit_of(Path::new("/r"), "nope").is_err());
 }
+
+#[test]
+fn clone_repo_puts_dashes_before_the_url_and_runs_in_the_parent() {
+    let (p, g) = scripted();
+    p.on(Tool::Git, &["clone"], ok(""));
+    g.clone_repo("-uploadpack", Path::new("/c/repos/a"))
+        .unwrap();
+    let calls = p.calls();
+    let call = calls.first().unwrap();
+    assert_eq!(call.args, ["clone", "--", "-uploadpack", "/c/repos/a"]);
+    assert_eq!(call.cwd.as_deref(), Some(Path::new("/c/repos")));
+}
+
+#[test]
+fn clone_repo_failure_is_moor_worded() {
+    let (p, g) = scripted();
+    p.on(
+        Tool::Git,
+        &["clone"],
+        Reply::Fail {
+            code: 128,
+            stdout: String::new(),
+            stderr: "fatal: repository not found\n".to_owned(),
+        },
+    );
+    let err = g.clone_repo("u", Path::new("/c/a")).unwrap_err();
+    assert!(err.to_string().contains("repository not found"), "{err}");
+}
+
+#[test]
+fn real_git_clone_then_fetch_branch_returns_the_tip() {
+    if Command::new("git").arg("--version").output().is_err() {
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let origin = dir.path().join("origin");
+    std::fs::create_dir(&origin).unwrap();
+    git_in(&origin, &["init", "-q", "-b", "main"]);
+    std::fs::write(origin.join("a.txt"), "a").unwrap();
+    git_in(&origin, &["add", "a.txt"]);
+    git_in(&origin, &["commit", "-q", "-m", "one"]);
+    let g = real_git();
+    let dest = dir.path().join("cache").join("r");
+    std::fs::create_dir(dest.parent().unwrap()).unwrap();
+    g.clone_repo(origin.to_str().unwrap(), &dest).unwrap();
+    assert!(dest.join(".git").is_dir());
+    std::fs::write(origin.join("b.txt"), "b").unwrap();
+    git_in(&origin, &["add", "b.txt"]);
+    git_in(&origin, &["commit", "-q", "-m", "two"]);
+    let tip = g.head(&origin).unwrap();
+    assert_eq!(g.fetch_branch(&dest, "main").unwrap(), tip);
+    assert!(g.fetch_branch(&dest, "nope").is_err());
+}

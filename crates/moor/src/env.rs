@@ -3,12 +3,17 @@
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use moor_core::config::RepoTable;
 
 /// Snapshot of environment variables.
 #[derive(Clone, Default)]
 pub struct Env {
     /// Variable name to value.
     vars: BTreeMap<String, String>,
+    /// Repos the controller knows, by name.
+    repos: Arc<RepoTable>,
 }
 
 impl Env {
@@ -18,7 +23,10 @@ impl Env {
         let vars = std::env::vars_os()
             .filter_map(|(k, v)| Some((k.into_string().ok()?, v.into_string().ok()?)))
             .collect();
-        Self { vars }
+        Self {
+            vars,
+            repos: Arc::default(),
+        }
     }
 
     /// Build an environment from explicit pairs.
@@ -33,6 +41,7 @@ impl Env {
                 .into_iter()
                 .map(|(k, v)| (k.into(), v.into()))
                 .collect(),
+            repos: Arc::default(),
         }
     }
 
@@ -64,6 +73,19 @@ impl Env {
             dir.to_string_lossy().into_owned(),
         );
         self
+    }
+
+    /// Set the repos the controller knows.
+    #[must_use]
+    pub fn with_repos(mut self, repos: RepoTable) -> Self {
+        self.repos = Arc::new(repos);
+        self
+    }
+
+    /// Repos the controller knows, by name.
+    #[must_use]
+    pub fn repos(&self) -> &RepoTable {
+        &self.repos
     }
 
     /// Resolved state directory, or `None` when no source is set.
