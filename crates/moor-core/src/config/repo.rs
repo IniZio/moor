@@ -55,6 +55,26 @@ pub fn parse_repo(file: &str, text: &str) -> Result<RepoConfig, ConfigError> {
 }
 
 impl RepoConfig {
+    /// Top-level `.moor.yaml` keys whose values differ between `self` and `other`, in file order.
+    #[must_use]
+    pub fn changed_keys(&self, other: &Self) -> Vec<&'static str> {
+        [
+            ("setup", self.setup != other.setup),
+            ("teardown", self.teardown != other.teardown),
+            ("egress", self.egress != other.egress),
+            ("env", self.env != other.env),
+            ("compose", self.compose != other.compose),
+            ("box", self.box_ != other.box_),
+            (
+                "box_credentials",
+                self.box_credentials != other.box_credentials,
+            ),
+        ]
+        .into_iter()
+        .filter_map(|(key, changed)| changed.then_some(key))
+        .collect()
+    }
+
     /// Checks values the types cannot.
     fn validate(&self) -> Result<(), ConfigError> {
         non_blank("setup", &self.setup)?;
