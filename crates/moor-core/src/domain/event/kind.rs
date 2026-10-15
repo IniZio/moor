@@ -45,6 +45,7 @@ impl Event {
             Self::ProxyStarted { .. } => "proxy_started",
             Self::TunnelRestarted { .. } => "tunnel_restarted",
             Self::EgressRefused { .. } => "egress_refused",
+            Self::CredentialWithheld { .. } => "credential_withheld",
             Self::ProxyCredentialFailed { .. } => "proxy_credential_failed",
         }
     }
