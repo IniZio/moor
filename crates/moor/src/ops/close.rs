@@ -24,6 +24,7 @@ use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::boxwork::{probe, BoxWork};
 use crate::ops::common::facts::resolved;
+use crate::ops::common::host_cleanup;
 use crate::ops::common::promote::promote_waiting;
 use crate::ops::common::provision::moor_yaml::for_teardown;
 use crate::ops::common::reports;
@@ -320,6 +321,7 @@ fn release(cx: &Cx, store: &Store, row: &TaskRow) -> Result<bool, CommandError> 
     let Some(handle) = held(b) else {
         return Ok(false);
     };
+    host_cleanup::on_release(cx, row, b, handle);
     let (result, cause) = match cx.driver().release(handle) {
         Ok(Released::Deleted | Released::AlreadyGone) => (ReleaseResult::Deleted, None),
         Err(e) => (ReleaseResult::Failed, Some(e)),

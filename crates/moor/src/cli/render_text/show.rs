@@ -95,6 +95,9 @@ fn detail(task: &Value, value: &Value) -> Option<String> {
                 field(b, "workdir"),
                 field(b, "egress"),
             );
+            if let Some(reason) = b.pointer("/sleep/reason").and_then(Value::as_str) {
+                let _ = writeln!(out, "sleep:    {reason}");
+            }
         }
         None => out.push_str("box:      none\n"),
     }

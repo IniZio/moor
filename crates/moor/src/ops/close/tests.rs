@@ -18,6 +18,7 @@ use crate::testing::surface::FakeSurface;
 mod agent;
 mod boxwork;
 mod branch;
+mod host_cleanup;
 mod promote;
 mod proxy;
 mod reports;

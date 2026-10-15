@@ -62,29 +62,29 @@ fn platform(
 }
 
 /// Checks the Box's nono is the pinned binary and runs; when it is missing or differs, uploads the
-/// host-fetched binary and checks again.
+/// host-fetched binary and checks again. Returns the Box OS.
 pub(super) fn ensure(
     driver: &dyn Driver,
     req: &LaunchReq,
     (home, cred): (&BoxPath, &BoxPath),
     release: &NonoRelease,
-) -> Result<(), Failure> {
+) -> Result<String, Failure> {
     let (os, arch) = platform(driver, req, cred)?;
     let bytes = release
         .binary(&os, &arch)
         .map_err(|e| fail("sandbox", &e))?;
     let script = sandbox::check_script(&sha256_hex(&bytes));
     match run(driver, req, script.clone())? {
-        0 => return Ok(()),
+        0 => return Ok(os),
         sandbox::NOT_INSTALLED => {}
-        code => return Err(fail("sandbox", &sandbox::check_failure(code))),
+        code => return Err(fail("sandbox", &sandbox::check_failure(&os, code))),
     }
     let at = BoxPath::under(home.as_str(), ".local/bin/nono").map_err(|e| fail("sandbox", &e))?;
     driver
         .put_file(&req.handle, &at, &bytes, 0o755, &req.worktree)
         .map_err(|e| fail("sandbox", &e))?;
     match run(driver, req, script)? {
-        0 => Ok(()),
-        code => Err(fail("sandbox", &sandbox::check_failure(code))),
+        0 => Ok(os),
+        code => Err(fail("sandbox", &sandbox::check_failure(&os, code))),
     }
 }

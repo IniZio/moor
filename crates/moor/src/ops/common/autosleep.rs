@@ -43,6 +43,13 @@ fn due(cx: &Cx, row: &TaskRow) -> bool {
     sleep_due(&facts) == SleepVerdict::Due
 }
 
+/// Whether the Task's Box lives on a host moor cannot sleep.
+fn is_static_host(cx: &Cx, row: &TaskRow) -> bool {
+    row.boxed
+        .as_ref()
+        .is_some_and(|b| matches!(cx.driver().caps(&b.provider), Ok(c) if c.static_host))
+}
+
 /// Sleep the Box once the Box lock is free and the Task is still due.
 fn try_sleep(cx: &Cx, store: &Store, id: TaskId) -> Result<(), CommandError> {
     let Some(row) = store.task(id)? else {
@@ -62,7 +69,12 @@ fn try_sleep(cx: &Cx, store: &Store, id: TaskId) -> Result<(), CommandError> {
         return Ok(());
     }
     let handle = sleep_handle(cx, &row)?;
-    let decision = match cx.driver().sleep(&handle)? {
+    let outcome = if is_static_host(cx, &row) {
+        SleepOutcome::CannotSleep("the Box is a static SSH host; moor never sleeps it".to_owned())
+    } else {
+        cx.driver().sleep(&handle)?
+    };
+    let decision = match outcome {
         SleepOutcome::Slept | SleepOutcome::Native => Decision::new(id)
             .task_input(TaskInput::SleepDue)
             .box_input(BoxInput::Sleep)

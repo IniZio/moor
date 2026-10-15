@@ -14,9 +14,14 @@ fn path(s: &str) -> BoxPath {
 }
 
 fn doc(env_names: &[&str]) -> Value {
+    serde_json::from_str(&text("Linux", env_names)).unwrap()
+}
+
+fn text(os: &str, env_names: &[&str]) -> String {
     let (w, h, c) = (path("/work/p"), path("/home/u"), path("/tmp/cred"));
     let tmp = path("/home/u/.moor-tmp-t-n");
     let input = SandboxInput {
+        os,
         workdir: &w,
         home: &h,
         cred: &c,
@@ -24,7 +29,7 @@ fn doc(env_names: &[&str]) -> Value {
         env_names: env_names.iter().map(|s| (*s).to_owned()).collect(),
         set_vars: vec![("APP_MODE".to_owned(), "it's".to_owned())],
     };
-    serde_json::from_str(&profile(&input)).unwrap()
+    profile(&input)
 }
 
 fn at<'a>(v: &'a Value, pointer: &str) -> &'a Value {
@@ -44,6 +49,16 @@ fn profile_blocks_pathname_sockets_and_leaves_the_network_open() {
     let d = doc(&[]);
     assert_eq!(at(&d, "/linux/af_unix_mediation"), "pathname");
     assert_eq!(at(&d, "/network"), &Value::Null);
+}
+
+#[test]
+fn darwin_profile_omits_linux_only_keys() {
+    let t = text("Darwin", &[]);
+    assert!(serde_json::from_str::<Value>(&t)
+        .unwrap()
+        .get("linux")
+        .is_none());
+    assert!(!t.contains("/run/systemd"));
 }
 
 #[test]
@@ -215,9 +230,10 @@ fn wrap_puts_agent_after_separator() {
 
 #[test]
 fn check_failure_names_the_cause() {
-    assert!(check_failure(5).contains("Landlock"));
-    assert!(check_failure(NOT_INSTALLED).contains("nono 0.80.0 on the Box is missing"));
-    assert!(check_failure(9).contains("exited 9"));
+    assert!(check_failure("Linux", 5).contains("Landlock"));
+    assert!(check_failure("Darwin", 5).contains("Seatbelt"));
+    assert!(check_failure("Linux", NOT_INSTALLED).contains("nono 0.80.0 on the Box is missing"));
+    assert!(check_failure("Linux", 9).contains("exited 9"));
 }
 
 #[test]

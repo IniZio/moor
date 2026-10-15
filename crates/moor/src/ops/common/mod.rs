@@ -8,6 +8,7 @@ pub(crate) mod capacity;
 pub(crate) mod creds;
 pub(crate) mod dotfiles;
 pub(crate) mod facts;
+pub(crate) mod host_cleanup;
 pub(crate) mod identity;
 pub(crate) mod promote;
 pub(crate) mod provision;

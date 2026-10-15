@@ -15,15 +15,19 @@ use super::parse::{parse_list, parse_warmup};
 use super::Crabbox;
 use crate::testing::proc::{Reply, ScriptedProc};
 
+mod real_mac;
 mod workdir;
 
+const PROBE_SCRIPT: &str = r#"printf "MOOR_WORKDIR=%s\n" "$(pwd)"; printf "MOOR_UNAME=%s %s\n" "$(uname -s)" "$(uname -m)""#;
 const PROBE_DIR: &str = "/root/crabbox/cbx_1/app";
 
 fn probe(p: &ScriptedProc) {
     p.on(
         Tool::Crabbox,
         &["run"],
-        Reply::Ok(format!("MOOR_WORKDIR={PROBE_DIR}\n")),
+        Reply::Ok(format!(
+            "MOOR_WORKDIR={PROBE_DIR}\nMOOR_UNAME=Linux x86_64\n"
+        )),
     );
 }
 
@@ -330,7 +334,7 @@ fn workdir_runs_the_pwd_probe() {
             "--",
             "sh",
             "-c",
-            r#"printf "MOOR_WORKDIR=%s\n" "$(pwd)""#
+            PROBE_SCRIPT
         ]
     );
     assert_eq!(first.cwd.as_deref(), Some(Path::new("/wt/app")));

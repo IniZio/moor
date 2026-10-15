@@ -208,8 +208,12 @@ impl Driver for Crabbox {
         let spec = static_env(spec, &handle);
         let out = self.call(Op::Acquire, Some(provider), &spec)?;
         parse::parse_warmup(&out.stdout).ok_or_else(|| unreadable("acquire"))?;
-        let workdir = workdir::probe(self, &handle, req.worktree.as_deref())?;
-        Ok(Acquired { handle, workdir })
+        let (workdir, platform) = workdir::probe_platform(self, &handle, req.worktree.as_deref())?;
+        Ok(Acquired {
+            handle,
+            workdir,
+            platform,
+        })
     }
 
     fn planned_handle(&self, req: &AcquireReq) -> BoxHandle {

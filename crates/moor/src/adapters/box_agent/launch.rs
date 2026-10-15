@@ -177,9 +177,10 @@ impl Launch<'_> {
             return Ok(None);
         };
         let (req, cred) = (self.req, self.cred);
-        install::ensure(self.driver, req, (&self.ctx.home, cred), self.release)?;
+        let os = install::ensure(self.driver, req, (&self.ctx.home, cred), self.release)?;
         let env_names = (self.profile.env(self.ctx).into_iter().map(|v| v.name)).collect();
         let profile = sandbox::profile(&SandboxInput {
+            os: &os,
             workdir: &self.ctx.workdir,
             home: &self.ctx.home,
             cred,

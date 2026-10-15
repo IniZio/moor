@@ -10,8 +10,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use moor_core::seam::driver::{
-    AcquireReq, Acquired, BoxListing, Driver, DriverCaps, DriverError, ExecOutcome, ExecSpec,
-    Released, SleepKind, SleepOutcome,
+    AcquireReq, Acquired, BoxListing, BoxPlatform, Driver, DriverCaps, DriverError, ExecOutcome,
+    ExecSpec, Released, SleepKind, SleepOutcome,
 };
 use moor_core::seam::proc::Deadline;
 use moor_core::{BoxHandle, BoxPath, ProviderId};
@@ -49,6 +49,8 @@ struct State {
     fail_workdir: Option<DriverError>,
     tunnel: tunnel::TunnelState,
     sleep_kind: Option<SleepKind>,
+    platform: Option<BoxPlatform>,
+    static_host: bool,
 }
 
 /// One `copy_out` call: handle, source, destination and host cwd.
@@ -86,45 +88,20 @@ impl FakeDriver {
         self.st().work_root = Some(root.to_owned());
     }
 
+    /// Makes every later `acquire` report `platform` instead of Linux `x86_64`.
+    pub(crate) fn set_platform(&self, platform: BoxPlatform) {
+        self.st().platform = Some(platform);
+    }
+
+    /// Reports the provider as a static host.
+    pub(crate) fn static_host(self) -> Self {
+        self.st().static_host = true;
+        self
+    }
+
     /// The next `workdir` fails once with `e`.
     pub(crate) fn fail_workdir(&self, e: DriverError) {
         self.st().fail_workdir = Some(e);
-    }
-
-    /// The next `acquire` fails once with `e`.
-    pub(crate) fn fail_acquire(self, e: DriverError) -> Self {
-        self.st().fail_acquire = Some(e);
-        self
-    }
-
-    /// The next `release` fails once with `e`.
-    pub(crate) fn fail_release(self, e: DriverError) -> Self {
-        self.st().fail_release = Some(e);
-        self
-    }
-
-    /// Every `release` fails with `e`.
-    pub(crate) fn fail_release_always(self, e: DriverError) -> Self {
-        self.st().fail_release_always = Some(e);
-        self
-    }
-
-    /// The next `list` fails once with `e`.
-    pub(crate) fn fail_list(self, e: DriverError) -> Self {
-        self.st().fail_list = Some(e);
-        self
-    }
-
-    /// The next `copy_out` fails once with `e`.
-    pub(crate) fn fail_copy_out(self, e: DriverError) -> Self {
-        self.st().fail_copy_out = Some(e);
-        self
-    }
-
-    /// Makes every `copy_out` write `content` to its destination.
-    pub(crate) fn copy_text(self, content: impl AsRef<[u8]>) -> Self {
-        self.st().copy_content = Some(content.as_ref().to_vec());
-        self
     }
 
     /// Queues scripted `exec` results, served in order; then exit code 0.
@@ -181,6 +158,10 @@ impl Driver for FakeDriver {
         Ok(Acquired {
             handle: BoxHandle::new(id),
             workdir,
+            platform: s.platform.clone().unwrap_or_else(|| BoxPlatform {
+                os: "Linux".into(),
+                arch: "x86_64".into(),
+            }),
         })
     }
 
@@ -386,6 +367,7 @@ fn write_bytes(to: &Path, bytes: &[u8]) -> Result<(), DriverError> {
     })
 }
 
+mod builders;
 mod script;
 #[cfg(test)]
 mod tests;

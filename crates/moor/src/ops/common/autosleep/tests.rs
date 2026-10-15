@@ -308,3 +308,17 @@ fn a_driver_failure_warns_and_changes_nothing() {
     assert_eq!(warned.len(), 1);
     assert_eq!(warned.first().unwrap().code, "auto_sleep_failed");
 }
+
+#[test]
+fn a_static_host_is_never_asked_to_sleep_and_says_why_once() {
+    let f = idle_with(FakeDriver::new().static_host());
+    pass(&f, LONG);
+    auto_sleep(&f);
+    auto_sleep(&f);
+    assert_eq!(states(&f), (TaskState::Idle, BoxState::Ready));
+    assert_eq!(sleep_calls(&f), 0);
+    let why = "the Box is a static SSH host; moor never sleeps it";
+    assert_eq!(reason(&f).as_deref(), Some(why));
+    let stays = kinds(&f).iter().filter(|k| *k == "stays_up").count();
+    assert_eq!(stays, 1);
+}
