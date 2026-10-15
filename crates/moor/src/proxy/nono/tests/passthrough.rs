@@ -48,7 +48,7 @@ fn fetch(path: &str) -> (Result<u16, String>, Vec<upstream::Seen>) {
     let state = dir.path().join("state");
     let ca = ca::load_or_create(&state, TASK).unwrap();
     let nonce = Secret::new(NONCE.as_bytes().to_vec());
-    let cfg = build_config(&NonoSpec {
+    let mut cfg = build_config(&NonoSpec {
         rules: &rules,
         allow: &[],
         nonce: &nonce,
@@ -57,6 +57,8 @@ fn fetch(path: &str) -> (Result<u16, String>, Vec<upstream::Seen>) {
         upstream_ca: Some(&up.ca_path),
         chain: None,
     });
+    // Stands in for the chained filter's Task CA, trusted for every upstream.
+    cfg.0.upstream_extra_ca_pems = vec![up.ca_path.to_string_lossy().into_owned()];
     let proxy = NonoProxy::start(cfg, capture).unwrap();
     let agent = upstream::client(proxy.port(), NONCE, ca.cert_pem());
     let status = agent
@@ -70,11 +72,25 @@ fn fetch(path: &str) -> (Result<u16, String>, Vec<upstream::Seen>) {
 
 #[test]
 fn request_matching_no_endpoint_rule_is_forwarded_not_refused() {
-    // Only matched routes trust the test upstream's CA, so the forward fails
-    // at the TLS handshake: 502 means the proxy tried the upstream, 403 would
-    // mean it refused first.
-    let (status, _) = fetch("/release/asset");
-    assert_eq!(status, Ok(502));
+    let (status, seen) = fetch("/release/asset");
+    assert_eq!(status, Ok(200));
+    let [only] = seen.as_slice() else {
+        unreachable!("{seen:?}")
+    };
+    assert_eq!(only.line, "GET /release/asset HTTP/1.1");
+}
+
+#[test]
+fn unmatched_request_reaches_upstream_without_any_credential() {
+    let (status, seen) = fetch("/release/asset");
+    assert_eq!(status, Ok(200));
+    let [only] = seen.as_slice() else {
+        unreachable!("{seen:?}")
+    };
+    assert_eq!(only.authorization, None, "{}", only.head);
+    for leaked in [SECRET, NONCE, "moor-proxy"] {
+        assert!(!only.head.contains(leaked), "{leaked} in {}", only.head);
+    }
 }
 
 #[test]

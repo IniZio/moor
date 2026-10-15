@@ -152,8 +152,17 @@ pub(crate) fn build_config(spec: &NonoSpec<'_>) -> NonoConfig {
         auth: None,
         bypass_hosts: Vec::new(),
     });
+    // Unmatched requests are passthrough, but the chained filter still
+    // re-signs them with its CA.
+    let upstream_extra_ca_pems = spec
+        .chain
+        .as_ref()
+        .map(|c| c.ca_pem.to_string_lossy().into_owned())
+        .into_iter()
+        .collect();
     NonoConfig(ProxyConfig {
         external_proxy,
+        upstream_extra_ca_pems,
         bind_addr: IpAddr::V4(Ipv4Addr::LOCALHOST),
         bind_port: 0,
         allowed_hosts: hosts.into_iter().collect(),
