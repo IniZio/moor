@@ -99,6 +99,12 @@ never changes the macOS system keychain or trust settings and never writes the
 system certificate file. The sandbox blocks non-loopback network, so a tool
 that ignores the proxy fails; it does not bypass it.
 
+The Proxy intercepts TLS, and needs its CA, only for hosts with a credential
+rule (for example `github.com`, `api.github.com`, and the model API). Every
+other host (pub.dev, the CocoaPods CDN, the npm registry) is a blind CONNECT
+tunnel, so a tool with no CA path still works there when it honours
+`HTTPS_PROXY`. The "not covered" rows below matter only for credential hosts.
+
 | Tool | Trust path on macOS | Variable that reaches it | Status |
 | --- | --- | --- | --- |
 | `curl` (`/usr/bin/curl`, SecureTransport) | CA file when one is given, else Security.framework | `SSL_CERT_FILE`, `CURL_CA_BUNDLE` | covered |
@@ -113,7 +119,8 @@ that ignores the proxy fails; it does not bypass it.
 | Dart and Flutter `pub` | Security.framework; Dart has no CA environment variable on macOS | none | not covered |
 | Swift `URLSession` (registry and binary-target downloads, app code) | Security.framework | none | not covered |
 
-Tools marked not covered cannot trust the Proxy CA without adding it to a
-keychain, which moor does not do. Fetch their inputs outside the Box (for
-example a prefilled pub cache or `.build` directory) or use a covered
-alternative from the table.
+A tool marked not covered cannot trust the Proxy CA without adding it to a
+keychain, which moor does not do, so it cannot reach an intercepted host. In
+particular `gh` (Go, Security.framework trust only) cannot reach the
+intercepted GitHub API hosts from a macOS Box. Use a covered tool such as
+`curl` for those hosts.
