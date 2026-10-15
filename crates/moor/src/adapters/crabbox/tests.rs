@@ -123,11 +123,7 @@ fn acquire_runs_warmup_and_builds_handle() {
             "standard"
         ]
     );
-    assert!(calls
-        .first()
-        .unwrap()
-        .env
-        .contains(&("CRABBOX_NAMESPACE_SIZE".into(), "S".into())));
+    assert!(calls.first().unwrap().env.is_empty());
     assert_eq!(
         c.planned_handle(&req("sprites", EgressPlan::Open, None)),
         got.handle
@@ -153,9 +149,7 @@ fn acquire_maps_sizes_and_rejects_unknown() {
     let calls = p.calls();
     let first = calls.first().unwrap();
     assert!(first.args.contains(&"large".to_owned()));
-    assert!(first
-        .env
-        .contains(&("CRABBOX_NAMESPACE_SIZE".into(), "L".into())));
+    assert!(first.env.is_empty());
     assert!(c
         .acquire(&req("sprites", EgressPlan::Open, Some("huge")))
         .is_err());
@@ -188,40 +182,43 @@ fn list_matches_top_level_slug_and_lease_label() {
     assert_eq!(names, ["a", "b"]);
 }
 
-#[test]
-fn acquire_sprites_allow_list_uses_flag() {
+const EGRESS_PROVIDERS: &str =
+    r#"[{"provider":"sprites","features":["egress-allow"]},{"provider":"ssh"}]"#;
+
+fn egress_fixture() -> (Arc<ScriptedProc>, Crabbox) {
     let (p, c) = fixture();
+    let providers = Reply::Ok(EGRESS_PROVIDERS.to_owned());
+    p.on(Tool::Crabbox, &["providers"], providers);
     p.on(Tool::Crabbox, &["warmup"], Reply::Ok(WARMUP_OUT.to_owned()));
     probe(&p);
+    (p, c)
+}
+
+#[test]
+fn acquire_allow_list_uses_flag_when_provider_enforces() {
+    let (p, c) = egress_fixture();
     let plan = EgressPlan::Allow(vec!["a.com".into(), "b.com".into()]);
     let got = c.acquire(&req("sprites", plan, None)).unwrap();
     assert_eq!(got.egress, EgressApplied::Enforced);
     let calls = p.calls();
-    let args = &calls.first().unwrap().args;
+    assert_eq!(calls.first().unwrap().args, ["providers", "--json"]);
+    let args = &calls.get(1).unwrap().args;
     assert_eq!(args.last().unwrap(), "a.com,b.com");
-    assert!(args.contains(&"--sprites-network-allow".to_owned()));
-}
-
-#[test]
-fn acquire_namespace_allow_list_uses_env() {
-    let (p, c) = fixture();
-    p.on(Tool::Crabbox, &["warmup"], Reply::Ok(WARMUP_OUT.to_owned()));
-    probe(&p);
-    let plan = EgressPlan::Allow(vec!["a.com".into()]);
-    c.acquire(&req("namespace-devbox", plan, None)).unwrap();
-    let calls = p.calls();
-    let env = &calls.first().unwrap().env;
-    assert!(env.contains(&("CRABBOX_NAMESPACE_EGRESS_DOMAINS".into(), "a.com".into())));
+    assert!(args.contains(&"--egress-allow".to_owned()));
 }
 
 #[test]
 fn acquire_unsupported_provider_reports_not_enforced() {
-    let (p, c) = fixture();
-    p.on(Tool::Crabbox, &["warmup"], Reply::Ok(WARMUP_OUT.to_owned()));
-    probe(&p);
+    let (p, c) = egress_fixture();
     let plan = EgressPlan::Allow(vec!["a.com".into()]);
     let got = c.acquire(&req("ssh", plan, None)).unwrap();
     assert_eq!(got.egress, EgressApplied::NotEnforced);
+    let calls = p.calls();
+    assert!(!calls
+        .get(1)
+        .unwrap()
+        .args
+        .contains(&"--egress-allow".to_owned()));
 }
 
 #[test]
@@ -279,7 +276,14 @@ fn release_stops_by_provider_and_name() {
     let call = calls.first().unwrap();
     assert_eq!(
         call.args,
-        ["stop", "--provider", "sprites", "--id", "moor-t7"]
+        [
+            "stop",
+            "--provider",
+            "sprites",
+            "--id",
+            "moor-t7",
+            "--delete"
+        ]
     );
     assert!(!call.args.contains(&"--json".to_owned()));
 }
@@ -298,7 +302,10 @@ fn release_bare_name_omits_provider() {
     p.on(Tool::Crabbox, &["stop"], Reply::Ok(String::new()));
     c.release(&BoxHandle::new("moor-t7")).unwrap();
     let calls = p.calls();
-    assert_eq!(calls.first().unwrap().args, ["stop", "--id", "moor-t7"]);
+    assert_eq!(
+        calls.first().unwrap().args,
+        ["stop", "--id", "moor-t7", "--delete"]
+    );
 }
 
 #[test]
@@ -476,10 +483,6 @@ fn exec_runs_without_sync_on_the_target() {
             "--no-hydrate",
             "--no-sync",
             "--",
-            "sh",
-            "-c",
-            super::exec::UNSET_THEN_EXEC,
-            "sh",
             "make",
             "test"
         ]
