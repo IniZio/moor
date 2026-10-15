@@ -24,7 +24,8 @@
   function activity(agent) {
     if (!agent) return DASH;
     var text = agent.state || DASH;
-    if (agent.waiting_for) text += ' (waiting for ' + agent.waiting_for + ')';
+    if (agent.question) text += ': ' + agent.question;
+    if (agent.options && agent.options.length) text += ' [' + agent.options.join(' / ') + ']';
     return text;
   }
 
