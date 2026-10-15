@@ -10,7 +10,7 @@ use moor_core::{ErrorKind, WaitFor, WaitReq};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::view::{agent_view, task_view_with_run};
+use crate::ops::common::view::{agent_view, hide_unsupported_sleep, task_view_with_run};
 use crate::ops::common::{activity, reconcile};
 use crate::store::RunRow;
 
@@ -49,6 +49,7 @@ pub(crate) fn run(cx: &Cx, req: &WaitReq) -> Result<WaitValue, CommandError> {
         {
             let mut task = task_view_with_run(&row, None, cx.config());
             task.agent = agent_view(&reading);
+            hide_unsupported_sleep(&mut task, cx);
             let shown = serde_json::to_value(&task)
                 .map_err(|e| CommandError::new(ErrorKind::Internal, e))?;
             return Err(CommandError::new(ErrorKind::Failed, failure.text()).with_value(shown));
@@ -70,6 +71,7 @@ pub(crate) fn run(cx: &Cx, req: &WaitReq) -> Result<WaitValue, CommandError> {
         };
         let mut task = task_view_with_run(&row, in_flight.as_ref(), cx.config());
         task.agent = agent_view(&reading);
+        hide_unsupported_sleep(&mut task, cx);
         return Ok(WaitValue {
             task,
             timed_out: verdict == WaitVerdict::TimedOut,

@@ -2,6 +2,8 @@
 //!
 //! Holds the Box lock for the call. Works from Idle, or from Working when no run is in flight.
 
+use std::collections::HashMap;
+
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::domain::task::{TaskInput, TaskState};
@@ -13,7 +15,7 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::autosleep::{refuse, sleep_handle};
 use crate::ops::common::boxlock::{self, BoxLock};
-use crate::ops::common::view::task_view;
+use crate::ops::common::view::{hide_unsupported_box_sleep, task_view};
 use crate::store::TaskRow;
 
 /// Run `sleep`.
@@ -38,9 +40,11 @@ pub(crate) fn run(cx: &Cx, req: &TaskReq) -> Result<SleepValue, CommandError> {
     if row.state != TaskState::Asleep {
         sleep_box(cx, &row)?;
     }
+    let mut boxed = task_view(&reload()?, cx.config()).r#box;
+    hide_unsupported_box_sleep(boxed.as_mut(), cx, &mut HashMap::new());
     Ok(SleepValue {
         task: req.task.as_str().to_owned(),
-        r#box: task_view(&reload()?, cx.config()).r#box,
+        r#box: boxed,
         woke: false,
     })
 }

@@ -7,7 +7,7 @@ use std::time::Duration;
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
-use moor_core::seam::driver::{AcquireReq, Driver, DriverError, EgressPlan};
+use moor_core::seam::driver::{AcquireReq, Driver, DriverError, EgressPlan, SleepKind};
 use moor_core::{ErrorKind, ProviderId, TaskId, TaskName, TaskReq};
 
 use super::run;
@@ -190,4 +190,14 @@ fn wake_refuses_while_another_op_holds_the_box_lock() {
     assert_eq!(err.kind, ErrorKind::Refused);
     assert!(err.error.to_string().contains("box busy"), "{}", err.error);
     assert_eq!(wakes(&f), 0);
+}
+
+#[test]
+fn sleep_label_follows_provider_sleep_support() {
+    for (kind, after) in [(SleepKind::None, None), (SleepKind::Suspend, Some("30m"))] {
+        let f = fx_with(FakeDriver::new().sleep_kind(kind));
+        asleep(&f);
+        let v = run(&f.cx, &req()).unwrap();
+        assert_eq!(v.r#box.unwrap().sleep.after.as_deref(), after);
+    }
 }
