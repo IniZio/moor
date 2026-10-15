@@ -240,6 +240,14 @@ impl Cx {
         self.warnings.borrow_mut().push(w);
     }
 
+    /// Records `w` unless a warning with the same code is already recorded.
+    pub(crate) fn warn_once(&self, w: Warning) {
+        let mut warnings = self.warnings.borrow_mut();
+        if !warnings.iter().any(|x| x.code == w.code) {
+            warnings.push(w);
+        }
+    }
+
     /// Drain recorded warnings.
     pub(crate) fn take_warnings(&self) -> Vec<Warning> {
         std::mem::take(&mut *self.warnings.borrow_mut())

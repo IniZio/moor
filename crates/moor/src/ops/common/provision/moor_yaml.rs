@@ -1,4 +1,6 @@
-//! Refuses a setup re-run that would use a `.moor.yaml` edited since the Task started.
+//! Refuses work outside the sandbox that would use a `.moor.yaml` edited since the Task started.
+//!
+//! Setup re-runs, agent relaunches and `moor run` all share this check.
 
 use std::path::Path;
 
@@ -12,10 +14,10 @@ use crate::store::TaskRow;
 /// File name of the repo config.
 const REPO_FILE: &str = ".moor.yaml";
 
-/// Lets a setup re-run use the worktree's `.moor.yaml` only when it matches the base commit.
+/// Lets setup, relaunch and run use the worktree's `.moor.yaml` only when it matches the base commit.
 ///
-/// The agent can edit that file, and repo setup runs outside the agent sandbox. A difference is
-/// refused unless the owner confirmed it with `trusted`, which warns instead.
+/// The agent can edit that file, and these commands run work outside the agent sandbox. A
+/// difference is refused unless the owner confirmed it with `trusted`, which warns once instead.
 pub(crate) fn guard(cx: &Cx, row: &TaskRow, trusted: bool) -> Result<(), CommandError> {
     let at = row.worktree.as_deref().unwrap_or(&row.repo);
     let path = Path::new(at).join(REPO_FILE);
@@ -47,10 +49,10 @@ pub(crate) fn guard(cx: &Cx, row: &TaskRow, trusted: bool) -> Result<(), Command
     let what = describe(at, current.as_deref(), base.as_deref());
     let rev = row.base.as_deref().unwrap_or("(none)");
     if trusted {
-        cx.warn(Warning {
+        cx.warn_once(Warning {
             code: "moor_yaml_trusted".to_owned(),
             message: format!(
-                "{at}/{REPO_FILE} differs from base commit {rev}: {what}; setup runs with it"
+                "{at}/{REPO_FILE} differs from base commit {rev}: {what}; running with it as confirmed by --trust-moor-yaml"
             ),
         });
         return Ok(());
@@ -58,13 +60,10 @@ pub(crate) fn guard(cx: &Cx, row: &TaskRow, trusted: bool) -> Result<(), Command
     Err(CommandError::new(
         ErrorKind::Refused,
         format!(
-            "{at}/{REPO_FILE} differs from base commit {rev}: {what}; setup runs outside the sandbox and will not use it unconfirmed"
+            "{at}/{REPO_FILE} differs from base commit {rev}: {what}; moor will not run work outside the sandbox with it unconfirmed"
         ),
     )
-    .with_hint(format!(
-        "review the change, then run `moor start {} --trust-moor-yaml`",
-        row.name.as_str()
-    )))
+    .with_hint("review the change, then repeat the command with --trust-moor-yaml"))
 }
 
 /// What differs between the worktree copy and the base copy, in words.
