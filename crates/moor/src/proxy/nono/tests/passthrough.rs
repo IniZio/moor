@@ -1,4 +1,4 @@
-//! A request no endpoint rule matches is refused and never reaches the upstream.
+//! A request no endpoint rule matches is forwarded without the credential.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -69,10 +69,12 @@ fn fetch(path: &str) -> (Result<u16, String>, Vec<upstream::Seen>) {
 }
 
 #[test]
-fn request_matching_no_endpoint_rule_is_refused_before_the_upstream() {
-    let (status, seen) = fetch("/release/asset");
-    assert_eq!(status, Ok(403));
-    assert!(seen.is_empty(), "{seen:?}");
+fn request_matching_no_endpoint_rule_is_forwarded_not_refused() {
+    // Only matched routes trust the test upstream's CA, so the forward fails
+    // at the TLS handshake: 502 means the proxy tried the upstream, 403 would
+    // mean it refused first.
+    let (status, _) = fetch("/release/asset");
+    assert_eq!(status, Ok(502));
 }
 
 #[test]

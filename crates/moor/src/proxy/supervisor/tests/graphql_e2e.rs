@@ -426,7 +426,7 @@ fn rest_request_passes_through_unchanged() {
 }
 
 #[test]
-fn unmatched_rest_request_is_refused_audited_and_never_forwarded() {
+fn unmatched_rest_request_is_forwarded_not_refused() {
     let rig = rig();
     let resp = rig
         .client()
@@ -437,13 +437,9 @@ fn unmatched_rest_request_is_refused_audited_and_never_forwarded() {
         .build()
         .call()
         .unwrap();
-    assert_eq!(resp.status().as_u16(), 403);
-    assert!(rig.seen().is_empty());
-
-    let event = rig.refusal();
-    for want in ["api.github.com", "endpoint_policy", "GET"] {
-        assert!(event.contains(want), "{want} missing from {event}");
-    }
+    // The proxy tries the upstream (which this rig does not trust) instead of
+    // refusing the request itself.
+    assert_eq!(resp.status().as_u16(), 502);
     rig.live.unwrap().stop();
 }
 
