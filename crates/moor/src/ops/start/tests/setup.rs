@@ -198,7 +198,7 @@ fn a_failing_setup_marks_the_task_and_a_later_clean_setup_clears_it() {
 
 #[test]
 fn no_setup_lines_means_setup_did_not_run() {
-    let (w, v) = start_with("egress: [example.com]\n", FakeDriver::new());
+    let (w, v) = start_with("env: {A: a}\n", FakeDriver::new());
     assert!(!v.setup.ran);
     assert!(w.driver.execs().is_empty());
     assert_eq!(v.task.state, TaskState::Working);
@@ -206,7 +206,7 @@ fn no_setup_lines_means_setup_did_not_run() {
 
 #[test]
 fn setup_env_is_exactly_the_repo_env() {
-    let yaml = "setup: [a]\nenv: {ZED: z, ALPHA: a}\negress: [example.com]\n";
+    let yaml = "setup: [a]\nenv: {ZED: z, ALPHA: a}\n";
     let (w, _) = start_with(yaml, FakeDriver::new());
     let envs: Vec<_> = w.driver.execs().into_iter().map(|e| e.1.env).collect();
     let pair = |k: &str, v: &str| (k.to_owned(), v.to_owned());

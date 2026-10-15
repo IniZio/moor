@@ -27,7 +27,6 @@ fn valueless_sections_are_defaults() {
         "env",
         "setup",
         "teardown",
-        "egress",
         "compose",
         "box_credentials",
     ] {
@@ -64,7 +63,6 @@ fn accepts_full_document() {
     let c = ok(r"
 setup: ['true']
 teardown: ['true']
-egress: [Example.COM, '*.example.org']
 env: {FOO: bar}
 compose: {project_prefix: pp}
 box: {size: large}
@@ -115,6 +113,7 @@ fn removed_keys_are_unknown() {
         "reports: {}",
         "record: {keep: [node_modules]}",
         "delivery: {mode: pr}",
+        "egress: [x.io]",
     ] {
         let key = t.split(':').next().unwrap_or(t);
         rejects(t, key, "unknown field");
@@ -152,24 +151,6 @@ fn list_entries() {
     rejects("setup: [' ']", "setup[0]", "setup");
     rejects("setup: ['true', '']", "setup[1]", "setup");
     rejects("teardown: ['']", "teardown[0]", "teardown");
-}
-
-#[test]
-fn egress_entries() {
-    for bad in [
-        "10.0.0.1",
-        "localhost",
-        "bad_char.com",
-        "https://x.com",
-        "''",
-    ] {
-        rejects(&format!("egress: [{bad}]"), "egress[0]", "egress");
-    }
-    rejects(
-        "egress: [a.example.com, localhost]",
-        "egress[1]",
-        "localhost",
-    );
 }
 
 #[test]

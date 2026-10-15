@@ -166,7 +166,7 @@ fn dotfiles_run_after_setup_and_before_the_agent_launches() {
 fn a_configured_install_script_with_a_space_is_quoted_and_guarded() {
     let src = tempfile::tempdir().unwrap();
     let (w, _, _repo) = dotfiles_world(
-        "egress: [example.com]\n",
+        "env: {A: a}\n",
         Some(src.path()),
         Some("my setup.sh"),
         FakeDriver::new(),
