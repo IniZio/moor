@@ -45,6 +45,27 @@ fn only_base_env_and_extra_reach_child() {
 }
 
 #[test]
+fn only_crabbox_gets_container_env() {
+    let dir = TempDir::new().unwrap();
+    let body = r#"echo "$CRABBOX_FOO|$DOCKER_HOST|$GH_TOKEN|$GITHUB_TOKEN|$ANTHROPIC_API_KEY|$CLAUDE_CODE_OAUTH_TOKEN""#;
+    let crabbox = script(dir.path(), "crabbox", body);
+    let git = script(dir.path(), "git", body);
+    let p = proc_with(vec![
+        ("MOOR_CRABBOX_BIN", crabbox),
+        ("MOOR_GIT_BIN", git),
+        ("CRABBOX_FOO", "c".into()),
+        ("DOCKER_HOST", "unix:///d.sock".into()),
+        ("GH_TOKEN", "leak".into()),
+        ("GITHUB_TOKEN", "leak".into()),
+        ("ANTHROPIC_API_KEY", "leak".into()),
+        ("CLAUDE_CODE_OAUTH_TOKEN", "leak".into()),
+    ]);
+    let crab = ProcSpec::new(Tool::Crabbox, Deadline(Duration::from_secs(5)));
+    assert_eq!(p.run(&crab).unwrap().stdout.trim(), "c|unix:///d.sock||||");
+    assert_eq!(p.run(&spec(5)).unwrap().stdout.trim(), "|||||");
+}
+
+#[test]
 fn bin_var_beats_config_beats_path() {
     let dir = TempDir::new().unwrap();
     let a = script(dir.path(), "a", "echo env");

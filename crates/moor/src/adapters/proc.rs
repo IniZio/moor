@@ -14,13 +14,13 @@ use std::time::Duration;
 
 use moor_core::seam::proc::{
     ChildHandle, Output, Proc, ProcError, ProcOutput, ProcSpec, Signal as GroupSignal, Stdin, Tool,
-    BASE_ENV,
 };
 use rustix::io::Errno;
 use rustix::process::{test_kill_process, Signal};
 use zeroize::Zeroizing;
 
 use crate::env::Env;
+use env::Snapshot;
 use signal::{send_group, signal_group, to_pid};
 
 /// Longest wait between SIGTERM and SIGKILL.
@@ -85,8 +85,8 @@ impl ToolPaths {
 /// Spawns real processes with a cleared environment and process-group kills.
 #[derive(Debug)]
 pub(crate) struct SystemProc {
-    /// Base variables captured at construction.
-    base: Vec<(String, String)>,
+    /// Environment captured at construction.
+    env: Snapshot,
     /// Resolved program per tool.
     programs: Vec<(Tool, OsString)>,
 }
@@ -94,12 +94,11 @@ pub(crate) struct SystemProc {
 impl SystemProc {
     /// Captures base variables and resolves programs: env var, config, then `PATH`.
     pub(crate) fn new(env: &Env, tools: &ToolPaths) -> Self {
-        let base = BASE_ENV
-            .iter()
-            .filter_map(|k| Some(((*k).to_owned(), env.get(k)?.to_owned())))
-            .collect();
         let programs = TOOLS.iter().map(|&t| (t, resolve(env, tools, t))).collect();
-        Self { base, programs }
+        Self {
+            env: Snapshot::new(env),
+            programs,
+        }
     }
 
     /// Program for `tool`.
@@ -114,7 +113,7 @@ impl SystemProc {
     fn command(&self, spec: &ProcSpec) -> Command {
         let mut cmd = Command::new(self.program(spec.tool));
         cmd.args(&spec.args).env_clear().process_group(0);
-        cmd.envs(self.base.iter().map(|(k, v)| (k, v)));
+        self.env.apply(&mut cmd, spec.tool);
         cmd.envs(spec.env.extra.iter().map(|(k, v)| (k, v)));
         if let Some(cwd) = &spec.cwd {
             cmd.current_dir(cwd);
@@ -392,6 +391,7 @@ impl Proc for SystemProc {
 mod boot;
 mod child;
 mod detached;
+mod env;
 mod signal;
 mod stream;
 #[cfg(test)]
