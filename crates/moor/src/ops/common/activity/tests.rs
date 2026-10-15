@@ -429,7 +429,10 @@ fn settle_leaves_a_working_task_when_only_the_pane_reports_idle() {
         (PaneStatus::Idle, AgentState::Idle),
         (
             PaneStatus::Blocked,
-            AgentState::Blocked { waiting_for: None },
+            AgentState::NeedsInput {
+                question: None,
+                options: Vec::new(),
+            },
         ),
     ];
     for (status, want) in cases {
@@ -528,3 +531,5 @@ fn a_new_hook_session_id_is_stored_once() {
 }
 
 mod exit;
+
+mod needs_input;

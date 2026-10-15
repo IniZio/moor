@@ -194,6 +194,13 @@ pub enum Event {
         /// The pane line that showed it.
         line: String,
     },
+    /// The agent stopped to ask the user something; one per waiting episode.
+    NeedsInput {
+        /// The question, when the agent showed one.
+        question: Option<String>,
+        /// The offered answers, empty for a free-text question.
+        options: Vec<String>,
+    },
     /// Reading the agent's pane for first-run prompts failed.
     AgentPromptCheckFailed {
         /// The agent's pane.

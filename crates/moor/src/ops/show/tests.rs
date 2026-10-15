@@ -449,7 +449,7 @@ fn list_does_not_idle_on_a_pane_only_blocked_report() {
     let (reading, state) = pane_only_reading(PaneStatus::Blocked);
     let a = reading.activity.as_ref().unwrap();
     assert_eq!(a.source, Source::Herdr);
-    assert!(matches!(a.state, AgentState::Blocked { .. }));
+    assert!(matches!(a.state, AgentState::NeedsInput { .. }));
     assert!(!reading.may_quiet);
     assert_eq!(state, TaskState::Working);
 }

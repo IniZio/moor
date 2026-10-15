@@ -68,7 +68,8 @@ fn agent_and_run_nested_keys() {
         state: "idle".into(),
         source: "hook".into(),
         exit_code: None,
-        waiting_for: None,
+        question: None,
+        options: Vec::new(),
         reason: None,
     });
     t.run = Some(RunView {
@@ -85,7 +86,8 @@ fn agent_and_run_nested_keys() {
             "state": "idle",
             "source": "hook",
             "exit_code": null,
-            "waiting_for": null,
+            "question": null,
+            "options": [],
             "reason": null
         }))
     );

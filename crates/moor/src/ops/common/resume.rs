@@ -16,7 +16,7 @@ pub(crate) const fn pane_status(state: &AgentState) -> PaneStatus {
     match state {
         AgentState::Working => PaneStatus::Working,
         AgentState::Idle => PaneStatus::Idle,
-        AgentState::Blocked { .. } => PaneStatus::Blocked,
+        AgentState::NeedsInput { .. } => PaneStatus::Blocked,
         _ => PaneStatus::Unknown,
     }
 }

@@ -77,6 +77,28 @@ fn list(tasks: &[Value]) -> Option<String> {
     Some(out)
 }
 
+/// The agent lines of the detail block: state, then any question with its numbered options.
+fn agent_block(out: &mut String, a: &Value) {
+    let _ = writeln!(
+        out,
+        "agent:    {} pane={}",
+        field(a, "state"),
+        field(a, "pane")
+    );
+    if let Some(q) = a.get("question").and_then(Value::as_str) {
+        let _ = writeln!(out, "  question: {q}");
+    }
+    let options = a.get("options").and_then(Value::as_array);
+    for (i, o) in options
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .enumerate()
+    {
+        let _ = writeln!(out, "  {}. {o}", i + 1);
+    }
+}
+
 /// The detail block for one task.
 fn detail(task: &Value, value: &Value) -> Option<String> {
     let mut out = String::new();
@@ -99,12 +121,7 @@ fn detail(task: &Value, value: &Value) -> Option<String> {
         None => out.push_str("box:      none\n"),
     }
     if let Some(a) = task.get("agent").filter(|a| !a.is_null()) {
-        let _ = writeln!(
-            out,
-            "agent:    {} pane={}",
-            field(a, "state"),
-            field(a, "pane")
-        );
+        agent_block(&mut out, a);
     }
     for key in ["setup", "dotfiles"] {
         let Some(s) = value

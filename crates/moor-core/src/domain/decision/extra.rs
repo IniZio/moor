@@ -88,6 +88,13 @@ pub enum ExtraEvent {
         /// The pane line that showed it.
         line: String,
     },
+    /// The agent stopped to ask the user something.
+    NeedsInput {
+        /// The question, when the agent showed one.
+        question: Option<String>,
+        /// The offered answers.
+        options: Vec<String>,
+    },
     /// Reading the agent's pane for first-run prompts failed.
     AgentPromptCheckFailed {
         /// The agent's pane.
@@ -177,6 +184,7 @@ impl From<ExtraEvent> for Event {
             ExtraEvent::AgentPromptBlocked { pane, prompt, line } => {
                 Self::AgentPromptBlocked { pane, prompt, line }
             }
+            ExtraEvent::NeedsInput { question, options } => Self::NeedsInput { question, options },
             ExtraEvent::AgentPromptCheckFailed { pane, error } => {
                 Self::AgentPromptCheckFailed { pane, error }
             }
@@ -259,6 +267,7 @@ impl TryFrom<Event> for ExtraEvent {
             Event::AgentPromptBlocked { pane, prompt, line } => {
                 Ok(Self::AgentPromptBlocked { pane, prompt, line })
             }
+            Event::NeedsInput { question, options } => Ok(Self::NeedsInput { question, options }),
             Event::AgentPromptCheckFailed { pane, error } => {
                 Ok(Self::AgentPromptCheckFailed { pane, error })
             }

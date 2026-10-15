@@ -189,6 +189,15 @@ fn defaults_and_renames() {
             timeout_secs: None
         })
     );
+    let r: Request = serde_json::from_str(r#"{"cmd":"wait","task":"a","for":"input"}"#).unwrap();
+    assert_eq!(
+        r,
+        Request::Wait(WaitReq {
+            task: n("a"),
+            wait_for: Some(WaitFor::Input),
+            timeout_secs: None
+        })
+    );
     let r: Request = serde_json::from_str(r#"{"cmd":"run","task":"a"}"#).unwrap();
     assert_eq!(
         r,
