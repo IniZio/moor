@@ -191,39 +191,74 @@ fn pinned(body: Vec<u8>) -> (Arc<Fake>, NonoRelease) {
 }
 
 #[test]
-fn darwin_arm64_comes_from_the_fork() {
-    let (fake, release) = pinned(b"junk".to_vec());
-    let err = release.binary("Darwin", "arm64").unwrap_err();
-    assert!(matches!(err, ReleaseError::Checksum { .. }), "{err}");
-    assert_eq!(
-        fake.urls.lock().unwrap().as_slice(),
-        ["https://github.com/IniZio/nono/releases/download/v0.80.0-moor.1/nono-v0.80.0-aarch64-apple-darwin.tar.gz"]
-    );
-    let asset = super::ASSETS
-        .iter()
-        .find(|a| a.os == "Darwin" && a.arch == "arm64")
-        .unwrap();
-    assert_eq!(
-        asset.sha256,
-        "ff84a3a50bce1781f3f89b62e8760c30ee187d22ec1239374bfb6771b7bf7658"
-    );
+fn fork_assets_come_from_the_fork_release() {
+    const FORK: &str = "https://github.com/IniZio/nono/releases/download/v0.80.0-moor.1";
+    const LINUX_X86_64: &str = "6204caef57aac110d491f01dcceb2745312cc7bdeb1db95576f77e4c92f7c6be";
+    const LINUX_AARCH64: &str = "aa9ef2123e52dc5c086b80eceb4fa4918fc451220180b89aabbb8b561e73d198";
+    const DARWIN_ARM64: &str = "ff84a3a50bce1781f3f89b62e8760c30ee187d22ec1239374bfb6771b7bf7658";
+    for (os, arch, file, sha) in [
+        (
+            "Linux",
+            "x86_64",
+            "nono-v0.80.0-x86_64-unknown-linux-gnu.tar.gz",
+            LINUX_X86_64,
+        ),
+        (
+            "Linux",
+            "aarch64",
+            "nono-v0.80.0-aarch64-unknown-linux-gnu.tar.gz",
+            LINUX_AARCH64,
+        ),
+        (
+            "Linux",
+            "arm64",
+            "nono-v0.80.0-aarch64-unknown-linux-gnu.tar.gz",
+            LINUX_AARCH64,
+        ),
+        (
+            "Darwin",
+            "arm64",
+            "nono-v0.80.0-aarch64-apple-darwin.tar.gz",
+            DARWIN_ARM64,
+        ),
+    ] {
+        let (fake, release) = pinned(b"junk".to_vec());
+        let err = release.binary(os, arch).unwrap_err();
+        assert!(
+            matches!(err, ReleaseError::Checksum { .. }),
+            "{os} {arch}: {err}"
+        );
+        assert_eq!(
+            fake.urls.lock().unwrap().as_slice(),
+            [format!("{FORK}/{file}")],
+            "{os} {arch}"
+        );
+        let asset = super::ASSETS
+            .iter()
+            .find(|a| a.os == os && a.arch == arch)
+            .unwrap();
+        assert_eq!(asset.sha256, sha, "{os} {arch}");
+    }
 }
 
 #[test]
-fn linux_and_darwin_x86_64_stay_on_upstream() {
-    for (os, arch) in [
-        ("Linux", "x86_64"),
-        ("Linux", "aarch64"),
-        ("Darwin", "x86_64"),
-    ] {
-        let (fake, release) = pinned(b"junk".to_vec());
-        let _ = release.binary(os, arch);
-        let urls = fake.urls.lock().unwrap().clone();
-        assert!(
-            urls.first()
-                .is_some_and(|u| u
-                    .starts_with("https://github.com/nolabs-ai/nono/releases/download/v0.80.0/")),
-            "{os} {arch}: {urls:?}"
-        );
-    }
+fn darwin_x86_64_stays_on_upstream() {
+    let (fake, release) = pinned(b"junk".to_vec());
+    let err = release.binary("Darwin", "x86_64").unwrap_err();
+    assert!(matches!(err, ReleaseError::Checksum { .. }), "{err}");
+    let urls = fake.urls.lock().unwrap().clone();
+    assert!(
+        urls.first().is_some_and(
+            |u| u.starts_with("https://github.com/nolabs-ai/nono/releases/download/v0.80.0/")
+        ),
+        "{urls:?}"
+    );
+    let asset = super::ASSETS
+        .iter()
+        .find(|a| a.os == "Darwin" && a.arch == "x86_64")
+        .unwrap();
+    assert_eq!(
+        asset.sha256,
+        "b354e674e6b4643ad5c572d148ae367bb0c5c103410fbc22923c5593a6f7d0b2"
+    );
 }
