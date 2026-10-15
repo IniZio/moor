@@ -7,6 +7,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+pub use crate::config::egress::EgressSupport;
 use crate::domain::run::SyncMode;
 use crate::name::{BoxHandle, BoxPath, ProviderId, TaskId, TaskName};
 use crate::seam::proc::{Deadline, Output};
@@ -24,17 +25,6 @@ pub enum SleepKind {
     /// The provider sleeps the Box on its own.
     Native,
     /// The Box cannot sleep.
-    None,
-}
-
-/// How far a provider can restrict Box egress.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum EgressSupport {
-    /// Always enforced.
-    Enforced,
-    /// Enforced when requested.
-    OptIn,
-    /// Not available.
     None,
 }
 

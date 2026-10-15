@@ -2,12 +2,13 @@
 
 use moor_core::config::egress::{egress_item, provider_applies_policy, unenforced_note};
 use moor_core::config::Flags;
+use moor_core::seam::driver::EgressSupport;
 use moor_core::view::env::{EnvEgress, EnvView};
 use moor_core::{EnvReq, ErrorKind};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::facts;
+use crate::ops::common::facts::{self, egress_support};
 
 pub(crate) mod items;
 
@@ -22,20 +23,20 @@ pub(crate) fn run(cx: &Cx, req: &EnvReq) -> Result<EnvView, CommandError> {
         .toplevel(&dir)
         .map_err(|e| CommandError::new(ErrorKind::Failed, e.to_string()))?;
     let settings = facts::settings(cx, &top, &Flags::default())?;
-    let applies = provider_applies_policy(&settings.provider.value, settings.enforce_egress);
+    let support = egress_support(cx, &settings).unwrap_or(EgressSupport::None);
+    let applies = provider_applies_policy(support, settings.enforce_egress);
     let egress = egress_item(&settings.user_egress, &settings.egress, applies)?;
     let env_egress = EnvEgress {
         mode: egress.name.to_owned(),
         hosts: egress.hosts.clone(),
         note: egress.detail.clone(),
-        enforce: unenforced_note(&settings.provider.value, settings.enforce_egress)
-            .map(str::to_owned),
+        enforce: unenforced_note(support, settings.enforce_egress).map(str::to_owned),
     };
     Ok(EnvView::new(
         top.display().to_string(),
         &settings,
         items::github(&settings),
-        items::assemble(cx, &settings, &top, &egress),
+        items::assemble(cx, &settings, &top, &egress, support),
         env_egress,
     ))
 }

@@ -119,12 +119,19 @@ impl FakeDriver {
         dropped.clone()
     }
 
+    /// Reports `support` as the provider's egress capability.
+    pub(crate) fn egress_support(self, support: EgressSupport) -> Self {
+        self.st().egress = Some(support);
+        self
+    }
+
     pub(super) fn caps_reply(&self) -> DriverCaps {
+        let st = self.st();
         DriverCaps {
             sleep: SleepKind::None,
             wake: false,
-            egress: EgressSupport::None,
-            reverse_tunnel: self.st().tunnel.enabled,
+            egress: st.egress.unwrap_or(EgressSupport::None),
+            reverse_tunnel: st.tunnel.enabled,
             has_workdir: true,
         }
     }

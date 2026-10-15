@@ -1,14 +1,19 @@
 use moor_core::config::parse_user;
+use moor_core::seam::driver::EgressSupport;
 use moor_core::TaskId;
 
 use super::{req, world_with};
 use crate::testing::driver::FakeDriver;
 
-/// Starts `demo` on `provider`; returns the stored egress and the warning codes.
-fn start_on(provider: &str) -> (Option<String>, Vec<String>) {
-    let config = parse_user("config.yaml", &format!("box: {{provider: {provider}}}")).unwrap();
+/// Starts `demo` on a provider reporting `support`; returns the stored egress and the warning codes.
+fn start_on(support: EgressSupport) -> (Option<String>, Vec<String>) {
+    let config = parse_user("config.yaml", "box: {provider: p}").unwrap();
     let repo = tempfile::tempdir().unwrap();
-    let w = world_with(FakeDriver::new(), repo.path(), config);
+    let w = world_with(
+        FakeDriver::new().egress_support(support),
+        repo.path(),
+        config,
+    );
     let v = crate::ops::start::run(&w.cx, &req("demo")).unwrap();
     let row = w.cx.store().unwrap().task(TaskId::new(v.task.id));
     let egress = row.unwrap().unwrap().boxed.unwrap().egress;
@@ -18,21 +23,21 @@ fn start_on(provider: &str) -> (Option<String>, Vec<String>) {
 
 #[test]
 fn a_provider_without_a_policy_stores_open_egress() {
-    let (egress, codes) = start_on("other");
+    let (egress, codes) = start_on(EgressSupport::None);
     assert_eq!(egress.as_deref(), Some("none"));
     assert!(!codes.contains(&"egress_unenforced".to_owned()));
 }
 
 #[test]
 fn an_applied_allow_list_stores_enforced() {
-    let (egress, codes) = start_on("sprites");
+    let (egress, codes) = start_on(EgressSupport::Enforced);
     assert_eq!(egress.as_deref(), Some("enforced"));
     assert!(!codes.contains(&"egress_unenforced".to_owned()));
 }
 
 #[test]
-fn namespace_devbox_without_the_opt_in_stores_not_enforced_and_warns() {
-    let (egress, codes) = start_on("namespace-devbox");
+fn a_create_only_provider_without_the_opt_in_stores_not_enforced_and_warns() {
+    let (egress, codes) = start_on(EgressSupport::OptIn);
     assert_eq!(egress.as_deref(), Some("not_enforced"));
     assert!(codes.contains(&"egress_unenforced".to_owned()));
 }

@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use moor_core::config::{parse_user, Layer, UserConfig};
 use moor_core::seam::clock::Ts;
+use moor_core::seam::driver::EgressSupport;
 use moor_core::seam::proc::{Proc, Tool};
 use moor_core::view::env::{EnvKind, EnvView};
 use moor_core::{EnvReq, ErrorKind};
@@ -29,6 +30,11 @@ fn cx_with(top: &Path, config: UserConfig) -> Cx {
 
 /// Like `cx_with`, over a caller-prepared scripted proc.
 fn cx_proc(top: &Path, config: UserConfig, proc: ScriptedProc) -> Cx {
+    cx_full(top, config, proc, FakeDriver::new())
+}
+
+/// Like `cx_proc`, over a caller-prepared driver.
+fn cx_full(top: &Path, config: UserConfig, proc: ScriptedProc, driver: FakeDriver) -> Cx {
     proc.on(
         Tool::Git,
         &["rev-parse", "--show-toplevel"],
@@ -44,7 +50,7 @@ fn cx_proc(top: &Path, config: UserConfig, proc: ScriptedProc) -> Cx {
         state_dir: Some(top.to_path_buf()),
         clock: Arc::new(FakeClock::new(Ts::from_millis(1000))),
         rng: Arc::new(FakeRng::default()),
-        driver: Arc::new(FakeDriver::new()),
+        driver: Arc::new(driver),
         surface: Arc::new(FakeSurface::new(top)),
         engine: Arc::new(FakeEngine::new()),
         forge: Arc::new(crate::testing::forge::FakeForge::new()),
@@ -237,12 +243,10 @@ fn json_hosts_are_the_effective_allow_list() {
 fn egress_note_lists_the_hosts_with_user_allow() {
     let d = tempfile::tempdir().unwrap();
     std::fs::write(d.path().join(".moor.yaml"), "egress: [repo.example.com]\n").unwrap();
-    let user = parse_user(
-        "t",
-        "box:\n  provider: sprites\negress:\n  allow: [user.example.com]\n",
-    )
-    .unwrap();
-    let v = run(&cx_with(d.path(), user), &EnvReq { repo: None }).unwrap();
+    let user = parse_user("t", "egress:\n  allow: [user.example.com]\n").unwrap();
+    let driver = FakeDriver::new().egress_support(EgressSupport::Enforced);
+    let cx = cx_full(d.path(), user, ScriptedProc::new(), driver);
+    let v = run(&cx, &EnvReq { repo: None }).unwrap();
     assert!(v.egress.hosts.iter().any(|h| h == "user.example.com"));
     for h in &v.egress.hosts {
         assert!(
@@ -250,5 +254,37 @@ fn egress_note_lists_the_hosts_with_user_allow() {
             "{h} not in {:?}",
             v.egress.note
         );
+    }
+}
+
+/// Runs `env` against a provider reporting `support`.
+fn env_on(support: EgressSupport, enforce: bool) -> EnvView {
+    let d = tempfile::tempdir().unwrap();
+    let flag = if enforce {
+        "\n  enforce_egress: true"
+    } else {
+        ""
+    };
+    let user = parse_user("t", &format!("box:\n  provider: p{flag}\n")).unwrap();
+    let driver = FakeDriver::new().egress_support(support);
+    run(
+        &cx_full(d.path(), user, ScriptedProc::new(), driver),
+        &EnvReq { repo: None },
+    )
+    .unwrap()
+}
+
+#[test]
+fn egress_row_follows_the_provider_capability() {
+    let cases = [
+        (EgressSupport::Enforced, false, "allow", false),
+        (EgressSupport::OptIn, false, "policy", true),
+        (EgressSupport::OptIn, true, "allow", false),
+        (EgressSupport::None, true, "policy", false),
+    ];
+    for (support, enforce, mode, warns) in cases {
+        let v = env_on(support, enforce);
+        assert_eq!(v.egress.mode, mode, "{support:?} {enforce}");
+        assert_eq!(v.egress.enforce.is_some(), warns, "{support:?} {enforce}");
     }
 }

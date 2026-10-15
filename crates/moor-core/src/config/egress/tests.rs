@@ -1,4 +1,5 @@
 use super::*;
+use crate::seam::driver::EgressSupport;
 
 fn s(v: &[&str]) -> Vec<String> {
     v.iter().map(|x| (*x).to_string()).collect()
@@ -45,27 +46,31 @@ fn invalid_entries_rejected() {
 }
 
 #[test]
-fn provider_capability_table() {
+fn capability_table() {
     let cases = [
-        ("sprites", false, true),
-        ("sprites", true, true),
-        ("namespace-devbox", false, false),
-        ("namespace-devbox", true, true),
-        ("local-container", false, false),
-        ("local-container", true, false),
-        ("ssh", true, false),
+        (EgressSupport::Enforced, false, true),
+        (EgressSupport::Enforced, true, true),
+        (EgressSupport::OptIn, false, false),
+        (EgressSupport::OptIn, true, true),
+        (EgressSupport::None, false, false),
+        (EgressSupport::None, true, false),
     ];
-    for (p, enforce, want) in cases {
-        assert_eq!(provider_applies_policy(p, enforce), want, "{p} {enforce}");
+    for (support, enforce, want) in cases {
+        assert_eq!(
+            provider_applies_policy(support, enforce),
+            want,
+            "{support:?} {enforce}"
+        );
     }
 }
 
 #[test]
-fn unenforced_note_only_namespace_without_opt_in() {
-    assert!(unenforced_note("namespace-devbox", false).is_some());
-    assert!(unenforced_note("namespace-devbox", true).is_none());
-    assert!(unenforced_note("sprites", false).is_none());
-    assert!(unenforced_note("local-container", false).is_none());
+fn unenforced_note_only_for_opt_in_without_opt_in() {
+    let note = unenforced_note(EgressSupport::OptIn, false).unwrap();
+    assert!(note.contains("box.enforce_egress"));
+    assert!(unenforced_note(EgressSupport::OptIn, true).is_none());
+    assert!(unenforced_note(EgressSupport::Enforced, false).is_none());
+    assert!(unenforced_note(EgressSupport::None, false).is_none());
 }
 
 #[test]

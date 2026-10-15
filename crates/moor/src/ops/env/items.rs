@@ -4,6 +4,7 @@ use std::path::Path;
 
 use moor_core::config::egress::{unenforced_note, EgressItem};
 use moor_core::config::{DotfilesConfig, Identity, Layer, TaskSettings};
+use moor_core::seam::driver::EgressSupport;
 use moor_core::view::env::{EnvGithub, EnvItem, EnvKind, EnvMint, EnvResolved};
 
 use crate::cx::Cx;
@@ -15,6 +16,7 @@ pub(crate) fn assemble(
     s: &TaskSettings,
     worktree: &Path,
     egress: &EgressItem,
+    support: EgressSupport,
 ) -> Vec<EnvItem> {
     let mut items = Vec::new();
     if let Ok(author) = cx.git().author(worktree) {
@@ -34,7 +36,7 @@ pub(crate) fn assemble(
 
     let provider = s.provider.value.as_str();
     items.push(plain(EnvKind::Egress, egress.name, &egress.detail));
-    if let Some(note) = unenforced_note(provider, s.enforce_egress) {
+    if let Some(note) = unenforced_note(support, s.enforce_egress) {
         items.push(plain(EnvKind::Egress, "enforce", note));
     }
     items.push(EnvItem {
