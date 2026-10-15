@@ -300,7 +300,8 @@ fn egress_row_follows_the_provider_capability() {
         (EgressSupport::Enforced, false, "allow", false),
         (EgressSupport::OptIn, false, "policy", true),
         (EgressSupport::OptIn, true, "allow", false),
-        (EgressSupport::None, true, "policy", false),
+        (EgressSupport::None, true, "policy", true),
+        (EgressSupport::None, false, "policy", false),
     ];
     for (support, enforce, mode, warns) in cases {
         let v = env_on(support, enforce);
