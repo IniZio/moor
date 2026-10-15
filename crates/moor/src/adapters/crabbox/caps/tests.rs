@@ -17,10 +17,20 @@ fn json() -> String {
         entry(
             "namespace-devbox",
             &["namespace", "ns"],
-            &["ssh"],
+            &[
+                "ssh",
+                "egress-allow",
+                "egress-allow-create-only",
+                "resume-rotates-host-key"
+            ],
             &["pause-resume"]
         ),
-        entry("sprites", &[], &["ssh"], &["ephemeral"]),
+        entry(
+            "sprites",
+            &[],
+            &["ssh", "native-sleep", "egress-allow"],
+            &["ephemeral"]
+        ),
         entry("ssh", &[], &["ssh"], &["static"]),
         entry("pauser", &[], &["pause-resume"], &[]),
     ])

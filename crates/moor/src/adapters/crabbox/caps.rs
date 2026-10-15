@@ -1,5 +1,4 @@
-//! Provider facts: derived from `crabbox providers --json`, plus a small
-//! static table for facts the JSON lacks.
+//! Provider facts: derived from the feature tokens in `crabbox providers --json`.
 
 use moor_core::name::ProviderId;
 use moor_core::seam::driver::{DriverCaps, DriverError, EgressSupport, SleepKind};
@@ -36,31 +35,34 @@ impl Entry {
     }
 }
 
-/// Provider whose Box sleeps on its own.
-const NATIVE_SLEEP: &str = "sprites";
-/// Provider with always-enforced egress.
-const ENFORCED_EGRESS: &str = "sprites";
-/// Provider with opt-in egress; its wake loses the host key.
-const NAMESPACE: &str = "namespace-devbox";
+/// Feature token: the Box sleeps on its own.
+const NATIVE_SLEEP: &str = "native-sleep";
+/// Feature token: the provider can apply an egress allow-list.
+const EGRESS_ALLOW: &str = "egress-allow";
+/// Feature token: the allow-list is fixed at Box creation, so enforcement is opt-in.
+const EGRESS_CREATE_ONLY: &str = "egress-allow-create-only";
+/// Feature token: a wake changes the host key.
+const ROTATES_HOST_KEY: &str = "resume-rotates-host-key";
 
-/// Facts for `entry`: JSON first, static table where the JSON is silent.
+/// Facts for `entry`, read from its feature tokens.
 fn derive(entry: &Entry) -> DriverCaps {
-    let name = entry.provider.as_str();
-    let sleep = if name == NATIVE_SLEEP {
+    let sleep = if entry.has(NATIVE_SLEEP) {
         SleepKind::Native
     } else if entry.has("pause-resume") {
         SleepKind::Suspend
     } else {
         SleepKind::None
     };
-    let egress = match name {
-        ENFORCED_EGRESS => EgressSupport::Enforced,
-        NAMESPACE => EgressSupport::OptIn,
-        _ => EgressSupport::None,
+    let egress = if !entry.has(EGRESS_ALLOW) {
+        EgressSupport::None
+    } else if entry.has(EGRESS_CREATE_ONLY) {
+        EgressSupport::OptIn
+    } else {
+        EgressSupport::Enforced
     };
     DriverCaps {
         sleep,
-        wake: sleep != SleepKind::None && name != NAMESPACE,
+        wake: sleep != SleepKind::None && !entry.has(ROTATES_HOST_KEY),
         egress,
         reverse_tunnel: true,
         has_workdir: true,
