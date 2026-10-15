@@ -162,3 +162,21 @@ fn no_steps_still_writes_rc_zero() {
     assert_eq!(s.run(&[]), Some(0));
     assert_eq!(s.read(".moor/setup.rc").trim(), "0");
 }
+
+#[test]
+fn steps_see_host_tool_dirs_after_original_path() {
+    let s = Scratch::new("path");
+    let script = setup_script(&["echo \"PATH=$PATH\"".to_owned()]);
+    Command::new("/bin/sh")
+        .arg("-c")
+        .arg(script)
+        .env("PATH", "/usr/bin:/bin")
+        .current_dir(&s.0)
+        .output()
+        .unwrap();
+    let log = s.read(".moor/setup.log");
+    assert!(
+        log.contains("\nPATH=/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin\n"),
+        "{log}"
+    );
+}

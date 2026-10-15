@@ -71,6 +71,25 @@ fn teardown_runs_before_the_box_is_released() {
     assert!(at("exec") < at("release"));
 }
 
+/// The teardown script needs the Task's workdir, which host cleanup removes.
+#[test]
+fn teardown_runs_before_the_host_workdir_is_cleaned() {
+    let f = fx_yaml(FakeDriver::new().static_host(), YAML);
+    run(&f.cx, &req(false)).unwrap();
+    let scripts: Vec<String> = f
+        .driver
+        .execs()
+        .into_iter()
+        .filter_map(|(_, spec, _)| spec.argv.last().cloned())
+        .collect();
+    let at = |needle: &str| scripts.iter().position(|s| s.contains(needle)).unwrap();
+    assert!(at("echo bye") < at(".moor-cred-"));
+    let calls = f.driver.calls();
+    let last_exec = calls.iter().rposition(|c| c.starts_with("exec")).unwrap();
+    let release = calls.iter().position(|c| c.starts_with("release")).unwrap();
+    assert!(last_exec < release);
+}
+
 #[test]
 fn failing_teardown_warns_and_still_releases() {
     let f = fx_yaml(

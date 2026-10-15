@@ -16,6 +16,7 @@ use super::Crabbox;
 use crate::testing::proc::{Reply, ScriptedProc};
 
 mod real_mac;
+mod real_mac_backend;
 mod workdir;
 
 const PROBE_SCRIPT: &str = r#"printf "MOOR_WORKDIR=%s\n" "$(pwd)"; printf "MOOR_UNAME=%s %s\n" "$(uname -s)" "$(uname -m)""#;

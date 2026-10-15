@@ -30,7 +30,9 @@ pub(super) fn steps_script(label: &str, steps: &[String]) -> String {
         let _ = writeln!(body, "__moor_step={}", i + 1);
         let _ = writeln!(body, "printf '%s\\n' {announce}\nsh -c {run} || exit $?");
     }
+    // Non-login ssh on a macOS Box lacks the Homebrew and Docker Desktop/OrbStack dirs. Appended,
+    // so command resolution is unchanged where they are absent.
     format!(
-        "mkdir -p .moor\n{{ (\n{prelude}{body}) 2>&1; echo $? > .moor/{label}.rc; }} | tee .moor/{label}.log\n__moor_rc=$(cat .moor/{label}.rc)\nexit \"${{__moor_rc:-1}}\"\n"
+        "PATH=\"$PATH:/usr/local/bin:/opt/homebrew/bin\"; export PATH\nmkdir -p .moor\n{{ (\n{prelude}{body}) 2>&1; echo $? > .moor/{label}.rc; }} | tee .moor/{label}.log\n__moor_rc=$(cat .moor/{label}.rc)\nexit \"${{__moor_rc:-1}}\"\n"
     )
 }

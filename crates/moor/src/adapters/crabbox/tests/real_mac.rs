@@ -20,12 +20,12 @@ use crate::env::Env;
 use crate::ops::common::host_cleanup;
 
 /// Variable that names the Mac and turns the check on.
-const HOST_VAR: &str = "MOOR_REAL_MAC_HOST";
+pub(super) const HOST_VAR: &str = "MOOR_REAL_MAC_HOST";
 /// The only directory on the Mac the check may create or remove things in.
-const WORK_ROOT: &str = "/Users/newman/.moor-boxes";
+pub(super) const WORK_ROOT: &str = "/Users/newman/.moor-boxes";
 
 /// Runs `test -e path` on the Mac over plain ssh.
-fn exists_on_mac(target: &str, path: &str) -> bool {
+pub(super) fn exists_on_mac(target: &str, path: &str) -> bool {
     Command::new("ssh")
         .args(["-o", "BatchMode=yes", target, "test", "-e", path])
         .status()
@@ -33,7 +33,7 @@ fn exists_on_mac(target: &str, path: &str) -> bool {
 }
 
 /// The address ssh would dial for `target`; crabbox does not read `~/.ssh/config`.
-fn dial_host(target: &str) -> String {
+pub(super) fn dial_host(target: &str) -> String {
     let out = Command::new("ssh").args(["-G", target]).output().unwrap();
     String::from_utf8(out.stdout)
         .unwrap()
@@ -43,15 +43,15 @@ fn dial_host(target: &str) -> String {
 }
 
 /// Frees every lease the check made, also when an assertion fails.
-struct Leases<'a> {
+pub(super) struct Leases<'a> {
     /// Driver that made the leases.
-    driver: &'a Crabbox,
+    pub(super) driver: &'a Crabbox,
     /// Mac as `user@host`.
-    target: &'a str,
+    pub(super) target: &'a str,
     /// Handles to release.
-    handles: Vec<BoxHandle>,
+    pub(super) handles: Vec<BoxHandle>,
     /// Lease directory names under [`WORK_ROOT`] to remove.
-    dirs: Vec<String>,
+    pub(super) dirs: Vec<String>,
 }
 
 impl Drop for Leases<'_> {
@@ -70,7 +70,13 @@ impl Drop for Leases<'_> {
 }
 
 /// Acquires a Box for task `n` named `name`.
-fn acquire(driver: &Crabbox, leases: &mut Leases<'_>, n: i64, name: &str, repo: &Path) -> Acquired {
+pub(super) fn acquire(
+    driver: &Crabbox,
+    leases: &mut Leases<'_>,
+    n: i64,
+    name: &str,
+    repo: &Path,
+) -> Acquired {
     let req = AcquireReq {
         provider: ProviderId::new("ssh"),
         task: TaskId::new(n),
@@ -88,7 +94,7 @@ fn acquire(driver: &Crabbox, leases: &mut Leases<'_>, n: i64, name: &str, repo: 
 }
 
 /// A one-commit git repo that crabbox can take as the worktree.
-fn fixture_repo(dir: &Path) {
+pub(super) fn fixture_repo(dir: &Path) {
     let git = |args: &[&str]| {
         let ok = Command::new("git")
             .args(["-c", "user.name=t", "-c", "user.email=t@t"])
@@ -104,7 +110,7 @@ fn fixture_repo(dir: &Path) {
 }
 
 /// The environment crabbox runs in: the Mac as a macOS static host under [`WORK_ROOT`].
-fn crabbox_env(target: &str) -> Env {
+pub(super) fn crabbox_env(target: &str) -> Env {
     let user = target.split_once('@').unwrap().0;
     Env::from_pairs(
         std::env::vars()
