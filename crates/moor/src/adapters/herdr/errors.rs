@@ -53,7 +53,10 @@ fn map_body(body: &ErrorBody) -> HerdrFailure {
             "herdr does not support this request; restart the moor herdr session".to_owned(),
         ));
     }
-    if body.code == "already_exists" || body.code.ends_with("_already_exists") {
+    if body.code == "already_exists"
+        || body.code.ends_with("_already_exists")
+        || body.code == "worktree_create_failed"
+    {
         return HerdrFailure::AlreadyExists(SurfaceError::Failed {
             summary: format!("herdr {}", body.code),
         });
