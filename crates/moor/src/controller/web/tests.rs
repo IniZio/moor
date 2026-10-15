@@ -8,8 +8,12 @@ use std::time::Duration;
 use moor_core::controller::ServerFrame;
 use moor_core::domain::task::TaskState;
 use moor_core::view::TaskView;
+use moor_core::{ErrorKind, ErrorView, Request, Response};
 
 use super::{start, Feed, FeedFactory, Web};
+
+#[path = "action_tests.rs"]
+mod action_tests;
 
 /// Token the test server requires.
 const TOKEN: &str = "s3cret-token";
@@ -17,10 +21,21 @@ const TOKEN: &str = "s3cret-token";
 /// Shared, appendable event list.
 type Events = Arc<Mutex<Vec<ServerFrame>>>;
 
-/// Feed over fixed tasks and a shared event list.
+/// Requests the fake feed was asked to run, in order.
+type Calls = Arc<Mutex<Vec<Request>>>;
+
+/// Task name for which the fake feed answers with a refusal.
+const REFUSED_TASK: &str = "refused";
+
+/// Refusal text the fake feed returns.
+const REFUSAL: &str = "repo nope is not known to the controller; known repos: app, web";
+
+/// Feed over fixed tasks, a shared event list and a recorded call log.
 struct Fake {
     /// Events served.
     events: Events,
+    /// Requests received through `call`.
+    calls: Calls,
 }
 
 impl Feed for Fake {
@@ -36,6 +51,33 @@ impl Feed for Fake {
             .take(limit)
             .cloned()
             .collect())
+    }
+
+    fn repos(&self) -> Vec<String> {
+        vec!["app".into(), "web".into()]
+    }
+
+    fn call(&self, req: Request) -> Response {
+        let refused = match &req {
+            Request::Start(r) => r.name.as_str() == REFUSED_TASK,
+            Request::Steer(r) => r.task.as_str() == REFUSED_TASK,
+            Request::Close(r) => r.task.as_str() == REFUSED_TASK,
+            _ => false,
+        };
+        self.calls.lock().unwrap().push(req);
+        if refused {
+            Response::err(
+                "start",
+                ErrorView {
+                    kind: ErrorKind::Refused,
+                    message: REFUSAL.into(),
+                    hints: vec!["moor repos".into()],
+                    context: vec![],
+                },
+            )
+        } else {
+            Response::ok("start", Some(serde_json::json!({"ok": true})))
+        }
     }
 }
 
@@ -73,22 +115,38 @@ fn event(cursor: i64) -> ServerFrame {
 
 /// Starts a server over a fake feed holding `seed` events.
 fn server(seed: Vec<ServerFrame>) -> (Web, Events) {
+    let (web, events, _) = server_with_calls(seed);
+    (web, events)
+}
+
+/// Like [`server`], also returning the log of requests the feed ran.
+fn server_with_calls(seed: Vec<ServerFrame>) -> (Web, Events, Calls) {
     let events: Events = Arc::new(Mutex::new(seed));
-    let shared = Arc::clone(&events);
+    let calls: Calls = Arc::default();
+    let (shared, log) = (Arc::clone(&events), Arc::clone(&calls));
     let feed: FeedFactory = Arc::new(move || {
         Ok(Box::new(Fake {
             events: Arc::clone(&shared),
+            calls: Arc::clone(&log),
         }) as Box<dyn Feed>)
     });
     let web = start(0, TOKEN.into(), feed, Duration::from_millis(10)).unwrap();
-    (web, events)
+    (web, events, calls)
 }
 
 /// Sends a request head and returns the open stream.
 fn open(web: &Web, path: &str, headers: &[&str]) -> TcpStream {
+    send_head(web, "GET", path, headers)
+}
+
+/// Writes a request head with `method` and returns the open stream; `Host` defaults to the bound address.
+fn send_head(web: &Web, method: &str, path: &str, headers: &[&str]) -> TcpStream {
     let mut s = TcpStream::connect(web.addr()).unwrap();
     s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
-    write!(s, "GET {path} HTTP/1.1\r\nHost: x\r\n").unwrap();
+    write!(s, "{method} {path} HTTP/1.1\r\n").unwrap();
+    if !headers.iter().any(|h| h.starts_with("Host:")) {
+        write!(s, "Host: {}\r\n", web.addr()).unwrap();
+    }
     for h in headers {
         write!(s, "{h}\r\n").unwrap();
     }
@@ -100,6 +158,21 @@ fn open(web: &Web, path: &str, headers: &[&str]) -> TcpStream {
 fn fetch(web: &Web, path: &str, headers: &[&str]) -> String {
     let mut out = String::new();
     open(web, path, headers).read_to_string(&mut out).unwrap();
+    out
+}
+
+/// POSTs `body` and returns the whole response; adds `Content-Length` unless given.
+fn post(web: &Web, path: &str, headers: &[&str], body: &str) -> String {
+    let len = format!("Content-Length: {}", body.len());
+    let mut all = headers.to_vec();
+    if !headers.iter().any(|h| h.starts_with("Content-Length")) {
+        all.push(&len);
+    }
+    let mut s = send_head(web, "POST", path, &all);
+    // The server may answer and close before reading an oversize body.
+    let _ = s.write_all(body.as_bytes());
+    let mut out = String::new();
+    let _ = s.read_to_string(&mut out);
     out
 }
 

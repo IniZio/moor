@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use moor_core::controller::ServerFrame;
 use moor_core::view::TaskView;
+use moor_core::{Request, Response};
 
 use super::web::{Feed, FeedFactory};
 use crate::env::Env;
@@ -23,6 +24,14 @@ impl Feed for MoorFeed {
 
     fn events_after(&self, after: i64, limit: usize) -> Result<Vec<ServerFrame>, String> {
         self.0.events_after(after, limit)
+    }
+
+    fn repos(&self) -> Vec<String> {
+        self.0.known_repo_names()
+    }
+
+    fn call(&self, req: Request) -> Response {
+        self.0.call(req)
     }
 }
 
