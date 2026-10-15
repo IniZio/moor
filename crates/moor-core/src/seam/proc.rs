@@ -70,7 +70,8 @@ impl Tool {
     }
 }
 
-/// Environment variables every child inherits; nothing else is inherited.
+/// Environment variables every child inherits; only crabbox gets more, see
+/// [`CRABBOX_ENV`] and [`CRABBOX_ENV_PREFIX`].
 pub const BASE_ENV: &[&str] = &[
     "PATH",
     "HOME",
@@ -78,6 +79,22 @@ pub const BASE_ENV: &[&str] = &[
     "SSH_AUTH_SOCK",
     "GIT_CEILING_DIRECTORIES",
 ];
+
+/// Extra host variables crabbox inherits so it can reach a local container
+/// runtime and find its config.
+pub const CRABBOX_ENV: &[&str] = &[
+    "DOCKER_HOST",
+    "DOCKER_CONTEXT",
+    "DOCKER_CONFIG",
+    "DOCKER_CERT_PATH",
+    "DOCKER_TLS_VERIFY",
+    "XDG_RUNTIME_DIR",
+    "XDG_CONFIG_HOME",
+    "USER",
+];
+
+/// Host variables with this name prefix are also inherited by crabbox.
+pub const CRABBOX_ENV_PREFIX: &str = "CRABBOX_";
 
 /// Per-call environment additions on top of [`BASE_ENV`].
 #[derive(Clone, Debug, Default)]

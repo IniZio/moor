@@ -48,6 +48,14 @@ impl Env {
         self.vars.get(key).map(String::as_str)
     }
 
+    /// Variables whose name starts with `prefix`.
+    pub fn with_prefix<'a>(&'a self, prefix: &'a str) -> impl Iterator<Item = (&'a str, &'a str)> {
+        self.vars
+            .iter()
+            .filter(move |(k, _)| k.starts_with(prefix))
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+    }
+
     /// Override the state directory (sets `MOOR_STATE_DIR`).
     #[must_use]
     pub fn with_state_dir(mut self, dir: &Path) -> Self {
