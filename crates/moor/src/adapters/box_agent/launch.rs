@@ -203,7 +203,8 @@ impl Launch<'_> {
             .map_err(|e| fail("script", &e))
     }
 
-    /// Stages the sandbox profile; a launch without a Proxy runs the agent unsandboxed.
+    /// Stages the sandbox profile. Without a Proxy a Linux Box runs the agent unsandboxed; a macOS
+    /// Box never gets here, since the launch is refused before upload.
     fn sandbox(&self) -> Result<Option<Sandboxed>, Failure> {
         let (Some(addr), Some(os)) = (&self.ctx.proxy, self.os) else {
             return Ok(None);
