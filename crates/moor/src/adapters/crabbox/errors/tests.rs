@@ -42,7 +42,7 @@ fn exit_and_text_table() {
         ),
         (
             nz(3, "bad config"),
-            failed("box release failed (crabbox configuration problem)"),
+            failed("box release failed (crabbox configuration problem): bad config"),
         ),
         (
             nz(5, "lost it"),
@@ -50,15 +50,15 @@ fn exit_and_text_table() {
         ),
         (
             nz(1, "release failed"),
-            failed("box release failed (crabbox exit 1)"),
+            failed("box release failed (crabbox exit 1): release failed"),
         ),
         (
             nz(4, "refused"),
-            failed("box release failed (crabbox exit 4)"),
+            failed("box release failed (crabbox exit 4): refused"),
         ),
         (
             nz(2, "usage: x"),
-            failed("box release failed (crabbox exit 2)"),
+            failed("box release failed (crabbox exit 2): usage: x"),
         ),
         (
             ProcError::Signalled(9),
@@ -86,7 +86,7 @@ fn op_names_the_summary() {
     let e = nz(1, "x");
     assert_eq!(
         map_error(Op::Acquire, None, &e),
-        failed("box acquire failed (crabbox exit 1)")
+        failed("box acquire failed (crabbox exit 1): x")
     );
     assert_eq!(
         map_error(Op::List, None, &e),
@@ -106,18 +106,51 @@ fn op_names_the_summary() {
 fn provider_named_in_exit_summary() {
     assert_eq!(
         map_error(Op::Release, Some("local-container"), &nz(1, "x")),
-        failed("box release failed on provider local-container (exit 1)")
+        failed("box release failed on provider local-container (exit 1): x")
     );
     assert_eq!(
         map_error(Op::Acquire, Some("aws"), &nz(1, "x")),
-        failed("box acquire failed on provider aws (exit 1)")
+        failed("box acquire failed on provider aws (exit 1): x")
     );
 }
 
 #[test]
-fn acquire_failure_renders_moor_wording_alone() {
-    let e = map_error(Op::Acquire, Some("aws"), &nz(1, "SECRETTOKEN123 boom"));
+fn release_failure_shows_stderr_tail() {
+    let e = map_error(
+        Op::Release,
+        Some("local-container"),
+        &nz(
+            1,
+            "starting\n\n  remove local-container host work root ...: permission denied  \n\n",
+        ),
+    );
+    assert_eq!(
+        e.to_string(),
+        "box release failed on provider local-container (exit 1): starting; remove local-container host work root ...: permission denied"
+    );
+}
+
+#[test]
+fn long_stderr_is_capped_keeping_the_end() {
+    let text = format!("{}\nthe real cause", "a".repeat(1000));
+    let summary = map_error(Op::Acquire, Some("aws"), &nz(1, &text)).to_string();
+    let tail = summary
+        .strip_prefix("box acquire failed on provider aws (exit 1): …")
+        .expect("prefix");
+    assert!(tail.chars().count() <= 299, "{summary}");
+    assert!(tail.ends_with("; the real cause"), "{summary}");
+}
+
+#[test]
+fn empty_stderr_adds_no_tail() {
+    let e = map_error(Op::Acquire, Some("aws"), &nz(1, " \n\n"));
     assert_eq!(e.to_string(), "box acquire failed on provider aws (exit 1)");
+}
+
+#[test]
+fn other_ops_carry_no_tail() {
+    let e = map_error(Op::List, None, &nz(1, "boom"));
+    assert_eq!(e.to_string(), "box list failed (crabbox exit 1)");
 }
 
 #[test]
@@ -134,8 +167,8 @@ fn raw_stderr_never_leaks() {
         for t in &texts {
             let out = format!(
                 "{:?} {}",
-                map_error(Op::Acquire, None, &nz(code, t)),
-                map_error(Op::Acquire, None, &nz(code, t))
+                map_error(Op::List, None, &nz(code, t)),
+                map_error(Op::List, None, &nz(code, t))
             );
             assert!(!out.contains(token), "{code} {t}: {out}");
         }
