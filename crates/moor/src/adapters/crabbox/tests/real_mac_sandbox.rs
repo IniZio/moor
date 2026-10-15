@@ -24,7 +24,7 @@ use crate::adapters::box_agent::sandbox::{self, SandboxInput};
 use crate::adapters::proc::{SystemProc, ToolPaths};
 
 /// Runs `script` under `sh` on the Mac over plain ssh and returns its exit code and stdout.
-fn ssh_sh(target: &str, script: &str) -> (i32, String) {
+pub(super) fn ssh_sh(target: &str, script: &str) -> (i32, String) {
     let out = Command::new("ssh")
         .args(["-o", "BatchMode=yes", target, "sh", "-c", &quote(script)])
         .stderr(Stdio::null())

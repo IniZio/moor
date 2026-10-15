@@ -17,6 +17,7 @@ use crate::testing::proc::{Reply, ScriptedProc};
 
 mod real_mac;
 mod real_mac_backend;
+mod real_mac_proxy;
 mod real_mac_sandbox;
 mod workdir;
 
