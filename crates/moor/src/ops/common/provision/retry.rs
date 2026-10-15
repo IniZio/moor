@@ -6,7 +6,7 @@ use moor_core::config::Flags;
 use moor_core::domain::decision::{Decision, Intent, IntentChange};
 use moor_core::domain::task::{SetupOutcome, TaskInput};
 
-use super::outcome::dotfiles_failed;
+use super::outcome::{dotfiles_failed, with_egress_hint};
 use super::Provisioned;
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -38,7 +38,16 @@ pub(super) fn retry_dotfiles(
     });
     let dotfiles = match run {
         Ok(run) => run,
-        Err(f) => return Err(dotfiles_failed(cx, store, row.id, true, None, f)),
+        Err(f) => {
+            return Err(dotfiles_failed(
+                cx,
+                store,
+                row.id,
+                true,
+                None,
+                with_egress_hint(cx, &cfg, f),
+            ))
+        }
     };
     let ok = TaskInput::BoxReady {
         setup: SetupOutcome::Ok,

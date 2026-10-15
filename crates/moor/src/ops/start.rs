@@ -71,7 +71,7 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
         model: req.model.clone(),
     };
     let cfg = settings(cx, facts.bound.as_deref().unwrap_or(&facts.repo), &flags)?;
-    egress_plan(&cfg, egress_support(cx, &cfg)?)?;
+    egress_plan(cx.engine().egress_hosts(), &cfg, egress_support(cx, &cfg)?)?;
     if let Some(reason) =
         preflight::rejection(cx, &cfg, facts.bound.as_deref().unwrap_or(&facts.repo))
     {

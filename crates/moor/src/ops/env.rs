@@ -25,7 +25,12 @@ pub(crate) fn run(cx: &Cx, req: &EnvReq) -> Result<EnvView, CommandError> {
     let settings = facts::settings(cx, &top, &Flags::default())?;
     let support = egress_support(cx, &settings).unwrap_or(EgressSupport::None);
     let applies = provider_applies_policy(support, settings.enforce_egress);
-    let egress = egress_item(&settings.user_egress, &settings.egress, applies)?;
+    let egress = egress_item(
+        cx.engine().egress_hosts(),
+        &settings.user_egress,
+        &settings.egress,
+        applies,
+    )?;
     let env_egress = EnvEgress {
         mode: egress.name.to_owned(),
         hosts: egress.hosts.clone(),

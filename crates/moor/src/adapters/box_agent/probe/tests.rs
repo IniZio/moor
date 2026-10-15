@@ -21,6 +21,10 @@ use crate::testing::surface::FakeSurface;
 struct Stub;
 
 impl AgentProfile for Stub {
+    fn egress_hosts(&self) -> &'static [&'static str] {
+        &[]
+    }
+
     fn parse_hook(&self, raw: &[u8]) -> Option<HookRecord> {
         let kind = match raw {
             b"busy" => HookKind::Busy,

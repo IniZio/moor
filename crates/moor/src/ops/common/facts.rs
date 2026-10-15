@@ -37,11 +37,13 @@ pub(crate) fn egress_support(cx: &Cx, cfg: &TaskSettings) -> Result<EgressSuppor
 /// # Errors
 /// A repo `egress` entry that is not a valid domain.
 pub(crate) fn egress_plan(
+    agent: &[&str],
     cfg: &TaskSettings,
     support: EgressSupport,
 ) -> Result<EgressPlan, CommandError> {
     if provider_applies_policy(support, cfg.enforce_egress) {
         Ok(EgressPlan::Allow(effective_allow_list(
+            agent,
             &cfg.user_egress,
             &cfg.egress,
         )?))

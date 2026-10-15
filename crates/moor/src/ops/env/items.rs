@@ -35,7 +35,14 @@ pub(crate) fn assemble(
     items.extend(mcp);
 
     let provider = s.provider.value.as_str();
+    let agent_hosts = cx.engine().egress_hosts();
     items.push(plain(EnvKind::Egress, egress.name, &egress.detail));
+    if egress.name == "allow" && !agent_hosts.is_empty() {
+        items.push(EnvItem {
+            source: Layer::Agent,
+            ..plain(EnvKind::Egress, "agent", &agent_hosts.join(", "))
+        });
+    }
     if let Some(note) = unenforced_note(support, s.enforce_egress) {
         items.push(plain(EnvKind::Egress, "enforce", note));
     }

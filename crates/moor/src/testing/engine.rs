@@ -32,6 +32,7 @@ struct State {
     later_texts: VecDeque<String>,
     fail_transcript: Option<EngineError>,
     on_transcript: Option<Arc<dyn Fn() + Send + Sync>>,
+    egress_hosts: &'static [&'static str],
 }
 
 /// Scripted Engine: probes are served per session id and counted.
@@ -48,6 +49,12 @@ impl FakeEngine {
 
     fn st(&self) -> MutexGuard<'_, State> {
         self.state.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// The hosts the agent reports it needs.
+    pub(crate) fn egress_hosts(self, hosts: &'static [&'static str]) -> Self {
+        self.st().egress_hosts = hosts;
+        self
     }
 
     /// Every probe of `session` returns `p`.
@@ -145,6 +152,10 @@ impl FakeEngine {
 }
 
 impl Engine for FakeEngine {
+    fn egress_hosts(&self) -> &'static [&'static str] {
+        self.st().egress_hosts
+    }
+
     fn probe(&self, s: &SessionRef, _deadline: Deadline) -> Result<Probes, EngineError> {
         let mut st = self.st();
         *st.counts.entry(s.id.clone()).or_default() += 1;

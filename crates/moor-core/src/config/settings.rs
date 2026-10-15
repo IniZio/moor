@@ -26,6 +26,8 @@ pub enum Layer {
     User,
     /// A built-in default.
     Default,
+    /// The agent profile.
+    Agent,
     /// Read from git itself (the effective config for the Task worktree).
     Git,
 }
@@ -39,6 +41,7 @@ impl Layer {
             Self::Repo => "repo",
             Self::User => "user",
             Self::Default => "default",
+            Self::Agent => "agent",
             Self::Git => "git",
         }
     }
