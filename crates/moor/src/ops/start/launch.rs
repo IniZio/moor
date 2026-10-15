@@ -108,6 +108,7 @@ pub(super) fn begin(
             return record_failure(cx, store, id, &e);
         }
     };
+    let repo_env = plan.env.clone();
     let (spec, ep) = match ensure_proxy(cx, row, launch, plan) {
         Ok(pair) => pair,
         Err(message) => {
@@ -123,7 +124,7 @@ pub(super) fn begin(
         box_port: ep.box_port,
         nonce: ep.nonce,
         ca_pem: ep.ca_pem,
-        box_env: box_env(&spec.rules),
+        box_env: merged_env(repo_env, box_env(&spec.rules)),
     }));
     launch.origin = origin;
     let launch = &launch;
@@ -131,6 +132,16 @@ pub(super) fn begin(
         Ok(session) => record_session(cx, store, row, launch, session),
         Err(e) => record_failure(cx, store, id, &e),
     }
+}
+
+/// The repo `env` followed by the rule `env`; a rule's value replaces the repo's of the same name.
+fn merged_env(repo: Vec<(String, String)>, rules: Vec<(String, String)>) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = repo
+        .into_iter()
+        .filter(|(name, _)| !rules.iter().any(|(r, _)| r == name))
+        .collect();
+    out.extend(rules);
+    out
 }
 
 /// Records the launched `session` on the Task `row` and reports it.

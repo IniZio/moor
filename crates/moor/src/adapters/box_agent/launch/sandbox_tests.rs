@@ -93,7 +93,9 @@ fn nono_put(d: &FakeDriver) -> Option<(BoxPath, Vec<u8>, u32)> {
 fn a_proxy_launch_wraps_the_agent_in_the_sandbox() {
     let (_, s) = launch_with_proxy();
     let script = script_of(&pane_line(&s));
-    let nono = script.find("'nono' '-s' 'run' '--profile'").expect(&script);
+    let nono = script
+        .find("'/home/box/.local/bin/nono' '-s' 'run' '--profile'")
+        .expect(&script);
     let port = script.find("'--open-port' '4567'").expect(&script);
     let agent = script.rfind("'claude'").expect(&script);
     assert!(nono < port && port < agent, "{script}");
@@ -238,4 +240,71 @@ fn a_failed_script_step_removes_the_temp_dir() {
     let b = Scratch::new();
     assert!(!b.spawn(&b.script("false")).wait().unwrap().success());
     assert!(!b.path("home/.moor-tmp-t1-x").exists());
+}
+
+#[test]
+fn the_proxy_env_is_exported_and_its_names_are_allowed_in_the_profile() {
+    let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new("/r")));
+    let addr = ProxyAddr {
+        box_env: vec![("APP_MODE".to_owned(), "dev".to_owned())],
+        ..proxy_addr()
+    };
+    let req = LaunchReq {
+        proxy: Some(Arc::new(addr)),
+        ..req_with_proxy(&s)
+    };
+    agent(&d, &s).launch(&req).unwrap();
+    let profile = d
+        .puts()
+        .into_iter()
+        .find(|p| p.1.as_str().ends_with("nono-profile.json"))
+        .unwrap();
+    assert!(String::from_utf8_lossy(&profile.2).contains("\"APP_MODE\""));
+    let script = script_of(&pane_line(&s));
+    assert!(!script.contains("export APP_MODE="), "{script}");
+}
+
+#[test]
+fn repo_env_reaches_the_agent_only_through_the_profile() {
+    let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new("/r")));
+    let value = "it's\n$(id) `id`";
+    let addr = ProxyAddr {
+        box_env: vec![
+            ("APP_NOTE".to_owned(), value.to_owned()),
+            ("NONO_ALLOW".to_owned(), "/".to_owned()),
+            ("XDG_CONFIG_HOME".to_owned(), "/tmp/x".to_owned()),
+        ],
+        ..proxy_addr()
+    };
+    let req = LaunchReq {
+        proxy: Some(Arc::new(addr)),
+        ..req_with_proxy(&s)
+    };
+    agent(&d, &s).launch(&req).unwrap();
+    let script = script_of(&pane_line(&s));
+    for name in ["APP_NOTE", "NONO_ALLOW"] {
+        assert!(!script.contains(&format!("export {name}=")), "{script}");
+    }
+    assert!(!script.contains("/tmp/x"), "{script}");
+    assert!(!script.contains("$(id)"), "{script}");
+    assert!(script.contains("unset \"$moor_v\""), "{script}");
+    assert!(
+        script.contains("export XDG_CONFIG_HOME=\"$HOME/.config\""),
+        "{script}"
+    );
+    let harden = script.find("XDG_CONFIG_HOME").expect(&script);
+    assert!(
+        harden < script.find("'--profile'").expect(&script),
+        "{script}"
+    );
+    let profile = d
+        .puts()
+        .into_iter()
+        .find(|p| p.1.as_str().ends_with("nono-profile.json"))
+        .unwrap();
+    let doc: serde_json::Value = serde_json::from_slice(&profile.2).unwrap();
+    assert_eq!(
+        doc.pointer("/environment/set_vars/APP_NOTE"),
+        Some(&serde_json::Value::from(value))
+    );
 }

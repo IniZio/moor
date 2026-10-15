@@ -1,5 +1,7 @@
 //! The nono sandbox the Box agent runs under: the check script, the profile and the wrapping argv.
 
+use std::collections::BTreeMap;
+
 use moor_core::name::BoxPath;
 use serde_json::json;
 
@@ -64,6 +66,8 @@ pub(super) struct SandboxInput<'a> {
     pub(super) tmp: &'a BoxPath,
     /// Extra names to pass: agent env and rule `box_env` names.
     pub(super) env_names: Vec<String>,
+    /// Variables the sandbox sets for the agent alone: repo `env` and rule `box_env`.
+    pub(super) set_vars: Vec<(String, String)>,
 }
 
 /// True when `name` may be passed into the sandbox.
@@ -117,7 +121,10 @@ pub(super) fn profile(input: &SandboxInput) -> String {
             ],
             "read_file": ["/etc/gitconfig", at(".gitconfig")],
         },
-        "environment": { "allow_vars": allow_vars(&input.env_names) },
+        "environment": {
+            "allow_vars": allow_vars(&input.env_names),
+            "set_vars": input.set_vars.iter().cloned().collect::<BTreeMap<_, _>>(),
+        },
     });
     serde_json::to_string_pretty(&doc).unwrap_or_default()
 }
@@ -145,9 +152,24 @@ pub(super) fn check_failure(code: i32) -> String {
     }
 }
 
-/// The argv that runs `agent` under nono with the profile and the Proxy port.
-pub(super) fn wrap(profile_path: &BoxPath, box_port: u16, agent: &[String]) -> Vec<String> {
-    ["nono", "-s", "run", "--profile"]
+/// Shell lines run before the sandbox starts: no `NONO_*` setting from the environment reaches it, and
+/// the profile lookup is pinned to the user's own config directory, which the agent cannot write.
+pub(super) fn harden_lines() -> Vec<String> {
+    vec![
+        "for moor_v in $(env | sed -n 's/^\\(NONO_[A-Za-z0-9_]*\\)=.*/\\1/p'); do unset \"$moor_v\"; done; unset moor_v"
+            .to_owned(),
+        "export XDG_CONFIG_HOME=\"$HOME/.config\"".to_owned(),
+    ]
+}
+
+/// The argv that runs `agent` under the sandbox tool at `launcher` with the profile and the Proxy port.
+pub(super) fn wrap(
+    launcher: &BoxPath,
+    profile_path: &BoxPath,
+    box_port: u16,
+    agent: &[String],
+) -> Vec<String> {
+    [launcher.as_str(), "-s", "run", "--profile"]
         .into_iter()
         .map(str::to_owned)
         .chain([

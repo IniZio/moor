@@ -3,11 +3,13 @@
 use std::path::Path;
 use std::time::Duration;
 
+use moor_core::config::check::{agent_env_reserved, credential_like_env};
 use moor_core::config::egress::effective_allow_list;
 use moor_core::config::proxy::{resolve_rules, ResolvedRule};
 use moor_core::config::Flags;
 use moor_core::seam::forge::ForgeRepo;
 use moor_core::seam::proc::{Deadline, ProcSpec, Tool};
+use moor_core::Warning;
 
 use crate::cx::Cx;
 use crate::ops::common::facts::settings;
@@ -36,6 +38,8 @@ pub(crate) struct ProxyPlan {
     pub(crate) rules: Vec<ResolvedRule>,
     /// The Box egress allow-list, without the rules' hosts.
     pub(crate) allow: Vec<String>,
+    /// The repo `env` the agent may see: credential-looking names are dropped.
+    pub(crate) env: Vec<(String, String)>,
 }
 
 /// Resolves the proxy plan of the worktree whose `origin` is `origin`.
@@ -54,7 +58,26 @@ pub(crate) fn plan(cx: &Cx, worktree: &Path, origin: Option<&str>) -> Result<Pro
     let task = settings(cx, worktree, &Flags::default()).map_err(|e| e.error.to_string())?;
     let allow = effective_allow_list(cx.engine().egress_hosts(), &task.user_egress, &task.egress)
         .map_err(|e| e.to_string())?;
-    Ok(ProxyPlan { repo, rules, allow })
+    let (kept, dropped): (Vec<_>, Vec<_>) = task
+        .env
+        .iter()
+        .partition(|(name, _)| !(credential_like_env(name) || agent_env_reserved(name)));
+    for (name, _) in dropped {
+        cx.warn(Warning {
+            code: "agent_env_dropped".to_owned(),
+            message: format!("env {name} looks like a credential or is set by moor, so it is not passed to the agent"),
+        });
+    }
+    let env = kept
+        .into_iter()
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    Ok(ProxyPlan {
+        repo,
+        rules,
+        allow,
+        env,
+    })
 }
 
 /// The non-secret Box env of `rules` in rule order; a later rule's value replaces an earlier one.

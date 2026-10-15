@@ -178,9 +178,7 @@ impl Launch<'_> {
         };
         let (req, cred) = (self.req, self.cred);
         install::ensure(self.driver, req, (&self.ctx.home, cred), self.release)?;
-        let env_names = (self.profile.env(self.ctx).into_iter().map(|v| v.name))
-            .chain(addr.box_env.iter().map(|(name, _)| name.clone()))
-            .collect();
+        let env_names = (self.profile.env(self.ctx).into_iter().map(|v| v.name)).collect();
         let profile = sandbox::profile(&SandboxInput {
             box_port: addr.box_port,
             workdir: &self.ctx.workdir,
@@ -188,6 +186,7 @@ impl Launch<'_> {
             cred,
             tmp: self.tmp,
             env_names,
+            set_vars: addr.box_env.clone(),
         });
         let at = BoxPath::under(cred.as_str(), sandbox::PROFILE_FILE)
             .map_err(|e| fail("sandbox", &e))?;
@@ -317,9 +316,13 @@ fn script(
         lines.insert(5, remove);
     }
     lines.extend(proxy.iter().cloned());
+    let launcher = BoxPath::under(ctx.home.as_str(), ".local/bin/nono")?;
+    if sandbox.is_some() {
+        lines.extend(sandbox::harden_lines());
+    }
     let agent = sandbox.map_or_else(
         || agent.clone(),
-        |(at, port)| sandbox::wrap(at, *port, &agent),
+        |(at, port)| sandbox::wrap(&launcher, at, *port, &agent),
     );
     lines.push(format!("cd {} && {}", quote(workdir), command_line(&agent)));
     Ok(lines.join("\n"))

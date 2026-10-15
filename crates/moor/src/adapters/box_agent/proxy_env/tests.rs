@@ -108,8 +108,6 @@ fn the_lines_never_contain_the_nonce_and_carry_the_exports() {
         "export http_proxy=\"http://moor:${moor_nonce}@127.0.0.1:4321\"",
         "export NODE_USE_ENV_PROXY=1",
         "export CLAUDE_CODE_OAUTH_TOKEN='moor-proxy'",
-        "export GH_TOKEN='moor-proxy'",
-        "export QUOTED='it'\\''s'",
         "export GIT_CONFIG_COUNT=2",
         "export GIT_CONFIG_KEY_0=remote.moor.url",
         "export GIT_CONFIG_VALUE_0='https://github.com/o/n.git'",
@@ -132,11 +130,17 @@ fn no_origin_unsets_the_git_config() {
 }
 
 #[test]
-fn the_profile_env_comes_before_the_tool_env() {
+fn the_profile_env_comes_after_the_proxy_env() {
     let lines = lines_for(None);
     let at = |w: &str| lines.iter().position(|l| l.contains(w)).unwrap();
-    assert!(at("CLAUDE_CODE_OAUTH_TOKEN") < at("export GH_TOKEN="));
     assert!(at("NODE_USE_ENV_PROXY") < at("CLAUDE_CODE_OAUTH_TOKEN"));
+}
+
+#[test]
+fn rule_and_repo_env_is_left_to_the_sandbox_profile() {
+    let text = lines_for(None).join("\n");
+    assert!(!text.contains("QUOTED"), "{text}");
+    assert!(!text.contains("export GH_TOKEN="), "{text}");
 }
 
 #[test]
@@ -152,9 +156,6 @@ fn an_empty_nonce_or_bad_name_is_refused() {
         value: Secret::new(b"x".to_vec()),
     }];
     assert!(script_lines(&c, &proxy(), &bad, None).is_err());
-    let mut bad_box = proxy();
-    bad_box.box_env = vec![("A-B".to_owned(), "x".to_owned())];
-    assert!(script_lines(&c, &bad_box, &[], None).is_err());
     let binary = [EnvVar {
         name: "A".to_owned(),
         value: Secret::new(vec![0xff]),

@@ -3,7 +3,9 @@ use std::process::Command;
 use moor_core::name::BoxPath;
 use serde_json::Value;
 
-use super::{check_failure, check_script, profile, wrap, SandboxInput, NOT_INSTALLED};
+use super::{
+    check_failure, check_script, harden_lines, profile, wrap, SandboxInput, NOT_INSTALLED,
+};
 
 fn path(s: &str) -> BoxPath {
     BoxPath::restore(s).unwrap()
@@ -19,6 +21,7 @@ fn doc(env_names: &[&str]) -> Value {
         cred: &c,
         tmp: &tmp,
         env_names: env_names.iter().map(|s| (*s).to_owned()).collect(),
+        set_vars: vec![("APP_MODE".to_owned(), "it's".to_owned())],
     };
     serde_json::from_str(&profile(&input)).unwrap()
 }
@@ -146,6 +149,7 @@ fn check_script_exits_not_installed_without_nono() {
 #[test]
 fn wrap_puts_agent_after_separator() {
     let argv = wrap(
+        &path("/home/u/.local/bin/nono"),
         &path("/tmp/cred/nono-profile.json"),
         4321,
         &["claude".to_owned(), "-p".to_owned()],
@@ -153,7 +157,7 @@ fn wrap_puts_agent_after_separator() {
     assert_eq!(
         argv,
         [
-            "nono",
+            "/home/u/.local/bin/nono",
             "-s",
             "run",
             "--profile",
@@ -173,4 +177,21 @@ fn check_failure_names_the_cause() {
     assert!(check_failure(5).contains("Landlock"));
     assert!(check_failure(NOT_INSTALLED).contains("nono 0.80.0 is not installed"));
     assert!(check_failure(9).contains("exited 9"));
+}
+
+#[test]
+fn set_vars_carry_the_values_byte_exact() {
+    let d = doc(&[]);
+    assert_eq!(at(&d, "/environment/set_vars/APP_MODE"), "it's");
+}
+
+#[test]
+fn harden_lines_unset_nono_names_and_pin_the_config_home() {
+    let text = harden_lines().join("\n");
+    assert!(text.contains("NONO_"), "{text}");
+    assert!(text.contains("unset"), "{text}");
+    assert!(
+        text.contains("export XDG_CONFIG_HOME=\"$HOME/.config\""),
+        "{text}"
+    );
 }
