@@ -5,6 +5,7 @@ pub(crate) mod claude;
 mod launch;
 mod probe;
 mod proxy_env;
+mod sandbox;
 mod steer;
 mod transcript;
 

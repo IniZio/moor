@@ -15,11 +15,14 @@ use moor_core::Secret;
 use super::brief::{render, BriefInput};
 use super::probe::HOOK_FILE;
 use super::proxy_env;
+use super::sandbox::{self, SandboxInput};
 
 /// Where the brief lands, relative to the Box workdir.
 const BRIEF_FILE: &str = ".moor/brief.md";
 /// Time allowed for removing the credential directory.
 const CLEANUP_DEADLINE: Duration = Duration::from_secs(30);
+/// Time allowed for installing the sandbox tool on the Box.
+const INSTALL_DEADLINE: Duration = Duration::from_secs(300);
 
 /// A failed step and why.
 struct Failure {
@@ -150,6 +153,53 @@ impl Launch<'_> {
             .map_err(|e| fail("script", &e))
     }
 
+    /// Installs the sandbox tool and stages its profile, returning the profile's path and the
+    /// tunnel port to open; a launch without a Proxy has no tunnel port, so the agent runs unsandboxed.
+    fn sandbox(&self) -> Result<Option<(BoxPath, u16)>, Failure> {
+        let Some(addr) = &self.ctx.proxy else {
+            return Ok(None);
+        };
+        let (req, cred) = (self.req, self.cred);
+        let spec = ExecSpec {
+            argv: vec!["sh".to_owned(), "-c".to_owned(), sandbox::install_script()],
+            env: Vec::new(),
+            cwd: None,
+            sync: SyncMode::None,
+            output: None,
+            host_cwd: Some(req.worktree.clone()),
+            class: None,
+        };
+        match self
+            .driver
+            .exec(&req.handle, &spec, Deadline(INSTALL_DEADLINE))
+        {
+            Ok(ExecOutcome::Exited { code: 0 }) => {}
+            Ok(ExecOutcome::Exited { code }) => {
+                return Err(fail("sandbox", &sandbox::install_failure(code)));
+            }
+            Ok(ExecOutcome::Interrupted) => {
+                return Err(fail("sandbox", &"the sandbox install was interrupted"));
+            }
+            Err(e) => return Err(fail("sandbox", &format!("the sandbox install failed: {e}"))),
+        }
+        let env_names = (self.profile.env(self.ctx).into_iter().map(|v| v.name))
+            .chain(addr.box_env.iter().map(|(name, _)| name.clone()))
+            .collect();
+        let profile = sandbox::profile(&SandboxInput {
+            box_port: addr.box_port,
+            workdir: &self.ctx.workdir,
+            home: &self.ctx.home,
+            cred,
+            env_names,
+        });
+        let at = BoxPath::under(cred.as_str(), sandbox::PROFILE_FILE)
+            .map_err(|e| fail("sandbox", &e))?;
+        self.driver
+            .put_file(&req.handle, &at, profile.as_bytes(), 0o600, &req.worktree)
+            .map_err(|e| fail("sandbox", &e))?;
+        Ok(Some((at, addr.box_port)))
+    }
+
     /// Puts the files in the Box and opens the tab.
     fn deliver(&self, connect: &[String]) -> Result<PaneRef, Failure> {
         let Self {
@@ -160,6 +210,7 @@ impl Launch<'_> {
             ctx,
             cred,
         } = self;
+        let sandboxed = self.sandbox()?;
         let hooks = profile.hook_writer(ctx).map_err(|e| fail("hooks", &e))?;
         let preseed = profile.preseed(ctx).map_err(|e| fail("preseed", &e))?;
         let brief = render(&BriefInput {
@@ -192,7 +243,8 @@ impl Launch<'_> {
         }
         let argv = self.argv();
         let lines = self.proxy_lines()?;
-        let script = script(cred, ctx, &hooks, &preseed, &argv, &lines);
+        let wrap = sandboxed.as_ref().map(|(at, port)| (at, *port));
+        let script = script(cred, ctx, &hooks, &preseed, &argv, (&lines, wrap));
         let script = script.map_err(|e| fail("script", &e))?;
         let line = format!(
             "{} {}; echo \"moor: agent exited $?\"",
@@ -216,14 +268,14 @@ impl Launch<'_> {
 /// The script the Box runs under `sh`; the credential directory goes once the brief is
 /// installed, and at exit or on a hangup, interrupt or terminate before then. With
 /// `proxy` lines the directory stays until the agent exits, since the CA bundle and the CA
-/// certificate live in it.
+/// certificate live in it. With a `sandbox` profile and port the agent runs under `nono`.
 fn script(
     cred: &BoxPath,
     ctx: &LaunchCtx,
     hooks: &BoxSetup,
     preseed: &BoxSetup,
     argv: &[String],
-    proxy: &[String],
+    (proxy, sandbox): (&[String], Option<(&BoxPath, u16)>),
 ) -> Result<String, NameError> {
     let workdir = ctx.workdir.as_str();
     let moor = quote(BoxPath::under(workdir, ".moor")?.as_str());
@@ -251,6 +303,10 @@ fn script(
         lines.insert(5, remove);
     }
     lines.extend(proxy.iter().cloned());
+    let agent = sandbox.map_or_else(
+        || agent.clone(),
+        |(at, port)| sandbox::wrap(at, port, &agent),
+    );
     lines.push(format!("cd {} && {}", quote(workdir), command_line(&agent)));
     Ok(lines.join("\n"))
 }
