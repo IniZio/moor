@@ -243,3 +243,92 @@ fn without_an_origin_only_the_rules_that_need_no_repo_remain() {
         Some("moor-proxy")
     );
 }
+
+/// Starts `demo` in a repo whose `.moor.yaml` is `yaml`, with the origin `o/r`; returns the first launch's env.
+fn repo_env_launch(yaml: &str) -> (World, Vec<(String, String)>) {
+    let repo = tempfile::tempdir().unwrap();
+    std::fs::write(repo.path().join(".moor.yaml"), yaml).unwrap();
+    let engine = Arc::new(FakeEngine::new());
+    let mut w = super::world_with(
+        FakeDriver::new(),
+        repo.path(),
+        crate::testing::cx::fake_config(),
+    );
+    w.cx = w.cx.with_engine(engine.clone()).with_forge(Arc::new(
+        FakeForge::new().with_repo("git@github.com:o/r.git", ForgeRepo::new("o", "r")),
+    ));
+    w.proc.on(
+        Tool::Git,
+        &["remote", "get-url", "origin"],
+        Reply::Ok("git@github.com:o/r.git\n".into()),
+    );
+    run(&w.cx, &goal_req()).unwrap();
+    let env = engine
+        .launches()
+        .first()
+        .unwrap()
+        .proxy
+        .as_ref()
+        .unwrap()
+        .box_env
+        .clone();
+    (w, env)
+}
+
+#[test]
+fn a_rule_env_value_wins_over_the_repo_env_of_the_same_name() {
+    let (_w, env) = repo_env_launch("env:\n  GH_REPO: other/repo\n");
+    assert_eq!(env_of(&env, "GH_REPO"), Some("o/r"));
+    assert_eq!(env.iter().filter(|(k, _)| k == "GH_REPO").count(), 1);
+}
+
+#[test]
+fn repo_env_never_sets_proxy_managed_or_loader_names() {
+    let names = [
+        "HTTPS_PROXY",
+        "no_proxy",
+        "SSL_CERT_FILE",
+        "LD_PRELOAD",
+        "HOME",
+        "NODE_OPTIONS",
+    ];
+    let yaml = names.map(|n| format!("  {n}: x\n")).concat();
+    let (w, env) = repo_env_launch(&format!("env:\n  KEEP: one\n{yaml}"));
+    assert_eq!(env_of(&env, "KEEP"), Some("one"));
+    for n in names {
+        assert_eq!(env_of(&env, n), None, "{n}");
+    }
+    let dropped = (w.cx.take_warnings().iter())
+        .filter(|x| x.code == "agent_env_dropped")
+        .count();
+    assert_eq!(dropped, names.len());
+}
+
+#[test]
+fn repo_env_reaches_the_agent_and_credential_looking_names_are_dropped() {
+    let repo = tempfile::tempdir().unwrap();
+    std::fs::write(
+        repo.path().join(".moor.yaml"),
+        "env:\n  APP_MODE: dev\n  DEPLOY_TOKEN: real\n  api_key: real\n",
+    )
+    .unwrap();
+    let engine = Arc::new(FakeEngine::new());
+    let mut w = super::world_with(
+        FakeDriver::new(),
+        repo.path(),
+        crate::testing::cx::fake_config(),
+    );
+    w.cx = w.cx.with_engine(engine.clone());
+    run(&w.cx, &goal_req()).unwrap();
+    let launches = engine.launches();
+    let addr = launches.first().unwrap().proxy.as_ref().unwrap();
+    assert_eq!(env_of(&addr.box_env, "APP_MODE"), Some("dev"));
+    assert_eq!(env_of(&addr.box_env, "DEPLOY_TOKEN"), None);
+    assert_eq!(env_of(&addr.box_env, "api_key"), None);
+    let dropped =
+        w.cx.take_warnings()
+            .iter()
+            .filter(|x| x.code == "agent_env_dropped")
+            .count();
+    assert_eq!(dropped, 2);
+}

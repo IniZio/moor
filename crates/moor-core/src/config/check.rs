@@ -63,6 +63,61 @@ pub fn not_gh_token(s: &str) -> Result<(), String> {
     }
 }
 
+/// True when `s` looks like it names a credential, so it never reaches the agent.
+#[must_use]
+pub fn credential_like_env(s: &str) -> bool {
+    const MARKS: [&str; 6] = ["TOKEN", "SECRET", "KEY", "PASSWORD", "PASSWD", "CREDENTIAL"];
+    let upper = s.to_ascii_uppercase();
+    MARKS.iter().any(|m| upper.contains(m))
+}
+
+/// True when `s` is set by moor or the sandbox profile, or can load code into the sandbox
+/// launcher, so a repo `env` may not set it for the agent.
+#[must_use]
+pub fn agent_env_reserved(s: &str) -> bool {
+    const FIXED: [&str; 33] = [
+        "PATH",
+        "HOME",
+        "USER",
+        "SHELL",
+        "TERM",
+        "LANG",
+        "LC_ALL",
+        "TMPDIR",
+        "COLORTERM",
+        "HTTPS_PROXY",
+        "HTTP_PROXY",
+        "https_proxy",
+        "http_proxy",
+        "NO_PROXY",
+        "no_proxy",
+        "NODE_USE_ENV_PROXY",
+        "SSL_CERT_FILE",
+        "CURL_CA_BUNDLE",
+        "REQUESTS_CA_BUNDLE",
+        "GIT_SSL_CAINFO",
+        "NODE_EXTRA_CA_CERTS",
+        "GCONV_PATH",
+        "BASH_ENV",
+        "ENV",
+        "NODE_OPTIONS",
+        "IFS",
+        "PS4",
+        "SHELLOPTS",
+        "BASHOPTS",
+        "CDPATH",
+        "NODE_PATH",
+        "LOCPATH",
+        "GLIBC_TUNABLES",
+    ];
+    FIXED.contains(&s)
+        || s.starts_with("LD_")
+        || s.starts_with("NONO_")
+        || s.starts_with("XDG_")
+        || s.starts_with("GIT_CONFIG_")
+        || s.starts_with("CLAUDE_")
+}
+
 /// Claude variables a box agent gets through the host proxy, not credentials.
 #[must_use]
 pub fn proxied_claude_var(s: &str) -> bool {

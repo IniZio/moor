@@ -107,12 +107,6 @@ pub(super) fn script_lines(
             .map_err(|_| "env value is not UTF-8".to_owned())?;
         lines.push(format!("export {}={}", var.name, quote(value)));
     }
-    for (name, value) in &proxy.box_env {
-        if !is_identifier(name) {
-            return Err(format!("{name:?} is not a shell variable name"));
-        }
-        lines.push(format!("export {name}={}", quote(value)));
-    }
     lines.extend(git_remote_lines(origin));
     lines.push(format!(
         "unset {NONCE_VAR} moor_bundle moor_sys moor_mark moor_f"
