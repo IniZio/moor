@@ -19,7 +19,6 @@ use moor_core::seam::surface::{PaneRef, SurfaceError, WorkspaceRef};
 use moor_core::view::CloseView;
 use moor_core::{BoxHandle, CloseReq, ErrorKind, TaskName, Warning};
 
-use crate::adapters::git::BranchSync;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
@@ -40,9 +39,9 @@ const TEARDOWN_DEADLINE: Duration = Duration::from_mins(30);
 ///
 /// The Box lock is held from the gate to the Workspace close and dropped before
 /// promotion, which takes the locks of the waiting tasks. The Box is released
-/// before the Workspace closes. The worktree is never removed; it belongs to the
-/// user's checkout. The agent stops first, so the session stays ended when the
-/// release fails and the task stays open. The Task's proxy supervisor stops after the lock is
+/// before the Workspace closes. The worktree goes too, before the Workspace, but only when moor
+/// created it and its work is pushed and clean. The agent stops first, so the session stays
+/// ended when the release fails and the task stays open. The Task's proxy supervisor stops after the lock is
 /// dropped, because the wait for it can take seconds and a closed Task cannot get a new proxy
 /// row. Waiting tasks are then promoted into the freed slot.
 pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
@@ -73,7 +72,8 @@ pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
         store.apply(plan.decision_close.clone())?;
         false
     };
-    sync_branch(cx, &row);
+    let synced = worktree::sync_branch(cx, &row);
+    let worktree_removed = worktree::remove_worktree(cx, &row, synced);
     let workspace_closed = close_workspace(cx, &row, &plan);
     drop(lock);
     if let Err(e) = cx.proxy_host().stop(row.id) {
@@ -96,7 +96,7 @@ pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
         workspace_closed,
         agent_stopped,
         transcript: saved.map(|t| t.path),
-        worktree_kept: true,
+        worktree_kept: !worktree_removed,
         promoted,
     })
 }
@@ -341,38 +341,6 @@ fn release(cx: &Cx, store: &Store, row: &TaskRow) -> Result<bool, CommandError> 
     Ok(result == ReleaseResult::Deleted)
 }
 
-/// Brings the kept worktree and its local Task branch up to the remote tip, so they show the
-/// work the agent pushed from the Box.
-///
-/// Only a fast-forward moves anything; every other outcome leaves the checkout alone and warns.
-fn sync_branch(cx: &Cx, row: &TaskRow) {
-    let (Some(wt), Some(branch)) = (row.worktree.as_deref(), row.branch.as_deref()) else {
-        return;
-    };
-    let wt = Path::new(wt);
-    if !wt.is_dir() {
-        return;
-    }
-    let why = match cx.git().sync_branch(wt, branch) {
-        Ok(BranchSync::FastForwarded | BranchSync::UpToDate | BranchSync::NotPushed) => return,
-        Ok(BranchSync::Diverged) => format!(
-            "the local branch {branch} and the remote one have each moved on; \
-             merge or rebase by hand"
-        ),
-        Ok(BranchSync::Dirty) => {
-            format!("the worktree has uncommitted changes; update {branch} by hand")
-        }
-        Ok(BranchSync::OffBranch) => {
-            format!("the worktree does not have {branch} checked out; update it by hand")
-        }
-        Err(e) => format!("could not fetch {branch} from the remote: {e}"),
-    };
-    cx.warn(Warning {
-        code: "branch_not_synced".to_owned(),
-        message: format!("the worktree was left as it was: {why}"),
-    });
-}
-
 /// Closes the Workspace; a missing one is success, other failures warn.
 fn close_workspace(cx: &Cx, row: &TaskRow, plan: &ClosePlan) -> bool {
     let Some(id) = row.workspace_id.as_deref().filter(|_| plan.close_workspace) else {
@@ -391,6 +359,8 @@ fn close_workspace(cx: &Cx, row: &TaskRow, plan: &ClosePlan) -> bool {
         }
     }
 }
+
+mod worktree;
 
 #[cfg(test)]
 mod tests;

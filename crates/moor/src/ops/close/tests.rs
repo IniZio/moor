@@ -23,6 +23,7 @@ mod proxy;
 mod reports;
 mod teardown;
 mod transcript;
+mod worktree;
 
 const RAW: &str = "RAWDRIVER-7731";
 /// The host commit id the probe compares against.
@@ -167,7 +168,7 @@ fn clean_close_deletes_the_box_and_closes() {
     let f = fx();
     let v = run(&f.cx, &req(false)).unwrap();
     assert_eq!(v.task.state, TaskState::Closed);
-    assert!(v.box_deleted && v.workspace_closed && v.worktree_kept);
+    assert!(v.box_deleted && v.workspace_closed && !v.worktree_kept);
     assert_eq!(box_state(&f), BoxState::Deleted);
     assert!(f.driver.calls().iter().any(|c| c.starts_with("release")));
     assert!(f.dir.path().is_dir());
