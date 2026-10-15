@@ -2007,8 +2007,7 @@ dependencies = [
 [[package]]
 name = "nono"
 version = "0.80.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8166c0af4e68a5cd677066ba1315094cb68353d4151b9761938d6a482c40b976"
+source = "git+https://github.com/IniZio/nono?rev=fadd5c50db6777067a0b958b42f6a07439b04430#fadd5c50db6777067a0b958b42f6a07439b04430"
 dependencies = [
  "der 0.8.2",
  "getrandom 0.4.3",
@@ -2036,8 +2035,7 @@ dependencies = [
 [[package]]
 name = "nono-proxy"
 version = "0.80.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "de3f794d0030ff3a95799bc02e7b841a5698bb97995b9893b9cc6f27ac8937f7"
+source = "git+https://github.com/IniZio/nono?rev=fadd5c50db6777067a0b958b42f6a07439b04430#fadd5c50db6777067a0b958b42f6a07439b04430"
 dependencies = [
  "aws-config",
  "aws-credential-types",
