@@ -13,7 +13,7 @@ use ureq::Agent;
 
 use super::sandbox::NONO_VERSION;
 
-/// Where the upstream release assets are published.
+/// Where the upstream release assets are published; only the asset the fork lacks is fetched here.
 const UPSTREAM_RELEASE: &str = "https://github.com/nolabs-ai/nono/releases/download/v0.80.0";
 
 /// Where the fork's release assets are published. The fork carries the passthrough phantom-header
@@ -38,28 +38,29 @@ pub(super) struct Asset {
     pub(super) sha256: &'static str,
 }
 
-/// The pinned assets by Box platform.
+/// The pinned assets by Box platform. Every row comes from the fork except Darwin `x86_64`, which
+/// the fork does not publish, so it stays on the upstream release.
 const ASSETS: &[Asset] = &[
     Asset {
-        release: UPSTREAM_RELEASE,
+        release: FORK_RELEASE,
         os: "Linux",
         arch: "x86_64",
         name: "nono-v0.80.0-x86_64-unknown-linux-gnu.tar.gz",
-        sha256: "6da665b61999570c10dffc7da78828fe1fb7f3cac53319e505cebecaef17037f",
+        sha256: "6204caef57aac110d491f01dcceb2745312cc7bdeb1db95576f77e4c92f7c6be",
     },
     Asset {
-        release: UPSTREAM_RELEASE,
+        release: FORK_RELEASE,
         os: "Linux",
         arch: "aarch64",
         name: "nono-v0.80.0-aarch64-unknown-linux-gnu.tar.gz",
-        sha256: "d2a24c8c37714f85c829b5586ffd81fc2acf336c95372d881ba62140884f22cb",
+        sha256: "aa9ef2123e52dc5c086b80eceb4fa4918fc451220180b89aabbb8b561e73d198",
     },
     Asset {
-        release: UPSTREAM_RELEASE,
+        release: FORK_RELEASE,
         os: "Linux",
         arch: "arm64",
         name: "nono-v0.80.0-aarch64-unknown-linux-gnu.tar.gz",
-        sha256: "d2a24c8c37714f85c829b5586ffd81fc2acf336c95372d881ba62140884f22cb",
+        sha256: "aa9ef2123e52dc5c086b80eceb4fa4918fc451220180b89aabbb8b561e73d198",
     },
     Asset {
         release: UPSTREAM_RELEASE,
