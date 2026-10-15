@@ -192,8 +192,11 @@ impl Store {
 
     /// Delete the proxy row of `task`; returns whether a row was deleted.
     pub(crate) fn remove_proxy(&self, task: TaskId) -> Result<bool, StoreError> {
-        let conn = self.writer()?;
-        let changed = conn.execute("DELETE FROM proxy WHERE task = ?", [task.get()])?;
+        let mut conn = self.writer()?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let changed = tx.execute("DELETE FROM proxy WHERE task = ?", [task.get()])?;
+        park::clear(&tx, task)?;
+        tx.commit()?;
         drop(conn);
         Ok(changed > 0)
     }
@@ -306,8 +309,10 @@ fn port_taken(conn: &Connection, port: u16) -> Result<bool, StoreError> {
 
 mod egress;
 mod lease;
+mod park;
 
 pub(crate) use lease::{Fenced, Lease};
+pub(crate) use park::{TunnelAck, TunnelRequest, TunnelWant};
 
 #[cfg(test)]
 mod tests;

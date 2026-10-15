@@ -5,6 +5,7 @@
 //! lease is lost, the tunnel dies or a signal arrives.
 
 mod listen;
+mod park;
 mod run;
 #[cfg(test)]
 mod tests;

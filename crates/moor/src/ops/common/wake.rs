@@ -14,6 +14,7 @@ use moor_core::{ErrorKind, TaskReq};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
+use crate::ops::common::park::restore_tunnel;
 use crate::ops::common::provision::recorded_workdir;
 use crate::ops::common::view::{hide_unsupported_box_sleep, task_view};
 use crate::ops::start::revive_after_wake;
@@ -26,7 +27,8 @@ use crate::store::{Store, TaskRow};
 /// Driver. Only a Box with no usable stored workdir is looked up and stored
 /// with the wake. When the Driver fails to resume the Box or to find its
 /// workdir, nothing is applied and the Task and Box stay Asleep, so the next
-/// call tries both again.
+/// call tries both again. A woken Box with a live Proxy waits for its tunnel;
+/// when that fails the Box stays awake and the call fails.
 pub(crate) fn wake_if_asleep(cx: &Cx, store: &Store, row: &TaskRow) -> Result<bool, CommandError> {
     wake(cx, store, row).map(|w| w.any)
 }
@@ -98,6 +100,10 @@ fn wake(cx: &Cx, store: &Store, row: &TaskRow) -> Result<Woke, CommandError> {
         });
     }
     store.apply(d)?;
+    if box_asleep {
+        // The Box stays awake when the tunnel cannot return; the op fails instead.
+        restore_tunnel(cx, store, row.id)?;
+    }
     Ok(Woke {
         any: true,
         box_resumed: box_asleep,

@@ -20,6 +20,8 @@ use crate::testing::engine::FakeEngine;
 use crate::testing::proc::{Reply, ScriptedProc};
 use crate::testing::surface::FakeSurface;
 
+mod tunnel;
+
 struct Fx {
     _dir: tempfile::TempDir,
     cx: Cx,
