@@ -7,7 +7,7 @@ use moor_core::seam::driver::{Driver, ExecOutcome, ExecSpec};
 use moor_core::seam::engine::LaunchReq;
 use moor_core::seam::proc::Deadline;
 
-use super::super::nono_release::NonoRelease;
+use super::super::nono_release::{sha256_hex, NonoRelease};
 use super::super::sandbox;
 use super::{fail, Failure, INSTALL_DEADLINE};
 
@@ -61,28 +61,29 @@ fn platform(
     }
 }
 
-/// Checks the pinned nono runs on the Box; when it is missing, uploads the host-fetched
-/// binary and checks again.
+/// Checks the Box's nono is the pinned binary and runs; when it is missing or differs, uploads the
+/// host-fetched binary and checks again.
 pub(super) fn ensure(
     driver: &dyn Driver,
     req: &LaunchReq,
     (home, cred): (&BoxPath, &BoxPath),
     release: &NonoRelease,
 ) -> Result<(), Failure> {
-    match run(driver, req, sandbox::check_script())? {
-        0 => return Ok(()),
-        sandbox::NOT_INSTALLED => {}
-        code => return Err(fail("sandbox", &sandbox::check_failure(code))),
-    }
     let (os, arch) = platform(driver, req, cred)?;
     let bytes = release
         .binary(&os, &arch)
         .map_err(|e| fail("sandbox", &e))?;
+    let script = sandbox::check_script(&sha256_hex(&bytes));
+    match run(driver, req, script.clone())? {
+        0 => return Ok(()),
+        sandbox::NOT_INSTALLED => {}
+        code => return Err(fail("sandbox", &sandbox::check_failure(code))),
+    }
     let at = BoxPath::under(home.as_str(), ".local/bin/nono").map_err(|e| fail("sandbox", &e))?;
     driver
         .put_file(&req.handle, &at, &bytes, 0o755, &req.worktree)
         .map_err(|e| fail("sandbox", &e))?;
-    match run(driver, req, sandbox::check_script())? {
+    match run(driver, req, script)? {
         0 => Ok(()),
         code => Err(fail("sandbox", &sandbox::check_failure(code))),
     }

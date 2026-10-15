@@ -7,6 +7,8 @@ use super::{
     check_failure, check_script, harden_lines, profile, wrap, SandboxInput, NOT_INSTALLED,
 };
 
+const SUM: &str = "6da665b61999570c10dffc7da78828fe1fb7f3cac53319e505cebecaef17037f";
+
 fn path(s: &str) -> BoxPath {
     BoxPath::restore(s).unwrap()
 }
@@ -44,7 +46,26 @@ fn profile_blocks_pathname_sockets_and_network() {
     assert_eq!(at(&d, "/linux/af_unix_mediation"), "pathname");
     assert_eq!(at(&d, "/network/block"), &Value::Bool(true));
     assert_eq!(at(&d, "/network/open_port"), &serde_json::json!([4321]));
-    assert_eq!(at(&d, "/extends"), "default");
+}
+
+#[test]
+fn profile_inlines_the_default_profile_instead_of_extending_it() {
+    let d = doc(&[]);
+    assert_eq!(at(&d, "/extends"), &Value::Null);
+    let groups = strings(at(&d, "/groups/include"));
+    assert_eq!(groups.len(), 18);
+    for name in [
+        "deny_credentials",
+        "system_read_linux_core",
+        "dangerous_commands_linux",
+    ] {
+        assert!(groups.contains(&name.to_owned()), "{groups:?}");
+    }
+    assert_eq!(at(&d, "/security/signal_mode"), "isolated");
+    assert_eq!(
+        strings(at(&d, "/filesystem/unix_socket_dir")),
+        ["/run/systemd/userdb"]
+    );
 }
 
 #[test]
@@ -113,8 +134,9 @@ fn profile_never_grants_the_nono_state_root() {
 
 #[test]
 fn check_script_pins_version_and_checks_sandbox() {
-    let s = check_script();
+    let s = check_script(SUM);
     assert!(s.contains("= \"nono 0.80.0\""));
+    assert!(s.contains(SUM));
     assert!(s.contains("exit 6"));
     assert!(s.contains("setup --check-only"));
     assert!(!s.contains("curl") && !s.contains("sudo"));
@@ -123,7 +145,7 @@ fn check_script_pins_version_and_checks_sandbox() {
 #[test]
 fn check_script_is_valid_sh() {
     let out = Command::new("sh")
-        .args(["-n", "-c", &check_script()])
+        .args(["-n", "-c", &check_script(SUM)])
         .output()
         .unwrap();
     assert!(
@@ -138,12 +160,37 @@ fn check_script_exits_not_installed_without_nono() {
     let home = std::env::temp_dir().join(format!("moor-check-script-{}", std::process::id()));
     std::fs::create_dir_all(&home).unwrap();
     let out = Command::new("sh")
-        .args(["-c", &check_script()])
+        .args(["-c", &check_script(SUM)])
         .env("HOME", &home)
         .output()
         .unwrap();
     std::fs::remove_dir_all(&home).unwrap();
     assert_eq!(out.status.code(), Some(NOT_INSTALLED));
+}
+
+/// Runs the check script with a stub `nono` holding `body` under a fresh home.
+fn check_with_stub(tag: &str, body: &[u8], sum: &str) -> Option<i32> {
+    use std::os::unix::fs::PermissionsExt;
+    let home = std::env::temp_dir().join(format!("moor-check-{tag}-{}", std::process::id()));
+    std::fs::create_dir_all(home.join(".local/bin")).unwrap();
+    let nono = home.join(".local/bin/nono");
+    std::fs::write(&nono, body).unwrap();
+    std::fs::set_permissions(&nono, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let out = Command::new("sh")
+        .args(["-c", &check_script(sum)])
+        .env("HOME", &home)
+        .output()
+        .unwrap();
+    std::fs::remove_dir_all(&home).unwrap();
+    out.status.code()
+}
+
+#[test]
+fn check_script_accepts_only_the_pinned_digest() {
+    let stub = b"#!/bin/sh\n[ \"$1\" = --version ] && echo 'nono 0.80.0'\nexit 0\n";
+    let sum = crate::adapters::box_agent::nono_release::sha256_hex(stub);
+    assert_eq!(check_with_stub("same", stub, &sum), Some(0));
+    assert_eq!(check_with_stub("other", stub, SUM), Some(NOT_INSTALLED));
 }
 
 #[test]
@@ -175,7 +222,7 @@ fn wrap_puts_agent_after_separator() {
 #[test]
 fn check_failure_names_the_cause() {
     assert!(check_failure(5).contains("Landlock"));
-    assert!(check_failure(NOT_INSTALLED).contains("nono 0.80.0 is not installed"));
+    assert!(check_failure(NOT_INSTALLED).contains("nono 0.80.0 on the Box is missing"));
     assert!(check_failure(9).contains("exited 9"));
 }
 

@@ -11,7 +11,7 @@ use moor_core::seam::surface::{Surface, SurfaceError};
 use moor_core::{BoxHandle, BoxPath, ProviderId, Secret, TaskId, TaskName};
 
 use crate::adapters::box_agent::claude::Claude;
-use crate::adapters::box_agent::nono_release::fake::offline_release;
+use crate::adapters::box_agent::nono_release::fake::ready_release;
 use crate::adapters::box_agent::proxy_env;
 use crate::adapters::box_agent::BoxAgent;
 use crate::testing::clock::FakeClock;
@@ -27,7 +27,12 @@ fn environ_path() -> BoxPath {
 }
 
 fn driver(d: FakeDriver) -> Arc<FakeDriver> {
-    let d = Arc::new(d.peek_text("box-1", &environ_path(), ENVIRON));
+    let uname = BoxPath::under(CRED, "uname").unwrap();
+    let d = Arc::new(d.peek_text("box-1", &environ_path(), ENVIRON).peek_text(
+        "box-1",
+        &uname,
+        "Linux x86_64",
+    ));
     d.acquire(&AcquireReq {
         provider: ProviderId::new("fake"),
         task: TaskId::new(1),
@@ -72,7 +77,7 @@ fn agent(d: &Arc<FakeDriver>, s: &Arc<FakeSurface>) -> BoxAgent {
         s.clone(),
         Arc::new(Claude),
         Arc::new(FakeClock::new(Ts::from_millis(0))),
-        offline_release(),
+        ready_release(),
     )
 }
 

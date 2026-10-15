@@ -10,7 +10,7 @@ pub(super) const NONO_VERSION: &str = "0.80.0";
 /// File name of the generated profile inside the credential directory.
 pub(super) const PROFILE_FILE: &str = "nono-profile.json";
 
-/// Exit code of the check script when the Box lacks the pinned nono.
+/// Exit code of the check script when the Box lacks the pinned nono binary.
 pub(super) const NOT_INSTALLED: i32 = 6;
 
 /// Environment names every agent keeps: terminal, proxy and CA variables, plus two globs.
@@ -90,17 +90,42 @@ fn allow_vars(env_names: &[String]) -> Vec<String> {
     vars
 }
 
+/// The groups the built-in `default` profile includes. The profile spells them out instead of
+/// extending `default`, because a user profile of that name in the Box would replace the built-in.
+const DEFAULT_GROUPS: [&str; 18] = [
+    "deny_credentials",
+    "deny_keychains_macos",
+    "deny_keychains_linux",
+    "deny_browser_data_macos",
+    "deny_browser_data_linux",
+    "deny_macos_private",
+    "deny_shell_history",
+    "deny_shell_configs",
+    "system_read_macos",
+    "system_read_linux_core",
+    "system_write_macos",
+    "system_write_linux",
+    "user_tools",
+    "homebrew_macos",
+    "homebrew_linux",
+    "dangerous_commands",
+    "dangerous_commands_macos",
+    "dangerous_commands_linux",
+];
+
 /// The nono profile as pretty JSON text.
 pub(super) fn profile(input: &SandboxInput) -> String {
     let home = input.home.as_str();
     let at = |rel: &str| format!("{home}/{rel}");
     let doc = json!({
-        "extends": "default",
         "meta": { "name": "moor-agent" },
+        "groups": { "include": DEFAULT_GROUPS },
+        "security": { "signal_mode": "isolated" },
         "linux": { "af_unix_mediation": "pathname" },
         "network": { "block": true, "open_port": [input.box_port] },
         "workdir": { "access": "readwrite" },
         "filesystem": {
+            "unix_socket_dir": ["/run/systemd/userdb"],
             "allow": [
                 input.workdir.as_str(),
                 input.tmp.as_str(),
@@ -129,11 +154,14 @@ pub(super) fn profile(input: &SandboxInput) -> String {
     serde_json::to_string_pretty(&doc).unwrap_or_default()
 }
 
-/// The POSIX shell script that checks the pinned nono is installed and can run; run via `sh -c`.
-pub(super) fn check_script() -> String {
+/// The POSIX shell script that checks the Box's nono is the pinned binary, with sha256 `sha256`,
+/// and can run; run via `sh -c`.
+pub(super) fn check_script(sha256: &str) -> String {
     let (v, missing) = (NONO_VERSION, NOT_INSTALLED);
     format!(
         r#"dest="$HOME/.local/bin/nono"
+sum=$(sha256sum "$dest" 2>/dev/null || shasum -a 256 "$dest" 2>/dev/null)
+[ "${{sum%% *}}" = "{sha256}" ] || exit {missing}
 [ "$("$dest" --version 2>/dev/null)" = "nono {v}" ] || exit {missing}
 "$dest" setup --check-only >/dev/null 2>&1 || exit 5
 "#
@@ -147,7 +175,7 @@ pub(super) fn check_failure(code: i32) -> String {
         5 => "the Box kernel cannot run the nono sandbox (Landlock is missing); \
               `nono setup --check-only` failed"
             .to_owned(),
-        NOT_INSTALLED => format!("nono {v} is not installed on the Box"),
+        NOT_INSTALLED => format!("nono {v} on the Box is missing or is not the pinned binary"),
         _ => format!("checking nono {v} exited {code}"),
     }
 }

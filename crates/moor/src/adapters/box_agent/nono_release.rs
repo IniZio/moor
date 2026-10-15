@@ -199,12 +199,17 @@ fn read_verified(path: &Path, asset: &Asset) -> Option<Vec<u8>> {
 
 /// Whether `bytes` hash to the asset's pinned sha256.
 fn matches_sum(bytes: &[u8], asset: &Asset) -> bool {
-    let digest = Sha256::digest(bytes);
-    let hex = digest.iter().fold(String::new(), |mut s, b| {
-        let _ = write!(s, "{b:02x}");
-        s
-    });
-    hex.eq_ignore_ascii_case(asset.sha256)
+    sha256_hex(bytes).eq_ignore_ascii_case(asset.sha256)
+}
+
+/// Lowercase hex sha256 of `bytes`.
+pub(super) fn sha256_hex(bytes: &[u8]) -> String {
+    Sha256::digest(bytes)
+        .iter()
+        .fold(String::new(), |mut s, b| {
+            let _ = write!(s, "{b:02x}");
+            s
+        })
 }
 
 /// Writes `bytes` to `path` through a temp file in the same directory.
