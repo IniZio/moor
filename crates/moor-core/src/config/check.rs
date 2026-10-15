@@ -158,11 +158,11 @@ pub fn box_credentials(names: &[String]) -> Result<(), (usize, String)> {
     Ok(())
 }
 
-/// An egress entry: a domain or `*.domain`, no IPs, schemes or odd chars.
+/// A rule host: a domain or `*.domain`, no IPs, schemes or odd chars.
 ///
 /// # Errors
-/// Returns the reason text when the entry is not a domain or `*.domain`.
-pub fn egress_entry(s: &str) -> Result<(), String> {
+/// Returns the reason text when the host is not a domain or `*.domain`.
+pub fn host_entry(s: &str) -> Result<(), String> {
     let entry = s.trim().to_ascii_lowercase();
     let host = entry.strip_prefix("*.").unwrap_or(&entry);
     let bad = host.is_empty()
@@ -170,7 +170,7 @@ pub fn egress_entry(s: &str) -> Result<(), String> {
         || host.contains(|c: char| !(c.is_ascii_alphanumeric() || c == '.' || c == '-'))
         || host.parse::<std::net::IpAddr>().is_ok();
     if bad {
-        return Err(format!("egress entry must be a domain or *.domain: {s:?}"));
+        return Err(format!("host must be a domain or *.domain: {s:?}"));
     }
     Ok(())
 }

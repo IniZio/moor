@@ -76,9 +76,9 @@ fn proxied_claude_vars() {
 }
 
 #[test]
-fn egress_entries() {
+fn host_entries() {
     for s in ["Example.COM", "*.example.org", " a-b.io "] {
-        assert_eq!(egress_entry(s), Ok(()), "{s:?}");
+        assert_eq!(host_entry(s), Ok(()), "{s:?}");
     }
     for s in [
         "10.0.0.1",
@@ -90,8 +90,8 @@ fn egress_entries() {
         "::1",
     ] {
         assert_eq!(
-            egress_entry(s),
-            Err(format!("egress entry must be a domain or *.domain: {s:?}"))
+            host_entry(s),
+            Err(format!("host must be a domain or *.domain: {s:?}"))
         );
     }
 }
