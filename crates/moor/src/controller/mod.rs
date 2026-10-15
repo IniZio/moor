@@ -4,6 +4,8 @@ mod conn;
 mod progress;
 mod settle;
 mod watch;
+mod web;
+mod web_feed;
 
 use std::fs::{self, File, TryLockError};
 use std::io::{BufReader, Write};
@@ -14,7 +16,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
 use std::time::Duration;
 
-use moor_core::config::parse_controller;
+use moor_core::config::{parse_controller, WebConfig};
 
 use crate::env::Env;
 use crate::Moor;
@@ -33,6 +35,9 @@ pub fn serve(env: &Env, config: &Path, stderr: impl Write + Send + 'static) -> u
     match start(env, config) {
         Ok(running) => {
             log(&sink, &format!("listening on {}", running.socket.display()));
+            if let Some(web) = &running.web {
+                log(&sink, &format!("web ui on http://{}", web.addr()));
+            }
             for line in Moor::reconcile_proxies(&running.env) {
                 log(&sink, &format!("proxy: {line}"));
             }
@@ -64,6 +69,8 @@ struct Running {
     listener: UnixListener,
     /// Holds the single-instance flock until the process exits.
     _lock: File,
+    /// Loopback web UI, served until the process exits.
+    web: Option<web::Web>,
     /// Environment shared by every connection.
     env: Arc<Env>,
     /// Time between settle passes.
@@ -96,12 +103,33 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
         code: 1,
         message: format!("cannot bind {}: {e}", socket.display()),
     })?;
+    let web = cfg.web.as_ref().map(|w| start_web(&env, w)).transpose()?;
     Ok(Running {
         socket,
         listener,
         _lock: lock,
+        web,
         env: Arc::new(env),
         settle_every: cfg.settle_every(),
+    })
+}
+
+/// Reads the token and binds the web UI on loopback.
+fn start_web(env: &Env, web: &WebConfig) -> Result<web::Web, Stop> {
+    let token_file = env.expand_home(&web.token_file);
+    let token = web_feed::read_token(&token_file).map_err(|message| Stop {
+        code: USAGE,
+        message,
+    })?;
+    web::start(
+        web.port,
+        token,
+        web_feed::factory(env),
+        Duration::from_millis(200),
+    )
+    .map_err(|e| Stop {
+        code: 1,
+        message: format!("cannot bind web ui on 127.0.0.1:{}: {e}", web.port),
     })
 }
 

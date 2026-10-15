@@ -12,7 +12,7 @@ pub(crate) mod env;
 mod gate;
 mod open;
 mod run;
-mod show;
+pub(crate) mod show;
 mod sleep;
 mod start;
 mod steer;

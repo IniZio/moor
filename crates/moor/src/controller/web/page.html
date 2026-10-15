@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>moor — Tasks</title>
+<style>
+  :root { color-scheme: light dark; --fg: #1a1a1a; --bg: #fff; --muted: #555; --line: #c8c8c8; --alt: #f4f4f4; }
+  @media (prefers-color-scheme: dark) {
+    :root { --fg: #ececec; --bg: #161616; --muted: #b0b0b0; --line: #444; --alt: #202020; }
+  }
+  body { font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--fg); background: var(--bg); margin: 0 auto; padding: 1rem; max-width: 70rem; }
+  h1 { font-size: 1.4rem; margin: 0 0 .5rem; }
+  .meta { color: var(--muted); margin: 0 0 1rem; font-size: .9rem; }
+  .meta p { margin: .1rem 0; }
+  .wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; }
+  caption { text-align: left; font-weight: 600; padding-bottom: .4rem; }
+  th, td { text-align: left; padding: .4rem .6rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  thead th { border-bottom-width: 2px; }
+  tbody tr:nth-child(even) { background: var(--alt); }
+  .sub { display: block; color: var(--muted); font-size: .85rem; }
+  #empty, #error { margin: 1rem 0; }
+  #error { font-weight: 600; }
+  [hidden] { display: none; }
+</style>
+</head>
+<body>
+<main>
+  <h1>moor — Tasks</h1>
+  <div class="meta">
+    <p id="status" aria-live="polite">Connecting…</p>
+    <p id="last-event">Last event: none yet</p>
+  </div>
+  <p id="error" role="alert" hidden></p>
+  <p id="empty" hidden>No open Tasks</p>
+  <div class="wrap">
+    <table id="tasks" hidden>
+      <caption>Tasks</caption>
+      <thead>
+        <tr>
+          <th scope="col">Task</th>
+          <th scope="col">State</th>
+          <th scope="col">Activity</th>
+          <th scope="col">Box</th>
+          <th scope="col">Updated</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</main>
+<script src="/app.js" defer></script>
+</body>
+</html>
