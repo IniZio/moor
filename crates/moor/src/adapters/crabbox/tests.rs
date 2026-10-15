@@ -183,42 +183,24 @@ fn list_matches_top_level_slug_and_lease_label() {
 }
 
 const EGRESS_PROVIDERS: &str =
-    r#"[{"provider":"sprites","features":["egress-allow"]},{"provider":"ssh"}]"#;
+    r#"[{"provider":"sprites","features":["egress-allow","ssh"]},{"provider":"ssh"}]"#;
 
-fn egress_fixture() -> (Arc<ScriptedProc>, Crabbox) {
+#[test]
+fn acquire_never_passes_egress_allow() {
     let (p, c) = fixture();
-    let providers = Reply::Ok(EGRESS_PROVIDERS.to_owned());
-    p.on(Tool::Crabbox, &["providers"], providers);
+    p.on(
+        Tool::Crabbox,
+        &["providers"],
+        Reply::Ok(EGRESS_PROVIDERS.to_owned()),
+    );
     p.on(Tool::Crabbox, &["warmup"], Reply::Ok(WARMUP_OUT.to_owned()));
     probe(&p);
-    (p, c)
-}
-
-#[test]
-fn acquire_allow_list_uses_flag_when_provider_enforces() {
-    let (p, c) = egress_fixture();
-    let plan = EgressPlan::Allow(vec!["a.com".into(), "b.com".into()]);
-    let got = c.acquire(&req("sprites", plan, None)).unwrap();
-    assert_eq!(got.egress, EgressApplied::Enforced);
-    let calls = p.calls();
-    assert_eq!(calls.first().unwrap().args, ["providers", "--json"]);
-    let args = &calls.get(1).unwrap().args;
-    assert_eq!(args.last().unwrap(), "a.com,b.com");
-    assert!(args.contains(&"--egress-allow".to_owned()));
-}
-
-#[test]
-fn acquire_unsupported_provider_reports_not_enforced() {
-    let (p, c) = egress_fixture();
     let plan = EgressPlan::Allow(vec!["a.com".into()]);
-    let got = c.acquire(&req("ssh", plan, None)).unwrap();
-    assert_eq!(got.egress, EgressApplied::NotEnforced);
-    let calls = p.calls();
-    assert!(!calls
-        .get(1)
-        .unwrap()
-        .args
-        .contains(&"--egress-allow".to_owned()));
+    let got = c.acquire(&req("sprites", plan, None)).unwrap();
+    assert_eq!(got.egress, EgressApplied::Open);
+    for call in p.calls() {
+        assert!(!call.args.contains(&"--egress-allow".to_owned()));
+    }
 }
 
 #[test]
