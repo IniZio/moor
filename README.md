@@ -23,7 +23,9 @@ These commands work today:
   checked, it exits 125 and does not run: save the work first or use
   `--no-sync`, which never syncs. Not both. `--record NAME` records the run.
 - `moor wait NAME` waits for the Task to be idle, done, or finished with a
-  run (`--for idle|done|run|input`; `input` also returns when the agent needs input). `--timeout S` bounds the wait (default 1800).
+  run (`--for idle|done|run|input`). `input` currently returns at the same
+  points as `idle` and exists so callers state their intent. `--timeout S`
+  bounds the wait (default 1800).
 - `moor steer NAME TEXT` sends text, or `--menu N` a menu choice, to the
   Task's agent.
 - `moor cp` copies a file or directory out of the Task's Box to the host.
