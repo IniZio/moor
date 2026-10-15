@@ -129,9 +129,6 @@ pub enum EngineError {
 
 /// The agent running in a Box.
 pub trait Engine: Send + Sync {
-    /// Hosts the agent needs through the Box allow-list.
-    fn egress_hosts(&self) -> &'static [&'static str];
-
     /// Reads the agent's hook file once, then its pane once, and returns them raw.
     /// It never chooses an agent state.
     ///

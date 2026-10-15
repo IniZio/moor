@@ -57,10 +57,6 @@ impl BoxAgent {
 }
 
 impl Engine for BoxAgent {
-    fn egress_hosts(&self) -> &'static [&'static str] {
-        self.profile.egress_hosts()
-    }
-
     fn probe(&self, s: &SessionRef, deadline: Deadline) -> Result<Probes, EngineError> {
         probe::probe(
             self.driver.as_ref(),

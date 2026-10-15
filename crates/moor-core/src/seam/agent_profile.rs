@@ -142,11 +142,6 @@ pub trait AgentProfile: Send + Sync {
     /// Arguments that continue the stored session `session_id`.
     fn resume_argv(&self, session_id: &str, ctx: &LaunchCtx) -> Vec<String>;
 
-    /// Hosts the agent's install and update need through the Box allow-list.
-    ///
-    /// Hosts the Proxy serves are not listed.
-    fn egress_hosts(&self) -> &'static [&'static str];
-
     /// Environment variables the agent needs; empty without a Proxy.
     ///
     /// Values never go in argv.
