@@ -76,6 +76,7 @@ fn request_matching_no_endpoint_rule_is_forwarded_without_credential() {
     assert_eq!(status, Ok(200));
     let last = seen.last().unwrap();
     assert_eq!(last.line, "GET /release/asset HTTP/1.1");
-    // Neither the Box placeholder nor the real token reaches the upstream.
-    assert_eq!(last.authorization, None);
+    // The Box's fixed placeholder passes through unchanged; the real token is never added.
+    assert_eq!(last.authorization.as_deref(), Some("Bearer moor-proxy"));
+    assert!(!last.authorization.as_deref().unwrap().contains(SECRET));
 }

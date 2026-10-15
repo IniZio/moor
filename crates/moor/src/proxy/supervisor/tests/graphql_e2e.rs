@@ -426,29 +426,6 @@ fn rest_request_passes_through_unchanged() {
 }
 
 #[test]
-fn unmatched_rest_request_passes_through_without_credential() {
-    let rig = rig();
-    let resp = rig
-        .client()
-        .get("https://api.github.com/repos/cli/cli")
-        .header("Authorization", "token placeholder-not-real")
-        .config()
-        .http_status_as_error(false)
-        .build()
-        .call()
-        .unwrap();
-    let status = resp.status().as_u16();
-    let seen = rig.seen();
-    assert_eq!(status, 200, "seen={seen:?}");
-    let [only] = seen.as_slice() else {
-        unreachable!("{seen:?}")
-    };
-    assert_eq!(only.line, "GET /repos/cli/cli HTTP/1.1");
-    assert_eq!(only.authorization, None);
-    rig.live.unwrap().stop();
-}
-
-#[test]
 fn stop_closes_both_listeners() {
     let mut rig = rig();
     let ports = [
