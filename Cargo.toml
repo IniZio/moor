@@ -3,5 +3,9 @@ members = ["crates/moor", "crates/moor-core", "tools/layering"]
 exclude = ["target"]
 resolver = "2"
 
+[patch.crates-io]
+nono = { git = "https://github.com/IniZio/nono", rev = "3dc195a643b990008c41ab59ec293e6b8545d770" }
+nono-proxy = { git = "https://github.com/IniZio/nono", rev = "3dc195a643b990008c41ab59ec293e6b8545d770" }
+
 [workspace.lints.clippy]
 allow_attributes_without_reason = "deny"
