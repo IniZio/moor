@@ -32,6 +32,19 @@ fn main() -> ExitCode {
             };
             return ExitCode::from(moor::controller::serve(&env, &config, std::io::stderr()));
         }
+        Parsed::ControllerAttach { opts, socket } => {
+            let env = match &opts.state_dir {
+                Some(dir) => env.with_state_dir(dir),
+                None => env,
+            };
+            return ExitCode::from(moor::controller::attach::attach(
+                &env,
+                socket.as_deref(),
+                std::io::stdin(),
+                std::io::stdout(),
+                std::io::stderr(),
+            ));
+        }
     };
     emit(&output)
 }
@@ -57,8 +70,8 @@ fn run(env: Env, inv: Invocation) -> Output {
         Some(dir) => env.with_state_dir(dir),
         None => env,
     };
-    if let Some(socket) = moor::client::configured_socket(&env) {
-        return moor::client::remote::run(&env, &socket, request, &opts);
+    if let Some(target) = moor::client::configured_target(&env) {
+        return moor::client::remote::run(&env, &target, request, &opts);
     }
     let request = cli::inherit_run_output(request, &opts);
     render_call(&env, request, &opts)

@@ -1,5 +1,6 @@
 //! `moor controller serve`: a long-running process answering moor requests on a Unix socket.
 
+pub mod attach;
 mod conn;
 mod progress;
 mod settle;
@@ -93,10 +94,8 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
     );
     let socket = match &cfg.socket {
         Some(s) => env.expand_home(Path::new(s)),
-        None => env
-            .state_dir()
-            .ok_or_else(|| failed("no state directory: set state_dir or MOOR_STATE_DIR".into()))?
-            .join("controller.sock"),
+        None => state_socket(&env)
+            .ok_or_else(|| failed("no state directory: set state_dir or MOOR_STATE_DIR".into()))?,
     };
     let lock = take_lock(&socket)?;
     let listener = bind(&socket).map_err(|e| Stop {
@@ -131,6 +130,11 @@ fn start_web(env: &Env, web: &WebConfig) -> Result<web::Web, Stop> {
         code: 1,
         message: format!("cannot bind web ui on 127.0.0.1:{}: {e}", web.port),
     })
+}
+
+/// The socket path used when no explicit one is configured.
+pub(crate) fn state_socket(env: &Env) -> Option<PathBuf> {
+    env.state_dir().map(|dir| dir.join("controller.sock"))
 }
 
 /// Takes `<socket>.lock` and records our pid and socket in it.

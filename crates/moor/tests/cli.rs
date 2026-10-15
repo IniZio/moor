@@ -9,6 +9,8 @@
 
 #[path = "cli/controller.rs"]
 mod controller;
+#[path = "cli/ssh_controller.rs"]
+mod ssh_controller;
 #[path = "cli/via_controller.rs"]
 mod via_controller;
 
