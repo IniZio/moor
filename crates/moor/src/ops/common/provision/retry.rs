@@ -3,8 +3,9 @@
 use std::path::Path;
 
 use moor_core::config::Flags;
+use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, Intent, IntentChange};
-use moor_core::domain::task::{SetupOutcome, TaskInput};
+use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
 
 use super::outcome::{dotfiles_failed, with_egress_hint};
 use super::Provisioned;
@@ -61,4 +62,10 @@ pub(super) fn retry_dotfiles(
         setup: SetupRun::Skipped,
         dotfiles,
     })
+}
+
+/// Whether the Task failed setup on a Box that is still ready, so only the dotfiles run again.
+pub(super) fn dotfiles_retry(row: &TaskRow) -> bool {
+    row.state == TaskState::SetupFailed
+        && row.boxed.as_ref().map(|b| b.state) == Some(BoxState::Ready)
 }
