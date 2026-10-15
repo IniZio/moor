@@ -1,6 +1,7 @@
 //! Scripted failures and recorded calls for the Driver fake.
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use moor_core::domain::run::SyncMode;
 use moor_core::seam::driver::{
@@ -90,6 +91,16 @@ impl FakeDriver {
     pub(crate) fn fail_wake(self, e: DriverError) -> Self {
         self.st().fail_wake = Some(e);
         self
+    }
+
+    /// Runs `f` at the start of every later `exec`, outside the Driver's lock.
+    pub(crate) fn on_exec(&self, f: impl Fn() + Send + Sync + 'static) {
+        self.st().on_exec = Some(Arc::new(f));
+    }
+
+    /// Runs `f` inside every later `wake` that succeeds, outside the Driver's lock; models a resume that cold-boots.
+    pub(crate) fn on_wake(&self, f: impl Fn() + Send + Sync + 'static) {
+        self.st().on_wake = Some(Arc::new(f));
     }
 
     /// Makes every `sleep` report `outcome` instead of `Slept`.

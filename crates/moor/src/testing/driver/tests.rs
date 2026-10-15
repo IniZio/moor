@@ -332,6 +332,21 @@ fn workdir_uses_a_lease_id_that_differs_from_the_handle() {
 }
 
 #[test]
+fn on_wake_runs_after_a_successful_wake_only() {
+    let fake = Arc::new(FakeDriver::new().fail_wake(DriverError::Timeout(Duration::from_secs(1))));
+    let h = fake.acquire(&req()).unwrap().handle;
+    let hits = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let seen = hits.clone();
+    fake.on_wake(move || {
+        seen.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    });
+    assert!(fake.wake(&h).is_err());
+    assert_eq!(hits.load(std::sync::atomic::Ordering::SeqCst), 0);
+    assert_eq!(fake.wake(&h), Ok(()));
+    assert_eq!(hits.load(std::sync::atomic::Ordering::SeqCst), 1);
+}
+
+#[test]
 fn batch_dispatches_to_own_logs_and_counts_one_top_level_call() {
     let fake = FakeDriver::new().run_stdout("out");
     let h = fake.acquire(&req()).unwrap().handle;

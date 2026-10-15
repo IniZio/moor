@@ -167,6 +167,9 @@ pub enum Event {
         new_pane: Option<String>,
         /// The goal the new session works on.
         goal: Option<String>,
+        /// Why the agent was relaunched; `None` for a plain `moor start`.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cause: Option<String>,
     },
     /// Admission checked credentials.
     Checked {

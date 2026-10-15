@@ -19,7 +19,7 @@ use crate::error::CommandError;
 use crate::ops::common::activity::{self, session_ref};
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::transcript;
-use crate::ops::common::wake::wake_if_asleep;
+use crate::ops::common::wake::wake_and_revive;
 use crate::store::{SessionRow, Store, TaskRow};
 
 /// Longest the send may take, pane reads included.
@@ -56,7 +56,7 @@ pub(crate) fn run(cx: &Cx, req: &SteerReq) -> Result<SteerValue, CommandError> {
     }
     if asleep(&reload()?) {
         let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "steer", boxlock::WAIT)?;
-        wake_if_asleep(cx, store, &reload()?)?;
+        wake_and_revive(cx, store, &reload()?)?;
     }
     let row = reload()?;
     let session = store.live_session(id)?.ok_or_else(no_agent)?;

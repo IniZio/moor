@@ -15,7 +15,7 @@ use moor_core::{CpReq, ErrorKind};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
-use crate::ops::common::wake::wake_if_asleep;
+use crate::ops::common::wake::wake_and_revive;
 use crate::store::TaskRow;
 
 /// Run `cp`.
@@ -43,7 +43,7 @@ pub(crate) fn run(cx: &Cx, req: &CpReq) -> Result<CpValue, CommandError> {
         })
     };
     let mut row = reload()?;
-    if wake_if_asleep(cx, store, &row)? {
+    if wake_and_revive(cx, store, &row)? {
         row = reload()?;
     }
     let handle = usable_handle(&row)?;

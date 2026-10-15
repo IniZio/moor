@@ -7,20 +7,38 @@ use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
-use moor_core::{ErrorKind, ProviderId, TaskId, TaskName};
+use moor_core::seam::engine::SessionRef;
+use moor_core::seam::proc::Tool;
+use moor_core::seam::surface::{PaneRef, SurfaceError};
+use moor_core::{BoxHandle, BoxPath, ErrorKind, ProviderId, TaskId, TaskName};
 
-use super::wake_if_asleep;
+use super::{wake_and_revive, wake_if_asleep};
 use crate::cx::Cx;
 use crate::store::TaskRow;
 use crate::testing::driver::FakeDriver;
-use crate::testing::proc::ScriptedProc;
+use crate::testing::engine::FakeEngine;
+use crate::testing::proc::{Reply, ScriptedProc};
 use crate::testing::surface::FakeSurface;
 
 struct Fx {
     _dir: tempfile::TempDir,
     cx: Cx,
     driver: Arc<FakeDriver>,
+    surface: Arc<FakeSurface>,
+    engine: Arc<FakeEngine>,
     id: TaskId,
+}
+
+/// A launched session whose pane is `pane`.
+fn session(pane: &str) -> SessionRef {
+    SessionRef {
+        id: String::new(),
+        handle: BoxHandle::new("box-1"),
+        workdir: BoxPath::under("/work", "box-1").unwrap(),
+        worktree: PathBuf::from("/home/me/wt/t"),
+        pane: Some(PaneRef::new(pane)),
+        sandbox: None,
+    }
 }
 
 fn acquire_req(provider: ProviderId, task: TaskId, name: TaskName) -> AcquireReq {
@@ -34,17 +52,32 @@ fn acquire_req(provider: ProviderId, task: TaskId, name: TaskName) -> AcquireReq
     }
 }
 
+/// A process runner that answers the git lookups a relaunch makes.
+fn git_proc() -> Arc<ScriptedProc> {
+    let proc = Arc::new(ScriptedProc::new());
+    proc.on(
+        Tool::Git,
+        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+        Reply::Ok("/home/me/proj/.git\n".into()),
+    );
+    proc
+}
+
 /// Task `t` Working with a Ready Box.
 fn fx_with(driver: FakeDriver) -> Fx {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(driver);
+    let surface = Arc::new(FakeSurface::new(PathBuf::from("/s")));
+    let engine = Arc::new(FakeEngine::new().launch_result(Ok(session("p-2"))));
+    let proc = git_proc();
     let cx = Cx::fake(
         dir.path(),
         Path::new("/home/me/proj"),
         driver.clone(),
-        Arc::new(FakeSurface::new(PathBuf::from("/s"))),
-        Arc::new(ScriptedProc::new()),
-    );
+        surface.clone(),
+        proc,
+    )
+    .with_engine(engine.clone());
     let store = cx.store().unwrap();
     let name = TaskName::parse("t").unwrap();
     let id = store
@@ -86,6 +119,8 @@ fn fx_with(driver: FakeDriver) -> Fx {
         _dir: dir,
         cx,
         driver,
+        surface,
+        engine,
         id,
     }
 }
@@ -295,4 +330,83 @@ fn waking_only_the_task_does_not_look_the_workdir_up() {
         .unwrap();
     assert!(wake_if_asleep(&f.cx, store, &row(&f)).unwrap());
     assert_eq!(workdir_calls(&f), 0);
+}
+
+/// Gives the Task a live agent session in pane `p-1` that can be resumed.
+fn with_agent(f: &Fx) {
+    let store = f.cx.store().unwrap();
+    store.begin_session(f.id, "agent-1", Some("p-1")).unwrap();
+    let set = Fields {
+        agent_session_id: Field::Set("agent-1".into()),
+        workspace_id: Field::Set("ws-1".into()),
+        ..Fields::default()
+    };
+    store.apply(Decision::new(f.id).set(set)).unwrap();
+}
+
+fn relaunched(f: &Fx) -> Vec<serde_json::Value> {
+    f.cx.store()
+        .unwrap()
+        .events(f.id, 100)
+        .unwrap()
+        .into_iter()
+        .filter(|e| e.kind == "relaunched")
+        .map(|e| e.payload)
+        .collect()
+}
+
+#[test]
+fn waking_a_box_whose_agent_is_gone_relaunches_it() {
+    let f = fx();
+    with_agent(&f);
+    sleep(&f);
+    f.surface.push_pane_obs("p-1", Err(SurfaceError::NotFound));
+    let store = f.cx.store().unwrap();
+    assert!(wake_and_revive(&f.cx, store, &row(&f)).unwrap());
+    assert_eq!(f.engine.launches().len(), 1);
+    let events = relaunched(&f);
+    assert_eq!(events.len(), 1);
+    assert_eq!(
+        events.first().and_then(|e| e.get("cause")),
+        Some(&serde_json::json!("wake"))
+    );
+}
+
+#[test]
+fn waking_a_box_whose_agent_is_live_does_not_relaunch() {
+    let f = fx();
+    with_agent(&f);
+    sleep(&f);
+    let store = f.cx.store().unwrap();
+    assert!(wake_and_revive(&f.cx, store, &row(&f)).unwrap());
+    assert!(f.engine.launches().is_empty());
+    assert!(relaunched(&f).is_empty());
+}
+
+#[test]
+fn waking_only_the_task_does_not_probe_the_agent() {
+    let f = fx();
+    with_agent(&f);
+    let store = f.cx.store().unwrap();
+    store
+        .apply(Decision::new(f.id).task_input(TaskInput::AgentQuiet))
+        .unwrap();
+    store
+        .apply(Decision::new(f.id).task_input(TaskInput::SleepCmd))
+        .unwrap();
+    f.surface.push_pane_obs("p-1", Err(SurfaceError::NotFound));
+    assert!(wake_and_revive(&f.cx, store, &row(&f)).unwrap());
+    assert!(f.engine.launches().is_empty());
+    assert!(relaunched(&f).is_empty());
+}
+
+#[test]
+fn plain_wake_leaves_a_gone_agent_alone() {
+    let f = fx();
+    with_agent(&f);
+    sleep(&f);
+    f.surface.push_pane_obs("p-1", Err(SurfaceError::NotFound));
+    let store = f.cx.store().unwrap();
+    assert!(wake_if_asleep(&f.cx, store, &row(&f)).unwrap());
+    assert!(f.engine.launches().is_empty());
 }
