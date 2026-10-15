@@ -2,6 +2,7 @@
 //!
 //! Strict: unknown keys fail parsing; [`parse_user`] then validates values.
 
+mod controller;
 mod creds;
 mod github;
 
@@ -14,6 +15,7 @@ use serde::Deserialize;
 
 use super::proxy::ProxyConfig;
 use super::{check, parse_strict, ConfigError};
+pub use controller::ControllerClientConfig;
 pub use creds::{CredentialSource, McpServer};
 pub use github::DEFAULT_YOU_TOKEN_CMD;
 
@@ -284,28 +286,6 @@ pub struct ToolsConfig {
     pub ssh: Option<PathBuf>,
     /// `git` program.
     pub git: Option<PathBuf>,
-}
-
-/// `controller:` section.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
-#[serde(deny_unknown_fields, default)]
-pub struct ControllerClientConfig {
-    /// Socket of a controller daemon; when set, CLI verbs run there instead of in-process.
-    pub socket: Option<PathBuf>,
-}
-
-impl ControllerClientConfig {
-    /// `socket` is not blank.
-    fn validate(&self) -> Result<(), ConfigError> {
-        if self
-            .socket
-            .as_ref()
-            .is_some_and(|s| s.as_os_str().is_empty())
-        {
-            return Err(ConfigError::new("controller.socket", "must not be empty"));
-        }
-        Ok(())
-    }
 }
 
 /// The user config.

@@ -10,14 +10,14 @@ use serde_json::Value;
 use super::fresh_dir;
 
 /// A running controller and the paths a client needs, torn down on drop.
-struct Daemon {
-    root: PathBuf,
-    socket: PathBuf,
+pub(crate) struct Daemon {
+    pub(crate) root: PathBuf,
+    pub(crate) socket: PathBuf,
     child: Child,
 }
 
 impl Daemon {
-    fn start() -> Self {
+    pub(crate) fn start() -> Self {
         let root = fresh_dir("via");
         // Kept short: Unix socket paths are limited to about 104 bytes.
         let socket = root.join("c.sock");

@@ -28,6 +28,8 @@ pub(super) enum Action {
     ProxyServe(TaskId),
     /// `controller serve --config <file>`: run the controller daemon.
     ControllerServe(PathBuf),
+    /// `controller attach [--socket <path>]`: bridge stdio to the controller socket.
+    ControllerAttach(Option<PathBuf>),
 }
 
 /// Parse argv (program name first) into global options and an action.

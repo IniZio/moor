@@ -345,6 +345,18 @@ fn controller_serve_takes_config() {
 }
 
 #[test]
+fn controller_attach_socket_is_optional() {
+    assert!(matches!(
+        run(&["controller", "attach"]),
+        Ok((_, Action::ControllerAttach(None)))
+    ));
+    assert!(matches!(
+        run(&["controller", "attach", "--socket", "/x"]),
+        Ok((_, Action::ControllerAttach(Some(p)))) if p.as_path() == std::path::Path::new("/x")
+    ));
+}
+
+#[test]
 fn removed_verbs_are_errors() {
     assert!(run(&["pane", "x"]).is_err());
     assert!(run(&["reports", "x"]).is_err());

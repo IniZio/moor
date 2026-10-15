@@ -69,6 +69,13 @@ pub enum Parsed {
         /// Controller config file.
         config: std::path::PathBuf,
     },
+    /// Bridge stdin/stdout to the controller socket.
+    ControllerAttach {
+        /// Global options.
+        opts: GlobalOpts,
+        /// Controller socket override.
+        socket: Option<std::path::PathBuf>,
+    },
     /// Nothing to run; print this.
     Done(Output),
 }
@@ -82,6 +89,7 @@ pub fn parse(args: Vec<OsString>) -> Parsed {
         Ok((opts, Action::CallStdin)) => Parsed::CallStdin(GlobalOpts { json: true, ..opts }),
         Ok((opts, Action::ProxyServe(task))) => Parsed::ProxyServe { opts, task },
         Ok((opts, Action::ControllerServe(config))) => Parsed::ControllerServe { opts, config },
+        Ok((opts, Action::ControllerAttach(socket))) => Parsed::ControllerAttach { opts, socket },
         Err(err) => Parsed::Done(clap_output(&err, cmd, &raw)),
     }
 }
