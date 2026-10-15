@@ -29,7 +29,6 @@ fn empty_doc_is_defaults() {
 fn valueless_sections_are_defaults() {
     for key in [
         "box",
-        "egress",
         "github",
         "surface",
         "tools",
@@ -87,13 +86,14 @@ fn sleep_after_defaults_and_parses() {
 
 #[test]
 fn provider_session_and_tools_parse() {
-    let c = ok("box: {provider: static, size: large, max_boxes: 3, enforce_egress: true, sleep_after: 30m}\n\
+    let c = ok(
+        "box: {provider: static, size: large, max_boxes: 3, sleep_after: 30m}\n\
          surface: {herdr: {session: work}}\n\
-         tools: {crabbox: /opt/crabbox, git: git2}\n");
+         tools: {crabbox: /opt/crabbox, git: git2}\n",
+    );
     assert_eq!(c.provider(), Some("static"));
     assert_eq!(c.box_.size, Some(BoxSize::Large));
     assert_eq!(c.box_.max_boxes, NonZeroU32::new(3));
-    assert_eq!(c.box_.enforce_egress, Some(true));
     assert_eq!(c.box_.sleep_after.as_deref(), Some("30m"));
     assert_eq!(c.herdr_session(), "work");
     assert_eq!(c.tools.crabbox, Some(PathBuf::from("/opt/crabbox")));
@@ -106,7 +106,6 @@ fn accepted_docs() {
     let docs = [
         "box: {size: small}",
         "box: {size: xlarge, provider: custom-provider}",
-        "box: {enforce_egress: true}",
         "github: {identity: you}",
         "github: {identity: bot}",
         "credentials: {A-b_1: {file: /f}}",
@@ -117,7 +116,6 @@ fn accepted_docs() {
         "dotfiles: {path: ~/dots}",
         "dotfiles: {path: /abs, install: ./i.sh}",
         "agent: {model: haiku}",
-        "egress: {allow: [Example.COM, '*.example.org']}",
         "box_credentials: [A, B]",
         "state_dir: /var/moor",
         "credentials: {T: {env: X}}\nmcp_servers: {m: {command: '${NOPE}', args: ['${T}'], env: {K: '${T}'}}, u: {url: 'http://h/${T}', headers: {X: '${T}'}}}",
@@ -184,7 +182,6 @@ fn rejected_values_with_paths() {
         ("github: {identity: Bot}", "github.identity"),
         ("github: {identity: other}", "github.identity"),
         ("box: {size: huge}", "box.size"),
-        ("box: {enforce_egress: 'yes'}", "box.enforce_egress"),
         (
             "credentials: {A: {cmd: gh auth token}}",
             "credentials.A.cmd",
@@ -200,7 +197,6 @@ fn rejected_values_with_paths() {
             "github.app.key_path",
         ),
         ("agent: {location: box}", "agent.location"),
-        ("egress: {allow: [a.com, 10.0.0.1]}", "egress.allow[1]"),
         ("box_credentials: [ANTHROPIC_API_KEY]", "box_credentials[0]"),
         ("box_credentials: [A, GH_TOKEN]", "box_credentials[1]"),
         ("box_credentials: [bad name]", "box_credentials[0]"),
@@ -379,4 +375,16 @@ fn box_credentials_duplicate_matches_helper() {
         (e.path.as_str(), e.reason.as_str()),
         ("box_credentials[1]", want.1.as_str())
     );
+}
+
+#[test]
+fn removed_keys_are_unknown() {
+    for (doc, path) in [
+        ("box: {enforce_egress: true}", "box.enforce_egress"),
+        ("egress: {allow: [x.io]}", "egress"),
+    ] {
+        let e = err(doc);
+        assert_eq!(e.path, path, "{doc}");
+        assert!(e.reason.contains("unknown field"), "{e}");
+    }
 }

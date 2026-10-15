@@ -193,23 +193,6 @@ fn unknown_credential_rejected_forge_allowed() {
 }
 
 #[test]
-fn host_in_egress_allow_names_both_paths() {
-    for allow in ["a.com", "A.com", "*.a.com"] {
-        let host = if allow == "*.a.com" {
-            "x.a.com"
-        } else {
-            "a.com"
-        };
-        let e = err(&format!(
-            "egress: {{allow: [other.org, '{allow}']}}\nproxy: {{rules: {{x: {{hosts: [{host}], credential: forge, inject: {{basic_user: u}}}}}}}}"
-        ));
-        assert_eq!(e.path, "proxy.rules.x.hosts[0]", "{allow}");
-        assert!(e.reason.contains("egress.allow[1]"), "{e}");
-    }
-    user("egress: {allow: [b.com]}\nproxy: {rules: {x: {hosts: [a.com], credential: forge, inject: {basic_user: u}}}}");
-}
-
-#[test]
 fn defaults_are_valid_and_complete() {
     let d = default_rules();
     assert_eq!(
@@ -360,15 +343,6 @@ fn no_repo_drops_repo_rules() {
     let rules = resolve_rules(&ProxyConfig::default(), &creds(), None).expect("resolves");
     let names: Vec<_> = rules.iter().map(|r| r.name.as_str()).collect();
     assert_eq!(names, ["claude"]);
-}
-
-#[test]
-fn default_hosts_conflict_with_egress_allow() {
-    for allow in ["api.github.com", "github.com", "'*.anthropic.com'"] {
-        let e = err(&format!("egress: {{allow: [{allow}]}}"));
-        assert!(e.path.starts_with("proxy.rules."), "{allow}: {e}");
-        assert!(e.reason.contains("egress.allow[0]"), "{e}");
-    }
 }
 
 #[test]
