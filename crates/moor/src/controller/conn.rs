@@ -5,6 +5,7 @@ use std::io::{BufRead, Write};
 use moor_core::controller::{parse_frame, ClientFrame, FrameErrorKind, ServerFrame, PROTOCOL};
 use moor_core::{Request, Response};
 
+use super::progress::{respond_with_progress, INTERVAL};
 use super::watch;
 use crate::env::Env;
 use crate::Moor;
@@ -16,7 +17,7 @@ pub(crate) fn handle(reader: impl BufRead, writer: impl Write, env: &Env) {
     serve(
         reader,
         writer,
-        |request| respond(env, request),
+        |id, request, emit| respond_with_progress(env, id, request, INTERVAL, emit),
         |writer, since| watch::stream(writer, env, since, watch::Limits::default()),
     );
 }
@@ -26,7 +27,7 @@ pub(crate) fn handle(reader: impl BufRead, writer: impl Write, env: &Env) {
 fn serve<W: Write>(
     reader: impl BufRead,
     mut writer: W,
-    answer: impl Fn(Request) -> Response,
+    answer: impl Fn(&str, Request, &mut dyn FnMut(ServerFrame) -> bool) -> Response,
     watch: impl Fn(&mut W, i64),
 ) {
     let mut handshaken = false;
@@ -60,10 +61,13 @@ fn serve<W: Write>(
                 id: Some(id),
                 kind: FrameErrorKind::HelloRequired,
             },
-            Ok(ClientFrame::Request { id, request }) => ServerFrame::Response {
-                id,
-                envelope: answer(request),
-            },
+            Ok(ClientFrame::Request { id, request }) => {
+                let emit = &mut |frame: ServerFrame| {
+                    writer.write_all(frame.to_line().as_bytes()).is_ok() && writer.flush().is_ok()
+                };
+                let envelope = answer(&id, request, emit);
+                ServerFrame::Response { id, envelope }
+            }
         };
         if writer.write_all(reply.to_line().as_bytes()).is_err() || writer.flush().is_err() {
             return;

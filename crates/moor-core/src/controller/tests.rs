@@ -114,3 +114,65 @@ fn store_unavailable_kind_serializes() {
         serde_json::to_string(&FrameErrorKind::StoreUnavailable).unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(got, r#""store-unavailable""#);
 }
+
+#[test]
+fn client_frames_round_trip_through_parse_frame() {
+    let hello = ClientFrame::Hello { protocol: PROTOCOL };
+    assert_eq!(parse_frame(&hello.to_line()), Ok(hello));
+    let request = ClientFrame::Request {
+        id: "9".into(),
+        request: Request::Version {},
+    };
+    assert_eq!(parse_frame(&request.to_line()), Ok(request));
+    let watch = ClientFrame::Watch { since: 3 };
+    assert_eq!(parse_frame(&watch.to_line()), Ok(watch));
+}
+
+#[test]
+fn server_frames_round_trip_through_parse_server_frame() {
+    let frames = [
+        ServerFrame::Hello { protocol: PROTOCOL },
+        ServerFrame::Progress {
+            id: "1".into(),
+            message: "fetching".into(),
+        },
+        ServerFrame::Response {
+            id: "1".into(),
+            envelope: Response::ok("version", None),
+        },
+        ServerFrame::Error {
+            id: Some("2".into()),
+            kind: FrameErrorKind::Malformed,
+            message: "m".into(),
+        },
+        ServerFrame::Error {
+            id: None,
+            kind: FrameErrorKind::HelloRequired,
+            message: "m".into(),
+        },
+        ServerFrame::Event {
+            cursor: 7,
+            task: "t".into(),
+            kind: "idled".into(),
+            payload: serde_json::json!({"a": 1}),
+            ts: 123,
+        },
+    ];
+    for frame in frames {
+        let parsed = parse_server_frame(&frame.to_line()).expect("parses");
+        assert_eq!(parsed, frame);
+    }
+}
+
+#[test]
+fn progress_shape() {
+    let line = ServerFrame::Progress {
+        id: "4".into(),
+        message: "step".into(),
+    }
+    .to_line();
+    assert_eq!(
+        line,
+        "{\"frame\":\"progress\",\"id\":\"4\",\"message\":\"step\"}\n"
+    );
+}

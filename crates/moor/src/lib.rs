@@ -3,6 +3,8 @@
 
 mod adapters;
 pub mod cli;
+/// Client for the controller socket.
+pub mod client;
 mod config_load;
 /// The controller daemon: serves Requests on a local socket.
 pub mod controller;

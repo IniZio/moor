@@ -9,6 +9,8 @@
 
 #[path = "cli/controller.rs"]
 mod controller;
+#[path = "cli/via_controller.rs"]
+mod via_controller;
 
 use std::io::Write;
 use std::path::PathBuf;

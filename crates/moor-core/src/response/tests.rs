@@ -72,3 +72,34 @@ fn kind_maps_to_class() {
     };
     assert_eq!(Response::err("x", e).class, ExitClass::Failed);
 }
+
+#[test]
+fn constructors_roundtrip() {
+    let e = ErrorView {
+        kind: ErrorKind::Refused,
+        message: "no".into(),
+        hints: vec!["h".into()],
+        context: vec!["c".into()],
+    };
+    let w = Warning {
+        code: "c".into(),
+        message: "m".into(),
+    };
+    for r in [
+        Response::ok("version", None),
+        Response::ok("x", Some(json!({"a":1}))).with_warnings(vec![w]),
+        Response::err("close", e),
+    ] {
+        let back: Response = serde_json::from_value(serde_json::to_value(&r).unwrap()).unwrap();
+        assert_eq!(back, r);
+    }
+}
+
+#[test]
+fn wrong_schema_rejected() {
+    let mut v = serde_json::to_value(Response::ok("x", None)).unwrap();
+    v.as_object_mut()
+        .unwrap()
+        .insert("schema".into(), json!("moor/2"));
+    assert!(serde_json::from_value::<Response>(v).is_err());
+}

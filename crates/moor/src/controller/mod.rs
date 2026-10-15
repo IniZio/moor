@@ -1,6 +1,7 @@
 //! `moor controller serve`: a long-running process answering moor requests on a Unix socket.
 
 mod conn;
+mod progress;
 mod settle;
 mod watch;
 

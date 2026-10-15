@@ -1,12 +1,12 @@
 //! Response envelope shared by every command.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// Envelope schema identifier.
 pub const SCHEMA: &str = "moor/1";
 
 /// Outcome class of a response.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ExitClass {
     /// Success.
@@ -20,7 +20,7 @@ pub enum ExitClass {
 }
 
 /// Kind of an error.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ErrorKind {
     /// Bad usage.
@@ -45,7 +45,7 @@ impl From<ErrorKind> for ExitClass {
 }
 
 /// Non-fatal notice attached to a response.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Warning {
     /// Stable machine code.
     pub code: String,
@@ -54,7 +54,7 @@ pub struct Warning {
 }
 
 /// Error detail of a failed response.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ErrorView {
     /// Error kind.
     pub kind: ErrorKind,
@@ -81,6 +81,49 @@ pub struct Response {
     pub warnings: Vec<Warning>,
     /// Error detail when not ok.
     pub error: Option<ErrorView>,
+}
+
+/// Wire form of [`Response`]; the schema is checked on conversion so the
+/// public field can stay `&'static str`.
+#[derive(Deserialize)]
+#[allow(
+    clippy::missing_docs_in_private_items,
+    reason = "fields mirror Response one to one"
+)]
+struct ResponseWire {
+    schema: String,
+    cmd: String,
+    class: ExitClass,
+    value: Option<serde_json::Value>,
+    warnings: Vec<Warning>,
+    error: Option<ErrorView>,
+}
+
+impl<'de> Deserialize<'de> for Response {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Self::try_from(ResponseWire::deserialize(d)?).map_err(serde::de::Error::custom)
+    }
+}
+
+impl TryFrom<ResponseWire> for Response {
+    type Error = String;
+
+    fn try_from(w: ResponseWire) -> Result<Self, String> {
+        if w.schema != SCHEMA {
+            return Err(format!(
+                "unsupported schema `{}`, expected `{SCHEMA}`",
+                w.schema
+            ));
+        }
+        Ok(Self {
+            schema: SCHEMA,
+            cmd: w.cmd,
+            class: w.class,
+            value: w.value,
+            warnings: w.warnings,
+            error: w.error,
+        })
+    }
 }
 
 impl Response {

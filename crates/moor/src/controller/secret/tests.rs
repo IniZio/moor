@@ -98,7 +98,7 @@ fn exchange(cx: Cx, requests: &[Request]) -> (String, String, Vec<Value>) {
     serve(
         Cursor::new(input.clone().into_bytes()),
         &mut out,
-        |r| moor.call(r),
+        |_, r, _| moor.call(r),
         |_, _| {},
     );
     let out = String::from_utf8(out).expect("utf8");
