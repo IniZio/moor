@@ -280,8 +280,10 @@ fn rig_with(f: Responder, guard: Guard) -> Rig {
         credential_headers: vec!["X-Gh-Auth".to_owned()],
         on_credentialed_401: {
             let evictions = Arc::clone(&evictions);
-            Box::new(move || {
-                evictions.fetch_add(1, Ordering::SeqCst);
+            Box::new(move |head| {
+                if head.header("authorization") == Some(&format!("token {TOKEN}")) {
+                    evictions.fetch_add(1, Ordering::SeqCst);
+                }
             })
         },
         upstream,

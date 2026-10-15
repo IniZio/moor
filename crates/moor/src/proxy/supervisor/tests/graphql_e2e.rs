@@ -144,7 +144,7 @@ fn serve_one(tcp: TcpStream, config: Arc<ServerConfig>, seen: &Mutex<Vec<Seen>>)
         return;
     }
     let request_line = head.lines().next().unwrap_or_default().to_owned();
-    let authorized = header("authorization").is_some();
+    let authorized = header("authorization").as_deref() == Some(&format!("token {SECRET}"));
     let reply = reply_for(authorized, &request_line);
     seen.lock()
         .unwrap_or_else(PoisonError::into_inner)
@@ -430,6 +430,66 @@ fn anonymous_401_does_not_evict_the_cached_credential() {
     }
     let (status, body) = query(&rig.client(), "o", "r");
     assert_eq!((status, body.as_str()), (200, GRAPHQL_REPLY));
+    assert_eq!(
+        rig.fetches.load(Ordering::SeqCst),
+        1,
+        "credential refetched"
+    );
+    rig.live.unwrap().stop();
+}
+
+/// Sends `request` through the front and nono as the Box would, bytes
+/// untouched, and returns the response head.
+fn raw_call(rig: &Rig, request: &str) -> String {
+    use rustls::pki_types::pem::PemObject;
+    use rustls::pki_types::{CertificateDer, ServerName};
+    use rustls::{ClientConfig, ClientConnection, RootCertStore};
+
+    let port = rig.live.as_ref().unwrap().port();
+    let mut tcp = TcpStream::connect((Ipv4Addr::LOCALHOST, port)).unwrap();
+    tcp.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+    let auth = crate::proxy::nono::capture::base64(format!("moor:{NONCE}").as_bytes());
+    let connect = format!(
+        "CONNECT api.github.com:443 HTTP/1.1\r\nHost: api.github.com:443\r\n\
+         Proxy-Authorization: Basic {auth}\r\n\r\n"
+    );
+    tcp.write_all(connect.as_bytes()).unwrap();
+    let read_head = |r: &mut dyn Read| {
+        let (mut head, mut byte) = (Vec::new(), [0u8; 1]);
+        while !head.ends_with(b"\r\n\r\n") && r.read(&mut byte).is_ok_and(|n| n == 1) {
+            head.push(byte[0]);
+        }
+        String::from_utf8_lossy(&head).into_owned()
+    };
+    assert!(read_head(&mut tcp).starts_with("HTTP/1.1 200"));
+    let mut roots = RootCertStore::empty();
+    roots
+        .add(CertificateDer::from_pem_slice(rig.ca_pem.as_bytes()).unwrap())
+        .unwrap();
+    let config =
+        ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
+            .with_safe_default_protocol_versions()
+            .unwrap()
+            .with_root_certificates(roots)
+            .with_no_client_auth();
+    let name = ServerName::try_from("api.github.com").unwrap();
+    let conn = ClientConnection::new(Arc::new(config), name).unwrap();
+    let mut tls = StreamOwned::new(conn, tcp);
+    tls.write_all(request.as_bytes()).unwrap();
+    read_head(&mut tls)
+}
+
+#[test]
+fn forged_authorization_line_does_not_make_the_credential_refetch() {
+    let rig = rig();
+    let (status, _) = query(&rig.client(), "o", "r");
+    assert_eq!(status, 200);
+    let forged = "GET /repos/cli/cli HTTP/1.1\r\nHost: api.github.com\r\n\
+                  Authorization : x\r\nConnection: close\r\n\r\n";
+    let head = raw_call(&rig, forged);
+    assert!(head.starts_with("HTTP/1.1 401"), "{head}");
+    let (status, _) = query(&rig.client(), "o", "r");
+    assert_eq!(status, 200);
     assert_eq!(
         rig.fetches.load(Ordering::SeqCst),
         1,

@@ -16,6 +16,7 @@ use moor_core::seam::proxy_host::ProxySpec;
 use moor_core::secret::Secret;
 use moor_core::{ProviderId, TaskId, TaskName};
 
+mod evict;
 mod front_e2e;
 mod graphql_e2e;
 mod hairpin_e2e;
