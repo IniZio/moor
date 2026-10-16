@@ -3,7 +3,7 @@
 use moor_core::boxscript::boxwork::BOXWORK_NO_CHECKOUT;
 use moor_core::domain::run::SyncMode;
 use moor_core::seam::proc::Tool;
-use moor_core::{BoxPath, StartReq, TaskId};
+use moor_core::{BoxPath, ErrorKind, StartReq, TaskId};
 
 use super::setup::{exit, failed_setup_with, setup_execs, start_req, warning_codes};
 use super::{world, World};
@@ -213,4 +213,26 @@ fn restart_after_a_failed_setup_warns_when_the_sync_fails_and_attaches() {
     let again = run(&w.cx, &req).unwrap();
     assert!(!again.setup.ran);
     assert!(warning_codes(&w).contains(&"resync_failed".to_owned()));
+}
+
+#[test]
+fn restart_after_a_failed_setup_that_launches_the_agent_aborts_when_the_sync_fails() {
+    let driver =
+        FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(1)), Ok(exit(1)), Ok(exit(0))]);
+    let (w, id) = failed_setup_with("setup: [a]\n", driver);
+    drop(warning_codes(&w));
+    let req = StartReq {
+        goal: Some("ship it".into()),
+        ..start_req()
+    };
+    let err = run(&w.cx, &req).unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Failed);
+    assert!(err
+        .error
+        .to_string()
+        .contains("syncing the checkout into the Box failed"));
+    assert_eq!(setup_execs(&w).len(), 1);
+    let store = w.cx.store().unwrap();
+    assert!(store.task(id).unwrap().unwrap().setup_failed_at.is_some());
+    assert!(store.live_session(id).unwrap().is_none());
 }
