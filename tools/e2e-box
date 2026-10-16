@@ -45,6 +45,11 @@ not in --box-step.
 Failed phases print the real elapsed time, the phase budget (none for asserts)
 and a short reason: PHASE wake1 took=45.0s budget=45.0s FAIL (no relaunched event)
 
+Agent checks (assert.agent_start, assert.agentN): the agent process runs on the Box, the Task's
+proxy log shows a successful POST claude within 60 s of session_started / relaunched (after a wake,
+a new one after relaunched), and moor.db has a registered agent session. A FAIL names the failed
+part and prints the agent pane tail (moor show --pane).
+
 Needs jq, ps, awk, crabbox, cargo.
 
 Every moor stderr is appended to <state-dir>/moor-stderr.log. With
@@ -162,6 +167,30 @@ assert_rc() { if [ "$2" -eq 0 ]; then phase_pass "$1"; else phase_fail "$1" "$3"
 # Runs a command on the Box; the command sees the Box workdir as cwd.
 box_run() { mo 180 run "$name" --no-sync -- "$@"; }
 agent_up() { box_run sh -c "pgrep -f '[c]laude' >/dev/null"; }
+# agent_check PHASE KIND [AFTER_ID]: the agent process runs, the proxy log shows a model POST within 60 s
+# of the newest KIND event, and the Task has a registered agent session. A FAIL names the missing part
+# and prints the agent pane tail, so a screen that blocks the goal is visible.
+agent_check() {
+  local phase=$1 kind=$2 after=${3:-0} t0 ref why="" mreq=0 sess=0 proc=0
+  t0=$(now_ms)
+  if in_pilot agent_up; then proc=1; fi
+  ref="$(budget event-ts --db "$state/moor.db" --task "$name" --kind "$kind" --after-id "$after" 2>/dev/null)" || ref=""
+  if [ -z "$ref" ]; then ref=$t0; fi
+  while :; do
+    budget model-request --db "$state/moor.db" --task "$name" --state-dir "$state" --after-ms "$ref" >/dev/null 2>&1 && mreq=1 || mreq=0
+    budget agent-session --db "$state/moor.db" --task "$name" >/dev/null 2>&1 && sess=1 || sess=0
+    if [ "$proc" = 0 ] || { [ "$mreq" = 1 ] && [ "$sess" = 1 ]; }; then break; fi
+    [ "$(now_ms)" -lt $((ref + 60000)) ] || break
+    sleep 1
+  done
+  if [ "$proc" = 1 ] && [ "$mreq" = 1 ] && [ "$sess" = 1 ]; then phase_pass "$phase"; return 0; fi
+  [ "$proc" = 1 ] || why="agent process not running; "
+  [ "$mreq" = 1 ] || why="${why}no model request (POST claude 2xx) in proxy log within 60s of $kind; "
+  [ "$sess" = 1 ] || why="${why}no registered agent session; "
+  phase_fail "$phase" "${why%; }" "$t0"
+  echo "agent pane tail:"
+  in_pilot mo 60 --json show "$name" --pane 2>/dev/null | jq -r '.value.pane.tail // "(no pane)"' 2>/dev/null | tail -n 20 || true
+}
 box_listed() { # 0 when the Box still appears in crabbox list
   local out
   # Neutral cwd: inside a repo crabbox reads the config as repo config and refuses trustProviderOutput.
@@ -238,11 +267,12 @@ if [ "$dry" = 1 ]; then
     echo "+ moor run $name -- sh -c '${box_steps[n]}'   # phase box_step.$((n + 1)), report only"
   done
   echo "+ poll for a tunnel --reverse process (assert.tunnel_seen)"
-  echo "+ moor run $name --no-sync -- sh -c \"pgrep -f '[c]laude' >/dev/null\"; moor run $name --no-sync -- test -e .git"
+  echo "+ assert.agent_start: pgrep claude on the Box, then poll <= 60s after session_started for a POST claude 2xx in <state>/proxy/<task id>.log and a registered agent session in moor.db (read-only); on FAIL print moor show --pane tail"
+  echo "+ moor run $name --no-sync -- test -e .git"
   for ((n = 1; n <= cycles; n++)); do
     echo "+ cycle $n: moor sleep $name (<= ${b_sleep}s); poll for the tunnel --reverse process to vanish; sleep$n.other_tunnels is informational (<= ${b_tunnels}s)"
     echo "+ cycle $n: e2e-budget last-id; moor wake $name; poll relaunched (<= ${b_wake_total}s); e2e-budget wake --cycle $n"
-    echo "+ cycle $n: agent check"
+    echo "+ cycle $n: assert.agent$n: same checks, with the POST required after the relaunched event"
   done
   echo "+ moor --json show $name; moor close $name (<= ${b_close}s); crabbox list --provider <p> --json"
   echo "+ moor stderr appended to $state/moor-stderr.log"
@@ -290,9 +320,7 @@ if task_exists; then
     sleep 0.5
   done
   if [ "$seen" = 1 ]; then phase_pass assert.tunnel_seen; else phase_fail assert.tunnel_seen "no moor reverse tunnel process within 10s" "$t0"; tunnel_diag; fi
-  t0=$(now_ms)
-  if in_pilot agent_up; then rc=0; else rc=$?; fi
-  assert_rc assert.agent_start "$rc" "agent not running"
+  agent_check assert.agent_start session_started
   if in_pilot box_run test -e .git; then rc=0; else rc=$?; fi
   assert_rc assert.checkout_git "$rc" "no .git in Box workdir"
 else
@@ -343,8 +371,7 @@ for ((n = 1; n <= cycles; n++)); do
   else
     tail -n 10 "$scratch/wake.log" || true; phase_fail "wake$n" "moor wake failed" "$t0" "$b_wake_total"
   fi
-  if in_pilot agent_up; then rc=0; else rc=$?; fi
-  assert_rc "assert.agent$n" "$rc" "agent not running after wake"
+  agent_check "assert.agent$n" relaunched "$after"
 done
 
 # close

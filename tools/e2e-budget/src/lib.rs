@@ -214,6 +214,24 @@ pub fn count_kind(events: &[Event], kind: &str) -> usize {
     events.iter().filter(|e| e.kind == kind).count()
 }
 
+/// True when the proxy log has a successful `POST <route>` line stamped at or after `after_ms`.
+///
+/// Lines are `<unix-ms> <method> <route> <status>`; nothing else in a line is read.
+pub fn model_request_after(log: &str, after_ms: i64, route: &str) -> bool {
+    log.lines().any(|line| {
+        let mut f = line.split_whitespace();
+        let (Some(ts), Some(method), Some(r), Some(status), None) =
+            (f.next(), f.next(), f.next(), f.next(), f.next())
+        else {
+            return false;
+        };
+        method == "POST"
+            && r == route
+            && status.starts_with('2')
+            && ts.parse::<i64>().is_ok_and(|t| t >= after_ms)
+    })
+}
+
 /// True when the list is non-empty and every phase passes.
 pub fn verdict(phases: &[Phase]) -> bool {
     !phases.is_empty() && phases.iter().all(Phase::pass)

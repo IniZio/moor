@@ -87,7 +87,10 @@ fn setup_time_is_excluded_from_total_and_never_fails() {
         ev(5, "session_started", 115_000),
     ];
     let p = start_phases(&events, &StartBudgets::default());
-    assert_eq!(p[1].line(), "PHASE start.setup took=100.0s budget=none PASS");
+    assert_eq!(
+        p[1].line(),
+        "PHASE start.setup took=100.0s budget=none PASS"
+    );
     assert_eq!(p[4].took_ms, Some(15_000));
     assert!(verdict(&p));
 }
@@ -244,4 +247,48 @@ fn parse_jsonl_skips_blank_lines_and_names_bad_line() {
     assert_eq!(ok, [ev(1, "started", 5)]);
     let err = parse_jsonl("{\"id\":1,\"kind\":\"started\",\"ts_ms\":5}\n\nnot json\n").unwrap_err();
     assert!(err.starts_with("line 3:"), "{err}");
+}
+
+const PROXY_LOG: &str = "1700000000000 GET gh 200\n1700000005000 POST claude 401\n\
+                         1700000009000 CONNECT claude 200\n1700000010000 POST claude 200\n";
+
+#[test]
+fn model_request_needs_successful_post_to_the_route() {
+    assert!(model_request_after(PROXY_LOG, 1_700_000_000_000, "claude"));
+    assert!(!model_request_after("", 0, "claude"));
+    assert!(!model_request_after(
+        "1700000010000 POST gh 200\n",
+        0,
+        "claude"
+    ));
+    assert!(!model_request_after(
+        "1700000010000 POST claude 403\n",
+        0,
+        "claude"
+    ));
+    assert!(!model_request_after(
+        "1700000010000 GET claude 200\n",
+        0,
+        "claude"
+    ));
+}
+
+#[test]
+fn model_request_before_the_relaunch_does_not_count() {
+    assert!(model_request_after(PROXY_LOG, 1_700_000_010_000, "claude"));
+    assert!(!model_request_after(PROXY_LOG, 1_700_000_010_001, "claude"));
+}
+
+#[test]
+fn model_request_ignores_malformed_lines() {
+    assert!(!model_request_after(
+        "POST claude 200\nx POST claude 200\n",
+        0,
+        "claude"
+    ));
+    assert!(!model_request_after(
+        "1 POST claude 200 extra\n",
+        0,
+        "claude"
+    ));
 }
