@@ -20,17 +20,32 @@ named=$(printf '%s\n' "$files" | grep -v -e '^crates/moor-core/src/config/check.
 # shellcheck disable=SC2086
 a=$(grep -nwE "$vars" $named /dev/null | grep -Ev "^[^:]*:[0-9]+:[[:space:]]*//" | sed 's/$/  <- proxy\/CA variable named outside exec_env/' || true)
 # (b) an ExecSpec literal's env is exactly `env: Vec::new(),`, `env: vec![],`, `env: <path>.vars(),` or
-# `env: <path>.vars.clone(),`; the `env,` shorthand and multi-line expressions are violations.
+# `env: <path>.vars.clone(),`; the `env,` shorthand and multi-line expressions are violations. The same
+# forms are the only ones allowed in a one-line literal. A shell script cannot resolve types, so `<path>`
+# is unchecked; (d) instead limits where a `vars` producer can be defined.
 # shellcheck disable=SC2086
 b=$(awk '
   FNR == 1 { depth = 0 }
-  depth == 0 && /ExecSpec \{/ && !/struct ExecSpec/ { depth = 1; line = $0; sub(/.*ExecSpec \{/, "", line); depth += gsub(/\{/, "{", line) - gsub(/\}/, "}", line); next }
+  depth == 0 && /ExecSpec \{/ && !/struct ExecSpec/ { depth = 1; line = $0; sub(/.*ExecSpec \{/, "", line); depth += gsub(/\{/, "{", line) - gsub(/\}/, "}", line); 
+    ok = "env: (Vec::new\\(\\)|vec!\\[\\]|[A-Za-z0-9_.]+\\.vars\\(\\)|[A-Za-z0-9_.]+\\.vars\\.clone\\(\\))[,} ]"
+    gsub(ok, "", line)
+    if (match(line, /(^|[^A-Za-z0-9_.])env([^A-Za-z0-9_]|$)/)) print FILENAME ":" FNR ":" $0 "  <- ExecSpec env not from exec_env"
+    next }
   depth > 0 {
     if ($0 ~ /^[ \t]*env[ \t]*([:,}]|$)/ && $0 !~ /^[ \t]*env: (Vec::new\(\)|vec!\[\]|[A-Za-z0-9_.]+\.vars\(\)|[A-Za-z0-9_.]+\.vars\.clone\(\)),[ \t]*$/)
       print FILENAME ":" FNR ":" $0 "  <- ExecSpec env not from exec_env"
     t = $0; depth += gsub(/\{/, "{", t) - gsub(/\}/, "}", t)
   }' $files || true)
-hits=$(printf '%s\n%s\n' "$a" "$b" | sed '/^$/d')
+# (c) no `.env = `, `.env.push(` or `.env.extend(` on an ExecSpec after construction. proc.rs is exempt:
+# its `ProcSpec::env` builder sets a host-side process env, not a Box exec env.
+# shellcheck disable=SC2086
+c=$(grep -nE '\.env( =|\.push\(|\.extend\()' $files /dev/null | grep -Ev "^[^:]*:[0-9]+:[[:space:]]*//" \
+  | grep -v '^crates/moor-core/src/seam/proc.rs:' | sed 's/$/  <- ExecSpec env mutated after construction/' || true)
+# (d) `vars` producers live in exec_env.rs (ExecEnv.vars) and box_exec.rs (BoxExec::vars) only.
+# shellcheck disable=SC2086
+d=$(grep -nE 'fn vars\(' $files /dev/null | grep -v '^crates/moor/src/ops/common/box_exec.rs:' \
+  | sed 's/$/  <- vars producer outside exec_env\/box_exec/' || true)
+hits=$(printf '%s\n%s\n%s\n%s\n' "$a" "$b" "$c" "$d" | sed '/^$/d')
 if [ -n "$hits" ]; then
   echo "exec-env: Box exec env built outside moor_core::exec_env"
   echo "$hits"

@@ -79,6 +79,33 @@ fn f() {
     };
 }
 RS
+exec_env exec-env-oneline-shorthand fail <<'RS'
+fn f() { let _ = ExecSpec { argv, env, cwd: None, .. }; }
+RS
+exec_env exec-env-oneline-cfg fail <<'RS'
+fn f() { let _ = ExecSpec { env: cfg.env.clone(), ..base }; }
+RS
+exec_env exec-env-oneline-empty pass <<'RS'
+fn f() { let _ = ExecSpec { argv, env: Vec::new(), .. }; }
+RS
+exec_env exec-env-oneline-vars pass <<'RS'
+fn f() { let _ = ExecSpec { env: exec.vars(), argv }; }
+RS
+exec_env exec-env-assign fail <<'RS'
+fn f() { spec.env = other; }
+RS
+exec_env exec-env-push fail <<'RS'
+fn f() { spec.env.push(kv); }
+RS
+exec_env exec-env-extend fail <<'RS'
+fn f() { spec.env.extend(kvs); }
+RS
+exec_env exec-env-read pass <<'RS'
+fn f() { let n = cfg.env.len(); }
+RS
+exec_env exec-env-fn-vars fail <<'RS'
+fn vars(&self) -> Vec<(String, String)> { Vec::new() }
+RS
 exec_env exec-env-proxy-name fail <<'RS'
 fn f() -> &'static str { "HTTPS_PROXY" }
 RS
