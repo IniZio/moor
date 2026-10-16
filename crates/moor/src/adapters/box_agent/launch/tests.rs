@@ -143,7 +143,10 @@ fn the_pane_line_runs_the_script_without_exec_and_reports_the_exit() {
     out.unwrap();
     let line = pane_line(&s);
     assert!(line.starts_with("'ssh' '-t' 'box-1' '"), "{line}");
-    assert!(line.ends_with("; echo \"moor: agent exited $?\""), "{line}");
+    assert!(
+        line.ends_with("; c=$?; printf '\\r\\033[K'; echo \"moor: agent exited $c\""),
+        "{line}"
+    );
     assert!(!line.contains("exec "), "{line}");
 }
 
@@ -195,7 +198,7 @@ fn unquote(q: &str) -> String {
 fn remote_of(line: &str) -> String {
     let rest = line.strip_prefix("'ssh' '-t' 'box-1' ").unwrap();
     let quoted = rest
-        .strip_suffix("; echo \"moor: agent exited $?\"")
+        .strip_suffix("; c=$?; printf '\\r\\033[K'; echo \"moor: agent exited $c\"")
         .unwrap();
     unquote(quoted)
 }

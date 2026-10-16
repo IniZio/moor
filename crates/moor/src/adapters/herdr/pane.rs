@@ -60,14 +60,15 @@ fn listed_status(out: &str, pane: &PaneRef) -> Result<Option<PaneStatus>, Surfac
         .map(|p| status_of(p.agent_status.as_deref())))
 }
 
-/// The code on the last exit marker line in `text`.
+/// The code on the last exit marker line in `text`. The marker must start
+/// the line and be followed at once by digits; leftover screen text after
+/// the digits is ignored, while a marker mid-line (such as an echoed command)
+/// is not one.
 fn exit_marker(text: &str) -> Option<i32> {
     text.lines().rev().find_map(|line| {
-        line.trim()
-            .strip_prefix(EXIT_MARKER)?
-            .trim()
-            .parse::<i32>()
-            .ok()
+        let rest = line.trim_start().strip_prefix(EXIT_MARKER)?;
+        let digits = rest.len() - rest.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+        rest.get(..digits)?.parse::<i32>().ok()
     })
 }
 

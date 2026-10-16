@@ -98,6 +98,21 @@ fn exit_marker_mid_line_is_ignored() {
 }
 
 #[test]
+fn exit_marker_ignores_residue_after_the_code() {
+    let (_, h) = fixture(Some("idle"), "moor: agent exited 255sc to cancel\n");
+    assert_eq!(obs(&h).expect("observed").exit_marker, Some(255));
+}
+
+#[test]
+fn exit_marker_ignores_unrelated_text() {
+    let (_, h) = fixture(
+        Some("idle"),
+        "sc to cancel moor: agent exited\nagent exited 4\n",
+    );
+    assert_eq!(obs(&h).expect("observed").exit_marker, None);
+}
+
+#[test]
 fn exit_marker_needs_a_number() {
     let (_, h) = fixture(Some("idle"), "moor: agent exited soon\n");
     assert_eq!(obs(&h).expect("observed").exit_marker, None);
