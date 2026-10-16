@@ -1,6 +1,6 @@
 //! The Box steps of one launch, run as batches.
 
-use moor_core::boxscript::quote;
+use moor_core::boxscript::{proof_publish, quote};
 use moor_core::name::BoxPath;
 use moor_core::seam::agent_profile::BoxSetup;
 use moor_core::seam::driver::{BoxStep, ExecOutcome, StepDone};
@@ -28,6 +28,8 @@ pub(super) enum Tag {
     Profile,
     /// The brief.
     Brief,
+    /// The proof publish helper.
+    Proof,
     /// A hook or preseed file.
     Hooks,
     /// A proxy file, with the text a failure is reported under.
@@ -41,6 +43,7 @@ impl Tag {
             Self::Agent => fail("agent", e),
             Self::Check | Self::Upload | Self::Recheck | Self::Profile => fail("sandbox", e),
             Self::Brief => fail("brief", e),
+            Self::Proof => fail("proof", e),
             Self::Hooks => fail("hooks", e),
             Self::Proxy(text) => Failure {
                 step: "proxy",
@@ -161,6 +164,17 @@ impl Launch<'_> {
             BoxStep::Put {
                 path,
                 bytes,
+                mode: 0o600,
+            },
+        );
+        let helper = BoxPath::under(ctx.workdir.as_str(), proof_publish::FILE)
+            .map_err(|e| fail("proof", &e))?;
+        let script = proof_publish::SCRIPT.as_bytes().to_vec();
+        plan.push(
+            Tag::Proof,
+            BoxStep::Put {
+                path: helper,
+                bytes: script,
                 mode: 0o600,
             },
         );

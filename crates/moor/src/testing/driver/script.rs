@@ -70,6 +70,15 @@ impl FakeDriver {
         self
     }
 
+    /// The `put_file` after `skip` more calls fails once with `e`.
+    pub(crate) fn fail_put_after(self, skip: usize, e: DriverError) -> Self {
+        let mut s = self.st();
+        s.fail_put = Some(e);
+        s.put_skips = skip;
+        drop(s);
+        self
+    }
+
     /// The next `connect_argv` fails once with `e`.
     pub(crate) fn fail_connect(self, e: DriverError) -> Self {
         self.st().fail_connect = Some(e);

@@ -120,6 +120,7 @@ fn delivers_the_hook_writer_files() {
         paths,
         [
             format!("{CRED}/brief.md"),
+            "/work/box-1/.moor/publish-proof.sh".to_owned(),
             "/work/box-1/.moor/hook.sh".to_owned(),
             "/work/box-1/.moor/hooks.json".to_owned(),
         ]
@@ -591,10 +592,9 @@ fn the_agent_gets_the_proxy_env_while_the_cred_dir_lives_until_exit() {
     assert!(b.cred_gone());
 }
 
+mod batch;
+mod proof;
 #[path = "sandbox_tests.rs"]
 mod sandbox_tests;
-
 #[path = "secret_tests.rs"]
 mod secret_tests;
-
-mod batch;

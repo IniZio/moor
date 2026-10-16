@@ -42,6 +42,7 @@ struct State {
     peeks: Vec<PeekCall>,
     puts: Vec<PutCall>,
     fail_put: Option<DriverError>,
+    put_skips: usize,
     fail_connect: Option<DriverError>,
     fail_peek: Option<DriverError>,
     fail_sleep: Option<DriverError>,
@@ -305,7 +306,9 @@ impl Driver for FakeDriver {
         if !s.live.iter().any(|h| h == handle.as_str()) {
             return Err(DriverError::NotFound);
         }
-        if let Some(e) = s.fail_put.take() {
+        if s.put_skips > 0 {
+            s.put_skips -= 1;
+        } else if let Some(e) = s.fail_put.take() {
             return Err(e);
         }
         let (h, p) = (handle.as_str(), path.as_str());

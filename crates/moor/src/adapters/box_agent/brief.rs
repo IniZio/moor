@@ -2,6 +2,8 @@
 
 use std::fmt::Write;
 
+use moor_core::boxscript::proof_publish;
+
 /// What the brief says about one Task.
 pub(super) struct BriefInput<'a> {
     /// The Task name.
@@ -59,6 +61,15 @@ pub(super) fn render(b: &BriefInput) -> String {
              `.moor/reports/<kind>.md`.\n\n"
         );
     }
+    _ = write!(
+        out,
+        "Save proof screenshots and recordings under `.moor/proof/`. To publish them, run \
+         `sh {file} {task}`. It commits them to branch `moor-proof/{task}` without touching \
+         the Task branch or the working tree, pushes that branch, and prints a Markdown block. \
+         Paste that block into the PR body. Do not push to or delete `moor-proof/*` any other \
+         way.\n\n",
+        file = proof_publish::FILE,
+    );
     out.push_str(
         "Reports are how you show work to a human: a spec, a checkpoint, a result. \
          Kind is a free-form label (e.g. `spec`, `result`). To present a Report, write it as \
@@ -141,6 +152,15 @@ mod tests {
         assert!(out.contains("Setup failed (exit 3)"));
         assert!(out.contains(".moor/setup.log"));
         assert!(out.contains(".moor/reports/<kind>.md"));
+    }
+
+    #[test]
+    fn tells_how_to_publish_proof() {
+        let out = render(&input(Some("g"), None));
+        assert!(out.contains("under `.moor/proof/`"));
+        assert!(out.contains(&format!("`sh {} t1`", proof_publish::FILE)));
+        assert!(out.contains("branch `moor-proof/t1`"));
+        assert!(out.contains("Paste that block into the PR body"));
     }
 
     #[test]
