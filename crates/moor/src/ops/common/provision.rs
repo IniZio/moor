@@ -93,10 +93,11 @@ pub(crate) fn reprovision(
     }
     let Some(entry) = entry else {
         if ready {
+            note_setup_not_rerun(cx, store, &row)?;
+            let row = reread(store, row.id)?;
             if row.intent.is_none() {
                 resync(cx, store, &row, trusted, gates)?;
             }
-            note_setup_not_rerun(cx, store, &row)?;
         }
         return Ok(None);
     };
