@@ -275,3 +275,41 @@ fn real_sh_stops_after_a_failing_run() {
     assert_eq!(super::parse(&out, &steps), [Ok(ran(4, "hi\n"))]);
     assert!(!Path::new(&marker).exists());
 }
+
+#[test]
+fn script_never_reads_stdin_byte_by_byte() {
+    let steps = [put("/w/a", b"x", 0o600), BoxStep::Run("true".to_owned())];
+    assert!(!script(&steps).contains("dd bs=1"));
+}
+
+#[test]
+fn steps_without_a_put_never_read_stdin() {
+    let steps = [BoxStep::Peek(path("/w/a")), BoxStep::Run("true".to_owned())];
+    assert!(!script(&steps).contains("cat >"));
+}
+
+#[test]
+fn real_sh_slices_large_puts_exactly() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_str().unwrap();
+    let f = |n: &str| format!("{root}/{n}");
+    let blob = |seed: usize, len: usize| -> Vec<u8> {
+        (0..len)
+            .map(|i| u8::try_from((i * 31 + seed * 7 + i / 251) % 256).unwrap())
+            .collect()
+    };
+    let (a, b, c) = (blob(1, 200_000), blob(2, 200_001), blob(3, 77));
+    let steps = [
+        put(&f("a"), &a, 0o600),
+        put(&f("b"), &b, 0o644),
+        put(&f("c"), &c, 0o600),
+    ];
+    let out = run_for_real(&steps);
+    assert_eq!(
+        super::parse(&out, &steps),
+        [Ok(StepDone::Put), Ok(StepDone::Put), Ok(StepDone::Put)]
+    );
+    assert_eq!(std::fs::read(f("a")).unwrap(), a);
+    assert_eq!(std::fs::read(f("b")).unwrap(), b);
+    assert_eq!(std::fs::read(f("c")).unwrap(), c);
+}

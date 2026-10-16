@@ -71,15 +71,36 @@ fn target_words(
 /// Frames: `A` absent, `P <len>` file bytes, `E` read error, `R <code> <len>` command
 /// output, `O` write done, `F` write failed. A length frame is followed by the bytes and a
 /// newline. The script always exits 0 once it starts, so frames survive.
+///
+/// With at least one Put, the script first copies stdin to a temp file, and each Put cuts
+/// its slice out of that file by byte offset. `head -c` on the shared pipe is not safe: BSD
+/// stdio over-reads past the count and eats the next file's bytes. If the copy fails or is
+/// short, the temp file is removed and every Put reports `F`. Steps with no Put never read
+/// stdin.
 pub(super) fn script(steps: &[BoxStep]) -> String {
-    let head = "T=$(mktemp -d) || exit 0\ntrap 'rm -rf \"$T\"' EXIT\n\
-                len() { wc -c < \"$1\" | tr -d ' '; }\n";
-    let body: String = steps.iter().map(step_script).collect();
+    let mut head = "T=$(mktemp -d) || exit 0\ntrap 'rm -rf \"$T\"' EXIT\n\
+                    len() { wc -c < \"$1\" | tr -d ' '; }\n"
+        .to_owned();
+    if steps.iter().any(|s| matches!(s, BoxStep::Put { .. })) {
+        let total = stdin_bytes(steps).len();
+        let copy = format!(
+            "cat > \"$T/in\" && test \"$(len \"$T/in\")\" -eq {total} || rm -f \"$T/in\"\n"
+        );
+        head.push_str(&copy);
+    }
+    let mut offset = 0;
+    let mut body = String::new();
+    for step in steps {
+        body.push_str(&step_script(step, offset));
+        if let BoxStep::Put { bytes, .. } = step {
+            offset += bytes.len();
+        }
+    }
     format!("{head}{body}exit 0\n")
 }
 
-/// The script text for one step.
-fn step_script(step: &BoxStep) -> String {
+/// The script text for one step; `offset` is where a Put's bytes start in the stdin copy.
+fn step_script(step: &BoxStep, offset: usize) -> String {
     match step {
         BoxStep::Peek(path) => {
             let p = quote(path.as_str());
@@ -100,9 +121,10 @@ fn step_script(step: &BoxStep) -> String {
         }
         BoxStep::Put { path, bytes, mode } => {
             let (dir, file) = (quote(dir_of(path)), quote(path.as_str()));
-            let n = bytes.len();
+            let (n, start) = (bytes.len(), offset + 1);
             format!(
-                "if ( umask 077 && mkdir -p {dir} && dd bs=1 count={n} of={file} 2>/dev/null \
+                "if ( umask 077 && test -f \"$T/in\" && mkdir -p {dir} \
+                 && tail -c +{start} \"$T/in\" | head -c {n} > {file} \
                  && chmod {mode:o} {file} ); then echo O; else echo F; exit 0; fi\n"
             )
         }
