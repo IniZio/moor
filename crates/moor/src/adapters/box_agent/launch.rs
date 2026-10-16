@@ -257,7 +257,7 @@ impl Launch<'_> {
         );
         let script = script.map_err(|e| fail("script", &e))?;
         let line = format!(
-            "{} {}; echo \"moor: agent exited $?\"",
+            "{} {}; c=$?; printf '\\r\\033[K'; echo \"moor: agent exited $c\"",
             command_line(connect),
             quote(&command_line(&[script]))
         );
