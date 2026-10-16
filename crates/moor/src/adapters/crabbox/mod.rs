@@ -1,5 +1,6 @@
 //! Crabbox adapter: the only code that knows crabbox terms.
 
+mod batch;
 mod caps;
 mod connect;
 mod cp;
@@ -23,8 +24,8 @@ use std::time::Duration;
 use moor_core::name::{BoxHandle, BoxPath, ProviderId};
 use moor_core::seam::clock::Clock;
 use moor_core::seam::driver::{
-    AcquireReq, Acquired, BoxListing, Driver, DriverCaps, DriverError, ExecOutcome, ExecSpec,
-    Released, SleepOutcome, TunnelHandle,
+    AcquireReq, Acquired, BoxListing, BoxStep, Driver, DriverCaps, DriverError, ExecOutcome,
+    ExecSpec, Released, SleepOutcome, StepDone, TunnelHandle,
 };
 use moor_core::seam::proc::{Deadline, Proc, ProcError, ProcOutput, ProcSpec, Tool};
 
@@ -321,6 +322,20 @@ impl Driver for Crabbox {
     ) -> Result<(), DriverError> {
         self.require_version()?;
         put::put_file(self, handle, path, bytes, mode, host_cwd)
+    }
+
+    fn batch(
+        &self,
+        handle: &BoxHandle,
+        connect: &[String],
+        steps: &[BoxStep],
+        host_cwd: &Path,
+        deadline: Deadline,
+    ) -> Vec<Result<StepDone, DriverError>> {
+        if let Err(e) = self.require_version() {
+            return vec![Err(e)];
+        }
+        batch::run(self, handle, connect, steps, host_cwd, deadline)
     }
 
     fn connect_argv(
