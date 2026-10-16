@@ -97,6 +97,44 @@ fn git_seed_source_is_local_for_crabbox_itself() {
     assert!(!has(&call, "--allow-env"));
 }
 
+fn seed_source_with_index(index: &str) -> Option<String> {
+    let p = Arc::new(ScriptedProc::new());
+    p.on(Tool::Git, &["ls-files", "-s"], Reply::Ok(index.to_owned()));
+    p.on(Tool::Crabbox, &["run"], ok());
+    let c = Crabbox::fake(p.clone());
+    let mut s = spec(SyncMode::Full);
+    s.host_cwd = Some(PathBuf::from("/work/tree"));
+    c.exec(
+        &BoxHandle::new("sprites/moor-t7-ab12cd"),
+        &s,
+        Deadline(Duration::from_secs(90)),
+    )
+    .unwrap();
+    let git = p.calls().into_iter().find(|c| c.tool == Tool::Git).unwrap();
+    assert_eq!(git.cwd, Some(PathBuf::from("/work/tree")));
+    let call = p
+        .calls()
+        .into_iter()
+        .find(|c| c.tool == Tool::Crabbox)
+        .unwrap();
+    call.env
+        .iter()
+        .find(|(k, _)| k == "CRABBOX_SYNC_GIT_SEED_SOURCE")
+        .map(|(_, v)| v.clone())
+}
+
+#[test]
+fn git_seed_source_is_origin_when_the_tree_has_submodule_gitlinks() {
+    let index = "100644 aaaa 0\tREADME.md\n160000 bbbb 0\tVendor/Lib\n";
+    assert_eq!(seed_source_with_index(index).as_deref(), Some("origin"));
+}
+
+#[test]
+fn git_seed_source_stays_local_without_gitlinks() {
+    let index = "100644 aaaa 0\tREADME.md\n100644 cccc 0\ta 160000 b\n";
+    assert_eq!(seed_source_with_index(index).as_deref(), Some("local"));
+}
+
 #[test]
 fn host_cwd_is_the_proc_cwd() {
     let mut s = spec(SyncMode::Full);
