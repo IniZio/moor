@@ -22,7 +22,8 @@ options:
   --start-arg ARG         extra argument for `moor start` (repeatable)
   --box-step CMD          shell command run on the Box via `moor run` after start,
                           before the agent check; timed as box_step.N, report only
-                          (repeatable)
+                          (repeatable). It runs after `moor start`, so it cannot
+                          affect the first launch
   --dry-run               print the planned commands; run nothing
   -h, --help              this text
 
@@ -31,6 +32,12 @@ budgets, seconds (defaults):
   --sleep 15  --tunnels-gone 5  --wake-woke 20  --wake-relaunch 25
   --wake-total 45  --close 30
 Each moor command also runs under an outer timeout of max(3 x budget, 120) s.
+
+Install agent CLIs in the pilot's .moor.yaml `setup:` (it runs before launch),
+not in --box-step.
+
+Failed phases print the real elapsed time, the phase budget (none for asserts)
+and a short reason: PHASE wake1 took=45.0s budget=45.0s FAIL (no relaunched event)
 
 The Box provider for moor itself comes from its own config
 ($XDG_CONFIG_HOME/moor/config.yaml or the pilot's .moor.yaml); this script
@@ -123,7 +130,13 @@ mo() {
 in_pilot() { (cd "$pilot" && "$@"); }
 
 emit() { echo "$1" | tee -a "$results"; }
-phase_fail() { emit "PHASE $1 took=0.0s budget=0.0s FAIL"; }
+# phase_fail NAME REASON [START_MS [BUDGET_S]]: took is the time since START_MS, budget "none" when unset.
+phase_fail() {
+  local took=0
+  [ -z "${3:-}" ] || took=$(($(now_ms) - $3))
+  emit "$(awk -v n="$1" -v ms="$took" -v b="${4:-}" -v r="$2" 'BEGIN {
+    printf "PHASE %s took=%.1fs budget=%s FAIL (%s)\n", n, ms / 1000, b == "" ? "none" : sprintf("%.1fs", b), r }')"
+}
 phase_skip() { emit "PHASE $1 took=0.0s budget=0.0s SKIP"; }
 phase_pass() { emit "$(budget timed --name "$1" --took-ms 0 --budget 0)"; }
 # Appends the helper's PHASE lines; a helper error becomes a FAIL line.
@@ -131,10 +144,10 @@ phase_lines() {
   local name=$1 out rc=0
   shift
   out="$(budget "$@")" || rc=$?
-  if [ "$rc" -ge 2 ] || [ -z "$out" ]; then phase_fail "$name"; else emit "$out"; fi
+  if [ "$rc" -ge 2 ] || [ -z "$out" ]; then phase_fail "$name" "e2e-budget could not report"; else emit "$out"; fi
 }
 phase_timed() { phase_lines "$1" timed --name "$1" --took-ms "$2" --budget "$3"; }
-assert_rc() { if [ "$2" -eq 0 ]; then phase_pass "$1"; else phase_fail "$1"; fi; }
+assert_rc() { if [ "$2" -eq 0 ]; then phase_pass "$1"; else phase_fail "$1" "$3"; fi; }
 
 # Runs a command on the Box; the command sees the Box workdir as cwd.
 box_run() { mo 180 run "$name" --no-sync -- "$@"; }
@@ -217,11 +230,11 @@ if in_pilot mo "$(outer "$b_start_total")" start "$name" ${start_args[@]+"${star
     phase_lines start start --events "$scratch/start.jsonl" --box-ready "$b_box_ready" \
       --proxy "$b_proxy" --session "$b_session" --total "$b_start_total"
   else
-    phase_fail start
+    phase_fail start "cannot read events" "$t0" "$b_start_total"
   fi
 else
   echo "e2e-box: moor start failed:"; tail -n 15 "$scratch/start.log" || true
-  phase_fail start; ok=0
+  phase_fail start "moor start failed" "$t0" "$b_start_total"; ok=0
 fi
 if task_exists; then
   info="$(in_pilot mo 60 --json show "$name" 2>/dev/null || true)"
@@ -236,7 +249,7 @@ if task_exists; then
     if in_pilot mo 600 run "$name" -- sh -c "$cmd"; then
       phase_lines "box_step.$step" report --name "box_step.$step" --took-ms $(($(now_ms) - t0))
     else
-      phase_fail "box_step.$step"
+      phase_fail "box_step.$step" "command failed" "$t0"
     fi
   done
   seen=0
@@ -246,11 +259,12 @@ if task_exists; then
     [ $(($(now_ms) - t0)) -lt 10000 ] || break
     sleep 0.5
   done
-  if [ "$seen" = 1 ]; then phase_pass assert.tunnel_seen; else phase_fail assert.tunnel_seen; fi
+  if [ "$seen" = 1 ]; then phase_pass assert.tunnel_seen; else phase_fail assert.tunnel_seen "no tunnel process within 10s" "$t0"; fi
+  t0=$(now_ms)
   if in_pilot agent_up; then rc=0; else rc=$?; fi
-  assert_rc assert.agent_start "$rc"
+  assert_rc assert.agent_start "$rc" "agent not running"
   if in_pilot box_run test -e .git; then rc=0; else rc=$?; fi
-  assert_rc assert.checkout_git "$rc"
+  assert_rc assert.checkout_git "$rc" "no .git in Box workdir"
 else
   for p in assert.tunnel_seen assert.agent_start assert.checkout_git; do phase_skip "$p"; done
 fi
@@ -265,7 +279,7 @@ for ((n = 1; n <= cycles; n++)); do
   if in_pilot mo "$(outer "$b_sleep")" sleep "$name" >"$scratch/sleep.log" 2>&1; then
     phase_timed "sleep$n" $(($(now_ms) - t0)) "$b_sleep"
   else
-    tail -n 10 "$scratch/sleep.log" || true; phase_fail "sleep$n"
+    tail -n 10 "$scratch/sleep.log" || true; phase_fail "sleep$n" "moor sleep failed" "$t0" "$b_sleep"
   fi
   t0=$(now_ms)
   gone=0
@@ -275,7 +289,7 @@ for ((n = 1; n <= cycles; n++)); do
     sleep 0.5
   done
   if [ "$gone" = 1 ]; then phase_timed "sleep$n.tunnels_gone" $(($(now_ms) - t0)) "$b_tunnels"
-  else phase_fail "sleep$n.tunnels_gone"; fi
+  else phase_fail "sleep$n.tunnels_gone" "tunnels still running" "$t0" "$b_tunnels"; fi
 
   after="$(last_id)" || after=0
   t0=$(now_ms)
@@ -293,13 +307,13 @@ for ((n = 1; n <= cycles; n++)); do
       phase_lines "wake$n" wake --events "$scratch/wake.jsonl" --cmd-ms "$cmd_ms" --cycle "$n" \
         --woke "$b_woke" --relaunch "$b_relaunch" --total "$b_wake_total"
     else
-      echo "e2e-box: no relaunched event within ${b_wake_total}s"; phase_fail "wake$n"
+      echo "e2e-box: no relaunched event within ${b_wake_total}s"; phase_fail "wake$n" "no relaunched event" "$t0" "$b_wake_total"
     fi
   else
-    tail -n 10 "$scratch/wake.log" || true; phase_fail "wake$n"
+    tail -n 10 "$scratch/wake.log" || true; phase_fail "wake$n" "moor wake failed" "$t0" "$b_wake_total"
   fi
   if in_pilot agent_up; then rc=0; else rc=$?; fi
-  assert_rc "assert.agent$n" "$rc"
+  assert_rc "assert.agent$n" "$rc" "agent not running after wake"
 done
 
 # close
@@ -309,24 +323,24 @@ if [ "$started" = 1 ] && [ "$closed" = 0 ]; then
     closed=1
     phase_timed close $(($(now_ms) - t0)) "$b_close"
   else
-    tail -n 10 "$scratch/close.log" || true; phase_fail close
+    tail -n 10 "$scratch/close.log" || true; phase_fail close "moor close failed" "$t0" "$b_close"
   fi
 fi
 if [ "$closed" = 1 ] && [ -n "$provider" ] && [ -n "$box" ]; then
   rc=0
   box_listed || rc=$?
   case $rc in 0) rc=1 ;; 1) rc=0 ;; *) rc=2 ;; esac
-  assert_rc close.box_gone "$rc"
+  assert_rc close.box_gone "$rc" "Box still listed or list failed"
 else
-  phase_fail close.box_gone
+  phase_fail close.box_gone "Box not closed or unknown"
 fi
 
 # no tunnel restarts over the whole Task
 if budget events --db "$state/moor.db" --task "$name" >"$scratch/all.jsonl"; then
   restarts="$(budget count --events "$scratch/all.jsonl" --kind tunnel_restarted || echo -1)"
-  if [ "$restarts" = 0 ]; then phase_pass assert.no_tunnel_restarts; else phase_fail assert.no_tunnel_restarts; fi
+  if [ "$restarts" = 0 ]; then phase_pass assert.no_tunnel_restarts; else phase_fail assert.no_tunnel_restarts "tunnel restarted or count failed"; fi
 else
-  phase_fail assert.no_tunnel_restarts
+  phase_fail assert.no_tunnel_restarts "cannot read events"
 fi
 
 trace_summary
