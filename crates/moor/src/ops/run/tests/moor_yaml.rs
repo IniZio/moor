@@ -3,6 +3,7 @@
 use moor_core::seam::proc::Tool;
 use moor_core::ErrorKind;
 
+use super::stage::command_execs;
 use super::{ready, req, Fx};
 use crate::ops::run::run;
 use crate::testing::proc::Reply;
@@ -41,7 +42,7 @@ fn unchanged_moor_yaml_runs_the_command() {
     let f = with_yaml(Some(BASE), BASE);
     let v = run(&f.cx, &req(&["true"])).unwrap();
     assert!(v.ran);
-    assert_eq!(f.driver.execs().len(), 1);
+    assert_eq!(command_execs(&f).len(), 1);
     assert!(!warning_codes(&f).contains(&"moor_yaml_trusted".to_owned()));
 }
 
@@ -58,7 +59,7 @@ fn trusting_a_changed_moor_yaml_runs_and_warns_once() {
     r.trust_moor_yaml = true;
     let v = run(&f.cx, &r).unwrap();
     assert!(v.ran);
-    assert_eq!(f.driver.execs().len(), 1);
+    assert_eq!(command_execs(&f).len(), 1);
     let trusted = warning_codes(&f)
         .into_iter()
         .filter(|c| c == "moor_yaml_trusted")

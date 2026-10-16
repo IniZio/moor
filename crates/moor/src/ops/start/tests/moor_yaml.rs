@@ -7,7 +7,7 @@ use std::sync::Arc;
 use moor_core::config::{MoorYamlSource, RepoEntry};
 use moor_core::seam::driver::DriverError;
 use moor_core::seam::proc::Tool;
-use moor_core::{ErrorKind, StartReq, TaskId, TaskName};
+use moor_core::{BoxPath, ErrorKind, StartReq, TaskId, TaskName};
 
 use super::setup::{is_setup_line, start_req, warning_codes};
 use super::{world_at, World};
@@ -224,7 +224,10 @@ fn overlay_world(driver: FakeDriver, repo_file: Option<&str>) -> World {
         &["rev-parse", "--git-path", "info/exclude"],
         ok(format!("{}/exclude\n", dir.path().display())),
     );
-    let driver = Arc::new(driver);
+    let environ = BoxPath::restore("/proc/self/environ").unwrap();
+    let driver = Arc::new((1..=4).fold(driver, |d, n| {
+        d.peek_text(&format!("box-{n}"), &environ, "HOME=/home/box\0")
+    }));
     let surface = Arc::new(FakeSurface::new(dir.path()));
     let table = BTreeMap::from([(
         "demo".to_owned(),

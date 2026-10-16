@@ -9,6 +9,7 @@ use moor_core::{ErrorKind, GateReq, RunReq};
 
 use crate::error::CommandError;
 use crate::ops::run::run;
+use crate::ops::run::tests::stage::{command_execs, command_results};
 use crate::ops::run::tests::{command, ran_events, ready, ready_with, req, Fx, SHA};
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::Reply;
@@ -98,7 +99,7 @@ fn record_run_wraps_the_command_in_the_record_script() {
     let argv = ["make", "test"];
     let v = run(&f.cx, &record_req(&argv)).unwrap();
     assert_eq!(v.exit, Some(0));
-    let (_, spec, _) = f.driver.execs().remove(0);
+    let (_, spec, _) = command_execs(&f).remove(0);
     let line = command_line(&argv.map(str::to_owned));
     assert_eq!(
         command(&spec.argv),
@@ -125,7 +126,7 @@ fn repo_setup_lines_precede_the_command() {
         Reply::Ok("setup: ['make deps']\n".into()),
     );
     run(&f.cx, &record_req(&["make", "test"])).unwrap();
-    let (_, spec, _) = f.driver.execs().remove(0);
+    let (_, spec, _) = command_execs(&f).remove(0);
     let line = command_line(&["make".to_owned(), "test".to_owned()]);
     let setup = ["make deps".to_owned()];
     assert_eq!(
@@ -136,7 +137,7 @@ fn repo_setup_lines_precede_the_command() {
 
 #[test]
 fn failed_prep_is_recorded_with_its_exit() {
-    let f = clean_with(FakeDriver::new().exec_results([Ok(ExecOutcome::Exited { code: 3 })]));
+    let f = clean_with(command_results([Ok(ExecOutcome::Exited { code: 3 })]));
     let v = run(&f.cx, &record_req(&["true"])).unwrap();
     assert_eq!(v.exit, Some(3));
     let row = f.cx.store().unwrap().last_run(f.id).unwrap().unwrap();
@@ -147,7 +148,7 @@ fn failed_prep_is_recorded_with_its_exit() {
 
 #[test]
 fn interrupted_record_run_has_no_exit() {
-    let f = clean_with(FakeDriver::new().exec_results([Ok(ExecOutcome::Interrupted)]));
+    let f = clean_with(command_results([Ok(ExecOutcome::Interrupted)]));
     let v = run(&f.cx, &record_req(&["sleep", "9"])).unwrap();
     assert!(v.interrupted && v.ran);
     assert_eq!(v.exit, None);
@@ -165,7 +166,7 @@ fn passing_record_run_passes_the_gate() {
 
 #[test]
 fn failing_record_run_fails_the_gate() {
-    let f = clean_with(FakeDriver::new().exec_results([Ok(ExecOutcome::Exited { code: 1 })]));
+    let f = clean_with(command_results([Ok(ExecOutcome::Exited { code: 1 })]));
     run(&f.cx, &record_req(&["false"])).unwrap();
     let e = gate(&f).unwrap_err();
     assert_eq!(e.kind, ErrorKind::Failed);
