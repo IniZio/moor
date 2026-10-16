@@ -2,6 +2,7 @@
 
 use std::time::Duration;
 
+use super::bind;
 use super::run::{say, Running, Stop};
 use crate::store::Fenced;
 
@@ -34,7 +35,8 @@ impl Running<'_> {
                 return stop;
             }
             self.deps.clock.sleep(wait);
-            match self.deps.driver.reverse_tunnel(
+            match bind::open(
+                self.deps,
                 &self.handle,
                 self.box_port,
                 self.live.port(),

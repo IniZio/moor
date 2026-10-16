@@ -3,6 +3,7 @@
 use moor_core::seam::driver::TunnelHandle;
 use moor_core::TaskId;
 
+use super::bind;
 use super::run::{say, Running};
 use super::Deps;
 use crate::store::{TunnelAck, TunnelRequest, TunnelWant};
@@ -91,7 +92,8 @@ impl Running<'_> {
 
     /// Opens one new tunnel on the same ports and answers `seq`.
     fn reopen(&self, seq: u64) {
-        let opened = self.deps.driver.reverse_tunnel(
+        let opened = bind::open(
+            self.deps,
             &self.handle,
             self.box_port,
             self.live.port(),
