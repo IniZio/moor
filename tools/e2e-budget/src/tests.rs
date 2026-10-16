@@ -280,6 +280,22 @@ fn model_request_before_the_relaunch_does_not_count() {
 }
 
 #[test]
+fn idle_resumed_agent_posts_only_after_the_steer() {
+    // relaunched at ...000, steer at ...005: the only POST is before the steer, so it must not count.
+    let log = "1700000001000 POST claude 200\n";
+    assert!(model_request_after(log, 1_700_000_000_000, "claude"));
+    assert!(!model_request_after(log, 1_700_000_005_000, "claude"));
+    let steered = "1700000001000 POST claude 200\n1700000006000 POST claude 200\n";
+    assert!(model_request_after(steered, 1_700_000_005_000, "claude"));
+    let limited = "1700000001000 POST claude 200\n1700000006000 POST claude 429\n";
+    assert!(!model_request_after(limited, 1_700_000_005_000, "claude"));
+    assert_eq!(
+        model_request_failure(limited, 1_700_000_005_000, "claude"),
+        Some("model requests rate limited: 429")
+    );
+}
+
+#[test]
 fn model_request_ignores_malformed_lines() {
     assert!(!model_request_after(
         "POST claude 200\nx POST claude 200\n",

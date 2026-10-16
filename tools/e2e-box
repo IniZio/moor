@@ -46,9 +46,10 @@ Failed phases print the real elapsed time, the phase budget (none for asserts)
 and a short reason: PHASE wake1 took=45.0s budget=45.0s FAIL (no relaunched event)
 
 Agent checks (assert.agent_start, assert.agentN): the agent process runs on the Box, the Task's
-proxy log shows a successful POST claude within 60 s of session_started / relaunched (after a wake,
-a new one after relaunched), and moor.db has a registered agent session. A FAIL names the failed
-part and prints the agent pane tail (moor show --pane).
+proxy log shows a successful POST claude within 60 s of session_started (after a wake, of a
+`moor steer <task> "Reply with OK."`, timed as wake<N>.steer, because a resumed agent stays idle),
+and moor.db has a registered agent session. A FAIL names the failed part and prints the agent
+pane tail (moor show --pane). A failed steer is a FAIL with its stderr tail.
 
 Needs jq, ps, awk, crabbox, cargo.
 
@@ -167,20 +168,25 @@ assert_rc() { if [ "$2" -eq 0 ]; then phase_pass "$1"; else phase_fail "$1" "$3"
 # Runs a command on the Box; the command sees the Box workdir as cwd.
 box_run() { mo 180 run "$name" --no-sync -- "$@"; }
 agent_up() { box_run sh -c "pgrep -f '[c]laude' >/dev/null"; }
-# agent_check PHASE KIND [AFTER_ID]: the agent process runs, the proxy log shows a model POST within 60 s
-# of the newest KIND event, and the Task has a registered agent session. A FAIL names the missing part
-# and prints the agent pane tail, so a screen that blocks the goal is visible.
+# agent_check PHASE KIND [AFTER_ID] [REF_MS]: the agent process runs, the proxy log shows a model POST within 60 s
+# of the newest KIND event (or of REF_MS, when given), and the Task has a registered agent session. A FAIL names
+# the missing part and prints the agent pane tail, so a screen that blocks the goal is visible.
 agent_check() {
-  local phase=$1 kind=$2 after=${3:-0} t0 ref why="" mreq=0 sess=0 proc=0 out="" limited=""
+  local phase=$1 kind=$2 after=${3:-0} ref=${4:-} t0 why="" mreq=0 sess=0 proc=0 out="" limited="" until_ms
   t0=$(now_ms)
   if in_pilot agent_up; then proc=1; fi
-  ref="$(budget event-ts --db "$state/moor.db" --task "$name" --kind "$kind" --after-id "$after" 2>/dev/null)" || ref=""
-  if [ -z "$ref" ]; then ref=$t0; fi
+  if [ -n "$ref" ]; then
+    until_ms=$((t0 + 60000))
+  else
+    ref="$(budget event-ts --db "$state/moor.db" --task "$name" --kind "$kind" --after-id "$after" 2>/dev/null)" || ref=""
+    if [ -z "$ref" ]; then ref=$t0; fi
+    until_ms=$((ref + 60000))
+  fi
   while :; do
     out="$(budget model-request --db "$state/moor.db" --task "$name" --state-dir "$state" --after-ms "$ref" 2>/dev/null)" && mreq=1 || mreq=0
     budget agent-session --db "$state/moor.db" --task "$name" >/dev/null 2>&1 && sess=1 || sess=0
     if [ "$proc" = 0 ] || { [ "$mreq" = 1 ] && [ "$sess" = 1 ]; }; then break; fi
-    [ "$(now_ms)" -lt $((ref + 60000)) ] || break
+    [ "$(now_ms)" -lt "$until_ms" ] || break
     sleep 1
   done
   if [ "$proc" = 1 ] && [ "$mreq" = 1 ] && [ "$sess" = 1 ]; then phase_pass "$phase"; return 0; fi
@@ -273,7 +279,7 @@ if [ "$dry" = 1 ]; then
   for ((n = 1; n <= cycles; n++)); do
     echo "+ cycle $n: moor sleep $name (<= ${b_sleep}s); poll for the tunnel --reverse process to vanish; sleep$n.other_tunnels is informational (<= ${b_tunnels}s)"
     echo "+ cycle $n: e2e-budget last-id; moor wake $name; poll relaunched (<= ${b_wake_total}s); e2e-budget wake --cycle $n"
-    echo "+ cycle $n: assert.agent$n: same checks, with the POST required after the relaunched event"
+    echo "+ cycle $n: moor steer $name 'Reply with OK.' (wake$n.steer, no budget); assert.agent$n: same checks, with the POST required within 60s after the steer"
   done
   echo "+ moor --json show $name; moor close $name (<= ${b_close}s); crabbox list --provider <p> --json"
   echo "+ moor stderr appended to $state/moor-stderr.log"
@@ -331,7 +337,7 @@ fi
 # cycles
 for ((n = 1; n <= cycles; n++)); do
   if ! task_exists; then
-    for p in "sleep$n" "sleep$n.tunnels_gone" "wake$n" "assert.agent$n"; do phase_skip "$p"; done
+    for p in "sleep$n" "sleep$n.tunnels_gone" "wake$n" "wake$n.steer" "assert.agent$n"; do phase_skip "$p"; done
     continue
   fi
   t0=$(now_ms)
@@ -353,6 +359,7 @@ for ((n = 1; n <= cycles; n++)); do
 
   after="$(last_id)" || after=0
   t0=$(now_ms)
+  relaunched=0
   if in_pilot mo "$(outer "$b_wake_total")" wake "$name" >"$scratch/wake.log" 2>&1; then
     cmd_ms=$t0
     seen=0
@@ -364,6 +371,7 @@ for ((n = 1; n <= cycles; n++)); do
       sleep 1
     done
     if [ "$seen" = 1 ]; then
+      relaunched=1
       phase_lines "wake$n" wake --events "$scratch/wake.jsonl" --cmd-ms "$cmd_ms" --cycle "$n" \
         --woke "$b_woke" --relaunch "$b_relaunch" --total "$b_wake_total"
     else
@@ -372,7 +380,20 @@ for ((n = 1; n <= cycles; n++)); do
   else
     tail -n 10 "$scratch/wake.log" || true; phase_fail "wake$n" "moor wake failed" "$t0" "$b_wake_total"
   fi
-  agent_check "assert.agent$n" relaunched "$after"
+  # A resumed agent stays idle (no prompt), so steer it and require a model request after that.
+  if [ "$relaunched" = 1 ]; then
+    steer_ms=$(now_ms)
+    if in_pilot mo 120 steer "$name" "Reply with OK." >"$scratch/steer.log" 2>&1; then
+      phase_lines "wake$n.steer" report --name "wake$n.steer" --took-ms $(($(now_ms) - steer_ms))
+      agent_check "assert.agent$n" steer "$after" "$steer_ms"
+    else
+      echo "moor steer stderr tail:"; tail -n 10 "$scratch/steer.log" || true
+      phase_fail "wake$n.steer" "moor steer failed" "$steer_ms"
+      phase_skip "assert.agent$n"
+    fi
+  else
+    phase_skip "wake$n.steer"; phase_skip "assert.agent$n"
+  fi
 done
 
 # close
