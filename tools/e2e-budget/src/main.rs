@@ -6,8 +6,8 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use e2e_budget::{
-    count_kind, parse_jsonl, parse_phase_line, report_line, start_phases, summarize, timed,
-    wake_phases, Event, Outcome, Phase, StartBudgets, WakeBudgets,
+    count_kind, model_request_after, parse_jsonl, parse_phase_line, report_line, start_phases,
+    summarize, timed, wake_phases, Event, Outcome, Phase, StartBudgets, WakeBudgets,
 };
 use rusqlite::{Connection, OpenFlags};
 
@@ -182,6 +182,63 @@ fn cmd_report(args: &Args) -> Result<bool, String> {
     Ok(true)
 }
 
+/// `event-ts`: prints the unix ms of a task's newest event of one kind (above `--after-id`); exit 1 when none.
+fn cmd_event_ts(args: &Args) -> Result<bool, String> {
+    let after = if args.0.contains_key("after-id") {
+        args.int("after-id")?
+    } else {
+        0
+    };
+    let kind = args.req("kind")?;
+    let conn = open_db(args)?;
+    let events = fetch_events(&conn, args.req("task")?, after)?;
+    let ts = events
+        .iter()
+        .rev()
+        .find(|e| e.kind == kind)
+        .map(|e| e.ts_ms);
+    if let Some(ts) = ts {
+        println!("{ts}");
+    }
+    Ok(ts.is_some())
+}
+
+/// `model-request`: exit 0 when the task's proxy log has a successful model POST at or after `--after-ms`.
+fn cmd_model_request(args: &Args) -> Result<bool, String> {
+    let conn = open_db(args)?;
+    let id: i64 = conn
+        .query_row(
+            "SELECT id FROM tasks WHERE name = ? ORDER BY id DESC LIMIT 1",
+            [args.req("task")?],
+            |r| r.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    let path = std::path::Path::new(args.req("state-dir")?)
+        .join("proxy")
+        .join(format!("{id}.log"));
+    // A missing log is "no request yet", not an error.
+    let text = std::fs::read_to_string(&path).unwrap_or_default();
+    let route = args.0.get("route").map_or("claude", String::as_str);
+    Ok(model_request_after(&text, args.int("after-ms")?, route))
+}
+
+/// `agent-session`: exit 0 when the task's newest agent session has a registered agent session id.
+/// Falls back to the task's own id only while it has no session rows. The id is never printed.
+fn cmd_agent_session(args: &Args) -> Result<bool, String> {
+    let conn = open_db(args)?;
+    let sql = "SELECT (SELECT registered_agent_session FROM sessions WHERE task = t.id \
+               ORDER BY id DESC LIMIT 1), \
+               (SELECT COUNT(*) FROM sessions WHERE task = t.id), t.agent_session_id \
+               FROM tasks t WHERE t.name = ? ORDER BY t.id DESC LIMIT 1";
+    let row: (Option<String>, i64, Option<String>) = conn
+        .query_row(sql, [args.req("task")?], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+        })
+        .map_err(|e| e.to_string())?;
+    let chosen = if row.1 == 0 { row.2 } else { row.0 };
+    Ok(chosen.is_some_and(|s| !s.is_empty()))
+}
+
 /// `verdict`: summarizes previously printed phase lines.
 fn cmd_verdict(args: &Args) -> Result<u8, String> {
     let path = args.req("lines")?;
@@ -206,6 +263,9 @@ fn run(raw: &[String]) -> Result<u8, String> {
         "timed" => cmd_timed(&args).map(u8::from).map(|ok| 1 - ok),
         "count" => cmd_count(&args).map(u8::from).map(|ok| 1 - ok),
         "report" => cmd_report(&args).map(u8::from).map(|ok| 1 - ok),
+        "event-ts" => cmd_event_ts(&args).map(u8::from).map(|ok| 1 - ok),
+        "model-request" => cmd_model_request(&args).map(u8::from).map(|ok| 1 - ok),
+        "agent-session" => cmd_agent_session(&args).map(u8::from).map(|ok| 1 - ok),
         "verdict" => cmd_verdict(&args),
         other => Err(format!("unknown subcommand `{other}`")),
     }
