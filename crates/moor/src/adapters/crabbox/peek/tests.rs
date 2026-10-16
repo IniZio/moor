@@ -288,3 +288,87 @@ fn built_in_provider_lookup_times_out_after_five_seconds() {
         Err(DriverError::Timeout(Duration::from_secs(5)))
     );
 }
+
+fn lookups(p: &ScriptedProc) -> usize {
+    p.calls()
+        .iter()
+        .filter(|c| c.tool == Tool::Crabbox && c.args.first().map(String::as_str) == Some("ssh"))
+        .count()
+}
+
+fn peek_of(c: &Crabbox, handle: &str) -> Result<Option<String>, DriverError> {
+    c.peek_file(
+        &BoxHandle::new(handle),
+        &BoxPath::under("/work", "a").unwrap(),
+        Path::new("/host/cwd"),
+    )
+}
+
+#[test]
+fn one_driver_looks_a_lease_up_once() {
+    let (p, c) = fixture();
+    scripted(&p, Reply::Ok("x".to_owned()));
+    peek(&c, "a").unwrap();
+    peek(&c, "b").unwrap();
+    let argv = c
+        .connect_argv(&BoxHandle::new("p/box"), Path::new("/host/cwd"))
+        .unwrap();
+    assert_eq!(argv.first().map(String::as_str), Some("ssh"));
+    assert_eq!(lookups(&p), 1);
+}
+
+#[test]
+fn release_makes_the_next_lookup_resolve_again() {
+    let (p, c) = fixture();
+    scripted(&p, Reply::Ok("x".to_owned()));
+    p.on(Tool::Crabbox, &["stop"], Reply::Ok(String::new()));
+    peek(&c, "a").unwrap();
+    c.release(&BoxHandle::new("p/box")).unwrap();
+    peek(&c, "a").unwrap();
+    assert_eq!(lookups(&p), 2);
+}
+
+#[test]
+fn wake_makes_the_next_lookup_resolve_again() {
+    let (p, c) = fixture();
+    scripted(&p, Reply::Ok("x".to_owned()));
+    p.on(Tool::Crabbox, &["resume"], Reply::Ok(String::new()));
+    p.on(
+        Tool::Crabbox,
+        &["providers"],
+        Reply::Ok(r#"[{"id":"p","sleep":"suspend","wake":true}]"#.to_owned()),
+    );
+    peek(&c, "a").unwrap();
+    let _ = c.wake(&BoxHandle::new("p/box"));
+    peek(&c, "a").unwrap();
+    assert_eq!(lookups(&p), 2);
+}
+
+#[test]
+fn another_lease_is_resolved_separately() {
+    let (p, c) = fixture();
+    scripted(&p, Reply::Ok("x".to_owned()));
+    peek_of(&c, "p/one").unwrap();
+    peek_of(&c, "p/two").unwrap();
+    peek_of(&c, "p/one").unwrap();
+    assert_eq!(lookups(&p), 2);
+}
+
+#[test]
+fn a_failed_lookup_is_not_kept() {
+    let (p, c) = fixture();
+    p.once(
+        Tool::Crabbox,
+        &["ssh"],
+        Reply::Fail {
+            code: 1,
+            stdout: String::new(),
+            stderr: "boom".to_owned(),
+        },
+    );
+    scripted(&p, Reply::Ok("x".to_owned()));
+    assert!(peek(&c, "a").is_err());
+    peek(&c, "a").unwrap();
+    peek(&c, "a").unwrap();
+    assert_eq!(lookups(&p), 2);
+}

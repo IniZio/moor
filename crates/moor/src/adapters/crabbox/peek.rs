@@ -54,8 +54,13 @@ pub(super) fn ssh_target(
     handle: &BoxHandle,
     host_cwd: &Path,
 ) -> Result<Vec<String>, DriverError> {
-    // `crabbox ssh` touches the lease, so every lookup also resets crabbox's idle timer;
-    // idle Boxes are slept by moor's `sleep_after`, not by that timer.
+    // `crabbox ssh` touches the lease, so a lookup also resets crabbox's idle timer;
+    // lookups within one command are reused, and idle Boxes are slept by moor's
+    // `sleep_after`, not by that timer.
+    let key = (handle.as_str().to_owned(), host_cwd.to_path_buf());
+    if let Some(words) = cb.targets.lock().ok().and_then(|m| m.get(&key).cloned()) {
+        return Ok(words);
+    }
     // Secret-token providers need --show-secret, not yet passed.
     let (provider, _) = split_handle(handle);
     let lookup = static_env(
@@ -72,7 +77,11 @@ pub(super) fn ssh_target(
         .stdout;
     match split_words(&line) {
         Some(words) if words.first().is_some_and(|w| w == "ssh") => {
-            Ok(words.into_iter().skip(1).collect())
+            let words: Vec<String> = words.into_iter().skip(1).collect();
+            if let Ok(mut map) = cb.targets.lock() {
+                map.insert(key, words.clone());
+            }
+            Ok(words)
         }
         _ => Err(DriverError::Failed {
             summary: "unreadable box provider output for ssh target".to_owned(),

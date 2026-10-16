@@ -17,8 +17,9 @@ mod version;
 mod workdir;
 
 use std::collections::BTreeMap;
-use std::path::Path;
-use std::sync::{Arc, OnceLock};
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use moor_core::name::{BoxHandle, BoxPath, ProviderId};
@@ -56,6 +57,8 @@ pub(crate) struct Crabbox {
     version_ok: OnceLock<()>,
     /// Lookup deadlines that replace the built-in ones, keyed by provider id.
     lookup_deadlines: BTreeMap<String, Duration>,
+    /// Resolved ssh words per (lease handle, host cwd), kept for this driver's lifetime.
+    targets: Mutex<HashMap<(String, PathBuf), Vec<String>>>,
 }
 
 impl Crabbox {
@@ -66,6 +69,14 @@ impl Crabbox {
             clock,
             version_ok: OnceLock::new(),
             lookup_deadlines: BTreeMap::new(),
+            targets: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// Forgets every cached ssh target of `handle`; its address may change.
+    pub(super) fn forget_targets(&self, handle: &BoxHandle) {
+        if let Ok(mut map) = self.targets.lock() {
+            map.retain(|(h, _), _| h != handle.as_str());
         }
     }
 
@@ -233,6 +244,7 @@ impl Driver for Crabbox {
         spec = spec.args(["--slug", &name, "--class", class]);
         let handle = handle_of(provider, &name);
         let spec = static_env(spec, &handle);
+        self.forget_targets(&handle);
         let out = self.call(Op::Acquire, Some(provider), &spec)?;
         parse::parse_warmup(&out.stdout).ok_or_else(|| unreadable("acquire"))?;
         let workdir = workdir::probe(self, &handle, req.worktree.as_deref())?;
@@ -250,7 +262,9 @@ impl Driver for Crabbox {
             .args(target_args(handle))
             .arg("--delete");
         let spec = static_env(spec, handle);
-        match self.call(Op::Release, split_handle(handle).0, &spec) {
+        let result = self.call(Op::Release, split_handle(handle).0, &spec);
+        self.forget_targets(handle);
+        match result {
             Ok(_) => Ok(Released::Deleted),
             Err(DriverError::NotFound) => Ok(Released::AlreadyGone),
             Err(e) => Err(e),
@@ -348,11 +362,15 @@ impl Driver for Crabbox {
     }
 
     fn sleep(&self, handle: &BoxHandle) -> Result<SleepOutcome, DriverError> {
-        sleep::sleep(self, handle)
+        let result = sleep::sleep(self, handle);
+        self.forget_targets(handle);
+        result
     }
 
     fn wake(&self, handle: &BoxHandle) -> Result<(), DriverError> {
-        sleep::wake(self, handle)
+        let result = sleep::wake(self, handle);
+        self.forget_targets(handle);
+        result
     }
 
     fn reverse_tunnel(
