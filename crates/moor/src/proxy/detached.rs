@@ -203,11 +203,10 @@ impl ProxyHost for DetachedSupervisor {
             .map_err(|e| store_failed(&e, &log))?;
         let pid = match reserved {
             Reserve::Reserved(_) => {
-                let spec = ProcSpec::new(Tool::MoorSelf, Deadline(WAIT)).args([
-                    "proxy",
-                    "serve",
-                    &task.get().to_string(),
-                ]);
+                let spec = ProcSpec::new(Tool::MoorSelf, Deadline(WAIT))
+                    .args(["proxy", "serve", &task.get().to_string()])
+                    // `--state-dir` only lives in this process's Env, so the child must be told.
+                    .env("MOOR_STATE_DIR", state.to_string_lossy());
                 let pid = self.proc.spawn_daemon(&spec, &log).map_err(|e| {
                     fail(&format!("the proxy supervisor could not start: {e}"), &log)
                 })?;

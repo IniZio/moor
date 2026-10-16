@@ -196,6 +196,22 @@ fn the_first_ensure_spawns_one_supervisor_and_returns_its_address() {
 }
 
 #[test]
+fn the_supervisor_is_told_the_state_dir_it_must_open() {
+    let f = fx();
+
+    f.sup.ensure(&f.spec()).unwrap();
+
+    // A `--state-dir` flag lives only in the launcher's Env, so the child gets it explicitly.
+    let daemons = f.proc.daemons();
+    let env = &daemons.first().unwrap().call.env;
+    let want = (
+        "MOOR_STATE_DIR".to_owned(),
+        f.dir.path().to_string_lossy().into_owned(),
+    );
+    assert!(env.contains(&want));
+}
+
+#[test]
 fn a_second_ensure_reuses_the_running_supervisor() {
     let f = fx();
     let first = f.sup.ensure(&f.spec()).unwrap();
