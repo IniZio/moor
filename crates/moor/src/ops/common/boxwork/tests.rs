@@ -137,10 +137,10 @@ fn clean_box_is_clean_and_the_probe_is_shaped_right() {
     assert_eq!(r.driver.execs().len(), 1);
     let spec = first_exec(&r);
     assert_eq!(spec.sync, SyncMode::None);
+    assert_eq!(spec.cwd, None);
     let mut argv = spec.argv.iter().map(String::as_str);
     assert_eq!((argv.next(), argv.next()), (Some("sh"), Some("-c")));
     assert!(argv.next().is_some_and(|script| script.contains(HEAD)));
-    assert_eq!(spec.cwd.as_ref().map(BoxPath::as_str), Some(WORKDIR));
     let peeks = r.driver.peeks();
     assert_eq!(peeks.len(), 1);
     assert!(peeks
@@ -297,4 +297,36 @@ fn unrecorded_workdir_is_asked_of_the_driver() {
     let _ = run(&r);
     assert!(r.driver.calls().iter().any(|c| c.starts_with("workdir")));
     assert_eq!(r.driver.execs().len(), 1);
+}
+
+#[test]
+fn probe_is_one_box_call() {
+    let d = tempfile::tempdir().unwrap();
+    let r = with_result(d.path(), "ahead=0 dirty=0");
+    let before = r.driver.box_calls().len();
+    assert_eq!(run(&r), BoxWork::Clean);
+    let calls = r.driver.box_calls();
+    assert_eq!(calls.get(before..), Some(&["batch".to_owned()][..]));
+}
+
+#[test]
+fn probe_script_enters_the_workdir_first() {
+    let d = tempfile::tempdir().unwrap();
+    let r = with_result(d.path(), "ahead=0 dirty=0");
+    assert_eq!(run(&r), BoxWork::Clean);
+    let script = first_exec(&r).argv.concat();
+    assert!(script.contains(&format!("cd '{WORKDIR}' || exit 1\n")));
+}
+
+#[test]
+fn plan_then_read_matches_probe() {
+    let d = tempfile::tempdir().unwrap();
+    let r = with_result(d.path(), "ahead=2 dirty=0");
+    let plan = super::plan(&r.cx, &r.task, &r.boxed).unwrap();
+    assert_eq!(plan.steps.len(), 2);
+    let mut none = std::iter::empty();
+    assert_eq!(
+        super::read(&plan, &mut none),
+        BoxWork::from("the probe left no result")
+    );
 }

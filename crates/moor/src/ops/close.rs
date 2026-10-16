@@ -22,7 +22,7 @@ use moor_core::{BoxHandle, CloseReq, ErrorKind, TaskName, Warning};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
-use crate::ops::common::boxwork::{probe, BoxWork};
+use crate::ops::common::boxwork::{self, probe, BoxWork, BOXWORK_DEADLINE};
 use crate::ops::common::facts::resolved;
 use crate::ops::common::promote::promote_waiting;
 use crate::ops::common::provision::moor_yaml::for_teardown;
@@ -63,9 +63,10 @@ pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
     let digest = saved.as_ref().map(|t| t.digest.as_str());
     let agent_stopped = stop_agent(cx, store, &row, digest)?;
     if probed_clean {
-        recheck_box(cx, &row)?;
+        recheck_and_collect(cx, store, &row)?;
+    } else {
+        reports::collect(cx, store, &row);
     }
-    reports::collect(cx, store, &row);
     let box_deleted = if plan.release_box {
         teardown(cx, &row, req.trust_moor_yaml);
         release(cx, store, &row)?
@@ -215,13 +216,43 @@ fn box_check(
     })
 }
 
-/// Probes the Box again once the agent is stopped; a live agent can write between the first
-/// probe and the stop. The agent stays stopped when this refuses.
-fn recheck_box(cx: &Cx, row: &TaskRow) -> Result<(), CommandError> {
+/// Probes the Box again once the agent is stopped, then collects its Reports; a live agent can
+/// write between the first probe and the stop. The agent stays stopped when this refuses, and
+/// no Report is stored then. The probe and the Report index run as one batch; when it stops
+/// early, Reports are collected on their own.
+fn recheck_and_collect(cx: &Cx, store: &Store, row: &TaskRow) -> Result<(), CommandError> {
     let Some(b) = row.boxed.as_ref().filter(|b| b.state == BoxState::Ready) else {
+        reports::collect(cx, store, row);
         return Ok(());
     };
-    let check = match probe(cx, row, b) {
+    let index = reports::index_plan(cx, row);
+    let mut done = Vec::new().into_iter();
+    let work = match (boxwork::plan(cx, row, b), b.handle.as_ref(), &index) {
+        (Err(work), _, _) => work,
+        (Ok(plan), Some(handle), Some(index)) => {
+            let steps = [plan.steps.as_slice(), index.steps.as_slice()].concat();
+            let host = Path::new(row.worktree.as_deref().unwrap_or(&row.repo));
+            // The probe and the index script each get their own allowance.
+            let deadline = Deadline(BOXWORK_DEADLINE + reports::INDEX_DEADLINE);
+            done = cx
+                .driver()
+                .batch(handle, &[], &steps, host, deadline)
+                .into_iter();
+            boxwork::read(&plan, &mut done)
+        }
+        (Ok(_), _, _) => boxwork::probe(cx, row, b),
+    };
+    recheck_verdict(cx, row, work)?;
+    index.as_ref().map_or_else(
+        || reports::collect(cx, store, row),
+        |i| reports::collect_from(cx, store, row, i, &mut done),
+    );
+    Ok(())
+}
+
+/// Refuses when the second probe found unsaved work or could not tell.
+fn recheck_verdict(cx: &Cx, row: &TaskRow, work: BoxWork) -> Result<(), CommandError> {
+    let check = match work {
         BoxWork::Clean | BoxWork::Gone => return Ok(()),
         BoxWork::Unsaved { ahead, dirty } => BoxCheck::Unsaved { ahead, dirty },
         BoxWork::Unknown(why) => BoxCheck::Unknown(why),

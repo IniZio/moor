@@ -315,7 +315,8 @@ fn close_refuses_when_the_agent_writes_between_the_probe_and_the_stop() {
     assert!(t.contains("the Box holds work"), "{t}");
     assert!(t.contains("the agent was stopped"), "{t}");
     assert!(t.contains("moor start t --resume"), "{t}");
-    assert_eq!(count(&f, "exec"), 2);
+    // The recheck shares a batch with the report index script, so that script runs too.
+    assert_eq!(count(&f, "exec"), 3);
     assert_eq!(count(&f, "release"), 0);
     assert_ne!(row(&f).state, TaskState::Closed);
     assert_ne!(box_state(&f), BoxState::Deleted);

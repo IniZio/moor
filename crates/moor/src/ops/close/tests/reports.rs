@@ -342,3 +342,53 @@ fn one_failed_store_does_not_stop_the_rest() {
         .iter()
         .all(|w| !w.message.contains("SECRET-BODY") && !w.message.contains("b.md")));
 }
+
+#[test]
+fn recheck_probe_and_report_index_share_one_batch() {
+    let f = fx(driver_with(&[("result.md", "R")]));
+    run(&f.cx, &req(false)).unwrap();
+    assert_eq!(kinds(&f), [("result".to_owned(), 1)]);
+    let batches = f
+        .driver
+        .box_calls()
+        .iter()
+        .filter(|c| *c == "batch")
+        .count();
+    assert_eq!(batches, 2, "{:?}", f.driver.box_calls());
+    let calls = f.driver.box_calls();
+    let after_acquire: Vec<&str> = calls.iter().skip(1).map(String::as_str).collect();
+    assert_eq!(
+        after_acquire,
+        ["batch", "batch", "peek_file", "release"],
+        "{calls:?}"
+    );
+}
+
+#[test]
+fn reports_are_collected_alone_when_the_batch_stops_at_the_recheck() {
+    let f = fx(driver_with(&[("result.md", "R")]).exec_results([
+        Ok(ExecOutcome::Exited { code: 0 }),
+        Err(DriverError::NotFound),
+    ]));
+    let v = run(&f.cx, &req(false)).unwrap();
+    assert_eq!(v.task.state, TaskState::Closed);
+    assert_eq!(kinds(&f), [("result".to_owned(), 1)]);
+    assert_eq!(collect_execs(&f), 1);
+}
+
+#[test]
+fn a_refused_recheck_stores_no_report() {
+    let f = fx(driver_with(&[("result.md", "R")]));
+    let driver = f.driver.clone();
+    let runs = std::sync::atomic::AtomicU32::new(0);
+    f.driver.on_exec(move || {
+        // The first probe sees a clean Box; the recheck sees unsaved work.
+        if runs.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 1 {
+            let path = BoxPath::under(WORKDIR, ".moor/boxwork").unwrap();
+            driver.set_peek_text("box-1", &path, "ahead=1 dirty=2");
+        }
+    });
+    let e = run(&f.cx, &req(false)).unwrap_err();
+    assert_eq!(e.kind, moor_core::ErrorKind::Refused);
+    assert!(kinds(&f).is_empty());
+}
