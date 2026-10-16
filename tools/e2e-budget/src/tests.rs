@@ -294,12 +294,15 @@ fn model_request_ignores_malformed_lines() {
 }
 
 #[test]
-fn rate_limited_post_counts_only_as_rate_limited() {
+fn rate_limited_post_fails_with_a_plain_reason() {
     let log = "1700000010000 POST claude 429\n";
     assert!(!model_request_after(log, 0, "claude"));
-    assert!(rate_limited_after(log, 0, "claude"));
-    assert!(!rate_limited_after(log, 1_700_000_010_001, "claude"));
-    assert!(!rate_limited_after(PROXY_LOG, 0, "claude"));
+    assert_eq!(
+        model_request_failure(log, 0, "claude"),
+        Some("model requests rate limited: 429")
+    );
+    assert_eq!(model_request_failure(log, 1_700_000_010_001, "claude"), None);
+    assert_eq!(model_request_failure(PROXY_LOG, 0, "claude"), None);
 }
 
 #[test]

@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use e2e_budget::{
     agent_session_set, count_kind, model_request_after, parse_jsonl, parse_phase_line,
-    rate_limited_after, report_line, start_phases, summarize, timed, wake_phases, Event, Outcome, Phase, StartBudgets, WakeBudgets,
+    model_request_failure, report_line, start_phases, summarize, timed, wake_phases, Event, Outcome, Phase, StartBudgets, WakeBudgets,
 };
 use rusqlite::{Connection, OpenFlags};
 
@@ -204,7 +204,7 @@ fn cmd_event_ts(args: &Args) -> Result<bool, String> {
 }
 
 /// `model-request`: exit 0 when the task's proxy log has a successful model POST at or after `--after-ms`.
-/// With `--allow-rate-limited 1` a `429` POST also passes, and `rate limited` is printed.
+/// On failure, a `429` POST after `--after-ms` prints its reason.
 fn cmd_model_request(args: &Args) -> Result<bool, String> {
     let conn = open_db(args)?;
     let id: i64 = conn
@@ -224,12 +224,10 @@ fn cmd_model_request(args: &Args) -> Result<bool, String> {
     if model_request_after(&text, after, route) {
         return Ok(true);
     }
-    let limited =
-        args.0.contains_key("allow-rate-limited") && rate_limited_after(&text, after, route);
-    if limited {
-        println!("rate limited");
+    if let Some(why) = model_request_failure(&text, after, route) {
+        println!("{why}");
     }
-    Ok(limited)
+    Ok(false)
 }
 
 /// `agent-session`: exit 0 when the newest agent session row's registered id or the task's own id is set.

@@ -221,9 +221,10 @@ pub fn model_request_after(log: &str, after_ms: i64, route: &str) -> bool {
     post_status_after(log, after_ms, route, |s| s.starts_with('2'))
 }
 
-/// True when the proxy log has a rate-limited (`429`) `POST <route>` line at or after `after_ms`.
-pub fn rate_limited_after(log: &str, after_ms: i64, route: &str) -> bool {
+/// Why the model requests failed: set when the proxy log has a `429` `POST <route>` line at or after `after_ms`.
+pub fn model_request_failure(log: &str, after_ms: i64, route: &str) -> Option<&'static str> {
     post_status_after(log, after_ms, route, |s| s == "429")
+        .then_some("model requests rate limited: 429")
 }
 
 /// True when the task has an agent session id: the newest session row's registered id or the task's own.
