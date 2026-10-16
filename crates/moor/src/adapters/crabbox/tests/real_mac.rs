@@ -130,9 +130,24 @@ pub(super) fn lease_of(acq: &Acquired) -> String {
     lease.to_owned()
 }
 
-/// Cleans up for `acq` as Task `task` and reports whether its lease is gone.
-fn clean(driver: &Crabbox, target: &str, acq: &Acquired, task: &str, repo: &Path) -> bool {
-    host_cleanup::run(driver, &acq.handle, task, acq.workdir.as_str(), Some(repo)).unwrap();
+/// Cleans up for `acq` as the Task named `name` with numeric id `id`, and reports whether its lease is gone.
+fn clean(
+    driver: &Crabbox,
+    target: &str,
+    acq: &Acquired,
+    name: &str,
+    id: &str,
+    repo: &Path,
+) -> bool {
+    host_cleanup::run(
+        driver,
+        &acq.handle,
+        name,
+        id,
+        acq.workdir.as_str(),
+        Some(repo),
+    )
+    .unwrap();
     !exists_on_mac(target, &lease_of(acq))
 }
 
@@ -165,13 +180,13 @@ fn macos_box_over_static_ssh_gets_per_task_workdirs_and_cleanup() {
     }
     assert_ne!(a.workdir, b.workdir);
 
-    let a_gone = clean(&driver, &target, &a, "987654321", repo.path());
+    let a_gone = clean(&driver, &target, &a, "realmac-a", "987654321", repo.path());
     let b_kept = exists_on_mac(&target, &lease_of(&b));
     eprintln!("a gone after its cleanup: {a_gone}");
     eprintln!("b kept after a's cleanup: {b_kept}");
     assert!(a_gone && b_kept);
 
-    let b_gone = clean(&driver, &target, &b, "987654322", repo.path());
+    let b_gone = clean(&driver, &target, &b, "realmac-b", "987654322", repo.path());
     eprintln!("b gone after its cleanup: {b_gone}");
     assert!(b_gone);
 }

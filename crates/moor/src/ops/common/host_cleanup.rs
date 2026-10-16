@@ -24,12 +24,44 @@ fn safe_name(s: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
 }
 
-/// A Task id safe to splice into a glob: non-empty ASCII digits only.
-///
-/// A hyphen or dot would let one Task's glob (`1-*`) match another's (`1-5-…`).
+/// A numeric Task id: non-empty, ASCII digits only.
 fn safe_task_id(s: &str) -> bool {
     !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit())
 }
+
+/// A Task name in the shape `[a-z0-9][a-z0-9-]{0,39}`.
+///
+/// Together with the fixed-width nonce glob this keeps Task `a` from matching
+/// the directories of Task `a-b`.
+fn safe_task_name(s: &str) -> bool {
+    let ok = |c: u8| c.is_ascii_lowercase() || c.is_ascii_digit();
+    let b = s.as_bytes();
+    (1..=40).contains(&b.len())
+        && b.first().is_some_and(|&c| ok(c))
+        && b.iter().all(|&c| ok(c) || c == b'-')
+}
+
+/// Stops every process whose command line holds a credential directory's path
+/// and then removes the Task's credential and temp directories.
+///
+/// The nonce is not stored, so it is matched as exactly six hex digits. The
+/// path reaches `awk` through the environment so the matcher's own command
+/// line never contains it; the match is a fixed-string one on `<dir>/`.
+const CLEAN: &str = r#"for d in "$HOME"/.moor-cred-NAME-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]; do
+[ -d "$d" ] || continue
+pids=$(ps -axo pid=,command= | P="$d/" S="$$" awk 'index($0, ENVIRON["P"]) && $1 != ENVIRON["S"] { print $1 }')
+for p in $pids; do kill -TERM "$p" 2>/dev/null || true; done
+i=0
+while [ "$i" -lt 20 ]; do
+left=
+for p in $pids; do kill -0 "$p" 2>/dev/null && left=1; done
+[ -n "$left" ] || break
+sleep 0.1
+i=$((i + 1))
+done
+for p in $pids; do kill -0 "$p" 2>/dev/null && { kill -KILL "$p" 2>/dev/null || true; }; done
+done
+rm -rf -- "$HOME"/.moor-cred-NAME-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f] "$HOME"/.moor-tmp-NAME-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]"#;
 
 /// Single-quotes `s` for `sh`.
 fn quote(s: &str) -> String {
@@ -63,27 +95,34 @@ fn lease_dir<'a>(workdir: &'a str, box_name: &str) -> Option<&'a str> {
 /// The `sh -c` script that removes the Task's credential and temp directories
 /// and per-Task home and, when `workdir` sits in the Box's own lease directory, that directory.
 /// It also runs each enabled device kind's release line, which deletes the Task's
-/// device by exact name (the iOS simulator, on a host with `xcrun`, named `moor-<task>`).
+/// device by exact name (the iOS simulator, on a host with `xcrun`, named `moor-<id>`).
 ///
-/// Returns `None` when `task` is not all ASCII digits, `box_name` is not a plain name or `workdir` is
-/// not an absolute path, because the paths are built from them.
-pub(crate) fn script(task: &str, box_name: &str, workdir: &str) -> Option<String> {
-    script_with(task, box_name, workdir, device::ENABLED)
+/// The directories are named by the Task name `task`; the device by the numeric Task id `id`.
+///
+/// Returns `None` when `task` is not a Task name, `id` is not a numeric Task id, `box_name` is
+/// not a plain name or `workdir` is not an absolute path, because the paths are built from them.
+pub(crate) fn script(task: &str, id: &str, box_name: &str, workdir: &str) -> Option<String> {
+    script_with(task, id, box_name, workdir, device::ENABLED)
 }
 
 /// [`script`] for an explicit set of device kinds.
 pub(crate) fn script_with(
     task: &str,
+    id: &str,
     box_name: &str,
     workdir: &str,
     kinds: &[&'static dyn DeviceKind],
 ) -> Option<String> {
-    if !safe_task_id(task) || !safe_name(box_name) || !workdir.starts_with('/') {
+    if !safe_task_name(task)
+        || !safe_task_id(id)
+        || !safe_name(box_name)
+        || !workdir.starts_with('/')
+    {
         return None;
     }
     let mut lines = vec![
         r#"[ -n "$HOME" ] && [ "$HOME" != / ] || exit 1"#.to_owned(),
-        format!(r#"rm -rf -- "$HOME"/.moor-cred-{task}-* "$HOME"/.moor-tmp-{task}-*"#),
+        CLEAN.replace("NAME", task),
     ];
     // The agent's per-Task HOME sits beside the workdir, so it goes even when
     // the lease directory below is kept.
@@ -98,23 +137,24 @@ pub(crate) fn script_with(
             r#"case "$HOME/" in {lease}/*) ;; *) rm -rf -- {lease} ;; esac"#
         ));
     }
-    lines.extend(kinds.iter().map(|k| k.release_line(task)));
+    lines.extend(kinds.iter().map(|k| k.release_line(id)));
     Some(lines.join("\n"))
 }
 
 /// Runs the cleanup on the host behind `handle`.
 ///
 /// # Errors
-/// Returns why it did not finish: unsafe names, a failed exec, or a non-zero exit.
+/// Returns why it did not finish: unsafe names or id, a failed exec, or a non-zero exit.
 pub(crate) fn run(
     driver: &dyn Driver,
     handle: &BoxHandle,
     task: &str,
+    id: &str,
     workdir: &str,
     host_cwd: Option<&Path>,
 ) -> Result<(), String> {
-    let Some(script) = script(task, box_name(handle), workdir) else {
-        return Err("the task or Box name is not a plain name".to_owned());
+    let Some(script) = script(task, id, box_name(handle), workdir) else {
+        return Err("the task name, task id or Box name is not plain".to_owned());
     };
     let spec = ExecSpec {
         argv: vec!["sh".to_owned(), "-c".to_owned(), script],
@@ -142,8 +182,15 @@ pub(crate) fn on_release(cx: &Cx, row: &TaskRow, b: &BoxRow, handle: &BoxHandle)
     let reason = match b.workdir.as_deref() {
         Some(workdir) => {
             let host_cwd = row.worktree.as_ref().map(Path::new);
-            let task = row.id.get().to_string();
-            match run(cx.driver(), handle, &task, workdir, host_cwd) {
+            let id = row.id.get().to_string();
+            match run(
+                cx.driver(),
+                handle,
+                row.name.as_str(),
+                &id,
+                workdir,
+                host_cwd,
+            ) {
                 Ok(()) => return,
                 Err(e) => e,
             }
