@@ -10,6 +10,8 @@ pub(super) struct Warmup {
     pub(super) id: String,
     /// Work root on the `ready` line, when printed.
     pub(super) workroot: Option<String>,
+    /// Absolute workdir on the `ready` line, when printed and usable.
+    pub(super) workdir: Option<String>,
 }
 
 /// Reads the `leased` and `ready` lines; `None` when there is no `leased` line.
@@ -19,12 +21,20 @@ pub(super) fn parse_warmup(text: &str) -> Option<Warmup> {
         .find_map(|l| l.strip_prefix("leased "))
         .and_then(|rest| rest.split_whitespace().next())?
         .to_owned();
-    let workroot = text
-        .lines()
-        .filter(|l| l.starts_with("ready "))
-        .find_map(|l| l.split_once("workroot=").map(|(_, w)| w.trim().to_owned()))
-        .filter(|w| !w.is_empty());
-    Some(Warmup { id, workroot })
+    let field = |key: &str| {
+        text.lines()
+            .filter(|l| l.starts_with("ready "))
+            .flat_map(str::split_whitespace)
+            .find_map(|t| t.strip_prefix(key))
+            .filter(|v| !v.is_empty())
+            .map(str::to_owned)
+    };
+    let workdir = field("workdir=").filter(|w| w.starts_with('/'));
+    Some(Warmup {
+        id,
+        workroot: field("workroot="),
+        workdir,
+    })
 }
 
 /// One Box from `crabbox list --json`.
