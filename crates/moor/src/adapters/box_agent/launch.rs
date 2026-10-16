@@ -261,6 +261,10 @@ fn script(
     script_stripping(paths, ctx, hooks, preseed, argv, (proxy, sandbox, &[]))
 }
 
+/// The line that puts the agent's install directories on the Box's `PATH`, in the launch script
+/// and in the check that the agent command exists.
+const AGENT_PATH_LINE: &str = "export PATH=\"$HOME/.local/bin:$HOME/.bun/bin:$PATH\"";
+
 /// The script the Box runs under `sh`; the credential directory goes once the brief is
 /// installed, and at exit or on a hangup, interrupt or terminate before then. With
 /// `proxy` lines the directory stays until the agent exits, since the CA bundle and the CA
@@ -296,7 +300,7 @@ fn script_stripping(
         ),
         format!("{} || exit 1", hooks.step),
         preseed.step.clone(),
-        "export PATH=\"$HOME/.local/bin:$HOME/.bun/bin:$PATH\"".to_owned(),
+        AGENT_PATH_LINE.to_owned(),
         format!("export TMPDIR={tmp} CLAUDE_CODE_TMPDIR={tmp}"),
     ];
     // The platform's secrets go before anything else runs, sandboxed or not.
