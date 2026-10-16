@@ -11,6 +11,7 @@ use moor_core::seam::driver::TunnelHandle;
 use moor_core::seam::proxy_host::ProxySpec;
 use moor_core::{BoxHandle, Secret, TaskId};
 
+use super::bind;
 use super::listen::{listen, Live};
 use super::park::{parked_tunnel, starts_parked};
 use super::{Deps, Sink, LEASE};
@@ -158,10 +159,7 @@ fn open_tunnel(
     deps: &Deps<'_>,
     (handle, box_port, host_port, worktree): (&BoxHandle, u16, u16, &Path),
 ) -> Option<Box<dyn TunnelHandle>> {
-    match deps
-        .driver
-        .reverse_tunnel(handle, box_port, host_port, worktree)
-    {
+    match bind::open(deps, handle, box_port, host_port, worktree) {
         Ok(tunnel) => Some(tunnel),
         Err(err) => {
             say(
