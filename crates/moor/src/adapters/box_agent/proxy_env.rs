@@ -1,12 +1,10 @@
 //! The proxy environment the agent starts with: the nonce arrives as a staged file, never as text.
 
-use std::path::Path;
-
 use moor_core::boxscript::quote;
 use moor_core::seam::agent_profile::{EnvVar, ProxyAddr};
-use moor_core::seam::driver::Driver;
+use moor_core::seam::driver::BoxStep;
 use moor_core::seam::forge::ForgeRepo;
-use moor_core::{BoxHandle, BoxPath};
+use moor_core::BoxPath;
 
 /// The staged nonce file name inside the credential directory.
 pub(super) const NONCE_FILE: &str = "proxy-nonce";
@@ -32,23 +30,26 @@ fn is_identifier(name: &str) -> bool {
         && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
-/// Stages the nonce at `<cred>/proxy-nonce` (mode 0600, raw nonce bytes, no newline) and the public CA
-/// certificate at `<cred>/proxy-ca.pem` (mode 0644), both via `put_file`.
-pub(super) fn stage(
-    driver: &dyn Driver,
-    handle: &BoxHandle,
+/// The steps that stage the nonce at `<cred>/proxy-nonce` (mode 0600, raw nonce bytes, no newline) and the
+/// public CA certificate at `<cred>/proxy-ca.pem` (mode 0644), each with the text a failure of that step is reported under.
+pub(super) fn stage_steps(
     cred: &BoxPath,
     proxy: &ProxyAddr,
-    host_cwd: &Path,
-) -> Result<(), String> {
-    let nonce_path = cred_file(cred, NONCE_FILE)?;
-    driver
-        .put_file(handle, &nonce_path, proxy.nonce.expose(), 0o600, host_cwd)
-        .map_err(|e| format!("could not stage the proxy nonce: {e}"))?;
-    let ca_path = cred_file(cred, CA_FILE)?;
-    driver
-        .put_file(handle, &ca_path, proxy.ca_pem.as_bytes(), 0o644, host_cwd)
-        .map_err(|e| format!("could not stage the proxy CA: {e}"))
+) -> Result<[(BoxStep, &'static str); 2], String> {
+    let nonce = BoxStep::Put {
+        path: cred_file(cred, NONCE_FILE)?,
+        bytes: proxy.nonce.expose().to_vec(),
+        mode: 0o600,
+    };
+    let ca = BoxStep::Put {
+        path: cred_file(cred, CA_FILE)?,
+        bytes: proxy.ca_pem.as_bytes().to_vec(),
+        mode: 0o644,
+    };
+    Ok([
+        (nonce, "could not stage the proxy nonce"),
+        (ca, "could not stage the proxy CA"),
+    ])
 }
 
 /// `rel` under the credential directory.

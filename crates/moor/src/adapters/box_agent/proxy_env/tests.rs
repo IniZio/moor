@@ -4,12 +4,11 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use moor_core::seam::agent_profile::{EnvVar, ProxyAddr};
-use moor_core::seam::driver::{AcquireReq, Driver};
+use moor_core::seam::driver::BoxStep;
 use moor_core::seam::forge::ForgeRepo;
-use moor_core::{BoxHandle, BoxPath, ProviderId, Secret, TaskId, TaskName};
+use moor_core::{BoxPath, Secret};
 
-use super::{github_repo, push_url, script_lines, stage, NONCE_FILE};
-use crate::testing::driver::FakeDriver;
+use super::{github_repo, push_url, script_lines, stage_steps, NONCE_FILE};
 
 const SENTINEL: &[u8] = b"sentinel-9c2e";
 const PORT: u16 = 4321;
@@ -271,38 +270,26 @@ fn is(env: &HashMap<String, String>, k: &str, v: &str) {
 }
 
 #[test]
-fn stage_puts_the_nonce_and_the_ca_under_the_credential_directory() {
-    let d = FakeDriver::new();
-    d.acquire(&AcquireReq {
-        provider: ProviderId::new("fake"),
-        task: TaskId::new(1),
-        name: TaskName::parse("t1").unwrap(),
-        class: None,
-        nonce: "n0".to_owned(),
-        worktree: None,
-    })
-    .unwrap();
+fn stage_steps_put_the_nonce_and_the_ca_under_the_credential_directory() {
     let c = cred(Path::new("/home/box/.moor-cred"));
-    stage(
-        &d,
-        &BoxHandle::new("box-1"),
-        &c,
-        &proxy(),
-        Path::new("/r/wt"),
-    )
-    .unwrap();
-    let puts = d.puts();
-    assert_eq!(puts.len(), 2);
-    let mut it = puts.iter();
-    let (first, second) = (it.next().unwrap(), it.next().unwrap());
-    let (handle, path, bytes, mode, cwd) = first;
-    assert_eq!(handle, &BoxHandle::new("box-1"));
-    assert_eq!(path.as_str(), "/home/box/.moor-cred/proxy-nonce");
-    assert_eq!(bytes, &SENTINEL.to_vec());
-    assert_eq!(*mode, 0o600);
-    assert_eq!(cwd, Path::new("/r/wt"));
-    let (_, path, bytes, mode, _) = second;
-    assert_eq!(path.as_str(), "/home/box/.moor-cred/proxy-ca.pem");
-    assert_eq!(bytes.as_slice(), CA.as_bytes());
-    assert_eq!(*mode, 0o644);
+    let [(nonce, nonce_text), (ca, ca_text)] = stage_steps(&c, &proxy()).unwrap();
+    let put = |path: &str, bytes: Vec<u8>, mode| BoxStep::Put {
+        path: BoxPath::restore(path).unwrap(),
+        bytes,
+        mode,
+    };
+    assert_eq!(
+        nonce,
+        put("/home/box/.moor-cred/proxy-nonce", SENTINEL.to_vec(), 0o600)
+    );
+    assert_eq!(nonce_text, "could not stage the proxy nonce");
+    assert_eq!(
+        ca,
+        put(
+            "/home/box/.moor-cred/proxy-ca.pem",
+            CA.as_bytes().to_vec(),
+            0o644
+        )
+    );
+    assert_eq!(ca_text, "could not stage the proxy CA");
 }

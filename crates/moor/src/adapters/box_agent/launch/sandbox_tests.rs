@@ -10,10 +10,6 @@ use moor_core::seam::engine::SessionRef;
 
 const NOT_INSTALLED: i32 = 6;
 
-fn uname_path() -> BoxPath {
-    BoxPath::under(CRED, "uname").unwrap()
-}
-
 /// The outcome of a proxy launch on a Box whose checks return `codes`, whose `uname` says
 /// `platform`, and whose downloads go through `release`.
 fn launch_missing(
@@ -29,7 +25,7 @@ fn launch_missing(
         FakeDriver::new()
             .exec_results([0, codes[0], codes[1]].map(|code| Ok(ExecOutcome::Exited { code }))),
     );
-    d.set_peek_text("box-1", &uname_path(), platform);
+    d.set_run_stdout(platform);
     let s = surface(FakeSurface::new("/r"));
     let a = BoxAgent::new(
         d.clone(),

@@ -27,12 +27,10 @@ fn environ_path() -> BoxPath {
 }
 
 fn driver(d: FakeDriver) -> Arc<FakeDriver> {
-    let uname = BoxPath::under(CRED, "uname").unwrap();
-    let d = Arc::new(d.peek_text("box-1", &environ_path(), ENVIRON).peek_text(
-        "box-1",
-        &uname,
-        "Linux x86_64",
-    ));
+    let d = Arc::new(
+        d.peek_text("box-1", &environ_path(), ENVIRON)
+            .run_stdout("Linux x86_64"),
+    );
     d.acquire(&AcquireReq {
         provider: ProviderId::new("fake"),
         task: TaskId::new(1),
@@ -598,3 +596,5 @@ mod sandbox_tests;
 
 #[path = "secret_tests.rs"]
 mod secret_tests;
+
+mod batch;

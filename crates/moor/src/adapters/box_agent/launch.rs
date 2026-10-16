@@ -6,17 +6,18 @@ use moor_core::boxscript::{command_line, quote};
 use moor_core::domain::run::SyncMode;
 use moor_core::name::{BoxPath, NameError};
 use moor_core::seam::agent_profile::{AgentProfile, BoxSetup, LaunchCtx, ProxyAddr};
-use moor_core::seam::driver::{Driver, ExecOutcome, ExecSpec};
+use moor_core::seam::driver::{BoxStep, Driver, ExecOutcome, ExecSpec, StepDone};
 use moor_core::seam::engine::{EngineError, LaunchReq, SessionRef};
 use moor_core::seam::proc::{Deadline, Tool};
 use moor_core::seam::surface::{PaneCmd, PaneRef, Surface};
 use moor_core::Secret;
 
-use super::brief::{render, BriefInput};
+use self::install::StepResult;
+use self::steps::{Plan, Staged};
 use super::nono_release::NonoRelease;
 use super::probe::HOOK_FILE;
 use super::proxy_env;
-use super::sandbox::{self, SandboxInput};
+use super::sandbox;
 
 /// Where the brief lands, relative to the Box workdir.
 const BRIEF_FILE: &str = ".moor/brief.md";
@@ -24,6 +25,9 @@ const BRIEF_FILE: &str = ".moor/brief.md";
 const CLEANUP_DEADLINE: Duration = Duration::from_secs(30);
 /// Time allowed for checking and installing the sandbox tool on the Box.
 const INSTALL_DEADLINE: Duration = Duration::from_secs(300);
+
+/// The Box's operating system and architecture, read when the launch has a Proxy.
+type Platform = Option<Result<(String, String), Failure>>;
 
 /// A failed step and why.
 struct Failure {
@@ -53,7 +57,7 @@ pub(super) fn launch(
     let connect = driver
         .connect_argv(&req.handle, &req.worktree)
         .map_err(|e| failed(fail("connect", &e)))?;
-    let (home, root) = box_user(driver, req).map_err(failed)?;
+    let ((home, root), platform) = open_box(driver, req, &connect).map_err(failed)?;
     let ctx = LaunchCtx {
         model: req.model.clone(),
         workdir: req.workdir.clone(),
@@ -65,11 +69,8 @@ pub(super) fn launch(
         }),
         home,
     };
-    let cred = BoxPath::under(
-        ctx.home.as_str(),
-        &format!(".moor-cred-{}-{}", req.task.as_str(), req.nonce),
-    )
-    .map_err(|e| failed(fail("brief", &e)))?;
+    let cred =
+        BoxPath::under(ctx.home.as_str(), &cred_dir(req)).map_err(|e| failed(fail("brief", &e)))?;
     let tmp = BoxPath::under(
         ctx.home.as_str(),
         &format!(".moor-tmp-{}-{}", req.task.as_str(), req.nonce),
@@ -86,7 +87,7 @@ pub(super) fn launch(
         release,
         root,
     };
-    match launch.deliver(&connect) {
+    match launch.deliver(&connect, platform) {
         Ok(pane) => Ok(SessionRef {
             id: String::new(),
             handle: req.handle.clone(),
@@ -117,12 +118,12 @@ fn failed(f: Failure) -> EngineError {
 
 /// The Box user's home, and whether that user is root, read from the environment of a process on
 /// the Box.
-fn box_user(driver: &dyn Driver, req: &LaunchReq) -> Result<(BoxPath, bool), Failure> {
-    let environ = BoxPath::restore("/proc/self/environ").map_err(|e| fail("home", &e))?;
-    let text = driver
-        .peek_file(&req.handle, &environ, &req.worktree)
-        .map_err(|e| fail("home", &e))?
-        .ok_or_else(|| fail("home", &"the Box has no process environment"))?;
+fn box_user(peeked: Option<StepResult>) -> Result<(BoxPath, bool), Failure> {
+    let text = match peeked {
+        Some(Ok(StepDone::Peeked(Some(text)))) => text,
+        Some(Err(e)) => return Err(fail("home", &e)),
+        _ => return Err(fail("home", &"the Box has no process environment")),
+    };
     let var = |name: &str| {
         let prefix = format!("{name}=");
         text.split('\0').find_map(|kv| kv.strip_prefix(&prefix))
@@ -130,6 +131,34 @@ fn box_user(driver: &dyn Driver, req: &LaunchReq) -> Result<(BoxPath, bool), Fai
     let home = var("HOME").ok_or_else(|| fail("home", &"the Box user has no home directory"))?;
     let home = BoxPath::restore(home).map_err(|e| fail("home", &e))?;
     Ok((home, var("USER") == Some("root")))
+}
+
+/// Looks the Box user up, and reads the Box platform when the launch has a Proxy, in one batch.
+fn open_box(
+    driver: &dyn Driver,
+    req: &LaunchReq,
+    connect: &[String],
+) -> Result<((BoxPath, bool), Platform), Failure> {
+    let environ = BoxPath::restore("/proc/self/environ").map_err(|e| fail("home", &e))?;
+    let mut steps = vec![BoxStep::Peek(environ)];
+    if req.proxy.is_some() {
+        steps.push(install::platform_step(&cred_dir(req)));
+    }
+    let deadline = Deadline(INSTALL_DEADLINE);
+    let mut done = driver
+        .batch(&req.handle, connect, &steps, &req.worktree, deadline)
+        .into_iter();
+    let user = box_user(done.next())?;
+    let platform = req
+        .proxy
+        .is_some()
+        .then(|| install::parse_platform(done.next()));
+    Ok((user, platform))
+}
+
+/// The name of the credential directory under the Box user's home.
+fn cred_dir(req: &LaunchReq) -> String {
+    format!(".moor-cred-{}-{}", req.task.as_str(), req.nonce)
 }
 
 /// What one launch works with.
@@ -162,96 +191,33 @@ impl Launch<'_> {
         resume.map_or_else(|| profile.argv(ctx), |id| profile.resume_argv(id, ctx))
     }
 
-    /// Stages the nonce and the CA certificate and returns the script lines that export the proxy
-    /// environment; empty when the launch has no Proxy.
+    /// The script lines that export the proxy environment; empty when the launch has no Proxy.
     fn proxy_lines(&self) -> Result<Vec<String>, Failure> {
         let Some(addr) = &self.ctx.proxy else {
             return Ok(Vec::new());
         };
-        let (req, cred) = (self.req, self.cred);
-        proxy_env::stage(self.driver, &req.handle, cred, addr, &req.worktree)
-            .map_err(|e| fail("proxy", &e))?;
         let env = self.profile.env(self.ctx);
-        proxy_env::script_lines(cred, addr, &env, req.origin.as_deref())
+        proxy_env::script_lines(self.cred, addr, &env, self.req.origin.as_deref())
             .map_err(|e| fail("script", &e))
     }
 
-    /// Makes sure the sandbox tool is on the Box and stages its profile, returning the profile's path; a
-    /// launch without a Proxy runs the agent unsandboxed.
-    fn sandbox(&self) -> Result<Option<BoxPath>, Failure> {
-        let Some(addr) = &self.ctx.proxy else {
-            return Ok(None);
-        };
-        let (req, cred) = (self.req, self.cred);
-        install::ensure(self.driver, req, (&self.ctx.home, cred), self.release)?;
-        let env_names = (self.profile.env(self.ctx).into_iter().map(|v| v.name)).collect();
-        let profile = sandbox::profile(&SandboxInput {
-            workdir: &self.ctx.workdir,
-            home: &self.ctx.home,
-            cred,
-            tmp: self.tmp,
-            env_names,
-            set_vars: addr.box_env.clone(),
-            root: self.root,
-            strip_env: &req.strip_env,
-        });
-        let at = BoxPath::under(cred.as_str(), sandbox::PROFILE_FILE)
-            .map_err(|e| fail("sandbox", &e))?;
-        self.driver
-            .put_file(&req.handle, &at, profile.as_bytes(), 0o600, &req.worktree)
-            .map_err(|e| fail("sandbox", &e))?;
-        Ok(Some(at))
-    }
-
-    /// Puts the brief in the credential directory.
-    fn put_brief(&self) -> Result<(), Failure> {
-        let (req, cred) = (self.req, self.cred);
-        let brief = render(&BriefInput {
-            task: req.task.as_str(),
-            goal: req.goal.as_deref(),
-            issue: req.issue.as_deref(),
-            branch: &req.branch,
-            setup_exit: req.setup_exit,
-        });
-        let brief_at = BoxPath::under(cred.as_str(), "brief.md").map_err(|e| fail("brief", &e))?;
-        self.driver
-            .put_file(
-                &req.handle,
-                &brief_at,
-                brief.as_bytes(),
-                0o600,
-                &req.worktree,
-            )
-            .map_err(|e| fail("brief", &e))?;
-        Ok(())
-    }
-
     /// Puts the files in the Box and opens the tab.
-    fn deliver(&self, connect: &[String]) -> Result<PaneRef, Failure> {
+    fn deliver(&self, connect: &[String], platform: Platform) -> Result<PaneRef, Failure> {
         let Self {
-            driver,
             surface,
-            profile,
-            req,
             ctx,
             cred,
+            req,
             ..
         } = self;
-        let sandboxed = self.sandbox()?;
-        let hooks = profile.hook_writer(ctx).map_err(|e| fail("hooks", &e))?;
-        let preseed = profile.preseed(ctx).map_err(|e| fail("preseed", &e))?;
-        self.put_brief()?;
-        for file in hooks.files.iter().chain(&preseed.files) {
-            driver
-                .put_file(
-                    &req.handle,
-                    &file.path,
-                    file.content.as_bytes(),
-                    file.mode,
-                    &req.worktree,
-                )
-                .map_err(|e| fail("hooks", &e))?;
-        }
+        let mut plan = Plan::default();
+        let staged = self.plan(platform, &mut plan);
+        self.execute(connect, &plan)?;
+        let Staged {
+            sandboxed,
+            hooks,
+            preseed,
+        } = staged?;
         let argv = self.argv();
         let lines = self.proxy_lines()?;
         let script = script_stripping(
@@ -389,6 +355,7 @@ fn remove_cred(
 }
 
 mod install;
+mod steps;
 
 #[cfg(test)]
 mod tests;
