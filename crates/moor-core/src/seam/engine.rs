@@ -128,6 +128,9 @@ pub enum EngineError {
     /// The transcript could not be archived or copied out.
     #[error("transcript: {0}")]
     Transcript(String),
+    /// The agent left no transcript to archive.
+    #[error("transcript: nothing to archive")]
+    NothingToArchive,
 }
 
 /// The agent running in a Box.
@@ -167,7 +170,8 @@ pub trait Engine: Send + Sync {
     /// Archives the agent's transcript in the Box and copies the archive to `dest` on the host.
     ///
     /// # Errors
-    /// [`EngineError::Transcript`] names the step that failed.
+    /// [`EngineError::Transcript`] names the step that failed; [`EngineError::NothingToArchive`]
+    /// when the agent left no transcript.
     fn transcript(&self, s: &SessionRef, dest: &Path) -> Result<(), EngineError>;
 }
 

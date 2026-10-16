@@ -37,6 +37,9 @@ fn with_transcript(engine: FakeEngine) -> (World, Arc<FakeEngine>, TaskId) {
     let (mut w, _, id) = started();
     let engine = Arc::new(engine.launch_result(Ok(session("p-2"))));
     w.cx = w.cx.with_engine(engine.clone());
+    let store = w.cx.store().unwrap();
+    let current = store.live_session(id).unwrap().unwrap();
+    store.set_registered_session(current.id, "agent-1").unwrap();
     (w, engine, id)
 }
 

@@ -117,6 +117,10 @@ fn all_events() -> Vec<Event> {
             trigger: s("close"),
             error: s("e"),
         },
+        Event::TranscriptSkipped {
+            trigger: s("close"),
+            reason: s("r"),
+        },
         Event::Steered {
             session: s("x"),
             message: s("m"),
@@ -195,13 +199,14 @@ const fn event_index(e: &Event) -> usize {
         Event::AgentPromptCheckFailed { .. } => 30,
         Event::TranscriptSaved { .. } => 31,
         Event::TranscriptFailed { .. } => 32,
-        Event::Steered { .. } => 33,
-        Event::ProxyStarted { .. } => 34,
-        Event::TunnelRestarted { .. } => 35,
-        Event::SetupFinished { .. } => 36,
-        Event::EgressRefused { .. } => 37,
-        Event::CredentialWithheld { .. } => 38,
-        Event::ProxyCredentialFailed { .. } => 39,
+        Event::TranscriptSkipped { .. } => 33,
+        Event::Steered { .. } => 34,
+        Event::ProxyStarted { .. } => 35,
+        Event::TunnelRestarted { .. } => 36,
+        Event::SetupFinished { .. } => 37,
+        Event::EgressRefused { .. } => 38,
+        Event::CredentialWithheld { .. } => 39,
+        Event::ProxyCredentialFailed { .. } => 40,
     }
 }
 
@@ -209,7 +214,7 @@ const fn event_index(e: &Event) -> usize {
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 40);
+    assert_eq!(all.len(), 41);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }

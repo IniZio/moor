@@ -1,5 +1,5 @@
 use moor_core::activity::{HookKind, HookRecord};
-use moor_core::seam::agent_profile::{AgentProfile, FirstRunPrompt};
+use moor_core::seam::agent_profile::{AgentProfile, FirstRunPrompt, NOTHING_TO_ARCHIVE};
 use moor_core::seam::clock::Ts;
 
 use super::Claude;
@@ -214,5 +214,100 @@ fn transcript_script_archives_the_project_sessions_to_the_given_path() {
     assert!(script.contains("$HOME/.claude/projects/$enc"));
     assert!(script.contains("*.jsonl"));
     assert!(script.contains("tar czf \"$OLDPWD/.moor/t.tgz\""));
-    assert!(script.contains("exit 3"));
+    assert!(script.contains(NOTHING_TO_ARCHIVE));
+}
+
+/// Runs the transcript script in a fresh workdir under a fresh HOME; `setup` gets (home, workdir).
+fn run_script(
+    setup: impl FnOnce(&std::path::Path, &std::path::Path),
+) -> (std::process::Output, tempfile::TempDir) {
+    let root = tempfile::tempdir().unwrap();
+    let home = root.path().join("home");
+    let work = root.path().join("work");
+    std::fs::create_dir_all(&home).unwrap();
+    std::fs::create_dir_all(&work).unwrap();
+    setup(&home, &work);
+    let out = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(Claude.transcript_script(".moor/t.tgz"))
+        .env("HOME", &home)
+        .current_dir(&work)
+        .output()
+        .unwrap();
+    (out, root)
+}
+
+/// The project directory the script reads for `work`.
+fn project_dir(home: &std::path::Path, work: &std::path::Path) -> std::path::PathBuf {
+    let enc: String = std::fs::canonicalize(work)
+        .unwrap()
+        .to_string_lossy()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+    home.join(".claude/projects").join(enc)
+}
+
+#[test]
+fn transcript_script_prints_the_marker_and_exits_zero_without_a_jsonl() {
+    for with_dir in [false, true] {
+        let (out, _root) = run_script(|home, work| {
+            if with_dir {
+                std::fs::create_dir_all(project_dir(home, work)).unwrap();
+            }
+        });
+        assert_eq!(out.status.code(), Some(0), "{out:?}");
+        assert_eq!(
+            String::from_utf8_lossy(&out.stdout).trim(),
+            NOTHING_TO_ARCHIVE
+        );
+    }
+}
+
+#[test]
+fn transcript_script_archives_when_a_jsonl_exists() {
+    let (out, _root) = run_script(|home, work| {
+        let d = project_dir(home, work);
+        std::fs::create_dir_all(&d).unwrap();
+        std::fs::write(d.join("a.jsonl"), "{}").unwrap();
+    });
+    assert_eq!(out.status.code(), Some(0), "{out:?}");
+    assert!(!String::from_utf8_lossy(&out.stdout).contains(NOTHING_TO_ARCHIVE));
+}
+
+#[test]
+fn transcript_script_fails_when_tar_fails() {
+    use std::os::unix::fs::PermissionsExt;
+    let mut file = None;
+    let (out, _root) = run_script(|home, work| {
+        let d = project_dir(home, work);
+        std::fs::create_dir_all(&d).unwrap();
+        let f = d.join("a.jsonl");
+        std::fs::write(&f, "{}").unwrap();
+        std::fs::set_permissions(&f, std::fs::Permissions::from_mode(0o000)).unwrap();
+        file = Some(f);
+    });
+    let readable_anyway = std::fs::read(file.unwrap()).is_ok();
+    if !readable_anyway {
+        assert_ne!(out.status.code(), Some(0), "{out:?}");
+    }
+}
+
+#[test]
+fn transcript_script_fails_when_the_project_dir_is_unreadable() {
+    use std::os::unix::fs::PermissionsExt;
+    let mut dir = None;
+    let (out, _root) = run_script(|home, work| {
+        let d = project_dir(home, work);
+        std::fs::create_dir_all(&d).unwrap();
+        std::fs::write(d.join("a.jsonl"), "{}").unwrap();
+        std::fs::set_permissions(&d, std::fs::Permissions::from_mode(0o000)).unwrap();
+        dir = Some(d);
+    });
+    let d = dir.unwrap();
+    let readable_anyway = std::fs::read_dir(&d).is_ok();
+    std::fs::set_permissions(&d, std::fs::Permissions::from_mode(0o755)).unwrap();
+    if !readable_anyway {
+        assert_ne!(out.status.code(), Some(0), "{out:?}");
+    }
 }

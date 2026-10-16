@@ -486,6 +486,9 @@ fn an_exited_agent_has_its_transcript_saved_before_the_session_ends() {
         .transcript_text("abc")
         .steer_result(Err(EngineError::PaneGone));
     let f = fx_with(engine, true);
+    let store = f.cx.store().unwrap();
+    let current = store.live_session(f.id).unwrap().unwrap();
+    store.set_registered_session(current.id, "agent-1").unwrap();
     run(&f.cx, &text("hi")).unwrap_err();
     assert_eq!(f.engine.transcripts(), ["agent-1"]);
     let store = f.cx.store().unwrap();
