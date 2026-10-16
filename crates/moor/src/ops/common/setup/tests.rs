@@ -441,6 +441,25 @@ fn empty_setup_still_syncs_the_checkout_with_one_exec() {
 }
 
 #[test]
+fn empty_setup_with_a_failed_sync_fails_like_a_failed_setup() {
+    let d = tempfile::tempdir().unwrap();
+    let r = rig(d.path(), FakeDriver::new().exec_results(exits(&[1])));
+    let got = run_setup(
+        &r.cx,
+        &r.handle,
+        &r.workdir,
+        d.path(),
+        &cfg(&[], &[]),
+        SyncMode::Full,
+    );
+    assert!(got.failed(), "{got:?}");
+    assert!(got.outcome() != SetupOutcome::Ok);
+    let w = only(r.cx.take_warnings());
+    assert_eq!(w.code, "setup_failed");
+    assert!(w.message.contains("syncing the checkout"), "{}", w.message);
+}
+
+#[test]
 fn outcome_maps_skipped_and_ok_to_ok() {
     assert_eq!(SetupRun::Skipped.outcome(), SetupOutcome::Ok);
     assert_eq!(SetupRun::Ok { ms: 0 }.outcome(), SetupOutcome::Ok);

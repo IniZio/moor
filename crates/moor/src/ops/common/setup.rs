@@ -117,27 +117,18 @@ pub(crate) fn run_setup(
     cfg: &TaskSettings,
     sync: SyncMode,
 ) -> SetupRun {
-    if cfg.setup.is_empty() {
-        // The sync happens inside the exec, so a Box with no setup still needs one to get its
-        // checkout. A failure here surfaces later, when the close probe finds no checkout.
-        if sync == SyncMode::Full {
-            let spec = ExecSpec {
-                argv: vec!["true".to_owned()],
-                env: Vec::new(),
-                cwd: Some(workdir.clone()),
-                sync,
-                output: None,
-                host_cwd: Some(worktree.to_path_buf()),
-                class: Some(cfg.size.value.as_str().to_owned()),
-            };
-            let _ = cx
-                .driver()
-                .exec(handle, &spec, Deadline(SETUP_LINE_DEADLINE));
-        }
+    // The full sync happens inside the exec, so a Box with no setup still runs one to get its
+    // checkout; a failure there is handled like a failed setup.
+    let sync_only = cfg.setup.is_empty();
+    if sync_only && sync != SyncMode::Full {
         return SetupRun::Skipped;
     }
     let spec = ExecSpec {
-        argv: vec!["sh".to_owned(), "-c".to_owned(), setup_script(&cfg.setup)],
+        argv: if sync_only {
+            vec!["true".to_owned()]
+        } else {
+            vec!["sh".to_owned(), "-c".to_owned(), setup_script(&cfg.setup)]
+        },
         env: cfg
             .env
             .iter()
@@ -155,12 +146,17 @@ pub(crate) fn run_setup(
     let elapsed = cx.clock().instant().saturating_duration_since(started);
     let ms = u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX);
     let (reason, exit) = match result {
+        Ok(ExecOutcome::Exited { code: 0 }) if sync_only => return SetupRun::Skipped,
         Ok(ExecOutcome::Exited { code: 0 }) => return SetupRun::Ok { ms },
         Ok(ExecOutcome::Exited { code }) => (format!("exit {code}"), Some(code)),
         Ok(ExecOutcome::Interrupted) => ("interrupted".to_owned(), None),
         Err(e) => (e.to_string(), None),
     };
-    let log = fetch_log(cx, handle, workdir, worktree);
+    let log = if sync_only {
+        String::new()
+    } else {
+        fetch_log(cx, handle, workdir, worktree)
+    };
     let line = cfg
         .setup
         .get(failed_step(&log, cfg.setup.len()))
@@ -168,7 +164,11 @@ pub(crate) fn run_setup(
         .unwrap_or_default();
     cx.warn(Warning {
         code: "setup_failed".to_owned(),
-        message: failure_message(&line, &reason, workdir, &log),
+        message: if sync_only {
+            format!("syncing the checkout into the Box failed: {reason}")
+        } else {
+            failure_message(&line, &reason, workdir, &log)
+        },
     });
     SetupRun::Failed { line, exit, ms }
 }
