@@ -6,8 +6,8 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use e2e_budget::{
-    count_kind, model_request_after, parse_jsonl, parse_phase_line, report_line, start_phases,
-    summarize, timed, wake_phases, Event, Outcome, Phase, StartBudgets, WakeBudgets,
+    agent_session_set, count_kind, model_request_after, parse_jsonl, parse_phase_line,
+    rate_limited_after, report_line, start_phases, summarize, timed, wake_phases, Event, Outcome, Phase, StartBudgets, WakeBudgets,
 };
 use rusqlite::{Connection, OpenFlags};
 
@@ -204,6 +204,7 @@ fn cmd_event_ts(args: &Args) -> Result<bool, String> {
 }
 
 /// `model-request`: exit 0 when the task's proxy log has a successful model POST at or after `--after-ms`.
+/// With `--allow-rate-limited 1` a `429` POST also passes, and `rate limited` is printed.
 fn cmd_model_request(args: &Args) -> Result<bool, String> {
     let conn = open_db(args)?;
     let id: i64 = conn
@@ -219,24 +220,29 @@ fn cmd_model_request(args: &Args) -> Result<bool, String> {
     // A missing log is "no request yet", not an error.
     let text = std::fs::read_to_string(&path).unwrap_or_default();
     let route = args.0.get("route").map_or("claude", String::as_str);
-    Ok(model_request_after(&text, args.int("after-ms")?, route))
+    let after = args.int("after-ms")?;
+    if model_request_after(&text, after, route) {
+        return Ok(true);
+    }
+    let limited =
+        args.0.contains_key("allow-rate-limited") && rate_limited_after(&text, after, route);
+    if limited {
+        println!("rate limited");
+    }
+    Ok(limited)
 }
 
-/// `agent-session`: exit 0 when the task's newest agent session has a registered agent session id.
-/// Falls back to the task's own id only while it has no session rows. The id is never printed.
+/// `agent-session`: exit 0 when the newest agent session row's registered id or the task's own id is set.
+/// The id is never printed.
 fn cmd_agent_session(args: &Args) -> Result<bool, String> {
     let conn = open_db(args)?;
     let sql = "SELECT (SELECT registered_agent_session FROM sessions WHERE task = t.id \
-               ORDER BY id DESC LIMIT 1), \
-               (SELECT COUNT(*) FROM sessions WHERE task = t.id), t.agent_session_id \
+               ORDER BY id DESC LIMIT 1), t.agent_session_id \
                FROM tasks t WHERE t.name = ? ORDER BY t.id DESC LIMIT 1";
-    let row: (Option<String>, i64, Option<String>) = conn
-        .query_row(sql, [args.req("task")?], |r| {
-            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
-        })
+    let row: (Option<String>, Option<String>) = conn
+        .query_row(sql, [args.req("task")?], |r| Ok((r.get(0)?, r.get(1)?)))
         .map_err(|e| e.to_string())?;
-    let chosen = if row.1 == 0 { row.2 } else { row.0 };
-    Ok(chosen.is_some_and(|s| !s.is_empty()))
+    Ok(agent_session_set(row.0.as_deref(), row.1.as_deref()))
 }
 
 /// `verdict`: summarizes previously printed phase lines.

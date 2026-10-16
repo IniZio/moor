@@ -28,6 +28,9 @@ options:
                           before the agent check; timed as box_step.N, report only
                           (repeatable). It runs after `moor start`, so it cannot
                           affect the first launch
+  --allow-rate-limited    count a POST claude 429 after the reference event as the goal sent (PASS,
+                          reason "rate limited"), to verify the launch while the account is at its
+                          limit (default off)
   --dry-run               print the planned commands; run nothing
   -h, --help              this text
 
@@ -62,15 +65,16 @@ EOF
 
 die() { echo "e2e-box: $*" >&2; exit 2; }
 
-cfg="" moor_cfg="" pilot="" cycles=2 name="e2e-$(date +%s)" moor="" state="" dry=0 goal="Reply with OK and wait."
+cfg="" moor_cfg="" pilot="" cycles=2 name="e2e-$(date +%s)" moor="" state="" dry=0 allow_rl=0 goal="Reply with OK and wait."
 start_args=() box_steps=()
 b_box_ready=30 b_proxy=15 b_session=20 b_start_total=90 b_sleep=15 b_tunnels=5
 b_woke=20 b_relaunch=25 b_wake_total=45 b_close=30
 while [ $# -gt 0 ]; do
-  [ $# -ge 2 ] || [ "$1" = --dry-run ] || [ "$1" = -h ] || [ "$1" = --help ] || die "missing value for $1"
+  [ $# -ge 2 ] || [ "$1" = --dry-run ] || [ "$1" = --allow-rate-limited ] || [ "$1" = -h ] || [ "$1" = --help ] || die "missing value for $1"
   case "$1" in
     -h|--help) usage; exit 0 ;;
     --dry-run) dry=1; shift; continue ;;
+    --allow-rate-limited) allow_rl=1; shift; continue ;;
     --provider-config) cfg=$2 ;;
     --moor-config) moor_cfg=$2 ;;
     --pilot) pilot=$2 ;;
@@ -153,7 +157,7 @@ phase_fail() {
     printf "PHASE %s took=%.1fs budget=%s FAIL (%s)\n", n, ms / 1000, b == "" ? "none" : sprintf("%.1fs", b), r }')"
 }
 phase_skip() { emit "PHASE $1 took=0.0s budget=0.0s SKIP"; }
-phase_pass() { emit "$(budget timed --name "$1" --took-ms 0 --budget 0)"; }
+phase_pass() { emit "$(budget timed --name "$1" --took-ms 0 --budget 0)${2:-}"; }
 # Appends the helper's PHASE lines; a helper error becomes a FAIL line.
 phase_lines() {
   local name=$1 out rc=0
@@ -171,19 +175,21 @@ agent_up() { box_run sh -c "pgrep -f '[c]laude' >/dev/null"; }
 # of the newest KIND event, and the Task has a registered agent session. A FAIL names the missing part
 # and prints the agent pane tail, so a screen that blocks the goal is visible.
 agent_check() {
-  local phase=$1 kind=$2 after=${3:-0} t0 ref why="" mreq=0 sess=0 proc=0
+  local phase=$1 kind=$2 after=${3:-0} t0 ref why="" mreq=0 sess=0 proc=0 note="" out rl=()
+  [ "$allow_rl" = 0 ] || rl=(--allow-rate-limited 1)
   t0=$(now_ms)
   if in_pilot agent_up; then proc=1; fi
   ref="$(budget event-ts --db "$state/moor.db" --task "$name" --kind "$kind" --after-id "$after" 2>/dev/null)" || ref=""
   if [ -z "$ref" ]; then ref=$t0; fi
   while :; do
-    budget model-request --db "$state/moor.db" --task "$name" --state-dir "$state" --after-ms "$ref" >/dev/null 2>&1 && mreq=1 || mreq=0
+    out="$(budget model-request --db "$state/moor.db" --task "$name" --state-dir "$state" --after-ms "$ref" ${rl[@]+"${rl[@]}"} 2>/dev/null)" && mreq=1 || mreq=0
+    note=""; [ "$out" != "rate limited" ] || note=" (rate limited)"
     budget agent-session --db "$state/moor.db" --task "$name" >/dev/null 2>&1 && sess=1 || sess=0
     if [ "$proc" = 0 ] || { [ "$mreq" = 1 ] && [ "$sess" = 1 ]; }; then break; fi
     [ "$(now_ms)" -lt $((ref + 60000)) ] || break
     sleep 1
   done
-  if [ "$proc" = 1 ] && [ "$mreq" = 1 ] && [ "$sess" = 1 ]; then phase_pass "$phase"; return 0; fi
+  if [ "$proc" = 1 ] && [ "$mreq" = 1 ] && [ "$sess" = 1 ]; then phase_pass "$phase" "$note"; return 0; fi
   [ "$proc" = 1 ] || why="agent process not running; "
   [ "$mreq" = 1 ] || why="${why}no model request (POST claude 2xx) in proxy log within 60s of $kind; "
   [ "$sess" = 1 ] || why="${why}no registered agent session; "

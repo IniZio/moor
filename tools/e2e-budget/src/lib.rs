@@ -218,6 +218,24 @@ pub fn count_kind(events: &[Event], kind: &str) -> usize {
 ///
 /// Lines are `<unix-ms> <method> <route> <status>`; nothing else in a line is read.
 pub fn model_request_after(log: &str, after_ms: i64, route: &str) -> bool {
+    post_status_after(log, after_ms, route, |s| s.starts_with('2'))
+}
+
+/// True when the proxy log has a rate-limited (`429`) `POST <route>` line at or after `after_ms`.
+pub fn rate_limited_after(log: &str, after_ms: i64, route: &str) -> bool {
+    post_status_after(log, after_ms, route, |s| s == "429")
+}
+
+/// True when the task has an agent session id: the newest session row's registered id or the task's own.
+///
+/// Moor registers a session only on `settle()`, while the agent's hook sets the task's id at once.
+pub fn agent_session_set(registered: Option<&str>, task_id: Option<&str>) -> bool {
+    [registered, task_id]
+        .into_iter()
+        .any(|s| s.is_some_and(|s| !s.is_empty()))
+}
+
+fn post_status_after(log: &str, after_ms: i64, route: &str, status_ok: fn(&str) -> bool) -> bool {
     log.lines().any(|line| {
         let mut f = line.split_whitespace();
         let (Some(ts), Some(method), Some(r), Some(status), None) =
@@ -227,7 +245,7 @@ pub fn model_request_after(log: &str, after_ms: i64, route: &str) -> bool {
         };
         method == "POST"
             && r == route
-            && status.starts_with('2')
+            && status_ok(status)
             && ts.parse::<i64>().is_ok_and(|t| t >= after_ms)
     })
 }
