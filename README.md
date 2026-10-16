@@ -120,7 +120,7 @@ cannot sleep and stays up.
   uses the modules listed for it in [tools/layering.tsv](tools/layering.tsv)
   (`module` and the comma-separated `allowed` modules; empty means none;
   an unlisted module is unconstrained),
-  plus the file-length and lint self-test scripts.
+  plus the file-length, lint self-test, and PR overlap scripts.
 
 ## Build and test
 
@@ -134,6 +134,9 @@ cannot sleep and stays up.
 - `make unit`: unit tests, the CLI test, and doc tests through `cargo nextest`
   and `cargo test`
 - `make test`: the same as `make unit`
+- `make overlap BASE=<ref> [HEAD=<ref>] [FILES="glob ..."]`: lists open PRs
+  that touch the same files and are not yet in `BASE`. Run it before
+  branching new work and before rebasing a stack, then stack on what it lists.
 - `make ci`: audit, lint, format-check, then test
 
 CI runs `format-check`, `lint`, `audit`, and `unit` in

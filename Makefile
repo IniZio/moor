@@ -5,7 +5,7 @@ TAPLO_VERSION := 0.10.0
 TYPOS_VERSION := 1.51.1
 LLVM_COV_VERSION := 0.9.1
 
-.PHONY: help coverage setup secret audit lint format format-check fmt-check test unit ci build deploy
+.PHONY: help coverage setup secret audit lint format format-check fmt-check test unit ci build deploy overlap
 
 help:
 	@echo "targets: setup secret audit lint format format-check test ci build deploy"
@@ -33,6 +33,7 @@ lint:
 	cargo test -p layering --locked
 	cargo run -q -p layering --locked
 	tools/lint-selftest.sh
+	tools/stack-overlap-selftest.sh
 	typos
 	RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items --locked
 
@@ -53,6 +54,9 @@ unit:
 	cargo test --workspace --doc --locked
 
 test: unit
+
+overlap:
+	@set -f; tools/stack-overlap.sh --pretty '$(BASE)' $(if $(HEAD),'$(HEAD)') $(if $(FILES),--files $(FILES))
 
 coverage:
 	cargo llvm-cov --workspace --locked
