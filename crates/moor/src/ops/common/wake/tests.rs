@@ -6,7 +6,7 @@ use std::sync::Arc;
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
-use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
+use moor_core::seam::driver::{AcquireReq, Driver, DriverError, SleepOutcome};
 use moor_core::seam::engine::SessionRef;
 use moor_core::seam::proc::Tool;
 use moor_core::seam::surface::{PaneRef, SurfaceError};
@@ -435,6 +435,21 @@ fn a_pane_closed_by_sleep_is_relaunched_on_wake() {
     f.surface.push_pane_obs("p-1", Err(SurfaceError::NotFound));
     let store = f.cx.store().unwrap();
     assert!(wake_and_revive(&f.cx, store, &row(&f)).unwrap());
+    assert_eq!(f.engine.launches().len(), 1);
+    assert_eq!(relaunched(&f).len(), 1);
+}
+
+#[test]
+fn a_box_that_cannot_sleep_gets_its_agent_back() {
+    let f = fx_with(FakeDriver::new().sleep_outcome(SleepOutcome::CannotSleep("no".into())));
+    with_agent(&f);
+    f.surface.have_pane("p-1");
+    f.surface.push_pane_obs("p-1", Err(SurfaceError::NotFound));
+    let req = moor_core::TaskReq {
+        task: TaskName::parse("t").unwrap(),
+    };
+    assert!(crate::ops::sleep::run(&f.cx, &req).is_err());
+    assert!(f.surface.calls().contains(&"close_pane p-1".to_owned()));
     assert_eq!(f.engine.launches().len(), 1);
     assert_eq!(relaunched(&f).len(), 1);
 }
