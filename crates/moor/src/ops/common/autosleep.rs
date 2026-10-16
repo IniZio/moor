@@ -11,6 +11,7 @@ use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
 use moor_core::domain::task::TaskInput;
 use moor_core::name::{BoxHandle, TaskId};
 use moor_core::seam::driver::SleepOutcome;
+use moor_core::seam::surface::{PaneRef, SurfaceError};
 use moor_core::{ErrorKind, Warning};
 
 use crate::cx::Cx;
@@ -84,10 +85,11 @@ fn try_sleep(cx: &Cx, store: &Store, id: TaskId) -> Result<(), CommandError> {
     }
 }
 
-/// Park the Task's Proxy tunnel, then ask the Driver to sleep the Box.
+/// Park the Task's Proxy tunnel, end the agent's pane, then ask the Driver to sleep the Box.
 ///
-/// A Box that stays awake gets its tunnel back. That restore is best effort: the sleep
-/// result is what the caller needs to see.
+/// The agent's ssh session would otherwise outlive the Box until its keepalive gave up. A wake
+/// finds the pane gone and relaunches the agent. A Box that stays awake gets its tunnel back.
+/// That restore is best effort: the sleep result is what the caller needs to see.
 pub(crate) fn sleep_parked(
     cx: &Cx,
     store: &Store,
@@ -95,11 +97,32 @@ pub(crate) fn sleep_parked(
     handle: &BoxHandle,
 ) -> Result<SleepOutcome, CommandError> {
     park_tunnel(cx, store, id)?;
+    if let Err(e) = close_agent_pane(cx, store, id) {
+        let _ = restore_tunnel(cx, store, id);
+        return Err(e);
+    }
     let slept = cx.driver().sleep(handle);
     if !matches!(slept, Ok(SleepOutcome::Slept | SleepOutcome::Native)) {
         let _ = restore_tunnel(cx, store, id);
     }
     Ok(slept?)
+}
+
+/// Closes the live agent pane; a pane already gone is fine.
+fn close_agent_pane(cx: &Cx, store: &Store, id: TaskId) -> Result<(), CommandError> {
+    let Some(session) = store.live_session(id)? else {
+        return Ok(());
+    };
+    let Some(pane) = session.pane.as_deref() else {
+        return Ok(());
+    };
+    match cx.surface().close_pane(&PaneRef::new(pane)) {
+        Ok(()) | Err(SurfaceError::NotFound) => Ok(()),
+        Err(e) => Err(CommandError::new(
+            ErrorKind::Failed,
+            format!("could not close the agent pane: {e}; the Box stays awake"),
+        )),
+    }
 }
 
 /// A refusal with `why`.

@@ -88,6 +88,11 @@ impl FakeSurface {
         self
     }
 
+    /// The next `close_pane` fails once with `e`, on a surface already shared.
+    pub(crate) fn set_fail_close_pane(&self, e: SurfaceError) {
+        self.st().fail_close_pane = Some(e);
+    }
+
     /// The next `close_workspace` fails once with `e`.
     pub(crate) fn fail_close_workspace(self, e: SurfaceError) -> Self {
         self.st().fail_close_ws = Some(e);

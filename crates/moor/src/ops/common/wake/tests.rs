@@ -418,3 +418,23 @@ fn plain_wake_leaves_a_gone_agent_alone() {
     assert!(wake_box_if_asleep(&f.cx, store, &row(&f)).unwrap());
     assert!(f.engine.launches().is_empty());
 }
+
+#[test]
+fn a_pane_closed_by_sleep_is_relaunched_on_wake() {
+    let f = fx();
+    with_agent(&f);
+    f.surface.have_pane("p-1");
+    crate::ops::sleep::run(
+        &f.cx,
+        &moor_core::TaskReq {
+            task: TaskName::parse("t").unwrap(),
+        },
+    )
+    .unwrap();
+    assert!(f.surface.calls().contains(&"close_pane p-1".to_owned()));
+    f.surface.push_pane_obs("p-1", Err(SurfaceError::NotFound));
+    let store = f.cx.store().unwrap();
+    assert!(wake_and_revive(&f.cx, store, &row(&f)).unwrap());
+    assert_eq!(f.engine.launches().len(), 1);
+    assert_eq!(relaunched(&f).len(), 1);
+}

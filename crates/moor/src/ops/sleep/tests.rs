@@ -8,6 +8,7 @@ use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
 use moor_core::seam::driver::{AcquireReq, Driver, SleepKind, SleepOutcome};
+use moor_core::seam::surface::SurfaceError;
 use moor_core::secret::Secret;
 use moor_core::{ErrorKind, ProviderId, TaskId, TaskName, TaskReq};
 
@@ -27,6 +28,7 @@ struct Fx {
     _dir: tempfile::TempDir,
     cx: Cx,
     driver: Arc<FakeDriver>,
+    surface: Arc<FakeSurface>,
     id: TaskId,
 }
 
@@ -34,11 +36,12 @@ struct Fx {
 fn fx_with(driver: FakeDriver) -> Fx {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(driver);
+    let surface = Arc::new(FakeSurface::new(PathBuf::from("/s")));
     let cx = Cx::fake(
         dir.path(),
         Path::new("/home/me/proj"),
         driver.clone(),
-        Arc::new(FakeSurface::new(PathBuf::from("/s"))),
+        surface.clone(),
         Arc::new(ScriptedProc::new()),
     );
     let store = cx.store().unwrap();
@@ -81,6 +84,7 @@ fn fx_with(driver: FakeDriver) -> Fx {
         _dir: dir,
         cx,
         driver,
+        surface,
         id,
     }
 }
@@ -315,11 +319,12 @@ fn an_asleep_task_is_left_alone() {
 fn starting() -> Fx {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(FakeDriver::new());
+    let surface = Arc::new(FakeSurface::new(PathBuf::from("/s")));
     let cx = Cx::fake(
         dir.path(),
         Path::new("/home/me/proj"),
         driver.clone(),
-        Arc::new(FakeSurface::new(PathBuf::from("/s"))),
+        surface.clone(),
         Arc::new(ScriptedProc::new()),
     );
     let store = cx.store().unwrap();
@@ -342,6 +347,7 @@ fn starting() -> Fx {
         _dir: dir,
         cx,
         driver,
+        surface,
         id,
     }
 }
@@ -459,4 +465,45 @@ fn a_box_that_cannot_sleep_gets_its_tunnel_back() {
     assert!(run(&f.cx, &req()).is_err());
     let r = tunnel_request(&f).unwrap();
     assert_eq!((r.want, r.seq), (TunnelWant::Up, 2));
+}
+
+/// Give the Task a live agent session in pane `p-1`.
+fn with_agent_pane(f: &Fx) {
+    f.surface.have_pane("p-1");
+    f.cx.store()
+        .unwrap()
+        .begin_session(f.id, "agent-1", Some("p-1"))
+        .unwrap();
+}
+
+#[test]
+fn sleep_closes_the_agent_pane() {
+    let f = idle();
+    with_agent_pane(&f);
+    run(&f.cx, &req()).unwrap();
+    assert!(f.surface.calls().contains(&"close_pane p-1".to_owned()));
+    assert_eq!(sleep_calls(&f), 1);
+}
+
+#[test]
+fn sleep_closes_the_pane_before_pausing_the_box() {
+    let f = idle();
+    with_agent_pane(&f);
+    f.surface
+        .set_fail_close_pane(SurfaceError::Unavailable("boom".into()));
+    let err = run(&f.cx, &req()).unwrap_err();
+    assert!(err.error.to_string().contains("agent pane"), "{err:?}");
+    assert_eq!(sleep_calls(&f), 0);
+    assert_eq!(states(&f), (TaskState::Idle, BoxState::Ready));
+}
+
+#[test]
+fn sleep_with_the_pane_already_gone_still_sleeps() {
+    let f = idle();
+    f.cx.store()
+        .unwrap()
+        .begin_session(f.id, "agent-1", Some("p-1"))
+        .unwrap();
+    run(&f.cx, &req()).unwrap();
+    assert_eq!(states(&f), (TaskState::Asleep, BoxState::Asleep));
 }
