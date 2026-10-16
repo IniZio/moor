@@ -157,8 +157,8 @@ pub(crate) fn run_setup(
     SetupRun::Failed { line, exit, ms }
 }
 
-/// Syncs the worktree into the Box with an exec that runs nothing, so a failure here is the sync
-/// failing and never a setup line.
+/// Syncs the worktree into the Box with an exec that only checks the workdir is a git checkout, so
+/// a failure here is the sync failing or leaving no checkout, and never a setup line.
 ///
 /// # Errors
 /// The reason, worded for the user, when the sync did not finish.
@@ -170,7 +170,9 @@ pub(crate) fn sync_checkout(
     cfg: &TaskSettings,
 ) -> Result<(), String> {
     let spec = ExecSpec {
-        argv: vec!["true".to_owned()],
+        argv: ["git", "rev-parse", "--git-dir"]
+            .map(str::to_owned)
+            .to_vec(),
         env: Vec::new(),
         cwd: Some(workdir.clone()),
         sync: SyncMode::Full,
@@ -183,7 +185,10 @@ pub(crate) fn sync_checkout(
         .exec(handle, &spec, Deadline(SETUP_LINE_DEADLINE))
     {
         Ok(ExecOutcome::Exited { code: 0 }) => return Ok(()),
-        Ok(ExecOutcome::Exited { code }) => format!("exit {code}"),
+        Ok(ExecOutcome::Exited { code }) => format!(
+            "exit {code}; the sync failed or left no git checkout (with submodules, \
+             push HEAD to origin first)"
+        ),
         Ok(ExecOutcome::Interrupted) => "interrupted".to_owned(),
         Err(e) => e.to_string(),
     };
