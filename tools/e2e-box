@@ -157,7 +157,8 @@ box_run() { mo 180 run "$name" --no-sync -- "$@"; }
 agent_up() { box_run sh -c "pgrep -f '[c]laude' >/dev/null"; }
 box_listed() { # 0 when the Box still appears in crabbox list
   local out
-  out="$(timeout 60 crabbox list --provider "$provider" --json)" || return 2
+  # Neutral cwd: inside a repo crabbox reads the config as repo config and refuses trustProviderOutput.
+  out="$(cd "$scratch" && timeout 60 crabbox list --provider "$provider" --json 2>"$scratch/list.err")" || return 2
   echo "$out" | jq -e --arg n "$box" '[.. | strings] | index($n) != null' >/dev/null
 }
 tunnels() { # 0 while a process with a `tunnel` argument and this Box's id or handle runs
@@ -333,7 +334,11 @@ if [ "$closed" = 1 ] && [ -n "$provider" ] && [ -n "$box" ]; then
   rc=0
   box_listed || rc=$?
   case $rc in 0) rc=1 ;; 1) rc=0 ;; *) rc=2 ;; esac
-  assert_rc close.box_gone "$rc" "Box still listed or list failed"
+  if [ "$rc" = 2 ]; then
+    assert_rc close.box_gone "$rc" "crabbox list failed: $(tr '\n' ' ' <"$scratch/list.err")"
+  else
+    assert_rc close.box_gone "$rc" "Box still listed"
+  fi
 else
   phase_fail close.box_gone "Box not closed or unknown"
 fi
