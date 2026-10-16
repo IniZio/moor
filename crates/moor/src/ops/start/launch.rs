@@ -73,7 +73,7 @@ pub(super) fn begin(
 ) -> Result<AgentLaunchView, CommandError> {
     let id = row.id;
     let handle = row.boxed.as_ref().and_then(|b| b.handle.clone());
-    let proxy = match box_exec::proxy(cx, id, handle, &launch.worktree, cfg) {
+    let mut proxy = match box_exec::proxy(cx, id, handle, &launch.worktree, cfg) {
         Ok(p) => p,
         Err(message) => {
             let e = EngineError::Failed {
@@ -83,6 +83,11 @@ pub(super) fn begin(
             return record_failure(cx, store, id, &e);
         }
     };
+    // Only the agent gets the filtered repo env; setup and run keep the full one.
+    proxy.addr.box_env = moor_core::exec_env::merged_env(
+        crate::ops::common::proxy::agent_env(cx, cfg),
+        proxy.rule_env.clone(),
+    );
     let mut launch = launch.clone();
     launch.proxy = Some(Arc::new(proxy.addr));
     launch.origin = proxy.origin;

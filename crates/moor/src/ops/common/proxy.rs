@@ -28,33 +28,17 @@ pub(crate) fn origin(cx: &Cx, worktree: &Path) -> Option<String> {
     (!url.is_empty()).then(|| url.to_owned())
 }
 
-/// What the proxy needs to know about a Task: its repo, tool rules and agent env.
+/// What the proxy needs to know about a Task: its repo, tool rules.
 pub(crate) struct ProxyPlan {
     /// The repo `origin` names, when the forge recognises it.
     pub(crate) repo: Option<ForgeRepo>,
     /// The tool rules with `{repo}` resolved.
     pub(crate) rules: Vec<ResolvedRule>,
-    /// The repo `env` the agent may see: credential-looking names are dropped.
-    pub(crate) env: Vec<(String, String)>,
 }
 
-/// Resolves the proxy plan of a worktree whose `origin` is `origin` and whose settings are `task`.
-///
-/// # Errors
-/// The message of a rule that does not resolve.
-pub(crate) fn plan(
-    cx: &Cx,
-    origin: Option<&str>,
-    task: &TaskSettings,
-) -> Result<ProxyPlan, String> {
-    let repo = origin.and_then(|o| cx.forge().repo_of(o));
-    let cfg = cx.config();
-    let rules = resolve_rules(
-        &cfg.proxy,
-        &cfg.credentials,
-        repo.as_ref().map(|r| (r.owner.as_str(), r.name.as_str())),
-    )
-    .map_err(|e| e.to_string())?;
+/// The repo `env` the agent may see: credential-looking and moor-set names are dropped, each with
+/// an `agent_env_dropped` warning.
+pub(crate) fn agent_env(cx: &Cx, task: &TaskSettings) -> Vec<(String, String)> {
     let (kept, dropped): (Vec<_>, Vec<_>) = task
         .env
         .iter()
@@ -65,11 +49,25 @@ pub(crate) fn plan(
             message: format!("env {name} looks like a credential or is set by moor, so it is not passed to the agent"),
         });
     }
-    let env = kept
-        .into_iter()
+    kept.into_iter()
         .map(|(k, v)| (k.clone(), v.clone()))
-        .collect();
-    Ok(ProxyPlan { repo, rules, env })
+        .collect()
+}
+
+/// Resolves the proxy plan of a worktree whose `origin` is `origin`.
+///
+/// # Errors
+/// The message of a rule that does not resolve.
+pub(crate) fn plan(cx: &Cx, origin: Option<&str>) -> Result<ProxyPlan, String> {
+    let repo = origin.and_then(|o| cx.forge().repo_of(o));
+    let cfg = cx.config();
+    let rules = resolve_rules(
+        &cfg.proxy,
+        &cfg.credentials,
+        repo.as_ref().map(|r| (r.owner.as_str(), r.name.as_str())),
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(ProxyPlan { repo, rules })
 }
 
 /// The non-secret Box env of `rules` in rule order; a later rule's value replaces an earlier one.

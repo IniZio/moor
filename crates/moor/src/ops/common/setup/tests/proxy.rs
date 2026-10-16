@@ -43,6 +43,7 @@ fn setup_gets_the_proxy_and_ca_variables_the_agent_gets() {
             box_env: vec![("A".to_owned(), "1".to_owned())],
         },
         origin: None,
+        rule_env: Vec::new(),
     };
     run_setup_with(
         &r.cx,
@@ -61,4 +62,58 @@ fn setup_gets_the_proxy_and_ca_variables_the_agent_gets() {
     assert!(!prelude.contains("s3cret-value"), "{prelude}");
     assert_eq!(spec.env, vec![("A".to_owned(), "1".to_owned())]);
     assert_eq!(spec.cwd.as_ref(), Some(&r.workdir));
+}
+
+const RESERVED: (&str, &str) = ("NODE_OPTIONS", "--max-old-space-size=4096");
+const CREDENTIAL_LIKE: (&str, &str) = ("STRIPE_TEST_KEY", "sk_test_x");
+
+fn has_env(env: &[(String, String)], (k, v): (&str, &str)) -> bool {
+    env.iter().any(|(ek, ev)| ek == k && ev == v)
+}
+
+#[test]
+fn without_a_proxy_setup_gets_reserved_and_credential_like_repo_env() {
+    let d = tempfile::tempdir().unwrap();
+    let r = rig(d.path(), FakeDriver::new());
+    run_setup(
+        &r.cx,
+        &r.handle,
+        &r.workdir,
+        d.path(),
+        &cfg(&["a"], &[RESERVED, CREDENTIAL_LIKE]),
+        SyncMode::Full,
+    );
+    let (_, spec, _) = only(r.driver.execs());
+    assert!(has_env(&spec.env, RESERVED), "{:?}", spec.env);
+    assert!(has_env(&spec.env, CREDENTIAL_LIKE), "{:?}", spec.env);
+}
+
+#[test]
+fn with_a_proxy_setup_still_gets_reserved_and_credential_like_repo_env() {
+    let d = tempfile::tempdir().unwrap();
+    let r = rig(d.path(), FakeDriver::new());
+    // The agent's env: the Proxy plan drops both names.
+    let proxy = BoxProxy {
+        addr: ProxyAddr {
+            box_port: 4000,
+            nonce: Secret::new(b"s3cret-value".to_vec()),
+            ca_pem: "-----BEGIN CERTIFICATE-----\nca\n-----END CERTIFICATE-----\n".to_owned(),
+            box_env: vec![("A".to_owned(), "1".to_owned())],
+        },
+        origin: None,
+        rule_env: Vec::new(),
+    };
+    run_setup_with(
+        &r.cx,
+        &r.handle,
+        "p",
+        &r.workdir,
+        d.path(),
+        &cfg(&["a"], &[("A", "1"), RESERVED, CREDENTIAL_LIKE]),
+        SyncMode::Full,
+        Some(&proxy),
+    );
+    let (_, spec, _) = only(r.driver.execs());
+    assert!(has_env(&spec.env, RESERVED), "{:?}", spec.env);
+    assert!(has_env(&spec.env, CREDENTIAL_LIKE), "{:?}", spec.env);
 }
