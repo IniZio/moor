@@ -1,0 +1,227 @@
+//! Time-budget checks for the real-Box end-to-end run.
+//!
+//! Pure logic only: events recorded by moor go in, per-phase timings and a
+//! pass/fail verdict come out.
+
+use serde::{Deserialize, Serialize};
+
+#[cfg(test)]
+mod tests;
+
+/// One persisted moor event: monotonically increasing id, snake_case kind, unix ms.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+pub struct Event {
+    /// Insertion order; later events have larger ids.
+    pub id: i64,
+    /// Persisted snake_case kind name, e.g. `box_ready`.
+    pub kind: String,
+    /// Unix timestamp in milliseconds.
+    pub ts_ms: i64,
+}
+
+/// A timed phase and the budget it must fit in.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Phase {
+    /// Dotted phase name, e.g. `start.box_ready`.
+    pub name: String,
+    /// Measured duration; `None` when an endpoint event never happened.
+    pub took_ms: Option<i64>,
+    /// Maximum allowed duration, inclusive.
+    pub budget_ms: i64,
+}
+
+fn secs(ms: i64) -> String {
+    format!("{:.1}", ms as f64 / 1000.0)
+}
+
+impl Phase {
+    /// True when the phase was measured and took no longer than its budget.
+    pub fn pass(&self) -> bool {
+        self.took_ms.is_some_and(|t| t <= self.budget_ms)
+    }
+
+    /// One report line, e.g. `PHASE start.box_ready took=12.3s budget=30.0s PASS`.
+    pub fn line(&self) -> String {
+        let took = self
+            .took_ms
+            .map_or_else(|| "missing".to_string(), |t| format!("{}s", secs(t)));
+        let word = if self.pass() { "PASS" } else { "FAIL" };
+        format!(
+            "PHASE {} took={} budget={}s {}",
+            self.name,
+            took,
+            secs(self.budget_ms),
+            word
+        )
+    }
+}
+
+/// Parses one JSON [`Event`] per non-empty line; errors name the 1-based line.
+pub fn parse_jsonl(text: &str) -> Result<Vec<Event>, String> {
+    text.lines()
+        .enumerate()
+        .filter(|(_, l)| !l.trim().is_empty())
+        .map(|(i, l)| serde_json::from_str(l).map_err(|e| format!("line {}: {e}", i + 1)))
+        .collect()
+}
+
+/// Budgets for the start flow.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StartBudgets {
+    /// `started` to `box_ready`.
+    pub box_ready_ms: i64,
+    /// `attached` to `proxy_started`.
+    pub proxy_ms: i64,
+    /// `proxy_started` to `session_started`.
+    pub session_ms: i64,
+    /// `started` to `session_started`.
+    pub total_ms: i64,
+}
+
+impl Default for StartBudgets {
+    fn default() -> Self {
+        Self {
+            box_ready_ms: 30_000,
+            proxy_ms: 15_000,
+            session_ms: 20_000,
+            total_ms: 90_000,
+        }
+    }
+}
+
+/// Earliest event of `kind`, optionally only those with an id above `after`.
+fn first<'a>(events: &'a [Event], kind: &str, after: Option<&Event>) -> Option<&'a Event> {
+    events
+        .iter()
+        .filter(|e| e.kind == kind && after.is_none_or(|a| e.id > a.id))
+        .min_by_key(|e| e.id)
+}
+
+/// Like [`first`], but requires the anchor to exist.
+fn next<'a>(events: &'a [Event], kind: &str, anchor: Option<&Event>) -> Option<&'a Event> {
+    anchor.and_then(|a| first(events, kind, Some(a)))
+}
+
+fn span(from: Option<i64>, to: Option<&Event>) -> Option<i64> {
+    Some(to?.ts_ms - from?)
+}
+
+fn phase(name: String, took_ms: Option<i64>, budget_ms: i64) -> Phase {
+    Phase {
+        name,
+        took_ms,
+        budget_ms,
+    }
+}
+
+/// Builds the four start-flow phases in report order.
+pub fn start_phases(events: &[Event], b: &StartBudgets) -> Vec<Phase> {
+    let started = first(events, "started", None);
+    let box_ready = next(events, "box_ready", started);
+    let attached = first(events, "attached", None);
+    let proxy = next(events, "proxy_started", attached);
+    let session_from_proxy = first(events, "proxy_started", None);
+    let session = next(events, "session_started", session_from_proxy);
+    let t0 = started.map(|e| e.ts_ms);
+    let session_after_start = next(events, "session_started", started);
+    vec![
+        phase(
+            "start.box_ready".into(),
+            span(t0, box_ready),
+            b.box_ready_ms,
+        ),
+        phase(
+            "start.proxy".into(),
+            span(attached.map(|e| e.ts_ms), proxy),
+            b.proxy_ms,
+        ),
+        phase(
+            "start.session".into(),
+            span(session_from_proxy.map(|e| e.ts_ms), session),
+            b.session_ms,
+        ),
+        phase(
+            "start.total".into(),
+            span(t0, session_after_start),
+            b.total_ms,
+        ),
+    ]
+}
+
+/// Budgets for one sleep/wake cycle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WakeBudgets {
+    /// Wake command to `woke`.
+    pub woke_ms: i64,
+    /// `woke` to `relaunched`.
+    pub relaunch_ms: i64,
+    /// Wake command to `relaunched`.
+    pub total_ms: i64,
+}
+
+impl Default for WakeBudgets {
+    fn default() -> Self {
+        Self {
+            woke_ms: 20_000,
+            relaunch_ms: 25_000,
+            total_ms: 45_000,
+        }
+    }
+}
+
+/// Builds the wake phases for `cycle`; `events` must be only those recorded
+/// after the wake command began at `cmd_ms`.
+pub fn wake_phases(events: &[Event], cmd_ms: i64, cycle: u32, b: &WakeBudgets) -> Vec<Phase> {
+    let woke = first(events, "woke", None);
+    let relaunched = next(events, "relaunched", woke);
+    vec![
+        phase(
+            format!("wake{cycle}.woke"),
+            span(Some(cmd_ms), woke),
+            b.woke_ms,
+        ),
+        phase(
+            format!("wake{cycle}.relaunch"),
+            span(woke.map(|e| e.ts_ms), relaunched),
+            b.relaunch_ms,
+        ),
+        phase(
+            format!("wake{cycle}.total"),
+            span(Some(cmd_ms), relaunched),
+            b.total_ms,
+        ),
+    ]
+}
+
+/// A phase timed outside the event log (e.g. by wall clock).
+pub fn timed(name: &str, took_ms: i64, budget_ms: i64) -> Phase {
+    phase(name.to_string(), Some(took_ms), budget_ms)
+}
+
+/// Number of events whose kind equals `kind`.
+pub fn count_kind(events: &[Event], kind: &str) -> usize {
+    events.iter().filter(|e| e.kind == kind).count()
+}
+
+/// True when the list is non-empty and every phase passes.
+pub fn verdict(phases: &[Phase]) -> bool {
+    !phases.is_empty() && phases.iter().all(Phase::pass)
+}
+
+/// Final summary line naming any failed phases.
+pub fn verdict_line(phases: &[Phase]) -> String {
+    if verdict(phases) {
+        return format!("VERDICT PASS ({} phases)", phases.len());
+    }
+    let failed: Vec<&str> = phases
+        .iter()
+        .filter(|p| !p.pass())
+        .map(|p| p.name.as_str())
+        .collect();
+    format!(
+        "VERDICT FAIL ({} of {} phases failed: {})",
+        failed.len(),
+        phases.len(),
+        failed.join(", ")
+    )
+}

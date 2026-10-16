@@ -1,0 +1,276 @@
+#!/usr/bin/env bash
+# Scripted real-Box end-to-end check: start, sleep/wake cycles, close; fails when a phase exceeds its budget.
+set -euo pipefail
+root="$(cd "$(dirname "$0")/.." && pwd)"
+
+usage() {
+  cat <<'EOF'
+usage: tools/e2e-box --provider-config FILE --pilot REPO [options]
+
+Drives one Task through start, N sleep/wake cycles and close on a real Box,
+timing each phase against a budget. Exit 0 only if every phase passes.
+
+required:
+  --provider-config FILE  crabbox config naming the Box provider (exported as CRABBOX_CONFIG)
+  --pilot REPO            git repository to run the Task from
+
+options:
+  --cycles N              sleep/wake cycles (default 2)
+  --name TASK             Task name (default e2e-<epoch>)
+  --moor BIN              moor binary (default: built from this repo)
+  --state-dir DIR         moor state dir (default: fresh mktemp -d)
+  --dry-run               print the planned commands; run nothing
+  -h, --help              this text
+
+budgets, seconds (defaults):
+  --start-box-ready 30  --start-proxy 15  --start-session 20  --start-total 90
+  --sleep 15  --tunnels-gone 5  --wake-woke 20  --wake-relaunch 25
+  --wake-total 45  --close 30
+Each moor command also runs under an outer timeout of max(3 x budget, 120) s.
+
+The Box provider for moor itself comes from its own config
+($XDG_CONFIG_HOME/moor/config.yaml or the pilot's .moor.yaml); this script
+does not write it. Needs jq, pgrep, crabbox, cargo.
+EOF
+}
+
+die() { echo "e2e-box: $*" >&2; exit 2; }
+
+cfg="" pilot="" cycles=2 name="e2e-$(date +%s)" moor="" state="" dry=0
+b_box_ready=30 b_proxy=15 b_session=20 b_start_total=90 b_sleep=15 b_tunnels=5
+b_woke=20 b_relaunch=25 b_wake_total=45 b_close=30
+while [ $# -gt 0 ]; do
+  [ $# -ge 2 ] || [ "$1" = --dry-run ] || [ "$1" = -h ] || [ "$1" = --help ] || die "missing value for $1"
+  case "$1" in
+    -h|--help) usage; exit 0 ;;
+    --dry-run) dry=1; shift; continue ;;
+    --provider-config) cfg=$2 ;;
+    --pilot) pilot=$2 ;;
+    --cycles) cycles=$2 ;;
+    --name) name=$2 ;;
+    --moor) moor=$2 ;;
+    --state-dir) state=$2 ;;
+    --start-box-ready) b_box_ready=$2 ;;
+    --start-proxy) b_proxy=$2 ;;
+    --start-session) b_session=$2 ;;
+    --start-total) b_start_total=$2 ;;
+    --sleep) b_sleep=$2 ;;
+    --tunnels-gone) b_tunnels=$2 ;;
+    --wake-woke) b_woke=$2 ;;
+    --wake-relaunch) b_relaunch=$2 ;;
+    --wake-total) b_wake_total=$2 ;;
+    --close) b_close=$2 ;;
+    *) usage >&2; die "unknown argument: $1" ;;
+  esac
+  shift 2
+done
+if [ -z "$cfg" ] || [ -z "$pilot" ]; then usage >&2; die "--provider-config and --pilot are required"; fi
+[ -f "$cfg" ] || die "provider config not found: $cfg"
+[ -d "$pilot/.git" ] || [ -f "$pilot/.git" ] || die "pilot is not a git checkout: $pilot"
+case "$cycles" in ''|*[!0-9]*) die "--cycles must be a number" ;; esac
+cfg="$(cd "$(dirname "$cfg")" && pwd)/$(basename "$cfg")"
+pilot="$(cd "$pilot" && pwd)"
+
+export CRABBOX_CONFIG="$cfg"
+scratch="$(mktemp -d)"
+if [ "$dry" = 1 ]; then state="${state:-<fresh-dir>}"; else state="${state:-$(mktemp -d)}"; fi
+results="$scratch/results"
+: >"$results"
+started=0 closed=0 provider="" box="" ok=1
+
+if [ "$dry" = 1 ]; then
+  echo "e2e-box: dry run (nothing executed)"
+  echo "+ CRABBOX_CONFIG=$cfg"
+  moor="${moor:-<repo>/target/debug/moor}"
+else
+  tdir="$(timeout 60 cargo metadata --no-deps --format-version 1 --manifest-path "$root/Cargo.toml" | jq -r .target_directory)"
+  timeout 1200 cargo build -q --locked --manifest-path "$root/Cargo.toml" -p e2e-budget || die "cannot build e2e-budget"
+  budget_bin="$tdir/debug/e2e-budget"
+  if [ -z "$moor" ]; then
+    timeout 1200 cargo build -q --locked --manifest-path "$root/Cargo.toml" -p moor || die "cannot build moor"
+    moor="$tdir/debug/moor"
+  fi
+  [ -x "$moor" ] || die "moor binary not executable: $moor"
+fi
+
+now_ms() { date +%s%3N; }
+outer() { local s=$(($1 * 3)); [ "$s" -ge 120 ] || s=120; echo "$s"; }
+budget() { if [ "$dry" = 1 ]; then echo "+ e2e-budget $*"; else timeout 60 "$budget_bin" "$@"; fi; }
+mo() { local t=$1; shift; timeout "$t" "$moor" --state-dir "$state" "$@"; }
+in_pilot() { (cd "$pilot" && "$@"); }
+
+emit() { echo "$1" | tee -a "$results"; }
+phase_fail() { emit "PHASE $1 took=0.0s budget=0.0s FAIL"; }
+phase_pass() { emit "$(budget timed --name "$1" --took-ms 0 --budget 0)"; }
+# Appends the helper's PHASE lines; a helper error becomes a FAIL line.
+phase_lines() {
+  local name=$1 out rc=0
+  shift
+  out="$(budget "$@")" || rc=$?
+  if [ "$rc" -ge 2 ] || [ -z "$out" ]; then phase_fail "$name"; else emit "$out"; fi
+}
+phase_timed() { phase_lines "$1" timed --name "$1" --took-ms "$2" --budget "$3"; }
+assert_rc() { if [ "$2" -eq 0 ]; then phase_pass "$1"; else phase_fail "$1"; fi; }
+
+# Runs a command on the Box; the command sees the Box workdir as cwd.
+box_run() { mo 180 run "$name" --no-sync -- "$@"; }
+agent_up() { box_run sh -c "pgrep -f '[c]laude' >/dev/null"; }
+box_listed() { # 0 when the Box still appears in crabbox list
+  local out
+  out="$(timeout 60 crabbox list --provider "$provider" --json)" || return 2
+  echo "$out" | jq -e --arg n "$box" '[.. | strings] | index($n) != null' >/dev/null
+}
+tunnels() { # 0 while a crabbox tunnel for this Task's Box is running
+  local pat='[c]rabbox tunnel'
+  [ -z "$box" ] || pat="$pat .*--id $box( |\$)"
+  pgrep -f "$pat" >/dev/null 2>&1
+}
+last_id() { budget last-id --db "$state/moor.db" --task "$name"; }
+
+teardown() {
+  local rc=$?
+  set +e
+  trap - EXIT INT TERM
+  if [ "$dry" = 0 ] && [ "$started" = 1 ] && [ "$closed" = 0 ]; then
+    echo "e2e-box: teardown: forcing close of $name"
+    in_pilot mo 180 close --force "$name" || echo "e2e-box: teardown: close --force failed"
+    if [ -n "$box" ]; then
+      box_listed; case $? in
+        0) echo "e2e-box: teardown: Box $box STILL LISTED" ;;
+        1) echo "e2e-box: teardown: Box $box gone" ;;
+        *) echo "e2e-box: teardown: could not list Boxes" ;;
+      esac
+    fi
+  fi
+  [ "$dry" = 1 ] || echo "e2e-box: state dir $state"
+  rm -rf "$scratch"
+  exit "$rc"
+}
+trap teardown EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+if [ "$dry" = 1 ]; then
+  echo "+ (cd $pilot && $moor --state-dir $state start $name)   # timeout $(outer "$b_start_total")s"
+  echo "+ e2e-budget events --db $state/moor.db --task $name; e2e-budget start ... (budgets $b_box_ready/$b_proxy/$b_session/$b_start_total)"
+  echo "+ moor run $name --no-sync -- sh -c \"pgrep -f '[c]laude' >/dev/null\"; moor run $name --no-sync -- test -e .git"
+  for ((n = 1; n <= cycles; n++)); do
+    echo "+ cycle $n: moor sleep $name (<= ${b_sleep}s); poll pgrep '[c]rabbox tunnel .*--id <box>' (<= ${b_tunnels}s)"
+    echo "+ cycle $n: e2e-budget last-id; moor wake $name; poll relaunched (<= ${b_wake_total}s); e2e-budget wake --cycle $n"
+    echo "+ cycle $n: agent check"
+  done
+  echo "+ moor --json show $name; moor close $name (<= ${b_close}s); crabbox list --provider <p> --json"
+  echo "+ e2e-budget count --kind tunnel_restarted; e2e-budget verdict --lines results"
+  exit 0
+fi
+
+echo "e2e-box: task $name, state dir $state"
+# start
+t0=$(now_ms)
+started=1
+if in_pilot mo "$(outer "$b_start_total")" start "$name" >"$scratch/start.log" 2>&1; then
+  budget events --db "$state/moor.db" --task "$name" >"$scratch/start.jsonl" || ok=0
+  if [ "$ok" = 1 ]; then
+    phase_lines start start --events "$scratch/start.jsonl" --box-ready "$b_box_ready" \
+      --proxy "$b_proxy" --session "$b_session" --total "$b_start_total"
+  else
+    phase_fail start
+  fi
+else
+  echo "e2e-box: moor start failed:"; tail -n 15 "$scratch/start.log" || true
+  phase_fail start; ok=0
+fi
+if [ "$ok" = 1 ]; then
+  info="$(in_pilot mo 60 --json show "$name" 2>/dev/null || true)"
+  provider="$(echo "$info" | jq -r '.value.task.box.provider // empty' 2>/dev/null || true)"
+  handle="$(echo "$info" | jq -r '.value.task.box.handle // empty' 2>/dev/null || true)"
+  box="${handle#*/}"
+  [ -n "$provider" ] && [ -n "$box" ] || echo "e2e-box: could not read Box provider/name from moor show"
+  if in_pilot agent_up; then rc=0; else rc=$?; fi
+  assert_rc assert.agent_start "$rc"
+  if in_pilot box_run test -e .git; then rc=0; else rc=$?; fi
+  assert_rc assert.checkout_git "$rc"
+else
+  phase_fail assert.agent_start; phase_fail assert.checkout_git
+fi
+
+# cycles
+for ((n = 1; n <= cycles; n++)); do
+  if [ "$ok" != 1 ]; then
+    for p in "sleep$n" "sleep$n.tunnels_gone" "wake$n" "assert.agent$n"; do phase_fail "$p"; done
+    continue
+  fi
+  t0=$(now_ms)
+  if in_pilot mo "$(outer "$b_sleep")" sleep "$name" >"$scratch/sleep.log" 2>&1; then
+    phase_timed "sleep$n" $(($(now_ms) - t0)) "$b_sleep"
+  else
+    tail -n 10 "$scratch/sleep.log" || true; phase_fail "sleep$n"; ok=0
+  fi
+  t0=$(now_ms)
+  gone=0
+  while :; do
+    if ! tunnels; then gone=1; break; fi
+    [ $(($(now_ms) - t0)) -lt $((b_tunnels * 1000)) ] || break
+    sleep 0.5
+  done
+  if [ "$gone" = 1 ]; then phase_timed "sleep$n.tunnels_gone" $(($(now_ms) - t0)) "$b_tunnels"
+  else phase_fail "sleep$n.tunnels_gone"; fi
+
+  if [ "$ok" != 1 ]; then phase_fail "wake$n"; phase_fail "assert.agent$n"; continue; fi
+  after="$(last_id)" || after=0
+  t0=$(now_ms)
+  if in_pilot mo "$(outer "$b_wake_total")" wake "$name" >"$scratch/wake.log" 2>&1; then
+    cmd_ms=$t0
+    seen=0
+    while :; do
+      budget events --db "$state/moor.db" --task "$name" --after-id "$after" >"$scratch/wake.jsonl" || true
+      c="$(budget count --events "$scratch/wake.jsonl" --kind relaunched 2>/dev/null || echo 0)"
+      if [ "${c:-0}" -ge 1 ] 2>/dev/null; then seen=1; break; fi
+      [ $(($(now_ms) - t0)) -lt $((b_wake_total * 1000)) ] || break
+      sleep 1
+    done
+    if [ "$seen" = 1 ]; then
+      phase_lines "wake$n" wake --events "$scratch/wake.jsonl" --cmd-ms "$cmd_ms" --cycle "$n" \
+        --woke "$b_woke" --relaunch "$b_relaunch" --total "$b_wake_total"
+    else
+      echo "e2e-box: no relaunched event within ${b_wake_total}s"; phase_fail "wake$n"; ok=0
+    fi
+  else
+    tail -n 10 "$scratch/wake.log" || true; phase_fail "wake$n"; ok=0
+  fi
+  if [ "$ok" = 1 ]; then
+    if in_pilot agent_up; then rc=0; else rc=$?; fi
+    assert_rc "assert.agent$n" "$rc"
+  else
+    phase_fail "assert.agent$n"
+  fi
+done
+
+# close
+if [ "$started" = 1 ] && [ "$closed" = 0 ]; then
+  t0=$(now_ms)
+  if in_pilot mo "$(outer "$b_close")" close "$name" >"$scratch/close.log" 2>&1; then
+    closed=1
+    phase_timed close $(($(now_ms) - t0)) "$b_close"
+  else
+    tail -n 10 "$scratch/close.log" || true; phase_fail close
+  fi
+fi
+if [ "$closed" = 1 ] && [ -n "$provider" ] && [ -n "$box" ]; then
+  rc=0
+  box_listed || rc=$?
+  case $rc in 0) rc=1 ;; 1) rc=0 ;; *) rc=2 ;; esac
+  assert_rc close.box_gone "$rc"
+else
+  phase_fail close.box_gone
+fi
+
+# no tunnel restarts over the whole Task
+if budget events --db "$state/moor.db" --task "$name" >"$scratch/all.jsonl"; then
+  restarts="$(budget count --events "$scratch/all.jsonl" --kind tunnel_restarted || echo -1)"
+  if [ "$restarts" = 0 ]; then phase_pass assert.no_tunnel_restarts; else phase_fail assert.no_tunnel_restarts; fi
+else
+  phase_fail assert.no_tunnel_restarts
+fi
+
+budget verdict --lines "$results"
