@@ -1,6 +1,7 @@
 use moor_core::seam::proc::Tool;
 use moor_core::TaskId;
 
+use super::setup::{is_identity, is_setup_line};
 use super::{req, world_at, World};
 use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
@@ -30,9 +31,9 @@ fn observed(
     let (mut setup, mut identity) = (Vec::new(), Vec::new());
     for (_, spec, _) in w.driver.execs() {
         let cwd = spec.cwd.map(|p| p.as_str().to_owned());
-        if spec.argv.first().map(String::as_str) == Some("sh") {
+        if is_setup_line(&spec.argv) {
             setup.push(cwd);
-        } else if spec.argv.starts_with(&["git".into(), "config".into()]) {
+        } else if is_identity(&spec.argv) {
             identity.push(cwd);
         }
     }
@@ -72,12 +73,8 @@ fn every_box_exec_runs_from_the_task_worktree() {
     let row = w.cx.store().unwrap().task(TaskId::new(v.task.id));
     let worktree = std::path::PathBuf::from(row.unwrap().unwrap().worktree.unwrap());
     let execs = w.driver.execs();
-    assert!(execs
-        .iter()
-        .any(|(_, s, _)| s.argv.first().map(String::as_str) == Some("git")));
-    assert!(execs
-        .iter()
-        .any(|(_, s, _)| s.argv.first().map(String::as_str) == Some("sh")));
+    assert!(execs.iter().any(|(_, s, _)| is_identity(&s.argv)));
+    assert!(execs.iter().any(|(_, s, _)| is_setup_line(&s.argv)));
     for (_, spec, _) in &execs {
         assert_eq!(
             spec.host_cwd.as_deref(),
