@@ -157,8 +157,8 @@ pub struct DriverConfig {
     /// Seconds allowed to look up a Box's ssh target (at least 1); 5 by default,
     /// 20 for the `external` provider.
     pub lookup_timeout_secs: Option<NonZeroU32>,
-    /// Environment variable names the provider's platform puts in the Box that
-    /// moor removes from the agent's environment.
+    /// Environment variable names the provider's platform puts in the Box.
+    /// moor removes them from every Box exec: setup, teardown, `moor run` and the agent.
     pub strip_env: Vec<String>,
 }
 
