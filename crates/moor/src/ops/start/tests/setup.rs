@@ -37,7 +37,7 @@ pub(super) fn start_with(yaml: &str, driver: FakeDriver) -> (World, moor_core::v
 }
 
 /// Starts `demo` like [`start_with`] with `git config` answering the given author.
-fn start_as(
+pub(super) fn start_as(
     author: (&str, &str),
     yaml: &str,
     driver: FakeDriver,
@@ -54,18 +54,20 @@ fn start_as(
     (w, v)
 }
 
-fn argvs(w: &World) -> Vec<Vec<String>> {
+pub(super) fn argvs(w: &World) -> Vec<Vec<String>> {
     w.driver.execs().into_iter().map(|e| e.1.argv).collect()
 }
 
-pub(super) fn is_setup_line(argv: &[String]) -> bool {
+/// Whether `argv` is the batched script that sets the Box's git identity.
+pub(super) fn is_identity(argv: &[String]) -> bool {
     argv.first().map(String::as_str) == Some("sh")
+        && argv
+            .get(2)
+            .is_some_and(|s| s.contains("git config --global"))
 }
 
-fn git_config(key: &str, value: &str) -> Vec<String> {
-    ["git", "config", "--global", key, value]
-        .map(str::to_owned)
-        .to_vec()
+pub(super) fn is_setup_line(argv: &[String]) -> bool {
+    argv.first().map(String::as_str) == Some("sh") && !is_identity(argv)
 }
 
 pub(super) fn start_req() -> StartReq {
@@ -73,7 +75,7 @@ pub(super) fn start_req() -> StartReq {
 }
 
 /// The argv that runs `steps` as the setup script.
-fn script_argv(steps: &[&str]) -> Vec<String> {
+pub(super) fn script_argv(steps: &[&str]) -> Vec<String> {
     let steps: Vec<String> = steps.iter().map(|s| (*s).to_owned()).collect();
     ["sh", "-c", &setup_script(&steps)]
         .map(str::to_owned)
@@ -429,120 +431,11 @@ fn start_re_runs_setup_for_a_setting_up_task_whose_setup_owner_died() {
 }
 
 #[test]
-fn identity_is_set_in_the_box_before_the_first_setup_line() {
-    let (w, v) = start_as(("Ann Dev", "a@x.io"), "setup: [a, b]\n", FakeDriver::new());
-    assert!(v.setup.ran && v.setup.ok);
-    assert_eq!(
-        argvs(&w),
-        [
-            git_config("user.name", "Ann Dev"),
-            git_config("user.email", "a@x.io"),
-            script_argv(&["a", "b"]),
-        ]
-    );
-}
-
-#[test]
-fn identity_is_set_again_when_the_box_is_re_provisioned() {
-    let (w, v) = start_as(("Ann Dev", "a@x.io"), "setup: [a]\n", FakeDriver::new());
-    let id = TaskId::new(v.task.id);
-    let store = w.cx.store().unwrap();
-    let wt = store.task(id).unwrap().unwrap().worktree.unwrap();
-    std::fs::create_dir_all(&wt).unwrap();
-    std::fs::write(Path::new(&wt).join(".moor.yaml"), "setup: [a]\n").unwrap();
-    script_base_yaml(&w, Some("setup: [a]\n"));
-    store
-        .apply(Decision::new(id).box_input(BoxInput::DriverMissing))
-        .unwrap();
-    run(&w.cx, &start_req()).unwrap();
-    let configs = argvs(&w).iter().filter(|a| !is_setup_line(a)).count();
-    assert_eq!(configs, 4);
-}
-
-/// The execs issued after the first `skip` ones.
-fn argvs_after(w: &World, skip: usize) -> Vec<Vec<String>> {
-    argvs(w).split_off(skip)
-}
-
-#[test]
-fn identity_is_set_before_the_re_run_after_a_failed_setup() {
-    let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(0)), Ok(exit(1))]);
-    let (w, v) = start_as(("Ann Dev", "a@x.io"), "setup: [a]\n", driver);
-    let wt =
-        w.cx.store()
-            .unwrap()
-            .task(TaskId::new(v.task.id))
-            .unwrap()
-            .unwrap()
-            .worktree;
-    let wt = wt.unwrap();
-    std::fs::create_dir_all(&wt).unwrap();
-    std::fs::write(Path::new(&wt).join(".moor.yaml"), "setup: [b]\n").unwrap();
-    script_base_yaml(&w, Some("setup: [b]\n"));
-    let before = argvs(&w).len();
-    let again = run(&w.cx, &start_req()).unwrap();
-    assert!(again.setup.ran && again.setup.ok);
-    let sh = |l: &str| script_argv(&[l]);
-    assert_eq!(
-        argvs_after(&w, before),
-        [
-            git_config("user.name", "Ann Dev"),
-            git_config("user.email", "a@x.io"),
-            sh("b"),
-        ]
-    );
-}
-
-#[test]
-fn identity_is_set_before_the_re_run_when_the_setup_owner_is_dead() {
-    let (w, v) = start_as(("Ann Dev", "a@x.io"), "setup: [a]\n", FakeDriver::new());
-    let id = TaskId::new(v.task.id);
-    let wt = w.cx.store().unwrap().task(id).unwrap().unwrap().worktree;
-    let wt = wt.unwrap();
-    std::fs::create_dir_all(&wt).unwrap();
-    std::fs::write(Path::new(&wt).join(".moor.yaml"), "setup: [b]\n").unwrap();
-    script_base_yaml(&w, Some("setup: [b]\n"));
-    let held = Decision::new(id).intent(IntentChange::Set(Intent::Setup { pid: 4242 }));
-    w.cx.store().unwrap().apply(held).unwrap();
-    w.proc.dead(4242);
-    let before = argvs(&w).len();
-    let again = run(&w.cx, &start_req()).unwrap();
-    assert!(again.setup.ran && again.setup.ok);
-    let sh = |l: &str| script_argv(&[l]);
-    assert_eq!(
-        argvs_after(&w, before),
-        [
-            git_config("user.name", "Ann Dev"),
-            git_config("user.email", "a@x.io"),
-            sh("b"),
-        ]
-    );
-}
-
-#[test]
 fn an_unset_author_runs_setup_without_touching_git_config() {
     let (w, v) = start_with("setup: [a, b]\n", FakeDriver::new());
     assert_eq!(v.task.state, TaskState::Working);
     assert!(v.setup.ran && v.setup.ok);
     assert_eq!(argvs(&w), [script_argv(&["a", "b"])]);
-}
-
-#[test]
-fn only_global_user_name_and_email_are_written_besides_setup_lines() {
-    let (w, _) = start_as(("Ann Dev", "a@x.io"), "setup: [a]\n", FakeDriver::new());
-    let others: Vec<_> = argvs(&w)
-        .into_iter()
-        .filter(|a| !is_setup_line(a))
-        .collect();
-    assert_eq!(
-        others,
-        [
-            git_config("user.name", "Ann Dev"),
-            git_config("user.email", "a@x.io")
-        ]
-    );
-    let joined = argvs(&w).concat().join(" ");
-    assert!(!joined.contains(".gitconfig") && !joined.contains("hosts.yml"));
 }
 
 #[test]

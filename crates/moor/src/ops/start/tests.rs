@@ -23,6 +23,7 @@ mod base;
 mod capacity;
 mod dead_agent;
 mod dotfiles;
+mod identity;
 mod leftover;
 mod moor_yaml;
 mod provider_caps;
