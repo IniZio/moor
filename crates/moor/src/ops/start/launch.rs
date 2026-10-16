@@ -5,8 +5,6 @@ use std::sync::Arc;
 
 use moor_core::activity::PaneStatus;
 use moor_core::config::TaskSettings;
-use moor_core::seam::agent_profile::ProxyAddr;
-use moor_core::seam::proxy_host::{ProxyEndpoint, ProxySpec};
 
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
@@ -18,8 +16,8 @@ use moor_core::{StartReq, TaskId};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
+use crate::ops::common::box_exec;
 use crate::ops::common::provision::{nonce, recorded_workdir, reread};
-use crate::ops::common::proxy::{box_env, origin, plan, ProxyPlan};
 use crate::ops::common::resume;
 use crate::ops::common::view::rfc3339;
 use crate::ops::show::redact_nonce;
@@ -63,24 +61,6 @@ pub(super) fn run(
     begin(cx, store, &row, &launch, &cfg)
 }
 
-/// Starts or reuses the Task's proxy for `plan`, returning the spec it was given and its endpoint.
-fn ensure_proxy(
-    cx: &Cx,
-    row: &TaskRow,
-    launch: &LaunchReq,
-    plan: ProxyPlan,
-) -> Result<(ProxySpec, ProxyEndpoint), String> {
-    let spec = ProxySpec {
-        task: row.id,
-        box_handle: row.boxed.as_ref().and_then(|b| b.handle.clone()),
-        host_cwd: launch.worktree.clone(),
-        task_repo: plan.repo,
-        rules: plan.rules,
-    };
-    let ep = cx.proxy_host().ensure(&spec).map_err(|e| e.to_string())?;
-    Ok((spec, ep))
-}
-
 /// Launches `launch` and records the session, or the failure, on the Task `row`.
 ///
 /// `cfg` supplies the egress the proxy plan allows.
@@ -92,8 +72,8 @@ pub(super) fn begin(
     cfg: &TaskSettings,
 ) -> Result<AgentLaunchView, CommandError> {
     let id = row.id;
-    let origin = origin(cx, &launch.worktree);
-    let plan = match plan(cx, origin.as_deref(), cfg) {
+    let handle = row.boxed.as_ref().and_then(|b| b.handle.clone());
+    let proxy = match box_exec::proxy(cx, id, handle, &launch.worktree, cfg) {
         Ok(p) => p,
         Err(message) => {
             let e = EngineError::Failed {
@@ -103,40 +83,14 @@ pub(super) fn begin(
             return record_failure(cx, store, id, &e);
         }
     };
-    let repo_env = plan.env.clone();
-    let (spec, ep) = match ensure_proxy(cx, row, launch, plan) {
-        Ok(pair) => pair,
-        Err(message) => {
-            let e = EngineError::Failed {
-                step: "proxy",
-                message,
-            };
-            return record_failure(cx, store, id, &e);
-        }
-    };
     let mut launch = launch.clone();
-    launch.proxy = Some(Arc::new(ProxyAddr {
-        box_port: ep.box_port,
-        nonce: ep.nonce,
-        ca_pem: ep.ca_pem,
-        box_env: merged_env(repo_env, box_env(&spec.rules)),
-    }));
-    launch.origin = origin;
+    launch.proxy = Some(Arc::new(proxy.addr));
+    launch.origin = proxy.origin;
     let launch = &launch;
     match cx.engine().launch(launch) {
         Ok(session) => record_session(cx, store, row, launch, session),
         Err(e) => record_failure(cx, store, id, &e),
     }
-}
-
-/// The repo `env` followed by the rule `env`; a rule's value replaces the repo's of the same name.
-fn merged_env(repo: Vec<(String, String)>, rules: Vec<(String, String)>) -> Vec<(String, String)> {
-    let mut out: Vec<(String, String)> = repo
-        .into_iter()
-        .filter(|(name, _)| !rules.iter().any(|(r, _)| r == name))
-        .collect();
-    out.extend(rules);
-    out
 }
 
 /// Records the launched `session` on the Task `row` and reports it.
@@ -204,11 +158,7 @@ pub(super) fn launch_req(cx: &Cx, row: &TaskRow, setup_exit: Option<i32>) -> Opt
     if row.state != TaskState::Working {
         return None;
     }
-    let strip_env = cx
-        .config()
-        .drivers
-        .get(b.provider.as_str())
-        .map_or_else(Vec::new, |d| d.strip_env.clone());
+    let strip_env = box_exec::strip_env(cx, b.provider.as_str());
     Some(LaunchReq {
         handle: b.handle.clone()?,
         workdir: recorded_workdir(b.workdir.as_deref()?)?,

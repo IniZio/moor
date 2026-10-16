@@ -88,6 +88,11 @@ fn dotfiles_execs(w: &World) -> Vec<(Vec<String>, Deadline, SyncMode)> {
         .collect()
 }
 
+/// Whether an upload is the exec-env staging (nonce, CA), not a dotfiles archive.
+fn is_staged(path: &str) -> bool {
+    path.starts_with("/tmp/moor-exec-")
+}
+
 fn started(w: &World) -> StartView {
     run(&w.cx, &goal_req()).unwrap()
 }
@@ -95,7 +100,9 @@ fn started(w: &World) -> StartView {
 /// The one upload: the scripted tar bytes in a per-run random directory, owner-only.
 /// Returns the archive path.
 fn assert_archive_put(w: &World) -> String {
-    let puts = w.driver.puts();
+    let puts: Vec<_> = (w.driver.puts().into_iter())
+        .filter(|p| !is_staged(p.1.as_str()))
+        .collect();
     assert_eq!(puts.len(), 1);
     let (handle, path, bytes, mode, _) = puts.first().unwrap();
     assert_eq!(handle.as_str(), "box-1");
@@ -159,6 +166,9 @@ fn dotfiles_run_after_setup_and_before_the_agent_launches() {
         [
             "acquire",
             "exec box-1",
+            "connect_argv box-1",
+            "put_file box-1",
+            "put_file box-1",
             "exec box-1",
             "put_file box-1",
             "exec box-1"
@@ -262,7 +272,9 @@ fn start_after_a_failed_dotfiles_run_re_applies_them_in_the_same_box() {
             ms: Some(0)
         }
     );
-    let puts = w.driver.puts();
+    let puts: Vec<_> = (w.driver.puts().into_iter())
+        .filter(|p| !is_staged(p.1.as_str()))
+        .collect();
     assert_eq!(puts.len(), 2);
     assert!(puts.iter().all(|p| p.0.as_str() == "box-1"));
     assert_eq!(dotfiles_execs(&w).len(), 2);
@@ -278,7 +290,7 @@ fn without_dotfiles_config_nothing_is_packed_uploaded_or_run() {
     let v = started(&w);
     assert_eq!(v.dotfiles, DotfilesView::default());
     assert!(w.proc.calls().iter().all(|c| c.tool != Tool::Sh));
-    assert!(w.driver.puts().is_empty());
+    assert!(w.driver.puts().iter().all(|p| is_staged(p.1.as_str())));
     assert!(dotfiles_execs(&w).is_empty());
 }
 
@@ -390,7 +402,9 @@ fn each_run_uploads_to_a_different_directory() {
     run(&w.cx, &goal_req()).unwrap_err();
     run(&w.cx, &goal_req()).unwrap();
     let puts = w.driver.puts();
-    let paths: Vec<_> = puts.iter().map(|p| p.1.as_str()).collect();
+    let paths: Vec<_> = (puts.iter().map(|p| p.1.as_str()))
+        .filter(|p| !is_staged(p))
+        .collect();
     assert_eq!(paths.len(), 2);
     assert_ne!(paths.first(), paths.last());
 }

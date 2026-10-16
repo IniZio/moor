@@ -6,7 +6,8 @@ use moor_core::domain::run::SyncMode;
 use moor_core::seam::driver::ExecSpec;
 use moor_core::BoxHandle;
 
-use super::{ready, req, Fx};
+use super::{command, ready, req, Fx};
+use crate::ops::common::box_exec;
 use crate::ops::common::facts::resolved;
 use crate::ops::common::provision::moor_yaml;
 use crate::ops::common::provision::recorded_workdir;
@@ -41,8 +42,29 @@ fn setup_spec(f: &Fx) -> ExecSpec {
     let workdir = recorded_workdir(boxed.workdir.as_deref().unwrap()).unwrap();
     let handle: BoxHandle = boxed.handle.unwrap();
     let before = f.driver.execs().len();
-    run_setup(&f.cx, &handle, &workdir, f.dir.path(), &cfg, SyncMode::Full);
+    let proxy = box_exec::proxy(&f.cx, f.id, Some(handle.clone()), f.dir.path(), &cfg).ok();
+    let provider = boxed.provider.as_str();
+    let (worktree, sync) = (f.dir.path(), SyncMode::Full);
+    run_setup(
+        &f.cx,
+        &handle,
+        provider,
+        &workdir,
+        worktree,
+        &cfg,
+        sync,
+        proxy.as_ref(),
+    );
     f.driver.execs().remove(before).1
+}
+
+/// The repo `env:` entries of the exec, apart from the Proxy variables.
+fn repo_vars(spec: &ExecSpec) -> Vec<(&str, &str)> {
+    spec.env
+        .iter()
+        .map(|(k, v)| (k.as_str(), v.as_str()))
+        .filter(|(k, _)| matches!(*k, "A" | "B"))
+        .collect()
 }
 
 #[test]
@@ -51,14 +73,8 @@ fn run_of_a_setup_line_has_the_env_and_cwd_setup_has() {
     let setup = setup_spec(&f);
     run(&f.cx, &req(&["make deps"])).unwrap();
     let (_, spec, _) = f.driver.execs().remove(1);
-    assert_eq!(spec.argv, ["sh", "-c", "make deps"]);
-    assert_eq!(
-        spec.env,
-        vec![
-            ("A".to_owned(), "1".to_owned()),
-            ("B".to_owned(), "2".to_owned())
-        ]
-    );
+    assert_eq!(command(&spec.argv), ["sh", "-c", "make deps"]);
+    assert_eq!(repo_vars(&spec), [("A", "1"), ("B", "2")]);
     assert_eq!(spec.env, setup.env);
     assert_eq!(spec.cwd, setup.cwd);
     assert!(spec.cwd.is_some());
@@ -76,13 +92,7 @@ fn recorded_run_has_the_repo_env_too() {
     r.record = Some("ci".into());
     run(&f.cx, &r).unwrap();
     let (_, spec, _) = f.driver.execs().remove(0);
-    assert_eq!(
-        spec.env,
-        vec![
-            ("A".to_owned(), "1".to_owned()),
-            ("B".to_owned(), "2".to_owned())
-        ]
-    );
+    assert_eq!(repo_vars(&spec), [("A", "1"), ("B", "2")]);
 }
 
 #[test]
