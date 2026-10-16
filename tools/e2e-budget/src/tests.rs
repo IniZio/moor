@@ -157,11 +157,11 @@ fn verdict_states() {
 }
 
 #[test]
-fn skips_are_counted_apart_and_do_not_fail() {
+fn any_skip_is_incomplete_never_pass() {
     let ok = [("a", Outcome::Pass), ("b", Outcome::Skip)];
     assert_eq!(
         summarize(&ok),
-        (true, "VERDICT PASS (2 phases, 1 skipped: b)".to_owned())
+        (3, "VERDICT INCOMPLETE (2 phases, 1 skipped: b)".to_owned())
     );
     let bad = [
         ("a", Outcome::Fail),
@@ -171,11 +171,12 @@ fn skips_are_counted_apart_and_do_not_fail() {
     assert_eq!(
         summarize(&bad),
         (
-            false,
+            1,
             "VERDICT FAIL (1 of 3 phases failed: a; 2 skipped: b, c)".to_owned()
         )
     );
-    assert!(!summarize(&[]).0);
+    assert_eq!(summarize(&[("a", Outcome::Pass)]).0, 0);
+    assert_eq!(summarize(&[]).0, 1);
 }
 
 #[test]

@@ -39,7 +39,8 @@ does not write it. Needs jq, ps, awk, crabbox, cargo.
 Every moor stderr is appended to <state-dir>/moor-stderr.log. With
 MOOR_TRACE_CRABBOX=1 the run ends with per crabbox subcommand call counts and
 total seconds. A failed phase never stops later cycles: each one is attempted
-while the Task exists, and a phase that could not run is reported SKIP.
+while the Task exists, and a phase that could not run is reported SKIP. A run with any SKIP ends
+INCOMPLETE (exit 3), never PASS.
 EOF
 }
 
