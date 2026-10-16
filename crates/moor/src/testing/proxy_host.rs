@@ -1,5 +1,6 @@
 //! Scripted `ProxyHost` for unit tests.
 
+use std::collections::VecDeque;
 use std::fmt;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
@@ -28,6 +29,7 @@ struct State {
     nonce: Zeroizing<Vec<u8>>,
     ensure_error: Option<ProxyHostError>,
     status: Result<ProxyStatus, ProxyHostError>,
+    upcoming: VecDeque<ProxyStatus>,
     stop_error: Option<ProxyHostError>,
     calls: Vec<ProxyHostCall>,
 }
@@ -47,6 +49,7 @@ impl FakeProxyHost {
                 nonce: Zeroizing::new(FAKE_NONCE.to_vec()),
                 ensure_error: None,
                 status: Ok(ProxyStatus::Absent),
+                upcoming: VecDeque::new(),
                 stop_error: None,
                 calls: Vec::new(),
             })),
@@ -74,6 +77,14 @@ impl FakeProxyHost {
     /// Makes `status` return `status`.
     pub(crate) fn with_status(self, status: ProxyStatus) -> Self {
         self.with_state(|s| s.status = Ok(status))
+    }
+
+    /// Makes the next `status` calls return `statuses` in order, then the usual status.
+    pub(crate) fn with_status_script(
+        self,
+        statuses: impl IntoIterator<Item = ProxyStatus>,
+    ) -> Self {
+        self.with_state(|s| s.upcoming.extend(statuses))
     }
 
     /// Makes `stop` fail with `error`.
@@ -119,6 +130,9 @@ impl ProxyHost for FakeProxyHost {
     fn status(&self, task: TaskId) -> Result<ProxyStatus, ProxyHostError> {
         let mut s = self.lock();
         s.calls.push(ProxyHostCall::Status(task));
+        if let Some(next) = s.upcoming.pop_front() {
+            return Ok(next);
+        }
         s.status.clone()
     }
 
