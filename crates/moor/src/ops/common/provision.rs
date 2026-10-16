@@ -10,7 +10,7 @@ use moor_core::domain::run::SyncMode;
 use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
 use moor_core::seam::driver::{AcquireReq, Acquired, DriverError, Released};
 use moor_core::seam::rng::Rng;
-use moor_core::{BoxHandle, BoxPath, ErrorKind, ProviderId, TaskId, Warning};
+use moor_core::{BoxHandle, BoxPath, ErrorKind, ProviderId, TaskId};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -213,7 +213,7 @@ fn record_acquired(store: &Store, id: TaskId, got: &Acquired) -> Result<(), Comm
     Ok(())
 }
 
-/// Where setup runs: the Box, and the worktree whose author the Box commits as.
+/// Where setup runs: the freshly acquired Box, and the worktree whose author the Box commits as.
 struct SetupTarget<'a> {
     /// The Box setup runs in.
     handle: &'a BoxHandle,
@@ -221,10 +221,6 @@ struct SetupTarget<'a> {
     workdir: &'a BoxPath,
     /// Worktree on the host the Task works in.
     worktree: &'a Path,
-    /// How the worktree is synced into the Box before setup runs.
-    sync: SyncMode,
-    /// Whether an agent launches after setup; `None` when it always does.
-    launching: Option<&'a dyn Fn() -> Result<bool, CommandError>>,
 }
 
 impl<'a> SetupTarget<'a> {
@@ -234,15 +230,11 @@ impl<'a> SetupTarget<'a> {
             handle: &got.handle,
             workdir: &got.workdir,
             worktree,
-            sync: SyncMode::Full,
-            launching: None,
         }
     }
 }
 
-/// Syncs the checkout into the Box when the target asks for it. A failure aborts when `advance`
-/// or when an agent launches after setup; otherwise it is a warning and setup carries on without
-/// the sync.
+/// Syncs the checkout into the Box. A failure aborts provisioning.
 fn sync_into_box(
     cx: &Cx,
     store: &Store,
@@ -251,22 +243,8 @@ fn sync_into_box(
     target: &SetupTarget<'_>,
     cfg: &TaskSettings,
 ) -> Result<(), CommandError> {
-    if target.sync != SyncMode::Full {
-        return Ok(());
-    }
-    let Err(reason) = setup::sync_checkout(cx, target.handle, target.workdir, target.worktree, cfg)
-    else {
-        return Ok(());
-    };
-    let launching = target.launching.map_or(Ok(true), |f| f())?;
-    if advance || launching {
-        return Err(sync_failed(cx, store, id, advance, reason));
-    }
-    cx.warn(Warning {
-        code: "resync_failed".to_owned(),
-        message: format!("{reason}; run `moor start` again"),
-    });
-    Ok(())
+    setup::sync_checkout(cx, target.handle, target.workdir, target.worktree, cfg)
+        .map_err(|reason| sync_failed(cx, store, id, advance, reason))
 }
 
 /// Runs repo setup in a Box under the setup intent and records how it ended, clearing the intent.

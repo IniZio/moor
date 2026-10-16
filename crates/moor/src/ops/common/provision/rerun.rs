@@ -20,7 +20,7 @@ use crate::ops::common::setup;
 use crate::ops::common::view::rfc3339;
 use crate::store::{Store, TaskRow};
 
-/// The sync for a start that re-runs in the Task's existing Box.
+/// Decides whether a start syncs the host checkout into the Task's existing Box.
 ///
 /// A sync resets the Box checkout to the host's: HEAD, branches and remote-tracking refs move
 /// even when every commit is pushed. A Task that has had an agent session is therefore synced
