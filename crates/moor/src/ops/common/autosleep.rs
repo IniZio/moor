@@ -18,6 +18,7 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::BoxLock;
 use crate::ops::common::park::{park_tunnel, restore_tunnel};
+use crate::ops::start::revive_after_wake;
 use crate::store::{Store, StoreError, TaskRow};
 
 /// Sleep the Box of task `id` when its Task has been Idle for `box.sleep_after`.
@@ -88,8 +89,9 @@ fn try_sleep(cx: &Cx, store: &Store, id: TaskId) -> Result<(), CommandError> {
 /// Park the Task's Proxy tunnel, end the agent's pane, then ask the Driver to sleep the Box.
 ///
 /// The agent's ssh session would otherwise outlive the Box until its keepalive gave up. A wake
-/// finds the pane gone and relaunches the agent. A Box that stays awake gets its tunnel back.
-/// That restore is best effort: the sleep result is what the caller needs to see.
+/// finds the pane gone and relaunches the agent. A Box that stays awake gets its tunnel back
+/// and its agent relaunched. Both are best effort: the sleep result is what the caller needs
+/// to see.
 pub(crate) fn sleep_parked(
     cx: &Cx,
     store: &Store,
@@ -104,6 +106,12 @@ pub(crate) fn sleep_parked(
     let slept = cx.driver().sleep(handle);
     if !matches!(slept, Ok(SleepOutcome::Slept | SleepOutcome::Native)) {
         let _ = restore_tunnel(cx, store, id);
+        if let Err(e) = revive_after_wake(cx, store, id) {
+            cx.warn(Warning {
+                code: "agent_relaunch_failed".to_owned(),
+                message: e.error.to_string(),
+            });
+        }
     }
     Ok(slept?)
 }
