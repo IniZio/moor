@@ -98,6 +98,7 @@ fn task(name: &str) -> TaskView {
         r#box: None,
         agent: None,
         run: None,
+        attention: Vec::new(),
         updated_at: "2026-01-01T00:00:00Z".into(),
     }
 }

@@ -129,6 +129,7 @@ pub(crate) fn task_view_with_run(
         agent: None,
         run: run.map(run_view),
         updated_at: rfc3339(row.updated_at),
+        attention: Vec::new(),
     }
 }
 

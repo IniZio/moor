@@ -14,6 +14,7 @@ use moor_core::TaskId;
 use nono::undo::{NetworkAuditDecision, NetworkAuditDenialCategory, NetworkAuditEvent};
 use serde_json::Value;
 
+use self::limits::Limits;
 use super::capture::MoorCapture;
 use super::rule_of_route;
 use crate::proxy::ProxyLog;
@@ -33,6 +34,12 @@ pub(crate) trait EgressSink {
     fn withheld(&self, host: &str, rule: &str, method: &str, shape: Option<&str>);
     /// Records, once, that further distinct withheld requests are not reported.
     fn withheld_overflow(&self);
+    /// The status of the open limit on `rule` recorded earlier, if any.
+    fn open_limit(&self, _rule: &str) -> Option<u16> {
+        None
+    }
+    /// Records a rate limit, rejection or recovery of a credential rule.
+    fn limit(&self, _event: &Event) {}
 }
 
 /// Distinct withheld requests reported per Task before reporting stops.
@@ -56,6 +63,8 @@ pub(crate) struct Withheld {
     repo: Option<ForgeRepo>,
     /// What has been reported for this Task.
     seen: Mutex<Reported>,
+    /// Rate limits and rejections reported for this Task.
+    limits: Limits,
 }
 
 impl Withheld {
@@ -73,6 +82,7 @@ impl Withheld {
             hosts,
             repo,
             seen: Mutex::default(),
+            limits: Limits::default(),
         }
     }
 
@@ -202,6 +212,15 @@ impl EgressSink for TaskSink<'_> {
     fn withheld_overflow(&self) {
         self.log.record("-", "withheld-overflow", 0);
     }
+
+    fn open_limit(&self, rule: &str) -> Option<u16> {
+        let limits = self.store.open_limits(self.task).ok()?;
+        limits.iter().find(|l| l.rule == rule).map(|l| l.status)
+    }
+
+    fn limit(&self, event: &Event) {
+        let _ = self.store.record_proxy_event(self.task, event);
+    }
 }
 
 /// Applies one drained batch of audit events.
@@ -221,6 +240,7 @@ pub(crate) fn apply(
         match event.decision {
             NetworkAuditDecision::Allow => {
                 allow(event, capture, sink);
+                withheld.limits.observe(event, sink);
                 withheld.report(event, sink);
             }
             NetworkAuditDecision::Deny => deny(event, sink),
@@ -294,6 +314,8 @@ fn category_name(category: &NetworkAuditDenialCategory) -> Option<String> {
         _ => None,
     }
 }
+
+mod limits;
 
 #[cfg(test)]
 mod tests;

@@ -35,6 +35,37 @@ fn egress_events_serialize_with_kind_tag() {
             "proxy_credential_failed",
             serde_json::json!({"rule": "r"}),
         ),
+        (
+            Event::AgentRateLimited {
+                rule: s("claude"),
+                status: 429,
+                resets_at: None,
+            },
+            "agent_rate_limited",
+            serde_json::json!({"rule": "claude", "status": 429, "resets_at": null}),
+        ),
+        (
+            Event::AgentRateLimited {
+                rule: s("claude"),
+                status: 429,
+                resets_at: Some(s("2026-10-17T21:00:00Z")),
+            },
+            "agent_rate_limited",
+            serde_json::json!({"rule": "claude", "status": 429, "resets_at": "2026-10-17T21:00:00Z"}),
+        ),
+        (
+            Event::ProxyCredentialRejected {
+                rule: s("claude"),
+                status: 401,
+            },
+            "proxy_credential_rejected",
+            serde_json::json!({"rule": "claude", "status": 401}),
+        ),
+        (
+            Event::ProxyCredentialRecovered { rule: s("claude") },
+            "proxy_credential_recovered",
+            serde_json::json!({"rule": "claude"}),
+        ),
     ];
     for (e, kind, payload) in cases {
         assert_eq!(e.kind(), kind);

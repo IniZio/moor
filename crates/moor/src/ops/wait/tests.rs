@@ -9,6 +9,7 @@ use moor_core::activity::{
 };
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
+use moor_core::domain::event::Event;
 use moor_core::domain::task::{SetupOutcome, TaskInput};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, SleepKind};
@@ -459,4 +460,71 @@ fn launch_failure_sleep_label_follows_provider_sleep_support() {
             after
         );
     }
+}
+
+/// Record an `agent_rate_limited` event for the `claude` rule on `task`.
+fn rate_limit(cx: &Cx, task: TaskId) {
+    cx.store()
+        .unwrap()
+        .record_proxy_event(
+            task,
+            &Event::AgentRateLimited {
+                rule: "claude".into(),
+                status: 429,
+                resets_at: None,
+            },
+        )
+        .unwrap();
+}
+
+#[test]
+fn an_open_rate_limit_fails_the_wait_with_attention() {
+    let dir = tempfile::tempdir().unwrap();
+    let (cx, _) = cx(dir.path());
+    let id = add(&cx);
+    rate_limit(&cx, id);
+    let e = run(&cx, &req(None, None)).unwrap_err();
+    assert_eq!(e.kind, ErrorKind::Failed);
+    assert_eq!(e.error.to_string(), "Claude account rate limited (429)");
+    let shown = e.value.unwrap();
+    assert_eq!(
+        shown.pointer("/attention/0/kind").and_then(|v| v.as_str()),
+        Some("agent_rate_limited")
+    );
+    assert_eq!(
+        shown
+            .pointer("/attention/0/status")
+            .and_then(serde_json::Value::as_u64),
+        Some(429)
+    );
+}
+
+#[test]
+fn a_recovered_rate_limit_no_longer_fails_the_wait() {
+    let dir = tempfile::tempdir().unwrap();
+    let (cx, _) = cx(dir.path());
+    let id = add(&cx);
+    rate_limit(&cx, id);
+    cx.store()
+        .unwrap()
+        .record_proxy_event(
+            id,
+            &Event::ProxyCredentialRecovered {
+                rule: "claude".into(),
+            },
+        )
+        .unwrap();
+    let v = run(&cx, &req(None, None)).unwrap();
+    assert!(!v.timed_out);
+    assert!(v.task.attention.is_empty());
+}
+
+#[test]
+fn waiting_for_the_run_ignores_open_limits() {
+    let dir = tempfile::tempdir().unwrap();
+    let (cx, _) = cx(dir.path());
+    let id = add(&cx);
+    rate_limit(&cx, id);
+    let v = run(&cx, &req(Some(WaitFor::Run), None)).unwrap();
+    assert_eq!(v.wait_for, WaitFor::Run);
 }
