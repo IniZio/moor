@@ -437,7 +437,7 @@ fn promoted_task_runs_the_repo_setup_commands_in_its_new_box() {
         .driver
         .execs()
         .into_iter()
-        .filter(|(h, spec, _)| *h == handle && spec.argv != ["true"])
+        .filter(|(h, spec, _)| *h == handle && spec.argv != ["git", "rev-parse", "--git-dir"])
         .map(|(_, spec, _)| spec.argv)
         .collect();
     let steps = ["echo one", "echo two"].map(str::to_owned);

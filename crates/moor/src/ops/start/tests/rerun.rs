@@ -24,7 +24,7 @@ fn checkout_syncs(w: &World) -> Vec<SyncMode> {
     w.driver
         .execs()
         .into_iter()
-        .filter(|e| e.1.argv == ["true"])
+        .filter(|e| e.1.argv == ["git", "rev-parse", "--git-dir"])
         .map(|e| e.1.sync)
         .collect()
 }

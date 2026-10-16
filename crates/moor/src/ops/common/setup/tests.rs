@@ -429,14 +429,14 @@ fn sync_checkout_is_one_synced_exec_that_runs_nothing() {
     assert_eq!(got, Ok(()));
     let (_, spec, dl) = only(r.driver.execs());
     assert_eq!(spec.sync, SyncMode::Full);
-    assert_eq!(spec.argv, vec!["true".to_owned()]);
+    assert_eq!(spec.argv, ["git", "rev-parse", "--git-dir"]);
     assert_eq!(dl, Deadline(SETUP_LINE_DEADLINE));
 }
 
 #[test]
 fn sync_checkout_failures_name_the_sync() {
     let failures = [
-        (Ok(ExecOutcome::Exited { code: 3 }), "exit 3"),
+        (Ok(ExecOutcome::Exited { code: 3 }), "exit 3; the sync failed or left no git checkout (with submodules, push HEAD to origin first)"),
         (Ok(ExecOutcome::Interrupted), "interrupted"),
         (Err(DriverError::Timeout(SETUP_LINE_DEADLINE)), "timed out"),
     ];

@@ -57,7 +57,7 @@ pub(super) fn start_as(
 
 /// Whether `argv` is the exec that only syncs the checkout into the Box.
 fn is_sync(argv: &[String]) -> bool {
-    argv == ["true"]
+    argv == ["git", "rev-parse", "--git-dir"]
 }
 
 /// Every exec except the checkout sync.
@@ -152,7 +152,7 @@ fn the_checkout_syncs_in_its_own_exec_and_setup_runs_without_syncing() {
     assert_eq!(execs.len(), 2, "a sync exec and one setup exec");
     let (_, setup, _) = execs.remove(1);
     let (_, sync, _) = execs.remove(0);
-    assert_eq!(sync.argv, ["true"]);
+    assert_eq!(sync.argv, ["git", "rev-parse", "--git-dir"]);
     assert_eq!(sync.sync, SyncMode::Full);
     assert_eq!(sync.host_cwd, wt.clone().map(Into::into));
     assert_eq!(sync.class.as_deref(), Some("large"));
@@ -223,7 +223,10 @@ fn no_setup_lines_means_setup_did_not_run() {
     assert!(!v.setup.ran);
     let execs = w.driver.execs();
     assert_eq!(execs.len(), 1);
-    assert_eq!(execs.first().expect("one exec").1.argv, ["true"]);
+    assert_eq!(
+        execs.first().expect("one exec").1.argv,
+        ["git", "rev-parse", "--git-dir"]
+    );
     assert_eq!(v.task.state, TaskState::Working);
 }
 
@@ -547,7 +550,14 @@ fn a_failed_checkout_sync_aborts_the_start_without_launching_the_agent() {
         assert!(row.intent.is_none() && row.setup_failed_at.is_some());
         assert!(kinds(&w, id).contains(&"setup_failed".to_owned()));
         let argvs: Vec<_> = w.driver.execs().into_iter().map(|e| e.1.argv).collect();
-        assert_eq!(argvs, [vec!["true".to_owned()]]);
+        assert_eq!(
+            argvs,
+            [vec![
+                "git".to_owned(),
+                "rev-parse".to_owned(),
+                "--git-dir".to_owned()
+            ]]
+        );
     }
 }
 
