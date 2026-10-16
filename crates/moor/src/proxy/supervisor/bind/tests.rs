@@ -123,7 +123,12 @@ fn the_port_is_freed_before_a_restart_binds_it() {
         2
     );
     assert!(calls.last().unwrap().starts_with("reverse_tunnel "));
-    assert!(calls[calls.len() - 2].starts_with("exec "));
+    assert!(calls
+        .iter()
+        .rev()
+        .nth(1)
+        .expect("penultimate call")
+        .starts_with("exec "));
 }
 
 #[test]
@@ -139,6 +144,11 @@ fn the_port_is_freed_before_a_wake_reopens_the_tunnel() {
 
     let calls = w.driver.calls();
     assert!(calls.last().unwrap().starts_with("reverse_tunnel "));
-    assert!(calls[calls.len() - 2].starts_with("exec "));
+    assert!(calls
+        .iter()
+        .rev()
+        .nth(1)
+        .expect("penultimate call")
+        .starts_with("exec "));
     assert_eq!(w.driver.execs().len(), 2);
 }
