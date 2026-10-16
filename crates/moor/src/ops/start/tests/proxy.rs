@@ -327,3 +327,52 @@ fn repo_env_reaches_the_agent_and_credential_looking_names_are_dropped() {
             .count();
     assert_eq!(dropped, 2);
 }
+
+/// Starts `demo` with setup lines and the repo env `yaml`; returns the world and the agent launch env.
+fn setup_env_launch(yaml: &str) -> (World, Vec<(String, String)>) {
+    let repo = tempfile::tempdir().unwrap();
+    std::fs::write(repo.path().join(".moor.yaml"), yaml).unwrap();
+    let engine = Arc::new(FakeEngine::new());
+    let mut w = super::world_with(
+        FakeDriver::new(),
+        repo.path(),
+        crate::testing::cx::fake_config(),
+    );
+    w.cx = w.cx.with_engine(engine.clone());
+    super::moor_yaml::script_base_yaml(&w, Some(yaml));
+    run(&w.cx, &goal_req()).unwrap();
+    let env = engine
+        .launches()
+        .first()
+        .unwrap()
+        .proxy
+        .as_ref()
+        .unwrap()
+        .box_env
+        .clone();
+    (w, env)
+}
+
+const SETUP_ENV_YAML: &str =
+    "setup: [a, b]\nenv:\n  A: a\n  STRIPE_TEST_KEY: sk\n  NODE_OPTIONS: --x\n";
+
+#[test]
+fn a_start_with_setup_warns_once_per_dropped_env_name() {
+    let (w, _env) = setup_env_launch(SETUP_ENV_YAML);
+    let warnings = w.cx.take_warnings();
+    let count = |name: &str| {
+        (warnings.iter())
+            .filter(|x| x.code == "agent_env_dropped" && x.message.contains(name))
+            .count()
+    };
+    assert_eq!(count("STRIPE_TEST_KEY"), 1, "{warnings:?}");
+    assert_eq!(count("NODE_OPTIONS"), 1, "{warnings:?}");
+}
+
+#[test]
+fn the_agent_launch_env_drops_reserved_and_credential_names_but_keeps_the_rest() {
+    let (_w, env) = setup_env_launch(SETUP_ENV_YAML);
+    assert_eq!(env_of(&env, "A"), Some("a"));
+    assert_eq!(env_of(&env, "NODE_OPTIONS"), None);
+    assert_eq!(env_of(&env, "STRIPE_TEST_KEY"), None);
+}

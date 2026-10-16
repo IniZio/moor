@@ -27,6 +27,8 @@ pub(crate) struct BoxProxy {
     pub(crate) addr: ProxyAddr,
     /// The git origin URL of the worktree, when it has one.
     pub(crate) origin: Option<String>,
+    /// The non-secret env of the tool rules, which wins over the repo `env`.
+    pub(crate) rule_env: Vec<(String, String)>,
 }
 
 /// The Box an exec runs in and where it runs.
@@ -53,8 +55,8 @@ pub(crate) fn proxy(
     cfg: &TaskSettings,
 ) -> Result<BoxProxy, String> {
     let origin = origin(cx, worktree);
-    let plan = plan(cx, origin.as_deref(), cfg)?;
-    let repo_env = plan.env.clone();
+    let plan = plan(cx, origin.as_deref())?;
+    let repo_env: Vec<(String, String)> = cfg.env.clone().into_iter().collect();
     let spec = ProxySpec {
         task,
         box_handle: handle,
@@ -62,14 +64,19 @@ pub(crate) fn proxy(
         task_repo: plan.repo,
         rules: plan.rules,
     };
+    let rule_env = box_env(&spec.rules);
     let ep = cx.proxy_host().ensure(&spec).map_err(|e| e.to_string())?;
     let addr = ProxyAddr {
         box_port: ep.box_port,
         nonce: ep.nonce,
         ca_pem: ep.ca_pem,
-        box_env: exec_env::merged_env(repo_env, box_env(&spec.rules)),
+        box_env: exec_env::merged_env(repo_env, rule_env.clone()),
     };
-    Ok(BoxProxy { addr, origin })
+    Ok(BoxProxy {
+        addr,
+        origin,
+        rule_env,
+    })
 }
 
 /// The variable names the `provider`'s platform puts in the Box that moor removes.
@@ -118,8 +125,9 @@ pub(crate) fn prepare(
     let dir = BoxPath::restore(&format!("/tmp/moor-exec-{}", nonce(cx.rng())))
         .map_err(|e| e.to_string())?;
     stage(cx, site, &dir, &p.addr)?;
+    let merged = exec_env::merged_env(repo_env, p.rule_env.clone());
     let ctx = BoxCtx {
-        env: &p.addr.box_env,
+        env: &merged,
         proxy: Some(ProxyCtx {
             box_port: p.addr.box_port,
             cred: &dir,

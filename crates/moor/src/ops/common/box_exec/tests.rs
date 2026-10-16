@@ -81,6 +81,7 @@ fn boxed_proxy() -> BoxProxy {
             box_env: vec![("RULE".to_owned(), "x".to_owned())],
         },
         origin: None,
+        rule_env: vec![("RULE".to_owned(), "x".to_owned())],
     }
 }
 
@@ -105,9 +106,42 @@ fn a_proxy_stages_the_nonce_and_ca_and_the_prelude_exports_the_proxy() {
     };
     assert_eq!(peek(NONCE_FILE).as_deref(), Some("s3cret"));
     assert_eq!(peek(CA_FILE).as_deref(), Some("CA-PEM"));
-    assert_eq!(e.vars(), p.addr.box_env);
+    assert_eq!(
+        e.vars(),
+        [
+            ("REPO".to_owned(), "1".to_owned()),
+            ("RULE".to_owned(), "x".to_owned())
+        ]
+    );
     let script = e.argv(vec!["true".to_owned()]).join(" ");
     assert!(script.contains("HTTPS_PROXY"), "{script}");
+}
+
+#[test]
+fn a_proxy_keeps_credential_like_and_reserved_repo_env_without_warning() {
+    let dir = tempfile::tempdir().unwrap();
+    let r = rig(dir.path());
+    let mut c = cfg();
+    c.env.insert("STRIPE_TEST_KEY".to_owned(), "sk".to_owned());
+    c.env.insert("NODE_OPTIONS".to_owned(), "--x".to_owned());
+    let p = boxed_proxy();
+    let e = prepare(
+        &r.cx,
+        &r.site(Some(&r.workdir), dir.path()),
+        Some(&p),
+        &c,
+        Purpose::Run,
+    )
+    .unwrap();
+    let vars = e.vars();
+    for name in ["STRIPE_TEST_KEY", "NODE_OPTIONS", "REPO", "RULE"] {
+        assert!(vars.iter().any(|(k, _)| k == name), "{name} in {vars:?}");
+    }
+    assert!(r
+        .cx
+        .take_warnings()
+        .iter()
+        .all(|w| w.code != "agent_env_dropped"));
 }
 
 #[test]
