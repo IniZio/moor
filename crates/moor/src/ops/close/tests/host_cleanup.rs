@@ -23,8 +23,11 @@ fn a_static_host_is_cleaned_before_release() {
     let v = run(&f.cx, &req(false)).unwrap();
     assert!(v.box_deleted);
     let id = f.id.get();
-    let want = format!(".moor-cred-{id}-*");
-    assert!(matches!(cleanup_scripts(&f).as_slice(), [s] if s.contains(&want)));
+    let old = format!("-{id}-*");
+    assert!(matches!(
+        cleanup_scripts(&f).as_slice(),
+        [s] if s.contains(".moor-cred-t-[0-9a-f]") && !s.contains(&old)
+    ));
     let calls = f.driver.calls();
     let last_exec = calls.iter().rposition(|c| c.starts_with("exec")).unwrap();
     let release = calls.iter().position(|c| c.starts_with("release")).unwrap();
