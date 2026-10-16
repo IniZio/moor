@@ -200,7 +200,9 @@ fn a_failing_setup_marks_the_task_and_a_later_clean_setup_clears_it() {
 fn no_setup_lines_means_setup_did_not_run() {
     let (w, v) = start_with("env: {A: a}\n", FakeDriver::new());
     assert!(!v.setup.ran);
-    assert!(w.driver.execs().is_empty());
+    let execs = w.driver.execs();
+    assert_eq!(execs.len(), 1);
+    assert_eq!(execs[0].1.argv, ["true"]);
     assert_eq!(v.task.state, TaskState::Working);
 }
 

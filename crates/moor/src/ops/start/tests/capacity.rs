@@ -178,7 +178,7 @@ fn queued_start_records_the_limit_and_keeps_worktree_and_workspace() {
     let calls = w.surface.calls();
     assert!(calls.contains(&"create_worktree waiter".to_owned()));
     assert!(calls.contains(&"ensure_workspace moor:waiter".to_owned()));
-    assert_eq!(w.driver.calls(), ["acquire"]);
+    assert_eq!(w.driver.calls(), ["acquire", "exec box-1"]);
 }
 
 #[test]
@@ -218,7 +218,7 @@ fn start_again_while_still_full_keeps_waiting() {
     let again = run(&w.cx, &req("waiter")).unwrap();
     assert!(again.queued);
     assert_eq!(again.task.state, TaskState::WaitingForBox);
-    assert_eq!(w.driver.calls(), ["acquire"]);
+    assert_eq!(w.driver.calls(), ["acquire", "exec box-1"]);
 }
 
 #[test]
@@ -226,13 +226,16 @@ fn start_again_after_a_box_is_freed_promotes_the_waiting_task() {
     let (w, holder) = with_live_box(box_limit(1));
     let queued = run(&w.cx, &req("waiter")).unwrap();
     assert!(queued.queued);
-    assert_eq!(w.driver.calls(), ["acquire"]);
+    assert_eq!(w.driver.calls(), ["acquire", "exec box-1"]);
     let id = TaskId::new(queued.task.id);
     free_box(&w, holder);
     let v = run(&w.cx, &req("waiter")).unwrap();
     assert!(!v.queued);
     assert_ne!(state_of(&w, id), TaskState::WaitingForBox);
-    assert_eq!(w.driver.calls(), ["acquire", "acquire"]);
+    assert_eq!(
+        w.driver.calls(),
+        ["acquire", "exec box-1", "acquire", "exec box-2"]
+    );
 }
 
 #[test]
@@ -240,7 +243,7 @@ fn start_again_after_the_holder_closes_promotes_the_waiting_task() {
     let (w, holder) = with_live_box(box_limit(1));
     let queued = run(&w.cx, &req("waiter")).unwrap();
     assert!(queued.queued);
-    assert_eq!(w.driver.calls(), ["acquire"]);
+    assert_eq!(w.driver.calls(), ["acquire", "exec box-1"]);
     let id = TaskId::new(queued.task.id);
     let store = w.cx.store().unwrap();
     store
@@ -253,7 +256,10 @@ fn start_again_after_the_holder_closes_promotes_the_waiting_task() {
     let v = run(&w.cx, &req("waiter")).unwrap();
     assert!(!v.queued);
     assert_ne!(state_of(&w, id), TaskState::WaitingForBox);
-    assert_eq!(w.driver.calls(), ["acquire", "acquire"]);
+    assert_eq!(
+        w.driver.calls(),
+        ["acquire", "exec box-1", "acquire", "exec box-2"]
+    );
 }
 
 #[test]
@@ -262,7 +268,10 @@ fn start_acquires_without_any_limit() {
     let v = run(&w.cx, &req("second")).unwrap();
     assert!(!v.queued);
     assert_eq!(v.task.state, TaskState::Working);
-    assert_eq!(w.driver.calls(), ["acquire", "acquire"]);
+    assert_eq!(
+        w.driver.calls(),
+        ["acquire", "exec box-1", "acquire", "exec box-2"]
+    );
 }
 
 #[test]
@@ -270,7 +279,10 @@ fn start_acquires_below_the_limit() {
     let (w, _) = with_live_box(box_limit(2));
     let v = run(&w.cx, &req("second")).unwrap();
     assert!(!v.queued);
-    assert_eq!(w.driver.calls(), ["acquire", "acquire"]);
+    assert_eq!(
+        w.driver.calls(),
+        ["acquire", "exec box-1", "acquire", "exec box-2"]
+    );
 }
 
 #[test]
@@ -280,7 +292,10 @@ fn limit_ignores_live_boxes_of_another_provider() {
     let v = run(&w.cx, &req("second")).unwrap();
     assert!(!v.queued);
     assert_eq!(v.task.state, TaskState::Working);
-    assert_eq!(w.driver.calls(), ["acquire", "acquire"]);
+    assert_eq!(
+        w.driver.calls(),
+        ["acquire", "exec box-1", "acquire", "exec box-2"]
+    );
 }
 
 #[test]
@@ -293,7 +308,10 @@ fn driver_limit_ignores_live_boxes_of_another_provider() {
     move_box_to(&w, holder, "other-provider");
     let v = run(&w.cx, &req("second")).unwrap();
     assert!(!v.queued);
-    assert_eq!(w.driver.calls(), ["acquire", "acquire"]);
+    assert_eq!(
+        w.driver.calls(),
+        ["acquire", "exec box-1", "acquire", "exec box-2"]
+    );
 }
 
 #[test]
@@ -306,7 +324,10 @@ fn driver_limit_overrides_the_box_limit() {
     let v = run(&w.cx, &req("second")).unwrap();
     assert!(!v.queued);
     assert_eq!(v.task.state, TaskState::Working);
-    assert_eq!(w.driver.calls(), ["acquire", "acquire"]);
+    assert_eq!(
+        w.driver.calls(),
+        ["acquire", "exec box-1", "acquire", "exec box-2"]
+    );
 }
 
 #[test]
@@ -318,7 +339,7 @@ fn driver_limit_of_one_queues_despite_a_larger_box_limit() {
     let (w, _) = with_live_box(config);
     let v = run(&w.cx, &req("second")).unwrap();
     assert!(v.queued);
-    assert_eq!(w.driver.calls(), ["acquire"]);
+    assert_eq!(w.driver.calls(), ["acquire", "exec box-1"]);
 }
 
 #[test]
@@ -331,5 +352,5 @@ fn asleep_box_still_counts_toward_the_limit() {
     let v = run(&w.cx, &req("waiter")).unwrap();
     assert!(v.queued);
     assert_eq!(v.task.state, TaskState::WaitingForBox);
-    assert_eq!(w.driver.calls(), ["acquire"]);
+    assert_eq!(w.driver.calls(), ["acquire", "exec box-1"]);
 }

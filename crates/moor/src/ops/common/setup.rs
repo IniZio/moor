@@ -118,6 +118,22 @@ pub(crate) fn run_setup(
     sync: SyncMode,
 ) -> SetupRun {
     if cfg.setup.is_empty() {
+        // The sync happens inside the exec, so a Box with no setup still needs one to get its
+        // checkout. A failure here surfaces later, when the close probe finds no checkout.
+        if sync == SyncMode::Full {
+            let spec = ExecSpec {
+                argv: vec!["true".to_owned()],
+                env: Vec::new(),
+                cwd: Some(workdir.clone()),
+                sync,
+                output: None,
+                host_cwd: Some(worktree.to_path_buf()),
+                class: Some(cfg.size.value.as_str().to_owned()),
+            };
+            let _ = cx
+                .driver()
+                .exec(handle, &spec, Deadline(SETUP_LINE_DEADLINE));
+        }
         return SetupRun::Skipped;
     }
     let spec = ExecSpec {

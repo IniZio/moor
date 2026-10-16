@@ -422,7 +422,7 @@ fn driver_timeout_fails_the_line() {
 }
 
 #[test]
-fn empty_setup_is_skipped_without_exec() {
+fn empty_setup_still_syncs_the_checkout_with_one_exec() {
     let d = tempfile::tempdir().unwrap();
     let r = rig(d.path(), FakeDriver::new());
     let got = run_setup(
@@ -434,7 +434,9 @@ fn empty_setup_is_skipped_without_exec() {
         SyncMode::Full,
     );
     assert_eq!(got, SetupRun::Skipped);
-    assert!(r.driver.execs().is_empty());
+    let (_, spec, _) = only(r.driver.execs());
+    assert_eq!(spec.sync, SyncMode::Full);
+    assert_eq!(spec.argv, vec!["true".to_owned()]);
     assert!(r.cx.take_warnings().is_empty());
 }
 

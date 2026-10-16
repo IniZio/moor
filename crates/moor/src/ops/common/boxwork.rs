@@ -3,7 +3,9 @@
 use std::path::Path;
 use std::time::Duration;
 
-use moor_core::boxscript::boxwork::{boxwork_script, is_full_sha, parse_boxwork, BOXWORK_FILE};
+use moor_core::boxscript::boxwork::{
+    boxwork_script, is_full_sha, parse_boxwork, BOXWORK_FILE, BOXWORK_NO_CHECKOUT,
+};
 use moor_core::domain::run::SyncMode;
 use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
 use moor_core::seam::proc::Deadline;
@@ -97,6 +99,9 @@ fn run(cx: &Cx, task: &TaskRow, boxed: &BoxRow) -> Result<BoxWork, BoxWork> {
     };
     match cx.driver().exec(handle, &spec, Deadline(BOXWORK_DEADLINE)) {
         Ok(ExecOutcome::Exited { code: 0 }) => {}
+        Ok(ExecOutcome::Exited {
+            code: BOXWORK_NO_CHECKOUT,
+        }) => return Err("the Box has no git checkout".into()),
         Ok(ExecOutcome::Exited { code }) => return Err(format!("the probe exited {code}").into()),
         Ok(ExecOutcome::Interrupted) => return Err("the probe was interrupted".into()),
         Err(e) => return Err(driver_fail("the probe could not run", &e)),

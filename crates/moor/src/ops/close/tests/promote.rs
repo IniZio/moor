@@ -278,6 +278,8 @@ fn promoted_task_goes_through_setting_up_and_gets_a_ready_box() {
             format!("peek_file {HOLDER_BOX}"),
             format!("release {HOLDER_BOX}"),
             "acquire".into(),
+            // The promoted task has no setup, so its one exec is the checkout sync.
+            "exec box-2".into(),
         ]
     );
 }
