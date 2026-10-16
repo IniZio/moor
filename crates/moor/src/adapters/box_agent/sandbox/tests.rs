@@ -14,6 +14,10 @@ fn path(s: &str) -> BoxPath {
 }
 
 fn doc(env_names: &[&str]) -> Value {
+    doc_as(env_names, false)
+}
+
+fn doc_as(env_names: &[&str], root: bool) -> Value {
     let (w, h, c) = (path("/work/p"), path("/home/u"), path("/tmp/cred"));
     let tmp = path("/home/u/.moor-tmp-t-n");
     let input = SandboxInput {
@@ -23,6 +27,7 @@ fn doc(env_names: &[&str]) -> Value {
         tmp: &tmp,
         env_names: env_names.iter().map(|s| (*s).to_owned()).collect(),
         set_vars: vec![("APP_MODE".to_owned(), "it's".to_owned())],
+        root,
         strip_env: &[],
     };
     serde_json::from_str(&profile(&input)).unwrap()
@@ -124,6 +129,7 @@ fn doc_with_set_vars(
         tmp: &tmp,
         env_names: env_names.iter().map(|s| (*s).to_owned()).collect(),
         set_vars,
+        root: false,
         strip_env,
     };
     serde_json::from_str(&profile(&input)).unwrap()
@@ -345,4 +351,11 @@ fn harden_lines_unset_nono_names_and_pin_the_config_home() {
         text.contains("export XDG_CONFIG_HOME=\"$HOME/.config\""),
         "{text}"
     );
+}
+
+#[test]
+fn profile_tells_claude_it_is_sandboxed_only_for_root() {
+    let var = "/environment/set_vars/IS_SANDBOX";
+    assert_eq!(at(&doc_as(&[], true), var), "1");
+    assert_eq!(at(&doc_as(&[], false), var), &Value::Null);
 }

@@ -303,3 +303,58 @@ fn repo_env_reaches_the_agent_only_through_the_profile() {
         Some(&serde_json::Value::from(value))
     );
 }
+
+/// The `set_vars` the sandbox profile of a proxy launch carries, for a Box whose login user's
+/// environment is `environ`.
+fn set_vars_for(environ: &str, repo_env: Vec<(String, String)>) -> serde_json::Value {
+    let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new("/r")));
+    d.set_peek_text("box-1", &environ_path(), environ);
+    let addr = ProxyAddr {
+        box_env: repo_env,
+        ..proxy_addr()
+    };
+    let req = LaunchReq {
+        proxy: Some(Arc::new(addr)),
+        ..req_with_proxy(&s)
+    };
+    agent(&d, &s).launch(&req).unwrap();
+    let script = script_of(&pane_line(&s));
+    assert!(!script.contains("IS_SANDBOX"), "{script}");
+    let profile = (d.puts().into_iter())
+        .find(|p| p.1.as_str().ends_with("nono-profile.json"))
+        .unwrap();
+    let doc: serde_json::Value = serde_json::from_slice(&profile.2).unwrap();
+    doc.pointer("/environment/set_vars").cloned().unwrap()
+}
+
+#[test]
+fn a_root_login_tells_the_sandboxed_agent_it_is_sandboxed() {
+    let vars = set_vars_for("HOME=/home/box\0USER=root\0", Vec::new());
+    assert_eq!(vars.get("IS_SANDBOX"), Some(&serde_json::Value::from("1")));
+}
+
+#[test]
+fn a_non_root_login_launches_unchanged() {
+    let vars = set_vars_for("HOME=/home/box\0USER=box\0", Vec::new());
+    assert_eq!(vars.get("IS_SANDBOX"), None);
+}
+
+#[test]
+fn a_root_launch_without_a_proxy_sets_nothing() {
+    let d = driver(FakeDriver::new());
+    d.set_peek_text("box-1", &environ_path(), "HOME=/home/box\0USER=root\0");
+    let s = surface(FakeSurface::new("/r"));
+    agent(&d, &s).launch(&req(&s)).unwrap();
+    assert!(!script_of(&pane_line(&s)).contains("IS_SANDBOX"));
+    assert!(d
+        .puts()
+        .iter()
+        .all(|p| !p.1.as_str().ends_with("nono-profile.json")));
+}
+
+#[test]
+fn a_repo_env_value_cannot_replace_the_root_signal() {
+    let repo_env = vec![("IS_SANDBOX".to_owned(), "0".to_owned())];
+    let vars = set_vars_for("HOME=/home/box\0USER=root\0", repo_env);
+    assert_eq!(vars.get("IS_SANDBOX"), Some(&serde_json::Value::from("1")));
+}

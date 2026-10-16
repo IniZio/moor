@@ -10,6 +10,9 @@ pub(super) const NONO_VERSION: &str = "0.80.0";
 /// File name of the generated profile inside the credential directory.
 pub(super) const PROFILE_FILE: &str = "nono-profile.json";
 
+/// The variable that makes Claude Code accept bypassPermissions as root.
+pub(super) const ROOT_SANDBOX_VAR: &str = "IS_SANDBOX";
+
 /// Exit code of the check script when the Box lacks the pinned nono binary.
 pub(super) const NOT_INSTALLED: i32 = 6;
 
@@ -66,8 +69,10 @@ pub(super) struct SandboxInput<'a> {
     pub(super) env_names: Vec<String>,
     /// Variables the sandbox sets for the agent alone: repo `env` and rule `box_env`.
     pub(super) set_vars: Vec<(String, String)>,
+    /// The Box user is root; the sandbox then tells Claude Code it is sandboxed.
+    pub(super) root: bool,
     /// Names that never reach the sandbox, whatever the repo or rules ask for.
-    pub strip_env: &'a [String],
+    pub(super) strip_env: &'a [String],
 }
 
 /// True when `name` may be passed into the sandbox.
@@ -118,6 +123,16 @@ const DEFAULT_GROUPS: [&str; 18] = [
 pub(super) fn profile(input: &SandboxInput) -> String {
     let home = input.home.as_str();
     let at = |rel: &str| format!("{home}/{rel}");
+    let mut set_vars: BTreeMap<_, _> = input
+        .set_vars
+        .iter()
+        .filter(|(n, _)| !input.strip_env.contains(n))
+        .cloned()
+        .collect();
+    if input.root {
+        // Claude Code refuses bypassPermissions as root unless it is told it is sandboxed.
+        set_vars.insert(ROOT_SANDBOX_VAR.to_owned(), "1".to_owned());
+    }
     let doc = json!({
         "meta": { "name": "moor-agent" },
         "groups": { "include": DEFAULT_GROUPS },
@@ -148,12 +163,7 @@ pub(super) fn profile(input: &SandboxInput) -> String {
         },
         "environment": {
             "allow_vars": allow_vars(&input.env_names, input.strip_env),
-            "set_vars": input
-                .set_vars
-                .iter()
-                .filter(|(n, _)| !input.strip_env.contains(n))
-                .cloned()
-                .collect::<BTreeMap<_, _>>(),
+            "set_vars": set_vars,
         },
     });
     serde_json::to_string_pretty(&doc).unwrap_or_default()
