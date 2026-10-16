@@ -104,9 +104,9 @@ impl Launch<'_> {
         platform: Platform,
         plan: &mut Plan,
     ) -> Result<Option<BoxPath>, Failure> {
-        let Some(addr) = &self.ctx.proxy else {
+        if self.ctx.proxy.is_none() {
             return Ok(None);
-        };
+        }
         let (req, cred) = (self.req, self.cred);
         let (os, arch) = platform.unwrap_or_else(|| parse_platform(None))?;
         let bytes = (self.release.binary(&os, &arch)).map_err(|e| fail("sandbox", &e))?;
@@ -114,13 +114,14 @@ impl Launch<'_> {
         plan.push(Tag::Check, BoxStep::Run(script.clone()));
         plan.check = Some((bytes, script));
         let env_names = (self.profile.env(self.ctx).into_iter().map(|v| v.name)).collect();
+        let exec = self.exec_env()?;
         let profile = sandbox::profile(&SandboxInput {
             workdir: &self.ctx.workdir,
             home: &self.ctx.home,
             cred,
             tmp: self.tmp,
             env_names,
-            set_vars: addr.box_env.clone(),
+            set_vars: exec.vars,
             root: self.root,
             strip_env: &req.strip_env,
         });

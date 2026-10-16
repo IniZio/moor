@@ -3,12 +3,12 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use moor_core::exec_env::{self, BoxCtx, ProxyCtx, Purpose, NONCE_FILE};
 use moor_core::seam::agent_profile::{EnvVar, ProxyAddr};
 use moor_core::seam::driver::BoxStep;
-use moor_core::seam::forge::ForgeRepo;
 use moor_core::{BoxPath, Secret};
 
-use super::{github_repo, push_url, script_lines, stage_steps, NONCE_FILE};
+use super::{script_lines, stage_steps};
 
 const SENTINEL: &[u8] = b"sentinel-9c2e";
 const PORT: u16 = 4321;
@@ -34,43 +34,48 @@ fn cred(dir: &Path) -> BoxPath {
     BoxPath::restore(dir.to_str().unwrap()).unwrap()
 }
 
-#[test]
-fn github_origins_map_to_one_push_url() {
-    let want = Some("https://github.com/o/n.git".to_owned());
-    for origin in [
-        "https://github.com/o/n",
-        "https://github.com/o/n.git",
-        "https://github.com/o/n/",
-        "ssh://git@github.com/o/n.git",
-        "ssh://git@github.com/o/n",
-        "git@github.com:o/n.git",
-        "git@github.com:o/n",
-    ] {
-        assert_eq!(push_url(origin), want, "{origin}");
-        assert_eq!(
-            github_repo(origin),
-            Some(ForgeRepo::new("o", "n")),
-            "{origin}"
-        );
-    }
+fn workdir() -> BoxPath {
+    BoxPath::restore("/work").unwrap()
 }
 
 #[test]
-fn other_origins_are_not_github() {
-    for origin in [
-        "https://gitlab.com/o/n.git",
-        "git@gitlab.com:o/n.git",
-        "ssh://git@example.com/o/n.git",
-        "/srv/git/o/n.git",
-        "https://github.com/o",
-        "https://github.com/o/",
-        "https://github.com/o/n/extra",
-        "https://github.com/o/n/extra.git",
-        "",
-    ] {
-        assert_eq!(push_url(origin), None, "{origin}");
-        assert_eq!(github_repo(origin), None, "{origin}");
-    }
+fn the_agent_gets_the_same_box_environment_as_run() {
+    let c = cred(Path::new("/home/box/.moor-cred"));
+    let w = workdir();
+    let mut p = proxy();
+    p.box_env = vec![("QUOTED".to_owned(), "it's".to_owned())];
+    let strip = ["PLATFORM_TOKEN".to_owned(), "PLATFORM_TOKEN".to_owned()];
+    let origin = Some("git@github.com:o/n.git");
+    let agent = super::exec_env(&c, Some(&p), &strip, origin, &w).unwrap();
+    let run = exec_env::build(
+        &BoxCtx {
+            env: &p.box_env,
+            strip: &strip,
+            proxy: Some(ProxyCtx {
+                box_port: PORT,
+                cred: &c,
+            }),
+            origin,
+            workdir: Some(&w),
+        },
+        Purpose::Run,
+    )
+    .unwrap();
+    assert_eq!(agent.prelude, run.prelude);
+    assert_eq!(agent.vars, run.vars);
+    assert_eq!(agent.unset, ["PLATFORM_TOKEN"]);
+    assert_eq!(agent.unset, run.unset);
+    assert_eq!(agent.cwd, run.cwd);
+    assert_eq!(script_lines(&c, &p, &[], origin).unwrap(), run.prelude);
+}
+
+#[test]
+fn without_a_proxy_the_environment_only_strips_names() {
+    let w = workdir();
+    let strip = ["PLATFORM_TOKEN".to_owned()];
+    let exec = super::exec_env(&w, None, &strip, None, &w).unwrap();
+    assert_eq!(exec.unset, strip);
+    assert!(exec.prelude.is_empty() && exec.vars.is_empty());
 }
 
 fn lines_for(origin: Option<&str>) -> Vec<String> {
