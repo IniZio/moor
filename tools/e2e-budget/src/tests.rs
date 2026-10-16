@@ -292,3 +292,22 @@ fn model_request_ignores_malformed_lines() {
         "claude"
     ));
 }
+
+#[test]
+fn rate_limited_post_counts_only_as_rate_limited() {
+    let log = "1700000010000 POST claude 429\n";
+    assert!(!model_request_after(log, 0, "claude"));
+    assert!(rate_limited_after(log, 0, "claude"));
+    assert!(!rate_limited_after(log, 1_700_000_010_001, "claude"));
+    assert!(!rate_limited_after(PROXY_LOG, 0, "claude"));
+}
+
+#[test]
+fn agent_session_is_set_by_either_the_registered_row_or_the_task() {
+    // After start: session row unregistered, the hook already set the task's id.
+    assert!(agent_session_set(None, Some("abc")));
+    assert!(agent_session_set(Some(""), Some("abc")));
+    assert!(agent_session_set(Some("abc"), None));
+    assert!(!agent_session_set(None, None));
+    assert!(!agent_session_set(Some(""), Some("")));
+}
