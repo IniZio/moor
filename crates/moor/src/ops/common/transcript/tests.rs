@@ -182,3 +182,20 @@ fn a_session_without_a_registered_agent_session_is_skipped_without_asking_the_en
         Some(&json!("no agent session registered"))
     );
 }
+
+#[test]
+fn a_session_unregistered_but_known_to_the_task_is_archived() {
+    let engine = Arc::new(FakeEngine::new().transcript_text("abc"));
+    let (dir, cx) = fx(FakeEngine::new());
+    let cx = cx.with_engine(engine.clone());
+    let (row, session) = unregistered(&cx, dir.path());
+    let store = cx.store().unwrap();
+    let set = Fields {
+        agent_session_id: Field::Set("agent-1".into()),
+        ..Fields::default()
+    };
+    store.apply(Decision::new(row.id).set(set)).unwrap();
+    let row = store.task(row.id).unwrap().unwrap();
+    assert!(save(&cx, store, &row, &session, Trigger::Close).is_some());
+    assert_eq!(engine.transcripts().len(), 1);
+}

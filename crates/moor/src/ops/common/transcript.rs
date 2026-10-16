@@ -40,11 +40,8 @@ pub(crate) fn save(
     if row.boxed.as_ref()?.state != BoxState::Ready {
         return None;
     }
-    if session
-        .registered_agent_session
-        .as_deref()
-        .is_none_or(str::is_empty)
-    {
+    let known = |id: &Option<String>| id.as_deref().is_some_and(|id| !id.is_empty());
+    if !known(&session.registered_agent_session) && !known(&row.agent_session_id) {
         record(store, row, skipped(trigger, "no agent session registered"));
         return None;
     }
