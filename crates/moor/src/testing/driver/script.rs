@@ -106,6 +106,7 @@ pub(super) struct Rec {
     box_calls: Vec<String>,
     connects: Vec<Vec<String>>,
     run_stdout: String,
+    run_queue: std::collections::VecDeque<String>,
 }
 
 impl State {
@@ -130,6 +131,15 @@ impl FakeDriver {
     /// Makes every batched `Run` report `text` as its stdout.
     pub(crate) fn run_stdout(self, text: &str) -> Self {
         self.set_run_stdout(text);
+        self
+    }
+
+    /// Makes the next batched `Run`s report these stdouts in order, then the usual one.
+    pub(crate) fn run_stdouts<'a>(self, texts: impl IntoIterator<Item = &'a str>) -> Self {
+        self.st()
+            .rec
+            .run_queue
+            .extend(texts.into_iter().map(str::to_owned));
         self
     }
 
@@ -203,7 +213,12 @@ impl FakeDriver {
                     class: None,
                 };
                 let outcome = self.exec(handle, &spec, deadline)?;
-                let stdout = self.st().rec.run_stdout.clone();
+                let mut s = self.st();
+                let stdout = s
+                    .rec
+                    .run_queue
+                    .pop_front()
+                    .unwrap_or_else(|| s.rec.run_stdout.clone());
                 Ok(StepDone::Ran { outcome, stdout })
             }
         }
