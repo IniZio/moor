@@ -10,10 +10,6 @@ use moor_core::seam::engine::SessionRef;
 
 const NOT_INSTALLED: i32 = 6;
 
-fn uname_path() -> BoxPath {
-    BoxPath::under(CRED, "uname").unwrap()
-}
-
 /// The outcome of a proxy launch on a Box whose checks return `codes`, whose `uname` says
 /// `platform`, and whose downloads go through `release`.
 fn launch_missing(
@@ -27,9 +23,9 @@ fn launch_missing(
 ) {
     let d = driver(
         FakeDriver::new()
-            .exec_results([0, codes[0], codes[1]].map(|code| Ok(ExecOutcome::Exited { code }))),
+            .exec_results([0, 0, codes[0], codes[1]].map(|code| Ok(ExecOutcome::Exited { code }))),
     );
-    d.set_peek_text("box-1", &uname_path(), platform);
+    d.set_run_stdout(platform);
     let s = surface(FakeSurface::new("/r"));
     let a = BoxAgent::new(
         d.clone(),
@@ -66,6 +62,13 @@ fn a_proxy_launch_wraps_the_agent_in_the_sandbox() {
         .expect(&script);
     let agent = script.rfind("'claude'").expect(&script);
     assert!(nono < agent, "{script}");
+    let ns = script
+        .find("moor_ns='unshare --pid --fork --kill-child --mount-proc --'")
+        .expect(&script);
+    let run = script
+        .find("&& $moor_ns '/home/box/.local/bin/nono'")
+        .expect(&script);
+    assert!(ns < run, "{script}");
     assert!(!script.contains("--block-net"), "{script}");
     assert!(!script.contains("--open-port"), "{script}");
 }
@@ -77,7 +80,7 @@ fn the_check_runs_before_the_hooks_are_put() {
     let exec = calls.iter().position(|c| c.starts_with("exec")).unwrap();
     let hooks = calls.iter().position(|c| c.starts_with("put")).unwrap();
     assert!(exec < hooks, "{calls:?}");
-    let script = d.execs().remove(1).1.argv.pop().unwrap();
+    let script = d.execs().remove(2).1.argv.pop().unwrap();
     assert!(script.contains("--version"), "{script}");
     assert!(script.contains(&sha256_hex(READY_BINARY)), "{script}");
     assert!(script.contains("setup --check-only"), "{script}");
@@ -90,7 +93,7 @@ fn an_installed_tool_with_the_pinned_digest_is_not_uploaded() {
     let (d, _, out) = launch_missing([0, 0], "Linux x86_64", release);
     out.unwrap();
     assert!(nono_put(&d).is_none());
-    assert_eq!(d.execs().len(), 2);
+    assert_eq!(d.execs().len(), 3);
 }
 
 #[test]
@@ -108,18 +111,18 @@ fn a_missing_or_replaced_tool_is_uploaded_executable_and_checked_again() {
     let script = |i: usize| execs.get(i).unwrap().1.argv.last().unwrap().clone();
     assert!(script(0).contains("uname -s -m"), "{}", script(0));
     assert!(
-        script(1).contains(&sha256_hex(b"the binary")),
+        script(2).contains(&sha256_hex(b"the binary")),
         "{}",
-        script(1)
+        script(2)
     );
-    assert_eq!(script(1), script(2));
+    assert_eq!(script(2), script(3));
 }
 
 #[test]
 fn a_replaced_tool_whose_upload_fails_is_refused() {
     let d = driver(
         FakeDriver::new()
-            .exec_results([0, NOT_INSTALLED].map(|code| Ok(ExecOutcome::Exited { code })))
+            .exec_results([0, 0, NOT_INSTALLED].map(|code| Ok(ExecOutcome::Exited { code })))
             .fail_put(DriverError::NotFound),
     );
     let s = surface(FakeSurface::new("/r"));
@@ -184,7 +187,9 @@ fn the_profile_lands_in_the_cred_dir_and_grants_the_temp_dir() {
 #[test]
 fn a_failed_check_fails_the_sandbox_step_and_opens_no_pane() {
     let (d, s) = (
-        driver(FakeDriver::new().exec_results([0, 5].map(|code| Ok(ExecOutcome::Exited { code })))),
+        driver(
+            FakeDriver::new().exec_results([0, 0, 5].map(|code| Ok(ExecOutcome::Exited { code }))),
+        ),
         surface(FakeSurface::new("/r")),
     );
     let message = sandbox_message(agent(&d, &s).launch(&req_with_proxy(&s)));
@@ -197,8 +202,12 @@ fn a_failed_check_fails_the_sandbox_step_and_opens_no_pane() {
 fn a_launch_without_a_proxy_installs_nothing_and_stays_unsandboxed() {
     let (d, s, out) = launch(FakeDriver::new(), FakeSurface::new("/r"));
     out.unwrap();
-    assert!(d.execs().is_empty());
+    let execs = d.execs();
+    assert_eq!(execs.len(), 1);
+    let script = execs.iter().find_map(|e| e.1.argv.last()).unwrap();
+    assert!(script.contains("command -v"), "{script}");
     assert!(!pane_line(&s).contains("nono"));
+    assert!(!pane_line(&s).contains("moor_ns"));
 }
 
 #[test]

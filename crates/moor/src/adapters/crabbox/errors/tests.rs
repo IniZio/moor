@@ -154,6 +154,26 @@ fn other_ops_carry_no_tail() {
 }
 
 #[test]
+fn exec_failure_before_the_box_shows_the_reason() {
+    let reason = "prepare offline local Git metadata: local Git seed uncompressed object byte limit exceeded";
+    let e = map_error(Op::Exec, Some("ssh"), &nz(6, reason));
+    assert_eq!(
+        e.to_string(),
+        format!("box command failed on provider ssh (exit 6): {reason}")
+    );
+}
+
+#[test]
+fn exec_remote_failure_carries_no_crabbox_noise() {
+    let e = map_error(
+        Op::Exec,
+        Some("ssh"),
+        &nz(6, "make: *** [all] Error 1\nremote command exited 6\n"),
+    );
+    assert_eq!(e.to_string(), "box command failed on provider ssh (exit 6)");
+}
+
+#[test]
 fn raw_stderr_never_leaks() {
     let token = "SECRETTOKEN123";
     let texts = [

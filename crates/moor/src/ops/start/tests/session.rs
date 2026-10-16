@@ -265,7 +265,10 @@ fn no_agent_and_no_goal_launch_nothing() {
 fn a_failed_setup_still_launches_with_its_exit_code() {
     let repo = tempfile::tempdir().unwrap();
     std::fs::write(repo.path().join(".moor.yaml"), "setup: [bad]\n").unwrap();
-    let driver = FakeDriver::new().exec_results([Ok(ExecOutcome::Exited { code: 3 })]);
+    let driver = FakeDriver::new().exec_results([
+        Ok(ExecOutcome::Exited { code: 0 }),
+        Ok(ExecOutcome::Exited { code: 3 }),
+    ]);
     let engine = Arc::new(FakeEngine::new());
     let mut w = world_at(driver, repo.path());
     w.cx = w.cx.with_engine(engine.clone());
@@ -468,8 +471,9 @@ fn attaching_to_a_live_session_does_not_watch_its_pane() {
     let again = run(&w.cx, &goal_req("demo")).unwrap();
     assert!(again.attached);
     assert!(!again.agent.launched);
-    // The one extra read is the liveness check of the session; the watch adds none.
-    assert_eq!(pane_reads(&w), before + 1);
+    // The extra reads are the liveness checks of the session, before the re-sync and before the
+    // attach; the watch adds none.
+    assert_eq!(pane_reads(&w), before + 2);
 }
 
 #[test]

@@ -99,7 +99,10 @@ impl TaskState {
             | (Self::Asleep, I::Wake) => Self::Working,
             (
                 Self::SettingUp,
-                I::AcquireFailed { .. } | I::CredFailed { .. } | I::DotfilesFailed { .. },
+                I::AcquireFailed { .. }
+                | I::CredFailed { .. }
+                | I::DotfilesFailed { .. }
+                | I::SyncFailed { .. },
             ) => Self::SetupFailed,
             (Self::Working, I::AgentQuiet) => Self::Idle,
             (Self::Idle, I::SleepDue | I::SleepCmd) | (Self::Working, I::SleepCmd) => Self::Asleep,
@@ -168,6 +171,11 @@ pub enum TaskInput {
         /// The error text.
         error: String,
     },
+    /// Syncing the checkout into the Box failed, so the agent never starts.
+    SyncFailed {
+        /// The error text.
+        error: String,
+    },
     /// Setup is retried.
     Retry,
     /// The agent went quiet.
@@ -200,6 +208,7 @@ impl TaskInput {
             Self::AcquireFailed { .. } => "acquire_failed",
             Self::CredFailed { .. } => "cred_failed",
             Self::DotfilesFailed { .. } => "dotfiles_failed",
+            Self::SyncFailed { .. } => "sync_failed",
             Self::Retry => "retry",
             Self::AgentQuiet => "agent_quiet",
             Self::AgentBusy => "agent_busy",

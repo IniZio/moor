@@ -4,7 +4,8 @@ use std::time::Duration;
 
 use moor_core::name::{BoxHandle, BoxPath};
 use moor_core::seam::driver::{Driver, DriverError};
-use moor_core::seam::proc::Tool;
+use moor_core::seam::proc::{Output, Proc, ProcError, ProcOutput, ProcSpec, Tool};
+use zeroize::Zeroizing;
 
 use crate::adapters::crabbox::Crabbox;
 use crate::testing::proc::{Call, Reply, ScriptedProc};
@@ -225,4 +226,149 @@ fn target_lookup_runs_in_host_cwd() {
         call_of(&p, Tool::Crabbox).cwd.as_deref(),
         Some(Path::new("/host/cwd"))
     );
+}
+
+/// Delays `crabbox` calls by `latency`: past their deadline they time out.
+struct Slow {
+    inner: Arc<ScriptedProc>,
+    latency: Duration,
+}
+
+impl Proc for Slow {
+    fn run(&self, spec: &ProcSpec) -> Result<ProcOutput, ProcError> {
+        if spec.tool == Tool::Crabbox && self.latency > spec.deadline.0 {
+            return Err(ProcError::Timeout {
+                tool: spec.tool,
+                after: spec.deadline.0,
+            });
+        }
+        self.inner.run(spec)
+    }
+
+    fn run_secret(&self, spec: &ProcSpec) -> Result<Zeroizing<Vec<u8>>, ProcError> {
+        self.inner.run_secret(spec)
+    }
+
+    fn run_streamed(&self, spec: &ProcSpec, out: &Output) -> Result<(), ProcError> {
+        self.inner.run_streamed(spec, out)
+    }
+
+    fn spawn_detached(&self, spec: &ProcSpec) -> Result<(), ProcError> {
+        self.inner.spawn_detached(spec)
+    }
+
+    fn alive(&self, pid: u32) -> bool {
+        self.inner.alive(pid)
+    }
+}
+
+fn peek_slow(handle: &str) -> Result<Option<String>, DriverError> {
+    let p = Arc::new(ScriptedProc::new());
+    scripted(&p, Reply::Ok("x".to_owned()));
+    let slow = Slow {
+        inner: p,
+        latency: Duration::from_secs(6),
+    };
+    Crabbox::fake(Arc::new(slow)).peek_file(
+        &BoxHandle::new(handle),
+        &BoxPath::under("/work", "a").unwrap(),
+        Path::new("/host/cwd"),
+    )
+}
+
+#[test]
+fn external_provider_lookup_outlasts_a_six_second_ssh_lookup() {
+    assert_eq!(peek_slow("external/box"), Ok(Some("x".to_owned())));
+}
+
+#[test]
+fn built_in_provider_lookup_times_out_after_five_seconds() {
+    assert_eq!(
+        peek_slow("p/box"),
+        Err(DriverError::Timeout(Duration::from_secs(5)))
+    );
+}
+
+fn lookups(p: &ScriptedProc) -> usize {
+    p.calls()
+        .iter()
+        .filter(|c| c.tool == Tool::Crabbox && c.args.first().map(String::as_str) == Some("ssh"))
+        .count()
+}
+
+fn peek_of(c: &Crabbox, handle: &str) -> Result<Option<String>, DriverError> {
+    c.peek_file(
+        &BoxHandle::new(handle),
+        &BoxPath::under("/work", "a").unwrap(),
+        Path::new("/host/cwd"),
+    )
+}
+
+#[test]
+fn one_driver_looks_a_lease_up_once() {
+    let (p, c) = fixture();
+    scripted(&p, Reply::Ok("x".to_owned()));
+    peek(&c, "a").unwrap();
+    peek(&c, "b").unwrap();
+    let argv = c
+        .connect_argv(&BoxHandle::new("p/box"), Path::new("/host/cwd"))
+        .unwrap();
+    assert_eq!(argv.first().map(String::as_str), Some("ssh"));
+    assert_eq!(lookups(&p), 1);
+}
+
+#[test]
+fn release_makes_the_next_lookup_resolve_again() {
+    let (p, c) = fixture();
+    scripted(&p, Reply::Ok("x".to_owned()));
+    p.on(Tool::Crabbox, &["stop"], Reply::Ok(String::new()));
+    peek(&c, "a").unwrap();
+    c.release(&BoxHandle::new("p/box")).unwrap();
+    peek(&c, "a").unwrap();
+    assert_eq!(lookups(&p), 2);
+}
+
+#[test]
+fn wake_makes_the_next_lookup_resolve_again() {
+    let (p, c) = fixture();
+    scripted(&p, Reply::Ok("x".to_owned()));
+    p.on(Tool::Crabbox, &["resume"], Reply::Ok(String::new()));
+    p.on(
+        Tool::Crabbox,
+        &["providers"],
+        Reply::Ok(r#"[{"id":"p","sleep":"suspend","wake":true}]"#.to_owned()),
+    );
+    peek(&c, "a").unwrap();
+    let _ = c.wake(&BoxHandle::new("p/box"));
+    peek(&c, "a").unwrap();
+    assert_eq!(lookups(&p), 2);
+}
+
+#[test]
+fn another_lease_is_resolved_separately() {
+    let (p, c) = fixture();
+    scripted(&p, Reply::Ok("x".to_owned()));
+    peek_of(&c, "p/one").unwrap();
+    peek_of(&c, "p/two").unwrap();
+    peek_of(&c, "p/one").unwrap();
+    assert_eq!(lookups(&p), 2);
+}
+
+#[test]
+fn a_failed_lookup_is_not_kept() {
+    let (p, c) = fixture();
+    p.once(
+        Tool::Crabbox,
+        &["ssh"],
+        Reply::Fail {
+            code: 1,
+            stdout: String::new(),
+            stderr: "boom".to_owned(),
+        },
+    );
+    scripted(&p, Reply::Ok("x".to_owned()));
+    assert!(peek(&c, "a").is_err());
+    peek(&c, "a").unwrap();
+    peek(&c, "a").unwrap();
+    assert_eq!(lookups(&p), 2);
 }

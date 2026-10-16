@@ -66,6 +66,10 @@ pub(super) fn choose(
         BoxWork::Unknown(reason) => Err(refused(format!(
             "cannot tell whether the Box has unsaved work: {reason}"
         ))),
+        BoxWork::NoCheckout => Err(refused(
+            "cannot tell whether the Box has unsaved work: its workdir has no git checkout"
+                .to_owned(),
+        )),
     }
 }
 

@@ -23,9 +23,10 @@ use crate::ops::common::setup;
 use crate::ops::common::view::task_view;
 use crate::store::{Store, TaskRow};
 
-use self::outcome::dotfiles_failed;
 pub(crate) use self::outcome::Provisioned;
-use self::rerun::{rerun_sync, setup_wanted};
+use self::outcome::{dotfiles_failed, sync_failed};
+pub(crate) use self::rerun::ResyncGates;
+use self::rerun::{note_setup_not_rerun, resync};
 use self::retry::{dotfiles_retry, retry_dotfiles};
 
 /// Re-reads a Task row that must exist.
@@ -63,61 +64,46 @@ impl Entry {
     }
 }
 
-/// Gives a Task with no Box, a failed setup or a lost Box a Box again.
+/// Gives a Task with no Box, a failed setup in a lost Box or a lost Box a Box again.
 ///
 /// Returns what ran, or `None` when nothing was provisioned. The Box lock is held while
 /// provisioning and the row is read again under it; another op holding it is
 /// refused as busy.
 ///
 /// A `.moor.yaml` that differs from the base commit is refused unless `trusted`, before any
-/// setup or Box work starts.
+/// setup or Box work starts. `gates` decide a re-sync of the checkout into a ready Box. A ready
+/// Box never has its setup run again; a failed or interrupted setup is only warned about.
 pub(crate) fn reprovision(
     cx: &Cx,
     store: &Store,
     row: &TaskRow,
     op: &str,
     trusted: bool,
+    gates: &ResyncGates,
 ) -> Result<Option<Provisioned>, CommandError> {
-    if entry_for(row).is_none() && !setup_wanted(cx, row) && !dotfiles_retry(row) {
+    let ready = row.boxed.as_ref().map(|b| b.state) == Some(BoxState::Ready);
+    if entry_for(row).is_none() && !dotfiles_retry(row) && !ready {
         return Ok(None);
     }
     let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, row.id, op, boxlock::WAIT)?;
     let row = reread(store, row.id)?;
+    let entry = entry_for(&row);
     if dotfiles_retry(&row) {
         return retry_dotfiles(cx, store, &row).map(Some);
     }
-    let at = row.worktree.as_deref().unwrap_or(&row.repo);
-    let entry = entry_for(&row);
-    if entry.is_none() && !setup_wanted(cx, &row) {
+    let Some(entry) = entry else {
+        if ready {
+            note_setup_not_rerun(cx, store, &row)?;
+            let row = reread(store, row.id)?;
+            if row.intent.is_none() {
+                resync(cx, store, &row, trusted, gates)?;
+            }
+        }
         return Ok(None);
-    }
+    };
     let repo = moor_yaml::guard(cx, &row, trusted)?;
     let cfg = resolved(cx, repo.as_ref(), &Flags::default());
-    if let Some(entry) = entry {
-        return provision(cx, store, row.id, entry, &cfg).map(Some);
-    }
-    let (Some(handle), Some(workdir)) = (
-        row.boxed.as_ref().and_then(|b| b.handle.clone()),
-        row.boxed.as_ref().and_then(|b| b.workdir.clone()),
-    ) else {
-        return Ok(None);
-    };
-    let workdir = recorded_workdir(&workdir)
-        .ok_or_else(|| CommandError::new(ErrorKind::Internal, "recorded box workdir is invalid"))?;
-    let held = Decision::new(row.id).intent(IntentChange::Set(Intent::Setup {
-        pid: std::process::id(),
-    }));
-    store.apply(held)?;
-    let advance = row.state == TaskState::SettingUp;
-    let target = SetupTarget {
-        handle: &handle,
-        workdir: &workdir,
-        worktree: Path::new(at),
-        sync: rerun_sync(cx, store, &row)?,
-    };
-    Ok(Some(run_and_record(
-        cx, store, row.id, advance, &target, &cfg,
-    )?))
+    provision(cx, store, row.id, entry, &cfg).map(Some)
 }
 
 /// Rebuilds the Box path from the workdir text stored on the Task row.
@@ -227,7 +213,7 @@ fn record_acquired(store: &Store, id: TaskId, got: &Acquired) -> Result<(), Comm
     Ok(())
 }
 
-/// Where setup runs: the Box, and the worktree whose author the Box commits as.
+/// Where setup runs: the freshly acquired Box, and the worktree whose author the Box commits as.
 struct SetupTarget<'a> {
     /// The Box setup runs in.
     handle: &'a BoxHandle,
@@ -235,8 +221,6 @@ struct SetupTarget<'a> {
     workdir: &'a BoxPath,
     /// Worktree on the host the Task works in.
     worktree: &'a Path,
-    /// How the worktree is synced into the Box before setup runs.
-    sync: SyncMode,
 }
 
 impl<'a> SetupTarget<'a> {
@@ -246,9 +230,21 @@ impl<'a> SetupTarget<'a> {
             handle: &got.handle,
             workdir: &got.workdir,
             worktree,
-            sync: SyncMode::Full,
         }
     }
+}
+
+/// Syncs the checkout into the Box. A failure aborts provisioning.
+fn sync_into_box(
+    cx: &Cx,
+    store: &Store,
+    id: TaskId,
+    advance: bool,
+    target: &SetupTarget<'_>,
+    cfg: &TaskSettings,
+) -> Result<(), CommandError> {
+    setup::sync_checkout(cx, target.handle, target.workdir, target.worktree, cfg)
+        .map_err(|reason| sync_failed(cx, store, id, advance, reason))
 }
 
 /// Runs repo setup in a Box under the setup intent and records how it ended, clearing the intent.
@@ -264,13 +260,15 @@ fn run_and_record(
     cfg: &TaskSettings,
 ) -> Result<Provisioned, CommandError> {
     identity::set_identity(cx, target.handle, target.worktree);
+    sync_into_box(cx, store, id, advance, target, cfg)?;
+    // The checkout is in the Box by now, or was meant to stay as it is.
     let run = setup::run_setup(
         cx,
         target.handle,
         target.workdir,
         target.worktree,
         cfg,
-        target.sync,
+        SyncMode::None,
     );
     let setup_line = match run.outcome() {
         SetupOutcome::Failed { line } => Some(line),

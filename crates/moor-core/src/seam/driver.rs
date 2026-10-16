@@ -11,8 +11,10 @@ use crate::domain::run::SyncMode;
 use crate::name::{BoxHandle, BoxPath, ProviderId, TaskId, TaskName};
 use crate::seam::proc::{Deadline, Output};
 
+mod batch;
 mod tunnel;
 
+pub use batch::{run_each, BoxStep, StepDone};
 use tunnel::fmt_tunnel;
 pub use tunnel::{TunnelFailure, TunnelHandle};
 
@@ -319,6 +321,22 @@ pub trait Driver: Send + Sync {
         host_port: u16,
         host_cwd: &Path,
     ) -> Result<Box<dyn TunnelHandle>, DriverError>;
+
+    /// Runs `steps` in order in one round trip where the provider can. `connect` is what
+    /// `connect_argv` returned for `handle`; a driver may reach the Box through it rather than
+    /// looking the target up again. The batch stops after a step that errs or a `Run` that does
+    /// not exit 0, so the result holds one entry per step run, the last being the one that stopped it.
+    fn batch(
+        &self,
+        handle: &BoxHandle,
+        connect: &[String],
+        steps: &[BoxStep],
+        host_cwd: &Path,
+        deadline: Deadline,
+    ) -> Vec<Result<StepDone, DriverError>> {
+        let _ = connect;
+        run_each(self, handle, steps, host_cwd, deadline)
+    }
 
     /// Puts the Box to sleep when its provider lets the Driver do so.
     ///

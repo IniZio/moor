@@ -51,6 +51,8 @@ fn driver_limit(n: u32) -> UserConfig {
             PROVIDER.to_owned(),
             DriverConfig {
                 max_boxes: NonZeroU32::new(n),
+                lookup_timeout_secs: None,
+                strip_env: Vec::new(),
             },
         )]),
         ..UserConfig::default()
@@ -278,6 +280,8 @@ fn promoted_task_goes_through_setting_up_and_gets_a_ready_box() {
             format!("peek_file {HOLDER_BOX}"),
             format!("release {HOLDER_BOX}"),
             "acquire".into(),
+            // The promoted task has no setup, so its one exec is the checkout sync.
+            "exec box-2".into(),
         ]
     );
 }
@@ -433,7 +437,7 @@ fn promoted_task_runs_the_repo_setup_commands_in_its_new_box() {
         .driver
         .execs()
         .into_iter()
-        .filter(|(h, _, _)| *h == handle)
+        .filter(|(h, spec, _)| *h == handle && spec.argv != ["git", "rev-parse", "--git-dir"])
         .map(|(_, spec, _)| spec.argv)
         .collect();
     let steps = ["echo one", "echo two"].map(str::to_owned);

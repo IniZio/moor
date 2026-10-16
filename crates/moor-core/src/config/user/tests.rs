@@ -112,6 +112,7 @@ fn accepted_docs() {
         "credentials: {A: {env: X}}",
         "credentials: {A: {cmd: [gh, auth, token]}}",
         "drivers: {crabbox: {max_boxes: 2}}",
+        "drivers: {crabbox: {lookup_timeout_secs: 30}}",
         "dotfiles: {path: /abs, install: install.sh}",
         "dotfiles: {path: ~/dots}",
         "dotfiles: {path: /abs, install: ./i.sh}",
@@ -303,11 +304,43 @@ fn zero_counts_are_rejected_by_type() {
     for (doc, path) in [
         ("box: {max_boxes: 0}", "box.max_boxes"),
         ("drivers: {c: {max_boxes: 0}}", "drivers.c.max_boxes"),
+        (
+            "drivers: {c: {lookup_timeout_secs: 0}}",
+            "drivers.c.lookup_timeout_secs",
+        ),
     ] {
         let e = err(doc);
         assert_eq!(e.path, path, "{doc}: {e}");
         assert!(e.reason.contains("nonzero"), "{doc}: {e}");
     }
+}
+
+#[test]
+fn strip_env_parses() {
+    let c = ok("drivers: {external: {strip_env: [PLATFORM_TOKEN]}}");
+    let got = c.drivers.get("external").map(|d| d.strip_env.clone());
+    assert_eq!(got, Some(vec!["PLATFORM_TOKEN".to_owned()]));
+}
+
+#[test]
+fn strip_env_rejects_bad_names() {
+    for doc in [
+        r#"drivers: {external: {strip_env: ["1BAD"]}}"#,
+        r#"drivers: {external: {strip_env: [OK, "A-B"]}}"#,
+    ] {
+        let e = err(doc);
+        assert!(
+            e.path.starts_with("drivers.external.strip_env["),
+            "{doc}: {e}"
+        );
+    }
+}
+
+#[test]
+fn lookup_timeout_secs_parses() {
+    let c = ok("drivers: {crabbox: {lookup_timeout_secs: 30}}");
+    let timeout = c.drivers.get("crabbox").and_then(|d| d.lookup_timeout_secs);
+    assert_eq!(timeout, NonZeroU32::new(30));
 }
 
 #[test]

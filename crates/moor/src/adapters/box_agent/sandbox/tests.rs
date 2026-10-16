@@ -4,7 +4,8 @@ use moor_core::name::BoxPath;
 use serde_json::Value;
 
 use super::{
-    check_failure, check_script, harden_lines, profile, wrap, SandboxInput, NOT_INSTALLED,
+    check_failure, check_script, harden_lines, namespace_lines, profile, wrap, SandboxInput,
+    NOT_INSTALLED,
 };
 
 const SUM: &str = "6da665b61999570c10dffc7da78828fe1fb7f3cac53319e505cebecaef17037f";
@@ -28,6 +29,7 @@ fn doc_as(env_names: &[&str], root: bool) -> Value {
         env_names: env_names.iter().map(|s| (*s).to_owned()).collect(),
         set_vars: vec![("APP_MODE".to_owned(), "it's".to_owned())],
         root,
+        strip_env: &[],
     };
     serde_json::from_str(&profile(&input)).unwrap()
 }
@@ -93,6 +95,12 @@ fn env_allow_list_passes_placeholders() {
         "GH_REPO",
         "CLAUDE_CODE_OAUTH_TOKEN",
         "HTTPS_PROXY",
+        "YARN_HTTPS_PROXY",
+        "YARN_HTTP_PROXY",
+        "YARN_CA_FILE_PATH",
+        "YARN_CACHE_FOLDER",
+        "YARN_GLOBAL_FOLDER",
+        "npm_config_cache",
     ] {
         assert!(vars.contains(&name.to_owned()), "{name}");
     }
@@ -111,6 +119,116 @@ fn env_allow_list_drops_provider_and_gate_names() {
     assert!(!vars.iter().any(|v| v.starts_with("NSC_")));
     for bad in ["token", "TOKEN", "gate", "run_dir"] {
         assert!(!vars.contains(&bad.to_owned()), "{bad}");
+    }
+}
+
+fn doc_with_set_vars(
+    env_names: &[&str],
+    set_vars: Vec<(String, String)>,
+    strip_env: &[String],
+) -> Value {
+    let (w, h, c) = (path("/work/p"), path("/home/u"), path("/tmp/cred"));
+    let tmp = path("/home/u/.moor-tmp-t-n");
+    let input = SandboxInput {
+        workdir: &w,
+        home: &h,
+        cred: &c,
+        tmp: &tmp,
+        env_names: env_names.iter().map(|s| (*s).to_owned()).collect(),
+        set_vars,
+        root: false,
+        strip_env,
+    };
+    serde_json::from_str(&profile(&input)).unwrap()
+}
+
+#[test]
+fn stripped_names_never_reach_the_sandbox_environment() {
+    let strip = ["PLATFORM_TOKEN".to_owned()];
+    let set_vars = vec![
+        ("PLATFORM_TOKEN".to_owned(), "secret".to_owned()),
+        ("APP_MODE".to_owned(), "x".to_owned()),
+    ];
+    let d = doc_with_set_vars(&["PLATFORM_TOKEN", "APP_ENV"], set_vars, &strip);
+    let allowed = strings(at(&d, "/environment/allow_vars"));
+    let set = at(&d, "/environment/set_vars").as_object().unwrap();
+    assert!(
+        !allowed.contains(&"PLATFORM_TOKEN".to_owned()),
+        "allow_vars"
+    );
+    assert!(allowed.contains(&"APP_ENV".to_owned()));
+    assert!(!set.contains_key("PLATFORM_TOKEN"), "set_vars");
+    assert!(set.contains_key("APP_MODE"));
+}
+
+#[test]
+fn stripped_names_are_dropped_from_set_vars_alone() {
+    let strip = ["PLATFORM_TOKEN".to_owned()];
+    let set_vars = vec![("PLATFORM_TOKEN".to_owned(), "secret".to_owned())];
+    let d = doc_with_set_vars(&[], set_vars, &strip);
+    let set = at(&d, "/environment/set_vars").as_object().unwrap();
+    assert!(!set.contains_key("PLATFORM_TOKEN"));
+}
+
+#[test]
+fn names_pass_when_strip_env_is_empty() {
+    let set_vars = vec![("PLATFORM_TOKEN".to_owned(), "v".to_owned())];
+    let d = doc_with_set_vars(&["PLATFORM_TOKEN"], set_vars, &[]);
+    assert!(strings(at(&d, "/environment/allow_vars")).contains(&"PLATFORM_TOKEN".to_owned()));
+    assert!(at(&d, "/environment/set_vars")
+        .as_object()
+        .unwrap()
+        .contains_key("PLATFORM_TOKEN"));
+}
+
+#[test]
+fn profile_never_grants_proc_run_or_root() {
+    let d = doc(&[]);
+    let fs = at(&d, "/filesystem").as_object().unwrap();
+    let mut seen = 0;
+    for (key, value) in fs {
+        let Some(list) = value.as_array() else {
+            continue;
+        };
+        for p in strings(&Value::Array(list.clone())) {
+            seen += 1;
+            let p = p.trim_end_matches('/');
+            assert!(!p.is_empty(), "{key}: grants /");
+            let exposed = ["/proc", "/run"]
+                .iter()
+                .any(|r| p == *r || p.starts_with(&format!("{r}/")));
+            let userdb = key == "unix_socket_dir" && p == "/run/systemd/userdb";
+            assert!(!exposed || userdb, "{key}: {p}");
+        }
+    }
+    assert!(seen > 5);
+}
+
+#[test]
+fn profile_groups_stay_within_the_pinned_set() {
+    let groups = strings(at(&doc(&[]), "/groups/include"));
+    let pinned = [
+        "deny_credentials",
+        "deny_keychains_macos",
+        "deny_keychains_linux",
+        "deny_browser_data_macos",
+        "deny_browser_data_linux",
+        "deny_macos_private",
+        "deny_shell_history",
+        "deny_shell_configs",
+        "system_read_macos",
+        "system_read_linux_core",
+        "system_write_macos",
+        "system_write_linux",
+        "user_tools",
+        "homebrew_macos",
+        "homebrew_linux",
+        "dangerous_commands",
+        "dangerous_commands_macos",
+        "dangerous_commands_linux",
+    ];
+    for g in &groups {
+        assert!(pinned.contains(&g.as_str()), "unpinned group {g}");
     }
 }
 
@@ -247,4 +365,78 @@ fn profile_tells_claude_it_is_sandboxed_only_for_root() {
     let var = "/environment/set_vars/IS_SANDBOX";
     assert_eq!(at(&doc_as(&[], true), var), "1");
     assert_eq!(at(&doc_as(&[], false), var), &Value::Null);
+}
+
+/// Which `unshare` the Box has.
+enum Unshare {
+    Missing,
+    Old,
+    Current,
+}
+
+/// Runs the namespace lines as a user whose `id -u` is `uid`, with the `unshare` of kind `unshare`;
+/// returns the exit code, stderr and the `moor_ns` value the script ends with.
+fn namespace_with(tag: &str, uid: &str, unshare: &Unshare) -> (Option<i32>, String, String) {
+    use std::os::unix::fs::PermissionsExt;
+    let bin = std::env::temp_dir().join(format!("moor-ns-{tag}-{}", std::process::id()));
+    std::fs::create_dir_all(&bin).unwrap();
+    let stub = |name: &str, body: &str| {
+        let file = bin.join(name);
+        std::fs::write(&file, body).unwrap();
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
+    };
+    stub("id", &format!("#!/bin/sh\necho {uid}\n"));
+    let help = match *unshare {
+        Unshare::Missing => None,
+        Unshare::Old => Some("  --pid"),
+        Unshare::Current => Some("  --kill-child"),
+    };
+    if let Some(help) = help {
+        stub("unshare", &format!("#!/bin/sh\necho '{help}'\n"));
+    }
+    std::os::unix::fs::symlink("/usr/bin/grep", bin.join("grep")).unwrap();
+    let script = format!("{}\nprintf '%s' \"$moor_ns\"", namespace_lines().join("\n"));
+    let out = Command::new("/bin/sh")
+        .args(["-c", &script])
+        .env("PATH", &bin)
+        .output()
+        .unwrap();
+    std::fs::remove_dir_all(&bin).unwrap();
+    (
+        out.status.code(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+    )
+}
+
+#[test]
+fn root_gets_its_own_pid_namespace_with_a_private_proc() {
+    let (code, _, prefix) = namespace_with("root", "0", &Unshare::Current);
+    assert_eq!(code, Some(0));
+    assert_eq!(prefix, "unshare --pid --fork --kill-child --mount-proc --");
+}
+
+#[test]
+fn a_non_root_user_runs_without_a_namespace() {
+    let (code, _, prefix) = namespace_with("user", "1000", &Unshare::Current);
+    assert_eq!(code, Some(0));
+    assert_eq!(prefix, "");
+    let (code, _, prefix) = namespace_with("user-bare", "1000", &Unshare::Missing);
+    assert_eq!((code, prefix.as_str()), (Some(0), ""));
+}
+
+#[test]
+fn root_without_unshare_is_refused() {
+    let (code, stderr, prefix) = namespace_with("bare", "0", &Unshare::Missing);
+    assert_eq!(code, Some(1));
+    assert!(stderr.contains("needs unshare"), "{stderr}");
+    assert_eq!(prefix, "");
+}
+
+#[test]
+fn root_with_an_unshare_lacking_kill_child_is_refused() {
+    let (code, stderr, prefix) = namespace_with("old", "0", &Unshare::Old);
+    assert_eq!(code, Some(1));
+    assert!(stderr.contains("--kill-child"), "{stderr}");
+    assert_eq!(prefix, "");
 }

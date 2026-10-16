@@ -24,6 +24,7 @@ fn all_inputs() -> Vec<TaskInput> {
             error: s(),
         },
         I::DotfilesFailed { error: s() },
+        I::SyncFailed { error: s() },
         I::Retry,
         I::AgentQuiet,
         I::AgentBusy,
@@ -74,6 +75,7 @@ fn legal() -> Vec<(TaskState, TaskInput, TaskState)> {
             I::DotfilesFailed { error: s() },
             S::SetupFailed,
         ),
+        (S::SettingUp, I::SyncFailed { error: s() }, S::SetupFailed),
         (S::SetupFailed, I::Retry, S::SettingUp),
         (S::Working, I::AgentQuiet, S::Idle),
         (S::Idle, I::AgentBusy, S::Working),
@@ -129,7 +131,7 @@ fn every_other_pair_is_illegal() {
 
 #[test]
 fn legal_table_has_expected_size() {
-    assert_eq!(legal().len(), 17 + 7);
+    assert_eq!(legal().len(), 17 + 8);
 }
 
 #[test]
@@ -217,14 +219,15 @@ const fn input_index(i: &TaskInput) -> usize {
         I::AcquireFailed { .. } => 6,
         I::CredFailed { .. } => 7,
         I::DotfilesFailed { .. } => 8,
-        I::Retry => 9,
-        I::AgentQuiet => 10,
-        I::AgentBusy => 11,
-        I::RunStarted => 12,
-        I::SleepDue => 13,
-        I::SleepCmd => 14,
-        I::Wake => 15,
-        I::Close => 16,
+        I::SyncFailed { .. } => 9,
+        I::Retry => 10,
+        I::AgentQuiet => 11,
+        I::AgentBusy => 12,
+        I::RunStarted => 13,
+        I::SleepDue => 14,
+        I::SleepCmd => 15,
+        I::Wake => 16,
+        I::Close => 17,
     }
 }
 
@@ -251,7 +254,7 @@ fn state_names_match_serde_and_parse() {
 #[test]
 fn input_samples_cover_every_variant_with_unique_names() {
     let all = all_inputs();
-    assert_eq!(all.len(), 17);
+    assert_eq!(all.len(), 18);
     for (pos, i) in all.iter().enumerate() {
         assert_eq!(input_index(i), pos, "{i:?}");
     }

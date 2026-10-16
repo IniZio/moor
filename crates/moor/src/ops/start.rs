@@ -20,7 +20,9 @@ use super::common::autosleep;
 use super::common::boxlock::{self, BoxLock};
 use super::common::capacity;
 use super::common::facts::{provider_caps, require_reverse_tunnel, resolved, settings};
-use super::common::provision::{moor_yaml, provision, reprovision, reread, Entry, Provisioned};
+use super::common::provision::{
+    moor_yaml, provision, reprovision, reread, Entry, Provisioned, ResyncGates,
+};
 use super::common::provisioning::dead_provisioning;
 use super::common::view::{hide_unsupported_sleep, task_view};
 use crate::cx::Cx;
@@ -32,6 +34,7 @@ mod launch;
 mod leftover;
 mod preflight;
 mod relaunch;
+mod watch;
 
 /// What `start` learns before it changes anything.
 struct Facts {
@@ -97,7 +100,7 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
         let agent = launch::run(cx, store, req, id, done.setup.exit(), &|| Ok(cfg.clone()))?;
         (done, agent)
     };
-    launch::watch(cx, store, id, &agent);
+    let agent = watch::run(cx, store, id, agent);
     let row = reread(store, id)?;
     let mut v = queued_view(cx, &row, false, &cfg.provider.value);
     v.setup = done.setup.view();
@@ -166,7 +169,13 @@ fn attach(
             message: format!("could not hide scratch dirs from git: {e}"),
         });
     }
-    let reprovisioned = reprovision(cx, store, row, "start", req.trust_moor_yaml)?;
+    let launching = || relaunch::will_launch(cx, store, req, row);
+    let agent_live = || relaunch::agent_live(cx, store, row);
+    let gates = ResyncGates {
+        launching: &launching,
+        agent_live: &agent_live,
+    };
+    let reprovisioned = reprovision(cx, store, row, "start", req.trust_moor_yaml, &gates)?;
     store.apply(Decision::new(row.id).event(ExtraEvent::Attached))?;
     let setup_exit = reprovisioned.as_ref().and_then(|p| p.setup.exit());
     let settings = || {
@@ -181,7 +190,7 @@ fn attach(
     };
     wake_idle(store, row.id)?;
     let agent = relaunch::run(cx, store, req, row.id, setup_exit, &settings)?;
-    launch::watch(cx, store, row.id, &agent);
+    let agent = watch::run(cx, store, row.id, agent);
     let row = &reread(store, row.id)?;
     let mut v = with_provider(cx, row, true)?;
     if let Some(p) = reprovisioned {

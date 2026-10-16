@@ -1,8 +1,8 @@
 //! Tests for how `run` picks its sync mode.
 
-use moor_core::boxscript::boxwork::BOXWORK_FILE;
+use moor_core::boxscript::boxwork::{BOXWORK_FILE, BOXWORK_NO_CHECKOUT};
 use moor_core::domain::run::SyncMode;
-use moor_core::seam::driver::DriverError;
+use moor_core::seam::driver::{DriverError, ExecOutcome};
 use moor_core::{BoxPath, ErrorKind, RunReq};
 
 use super::{ran_events, ready, ready_with, req, run, Fx};
@@ -121,4 +121,12 @@ fn sync_with_no_sync_is_usage() {
     let e = run(&f.cx, &r).unwrap_err();
     assert_eq!(e.kind, ErrorKind::Usage, "{e:?}");
     assert!(f.driver.execs().is_empty());
+}
+
+#[test]
+fn sync_is_refused_when_the_box_has_no_git_checkout() {
+    let code = BOXWORK_NO_CHECKOUT;
+    let driver = probe_result("ahead=0 dirty=0").exec_results([Ok(ExecOutcome::Exited { code })]);
+    let hints = refused_by_probe(&ready_with(driver));
+    assert!(hints.iter().any(|h| h.contains("--no-sync")), "{hints:?}");
 }

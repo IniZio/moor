@@ -152,6 +152,23 @@ fn parse_duration(text: &str) -> Result<Duration, &'static str> {
 pub struct DriverConfig {
     /// Cap on live Boxes for this provider (at least 1).
     pub max_boxes: Option<NonZeroU32>,
+    /// Seconds allowed to look up a Box's ssh target (at least 1); 5 by default,
+    /// 20 for the `external` provider.
+    pub lookup_timeout_secs: Option<NonZeroU32>,
+    /// Environment variable names the provider's platform puts in the Box that
+    /// moor removes from the agent's environment.
+    pub strip_env: Vec<String>,
+}
+
+impl DriverConfig {
+    /// Every `strip_env` entry is a valid variable name.
+    fn validate(&self, provider: &str) -> Result<(), ConfigError> {
+        for (i, name) in self.strip_env.iter().enumerate() {
+            let here = format!("drivers.{provider}.strip_env[{i}]");
+            check::env_name(name).map_err(|why| ConfigError::new(here, why))?;
+        }
+        Ok(())
+    }
 }
 
 /// `github:` section.
@@ -327,6 +344,9 @@ impl UserConfig {
         }
         self.github.validate()?;
         self.box_.validate()?;
+        for (name, d) in &self.drivers {
+            d.validate(name)?;
+        }
         creds::validate_credentials(&self.credentials)?;
         creds::validate_mcp(&self.mcp_servers, &self.credentials)?;
         if let Some(d) = &self.dotfiles {

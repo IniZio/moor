@@ -80,6 +80,8 @@ mod tests {
                 (*name).to_owned(),
                 DriverConfig {
                     max_boxes: Some(n(*max)),
+                    lookup_timeout_secs: None,
+                    strip_env: Vec::new(),
                 },
             );
         }

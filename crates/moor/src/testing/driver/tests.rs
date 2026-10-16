@@ -7,7 +7,8 @@ use std::time::Duration;
 use moor_core::domain::run::SyncMode;
 use moor_core::name::TaskName;
 use moor_core::seam::driver::{
-    AcquireReq, Driver, DriverError, ExecOutcome, ExecSpec, Released, SleepOutcome,
+    AcquireReq, BoxStep, Driver, DriverError, ExecOutcome, ExecSpec, Released, SleepOutcome,
+    StepDone,
 };
 use moor_core::seam::proc::{Deadline, Output};
 use moor_core::{BoxHandle, BoxPath, ProviderId, TaskId};
@@ -328,4 +329,45 @@ fn workdir_uses_a_lease_id_that_differs_from_the_handle() {
     let again = fake.workdir(&got.handle, Path::new("/x/wt/demo")).unwrap();
     assert_eq!(again, got.workdir);
     assert_ne!(again.as_str(), "/work/box-1");
+}
+
+#[test]
+fn batch_dispatches_to_own_logs_and_counts_one_top_level_call() {
+    let fake = FakeDriver::new().run_stdout("out");
+    let h = fake.acquire(&req()).unwrap().handle;
+    let path = BoxPath::under("/work", "a").unwrap();
+    let steps = [
+        BoxStep::Peek(path.clone()),
+        BoxStep::Put {
+            path,
+            bytes: b"x".to_vec(),
+            mode: 0o600,
+        },
+        BoxStep::Run("true".to_owned()),
+    ];
+    let connect = vec!["ssh".to_owned()];
+    let done = fake.batch(&h, &connect, &steps, Path::new("/h"), DL);
+    assert_eq!(done.len(), 3);
+    assert_eq!(
+        done.last(),
+        Some(&Ok(StepDone::Ran {
+            outcome: ExecOutcome::Exited { code: 0 },
+            stdout: "out".to_owned()
+        }))
+    );
+    assert_eq!(fake.box_calls(), ["acquire", "batch"]);
+    assert_eq!(fake.batch_connects(), [connect]);
+    assert_eq!(fake.peeks().len(), 1);
+    assert_eq!(fake.puts().len(), 1);
+    assert_eq!(fake.execs().len(), 1);
+}
+
+#[test]
+fn batch_stops_after_a_failed_run() {
+    let fake = FakeDriver::new().exec_results([Ok(ExecOutcome::Exited { code: 1 })]);
+    let h = fake.acquire(&req()).unwrap().handle;
+    let steps = [BoxStep::Run("a".to_owned()), BoxStep::Run("b".to_owned())];
+    let done = fake.batch(&h, &[], &steps, Path::new("/h"), DL);
+    assert_eq!(done.len(), 1);
+    assert_eq!(fake.execs().len(), 1);
 }

@@ -104,6 +104,14 @@ pub(crate) fn setup_deadline(lines: usize) -> Duration {
     SETUP_LINE_DEADLINE.saturating_mul(n)
 }
 
+/// The repo `env:` as the variables every command in the Box gets, setup and `run` alike.
+pub(crate) fn exec_env(cfg: &TaskSettings) -> Vec<(String, String)> {
+    cfg.env
+        .iter()
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect()
+}
+
 /// Runs the setup lines as one script in `workdir` after syncing the worktree as `sync` says,
 /// stopping at the first failure.
 ///
@@ -122,11 +130,7 @@ pub(crate) fn run_setup(
     }
     let spec = ExecSpec {
         argv: vec!["sh".to_owned(), "-c".to_owned(), setup_script(&cfg.setup)],
-        env: cfg
-            .env
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect(),
+        env: exec_env(cfg),
         cwd: Some(workdir.clone()),
         sync,
         output: None,
@@ -155,6 +159,46 @@ pub(crate) fn run_setup(
         message: failure_message(&line, &reason, workdir, &log),
     });
     SetupRun::Failed { line, exit, ms }
+}
+
+/// Syncs the worktree into the Box with an exec that only checks the workdir is a git checkout, so
+/// a failure here is the sync failing or leaving no checkout, and never a setup line.
+///
+/// # Errors
+/// The reason, worded for the user, when the sync did not finish.
+pub(crate) fn sync_checkout(
+    cx: &Cx,
+    handle: &BoxHandle,
+    workdir: &BoxPath,
+    worktree: &Path,
+    cfg: &TaskSettings,
+) -> Result<(), String> {
+    let spec = ExecSpec {
+        argv: ["git", "rev-parse", "--git-dir"]
+            .map(str::to_owned)
+            .to_vec(),
+        env: Vec::new(),
+        cwd: Some(workdir.clone()),
+        sync: SyncMode::Full,
+        output: None,
+        host_cwd: Some(worktree.to_path_buf()),
+        class: Some(cfg.size.value.as_str().to_owned()),
+    };
+    let reason = match cx
+        .driver()
+        .exec(handle, &spec, Deadline(SETUP_LINE_DEADLINE))
+    {
+        Ok(ExecOutcome::Exited { code: 0 }) => return Ok(()),
+        Ok(ExecOutcome::Exited { code }) => format!(
+            "exit {code}; the sync failed or left no git checkout (with submodules, \
+             push HEAD to origin first)"
+        ),
+        Ok(ExecOutcome::Interrupted) => "interrupted".to_owned(),
+        Err(e) => e.to_string(),
+    };
+    Err(format!(
+        "syncing the checkout into the Box failed: {reason}"
+    ))
 }
 
 /// The warning text: the failing line, where the full log lives in the Box, and its tail.

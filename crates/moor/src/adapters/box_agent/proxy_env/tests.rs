@@ -4,12 +4,11 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use moor_core::seam::agent_profile::{EnvVar, ProxyAddr};
-use moor_core::seam::driver::{AcquireReq, Driver};
+use moor_core::seam::driver::BoxStep;
 use moor_core::seam::forge::ForgeRepo;
-use moor_core::{BoxHandle, BoxPath, ProviderId, Secret, TaskId, TaskName};
+use moor_core::{BoxPath, Secret};
 
-use super::{github_repo, push_url, script_lines, stage, NONCE_FILE};
-use crate::testing::driver::FakeDriver;
+use super::{github_repo, push_url, script_lines, stage_steps, NONCE_FILE};
 
 const SENTINEL: &[u8] = b"sentinel-9c2e";
 const PORT: u16 = 4321;
@@ -106,6 +105,12 @@ fn the_lines_never_contain_the_nonce_and_carry_the_exports() {
         "export HTTP_PROXY=\"http://moor:${moor_nonce}@127.0.0.1:4321\"",
         "export https_proxy=\"http://moor:${moor_nonce}@127.0.0.1:4321\"",
         "export http_proxy=\"http://moor:${moor_nonce}@127.0.0.1:4321\"",
+        "export YARN_HTTPS_PROXY=\"http://moor:${moor_nonce}@127.0.0.1:4321\"",
+        "export YARN_HTTP_PROXY=\"http://moor:${moor_nonce}@127.0.0.1:4321\"",
+        "export YARN_CA_FILE_PATH=\"$moor_bundle\"",
+        "export YARN_CACHE_FOLDER=\"$HOME/.cache/yarn\"",
+        "export YARN_GLOBAL_FOLDER=\"$HOME/.cache/yarn/berry\"",
+        "export npm_config_cache=\"$HOME/.cache/npm\"",
         "export NODE_USE_ENV_PROXY=1",
         "export CLAUDE_CODE_OAUTH_TOKEN='moor-proxy'",
         "export GIT_CONFIG_COUNT=2",
@@ -205,10 +210,7 @@ fn the_script_runs_and_builds_the_environment_from_the_staged_nonce() {
         String::from_utf8_lossy(&out.stderr)
     );
     let env = parse_env(&out.stdout);
-    let proxy_url = format!("http://moor:sentinel-9c2e@127.0.0.1:{PORT}");
-    for name in ["HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy"] {
-        is(&env, name, &proxy_url);
-    }
+    assert_yarn_vars(&env, dir.path());
     assert_ca_vars(&env, dir.path(), &dir.path().join("ca-bundle.pem"));
     is(&env, "CLAUDE_CODE_OAUTH_TOKEN", "moor-proxy");
     is(&env, "GIT_CONFIG_VALUE_0", "https://github.com/o/n.git");
@@ -271,38 +273,49 @@ fn is(env: &HashMap<String, String>, k: &str, v: &str) {
 }
 
 #[test]
-fn stage_puts_the_nonce_and_the_ca_under_the_credential_directory() {
-    let d = FakeDriver::new();
-    d.acquire(&AcquireReq {
-        provider: ProviderId::new("fake"),
-        task: TaskId::new(1),
-        name: TaskName::parse("t1").unwrap(),
-        class: None,
-        nonce: "n0".to_owned(),
-        worktree: None,
-    })
-    .unwrap();
+fn stage_steps_put_the_nonce_and_the_ca_under_the_credential_directory() {
     let c = cred(Path::new("/home/box/.moor-cred"));
-    stage(
-        &d,
-        &BoxHandle::new("box-1"),
-        &c,
-        &proxy(),
-        Path::new("/r/wt"),
-    )
-    .unwrap();
-    let puts = d.puts();
-    assert_eq!(puts.len(), 2);
-    let mut it = puts.iter();
-    let (first, second) = (it.next().unwrap(), it.next().unwrap());
-    let (handle, path, bytes, mode, cwd) = first;
-    assert_eq!(handle, &BoxHandle::new("box-1"));
-    assert_eq!(path.as_str(), "/home/box/.moor-cred/proxy-nonce");
-    assert_eq!(bytes, &SENTINEL.to_vec());
-    assert_eq!(*mode, 0o600);
-    assert_eq!(cwd, Path::new("/r/wt"));
-    let (_, path, bytes, mode, _) = second;
-    assert_eq!(path.as_str(), "/home/box/.moor-cred/proxy-ca.pem");
-    assert_eq!(bytes.as_slice(), CA.as_bytes());
-    assert_eq!(*mode, 0o644);
+    let [(nonce, nonce_text), (ca, ca_text)] = stage_steps(&c, &proxy()).unwrap();
+    let put = |path: &str, bytes: Vec<u8>, mode| BoxStep::Put {
+        path: BoxPath::restore(path).unwrap(),
+        bytes,
+        mode,
+    };
+    assert_eq!(
+        nonce,
+        put("/home/box/.moor-cred/proxy-nonce", SENTINEL.to_vec(), 0o600)
+    );
+    assert_eq!(nonce_text, "could not stage the proxy nonce");
+    assert_eq!(
+        ca,
+        put(
+            "/home/box/.moor-cred/proxy-ca.pem",
+            CA.as_bytes().to_vec(),
+            0o644
+        )
+    );
+    assert_eq!(ca_text, "could not stage the proxy CA");
+}
+
+/// Asserts the proxy URL reaches the usual and Yarn variables, and Yarn gets the CA bundle and a cache under `$HOME/.cache`.
+fn assert_yarn_vars(env: &HashMap<String, String>, dir: &Path) {
+    let proxy_url = format!("http://moor:sentinel-9c2e@127.0.0.1:{PORT}");
+    for name in ["HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy"] {
+        is(env, name, &proxy_url);
+    }
+    is(env, "YARN_HTTPS_PROXY", &proxy_url);
+    is(env, "YARN_HTTP_PROXY", &proxy_url);
+    is(
+        env,
+        "YARN_CA_FILE_PATH",
+        dir.join("ca-bundle.pem").to_str().unwrap(),
+    );
+    let home = std::env::var("HOME").unwrap();
+    is(env, "YARN_CACHE_FOLDER", &format!("{home}/.cache/yarn"));
+    is(
+        env,
+        "YARN_GLOBAL_FOLDER",
+        &format!("{home}/.cache/yarn/berry"),
+    );
+    is(env, "npm_config_cache", &format!("{home}/.cache/npm"));
 }

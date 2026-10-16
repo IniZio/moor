@@ -78,7 +78,7 @@ fn an_unchanged_moor_yaml_relaunches_without_a_warning() {
 }
 
 #[test]
-fn a_start_that_re_runs_setup_and_launches_warns_once() {
+fn a_relaunch_after_a_failed_setup_warns_once_each_for_setup_and_moor_yaml() {
     let repo = tempfile::tempdir().unwrap();
     std::fs::write(repo.path().join(".moor.yaml"), BASE).unwrap();
     let engine = Arc::new(
@@ -86,7 +86,10 @@ fn a_start_that_re_runs_setup_and_launches_warns_once() {
             .launch_result(Ok(session("p-1")))
             .launch_result(Ok(session("p-2"))),
     );
-    let mut w = world_at(FakeDriver::new().exec_results([Ok(exit(1))]), repo.path());
+    let mut w = world_at(
+        FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(1))]),
+        repo.path(),
+    );
     w.cx = w.cx.with_engine(engine.clone());
     script_base_yaml(&w, Some(BASE));
     let first = run(
@@ -104,10 +107,13 @@ fn a_start_that_re_runs_setup_and_launches_warns_once() {
     script_base_yaml(&w, Some(BASE));
     drop(w.cx.take_warnings());
     let again = run(&w.cx, &trusted()).unwrap();
-    assert!(again.setup.ran && again.setup.ok);
+    assert!(!again.setup.ran);
     assert!(again.agent.launched);
     assert_eq!(engine.launches().len(), 2);
-    assert_eq!(trusted_warnings(&w), 1);
+    let warnings = w.cx.take_warnings();
+    let count = |code: &str| warnings.iter().filter(|x| x.code == code).count();
+    assert_eq!(count("moor_yaml_trusted"), 1);
+    assert_eq!(count("setup_not_rerun"), 1);
 }
 
 /// A Task with a finished setup, no session ever launched and no goal, over a `BASE` base,

@@ -1,5 +1,6 @@
 //! Crabbox adapter: the only code that knows crabbox terms.
 
+mod batch;
 mod caps;
 mod connect;
 mod cp;
@@ -15,15 +16,17 @@ mod tunnel;
 mod version;
 mod workdir;
 
-use std::path::Path;
-use std::sync::{Arc, OnceLock};
+use std::collections::BTreeMap;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use moor_core::name::{BoxHandle, BoxPath, ProviderId};
 use moor_core::seam::clock::Clock;
 use moor_core::seam::driver::{
-    AcquireReq, Acquired, BoxListing, Driver, DriverCaps, DriverError, ExecOutcome, ExecSpec,
-    Released, SleepOutcome, TunnelHandle,
+    AcquireReq, Acquired, BoxListing, BoxStep, Driver, DriverCaps, DriverError, ExecOutcome,
+    ExecSpec, Released, SleepOutcome, StepDone, TunnelHandle,
 };
 use moor_core::seam::proc::{Deadline, Proc, ProcError, ProcOutput, ProcSpec, Tool};
 
@@ -35,6 +38,10 @@ const ACQUIRE_DEADLINE: Duration = Duration::from_mins(15);
 const LIST_DEADLINE: Duration = Duration::from_secs(5);
 /// Time allowed for every other call.
 const QUICK_DEADLINE: Duration = Duration::from_secs(60);
+/// Time allowed for an ssh target lookup unless the provider has its own.
+const LOOKUP_DEADLINE: Duration = Duration::from_secs(5);
+/// An external provider's ssh lookup runs through the adapter and was measured at ~6 s.
+const EXTERNAL_LOOKUP_DEADLINE: Duration = Duration::from_secs(20);
 /// Provider whose Boxes share one slug and need the Box id and port in env.
 const STATIC_PROVIDER: &str = "ssh";
 /// Port the static provider dials (not configurable yet).
@@ -48,6 +55,10 @@ pub(crate) struct Crabbox {
     clock: Arc<dyn Clock>,
     /// Set once crabbox has passed the version check.
     version_ok: OnceLock<()>,
+    /// Lookup deadlines that replace the built-in ones, keyed by provider id.
+    lookup_deadlines: BTreeMap<String, Duration>,
+    /// Resolved ssh words per (lease handle, host cwd), kept for this driver's lifetime.
+    targets: Mutex<HashMap<(String, PathBuf), Vec<String>>>,
 }
 
 impl Crabbox {
@@ -57,7 +68,34 @@ impl Crabbox {
             proc,
             clock,
             version_ok: OnceLock::new(),
+            lookup_deadlines: BTreeMap::new(),
+            targets: Mutex::new(HashMap::new()),
         }
+    }
+
+    /// Forgets every cached ssh target of `handle`; its address may change.
+    pub(super) fn forget_targets(&self, handle: &BoxHandle) {
+        if let Ok(mut map) = self.targets.lock() {
+            map.retain(|(h, _), _| h != handle.as_str());
+        }
+    }
+
+    /// Sets per-provider ssh lookup deadlines that override the built-in ones.
+    pub(crate) fn with_lookup_deadlines(mut self, deadlines: BTreeMap<String, Duration>) -> Self {
+        self.lookup_deadlines = deadlines;
+        self
+    }
+
+    /// Time allowed for an ssh target lookup on `provider`.
+    pub(super) fn lookup_deadline(&self, provider: &str) -> Duration {
+        self.lookup_deadlines
+            .get(provider)
+            .copied()
+            .unwrap_or(if provider == "external" {
+                EXTERNAL_LOOKUP_DEADLINE
+            } else {
+                LOOKUP_DEADLINE
+            })
     }
 
     /// Refuses a crabbox older than moor supports; asks once and remembers a pass.
@@ -206,9 +244,13 @@ impl Driver for Crabbox {
         spec = spec.args(["--slug", &name, "--class", class]);
         let handle = handle_of(provider, &name);
         let spec = static_env(spec, &handle);
+        self.forget_targets(&handle);
         let out = self.call(Op::Acquire, Some(provider), &spec)?;
-        parse::parse_warmup(&out.stdout).ok_or_else(|| unreadable("acquire"))?;
-        let workdir = workdir::probe(self, &handle, req.worktree.as_deref())?;
+        let warm = parse::parse_warmup(&out.stdout).ok_or_else(|| unreadable("acquire"))?;
+        let workdir = match warm.workdir.as_deref().map(BoxPath::restore) {
+            Some(Ok(dir)) => dir,
+            _ => workdir::probe(self, &handle, req.worktree.as_deref())?,
+        };
         Ok(Acquired { handle, workdir })
     }
 
@@ -223,7 +265,9 @@ impl Driver for Crabbox {
             .args(target_args(handle))
             .arg("--delete");
         let spec = static_env(spec, handle);
-        match self.call(Op::Release, split_handle(handle).0, &spec) {
+        let result = self.call(Op::Release, split_handle(handle).0, &spec);
+        self.forget_targets(handle);
+        match result {
             Ok(_) => Ok(Released::Deleted),
             Err(DriverError::NotFound) => Ok(Released::AlreadyGone),
             Err(e) => Err(e),
@@ -297,6 +341,20 @@ impl Driver for Crabbox {
         put::put_file(self, handle, path, bytes, mode, host_cwd)
     }
 
+    fn batch(
+        &self,
+        handle: &BoxHandle,
+        connect: &[String],
+        steps: &[BoxStep],
+        host_cwd: &Path,
+        deadline: Deadline,
+    ) -> Vec<Result<StepDone, DriverError>> {
+        if let Err(e) = self.require_version() {
+            return vec![Err(e)];
+        }
+        batch::run(self, handle, connect, steps, host_cwd, deadline)
+    }
+
     fn connect_argv(
         &self,
         handle: &BoxHandle,
@@ -307,11 +365,15 @@ impl Driver for Crabbox {
     }
 
     fn sleep(&self, handle: &BoxHandle) -> Result<SleepOutcome, DriverError> {
-        sleep::sleep(self, handle)
+        let result = sleep::sleep(self, handle);
+        self.forget_targets(handle);
+        result
     }
 
     fn wake(&self, handle: &BoxHandle) -> Result<(), DriverError> {
-        sleep::wake(self, handle)
+        let result = sleep::wake(self, handle);
+        self.forget_targets(handle);
+        result
     }
 
     fn reverse_tunnel(

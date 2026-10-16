@@ -164,3 +164,51 @@ fn wake_is_unsupported_without_sleep_or_provider() {
     ));
     assert_eq!(verbs(&p), ["providers", "providers"]);
 }
+
+const EXTERNAL_OPTED_IN: &str = r#"[
+ {"provider":"external","aliases":["exec-provider"],
+  "features":["ssh","cleanup","pause-resume"],"lifecycle":["cleanup","pause-resume"]}
+]"#;
+
+const EXTERNAL_OPTED_OUT: &str = r#"[
+ {"provider":"external","aliases":["exec-provider"],
+  "features":["ssh","cleanup"],"lifecycle":["cleanup"]}
+]"#;
+
+fn external(providers: &str) -> (Arc<ScriptedProc>, Crabbox) {
+    let p = Arc::new(ScriptedProc::new());
+    p.on(
+        Tool::Crabbox,
+        &["providers"],
+        Reply::Ok(providers.to_owned()),
+    );
+    p.on(Tool::Crabbox, &["pause"], Reply::Ok(String::new()));
+    let c = Crabbox::fake(p.clone());
+    (p, c)
+}
+
+#[test]
+fn external_box_with_pause_resume_opted_in_is_paused() {
+    let (p, c) = external(EXTERNAL_OPTED_IN);
+    assert_eq!(
+        c.sleep(&BoxHandle::new("external/box")),
+        Ok(SleepOutcome::Slept)
+    );
+    let call = p
+        .calls()
+        .into_iter()
+        .find(|c| c.args.first().is_some_and(|a| a == "pause"))
+        .unwrap();
+    assert_eq!(
+        call.args,
+        ["pause", "--provider", "external", "--id", "box"]
+    );
+}
+
+#[test]
+fn external_box_without_pause_resume_cannot_sleep_and_makes_no_pause_call() {
+    let (p, c) = external(EXTERNAL_OPTED_OUT);
+    let got = c.sleep(&BoxHandle::new("external/box"));
+    assert!(matches!(&got, Ok(SleepOutcome::CannotSleep(r)) if r.contains("external")));
+    assert_eq!(verbs(&p), ["providers"]);
+}

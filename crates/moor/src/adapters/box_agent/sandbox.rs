@@ -17,7 +17,7 @@ pub(super) const ROOT_SANDBOX_VAR: &str = "IS_SANDBOX";
 pub(super) const NOT_INSTALLED: i32 = 6;
 
 /// Environment names every agent keeps: terminal, proxy and CA variables, plus two globs.
-const BASE_VARS: [&str; 23] = [
+const BASE_VARS: [&str; 29] = [
     "PATH",
     "HOME",
     "USER",
@@ -39,6 +39,12 @@ const BASE_VARS: [&str; 23] = [
     "REQUESTS_CA_BUNDLE",
     "GIT_SSL_CAINFO",
     "NODE_EXTRA_CA_CERTS",
+    "YARN_HTTPS_PROXY",
+    "YARN_HTTP_PROXY",
+    "YARN_CA_FILE_PATH",
+    "YARN_CACHE_FOLDER",
+    "YARN_GLOBAL_FOLDER",
+    "npm_config_cache",
     "GIT_CONFIG_*",
     "CLAUDE_*",
 ];
@@ -71,22 +77,25 @@ pub(super) struct SandboxInput<'a> {
     pub(super) set_vars: Vec<(String, String)>,
     /// The Box user is root; the sandbox then tells Claude Code it is sandboxed.
     pub(super) root: bool,
+    /// Names that never reach the sandbox, whatever the repo or rules ask for.
+    pub(super) strip_env: &'a [String],
 }
 
 /// True when `name` may be passed into the sandbox.
-fn passable(name: &str) -> bool {
+fn passable(name: &str, strip_env: &[String]) -> bool {
     !name.is_empty()
         && !name.starts_with("NSC_")
         && !name.eq_ignore_ascii_case("token")
         && !GATE_VARS.contains(&name)
+        && !strip_env.iter().any(|s| s == name)
 }
 
 /// The sorted, deduplicated environment allow list.
-fn allow_vars(env_names: &[String]) -> Vec<String> {
+fn allow_vars(env_names: &[String], strip_env: &[String]) -> Vec<String> {
     let mut vars: Vec<String> = BASE_VARS
         .iter()
         .map(|n| (*n).to_owned())
-        .chain(env_names.iter().filter(|n| passable(n)).cloned())
+        .chain(env_names.iter().filter(|n| passable(n, strip_env)).cloned())
         .collect();
     vars.sort();
     vars.dedup();
@@ -120,7 +129,12 @@ const DEFAULT_GROUPS: [&str; 18] = [
 pub(super) fn profile(input: &SandboxInput) -> String {
     let home = input.home.as_str();
     let at = |rel: &str| format!("{home}/{rel}");
-    let mut set_vars: BTreeMap<_, _> = input.set_vars.iter().cloned().collect();
+    let mut set_vars: BTreeMap<_, _> = input
+        .set_vars
+        .iter()
+        .filter(|(n, _)| !input.strip_env.contains(n))
+        .cloned()
+        .collect();
     if input.root {
         // Claude Code refuses bypassPermissions as root unless it is told it is sandboxed.
         set_vars.insert(ROOT_SANDBOX_VAR.to_owned(), "1".to_owned());
@@ -154,7 +168,7 @@ pub(super) fn profile(input: &SandboxInput) -> String {
             "read_file": ["/etc/gitconfig", at(".gitconfig")],
         },
         "environment": {
-            "allow_vars": allow_vars(&input.env_names),
+            "allow_vars": allow_vars(&input.env_names, input.strip_env),
             "set_vars": set_vars,
         },
     });
@@ -195,6 +209,21 @@ pub(super) fn harden_lines() -> Vec<String> {
             .to_owned(),
         "export XDG_CONFIG_HOME=\"$HOME/.config\"".to_owned(),
     ]
+}
+
+/// Shell variable holding the PID namespace prefix, empty unless the agent runs as root.
+pub(super) const NAMESPACE_VAR: &str = "moor_ns";
+
+/// Shell lines that set `$moor_ns` to an `unshare` prefix when the Box user is root, so the
+/// agent gets its own PID namespace and a private `/proc`: nono grants the whole of `/proc`,
+/// and for root only the kernel's ptrace check would then guard other processes' `environ`.
+/// Root without an `unshare` that supports `--kill-child` stops the launch.
+pub(super) fn namespace_lines() -> Vec<String> {
+    let var = NAMESPACE_VAR;
+    let refusal = "moor: the agent runs as root and needs unshare --kill-child (util-linux 2.36 or newer) on the Box to hide other processes";
+    vec![format!(
+        "{var}=; if [ \"$(id -u)\" = 0 ]; then {{ command -v unshare >/dev/null 2>&1 && unshare --help 2>&1 | grep -q -- --kill-child; }} || {{ echo '{refusal}' >&2; exit 1; }}; {var}='unshare --pid --fork --kill-child --mount-proc --'; fi"
+    )]
 }
 
 /// The argv that runs `agent` under the sandbox tool at `launcher` with the profile.

@@ -179,6 +179,46 @@ fn acquire_without_workroot_still_gets_workdir_from_probe() {
         .all(|call| call.args.first().map(String::as_str) != Some("inspect")));
 }
 
+fn run_calls(p: &ScriptedProc) -> usize {
+    p.calls()
+        .iter()
+        .filter(|c| c.args.first().map(String::as_str) == Some("run"))
+        .count()
+}
+
+fn acquire_with_ready(ready: &str) -> (Arc<ScriptedProc>, BoxPath) {
+    let (p, c) = fixture();
+    p.on(
+        Tool::Crabbox,
+        &["warmup"],
+        Reply::Ok(format!("leased cbx_1 slug=-\n{ready}\n")),
+    );
+    probe(&p);
+    let got = c.acquire(&req("ssh", None)).unwrap();
+    (p, got.workdir)
+}
+
+#[test]
+fn acquire_uses_workdir_from_warmup_without_probing() {
+    let (p, dir) =
+        acquire_with_ready("ready ssh=u@h:22 workroot=/root/crabbox workdir=/root/crabbox/w/app");
+    assert_eq!(dir.as_str(), "/root/crabbox/w/app");
+    assert_eq!(run_calls(&p), 0);
+}
+
+#[test]
+fn acquire_probes_when_warmup_workdir_is_relative_or_empty() {
+    for ready in [
+        "ready ssh=u@h:22 workdir=app",
+        "ready ssh=u@h:22 workdir=",
+        "ready ssh=u@h:22 workroot=/r",
+    ] {
+        let (p, dir) = acquire_with_ready(ready);
+        assert_eq!(dir.as_str(), PROBE_DIR, "{ready}");
+        assert_eq!(run_calls(&p), 1, "{ready}");
+    }
+}
+
 #[test]
 fn acquire_unreadable_output_fails() {
     let (p, c) = fixture();
@@ -538,4 +578,23 @@ fn exec_spawn_failure_is_unavailable() {
         exec_on(&c, &exec_spec(&["true"])),
         Err(DriverError::Unavailable(_))
     ));
+}
+
+#[test]
+fn lookup_deadline_defaults_by_provider() {
+    let c = Crabbox::fake(Arc::new(ScriptedProc::new()));
+    assert_eq!(c.lookup_deadline("aws"), Duration::from_secs(5));
+    assert_eq!(c.lookup_deadline("external"), Duration::from_secs(20));
+}
+
+#[test]
+fn lookup_deadline_override_wins() {
+    let c = Crabbox::fake(Arc::new(ScriptedProc::new())).with_lookup_deadlines(
+        [("aws", 9), ("external", 40)]
+            .map(|(k, s)| (k.to_owned(), Duration::from_secs(s)))
+            .into(),
+    );
+    assert_eq!(c.lookup_deadline("aws"), Duration::from_secs(9));
+    assert_eq!(c.lookup_deadline("external"), Duration::from_secs(40));
+    assert_eq!(c.lookup_deadline("ssh"), Duration::from_secs(5));
 }

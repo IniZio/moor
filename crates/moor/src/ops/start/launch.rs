@@ -2,21 +2,19 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
 
 use moor_core::activity::PaneStatus;
 use moor_core::config::TaskSettings;
 use moor_core::seam::agent_profile::ProxyAddr;
-use moor_core::seam::proc::Deadline;
 use moor_core::seam::proxy_host::{ProxyEndpoint, ProxySpec};
 
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
 use moor_core::domain::task::TaskState;
 use moor_core::seam::engine::{EngineError, LaunchReq, SessionRef};
-use moor_core::seam::surface::{PaneRef, SurfaceError, WorkspaceRef};
+use moor_core::seam::surface::{PaneRef, WorkspaceRef};
 use moor_core::view::{AgentLaunchView, LaunchFailure};
-use moor_core::{StartReq, TaskId, Warning};
+use moor_core::{StartReq, TaskId};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -27,16 +25,7 @@ use crate::ops::common::view::rfc3339;
 use crate::store::{Store, TaskRow};
 
 /// Lines of a failure's output kept as its tail.
-const TAIL_LINES: usize = 10;
-
-/// Time between two reads of the pane while watching.
-const PROMPT_POLL: Duration = Duration::from_millis(500);
-
-/// Pane lines, from the end, that the watch matches against.
-const PROMPT_LINES: usize = 40;
-
-/// Deadline of one pane read while watching.
-const PROMPT_READ: Duration = Duration::from_secs(5);
+pub(super) const TAIL_LINES: usize = 10;
 
 /// Launches the agent when the Task is Working with a ready Box, a goal and no live session.
 ///
@@ -203,83 +192,17 @@ fn record_failure(
     })
 }
 
-/// Reads the fresh agent pane for a bounded window and records a first-run prompt.
-///
-/// A prompt becomes an `agent_prompt_blocked` event and a warning that quotes its line; a
-/// failed read becomes an `agent_prompt_check_failed` event. A pane that is gone ends the
-/// watch quietly. Nothing here fails the start.
-pub(super) fn watch(cx: &Cx, store: &Store, id: TaskId, agent: &AgentLaunchView) {
-    if !agent.launched {
-        return;
-    }
-    let pane = match store.live_session(id) {
-        Ok(Some(row)) => row.pane,
-        Ok(None) => None,
-        Err(e) => return warn_record(cx, &e),
-    };
-    let Some(pane) = pane else { return };
-    let pane_ref = PaneRef::new(pane.clone());
-    let begin = cx.clock().instant();
-    loop {
-        let event = match cx.surface().pane_obs(&pane_ref, Deadline(PROMPT_READ)) {
-            Ok(obs) => cx
-                .engine()
-                .first_run_prompt(&last_lines(&obs.tail, PROMPT_LINES))
-                .map(|m| {
-                    let name = m.prompt.name();
-                    cx.warn(Warning {
-                        code: "agent_prompt_blocked".to_owned(),
-                        message: format!(
-                            "the agent in pane {pane} waits at a {name} prompt: \"{}\"; answer it in the pane",
-                            m.line
-                        ),
-                    });
-                    ExtraEvent::AgentPromptBlocked {
-                        pane: pane.clone(),
-                        prompt: name.to_owned(),
-                        line: m.line,
-                    }
-                }),
-            Err(SurfaceError::NotFound) => return,
-            Err(e) => Some(ExtraEvent::AgentPromptCheckFailed {
-                pane: pane.clone(),
-                error: e.to_string(),
-            }),
-        };
-        if let Some(event) = event {
-            if let Err(e) = store.apply(Decision::new(id).event(event)) {
-                warn_record(cx, &e);
-            }
-            return;
-        }
-        if cx.clock().instant().duration_since(begin) + PROMPT_POLL > cx.prompt_window() {
-            return;
-        }
-        cx.clock().sleep(PROMPT_POLL);
-    }
-}
-
-/// Warns that the first-run prompt check could not be recorded.
-fn warn_record(cx: &Cx, e: &dyn std::fmt::Display) {
-    cx.warn(Warning {
-        code: "agent_prompt_record_failed".to_owned(),
-        message: format!("could not record the first-run prompt check: {e}"),
-    });
-}
-
-/// The last `n` lines of `text`.
-fn last_lines(text: &str, n: usize) -> String {
-    let mut lines: Vec<&str> = text.lines().rev().take(n).collect();
-    lines.reverse();
-    lines.join("\n")
-}
-
 /// What the Engine needs to launch `row`'s agent; none unless the Task is Working with a ready Box.
 pub(super) fn launch_req(cx: &Cx, row: &TaskRow, setup_exit: Option<i32>) -> Option<LaunchReq> {
     let b = row.boxed.as_ref().filter(|b| b.state == BoxState::Ready)?;
     if row.state != TaskState::Working {
         return None;
     }
+    let strip_env = cx
+        .config()
+        .drivers
+        .get(b.provider.as_str())
+        .map_or_else(Vec::new, |d| d.strip_env.clone());
     Some(LaunchReq {
         handle: b.handle.clone()?,
         workdir: recorded_workdir(b.workdir.as_deref()?)?,
@@ -295,6 +218,7 @@ pub(super) fn launch_req(cx: &Cx, row: &TaskRow, setup_exit: Option<i32>) -> Opt
         nonce: nonce(cx.rng()),
         proxy: None,
         origin: None,
+        strip_env,
     })
 }
 
@@ -326,12 +250,12 @@ fn failure(cx: &Cx, e: &EngineError) -> LaunchFailure {
 }
 
 /// The failure as the JSON kept on the Task row.
-fn to_json(f: &LaunchFailure) -> Result<String, CommandError> {
+pub(super) fn to_json(f: &LaunchFailure) -> Result<String, CommandError> {
     serde_json::to_string(f).map_err(|e| CommandError::new(moor_core::ErrorKind::Internal, e))
 }
 
 /// Writes the Task's launch failure column, with a `session_failed` event for a new failure.
-fn record(
+pub(super) fn record(
     store: &Store,
     id: TaskId,
     column: Field<String>,

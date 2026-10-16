@@ -6,6 +6,9 @@ use super::quote;
 /// Box-relative path of the probe's result file.
 pub const BOXWORK_FILE: &str = ".moor/boxwork";
 
+/// Exit code of the probe when the workdir is not a git checkout.
+pub const BOXWORK_NO_CHECKOUT: i32 = 66;
+
 /// Prefix of the marker line the probe prints on stdout.
 pub const BOXWORK_MARKER: &str = "MOOR_BOXWORK";
 
@@ -44,7 +47,8 @@ pub fn is_full_sha(s: &str) -> bool {
 /// Script run with `sh -c` in the Box workdir.
 ///
 /// `saved` are commit shas whose history counts as saved (task base, host HEAD). Returns `None`
-/// when any entry is not a full 40-hex sha. Any git failure makes the script exit non-zero.
+/// when any entry is not a full 40-hex sha. Any git failure makes the script exit non-zero; a workdir with no git checkout exits
+/// [`BOXWORK_NO_CHECKOUT`], so a missing checkout never reads as clean.
 #[must_use]
 pub fn boxwork_script(saved: &[&str]) -> Option<String> {
     if !saved.iter().all(|s| is_full_sha(s)) {
@@ -65,6 +69,7 @@ pub fn boxwork_script(saved: &[&str]) -> Option<String> {
     Some(format!(
         r#"export GIT_NO_LAZY_FETCH=1
 rm -f {BOXWORK_FILE}
+git rev-parse --git-dir >/dev/null 2>&1 || exit {BOXWORK_NO_CHECKOUT}
 mkdir -p .moor || exit 1
 keep=
 for s in{shas}; do

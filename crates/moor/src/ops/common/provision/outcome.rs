@@ -31,6 +31,43 @@ impl Provisioned {
     }
 }
 
+/// Records a failed checkout sync and returns the error, carrying the Task row, to report.
+///
+/// The Box is kept and the agent does not start. `advance` moves the Task to setup-failed; a
+/// Task already working gets a `setup_failed` event instead.
+pub(super) fn sync_failed(
+    cx: &Cx,
+    store: &Store,
+    id: TaskId,
+    advance: bool,
+    reason: String,
+) -> CommandError {
+    let mut done = Decision::new(id);
+    if advance {
+        done.task_input = Some(TaskInput::SyncFailed {
+            error: reason.clone(),
+        });
+    } else {
+        done = done.event(ExtraEvent::SetupFailed {
+            line: reason.clone(),
+        });
+    }
+    let done = done
+        .set(Fields {
+            setup_failed_at: Field::Set(cx.clock().now().as_millis()),
+            ..Fields::default()
+        })
+        .intent(IntentChange::Clear);
+    if let Err(write) = store.apply(done) {
+        return write.into();
+    }
+    let out = CommandError::new(ErrorKind::Failed, reason);
+    match reread(store, id) {
+        Ok(row) => out.with_value(serde_json::json!({ "task": task_view(&row, cx.config()) })),
+        Err(_) => out,
+    }
+}
+
 /// Records a failed dotfiles step and returns the error, carrying the Task row, to report.
 ///
 /// The Box is kept. `advance` moves the Task to setup-failed; a Task already working gets a

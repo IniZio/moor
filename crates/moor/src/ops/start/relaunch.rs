@@ -80,6 +80,35 @@ pub(super) fn run(
     relaunch(cx, store, req, &old, &end, settings)
 }
 
+/// Whether [`run`] is about to launch or relaunch the agent of `row`.
+///
+/// # Errors
+/// A store failure.
+pub(super) fn will_launch(
+    cx: &Cx,
+    store: &Store,
+    req: &StartReq,
+    row: &TaskRow,
+) -> Result<bool, CommandError> {
+    if req.no_agent {
+        return Ok(false);
+    }
+    if !matches!(row.state, TaskState::Working | TaskState::Idle) {
+        return Ok(true);
+    }
+    Ok(store.live_session(row.id)?.map_or_else(
+        || row.goal.is_some() || req.goal.is_some() || req.resume,
+        |s| ended(cx, &s).is_some(),
+    ))
+}
+
+/// Whether an agent session of `row` exists and has not ended.
+pub(super) fn agent_live(cx: &Cx, store: &Store, row: &TaskRow) -> Result<bool, CommandError> {
+    Ok(store
+        .live_session(row.id)?
+        .is_some_and(|s| ended(cx, &s).is_none()))
+}
+
 /// Whether `req` resumes the stored agent session of `row`.
 fn resumes(req: &StartReq, row: &TaskRow) -> bool {
     req.resume

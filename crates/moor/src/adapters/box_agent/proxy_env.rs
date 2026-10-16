@@ -1,12 +1,10 @@
 //! The proxy environment the agent starts with: the nonce arrives as a staged file, never as text.
 
-use std::path::Path;
-
 use moor_core::boxscript::quote;
 use moor_core::seam::agent_profile::{EnvVar, ProxyAddr};
-use moor_core::seam::driver::Driver;
+use moor_core::seam::driver::BoxStep;
 use moor_core::seam::forge::ForgeRepo;
-use moor_core::{BoxHandle, BoxPath};
+use moor_core::BoxPath;
 
 /// The staged nonce file name inside the credential directory.
 pub(super) const NONCE_FILE: &str = "proxy-nonce";
@@ -32,23 +30,26 @@ fn is_identifier(name: &str) -> bool {
         && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
-/// Stages the nonce at `<cred>/proxy-nonce` (mode 0600, raw nonce bytes, no newline) and the public CA
-/// certificate at `<cred>/proxy-ca.pem` (mode 0644), both via `put_file`.
-pub(super) fn stage(
-    driver: &dyn Driver,
-    handle: &BoxHandle,
+/// The steps that stage the nonce at `<cred>/proxy-nonce` (mode 0600, raw nonce bytes, no newline) and the
+/// public CA certificate at `<cred>/proxy-ca.pem` (mode 0644), each with the text a failure of that step is reported under.
+pub(super) fn stage_steps(
     cred: &BoxPath,
     proxy: &ProxyAddr,
-    host_cwd: &Path,
-) -> Result<(), String> {
-    let nonce_path = cred_file(cred, NONCE_FILE)?;
-    driver
-        .put_file(handle, &nonce_path, proxy.nonce.expose(), 0o600, host_cwd)
-        .map_err(|e| format!("could not stage the proxy nonce: {e}"))?;
-    let ca_path = cred_file(cred, CA_FILE)?;
-    driver
-        .put_file(handle, &ca_path, proxy.ca_pem.as_bytes(), 0o644, host_cwd)
-        .map_err(|e| format!("could not stage the proxy CA: {e}"))
+) -> Result<[(BoxStep, &'static str); 2], String> {
+    let nonce = BoxStep::Put {
+        path: cred_file(cred, NONCE_FILE)?,
+        bytes: proxy.nonce.expose().to_vec(),
+        mode: 0o600,
+    };
+    let ca = BoxStep::Put {
+        path: cred_file(cred, CA_FILE)?,
+        bytes: proxy.ca_pem.as_bytes().to_vec(),
+        mode: 0o644,
+    };
+    Ok([
+        (nonce, "could not stage the proxy nonce"),
+        (ca, "could not stage the proxy CA"),
+    ])
 }
 
 /// `rel` under the credential directory.
@@ -93,6 +94,7 @@ pub(super) fn script_lines(
             proxy.box_port
         ));
     }
+    lines.extend(yarn_lines(proxy.box_port));
     for name in ["NO_PROXY", "no_proxy"] {
         lines.push(format!(
             "export {name}=\"127.0.0.1,localhost${{{name}:+,${name}}}\""
@@ -112,6 +114,24 @@ pub(super) fn script_lines(
         "unset {NONCE_VAR} moor_bundle moor_sys moor_mark moor_f"
     ));
     Ok(lines)
+}
+
+/// Shell lines that point Yarn and npm at the proxy, the CA bundle and a cache the sandbox can write.
+fn yarn_lines(box_port: u16) -> Vec<String> {
+    let mut lines: Vec<String> = ["YARN_HTTPS_PROXY", "YARN_HTTP_PROXY"]
+        .iter()
+        .map(|name| format!("export {name}=\"http://moor:${{{NONCE_VAR}}}@127.0.0.1:{box_port}\""))
+        .collect();
+    lines.extend(
+        [
+            "export YARN_CA_FILE_PATH=\"$moor_bundle\"",
+            "export YARN_CACHE_FOLDER=\"$HOME/.cache/yarn\"",
+            "export YARN_GLOBAL_FOLDER=\"$HOME/.cache/yarn/berry\"",
+            "export npm_config_cache=\"$HOME/.cache/npm\"",
+        ]
+        .map(str::to_owned),
+    );
+    lines
 }
 
 /// Shell lines that point the `moor` git remote at the push URL for `origin`, or clear the git config env.
