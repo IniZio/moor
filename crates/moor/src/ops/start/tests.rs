@@ -33,6 +33,7 @@ mod relaunch_yaml;
 mod rerun;
 mod session;
 mod setup;
+mod setup_rerun;
 mod transcript;
 mod workdir;
 
