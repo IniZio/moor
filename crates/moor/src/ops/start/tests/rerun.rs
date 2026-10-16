@@ -45,16 +45,25 @@ fn probe_says(w: &World, result: &str) {
     w.driver.set_peek_text("box-1", &path, result);
 }
 
-/// A started Task with an agent session, ready to be started again with no setup to re-run.
-fn attached_with_session(driver: FakeDriver) -> World {
+/// A started Task whose agent session is `live` or has ended, ready to be started again with no
+/// setup to re-run.
+fn attached(driver: FakeDriver, live: bool) -> World {
     let w = world(driver);
     let first = run(&w.cx, &start_req()).unwrap();
-    w.cx.store()
-        .unwrap()
+    let store = w.cx.store().unwrap();
+    let session = store
         .begin_session(TaskId::new(first.task.id), "agent-1", None)
         .unwrap();
+    if !live {
+        store.end_session(session, Some(0), None).unwrap();
+    }
     drop(warning_codes(&w));
     w
+}
+
+/// A started Task whose agent session has ended.
+fn attached_with_session(driver: FakeDriver) -> World {
+    attached(driver, false)
 }
 
 #[test]
@@ -136,7 +145,16 @@ fn attach_keeps_unsaved_box_work_and_warns() {
 }
 
 #[test]
-fn attach_to_a_live_agent_warns_when_the_re_sync_fails_and_attaches() {
+fn attach_to_a_live_agent_never_syncs_and_warns() {
+    let w = attached(FakeDriver::new(), true);
+    probe_says(&w, "ahead=0 dirty=0");
+    run(&w.cx, &start_req()).unwrap();
+    assert_eq!(checkout_syncs(&w), [SyncMode::Full]);
+    assert!(warning_codes(&w).contains(&"resync_skipped".to_owned()));
+}
+
+#[test]
+fn attach_warns_when_the_re_sync_fails_and_no_agent_is_live() {
     let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(0)), Ok(exit(1))]);
     let w = attached_with_session(driver);
     probe_says(&w, "ahead=0 dirty=0");
