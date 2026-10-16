@@ -23,12 +23,39 @@ fn safe_name(s: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
 }
 
-/// A Task id safe to splice into a glob: non-empty ASCII digits only.
+/// A Task name in the shape `[a-z0-9][a-z0-9-]{0,39}`.
 ///
-/// A hyphen or dot would let one Task's glob (`1-*`) match another's (`1-5-…`).
-fn safe_task_id(s: &str) -> bool {
-    !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit())
+/// Together with the fixed-width nonce glob this keeps Task `a` from matching
+/// the directories of Task `a-b`.
+fn safe_task_name(s: &str) -> bool {
+    let ok = |c: u8| c.is_ascii_lowercase() || c.is_ascii_digit();
+    let b = s.as_bytes();
+    (1..=40).contains(&b.len())
+        && b.first().is_some_and(|&c| ok(c))
+        && b.iter().all(|&c| ok(c) || c == b'-')
 }
+
+/// Stops every process whose command line holds a credential directory's path
+/// and then removes the Task's credential and temp directories.
+///
+/// The nonce is not stored, so it is matched as exactly six hex digits. The
+/// path reaches `awk` through the environment so the matcher's own command
+/// line never contains it; the match is a fixed-string one on `<dir>/`.
+const CLEAN: &str = r#"for d in "$HOME"/.moor-cred-NAME-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]; do
+[ -d "$d" ] || continue
+pids=$(ps -axo pid=,command= | P="$d/" S="$$" awk 'index($0, ENVIRON["P"]) && $1 != ENVIRON["S"] { print $1 }')
+for p in $pids; do kill -TERM "$p" 2>/dev/null || true; done
+i=0
+while [ "$i" -lt 20 ]; do
+left=
+for p in $pids; do kill -0 "$p" 2>/dev/null && left=1; done
+[ -n "$left" ] || break
+sleep 0.1
+i=$((i + 1))
+done
+for p in $pids; do kill -0 "$p" 2>/dev/null && { kill -KILL "$p" 2>/dev/null || true; }; done
+done
+rm -rf -- "$HOME"/.moor-cred-NAME-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f] "$HOME"/.moor-tmp-NAME-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]"#;
 
 /// Single-quotes `s` for `sh`.
 fn quote(s: &str) -> String {
@@ -62,15 +89,15 @@ fn lease_dir<'a>(workdir: &'a str, box_name: &str) -> Option<&'a str> {
 /// The `sh -c` script that removes the Task's credential and temp directories
 /// and, when `workdir` sits in the Box's own lease directory, that directory.
 ///
-/// Returns `None` when `task` is not all ASCII digits, `box_name` is not a plain name or `workdir` is
+/// Returns `None` when `task` is not a Task name, `box_name` is not a plain name or `workdir` is
 /// not an absolute path, because the paths are built from them.
 pub(crate) fn script(task: &str, box_name: &str, workdir: &str) -> Option<String> {
-    if !safe_task_id(task) || !safe_name(box_name) || !workdir.starts_with('/') {
+    if !safe_task_name(task) || !safe_name(box_name) || !workdir.starts_with('/') {
         return None;
     }
     let mut lines = vec![
         r#"[ -n "$HOME" ] && [ "$HOME" != / ] || exit 1"#.to_owned(),
-        format!(r#"rm -rf -- "$HOME"/.moor-cred-{task}-* "$HOME"/.moor-tmp-{task}-*"#),
+        CLEAN.replace("NAME", task),
     ];
     if let Some(lease) = lease_dir(workdir, box_name) {
         let lease = quote(lease);
@@ -122,8 +149,7 @@ pub(crate) fn on_release(cx: &Cx, row: &TaskRow, b: &BoxRow, handle: &BoxHandle)
     let reason = match b.workdir.as_deref() {
         Some(workdir) => {
             let host_cwd = row.worktree.as_ref().map(Path::new);
-            let task = row.id.get().to_string();
-            match run(cx.driver(), handle, &task, workdir, host_cwd) {
+            match run(cx.driver(), handle, row.name.as_str(), workdir, host_cwd) {
                 Ok(()) => return,
                 Err(e) => e,
             }
