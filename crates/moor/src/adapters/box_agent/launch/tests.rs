@@ -381,7 +381,7 @@ impl Scratch {
             &setup(hook_step),
             &setup("true"),
             &[],
-            (proxy, None, None),
+            (proxy, None, &[]),
         )
         .unwrap()
     }

@@ -8,6 +8,7 @@ use moor_core::seam::driver::{Driver, ExecOutcome, ExecSpec};
 use moor_core::seam::proc::Deadline;
 use moor_core::{BoxHandle, Warning};
 
+use crate::adapters::box_agent::device::{self, DeviceKind};
 use crate::cx::Cx;
 use crate::store::{BoxRow, TaskRow};
 
@@ -61,11 +62,22 @@ fn lease_dir<'a>(workdir: &'a str, box_name: &str) -> Option<&'a str> {
 
 /// The `sh -c` script that removes the Task's credential and temp directories
 /// and per-Task home and, when `workdir` sits in the Box's own lease directory, that directory.
-/// On a host with `xcrun` it also deletes the Task's simulator, named exactly `moor-<task>`.
+/// It also runs each enabled device kind's release line, which deletes the Task's
+/// device by exact name (the iOS simulator, on a host with `xcrun`, named `moor-<task>`).
 ///
 /// Returns `None` when `task` is not all ASCII digits, `box_name` is not a plain name or `workdir` is
 /// not an absolute path, because the paths are built from them.
 pub(crate) fn script(task: &str, box_name: &str, workdir: &str) -> Option<String> {
+    script_with(task, box_name, workdir, device::ENABLED)
+}
+
+/// [`script`] for an explicit set of device kinds.
+pub(crate) fn script_with(
+    task: &str,
+    box_name: &str,
+    workdir: &str,
+    kinds: &[&'static dyn DeviceKind],
+) -> Option<String> {
     if !safe_task_id(task) || !safe_name(box_name) || !workdir.starts_with('/') {
         return None;
     }
@@ -86,21 +98,8 @@ pub(crate) fn script(task: &str, box_name: &str, workdir: &str) -> Option<String
             r#"case "$HOME/" in {lease}/*) ;; *) rm -rf -- {lease} ;; esac"#
         ));
     }
-    lines.push(simulator_line(task));
+    lines.extend(kinds.iter().map(|k| k.release_line(task)));
     Some(lines.join("\n"))
-}
-
-/// A line that deletes the Task's iOS simulator on a macOS host.
-///
-/// Only a device named exactly `moor-<task>` goes: the match is anchored on
-/// both sides, so `moor-4` never matches `moor-42`. The owner's own simulators
-/// are never booted, shut down or deleted, so there is no `booted` or `all`
-/// target. A host without `xcrun` is skipped, and a simctl failure does not
-/// fail the cleanup.
-fn simulator_line(task: &str) -> String {
-    format!(
-        r#"command -v xcrun >/dev/null 2>&1 && xcrun simctl list devices 2>/dev/null | sed -n 's/^ *moor-{task} (\([0-9A-Fa-f-]\{{36\}}\)).*/\1/p' | while read -r u; do xcrun simctl delete "$u" || true; done || true"#
-    )
 }
 
 /// Runs the cleanup on the host behind `handle`.

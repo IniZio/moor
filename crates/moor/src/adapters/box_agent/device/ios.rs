@@ -1,4 +1,4 @@
-//! A per-Task iOS simulator device on a macOS Box.
+//! The iOS device kind: a per-Task simulator on a macOS Box.
 //!
 //! The device is named `moor-<task>` and is created and booted outside the
 //! sandbox. Only names of exactly that shape are ever managed, so the owner's
@@ -13,8 +13,13 @@ use moor_core::seam::driver::{Driver, ExecOutcome, ExecSpec};
 use moor_core::seam::engine::LaunchReq;
 use moor_core::seam::proc::Deadline;
 
-/// Proof files go here, relative to the workdir; `.moor/` is already git-excluded.
-pub(super) const PROOF_DIR: &str = ".moor/proof";
+use super::DeviceKind;
+
+/// The iOS simulator kind.
+pub(crate) struct Ios;
+
+/// Where simulator devices live, relative to the login user's home.
+pub(crate) const SIM_DEVICES_DIR: &str = "Library/Developer/CoreSimulator/Devices";
 
 /// Time allowed for creating and booting the device.
 const CREATE_DEADLINE: Duration = Duration::from_secs(120);
@@ -79,10 +84,65 @@ pub(super) fn delete_line(udid: &str) -> Option<String> {
     Some(format!("xcrun simctl delete {}", quote(&udid)))
 }
 
+impl DeviceKind for Ios {
+    fn available(&self, os: &str) -> bool {
+        os == "Darwin"
+    }
+
+    fn provision(&self, driver: &dyn Driver, req: &LaunchReq, cred: &BoxPath) -> Option<String> {
+        create(driver, req, cred)
+    }
+
+    fn env(&self, id: &str) -> Vec<(String, String)> {
+        parse_udid(id)
+            .map(|u| vec![("MOOR_SIM_UDID".to_owned(), u)])
+            .unwrap_or_default()
+    }
+
+    fn grants(&self, id: &str, login_home: &str) -> Vec<String> {
+        parse_udid(id)
+            .map(|u| vec![format!("{login_home}/{SIM_DEVICES_DIR}/{u}")])
+            .unwrap_or_default()
+    }
+
+    fn brief(&self, id: &str) -> String {
+        format!(
+            "This Task has its own iOS simulator, already booted: UDID `{id}`, also in \
+             `$MOOR_SIM_UDID`. Use only this device: pass the UDID to `xcrun simctl` and \
+             `xcodebuild -destination id={id}`; never use `booted` and never touch other \
+             simulators."
+        )
+    }
+
+    fn proof(&self, _id: &str) -> String {
+        "Put proof under `.moor/proof/` (git ignores it): \
+         `xcrun simctl io \"$MOOR_SIM_UDID\" screenshot \"$PWD/.moor/proof/<name>.png\"`, \
+         and for video `xcrun simctl io \"$MOOR_SIM_UDID\" recordVideo --codec=h264 \
+         \"$PWD/.moor/proof/<name>.mp4\"`, stopped with Ctrl-C (SIGINT). simctl needs an \
+         absolute output path, so build it from `$PWD` as shown."
+            .to_owned()
+    }
+
+    fn teardown(&self, id: &str) -> Option<String> {
+        delete_line(id)
+    }
+
+    /// Only a device named exactly `moor-<task>` goes: the match is anchored on
+    /// both sides, so `moor-4` never matches `moor-42`. The owner's own simulators
+    /// are never booted, shut down or deleted, so there is no `booted` or `all`
+    /// target. A host without `xcrun` is skipped, and a simctl failure does not
+    /// fail the cleanup.
+    fn release_line(&self, task: &str) -> String {
+        format!(
+            r#"command -v xcrun >/dev/null 2>&1 && xcrun simctl list devices 2>/dev/null | sed -n 's/^ *moor-{task} (\([0-9A-Fa-f-]\{{36\}}\)).*/\1/p' | while read -r u; do xcrun simctl delete "$u" || true; done || true"#
+        )
+    }
+}
+
 /// Creates and boots the Task's device on the Box and returns its UDID.
 ///
 /// Any failure returns `None`; the Task then runs without a simulator.
-pub(super) fn create(driver: &dyn Driver, req: &LaunchReq, cred: &BoxPath) -> Option<String> {
+fn create(driver: &dyn Driver, req: &LaunchReq, cred: &BoxPath) -> Option<String> {
     let out = BoxPath::under(cred.as_str(), UDID_FILE).ok()?;
     let script = create_script(req.task.as_str(), &out)?;
     let spec = ExecSpec {

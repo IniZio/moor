@@ -77,11 +77,11 @@ fn parse_udid_accepts_only_a_strict_uppercase_uuid() {
 #[test]
 fn delete_line_refuses_anything_but_a_udid() {
     assert_eq!(
-        delete_line(UDID).as_deref(),
+        Ios.teardown(UDID).as_deref(),
         Some(format!("xcrun simctl delete '{UDID}'").as_str())
     );
     for bad in ["booted", "all", "", "x'; rm -rf /", &format!("{UDID} all")] {
-        assert_eq!(delete_line(bad), None, "{bad:?}");
+        assert_eq!(Ios.teardown(bad), None, "{bad:?}");
     }
 }
 
@@ -98,7 +98,7 @@ fn create_script_names_the_device_and_never_uses_booted() {
 #[test]
 fn create_returns_the_udid_the_script_wrote() {
     let d = driver(FakeDriver::new().peek_text("box-1", &out(), &format!("{UDID}\n")));
-    let got = create(&d, &req("42"), &BoxPath::restore(CRED).unwrap());
+    let got = Ios.provision(&d, &req("42"), &BoxPath::restore(CRED).unwrap());
     assert_eq!(got.as_deref(), Some(UDID));
     let execs = d.execs();
     assert_eq!(execs.len(), 1);
@@ -114,7 +114,7 @@ fn create_is_none_when_exec_fails_or_exits_nonzero() {
             .peek_text("box-1", &out(), UDID)
             .exec_results([Ok(ExecOutcome::Exited { code: 1 })]),
     );
-    assert_eq!(create(&d, &req("42"), &cred), None);
+    assert_eq!(Ios.provision(&d, &req("42"), &cred), None);
     let d = driver(
         FakeDriver::new()
             .peek_text("box-1", &out(), UDID)
@@ -122,18 +122,18 @@ fn create_is_none_when_exec_fails_or_exits_nonzero() {
                 summary: "x".to_owned(),
             })]),
     );
-    assert_eq!(create(&d, &req("42"), &cred), None);
+    assert_eq!(Ios.provision(&d, &req("42"), &cred), None);
 }
 
 #[test]
 fn create_is_none_without_a_valid_file_or_numeric_task() {
     let cred = BoxPath::restore(CRED).unwrap();
     let d = driver(FakeDriver::new());
-    assert_eq!(create(&d, &req("42"), &cred), None);
+    assert_eq!(Ios.provision(&d, &req("42"), &cred), None);
     let d = driver(FakeDriver::new().peek_text("box-1", &out(), "booted"));
-    assert_eq!(create(&d, &req("42"), &cred), None);
+    assert_eq!(Ios.provision(&d, &req("42"), &cred), None);
     let d = driver(FakeDriver::new().peek_text("box-1", &out(), UDID));
-    assert_eq!(create(&d, &req("t1"), &cred), None);
+    assert_eq!(Ios.provision(&d, &req("t1"), &cred), None);
     assert!(d.execs().is_empty());
 }
 
@@ -247,4 +247,50 @@ fn script_fails_without_writing_when_every_type_is_rejected() {
     assert_eq!(udid, None);
     assert_eq!(calls.matches("create").count(), 6, "{calls}");
     assert!(!calls.contains("boot"), "{calls}");
+}
+
+#[test]
+fn brief_and_proof_make_the_simulator_paragraph() {
+    let got = format!("{} {}\n\n", Ios.brief(UDID), Ios.proof(UDID));
+    let want = format!(
+        "This Task has its own iOS simulator, already booted: UDID `{UDID}`, also in \
+         `$MOOR_SIM_UDID`. Use only this device: pass the UDID to `xcrun simctl` and \
+         `xcodebuild -destination id={UDID}`; never use `booted` and never touch other \
+         simulators. Put proof under `.moor/proof/` (git ignores it): \
+         `xcrun simctl io \"$MOOR_SIM_UDID\" screenshot \"$PWD/.moor/proof/<name>.png\"`, \
+         and for video `xcrun simctl io \"$MOOR_SIM_UDID\" recordVideo --codec=h264 \
+         \"$PWD/.moor/proof/<name>.mp4\"`, stopped with Ctrl-C (SIGINT). simctl needs an \
+         absolute output path, so build it from `$PWD` as shown.\n\n"
+    );
+    assert_eq!(got, want);
+}
+
+#[test]
+fn env_and_grants_carry_a_valid_udid_only() {
+    assert_eq!(
+        Ios.env(UDID),
+        vec![("MOOR_SIM_UDID".to_owned(), UDID.to_owned())]
+    );
+    assert_eq!(
+        Ios.grants(UDID, "/Users/box"),
+        vec![format!("/Users/box/{SIM_DEVICES_DIR}/{UDID}")]
+    );
+    for bad in ["", "booted", "../x", "699bc2bd-e0b4-49a1-bfa1-3f7248bcd10d"] {
+        assert!(Ios.env(bad).is_empty(), "{bad:?}");
+        assert!(Ios.grants(bad, "/Users/box").is_empty(), "{bad:?}");
+    }
+}
+
+#[test]
+fn available_only_on_darwin() {
+    assert!(Ios.available("Darwin"));
+    assert!(!Ios.available("Linux"));
+}
+
+#[test]
+fn release_line_deletes_by_exact_name() {
+    assert_eq!(
+        Ios.release_line("42"),
+        r#"command -v xcrun >/dev/null 2>&1 && xcrun simctl list devices 2>/dev/null | sed -n 's/^ *moor-42 (\([0-9A-Fa-f-]\{36\}\)).*/\1/p' | while read -r u; do xcrun simctl delete "$u" || true; done || true"#
+    );
 }

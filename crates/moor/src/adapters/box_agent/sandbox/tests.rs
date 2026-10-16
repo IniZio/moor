@@ -3,6 +3,7 @@ use std::process::Command;
 use moor_core::name::BoxPath;
 use serde_json::Value;
 
+use super::super::device::{ios::Ios, Device, DeviceKind};
 use super::{
     check_failure, check_script, harden_lines, profile, wrap, SandboxInput, NOT_INSTALLED,
 };
@@ -28,6 +29,17 @@ fn text_with(os: &str, env_names: &[&str], moor_paths: &[&str]) -> String {
 }
 
 fn text_sim(os: &str, env_names: &[&str], moor_paths: &[&str], sim_udid: Option<&str>) -> String {
+    let devices: Vec<Device> = sim_udid
+        .map(|id| Device {
+            kind: &Ios,
+            id: id.to_owned(),
+        })
+        .into_iter()
+        .collect();
+    text_devices(os, env_names, moor_paths, &devices)
+}
+
+fn text_devices(os: &str, env_names: &[&str], moor_paths: &[&str], devices: &[Device]) -> String {
     let moor_paths: Vec<String> = moor_paths.iter().map(|s| (*s).to_owned()).collect();
     let (w, c) = (path("/work/p"), path("/tmp/cred"));
     let (login, h) = if os == "Darwin" {
@@ -46,7 +58,7 @@ fn text_sim(os: &str, env_names: &[&str], moor_paths: &[&str], sim_udid: Option<
         env_names: env_names.iter().map(|s| (*s).to_owned()).collect(),
         set_vars: vec![("APP_MODE".to_owned(), "it's".to_owned())],
         moor_paths: &moor_paths,
-        sim_udid,
+        devices,
     };
     profile(&input)
 }
@@ -501,4 +513,53 @@ fn darwin_profile_ignores_a_malformed_simulator_udid() {
 #[test]
 fn linux_profile_ignores_the_simulator_udid() {
     assert_eq!(sim("Linux", Some(UDID)), sim("Linux", None));
+}
+
+/// A device kind hosted on Linux, to prove the profile takes grants and env from any kind.
+struct Fake;
+
+impl DeviceKind for Fake {
+    fn available(&self, os: &str) -> bool {
+        os == "Linux"
+    }
+    fn provision(
+        &self,
+        _: &dyn moor_core::seam::driver::Driver,
+        _: &moor_core::seam::engine::LaunchReq,
+        _: &BoxPath,
+    ) -> Option<String> {
+        None
+    }
+    fn env(&self, id: &str) -> Vec<(String, String)> {
+        vec![("FAKE_DEVICE".to_owned(), id.to_owned())]
+    }
+    fn grants(&self, id: &str, login_home: &str) -> Vec<String> {
+        vec![format!("{login_home}/.fake/{id}")]
+    }
+    fn brief(&self, _: &str) -> String {
+        String::new()
+    }
+    fn proof(&self, _: &str) -> String {
+        String::new()
+    }
+    fn teardown(&self, _: &str) -> Option<String> {
+        None
+    }
+    fn release_line(&self, _: &str) -> String {
+        String::new()
+    }
+}
+
+#[test]
+fn a_device_kind_available_on_the_os_lands_its_grants_and_env_in_the_profile() {
+    let devices = [Device {
+        kind: &Fake,
+        id: "d1".to_owned(),
+    }];
+    let d: Value = serde_json::from_str(&text_devices("Linux", &[], &[], &devices)).unwrap();
+    let allow = strings(at(&d, "/filesystem/allow"));
+    assert!(allow.contains(&"/home/u/.fake/d1".to_owned()), "{allow:?}");
+    assert_eq!(at(&d, "/environment/set_vars/FAKE_DEVICE"), "d1");
+    let d: Value = serde_json::from_str(&text_devices("Darwin", &[], &[], &devices)).unwrap();
+    assert_eq!(at(&d, "/environment/set_vars/FAKE_DEVICE"), &Value::Null);
 }

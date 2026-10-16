@@ -2,8 +2,67 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use super::{box_name, script};
+use super::{box_name, script, script_with};
+use crate::adapters::box_agent::device::{self, DeviceKind};
+use moor_core::name::BoxPath;
+use moor_core::seam::driver::Driver;
+use moor_core::seam::engine::LaunchReq;
 use moor_core::BoxHandle;
+
+/// A device kind that only has a release line.
+struct Fake(&'static str);
+
+impl DeviceKind for Fake {
+    fn available(&self, _os: &str) -> bool {
+        true
+    }
+    fn provision(&self, _: &dyn Driver, _: &LaunchReq, _: &BoxPath) -> Option<String> {
+        None
+    }
+    fn env(&self, _: &str) -> Vec<(String, String)> {
+        Vec::new()
+    }
+    fn grants(&self, _: &str, _: &str) -> Vec<String> {
+        Vec::new()
+    }
+    fn brief(&self, _: &str) -> String {
+        String::new()
+    }
+    fn proof(&self, _: &str) -> String {
+        String::new()
+    }
+    fn teardown(&self, _: &str) -> Option<String> {
+        None
+    }
+    fn release_line(&self, task: &str) -> String {
+        format!("echo {}-{task}", self.0)
+    }
+}
+
+static A: Fake = Fake("a");
+static B: Fake = Fake("b");
+
+#[test]
+fn every_given_kinds_release_line_is_run_in_order() {
+    let w = "/r/moor-a-x/repo";
+    let s = script_with("7", "moor-a-x", w, &[&A, &B]).unwrap();
+    let (a, b) = (s.find("echo a-7"), s.find("echo b-7"));
+    assert!(a.is_some() && b.is_some() && a < b, "{s}");
+    let none = script_with("7", "moor-a-x", w, &[]).unwrap();
+    assert!(
+        !none.contains("echo a-7") && !none.contains("echo b-7"),
+        "{none}"
+    );
+}
+
+#[test]
+fn script_uses_the_enabled_kinds() {
+    let w = "/r/moor-a-x/repo";
+    assert_eq!(
+        script("7", "moor-a-x", w),
+        script_with("7", "moor-a-x", w, device::ENABLED)
+    );
+}
 
 /// A host home and a crabbox work root in one tempdir.
 struct Host {

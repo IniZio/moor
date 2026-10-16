@@ -2,6 +2,7 @@
 
 mod brief;
 pub(crate) mod claude;
+pub(crate) mod device;
 mod launch;
 pub(crate) mod nono_release;
 mod probe;
@@ -21,6 +22,7 @@ use moor_core::seam::engine::{Engine, EngineError, LaunchReq, SessionRef, Steer,
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::Surface;
 
+use self::device::DeviceKind;
 use self::nono_release::NonoRelease;
 
 /// An agent running in a Box, read through the Driver and the Surface.
@@ -37,6 +39,8 @@ pub(crate) struct BoxAgent {
     release: Arc<NonoRelease>,
     /// The moor controller's own state and config paths, kept out of a macOS sandbox.
     moor_paths: Vec<String>,
+    /// The device kinds provisioned for every Task, in order.
+    devices: &'static [&'static dyn DeviceKind],
 }
 
 impl BoxAgent {
@@ -55,6 +59,7 @@ impl BoxAgent {
             clock,
             release,
             moor_paths: Vec::new(),
+            devices: device::ENABLED,
         }
     }
 
@@ -62,6 +67,14 @@ impl BoxAgent {
     #[must_use]
     pub(crate) fn with_moor_paths(mut self, paths: Vec<String>) -> Self {
         self.moor_paths = paths;
+        self
+    }
+
+    /// Replaces the device kinds provisioned for every Task.
+    #[cfg(test)]
+    #[must_use]
+    pub(crate) fn with_devices(mut self, kinds: &'static [&'static dyn DeviceKind]) -> Self {
+        self.devices = kinds;
         self
     }
 }
@@ -89,6 +102,7 @@ impl Engine for BoxAgent {
             req,
             &self.release,
             &self.moor_paths,
+            self.devices,
         )
     }
 

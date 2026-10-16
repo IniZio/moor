@@ -18,6 +18,8 @@ use moor_core::seam::driver::Driver;
 
 use super::real_mac::{acquire, crabbox_env, fixture_repo, lease_of, Leases, HOST_VAR};
 use super::Crabbox;
+use crate::adapters::box_agent::device::ios::Ios;
+use crate::adapters::box_agent::device::Device;
 use crate::adapters::box_agent::nono_release::{NonoRelease, UreqFetch};
 use crate::adapters::box_agent::sandbox::{self, SandboxInput};
 use crate::adapters::proc::{SystemProc, ToolPaths};
@@ -167,7 +169,10 @@ fn per_task_simulator_captures_proof_inside_the_sandbox_and_leaves_the_owners_de
         moor_paths: &[],
         env_names: Vec::new(),
         set_vars: vec![("IS_SANDBOX".to_owned(), "1".to_owned())],
-        sim_udid: Some(&udid_a),
+        devices: &[Device {
+            kind: &Ios,
+            id: udid_a.clone(),
+        }],
     });
     driver
         .put_file(

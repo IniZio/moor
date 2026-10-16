@@ -12,6 +12,7 @@ use moor_core::seam::surface::{PaneCmd, PaneRef, Surface};
 use moor_core::Secret;
 
 use super::brief::{render, BriefInput};
+use super::device::{self, Device, DeviceKind};
 use super::nono_release::NonoRelease;
 use super::probe::HOOK_FILE;
 use super::proxy_env;
@@ -41,6 +42,7 @@ fn fail(step: &'static str, e: &impl ToString) -> Failure {
 
 /// Delivers the brief and hook files, then opens the agent's tab; a failure removes the
 /// credential directory and names the step.
+#[allow(clippy::too_many_arguments, reason = "distinct collaborators")]
 pub(super) fn launch(
     driver: &dyn Driver,
     surface: &dyn Surface,
@@ -48,6 +50,7 @@ pub(super) fn launch(
     req: &LaunchReq,
     release: &NonoRelease,
     moor_paths: &[String],
+    kinds: &[&'static dyn DeviceKind],
 ) -> Result<SessionRef, EngineError> {
     let connect = driver
         .connect_argv(&req.handle, &req.worktree)
@@ -65,6 +68,7 @@ pub(super) fn launch(
         req,
         release,
         moor_paths,
+        kinds,
     };
     run.start(&login, (&cred, &tmp), &connect).map_err(|mut f| {
         if let Err(c) = cleanup::remove_cred(driver, req, (&cred, &tmp)) {
@@ -88,6 +92,8 @@ struct Run<'a> {
     release: &'a NonoRelease,
     /// The moor controller's own state and config paths, which a macOS sandbox denies.
     moor_paths: &'a [String],
+    /// The device kinds to provision for the Task, in order.
+    kinds: &'a [&'static dyn DeviceKind],
 }
 
 impl Run<'_> {
@@ -112,9 +118,7 @@ impl Run<'_> {
             }),
             home: task_home.unwrap_or_else(|| login.home.clone()),
         };
-        let sim = (os.as_deref() == Some("Darwin"))
-            .then(|| simulator::create(driver, req, cred))
-            .flatten();
+        let devices = device::provision(self.kinds, driver, req, cred, os.as_deref());
         let launch = Launch {
             driver,
             surface: self.surface,
@@ -126,11 +130,13 @@ impl Run<'_> {
             login: &login.home,
             os: os.as_deref(),
             moor_paths: self.moor_paths,
-            sim: sim.as_deref(),
+            devices: &devices,
         };
         let pane = launch.deliver(connect).inspect_err(|_| {
-            if let Some(line) = sim.as_deref().and_then(simulator::delete_line) {
-                let _ = cleanup::run_line(driver, req, &line);
+            for d in &devices {
+                if let Some(line) = d.kind.teardown(&d.id) {
+                    let _ = cleanup::run_line(driver, req, &line);
+                }
             }
         })?;
         Ok(SessionRef {
@@ -177,8 +183,8 @@ struct Launch<'a> {
     os: Option<&'a str>,
     /// The moor controller's own state and config paths, which a macOS sandbox denies.
     moor_paths: &'a [String],
-    /// The UDID of this Task's simulator, when the Box made one.
-    sim: Option<&'a str>,
+    /// The devices provisioned for this Task.
+    devices: &'a [Device],
 }
 
 /// What a sandboxed launch stages on the Box.
@@ -232,7 +238,7 @@ impl Launch<'_> {
             env_names,
             set_vars: addr.box_env.clone(),
             moor_paths: self.moor_paths,
-            sim_udid: self.sim,
+            devices: self.devices,
         });
         let at = BoxPath::under(cred.as_str(), sandbox::PROFILE_FILE)
             .map_err(|e| fail("sandbox", &e))?;
@@ -257,7 +263,7 @@ impl Launch<'_> {
             issue: req.issue.as_deref(),
             branch: &req.branch,
             setup_exit: req.setup_exit,
-            sim_udid: self.sim,
+            devices: self.devices,
         });
         let brief_at = BoxPath::under(cred.as_str(), "brief.md").map_err(|e| fail("brief", &e))?;
         self.driver
@@ -306,7 +312,7 @@ impl Launch<'_> {
             &hooks,
             &preseed,
             &argv,
-            (&lines, sandboxed.as_ref(), self.sim),
+            (&lines, sandboxed.as_ref(), self.devices),
         );
         let script = script.map_err(|e| fail("script", &e))?;
         let line = format!(
@@ -338,7 +344,7 @@ fn script(
     hooks: &BoxSetup,
     preseed: &BoxSetup,
     argv: &[String],
-    (proxy, sandbox, sim): (&[String], Option<&Sandboxed>, Option<&str>),
+    (proxy, sandbox, devices): (&[String], Option<&Sandboxed>, &[Device]),
 ) -> Result<String, NameError> {
     let workdir = ctx.workdir.as_str();
     let moor = quote(BoxPath::under(workdir, ".moor")?.as_str());
@@ -349,12 +355,11 @@ fn script(
         .chain(argv.iter().cloned())
         .collect::<Vec<_>>();
     let remove = format!("rm -rf {}", quote(cred.as_str()));
-    let mut remove_all = format!("{remove} {}", quote(tmp.as_str()));
-    remove_all.extend(
-        sim.and_then(simulator::delete_line)
-            .map(|d| format!("; {d}")),
-    );
-    let proof = quote(BoxPath::under(workdir, simulator::PROOF_DIR)?.as_str());
+    let remove_all = std::iter::once(format!("{remove} {}", quote(tmp.as_str())))
+        .chain(devices.iter().filter_map(|d| d.kind.teardown(&d.id)))
+        .collect::<Vec<_>>()
+        .join("; ");
+    let proof = quote(BoxPath::under(workdir, device::PROOF_DIR)?.as_str());
     let tmp = quote(tmp.as_str());
     let mut lines = vec![
         format!("trap {} EXIT", quote(&remove_all)),
@@ -391,7 +396,5 @@ fn script(
 mod cleanup;
 mod home;
 mod install;
-mod simulator;
-
 #[cfg(test)]
 mod tests;

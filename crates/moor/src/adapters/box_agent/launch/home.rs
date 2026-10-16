@@ -187,7 +187,7 @@ mod tests {
             env_names: Vec::new(),
             set_vars: Vec::new(),
             moor_paths: &[],
-            sim_udid: None,
+            devices: &[],
         };
         let doc: serde_json::Value = serde_json::from_str(&profile(&input)).unwrap();
         let allow = doc
