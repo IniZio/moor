@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::activity::Probes;
-use crate::name::{BoxHandle, BoxPath, TaskName};
+use crate::name::{BoxHandle, BoxPath, NameError, TaskName};
 use crate::seam::agent_profile::{PromptMatch, ProxyAddr};
 use crate::seam::driver::DriverError;
 use crate::seam::proc::Deadline;
@@ -60,6 +60,30 @@ pub struct LaunchReq {
     pub origin: Option<String>,
     /// Env var names removed from the agent's environment before hooks and the agent run.
     pub strip_env: Vec<String>,
+}
+
+impl LaunchReq {
+    /// The credential and tmp directories this launch creates under the Box home `home`.
+    ///
+    /// # Errors
+    /// [`NameError`] when `home` and the Task name do not form a valid Box path.
+    pub fn dirs_under(&self, home: &BoxPath) -> Result<(BoxPath, BoxPath), NameError> {
+        let (cred, tmp) = self.dir_names();
+        Ok((
+            BoxPath::under(home.as_str(), &cred)?,
+            BoxPath::under(home.as_str(), &tmp)?,
+        ))
+    }
+
+    /// The names of the credential and tmp directories this launch creates under the Box home.
+    #[must_use]
+    pub fn dir_names(&self) -> (String, String) {
+        let (task, nonce) = (self.task.as_str(), &self.nonce);
+        (
+            format!(".moor-cred-{task}-{nonce}"),
+            format!(".moor-tmp-{task}-{nonce}"),
+        )
+    }
 }
 
 impl PartialEq for LaunchReq {
@@ -150,6 +174,14 @@ pub trait Engine: Send + Sync {
     /// [`EngineError::Failed`] names the step that failed; no pane is open then, and the
     /// credential directory is removed.
     fn launch(&self, req: &LaunchReq) -> Result<SessionRef, EngineError>;
+
+    /// The credential and tmp directories `launch` of `req` creates on the Box; `Ok(None)`
+    /// when this engine creates none.
+    ///
+    /// # Errors
+    /// [`EngineError`] when they cannot be named now (for example the Box home cannot be
+    /// read); the caller must not launch then.
+    fn launch_dirs(&self, req: &LaunchReq) -> Result<Option<(BoxPath, BoxPath)>, EngineError>;
 
     /// Sends `steer` to the agent's pane. Text is never typed twice.
     ///

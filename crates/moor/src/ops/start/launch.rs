@@ -21,6 +21,7 @@ use crate::ops::common::provision::{nonce, recorded_workdir, reread};
 use crate::ops::common::resume;
 use crate::ops::common::view::rfc3339;
 use crate::ops::show::redact_nonce;
+use crate::store::lease::{LeaseId, LeaseKind};
 use crate::store::{Store, TaskRow};
 
 /// Lines of a failure's output kept as its tail.
@@ -92,10 +93,40 @@ pub(super) fn begin(
     launch.proxy = Some(Arc::new(proxy.addr));
     launch.origin = proxy.origin;
     let launch = &launch;
+    let leases = match plan_dirs(cx, store, id, launch)? {
+        Ok(leases) => leases,
+        Err(e) => return record_failure(cx, store, id, &e),
+    };
     match cx.engine().launch(launch) {
-        Ok(session) => record_session(cx, store, row, launch, session),
+        Ok(session) => {
+            for lease in leases {
+                store.hold_lease(lease)?;
+            }
+            record_session(cx, store, row, launch, session)
+        }
         Err(e) => record_failure(cx, store, id, &e),
     }
+}
+
+/// Plans a lease for each directory `launch` will create on the Box, before it creates them.
+///
+/// `Ok(None)` from the Engine means it creates no directories, so none are planned. An Engine
+/// error fails the launch before any directory is created, and is returned for the caller to record.
+fn plan_dirs(
+    cx: &Cx,
+    store: &Store,
+    id: TaskId,
+    launch: &LaunchReq,
+) -> Result<Result<Vec<LeaseId>, EngineError>, CommandError> {
+    let (cred, tmp) = match cx.engine().launch_dirs(launch) {
+        Ok(Some(dirs)) => dirs,
+        Ok(None) => return Ok(Ok(Vec::new())),
+        Err(e) => return Ok(Err(e)),
+    };
+    Ok(Ok(vec![
+        store.plan_lease(id, LeaseKind::BoxDir, cred.as_str())?,
+        store.plan_lease(id, LeaseKind::BoxDir, tmp.as_str())?,
+    ]))
 }
 
 /// Records the launched `session` on the Task `row` and reports it.

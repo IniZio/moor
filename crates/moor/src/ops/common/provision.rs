@@ -22,8 +22,11 @@ use crate::ops::common::facts::{provider_caps, require_reverse_tunnel, resolved}
 use crate::ops::common::identity;
 use crate::ops::common::setup;
 use crate::ops::common::view::task_view;
+use crate::store::lease::LeaseKind;
 use crate::store::{Store, TaskRow};
 
+pub(crate) use self::lease::hold_root;
+use self::lease::hold_workdir;
 pub(crate) use self::outcome::Provisioned;
 use self::outcome::{dotfiles_failed, sync_failed};
 pub(crate) use self::rerun::ResyncGates;
@@ -181,9 +184,14 @@ pub(crate) fn provision(
         nonce: nonce(cx.rng()),
         worktree: task.worktree.as_deref().map(PathBuf::from),
     };
+    // The record exists before the Box does; a failed acquire leaves it `planned`.
+    let planned = cx.driver().planned_handle(&req);
+    let root = store.plan_lease(id, LeaseKind::BoxRoot, planned.as_str())?;
     match cx.driver().acquire(&req) {
         Ok(got) => {
+            hold_root(store, id, root, &planned, &got)?;
             record_acquired(store, id, &got)?;
+            hold_workdir(store, id, &got)?;
             let target = SetupTarget::new(&got, &worktree);
             run_and_record(cx, store, id, entry.begin().is_some(), &target, cfg)
         }
@@ -374,6 +382,7 @@ fn failed(
     }
 }
 
+mod lease;
 pub(crate) mod moor_yaml;
 mod outcome;
 mod rerun;

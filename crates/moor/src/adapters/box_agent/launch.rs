@@ -70,13 +70,7 @@ pub(super) fn launch(
         }),
         home,
     };
-    let cred =
-        BoxPath::under(ctx.home.as_str(), &cred_dir(req)).map_err(|e| failed(fail("brief", &e)))?;
-    let tmp = BoxPath::under(
-        ctx.home.as_str(),
-        &format!(".moor-tmp-{}-{}", req.task.as_str(), req.nonce),
-    )
-    .map_err(|e| failed(fail("brief", &e)))?;
+    let (cred, tmp) = dirs_in(&ctx.home, req).map_err(failed)?;
     let launch = Launch {
         driver,
         surface,
@@ -117,6 +111,22 @@ fn failed(f: Failure) -> EngineError {
     }
 }
 
+/// The credential and tmp directories a launch of `req` creates under `home`.
+fn dirs_in(home: &BoxPath, req: &LaunchReq) -> Result<(BoxPath, BoxPath), Failure> {
+    req.dirs_under(home).map_err(|e| fail("brief", &e))
+}
+
+/// The credential and tmp directories a launch of `req` creates on its Box.
+pub(super) fn dirs(d: &dyn Driver, req: &LaunchReq) -> Result<(BoxPath, BoxPath), EngineError> {
+    let environ = BoxPath::restore("/proc/self/environ").map_err(|e| failed(fail("home", &e)))?;
+    let text = match d.peek_file(&req.handle, &environ, &req.worktree) {
+        Ok(Some(text)) => text,
+        Ok(None) => return Err(failed(fail("home", &"the Box has no process environment"))),
+        Err(e) => return Err(failed(fail("home", &e))),
+    };
+    dirs_in(&home_in(&text).map_err(failed)?, req).map_err(failed)
+}
+
 /// The Box user's home, and whether that user is root, read from the environment of a process on
 /// the Box.
 fn box_user(peeked: Option<StepResult>) -> Result<(BoxPath, bool), Failure> {
@@ -125,13 +135,20 @@ fn box_user(peeked: Option<StepResult>) -> Result<(BoxPath, bool), Failure> {
         Some(Err(e)) => return Err(fail("home", &e)),
         _ => return Err(fail("home", &"the Box has no process environment")),
     };
-    let var = |name: &str| {
-        let prefix = format!("{name}=");
-        text.split('\0').find_map(|kv| kv.strip_prefix(&prefix))
-    };
-    let home = var("HOME").ok_or_else(|| fail("home", &"the Box user has no home directory"))?;
-    let home = BoxPath::restore(home).map_err(|e| fail("home", &e))?;
-    Ok((home, var("USER") == Some("root")))
+    Ok((home_in(&text)?, environ_var(&text, "USER") == Some("root")))
+}
+
+/// The value of `name` in NUL-separated process environment `text`.
+fn environ_var<'a>(text: &'a str, name: &str) -> Option<&'a str> {
+    let prefix = format!("{name}=");
+    text.split('\0').find_map(|kv| kv.strip_prefix(&prefix))
+}
+
+/// The Box user's home from NUL-separated process environment `text`.
+fn home_in(text: &str) -> Result<BoxPath, Failure> {
+    let home = environ_var(text, "HOME")
+        .ok_or_else(|| fail("home", &"the Box user has no home directory"))?;
+    BoxPath::restore(home).map_err(|e| fail("home", &e))
 }
 
 /// Looks the Box user up, and reads the Box platform when the launch has a Proxy, in one batch.
@@ -159,7 +176,7 @@ fn open_box(
 
 /// The name of the credential directory under the Box user's home.
 fn cred_dir(req: &LaunchReq) -> String {
-    format!(".moor-cred-{}-{}", req.task.as_str(), req.nonce)
+    req.dir_names().0
 }
 
 /// What one launch works with.
@@ -373,3 +390,7 @@ mod steps;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+#[path = "launch/tests/dirs.rs"]
+mod dirs_tests;
