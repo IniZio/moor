@@ -2,9 +2,8 @@
 
 use serde::Serialize;
 
-use crate::domain::boxes::{BoxInput, BoxState};
 use crate::domain::task::{SetupOutcome, TaskInput, TaskState};
-use crate::name::{BoxHandle, RunId};
+use crate::name::RunId;
 
 /// The event kinds the event tests pin. Frozen.
 pub const ASSERTED_KINDS: [&str; 20] = [
@@ -298,6 +297,27 @@ pub enum Event {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         refused: Option<String>,
     },
+    /// An upstream answered a credential rule's request with 429: the account behind the rule is rate limited.
+    AgentRateLimited {
+        /// The credential rule whose account is rate limited.
+        rule: String,
+        /// The HTTP status of the upstream answer.
+        status: u16,
+        /// When the limit resets, if the upstream said so.
+        resets_at: Option<String>,
+    },
+    /// An upstream rejected a credential rule's credential with 401 or 403.
+    ProxyCredentialRejected {
+        /// The credential rule whose credential was rejected.
+        rule: String,
+        /// The HTTP status of the upstream answer.
+        status: u16,
+    },
+    /// A credential rule's upstream answered 2xx again after a rate limit or rejection.
+    ProxyCredentialRecovered {
+        /// The credential rule that works again.
+        rule: String,
+    },
 }
 
 /// The events a task step produces.
@@ -349,32 +369,9 @@ pub fn task_events(from: Option<TaskState>, to: TaskState, input: &TaskInput) ->
     }
 }
 
-/// The events a box step produces; `handle` is the Box row's current handle.
-#[must_use]
-pub fn box_events(
-    _from: Option<BoxState>,
-    _to: BoxState,
-    input: &BoxInput,
-    handle: Option<&BoxHandle>,
-) -> Vec<Event> {
-    let text = |h: Option<&BoxHandle>| h.map(|h| h.as_str().to_owned());
-    match input {
-        BoxInput::Requested => vec![Event::BoxRequested],
-        BoxInput::Acquired { .. } | BoxInput::Wake => vec![Event::BoxReady],
-        BoxInput::AcquireFailed { cause, attempted } => vec![Event::BoxFailed {
-            error: cause.clone(),
-            handle: text(attempted.as_ref().or(handle)),
-        }],
-        BoxInput::Sleep => vec![Event::BoxAsleep],
-        BoxInput::DriverMissing => vec![Event::BoxGone],
-        BoxInput::Released => vec![Event::BoxDeleted],
-        BoxInput::ReleaseErr { cause } => vec![Event::BoxReleaseFailed {
-            error: cause.clone(),
-            handle: text(handle),
-        }],
-    }
-}
+pub use boxes::box_events;
 
+mod boxes;
 mod kind;
 
 #[cfg(test)]

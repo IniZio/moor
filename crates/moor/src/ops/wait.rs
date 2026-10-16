@@ -6,13 +6,14 @@ use std::time::Duration;
 
 use moor_core::decide::wait::{wait_verdict, WaitFacts, WaitVerdict};
 use moor_core::view::run::{WaitRunView, WaitValue};
+use moor_core::view::AttentionView;
 use moor_core::{ErrorKind, WaitFor, WaitReq};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::view::{agent_view, hide_unsupported_sleep, task_view_with_run};
 use crate::ops::common::{activity, reconcile};
-use crate::store::RunRow;
+use crate::store::{RunRow, TaskRow};
 
 /// Longest pause between polls.
 const POLL: Duration = Duration::from_millis(250);
@@ -47,12 +48,14 @@ pub(crate) fn run(cx: &Cx, req: &WaitReq) -> Result<WaitValue, CommandError> {
             .as_ref()
             .filter(|_| want != WaitFor::Run)
         {
-            let mut task = task_view_with_run(&row, None, cx.config());
-            task.agent = agent_view(&reading);
-            hide_unsupported_sleep(&mut task, cx);
-            let shown = serde_json::to_value(&task)
-                .map_err(|e| CommandError::new(ErrorKind::Internal, e))?;
-            return Err(CommandError::new(ErrorKind::Failed, failure.text()).with_value(shown));
+            return Err(failed(cx, &row, &reading, failure.text(), Vec::new())?);
+        }
+        if want != WaitFor::Run {
+            let limits = store.open_limits(id)?;
+            if let Some(first) = limits.first() {
+                let attention = limits.iter().map(AttentionView::from).collect();
+                return Err(failed(cx, &row, &reading, first.message(), attention)?);
+            }
         }
         let in_flight = store.in_flight_run(id, &|pid| cx.proc().alive(pid))?;
         let facts = WaitFacts {
@@ -80,6 +83,23 @@ pub(crate) fn run(cx: &Cx, req: &WaitReq) -> Result<WaitValue, CommandError> {
             run: shown.as_ref().map(|r| run_view(r, live)),
         });
     }
+}
+
+/// A `Failed` error carrying the Task as it stands, with `attention` filled in.
+fn failed(
+    cx: &Cx,
+    row: &TaskRow,
+    reading: &activity::Reading,
+    text: impl Into<String>,
+    attention: Vec<AttentionView>,
+) -> Result<CommandError, CommandError> {
+    let mut task = task_view_with_run(row, None, cx.config());
+    task.agent = agent_view(reading);
+    task.attention = attention;
+    hide_unsupported_sleep(&mut task, cx);
+    let shown =
+        serde_json::to_value(&task).map_err(|e| CommandError::new(ErrorKind::Internal, e))?;
+    Ok(CommandError::new(ErrorKind::Failed, text.into()).with_value(shown))
 }
 
 /// The run as the `wait` payload shows it.

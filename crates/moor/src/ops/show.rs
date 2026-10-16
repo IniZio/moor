@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use moor_core::decide::proof::ProofFile;
 use moor_core::domain::boxes::BoxState;
-use moor_core::view::{EventView, PaneView, ShowView, TaskView};
+use moor_core::view::{AttentionView, EventView, PaneView, ShowView, TaskView};
 use moor_core::{ErrorKind, ShowReq, TaskId, Warning};
 
 use crate::cx::Cx;
@@ -96,6 +96,15 @@ fn proof_files(cx: &Cx, row: &TaskRow) -> Option<Vec<ProofFile>> {
     }
 }
 
+/// The task's open credential limits as views.
+fn attention(store: &Store, task: TaskId) -> Result<Vec<AttentionView>, CommandError> {
+    Ok(store
+        .open_limits(task)?
+        .iter()
+        .map(AttentionView::from)
+        .collect())
+}
+
 /// Run `show`.
 pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
     reconcile::run(cx);
@@ -112,6 +121,7 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
             let in_flight = store.in_flight_run(row.id, &|pid| cx.proc().alive(pid))?;
             let mut view = task_view_with_run(&row, in_flight.as_ref(), cx.config());
             view.agent = agent_view(&reading);
+            view.attention = attention(store, row.id)?;
             hide_unsupported_sleep_cached(&mut view, cx, &mut sleep_caps);
             tasks.push(view);
         }
@@ -132,6 +142,7 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
     let (agent, pane) = (agent_view(&reading), pane_view(&reading, store, row.id)?);
     let mut detail = task_view_with_run(&row, in_flight.as_ref(), cx.config());
     detail.agent = agent;
+    detail.attention = attention(store, row.id)?;
     hide_unsupported_sleep(&mut detail, cx);
     let events = match req.events {
         Some(n) => {

@@ -122,3 +122,37 @@ fn detail_lists_proof_files() {
         "{out}"
     );
 }
+
+fn with_attention(mut t: Value) -> Value {
+    t.as_object_mut().unwrap().insert(
+        "attention".into(),
+        json!([{
+            "kind": "agent_rate_limited", "rule": "claude", "status": 429,
+            "message": "Claude account rate limited (429)"
+        }]),
+    );
+    t
+}
+
+#[test]
+fn list_prints_a_needs_attention_line_under_the_row() {
+    let out = show(json!({"tasks": [with_attention(task("alpha", true)), task("b", true)]}));
+    assert_eq!(
+        out,
+        "alpha  running  working  running  /work\n  needs attention: Claude account rate limited (429)\nb      running  working  running  /work\n"
+    );
+}
+
+#[test]
+fn detail_prints_a_needs_attention_line() {
+    let out = show(json!({"task": with_attention(task("alpha", true))}));
+    assert!(out.contains(
+        "agent:    working pane=live\nneeds attention: Claude account rate limited (429)\n"
+    ));
+}
+
+#[test]
+fn detail_omits_the_line_without_attention() {
+    let out = show(json!({"task": task("alpha", true)}));
+    assert!(!out.contains("needs attention"));
+}

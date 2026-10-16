@@ -1,6 +1,7 @@
 //! Wire-shape tests for the view structs.
 
 use super::*;
+use crate::attention::{Limit, LimitKind};
 use serde_json::{json, Value};
 
 fn task() -> TaskView {
@@ -31,6 +32,7 @@ fn task() -> TaskView {
         agent: None,
         run: None,
         updated_at: "2026-01-01T00:00:00Z".into(),
+        attention: Vec::new(),
     }
 }
 
@@ -410,5 +412,50 @@ fn sleep_value_without_box_serializes_null() {
     assert_eq!(
         serde_json::to_value(&v).unwrap(),
         json!({"task": "t", "box": null, "woke": false})
+    );
+}
+
+#[test]
+fn empty_attention_omits_the_key() {
+    let v = serde_json::to_value(task()).ok();
+    assert_eq!(v.map(|v| v.get("attention").cloned()), Some(None));
+}
+
+#[test]
+fn open_attention_serializes_the_array() {
+    let mut t = task();
+    t.attention = vec![AttentionView {
+        kind: "agent_rate_limited".into(),
+        rule: "claude".into(),
+        status: 429,
+        resets_at: None,
+        message: "Claude account rate limited (429)".into(),
+    }];
+    let v = serde_json::to_value(t).ok();
+    assert_eq!(
+        v.and_then(|v| v.get("attention").cloned()),
+        Some(json!([{
+            "kind": "agent_rate_limited", "rule": "claude", "status": 429,
+            "resets_at": null, "message": "Claude account rate limited (429)"
+        }]))
+    );
+}
+
+#[test]
+fn attention_view_copies_the_limit() {
+    let limit = Limit {
+        kind: LimitKind::Rejected,
+        rule: "claude".into(),
+        status: 401,
+        resets_at: None,
+    };
+    let v = AttentionView::from(&limit);
+    assert_eq!(
+        (v.kind.as_str(), v.status, v.message.as_str()),
+        (
+            "proxy_credential_rejected",
+            401,
+            "Claude credential rejected (401)"
+        )
     );
 }

@@ -105,3 +105,83 @@ fn unknown_task_is_not_found() {
         .unwrap_err();
     assert!(matches!(err, StoreError::NotFound(_)), "{err:?}");
 }
+
+#[test]
+fn limit_events_are_accepted_and_stored() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, id) = setup(dir.path());
+    let events = [
+        Event::AgentRateLimited {
+            rule: "claude".into(),
+            status: 429,
+            resets_at: None,
+        },
+        Event::ProxyCredentialRejected {
+            rule: "claude".into(),
+            status: 401,
+        },
+        Event::ProxyCredentialRecovered {
+            rule: "claude".into(),
+        },
+    ];
+    for e in &events {
+        store.record_proxy_event(id, e).unwrap();
+    }
+    let rows = store.events(id, 100).unwrap();
+    for kind in [
+        "agent_rate_limited",
+        "proxy_credential_rejected",
+        "proxy_credential_recovered",
+    ] {
+        assert!(rows.iter().any(|r| r.kind == kind), "{kind} missing");
+    }
+}
+
+#[test]
+fn limit_events_are_only_the_three_kinds_oldest_first() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, id) = setup(dir.path());
+    let other = Event::ProxyCredentialFailed { rule: "gh".into() };
+    store.record_proxy_event(id, &other).unwrap();
+    store
+        .record_proxy_event(
+            id,
+            &Event::AgentRateLimited {
+                rule: "claude".into(),
+                status: 429,
+                resets_at: None,
+            },
+        )
+        .unwrap();
+    store.record_proxy_event(id, &other).unwrap();
+    store
+        .record_proxy_event(
+            id,
+            &Event::ProxyCredentialRecovered {
+                rule: "claude".into(),
+            },
+        )
+        .unwrap();
+    let got = store.proxy_limit_events(id).unwrap();
+    let kinds: Vec<&str> = got.iter().map(|(k, _)| k.as_str()).collect();
+    assert_eq!(kinds, ["agent_rate_limited", "proxy_credential_recovered"]);
+    assert_eq!(got.last().map(|(_, p)| p), Some(&json!({"rule": "claude"})));
+}
+
+#[test]
+fn open_limits_empty_after_recovery() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, id) = setup(dir.path());
+    let limited = Event::AgentRateLimited {
+        rule: "claude".into(),
+        status: 429,
+        resets_at: None,
+    };
+    store.record_proxy_event(id, &limited).unwrap();
+    assert_eq!(store.open_limits(id).unwrap().len(), 1);
+    let recovered = Event::ProxyCredentialRecovered {
+        rule: "claude".into(),
+    };
+    store.record_proxy_event(id, &recovered).unwrap();
+    assert!(store.open_limits(id).unwrap().is_empty());
+}

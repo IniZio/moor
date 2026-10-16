@@ -50,6 +50,9 @@ impl Event {
             Self::CredentialWithheld { .. } => "credential_withheld",
             Self::ProxyCredentialFailed { .. } => "proxy_credential_failed",
             Self::Proof { .. } => "proof",
+            Self::AgentRateLimited { .. } => "agent_rate_limited",
+            Self::ProxyCredentialRejected { .. } => "proxy_credential_rejected",
+            Self::ProxyCredentialRecovered { .. } => "proxy_credential_recovered",
         }
     }
 

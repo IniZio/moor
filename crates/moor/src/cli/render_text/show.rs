@@ -29,7 +29,17 @@ fn field<'a>(v: &'a Value, key: &str) -> &'a str {
     v.get(key).and_then(Value::as_str).unwrap_or("-")
 }
 
-/// One aligned line per task.
+/// A `needs attention: <message>` line per entry of the task's `attention`, prefixed by `indent`.
+fn write_attention(out: &mut String, task: &Value, indent: &str) {
+    let Some(items) = task.get("attention").and_then(Value::as_array) else {
+        return;
+    };
+    for item in items {
+        let _ = writeln!(out, "{indent}needs attention: {}", field(item, "message"));
+    }
+}
+
+/// One aligned line per task, each followed by its attention lines.
 fn list(tasks: &[Value]) -> Option<String> {
     if tasks.is_empty() {
         return Some("no tasks\n".to_owned());
@@ -59,7 +69,7 @@ fn list(tasks: &[Value]) -> Option<String> {
         }
     }
     let mut out = String::new();
-    for r in &rows {
+    for (r, t) in rows.iter().zip(tasks) {
         let _ = writeln!(
             out,
             "{:<w0$}  {:<w1$}  {:<w2$}  {:<w3$}  {}",
@@ -73,6 +83,7 @@ fn list(tasks: &[Value]) -> Option<String> {
             w2 = widths[2],
             w3 = widths[3],
         );
+        write_attention(&mut out, t, "  ");
     }
     Some(out)
 }
@@ -141,6 +152,7 @@ fn detail(task: &Value, value: &Value) -> Option<String> {
     if let Some(a) = task.get("agent").filter(|a| !a.is_null()) {
         agent_block(&mut out, a);
     }
+    write_attention(&mut out, task, "");
     for key in ["setup", "dotfiles"] {
         let Some(s) = value
             .get(key)

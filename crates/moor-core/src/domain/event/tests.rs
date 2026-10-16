@@ -1,6 +1,7 @@
 //! Tests for the event kinds, payloads and step-to-event tables.
 
 use super::*;
+use crate::domain::boxes::{BoxInput, BoxState};
 use crate::name::BoxHandle;
 
 const PINNED_KINDS: [&str; 20] = [
@@ -160,6 +161,16 @@ fn all_events() -> Vec<Event> {
             sha256: s("ab"),
             refused: None,
         },
+        Event::AgentRateLimited {
+            rule: s("r"),
+            status: 429,
+            resets_at: None,
+        },
+        Event::ProxyCredentialRejected {
+            rule: s("r"),
+            status: 401,
+        },
+        Event::ProxyCredentialRecovered { rule: s("r") },
     ]
 }
 
@@ -219,6 +230,9 @@ const fn event_index(e: &Event) -> usize {
         Event::ProxyCredentialFailed { .. } => 40,
         Event::NeedsInput { .. } => 41,
         Event::Proof { .. } => 42,
+        Event::AgentRateLimited { .. } => 43,
+        Event::ProxyCredentialRejected { .. } => 44,
+        Event::ProxyCredentialRecovered { .. } => 45,
     }
 }
 
@@ -226,7 +240,7 @@ const fn event_index(e: &Event) -> usize {
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 43);
+    assert_eq!(all.len(), 46);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }
