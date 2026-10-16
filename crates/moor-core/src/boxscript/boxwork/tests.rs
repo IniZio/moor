@@ -6,6 +6,7 @@ use std::process::{Command, Output};
 
 use super::{
     boxwork_script, is_full_sha, parse_boxwork, BoxworkCounts, BOXWORK_FILE, BOXWORK_MARKER,
+    BOXWORK_NO_CHECKOUT,
 };
 
 const SHA_A: &str = "0123456789abcdef0123456789abcdef01234567";
@@ -241,16 +242,15 @@ fn clean_pushed_repo_is_zero() {
 }
 
 #[test]
-fn stale_result_is_removed_and_git_failure_exits_nonzero() {
+fn stale_result_is_removed_and_a_missing_checkout_exits_no_checkout() {
     if !git_available() {
         return;
     }
     let r = Repo::new("stale");
     r.write(BOXWORK_FILE, "ahead=9 dirty=9\n");
     fs::remove_dir_all(r.root.join(".git")).unwrap();
-    // Not a git repo: rev-list fails.
     let out = r.probe(&[]);
-    assert!(!out.status.success());
+    assert_eq!(out.status.code(), Some(BOXWORK_NO_CHECKOUT));
     assert_eq!(r.result(), None);
 }
 

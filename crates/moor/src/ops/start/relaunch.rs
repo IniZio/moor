@@ -80,7 +80,7 @@ pub(super) fn run(
     relaunch(cx, store, req, &old, &end, settings)
 }
 
-/// Whether starting `row` with `req` goes on to launch an agent.
+/// Whether [`run`] is about to launch or relaunch the agent of `row`.
 ///
 /// # Errors
 /// A store failure.
@@ -93,17 +93,13 @@ pub(super) fn will_launch(
     if req.no_agent {
         return Ok(false);
     }
-    let stored = row
-        .agent_session_id
-        .as_deref()
-        .is_some_and(|s| !s.is_empty());
-    let session = store.live_session(row.id)?;
-    if session.as_ref().is_some_and(|s| ended(cx, s).is_none()) {
-        return Ok(false);
+    if !matches!(row.state, TaskState::Working | TaskState::Idle) {
+        return Ok(true);
     }
-    let goal = req.goal.is_some() || row.goal.is_some();
-    let resume = stored && req.goal.is_none() && (req.resume || session.is_some());
-    Ok(goal || resume)
+    Ok(store.live_session(row.id)?.map_or_else(
+        || row.goal.is_some() || req.goal.is_some() || req.resume,
+        |s| ended(cx, &s).is_some(),
+    ))
 }
 
 /// Whether `req` resumes the stored agent session of `row`.

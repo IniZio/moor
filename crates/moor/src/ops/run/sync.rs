@@ -55,7 +55,7 @@ pub(super) fn choose(
         |boxed| boxwork::probe(cx, row, boxed),
     );
     match work {
-        BoxWork::Clean => Ok(SyncMode::Full),
+        BoxWork::Clean | BoxWork::NoCheckout => Ok(SyncMode::Full),
         BoxWork::Unsaved { ahead, dirty } => Err(refused(format!(
             "the Box has unsaved work: {ahead} commits the host lacks, {dirty} changed paths"
         ))),
