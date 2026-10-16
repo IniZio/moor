@@ -1,37 +1,13 @@
 //! Reads the Box platform and puts the pinned sandbox tool on the Box when it is missing.
 
 use moor_core::boxscript::quote;
-use moor_core::domain::run::SyncMode;
 use moor_core::name::BoxPath;
-use moor_core::seam::driver::{BoxStep, Driver, DriverError, ExecOutcome, ExecSpec, StepDone};
-use moor_core::seam::engine::LaunchReq;
-use moor_core::seam::proc::Deadline;
+use moor_core::seam::driver::{BoxStep, DriverError, ExecOutcome, StepDone};
 
-use super::super::sandbox;
-use super::{fail, Failure, INSTALL_DEADLINE};
+use super::{fail, Failure};
 
 /// What a batch reports for one step.
 pub(super) type StepResult = Result<StepDone, DriverError>;
-
-/// Runs `script` under `sh` on the Box and returns its exit code.
-fn run(driver: &dyn Driver, req: &LaunchReq, script: String) -> Result<i32, Failure> {
-    let spec = ExecSpec {
-        argv: vec!["sh".to_owned(), "-c".to_owned(), script],
-        env: Vec::new(),
-        cwd: None,
-        sync: SyncMode::None,
-        output: None,
-        host_cwd: Some(req.worktree.clone()),
-        class: None,
-    };
-    match driver.exec(&req.handle, &spec, Deadline(INSTALL_DEADLINE)) {
-        Ok(ExecOutcome::Exited { code }) => Ok(code),
-        Ok(ExecOutcome::Interrupted) => {
-            Err(fail("sandbox", &"the sandbox install was interrupted"))
-        }
-        Err(e) => Err(fail("sandbox", &format!("the sandbox install failed: {e}"))),
-    }
-}
 
 /// The step that writes `uname -s -m` under the credential directory `dir` in the Box user's home
 /// and prints it back; the home is not known yet, so the script reads it from `$HOME`. It exits
@@ -89,19 +65,17 @@ fn unreadable() -> Failure {
     fail("sandbox", &"could not read the Box platform")
 }
 
-/// Uploads the host-fetched `bytes` as the Box user's nono and runs `check` again.
-pub(super) fn upload_and_recheck(
-    driver: &dyn Driver,
-    req: &LaunchReq,
+/// The steps that upload the host-fetched `bytes` as the Box user's nono and run `check` again.
+pub(super) fn upload_steps(
     home: &BoxPath,
-    (bytes, check): (&[u8], &str),
-) -> Result<(), Failure> {
-    let at = BoxPath::under(home.as_str(), ".local/bin/nono").map_err(|e| fail("sandbox", &e))?;
-    driver
-        .put_file(&req.handle, &at, bytes, 0o755, &req.worktree)
-        .map_err(|e| fail("sandbox", &e))?;
-    match run(driver, req, check.to_owned())? {
-        0 => Ok(()),
-        code => Err(fail("sandbox", &sandbox::check_failure(code))),
-    }
+    bytes: &[u8],
+    check: &str,
+) -> Result<Vec<BoxStep>, Failure> {
+    let path = BoxPath::under(home.as_str(), ".local/bin/nono").map_err(|e| fail("sandbox", &e))?;
+    let put = BoxStep::Put {
+        path,
+        bytes: bytes.to_vec(),
+        mode: 0o755,
+    };
+    Ok(vec![put, BoxStep::Run(check.to_owned())])
 }
