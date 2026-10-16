@@ -1,10 +1,16 @@
 use moor_core::domain::decision::{Decision, Field, Fields};
+use std::sync::Arc;
+use std::time::Duration;
+
+use moor_core::domain::decision::ExtraEvent;
+use moor_core::seam::proxy_host::ProxyStatus;
 use moor_core::seam::surface::SurfaceError;
 use moor_core::TaskId;
 
 use super::relaunch::{gone, obs, set_agent_session, started};
 use super::World;
 use crate::ops::start::revive_after_wake;
+use crate::testing::proxy_host::{FakeProxyHost, ProxyHostCall};
 
 fn revive(w: &World, id: TaskId) {
     revive_after_wake(&w.cx, w.cx.store().unwrap(), id).unwrap();
@@ -97,4 +103,67 @@ fn nothing_to_resume_and_no_goal_launches_nothing() {
     revive(&w, id);
     assert_eq!(engine.launches().len(), 1);
     assert!(relaunched(&w, id).is_empty());
+}
+
+const UP: ProxyStatus = ProxyStatus::Ready { box_port: 40123 };
+
+fn elapsed_ms(w: &World, since: i64) -> i64 {
+    w.cx.clock().now().as_millis() - since
+}
+
+fn status_calls(host: &FakeProxyHost) -> usize {
+    host.calls()
+        .iter()
+        .filter(|c| matches!(c, ProxyHostCall::Status(_)))
+        .count()
+}
+
+#[test]
+fn the_relaunch_waits_for_the_tunnel_to_come_up() {
+    let (mut w, engine, id) = started();
+    set_agent_session(&w, id, "agent-1");
+    gone(&w);
+    let host =
+        FakeProxyHost::new().with_status_script([ProxyStatus::Starting, ProxyStatus::Starting, UP]);
+    w.cx = w.cx.with_proxy_host(Arc::new(host.clone()));
+    let before = w.cx.clock().now().as_millis();
+    revive(&w, id);
+    assert_eq!(engine.launches().len(), 2);
+    assert_eq!(status_calls(&host), 3);
+    assert_eq!(elapsed_ms(&w, before), 2000);
+}
+
+#[test]
+fn the_relaunch_waits_out_a_recent_tunnel_restart() {
+    let (mut w, engine, id) = started();
+    set_agent_session(&w, id, "agent-1");
+    gone(&w);
+    let host = FakeProxyHost::new().with_status(UP);
+    w.cx = w.cx.with_proxy_host(Arc::new(host));
+    let restart = ExtraEvent::TunnelRestarted {
+        box_port: 40123,
+        reason: "tunnel exited".into(),
+    };
+    w.cx.store()
+        .unwrap()
+        .apply(Decision::new(id).event(restart))
+        .unwrap();
+    w.cx.clock().sleep(Duration::from_secs(2));
+    let before = w.cx.clock().now().as_millis();
+    revive(&w, id);
+    assert_eq!(engine.launches().len(), 2);
+    assert_eq!(elapsed_ms(&w, before), 3000);
+}
+
+#[test]
+fn the_relaunch_goes_ahead_when_the_tunnel_never_settles() {
+    let (mut w, engine, id) = started();
+    set_agent_session(&w, id, "agent-1");
+    gone(&w);
+    let host = FakeProxyHost::new().with_status(ProxyStatus::Starting);
+    w.cx = w.cx.with_proxy_host(Arc::new(host));
+    let before = w.cx.clock().now().as_millis();
+    revive(&w, id);
+    assert_eq!(engine.launches().len(), 2);
+    assert_eq!(elapsed_ms(&w, before), 60_000);
 }

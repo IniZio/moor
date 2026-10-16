@@ -6,6 +6,7 @@ use moor_core::decide::transcript::Trigger;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
 use moor_core::domain::task::TaskState;
 use moor_core::seam::proc::Deadline;
+use moor_core::seam::proxy_host::ProxyStatus;
 use moor_core::seam::surface::{PaneRef, SurfaceError};
 use moor_core::view::AgentLaunchView;
 use moor_core::{ErrorKind, StartReq, TaskId, Warning};
@@ -24,6 +25,15 @@ use crate::store::{SessionRow, Store, TaskRow};
 
 /// Time allowed for reading a pane to see whether it ended.
 const PANE_DEADLINE: Duration = Duration::from_secs(5);
+
+/// Longest a wake waits for the tunnel before relaunching anyway.
+const TUNNEL_WAIT: Duration = Duration::from_secs(60);
+/// How often the tunnel is checked while waiting.
+const TUNNEL_POLL: Duration = Duration::from_secs(1);
+/// How long the tunnel must go without restarting before the agent relaunches.
+const TUNNEL_SETTLE: Duration = Duration::from_secs(5);
+/// Recent events searched for a tunnel restart.
+const TUNNEL_EVENTS: usize = 50;
 
 /// How a session's pane ended.
 enum Ended {
@@ -261,6 +271,7 @@ pub(crate) fn revive_after_wake(cx: &Cx, store: &Store, id: TaskId) -> Result<()
     let Some(end) = ended(cx, &old) else {
         return Ok(());
     };
+    await_tunnel(cx, store, id);
     let req = StartReq {
         name: row.name.clone(),
         goal: None,
@@ -278,6 +289,43 @@ pub(crate) fn revive_after_wake(cx: &Cx, store: &Store, id: TaskId) -> Result<()
     };
     relaunch(cx, store, &req, (&old, &end), false, &settings, Some("wake"))?;
     Ok(())
+}
+
+/// Waits until the Task's tunnel is up and has not restarted for `TUNNEL_SETTLE`.
+///
+/// A relaunch touches the Box lease, which every tunnel restart rewrites, so launching into a
+/// restarting tunnel loses the claim. A Task with no live proxy is not waited for. After
+/// `TUNNEL_WAIT` the relaunch goes ahead anyway.
+fn await_tunnel(cx: &Cx, store: &Store, id: TaskId) {
+    let mut waited = Duration::ZERO;
+    loop {
+        let up = match cx.proxy_host().status(id) {
+            Ok(ProxyStatus::Ready { .. }) => true,
+            Ok(ProxyStatus::Starting) => false,
+            _ => return,
+        };
+        if up && !restarted_within(cx, store, id, TUNNEL_SETTLE) {
+            return;
+        }
+        if waited >= TUNNEL_WAIT {
+            return;
+        }
+        cx.clock().sleep(TUNNEL_POLL);
+        waited += TUNNEL_POLL;
+    }
+}
+
+/// Whether the Task's tunnel restarted less than `window` ago.
+fn restarted_within(cx: &Cx, store: &Store, id: TaskId, window: Duration) -> bool {
+    let now = cx.clock().now().as_millis();
+    let window = i64::try_from(window.as_millis()).unwrap_or(i64::MAX);
+    store.events(id, TUNNEL_EVENTS).is_ok_and(|events| {
+        events
+            .iter()
+            .rev()
+            .find(|e| e.kind == "tunnel_restarted")
+            .is_some_and(|e| now.saturating_sub(e.ts.as_millis()) < window)
+    })
 }
 
 /// How the pane of `session` ended; none while it is live, or when it cannot be read.

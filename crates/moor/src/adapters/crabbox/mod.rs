@@ -126,17 +126,17 @@ impl Crabbox {
         Self::new(proc, Arc::new(FakeClock::new(Ts::from_millis(0))))
     }
 
-    /// Runs `call`, trying again while crabbox reports a claim race, up to three attempts.
+    /// Runs `call`, trying again while crabbox reports a claim race, for up to `CLAIM_RACE_BUDGET` of waiting.
     fn retry_claim_race<T>(
         &self,
         mut call: impl FnMut() -> Result<T, ProcError>,
     ) -> Result<T, ProcError> {
-        let mut attempt = 1;
+        let mut waited = Duration::ZERO;
         loop {
             match call() {
-                Err(e) if attempt < CLAIM_RACE_ATTEMPTS && is_claim_race(&e) => {
-                    self.clock.sleep(CLAIM_RACE_PAUSE * attempt);
-                    attempt += 1;
+                Err(e) if waited + CLAIM_RACE_PAUSE <= CLAIM_RACE_BUDGET && is_claim_race(&e) => {
+                    self.clock.sleep(CLAIM_RACE_PAUSE);
+                    waited += CLAIM_RACE_PAUSE;
                 }
                 result => return result,
             }
@@ -159,10 +159,10 @@ impl Crabbox {
     }
 }
 
-/// Attempts a call gets when crabbox reports a claim race.
-const CLAIM_RACE_ATTEMPTS: u32 = 3;
-/// Pause before the first retry; each later retry waits one step longer.
-const CLAIM_RACE_PAUSE: Duration = Duration::from_millis(300);
+/// Total time a call waits out claim races; a restarting tunnel rewrites the claim every few seconds.
+const CLAIM_RACE_BUDGET: Duration = Duration::from_secs(15);
+/// Pause between retries of a claim race.
+const CLAIM_RACE_PAUSE: Duration = Duration::from_secs(1);
 
 /// Per-Task Box name: `moor-{name}-{nonce}`.
 fn box_name(req: &AcquireReq) -> String {

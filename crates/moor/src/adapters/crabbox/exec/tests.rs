@@ -276,11 +276,30 @@ fn claim_race_is_retried_until_the_call_succeeds() {
     let c = Crabbox::new(p.clone(), clock.clone());
     assert_eq!(exec_once(&c), Ok(ExecOutcome::Exited { code: 0 }));
     assert_eq!(run_calls(&p), 2);
-    assert_eq!(clock.now(), Ts::from_millis(300));
+    assert_eq!(clock.now(), Ts::from_millis(1000));
 }
 
 #[test]
-fn claim_race_gives_up_after_three_attempts() {
+fn claim_race_is_retried_through_a_long_tunnel_restart() {
+    let p = Arc::new(ScriptedProc::new());
+    for _ in 0..12 {
+        p.once(Tool::Crabbox, &["run"], race());
+    }
+    p.on(Tool::Crabbox, &["run"], ok());
+    let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
+    p.on(
+        Tool::Crabbox,
+        &["--version"],
+        Reply::Ok("crabbox 0.72.0-moor.5\n".into()),
+    );
+    let c = Crabbox::new(p.clone(), clock.clone());
+    assert_eq!(exec_once(&c), Ok(ExecOutcome::Exited { code: 0 }));
+    assert_eq!(run_calls(&p), 13);
+    assert_eq!(clock.now(), Ts::from_millis(12_000));
+}
+
+#[test]
+fn claim_race_gives_up_after_the_budget() {
     let p = Arc::new(ScriptedProc::new());
     p.on(Tool::Crabbox, &["run"], race());
     let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
@@ -291,8 +310,8 @@ fn claim_race_gives_up_after_three_attempts() {
     );
     let c = Crabbox::new(p.clone(), clock.clone());
     let err = exec_once(&c).unwrap_err();
-    assert_eq!(run_calls(&p), 3);
-    assert_eq!(clock.now(), Ts::from_millis(900));
+    assert_eq!(run_calls(&p), 16);
+    assert_eq!(clock.now(), Ts::from_millis(15_000));
     assert_eq!(err.to_string(), "the Box lease was busy; try again");
 }
 
