@@ -439,6 +439,12 @@ fn sync_checkout_failures_name_the_sync() {
         (Ok(ExecOutcome::Exited { code: 3 }), "exit 3; the sync failed or left no git checkout (with submodules, push HEAD to origin first)"),
         (Ok(ExecOutcome::Interrupted), "interrupted"),
         (Err(DriverError::Timeout(SETUP_LINE_DEADLINE)), "timed out"),
+        (
+            Err(DriverError::Failed {
+                summary: "box command failed on provider ssh (exit 6): local Git seed rev-list failed".to_owned(),
+            }),
+            "(exit 6): local Git seed rev-list failed",
+        ),
     ];
     for (result, reason) in failures {
         let d = tempfile::tempdir().unwrap();

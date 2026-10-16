@@ -140,8 +140,15 @@ pub(super) fn is_claim_race(e: &ProcError) -> bool {
 const TAIL_MAX: usize = 300;
 
 /// The end of `stderr` as one line: trimmed non-empty lines joined by `; `, cut from the front to `TAIL_MAX`.
-fn stderr_suffix(op: Op, stderr: &str) -> String {
-    if !matches!(op, Op::Acquire | Op::Release) {
+///
+/// An exec shows its tail only when crabbox itself failed; once the remote command ran, its output is not crabbox's to repeat.
+fn stderr_suffix(op: Op, stderr: &str, remote_ran: bool) -> String {
+    let shown = match op {
+        Op::Acquire | Op::Release => true,
+        Op::Exec => !remote_ran,
+        _ => false,
+    };
+    if !shown {
         return String::new();
     }
     let lines: Vec<&str> = stderr
@@ -173,7 +180,7 @@ pub(super) fn map_error(op: Op, provider: Option<&str>, e: &ProcError) -> Driver
         ProcError::NonZero {
             code, stderr_tail, ..
         } => classify_text(*code, &stderr_tail.to_lowercase()).unwrap_or_else(|| {
-            let tail = stderr_suffix(op, stderr_tail);
+            let tail = stderr_suffix(op, stderr_tail, remote_exit(e).is_some());
             let summary = match *code {
                 EXIT_CONFIG => format!("{what} failed (crabbox configuration problem){tail}"),
                 EXIT_LOST => format!("{what} failed (box lost during warmup)"),
