@@ -1,11 +1,12 @@
-//! Tests for refusing a setup re-run when the worktree `.moor.yaml` differs from the base.
+//! Tests for refusing a Box setup when the worktree `.moor.yaml` differs from the base.
 
 use std::path::Path;
 
+use moor_core::seam::driver::DriverError;
 use moor_core::seam::proc::Tool;
-use moor_core::{ErrorKind, StartReq, TaskId};
+use moor_core::{ErrorKind, StartReq, TaskId, TaskName};
 
-use super::setup::{exit, is_setup_line, start_req, start_with, warning_codes};
+use super::setup::{is_setup_line, start_req, warning_codes};
 use super::{world_at, World};
 use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
@@ -30,25 +31,34 @@ pub(super) fn script_base_yaml(w: &World, yaml: Option<&str>) {
     }
 }
 
-/// Starts `demo` on a base holding `base`, then leaves `worktree_yaml` in its worktree.
+/// Starts `demo` on a base holding `base` with the Box acquire failing, then leaves
+/// `worktree_yaml` in its worktree.
 ///
+/// The Task is left `SetupFailed` with a lost Box, so the next start provisions a new one.
 /// `None` removes the worktree's `.moor.yaml`.
-pub(super) fn failed_setup_on_base(
-    base: &str,
-    worktree_yaml: Option<&str>,
-    driver: FakeDriver,
-) -> (World, TaskId) {
-    let (w, v) = start_with(base, driver);
-    let id = TaskId::new(v.task.id);
-    let wt = w.cx.store().unwrap().task(id).unwrap().unwrap().worktree;
-    let file = Path::new(&wt.unwrap()).join(".moor.yaml");
+fn lost_box_on_base(base: &str, worktree_yaml: Option<&str>) -> World {
+    let repo = tempfile::tempdir().unwrap();
+    std::fs::write(repo.path().join(".moor.yaml"), base).unwrap();
+    let driver = FakeDriver::new().fail_acquire(DriverError::Failed {
+        summary: "boom".into(),
+    });
+    let w = world_at(driver, repo.path());
+    script_base_yaml(&w, Some(base));
+    let err = run(&w.cx, &start_req()).unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Failed);
+    let name = TaskName::parse("demo").unwrap();
+    let row = w.cx.store().unwrap().open_task_by_name(&name).unwrap();
+    let wt = row.unwrap().worktree.unwrap();
+    std::fs::create_dir_all(&wt).unwrap();
+    let file = Path::new(&wt).join(".moor.yaml");
     match worktree_yaml {
         Some(text) => std::fs::write(file, text).unwrap(),
         None => {
             let _ = std::fs::remove_file(file);
         }
     }
-    (w, id)
+    drop(warning_codes(&w));
+    w
 }
 
 const BASE: &str = "setup: [a]\nenv:\n  A: \"1\"\n";
@@ -61,40 +71,39 @@ fn setup_execs(w: &World) -> usize {
         .count()
 }
 
-/// A failed first setup, with `worktree_yaml` in the worktree over a `BASE` base.
+/// A lost Box, with `worktree_yaml` in the worktree over a `BASE` base.
 fn failed_with(worktree_yaml: Option<&str>) -> World {
-    let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(1))]);
-    let (w, _) = failed_setup_on_base(BASE, worktree_yaml, driver);
-    drop(warning_codes(&w));
+    let w = lost_box_on_base(BASE, worktree_yaml);
+    script_base_yaml(&w, Some(BASE));
     w
 }
 
-/// Asserts the re-run was refused naming `key`, and ran no setup.
+/// Asserts the start was refused naming `key`, and ran no setup.
 fn assert_refused(w: &World, req: &StartReq, key: &str) {
     let err = run(&w.cx, req).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Refused);
     assert!(err.error.to_string().contains(key), "{}", err.error);
     assert!(err.hints.iter().any(|h| h.contains("--trust-moor-yaml")));
-    assert_eq!(setup_execs(w), 1);
+    assert_eq!(setup_execs(w), 0);
 }
 
 #[test]
-fn an_unchanged_moor_yaml_re_runs_setup() {
+fn an_unchanged_moor_yaml_sets_up_a_replacement_box() {
     let w = failed_with(Some(BASE));
     let again = run(&w.cx, &start_req()).unwrap();
     assert!(again.setup.ran && again.setup.ok);
-    assert_eq!(setup_execs(&w), 2);
+    assert_eq!(setup_execs(&w), 1);
     assert!(!warning_codes(&w).contains(&"moor_yaml_trusted".to_owned()));
 }
 
 #[test]
-fn a_changed_setup_is_refused_before_it_runs() {
+fn a_changed_setup_is_refused_before_a_replacement_box_is_set_up() {
     let w = failed_with(Some("setup: [a, curl evil]\nenv:\n  A: \"1\"\n"));
     assert_refused(&w, &start_req(), "setup");
 }
 
 #[test]
-fn a_changed_setup_runs_when_trusted_and_warns() {
+fn a_changed_setup_sets_up_a_replacement_box_when_trusted_and_warns() {
     let w = failed_with(Some("setup: [a, curl evil]\nenv:\n  A: \"1\"\n"));
     let trusted = StartReq {
         trust_moor_yaml: true,
@@ -102,27 +111,25 @@ fn a_changed_setup_runs_when_trusted_and_warns() {
     };
     let again = run(&w.cx, &trusted).unwrap();
     assert!(again.setup.ran && again.setup.ok);
-    assert_eq!(setup_execs(&w), 2);
+    assert_eq!(setup_execs(&w), 1);
     assert!(warning_codes(&w).contains(&"moor_yaml_trusted".to_owned()));
 }
 
 #[test]
-fn a_deleted_moor_yaml_is_refused() {
+fn a_deleted_moor_yaml_is_refused_for_a_replacement_box() {
     let w = failed_with(None);
     assert_refused(&w, &start_req(), "deleted");
 }
 
 #[test]
-fn an_added_moor_yaml_is_refused() {
-    let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(1))]);
-    let (w, _) = failed_setup_on_base(BASE, Some(BASE), driver);
+fn an_added_moor_yaml_is_refused_for_a_replacement_box() {
+    let w = lost_box_on_base(BASE, Some(BASE));
     script_base_yaml(&w, None);
-    drop(warning_codes(&w));
     assert_refused(&w, &start_req(), "added");
 }
 
 #[test]
-fn a_changed_env_is_refused() {
+fn a_changed_env_is_refused_for_a_replacement_box() {
     let w = failed_with(Some("setup: [a]\nenv:\n  A: \"2\"\n"));
     assert_refused(&w, &start_req(), "env");
 }
@@ -162,16 +169,20 @@ fn the_base_copy_is_read_by_host_git_in_the_main_checkout() {
 }
 
 #[test]
-fn a_worktree_copy_equal_to_the_base_passes_when_the_main_checkout_file_differs() {
+fn a_replacement_box_starts_when_the_worktree_copy_equals_the_base_but_the_main_checkout_differs() {
     let repo = tempfile::tempdir().unwrap();
     std::fs::write(repo.path().join(".moor.yaml"), BASE).unwrap();
-    let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(1))]);
+    let driver = FakeDriver::new().fail_acquire(DriverError::Failed {
+        summary: "boom".into(),
+    });
     let w = world_at(driver, repo.path());
     script_base_yaml(&w, Some(BASE));
-    let first = run(&w.cx, &start_req()).unwrap();
-    let id = TaskId::new(first.task.id);
-    let wt = w.cx.store().unwrap().task(id).unwrap().unwrap().worktree;
-    std::fs::write(Path::new(&wt.unwrap()).join(".moor.yaml"), BASE).unwrap();
+    run(&w.cx, &start_req()).unwrap_err();
+    let name = TaskName::parse("demo").unwrap();
+    let row = w.cx.store().unwrap().open_task_by_name(&name).unwrap();
+    let wt = row.unwrap().worktree.unwrap();
+    std::fs::create_dir_all(&wt).unwrap();
+    std::fs::write(Path::new(&wt).join(".moor.yaml"), BASE).unwrap();
     std::fs::write(repo.path().join(".moor.yaml"), "setup: [evil]\n").unwrap();
     script_base_yaml(&w, Some(BASE));
     let again = run(&w.cx, &start_req()).unwrap();

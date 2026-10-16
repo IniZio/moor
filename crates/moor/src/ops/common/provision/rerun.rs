@@ -1,10 +1,12 @@
-//! Decides whether a setup re-run is wanted, and how it syncs the worktree into a Box that already exists.
+//! What a start does in a Box that already exists: sync the worktree into it, and warn about a
+//! setup that failed or was interrupted, which is never re-run.
 
 use moor_core::config::Flags;
 use moor_core::decide::intent::setup_dead;
 use moor_core::domain::boxes::BoxState;
+use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, IntentChange};
 use moor_core::domain::run::SyncMode;
-use moor_core::domain::task::TaskState;
+use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
 use moor_core::Warning;
 use std::path::Path;
 
@@ -15,6 +17,7 @@ use crate::error::CommandError;
 use crate::ops::common::boxwork::{self, BoxWork};
 use crate::ops::common::facts::resolved;
 use crate::ops::common::setup;
+use crate::ops::common::view::rfc3339;
 use crate::store::{Store, TaskRow};
 
 /// The sync for a start that re-runs in the Task's existing Box.
@@ -69,9 +72,9 @@ pub(crate) struct ResyncGates<'a> {
     pub agent_live: &'a dyn Fn() -> Result<bool, CommandError>,
 }
 
-/// Syncs the host checkout into a ready Box when no setup re-run is going to.
+/// Syncs the host checkout into a ready Box.
 ///
-/// Only the sync happens. A failed sync ends the start like a fresh
+/// A failed sync ends the start like a fresh
 /// one's when the agent is about to launch; otherwise it is a warning and the start goes on, so
 /// the user can retry.
 ///
@@ -113,13 +116,57 @@ pub(super) fn resync(
     Ok(())
 }
 
-/// Whether the Task's Box is ready but its repo setup failed or its owner died.
-pub(super) fn setup_wanted(cx: &Cx, row: &TaskRow) -> bool {
+/// Warns that `moor start` does not re-run a setup that failed or was interrupted in a ready Box.
+///
+/// An interrupted setup (its owner died) is recorded as a failed one: the intent is cleared and
+/// the failure marker set, so `show` reports it and later starts take the failed branch.
+pub(super) fn note_setup_not_rerun(
+    cx: &Cx,
+    store: &Store,
+    row: &TaskRow,
+) -> Result<(), CommandError> {
     if row.boxed.as_ref().map(|b| b.state) != Some(BoxState::Ready) {
-        return false;
+        return Ok(());
     }
-    if let Some(intent) = &row.intent {
-        return setup_dead(intent, cx.proc().alive(intent.pid()));
+    let name = row.name.as_str();
+    let by_hand = format!("`moor start` does not re-run it, run its commands by hand with `moor run {name} -- <command>`");
+    let message = if let Some(intent) = &row.intent {
+        if !setup_dead(intent, cx.proc().alive(intent.pid())) {
+            return Ok(());
+        }
+        record_interrupted(cx, store, row)?;
+        format!("setup was interrupted; {by_hand}")
+    } else if let (TaskState::Working | TaskState::Idle, Some(at)) =
+        (row.state, row.setup_failed_at)
+    {
+        format!("setup failed at {}; {by_hand}", rfc3339(at))
+    } else {
+        return Ok(());
+    };
+    cx.warn(Warning {
+        code: "setup_not_rerun".to_owned(),
+        message,
+    });
+    Ok(())
+}
+
+/// Records a dead setup as failed, as a failed setup run would, without running anything.
+fn record_interrupted(cx: &Cx, store: &Store, row: &TaskRow) -> Result<(), CommandError> {
+    let line = "setup was interrupted".to_owned();
+    let mut done = Decision::new(row.id);
+    if row.state == TaskState::SettingUp {
+        done.task_input = Some(TaskInput::BoxReady {
+            setup: SetupOutcome::Failed { line },
+        });
+    } else {
+        done = done.event(ExtraEvent::SetupFailed { line });
     }
-    matches!(row.state, TaskState::Working | TaskState::Idle) && row.setup_failed_at.is_some()
+    let done = done
+        .set(Fields {
+            setup_failed_at: Field::Set(cx.clock().now().as_millis()),
+            ..Fields::default()
+        })
+        .intent(IntentChange::Clear);
+    store.apply(done)?;
+    Ok(())
 }

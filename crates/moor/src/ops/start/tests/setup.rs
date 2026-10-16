@@ -319,61 +319,68 @@ pub(super) fn failed_setup_with(yaml: &str, driver: FakeDriver) -> (World, TaskI
     (w, id)
 }
 
+/// The warning `start` gives instead of re-running setup, cut to its stable ends.
+fn not_rerun_warning(w: &World) -> Vec<String> {
+    (w.cx.take_warnings().into_iter())
+        .filter(|x| x.code == "setup_not_rerun")
+        .map(|x| x.message)
+        .collect()
+}
+
+const BY_HAND: &str =
+    "`moor start` does not re-run it, run its commands by hand with `moor run demo -- <command>`";
+
 #[test]
-fn start_after_a_failed_setup_re_runs_setup_in_the_same_box_and_clears_the_failure() {
+fn start_after_a_failed_setup_does_not_re_run_setup_and_warns() {
     let (w, id) = failed_setup_then(
         "setup: [a]\n",
         [Ok(exit(0)), Ok(exit(1)), Ok(exit(0)), Ok(exit(0))],
     );
-    let again = run(&w.cx, &start_req()).unwrap();
-    assert_eq!(again.task.state, TaskState::Working);
-    assert!(again.setup.ran && again.setup.ok);
-    assert!(!failed_at_set(&w, &again));
-    let scripts: Vec<_> = argvs(&w);
-    assert_eq!(scripts, [script_argv(&["a"]), script_argv(&["a"])]);
-    let handles: Vec<_> = setup_execs(&w).into_iter().map(|e| e.0).collect();
-    assert_eq!(handles, [BoxHandle::new("box-1"), BoxHandle::new("box-1")]);
-    assert_eq!(kinds(&w, id).iter().filter(|k| *k == "working").count(), 1);
-}
-
-#[test]
-fn start_re_runs_setup_in_a_workdir_whose_root_holds_a_parent_component() {
-    let driver = FakeDriver::new().work_root("/w/bin/../box").exec_results([
-        Ok(exit(0)),
-        Ok(exit(1)),
-        Ok(exit(0)),
-        Ok(exit(0)),
-    ]);
-    let (w, _) = failed_setup_with("setup: [a]\n", driver);
-    let again = run(&w.cx, &start_req()).unwrap();
-    assert!(again.setup.ran && again.setup.ok);
-    let cwds: Vec<_> = setup_execs(&w)
-        .into_iter()
-        .map(|e| e.1.cwd.map(|p| p.as_str().to_owned()))
-        .collect();
-    let stored = Some("/w/bin/../box/cbx_1/demo".to_owned());
-    assert_eq!(cwds, [stored.clone(), stored]);
-}
-
-#[test]
-fn start_after_a_failed_setup_that_fails_again_warns_and_stays_working() {
-    let (w, id) = failed_setup_then(
-        "setup: [a]\n",
-        [Ok(exit(0)), Ok(exit(1)), Ok(exit(0)), Ok(exit(1))],
-    );
     drop(warning_codes(&w));
     let again = run(&w.cx, &start_req()).unwrap();
-    assert_eq!(again.task.state, TaskState::Working);
-    assert!(again.setup.ran && !again.setup.ok);
-    assert_eq!(again.setup.line.as_deref(), Some("a"));
-    assert!(warning_codes(&w).contains(&"setup_failed".to_owned()));
+    assert!(!again.setup.ran);
+    assert_eq!(argvs(&w), [script_argv(&["a"])]);
+    let [message] = not_rerun_warning(&w).try_into().unwrap();
+    assert!(message.starts_with("setup failed at "));
+    assert!(message.ends_with(BY_HAND), "{message}");
     assert!(failed_at_set(&w, &again));
     let failed = kinds(&w, id)
         .iter()
         .filter(|k| *k == "setup_failed")
         .count();
-    assert_eq!(failed, 2);
-    assert_eq!(setup_execs(&w).len(), 2);
+    assert_eq!(failed, 1);
+}
+
+#[test]
+fn start_after_a_failed_setup_re_syncs_the_checkout_in_the_same_box() {
+    let (w, _) = failed_setup_then(
+        "setup: [a]\n",
+        [Ok(exit(0)), Ok(exit(1)), Ok(exit(0)), Ok(exit(0))],
+    );
+    run(&w.cx, &start_req()).unwrap();
+    let handles: Vec<_> = w.driver.execs().into_iter().map(|e| e.0).collect();
+    let box_1 = BoxHandle::new("box-1");
+    assert_eq!(handles, [box_1.clone(), box_1.clone(), box_1]);
+}
+
+#[test]
+fn start_after_a_failed_setup_in_a_replaced_box_runs_setup_in_the_new_box() {
+    let (w, id) = failed_setup_then(
+        "setup: [a]\n",
+        [Ok(exit(0)), Ok(exit(1)), Ok(exit(0)), Ok(exit(0))],
+    );
+    let store = w.cx.store().unwrap();
+    store
+        .apply(Decision::new(id).box_input(BoxInput::DriverMissing))
+        .unwrap();
+    drop(warning_codes(&w));
+    let again = run(&w.cx, &start_req()).unwrap();
+    assert!(again.setup.ran && again.setup.ok);
+    assert_eq!(argvs(&w), [script_argv(&["a"]), script_argv(&["a"])]);
+    let handles: Vec<_> = setup_execs(&w).into_iter().map(|e| e.0).collect();
+    assert_eq!(handles, [BoxHandle::new("box-1"), BoxHandle::new("box-2")]);
+    assert!(not_rerun_warning(&w).is_empty());
+    assert!(!failed_at_set(&w, &again));
 }
 
 /// A started `demo` with a recorded Box whose setup intent belongs to `pid`.
@@ -391,12 +398,17 @@ fn interrupted_setup(pid: u32) -> (World, moor_core::view::StartView) {
 }
 
 #[test]
-fn start_re_runs_setup_when_the_setup_owner_is_dead() {
+fn start_does_not_re_run_setup_when_the_setup_owner_is_dead() {
     let (w, _) = interrupted_setup(4242);
     w.proc.dead(4242);
+    drop(warning_codes(&w));
     let again = run(&w.cx, &start_req()).unwrap();
-    assert!(again.setup.ran && again.setup.ok);
-    assert_eq!(argvs(&w), [script_argv(&["a"]), script_argv(&["b"])]);
+    assert!(!again.setup.ran);
+    assert_eq!(argvs(&w), [script_argv(&["a"])]);
+    let [message] = not_rerun_warning(&w).try_into().unwrap();
+    assert!(message.starts_with("setup was interrupted; "));
+    assert!(message.ends_with(BY_HAND), "{message}");
+    assert!(failed_at_set(&w, &again));
     let row = w.cx.store().unwrap().task(TaskId::new(again.task.id));
     assert_eq!(row.unwrap().unwrap().intent, None);
 }
@@ -435,7 +447,7 @@ fn start_on_a_setting_up_task_with_a_live_setup_owner_records_no_session() {
 }
 
 #[test]
-fn start_re_runs_setup_for_a_setting_up_task_whose_setup_owner_died() {
+fn start_does_not_re_run_setup_for_a_setting_up_task_whose_setup_owner_died() {
     let repo = tempfile::tempdir().unwrap();
     std::fs::write(repo.path().join(".moor.yaml"), "setup: [a]\n").unwrap();
     let w = world_at(FakeDriver::new(), repo.path());
@@ -457,10 +469,14 @@ fn start_re_runs_setup_for_a_setting_up_task_whose_setup_owner_died() {
     );
     w.driver.on_exec(|| {});
     w.proc.dead(std::process::id());
+    drop(warning_codes(&w));
     let again = run(&w.cx, &start_req()).unwrap();
-    assert_eq!(again.task.state, TaskState::Working);
-    assert!(again.setup.ran && again.setup.ok);
-    assert_eq!(kinds(&w, id).iter().filter(|k| *k == "working").count(), 1);
+    assert!(!again.setup.ran);
+    assert_eq!(not_rerun_warning(&w).len(), 1);
+    assert!(failed_at_set(&w, &again));
+    let row = w.cx.store().unwrap().task(id).unwrap().unwrap();
+    assert_eq!(row.intent, None);
+    assert_eq!(row.state, TaskState::Working);
 }
 
 #[test]

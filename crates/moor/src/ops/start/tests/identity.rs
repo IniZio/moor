@@ -2,12 +2,12 @@ use std::path::Path;
 
 use moor_core::boxscript::quote;
 use moor_core::domain::boxes::BoxInput;
-use moor_core::domain::decision::{Decision, Intent, IntentChange};
+use moor_core::domain::decision::Decision;
 use moor_core::TaskId;
 
 use super::moor_yaml::script_base_yaml;
 use super::setup::{
-    argvs, exit, is_identity, is_setup_line, script_argv, start_as, start_req, start_with,
+    argvs, is_identity, is_setup_line, script_argv, start_as, start_req, start_with,
 };
 use super::World;
 use crate::ops::start::run;
@@ -64,58 +64,6 @@ fn identity_is_set_again_when_the_box_is_re_provisioned() {
     run(&w.cx, &start_req()).unwrap();
     let configs = argvs(&w).iter().filter(|a| is_identity(a)).count();
     assert_eq!(configs, 2);
-}
-
-/// The execs issued after the first `skip` ones.
-fn argvs_after(w: &World, skip: usize) -> Vec<Vec<String>> {
-    argvs(w).split_off(skip)
-}
-
-#[test]
-fn identity_is_set_before_the_re_run_after_a_failed_setup() {
-    let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(0)), Ok(exit(1))]);
-    let (w, v) = start_as(("Ann Dev", "a@x.io"), "setup: [a]\n", driver);
-    let wt =
-        w.cx.store()
-            .unwrap()
-            .task(TaskId::new(v.task.id))
-            .unwrap()
-            .unwrap()
-            .worktree;
-    let wt = wt.unwrap();
-    std::fs::create_dir_all(&wt).unwrap();
-    std::fs::write(Path::new(&wt).join(".moor.yaml"), "setup: [b]\n").unwrap();
-    script_base_yaml(&w, Some("setup: [b]\n"));
-    let before = argvs(&w).len();
-    let again = run(&w.cx, &start_req()).unwrap();
-    assert!(again.setup.ran && again.setup.ok);
-    let sh = |l: &str| script_argv(&[l]);
-    assert_eq!(
-        identity_marked(argvs_after(&w, before)),
-        [identity_marker(), sh("b")]
-    );
-}
-
-#[test]
-fn identity_is_set_before_the_re_run_when_the_setup_owner_is_dead() {
-    let (w, v) = start_as(("Ann Dev", "a@x.io"), "setup: [a]\n", FakeDriver::new());
-    let id = TaskId::new(v.task.id);
-    let wt = w.cx.store().unwrap().task(id).unwrap().unwrap().worktree;
-    let wt = wt.unwrap();
-    std::fs::create_dir_all(&wt).unwrap();
-    std::fs::write(Path::new(&wt).join(".moor.yaml"), "setup: [b]\n").unwrap();
-    script_base_yaml(&w, Some("setup: [b]\n"));
-    let held = Decision::new(id).intent(IntentChange::Set(Intent::Setup { pid: 4242 }));
-    w.cx.store().unwrap().apply(held).unwrap();
-    w.proc.dead(4242);
-    let before = argvs(&w).len();
-    let again = run(&w.cx, &start_req()).unwrap();
-    assert!(again.setup.ran && again.setup.ok);
-    let sh = |l: &str| script_argv(&[l]);
-    assert_eq!(
-        identity_marked(argvs_after(&w, before)),
-        [identity_marker(), sh("b")]
-    );
 }
 
 #[test]

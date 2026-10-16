@@ -26,7 +26,7 @@ use crate::store::{Store, TaskRow};
 pub(crate) use self::outcome::Provisioned;
 use self::outcome::{dotfiles_failed, sync_failed};
 pub(crate) use self::rerun::ResyncGates;
-use self::rerun::{rerun_sync, resync, setup_wanted};
+use self::rerun::{note_setup_not_rerun, resync};
 use self::retry::{dotfiles_retry, retry_dotfiles};
 
 /// Re-reads a Task row that must exist.
@@ -64,14 +64,15 @@ impl Entry {
     }
 }
 
-/// Gives a Task with no Box, a failed setup or a lost Box a Box again.
+/// Gives a Task with no Box, a failed setup in a lost Box or a lost Box a Box again.
 ///
 /// Returns what ran, or `None` when nothing was provisioned. The Box lock is held while
 /// provisioning and the row is read again under it; another op holding it is
 /// refused as busy.
 ///
 /// A `.moor.yaml` that differs from the base commit is refused unless `trusted`, before any
-/// setup or Box work starts. `gates` decide a re-sync of the checkout into a ready Box.
+/// setup or Box work starts. `gates` decide a re-sync of the checkout into a ready Box. A ready
+/// Box never has its setup run again; a failed or interrupted setup is only warned about.
 pub(crate) fn reprovision(
     cx: &Cx,
     store: &Store,
@@ -81,7 +82,7 @@ pub(crate) fn reprovision(
     gates: &ResyncGates,
 ) -> Result<Option<Provisioned>, CommandError> {
     let ready = row.boxed.as_ref().map(|b| b.state) == Some(BoxState::Ready);
-    if entry_for(row).is_none() && !setup_wanted(cx, row) && !dotfiles_retry(row) && !ready {
+    if entry_for(row).is_none() && !dotfiles_retry(row) && !ready {
         return Ok(None);
     }
     let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, row.id, op, boxlock::WAIT)?;
@@ -90,41 +91,18 @@ pub(crate) fn reprovision(
     if dotfiles_retry(&row) {
         return retry_dotfiles(cx, store, &row).map(Some);
     }
-    if ready && entry.is_none() && row.intent.is_none() && !setup_wanted(cx, &row) {
-        resync(cx, store, &row, trusted, gates)?;
-    }
-    let at = row.worktree.as_deref().unwrap_or(&row.repo);
-    if entry.is_none() && !setup_wanted(cx, &row) {
+    let Some(entry) = entry else {
+        if ready {
+            if row.intent.is_none() {
+                resync(cx, store, &row, trusted, gates)?;
+            }
+            note_setup_not_rerun(cx, store, &row)?;
+        }
         return Ok(None);
-    }
+    };
     let repo = moor_yaml::guard(cx, &row, trusted)?;
     let cfg = resolved(cx, repo.as_ref(), &Flags::default());
-    if let Some(entry) = entry {
-        return provision(cx, store, row.id, entry, &cfg).map(Some);
-    }
-    let (Some(handle), Some(workdir)) = (
-        row.boxed.as_ref().and_then(|b| b.handle.clone()),
-        row.boxed.as_ref().and_then(|b| b.workdir.clone()),
-    ) else {
-        return Ok(None);
-    };
-    let workdir = recorded_workdir(&workdir)
-        .ok_or_else(|| CommandError::new(ErrorKind::Internal, "recorded box workdir is invalid"))?;
-    let held = Decision::new(row.id).intent(IntentChange::Set(Intent::Setup {
-        pid: std::process::id(),
-    }));
-    store.apply(held)?;
-    let advance = row.state == TaskState::SettingUp;
-    let target = SetupTarget {
-        handle: &handle,
-        workdir: &workdir,
-        worktree: Path::new(at),
-        sync: rerun_sync(cx, store, &row, gates)?,
-        launching: Some(gates.launching),
-    };
-    Ok(Some(run_and_record(
-        cx, store, row.id, advance, &target, &cfg,
-    )?))
+    provision(cx, store, row.id, entry, &cfg).map(Some)
 }
 
 /// Rebuilds the Box path from the workdir text stored on the Task row.
