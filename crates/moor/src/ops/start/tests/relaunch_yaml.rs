@@ -86,7 +86,10 @@ fn a_start_that_re_runs_setup_and_launches_warns_once() {
             .launch_result(Ok(session("p-1")))
             .launch_result(Ok(session("p-2"))),
     );
-    let mut w = world_at(FakeDriver::new().exec_results([Ok(exit(1))]), repo.path());
+    let mut w = world_at(
+        FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(1))]),
+        repo.path(),
+    );
     w.cx = w.cx.with_engine(engine.clone());
     script_base_yaml(&w, Some(BASE));
     let first = run(

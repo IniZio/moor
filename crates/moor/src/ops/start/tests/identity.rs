@@ -73,7 +73,7 @@ fn argvs_after(w: &World, skip: usize) -> Vec<Vec<String>> {
 
 #[test]
 fn identity_is_set_before_the_re_run_after_a_failed_setup() {
-    let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(1))]);
+    let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(0)), Ok(exit(1))]);
     let (w, v) = start_as(("Ann Dev", "a@x.io"), "setup: [a]\n", driver);
     let wt =
         w.cx.store()

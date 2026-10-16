@@ -140,7 +140,7 @@ fn happy_path_calls_seams_in_order_and_clears_intent() {
         w.surface.calls(),
         ["create_worktree demo", "ensure_workspace moor:demo"]
     );
-    assert_eq!(w.driver.calls(), ["acquire"]);
+    assert_eq!(w.driver.calls(), ["acquire", "exec box-1"]);
 }
 
 #[test]
@@ -304,7 +304,7 @@ fn open_name_attaches_without_effects() {
     let again = run(&w.cx, &req("demo")).unwrap();
     assert!(again.attached);
     assert_eq!(again.task.id, first.task.id);
-    assert_eq!(w.driver.calls(), ["acquire"]);
+    assert_eq!(w.driver.calls(), ["acquire", "exec box-1"]);
     assert_eq!(w.surface.calls().len(), 2);
 }
 
@@ -368,7 +368,10 @@ fn start_after_acquire_failure_gets_a_new_box() {
     assert_eq!(again.task.state, TaskState::Working);
     let row = w.cx.store().unwrap().task(TaskId::new(again.task.id));
     assert_eq!(row.unwrap().unwrap().boxed.unwrap().state, BoxState::Ready);
-    assert_eq!(w.driver.calls(), ["acquire", "release box-1", "acquire"]);
+    assert_eq!(
+        w.driver.calls(),
+        ["acquire", "release box-1", "acquire", "exec box-1"]
+    );
     assert_eq!(w.surface.calls().len(), 2);
 }
 
@@ -386,7 +389,10 @@ fn start_on_a_gone_box_acquires_again_and_keeps_the_task_working() {
     let b = store.task(id).unwrap().unwrap().boxed.unwrap();
     assert_eq!(b.state, BoxState::Ready);
     assert_ne!(b.handle.unwrap().as_str(), "box-1");
-    assert_eq!(w.driver.calls(), ["acquire", "acquire"]);
+    assert_eq!(
+        w.driver.calls(),
+        ["acquire", "exec box-1", "acquire", "exec box-2"]
+    );
 }
 
 #[test]
@@ -482,7 +488,7 @@ fn refused_start_provisions_when_retried_after_the_lock_is_released() {
     assert_eq!(again.task.state, TaskState::Working);
     let row = w.cx.store().unwrap().task(TaskId::new(again.task.id));
     assert_eq!(row.unwrap().unwrap().boxed.unwrap().state, BoxState::Ready);
-    assert_eq!(w.driver.calls(), ["acquire"]);
+    assert_eq!(w.driver.calls(), ["acquire", "exec box-1"]);
 }
 
 #[test]
@@ -498,7 +504,7 @@ fn start_on_a_lost_box_is_refused_while_another_op_holds_the_lock() {
     let err = run(&w.cx, &req("demo")).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Refused);
     assert_eq!(err.error.to_string(), "box busy: close in progress");
-    assert_eq!(w.driver.calls(), ["acquire"]);
+    assert_eq!(w.driver.calls(), ["acquire", "exec box-1"]);
 }
 
 #[test]
@@ -512,11 +518,17 @@ fn reprovision_skips_when_another_start_already_gave_the_box_back() {
         .unwrap();
     let stale = store.task(id).unwrap().unwrap();
     run(&w.cx, &req("demo")).unwrap();
-    assert_eq!(w.driver.calls(), ["acquire", "acquire"]);
+    assert_eq!(
+        w.driver.calls(),
+        ["acquire", "exec box-1", "acquire", "exec box-2"]
+    );
     let run =
         crate::ops::common::provision::reprovision(&w.cx, store, &stale, "start", false).unwrap();
     assert!(run.is_none());
-    assert_eq!(w.driver.calls(), ["acquire", "acquire"]);
+    assert_eq!(
+        w.driver.calls(),
+        ["acquire", "exec box-1", "acquire", "exec box-2"]
+    );
 }
 
 /// Starts `demo`, then leaves it as a provisioning that lost its Box handle.

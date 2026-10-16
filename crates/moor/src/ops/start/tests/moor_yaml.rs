@@ -63,7 +63,7 @@ fn setup_execs(w: &World) -> usize {
 
 /// A failed first setup, with `worktree_yaml` in the worktree over a `BASE` base.
 fn failed_with(worktree_yaml: Option<&str>) -> World {
-    let driver = FakeDriver::new().exec_results([Ok(exit(1))]);
+    let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(1))]);
     let (w, _) = failed_setup_on_base(BASE, worktree_yaml, driver);
     drop(warning_codes(&w));
     w
@@ -114,7 +114,7 @@ fn a_deleted_moor_yaml_is_refused() {
 
 #[test]
 fn an_added_moor_yaml_is_refused() {
-    let driver = FakeDriver::new().exec_results([Ok(exit(1))]);
+    let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(1))]);
     let (w, _) = failed_setup_on_base(BASE, Some(BASE), driver);
     script_base_yaml(&w, None);
     drop(warning_codes(&w));
@@ -165,7 +165,7 @@ fn the_base_copy_is_read_by_host_git_in_the_main_checkout() {
 fn a_worktree_copy_equal_to_the_base_passes_when_the_main_checkout_file_differs() {
     let repo = tempfile::tempdir().unwrap();
     std::fs::write(repo.path().join(".moor.yaml"), BASE).unwrap();
-    let driver = FakeDriver::new().exec_results([Ok(exit(1))]);
+    let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(1))]);
     let w = world_at(driver, repo.path());
     script_base_yaml(&w, Some(BASE));
     let first = run(&w.cx, &start_req()).unwrap();

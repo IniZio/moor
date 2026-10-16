@@ -300,9 +300,11 @@ pub fn task_events(from: Option<TaskState>, to: TaskState, input: &TaskInput) ->
         TaskInput::AcquireFailed { cause } => vec![Event::SetupFailed {
             line: cause.clone(),
         }],
-        TaskInput::DotfilesFailed { error } => vec![Event::SetupFailed {
-            line: error.clone(),
-        }],
+        TaskInput::DotfilesFailed { error } | TaskInput::SyncFailed { error } => {
+            vec![Event::SetupFailed {
+                line: error.clone(),
+            }]
+        }
         TaskInput::CredFailed { which, error } => vec![
             Event::CredentialFailed {
                 which: which.clone(),

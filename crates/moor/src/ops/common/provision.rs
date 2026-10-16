@@ -23,8 +23,8 @@ use crate::ops::common::setup;
 use crate::ops::common::view::task_view;
 use crate::store::{Store, TaskRow};
 
-use self::outcome::dotfiles_failed;
 pub(crate) use self::outcome::Provisioned;
+use self::outcome::{dotfiles_failed, sync_failed};
 use self::rerun::{rerun_sync, setup_wanted};
 use self::retry::{dotfiles_retry, retry_dotfiles};
 
@@ -264,13 +264,21 @@ fn run_and_record(
     cfg: &TaskSettings,
 ) -> Result<Provisioned, CommandError> {
     identity::set_identity(cx, target.handle, target.worktree);
+    if target.sync == SyncMode::Full {
+        if let Err(reason) =
+            setup::sync_checkout(cx, target.handle, target.workdir, target.worktree, cfg)
+        {
+            return Err(sync_failed(cx, store, id, advance, reason));
+        }
+    }
+    // The checkout is in the Box by now, or was meant to stay as it is.
     let run = setup::run_setup(
         cx,
         target.handle,
         target.workdir,
         target.worktree,
         cfg,
-        target.sync,
+        SyncMode::None,
     );
     let setup_line = match run.outcome() {
         SetupOutcome::Failed { line } => Some(line),

@@ -3,7 +3,9 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use moor_core::boxscript::boxwork::{boxwork_script, is_full_sha, parse_boxwork, BOXWORK_FILE};
+use moor_core::boxscript::boxwork::{
+    boxwork_script, is_full_sha, parse_boxwork, BOXWORK_FILE, BOXWORK_NO_CHECKOUT,
+};
 use moor_core::boxscript::quote;
 use moor_core::seam::driver::{BoxStep, DriverError, ExecOutcome, StepDone};
 use moor_core::seam::proc::Deadline;
@@ -137,6 +139,12 @@ fn verdict(
             outcome: ExecOutcome::Exited { code: 0 },
             ..
         })) => {}
+        Some(Ok(StepDone::Ran {
+            outcome: ExecOutcome::Exited {
+                code: BOXWORK_NO_CHECKOUT,
+            },
+            ..
+        })) => return Err("the Box has no git checkout".into()),
         Some(Ok(StepDone::Ran {
             outcome: ExecOutcome::Exited { code },
             ..
