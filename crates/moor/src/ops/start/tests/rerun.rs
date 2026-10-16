@@ -11,16 +11,22 @@ use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::Reply;
 
-/// A failed first setup on a Task whose agent has run.
-fn resumed_with_session() -> World {
+/// A failed first setup on a Task whose agent session is `live` or has ended.
+fn resumed(live: bool) -> World {
     let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(1))]);
     let (w, id) = failed_setup_with("setup: [a]\n", driver);
-    w.cx.store()
-        .unwrap()
-        .begin_session(id, "agent-1", None)
-        .unwrap();
+    let store = w.cx.store().unwrap();
+    let session = store.begin_session(id, "agent-1", None).unwrap();
+    if !live {
+        store.end_session(session, Some(0), None).unwrap();
+    }
     drop(warning_codes(&w));
     w
+}
+
+/// A failed first setup on a Task whose agent session has ended.
+fn resumed_with_session() -> World {
+    resumed(false)
 }
 
 /// The sync mode of every exec that only syncs the checkout.
@@ -77,6 +83,16 @@ fn setup_re_run_over_unsaved_box_work_never_syncs_over_the_box() {
 }
 
 #[test]
+fn setup_re_run_with_a_live_agent_never_syncs_and_warns() {
+    let w = resumed(true);
+    probe_says(&w, "ahead=0 dirty=0");
+    let again = run(&w.cx, &start_req()).unwrap();
+    assert!(again.setup.ran && again.setup.ok);
+    assert_eq!(checkout_syncs(&w), [SyncMode::Full]);
+    assert!(warning_codes(&w).contains(&"resync_skipped".to_owned()));
+}
+
+#[test]
 fn setup_re_run_syncs_a_box_with_no_unsaved_work() {
     let w = resumed_with_session();
     probe_says(&w, "ahead=0 dirty=0");
@@ -90,10 +106,9 @@ fn setup_re_run_syncs_a_box_whose_first_sync_left_no_checkout() {
     let driver =
         FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(1)), Ok(exit(BOXWORK_NO_CHECKOUT))]);
     let (w, id) = failed_setup_with("setup: [a]\n", driver);
-    w.cx.store()
-        .unwrap()
-        .begin_session(id, "agent-1", None)
-        .unwrap();
+    let store = w.cx.store().unwrap();
+    let session = store.begin_session(id, "agent-1", None).unwrap();
+    store.end_session(session, Some(0), None).unwrap();
     probe_says(&w, "");
     run(&w.cx, &start_req()).unwrap();
     assert_eq!(checkout_syncs(&w), [SyncMode::Full, SyncMode::Full]);

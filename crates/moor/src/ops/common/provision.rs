@@ -119,7 +119,7 @@ pub(crate) fn reprovision(
         handle: &handle,
         workdir: &workdir,
         worktree: Path::new(at),
-        sync: rerun_sync(cx, store, &row)?,
+        sync: rerun_sync(cx, store, &row, gates)?,
         launching: Some(gates.launching),
     };
     Ok(Some(run_and_record(
