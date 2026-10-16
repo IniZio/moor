@@ -140,7 +140,7 @@ pub(crate) fn run_setup(
         host_cwd: Some(worktree.to_path_buf()),
         class: Some(cfg.size.value.as_str().to_owned()),
     };
-    let deadline = Deadline(setup_deadline(cfg.setup.len()));
+    let deadline = Deadline(setup_deadline(cfg.setup.len().max(1)));
     let started = cx.clock().instant();
     let result = cx.driver().exec(handle, &spec, deadline);
     let elapsed = cx.clock().instant().saturating_duration_since(started);

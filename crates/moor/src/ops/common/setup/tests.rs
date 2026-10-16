@@ -434,9 +434,10 @@ fn empty_setup_still_syncs_the_checkout_with_one_exec() {
         SyncMode::Full,
     );
     assert_eq!(got, SetupRun::Skipped);
-    let (_, spec, _) = only(r.driver.execs());
+    let (_, spec, dl) = only(r.driver.execs());
     assert_eq!(spec.sync, SyncMode::Full);
     assert_eq!(spec.argv, vec!["true".to_owned()]);
+    assert_eq!(dl, Deadline(SETUP_LINE_DEADLINE));
     assert!(r.cx.take_warnings().is_empty());
 }
 
