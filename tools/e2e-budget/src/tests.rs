@@ -4,6 +4,7 @@ use super::*;
 
 const START_OK: &str = include_str!("../fixtures/start_ok.jsonl");
 const START_SLOW_BOX: &str = include_str!("../fixtures/start_slow_box.jsonl");
+const START_REAL_RUN: &str = include_str!("../fixtures/start_real_run.jsonl");
 const START_NO_SESSION: &str = include_str!("../fixtures/start_no_session.jsonl");
 const WAKE_OK: &str = include_str!("../fixtures/wake_ok.jsonl");
 const WAKE_SLOW: &str = include_str!("../fixtures/wake_slow_relaunch.jsonl");
@@ -40,9 +41,10 @@ fn start_within_budget_passes_with_exact_lines() {
         lines(&p),
         [
             "PHASE start.box_ready took=12.3s budget=30.0s PASS",
+            "PHASE start.setup took=0.7s budget=none PASS",
             "PHASE start.proxy took=7.0s budget=15.0s PASS",
             "PHASE start.session took=9.5s budget=20.0s PASS",
-            "PHASE start.total took=29.5s budget=90.0s PASS",
+            "PHASE start.total took=28.8s budget=90.0s PASS",
         ]
     );
     assert!(verdict(&p));
@@ -60,6 +62,51 @@ fn slow_box_ready_fails_that_phase_only() {
 }
 
 #[test]
+fn real_run_events_yield_a_number_for_every_start_phase() {
+    let p = start(START_REAL_RUN);
+    assert_eq!(
+        lines(&p),
+        [
+            "PHASE start.box_ready took=37.7s budget=30.0s FAIL",
+            "PHASE start.setup took=132.7s budget=none PASS",
+            "PHASE start.proxy took=26.3s budget=15.0s FAIL",
+            "PHASE start.session took=39.6s budget=20.0s FAIL",
+            "PHASE start.total took=103.7s budget=90.0s FAIL",
+        ]
+    );
+    assert!(p.iter().all(|x| x.took_ms.is_some()));
+}
+
+#[test]
+fn setup_time_is_excluded_from_total_and_never_fails() {
+    let events = [
+        ev(1, "started", 0),
+        ev(2, "box_ready", 10_000),
+        ev(3, "setup_finished", 110_000),
+        ev(4, "proxy_started", 112_000),
+        ev(5, "session_started", 115_000),
+    ];
+    let p = start_phases(&events, &StartBudgets::default());
+    assert_eq!(p[1].line(), "PHASE start.setup took=100.0s budget=none PASS");
+    assert_eq!(p[4].took_ms, Some(15_000));
+    assert!(verdict(&p));
+}
+
+#[test]
+fn start_without_setup_anchors_proxy_on_box_ready() {
+    let events = [
+        ev(1, "started", 0),
+        ev(2, "box_ready", 10_000),
+        ev(3, "proxy_started", 12_000),
+        ev(4, "session_started", 15_000),
+    ];
+    let p = start_phases(&events, &StartBudgets::default());
+    assert_eq!(p.len(), 4);
+    assert_eq!(p[1].took_ms, Some(2_000));
+    assert_eq!(p[3].took_ms, Some(15_000));
+}
+
+#[test]
 fn exactly_at_budget_passes_one_ms_over_fails() {
     assert!(timed("x", 30_000, 30_000).pass());
     assert!(!timed("x", 30_001, 30_000).pass());
@@ -69,17 +116,17 @@ fn exactly_at_budget_passes_one_ms_over_fails() {
 fn missing_session_started_fails_session_and_total() {
     let p = start(START_NO_SESSION);
     assert_eq!(
-        p[2].line(),
+        p[3].line(),
         "PHASE start.session took=missing budget=20.0s FAIL"
     );
     assert_eq!(
-        p[3].line(),
+        p[4].line(),
         "PHASE start.total took=missing budget=90.0s FAIL"
     );
-    assert!(p[0].pass() && p[1].pass());
+    assert!(p[..3].iter().all(Phase::pass));
     assert_eq!(
         verdict_line(&p),
-        "VERDICT FAIL (2 of 4 phases failed: start.session, start.total)"
+        "VERDICT FAIL (2 of 5 phases failed: start.session, start.total)"
     );
 }
 
