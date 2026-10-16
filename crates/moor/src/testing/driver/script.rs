@@ -53,6 +53,11 @@ impl FakeDriver {
             .push((handle.to_owned(), path.as_str().to_owned(), text.to_owned()));
     }
 
+    /// Queues one more scripted `exec` result on a driver already in use.
+    pub(crate) fn push_exec_result(&self, r: Result<ExecOutcome, DriverError>) {
+        self.st().exec_results.push_back(r);
+    }
+
     /// The next `peek_file` fails once with `e`.
     pub(crate) fn fail_peek(self, e: DriverError) -> Self {
         self.st().fail_peek = Some(e);

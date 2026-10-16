@@ -3,16 +3,17 @@
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
+use std::time::Duration;
 
-use super::super::start;
+use moor_core::seam::driver::DriverError;
+use moor_core::seam::proc::Deadline;
+
+use moor_core::seam::clock::Clock;
+
 use super::super::tests::{World, FIRST_TUNNEL_PID};
+use super::super::{start, LEASE};
 use super::clear_argv;
 use crate::store::TunnelWant;
-
-/// Position of the first call starting with `prefix`.
-fn position(calls: &[String], prefix: &str) -> usize {
-    calls.iter().position(|c| c.starts_with(prefix)).unwrap()
-}
 
 fn sleeper() -> Child {
     Command::new("sleep")
@@ -91,17 +92,74 @@ fn nothing_is_killed_when_no_sshd_session_holds_the_port() {
 }
 
 #[test]
-fn the_port_is_freed_before_the_first_bind() {
+fn a_first_open_makes_no_clear_call() {
     let w = World::new([]);
     let deps = w.deps();
     let _run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
 
+    assert!(w.driver.execs().is_empty());
+    assert!(w
+        .driver
+        .calls()
+        .iter()
+        .any(|c| c.starts_with("reverse_tunnel ")));
+}
+
+#[test]
+fn a_new_supervisor_for_a_box_that_had_a_tunnel_clears_the_port_first() {
+    let w = World::new([]);
+    let deps = w.deps();
+    let first = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
+    drop(first);
+    w.clock.sleep(LEASE + Duration::from_secs(1));
+
+    let _run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
+
     let calls = w.driver.calls();
-    assert!(position(&calls, "exec ") < position(&calls, "reverse_tunnel "));
-    let execs = w.driver.execs();
+    assert!(calls.last().unwrap().starts_with("reverse_tunnel "));
+    assert!(calls
+        .iter()
+        .rev()
+        .nth(1)
+        .expect("penultimate call")
+        .starts_with("exec "));
     let port = w.driver.tunnels().first().unwrap().box_port;
-    assert_eq!(execs.len(), 1);
-    assert_eq!(execs.first().unwrap().1.argv, clear_argv(port));
+    assert_eq!(w.driver.execs().len(), 1);
+    assert_eq!(w.driver.execs().first().unwrap().1.argv, clear_argv(port));
+}
+
+#[test]
+fn the_clear_deadline_covers_the_cost_of_a_remote_run() {
+    let w = World::new([]);
+    let deps = w.deps();
+    let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
+    w.driver.end_tunnel(FIRST_TUNNEL_PID);
+
+    assert!(run.tick().is_none());
+
+    let execs = w.driver.execs();
+    let deadline = execs.first().unwrap().2;
+    assert_eq!(deadline, Deadline(Duration::from_secs(45)));
+}
+
+#[test]
+fn the_clear_outcome_is_logged_and_a_timeout_does_not_block_the_bind() {
+    let w = World::new([]);
+    let deps = w.deps();
+    let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
+    w.driver.end_tunnel(FIRST_TUNNEL_PID);
+    w.driver
+        .push_exec_result(Err(DriverError::Timeout(Duration::from_secs(45))));
+
+    assert!(run.tick().is_none());
+
+    assert!(w.stderr().contains("cannot free port"), "{}", w.stderr());
+    assert!(w
+        .driver
+        .calls()
+        .last()
+        .unwrap()
+        .starts_with("reverse_tunnel "));
 }
 
 #[test]
@@ -120,7 +178,7 @@ fn the_port_is_freed_before_a_restart_binds_it() {
             .map(String::as_str)
             .filter(|c| c.starts_with("exec "))
             .count(),
-        2
+        1
     );
     assert!(calls.last().unwrap().starts_with("reverse_tunnel "));
     assert!(calls
@@ -150,5 +208,5 @@ fn the_port_is_freed_before_a_wake_reopens_the_tunnel() {
         .nth(1)
         .expect("penultimate call")
         .starts_with("exec "));
-    assert_eq!(w.driver.execs().len(), 2);
+    assert_eq!(w.driver.execs().len(), 1);
 }
