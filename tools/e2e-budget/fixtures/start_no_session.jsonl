@@ -1,0 +1,8 @@
+{"id":1,"kind":"box_requested","ts_ms":1700000000000}
+{"id":2,"kind":"started","ts_ms":1700000001000}
+{"id":3,"kind":"setting_up","ts_ms":1700000004000}
+{"id":4,"kind":"box_ready","ts_ms":1700000013300}
+{"id":5,"kind":"attached","ts_ms":1700000014000}
+{"id":6,"kind":"checked","ts_ms":1700000015000}
+{"id":7,"kind":"proxy_started","ts_ms":1700000021000}
+{"id":8,"kind":"working","ts_ms":1700000024000}
