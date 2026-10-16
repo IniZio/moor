@@ -290,7 +290,7 @@ fn claim_race_is_retried_through_a_long_tunnel_restart() {
     p.on(
         Tool::Crabbox,
         &["--version"],
-        Reply::Ok("crabbox 0.72.0-moor.5\n".into()),
+        Reply::Ok("crabbox 0.72.0-moor.7\n".into()),
     );
     let c = Crabbox::new(p.clone(), clock.clone());
     assert_eq!(exec_once(&c), Ok(ExecOutcome::Exited { code: 0 }));
