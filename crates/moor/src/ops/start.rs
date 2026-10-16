@@ -180,8 +180,12 @@ fn attach(
             },
         ))
     };
+    let recreated = matches!(
+        row.boxed.as_ref().map(|b| b.state),
+        Some(BoxState::Failed | BoxState::Gone)
+    );
     wake_idle(store, row.id)?;
-    let agent = relaunch::run(cx, store, req, row.id, setup_exit, &settings)?;
+    let agent = relaunch::run(cx, store, req, row.id, (setup_exit, recreated), &settings)?;
     let agent = watch::run(cx, store, row.id, agent);
     let row = &reread(store, row.id)?;
     let mut v = with_provider(cx, row, true)?;
