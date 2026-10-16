@@ -128,6 +128,9 @@ pub struct PromptMatch {
     pub line: String,
 }
 
+/// What a transcript script prints when the agent left no transcript.
+pub const NOTHING_TO_ARCHIVE: &str = "moor: nothing to archive";
+
 /// What is specific to one kind of agent.
 pub trait AgentProfile: Send + Sync {
     /// Parses the agent's hook state file; `None` when it is unreadable or partial.
@@ -174,7 +177,8 @@ pub trait AgentProfile: Send + Sync {
 
     /// POSIX sh text that archives the agent's session transcripts to `archive`.
     ///
-    /// It runs in the Box workdir and exits non-zero when there is nothing to archive.
+    /// It runs in the Box workdir. When there is nothing to archive it prints
+    /// [`NOTHING_TO_ARCHIVE`] and exits 0; any other non-zero exit is a failure.
     fn transcript_script(&self, archive: &str) -> String;
 }
 

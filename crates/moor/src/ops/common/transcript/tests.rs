@@ -32,6 +32,14 @@ fn fx(engine: FakeEngine) -> (tempfile::TempDir, Cx) {
 }
 
 fn ready(cx: &Cx, dir: &std::path::Path) -> (TaskRow, SessionRow) {
+    let (row, session) = unregistered(cx, dir);
+    let store = cx.store().unwrap();
+    store.set_registered_session(session.id, "agent-1").unwrap();
+    let session = store.live_session(row.id).unwrap().unwrap();
+    (row, session)
+}
+
+fn unregistered(cx: &Cx, dir: &std::path::Path) -> (TaskRow, SessionRow) {
     let store = cx.store().unwrap();
     let id = store
         .apply(Decision::insert(NewTask {
@@ -138,4 +146,39 @@ fn a_box_that_is_not_ready_is_skipped() {
         .unwrap()
         .iter()
         .all(|e| !e.kind.starts_with("transcript_")));
+}
+
+#[test]
+fn nothing_to_archive_records_a_skip_not_a_failure() {
+    let engine = FakeEngine::new().fail_transcript(EngineError::NothingToArchive);
+    let (dir, cx) = fx(engine);
+    let (row, session) = ready(&cx, dir.path());
+    assert!(save(&cx, cx.store().unwrap(), &row, &session, Trigger::Relaunch).is_none());
+    let ev = cx.store().unwrap().events(row.id, 100).unwrap();
+    let last = ev.last().unwrap();
+    assert_eq!(last.kind, "transcript_skipped");
+    assert_eq!(last.payload.get("trigger"), Some(&json!("relaunch")));
+    assert_eq!(
+        last.payload.get("reason"),
+        Some(&json!("nothing to archive"))
+    );
+    assert!(ev.iter().all(|e| e.kind != "transcript_failed"));
+}
+
+#[test]
+fn a_session_without_a_registered_agent_session_is_skipped_without_asking_the_engine() {
+    let engine = Arc::new(FakeEngine::new().transcript_text("abc"));
+    let (dir, cx) = fx(FakeEngine::new());
+    let cx = cx.with_engine(engine.clone());
+    let (row, session) = unregistered(&cx, dir.path());
+    assert!(save(&cx, cx.store().unwrap(), &row, &session, Trigger::Close).is_none());
+    assert!(engine.transcripts().is_empty());
+    let ev = cx.store().unwrap().events(row.id, 100).unwrap();
+    let last = ev.last().unwrap();
+    assert_eq!(last.kind, "transcript_skipped");
+    assert_eq!(last.payload.get("trigger"), Some(&json!("close")));
+    assert_eq!(
+        last.payload.get("reason"),
+        Some(&json!("no agent session registered"))
+    );
 }

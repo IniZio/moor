@@ -9,7 +9,7 @@ use std::time::Duration;
 use moor_core::decide::transcript::{digest, is_duplicate, next_number, relative_path, Trigger};
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, ExtraEvent};
-use moor_core::seam::engine::SessionRef;
+use moor_core::seam::engine::{EngineError, SessionRef};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -40,6 +40,14 @@ pub(crate) fn save(
     if row.boxed.as_ref()?.state != BoxState::Ready {
         return None;
     }
+    if session
+        .registered_agent_session
+        .as_deref()
+        .is_none_or(str::is_empty)
+    {
+        record(store, row, skipped(trigger, "no agent session registered"));
+        return None;
+    }
     let s = session_ref(row, session.session_ref.clone(), session.pane.clone())?;
     let event = match try_save(cx, store, row, session, &s) {
         Ok(None) => return None,
@@ -53,7 +61,8 @@ pub(crate) fn save(
             record(store, row, event);
             return Some(saved);
         }
-        Err(error) => ExtraEvent::TranscriptFailed {
+        Err(TryError::NothingToArchive) => skipped(trigger, "nothing to archive"),
+        Err(TryError::Failed(error)) => ExtraEvent::TranscriptFailed {
             trigger: trigger.name().to_owned(),
             error,
         },
@@ -62,11 +71,33 @@ pub(crate) fn save(
     None
 }
 
+/// The event for a save that found nothing to save.
+fn skipped(trigger: Trigger, reason: &str) -> ExtraEvent {
+    ExtraEvent::TranscriptSkipped {
+        trigger: trigger.name().to_owned(),
+        reason: reason.to_owned(),
+    }
+}
+
+/// Why `try_save` saved nothing new.
+enum TryError {
+    /// The agent left no transcript.
+    NothingToArchive,
+    /// The archive could not be built, copied or read.
+    Failed(String),
+}
+
+impl From<String> for TryError {
+    fn from(error: String) -> Self {
+        Self::Failed(error)
+    }
+}
+
 /// Saves the live session's transcript the first time its agent is seen exited.
 ///
 /// `probed` is the session the exit was read from. Nothing is saved while another operation
 /// holds the Box lock, when the Box is no longer Ready, when the live session is another one,
-/// or when it was already saved or its exit save already failed: a failure is not retried.
+/// or when it was already saved or its exit save already failed or was skipped: neither is retried.
 /// The digest kept on the session marks it saved.
 pub(crate) fn save_on_exit(
     cx: &Cx,
@@ -89,7 +120,7 @@ pub(crate) fn save_on_exit(
     let Some(session) = store.live_session(row.id)?.filter(|s| s.id == probed) else {
         return Ok(());
     };
-    if session.transcript_digest.is_some() || exit_save_failed(store, &row)? {
+    if session.transcript_digest.is_some() || exit_save_ended(store, &row)? {
         return Ok(());
     }
     if let Some(saved) = save(cx, store, &row, &session, Trigger::Exit) {
@@ -98,15 +129,15 @@ pub(crate) fn save_on_exit(
     Ok(())
 }
 
-/// Whether an exit save failed since the Task's latest session started.
-fn exit_save_failed(store: &Store, row: &TaskRow) -> Result<bool, CommandError> {
+/// Whether an exit save failed or was skipped since the Task's latest session started.
+fn exit_save_ended(store: &Store, row: &TaskRow) -> Result<bool, CommandError> {
     let events = store.events(row.id, usize::MAX)?;
     Ok(events
         .iter()
         .rev()
         .take_while(|e| e.kind != "session_started")
         .any(|e| {
-            e.kind == "transcript_failed"
+            (e.kind == "transcript_failed" || e.kind == "transcript_skipped")
                 && e.payload.get("trigger").and_then(|t| t.as_str()) == Some("exit")
         }))
 }
@@ -126,15 +157,16 @@ fn try_save(
     row: &TaskRow,
     session: &SessionRow,
     s: &SessionRef,
-) -> Result<Option<(Saved, bool)>, String> {
+) -> Result<Option<(Saved, bool)>, TryError> {
     let events = store
         .events(row.id, usize::MAX)
         .map_err(|e| e.to_string())?;
     let n = next_number(events.iter().map(|e| e.kind.as_str()));
     let dest = dest(cx, relative_path(row.id, session.id, n))?;
-    cx.engine()
-        .transcript(s, &dest)
-        .map_err(|e| e.to_string())?;
+    cx.engine().transcript(s, &dest).map_err(|e| match e {
+        EngineError::NothingToArchive => TryError::NothingToArchive,
+        e => TryError::Failed(e.to_string()),
+    })?;
     fs::set_permissions(&dest, Permissions::from_mode(0o600))
         .map_err(|e| format!("chmod {}: {e}", dest.display()))?;
     let file = fs::File::open(&dest).map_err(|e| format!("read {}: {e}", dest.display()))?;

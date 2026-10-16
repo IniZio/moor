@@ -224,6 +224,13 @@ pub enum Event {
         /// What went wrong.
         error: String,
     },
+    /// The agent's transcript was not saved because there was nothing to save.
+    TranscriptSkipped {
+        /// What ended the session: `relaunch` or `close`.
+        trigger: String,
+        /// Why nothing was saved.
+        reason: String,
+    },
     /// A message or menu choice was sent to the agent.
     Steered {
         /// The agent session it went to.

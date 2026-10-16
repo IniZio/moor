@@ -7,11 +7,20 @@ use moor_core::activity::{HookRead, PaneObs, PaneRead, PaneStatus, Probes};
 use moor_core::seam::engine::EngineError;
 use moor_core::TaskId;
 
-use super::{cx, row, run_once, task, SESSION};
+use super::{cx, row, run_once, task as plain_task, SESSION};
 use crate::cx::Cx;
 use crate::ops::common::activity::{settle, PaneLiveness, Reading};
 use crate::ops::common::boxlock::BoxLock;
 use crate::testing::engine::FakeEngine;
+
+/// A working task whose live session has a registered agent session.
+fn task(cx: &Cx) -> TaskId {
+    let id = plain_task(cx, true);
+    let store = cx.store().unwrap();
+    let live = store.live_session(id).unwrap().unwrap();
+    store.set_registered_session(live.id, "agent-1").unwrap();
+    id
+}
 
 fn exited_probes() -> Probes {
     Probes {
@@ -45,7 +54,7 @@ fn the_first_exited_settle_saves_the_transcript_once() {
             .transcript_text("abc"),
     );
     let (cx, _) = cx(dir.path(), &engine);
-    let id = task(&cx, true);
+    let id = task(&cx);
     let reading = run_once(&cx, id);
     assert_eq!(exit_saves(&cx, id), 0);
     settle(&cx, cx.store().unwrap(), &row(&cx, id), &reading).unwrap();
@@ -62,7 +71,7 @@ fn a_live_or_gone_pane_saves_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let engine = Arc::new(FakeEngine::new().transcript_text("abc"));
     let (cx, _) = cx(dir.path(), &engine);
-    let id = task(&cx, true);
+    let id = task(&cx);
     for pane in [PaneLiveness::Live, PaneLiveness::Gone] {
         let r = Reading::new(None, pane, false, false);
         settle(&cx, cx.store().unwrap(), &row(&cx, id), &r).unwrap();
@@ -74,7 +83,7 @@ fn exited_fx(engine: FakeEngine) -> (tempfile::TempDir, Arc<FakeEngine>, Cx, Tas
     let dir = tempfile::tempdir().unwrap();
     let engine = Arc::new(engine.probes(SESSION, exited_probes()));
     let (cx, _) = cx(dir.path(), &engine);
-    let id = task(&cx, true);
+    let id = task(&cx);
     (dir, engine, cx, id)
 }
 
@@ -140,8 +149,30 @@ fn a_failed_exit_save_of_one_session_does_not_block_the_next() {
     settle(&cx, store, &row(&cx, id), &r).unwrap();
     let first = store.live_session(id).unwrap().unwrap();
     store.end_session(first.id, None, None).unwrap();
-    store.begin_session(id, "sess-2", None).unwrap();
+    let second = store.begin_session(id, "sess-2", None).unwrap();
+    store.set_registered_session(second, "agent-2").unwrap();
     let r = run_once(&cx, id);
     settle(&cx, store, &row(&cx, id), &r).unwrap();
     assert_eq!(engine.transcripts(), [SESSION, "sess-2"]);
+}
+
+#[test]
+fn an_exit_save_with_nothing_to_archive_is_recorded_once() {
+    let (_dir, engine, cx, id) =
+        exited_fx(FakeEngine::new().fail_transcript(EngineError::NothingToArchive));
+    for _ in 0..3 {
+        let r = run_once(&cx, id);
+        settle(&cx, cx.store().unwrap(), &row(&cx, id), &r).unwrap();
+    }
+    let kinds: Vec<_> = cx
+        .store()
+        .unwrap()
+        .events(id, 100)
+        .unwrap()
+        .into_iter()
+        .map(|e| e.kind)
+        .filter(|k| k.starts_with("transcript_"))
+        .collect();
+    assert_eq!(kinds, ["transcript_skipped"]);
+    assert_eq!(engine.transcripts().len(), 1);
 }
