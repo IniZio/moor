@@ -16,23 +16,28 @@ const CD_THEN_EXEC: &str = r#"cd "$1" && shift && exec "$@""#;
 /// Git metadata source for the sync seed.
 ///
 /// Crabbox's offline `local` seed rejects any tree with a submodule gitlink
-/// (`prepare complete local Git seed snapshot: gitlink`), initialised or not.
-/// Such trees use `origin`, which skips gitlink entries. An unreadable index
-/// keeps `local`, and an exec that does not sync skips the probe.
+/// (`prepare complete local Git seed snapshot: gitlink`), initialised or not,
+/// in the index or in HEAD. Such trees use `origin`, which skips gitlink
+/// entries. A probe that fails counts as no gitlink, and an exec that does
+/// not sync skips both probes.
 fn seed_source(cb: &Crabbox, spec: &ExecSpec) -> &'static str {
     let (SyncMode::Full, Some(dir)) = (spec.sync, &spec.host_cwd) else {
         return "local";
     };
-    let probe = ProcSpec::new(Tool::Git, Deadline(GITLINK_PROBE_TIMEOUT))
-        .args(["ls-files", "-s"])
-        .cwd(dir);
-    match cb.proc.run(&probe) {
-        Ok(out) if out.stdout.lines().any(|l| l.starts_with("160000 ")) => "origin",
-        _ => "local",
+    let has_gitlink = |args: &[&str]| {
+        let probe = ProcSpec::new(Tool::Git, Deadline(GITLINK_PROBE_TIMEOUT))
+            .args(args)
+            .cwd(dir);
+        matches!(cb.proc.run(&probe), Ok(out) if out.stdout.lines().any(|l| l.starts_with("160000 ")))
+    };
+    if has_gitlink(&["ls-files", "-s"]) || has_gitlink(&["ls-tree", "-r", "HEAD"]) {
+        "origin"
+    } else {
+        "local"
     }
 }
 
-/// Deadline for listing the host index.
+/// Deadline for listing the host trees.
 const GITLINK_PROBE_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Runs `spec` in the Box behind `handle`.
