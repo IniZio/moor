@@ -38,6 +38,10 @@ These commands work today:
 `report`, `remove`, `shell`, `github setup`, `github login` and `proxy check`
 parse but return the error "`moor <cmd>` is not implemented yet".
 
+The Slack bot token needs the `chat:write` scope for posting and updating
+messages and ephemeral replies, and `files:write` for uploading proof files
+into a Task's thread.
+
 Global flags: `--json`, `--quiet`, `--state-dir DIR`. State lives in
 `moor.db` inside the state directory, set by `--state-dir`, `MOOR_STATE_DIR`,
 `XDG_STATE_HOME`, or `HOME`.

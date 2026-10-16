@@ -6,3 +6,5 @@ CREATE TABLE IF NOT EXISTS slack_prompts (event_id INTEGER PRIMARY KEY, channel 
   message_ts TEXT NOT NULL, task TEXT NOT NULL, question TEXT NOT NULL, options TEXT NOT NULL, answer TEXT,
   created_at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS slack_prompts_message ON slack_prompts (channel, message_ts);
+CREATE TABLE IF NOT EXISTS slack_proofs (task TEXT NOT NULL, name TEXT NOT NULL, sha256 TEXT NOT NULL,
+  posted_at INTEGER NOT NULL, PRIMARY KEY (task, name, sha256));
