@@ -66,6 +66,13 @@ fn a_proxy_launch_wraps_the_agent_in_the_sandbox() {
         .expect(&script);
     let agent = script.rfind("'claude'").expect(&script);
     assert!(nono < agent, "{script}");
+    let ns = script
+        .find("moor_ns='unshare --pid --fork --kill-child --mount-proc --'")
+        .expect(&script);
+    let run = script
+        .find("&& $moor_ns '/home/box/.local/bin/nono'")
+        .expect(&script);
+    assert!(ns < run, "{script}");
     assert!(!script.contains("--block-net"), "{script}");
     assert!(!script.contains("--open-port"), "{script}");
 }
@@ -199,6 +206,7 @@ fn a_launch_without_a_proxy_installs_nothing_and_stays_unsandboxed() {
     out.unwrap();
     assert!(d.execs().is_empty());
     assert!(!pane_line(&s).contains("nono"));
+    assert!(!pane_line(&s).contains("moor_ns"));
 }
 
 #[test]

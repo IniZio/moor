@@ -340,9 +340,19 @@ fn script_stripping(
     let launcher = BoxPath::under(ctx.home.as_str(), ".local/bin/nono")?;
     if sandbox.is_some() {
         lines.extend(sandbox::harden_lines());
+        lines.extend(sandbox::namespace_lines());
     }
     let agent = sandbox.map_or_else(|| agent.clone(), |at| sandbox::wrap(&launcher, at, &agent));
-    lines.push(format!("cd {} && {}", quote(workdir), command_line(&agent)));
+    let prefix = if sandbox.is_some() {
+        format!("${} ", sandbox::NAMESPACE_VAR)
+    } else {
+        String::new()
+    };
+    lines.push(format!(
+        "cd {} && {prefix}{}",
+        quote(workdir),
+        command_line(&agent)
+    ));
     Ok(lines.join("\n"))
 }
 

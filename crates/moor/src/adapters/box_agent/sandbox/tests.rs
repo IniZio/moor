@@ -4,7 +4,8 @@ use moor_core::name::BoxPath;
 use serde_json::Value;
 
 use super::{
-    check_failure, check_script, harden_lines, profile, wrap, SandboxInput, NOT_INSTALLED,
+    check_failure, check_script, harden_lines, namespace_lines, profile, wrap, SandboxInput,
+    NOT_INSTALLED,
 };
 
 const SUM: &str = "6da665b61999570c10dffc7da78828fe1fb7f3cac53319e505cebecaef17037f";
@@ -345,4 +346,78 @@ fn harden_lines_unset_nono_names_and_pin_the_config_home() {
         text.contains("export XDG_CONFIG_HOME=\"$HOME/.config\""),
         "{text}"
     );
+}
+
+/// Which `unshare` the Box has.
+enum Unshare {
+    Missing,
+    Old,
+    Current,
+}
+
+/// Runs the namespace lines as a user whose `id -u` is `uid`, with the `unshare` of kind `unshare`;
+/// returns the exit code, stderr and the `moor_ns` value the script ends with.
+fn namespace_with(tag: &str, uid: &str, unshare: Unshare) -> (Option<i32>, String, String) {
+    use std::os::unix::fs::PermissionsExt;
+    let bin = std::env::temp_dir().join(format!("moor-ns-{tag}-{}", std::process::id()));
+    std::fs::create_dir_all(&bin).unwrap();
+    let stub = |name: &str, body: &str| {
+        let file = bin.join(name);
+        std::fs::write(&file, body).unwrap();
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
+    };
+    stub("id", &format!("#!/bin/sh\necho {uid}\n"));
+    let help = match unshare {
+        Unshare::Missing => None,
+        Unshare::Old => Some("  --pid"),
+        Unshare::Current => Some("  --kill-child"),
+    };
+    if let Some(help) = help {
+        stub("unshare", &format!("#!/bin/sh\necho '{help}'\n"));
+    }
+    std::os::unix::fs::symlink("/usr/bin/grep", bin.join("grep")).unwrap();
+    let script = format!("{}\nprintf '%s' \"$moor_ns\"", namespace_lines().join("\n"));
+    let out = Command::new("/bin/sh")
+        .args(["-c", &script])
+        .env("PATH", &bin)
+        .output()
+        .unwrap();
+    std::fs::remove_dir_all(&bin).unwrap();
+    (
+        out.status.code(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+    )
+}
+
+#[test]
+fn root_gets_its_own_pid_namespace_with_a_private_proc() {
+    let (code, _, prefix) = namespace_with("root", "0", Unshare::Current);
+    assert_eq!(code, Some(0));
+    assert_eq!(prefix, "unshare --pid --fork --kill-child --mount-proc --");
+}
+
+#[test]
+fn a_non_root_user_runs_without_a_namespace() {
+    let (code, _, prefix) = namespace_with("user", "1000", Unshare::Current);
+    assert_eq!(code, Some(0));
+    assert_eq!(prefix, "");
+    let (code, _, prefix) = namespace_with("user-bare", "1000", Unshare::Missing);
+    assert_eq!((code, prefix.as_str()), (Some(0), ""));
+}
+
+#[test]
+fn root_without_unshare_is_refused() {
+    let (code, stderr, prefix) = namespace_with("bare", "0", Unshare::Missing);
+    assert_eq!(code, Some(1));
+    assert!(stderr.contains("needs unshare"), "{stderr}");
+    assert_eq!(prefix, "");
+}
+
+#[test]
+fn root_with_an_unshare_lacking_kill_child_is_refused() {
+    let (code, stderr, prefix) = namespace_with("old", "0", Unshare::Old);
+    assert_eq!(code, Some(1));
+    assert!(stderr.contains("--kill-child"), "{stderr}");
+    assert_eq!(prefix, "");
 }

@@ -195,6 +195,21 @@ pub(super) fn harden_lines() -> Vec<String> {
     ]
 }
 
+/// Shell variable holding the PID namespace prefix, empty unless the agent runs as root.
+pub(super) const NAMESPACE_VAR: &str = "moor_ns";
+
+/// Shell lines that set `$moor_ns` to an `unshare` prefix when the Box user is root, so the
+/// agent gets its own PID namespace and a private `/proc`: nono grants the whole of `/proc`,
+/// and for root only the kernel's ptrace check would then guard other processes' `environ`.
+/// Root without an `unshare` that supports `--kill-child` stops the launch.
+pub(super) fn namespace_lines() -> Vec<String> {
+    let var = NAMESPACE_VAR;
+    let refusal = "moor: the agent runs as root and needs unshare --kill-child (util-linux 2.36 or newer) on the Box to hide other processes";
+    vec![format!(
+        "{var}=; if [ \"$(id -u)\" = 0 ]; then {{ command -v unshare >/dev/null 2>&1 && unshare --help 2>&1 | grep -q -- --kill-child; }} || {{ echo '{refusal}' >&2; exit 1; }}; {var}='unshare --pid --fork --kill-child --mount-proc --'; fi"
+    )]
+}
+
 /// The argv that runs `agent` under the sandbox tool at `launcher` with the profile.
 pub(super) fn wrap(launcher: &BoxPath, profile_path: &BoxPath, agent: &[String]) -> Vec<String> {
     [launcher.as_str(), "-s", "run", "--profile"]
