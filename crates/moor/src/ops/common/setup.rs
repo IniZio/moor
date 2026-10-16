@@ -146,6 +146,9 @@ pub(crate) fn run_setup(
                 class: Some(cfg.size.value.as_str().to_owned()),
             };
             let out = cx.driver().exec(handle, &spec, exec.deadline());
+            if matches!(out, Err(_) | Ok(ExecOutcome::Interrupted)) {
+                exec.cleanup(cx, &site);
+            }
             out.map_err(Failure::Exec)
         });
     let elapsed = cx.clock().instant().saturating_duration_since(started);

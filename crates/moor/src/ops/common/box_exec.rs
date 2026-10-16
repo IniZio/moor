@@ -7,13 +7,12 @@ use moor_core::config::TaskSettings;
 use moor_core::domain::run::SyncMode;
 use moor_core::exec_env::{self, BoxCtx, ExecEnv, ProxyCtx, Purpose, RUN_DEADLINE};
 use moor_core::seam::agent_profile::ProxyAddr;
-use moor_core::seam::driver::ExecSpec;
+use moor_core::seam::driver::{ExecOutcome, ExecSpec};
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::proxy_host::ProxySpec;
 use moor_core::{BoxHandle, BoxPath, TaskId};
 
 use crate::cx::Cx;
-use crate::ops::common::provision::nonce;
 use crate::ops::common::proxy::{box_env, origin, plan};
 
 /// Time allowed for removing the staged directory.
@@ -23,6 +22,8 @@ const STAGE_DEADLINE: Duration = Duration::from_secs(60);
 
 /// The Task's running Proxy, as a Box exec needs it.
 pub(crate) struct BoxProxy {
+    /// The Task the Proxy serves; names the staged directory.
+    pub(crate) task: TaskId,
     /// The Proxy's address and credentials inside the Box.
     pub(crate) addr: ProxyAddr,
     /// The git origin URL of the worktree, when it has one.
@@ -73,6 +74,7 @@ pub(crate) fn proxy(
         box_env: exec_env::merged_env(repo_env, rule_env.clone()),
     };
     Ok(BoxProxy {
+        task,
         addr,
         origin,
         rule_env,
@@ -97,8 +99,9 @@ pub(crate) struct BoxExec {
 
 /// Builds the environment for `purpose`; with a Proxy it first stages the nonce and CA.
 ///
-/// The directory is under `/tmp`, outside the synced workdir, so a sync can neither delete nor
-/// upload it; the driver creates it private (mode 0700).
+/// The directory is under the Box user's home, outside the synced workdir, so a sync can neither
+/// delete nor upload it. It is created exclusively (mode 0700) before anything is written, so a
+/// path someone else planted is refused and left alone.
 ///
 /// # Errors
 /// Returns a message when staging fails or the environment cannot be built.
@@ -122,8 +125,17 @@ pub(crate) fn prepare(
         let env = exec_env::build(&ctx, purpose)?;
         return Ok(BoxExec { env, staged: None });
     };
-    let dir = BoxPath::restore(&format!("/tmp/moor-exec-{}", nonce(cx.rng())))
-        .map_err(|e| e.to_string())?;
+    let dir = BoxPath::under(
+        box_home(cx, site)?.as_str(),
+        &format!(
+            ".moor-cred-{}-{:08x}{:08x}",
+            p.task.get(),
+            cx.rng().u32(),
+            cx.rng().u32()
+        ),
+    )
+    .map_err(|e| e.to_string())?;
+    create(cx, site, &dir)?;
     stage(cx, site, &dir, &p.addr)?;
     let merged = exec_env::merged_env(repo_env, p.rule_env.clone());
     let ctx = BoxCtx {
@@ -173,6 +185,15 @@ fn stage(cx: &Cx, site: &Site<'_>, dir: &BoxPath, addr: &ProxyAddr) -> Result<()
 }
 
 impl BoxExec {
+    /// Removes the staged directory after an exec that never reached its prelude; best effort.
+    ///
+    /// Call it when the command exec returns an error or is interrupted. No-op without a Proxy.
+    pub(crate) fn cleanup(&self, cx: &Cx, site: &Site<'_>) {
+        if let Some(dir) = &self.staged {
+            remove(cx, site, dir);
+        }
+    }
+
     /// `argv` wrapped so the prelude runs first and the staged directory is removed on exit.
     pub(crate) fn argv(&self, argv: Vec<String>) -> Vec<String> {
         exec_env::wrap_argv(&self.env, argv, self.staged.as_ref())
@@ -191,6 +212,50 @@ impl BoxExec {
     /// The wall-clock limit of the exec.
     pub(crate) fn deadline(&self) -> Deadline {
         self.env.deadline.unwrap_or(Deadline(RUN_DEADLINE))
+    }
+}
+
+/// The Box user's home, read from the environment of a process on the Box.
+fn box_home(cx: &Cx, site: &Site<'_>) -> Result<BoxPath, String> {
+    let environ = BoxPath::restore("/proc/self/environ").map_err(|e| e.to_string())?;
+    let text = cx
+        .driver()
+        .peek_file(site.handle, &environ, site.worktree)
+        .map_err(|e| format!("could not find the Box home: {e}"))?
+        .ok_or("the Box has no process environment")?;
+    let home = text
+        .split('\0')
+        .find_map(|kv| kv.strip_prefix("HOME="))
+        .ok_or("the Box user has no home directory")?;
+    BoxPath::restore(home).map_err(|e| e.to_string())
+}
+
+/// Creates `dir` private and new; fails when the path exists or cannot be made.
+fn create(cx: &Cx, site: &Site<'_>, dir: &BoxPath) -> Result<(), String> {
+    let spec = ExecSpec {
+        argv: vec![
+            "mkdir".into(),
+            "-m".into(),
+            "700".into(),
+            "--".into(),
+            dir.as_str().to_owned(),
+        ],
+        env: Vec::new(),
+        cwd: None,
+        sync: SyncMode::None,
+        output: None,
+        host_cwd: Some(site.worktree.to_path_buf()),
+        class: None,
+    };
+    match cx
+        .driver()
+        .exec(site.handle, &spec, Deadline(CLEANUP_DEADLINE))
+    {
+        Ok(ExecOutcome::Exited { code: 0 }) => Ok(()),
+        _ => Err(format!(
+            "{} already exists or could not be created on the Box",
+            dir.as_str()
+        )),
     }
 }
 

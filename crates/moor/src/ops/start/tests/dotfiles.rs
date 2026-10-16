@@ -83,14 +83,17 @@ fn dotfiles_execs(w: &World) -> Vec<(Vec<String>, Deadline, SyncMode)> {
     w.driver
         .execs()
         .into_iter()
-        .filter(|e| e.1.sync == SyncMode::None && e.1.cwd.is_none())
+        .filter(|e| {
+            let mkdir = e.1.argv.first().map(String::as_str) == Some("mkdir");
+            e.1.sync == SyncMode::None && e.1.cwd.is_none() && !mkdir
+        })
         .map(|e| (e.1.argv, e.2, e.1.sync))
         .collect()
 }
 
 /// Whether an upload is the exec-env staging (nonce, CA), not a dotfiles archive.
 fn is_staged(path: &str) -> bool {
-    path.starts_with("/tmp/moor-exec-")
+    path.contains("/.moor-cred-")
 }
 
 fn started(w: &World) -> StartView {
@@ -124,7 +127,7 @@ fn assert_archive_put(w: &World) -> String {
 fn assert_dotfiles_exec(w: &World, archive: &str) {
     let want = ["sh", "-c", &script(archive, DEFAULT_INSTALL)].map(str::to_owned);
     let execs = w.driver.execs();
-    assert_eq!(execs.len(), 3);
+    assert_eq!(execs.len(), 4);
     let (_, spec, deadline) = execs.last().unwrap();
     assert_eq!(spec.argv, want);
     assert_eq!(spec.sync, SyncMode::None);
@@ -165,6 +168,8 @@ fn dotfiles_run_after_setup_and_before_the_agent_launches() {
         calls,
         [
             "acquire",
+            "exec box-1",
+            "peek_file box-1",
             "exec box-1",
             "connect_argv box-1",
             "put_file box-1",
@@ -211,7 +216,8 @@ fn log_writer(w: &World) {
 /// A started `demo` whose dotfiles exec failed (setup passes first).
 fn failed_start() -> (World, Arc<FakeEngine>, tempfile::TempDir, tempfile::TempDir) {
     let src = tempfile::tempdir().unwrap();
-    let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(0)), Ok(exit(1))]);
+    let driver =
+        FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(0)), Ok(exit(0)), Ok(exit(1))]);
     let (w, engine, repo) = dotfiles_world("setup: [a]\n", Some(src.path()), None, driver);
     log_writer(&w);
     (w, engine, repo, src)
@@ -297,13 +303,14 @@ fn without_dotfiles_config_nothing_is_packed_uploaded_or_run() {
 #[test]
 fn dotfiles_still_run_when_a_setup_line_fails() {
     let src = tempfile::tempdir().unwrap();
-    let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(1)), Ok(exit(0))]);
+    let driver =
+        FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(0)), Ok(exit(1)), Ok(exit(0))]);
     let (w, engine, _repo) = dotfiles_world("setup: [a]\n", Some(src.path()), None, driver);
     let v = started(&w);
     assert_eq!(v.task.state, TaskState::Working);
     assert!(v.setup.ran && !v.setup.ok);
     assert!(v.dotfiles.ran && v.dotfiles.ok);
-    assert_eq!(w.driver.execs().len(), 3);
+    assert_eq!(w.driver.execs().len(), 4);
     assert_eq!(dotfiles_execs(&w).len(), 1);
     let (_, spec, _) = w.driver.execs().pop().unwrap();
     assert_eq!(spec.sync, SyncMode::None);
@@ -350,8 +357,13 @@ fn a_retry_holds_the_setup_intent_while_the_install_runs() {
 #[test]
 fn a_failed_retry_clears_the_setup_intent() {
     let src = tempfile::tempdir().unwrap();
-    let driver =
-        FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(0)), Ok(exit(1)), Ok(exit(1))]);
+    let driver = FakeDriver::new().exec_results([
+        Ok(exit(0)),
+        Ok(exit(0)),
+        Ok(exit(0)),
+        Ok(exit(1)),
+        Ok(exit(1)),
+    ]);
     let (w, _, _repo) = dotfiles_world("setup: [a]\n", Some(src.path()), None, driver);
     run(&w.cx, &goal_req()).unwrap_err();
     run(&w.cx, &goal_req()).unwrap_err();
@@ -363,7 +375,8 @@ fn a_failed_retry_clears_the_setup_intent() {
 #[test]
 fn a_setup_failure_is_kept_when_the_dotfiles_fail_too() {
     let src = tempfile::tempdir().unwrap();
-    let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(1)), Ok(exit(1))]);
+    let driver =
+        FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(0)), Ok(exit(1)), Ok(exit(1))]);
     let (w, engine, _repo) = dotfiles_world("setup: [make-it]\n", Some(src.path()), None, driver);
     log_writer(&w);
     let err = run(&w.cx, &goal_req()).unwrap_err();

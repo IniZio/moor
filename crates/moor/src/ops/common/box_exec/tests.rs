@@ -6,7 +6,7 @@ use std::sync::Arc;
 use moor_core::config::{parse_user, Flags, TaskSettings, UserConfig};
 use moor_core::exec_env::{Purpose, CA_FILE, NONCE_FILE};
 use moor_core::seam::agent_profile::ProxyAddr;
-use moor_core::seam::driver::{AcquireReq, Driver};
+use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
 use moor_core::secret::Secret;
 use moor_core::{BoxHandle, BoxPath, ProviderId, TaskId, TaskName};
 
@@ -28,7 +28,21 @@ fn rig(dir: &Path) -> Rig {
 }
 
 fn rig_with(dir: &Path, config: UserConfig) -> Rig {
-    let driver = Arc::new(FakeDriver::new());
+    rig_driver(dir, config, FakeDriver::new())
+}
+
+/// A rig whose Box user's home is `/home/box`.
+fn home_rig(dir: &Path) -> Rig {
+    rig_driver(dir, crate::testing::cx::fake_config(), home_driver())
+}
+
+fn home_driver() -> FakeDriver {
+    let environ = BoxPath::restore("/proc/self/environ").unwrap();
+    FakeDriver::new().peek_text("box-1", &environ, "PATH=/bin\0HOME=/home/box\0")
+}
+
+fn rig_driver(dir: &Path, config: UserConfig, driver: FakeDriver) -> Rig {
+    let driver = Arc::new(driver);
     let cx = Cx::fake_with(
         dir,
         dir,
@@ -66,6 +80,15 @@ impl Rig {
     }
 }
 
+/// The argv of every Box exec so far, in order.
+fn argvs(r: &Rig) -> Vec<Vec<String>> {
+    r.driver
+        .execs()
+        .into_iter()
+        .map(|(_, s, _)| s.argv)
+        .collect()
+}
+
 fn cfg() -> TaskSettings {
     let mut c = TaskSettings::resolve(&UserConfig::default(), None, &Flags::default());
     c.env = [("REPO".to_owned(), "1".to_owned())].into();
@@ -74,6 +97,7 @@ fn cfg() -> TaskSettings {
 
 fn boxed_proxy() -> BoxProxy {
     BoxProxy {
+        task: TaskId::new(1),
         addr: ProxyAddr {
             box_port: 4000,
             nonce: Secret::new(b"s3cret".to_vec()),
@@ -88,7 +112,7 @@ fn boxed_proxy() -> BoxProxy {
 #[test]
 fn a_proxy_stages_the_nonce_and_ca_and_the_prelude_exports_the_proxy() {
     let dir = tempfile::tempdir().unwrap();
-    let r = rig(dir.path());
+    let r = home_rig(dir.path());
     let p = boxed_proxy();
     let e = prepare(
         &r.cx,
@@ -99,7 +123,7 @@ fn a_proxy_stages_the_nonce_and_ca_and_the_prelude_exports_the_proxy() {
     )
     .unwrap();
     let staged = e.staged.clone().unwrap();
-    assert!(staged.as_str().starts_with("/tmp/moor-exec-"));
+    assert!(staged.as_str().starts_with("/home/box/.moor-cred-1-"));
     let peek = |f: &str| {
         let path = BoxPath::under(staged.as_str(), f).unwrap();
         r.driver.peek_file(&r.handle, &path, dir.path()).unwrap()
@@ -120,7 +144,7 @@ fn a_proxy_stages_the_nonce_and_ca_and_the_prelude_exports_the_proxy() {
 #[test]
 fn a_proxy_keeps_credential_like_and_reserved_repo_env_without_warning() {
     let dir = tempfile::tempdir().unwrap();
-    let r = rig(dir.path());
+    let r = home_rig(dir.path());
     let mut c = cfg();
     c.env.insert("STRIPE_TEST_KEY".to_owned(), "sk".to_owned());
     c.env.insert("NODE_OPTIONS".to_owned(), "--x".to_owned());
@@ -163,7 +187,7 @@ fn no_proxy_gives_the_repo_env_and_no_proxy_variables() {
 #[test]
 fn a_proxied_argv_removes_the_staged_directory_in_the_same_exec() {
     let dir = tempfile::tempdir().unwrap();
-    let r = rig(dir.path());
+    let r = home_rig(dir.path());
     let p = boxed_proxy();
     let e = prepare(
         &r.cx,
@@ -184,7 +208,9 @@ fn a_proxied_argv_removes_the_staged_directory_in_the_same_exec() {
         trap.contains("rm -rf") && trap.contains(staged.as_str()),
         "{script}"
     );
-    assert!(r.driver.execs().is_empty());
+    assert!(argvs(&r)
+        .iter()
+        .all(|a| a.first().map(String::as_str) != Some("rm")));
 }
 
 #[test]
@@ -240,4 +266,82 @@ fn another_providers_strip_env_is_not_applied() {
     let e = prepare(&r.cx, &r.site(None, dir.path()), None, &cfg(), Purpose::Run).unwrap();
     assert!(e.env.unset.is_empty());
     assert_eq!(e.vars(), vec![("REPO".to_owned(), "1".to_owned())]);
+}
+
+fn run_prepare(r: &Rig, dir: &Path, p: Option<&BoxProxy>) -> Result<super::BoxExec, String> {
+    prepare(
+        &r.cx,
+        &r.site(Some(&r.workdir), dir),
+        p,
+        &cfg(),
+        Purpose::Run,
+    )
+}
+
+#[test]
+fn the_staged_directory_is_private_to_the_box_user_and_named_with_64_random_bits() {
+    let dir = tempfile::tempdir().unwrap();
+    let r = home_rig(dir.path());
+    let p = boxed_proxy();
+    let e = run_prepare(&r, dir.path(), Some(&p)).unwrap();
+    let staged = e.staged.clone().unwrap();
+    let tail = staged
+        .as_str()
+        .strip_prefix("/home/box/.moor-cred-1-")
+        .unwrap();
+    assert!(
+        tail.len() == 16 && tail.chars().all(|c| c.is_ascii_hexdigit()),
+        "{tail}"
+    );
+    assert_eq!(argvs(&r), [["mkdir", "-m", "700", "--", staged.as_str()]]);
+    for (_, path, ..) in r.driver.puts() {
+        assert!(!path.as_str().starts_with("/tmp"), "{}", path.as_str());
+    }
+    let script = e.argv(vec!["true".to_owned()]).join(" ");
+    assert!(!script.contains("/tmp"), "{script}");
+}
+
+#[test]
+fn a_path_that_already_exists_is_refused_and_left_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    let driver = home_driver().exec_results([Ok(ExecOutcome::Exited { code: 1 })]);
+    let r = rig_driver(dir.path(), crate::testing::cx::fake_config(), driver);
+    let p = boxed_proxy();
+    let err = run_prepare(&r, dir.path(), Some(&p)).err().unwrap();
+    assert!(err.contains("already exists"), "{err}");
+    let execs = argvs(&r);
+    assert_eq!(execs.len(), 1);
+    assert!(execs
+        .iter()
+        .all(|a| a.first().map(String::as_str) != Some("rm")));
+    assert!(r.driver.puts().is_empty());
+}
+
+#[test]
+fn a_staging_failure_removes_the_directory_and_returns_the_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let driver = home_driver().fail_put(DriverError::Unavailable("down".into()));
+    let r = rig_driver(dir.path(), crate::testing::cx::fake_config(), driver);
+    let p = boxed_proxy();
+    let err = run_prepare(&r, dir.path(), Some(&p)).err().unwrap();
+    assert!(err.contains("could not stage"), "{err}");
+    let [mkdir, rm] = argvs(&r).try_into().unwrap();
+    assert_eq!(rm, ["rm", "-rf", mkdir.last().unwrap().as_str()]);
+}
+
+#[test]
+fn cleanup_removes_the_staged_directory_and_is_a_no_op_without_a_proxy() {
+    let dir = tempfile::tempdir().unwrap();
+    let r = home_rig(dir.path());
+    let p = boxed_proxy();
+    let e = run_prepare(&r, dir.path(), Some(&p)).unwrap();
+    let staged = e.staged.clone().unwrap();
+    e.cleanup(&r.cx, &r.site(Some(&r.workdir), dir.path()));
+    let [_, rm] = argvs(&r).try_into().unwrap();
+    assert_eq!(rm, ["rm", "-rf", staged.as_str()]);
+
+    let r = rig(dir.path());
+    let e = run_prepare(&r, dir.path(), None).unwrap();
+    e.cleanup(&r.cx, &r.site(Some(&r.workdir), dir.path()));
+    assert!(r.driver.execs().is_empty());
 }

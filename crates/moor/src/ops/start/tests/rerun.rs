@@ -13,7 +13,7 @@ use crate::testing::proc::Reply;
 
 /// A failed first setup on a Task whose agent session is `live` or has ended.
 fn resumed(live: bool) -> World {
-    let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(1))]);
+    let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(0)), Ok(exit(1))]);
     let (w, id) = failed_setup_with("setup: [a]\n", driver);
     let store = w.cx.store().unwrap();
     let session = store.begin_session(id, "agent-1", None).unwrap();
@@ -110,8 +110,12 @@ fn restart_after_a_failed_setup_syncs_a_box_with_no_unsaved_work() {
 
 #[test]
 fn restart_after_a_failed_setup_that_left_no_checkout_syncs_again() {
-    let driver =
-        FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(1)), Ok(exit(BOXWORK_NO_CHECKOUT))]);
+    let driver = FakeDriver::new().exec_results([
+        Ok(exit(0)),
+        Ok(exit(0)),
+        Ok(exit(1)),
+        Ok(exit(BOXWORK_NO_CHECKOUT)),
+    ]);
     let (w, id) = failed_setup_with("setup: [a]\n", driver);
     let store = w.cx.store().unwrap();
     let session = store.begin_session(id, "agent-1", None).unwrap();
@@ -123,7 +127,7 @@ fn restart_after_a_failed_setup_that_left_no_checkout_syncs_again() {
 
 #[test]
 fn restart_after_a_failed_setup_before_any_agent_session_syncs_without_a_resync_warning() {
-    let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(1))]);
+    let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(0)), Ok(exit(1))]);
     let (w, _) = failed_setup_with("setup: [a]\n", driver);
     drop(warning_codes(&w));
     run(&w.cx, &start_req()).unwrap();
@@ -202,8 +206,13 @@ fn start_that_launches_the_agent_aborts_when_the_re_sync_fails() {
 
 #[test]
 fn restart_after_a_failed_setup_warns_when_the_sync_fails_and_attaches() {
-    let driver =
-        FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(1)), Ok(exit(1)), Ok(exit(0))]);
+    let driver = FakeDriver::new().exec_results([
+        Ok(exit(0)),
+        Ok(exit(0)),
+        Ok(exit(1)),
+        Ok(exit(1)),
+        Ok(exit(0)),
+    ]);
     let (w, _) = failed_setup_with("setup: [a]\n", driver);
     drop(warning_codes(&w));
     let req = StartReq {
@@ -217,8 +226,13 @@ fn restart_after_a_failed_setup_warns_when_the_sync_fails_and_attaches() {
 
 #[test]
 fn restart_after_a_failed_setup_that_launches_the_agent_aborts_when_the_sync_fails() {
-    let driver =
-        FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(1)), Ok(exit(1)), Ok(exit(0))]);
+    let driver = FakeDriver::new().exec_results([
+        Ok(exit(0)),
+        Ok(exit(0)),
+        Ok(exit(1)),
+        Ok(exit(1)),
+        Ok(exit(0)),
+    ]);
     let (w, id) = failed_setup_with("setup: [a]\n", driver);
     drop(warning_codes(&w));
     let req = StartReq {

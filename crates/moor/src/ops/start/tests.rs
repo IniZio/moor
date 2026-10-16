@@ -9,7 +9,7 @@ use moor_core::domain::task::{TaskInput, TaskState};
 use moor_core::seam::driver::DriverError;
 use moor_core::seam::proc::Tool;
 use moor_core::seam::surface::Surface;
-use moor_core::{ErrorKind, StartReq, TaskId, TaskName};
+use moor_core::{BoxPath, ErrorKind, StartReq, TaskId, TaskName};
 
 use super::run;
 use crate::cx::Cx;
@@ -82,7 +82,10 @@ fn world_with(driver: FakeDriver, repo: &Path, config: UserConfig) -> World {
         &["rev-parse", "--git-path", "info/exclude"],
         Reply::Ok(format!("{}/exclude\n", dir.path().display())),
     );
-    let driver = Arc::new(driver);
+    let environ = BoxPath::restore("/proc/self/environ").unwrap();
+    let driver = Arc::new((1..=4).fold(driver, |d, n| {
+        d.peek_text(&format!("box-{n}"), &environ, "HOME=/home/box\0")
+    }));
     let surface = Arc::new(FakeSurface::new(dir.path()));
     let cx = Cx::fake_with(
         dir.path(),

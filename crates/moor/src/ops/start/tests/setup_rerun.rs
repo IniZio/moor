@@ -5,24 +5,21 @@ use std::path::Path;
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Intent, IntentChange};
 use moor_core::domain::task::TaskState;
-use moor_core::seam::driver::{DriverError, ExecOutcome};
 use moor_core::{BoxHandle, TaskId};
 
 use super::moor_yaml::script_base_yaml;
+use super::setup::Step::{Cmd, Sync};
 use super::setup::{
-    argvs, exit, failed_at_set, failed_setup_with, kinds, script_argv, setup_execs, start_req,
-    start_with, warning_codes,
+    argvs, execs, exit, failed_at_set, failed_setup_with, kinds, script_argv, scripted,
+    setup_execs, start_req, start_with, warning_codes, Step,
 };
 use super::{world_at, World};
 use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
 
 /// Starts `demo` with a failing first setup, then points its worktree at `yaml`.
-fn failed_setup_then(
-    yaml: &str,
-    results: [Result<ExecOutcome, DriverError>; 4],
-) -> (World, TaskId) {
-    failed_setup_with(yaml, FakeDriver::new().exec_results(results))
+fn failed_setup_then(yaml: &str, results: [Step; 4]) -> (World, TaskId) {
+    failed_setup_with(yaml, FakeDriver::new().exec_results(scripted(results)))
 }
 
 /// The warning `start` gives instead of re-running setup, cut to its stable ends.
@@ -40,7 +37,12 @@ const BY_HAND: &str =
 fn start_after_a_failed_setup_does_not_re_run_setup_and_warns() {
     let (w, id) = failed_setup_then(
         "setup: [a]\n",
-        [Ok(exit(0)), Ok(exit(1)), Ok(exit(0)), Ok(exit(0))],
+        [
+            Sync(Ok(exit(0))),
+            Cmd(Ok(exit(1))),
+            Sync(Ok(exit(0))),
+            Sync(Ok(exit(0))),
+        ],
     );
     drop(warning_codes(&w));
     let again = run(&w.cx, &start_req()).unwrap();
@@ -61,10 +63,15 @@ fn start_after_a_failed_setup_does_not_re_run_setup_and_warns() {
 fn start_after_a_failed_setup_re_syncs_the_checkout_in_the_same_box() {
     let (w, _) = failed_setup_then(
         "setup: [a]\n",
-        [Ok(exit(0)), Ok(exit(1)), Ok(exit(0)), Ok(exit(0))],
+        [
+            Sync(Ok(exit(0))),
+            Cmd(Ok(exit(1))),
+            Sync(Ok(exit(0))),
+            Sync(Ok(exit(0))),
+        ],
     );
     run(&w.cx, &start_req()).unwrap();
-    let handles: Vec<_> = w.driver.execs().into_iter().map(|e| e.0).collect();
+    let handles: Vec<_> = execs(&w).into_iter().map(|e| e.0).collect();
     let box_1 = BoxHandle::new("box-1");
     assert_eq!(handles, [box_1.clone(), box_1.clone(), box_1]);
 }
@@ -73,7 +80,12 @@ fn start_after_a_failed_setup_re_syncs_the_checkout_in_the_same_box() {
 fn start_after_a_failed_setup_in_a_replaced_box_runs_setup_in_the_new_box() {
     let (w, id) = failed_setup_then(
         "setup: [a]\n",
-        [Ok(exit(0)), Ok(exit(1)), Ok(exit(0)), Ok(exit(0))],
+        [
+            Sync(Ok(exit(0))),
+            Cmd(Ok(exit(1))),
+            Sync(Ok(exit(0))),
+            Cmd(Ok(exit(0))),
+        ],
     );
     let store = w.cx.store().unwrap();
     store
@@ -125,7 +137,7 @@ fn start_after_an_interrupted_setup_re_syncs_the_checkout_in_the_same_box() {
     w.proc.dead(4242);
     drop(warning_codes(&w));
     let syncs = |w: &World| {
-        let all = w.driver.execs().into_iter();
+        let all = execs(w).into_iter();
         let all = all.filter(|e| e.1.argv == ["git", "rev-parse", "--git-dir"]);
         all.map(|e| e.0).collect::<Vec<_>>()
     };

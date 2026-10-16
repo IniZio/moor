@@ -11,7 +11,7 @@ use moor_core::domain::decision::Decision;
 use moor_core::domain::run::SyncMode;
 use moor_core::domain::task::{TaskInput, TaskState};
 use moor_core::exec_env::Purpose;
-use moor_core::seam::driver::{ExecOutcome, ExecSpec};
+use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
 use moor_core::seam::proc::Output;
 use moor_core::view::run::RunValue;
 use moor_core::{ErrorKind, RunId, RunReq, Sha, Warning};
@@ -116,8 +116,7 @@ fn launch(
         host_cwd: Some(target.worktree.clone()),
         class: Some(cfg.size.value.as_str().to_owned()),
     };
-    let result = cx.driver().exec(&target.handle, &spec, exec.deadline());
-    let outcome = match result {
+    let outcome = match exec_in_box(cx, row, target, &exec, &spec) {
         Ok(outcome) => outcome,
         Err(e) => {
             let message = e.to_string();
@@ -142,6 +141,31 @@ fn launch(
     })
 }
 
+/// Runs the command; when it may never have started, drops the staged Proxy nonce.
+fn exec_in_box(
+    cx: &Cx,
+    row: &TaskRow,
+    target: &ready::Target,
+    exec: &BoxExec,
+    spec: &ExecSpec,
+) -> Result<ExecOutcome, DriverError> {
+    let result = cx.driver().exec(&target.handle, spec, exec.deadline());
+    if matches!(result, Err(_) | Ok(ExecOutcome::Interrupted)) {
+        exec.cleanup(cx, &site(row, target));
+    }
+    result
+}
+
+/// Where in the Box the Task's commands run.
+fn site<'a>(row: &'a TaskRow, target: &'a ready::Target) -> Site<'a> {
+    Site {
+        handle: &target.handle,
+        provider: row.boxed.as_ref().map_or("", |b| b.provider.as_str()),
+        workdir: target.workdir.as_ref(),
+        worktree: &target.worktree,
+    }
+}
+
 /// The environment every Box exec gets; without the Proxy the command still runs, and warns.
 fn box_env(
     cx: &Cx,
@@ -163,14 +187,7 @@ fn box_env(
         });
     })
     .ok();
-    let provider = row.boxed.as_ref().map_or("", |b| b.provider.as_str());
-    let site = Site {
-        handle: &target.handle,
-        provider,
-        workdir: target.workdir.as_ref(),
-        worktree: &target.worktree,
-    };
-    box_exec::prepare(cx, &site, proxy.as_ref(), cfg, Purpose::Run)
+    box_exec::prepare(cx, &site(row, target), proxy.as_ref(), cfg, Purpose::Run)
         .map_err(|m| CommandError::new(ErrorKind::Failed, m))
 }
 

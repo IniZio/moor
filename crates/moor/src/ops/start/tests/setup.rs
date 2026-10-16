@@ -12,6 +12,7 @@ use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
 use moor_core::seam::proc::{Deadline, Tool};
 use moor_core::{BoxHandle, ErrorKind, StartReq, TaskId};
 
+use self::Step::{Cmd, Sync};
 use super::moor_yaml::script_base_yaml;
 use super::{req, world_at, World};
 use crate::adapters::clock::SystemClock;
@@ -60,11 +61,47 @@ fn is_sync(argv: &[String]) -> bool {
     argv == ["git", "rev-parse", "--git-dir"]
 }
 
+/// Every Box exec except those that make or remove the Proxy-credential directory.
+pub(super) fn execs(w: &World) -> Vec<(BoxHandle, ExecSpec, Deadline)> {
+    let is_cred_dir = |a: &[String]| {
+        matches!(a.first().map(String::as_str), Some("mkdir" | "rm"))
+            && a.iter().any(|x| x.contains(".moor-cred-"))
+    };
+    (w.driver.execs().into_iter())
+        .filter(|e| !is_cred_dir(&e.1.argv))
+        .collect()
+}
+
 /// Every exec except the checkout sync.
 pub(super) fn setup_execs(w: &World) -> Vec<(BoxHandle, ExecSpec, Deadline)> {
-    (w.driver.execs().into_iter())
+    (execs(w).into_iter())
         .filter(|e| !is_sync(&e.1.argv))
         .collect()
+}
+
+/// A scripted exec result: the checkout sync, or a command exec that stages Proxy credentials.
+pub(super) enum Step {
+    Sync(Result<ExecOutcome, DriverError>),
+    Cmd(Result<ExecOutcome, DriverError>),
+}
+
+/// The driver results for `steps`: each `Cmd` is preceded by the Ok for its credential-directory
+/// `mkdir`, and followed by the Ok for the cleanup `rm` when it errs or is interrupted.
+pub(super) fn scripted(
+    steps: impl IntoIterator<Item = Step>,
+) -> Vec<Result<ExecOutcome, DriverError>> {
+    let wrap = |step: Step| match step {
+        Step::Sync(r) => vec![r],
+        Step::Cmd(r) => {
+            let rm = matches!(r, Err(_) | Ok(ExecOutcome::Interrupted));
+            let tail = rm.then(|| Ok(exit(0)));
+            [Some(Ok(exit(0))), Some(r), tail]
+                .into_iter()
+                .flatten()
+                .collect()
+        }
+    };
+    steps.into_iter().flat_map(wrap).collect()
 }
 
 /// Peels the Proxy wrapper (`sh -c <prelude> sh`) off an argv.
@@ -161,7 +198,7 @@ fn the_checkout_syncs_in_its_own_exec_and_setup_runs_without_syncing() {
             .unwrap()
             .unwrap()
             .worktree;
-    let mut execs = w.driver.execs();
+    let mut execs = execs(&w);
     assert_eq!(execs.len(), 2, "a sync exec and one setup exec");
     let (_, setup, _) = execs.remove(1);
     let (_, sync, _) = execs.remove(0);
@@ -177,7 +214,7 @@ fn the_checkout_syncs_in_its_own_exec_and_setup_runs_without_syncing() {
 #[test]
 fn a_failing_setup_leaves_a_working_task_and_runs_nothing_more() {
     let driver = FakeDriver::new()
-        .exec_results([Ok(exit(0)), Ok(exit(1))])
+        .exec_results(scripted([Sync(Ok(exit(0))), Cmd(Ok(exit(1)))]))
         .copy_text("moor setup: $ a\nmoor setup: $ b\n");
     let (w, v) = start_with("setup: [a, b, c]\n", driver);
     assert_eq!(v.task.state, TaskState::Working);
@@ -194,7 +231,7 @@ fn a_failing_setup_leaves_a_working_task_and_runs_nothing_more() {
 
 #[test]
 fn a_failed_setup_copies_its_log_out_of_the_box_into_the_worktree() {
-    let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(1))]);
+    let driver = FakeDriver::new().exec_results(scripted([Sync(Ok(exit(0))), Cmd(Ok(exit(1)))]));
     let (w, v) = start_with("setup: [a]\n", driver);
     let wt =
         w.cx.store()
@@ -212,7 +249,7 @@ fn a_failed_setup_copies_its_log_out_of_the_box_into_the_worktree() {
 
 #[test]
 fn a_failing_setup_marks_the_task_and_a_later_clean_setup_clears_it() {
-    let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(1))]);
+    let driver = FakeDriver::new().exec_results(scripted([Sync(Ok(exit(0))), Cmd(Ok(exit(1)))]));
     let (w, v) = start_with("setup: [a]\n", driver);
     assert!(!v.setup.ok);
     assert!(failed_at_set(&w, &v));
@@ -234,7 +271,7 @@ fn a_failing_setup_marks_the_task_and_a_later_clean_setup_clears_it() {
 fn no_setup_lines_means_setup_did_not_run() {
     let (w, v) = start_with("env: {A: a}\n", FakeDriver::new());
     assert!(!v.setup.ran);
-    let execs = w.driver.execs();
+    let execs = execs(&w);
     assert_eq!(execs.len(), 1);
     assert_eq!(
         execs.first().expect("one exec").1.argv,
@@ -257,7 +294,10 @@ fn setup_env_is_the_repo_env_plus_the_proxy_rule_env() {
 #[test]
 fn a_timed_out_setup_counts_as_a_failing_line() {
     let driver = FakeDriver::new()
-        .exec_results([Ok(exit(0)), Err(DriverError::Timeout(LINE_DEADLINE))])
+        .exec_results(scripted([
+            Sync(Ok(exit(0))),
+            Cmd(Err(DriverError::Timeout(LINE_DEADLINE))),
+        ]))
         .copy_text("moor setup: $ a\nmoor setup: $ b\n");
     let (w, v) = start_with("setup: [a, b, c]\n", driver);
     assert_eq!(v.task.state, TaskState::Working);
@@ -270,8 +310,12 @@ fn a_timed_out_setup_counts_as_a_failing_line() {
 
 #[test]
 fn a_failing_setup_on_a_re_provisioned_working_task_records_the_failing_line() {
-    let driver =
-        FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(0)), Ok(exit(0)), Ok(exit(1))]);
+    let driver = FakeDriver::new().exec_results(scripted([
+        Sync(Ok(exit(0))),
+        Cmd(Ok(exit(0))),
+        Sync(Ok(exit(0))),
+        Cmd(Ok(exit(1))),
+    ]));
     let (w, v) = start_with("setup: [a]\n", driver);
     let id = TaskId::new(v.task.id);
     let store = w.cx.store().unwrap();
@@ -308,8 +352,8 @@ fn setup_holds_the_setup_intent_and_clears_it_after() {
     });
     let v = run(&w.cx, &start_req()).unwrap();
     let pid = std::process::id();
-    // The checkout sync and the setup script both run under the intent.
-    assert_eq!(*seen.lock().unwrap(), [Some(Intent::Setup { pid }); 2]);
+    // The checkout sync, the credential-directory mkdir and the setup script all run under it.
+    assert_eq!(*seen.lock().unwrap(), [Some(Intent::Setup { pid }); 3]);
     let row = w.cx.store().unwrap().task(TaskId::new(v.task.id));
     assert_eq!(row.unwrap().unwrap().intent, None);
 }
@@ -346,7 +390,7 @@ fn a_failing_identity_exec_warns_and_setup_still_runs() {
 
 #[test]
 fn a_setup_run_records_its_duration_on_a_setup_finished_event() {
-    let driver = FakeDriver::new().exec_results([Ok(exit(0))]);
+    let driver = FakeDriver::new().exec_results(scripted([Sync(Ok(exit(0))), Cmd(Ok(exit(0)))]));
     let (w, v) = start_with("setup: [a]\n", driver);
     assert_eq!(v.setup.ms, Some(0));
     let id = TaskId::new(v.task.id);
@@ -361,7 +405,7 @@ fn a_setup_run_records_its_duration_on_a_setup_finished_event() {
 
 #[test]
 fn a_failed_setup_records_its_duration_too() {
-    let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(1))]);
+    let driver = FakeDriver::new().exec_results(scripted([Sync(Ok(exit(0))), Cmd(Ok(exit(1)))]));
     let (w, v) = start_with("setup: [a]\n", driver);
     let id = TaskId::new(v.task.id);
     let events = w.cx.store().unwrap().events(id, 50).unwrap();
@@ -376,7 +420,7 @@ fn a_failed_setup_records_its_duration_too() {
 /// Starts `demo` on a driver whose first execs give `results`; the engine records launches.
 fn start_recording_launches(
     yaml: &str,
-    results: [Result<ExecOutcome, DriverError>; 2],
+    results: [Step; 2],
 ) -> (
     World,
     Arc<FakeEngine>,
@@ -384,7 +428,10 @@ fn start_recording_launches(
 ) {
     let repo = tempfile::tempdir().unwrap();
     std::fs::write(repo.path().join(".moor.yaml"), yaml).unwrap();
-    let mut w = world_at(FakeDriver::new().exec_results(results), repo.path());
+    let mut w = world_at(
+        FakeDriver::new().exec_results(scripted(results)),
+        repo.path(),
+    );
     let engine = Arc::new(FakeEngine::new());
     w.cx = w.cx.with_engine(engine.clone());
     let with_goal = StartReq {
@@ -398,7 +445,8 @@ fn start_recording_launches(
 #[test]
 fn a_failed_checkout_sync_aborts_the_start_without_launching_the_agent() {
     for yaml in ["env: {A: a}\n", "setup: [a, b]\n"] {
-        let (w, engine, got) = start_recording_launches(yaml, [Ok(exit(1)), Ok(exit(0))]);
+        let (w, engine, got) =
+            start_recording_launches(yaml, [Sync(Ok(exit(1))), Cmd(Ok(exit(0)))]);
         let err = got.unwrap_err();
         assert_eq!(err.kind, ErrorKind::Failed);
         let msg = err.error.to_string();
@@ -412,7 +460,7 @@ fn a_failed_checkout_sync_aborts_the_start_without_launching_the_agent() {
         assert_eq!(row.state, TaskState::SetupFailed);
         assert!(row.intent.is_none() && row.setup_failed_at.is_some());
         assert!(kinds(&w, id).contains(&"setup_failed".to_owned()));
-        let argvs: Vec<_> = w.driver.execs().into_iter().map(|e| e.1.argv).collect();
+        let argvs: Vec<_> = execs(&w).into_iter().map(|e| e.1.argv).collect();
         assert_eq!(
             argvs,
             [vec![
@@ -426,10 +474,11 @@ fn a_failed_checkout_sync_aborts_the_start_without_launching_the_agent() {
 
 #[test]
 fn a_failing_setup_command_after_a_good_sync_still_launches_the_agent() {
-    let (w, engine, got) = start_recording_launches("setup: [a]\n", [Ok(exit(0)), Ok(exit(1))]);
+    let (w, engine, got) =
+        start_recording_launches("setup: [a]\n", [Sync(Ok(exit(0))), Cmd(Ok(exit(1)))]);
     let v = got.unwrap();
     assert!(v.setup.ran && !v.setup.ok);
     assert_eq!(engine.launches().len(), 1);
-    let syncs: Vec<_> = w.driver.execs().into_iter().map(|e| e.1.sync).collect();
+    let syncs: Vec<_> = execs(&w).into_iter().map(|e| e.1.sync).collect();
     assert_eq!(syncs, [SyncMode::Full, SyncMode::None]);
 }

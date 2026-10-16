@@ -11,7 +11,7 @@ use moor_core::domain::task::{TaskInput, TaskState};
 use moor_core::seam::driver::{DriverError, ExecOutcome};
 use moor_core::BoxPath;
 
-use super::teardown::{base_has, YAML};
+use super::teardown::{base_has, with_home, YAML};
 use super::{box_state, fx_with, req, row, run, Fx};
 use crate::testing::driver::FakeDriver;
 use crate::testing::surface::FakeSurface;
@@ -229,7 +229,7 @@ fn bad_name_is_skipped() {
 
 #[test]
 fn collection_runs_before_teardown_and_release() {
-    let f = fx(driver_with(&[("result.md", "R")]));
+    let f = fx(with_home(driver_with(&[("result.md", "R")])));
     fs::write(f.dir.path().join(".moor.yaml"), YAML).unwrap();
     base_has(&f, YAML);
     run(&f.cx, &req(false)).unwrap();
@@ -237,12 +237,12 @@ fn collection_runs_before_teardown_and_release() {
     let execs = exec_at(&f);
     assert_eq!(
         execs.len(),
-        4,
-        "probe, recheck, collection, teardown: {calls:?}"
+        5,
+        "probe, recheck, collection, credential dir, teardown: {calls:?}"
     );
-    let (collect, teardown) = (execs.get(2).unwrap(), execs.get(3).unwrap());
+    let (collect, teardown) = (execs.get(2).unwrap(), execs.get(4).unwrap());
     let specs = f.driver.execs();
-    let (c, t) = (&specs.get(2).unwrap().1, &specs.get(3).unwrap().1);
+    let (c, t) = (&specs.get(2).unwrap().1, &specs.get(4).unwrap().1);
     assert_eq!(c.sync, SyncMode::None);
     assert!(c.argv.iter().any(|a| a.contains("reports.index")));
     assert_eq!(t.sync, SyncMode::Full);
