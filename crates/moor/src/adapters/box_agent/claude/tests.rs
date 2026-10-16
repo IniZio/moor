@@ -159,6 +159,10 @@ fn first_run_prompts_are_told_apart() {
         first_run("Choose the text style that looks best with your terminal"),
         Some(FirstRunPrompt::Theme)
     );
+    assert_eq!(
+        first_run("WARNING: Claude Code running in Bypass Permissions mode"),
+        Some(FirstRunPrompt::BypassPermissions)
+    );
     assert_eq!(first_run("❯ 2. Light mode"), Some(FirstRunPrompt::Theme));
 }
 

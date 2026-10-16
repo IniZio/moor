@@ -18,6 +18,8 @@ use tempfile::TempDir;
 
 use super::super::Claude;
 
+mod bypass;
+
 fn ctx(dir: &Path) -> LaunchCtx {
     let root = dir.to_str().unwrap();
     LaunchCtx {

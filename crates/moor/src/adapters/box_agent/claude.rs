@@ -163,6 +163,9 @@ fn prompt_of(line: &str, trusting: bool) -> Option<FirstRunPrompt> {
     if FOLDER.iter().any(|p| line.contains(p)) || (trusting && line.contains("yes, proceed")) {
         return Some(FirstRunPrompt::FolderTrust);
     }
+    if line.contains("bypass permissions mode") {
+        return Some(FirstRunPrompt::BypassPermissions);
+    }
     if line.contains("press enter to continue") {
         return Some(FirstRunPrompt::PressEnter);
     }
