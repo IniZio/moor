@@ -1,0 +1,95 @@
+//! Proof files an agent leaves under the Box workdir: listing, parsing and copy decisions.
+
+use std::collections::HashMap;
+use std::path::PathBuf;
+
+pub use crate::domain::proof::ProofFile;
+
+/// Directory, relative to the Box workdir, where agents write proof files.
+pub const PROOF_DIR: &str = ".moor/proof";
+
+/// POSIX sh that prints `name<TAB>size<TAB>sha256` for each regular file under the proof directory.
+const SCRIPT: &str = r#"[ -d .moor/proof ] || exit 0
+cd .moor/proof || exit 0
+find . -type f | while IFS= read -r f; do
+  n=${f#./}
+  s=$(wc -c <"$f" | tr -d ' ')
+  h=$( (sha256sum "$f" 2>/dev/null || shasum -a 256 "$f") | cut -d' ' -f1)
+  printf '%s\t%s\t%s\n' "$n" "$s" "$h"
+done
+"#;
+
+/// Argv that lists proof files; run it with the Box workdir as cwd.
+#[must_use]
+pub fn listing_argv() -> Vec<String> {
+    vec!["sh".to_owned(), "-c".to_owned(), SCRIPT.to_owned()]
+}
+
+/// Parse the output of [`listing_argv`], dropping malformed lines and unsafe names, sorted by name.
+#[must_use]
+pub fn parse_listing(stdout: &str) -> Vec<ProofFile> {
+    let mut files: Vec<ProofFile> = stdout.lines().filter_map(parse_line).collect();
+    files.sort_by(|a, b| a.name.cmp(&b.name));
+    files
+}
+
+/// Parse one listing line, or `None` when it is malformed or names an unsafe path.
+fn parse_line(line: &str) -> Option<ProofFile> {
+    let mut parts = line.split('\t');
+    let name = parts.next()?;
+    let size = parts.next()?.trim().parse::<u64>().ok()?;
+    let sha256 = parts.next()?.trim();
+    if parts.next().is_some() || sha256.is_empty() || !safe_name(name) {
+        return None;
+    }
+    Some(ProofFile {
+        name: name.to_owned(),
+        size,
+        sha256: sha256.to_owned(),
+    })
+}
+
+/// True for a non-empty relative name with no empty, `.` or `..` segments.
+fn safe_name(name: &str) -> bool {
+    !name.is_empty()
+        && !name.starts_with('/')
+        && name
+            .split('/')
+            .all(|seg| !seg.is_empty() && seg != "." && seg != "..")
+}
+
+/// Files in `listing` that are new or whose hash differs from the latest `seen` entry of that name.
+#[must_use]
+pub fn fresh(listing: &[ProofFile], seen: &[ProofFile]) -> Vec<ProofFile> {
+    let latest: HashMap<&str, &str> = seen
+        .iter()
+        .map(|f| (f.name.as_str(), f.sha256.as_str()))
+        .collect();
+    listing
+        .iter()
+        .filter(|f| latest.get(f.name.as_str()) != Some(&f.sha256.as_str()))
+        .cloned()
+        .collect()
+}
+
+/// Where a copied proof file lives, relative to the state dir.
+#[must_use]
+pub fn copy_relpath(task: &str, name: &str) -> PathBuf {
+    PathBuf::from("proof").join(task).join(name)
+}
+
+/// Plain sentence explaining why `file` is not copied, or `None` when it fits under `cap` bytes.
+#[must_use]
+pub fn refusal(file: &ProofFile, cap: u64) -> Option<String> {
+    if file.size <= cap {
+        return None;
+    }
+    Some(format!(
+        "proof file {} is {} bytes, above the {cap}-byte proof cap; not copied. \
+         Raise proof_max_bytes in the controller config to keep it.",
+        file.name, file.size
+    ))
+}
+
+#[cfg(test)]
+mod tests;
