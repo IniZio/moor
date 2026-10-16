@@ -36,7 +36,8 @@ pub(super) fn clear_argv(box_port: u16) -> Vec<String> {
 
 /// Opens a tunnel serving `host_port` on `box_port` in the Box.
 ///
-/// Unless `fresh` (no tunnel was ever opened into this Box, so no stale listener can exist), the
+/// Unless `fresh` (no tunnel was ever opened into this Box, or it just cold-booted, so no stale
+/// listener can exist), the
 /// port is freed first. A failed or timed-out cleanup is reported and the open goes ahead.
 pub(super) fn open(
     deps: &Deps<'_>,
