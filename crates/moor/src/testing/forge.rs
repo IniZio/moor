@@ -13,6 +13,7 @@ use zeroize::Zeroizing;
 pub(crate) enum ForgeCall {
     RepoOf(String),
     RepoToken(ForgeRepo),
+    OpenPr(ForgeRepo, String),
 }
 
 /// A canned token outcome. Token bytes are wiped on drop.
@@ -25,6 +26,8 @@ enum TokenReply {
 struct State {
     repos: HashMap<String, ForgeRepo>,
     tokens: HashMap<ForgeRepo, TokenReply>,
+    prs: HashMap<(ForgeRepo, String), String>,
+    pr_error: Option<ForgeError>,
     calls: Vec<ForgeCall>,
 }
 
@@ -66,6 +69,21 @@ impl FakeForge {
         })
     }
 
+    /// Makes `open_pr` return `url` for `branch` in `owner/name`.
+    pub(crate) fn with_open_pr(self, owner: &str, name: &str, branch: &str, url: &str) -> Self {
+        self.with_state(|s| {
+            s.prs.insert(
+                (ForgeRepo::new(owner, name), branch.to_owned()),
+                url.to_owned(),
+            );
+        })
+    }
+
+    /// Makes every `open_pr` call fail with `err`.
+    pub(crate) fn with_pr_error(self, err: ForgeError) -> Self {
+        self.with_state(|s| s.pr_error = Some(err))
+    }
+
     /// Returns the calls made so far, in order.
     pub(crate) fn calls(&self) -> Vec<ForgeCall> {
         self.lock().calls.clone()
@@ -103,6 +121,16 @@ impl Forge for FakeForge {
             Some(TokenReply::Err(e)) => Err(e.clone()),
             None => Err(ForgeError::Failed(format!("no scripted token for {repo}"))),
         }
+    }
+
+    fn open_pr(&self, repo: &ForgeRepo, branch: &str) -> Result<Option<String>, ForgeError> {
+        let mut s = self.lock();
+        s.calls
+            .push(ForgeCall::OpenPr(repo.clone(), branch.to_owned()));
+        if let Some(e) = &s.pr_error {
+            return Err(e.clone());
+        }
+        Ok(s.prs.get(&(repo.clone(), branch.to_owned())).cloned())
     }
 }
 
@@ -152,6 +180,23 @@ mod tests {
             Some(ForgeError::Failed(
                 "no scripted token for acme/widgets".to_owned()
             ))
+        );
+    }
+
+    #[test]
+    fn open_pr_scripted_unscripted_and_error() {
+        let fake = FakeForge::new().with_open_pr("acme", "widgets", "feat", "https://h/pr/1");
+        assert_eq!(
+            fake.open_pr(&repo(), "feat"),
+            Ok(Some("https://h/pr/1".to_owned()))
+        );
+        assert_eq!(fake.open_pr(&repo(), "other"), Ok(None));
+        let err = ForgeError::Network("down".to_owned());
+        let failing = FakeForge::new().with_pr_error(err.clone());
+        assert_eq!(failing.open_pr(&repo(), "feat"), Err(err));
+        assert_eq!(
+            failing.calls(),
+            vec![ForgeCall::OpenPr(repo(), "feat".to_owned())]
         );
     }
 

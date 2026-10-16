@@ -109,3 +109,54 @@ fn repo_of_delegates() {
         Some(ForgeRepo::new("o", "n"))
     );
 }
+
+fn open_pr(reply: Reply) -> (Result<Option<String>, ForgeError>, Arc<ScriptedProc>) {
+    let (g, proc) = gh(Reply::Ok("tok123\n".to_owned()));
+    proc.on(Tool::Gh, &["pr", "list"], reply);
+    let r = g.open_pr(&ForgeRepo::new("o", "n"), "feat/x");
+    (r, proc)
+}
+
+#[test]
+fn open_pr_returns_first_url() {
+    let json = r#"[{"url":"https://github.com/o/n/pull/7"}]"#;
+    let (r, proc) = open_pr(Reply::Ok(json.to_owned()));
+    assert_eq!(r, Ok(Some("https://github.com/o/n/pull/7".to_owned())));
+    let calls = proc.calls();
+    let call = calls.iter().find(|c| c.tool == Tool::Gh).expect("gh call");
+    assert_eq!(
+        call.args,
+        [
+            "pr", "list", "--repo", "o/n", "--head", "feat/x", "--state", "open", "--limit", "1",
+            "--json", "url"
+        ]
+    );
+}
+
+#[test]
+fn open_pr_none_for_empty_list() {
+    let (r, _) = open_pr(Reply::Ok("[]\n".to_owned()));
+    assert_eq!(r, Ok(None));
+}
+
+#[test]
+fn open_pr_token_is_env_not_argv() {
+    let (_, proc) = open_pr(Reply::Ok("[]".to_owned()));
+    let calls = proc.calls();
+    let call = calls.iter().find(|c| c.tool == Tool::Gh).expect("gh call");
+    assert!(call
+        .env
+        .contains(&("GH_TOKEN".to_owned(), "tok123".to_owned())));
+    assert!(call.args.iter().all(|a| !a.contains("tok123")));
+}
+
+#[test]
+fn open_pr_nonzero_is_failed_without_leaking() {
+    let (r, _) = open_pr(fail(1));
+    let m = match r {
+        Err(ForgeError::Failed(m)) => m,
+        other => format!("unexpected: {other:?}"),
+    };
+    assert!(!m.starts_with("unexpected"), "{m}");
+    assert!(!m.contains("tok123") && !m.contains("SECRETOUT") && !m.contains("SECRETERR"));
+}
