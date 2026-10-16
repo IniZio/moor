@@ -167,7 +167,8 @@ fn attach(
             message: format!("could not hide scratch dirs from git: {e}"),
         });
     }
-    let reprovisioned = reprovision(cx, store, row, "start", req.trust_moor_yaml)?;
+    let launching = || relaunch::will_launch(cx, store, req, row);
+    let reprovisioned = reprovision(cx, store, row, "start", req.trust_moor_yaml, &launching)?;
     store.apply(Decision::new(row.id).event(ExtraEvent::Attached))?;
     let setup_exit = reprovisioned.as_ref().and_then(|p| p.setup.exit());
     let settings = || {
