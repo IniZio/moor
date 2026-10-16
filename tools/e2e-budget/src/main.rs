@@ -6,8 +6,8 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use e2e_budget::{
-    count_kind, parse_jsonl, start_phases, timed, wake_phases, Event, Phase, StartBudgets,
-    WakeBudgets,
+    count_kind, parse_jsonl, parse_phase_line, report_line, start_phases, summarize, timed,
+    wake_phases, Event, Outcome, Phase, StartBudgets, WakeBudgets,
 };
 use rusqlite::{Connection, OpenFlags};
 
@@ -176,39 +176,20 @@ fn cmd_count(args: &Args) -> Result<bool, String> {
     Ok(true)
 }
 
-/// Splits a phase line into its name and pass flag, if it is one.
-fn parse_phase_line(line: &str) -> Option<(&str, bool)> {
-    let mut tokens = line.split_whitespace();
-    if tokens.next()? != "PHASE" {
-        return None;
-    }
-    let name = tokens.next()?;
-    let pass = tokens.find_map(|t| match t {
-        "PASS" => Some(true),
-        "FAIL" => Some(false),
-        _ => None,
-    })?;
-    Some((name, pass))
+/// `report`: one phase that is timed but has no budget.
+fn cmd_report(args: &Args) -> Result<bool, String> {
+    println!("{}", report_line(args.req("name")?, args.int("took-ms")?));
+    Ok(true)
 }
 
 /// `verdict`: summarizes previously printed phase lines.
 fn cmd_verdict(args: &Args) -> Result<bool, String> {
     let path = args.req("lines")?;
     let text = std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))?;
-    let parsed: Vec<(&str, bool)> = text.lines().filter_map(parse_phase_line).collect();
-    let failed: Vec<&str> = parsed.iter().filter(|p| !p.1).map(|p| p.0).collect();
-    if parsed.is_empty() {
-        println!("VERDICT FAIL (no phases)");
-    } else if failed.is_empty() {
-        println!("VERDICT PASS ({} phases)", parsed.len());
-    } else {
-        let (k, n) = (failed.len(), parsed.len());
-        println!(
-            "VERDICT FAIL ({k} of {n} phases failed: {})",
-            failed.join(", ")
-        );
-    }
-    Ok(!parsed.is_empty() && failed.is_empty())
+    let parsed: Vec<(&str, Outcome)> = text.lines().filter_map(parse_phase_line).collect();
+    let (pass, line) = summarize(&parsed);
+    println!("{line}");
+    Ok(pass)
 }
 
 /// Dispatches a subcommand; `Ok(true)` means all phases passed.
@@ -224,6 +205,7 @@ fn run(raw: &[String]) -> Result<bool, String> {
         "wake" => cmd_wake(&args),
         "timed" => cmd_timed(&args),
         "count" => cmd_count(&args),
+        "report" => cmd_report(&args),
         "verdict" => cmd_verdict(&args),
         other => Err(format!("unknown subcommand `{other}`")),
     }

@@ -208,20 +208,79 @@ pub fn verdict(phases: &[Phase]) -> bool {
     !phases.is_empty() && phases.iter().all(Phase::pass)
 }
 
-/// Final summary line naming any failed phases.
-pub fn verdict_line(phases: &[Phase]) -> String {
-    if verdict(phases) {
-        return format!("VERDICT PASS ({} phases)", phases.len());
+/// How one report line ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Outcome {
+    /// Measured and within budget.
+    Pass,
+    /// Failed, over budget or missing.
+    Fail,
+    /// Could not be attempted.
+    Skip,
+}
+
+/// Splits a report line into its phase name and outcome, if it is one.
+pub fn parse_phase_line(line: &str) -> Option<(&str, Outcome)> {
+    let mut tokens = line.split_whitespace();
+    if tokens.next()? != "PHASE" {
+        return None;
     }
-    let failed: Vec<&str> = phases
-        .iter()
-        .filter(|p| !p.pass())
-        .map(|p| p.name.as_str())
-        .collect();
-    format!(
-        "VERDICT FAIL ({} of {} phases failed: {})",
+    let name = tokens.next()?;
+    let outcome = tokens.find_map(|t| match t {
+        "PASS" => Some(Outcome::Pass),
+        "FAIL" => Some(Outcome::Fail),
+        "SKIP" => Some(Outcome::Skip),
+        _ => None,
+    })?;
+    Some((name, outcome))
+}
+
+/// Report line for a phase that is timed but has no budget.
+pub fn report_line(name: &str, took_ms: i64) -> String {
+    format!("PHASE {name} took={}s budget=none PASS", secs(took_ms))
+}
+
+/// Verdict over report lines: passes when non-empty with no failure. Skips are counted apart.
+pub fn summarize(phases: &[(&str, Outcome)]) -> (bool, String) {
+    let names =
+        |o: Outcome| -> Vec<&str> { phases.iter().filter(|p| p.1 == o).map(|p| p.0).collect() };
+    let (failed, skipped) = (names(Outcome::Fail), names(Outcome::Skip));
+    if phases.is_empty() {
+        return (false, "VERDICT FAIL (no phases)".to_owned());
+    }
+    let skips = if skipped.is_empty() {
+        String::new()
+    } else {
+        format!("; {} skipped: {}", skipped.len(), skipped.join(", "))
+    };
+    if failed.is_empty() {
+        let note = skips.replacen("; ", ", ", 1);
+        return (
+            true,
+            format!("VERDICT PASS ({} phases{note})", phases.len()),
+        );
+    }
+    let line = format!(
+        "VERDICT FAIL ({} of {} phases failed: {}{skips})",
         failed.len(),
         phases.len(),
         failed.join(", ")
-    )
+    );
+    (false, line)
+}
+
+/// Final summary line naming any failed phases.
+pub fn verdict_line(phases: &[Phase]) -> String {
+    let parsed: Vec<(&str, Outcome)> = phases
+        .iter()
+        .map(|p| {
+            let o = if p.pass() {
+                Outcome::Pass
+            } else {
+                Outcome::Fail
+            };
+            (p.name.as_str(), o)
+        })
+        .collect();
+    summarize(&parsed).1
 }
