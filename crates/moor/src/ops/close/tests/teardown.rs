@@ -53,13 +53,24 @@ fn teardown_runs_as_one_synced_script_before_release() {
     let v = run(&f.cx, &req(false)).unwrap();
     assert!(v.box_deleted);
     let spec = only_exec(&f);
-    assert!(matches!(spec.argv.as_slice(), [sh, c, script]
+    assert!(matches!(spec.argv.as_slice(), [.., sh, c, script]
         if sh == "sh" && c == "-c" && script.contains("echo bye") && script.contains("rm -rf cache")));
     assert_eq!(spec.sync, SyncMode::Full);
     assert_eq!(spec.host_cwd.as_deref(), Some(f.dir.path()));
     assert_eq!(spec.class.as_deref(), Some("large"));
-    assert_eq!(spec.env, [("K".to_owned(), "v".to_owned())]);
+    assert_eq!(spec.env.first(), Some(&("K".to_owned(), "v".to_owned())));
     assert!(f.cx.take_warnings().is_empty());
+}
+
+#[test]
+fn teardown_gets_the_proxy_variables_and_runs_in_the_workdir() {
+    let f = fx_yaml(FakeDriver::new(), YAML);
+    run(&f.cx, &req(false)).unwrap();
+    let spec = only_exec(&f);
+    assert_eq!(spec.env.first(), Some(&("K".to_owned(), "v".to_owned())));
+    assert_eq!(spec.cwd.unwrap().as_str(), "/work/box-1");
+    assert!(matches!(spec.argv.as_slice(), [sh, c, script, ..]
+        if sh == "sh" && c == "-c" && script.contains("export HTTPS_PROXY=")));
 }
 
 #[test]

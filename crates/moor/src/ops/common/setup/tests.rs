@@ -8,19 +8,21 @@ use moor_core::boxscript::setup::setup_script;
 use moor_core::config::{Flags, TaskSettings, UserConfig};
 use moor_core::domain::run::SyncMode;
 use moor_core::domain::task::SetupOutcome;
+use moor_core::exec_env::SETUP_LINE_DEADLINE;
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
 use moor_core::seam::proc::Deadline;
 use moor_core::view::SetupView;
 use moor_core::{BoxHandle, BoxPath, ProviderId, TaskId, TaskName};
 
-use super::{run_setup, setup_deadline, sync_checkout, SetupRun, SETUP_LINE_DEADLINE};
+use super::{run_setup as run_setup_with, sync_checkout, SetupRun};
 use crate::cx::Cx;
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
 use crate::testing::surface::FakeSurface;
 
+mod proxy;
 mod warning;
 
 struct Rig {
@@ -73,6 +75,18 @@ fn cfg(setup: &[&str], env: &[(&str, &str)]) -> TaskSettings {
     c
 }
 
+/// Runs setup in the rig's Box without a Proxy.
+fn run_setup(
+    cx: &Cx,
+    handle: &BoxHandle,
+    workdir: &BoxPath,
+    worktree: &Path,
+    cfg: &TaskSettings,
+    sync: SyncMode,
+) -> SetupRun {
+    run_setup_with(cx, handle, "p", workdir, worktree, cfg, sync, None)
+}
+
 fn exits(codes: &[i32]) -> Vec<Result<ExecOutcome, DriverError>> {
     codes
         .iter()
@@ -117,29 +131,6 @@ fn lines_run_as_one_generated_script_under_sh() {
 }
 
 #[test]
-fn runs_in_workdir_with_exactly_the_repo_env() {
-    let d = tempfile::tempdir().unwrap();
-    let r = rig(d.path(), FakeDriver::new());
-    run_setup(
-        &r.cx,
-        &r.handle,
-        &r.workdir,
-        d.path(),
-        &cfg(&["a"], &[("B", "2"), ("A", "1")]),
-        SyncMode::Full,
-    );
-    let (_, spec, _) = only(r.driver.execs());
-    assert_eq!(spec.cwd.as_ref(), Some(&r.workdir));
-    assert_eq!(
-        spec.env,
-        vec![
-            ("A".to_owned(), "1".to_owned()),
-            ("B".to_owned(), "2".to_owned())
-        ]
-    );
-}
-
-#[test]
 fn the_script_gets_one_line_allowance_per_line() {
     let d = tempfile::tempdir().unwrap();
     let r = rig(d.path(), FakeDriver::new());
@@ -154,7 +145,6 @@ fn the_script_gets_one_line_allowance_per_line() {
     let (_, _, dl) = only(r.driver.execs());
     assert_eq!(dl, Deadline(SETUP_LINE_DEADLINE * 3));
     assert_eq!(SETUP_LINE_DEADLINE.as_secs(), 1800);
-    assert_eq!(setup_deadline(0), Duration::ZERO);
 }
 
 #[test]

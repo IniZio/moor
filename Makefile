@@ -30,6 +30,7 @@ lint:
 	cargo clippy --workspace --all-targets --locked -- -D warnings
 	tools/file-cap.sh
 	tools/removed-names.sh
+	tools/exec-env.sh
 	cargo test -p layering --locked
 	cargo run -q -p layering --locked
 	tools/lint-selftest.sh

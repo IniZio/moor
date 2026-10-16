@@ -3,35 +3,32 @@
 //! The Box lock is held from the run row's creation to its completion.
 
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 use moor_core::boxscript::command_line;
-use moor_core::config::Flags;
+use moor_core::config::{Flags, TaskSettings};
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::Decision;
 use moor_core::domain::run::SyncMode;
 use moor_core::domain::task::{TaskInput, TaskState};
+use moor_core::exec_env::Purpose;
 use moor_core::seam::driver::{ExecOutcome, ExecSpec};
-use moor_core::seam::proc::{Deadline, Output};
+use moor_core::seam::proc::Output;
 use moor_core::view::run::RunValue;
-use moor_core::{ErrorKind, RunId, RunReq, Sha};
+use moor_core::{ErrorKind, RunId, RunReq, Sha, Warning};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
+use crate::ops::common::box_exec::{self, BoxExec, Site};
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::facts::resolved;
 use crate::ops::common::provision::moor_yaml;
 use crate::ops::common::provisioning::dead_provisioning;
-use crate::ops::common::setup::exec_env;
 use crate::ops::common::wake::wake_if_asleep;
 use crate::store::{NewRun, RunOutcome, Store, StoreError, TaskRow};
 
 mod ready;
 mod record;
 mod sync;
-
-/// Longest a command may run before the driver gives up on it.
-const RUN_DEADLINE: Duration = Duration::from_hours(24);
 
 /// Run `run`.
 ///
@@ -74,7 +71,7 @@ fn locked(cx: &Cx, store: &Store, req: &RunReq, row: &TaskRow) -> Result<RunValu
         row
     };
     let target = ready::target(store, row)?;
-    launch(cx, store, req, row, target)
+    launch(cx, store, req, row, &target)
 }
 
 /// Records the run, executes the command in the Box and records how it ended.
@@ -83,7 +80,7 @@ fn launch(
     store: &Store,
     req: &RunReq,
     row: &TaskRow,
-    target: ready::Target,
+    target: &ready::Target,
 ) -> Result<RunValue, CommandError> {
     let repo = moor_yaml::guard(cx, row, req.trust_moor_yaml)?;
     let cfg = resolved(cx, repo.as_ref(), &Flags::default());
@@ -108,19 +105,19 @@ fn launch(
             return Err(e);
         }
     };
+    let exec = box_env(cx, row, target, &cfg)
+        .inspect_err(|e| finish(store, id, Some(e.error.to_string())))?;
     let spec = ExecSpec {
-        argv,
-        env: exec_env(&cfg),
-        cwd: target.workdir,
+        argv: exec.argv(argv),
+        env: exec.vars(),
+        cwd: exec.cwd(),
         sync,
         output: Some(output),
-        host_cwd: Some(target.worktree),
+        host_cwd: Some(target.worktree.clone()),
         class: Some(cfg.size.value.as_str().to_owned()),
     };
-    let outcome = match cx
-        .driver()
-        .exec(&target.handle, &spec, Deadline(RUN_DEADLINE))
-    {
+    let result = cx.driver().exec(&target.handle, &spec, exec.deadline());
+    let outcome = match result {
         Ok(outcome) => outcome,
         Err(e) => {
             let message = e.to_string();
@@ -143,6 +140,38 @@ fn launch(
         record: req.record.clone(),
         log,
     })
+}
+
+/// The environment every Box exec gets; without the Proxy the command still runs, and warns.
+fn box_env(
+    cx: &Cx,
+    row: &TaskRow,
+    target: &ready::Target,
+    cfg: &TaskSettings,
+) -> Result<BoxExec, CommandError> {
+    let proxy = box_exec::proxy(
+        cx,
+        row.id,
+        Some(target.handle.clone()),
+        &target.worktree,
+        cfg,
+    )
+    .map_err(|e| {
+        cx.warn(Warning {
+            code: "proxy_unavailable".to_owned(),
+            message: format!("{e}; the command runs without the proxy"),
+        });
+    })
+    .ok();
+    let provider = row.boxed.as_ref().map_or("", |b| b.provider.as_str());
+    let site = Site {
+        handle: &target.handle,
+        provider,
+        workdir: target.workdir.as_ref(),
+        worktree: &target.worktree,
+    };
+    box_exec::prepare(cx, &site, proxy.as_ref(), cfg, Purpose::Run)
+        .map_err(|m| CommandError::new(ErrorKind::Failed, m))
 }
 
 /// An Idle Task becomes Working for the run; a row that changed since it was read is left as is.

@@ -7,6 +7,7 @@ use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Intent};
 use moor_core::domain::run::SyncMode;
 use moor_core::domain::task::TaskState;
+use moor_core::exec_env::SETUP_LINE_DEADLINE;
 use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
 use moor_core::seam::proc::{Deadline, Tool};
 use moor_core::{BoxHandle, ErrorKind, StartReq, TaskId};
@@ -14,7 +15,6 @@ use moor_core::{BoxHandle, ErrorKind, StartReq, TaskId};
 use super::moor_yaml::script_base_yaml;
 use super::{req, world_at, World};
 use crate::adapters::clock::SystemClock;
-use crate::ops::common::setup::SETUP_LINE_DEADLINE;
 use crate::ops::start::run;
 use crate::store::Store;
 use crate::testing::driver::FakeDriver;
@@ -67,9 +67,20 @@ pub(super) fn setup_execs(w: &World) -> Vec<(BoxHandle, ExecSpec, Deadline)> {
         .collect()
 }
 
-/// The argv of every exec except the checkout sync.
+/// Peels the Proxy wrapper (`sh -c <prelude> sh`) off an argv.
+pub(super) fn unwrapped(argv: Vec<String>) -> Vec<String> {
+    match argv.as_slice() {
+        [_, _, _, sh, rest @ ..] if sh == "sh" => rest.to_vec(),
+        _ => argv,
+    }
+}
+
+/// The argv of every exec except the checkout sync, wrapper peeled.
 pub(super) fn argvs(w: &World) -> Vec<Vec<String>> {
-    setup_execs(w).into_iter().map(|e| e.1.argv).collect()
+    setup_execs(w)
+        .into_iter()
+        .map(|e| unwrapped(e.1.argv))
+        .collect()
 }
 
 /// Whether `argv` is the batched script that sets the Box's git identity.
@@ -120,7 +131,7 @@ fn setup_lines_run_in_order_in_the_box_workdir() {
         .into_iter()
         .map(|(h, spec, _)| {
             let cwd = spec.cwd.map(|p| p.as_str().to_owned());
-            (h.as_str().to_owned(), spec.argv, cwd)
+            (h.as_str().to_owned(), unwrapped(spec.argv), cwd)
         })
         .collect();
     let want = (
@@ -129,6 +140,8 @@ fn setup_lines_run_in_order_in_the_box_workdir() {
         Some("/work/cbx_1/demo".to_owned()),
     );
     assert_eq!(seen, [want]);
+    let calls = w.driver.box_calls();
+    assert_eq!(calls.iter().filter(|c| *c == "batch").count(), 1);
 }
 
 #[test]
@@ -231,12 +244,14 @@ fn no_setup_lines_means_setup_did_not_run() {
 }
 
 #[test]
-fn setup_env_is_exactly_the_repo_env() {
+fn setup_env_is_the_repo_env_plus_the_proxy_rule_env() {
     let yaml = "setup: [a]\nenv: {ZED: z, ALPHA: a}\n";
     let (w, _) = start_with(yaml, FakeDriver::new());
-    let envs: Vec<_> = setup_execs(&w).into_iter().map(|e| e.1.env).collect();
-    let pair = |k: &str, v: &str| (k.to_owned(), v.to_owned());
-    assert_eq!(envs, [vec![pair("ALPHA", "a"), pair("ZED", "z")]]);
+    let execs = setup_execs(&w).into_iter();
+    let env = execs.flat_map(|e| e.1.env).map(|(k, v)| format!("{k}={v}"));
+    let env: Vec<_> = env.collect();
+    assert!(env.starts_with(&["ALPHA=a".to_owned(), "ZED=z".to_owned()]));
+    assert!(env.contains(&"CLAUDE_CODE_OAUTH_TOKEN=moor-proxy".to_owned()));
 }
 
 #[test]
