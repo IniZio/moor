@@ -59,8 +59,9 @@ impl Running<'_> {
                 }
                 self.answer(&TunnelAck::Parked { seq: request.seq });
             }
-            TunnelWant::Up if self.parked.get() => self.reopen(request.seq),
-            TunnelWant::Up => {
+            TunnelWant::Up if self.parked.get() => self.reopen(request.seq, true),
+            TunnelWant::UpAwake if self.parked.get() => self.reopen(request.seq, false),
+            TunnelWant::Up | TunnelWant::UpAwake => {
                 // A dead tunnel falls through to the restart path and is answered once it is up.
                 if self.tunnel.borrow().alive() {
                     self.answer(&TunnelAck::Up { seq: request.seq });
@@ -92,16 +93,16 @@ impl Running<'_> {
 
     /// Opens one new tunnel on the same ports and answers `seq`.
     ///
-    /// The port is not cleared: a sleep stops the Box, so its wake is a cold boot and no session
-    /// from before the park can still hold the port.
-    fn reopen(&self, seq: u64) {
+    /// A `fresh` reopen skips the port clear: a sleep stops the Box, so its wake is a cold boot and
+    /// no session from before the park can still hold the port. A Box that stayed up is cleared.
+    fn reopen(&self, seq: u64, fresh: bool) {
         let opened = bind::open(
             self.deps,
             &self.handle,
             self.box_port,
             self.live.port(),
             &self.worktree,
-            true,
+            fresh,
         );
         // A failed open leaves the dead stand-in, so the restart path takes over.
         self.parked.set(false);

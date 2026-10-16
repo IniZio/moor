@@ -464,7 +464,7 @@ fn a_box_that_cannot_sleep_gets_its_tunnel_back() {
         .unwrap();
     assert!(run(&f.cx, &req()).is_err());
     let r = tunnel_request(&f).unwrap();
-    assert_eq!((r.want, r.seq), (TunnelWant::Up, 2));
+    assert_eq!((r.want, r.seq), (TunnelWant::UpAwake, 2));
 }
 
 /// Give the Task a live agent session in pane `p-1`.

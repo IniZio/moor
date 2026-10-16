@@ -86,7 +86,7 @@ fn no_proxy_row_needs_no_tunnel_work() {
     let f = fx();
     let store = f.cx.store().unwrap();
     park_tunnel(&f.cx, store, f.id).unwrap();
-    restore_tunnel(&f.cx, store, f.id).unwrap();
+    restore_tunnel(&f.cx, store, f.id, false).unwrap();
     assert_eq!(store.tunnel_request(f.id).unwrap(), None);
 }
 
@@ -131,7 +131,7 @@ fn restore_writes_the_request_and_accepts_the_up_ack() {
     let f = live();
     let store = f.cx.store().unwrap();
     store.ack_tunnel(f.id, &TunnelAck::Up { seq: 1 }).unwrap();
-    restore_tunnel(&f.cx, store, f.id).unwrap();
+    restore_tunnel(&f.cx, store, f.id, false).unwrap();
     let req = store.tunnel_request(f.id).unwrap().unwrap();
     assert_eq!((req.want, req.seq), (TunnelWant::Up, 1));
 }
@@ -145,7 +145,7 @@ fn restore_failure_carries_the_tunnel_error() {
         error: "reverse tunnel refused".to_owned(),
     };
     store.ack_tunnel(f.id, &failed).unwrap();
-    let err = restore_tunnel(&f.cx, store, f.id).unwrap_err();
+    let err = restore_tunnel(&f.cx, store, f.id, false).unwrap_err();
     assert!(err.error.to_string().contains("reverse tunnel refused"));
 }
 
@@ -175,6 +175,6 @@ fn park_times_out_without_an_ack() {
 fn restore_times_out_without_an_ack() {
     let f = live();
     let store = f.cx.store().unwrap();
-    let err = restore_tunnel(&f.cx, store, f.id).unwrap_err();
+    let err = restore_tunnel(&f.cx, store, f.id, false).unwrap_err();
     assert!(err.error.to_string().contains("did not bring the tunnel"));
 }
