@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use moor_core::boxscript::{command_line, quote};
 use moor_core::domain::run::SyncMode;
+use moor_core::exec_env::ExecEnv;
 use moor_core::name::{BoxPath, NameError};
 use moor_core::seam::agent_profile::{AgentProfile, BoxSetup, LaunchCtx, ProxyAddr};
 use moor_core::seam::driver::{BoxStep, Driver, ExecOutcome, ExecSpec, StepDone};
@@ -191,6 +192,14 @@ impl Launch<'_> {
         resume.map_or_else(|| profile.argv(ctx), |id| profile.resume_argv(id, ctx))
     }
 
+    /// The Box environment the launch builds, from the builder every exec uses.
+    pub(super) fn exec_env(&self) -> Result<ExecEnv, Failure> {
+        let (req, ctx) = (self.req, self.ctx);
+        let (strip, origin) = (&req.strip_env, req.origin.as_deref());
+        proxy_env::exec_env(self.cred, ctx.proxy.as_ref(), strip, origin, &ctx.workdir)
+            .map_err(|e| fail("script", &e))
+    }
+
     /// The script lines that export the proxy environment; empty when the launch has no Proxy.
     fn proxy_lines(&self) -> Result<Vec<String>, Failure> {
         let Some(addr) = &self.ctx.proxy else {
@@ -219,6 +228,7 @@ impl Launch<'_> {
             preseed,
         } = staged?;
         let argv = self.argv();
+        let exec = self.exec_env()?;
         let lines = self.proxy_lines()?;
         let script = script_stripping(
             (cred, self.tmp),
@@ -226,7 +236,7 @@ impl Launch<'_> {
             &hooks,
             &preseed,
             &argv,
-            (&lines, sandboxed.as_ref(), &req.strip_env),
+            (&lines, sandboxed.as_ref(), &exec.unset),
         );
         let script = script.map_err(|e| fail("script", &e))?;
         let line = format!(
