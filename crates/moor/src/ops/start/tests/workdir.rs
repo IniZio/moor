@@ -1,7 +1,9 @@
+use moor_core::domain::boxes::BoxInput;
+use moor_core::domain::decision::Decision;
 use moor_core::seam::proc::Tool;
 use moor_core::TaskId;
 
-use super::setup::{is_identity, is_setup_line};
+use super::setup::{exit, failed_setup_with, is_identity, is_setup_line, setup_execs, start_req};
 use super::{req, world_at, World};
 use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
@@ -83,4 +85,33 @@ fn every_box_exec_runs_from_the_task_worktree() {
             spec.argv
         );
     }
+}
+
+#[test]
+fn start_in_a_replaced_box_runs_setup_in_a_workdir_whose_root_holds_a_parent_component() {
+    let driver = FakeDriver::new().work_root("/w/bin/../box").exec_results([
+        Ok(exit(0)),
+        Ok(exit(1)),
+        Ok(exit(0)),
+        Ok(exit(0)),
+    ]);
+    let (w, id) = failed_setup_with("setup: [a]\n", driver);
+    let store = w.cx.store().unwrap();
+    store
+        .apply(Decision::new(id).box_input(BoxInput::DriverMissing))
+        .unwrap();
+    let again = run(&w.cx, &start_req()).unwrap();
+    assert!(again.setup.ran && again.setup.ok);
+    let execs = setup_execs(&w);
+    assert_eq!(execs.len(), 2);
+    let cwd = execs
+        .last()
+        .and_then(|e| e.1.cwd.as_ref())
+        .map(|p| p.as_str().to_owned());
+    assert_eq!(cwd.as_deref(), Some("/w/bin/../box/cbx_2/demo"));
+    let row = w.cx.store().unwrap().task(id).unwrap().unwrap();
+    assert_eq!(
+        row.boxed.unwrap().workdir.as_deref(),
+        Some("/w/bin/../box/cbx_2/demo")
+    );
 }
