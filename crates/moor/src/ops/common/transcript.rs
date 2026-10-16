@@ -68,6 +68,11 @@ pub(crate) fn save(
     None
 }
 
+/// Records that no save was made for `trigger`, with the reason.
+pub(crate) fn record_skipped(store: &Store, row: &TaskRow, trigger: Trigger, reason: &str) {
+    record(store, row, skipped(trigger, reason));
+}
+
 /// The event for a save that found nothing to save.
 fn skipped(trigger: Trigger, reason: &str) -> ExtraEvent {
     ExtraEvent::TranscriptSkipped {

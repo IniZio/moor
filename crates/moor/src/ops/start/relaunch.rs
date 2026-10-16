@@ -40,13 +40,15 @@ enum Ended {
 /// A store failure, a busy Box, a model that cannot be resolved, or a `.moor.yaml` that changed
 /// since the base commit when an agent is about to launch and the owner has not trusted it.
 ///
+/// `setup_exit` is the setup exit of a Box just provisioned, and whether that Box replaced a lost one.
+///
 /// `settings` is evaluated once, before anything changes, and holds the config the launch uses.
 pub(super) fn run(
     cx: &Cx,
     store: &Store,
     req: &StartReq,
     id: TaskId,
-    setup_exit: Option<i32>,
+    (setup_exit, recreated): (Option<i32>, bool),
     settings: &dyn Fn() -> Result<TaskSettings, CommandError>,
 ) -> Result<AgentLaunchView, CommandError> {
     let row = reread(store, id)?;
@@ -77,7 +79,7 @@ pub(super) fn run(
         on_live(cx, store, req, &row, &old);
         return Ok(AgentLaunchView::default());
     };
-    relaunch(cx, store, req, &old, &end, settings)
+    relaunch(cx, store, req, (&old, &end), recreated, settings)
 }
 
 /// Whether [`run`] is about to launch or relaunch the agent of `row`.
@@ -183,8 +185,8 @@ fn relaunch(
     cx: &Cx,
     store: &Store,
     req: &StartReq,
-    old: &SessionRow,
-    end: &Ended,
+    (old, end): (&SessionRow, &Ended),
+    recreated: bool,
     settings: &dyn Fn() -> Result<TaskSettings, CommandError>,
 ) -> Result<AgentLaunchView, CommandError> {
     let id = old.task;
@@ -215,7 +217,13 @@ fn relaunch(
         Ended::Gone => None,
         Ended::Exited(code) => Some(*code),
     };
-    let saved = transcript::save(cx, store, &row, old, Trigger::Relaunch);
+    // A resumed session keeps writing the same file on a disk that survived, so a copy now adds nothing.
+    let saved = if launch.resume.is_some() && !recreated {
+        transcript::record_skipped(store, &row, Trigger::Relaunch, "resumed on the same Box");
+        None
+    } else {
+        transcript::save(cx, store, &row, old, Trigger::Relaunch)
+    };
     let digest = saved.as_ref().map(|t| t.digest.as_str());
     store.end_session(old.id, exit, digest)?;
     let view = launch::begin(cx, store, &row, &launch, &cfg)?;

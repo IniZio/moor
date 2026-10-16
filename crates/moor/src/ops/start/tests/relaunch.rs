@@ -63,7 +63,7 @@ fn relaunch_of(engine: &FakeEngine) -> LaunchReq {
     all.remove(1)
 }
 
-fn set_agent_session(w: &World, id: TaskId, agent: &str) {
+pub(super) fn set_agent_session(w: &World, id: TaskId, agent: &str) {
     let set = Fields {
         agent_session_id: Field::Set(agent.into()),
         ..Fields::default()
