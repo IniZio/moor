@@ -114,6 +114,7 @@ if ! ls "$d"/*.jsonl >/dev/null 2>&1; then
   exit 0
 fi
 (cd "$d" && tar czf "$OLDPWD/{archive}" *.jsonl)
+test -s "{archive}"
 "#
         )
     }
