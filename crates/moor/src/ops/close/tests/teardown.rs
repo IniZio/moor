@@ -188,6 +188,13 @@ fn fx_woken_yaml(yaml: &str) -> Fx {
         proc.clone(),
     );
     let id = admit(&cx, &driver, &worktree);
+    cx.store()
+        .unwrap()
+        .apply(Decision::new(id).set(Fields {
+            box_workdir: Field::Set("/work/cbx_1/repo".to_owned()),
+            ..Fields::default()
+        }))
+        .unwrap();
     fs::write(worktree.join(".moor.yaml"), yaml).unwrap();
     let f = Fx {
         dir,

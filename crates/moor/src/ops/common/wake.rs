@@ -14,15 +14,18 @@ use moor_core::{ErrorKind, TaskReq};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
+use crate::ops::common::provision::recorded_workdir;
 use crate::ops::common::view::{hide_unsupported_box_sleep, task_view};
 use crate::store::{Store, TaskRow};
 
 /// Wake the Task and its Box when either is Asleep; `Ok(true)` when it did.
 ///
-/// A Gone Box is never resumed. A resumed Box may sit in a different working
-/// directory, so it is looked up again and stored with the wake. When the
-/// Driver fails to resume the Box or to find its workdir, nothing is applied
-/// and the Task and Box stay Asleep, so the next call tries both again.
+/// A Gone Box is never resumed. A Box keeps its working directory across
+/// pause and resume, so a usable stored workdir is reused without asking the
+/// Driver. Only a Box with no usable stored workdir is looked up and stored
+/// with the wake. When the Driver fails to resume the Box or to find its
+/// workdir, nothing is applied and the Task and Box stay Asleep, so the next
+/// call tries both again.
 pub(crate) fn wake_if_asleep(cx: &Cx, store: &Store, row: &TaskRow) -> Result<bool, CommandError> {
     let task_asleep = row.state == TaskState::Asleep;
     let box_asleep = row
@@ -42,8 +45,13 @@ pub(crate) fn wake_if_asleep(cx: &Cx, store: &Store, row: &TaskRow) -> Result<bo
                 CommandError::new(ErrorKind::Refused, "the Box has not been acquired")
             })?;
             cx.driver().wake(handle)?;
-            let worktree = Path::new(row.worktree.as_deref().unwrap_or(&row.repo));
-            workdir = Some(cx.driver().workdir(handle, worktree)?);
+            if b.workdir
+                .as_deref()
+                .is_none_or(|w| recorded_workdir(w).is_none())
+            {
+                let worktree = Path::new(row.worktree.as_deref().unwrap_or(&row.repo));
+                workdir = Some(cx.driver().workdir(handle, worktree)?);
+            }
         }
     }
     let mut d = Decision::new(row.id);
