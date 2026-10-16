@@ -370,7 +370,7 @@ enum Unshare {
 
 /// Runs the namespace lines as a user whose `id -u` is `uid`, with the `unshare` of kind `unshare`;
 /// returns the exit code, stderr and the `moor_ns` value the script ends with.
-fn namespace_with(tag: &str, uid: &str, unshare: Unshare) -> (Option<i32>, String, String) {
+fn namespace_with(tag: &str, uid: &str, unshare: &Unshare) -> (Option<i32>, String, String) {
     use std::os::unix::fs::PermissionsExt;
     let bin = std::env::temp_dir().join(format!("moor-ns-{tag}-{}", std::process::id()));
     std::fs::create_dir_all(&bin).unwrap();
@@ -380,7 +380,7 @@ fn namespace_with(tag: &str, uid: &str, unshare: Unshare) -> (Option<i32>, Strin
         std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
     };
     stub("id", &format!("#!/bin/sh\necho {uid}\n"));
-    let help = match unshare {
+    let help = match *unshare {
         Unshare::Missing => None,
         Unshare::Old => Some("  --pid"),
         Unshare::Current => Some("  --kill-child"),
@@ -405,23 +405,23 @@ fn namespace_with(tag: &str, uid: &str, unshare: Unshare) -> (Option<i32>, Strin
 
 #[test]
 fn root_gets_its_own_pid_namespace_with_a_private_proc() {
-    let (code, _, prefix) = namespace_with("root", "0", Unshare::Current);
+    let (code, _, prefix) = namespace_with("root", "0", &Unshare::Current);
     assert_eq!(code, Some(0));
     assert_eq!(prefix, "unshare --pid --fork --kill-child --mount-proc --");
 }
 
 #[test]
 fn a_non_root_user_runs_without_a_namespace() {
-    let (code, _, prefix) = namespace_with("user", "1000", Unshare::Current);
+    let (code, _, prefix) = namespace_with("user", "1000", &Unshare::Current);
     assert_eq!(code, Some(0));
     assert_eq!(prefix, "");
-    let (code, _, prefix) = namespace_with("user-bare", "1000", Unshare::Missing);
+    let (code, _, prefix) = namespace_with("user-bare", "1000", &Unshare::Missing);
     assert_eq!((code, prefix.as_str()), (Some(0), ""));
 }
 
 #[test]
 fn root_without_unshare_is_refused() {
-    let (code, stderr, prefix) = namespace_with("bare", "0", Unshare::Missing);
+    let (code, stderr, prefix) = namespace_with("bare", "0", &Unshare::Missing);
     assert_eq!(code, Some(1));
     assert!(stderr.contains("needs unshare"), "{stderr}");
     assert_eq!(prefix, "");
@@ -429,7 +429,7 @@ fn root_without_unshare_is_refused() {
 
 #[test]
 fn root_with_an_unshare_lacking_kill_child_is_refused() {
-    let (code, stderr, prefix) = namespace_with("old", "0", Unshare::Old);
+    let (code, stderr, prefix) = namespace_with("old", "0", &Unshare::Old);
     assert_eq!(code, Some(1));
     assert!(stderr.contains("--kill-child"), "{stderr}");
     assert_eq!(prefix, "");
