@@ -54,7 +54,8 @@ fi > "$t" 2>/dev/null && mv -f "$t" "$d/agent-state.json" || rm -f "$t"
 exit 0
 "#;
 
-/// Adds the fragment's hooks to the settings file, dropping earlier entries that run the hook script.
+/// Adds the fragment's hooks and other settings to the settings file, dropping earlier entries that
+/// run the hook script.
 const MERGE_HOOKS_PY: &str = r#"
 import json, os, sys
 p, f, m = sys.argv[1:4]
@@ -63,7 +64,11 @@ try:
 except FileNotFoundError:
     j = {}
 hooks = j.setdefault("hooks", {})
-for ev, new in json.load(open(f))["hooks"].items():
+frag = json.load(open(f))
+for k, v in frag.items():
+    if k != "hooks":
+        j[k] = v
+for ev, new in frag["hooks"].items():
     keep = [e for e in hooks.get(ev, []) if not any(m in str(h.get("command", "")) for h in e.get("hooks", []))]
     hooks[ev] = keep + new
 os.makedirs(os.path.dirname(p), exist_ok=True)
@@ -80,7 +85,9 @@ const [p, f, m] = process.argv.slice(1);
 let j = {};
 try { j = JSON.parse(fs.readFileSync(p, "utf8")); } catch (e) { if (e.code !== "ENOENT") throw e; }
 j.hooks = j.hooks || {};
-for (const [ev, add] of Object.entries(JSON.parse(fs.readFileSync(f, "utf8")).hooks)) {
+const frag = JSON.parse(fs.readFileSync(f, "utf8"));
+for (const [k, v] of Object.entries(frag)) if (k !== "hooks") j[k] = v;
+for (const [ev, add] of Object.entries(frag.hooks)) {
   const keep = (j.hooks[ev] || []).filter(e => !(e.hooks || []).some(h => String(h.command || "").includes(m)));
   j.hooks[ev] = keep.concat(add);
 }
@@ -136,17 +143,23 @@ pub(super) fn resume_argv(session_id: &str, ctx: &LaunchCtx) -> Vec<String> {
     argv
 }
 
+/// The permission mode of an agent that runs behind a Proxy.
+const BYPASS_MODE: &str = "bypassPermissions";
+
+/// Whether the agent launches in [`BYPASS_MODE`]; its confirmation screen is then pre-accepted in
+/// the settings the hook writer merges.
+const fn bypasses_permissions(ctx: &LaunchCtx) -> bool {
+    ctx.proxy.is_some()
+}
+
 /// The model and permission flags shared by both argument lists.
 fn flags(ctx: &LaunchCtx) -> Vec<String> {
     let mut flags = Vec::new();
     if let Some(model) = &ctx.model {
         flags.extend(["--model".to_owned(), model.clone()]);
     }
-    if ctx.proxy.is_some() {
-        flags.extend([
-            "--permission-mode".to_owned(),
-            "bypassPermissions".to_owned(),
-        ]);
+    if bypasses_permissions(ctx) {
+        flags.extend(["--permission-mode".to_owned(), BYPASS_MODE.to_owned()]);
     }
     flags
 }
@@ -204,7 +217,9 @@ fn fresh_preseed(ctx: &LaunchCtx) -> String {
 }
 
 /// Puts the hook script and hook fragment in `<workdir>/.moor` and merges the fragment into
-/// `~/.claude/settings.json`, keeping other keys and hooks; running it again changes nothing.
+/// `~/.claude/settings.json` in the Box agent's home, keeping other keys and hooks; running it
+/// again changes nothing. In bypass mode the fragment also accepts Claude Code's confirmation
+/// screen for that mode.
 pub(super) fn hook_writer(ctx: &LaunchCtx) -> Result<BoxSetup, NameError> {
     let script = BoxPath::under(ctx.workdir.as_str(), ".moor/hook.sh")?;
     let fragment = BoxPath::under(ctx.workdir.as_str(), ".moor/hooks.json")?;
@@ -231,7 +246,7 @@ pub(super) fn hook_writer(ctx: &LaunchCtx) -> Result<BoxSetup, NameError> {
             },
             BoxFile {
                 path: fragment,
-                content: hooks(script.as_str()).to_string(),
+                content: fragment_json(ctx, script.as_str()).to_string(),
                 mode: 0o600,
             },
         ],
@@ -252,6 +267,17 @@ elif {fallback}; then :; else false; fi",
         py = quote(py),
         js = quote(js),
     )
+}
+
+/// The settings fragment: the hooks, plus the bypass-mode acceptance when the agent launches so.
+fn fragment_json(ctx: &LaunchCtx, script: &str) -> Value {
+    let mut fragment = hooks(script);
+    if bypasses_permissions(ctx) {
+        if let Some(map) = fragment.as_object_mut() {
+            map.insert("skipDangerousModePermissionPrompt".to_owned(), true.into());
+        }
+    }
+    fragment
 }
 
 /// The hook entries to merge, each running the hook script with its state and event.

@@ -93,6 +93,8 @@ pub enum Key {
 /// A first-run prompt that holds the agent until someone answers it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FirstRunPrompt {
+    /// Asks to confirm running without permission checks.
+    BypassPermissions,
     /// Asks whether to trust the working folder.
     FolderTrust,
     /// Waits for Enter to go on.
@@ -108,6 +110,7 @@ impl FirstRunPrompt {
     #[must_use]
     pub const fn name(self) -> &'static str {
         match self {
+            Self::BypassPermissions => "bypass_permissions",
             Self::FolderTrust => "folder_trust",
             Self::PressEnter => "press_enter",
             Self::SecurityNotes => "security_notes",
