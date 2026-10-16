@@ -23,7 +23,11 @@ fn launch_with_kinds(
     os: &'static str,
     driver_fake: FakeDriver,
     kinds: Option<&'static [&'static dyn DeviceKind]>,
-) -> (Arc<FakeDriver>, Arc<FakeSurface>, Result<(), EngineError>) {
+) -> (
+    Arc<FakeDriver>,
+    Arc<FakeSurface>,
+    Result<SessionRef, EngineError>,
+) {
     let fetch = Arc::new(FakeFetch::new(Ok(tarball(READY_BINARY))));
     let release = release_for(&fetch, &tarball(READY_BINARY), (os, "arm64"));
     let d = driver(driver_fake);
@@ -44,9 +48,10 @@ fn launch_with_kinds(
     }
     let req = LaunchReq {
         task: TaskName::parse("42").unwrap(),
+        task_id: TaskId::new(42),
         ..req_with_proxy(&s)
     };
-    let out = a.launch(&req).map(|_| ());
+    let out = a.launch(&req);
     (d, s, out)
 }
 
@@ -79,11 +84,14 @@ fn a_linux_launch_never_runs_simctl() {
 struct Failing;
 
 impl DeviceKind for Failing {
+    fn name(&self) -> &'static str {
+        "failing"
+    }
     fn available(&self, os: &str) -> bool {
         os == "Darwin"
     }
-    fn provision(&self, _: &dyn Driver, _: &LaunchReq, _: &BoxPath) -> Option<String> {
-        None
+    fn provision(&self, _: &dyn Driver, _: &LaunchReq, _: &BoxPath) -> Result<String, String> {
+        Err("failing reason".to_owned())
     }
     fn env(&self, _: &str) -> Vec<(String, String)> {
         vec![("FAILING_ENV".to_owned(), "failing-env".to_owned())]
@@ -112,8 +120,8 @@ impl DeviceKind for Fake {
     fn available(&self, os: &str) -> bool {
         os == "Darwin"
     }
-    fn provision(&self, _: &dyn Driver, _: &LaunchReq, _: &BoxPath) -> Option<String> {
-        Some("fake-1".to_owned())
+    fn provision(&self, _: &dyn Driver, _: &LaunchReq, _: &BoxPath) -> Result<String, String> {
+        Ok("fake-1".to_owned())
     }
     fn env(&self, id: &str) -> Vec<(String, String)> {
         vec![("FAKE_ENV".to_owned(), id.to_owned())]
@@ -143,7 +151,14 @@ fn a_kind_that_fails_to_provision_is_skipped_and_the_next_kind_still_runs() {
         FakeDriver::new(),
         Some(&[&Failing, &Fake]),
     );
-    out.unwrap();
+    let session = out.unwrap();
+    assert_eq!(
+        session.device_failures,
+        [DeviceFailure {
+            kind: "failing".to_owned(),
+            reason: "failing reason".to_owned(),
+        }]
+    );
     let script = script_of(&pane_line(&s));
     let trap = script.lines().find(|l| l.starts_with("trap ")).unwrap();
     assert!(trap.contains("echo fake-down fake-1"), "{script}");

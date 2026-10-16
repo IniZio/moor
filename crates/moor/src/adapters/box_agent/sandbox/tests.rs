@@ -527,8 +527,8 @@ impl DeviceKind for Fake {
         _: &dyn moor_core::seam::driver::Driver,
         _: &moor_core::seam::engine::LaunchReq,
         _: &BoxPath,
-    ) -> Option<String> {
-        None
+    ) -> Result<String, String> {
+        Err("unused".to_owned())
     }
     fn env(&self, id: &str) -> Vec<(String, String)> {
         vec![("FAKE_DEVICE".to_owned(), id.to_owned())]

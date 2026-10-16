@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::activity::Probes;
-use crate::name::{BoxHandle, BoxPath, TaskName};
+use crate::name::{BoxHandle, BoxPath, TaskId, TaskName};
 use crate::seam::agent_profile::{PromptMatch, ProxyAddr};
 use crate::seam::driver::DriverError;
 use crate::seam::proc::Deadline;
@@ -25,6 +25,17 @@ pub struct SessionRef {
     pub pane: Option<PaneRef>,
     /// The sandbox the agent runs under, such as `nono 0.80.0`; none when unsandboxed.
     pub sandbox: Option<String>,
+    /// Device kinds that failed to provision; the agent runs without them.
+    pub device_failures: Vec<DeviceFailure>,
+}
+
+/// A per-Task device kind that could not be provisioned.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeviceFailure {
+    /// The device kind, such as `ios`.
+    pub kind: String,
+    /// A short human reason.
+    pub reason: String,
 }
 
 /// What a launch needs to start the agent in a Box.
@@ -40,6 +51,8 @@ pub struct LaunchReq {
     pub workspace: WorkspaceRef,
     /// The Task the agent works on.
     pub task: TaskName,
+    /// The Task's numeric id; names the per-Task devices.
+    pub task_id: TaskId,
     /// The Task branch the agent pushes to.
     pub branch: String,
     /// What the agent is asked to do.
@@ -69,6 +82,7 @@ impl PartialEq for LaunchReq {
             && self.worktree == other.worktree
             && self.workspace == other.workspace
             && self.task == other.task
+            && self.task_id == other.task_id
             && self.branch == other.branch
             && self.goal == other.goal
             && self.resume == other.resume

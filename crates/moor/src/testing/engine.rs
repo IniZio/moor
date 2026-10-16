@@ -183,6 +183,7 @@ impl Engine for FakeEngine {
                 worktree: req.worktree.clone(),
                 pane: Some(PaneRef::new("p-1")),
                 sandbox: None,
+                device_failures: Vec::new(),
             })
         })
     }

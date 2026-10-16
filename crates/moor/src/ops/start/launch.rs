@@ -159,6 +159,7 @@ fn record_session(
 ) -> Result<AgentLaunchView, CommandError> {
     let id = row.id;
     let sandbox = session.sandbox.clone();
+    let device_failures = session.device_failures.clone();
     let sref = if session.id.is_empty() {
         format!("moor-{}", id.get())
     } else {
@@ -177,6 +178,20 @@ fn record_session(
     }
     if row.launch_failure.is_some() {
         record(store, id, Field::Clear, None)?;
+    }
+    for f in device_failures {
+        cx.warn(Warning {
+            code: "device_provision_failed".to_owned(),
+            message: format!(
+                "could not set up the {} device: {}; the agent runs without it",
+                f.kind, f.reason
+            ),
+        });
+        let event = ExtraEvent::DeviceProvisionFailed {
+            device: f.kind,
+            reason: f.reason,
+        };
+        store.apply(Decision::new(id).event(event))?;
     }
     Ok(AgentLaunchView {
         launched: true,
@@ -286,6 +301,7 @@ pub(super) fn launch_req(cx: &Cx, row: &TaskRow, setup_exit: Option<i32>) -> Opt
         worktree: PathBuf::from(row.worktree.as_deref()?),
         workspace: WorkspaceRef::new(row.workspace_id.as_deref()?),
         task: row.name.clone(),
+        task_id: row.id,
         branch: row.branch.clone().unwrap_or_default(),
         goal: row.goal.clone(),
         resume: None,

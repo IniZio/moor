@@ -16,8 +16,8 @@ impl DeviceKind for Fake {
     fn available(&self, _os: &str) -> bool {
         true
     }
-    fn provision(&self, _: &dyn Driver, _: &LaunchReq, _: &BoxPath) -> Option<String> {
-        None
+    fn provision(&self, _: &dyn Driver, _: &LaunchReq, _: &BoxPath) -> Result<String, String> {
+        Err(String::new())
     }
     fn env(&self, _: &str) -> Vec<(String, String)> {
         Vec::new()

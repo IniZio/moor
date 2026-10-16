@@ -21,6 +21,7 @@ use crate::testing::surface::FakeSurface;
 mod activity;
 mod base;
 mod capacity;
+mod devices;
 mod dotfiles;
 mod leftover;
 mod moor_yaml;

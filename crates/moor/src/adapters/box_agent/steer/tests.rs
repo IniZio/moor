@@ -45,6 +45,7 @@ fn surface(reads: Vec<Result<PaneObs, SurfaceError>>) -> (Arc<FakeSurface>, Sess
         worktree: PathBuf::from("/host/wt"),
         pane: Some(pane),
         sandbox: None,
+        device_failures: Vec::new(),
     };
     (Arc::new(s), session)
 }

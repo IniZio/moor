@@ -146,6 +146,10 @@ fn all_events() -> Vec<Event> {
             shape: None,
         },
         Event::ProxyCredentialFailed { rule: s("r") },
+        Event::DeviceProvisionFailed {
+            device: s("ios"),
+            reason: s("r"),
+        },
     ]
 }
 
@@ -202,6 +206,7 @@ const fn event_index(e: &Event) -> usize {
         Event::EgressRefused { .. } => 37,
         Event::CredentialWithheld { .. } => 38,
         Event::ProxyCredentialFailed { .. } => 39,
+        Event::DeviceProvisionFailed { .. } => 40,
     }
 }
 
@@ -209,7 +214,7 @@ const fn event_index(e: &Event) -> usize {
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 40);
+    assert_eq!(all.len(), 41);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }

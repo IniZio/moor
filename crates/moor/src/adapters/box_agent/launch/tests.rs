@@ -6,7 +6,7 @@ use std::sync::Arc;
 use moor_core::seam::agent_profile::{AgentProfile, BoxSetup, LaunchCtx, ProxyAddr};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
-use moor_core::seam::engine::{Engine, EngineError, LaunchReq};
+use moor_core::seam::engine::{DeviceFailure, Engine, EngineError, LaunchReq, SessionRef};
 use moor_core::seam::surface::{Surface, SurfaceError};
 use moor_core::{BoxHandle, BoxPath, ProviderId, Secret, TaskId, TaskName};
 
@@ -58,6 +58,7 @@ fn req(s: &FakeSurface) -> LaunchReq {
         worktree: wt.path.clone(),
         workspace: s.ensure_workspace(&wt, "moor:t1").unwrap(),
         task: TaskName::parse("t1").unwrap(),
+        task_id: TaskId::new(1),
         branch: "moor/t1".to_owned(),
         goal: Some("fix x".to_owned()),
         resume: None,

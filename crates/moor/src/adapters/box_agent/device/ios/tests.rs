@@ -21,6 +21,7 @@ fn req(task: &str) -> LaunchReq {
         worktree: PathBuf::from("/r"),
         workspace: moor_core::seam::surface::WorkspaceRef::new("w"),
         task: TaskName::parse(task).unwrap(),
+        task_id: TaskId::new(42),
         branch: "moor/x".to_owned(),
         goal: None,
         resume: None,
@@ -99,7 +100,7 @@ fn create_script_names_the_device_and_never_uses_booted() {
 fn create_returns_the_udid_the_script_wrote() {
     let d = driver(FakeDriver::new().peek_text("box-1", &out(), &format!("{UDID}\n")));
     let got = Ios.provision(&d, &req("42"), &BoxPath::restore(CRED).unwrap());
-    assert_eq!(got.as_deref(), Some(UDID));
+    assert_eq!(got.as_deref(), Ok(UDID));
     let execs = d.execs();
     assert_eq!(execs.len(), 1);
     let argv = execs.first().map(|e| e.1.argv.get(..2));
@@ -107,14 +108,17 @@ fn create_returns_the_udid_the_script_wrote() {
 }
 
 #[test]
-fn create_is_none_when_exec_fails_or_exits_nonzero() {
+fn create_fails_with_a_reason_when_exec_fails_or_exits_nonzero() {
     let cred = BoxPath::restore(CRED).unwrap();
     let d = driver(
         FakeDriver::new()
             .peek_text("box-1", &out(), UDID)
             .exec_results([Ok(ExecOutcome::Exited { code: 1 })]),
     );
-    assert_eq!(Ios.provision(&d, &req("42"), &cred), None);
+    assert_eq!(
+        Ios.provision(&d, &req("42"), &cred),
+        Err("simctl create exited 1".to_owned())
+    );
     let d = driver(
         FakeDriver::new()
             .peek_text("box-1", &out(), UDID)
@@ -122,19 +126,38 @@ fn create_is_none_when_exec_fails_or_exits_nonzero() {
                 summary: "x".to_owned(),
             })]),
     );
-    assert_eq!(Ios.provision(&d, &req("42"), &cred), None);
+    assert!(Ios.provision(&d, &req("42"), &cred).is_err());
 }
 
 #[test]
-fn create_is_none_without_a_valid_file_or_numeric_task() {
+fn create_fails_with_a_reason_without_a_valid_device_file() {
     let cred = BoxPath::restore(CRED).unwrap();
     let d = driver(FakeDriver::new());
-    assert_eq!(Ios.provision(&d, &req("42"), &cred), None);
+    assert_eq!(
+        Ios.provision(&d, &req("42"), &cred),
+        Err("no device file".to_owned())
+    );
     let d = driver(FakeDriver::new().peek_text("box-1", &out(), "booted"));
-    assert_eq!(Ios.provision(&d, &req("42"), &cred), None);
-    let d = driver(FakeDriver::new().peek_text("box-1", &out(), UDID));
-    assert_eq!(Ios.provision(&d, &req("t1"), &cred), None);
-    assert!(d.execs().is_empty());
+    assert_eq!(
+        Ios.provision(&d, &req("42"), &cred),
+        Err("device file holds no UDID".to_owned())
+    );
+}
+
+/// A named Task's simulator is named after its numeric id, which is what the release line deletes.
+#[test]
+fn a_named_task_gets_a_simulator_named_after_its_id() {
+    let d = driver(FakeDriver::new().peek_text("box-1", &out(), &format!("{UDID}\n")));
+    let got = Ios.provision(&d, &req("fix-login"), &BoxPath::restore(CRED).unwrap());
+    assert_eq!(got.as_deref(), Ok(UDID));
+    let execs = d.execs();
+    let script = execs.first().and_then(|e| e.1.argv.get(2)).unwrap();
+    assert!(
+        script.contains("simctl create 'moor-42'") || script.contains("simctl create moor-42"),
+        "{script}"
+    );
+    assert!(!script.contains("fix-login"), "{script}");
+    assert!(Ios.release_line("42").contains("moor-42 ("));
 }
 
 const DEVICETYPES: &str = "\

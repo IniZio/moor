@@ -15,6 +15,7 @@ impl Event {
             Self::SetupFailed { .. } => "setup_failed",
             Self::SetupFinished { .. } => "setup_finished",
             Self::CredentialFailed { .. } => "credential_failed",
+            Self::DeviceProvisionFailed { .. } => "device_provision_failed",
             Self::Idled => "idled",
             Self::Busy => "busy",
             Self::Asleep { .. } => "asleep",

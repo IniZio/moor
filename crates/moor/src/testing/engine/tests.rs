@@ -8,7 +8,7 @@ use moor_core::seam::driver::DriverError;
 use moor_core::seam::engine::{Engine, EngineError, LaunchReq, SessionRef, Steer, SteerOutcome};
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::{PaneRef, WorkspaceRef};
-use moor_core::{BoxHandle, BoxPath, TaskName};
+use moor_core::{BoxHandle, BoxPath, TaskId, TaskName};
 
 use super::FakeEngine;
 
@@ -20,6 +20,7 @@ fn session(id: &str) -> SessionRef {
         worktree: PathBuf::from("/host/wt"),
         pane: None,
         sandbox: None,
+        device_failures: Vec::new(),
     }
 }
 
@@ -82,6 +83,7 @@ fn launch_req() -> LaunchReq {
         worktree: PathBuf::from("/host/wt"),
         workspace: WorkspaceRef::new("ws-1"),
         task: TaskName::parse("t1").unwrap(),
+        task_id: TaskId::new(1),
         branch: "moor/t1".to_owned(),
         goal: None,
         resume: None,

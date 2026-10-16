@@ -18,7 +18,7 @@
 
 use moor_core::name::BoxPath;
 use moor_core::seam::driver::Driver;
-use moor_core::seam::engine::LaunchReq;
+use moor_core::seam::engine::{DeviceFailure, LaunchReq};
 
 pub(crate) mod ios;
 #[cfg(test)]
@@ -29,10 +29,22 @@ pub(crate) const PROOF_DIR: &str = ".moor/proof";
 
 /// One kind of device a Task can hold.
 pub(crate) trait DeviceKind: Sync {
+    /// Short name used in failure reports, such as `ios`.
+    fn name(&self) -> &'static str {
+        "device"
+    }
     /// Whether a Box whose `uname -s` is `os` can host this kind.
     fn available(&self, os: &str) -> bool;
-    /// Creates and starts the device outside the sandbox; returns its identity, `None` on any failure.
-    fn provision(&self, driver: &dyn Driver, req: &LaunchReq, cred: &BoxPath) -> Option<String>;
+    /// Creates and starts the device outside the sandbox; returns its identity, or a short reason it failed.
+    ///
+    /// # Errors
+    /// Returns a short human reason when the device could not be created.
+    fn provision(
+        &self,
+        driver: &dyn Driver,
+        req: &LaunchReq,
+        cred: &BoxPath,
+    ) -> Result<String, String>;
     /// Variables exported to the agent for device `id`; empty when `id` is invalid.
     fn env(&self, id: &str) -> Vec<(String, String)>;
     /// Absolute paths granted read-write to the sandboxed agent; `login_home` is the Box login user's home.
@@ -60,23 +72,28 @@ pub(crate) struct Device {
 pub(crate) const ENABLED: &[&'static dyn DeviceKind] = &[&ios::Ios];
 
 /// Provisions every kind in `kinds` that `os` can host, in order; a kind that fails is skipped
-/// (the Task runs without it) and does not stop the others. `os == None` provisions nothing.
+/// (the Task runs without it) and does not stop the others. A kind that `os` cannot host is
+/// not a failure. `os == None` provisions nothing. Returns the devices and the failures.
 pub(crate) fn provision(
     kinds: &[&'static dyn DeviceKind],
     driver: &dyn Driver,
     req: &LaunchReq,
     cred: &BoxPath,
     os: Option<&str>,
-) -> Vec<Device> {
+) -> (Vec<Device>, Vec<DeviceFailure>) {
+    let mut devices = Vec::new();
+    let mut failures = Vec::new();
     let Some(os) = os else {
-        return Vec::new();
+        return (devices, failures);
     };
-    kinds
-        .iter()
-        .filter(|kind| kind.available(os))
-        .filter_map(|&kind| {
-            let id = kind.provision(driver, req, cred)?;
-            Some(Device { kind, id })
-        })
-        .collect()
+    for &kind in kinds.iter().filter(|kind| kind.available(os)) {
+        match kind.provision(driver, req, cred) {
+            Ok(id) => devices.push(Device { kind, id }),
+            Err(reason) => failures.push(DeviceFailure {
+                kind: kind.name().to_owned(),
+                reason,
+            }),
+        }
+    }
+    (devices, failures)
 }

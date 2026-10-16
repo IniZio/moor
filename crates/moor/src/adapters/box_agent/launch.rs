@@ -118,7 +118,8 @@ impl Run<'_> {
             }),
             home: task_home.unwrap_or_else(|| login.home.clone()),
         };
-        let devices = device::provision(self.kinds, driver, req, cred, os.as_deref());
+        let (devices, device_failures) =
+            device::provision(self.kinds, driver, req, cred, os.as_deref());
         let launch = Launch {
             driver,
             surface: self.surface,
@@ -133,10 +134,8 @@ impl Run<'_> {
             devices: &devices,
         };
         let pane = launch.deliver(connect).inspect_err(|_| {
-            for d in &devices {
-                if let Some(line) = d.kind.teardown(&d.id) {
-                    let _ = cleanup::run_line(driver, req, &line);
-                }
+            for line in devices.iter().filter_map(|d| d.kind.teardown(&d.id)) {
+                let _ = cleanup::run_line(driver, req, &line);
             }
         })?;
         Ok(SessionRef {
@@ -149,6 +148,7 @@ impl Run<'_> {
                 .proxy
                 .is_some()
                 .then(|| format!("nono {}", sandbox::NONO_VERSION)),
+            device_failures,
         })
     }
 }

@@ -83,6 +83,13 @@ pub enum Event {
         /// The error text.
         error: String,
     },
+    /// A per-Task device could not be provisioned; the Task launched without it.
+    DeviceProvisionFailed {
+        /// The device kind, such as `ios`.
+        device: String,
+        /// Why provisioning failed.
+        reason: String,
+    },
     /// The agent went quiet.
     Idled,
     /// The agent became busy again.

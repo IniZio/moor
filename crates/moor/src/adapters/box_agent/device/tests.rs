@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use moor_core::seam::engine::LaunchReq;
-use moor_core::{BoxHandle, BoxPath, TaskName};
+use moor_core::{BoxHandle, BoxPath, TaskId, TaskName};
 
 use super::*;
 use crate::testing::driver::FakeDriver;
@@ -14,6 +14,7 @@ fn req() -> LaunchReq {
         worktree: PathBuf::from("/r"),
         workspace: moor_core::seam::surface::WorkspaceRef::new("w"),
         task: TaskName::parse("42").unwrap(),
+        task_id: TaskId::new(1),
         branch: "moor/x".to_owned(),
         goal: None,
         resume: None,
@@ -41,9 +42,9 @@ impl DeviceKind for Fake {
     fn available(&self, os: &str) -> bool {
         os == self.os
     }
-    fn provision(&self, _: &dyn Driver, _: &LaunchReq, _: &BoxPath) -> Option<String> {
+    fn provision(&self, _: &dyn Driver, _: &LaunchReq, _: &BoxPath) -> Result<String, String> {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        self.id.map(str::to_owned)
+        self.id.map(str::to_owned).ok_or_else(|| "no id".to_owned())
     }
     fn env(&self, _: &str) -> Vec<(String, String)> {
         Vec::new()
@@ -75,6 +76,7 @@ const fn fake(os: &'static str, id: Option<&'static str>) -> Fake {
 
 fn run(kinds: &[&'static dyn DeviceKind], os: Option<&str>) -> Vec<String> {
     provision(kinds, &FakeDriver::default(), &req(), &cred(), os)
+        .0
         .into_iter()
         .map(|d| d.id)
         .collect()

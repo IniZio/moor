@@ -1,6 +1,6 @@
 //! The iOS device kind: a per-Task simulator on a macOS Box.
 //!
-//! The device is named `moor-<task>` and is created and booted outside the
+//! The device is named `moor-<task id>` and is created and booted outside the
 //! sandbox. Only names of exactly that shape are ever managed, so the owner's
 //! own simulators are never booted, shut down or deleted.
 
@@ -27,7 +27,7 @@ const CREATE_DEADLINE: Duration = Duration::from_secs(120);
 /// File in the credential directory that receives the device UDID.
 const UDID_FILE: &str = "simulator-udid";
 
-/// The device name for `task`; `None` unless `task` is non-empty ASCII digits.
+/// The device name for the Task id `task`; `None` unless `task` is non-empty ASCII digits.
 pub(super) fn device_name(task: &str) -> Option<String> {
     (!task.is_empty() && task.bytes().all(|b| b.is_ascii_digit())).then(|| format!("moor-{task}"))
 }
@@ -85,11 +85,20 @@ pub(super) fn delete_line(udid: &str) -> Option<String> {
 }
 
 impl DeviceKind for Ios {
+    fn name(&self) -> &'static str {
+        "ios"
+    }
+
     fn available(&self, os: &str) -> bool {
         os == "Darwin"
     }
 
-    fn provision(&self, driver: &dyn Driver, req: &LaunchReq, cred: &BoxPath) -> Option<String> {
+    fn provision(
+        &self,
+        driver: &dyn Driver,
+        req: &LaunchReq,
+        cred: &BoxPath,
+    ) -> Result<String, String> {
         create(driver, req, cred)
     }
 
@@ -141,10 +150,11 @@ impl DeviceKind for Ios {
 
 /// Creates and boots the Task's device on the Box and returns its UDID.
 ///
-/// Any failure returns `None`; the Task then runs without a simulator.
-fn create(driver: &dyn Driver, req: &LaunchReq, cred: &BoxPath) -> Option<String> {
-    let out = BoxPath::under(cred.as_str(), UDID_FILE).ok()?;
-    let script = create_script(req.task.as_str(), &out)?;
+/// Any failure returns a short reason; the Task then runs without a simulator.
+fn create(driver: &dyn Driver, req: &LaunchReq, cred: &BoxPath) -> Result<String, String> {
+    let out = BoxPath::under(cred.as_str(), UDID_FILE).map_err(|_| "no device file".to_owned())?;
+    let script = create_script(&req.task_id.get().to_string(), &out)
+        .ok_or_else(|| "task id not numeric".to_owned())?;
     let spec = ExecSpec {
         argv: vec!["sh".to_owned(), "-c".to_owned(), script],
         env: Vec::new(),
@@ -156,10 +166,16 @@ fn create(driver: &dyn Driver, req: &LaunchReq, cred: &BoxPath) -> Option<String
     };
     match driver.exec(&req.handle, &spec, Deadline(CREATE_DEADLINE)) {
         Ok(ExecOutcome::Exited { code: 0 }) => {}
-        _ => return None,
+        Ok(ExecOutcome::Exited { code }) => return Err(format!("simctl create exited {code}")),
+        Ok(_) => return Err("simctl create did not finish".to_owned()),
+        Err(e) => return Err(format!("simctl create failed: {e}")),
     }
-    let text = driver.peek_file(&req.handle, &out, &req.worktree).ok()??;
-    parse_udid(&text)
+    let text = driver
+        .peek_file(&req.handle, &out, &req.worktree)
+        .ok()
+        .flatten()
+        .ok_or_else(|| "no device file".to_owned())?;
+    parse_udid(&text).ok_or_else(|| "device file holds no UDID".to_owned())
 }
 
 #[cfg(test)]

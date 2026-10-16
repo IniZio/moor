@@ -111,6 +111,13 @@ pub enum ExtraEvent {
         /// What went wrong.
         error: String,
     },
+    /// A per-Task device could not be provisioned; the Task launched without it.
+    DeviceProvisionFailed {
+        /// The device kind, such as `ios`.
+        device: String,
+        /// Why provisioning failed.
+        reason: String,
+    },
     /// A message or menu choice was sent to the agent.
     Steered {
         /// The agent session it went to.
@@ -191,6 +198,9 @@ impl From<ExtraEvent> for Event {
             },
             ExtraEvent::TranscriptFailed { trigger, error } => {
                 Self::TranscriptFailed { trigger, error }
+            }
+            ExtraEvent::DeviceProvisionFailed { device, reason } => {
+                Self::DeviceProvisionFailed { device, reason }
             }
             ExtraEvent::Steered {
                 session,
@@ -273,6 +283,9 @@ impl TryFrom<Event> for ExtraEvent {
             }),
             Event::TranscriptFailed { trigger, error } => {
                 Ok(Self::TranscriptFailed { trigger, error })
+            }
+            Event::DeviceProvisionFailed { device, reason } => {
+                Ok(Self::DeviceProvisionFailed { device, reason })
             }
             Event::Steered {
                 session,
