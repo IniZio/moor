@@ -32,6 +32,7 @@ mod launch;
 mod leftover;
 mod preflight;
 mod relaunch;
+mod watch;
 
 /// What `start` learns before it changes anything.
 struct Facts {
@@ -97,7 +98,7 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
         let agent = launch::run(cx, store, req, id, done.setup.exit(), &|| Ok(cfg.clone()))?;
         (done, agent)
     };
-    launch::watch(cx, store, id, &agent);
+    let agent = watch::run(cx, store, id, agent);
     let row = reread(store, id)?;
     let mut v = queued_view(cx, &row, false, &cfg.provider.value);
     v.setup = done.setup.view();
@@ -181,7 +182,7 @@ fn attach(
     };
     wake_idle(store, row.id)?;
     let agent = relaunch::run(cx, store, req, row.id, setup_exit, &settings)?;
-    launch::watch(cx, store, row.id, &agent);
+    let agent = watch::run(cx, store, row.id, agent);
     let row = &reread(store, row.id)?;
     let mut v = with_provider(cx, row, true)?;
     if let Some(p) = reprovisioned {
