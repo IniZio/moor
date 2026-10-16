@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 
+use moor_core::exec_env;
 use moor_core::name::BoxPath;
 use serde_json::json;
 
@@ -16,8 +17,9 @@ pub(super) const ROOT_SANDBOX_VAR: &str = "IS_SANDBOX";
 /// Exit code of the check script when the Box lacks the pinned nono binary.
 pub(super) const NOT_INSTALLED: i32 = 6;
 
-/// Environment names every agent keeps: terminal, proxy and CA variables, plus two globs.
-const BASE_VARS: [&str; 29] = [
+/// Login and terminal names every agent keeps, plus two globs; the Proxy and CA names come from
+/// `exec_env::PASS_VARS`.
+const LOGIN_VARS: [&str; 11] = [
     "PATH",
     "HOME",
     "USER",
@@ -27,24 +29,6 @@ const BASE_VARS: [&str; 29] = [
     "LC_ALL",
     "TMPDIR",
     "COLORTERM",
-    "HTTPS_PROXY",
-    "HTTP_PROXY",
-    "https_proxy",
-    "http_proxy",
-    "NO_PROXY",
-    "no_proxy",
-    "NODE_USE_ENV_PROXY",
-    "SSL_CERT_FILE",
-    "CURL_CA_BUNDLE",
-    "REQUESTS_CA_BUNDLE",
-    "GIT_SSL_CAINFO",
-    "NODE_EXTRA_CA_CERTS",
-    "YARN_HTTPS_PROXY",
-    "YARN_HTTP_PROXY",
-    "YARN_CA_FILE_PATH",
-    "YARN_CACHE_FOLDER",
-    "YARN_GLOBAL_FOLDER",
-    "npm_config_cache",
     "GIT_CONFIG_*",
     "CLAUDE_*",
 ];
@@ -92,8 +76,9 @@ fn passable(name: &str, strip_env: &[String]) -> bool {
 
 /// The sorted, deduplicated environment allow list.
 fn allow_vars(env_names: &[String], strip_env: &[String]) -> Vec<String> {
-    let mut vars: Vec<String> = BASE_VARS
+    let mut vars: Vec<String> = LOGIN_VARS
         .iter()
+        .chain(exec_env::PASS_VARS)
         .map(|n| (*n).to_owned())
         .chain(env_names.iter().filter(|n| passable(n, strip_env)).cloned())
         .collect();
