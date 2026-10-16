@@ -29,6 +29,60 @@ check() {
   echo "lint-selftest: $1 ok"
 }
 
+# exec_env <case> <expect: pass|fail> ; fake .rs source on stdin, scanned by tools/exec-env.sh
+exec_env() {
+  local d="$dir/exec-env-case"
+  rm -rf "$d"; mkdir -p "$d"
+  cat > "$d/fake.rs"
+  local rc=0 out
+  out="$("$root/tools/exec-env.sh" "$d" 2>&1)" || rc=$?
+  if { [ "$2" = pass ] && [ "$rc" -ne 0 ]; } || { [ "$2" = fail ] && [ "$rc" -eq 0 ]; }; then
+    echo "lint-selftest: $1 FAILED (expected $2)"; echo "$out"; exit 1
+  fi
+  echo "lint-selftest: $1 ok"
+}
+
+exec_env exec-env-shorthand fail <<'RS'
+fn f(env: Vec<(String, String)>) {
+    let _ = ExecSpec {
+        argv: vec![],
+        env,
+    };
+}
+RS
+exec_env exec-env-chain fail <<'RS'
+fn f() {
+    let _ = ExecSpec {
+        env: exec.vars().into_iter().chain(extra).collect(),
+    };
+}
+RS
+exec_env exec-env-multiline fail <<'RS'
+fn f() {
+    let _ = ExecSpec {
+        env: exec
+            .vars(),
+    };
+}
+RS
+exec_env exec-env-vars pass <<'RS'
+fn f() {
+    let _ = ExecSpec {
+        env: exec.vars(),
+    };
+}
+RS
+exec_env exec-env-empty pass <<'RS'
+fn f() {
+    let _ = ExecSpec {
+        env: Vec::new(),
+    };
+}
+RS
+exec_env exec-env-proxy-name fail <<'RS'
+fn f() -> &'static str { "HTTPS_PROXY" }
+RS
+
 check E fail "missing-docs" <<'RS'
 //! Crate.
 pub const X: u32 = 1;
