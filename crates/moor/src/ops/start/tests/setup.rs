@@ -202,7 +202,7 @@ fn no_setup_lines_means_setup_did_not_run() {
     assert!(!v.setup.ran);
     let execs = w.driver.execs();
     assert_eq!(execs.len(), 1);
-    assert_eq!(execs[0].1.argv, ["true"]);
+    assert_eq!(execs.first().expect("one exec").1.argv, ["true"]);
     assert_eq!(v.task.state, TaskState::Working);
 }
 

@@ -454,7 +454,7 @@ fn empty_setup_with_a_failed_sync_fails_like_a_failed_setup() {
         SyncMode::Full,
     );
     assert!(got.failed(), "{got:?}");
-    assert!(got.outcome() != SetupOutcome::Ok);
+    assert_ne!(got.outcome(), SetupOutcome::Ok);
     let w = only(r.cx.take_warnings());
     assert_eq!(w.code, "setup_failed");
     assert!(w.message.contains("syncing the checkout"), "{}", w.message);
