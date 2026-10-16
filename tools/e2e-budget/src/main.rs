@@ -183,29 +183,29 @@ fn cmd_report(args: &Args) -> Result<bool, String> {
 }
 
 /// `verdict`: summarizes previously printed phase lines.
-fn cmd_verdict(args: &Args) -> Result<bool, String> {
+fn cmd_verdict(args: &Args) -> Result<u8, String> {
     let path = args.req("lines")?;
     let text = std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))?;
     let parsed: Vec<(&str, Outcome)> = text.lines().filter_map(parse_phase_line).collect();
-    let (pass, line) = summarize(&parsed);
+    let (code, line) = summarize(&parsed);
     println!("{line}");
-    Ok(pass)
+    Ok(code)
 }
 
-/// Dispatches a subcommand; `Ok(true)` means all phases passed.
-fn run(raw: &[String]) -> Result<bool, String> {
+/// Dispatches a subcommand; the code is 0 when all phases passed, 1 on a failure, 3 when incomplete.
+fn run(raw: &[String]) -> Result<u8, String> {
     let (cmd, rest) = raw
         .split_first()
         .ok_or("usage: e2e-budget <subcommand> [--flag value]...")?;
     let args = Args::parse(rest)?;
     match cmd.as_str() {
-        "events" => cmd_events(&args),
-        "last-id" => cmd_last_id(&args),
-        "start" => cmd_start(&args),
-        "wake" => cmd_wake(&args),
-        "timed" => cmd_timed(&args),
-        "count" => cmd_count(&args),
-        "report" => cmd_report(&args),
+        "events" => cmd_events(&args).map(u8::from).map(|ok| 1 - ok),
+        "last-id" => cmd_last_id(&args).map(u8::from).map(|ok| 1 - ok),
+        "start" => cmd_start(&args).map(u8::from).map(|ok| 1 - ok),
+        "wake" => cmd_wake(&args).map(u8::from).map(|ok| 1 - ok),
+        "timed" => cmd_timed(&args).map(u8::from).map(|ok| 1 - ok),
+        "count" => cmd_count(&args).map(u8::from).map(|ok| 1 - ok),
+        "report" => cmd_report(&args).map(u8::from).map(|ok| 1 - ok),
         "verdict" => cmd_verdict(&args),
         other => Err(format!("unknown subcommand `{other}`")),
     }
@@ -215,8 +215,7 @@ fn run(raw: &[String]) -> Result<bool, String> {
 fn main() -> ExitCode {
     let raw: Vec<String> = std::env::args().skip(1).collect();
     match run(&raw) {
-        Ok(true) => ExitCode::SUCCESS,
-        Ok(false) => ExitCode::from(1),
+        Ok(code) => ExitCode::from(code),
         Err(msg) => {
             eprintln!("e2e-budget: {msg}");
             ExitCode::from(2)

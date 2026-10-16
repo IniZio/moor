@@ -240,33 +240,37 @@ pub fn report_line(name: &str, took_ms: i64) -> String {
     format!("PHASE {name} took={}s budget=none PASS", secs(took_ms))
 }
 
-/// Verdict over report lines: passes when non-empty with no failure. Skips are counted apart.
-pub fn summarize(phases: &[(&str, Outcome)]) -> (bool, String) {
+/// Verdict over report lines: the exit code (0 pass, 1 fail, 3 incomplete) and the summary line.
+/// A run with any skipped phase is never a pass.
+pub fn summarize(phases: &[(&str, Outcome)]) -> (u8, String) {
     let names =
         |o: Outcome| -> Vec<&str> { phases.iter().filter(|p| p.1 == o).map(|p| p.0).collect() };
     let (failed, skipped) = (names(Outcome::Fail), names(Outcome::Skip));
     if phases.is_empty() {
-        return (false, "VERDICT FAIL (no phases)".to_owned());
+        return (1, "VERDICT FAIL (no phases)".to_owned());
     }
     let skips = if skipped.is_empty() {
         String::new()
     } else {
-        format!("; {} skipped: {}", skipped.len(), skipped.join(", "))
+        format!("{} skipped: {}", skipped.len(), skipped.join(", "))
     };
-    if failed.is_empty() {
-        let note = skips.replacen("; ", ", ", 1);
-        return (
-            true,
-            format!("VERDICT PASS ({} phases{note})", phases.len()),
+    if !failed.is_empty() {
+        let sep = if skips.is_empty() { "" } else { "; " };
+        let line = format!(
+            "VERDICT FAIL ({} of {} phases failed: {}{sep}{skips})",
+            failed.len(),
+            phases.len(),
+            failed.join(", ")
         );
+        return (1, line);
     }
-    let line = format!(
-        "VERDICT FAIL ({} of {} phases failed: {}{skips})",
-        failed.len(),
-        phases.len(),
-        failed.join(", ")
-    );
-    (false, line)
+    if skipped.is_empty() {
+        return (0, format!("VERDICT PASS ({} phases)", phases.len()));
+    }
+    (
+        3,
+        format!("VERDICT INCOMPLETE ({} phases, {skips})", phases.len()),
+    )
 }
 
 /// Final summary line naming any failed phases.
