@@ -328,7 +328,7 @@ fn not_rerun_warning(w: &World) -> Vec<String> {
 }
 
 const BY_HAND: &str =
-    "`moor start` does not re-run it, run its commands by hand with `moor run demo -- <command>`";
+    "`moor start` does not re-run it; run each `setup:` line by hand with `moor run demo -- '<line>'`";
 
 #[test]
 fn start_after_a_failed_setup_does_not_re_run_setup_and_warns() {
