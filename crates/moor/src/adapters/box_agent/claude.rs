@@ -3,7 +3,7 @@
 use moor_core::activity::{HookKind, HookRecord};
 use moor_core::name::NameError;
 use moor_core::seam::agent_profile::{
-    AgentProfile, BoxSetup, EnvVar, FirstRunPrompt, Key, LaunchCtx, PromptMatch,
+    AgentProfile, BoxSetup, EnvVar, FirstRunPrompt, Key, LaunchCtx, PromptMatch, NOTHING_TO_ARCHIVE,
 };
 use moor_core::seam::clock::Ts;
 use serde_json::Value;
@@ -104,9 +104,14 @@ impl AgentProfile for Claude {
 enc=$(pwd | sed 's/[^A-Za-z0-9]/-/g')
 d="$HOME/.claude/projects/$enc"
 mkdir -p "$(dirname {archive})"
+if [ ! -d "$d" ]; then
+  echo '{NOTHING_TO_ARCHIVE}'
+  exit 0
+fi
+ls "$d" >/dev/null
 if ! ls "$d"/*.jsonl >/dev/null 2>&1; then
-  echo "no transcript jsonl in $d" >&2
-  exit 3
+  echo '{NOTHING_TO_ARCHIVE}'
+  exit 0
 fi
 (cd "$d" && tar czf "$OLDPWD/{archive}" *.jsonl)
 "#

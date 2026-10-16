@@ -42,6 +42,7 @@ impl Event {
             Self::AgentPromptCheckFailed { .. } => "agent_prompt_check_failed",
             Self::TranscriptSaved { .. } => "transcript_saved",
             Self::TranscriptFailed { .. } => "transcript_failed",
+            Self::TranscriptSkipped { .. } => "transcript_skipped",
             Self::Steered { .. } => "steered",
             Self::ProxyStarted { .. } => "proxy_started",
             Self::TunnelRestarted { .. } => "tunnel_restarted",
