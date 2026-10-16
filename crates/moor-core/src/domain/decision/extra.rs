@@ -111,6 +111,13 @@ pub enum ExtraEvent {
         /// What went wrong.
         error: String,
     },
+    /// The agent's transcript was not saved because there was nothing to save.
+    TranscriptSkipped {
+        /// What ended the session: `relaunch` or `close`.
+        trigger: String,
+        /// Why nothing was saved.
+        reason: String,
+    },
     /// A message or menu choice was sent to the agent.
     Steered {
         /// The agent session it went to.
@@ -191,6 +198,9 @@ impl From<ExtraEvent> for Event {
             },
             ExtraEvent::TranscriptFailed { trigger, error } => {
                 Self::TranscriptFailed { trigger, error }
+            }
+            ExtraEvent::TranscriptSkipped { trigger, reason } => {
+                Self::TranscriptSkipped { trigger, reason }
             }
             ExtraEvent::Steered {
                 session,
@@ -273,6 +283,9 @@ impl TryFrom<Event> for ExtraEvent {
             }),
             Event::TranscriptFailed { trigger, error } => {
                 Ok(Self::TranscriptFailed { trigger, error })
+            }
+            Event::TranscriptSkipped { trigger, reason } => {
+                Ok(Self::TranscriptSkipped { trigger, reason })
             }
             Event::Steered {
                 session,
