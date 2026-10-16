@@ -20,6 +20,7 @@ use crate::testing::driver::FakeDriver;
 use crate::testing::proc::{Reply, ScriptedProc};
 use crate::testing::surface::FakeSurface;
 
+mod env;
 mod moor_yaml;
 mod setup_parity;
 mod sync;
@@ -166,7 +167,7 @@ fn inherited_output_is_streamed_to_moor() {
     assert!(v.ran && !v.interrupted);
     let (_, spec, _) = f.driver.execs().remove(0);
     assert_eq!(spec.output, Some(Output::Inherit));
-    assert_eq!(spec.argv, ["sh", "-c", "'make' 'test'"]);
+    assert_eq!(command(&spec.argv), ["sh", "-c", "'make' 'test'"]);
 }
 
 #[test]
@@ -174,7 +175,7 @@ fn plain_run_launches_through_sh_and_stores_the_users_argv() {
     let (f, multi) = (ready(), req(&["echo", "a b"]));
     run(&f.cx, &req(&["echo one; echo TWO"])).unwrap();
     run(&f.cx, &multi).unwrap();
-    let launched = |i| f.driver.execs().remove(i).1.argv;
+    let launched = |i| command(&f.driver.execs().remove(i).1.argv).to_vec();
     assert_eq!(launched(0), ["sh", "-c", "echo one; echo TWO"]);
     assert_eq!(launched(1), ["sh", "-c", &command_line(&multi.argv)]);
     let stored = f.cx.store().unwrap().last_run(f.id).unwrap().unwrap().argv;
@@ -216,6 +217,14 @@ fn sync_class_and_directories_come_from_the_task() {
     assert_eq!(spec.class.as_deref(), Some("small"));
     let v = run(&f.cx, &req(&["true"])).unwrap();
     assert_eq!(v.sync, SyncMode::Full);
+}
+
+/// The user's command inside the exec prelude wrapper; the argv itself when unwrapped.
+pub(in crate::ops::run) fn command(argv: &[String]) -> &[String] {
+    match argv {
+        [_, _, script, sh, rest @ ..] if sh == "sh" && script.ends_with("\"$@\"") => rest,
+        _ => argv,
+    }
 }
 
 fn refused(f: &Fx, r: &RunReq, kind: ErrorKind) -> String {

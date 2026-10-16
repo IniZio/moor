@@ -2,21 +2,19 @@
 
 use std::fmt::Write as _;
 use std::path::Path;
-use std::time::Duration;
 
 use moor_core::boxscript::setup::setup_script;
 use moor_core::config::TaskSettings;
 use moor_core::domain::run::SyncMode;
 use moor_core::domain::task::SetupOutcome;
-use moor_core::seam::driver::{ExecOutcome, ExecSpec};
+use moor_core::exec_env::{Purpose, SETUP_LINE_DEADLINE};
+use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
 use moor_core::seam::proc::Deadline;
 use moor_core::view::SetupView;
 use moor_core::{BoxHandle, BoxPath, Warning};
 
 use crate::cx::Cx;
-
-/// Wall-clock allowance for one setup line.
-pub(crate) const SETUP_LINE_DEADLINE: Duration = Duration::from_mins(30);
+use crate::ops::common::box_exec::{self, BoxProxy, Site};
 
 /// How many trailing log lines a failure warning carries.
 const LOG_TAIL_LINES: usize = 20;
@@ -98,55 +96,66 @@ impl SetupRun {
     }
 }
 
-/// Wall-clock allowance for a setup script of `lines` lines: one line allowance per line.
-pub(crate) fn setup_deadline(lines: usize) -> Duration {
-    let n = u32::try_from(lines).unwrap_or(u32::MAX);
-    SETUP_LINE_DEADLINE.saturating_mul(n)
-}
-
-/// The repo `env:` as the variables every command in the Box gets, setup and `run` alike.
-pub(crate) fn exec_env(cfg: &TaskSettings) -> Vec<(String, String)> {
-    cfg.env
-        .iter()
-        .map(|(k, v)| (k.clone(), v.clone()))
-        .collect()
-}
-
 /// Runs the setup lines as one script in `workdir` after syncing the worktree as `sync` says,
 /// stopping at the first failure.
 ///
 /// Sync is one-way, so after a failure the script's log is copied back from the Box; the
-/// failing line comes from there.
+/// failing line comes from there. The script gets the environment the agent gets in the Box,
+/// including the Proxy variables when `proxy` is set.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the Box, its provider and workdir, worktree, settings, sync mode and Proxy"
+)]
 pub(crate) fn run_setup(
     cx: &Cx,
     handle: &BoxHandle,
+    provider: &str,
     workdir: &BoxPath,
     worktree: &Path,
     cfg: &TaskSettings,
     sync: SyncMode,
+    proxy: Option<&BoxProxy>,
 ) -> SetupRun {
     if cfg.setup.is_empty() {
         return SetupRun::Skipped;
     }
-    let spec = ExecSpec {
-        argv: vec!["sh".to_owned(), "-c".to_owned(), setup_script(&cfg.setup)],
-        env: exec_env(cfg),
-        cwd: Some(workdir.clone()),
-        sync,
-        output: None,
-        host_cwd: Some(worktree.to_path_buf()),
-        class: Some(cfg.size.value.as_str().to_owned()),
+    let site = Site {
+        handle,
+        provider,
+        workdir: Some(workdir),
+        worktree,
     };
-    let deadline = Deadline(setup_deadline(cfg.setup.len()));
+    let purpose = Purpose::Setup {
+        lines: cfg.setup.len(),
+    };
     let started = cx.clock().instant();
-    let result = cx.driver().exec(handle, &spec, deadline);
+    let result = box_exec::prepare(cx, &site, proxy, cfg, purpose)
+        .map_err(Failure::Prepare)
+        .and_then(|exec| {
+            let spec = ExecSpec {
+                argv: exec.argv(vec![
+                    "sh".to_owned(),
+                    "-c".to_owned(),
+                    setup_script(&cfg.setup),
+                ]),
+                env: exec.vars(),
+                cwd: exec.cwd(),
+                sync,
+                output: None,
+                host_cwd: Some(worktree.to_path_buf()),
+                class: Some(cfg.size.value.as_str().to_owned()),
+            };
+            let out = cx.driver().exec(handle, &spec, exec.deadline());
+            out.map_err(Failure::Exec)
+        });
     let elapsed = cx.clock().instant().saturating_duration_since(started);
     let ms = u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX);
     let (reason, exit) = match result {
         Ok(ExecOutcome::Exited { code: 0 }) => return SetupRun::Ok { ms },
         Ok(ExecOutcome::Exited { code }) => (format!("exit {code}"), Some(code)),
         Ok(ExecOutcome::Interrupted) => ("interrupted".to_owned(), None),
-        Err(e) => (e.to_string(), None),
+        Err(Failure::Prepare(e)) => (e, None),
+        Err(Failure::Exec(e)) => (e.to_string(), None),
     };
     let log = fetch_log(cx, handle, workdir, worktree);
     let line = cfg
@@ -159,6 +168,14 @@ pub(crate) fn run_setup(
         message: failure_message(&line, &reason, workdir, &log),
     });
     SetupRun::Failed { line, exit, ms }
+}
+
+/// Why the script did not run to an exit.
+enum Failure {
+    /// The environment could not be built.
+    Prepare(String),
+    /// The Box exec failed.
+    Exec(DriverError),
 }
 
 /// Syncs the worktree into the Box with an exec that only checks the workdir is a git checkout, so

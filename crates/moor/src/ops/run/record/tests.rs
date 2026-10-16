@@ -9,7 +9,7 @@ use moor_core::{ErrorKind, GateReq, RunReq};
 
 use crate::error::CommandError;
 use crate::ops::run::run;
-use crate::ops::run::tests::{ran_events, ready, ready_with, req, Fx, SHA};
+use crate::ops::run::tests::{command, ran_events, ready, ready_with, req, Fx, SHA};
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::Reply;
 
@@ -100,7 +100,10 @@ fn record_run_wraps_the_command_in_the_record_script() {
     assert_eq!(v.exit, Some(0));
     let (_, spec, _) = f.driver.execs().remove(0);
     let line = command_line(&argv.map(str::to_owned));
-    assert_eq!(spec.argv, ["sh", "-c", &record_script(&[], &line)]);
+    assert_eq!(
+        command(&spec.argv),
+        ["sh", "-c", &record_script(&[], &line)]
+    );
     assert_eq!(spec.sync, SyncMode::Full);
     let row = f.cx.store().unwrap().last_run(f.id).unwrap().unwrap();
     assert_eq!(row.sha.as_ref().map(moor_core::Sha::as_str), Some(SHA));
@@ -125,7 +128,10 @@ fn repo_setup_lines_precede_the_command() {
     let (_, spec, _) = f.driver.execs().remove(0);
     let line = command_line(&["make".to_owned(), "test".to_owned()]);
     let setup = ["make deps".to_owned()];
-    assert_eq!(spec.argv, ["sh", "-c", &record_script(&setup, &line)]);
+    assert_eq!(
+        command(&spec.argv),
+        ["sh", "-c", &record_script(&setup, &line)]
+    );
 }
 
 #[test]

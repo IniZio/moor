@@ -1,6 +1,6 @@
 //! `moor close`: gate, save the agent's transcript, stop the agent, tear down and release the Box, then close the Workspace.
 
-use std::{path::Path, time::Duration};
+use std::path::Path;
 
 use moor_core::boxscript::teardown::teardown_script;
 use moor_core::config::Flags;
@@ -11,6 +11,7 @@ use moor_core::decide::transcript::Trigger;
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, ExtraEvent};
 use moor_core::domain::run::SyncMode;
+use moor_core::exec_env::Purpose;
 use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec, Released};
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::{PaneRef, SurfaceError, WorkspaceRef};
@@ -19,30 +20,26 @@ use moor_core::{BoxHandle, CloseReq, ErrorKind, TaskName, Warning};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
+use crate::ops::common::box_exec::{self, Site};
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::boxwork::{self, probe, BoxWork, BOXWORK_DEADLINE};
 use crate::ops::common::facts::resolved;
 use crate::ops::common::promote::promote_waiting;
-use crate::ops::common::provision::moor_yaml::for_teardown;
+use crate::ops::common::provision::{moor_yaml::for_teardown, recorded_workdir};
 use crate::ops::common::reports;
 use crate::ops::common::transcript::{self, Saved};
 use crate::ops::common::view::task_view;
 use crate::ops::common::wake::wake_if_asleep;
 use crate::store::{BoxRow, Store, TaskRow};
 
-/// Wall-clock allowance for the teardown script.
-const TEARDOWN_DEADLINE: Duration = Duration::from_mins(30);
-
-/// Closes a task: the data-loss gate, transcript save, agent stop, Box teardown and release,
-/// Workspace close.
+/// Closes a task: gate, transcript save, agent stop, Box teardown and release, Workspace close.
 ///
-/// The Box lock is held from the gate to the Workspace close and dropped before
-/// promotion, which takes the locks of the waiting tasks. The Box is released
-/// before the Workspace closes. The worktree goes too, before the Workspace, but only when moor
-/// created it and its work is pushed and clean. The agent stops first, so the session stays
-/// ended when the release fails and the task stays open. The Task's proxy supervisor stops after the lock is
-/// dropped, because the wait for it can take seconds and a closed Task cannot get a new proxy
-/// row. Waiting tasks are then promoted into the freed slot.
+/// The Box lock is held from the gate to the Workspace close and dropped before promotion, which
+/// takes the locks of the waiting tasks. The Box is released before the Workspace closes. The
+/// worktree goes too, before the Workspace, but only when moor created it and its work is pushed
+/// and clean. The agent stops first, so the session stays ended when the release fails and the
+/// task stays open. The Task's proxy supervisor stops after the lock is dropped: the wait can take
+/// seconds and a closed Task cannot get a new proxy row. Waiting tasks are then promoted.
 pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
     let store = cx.store()?;
     let first = find(store, &req.task)?;
@@ -289,14 +286,11 @@ fn facts(cx: &Cx, row: &TaskRow, box_check: BoxCheck) -> Result<CloseFacts, Comm
 
 /// Runs the repo `teardown:` lines as one synced script in a ready Box.
 ///
-/// Nothing runs without lines or without a live Box. A failure only warns. The agent can edit
-/// the worktree `.moor.yaml`, so a copy that differs from the base commit is not used unless
-/// `trusted`.
+/// Nothing runs without lines or a live Box; a failure only warns. A worktree `.moor.yaml` that
+/// differs from the base commit is not used unless `trusted`. The env is the agent's Box env.
 fn teardown(cx: &Cx, row: &TaskRow, trusted: bool) {
-    let Some(b) = row.boxed.as_ref().filter(|b| b.state == BoxState::Ready) else {
-        return;
-    };
-    let Some(handle) = held(b) else {
+    let ready = row.boxed.as_ref().filter(|b| b.state == BoxState::Ready);
+    let Some((b, handle)) = ready.and_then(|b| Some((b, held(b)?))) else {
         return;
     };
     let repo = match for_teardown(cx, row, trusted) {
@@ -307,24 +301,30 @@ fn teardown(cx: &Cx, row: &TaskRow, trusted: bool) {
     if cfg.teardown.is_empty() {
         return;
     }
+    let worktree = Path::new(row.worktree.as_deref().unwrap_or(&row.repo));
+    let workdir = b.workdir.as_deref().and_then(recorded_workdir);
+    let proxy = box_exec::proxy(cx, row.id, Some(handle.clone()), worktree, &cfg);
+    let site = Site {
+        handle,
+        provider: b.provider.as_str(),
+        workdir: workdir.as_ref(),
+        worktree,
+    };
+    let exec = match box_exec::prepare(cx, &site, proxy.as_ref().ok(), &cfg, Purpose::Teardown) {
+        Ok(exec) => exec,
+        Err(e) => return warn_teardown(cx, &e),
+    };
+    let script = ["sh", "-c", &teardown_script(&cfg.teardown)].map(str::to_owned);
     let spec = ExecSpec {
-        argv: vec![
-            "sh".to_owned(),
-            "-c".to_owned(),
-            teardown_script(&cfg.teardown),
-        ],
-        env: cfg
-            .env
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect(),
-        cwd: None,
+        argv: exec.argv(script.to_vec()),
+        env: exec.vars(),
+        cwd: exec.cwd(),
         sync: SyncMode::Full,
         output: None,
         host_cwd: row.worktree.as_ref().map(Into::into),
         class: Some(cfg.size.value.as_str().to_owned()),
     };
-    let reason = match cx.driver().exec(handle, &spec, Deadline(TEARDOWN_DEADLINE)) {
+    let reason = match cx.driver().exec(handle, &spec, exec.deadline()) {
         Ok(ExecOutcome::Exited { code: 0 }) => return,
         Ok(ExecOutcome::Exited { code }) => format!("exit {code}"),
         Ok(ExecOutcome::Interrupted) => "interrupted".to_owned(),
