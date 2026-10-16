@@ -91,6 +91,9 @@ impl Running<'_> {
     }
 
     /// Opens one new tunnel on the same ports and answers `seq`.
+    ///
+    /// The port is not cleared: a sleep stops the Box, so its wake is a cold boot and no session
+    /// from before the park can still hold the port.
     fn reopen(&self, seq: u64) {
         let opened = bind::open(
             self.deps,
@@ -98,7 +101,7 @@ impl Running<'_> {
             self.box_port,
             self.live.port(),
             &self.worktree,
-            false,
+            true,
         );
         // A failed open leaves the dead stand-in, so the restart path takes over.
         self.parked.set(false);
