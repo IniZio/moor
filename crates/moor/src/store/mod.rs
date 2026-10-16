@@ -18,6 +18,7 @@ pub(crate) const STORE_FILE: &str = "moor.db";
 #[cfg_attr(not(test), expect(dead_code, reason = "used by ops, not yet wired"))]
 mod agent;
 mod apply;
+pub(crate) mod lease;
 mod open;
 mod proxy;
 mod reads;
@@ -274,6 +275,7 @@ fn init_schema(conn: &mut Connection) -> Result<(), StoreError> {
         tx.execute_batch(SCHEMA_SQL)?;
     }
     tx.execute_batch(slack::SLACK_SQL)?;
+    tx.execute_batch(lease::LEASE_SQL)?;
     tx.commit()?;
     Ok(())
 }
