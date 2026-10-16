@@ -97,9 +97,14 @@ fn git_seed_source_is_local_for_crabbox_itself() {
     assert!(!has(&call, "--allow-env"));
 }
 
-fn seed_source_with_index(index: &str) -> Option<String> {
+fn seed_source_with_trees(index: &str, head: &str) -> Option<String> {
     let p = Arc::new(ScriptedProc::new());
     p.on(Tool::Git, &["ls-files", "-s"], Reply::Ok(index.to_owned()));
+    p.on(
+        Tool::Git,
+        &["ls-tree", "-r", "HEAD"],
+        Reply::Ok(head.to_owned()),
+    );
     p.on(Tool::Crabbox, &["run"], ok());
     let c = Crabbox::fake(p.clone());
     let mut s = spec(SyncMode::Full);
@@ -126,13 +131,27 @@ fn seed_source_with_index(index: &str) -> Option<String> {
 #[test]
 fn git_seed_source_is_origin_when_the_tree_has_submodule_gitlinks() {
     let index = "100644 aaaa 0\tREADME.md\n160000 bbbb 0\tVendor/Lib\n";
-    assert_eq!(seed_source_with_index(index).as_deref(), Some("origin"));
+    assert_eq!(seed_source_with_trees(index, "").as_deref(), Some("origin"));
+}
+
+#[test]
+fn git_seed_source_is_origin_when_only_head_has_a_gitlink() {
+    let index = "100644 aaaa 0\tREADME.md\n";
+    let head = "100644 blob aaaa\tREADME.md\n160000 commit bbbb\tvendor/sub\n";
+    assert_eq!(
+        seed_source_with_trees(index, head).as_deref(),
+        Some("origin")
+    );
 }
 
 #[test]
 fn git_seed_source_stays_local_without_gitlinks() {
     let index = "100644 aaaa 0\tREADME.md\n100644 cccc 0\ta 160000 b\n";
-    assert_eq!(seed_source_with_index(index).as_deref(), Some("local"));
+    let head = "100644 blob aaaa\tREADME.md\n";
+    assert_eq!(
+        seed_source_with_trees(index, head).as_deref(),
+        Some("local")
+    );
 }
 
 #[test]
