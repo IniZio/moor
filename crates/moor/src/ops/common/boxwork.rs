@@ -30,6 +30,8 @@ pub(crate) enum BoxWork {
         /// Changed or untracked paths in the Box checkout.
         dirty: u32,
     },
+    /// The Box workdir has no git checkout, so it holds no work to lose.
+    NoCheckout,
     /// The driver no longer has the Box, so nothing in it can be saved.
     Gone,
     /// The probe could not tell; never read as clean.
@@ -144,7 +146,7 @@ fn verdict(
                 code: BOXWORK_NO_CHECKOUT,
             },
             ..
-        })) => return Err("the Box has no git checkout".into()),
+        })) => return Ok(BoxWork::NoCheckout),
         Some(Ok(StepDone::Ran {
             outcome: ExecOutcome::Exited { code },
             ..

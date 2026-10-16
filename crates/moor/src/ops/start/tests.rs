@@ -298,13 +298,13 @@ fn restart_of_a_closed_name_creates_a_new_task() {
 }
 
 #[test]
-fn open_name_attaches_without_effects() {
+fn open_name_attaches_with_only_a_checkout_sync() {
     let w = world(FakeDriver::new());
     let first = run(&w.cx, &req("demo")).unwrap();
     let again = run(&w.cx, &req("demo")).unwrap();
     assert!(again.attached);
     assert_eq!(again.task.id, first.task.id);
-    assert_eq!(w.driver.calls(), ["acquire", "exec box-1"]);
+    assert_eq!(w.driver.calls(), ["acquire", "exec box-1", "exec box-1"]);
     assert_eq!(w.surface.calls().len(), 2);
 }
 

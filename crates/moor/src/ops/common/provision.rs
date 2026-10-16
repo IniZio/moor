@@ -25,7 +25,7 @@ use crate::store::{Store, TaskRow};
 
 pub(crate) use self::outcome::Provisioned;
 use self::outcome::{dotfiles_failed, sync_failed};
-use self::rerun::{rerun_sync, setup_wanted};
+use self::rerun::{rerun_sync, resync, setup_wanted};
 use self::retry::{dotfiles_retry, retry_dotfiles};
 
 /// Re-reads a Task row that must exist.
@@ -71,6 +71,9 @@ impl Entry {
 ///
 /// A `.moor.yaml` that differs from the base commit is refused unless `trusted`, before any
 /// setup or Box work starts.
+///
+/// `launching` tells whether the caller is about to launch the agent, asked only if a re-sync of
+/// the checkout fails: then the start ends like a fresh one, else it is only warned of.
 pub(crate) fn reprovision(
     cx: &Cx,
     store: &Store,
@@ -79,16 +82,20 @@ pub(crate) fn reprovision(
     trusted: bool,
     launching: &dyn Fn() -> Result<bool, CommandError>,
 ) -> Result<Option<Provisioned>, CommandError> {
-    if entry_for(row).is_none() && !setup_wanted(cx, row) && !dotfiles_retry(row) {
+    let ready = row.boxed.as_ref().map(|b| b.state) == Some(BoxState::Ready);
+    if entry_for(row).is_none() && !setup_wanted(cx, row) && !dotfiles_retry(row) && !ready {
         return Ok(None);
     }
     let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, row.id, op, boxlock::WAIT)?;
     let row = reread(store, row.id)?;
+    let entry = entry_for(&row);
     if dotfiles_retry(&row) {
         return retry_dotfiles(cx, store, &row).map(Some);
     }
+    if ready && entry.is_none() && row.intent.is_none() && !setup_wanted(cx, &row) {
+        resync(cx, store, &row, trusted, launching)?;
+    }
     let at = row.worktree.as_deref().unwrap_or(&row.repo);
-    let entry = entry_for(&row);
     if entry.is_none() && !setup_wanted(cx, &row) {
         return Ok(None);
     }
