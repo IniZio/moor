@@ -55,7 +55,7 @@ pub(super) fn choose(
         |boxed| boxwork::probe(cx, row, boxed),
     );
     match work {
-        BoxWork::Clean | BoxWork::NoCheckout => Ok(SyncMode::Full),
+        BoxWork::Clean => Ok(SyncMode::Full),
         BoxWork::Unsaved { ahead, dirty } => Err(refused(format!(
             "the Box has unsaved work: {ahead} commits the host lacks, {dirty} changed paths"
         ))),
@@ -66,6 +66,10 @@ pub(super) fn choose(
         BoxWork::Unknown(reason) => Err(refused(format!(
             "cannot tell whether the Box has unsaved work: {reason}"
         ))),
+        BoxWork::NoCheckout => Err(refused(
+            "cannot tell whether the Box has unsaved work: its workdir has no git checkout"
+                .to_owned(),
+        )),
     }
 }
 

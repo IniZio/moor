@@ -1,18 +1,16 @@
 //! `moor close`: gate, save the agent's transcript, stop the agent, tear down and release the Box, then close the Workspace.
 
-use std::path::Path;
-use std::time::Duration;
+use std::{path::Path, time::Duration};
 
 use moor_core::boxscript::teardown::teardown_script;
 use moor_core::config::Flags;
-use moor_core::domain::boxes::BoxState;
-use moor_core::domain::decision::{Decision, ExtraEvent};
-use moor_core::domain::run::SyncMode;
-
 use moor_core::decide::close::{
     close_gate, release_outcome, BoxCheck, CloseFacts, ClosePlan, ReleaseResult,
 };
 use moor_core::decide::transcript::Trigger;
+use moor_core::domain::boxes::BoxState;
+use moor_core::domain::decision::{Decision, ExtraEvent};
+use moor_core::domain::run::SyncMode;
 use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec, Released};
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::{PaneRef, SurfaceError, WorkspaceRef};
@@ -209,10 +207,11 @@ fn box_check(
         return Ok(BoxCheck::Skipped);
     };
     Ok(match probe(cx, row, b) {
-        BoxWork::Clean | BoxWork::NoCheckout => BoxCheck::Clean,
+        BoxWork::Clean => BoxCheck::Clean,
         BoxWork::Unsaved { ahead, dirty } => BoxCheck::Unsaved { ahead, dirty },
         BoxWork::Gone => BoxCheck::Skipped,
         BoxWork::Unknown(why) => BoxCheck::Unknown(why),
+        BoxWork::NoCheckout => BoxCheck::Unknown("the Box has no git checkout".into()),
     })
 }
 
@@ -253,9 +252,10 @@ fn recheck_and_collect(cx: &Cx, store: &Store, row: &TaskRow) -> Result<(), Comm
 /// Refuses when the second probe found unsaved work or could not tell.
 fn recheck_verdict(cx: &Cx, row: &TaskRow, work: BoxWork) -> Result<(), CommandError> {
     let check = match work {
-        BoxWork::Clean | BoxWork::NoCheckout | BoxWork::Gone => return Ok(()),
+        BoxWork::Clean | BoxWork::Gone => return Ok(()),
         BoxWork::Unsaved { ahead, dirty } => BoxCheck::Unsaved { ahead, dirty },
         BoxWork::Unknown(why) => BoxCheck::Unknown(why),
+        BoxWork::NoCheckout => BoxCheck::Unknown("the Box has no git checkout".into()),
     };
     match close_gate(&facts(cx, row, check)?, false) {
         Ok(_) => Ok(()),
