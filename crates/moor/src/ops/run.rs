@@ -22,6 +22,7 @@ use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::facts::resolved;
 use crate::ops::common::provision::moor_yaml;
 use crate::ops::common::provisioning::dead_provisioning;
+use crate::ops::common::setup::exec_env;
 use crate::ops::common::wake::wake_if_asleep;
 use crate::store::{NewRun, RunOutcome, Store, StoreError, TaskRow};
 
@@ -109,7 +110,7 @@ fn launch(
     };
     let spec = ExecSpec {
         argv,
-        env: Vec::new(),
+        env: exec_env(&cfg),
         cwd: target.workdir,
         sync,
         output: Some(output),
