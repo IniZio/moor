@@ -4,7 +4,7 @@ use std::sync::Arc;
 use moor_core::seam::engine::EngineError;
 use moor_core::TaskId;
 
-use super::relaunch::{gone, session, started};
+use super::relaunch::{gone, session, set_agent_session, started};
 use super::{req, World};
 use crate::ops::start::run;
 use crate::testing::engine::FakeEngine;
@@ -80,4 +80,38 @@ fn a_failed_save_records_the_failure_and_the_relaunch_goes_on() {
     assert_eq!(engine.launches().len(), 1);
     assert_eq!(kinds(&w, id), ["transcript_failed"]);
     assert_eq!(first_digest(&w, id), None);
+}
+
+#[test]
+fn a_resuming_relaunch_skips_the_save_and_makes_no_box_call() {
+    let (w, engine, id) = with_transcript(FakeEngine::new().transcript_text("abc"));
+    set_agent_session(&w, id, "agent-1");
+    gone(&w);
+    let v = run(&w.cx, &req("demo")).unwrap();
+    assert!(v.agent.launched);
+    assert!(engine.transcripts().is_empty());
+    assert_eq!(kinds(&w, id), ["transcript_skipped"]);
+    let ev = w.cx.store().unwrap().events(id, 100).unwrap();
+    let last = ev
+        .iter()
+        .rev()
+        .find(|e| e.kind == "transcript_skipped")
+        .unwrap();
+    assert_eq!(
+        last.payload.get("reason"),
+        Some(&serde_json::json!("resumed on the same Box"))
+    );
+    assert_eq!(first_digest(&w, id), None);
+}
+
+#[test]
+fn a_relaunch_with_a_new_goal_still_saves_though_a_session_is_stored() {
+    let (w, engine, id) = with_transcript(FakeEngine::new().transcript_text("abc"));
+    set_agent_session(&w, id, "agent-1");
+    gone(&w);
+    let mut r = req("demo");
+    r.goal = Some("new goal".into());
+    run(&w.cx, &r).unwrap();
+    assert_eq!(engine.transcripts().len(), 1);
+    assert_eq!(kinds(&w, id), ["transcript_saved"]);
 }
