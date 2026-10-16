@@ -360,3 +360,17 @@ fn auto_sleep_parks_a_live_proxy_tunnel_first() {
     assert_eq!((r.want, r.seq), (TunnelWant::Parked, 1));
     assert_eq!(states(&f), (TaskState::Asleep, BoxState::Asleep));
 }
+
+#[test]
+fn auto_sleep_of_a_box_that_cannot_sleep_asks_for_a_clearing_restore() {
+    let f = refusing();
+    pass(&f, LONG);
+    live_proxy(&f);
+    let store = f.cx.store().unwrap();
+    store
+        .ack_tunnel(f.id, &TunnelAck::Parked { seq: 1 })
+        .unwrap();
+    auto_sleep(&f);
+    let r = tunnel_request(&f).unwrap();
+    assert_eq!((r.want, r.seq), (TunnelWant::UpAwake, 2));
+}

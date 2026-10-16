@@ -37,8 +37,20 @@ pub(crate) fn park_tunnel(cx: &Cx, store: &Store, task: TaskId) -> Result<(), Co
 }
 
 /// Asks the Task's Proxy to bring its tunnel back up and waits until it is up.
-pub(crate) fn restore_tunnel(cx: &Cx, store: &Store, task: TaskId) -> Result<(), CommandError> {
-    match request(cx, store, task, TunnelWant::Up, RESTORE_WAIT)? {
+///
+/// `box_stayed_up` is true when the Box never stopped, so a stale session may still hold the port.
+pub(crate) fn restore_tunnel(
+    cx: &Cx,
+    store: &Store,
+    task: TaskId,
+    box_stayed_up: bool,
+) -> Result<(), CommandError> {
+    let want = if box_stayed_up {
+        TunnelWant::UpAwake
+    } else {
+        TunnelWant::Up
+    };
+    match request(cx, store, task, want, RESTORE_WAIT)? {
         Reply::NoSupervisor | Reply::Got(TunnelAck::Up { .. }) => Ok(()),
         Reply::Got(TunnelAck::Failed { error, .. }) => Err(CommandError::new(
             ErrorKind::Failed,

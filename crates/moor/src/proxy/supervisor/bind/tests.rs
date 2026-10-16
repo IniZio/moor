@@ -203,3 +203,25 @@ fn a_wake_reopen_makes_no_clear_call() {
     assert!(w.driver.execs().is_empty());
     assert_eq!(w.driver.tunnels().len(), 2);
 }
+
+#[test]
+fn a_reopen_after_a_sleep_that_left_the_box_up_clears_the_port_first() {
+    let w = World::new([]);
+    let deps = w.deps();
+    let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
+    w.store.request_tunnel(w.id, TunnelWant::Parked).unwrap();
+    assert!(run.tick().is_none());
+    w.store.request_tunnel(w.id, TunnelWant::UpAwake).unwrap();
+
+    assert!(run.tick().is_none());
+
+    let calls = w.driver.calls();
+    assert!(calls.last().unwrap().starts_with("reverse_tunnel "));
+    assert!(calls
+        .iter()
+        .rev()
+        .nth(1)
+        .expect("penultimate call")
+        .starts_with("exec "));
+    assert_eq!(w.driver.execs().len(), 1);
+}

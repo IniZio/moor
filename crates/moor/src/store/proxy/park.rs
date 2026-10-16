@@ -13,8 +13,10 @@ use crate::store::{Store, StoreError};
 pub(crate) enum TunnelWant {
     /// Kill the tunnel and stop reviving it.
     Parked,
-    /// Bring the tunnel back on the same box port.
+    /// Bring the tunnel back on the same box port after the Box was stopped and booted again.
     Up,
+    /// Bring the tunnel back on the same box port, the Box having stayed up throughout.
+    UpAwake,
 }
 
 /// A stored tunnel request.
@@ -103,6 +105,7 @@ fn encode_request(want: TunnelWant, seq: u64) -> String {
     let word = match want {
         TunnelWant::Parked => "parked",
         TunnelWant::Up => "up",
+        TunnelWant::UpAwake => "up_awake",
     };
     format!("{word} {seq}")
 }
@@ -113,6 +116,7 @@ fn decode_request(raw: &str) -> Option<TunnelRequest> {
     let want = match word {
         "parked" => TunnelWant::Parked,
         "up" => TunnelWant::Up,
+        "up_awake" => TunnelWant::UpAwake,
         _ => return None,
     };
     Some(TunnelRequest {
