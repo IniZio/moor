@@ -43,7 +43,10 @@ pub(super) fn render(b: &BriefInput) -> String {
          commit-msg hook and conventions. Push with \
          `git push moor HEAD:refs/heads/{branch}` when the repo's push guard \
          allows it, not after each commit. If `git remote get-url moor` fails, commit \
-         only, do not push, and say so. Push to the branch named in the Goal if it names one, else \
+         only, do not push, and say so. The checkout may be shallow \
+         (`git rev-parse --is-shallow-repository`). If you need more history, for example to \
+         rebase, fetch it through the proxy with `git fetch --deepen=50 moor` or \
+         `git fetch --unshallow moor`. Push to the branch named in the Goal if it names one, else \
          to `{branch}`. Do not switch branches. Do not add Co-Authored-By trailers to \
          commits.\n\n\
          You may receive follow-up messages (steers) typed into this session.\n\n"
@@ -108,6 +111,14 @@ mod tests {
         assert!(out.contains("HEAD is detached"));
         assert!(out.contains("Do not add Co-Authored-By trailers"));
         assert!(out.contains("follow-up messages (steers)"));
+    }
+
+    #[test]
+    fn says_history_may_be_shallow_and_how_to_deepen_it() {
+        let out = render(&input(Some("g"), None));
+        assert!(out.contains("may be shallow"));
+        assert!(out.contains("git fetch --deepen=50 moor"));
+        assert!(out.contains("git fetch --unshallow moor"));
     }
 
     #[test]
