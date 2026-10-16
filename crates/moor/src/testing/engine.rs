@@ -10,6 +10,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use moor_core::activity::{HookRead, PaneRead, Probes};
+use moor_core::name::BoxPath;
 use moor_core::seam::agent_profile::{FirstRunPrompt, PromptMatch};
 use moor_core::seam::engine::{Engine, EngineError, LaunchReq, SessionRef, Steer, SteerOutcome};
 use moor_core::seam::proc::Deadline;
@@ -24,6 +25,8 @@ struct State {
     panes: HashMap<String, Option<PaneRef>>,
     launch_results: VecDeque<Result<SessionRef, EngineError>>,
     launches: Vec<LaunchReq>,
+    box_home: Option<String>,
+    fail_launch_dirs: Option<String>,
     prompts: Vec<(String, FirstRunPrompt)>,
     steer_results: VecDeque<Result<SteerOutcome, EngineError>>,
     steers: Vec<(String, Steer)>,
@@ -48,6 +51,18 @@ impl FakeEngine {
 
     fn st(&self) -> MutexGuard<'_, State> {
         self.state.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Launches create their directories under `home`; unset, the launch creates none.
+    pub(crate) fn box_home(self, home: &str) -> Self {
+        self.st().box_home = Some(home.to_owned());
+        self
+    }
+
+    /// Every later `launch_dirs` fails with `message`.
+    pub(crate) fn fail_launch_dirs(self, message: &str) -> Self {
+        self.st().fail_launch_dirs = Some(message.to_owned());
+        self
     }
 
     /// Every probe of `session` returns `p`.
@@ -185,6 +200,25 @@ impl Engine for FakeEngine {
                 sandbox: None,
             })
         })
+    }
+
+    fn launch_dirs(&self, req: &LaunchReq) -> Result<Option<(BoxPath, BoxPath)>, EngineError> {
+        let (home, failed) = {
+            let st = self.st();
+            (st.box_home.clone(), st.fail_launch_dirs.clone())
+        };
+        let err = |message: String| EngineError::Failed {
+            step: "home",
+            message,
+        };
+        if let Some(message) = failed {
+            return Err(err(message));
+        }
+        let Some(home) = home else { return Ok(None) };
+        let home = BoxPath::restore(&home).map_err(|e| err(e.to_string()))?;
+        req.dirs_under(&home)
+            .map(Some)
+            .map_err(|e| err(e.to_string()))
     }
 
     fn steer(

@@ -14,6 +14,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use moor_core::activity::Probes;
+use moor_core::name::BoxPath;
 use moor_core::seam::agent_profile::{AgentProfile, PromptMatch};
 use moor_core::seam::clock::Clock;
 use moor_core::seam::driver::Driver;
@@ -79,6 +80,10 @@ impl Engine for BoxAgent {
             req,
             &self.release,
         )
+    }
+
+    fn launch_dirs(&self, req: &LaunchReq) -> Result<Option<(BoxPath, BoxPath)>, EngineError> {
+        launch::dirs(self.driver.as_ref(), req).map(Some)
     }
 
     fn steer(
