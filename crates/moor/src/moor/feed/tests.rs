@@ -93,7 +93,7 @@ fn idle_hook(cx: &Cx) -> Probes {
 
 /// A Working Task whose fake engine reports quiet, with the context that settles it.
 fn quiet_agent(dir: &Path) -> Cx {
-    let driver = Arc::new(FakeDriver::new());
+    let driver = Arc::new(FakeDriver::new().exec_stdout([""]));
     let cx = engine_cx(dir, &driver, &Arc::new(FakeEngine::new()));
     working(&cx, &driver, "a", "s-a");
     let engine = Arc::new(FakeEngine::new().probes("s-a", idle_hook(&cx)));
@@ -144,7 +144,9 @@ fn settle_open_records_and_copies_a_new_proof_file() {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(
         FakeDriver::new()
-            .exec_stdout(["shot.png\t4\tabcd\n"])
+            .exec_stdout([
+                "shot.png\t4\taaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+            ])
             .copy_text("png!"),
     );
     let cx = engine_cx(dir.path(), &driver, &Arc::new(FakeEngine::new()));

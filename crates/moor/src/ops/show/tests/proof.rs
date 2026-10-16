@@ -71,3 +71,17 @@ fn nonzero_exit_warns() {
     assert!(v.proofs.is_none());
     assert_eq!(cx.take_warnings().len(), 1);
 }
+
+#[test]
+fn a_missing_listing_log_warns() {
+    let dir = tempfile::tempdir().unwrap();
+    let driver = Arc::new(FakeDriver::new());
+    let cx = cx(dir.path(), &driver);
+    let id = add(&cx, "a");
+    ready_box(&cx, &driver, id);
+    let v = run(&cx, &req(Some("a"), None)).unwrap();
+    assert!(v.proofs.is_none());
+    let w = cx.take_warnings();
+    let codes: Vec<_> = w.iter().map(|w| w.code.as_str()).collect();
+    assert_eq!(codes, ["proof_unavailable"]);
+}

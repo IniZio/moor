@@ -16,8 +16,8 @@ use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
 use crate::testing::surface::FakeSurface;
 
-const A: &str = "aaaa";
-const B: &str = "bbbb";
+const A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const B: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
 struct Fx {
     dir: tempfile::TempDir,
@@ -211,4 +211,114 @@ fn no_proof_directory_means_no_events() {
         .file_name()
         .to_string_lossy()
         .starts_with("proof-listing")));
+}
+
+/// The Box handle of the Task.
+fn handle(f: &Fx) -> moor_core::BoxHandle {
+    let rows = f.cx.store().unwrap().open_tasks().unwrap();
+    rows.into_iter()
+        .find_map(|r| r.boxed.and_then(|b| b.handle))
+        .unwrap()
+}
+
+/// Where the planted symlinks point; nothing may appear here.
+fn outside(f: &Fx) -> std::path::PathBuf {
+    let out = f.dir.path().join("outside");
+    fs::create_dir_all(&out).unwrap();
+    out
+}
+
+#[test]
+fn a_symlinked_task_directory_is_refused_without_copying() {
+    let listing = line("a.png", 10, A);
+    let f = fx(FakeDriver::new(), &[&listing]);
+    let out = outside(&f);
+    fs::create_dir_all(f.dir.path().join("proof")).unwrap();
+    std::os::unix::fs::symlink(&out, f.dir.path().join("proof/t")).unwrap();
+    let warnings = pass(&f, DEFAULT_PROOF_MAX_BYTES);
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert!(
+        warnings.iter().all(|w| w.contains("symlink")),
+        "{warnings:?}"
+    );
+    assert!(f.driver.copies().is_empty());
+    assert!(proofs(&f).is_empty());
+    assert_eq!(fs::read_dir(&out).unwrap().count(), 0);
+}
+
+#[test]
+fn a_symlink_at_the_destination_is_refused_without_copying() {
+    let listing = line("a.png", 10, A);
+    let f = fx(FakeDriver::new(), &[&listing]);
+    let out = outside(&f);
+    let secret = out.join("secret");
+    fs::write(&secret, "keep").unwrap();
+    fs::create_dir_all(f.dir.path().join("proof/t")).unwrap();
+    std::os::unix::fs::symlink(&secret, f.dir.path().join("proof/t/a.png")).unwrap();
+    let warnings = pass(&f, DEFAULT_PROOF_MAX_BYTES);
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert!(f.driver.copies().is_empty());
+    assert!(proofs(&f).is_empty());
+    assert_eq!(fs::read_to_string(&secret).unwrap(), "keep");
+}
+
+#[test]
+fn a_symlink_left_by_the_copy_is_removed_and_nothing_is_recorded() {
+    let listing = line("a.png", 10, A);
+    let out = tempfile::tempdir().unwrap();
+    let target = out.path().join("target");
+    let f = fx(FakeDriver::new().copy_symlink(&target), &[&listing]);
+    let warnings = pass(&f, DEFAULT_PROOF_MAX_BYTES);
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert!(warnings.iter().all(|w| w.contains("a.png")), "{warnings:?}");
+    let dest = f.dir.path().join("proof/t/a.png");
+    assert!(fs::symlink_metadata(&dest).is_err());
+    assert!(proofs(&f).is_empty());
+    assert!(!target.exists());
+}
+
+#[test]
+fn consecutive_listings_use_distinct_log_files() {
+    let f = fx(FakeDriver::new(), &["", ""]);
+    let handle = handle(&f);
+    for _ in 0..2 {
+        super::list(&f.cx, &handle, f.id, None).unwrap();
+    }
+    let logs: Vec<_> = f
+        .driver
+        .execs()
+        .iter()
+        .filter_map(|e| match &e.1.output {
+            Some(moor_core::seam::proc::Output::Log(p)) => Some(p.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(logs.len(), 2);
+    assert_ne!(logs.first(), logs.get(1));
+}
+
+#[test]
+fn a_listing_that_wrote_no_log_is_an_error() {
+    let f = fx(FakeDriver::new(), &[]);
+    let handle = handle(&f);
+    let err = super::list(&f.cx, &handle, f.id, None).unwrap_err();
+    assert!(err.contains("listing"), "{err}");
+}
+
+#[test]
+fn a_sync_with_no_listing_log_warns_and_records_nothing() {
+    let f = fx(FakeDriver::new(), &[]);
+    let warnings = pass(&f, DEFAULT_PROOF_MAX_BYTES);
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert!(proofs(&f).is_empty());
+    assert!(f.driver.copies().is_empty());
+}
+
+#[test]
+fn a_file_listed_twice_records_one_event_and_one_copy() {
+    let listing = line("a.png", 10, A) + &line("a.png", 10, A);
+    let f = fx(FakeDriver::new(), &[&listing]);
+    assert!(pass(&f, DEFAULT_PROOF_MAX_BYTES).is_empty());
+    assert_eq!(proofs(&f).len(), 1);
+    assert_eq!(f.driver.copies().len(), 1);
 }
