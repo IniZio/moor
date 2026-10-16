@@ -22,8 +22,22 @@ use crate::store::{Store, TaskRow};
 /// A sync resets the Box checkout to the host's: HEAD, branches and remote-tracking refs move
 /// even when every commit is pushed. A Task that has had an agent session is therefore synced
 /// only when the Box holds no work that exists nowhere else, or has no git checkout at all
-/// (an earlier sync failed); otherwise the sync is skipped with a warning.
-pub(super) fn rerun_sync(cx: &Cx, store: &Store, row: &TaskRow) -> Result<SyncMode, CommandError> {
+/// (an earlier sync failed); otherwise the sync is skipped with a warning. While an agent session
+/// is live no sync is made at all: the agent may be writing files in the checkout.
+pub(super) fn rerun_sync(
+    cx: &Cx,
+    store: &Store,
+    row: &TaskRow,
+    gates: &ResyncGates,
+) -> Result<SyncMode, CommandError> {
+    if (gates.agent_live)()? {
+        cx.warn(Warning {
+            code: "resync_skipped".to_owned(),
+            message: "did not sync the checkout into the Box: an agent session is still running"
+                .to_owned(),
+        });
+        return Ok(SyncMode::None);
+    }
     if !store.has_session(row.id)? {
         return Ok(SyncMode::Full);
     }
@@ -57,8 +71,7 @@ pub(crate) struct ResyncGates<'a> {
 
 /// Syncs the host checkout into a ready Box when no setup re-run is going to.
 ///
-/// Only the sync happens. A live agent does not respect the Box lock and may be writing files, so
-/// no sync is made while an agent session is live. A failed sync ends the start like a fresh
+/// Only the sync happens. A failed sync ends the start like a fresh
 /// one's when the agent is about to launch; otherwise it is a warning and the start goes on, so
 /// the user can retry.
 ///
@@ -80,15 +93,7 @@ pub(super) fn resync(
     ) else {
         return Ok(());
     };
-    if (gates.agent_live)()? {
-        cx.warn(Warning {
-            code: "resync_skipped".to_owned(),
-            message: "did not sync the checkout into the Box: an agent session is still running"
-                .to_owned(),
-        });
-        return Ok(());
-    }
-    if rerun_sync(cx, store, row)? != SyncMode::Full {
+    if rerun_sync(cx, store, row, gates)? != SyncMode::Full {
         return Ok(());
     }
     let repo = moor_yaml::for_teardown(cx, row, trusted)?;
