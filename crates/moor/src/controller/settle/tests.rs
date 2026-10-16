@@ -98,7 +98,7 @@ fn idle_hook(cx: &Cx) -> Probes {
 
 /// A Working Task whose fake engine reports quiet, with the context that settles it.
 fn quiet_agent(dir: &Path) -> (Cx, TaskId) {
-    let driver = Arc::new(FakeDriver::new());
+    let driver = Arc::new(FakeDriver::new().exec_stdout([""]));
     let cx = engine_cx(dir, &driver, &Arc::new(FakeEngine::new()));
     let id = working(&cx, &driver, "a", "s-a");
     let engine = Arc::new(FakeEngine::new().probes("s-a", idle_hook(&cx)));
