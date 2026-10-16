@@ -98,6 +98,7 @@ impl Running<'_> {
             self.box_port,
             self.live.port(),
             &self.worktree,
+            false,
         );
         // A failed open leaves the dead stand-in, so the restart path takes over.
         self.parked.set(false);

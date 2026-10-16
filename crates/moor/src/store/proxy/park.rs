@@ -93,6 +93,11 @@ fn ack_key(task: TaskId) -> String {
     format!("tunnel_ack:{}", task.get())
 }
 
+/// Key of the row recording that a supervisor has opened a tunnel into the Box of `task`.
+fn opened_key(task: TaskId) -> String {
+    format!("tunnel_opened:{}", task.get())
+}
+
 /// Stored form of a request.
 fn encode_request(want: TunnelWant, seq: u64) -> String {
     let word = match want {
@@ -135,8 +140,8 @@ fn put(conn: &Connection, key: &str, value: &str) -> Result<(), StoreError> {
 /// Delete the request and ack rows of `task` on `conn`.
 pub(super) fn clear(conn: &Connection, task: TaskId) -> Result<(), StoreError> {
     conn.execute(
-        "DELETE FROM meta WHERE k IN (?, ?)",
-        params![want_key(task), ack_key(task)],
+        "DELETE FROM meta WHERE k IN (?, ?, ?)",
+        params![want_key(task), ack_key(task), opened_key(task)],
     )?;
     Ok(())
 }
@@ -180,6 +185,19 @@ impl Store {
     pub(crate) fn ack_tunnel(&self, task: TaskId, ack: &TunnelAck) -> Result<(), StoreError> {
         let conn = self.writer()?;
         put(&conn, &ack_key(task), &ack.encode())
+    }
+
+    /// Records that a tunnel is about to be opened into the Box of `task`; it stays set until the
+    /// proxy row is removed.
+    pub(crate) fn note_tunnel_opened(&self, task: TaskId) -> Result<(), StoreError> {
+        let conn = self.writer()?;
+        put(&conn, &opened_key(task), "1")
+    }
+
+    /// Whether a tunnel was ever opened into the Box of `task`.
+    pub(crate) fn tunnel_opened(&self, task: TaskId) -> Result<bool, StoreError> {
+        let conn = self.reader()?;
+        Ok(get(&conn, &opened_key(task))?.is_some())
     }
 
     /// The latest tunnel ack of `task`, if any.

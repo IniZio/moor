@@ -41,6 +41,7 @@ impl Running<'_> {
                 self.box_port,
                 self.live.port(),
                 &self.worktree,
+                false,
             ) {
                 Ok(tunnel) => {
                     *self.tunnel.borrow_mut() = tunnel;

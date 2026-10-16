@@ -15,8 +15,9 @@ use moor_core::BoxHandle;
 use super::run::say;
 use super::Deps;
 
-/// Time allowed for the Box-side cleanup.
-const CLEAR_DEADLINE: Duration = Duration::from_secs(20);
+/// Time allowed for the Box-side cleanup; a `crabbox run` on the external provider costs about 20 s
+/// before the script starts.
+const CLEAR_DEADLINE: Duration = Duration::from_secs(45);
 
 /// Shell run in the Box with the port as `$1`.
 ///
@@ -33,16 +34,27 @@ pub(super) fn clear_argv(box_port: u16) -> Vec<String> {
         .collect()
 }
 
-/// Frees `box_port` in the Box, then opens a tunnel serving `host_port` there.
+/// Opens a tunnel serving `host_port` on `box_port` in the Box.
 ///
-/// A failed cleanup is reported and the open goes ahead.
+/// Unless `fresh` (no tunnel was ever opened into this Box, so no stale listener can exist), the
+/// port is freed first. A failed or timed-out cleanup is reported and the open goes ahead.
 pub(super) fn open(
     deps: &Deps<'_>,
     handle: &BoxHandle,
     box_port: u16,
     host_port: u16,
     worktree: &Path,
+    fresh: bool,
 ) -> Result<Box<dyn TunnelHandle>, DriverError> {
+    if !fresh {
+        clear(deps, handle, box_port, worktree);
+    }
+    deps.driver
+        .reverse_tunnel(handle, box_port, host_port, worktree)
+}
+
+/// Ends any `sshd-session` holding `box_port` in the Box, reporting the outcome.
+fn clear(deps: &Deps<'_>, handle: &BoxHandle, box_port: u16, worktree: &Path) {
     let spec = ExecSpec {
         argv: clear_argv(box_port),
         env: Vec::new(),
@@ -52,14 +64,11 @@ pub(super) fn open(
         host_cwd: Some(worktree.to_path_buf()),
         class: None,
     };
-    if let Err(err) = deps.driver.exec(handle, &spec, Deadline(CLEAR_DEADLINE)) {
-        say(
-            &deps.stderr,
-            format_args!("cannot free port {box_port} in the box: {err}"),
-        );
-    }
-    deps.driver
-        .reverse_tunnel(handle, box_port, host_port, worktree)
+    let outcome = match deps.driver.exec(handle, &spec, Deadline(CLEAR_DEADLINE)) {
+        Ok(done) => format!("freed port {box_port} in the box: {done:?}"),
+        Err(err) => format!("cannot free port {box_port} in the box: {err}"),
+    };
+    say(&deps.stderr, format_args!("{outcome}"));
 }
 
 #[cfg(test)]
