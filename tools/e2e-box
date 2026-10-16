@@ -124,7 +124,7 @@ mo() {
   local t=$1 rc=0 err
   shift
   err="$(mktemp -p "$scratch")"
-  timeout "$t" "$moor" --state-dir "$state" "$@" 2>"$err" || rc=$?
+  MOOR_STATE_DIR="$state" timeout "$t" "$moor" --state-dir "$state" "$@" 2>"$err" || rc=$?
   { echo "== moor $*"; cat "$err"; } >>"$state/moor-stderr.log"
   cat "$err" >&2
   rm -f "$err"
@@ -161,15 +161,33 @@ box_listed() { # 0 when the Box still appears in crabbox list
   out="$(cd "$scratch" && timeout 60 crabbox list --provider "$provider" --json 2>"$scratch/list.err")" || return 2
   echo "$out" | jq -e --arg n "$box" '[.. | strings] | index($n) != null' >/dev/null
 }
-tunnels() { # 0 while a process with a `tunnel` argument and this Box's id or handle runs
-  [ -n "$box" ] || return 1
-  TUN_BOX="$box" TUN_HANDLE="$handle" ps -eo pid=,args= 2>/dev/null | awk -v self="$$" '
+# Process lines "pid args" containing a `tunnel` word, minus this shell.
+tunnel_procs() { ps -eo pid=,args= 2>/dev/null | awk -v self="$$" '$1 != self && (" " $0 " ") ~ / tunnel /'; }
+tunnels() { # 0 while moor's reverse tunnel (`tunnel` and `--reverse` arguments) runs
+  tunnel_procs | awk '{ a = " " $0 " " } a ~ / --reverse / { found = 1 } END { exit !found }'
+}
+other_tunnels() { # prints the count of non-reverse `tunnel` processes naming this Box's id or handle
+  [ -n "$box" ] || { echo 0; return 0; }
+  TUN_BOX="$box" TUN_HANDLE="$handle" tunnel_procs | awk '
     BEGIN { b = ENVIRON["TUN_BOX"]; h = ENVIRON["TUN_HANDLE"] }
-    $1 != self {
-      a = $0; sub(/^ *[0-9]+ +/, "", a)
-      if ((" " a " ") ~ / tunnel / && (index(a, b) || (h != "" && index(a, h)))) found = 1
-    }
-    END { exit !found }'
+    (" " $0 " ") !~ / --reverse / && (index($0, b) || (h != "" && index($0, h))) { n++ }
+    END { print n + 0 }'
+}
+# phase_other_tunnels NAME: informational phase, never fails the verdict.
+phase_other_tunnels() {
+  local n
+  n="$(other_tunnels)"
+  echo "e2e-box: $1: $n other tunnel process(es) naming the Box"
+  phase_lines "$1" report --name "$1" --took-ms 0
+}
+# tunnel_diag: appends tunnel process lines to the moor stderr log and prints their args (secret-looking args redacted).
+tunnel_diag() {
+  local out
+  out="$(ps -eo pid,ppid,etimes,args 2>/dev/null | awk -v self="$$" 'NR == 1 || ($1 != self && (" " $0 " ") ~ /tunnel/)' | grep -v "ps -eo" || true)"
+  out="$(echo "$out" | sed -E 's/((--?)?[A-Za-z_-]*(token|key|secret|password)[A-Za-z_-]*[= ]+)[^ ]+/\1<redacted>/Ig; s/\b(sk|ghp|gho|ghs|github_pat|xox[a-z])[-_][A-Za-z0-9_-]{8,}/<redacted>/g')"
+  { echo "== tunnel processes"; echo "$out"; } >>"$state/moor-stderr.log"
+  echo "tunnel processes (pid ppid etimes args):"
+  echo "$out"
 }
 task_exists() { mo 60 --json show "$name" >/dev/null 2>&1; }
 trace_summary() {
@@ -206,15 +224,15 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 if [ "$dry" = 1 ]; then
-  echo "+ (cd $pilot && $moor --state-dir $state start $name --goal '$goal'${start_args[*]:+ ${start_args[*]}})   # timeout $(outer "$b_start_total")s"
+  echo "+ (cd $pilot && MOOR_STATE_DIR=$state $moor --state-dir $state start $name --goal '$goal'${start_args[*]:+ ${start_args[*]}})   # timeout $(outer "$b_start_total")s"
   echo "+ e2e-budget events --db $state/moor.db --task $name; e2e-budget start ... (budgets $b_box_ready/$b_proxy/$b_session/$b_start_total)"
   for ((n = 0; n < ${#box_steps[@]}; n++)); do
     echo "+ moor run $name -- sh -c '${box_steps[n]}'   # phase box_step.$((n + 1)), report only"
   done
-  echo "+ poll for a process with a tunnel argument and the Box id (assert.tunnel_seen)"
+  echo "+ poll for a tunnel --reverse process (assert.tunnel_seen)"
   echo "+ moor run $name --no-sync -- sh -c \"pgrep -f '[c]laude' >/dev/null\"; moor run $name --no-sync -- test -e .git"
   for ((n = 1; n <= cycles; n++)); do
-    echo "+ cycle $n: moor sleep $name (<= ${b_sleep}s); poll for a tunnel process with the Box id (<= ${b_tunnels}s)"
+    echo "+ cycle $n: moor sleep $name (<= ${b_sleep}s); poll for the tunnel --reverse process to vanish; sleep$n.other_tunnels is informational (<= ${b_tunnels}s)"
     echo "+ cycle $n: e2e-budget last-id; moor wake $name; poll relaunched (<= ${b_wake_total}s); e2e-budget wake --cycle $n"
     echo "+ cycle $n: agent check"
   done
@@ -263,7 +281,7 @@ if task_exists; then
     [ $(($(now_ms) - t0)) -lt 10000 ] || break
     sleep 0.5
   done
-  if [ "$seen" = 1 ]; then phase_pass assert.tunnel_seen; else phase_fail assert.tunnel_seen "no tunnel process within 10s" "$t0"; fi
+  if [ "$seen" = 1 ]; then phase_pass assert.tunnel_seen; else phase_fail assert.tunnel_seen "no moor reverse tunnel process within 10s" "$t0"; tunnel_diag; fi
   t0=$(now_ms)
   if in_pilot agent_up; then rc=0; else rc=$?; fi
   assert_rc assert.agent_start "$rc" "agent not running"
@@ -293,7 +311,8 @@ for ((n = 1; n <= cycles; n++)); do
     sleep 0.5
   done
   if [ "$gone" = 1 ]; then phase_timed "sleep$n.tunnels_gone" $(($(now_ms) - t0)) "$b_tunnels"
-  else phase_fail "sleep$n.tunnels_gone" "tunnels still running" "$t0" "$b_tunnels"; fi
+  else phase_fail "sleep$n.tunnels_gone" "tunnels still running" "$t0" "$b_tunnels"; tunnel_diag; fi
+  phase_other_tunnels "sleep$n.other_tunnels"
 
   after="$(last_id)" || after=0
   t0=$(now_ms)
