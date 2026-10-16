@@ -33,6 +33,12 @@ impl Moor {
         wire::reconcile_proxies(env)
     }
 
+    /// The web URL of the open pull request on the live Task `task`'s branch, looked up through the forge on this host.
+    pub fn open_pr_url(env: &Env, task: &str) -> Result<Option<String>, String> {
+        let cx = wire::build(env).map_err(|e| e.error.to_string())?;
+        ops::pr::open_pr_url(&cx, task)
+    }
+
     /// The `version` envelope; independent of config and state.
     #[must_use]
     pub fn version() -> Response {

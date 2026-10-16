@@ -11,7 +11,9 @@ use moor_core::secret::Secret;
 use serde_json::Value;
 
 use super::api::Api;
+use super::pr::{PrCache, PrOf};
 use super::prompt::Pending;
+use super::proof::Proofs;
 use crate::adapters::clock::SystemClock;
 use crate::env::Env;
 use crate::store::{SlackThread, Store, STORE_FILE};
@@ -110,8 +112,9 @@ pub(super) fn escape(s: &str) -> String {
         .replace('>', "&gt;")
 }
 
-/// The message text for `task`; names the loopback web UI when `web` is known.
-pub(super) fn render(task: &str, view: &View, web: Option<SocketAddr>) -> String {
+/// The message text for `task`; names the loopback web UI when `web` is known
+/// and links the Task branch's open pull request when `pr` is known.
+pub(super) fn render(task: &str, view: &View, web: Option<SocketAddr>, pr: Option<&str>) -> String {
     let state = match &view.state {
         State::Starting => "starting".to_owned(),
         State::Working => "working".to_owned(),
@@ -138,6 +141,9 @@ pub(super) fn render(task: &str, view: &View, web: Option<SocketAddr>) -> String
             BoxState::Deleted => "deleted",
         };
         let _ = write!(text, "\nBox: {b}");
+    }
+    if let Some(url) = pr {
+        let _ = write!(text, "\n<{}|Pull request>", escape(url).replace('|', "%7C"));
     }
     if let Some(addr) = web {
         let _ = write!(
@@ -186,13 +192,19 @@ impl Planner {
         threads: &[SlackThread],
         views: &HashMap<String, View>,
         web: Option<SocketAddr>,
+        prs: &HashMap<String, String>,
         now: Instant,
     ) -> Vec<Step> {
         let mut steps = Vec::new();
         for t in threads {
             let key = (t.channel.clone(), t.thread_ts.clone());
             let view = views.get(t.task.as_str()).cloned().unwrap_or_default();
-            let text = render(t.task.as_str(), &view, web);
+            let text = render(
+                t.task.as_str(),
+                &view,
+                web,
+                prs.get(t.task.as_str()).map(String::as_str),
+            );
             let sent = self.sent.get(&key);
             if t.status_ts.is_some() && sent.and_then(|s| s.text.as_ref()) == Some(&text) {
                 continue;
@@ -228,6 +240,7 @@ pub(crate) fn follow(
     api: &Api,
     bot: &Secret,
     web: Option<SocketAddr>,
+    pr_of: &PrOf,
     log: &(dyn Fn(&str) + Send + Sync),
 ) {
     let clock: Arc<dyn Clock> = loop {
@@ -251,6 +264,8 @@ pub(crate) fn follow(
     let mut views: HashMap<String, View> = HashMap::new();
     let mut pending = Pending::default();
     let mut planner = Planner::default();
+    let mut proofs = Proofs::default();
+    let mut prs = PrCache::default();
     let mut cursor = 0;
     loop {
         match store.events_after(cursor, BATCH) {
@@ -261,6 +276,7 @@ pub(crate) fn follow(
                         .entry(e.task_name.clone())
                         .or_default()
                         .fold(&e.row.kind, &e.row.payload);
+                    proofs.fold(&e.task_name, &e.row.kind, &e.row.payload);
                     pending.fold(e.row.id, &e.task_name, &e.row.kind, &e.row.payload);
                 }
                 if events.len() == BATCH {
@@ -271,11 +287,16 @@ pub(crate) fn follow(
         }
         match store.slack_threads() {
             Ok(threads) => {
-                for step in planner.plan(&threads, &views, web, clock.instant()) {
+                prs.refresh(&threads, &views, pr_of, clock.instant());
+                for step in planner.plan(&threads, &views, web, prs.urls(), clock.instant()) {
                     let ok = send(&store, api, bot, &step, log);
                     planner.record(&step, clock.instant(), ok);
                 }
                 pending.post_due(&store, api, bot, &threads, log);
+                match env.state_dir() {
+                    Some(dir) => proofs.post_due(&store, api, bot, &threads, &dir, log),
+                    None => log("slack status: no state directory, proofs not posted"),
+                }
             }
             Err(e) => log(&format!("slack status: {e}")),
         }
