@@ -33,6 +33,7 @@ struct State {
     fail_list: Option<DriverError>,
     fail_copy_out: Option<DriverError>,
     copy_content: Option<Vec<u8>>,
+    copy_symlink: Option<PathBuf>,
     exec_results: VecDeque<Result<ExecOutcome, DriverError>>,
     exec_stdout: VecDeque<String>,
     execs: Vec<(BoxHandle, ExecSpec, Deadline)>,
@@ -80,6 +81,12 @@ impl FakeDriver {
     /// Makes every `copy_out` write `content` to its destination.
     pub(crate) fn copy_text(self, content: impl AsRef<[u8]>) -> Self {
         self.st().copy_content = Some(content.as_ref().to_vec());
+        self
+    }
+
+    /// Makes every `copy_out` leave a symlink to `target` at its destination.
+    pub(crate) fn copy_symlink(self, target: impl Into<PathBuf>) -> Self {
+        self.st().copy_symlink = Some(target.into());
         self
     }
 
@@ -248,6 +255,12 @@ impl Driver for FakeDriver {
         }
         if let Some(e) = s.fail_copy_out.take() {
             return Err(e);
+        }
+        if let Some(target) = &s.copy_symlink {
+            let _ = std::fs::remove_file(to);
+            return std::os::unix::fs::symlink(target, to).map_err(|e| DriverError::Failed {
+                summary: format!("cannot place a symlink: {e}"),
+            });
         }
         s.copy_content
             .as_deref()
