@@ -233,15 +233,37 @@ fn asleep_box_with_working_task_wakes_only_the_box() {
 }
 
 #[test]
-fn waking_a_box_stores_the_workdir_the_driver_reports_now() {
+fn waking_a_box_with_a_stored_workdir_does_not_probe() {
     let f = fx();
     sleep(&f);
-    assert_eq!(stored_workdir(&f).as_deref(), Some("/work/cbx_1/t"));
-    assert_eq!(workdir_calls(&f), 0);
     f.driver.set_work_root("/moved");
     let store = f.cx.store().unwrap();
     assert!(wake_if_asleep(&f.cx, store, &row(&f)).unwrap());
-    assert_eq!(workdir_calls(&f), 1);
+    assert_eq!(f.driver.box_calls(), ["acquire", "wake"]);
+    assert_eq!(workdir_calls(&f), 0);
+    assert_eq!(stored_workdir(&f).as_deref(), Some("/work/cbx_1/t"));
+}
+
+fn clear_workdir(f: &Fx) {
+    f.cx.store()
+        .unwrap()
+        .apply(Decision::new(f.id).set(Fields {
+            box_workdir: Field::Clear,
+            ..Fields::default()
+        }))
+        .unwrap();
+    assert_eq!(stored_workdir(f), None);
+}
+
+#[test]
+fn waking_a_box_without_a_stored_workdir_probes_once_and_stores_it() {
+    let f = fx();
+    sleep(&f);
+    clear_workdir(&f);
+    f.driver.set_work_root("/moved");
+    let store = f.cx.store().unwrap();
+    assert!(wake_if_asleep(&f.cx, store, &row(&f)).unwrap());
+    assert_eq!(f.driver.box_calls(), ["acquire", "wake", "workdir"]);
     assert_eq!(stored_workdir(&f).as_deref(), Some("/moved/cbx_1/t"));
 }
 
@@ -249,13 +271,14 @@ fn waking_a_box_stores_the_workdir_the_driver_reports_now() {
 fn failed_workdir_lookup_after_wake_leaves_task_and_box_asleep() {
     let f = fx();
     sleep(&f);
+    clear_workdir(&f);
     f.driver.fail_workdir(DriverError::NotFound);
     let store = f.cx.store().unwrap();
     assert!(wake_if_asleep(&f.cx, store, &row(&f)).is_err());
     let r = row(&f);
     assert_eq!(r.state, TaskState::Asleep);
     assert_eq!(r.boxed.unwrap().state, BoxState::Asleep);
-    assert_eq!(stored_workdir(&f).as_deref(), Some("/work/cbx_1/t"));
+    assert_eq!(stored_workdir(&f), None);
     assert!(wake_if_asleep(&f.cx, store, &row(&f)).unwrap());
     assert_eq!(workdir_calls(&f), 2);
 }
