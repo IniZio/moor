@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use moor_core::seam::agent_profile::{AgentProfile, BoxSetup, LaunchCtx, ProxyAddr};
 use moor_core::seam::clock::Ts;
-use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
+use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
 use moor_core::seam::engine::{Engine, EngineError, LaunchReq};
 use moor_core::seam::surface::{Surface, SurfaceError};
 use moor_core::{BoxHandle, BoxPath, ProviderId, Secret, TaskId, TaskName};
@@ -258,9 +258,9 @@ fn a_failed_brief_write_removes_the_cred_dir() {
     ));
     assert!(s.opened().is_empty());
     let execs = d.execs();
-    assert_eq!(execs.len(), 1);
+    assert_eq!(execs.len(), 2);
     assert_eq!(
-        execs.into_iter().next().unwrap().1.argv,
+        execs.into_iter().last().unwrap().1.argv,
         ["rm", "-rf", CRED, TMP]
     );
 }
@@ -272,7 +272,7 @@ fn a_failed_pane_open_removes_the_cred_dir() {
         FakeSurface::new("/r").fail_open_pane(SurfaceError::Timeout),
     );
     assert!(matches!(out, Err(EngineError::Failed { step: "pane", .. })));
-    assert_eq!(d.execs().remove(0).1.argv, ["rm", "-rf", CRED, TMP]);
+    assert_eq!(d.execs().pop().unwrap().1.argv, ["rm", "-rf", CRED, TMP]);
 }
 
 #[test]
@@ -280,7 +280,7 @@ fn a_failed_cleanup_is_named_in_the_error() {
     let (_, _, out) = launch(
         FakeDriver::new()
             .fail_put(DriverError::NotFound)
-            .exec_results([Ok(moor_core::seam::driver::ExecOutcome::Exited { code: 1 })]),
+            .exec_results([0, 1].map(|code| Ok(ExecOutcome::Exited { code }))),
         FakeSurface::new("/r"),
     );
     let message = format!("{out:?}");

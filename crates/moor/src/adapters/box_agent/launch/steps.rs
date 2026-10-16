@@ -1,20 +1,23 @@
 //! The Box steps of one launch, run as batches.
 
+use moor_core::boxscript::quote;
 use moor_core::name::BoxPath;
 use moor_core::seam::agent_profile::BoxSetup;
-use moor_core::seam::driver::BoxStep;
-use moor_core::seam::proc::Deadline;
+use moor_core::seam::driver::{BoxStep, ExecOutcome, StepDone};
+use moor_core::seam::proc::{Deadline, Tool};
 
 use super::super::brief::{render, BriefInput};
 use super::super::nono_release::sha256_hex;
 use super::super::proxy_env;
 use super::super::sandbox::{self, SandboxInput};
 use super::install::{check_outcome, parse_platform, upload_and_recheck};
-use super::{fail, Failure, Launch, Platform, INSTALL_DEADLINE};
+use super::{fail, Failure, Launch, Platform, AGENT_PATH_LINE, INSTALL_DEADLINE};
 
 /// Which launch step a batch step belongs to, and so how its failure is reported.
 #[derive(Clone, Copy)]
 pub(super) enum Tag {
+    /// The check that the agent command is on the Box's `PATH`.
+    Agent,
     /// The check that the sandbox tool is the pinned binary.
     Check,
     /// The sandbox profile.
@@ -31,6 +34,7 @@ impl Tag {
     /// The failure of this step caused by `e`.
     fn failure(self, e: &impl ToString) -> Failure {
         match self {
+            Self::Agent => fail("agent", e),
             Self::Check | Self::Profile => fail("sandbox", e),
             Self::Brief => fail("brief", e),
             Self::Hooks => fail("hooks", e),
@@ -69,6 +73,24 @@ pub(super) struct Staged {
     pub(super) hooks: BoxSetup,
     /// The agent's preseed files and step.
     pub(super) preseed: BoxSetup,
+}
+
+/// The script that exits non-zero when the agent command is not on the `PATH` the launch uses.
+pub(super) fn agent_check_script() -> String {
+    let program = quote(Tool::Agent.program());
+    format!("{AGENT_PATH_LINE}; command -v {program} >/dev/null 2>&1")
+}
+
+/// The failure of a missing agent command.
+fn agent_missing() -> Failure {
+    let program = Tool::Agent.program();
+    fail(
+        "agent",
+        &format!(
+            "the agent command `{program}` is not on the Box's PATH; install it in the Box image \
+             or in the `setup` commands of .moor.yaml"
+        ),
+    )
 }
 
 impl Launch<'_> {
@@ -113,6 +135,7 @@ impl Launch<'_> {
     /// `plan` holds the steps before it.
     pub(super) fn plan(&self, platform: Platform, plan: &mut Plan) -> Result<Staged, Failure> {
         let (req, cred, ctx) = (self.req, self.cred, self.ctx);
+        plan.push(Tag::Agent, BoxStep::Run(agent_check_script()));
         let sandboxed = self.plan_sandbox(platform, plan)?;
         let hooks = self
             .profile
@@ -170,6 +193,15 @@ impl Launch<'_> {
             let results = (self.driver).batch(&req.handle, connect, steps, &req.worktree, deadline);
             let mut next = plan.steps.len();
             for (i, (result, &tag)) in results.into_iter().zip(tags).enumerate() {
+                if matches!(tag, Tag::Agent) {
+                    match result.map_err(|e| tag.failure(&e))? {
+                        StepDone::Ran {
+                            outcome: ExecOutcome::Exited { code: 0 },
+                            ..
+                        } => continue,
+                        _ => return Err(agent_missing()),
+                    }
+                }
                 let Tag::Check = tag else {
                     result.map_err(|e| tag.failure(&e))?;
                     continue;

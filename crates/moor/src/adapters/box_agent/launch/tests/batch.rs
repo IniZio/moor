@@ -140,7 +140,7 @@ fn a_launch_without_a_proxy_makes_two_batch_calls_after_the_connect_lookup() {
 
 #[test]
 fn a_missing_nono_adds_only_the_upload_and_the_recheck() {
-    let run = launch(true, &[0, NOT_INSTALLED, 0], missing_nono_release());
+    let run = launch(true, &[0, 0, NOT_INSTALLED, 0], missing_nono_release());
     run.out.unwrap();
     assert_eq!(
         box_calls(&run.d),
@@ -157,7 +157,7 @@ fn a_missing_nono_adds_only_the_upload_and_the_recheck() {
 
 #[test]
 fn a_failed_check_refuses_the_launch_before_anything_is_uploaded() {
-    let run = launch(true, &[0, 5], ready_release());
+    let run = launch(true, &[0, 0, 5], ready_release());
     let message = match run.out {
         Err(EngineError::Failed {
             step: "sandbox",
@@ -168,6 +168,57 @@ fn a_failed_check_refuses_the_launch_before_anything_is_uploaded() {
     assert!(message.contains("Landlock"), "{message}");
     assert!(run.d.puts().is_empty());
     assert!(run.s.opened().is_empty());
+}
+
+fn agent_failure(run: Run) -> String {
+    match run.out {
+        Err(EngineError::Failed {
+            step: "agent",
+            message,
+        }) => message,
+        other => format!("unexpected {other:?}"),
+    }
+}
+
+#[test]
+fn a_missing_agent_refuses_a_proxy_launch_before_anything_is_uploaded() {
+    let run = launch(true, &[0, 1], ready_release());
+    assert_eq!(
+        box_calls(&run.d),
+        ["connect_argv", "batch", "batch", "exec"]
+    );
+    assert!(run.d.puts().is_empty());
+    assert!(run.s.opened().is_empty());
+    let message = agent_failure(run);
+    assert!(message.contains("`claude`"), "{message}");
+    assert!(message.contains("`setup`"), "{message}");
+}
+
+#[test]
+fn a_missing_agent_refuses_a_launch_without_a_proxy_before_anything_is_uploaded() {
+    let run = launch(false, &[127], ready_release());
+    assert_eq!(
+        box_calls(&run.d),
+        ["connect_argv", "batch", "batch", "exec"]
+    );
+    assert!(run.d.puts().is_empty());
+    assert!(agent_failure(run).contains("not on the Box's PATH"));
+}
+
+#[test]
+fn the_agent_check_names_the_program_and_the_launch_path() {
+    let run = launch(false, &[], ready_release());
+    run.out.unwrap();
+    let execs = run.d.execs();
+    let script = execs
+        .iter()
+        .filter_map(|e| e.1.argv.get(2))
+        .find(|a| a.contains("command -v"))
+        .expect("agent check");
+    assert_eq!(
+        script,
+        "export PATH=\"$HOME/.local/bin:$HOME/.bun/bin:$PATH\"; command -v 'claude' >/dev/null 2>&1"
+    );
 }
 
 fn leaks(text: &str) -> bool {
