@@ -21,6 +21,7 @@ use crate::testing::proc::{Reply, ScriptedProc};
 use crate::testing::surface::FakeSurface;
 
 mod moor_yaml;
+mod setup_parity;
 mod sync;
 
 pub(in crate::ops::run) const SHA: &str = "0123456789abcdef0123456789abcdef01234567";

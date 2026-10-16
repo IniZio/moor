@@ -104,6 +104,14 @@ pub(crate) fn setup_deadline(lines: usize) -> Duration {
     SETUP_LINE_DEADLINE.saturating_mul(n)
 }
 
+/// The repo `env:` as the variables every command in the Box gets, setup and `run` alike.
+pub(crate) fn exec_env(cfg: &TaskSettings) -> Vec<(String, String)> {
+    cfg.env
+        .iter()
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect()
+}
+
 /// Runs the setup lines as one script in `workdir` after syncing the worktree as `sync` says,
 /// stopping at the first failure.
 ///
@@ -122,11 +130,7 @@ pub(crate) fn run_setup(
     }
     let spec = ExecSpec {
         argv: vec!["sh".to_owned(), "-c".to_owned(), setup_script(&cfg.setup)],
-        env: cfg
-            .env
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect(),
+        env: exec_env(cfg),
         cwd: Some(workdir.clone()),
         sync,
         output: None,
