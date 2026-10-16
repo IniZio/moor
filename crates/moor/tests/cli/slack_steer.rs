@@ -248,7 +248,13 @@ fn one_status_message_is_posted_then_edited_through_the_task_life() {
     assert!(updates[2].text.contains("closed"), "{}", updates[2].text);
 
     assert_edits_target(&updates, &status);
-    assert_eq!(rig.fake.posts().len(), 1, "{:?}", rig.fake.posts());
+    // The needs_input event also posts a separate prompt; only the status is edited.
+    let posts = rig.fake.posts();
+    let status_posts = posts
+        .iter()
+        .filter(|p| !p.text.contains("which database?"))
+        .count();
+    assert_eq!(status_posts, 1, "{posts:?}");
 }
 
 #[test]

@@ -11,6 +11,7 @@ use moor_core::secret::Secret;
 use serde_json::Value;
 
 use super::api::Api;
+use super::prompt::Pending;
 use crate::adapters::clock::SystemClock;
 use crate::env::Env;
 use crate::store::{SlackThread, Store, STORE_FILE};
@@ -103,7 +104,7 @@ impl View {
 }
 
 /// Escapes the characters Slack treats as markup, so a quoted line cannot ping anyone.
-fn escape(s: &str) -> String {
+pub(super) fn escape(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
@@ -248,6 +249,7 @@ pub(crate) fn follow(
         }
     };
     let mut views: HashMap<String, View> = HashMap::new();
+    let mut pending = Pending::default();
     let mut planner = Planner::default();
     let mut cursor = 0;
     loop {
@@ -259,6 +261,7 @@ pub(crate) fn follow(
                         .entry(e.task_name.clone())
                         .or_default()
                         .fold(&e.row.kind, &e.row.payload);
+                    pending.fold(e.row.id, &e.task_name, &e.row.kind, &e.row.payload);
                 }
                 if events.len() == BATCH {
                     continue;
@@ -272,6 +275,7 @@ pub(crate) fn follow(
                     let ok = send(&store, api, bot, &step, log);
                     planner.record(&step, clock.instant(), ok);
                 }
+                pending.post_due(&store, api, bot, &threads, log);
             }
             Err(e) => log(&format!("slack status: {e}")),
         }

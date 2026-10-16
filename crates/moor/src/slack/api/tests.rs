@@ -161,6 +161,112 @@ fn update_message_sends_the_bot_token_and_json_body() {
     );
 }
 
+/// The JSON body of a raw HTTP request.
+fn json_body(request: &str) -> serde_json::Value {
+    let body = request.split_once("\r\n\r\n").expect("body").1;
+    serde_json::from_str(body).expect("json")
+}
+
+#[test]
+fn post_blocks_sends_blocks_and_returns_ts() {
+    let (base, handle) = serve(r#"{"ok":true,"ts":"1730000000.3"}"#);
+    let api = Api::new(&base).expect("api");
+    let blocks = serde_json::json!([{"type":"section","text":{"type":"mrkdwn","text":"q"}}]);
+    let ts = api
+        .post_blocks(
+            &Secret::new(TOKEN.as_bytes().to_vec()),
+            "C1",
+            "1.1",
+            "q",
+            &blocks,
+        )
+        .expect("post");
+    assert_eq!(ts, "1730000000.3");
+    let request = handle.join().expect("server");
+    assert!(request.starts_with("POST /chat.postMessage "), "{request}");
+    assert!(
+        request.contains(&format!("authorization: Bearer {TOKEN}")),
+        "{request}"
+    );
+    assert_eq!(
+        json_body(&request),
+        serde_json::json!({"channel":"C1","thread_ts":"1.1","text":"q","blocks":blocks})
+    );
+}
+
+#[test]
+fn update_blocks_sends_blocks() {
+    let (base, handle) = serve(r#"{"ok":true}"#);
+    let api = Api::new(&base).expect("api");
+    let blocks = serde_json::json!([{"type":"divider"}]);
+    api.update_blocks(
+        &Secret::new(TOKEN.as_bytes().to_vec()),
+        "C1",
+        "1.2",
+        "done",
+        &blocks,
+    )
+    .expect("update");
+    let request = handle.join().expect("server");
+    assert!(request.starts_with("POST /chat.update "), "{request}");
+    assert!(
+        request.contains(&format!("authorization: Bearer {TOKEN}")),
+        "{request}"
+    );
+    assert_eq!(
+        json_body(&request),
+        serde_json::json!({"channel":"C1","ts":"1.2","text":"done","blocks":blocks})
+    );
+}
+
+#[test]
+fn post_ephemeral_sends_user_and_thread() {
+    let (base, handle) = serve(r#"{"ok":true,"message_ts":"1.9"}"#);
+    let api = Api::new(&base).expect("api");
+    api.post_ephemeral(
+        &Secret::new(TOKEN.as_bytes().to_vec()),
+        "C1",
+        "U1",
+        "1.1",
+        "not yours",
+    )
+    .expect("ephemeral");
+    let request = handle.join().expect("server");
+    assert!(
+        request.starts_with("POST /chat.postEphemeral "),
+        "{request}"
+    );
+    assert!(
+        request.contains(&format!("authorization: Bearer {TOKEN}")),
+        "{request}"
+    );
+    assert_eq!(
+        json_body(&request),
+        serde_json::json!({"channel":"C1","user":"U1","thread_ts":"1.1","text":"not yours"})
+    );
+}
+
+#[test]
+fn block_calls_map_ok_false_to_a_slack_error() {
+    let token = Secret::new(TOKEN.as_bytes().to_vec());
+    let blocks = serde_json::json!([]);
+    for call in 0..3 {
+        let (base, handle) = serve(r#"{"ok":false,"error":"channel_not_found"}"#);
+        let api = Api::new(&base).expect("api");
+        let err = match call {
+            0 => api.post_blocks(&token, "C1", "1.1", "q", &blocks).map(drop),
+            1 => api.update_blocks(&token, "C1", "1.2", "q", &blocks),
+            _ => api.post_ephemeral(&token, "C1", "U1", "1.1", "q"),
+        }
+        .expect_err("rejected");
+        handle.join().expect("server");
+        assert!(
+            matches!(&err, ApiError::Slack(code) if code == "channel_not_found"),
+            "{err:?}"
+        );
+    }
+}
+
 #[test]
 fn http_429_maps_to_rate_limited() {
     let (base, handle) = serve_status(

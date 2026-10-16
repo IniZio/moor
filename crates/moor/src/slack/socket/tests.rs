@@ -13,7 +13,8 @@ use moor_core::secret::Secret;
 use serde_json::json;
 use tungstenite::Message;
 
-use super::{next_delay, parse_mention, run, session, Mention, SocketError};
+use super::Click;
+use super::{next_delay, parse_mention, run, session, Inbound, Mention, SocketError};
 use crate::slack::api::Api;
 
 /// Serves one WebSocket client with `script`, returning every text frame it sent back.
@@ -84,10 +85,10 @@ fn acks_every_envelope_and_forwards_only_the_mention() {
         acks,
         vec![r#"{"envelope_id":"env-1"}"#, r#"{"envelope_id":"env-2"}"#]
     );
-    let mentions: Vec<Mention> = rx.try_iter().collect();
+    let mentions: Vec<Inbound> = rx.try_iter().collect();
     assert_eq!(
         mentions,
-        vec![Mention {
+        vec![Inbound::Mention(Mention {
             event_id: "Ev1".into(),
             channel: "C1".into(),
             user: "U1".into(),
@@ -95,7 +96,7 @@ fn acks_every_envelope_and_forwards_only_the_mention() {
             ts: "1730000000.1".into(),
             thread_ts: Some("1730000000.0".into()),
             reply: false,
-        }]
+        })]
     );
 }
 
@@ -271,4 +272,51 @@ fn ignores_messages_that_are_not_user_thread_replies() {
 fn bot_mention_filter_is_skipped_without_authorizations() {
     let event = json!({"type":"message","user":"U1","text":"<@UBOT> hi","ts":"2.0","thread_ts":"1.0","channel":"C1"});
     assert!(parse_mention(&events_api("env", "Ev9", &event)).is_some());
+}
+
+/// An `interactive` envelope with one action.
+fn interactive(payload_type: &str, action_id: &str, value: &str) -> serde_json::Value {
+    json!({"type":"interactive","envelope_id":"env-c","payload":{"type":payload_type,"user":{"id":"U1"},"channel":{"id":"C1"},"container":{"type":"message","message_ts":"3.0","channel_id":"C1"},"message":{"ts":"3.0","thread_ts":"1.0"},"actions":[{"action_id":action_id,"value":value}]}})
+}
+
+/// Runs a session that receives `envelope`, returning the acks and what was forwarded.
+fn forwarded(envelope: serde_json::Value) -> (Vec<String>, Vec<Inbound>) {
+    let (url, server) = fake_slack(move |ws| {
+        send(ws, &envelope);
+        ws.close(None).expect("close");
+    });
+    let (tx, rx) = mpsc::channel();
+    session(&url, &tx).expect("session ends cleanly");
+    (server.join().expect("server"), rx.try_iter().collect())
+}
+
+#[test]
+fn block_actions_is_forwarded_as_click() {
+    let (acks, got) = forwarded(interactive("block_actions", "answer_2", "2"));
+    assert_eq!(acks, vec![r#"{"envelope_id":"env-c"}"#]);
+    assert_eq!(
+        got,
+        vec![Inbound::Click(Click {
+            envelope_id: "env-c".into(),
+            channel: "C1".into(),
+            user: "U1".into(),
+            message_ts: "3.0".into(),
+            thread_ts: Some("1.0".into()),
+            choice: 2,
+        })]
+    );
+}
+
+#[test]
+fn malformed_clicks_are_acked_but_not_forwarded() {
+    for envelope in [
+        interactive("view_submission", "answer_1", "1"),
+        interactive("block_actions", "other_1", "1"),
+        interactive("block_actions", "answer_x", "x"),
+        interactive("block_actions", "answer_0", "0"),
+    ] {
+        let (acks, got) = forwarded(envelope);
+        assert_eq!(acks, vec![r#"{"envelope_id":"env-c"}"#]);
+        assert!(got.is_empty());
+    }
 }
