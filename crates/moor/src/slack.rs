@@ -1,7 +1,9 @@
 //! Slack Socket Mode front end: an app mention in an allowed channel starts a Task.
 
+mod answer;
 mod api;
 mod command;
+mod prompt;
 mod socket;
 mod status;
 
@@ -13,14 +15,16 @@ use std::thread;
 use moor_core::config::SlackConfig;
 use moor_core::request::{CloseReq, Request, StartReq, SteerReq};
 use moor_core::secret::Secret;
+use serde_json::Value;
 
 use crate::adapters::clock::SystemClock;
 use crate::env::Env;
 use crate::store::{Store, STORE_FILE};
 use crate::Moor;
+use answer::{answer_open, handle_click, Fx, Ui};
 use api::Api;
 use command::{decide, failed, reply_action, started, Action, Allow, ReplyAction};
-use socket::Mention;
+use socket::{Inbound, Mention};
 
 /// Diagnostic sink for the controller log.
 pub(crate) type Log = Arc<dyn Fn(&str) + Send + Sync>;
@@ -86,7 +90,7 @@ impl Slack {
     }
 }
 
-/// Handles queued mentions one at a time.
+/// Handles queued mentions and button presses one at a time.
 struct Worker {
     /// Environment for opening the store and the engine.
     env: Env,
@@ -103,13 +107,13 @@ struct Worker {
 }
 
 impl Worker {
-    /// Serves mentions until the socket thread is gone.
-    fn run(&self, mentions: &Receiver<Mention>) {
+    /// Serves queued events until the socket thread is gone.
+    fn run(&self, inbound: &Receiver<Inbound>) {
         let allow = Allow {
             channels: &self.channels,
             users: &self.users,
         };
-        for mention in mentions {
+        for item in inbound {
             let store = match self.open_store() {
                 Ok(store) => store,
                 Err(e) => {
@@ -126,7 +130,17 @@ impl Worker {
                     (self.log)(&format!("slack: reply failed: {e}"));
                 }
             };
-            handle(&mention, &store, &allow, &mut call, &mut reply, &*self.log);
+            let mut ui = ApiUi(self);
+            let mut fx = Fx {
+                call: &mut call,
+                reply: &mut reply,
+                ui: &mut ui,
+                log: &*self.log,
+            };
+            match item {
+                Inbound::Mention(mention) => handle(&mention, &store, &allow, &mut fx),
+                Inbound::Click(click) => handle_click(&click, &store, &mut fx),
+            }
         }
     }
 
@@ -148,28 +162,43 @@ impl Worker {
     }
 }
 
+/// Sends ephemeral messages and message edits through the Web API.
+struct ApiUi<'a>(&'a Worker);
+
+impl Ui for ApiUi<'_> {
+    fn ephemeral(&mut self, channel: &str, user: &str, thread: &str, text: &str) {
+        let w = self.0;
+        if let Err(e) = w
+            .api
+            .post_ephemeral(&w.bot_token, channel, user, thread, text)
+        {
+            (w.log)(&format!("slack: ephemeral failed: {e}"));
+        }
+    }
+
+    fn update(&mut self, channel: &str, ts: &str, text: &str, blocks: &Value) {
+        let w = self.0;
+        if let Err(e) = w.api.update_blocks(&w.bot_token, channel, ts, text, blocks) {
+            (w.log)(&format!("slack: update failed: {e}"));
+        }
+    }
+}
+
 /// Applies one event: dedupe, then steer or close a bound Task, or decide, start and bind.
-fn handle(
-    mention: &Mention,
-    store: &Store,
-    allow: &Allow<'_>,
-    call: &mut dyn FnMut(Request) -> Result<(), String>,
-    reply: &mut dyn FnMut(&str, &str, &str),
-    log: &dyn Fn(&str),
-) {
+fn handle(mention: &Mention, store: &Store, allow: &Allow<'_>, fx: &mut Fx<'_>) {
     match store.slack_event_once(&mention.event_id) {
         Ok(true) => {}
         Ok(false) => return,
-        Err(e) => return log(&format!("slack: {e}")),
+        Err(e) => return (fx.log)(&format!("slack: {e}")),
     }
     let channel = mention.channel.as_str();
     if mention.reply {
-        return handle_reply(mention, store, allow, call, reply, log);
+        return handle_reply(mention, store, allow, fx);
     }
     let thread = mention.thread_ts.as_deref().unwrap_or(&mention.ts);
     let bound = match store.slack_thread(channel, thread) {
         Ok(bound) => bound,
-        Err(e) => return log(&format!("slack: {e}")),
+        Err(e) => return (fx.log)(&format!("slack: {e}")),
     };
     let action = decide(
         allow,
@@ -181,7 +210,7 @@ fn handle(
     );
     match action {
         Action::Ignore => {}
-        Action::Reply(text) => reply(channel, thread, &text),
+        Action::Reply(text) => (fx.reply)(channel, thread, &text),
         Action::Start { name, repo, goal } => {
             let req = StartReq {
                 name: name.clone(),
@@ -195,28 +224,22 @@ fn handle(
                 trust_moor_yaml: false,
                 repo: Some(repo),
             };
-            match call(Request::Start(req)) {
+            match (fx.call)(Request::Start(req)) {
                 Ok(()) => {
                     if let Err(e) = store.bind_slack_thread(channel, thread, &name, &mention.user) {
-                        log(&format!("slack: {e}"));
+                        (fx.log)(&format!("slack: {e}"));
                     }
-                    reply(channel, thread, &started(&name));
+                    (fx.reply)(channel, thread, &started(&name));
                 }
-                Err(message) => reply(channel, thread, &failed(&name, &message)),
+                Err(message) => (fx.reply)(channel, thread, &failed(&name, &message)),
             }
         }
     }
 }
 
-/// Applies a plain thread reply: the Task owner steers or closes, anyone else is refused.
-fn handle_reply(
-    mention: &Mention,
-    store: &Store,
-    allow: &Allow<'_>,
-    call: &mut dyn FnMut(Request) -> Result<(), String>,
-    reply: &mut dyn FnMut(&str, &str, &str),
-    log: &dyn Fn(&str),
-) {
+/// Applies a plain thread reply: the Task owner answers an open prompt, steers or closes;
+/// anyone else is refused.
+fn handle_reply(mention: &Mention, store: &Store, allow: &Allow<'_>, fx: &mut Fx<'_>) {
     let channel = mention.channel.as_str();
     let Some(thread) = mention.thread_ts.as_deref() else {
         return;
@@ -231,25 +254,39 @@ fn handle_reply(
     let (task, owner) = match found {
         Ok(Some(pair)) => pair,
         Ok(None) => return,
-        Err(e) => return log(&format!("slack: {e}")),
+        Err(e) => return (fx.log)(&format!("slack: {e}")),
     };
+    if mention.user == owner {
+        if let Some(choice) = bare_number(&mention.text) {
+            if answer_open(channel, thread, &owner, choice, store, fx) {
+                return;
+            }
+        }
+    }
     let result = match reply_action(&owner, &mention.user, &mention.text) {
         ReplyAction::Ignore => return,
-        ReplyAction::Refuse(text) => return reply(channel, thread, &text),
-        ReplyAction::Steer(text) => call(Request::Steer(SteerReq {
+        ReplyAction::Refuse(text) => return (fx.reply)(channel, thread, &text),
+        ReplyAction::Steer(text) => (fx.call)(Request::Steer(SteerReq {
             task,
             text: Some(text),
             menu: None,
         })),
-        ReplyAction::Close => call(Request::Close(CloseReq {
+        ReplyAction::Close => (fx.call)(Request::Close(CloseReq {
             task,
             force: false,
             trust_moor_yaml: false,
         })),
     };
     if let Err(message) = result {
-        reply(channel, thread, &message);
+        (fx.reply)(channel, thread, &message);
     }
+}
+
+/// The positive number a reply consists of, ignoring user mentions.
+fn bare_number(text: &str) -> Option<u32> {
+    let mut words = text.split_whitespace().filter(|w| !w.starts_with("<@"));
+    let n = words.next()?.parse::<u32>().ok()?;
+    (words.next().is_none() && n > 0).then_some(n)
 }
 
 #[cfg(test)]

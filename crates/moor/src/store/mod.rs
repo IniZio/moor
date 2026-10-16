@@ -31,7 +31,7 @@ pub(crate) use agent::SessionRow;
 pub(crate) use proxy::{Fenced, Lease, ProxyPorts, ProxyRow, ReadyProc, Reserve};
 pub(crate) use runs::RunRow;
 pub(crate) use runs::{NewRun, RunOutcome};
-pub(crate) use slack::SlackThread;
+pub(crate) use slack::{SlackPrompt, SlackThread};
 
 /// Schema version this build reads and writes.
 pub(crate) const SCHEMA_VERSION: &str = "1";

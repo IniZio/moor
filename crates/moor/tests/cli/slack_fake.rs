@@ -46,6 +46,8 @@ pub(crate) struct Post {
     pub(crate) text: String,
     /// The ts the fake assigned to the message.
     pub(crate) ts: String,
+    /// Block Kit blocks, `Null` when absent.
+    pub(crate) blocks: Value,
 }
 
 /// A `chat.update` the controller made with a valid bot token.
@@ -57,6 +59,39 @@ pub(crate) struct Update {
     pub(crate) ts: String,
     /// New message text.
     pub(crate) text: String,
+    /// New Block Kit blocks, `Null` when absent.
+    pub(crate) blocks: Value,
+}
+
+/// A `chat.postEphemeral` the controller made with a valid bot token.
+#[derive(Clone, Debug)]
+pub(crate) struct Ephemeral {
+    /// Channel id.
+    pub(crate) channel: String,
+    /// The only user who sees the message.
+    pub(crate) user: String,
+    /// Thread root ts.
+    pub(crate) thread_ts: String,
+    /// Message text.
+    pub(crate) text: String,
+}
+
+/// A button press to push to the controller.
+pub(crate) struct Click<'a> {
+    /// Envelope id the controller must ack.
+    pub(crate) envelope_id: &'a str,
+    /// Channel of the prompt message.
+    pub(crate) channel: &'a str,
+    /// User who pressed the button.
+    pub(crate) user: &'a str,
+    /// Ts of the prompt message.
+    pub(crate) message_ts: &'a str,
+    /// Thread root ts of the prompt message.
+    pub(crate) thread_ts: &'a str,
+    /// The button's value.
+    pub(crate) value: &'a str,
+    /// The button's action id.
+    pub(crate) action_id: &'a str,
 }
 
 /// A plain message to push to the controller.
@@ -185,6 +220,27 @@ impl FakeSlack {
         self.queue(reply.envelope_id, reply.event_id, &event);
     }
 
+    /// Queues an `interactive` envelope carrying a `block_actions` button press.
+    pub(crate) fn send_click(&self, click: &Click<'_>) {
+        let envelope = json!({
+            "type": "interactive",
+            "envelope_id": click.envelope_id,
+            "payload": {
+                "type": "block_actions",
+                "user": {"id": click.user},
+                "channel": {"id": click.channel},
+                "container": {
+                    "type": "message",
+                    "message_ts": click.message_ts,
+                    "channel_id": click.channel,
+                },
+                "message": {"ts": click.message_ts, "thread_ts": click.thread_ts},
+                "actions": [{"action_id": click.action_id, "value": click.value}],
+            },
+        });
+        self.lock().outbox.push_back(envelope.to_string());
+    }
+
     fn queue(&self, envelope_id: &str, event_id: &str, event: &Value) {
         let envelope = json!({
             "type": "events_api",
@@ -215,6 +271,7 @@ impl FakeSlack {
                     thread_ts: text("thread_ts"),
                     text: text("text"),
                     ts: r.reply["ts"].as_str().unwrap_or_default().to_owned(),
+                    blocks: r.body["blocks"].clone(),
                 }
             })
             .collect()
@@ -231,9 +288,33 @@ impl FakeSlack {
                     channel: text("channel"),
                     ts: text("ts"),
                     text: text("text"),
+                    blocks: r.body["blocks"].clone(),
                 }
             })
             .collect()
+    }
+
+    /// Ephemeral messages sent with the bot token, in order.
+    pub(crate) fn ephemerals(&self) -> Vec<Ephemeral> {
+        self.requests()
+            .iter()
+            .filter(|r| r.path == "/chat.postEphemeral" && r.auth == format!("Bearer {BOT_TOKEN}"))
+            .map(|r| {
+                let text = |key: &str| r.body[key].as_str().unwrap_or_default().to_owned();
+                Ephemeral {
+                    channel: text("channel"),
+                    user: text("user"),
+                    thread_ts: text("thread_ts"),
+                    text: text("text"),
+                }
+            })
+            .collect()
+    }
+
+    /// Waits until at least `n` ephemeral messages exist and returns all of them.
+    pub(crate) fn wait_ephemerals(&self, n: usize) -> Vec<Ephemeral> {
+        Self::wait(|| Some(self.ephemerals()).filter(|e| e.len() >= n))
+            .unwrap_or_else(|| panic!("expected {n} ephemerals, saw {:?}", self.ephemerals()))
     }
 
     /// Waits until at least `n` updates exist and returns all of them.
@@ -357,6 +438,9 @@ fn serve_http(mut stream: TcpStream, state: &Mutex<State>, ws_port: u16) {
         }
         "/chat.update" if auth == format!("Bearer {BOT_TOKEN}") => {
             json!({"ok": true, "channel": body["channel"], "ts": body["ts"]})
+        }
+        "/chat.postEphemeral" if auth == format!("Bearer {BOT_TOKEN}") => {
+            json!({"ok": true, "message_ts": message_ts(guard.posted)})
         }
         _ => json!({"ok": false, "error": "invalid_auth"}),
     };
