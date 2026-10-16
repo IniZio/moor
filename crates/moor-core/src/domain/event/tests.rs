@@ -150,6 +150,12 @@ fn all_events() -> Vec<Event> {
             question: Some(s("q")),
             options: vec![s("a")],
         },
+        Event::Proof {
+            name: s("a.png"),
+            size: 3,
+            sha256: s("ab"),
+            refused: None,
+        },
     ]
 }
 
@@ -207,6 +213,7 @@ const fn event_index(e: &Event) -> usize {
         Event::CredentialWithheld { .. } => 38,
         Event::ProxyCredentialFailed { .. } => 39,
         Event::NeedsInput { .. } => 40,
+        Event::Proof { .. } => 41,
     }
 }
 
@@ -214,7 +221,7 @@ const fn event_index(e: &Event) -> usize {
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 41);
+    assert_eq!(all.len(), 42);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }

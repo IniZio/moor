@@ -17,6 +17,7 @@ use moor_core::seam::proc::Tool;
 use moor_core::{ProviderId, ShowReq, StartReq, TaskId, TaskName};
 
 mod pane;
+mod proof;
 
 use super::run;
 use crate::cx::Cx;

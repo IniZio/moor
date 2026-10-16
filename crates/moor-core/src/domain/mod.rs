@@ -3,6 +3,7 @@
 pub mod boxes;
 pub mod decision;
 pub mod event;
+pub mod proof;
 pub mod run;
 pub mod task;
 
