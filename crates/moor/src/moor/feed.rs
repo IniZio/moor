@@ -46,8 +46,9 @@ impl Moor {
 
     /// Settle every open Task once, as `start` does; returns failure and warning messages to log.
     ///
-    /// Autosleep runs with it, so an agent idle past its limit sleeps without a client.
-    pub(crate) fn settle_open(&self) -> Vec<String> {
+    /// Autosleep runs with it, so an agent idle past its limit sleeps without a client. New or
+    /// changed proof files are recorded and copied too, up to `proof_cap` bytes each.
+    pub(crate) fn settle_open(&self, proof_cap: u64) -> Vec<String> {
         let settled = self
             .cx
             .store()
@@ -55,6 +56,9 @@ impl Moor {
         let mut out = Vec::new();
         if let Err(e) = settled {
             out.push(e.error.to_string());
+        }
+        if let Ok(store) = self.cx.store() {
+            ops::proof::sync_proofs(&self.cx, store, proof_cap);
         }
         out.extend(self.cx.take_warnings().into_iter().map(|w| w.message));
         out

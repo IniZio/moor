@@ -13,7 +13,7 @@ use moor_core::seam::driver::{
     AcquireReq, Acquired, BoxListing, BoxStep, Driver, DriverCaps, DriverError, ExecOutcome,
     ExecSpec, Released, SleepKind, SleepOutcome, StepDone,
 };
-use moor_core::seam::proc::Deadline;
+use moor_core::seam::proc::{Deadline, Output};
 use moor_core::{BoxHandle, BoxPath, ProviderId};
 
 pub(crate) use script::PutCall;
@@ -34,6 +34,7 @@ struct State {
     fail_copy_out: Option<DriverError>,
     copy_content: Option<Vec<u8>>,
     exec_results: VecDeque<Result<ExecOutcome, DriverError>>,
+    exec_stdout: VecDeque<String>,
     execs: Vec<(BoxHandle, ExecSpec, Deadline)>,
     copies: Vec<CopyCall>,
     files: Vec<(String, String, String)>,
@@ -76,52 +77,6 @@ impl FakeDriver {
         self.state.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
-    /// Puts every box workdir under `root` instead of `/work`.
-    pub(crate) fn work_root(self, root: &str) -> Self {
-        self.st().work_root = Some(root.to_owned());
-        self
-    }
-
-    /// Moves where later `workdir` lookups report every box.
-    pub(crate) fn set_work_root(&self, root: &str) {
-        self.st().work_root = Some(root.to_owned());
-    }
-
-    /// The next `workdir` fails once with `e`.
-    pub(crate) fn fail_workdir(&self, e: DriverError) {
-        self.st().fail_workdir = Some(e);
-    }
-
-    /// The next `acquire` fails once with `e`.
-    pub(crate) fn fail_acquire(self, e: DriverError) -> Self {
-        self.st().fail_acquire = Some(e);
-        self
-    }
-
-    /// The next `release` fails once with `e`.
-    pub(crate) fn fail_release(self, e: DriverError) -> Self {
-        self.st().fail_release = Some(e);
-        self
-    }
-
-    /// Every `release` fails with `e`.
-    pub(crate) fn fail_release_always(self, e: DriverError) -> Self {
-        self.st().fail_release_always = Some(e);
-        self
-    }
-
-    /// The next `list` fails once with `e`.
-    pub(crate) fn fail_list(self, e: DriverError) -> Self {
-        self.st().fail_list = Some(e);
-        self
-    }
-
-    /// The next `copy_out` fails once with `e`.
-    pub(crate) fn fail_copy_out(self, e: DriverError) -> Self {
-        self.st().fail_copy_out = Some(e);
-        self
-    }
-
     /// Makes every `copy_out` write `content` to its destination.
     pub(crate) fn copy_text(self, content: impl AsRef<[u8]>) -> Self {
         self.st().copy_content = Some(content.as_ref().to_vec());
@@ -134,6 +89,14 @@ impl FakeDriver {
         rs: impl IntoIterator<Item = Result<ExecOutcome, DriverError>>,
     ) -> Self {
         self.st().exec_results.extend(rs);
+        self
+    }
+
+    /// Queues text that later `exec` calls write to their `Output::Log` file, served in order.
+    pub(crate) fn exec_stdout(self, out: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.st()
+            .exec_stdout
+            .extend(out.into_iter().map(Into::into));
         self
     }
 
@@ -256,6 +219,9 @@ impl Driver for FakeDriver {
         s.execs.push((handle.clone(), spec.clone(), deadline));
         if !s.live.iter().any(|h| h == handle.as_str()) {
             return Err(DriverError::NotFound);
+        }
+        if let (Some(Output::Log(path)), Some(text)) = (&spec.output, s.exec_stdout.pop_front()) {
+            write_bytes(path, text.as_bytes())?;
         }
         s.exec_results
             .pop_front()
@@ -391,6 +357,7 @@ impl Driver for FakeDriver {
     }
 }
 
+mod knobs;
 mod script;
 #[cfg(test)]
 mod tests;

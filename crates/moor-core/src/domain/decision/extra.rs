@@ -127,6 +127,17 @@ pub enum ExtraEvent {
         /// Whether the submit key was pressed a second time.
         submit_retried: bool,
     },
+    /// A new or changed proof file was found in the Box.
+    Proof {
+        /// The file name under the proof directory.
+        name: String,
+        /// The file size in bytes.
+        size: u64,
+        /// The hex SHA-256 digest of the file.
+        sha256: String,
+        /// Why the file was not copied, when it was over the size cap.
+        refused: Option<String>,
+    },
     /// The Proxy for the task is ready to accept connections.
     ProxyStarted {
         /// Port the Box side connects to.
@@ -223,6 +234,17 @@ impl From<ExtraEvent> for Event {
             ExtraEvent::TunnelRestarted { box_port, reason } => {
                 Self::TunnelRestarted { box_port, reason }
             }
+            ExtraEvent::Proof {
+                name,
+                size,
+                sha256,
+                refused,
+            } => Self::Proof {
+                name,
+                size,
+                sha256,
+                refused,
+            },
         }
     }
 }
@@ -306,6 +328,17 @@ impl TryFrom<Event> for ExtraEvent {
             Event::TunnelRestarted { box_port, reason } => {
                 Ok(Self::TunnelRestarted { box_port, reason })
             }
+            Event::Proof {
+                name,
+                size,
+                sha256,
+                refused,
+            } => Ok(Self::Proof {
+                name,
+                size,
+                sha256,
+                refused,
+            }),
             e @ (Event::Started
             | Event::Rejected { .. }
             | Event::WaitingForBox { .. }

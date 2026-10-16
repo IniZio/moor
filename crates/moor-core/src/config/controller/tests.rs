@@ -68,6 +68,20 @@ fn zero_settle_interval_names_key() {
 }
 
 #[test]
+fn proof_cap_defaults_and_parses() {
+    assert_eq!(ControllerConfig::default().proof_max_bytes(), 104_857_600);
+    let c = parse_controller("c.yaml", "proof_max_bytes: 2048\n").unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(c.proof_max_bytes(), 2048);
+}
+
+#[test]
+fn zero_proof_cap_names_key() {
+    let e = err("proof_max_bytes: 0\n");
+    assert_eq!(e.path, "proof_max_bytes");
+    assert_eq!(e.file, "c.yaml");
+}
+
+#[test]
 fn web_section_parses_and_defaults_to_none() {
     let c = parse_controller("c.yaml", "web: {port: 8765, token_file: /x/token}\n")
         .unwrap_or_else(|e| panic!("{e}"));

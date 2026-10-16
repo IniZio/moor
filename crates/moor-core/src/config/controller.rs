@@ -19,6 +19,9 @@ pub struct ControllerConfig {
     /// Seconds between passes that settle every open Task's agent state; must be above 0.
     /// None means 5.
     pub settle_every_secs: Option<u64>,
+    /// Largest proof file, in bytes, the controller copies to its state dir; must be above 0.
+    /// None means 104857600 (100 MB).
+    pub proof_max_bytes: Option<u64>,
     /// Loopback-only web UI; None means it is not served.
     pub web: Option<WebConfig>,
     /// Slack Socket Mode app; None means it is not started.
@@ -218,7 +221,16 @@ fn validate_slack(file: &str, slack: &SlackConfig) -> Result<(), ConfigError> {
 /// Seconds between settle passes when the config does not say.
 const DEFAULT_SETTLE_SECS: u64 = 5;
 
+/// Largest proof file the controller copies when the config does not say.
+pub const DEFAULT_PROOF_MAX_BYTES: u64 = 100 * 1024 * 1024;
+
 impl ControllerConfig {
+    /// The largest proof file, in bytes, that is copied.
+    #[must_use]
+    pub fn proof_max_bytes(&self) -> u64 {
+        self.proof_max_bytes.unwrap_or(DEFAULT_PROOF_MAX_BYTES)
+    }
+
     /// The time between settle passes.
     #[must_use]
     pub fn settle_every(&self) -> Duration {
@@ -240,6 +252,9 @@ pub fn parse_controller(file: &str, text: &str) -> Result<ControllerConfig, Conf
     }
     if cfg.settle_every_secs == Some(0) {
         return Err(ConfigError::new("settle_every_secs", "must be above 0").in_file(file));
+    }
+    if cfg.proof_max_bytes == Some(0) {
+        return Err(ConfigError::new("proof_max_bytes", "must be above 0").in_file(file));
     }
     if let Some(web) = &cfg.web {
         if web.port == 0 {

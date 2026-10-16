@@ -11,6 +11,7 @@ mod cp;
 pub(crate) mod env;
 mod gate;
 mod open;
+pub(crate) mod proof;
 mod run;
 pub(crate) mod show;
 mod sleep;
