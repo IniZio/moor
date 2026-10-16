@@ -269,6 +269,33 @@ fn transcript_script_prints_the_marker_and_exits_zero_without_a_jsonl() {
 }
 
 #[test]
+fn transcript_script_fails_when_the_archive_is_empty() {
+    let root = tempfile::tempdir().unwrap();
+    let home = root.path().join("home");
+    let work = root.path().join("work");
+    let bin = root.path().join("bin");
+    for d in [&home, &work, &bin] {
+        std::fs::create_dir_all(d).unwrap();
+    }
+    let tar = bin.join("tar");
+    std::fs::write(&tar, "#!/bin/sh\n: > \"$2\"\n").unwrap();
+    std::fs::set_permissions(&tar, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    let d = project_dir(&home, &work);
+    std::fs::create_dir_all(&d).unwrap();
+    std::fs::write(d.join("a.jsonl"), "{}").unwrap();
+    let path = format!("{}:{}", bin.display(), std::env::var("PATH").unwrap());
+    let out = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(Claude.transcript_script(".moor/t.tgz"))
+        .env("HOME", &home)
+        .env("PATH", path)
+        .current_dir(&work)
+        .output()
+        .unwrap();
+    assert_ne!(out.status.code(), Some(0), "{out:?}");
+}
+
+#[test]
 fn transcript_script_archives_when_a_jsonl_exists() {
     let (out, _root) = run_script(|home, work| {
         let d = project_dir(home, work);
