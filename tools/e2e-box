@@ -5,13 +5,15 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 
 usage() {
   cat <<'EOF'
-usage: tools/e2e-box --provider-config FILE --pilot REPO [options]
+usage: tools/e2e-box --provider-config FILE --moor-config FILE --pilot REPO [options]
 
 Drives one Task through start, N sleep/wake cycles and close on a real Box,
 timing each phase against a budget. Exit 0 only if every phase passes.
 
 required:
   --provider-config FILE  crabbox config naming the Box provider (exported as CRABBOX_CONFIG)
+  --moor-config FILE      moor config naming the Box provider (exported as MOOR_CONFIG for every
+                          moor call; the user's own config is never inherited)
   --pilot REPO            git repository to run the Task from
 
 options:
@@ -33,6 +35,8 @@ budgets, seconds (defaults):
   --start-box-ready 30  --start-proxy 15  --start-session 20  --start-total 90
   --sleep 15  --tunnels-gone 5  --wake-woke 20  --wake-relaunch 25
   --wake-total 45  --close 30
+start.setup (box_ready to setup_finished: the pilot's own `setup:` workload)
+is informational (budget none) and is excluded from start.total.
 Each moor command also runs under an outer timeout of max(3 x budget, 120) s.
 
 Install agent CLIs in the pilot's .moor.yaml `setup:` (it runs before launch),
@@ -41,9 +45,7 @@ not in --box-step.
 Failed phases print the real elapsed time, the phase budget (none for asserts)
 and a short reason: PHASE wake1 took=45.0s budget=45.0s FAIL (no relaunched event)
 
-The Box provider for moor itself comes from its own config
-($XDG_CONFIG_HOME/moor/config.yaml or the pilot's .moor.yaml); this script
-does not write it. Needs jq, ps, awk, crabbox, cargo.
+Needs jq, ps, awk, crabbox, cargo.
 
 Every moor stderr is appended to <state-dir>/moor-stderr.log. With
 MOOR_TRACE_CRABBOX=1 the run ends with per crabbox subcommand call counts and
@@ -55,7 +57,7 @@ EOF
 
 die() { echo "e2e-box: $*" >&2; exit 2; }
 
-cfg="" pilot="" cycles=2 name="e2e-$(date +%s)" moor="" state="" dry=0 goal="Reply with OK and wait."
+cfg="" moor_cfg="" pilot="" cycles=2 name="e2e-$(date +%s)" moor="" state="" dry=0 goal="Reply with OK and wait."
 start_args=() box_steps=()
 b_box_ready=30 b_proxy=15 b_session=20 b_start_total=90 b_sleep=15 b_tunnels=5
 b_woke=20 b_relaunch=25 b_wake_total=45 b_close=30
@@ -65,6 +67,7 @@ while [ $# -gt 0 ]; do
     -h|--help) usage; exit 0 ;;
     --dry-run) dry=1; shift; continue ;;
     --provider-config) cfg=$2 ;;
+    --moor-config) moor_cfg=$2 ;;
     --pilot) pilot=$2 ;;
     --cycles) cycles=$2 ;;
     --name) name=$2 ;;
@@ -87,14 +90,18 @@ while [ $# -gt 0 ]; do
   esac
   shift 2
 done
-if [ -z "$cfg" ] || [ -z "$pilot" ]; then usage >&2; die "--provider-config and --pilot are required"; fi
+if [ -z "$cfg" ] || [ -z "$moor_cfg" ] || [ -z "$pilot" ]; then
+  usage >&2; die "--provider-config, --moor-config and --pilot are required"
+fi
 [ -f "$cfg" ] || die "provider config not found: $cfg"
+[ -f "$moor_cfg" ] || die "moor config not found: $moor_cfg"
 [ -d "$pilot/.git" ] || [ -f "$pilot/.git" ] || die "pilot is not a git checkout: $pilot"
 case "$cycles" in ''|*[!0-9]*) die "--cycles must be a number" ;; esac
 cfg="$(cd "$(dirname "$cfg")" && pwd)/$(basename "$cfg")"
+moor_cfg="$(cd "$(dirname "$moor_cfg")" && pwd)/$(basename "$moor_cfg")"
 pilot="$(cd "$pilot" && pwd)"
 
-export CRABBOX_CONFIG="$cfg"
+export CRABBOX_CONFIG="$cfg" MOOR_CONFIG="$moor_cfg"
 scratch="$(mktemp -d)"
 if [ "$dry" = 1 ]; then state="${state:-<fresh-dir>}"; else state="${state:-$(mktemp -d)}"; mkdir -p "$state"; fi
 results="$scratch/results"
@@ -103,7 +110,7 @@ started=0 closed=0 provider="" box="" handle="" ok=1
 
 if [ "$dry" = 1 ]; then
   echo "e2e-box: dry run (nothing executed)"
-  echo "+ CRABBOX_CONFIG=$cfg"
+  echo "+ CRABBOX_CONFIG=$cfg MOOR_CONFIG=$moor_cfg"
   moor="${moor:-<repo>/target/debug/moor}"
 else
   tdir="$(timeout 60 cargo metadata --no-deps --format-version 1 --manifest-path "$root/Cargo.toml" | jq -r .target_directory)"
@@ -179,6 +186,7 @@ phase_other_tunnels() {
   n="$(other_tunnels)"
   echo "e2e-box: $1: $n other tunnel process(es) naming the Box"
   phase_lines "$1" report --name "$1" --took-ms 0
+  if [ "$n" -gt 0 ]; then tunnel_diag; fi
 }
 # tunnel_diag: appends tunnel process lines to the moor stderr log and prints their args (secret-looking args redacted).
 tunnel_diag() {

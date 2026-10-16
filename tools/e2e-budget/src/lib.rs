@@ -26,8 +26,8 @@ pub struct Phase {
     pub name: String,
     /// Measured duration; `None` when an endpoint event never happened.
     pub took_ms: Option<i64>,
-    /// Maximum allowed duration, inclusive.
-    pub budget_ms: i64,
+    /// Maximum allowed duration, inclusive; `None` for an informational phase.
+    pub budget_ms: Option<i64>,
 }
 
 fn secs(ms: i64) -> String {
@@ -37,7 +37,8 @@ fn secs(ms: i64) -> String {
 impl Phase {
     /// True when the phase was measured and took no longer than its budget.
     pub fn pass(&self) -> bool {
-        self.took_ms.is_some_and(|t| t <= self.budget_ms)
+        self.took_ms
+            .is_some_and(|t| self.budget_ms.is_none_or(|b| t <= b))
     }
 
     /// One report line, e.g. `PHASE start.box_ready took=12.3s budget=30.0s PASS`.
@@ -46,13 +47,10 @@ impl Phase {
             .took_ms
             .map_or_else(|| "missing".to_string(), |t| format!("{}s", secs(t)));
         let word = if self.pass() { "PASS" } else { "FAIL" };
-        format!(
-            "PHASE {} took={} budget={}s {}",
-            self.name,
-            took,
-            secs(self.budget_ms),
-            word
-        )
+        let budget = self
+            .budget_ms
+            .map_or_else(|| "none".to_string(), |b| format!("{}s", secs(b)));
+        format!("PHASE {} took={took} budget={budget} {word}", self.name)
     }
 }
 
@@ -70,11 +68,11 @@ pub fn parse_jsonl(text: &str) -> Result<Vec<Event>, String> {
 pub struct StartBudgets {
     /// `started` to `box_ready`.
     pub box_ready_ms: i64,
-    /// `attached` to `proxy_started`.
+    /// `setup_finished` (else `box_ready`) to `proxy_started`.
     pub proxy_ms: i64,
     /// `proxy_started` to `session_started`.
     pub session_ms: i64,
-    /// `started` to `session_started`.
+    /// `started` to `session_started`, minus the setup duration.
     pub total_ms: i64,
 }
 
@@ -110,29 +108,41 @@ fn phase(name: String, took_ms: Option<i64>, budget_ms: i64) -> Phase {
     Phase {
         name,
         took_ms,
-        budget_ms,
+        budget_ms: Some(budget_ms),
     }
 }
 
-/// Builds the four start-flow phases in report order.
+/// Builds the start-flow phases in report order.
+///
+/// `start.setup` (the pilot's own `setup:` workload, `box_ready` to
+/// `setup_finished`) is informational and is excluded from `start.total`.
 pub fn start_phases(events: &[Event], b: &StartBudgets) -> Vec<Phase> {
     let started = first(events, "started", None);
     let box_ready = next(events, "box_ready", started);
-    let attached = first(events, "attached", None);
-    let proxy = next(events, "proxy_started", attached);
+    let setup_finished = next(events, "setup_finished", box_ready);
+    let proxy_from = setup_finished.or(box_ready);
+    let proxy = next(events, "proxy_started", proxy_from);
     let session_from_proxy = first(events, "proxy_started", None);
     let session = next(events, "session_started", session_from_proxy);
     let t0 = started.map(|e| e.ts_ms);
     let session_after_start = next(events, "session_started", started);
-    vec![
-        phase(
-            "start.box_ready".into(),
-            span(t0, box_ready),
-            b.box_ready_ms,
-        ),
+    let setup_ms = setup_finished.and_then(|f| span(box_ready.map(|e| e.ts_ms), Some(f)));
+    let mut phases = vec![phase(
+        "start.box_ready".into(),
+        span(t0, box_ready),
+        b.box_ready_ms,
+    )];
+    if setup_ms.is_some() {
+        phases.push(Phase {
+            name: "start.setup".into(),
+            took_ms: setup_ms,
+            budget_ms: None,
+        });
+    }
+    phases.extend([
         phase(
             "start.proxy".into(),
-            span(attached.map(|e| e.ts_ms), proxy),
+            span(proxy_from.map(|e| e.ts_ms), proxy),
             b.proxy_ms,
         ),
         phase(
@@ -142,10 +152,11 @@ pub fn start_phases(events: &[Event], b: &StartBudgets) -> Vec<Phase> {
         ),
         phase(
             "start.total".into(),
-            span(t0, session_after_start),
+            span(t0, session_after_start).map(|t| t - setup_ms.unwrap_or(0)),
             b.total_ms,
         ),
-    ]
+    ]);
+    phases
 }
 
 /// Budgets for one sleep/wake cycle.
