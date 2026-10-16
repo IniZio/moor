@@ -223,3 +223,34 @@ fn prompt_answered_once() {
     let got = store.slack_prompt_by_message("C1", "2.2").unwrap().unwrap();
     assert_eq!(got.answer.as_deref(), Some("1. a"));
 }
+
+#[test]
+fn proof_posted_once_per_digest() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = open(dir.path());
+    assert!(!store.slack_proof_posted("t", "shot.png", "aa").unwrap());
+    store
+        .mark_slack_proof_posted("t", "shot.png", "aa")
+        .unwrap();
+    assert!(store.slack_proof_posted("t", "shot.png", "aa").unwrap());
+    assert!(!store.slack_proof_posted("t", "shot.png", "bb").unwrap());
+    assert!(!store.slack_proof_posted("u", "shot.png", "aa").unwrap());
+    store
+        .mark_slack_proof_posted("t", "shot.png", "aa")
+        .unwrap();
+    assert!(store.slack_proof_posted("t", "shot.png", "aa").unwrap());
+}
+
+#[test]
+fn proof_posted_survives_reopen() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, clock) = open(dir.path());
+    store
+        .mark_slack_proof_posted("t", "shot.png", "aa")
+        .unwrap();
+    drop(store);
+    let path = dir.path().join("state").join("moor.db");
+    let store = Store::open(&path, clock).unwrap();
+    assert!(store.slack_proof_posted("t", "shot.png", "aa").unwrap());
+    assert!(!store.slack_proof_posted("t", "shot.png", "bb").unwrap());
+}

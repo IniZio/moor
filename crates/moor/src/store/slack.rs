@@ -208,6 +208,39 @@ impl Store {
             .is_some())
     }
 
+    /// True once this proof file, at this exact content digest, was posted for the task.
+    pub(crate) fn slack_proof_posted(
+        &self,
+        task: &str,
+        name: &str,
+        sha256: &str,
+    ) -> Result<bool, StoreError> {
+        Ok(self
+            .reader()?
+            .query_row(
+                "SELECT 1 FROM slack_proofs WHERE task = ? AND name = ? AND sha256 = ?",
+                params![task, name, sha256],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some())
+    }
+
+    /// Records a posted proof file; repeating the same name and digest is a no-op.
+    pub(crate) fn mark_slack_proof_posted(
+        &self,
+        task: &str,
+        name: &str,
+        sha256: &str,
+    ) -> Result<(), StoreError> {
+        let now = self.now();
+        self.writer()?.execute(
+            "INSERT OR IGNORE INTO slack_proofs (task, name, sha256, posted_at) VALUES (?, ?, ?, ?)",
+            params![task, name, sha256, now.as_millis()],
+        )?;
+        Ok(())
+    }
+
     /// Records a posted prompt; ignored when the event already has one.
     pub(crate) fn add_slack_prompt(&self, p: &SlackPrompt) -> Result<(), StoreError> {
         let now = self.now();

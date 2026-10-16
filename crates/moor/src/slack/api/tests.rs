@@ -314,3 +314,191 @@ fn rejects_a_base_url_without_http_scheme() {
         Err(ApiError::Transport(_))
     ));
 }
+
+/// One request a [`serve_routes`] fake received.
+struct Seen {
+    /// Request path.
+    path: String,
+    /// Lower-cased header block, including the request line.
+    head: String,
+    /// Request body.
+    body: Vec<u8>,
+}
+
+/// Serves `count` requests on loopback, answering each by path from `routes`.
+///
+/// A route reply of `("200 OK", text)`; `{BASE}` in `text` becomes the fake's base URL.
+fn serve_routes(
+    count: usize,
+    routes: &'static [(&'static str, &'static str, &'static str)],
+) -> (String, JoinHandle<Vec<Seen>>) {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+    let base = format!("http://{}", listener.local_addr().expect("addr"));
+    let own = base.clone();
+    let handle = std::thread::spawn(move || {
+        let mut seen = Vec::new();
+        for _ in 0..count {
+            let (mut conn, _) = listener.accept().expect("accept");
+            conn.set_read_timeout(Some(Duration::from_secs(2)))
+                .expect("timeout");
+            let mut request = Vec::new();
+            let mut buf = [0_u8; 4096];
+            while !request_complete(&request) {
+                let n = conn.read(&mut buf).expect("read");
+                assert!(n > 0, "client closed early");
+                request.extend_from_slice(buf.get(..n).expect("slice"));
+            }
+            let split = request
+                .windows(4)
+                .position(|w| w == b"\r\n\r\n")
+                .expect("head end");
+            let head = String::from_utf8_lossy(request.get(..split).expect("head")).to_lowercase();
+            let path = head.split_whitespace().nth(1).expect("path").to_owned();
+            let (status, reply) = routes
+                .iter()
+                .find(|(p, _, _)| *p == path)
+                .map(|(_, s, r)| (*s, r.replace("{BASE}", &own)))
+                .expect("route");
+            let response = format!(
+                "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}",
+                reply.len()
+            );
+            conn.write_all(response.as_bytes()).expect("write");
+            seen.push(Seen {
+                path,
+                head,
+                body: request.get(split + 4..).expect("body").to_vec(),
+            });
+        }
+        seen
+    });
+    (base, handle)
+}
+
+const UPLOAD_ROUTES: &[(&str, &str, &str)] = &[
+    (
+        "/files.getuploadurlexternal",
+        "200 OK",
+        r#"{"ok":true,"upload_url":"{BASE}/put/F1","file_id":"F1"}"#,
+    ),
+    ("/put/f1", "200 OK", "OK - 5"),
+    ("/files.completeuploadexternal", "200 OK", r#"{"ok":true}"#),
+];
+
+#[test]
+fn upload_file_runs_the_three_calls_in_order() {
+    let (base, handle) = serve_routes(3, UPLOAD_ROUTES);
+    Api::new(&base)
+        .expect("api")
+        .upload_file(
+            &Secret::new(TOKEN.as_bytes().to_vec()),
+            "C1",
+            "1730000000.1",
+            "proof one.png",
+            b"hello",
+        )
+        .expect("upload");
+    let seen = handle.join().expect("server");
+    let paths: Vec<&str> = seen.iter().map(|s| s.path.as_str()).collect();
+    assert_eq!(
+        paths,
+        [
+            "/files.getuploadurlexternal",
+            "/put/f1",
+            "/files.completeuploadexternal"
+        ]
+    );
+    let [get, put, done] = seen.as_slice() else {
+        unreachable!("three requests")
+    };
+    assert!(get.head.contains(&format!("authorization: bearer {TOKEN}")));
+    assert_eq!(
+        String::from_utf8_lossy(&get.body),
+        "filename=proof%20one.png&length=5"
+    );
+    assert_eq!(put.body, b"hello");
+    assert!(done
+        .head
+        .contains(&format!("authorization: bearer {TOKEN}")));
+    let sent: serde_json::Value = serde_json::from_slice(&done.body).expect("json");
+    assert_eq!(
+        sent,
+        serde_json::json!({
+            "files": [{"id": "F1", "title": "proof one.png"}],
+            "channel_id": "C1",
+            "thread_ts": "1730000000.1",
+        })
+    );
+}
+
+#[test]
+fn upload_post_carries_no_authorization_header() {
+    let (base, handle) = serve_routes(3, UPLOAD_ROUTES);
+    Api::new(&base)
+        .expect("api")
+        .upload_file(
+            &Secret::new(TOKEN.as_bytes().to_vec()),
+            "C1",
+            "1.1",
+            "a.txt",
+            b"hello",
+        )
+        .expect("upload");
+    let seen = handle.join().expect("server");
+    let put = seen.get(1).expect("put");
+    assert!(!put.head.contains("authorization"), "{}", put.head);
+    assert!(!put.head.contains(&TOKEN.to_lowercase()), "{}", put.head);
+}
+
+#[test]
+fn upload_url_refusal_is_a_slack_error() {
+    static ROUTES: &[(&str, &str, &str)] = &[(
+        "/files.getuploadurlexternal",
+        "200 OK",
+        r#"{"ok":false,"error":"missing_scope"}"#,
+    )];
+    let (base, handle) = serve_routes(1, ROUTES);
+    let err = Api::new(&base)
+        .expect("api")
+        .upload_file(
+            &Secret::new(TOKEN.as_bytes().to_vec()),
+            "C1",
+            "1.1",
+            "a.txt",
+            b"x",
+        )
+        .expect_err("rejected");
+    handle.join().expect("server");
+    assert!(
+        matches!(&err, ApiError::Slack(code) if code == "missing_scope"),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn upload_non_2xx_is_a_transport_error_and_skips_completion() {
+    static ROUTES: &[(&str, &str, &str)] = &[
+        (
+            "/files.getuploadurlexternal",
+            "200 OK",
+            r#"{"ok":true,"upload_url":"{BASE}/put/F1","file_id":"F1"}"#,
+        ),
+        ("/put/f1", "500 Internal Server Error", "boom"),
+    ];
+    let (base, handle) = serve_routes(2, ROUTES);
+    let err = Api::new(&base)
+        .expect("api")
+        .upload_file(
+            &Secret::new(TOKEN.as_bytes().to_vec()),
+            "C1",
+            "1.1",
+            "a.txt",
+            b"x",
+        )
+        .expect_err("refused");
+    handle.join().expect("server");
+    assert!(
+        matches!(&err, ApiError::Transport(m) if m.contains("500")),
+        "{err:?}"
+    );
+}
