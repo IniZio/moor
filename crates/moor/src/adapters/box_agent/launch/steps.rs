@@ -10,7 +10,7 @@ use super::super::brief::{render, BriefInput};
 use super::super::nono_release::sha256_hex;
 use super::super::proxy_env;
 use super::super::sandbox::{self, SandboxInput};
-use super::install::{check_outcome, parse_platform, upload_and_recheck};
+use super::install::{check_outcome, parse_platform, upload_steps};
 use super::{fail, Failure, Launch, Platform, AGENT_PATH_LINE, INSTALL_DEADLINE};
 
 /// Which launch step a batch step belongs to, and so how its failure is reported.
@@ -20,6 +20,10 @@ pub(super) enum Tag {
     Agent,
     /// The check that the sandbox tool is the pinned binary.
     Check,
+    /// The upload of the pinned binary after the check found it missing.
+    Upload,
+    /// The check run again after the upload.
+    Recheck,
     /// The sandbox profile.
     Profile,
     /// The brief.
@@ -35,7 +39,7 @@ impl Tag {
     fn failure(self, e: &impl ToString) -> Failure {
         match self {
             Self::Agent => fail("agent", e),
-            Self::Check | Self::Profile => fail("sandbox", e),
+            Self::Check | Self::Upload | Self::Recheck | Self::Profile => fail("sandbox", e),
             Self::Brief => fail("brief", e),
             Self::Hooks => fail("hooks", e),
             Self::Proxy(text) => Failure {
@@ -180,19 +184,31 @@ impl Launch<'_> {
         })
     }
 
-    /// Runs the steps of `plan` as batches; a missing sandbox tool is uploaded and checked again,
-    /// then the rest of the steps run.
+    /// Runs the steps of `plan` as batches; a missing sandbox tool is uploaded and checked again
+    /// at the head of the next batch, ahead of the rest of the steps.
     pub(super) fn execute(&self, connect: &[String], plan: &Plan) -> Result<(), Failure> {
         let req = self.req;
         let mut from = 0;
-        while let (Some(steps), Some(tags)) = (plan.steps.get(from..), plan.tags.get(from..)) {
-            if steps.is_empty() {
+        let mut head: Option<Vec<BoxStep>> = None;
+        while let (Some(rest), Some(rest_tags)) = (plan.steps.get(from..), plan.tags.get(from..)) {
+            if rest.is_empty() && head.is_none() {
                 break;
             }
+            let (steps, tags) = head.take().map_or_else(
+                || (rest.to_vec(), rest_tags.to_vec()),
+                |mut steps| {
+                    steps.extend_from_slice(rest);
+                    let mut tags = vec![Tag::Upload, Tag::Recheck];
+                    tags.extend_from_slice(rest_tags);
+                    (steps, tags)
+                },
+            );
+            let offset = steps.len() - rest.len();
             let deadline = Deadline(INSTALL_DEADLINE);
-            let results = (self.driver).batch(&req.handle, connect, steps, &req.worktree, deadline);
+            let results =
+                (self.driver).batch(&req.handle, connect, &steps, &req.worktree, deadline);
             let mut next = plan.steps.len();
-            for (i, (result, &tag)) in results.into_iter().zip(tags).enumerate() {
+            for (i, (result, &tag)) in results.into_iter().zip(&tags).enumerate() {
                 if matches!(tag, Tag::Agent) {
                     match result.map_err(|e| tag.failure(&e))? {
                         StepDone::Ran {
@@ -202,16 +218,16 @@ impl Launch<'_> {
                         _ => return Err(agent_missing()),
                     }
                 }
-                let Tag::Check = tag else {
+                let (Tag::Check | Tag::Recheck) = tag else {
                     result.map_err(|e| tag.failure(&e))?;
                     continue;
                 };
                 match check_outcome(Some(result))? {
                     0 => {}
-                    sandbox::NOT_INSTALLED => {
+                    sandbox::NOT_INSTALLED if matches!(tag, Tag::Check) => {
                         if let Some((bytes, script)) = &plan.check {
-                            upload_and_recheck(self.driver, req, &self.ctx.home, (bytes, script))?;
-                            next = from + i + 1;
+                            head = Some(upload_steps(&self.ctx.home, bytes, script)?);
+                            next = from + (i - offset) + 1;
                             break;
                         }
                     }

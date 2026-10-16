@@ -139,20 +139,57 @@ fn a_launch_without_a_proxy_makes_two_batch_calls_after_the_connect_lookup() {
 }
 
 #[test]
-fn a_missing_nono_adds_only_the_upload_and_the_recheck() {
+fn a_missing_nono_adds_only_the_upload_and_the_recheck_to_the_third_batch() {
     let run = launch(true, &[0, 0, NOT_INSTALLED, 0], missing_nono_release());
     run.out.unwrap();
     assert_eq!(
         box_calls(&run.d),
-        [
-            "connect_argv",
-            "batch",
-            "batch",
-            "put_file",
-            "exec",
-            "batch"
-        ]
+        ["connect_argv", "batch", "batch", "batch"]
     );
+    assert_connect_argv_reused(&run.d);
+    let puts = run.d.puts();
+    let first = puts.first().expect("a put");
+    assert_eq!(first.1.as_str(), "/home/box/.local/bin/nono");
+    assert_eq!(first.2, b"the binary");
+    assert_eq!(first.3, 0o755);
+    let execs = run.d.execs();
+    let scripts: Vec<_> = execs.iter().filter_map(|e| e.1.argv.get(2)).collect();
+    assert_eq!(scripts.len(), 4);
+    assert_eq!(scripts.get(3), scripts.get(2));
+}
+
+#[test]
+fn a_failed_recheck_refuses_the_launch_like_a_failed_first_check() {
+    let run = launch(true, &[0, 0, NOT_INSTALLED, 5], missing_nono_release());
+    let message = match run.out {
+        Err(EngineError::Failed {
+            step: "sandbox",
+            message,
+        }) => message,
+        other => format!("unexpected {other:?}"),
+    };
+    assert!(message.contains("Landlock"), "{message}");
+    assert!(run.s.opened().is_empty());
+}
+
+#[test]
+fn a_failed_nono_upload_is_a_sandbox_failure_and_stops_the_batch() {
+    let failing = FakeDriver::new()
+        .exec_results(exited(&[0, 0, NOT_INSTALLED]))
+        .fail_put(DriverError::Quota("upload broke".to_owned()));
+    let d = driver(failing);
+    let s = Arc::new(FakeSurface::new("/r"));
+    let out = agent(&d, &s, missing_nono_release()).launch(&req(&s, true));
+    match out {
+        Err(EngineError::Failed {
+            step: "sandbox",
+            message,
+        }) => assert!(message.contains("upload broke"), "{message}"),
+        other => unreachable!("unexpected {other:?}"),
+    }
+    let calls = box_calls(&d);
+    let launch_calls = calls.iter().take(4).map(String::as_str);
+    assert!(launch_calls.eq(["connect_argv", "batch", "batch", "batch"]));
 }
 
 #[test]
