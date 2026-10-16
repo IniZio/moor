@@ -95,6 +95,12 @@ fn env_allow_list_passes_placeholders() {
         "GH_REPO",
         "CLAUDE_CODE_OAUTH_TOKEN",
         "HTTPS_PROXY",
+        "YARN_HTTPS_PROXY",
+        "YARN_HTTP_PROXY",
+        "YARN_CA_FILE_PATH",
+        "YARN_CACHE_FOLDER",
+        "YARN_GLOBAL_FOLDER",
+        "npm_config_cache",
     ] {
         assert!(vars.contains(&name.to_owned()), "{name}");
     }

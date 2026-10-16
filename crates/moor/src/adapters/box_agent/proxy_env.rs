@@ -94,6 +94,7 @@ pub(super) fn script_lines(
             proxy.box_port
         ));
     }
+    lines.extend(yarn_lines(proxy.box_port));
     for name in ["NO_PROXY", "no_proxy"] {
         lines.push(format!(
             "export {name}=\"127.0.0.1,localhost${{{name}:+,${name}}}\""
@@ -113,6 +114,24 @@ pub(super) fn script_lines(
         "unset {NONCE_VAR} moor_bundle moor_sys moor_mark moor_f"
     ));
     Ok(lines)
+}
+
+/// Shell lines that point Yarn and npm at the proxy, the CA bundle and a cache the sandbox can write.
+fn yarn_lines(box_port: u16) -> Vec<String> {
+    let mut lines: Vec<String> = ["YARN_HTTPS_PROXY", "YARN_HTTP_PROXY"]
+        .iter()
+        .map(|name| format!("export {name}=\"http://moor:${{{NONCE_VAR}}}@127.0.0.1:{box_port}\""))
+        .collect();
+    lines.extend(
+        [
+            "export YARN_CA_FILE_PATH=\"$moor_bundle\"",
+            "export YARN_CACHE_FOLDER=\"$HOME/.cache/yarn\"",
+            "export YARN_GLOBAL_FOLDER=\"$HOME/.cache/yarn/berry\"",
+            "export npm_config_cache=\"$HOME/.cache/npm\"",
+        ]
+        .map(str::to_owned),
+    );
+    lines
 }
 
 /// Shell lines that point the `moor` git remote at the push URL for `origin`, or clear the git config env.

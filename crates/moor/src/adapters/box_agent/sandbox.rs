@@ -17,7 +17,7 @@ pub(super) const ROOT_SANDBOX_VAR: &str = "IS_SANDBOX";
 pub(super) const NOT_INSTALLED: i32 = 6;
 
 /// Environment names every agent keeps: terminal, proxy and CA variables, plus two globs.
-const BASE_VARS: [&str; 23] = [
+const BASE_VARS: [&str; 29] = [
     "PATH",
     "HOME",
     "USER",
@@ -39,6 +39,12 @@ const BASE_VARS: [&str; 23] = [
     "REQUESTS_CA_BUNDLE",
     "GIT_SSL_CAINFO",
     "NODE_EXTRA_CA_CERTS",
+    "YARN_HTTPS_PROXY",
+    "YARN_HTTP_PROXY",
+    "YARN_CA_FILE_PATH",
+    "YARN_CACHE_FOLDER",
+    "YARN_GLOBAL_FOLDER",
+    "npm_config_cache",
     "GIT_CONFIG_*",
     "CLAUDE_*",
 ];
