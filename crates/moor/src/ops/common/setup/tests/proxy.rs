@@ -2,6 +2,7 @@
 
 use moor_core::domain::run::SyncMode;
 use moor_core::seam::agent_profile::ProxyAddr;
+use moor_core::seam::driver::{DriverError, ExecOutcome};
 use moor_core::secret::Secret;
 use moor_core::{BoxPath, TaskId};
 
@@ -103,22 +104,31 @@ fn without_a_proxy_setup_gets_reserved_and_credential_like_repo_env() {
     assert!(has_env(&spec.env, CREDENTIAL_LIKE), "{:?}", spec.env);
 }
 
-#[test]
-fn with_a_proxy_setup_still_gets_reserved_and_credential_like_repo_env() {
-    let d = tempfile::tempdir().unwrap();
-    let r = rig(d.path(), FakeDriver::new());
-    // The agent's env: the Proxy plan drops both names.
-    let proxy = BoxProxy {
+fn proxy() -> BoxProxy {
+    BoxProxy {
         task: TaskId::new(1),
         addr: ProxyAddr {
             box_port: 4000,
             nonce: Secret::new(b"s3cret-value".to_vec()),
             ca_pem: "-----BEGIN CERTIFICATE-----\nca\n-----END CERTIFICATE-----\n".to_owned(),
-            box_env: vec![("A".to_owned(), "1".to_owned())],
+            box_env: Vec::new(),
         },
         origin: None,
         rule_env: Vec::new(),
-    };
+    }
+}
+
+#[test]
+fn with_a_proxy_setup_still_gets_reserved_and_credential_like_repo_env() {
+    let d = tempfile::tempdir().unwrap();
+    let environ = BoxPath::restore("/proc/self/environ").unwrap();
+    let r = rig(
+        d.path(),
+        FakeDriver::new().peek_text("box-1", &environ, "HOME=/home/box\0"),
+    );
+    // The agent's env: the Proxy plan drops both names.
+    let mut proxy = proxy();
+    proxy.addr.box_env = vec![("A".to_owned(), "1".to_owned())];
     run_setup_with(
         &r.cx,
         &r.handle,
@@ -129,7 +139,66 @@ fn with_a_proxy_setup_still_gets_reserved_and_credential_like_repo_env() {
         SyncMode::Full,
         Some(&proxy),
     );
-    let (_, spec, _) = only(r.driver.execs());
+    let (_, spec, _) = r
+        .driver
+        .execs()
+        .into_iter()
+        .find(|(_, s, _)| {
+            s.argv
+                .get(2)
+                .is_some_and(|a| a.contains("export HTTPS_PROXY="))
+        })
+        .expect("setup exec with the proxy prelude");
     assert!(has_env(&spec.env, RESERVED), "{:?}", spec.env);
     assert!(has_env(&spec.env, CREDENTIAL_LIKE), "{:?}", spec.env);
+}
+
+/// Runs setup with the Proxy where the setup exec ends as `setup`, and checks
+/// the exec right after it removes the staged credential dir.
+fn assert_failed_setup_removes_the_credential_dir(setup: Result<ExecOutcome, DriverError>) {
+    let d = tempfile::tempdir().unwrap();
+    let environ = BoxPath::restore("/proc/self/environ").unwrap();
+    let r = rig(
+        d.path(),
+        FakeDriver::new()
+            .peek_text("box-1", &environ, "HOME=/home/box\0")
+            .exec_results([Ok(ExecOutcome::Exited { code: 0 }), setup]),
+    );
+    run_setup_with(
+        &r.cx,
+        &r.handle,
+        "p",
+        &r.workdir,
+        d.path(),
+        &cfg(&["a"], &[]),
+        SyncMode::Full,
+        Some(&proxy()),
+    );
+    let argvs: Vec<Vec<String>> = r
+        .driver
+        .execs()
+        .into_iter()
+        .map(|(_, s, _)| s.argv)
+        .collect();
+    let mkdir = argvs
+        .iter()
+        .position(|a| a.starts_with(&["mkdir".to_owned(), "-m".to_owned(), "700".to_owned()]))
+        .expect("mkdir of the credential dir");
+    let dir = argvs.get(mkdir).and_then(|a| a.last()).cloned().unwrap();
+    assert!(dir.contains("/.moor-cred-"), "{dir}");
+    assert_eq!(
+        argvs.get(mkdir + 2),
+        Some(&vec!["rm".to_owned(), "-rf".to_owned(), dir]),
+        "{argvs:?}"
+    );
+}
+
+#[test]
+fn an_interrupted_setup_removes_the_staged_credential_dir() {
+    assert_failed_setup_removes_the_credential_dir(Ok(ExecOutcome::Interrupted));
+}
+
+#[test]
+fn a_failed_setup_exec_removes_the_staged_credential_dir() {
+    assert_failed_setup_removes_the_credential_dir(Err(DriverError::Quota("out".to_owned())));
 }
