@@ -75,7 +75,7 @@ pub fn credential_like_env(s: &str) -> bool {
 /// launcher, so a repo `env` may not set it for the agent.
 #[must_use]
 pub fn agent_env_reserved(s: &str) -> bool {
-    const FIXED: [&str; 33] = [
+    const FIXED: [&str; 34] = [
         "PATH",
         "HOME",
         "USER",
@@ -109,6 +109,7 @@ pub fn agent_env_reserved(s: &str) -> bool {
         "NODE_PATH",
         "LOCPATH",
         "GLIBC_TUNABLES",
+        "IS_SANDBOX",
     ];
     FIXED.contains(&s)
         || s.starts_with("LD_")
