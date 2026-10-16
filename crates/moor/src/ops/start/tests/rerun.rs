@@ -3,9 +3,9 @@
 use moor_core::boxscript::boxwork::BOXWORK_NO_CHECKOUT;
 use moor_core::domain::run::SyncMode;
 use moor_core::seam::proc::Tool;
-use moor_core::{BoxPath, ErrorKind, StartReq, TaskId};
+use moor_core::{BoxPath, StartReq, TaskId};
 
-use super::setup::{exit, failed_setup_with, start_req, warning_codes};
+use super::setup::{exit, failed_setup_with, setup_execs, start_req, warning_codes};
 use super::{world, World};
 use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
@@ -73,36 +73,43 @@ fn attached_with_session(driver: FakeDriver) -> World {
 }
 
 #[test]
-fn setup_re_run_over_unsaved_box_work_never_syncs_over_the_box() {
+fn restart_after_a_failed_setup_over_unsaved_box_work_never_syncs_over_the_box() {
     let w = resumed_with_session();
     probe_says(&w, "ahead=1 dirty=0");
     let again = run(&w.cx, &start_req()).unwrap();
-    assert!(again.setup.ran && again.setup.ok);
+    assert!(!again.setup.ran);
     assert_eq!(checkout_syncs(&w), [SyncMode::Full]);
-    assert!(warning_codes(&w).contains(&"resync_skipped".to_owned()));
+    let codes = warning_codes(&w);
+    assert!(codes.contains(&"resync_skipped".to_owned()));
+    assert!(codes.contains(&"setup_not_rerun".to_owned()));
 }
 
 #[test]
-fn setup_re_run_with_a_live_agent_never_syncs_and_warns() {
+fn restart_after_a_failed_setup_with_a_live_agent_never_syncs_and_warns() {
     let w = resumed(true);
     probe_says(&w, "ahead=0 dirty=0");
     let again = run(&w.cx, &start_req()).unwrap();
-    assert!(again.setup.ran && again.setup.ok);
+    assert!(!again.setup.ran);
+    assert_eq!(setup_execs(&w).len(), 1);
     assert_eq!(checkout_syncs(&w), [SyncMode::Full]);
-    assert!(warning_codes(&w).contains(&"resync_skipped".to_owned()));
+    let codes = warning_codes(&w);
+    assert!(codes.contains(&"resync_skipped".to_owned()));
+    assert_eq!(codes.iter().filter(|c| *c == "setup_not_rerun").count(), 1);
 }
 
 #[test]
-fn setup_re_run_syncs_a_box_with_no_unsaved_work() {
+fn restart_after_a_failed_setup_syncs_a_box_with_no_unsaved_work() {
     let w = resumed_with_session();
     probe_says(&w, "ahead=0 dirty=0");
     run(&w.cx, &start_req()).unwrap();
     assert_eq!(checkout_syncs(&w), [SyncMode::Full, SyncMode::Full]);
-    assert!(!warning_codes(&w).contains(&"resync_skipped".to_owned()));
+    let codes = warning_codes(&w);
+    assert!(!codes.contains(&"resync_skipped".to_owned()));
+    assert!(codes.contains(&"setup_not_rerun".to_owned()));
 }
 
 #[test]
-fn setup_re_run_syncs_a_box_whose_first_sync_left_no_checkout() {
+fn restart_after_a_failed_setup_that_left_no_checkout_syncs_again() {
     let driver =
         FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(1)), Ok(exit(BOXWORK_NO_CHECKOUT))]);
     let (w, id) = failed_setup_with("setup: [a]\n", driver);
@@ -115,7 +122,7 @@ fn setup_re_run_syncs_a_box_whose_first_sync_left_no_checkout() {
 }
 
 #[test]
-fn setup_re_run_before_any_agent_session_syncs_and_does_not_warn() {
+fn restart_after_a_failed_setup_before_any_agent_session_syncs_without_a_resync_warning() {
     let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(1))]);
     let (w, _) = failed_setup_with("setup: [a]\n", driver);
     drop(warning_codes(&w));
@@ -193,35 +200,17 @@ fn start_that_launches_the_agent_aborts_when_the_re_sync_fails() {
     assert!(events.iter().any(|e| e.kind == "setup_failed"));
 }
 
-/// A failed first setup whose re-run sync fails.
-fn failing_re_run_sync() -> World {
+#[test]
+fn restart_after_a_failed_setup_warns_when_the_sync_fails_and_attaches() {
     let driver =
         FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(1)), Ok(exit(1)), Ok(exit(0))]);
     let (w, _) = failed_setup_with("setup: [a]\n", driver);
     drop(warning_codes(&w));
-    w
-}
-
-#[test]
-fn setup_re_run_with_no_agent_launch_warns_when_the_sync_fails_and_attaches() {
-    let w = failing_re_run_sync();
     let req = StartReq {
         no_agent: true,
         ..start_req()
     };
     let again = run(&w.cx, &req).unwrap();
-    assert!(again.setup.ran && again.setup.ok);
+    assert!(!again.setup.ran);
     assert!(warning_codes(&w).contains(&"resync_failed".to_owned()));
-}
-
-#[test]
-fn setup_re_run_that_launches_the_agent_aborts_when_the_sync_fails() {
-    let w = failing_re_run_sync();
-    let req = StartReq {
-        goal: Some("ship it".into()),
-        ..start_req()
-    };
-    let err = run(&w.cx, &req).unwrap_err();
-    assert_eq!(err.kind, ErrorKind::Failed);
-    assert!(!warning_codes(&w).contains(&"resync_failed".to_owned()));
 }
