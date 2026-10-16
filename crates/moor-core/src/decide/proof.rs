@@ -1,6 +1,6 @@
 //! Proof files an agent leaves under the Box workdir: listing, parsing and copy decisions.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 pub use crate::domain::proof::ProofFile;
@@ -9,12 +9,16 @@ pub use crate::domain::proof::ProofFile;
 pub const PROOF_DIR: &str = ".moor/proof";
 
 /// POSIX sh that prints `name<TAB>size<TAB>sha256` for each regular file under the proof directory.
-const SCRIPT: &str = r#"[ -d .moor/proof ] || exit 0
+const SCRIPT: &str = r#"[ -L .moor ] && exit 0
+[ -L .moor/proof ] && exit 0
+[ -d .moor/proof ] || exit 0
 cd .moor/proof || exit 0
-find . -type f | while IFS= read -r f; do
+find . -type f ! -path '*
+*' | while IFS= read -r f; do
   n=${f#./}
   s=$(wc -c <"$f" | tr -d ' ')
-  h=$( (sha256sum "$f" 2>/dev/null || shasum -a 256 "$f") | cut -d' ' -f1)
+  h=$(sha256sum <"$f" 2>/dev/null | cut -d' ' -f1)
+  [ -n "$h" ] || h=$(shasum -a 256 <"$f" 2>/dev/null | cut -d' ' -f1)
   printf '%s\t%s\t%s\n' "$n" "$s" "$h"
 done
 "#;
@@ -28,7 +32,11 @@ pub fn listing_argv() -> Vec<String> {
 /// Parse the output of [`listing_argv`], dropping malformed lines and unsafe names, sorted by name.
 #[must_use]
 pub fn parse_listing(stdout: &str) -> Vec<ProofFile> {
-    let mut files: Vec<ProofFile> = stdout.lines().filter_map(parse_line).collect();
+    let mut by_name: HashMap<String, ProofFile> = HashMap::new();
+    for file in stdout.lines().filter_map(parse_line) {
+        by_name.insert(file.name.clone(), file);
+    }
+    let mut files: Vec<ProofFile> = by_name.into_values().collect();
     files.sort_by(|a, b| a.name.cmp(&b.name));
     files
 }
@@ -39,7 +47,7 @@ fn parse_line(line: &str) -> Option<ProofFile> {
     let name = parts.next()?;
     let size = parts.next()?.trim().parse::<u64>().ok()?;
     let sha256 = parts.next()?.trim();
-    if parts.next().is_some() || sha256.is_empty() || !safe_name(name) {
+    if parts.next().is_some() || !valid_sha256(sha256) || !safe_name(name) {
         return None;
     }
     Some(ProofFile {
@@ -47,6 +55,11 @@ fn parse_line(line: &str) -> Option<ProofFile> {
         size,
         sha256: sha256.to_owned(),
     })
+}
+
+/// True for exactly 64 lowercase hex digits.
+fn valid_sha256(s: &str) -> bool {
+    s.len() == 64 && s.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 /// True for a non-empty relative name with no empty, `.` or `..` segments.
@@ -65,10 +78,16 @@ pub fn fresh(listing: &[ProofFile], seen: &[ProofFile]) -> Vec<ProofFile> {
         .iter()
         .map(|f| (f.name.as_str(), f.sha256.as_str()))
         .collect();
+    let mut emitted: HashSet<&str> = HashSet::new();
     listing
         .iter()
         .filter(|f| latest.get(f.name.as_str()) != Some(&f.sha256.as_str()))
+        .rev()
+        .filter(|f| emitted.insert(f.name.as_str()))
         .cloned()
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
         .collect()
 }
 
