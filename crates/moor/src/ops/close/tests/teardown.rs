@@ -7,6 +7,7 @@ use moor_core::domain::run::SyncMode;
 use moor_core::domain::task::TaskState;
 use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
 use moor_core::seam::proc::Tool;
+use moor_core::seam::proxy_host::ProxyHostError;
 use moor_core::{BoxPath, CloseReq, ErrorKind};
 
 use super::{admit, box_state, fx_with, proc, req, row, run, Fx};
@@ -14,13 +15,20 @@ use crate::cx::Cx;
 use crate::ops::common::boxlock::{BoxLock, WAIT};
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::Reply;
+use crate::testing::proxy_host::FakeProxyHost;
 use crate::testing::surface::FakeSurface;
 
 pub(super) const YAML: &str =
     "teardown: ['echo bye', 'rm -rf cache']\nenv: {K: v}\nbox: {size: large}\n";
 
+/// The Box user's HOME, which a Proxy-backed teardown stages its credentials under.
+pub(super) fn with_home(driver: FakeDriver) -> FakeDriver {
+    let environ = BoxPath::restore("/proc/self/environ").unwrap();
+    driver.peek_text("box-1", &environ, "PATH=/bin\0HOME=/home/box\0")
+}
+
 fn fx_yaml(driver: FakeDriver, yaml: &str) -> Fx {
-    let f = fx_with(driver, FakeSurface::new("/s"), 0);
+    let f = fx_with(with_home(driver), FakeSurface::new("/s"), 0);
     fs::write(f.dir.path().join(".moor.yaml"), yaml).unwrap();
     base_has(&f, yaml);
     f
@@ -89,6 +97,7 @@ fn failing_teardown_warns_and_still_releases() {
             Ok(ExecOutcome::Exited { code: 0 }),
             Ok(ExecOutcome::Exited { code: 0 }),
             Ok(ExecOutcome::Exited { code: 0 }),
+            Ok(ExecOutcome::Exited { code: 0 }),
             Ok(ExecOutcome::Exited { code: 3 }),
         ]),
         YAML,
@@ -107,6 +116,7 @@ fn teardown_driver_error_warns_and_still_releases() {
             Ok(ExecOutcome::Exited { code: 0 }),
             Ok(ExecOutcome::Exited { code: 0 }),
             Ok(ExecOutcome::Exited { code: 0 }),
+            Ok(ExecOutcome::Exited { code: 0 }),
             Err(DriverError::Failed {
                 summary: "boom".into(),
             }),
@@ -120,6 +130,55 @@ fn teardown_driver_error_warns_and_still_releases() {
         .take_warnings()
         .iter()
         .any(|w| w.code == "teardown_failed"));
+}
+
+#[test]
+fn interrupted_teardown_removes_the_staged_credential_dir() {
+    let f = fx_yaml(
+        FakeDriver::new().exec_results([
+            Ok(ExecOutcome::Exited { code: 0 }),
+            Ok(ExecOutcome::Exited { code: 0 }),
+            Ok(ExecOutcome::Exited { code: 0 }),
+            Ok(ExecOutcome::Exited { code: 0 }),
+            Ok(ExecOutcome::Interrupted),
+        ]),
+        YAML,
+    );
+    let v = run(&f.cx, &req(false)).unwrap();
+    assert!(v.box_deleted);
+    let execs = f.driver.execs();
+    assert_eq!(
+        execs.len(),
+        6,
+        "probe, recheck, collection, mkdir, teardown, rm"
+    );
+    let argv = &execs.last().unwrap().1.argv;
+    assert!(
+        matches!(argv.as_slice(), [rm, f, dir] if rm == "rm" && f == "-rf"
+            && dir.starts_with("/home/box/.moor-cred-")),
+        "{argv:?}"
+    );
+    assert!(f
+        .cx
+        .take_warnings()
+        .iter()
+        .any(|w| w.code == "teardown_failed"));
+}
+
+#[test]
+fn teardown_without_a_startable_proxy_warns_and_still_runs() {
+    let mut f = fx_yaml(FakeDriver::new(), YAML);
+    let host = FakeProxyHost::new().with_ensure_error(ProxyHostError::Failed("boom".into()));
+    f.cx = f.cx.with_proxy_host(Arc::new(host));
+    let v = run(&f.cx, &req(false)).unwrap();
+    assert!(v.box_deleted);
+    let warnings = f.cx.take_warnings();
+    let w = warnings
+        .iter()
+        .find(|w| w.code == "teardown_proxy")
+        .unwrap();
+    assert!(w.message.starts_with("teardown runs without the Proxy:"));
+    assert!(script_of(&only_exec(&f)).contains("echo bye"));
 }
 
 #[test]
@@ -188,7 +247,8 @@ fn fx_woken_yaml(yaml: &str) -> Fx {
     let worktree = dir.path().join("repo");
     fs::create_dir(&worktree).unwrap();
     let path = BoxPath::under("/work/cbx_1/repo", ".moor/boxwork").unwrap();
-    let driver = Arc::new(FakeDriver::new().peek_text("box-1", &path, "ahead=0 dirty=0"));
+    let driver =
+        Arc::new(with_home(FakeDriver::new()).peek_text("box-1", &path, "ahead=0 dirty=0"));
     let surface = Arc::new(FakeSurface::new("/s"));
     let proc = proc(0);
     let cx = Cx::fake(

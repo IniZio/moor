@@ -3,6 +3,7 @@
 use moor_core::domain::run::SyncMode;
 use moor_core::seam::agent_profile::ProxyAddr;
 use moor_core::secret::Secret;
+use moor_core::{BoxPath, TaskId};
 
 use super::{cfg, only, rig, run_setup, run_setup_with};
 use crate::ops::common::box_exec::BoxProxy;
@@ -34,8 +35,13 @@ fn without_a_proxy_setup_runs_in_workdir_with_exactly_the_repo_env() {
 #[test]
 fn setup_gets_the_proxy_and_ca_variables_the_agent_gets() {
     let d = tempfile::tempdir().unwrap();
-    let r = rig(d.path(), FakeDriver::new());
+    let environ = BoxPath::restore("/proc/self/environ").unwrap();
+    let r = rig(
+        d.path(),
+        FakeDriver::new().peek_text("box-1", &environ, "HOME=/home/box\0"),
+    );
     let proxy = BoxProxy {
+        task: TaskId::new(1),
         addr: ProxyAddr {
             box_port: 4000,
             nonce: Secret::new(b"s3cret-value".to_vec()),
@@ -55,7 +61,16 @@ fn setup_gets_the_proxy_and_ca_variables_the_agent_gets() {
         SyncMode::Full,
         Some(&proxy),
     );
-    let (_, spec, _) = r.driver.execs().remove(0);
+    let (_, spec, _) = r
+        .driver
+        .execs()
+        .into_iter()
+        .find(|(_, s, _)| {
+            s.argv
+                .get(2)
+                .is_some_and(|a| a.contains("export HTTPS_PROXY="))
+        })
+        .expect("setup exec with the proxy prelude");
     let prelude = spec.argv.get(2).unwrap();
     assert!(prelude.contains("export HTTPS_PROXY="), "{prelude}");
     assert!(prelude.contains("SSL_CERT_FILE"), "{prelude}");
@@ -94,6 +109,7 @@ fn with_a_proxy_setup_still_gets_reserved_and_credential_like_repo_env() {
     let r = rig(d.path(), FakeDriver::new());
     // The agent's env: the Proxy plan drops both names.
     let proxy = BoxProxy {
+        task: TaskId::new(1),
         addr: ProxyAddr {
             box_port: 4000,
             nonce: Secret::new(b"s3cret-value".to_vec()),

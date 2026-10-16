@@ -37,6 +37,12 @@ pub(super) fn teardown(cx: &Cx, row: &TaskRow, trusted: bool) {
     let worktree = Path::new(row.worktree.as_deref().unwrap_or(&row.repo));
     let workdir = b.workdir.as_deref().and_then(recorded_workdir);
     let proxy = box_exec::proxy(cx, row.id, Some(handle.clone()), worktree, &cfg);
+    if let Err(e) = &proxy {
+        cx.warn(Warning {
+            code: "teardown_proxy".to_owned(),
+            message: format!("teardown runs without the Proxy: {e}"),
+        });
+    }
     let site = Site {
         handle,
         provider: b.provider.as_str(),
@@ -57,7 +63,11 @@ pub(super) fn teardown(cx: &Cx, row: &TaskRow, trusted: bool) {
         host_cwd: row.worktree.as_ref().map(Into::into),
         class: Some(cfg.size.value.as_str().to_owned()),
     };
-    let reason = match cx.driver().exec(handle, &spec, exec.deadline()) {
+    let result = cx.driver().exec(handle, &spec, exec.deadline());
+    if matches!(result, Err(_) | Ok(ExecOutcome::Interrupted)) {
+        exec.cleanup(cx, &site);
+    }
+    let reason = match result {
         Ok(ExecOutcome::Exited { code: 0 }) => return,
         Ok(ExecOutcome::Exited { code }) => format!("exit {code}"),
         Ok(ExecOutcome::Interrupted) => "interrupted".to_owned(),
