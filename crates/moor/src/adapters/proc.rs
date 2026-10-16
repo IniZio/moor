@@ -1,9 +1,7 @@
 //! `SystemProc`: the real spawner every adapter shells out through.
 
 use std::ffi::OsString;
-use std::fs::File;
 use std::io::{self, Read, Write};
-use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
@@ -13,7 +11,7 @@ use std::thread;
 use std::time::Duration;
 
 use moor_core::seam::proc::{
-    ChildHandle, Output, Proc, ProcError, ProcOutput, ProcSpec, Signal as GroupSignal, Stdin, Tool,
+    ChildHandle, Output, Proc, ProcError, ProcOutput, ProcSpec, Signal as GroupSignal, Tool,
 };
 use rustix::io::Errno;
 use rustix::process::{test_kill_process, Signal};
@@ -22,6 +20,8 @@ use zeroize::Zeroizing;
 use crate::env::Env;
 use env::Snapshot;
 use signal::{send_group, signal_group, to_pid};
+use stdin::stdin_for;
+use trace::Trace;
 
 /// Longest wait between SIGTERM and SIGKILL.
 const GRACE: Duration = Duration::from_secs(2);
@@ -89,6 +89,8 @@ pub(crate) struct SystemProc {
     env: Snapshot,
     /// Resolved program per tool.
     programs: Vec<(Tool, OsString)>,
+    /// Opt-in per-call crabbox timing.
+    trace: Trace,
 }
 
 impl SystemProc {
@@ -98,6 +100,7 @@ impl SystemProc {
         Self {
             env: Snapshot::new(env),
             programs,
+            trace: Trace::new(env),
         }
     }
 
@@ -145,25 +148,6 @@ fn resolve(env: &Env, tools: &ToolPaths, tool: Tool) -> OsString {
     tools
         .get(tool)
         .map_or_else(|| tool.program().into(), |p| p.clone().into_os_string())
-}
-
-/// Stdio for the child plus bytes to write to its pipe, if any.
-fn stdin_for(stdin: &Stdin) -> io::Result<(Stdio, Option<&[u8]>)> {
-    match stdin {
-        Stdin::Null => Ok((Stdio::null(), None)),
-        Stdin::Bytes(b) => Ok((Stdio::piped(), Some(b.as_slice()))),
-        Stdin::Secret(s) => Ok((Stdio::piped(), Some(s.expose()))),
-        Stdin::File0600(p) => {
-            let file = File::open(p)?;
-            if file.metadata()?.permissions().mode() & 0o077 != 0 {
-                return Err(io::Error::new(
-                    io::ErrorKind::PermissionDenied,
-                    "secret file must be mode 0600",
-                ));
-            }
-            Ok((Stdio::from(file), None))
-        }
-    }
 }
 
 /// Bytes read so far from one pipe.
@@ -332,15 +316,9 @@ impl SystemProc {
     }
 }
 
-impl Proc for SystemProc {
-    fn run(&self, spec: &ProcSpec) -> Result<ProcOutput, ProcError> {
-        let (status, out, err) = self.exec(spec)?;
-        finish(status, &out, &err)
-    }
-
-    /// Stdout that hit the capture cap is [`ProcError::Spawn`] (an I/O error),
-    /// never a truncated secret.
-    fn run_secret(&self, spec: &ProcSpec) -> Result<Zeroizing<Vec<u8>>, ProcError> {
+impl SystemProc {
+    /// Stdout of a zero exit; truncated output is an error, never a short secret.
+    fn secret(&self, spec: &ProcSpec) -> Result<Zeroizing<Vec<u8>>, ProcError> {
         let (status, out, err) = self.exec(spec)?;
         if status.code() != Some(0) {
             return Err(failure(status, &err.buf));
@@ -352,11 +330,25 @@ impl Proc for SystemProc {
         }
         Ok(out.buf)
     }
+}
 
-    fn run_streamed(&self, spec: &ProcSpec, out: &Output) -> Result<(), ProcError> {
-        self.stream_forwarding(spec, out)
+impl Proc for SystemProc {
+    fn run(&self, spec: &ProcSpec) -> Result<ProcOutput, ProcError> {
+        self.trace.timed(spec, || {
+            let (status, out, err) = self.exec(spec)?;
+            finish(status, &out, &err)
+        })
     }
 
+    /// Stdout that hit the capture cap is [`ProcError::Spawn`] (an I/O error),
+    /// never a truncated secret.
+    fn run_secret(&self, spec: &ProcSpec) -> Result<Zeroizing<Vec<u8>>, ProcError> {
+        self.trace.timed(spec, || self.secret(spec))
+    }
+
+    fn run_streamed(&self, spec: &ProcSpec, out: &Output) -> Result<(), ProcError> {
+        self.trace.timed(spec, || self.stream_forwarding(spec, out))
+    }
     fn spawn_detached(&self, spec: &ProcSpec) -> Result<(), ProcError> {
         let mut cmd = self.command(spec);
         cmd.stdin(Stdio::null())
@@ -364,15 +356,17 @@ impl Proc for SystemProc {
             .stderr(Stdio::null());
         let mut child = spawn_retrying(&mut cmd).map_err(ProcError::Spawn)?;
         thread::spawn(move || drop(child.wait()));
+        self.trace.started(spec);
         Ok(())
     }
 
     fn spawn_child(&self, spec: &ProcSpec) -> Result<Box<dyn ChildHandle>, ProcError> {
         self.spawn_long_lived(spec)
+            .inspect(|_| self.trace.started(spec))
     }
 
     fn spawn_daemon(&self, spec: &ProcSpec, log: &Path) -> Result<u32, ProcError> {
-        self.daemon(spec, log)
+        self.daemon(spec, log).inspect(|_| self.trace.started(spec))
     }
 
     fn signal_group(&self, pgid: u32, sig: GroupSignal) -> Result<(), ProcError> {
@@ -393,6 +387,8 @@ mod child;
 mod detached;
 mod env;
 mod signal;
+mod stdin;
 mod stream;
 #[cfg(test)]
 mod tests;
+mod trace;
