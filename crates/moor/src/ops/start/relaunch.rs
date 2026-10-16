@@ -102,6 +102,13 @@ pub(super) fn will_launch(
     ))
 }
 
+/// Whether an agent session of `row` exists and has not ended.
+pub(super) fn agent_live(cx: &Cx, store: &Store, row: &TaskRow) -> Result<bool, CommandError> {
+    Ok(store
+        .live_session(row.id)?
+        .is_some_and(|s| ended(cx, &s).is_none()))
+}
+
 /// Whether `req` resumes the stored agent session of `row`.
 fn resumes(req: &StartReq, row: &TaskRow) -> bool {
     req.resume

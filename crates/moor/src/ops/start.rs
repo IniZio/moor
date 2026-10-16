@@ -20,7 +20,9 @@ use super::common::autosleep;
 use super::common::boxlock::{self, BoxLock};
 use super::common::capacity;
 use super::common::facts::{provider_caps, require_reverse_tunnel, resolved, settings};
-use super::common::provision::{moor_yaml, provision, reprovision, reread, Entry, Provisioned};
+use super::common::provision::{
+    moor_yaml, provision, reprovision, reread, Entry, Provisioned, ResyncGates,
+};
 use super::common::provisioning::dead_provisioning;
 use super::common::view::{hide_unsupported_sleep, task_view};
 use crate::cx::Cx;
@@ -168,7 +170,12 @@ fn attach(
         });
     }
     let launching = || relaunch::will_launch(cx, store, req, row);
-    let reprovisioned = reprovision(cx, store, row, "start", req.trust_moor_yaml, &launching)?;
+    let agent_live = || relaunch::agent_live(cx, store, row);
+    let gates = ResyncGates {
+        launching: &launching,
+        agent_live: &agent_live,
+    };
+    let reprovisioned = reprovision(cx, store, row, "start", req.trust_moor_yaml, &gates)?;
     store.apply(Decision::new(row.id).event(ExtraEvent::Attached))?;
     let setup_exit = reprovisioned.as_ref().and_then(|p| p.setup.exit());
     let settings = || {

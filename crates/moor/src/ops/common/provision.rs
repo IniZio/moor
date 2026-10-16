@@ -25,6 +25,7 @@ use crate::store::{Store, TaskRow};
 
 pub(crate) use self::outcome::Provisioned;
 use self::outcome::{dotfiles_failed, sync_failed};
+pub(crate) use self::rerun::ResyncGates;
 use self::rerun::{rerun_sync, resync, setup_wanted};
 use self::retry::{dotfiles_retry, retry_dotfiles};
 
@@ -70,17 +71,14 @@ impl Entry {
 /// refused as busy.
 ///
 /// A `.moor.yaml` that differs from the base commit is refused unless `trusted`, before any
-/// setup or Box work starts.
-///
-/// `launching` tells whether the caller is about to launch the agent, asked only if a re-sync of
-/// the checkout fails: then the start ends like a fresh one, else it is only warned of.
+/// setup or Box work starts. `gates` decide a re-sync of the checkout into a ready Box.
 pub(crate) fn reprovision(
     cx: &Cx,
     store: &Store,
     row: &TaskRow,
     op: &str,
     trusted: bool,
-    launching: &dyn Fn() -> Result<bool, CommandError>,
+    gates: &ResyncGates,
 ) -> Result<Option<Provisioned>, CommandError> {
     let ready = row.boxed.as_ref().map(|b| b.state) == Some(BoxState::Ready);
     if entry_for(row).is_none() && !setup_wanted(cx, row) && !dotfiles_retry(row) && !ready {
@@ -93,7 +91,7 @@ pub(crate) fn reprovision(
         return retry_dotfiles(cx, store, &row).map(Some);
     }
     if ready && entry.is_none() && row.intent.is_none() && !setup_wanted(cx, &row) {
-        resync(cx, store, &row, trusted, launching)?;
+        resync(cx, store, &row, trusted, gates)?;
     }
     let at = row.worktree.as_deref().unwrap_or(&row.repo);
     if entry.is_none() && !setup_wanted(cx, &row) {
@@ -122,7 +120,7 @@ pub(crate) fn reprovision(
         workdir: &workdir,
         worktree: Path::new(at),
         sync: rerun_sync(cx, store, &row)?,
-        launching: Some(launching),
+        launching: Some(gates.launching),
     };
     Ok(Some(run_and_record(
         cx, store, row.id, advance, &target, &cfg,
@@ -263,10 +261,9 @@ impl<'a> SetupTarget<'a> {
     }
 }
 
-/// Syncs the checkout into the Box when the target asks for it.
-///
-/// A failure aborts when `advance` or when an agent launches after setup; otherwise it is a
-/// warning and setup carries on without the sync.
+/// Syncs the checkout into the Box when the target asks for it. A failure aborts when `advance`
+/// or when an agent launches after setup; otherwise it is a warning and setup carries on without
+/// the sync.
 fn sync_into_box(
     cx: &Cx,
     store: &Store,

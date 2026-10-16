@@ -47,19 +47,29 @@ pub(super) fn rerun_sync(cx: &Cx, store: &Store, row: &TaskRow) -> Result<SyncMo
     Ok(SyncMode::None)
 }
 
+/// What a caller knows that decides a re-sync of the checkout.
+pub(crate) struct ResyncGates<'a> {
+    /// Whether the caller is about to launch the agent; asked only if the re-sync fails.
+    pub launching: &'a dyn Fn() -> Result<bool, CommandError>,
+    /// Whether an agent session is still running.
+    pub agent_live: &'a dyn Fn() -> Result<bool, CommandError>,
+}
+
 /// Syncs the host checkout into a ready Box when no setup re-run is going to.
 ///
-/// Only the sync happens. A failed sync ends the start like a fresh one's when the agent is about
-/// to launch; otherwise it is a warning and the start goes on, so the user can retry.
+/// Only the sync happens. A live agent does not respect the Box lock and may be writing files, so
+/// no sync is made while an agent session is live. A failed sync ends the start like a fresh
+/// one's when the agent is about to launch; otherwise it is a warning and the start goes on, so
+/// the user can retry.
 ///
 /// # Errors
-/// The sync failed while `launching`, or the repo config could not be read.
+/// The sync failed while launching, or the repo config could not be read.
 pub(super) fn resync(
     cx: &Cx,
     store: &Store,
     row: &TaskRow,
     trusted: bool,
-    launching: &dyn Fn() -> Result<bool, CommandError>,
+    gates: &ResyncGates,
 ) -> Result<(), CommandError> {
     let Some(boxed) = row.boxed.as_ref().filter(|b| b.state == BoxState::Ready) else {
         return Ok(());
@@ -70,6 +80,14 @@ pub(super) fn resync(
     ) else {
         return Ok(());
     };
+    if (gates.agent_live)()? {
+        cx.warn(Warning {
+            code: "resync_skipped".to_owned(),
+            message: "did not sync the checkout into the Box: an agent session is still running"
+                .to_owned(),
+        });
+        return Ok(());
+    }
     if rerun_sync(cx, store, row)? != SyncMode::Full {
         return Ok(());
     }
@@ -79,7 +97,7 @@ pub(super) fn resync(
     let Err(reason) = setup::sync_checkout(cx, handle, &workdir, worktree, &cfg) else {
         return Ok(());
     };
-    if launching()? {
+    if (gates.launching)()? {
         let advance = row.state == TaskState::SettingUp;
         return Err(sync_failed(cx, store, row.id, advance, reason));
     }

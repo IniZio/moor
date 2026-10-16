@@ -522,11 +522,18 @@ fn reprovision_skips_when_another_start_already_gave_the_box_back() {
         w.driver.calls(),
         ["acquire", "exec box-1", "acquire", "exec box-2"]
     );
-    let run =
-        crate::ops::common::provision::reprovision(&w.cx, store, &stale, "start", false, &|| {
-            Ok(true)
-        })
-        .unwrap();
+    let run = crate::ops::common::provision::reprovision(
+        &w.cx,
+        store,
+        &stale,
+        "start",
+        false,
+        &crate::ops::common::provision::ResyncGates {
+            launching: &|| Ok(true),
+            agent_live: &|| Ok(false),
+        },
+    )
+    .unwrap();
     assert!(run.is_none());
     assert_eq!(
         w.driver.calls(),
