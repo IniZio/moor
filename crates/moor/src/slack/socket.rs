@@ -1,4 +1,4 @@
-//! The Socket Mode WebSocket loop: acknowledges envelopes and forwards app mentions.
+//! The Socket Mode WebSocket loop: acknowledges envelopes and forwards app mentions and button clicks.
 
 use std::io::{self, Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
@@ -14,6 +14,9 @@ use tungstenite::http::Uri;
 use tungstenite::{client, Message, WebSocket};
 
 use super::api::Api;
+
+mod parse;
+use parse::{parse_click, parse_mention};
 
 /// First wait after a failed or finished connection.
 const MIN_BACKOFF: Duration = Duration::from_secs(1);
@@ -47,6 +50,32 @@ pub(super) struct Mention {
     pub thread_ts: Option<String>,
     /// True for a plain thread reply, false for an app mention.
     pub(crate) reply: bool,
+}
+
+/// A button press on a prompt message.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct Click {
+    /// Envelope id, used as the dedupe id.
+    pub envelope_id: String,
+    /// Channel holding the message.
+    pub channel: String,
+    /// User who pressed the button.
+    pub user: String,
+    /// Timestamp of the message carrying the button.
+    pub message_ts: String,
+    /// Thread the message belongs to, if known.
+    pub thread_ts: Option<String>,
+    /// 1-based option number.
+    pub choice: u32,
+}
+
+/// What the socket thread forwards to the worker.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum Inbound {
+    /// An app mention or thread reply.
+    Mention(Mention),
+    /// A button press.
+    Click(Click),
 }
 
 /// Why a Socket Mode session ended abnormally; never carries the URL or a token.
@@ -124,7 +153,7 @@ enum Flow {
 
 /// Reads envelopes from one connection until Slack disconnects or the socket closes.
 #[cfg(test)]
-pub(super) fn session(url: &str, mentions: &Sender<Mention>) -> Result<(), SocketError> {
+pub(super) fn session(url: &str, mentions: &Sender<Inbound>) -> Result<(), SocketError> {
     session_tracked(url, mentions, &mut false)
 }
 
@@ -132,7 +161,7 @@ pub(super) fn session(url: &str, mentions: &Sender<Mention>) -> Result<(), Socke
 pub(super) fn run(
     api: &Api,
     app_token: &Secret,
-    mentions: &Sender<Mention>,
+    mentions: &Sender<Inbound>,
     sleep: &dyn Fn(Duration),
 ) {
     let mut delay = MIN_BACKOFF;
@@ -162,7 +191,7 @@ fn next_delay(delay: Duration) -> Duration {
 /// Reads envelopes from one connection, setting `healthy` once Slack's hello arrives.
 fn session_tracked(
     url: &str,
-    mentions: &Sender<Mention>,
+    mentions: &Sender<Inbound>,
     healthy: &mut bool,
 ) -> Result<(), SocketError> {
     let mut ws = connect(url)?;
@@ -213,11 +242,11 @@ fn flush(ws: &mut WebSocket<Stream>) -> Result<(), SocketError> {
     }
 }
 
-/// Acknowledges one JSON envelope, then forwards it if it is an app mention.
+/// Acknowledges one JSON envelope, then forwards it if it is a mention or click.
 fn handle_envelope(
     text: &str,
     ws: &mut WebSocket<Stream>,
-    mentions: &Sender<Mention>,
+    mentions: &Sender<Inbound>,
 ) -> Result<Flow, SocketError> {
     let Ok(envelope) = serde_json::from_str::<Value>(text) else {
         return Ok(Flow::Continue);
@@ -233,57 +262,18 @@ fn handle_envelope(
     match envelope.get("type").and_then(Value::as_str) {
         Some("hello") => Ok(Flow::Hello),
         Some("disconnect") => Ok(Flow::Disconnect),
-        Some("events_api") => {
-            if let Some(mention) = parse_mention(&envelope) {
-                mentions
-                    .send(mention)
-                    .map_err(|_| SocketError::ReceiverGone)?;
-            }
-            Ok(Flow::Continue)
-        }
+        Some("events_api") => forward(mentions, parse_mention(&envelope).map(Inbound::Mention)),
+        Some("interactive") => forward(mentions, parse_click(&envelope).map(Inbound::Click)),
         _ => Ok(Flow::Continue),
     }
 }
 
-/// The mention or thread reply inside an `events_api` envelope, if it is a well-formed one.
-fn parse_mention(envelope: &Value) -> Option<Mention> {
-    let payload = envelope.get("payload")?;
-    let event = payload.get("event")?;
-    let field = |value: &Value, key: &str| value.get(key)?.as_str().map(str::to_owned);
-    let reply = match event.get("type")?.as_str()? {
-        "app_mention" => false,
-        "message" => {
-            // Subtyped events (edits, deletes, joins) and bot posts are not user replies.
-            if event.get("subtype").is_some() || event.get("bot_id").is_some() {
-                return None;
-            }
-            let thread_ts = field(event, "thread_ts")?;
-            if thread_ts == field(event, "ts")? {
-                return None;
-            }
-            // Slack also delivers a message naming the bot as `app_mention`, which handles it.
-            let bot = payload
-                .get("authorizations")
-                .and_then(|a| a.get(0))
-                .and_then(|a| field(a, "user_id"));
-            if let Some(bot) = bot {
-                if field(event, "text")?.contains(&format!("<@{bot}")) {
-                    return None;
-                }
-            }
-            true
-        }
-        _ => return None,
-    };
-    Some(Mention {
-        event_id: field(payload, "event_id")?,
-        channel: field(event, "channel")?,
-        user: field(event, "user")?,
-        text: field(event, "text")?,
-        ts: field(event, "ts")?,
-        thread_ts: field(event, "thread_ts"),
-        reply,
-    })
+/// Sends `item` to the worker when present.
+fn forward(tx: &Sender<Inbound>, item: Option<Inbound>) -> Result<Flow, SocketError> {
+    if let Some(item) = item {
+        tx.send(item).map_err(|_| SocketError::ReceiverGone)?;
+    }
+    Ok(Flow::Continue)
 }
 
 /// Opens the transport and completes the WebSocket handshake.

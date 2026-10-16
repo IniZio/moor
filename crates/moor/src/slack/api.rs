@@ -78,18 +78,8 @@ impl Api {
         thread_ts: &str,
         text: &str,
     ) -> Result<String, ApiError> {
-        let url = format!("{}/chat.postMessage", self.base);
-        let body = json!({"channel": channel, "thread_ts": thread_ts, "text": text}).to_string();
-        let request = self
-            .agent
-            .post(&url)
-            .header("Authorization", bearer(bot_token)?)
-            .header("Content-Type", "application/json; charset=utf-8");
-        read_reply(request.send(body))?
-            .get("ts")
-            .and_then(Value::as_str)
-            .map(str::to_owned)
-            .ok_or_else(|| ApiError::Slack("reply has no ts".into()))
+        let body = json!({"channel": channel, "thread_ts": thread_ts, "text": text});
+        reply_ts(&self.call(bot_token, "chat.postMessage", &body)?)
     }
 
     /// Replaces the text of the message `ts` in `channel`.
@@ -100,15 +90,70 @@ impl Api {
         ts: &str,
         text: &str,
     ) -> Result<(), ApiError> {
-        let url = format!("{}/chat.update", self.base);
-        let body = json!({"channel": channel, "ts": ts, "text": text}).to_string();
+        let body = json!({"channel": channel, "ts": ts, "text": text});
+        self.call(bot_token, "chat.update", &body).map(|_| ())
+    }
+
+    /// Posts `text` with Block Kit `blocks` into thread `thread_ts`; returns the new message ts.
+    pub(super) fn post_blocks(
+        &self,
+        bot_token: &Secret,
+        channel: &str,
+        thread_ts: &str,
+        text: &str,
+        blocks: &Value,
+    ) -> Result<String, ApiError> {
+        let body =
+            json!({"channel": channel, "thread_ts": thread_ts, "text": text, "blocks": blocks});
+        reply_ts(&self.call(bot_token, "chat.postMessage", &body)?)
+    }
+
+    /// Replaces text and blocks of message `ts`.
+    pub(super) fn update_blocks(
+        &self,
+        bot_token: &Secret,
+        channel: &str,
+        ts: &str,
+        text: &str,
+        blocks: &Value,
+    ) -> Result<(), ApiError> {
+        let body = json!({"channel": channel, "ts": ts, "text": text, "blocks": blocks});
+        self.call(bot_token, "chat.update", &body).map(|_| ())
+    }
+
+    /// chat.postEphemeral: shows `text` to `user` only, inside thread `thread_ts`.
+    pub(super) fn post_ephemeral(
+        &self,
+        bot_token: &Secret,
+        channel: &str,
+        user: &str,
+        thread_ts: &str,
+        text: &str,
+    ) -> Result<(), ApiError> {
+        let body = json!({"channel": channel, "user": user, "thread_ts": thread_ts, "text": text});
+        self.call(bot_token, "chat.postEphemeral", &body)
+            .map(|_| ())
+    }
+
+    /// Sends the JSON `body` to Web API `method` with the bot token.
+    fn call(&self, bot_token: &Secret, method: &str, body: &Value) -> Result<Value, ApiError> {
+        let url = format!("{}/{method}", self.base);
         let request = self
             .agent
             .post(&url)
             .header("Authorization", bearer(bot_token)?)
             .header("Content-Type", "application/json; charset=utf-8");
-        read_reply(request.send(body)).map(|_| ())
+        read_reply(request.send(body.to_string()))
     }
+}
+
+/// The message `ts` in a posting reply.
+fn reply_ts(reply: &Value) -> Result<String, ApiError> {
+    reply
+        .get("ts")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .ok_or_else(|| ApiError::Slack("reply has no ts".into()))
 }
 
 /// The `Authorization` header value for `token`.
