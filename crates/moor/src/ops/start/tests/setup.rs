@@ -414,6 +414,27 @@ fn start_does_not_re_run_setup_when_the_setup_owner_is_dead() {
 }
 
 #[test]
+fn start_after_an_interrupted_setup_re_syncs_the_checkout_in_the_same_box() {
+    let (w, _) = interrupted_setup(4242);
+    w.proc.dead(4242);
+    drop(warning_codes(&w));
+    let syncs = |w: &World| {
+        let all = w.driver.execs().into_iter();
+        let all = all.filter(|e| e.1.argv == ["git", "rev-parse", "--git-dir"]);
+        all.map(|e| e.0).collect::<Vec<_>>()
+    };
+    let before = syncs(&w).len();
+    let again = run(&w.cx, &start_req()).unwrap();
+    assert!(!again.setup.ran);
+    assert_eq!(argvs(&w), [script_argv(&["a"])]);
+    let after = syncs(&w);
+    assert_eq!(after.len(), before + 1);
+    assert_eq!(after.last(), Some(&BoxHandle::new("box-1")));
+    let [message] = not_rerun_warning(&w).try_into().unwrap();
+    assert!(message.starts_with("setup was interrupted; "));
+}
+
+#[test]
 fn start_leaves_setup_alone_when_the_setup_owner_is_alive() {
     let (w, _) = interrupted_setup(4242);
     let again = run(&w.cx, &start_req()).unwrap();
