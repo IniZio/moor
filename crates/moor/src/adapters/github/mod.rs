@@ -14,6 +14,8 @@ use moor_core::secret::Secret;
 
 /// How long the token command may run.
 const TOKEN_DEADLINE: Deadline = Deadline(Duration::from_secs(10));
+/// How long the PR lookup may run.
+const PR_DEADLINE: Deadline = Deadline(Duration::from_secs(15));
 /// Config key named in every error.
 const KEY: &str = "github.you_token_cmd";
 
@@ -84,5 +86,39 @@ impl Forge for GitHub {
             return Err(ForgeError::Auth(format!("{KEY} printed no token")));
         }
         Ok(Secret::new(token.to_vec()))
+    }
+
+    /// Looks up the open PR whose head is `branch` with `gh pr list`.
+    ///
+    /// The token travels in `GH_TOKEN`, never argv. Errors never carry the
+    /// token, stdout or stderr.
+    fn open_pr(&self, repo: &ForgeRepo, branch: &str) -> Result<Option<String>, ForgeError> {
+        let token = self.repo_token(repo)?;
+        let token = String::from_utf8_lossy(token.expose()).into_owned();
+        let spec = ProcSpec::new(Tool::Gh, PR_DEADLINE)
+            .env("GH_TOKEN", token)
+            .args(["pr", "list", "--repo"])
+            .arg(format!("{}/{}", repo.owner, repo.name))
+            .args(["--head", branch, "--state", "open", "--limit", "1"])
+            .args(["--json", "url"]);
+        let out = self.proc.run_secret(&spec).map_err(|e| {
+            ForgeError::Failed(match e {
+                ProcError::NonZero { code, .. } => format!("gh pr list exited {code}"),
+                ProcError::Spawn(e) => format!("gh pr list could not start: {}", e.kind()),
+                ProcError::Timeout { after, .. } => {
+                    format!("gh pr list timed out after {}s", after.as_secs())
+                }
+                ProcError::Signalled(_) | ProcError::Interrupted => {
+                    "gh pr list was killed by a signal".to_owned()
+                }
+            })
+        })?;
+        let list: Vec<serde_json::Value> = serde_json::from_slice(&out)
+            .map_err(|_| ForgeError::Failed("gh pr list printed unreadable output".to_owned()))?;
+        Ok(list
+            .first()
+            .and_then(|pr| pr.get("url"))
+            .and_then(|u| u.as_str())
+            .map(str::to_owned))
     }
 }
