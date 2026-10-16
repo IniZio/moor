@@ -1,10 +1,10 @@
 //! Close checks the Box for work that exists nowhere else.
 
-use moor_core::boxscript::boxwork::BOXWORK_FILE;
+use moor_core::boxscript::boxwork::{BOXWORK_FILE, BOXWORK_NO_CHECKOUT};
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::task::{TaskInput, TaskState};
-use moor_core::seam::driver::DriverError;
+use moor_core::seam::driver::{DriverError, ExecOutcome};
 use moor_core::{CloseReq, ErrorKind, ProviderId, TaskName};
 
 use std::sync::Arc;
@@ -333,4 +333,35 @@ fn force_does_not_probe_before_or_after_stopping_the_agent() {
     let v = run(&f.cx, &req(true)).unwrap();
     assert!(v.agent_stopped);
     assert_eq!(probes(&f), 0);
+}
+
+const NO_CHECKOUT: ExecOutcome = ExecOutcome::Exited {
+    code: BOXWORK_NO_CHECKOUT,
+};
+
+#[test]
+fn close_refuses_a_box_with_no_git_checkout_like_an_unreadable_probe() {
+    let driver = FakeDriver::new().exec_results([Ok(NO_CHECKOUT)]);
+    let f = fx_box(driver, surface(), 0, Some("ahead=0 dirty=0"));
+    let t = text(&refused(&f));
+    assert!(
+        t.contains("could not check the Box for unsaved work"),
+        "{t}"
+    );
+}
+
+#[test]
+fn close_refuses_when_the_recheck_finds_no_git_checkout() {
+    let ok = Ok(ExecOutcome::Exited { code: 0 });
+    let driver = FakeDriver::new().exec_results([ok, Ok(NO_CHECKOUT)]);
+    let f = fx_box(driver, surface(), 0, Some("ahead=0 dirty=0"));
+    let e = run(&f.cx, &req(false)).unwrap_err();
+    assert_eq!(e.kind, ErrorKind::Refused);
+    let t = text(&e);
+    assert!(
+        t.contains("could not check the Box for unsaved work"),
+        "{t}"
+    );
+    assert_eq!(count(&f, "release"), 0);
+    assert_ne!(row(&f).state, TaskState::Closed);
 }
