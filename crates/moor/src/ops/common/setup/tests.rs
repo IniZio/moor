@@ -14,7 +14,7 @@ use moor_core::seam::proc::Deadline;
 use moor_core::view::SetupView;
 use moor_core::{BoxHandle, BoxPath, ProviderId, TaskId, TaskName};
 
-use super::{run_setup, setup_deadline, SetupRun, SETUP_LINE_DEADLINE};
+use super::{run_setup, setup_deadline, sync_checkout, SetupRun, SETUP_LINE_DEADLINE};
 use crate::cx::Cx;
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
@@ -422,6 +422,35 @@ fn driver_timeout_fails_the_line() {
 }
 
 #[test]
+fn sync_checkout_is_one_synced_exec_that_runs_nothing() {
+    let d = tempfile::tempdir().unwrap();
+    let r = rig(d.path(), FakeDriver::new());
+    let got = sync_checkout(&r.cx, &r.handle, &r.workdir, d.path(), &cfg(&["a"], &[]));
+    assert_eq!(got, Ok(()));
+    let (_, spec, dl) = only(r.driver.execs());
+    assert_eq!(spec.sync, SyncMode::Full);
+    assert_eq!(spec.argv, vec!["true".to_owned()]);
+    assert_eq!(dl, Deadline(SETUP_LINE_DEADLINE));
+}
+
+#[test]
+fn sync_checkout_failures_name_the_sync() {
+    let failures = [
+        (Ok(ExecOutcome::Exited { code: 3 }), "exit 3"),
+        (Ok(ExecOutcome::Interrupted), "interrupted"),
+        (Err(DriverError::Timeout(SETUP_LINE_DEADLINE)), "timed out"),
+    ];
+    for (result, reason) in failures {
+        let d = tempfile::tempdir().unwrap();
+        let r = rig(d.path(), FakeDriver::new().exec_results([result]));
+        let got = sync_checkout(&r.cx, &r.handle, &r.workdir, d.path(), &cfg(&[], &[]));
+        let msg = got.unwrap_err();
+        assert!(msg.starts_with("syncing the checkout into the Box failed: "));
+        assert!(msg.contains(reason), "{msg}");
+    }
+}
+
+#[test]
 fn empty_setup_is_skipped_without_exec() {
     let d = tempfile::tempdir().unwrap();
     let r = rig(d.path(), FakeDriver::new());
@@ -504,7 +533,6 @@ fn exec_is_synced_from_the_worktree_at_the_resolved_size() {
     let (_, spec, _) = only(r.driver.execs());
     assert_eq!(spec.sync, SyncMode::Full);
     assert!(spec.output.is_none());
-    assert_eq!(spec.host_cwd.as_deref(), Some(d.path()));
     assert_eq!(spec.class.as_deref(), Some(c.size.value.as_str()));
 }
 

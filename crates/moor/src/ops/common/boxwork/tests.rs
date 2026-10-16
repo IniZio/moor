@@ -192,6 +192,16 @@ fn non_zero_exit_is_unknown_and_names_the_code() {
 }
 
 #[test]
+fn missing_checkout_is_unknown_and_says_so() {
+    let d = tempfile::tempdir().unwrap();
+    let driver = FakeDriver::new().exec_results([Ok(ExecOutcome::Exited {
+        code: moor_core::boxscript::boxwork::BOXWORK_NO_CHECKOUT,
+    })]);
+    let r = rig(d.path(), driver);
+    assert!(matches!(run(&r), BoxWork::Unknown(why) if why.contains("no git checkout")));
+}
+
+#[test]
 fn missing_result_file_is_unknown() {
     let d = tempfile::tempdir().unwrap();
     assert!(is_unknown(&run(&rig(d.path(), FakeDriver::new()))));

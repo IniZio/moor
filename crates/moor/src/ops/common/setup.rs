@@ -157,6 +157,41 @@ pub(crate) fn run_setup(
     SetupRun::Failed { line, exit, ms }
 }
 
+/// Syncs the worktree into the Box with an exec that runs nothing, so a failure here is the sync
+/// failing and never a setup line.
+///
+/// # Errors
+/// The reason, worded for the user, when the sync did not finish.
+pub(crate) fn sync_checkout(
+    cx: &Cx,
+    handle: &BoxHandle,
+    workdir: &BoxPath,
+    worktree: &Path,
+    cfg: &TaskSettings,
+) -> Result<(), String> {
+    let spec = ExecSpec {
+        argv: vec!["true".to_owned()],
+        env: Vec::new(),
+        cwd: Some(workdir.clone()),
+        sync: SyncMode::Full,
+        output: None,
+        host_cwd: Some(worktree.to_path_buf()),
+        class: Some(cfg.size.value.as_str().to_owned()),
+    };
+    let reason = match cx
+        .driver()
+        .exec(handle, &spec, Deadline(SETUP_LINE_DEADLINE))
+    {
+        Ok(ExecOutcome::Exited { code: 0 }) => return Ok(()),
+        Ok(ExecOutcome::Exited { code }) => format!("exit {code}"),
+        Ok(ExecOutcome::Interrupted) => "interrupted".to_owned(),
+        Err(e) => e.to_string(),
+    };
+    Err(format!(
+        "syncing the checkout into the Box failed: {reason}"
+    ))
+}
+
 /// The warning text: the failing line, where the full log lives in the Box, and its tail.
 fn failure_message(line: &str, reason: &str, workdir: &BoxPath, log: &str) -> String {
     let path = format!("{}/{LOG_REL}", workdir.as_str());
