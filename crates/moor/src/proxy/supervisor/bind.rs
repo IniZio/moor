@@ -1,6 +1,6 @@
 //! Opening the reverse tunnel after freeing its Box port from a stale forward.
 //!
-//! When a tunnel is dropped, its ssh and ProxyCommand are killed without closing the
+//! When a tunnel is dropped, its ssh and `ProxyCommand` are killed without closing the
 //! connection, so the Box's `sshd-session` can keep the half-open session, and with it the
 //! `-R` listener port, until it times out. Every new `ssh -R` would then fail to bind.
 
