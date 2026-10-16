@@ -240,8 +240,24 @@ fn script_drops_names_containing_a_newline() {
 }
 
 #[test]
+#[allow(
+    clippy::print_stderr,
+    reason = "explicit skip notice when no hasher exists"
+)]
 fn script_falls_back_to_shasum_without_sha256sum() {
     use std::os::unix::fs::PermissionsExt;
+    // The script calls `shasum -a 256`. A real sha256sum rejects `-a 256`, so
+    // that shim ignores its arguments; a real shasum gets them passed through.
+    // The shim restores the caller's PATH so a `#!/usr/bin/env perl` shasum runs.
+    let exec_line = if let Some(p) = which("sha256sum") {
+        format!("exec '{}'", p.display())
+    } else if let Some(p) = which("shasum") {
+        format!("exec '{}' \"$@\"", p.display())
+    } else {
+        eprintln!("skipping: neither sha256sum nor shasum on PATH");
+        return;
+    };
+    let real_path = std::env::var("PATH").unwrap_or_default();
     let root = scratch("shasum");
     let proof = root.join(PROOF_DIR);
     std::fs::create_dir_all(&proof).unwrap();
@@ -249,7 +265,7 @@ fn script_falls_back_to_shasum_without_sha256sum() {
     let bin = root.join("bin");
     std::fs::create_dir_all(&bin).unwrap();
     for tool in ["sh", "find", "wc", "tr", "cut", "head", "awk", "touch"] {
-        if let Ok(p) = which(tool) {
+        if let Some(p) = which(tool) {
             std::os::unix::fs::symlink(p, bin.join(tool)).unwrap();
         }
     }
@@ -258,8 +274,9 @@ fn script_falls_back_to_shasum_without_sha256sum() {
     std::fs::write(
         &shim,
         format!(
-            "#!/bin/sh\ntouch '{}'\nexec /usr/bin/sha256sum\n",
-            marker.display()
+            "#!/bin/sh\ntouch '{}'\nPATH='{}'\nexport PATH\n{exec_line}\n",
+            marker.display(),
+            real_path
         ),
     )
     .unwrap();
@@ -278,10 +295,13 @@ fn script_falls_back_to_shasum_without_sha256sum() {
     assert_eq!(files, vec![pf("a", 3, ABC)]);
 }
 
-fn which(tool: &str) -> Result<PathBuf, ()> {
-    ["/usr/bin", "/bin"]
-        .iter()
-        .map(|d| PathBuf::from(d).join(tool))
-        .find(|p| p.exists())
-        .ok_or(())
+fn which(tool: &str) -> Option<PathBuf> {
+    use std::os::unix::fs::PermissionsExt;
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path)
+        .map(|d| d.join(tool))
+        .find(|p| {
+            p.metadata()
+                .is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+        })
 }
