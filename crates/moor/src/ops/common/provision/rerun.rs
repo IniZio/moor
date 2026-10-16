@@ -129,7 +129,7 @@ pub(super) fn note_setup_not_rerun(
         return Ok(());
     }
     let name = row.name.as_str();
-    let by_hand = format!("`moor start` does not re-run it, run its commands by hand with `moor run {name} -- <command>`");
+    let by_hand = format!("`moor start` does not re-run it; run each `setup:` line by hand with `moor run {name} -- '<line>'`");
     let message = if let Some(intent) = &row.intent {
         if !setup_dead(intent, cx.proc().alive(intent.pid())) {
             return Ok(());
