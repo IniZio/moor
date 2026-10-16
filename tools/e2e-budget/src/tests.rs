@@ -157,6 +157,40 @@ fn verdict_states() {
 }
 
 #[test]
+fn skips_are_counted_apart_and_do_not_fail() {
+    let ok = [("a", Outcome::Pass), ("b", Outcome::Skip)];
+    assert_eq!(
+        summarize(&ok),
+        (true, "VERDICT PASS (2 phases, 1 skipped: b)".to_owned())
+    );
+    let bad = [
+        ("a", Outcome::Fail),
+        ("b", Outcome::Skip),
+        ("c", Outcome::Skip),
+    ];
+    assert_eq!(
+        summarize(&bad),
+        (
+            false,
+            "VERDICT FAIL (1 of 3 phases failed: a; 2 skipped: b, c)".to_owned()
+        )
+    );
+    assert!(!summarize(&[]).0);
+}
+
+#[test]
+fn parses_phase_lines_and_report_lines() {
+    assert_eq!(
+        parse_phase_line("PHASE wake2 took=0.0s budget=0.0s SKIP"),
+        Some(("wake2", Outcome::Skip))
+    );
+    assert_eq!(parse_phase_line("noise"), None);
+    let line = report_line("box_step.1", 2_500);
+    assert_eq!(line, "PHASE box_step.1 took=2.5s budget=none PASS");
+    assert_eq!(parse_phase_line(&line), Some(("box_step.1", Outcome::Pass)));
+}
+
+#[test]
 fn parse_jsonl_skips_blank_lines_and_names_bad_line() {
     let ok = parse_jsonl("{\"id\":1,\"kind\":\"started\",\"ts_ms\":5}\n\n").unwrap();
     assert_eq!(ok, [ev(1, "started", 5)]);
