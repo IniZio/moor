@@ -143,7 +143,7 @@ struct StartArgs {
     /// Resume the agent's stored session.
     #[arg(long)]
     resume: bool,
-    /// Run setup and relaunch the agent even when the Task's .moor.yaml differs from its base commit.
+    /// Launch the agent with the Task's .moor.yaml even when it differs from its base commit.
     #[arg(long)]
     trust_moor_yaml: bool,
 }
