@@ -139,6 +139,18 @@ pub fn build(b: &BoxCtx<'_>, purpose: Purpose) -> Result<ExecEnv, String> {
         prelude.push(format!(
             "unset {NONCE_VAR} moor_bundle moor_sys moor_mark moor_f"
         ));
+        // The agent gets these through its sandbox profile instead.
+        if !matches!(purpose, Purpose::Agent) {
+            for name in ["GH_TOKEN", "GITHUB_TOKEN"] {
+                if let Some((_, v)) = b
+                    .env
+                    .iter()
+                    .find(|(n, _)| n == name && !b.strip.contains(n))
+                {
+                    prelude.push(format!("export {name}={}", quote(v)));
+                }
+            }
+        }
     }
     let (deadline, pty) = match purpose {
         Purpose::Setup { lines } => {
