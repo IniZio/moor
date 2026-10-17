@@ -59,6 +59,10 @@ pub(crate) fn apply(doc: &mut Value, input: &MacInput) -> Result<(), String> {
                 "(allow user-preference-read user-preference-write (preference-domain \"{}\"))",
                 plain(d)?
             )),
+            Grant::NestedSandboxExec => rules.push(
+                "(allow process-exec (with no-sandbox) (literal \"/usr/bin/sandbox-exec\"))"
+                    .to_owned(),
+            ),
             Grant::MachLookup(n) => {
                 rules.push(format!(
                     "(allow mach-lookup (global-name \"{}\"))",

@@ -28,6 +28,12 @@ fn capabilities_parse() {
         ok("box: {capabilities: [ios-simulator]}").box_.capabilities,
         [BoxCapability::IosSimulator]
     );
+    assert_eq!(
+        ok("box: {capabilities: [swiftpm-plugins]}")
+            .box_
+            .capabilities,
+        [BoxCapability::SwiftpmPlugins]
+    );
 }
 
 #[test]

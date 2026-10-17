@@ -203,6 +203,7 @@ impl Launch<'_> {
         let sel = Selection {
             xcode: has(BoxCapability::Xcode),
             ios_simulator: has(BoxCapability::IosSimulator),
+            swiftpm_plugins: has(BoxCapability::SwiftpmPlugins),
         };
         Ok(Some(selected(sel)))
     }
