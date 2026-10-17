@@ -131,6 +131,7 @@ pub(crate) fn run_setup(
     let purpose = Purpose::Setup {
         lines: cfg.setup.len(),
     };
+    let nonce = proxy.map(|p| p.addr.nonce.expose());
     let started = cx.clock().instant();
     let mut sandboxed = false;
     let result = box_exec::prepare(cx, &site, proxy, cfg, purpose)
@@ -166,7 +167,7 @@ pub(crate) fn run_setup(
         Err(Failure::Exec(e)) => (e.to_string(), None),
     };
     let log = fetch_box_file(cx, handle, workdir, worktree, LOG_REL);
-    let sandbox = denials::fetch(cx, handle, workdir, worktree, sandboxed);
+    let sandbox = denials::fetch(cx, handle, workdir, worktree, sandboxed, nonce);
     let line = cfg
         .setup
         .get(failed_step(&log, cfg.setup.len()))

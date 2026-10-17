@@ -2,7 +2,10 @@
 
 use std::process::Command;
 
-use super::{from_report, parse, script, window_script, Denial, DENIAL_LIMIT, PID_FILTER_AWK};
+use super::{
+    clean, from_report, parse, parse_split, script, window_script, Denial, DENIAL_LIMIT,
+    DENIAL_LINE_CHARS, PID_FILTER_AWK,
+};
 
 const NONO: &str = r#"{
   "session": {
@@ -239,4 +242,38 @@ fn parse_keeps_blocking_denial_among_noise() {
     assert_eq!(out.len(), DENIAL_LIMIT);
     assert_eq!(out.first().unwrap().operation, "file-read-data");
     assert_eq!(out.last().unwrap().target, "com.apple.n49");
+}
+
+#[test]
+fn parse_split_separates_setup_from_live() {
+    let live_line = LOG.replace("cat(73134)", "ls(9)");
+    let out = format!("moor-denials: report\n{NONO}{LOG}\nmoor-denials: log\n{live_line}\n");
+    let split = parse_split(&out);
+    let procs: Vec<_> = split.setup.iter().map(|d| d.process.as_deref()).collect();
+    assert_eq!(procs, [None, Some("cat")]);
+    let live: Vec<_> = split.live.iter().map(|d| d.process.as_deref()).collect();
+    assert_eq!(live, [Some("ls")]);
+}
+
+#[test]
+fn clean_strips_escapes_and_controls() {
+    let raw = "\x1b[31mred\x1b[0m \x1b]0;title\x07ok\r\0\x1b]0;t2\x1b\\\tx\n  y";
+    assert_eq!(clean(raw), "red ok x y");
+}
+
+#[test]
+fn clean_caps_long_text() {
+    let out = clean(&"a".repeat(10_000));
+    assert_eq!(out.chars().count(), DENIAL_LINE_CHARS);
+    assert!(out.ends_with('…'));
+}
+
+#[test]
+fn giant_log_line_target_is_bounded() {
+    let line = format!("{LOG}{}", "x".repeat(10_000));
+    let lens: Vec<_> = parse(&line)
+        .iter()
+        .map(|d| d.target.chars().count())
+        .collect();
+    assert_eq!(lens, [4 * DENIAL_LINE_CHARS]);
 }
