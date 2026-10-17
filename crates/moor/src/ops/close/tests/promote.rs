@@ -18,6 +18,7 @@ use crate::ops::common::boxlock::{BoxLock, WAIT};
 use crate::ops::common::promote::PROMOTE_WAIT;
 use crate::ops::show;
 use crate::ops::start;
+use crate::testing::cx::fake_config;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::{Reply, ScriptedProc};
 use crate::testing::surface::FakeSurface;
@@ -428,7 +429,14 @@ fn promoted_task_runs_the_repo_setup_commands_in_its_new_box() {
         "setup: [\"echo one\", \"echo two\"]\n",
     )
     .unwrap();
-    let w = world_at(limit(1), FakeDriver::new(), repo.path());
+    // Setup runs through the Proxy, which stages its credentials under the Box user's HOME.
+    let environ = BoxPath::restore("/proc/self/environ").unwrap();
+    let driver = FakeDriver::new().peek_text("box-2", &environ, "HOME=/home/box\0");
+    let config = UserConfig {
+        credentials: fake_config().credentials,
+        ..limit(1)
+    };
+    let w = world_at(config, driver, repo.path());
     let id = queue(&w, "first");
     close_holder(&w);
     assert_eq!(state_of(&w, id), TaskState::Working);
@@ -442,6 +450,10 @@ fn promoted_task_runs_the_repo_setup_commands_in_its_new_box() {
         .map(|(_, spec, _)| spec.argv)
         .collect();
     let steps = ["echo one", "echo two"].map(str::to_owned);
-    let want = vec!["sh".to_owned(), "-c".to_owned(), setup_script(&steps)];
-    assert_eq!(argvs, [want]);
+    let script = setup_script(&steps);
+    let ran = argvs
+        .iter()
+        .filter(|a| a.last().is_some_and(|l| l.contains(&script)))
+        .count();
+    assert_eq!(ran, 1, "{argvs:?}");
 }

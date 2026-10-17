@@ -56,7 +56,7 @@ pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
         reports::collect(cx, store, &row);
     }
     let box_deleted = if plan.release_box {
-        teardown::teardown(cx, &row, req.trust_moor_yaml);
+        teardown::teardown(cx, &row, req.trust_moor_yaml, req.force)?;
         release(cx, store, &row)?
     } else {
         store.apply(plan.decision_close.clone())?;
