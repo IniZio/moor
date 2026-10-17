@@ -1,6 +1,6 @@
 use moor_core::config::parse_user;
 use moor_core::seam::driver::Platform;
-use moor_core::TaskId;
+use moor_core::{TaskId, TaskName};
 
 use super::{req, world_with};
 use crate::testing::driver::FakeDriver;
@@ -101,6 +101,14 @@ fn capabilities_on_a_macos_box_start_normally() {
 
 /// Starts `demo` in a repo that selects toolchain `name`, on a Box of `platform`.
 fn start_with_toolchain(name: &str, platform: Platform) -> Result<(), crate::error::CommandError> {
+    start_in_world(name, platform).1
+}
+
+/// Like [`start_with_toolchain`], also returning the world to inspect afterwards.
+fn start_in_world(
+    name: &str,
+    platform: Platform,
+) -> (super::World, Result<(), crate::error::CommandError>) {
     let repo = tempfile::tempdir().unwrap();
     std::fs::write(
         repo.path().join(".moor.yaml"),
@@ -114,17 +122,27 @@ fn start_with_toolchain(name: &str, platform: Platform) -> Result<(), crate::err
         parse_user("c.yaml", host).unwrap(),
     );
     w.driver.set_platform(platform);
-    crate::ops::start::run(&w.cx, &req("demo")).map(drop)
+    let r = crate::ops::start::run(&w.cx, &req("demo")).map(drop);
+    (w, r)
 }
 
 #[test]
 fn an_unknown_toolchain_on_a_macos_box_fails_the_start_as_a_config_error() {
-    let e = start_with_toolchain("nope", Platform::Macos).unwrap_err();
-    let msg = e.error.to_string();
+    let (w, r) = start_in_world("nope", Platform::Macos);
+    let msg = r.unwrap_err().error.to_string();
     assert!(
         msg.starts_with(".moor.yaml:box.toolchains[0]:")
-            && msg.contains("unknown toolchain \"nope\""),
+            && msg.contains("unknown toolchain \"nope\"")
+            && msg.contains("the host config names: mise"),
         "{msg}"
+    );
+    assert!(!w.driver.calls().iter().any(|c| c == "acquire"));
+    assert_eq!(
+        w.cx.store()
+            .unwrap()
+            .open_task_by_name(&TaskName::parse("demo").unwrap())
+            .unwrap(),
+        None
     );
 }
 
