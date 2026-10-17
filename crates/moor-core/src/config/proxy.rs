@@ -99,12 +99,16 @@ pub struct ToolRule {
     pub allow: Vec<String>,
     /// Box environment variables; values may use the repo placeholders.
     pub box_env: BTreeMap<String, String>,
+    /// Drop the rule for a Task with no repo even when no allow entry or Box
+    /// variable uses `{repo}`.
+    pub requires_repo: bool,
 }
 
 impl ToolRule {
-    /// Whether any allow entry or Box variable needs the Task repo.
+    /// Whether the rule needs the Task repo: `requires_repo`, or any allow entry or Box variable uses it.
     pub(super) fn needs_repo(&self) -> bool {
-        self.allow.iter().any(|a| template::uses_repo(a))
+        self.requires_repo
+            || self.allow.iter().any(|a| template::uses_repo(a))
             || self.box_env.values().any(|v| template::uses_repo(v))
     }
 
@@ -152,6 +156,7 @@ impl ToolRule {
             },
             allow,
             box_env,
+            requires_repo: default.requires_repo,
         }
     }
 

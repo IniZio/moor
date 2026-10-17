@@ -291,3 +291,42 @@ fn unchained_config_adds_no_extra_ca() {
         .upstream_extra_ca_pems
         .is_empty());
 }
+
+#[test]
+fn github_uploads_route_admits_only_the_asset_post() {
+    use moor_core::config::proxy::ProxyConfig;
+    use nono_proxy::config::CompiledEndpointRules;
+
+    let src = moor_core::config::CredentialSource {
+        env: Some("X".into()),
+        ..Default::default()
+    };
+    let creds = std::collections::BTreeMap::from([("CLAUDE_CODE_OAUTH_TOKEN".to_owned(), src)]);
+    let rules =
+        moor_core::config::proxy::resolve_rules(&ProxyConfig::default(), &creds, Some(("o", "w")))
+            .unwrap();
+    let cfg = cfg_for(&rules, None);
+    let route = cfg
+        .inner()
+        .routes
+        .iter()
+        .find(|r| r.upstream == "https://uploads.github.com")
+        .expect("uploads route");
+    let policy = CompiledEndpointRules::compile(&route.endpoint_rules).unwrap();
+    assert!(policy.is_allowed("POST", "/user-attachments/assets"));
+    assert!(policy.is_allowed(
+        "POST",
+        "/user-attachments/assets?name=a.png&content_type=image%2Fpng&repository_id=1"
+    ));
+    for (m, p) in [
+        ("GET", "/user-attachments/assets"),
+        ("PUT", "/user-attachments/assets"),
+        ("DELETE", "/user-attachments/assets"),
+        ("POST", "/user-attachments/assets/1"),
+        ("POST", "/user-attachments"),
+        ("POST", "/repos/o/r/releases/1/assets"),
+        ("POST", "/"),
+    ] {
+        assert!(!policy.is_allowed(m, p), "{m} {p}");
+    }
+}

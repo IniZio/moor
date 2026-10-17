@@ -207,7 +207,10 @@ fn the_spec_carries_the_task_repo_and_resolved_rules() {
     let spec = spec_of(&fake);
     assert_eq!(spec.task_repo, Some(ForgeRepo::new("o", "r")));
     let names: Vec<&str> = spec.rules.iter().map(|r| r.name.as_str()).collect();
-    assert_eq!(names, ["claude", "github-api", "github-git"]);
+    assert_eq!(
+        names,
+        ["claude", "github-api", "github-git", "github-uploads"]
+    );
     let api = spec.rules.iter().find(|r| r.name == "github-api").unwrap();
     assert_eq!(api.box_env.get("GH_REPO").map(String::as_str), Some("o/r"));
     let launches = engine.launches();
