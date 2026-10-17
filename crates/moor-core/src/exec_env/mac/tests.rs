@@ -273,32 +273,7 @@ fn a_task_with_a_simulator_gets_its_device_and_set() {
 
 #[test]
 fn a_task_without_a_simulator_sets_neither_variable() {
-    let (layout, key) = fixture();
-    let tc = [("MOOR_SIM_UDID".to_owned(), "x".to_owned())];
-    let mac = MacTask {
-        layout: &layout,
-        key: &key,
-        nonce: "abc",
-        toolchain_env: &tc,
-        toolchain_bin: &[],
-        sim_udid: None,
-    };
-    let v = vars(&mac).unwrap();
-    assert_eq!(get(&v, "MOOR_SIM_SET"), Vec::<String>::new());
-    assert_eq!(get(&v, "MOOR_SIM_UDID"), ["x"]);
-}
-
-#[test]
-fn a_toolchain_cannot_override_the_simulator_device() {
-    let (layout, key) = fixture();
-    let tc = [("MOOR_SIM_UDID".to_owned(), "x".to_owned())];
-    let mac = MacTask {
-        layout: &layout,
-        key: &key,
-        nonce: "abc",
-        toolchain_env: &tc,
-        toolchain_bin: &[],
-        sim_udid: Some("real"),
-    };
-    assert_eq!(get(&vars(&mac).unwrap(), "MOOR_SIM_UDID"), ["real"]);
+    let (vars, _) = with_toolchains(&[], &[]);
+    assert_eq!(get(&vars, "MOOR_SIM_SET"), Vec::<String>::new());
+    assert_eq!(get(&vars, "MOOR_SIM_UDID"), Vec::<String>::new());
 }

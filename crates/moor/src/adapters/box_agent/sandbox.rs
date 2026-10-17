@@ -18,8 +18,10 @@ pub(super) const ROOT_SANDBOX_VAR: &str = "IS_SANDBOX";
 pub(super) const NOT_INSTALLED: i32 = 6;
 
 /// Login and terminal names every agent keeps, plus two globs; the Proxy and CA names come from
-/// `exec_env::PASS_VARS`.
-const LOGIN_VARS: [&str; 17] = [
+/// `exec_env::PASS_VARS`. The Task's simulator names are not here: they reach the sandbox only as
+/// the profile's `set_vars`, so a value in the Box login environment never leaks into a Task that
+/// has no simulator.
+const LOGIN_VARS: [&str; 15] = [
     "PATH",
     "HOME",
     "USER",
@@ -31,8 +33,6 @@ const LOGIN_VARS: [&str; 17] = [
     "CFFIXED_USER_HOME",
     "XCODE_XCCONFIG_FILE",
     "MOOR_BOX_TAG",
-    "MOOR_SIM_UDID",
-    "MOOR_SIM_SET",
     "DEVELOPER_DIR",
     "COLORTERM",
     "GIT_CONFIG_*",
@@ -281,5 +281,7 @@ pub(super) fn wrap(launcher: &BoxPath, profile_path: &BoxPath, agent: &[String])
 
 pub(super) mod mac;
 
+#[cfg(test)]
+mod sim_tests;
 #[cfg(test)]
 mod tests;

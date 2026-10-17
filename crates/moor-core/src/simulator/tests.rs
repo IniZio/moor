@@ -88,6 +88,24 @@ fn runtime_versions_compare_numerically() {
 }
 
 #[test]
+fn newest_runtime_tie_goes_to_first_listed() {
+    let mut i = inv();
+    let mut twin = i
+        .runtimes
+        .iter()
+        .find(|r| r.identifier == IOS_26_4)
+        .unwrap()
+        .clone();
+    twin.identifier = "com.apple.CoreSimulator.SimRuntime.iOS-26-4-beta".into();
+    twin.name = "iOS 26.4 beta".into();
+    i.runtimes.push(twin.clone());
+    assert_eq!(choose(&i, None, None).unwrap().runtime, IOS_26_4);
+    i.runtimes.retain(|r| r.identifier != IOS_26_4);
+    i.runtimes.insert(0, twin.clone());
+    assert_eq!(choose(&i, None, None).unwrap().runtime, twin.identifier);
+}
+
+#[test]
 fn unavailable_and_non_ios_runtimes_are_skipped() {
     let c = choose(&inv(), None, None).unwrap();
     assert_eq!(c.runtime, IOS_26_4);

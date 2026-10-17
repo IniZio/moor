@@ -129,6 +129,8 @@ fn refuses_bad_env() {
         "XCODE_XCCONFIG_FILE",
         "MOOR_BOX_TAG",
         "DEVELOPER_DIR",
+        "MOOR_SIM_UDID",
+        "MOOR_SIM_SET",
     ] {
         bad(
             &format!("t: {{root: /a/b, env: {{{n}: v}}}}"),
@@ -137,6 +139,16 @@ fn refuses_bad_env() {
     }
     let e = err("toolchains: {t: {root: /a/b, env: {PATH: v}}}");
     assert!(e.reason.contains("PATH entries go in bin"), "{e}");
+}
+
+#[test]
+fn refuses_the_simulator_variables() {
+    let e = err("toolchains: {t: {root: /a/b, env: {MOOR_SIM_UDID: x}}}");
+    assert!(
+        e.to_string().contains("toolchains.t.env.MOOR_SIM_UDID"),
+        "{e}"
+    );
+    assert!(e.reason.contains("is reserved"), "{e}");
 }
 
 #[test]
