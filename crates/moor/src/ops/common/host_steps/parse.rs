@@ -63,21 +63,30 @@ pub(super) fn holder(out: &str) -> Option<(String, Option<String>)> {
     ))
 }
 
-/// Marker line before the framed command output.
-pub(super) const BEGIN: &str = "moor-up-begin";
+/// Marker line before the framed command output; the per-run nonce follows.
+pub(super) fn begin(nonce: &str) -> String {
+    format!("moor-up-begin {nonce}")
+}
 
-/// Marker prefix of the line after the framed command output; the exit status follows.
-pub(super) const END: &str = "moor-up-end";
+/// Marker prefix of the line after the framed command output; the exit status follows it.
+pub(super) fn end(nonce: &str) -> String {
+    format!("moor-up-end {nonce}")
+}
 
 /// What the command itself printed: the lines between the begin and end markers.
 ///
-/// The Driver log also holds its own banner before and its run summary after, which are never
-/// read. `None` when either marker is missing.
-pub(super) fn framed(log: &str) -> Option<String> {
-    let mut lines = log.lines().skip_while(|l| *l != BEGIN).skip(1);
+/// Only lines exactly matching the markers for `nonce` count, so command output cannot fake the
+/// frame. The Driver log also holds its own banner before and its run summary after, which are
+/// never read. `None` when either marker is missing.
+pub(super) fn framed(log: &str, nonce: &str) -> Option<String> {
+    let (begin, end) = (begin(nonce), end(nonce));
+    let mut lines = log.lines().skip_while(|l| *l != begin).skip(1);
     let mut out = String::new();
     for l in lines.by_ref() {
-        if l.strip_prefix(END).is_some_and(|r| r.starts_with(' ')) {
+        if l.strip_prefix(&end).is_some_and(|c| {
+            c.strip_prefix(' ')
+                .is_some_and(|c| !c.is_empty() && c.bytes().all(|b| b.is_ascii_digit()))
+        }) {
             return Some(out);
         }
         out.push_str(l);

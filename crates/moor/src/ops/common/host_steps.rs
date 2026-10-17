@@ -21,7 +21,7 @@ use crate::store::lease::LeaseKind;
 
 mod parse;
 
-use self::parse::{classify, framed, holder, last_line, Clash, BEGIN, END, HOLDER_MARK};
+use self::parse::{begin, classify, end, framed, holder, last_line, Clash, HOLDER_MARK};
 
 /// Wall-clock allowance for `docker compose up -d`, which may pull images.
 const UP_DEADLINE: Duration = Duration::from_mins(15);
@@ -64,9 +64,10 @@ pub(crate) fn backend_up(
         log_dir: cx.state_dir()?.join("host-steps"),
         id,
     };
-    let script = format!(
-        "echo {BEGIN}; docker compose -p {project} up -d 2>&1; c=$?; echo {END} $c; exit $c"
-    );
+    let nonce = format!("{:08x}", cx.rng().u32());
+    let (b, e) = (begin(&nonce), end(&nonce));
+    let script =
+        format!("echo {b}; docker compose -p {project} up -d 2>&1; c=$?; echo {e} $c; exit $c");
     let (outcome, log) = step.run("up", &["sh", "-c", &script], UP_DEADLINE);
     let code = match outcome {
         Ok(ExecOutcome::Exited { code: 0 }) => {
@@ -79,14 +80,14 @@ pub(crate) fn backend_up(
     };
     let message = match code {
         Err(r) => failed(&project, &r),
-        Ok(code) => exit_message(&step, &project, code, &log),
+        Ok(code) => exit_message(&step, &project, code, &log, &nonce),
     };
     Err(CommandError::new(ErrorKind::Failed, message))
 }
 
 /// The message for a start that exited non-zero, read from the command's framed output only.
-fn exit_message(step: &Step<'_>, project: &str, code: i32, log: &str) -> String {
-    let Some(out) = framed(log) else {
+fn exit_message(step: &Step<'_>, project: &str, code: i32, log: &str, nonce: &str) -> String {
+    let Some(out) = framed(log, nonce) else {
         return format!(
             "host step backend: docker compose -p {project} up -d failed (exit {code})"
         );

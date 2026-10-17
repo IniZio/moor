@@ -131,9 +131,12 @@ fn a_port_clash_is_the_start_failure_and_setup_does_not_run() {
     };
     let mut results: Vec<_> = (0..before).map(|_| Ok(exit(0))).collect();
     results.extend([Ok(exit(1)), Ok(exit(0))]);
-    let driver = mac_driver()
-        .exec_results(results)
-        .exec_stdout([&format!("moor-up-begin\n{PORT_ERR}moor-up-end 1\n"), ""]);
+    // The start draws once before the `up` exec, so `up` gets the second fake nonce.
+    let n = crate::ops::common::release::testkit::nonce(1);
+    let driver = mac_driver().exec_results(results).exec_stdout([
+        &format!("moor-up-begin {n}\n{PORT_ERR}moor-up-end {n} 1\n"),
+        "",
+    ]);
     let w = world_at(driver, repo.path());
     script_base_yaml(&w, Some(BACKEND));
     let err = run(&w.cx, &start_req()).unwrap_err();

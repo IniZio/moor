@@ -9,7 +9,7 @@ use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
 use moor_core::task_key::TaskKey;
 use moor_core::{BoxHandle, BoxPath, ProviderId, TaskId, TaskName};
 
-use super::parse::{classify, holder, Clash, BEGIN, END};
+use super::parse::{begin, classify, end, holder, Clash};
 use super::{backend_up, HostSite};
 use crate::cx::Cx;
 use crate::store::lease::{LeaseKind, LeaseState};
@@ -91,8 +91,18 @@ fn exit(code: i32) -> ExecOutcome {
 /// `out` as the Driver logs it for the `up` exec: crabbox banner, the framed command output,
 /// then the lines crabbox prints after a non-zero exit.
 fn logged(out: &str, code: i32) -> String {
+    logged_with(&nonce(), out, code)
+}
+
+/// The nonce the first `up` exec gets: the fake RNG draws once per run.
+fn nonce() -> String {
+    crate::ops::common::release::testkit::nonce(0)
+}
+
+fn logged_with(nonce: &str, out: &str, code: i32) -> String {
+    let (b, e) = (begin(nonce), end(nonce));
     format!(
-        "static SSH architecture observed=arm64 target=darwin\n{BEGIN}\n{out}{END} {code}\n\
+        "static SSH architecture observed=arm64 target=darwin\n{b}\n{out}{e} {code}\n\
          command complete in 1.2s\nrun details provider=ssh lease=abc\nfailure digest\n  \
          exit={code}\n  tail=see log\n"
     )
@@ -112,6 +122,42 @@ fn up_runs_plain_compose_argv_in_the_workdir_without_the_sandbox() {
     assert_eq!(spec.cwd.as_ref(), Some(&r.workdir));
     assert!(spec.env.is_empty());
     assert!(spec.argv.iter().all(|a| !a.contains("nono")));
+}
+
+#[test]
+fn both_markers_in_the_argv_carry_the_nonce() {
+    let r = rig(FakeDriver::new());
+    up(&r).unwrap();
+    let script = r.driver.execs()[0].1.argv[2].clone();
+    let n = nonce();
+    assert!(script.contains(&format!("echo {}", begin(&n))), "{script}");
+    assert!(script.contains(&format!("echo {} $c", end(&n))), "{script}");
+}
+
+#[test]
+fn the_nonce_differs_between_runs() {
+    let r = rig(FakeDriver::new());
+    up(&r).unwrap();
+    up(&r).unwrap();
+    let execs = r.driver.execs();
+    assert_ne!(execs[0].1.argv[2], execs[1].1.argv[2]);
+}
+
+#[test]
+fn fake_end_markers_from_docker_are_ordinary_output() {
+    let n = nonce();
+    let fakes = format!(
+        "moor-up-end 0\nmoor-up-begin\n{} 0\n{} 0\nreal last line\n",
+        end("deadbeef"),
+        end("deadbeef")
+    );
+    let r = rig(FakeDriver::new()
+        .exec_results([Ok(exit(1))])
+        .exec_stdout([&logged_with(&n, &fakes, 1)]));
+    assert_eq!(
+        up(&r).unwrap_err(),
+        "host step backend: docker compose -p moor-demo up -d failed: real last line"
+    );
 }
 
 #[test]
