@@ -91,7 +91,7 @@ pub(super) fn run(
         on_live(cx, store, req, &row, &old);
         return Ok(AgentLaunchView::default());
     };
-    relaunch(cx, store, req, (&old, &end), recreated, settings, None)
+    relaunch(cx, store, req, (&old, &end), (recreated, None), settings)
 }
 
 /// Whether [`run`] is about to launch or relaunch the agent of `row`.
@@ -198,9 +198,8 @@ fn relaunch(
     store: &Store,
     req: &StartReq,
     (old, end): (&SessionRow, &Ended),
-    recreated: bool,
+    (recreated, cause): (bool, Option<&str>),
     settings: &dyn Fn() -> Result<TaskSettings, CommandError>,
-    cause: Option<&str>,
 ) -> Result<AgentLaunchView, CommandError> {
     let id = old.task;
     let mut row = reread(store, id)?;
@@ -288,7 +287,14 @@ pub(crate) fn revive_after_wake(cx: &Cx, store: &Store, id: TaskId) -> Result<()
         let at = row.worktree.as_deref().unwrap_or(&row.repo);
         settings(cx, Path::new(at), &Flags::default())
     };
-    relaunch(cx, store, &req, (&old, &end), false, &settings, Some("wake"))?;
+    relaunch(
+        cx,
+        store,
+        &req,
+        (&old, &end),
+        (false, Some("wake")),
+        &settings,
+    )?;
     Ok(())
 }
 
