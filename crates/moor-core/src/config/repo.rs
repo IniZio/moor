@@ -14,12 +14,84 @@ pub struct RepoCompose {
     pub project_prefix: Option<String>,
 }
 
-/// `box:` section; only `size` is allowed at the repo layer.
+/// A macOS Box capability a repo can ask for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum BoxCapability {
+    /// Xcode toolchain (`xcode`).
+    Xcode,
+    /// iOS Simulator (`ios-simulator`).
+    IosSimulator,
+}
+
+/// `box.sandbox:` project paths, relative to the workdir.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct RepoSandbox {
+    /// Extra paths the sandbox may read.
+    pub read: Vec<String>,
+    /// Extra paths the sandbox may write.
+    pub write: Vec<String>,
+}
+
+/// `box:` section: `size`, `capabilities` and `sandbox` are allowed at the repo layer.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct RepoBox {
     /// Box size class; repo > user > default.
     pub size: Option<BoxSize>,
+    /// macOS Box capabilities the repo needs.
+    pub capabilities: Vec<BoxCapability>,
+    /// Project paths added to the sandbox.
+    pub sandbox: RepoSandbox,
+}
+
+impl RepoBox {
+    /// Refuses `box.capabilities` on a Box that is not macOS.
+    ///
+    /// # Errors
+    /// Returns [`ConfigError`] at `box.capabilities` when any capability is set and `macos` is false.
+    pub fn check_platform(&self, macos: bool) -> Result<(), ConfigError> {
+        if macos || self.capabilities.is_empty() {
+            return Ok(());
+        }
+        Err(ConfigError::new(
+            "box.capabilities",
+            "box.capabilities applies only to a macOS Box; remove it or use a macOS Box",
+        ))
+    }
+
+    /// Checks capability duplicates and sandbox paths.
+    fn validate(&self) -> Result<(), ConfigError> {
+        for (i, cap) in self.capabilities.iter().enumerate() {
+            if self.capabilities.get(..i).is_some_and(|p| p.contains(cap)) {
+                return Err(ConfigError::new(
+                    format!("box.capabilities[{i}]"),
+                    "list each capability once",
+                ));
+            }
+        }
+        sandbox_paths("read", &self.sandbox.read)?;
+        sandbox_paths("write", &self.sandbox.write)
+    }
+}
+
+/// Rejects sandbox paths that are empty, absolute, home-relative or climb out with `..`.
+fn sandbox_paths(kind: &str, items: &[String]) -> Result<(), ConfigError> {
+    items
+        .iter()
+        .position(|p| {
+            p.trim().is_empty()
+                || p.starts_with('/')
+                || p.starts_with('~')
+                || p.split('/').any(|c| c == "..")
+        })
+        .map_or(Ok(()), |i| {
+            Err(ConfigError::new(
+                format!("box.sandbox.{kind}[{i}]"),
+                "a sandbox path must be inside the workdir; write it relative to the checkout",
+            ))
+        })
 }
 
 /// The repo config. Build it with [`parse_repo`].
@@ -77,6 +149,7 @@ impl RepoConfig {
         non_blank("setup", &self.setup)?;
         non_blank("teardown", &self.teardown)?;
         self.validate_box_credentials()?;
+        self.box_.validate()?;
         for name in self.env.keys() {
             let path = format!("env.{name}");
             check::env_name(name)
@@ -106,5 +179,7 @@ fn non_blank(name: &str, items: &[String]) -> Result<(), ConfigError> {
         })
 }
 
+#[cfg(test)]
+mod capability_tests;
 #[cfg(test)]
 mod tests;
