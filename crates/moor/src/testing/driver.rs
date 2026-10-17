@@ -33,6 +33,7 @@ struct State {
     fail_list: Option<DriverError>,
     fail_copy_out: Option<DriverError>,
     copy_content: Option<Vec<u8>>,
+    copy_report: Option<Vec<u8>>,
     copy_symlink: Option<PathBuf>,
     exec_results: VecDeque<Result<ExecOutcome, DriverError>>,
     exec_stdout: VecDeque<String>,
@@ -79,6 +80,12 @@ impl FakeDriver {
 
     fn st(&self) -> MutexGuard<'_, State> {
         self.state.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Makes a `copy_out` of the sandbox report write `content`; `copy_text` skips that file.
+    pub(crate) fn copy_report(self, content: impl AsRef<[u8]>) -> Self {
+        self.st().copy_report = Some(content.as_ref().to_vec());
+        self
     }
 
     /// Makes every `copy_out` write `content` to its destination.
@@ -228,7 +235,8 @@ impl Driver for FakeDriver {
         if !s.live.iter().any(|h| h == handle.as_str()) {
             return Err(DriverError::NotFound);
         }
-        if let (Some(Output::Log(path)), Some(text)) = (&spec.output, s.exec_stdout.pop_front()) {
+        if let (Some(Output::Log(path)), true) = (&spec.output, !s.exec_stdout.is_empty()) {
+            let text = s.exec_stdout.pop_front().unwrap_or_default();
             write_bytes(path, text.as_bytes())?;
         }
         s.exec_results
@@ -263,9 +271,14 @@ impl Driver for FakeDriver {
                 summary: format!("cannot place a symlink: {e}"),
             });
         }
-        s.copy_content
-            .as_deref()
-            .map_or(Ok(()), |bytes| write_bytes(to, bytes))
+        let report = to.ends_with("setup.sandbox.json");
+        (if report {
+            &s.copy_report
+        } else {
+            &s.copy_content
+        })
+        .as_deref()
+        .map_or(Ok(()), |bytes| write_bytes(to, bytes))
     }
 
     fn peek_file(

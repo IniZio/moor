@@ -132,9 +132,11 @@ pub(crate) fn run_setup(
         lines: cfg.setup.len(),
     };
     let started = cx.clock().instant();
+    let mut sandboxed = false;
     let result = box_exec::prepare(cx, &site, proxy, cfg, purpose)
         .map_err(Failure::Prepare)
         .and_then(|exec| {
+            sandboxed = exec.is_sandboxed();
             let spec = ExecSpec {
                 argv: exec.argv(vec![
                     "sh".to_owned(),
@@ -163,7 +165,8 @@ pub(crate) fn run_setup(
         Err(Failure::Prepare(e)) => (e, None),
         Err(Failure::Exec(e)) => (e.to_string(), None),
     };
-    let log = fetch_log(cx, handle, workdir, worktree);
+    let log = fetch_box_file(cx, handle, workdir, worktree, LOG_REL);
+    let sandbox = denials::fetch(cx, handle, workdir, worktree, sandboxed);
     let line = cfg
         .setup
         .get(failed_step(&log, cfg.setup.len()))
@@ -171,7 +174,7 @@ pub(crate) fn run_setup(
         .unwrap_or_default();
     cx.warn(Warning {
         code: "setup_failed".to_owned(),
-        message: failure_message(&line, &reason, workdir, &log),
+        message: failure_message(&line, &reason, workdir, &log, &sandbox),
     });
     SetupRun::Failed { line, exit, ms }
 }
@@ -225,9 +228,18 @@ pub(crate) fn sync_checkout(
 }
 
 /// The warning text: the failing line, where the full log lives in the Box, and its tail.
-fn failure_message(line: &str, reason: &str, workdir: &BoxPath, log: &str) -> String {
+///
+/// `sandbox` is the sandbox's own account of what it denied, inserted after the first line.
+fn failure_message(
+    line: &str,
+    reason: &str,
+    workdir: &BoxPath,
+    log: &str,
+    sandbox: &str,
+) -> String {
     let path = format!("{}/{LOG_REL}", workdir.as_str());
-    let mut msg = format!("setup line `{line}` failed: {reason}\nfull log in the Box: {path}");
+    let mut msg =
+        format!("setup line `{line}` failed: {reason}{sandbox}\nfull log in the Box: {path}");
     // A terminal shows only the last frame of a line redrawn with `\r`.
     let lines: Vec<&str> = log
         .lines()
@@ -279,10 +291,17 @@ fn tidy(line: &str) -> String {
     cut
 }
 
-/// Copies the script's log out of the Box and reads it; empty when either step fails.
-fn fetch_log(cx: &Cx, handle: &BoxHandle, workdir: &BoxPath, worktree: &Path) -> String {
-    let to = worktree.join(".moor").join("setup.log");
-    let Ok(from) = BoxPath::under(workdir.as_str(), LOG_REL) else {
+/// Copies a file under the Box workdir out to the same place under the worktree and reads it;
+/// empty when either step fails.
+fn fetch_box_file(
+    cx: &Cx,
+    handle: &BoxHandle,
+    workdir: &BoxPath,
+    worktree: &Path,
+    rel: &str,
+) -> String {
+    let to = worktree.join(rel);
+    let Ok(from) = BoxPath::under(workdir.as_str(), rel) else {
         return String::new();
     };
     let made = to
@@ -302,6 +321,8 @@ fn failed_step(log: &str, steps: usize) -> usize {
         .count();
     announced.clamp(1, steps.max(1)) - 1
 }
+
+mod denials;
 
 #[cfg(test)]
 mod tests;

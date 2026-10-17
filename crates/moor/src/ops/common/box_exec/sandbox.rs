@@ -19,6 +19,11 @@ impl BoxExec {
             sandboxed: None,
         }
     }
+
+    /// Whether the exec runs under the sandbox.
+    pub(crate) const fn is_sandboxed(&self) -> bool {
+        self.sandboxed.is_some()
+    }
 }
 
 /// Finishes `env` into a [`BoxExec`]; on a macOS Box it asks the engine for the sandbox.
