@@ -10,6 +10,9 @@ use crate::seam::forge::ForgeRepo;
 use crate::seam::proc::Deadline;
 use crate::secret::Secret;
 
+mod mac;
+pub use mac::MacTask;
+
 /// The staged nonce file name inside the credential directory.
 pub const NONCE_FILE: &str = "proxy-nonce";
 /// The staged public CA certificate file name inside the credential directory.
@@ -78,8 +81,7 @@ pub struct ProxyCtx<'a> {
     pub cred: &'a BoxPath,
 }
 
-/// What the environment is built from. Per-Task home, xcconfig and Box tag variables for Mac Boxes
-/// are added here, so every purpose gets them.
+/// What the environment is built from.
 #[derive(Debug, Clone, Copy)]
 pub struct BoxCtx<'a> {
     /// Repo `env:` already merged with the Proxy rule env (see [`merged_env`]).
@@ -92,6 +94,9 @@ pub struct BoxCtx<'a> {
     pub workdir: Option<&'a BoxPath>,
     /// Provider variable names removed from the Box environment.
     pub strip: &'a [String],
+    /// The Task's directories on a macOS Box; adds the per-Task home, temp, cache, Xcode and Box tag
+    /// variables for every purpose. None on other Boxes.
+    pub mac: Option<MacTask<'a>>,
 }
 
 /// The environment for one Box exec.
@@ -101,8 +106,8 @@ pub struct ExecEnv {
     pub vars: Vec<(String, String)>,
     /// Names to unset before the command runs (the strip names, deduplicated).
     pub unset: Vec<String>,
-    /// Shell lines run before the command; they never contain the nonce. Empty without a Proxy,
-    /// because there is then no push remote to set up.
+    /// Shell lines run before the command; they never contain the nonce. Empty without a Proxy
+    /// (no push remote to set up) and without a macOS Task.
     pub prelude: Vec<String>,
     /// The working directory; none keeps the driver's default directory.
     pub cwd: Option<BoxPath>,
@@ -131,9 +136,10 @@ pub fn build(b: &BoxCtx<'_>, purpose: Purpose) -> Result<ExecEnv, String> {
         }
     }
     let mut prelude = match &b.proxy {
-        Some(p) => proxy_lines(p)?,
+        Some(p) => proxy_lines(p, b.mac.is_none())?,
         None => Vec::new(),
     };
+    prelude.extend(mac::prelude(b.mac.as_ref())?);
     if b.proxy.is_some() {
         prelude.extend(git_remote_lines(b.origin));
         prelude.push(format!(
@@ -161,13 +167,15 @@ pub fn build(b: &BoxCtx<'_>, purpose: Purpose) -> Result<ExecEnv, String> {
         Purpose::Run => (Some(RUN_DEADLINE), false),
         Purpose::Agent => (None, true),
     };
+    let repo: Vec<(String, String)> = b
+        .env
+        .iter()
+        .filter(|(n, _)| !b.strip.contains(n))
+        .cloned()
+        .collect();
+    let vars = mac::overlay(repo, b.mac.as_ref())?;
     Ok(ExecEnv {
-        vars: b
-            .env
-            .iter()
-            .filter(|(n, _)| !b.strip.contains(n))
-            .cloned()
-            .collect(),
+        vars,
         unset,
         prelude,
         cwd: b.workdir.cloned(),
@@ -301,7 +309,7 @@ fn cred_file(cred: &BoxPath, rel: &str) -> Result<BoxPath, String> {
 }
 
 /// Lines that read the staged nonce (removing it), trust the CA and export the Proxy variables.
-fn proxy_lines(p: &ProxyCtx<'_>) -> Result<Vec<String>, String> {
+fn proxy_lines(p: &ProxyCtx<'_>, caches: bool) -> Result<Vec<String>, String> {
     let file = quote(cred_file(p.cred, NONCE_FILE)?.as_str());
     let ca = quote(cred_file(p.cred, CA_FILE)?.as_str());
     let built = quote(cred_file(p.cred, BUNDLE_FILE)?.as_str());
@@ -331,7 +339,7 @@ fn proxy_lines(p: &ProxyCtx<'_>) -> Result<Vec<String>, String> {
             p.box_port
         ));
     }
-    lines.extend(yarn_lines(p.box_port));
+    lines.extend(yarn_lines(p.box_port, caches));
     for name in ["NO_PROXY", "no_proxy"] {
         lines.push(format!(
             "export {name}=\"127.0.0.1,localhost${{{name}:+,${name}}}\""
@@ -341,21 +349,24 @@ fn proxy_lines(p: &ProxyCtx<'_>) -> Result<Vec<String>, String> {
     Ok(lines)
 }
 
-/// Shell lines that point Yarn and npm at the proxy, the CA bundle and a cache the sandbox can write.
-fn yarn_lines(box_port: u16) -> Vec<String> {
+/// Shell lines that point Yarn and npm at the proxy, the CA bundle and, unless the Task sets its own,
+/// a cache the sandbox can write.
+fn yarn_lines(box_port: u16, caches: bool) -> Vec<String> {
     let mut lines: Vec<String> = ["YARN_HTTPS_PROXY", "YARN_HTTP_PROXY"]
         .iter()
         .map(|name| format!("export {name}=\"http://moor:${{{NONCE_VAR}}}@127.0.0.1:{box_port}\""))
         .collect();
-    lines.extend(
-        [
-            "export YARN_CA_FILE_PATH=\"$moor_bundle\"",
-            "export YARN_CACHE_FOLDER=\"$HOME/.cache/yarn\"",
-            "export YARN_GLOBAL_FOLDER=\"$HOME/.cache/yarn/berry\"",
-            "export npm_config_cache=\"$HOME/.cache/npm\"",
-        ]
-        .map(str::to_owned),
-    );
+    lines.push("export YARN_CA_FILE_PATH=\"$moor_bundle\"".to_owned());
+    if caches {
+        lines.extend(
+            [
+                "export YARN_CACHE_FOLDER=\"$HOME/.cache/yarn\"",
+                "export YARN_GLOBAL_FOLDER=\"$HOME/.cache/yarn/berry\"",
+                "export npm_config_cache=\"$HOME/.cache/npm\"",
+            ]
+            .map(str::to_owned),
+        );
+    }
     lines
 }
 

@@ -163,6 +163,7 @@ fn site<'a>(row: &'a TaskRow, target: &'a ready::Target) -> Site<'a> {
         provider: row.boxed.as_ref().map_or("", |b| b.provider.as_str()),
         workdir: target.workdir.as_ref(),
         worktree: &target.worktree,
+        task: Some(row.id),
     }
 }
 

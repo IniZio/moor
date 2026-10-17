@@ -62,6 +62,7 @@ fn setup_gets_the_proxy_and_ca_variables_the_agent_gets() {
         &cfg(&["a"], &[("A", "1")]),
         SyncMode::Full,
         Some(&proxy),
+        TaskId::new(1),
     );
     let (_, spec, _) = r
         .driver
@@ -140,6 +141,7 @@ fn with_a_proxy_setup_still_gets_reserved_and_credential_like_repo_env() {
         &cfg(&["a"], &[("A", "1"), RESERVED, CREDENTIAL_LIKE]),
         SyncMode::Full,
         Some(&proxy),
+        TaskId::new(1),
     );
     let (_, spec, _) = r
         .driver
@@ -175,6 +177,7 @@ fn assert_failed_setup_removes_the_credential_dir(setup: Result<ExecOutcome, Dri
         &cfg(&["a"], &[]),
         SyncMode::Full,
         Some(&proxy()),
+        TaskId::new(1),
     );
     let argvs: Vec<Vec<String>> = r
         .driver

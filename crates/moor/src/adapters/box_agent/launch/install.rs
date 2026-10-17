@@ -15,12 +15,12 @@ pub(super) type StepResult = Result<StepDone, DriverError>;
 /// A relative `dir` is a name under the Box user's home, which is not known yet, so the script
 /// reads it from `$HOME`; it exits before creating anything when the Box has no readable process
 /// environment or no `$HOME`, the cases where the launch fails at its home step and never cleans
-/// up. An absolute `dir` is used as it is and never reads `$HOME`.
+/// up. An absolute `dir` is the Task's own on a macOS Box, which has no process environment; it is
+/// used as it is and never reads `$HOME` or `/proc`.
 pub(super) fn platform_step(dir: &str) -> BoxStep {
     if dir.starts_with('/') {
         return BoxStep::Run(format!(
-            "[ -r /proc/self/environ ] || exit 1; \
-             c={}; mkdir -p \"$c\" && uname -s -m > \"$c/uname\" && cat \"$c/uname\"",
+            "c={}; mkdir -p \"$c\" && uname -s -m > \"$c/uname\" && cat \"$c/uname\"",
             quote(dir)
         ));
     }

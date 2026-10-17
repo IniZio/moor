@@ -55,6 +55,7 @@ fn setup_spec(f: &Fx) -> ExecSpec {
         &cfg,
         sync,
         proxy.as_ref(),
+        f.id,
     );
     command_execs(f).remove(before).1
 }

@@ -3,10 +3,11 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use moor_core::exec_env::{self, BoxCtx, ProxyCtx, Purpose, NONCE_FILE};
+use moor_core::exec_env::{self, BoxCtx, MacTask, ProxyCtx, Purpose, NONCE_FILE};
 use moor_core::seam::agent_profile::{EnvVar, ProxyAddr};
 use moor_core::seam::driver::BoxStep;
-use moor_core::{BoxPath, Secret};
+use moor_core::task_key::{MacLayout, TaskKey};
+use moor_core::{BoxPath, Secret, TaskName};
 
 use super::{script_lines, stage_steps};
 
@@ -47,7 +48,7 @@ fn the_agent_gets_the_same_box_environment_as_run() {
     p.box_env = vec![("QUOTED".to_owned(), "it's".to_owned())];
     let strip = ["PLATFORM_TOKEN".to_owned(), "PLATFORM_TOKEN".to_owned()];
     let origin = Some("git@github.com:o/n.git");
-    let agent = super::exec_env(&c, Some(&p), &strip, origin, &w).unwrap();
+    let agent = super::exec_env(&c, Some(&p), &strip, origin, &w, None).unwrap();
     let run = exec_env::build(
         &BoxCtx {
             env: &p.box_env,
@@ -58,6 +59,7 @@ fn the_agent_gets_the_same_box_environment_as_run() {
             }),
             origin,
             workdir: Some(&w),
+            mac: None,
         },
         Purpose::Run,
     )
@@ -67,14 +69,17 @@ fn the_agent_gets_the_same_box_environment_as_run() {
     assert_eq!(agent.unset, ["PLATFORM_TOKEN"]);
     assert_eq!(agent.unset, run.unset);
     assert_eq!(agent.cwd, run.cwd);
-    assert_eq!(script_lines(&c, &p, &[], origin).unwrap(), run.prelude);
+    assert_eq!(
+        script_lines(&c, &p, &[], origin, None).unwrap(),
+        run.prelude
+    );
 }
 
 #[test]
 fn without_a_proxy_the_environment_only_strips_names() {
     let w = workdir();
     let strip = ["PLATFORM_TOKEN".to_owned()];
-    let exec = super::exec_env(&w, None, &strip, None, &w).unwrap();
+    let exec = super::exec_env(&w, None, &strip, None, &w, None).unwrap();
     assert_eq!(exec.unset, strip);
     assert!(exec.prelude.is_empty() && exec.vars.is_empty());
 }
@@ -90,6 +95,7 @@ fn lines_for(origin: Option<&str>) -> Vec<String> {
         &p,
         &placeholder_env(),
         origin,
+        None,
     )
     .unwrap()
 }
@@ -161,17 +167,17 @@ fn an_empty_nonce_or_bad_name_is_refused() {
         nonce: Secret::new(Vec::new()),
         ..proxy()
     };
-    assert!(script_lines(&c, &empty, &[], None).is_err());
+    assert!(script_lines(&c, &empty, &[], None, None).is_err());
     let bad = [EnvVar {
         name: "A B".to_owned(),
         value: Secret::new(b"x".to_vec()),
     }];
-    assert!(script_lines(&c, &proxy(), &bad, None).is_err());
+    assert!(script_lines(&c, &proxy(), &bad, None, None).is_err());
     let binary = [EnvVar {
         name: "A".to_owned(),
         value: Secret::new(vec![0xff]),
     }];
-    assert!(script_lines(&c, &proxy(), &binary, None).is_err());
+    assert!(script_lines(&c, &proxy(), &binary, None, None).is_err());
 }
 
 #[test]
@@ -186,6 +192,7 @@ fn the_script_runs_and_builds_the_environment_from_the_staged_nonce() {
         &proxy(),
         &placeholder_env(),
         Some("https://github.com/o/n"),
+        None,
     )
     .unwrap();
     let script = format!("{}\nenv", lines.join("\n"));
@@ -324,4 +331,61 @@ fn assert_yarn_vars(env: &HashMap<String, String>, dir: &Path) {
         &format!("{home}/.cache/yarn/berry"),
     );
     is(env, "npm_config_cache", &format!("{home}/.cache/npm"));
+}
+
+fn mac_layout() -> (MacLayout, TaskKey) {
+    let key = TaskKey::new(&TaskName::parse("fix-login").unwrap());
+    let layout = MacLayout::new(&BoxPath::restore("/Users/Shared/moor").unwrap(), &key).unwrap();
+    (layout, key)
+}
+
+#[test]
+fn a_mac_task_gives_the_agent_its_home_and_box_tag() {
+    let (layout, key) = mac_layout();
+    let mac = MacTask {
+        layout: &layout,
+        key: &key,
+        nonce: "n1",
+    };
+    let c = cred(Path::new("/home/box/.moor-cred"));
+    let w = workdir();
+    let exec = super::exec_env(&c, Some(&proxy()), &[], None, &w, Some(mac)).unwrap();
+    let get = |k: &str| {
+        exec.vars
+            .iter()
+            .find(|(n, _)| n == k)
+            .map(|(_, v)| v.as_str())
+    };
+    assert_eq!(get("HOME"), Some(layout.home.as_str()));
+    assert_eq!(
+        get("MOOR_BOX_TAG"),
+        Some(format!("{}-n1", key.as_str()).as_str())
+    );
+}
+
+#[test]
+fn a_mac_task_exports_no_home_before_the_sandbox_starts() {
+    let (layout, key) = mac_layout();
+    let mac = MacTask {
+        layout: &layout,
+        key: &key,
+        nonce: "n1",
+    };
+    let c = cred(Path::new("/home/box/.moor-cred"));
+    let lines = script_lines(&c, &proxy(), &placeholder_env(), None, Some(mac)).unwrap();
+    for name in [
+        "HOME",
+        "XDG_CONFIG_HOME",
+        "XDG_STATE_HOME",
+        "CFFIXED_USER_HOME",
+    ] {
+        let prefix = format!("export {name}=");
+        assert!(!lines.iter().any(|l| l.starts_with(&prefix)), "{lines:?}");
+    }
+    assert!(
+        !lines.iter().any(|l| l.contains(layout.home.as_str())),
+        "{lines:?}"
+    );
+    let token = "export CLAUDE_CODE_OAUTH_TOKEN='moor-proxy'";
+    assert!(lines.iter().any(|l| l == token), "{lines:?}");
 }

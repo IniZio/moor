@@ -22,6 +22,7 @@ use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
 use crate::testing::surface::FakeSurface;
 
+mod mac;
 mod proxy;
 mod warning;
 
@@ -84,7 +85,17 @@ fn run_setup(
     cfg: &TaskSettings,
     sync: SyncMode,
 ) -> SetupRun {
-    run_setup_with(cx, handle, "p", workdir, worktree, cfg, sync, None)
+    run_setup_with(
+        cx,
+        handle,
+        "p",
+        workdir,
+        worktree,
+        cfg,
+        sync,
+        None,
+        TaskId::new(1),
+    )
 }
 
 fn exits(codes: &[i32]) -> Vec<Result<ExecOutcome, DriverError>> {

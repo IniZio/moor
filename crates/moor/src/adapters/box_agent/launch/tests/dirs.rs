@@ -171,3 +171,6 @@ fn the_platform_probe_keeps_the_home_name_outside_a_mac_layout() {
         "{script}"
     );
 }
+
+#[path = "mac.rs"]
+mod mac;
