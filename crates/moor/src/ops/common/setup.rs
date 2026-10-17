@@ -197,6 +197,25 @@ fn exec_script(
     out.map_err(Failure::Exec)
 }
 
+/// A setup that failed because the Proxy would not start; no line ran, so none is blamed.
+///
+/// `name` names the Box in the by-hand retry hint.
+pub(crate) fn proxy_failed(cx: &Cx, name: &str, reason: &str) -> SetupRun {
+    cx.warn(Warning {
+        code: "setup_failed".to_owned(),
+        message: format!(
+            "setup did not run: the Proxy could not start: {reason}; once it starts, run each \
+             `setup:` line by hand with `moor run {name} -- '<line>'`"
+        ),
+    });
+    SetupRun::Failed {
+        line: "the Proxy could not start".to_owned(),
+        exit: None,
+        ms: 0,
+        tail: String::new(),
+    }
+}
+
 /// Why the script did not run to an exit.
 enum Failure {
     /// The environment could not be built.
