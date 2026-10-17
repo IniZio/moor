@@ -219,7 +219,7 @@ fn toolchain_env_follows_the_task_vars_and_never_replaces_one() {
 }
 
 #[test]
-fn toolchain_bins_follow_homebrew_in_order_and_are_quoted() {
+fn toolchain_bins_precede_homebrew_in_order_and_are_quoted() {
     let bin = vec![
         "/Users/me/tool dir/bin".to_owned(),
         "/opt/two/bin".to_owned(),
@@ -233,8 +233,8 @@ fn toolchain_bins_follow_homebrew_in_order_and_are_quoted() {
         .output()
         .unwrap();
     let got = String::from_utf8(out.stdout).unwrap();
-    let want = "/Users/Shared/moor-n/t1/launch/bin:/opt/homebrew/bin:/opt/homebrew/sbin:\
-                /Users/me/tool dir/bin:/opt/two/bin:/usr/bin:/bin";
+    let want = "/Users/Shared/moor-n/t1/launch/bin:/Users/me/tool dir/bin:/opt/two/bin:\
+                /opt/homebrew/bin:/opt/homebrew/sbin:/usr/bin:/bin";
     assert_eq!(got.trim(), want);
 }
 
