@@ -34,7 +34,7 @@ fn setup_without_a_proxy_on_a_mac_layout_gets_the_task_env() {
     );
     let execs = r.driver.execs();
     let (_, setup, _) = execs.last().expect("a setup exec");
-    assert_eq!(execs.len(), 2, "layout prepare, then setup");
+    assert_eq!(execs.len(), 3, "layout prepare, cred dir, then setup");
     let var = |name: &str| {
         setup
             .env

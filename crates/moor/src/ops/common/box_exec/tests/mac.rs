@@ -60,9 +60,10 @@ fn a_mac_exec_without_a_proxy_gets_the_task_env_and_prepares_the_layout_first() 
     );
     let tag = var(&e, "MOOR_BOX_TAG").unwrap();
     assert!(tag.starts_with("demo-"), "{tag}");
-    let [prep] = argvs(&r).try_into().unwrap();
+    let [prep, mkdir] = argvs(&r).try_into().unwrap();
     assert_eq!(prep.get(..2), Some(&["sh".to_owned(), "-c".to_owned()][..]));
     assert!(prep.last().unwrap().contains("/Users/box/moor/demo/launch"));
+    assert_eq!(mkdir.first().map(String::as_str), Some("mkdir"));
     assert!(!r.driver.calls().iter().any(|c| c.starts_with("peek_file")));
 }
 
