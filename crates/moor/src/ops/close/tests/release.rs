@@ -94,6 +94,22 @@ fn a_failed_release_step_of_a_box_that_was_the_whole_machine_still_closes() {
 }
 
 #[test]
+fn a_failed_release_step_keeps_the_lease_rows_and_the_task_open_on_a_static_host() {
+    let driver = quiet(3)
+        .static_host()
+        .exec_results([0, 0, 0, 1].map(|code| Ok(ExecOutcome::Exited { code })));
+    let f = fx_with(driver, FakeSurface::new("/s"), 0);
+    let store = f.cx.store().unwrap();
+    store.plan_lease(f.id, LeaseKind::BoxRoot, "/root").unwrap();
+    store.plan_lease(f.id, LeaseKind::Compose, "proj").unwrap();
+    let e = run(&f.cx, &req(false)).unwrap_err();
+    assert_eq!(e.kind, ErrorKind::Failed);
+    assert!(e.error.to_string().contains("the task stays open"));
+    assert_eq!(lease_count(&f), 2);
+    assert_eq!(box_state(&f), BoxState::ReleaseFailed);
+}
+
+#[test]
 fn force_close_runs_the_same_release() {
     let f = fx_with(quiet(0), FakeSurface::new("/s"), 3);
     f.cx.store()

@@ -3,10 +3,11 @@
 //! Each step runs on its own: a failed step is a warning and every later step still runs. Each
 //! lease row is written once per release, with every failed step that answers on it. The
 //! lease rows are all kept or all dropped, and only a driver that released the Box drops them.
-//! A Box outside the Mac layout was the whole machine, so once the driver deleted it, or found it
-//! gone, nothing it held can still exist and the rows go even after a failed step. On a Mac host,
-//! which outlives the release, they go only when no step failed and verify was clean; otherwise
-//! every row stays for the next release. A driver that failed to release the Box fails every row.
+//! A Box outside the Mac layout on a host that goes with it, so once the driver deleted it, or
+//! found it gone, nothing it held can still exist and the rows go even after a failed step. On a
+//! host that outlives the release (a Mac layout, or a static host whose lease only drops the
+//! claim) they go only when no step failed and verify was clean; otherwise every row stays for
+//! the next release. Caps that cannot be read count as a static host. A driver that failed to release the Box fails every row.
 
 use std::path::Path;
 use std::time::Duration;
@@ -153,9 +154,10 @@ pub(crate) fn release_box(
         .err()
         .map(|e| shorten(&format!("Box release failed: {e}")));
     record_attempts(store, &rows, &outcome.results, driver_failure.as_deref())?;
-    // A Box that was the whole machine takes everything it held with it; a Mac host outlives
-    // the release, so its failed steps keep their rows.
-    let done = driver.is_ok() && (!outcome.any_failed || layout.is_none());
+    // A failed step's rows go only when the Box was not on a host that outlives the release
+    // (non-static, no Mac layout); unreadable caps count as static.
+    let done =
+        driver.is_ok() && (!outcome.any_failed || (layout.is_none() && !is_static_host(cx, row)));
     if done {
         for r in &rows {
             store.drop_lease(r.id)?;
@@ -166,6 +168,13 @@ pub(crate) fn release_box(
         driver,
         left: outcome.left,
     })
+}
+
+/// Whether the Task's Box is on a host that outlives its release; true when caps are unreadable.
+fn is_static_host(cx: &Cx, row: &TaskRow) -> bool {
+    row.boxed
+        .as_ref()
+        .is_none_or(|b| !matches!(cx.driver().caps(&b.provider), Ok(c) if !c.static_host))
 }
 
 /// Runs one step; `Some` when it failed.

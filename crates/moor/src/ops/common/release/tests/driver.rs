@@ -94,3 +94,19 @@ fn a_deleted_mac_box_keeps_the_rows_of_a_failed_step() {
     assert!(row.failure.as_deref().unwrap().contains("agent stuck"));
     assert!(row.next_attempt_at.is_some());
 }
+
+#[test]
+fn a_deleted_box_on_a_static_host_keeps_the_rows_of_a_failed_step() {
+    let driver = printing(&[framed(0, "compose stuck")])
+        .exec_results([super::exit(1)].map(Ok))
+        .static_host();
+    let r = rig(driver, "/work/box-1");
+    let report = go(&r);
+    assert_eq!(report.driver, Ok(Released::Deleted));
+    assert!(!report.released);
+    let failures: Vec<_> = rows(&r).into_iter().filter_map(|l| l.failure).collect();
+    assert!(
+        failures.iter().any(|f| f.contains("compose stuck")),
+        "{failures:?}"
+    );
+}

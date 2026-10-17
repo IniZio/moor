@@ -267,3 +267,29 @@ fn one_failing_task_does_not_block_another() {
     assert_eq!(rows(&f, good), 0);
     assert_eq!(released(&f), 2);
 }
+
+#[test]
+fn a_static_host_keeps_rows_of_a_failed_step_and_retries_after_backoff() {
+    let f = fx(driver(1).static_host());
+    let id = task(&f, "a");
+    end(&f, id, TaskInput::Close);
+
+    let first = run(&f.cx).unwrap();
+    assert!(first[0].contains("will retry"), "{first:?}");
+    assert_eq!(rows(&f, id), 1);
+    assert!(f.cx.store().unwrap().leases(id).unwrap()[0]
+        .failure
+        .is_some());
+    let calls = released(&f);
+
+    f.clock.sleep(Duration::from_mins(1));
+    assert!(run(&f.cx).unwrap().is_empty(), "inside the backoff");
+    assert_eq!(released(&f), calls);
+    assert_eq!(rows(&f, id), 1);
+
+    f.clock.sleep(Duration::from_mins(11));
+    let again = run(&f.cx).unwrap();
+    assert!(again[0].contains("released"), "{again:?}");
+    assert_eq!(released(&f), calls + 1);
+    assert_eq!(rows(&f, id), 0);
+}
