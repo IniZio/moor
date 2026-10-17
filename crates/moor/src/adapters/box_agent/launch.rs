@@ -26,7 +26,7 @@ const BRIEF_FILE: &str = ".moor/brief.md";
 /// Time allowed for removing the credential directory.
 const CLEANUP_DEADLINE: Duration = Duration::from_secs(30);
 /// Time allowed for checking and installing the sandbox tool on the Box.
-const INSTALL_DEADLINE: Duration = Duration::from_secs(300);
+pub(in super::super) const INSTALL_DEADLINE: Duration = Duration::from_secs(300);
 
 /// The Box's operating system and architecture, read when the launch has a Proxy.
 type Platform = Option<Result<(String, String), Failure>>;
@@ -39,15 +39,15 @@ type Opened = ((BoxPath, bool), Option<MacBox>, Platform);
 type Delivered = (PaneRef, Vec<LaunchNotice>);
 
 /// A failed step and why.
-struct Failure {
+pub(in super::super) struct Failure {
     /// The step that failed.
-    step: &'static str,
+    pub(in super::super) step: &'static str,
     /// What went wrong.
-    message: String,
+    pub(in super::super) message: String,
 }
 
 /// A failure of `step` caused by `e`.
-fn fail(step: &'static str, e: &impl ToString) -> Failure {
+pub(in super::super) fn fail(step: &'static str, e: &impl ToString) -> Failure {
     Failure {
         step,
         message: e.to_string(),
@@ -383,8 +383,9 @@ fn remove_cred(
 
 mod environ;
 mod gh;
-mod install;
-mod mac;
+pub(super) mod install;
+pub(super) mod mac;
+pub(super) mod profile;
 mod steps;
 
 #[cfg(test)]

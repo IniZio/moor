@@ -9,7 +9,7 @@ use moor_core::task_key::{MacLayout, TaskKey};
 use super::{fail, Failure};
 
 /// What a batch reports for one step.
-pub(super) type StepResult = Result<StepDone, DriverError>;
+pub(in super::super) type StepResult = Result<StepDone, DriverError>;
 
 /// The step that writes `uname -s -m` under the credential directory `dir` and prints it back.
 /// A relative `dir` is a name under the Box user's home, which is not known yet, so the script
@@ -17,7 +17,7 @@ pub(super) type StepResult = Result<StepDone, DriverError>;
 /// environment or no `$HOME`, the cases where the launch fails at its home step and never cleans
 /// up. An absolute `dir` is the Task's own on a macOS Box, which has no process environment; it is
 /// used as it is and never reads `$HOME` or `/proc`.
-pub(super) fn platform_step(dir: &str) -> BoxStep {
+pub(in super::super) fn platform_step(dir: &str) -> BoxStep {
     if dir.starts_with('/') {
         return BoxStep::Run(format!(
             "c={}; mkdir -p \"$c\" && uname -s -m > \"$c/uname\" && cat \"$c/uname\"",
@@ -32,7 +32,7 @@ pub(super) fn platform_step(dir: &str) -> BoxStep {
 }
 
 /// The exit code of a finished `Run` step.
-pub(super) fn check_outcome(result: Option<StepResult>) -> Result<i32, Failure> {
+pub(in super::super) fn check_outcome(result: Option<StepResult>) -> Result<i32, Failure> {
     match result {
         Some(Ok(StepDone::Ran {
             outcome: ExecOutcome::Exited { code },
@@ -56,7 +56,9 @@ pub(super) fn probe_dir(req: &LaunchReq) -> String {
 }
 
 /// The Box's operating system and architecture, from the result of the [`platform_step`].
-pub(super) fn parse_platform(result: Option<StepResult>) -> Result<(String, String), Failure> {
+pub(in super::super) fn parse_platform(
+    result: Option<StepResult>,
+) -> Result<(String, String), Failure> {
     let stdout = match result {
         Some(Ok(StepDone::Ran {
             outcome: ExecOutcome::Exited { code: 0 },
@@ -84,7 +86,7 @@ fn unreadable() -> Failure {
 }
 
 /// The steps that upload the host-fetched `bytes` as the Box user's nono and run `check` again.
-pub(super) fn upload_steps(
+pub(in super::super) fn upload_steps(
     home: &BoxPath,
     bytes: &[u8],
     check: &str,

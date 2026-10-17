@@ -12,7 +12,9 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use moor_core::activity::{HookRead, PaneRead, Probes};
 use moor_core::name::BoxPath;
 use moor_core::seam::agent_profile::{FirstRunPrompt, PromptMatch};
-use moor_core::seam::engine::{Engine, EngineError, LaunchReq, SessionRef, Steer, SteerOutcome};
+use moor_core::seam::engine::{
+    Engine, EngineError, LaunchReq, SandboxReq, Sandboxed, SessionRef, Steer, SteerOutcome,
+};
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::PaneRef;
 
@@ -25,6 +27,8 @@ struct State {
     panes: HashMap<String, Option<PaneRef>>,
     launch_results: VecDeque<Result<SessionRef, EngineError>>,
     launches: Vec<LaunchReq>,
+    sandbox_results: VecDeque<Result<Option<Sandboxed>, EngineError>>,
+    sandbox_reqs: Vec<SandboxReq>,
     box_home: Option<String>,
     fail_launch_dirs: Option<String>,
     prompts: Vec<(String, FirstRunPrompt)>,
@@ -91,6 +95,17 @@ impl FakeEngine {
     pub(crate) fn launch_result(self, r: Result<SessionRef, EngineError>) -> Self {
         self.st().launch_results.push_back(r);
         self
+    }
+
+    /// The next sandbox request returns `r`; requests past the scripted ones return `Ok(None)`.
+    pub(crate) fn sandbox_result(self, r: Result<Option<Sandboxed>, EngineError>) -> Self {
+        self.st().sandbox_results.push_back(r);
+        self
+    }
+
+    /// Every sandbox request so far, in call order.
+    pub(crate) fn sandbox_reqs(&self) -> Vec<SandboxReq> {
+        self.st().sandbox_reqs.clone()
     }
 
     /// A pane tail containing `text` shows `prompt`.
@@ -174,6 +189,12 @@ impl Engine for FakeEngine {
             hook: HookRead::Absent,
             pane: PaneRead::Absent,
         }))
+    }
+
+    fn sandbox(&self, req: &SandboxReq) -> Result<Option<Sandboxed>, EngineError> {
+        let mut st = self.st();
+        st.sandbox_reqs.push(req.clone());
+        st.sandbox_results.pop_front().unwrap_or(Ok(None))
     }
 
     fn first_run_prompt(&self, tail: &str) -> Option<PromptMatch> {
