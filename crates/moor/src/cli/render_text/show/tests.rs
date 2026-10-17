@@ -136,6 +136,27 @@ fn detail_lists_proof_files() {
     );
 }
 
+#[test]
+fn detail_omits_sandbox_denials_when_absent() {
+    let out = show(json!({"task": task("x", true)}));
+    assert!(!out.contains("sandbox denials"), "{out}");
+}
+
+#[test]
+fn detail_says_no_sandbox_denials() {
+    let out = show(json!({"task": task("x", true), "sandbox_denials": []}));
+    assert!(out.contains("sandbox denials: none\n"), "{out}");
+}
+
+#[test]
+fn detail_lists_sandbox_denials() {
+    let out = show(json!({"task": task("x", true), "sandbox_denials": ["a deny", "b deny"]}));
+    assert!(
+        out.contains("sandbox denials:\n  a deny\n  b deny\n"),
+        "{out}"
+    );
+}
+
 fn with_attention(mut t: Value) -> Value {
     t.as_object_mut().unwrap().insert(
         "attention".into(),

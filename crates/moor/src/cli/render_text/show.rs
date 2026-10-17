@@ -128,6 +128,37 @@ fn proof_block(out: &mut String, files: &[Value]) {
     }
 }
 
+/// The sandbox denial lines of the detail block: `none` or one indented line each.
+fn denials_block(out: &mut String, lines: &[Value]) {
+    if lines.is_empty() {
+        out.push_str("sandbox denials: none\n");
+        return;
+    }
+    out.push_str("sandbox denials:\n");
+    for l in lines.iter().filter_map(Value::as_str) {
+        let _ = writeln!(out, "  {l}");
+    }
+}
+
+/// The `setup:` / `dotfiles:` status line, when that step was recorded.
+fn step_line(out: &mut String, key: &str, value: &Value, task: &Value) {
+    let Some(s) = value
+        .get(key)
+        .or_else(|| task.get(key))
+        .filter(|s| !s.is_null())
+    else {
+        return;
+    };
+    let ran = s.get("ran").and_then(Value::as_bool).unwrap_or(false);
+    let ok = s.get("ok").and_then(Value::as_bool).unwrap_or(false);
+    let status = match (ran, ok) {
+        (false, _) => "not run",
+        (true, true) => "ok",
+        (true, false) => "failed",
+    };
+    let _ = writeln!(out, "{key}: {status}");
+}
+
 /// The detail block for one task.
 fn detail(task: &Value, value: &Value) -> Option<String> {
     let mut out = String::new();
@@ -157,24 +188,13 @@ fn detail(task: &Value, value: &Value) -> Option<String> {
     }
     write_attention(&mut out, task, "");
     for key in ["setup", "dotfiles"] {
-        let Some(s) = value
-            .get(key)
-            .or_else(|| task.get(key))
-            .filter(|s| !s.is_null())
-        else {
-            continue;
-        };
-        let ran = s.get("ran").and_then(Value::as_bool).unwrap_or(false);
-        let ok = s.get("ok").and_then(Value::as_bool).unwrap_or(false);
-        let status = match (ran, ok) {
-            (false, _) => "not run",
-            (true, true) => "ok",
-            (true, false) => "failed",
-        };
-        let _ = writeln!(out, "{key}: {status}");
+        step_line(&mut out, key, value, task);
     }
     if let Some(files) = value.get("proofs").and_then(Value::as_array) {
         proof_block(&mut out, files);
+    }
+    if let Some(lines) = value.get("sandbox_denials").and_then(Value::as_array) {
+        denials_block(&mut out, lines);
     }
     if let Some(events) = value.get("events").and_then(Value::as_array) {
         out.push_str("events:\n");
