@@ -257,6 +257,12 @@ pub struct ShowView {
     /// Proof files in the Box; absent when the Box could not be read.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub proofs: Option<Vec<crate::domain::proof::ProofFile>>,
+    /// Recent sandbox denials of the Task's own sandbox processes on a macOS Box, one line each; absent when not read.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sandbox_denials: Option<Vec<String>>,
+    /// Seatbelt denials logged on the Box since setup started, one line each; they may include other processes. Absent when not read.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub setup_denials: Option<Vec<String>>,
 }
 
 /// `value` of `close`.

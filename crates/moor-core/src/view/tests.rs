@@ -134,9 +134,49 @@ fn start_view_keys_match_wire_shape() {
 }
 
 #[test]
+fn show_view_sandbox_denials_key_only_when_some() {
+    let mut v = ShowView {
+        tasks: None,
+        task: None,
+        events: None,
+        pane: None,
+        reports: None,
+        proofs: None,
+        sandbox_denials: None,
+        setup_denials: None,
+    };
+    let j = serde_json::to_value(&v).unwrap();
+    assert!(j.get("sandbox_denials").is_none(), "{j}");
+    v.sandbox_denials = Some(vec!["deny file-read".into()]);
+    let j = serde_json::to_value(&v).unwrap();
+    assert_eq!(j.get("sandbox_denials"), Some(&json!(["deny file-read"])));
+}
+
+#[test]
+fn show_view_setup_denials_key_only_when_some() {
+    let mut v = ShowView {
+        tasks: None,
+        task: None,
+        events: None,
+        pane: None,
+        reports: None,
+        proofs: None,
+        sandbox_denials: None,
+        setup_denials: None,
+    };
+    let j = serde_json::to_value(&v).unwrap();
+    assert!(j.get("setup_denials").is_none(), "{j}");
+    v.setup_denials = Some(vec!["deny".into()]);
+    let j = serde_json::to_value(&v).unwrap();
+    assert_eq!(j.get("setup_denials"), Some(&json!(["deny"])));
+}
+
+#[test]
 fn show_view_keys_match_wire_shape() {
     let v = ShowView {
         proofs: None,
+        sandbox_denials: None,
+        setup_denials: None,
         tasks: Some(vec![task()]),
         task: None,
         events: Some(vec![EventView {
@@ -172,6 +212,8 @@ fn show_view_keys_match_wire_shape() {
 fn show_view_absent_sections_are_null() {
     let v = ShowView {
         proofs: None,
+        sandbox_denials: None,
+        setup_denials: None,
         tasks: Some(vec![]),
         task: None,
         events: None,
@@ -188,6 +230,8 @@ fn show_view_absent_sections_are_null() {
 fn show_view_single_task_omits_tasks() {
     let v = ShowView {
         proofs: None,
+        sandbox_denials: None,
+        setup_denials: None,
         tasks: None,
         task: Some(task()),
         events: None,

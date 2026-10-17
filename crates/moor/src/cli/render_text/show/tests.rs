@@ -136,6 +136,65 @@ fn detail_lists_proof_files() {
     );
 }
 
+#[test]
+fn detail_omits_sandbox_denials_when_absent() {
+    let out = show(json!({"task": task("x", true)}));
+    assert!(!out.contains("sandbox denials"), "{out}");
+}
+
+#[test]
+fn detail_says_no_sandbox_denials() {
+    let out = show(json!({"task": task("x", true), "sandbox_denials": []}));
+    assert!(
+        out.contains("sandbox denials of the Task's processes: none\n"),
+        "{out}"
+    );
+}
+
+#[test]
+fn detail_lists_sandbox_denials() {
+    let out = show(json!({"task": task("x", true), "sandbox_denials": ["a deny", "b deny"]}));
+    assert!(
+        out.contains("sandbox denials of the Task's processes:\n  a deny\n  b deny\n"),
+        "{out}"
+    );
+}
+
+#[test]
+fn detail_separates_live_and_setup_denials() {
+    let out = show(json!({
+        "task": task("x", true),
+        "sandbox_denials": ["live deny"],
+        "setup_denials": ["setup deny"]
+    }));
+    let live = out.find("sandbox denials of the Task's processes:\n  live deny\n");
+    let setup = out.find(
+        "Seatbelt denials logged on the Box since setup started (may include other processes):\n  setup deny\n",
+    );
+    assert!(live.is_some() && setup.is_some() && live < setup, "{out}");
+}
+
+#[test]
+fn detail_omits_empty_setup_denials() {
+    let out = show(json!({"task": task("x", true), "setup_denials": []}));
+    assert!(
+        !out.contains("Seatbelt") && !out.contains("denials"),
+        "{out}"
+    );
+}
+
+#[test]
+fn detail_cleans_untrusted_denials() {
+    let long = "p".repeat(10_000);
+    let out = show(json!({
+        "task": task("x", true),
+        "sandbox_denials": ["\u{1b}[31mred"],
+        "setup_denials": [long]
+    }));
+    assert!(!out.contains('\u{1b}') && out.contains("  red"), "{out}");
+    assert!(out.len() < 5_000 && out.contains('…'), "{}", out.len());
+}
+
 fn with_attention(mut t: Value) -> Value {
     t.as_object_mut().unwrap().insert(
         "attention".into(),

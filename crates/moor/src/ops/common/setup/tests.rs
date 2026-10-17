@@ -24,6 +24,7 @@ use crate::testing::surface::FakeSurface;
 
 mod mac;
 mod proxy;
+mod sandbox;
 mod warning;
 
 struct Rig {

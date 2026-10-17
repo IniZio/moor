@@ -128,6 +128,64 @@ fn proof_block(out: &mut String, files: &[Value]) {
     }
 }
 
+/// One denial entry, indented, stripped of control characters and length-capped.
+fn denial_entries(out: &mut String, lines: &[Value]) {
+    for l in lines.iter().filter_map(Value::as_str) {
+        let _ = writeln!(out, "  {}", moor_core::boxscript::denials::clean(l));
+    }
+}
+
+/// The live denial block of the detail: `none` or one indented line each.
+fn denials_block(out: &mut String, lines: &[Value]) {
+    const HEAD: &str = "sandbox denials of the Task's processes:";
+    if lines.is_empty() {
+        let _ = writeln!(out, "{HEAD} none");
+        return;
+    }
+    let _ = writeln!(out, "{HEAD}");
+    denial_entries(out, lines);
+}
+
+/// The setup-window denial block; omitted when empty.
+fn setup_denials_block(out: &mut String, lines: &[Value]) {
+    if lines.is_empty() {
+        return;
+    }
+    out.push_str(
+        "Seatbelt denials logged on the Box since setup started (may include other processes):\n",
+    );
+    denial_entries(out, lines);
+}
+
+/// The live then setup-window denial blocks, each only when present in `value`.
+fn denial_blocks(out: &mut String, value: &Value) {
+    if let Some(lines) = value.get("sandbox_denials").and_then(Value::as_array) {
+        denials_block(out, lines);
+    }
+    if let Some(lines) = value.get("setup_denials").and_then(Value::as_array) {
+        setup_denials_block(out, lines);
+    }
+}
+
+/// The `setup:` / `dotfiles:` status line, when that step was recorded.
+fn step_line(out: &mut String, key: &str, value: &Value, task: &Value) {
+    let Some(s) = value
+        .get(key)
+        .or_else(|| task.get(key))
+        .filter(|s| !s.is_null())
+    else {
+        return;
+    };
+    let ran = s.get("ran").and_then(Value::as_bool).unwrap_or(false);
+    let ok = s.get("ok").and_then(Value::as_bool).unwrap_or(false);
+    let status = match (ran, ok) {
+        (false, _) => "not run",
+        (true, true) => "ok",
+        (true, false) => "failed",
+    };
+    let _ = writeln!(out, "{key}: {status}");
+}
+
 /// The detail block for one task.
 fn detail(task: &Value, value: &Value) -> Option<String> {
     let mut out = String::new();
@@ -157,25 +215,12 @@ fn detail(task: &Value, value: &Value) -> Option<String> {
     }
     write_attention(&mut out, task, "");
     for key in ["setup", "dotfiles"] {
-        let Some(s) = value
-            .get(key)
-            .or_else(|| task.get(key))
-            .filter(|s| !s.is_null())
-        else {
-            continue;
-        };
-        let ran = s.get("ran").and_then(Value::as_bool).unwrap_or(false);
-        let ok = s.get("ok").and_then(Value::as_bool).unwrap_or(false);
-        let status = match (ran, ok) {
-            (false, _) => "not run",
-            (true, true) => "ok",
-            (true, false) => "failed",
-        };
-        let _ = writeln!(out, "{key}: {status}");
+        step_line(&mut out, key, value, task);
     }
     if let Some(files) = value.get("proofs").and_then(Value::as_array) {
         proof_block(&mut out, files);
     }
+    denial_blocks(&mut out, value);
     if let Some(events) = value.get("events").and_then(Value::as_array) {
         out.push_str("events:\n");
         for e in events {
