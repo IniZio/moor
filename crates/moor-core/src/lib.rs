@@ -15,6 +15,7 @@ pub mod request;
 pub mod response;
 pub mod seam;
 pub mod secret;
+pub mod task_key;
 pub mod view;
 
 pub use name::{BoxHandle, BoxPath, NameError, ProviderId, RunId, Sha, TaskId, TaskName};

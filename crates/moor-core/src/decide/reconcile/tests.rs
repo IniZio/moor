@@ -4,7 +4,7 @@ use super::{reconcile, BoxFact};
 use crate::domain::boxes::{BoxInput, BoxState};
 use crate::domain::decision::TaskTarget;
 use crate::name::{BoxHandle, TaskId};
-use crate::seam::driver::BoxListing;
+use crate::seam::driver::{BoxListing, Platform};
 
 fn fact(n: i64, state: BoxState, h: Option<&str>) -> BoxFact {
     BoxFact {
@@ -19,6 +19,7 @@ fn listed(h: &str, asleep: bool) -> BoxListing {
         handle: BoxHandle::new(h),
         provider: None,
         asleep,
+        platform: Platform::Linux,
     }
 }
 

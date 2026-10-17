@@ -165,7 +165,7 @@ fn open_box(
     let environ = BoxPath::restore("/proc/self/environ").map_err(|e| fail("home", &e))?;
     let mut steps = vec![BoxStep::Peek(environ)];
     if req.proxy.is_some() {
-        steps.push(install::platform_step(&req.dir_names().0));
+        steps.push(install::platform_step(&install::probe_dir(req)));
     }
     let deadline = Deadline(INSTALL_DEADLINE);
     let mut done = driver

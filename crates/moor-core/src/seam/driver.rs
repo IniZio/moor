@@ -69,41 +69,28 @@ pub struct Acquired {
     pub handle: BoxHandle,
     /// Working directory.
     pub workdir: BoxPath,
-    /// OS and architecture of the Box.
-    pub platform: BoxPlatform,
+    /// OS family of the Box.
+    pub platform: Platform,
 }
 
-/// OS and architecture of a Box.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BoxPlatform {
-    /// `uname -s`, such as `Linux` or `Darwin`.
-    pub os: String,
-    /// `uname -m`, such as `x86_64` or `arm64`.
-    pub arch: String,
+/// Operating system family of a Box, taken from the crabbox target.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Platform {
+    /// Linux Box.
+    #[default]
+    Linux,
+    /// macOS Box.
+    Macos,
 }
 
-impl BoxPlatform {
-    /// The platform of a Box known to run Linux, whose CPU nothing reads.
+impl Platform {
+    /// `macos` (trimmed, ASCII case-insensitive) is Macos; anything else or `None` is Linux.
     #[must_use]
-    pub fn linux() -> Self {
-        Self {
-            os: "Linux".to_owned(),
-            arch: String::new(),
+    pub fn from_target(target: Option<&str>) -> Self {
+        match target {
+            Some(t) if t.trim().eq_ignore_ascii_case("macos") => Self::Macos,
+            _ => Self::Linux,
         }
-    }
-
-    /// Parses `<os> <arch>` as the Box prints it; `None` unless exactly two words.
-    #[must_use]
-    pub fn parse(uname: &str) -> Option<Self> {
-        let mut words = uname.split_whitespace();
-        let (os, arch) = (words.next()?, words.next()?);
-        if words.next().is_some() {
-            return None;
-        }
-        Some(Self {
-            os: os.to_owned(),
-            arch: arch.to_owned(),
-        })
     }
 }
 
@@ -125,6 +112,8 @@ pub struct BoxListing {
     pub provider: Option<ProviderId>,
     /// Whether the Box sleeps.
     pub asleep: bool,
+    /// OS family of the Box.
+    pub platform: Platform,
 }
 
 /// A command to run inside a Box.

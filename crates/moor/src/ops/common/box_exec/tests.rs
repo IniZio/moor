@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use moor_core::config::proxy::{ResolvedInject, ResolvedRule, FORGE_CREDENTIAL};
 use moor_core::config::{parse_user, Flags, TaskSettings, UserConfig};
+use moor_core::domain::decision::{Decision, NewTask};
 use moor_core::exec_env::{Purpose, CA_FILE, NONCE_FILE};
 use moor_core::seam::agent_profile::ProxyAddr;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
@@ -372,4 +373,37 @@ fn a_forge_rule_marks_the_proxy_as_forge_routed() {
 fn rules_without_a_forge_credential_do_not() {
     assert!(!forge_routed(&[rule_with("other")]));
     assert!(!forge_routed(&[]));
+}
+
+#[test]
+fn a_mac_box_stages_credentials_under_launch_without_reading_the_home() {
+    let dir = tempfile::tempdir().unwrap();
+    let r = rig(dir.path());
+    r.cx.store()
+        .unwrap()
+        .apply(Decision::insert(NewTask {
+            name: TaskName::parse("demo").unwrap(),
+            repo: "r".into(),
+        }))
+        .unwrap();
+    let workdir = BoxPath::restore("/Users/box/moor/demo/work/repo").unwrap();
+    let p = boxed_proxy();
+    let e = prepare(
+        &r.cx,
+        &r.site(Some(&workdir), dir.path()),
+        Some(&p),
+        &cfg(),
+        Purpose::Run,
+    )
+    .unwrap();
+    let staged = e.staged.unwrap();
+    let tail = staged
+        .as_str()
+        .strip_prefix("/Users/box/moor/demo/launch/.moor-cred-")
+        .unwrap();
+    assert!(
+        tail.len() == 16 && tail.chars().all(|c| c.is_ascii_hexdigit()),
+        "{tail}"
+    );
+    assert_eq!(argvs(&r), [["mkdir", "-m", "700", "--", staged.as_str()]]);
 }
