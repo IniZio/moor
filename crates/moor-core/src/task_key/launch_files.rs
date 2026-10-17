@@ -3,6 +3,7 @@
 use super::MacLayout;
 use crate::boxscript::quote;
 use crate::name::{BoxPath, NameError};
+use std::fmt::Write as _;
 
 impl MacLayout {
     /// `<launch>/moor.xcconfig`.
@@ -147,7 +148,54 @@ impl MacLayout {
              fi\n"
         ))
     }
+
+    /// Shell lines that, for each `(name, root)` in order, print the root's real path on its own
+    /// line and link `<home>/<root relative to the login home>` to the root when the root is
+    /// under `$HOME`.
+    ///
+    /// The link target is the configured root, not its real path, so `~/...` paths in a project
+    /// resolve the same inside the Task home. An existing link is replaced; a real file or
+    /// directory at the link path is never touched and fails the script. A root outside `$HOME`
+    /// gets no link. An empty list gives an empty string.
+    ///
+    /// # Errors
+    /// Returns a [`NameError`] when a root is not an absolute path or a name or root holds a
+    /// newline.
+    pub fn toolchain_script(&self, toolchains: &[(String, String)]) -> Result<String, NameError> {
+        let task_home = quote(self.home.as_str());
+        let mut out = String::new();
+        for (name, root) in toolchains {
+            if name.contains('\n') || root.contains('\n') {
+                return Err(NameError::Workdir(root.clone()));
+            }
+            let root = BoxPath::restore(root)?;
+            let r = quote(root.as_str());
+            let missing = quote(&format!(
+                "host toolchain \"{name}\": root {} is not a directory on the Box",
+                root.as_str()
+            ));
+            let clash = quote(&format!(
+                "host toolchain \"{name}\": cannot link the root because this path exists and is not a link:"
+            ));
+            let _ = write!(
+                out,
+                "if ! r=$(cd {r} 2>/dev/null && pwd -P); then printf '%s\\n' {missing} >&2; exit 1; fi\n\
+                 p={r}\n\
+                 case $p in\n\
+                 (\"$HOME\"/*)\n\
+                 l={task_home}/${{p#\"$HOME\"/}}\n\
+                 mkdir -p \"${{l%/*}}\"\n\
+                 if [ -L \"$l\" ] || [ ! -e \"$l\" ]; then ln -sfn {r} \"$l\"; else printf '%s %s\\n' {clash} \"$l\" >&2; exit 1; fi\n\
+                 ;;\n\
+                 esac\n\
+                 printf '%s\\n' \"$r\"\n"
+            );
+        }
+        Ok(out)
+    }
 }
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod toolchain_tests;
