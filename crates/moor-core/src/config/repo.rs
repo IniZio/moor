@@ -22,6 +22,8 @@ pub enum BoxCapability {
     Xcode,
     /// iOS Simulator (`ios-simulator`).
     IosSimulator,
+    /// `SwiftPM` build-tool plugins (`swiftpm-plugins`); implies `xcode`.
+    SwiftpmPlugins,
 }
 
 /// `box.sandbox:` project paths, relative to the workdir.

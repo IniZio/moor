@@ -47,6 +47,7 @@ fn caps(xcode: bool, ios_simulator: bool) -> Vec<MacCapability> {
     selected(Selection {
         xcode,
         ios_simulator,
+        swiftpm_plugins: false,
     })
 }
 
@@ -224,4 +225,32 @@ fn duplicates_are_not_re_added() {
 fn missing_arrays_are_created() {
     let doc = run(&caps(false, false), &RepoSandbox::default(), json!({})).unwrap();
     assert_eq!(arr(&doc, &["filesystem", "allow"]).len(), 4);
+}
+
+const NESTED: &str = r#"(allow process-exec (with no-sandbox) (literal "/usr/bin/sandbox-exec"))"#;
+
+fn rules_of(doc: &Value) -> Vec<&str> {
+    doc.get("unsafe_macos_seatbelt_rules")
+        .and_then(Value::as_array)
+        .map(|a| a.iter().filter_map(Value::as_str).collect())
+        .unwrap_or_default()
+}
+
+#[test]
+fn swiftpm_plugins_renders_the_nested_sandbox_rule_once() {
+    let c = selected(Selection {
+        swiftpm_plugins: true,
+        ..Selection::default()
+    });
+    let doc = run(&c, &RepoSandbox::default(), minimal()).unwrap();
+    assert_eq!(rules_of(&doc).iter().filter(|r| **r == NESTED).count(), 1);
+    let twice = run(&c, &RepoSandbox::default(), doc.clone()).unwrap();
+    assert_eq!(doc, twice);
+}
+
+#[test]
+fn nested_sandbox_rule_is_absent_without_the_capability() {
+    for c in [caps(false, false), caps(true, false), caps(true, true)] {
+        assert!(!pretty(&c).contains("sandbox-exec"));
+    }
 }

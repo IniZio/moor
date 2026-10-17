@@ -83,6 +83,16 @@ fn a_darwin_launch_in_a_mac_layout_gets_the_capability_rules() {
 }
 
 #[test]
+fn the_nested_sandbox_rule_is_in_the_profile_only_when_asked() {
+    let asked = layout_profile("Darwin arm64", vec![BoxCapability::SwiftpmPlugins]);
+    assert_eq!(asked.matches("/usr/bin/sandbox-exec").count(), 1, "{asked}");
+    for caps in [vec![], vec![BoxCapability::Xcode]] {
+        let profile = layout_profile("Darwin arm64", caps);
+        assert!(!profile.contains("sandbox-exec"), "{profile}");
+    }
+}
+
+#[test]
 fn the_simulator_directory_is_granted_only_for_ios_simulator() {
     let profile = layout_profile("Darwin arm64", vec![BoxCapability::IosSimulator]);
     let doc: serde_json::Value = serde_json::from_str(&profile).unwrap();

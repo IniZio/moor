@@ -1,6 +1,6 @@
 use super::*;
 
-use MacCapability::{InterfaceBuilder, Toolchain, XcodeBuild};
+use MacCapability::{InterfaceBuilder, SwiftpmPlugins, Toolchain, XcodeBuild};
 
 fn render(sel: Selection) -> String {
     render_list(&expand(&selected(sel)))
@@ -12,6 +12,7 @@ fn selected_sets() {
     let xcode = Selection {
         xcode: true,
         ios_simulator: false,
+        swiftpm_plugins: false,
     };
     assert_eq!(
         selected(xcode),
@@ -20,8 +21,19 @@ fn selected_sets() {
     let sim = Selection {
         xcode: false,
         ios_simulator: true,
+        swiftpm_plugins: false,
     };
-    assert_eq!(selected(sim), MacCapability::ALL.to_vec());
+    let mut no_plugins = MacCapability::ALL.to_vec();
+    no_plugins.retain(|c| *c != SwiftpmPlugins);
+    assert_eq!(selected(sim), no_plugins);
+    let plugins = Selection {
+        swiftpm_plugins: true,
+        ..Selection::default()
+    };
+    assert_eq!(
+        selected(plugins),
+        vec![Toolchain, XcodeBuild, InterfaceBuilder, SwiftpmPlugins]
+    );
 }
 
 #[test]
@@ -75,7 +87,8 @@ interface-builder read login-home:Library/Developer/DVTDownloads # Metal toolcha
     assert_eq!(
         render(Selection {
             xcode: true,
-            ios_simulator: false
+            ios_simulator: false,
+            swiftpm_plugins: false,
         }),
         expected
     );
@@ -107,6 +120,7 @@ ios-simulator read login-home:Library/Developer/CoreSimulator # CoreSimulator re
     let all = render(Selection {
         xcode: false,
         ios_simulator: true,
+        swiftpm_plugins: false,
     });
     assert_eq!(all, expected);
     assert!(!all.contains("(allow"));
@@ -118,7 +132,25 @@ fn no_grant_names_library_logs() {
         let text = match g.grant {
             Grant::Read(p) | Grant::Write(p) => p.rel,
             Grant::PrefDomain(s) | Grant::MachLookup(s) => s,
+            Grant::NestedSandboxExec => continue,
         };
         assert!(!text.contains("Library/Logs"), "{text}");
     }
+}
+
+#[test]
+fn snapshot_swiftpm_plugins_adds_one_reasoned_grant() {
+    let plain = render(Selection {
+        xcode: true,
+        ..Selection::default()
+    });
+    let with = render(Selection {
+        swiftpm_plugins: true,
+        ..Selection::default()
+    });
+    let expected = format!(
+        "{plain}swiftpm-plugins exec nested-sandbox-exec # Xcode wraps plugin commands in sandbox-exec; any command run through sandbox-exec can leave the sandbox\n"
+    );
+    assert_eq!(with, expected);
+    assert!(!plain.contains("nested-sandbox-exec"));
 }

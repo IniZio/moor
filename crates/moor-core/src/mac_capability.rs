@@ -16,15 +16,18 @@ pub enum MacCapability {
     InterfaceBuilder,
     /// Booting and driving an iOS simulator.
     IosSimulator,
+    /// `SwiftPM` build-tool plugins: lets `sandbox-exec` run nested under the sandbox.
+    SwiftpmPlugins,
 }
 
 impl MacCapability {
     /// Every capability, in grant order.
-    pub const ALL: [Self; 4] = [
+    pub const ALL: [Self; 5] = [
         Self::Toolchain,
         Self::XcodeBuild,
         Self::InterfaceBuilder,
         Self::IosSimulator,
+        Self::SwiftpmPlugins,
     ];
 
     /// The stable kebab-case name used in config and in rendered lists.
@@ -35,6 +38,7 @@ impl MacCapability {
             Self::XcodeBuild => "xcode-build",
             Self::InterfaceBuilder => "interface-builder",
             Self::IosSimulator => "ios-simulator",
+            Self::SwiftpmPlugins => "swiftpm-plugins",
         }
     }
 
@@ -46,6 +50,7 @@ impl MacCapability {
             Self::XcodeBuild => XCODE_BUILD,
             Self::InterfaceBuilder => INTERFACE_BUILDER,
             Self::IosSimulator => IOS_SIMULATOR,
+            Self::SwiftpmPlugins => SWIFTPM_PLUGINS,
         }
     }
 }
@@ -93,6 +98,8 @@ pub enum Grant {
     PrefDomain(&'static str),
     /// Lookup of a Mach service by name.
     MachLookup(&'static str),
+    /// Running `/usr/bin/sandbox-exec` nested under the sandbox, unsandboxed.
+    NestedSandboxExec,
 }
 
 /// A grant together with the capability that owns it and why it exists.
@@ -113,12 +120,14 @@ pub struct Selection {
     pub xcode: bool,
     /// Use an iOS simulator; implies `xcode`.
     pub ios_simulator: bool,
+    /// Run `SwiftPM` build-tool plugins; implies `xcode`.
+    pub swiftpm_plugins: bool,
 }
 
 /// Capabilities for a selection: sorted, without duplicates, `Toolchain` always first.
 #[must_use]
 pub fn selected(sel: Selection) -> Vec<MacCapability> {
-    let xcode = sel.xcode || sel.ios_simulator;
+    let xcode = sel.xcode || sel.ios_simulator || sel.swiftpm_plugins;
     let mut caps = vec![MacCapability::Toolchain];
     if xcode {
         caps.push(MacCapability::XcodeBuild);
@@ -126,6 +135,9 @@ pub fn selected(sel: Selection) -> Vec<MacCapability> {
     }
     if sel.ios_simulator {
         caps.push(MacCapability::IosSimulator);
+    }
+    if sel.swiftpm_plugins {
+        caps.push(MacCapability::SwiftpmPlugins);
     }
     caps.sort();
     caps.dedup();
@@ -150,6 +162,7 @@ pub fn render_list(grants: &[Reasoned]) -> String {
             Grant::Write(p) => ("write", path_target(p)),
             Grant::PrefDomain(d) => ("pref", format!("pref:{d}")),
             Grant::MachLookup(n) => ("mach", format!("mach:{n}")),
+            Grant::NestedSandboxExec => ("exec", "nested-sandbox-exec".to_owned()),
         };
         let name = g.capability.name();
         let _ = writeln!(out, "{name} {kind} {target} # {}", g.reason);
@@ -195,6 +208,8 @@ const XB: MacCapability = MacCapability::XcodeBuild;
 const IB: MacCapability = MacCapability::InterfaceBuilder;
 /// Short alias for the iOS simulator capability in the tables.
 const IS: MacCapability = MacCapability::IosSimulator;
+/// Short alias for the `SwiftPM` plugins capability in the tables.
+const SP: MacCapability = MacCapability::SwiftpmPlugins;
 
 /// Grants of the toolchain capability.
 static TOOLCHAIN: &[Reasoned] = &[
@@ -306,6 +321,13 @@ static IOS_SIMULATOR: &[Reasoned] = &[
         "CoreSimulator reads the logged-in user's device data",
     ),
 ];
+
+/// Grants of the `SwiftPM` plugins capability.
+static SWIFTPM_PLUGINS: &[Reasoned] = &[r(
+    SP,
+    Grant::NestedSandboxExec,
+    "Xcode wraps plugin commands in sandbox-exec; any command run through sandbox-exec can leave the sandbox",
+)];
 
 #[cfg(test)]
 mod tests;
