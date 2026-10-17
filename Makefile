@@ -32,10 +32,13 @@ lint:
 	tools/removed-names.sh
 	tools/exec-env.sh
 	tools/seatbelt-text.sh
+	tools/case-paren.sh
 	cargo test -p layering --locked
 	cargo run -q -p layering --locked
 	tools/lint-selftest.sh
 	tools/stack-overlap-selftest.sh
+	tools/git-env-selftest.sh
+	tools/case-paren-selftest.sh
 	typos
 	RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items --locked
 

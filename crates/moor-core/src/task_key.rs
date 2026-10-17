@@ -131,6 +131,8 @@ pub fn refuse_inside_login_home(workdir: &BoxPath, login_home: &BoxPath) -> Resu
 }
 
 mod launch_files;
+pub mod release;
+pub mod release_sim;
 
 #[cfg(test)]
 mod tests;

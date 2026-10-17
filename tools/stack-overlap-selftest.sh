@@ -2,6 +2,10 @@
 # Runs stack-overlap.sh against a throwaway repo with a stub gh on PATH.
 set -euo pipefail
 
+# A caller such as `git rebase -x` exports GIT_DIR and friends; git init below would then rewrite the caller's repo.
+# shellcheck disable=SC2046
+unset $(git rev-parse --local-env-vars) GIT_NAMESPACE GIT_CEILING_DIRECTORIES
+
 root="$(cd "$(dirname "$0")/.." && pwd)"
 script="$root/tools/stack-overlap.sh"
 tmp="$(mktemp -d)"
