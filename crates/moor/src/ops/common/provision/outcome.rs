@@ -1,7 +1,9 @@
 //! What provisioning ran in a Box, and how a failed dotfiles step is recorded.
 
+use moor_core::config::RepoBox;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, IntentChange};
 use moor_core::domain::task::TaskInput;
+use moor_core::seam::driver::Platform;
 use moor_core::ErrorKind;
 use moor_core::TaskId;
 
@@ -29,6 +31,13 @@ impl Provisioned {
             dotfiles: DotfilesRun::Skipped,
         }
     }
+}
+
+/// Why the repo's `box:` section cannot apply to a Box of `platform`, worded as a config error.
+pub(super) fn platform_refusal(repo_box: &RepoBox, platform: Platform) -> Option<String> {
+    let macos = platform == Platform::Macos;
+    let e = repo_box.check_platform(macos).err()?;
+    Some(e.in_file(".moor.yaml").to_string())
 }
 
 /// Records a failed checkout sync and returns the error, carrying the Task row, to report.

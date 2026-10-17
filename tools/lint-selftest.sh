@@ -42,6 +42,19 @@ exec_env() {
   echo "lint-selftest: $1 ok"
 }
 
+# seatbelt_text <case> <expect: pass|fail> [relpath] ; fake .rs source on stdin, scanned by tools/seatbelt-text.sh
+seatbelt_text() {
+  local d="$dir/seatbelt-case" rel="${3:-moor/src/fake.rs}"
+  rm -rf "$d"; mkdir -p "$d/$(dirname "$rel")"
+  cat > "$d/$rel"
+  local rc=0 out
+  out="$("$root/tools/seatbelt-text.sh" "$d" 2>&1)" || rc=$?
+  if { [ "$2" = pass ] && [ "$rc" -ne 0 ]; } || { [ "$2" = fail ] && [ "$rc" -eq 0 ]; }; then
+    echo "lint-selftest: $1 FAILED (expected $2)"; echo "$out"; exit 1
+  fi
+  echo "lint-selftest: $1 ok"
+}
+
 exec_env exec-env-shorthand fail <<'RS'
 fn f(env: Vec<(String, String)>) {
     let _ = ExecSpec {
@@ -230,4 +243,42 @@ check L fail "disallowed_methods" <<'RS'
 /// Now.
 #[must_use]
 pub fn now() -> std::time::Instant { std::time::Instant::now() }
+RS
+
+seatbelt_text allow-in-fake fail <<'RS'
+const R: &str = "(allow file-read*)";
+RS
+seatbelt_text allow-at-eol fail <<'RS'
+const R: &str = "(allow
+file-read*)";
+RS
+seatbelt_text allow-tab fail < <(printf 'const R: &str = "(allow\tfile-read*)";\n')
+seatbelt_text allow-escaped-newline fail <<'RS'
+const R: &str = "(allow\nfile-read*)";
+RS
+seatbelt_text allow-space-before fail <<'RS'
+const R: &str = "( allow file-read*)";
+RS
+seatbelt_text allow-list-prose pass <<'RS'
+// (allow-list applied)
+fn f(allow: u8) {}
+RS
+seatbelt_text key-in-fake fail <<'RS'
+const K: &str = "unsafe_macos_seatbelt_rules";
+RS
+seatbelt_text allow-in-comment fail <<'RS'
+// emits (allow network*) somewhere
+fn f() {}
+RS
+seatbelt_text allow-in-tests.rs fail moor/src/tests.rs <<'RS'
+const R: &str = "(allow file-read*)";
+RS
+seatbelt_text seatbelt-clean pass <<'RS'
+fn f() {}
+RS
+seatbelt_text allow-in-mac.rs pass moor/src/adapters/box_agent/sandbox/mac.rs <<'RS'
+const R: &str = "(allow file-read*)";
+RS
+seatbelt_text allow-in-mac-tests pass moor/src/adapters/box_agent/sandbox/mac/tests.rs <<'RS'
+const R: &str = "(allow file-read*)";
 RS

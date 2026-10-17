@@ -35,8 +35,9 @@ fn text(os: &str, env_names: &[&str], root: bool) -> String {
         set_vars: vec![("APP_MODE".to_owned(), "it's".to_owned())],
         root,
         strip_env: &[],
+        mac: None,
     };
-    profile(&input)
+    profile(&input).unwrap()
 }
 
 fn at<'a>(v: &'a Value, pointer: &str) -> &'a Value {
@@ -154,8 +155,9 @@ fn doc_with_set_vars(
         set_vars,
         root: false,
         strip_env,
+        mac: None,
     };
-    serde_json::from_str(&profile(&input)).unwrap()
+    serde_json::from_str(&profile(&input).unwrap()).unwrap()
 }
 
 #[test]

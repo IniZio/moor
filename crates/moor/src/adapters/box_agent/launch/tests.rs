@@ -6,7 +6,7 @@ use std::sync::Arc;
 use moor_core::seam::agent_profile::{AgentProfile, BoxSetup, LaunchCtx, ProxyAddr};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
-use moor_core::seam::engine::{Engine, EngineError, LaunchReq};
+use moor_core::seam::engine::{Engine, EngineError, LaunchReq, MacGrants};
 use moor_core::seam::surface::{Surface, SurfaceError};
 use moor_core::{BoxHandle, BoxPath, ProviderId, Secret, TaskId, TaskName};
 
@@ -43,13 +43,11 @@ fn driver(d: FakeDriver) -> Arc<FakeDriver> {
     d
 }
 
-fn surface(s: FakeSurface) -> Arc<FakeSurface> {
-    Arc::new(s)
-}
-
 fn req(s: &FakeSurface) -> LaunchReq {
-    let wt = s.create_worktree(&PathBuf::from("/r"), &TaskName::parse("t1").unwrap(), None);
-    let wt = wt.unwrap();
+    let name = TaskName::parse("t1").unwrap();
+    let wt = s
+        .create_worktree(&PathBuf::from("/r"), &name, None)
+        .unwrap();
     LaunchReq {
         handle: BoxHandle::new("box-1"),
         workdir: BoxPath::under("/work", "box-1").unwrap(),
@@ -66,6 +64,7 @@ fn req(s: &FakeSurface) -> LaunchReq {
         proxy: None,
         origin: None,
         strip_env: Vec::new(),
+        mac_grants: MacGrants::default(),
     }
 }
 
@@ -87,7 +86,7 @@ fn launch(
     Arc<FakeSurface>,
     Result<String, EngineError>,
 ) {
-    let (d, s) = (driver(d), surface(s));
+    let (d, s) = (driver(d), Arc::new(s));
     let r = req(&s);
     let out = agent(&d, &s)
         .launch(&r)
@@ -149,7 +148,7 @@ fn the_pane_line_runs_the_script_without_exec_and_reports_the_exit() {
 
 #[test]
 fn a_resume_runs_the_agent_with_the_stored_session_instead_of_the_prompt() {
-    let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new("/r")));
+    let (d, s) = (driver(FakeDriver::new()), Arc::new(FakeSurface::new("/r")));
     let r = LaunchReq {
         resume: Some("sess-9".to_owned()),
         ..req(&s)
@@ -302,7 +301,7 @@ fn a_box_without_a_home_fails_before_delivering() {
         worktree: None,
     })
     .unwrap();
-    let s = surface(FakeSurface::new("/r"));
+    let s = Arc::new(FakeSurface::new("/r"));
     let r = req(&s);
     let out = agent(&d, &s).launch(&r);
     assert!(matches!(out, Err(EngineError::Failed { step: "home", .. })));
@@ -505,7 +504,7 @@ fn req_with_proxy(s: &FakeSurface) -> LaunchReq {
 }
 
 fn launch_with_proxy() -> (Arc<FakeDriver>, Arc<FakeSurface>) {
-    let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new("/r")));
+    let (d, s) = (driver(FakeDriver::new()), Arc::new(FakeSurface::new("/r")));
     agent(&d, &s).launch(&req_with_proxy(&s)).unwrap();
     (d, s)
 }
@@ -592,9 +591,9 @@ fn the_agent_gets_the_proxy_env_while_the_cred_dir_lives_until_exit() {
     assert!(b.cred_gone());
 }
 
+mod batch;
+mod mac;
 #[path = "sandbox_tests.rs"]
 mod sandbox_tests;
 #[path = "secret_tests.rs"]
 mod secret_tests;
-
-mod batch;

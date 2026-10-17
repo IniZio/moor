@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::activity::Probes;
+use crate::config::{BoxCapability, RepoSandbox};
 use crate::name::{BoxHandle, BoxPath, NameError, TaskName};
 use crate::seam::agent_profile::{PromptMatch, ProxyAddr};
 use crate::seam::driver::DriverError;
@@ -39,6 +40,15 @@ pub struct LaunchNotice {
     pub message: String,
 }
 
+/// What the repo's `box:` section grants the agent's sandbox on a macOS Box.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MacGrants {
+    /// Capabilities from `box.capabilities`.
+    pub capabilities: Vec<BoxCapability>,
+    /// Extra read and write paths from `box.sandbox`.
+    pub sandbox: RepoSandbox,
+}
+
 /// What a launch needs to start the agent in a Box.
 #[derive(Debug, Clone)]
 pub struct LaunchReq {
@@ -72,6 +82,8 @@ pub struct LaunchReq {
     pub origin: Option<String>,
     /// Env var names removed from the agent's environment before hooks and the agent run.
     pub strip_env: Vec<String>,
+    /// What the repo grants the sandbox on a macOS Box; ignored on other Boxes.
+    pub mac_grants: MacGrants,
 }
 
 impl LaunchReq {
@@ -121,6 +133,7 @@ impl PartialEq for LaunchReq {
             && proxy(&self.proxy) == proxy(&other.proxy)
             && self.origin == other.origin
             && self.strip_env == other.strip_env
+            && self.mac_grants == other.mac_grants
     }
 }
 

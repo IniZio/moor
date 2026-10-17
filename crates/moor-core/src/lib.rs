@@ -10,6 +10,7 @@ pub mod decide;
 pub mod domain;
 pub mod exec_env;
 pub mod graphql_scope;
+pub mod mac_capability;
 pub mod name;
 pub mod request;
 pub mod response;

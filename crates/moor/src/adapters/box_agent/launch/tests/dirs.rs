@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, BoxStep, Driver, DriverError};
-use moor_core::seam::engine::{Engine, EngineError, LaunchReq};
+use moor_core::seam::engine::{Engine, EngineError, LaunchReq, MacGrants};
 use moor_core::seam::surface::Surface;
 use moor_core::{BoxHandle, BoxPath, ProviderId, TaskId, TaskName};
 
@@ -58,6 +58,7 @@ fn req(s: &FakeSurface) -> LaunchReq {
         proxy: None,
         origin: None,
         strip_env: Vec::new(),
+        mac_grants: MacGrants::default(),
     }
 }
 
