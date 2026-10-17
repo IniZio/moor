@@ -50,7 +50,6 @@ pub const PASS_VARS: &[&str] = &[
     "NODE_EXTRA_CA_CERTS",
     "YARN_HTTPS_PROXY",
     "YARN_HTTP_PROXY",
-    "YARN_HTTPS_CA_FILE_PATH",
     "YARN_CACHE_FOLDER",
     "YARN_GLOBAL_FOLDER",
     "npm_config_cache",
@@ -349,14 +348,13 @@ fn proxy_lines(p: &ProxyCtx<'_>, caches: bool) -> Result<Vec<String>, String> {
     Ok(lines)
 }
 
-/// Shell lines that point Yarn and npm at the proxy, the CA bundle (`httpsCaFilePath`; Yarn 4 rejects the legacy `caFilePath`) and, unless the Task sets its own,
-/// a cache the sandbox can write.
+/// Shell lines that point Yarn and npm at the proxy and, unless the Task sets its own,
+/// a cache the sandbox can write. Yarn trusts the CA through `NODE_EXTRA_CA_CERTS`: each Yarn major rejects the other's CA setting, so none is exported.
 fn yarn_lines(box_port: u16, caches: bool) -> Vec<String> {
     let mut lines: Vec<String> = ["YARN_HTTPS_PROXY", "YARN_HTTP_PROXY"]
         .iter()
         .map(|name| format!("export {name}=\"http://moor:${{{NONCE_VAR}}}@127.0.0.1:{box_port}\""))
         .collect();
-    lines.push("export YARN_HTTPS_CA_FILE_PATH=\"$moor_bundle\"".to_owned());
     if caches {
         lines.extend(
             [
