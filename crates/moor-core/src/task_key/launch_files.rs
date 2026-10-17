@@ -5,6 +5,9 @@ use crate::boxscript::quote;
 use crate::name::{BoxPath, NameError};
 use std::fmt::Write as _;
 
+/// Login-home directories that hold the owner's credentials, relative to the login home.
+const CREDENTIAL_DIRS: [&str; 3] = [".config/gh", ".docker", ".ssh"];
+
 impl MacLayout {
     /// `<launch>/moor.xcconfig`.
     ///
@@ -156,13 +159,17 @@ impl MacLayout {
     /// The link target is the configured root, not its real path, so `~/...` paths in a project
     /// resolve the same inside the Task home. An existing link is replaced; a real file or
     /// directory at the link path is never touched and fails the script. A root outside `$HOME`
-    /// gets no link. An empty list gives an empty string.
+    /// gets no link, and neither does a root whose real path the Box refuses: the login home or a
+    /// parent of it, anything in `Library` or a credential directory, a parent of a credential
+    /// directory, or the Box work root, a parent of it or anything in it. The real path is still
+    /// printed. An empty list gives an empty string.
     ///
     /// # Errors
     /// Returns a [`NameError`] when a root is not an absolute path or a name or root holds a
     /// newline.
     pub fn toolchain_script(&self, toolchains: &[(String, String)]) -> Result<String, NameError> {
         let task_home = quote(self.home.as_str());
+        let (inside, contains) = self.refused_checks();
         let mut out = String::new();
         for (name, root) in toolchains {
             if name.contains('\n') || root.contains('\n') {
@@ -181,6 +188,10 @@ impl MacLayout {
                 out,
                 "if ! r=$(cd {r} 2>/dev/null && pwd -P); then printf '%s\\n' {missing} >&2; exit 1; fi\n\
                  p={r}\n\
+                 k=1\n\
+                 case $r in ({inside}) k=0;; esac\n\
+                 {contains}\
+                 if [ \"$k\" = 1 ]; then\n\
                  case $p in\n\
                  (\"$HOME\"/*)\n\
                  l={task_home}/${{p#\"$HOME\"/}}\n\
@@ -188,10 +199,34 @@ impl MacLayout {
                  if [ -L \"$l\" ] || [ ! -e \"$l\" ]; then ln -sfn {r} \"$l\"; else printf '%s %s\\n' {clash} \"$l\" >&2; exit 1; fi\n\
                  ;;\n\
                  esac\n\
+                 fi\n\
                  printf '%s\\n' \"$r\"\n"
             );
         }
         Ok(out)
+    }
+
+    /// The case pattern list of real paths that are in a refused place, and the `case` lines that
+    /// catch a real path that is, or holds, a refused place.
+    fn refused_checks(&self) -> (String, String) {
+        let home = |rel: &str| format!("\"$HOME\"{}", quote(rel));
+        let work = self.root.as_str().trim_end_matches('/');
+        let work = work.rsplit_once('/').map_or("", |(p, _)| p);
+        let work = quote(if work.is_empty() { "/" } else { work });
+        let creds = CREDENTIAL_DIRS.map(|d| home(&format!("/{d}")));
+        let mut inside = vec![format!("{}/*", home("/Library"))];
+        let mut contains = vec!["\"$HOME\"".to_owned()];
+        for c in creds.into_iter().chain([work]) {
+            inside.push(c.clone());
+            inside.push(format!("{c}/*"));
+            contains.push(c);
+        }
+        let mut lines = String::new();
+        for s in &contains {
+            let _ = writeln!(lines, "case {s} in (\"$r\"|\"${{r%/}}\"/*) k=0;; esac");
+        }
+        let contains = lines;
+        (inside.join("|"), contains)
     }
 }
 
