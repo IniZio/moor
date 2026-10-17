@@ -2,6 +2,7 @@
 
 mod brief;
 pub(crate) mod claude;
+mod exec_sandbox;
 mod launch;
 pub(crate) mod nono_release;
 mod probe;
@@ -18,7 +19,9 @@ use moor_core::name::BoxPath;
 use moor_core::seam::agent_profile::{AgentProfile, PromptMatch};
 use moor_core::seam::clock::Clock;
 use moor_core::seam::driver::Driver;
-use moor_core::seam::engine::{Engine, EngineError, LaunchReq, SessionRef, Steer, SteerOutcome};
+use moor_core::seam::engine::{
+    Engine, EngineError, LaunchReq, SandboxReq, Sandboxed, SessionRef, Steer, SteerOutcome,
+};
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::Surface;
 
@@ -58,6 +61,10 @@ impl BoxAgent {
 }
 
 impl Engine for BoxAgent {
+    fn sandbox(&self, req: &SandboxReq) -> Result<Option<Sandboxed>, EngineError> {
+        exec_sandbox::sandbox(self, req)
+    }
+
     fn probe(&self, s: &SessionRef, deadline: Deadline) -> Result<Probes, EngineError> {
         probe::probe(
             self.driver.as_ref(),

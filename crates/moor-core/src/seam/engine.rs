@@ -186,6 +186,38 @@ pub enum EngineError {
     NothingToArchive,
 }
 
+/// What one sandboxed Box exec (setup, teardown or `moor run`) on a macOS Box needs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SandboxReq {
+    /// The Box the exec runs on.
+    pub handle: BoxHandle,
+    /// Host worktree; passed as the host cwd to Driver calls.
+    pub worktree: PathBuf,
+    /// The Box workdir the command runs in.
+    pub workdir: BoxPath,
+    /// The Task the exec belongs to.
+    pub task: TaskName,
+    /// The exec's credential directory, already created (mode 0700); the profile is written in it.
+    pub cred: BoxPath,
+    /// The exec's environment; it reaches the command only through the profile's `set_vars`.
+    pub set_vars: Vec<(String, String)>,
+    /// Names that never reach the sandbox.
+    pub strip_env: Vec<String>,
+    /// What the repo grants the sandbox.
+    pub mac_grants: MacGrants,
+    /// nono prints its session diagnostics as JSON on its stderr after the run (`--diagnostics-json`).
+    pub report: bool,
+}
+
+/// How to start one command under the sandbox.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sandboxed {
+    /// Shell lines run outside the sandbox, after the exec prelude and just before the sandbox starts.
+    pub lines: Vec<String>,
+    /// The argv that starts the sandbox, ending in `--`; the command's argv follows it.
+    pub prefix: Vec<String>,
+}
+
 /// The agent running in a Box.
 pub trait Engine: Send + Sync {
     /// Reads the agent's hook file once, then its pane once, and returns them raw.
@@ -214,6 +246,14 @@ pub trait Engine: Send + Sync {
     /// [`EngineError`] when they cannot be named now (for example the Box home cannot be
     /// read); the caller must not launch then.
     fn launch_dirs(&self, req: &LaunchReq) -> Result<Option<(BoxPath, BoxPath)>, EngineError>;
+
+    /// Readies the sandbox for one Box exec in `req`'s Task: puts the pinned sandbox tool on the
+    /// Box when it is missing and writes the profile the agent gets into `req.cred`.
+    /// `Ok(None)` when the workdir is not inside a macOS Box layout; the exec then runs unsandboxed.
+    ///
+    /// # Errors
+    /// [`EngineError::Failed`] names the step that failed.
+    fn sandbox(&self, req: &SandboxReq) -> Result<Option<Sandboxed>, EngineError>;
 
     /// Sends `steer` to the agent's pane. Text is never typed twice.
     ///
