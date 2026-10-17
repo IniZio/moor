@@ -257,17 +257,23 @@ fn prelude_exports_yarn_after_the_proxy_and_before_no_proxy() {
     let yarn = [
         "export YARN_HTTPS_PROXY=\"http://moor:${moor_nonce}@127.0.0.1:4321\"",
         "export YARN_HTTP_PROXY=\"http://moor:${moor_nonce}@127.0.0.1:4321\"",
-        "export YARN_HTTPS_CA_FILE_PATH=\"$moor_bundle\"",
         "export YARN_CACHE_FOLDER=\"$HOME/.cache/yarn\"",
         "export YARN_GLOBAL_FOLDER=\"$HOME/.cache/yarn/berry\"",
         "export npm_config_cache=\"$HOME/.cache/npm\"",
     ];
+    for name in ["YARN_CA_FILE_PATH", "YARN_HTTPS_CA_FILE_PATH"] {
+        assert!(!got.prelude.iter().any(|l| l.contains(name)), "{name}");
+    }
+    assert!(got
+        .prelude
+        .iter()
+        .any(|l| l.contains("export NODE_EXTRA_CA_CERTS=")));
     let first = at("export http_proxy=") + 1;
     assert_eq!(
-        got.prelude.get(first..first + 6),
+        got.prelude.get(first..first + 5),
         Some(strs(&yarn).as_slice())
     );
-    assert_eq!(first + 6, at("export NO_PROXY="));
+    assert_eq!(first + 5, at("export NO_PROXY="));
 }
 
 #[test]

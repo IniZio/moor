@@ -113,7 +113,6 @@ fn the_lines_never_contain_the_nonce_and_carry_the_exports() {
         "export http_proxy=\"http://moor:${moor_nonce}@127.0.0.1:4321\"",
         "export YARN_HTTPS_PROXY=\"http://moor:${moor_nonce}@127.0.0.1:4321\"",
         "export YARN_HTTP_PROXY=\"http://moor:${moor_nonce}@127.0.0.1:4321\"",
-        "export YARN_HTTPS_CA_FILE_PATH=\"$moor_bundle\"",
         "export YARN_CACHE_FOLDER=\"$HOME/.cache/yarn\"",
         "export YARN_GLOBAL_FOLDER=\"$HOME/.cache/yarn/berry\"",
         "export npm_config_cache=\"$HOME/.cache/npm\"",
@@ -303,7 +302,7 @@ fn stage_steps_put_the_nonce_and_the_ca_under_the_credential_directory() {
     assert_eq!(ca_text, "could not stage the proxy CA");
 }
 
-/// Asserts the proxy URL reaches the usual and Yarn variables, and Yarn gets the CA bundle and a cache under `$HOME/.cache`.
+/// Asserts the proxy URL reaches the usual and Yarn variables, and Yarn gets no CA setting of its own and a cache under `$HOME/.cache`.
 fn assert_yarn_vars(env: &HashMap<String, String>, dir: &Path) {
     let proxy_url = format!("http://moor:sentinel-9c2e@127.0.0.1:{PORT}");
     for name in ["HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy"] {
@@ -311,10 +310,14 @@ fn assert_yarn_vars(env: &HashMap<String, String>, dir: &Path) {
     }
     is(env, "YARN_HTTPS_PROXY", &proxy_url);
     is(env, "YARN_HTTP_PROXY", &proxy_url);
+    // Yarn 3 and Yarn 4 each reject the other's CA setting; Node's CA variable covers every Yarn.
+    for name in ["YARN_CA_FILE_PATH", "YARN_HTTPS_CA_FILE_PATH"] {
+        assert!(!env.contains_key(name), "{name}");
+    }
     is(
         env,
-        "YARN_HTTPS_CA_FILE_PATH",
-        dir.join("ca-bundle.pem").to_str().unwrap(),
+        "NODE_EXTRA_CA_CERTS",
+        dir.join("proxy-ca.pem").to_str().unwrap(),
     );
     let home = std::env::var("HOME").unwrap();
     is(env, "YARN_CACHE_FOLDER", &format!("{home}/.cache/yarn"));

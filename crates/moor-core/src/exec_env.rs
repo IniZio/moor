@@ -47,7 +47,6 @@ pub const PASS_VARS: &[&str] = &[
     "NODE_EXTRA_CA_CERTS",
     "YARN_HTTPS_PROXY",
     "YARN_HTTP_PROXY",
-    "YARN_HTTPS_CA_FILE_PATH",
     "YARN_CACHE_FOLDER",
     "YARN_GLOBAL_FOLDER",
     "npm_config_cache",
@@ -341,7 +340,7 @@ fn proxy_lines(p: &ProxyCtx<'_>) -> Result<Vec<String>, String> {
     Ok(lines)
 }
 
-/// Shell lines that point Yarn and npm at the proxy, the CA bundle (`httpsCaFilePath`; Yarn 4 rejects the legacy `caFilePath`) and a cache the sandbox can write.
+/// Shell lines that point Yarn and npm at the proxy and a cache the sandbox can write.
 fn yarn_lines(box_port: u16) -> Vec<String> {
     let mut lines: Vec<String> = ["YARN_HTTPS_PROXY", "YARN_HTTP_PROXY"]
         .iter()
@@ -349,7 +348,6 @@ fn yarn_lines(box_port: u16) -> Vec<String> {
         .collect();
     lines.extend(
         [
-            "export YARN_HTTPS_CA_FILE_PATH=\"$moor_bundle\"",
             "export YARN_CACHE_FOLDER=\"$HOME/.cache/yarn\"",
             "export YARN_GLOBAL_FOLDER=\"$HOME/.cache/yarn/berry\"",
             "export npm_config_cache=\"$HOME/.cache/npm\"",

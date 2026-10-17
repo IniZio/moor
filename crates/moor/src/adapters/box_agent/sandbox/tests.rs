@@ -97,7 +97,6 @@ fn env_allow_list_passes_placeholders() {
         "HTTPS_PROXY",
         "YARN_HTTPS_PROXY",
         "YARN_HTTP_PROXY",
-        "YARN_HTTPS_CA_FILE_PATH",
         "YARN_CACHE_FOLDER",
         "YARN_GLOBAL_FOLDER",
         "npm_config_cache",
