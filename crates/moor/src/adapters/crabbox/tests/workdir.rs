@@ -12,7 +12,7 @@ const LEASE_OUT: &str =
     "leased cbx_X slug=moor-t7-ab12cd provider=sprites server=1 type=t ip=1.2.3.4\n\
 ready ssh=u@h:22 network=public workroot=/w\n";
 
-const PROBE_SCRIPT: &str = r#"printf "MOOR_WORKDIR=%s\n" "$(pwd)""#;
+const PROBE_SCRIPT: &str = super::PROBE_SCRIPT;
 
 fn probe_argv() -> Vec<String> {
     [
@@ -50,7 +50,7 @@ fn acquire_learns_the_workdir_from_the_probe() {
     p.on(
         Tool::Crabbox,
         &["run"],
-        Reply::Ok("MOOR_WORKDIR=/w/cbx_X/app\n".to_owned()),
+        Reply::Ok("MOOR_WORKDIR=/w/cbx_X/app\nMOOR_UNAME=Darwin arm64\n".to_owned()),
     );
     let mut r = req("sprites", None);
     r.worktree = Some(PathBuf::from("/wt/app"));
@@ -124,4 +124,32 @@ fn acquire_fails_when_the_probe_fails() {
     r.worktree = Some(PathBuf::from("/wt/app"));
     let err = c.acquire(&r).unwrap_err();
     assert!(matches!(err, DriverError::Failed { .. }), "{err:?}");
+}
+
+#[test]
+fn acquire_on_ssh_reports_the_darwin_platform() {
+    let (p, c) = fixture();
+    p.on(Tool::Crabbox, &["warmup"], Reply::Ok(LEASE_OUT.to_owned()));
+    p.on(
+        Tool::Crabbox,
+        &["run"],
+        Reply::Ok("MOOR_WORKDIR=/Users/me/crabbox/app\nMOOR_UNAME=Darwin arm64\n".to_owned()),
+    );
+    let got = c.acquire(&req("ssh", None)).unwrap();
+    assert_eq!(got.workdir.as_str(), "/Users/me/crabbox/app");
+    assert_eq!(got.platform.os, "Darwin");
+    assert_eq!(got.platform.arch, "arm64");
+}
+
+#[test]
+fn acquire_fails_when_the_probe_has_no_uname_line() {
+    let (p, c) = fixture();
+    p.on(Tool::Crabbox, &["warmup"], Reply::Ok(LEASE_OUT.to_owned()));
+    p.on(
+        Tool::Crabbox,
+        &["run"],
+        Reply::Ok("MOOR_WORKDIR=/w/cbx_X/app\n".to_owned()),
+    );
+    let err = c.acquire(&req("ssh", None)).unwrap_err();
+    assert!(format!("{err:?}").contains("MOOR_UNAME"), "{err:?}");
 }

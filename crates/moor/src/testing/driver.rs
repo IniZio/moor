@@ -10,8 +10,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use moor_core::seam::driver::{
-    AcquireReq, Acquired, BoxListing, BoxStep, Driver, DriverCaps, DriverError, ExecOutcome,
-    ExecSpec, Released, SleepKind, SleepOutcome, StepDone,
+    AcquireReq, Acquired, BoxListing, BoxPlatform, BoxStep, Driver, DriverCaps, DriverError,
+    ExecOutcome, ExecSpec, Released, SleepKind, SleepOutcome, StepDone,
 };
 use moor_core::seam::proc::{Deadline, Output};
 use moor_core::{BoxHandle, BoxPath, ProviderId};
@@ -53,6 +53,8 @@ struct State {
     fail_workdir: Option<DriverError>,
     tunnel: tunnel::TunnelState,
     sleep_kind: Option<SleepKind>,
+    platform: Option<BoxPlatform>,
+    static_host: bool,
 }
 
 /// One `copy_out` call: handle, source, destination and host cwd.
@@ -148,6 +150,10 @@ impl Driver for FakeDriver {
         Ok(Acquired {
             handle: BoxHandle::new(id),
             workdir,
+            platform: s.platform.clone().unwrap_or_else(|| BoxPlatform {
+                os: "Linux".into(),
+                arch: "x86_64".into(),
+            }),
         })
     }
 
@@ -374,6 +380,7 @@ impl Driver for FakeDriver {
     }
 }
 
+mod builders;
 mod knobs;
 mod script;
 #[cfg(test)]

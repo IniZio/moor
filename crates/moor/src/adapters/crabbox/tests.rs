@@ -15,15 +15,20 @@ use super::parse::{parse_list, parse_warmup};
 use super::Crabbox;
 use crate::testing::proc::{Reply, ScriptedProc};
 
+mod acquire_workdir;
+mod real_mac;
 mod workdir;
 
+const PROBE_SCRIPT: &str = r#"printf "MOOR_WORKDIR=%s\n" "$(pwd)"; printf "MOOR_UNAME=%s %s\n" "$(uname -s)" "$(uname -m)""#;
 const PROBE_DIR: &str = "/root/crabbox/cbx_1/app";
 
 fn probe(p: &ScriptedProc) {
     p.on(
         Tool::Crabbox,
         &["run"],
-        Reply::Ok(format!("MOOR_WORKDIR={PROBE_DIR}\n")),
+        Reply::Ok(format!(
+            "MOOR_WORKDIR={PROBE_DIR}\nMOOR_UNAME=Linux x86_64\n"
+        )),
     );
 }
 
@@ -160,63 +165,6 @@ fn list_matches_top_level_slug_and_lease_label() {
     let items = parse_list(r#"[{"slug":"a"},{"labels":{"lease":"b"}}]"#).unwrap();
     let names: Vec<_> = items.iter().map(|i| i.name.as_str()).collect();
     assert_eq!(names, ["a", "b"]);
-}
-
-#[test]
-fn acquire_without_workroot_still_gets_workdir_from_probe() {
-    let (p, c) = fixture();
-    p.on(
-        Tool::Crabbox,
-        &["warmup"],
-        Reply::Ok("leased cbx_1 slug=-\n".into()),
-    );
-    probe(&p);
-    let got = c.acquire(&req("ssh", None)).unwrap();
-    assert_eq!(got.workdir.as_str(), PROBE_DIR);
-    assert!(p
-        .calls()
-        .iter()
-        .all(|call| call.args.first().map(String::as_str) != Some("inspect")));
-}
-
-fn run_calls(p: &ScriptedProc) -> usize {
-    p.calls()
-        .iter()
-        .filter(|c| c.args.first().map(String::as_str) == Some("run"))
-        .count()
-}
-
-fn acquire_with_ready(ready: &str) -> (Arc<ScriptedProc>, BoxPath) {
-    let (p, c) = fixture();
-    p.on(
-        Tool::Crabbox,
-        &["warmup"],
-        Reply::Ok(format!("leased cbx_1 slug=-\n{ready}\n")),
-    );
-    probe(&p);
-    let got = c.acquire(&req("ssh", None)).unwrap();
-    (p, got.workdir)
-}
-
-#[test]
-fn acquire_uses_workdir_from_warmup_without_probing() {
-    let (p, dir) =
-        acquire_with_ready("ready ssh=u@h:22 workroot=/root/crabbox workdir=/root/crabbox/w/app");
-    assert_eq!(dir.as_str(), "/root/crabbox/w/app");
-    assert_eq!(run_calls(&p), 0);
-}
-
-#[test]
-fn acquire_probes_when_warmup_workdir_is_relative_or_empty() {
-    for ready in [
-        "ready ssh=u@h:22 workdir=app",
-        "ready ssh=u@h:22 workdir=",
-        "ready ssh=u@h:22 workroot=/r",
-    ] {
-        let (p, dir) = acquire_with_ready(ready);
-        assert_eq!(dir.as_str(), PROBE_DIR, "{ready}");
-        assert_eq!(run_calls(&p), 1, "{ready}");
-    }
 }
 
 #[test]
@@ -370,7 +318,7 @@ fn workdir_runs_the_pwd_probe() {
             "--",
             "sh",
             "-c",
-            r#"printf "MOOR_WORKDIR=%s\n" "$(pwd)""#
+            PROBE_SCRIPT
         ]
     );
     assert_eq!(first.cwd.as_deref(), Some(Path::new("/wt/app")));

@@ -1,5 +1,6 @@
 //! Provider facts: derived from the feature tokens in `crabbox providers --json`.
 
+use super::STATIC_PROVIDER;
 use moor_core::name::ProviderId;
 use moor_core::seam::driver::{DriverCaps, DriverError, SleepKind};
 use serde::Deserialize;
@@ -42,6 +43,9 @@ const ROTATES_HOST_KEY: &str = "resume-rotates-host-key";
 /// Feature token: the Box is reached over SSH, which carries the reverse tunnel.
 const SSH: &str = "ssh";
 
+/// Alias of the static SSH provider, whose `stop` leaves the host untouched.
+const STATIC_ALIAS: &str = "static";
+
 /// Facts for `entry`, read from its feature tokens.
 fn derive(entry: &Entry) -> DriverCaps {
     let sleep = if entry.has(NATIVE_SLEEP) {
@@ -56,6 +60,7 @@ fn derive(entry: &Entry) -> DriverCaps {
         wake: sleep != SleepKind::None && !entry.has(ROTATES_HOST_KEY),
         reverse_tunnel: entry.has(SSH),
         has_workdir: true,
+        static_host: entry.answers_to(STATIC_PROVIDER) || entry.answers_to(STATIC_ALIAS),
     }
 }
 

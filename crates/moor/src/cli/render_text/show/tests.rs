@@ -71,6 +71,19 @@ fn detail_lists_the_question_and_numbered_options() {
 }
 
 #[test]
+fn detail_shows_why_the_box_cannot_sleep() {
+    let mut t = task("alpha", true);
+    if let Some(sleep) = t.pointer_mut("/box/sleep") {
+        *sleep = json!({"reason": "static host"});
+    }
+    let out = show(json!({"task": t}));
+    assert!(
+        out.contains("egress=none\nsleep:    static host\nagent:"),
+        "{out}"
+    );
+}
+
+#[test]
 fn detail_without_box() {
     let out = show(json!({"task": task("alpha", false)}));
     assert!(out.contains("box:      none\n"));

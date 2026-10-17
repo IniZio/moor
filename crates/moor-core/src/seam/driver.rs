@@ -30,6 +30,7 @@ pub enum SleepKind {
 }
 
 /// Facts about a provider, as data.
+#[allow(clippy::struct_excessive_bools, reason = "independent provider facts")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DriverCaps {
     /// Sleep style.
@@ -40,6 +41,8 @@ pub struct DriverCaps {
     pub reverse_tunnel: bool,
     /// Whether the Box reports a working directory.
     pub has_workdir: bool,
+    /// The provider runs on a host that outlives its Boxes.
+    pub static_host: bool,
 }
 
 /// A request for a new Box.
@@ -66,6 +69,42 @@ pub struct Acquired {
     pub handle: BoxHandle,
     /// Working directory.
     pub workdir: BoxPath,
+    /// OS and architecture of the Box.
+    pub platform: BoxPlatform,
+}
+
+/// OS and architecture of a Box.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BoxPlatform {
+    /// `uname -s`, such as `Linux` or `Darwin`.
+    pub os: String,
+    /// `uname -m`, such as `x86_64` or `arm64`.
+    pub arch: String,
+}
+
+impl BoxPlatform {
+    /// The platform of a Box known to run Linux, whose CPU nothing reads.
+    #[must_use]
+    pub fn linux() -> Self {
+        Self {
+            os: "Linux".to_owned(),
+            arch: String::new(),
+        }
+    }
+
+    /// Parses `<os> <arch>` as the Box prints it; `None` unless exactly two words.
+    #[must_use]
+    pub fn parse(uname: &str) -> Option<Self> {
+        let mut words = uname.split_whitespace();
+        let (os, arch) = (words.next()?, words.next()?);
+        if words.next().is_some() {
+            return None;
+        }
+        Some(Self {
+            os: os.to_owned(),
+            arch: arch.to_owned(),
+        })
+    }
 }
 
 /// Result of releasing a Box.

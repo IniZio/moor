@@ -70,6 +70,8 @@ pub(super) struct Plan {
     gh: Option<Vec<u8>>,
     /// Notices raised while planning.
     warnings: Vec<LaunchNotice>,
+    /// The Box's OS as `uname` names it, once the sandbox is planned.
+    os: String,
 }
 
 impl Plan {
@@ -140,9 +142,11 @@ impl Launch<'_> {
         let script = sandbox::check_script(&sha256_hex(&bytes));
         plan.push(Tag::Check, BoxStep::Run(script.clone()));
         plan.check = Some((bytes, script));
+        plan.os.clone_from(&os);
         let env_names = (self.profile.env(self.ctx).into_iter().map(|v| v.name)).collect();
         let exec = self.exec_env()?;
         let profile = sandbox::profile(&SandboxInput {
+            os: &os,
             workdir: &self.ctx.workdir,
             home: &self.ctx.home,
             cred,
@@ -266,7 +270,9 @@ impl Launch<'_> {
                                 head = [Tag::Upload, Tag::Recheck].into_iter().zip(up).collect();
                             }
                         }
-                        code => return Err(fail("sandbox", &sandbox::check_failure(code))),
+                        code => {
+                            return Err(fail("sandbox", &sandbox::check_failure(&plan.os, code)));
+                        }
                     },
                     _ => result.map(drop).map_err(|e| tag.failure(&e))?,
                 }

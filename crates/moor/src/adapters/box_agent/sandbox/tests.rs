@@ -15,13 +15,18 @@ fn path(s: &str) -> BoxPath {
 }
 
 fn doc(env_names: &[&str]) -> Value {
-    doc_as(env_names, false)
+    doc_as("Linux", env_names, false)
 }
 
-fn doc_as(env_names: &[&str], root: bool) -> Value {
+fn doc_as(os: &str, env_names: &[&str], root: bool) -> Value {
+    serde_json::from_str(&text(os, env_names, root)).unwrap()
+}
+
+fn text(os: &str, env_names: &[&str], root: bool) -> String {
     let (w, h, c) = (path("/work/p"), path("/home/u"), path("/tmp/cred"));
     let tmp = path("/home/u/.moor-tmp-t-n");
     let input = SandboxInput {
+        os,
         workdir: &w,
         home: &h,
         cred: &c,
@@ -31,7 +36,7 @@ fn doc_as(env_names: &[&str], root: bool) -> Value {
         root,
         strip_env: &[],
     };
-    serde_json::from_str(&profile(&input)).unwrap()
+    profile(&input)
 }
 
 fn at<'a>(v: &'a Value, pointer: &str) -> &'a Value {
@@ -51,6 +56,16 @@ fn profile_blocks_pathname_sockets_and_leaves_the_network_open() {
     let d = doc(&[]);
     assert_eq!(at(&d, "/linux/af_unix_mediation"), "pathname");
     assert_eq!(at(&d, "/network"), &Value::Null);
+}
+
+#[test]
+fn darwin_profile_omits_linux_only_keys() {
+    let t = text("Darwin", &[], false);
+    assert!(serde_json::from_str::<Value>(&t)
+        .unwrap()
+        .get("linux")
+        .is_none());
+    assert!(!t.contains("/run/systemd"));
 }
 
 #[test]
@@ -130,6 +145,7 @@ fn doc_with_set_vars(
     let (w, h, c) = (path("/work/p"), path("/home/u"), path("/tmp/cred"));
     let tmp = path("/home/u/.moor-tmp-t-n");
     let input = SandboxInput {
+        os: "Linux",
         workdir: &w,
         home: &h,
         cred: &c,
@@ -338,9 +354,10 @@ fn wrap_puts_agent_after_separator() {
 
 #[test]
 fn check_failure_names_the_cause() {
-    assert!(check_failure(5).contains("Landlock"));
-    assert!(check_failure(NOT_INSTALLED).contains("nono 0.80.0 on the Box is missing"));
-    assert!(check_failure(9).contains("exited 9"));
+    assert!(check_failure("Linux", 5).contains("Landlock"));
+    assert!(check_failure("Darwin", 5).contains("Seatbelt"));
+    assert!(check_failure("Linux", NOT_INSTALLED).contains("nono 0.80.0 on the Box is missing"));
+    assert!(check_failure("Linux", 9).contains("exited 9"));
 }
 
 #[test]
@@ -363,8 +380,8 @@ fn harden_lines_unset_nono_names_and_pin_the_config_home() {
 #[test]
 fn profile_tells_claude_it_is_sandboxed_only_for_root() {
     let var = "/environment/set_vars/IS_SANDBOX";
-    assert_eq!(at(&doc_as(&[], true), var), "1");
-    assert_eq!(at(&doc_as(&[], false), var), &Value::Null);
+    assert_eq!(at(&doc_as("Linux", &[], true), var), "1");
+    assert_eq!(at(&doc_as("Linux", &[], false), var), &Value::Null);
 }
 
 /// Which `unshare` the Box has.

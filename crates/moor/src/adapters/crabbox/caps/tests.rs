@@ -47,7 +47,13 @@ fn want(sleep: SleepKind, wake: bool) -> DriverCaps {
         wake,
         reverse_tunnel: true,
         has_workdir: true,
+        static_host: false,
     }
+}
+
+fn static_host(mut caps: DriverCaps) -> DriverCaps {
+    caps.static_host = true;
+    caps
 }
 
 fn no_tunnel(mut caps: DriverCaps) -> DriverCaps {
@@ -61,11 +67,35 @@ fn table() {
         ("local-container", want(SleepKind::None, false)),
         ("namespace-devbox", want(SleepKind::Suspend, false)),
         ("sprites", want(SleepKind::Native, true)),
-        ("ssh", want(SleepKind::None, false)),
+        ("ssh", static_host(want(SleepKind::None, false))),
         ("pauser", no_tunnel(want(SleepKind::Suspend, true))),
     ];
     for (id, w) in cases {
         assert_eq!(caps(id), Ok(w), "{id}");
+    }
+}
+
+#[test]
+fn static_provider_is_static_host_and_never_sleeps() {
+    let c = caps("ssh").unwrap();
+    assert!(c.static_host);
+    assert_eq!(c.sleep, SleepKind::None);
+}
+
+#[test]
+fn static_alias_marks_static_host() {
+    let j = serde_json::json!([entry("other", &["static"], &["ssh"], &[])]).to_string();
+    assert!(
+        caps_from(&j, &ProviderId::new("other"))
+            .unwrap()
+            .static_host
+    );
+}
+
+#[test]
+fn cloud_provider_is_not_static_host() {
+    for id in ["sprites", "namespace-devbox", "local-container"] {
+        assert!(!caps(id).unwrap().static_host, "{id}");
     }
 }
 

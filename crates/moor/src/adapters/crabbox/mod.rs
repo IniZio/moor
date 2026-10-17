@@ -247,11 +247,12 @@ impl Driver for Crabbox {
         self.forget_targets(&handle);
         let out = self.call(Op::Acquire, Some(provider), &spec)?;
         let warm = parse::parse_warmup(&out.stdout).ok_or_else(|| unreadable("acquire"))?;
-        let workdir = match warm.workdir.as_deref().map(BoxPath::restore) {
-            Some(Ok(dir)) => dir,
-            _ => workdir::probe(self, &handle, req.worktree.as_deref())?,
-        };
-        Ok(Acquired { handle, workdir })
+        let (workdir, platform) = workdir::acquired(self, &handle, &warm, req)?;
+        Ok(Acquired {
+            handle,
+            workdir,
+            platform,
+        })
     }
 
     fn planned_handle(&self, req: &AcquireReq) -> BoxHandle {
