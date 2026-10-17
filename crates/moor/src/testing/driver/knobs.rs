@@ -1,10 +1,16 @@
 //! Setup knobs for the Driver fake: where boxes live and which calls fail.
 
 use moor_core::seam::driver::DriverError;
+use moor_core::BoxHandle;
 
 use super::FakeDriver;
 
 impl FakeDriver {
+    /// Brings a released Box back, as if the release had left it running.
+    pub(crate) fn revive(&self, handle: &BoxHandle) {
+        self.st().live.push(handle.as_str().to_owned());
+    }
+
     /// Puts every box workdir under `root` instead of `/work`.
     pub(crate) fn work_root(self, root: &str) -> Self {
         self.st().work_root = Some(root.to_owned());

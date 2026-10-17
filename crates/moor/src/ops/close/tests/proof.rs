@@ -5,6 +5,7 @@ use moor_core::seam::driver::DriverError;
 use moor_core::ErrorKind;
 
 use super::{fx, fx_with, req, run, Fx};
+use crate::store::lease::LeaseKind;
 use crate::testing::driver::FakeDriver;
 use crate::testing::surface::FakeSurface;
 
@@ -55,6 +56,10 @@ fn a_failed_release_keeps_the_proof_copies() {
         FakeSurface::new("/s"),
         0,
     );
+    f.cx.store()
+        .unwrap()
+        .plan_lease(f.id, LeaseKind::Compose, "proj")
+        .unwrap();
     let (shot, log) = seed(&f);
     assert_eq!(run(&f.cx, &req(false)).unwrap_err().kind, ErrorKind::Failed);
     assert_kept(&shot, &log);

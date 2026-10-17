@@ -16,10 +16,6 @@ pub(crate) mod provision;
 pub(crate) mod provisioning;
 pub(crate) mod proxy;
 pub(crate) mod reconcile;
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "first used by close in the next PR")
-)]
 pub(crate) mod release;
 pub(crate) mod reports;
 pub(crate) mod resume;
