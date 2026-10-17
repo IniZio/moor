@@ -167,19 +167,39 @@ fn interrupted_teardown_removes_the_staged_credential_dir() {
 }
 
 #[test]
-fn teardown_without_a_startable_proxy_warns_and_still_runs() {
+fn teardown_fails_the_close_when_the_proxy_cannot_start() {
     let mut f = fx_yaml(FakeDriver::new(), YAML);
-    let host = FakeProxyHost::new().with_ensure_error(ProxyHostError::Failed("boom".into()));
-    f.cx = f.cx.with_proxy_host(Arc::new(host));
-    let v = run(&f.cx, &req(false)).unwrap();
+    f.cx = f.cx.with_proxy_host(Arc::new(
+        FakeProxyHost::new().with_ensure_error(ProxyHostError::Failed("boom".into())),
+    ));
+    let err = run(&f.cx, &req(false)).unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Failed);
+    let msg = err.error.to_string();
+    assert!(msg.contains("the Proxy could not start: boom"), "{msg}");
+    assert!(msg.contains("--force"), "{msg}");
+    assert_eq!(exec_calls(&f), 0);
+    assert_ne!(row(&f).lifecycle, BoxLifecycle::Closed);
+}
+
+#[test]
+fn forced_close_goes_past_a_proxy_that_cannot_start_and_warns() {
+    let mut f = fx_yaml(FakeDriver::new(), YAML);
+    f.cx = f.cx.with_proxy_host(Arc::new(
+        FakeProxyHost::new().with_ensure_error(ProxyHostError::Failed("boom".into())),
+    ));
+    let v = run(&f.cx, &req(true)).unwrap();
     assert!(v.box_deleted);
     let warnings = f.cx.take_warnings();
     let w = warnings
         .iter()
-        .find(|w| w.code == "teardown_proxy")
+        .find(|w| w.code == "teardown_failed")
         .unwrap();
-    assert!(w.message.starts_with("teardown runs without the Proxy:"));
-    assert!(script_of(&only_exec(&f)).contains("echo bye"));
+    assert!(
+        w.message.contains("the Proxy could not start: boom"),
+        "{}",
+        w.message
+    );
+    assert_eq!(exec_calls(&f), 0);
 }
 
 #[test]

@@ -7,6 +7,7 @@ use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::seam::driver::ExecOutcome;
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::proxy_host::ProxyHostError;
+use moor_core::ErrorKind;
 
 use super::stage::{command_execs, command_results};
 use super::{command, ready, ready_with, req, run};
@@ -75,18 +76,17 @@ fn run_with_a_proxy_gets_reserved_and_credential_like_repo_env() {
 }
 
 #[test]
-fn run_without_a_proxy_gets_reserved_and_credential_like_repo_env() {
+fn run_fails_with_the_proxy_error_when_the_proxy_cannot_start() {
     let mut f = ready();
     f.cx = f.cx.with_proxy_host(Arc::new(
         FakeProxyHost::new().with_ensure_error(ProxyHostError::Failed("down".into())),
     ));
-    std::fs::write(f.dir.path().join(".moor.yaml"), REPO_ENV).unwrap();
-    let mut r = req(&["echo hi"]);
-    r.trust_moor_yaml = true;
-    run(&f.cx, &r).unwrap();
-    let (_, spec, _) = command_execs(&f).remove(0);
-    assert!(!spec.argv.get(2).unwrap().contains("export HTTPS_PROXY="));
-    assert_full_repo_env(&spec.env);
+    let err = run(&f.cx, &req(&["echo hi"])).unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Failed);
+    let msg = err.error.to_string();
+    assert!(msg.contains("the Proxy could not start: down"), "{msg}");
+    assert!(msg.contains("retry"), "{msg}");
+    assert!(command_execs(&f).is_empty());
 }
 
 #[test]

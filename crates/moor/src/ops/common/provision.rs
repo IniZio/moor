@@ -12,11 +12,11 @@ use moor_core::domain::run::SyncMode;
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::{AcquireReq, Acquired, DriverError, Released};
 use moor_core::seam::rng::Rng;
-use moor_core::{BoxHandle, BoxId, BoxPath, ErrorKind, ProviderId, Warning};
+use moor_core::{BoxHandle, BoxId, BoxPath, ErrorKind, ProviderId};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::box_exec::{self, BoxProxy};
+use crate::ops::common::box_exec;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::capacity;
 use crate::ops::common::dotfiles::{self, DotfilesRun};
@@ -258,24 +258,35 @@ fn sync_into_box(
         .map_err(|reason| sync_failed(cx, store, id, advance, target.handle, reason))
 }
 
-/// The Proxy setup runs through, started or reused; none when there is no setup or it will not start.
-fn setup_proxy(
+/// Runs the setup lines through the Proxy; a Proxy that will not start fails the setup.
+fn run_through_proxy(
     cx: &Cx,
+    store: &Store,
     id: BoxId,
     target: &SetupTarget<'_>,
     cfg: &BoxSettings,
-) -> Option<BoxProxy> {
-    if cfg.setup.is_empty() {
-        return None;
-    }
-    match box_exec::proxy(cx, id, Some(target.handle.clone()), target.worktree, cfg) {
-        Ok(p) => Some(p),
-        Err(e) => {
-            cx.warn(Warning {
-                code: "setup_proxy".to_owned(),
-                message: format!("setup runs without the Proxy: {e}"),
-            });
-            None
+) -> setup::SetupRun {
+    let proxy = (!cfg.setup.is_empty())
+        .then(|| box_exec::proxy(cx, id, Some(target.handle.clone()), target.worktree, cfg))
+        .transpose();
+    match proxy {
+        Ok(proxy) => setup::run_setup(
+            cx,
+            target.handle,
+            &cfg.provider.value,
+            target.workdir,
+            target.worktree,
+            cfg,
+            SyncMode::None,
+            proxy.as_ref(),
+        ),
+        Err(reason) => {
+            let name = store
+                .box_row(id)
+                .ok()
+                .flatten()
+                .map(|r| r.name.as_str().to_owned());
+            setup::proxy_failed(cx, name.as_deref().unwrap_or("<box>"), &reason)
         }
     }
 }
@@ -295,17 +306,7 @@ fn run_and_record(
     identity::set_identity(cx, target.handle, target.worktree);
     sync_into_box(cx, store, id, advance, target, cfg)?;
     // The checkout is in the Box by now, or was meant to stay as it is.
-    let proxy = setup_proxy(cx, id, target, cfg);
-    let run = setup::run_setup(
-        cx,
-        target.handle,
-        &cfg.provider.value,
-        target.workdir,
-        target.worktree,
-        cfg,
-        SyncMode::None,
-        proxy.as_ref(),
-    );
+    let run = run_through_proxy(cx, store, id, target, cfg);
     let dotfiles = match dotfiles::apply(cx, target.handle, id, target.worktree, cfg) {
         Ok(d) => d,
         Err(f) => dotfiles_warned(cx, f),

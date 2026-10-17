@@ -15,7 +15,7 @@ use moor_core::exec_env::Purpose;
 use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
 use moor_core::seam::proc::Output;
 use moor_core::view::run::RunValue;
-use moor_core::{ErrorKind, RunId, RunReq, Sha, Warning};
+use moor_core::{ErrorKind, RunId, RunReq, Sha};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -167,7 +167,7 @@ fn site<'a>(row: &'a BoxRow, target: &'a ready::Target) -> Site<'a> {
     }
 }
 
-/// The environment every Box exec gets; without the Proxy the command still runs, and warns.
+/// The environment every Box exec gets; a Proxy that will not start fails the run.
 fn box_env(
     cx: &Cx,
     row: &BoxRow,
@@ -182,13 +182,12 @@ fn box_env(
         cfg,
     )
     .map_err(|e| {
-        cx.warn(Warning {
-            code: "proxy_unavailable".to_owned(),
-            message: format!("{e}; the command runs without the proxy"),
-        });
-    })
-    .ok();
-    box_exec::prepare(cx, &site(row, target), proxy.as_ref(), cfg, Purpose::Run)
+        CommandError::new(
+            ErrorKind::Failed,
+            format!("the Proxy could not start: {e}; retry `moor run` once it starts"),
+        )
+    })?;
+    box_exec::prepare(cx, &site(row, target), Some(&proxy), cfg, Purpose::Run)
         .map_err(|m| CommandError::new(ErrorKind::Failed, m))
 }
 
