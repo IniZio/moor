@@ -231,3 +231,23 @@ check L fail "disallowed_methods" <<'RS'
 #[must_use]
 pub fn now() -> std::time::Instant { std::time::Instant::now() }
 RS
+
+# Lints that list files through git must fail loudly in a tree that is not a git checkout (a `git archive` export).
+# Every tools/*.sh that sources lib/repo-root.sh is covered; add new ones here by dropping them in tools/.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
+export_dir="$(mktemp -d)"
+trap 'rm -rf "$export_dir"' EXIT
+mkdir -p "$export_dir/tools" "$export_dir/crates"
+cp -r "$root/tools/lib" "$export_dir/tools/"
+echo 'fn main() {}' > "$export_dir/crates/a.rs"
+for script in $(grep -l 'lib/repo-root.sh' "$root"/tools/*.sh); do
+  name="$(basename "$script")"
+  [ "$name" != lint-selftest.sh ] || continue
+  cp "$script" "$export_dir/tools/$name"
+  rc=0
+  out="$(cd "$export_dir" && GIT_CEILING_DIRECTORIES="$(dirname "$export_dir")" "tools/$name" 2>&1)" || rc=$?
+  if [ "$rc" -eq 0 ] || ! grep -q 'not a git checkout' <<< "$out"; then
+    echo "lint-selftest: $name outside git FAILED (expected non-zero 'not a git checkout')"; echo "$out"; exit 1
+  fi
+  echo "lint-selftest: $name outside git ok"
+done
