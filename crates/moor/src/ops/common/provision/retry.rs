@@ -11,6 +11,7 @@ use super::outcome::dotfiles_failed;
 use super::Provisioned;
 use crate::cx::Cx;
 use crate::error::CommandError;
+use crate::ops::common::box_exec;
 use crate::ops::common::dotfiles::{self, DotfilesRun};
 use crate::ops::common::facts::settings;
 use crate::ops::common::setup::SetupRun;
@@ -35,7 +36,13 @@ pub(super) fn retry_dotfiles(
     store.apply(begin)?;
     let handle = row.boxed.as_ref().and_then(|b| b.handle.as_ref());
     let run = handle.map_or(Ok(DotfilesRun::Skipped), |h| {
-        dotfiles::apply(cx, h, row.id, Path::new(at), &cfg)
+        let worktree = Path::new(at);
+        let proxy = cfg
+            .dotfiles
+            .is_some()
+            .then(|| box_exec::proxy(cx, row.id, Some(h.clone()), worktree, &cfg))
+            .transpose();
+        dotfiles::apply(cx, h, row.id, worktree, &cfg, &proxy)
     });
     let dotfiles = match run {
         Ok(run) => run,
