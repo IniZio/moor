@@ -31,6 +31,7 @@ lint:
 	tools/file-cap.sh
 	tools/removed-names.sh
 	tools/exec-env.sh
+	tools/seatbelt-text.sh
 	cargo test -p layering --locked
 	cargo run -q -p layering --locked
 	tools/lint-selftest.sh
