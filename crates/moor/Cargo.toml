@@ -26,6 +26,7 @@ zeroize = "1"
 sha2 = "0.10"
 flate2 = "1"
 tar = "0.4"
+zip = { version = "9", default-features = false, features = ["deflate-flate2"] }
 signal-hook = "=0.4.4"
 getrandom = "=0.4.3"
 ureq = { version = "3", default-features = false, features = [

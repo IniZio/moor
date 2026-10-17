@@ -37,6 +37,7 @@ fn proxied(dir: &Path) -> LaunchCtx {
             nonce: Secret::new(b"sentinel-7f3a".to_vec()),
             ca_pem: String::new(),
             box_env: Vec::new(),
+            forge: false,
         }),
         ..ctx(dir)
     }

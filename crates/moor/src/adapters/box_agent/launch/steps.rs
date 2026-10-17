@@ -3,14 +3,16 @@
 use moor_core::boxscript::quote;
 use moor_core::name::BoxPath;
 use moor_core::seam::agent_profile::BoxSetup;
-use moor_core::seam::driver::{BoxStep, ExecOutcome, StepDone};
+use moor_core::seam::driver::{BoxStep, DriverError, ExecOutcome, StepDone};
+use moor_core::seam::engine::LaunchNotice;
 use moor_core::seam::proc::{Deadline, Tool};
 
 use super::super::brief::{render, BriefInput};
 use super::super::nono_release::sha256_hex;
 use super::super::proxy_env;
 use super::super::sandbox::{self, SandboxInput};
-use super::install::{check_outcome, parse_platform, upload_steps};
+use super::gh;
+use super::install::{check_outcome, parse_platform, upload_steps, StepResult};
 use super::{fail, Failure, Launch, Platform, AGENT_PATH_LINE, INSTALL_DEADLINE};
 
 /// Which launch step a batch step belongs to, and so how its failure is reported.
@@ -24,6 +26,10 @@ pub(super) enum Tag {
     Upload,
     /// The check run again after the upload.
     Recheck,
+    /// The check that the Box has the pinned `gh`.
+    GhCheck,
+    /// The upload of the pinned `gh` after the check found it missing.
+    GhPut,
     /// The sandbox profile.
     Profile,
     /// The brief.
@@ -40,6 +46,7 @@ impl Tag {
         match self {
             Self::Agent => fail("agent", e),
             Self::Check | Self::Upload | Self::Recheck | Self::Profile => fail("sandbox", e),
+            Self::GhCheck | Self::GhPut => fail("gh", e),
             Self::Brief => fail("brief", e),
             Self::Hooks => fail("hooks", e),
             Self::Proxy(text) => Failure {
@@ -59,6 +66,10 @@ pub(super) struct Plan {
     tags: Vec<Tag>,
     /// The pinned binary and the script that checks it, when the check is a step.
     check: Option<(Vec<u8>, String)>,
+    /// The pinned `gh` binary, when the Box is to have it.
+    gh: Option<Vec<u8>>,
+    /// Notices raised while planning.
+    warnings: Vec<LaunchNotice>,
 }
 
 impl Plan {
@@ -97,6 +108,22 @@ fn agent_missing() -> Failure {
     )
 }
 
+/// Passes an agent step that exited 0 and fails the launch for any other result.
+fn gate(tag: Tag, result: Result<StepDone, DriverError>) -> Result<(), Failure> {
+    let code = match result.map_err(|e| tag.failure(&e))? {
+        StepDone::Ran {
+            outcome: ExecOutcome::Exited { code },
+            ..
+        } => code,
+        _ => -1,
+    };
+    if code == 0 {
+        Ok(())
+    } else {
+        Err(agent_missing())
+    }
+}
+
 impl Launch<'_> {
     /// Adds the sandbox check and profile to `plan` and returns the profile's path.
     fn plan_sandbox(
@@ -133,7 +160,22 @@ impl Launch<'_> {
             mode: 0o600,
         };
         plan.push(Tag::Profile, put);
+        if self.ctx.proxy.as_ref().is_some_and(|p| p.forge) {
+            self.plan_gh((&os, &arch), plan);
+        }
         Ok(Some(at))
+    }
+
+    /// Adds the `gh` check to `plan`; a `gh` the host cannot fetch is a warning, not a failure.
+    fn plan_gh(&self, (os, arch): (&str, &str), plan: &mut Plan) {
+        match self.release.gh_binary(os, arch) {
+            Ok(bytes) => {
+                let script = gh::check_script(&sha256_hex(&bytes));
+                plan.push(Tag::GhCheck, BoxStep::Run(script));
+                plan.gh = Some(bytes);
+            }
+            Err(e) => plan.warnings.push(gh::not_delivered(&e)),
+        }
     }
 
     /// Adds every step after the platform to `plan`, in the order a failure is reported; on an error
@@ -186,57 +228,96 @@ impl Launch<'_> {
     }
 
     /// Runs the steps of `plan` as batches; a missing sandbox tool is uploaded and checked again
-    /// at the head of the next batch, ahead of the rest of the steps.
-    pub(super) fn execute(&self, connect: &[String], plan: &Plan) -> Result<(), Failure> {
+    /// at the head of the next batch, ahead of the rest of the steps, and a missing `gh` is
+    /// uploaded there too. The result holds the notices of the launch.
+    pub(super) fn execute(
+        &self,
+        connect: &[String],
+        plan: &Plan,
+    ) -> Result<Vec<LaunchNotice>, Failure> {
         let req = self.req;
+        let mut warnings = plan.warnings.clone();
         let mut from = 0;
-        let mut head: Option<Vec<BoxStep>> = None;
+        let mut head: Vec<(Tag, BoxStep)> = Vec::new();
         while let (Some(rest), Some(rest_tags)) = (plan.steps.get(from..), plan.tags.get(from..)) {
-            if rest.is_empty() && head.is_none() {
+            if rest.is_empty() && head.is_empty() {
                 break;
             }
-            let (steps, tags) = head.take().map_or_else(
-                || (rest.to_vec(), rest_tags.to_vec()),
-                |mut steps| {
-                    steps.extend_from_slice(rest);
-                    let mut tags = vec![Tag::Upload, Tag::Recheck];
-                    tags.extend_from_slice(rest_tags);
-                    (steps, tags)
-                },
-            );
-            let offset = steps.len() - rest.len();
+            let (mut tags, mut steps): (Vec<Tag>, Vec<BoxStep>) =
+                std::mem::take(&mut head).into_iter().unzip();
+            let offset = steps.len();
+            steps.extend_from_slice(rest);
+            tags.extend_from_slice(rest_tags);
             let deadline = Deadline(INSTALL_DEADLINE);
             let results =
                 (self.driver).batch(&req.handle, connect, &steps, &req.worktree, deadline);
-            let mut next = plan.steps.len();
-            for (i, (result, &tag)) in results.into_iter().zip(&tags).enumerate() {
-                if matches!(tag, Tag::Agent) {
-                    match result.map_err(|e| tag.failure(&e))? {
-                        StepDone::Ran {
-                            outcome: ExecOutcome::Exited { code: 0 },
-                            ..
-                        } => continue,
-                        _ => return Err(agent_missing()),
+            let ran = results.len();
+            for (result, &tag) in results.into_iter().zip(&tags) {
+                match tag {
+                    Tag::Agent => gate(tag, result)?,
+                    Tag::GhCheck | Tag::GhPut => {
+                        self.gh_step(tag, result, plan, (&mut head, &mut warnings));
                     }
-                }
-                let (Tag::Check | Tag::Recheck) = tag else {
-                    result.map_err(|e| tag.failure(&e))?;
-                    continue;
-                };
-                match check_outcome(Some(result))? {
-                    0 => {}
-                    sandbox::NOT_INSTALLED if matches!(tag, Tag::Check) => {
-                        if let Some((bytes, script)) = &plan.check {
-                            head = Some(upload_steps(&self.ctx.home, bytes, script)?);
-                            next = from + (i - offset) + 1;
-                            break;
+                    Tag::Check | Tag::Recheck => match check_outcome(Some(result))? {
+                        0 => {}
+                        sandbox::NOT_INSTALLED if matches!(tag, Tag::Check) => {
+                            if let Some((bytes, script)) = &plan.check {
+                                let up = upload_steps(&self.ctx.home, bytes, script)?;
+                                head = [Tag::Upload, Tag::Recheck].into_iter().zip(up).collect();
+                            }
                         }
-                    }
-                    code => return Err(fail("sandbox", &sandbox::check_failure(code))),
+                        code => return Err(fail("sandbox", &sandbox::check_failure(code))),
+                    },
+                    _ => result.map(drop).map_err(|e| tag.failure(&e))?,
                 }
             }
-            from = next;
+            // A batch stops at its first failed step; what follows it runs in the next batch.
+            from = if ran < steps.len() {
+                from + ran.saturating_sub(offset)
+            } else {
+                plan.steps.len()
+            };
         }
-        Ok(())
+        Ok(warnings)
+    }
+
+    /// Takes the result of a `gh` step: a missing `gh` queues its upload in `head`, and any other
+    /// trouble becomes a warning in `warnings`, since the agent can run without `gh`.
+    fn gh_step(
+        &self,
+        tag: Tag,
+        result: StepResult,
+        plan: &Plan,
+        (head, warnings): (&mut Vec<(Tag, BoxStep)>, &mut Vec<LaunchNotice>),
+    ) {
+        let code = match (tag, result) {
+            (_, Err(e)) => Err(e.to_string()),
+            (
+                Tag::GhCheck,
+                Ok(StepDone::Ran {
+                    outcome: ExecOutcome::Exited { code },
+                    ..
+                }),
+            ) => Ok(code),
+            (Tag::GhCheck, Ok(_)) => Err("the check was interrupted".to_owned()),
+            (_, Ok(_)) => Ok(0),
+        };
+        let put = plan.gh.as_ref().and_then(|bytes| {
+            let path = BoxPath::under(self.ctx.home.as_str(), gh::GH_PATH).ok()?;
+            let bytes = bytes.clone();
+            Some(BoxStep::Put {
+                path,
+                bytes,
+                mode: 0o755,
+            })
+        });
+        match (code, put) {
+            (Ok(0), _) => {}
+            (Ok(gh::NOT_INSTALLED), Some(put)) if matches!(tag, Tag::GhCheck) => {
+                head.push((Tag::GhPut, put));
+            }
+            (Ok(code), _) => warnings.push(gh::not_delivered(&format!("the check exited {code}"))),
+            (Err(message), _) => warnings.push(gh::not_delivered(&message)),
+        }
     }
 }

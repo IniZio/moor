@@ -39,6 +39,7 @@ fn session() -> SessionRef {
         worktree: PathBuf::from("/host/wt"),
         pane: None,
         sandbox: None,
+        warnings: Vec::new(),
     }
 }
 

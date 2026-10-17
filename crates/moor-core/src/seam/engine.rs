@@ -25,6 +25,17 @@ pub struct SessionRef {
     pub pane: Option<PaneRef>,
     /// The sandbox the agent runs under, such as `nono 0.80.0`; none when unsandboxed.
     pub sandbox: Option<String>,
+    /// Non-fatal notices from the launch, for the caller to report; empty otherwise.
+    pub warnings: Vec<LaunchNotice>,
+}
+
+/// A non-fatal notice from a launch; the caller reports it as a warning.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LaunchNotice {
+    /// Stable machine code.
+    pub code: String,
+    /// Human message.
+    pub message: String,
 }
 
 /// What a launch needs to start the agent in a Box.

@@ -490,6 +490,7 @@ fn proxy_addr() -> ProxyAddr {
         nonce: Secret::new(NONCE.to_vec()),
         ca_pem: "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n".to_owned(),
         box_env: Vec::new(),
+        forge: false,
     }
 }
 
@@ -593,7 +594,6 @@ fn the_agent_gets_the_proxy_env_while_the_cred_dir_lives_until_exit() {
 
 #[path = "sandbox_tests.rs"]
 mod sandbox_tests;
-
 #[path = "secret_tests.rs"]
 mod secret_tests;
 

@@ -102,6 +102,7 @@ fn session(pane: Option<&str>) -> SessionRef {
         worktree: PathBuf::from("/host/wt"),
         pane: pane.map(PaneRef::new),
         sandbox: None,
+        warnings: Vec::new(),
     }
 }
 

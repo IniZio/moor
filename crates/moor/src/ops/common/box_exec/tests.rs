@@ -1,8 +1,10 @@
 //! Tests for the Box exec environment.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 
+use moor_core::config::proxy::{ResolvedInject, ResolvedRule, FORGE_CREDENTIAL};
 use moor_core::config::{parse_user, Flags, TaskSettings, UserConfig};
 use moor_core::exec_env::{Purpose, CA_FILE, NONCE_FILE};
 use moor_core::seam::agent_profile::ProxyAddr;
@@ -10,7 +12,7 @@ use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
 use moor_core::secret::Secret;
 use moor_core::{BoxHandle, BoxPath, ProviderId, TaskId, TaskName};
 
-use super::{prepare, BoxProxy, Site};
+use super::{forge_routed, prepare, BoxProxy, Site};
 use crate::cx::Cx;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
@@ -103,6 +105,7 @@ fn boxed_proxy() -> BoxProxy {
             nonce: Secret::new(b"s3cret".to_vec()),
             ca_pem: "CA-PEM".to_owned(),
             box_env: vec![("RULE".to_owned(), "x".to_owned())],
+            forge: false,
         },
         origin: None,
         rule_env: vec![("RULE".to_owned(), "x".to_owned())],
@@ -344,4 +347,29 @@ fn cleanup_removes_the_staged_directory_and_is_a_no_op_without_a_proxy() {
     let e = run_prepare(&r, dir.path(), None).unwrap();
     e.cleanup(&r.cx, &r.site(Some(&r.workdir), dir.path()));
     assert!(r.driver.execs().is_empty());
+}
+
+fn rule_with(credential: &str) -> ResolvedRule {
+    ResolvedRule {
+        name: "r".to_owned(),
+        hosts: vec!["api.github.com".to_owned()],
+        credential: credential.to_owned(),
+        inject: ResolvedInject::BasicAuth {
+            user: "x".to_owned(),
+        },
+        endpoint_rules: Vec::new(),
+        box_env: BTreeMap::new(),
+    }
+}
+
+#[test]
+fn a_forge_rule_marks_the_proxy_as_forge_routed() {
+    let rules = [rule_with("other"), rule_with(FORGE_CREDENTIAL)];
+    assert!(forge_routed(&rules));
+}
+
+#[test]
+fn rules_without_a_forge_credential_do_not() {
+    assert!(!forge_routed(&[rule_with("other")]));
+    assert!(!forge_routed(&[]));
 }

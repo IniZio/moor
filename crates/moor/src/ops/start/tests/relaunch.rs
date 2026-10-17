@@ -30,6 +30,7 @@ pub(super) fn session(pane: &str) -> SessionRef {
         worktree: PathBuf::from("/wt"),
         pane: Some(PaneRef::new(pane)),
         sandbox: None,
+        warnings: Vec::new(),
     }
 }
 
