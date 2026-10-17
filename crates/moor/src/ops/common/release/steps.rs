@@ -92,7 +92,7 @@ pub(crate) fn script(step: Step, mac: Option<&MacTarget<'_>>, rows: &[LeaseRow])
         Step::ComposeDown => rows.iter().find(|r| r.kind == LeaseKind::Compose).map(|r| {
             // A non-interactive ssh shell lacks Docker's dirs (OrbStack: /usr/local/bin).
             format!(
-                "PATH=/usr/local/bin:/opt/homebrew/bin:\"$PATH\"; export PATH\n\
+                "PATH=\"$PATH\":/usr/local/bin:/opt/homebrew/bin; export PATH\n\
                  docker compose -p {} down -v --remove-orphans",
                 quote(&r.key)
             )

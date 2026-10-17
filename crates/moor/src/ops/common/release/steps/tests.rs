@@ -107,9 +107,11 @@ fn kill_tree_script_carries_recorded_pgids() {
 #[test]
 fn compose_down_uses_the_row_key() {
     let rows = [row(1, LeaseKind::Compose, "my proj", None)];
+    let down = script(Step::ComposeDown, None, &rows).unwrap();
+    assert!(down.starts_with("PATH=\"$PATH\":"), "{down}");
     assert_eq!(
-        script(Step::ComposeDown, None, &rows).unwrap(),
-        "PATH=/usr/local/bin:/opt/homebrew/bin:\"$PATH\"; export PATH\n\
+        down,
+        "PATH=\"$PATH\":/usr/local/bin:/opt/homebrew/bin; export PATH\n\
          docker compose -p 'my proj' down -v --remove-orphans"
     );
     assert_eq!(script(Step::ComposeDown, None, &[]), None);
