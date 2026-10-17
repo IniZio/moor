@@ -364,7 +364,7 @@ fn a_mac_task_gives_the_agent_its_home_and_box_tag() {
 }
 
 #[test]
-fn a_mac_task_exports_its_variables_before_the_profile_env() {
+fn a_mac_task_exports_no_home_before_the_sandbox_starts() {
     let (layout, key) = mac_layout();
     let mac = MacTask {
         layout: &layout,
@@ -373,15 +373,19 @@ fn a_mac_task_exports_its_variables_before_the_profile_env() {
     };
     let c = cred(Path::new("/home/box/.moor-cred"));
     let lines = script_lines(&c, &proxy(), &placeholder_env(), None, Some(mac)).unwrap();
-    let at = |w: &str| lines.iter().position(|l| l == w).unwrap_or(usize::MAX);
-    let home = format!("export HOME='{}'", layout.home.as_str());
-    let tag = format!("export MOOR_BOX_TAG='{}-n1'", key.as_str());
-    let token = "export CLAUDE_CODE_OAUTH_TOKEN='moor-proxy'";
-    assert!(at(&home) < at(token), "{lines:?}");
-    assert!(at(&tag) < at(token), "{lines:?}");
-    let plain = script_lines(&c, &proxy(), &placeholder_env(), None, None).unwrap();
+    for name in [
+        "HOME",
+        "XDG_CONFIG_HOME",
+        "XDG_STATE_HOME",
+        "CFFIXED_USER_HOME",
+    ] {
+        let prefix = format!("export {name}=");
+        assert!(!lines.iter().any(|l| l.starts_with(&prefix)), "{lines:?}");
+    }
     assert!(
-        !plain.iter().any(|l| l.starts_with("export HOME=")),
-        "{plain:?}"
+        !lines.iter().any(|l| l.contains(layout.home.as_str())),
+        "{lines:?}"
     );
+    let token = "export CLAUDE_CODE_OAUTH_TOKEN='moor-proxy'";
+    assert!(lines.iter().any(|l| l == token), "{lines:?}");
 }

@@ -118,9 +118,26 @@ fn the_agent_path_is_set_before_the_launch_exports_the_task_home() {
 }
 
 #[test]
-fn a_mac_proxy_launch_exports_the_task_home_once() {
-    let (_, s) = launch(&[], false, ready_release_with_gh());
+fn a_mac_proxy_launch_leaves_the_task_home_to_the_profile() {
+    let (d, s) = launch(&[], false, ready_release_with_gh());
     let script = super::super::script_of(&s.opened().remove(0).argv.pop().unwrap());
-    assert_eq!(count(&script, "export HOME="), 1, "{script}");
-    assert_eq!(count(&script, "export CFFIXED_USER_HOME="), 1, "{script}");
+    let harden = script
+        .find("export XDG_CONFIG_HOME=\"$HOME/.config\"")
+        .expect(&script);
+    assert!(
+        harden < script.find("'--profile'").expect(&script),
+        "{script}"
+    );
+    assert_eq!(count(&script, "export HOME="), 0, "{script}");
+    assert_eq!(count(&script, "export XDG_"), 1, "{script}");
+    let profile = (d.puts().into_iter())
+        .find(|p| p.1.as_str().ends_with("nono-profile.json"))
+        .unwrap();
+    let doc: serde_json::Value = serde_json::from_slice(&profile.2).unwrap();
+    let vars = doc.pointer("/environment/set_vars").expect("set_vars");
+    assert_eq!(vars.get("HOME"), Some(&serde_json::Value::from(HOME)));
+    assert_eq!(
+        vars.get("CFFIXED_USER_HOME"),
+        Some(&serde_json::Value::from(HOME))
+    );
 }

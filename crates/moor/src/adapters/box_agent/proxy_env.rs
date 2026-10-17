@@ -71,7 +71,7 @@ pub(super) fn task_lines(mac: MacTask<'_>) -> Result<Vec<String>, String> {
     Ok(lines)
 }
 
-/// Shell lines run just before the agent starts: the builder's prelude, the Mac task variables when there are any, then the profile's `env`
+/// Shell lines run just before the agent starts: the builder's prelude, then the profile's `env`
 /// exports. They must not contain the nonce.
 pub(super) fn script_lines(
     cred: &BoxPath,
@@ -98,11 +98,6 @@ pub(super) fn script_lines(
         Purpose::Agent,
     )?;
     let mut lines = built.prelude;
-    if mac.is_some() {
-        for (name, value) in &built.vars {
-            lines.push(format!("export {name}={}", quote(value)));
-        }
-    }
     for var in env {
         if !is_identifier(&var.name) {
             return Err(format!("{:?} is not a shell variable name", var.name));
