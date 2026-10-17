@@ -3,8 +3,8 @@
 use std::process::Command;
 
 use super::{
-    clean, from_report, parse, parse_split, script, window_script, Denial, DENIAL_LIMIT,
-    DENIAL_LINE_CHARS, PID_FILTER_AWK,
+    cap, clean, from_report, parse, parse_split, script, strip, window_script, Denial,
+    DENIAL_LIMIT, DENIAL_LINE_CHARS, PID_FILTER_AWK,
 };
 
 const NONO: &str = r#"{
@@ -266,6 +266,30 @@ fn clean_caps_long_text() {
     let out = clean(&"a".repeat(10_000));
     assert_eq!(out.chars().count(), DENIAL_LINE_CHARS);
     assert!(out.ends_with('…'));
+}
+
+#[test]
+fn strip_removes_controls_escapes_and_osc() {
+    assert_eq!(strip("a\x01b\x1b[0mc\x1b]0;t\x07d"), "abcd");
+}
+
+#[test]
+fn strip_does_not_cap() {
+    assert_eq!(strip(&"a".repeat(10_000)).chars().count(), 10_000);
+}
+
+#[test]
+fn cap_cuts_long_text_and_keeps_short() {
+    let out = cap(&"a".repeat(10_000));
+    assert_eq!(out.chars().count(), DENIAL_LINE_CHARS);
+    assert!(out.ends_with('…'));
+    assert_eq!(cap("short"), "short");
+}
+
+#[test]
+fn clean_is_cap_of_strip() {
+    let raw = format!("\x1b[1m{}\x01 b", "a ".repeat(500));
+    assert_eq!(clean(&raw), cap(&strip(&raw)));
 }
 
 #[test]
