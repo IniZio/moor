@@ -324,3 +324,30 @@ fn the_agent_env_carries_the_toolchain_env_and_bin_dirs() {
         ["/Users/alice/m/bin", "/Users/alice/r/bin"]
     );
 }
+
+fn sim_script(udid: Option<&str>) -> String {
+    mac_script(|s| LaunchReq {
+        mac_grants: MacGrants {
+            sim_udid: udid.map(str::to_owned),
+            ..MacGrants::default()
+        },
+        ..req(s)
+    })
+}
+
+#[test]
+fn a_launch_with_a_simulator_device_exports_its_udid_and_the_sim_set() {
+    let script = sim_script(Some("UDID-1"));
+    assert!(script.contains("export MOOR_SIM_UDID='UDID-1'"), "{script}");
+    assert!(
+        script.contains("export MOOR_SIM_SET='/Users/box/boxes/t1/sim'"),
+        "{script}"
+    );
+}
+
+#[test]
+fn a_launch_without_a_simulator_device_exports_neither_simulator_variable() {
+    let script = sim_script(None);
+    assert!(!script.contains("MOOR_SIM_UDID"), "{script}");
+    assert!(!script.contains("MOOR_SIM_SET"), "{script}");
+}

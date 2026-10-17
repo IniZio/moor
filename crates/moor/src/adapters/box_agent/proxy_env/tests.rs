@@ -344,6 +344,7 @@ fn a_mac_task_gives_the_agent_its_home_and_box_tag() {
         nonce: "n1",
         toolchain_env: &[],
         toolchain_bin: &[],
+        sim_udid: None,
     };
     let c = cred(Path::new("/home/box/.moor-cred"));
     let w = workdir();
@@ -370,6 +371,7 @@ fn a_mac_task_exports_no_home_before_the_sandbox_starts() {
         nonce: "n1",
         toolchain_env: &[],
         toolchain_bin: &[],
+        sim_udid: None,
     };
     let c = cred(Path::new("/home/box/.moor-cred"));
     let lines = script_lines(&c, &proxy(), &placeholder_env(), None, Some(mac)).unwrap();

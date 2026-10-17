@@ -18,6 +18,8 @@ pub struct MacTask<'a> {
     pub toolchain_env: &'a [(String, String)],
     /// Absolute Box directories of the selected toolchains' executables, in `PATH` order (before Homebrew).
     pub toolchain_bin: &'a [String],
+    /// The Task's simulator device, when it has one.
+    pub sim_udid: Option<&'a str>,
 }
 
 /// `(name, directory, relative path)` for the variables that point into the Task directories.
@@ -59,6 +61,10 @@ fn vars(m: &MacTask<'_>) -> Result<Vec<(String, String)>, String> {
             format!("{}-{}", m.key.as_str(), m.nonce),
         ),
     ];
+    if let Some(udid) = m.sim_udid {
+        out.push(("MOOR_SIM_UDID".to_owned(), udid.to_owned()));
+        out.push(("MOOR_SIM_SET".to_owned(), l.sim.as_str().to_owned()));
+    }
     for (name, dir, rel) in &rooted(m) {
         let p = BoxPath::under(dir.as_str(), rel).map_err(|e| e.to_string())?;
         out.push(((*name).to_owned(), p.as_str().to_owned()));

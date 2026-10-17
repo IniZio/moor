@@ -25,6 +25,7 @@ pub(crate) fn mac_grants(cx: &Cx, cfg: &TaskSettings) -> Result<MacGrants, Confi
         capabilities: cfg.repo_box.capabilities.clone(),
         sandbox: cfg.repo_box.sandbox.clone(),
         toolchains: selected(cx, cfg)?,
+        sim_udid: None,
     })
 }
 
