@@ -2,6 +2,7 @@ use super::*;
 use moor_core::domain::decision::{Decision, NewTask};
 use moor_core::seam::engine::Sandboxed;
 
+use super::super::denials;
 use crate::testing::engine::FakeEngine;
 
 fn failed(driver: FakeDriver) -> String {
@@ -51,7 +52,10 @@ fn a_child_process_denial_from_the_box_log_is_named() {
         FakeDriver::new().exec_stdout([KNOWN_HOSTS]),
         exits(&[0, 0, 1, 0]),
     );
-    assert!(msg.contains("\nthe sandbox denied:"), "{msg}");
+    assert!(
+        msg.contains("\nSeatbelt denials logged on the Box since setup started"),
+        "{msg}"
+    );
     assert!(
         msg.contains("\n  cat: file-read-data /Users/newman/.ssh/known_hosts"),
         "{msg}"
@@ -68,7 +72,7 @@ fn a_failed_window_exec_leaves_no_denial_lines() {
     let mut results = exits(&[0, 0, 1]);
     results.push(Err(DriverError::NotFound));
     let msg = failed_with(FakeDriver::new().exec_stdout([KNOWN_HOSTS]), results).0;
-    assert!(!msg.contains("the sandbox denied"), "{msg}");
+    assert!(!msg.contains("Seatbelt denials"), "{msg}");
     assert!(msg.starts_with("setup line `a` failed: exit 1"), "{msg}");
 }
 
@@ -103,7 +107,7 @@ fn a_denial_is_named_right_after_the_first_line() {
     assert!(first.starts_with("setup line `a` failed: exit 1"), "{msg}");
     assert!(
         rest.starts_with(
-            "the sandbox denied:\n  file-read-data /Users/x/.ssh/key0\nfull log in the Box"
+            "Seatbelt denials logged on the Box since setup started (may include other processes):\n  file-read-data /Users/x/.ssh/key0\nfull log in the Box"
         ),
         "{msg}"
     );
@@ -139,7 +143,7 @@ fn more_than_ten_denials_show_the_newest_ten_after_the_earlier_count() {
     let msg = failed(FakeDriver::new().copy_report(report(12)));
     assert_eq!(msg.matches("\n  file-read-data ").count(), 10, "{msg}");
     assert!(
-        msg.contains("denied:\n  … and 2 earlier\n  file-read-data /Users/x/.ssh/key2\n"),
+        msg.contains("processes):\n  … and 2 earlier\n  file-read-data /Users/x/.ssh/key2\n"),
         "{msg}"
     );
     assert!(msg.contains("key11\n"), "{msg}");
@@ -154,4 +158,26 @@ fn the_newest_denial_is_shown_among_many() {
         msg.contains("\n  file-read-data /Users/x/.ssh/key19\n"),
         "{msg}"
     );
+}
+
+#[test]
+fn a_planted_denial_line_loses_escapes_and_nonce_and_is_capped() {
+    let nonce = "q7v2k9x4q7v2k9x4q7v2";
+    let line = format!(
+        "{}\x1b[31m{nonce}{}",
+        KNOWN_HOSTS.replace("/Users/newman/.ssh/known_hosts", "/p/"),
+        "a".repeat(10_000)
+    );
+    let found = moor_core::boxscript::denials::parse(&line);
+    assert_eq!(found.len(), 1, "{line}");
+    let msg = denials::describe(&found, "", Some(nonce.as_bytes()));
+    assert!(!msg.contains('\x1b'), "{msg}");
+    assert!(!msg.contains(nonce), "{msg}");
+    assert!(msg.len() < 2_000, "{}", msg.len());
+    let text = denials::describe(
+        &[],
+        &format!("nono: \x1b[31m{nonce}"),
+        Some(nonce.as_bytes()),
+    );
+    assert!(!text.contains('\x1b') && !text.contains(nonce), "{text}");
 }

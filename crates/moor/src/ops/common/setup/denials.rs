@@ -12,6 +12,7 @@ use moor_core::{BoxHandle, BoxPath};
 
 use super::{fetch_box_file, tidy};
 use crate::cx::Cx;
+use crate::ops::show::redact_nonce;
 
 /// Most denials listed, newest last; the older ones are counted.
 const MAX_DENIALS: usize = 10;
@@ -31,6 +32,7 @@ pub(super) fn fetch(
     workdir: &BoxPath,
     worktree: &Path,
     sandboxed: bool,
+    nonce: Option<&[u8]>,
 ) -> String {
     if !sandboxed {
         return String::new();
@@ -45,7 +47,7 @@ pub(super) fn fetch(
             found.push(d);
         }
     }
-    describe(&found, &report.text)
+    describe(&found, &report.text, nonce)
 }
 
 /// The denials the Box's log holds since setup started; none when the Box cannot say.
@@ -76,13 +78,14 @@ fn window(cx: &Cx, handle: &BoxHandle, workdir: &BoxPath, worktree: &Path) -> Ve
     }
 }
 
-/// Words the denials, else nono's text, for the warning.
-fn describe(denials: &[Denial], text: &str) -> String {
+/// Words the denials, else nono's text, for the warning; each line is tidied and loses the nonce.
+pub(super) fn describe(denials: &[Denial], text: &str, nonce: Option<&[u8]>) -> String {
+    let clean = |l: &str| redact_nonce(&tidy(l), nonce);
     let mut out = String::new();
     if denials.is_empty() {
         let text: Vec<String> = text
             .lines()
-            .map(tidy)
+            .map(clean)
             .filter(|l| !l.trim().is_empty())
             .take(MAX_TEXT_LINES)
             .collect();
@@ -91,13 +94,15 @@ fn describe(denials: &[Denial], text: &str) -> String {
         }
         return out;
     }
-    out.push_str("\nthe sandbox denied:");
+    out.push_str(
+        "\nSeatbelt denials logged on the Box since setup started (may include other processes):",
+    );
     let earlier = denials.len().saturating_sub(MAX_DENIALS);
     if earlier > 0 {
         let _ = write!(out, "\n  … and {earlier} earlier");
     }
     for d in denials.iter().skip(earlier) {
-        let _ = write!(out, "\n  {}", tidy(&d.to_string()));
+        let _ = write!(out, "\n  {}", clean(&d.to_string()));
     }
     out
 }
