@@ -347,7 +347,7 @@ fn image_path_line_for(file: &str) -> String {
     )
 }
 
-/// Shell lines that point Yarn and npm at the proxy, the CA bundle and a cache the agent can write.
+/// Shell lines that point Yarn and npm at the proxy and a cache the agent can write.
 fn yarn_lines(box_port: u16) -> Vec<String> {
     let mut lines: Vec<String> = ["YARN_HTTPS_PROXY", "YARN_HTTP_PROXY"]
         .iter()
@@ -355,7 +355,6 @@ fn yarn_lines(box_port: u16) -> Vec<String> {
         .collect();
     lines.extend(
         [
-            "export YARN_CA_FILE_PATH=\"$moor_bundle\"",
             "export YARN_CACHE_FOLDER=\"$HOME/.cache/yarn\"",
             "export YARN_GLOBAL_FOLDER=\"$HOME/.cache/yarn/berry\"",
             "export npm_config_cache=\"$HOME/.cache/npm\"",
