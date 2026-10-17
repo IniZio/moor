@@ -109,7 +109,8 @@ fn compose_down_uses_the_row_key() {
     let rows = [row(1, LeaseKind::Compose, "my proj", None)];
     assert_eq!(
         script(Step::ComposeDown, None, &rows).unwrap(),
-        "docker compose -p 'my proj' down -v --remove-orphans"
+        "PATH=/usr/local/bin:/opt/homebrew/bin:\"$PATH\"; export PATH\n\
+         docker compose -p 'my proj' down -v --remove-orphans"
     );
     assert_eq!(script(Step::ComposeDown, None, &[]), None);
 }
