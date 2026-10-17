@@ -5,6 +5,7 @@
 mod controller;
 mod creds;
 mod github;
+mod toolchain;
 
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
@@ -18,6 +19,7 @@ use super::{check, parse_strict, ConfigError};
 pub use controller::ControllerClientConfig;
 pub use creds::{CredentialSource, McpServer};
 pub use github::DEFAULT_YOU_TOKEN_CMD;
+pub use toolchain::{select_toolchains, HostToolchain, SelectedToolchain, ToolchainTable};
 
 /// herdr session used when `surface.herdr.session` is unset.
 const DEFAULT_HERDR_SESSION: &str = "moor";
@@ -319,6 +321,8 @@ pub struct UserConfig {
     pub box_credentials: Vec<String>,
     /// State directory override.
     pub state_dir: Option<PathBuf>,
+    /// Host toolchains a repo may select by name.
+    pub toolchains: ToolchainTable,
 }
 
 impl UserConfig {
@@ -358,6 +362,7 @@ impl UserConfig {
         }
         self.proxy.validate(&self.credentials)?;
         self.controller.validate()?;
+        toolchain::validate_toolchains(&self.toolchains)?;
         check::box_credentials(&self.box_credentials)
             .map_err(|(i, m)| ConfigError::new(format!("box_credentials[{i}]"), m))
     }
