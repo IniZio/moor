@@ -44,23 +44,33 @@ pub struct RepoBox {
     pub size: Option<BoxSize>,
     /// macOS Box capabilities the repo needs.
     pub capabilities: Vec<BoxCapability>,
+    /// Host toolchains this repo uses, by the names the host config gives them.
+    pub toolchains: Vec<String>,
     /// Project paths added to the sandbox.
     pub sandbox: RepoSandbox,
 }
 
 impl RepoBox {
-    /// Refuses `box.capabilities` on a Box that is not macOS.
+    /// Refuses `box.capabilities` and `box.toolchains` on a Box that is not macOS.
     ///
     /// # Errors
-    /// Returns [`ConfigError`] at `box.capabilities` when any capability is set and `macos` is false.
+    /// Returns [`ConfigError`] at `box.capabilities` or `box.toolchains` when set and `macos` is false.
     pub fn check_platform(&self, macos: bool) -> Result<(), ConfigError> {
-        if macos || self.capabilities.is_empty() {
+        if macos {
             return Ok(());
         }
-        Err(ConfigError::new(
-            "box.capabilities",
-            "box.capabilities applies only to a macOS Box; remove it or use a macOS Box",
-        ))
+        for (key, set) in [
+            ("capabilities", !self.capabilities.is_empty()),
+            ("toolchains", !self.toolchains.is_empty()),
+        ] {
+            if set {
+                return Err(ConfigError::new(
+                    format!("box.{key}"),
+                    format!("box.{key} applies only to a macOS Box; remove it or use a macOS Box"),
+                ));
+            }
+        }
+        Ok(())
     }
 
     /// Checks capability duplicates and sandbox paths.
@@ -73,8 +83,30 @@ impl RepoBox {
                 ));
             }
         }
+        self.validate_toolchains()?;
         sandbox_paths("read", &self.sandbox.read)?;
         sandbox_paths("write", &self.sandbox.write)
+    }
+
+    /// Checks each toolchain name is well formed and listed once.
+    fn validate_toolchains(&self) -> Result<(), ConfigError> {
+        for (i, name) in self.toolchains.iter().enumerate() {
+            let path = format!("box.toolchains[{i}]");
+            let well_formed = !name.is_empty()
+                && name.chars().all(|c| {
+                    c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '-' | '.' | '_')
+                });
+            if !well_formed {
+                return Err(ConfigError::new(
+                    path,
+                    "a toolchain name uses lowercase letters, digits, '-', '.' and '_'",
+                ));
+            }
+            if self.toolchains.get(..i).is_some_and(|p| p.contains(name)) {
+                return Err(ConfigError::new(path, "list each toolchain once"));
+            }
+        }
+        Ok(())
     }
 }
 
@@ -185,3 +217,5 @@ fn non_blank(name: &str, items: &[String]) -> Result<(), ConfigError> {
 mod capability_tests;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod toolchain_tests;
