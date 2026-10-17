@@ -191,3 +191,33 @@ fn an_unknown_toolchain_fails_the_exec_as_a_config_error_before_the_box_is_touch
     );
     assert!(argvs(&r).is_empty());
 }
+
+fn hold_sim_device(r: &Rig, udid: &str) {
+    let store = r.cx.store().unwrap();
+    let id = store
+        .plan_lease(TaskId::new(1), LeaseKind::SimDevice, udid)
+        .unwrap();
+    assert!(store.hold_lease(id).unwrap());
+}
+
+#[test]
+fn a_task_holding_a_simulator_device_gets_its_udid_and_set_in_the_exec_env() {
+    let dir = tempfile::tempdir().unwrap();
+    let r = mac_rig(dir.path());
+    hold_sim_device(&r, "UDID-1");
+    let e = run(&r, dir.path(), WORKDIR, false);
+    assert_eq!(var(&e, "MOOR_SIM_UDID").as_deref(), Some("UDID-1"));
+    assert_eq!(
+        var(&e, "MOOR_SIM_SET").as_deref(),
+        Some("/Users/box/moor/demo/sim")
+    );
+}
+
+#[test]
+fn a_task_without_a_simulator_device_gets_neither_simulator_var() {
+    let dir = tempfile::tempdir().unwrap();
+    let r = mac_rig(dir.path());
+    let e = run(&r, dir.path(), WORKDIR, false);
+    assert!(var(&e, "MOOR_SIM_UDID").is_none());
+    assert!(var(&e, "MOOR_SIM_SET").is_none());
+}

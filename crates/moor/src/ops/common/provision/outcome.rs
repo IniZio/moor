@@ -1,9 +1,11 @@
 //! What provisioning ran in a Box, and how a failed dotfiles step is recorded.
 
-use moor_core::config::{select_toolchains, RepoBox};
+use std::path::Path;
+
+use moor_core::config::{select_toolchains, RepoBox, TaskSettings};
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, IntentChange};
 use moor_core::domain::task::TaskInput;
-use moor_core::seam::driver::Platform;
+use moor_core::seam::driver::{Acquired, Platform};
 use moor_core::ErrorKind;
 use moor_core::TaskId;
 
@@ -12,6 +14,7 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::dotfiles::{DotfilesFailed, DotfilesRun};
 use crate::ops::common::setup::SetupRun;
+use crate::ops::common::simulator;
 use crate::ops::common::view::task_view;
 use crate::store::Store;
 
@@ -42,6 +45,20 @@ pub(super) fn platform_refusal(cx: &Cx, repo_box: &RepoBox, platform: Platform) 
             .flatten()
     })?;
     Some(e.in_file(".moor.yaml").to_string())
+}
+
+/// Why provisioning stops before setup: the Box cannot take the repo's `box:` section, or the
+/// Task's simulator cannot be made. `None` when setup may run.
+pub(super) fn refusal(
+    cx: &Cx,
+    store: &Store,
+    id: TaskId,
+    got: &Acquired,
+    worktree: &Path,
+    cfg: &TaskSettings,
+) -> Option<String> {
+    platform_refusal(cx, &cfg.repo_box, got.platform)
+        .or_else(|| simulator::ensure(cx, store, id, got, worktree, cfg).err())
 }
 
 /// Records a failed checkout sync and returns the error, carrying the Task row, to report.

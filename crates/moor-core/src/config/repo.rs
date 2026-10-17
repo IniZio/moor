@@ -36,7 +36,17 @@ pub struct RepoSandbox {
     pub write: Vec<String>,
 }
 
-/// `box:` section: `size`, `capabilities` and `sandbox` are allowed at the repo layer.
+/// `box.simulator:` pin for the per-Task iOS simulator; each value is a name or an identifier.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RepoSimulator {
+    /// Device type by name (`iPhone 17`) or identifier (`com.apple.CoreSimulator.SimDeviceType.iPhone-17`).
+    pub device_type: Option<String>,
+    /// Runtime by name (`iOS 26.4`) or identifier (`com.apple.CoreSimulator.SimRuntime.iOS-26-4`).
+    pub runtime: Option<String>,
+}
+
+/// `box:` section: `size`, `capabilities`, `toolchains`, `simulator` and `sandbox` are allowed at the repo layer.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct RepoBox {
@@ -46,15 +56,17 @@ pub struct RepoBox {
     pub capabilities: Vec<BoxCapability>,
     /// Host toolchains this repo uses, by the names the host config gives them.
     pub toolchains: Vec<String>,
+    /// iOS simulator pin; needs the `ios-simulator` capability.
+    pub simulator: Option<RepoSimulator>,
     /// Project paths added to the sandbox.
     pub sandbox: RepoSandbox,
 }
 
 impl RepoBox {
-    /// Refuses `box.capabilities` and `box.toolchains` on a Box that is not macOS.
+    /// Refuses `box.capabilities`, `box.toolchains` and `box.simulator` on a Box that is not macOS.
     ///
     /// # Errors
-    /// Returns [`ConfigError`] at `box.capabilities` or `box.toolchains` when set and `macos` is false.
+    /// Returns [`ConfigError`] at `box.capabilities`, `box.toolchains` or `box.simulator` when set and `macos` is false.
     pub fn check_platform(&self, macos: bool) -> Result<(), ConfigError> {
         if macos {
             return Ok(());
@@ -62,6 +74,7 @@ impl RepoBox {
         for (key, set) in [
             ("capabilities", !self.capabilities.is_empty()),
             ("toolchains", !self.toolchains.is_empty()),
+            ("simulator", self.simulator.is_some()),
         ] {
             if set {
                 return Err(ConfigError::new(
@@ -84,8 +97,31 @@ impl RepoBox {
             }
         }
         self.validate_toolchains()?;
+        self.validate_simulator()?;
         sandbox_paths("read", &self.sandbox.read)?;
         sandbox_paths("write", &self.sandbox.write)
+    }
+
+    /// Checks the simulator pin has no blank value and its capability is selected.
+    fn validate_simulator(&self) -> Result<(), ConfigError> {
+        let Some(sim) = &self.simulator else {
+            return Ok(());
+        };
+        if !self.capabilities.contains(&BoxCapability::IosSimulator) {
+            return Err(ConfigError::new(
+                "box.simulator",
+                "box.simulator needs the ios-simulator capability; add it to box.capabilities",
+            ));
+        }
+        for (key, value) in [("device_type", &sim.device_type), ("runtime", &sim.runtime)] {
+            if value.as_deref().is_some_and(|v| v.trim().is_empty()) {
+                return Err(ConfigError::new(
+                    format!("box.simulator.{key}"),
+                    format!("box.simulator.{key} must not be empty; name a {key} or remove it"),
+                ));
+            }
+        }
+        Ok(())
     }
 
     /// Checks each toolchain name is well formed and listed once.
@@ -215,6 +251,8 @@ fn non_blank(name: &str, items: &[String]) -> Result<(), ConfigError> {
 
 #[cfg(test)]
 mod capability_tests;
+#[cfg(test)]
+mod simulator_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]

@@ -136,3 +136,32 @@ fn a_failed_launch_leaves_the_toolchain_link_planned() {
     assert_eq!(rows.len(), 1, "{rows:?}");
     assert_eq!(rows.first().unwrap().state, LeaseState::Planned);
 }
+
+/// Holds a simulator device lease for `udid` on the Task.
+fn hold_device(w: &World, id: TaskId, udid: &str) {
+    let store = w.cx.store().unwrap();
+    let lease = store.plan_lease(id, LeaseKind::SimDevice, udid).unwrap();
+    store.hold_lease(lease).unwrap();
+}
+
+#[test]
+fn a_held_simulator_device_reaches_the_launch_request() {
+    let engine = Arc::new(FakeEngine::new().box_home("/home/box"));
+    let mut w = world(FakeDriver::new());
+    w.cx = w.cx.with_engine(engine.clone());
+    let v = run(&w.cx, &req("demo")).unwrap();
+    hold_device(&w, TaskId::new(v.task.id), "UDID-1");
+    run(&w.cx, &goal_req("demo")).unwrap();
+    let launches = engine.launches();
+    let grants = &launches.last().unwrap().mac_grants;
+    assert_eq!(grants.sim_udid.as_deref(), Some("UDID-1"));
+}
+
+#[test]
+fn a_launch_without_a_simulator_device_carries_no_udid() {
+    let engine = Arc::new(FakeEngine::new().box_home("/home/box"));
+    let (w, _id) = started(&engine);
+    run(&w.cx, &goal_req("demo")).unwrap();
+    let launches = engine.launches();
+    assert_eq!(launches.last().unwrap().mac_grants.sim_udid, None);
+}

@@ -9,13 +9,15 @@ use serde::Deserialize;
 use super::super::{check, ConfigError};
 
 /// Environment names a toolchain may not set.
-const RESERVED_ENV: [&str; 6] = [
+const RESERVED_ENV: [&str; 8] = [
     "HOME",
     "TMPDIR",
     "CFFIXED_USER_HOME",
     "XCODE_XCCONFIG_FILE",
     "MOOR_BOX_TAG",
     "DEVELOPER_DIR",
+    "MOOR_SIM_UDID",
+    "MOOR_SIM_SET",
 ];
 
 /// One owner-configured toolchain on the Box host.

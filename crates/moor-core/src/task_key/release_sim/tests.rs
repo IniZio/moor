@@ -13,6 +13,8 @@ use crate::name::{BoxPath, TaskName};
 use crate::task_key::release::{path_pids_cmd, tagged_pids_cmd};
 use crate::task_key::{MacLayout, TaskKey};
 
+mod recorded;
+
 const A: &str = "AAAAAAAA-1111-2222-3333-444444444444";
 const B: &str = "BBBBBBBB-1111-2222-3333-444444444444";
 
@@ -147,7 +149,7 @@ fn make_sim_dir(l: &MacLayout) {
 #[test]
 fn delete_script_text_is_scoped_to_the_task_set() {
     let s = Scratch::new("text");
-    let script = delete_devices_script(&s.layout());
+    let script = delete_devices_script(&s.layout(), &[]);
     assert!(script.contains("--set \"$sim\""));
     assert!(script.contains(&format!("sim='{}'", s.layout().sim.as_str())));
     assert!(script.contains("$HOME/Library/Logs/CoreSimulator"));
@@ -162,7 +164,7 @@ fn delete_removes_each_device_and_its_logs() {
     make_sim_dir(&l);
     fake_xcrun(&s, &listing(), "none");
     let home = setup_logs(&s, &[A, B, "KEEPME"]);
-    let (code, out) = s.run_home(&delete_devices_script(&l), Some(&home));
+    let (code, out) = s.run_home(&delete_devices_script(&l, &[]), Some(&home));
     assert_eq!(code, Some(0), "{out}");
     let c = calls(&s);
     for u in [A, B] {
@@ -187,7 +189,7 @@ fn delete_continues_past_a_failure_and_exits_nonzero() {
     make_sim_dir(&l);
     fake_xcrun(&s, &listing(), A);
     let home = setup_logs(&s, &[A, B]);
-    let (code, out) = s.run_home(&delete_devices_script(&l), Some(&home));
+    let (code, out) = s.run_home(&delete_devices_script(&l, &[]), Some(&home));
     assert_eq!(code, Some(1), "{out}");
     assert_eq!(failed_lines(&out).len(), 1, "{out}");
     assert!(
@@ -204,7 +206,7 @@ fn delete_continues_past_a_failure_and_exits_nonzero() {
 fn delete_with_missing_sim_dir_succeeds_without_calling_xcrun() {
     let s = Scratch::new("nosim");
     fake_xcrun(&s, &listing(), "none");
-    let (code, out) = s.run(&delete_devices_script(&s.layout()));
+    let (code, out) = s.run(&delete_devices_script(&s.layout(), &[]));
     assert_eq!(code, Some(0), "{out}");
     assert_eq!(calls(&s), "");
 }
@@ -215,7 +217,7 @@ fn delete_with_empty_set_succeeds() {
     let l = s.layout();
     make_sim_dir(&l);
     fake_xcrun(&s, "== Devices ==\n", "none");
-    let (code, _) = s.run(&delete_devices_script(&l));
+    let (code, _) = s.run(&delete_devices_script(&l, &[]));
     assert_eq!(code, Some(0));
 }
 
@@ -301,7 +303,7 @@ fn delete_with_empty_or_relative_home_still_deletes_devices_and_reports_logs() {
         let l = s.layout();
         make_sim_dir(&l);
         stateful_xcrun(&s, &[(A, "Booted"), (B, "Shutdown")]);
-        let (code, out) = s.run_home(&delete_devices_script(&l), Some(home));
+        let (code, out) = s.run_home(&delete_devices_script(&l, &[]), Some(home));
         assert_eq!(code, Some(1), "{out}");
         assert_eq!(failed_lines(&out), ["logs: HOME is not an absolute path"]);
         assert!(!s.path(&format!("devs/{A}")).exists());
@@ -341,7 +343,7 @@ fn booted_device_is_deleted_logs_gone_then_root_removed_in_order() {
     make_sim_dir(&l);
     stateful_xcrun(&s, &[(A, "Booted")]);
     let home = setup_logs(&s, &[A]);
-    let (code, out) = s.run_home(&delete_devices_script(&l), Some(&home));
+    let (code, out) = s.run_home(&delete_devices_script(&l, &[]), Some(&home));
     assert_eq!(code, Some(0), "{out}");
     assert!(!s.path(&format!("devs/{A}")).exists());
     assert!(!s
@@ -517,7 +519,7 @@ fn case_patterns_in_generated_scripts_have_a_leading_paren() {
     let s = Scratch::new("casepat");
     let l = s.layout();
     let scripts = [
-        ("delete", delete_devices_script(&l)),
+        ("delete", delete_devices_script(&l, &[])),
         ("remove_root", remove_root_script(&l)),
         ("verify", verify_script(&l, "echo 1", "echo 2")),
     ];

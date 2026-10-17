@@ -15,6 +15,7 @@ moor_core::graphql_scope
 moor_core::mac_capability	
 moor_core::seam	moor_core::activity,moor_core::domain,moor_core::name,moor_core::secret,moor_core::config,moor_core::task_key
 moor_core::view	moor_core::domain,moor_core::name,moor_core::config,moor_core::request
+moor_core::simulator	moor_core::boxscript,moor_core::name,moor_core::task_key
 moor::env	
 moor::error	moor::env,moor::store
 moor::store	moor::env

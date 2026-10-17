@@ -19,6 +19,7 @@ use crate::error::CommandError;
 use crate::ops::common::box_exec;
 use crate::ops::common::provision::{recorded_workdir, reread};
 use crate::ops::common::resume;
+use crate::ops::common::simulator;
 use crate::ops::common::toolchains;
 use crate::ops::common::view::rfc3339;
 use crate::ops::show::redact_nonce;
@@ -103,6 +104,7 @@ pub(super) fn begin(
             return record_failure(cx, store, id, &e);
         }
     };
+    launch.mac_grants.sim_udid = simulator::recorded(store, id)?;
     let launch = &launch;
     let leases = match plan_dirs(cx, store, id, launch)? {
         Ok(leases) => leases,

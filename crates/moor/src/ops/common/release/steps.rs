@@ -105,7 +105,14 @@ pub(crate) fn script(step: Step, mac: Option<&MacTarget<'_>>, rows: &[LeaseRow])
             kill_tree_script(m.key, m.layout, &pgids)
         }),
         Step::OrphanIbtoold => mac.map(|m| orphan_ibtoold_script(m.layout)),
-        Step::DeleteDevices => mac.map(|m| delete_devices_script(m.layout)),
+        Step::DeleteDevices => mac.map(|m| {
+            let recorded: Vec<&str> = rows
+                .iter()
+                .filter(|r| r.kind == LeaseKind::SimDevice)
+                .map(|r| r.key.as_str())
+                .collect();
+            delete_devices_script(m.layout, &recorded)
+        }),
         Step::RemoveRoot => mac.map(|m| remove_root_script(m.layout)),
         Step::Verify => {
             mac.map(|m| verify_script(m.layout, &tagged_pids_cmd(m.key), &path_pids_cmd(m.layout)))

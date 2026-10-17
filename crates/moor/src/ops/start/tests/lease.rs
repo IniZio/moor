@@ -81,3 +81,5 @@ fn a_failed_setup_leaves_the_workdir_held() {
         .collect();
     assert_eq!(dir, vec![LeaseState::Held]);
 }
+
+mod simulator;

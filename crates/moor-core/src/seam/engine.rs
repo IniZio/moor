@@ -49,6 +49,8 @@ pub struct MacGrants {
     pub sandbox: RepoSandbox,
     /// Host toolchains the repo selected in `box.toolchains`, from the host config.
     pub toolchains: Vec<crate::config::SelectedToolchain>,
+    /// The Task's simulator device, recorded at provisioning.
+    pub sim_udid: Option<String>,
 }
 
 /// What a launch needs to start the agent in a Box.

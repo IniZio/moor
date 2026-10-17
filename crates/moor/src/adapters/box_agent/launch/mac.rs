@@ -25,6 +25,8 @@ pub(in super::super) struct Mac {
     env: Vec<(String, String)>,
     /// Their `PATH` directories, flattened in selection order.
     bin: Vec<String>,
+    /// The Task's simulator device, when it has one.
+    sim_udid: Option<String>,
 }
 
 /// A launch's Task on a macOS Box, with what the prepare step printed. The Box home is the
@@ -70,7 +72,9 @@ impl Launch<'_> {
 impl Mac {
     /// The layout of `req`'s Task, when its workdir is in one.
     pub(super) fn find(req: &LaunchReq) -> Option<Self> {
-        Self::of(&req.workdir, &req.task, &req.mac_grants.toolchains)
+        let mut mac = Self::of(&req.workdir, &req.task, &req.mac_grants.toolchains)?;
+        mac.sim_udid.clone_from(&req.mac_grants.sim_udid);
+        Some(mac)
     }
 
     /// The layout of the Task `task`, when `workdir` is in one, with the `toolchains` it selected.
@@ -86,6 +90,7 @@ impl Mac {
             toolchains: toolchains.to_vec(),
             env: toolchains.iter().flat_map(|t| t.env.clone()).collect(),
             bin: toolchains.iter().flat_map(|t| t.bin.clone()).collect(),
+            sim_udid: None,
         })
     }
 
@@ -102,6 +107,7 @@ impl Mac {
             nonce,
             toolchain_env: &self.env,
             toolchain_bin: &self.bin,
+            sim_udid: self.sim_udid.as_deref(),
         }
     }
 

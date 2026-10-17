@@ -13,12 +13,13 @@ use moor_core::seam::engine::Sandboxed;
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::proxy_host::ProxySpec;
 use moor_core::seam::rng::Rng;
-use moor_core::task_key::{MacLayout, TaskKey};
+use moor_core::task_key::MacLayout;
 use moor_core::{BoxHandle, BoxPath, TaskId};
 
 use crate::cx::Cx;
 use crate::ops::common::proxy::{box_env, origin, plan};
 use crate::ops::common::toolchains;
+use layout::{mac_layout, MacBox};
 
 /// Time allowed for removing the staged directory.
 const CLEANUP_DEADLINE: Duration = Duration::from_secs(30);
@@ -114,8 +115,8 @@ pub(crate) struct BoxExec {
 }
 
 /// The Mac Task of one exec, with the env and `PATH` directories of its host toolchains.
-const fn task_for<'a>(
-    (layout, key): &'a (MacLayout, TaskKey),
+fn task_for<'a>(
+    (layout, key, sim): &'a MacBox,
     nonce: &'a str,
     toolchain_env: &'a [(String, String)],
     toolchain_bin: &'a [String],
@@ -126,6 +127,7 @@ const fn task_for<'a>(
         nonce,
         toolchain_env,
         toolchain_bin,
+        sim_udid: sim.as_deref(),
     }
 }
 
@@ -145,7 +147,7 @@ pub(crate) fn prepare(
     purpose: Purpose,
 ) -> Result<BoxExec, String> {
     let task = proxy.map(|p| p.task).or(site.task);
-    let mac = mac_layout(cx, site, task);
+    let mac = mac_layout(cx, site, task)?;
     let tc = if mac.is_some() {
         toolchains::selected(cx, cfg).map_err(|e| e.in_file(".moor.yaml").to_string())?
     } else {
@@ -164,11 +166,11 @@ fn build(
     proxy: Option<&BoxProxy>,
     cfg: &TaskSettings,
     purpose: Purpose,
-    (mac, tc): (Option<&(MacLayout, TaskKey)>, &[SelectedToolchain]),
+    (mac, tc): (Option<&MacBox>, &[SelectedToolchain]),
 ) -> Result<BoxExec, String> {
     let strip = strip_env(cx, site.provider);
     let repo_env: Vec<(String, String)> = cfg.env.clone().into_iter().collect();
-    if let Some((layout, _)) = mac {
+    if let Some((layout, ..)) = mac {
         prepare_layout(cx, site, layout)?;
     }
     let nonce = tag_nonce(cx.rng());
@@ -187,7 +189,7 @@ fn build(
         return sandbox::seal(cx, site, cfg, purpose, mac_task, BoxExec::plain(env, None));
     };
     let dir = match mac {
-        Some((layout, _)) => layout.cred_dir(&nonce).map_err(|e| e.to_string())?,
+        Some((layout, ..)) => layout.cred_dir(&nonce).map_err(|e| e.to_string())?,
         None => BoxPath::under(
             box_home(cx, site)?.as_str(),
             &format!(".moor-cred-{}-{nonce}", p.task.get()),
@@ -285,15 +287,6 @@ impl BoxExec {
     }
 }
 
-/// The macOS Box layout of `task` and its key, when the workdir is inside that layout.
-fn mac_layout(cx: &Cx, site: &Site<'_>, task: Option<TaskId>) -> Option<(MacLayout, TaskKey)> {
-    let workdir = site.workdir?;
-    let row = cx.store().ok()?.task(task?).ok()??;
-    let key = TaskKey::new(&row.name);
-    let layout = MacLayout::find(workdir, &key)?;
-    Some((layout, key))
-}
-
 /// Creates the Task directories and launch files of `layout` on the Box; names the step on failure.
 fn prepare_layout(cx: &Cx, site: &Site<'_>, layout: &MacLayout) -> Result<(), String> {
     let script = layout
@@ -382,6 +375,7 @@ fn remove(cx: &Cx, site: &Site<'_>, dir: &BoxPath) {
         .exec(site.handle, &spec, Deadline(CLEANUP_DEADLINE));
 }
 
+mod layout;
 mod sandbox;
 
 /// The nonce in `MOOR_BOX_TAG`. Must stay 16 lowercase hex chars: Box release

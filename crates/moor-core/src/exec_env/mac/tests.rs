@@ -32,6 +32,7 @@ fn every_purpose_gets_the_task_vars() {
         nonce: "abc",
         toolchain_env: &[],
         toolchain_bin: &[],
+        sim_udid: None,
     };
     let repo = vec![
         ("HOME".to_owned(), "/root".to_owned()),
@@ -103,6 +104,7 @@ fn the_prelude_puts_shims_and_homebrew_first_on_the_inherited_path() {
         nonce: "abc",
         toolchain_env: &[],
         toolchain_bin: &[],
+        sim_udid: None,
     };
     let b = BoxCtx {
         env: &[],
@@ -136,6 +138,7 @@ fn proxy_cache_lines_do_not_override_task_caches() {
         nonce: "abc",
         toolchain_env: &[],
         toolchain_bin: &[],
+        sim_udid: None,
     };
     let cred = bp("/cred");
     let b = BoxCtx {
@@ -180,6 +183,7 @@ fn with_toolchains(
         nonce: "abc",
         toolchain_env: env,
         toolchain_bin: bin,
+        sim_udid: None,
     };
     let b = BoxCtx {
         env: &[],
@@ -246,4 +250,30 @@ fn empty_toolchains_leave_the_path_line_unchanged() {
         line,
         "PATH='/Users/Shared/moor-n/t1/launch/bin':/opt/homebrew/bin:/opt/homebrew/sbin:\"$PATH\"; export PATH"
     );
+}
+
+#[test]
+fn a_task_with_a_simulator_gets_its_device_and_set() {
+    let (layout, key) = fixture();
+    let mac = MacTask {
+        layout: &layout,
+        key: &key,
+        nonce: "abc",
+        toolchain_env: &[],
+        toolchain_bin: &[],
+        sim_udid: Some("0A1B2C3D-0000-1111-2222-333344445555"),
+    };
+    let v = vars(&mac).unwrap();
+    assert_eq!(
+        get(&v, "MOOR_SIM_UDID"),
+        ["0A1B2C3D-0000-1111-2222-333344445555"]
+    );
+    assert_eq!(get(&v, "MOOR_SIM_SET"), ["/Users/Shared/moor-n/t1/sim"]);
+}
+
+#[test]
+fn a_task_without_a_simulator_sets_neither_variable() {
+    let (vars, _) = with_toolchains(&[], &[]);
+    assert_eq!(get(&vars, "MOOR_SIM_SET"), Vec::<String>::new());
+    assert_eq!(get(&vars, "MOOR_SIM_UDID"), Vec::<String>::new());
 }
