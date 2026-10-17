@@ -9,15 +9,21 @@ use moor_core::domain::boxes::BoxState;
 use moor_core::domain::run::SyncMode;
 use moor_core::seam::driver::ExecOutcome;
 use moor_core::seam::proc::{Deadline, Tool};
+use moor_core::seam::proxy_host::ProxyHostError;
 use moor_core::view::{DotfilesView, StartView};
 use moor_core::{BoxId, StartReq};
 
+use super::setup::{
+    scripted, unwrapped,
+    Step::{Cmd, Sync},
+};
 use super::state::WORKING;
 use super::{req, world_with, World};
 use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::proc::Reply;
+use crate::testing::proxy_host::FakeProxyHost;
 
 const TAR_SCRIPT: &str = "exec tar -C \"$1\" -czhf - .";
 
@@ -83,7 +89,7 @@ fn dotfiles_execs(w: &World) -> Vec<(Vec<String>, Deadline, SyncMode)> {
             let mkdir = e.1.argv.first().map(String::as_str) == Some("mkdir");
             e.1.sync == SyncMode::None && e.1.cwd.is_none() && !mkdir
         })
-        .map(|e| (e.1.argv, e.2, e.1.sync))
+        .map(|e| (unwrapped(e.1.argv), e.2, e.1.sync))
         .collect()
 }
 
@@ -123,12 +129,19 @@ fn assert_archive_put(w: &World) -> String {
 fn assert_dotfiles_exec(w: &World, archive: &str) {
     let want = ["sh", "-c", &script(archive, DEFAULT_INSTALL)].map(str::to_owned);
     let execs = w.driver.execs();
-    assert_eq!(execs.len(), 4);
+    assert_eq!(execs.len(), 5);
     let (_, spec, deadline) = execs.last().unwrap();
-    assert_eq!(spec.argv, want);
+    assert!(spec
+        .argv
+        .get(2)
+        .is_some_and(|p| p.contains("export HTTPS_PROXY=")));
+    assert_eq!(unwrapped(spec.argv.clone()), want);
     assert_eq!(spec.sync, SyncMode::None);
     assert_eq!(spec.cwd, None);
-    assert!(spec.env.is_empty());
+    assert!(spec.env.contains(&(
+        "CLAUDE_CODE_OAUTH_TOKEN".to_owned(),
+        "moor-proxy".to_owned()
+    )));
     assert_eq!(*deadline, Deadline(Duration::from_mins(15)));
 }
 
@@ -174,6 +187,12 @@ fn dotfiles_run_after_setup_and_before_the_agent_launches() {
             "exec box-1",
             "copy_out box-1",
             "put_file box-1",
+            "connect_argv box-1",
+            "peek_file box-1",
+            "exec box-1",
+            "connect_argv box-1",
+            "put_file box-1",
+            "put_file box-1",
             "exec box-1",
             "sweep box-1"
         ]
@@ -215,8 +234,11 @@ fn log_writer(w: &World) {
 /// A started `demo` whose dotfiles exec failed (setup passes first).
 fn failed_start() -> (World, Arc<FakeEngine>, tempfile::TempDir, tempfile::TempDir) {
     let src = tempfile::tempdir().unwrap();
-    let driver =
-        FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(0)), Ok(exit(0)), Ok(exit(1))]);
+    let driver = FakeDriver::new().exec_results(scripted([
+        Sync(Ok(exit(0))),
+        Cmd(Ok(exit(0))),
+        Cmd(Ok(exit(1))),
+    ]));
     let (w, engine, repo) = dotfiles_world("setup: [a]\n", Some(src.path()), None, driver);
     log_writer(&w);
     (w, engine, repo, src)
@@ -275,14 +297,17 @@ fn without_dotfiles_config_nothing_is_packed_uploaded_or_run() {
 #[test]
 fn dotfiles_still_run_when_a_setup_line_fails() {
     let src = tempfile::tempdir().unwrap();
-    let driver =
-        FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(0)), Ok(exit(1)), Ok(exit(0))]);
+    let driver = FakeDriver::new().exec_results(scripted([
+        Sync(Ok(exit(0))),
+        Cmd(Ok(exit(1))),
+        Cmd(Ok(exit(0))),
+    ]));
     let (w, engine, _repo) = dotfiles_world("setup: [a]\n", Some(src.path()), None, driver);
     let v = started(&w);
     assert_eq!((v.boxed.lifecycle, v.boxed.session_state), WORKING);
     assert!(v.setup.ran && !v.setup.ok);
     assert!(v.dotfiles.ran && v.dotfiles.ok);
-    assert_eq!(w.driver.execs().len(), 4);
+    assert_eq!(w.driver.execs().len(), 5);
     assert_eq!(dotfiles_execs(&w).len(), 1);
     let (_, spec, _) = w.driver.execs().pop().unwrap();
     assert_eq!(spec.sync, SyncMode::None);
@@ -303,8 +328,11 @@ fn the_host_log_and_its_directory_are_owner_only() {
 #[test]
 fn a_failed_setup_line_still_fails_setup_when_the_dotfiles_fail_too() {
     let src = tempfile::tempdir().unwrap();
-    let driver =
-        FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(0)), Ok(exit(1)), Ok(exit(1))]);
+    let driver = FakeDriver::new().exec_results(scripted([
+        Sync(Ok(exit(0))),
+        Cmd(Ok(exit(1))),
+        Cmd(Ok(exit(1))),
+    ]));
     let (w, engine, _repo) = dotfiles_world("setup: [make-it]\n", Some(src.path()), None, driver);
     log_writer(&w);
     let v = run(&w.cx, &goal_req()).unwrap();
@@ -313,4 +341,47 @@ fn a_failed_setup_line_still_fails_setup_when_the_dotfiles_fail_too() {
     assert_eq!(engine.launches().len(), 1);
     let warnings = w.cx.take_warnings();
     assert!(warnings.iter().any(|x| x.code == "dotfiles_failed"));
+}
+
+#[test]
+fn dotfiles_install_gets_the_repo_env_and_the_proxy_without_any_setup_lines() {
+    let src = tempfile::tempdir().unwrap();
+    let (w, _, _repo) =
+        dotfiles_world("env: {ZED: z}\n", Some(src.path()), None, FakeDriver::new());
+    let v = started(&w);
+    assert!(v.dotfiles.ran && v.dotfiles.ok);
+    let execs = w.driver.execs();
+    let (_, spec, _) = execs.last().unwrap();
+    assert!(spec
+        .argv
+        .get(2)
+        .is_some_and(|p| p.contains("export HTTPS_PROXY=")));
+    assert!(spec.env.contains(&("ZED".to_owned(), "z".to_owned())));
+    assert!(spec.env.contains(&(
+        "CLAUDE_CODE_OAUTH_TOKEN".to_owned(),
+        "moor-proxy".to_owned()
+    )));
+    assert_eq!(spec.cwd, None);
+}
+
+#[test]
+fn dotfiles_fail_when_the_proxy_cannot_start() {
+    let src = tempfile::tempdir().unwrap();
+    let (mut w, engine, _repo) =
+        dotfiles_world("env: {A: a}\n", Some(src.path()), None, FakeDriver::new());
+    w.cx = w.cx.with_proxy_host(Arc::new(
+        FakeProxyHost::new().with_ensure_error(ProxyHostError::Failed("boom".into())),
+    ));
+    let v = run(&w.cx, &goal_req()).unwrap();
+    assert!(v.dotfiles.ran && !v.dotfiles.ok);
+    let warnings = w.cx.take_warnings();
+    let msg = &warnings
+        .iter()
+        .find(|x| x.code == "dotfiles_failed")
+        .unwrap()
+        .message;
+    assert!(msg.contains("the Proxy could not start: boom"), "{msg}");
+    assert!(dotfiles_execs(&w).is_empty());
+    assert!(w.proc.calls().iter().all(|c| c.tool != Tool::Sh));
+    assert!(engine.launches().is_empty());
 }
