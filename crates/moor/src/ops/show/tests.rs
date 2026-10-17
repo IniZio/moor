@@ -17,6 +17,7 @@ use moor_core::seam::proc::Tool;
 use moor_core::{ProviderId, ShowReq, StartReq, TaskId, TaskName};
 
 mod attention;
+mod denials;
 mod pane;
 mod proof;
 

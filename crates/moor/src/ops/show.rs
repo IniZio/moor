@@ -2,9 +2,18 @@
 //! Each task's agent is read once per command; a named task reads only its own.
 
 use std::collections::HashMap;
+use std::fs;
+use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
 
+use moor_core::boxscript::denials;
 use moor_core::decide::proof::ProofFile;
 use moor_core::domain::boxes::BoxState;
+use moor_core::domain::run::SyncMode;
+use moor_core::seam::driver::{ExecOutcome, ExecSpec};
+use moor_core::seam::proc::{Deadline, Output};
+use moor_core::task_key::{MacLayout, TaskKey};
 use moor_core::view::{AttentionView, EventView, PaneView, ShowView, TaskView};
 use moor_core::{ErrorKind, ShowReq, TaskId, Warning};
 
@@ -19,6 +28,15 @@ use crate::store::{Store, TaskRow};
 
 /// Lines of the pane kept as the tail.
 const PANE_LINES: usize = 40;
+
+/// Minutes of sandbox log a denial listing covers.
+const DENIAL_MINUTES: u32 = 30;
+
+/// Wall-clock allowance for the denial listing.
+const DENIALS_DEADLINE: Duration = Duration::from_secs(20);
+
+/// Makes each denial log name unique within the process.
+static DENIALS_SEQ: AtomicU64 = AtomicU64::new(0);
 
 /// Stand-in for a proxy nonce in pane text.
 const REDACTED: &str = "<nonce>";
@@ -96,6 +114,48 @@ fn proof_files(cx: &Cx, row: &TaskRow) -> Option<Vec<ProofFile>> {
     }
 }
 
+/// Recent Seatbelt denials of a macOS Task's processes, read from its Box. None for any other
+/// Task, and when the Box cannot be read: `show` never fails on it.
+fn sandbox_denials(cx: &Cx, row: &TaskRow) -> Option<Vec<String>> {
+    let handle = row
+        .boxed
+        .as_ref()
+        .filter(|b| b.state == BoxState::Ready)
+        .and_then(|b| b.handle.as_ref())?;
+    let worktree = Path::new(row.worktree.as_deref().unwrap_or(&row.repo));
+    let workdir = cx.driver().workdir(handle, worktree).ok()?;
+    let layout = MacLayout::find(&workdir, &TaskKey::new(&row.name))?;
+    let state = cx.state_dir().ok()?;
+    let seq = DENIALS_SEQ.fetch_add(1, Ordering::Relaxed);
+    let log = state.join(format!(
+        "denials-{}-{}-{seq}.log",
+        row.id.get(),
+        std::process::id()
+    ));
+    let script = denials::script(layout.root.as_str(), workdir.as_str(), DENIAL_MINUTES);
+    let spec = ExecSpec {
+        argv: vec!["sh".to_owned(), "-c".to_owned(), script],
+        env: Vec::new(),
+        cwd: None,
+        sync: SyncMode::None,
+        output: Some(Output::Log(log.clone())),
+        host_cwd: None,
+        class: None,
+    };
+    let ran = cx.driver().exec(handle, &spec, Deadline(DENIALS_DEADLINE));
+    let text = fs::read_to_string(&log);
+    let _ = fs::remove_file(&log);
+    match (ran, text) {
+        (Ok(ExecOutcome::Exited { code: 0 }), Ok(text)) => Some(
+            denials::parse(&text)
+                .iter()
+                .map(ToString::to_string)
+                .collect(),
+        ),
+        _ => None,
+    }
+}
+
 /// The task's open credential limits as views.
 fn attention(store: &Store, task: TaskId) -> Result<Vec<AttentionView>, CommandError> {
     Ok(store
@@ -132,6 +192,7 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
             pane: None,
             reports: None,
             proofs: None,
+            sandbox_denials: None,
         });
     };
     let row = store.latest_task_by_name(name)?.ok_or_else(|| {
@@ -159,6 +220,7 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
         pane: pane.filter(|_| req.pane),
         reports: None,
         proofs: proof_files(cx, &row),
+        sandbox_denials: sandbox_denials(cx, &row),
     })
 }
 
