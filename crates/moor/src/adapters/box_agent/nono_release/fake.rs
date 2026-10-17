@@ -49,12 +49,19 @@ pub(crate) fn offline_release() -> Arc<NonoRelease> {
 
 /// A gzip tarball holding one `nono` file.
 pub(crate) fn tarball(content: &[u8]) -> Vec<u8> {
+    tarball_of(&[("nono", content)])
+}
+
+/// A gzip tarball holding each `(name, content)` file.
+fn tarball_of(files: &[(&str, &[u8])]) -> Vec<u8> {
     let mut builder = tar::Builder::new(Vec::new());
-    let mut header = tar::Header::new_gnu();
-    header.set_size(u64::try_from(content.len()).unwrap());
-    header.set_mode(0o755);
-    header.set_cksum();
-    builder.append_data(&mut header, "nono", content).unwrap();
+    for (name, content) in files {
+        let mut header = tar::Header::new_gnu();
+        header.set_size(u64::try_from(content.len()).unwrap());
+        header.set_mode(0o755);
+        header.set_cksum();
+        builder.append_data(&mut header, name, *content).unwrap();
+    }
     let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
     gz.write_all(&builder.into_inner().unwrap()).unwrap();
     gz.finish().unwrap()
@@ -83,4 +90,25 @@ pub(crate) fn ready_release() -> Arc<NonoRelease> {
     let tarball = tarball(READY_BINARY);
     let fetch = Arc::new(FakeFetch::new(Ok(tarball.clone())));
     Arc::new(release_of(&fetch, &tarball))
+}
+
+/// The `gh` binary that `ready_release_with_gh` serves.
+pub(crate) const READY_GH: &[u8] = b"the gh binary";
+
+/// A release that serves `READY_BINARY` and `READY_GH` for Linux `x86_64` from one tarball.
+pub(crate) fn ready_release_with_gh() -> Arc<NonoRelease> {
+    let tarball = tarball_of(&[("nono", READY_BINARY), ("gh", READY_GH)]);
+    let fetch = Arc::new(FakeFetch::new(Ok(tarball.clone())));
+    let sha256: &'static str = Box::leak(sha256_hex(&tarball).into_boxed_str());
+    let asset = |name| Asset {
+        release: "https://example.test/release",
+        os: "Linux",
+        arch: "x86_64",
+        name,
+        sha256,
+    };
+    let release: &'static [Asset] = Box::leak(Box::new([asset("nono-test.tar.gz")]));
+    let gh: &'static [Asset] = Box::leak(Box::new([asset("gh-test.tar.gz")]));
+    let fetch: Arc<dyn Fetch> = fetch;
+    Arc::new(NonoRelease::with_assets(fetch, None, release).with_gh_assets(gh))
 }

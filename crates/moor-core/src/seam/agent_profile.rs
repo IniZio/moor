@@ -16,6 +16,8 @@ pub struct ProxyAddr {
     pub ca_pem: String,
     /// Non-secret environment pairs from the tool rules, already resolved.
     pub box_env: Vec<(String, String)>,
+    /// Whether a forge rule routes GitHub through the Proxy, so the agent gets `gh`.
+    pub forge: bool,
 }
 
 impl fmt::Debug for ProxyAddr {
@@ -24,6 +26,7 @@ impl fmt::Debug for ProxyAddr {
             .field("box_port", &self.box_port)
             .field("nonce", &"<redacted>")
             .field("box_env", &self.box_env)
+            .field("forge", &self.forge)
             .finish_non_exhaustive()
     }
 }
@@ -194,6 +197,7 @@ mod tests {
             nonce: Secret::new(NONCE.to_vec()),
             ca_pem: String::new(),
             box_env: Vec::new(),
+            forge: false,
         }
     }
 

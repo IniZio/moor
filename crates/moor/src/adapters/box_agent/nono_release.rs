@@ -11,6 +11,7 @@ use sha2::{Digest, Sha256};
 use ureq::tls::{RootCerts, TlsConfig, TlsProvider};
 use ureq::Agent;
 
+use self::gh_assets::GH_ASSETS;
 use super::sandbox::NONO_VERSION;
 
 /// Where the upstream release assets are published; only the asset the fork lacks is fetched here.
@@ -19,6 +20,9 @@ const UPSTREAM_RELEASE: &str = "https://github.com/nolabs-ai/nono/releases/downl
 /// Where the fork's release assets are published. The fork carries the passthrough phantom-header
 /// strip and the upstream extra CA that moor needs.
 const FORK_RELEASE: &str = "https://github.com/IniZio/nono/releases/download/v0.80.0-moor.1";
+
+/// The pinned gh release.
+pub(super) const GH_VERSION: &str = "2.102.0";
 
 /// Largest download or unpacked binary accepted.
 const MAX_BYTES: u64 = 64 * 1024 * 1024;
@@ -78,28 +82,57 @@ const ASSETS: &[Asset] = &[
     },
 ];
 
-/// Why the nono release could not be produced.
+/// A tool shipped in a release archive: what it is called, which version, and its binary's name.
+#[derive(Debug, Clone, Copy)]
+struct Tool {
+    /// Tool name, also the binary's file name in the archive.
+    name: &'static str,
+    /// Pinned version.
+    version: &'static str,
+}
+
+/// The nono sandbox.
+const NONO: Tool = Tool {
+    name: "nono",
+    version: NONO_VERSION,
+};
+
+/// The GitHub CLI.
+const GH: Tool = Tool {
+    name: "gh",
+    version: GH_VERSION,
+};
+
+/// Why a pinned release could not be produced.
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum ReleaseError {
     /// No pinned asset for this Box platform.
-    #[error("nono {NONO_VERSION} has no release for {os} {arch}")]
+    #[error("{tool} {version} has no release for {os} {arch}")]
     Unsupported {
+        /// Tool name.
+        tool: &'static str,
+        /// Tool version.
+        version: &'static str,
         /// `uname -s` of the Box.
         os: String,
         /// `uname -m` of the Box.
         arch: String,
     },
     /// The download does not match its pinned sha256.
-    #[error("the nono {NONO_VERSION} download {asset} failed its sha256 check")]
+    #[error("the {tool} {version} download {asset} failed its sha256 check")]
     Checksum {
+        /// Tool name.
+        tool: &'static str,
+        /// Tool version.
+        version: &'static str,
         /// Release file name.
         asset: String,
     },
     /// The download failed.
-    #[error("could not download nono {NONO_VERSION} on the host: {0}")]
+    #[error("could not download {0}")]
     Download(String),
-    /// The archive has no usable `nono` binary.
-    #[error("could not unpack nono {NONO_VERSION}: {0}")]
+    /// The archive has no usable binary.
+    #[error("could not unpack {0}")]
     Extract(String),
 }
 
@@ -142,8 +175,10 @@ pub(crate) struct NonoRelease {
     fetch: Arc<dyn Fetch>,
     /// Directory holding downloaded assets, if caching is on.
     cache: Option<PathBuf>,
-    /// Pinned assets by platform.
+    /// Pinned nono assets by platform.
     assets: &'static [Asset],
+    /// Pinned gh assets by platform.
+    gh_assets: &'static [Asset],
 }
 
 impl NonoRelease {
@@ -162,36 +197,73 @@ impl NonoRelease {
             fetch,
             cache,
             assets,
+            gh_assets: GH_ASSETS,
+        }
+    }
+
+    /// Like `self` with a different gh asset table.
+    #[cfg(test)]
+    pub(super) fn with_gh_assets(self, assets: &'static [Asset]) -> Self {
+        Self {
+            gh_assets: assets,
+            ..self
         }
     }
 
     /// The verified `nono` binary for the Box platform given by `uname -s` and `uname -m`.
     pub(crate) fn binary(&self, os: &str, arch: &str) -> Result<Vec<u8>, ReleaseError> {
-        let asset = self
-            .assets
+        self.tool_binary(NONO, self.assets, os, arch)
+    }
+
+    /// The verified `gh` binary for the Box platform given by `uname -s` and `uname -m`.
+    pub(super) fn gh_binary(&self, os: &str, arch: &str) -> Result<Vec<u8>, ReleaseError> {
+        self.tool_binary(GH, self.gh_assets, os, arch)
+    }
+
+    /// The binary of `tool` from the asset in `assets` that serves the platform.
+    fn tool_binary(
+        &self,
+        tool: Tool,
+        assets: &[Asset],
+        os: &str,
+        arch: &str,
+    ) -> Result<Vec<u8>, ReleaseError> {
+        let asset = assets
             .iter()
             .find(|a| a.os == os && a.arch == arch)
             .ok_or_else(|| ReleaseError::Unsupported {
+                tool: tool.name,
+                version: tool.version,
                 os: os.to_owned(),
                 arch: arch.to_owned(),
             })?;
+        let slot = format!("{}-v{}", tool.name, tool.version);
         let cached = self
             .cache
             .as_ref()
-            .map(|dir| dir.join(format!("nono-v{NONO_VERSION}")).join(asset.name));
-        let tarball = match cached.as_deref().and_then(|p| read_verified(p, asset)) {
+            .map(|dir| dir.join(slot).join(asset.name));
+        let archive = match cached.as_deref().and_then(|p| read_verified(p, asset)) {
             Some(bytes) => bytes,
-            None => self.download(asset, cached.as_deref())?,
+            None => self.download(tool, asset, cached.as_deref())?,
         };
-        extract(&tarball)
+        extract(tool, asset, &archive)
     }
 
     /// Fetches and verifies `asset`, then stores it at `cached`.
-    fn download(&self, asset: &Asset, cached: Option<&Path>) -> Result<Vec<u8>, ReleaseError> {
+    fn download(
+        &self,
+        tool: Tool,
+        asset: &Asset,
+        cached: Option<&Path>,
+    ) -> Result<Vec<u8>, ReleaseError> {
         let url = format!("{}/{}", asset.release, asset.name);
-        let bytes = self.fetch.get(&url).map_err(ReleaseError::Download)?;
+        let bytes = self.fetch.get(&url).map_err(|e| {
+            ReleaseError::Download(format!("{} {} on the host: {e}", tool.name, tool.version))
+        })?;
         if !matches_sum(&bytes, asset) {
             return Err(ReleaseError::Checksum {
+                tool: tool.name,
+                version: tool.version,
                 asset: asset.name.to_owned(),
             });
         }
@@ -236,26 +308,66 @@ fn store(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     })
 }
 
-/// The `nono` member of a gzip tarball.
-fn extract(tarball: &[u8]) -> Result<Vec<u8>, ReleaseError> {
-    let fail = |e: std::io::Error| ReleaseError::Extract(e.to_string());
+/// The binary of `tool` in `archive`, a zip or gzip tarball by the asset's file name.
+fn extract(tool: Tool, asset: &Asset, archive: &[u8]) -> Result<Vec<u8>, ReleaseError> {
+    let found = if Path::new(asset.name)
+        .extension()
+        .is_some_and(|e| e.eq_ignore_ascii_case("zip"))
+    {
+        unzip_member(archive, tool.name)
+    } else {
+        untar_member(archive, tool.name)
+    };
+    found
+        .map_err(|e| ReleaseError::Extract(format!("{} {}: {e}", tool.name, tool.version)))?
+        .ok_or_else(|| {
+            ReleaseError::Extract(format!(
+                "{} {}: the archive has no {} binary",
+                tool.name, tool.version, tool.name
+            ))
+        })
+}
+
+/// The first regular file named `member` in a gzip tarball.
+fn untar_member(tarball: &[u8], member: &str) -> std::io::Result<Option<Vec<u8>>> {
     let mut archive = tar::Archive::new(GzDecoder::new(tarball));
-    for entry in archive.entries().map_err(fail)? {
-        let entry = entry.map_err(fail)?;
-        let path = entry.path().map_err(fail)?;
-        if path.file_name().is_some_and(|n| n == "nono") && entry.header().entry_type().is_file() {
+    for entry in archive.entries()? {
+        let entry = entry?;
+        let path = entry.path()?;
+        if path.file_name().is_some_and(|n| n == member) && entry.header().entry_type().is_file() {
             let mut out = Vec::new();
-            entry.take(MAX_BYTES).read_to_end(&mut out).map_err(fail)?;
-            return Ok(out);
+            entry.take(MAX_BYTES).read_to_end(&mut out)?;
+            return Ok(Some(out));
         }
     }
-    Err(ReleaseError::Extract(
-        "the archive has no nono binary".to_owned(),
-    ))
+    Ok(None)
 }
+
+/// The first regular file named `member` in a zip.
+fn unzip_member(bytes: &[u8], member: &str) -> std::io::Result<Option<Vec<u8>>> {
+    let fail = |e: zip::result::ZipError| std::io::Error::other(e);
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).map_err(fail)?;
+    for index in 0..archive.len() {
+        let file = archive.by_index(index).map_err(fail)?;
+        if file.is_file()
+            && file
+                .name()
+                .is_ok_and(|n| n.rsplit('/').next() == Some(member))
+        {
+            let mut out = Vec::new();
+            file.take(MAX_BYTES).read_to_end(&mut out)?;
+            return Ok(Some(out));
+        }
+    }
+    Ok(None)
+}
+
+mod gh_assets;
 
 #[cfg(test)]
 pub(super) mod fake;
 
+#[cfg(test)]
+mod gh_tests;
 #[cfg(test)]
 mod tests;

@@ -74,6 +74,7 @@ fn req(s: &FakeSurface, proxy: bool) -> LaunchReq {
                 nonce: Secret::new(NONCE.as_bytes().to_vec()),
                 ca_pem: "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n".to_owned(),
                 box_env: Vec::new(),
+                forge: false,
             })
         }),
         origin: proxy.then(|| "git@github.com:o/n.git".to_owned()),
@@ -320,3 +321,5 @@ fn a_launch_with_no_environ_reports_the_home_step() {
     };
     assert_eq!(got, "home: the Box has no process environment");
 }
+
+mod gh;

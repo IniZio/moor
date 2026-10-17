@@ -18,6 +18,7 @@ fn relaunched(pane: &str, id: &str) -> SessionRef {
         worktree: PathBuf::from("/wt"),
         pane: Some(PaneRef::new(pane)),
         sandbox: None,
+        warnings: Vec::new(),
     }
 }
 

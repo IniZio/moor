@@ -12,7 +12,7 @@ use moor_core::domain::task::TaskState;
 use moor_core::seam::engine::{EngineError, LaunchReq, SessionRef};
 use moor_core::seam::surface::{PaneRef, WorkspaceRef};
 use moor_core::view::{AgentLaunchView, LaunchFailure};
-use moor_core::{StartReq, TaskId};
+use moor_core::{StartReq, TaskId, Warning};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -98,9 +98,15 @@ pub(super) fn begin(
         Err(e) => return record_failure(cx, store, id, &e),
     };
     match cx.engine().launch(launch) {
-        Ok(session) => {
+        Ok(mut session) => {
             for lease in leases {
                 store.hold_lease(lease)?;
+            }
+            for warning in std::mem::take(&mut session.warnings) {
+                cx.warn(Warning {
+                    code: warning.code,
+                    message: warning.message,
+                });
             }
             record_session(cx, store, row, launch, session)
         }

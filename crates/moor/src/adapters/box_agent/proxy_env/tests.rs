@@ -20,6 +20,7 @@ fn proxy() -> ProxyAddr {
         nonce: Secret::new(SENTINEL.to_vec()),
         ca_pem: CA.to_owned(),
         box_env: Vec::new(),
+        forge: false,
     }
 }
 

@@ -70,6 +70,11 @@ impl FakeDriver {
         self
     }
 
+    /// Makes the next `put_file` fail once with `e`, even mid-run.
+    pub(crate) fn set_fail_put(&self, e: DriverError) {
+        self.st().fail_put = Some(e);
+    }
+
     /// The next `connect_argv` fails once with `e`.
     pub(crate) fn fail_connect(self, e: DriverError) -> Self {
         self.st().fail_connect = Some(e);

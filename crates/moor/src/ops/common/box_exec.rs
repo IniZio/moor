@@ -3,6 +3,7 @@
 use std::path::Path;
 use std::time::Duration;
 
+use moor_core::config::proxy::{ResolvedRule, FORGE_CREDENTIAL};
 use moor_core::config::TaskSettings;
 use moor_core::domain::run::SyncMode;
 use moor_core::exec_env::{self, BoxCtx, ExecEnv, ProxyCtx, Purpose, RUN_DEADLINE};
@@ -66,12 +67,14 @@ pub(crate) fn proxy(
         rules: plan.rules,
     };
     let rule_env = box_env(&spec.rules);
+    let forge = forge_routed(&spec.rules);
     let ep = cx.proxy_host().ensure(&spec).map_err(|e| e.to_string())?;
     let addr = ProxyAddr {
         box_port: ep.box_port,
         nonce: ep.nonce,
         ca_pem: ep.ca_pem,
         box_env: exec_env::merged_env(repo_env, rule_env.clone()),
+        forge,
     };
     Ok(BoxProxy {
         task,
@@ -79,6 +82,11 @@ pub(crate) fn proxy(
         origin,
         rule_env,
     })
+}
+
+/// Whether a rule sends GitHub through the Proxy with the Task's forge token.
+fn forge_routed(rules: &[ResolvedRule]) -> bool {
+    rules.iter().any(|r| r.credential == FORGE_CREDENTIAL)
 }
 
 /// The variable names the `provider`'s platform puts in the Box that moor removes.

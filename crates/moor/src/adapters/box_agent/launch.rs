@@ -8,7 +8,7 @@ use moor_core::exec_env::ExecEnv;
 use moor_core::name::{BoxPath, NameError};
 use moor_core::seam::agent_profile::{AgentProfile, BoxSetup, LaunchCtx, ProxyAddr};
 use moor_core::seam::driver::{BoxStep, Driver, ExecOutcome, ExecSpec, StepDone};
-use moor_core::seam::engine::{EngineError, LaunchReq, SessionRef};
+use moor_core::seam::engine::{EngineError, LaunchNotice, LaunchReq, SessionRef};
 use moor_core::seam::proc::{Deadline, Tool};
 use moor_core::seam::surface::{PaneCmd, PaneRef, Surface};
 use moor_core::Secret;
@@ -29,6 +29,9 @@ const INSTALL_DEADLINE: Duration = Duration::from_secs(300);
 
 /// The Box's operating system and architecture, read when the launch has a Proxy.
 type Platform = Option<Result<(String, String), Failure>>;
+
+/// The pane a launch opened, and its notices.
+type Delivered = (PaneRef, Vec<LaunchNotice>);
 
 /// A failed step and why.
 struct Failure {
@@ -67,6 +70,7 @@ pub(super) fn launch(
             nonce: Secret::new(p.nonce.expose().to_vec()),
             ca_pem: p.ca_pem.clone(),
             box_env: p.box_env.clone(),
+            forge: p.forge,
         }),
         home,
     };
@@ -83,7 +87,7 @@ pub(super) fn launch(
         root,
     };
     match launch.deliver(&connect, platform) {
-        Ok(pane) => Ok(SessionRef {
+        Ok((pane, warnings)) => Ok(SessionRef {
             id: String::new(),
             handle: req.handle.clone(),
             workdir: req.workdir.clone(),
@@ -93,6 +97,7 @@ pub(super) fn launch(
                 .proxy
                 .is_some()
                 .then(|| format!("nono {}", sandbox::NONO_VERSION)),
+            warnings,
         }),
         Err(mut f) => {
             if let Err(c) = remove_cred(driver, req, (&cred, &tmp)) {
@@ -160,7 +165,7 @@ fn open_box(
     let environ = BoxPath::restore("/proc/self/environ").map_err(|e| fail("home", &e))?;
     let mut steps = vec![BoxStep::Peek(environ)];
     if req.proxy.is_some() {
-        steps.push(install::platform_step(&cred_dir(req)));
+        steps.push(install::platform_step(&req.dir_names().0));
     }
     let deadline = Deadline(INSTALL_DEADLINE);
     let mut done = driver
@@ -172,11 +177,6 @@ fn open_box(
         .is_some()
         .then(|| install::parse_platform(done.next()));
     Ok((user, platform))
-}
-
-/// The name of the credential directory under the Box user's home.
-fn cred_dir(req: &LaunchReq) -> String {
-    req.dir_names().0
 }
 
 /// What one launch works with.
@@ -228,7 +228,7 @@ impl Launch<'_> {
     }
 
     /// Puts the files in the Box and opens the tab.
-    fn deliver(&self, connect: &[String], platform: Platform) -> Result<PaneRef, Failure> {
+    fn deliver(&self, connect: &[String], platform: Platform) -> Result<Delivered, Failure> {
         let Self {
             surface,
             ctx,
@@ -238,7 +238,7 @@ impl Launch<'_> {
         } = self;
         let mut plan = Plan::default();
         let staged = self.plan(platform, &mut plan);
-        self.execute(connect, &plan)?;
+        let warnings = self.execute(connect, &plan)?;
         let Staged {
             sandboxed,
             hooks,
@@ -271,6 +271,7 @@ impl Launch<'_> {
                     env: Vec::new(),
                 },
             )
+            .map(|pane| (pane, warnings))
             .map_err(|e| fail("pane", &e))
     }
 }
@@ -385,6 +386,7 @@ fn remove_cred(
     }
 }
 
+mod gh;
 mod install;
 mod steps;
 
