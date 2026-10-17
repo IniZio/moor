@@ -11,7 +11,7 @@ use moor_core::exec_env::{Purpose, SETUP_LINE_DEADLINE};
 use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
 use moor_core::seam::proc::Deadline;
 use moor_core::view::SetupView;
-use moor_core::{BoxHandle, BoxPath, Warning};
+use moor_core::{BoxHandle, BoxPath, TaskId, Warning};
 
 use crate::cx::Cx;
 use crate::ops::common::box_exec::{self, BoxProxy, Site};
@@ -101,10 +101,11 @@ impl SetupRun {
 ///
 /// Sync is one-way, so after a failure the script's log is copied back from the Box; the
 /// failing line comes from there. The script gets the environment the agent gets in the Box,
-/// including the Proxy variables when `proxy` is set.
+/// including the Proxy variables when `proxy` is set. `task` is the Task the Box belongs to, so
+/// the script gets that Task's environment whether or not a Proxy started.
 #[allow(
     clippy::too_many_arguments,
-    reason = "the Box, its provider and workdir, worktree, settings, sync mode and Proxy"
+    reason = "the Box, its provider and workdir, worktree, settings, sync mode, Proxy and Task"
 )]
 pub(crate) fn run_setup(
     cx: &Cx,
@@ -115,6 +116,7 @@ pub(crate) fn run_setup(
     cfg: &TaskSettings,
     sync: SyncMode,
     proxy: Option<&BoxProxy>,
+    task: TaskId,
 ) -> SetupRun {
     if cfg.setup.is_empty() {
         return SetupRun::Skipped;
@@ -124,7 +126,7 @@ pub(crate) fn run_setup(
         provider,
         workdir: Some(workdir),
         worktree,
-        task: proxy.map(|p| p.task),
+        task: Some(task),
     };
     let purpose = Purpose::Setup {
         lines: cfg.setup.len(),

@@ -306,6 +306,7 @@ fn run_and_record(
         cfg,
         SyncMode::None,
         proxy.as_ref(),
+        id,
     );
     let setup_line = match run.outcome() {
         SetupOutcome::Failed { line } => Some(line),
