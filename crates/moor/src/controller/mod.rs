@@ -3,6 +3,7 @@
 pub mod attach;
 mod conn;
 mod progress;
+mod reap;
 mod settle;
 mod watch;
 mod web;
@@ -46,6 +47,7 @@ pub fn serve(env: &Env, config: &Path, stderr: impl Write + Send + 'static) -> u
             for line in Moor::reconcile_proxies(&running.env) {
                 log(&sink, &format!("proxy: {line}"));
             }
+            reap::spawn(&running.env, &sink);
             settle::spawn(
                 &running.env,
                 running.settle_every,
