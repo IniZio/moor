@@ -248,6 +248,14 @@ RS
 seatbelt_text allow-in-fake fail <<'RS'
 const R: &str = "(allow file-read*)";
 RS
+seatbelt_text allow-at-eol fail <<'RS'
+const R: &str = "(allow
+file-read*)";
+RS
+seatbelt_text allow-list-prose pass <<'RS'
+// (allow-list applied)
+fn f(allow: u8) {}
+RS
 seatbelt_text key-in-fake fail <<'RS'
 const K: &str = "unsafe_macos_seatbelt_rules";
 RS
