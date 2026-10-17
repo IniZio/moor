@@ -9,7 +9,7 @@ use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
 use moor_core::task_key::TaskKey;
 use moor_core::{BoxHandle, BoxPath, ProviderId, TaskId, TaskName};
 
-use super::parse::{classify, holder, Clash};
+use super::parse::{classify, holder, Clash, BEGIN, END};
 use super::{backend_up, HostSite};
 use crate::cx::Cx;
 use crate::store::lease::{LeaseKind, LeaseState};
@@ -88,6 +88,16 @@ fn exit(code: i32) -> ExecOutcome {
     ExecOutcome::Exited { code }
 }
 
+/// `out` as the Driver logs it for the `up` exec: crabbox banner, the framed command output,
+/// then the lines crabbox prints after a non-zero exit.
+fn logged(out: &str, code: i32) -> String {
+    format!(
+        "static SSH architecture observed=arm64 target=darwin\n{BEGIN}\n{out}{END} {code}\n\
+         command complete in 1.2s\nrun details provider=ssh lease=abc\nfailure digest\n  \
+         exit={code}\n  tail=see log\n"
+    )
+}
+
 #[test]
 fn up_runs_plain_compose_argv_in_the_workdir_without_the_sandbox() {
     let r = rig(FakeDriver::new());
@@ -96,10 +106,9 @@ fn up_runs_plain_compose_argv_in_the_workdir_without_the_sandbox() {
     assert_eq!(execs.len(), 1);
     let (handle, spec, _) = &execs[0];
     assert_eq!(handle, &r.handle);
-    assert_eq!(
-        spec.argv,
-        ["docker", "compose", "-p", "moor-demo", "up", "-d"]
-    );
+    assert_eq!(spec.argv[..2], ["sh", "-c"]);
+    assert_eq!(spec.argv.len(), 3);
+    assert!(spec.argv[2].contains("docker compose -p moor-demo up -d 2>&1"));
     assert_eq!(spec.cwd.as_ref(), Some(&r.workdir));
     assert!(spec.env.is_empty());
     assert!(spec.argv.iter().all(|a| !a.contains("nono")));
@@ -131,7 +140,7 @@ fn port_clash_names_the_port_and_the_holder() {
     let ps = "running on host sh -c docker ps\nmoor-holder\tother-web-1\tother\ncommand complete in 9ms\n";
     let r = rig(FakeDriver::new()
         .exec_results([Ok(exit(1)), Ok(exit(0))])
-        .exec_stdout([PORT_ERR, ps]));
+        .exec_stdout([&logged(PORT_ERR, 1), ps]));
     assert_eq!(
         up(&r).unwrap_err(),
         "host step backend: port 8080 is held by container \"other-web-1\" \
@@ -150,7 +159,7 @@ fn port_clash_names_the_port_and_the_holder() {
 fn port_clash_without_a_holder_still_names_the_port() {
     let r = rig(FakeDriver::new()
         .exec_results([Ok(exit(1)), Ok(exit(0))])
-        .exec_stdout([PORT_ERR, ""]));
+        .exec_stdout([&logged(PORT_ERR, 1), ""]));
     assert_eq!(
         up(&r).unwrap_err(),
         "host step backend: port 8080 is held by another process or container; \
@@ -162,7 +171,7 @@ fn port_clash_without_a_holder_still_names_the_port() {
 fn name_clash_names_the_container_and_its_holder() {
     let r = rig(FakeDriver::new()
         .exec_results([Ok(exit(1))])
-        .exec_stdout([NAME_ERR]));
+        .exec_stdout([&logged(NAME_ERR, 1)]));
     assert_eq!(
         up(&r).unwrap_err(),
         "host step backend: container name \"web\" is already in use by container \
@@ -174,12 +183,51 @@ fn name_clash_names_the_container_and_its_holder() {
 fn other_failure_shows_the_last_stderr_line() {
     let r = rig(FakeDriver::new()
         .exec_results([Ok(exit(1))])
-        .exec_stdout(["pulling\nno configuration file provided: not found\n"]));
+        .exec_stdout([&logged(
+            "pulling\nno configuration file provided: not found\n",
+            1,
+        )]));
     assert_eq!(
         up(&r).unwrap_err(),
         "host step backend: docker compose -p moor-demo up -d failed: \
          no configuration file provided: not found"
     );
+}
+
+#[test]
+fn unframed_log_fails_with_the_exit_and_no_crabbox_text() {
+    let r = rig(FakeDriver::new()
+        .exec_results([Ok(exit(3))])
+        .exec_stdout(["static SSH architecture observed=arm64\ncommand complete in 1s\n"]));
+    assert_eq!(
+        up(&r).unwrap_err(),
+        "host step backend: docker compose -p moor-demo up -d failed (exit 3)"
+    );
+}
+
+#[test]
+fn ps_that_exits_non_zero_is_ignored_even_with_a_holder_line() {
+    let ps = "moor-holder\tother-web-1\tother\n";
+    let r = rig(FakeDriver::new()
+        .exec_results([Ok(exit(1)), Ok(exit(1))])
+        .exec_stdout([&logged(PORT_ERR, 1), ps]));
+    assert_eq!(
+        up(&r).unwrap_err(),
+        "host step backend: port 8080 is held by another process or container; \
+         stop it or change the port"
+    );
+}
+
+#[test]
+fn port_token_must_be_all_digits() {
+    let cases = [
+        "(letter after) Bind for 0.0.0.0:80a failed: port is already allocated",
+        "(letter before) Bind for :x80 failed: port is already allocated",
+        "(both) Bind for host:8x0: failed: port is already allocated",
+    ];
+    for input in cases {
+        assert_eq!(classify(input), Clash::Other, "{input}");
+    }
 }
 
 #[test]

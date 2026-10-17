@@ -1,7 +1,7 @@
 //! Steps moor runs on the Mac host, outside the sandbox that setup, run and the agent share.
 //!
-//! The sandbox has no Docker socket and never gets one, so a repo's backend containers start
-//! here: a plain argv through the Driver, with no sandbox launcher in front of it.
+//! moor adds no Docker grant to the sandbox, so a repo's backend containers start here: a plain
+//! `sh -c` through the Driver, with no sandbox launcher in front of it.
 
 use std::fs::{DirBuilder, OpenOptions};
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
@@ -21,7 +21,7 @@ use crate::store::lease::LeaseKind;
 
 mod parse;
 
-use self::parse::{classify, holder, Clash, HOLDER_MARK};
+use self::parse::{classify, framed, holder, last_line, Clash, BEGIN, END, HOLDER_MARK};
 
 /// Wall-clock allowance for `docker compose up -d`, which may pull images.
 const UP_DEADLINE: Duration = Duration::from_mins(15);
@@ -64,24 +64,38 @@ pub(crate) fn backend_up(
         log_dir: cx.state_dir()?.join("host-steps"),
         id,
     };
-    let up = ["docker", "compose", "-p", &project, "up", "-d"];
-    let (outcome, log) = step.run("up", &up, UP_DEADLINE);
-    let reason = match outcome {
+    let script = format!(
+        "echo {BEGIN}; docker compose -p {project} up -d 2>&1; c=$?; echo {END} $c; exit $c"
+    );
+    let (outcome, log) = step.run("up", &["sh", "-c", &script], UP_DEADLINE);
+    let code = match outcome {
         Ok(ExecOutcome::Exited { code: 0 }) => {
             store.hold_lease(lease)?;
             return Ok(());
         }
-        Ok(ExecOutcome::Exited { .. }) => None,
-        Ok(ExecOutcome::Interrupted) => Some("interrupted".to_owned()),
-        Err(e) => Some(e.to_string()),
+        Ok(ExecOutcome::Exited { code }) => Ok(code),
+        Ok(ExecOutcome::Interrupted) => Err("interrupted".to_owned()),
+        Err(e) => Err(e.to_string()),
     };
-    let message = match (reason, classify(&log)) {
-        (Some(r), _) => failed(&project, &r),
-        (None, Clash::Port(port)) => port_message(&step, &port),
-        (None, Clash::Name { name, holder }) => name_message(&name, holder.as_deref()),
-        (None, Clash::Other) => failed(&project, log.lines().last().unwrap_or("no output")),
+    let message = match code {
+        Err(r) => failed(&project, &r),
+        Ok(code) => exit_message(&step, &project, code, &log),
     };
     Err(CommandError::new(ErrorKind::Failed, message))
+}
+
+/// The message for a start that exited non-zero, read from the command's framed output only.
+fn exit_message(step: &Step<'_>, project: &str, code: i32, log: &str) -> String {
+    let Some(out) = framed(log) else {
+        return format!(
+            "host step backend: docker compose -p {project} up -d failed (exit {code})"
+        );
+    };
+    match classify(&out) {
+        Clash::Port(port) => port_message(step, &port),
+        Clash::Name { name, holder } => name_message(&name, holder.as_deref()),
+        Clash::Other => failed(project, last_line(&out).unwrap_or("no output")),
+    }
 }
 
 /// The message for a start that failed for a reason other than a clash.

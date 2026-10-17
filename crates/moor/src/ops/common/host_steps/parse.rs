@@ -62,3 +62,31 @@ pub(super) fn holder(out: &str) -> Option<(String, Option<String>)> {
         (!project.is_empty()).then(|| project.to_owned()),
     ))
 }
+
+/// Marker line before the framed command output.
+pub(super) const BEGIN: &str = "moor-up-begin";
+
+/// Marker prefix of the line after the framed command output; the exit status follows.
+pub(super) const END: &str = "moor-up-end";
+
+/// What the command itself printed: the lines between the begin and end markers.
+///
+/// The Driver log also holds its own banner before and its run summary after, which are never
+/// read. `None` when either marker is missing.
+pub(super) fn framed(log: &str) -> Option<String> {
+    let mut lines = log.lines().skip_while(|l| *l != BEGIN).skip(1);
+    let mut out = String::new();
+    for l in lines.by_ref() {
+        if l.strip_prefix(END).is_some_and(|r| r.starts_with(' ')) {
+            return Some(out);
+        }
+        out.push_str(l);
+        out.push('\n');
+    }
+    None
+}
+
+/// The last non-blank line of `out`.
+pub(super) fn last_line(out: &str) -> Option<&str> {
+    out.lines().rev().find(|l| !l.trim().is_empty())
+}

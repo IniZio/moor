@@ -23,7 +23,13 @@ fn mac_driver() -> FakeDriver {
 }
 
 fn is_compose(argv: &[String]) -> bool {
-    argv.starts_with(&["docker".to_owned(), "compose".to_owned()])
+    argv.first().is_some_and(|a| a == "sh")
+        && argv.get(2).is_some_and(|s| s.contains("docker compose -p"))
+}
+
+/// A setup line, which is also an `sh` exec but not the compose one.
+fn is_setup(argv: &[String]) -> bool {
+    is_setup_line(argv) && !is_compose(argv)
 }
 
 fn all_execs(w: &World) -> Vec<(BoxHandle, ExecSpec, moor_core::seam::proc::Deadline)> {
@@ -40,13 +46,10 @@ fn a_mac_box_brings_the_backend_up_before_setup_runs() {
         .expect("a compose exec");
     let setup = execs
         .iter()
-        .position(|e| is_setup_line(&e.1.argv))
+        .position(|e| is_setup(&e.1.argv))
         .expect("a setup exec");
     assert!(up < setup, "{up} {setup}");
-    assert_eq!(
-        execs[up].1.argv,
-        ["docker", "compose", "-p", "moor-demo", "up", "-d"]
-    );
+    assert!(execs[up].1.argv[2].contains("docker compose -p moor-demo up -d"));
     assert!(execs[up].1.argv.iter().all(|a| !a.contains("nono")));
     let rows =
         w.cx.store()
@@ -130,7 +133,7 @@ fn a_port_clash_is_the_start_failure_and_setup_does_not_run() {
     results.extend([Ok(exit(1)), Ok(exit(0))]);
     let driver = mac_driver()
         .exec_results(results)
-        .exec_stdout([PORT_ERR, ""]);
+        .exec_stdout([&format!("moor-up-begin\n{PORT_ERR}moor-up-end 1\n"), ""]);
     let w = world_at(driver, repo.path());
     script_base_yaml(&w, Some(BACKEND));
     let err = run(&w.cx, &start_req()).unwrap_err();
@@ -140,5 +143,5 @@ fn a_port_clash_is_the_start_failure_and_setup_does_not_run() {
         "host step backend: port 8080 is held by another process or container; \
          stop it or change the port"
     );
-    assert!(all_execs(&w).iter().all(|e| !is_setup_line(&e.1.argv)));
+    assert!(all_execs(&w).iter().all(|e| !is_setup(&e.1.argv)));
 }
