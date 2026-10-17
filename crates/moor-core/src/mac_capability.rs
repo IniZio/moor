@@ -260,12 +260,12 @@ static XCODE_BUILD: &[Reasoned] = &[
     r(
         XB,
         Grant::PrefDomain("com.apple.dt.Xcode"),
-        "Xcode reads its preferences",
+        "Xcode reads and writes its preferences",
     ),
     r(
         XB,
         Grant::PrefDomain("com.apple.dt.xcodebuild"),
-        "xcodebuild reads its preferences",
+        "xcodebuild reads and writes its preferences",
     ),
 ];
 
@@ -274,7 +274,7 @@ static INTERFACE_BUILDER: &[Reasoned] = &[
     r(
         IB,
         Grant::PrefDomain("com.apple.ibtool"),
-        "ibtool writes its preference",
+        "ibtool reads and writes its preferences",
     ),
     r(
         IB,

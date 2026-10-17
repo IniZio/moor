@@ -66,9 +66,9 @@ toolchain write cache: # tools write caches to the cache directory
 toolchain read launch: # moor-written launch files are readable but not editable
 xcode-build write home:Library/Developer/Xcode # DerivedData and module cache
 xcode-build write home:Library/Caches # Xcode and clang write caches under the Box home
-xcode-build pref pref:com.apple.dt.Xcode # Xcode reads its preferences
-xcode-build pref pref:com.apple.dt.xcodebuild # xcodebuild reads its preferences
-interface-builder pref pref:com.apple.ibtool # ibtool writes its preference
+xcode-build pref pref:com.apple.dt.Xcode # Xcode reads and writes its preferences
+xcode-build pref pref:com.apple.dt.xcodebuild # xcodebuild reads and writes its preferences
+interface-builder pref pref:com.apple.ibtool # ibtool reads and writes its preferences
 interface-builder read login-home:Library/Developer/CoreSimulator # actool and ibtool start AssetCatalogSimulatorAgent through CoreSimulator
 interface-builder read login-home:Library/Developer/DVTDownloads # Metal toolchain download directory
 ";
@@ -95,9 +95,9 @@ toolchain write cache: # tools write caches to the cache directory
 toolchain read launch: # moor-written launch files are readable but not editable
 xcode-build write home:Library/Developer/Xcode # DerivedData and module cache
 xcode-build write home:Library/Caches # Xcode and clang write caches under the Box home
-xcode-build pref pref:com.apple.dt.Xcode # Xcode reads its preferences
-xcode-build pref pref:com.apple.dt.xcodebuild # xcodebuild reads its preferences
-interface-builder pref pref:com.apple.ibtool # ibtool writes its preference
+xcode-build pref pref:com.apple.dt.Xcode # Xcode reads and writes its preferences
+xcode-build pref pref:com.apple.dt.xcodebuild # xcodebuild reads and writes its preferences
+interface-builder pref pref:com.apple.ibtool # ibtool reads and writes its preferences
 interface-builder read login-home:Library/Developer/CoreSimulator # actool and ibtool start AssetCatalogSimulatorAgent through CoreSimulator
 interface-builder read login-home:Library/Developer/DVTDownloads # Metal toolchain download directory
 ios-simulator write sim: # the simulator device set of the Box holds device state
