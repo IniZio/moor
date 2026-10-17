@@ -17,7 +17,7 @@ pub struct MacTask<'a> {
 }
 
 /// `(name, directory, relative path)` for the variables that point into the Task directories.
-const fn rooted<'a>(m: &'a MacTask<'_>) -> [(&'static str, &'a BoxPath, &'static str); 13] {
+const fn rooted<'a>(m: &'a MacTask<'_>) -> [(&'static str, &'a BoxPath, &'static str); 12] {
     let (home, cache) = (&m.layout.home, &m.layout.cache);
     [
         ("YARN_CACHE_FOLDER", cache, "yarn"),
@@ -26,8 +26,8 @@ const fn rooted<'a>(m: &'a MacTask<'_>) -> [(&'static str, &'a BoxPath, &'static
         ("COREPACK_HOME", cache, "corepack"),
         ("CP_HOME_DIR", cache, "cocoapods"),
         ("CP_CACHE_DIR", cache, "cocoapods/cache"),
+        // GEM_PATH is left unset so Ruby keeps its own gem directories.
         ("GEM_HOME", cache, "gem"),
-        ("GEM_PATH", cache, "gem"),
         ("GEM_SPEC_CACHE", cache, "gem/specs"),
         ("PUB_CACHE", cache, "pub"),
         ("XDG_CACHE_HOME", cache, "xdg"),
