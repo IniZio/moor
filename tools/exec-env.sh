@@ -5,7 +5,8 @@ set -euo pipefail
 if [ -n "${1:-${EXEC_ENV_ROOT:-}}" ]; then
   root="${1:-$EXEC_ENV_ROOT}"
 else
-  cd "$(git rev-parse --show-toplevel)"
+  . "$(dirname "$0")/lib/repo-root.sh"
+  cd_repo_root
   root=crates
 fi
 vars='HTTPS_PROXY|HTTP_PROXY|https_proxy|http_proxy|SSL_CERT_FILE|CURL_CA_BUNDLE|REQUESTS_CA_BUNDLE|GIT_SSL_CAINFO|NODE_EXTRA_CA_CERTS|NODE_USE_ENV_PROXY|GIT_CONFIG_COUNT|YARN_HTTPS_PROXY|YARN_HTTP_PROXY|YARN_CA_FILE_PATH|YARN_CACHE_FOLDER|YARN_GLOBAL_FOLDER|npm_config_cache'
