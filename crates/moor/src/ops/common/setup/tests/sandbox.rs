@@ -181,3 +181,69 @@ fn a_planted_denial_line_loses_escapes_and_nonce_and_is_capped() {
     );
     assert!(!text.contains('\x1b') && !text.contains(nonce), "{text}");
 }
+
+const SPLIT_NONCE: &str = "q7v2k9x4m5n6p8r3t1w0";
+
+fn shows_nonce_part(msg: &str) -> bool {
+    let n: Vec<char> = SPLIT_NONCE.chars().collect();
+    n.windows(8)
+        .any(|w| msg.contains(&w.iter().collect::<String>()))
+}
+
+fn denial_line(target: &str) -> String {
+    KNOWN_HOSTS.replace("/Users/newman/.ssh/known_hosts", target)
+}
+
+fn describe_denial(target: &str) -> String {
+    let found = moor_core::boxscript::denials::parse(&denial_line(target));
+    assert_eq!(found.len(), 1, "{target}");
+    denials::describe(&found, "", Some(SPLIT_NONCE.as_bytes()))
+}
+
+fn describe_text(text: &str) -> String {
+    denials::describe(&[], text, Some(SPLIT_NONCE.as_bytes()))
+}
+
+fn straddling(prefix_chars: usize) -> String {
+    format!("{}{SPLIT_NONCE}tail", "/p".repeat(prefix_chars / 2))
+}
+
+#[test]
+fn a_nonce_straddling_the_cap_in_a_denial_is_not_shown() {
+    for prefix in 270..310 {
+        let msg = describe_denial(&straddling(prefix));
+        assert!(!shows_nonce_part(&msg), "{prefix}: {msg}");
+        let line = msg.lines().last().unwrap().trim_start();
+        assert!(line.chars().count() <= 300, "{prefix}: {}", line.len());
+    }
+}
+
+#[test]
+fn a_nonce_split_by_a_control_char_in_a_denial_is_not_shown() {
+    for mid in ["\x01", "\x1b[0m"] {
+        let (a, b) = SPLIT_NONCE.split_at(9);
+        let msg = describe_denial(&format!("/p/{a}{mid}{b}"));
+        assert!(!shows_nonce_part(&msg), "{msg:?}");
+        assert!(!msg.chars().any(|c| c == '\x1b' || c == '\x01'), "{msg:?}");
+    }
+}
+
+#[test]
+fn a_nonce_straddling_the_cap_in_sandbox_text_is_not_shown() {
+    for prefix in 270..310 {
+        let msg = describe_text(&straddling(prefix));
+        assert!(!shows_nonce_part(&msg), "{prefix}: {msg}");
+        let line = msg.strip_prefix("\nsandbox: ").unwrap();
+        assert!(line.chars().count() <= 300, "{prefix}: {}", line.len());
+    }
+}
+
+#[test]
+fn a_nonce_split_by_a_control_char_in_sandbox_text_is_not_shown() {
+    for mid in ["\x01", "\x1b[0m"] {
+        let (a, b) = SPLIT_NONCE.split_at(9);
+        let msg = describe_text(&format!("nono: {a}{mid}{b}"));
+        assert!(!shows_nonce_part(&msg), "{msg:?}");
+        assert!(!msg.chars().any(|c| c == '\x1b' || c == '\x01'), "{msg:?}");
+    }
+}

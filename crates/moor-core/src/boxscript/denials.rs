@@ -194,7 +194,7 @@ case "$p" in (''|*[!0-9]*) p=0 ;; esac
 #[must_use]
 pub fn parse(stdout: &str) -> Vec<Denial> {
     let split = split_all(stdout);
-    cap(merge(split.setup.into_iter().chain(split.live)))
+    cap_denials(merge(split.setup.into_iter().chain(split.live)))
 }
 
 /// The script output of [`script`] split by section; each list deduplicated and capped like [`parse`].
@@ -202,8 +202,8 @@ pub fn parse(stdout: &str) -> Vec<Denial> {
 pub fn parse_split(stdout: &str) -> Split {
     let split = split_all(stdout);
     Split {
-        setup: cap(merge(split.setup)),
-        live: cap(merge(split.live)),
+        setup: cap_denials(merge(split.setup)),
+        live: cap_denials(merge(split.live)),
     }
 }
 
@@ -257,10 +257,9 @@ fn bound(text: &str) -> String {
     text.chars().take(TARGET_KEEP_CHARS).collect()
 }
 
-/// `text` safe to show: ANSI escape sequences (CSI and OSC) and other control characters removed
-/// (tab kept as a space), whitespace runs collapsed, and cut to `DENIAL_LINE_CHARS` characters ending in `…`.
+/// `text` with ANSI escape sequences (CSI and OSC) and other control characters removed (tab and newline become a space) and whitespace runs collapsed; no length cap.
 #[must_use]
-pub fn clean(text: &str) -> String {
+pub fn strip(text: &str) -> String {
     let mut kept = String::new();
     let mut chars = text.chars().peekable();
     while let Some(c) = chars.next() {
@@ -286,13 +285,24 @@ pub fn clean(text: &str) -> String {
             _ => {}
         }
     }
-    let collapsed = kept.split_whitespace().collect::<Vec<_>>().join(" ");
-    if collapsed.chars().count() <= DENIAL_LINE_CHARS {
-        return collapsed;
+    kept.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// `text` cut to `DENIAL_LINE_CHARS` characters, ending in `…` when cut.
+#[must_use]
+pub fn cap(text: &str) -> String {
+    if text.chars().count() <= DENIAL_LINE_CHARS {
+        return text.to_owned();
     }
-    let mut cut: String = collapsed.chars().take(DENIAL_LINE_CHARS - 1).collect();
+    let mut cut: String = text.chars().take(DENIAL_LINE_CHARS - 1).collect();
     cut.push('…');
     cut
+}
+
+/// `text` safe to show when it needs no redaction: `cap(&strip(text))`.
+#[must_use]
+pub fn clean(text: &str) -> String {
+    cap(&strip(text))
 }
 
 /// Whether the operation can block a command, as opposed to preference or mach lookups.
@@ -303,7 +313,7 @@ fn is_blocking(operation: &str) -> bool {
 }
 
 /// Keeps at most `DENIAL_LIMIT`: the latest blocking ones first, then the latest others; oldest first.
-fn cap(denials: Vec<Denial>) -> Vec<Denial> {
+fn cap_denials(denials: Vec<Denial>) -> Vec<Denial> {
     if denials.len() <= DENIAL_LIMIT {
         return denials;
     }

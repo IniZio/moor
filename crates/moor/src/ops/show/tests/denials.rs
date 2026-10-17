@@ -119,3 +119,65 @@ fn nonzero_exit_leaves_denials_none() {
     ]));
     assert!(v.sandbox_denials.is_none());
 }
+
+const SPLIT_NONCE: &str = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-abcde";
+
+/// Show task `a` with proxy nonce `SPLIT_NONCE`; both the setup and live lists get one denial per
+/// target. Returns the view.
+fn show_with_nonce(targets: &[String]) -> moor_core::view::ShowView {
+    let line = |t: &String| {
+        format!("2026-01-01 00:00:00.0 Sandbox: git(42) deny(1) file-write-create /{t}\n")
+    };
+    let mut out = String::from("moor-denials: report\n");
+    out.extend(targets.iter().map(line));
+    out.push_str("moor-denials: log\n");
+    out.extend(targets.iter().map(line));
+    let dir = tempfile::tempdir().unwrap();
+    let driver = Arc::new(
+        FakeDriver::new()
+            .work_root(MAC_ROOT)
+            .exec_stdout(["", out.as_str()]),
+    );
+    let cx = cx(dir.path(), &driver);
+    let id = add(&cx, "a");
+    ready_box(&cx, &driver, id);
+    let nonce = Secret::new(SPLIT_NONCE.as_bytes().to_vec());
+    let reserved =
+        cx.store()
+            .unwrap()
+            .reserve(id, &nonce, cx.rng(), crate::proxy::supervisor::LEASE);
+    assert!(reserved.is_ok());
+    run(&cx, &req(Some("a"), None)).unwrap()
+}
+
+#[test]
+fn nonce_split_by_junk_is_still_redacted() {
+    let (a, b) = SPLIT_NONCE.split_at(3);
+    let targets = [format!("{a}\x01{b}"), format!("{a}\x1b[0m{b}")];
+    let v = show_with_nonce(&targets);
+    let json = serde_json::to_string(&v).unwrap();
+    assert!(!json.contains(SPLIT_NONCE), "{json}");
+    for list in [v.sandbox_denials.unwrap(), v.setup_denials.unwrap()] {
+        assert_eq!(list.len(), 2, "{list:?}");
+        for line in &list {
+            assert!(!line.contains(SPLIT_NONCE), "{line:?}");
+            assert!(line.contains(super::super::REDACTED), "{line:?}");
+        }
+    }
+}
+
+#[test]
+fn nonce_straddling_the_cap_leaves_no_long_fragment() {
+    let target = format!("{}{SPLIT_NONCE}", "p".repeat(DENIAL_LINE_CHARS - 10));
+    let v = show_with_nonce(&[target]);
+    let chars: Vec<char> = SPLIT_NONCE.chars().collect();
+    for list in [v.sandbox_denials.unwrap(), v.setup_denials.unwrap()] {
+        assert_eq!(list.len(), 1, "{list:?}");
+        let line = list.first().unwrap();
+        assert!(line.chars().count() <= DENIAL_LINE_CHARS, "{line:?}");
+        for w in chars.windows(8) {
+            let frag: String = w.iter().collect();
+            assert!(!line.contains(&frag), "{frag} in {line:?}");
+        }
+    }
+}

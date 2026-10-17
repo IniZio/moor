@@ -4,13 +4,15 @@ use std::fmt::Write as _;
 use std::path::Path;
 use std::time::Duration;
 
-use moor_core::boxscript::denials::{from_report, parse, window_script, Denial, SETUP_REPORT_REL};
+use moor_core::boxscript::denials::{
+    cap, from_report, parse, strip, window_script, Denial, SETUP_REPORT_REL,
+};
 use moor_core::domain::run::SyncMode;
 use moor_core::seam::driver::{ExecOutcome, ExecSpec};
 use moor_core::seam::proc::{Deadline, Output};
 use moor_core::{BoxHandle, BoxPath};
 
-use super::{fetch_box_file, tidy};
+use super::fetch_box_file;
 use crate::cx::Cx;
 use crate::ops::show::redact_nonce;
 
@@ -78,9 +80,9 @@ fn window(cx: &Cx, handle: &BoxHandle, workdir: &BoxPath, worktree: &Path) -> Ve
     }
 }
 
-/// Words the denials, else nono's text, for the warning; each line is tidied and loses the nonce.
+/// Words the denials, else nono's text, for the warning; each line is stripped, loses the nonce, then is capped.
 pub(super) fn describe(denials: &[Denial], text: &str, nonce: Option<&[u8]>) -> String {
-    let clean = |l: &str| redact_nonce(&tidy(l), nonce);
+    let clean = |l: &str| cap(&redact_nonce(&strip(l), nonce));
     let mut out = String::new();
     if denials.is_empty() {
         let text: Vec<String> = text

@@ -161,7 +161,7 @@ fn sandbox_denials(cx: &Cx, row: &TaskRow) -> Option<SandboxDenials> {
             let nonce = proxy.as_ref().map(|r| r.nonce.expose());
             let tidy = |list: Vec<denials::Denial>| -> Vec<String> {
                 list.iter()
-                    .map(|d| denials::clean(&redact_nonce(&d.to_string(), nonce)))
+                    .map(|d| denials::cap(&redact_nonce(&denials::strip(&d.to_string()), nonce)))
                     .collect()
             };
             let split = denials::parse_split(&text);
