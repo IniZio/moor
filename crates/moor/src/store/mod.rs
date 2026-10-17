@@ -19,6 +19,7 @@ pub(crate) const STORE_FILE: &str = "moor.db";
 mod agent;
 mod apply;
 pub(crate) mod lease;
+mod migrate;
 mod open;
 mod proxy;
 mod reads;
@@ -274,8 +275,7 @@ fn init_schema(conn: &mut Connection) -> Result<(), StoreError> {
     } else {
         tx.execute_batch(SCHEMA_SQL)?;
     }
-    tx.execute_batch(slack::SLACK_SQL)?;
-    tx.execute_batch(lease::LEASE_SQL)?;
+    migrate::tables(&tx)?;
     tx.commit()?;
     Ok(())
 }

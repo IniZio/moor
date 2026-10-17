@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use moor_core::domain::decision::{Decision, NewTask};
-use moor_core::seam::clock::Ts;
+use moor_core::seam::clock::{Clock, Ts};
 use moor_core::{TaskId, TaskName};
 
 use super::{LeaseKind, LeaseState, ProcessIds};
@@ -160,4 +160,91 @@ fn drop_removes_only_that_row() {
     let ids: Vec<_> = store.all_leases().unwrap().iter().map(|r| r.id).collect();
     assert_eq!(ids, vec![one, three]);
     assert_eq!(store.leases(a).unwrap().len(), 1);
+}
+
+#[test]
+fn new_lease_has_no_attempts_or_failure() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(dir.path());
+    let t = add(&store, "a");
+    store.plan_lease(t, LeaseKind::BoxDir, "/b").unwrap();
+    let row = &store.leases(t).unwrap()[0];
+    assert_eq!(row.attempts, 0);
+    assert_eq!(row.failure, None);
+}
+
+#[test]
+fn record_attempt_counts_and_sets_or_clears_failure() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(dir.path());
+    let t = add(&store, "a");
+    let id = store.plan_lease(t, LeaseKind::Compose, "proj").unwrap();
+    store
+        .record_attempt(id, Some("compose down: exit 1"))
+        .unwrap();
+    store
+        .record_attempt(id, Some("compose down: timeout"))
+        .unwrap();
+    let row = &store.all_leases().unwrap()[0];
+    assert_eq!(row.attempts, 2);
+    assert_eq!(row.failure.as_deref(), Some("compose down: timeout"));
+    store.record_attempt(id, None).unwrap();
+    let row = &store.leases(t).unwrap()[0];
+    assert_eq!(row.attempts, 3);
+    assert_eq!(row.failure, None);
+}
+
+#[test]
+fn record_attempt_bumps_updated_at_and_survives_reopen() {
+    let dir = tempfile::tempdir().unwrap();
+    let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
+    let store = Store::open(&dir.path().join("moor.db"), clock.clone()).unwrap();
+    let t = add(&store, "a");
+    let id = store.plan_lease(t, LeaseKind::Home, "/h").unwrap();
+    clock.sleep(std::time::Duration::from_millis(500));
+    store.record_attempt(id, Some("busy")).unwrap();
+    assert_eq!(
+        store.leases(t).unwrap()[0].updated_at,
+        Ts::from_millis(1_500)
+    );
+    drop(store);
+    let row = open(dir.path()).leases(t).unwrap().remove(0);
+    assert_eq!((row.attempts, row.failure.as_deref()), (1, Some("busy")));
+}
+
+#[test]
+fn old_lease_table_gains_attempt_columns_on_open() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(dir.path());
+    let t = add(&store, "a");
+    drop(store);
+    // The table as earlier builds created it: no `attempts`, no `failure`.
+    let conn = rusqlite::Connection::open(dir.path().join("moor.db")).unwrap();
+    conn.execute_batch(
+        "DROP TABLE box_lease;
+         CREATE TABLE box_lease (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           task INTEGER NOT NULL REFERENCES tasks(id),
+           kind TEXT NOT NULL, key TEXT NOT NULL, state TEXT NOT NULL,
+           booted INTEGER NOT NULL DEFAULT 0,
+           pgid INTEGER, sid INTEGER, root_pid INTEGER, root_start INTEGER,
+           size_at_release INTEGER,
+           created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+           UNIQUE(task, kind, key));",
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO box_lease (task, kind, key, state, created_at, updated_at)
+         VALUES (?, 'home', '/h', 'planned', 1, 1)",
+        [t.get()],
+    )
+    .unwrap();
+    drop(conn);
+    let store = open(dir.path());
+    let row = store.leases(t).unwrap().remove(0);
+    assert_eq!((row.attempts, row.failure.as_deref()), (0, None));
+    store.record_attempt(row.id, Some("busy")).unwrap();
+    drop(store);
+    let row = open(dir.path()).leases(t).unwrap().remove(0);
+    assert_eq!((row.attempts, row.failure.as_deref()), (1, Some("busy")));
 }

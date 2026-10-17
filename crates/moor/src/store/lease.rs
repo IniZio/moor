@@ -1,10 +1,5 @@
 //! Records of Box resources, written before creation so cleanup works from a record.
 
-#![cfg_attr(
-    not(test),
-    expect(dead_code, reason = "read by Box release, not yet wired")
-)]
-
 use moor_core::seam::clock::Ts;
 use moor_core::TaskId;
 use rusqlite::{params, Connection, Row};
@@ -22,6 +17,8 @@ CREATE TABLE IF NOT EXISTS box_lease (
   booted INTEGER NOT NULL DEFAULT 0,
   pgid INTEGER, sid INTEGER, root_pid INTEGER, root_start INTEGER,
   size_at_release INTEGER,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  failure TEXT,
   created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
   UNIQUE(task, kind, key));
 CREATE INDEX IF NOT EXISTS box_lease_task ON box_lease(task);
@@ -29,7 +26,7 @@ CREATE INDEX IF NOT EXISTS box_lease_task ON box_lease(task);
 
 /// Columns read into a `LeaseRow`, in `row` order.
 const COLUMNS: &str = "id, task, kind, key, state, booted, pgid, sid, root_pid, root_start, \
-                       size_at_release, updated_at";
+                       size_at_release, updated_at, attempts, failure";
 
 /// What a leased resource is; `key` means a path, UDID, project or tag by kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -153,6 +150,10 @@ pub(crate) struct LeaseRow {
     pub size_at_release: Option<u64>,
     /// Last change time.
     pub updated_at: Ts,
+    /// Release attempts made so far.
+    pub attempts: u32,
+    /// Summary of the last failed release step, if any.
+    pub failure: Option<String>,
 }
 
 impl Store {
@@ -186,11 +187,13 @@ impl Store {
     }
 
     /// Record whether a simulator is booted; returns whether the row exists.
+    #[cfg_attr(not(test), expect(dead_code, reason = "not yet read outside tests"))]
     pub(crate) fn set_booted(&self, id: LeaseId, booted: bool) -> Result<bool, StoreError> {
         self.update(id, "booted = ?", params![i64::from(booted)])
     }
 
     /// Record process identity; returns whether the row exists.
+    #[cfg_attr(not(test), expect(dead_code, reason = "not yet read outside tests"))]
     pub(crate) fn record_process(&self, id: LeaseId, ids: ProcessIds) -> Result<bool, StoreError> {
         self.update(
             id,
@@ -199,7 +202,25 @@ impl Store {
         )
     }
 
+    /// Count one release attempt and set `failure` to its summary (`None` clears it).
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "first used by the Box release op")
+    )]
+    pub(crate) fn record_attempt(
+        &self,
+        id: LeaseId,
+        failure: Option<&str>,
+    ) -> Result<(), StoreError> {
+        self.update(id, "attempts = attempts + 1, failure = ?", params![failure])?;
+        Ok(())
+    }
+
     /// Delete the row; call only after release is verified. Returns whether a row was deleted.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "first used by the Box release op")
+    )]
     pub(crate) fn drop_lease(&self, id: LeaseId) -> Result<bool, StoreError> {
         let conn = self.writer()?;
         let changed = conn.execute("DELETE FROM box_lease WHERE id = ?", [id.0])?;
@@ -208,6 +229,10 @@ impl Store {
     }
 
     /// Leases of `task`, by id.
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "first used by the Box release op")
+    )]
     pub(crate) fn leases(&self, task: TaskId) -> Result<Vec<LeaseRow>, StoreError> {
         let conn = self.reader()?;
         query(
@@ -218,6 +243,7 @@ impl Store {
     }
 
     /// Every lease, by id.
+    #[cfg_attr(not(test), expect(dead_code, reason = "not yet read outside tests"))]
     pub(crate) fn all_leases(&self) -> Result<Vec<LeaseRow>, StoreError> {
         let conn = self.reader()?;
         query(
@@ -287,6 +313,8 @@ fn row(r: &Row<'_>) -> Result<LeaseRow, StoreError> {
         process,
         size_at_release: size.and_then(|s| u64::try_from(s).ok()),
         updated_at: Ts::from_millis(r.get(11)?),
+        attempts: u32::try_from(r.get::<_, i64>(12)?).unwrap_or(u32::MAX),
+        failure: r.get(13)?,
     })
 }
 
