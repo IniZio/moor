@@ -33,8 +33,8 @@ impl Moor {
         wire::reconcile_proxies(env)
     }
 
-    /// Releases the Box leases no close will: those of closed or rejected Tasks, and of Tasks
-    /// whose owner is gone. Returns one log line per Task acted on or left; open Tasks are skipped.
+    /// Releases the Box leases no close will: those of closed or rejected Tasks. Open Tasks are
+    /// never reaped. Returns one log line per Task acted on or left.
     #[must_use]
     pub fn reap_leases(&self) -> Vec<String> {
         ops::reap::run(&self.cx).unwrap_or_else(|e| vec![e.error.to_string()])

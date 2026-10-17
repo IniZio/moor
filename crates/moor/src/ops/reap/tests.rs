@@ -1,4 +1,4 @@
-//! The reaper releases orphan leases of closed and rejected Tasks, leaves open Tasks alone and retries failed rows after their backoff.
+//! The reaper releases orphan leases of closed and rejected Tasks, leaves open Tasks alone, drops rows of a Task that never had a Box and holds a Task back until every row's backoff has passed.
 #![allow(clippy::indexing_slicing, reason = "test assertions")]
 
 use std::sync::Arc;
@@ -8,11 +8,12 @@ use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
 use moor_core::seam::clock::{Clock, Ts};
-use moor_core::seam::driver::{AcquireReq, Driver, ExecOutcome};
-use moor_core::{BoxHandle, ProviderId, TaskId, TaskName};
+use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
+use moor_core::{ProviderId, TaskId, TaskName};
 
 use super::run;
 use crate::cx::Cx;
+use crate::ops::common::boxlock::{BoxLock, WAIT};
 use crate::ops::common::release::testkit::framed;
 use crate::store::lease::LeaseKind;
 use crate::testing::clock::FakeClock;
@@ -136,7 +137,7 @@ fn a_closed_task_has_its_leases_released_and_dropped() {
 }
 
 #[test]
-fn a_rejected_task_with_no_box_keeps_its_rows_and_says_so() {
+fn a_rejected_task_with_no_box_has_its_rows_dropped_and_says_so_once() {
     let f = fx(driver(0));
     let store = f.cx.store().unwrap();
     let id = store
@@ -157,9 +158,11 @@ fn a_rejected_task_with_no_box_keeps_its_rows_and_says_so() {
     let state = store.task(id).unwrap().unwrap().state;
     assert_eq!(state, TaskState::Rejected);
     let lines = run(&f.cx).unwrap();
-    assert_eq!(rows(&f, id), 1);
-    assert!(lines[0].contains("no Box handle"), "{lines:?}");
+    assert_eq!(rows(&f, id), 0);
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert!(lines[0].contains("no Box ever existed"), "{lines:?}");
     assert_eq!(released(&f), 0);
+    assert!(run(&f.cx).unwrap().is_empty());
 }
 
 #[test]
@@ -178,12 +181,13 @@ fn an_open_task_is_never_touched_even_with_failed_rows() {
 }
 
 #[test]
-fn a_failed_row_waits_out_its_backoff_then_is_retried() {
-    let f = fx(driver(1));
+fn a_driver_failure_backs_rows_off_then_the_task_is_retried() {
+    let f = fx(driver(0).fail_release(DriverError::Failed {
+        summary: "boom".into(),
+    }));
     let id = task(&f, "a");
     end(&f, id, TaskInput::Close);
     let first = run(&f.cx).unwrap();
-    assert_eq!(first.len(), 1);
     assert!(first[0].contains("will retry"), "{first:?}");
     assert_eq!(rows(&f, id), 1);
 
@@ -191,16 +195,65 @@ fn a_failed_row_waits_out_its_backoff_then_is_retried() {
     assert_eq!(released(&f), 1);
 
     f.clock.sleep(Duration::from_mins(11));
-    // The fake driver forgets a released Box; a real one can leave it running.
-    f.driver.revive(&BoxHandle::new("box-1"));
     let again = run(&f.cx).unwrap();
     assert!(again[0].contains("released"), "{again:?}");
     assert_eq!(rows(&f, id), 0);
+    assert_eq!(released(&f), 2);
+}
+
+#[test]
+fn two_runs_inside_the_backoff_release_the_box_once() {
+    let f = fx(driver(0).fail_release_always(DriverError::Failed {
+        summary: "boom".into(),
+    }));
+    let id = task(&f, "a");
+    end(&f, id, TaskInput::Close);
+    run(&f.cx).unwrap();
+    f.clock.sleep(Duration::from_mins(1));
+    assert!(run(&f.cx).unwrap().is_empty());
+    assert_eq!(released(&f), 1);
+    assert_eq!(rows(&f, id), 1);
+}
+
+#[test]
+fn a_failed_row_holds_back_the_whole_task_until_its_backoff_passes() {
+    let f = fx(driver(0));
+    let id = task(&f, "a");
+    let store = f.cx.store().unwrap();
+    store.plan_lease(id, LeaseKind::Compose, "other").unwrap();
+    let failed = store.leases(id).unwrap()[0].id;
+    store.record_attempt(failed, Some("boom")).unwrap();
+    end(&f, id, TaskInput::Close);
+
+    assert!(run(&f.cx).unwrap().is_empty());
+    assert_eq!(released(&f), 0);
+    assert_eq!(rows(&f, id), 2);
+
+    f.clock.sleep(Duration::from_mins(11));
+    let lines = run(&f.cx).unwrap();
+    assert_eq!(released(&f), 1);
+    assert!(lines[0].contains("released"), "{lines:?}");
+}
+
+#[test]
+fn a_task_whose_box_lock_is_held_is_skipped_with_its_rows_kept() {
+    let f = fx(driver(0));
+    let id = task(&f, "a");
+    end(&f, id, TaskInput::Close);
+    let _held =
+        BoxLock::acquire(f.cx.clock(), f.cx.state_dir().unwrap(), id, "close", WAIT).unwrap();
+    let lines = run(&f.cx).unwrap();
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert!(lines[0].contains("skipped"), "{lines:?}");
+    assert_eq!(rows(&f, id), 1);
+    assert_eq!(released(&f), 0);
 }
 
 #[test]
 fn one_failing_task_does_not_block_another() {
-    let f = fx(driver(1));
+    let f = fx(driver(0).fail_release(DriverError::Failed {
+        summary: "boom".into(),
+    }));
     let bad = task(&f, "a");
     let good = task(&f, "b");
     end(&f, bad, TaskInput::Close);
@@ -208,5 +261,9 @@ fn one_failing_task_does_not_block_another() {
     let lines = run(&f.cx).unwrap();
     assert_eq!(lines.len(), 2, "{lines:?}");
     assert_eq!(rows(&f, bad), 1);
+    assert!(f.cx.store().unwrap().leases(bad).unwrap()[0]
+        .failure
+        .is_some());
     assert_eq!(rows(&f, good), 0);
+    assert_eq!(released(&f), 2);
 }

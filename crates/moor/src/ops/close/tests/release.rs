@@ -65,13 +65,27 @@ fn a_clean_release_drops_the_lease_rows_and_deletes_the_box() {
 }
 
 #[test]
-fn a_failed_release_step_keeps_the_lease_rows_and_the_task_open() {
-    let f = leased(1);
-    let e = run(&f.cx, &req(false)).unwrap_err();
+fn a_failed_release_step_keeps_the_lease_rows_and_the_task_open_on_a_mac_host() {
+    let f = mac_leased(1);
+    let e = try_close_envchk2(&f).unwrap_err();
     assert_eq!(e.kind, ErrorKind::Failed);
     assert!(e.error.to_string().contains("the task stays open"));
-    assert_eq!(lease_count(&f), 2);
+    assert_eq!(lease_count(&f), 1);
     assert_eq!(box_state(&f), BoxState::ReleaseFailed);
+    assert!(f
+        .cx
+        .take_warnings()
+        .iter()
+        .any(|w| w.code == "box_release_step_failed"));
+}
+
+#[test]
+fn a_failed_release_step_of_a_box_that_was_the_whole_machine_still_closes() {
+    let f = leased(1);
+    let v = run(&f.cx, &req(false)).unwrap();
+    assert_eq!(v.task.state, TaskState::Closed);
+    assert!(v.box_deleted);
+    assert_eq!(lease_count(&f), 0);
     assert!(f
         .cx
         .take_warnings()
@@ -313,6 +327,27 @@ fn close_envchk2(f: &Fx) -> moor_core::view::CloseView {
     run(&f.cx, &req).unwrap()
 }
 
+/// A Mac Task `envchk2` whose Box probes clean; the probes exit 0 and the fourth script exits `code`.
+fn mac_leased(code: i32) -> Fx {
+    let driver = quiet(3)
+        .peek_text(
+            "box-1",
+            &BoxPath::under(FIELD_WORKDIR, ".moor/boxwork").unwrap(),
+            "ahead=0 dirty=0",
+        )
+        .exec_results([0, 0, 0, code].map(|code| Ok(ExecOutcome::Exited { code })));
+    mac_task(driver, "envchk2", FIELD_WORKDIR, FIELD_ROOT)
+}
+
+/// A plain close of `envchk2`, whatever the outcome.
+fn try_close_envchk2(f: &Fx) -> Result<moor_core::view::CloseView, crate::error::CommandError> {
+    let req = CloseReq {
+        task: TaskName::parse("envchk2").unwrap(),
+        ..req(false)
+    };
+    run(&f.cx, &req)
+}
+
 #[test]
 fn a_plain_close_of_a_mac_box_runs_the_mac_release_then_deletes_the_box() {
     let f = field_fx(false);
@@ -345,16 +380,16 @@ fn a_plain_close_with_the_remote_missing_warns_and_still_runs_the_mac_release() 
 
 #[test]
 fn a_retried_plain_close_after_a_failed_release_skips_the_probe_and_closes() {
-    let f = leased(1);
-    let e = run(&f.cx, &req(false)).unwrap_err();
+    let f = mac_leased(1);
+    let e = try_close_envchk2(&f).unwrap_err();
     assert!(e.error.to_string().contains("the task stays open"), "{e:?}");
     assert_eq!(box_state(&f), BoxState::ReleaseFailed);
-    assert_eq!(lease_count(&f), 2);
+    assert_eq!(lease_count(&f), 1);
     let first = scripts(&f).len();
     // The fake driver forgets a released Box; a real one can leave it running.
     f.driver.revive(&BoxHandle::new("box-1"));
 
-    let v = run(&f.cx, &req(false)).unwrap();
+    let v = try_close_envchk2(&f).unwrap();
     assert_eq!(v.task.state, TaskState::Closed);
     assert!(v.box_deleted);
     assert_eq!(box_state(&f), BoxState::Deleted);
@@ -366,17 +401,20 @@ fn a_retried_plain_close_after_a_failed_release_skips_the_probe_and_closes() {
 
 #[test]
 fn a_plain_close_with_a_failing_release_keeps_the_task_open_every_time() {
-    let driver = quiet(3).exec_results([0, 0, 0].map(|code| Ok(ExecOutcome::Exited { code })));
+    let driver = quiet(3)
+        .peek_text(
+            "box-1",
+            &BoxPath::under(FIELD_WORKDIR, ".moor/boxwork").unwrap(),
+            "ahead=0 dirty=0",
+        )
+        .exec_results([0, 0, 0].map(|code| Ok(ExecOutcome::Exited { code })));
     let driver = driver.exec_results((0..60).map(|_| Ok(ExecOutcome::Exited { code: 1 })));
-    let f = fx_with(driver, FakeSurface::new("/s"), 0);
-    let store = f.cx.store().unwrap();
-    store.plan_lease(f.id, LeaseKind::BoxRoot, "/root").unwrap();
-    store.plan_lease(f.id, LeaseKind::Compose, "proj").unwrap();
+    let f = mac_task(driver, "envchk2", FIELD_WORKDIR, FIELD_ROOT);
     for n in 1..=3 {
-        let e = run(&f.cx, &req(false)).unwrap_err();
+        let e = try_close_envchk2(&f).unwrap_err();
         assert!(e.error.to_string().contains("the task stays open"), "{e:?}");
         assert_eq!(box_state(&f), BoxState::ReleaseFailed);
-        assert_eq!(lease_count(&f), 2);
+        assert_eq!(lease_count(&f), 1);
         let calls = f.driver.calls();
         let releases = calls.iter().filter(|c| c.starts_with("release")).count();
         assert_eq!(releases, n, "{calls:?}");

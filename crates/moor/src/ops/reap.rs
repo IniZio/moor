@@ -1,8 +1,9 @@
 //! Releases lease rows no live `moor close` is going to: a Task closed with `--force`, rejected,
-//! or whose owner is gone leaves Box resources recorded that nothing else would remove.
+//! leaves Box resources recorded that nothing else would remove.
 //!
-//! A Task that is still open is never touched. Rows whose last attempt failed wait out their
-//! backoff (`next_attempt_at`) before the next try.
+//! A Task that is still open is never reaped. A Task is tried only once every one of its rows is
+//! due, so a row whose last attempt failed holds the whole Task back until its backoff
+//! (`next_attempt_at`) has passed.
 
 use moor_core::TaskId;
 
@@ -21,7 +22,7 @@ pub(crate) fn run(cx: &Cx) -> Result<Vec<String>, CommandError> {
     let now = cx.clock().now();
     let mut out = Vec::new();
     for (task, rows) in by_task(store.all_leases()?) {
-        if !rows.iter().any(|r| r.due(now)) {
+        if !rows.iter().all(|r| r.due(now)) {
             continue;
         }
         if let Some(line) = reap_task(cx, store, task, &rows) {
@@ -51,18 +52,10 @@ fn reap_task(cx: &Cx, store: &Store, task: TaskId, rows: &[LeaseRow]) -> Option<
         Ok(None) => return Some(missing(id, rows)),
         Err(e) => return Some(format!("reap task {id}: {e}")),
     };
-    if row.state.is_live() && !owner_gone(cx, store, &row) {
+    if row.state.is_live() {
         return None;
     }
     Some(reap(cx, store, &row, rows).unwrap_or_else(|e| format!("reap task {id}: {}", e.error)))
-}
-
-/// Whether the owner of the open Task `row` is gone, with no live Proxy to speak for it.
-///
-/// No Task owner liveness exists yet, so this is `false` and an open Task is never reaped.
-/// Reaping an open Task needs a real liveness check here first.
-const fn owner_gone(_cx: &Cx, _store: &Store, _row: &TaskRow) -> bool {
-    false
 }
 
 /// The log line for lease rows whose Task row is gone.
@@ -85,8 +78,11 @@ fn reap(cx: &Cx, store: &Store, row: &TaskRow, rows: &[LeaseRow]) -> Result<Stri
         .as_ref()
         .and_then(|b| b.handle.as_ref().or(b.attempted_handle.as_ref()))
     else {
+        for r in rows {
+            store.drop_lease(r.id)?;
+        }
         return Ok(format!(
-            "reap task {id}: no Box handle recorded, left {} lease row(s): {}",
+            "reap task {id}: no Box ever existed, dropped {} lease row(s): {}",
             rows.len(),
             keys(rows)
         ));
