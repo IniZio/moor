@@ -1,11 +1,13 @@
 use std::process::Command;
 
-use moor_core::name::BoxPath;
+use moor_core::config::RepoSandbox;
+use moor_core::name::{BoxPath, TaskName};
+use moor_core::task_key::{MacLayout, TaskKey};
 use serde_json::Value;
 
 use super::{
-    check_failure, check_script, harden_lines, namespace_lines, profile, wrap, SandboxInput,
-    NOT_INSTALLED,
+    check_failure, check_script, harden_lines, mac::MacInput, namespace_lines, profile, wrap,
+    SandboxInput, NOT_INSTALLED,
 };
 
 const SUM: &str = "6da665b61999570c10dffc7da78828fe1fb7f3cac53319e505cebecaef17037f";
@@ -360,6 +362,98 @@ fn check_failure_names_the_cause() {
     assert!(check_failure("Darwin", 5).contains("Seatbelt"));
     assert!(check_failure("Linux", NOT_INSTALLED).contains("nono 0.80.0 on the Box is missing"));
     assert!(check_failure("Linux", 9).contains("exited 9"));
+}
+
+fn mac_doc() -> Value {
+    let (w, h, c) = (
+        path("/Users/Shared/moor/t/work"),
+        path("/Users/Shared/moor/t/home"),
+        path("/tmp/cred"),
+    );
+    let tmp = path("/Users/Shared/moor/t/tmp");
+    let key = TaskKey::new(&TaskName::parse("t").unwrap());
+    let layout = MacLayout::new(&path("/Users/Shared/moor"), &key).unwrap();
+    let (login, sandbox) = (path("/Users/newman"), RepoSandbox::default());
+    let input = SandboxInput {
+        os: "Darwin",
+        workdir: &w,
+        home: &h,
+        cred: &c,
+        tmp: &tmp,
+        env_names: vec![],
+        set_vars: vec![],
+        root: false,
+        strip_env: &[],
+        mac: Some(MacInput {
+            layout: &layout,
+            login_home: &login,
+            developer_dir: "/Applications/Xcode.app/Contents/Developer",
+            capabilities: &[],
+            sandbox: &sandbox,
+        }),
+    };
+    serde_json::from_str(&profile(&input).unwrap()).unwrap()
+}
+
+#[test]
+fn mac_profile_reads_toolchains_from_the_login_home() {
+    let d = mac_doc();
+    let read = strings(at(&d, "/filesystem/read"));
+    for rel in [
+        ".bun",
+        ".local/share/claude",
+        ".local/share/mise",
+        ".npm-global",
+    ] {
+        assert!(
+            read.contains(&format!("/Users/newman/{rel}")),
+            "{rel}: {read:?}"
+        );
+        assert!(
+            !read.contains(&format!("/Users/Shared/moor/t/home/{rel}")),
+            "{rel}"
+        );
+    }
+    let files = strings(at(&d, "/filesystem/read_file"));
+    assert!(
+        files.contains(&"/Users/newman/.gitconfig".to_owned()),
+        "{files:?}"
+    );
+    assert!(!files.contains(&"/Users/Shared/moor/t/home/.gitconfig".to_owned()));
+}
+
+#[test]
+fn mac_profile_writes_agent_state_in_the_task_home_only() {
+    let d = mac_doc();
+    let allow = strings(at(&d, "/filesystem/allow"));
+    for rel in [".claude", ".cache", ".config/gh", ".local/state/claude"] {
+        assert!(
+            allow.contains(&format!("/Users/Shared/moor/t/home/{rel}")),
+            "{rel}"
+        );
+    }
+    assert!(
+        !allow
+            .iter()
+            .any(|p| p.contains("share/claude") || p.starts_with("/Users/newman")),
+        "{allow:?}"
+    );
+    let file = strings(at(&d, "/filesystem/allow_file"));
+    assert_eq!(file, ["/Users/Shared/moor/t/home/.claude.json"]);
+}
+
+#[test]
+fn linux_profile_keeps_toolchains_and_claude_share_under_the_home() {
+    let d = doc(&[]);
+    let (read, allow) = (
+        strings(at(&d, "/filesystem/read")),
+        strings(at(&d, "/filesystem/allow")),
+    );
+    for rel in [".bun", ".local/share/mise", ".npm-global"] {
+        assert!(read.contains(&format!("/home/u/{rel}")), "{rel}");
+    }
+    assert!(allow.contains(&"/home/u/.local/share/claude".to_owned()));
+    assert!(!read.contains(&"/home/u/.local/share/claude".to_owned()));
 }
 
 #[test]

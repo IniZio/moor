@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use moor_core::exec_env;
 use moor_core::name::BoxPath;
-use serde_json::json;
+use serde_json::{json, Value};
 
 /// The pinned nono release.
 pub(super) const NONO_VERSION: &str = "0.80.0";
@@ -118,13 +118,51 @@ const DEFAULT_GROUPS: [&str; 18] = [
     "dangerous_commands_linux",
 ];
 
+/// The profile's `filesystem` section: agent state is the Task home's, toolchains are read-only.
+fn filesystem(input: &SandboxInput) -> Value {
+    let home = input.home.as_str();
+    let at = |rel: &str| format!("{home}/{rel}");
+    // The agent's binaries and toolchains live in the Box user's real home, which on a macOS Box
+    // is not the Task home; they are only read, never written.
+    let tools = input.mac.as_ref().map_or(home, |m| m.login_home.as_str());
+    let tool = |rel: &str| format!("{tools}/{rel}");
+    let mut allow = vec![
+        input.workdir.as_str().to_owned(),
+        input.tmp.as_str().to_owned(),
+        at(".claude"),
+        at(".cache"),
+        at(".config/gh"),
+        at(".local/state/claude"),
+    ];
+    let mut read = vec![
+        input.cred.as_str().to_owned(),
+        "/usr/local/bin".to_owned(),
+        "/usr/local/lib".to_owned(),
+        tool(".local/share/mise"),
+        tool(".bun"),
+        tool(".npm-global"),
+    ];
+    // Claude Code keeps its versions here; a macOS Box reads the login home's copy, and the
+    // Task home gets no write grant for it.
+    if input.mac.is_some() {
+        read.push(tool(".local/share/claude"));
+    } else {
+        allow.push(at(".local/share/claude"));
+    }
+    json!({
+        "unix_socket_dir": ["/run/systemd/userdb"],
+        "allow": allow,
+        "allow_file": [at(".claude.json")],
+        "read": read,
+        "read_file": ["/etc/gitconfig", tool(".gitconfig")],
+    })
+}
+
 /// The nono profile as pretty JSON text.
 ///
 /// # Errors
 /// The macOS grants cannot be rendered into the profile.
 pub(super) fn profile(input: &SandboxInput) -> Result<String, String> {
-    let home = input.home.as_str();
-    let at = |rel: &str| format!("{home}/{rel}");
     let mut set_vars: BTreeMap<_, _> = input
         .set_vars
         .iter()
@@ -141,28 +179,7 @@ pub(super) fn profile(input: &SandboxInput) -> Result<String, String> {
         "security": { "signal_mode": "isolated" },
         "linux": { "af_unix_mediation": "pathname" },
         "workdir": { "access": "readwrite" },
-        "filesystem": {
-            "unix_socket_dir": ["/run/systemd/userdb"],
-            "allow": [
-                input.workdir.as_str(),
-                input.tmp.as_str(),
-                at(".claude"),
-                at(".cache"),
-                at(".config/gh"),
-                at(".local/state/claude"),
-                at(".local/share/claude"),
-            ],
-            "allow_file": [at(".claude.json")],
-            "read": [
-                input.cred.as_str(),
-                "/usr/local/bin",
-                "/usr/local/lib",
-                at(".local/share/mise"),
-                at(".bun"),
-                at(".npm-global"),
-            ],
-            "read_file": ["/etc/gitconfig", at(".gitconfig")],
-        },
+        "filesystem": filesystem(input),
         "environment": {
             "allow_vars": allow_vars(&input.env_names, input.strip_env),
             "set_vars": set_vars,
