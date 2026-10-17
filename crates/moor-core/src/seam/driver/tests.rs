@@ -41,14 +41,15 @@ fn driver_is_object_safe() {
 }
 
 #[test]
-fn platform_parses_os_and_arch() {
-    let p = BoxPlatform::parse("Darwin arm64\n").unwrap();
-    assert_eq!((p.os.as_str(), p.arch.as_str()), ("Darwin", "arm64"));
+fn macos_target_is_macos() {
+    assert_eq!(Platform::from_target(Some("macos")), Platform::Macos);
+    assert_eq!(Platform::from_target(Some("  MacOS \n")), Platform::Macos);
 }
 
 #[test]
-fn platform_rejects_wrong_word_count() {
-    assert_eq!(BoxPlatform::parse(""), None);
-    assert_eq!(BoxPlatform::parse("Linux"), None);
-    assert_eq!(BoxPlatform::parse("Linux x86_64 extra"), None);
+fn other_or_missing_target_is_linux() {
+    assert_eq!(Platform::from_target(Some("linux")), Platform::Linux);
+    assert_eq!(Platform::from_target(Some("")), Platform::Linux);
+    assert_eq!(Platform::from_target(None), Platform::Linux);
+    assert_eq!(Platform::default(), Platform::Linux);
 }

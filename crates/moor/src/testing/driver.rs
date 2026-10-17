@@ -10,8 +10,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use moor_core::seam::driver::{
-    AcquireReq, Acquired, BoxListing, BoxPlatform, BoxStep, Driver, DriverCaps, DriverError,
-    ExecOutcome, ExecSpec, Released, SleepKind, SleepOutcome, StepDone,
+    AcquireReq, Acquired, BoxListing, BoxStep, Driver, DriverCaps, DriverError, ExecOutcome,
+    ExecSpec, Platform, Released, SleepKind, SleepOutcome, StepDone,
 };
 use moor_core::seam::proc::{Deadline, Output};
 use moor_core::{BoxHandle, BoxPath, ProviderId};
@@ -53,7 +53,7 @@ struct State {
     fail_workdir: Option<DriverError>,
     tunnel: tunnel::TunnelState,
     sleep_kind: Option<SleepKind>,
-    platform: Option<BoxPlatform>,
+    platform: Platform,
     static_host: bool,
 }
 
@@ -150,10 +150,7 @@ impl Driver for FakeDriver {
         Ok(Acquired {
             handle: BoxHandle::new(id),
             workdir,
-            platform: s.platform.clone().unwrap_or_else(|| BoxPlatform {
-                os: "Linux".into(),
-                arch: "x86_64".into(),
-            }),
+            platform: s.platform,
         })
     }
 
@@ -186,6 +183,7 @@ impl Driver for FakeDriver {
         if let Some(e) = s.fail_list.take() {
             return Err(e);
         }
+        let platform = s.platform;
         Ok(s.providers
             .iter()
             .filter(|(h, p)| p == provider && s.live.contains(h))
@@ -193,6 +191,7 @@ impl Driver for FakeDriver {
                 handle: BoxHandle::new(h.clone()),
                 provider: Some(provider.clone()),
                 asleep: false,
+                platform,
             })
             .collect())
     }

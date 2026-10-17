@@ -6,6 +6,8 @@ mod connect;
 mod cp;
 mod errors;
 mod exec;
+mod mac;
+mod names;
 mod parse;
 mod peek;
 mod put;
@@ -26,11 +28,12 @@ use moor_core::name::{BoxHandle, BoxPath, ProviderId};
 use moor_core::seam::clock::Clock;
 use moor_core::seam::driver::{
     AcquireReq, Acquired, BoxListing, BoxStep, Driver, DriverCaps, DriverError, ExecOutcome,
-    ExecSpec, Released, SleepOutcome, StepDone, TunnelHandle,
+    ExecSpec, Platform, Released, SleepOutcome, StepDone, TunnelHandle,
 };
 use moor_core::seam::proc::{Deadline, Proc, ProcError, ProcOutput, ProcSpec, Tool};
 
 use errors::{is_claim_race, map_error, Op};
+use names::{box_name, handle_of, size_of, split_handle, target_args, unreadable};
 
 /// Time allowed for a warmup.
 const ACQUIRE_DEADLINE: Duration = Duration::from_mins(15);
@@ -59,6 +62,10 @@ pub(crate) struct Crabbox {
     lookup_deadlines: BTreeMap<String, Duration>,
     /// Resolved ssh words per (lease handle, host cwd), kept for this driver's lifetime.
     targets: Mutex<HashMap<(String, PathBuf), Vec<String>>>,
+    /// The `CRABBOX_TARGET` crabbox runs with.
+    target: Option<String>,
+    /// The `CRABBOX_STATIC_WORK_ROOT` crabbox runs with.
+    work_root: Option<String>,
 }
 
 impl Crabbox {
@@ -70,7 +77,21 @@ impl Crabbox {
             version_ok: OnceLock::new(),
             lookup_deadlines: BTreeMap::new(),
             targets: Mutex::new(HashMap::new()),
+            target: None,
+            work_root: None,
         }
+    }
+
+    /// Records the `CRABBOX_TARGET` and `CRABBOX_STATIC_WORK_ROOT` crabbox runs with.
+    pub(crate) fn with_target(mut self, target: Option<String>, work_root: Option<String>) -> Self {
+        self.target = target;
+        self.work_root = work_root;
+        self
+    }
+
+    /// The platform of the Boxes crabbox is configured for.
+    fn platform(&self) -> Platform {
+        Platform::from_target(self.target.as_deref())
     }
 
     /// Forgets every cached ssh target of `handle`; its address may change.
@@ -164,16 +185,6 @@ const CLAIM_RACE_BUDGET: Duration = Duration::from_secs(15);
 /// Pause between retries of a claim race.
 const CLAIM_RACE_PAUSE: Duration = Duration::from_secs(1);
 
-/// Per-Task Box name: `moor-{name}-{nonce}`.
-fn box_name(req: &AcquireReq) -> String {
-    format!("moor-{}-{}", req.name.as_str(), req.nonce)
-}
-
-/// The handle for a Box named `name` under `provider`.
-fn handle_of(provider: &str, name: &str) -> BoxHandle {
-    BoxHandle::new(format!("{provider}/{name}"))
-}
-
 /// Adds the static provider's Box id and port to a call on `handle`.
 fn static_env(spec: ProcSpec, handle: &BoxHandle) -> ProcSpec {
     match split_handle(handle) {
@@ -181,46 +192,6 @@ fn static_env(spec: ProcSpec, handle: &BoxHandle) -> ProcSpec {
             .env("CRABBOX_STATIC_ID", name)
             .env("CRABBOX_STATIC_PORT", DEFAULT_SSH_PORT.to_string()),
         _ => spec,
-    }
-}
-
-/// Maps a moor size to crabbox's machine class.
-fn size_of(size: Option<&str>) -> Result<&'static str, DriverError> {
-    match size.unwrap_or("small") {
-        "small" => Ok("standard"),
-        "medium" => Ok("fast"),
-        "large" => Ok("large"),
-        "xlarge" => Ok("beast"),
-        other => Err(DriverError::Failed {
-            summary: format!("unknown box size {other:?}"),
-        }),
-    }
-}
-
-/// Splits a handle into optional provider and Box name.
-fn split_handle(handle: &BoxHandle) -> (Option<&str>, &str) {
-    match handle.as_str().split_once('/') {
-        Some((p, n)) if !p.is_empty() => (Some(p), n),
-        Some((_, n)) => (None, n),
-        None => (None, handle.as_str()),
-    }
-}
-
-/// Selector arguments that name one Box.
-fn target_args(handle: &BoxHandle) -> Vec<String> {
-    let (provider, name) = split_handle(handle);
-    let mut args = Vec::new();
-    if let Some(p) = provider {
-        args.extend(["--provider".to_owned(), p.to_owned()]);
-    }
-    args.extend(["--id".to_owned(), name.to_owned()]);
-    args
-}
-
-/// Error for output moor cannot read.
-fn unreadable(what: &str) -> DriverError {
-    DriverError::Failed {
-        summary: format!("unreadable box provider output for {what}"),
     }
 }
 
@@ -237,21 +208,25 @@ impl Driver for Crabbox {
         let provider = req.provider.as_str();
         let name = box_name(req);
         let class = size_of(req.class.as_deref())?;
+        let layout = self.acquire_layout(req)?;
         let mut spec = Self::spec(ACQUIRE_DEADLINE).args(["warmup", "--provider", provider]);
         if let Some(dir) = &req.worktree {
             spec = spec.cwd(dir);
         }
         spec = spec.args(["--slug", &name, "--class", class]);
+        if let Some(l) = &layout {
+            spec = spec.env("CRABBOX_STATIC_WORK_ROOT", l.work.as_str());
+        }
         let handle = handle_of(provider, &name);
         let spec = static_env(spec, &handle);
         self.forget_targets(&handle);
         let out = self.call(Op::Acquire, Some(provider), &spec)?;
         let warm = parse::parse_warmup(&out.stdout).ok_or_else(|| unreadable("acquire"))?;
-        let (workdir, platform) = workdir::acquired(self, &handle, &warm, req)?;
+        let workdir = self.acquired_workdir(&handle, layout.as_ref(), &warm, req)?;
         Ok(Acquired {
             handle,
             workdir,
-            platform,
+            platform: self.platform(),
         })
     }
 
@@ -290,6 +265,7 @@ impl Driver for Crabbox {
                 handle: handle_of(p, &i.name),
                 provider: Some(provider.clone()),
                 asleep: i.asleep,
+                platform: self.platform(),
             })
             .collect())
     }

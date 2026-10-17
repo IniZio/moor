@@ -5,12 +5,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::seam::clock::Ts;
-use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
+use moor_core::seam::driver::{AcquireReq, BoxStep, Driver, DriverError};
 use moor_core::seam::engine::{Engine, EngineError, LaunchReq};
 use moor_core::seam::surface::Surface;
 use moor_core::{BoxHandle, BoxPath, ProviderId, TaskId, TaskName};
 
 use crate::adapters::box_agent::claude::Claude;
+use crate::adapters::box_agent::launch::install::platform_step;
+use crate::adapters::box_agent::launch::install::probe_dir;
 use crate::adapters::box_agent::nono_release::fake::ready_release;
 use crate::adapters::box_agent::BoxAgent;
 use crate::testing::clock::FakeClock;
@@ -110,5 +112,61 @@ fn launch_dirs_fails_at_the_home_step_when_the_home_cannot_be_read() {
     assert!(
         matches!(err, EngineError::Failed { step: "home", .. }),
         "{err:?}"
+    );
+}
+
+#[test]
+fn dirs_under_keeps_the_home_names_for_a_workdir_outside_a_mac_layout() {
+    let s = FakeSurface::new("/r");
+    let home = BoxPath::restore("/home/box").unwrap();
+    let (cred, tmp) = req(&s).dirs_under(&home).unwrap();
+    assert_eq!(cred.as_str(), "/home/box/.moor-cred-t1-abc123");
+    assert_eq!(tmp.as_str(), "/home/box/.moor-tmp-t1-abc123");
+}
+
+#[test]
+fn dirs_under_stages_in_launch_and_tmp_for_a_mac_workdir() {
+    let s = FakeSurface::new("/r");
+    let mut r = req(&s);
+    r.workdir = BoxPath::restore("/Users/box/boxes/t1/work/repo").unwrap();
+    let home = BoxPath::restore("/Users/box/boxes/t1/home").unwrap();
+    let (cred, tmp) = r.dirs_under(&home).unwrap();
+    assert_eq!(
+        cred.as_str(),
+        "/Users/box/boxes/t1/launch/.moor-cred-abc123"
+    );
+    assert_eq!(tmp.as_str(), "/Users/box/boxes/t1/tmp/.moor-tmp-abc123");
+}
+
+fn probe_script(r: &LaunchReq) -> String {
+    match platform_step(&probe_dir(r)) {
+        BoxStep::Run(script) => script,
+        other => format!("{other:?}"),
+    }
+}
+
+#[test]
+fn the_platform_probe_stages_in_launch_for_a_mac_workdir_and_never_in_the_home() {
+    let s = FakeSurface::new("/r");
+    let mut r = req(&s);
+    r.workdir = BoxPath::restore("/Users/box/boxes/t1/work/repo").unwrap();
+    let script = probe_script(&r);
+    assert!(
+        script.contains("/Users/box/boxes/t1/launch/.moor-cred-abc123"),
+        "{script}"
+    );
+    assert!(
+        !script.contains("$HOME") && !script.contains("t1-abc123"),
+        "{script}"
+    );
+}
+
+#[test]
+fn the_platform_probe_keeps_the_home_name_outside_a_mac_layout() {
+    let s = FakeSurface::new("/r");
+    let script = probe_script(&req(&s));
+    assert!(
+        script.contains("\"$HOME\"/'.moor-cred-t1-abc123'"),
+        "{script}"
     );
 }

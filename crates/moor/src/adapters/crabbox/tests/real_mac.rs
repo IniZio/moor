@@ -12,7 +12,7 @@ use std::process::{Command, Stdio};
 use std::sync::Arc;
 
 use moor_core::name::{BoxHandle, ProviderId, TaskId, TaskName};
-use moor_core::seam::driver::{AcquireReq, Acquired, Driver};
+use moor_core::seam::driver::{AcquireReq, Acquired, Driver, Platform};
 
 use super::Crabbox;
 use crate::adapters::proc::{SystemProc, ToolPaths};
@@ -21,7 +21,7 @@ use crate::env::Env;
 /// Variable that names the Mac and turns the check on.
 const HOST_VAR: &str = "MOOR_REAL_MAC_HOST";
 /// The only directory on the Mac the check may create or remove things in.
-const WORK_ROOT: &str = "/Users/newman/.moor-boxes";
+const WORK_ROOT: &str = "/Users/Shared/moor-test";
 
 /// Runs `test -e path` on the Mac over plain ssh.
 fn exists_on_mac(target: &str, path: &str) -> bool {
@@ -49,7 +49,7 @@ struct Leases<'a> {
     target: &'a str,
     /// Handles to release.
     handles: Vec<BoxHandle>,
-    /// Lease directory names under [`WORK_ROOT`] to remove.
+    /// Task directory names under [`WORK_ROOT`] to remove.
     dirs: Vec<String>,
 }
 
@@ -58,7 +58,7 @@ impl Drop for Leases<'_> {
         for h in &self.handles {
             let _ = self.driver.release(h);
         }
-        for dir in self.dirs.iter().filter(|d| d.starts_with("moor-")) {
+        for dir in self.dirs.iter().filter(|d| d.starts_with("realmac-")) {
             let path = format!("{WORK_ROOT}/{dir}");
             let _ = Command::new("ssh")
                 .args(["-o", "BatchMode=yes", self.target, "rm", "-rf", "--", &path])
@@ -79,10 +79,6 @@ fn acquire(driver: &Crabbox, leases: &mut Leases<'_>, n: i64, name: &str, repo: 
         worktree: Some(repo.to_path_buf()),
     };
     let planned = driver.planned_handle(&req);
-    let name = planned
-        .as_str()
-        .split_once('/')
-        .map_or(planned.as_str(), |(_, n)| n);
     leases.dirs.push(name.to_owned());
     leases.handles.push(planned);
     driver.acquire(&req).unwrap()
@@ -119,7 +115,7 @@ fn crabbox_env(target: &str) -> Env {
     )
 }
 
-/// The lease directory above a Box's workdir.
+/// The lease directory above a Box's workdir (`<WORK_ROOT>/<task>/work/<lease>/<repo>`).
 fn lease_of(acq: &Acquired) -> String {
     let (lease, _) = acq.workdir.as_str().rsplit_once('/').unwrap();
     lease.to_owned()
@@ -147,8 +143,7 @@ fn macos_box_over_static_ssh_gets_per_task_workdirs() {
     for (n, acq) in [("a", &a), ("b", &b)] {
         eprintln!("workdir {n}: {}", acq.workdir.as_str());
         eprintln!("platform {n}: {:?}", acq.platform);
-        assert_eq!(acq.platform.os, "Darwin");
-        assert_eq!(acq.platform.arch, "arm64");
+        assert_eq!(acq.platform, Platform::Macos);
         assert!(acq.workdir.as_str().starts_with(&format!("{WORK_ROOT}/")));
         assert!(exists_on_mac(&target, &lease_of(acq)));
     }

@@ -9,6 +9,7 @@ use crate::seam::agent_profile::{PromptMatch, ProxyAddr};
 use crate::seam::driver::DriverError;
 use crate::seam::proc::Deadline;
 use crate::seam::surface::{PaneRef, WorkspaceRef};
+use crate::task_key::{MacLayout, TaskKey};
 
 /// A stored agent session and where it runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -74,11 +75,15 @@ pub struct LaunchReq {
 }
 
 impl LaunchReq {
-    /// The credential and tmp directories this launch creates under the Box home `home`.
+    /// The credential and tmp directories this launch creates: under `launch/` and `tmp/` of a
+    /// macOS Box layout when the workdir is inside one, else under the Box home `home`.
     ///
     /// # Errors
     /// [`NameError`] when `home` and the Task name do not form a valid Box path.
     pub fn dirs_under(&self, home: &BoxPath) -> Result<(BoxPath, BoxPath), NameError> {
+        if let Some(layout) = MacLayout::find(&self.workdir, &TaskKey::new(&self.task)) {
+            return Ok((layout.cred_dir(&self.nonce)?, layout.cred_tmp(&self.nonce)?));
+        }
         let (cred, tmp) = self.dir_names();
         Ok((
             BoxPath::under(home.as_str(), &cred)?,

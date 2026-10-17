@@ -19,16 +19,15 @@ mod acquire_workdir;
 mod real_mac;
 mod workdir;
 
-const PROBE_SCRIPT: &str = r#"printf "MOOR_WORKDIR=%s\n" "$(pwd)"; printf "MOOR_UNAME=%s %s\n" "$(uname -s)" "$(uname -m)""#;
+const PROBE_SCRIPT: &str =
+    r#"printf "MOOR_WORKDIR=%s\n" "$(pwd)"; printf "MOOR_HOME=%s\n" "$HOME""#;
 const PROBE_DIR: &str = "/root/crabbox/cbx_1/app";
 
 fn probe(p: &ScriptedProc) {
     p.on(
         Tool::Crabbox,
         &["run"],
-        Reply::Ok(format!(
-            "MOOR_WORKDIR={PROBE_DIR}\nMOOR_UNAME=Linux x86_64\n"
-        )),
+        Reply::Ok(format!("MOOR_WORKDIR={PROBE_DIR}\nMOOR_HOME=/root\n")),
     );
 }
 

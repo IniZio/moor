@@ -11,6 +11,7 @@ use moor_core::seam::agent_profile::ProxyAddr;
 use moor_core::seam::driver::{ExecOutcome, ExecSpec};
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::proxy_host::ProxySpec;
+use moor_core::task_key::{MacLayout, TaskKey};
 use moor_core::{BoxHandle, BoxPath, TaskId};
 
 use crate::cx::Cx;
@@ -133,16 +134,15 @@ pub(crate) fn prepare(
         let env = exec_env::build(&ctx, purpose)?;
         return Ok(BoxExec { env, staged: None });
     };
-    let dir = BoxPath::under(
-        box_home(cx, site)?.as_str(),
-        &format!(
-            ".moor-cred-{}-{:08x}{:08x}",
-            p.task.get(),
-            cx.rng().u32(),
-            cx.rng().u32()
-        ),
-    )
-    .map_err(|e| e.to_string())?;
+    let nonce = format!("{:08x}{:08x}", cx.rng().u32(), cx.rng().u32());
+    let dir = match mac_cred_dir(cx, site, p.task, &nonce) {
+        Some(dir) => dir,
+        None => BoxPath::under(
+            box_home(cx, site)?.as_str(),
+            &format!(".moor-cred-{}-{nonce}", p.task.get()),
+        )
+        .map_err(|e| e.to_string())?,
+    };
     create(cx, site, &dir)?;
     stage(cx, site, &dir, &p.addr)?;
     let merged = exec_env::merged_env(repo_env, p.rule_env.clone());
@@ -221,6 +221,15 @@ impl BoxExec {
     pub(crate) fn deadline(&self) -> Deadline {
         self.env.deadline.unwrap_or(Deadline(RUN_DEADLINE))
     }
+}
+
+/// The credential directory under the macOS Box layout of `task`, when the workdir is inside it.
+fn mac_cred_dir(cx: &Cx, site: &Site<'_>, task: TaskId, nonce: &str) -> Option<BoxPath> {
+    let workdir = site.workdir?;
+    let row = cx.store().ok()?.task(task).ok()??;
+    MacLayout::find(workdir, &TaskKey::new(&row.name))?
+        .cred_dir(nonce)
+        .ok()
 }
 
 /// The Box user's home, read from the environment of a process on the Box.
