@@ -12,6 +12,7 @@ use moor_core::seam::driver::{ExecOutcome, ExecSpec};
 use moor_core::seam::engine::Sandboxed;
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::proxy_host::ProxySpec;
+use moor_core::seam::rng::Rng;
 use moor_core::task_key::{MacLayout, TaskKey};
 use moor_core::{BoxHandle, BoxPath, TaskId};
 
@@ -132,7 +133,7 @@ pub(crate) fn prepare(
     if let Some((layout, _)) = &mac {
         prepare_layout(cx, site, layout)?;
     }
-    let nonce = format!("{:08x}{:08x}", cx.rng().u32(), cx.rng().u32());
+    let nonce = tag_nonce(cx.rng());
     let mac_task = mac.as_ref().map(|(layout, key)| MacTask {
         layout,
         key,
@@ -347,5 +348,12 @@ fn remove(cx: &Cx, site: &Site<'_>, dir: &BoxPath) {
 }
 
 mod sandbox;
+
+/// The nonce in `MOOR_BOX_TAG`. Must stay 16 lowercase hex chars: Box release
+/// matches the tag anchored as `^<key>-[0-9a-f]{16}$`.
+pub(crate) fn tag_nonce(rng: &dyn Rng) -> String {
+    format!("{:08x}{:08x}", rng.u32(), rng.u32())
+}
+
 #[cfg(test)]
 mod tests;

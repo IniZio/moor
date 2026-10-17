@@ -8,7 +8,7 @@ use moor_core::seam::driver::ExecOutcome;
 use moor_core::{BoxPath, TaskName};
 
 use super::{argvs, boxed_proxy, cfg, rig_driver, Rig};
-use crate::ops::common::box_exec::{prepare, BoxExec};
+use crate::ops::common::box_exec::{prepare, tag_nonce, BoxExec};
 use crate::testing::driver::FakeDriver;
 
 const WORKDIR: &str = "/Users/box/moor/demo/work/repo";
@@ -107,4 +107,18 @@ fn a_failed_layout_prepare_names_the_step_and_does_not_build_the_env() {
     );
     let e = got.err().unwrap();
     assert!(e.contains("prepare the Task directories"), "{e}");
+}
+
+#[test]
+fn the_tag_nonce_is_sixteen_lowercase_hex_so_box_release_matches_the_tag_anchored() {
+    let dir = tempfile::tempdir().unwrap();
+    let r = mac_rig(dir.path());
+    for _ in 0..8 {
+        let n = tag_nonce(r.cx.rng());
+        assert_eq!(n.len(), 16, "{n}");
+        assert!(
+            n.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')),
+            "{n}"
+        );
+    }
 }

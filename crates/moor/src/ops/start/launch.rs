@@ -17,7 +17,7 @@ use moor_core::{StartReq, TaskId, Warning};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::box_exec;
-use crate::ops::common::provision::{nonce, recorded_workdir, reread};
+use crate::ops::common::provision::{recorded_workdir, reread};
 use crate::ops::common::resume;
 use crate::ops::common::view::rfc3339;
 use crate::ops::show::redact_nonce;
@@ -217,7 +217,7 @@ pub(super) fn launch_req(cx: &Cx, row: &TaskRow, setup_exit: Option<i32>) -> Opt
         issue: row.issue.clone(),
         setup_exit,
         model: None,
-        nonce: nonce(cx.rng()),
+        nonce: box_exec::tag_nonce(cx.rng()),
         proxy: None,
         origin: None,
         strip_env,
