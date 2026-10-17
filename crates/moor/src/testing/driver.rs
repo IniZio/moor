@@ -56,6 +56,7 @@ struct State {
     sleep_kind: Option<SleepKind>,
     platform: Platform,
     static_host: bool,
+    fail_caps: bool,
 }
 
 /// One `copy_out` call: handle, source, destination and host cwd.
@@ -132,6 +133,9 @@ impl FakeDriver {
 
 impl Driver for FakeDriver {
     fn caps(&self, _provider: &ProviderId) -> Result<DriverCaps, DriverError> {
+        if self.st().fail_caps {
+            return Err(DriverError::Unavailable("caps".to_owned()));
+        }
         Ok(self.caps_reply())
     }
 

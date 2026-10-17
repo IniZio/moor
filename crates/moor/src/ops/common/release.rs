@@ -3,11 +3,12 @@
 //! Each step runs on its own: a failed step is a warning and every later step still runs. Each
 //! lease row is written once per release, with every failed step that answers on it. The
 //! lease rows are all kept or all dropped, and only a driver that released the Box drops them.
-//! A Box outside the Mac layout on a host that goes with it, so once the driver deleted it, or
-//! found it gone, nothing it held can still exist and the rows go even after a failed step. On a
-//! host that outlives the release (a Mac layout, or a static host whose lease only drops the
-//! claim) they go only when no step failed and verify was clean; otherwise every row stays for
-//! the next release. Caps that cannot be read count as a static host. A driver that failed to release the Box fails every row.
+//! A Box outside the Mac layout on a host that goes with it has nothing left once the driver
+//! deleted it, or found it gone, so the rows go even after a failed step. On a host that
+//! outlives the release (a Mac layout, or a static host whose lease only drops the claim) they go
+//! only when no step failed and verify was clean; otherwise every row stays for the next
+//! release. Caps that cannot be read count as a static host. A driver that failed to release the
+//! Box fails every row.
 
 use std::path::Path;
 use std::time::Duration;

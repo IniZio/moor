@@ -110,3 +110,19 @@ fn a_deleted_box_on_a_static_host_keeps_the_rows_of_a_failed_step() {
         "{failures:?}"
     );
 }
+
+#[test]
+fn unreadable_caps_keep_the_rows_of_a_failed_step() {
+    let driver = printing(&[framed(0, "compose stuck")])
+        .exec_results([super::exit(1)].map(Ok))
+        .fail_caps();
+    let r = rig(driver, "/work/box-1");
+    let report = go(&r);
+    assert_eq!(report.driver, Ok(Released::Deleted));
+    assert!(!report.released);
+    let failures: Vec<_> = rows(&r).into_iter().filter_map(|l| l.failure).collect();
+    assert!(
+        failures.iter().any(|f| f.contains("compose stuck")),
+        "{failures:?}"
+    );
+}
