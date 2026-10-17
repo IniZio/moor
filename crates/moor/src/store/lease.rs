@@ -175,7 +175,6 @@ pub(crate) fn retry_after(attempts: u32) -> Duration {
 
 impl LeaseRow {
     /// Whether a release attempt may run at `now`.
-    #[cfg_attr(not(test), expect(dead_code, reason = "not yet read outside tests"))]
     pub(crate) fn due(&self, now: Ts) -> bool {
         self.next_attempt_at.is_none_or(|at| at <= now)
     }
@@ -281,7 +280,6 @@ impl Store {
     }
 
     /// Every lease, by id.
-    #[cfg_attr(not(test), expect(dead_code, reason = "not yet read outside tests"))]
     pub(crate) fn all_leases(&self) -> Result<Vec<LeaseRow>, StoreError> {
         let conn = self.reader()?;
         query(
