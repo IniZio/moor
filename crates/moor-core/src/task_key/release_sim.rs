@@ -4,6 +4,8 @@
 //! device set with `xcrun simctl --set <sim>`; they never shut down or delete devices of other
 //! Tasks.
 
+use std::fmt::Write as _;
+
 use crate::boxscript::quote;
 use crate::task_key::MacLayout;
 
@@ -17,37 +19,78 @@ mod tests;
 /// contains UUID-like text is not taken for the UDID.
 const UDIDS_FN: &str = "udids() {\n  xcrun simctl --set \"$sim\" list devices 2>/dev/null | sed -n -E 's/^.*\\(([0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12})\\) \\([A-Za-z]+( [A-Za-z]+)*\\) *$/\\1/p'\n}\n";
 
-/// POSIX sh text that deletes every simulator device of the Task and its device logs.
+/// Whether `s` is a simulator UDID: 8-4-4-4-12 uppercase hex, as [`UDIDS_FN`] matches it.
+fn is_udid(s: &str) -> bool {
+    let groups: Vec<&str> = s.split('-').collect();
+    groups.len() == 5
+        && groups
+            .iter()
+            .zip([8, 4, 4, 4, 12])
+            .all(|(g, n)| g.len() == n && g.bytes().all(|b| matches!(b, b'0'..=b'9' | b'A'..=b'F')))
+}
+
+/// POSIX sh text that deletes the simulator devices of the Task and their device logs.
 ///
-/// Each device in `xcrun simctl --set <sim> list devices` is shut down (an already shut down
-/// device is not a failure), deleted, then `$HOME/Library/Logs/CoreSimulator/<udid>` is removed
-/// with `rm -rf`. `$HOME` is read when the script runs: it is the real login home, and device
-/// logs there survive `simctl delete`. When `$HOME` is empty or not absolute the script prints
-/// `failed logs: HOME is not an absolute path`, skips the log removal, and still shuts down and
-/// deletes the devices. A missing sim directory is success. The script goes on after one step
-/// fails, prints `failed <udid>: <what>` for each, and exits 1 at the end when any step failed.
-/// It never runs `shutdown booted` or `delete all`.
+/// `recorded` holds the UDIDs the Task recorded before use. A value that is not a UDID is never
+/// put in the script: the script prints `failed <value>: not a simulator UDID` for it and exits 1
+/// at the end. When the set directory exists, in order: (1) each recorded device is shut down and
+/// deleted (a recorded device already gone from the set is not a failure); (2) every device still
+/// in `xcrun simctl --set <sim> list devices` is shut down and deleted; (3) `$HOME/Library/Logs/
+/// CoreSimulator/<udid>` is removed with `rm -rf` for every recorded device, even when the set
+/// directory is already gone, and for every device deleted in (2). `$HOME` is read when the
+/// script runs: it is the real login home, and device logs there survive `simctl delete`. When
+/// `$HOME` is empty or not absolute and there are logs to remove, the script prints
+/// `failed logs: HOME is not an absolute path` and skips the log removal. A missing sim directory
+/// with nothing recorded is success. The script goes on after one step fails, prints
+/// `failed <udid>: <what>` for each, and exits 1 at the end when any step failed. It never runs
+/// `shutdown booted` or `delete all`.
 #[must_use]
-pub fn delete_devices_script(layout: &MacLayout) -> String {
+pub fn delete_devices_script(layout: &MacLayout, recorded: &[&str]) -> String {
     let mut s = format!("sim={}\nrc=0\n", quote(layout.sim.as_str()));
-    s.push_str("[ -d \"$sim\" ] || exit 0\n");
+    let mut valid: Vec<&str> = Vec::new();
+    for &r in recorded {
+        if is_udid(r) {
+            if !valid.contains(&r) {
+                valid.push(r);
+            }
+        } else {
+            let shown: String = r
+                .chars()
+                .map(|c| if c.is_control() { '?' } else { c })
+                .collect();
+            let line = format!("failed {shown}: not a simulator UDID");
+            let _ = writeln!(s, "echo {}; rc=1", quote(&line));
+        }
+    }
+    let _ = write!(s, "rec={}\ndeleted=\n", quote(&valid.join(" ")));
+    if valid.is_empty() {
+        s.push_str("[ -d \"$sim\" ] || exit 0\n");
+    }
     s.push_str(UDIDS_FN);
     s.push_str(
         "one_line() { printf '%s' \"$1\" | tr '\\n' ' '; }\n\
-logs=\n\
-case \"$HOME\" in\n\
-  (/?*) logs=\"$HOME/Library/Logs/CoreSimulator\" ;;\n\
-  (*) echo 'failed logs: HOME is not an absolute path'; rc=1 ;;\n\
-esac\n\
-for u in $(udids); do\n\
-  xcrun simctl --set \"$sim\" shutdown \"$u\" >/dev/null 2>&1\n\
-  if ! out=$(xcrun simctl --set \"$sim\" delete \"$u\" 2>&1); then\n\
-    echo \"failed $u: delete: $(one_line \"$out\")\"; rc=1\n\
+del_dev() {\n\
+  xcrun simctl --set \"$sim\" shutdown \"$1\" >/dev/null 2>&1\n\
+  if ! out=$(xcrun simctl --set \"$sim\" delete \"$1\" 2>&1); then\n\
+    if udids | grep -qx \"$1\"; then echo \"failed $1: delete: $(one_line \"$out\")\"; rc=1; fi\n\
   fi\n\
-  if [ -n \"$logs\" ] && ! out=$(rm -rf \"$logs/$u\" 2>&1); then\n\
-    echo \"failed $u: remove logs: $(one_line \"$out\")\"; rc=1\n\
+}\n\
+if [ -d \"$sim\" ]; then\n\
+  for u in $rec; do del_dev \"$u\"; done\n\
+  for u in $(udids); do del_dev \"$u\"; deleted=\"$deleted $u\"; done\n\
+fi\n\
+if [ -n \"$rec$deleted\" ]; then\n\
+  logs=\n\
+  case \"$HOME\" in\n\
+    (/?*) logs=\"$HOME/Library/Logs/CoreSimulator\" ;;\n\
+    (*) echo 'failed logs: HOME is not an absolute path'; rc=1 ;;\n\
+  esac\n\
+  if [ -n \"$logs\" ]; then\n\
+    for u in $rec $deleted; do\n\
+      if ! out=$(rm -rf \"$logs/$u\" 2>&1); then echo \"failed $u: remove logs: $(one_line \"$out\")\"; rc=1; fi\n\
+    done\n\
   fi\n\
-done\n\
+fi\n\
 exit $rc\n",
     );
     s

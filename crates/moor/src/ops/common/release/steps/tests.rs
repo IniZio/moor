@@ -180,3 +180,20 @@ fn every_step_has_a_label() {
         assert!(!step.label().is_empty(), "{step:?}");
     }
 }
+
+#[test]
+fn delete_devices_script_gets_the_recorded_sim_device_keys() {
+    const A: &str = "AAAAAAAA-1111-2222-3333-444444444444";
+    const B: &str = "BBBBBBBB-1111-2222-3333-444444444444";
+    let m = Fixture::new();
+    let rows = [
+        row(1, LeaseKind::SimSet, "set", None),
+        row(2, LeaseKind::SimDevice, A, None),
+        row(3, LeaseKind::Process, B, Some(9)),
+        row(4, LeaseKind::SimDevice, B, None),
+    ];
+    let s = script(Step::DeleteDevices, Some(&m.target()), &rows).unwrap();
+    assert!(s.contains(&format!("rec='{A} {B}'")), "{s}");
+    let none = script(Step::DeleteDevices, Some(&m.target()), &rows[..1]).unwrap();
+    assert!(none.contains("rec=''"), "{none}");
+}
