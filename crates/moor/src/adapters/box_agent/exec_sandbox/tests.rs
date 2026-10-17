@@ -3,6 +3,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use moor_core::config::{BoxCapability, RepoSandbox};
 use moor_core::seam::agent_profile::ProxyAddr;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver, ExecOutcome};
@@ -204,7 +205,7 @@ fn an_unreadable_platform_is_a_failure() {
 }
 
 /// The profile the agent launch writes for a Darwin Box in the same layout.
-fn agent_profile() -> serde_json::Value {
+fn agent_profile(grants: &MacGrants) -> serde_json::Value {
     let d = darwin_box(&[]);
     let s = Arc::new(FakeSurface::new("/r"));
     let name = TaskName::parse("t1").unwrap();
@@ -234,25 +235,52 @@ fn agent_profile() -> serde_json::Value {
         proxy: Some(Arc::new(proxy)),
         origin: None,
         strip_env: Vec::new(),
-        mac_grants: MacGrants::default(),
+        mac_grants: grants.clone(),
     };
     agent(&d, &s).launch(&launch).unwrap();
     let (_, bytes, _) = profile_put(&d).expect("the agent profile");
     serde_json::from_slice(&bytes).unwrap()
 }
 
-/// The profile's filesystem section with the temp directories left out of the write grants.
-fn without_temp(doc: &serde_json::Value) -> serde_json::Value {
-    let mut fs = doc.pointer("/filesystem").cloned().unwrap();
-    if let Some(allow) = fs.get_mut("allow").and_then(|a| a.as_array_mut()) {
-        allow.retain(|p| !p.as_str().is_some_and(|p| p.contains("/tmp")));
-    }
-    fs
+const TMP: &str = "/Users/box/boxes/t1/tmp";
+
+/// The profile without its temp write grants and its `allow_vars`, with the `allow_vars`.
+///
+/// The agent writes its own `.moor-tmp-<nonce>` inside the Task's temp directory; the exec has
+/// only the Task's.
+fn without_temp(doc: &serde_json::Value) -> (serde_json::Value, Vec<String>) {
+    let mut doc = doc.clone();
+    let allow = doc.pointer_mut("/filesystem/allow").unwrap();
+    let allow = allow.as_array_mut().unwrap();
+    let before = allow.len();
+    allow.retain(|p| !p.as_str().is_some_and(|p| p.starts_with(TMP)));
+    assert!(allow.len() < before, "a temp grant in {allow:?}");
+    let vars = doc.pointer_mut("/environment").unwrap();
+    let vars = vars.as_object_mut().unwrap().remove("allow_vars").unwrap();
+    let vars = vars.as_array().unwrap().iter();
+    let vars = vars.map(|v| v.as_str().unwrap().to_owned()).collect();
+    (doc, vars)
+}
+
+fn non_empty(doc: &serde_json::Value, pointer: &str) {
+    let found = doc.pointer(pointer).and_then(|v| v.as_array());
+    assert!(found.is_some_and(|a| !a.is_empty()), "{pointer} in {doc}");
 }
 
 #[test]
 fn the_exec_profile_is_the_one_the_agent_launch_writes() {
-    let agent_doc = agent_profile();
+    let grants = MacGrants {
+        capabilities: vec![
+            BoxCapability::Xcode,
+            BoxCapability::IosSimulator,
+            BoxCapability::SwiftpmPlugins,
+        ],
+        sandbox: RepoSandbox {
+            read: vec!["ios/Pods".to_owned()],
+            write: vec!["build".to_owned()],
+        },
+    };
+    let agent_doc = agent_profile(&grants);
     let set = agent_doc.pointer("/environment/set_vars").unwrap();
     let vars = (set.as_object().unwrap().iter())
         .map(|(k, v)| (k.clone(), v.as_str().unwrap().to_owned()))
@@ -261,14 +289,31 @@ fn the_exec_profile_is_the_one_the_agent_launch_writes() {
     let s = Arc::new(FakeSurface::new("/r"));
     let r = SandboxReq {
         set_vars: vars,
+        mac_grants: grants,
         ..mac_req()
     };
     agent(&d, &s).sandbox(&r).unwrap().unwrap();
     let (_, bytes, _) = profile_put(&d).expect("a profile");
     let exec_doc: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
-    // Only the temp directory differs: the agent has one of its own, the exec uses the Task's.
-    assert_eq!(without_temp(&exec_doc), without_temp(&agent_doc));
-    assert_eq!(exec_doc.pointer("/mac"), agent_doc.pointer("/mac"));
-    assert_eq!(exec_doc.pointer("/environment/set_vars"), Some(set));
-    assert_eq!(exec_doc.pointer("/groups"), agent_doc.pointer("/groups"));
+    for doc in [&agent_doc, &exec_doc] {
+        non_empty(doc, &format!("/{}", super::super::sandbox::mac::RULES_KEY));
+        non_empty(doc, "/environment/allow_vars");
+        non_empty(doc, "/filesystem/deny");
+    }
+    let (exec_rest, exec_vars) = without_temp(&exec_doc);
+    let (agent_rest, agent_vars) = without_temp(&agent_doc);
+    assert_eq!(exec_rest, agent_rest);
+    // Only the pass-through names differ: the agent also passes its own credential, and the exec
+    // names every variable it sets.
+    let only = |a: &[String], b: &[String]| -> Vec<String> {
+        a.iter().filter(|v| !b.contains(v)).cloned().collect()
+    };
+    assert_eq!(
+        only(&agent_vars, &exec_vars),
+        ["CLAUDE_CODE_OAUTH_TOKEN".to_owned()]
+    );
+    let sets = exec_doc.pointer("/environment/set_vars").unwrap();
+    for name in only(&exec_vars, &agent_vars) {
+        assert!(sets.get(&name).is_some(), "{name} is not a set var");
+    }
 }
