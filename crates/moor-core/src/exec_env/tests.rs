@@ -315,3 +315,33 @@ fn wrap_argv_unsets_first_even_without_a_prelude() {
     assert!(w.get(2).unwrap().starts_with("unset X Y\n"), "{w:?}");
     assert!(w.get(2).unwrap().contains("\nunset GH_TOKEN"));
 }
+
+#[test]
+fn exec_purposes_reexport_the_token_after_the_unset_and_the_agent_does_not() {
+    let (cred, wd) = (path("/cred"), path("/work"));
+    let e = vec![("GH_TOKEN".to_owned(), "moor-proxy".to_owned())];
+    let b = ctx(&e, Some(&cred), Some(&wd));
+    for purpose in [Purpose::Run, Purpose::Setup { lines: 1 }, Purpose::Teardown] {
+        let got = build(&b, purpose).unwrap();
+        let at = |needle: &str| got.prelude.iter().position(|l| l == needle).unwrap();
+        assert!(
+            at("export GH_TOKEN='moor-proxy'") > at("unset GH_TOKEN GITHUB_TOKEN"),
+            "{purpose:?}"
+        );
+    }
+    let agent = build(&b, Purpose::Agent).unwrap();
+    assert!(!agent.prelude.join("\n").contains("export GH_TOKEN="));
+}
+
+#[test]
+fn a_stripped_token_is_not_reexported() {
+    let (cred, wd) = (path("/cred"), path("/work"));
+    let e = vec![("GH_TOKEN".to_owned(), "moor-proxy".to_owned())];
+    let strip = ["GH_TOKEN".to_owned()];
+    let b = BoxCtx {
+        strip: &strip,
+        ..ctx(&e, Some(&cred), Some(&wd))
+    };
+    let got = build(&b, Purpose::Run).unwrap();
+    assert!(!got.prelude.join("\n").contains("export GH_TOKEN="));
+}
