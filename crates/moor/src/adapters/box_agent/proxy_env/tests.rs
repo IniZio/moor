@@ -81,7 +81,7 @@ fn without_a_proxy_the_environment_only_strips_names() {
 fn lines_for(origin: Option<&str>) -> Vec<String> {
     let mut p = proxy();
     p.box_env = vec![
-        ("GH_TOKEN".to_owned(), "moor-proxy".to_owned()),
+        ("GH_TOKEN".to_owned(), "gho_moor-proxy".to_owned()),
         ("QUOTED".to_owned(), "it's".to_owned()),
     ];
     script_lines(

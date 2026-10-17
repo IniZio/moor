@@ -197,7 +197,7 @@ fn defaults_are_valid_and_complete() {
     let d = default_rules();
     assert_eq!(
         d.keys().map(String::as_str).collect::<Vec<_>>(),
-        ["claude", "github-api", "github-git"]
+        ["claude", "github-api", "github-git", "github-uploads"]
     );
     assert!(d.get("claude").expect("claude").allow.is_empty());
     assert_eq!(
@@ -276,7 +276,7 @@ fn user_rule_overrides_default_inject_and_adds() {
         gl.box_env.get("GL_REPO").map(String::as_str),
         Some("acme/widgets")
     );
-    assert_eq!(rules.len(), 4);
+    assert_eq!(rules.len(), 5);
 }
 
 fn github_api_paths(allow: Option<&str>) -> Vec<String> {
@@ -316,8 +316,33 @@ fn user_box_env_overrides_default_var() {
     assert_eq!(gh.box_env.get("MORE").map(String::as_str), Some("x"));
     assert_eq!(
         gh.box_env.get("GH_TOKEN").map(String::as_str),
-        Some("moor-proxy")
+        Some("gho_moor-proxy")
     );
+}
+
+#[test]
+fn github_uploads_rule_injects_forge_and_allows_only_the_asset_post() {
+    let rules =
+        resolve_rules(&ProxyConfig::default(), &creds(), Some(("o", "w"))).expect("resolves");
+    let up = rules
+        .iter()
+        .find(|r| r.name == "github-uploads")
+        .expect("uploads");
+    assert_eq!(up.hosts, ["uploads.github.com"]);
+    assert_eq!(up.credential, "forge");
+    assert_eq!(
+        up.inject,
+        ResolvedInject::Header {
+            header: "Authorization".to_owned(),
+            form: "token {secret}".to_owned(),
+        }
+    );
+    let allowed: Vec<String> = up
+        .endpoint_rules
+        .iter()
+        .map(|r| format!("{} {}", r.method, r.path))
+        .collect();
+    assert_eq!(allowed, ["POST /user-attachments/assets"]);
 }
 
 #[test]
