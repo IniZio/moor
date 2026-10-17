@@ -20,6 +20,7 @@ pub(crate) mod release;
 pub(crate) mod reports;
 pub(crate) mod resume;
 pub(crate) mod setup;
+pub(crate) mod toolchains;
 pub(crate) mod transcript;
 pub(crate) mod view;
 pub(crate) mod wake;

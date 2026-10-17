@@ -4,11 +4,12 @@ use moor_core::boxscript::denials::{SETUP_REPORT_REL, SETUP_START_REL};
 use moor_core::boxscript::quote;
 use moor_core::config::TaskSettings;
 use moor_core::exec_env::{self, ExecEnv, MacTask, Purpose};
-use moor_core::seam::engine::{MacGrants, SandboxReq, Sandboxed};
+use moor_core::seam::engine::{SandboxReq, Sandboxed};
 use moor_core::{BoxPath, TaskName};
 
 use super::{create, remove, strip_env, BoxExec, Site};
 use crate::cx::Cx;
+use crate::ops::common::toolchains;
 
 impl BoxExec {
     /// An exec that runs `env` as is.
@@ -53,22 +54,22 @@ pub(super) fn seal(
         dir
     };
     let report = matches!(purpose, Purpose::Setup { .. });
-    let req = TaskName::parse(mac.key.as_str())
-        .map(|task| SandboxReq {
-            handle: site.handle.clone(),
-            worktree: site.worktree.to_path_buf(),
-            workdir: workdir.clone(),
-            task,
-            cred: dir.clone(),
-            set_vars: env.vars.clone(),
-            strip_env: strip_env(cx, site.provider),
-            mac_grants: MacGrants {
-                capabilities: cfg.repo_box.capabilities.clone(),
-                sandbox: cfg.repo_box.sandbox.clone(),
-            },
-            report,
-        })
-        .map_err(|e| e.to_string());
+    let req = toolchains::mac_grants(cx, cfg)
+        .map_err(|e| e.in_file(".moor.yaml").to_string())
+        .and_then(|mac_grants| {
+            let task = TaskName::parse(mac.key.as_str()).map_err(|e| e.to_string())?;
+            Ok(SandboxReq {
+                handle: site.handle.clone(),
+                worktree: site.worktree.to_path_buf(),
+                workdir: workdir.clone(),
+                task,
+                cred: dir.clone(),
+                set_vars: env.vars.clone(),
+                strip_env: strip_env(cx, site.provider),
+                mac_grants,
+                report,
+            })
+        });
     let got = match req {
         Ok(req) => cx.engine().sandbox(&req).map_err(|e| e.to_string()),
         Err(e) => Err(e),

@@ -2,13 +2,15 @@
 
 use std::path::Path;
 
+use moor_core::config::parse_user;
 use moor_core::domain::decision::{Decision, NewTask};
 use moor_core::exec_env::Purpose;
 use moor_core::seam::driver::ExecOutcome;
-use moor_core::{BoxPath, TaskName};
+use moor_core::{BoxPath, TaskId, TaskName};
 
 use super::{argvs, boxed_proxy, cfg, rig_driver, Rig};
 use crate::ops::common::box_exec::{prepare, tag_nonce, BoxExec};
+use crate::store::lease::{LeaseKind, LeaseState};
 use crate::testing::driver::FakeDriver;
 
 const WORKDIR: &str = "/Users/box/moor/demo/work/repo";
@@ -121,4 +123,71 @@ fn the_tag_nonce_is_sixteen_lowercase_hex_so_box_release_matches_the_tag_anchore
             "{n}"
         );
     }
+}
+
+const HOST: &str = "toolchains:\n  mise: {root: /Users/me/.local/share/mise, env: {MISE_DATA_DIR: \"{root}\"}, bin: [installs/node/22/bin]}\n";
+
+#[test]
+fn the_selected_toolchains_reach_the_env_and_the_path_and_their_links_are_held() {
+    let dir = tempfile::tempdir().unwrap();
+    let r = rig_driver(
+        dir.path(),
+        parse_user("c.yaml", HOST).unwrap(),
+        FakeDriver::new(),
+    );
+    r.cx.store()
+        .unwrap()
+        .apply(Decision::insert(NewTask {
+            name: TaskName::parse("demo").unwrap(),
+            repo: "r".into(),
+        }))
+        .unwrap();
+    let mut c = cfg();
+    c.repo_box.toolchains = vec!["mise".to_owned()];
+    let workdir = BoxPath::restore(WORKDIR).unwrap();
+    let e = prepare(
+        &r.cx,
+        &r.site(Some(&workdir), dir.path()),
+        None,
+        &c,
+        Purpose::Run,
+    )
+    .unwrap();
+    assert_eq!(
+        var(&e, "MISE_DATA_DIR").as_deref(),
+        Some("/Users/me/.local/share/mise")
+    );
+    let prelude = e.env.prelude.join("\n");
+    assert!(
+        prelude.contains("'/Users/me/.local/share/mise/installs/node/22/bin':"),
+        "{prelude}"
+    );
+    let rows = r.cx.store().unwrap().leases(TaskId::new(1)).unwrap();
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    let row = rows.first().unwrap();
+    assert_eq!(row.kind, LeaseKind::ToolchainLink);
+    assert_eq!(row.key, "/Users/me/.local/share/mise");
+    assert_eq!(row.state, LeaseState::Held);
+}
+
+#[test]
+fn an_unknown_toolchain_fails_the_exec_as_a_config_error_before_the_box_is_touched() {
+    let dir = tempfile::tempdir().unwrap();
+    let r = mac_rig(dir.path());
+    let mut c = cfg();
+    c.repo_box.toolchains = vec!["nope".to_owned()];
+    let workdir = BoxPath::restore(WORKDIR).unwrap();
+    let got = prepare(
+        &r.cx,
+        &r.site(Some(&workdir), dir.path()),
+        None,
+        &c,
+        Purpose::Run,
+    );
+    let e = got.err().unwrap();
+    assert!(
+        e.starts_with(".moor.yaml:box.toolchains[0]:") && e.contains("unknown toolchain \"nope\""),
+        "{e}"
+    );
+    assert!(argvs(&r).is_empty());
 }

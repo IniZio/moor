@@ -4,8 +4,9 @@ use moor_core::config::{BoxCapability, RepoBox};
 use moor_core::mac_capability::{selected, MacCapability, Selection};
 use moor_core::name::BoxPath;
 use moor_core::seam::engine::MacGrants;
+use moor_core::view::TOOLCHAIN_STEP;
 
-use super::super::sandbox::mac::MacInput;
+use super::super::sandbox::mac::{check_toolchains, MacInput};
 use super::super::sandbox::{self, SandboxInput};
 use super::mac::MacBox;
 use super::{fail, Failure};
@@ -42,6 +43,17 @@ pub(in super::super) struct ProfileArgs<'a> {
 /// Capabilities that cannot be granted here, or grants that cannot be rendered.
 pub(in super::super) fn build(args: ProfileArgs) -> Result<String, Failure> {
     let caps = mac_grants(args.os, args.mac.is_some(), args.grants)?;
+    let mac = args.mac.zip(caps.as_deref()).map(|(m, caps)| MacInput {
+        layout: &m.layout,
+        login_home: &m.login_home,
+        developer_dir: m.developer_dir.as_str(),
+        capabilities: caps,
+        sandbox: &args.grants.sandbox,
+        toolchains: &m.toolchains,
+    });
+    if let Some(m) = &mac {
+        check_toolchains(m).map_err(|e| fail(TOOLCHAIN_STEP, &e))?;
+    }
     sandbox::profile(&SandboxInput {
         os: args.os,
         workdir: args.workdir,
@@ -52,14 +64,7 @@ pub(in super::super) fn build(args: ProfileArgs) -> Result<String, Failure> {
         set_vars: args.set_vars,
         root: args.root,
         strip_env: args.strip_env,
-        mac: args.mac.zip(caps.as_deref()).map(|(m, caps)| MacInput {
-            layout: &m.layout,
-            login_home: &m.login_home,
-            developer_dir: m.developer_dir.as_str(),
-            capabilities: caps,
-            sandbox: &args.grants.sandbox,
-            toolchains: &[],
-        }),
+        mac,
     })
     .map_err(|e| fail("sandbox", &e))
 }
@@ -77,6 +82,7 @@ fn mac_grants(
     if os != "Darwin" || !in_layout {
         let asked = RepoBox {
             capabilities: grants.capabilities.clone(),
+            toolchains: grants.toolchains.iter().map(|t| t.name.clone()).collect(),
             ..RepoBox::default()
         };
         return match asked.check_platform(false) {

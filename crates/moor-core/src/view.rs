@@ -8,6 +8,9 @@ pub mod steer;
 use crate::domain::boxes::BoxState;
 use crate::domain::task::TaskState;
 
+/// The launch step that fails when a host toolchain root is refused.
+pub const TOOLCHAIN_STEP: &str = "toolchain";
+
 /// Why the agent could not be launched.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LaunchFailure {
@@ -25,6 +28,10 @@ impl LaunchFailure {
     /// The text `start` shows for the failure.
     #[must_use]
     pub fn text(&self) -> String {
+        if self.step == TOOLCHAIN_STEP {
+            // Retrying fails the same way; the message already says which config key to change.
+            return format!("agent dispatch failed: {}: {}", self.step, self.message);
+        }
         format!(
             "agent dispatch failed: {}: {}; re-run start to retry",
             self.step, self.message

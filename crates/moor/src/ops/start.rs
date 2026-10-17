@@ -23,6 +23,7 @@ use super::common::provision::{
     moor_yaml, provision, reprovision, reread, Entry, Provisioned, ResyncGates,
 };
 use super::common::provisioning::dead_provisioning;
+use super::common::toolchains;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::store::{Store, StoreError, TaskRow};
@@ -82,6 +83,7 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     let cfg = settings(cx, facts.bound.as_deref().unwrap_or(&facts.repo), &flags)?;
     let caps = provider_caps(cx, &cfg)?;
     require_reverse_tunnel(&cfg, caps)?;
+    toolchains::selected(cx, &cfg).map_err(|e| e.in_file(".moor.yaml"))?;
     if let Some(reason) =
         preflight::rejection(cx, &cfg, facts.bound.as_deref().unwrap_or(&facts.repo))
     {

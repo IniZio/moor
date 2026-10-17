@@ -105,6 +105,28 @@ fn plain(text: &str) -> Result<&str, String> {
     Ok(text)
 }
 
+/// Checks every selected host toolchain root before the profile is built.
+///
+/// # Errors
+/// The message names the first refused toolchain and the host config key to change.
+pub(crate) fn check_toolchains(input: &MacInput) -> Result<(), String> {
+    for (i, (name, _)) in input.toolchains.iter().enumerate() {
+        let Ok(i) = u16::try_from(i) else { continue };
+        let path = MacPath {
+            root: MacRoot::HostToolchain(i),
+            rel: "",
+        };
+        let abs = resolve(input, path);
+        refuse_host_toolchain(input, &abs).map_err(|why| {
+            format!(
+                "host toolchain \"{name}\" root {abs} is refused: {why}; \
+                 change toolchains.{name}.root in the host config, then re-run start"
+            )
+        })?;
+    }
+    Ok(())
+}
+
 /// Resolves a capability path and files it under the access it asks for.
 fn push_path(
     input: &MacInput,

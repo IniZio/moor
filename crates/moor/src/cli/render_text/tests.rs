@@ -359,6 +359,20 @@ fn start_shows_a_sandbox_step_failure_as_a_warning() {
 }
 
 #[test]
+fn start_shows_a_toolchain_refusal_without_the_retry_hint() {
+    let message = "host toolchain \"keys\" root /Users/n/.ssh is refused: it is inside the credential directory /Users/n/.ssh; change toolchains.keys.root in the host config, then re-run start";
+    let reason = LaunchFailure {
+        step: "toolchain".to_owned(),
+        message: message.to_owned(),
+        tail: None,
+        at: "2026-01-01T00:00:00Z".to_owned(),
+    };
+    let text = reason.text();
+    assert_eq!(text, format!("agent dispatch failed: toolchain: {message}"));
+    assert!(!text.contains("re-run start to retry"));
+}
+
+#[test]
 fn close_prints_name_and_box_outcome() {
     let v = json!({
         "task": lifecycle_task("alpha", "closed", None),

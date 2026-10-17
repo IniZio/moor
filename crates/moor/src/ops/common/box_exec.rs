@@ -4,7 +4,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use moor_core::config::proxy::{ResolvedRule, FORGE_CREDENTIAL};
-use moor_core::config::TaskSettings;
+use moor_core::config::{SelectedToolchain, TaskSettings};
 use moor_core::domain::run::SyncMode;
 use moor_core::exec_env::{self, BoxCtx, ExecEnv, MacTask, ProxyCtx, Purpose, RUN_DEADLINE};
 use moor_core::seam::agent_profile::ProxyAddr;
@@ -18,6 +18,7 @@ use moor_core::{BoxHandle, BoxPath, TaskId};
 
 use crate::cx::Cx;
 use crate::ops::common::proxy::{box_env, origin, plan};
+use crate::ops::common::toolchains;
 
 /// Time allowed for removing the staged directory.
 const CLEANUP_DEADLINE: Duration = Duration::from_secs(30);
@@ -112,14 +113,19 @@ pub(crate) struct BoxExec {
     sandboxed: Option<Sandboxed>,
 }
 
-/// The Mac Task of one exec; no host toolchains yet.
-const fn task_for<'a>(layout: &'a MacLayout, key: &'a TaskKey, nonce: &'a str) -> MacTask<'a> {
+/// The Mac Task of one exec, with the env and `PATH` directories of its host toolchains.
+const fn task_for<'a>(
+    (layout, key): &'a (MacLayout, TaskKey),
+    nonce: &'a str,
+    toolchain_env: &'a [(String, String)],
+    toolchain_bin: &'a [String],
+) -> MacTask<'a> {
     MacTask {
         layout,
         key,
         nonce,
-        toolchain_env: &[],
-        toolchain_bin: &[],
+        toolchain_env,
+        toolchain_bin,
     }
 }
 
@@ -138,16 +144,36 @@ pub(crate) fn prepare(
     cfg: &TaskSettings,
     purpose: Purpose,
 ) -> Result<BoxExec, String> {
+    let task = proxy.map(|p| p.task).or(site.task);
+    let mac = mac_layout(cx, site, task);
+    let tc = if mac.is_some() {
+        toolchains::selected(cx, cfg).map_err(|e| e.in_file(".moor.yaml").to_string())?
+    } else {
+        Vec::new()
+    };
+    let links = toolchains::plan_for_exec(cx, task, &tc)?;
+    let exec = build(cx, site, proxy, cfg, purpose, (mac.as_ref(), &tc))?;
+    toolchains::hold_for_exec(cx, &links)?;
+    Ok(exec)
+}
+
+/// Builds the environment for `purpose` on the Mac `layout` or the Linux Box.
+fn build(
+    cx: &Cx,
+    site: &Site<'_>,
+    proxy: Option<&BoxProxy>,
+    cfg: &TaskSettings,
+    purpose: Purpose,
+    (mac, tc): (Option<&(MacLayout, TaskKey)>, &[SelectedToolchain]),
+) -> Result<BoxExec, String> {
     let strip = strip_env(cx, site.provider);
     let repo_env: Vec<(String, String)> = cfg.env.clone().into_iter().collect();
-    let mac = mac_layout(cx, site, proxy.map(|p| p.task).or(site.task));
-    if let Some((layout, _)) = &mac {
+    if let Some((layout, _)) = mac {
         prepare_layout(cx, site, layout)?;
     }
     let nonce = tag_nonce(cx.rng());
-    let mac_task = mac
-        .as_ref()
-        .map(|(layout, key)| task_for(layout, key, &nonce));
+    let (tc_env, tc_bin) = toolchains::env_and_bin(tc);
+    let mac_task = mac.map(|m| task_for(m, &nonce, &tc_env, &tc_bin));
     let Some(p) = proxy else {
         let ctx = BoxCtx {
             env: &repo_env,
@@ -160,7 +186,7 @@ pub(crate) fn prepare(
         let env = exec_env::build(&ctx, purpose)?;
         return sandbox::seal(cx, site, cfg, purpose, mac_task, BoxExec::plain(env, None));
     };
-    let dir = match &mac {
+    let dir = match mac {
         Some((layout, _)) => layout.cred_dir(&nonce).map_err(|e| e.to_string())?,
         None => BoxPath::under(
             box_home(cx, site)?.as_str(),

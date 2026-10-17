@@ -2,6 +2,7 @@
 //! launch reads no process environment and prepares the Task's directories instead.
 
 use moor_core::boxscript::quote;
+use moor_core::config::SelectedToolchain;
 use moor_core::exec_env::MacTask;
 use moor_core::name::{BoxPath, TaskName};
 use moor_core::seam::driver::{BoxStep, ExecOutcome, StepDone};
@@ -18,6 +19,12 @@ pub(in super::super) struct Mac {
     layout: MacLayout,
     /// The Task's key.
     key: TaskKey,
+    /// The host toolchains the repo selected.
+    toolchains: Vec<SelectedToolchain>,
+    /// Their environment, flattened in selection order.
+    env: Vec<(String, String)>,
+    /// Their `PATH` directories, flattened in selection order.
+    bin: Vec<String>,
 }
 
 /// A launch's Task on a macOS Box, with what the prepare step printed. The Box home is the
@@ -32,6 +39,8 @@ pub(in super::super) struct MacBox {
     pub(in super::super) developer_dir: BoxPath,
     /// The Box user is root.
     pub(in super::super) root: bool,
+    /// Each selected toolchain's name and the realpath of its root as the Box reported it.
+    pub(in super::super) toolchains: Vec<(String, String)>,
 }
 
 impl MacBox {
@@ -61,13 +70,23 @@ impl Launch<'_> {
 impl Mac {
     /// The layout of `req`'s Task, when its workdir is in one.
     pub(super) fn find(req: &LaunchReq) -> Option<Self> {
-        Self::of(&req.workdir, &req.task)
+        Self::of(&req.workdir, &req.task, &req.mac_grants.toolchains)
     }
 
-    /// The layout of the Task `task`, when `workdir` is in one.
-    pub(in super::super) fn of(workdir: &BoxPath, task: &TaskName) -> Option<Self> {
+    /// The layout of the Task `task`, when `workdir` is in one, with the `toolchains` it selected.
+    pub(in super::super) fn of(
+        workdir: &BoxPath,
+        task: &TaskName,
+        toolchains: &[SelectedToolchain],
+    ) -> Option<Self> {
         let key = TaskKey::new(task);
-        MacLayout::find(workdir, &key).map(|layout| Self { layout, key })
+        MacLayout::find(workdir, &key).map(|layout| Self {
+            layout,
+            key,
+            toolchains: toolchains.to_vec(),
+            env: toolchains.iter().flat_map(|t| t.env.clone()).collect(),
+            bin: toolchains.iter().flat_map(|t| t.bin.clone()).collect(),
+        })
     }
 
     /// The Box user's home: the Task's own.
@@ -76,26 +95,34 @@ impl Mac {
     }
 
     /// What the exec environment needs of the Task, for the launch with `nonce`.
-    pub(super) const fn task<'a>(&'a self, nonce: &'a str) -> MacTask<'a> {
+    pub(super) fn task<'a>(&'a self, nonce: &'a str) -> MacTask<'a> {
         MacTask {
             layout: &self.layout,
             key: &self.key,
             nonce,
-            toolchain_env: &[],
-            toolchain_bin: &[],
+            toolchain_env: &self.env,
+            toolchain_bin: &self.bin,
         }
     }
 
     /// The step that prepares the Task's directories and launch files, then prints the user id,
-    /// the login shell's home and the resolved developer directory, one per line.
+    /// the login shell's home and the resolved developer directory, then the realpath of each
+    /// selected toolchain's root, one per line.
     pub(in super::super) fn prepare_step(&self) -> Result<BoxStep, Failure> {
         let script = self.layout.prepare_script().map_err(|e| fail("home", &e))?;
+        let tools: Vec<(String, String)> = (self.toolchains.iter())
+            .map(|t| (t.name.clone(), t.root.clone()))
+            .collect();
+        let linked = self
+            .layout
+            .toolchain_script(&tools)
+            .map_err(|e| fail("home", &e))?;
         let file = self
             .layout
             .developer_dir_file()
             .map_err(|e| fail("home", &e))?;
         Ok(BoxStep::Run(format!(
-            "{script}\nid -u\nprintf '%s\\n' \"$HOME\"\ncat {}",
+            "{script}\nid -u\nprintf '%s\\n' \"$HOME\"\ncat {}\n{linked}",
             quote(file.as_str())
         )))
     }
@@ -113,7 +140,10 @@ impl Mac {
             })) => {
                 return Err(fail(
                     "home",
-                    &format!("could not prepare the Task directories: exit {code}"),
+                    &format!(
+                        "could not prepare the Task directories: exit {code}{}",
+                        self.toolchain_hint()
+                    ),
                 ))
             }
             Some(Err(e)) => return Err(fail("home", &e)),
@@ -127,11 +157,33 @@ impl Mac {
         };
         let login_home = path("login home", lines.next())?;
         let developer_dir = path("developer directory", lines.next())?;
+        let mut toolchains = Vec::new();
+        for t in &self.toolchains {
+            let real = lines.next().unwrap_or_default();
+            if real.is_empty() {
+                return Err(fail(
+                    "home",
+                    &format!("host toolchain \"{}\": the Box reported no root", t.name),
+                ));
+            }
+            toolchains.push((t.name.clone(), real.to_owned()));
+        }
         Ok(MacBox {
             layout: self.layout,
             login_home,
             developer_dir,
             root,
+            toolchains,
         })
+    }
+
+    /// Names the selected toolchains, whose missing root fails the prepare step, or nothing.
+    fn toolchain_hint(&self) -> String {
+        let names: Vec<&str> = self.toolchains.iter().map(|t| t.name.as_str()).collect();
+        if names.is_empty() {
+            String::new()
+        } else {
+            format!(" (host toolchains: {})", names.join(", "))
+        }
     }
 }
