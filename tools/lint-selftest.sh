@@ -232,17 +232,20 @@ check L fail "disallowed_methods" <<'RS'
 pub fn now() -> std::time::Instant { std::time::Instant::now() }
 RS
 
-# Lints that list files through git must fail loudly in a tree that is not a git checkout (a `git archive` export).
-# Every tools/*.sh that sources lib/repo-root.sh is covered; add new ones here by dropping them in tools/.
+# Lints that scan the tree through git must fail loudly in a tree that is not a git checkout (a `git archive` export).
+# The list is fixed on purpose: a new tree-scanning tools/*.sh must be added here and source lib/repo-root.sh.
+# stack-overlap.sh is excluded: it compares refs and PR heads, never scans working-tree files, and already dies on a bad ref.
 unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
 export_dir="$(mktemp -d)"
 trap 'rm -rf "$export_dir"' EXIT
 mkdir -p "$export_dir/tools" "$export_dir/crates"
 cp -r "$root/tools/lib" "$export_dir/tools/"
 echo 'fn main() {}' > "$export_dir/crates/a.rs"
-for script in $(grep -l 'lib/repo-root.sh' "$root"/tools/*.sh); do
-  name="$(basename "$script")"
-  [ "$name" != lint-selftest.sh ] || continue
+for name in file-cap.sh removed-names.sh exec-env.sh; do
+  script="$root/tools/$name"
+  if ! grep -q 'lib/repo-root.sh' "$script"; then
+    echo "lint-selftest: $name FAILED (does not source lib/repo-root.sh)"; exit 1
+  fi
   cp "$script" "$export_dir/tools/$name"
   rc=0
   out="$(cd "$export_dir" && GIT_CEILING_DIRECTORIES="$(dirname "$export_dir")" "tools/$name" 2>&1)" || rc=$?
