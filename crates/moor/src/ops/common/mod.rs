@@ -9,6 +9,7 @@ pub(crate) mod capacity;
 pub(crate) mod creds;
 pub(crate) mod dotfiles;
 pub(crate) mod facts;
+pub(crate) mod host_steps;
 pub(crate) mod identity;
 pub(crate) mod park;
 pub(crate) mod promote;
