@@ -44,10 +44,10 @@ __moor_key() {
   } | $__moor_hash
 }
 ( LC_ALL=C; git ls-files | while IFS= read -r __f; do
-    case "$__f" in node_modules/*|*/node_modules/*|vendor/*|*/vendor/*|Pods/*|*/Pods/*) continue ;; esac
-    case "$__f" in *[!A-Za-z0-9._/@+-]*|*..*) continue ;; esac
+    case "$__f" in (node_modules/*|*/node_modules/*|vendor/*|*/vendor/*|Pods/*|*/Pods/*) continue ;; esac
+    case "$__f" in (*[!A-Za-z0-9._/@+-]*|*..*) continue ;; esac
     case "${__f##*/}" in
-      package-lock.json|pnpm-lock.yaml|yarn.lock|bun.lock|bun.lockb|uv.lock|poetry.lock|Pipfile.lock|Gemfile.lock|composer.lock|Podfile.lock) printf '%s\n' "$__f" ;;
+      (package-lock.json|pnpm-lock.yaml|yarn.lock|bun.lock|bun.lockb|uv.lock|poetry.lock|Pipfile.lock|Gemfile.lock|composer.lock|Podfile.lock) printf '%s\n' "$__f" ;;
     esac
   done ) > .moor/cache/.locks
 __moor_ok=1
@@ -63,13 +63,13 @@ if [ -n "$__moor_ok" ]; then
   while IFS= read -r __f; do
     __nest=
     case "${__f##*/}" in
-      package-lock.json|pnpm-lock.yaml|yarn.lock|bun.lock|bun.lockb) __eco=node; __pins='.nvmrc .node-version .tool-versions .mise.toml mise.toml'; __dir=node_modules; __nest=1 ;;
-      uv.lock|poetry.lock|Pipfile.lock) __eco=python; __pins='.python-version .tool-versions .mise.toml mise.toml'; __dir=.venv ;;
-      Gemfile.lock) __eco=ruby; __pins='.ruby-version .tool-versions .mise.toml mise.toml'; __dir=vendor/bundle ;;
-      composer.lock) __eco=php; __pins='.tool-versions .mise.toml mise.toml'; __dir=vendor ;;
-      *) __eco=pods; __pins='.tool-versions .mise.toml mise.toml'; __dir=Pods ;;
+      (package-lock.json|pnpm-lock.yaml|yarn.lock|bun.lock|bun.lockb) __eco=node; __pins='.nvmrc .node-version .tool-versions .mise.toml mise.toml'; __dir=node_modules; __nest=1 ;;
+      (uv.lock|poetry.lock|Pipfile.lock) __eco=python; __pins='.python-version .tool-versions .mise.toml mise.toml'; __dir=.venv ;;
+      (Gemfile.lock) __eco=ruby; __pins='.ruby-version .tool-versions .mise.toml mise.toml'; __dir=vendor/bundle ;;
+      (composer.lock) __eco=php; __pins='.tool-versions .mise.toml mise.toml'; __dir=vendor ;;
+      (*) __eco=pods; __pins='.tool-versions .mise.toml mise.toml'; __dir=Pods ;;
     esac
-    case "$__f" in */*) __pre="${__f%/*}/" ;; *) __pre= ;; esac
+    case "$__f" in (*/*) __pre="${__f%/*}/" ;; (*) __pre= ;; esac
     __slug=$(printf '%s' "$__f" | sed 's,/,__,g')
     __key=$(__moor_key "$__f" "$__eco" "$__pins") || __key=
     if [ -n "$__key" ] && [ -f ".moor/cache/$__slug.key" ] && [ "$(cat ".moor/cache/$__slug.key")" = "$__key" ]; then

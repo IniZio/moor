@@ -401,3 +401,29 @@ fn step_with_unbalanced_parens_cannot_break_out() {
     assert!(!sb.exists("escaped"));
     assert!(!sb.exists("ran"));
 }
+
+#[test]
+fn every_case_pattern_has_a_leading_paren() {
+    // bash 3.2 (macOS /bin/sh) misreads an unparenthesised pattern inside `$( … )`.
+    let script = record_script(&[], "true");
+    let mut in_case = false;
+    for line in script.lines().map(str::trim) {
+        if let Some(rest) = line.strip_prefix("case ") {
+            let arms = rest.split_once(" in").map_or("", |(_, a)| a.trim());
+            for arm in arms
+                .split(";;")
+                .map(str::trim)
+                .filter(|a| !a.is_empty() && *a != "esac")
+            {
+                assert!(arm.starts_with('('), "unparenthesised case arm: {arm}");
+            }
+            in_case = !line.contains("esac");
+        } else if in_case && line == "esac" {
+            in_case = false;
+        } else if in_case {
+            for arm in line.split(";;").map(str::trim).filter(|a| !a.is_empty()) {
+                assert!(arm.starts_with('('), "unparenthesised case arm: {arm}");
+            }
+        }
+    }
+}
