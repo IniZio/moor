@@ -220,6 +220,24 @@ fn a_toolchain_whose_realpath_is_in_the_credential_dirs_is_refused_by_name() {
 }
 
 #[test]
+fn a_refused_toolchain_root_fails_the_toolchain_step_and_names_the_config_key() {
+    let prepared =
+        "501\n/Users/alice\n/Applications/Xcode.app/Contents/Developer\n/Users/alice/.ssh\n";
+    let e = grants_launch(
+        "Darwin arm64",
+        with_toolchains(vec![mise()]),
+        true,
+        prepared,
+    )
+    .unwrap_err();
+    assert!(e.starts_with("launch failed at toolchain: "), "{e}");
+    assert!(
+        e.ends_with("change toolchains.mise.root in the host config, then re-run start"),
+        "{e}"
+    );
+}
+
+#[test]
 fn a_toolchain_the_prepare_step_did_not_report_fails_the_home_step() {
     let e = grants_launch(
         "Darwin arm64",

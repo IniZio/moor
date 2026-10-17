@@ -34,7 +34,7 @@ pub(super) fn sandbox(
     prepare(agent, req, mac)
         .map(Some)
         .map_err(|f| EngineError::Failed {
-            step: "sandbox",
+            step: f.step,
             message: f.message,
         })
 }
