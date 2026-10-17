@@ -382,4 +382,6 @@ mod proof_tests;
 #[cfg(test)]
 mod proxy_tests;
 #[cfg(test)]
+mod relaunch_tests;
+#[cfg(test)]
 mod tests;
