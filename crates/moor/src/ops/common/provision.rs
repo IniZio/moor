@@ -21,6 +21,7 @@ use crate::ops::common::dotfiles;
 use crate::ops::common::facts::{provider_caps, require_reverse_tunnel, resolved};
 use crate::ops::common::identity;
 use crate::ops::common::setup;
+use crate::ops::common::toolchains;
 use crate::store::lease::LeaseKind;
 use crate::store::{Store, TaskRow};
 
@@ -143,6 +144,7 @@ pub(crate) fn provision(
     let task = reread(store, id)?;
     let provider = ProviderId::new(cfg.provider.value.clone());
     require_reverse_tunnel(cfg, provider_caps(cx, cfg)?)?;
+    toolchains::selected(cx, cfg).map_err(|e| e.in_file(".moor.yaml"))?;
     let mut requested = Decision::new(id);
     requested.task_input = entry.begin();
     let requested = requested

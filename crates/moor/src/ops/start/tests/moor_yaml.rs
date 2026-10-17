@@ -121,6 +121,25 @@ fn a_changed_setup_sets_up_a_replacement_box_when_trusted_and_warns() {
 }
 
 #[test]
+fn an_unknown_toolchain_in_the_worktree_fails_before_a_replacement_box_is_acquired() {
+    let w = failed_with(Some("setup: [a]\nbox: {toolchains: [nope]}\n"));
+    let acquires = || w.driver.calls().iter().filter(|c| *c == "acquire").count();
+    let before = acquires();
+    let trusted = StartReq {
+        trust_moor_yaml: true,
+        ..start_req()
+    };
+    let err = run(&w.cx, &trusted).unwrap_err();
+    let msg = err.error.to_string();
+    assert!(
+        msg.starts_with(".moor.yaml:box.toolchains[0]:")
+            && msg.contains("unknown toolchain \"nope\""),
+        "{msg}"
+    );
+    assert_eq!(acquires(), before);
+}
+
+#[test]
 fn a_deleted_moor_yaml_is_refused_for_a_replacement_box() {
     let w = failed_with(None);
     assert_refused(&w, &start_req(), "deleted");
