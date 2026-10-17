@@ -10,7 +10,7 @@ use moor_core::domain::decision::Intent;
 use moor_core::domain::run::SyncMode;
 use moor_core::domain::task::TaskState;
 use moor_core::seam::clock::Ts;
-use moor_core::seam::driver::ExecOutcome;
+use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
 use moor_core::seam::proc::{Deadline, Tool};
 use moor_core::seam::proxy_host::ProxyHostError;
 use moor_core::view::{DotfilesView, StartView};
@@ -285,6 +285,19 @@ fn assert_event_tail(w: &World) {
     );
 }
 
+/// The exec carries the Proxy prelude and the Proxy token env.
+fn assert_proxied(spec: &ExecSpec) {
+    assert!(spec
+        .argv
+        .get(2)
+        .is_some_and(|p| p.contains("export HTTPS_PROXY=")));
+    let token = (
+        "CLAUDE_CODE_OAUTH_TOKEN".to_owned(),
+        "moor-proxy".to_owned(),
+    );
+    assert!(spec.env.contains(&token));
+}
+
 #[test]
 fn start_after_a_failed_dotfiles_run_re_applies_them_in_the_same_box() {
     let (w, engine, _repo, _src) = failed_start();
@@ -305,6 +318,7 @@ fn start_after_a_failed_dotfiles_run_re_applies_them_in_the_same_box() {
     assert_eq!(puts.len(), 2);
     assert!(puts.iter().all(|p| p.0.as_str() == "box-1"));
     assert_eq!(dotfiles_execs(&w).len(), 2);
+    assert_proxied(&w.driver.execs().pop().unwrap().1);
     assert!(w.driver.execs().iter().all(|e| e.0.as_str() == "box-1"));
     assert_eq!(engine.launches().len(), 1);
     let row = w.cx.store().unwrap().task(TaskId::new(1)).unwrap().unwrap();
@@ -484,8 +498,46 @@ fn dotfiles_fail_when_the_proxy_cannot_start() {
         "{msg}"
     );
     assert!(msg.contains("run `moor start` on this Task again"), "{msg}");
+    assert!(!msg.contains("setup failed:"), "{msg}");
+    assert!(w
+        .cx
+        .take_warnings()
+        .iter()
+        .all(|x| x.code != "setup_failed"));
+    let events = w.cx.store().unwrap().events(TaskId::new(1), 50).unwrap();
+    let lines: Vec<_> = (events.iter().filter(|e| e.kind == "setup_failed"))
+        .filter_map(|e| e.payload.get("line").and_then(|l| l.as_str()))
+        .collect();
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert!(
+        lines.iter().all(|l| l.contains("dotfiles did not run")),
+        "{lines:?}"
+    );
     assert!(dotfiles_execs(&w).is_empty());
     assert!(w.proc.calls().iter().all(|c| c.tool != Tool::Sh));
     assert!(engine.launches().is_empty());
     assert_task_kept_in_setup_failed(&w);
+}
+
+/// The argv of the last Box exec after a start whose dotfiles exec ended as `out`.
+fn last_argv_after(out: Result<ExecOutcome, DriverError>) -> Vec<String> {
+    let src = tempfile::tempdir().unwrap();
+    let driver = FakeDriver::new().exec_results(scripted([Sync(Ok(exit(0))), Cmd(out)]));
+    let (w, _, _repo) = dotfiles_world("env: {A: a}\n", Some(src.path()), None, driver);
+    run(&w.cx, &goal_req()).unwrap_err();
+    w.driver.execs().pop().unwrap().1.argv
+}
+
+#[test]
+fn a_dotfiles_exec_that_errors_or_is_interrupted_removes_the_staged_credentials() {
+    let timeout = DriverError::Timeout(Duration::from_mins(15));
+    for out in [Ok(ExecOutcome::Interrupted), Err(timeout)] {
+        let last = last_argv_after(out);
+        let dir = last.get(2).cloned().unwrap_or_default();
+        assert_eq!(
+            last.get(..2),
+            Some(&["rm".to_owned(), "-rf".to_owned()][..])
+        );
+        assert!(dir.contains(".moor-cred-"), "{last:?}");
+    }
 }
