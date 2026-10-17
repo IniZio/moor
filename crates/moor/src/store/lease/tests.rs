@@ -3,12 +3,13 @@
 
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 
 use moor_core::domain::decision::{Decision, NewTask};
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::{TaskId, TaskName};
 
-use super::{LeaseKind, LeaseState, ProcessIds};
+use super::{retry_after, LeaseKind, LeaseState, ProcessIds};
 use crate::store::Store;
 use crate::testing::clock::FakeClock;
 
@@ -247,4 +248,91 @@ fn old_lease_table_gains_attempt_columns_on_open() {
     drop(store);
     let row = open(dir.path()).leases(t).unwrap().remove(0);
     assert_eq!((row.attempts, row.failure.as_deref()), (1, Some("busy")));
+}
+
+#[test]
+fn retry_after_doubles_from_ten_minutes_and_caps_at_six_hours() {
+    let min = |m: u64| Duration::from_secs(m * 60);
+    assert_eq!(retry_after(0), min(10));
+    assert_eq!(retry_after(1), min(10));
+    assert_eq!(retry_after(2), min(20));
+    assert_eq!(retry_after(3), min(40));
+    assert_eq!(retry_after(6), min(320));
+    assert_eq!(retry_after(7), min(360));
+    assert_eq!(retry_after(8), min(360));
+    assert_eq!(retry_after(u32::MAX), min(360));
+}
+
+#[test]
+fn record_attempt_sets_then_clears_next_attempt_at() {
+    let dir = tempfile::tempdir().unwrap();
+    let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
+    let store = Store::open(&dir.path().join("moor.db"), clock.clone()).unwrap();
+    let t = add(&store, "a");
+    let id = store.plan_lease(t, LeaseKind::Home, "/h").unwrap();
+    assert_eq!(store.leases(t).unwrap()[0].next_attempt_at, None);
+    store.record_attempt(id, Some("busy")).unwrap();
+    let first = Ts::from_millis(1_000).saturating_add(retry_after(1));
+    assert_eq!(store.leases(t).unwrap()[0].next_attempt_at, Some(first));
+    clock.sleep(Duration::from_secs(60));
+    store.record_attempt(id, Some("busy")).unwrap();
+    let second = Ts::from_millis(61_000).saturating_add(retry_after(2));
+    assert_eq!(store.leases(t).unwrap()[0].next_attempt_at, Some(second));
+    store.record_attempt(id, None).unwrap();
+    assert_eq!(store.leases(t).unwrap()[0].next_attempt_at, None);
+}
+
+#[test]
+fn due_when_unset_or_reached() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(dir.path());
+    let t = add(&store, "a");
+    let id = store.plan_lease(t, LeaseKind::Home, "/h").unwrap();
+    let mut row = store.leases(t).unwrap().remove(0);
+    assert_eq!(row.id, id);
+    assert!(row.due(Ts::from_millis(0)));
+    row.next_attempt_at = Some(Ts::from_millis(500));
+    assert!(!row.due(Ts::from_millis(499)));
+    assert!(row.due(Ts::from_millis(500)));
+    assert!(row.due(Ts::from_millis(501)));
+}
+
+#[test]
+fn old_lease_table_gains_next_attempt_at_on_open() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(dir.path());
+    let t = add(&store, "a");
+    drop(store);
+    let conn = rusqlite::Connection::open(dir.path().join("moor.db")).unwrap();
+    conn.execute_batch(
+        "DROP TABLE box_lease;
+         CREATE TABLE box_lease (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           task INTEGER NOT NULL REFERENCES tasks(id),
+           kind TEXT NOT NULL, key TEXT NOT NULL, state TEXT NOT NULL,
+           booted INTEGER NOT NULL DEFAULT 0,
+           pgid INTEGER, sid INTEGER, root_pid INTEGER, root_start INTEGER,
+           size_at_release INTEGER,
+           attempts INTEGER NOT NULL DEFAULT 0, failure TEXT,
+           created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
+           UNIQUE(task, kind, key));",
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO box_lease (task, kind, key, state, created_at, updated_at)
+         VALUES (?, 'home', '/h', 'planned', 1, 1)",
+        [t.get()],
+    )
+    .unwrap();
+    drop(conn);
+    let store = open(dir.path());
+    let row = store.leases(t).unwrap().remove(0);
+    assert_eq!(row.next_attempt_at, None);
+    store.record_attempt(row.id, Some("busy")).unwrap();
+    drop(store);
+    let row = open(dir.path()).leases(t).unwrap().remove(0);
+    assert_eq!(
+        row.next_attempt_at,
+        Some(Ts::from_millis(1_000).saturating_add(retry_after(1)))
+    );
 }

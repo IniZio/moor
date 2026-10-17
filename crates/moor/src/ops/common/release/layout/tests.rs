@@ -24,6 +24,7 @@ fn lease_root(key: &str, leases: &[(LeaseKind, &str)]) -> Option<String> {
             updated_at: Ts::from_millis(0),
             attempts: 0,
             failure: None,
+            next_attempt_at: None,
         })
         .collect();
     layout_from_leases(&rows, &TaskKey::new(&TaskName::parse(key).unwrap()))

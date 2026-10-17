@@ -25,6 +25,7 @@ fn row(id: i64, kind: LeaseKind, key: &str, pgid: Option<i64>) -> LeaseRow {
         updated_at: Ts::from_millis(0),
         attempts: 0,
         failure: None,
+        next_attempt_at: None,
     }
 }
 

@@ -12,7 +12,8 @@ pub(super) fn tables(conn: &Connection) -> Result<(), StoreError> {
     conn.execute_batch(slack::SLACK_SQL)?;
     conn.execute_batch(lease::LEASE_SQL)?;
     add_column(conn, "box_lease", "attempts", "INTEGER NOT NULL DEFAULT 0")?;
-    add_column(conn, "box_lease", "failure", "TEXT")
+    add_column(conn, "box_lease", "failure", "TEXT")?;
+    add_column(conn, "box_lease", "next_attempt_at", "INTEGER")
 }
 
 /// Add `column` to `table` when `PRAGMA table_info` does not list it.
