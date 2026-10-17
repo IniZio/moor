@@ -58,7 +58,7 @@ impl MacLayout {
         Ok(format!(
             "#!/bin/sh\n\
              d=$(cat {q}) || exit 1\n\
-             [ -n \"$d\" ] || {{ echo \"moor: no Xcode developer dir is recorded in {file}\" >&2; exit 1; }}\n\
+             [ -n \"$d\" ] || {{ echo \"moor: no Xcode developer dir is recorded in \"{q} >&2; exit 1; }}\n\
              exec \"$d/usr/bin/xcodebuild\" -IDEPackageSupportDisableManifestSandbox=YES -IDEPackageSupportDisablePluginExecutionSandbox=YES \"$@\"\n"
         ))
     }
@@ -71,14 +71,20 @@ impl MacLayout {
     /// # Errors
     /// Returns a [`NameError`] when the shim path cannot be joined.
     pub fn xcrun_shim_text(&self) -> Result<String, NameError> {
+        self.xcrun_shim_with("/usr/bin/xcrun")
+    }
+
+    /// The one `xcrun` shim template, with the real `xcrun` it falls through to.
+    fn xcrun_shim_with(&self, real: &str) -> Result<String, NameError> {
         let shim = quote(BoxPath::under(self.bin_dir()?.as_str(), "xcodebuild")?.as_str());
+        let real = quote(real);
         Ok(format!(
             "#!/bin/sh\n\
              if [ \"$1\" = xcodebuild ]; then\n\
              shift\n\
              exec {shim} \"$@\"\n\
              fi\n\
-             exec /usr/bin/xcrun \"$@\"\n"
+             exec {real} \"$@\"\n"
         ))
     }
 
