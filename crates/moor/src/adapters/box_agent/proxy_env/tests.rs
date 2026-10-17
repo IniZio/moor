@@ -119,7 +119,6 @@ fn the_lines_never_contain_the_nonce_and_carry_the_exports() {
         "export http_proxy=\"http://moor:${moor_nonce}@127.0.0.1:4321\"",
         "export YARN_HTTPS_PROXY=\"http://moor:${moor_nonce}@127.0.0.1:4321\"",
         "export YARN_HTTP_PROXY=\"http://moor:${moor_nonce}@127.0.0.1:4321\"",
-        "export YARN_CA_FILE_PATH=\"$moor_bundle\"",
         "export YARN_CACHE_FOLDER=\"$HOME/.cache/yarn\"",
         "export YARN_GLOBAL_FOLDER=\"$HOME/.cache/yarn/berry\"",
         "export npm_config_cache=\"$HOME/.cache/npm\"",
@@ -223,7 +222,7 @@ fn the_script_runs_and_builds_the_environment_from_the_staged_nonce() {
         String::from_utf8_lossy(&out.stderr)
     );
     let env = parse_env(&out.stdout);
-    assert_yarn_vars(&env, dir.path());
+    assert_yarn_vars(&env);
     assert_ca_vars(&env, dir.path(), &dir.path().join("ca-bundle.pem"));
     is(&env, "CLAUDE_CODE_OAUTH_TOKEN", "moor-proxy");
     is(&env, "GIT_CONFIG_VALUE_0", "https://github.com/o/n.git");
@@ -311,18 +310,15 @@ fn stage_steps_put_the_nonce_and_the_ca_under_the_credential_directory() {
 }
 
 /// Asserts the proxy URL reaches the usual and Yarn variables, and Yarn gets the CA bundle and a cache under `$HOME/.cache`.
-fn assert_yarn_vars(env: &HashMap<String, String>, dir: &Path) {
+fn assert_yarn_vars(env: &HashMap<String, String>) {
     let proxy_url = format!("http://moor:sentinel-9c2e@127.0.0.1:{PORT}");
     for name in ["HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy"] {
         is(env, name, &proxy_url);
     }
     is(env, "YARN_HTTPS_PROXY", &proxy_url);
     is(env, "YARN_HTTP_PROXY", &proxy_url);
-    is(
-        env,
-        "YARN_CA_FILE_PATH",
-        dir.join("ca-bundle.pem").to_str().unwrap(),
-    );
+    assert!(!env.contains_key("YARN_HTTPS_CA_FILE_PATH"));
+    assert!(!env.contains_key("YARN_CA_FILE_PATH"));
     let home = std::env::var("HOME").unwrap();
     is(env, "YARN_CACHE_FOLDER", &format!("{home}/.cache/yarn"));
     is(

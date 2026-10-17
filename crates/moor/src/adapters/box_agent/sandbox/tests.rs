@@ -115,13 +115,13 @@ fn env_allow_list_passes_placeholders() {
         "HTTPS_PROXY",
         "YARN_HTTPS_PROXY",
         "YARN_HTTP_PROXY",
-        "YARN_CA_FILE_PATH",
         "YARN_CACHE_FOLDER",
         "YARN_GLOBAL_FOLDER",
         "npm_config_cache",
     ] {
         assert!(vars.contains(&name.to_owned()), "{name}");
     }
+    assert!(!vars.iter().any(|v| v.ends_with("CA_FILE_PATH")));
     let mut sorted = vars.clone();
     sorted.sort();
     sorted.dedup();
