@@ -81,6 +81,8 @@ impl Mac {
             layout: &self.layout,
             key: &self.key,
             nonce,
+            toolchain_env: &[],
+            toolchain_bin: &[],
         }
     }
 
