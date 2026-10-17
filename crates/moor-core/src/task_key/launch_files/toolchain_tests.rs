@@ -247,3 +247,11 @@ fn root_under_home_is_linked() {
     let link = Path::new(l.home.as_str()).join("tools");
     assert_eq!(std::fs::read_link(&link).unwrap(), root);
 }
+
+#[test]
+fn root_holding_a_credential_dir_is_not_linked() {
+    refused_case("holds-cred", |home, _| {
+        std::fs::create_dir_all(home.join(".config/gh")).unwrap();
+        home.join(".config")
+    });
+}
