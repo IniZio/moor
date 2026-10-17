@@ -9,7 +9,7 @@ use moor_core::seam::engine::LaunchReq;
 use moor_core::task_key::{MacLayout, TaskKey};
 
 use super::install::StepResult;
-use super::{fail, Failure};
+use super::{fail, Failure, Launch};
 
 /// The macOS layout of a launch's Task, before the Box has been asked anything.
 pub(super) struct Mac {
@@ -22,15 +22,9 @@ pub(super) struct Mac {
 /// A launch's Task on a macOS Box, with what the prepare step printed. The Box home is the
 /// Task's own; `login_home` is the Box user's real home, used only for read grants outside the
 /// Task.
-#[allow(
-    dead_code,
-    reason = "read by the steps that grant the agent file access"
-)]
 pub(super) struct MacBox {
     /// Every directory of the Task's Box.
     pub(super) layout: MacLayout,
-    /// The Task's key.
-    pub(super) key: TaskKey,
     /// The Box user's real login home, not the Task's.
     pub(super) login_home: BoxPath,
     /// The Xcode developer directory, as resolved once by the prepare step.
@@ -43,6 +37,15 @@ impl MacBox {
     /// The Box user's home: the Task's own.
     pub(super) const fn home(&self) -> &BoxPath {
         &self.layout.home
+    }
+}
+
+impl Launch<'_> {
+    /// The home that holds the Box user's own binaries (`nono`, `gh`, the agent command): the
+    /// real login home on a macOS Box, whose Task home is the agent's alone, and the Box home
+    /// elsewhere. The batch steps and the launch script start in the login home.
+    pub(super) fn bin_home(&self) -> &BoxPath {
+        self.mac.map_or(&self.ctx.home, |m| &m.login_home)
     }
 }
 
@@ -110,7 +113,6 @@ impl Mac {
         let developer_dir = path("developer directory", lines.next())?;
         Ok(MacBox {
             layout: self.layout,
-            key: self.key,
             login_home,
             developer_dir,
             root,

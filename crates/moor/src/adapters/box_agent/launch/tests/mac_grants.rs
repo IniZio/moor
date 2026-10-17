@@ -23,13 +23,23 @@ fn layout_launch(
     capabilities: Vec<BoxCapability>,
     in_layout: bool,
 ) -> Result<String, String> {
+    prepared_launch(platform, capabilities, in_layout, PREPARED)
+}
+
+/// Like [`layout_launch`], with `prepared` as what the Task prepare step prints.
+fn prepared_launch(
+    platform: &str,
+    capabilities: Vec<BoxCapability>,
+    in_layout: bool,
+    prepared: &'static str,
+) -> Result<String, String> {
     let (os, arch) = platform.split_once(' ').unwrap();
     let os: &'static str = if os == "Darwin" { "Darwin" } else { "Linux" };
     let arch: &'static str = if arch == "arm64" { "arm64" } else { "x86_64" };
     let fetch = Arc::new(FakeFetch::new(Ok(tarball(READY_BINARY))));
     // A Mac layout workdir first runs the Task prepare step, which prints the uid, the login home
     // and the developer directory.
-    let prepare = if in_layout { vec![PREPARED] } else { vec![] };
+    let prepare = if in_layout { vec![prepared] } else { vec![] };
     let d = driver(FakeDriver::new().run_stdouts(prepare));
     d.set_run_stdout(platform);
     let s = Arc::new(FakeSurface::new("/r"));
@@ -78,6 +88,37 @@ fn the_simulator_directory_is_granted_only_for_ios_simulator() {
     let doc: serde_json::Value = serde_json::from_str(&profile).unwrap();
     let allow = doc.pointer("/filesystem/allow").unwrap().to_string();
     assert!(allow.contains("/Users/box/moor/t1/sim"), "{allow}");
+}
+
+#[test]
+fn the_simulator_reads_the_real_login_home_not_the_task_home() {
+    let profile = layout_profile("Darwin arm64", vec![BoxCapability::IosSimulator]);
+    let doc: serde_json::Value = serde_json::from_str(&profile).unwrap();
+    let read = doc.pointer("/filesystem/read").unwrap().to_string();
+    for dir in ["CoreSimulator", "DVTDownloads"] {
+        let login = format!("/Users/alice/Library/Developer/{dir}");
+        assert!(read.contains(&login), "{read}");
+        let task = format!("/Users/box/moor/t1/home/Library/Developer/{dir}");
+        assert!(!read.contains(&task), "{read}");
+    }
+    assert!(!profile.contains("Library/Logs/CoreSimulator"), "{profile}");
+}
+
+#[test]
+fn the_developer_directory_grant_is_the_recorded_one() {
+    let prepared = "501\n/Users/alice\n/Applications/Xcode-26.app/Contents/Developer\n";
+    let profile =
+        prepared_launch("Darwin arm64", vec![BoxCapability::Xcode], true, prepared).unwrap();
+    let doc: serde_json::Value = serde_json::from_str(&profile).unwrap();
+    let read = doc.pointer("/filesystem/read").unwrap().to_string();
+    assert!(
+        read.contains("/Applications/Xcode-26.app/Contents/Developer"),
+        "{read}"
+    );
+    assert!(
+        !read.contains("/Applications/Xcode.app/Contents/Developer"),
+        "{read}"
+    );
 }
 
 #[test]

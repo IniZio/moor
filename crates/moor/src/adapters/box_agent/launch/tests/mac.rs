@@ -176,3 +176,6 @@ fn the_platform_probe_of_a_mac_layout_reads_no_process_environment() {
     assert!(!script.contains("/proc"), "{script}");
     assert!(script.contains(LAUNCH), "{script}");
 }
+
+#[path = "mac_bin.rs"]
+mod mac_bin;

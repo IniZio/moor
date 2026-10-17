@@ -180,10 +180,6 @@ struct Launch<'a> {
     /// The Box user is root.
     root: bool,
     /// The Task's Box, on a macOS layout.
-    #[allow(
-        dead_code,
-        reason = "read by the steps that grant the agent file access"
-    )]
     mac: Option<&'a MacBox>,
 }
 
@@ -246,7 +242,7 @@ impl Launch<'_> {
         let lines = self.proxy_lines()?;
         let script = script_stripping(
             (cred, self.tmp),
-            ctx,
+            (ctx, self.bin_home()),
             &hooks,
             &preseed,
             &argv,
@@ -283,7 +279,8 @@ fn script(
     argv: &[String],
     (proxy, sandbox): (&[String], Option<&BoxPath>),
 ) -> Result<String, NameError> {
-    script_stripping(paths, ctx, hooks, preseed, argv, (proxy, sandbox, &[]))
+    let homes = (ctx, &ctx.home);
+    script_stripping(paths, homes, hooks, preseed, argv, (proxy, sandbox, &[]))
 }
 
 /// The line that puts the agent's install directories on the Box's `PATH`, in the launch script
@@ -297,7 +294,7 @@ const AGENT_PATH_LINE: &str = "export PATH=\"$HOME/.local/bin:$HOME/.bun/bin:$PA
 /// The `strip_env` names are unset before anything else runs.
 fn script_stripping(
     (cred, tmp): (&BoxPath, &BoxPath),
-    ctx: &LaunchCtx,
+    (ctx, bin_home): (&LaunchCtx, &BoxPath),
     hooks: &BoxSetup,
     preseed: &BoxSetup,
     argv: &[String],
@@ -339,7 +336,7 @@ fn script_stripping(
         lines.insert(at + 1, remove);
     }
     lines.extend(proxy.iter().cloned());
-    let launcher = BoxPath::under(ctx.home.as_str(), ".local/bin/nono")?;
+    let launcher = BoxPath::under(bin_home.as_str(), ".local/bin/nono")?;
     if sandbox.is_some() {
         lines.extend(sandbox::harden_lines());
         lines.extend(sandbox::namespace_lines());

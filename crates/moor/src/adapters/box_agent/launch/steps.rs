@@ -8,7 +8,6 @@ use moor_core::seam::agent_profile::BoxSetup;
 use moor_core::seam::driver::{BoxStep, DriverError, ExecOutcome, StepDone};
 use moor_core::seam::engine::LaunchNotice;
 use moor_core::seam::proc::{Deadline, Tool};
-use moor_core::task_key::{MacLayout, TaskKey};
 
 use super::super::brief::{render, BriefInput};
 use super::super::nono_release::sha256_hex;
@@ -18,10 +17,6 @@ use super::super::sandbox::{self, SandboxInput};
 use super::gh;
 use super::install::{check_outcome, parse_platform, upload_steps, StepResult};
 use super::{fail, Failure, Launch, Platform, AGENT_PATH_LINE, INSTALL_DEADLINE};
-
-/// The active Xcode developer directory. It is not yet resolved per Box, so every macOS Box
-/// is assumed to use the default install location.
-const DEVELOPER_DIR: &str = "/Applications/Xcode.app/Contents/Developer";
 
 /// Which launch step a batch step belongs to, and so how its failure is reported.
 #[derive(Clone, Copy)]
@@ -164,10 +159,10 @@ impl Launch<'_> {
             set_vars: exec.vars,
             root: self.root,
             strip_env: &req.strip_env,
-            mac: mac.as_ref().map(|(layout, caps)| MacInput {
-                layout,
-                login_home: self.mac.map_or(&self.ctx.home, |m| &m.login_home),
-                developer_dir: DEVELOPER_DIR,
+            mac: self.mac.zip(mac.as_deref()).map(|(m, caps)| MacInput {
+                layout: &m.layout,
+                login_home: &m.login_home,
+                developer_dir: m.developer_dir.as_str(),
                 capabilities: caps,
                 sandbox: &req.mac_grants.sandbox,
             }),
@@ -187,16 +182,14 @@ impl Launch<'_> {
         Ok(Some(at))
     }
 
-    /// The Mac layout and capabilities to grant, when a Darwin Box runs the Task inside one.
+    /// The capabilities to grant, when a Darwin Box runs the Task inside a Mac layout.
     ///
     /// # Errors
     /// A launch that asks for capabilities but cannot grant them (not a Darwin Box, or no Mac
     /// layout for the workdir) fails with the same text as the provision-time platform check.
-    fn mac_grants(&self, os: &str) -> Result<Option<(MacLayout, Vec<MacCapability>)>, Failure> {
+    fn mac_grants(&self, os: &str) -> Result<Option<Vec<MacCapability>>, Failure> {
         let req = self.req;
-        let layout =
-            MacLayout::find(&self.ctx.workdir, &TaskKey::new(&req.task)).filter(|_| os == "Darwin");
-        let Some(layout) = layout else {
+        if os != "Darwin" || self.mac.is_none() {
             let asked = RepoBox {
                 capabilities: req.mac_grants.capabilities.clone(),
                 ..RepoBox::default()
@@ -205,13 +198,13 @@ impl Launch<'_> {
                 Ok(()) => Ok(None),
                 Err(e) => Err(fail("sandbox", &e.in_file(".moor.yaml"))),
             };
-        };
+        }
         let has = |c| req.mac_grants.capabilities.contains(&c);
         let sel = Selection {
             xcode: has(BoxCapability::Xcode),
             ios_simulator: has(BoxCapability::IosSimulator),
         };
-        Ok(Some((layout, selected(sel))))
+        Ok(Some(selected(sel)))
     }
 
     /// Adds the `gh` check to `plan`; a `gh` the host cannot fetch is a warning, not a failure.
@@ -310,7 +303,7 @@ impl Launch<'_> {
                         0 => {}
                         sandbox::NOT_INSTALLED if matches!(tag, Tag::Check) => {
                             if let Some((bytes, script)) = &plan.check {
-                                let up = upload_steps(&self.ctx.home, bytes, script)?;
+                                let up = upload_steps(self.bin_home(), bytes, script)?;
                                 head = [Tag::Upload, Tag::Recheck].into_iter().zip(up).collect();
                             }
                         }
@@ -353,7 +346,7 @@ impl Launch<'_> {
             (_, Ok(_)) => Ok(0),
         };
         let put = plan.gh.as_ref().and_then(|bytes| {
-            let path = BoxPath::under(self.ctx.home.as_str(), gh::GH_PATH).ok()?;
+            let path = BoxPath::under(self.bin_home().as_str(), gh::GH_PATH).ok()?;
             let bytes = bytes.clone();
             Some(BoxStep::Put {
                 path,
