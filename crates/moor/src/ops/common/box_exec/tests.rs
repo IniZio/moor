@@ -14,6 +14,7 @@ use moor_core::secret::Secret;
 use moor_core::{BoxHandle, BoxPath, ProviderId, TaskId, TaskName};
 
 mod mac;
+mod sandbox;
 
 use super::{forge_routed, prepare, BoxProxy, Site};
 use crate::cx::Cx;

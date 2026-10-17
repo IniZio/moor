@@ -9,6 +9,7 @@ use moor_core::domain::run::SyncMode;
 use moor_core::exec_env::{self, BoxCtx, ExecEnv, MacTask, ProxyCtx, Purpose, RUN_DEADLINE};
 use moor_core::seam::agent_profile::ProxyAddr;
 use moor_core::seam::driver::{ExecOutcome, ExecSpec};
+use moor_core::seam::engine::Sandboxed;
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::proxy_host::ProxySpec;
 use moor_core::task_key::{MacLayout, TaskKey};
@@ -106,6 +107,8 @@ pub(crate) struct BoxExec {
     pub(crate) env: ExecEnv,
     /// The Box directory holding the staged nonce and CA, when there is a Proxy.
     staged: Option<BoxPath>,
+    /// How the sandbox starts the command, on a macOS Box that has one.
+    sandboxed: Option<Sandboxed>,
 }
 
 /// Builds the environment for `purpose`; with a Proxy it first stages the nonce and CA.
@@ -145,7 +148,7 @@ pub(crate) fn prepare(
             mac: mac_task,
         };
         let env = exec_env::build(&ctx, purpose)?;
-        return Ok(BoxExec { env, staged: None });
+        return sandbox::seal(cx, site, cfg, purpose, mac_task, BoxExec::plain(env, None));
     };
     let dir = match &mac {
         Some((layout, _)) => layout.cred_dir(&nonce).map_err(|e| e.to_string())?,
@@ -170,10 +173,14 @@ pub(crate) fn prepare(
         mac: mac_task,
     };
     match exec_env::build(&ctx, purpose) {
-        Ok(env) => Ok(BoxExec {
-            env,
-            staged: Some(dir),
-        }),
+        Ok(env) => sandbox::seal(
+            cx,
+            site,
+            cfg,
+            purpose,
+            mac_task,
+            BoxExec::plain(env, Some(dir)),
+        ),
         Err(e) => {
             remove(cx, site, &dir);
             Err(e)
@@ -217,11 +224,17 @@ impl BoxExec {
 
     /// `argv` wrapped so the prelude runs first and the staged directory is removed on exit.
     pub(crate) fn argv(&self, argv: Vec<String>) -> Vec<String> {
+        if let Some(s) = &self.sandboxed {
+            return sandbox::argv(&self.env, s, argv, self.staged.as_ref());
+        }
         exec_env::wrap_argv(&self.env, argv, self.staged.as_ref())
     }
 
     /// The non-secret variables to pass as the exec's env.
     pub(crate) fn vars(&self) -> Vec<(String, String)> {
+        if self.sandboxed.is_some() {
+            return Vec::new();
+        }
         self.env.vars.clone()
     }
 
@@ -333,5 +346,6 @@ fn remove(cx: &Cx, site: &Site<'_>, dir: &BoxPath) {
         .exec(site.handle, &spec, Deadline(CLEANUP_DEADLINE));
 }
 
+mod sandbox;
 #[cfg(test)]
 mod tests;
