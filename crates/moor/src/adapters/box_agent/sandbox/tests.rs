@@ -390,6 +390,7 @@ fn mac_doc() -> Value {
             developer_dir: "/Applications/Xcode.app/Contents/Developer",
             capabilities: &[],
             sandbox: &sandbox,
+            toolchains: &[],
         }),
     };
     serde_json::from_str(&profile(&input).unwrap()).unwrap()

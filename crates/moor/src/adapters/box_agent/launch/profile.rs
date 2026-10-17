@@ -58,6 +58,7 @@ pub(in super::super) fn build(args: ProfileArgs) -> Result<String, Failure> {
             developer_dir: m.developer_dir.as_str(),
             capabilities: caps,
             sandbox: &args.grants.sandbox,
+            toolchains: &[],
         }),
     })
     .map_err(|e| fail("sandbox", &e))
