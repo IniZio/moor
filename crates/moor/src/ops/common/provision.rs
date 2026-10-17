@@ -278,6 +278,8 @@ fn run_through_proxy(
             SyncMode::None,
             proxy.as_ref(),
         ),
+        // Dotfiles report their own Proxy failure; no setup line was meant to run.
+        Err(_) if cfg.setup.is_empty() => setup::SetupRun::Skipped,
         Err(reason) => {
             let name = store.box_row(id).ok().flatten().map(|r| r.name);
             setup::proxy_failed(cx, name.as_ref().map_or("<box>", |n| n.as_str()), reason)

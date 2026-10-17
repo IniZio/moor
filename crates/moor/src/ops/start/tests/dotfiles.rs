@@ -7,7 +7,7 @@ use moor_core::boxscript::quote;
 use moor_core::config::{DotfilesConfig, UserConfig};
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::run::SyncMode;
-use moor_core::seam::driver::ExecOutcome;
+use moor_core::seam::driver::{DriverError, ExecOutcome};
 use moor_core::seam::proc::{Deadline, Tool};
 use moor_core::seam::proxy_host::ProxyHostError;
 use moor_core::view::{DotfilesView, StartView};
@@ -374,14 +374,49 @@ fn dotfiles_fail_when_the_proxy_cannot_start() {
     ));
     let v = run(&w.cx, &goal_req()).unwrap();
     assert!(v.dotfiles.ran && !v.dotfiles.ok);
+    assert!(!v.setup.ran);
     let warnings = w.cx.take_warnings();
+    assert!(warnings.iter().all(|x| x.code != "setup_failed"));
     let msg = &warnings
         .iter()
         .find(|x| x.code == "dotfiles_failed")
         .unwrap()
         .message;
     assert!(msg.contains("the Proxy could not start: boom"), "{msg}");
+    let events = w.cx.store().unwrap().events(BoxId::new(1), 50).unwrap();
+    let lines: Vec<_> = (events.iter().filter(|e| e.kind == "setup_failed"))
+        .filter_map(|e| e.payload.get("line").and_then(|l| l.as_str()))
+        .collect();
+    assert_eq!(
+        lines,
+        ["dotfiles: the Proxy could not start: boom"],
+        "{lines:?}"
+    );
     assert!(dotfiles_execs(&w).is_empty());
     assert!(w.proc.calls().iter().all(|c| c.tool != Tool::Sh));
     assert!(engine.launches().is_empty());
+}
+
+/// The argv of the last Box exec after a start whose dotfiles exec ended as `out`.
+fn last_argv_after(out: Result<ExecOutcome, DriverError>) -> Vec<String> {
+    let src = tempfile::tempdir().unwrap();
+    let driver = FakeDriver::new().exec_results(scripted([Sync(Ok(exit(0))), Cmd(out)]));
+    let (w, _, _repo) = dotfiles_world("env: {A: a}\n", Some(src.path()), None, driver);
+    let v = run(&w.cx, &goal_req()).unwrap();
+    assert!(v.dotfiles.ran && !v.dotfiles.ok);
+    w.driver.execs().pop().unwrap().1.argv
+}
+
+#[test]
+fn a_dotfiles_exec_that_errors_or_is_interrupted_removes_the_staged_credentials() {
+    let timeout = DriverError::Timeout(Duration::from_mins(15));
+    for out in [Ok(ExecOutcome::Interrupted), Err(timeout)] {
+        let last = last_argv_after(out);
+        let dir = last.get(2).cloned().unwrap_or_default();
+        assert_eq!(
+            last.get(..2),
+            Some(&["rm".to_owned(), "-rf".to_owned()][..])
+        );
+        assert!(dir.contains(".moor-cred-"), "{last:?}");
+    }
 }
