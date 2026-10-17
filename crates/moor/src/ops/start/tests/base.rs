@@ -1,6 +1,12 @@
-use moor_core::seam::proc::Tool;
+use std::path::Path;
 
-use super::{req, world};
+use moor_core::seam::proc::Tool;
+use moor_core::seam::surface::Surface;
+use moor_core::TaskName;
+
+use super::moor_yaml::script_base_yaml;
+use super::setup::{execs, is_setup_line, setup_execs};
+use super::{req, world, world_at};
 use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::Reply;
@@ -85,4 +91,114 @@ fn a_repo_without_a_remote_default_is_not_fetched() {
     assert_eq!(w.surface.bases(), [None]);
     assert_eq!(v.task.base.as_deref(), Some("abc123"));
     assert!(w.cx.take_warnings().is_empty());
+}
+
+#[test]
+fn setup_comes_from_the_base_commit_not_the_checkout_file() {
+    let repo = tempfile::tempdir().unwrap();
+    std::fs::write(repo.path().join(".moor.yaml"), "setup: [host-only-line]\n").unwrap();
+    let w = world_at(FakeDriver::new(), repo.path());
+    follow_origin(&w);
+    w.proc.on(Tool::Git, &["fetch", "origin", "main"], ok(""));
+    w.proc
+        .on(Tool::Git, &["rev-parse", "origin/main"], ok("c643cc8a"));
+    w.proc.before(
+        Tool::Git,
+        &["ls-tree", "--name-only", "c643cc8a", "--", ".moor.yaml"],
+        ok(".moor.yaml"),
+    );
+    w.proc.before(
+        Tool::Git,
+        &["show", "c643cc8a:.moor.yaml"],
+        Reply::Ok("setup: [base-line]\n".into()),
+    );
+    run(&w.cx, &req("demo")).unwrap();
+    let lines: Vec<String> = setup_execs(&w)
+        .into_iter()
+        .filter(|e| is_setup_line(&e.1.argv))
+        .map(|e| e.1.argv.join(" "))
+        .collect();
+    assert!(lines.iter().any(|l| l.contains("base-line")), "{lines:?}");
+    assert!(
+        !lines.iter().any(|l| l.contains("host-only-line")),
+        "{lines:?}"
+    );
+    let warnings = w.cx.take_warnings();
+    assert!(
+        warnings
+            .iter()
+            .any(|x| x.code == "moor_yaml_differs_from_base" && x.message.contains("c643cc8a")),
+        "{warnings:?}"
+    );
+}
+
+/// The text of every setup-line exec.
+fn setup_lines(w: &super::World) -> Vec<String> {
+    setup_execs(w)
+        .into_iter()
+        .filter(|e| is_setup_line(&e.1.argv))
+        .map(|e| e.1.argv.join(" "))
+        .collect()
+}
+
+fn differs_warned(w: &super::World) -> bool {
+    (w.cx.take_warnings().iter()).any(|x| x.code == "moor_yaml_differs_from_base")
+}
+
+#[test]
+fn a_checkout_file_equal_to_the_base_copy_runs_without_a_warning() {
+    let repo = tempfile::tempdir().unwrap();
+    std::fs::write(repo.path().join(".moor.yaml"), "setup: [same-line]\n").unwrap();
+    let w = world_at(FakeDriver::new(), repo.path());
+    script_base_yaml(&w, Some("setup: [same-line]\n"));
+    run(&w.cx, &req("demo")).unwrap();
+    let lines = setup_lines(&w);
+    assert!(lines.iter().any(|l| l.contains("same-line")), "{lines:?}");
+    assert!(!differs_warned(&w));
+}
+
+#[test]
+fn an_unreadable_base_copy_fails_the_start_before_any_box_work() {
+    let repo = tempfile::tempdir().unwrap();
+    std::fs::write(repo.path().join(".moor.yaml"), "setup: [host-only-line]\n").unwrap();
+    let w = world_at(FakeDriver::new(), repo.path());
+    w.proc.before(
+        Tool::Git,
+        &["ls-tree"],
+        Reply::Fail {
+            code: 128,
+            stdout: String::new(),
+            stderr: "bad object".into(),
+        },
+    );
+    let err = run(&w.cx, &req("demo")).unwrap_err();
+    assert!(
+        err.error
+            .to_string()
+            .contains("cannot read .moor.yaml at base commit"),
+        "{err:?}"
+    );
+    assert!(execs(&w).is_empty());
+}
+
+#[test]
+fn a_bound_worktree_keeps_its_own_file_over_a_different_base_copy() {
+    let w = world(FakeDriver::new());
+    let made = w
+        .surface
+        .create_worktree(Path::new("/repo"), &TaskName::parse("pre").unwrap(), None)
+        .unwrap();
+    std::fs::create_dir_all(&made.path).unwrap();
+    std::fs::write(made.path.join(".moor.yaml"), "setup: [worktree-line]\n").unwrap();
+    script_base_yaml(&w, Some("setup: [base-line]\n"));
+    let mut r = req("demo");
+    r.worktree = Some(made.path.display().to_string());
+    run(&w.cx, &r).unwrap();
+    let lines = setup_lines(&w);
+    assert!(
+        lines.iter().any(|l| l.contains("worktree-line")),
+        "{lines:?}"
+    );
+    assert!(!lines.iter().any(|l| l.contains("base-line")), "{lines:?}");
+    assert!(!differs_warned(&w));
 }

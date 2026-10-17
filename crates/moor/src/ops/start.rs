@@ -81,7 +81,10 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     let flags = Flags {
         model: req.model.clone(),
     };
-    let cfg = settings(cx, facts.bound.as_deref().unwrap_or(&facts.repo), &flags)?;
+    let cfg = match facts.bound.as_deref() {
+        Some(worktree) => settings(cx, worktree, &flags)?,
+        None => base::settings_at_base(cx, &facts.repo, &facts.base, &flags)?,
+    };
     let caps = provider_caps(cx, &cfg)?;
     require_reverse_tunnel(&cfg, caps)?;
     if let Some(reason) =

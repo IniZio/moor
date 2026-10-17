@@ -474,6 +474,7 @@ fn start_cx(dir: &Path, driver: &Arc<FakeDriver>) -> Cx {
         &["rev-parse", "--show-toplevel"],
         Reply::Ok("/repo\n".into()),
     );
+    proc.on(Tool::Git, &["ls-tree"], Reply::Ok(String::new()));
     proc.on(
         Tool::Git,
         &["rev-parse", "HEAD"],

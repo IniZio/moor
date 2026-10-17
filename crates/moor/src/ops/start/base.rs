@@ -2,10 +2,49 @@
 
 use std::path::Path;
 
+use moor_core::config::{parse_repo, Flags, TaskSettings};
 use moor_core::{ErrorKind, StartReq, Warning};
 
+use super::super::common::facts::{resolved, settings};
 use crate::cx::Cx;
 use crate::error::CommandError;
+
+/// The repo config file name.
+const REPO_FILE: &str = ".moor.yaml";
+
+/// Settings for an unbound Task, taking the repo config from `base` because the Box checks that out.
+///
+/// A host `.moor.yaml` that differs from the base copy warns and is not used. With no base copy,
+/// the checkout's own file is read.
+pub(super) fn settings_at_base(
+    cx: &Cx,
+    repo: &Path,
+    base: &str,
+    flags: &Flags,
+) -> Result<TaskSettings, CommandError> {
+    let text = cx.git().file_at(repo, base, REPO_FILE).map_err(|e| {
+        CommandError::new(
+            ErrorKind::Failed,
+            format!("cannot read {REPO_FILE} at base commit {base}: {e}"),
+        )
+    })?;
+    let Some(text) = text else {
+        return settings(cx, repo, flags);
+    };
+    let host = std::fs::read_to_string(repo.join(REPO_FILE)).ok();
+    if host.is_some_and(|h| h != text) {
+        cx.warn_once(Warning {
+            code: "moor_yaml_differs_from_base".to_owned(),
+            message: format!(
+                "{}/{REPO_FILE} differs from base {base}; using the base copy (push it or start from that commit)",
+                repo.display()
+            ),
+        });
+    }
+    let file = format!("{base}:{REPO_FILE}");
+    let repo_cfg = parse_repo(&file, &text)?;
+    Ok(resolved(cx, Some(&repo_cfg), flags))
+}
 
 /// The base recorded for the Task and the ref its worktree branches from.
 ///
