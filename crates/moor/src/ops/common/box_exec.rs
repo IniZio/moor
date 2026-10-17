@@ -6,7 +6,7 @@ use std::time::Duration;
 use moor_core::config::proxy::{ResolvedRule, FORGE_CREDENTIAL};
 use moor_core::config::TaskSettings;
 use moor_core::domain::run::SyncMode;
-use moor_core::exec_env::{self, BoxCtx, ExecEnv, ProxyCtx, Purpose, RUN_DEADLINE};
+use moor_core::exec_env::{self, BoxCtx, ExecEnv, MacTask, ProxyCtx, Purpose, RUN_DEADLINE};
 use moor_core::seam::agent_profile::ProxyAddr;
 use moor_core::seam::driver::{ExecOutcome, ExecSpec};
 use moor_core::seam::proc::Deadline;
@@ -44,6 +44,8 @@ pub(crate) struct Site<'a> {
     pub(crate) workdir: Option<&'a BoxPath>,
     /// The host worktree of the Task.
     pub(crate) worktree: &'a Path,
+    /// The Task, when the caller knows it; finds the macOS Box layout without a Proxy.
+    pub(crate) task: Option<TaskId>,
 }
 
 /// Starts or reuses the Task's Proxy for `cfg`'s egress.
@@ -123,6 +125,16 @@ pub(crate) fn prepare(
 ) -> Result<BoxExec, String> {
     let strip = strip_env(cx, site.provider);
     let repo_env: Vec<(String, String)> = cfg.env.clone().into_iter().collect();
+    let mac = mac_layout(cx, site, proxy.map(|p| p.task).or(site.task));
+    if let Some((layout, _)) = &mac {
+        prepare_layout(cx, site, layout)?;
+    }
+    let nonce = format!("{:08x}{:08x}", cx.rng().u32(), cx.rng().u32());
+    let mac_task = mac.as_ref().map(|(layout, key)| MacTask {
+        layout,
+        key,
+        nonce: &nonce,
+    });
     let Some(p) = proxy else {
         let ctx = BoxCtx {
             env: &repo_env,
@@ -130,13 +142,13 @@ pub(crate) fn prepare(
             origin: None,
             workdir: site.workdir,
             strip: &strip,
+            mac: mac_task,
         };
         let env = exec_env::build(&ctx, purpose)?;
         return Ok(BoxExec { env, staged: None });
     };
-    let nonce = format!("{:08x}{:08x}", cx.rng().u32(), cx.rng().u32());
-    let dir = match mac_cred_dir(cx, site, p.task, &nonce) {
-        Some(dir) => dir,
+    let dir = match &mac {
+        Some((layout, _)) => layout.cred_dir(&nonce).map_err(|e| e.to_string())?,
         None => BoxPath::under(
             box_home(cx, site)?.as_str(),
             &format!(".moor-cred-{}-{nonce}", p.task.get()),
@@ -155,6 +167,7 @@ pub(crate) fn prepare(
         origin: p.origin.as_deref(),
         workdir: site.workdir,
         strip: &strip,
+        mac: mac_task,
     };
     match exec_env::build(&ctx, purpose) {
         Ok(env) => Ok(BoxExec {
@@ -223,16 +236,44 @@ impl BoxExec {
     }
 }
 
-/// The credential directory under the macOS Box layout of `task`, when the workdir is inside it.
-fn mac_cred_dir(cx: &Cx, site: &Site<'_>, task: TaskId, nonce: &str) -> Option<BoxPath> {
+/// The macOS Box layout of `task` and its key, when the workdir is inside that layout.
+fn mac_layout(cx: &Cx, site: &Site<'_>, task: Option<TaskId>) -> Option<(MacLayout, TaskKey)> {
     let workdir = site.workdir?;
-    let row = cx.store().ok()?.task(task).ok()??;
-    MacLayout::find(workdir, &TaskKey::new(&row.name))?
-        .cred_dir(nonce)
-        .ok()
+    let row = cx.store().ok()?.task(task?).ok()??;
+    let key = TaskKey::new(&row.name);
+    let layout = MacLayout::find(workdir, &key)?;
+    Some((layout, key))
 }
 
-/// The Box user's home, read from the environment of a process on the Box.
+/// Creates the Task directories and launch files of `layout` on the Box; names the step on failure.
+fn prepare_layout(cx: &Cx, site: &Site<'_>, layout: &MacLayout) -> Result<(), String> {
+    let script = layout
+        .prepare_script()
+        .map_err(|e| format!("could not prepare the Task directories on the Box: {e}"))?;
+    let spec = ExecSpec {
+        argv: vec!["sh".into(), "-c".into(), script],
+        env: Vec::new(),
+        cwd: None,
+        sync: SyncMode::None,
+        output: None,
+        host_cwd: Some(site.worktree.to_path_buf()),
+        class: None,
+    };
+    match cx
+        .driver()
+        .exec(site.handle, &spec, Deadline(CLEANUP_DEADLINE))
+    {
+        Ok(ExecOutcome::Exited { code: 0 }) => Ok(()),
+        Ok(other) => Err(format!(
+            "could not prepare the Task directories on the Box: {other:?}"
+        )),
+        Err(e) => Err(format!(
+            "could not prepare the Task directories on the Box: {e}"
+        )),
+    }
+}
+
+/// The Box user's home on a Linux Box, read from the environment of a process on the Box.
 fn box_home(cx: &Cx, site: &Site<'_>) -> Result<BoxPath, String> {
     let environ = BoxPath::restore("/proc/self/environ").map_err(|e| e.to_string())?;
     let text = cx

@@ -13,6 +13,8 @@ use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
 use moor_core::secret::Secret;
 use moor_core::{BoxHandle, BoxPath, ProviderId, TaskId, TaskName};
 
+mod mac;
+
 use super::{forge_routed, prepare, BoxProxy, Site};
 use crate::cx::Cx;
 use crate::testing::driver::FakeDriver;
@@ -79,6 +81,7 @@ impl Rig {
             provider: "p",
             workdir,
             worktree,
+            task: Some(TaskId::new(1)),
         }
     }
 }
@@ -405,5 +408,7 @@ fn a_mac_box_stages_credentials_under_launch_without_reading_the_home() {
         tail.len() == 16 && tail.chars().all(|c| c.is_ascii_hexdigit()),
         "{tail}"
     );
-    assert_eq!(argvs(&r), [["mkdir", "-m", "700", "--", staged.as_str()]]);
+    let [prep, mkdir] = argvs(&r).try_into().unwrap();
+    assert_eq!(prep.get(..2), Some(&["sh".to_owned(), "-c".to_owned()][..]));
+    assert_eq!(mkdir, ["mkdir", "-m", "700", "--", staged.as_str()]);
 }

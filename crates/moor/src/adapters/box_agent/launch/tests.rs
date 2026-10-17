@@ -356,7 +356,7 @@ impl Scratch {
         let cred = BoxPath::under(root, "home/.moor-cred-t1-x").unwrap();
         let env = Claude.env(&self.proxy_ctx());
         let origin = Some("git@github.com:o/n.git");
-        proxy_env::script_lines(&cred, &proxy_addr(), &env, origin).unwrap()
+        proxy_env::script_lines(&cred, &proxy_addr(), &env, origin, None).unwrap()
     }
 
     fn script_with(&self, hook_step: &str, proxy: &[String]) -> String {
@@ -592,7 +592,7 @@ fn the_agent_gets_the_proxy_env_while_the_cred_dir_lives_until_exit() {
 }
 
 mod batch;
-mod mac;
+mod mac_grants;
 #[path = "sandbox_tests.rs"]
 mod sandbox_tests;
 #[path = "secret_tests.rs"]

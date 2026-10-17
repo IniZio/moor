@@ -166,7 +166,7 @@ impl Launch<'_> {
             strip_env: &req.strip_env,
             mac: mac.as_ref().map(|(layout, caps)| MacInput {
                 layout,
-                login_home: &self.ctx.home,
+                login_home: self.mac.map_or(&self.ctx.home, |m| &m.login_home),
                 developer_dir: DEVELOPER_DIR,
                 capabilities: caps,
                 sandbox: &req.mac_grants.sandbox,
@@ -194,8 +194,8 @@ impl Launch<'_> {
     /// layout for the workdir) fails with the same text as the provision-time platform check.
     fn mac_grants(&self, os: &str) -> Result<Option<(MacLayout, Vec<MacCapability>)>, Failure> {
         let req = self.req;
-        let layout = MacLayout::find(&self.ctx.workdir, &TaskKey::new(&req.task))
-            .filter(|_| os == "Darwin");
+        let layout =
+            MacLayout::find(&self.ctx.workdir, &TaskKey::new(&req.task)).filter(|_| os == "Darwin");
         let Some(layout) = layout else {
             let asked = RepoBox {
                 capabilities: req.mac_grants.capabilities.clone(),

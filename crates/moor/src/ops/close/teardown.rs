@@ -48,6 +48,7 @@ pub(super) fn teardown(cx: &Cx, row: &TaskRow, trusted: bool) {
         provider: b.provider.as_str(),
         workdir: workdir.as_ref(),
         worktree,
+        task: Some(row.id),
     };
     let exec = match box_exec::prepare(cx, &site, proxy.as_ref().ok(), &cfg, Purpose::Teardown) {
         Ok(exec) => exec,

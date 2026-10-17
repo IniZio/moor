@@ -1,7 +1,7 @@
 //! The proxy environment the agent starts with: the nonce arrives as a staged file, never as text.
 
 use moor_core::boxscript::quote;
-use moor_core::exec_env::{self, BoxCtx, ExecEnv, ProxyCtx, Purpose};
+use moor_core::exec_env::{self, BoxCtx, ExecEnv, MacTask, ProxyCtx, Purpose};
 use moor_core::seam::agent_profile::{EnvVar, ProxyAddr};
 use moor_core::seam::driver::BoxStep;
 use moor_core::BoxPath;
@@ -32,6 +32,7 @@ pub(super) fn exec_env(
     strip: &[String],
     origin: Option<&str>,
     workdir: &BoxPath,
+    mac: Option<MacTask<'_>>,
 ) -> Result<ExecEnv, String> {
     exec_env::build(
         &BoxCtx {
@@ -43,23 +44,25 @@ pub(super) fn exec_env(
             }),
             origin,
             workdir: Some(workdir),
+            mac,
         },
         Purpose::Agent,
     )
 }
 
-/// Shell lines run just before the agent starts: the builder's prelude, then the profile's `env`
+/// Shell lines run just before the agent starts: the builder's prelude, the Mac task variables when there are any, then the profile's `env`
 /// exports. They must not contain the nonce.
 pub(super) fn script_lines(
     cred: &BoxPath,
     proxy: &ProxyAddr,
     env: &[EnvVar],
     origin: Option<&str>,
+    mac: Option<MacTask<'_>>,
 ) -> Result<Vec<String>, String> {
     if proxy.nonce.expose().is_empty() {
         return Err("the proxy nonce is empty".to_owned());
     }
-    let mut lines = exec_env::build(
+    let built = exec_env::build(
         &BoxCtx {
             env: &proxy.box_env,
             strip: &[],
@@ -69,10 +72,16 @@ pub(super) fn script_lines(
             }),
             origin,
             workdir: None,
+            mac,
         },
         Purpose::Agent,
-    )?
-    .prelude;
+    )?;
+    let mut lines = built.prelude;
+    if mac.is_some() {
+        for (name, value) in &built.vars {
+            lines.push(format!("export {name}={}", quote(value)));
+        }
+    }
     for var in env {
         if !is_identifier(&var.name) {
             return Err(format!("{:?} is not a shell variable name", var.name));

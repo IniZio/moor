@@ -24,6 +24,7 @@ fn ctx<'a>(
         origin: Some("https://github.com/o/n.git"),
         workdir,
         strip: &[],
+        mac: None,
     }
 }
 

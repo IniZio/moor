@@ -130,5 +130,7 @@ pub fn refuse_inside_login_home(workdir: &BoxPath, login_home: &BoxPath) -> Resu
     Ok(())
 }
 
+mod launch_files;
+
 #[cfg(test)]
 mod tests;

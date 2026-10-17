@@ -7,13 +7,14 @@ use moor_core::domain::run::SyncMode;
 use moor_core::exec_env::ExecEnv;
 use moor_core::name::{BoxPath, NameError};
 use moor_core::seam::agent_profile::{AgentProfile, BoxSetup, LaunchCtx, ProxyAddr};
-use moor_core::seam::driver::{BoxStep, Driver, ExecOutcome, ExecSpec, StepDone};
+use moor_core::seam::driver::{BoxStep, Driver, ExecOutcome, ExecSpec};
 use moor_core::seam::engine::{EngineError, LaunchNotice, LaunchReq, SessionRef};
 use moor_core::seam::proc::{Deadline, Tool};
 use moor_core::seam::surface::{PaneCmd, PaneRef, Surface};
 use moor_core::Secret;
 
-use self::install::StepResult;
+use self::environ::{box_user, dirs_in, failed};
+use self::mac::{Mac, MacBox};
 use self::steps::{Plan, Staged};
 use super::nono_release::NonoRelease;
 use super::probe::HOOK_FILE;
@@ -29,6 +30,10 @@ const INSTALL_DEADLINE: Duration = Duration::from_secs(300);
 
 /// The Box's operating system and architecture, read when the launch has a Proxy.
 type Platform = Option<Result<(String, String), Failure>>;
+
+/// The Box user's home and whether that user is root, the Task's Box on a macOS layout, and the
+/// platform.
+type Opened = ((BoxPath, bool), Option<MacBox>, Platform);
 
 /// The pane a launch opened, and its notices.
 type Delivered = (PaneRef, Vec<LaunchNotice>);
@@ -61,7 +66,7 @@ pub(super) fn launch(
     let connect = driver
         .connect_argv(&req.handle, &req.worktree)
         .map_err(|e| failed(fail("connect", &e)))?;
-    let ((home, root), platform) = open_box(driver, req, &connect).map_err(failed)?;
+    let ((home, root), mac, platform) = open_box(driver, req, &connect).map_err(failed)?;
     let ctx = LaunchCtx {
         model: req.model.clone(),
         workdir: req.workdir.clone(),
@@ -85,6 +90,7 @@ pub(super) fn launch(
         tmp: &tmp,
         release,
         root,
+        mac: mac.as_ref(),
     };
     match launch.deliver(&connect, platform) {
         Ok((pane, warnings)) => Ok(SessionRef {
@@ -108,62 +114,30 @@ pub(super) fn launch(
     }
 }
 
-/// The Engine error for `f`.
-fn failed(f: Failure) -> EngineError {
-    EngineError::Failed {
-        step: f.step,
-        message: f.message,
-    }
-}
-
-/// The credential and tmp directories a launch of `req` creates under `home`.
-fn dirs_in(home: &BoxPath, req: &LaunchReq) -> Result<(BoxPath, BoxPath), Failure> {
-    req.dirs_under(home).map_err(|e| fail("brief", &e))
-}
-
 /// The credential and tmp directories a launch of `req` creates on its Box.
 pub(super) fn dirs(d: &dyn Driver, req: &LaunchReq) -> Result<(BoxPath, BoxPath), EngineError> {
+    if let Some(mac) = Mac::find(req) {
+        return dirs_in(mac.home(), req).map_err(failed);
+    }
     let environ = BoxPath::restore("/proc/self/environ").map_err(|e| failed(fail("home", &e)))?;
     let text = match d.peek_file(&req.handle, &environ, &req.worktree) {
         Ok(Some(text)) => text,
         Ok(None) => return Err(failed(fail("home", &"the Box has no process environment"))),
         Err(e) => return Err(failed(fail("home", &e))),
     };
-    dirs_in(&home_in(&text).map_err(failed)?, req).map_err(failed)
-}
-
-/// The Box user's home, and whether that user is root, read from the environment of a process on
-/// the Box.
-fn box_user(peeked: Option<StepResult>) -> Result<(BoxPath, bool), Failure> {
-    let text = match peeked {
-        Some(Ok(StepDone::Peeked(Some(text)))) => text,
-        Some(Err(e)) => return Err(fail("home", &e)),
-        _ => return Err(fail("home", &"the Box has no process environment")),
-    };
-    Ok((home_in(&text)?, environ_var(&text, "USER") == Some("root")))
-}
-
-/// The value of `name` in NUL-separated process environment `text`.
-fn environ_var<'a>(text: &'a str, name: &str) -> Option<&'a str> {
-    let prefix = format!("{name}=");
-    text.split('\0').find_map(|kv| kv.strip_prefix(&prefix))
-}
-
-/// The Box user's home from NUL-separated process environment `text`.
-fn home_in(text: &str) -> Result<BoxPath, Failure> {
-    let home = environ_var(text, "HOME")
-        .ok_or_else(|| fail("home", &"the Box user has no home directory"))?;
-    BoxPath::restore(home).map_err(|e| fail("home", &e))
+    dirs_in(&environ::home_in(&text).map_err(failed)?, req).map_err(failed)
 }
 
 /// Looks the Box user up, and reads the Box platform when the launch has a Proxy, in one batch.
-fn open_box(
-    driver: &dyn Driver,
-    req: &LaunchReq,
-    connect: &[String],
-) -> Result<((BoxPath, bool), Platform), Failure> {
-    let environ = BoxPath::restore("/proc/self/environ").map_err(|e| fail("home", &e))?;
-    let mut steps = vec![BoxStep::Peek(environ)];
+fn open_box(driver: &dyn Driver, req: &LaunchReq, connect: &[String]) -> Result<Opened, Failure> {
+    let mac = Mac::find(req);
+    let first = match &mac {
+        Some(mac) => mac.prepare_step()?,
+        None => {
+            BoxStep::Peek(BoxPath::restore("/proc/self/environ").map_err(|e| fail("home", &e))?)
+        }
+    };
+    let mut steps = vec![first];
     if req.proxy.is_some() {
         steps.push(install::platform_step(&install::probe_dir(req)));
     }
@@ -171,12 +145,18 @@ fn open_box(
     let mut done = driver
         .batch(&req.handle, connect, &steps, &req.worktree, deadline)
         .into_iter();
-    let user = box_user(done.next())?;
+    let (user, mac) = match mac {
+        Some(m) => {
+            let m = m.user(done.next())?;
+            ((m.home().clone(), m.root), Some(m))
+        }
+        None => (box_user(done.next())?, None),
+    };
     let platform = req
         .proxy
         .is_some()
         .then(|| install::parse_platform(done.next()));
-    Ok((user, platform))
+    Ok((user, mac, platform))
 }
 
 /// What one launch works with.
@@ -199,6 +179,12 @@ struct Launch<'a> {
     release: &'a NonoRelease,
     /// The Box user is root.
     root: bool,
+    /// The Task's Box, on a macOS layout.
+    #[allow(
+        dead_code,
+        reason = "read by the steps that grant the agent file access"
+    )]
+    mac: Option<&'a MacBox>,
 }
 
 impl Launch<'_> {
@@ -213,8 +199,17 @@ impl Launch<'_> {
     pub(super) fn exec_env(&self) -> Result<ExecEnv, Failure> {
         let (req, ctx) = (self.req, self.ctx);
         let (strip, origin) = (&req.strip_env, req.origin.as_deref());
-        proxy_env::exec_env(self.cred, ctx.proxy.as_ref(), strip, origin, &ctx.workdir)
-            .map_err(|e| fail("script", &e))
+        let mac = Mac::find(req);
+        let task = mac.as_ref().map(|m| m.task(&req.nonce));
+        proxy_env::exec_env(
+            self.cred,
+            ctx.proxy.as_ref(),
+            strip,
+            origin,
+            &ctx.workdir,
+            task,
+        )
+        .map_err(|e| fail("script", &e))
     }
 
     /// The script lines that export the proxy environment; empty when the launch has no Proxy.
@@ -223,8 +218,10 @@ impl Launch<'_> {
             return Ok(Vec::new());
         };
         let env = self.profile.env(self.ctx);
-        proxy_env::script_lines(self.cred, addr, &env, self.req.origin.as_deref())
-            .map_err(|e| fail("script", &e))
+        let mac = Mac::find(self.req);
+        let task = mac.as_ref().map(|m| m.task(&self.req.nonce));
+        let origin = self.req.origin.as_deref();
+        proxy_env::script_lines(self.cred, addr, &env, origin, task).map_err(|e| fail("script", &e))
     }
 
     /// Puts the files in the Box and opens the tab.
@@ -386,8 +383,10 @@ fn remove_cred(
     }
 }
 
+mod environ;
 mod gh;
 mod install;
+mod mac;
 mod steps;
 
 #[cfg(test)]

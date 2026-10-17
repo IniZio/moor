@@ -124,6 +124,7 @@ pub(crate) fn run_setup(
         provider,
         workdir: Some(workdir),
         worktree,
+        task: proxy.map(|p| p.task),
     };
     let purpose = Purpose::Setup {
         lines: cfg.setup.len(),

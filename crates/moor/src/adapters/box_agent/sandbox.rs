@@ -19,7 +19,7 @@ pub(super) const NOT_INSTALLED: i32 = 6;
 
 /// Login and terminal names every agent keeps, plus two globs; the Proxy and CA names come from
 /// `exec_env::PASS_VARS`.
-const LOGIN_VARS: [&str; 11] = [
+const LOGIN_VARS: [&str; 15] = [
     "PATH",
     "HOME",
     "USER",
@@ -28,6 +28,10 @@ const LOGIN_VARS: [&str; 11] = [
     "LANG",
     "LC_ALL",
     "TMPDIR",
+    "CFFIXED_USER_HOME",
+    "XCODE_XCCONFIG_FILE",
+    "MOOR_BOX_TAG",
+    "DEVELOPER_DIR",
     "COLORTERM",
     "GIT_CONFIG_*",
     "CLAUDE_*",
