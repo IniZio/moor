@@ -28,6 +28,9 @@ pub(crate) struct MacInput<'a> {
     pub(crate) sandbox: &'a RepoSandbox,
 }
 
+/// Login-home directories that hold the owner's credentials, relative to the login home.
+const CREDENTIAL_DIRS: [&str; 3] = [".config/gh", ".docker", ".ssh"];
+
 /// Whether a path is granted read-only or read-write.
 #[derive(Clone, Copy)]
 enum Access {
@@ -40,13 +43,14 @@ enum Access {
 /// Adds the expanded grants of `input` to the nono profile `doc`.
 ///
 /// Read paths go to `filesystem.read`, write paths to `filesystem.allow`;
-/// existing entries are kept and none is added twice. Preference and Mach
+/// existing entries are kept and none is added twice. The login-home credential
+/// directories go to `filesystem.deny`. Preference and Mach
 /// grants become entries of `unsafe_macos_seatbelt_rules`, omitted when empty.
 ///
 /// # Errors
 /// Returns a message when a project path is outside the workdir, when a
 /// resolved path is inside the login home without being a login-home grant,
-/// or when a grant text holds a quote, backslash or control character.
+/// when a read or write grant covers a login-home credential directory, or when a grant text holds a quote, backslash or control character.
 pub(crate) fn apply(doc: &mut Value, input: &MacInput) -> Result<(), String> {
     let mut reads = Vec::new();
     let mut writes = Vec::new();
@@ -73,12 +77,15 @@ pub(crate) fn apply(doc: &mut Value, input: &MacInput) -> Result<(), String> {
     }
     project_paths(input, "read", &input.sandbox.read, &mut reads)?;
     project_paths(input, "write", &input.sandbox.write, &mut writes)?;
+    let denies = credential_paths(input);
+    refuse_credentials(&denies, reads.iter().chain(&writes))?;
     let root = doc
         .as_object_mut()
         .ok_or_else(|| "nono profile is not an object".to_owned())?;
     let fs = section(root, "filesystem")?;
     extend(fs, "read", reads)?;
     extend(fs, "allow", writes)?;
+    extend(fs, "deny", denies)?;
     if !rules.is_empty() {
         extend(root, RULES_KEY, rules)?;
     }
@@ -148,6 +155,35 @@ fn refuse_login_home(input: &MacInput, abs: &str) -> Result<(), String> {
             "`{abs}` is inside the login home {}; only login-home grants may be there",
             input.login_home.as_str()
         ));
+    }
+    Ok(())
+}
+
+/// The absolute credential directories of the login home.
+fn credential_paths(input: &MacInput) -> Vec<String> {
+    let home = input.login_home.as_str().trim_end_matches('/');
+    CREDENTIAL_DIRS
+        .iter()
+        .map(|rel| format!("{home}/{rel}"))
+        .collect()
+}
+
+/// Refuses a grant that equals, contains or lies inside a denied credential directory.
+fn refuse_credentials<'a>(
+    denies: &[String],
+    grants: impl Iterator<Item = &'a String>,
+) -> Result<(), String> {
+    let restore = |s: &str| BoxPath::restore(s).ok();
+    for grant in grants {
+        let Some(g) = restore(grant) else { continue };
+        for deny in denies {
+            let Some(d) = restore(deny) else { continue };
+            if inside(&g, &d) || inside(&d, &g) {
+                return Err(format!(
+                    "`{grant}` would give the agent access to `{deny}`, which holds login credentials"
+                ));
+            }
+        }
     }
     Ok(())
 }

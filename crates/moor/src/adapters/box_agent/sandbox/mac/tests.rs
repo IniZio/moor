@@ -72,6 +72,11 @@ fn toolchain_snapshot() {
       "/Users/Shared/moor/t/home",
       "/Users/Shared/moor/t/tmp",
       "/Users/Shared/moor/t/cache"
+    ],
+    "deny": [
+      "/Users/minion/.config/gh",
+      "/Users/minion/.docker",
+      "/Users/minion/.ssh"
     ]
   }
 }"#;
@@ -98,6 +103,11 @@ fn xcode_snapshot() {
       "/Users/Shared/moor/t/cache",
       "/Users/Shared/moor/t/home/Library/Developer/Xcode",
       "/Users/Shared/moor/t/home/Library/Caches"
+    ],
+    "deny": [
+      "/Users/minion/.config/gh",
+      "/Users/minion/.docker",
+      "/Users/minion/.ssh"
     ]
   },
   "unsafe_macos_seatbelt_rules": [
@@ -131,6 +141,11 @@ fn ios_simulator_snapshot() {
       "/Users/Shared/moor/t/home/Library/Developer/Xcode",
       "/Users/Shared/moor/t/home/Library/Caches",
       "/Users/Shared/moor/t/sim"
+    ],
+    "deny": [
+      "/Users/minion/.config/gh",
+      "/Users/minion/.docker",
+      "/Users/minion/.ssh"
     ]
   },
   "unsafe_macos_seatbelt_rules": [
@@ -253,4 +268,83 @@ fn nested_sandbox_rule_is_absent_without_the_capability() {
     for c in [caps(false, false), caps(true, false), caps(true, true)] {
         assert!(!pretty(&c).contains("sandbox-exec"));
     }
+}
+
+const CREDS: [&str; 3] = [
+    "/Users/minion/.config/gh",
+    "/Users/minion/.docker",
+    "/Users/minion/.ssh",
+];
+
+fn covers(grant: &str, cred: &str) -> bool {
+    let (g, c) = (grant.trim_end_matches('/'), cred);
+    c == g || c.starts_with(&format!("{g}/"))
+}
+
+#[test]
+fn login_home_credentials_are_denied() {
+    let doc = run(&caps(true, true), &RepoSandbox::default(), minimal()).unwrap();
+    let deny = arr(&doc, &["filesystem", "deny"]);
+    for c in CREDS {
+        assert!(deny.contains(&json!(c)), "{c}");
+    }
+}
+
+#[test]
+fn no_grant_covers_a_credential_directory() {
+    let sb = RepoSandbox {
+        read: vec!["ios".to_owned()],
+        write: vec!["build".to_owned()],
+    };
+    let doc = run(&caps(true, true), &sb, minimal()).unwrap();
+    for key in ["read", "allow", "read_file", "allow_file"] {
+        let Some(list) = doc
+            .get("filesystem")
+            .and_then(|f| f.get(key))
+            .and_then(Value::as_array)
+        else {
+            continue;
+        };
+        for g in list.iter().filter_map(Value::as_str) {
+            for c in CREDS {
+                assert!(!covers(g, c), "{key} `{g}` covers {c}");
+            }
+        }
+    }
+}
+
+#[test]
+fn task_home_keeps_its_gh_config_grant() {
+    let doc = run(&caps(false, false), &RepoSandbox::default(), minimal()).unwrap();
+    let allow = arr(&doc, &["filesystem", "allow"]);
+    assert!(allow.contains(&json!("/Users/Shared/moor/t/home")));
+    assert!(!arr(&doc, &["filesystem", "deny"])
+        .iter()
+        .any(|d| d.as_str().unwrap().starts_with("/Users/Shared")));
+}
+
+#[test]
+fn project_read_of_login_home_config_is_refused() {
+    let sb = RepoSandbox {
+        read: vec!["/Users/minion/.config".to_owned()],
+        write: vec![],
+    };
+    let err = run(&caps(false, false), &sb, minimal()).unwrap_err();
+    assert!(err.contains("box.sandbox.read[0]"), "{err}");
+}
+
+#[test]
+fn a_grant_covering_a_credential_directory_is_refused() {
+    let denies = vec!["/Users/minion/.config/gh".to_owned()];
+    for grant in [
+        "/Users/minion",
+        "/Users/minion/.config",
+        "/Users/minion/.config/gh/x",
+    ] {
+        let g = grant.to_owned();
+        let err = super::refuse_credentials(&denies, [&g].into_iter()).unwrap_err();
+        assert!(err.contains("holds login credentials"), "{err}");
+    }
+    let ok = "/Users/minion/.config/other".to_owned();
+    assert!(super::refuse_credentials(&denies, [&ok].into_iter()).is_ok());
 }
