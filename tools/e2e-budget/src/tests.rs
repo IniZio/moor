@@ -317,7 +317,10 @@ fn rate_limited_post_fails_with_a_plain_reason() {
         model_request_failure(log, 0, "claude"),
         Some("model requests rate limited: 429")
     );
-    assert_eq!(model_request_failure(log, 1_700_000_010_001, "claude"), None);
+    assert_eq!(
+        model_request_failure(log, 1_700_000_010_001, "claude"),
+        None
+    );
     assert_eq!(model_request_failure(PROXY_LOG, 0, "claude"), None);
 }
 

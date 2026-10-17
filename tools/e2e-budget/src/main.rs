@@ -6,8 +6,9 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use e2e_budget::{
-    agent_session_set, count_kind, model_request_after, parse_jsonl, parse_phase_line,
-    model_request_failure, report_line, start_phases, summarize, timed, wake_phases, Event, Outcome, Phase, StartBudgets, WakeBudgets,
+    agent_session_set, count_kind, model_request_after, model_request_failure, parse_jsonl,
+    parse_phase_line, report_line, start_phases, summarize, timed, wake_phases, Event, Outcome,
+    Phase, StartBudgets, WakeBudgets,
 };
 use rusqlite::{Connection, OpenFlags};
 
