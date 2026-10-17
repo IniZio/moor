@@ -21,7 +21,7 @@ use crate::store::TaskRow;
 ///
 /// Nothing runs without lines or a live Box; a failure only warns. A worktree `.moor.yaml` that
 /// differs from the base commit is not used unless `trusted`. The env is the agent's Box env.
-pub(super) fn teardown(cx: &Cx, row: &TaskRow, trusted: bool) {
+pub(crate) fn teardown(cx: &Cx, row: &TaskRow, trusted: bool) {
     let ready = row.boxed.as_ref().filter(|b| b.state == BoxState::Ready);
     let Some((b, handle)) = ready.and_then(|b| Some((b, held(b)?))) else {
         return;

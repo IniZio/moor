@@ -331,7 +331,7 @@ fn close_workspace(cx: &Cx, row: &TaskRow, plan: &ClosePlan) -> bool {
     }
 }
 
-mod teardown;
+pub(crate) mod teardown;
 mod worktree;
 
 #[cfg(test)]
