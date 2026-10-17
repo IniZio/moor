@@ -105,6 +105,10 @@ impl MacLayout {
     }
 }
 
+/// Login-home directories that hold credentials, relative to the login home.
+/// They are never granted to a Task or linked into its home.
+pub const CREDENTIAL_DIRS: [&str; 3] = [".config/gh", ".docker", ".ssh"];
+
 /// True when `path` is `home` or below it (component-wise).
 #[must_use]
 pub fn inside(path: &BoxPath, home: &BoxPath) -> bool {

@@ -1,12 +1,9 @@
 //! The read-only launch files and directories of one macOS Box Task.
 
-use super::MacLayout;
+use super::{MacLayout, CREDENTIAL_DIRS};
 use crate::boxscript::quote;
 use crate::name::{BoxPath, NameError};
 use std::fmt::Write as _;
-
-/// Login-home directories that hold the owner's credentials, relative to the login home.
-const CREDENTIAL_DIRS: [&str; 3] = [".config/gh", ".docker", ".ssh"];
 
 impl MacLayout {
     /// `<launch>/moor.xcconfig`.

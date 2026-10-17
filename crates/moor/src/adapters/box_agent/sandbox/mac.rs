@@ -8,7 +8,7 @@
 use moor_core::config::RepoSandbox;
 use moor_core::mac_capability::{expand_with, Grant, MacCapability, MacPath, MacRoot};
 use moor_core::name::BoxPath;
-use moor_core::task_key::{inside, MacLayout};
+use moor_core::task_key::{inside, MacLayout, CREDENTIAL_DIRS};
 use serde_json::{json, Map, Value};
 
 /// The nono profile key that holds raw `Seatbelt` rules.
@@ -29,9 +29,6 @@ pub(crate) struct MacInput<'a> {
     /// Selected host toolchains as (name, realpath of the root on the Box), in selection order.
     pub(crate) toolchains: &'a [(String, String)],
 }
-
-/// Login-home directories that hold the owner's credentials, relative to the login home.
-const CREDENTIAL_DIRS: [&str; 3] = [".config/gh", ".docker", ".ssh"];
 
 /// Whether a path is granted read-only or read-write.
 #[derive(Clone, Copy)]
