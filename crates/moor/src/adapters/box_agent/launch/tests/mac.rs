@@ -11,6 +11,16 @@ use moor_core::task_key::{MacLayout, TaskKey};
 /// The profile text a proxy launch uploads, from a Box of `platform` whose workdir is the `work/`
 /// directory of a Mac layout and whose repo asks for `capabilities`.
 fn layout_profile(platform: &str, capabilities: Vec<BoxCapability>) -> String {
+    layout_launch(platform, capabilities, true).unwrap()
+}
+
+/// The profile text, or the launch failure's message, from a Box of `platform` whose repo asks for
+/// `capabilities`; `in_layout` says whether the workdir is a Mac layout's `work/` directory.
+fn layout_launch(
+    platform: &str,
+    capabilities: Vec<BoxCapability>,
+    in_layout: bool,
+) -> Result<String, String> {
     let (os, arch) = platform.split_once(' ').unwrap();
     let os: &'static str = if os == "Darwin" { "Darwin" } else { "Linux" };
     let arch: &'static str = if arch == "arm64" { "arm64" } else { "x86_64" };
@@ -22,7 +32,7 @@ fn layout_profile(platform: &str, capabilities: Vec<BoxCapability>) -> String {
     let root = BoxPath::restore("/Users/box/moor").unwrap();
     let layout = MacLayout::new(&root, &TaskKey::new(&task)).unwrap();
     let r = LaunchReq {
-        workdir: layout.work,
+        workdir: if in_layout { layout.work } else { root },
         mac_grants: MacGrants {
             capabilities,
             sandbox: RepoSandbox::default(),
@@ -37,9 +47,9 @@ fn layout_profile(platform: &str, capabilities: Vec<BoxCapability>) -> String {
         Arc::new(FakeClock::new(Ts::from_millis(0))),
         release,
     );
-    a.launch(&r).unwrap();
+    a.launch(&r).map_err(|e| e.to_string())?;
     let put = (d.puts().into_iter()).find(|p| p.1.as_str().ends_with("nono-profile.json"));
-    String::from_utf8(put.unwrap().2).unwrap()
+    Ok(String::from_utf8(put.unwrap().2).unwrap())
 }
 
 /// Whether the profile's JSON has a top-level key naming Seatbelt rules.
@@ -67,7 +77,19 @@ fn the_simulator_directory_is_granted_only_for_ios_simulator() {
 
 #[test]
 fn a_linux_launch_never_gets_the_mac_rules() {
-    let profile = layout_profile("Linux x86_64", vec![BoxCapability::IosSimulator]);
+    let profile = layout_profile("Linux x86_64", vec![]);
     assert!(!has_seatbelt_key(&profile), "{profile}");
     assert!(!profile.contains("com.apple.ibtool"), "{profile}");
+}
+
+#[test]
+fn a_linux_launch_with_capabilities_fails() {
+    let e = layout_launch("Linux x86_64", vec![BoxCapability::Xcode], true).unwrap_err();
+    assert!(e.contains("box.capabilities applies only to a macOS Box"), "{e}");
+}
+
+#[test]
+fn a_darwin_launch_without_a_mac_layout_and_with_capabilities_fails() {
+    let e = layout_launch("Darwin arm64", vec![BoxCapability::Xcode], false).unwrap_err();
+    assert!(e.contains("box.capabilities applies only to a macOS Box"), "{e}");
 }

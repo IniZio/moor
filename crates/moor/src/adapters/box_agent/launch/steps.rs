@@ -1,7 +1,7 @@
 //! The Box steps of one launch, run as batches.
 
 use moor_core::boxscript::quote;
-use moor_core::config::BoxCapability;
+use moor_core::config::{BoxCapability, RepoBox};
 use moor_core::mac_capability::{selected, MacCapability, Selection};
 use moor_core::name::BoxPath;
 use moor_core::seam::agent_profile::BoxSetup;
@@ -153,7 +153,7 @@ impl Launch<'_> {
         plan.os.clone_from(&os);
         let env_names = (self.profile.env(self.ctx).into_iter().map(|v| v.name)).collect();
         let exec = self.exec_env()?;
-        let mac = self.mac_grants(&os);
+        let mac = self.mac_grants(&os)?;
         let profile = sandbox::profile(&SandboxInput {
             os: &os,
             workdir: &self.ctx.workdir,
@@ -188,16 +188,30 @@ impl Launch<'_> {
     }
 
     /// The Mac layout and capabilities to grant, when a Darwin Box runs the Task inside one.
-    fn mac_grants(&self, os: &str) -> Option<(MacLayout, Vec<MacCapability>)> {
+    ///
+    /// # Errors
+    /// A launch that asks for capabilities but cannot grant them (not a Darwin Box, or no Mac
+    /// layout for the workdir) fails with the same text as the provision-time platform check.
+    fn mac_grants(&self, os: &str) -> Result<Option<(MacLayout, Vec<MacCapability>)>, Failure> {
         let req = self.req;
         let layout = MacLayout::find(&self.ctx.workdir, &TaskKey::new(&req.task))
-            .filter(|_| os == "Darwin")?;
+            .filter(|_| os == "Darwin");
+        let Some(layout) = layout else {
+            let asked = RepoBox {
+                capabilities: req.mac_grants.capabilities.clone(),
+                ..RepoBox::default()
+            };
+            return match asked.check_platform(false) {
+                Ok(()) => Ok(None),
+                Err(e) => Err(fail("sandbox", &e.in_file(".moor.yaml"))),
+            };
+        };
         let has = |c| req.mac_grants.capabilities.contains(&c);
         let sel = Selection {
             xcode: has(BoxCapability::Xcode),
             ios_simulator: has(BoxCapability::IosSimulator),
         };
-        Some((layout, selected(sel)))
+        Ok(Some((layout, selected(sel))))
     }
 
     /// Adds the `gh` check to `plan`; a `gh` the host cannot fetch is a warning, not a failure.
