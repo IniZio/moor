@@ -16,6 +16,7 @@ pub mod request;
 pub mod response;
 pub mod seam;
 pub mod secret;
+pub mod simulator;
 pub mod task_key;
 pub mod view;
 
