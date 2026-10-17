@@ -282,6 +282,7 @@ pub(crate) fn revive_after_wake(cx: &Cx, store: &Store, id: TaskId) -> Result<()
         no_agent: false,
         resume: false,
         trust_moor_yaml: false,
+        repo: None,
     };
     let settings = || {
         let at = row.worktree.as_deref().unwrap_or(&row.repo);

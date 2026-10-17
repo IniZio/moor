@@ -78,7 +78,7 @@ fn unquote(q: &str) -> String {
 fn script_of(line: &str) -> String {
     let rest = line.strip_prefix("'ssh' '-t' 'box-1' ").unwrap();
     let quoted = rest
-        .strip_suffix("; echo \"moor: agent exited $?\"")
+        .strip_suffix(r#"; c=$?; printf '\r\033[K'; echo "moor: agent exited $c""#)
         .unwrap();
     unquote(unquote(quoted).strip_prefix("sh -c ").unwrap())
 }
