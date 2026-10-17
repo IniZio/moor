@@ -51,6 +51,7 @@ fn every_purpose_gets_the_task_vars() {
         ("XCODE_XCCONFIG_FILE", "launch/moor.xcconfig"),
         ("YARN_CACHE_FOLDER", "cache/yarn"),
         ("CP_CACHE_DIR", "cache/cocoapods/cache"),
+        ("GEM_HOME", "cache/gem"),
         ("GEM_SPEC_CACHE", "cache/gem/specs"),
         ("PUB_CACHE", "cache/pub"),
         ("XDG_CONFIG_HOME", "home/.config"),
@@ -66,6 +67,10 @@ fn every_purpose_gets_the_task_vars() {
         for (name, rel) in want {
             assert_eq!(get(&got.vars, name), vec![format!("{r}/{rel}")], "{name}");
         }
+        assert!(
+            get(&got.vars, "GEM_PATH").is_empty(),
+            "GEM_PATH stays unset so Ruby keeps its own gem directories"
+        );
         assert_eq!(get(&got.vars, "MOOR_BOX_TAG"), vec!["t1-abc".to_owned()]);
         assert_eq!(get(&got.vars, "A"), vec!["a".to_owned()]);
         assert_prelude(&got.prelude, r);
