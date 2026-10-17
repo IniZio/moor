@@ -56,6 +56,7 @@ struct State {
     sleep_kind: Option<SleepKind>,
     platform: Platform,
     static_host: bool,
+    fail_caps: bool,
 }
 
 /// One `copy_out` call: handle, source, destination and host cwd.
@@ -109,14 +110,6 @@ impl FakeDriver {
         self
     }
 
-    /// Queues text that later `exec` calls write to their `Output::Log` file, served in order.
-    pub(crate) fn exec_stdout(self, out: impl IntoIterator<Item = impl Into<String>>) -> Self {
-        self.st()
-            .exec_stdout
-            .extend(out.into_iter().map(Into::into));
-        self
-    }
-
     /// Makes `handle` vanish, as if deleted behind moor's back.
     pub(crate) fn forget(&self, handle: &BoxHandle) {
         self.st().live.retain(|h| h != handle.as_str());
@@ -140,6 +133,9 @@ impl FakeDriver {
 
 impl Driver for FakeDriver {
     fn caps(&self, _provider: &ProviderId) -> Result<DriverCaps, DriverError> {
+        if self.st().fail_caps {
+            return Err(DriverError::Unavailable("caps".to_owned()));
+        }
         Ok(self.caps_reply())
     }
 
@@ -174,6 +170,10 @@ impl Driver for FakeDriver {
             .or_else(|| s.fail_release.take())
         {
             return Err(e);
+        }
+        if s.static_host {
+            // Releasing a static lease only drops the claim; the host stays reachable by its handle.
+            return Ok(Released::Deleted);
         }
         let before = s.live.len();
         s.live.retain(|h| h != handle.as_str());

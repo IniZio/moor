@@ -15,4 +15,18 @@ impl FakeDriver {
         self.st().static_host = true;
         self
     }
+
+    /// Makes `caps` fail with `Unavailable`.
+    pub(crate) fn fail_caps(self) -> Self {
+        self.st().fail_caps = true;
+        self
+    }
+
+    /// Queues text that later `exec` calls write to their `Output::Log` file, served in order.
+    pub(crate) fn exec_stdout(self, out: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.st()
+            .exec_stdout
+            .extend(out.into_iter().map(Into::into));
+        self
+    }
 }

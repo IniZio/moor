@@ -48,6 +48,17 @@ fn scripted_acquire_failure_is_one_shot() {
 }
 
 #[test]
+fn fail_caps_makes_caps_err_and_default_is_ok() {
+    let p = ProviderId::new("p");
+    assert!(FakeDriver::new().caps(&p).is_ok());
+    assert!(FakeDriver::new()
+        .static_host()
+        .fail_caps()
+        .caps(&p)
+        .is_err());
+}
+
+#[test]
 fn planned_handle_is_the_next_acquired_handle() {
     let fake = FakeDriver::new();
     let planned = fake.planned_handle(&req());

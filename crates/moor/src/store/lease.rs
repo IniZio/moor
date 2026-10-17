@@ -1,8 +1,10 @@
 //! Records of Box resources, written before creation so cleanup works from a record.
 
+use std::time::Duration;
+
 use moor_core::seam::clock::Ts;
 use moor_core::TaskId;
-use rusqlite::{params, Connection, Row};
+use rusqlite::{params, Connection, OptionalExtension, Row};
 
 use super::{parsed_opt, Store, StoreError};
 
@@ -19,6 +21,7 @@ CREATE TABLE IF NOT EXISTS box_lease (
   size_at_release INTEGER,
   attempts INTEGER NOT NULL DEFAULT 0,
   failure TEXT,
+  next_attempt_at INTEGER,
   created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
   UNIQUE(task, kind, key));
 CREATE INDEX IF NOT EXISTS box_lease_task ON box_lease(task);
@@ -26,7 +29,7 @@ CREATE INDEX IF NOT EXISTS box_lease_task ON box_lease(task);
 
 /// Columns read into a `LeaseRow`, in `row` order.
 const COLUMNS: &str = "id, task, kind, key, state, booted, pgid, sid, root_pid, root_start, \
-                       size_at_release, updated_at, attempts, failure";
+                       size_at_release, updated_at, attempts, failure, next_attempt_at";
 
 /// What a leased resource is; `key` means a path, UDID, project or tag by kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -154,6 +157,27 @@ pub(crate) struct LeaseRow {
     pub attempts: u32,
     /// Summary of the last failed release step, if any.
     pub failure: Option<String>,
+    /// When the next release attempt may run; `None` means any time.
+    pub(crate) next_attempt_at: Option<Ts>,
+}
+
+/// First wait after a failed release attempt; later waits double.
+const RETRY_BASE: Duration = Duration::from_mins(10);
+/// Longest wait between release attempts.
+const RETRY_MAX: Duration = Duration::from_hours(6);
+
+/// How long to wait after the `attempts`-th attempt failed: 10 minutes for the first,
+/// doubling per extra attempt, capped at 6 hours.
+pub(crate) fn retry_after(attempts: u32) -> Duration {
+    let doublings = attempts.saturating_sub(1).min(16);
+    RETRY_BASE.saturating_mul(1_u32 << doublings).min(RETRY_MAX)
+}
+
+impl LeaseRow {
+    /// Whether a release attempt may run at `now`.
+    pub(crate) fn due(&self, now: Ts) -> bool {
+        self.next_attempt_at.is_none_or(|at| at <= now)
+    }
 }
 
 impl Store {
@@ -208,7 +232,32 @@ impl Store {
         id: LeaseId,
         failure: Option<&str>,
     ) -> Result<(), StoreError> {
-        self.update(id, "attempts = attempts + 1, failure = ?", params![failure])?;
+        let Some(failure) = failure else {
+            self.update(
+                id,
+                "attempts = attempts + 1, failure = NULL, next_attempt_at = NULL",
+                params![],
+            )?;
+            return Ok(());
+        };
+        let attempts: u32 = {
+            let conn = self.reader()?;
+            let n: i64 = conn
+                .query_row("SELECT attempts FROM box_lease WHERE id = ?", [id.0], |r| {
+                    r.get(0)
+                })
+                .optional()?
+                .unwrap_or(0);
+            u32::try_from(n).unwrap_or(u32::MAX)
+        };
+        let next = self
+            .now()
+            .saturating_add(retry_after(attempts.saturating_add(1)));
+        self.update(
+            id,
+            "attempts = attempts + 1, failure = ?, next_attempt_at = ?",
+            params![failure, next.as_millis()],
+        )?;
         Ok(())
     }
 
@@ -231,7 +280,6 @@ impl Store {
     }
 
     /// Every lease, by id.
-    #[cfg_attr(not(test), expect(dead_code, reason = "not yet read outside tests"))]
     pub(crate) fn all_leases(&self) -> Result<Vec<LeaseRow>, StoreError> {
         let conn = self.reader()?;
         query(
@@ -303,6 +351,7 @@ fn row(r: &Row<'_>) -> Result<LeaseRow, StoreError> {
         updated_at: Ts::from_millis(r.get(11)?),
         attempts: u32::try_from(r.get::<_, i64>(12)?).unwrap_or(u32::MAX),
         failure: r.get(13)?,
+        next_attempt_at: r.get::<_, Option<i64>>(14)?.map(Ts::from_millis),
     })
 }
 

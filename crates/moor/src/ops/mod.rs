@@ -13,6 +13,7 @@ mod gate;
 mod open;
 pub(crate) mod pr;
 pub(crate) mod proof;
+pub(crate) mod reap;
 mod run;
 pub(crate) mod show;
 mod sleep;

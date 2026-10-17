@@ -33,6 +33,13 @@ impl Moor {
         wire::reconcile_proxies(env)
     }
 
+    /// Releases the Box leases no close will: those of closed or rejected Tasks. Open Tasks are
+    /// never reaped. Returns one log line per Task acted on or left.
+    #[must_use]
+    pub fn reap_leases(&self) -> Vec<String> {
+        ops::reap::run(&self.cx).unwrap_or_else(|e| vec![e.error.to_string()])
+    }
+
     /// The web URL of the open pull request on the live Task `task`'s branch, looked up through the forge on this host.
     pub fn open_pr_url(env: &Env, task: &str) -> Result<Option<String>, String> {
         let cx = wire::build(env).map_err(|e| e.error.to_string())?;

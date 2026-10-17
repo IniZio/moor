@@ -2,8 +2,13 @@
 //!
 //! Each step runs on its own: a failed step is a warning and every later step still runs. Each
 //! lease row is written once per release, with every failed step that answers on it. The
-//! lease rows are all kept or all dropped: they go only when no step failed, verify was clean
-//! and the driver released the Box; otherwise every row stays for the next release.
+//! lease rows are all kept or all dropped, and only a driver that released the Box drops them.
+//! A Box outside the Mac layout on a host that goes with it has nothing left once the driver
+//! deleted it, or found it gone, so the rows go even after a failed step. On a host that
+//! outlives the release (a Mac layout, or a static host whose lease only drops the claim) they go
+//! only when no step failed and verify was clean; otherwise every row stays for the next
+//! release. Caps that cannot be read count as a static host. A driver that failed to release the
+//! Box fails every row.
 
 use std::path::Path;
 use std::time::Duration;
@@ -15,13 +20,14 @@ use moor_core::task_key::{MacLayout, TaskKey};
 use moor_core::{BoxHandle, Warning};
 
 use self::layout::layout_from_leases;
-use self::steps::{plan, rows_for, script, MacTarget, Step};
+use self::record::{record_attempts, Outcome};
+use self::steps::{plan, script, MacTarget, Step};
 use super::provision::recorded_workdir;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::close::teardown::teardown;
 use crate::ops::show::redact_nonce;
-use crate::store::lease::{LeaseId, LeaseRow};
+use crate::store::lease::LeaseRow;
 use crate::store::{Store, TaskRow};
 
 pub(crate) mod steps;
@@ -88,46 +94,6 @@ impl From<String> for Failure {
     }
 }
 
-/// What the plan's steps did: the failures per lease row, and what was left.
-#[derive(Default)]
-struct Outcome {
-    /// Each lease row answered by a step, with the failures of those steps.
-    results: Vec<(LeaseId, Vec<String>)>,
-    /// What verify found left behind, plus each failed step's summary.
-    left: Vec<String>,
-    /// Whether any step failed.
-    any_failed: bool,
-}
-
-impl Outcome {
-    /// Notes one step's answer on every lease row it answers on.
-    fn note(&mut self, step: Step, rows: &[LeaseRow], failure: Option<&Failure>) {
-        for id in rows_for(step, rows) {
-            let at = self
-                .results
-                .iter()
-                .position(|(i, _)| *i == id)
-                .unwrap_or_else(|| {
-                    self.results.push((id, Vec::new()));
-                    self.results.len() - 1
-                });
-            if let (Some(f), Some((_, why))) = (failure, self.results.get_mut(at)) {
-                why.push(format!("{}: {}", step.label(), f.summary));
-            }
-        }
-    }
-
-    /// Keeps what a failed step left behind.
-    fn fail(&mut self, f: Failure) {
-        self.any_failed = true;
-        self.left.extend(if f.left.is_empty() {
-            vec![f.summary]
-        } else {
-            f.left
-        });
-    }
-}
-
 /// The Mac layout of the Task's Box: the recorded workdir, else what the lease rows name.
 fn mac_layout(row: &TaskRow, rows: &[LeaseRow], key: &TaskKey) -> Option<MacLayout> {
     let recorded = row
@@ -167,15 +133,6 @@ fn run_plan(
     outcome
 }
 
-/// Writes one attempt per lease row, with the joined failures when there are any.
-fn record_attempts(store: &Store, results: &[(LeaseId, Vec<String>)]) -> Result<(), CommandError> {
-    for (id, why) in results {
-        let failure = (!why.is_empty()).then(|| why.join("; "));
-        store.record_attempt(*id, failure.as_deref())?;
-    }
-    Ok(())
-}
-
 /// Runs the release plan for the Task's Box, records each step on its lease rows and asks the
 /// driver to release the Box. A failed step only warns; every later step still runs.
 pub(crate) fn release_box(
@@ -192,9 +149,17 @@ pub(crate) fn release_box(
         .as_ref()
         .map(|layout| MacTarget { key: &key, layout });
     let outcome = run_plan(cx, row, handle, trust_moor_yaml, mac.as_ref(), &rows);
-    record_attempts(store, &outcome.results)?;
     let driver = cx.driver().release(handle);
-    if !outcome.any_failed && driver.is_ok() {
+    let driver_failure = driver
+        .as_ref()
+        .err()
+        .map(|e| shorten(&format!("Box release failed: {e}")));
+    record_attempts(store, &rows, &outcome.results, driver_failure.as_deref())?;
+    // A failed step's rows go only when the Box was not on a host that outlives the release
+    // (non-static, no Mac layout); unreadable caps count as static.
+    let done =
+        driver.is_ok() && (!outcome.any_failed || (layout.is_none() && !is_static_host(cx, row)));
+    if done {
         for r in &rows {
             store.drop_lease(r.id)?;
         }
@@ -204,6 +169,13 @@ pub(crate) fn release_box(
         driver,
         left: outcome.left,
     })
+}
+
+/// Whether the Task's Box is on a host that outlives its release; true when caps are unreadable.
+fn is_static_host(cx: &Cx, row: &TaskRow) -> bool {
+    row.boxed
+        .as_ref()
+        .is_none_or(|b| !matches!(cx.driver().caps(&b.provider), Ok(c) if !c.static_host))
 }
 
 /// Runs one step; `Some` when it failed.
@@ -386,6 +358,7 @@ fn warn_failed(cx: &Cx, step: Step, summary: &str) {
 }
 
 mod layout;
+mod record;
 
 #[cfg(test)]
 pub(crate) mod testkit;

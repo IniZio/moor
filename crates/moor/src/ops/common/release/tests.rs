@@ -19,6 +19,8 @@ use crate::testing::driver::FakeDriver;
 use crate::testing::proc::{Reply, ScriptedProc};
 use crate::testing::surface::FakeSurface;
 
+mod driver;
+
 const MAC_WORKDIR: &str = "/Users/box/moor/demo/work/repo";
 
 struct Rig {
@@ -533,7 +535,7 @@ fn a_second_release_adds_an_attempt_to_the_kept_rows() {
     assert_eq!(root_row(&r).failure, None);
     go(&r);
     assert_eq!(root_row(&r).attempts, 1);
-    assert_eq!(root_row(&r).failure, None);
+    assert!(root_row(&r).failure.is_some());
     go(&r);
     assert_eq!(root_row(&r).attempts, 2);
 }
