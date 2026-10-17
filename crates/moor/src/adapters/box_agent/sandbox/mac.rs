@@ -12,7 +12,7 @@ use moor_core::task_key::{inside, MacLayout};
 use serde_json::{json, Map, Value};
 
 /// The nono profile key that holds raw `Seatbelt` rules.
-const RULES_KEY: &str = "unsafe_macos_seatbelt_rules";
+pub(crate) const RULES_KEY: &str = "unsafe_macos_seatbelt_rules";
 
 /// What the Mac profile builder needs.
 pub(crate) struct MacInput<'a> {

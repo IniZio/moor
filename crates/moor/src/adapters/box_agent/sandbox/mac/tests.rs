@@ -348,3 +348,23 @@ fn a_grant_covering_a_credential_directory_is_refused() {
     let ok = "/Users/minion/.config/other".to_owned();
     assert!(super::refuse_credentials(&denies, [&ok].into_iter()).is_ok());
 }
+
+#[test]
+fn apply_refuses_a_grant_that_reaches_the_login_credentials() {
+    // The Task home is above the login home, so the home grant is not inside the login home but
+    // contains its credential directories.
+    let layout = layout();
+    let home = path("/Users/Shared/moor/t/home/login");
+    let sb = RepoSandbox::default();
+    let c = caps(false, false);
+    let input = MacInput {
+        layout: &layout,
+        login_home: &home,
+        developer_dir: DEV,
+        capabilities: &c,
+        sandbox: &sb,
+    };
+    let err = apply(&mut minimal(), &input).unwrap_err();
+    assert!(err.contains("holds login credentials"), "{err}");
+    assert!(err.contains("/Users/Shared/moor/t/home"), "{err}");
+}
