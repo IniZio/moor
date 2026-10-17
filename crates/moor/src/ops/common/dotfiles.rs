@@ -8,12 +8,14 @@ use std::time::Duration;
 use moor_core::boxscript::quote;
 use moor_core::config::BoxSettings;
 use moor_core::domain::run::SyncMode;
+use moor_core::exec_env::Purpose;
 use moor_core::seam::driver::{ExecOutcome, ExecSpec};
 use moor_core::seam::proc::{Deadline, Output, ProcSpec, Tool};
 use moor_core::view::DotfilesView;
 use moor_core::{BoxHandle, BoxId, BoxPath};
 
 use crate::cx::Cx;
+use crate::ops::common::box_exec::{self, BoxProxy, Site};
 
 /// Wall-clock allowance for the install step inside the Box.
 pub(crate) const DOTFILES_DEADLINE: Duration = Duration::from_mins(15);
@@ -111,22 +113,59 @@ fn private_log(log: &Path) -> std::io::Result<()> {
     fs::set_permissions(log, Permissions::from_mode(0o600))
 }
 
+/// Runs the install `script` in the Box with the env and Proxy credentials setup gets, logging to
+/// `log`. The error is why it could not run to an exit.
+fn install(
+    cx: &Cx,
+    site: &Site<'_>,
+    cfg: &BoxSettings,
+    proxy: Option<&BoxProxy>,
+    script: String,
+    log: &Path,
+) -> Result<ExecOutcome, String> {
+    let env = box_exec::prepare(cx, site, proxy, cfg, Purpose::Run)
+        .map_err(|e| format!("could not prepare the dotfiles install: {e}"))?;
+    let exec = ExecSpec {
+        argv: env.argv(vec!["sh".to_owned(), "-c".to_owned(), script]),
+        env: env.vars(),
+        cwd: None,
+        sync: SyncMode::None,
+        output: Some(Output::Log(log.to_path_buf())),
+        host_cwd: Some(site.worktree.to_path_buf()),
+        class: Some(cfg.size.value.as_str().to_owned()),
+    };
+    let out = cx
+        .driver()
+        .exec(site.handle, &exec, Deadline(DOTFILES_DEADLINE));
+    if matches!(out, Err(_) | Ok(ExecOutcome::Interrupted)) {
+        env.cleanup(cx, site);
+    }
+    out.map_err(|e| e.to_string())
+}
+
 /// Packs the configured dotfiles on the host, uploads them, and runs the install script in
 /// the Box. Does nothing when no dotfiles are configured.
 ///
 /// Symlinks inside the dotfiles directory are followed (`tar -h`), so the files they point to
 /// are copied into the Box, even when they live outside that directory.
+///
+/// The install script runs with the env and Proxy credentials setup gets. `proxy` is how starting
+/// the Proxy went; an `Err` fails the step before anything is packed.
 pub(crate) fn apply(
     cx: &Cx,
     handle: &BoxHandle,
     id: BoxId,
     host_cwd: &Path,
     cfg: &BoxSettings,
+    proxy: &Result<Option<BoxProxy>, String>,
 ) -> Result<DotfilesRun, DotfilesFailed> {
     let Some(d) = &cfg.dotfiles else {
         return Ok(DotfilesRun::Skipped);
     };
     let fail = |tail: String| DotfilesFailed { tail };
+    let proxy = proxy
+        .as_ref()
+        .map_err(|e| fail(format!("the Proxy could not start: {e}")))?;
     let started = cx.clock().instant();
     let src = cx.creds().env().expand_home(&d.path);
     let spec = ProcSpec::new(Tool::Sh, Deadline(TAR_DEADLINE))
@@ -150,20 +189,14 @@ pub(crate) fn apply(
         .join("dotfiles")
         .join(format!("{n}.log"));
     private_log(&log).map_err(|e| fail(format!("could not create dotfiles log: {e}")))?;
-    let exec = ExecSpec {
-        argv: vec![
-            "sh".to_owned(),
-            "-c".to_owned(),
-            box_script(&stage, archive.as_str(), d.install.as_deref()),
-        ],
-        env: vec![],
-        cwd: None,
-        sync: SyncMode::None,
-        output: Some(Output::Log(log.clone())),
-        host_cwd: Some(host_cwd.to_path_buf()),
-        class: Some(cfg.size.value.as_str().to_owned()),
+    let script = box_script(&stage, archive.as_str(), d.install.as_deref());
+    let site = Site {
+        handle,
+        provider: &cfg.provider.value,
+        workdir: None,
+        worktree: host_cwd,
     };
-    let reason = match cx.driver().exec(handle, &exec, Deadline(DOTFILES_DEADLINE)) {
+    let reason = match install(cx, &site, cfg, proxy.as_ref(), script, &log) {
         Ok(ExecOutcome::Exited { code: 0 }) => {
             let elapsed = cx.clock().instant().saturating_duration_since(started);
             let ms = u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX);
@@ -171,7 +204,7 @@ pub(crate) fn apply(
         }
         Ok(ExecOutcome::Exited { code }) => format!("exit {code}"),
         Ok(ExecOutcome::Interrupted) => "interrupted".to_owned(),
-        Err(e) => e.to_string(),
+        Err(e) => e,
     };
     let logged = std::fs::read_to_string(&log)
         .map(|s| tail(&s))
