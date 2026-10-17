@@ -21,7 +21,7 @@ use crate::store::lease::LeaseKind;
 
 mod parse;
 
-use self::parse::{classify, holder, Clash};
+use self::parse::{classify, holder, Clash, HOLDER_MARK};
 
 /// Wall-clock allowance for `docker compose up -d`, which may pull images.
 const UP_DEADLINE: Duration = Duration::from_mins(15);
@@ -101,8 +101,9 @@ fn name_message(name: &str, holder: Option<&str>) -> String {
 /// Names the port and, when `docker ps` finds it, the container and compose project holding it.
 fn port_message(step: &Step<'_>, port: &str) -> String {
     let filter = format!("publish={port}");
-    let format = "{{.Names}}\\t{{.Label \"com.docker.compose.project\"}}";
-    let ps = ["docker", "ps", "--filter", &filter, "--format", format];
+    let format =
+        format!("{HOLDER_MARK}{{{{.Names}}}}\\t{{{{.Label \"com.docker.compose.project\"}}}}");
+    let ps = ["docker", "ps", "--filter", &filter, "--format", &format];
     let (outcome, out) = step.run("ps", &ps, PS_DEADLINE);
     let who = match outcome {
         Ok(ExecOutcome::Exited { code: 0 }) => holder(&out),

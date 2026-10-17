@@ -128,7 +128,7 @@ fn lease_is_planned_before_the_exec_runs() {
 
 #[test]
 fn port_clash_names_the_port_and_the_holder() {
-    let ps = "other-web-1\tother\n";
+    let ps = "running on host sh -c docker ps\nmoor-holder\tother-web-1\tother\ncommand complete in 9ms\n";
     let r = rig(FakeDriver::new()
         .exec_results([Ok(exit(1)), Ok(exit(0))])
         .exec_stdout([PORT_ERR, ps]));
@@ -216,7 +216,11 @@ fn classify_reads_docker_texts() {
 #[test]
 fn holder_reads_the_first_ps_line() {
     assert_eq!(holder(""), None);
-    assert_eq!(holder("a\tp\nb\tq\n"), Some(("a".into(), Some("p".into()))));
-    assert_eq!(holder("solo\t\n"), Some(("solo".into(), None)));
-    assert_eq!(holder("solo\n"), Some(("solo".into(), None)));
+    assert_eq!(holder("noise\n"), None);
+    assert_eq!(
+        holder("banner line\nmoor-holder\ta\tp\nmoor-holder\tb\tq\n"),
+        Some(("a".into(), Some("p".into())))
+    );
+    assert_eq!(holder("moor-holder\tsolo\t\n"), Some(("solo".into(), None)));
+    assert_eq!(holder("moor-holder\tsolo\n"), Some(("solo".into(), None)));
 }

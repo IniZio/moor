@@ -49,9 +49,12 @@ fn port_of(line: &str) -> Option<String> {
     })
 }
 
-/// The first container of `docker ps` output as name and compose project.
+/// Prefix of each `docker ps` line that names a container; the Driver's own banner lines share the log.
+pub(super) const HOLDER_MARK: &str = "moor-holder\t";
+
+/// The first marked container of `docker ps` output as name and compose project.
 pub(super) fn holder(out: &str) -> Option<(String, Option<String>)> {
-    let line = out.lines().find(|l| !l.trim().is_empty())?;
+    let line = out.lines().find_map(|l| l.strip_prefix(HOLDER_MARK))?;
     let (name, project) = line.split_once('\t').unwrap_or((line, ""));
     let project = project.trim();
     Some((
