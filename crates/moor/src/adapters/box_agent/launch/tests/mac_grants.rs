@@ -51,6 +51,7 @@ fn prepared_launch(
         mac_grants: MacGrants {
             capabilities,
             sandbox: RepoSandbox::default(),
+            ..MacGrants::default()
         },
         ..req_with_proxy(&s)
     };

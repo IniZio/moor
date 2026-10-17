@@ -19,6 +19,7 @@ use crate::error::CommandError;
 use crate::ops::common::box_exec;
 use crate::ops::common::provision::{recorded_workdir, reread};
 use crate::ops::common::resume;
+use crate::ops::common::toolchains;
 use crate::ops::common::view::rfc3339;
 use crate::ops::show::redact_nonce;
 use crate::store::lease::{LeaseId, LeaseKind};
@@ -92,9 +93,15 @@ pub(super) fn begin(
     let mut launch = launch.clone();
     launch.proxy = Some(Arc::new(proxy.addr));
     launch.origin = proxy.origin;
-    launch.mac_grants = MacGrants {
-        capabilities: cfg.repo_box.capabilities.clone(),
-        sandbox: cfg.repo_box.sandbox.clone(),
+    launch.mac_grants = match toolchains::mac_grants(cx, cfg) {
+        Ok(grants) => grants,
+        Err(e) => {
+            let e = EngineError::Failed {
+                step: "config",
+                message: e.in_file(".moor.yaml").to_string(),
+            };
+            return record_failure(cx, store, id, &e);
+        }
     };
     let launch = &launch;
     let leases = match plan_dirs(cx, store, id, launch)? {
@@ -118,7 +125,7 @@ pub(super) fn begin(
     }
 }
 
-/// Plans a lease for each directory `launch` will create on the Box, before it creates them.
+/// Plans a lease for each directory and toolchain link `launch` will create on the Box, before it creates them.
 ///
 /// `Ok(None)` from the Engine means it creates no directories, so none are planned. An Engine
 /// error fails the launch before any directory is created, and is returned for the caller to record.
@@ -128,15 +135,20 @@ fn plan_dirs(
     id: TaskId,
     launch: &LaunchReq,
 ) -> Result<Result<Vec<LeaseId>, EngineError>, CommandError> {
-    let (cred, tmp) = match cx.engine().launch_dirs(launch) {
-        Ok(Some(dirs)) => dirs,
-        Ok(None) => return Ok(Ok(Vec::new())),
+    let mut leases = match cx.engine().launch_dirs(launch) {
+        Ok(Some((cred, tmp))) => vec![
+            store.plan_lease(id, LeaseKind::BoxDir, cred.as_str())?,
+            store.plan_lease(id, LeaseKind::BoxDir, tmp.as_str())?,
+        ],
+        Ok(None) => Vec::new(),
         Err(e) => return Ok(Err(e)),
     };
-    Ok(Ok(vec![
-        store.plan_lease(id, LeaseKind::BoxDir, cred.as_str())?,
-        store.plan_lease(id, LeaseKind::BoxDir, tmp.as_str())?,
-    ]))
+    leases.extend(toolchains::plan_links(
+        store,
+        id,
+        &launch.mac_grants.toolchains,
+    )?);
+    Ok(Ok(leases))
 }
 
 /// Records the launched `session` on the Task `row` and reports it.

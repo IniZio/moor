@@ -98,3 +98,37 @@ fn capabilities_on_a_linux_box_fail_the_start_as_a_config_error() {
 fn capabilities_on_a_macos_box_start_normally() {
     start_with_capabilities(Platform::Macos).unwrap();
 }
+
+/// Starts `demo` in a repo that selects toolchain `name`, on a Box of `platform`.
+fn start_with_toolchain(name: &str, platform: Platform) -> Result<(), crate::error::CommandError> {
+    let repo = tempfile::tempdir().unwrap();
+    std::fs::write(
+        repo.path().join(".moor.yaml"),
+        format!("box: {{toolchains: [{name}]}}"),
+    )
+    .unwrap();
+    let host = "toolchains: {mise: {root: /Users/me/.local/share/mise}}";
+    let w = world_with(
+        FakeDriver::new(),
+        repo.path(),
+        parse_user("c.yaml", host).unwrap(),
+    );
+    w.driver.set_platform(platform);
+    crate::ops::start::run(&w.cx, &req("demo")).map(drop)
+}
+
+#[test]
+fn an_unknown_toolchain_on_a_macos_box_fails_the_start_as_a_config_error() {
+    let e = start_with_toolchain("nope", Platform::Macos).unwrap_err();
+    let msg = e.error.to_string();
+    assert!(
+        msg.starts_with(".moor.yaml:box.toolchains[0]:")
+            && msg.contains("unknown toolchain \"nope\""),
+        "{msg}"
+    );
+}
+
+#[test]
+fn a_known_toolchain_on_a_macos_box_starts_normally() {
+    start_with_toolchain("mise", Platform::Macos).unwrap();
+}

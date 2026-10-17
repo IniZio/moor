@@ -1,6 +1,6 @@
 //! What provisioning ran in a Box, and how a failed dotfiles step is recorded.
 
-use moor_core::config::RepoBox;
+use moor_core::config::{select_toolchains, RepoBox};
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, IntentChange};
 use moor_core::domain::task::TaskInput;
 use moor_core::seam::driver::Platform;
@@ -34,9 +34,13 @@ impl Provisioned {
 }
 
 /// Why the repo's `box:` section cannot apply to a Box of `platform`, worded as a config error.
-pub(super) fn platform_refusal(repo_box: &RepoBox, platform: Platform) -> Option<String> {
+pub(super) fn platform_refusal(cx: &Cx, repo_box: &RepoBox, platform: Platform) -> Option<String> {
     let macos = platform == Platform::Macos;
-    let e = repo_box.check_platform(macos).err()?;
+    let e = repo_box.check_platform(macos).err().or_else(|| {
+        macos
+            .then(|| select_toolchains(&cx.config().toolchains, &repo_box.toolchains).err())
+            .flatten()
+    })?;
     Some(e.in_file(".moor.yaml").to_string())
 }
 

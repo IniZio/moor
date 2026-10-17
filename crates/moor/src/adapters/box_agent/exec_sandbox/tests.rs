@@ -279,6 +279,7 @@ fn the_exec_profile_is_the_one_the_agent_launch_writes() {
             read: vec!["ios/Pods".to_owned()],
             write: vec!["build".to_owned()],
         },
+        ..MacGrants::default()
     };
     let agent_doc = agent_profile(&grants);
     let set = agent_doc.pointer("/environment/set_vars").unwrap();

@@ -47,6 +47,8 @@ pub struct MacGrants {
     pub capabilities: Vec<BoxCapability>,
     /// Extra read and write paths from `box.sandbox`.
     pub sandbox: RepoSandbox,
+    /// Host toolchains the repo selected in `box.toolchains`, from the host config.
+    pub toolchains: Vec<crate::config::SelectedToolchain>,
 }
 
 /// What a launch needs to start the agent in a Box.
