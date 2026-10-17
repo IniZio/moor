@@ -2,7 +2,9 @@
 
 use std::sync::Arc;
 
+use moor_core::boxscript::denials::DENIAL_LINE_CHARS;
 use moor_core::seam::driver::{DriverError, ExecOutcome};
+use moor_core::Secret;
 
 use super::super::run;
 use super::{add, cx, ready_box, req};
@@ -41,6 +43,56 @@ fn mac_task_lists_its_denials() {
         got,
         ["git: file-write-create /Users/Shared/moor-n/a/home/x"]
     );
+    assert_eq!(v.setup_denials.unwrap(), Vec::<String>::new());
+}
+
+#[test]
+fn setup_and_live_denials_are_listed_apart() {
+    let out = "moor-denials: report\n\
+        2026-01-01 00:00:00.0 Sandbox: npm(7) deny(1) file-write-create /Users/Shared/moor-n/a/home/s\n\
+        moor-denials: log\n\
+        2026-01-01 00:00:01.0 Sandbox: git(42) deny(1) file-write-create /Users/Shared/moor-n/a/home/x\n";
+    let (v, _) = show(FakeDriver::new().work_root(MAC_ROOT).exec_stdout(["", out]));
+    let setup = v.setup_denials.unwrap();
+    let live = v.sandbox_denials.unwrap();
+    assert_eq!((setup.len(), live.len()), (1, 1), "{setup:?} {live:?}");
+    let (s, l) = (setup.concat(), live.concat());
+    assert!(s.contains("npm") && s.ends_with("home/s"), "{s}");
+    assert!(l.contains("git") && l.ends_with("home/x"), "{l}");
+}
+
+#[test]
+fn denial_text_is_cleaned_redacted_and_capped() {
+    const NONCE: &str = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-abcde";
+    let long = "p".repeat(10_000);
+    let out = format!(
+        "moor-denials: log\n\
+        2026-01-01 00:00:00.0 Sandbox: git(42) deny(1) file-write-create \
+        \x1b[31m/a\x1b]0;t\x07/{NONCE}/{long}\n"
+    );
+    let dir = tempfile::tempdir().unwrap();
+    let driver = Arc::new(
+        FakeDriver::new()
+            .work_root(MAC_ROOT)
+            .exec_stdout(["", out.as_str()]),
+    );
+    let cx = cx(dir.path(), &driver);
+    let id = add(&cx, "a");
+    ready_box(&cx, &driver, id);
+    let nonce = Secret::new(NONCE.as_bytes().to_vec());
+    let reserved =
+        cx.store()
+            .unwrap()
+            .reserve(id, &nonce, cx.rng(), crate::proxy::supervisor::LEASE);
+    assert!(reserved.is_ok());
+    let v = run(&cx, &req(Some("a"), None)).unwrap();
+    let live = v.sandbox_denials.unwrap();
+    assert_eq!(live.len(), 1);
+    for line in &live {
+        assert!(!line.chars().any(char::is_control), "{line:?}");
+        assert!(!line.contains(NONCE), "{line:?}");
+        assert!(line.chars().count() <= DENIAL_LINE_CHARS);
+    }
 }
 
 #[test]

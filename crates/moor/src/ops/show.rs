@@ -114,9 +114,19 @@ fn proof_files(cx: &Cx, row: &TaskRow) -> Option<Vec<ProofFile>> {
     }
 }
 
-/// Recent Seatbelt denials of a macOS Task's processes, read from its Box. None for any other
-/// Task, and when the Box cannot be read: `show` never fails on it.
-fn sandbox_denials(cx: &Cx, row: &TaskRow) -> Option<Vec<String>> {
+/// Sandbox denials of a macOS Task: `live` are its own processes', `setup` those saved from the
+/// setup time window.
+struct SandboxDenials {
+    /// From the Task's own sandbox processes.
+    live: Vec<String>,
+    /// Saved from the setup window; may include other processes.
+    setup: Vec<String>,
+}
+
+/// Recent Seatbelt denials of a macOS Task, read from its Box in one exec. None for any other
+/// Task, and when the Box cannot be read: `show` never fails on it. The text is untrusted, so
+/// each line is stripped of control characters, capped and has the proxy nonce redacted.
+fn sandbox_denials(cx: &Cx, row: &TaskRow) -> Option<SandboxDenials> {
     let handle = row
         .boxed
         .as_ref()
@@ -146,12 +156,20 @@ fn sandbox_denials(cx: &Cx, row: &TaskRow) -> Option<Vec<String>> {
     let text = fs::read_to_string(&log);
     let _ = fs::remove_file(&log);
     match (ran, text) {
-        (Ok(ExecOutcome::Exited { code: 0 }), Ok(text)) => Some(
-            denials::parse(&text)
-                .iter()
-                .map(ToString::to_string)
-                .collect(),
-        ),
+        (Ok(ExecOutcome::Exited { code: 0 }), Ok(text)) => {
+            let proxy = cx.store().ok()?.proxy(row.id).ok()?;
+            let nonce = proxy.as_ref().map(|r| r.nonce.expose());
+            let tidy = |list: Vec<denials::Denial>| -> Vec<String> {
+                list.iter()
+                    .map(|d| denials::clean(&redact_nonce(&d.to_string(), nonce)))
+                    .collect()
+            };
+            let split = denials::parse_split(&text);
+            Some(SandboxDenials {
+                live: tidy(split.live),
+                setup: tidy(split.setup),
+            })
+        }
         _ => None,
     }
 }
@@ -193,6 +211,7 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
             reports: None,
             proofs: None,
             sandbox_denials: None,
+            setup_denials: None,
         });
     };
     let row = store.latest_task_by_name(name)?.ok_or_else(|| {
@@ -213,14 +232,17 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
         }
         None => None,
     };
+    let proofs = proof_files(cx, &row);
+    let denied = sandbox_denials(cx, &row);
     Ok(ShowView {
         tasks: None,
         task: Some(detail),
         events,
         pane: pane.filter(|_| req.pane),
         reports: None,
-        proofs: proof_files(cx, &row),
-        sandbox_denials: sandbox_denials(cx, &row),
+        proofs,
+        sandbox_denials: denied.as_ref().map(|d| d.live.clone()),
+        setup_denials: denied.map(|d| d.setup),
     })
 }
 

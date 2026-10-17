@@ -128,15 +128,42 @@ fn proof_block(out: &mut String, files: &[Value]) {
     }
 }
 
-/// The sandbox denial lines of the detail block: `none` or one indented line each.
+/// One denial entry, indented, stripped of control characters and length-capped.
+fn denial_entries(out: &mut String, lines: &[Value]) {
+    for l in lines.iter().filter_map(Value::as_str) {
+        let _ = writeln!(out, "  {}", moor_core::boxscript::denials::clean(l));
+    }
+}
+
+/// The live denial block of the detail: `none` or one indented line each.
 fn denials_block(out: &mut String, lines: &[Value]) {
+    const HEAD: &str = "sandbox denials of the Task's processes:";
     if lines.is_empty() {
-        out.push_str("sandbox denials: none\n");
+        let _ = writeln!(out, "{HEAD} none");
         return;
     }
-    out.push_str("sandbox denials:\n");
-    for l in lines.iter().filter_map(Value::as_str) {
-        let _ = writeln!(out, "  {l}");
+    let _ = writeln!(out, "{HEAD}");
+    denial_entries(out, lines);
+}
+
+/// The setup-window denial block; omitted when empty.
+fn setup_denials_block(out: &mut String, lines: &[Value]) {
+    if lines.is_empty() {
+        return;
+    }
+    out.push_str(
+        "Seatbelt denials logged on the Box since setup started (may include other processes):\n",
+    );
+    denial_entries(out, lines);
+}
+
+/// The live then setup-window denial blocks, each only when present in `value`.
+fn denial_blocks(out: &mut String, value: &Value) {
+    if let Some(lines) = value.get("sandbox_denials").and_then(Value::as_array) {
+        denials_block(out, lines);
+    }
+    if let Some(lines) = value.get("setup_denials").and_then(Value::as_array) {
+        setup_denials_block(out, lines);
     }
 }
 
@@ -193,9 +220,7 @@ fn detail(task: &Value, value: &Value) -> Option<String> {
     if let Some(files) = value.get("proofs").and_then(Value::as_array) {
         proof_block(&mut out, files);
     }
-    if let Some(lines) = value.get("sandbox_denials").and_then(Value::as_array) {
-        denials_block(&mut out, lines);
-    }
+    denial_blocks(&mut out, value);
     if let Some(events) = value.get("events").and_then(Value::as_array) {
         out.push_str("events:\n");
         for e in events {
