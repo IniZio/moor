@@ -7,8 +7,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::{
-    BoxSize, CredentialSource, DotfilesConfig, Identity, McpServer, RepoConfig, ToolsConfig,
-    UserConfig,
+    BoxSize, CredentialSource, DotfilesConfig, Identity, McpServer, RepoBox, RepoConfig,
+    ToolsConfig, UserConfig,
 };
 
 /// Provider when the user config names none.
@@ -114,6 +114,8 @@ pub struct TaskSettings {
     pub compose_prefix: Option<String>,
     /// User tool path overrides.
     pub tool_paths: ToolsConfig,
+    /// Repo `box:` section; its capabilities and sandbox paths reach a macOS Box's sandbox.
+    pub repo_box: RepoBox,
 }
 
 /// Builds the sorted credential plan from user, repo and MCP refs.
@@ -185,6 +187,7 @@ impl TaskSettings {
             env: r.env.clone(),
             compose_prefix: r.compose.project_prefix.clone(),
             tool_paths: user.tools.clone(),
+            repo_box: r.box_.clone(),
         }
     }
 

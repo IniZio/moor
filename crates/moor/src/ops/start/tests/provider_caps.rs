@@ -1,4 +1,5 @@
 use moor_core::config::parse_user;
+use moor_core::seam::driver::Platform;
 use moor_core::TaskId;
 
 use super::{req, world_with};
@@ -62,4 +63,38 @@ fn the_box_providers_strip_env_reaches_the_launch_request() {
 fn another_providers_strip_env_is_not_applied() {
     let yaml = "box: {provider: p}\ndrivers: {external: {strip_env: [PLATFORM_TOKEN]}}";
     assert!(launch_strip_env(yaml).is_empty());
+}
+
+/// Starts `demo` in a repo whose `.moor.yaml` asks for the xcode capability, on a Box of `platform`.
+fn start_with_capabilities(platform: Platform) -> Result<(), crate::error::CommandError> {
+    let repo = tempfile::tempdir().unwrap();
+    std::fs::write(
+        repo.path().join(".moor.yaml"),
+        "box: {capabilities: [xcode]}",
+    )
+    .unwrap();
+    let w = world_with(
+        FakeDriver::new(),
+        repo.path(),
+        parse_user("c.yaml", "").unwrap(),
+    );
+    w.driver.set_platform(platform);
+    crate::ops::start::run(&w.cx, &req("demo")).map(drop)
+}
+
+#[test]
+fn capabilities_on_a_linux_box_fail_the_start_as_a_config_error() {
+    let e = start_with_capabilities(Platform::Linux).unwrap_err();
+    let msg = e.error.to_string();
+    assert!(
+        msg.starts_with(
+            ".moor.yaml:box.capabilities: box.capabilities applies only to a macOS Box"
+        ),
+        "{msg}"
+    );
+}
+
+#[test]
+fn capabilities_on_a_macos_box_start_normally() {
+    start_with_capabilities(Platform::Macos).unwrap();
 }

@@ -192,6 +192,9 @@ pub(crate) fn provision(
             hold_root(store, id, root, &planned, &got)?;
             record_acquired(store, id, &got)?;
             hold_workdir(store, id, &got)?;
+            if let Some(e) = outcome::platform_refusal(&cfg.repo_box, got.platform) {
+                return Err(sync_failed(cx, store, id, entry.begin().is_some(), e));
+            }
             let target = SetupTarget::new(&got, &worktree);
             run_and_record(cx, store, id, entry.begin().is_some(), &target, cfg)
         }

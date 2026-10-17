@@ -1,19 +1,27 @@
 //! The Box steps of one launch, run as batches.
 
 use moor_core::boxscript::quote;
+use moor_core::config::BoxCapability;
+use moor_core::mac_capability::{selected, MacCapability, Selection};
 use moor_core::name::BoxPath;
 use moor_core::seam::agent_profile::BoxSetup;
 use moor_core::seam::driver::{BoxStep, DriverError, ExecOutcome, StepDone};
 use moor_core::seam::engine::LaunchNotice;
 use moor_core::seam::proc::{Deadline, Tool};
+use moor_core::task_key::{MacLayout, TaskKey};
 
 use super::super::brief::{render, BriefInput};
 use super::super::nono_release::sha256_hex;
 use super::super::proxy_env;
+use super::super::sandbox::mac::MacInput;
 use super::super::sandbox::{self, SandboxInput};
 use super::gh;
 use super::install::{check_outcome, parse_platform, upload_steps, StepResult};
 use super::{fail, Failure, Launch, Platform, AGENT_PATH_LINE, INSTALL_DEADLINE};
+
+/// The active Xcode developer directory. It is not yet resolved per Box, so every macOS Box
+/// is assumed to use the default install location.
+const DEVELOPER_DIR: &str = "/Applications/Xcode.app/Contents/Developer";
 
 /// Which launch step a batch step belongs to, and so how its failure is reported.
 #[derive(Clone, Copy)]
@@ -145,6 +153,7 @@ impl Launch<'_> {
         plan.os.clone_from(&os);
         let env_names = (self.profile.env(self.ctx).into_iter().map(|v| v.name)).collect();
         let exec = self.exec_env()?;
+        let mac = self.mac_grants(&os);
         let profile = sandbox::profile(&SandboxInput {
             os: &os,
             workdir: &self.ctx.workdir,
@@ -155,7 +164,15 @@ impl Launch<'_> {
             set_vars: exec.vars,
             root: self.root,
             strip_env: &req.strip_env,
-        });
+            mac: mac.as_ref().map(|(layout, caps)| MacInput {
+                layout,
+                login_home: &self.ctx.home,
+                developer_dir: DEVELOPER_DIR,
+                capabilities: caps,
+                sandbox: &req.mac_grants.sandbox,
+            }),
+        })
+        .map_err(|e| fail("sandbox", &e))?;
         let at = BoxPath::under(cred.as_str(), sandbox::PROFILE_FILE)
             .map_err(|e| fail("sandbox", &e))?;
         let put = BoxStep::Put {
@@ -168,6 +185,19 @@ impl Launch<'_> {
             self.plan_gh((&os, &arch), plan);
         }
         Ok(Some(at))
+    }
+
+    /// The Mac layout and capabilities to grant, when a Darwin Box runs the Task inside one.
+    fn mac_grants(&self, os: &str) -> Option<(MacLayout, Vec<MacCapability>)> {
+        let req = self.req;
+        let layout = MacLayout::find(&self.ctx.workdir, &TaskKey::new(&req.task))
+            .filter(|_| os == "Darwin")?;
+        let has = |c| req.mac_grants.capabilities.contains(&c);
+        let sel = Selection {
+            xcode: has(BoxCapability::Xcode),
+            ios_simulator: has(BoxCapability::IosSimulator),
+        };
+        Some((layout, selected(sel)))
     }
 
     /// Adds the `gh` check to `plan`; a `gh` the host cannot fetch is a warning, not a failure.

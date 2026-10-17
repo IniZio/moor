@@ -5,7 +5,9 @@ use std::time::Duration;
 
 use moor_core::activity::{HookRead, PaneRead, Probes};
 use moor_core::seam::driver::DriverError;
-use moor_core::seam::engine::{Engine, EngineError, LaunchReq, SessionRef, Steer, SteerOutcome};
+use moor_core::seam::engine::{
+    Engine, EngineError, LaunchReq, MacGrants, SessionRef, Steer, SteerOutcome,
+};
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::{PaneRef, WorkspaceRef};
 use moor_core::{BoxHandle, BoxPath, TaskName};
@@ -93,6 +95,7 @@ fn launch_req() -> LaunchReq {
         proxy: None,
         origin: None,
         strip_env: Vec::new(),
+        mac_grants: MacGrants::default(),
     }
 }
 

@@ -9,7 +9,7 @@ use moor_core::config::TaskSettings;
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
 use moor_core::domain::task::TaskState;
-use moor_core::seam::engine::{EngineError, LaunchReq, SessionRef};
+use moor_core::seam::engine::{EngineError, LaunchReq, MacGrants, SessionRef};
 use moor_core::seam::surface::{PaneRef, WorkspaceRef};
 use moor_core::view::{AgentLaunchView, LaunchFailure};
 use moor_core::{StartReq, TaskId, Warning};
@@ -92,6 +92,10 @@ pub(super) fn begin(
     let mut launch = launch.clone();
     launch.proxy = Some(Arc::new(proxy.addr));
     launch.origin = proxy.origin;
+    launch.mac_grants = MacGrants {
+        capabilities: cfg.repo_box.capabilities.clone(),
+        sandbox: cfg.repo_box.sandbox.clone(),
+    };
     let launch = &launch;
     let leases = match plan_dirs(cx, store, id, launch)? {
         Ok(leases) => leases,
@@ -217,6 +221,7 @@ pub(super) fn launch_req(cx: &Cx, row: &TaskRow, setup_exit: Option<i32>) -> Opt
         proxy: None,
         origin: None,
         strip_env,
+        mac_grants: MacGrants::default(),
     })
 }
 

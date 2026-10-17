@@ -26,7 +26,7 @@ fn launch_missing(
             .exec_results([0, 0, codes[0], codes[1]].map(|code| Ok(ExecOutcome::Exited { code }))),
     );
     d.set_run_stdout(platform);
-    let s = surface(FakeSurface::new("/r"));
+    let s = Arc::new(FakeSurface::new("/r"));
     let a = BoxAgent::new(
         d.clone(),
         s.clone(),
@@ -125,7 +125,7 @@ fn a_replaced_tool_whose_upload_fails_is_refused() {
             .exec_results([0, 0, NOT_INSTALLED].map(|code| Ok(ExecOutcome::Exited { code })))
             .fail_put(DriverError::NotFound),
     );
-    let s = surface(FakeSurface::new("/r"));
+    let s = Arc::new(FakeSurface::new("/r"));
     let out = BoxAgent::new(
         d,
         s.clone(),
@@ -190,7 +190,7 @@ fn a_failed_check_fails_the_sandbox_step_and_opens_no_pane() {
         driver(
             FakeDriver::new().exec_results([0, 0, 5].map(|code| Ok(ExecOutcome::Exited { code }))),
         ),
-        surface(FakeSurface::new("/r")),
+        Arc::new(FakeSurface::new("/r")),
     );
     let message = sandbox_message(agent(&d, &s).launch(&req_with_proxy(&s)));
     assert!(message.contains("Landlock"), "{message}");
@@ -214,7 +214,7 @@ fn a_launch_without_a_proxy_installs_nothing_and_stays_unsandboxed() {
 fn a_failed_proxy_stage_removes_the_cred_dir() {
     let (d, s) = (
         driver(FakeDriver::new().fail_put(DriverError::NotFound)),
-        surface(FakeSurface::new("/r")),
+        Arc::new(FakeSurface::new("/r")),
     );
     let out = agent(&d, &s).launch(&req_with_proxy(&s));
     assert!(matches!(out, Err(EngineError::Failed { .. })));
@@ -248,7 +248,7 @@ fn a_failed_script_step_removes_the_temp_dir() {
 
 #[test]
 fn the_proxy_env_is_exported_and_its_names_are_allowed_in_the_profile() {
-    let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new("/r")));
+    let (d, s) = (driver(FakeDriver::new()), Arc::new(FakeSurface::new("/r")));
     let addr = ProxyAddr {
         box_env: vec![("APP_MODE".to_owned(), "dev".to_owned())],
         ..proxy_addr()
@@ -270,7 +270,7 @@ fn the_proxy_env_is_exported_and_its_names_are_allowed_in_the_profile() {
 
 #[test]
 fn repo_env_reaches_the_agent_only_through_the_profile() {
-    let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new("/r")));
+    let (d, s) = (driver(FakeDriver::new()), Arc::new(FakeSurface::new("/r")));
     let value = "it's\n$(id) `id`";
     let addr = ProxyAddr {
         box_env: vec![
@@ -316,7 +316,7 @@ fn repo_env_reaches_the_agent_only_through_the_profile() {
 /// The `set_vars` the sandbox profile of a proxy launch carries, for a Box whose login user's
 /// environment is `environ`.
 fn set_vars_for(environ: &str, repo_env: Vec<(String, String)>) -> serde_json::Value {
-    let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new("/r")));
+    let (d, s) = (driver(FakeDriver::new()), Arc::new(FakeSurface::new("/r")));
     d.set_peek_text("box-1", &environ_path(), environ);
     let addr = ProxyAddr {
         box_env: repo_env,
@@ -352,7 +352,7 @@ fn a_non_root_login_launches_unchanged() {
 fn a_root_launch_without_a_proxy_sets_nothing() {
     let d = driver(FakeDriver::new());
     d.set_peek_text("box-1", &environ_path(), "HOME=/home/box\0USER=root\0");
-    let s = surface(FakeSurface::new("/r"));
+    let s = Arc::new(FakeSurface::new("/r"));
     agent(&d, &s).launch(&req(&s)).unwrap();
     assert!(!script_of(&pane_line(&s)).contains("IS_SANDBOX"));
     assert!(d

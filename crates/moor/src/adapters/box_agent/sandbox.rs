@@ -65,6 +65,8 @@ pub(super) struct SandboxInput<'a> {
     pub(super) root: bool,
     /// Names that never reach the sandbox, whatever the repo or rules ask for.
     pub(super) strip_env: &'a [String],
+    /// The macOS Box's layout and grants; none on a Box that is not macOS or has no layout.
+    pub(super) mac: Option<mac::MacInput<'a>>,
 }
 
 /// True when `name` may be passed into the sandbox.
@@ -113,7 +115,10 @@ const DEFAULT_GROUPS: [&str; 18] = [
 ];
 
 /// The nono profile as pretty JSON text.
-pub(super) fn profile(input: &SandboxInput) -> String {
+///
+/// # Errors
+/// The macOS grants cannot be rendered into the profile.
+pub(super) fn profile(input: &SandboxInput) -> Result<String, String> {
     let home = input.home.as_str();
     let at = |rel: &str| format!("{home}/{rel}");
     let mut set_vars: BTreeMap<_, _> = input
@@ -168,7 +173,10 @@ pub(super) fn profile(input: &SandboxInput) -> String {
             }
         }
     }
-    serde_json::to_string_pretty(&doc).unwrap_or_default()
+    if let Some(m) = &input.mac {
+        mac::apply(&mut doc, m)?;
+    }
+    Ok(serde_json::to_string_pretty(&doc).unwrap_or_default())
 }
 
 /// The POSIX shell script that checks the Box's nono is the pinned binary, with sha256 `sha256`,
@@ -239,6 +247,8 @@ pub(super) fn wrap(launcher: &BoxPath, profile_path: &BoxPath, agent: &[String])
         .chain(agent.iter().cloned())
         .collect()
 }
+
+pub(super) mod mac;
 
 #[cfg(test)]
 mod tests;
