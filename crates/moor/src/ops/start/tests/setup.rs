@@ -10,6 +10,7 @@ use moor_core::domain::task::TaskState;
 use moor_core::exec_env::SETUP_LINE_DEADLINE;
 use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
 use moor_core::seam::proc::{Deadline, Tool};
+use moor_core::seam::proxy_host::ProxyHostError;
 use moor_core::{BoxHandle, ErrorKind, StartReq, TaskId};
 
 use self::Step::{Cmd, Sync};
@@ -21,6 +22,7 @@ use crate::store::Store;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::proc::Reply;
+use crate::testing::proxy_host::FakeProxyHost;
 
 const LINE_DEADLINE: Duration = SETUP_LINE_DEADLINE;
 
@@ -227,6 +229,44 @@ fn a_failing_setup_leaves_a_working_task_and_runs_nothing_more() {
     let failed = events.iter().find(|e| e.kind == "setup_failed").unwrap();
     assert_eq!(failed.payload.get("line"), Some(&serde_json::json!("b")));
     assert!(kinds(&w, id).contains(&"working".to_owned()));
+}
+
+#[test]
+fn setup_fails_like_a_failing_line_when_the_proxy_cannot_start() {
+    let repo = tempfile::tempdir().unwrap();
+    std::fs::write(repo.path().join(".moor.yaml"), "setup: [a, b]\n").unwrap();
+    let mut w = world_at(
+        FakeDriver::new().exec_results(scripted([Sync(Ok(exit(0)))])),
+        repo.path(),
+    );
+    w.cx = w.cx.with_proxy_host(Arc::new(
+        FakeProxyHost::new().with_ensure_error(ProxyHostError::Failed("boom".into())),
+    ));
+    script_base_yaml(&w, Some("setup: [a, b]\n"));
+    let v = run(&w.cx, &start_req()).unwrap();
+    assert_eq!(v.task.state, TaskState::Working);
+    assert!(v.setup.ran && !v.setup.ok);
+    assert!(failed_at_set(&w, &v));
+    assert!(setup_execs(&w).is_empty());
+    let warnings = w.cx.take_warnings();
+    let msg = &warnings
+        .iter()
+        .find(|x| x.code == "setup_failed")
+        .unwrap()
+        .message;
+    assert!(msg.contains("the Proxy could not start: boom"), "{msg}");
+    assert!(
+        msg.contains("run each `setup:` line by hand with `moor run"),
+        "{msg}"
+    );
+    assert_eq!(v.setup.line.as_deref(), Some("the Proxy could not start"));
+    let id = TaskId::new(v.task.id);
+    let events = w.cx.store().unwrap().events(id, 50).unwrap();
+    let failed = events.iter().find(|e| e.kind == "setup_failed").unwrap();
+    assert_eq!(
+        failed.payload.get("line"),
+        Some(&serde_json::json!("the Proxy could not start"))
+    );
 }
 
 #[test]

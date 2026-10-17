@@ -173,6 +173,24 @@ pub(crate) fn run_setup(
     SetupRun::Failed { line, exit, ms }
 }
 
+/// A setup that failed because the Proxy would not start; no line ran, so none is blamed.
+///
+/// `task` names the Task in the by-hand retry hint.
+pub(crate) fn proxy_failed(cx: &Cx, task: &str, reason: &str) -> SetupRun {
+    cx.warn(Warning {
+        code: "setup_failed".to_owned(),
+        message: format!(
+            "setup did not run: the Proxy could not start: {reason}; once it starts, run each \
+             `setup:` line by hand with `moor run {task} -- '<line>'`"
+        ),
+    });
+    SetupRun::Failed {
+        line: "the Proxy could not start".to_owned(),
+        exit: None,
+        ms: 0,
+    }
+}
+
 /// Why the script did not run to an exit.
 enum Failure {
     /// The environment could not be built.
