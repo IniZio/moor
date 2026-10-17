@@ -80,7 +80,8 @@ pub(super) fn overlay(
     Ok(out)
 }
 
-/// The prelude line that restores the `DEVELOPER_DIR` recorded for this Task, when one was recorded.
+/// The prelude lines that restore the `DEVELOPER_DIR` recorded for this Task, when one was recorded,
+/// and put the Task's shims directory and Homebrew first on `PATH`.
 ///
 /// # Errors
 /// Returns a message when the file path is invalid.
@@ -88,9 +89,11 @@ pub(super) fn prelude(m: Option<&MacTask<'_>>) -> Result<Vec<String>, String> {
     let Some(m) = m else { return Ok(Vec::new()) };
     let file = m.layout.developer_dir_file().map_err(|e| e.to_string())?;
     let f = quote(file.as_str());
-    Ok(vec![format!(
-        "if [ -s {f} ]; then DEVELOPER_DIR=$(cat {f}); export DEVELOPER_DIR; fi"
-    )])
+    let bin = quote(m.layout.bin_dir().map_err(|e| e.to_string())?.as_str());
+    Ok(vec![
+        format!("if [ -s {f} ]; then DEVELOPER_DIR=$(cat {f}); export DEVELOPER_DIR; fi"),
+        format!("PATH={bin}:/opt/homebrew/bin:/opt/homebrew/sbin:\"$PATH\"; export PATH"),
+    ])
 }
 
 #[cfg(test)]
