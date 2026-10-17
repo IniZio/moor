@@ -235,6 +235,21 @@ fn remove_root_deletes_the_tree() {
 }
 
 #[test]
+fn remove_root_does_not_follow_a_link_into_its_target() {
+    let s = Scratch::new("rmlink");
+    let l = s.layout();
+    fs::create_dir_all(l.home.as_str()).unwrap();
+    let target = s.path("toolchain");
+    fs::create_dir_all(&target).unwrap();
+    fs::write(target.join("keep"), "x").unwrap();
+    std::os::unix::fs::symlink(&target, format!("{}/tc", l.home.as_str())).unwrap();
+    let (code, out) = s.run(&remove_root_script(&l));
+    assert_eq!(code, Some(0), "{out}");
+    assert!(!Path::new(l.root.as_str()).exists());
+    assert!(target.join("keep").exists());
+}
+
+#[test]
 fn remove_root_already_gone_is_success() {
     let s = Scratch::new("gone");
     let (code, out) = s.run(&remove_root_script(&s.layout()));

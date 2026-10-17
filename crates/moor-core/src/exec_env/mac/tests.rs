@@ -30,6 +30,8 @@ fn every_purpose_gets_the_task_vars() {
         layout: &layout,
         key: &key,
         nonce: "abc",
+        toolchain_env: &[],
+        toolchain_bin: &[],
     };
     let repo = vec![
         ("HOME".to_owned(), "/root".to_owned()),
@@ -99,6 +101,8 @@ fn the_prelude_puts_shims_and_homebrew_first_on_the_inherited_path() {
         layout: &layout,
         key: &key,
         nonce: "abc",
+        toolchain_env: &[],
+        toolchain_bin: &[],
     };
     let b = BoxCtx {
         env: &[],
@@ -130,6 +134,8 @@ fn proxy_cache_lines_do_not_override_task_caches() {
         layout: &layout,
         key: &key,
         nonce: "abc",
+        toolchain_env: &[],
+        toolchain_bin: &[],
     };
     let cred = bp("/cred");
     let b = BoxCtx {
@@ -161,4 +167,83 @@ fn without_mac_there_is_no_developer_dir_or_path_line() {
         mac: None,
     };
     assert!(build(&b, Purpose::Run).unwrap().prelude.is_empty());
+}
+
+fn with_toolchains(
+    env: &[(String, String)],
+    bin: &[String],
+) -> (Vec<(String, String)>, Vec<String>) {
+    let (layout, key) = fixture();
+    let mac = MacTask {
+        layout: &layout,
+        key: &key,
+        nonce: "abc",
+        toolchain_env: env,
+        toolchain_bin: bin,
+    };
+    let b = BoxCtx {
+        env: &[],
+        proxy: None,
+        origin: None,
+        workdir: None,
+        strip: &[],
+        mac: Some(mac),
+    };
+    let got = build(&b, Purpose::Run).unwrap();
+    (got.vars, got.prelude)
+}
+
+#[test]
+fn toolchain_env_follows_the_task_vars_and_never_replaces_one() {
+    let env = vec![
+        (
+            "MISE_DATA_DIR".to_owned(),
+            "/Users/me/.local/share/mise".to_owned(),
+        ),
+        ("HOME".to_owned(), "/Users/me".to_owned()),
+        ("GEM_HOME".to_owned(), "/elsewhere".to_owned()),
+    ];
+    let (vars, _) = with_toolchains(&env, &[]);
+    assert_eq!(
+        get(&vars, "MISE_DATA_DIR"),
+        vec!["/Users/me/.local/share/mise".to_owned()]
+    );
+    assert_eq!(
+        get(&vars, "HOME"),
+        vec!["/Users/Shared/moor-n/t1/home".to_owned()]
+    );
+    assert_eq!(
+        get(&vars, "GEM_HOME"),
+        vec!["/Users/Shared/moor-n/t1/cache/gem".to_owned()]
+    );
+}
+
+#[test]
+fn toolchain_bins_precede_homebrew_in_order_and_are_quoted() {
+    let bin = vec![
+        "/Users/me/tool dir/bin".to_owned(),
+        "/opt/two/bin".to_owned(),
+    ];
+    let (_, pre) = with_toolchains(&[], &bin);
+    let script = format!("{}\necho \"$PATH\"", pre.join("\n"));
+    let out = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(script)
+        .env("PATH", "/usr/bin:/bin")
+        .output()
+        .unwrap();
+    let got = String::from_utf8(out.stdout).unwrap();
+    let want = "/Users/Shared/moor-n/t1/launch/bin:/Users/me/tool dir/bin:/opt/two/bin:\
+                /opt/homebrew/bin:/opt/homebrew/sbin:/usr/bin:/bin";
+    assert_eq!(got.trim(), want);
+}
+
+#[test]
+fn empty_toolchains_leave_the_path_line_unchanged() {
+    let (_, pre) = with_toolchains(&[], &[]);
+    let line = pre.iter().find(|l| l.starts_with("PATH=")).unwrap();
+    assert_eq!(
+        line,
+        "PATH='/Users/Shared/moor-n/t1/launch/bin':/opt/homebrew/bin:/opt/homebrew/sbin:\"$PATH\"; export PATH"
+    );
 }

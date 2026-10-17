@@ -142,6 +142,12 @@ fn rows_for_maps_kinds_to_steps() {
         row(5, LeaseKind::Compose, "c", None),
         row(6, LeaseKind::Cache, "/w/demo/cache", None),
         row(7, LeaseKind::Home, "/w/demo/home", None),
+        row(
+            8,
+            LeaseKind::ToolchainLink,
+            "/Users/me/.local/share/mise",
+            None,
+        ),
     ];
     assert_eq!(rows_for(Step::KillTree, &rows), [LeaseId(2)]);
     assert_eq!(
@@ -151,7 +157,7 @@ fn rows_for_maps_kinds_to_steps() {
     assert_eq!(rows_for(Step::ComposeDown, &rows), [LeaseId(5)]);
     assert_eq!(
         rows_for(Step::RemoveRoot, &rows),
-        [LeaseId(1), LeaseId(6), LeaseId(7)]
+        [LeaseId(1), LeaseId(6), LeaseId(7), LeaseId(8)]
     );
 }
 

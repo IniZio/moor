@@ -74,6 +74,8 @@ pub enum MacRoot {
     DeveloperDir,
     /// The home directory of the user who logged in to the host.
     LoginHome,
+    /// The selected host toolchain root at this index, as resolved on the Box.
+    HostToolchain(u16),
     /// No anchor: `rel` is an absolute path.
     System,
 }
@@ -152,6 +154,23 @@ pub fn expand(caps: &[MacCapability]) -> Vec<Reasoned> {
         .collect()
 }
 
+/// The grants of `caps`, then one read of each of `host_roots` selected host toolchain roots under the `toolchain` capability.
+#[must_use]
+pub fn expand_with(caps: &[MacCapability], host_roots: usize) -> Vec<Reasoned> {
+    let mut grants = expand(caps);
+    if caps.contains(&MacCapability::Toolchain) {
+        let roots = u16::try_from(host_roots).unwrap_or(u16::MAX);
+        grants.extend((0..roots).map(|i| {
+            r(
+                TC,
+                Grant::Read(p(MacRoot::HostToolchain(i), "")),
+                "owner-configured host toolchain",
+            )
+        }));
+    }
+    grants
+}
+
 /// One line per grant for snapshots: `<capability> <kind> <target> # <reason>`.
 #[must_use]
 pub fn render_list(grants: &[Reasoned]) -> String {
@@ -173,15 +192,16 @@ pub fn render_list(grants: &[Reasoned]) -> String {
 /// Renders a path as `<root>:<rel>`.
 fn path_target(p: MacPath) -> String {
     let root = match p.root {
-        MacRoot::Work => "work",
-        MacRoot::Home => "home",
-        MacRoot::Tmp => "tmp",
-        MacRoot::Cache => "cache",
-        MacRoot::Sim => "sim",
-        MacRoot::Launch => "launch",
-        MacRoot::DeveloperDir => "developer-dir",
-        MacRoot::LoginHome => "login-home",
-        MacRoot::System => "system",
+        MacRoot::HostToolchain(i) => format!("host-toolchain[{i}]"),
+        MacRoot::Work => "work".to_owned(),
+        MacRoot::Home => "home".to_owned(),
+        MacRoot::Tmp => "tmp".to_owned(),
+        MacRoot::Cache => "cache".to_owned(),
+        MacRoot::Sim => "sim".to_owned(),
+        MacRoot::Launch => "launch".to_owned(),
+        MacRoot::DeveloperDir => "developer-dir".to_owned(),
+        MacRoot::LoginHome => "login-home".to_owned(),
+        MacRoot::System => "system".to_owned(),
     };
     format!("{root}:{}", p.rel)
 }

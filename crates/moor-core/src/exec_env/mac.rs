@@ -14,6 +14,10 @@ pub struct MacTask<'a> {
     pub key: &'a TaskKey,
     /// The nonce that makes this run's Box tag unique.
     pub nonce: &'a str,
+    /// Environment of the selected host toolchains; a name the Task sets is dropped.
+    pub toolchain_env: &'a [(String, String)],
+    /// Absolute Box directories of the selected toolchains' executables, in `PATH` order (before Homebrew).
+    pub toolchain_bin: &'a [String],
 }
 
 /// `(name, directory, relative path)` for the variables that point into the Task directories.
@@ -59,6 +63,11 @@ fn vars(m: &MacTask<'_>) -> Result<Vec<(String, String)>, String> {
         let p = BoxPath::under(dir.as_str(), rel).map_err(|e| e.to_string())?;
         out.push(((*name).to_owned(), p.as_str().to_owned()));
     }
+    for (name, value) in m.toolchain_env {
+        if !out.iter().any(|(n, _)| n == name) {
+            out.push((name.clone(), value.clone()));
+        }
+    }
     Ok(out)
 }
 
@@ -81,7 +90,8 @@ pub(super) fn overlay(
 }
 
 /// The prelude lines that restore the `DEVELOPER_DIR` recorded for this Task, when one was recorded,
-/// and put the Task's shims directory and Homebrew first on `PATH`.
+/// and put the Task's shims directory, the selected toolchain directories and Homebrew first on `PATH`,
+/// in that order, so a toolchain the owner selected wins over Homebrew.
 ///
 /// # Errors
 /// Returns a message when the file path is invalid.
@@ -90,9 +100,13 @@ pub(super) fn prelude(m: Option<&MacTask<'_>>) -> Result<Vec<String>, String> {
     let file = m.layout.developer_dir_file().map_err(|e| e.to_string())?;
     let f = quote(file.as_str());
     let bin = quote(m.layout.bin_dir().map_err(|e| e.to_string())?.as_str());
+    let tools = m
+        .toolchain_bin
+        .iter()
+        .fold(String::new(), |acc, d| acc + ":" + &quote(d));
     Ok(vec![
         format!("if [ -s {f} ]; then DEVELOPER_DIR=$(cat {f}); export DEVELOPER_DIR; fi"),
-        format!("PATH={bin}:/opt/homebrew/bin:/opt/homebrew/sbin:\"$PATH\"; export PATH"),
+        format!("PATH={bin}{tools}:/opt/homebrew/bin:/opt/homebrew/sbin:\"$PATH\"; export PATH"),
     ])
 }
 

@@ -112,6 +112,17 @@ pub(crate) struct BoxExec {
     sandboxed: Option<Sandboxed>,
 }
 
+/// The Mac Task of one exec; no host toolchains yet.
+const fn task_for<'a>(layout: &'a MacLayout, key: &'a TaskKey, nonce: &'a str) -> MacTask<'a> {
+    MacTask {
+        layout,
+        key,
+        nonce,
+        toolchain_env: &[],
+        toolchain_bin: &[],
+    }
+}
+
 /// Builds the environment for `purpose`; with a Proxy it first stages the nonce and CA.
 ///
 /// The directory is under the Box user's home, outside the synced workdir, so a sync can neither
@@ -134,11 +145,9 @@ pub(crate) fn prepare(
         prepare_layout(cx, site, layout)?;
     }
     let nonce = tag_nonce(cx.rng());
-    let mac_task = mac.as_ref().map(|(layout, key)| MacTask {
-        layout,
-        key,
-        nonce: &nonce,
-    });
+    let mac_task = mac
+        .as_ref()
+        .map(|(layout, key)| task_for(layout, key, &nonce));
     let Some(p) = proxy else {
         let ctx = BoxCtx {
             env: &repo_env,

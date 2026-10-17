@@ -26,6 +26,7 @@ fn run(caps: &[MacCapability], sandbox: &RepoSandbox, mut doc: Value) -> Result<
         developer_dir: DEV,
         capabilities: caps,
         sandbox,
+        toolchains: &[],
     };
     apply(&mut doc, &input).map(|()| doc)
 }
@@ -216,6 +217,7 @@ fn layout_inside_login_home_is_refused() {
         developer_dir: DEV,
         capabilities: &c,
         sandbox: &sb,
+        toolchains: &[],
     };
     let err = apply(&mut minimal(), &input).unwrap_err();
     assert!(err.contains("inside the login home"), "{err}");
@@ -363,8 +365,65 @@ fn apply_refuses_a_grant_that_reaches_the_login_credentials() {
         developer_dir: DEV,
         capabilities: &c,
         sandbox: &sb,
+        toolchains: &[],
     };
     let err = apply(&mut minimal(), &input).unwrap_err();
     assert!(err.contains("holds login credentials"), "{err}");
     assert!(err.contains("/Users/Shared/moor/t/home"), "{err}");
+}
+
+fn with_toolchain(root: &str) -> Result<Value, String> {
+    let layout = layout();
+    let home = path("/Users/minion");
+    let sb = RepoSandbox::default();
+    let c = caps(false, false);
+    let tc = [("mise".to_owned(), root.to_owned())];
+    let input = MacInput {
+        layout: &layout,
+        login_home: &home,
+        developer_dir: DEV,
+        capabilities: &c,
+        sandbox: &sb,
+        toolchains: &tc,
+    };
+    let mut doc = minimal();
+    apply(&mut doc, &input).map(|()| doc)
+}
+
+#[test]
+fn host_toolchain_root_is_read_only() {
+    let doc = with_toolchain("/Users/minion/.local/share/mise").unwrap();
+    let root = json!("/Users/minion/.local/share/mise");
+    assert!(arr(&doc, &["filesystem", "read"]).contains(&root));
+    assert!(!arr(&doc, &["filesystem", "allow"]).contains(&root));
+}
+
+#[test]
+fn host_toolchain_roots_that_widen_access_are_refused() {
+    for (root, why) in [
+        (
+            "/Users/minion/.ssh",
+            "inside the credential directory /Users/minion/.ssh",
+        ),
+        (
+            "/Users/minion/.config/gh/x",
+            "inside the credential directory",
+        ),
+        ("/Users/minion/.config", "contains the credential directory"),
+        ("/Users/minion", "login home"),
+        ("/Users", "login home"),
+        ("/", "login home"),
+        ("/Users/minion/Library/x", "inside /Users/minion/Library"),
+        ("/Users/Shared/moor/other/work", "Box work root"),
+        ("/Users/Shared", "Box work root"),
+        ("/Users/minion/../x", "plain path"),
+        ("/tmp/a\"b", "plain path"),
+    ] {
+        let err = with_toolchain(root).unwrap_err();
+        assert!(
+            err.starts_with(&format!("host toolchain \"mise\" root {root} is refused")),
+            "{err}"
+        );
+        assert!(err.contains(why), "{root}: {err}");
+    }
 }

@@ -154,3 +154,22 @@ fn snapshot_swiftpm_plugins_adds_one_reasoned_grant() {
     assert_eq!(with, expected);
     assert!(!plain.contains("nested-sandbox-exec"));
 }
+
+#[test]
+fn host_toolchain_roots_add_one_read_each_under_toolchain() {
+    let base = expand(&[Toolchain]);
+    let got = expand_with(&[Toolchain], 2);
+    assert_eq!(expand_with(&[Toolchain], 0), base);
+    let (head, added) = got.split_at(base.len());
+    assert_eq!(head, base.as_slice());
+    assert_eq!(
+        render_list(added),
+        "toolchain read host-toolchain[0]: # owner-configured host toolchain\n\
+         toolchain read host-toolchain[1]: # owner-configured host toolchain\n"
+    );
+}
+
+#[test]
+fn host_toolchain_roots_need_the_toolchain_capability() {
+    assert_eq!(expand_with(&[XcodeBuild], 3), expand(&[XcodeBuild]));
+}

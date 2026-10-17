@@ -13,7 +13,7 @@ use super::{retry_after, LeaseKind, LeaseState, ProcessIds};
 use crate::store::Store;
 use crate::testing::clock::FakeClock;
 
-const ALL: [LeaseKind; 9] = [
+const ALL: [LeaseKind; 10] = [
     LeaseKind::BoxRoot,
     LeaseKind::BoxDir,
     LeaseKind::Home,
@@ -23,6 +23,7 @@ const ALL: [LeaseKind; 9] = [
     LeaseKind::Process,
     LeaseKind::Compose,
     LeaseKind::Cache,
+    LeaseKind::ToolchainLink,
 ];
 
 fn open(dir: &Path) -> Store {
@@ -134,6 +135,25 @@ fn kinds_round_trip() {
     }
     assert_eq!(LeaseKind::parse("nope"), None);
     assert_eq!(LeaseKind::SimSet.as_str(), "sim_set");
+    assert_eq!(LeaseKind::ToolchainLink.as_str(), "toolchain-link");
+}
+
+#[test]
+fn toolchain_link_plan_hold_drop() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(dir.path());
+    let t = add(&store, "a");
+    let id = store
+        .plan_lease(t, LeaseKind::ToolchainLink, "/Users/me/.local/share/mise")
+        .unwrap();
+    let rows = store.leases(t).unwrap();
+    assert_eq!(rows[0].kind, LeaseKind::ToolchainLink);
+    assert_eq!(rows[0].state, LeaseState::Planned);
+    assert_eq!(rows[0].key, "/Users/me/.local/share/mise");
+    assert!(store.hold_lease(id).unwrap());
+    assert_eq!(store.leases(t).unwrap()[0].state, LeaseState::Held);
+    assert!(store.drop_lease(id).unwrap());
+    assert!(store.leases(t).unwrap().is_empty());
 }
 
 #[test]

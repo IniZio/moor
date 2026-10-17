@@ -64,6 +64,8 @@ fn the_agent_launch_nonce_makes_the_macos_tag_the_task_name_and_sixteen_lowercas
             layout: &layout,
             key: &key,
             nonce: &launch.nonce,
+            toolchain_env: &[],
+            toolchain_bin: &[],
         }),
     };
     let vars = build(&ctx, Purpose::Agent).unwrap().vars;
