@@ -14,7 +14,7 @@ use moor_core::{BoxHandle, BoxPath, ErrorKind, ProviderId, TaskId};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::box_exec;
+use crate::ops::common::box_exec::{self, BoxProxy};
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::capacity;
 use crate::ops::common::dotfiles;
@@ -263,12 +263,8 @@ fn run_through_proxy(
     id: TaskId,
     target: &SetupTarget<'_>,
     cfg: &TaskSettings,
+    proxy: &Result<Option<BoxProxy>, String>,
 ) -> setup::SetupRun {
-    let proxy = if cfg.setup.is_empty() {
-        Ok(None)
-    } else {
-        box_exec::proxy(cx, id, Some(target.handle.clone()), target.worktree, cfg).map(Some)
-    };
     match proxy {
         Ok(proxy) => setup::run_setup(
             cx,
@@ -280,13 +276,15 @@ fn run_through_proxy(
             SyncMode::None,
             proxy.as_ref(),
         ),
+        // Dotfiles report their own Proxy failure; no setup line was meant to run.
+        Err(_) if cfg.setup.is_empty() => setup::SetupRun::Skipped,
         Err(reason) => {
             let name = store
                 .task(id)
                 .ok()
                 .flatten()
                 .map(|r| r.name.as_str().to_owned());
-            setup::proxy_failed(cx, name.as_deref().unwrap_or("<task>"), &reason)
+            setup::proxy_failed(cx, name.as_deref().unwrap_or("<task>"), reason)
         }
     }
 }
@@ -306,12 +304,16 @@ fn run_and_record(
     identity::set_identity(cx, target.handle, target.worktree);
     sync_into_box(cx, store, id, advance, target, cfg)?;
     // The checkout is in the Box by now, or was meant to stay as it is.
-    let run = run_through_proxy(cx, store, id, target, cfg);
+    // One Proxy serves setup and dotfiles; it starts only when one of them has work.
+    let proxy = (!cfg.setup.is_empty() || cfg.dotfiles.is_some())
+        .then(|| box_exec::proxy(cx, id, Some(target.handle.clone()), target.worktree, cfg))
+        .transpose();
+    let run = run_through_proxy(cx, store, id, target, cfg, &proxy);
     let setup_line = match run.outcome() {
         SetupOutcome::Failed { line } => Some(line),
         SetupOutcome::Ok => None,
     };
-    let dotfiles = match dotfiles::apply(cx, target.handle, id, target.worktree, cfg) {
+    let dotfiles = match dotfiles::apply(cx, target.handle, id, target.worktree, cfg, &proxy) {
         Ok(d) => d,
         Err(f) => return Err(dotfiles_failed(cx, store, id, advance, setup_line, f)),
     };
