@@ -116,3 +116,11 @@ fn the_agent_path_is_set_before_the_launch_exports_the_task_home() {
     let home = pane.find("HOME=").expect(&pane);
     assert!(path < home, "{pane}");
 }
+
+#[test]
+fn a_mac_proxy_launch_exports_the_task_home_once() {
+    let (_, s) = launch(&[], false, ready_release_with_gh());
+    let script = super::super::script_of(&s.opened().remove(0).argv.pop().unwrap());
+    assert_eq!(count(&script, "export HOME="), 1, "{script}");
+    assert_eq!(count(&script, "export CFFIXED_USER_HOME="), 1, "{script}");
+}

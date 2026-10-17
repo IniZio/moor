@@ -246,7 +246,7 @@ impl Launch<'_> {
             &hooks,
             &preseed,
             &argv,
-            (&lines, sandboxed.as_ref(), &exec.unset),
+            (&lines, sandboxed.as_ref(), &self.task_lines()?, &exec.unset),
         );
         let script = script.map_err(|e| fail("script", &e))?;
         let line = format!(
@@ -280,7 +280,8 @@ fn script(
     (proxy, sandbox): (&[String], Option<&BoxPath>),
 ) -> Result<String, NameError> {
     let homes = (ctx, &ctx.home);
-    script_stripping(paths, homes, hooks, preseed, argv, (proxy, sandbox, &[]))
+    let tail = (proxy, sandbox, &[][..], &[][..]);
+    script_stripping(paths, homes, hooks, preseed, argv, tail)
 }
 
 /// The line that puts the agent's install directories on the Box's `PATH`, in the launch script
@@ -298,7 +299,7 @@ fn script_stripping(
     hooks: &BoxSetup,
     preseed: &BoxSetup,
     argv: &[String],
-    (proxy, sandbox, strip_env): (&[String], Option<&BoxPath>, &[String]),
+    (proxy, sandbox, task_env, strip_env): (&[String], Option<&BoxPath>, &[String], &[String]),
 ) -> Result<String, NameError> {
     let workdir = ctx.workdir.as_str();
     let moor = quote(BoxPath::under(workdir, ".moor")?.as_str());
@@ -335,7 +336,7 @@ fn script_stripping(
     if proxy.is_empty() {
         lines.insert(at + 1, remove);
     }
-    lines.extend(proxy.iter().cloned());
+    lines.extend(task_env.iter().chain(proxy).cloned());
     let launcher = BoxPath::under(bin_home.as_str(), ".local/bin/nono")?;
     if sandbox.is_some() {
         lines.extend(sandbox::harden_lines());

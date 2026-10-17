@@ -8,6 +8,7 @@ use moor_core::seam::driver::{BoxStep, ExecOutcome, StepDone};
 use moor_core::seam::engine::LaunchReq;
 use moor_core::task_key::{MacLayout, TaskKey};
 
+use super::super::proxy_env;
 use super::install::StepResult;
 use super::{fail, Failure, Launch};
 
@@ -41,6 +42,14 @@ impl MacBox {
 }
 
 impl Launch<'_> {
+    /// The Mac Task variables when the launch has no Proxy, which would otherwise export them.
+    pub(super) fn task_lines(&self) -> Result<Vec<String>, Failure> {
+        let mac = Mac::find(self.req).filter(|_| self.ctx.proxy.is_none());
+        let task = |m: Mac| proxy_env::task_lines(m.task(&self.req.nonce));
+        mac.map_or(Ok(Vec::new()), task)
+            .map_err(|e| fail("script", &e))
+    }
+
     /// The home that holds the Box user's own binaries (`nono`, `gh`, the agent command): the
     /// real login home on a macOS Box, whose Task home is the agent's alone, and the Box home
     /// elsewhere. The batch steps and the launch script start in the login home.

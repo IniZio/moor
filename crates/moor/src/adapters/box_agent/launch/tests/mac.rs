@@ -179,3 +179,40 @@ fn the_platform_probe_of_a_mac_layout_reads_no_process_environment() {
 
 #[path = "mac_bin.rs"]
 mod mac_bin;
+
+const MAC_PRINTED: &str = "501\n/Users/alice\n/Applications/Xcode.app/Contents/Developer\n";
+
+fn mac_script(r: impl FnOnce(&FakeSurface) -> LaunchReq) -> String {
+    let d = driver(FakeDriver::new().run_stdout(MAC_PRINTED));
+    let s = Arc::new(FakeSurface::new("/r"));
+    agent(&d, &s).launch(&r(&s)).unwrap();
+    super::script_of(&s.opened().remove(0).argv.pop().unwrap())
+}
+
+pub(super) fn count(script: &str, line: &str) -> usize {
+    script.lines().filter(|l| l.starts_with(line)).count()
+}
+
+#[test]
+fn a_mac_launch_without_a_proxy_exports_the_task_home_after_the_login_path() {
+    let script = mac_script(req);
+    let path = script
+        .find("export PATH=\"$HOME/.local/bin")
+        .expect(&script);
+    let home = script
+        .find(&format!("export HOME='{HOME}'"))
+        .expect(&script);
+    assert!(path < home, "{script}");
+    assert!(
+        script.contains(&format!("export CFFIXED_USER_HOME='{HOME}'")),
+        "{script}"
+    );
+    assert!(
+        script.contains("export TMPDIR='/Users/box/boxes/t1/tmp"),
+        "{script}"
+    );
+    assert!(
+        script.contains(&format!("DEVELOPER_DIR=$(cat '{LAUNCH}/developer-dir')")),
+        "{script}"
+    );
+}

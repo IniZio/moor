@@ -50,6 +50,27 @@ pub(super) fn exec_env(
     )
 }
 
+/// The Mac Task lines for a launch with no Proxy: the prelude that restores the recorded
+/// `DEVELOPER_DIR`, then the `export` lines for the Mac Task variables.
+pub(super) fn task_lines(mac: MacTask<'_>) -> Result<Vec<String>, String> {
+    let built = exec_env::build(
+        &BoxCtx {
+            env: &[],
+            strip: &[],
+            proxy: None,
+            origin: None,
+            workdir: None,
+            mac: Some(mac),
+        },
+        Purpose::Agent,
+    )?;
+    let mut lines = built.prelude;
+    for (name, value) in &built.vars {
+        lines.push(format!("export {name}={}", quote(value)));
+    }
+    Ok(lines)
+}
+
 /// Shell lines run just before the agent starts: the builder's prelude, the Mac task variables when there are any, then the profile's `env`
 /// exports. They must not contain the nonce.
 pub(super) fn script_lines(
