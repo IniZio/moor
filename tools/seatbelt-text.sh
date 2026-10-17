@@ -14,7 +14,7 @@ files=$(find "$root" -name '*.rs' -not -path "$root/target/*" -not -path "$root/
 [ -n "$files" ] || { echo "seatbelt-text: ok"; exit 0; }
 # Comments count: rule text in a comment is still rule text.
 # shellcheck disable=SC2086
-hits=$({ grep -nE '\(allow( |$)' $files /dev/null || true; grep -nF 'unsafe_macos_seatbelt_rules' $files /dev/null || true; } \
+hits=$({ grep -nE '\([[:space:]]*allow([[:space:]]|\\[ntr]|$)' $files /dev/null || true; grep -nF 'unsafe_macos_seatbelt_rules' $files /dev/null || true; } \
   | sed 's/$/  <- Seatbelt rule text outside the Mac profile builder/' || true)
 if [ -n "$hits" ]; then
   echo "seatbelt-text: Seatbelt rule text outside the Mac profile builder"

@@ -252,6 +252,13 @@ seatbelt_text allow-at-eol fail <<'RS'
 const R: &str = "(allow
 file-read*)";
 RS
+seatbelt_text allow-tab fail < <(printf 'const R: &str = "(allow\tfile-read*)";\n')
+seatbelt_text allow-escaped-newline fail <<'RS'
+const R: &str = "(allow\nfile-read*)";
+RS
+seatbelt_text allow-space-before fail <<'RS'
+const R: &str = "( allow file-read*)";
+RS
 seatbelt_text allow-list-prose pass <<'RS'
 // (allow-list applied)
 fn f(allow: u8) {}
