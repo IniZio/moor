@@ -298,6 +298,8 @@ fn run_and_record(
     identity::set_identity(cx, target.handle, target.worktree);
     sync_into_box(cx, store, id, advance, target, cfg)?;
     // The checkout is in the Box by now, or was meant to stay as it is.
+    host::run_host_steps(cx, store, id, target, cfg)
+        .map_err(|e| sync_failed(cx, store, id, advance, e.error.to_string()))?;
     let proxy = setup_proxy(cx, id, target, cfg);
     let run = setup::run_setup(
         cx,
@@ -352,6 +354,7 @@ fn run_and_record(
 }
 
 mod acquire_failed;
+mod host;
 mod lease;
 pub(crate) mod moor_yaml;
 mod outcome;

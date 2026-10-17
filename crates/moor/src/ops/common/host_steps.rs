@@ -3,8 +3,6 @@
 //! The sandbox has no Docker socket and never gets one, so a repo's backend containers start
 //! here: a plain argv through the Driver, with no sandbox launcher in front of it.
 
-#![cfg_attr(not(test), expect(dead_code, reason = "wired into provision next"))]
-
 use std::fs::{DirBuilder, OpenOptions};
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};

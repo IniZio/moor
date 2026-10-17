@@ -1,5 +1,4 @@
-use std::path::Path;
-use std::{sync::Arc, time::Duration};
+use std::{path::Path, sync::Arc, time::Duration};
 
 use moor_core::config::UserConfig;
 use moor_core::domain::boxes::{BoxInput, BoxState};
@@ -22,6 +21,7 @@ mod base;
 mod capacity;
 mod dead_agent;
 mod dotfiles;
+mod host_steps;
 mod identity;
 mod known_repo;
 mod launch_warnings;
