@@ -141,7 +141,7 @@ fn proxy_cache_lines_do_not_override_task_caches() {
     let pre = build(&b, Purpose::Run).unwrap().prelude.join("\n");
     assert!(!pre.contains("$HOME/.cache"), "{pre}");
     assert!(pre.contains("export YARN_HTTPS_PROXY="));
-    assert!(pre.contains("export YARN_CA_FILE_PATH="));
+    assert!(pre.contains("export YARN_HTTPS_CA_FILE_PATH="));
 }
 
 #[test]

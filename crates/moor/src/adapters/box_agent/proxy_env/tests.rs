@@ -119,7 +119,7 @@ fn the_lines_never_contain_the_nonce_and_carry_the_exports() {
         "export http_proxy=\"http://moor:${moor_nonce}@127.0.0.1:4321\"",
         "export YARN_HTTPS_PROXY=\"http://moor:${moor_nonce}@127.0.0.1:4321\"",
         "export YARN_HTTP_PROXY=\"http://moor:${moor_nonce}@127.0.0.1:4321\"",
-        "export YARN_CA_FILE_PATH=\"$moor_bundle\"",
+        "export YARN_HTTPS_CA_FILE_PATH=\"$moor_bundle\"",
         "export YARN_CACHE_FOLDER=\"$HOME/.cache/yarn\"",
         "export YARN_GLOBAL_FOLDER=\"$HOME/.cache/yarn/berry\"",
         "export npm_config_cache=\"$HOME/.cache/npm\"",
@@ -320,7 +320,7 @@ fn assert_yarn_vars(env: &HashMap<String, String>, dir: &Path) {
     is(env, "YARN_HTTP_PROXY", &proxy_url);
     is(
         env,
-        "YARN_CA_FILE_PATH",
+        "YARN_HTTPS_CA_FILE_PATH",
         dir.join("ca-bundle.pem").to_str().unwrap(),
     );
     let home = std::env::var("HOME").unwrap();

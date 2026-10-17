@@ -258,7 +258,7 @@ fn prelude_exports_yarn_after_the_proxy_and_before_no_proxy() {
     let yarn = [
         "export YARN_HTTPS_PROXY=\"http://moor:${moor_nonce}@127.0.0.1:4321\"",
         "export YARN_HTTP_PROXY=\"http://moor:${moor_nonce}@127.0.0.1:4321\"",
-        "export YARN_CA_FILE_PATH=\"$moor_bundle\"",
+        "export YARN_HTTPS_CA_FILE_PATH=\"$moor_bundle\"",
         "export YARN_CACHE_FOLDER=\"$HOME/.cache/yarn\"",
         "export YARN_GLOBAL_FOLDER=\"$HOME/.cache/yarn/berry\"",
         "export npm_config_cache=\"$HOME/.cache/npm\"",
