@@ -16,6 +16,14 @@ pub(super) struct BriefInput<'a> {
     pub(super) setup_exit: Option<i32>,
 }
 
+/// How to put proof screenshots and videos into the PR body.
+const PROOF_GUIDE: &str = "To show proof in the PR, such as a screenshot or a video, save it \
+    as a file and attach it with `gh pr create --attach <file>`, or \
+    `gh pr edit --attach <file>` for an existing PR. Reference each file by its path in the PR \
+    body, such as `![shot](./shot.png)`; gh replaces the path with the uploaded URL. Supported \
+    types are png, jpg, gif, webp, svg, mp4, mov and webm; images up to 10 MB, videos up to \
+    100 MB on paid plans.\n\n";
+
 /// The brief text for a Task.
 pub(super) fn render(b: &BriefInput) -> String {
     let (task, branch) = (b.task, b.branch);
@@ -51,6 +59,7 @@ pub(super) fn render(b: &BriefInput) -> String {
          commits.\n\n\
          You may receive follow-up messages (steers) typed into this session.\n\n"
     );
+    out.push_str(PROOF_GUIDE);
     if let Some(n) = b.setup_exit {
         _ = write!(
             out,
@@ -119,6 +128,18 @@ mod tests {
         assert!(out.contains("may be shallow"));
         assert!(out.contains("git fetch --deepen=50 moor"));
         assert!(out.contains("git fetch --unshallow moor"));
+    }
+
+    #[test]
+    fn tells_how_to_attach_proof_to_the_pr() {
+        let out = render(&input(Some("g"), None));
+        assert!(out.contains("gh pr create --attach"));
+        assert!(out.contains("gh pr edit --attach"));
+        assert!(out.contains("webm"));
+        assert!(out.contains("![shot](./shot.png)"));
+        assert!(out.contains("uploaded URL"));
+        assert!(out.contains("10 MB"));
+        assert!(out.contains("100 MB on paid plans"));
     }
 
     #[test]
