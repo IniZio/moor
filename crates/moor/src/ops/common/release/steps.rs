@@ -114,7 +114,7 @@ pub(crate) fn script(step: Step, mac: Option<&MacTarget<'_>>, rows: &[LeaseRow])
 }
 
 /// Lease rows a step answers for: `Process`->`KillTree`, `SimSet`/`SimDevice`->`DeleteDevices`,
-/// `Compose`->`ComposeDown`, `BoxRoot`/`BoxDir`/`Home`/`Xcconfig`/`Cache`->`RemoveRoot`. A step
+/// `Compose`->`ComposeDown`, `BoxRoot`/`BoxDir`/`Home`/`Xcconfig`/`Cache`/`ToolchainLink`->`RemoveRoot`. A step
 /// with none of its own answers on the `BoxRoot` row, else the first row, else nothing.
 pub(crate) fn rows_for(step: Step, rows: &[LeaseRow]) -> Vec<LeaseId> {
     let own: Vec<LeaseId> = rows
@@ -142,7 +142,8 @@ const fn owner(kind: LeaseKind) -> Step {
         | LeaseKind::BoxDir
         | LeaseKind::Home
         | LeaseKind::Xcconfig
-        | LeaseKind::Cache => Step::RemoveRoot,
+        | LeaseKind::Cache
+        | LeaseKind::ToolchainLink => Step::RemoveRoot,
     }
 }
 

@@ -52,6 +52,8 @@ pub(crate) enum LeaseKind {
     Compose,
     /// A cache directory.
     Cache,
+    /// A read-only symlink to a host toolchain root inside the Task home; the key is the toolchain root.
+    ToolchainLink,
 }
 
 impl LeaseKind {
@@ -67,6 +69,7 @@ impl LeaseKind {
             Self::Process => "process",
             Self::Compose => "compose",
             Self::Cache => "cache",
+            Self::ToolchainLink => "toolchain-link",
         }
     }
 
@@ -82,6 +85,7 @@ impl LeaseKind {
             "process" => Self::Process,
             "compose" => Self::Compose,
             "cache" => Self::Cache,
+            "toolchain-link" => Self::ToolchainLink,
             _ => return None,
         })
     }
