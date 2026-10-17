@@ -26,6 +26,29 @@ pub enum BoxCapability {
     SwiftpmPlugins,
 }
 
+/// A step moor runs on the Mac host, outside the sandbox, for a task.
+///
+/// `backend` brings the repo's compose file up on the Mac host as compose
+/// project `moor-<task key>` outside the sandbox, and takes it down with
+/// `down -v --remove-orphans` at release.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HostStep {
+    /// The repo's backend compose stack (`backend`).
+    Backend,
+}
+
+impl<'de> Deserialize<'de> for HostStep {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let name = String::deserialize(d)?;
+        match name.as_str() {
+            "backend" => Ok(Self::Backend),
+            _ => Err(serde::de::Error::custom(format!(
+                "unknown host step \"{name}\"; the only host step is \"backend\""
+            ))),
+        }
+    }
+}
+
 /// `box.sandbox:` project paths, relative to the workdir.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields, default)]
@@ -58,15 +81,23 @@ pub struct RepoBox {
     pub toolchains: Vec<String>,
     /// iOS simulator pin; needs the `ios-simulator` capability.
     pub simulator: Option<RepoSimulator>,
+    /// Steps run on the Mac host outside the sandbox.
+    pub host_steps: Vec<HostStep>,
     /// Project paths added to the sandbox.
     pub sandbox: RepoSandbox,
 }
 
 impl RepoBox {
-    /// Refuses `box.capabilities`, `box.toolchains` and `box.simulator` on a Box that is not macOS.
+    /// Whether the repo opted in to the `backend` host step.
+    #[must_use]
+    pub fn wants_backend(&self) -> bool {
+        self.host_steps.contains(&HostStep::Backend)
+    }
+
+    /// Refuses `box.capabilities`, `box.toolchains`, `box.simulator` and `box.host_steps` on a Box that is not macOS.
     ///
     /// # Errors
-    /// Returns [`ConfigError`] at `box.capabilities`, `box.toolchains` or `box.simulator` when set and `macos` is false.
+    /// Returns [`ConfigError`] at the key when set and `macos` is false.
     pub fn check_platform(&self, macos: bool) -> Result<(), ConfigError> {
         if macos {
             return Ok(());
@@ -75,6 +106,7 @@ impl RepoBox {
             ("capabilities", !self.capabilities.is_empty()),
             ("toolchains", !self.toolchains.is_empty()),
             ("simulator", self.simulator.is_some()),
+            ("host_steps", !self.host_steps.is_empty()),
         ] {
             if set {
                 return Err(ConfigError::new(
@@ -98,6 +130,14 @@ impl RepoBox {
         }
         self.validate_toolchains()?;
         self.validate_simulator()?;
+        for (i, step) in self.host_steps.iter().enumerate() {
+            if self.host_steps.get(..i).is_some_and(|p| p.contains(step)) {
+                return Err(ConfigError::new(
+                    format!("box.host_steps[{i}]"),
+                    "list each host step once",
+                ));
+            }
+        }
         sandbox_paths("read", &self.sandbox.read)?;
         sandbox_paths("write", &self.sandbox.write)
     }
@@ -251,6 +291,8 @@ fn non_blank(name: &str, items: &[String]) -> Result<(), ConfigError> {
 
 #[cfg(test)]
 mod capability_tests;
+#[cfg(test)]
+mod host_step_tests;
 #[cfg(test)]
 mod simulator_tests;
 #[cfg(test)]
