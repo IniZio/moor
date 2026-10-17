@@ -68,10 +68,54 @@ fn every_purpose_gets_the_task_vars() {
         }
         assert_eq!(get(&got.vars, "MOOR_BOX_TAG"), vec!["t1-abc".to_owned()]);
         assert_eq!(get(&got.vars, "A"), vec!["a".to_owned()]);
-        let pre = got.prelude.join("\n");
-        assert!(pre.contains(&format!("{r}/launch/developer-dir")), "{pre}");
-        assert!(pre.contains("export DEVELOPER_DIR"), "{pre}");
+        assert_prelude(&got.prelude, r);
+        assert!(get(&got.vars, "PATH").is_empty(), "PATH stays out of vars");
     }
+}
+
+fn assert_prelude(prelude: &[String], r: &str) {
+    let pre = prelude.join("\n");
+    assert!(pre.contains(&format!("{r}/launch/developer-dir")), "{pre}");
+    assert!(pre.contains("export DEVELOPER_DIR"), "{pre}");
+    let line = prelude
+        .iter()
+        .find(|l| l.starts_with("PATH="))
+        .expect("PATH line in prelude");
+    let bin = line.find(&format!("{r}/launch/bin")).expect("shims dir");
+    let brew = line.find("/opt/homebrew/bin").expect("homebrew");
+    assert!(bin < brew, "{line}");
+    assert!(line.ends_with("; export PATH"), "{line}");
+}
+
+#[test]
+fn the_prelude_puts_shims_and_homebrew_first_on_the_inherited_path() {
+    let (layout, key) = fixture();
+    let mac = MacTask {
+        layout: &layout,
+        key: &key,
+        nonce: "abc",
+    };
+    let b = BoxCtx {
+        env: &[],
+        proxy: None,
+        origin: None,
+        workdir: None,
+        strip: &[],
+        mac: Some(mac),
+    };
+    let pre = build(&b, Purpose::Run).unwrap().prelude;
+    let script = format!("{}\necho \"$PATH\"", pre.join("\n"));
+    let out = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(script)
+        .env("PATH", "/usr/bin:/bin")
+        .output()
+        .unwrap();
+    let got = String::from_utf8(out.stdout).unwrap();
+    let got = got.trim();
+    let head = "/Users/Shared/moor-n/t1/launch/bin:/opt/homebrew/bin:/opt/homebrew/sbin:";
+    assert!(got.starts_with(head), "{got}");
+    assert!(got.ends_with("/usr/bin:/bin"), "{got}");
 }
 
 #[test]
@@ -101,7 +145,7 @@ fn proxy_cache_lines_do_not_override_task_caches() {
 }
 
 #[test]
-fn without_mac_there_is_no_developer_dir_line() {
+fn without_mac_there_is_no_developer_dir_or_path_line() {
     let b = BoxCtx {
         env: &[],
         proxy: None,

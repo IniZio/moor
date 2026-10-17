@@ -141,3 +141,28 @@ fn a_mac_proxy_launch_leaves_the_task_home_to_the_profile() {
         Some(&serde_json::Value::from(HOME))
     );
 }
+
+#[test]
+fn a_mac_proxy_launch_puts_the_launch_bin_on_path_without_exporting_the_home() {
+    let (_, s) = launch(&[], false, ready_release_with_gh());
+    let script = super::super::script_of(&s.opened().remove(0).argv.pop().unwrap());
+    let line = "PATH='/Users/box/boxes/t1/launch/bin':/opt/homebrew/bin:/opt/homebrew/sbin:\"$PATH\"; export PATH";
+    let at = script.find(line).expect(&script);
+    let dev = script.find("DEVELOPER_DIR=$(cat").expect(&script);
+    assert!(dev < at, "{script}");
+    assert!(at < script.find("'--profile'").expect(&script), "{script}");
+    assert_eq!(count(&script, "export HOME="), 0, "{script}");
+}
+
+#[test]
+fn the_profile_passes_the_prepended_path_through_instead_of_setting_it() {
+    let (d, _) = launch(&[], false, ready_release_with_gh());
+    let profile = (d.puts().into_iter())
+        .find(|p| p.1.as_str().ends_with("nono-profile.json"))
+        .unwrap();
+    let doc: serde_json::Value = serde_json::from_slice(&profile.2).unwrap();
+    let set = doc.pointer("/environment/set_vars").expect("set_vars");
+    assert_eq!(set.get("PATH"), None, "{doc}");
+    let allow = doc.pointer("/environment/allow_vars").expect("allow_vars");
+    assert!(allow.as_array().unwrap().contains(&"PATH".into()), "{doc}");
+}

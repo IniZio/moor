@@ -216,3 +216,21 @@ fn a_mac_launch_without_a_proxy_exports_the_task_home_after_the_login_path() {
         "{script}"
     );
 }
+
+fn mac_path_line() -> String {
+    format!("PATH='{LAUNCH}/bin':/opt/homebrew/bin:/opt/homebrew/sbin:\"$PATH\"; export PATH")
+}
+
+fn assert_mac_path_between_developer_dir_and_agent(script: &str) {
+    let line = mac_path_line();
+    let at = script.find(&line).expect(script);
+    let dev = script.find("DEVELOPER_DIR=$(cat").expect(script);
+    assert!(dev < at, "{script}");
+    let agent = script.rfind("'claude'").expect(script);
+    assert!(at < agent, "{script}");
+}
+
+#[test]
+fn a_mac_launch_without_a_proxy_puts_the_launch_bin_on_path_before_the_agent() {
+    assert_mac_path_between_developer_dir_and_agent(&mac_script(req));
+}
