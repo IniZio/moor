@@ -123,8 +123,10 @@ pub enum ReleaseResult {
     Deleted,
     /// The Driver reported the Box already absent.
     AlreadyGone,
-    /// Any other Driver error.
+    /// Any other Driver error, before any release step ran.
     Failed,
+    /// The release steps ran but left part of the Box behind.
+    Left,
 }
 
 /// What to do after a release request.
@@ -190,49 +192,90 @@ const fn releasable(s: BoxState) -> bool {
 
 /// Maps a release result to the decision that closes the task.
 ///
-/// A live Box (`Ready`/`Asleep`) that cannot be released keeps the task open;
-/// a `Failed` or `ReleaseFailed` Box does not hold the task back.
+/// - `Deleted` / `AlreadyGone`: the Box is released and the task closes.
+/// - `Left`: lease rows always remain. A plain close keeps the task open; `force` closes it
+///   with a warning that lists `left` and says they need manual cleanup.
+/// - `Failed` (Driver error), plain close with `rows_left`: the task stays open and the next
+///   plain close runs the release again.
+/// - `Failed`, plain close without `rows_left`: nothing is left to retry, so the task closes
+///   with a warning that the Box handle needs manual release.
+/// - `Failed` with `force`: the task closes with a warning naming the Driver failure.
+///
+/// Whenever the release did not finish the Box goes to `ReleaseFailed` (or stays there).
 #[must_use]
-pub fn release_outcome(task: TaskId, box_state: BoxState, r: ReleaseResult) -> ReleaseVerdict {
-    let close = Decision::new(task).task_input(TaskInput::Close);
-    match r {
-        ReleaseResult::Deleted | ReleaseResult::AlreadyGone => ReleaseVerdict {
+pub fn release_outcome(
+    id: TaskId,
+    state: BoxState,
+    result: ReleaseResult,
+    force: bool,
+    left: &[String],
+    rows_left: bool,
+) -> ReleaseVerdict {
+    let close = Decision::new(id).task_input(TaskInput::Close);
+    if matches!(result, ReleaseResult::Deleted | ReleaseResult::AlreadyGone) {
+        return ReleaseVerdict {
             decision: Some(close.box_input(BoxInput::Released)),
             warning: None,
             closes: true,
-        },
-        ReleaseResult::Failed => match box_state {
-            BoxState::Ready | BoxState::Asleep => ReleaseVerdict {
-                decision: None,
-                warning: None,
-                closes: false,
-            },
-            _ => ReleaseVerdict {
-                decision: Some(failed_close(close, box_state)),
-                warning: Some(release_warning()),
-                closes: true,
-            },
-        },
+        };
+    }
+    let cause = if result == ReleaseResult::Left {
+        format!("the Box release left: {}", left.join("; "))
+    } else {
+        "the Driver could not release the Box".to_owned()
+    };
+    // `ReleaseFailed` has no `ReleaseErr` edge: the Box is already recorded.
+    let record = |d: Decision| {
+        if state == BoxState::ReleaseFailed {
+            d
+        } else {
+            d.box_input(BoxInput::ReleaseErr { cause })
+        }
+    };
+    if force {
+        ReleaseVerdict {
+            decision: Some(record(close)),
+            warning: Some(release_warning(result, left)),
+            closes: true,
+        }
+    } else if result == ReleaseResult::Failed && !rows_left {
+        ReleaseVerdict {
+            decision: Some(record(close)),
+            warning: Some(handle_warning()),
+            closes: true,
+        }
+    } else {
+        ReleaseVerdict {
+            decision: (state != BoxState::ReleaseFailed).then(|| record(Decision::new(id))),
+            warning: None,
+            closes: false,
+        }
     }
 }
 
-/// Records `ReleaseFailed` unless the Box is already there.
-fn failed_close(close: Decision, from: BoxState) -> Decision {
-    if from == BoxState::ReleaseFailed {
-        return close;
-    }
-    close.box_input(BoxInput::ReleaseErr {
-        cause: "the Driver could not release the Box".to_owned(),
-    })
-}
-
-/// The caller-facing notice for an unreleased Box.
-fn release_warning() -> Warning {
+/// The notice for a plain close whose Driver release failed with no lease rows to retry.
+fn handle_warning() -> Warning {
     Warning {
         code: "box_release_failed".to_owned(),
-        message: "the task is closed but its Box was not deleted; \
-                  its handle kept for manual release"
+        message: "the task is closed but the Driver could not release the Box; \
+                  the Box handle needs manual release"
             .to_owned(),
+    }
+}
+
+/// The caller-facing notice for a forced close that left part of the Box behind.
+fn release_warning(result: ReleaseResult, left: &[String]) -> Warning {
+    let what = if result == ReleaseResult::Left {
+        format!("left on the Box: {}", left.join("; "))
+    } else {
+        "the Driver could not release the Box".to_owned()
+    };
+    Warning {
+        code: "box_release_failed".to_owned(),
+        message: format!(
+            "the task is closed but its Box was not fully released; {what}; \
+             these need manual cleanup on the Box"
+        ),
     }
 }
 

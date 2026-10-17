@@ -3,7 +3,7 @@
 use super::{
     close_gate, release_outcome, BoxCheck, CloseFacts, Refusal, ReleaseResult, ReleaseVerdict,
 };
-use crate::domain::boxes::BoxState;
+use crate::domain::boxes::{BoxInput, BoxState};
 use crate::domain::task::{TaskInput, TaskState};
 use crate::name::TaskId;
 
@@ -232,11 +232,28 @@ fn apply(v: &ReleaseVerdict, task: TaskState, b: BoxState) -> (TaskState, BoxSta
     (t.expect("task step"), bx.expect("box step"))
 }
 
+fn out(b: BoxState, r: ReleaseResult, force: bool) -> ReleaseVerdict {
+    out_rows(b, r, force, true)
+}
+
+fn out_rows(b: BoxState, r: ReleaseResult, force: bool, rows_left: bool) -> ReleaseVerdict {
+    release_outcome(
+        TaskId::new(7),
+        b,
+        r,
+        force,
+        &LEFT.map(str::to_owned),
+        rows_left,
+    )
+}
+
+const LEFT: [&str; 2] = ["root /srv/t7", "process 4242"];
+
 #[test]
 fn deleted_and_already_gone_mark_the_box_deleted() {
     for r in [R::Deleted, R::AlreadyGone] {
         for b in [B::Ready, B::Asleep, B::Failed, B::ReleaseFailed] {
-            let v = release_outcome(TaskId::new(7), b, r);
+            let v = out(b, r, false);
             assert!(v.closes && v.warning.is_none());
             assert_eq!(
                 apply(&v, TaskState::Working, b),
@@ -247,35 +264,96 @@ fn deleted_and_already_gone_mark_the_box_deleted() {
 }
 
 #[test]
-fn failed_release_of_a_live_box_keeps_the_task_open() {
-    for b in [B::Ready, B::Asleep] {
-        let v = release_outcome(TaskId::new(7), b, R::Failed);
-        assert!(!v.closes && v.decision.is_none() && v.warning.is_none());
+fn a_plain_close_that_fails_or_leaves_keeps_the_task_open_in_every_state() {
+    for r in [R::Failed, R::Left] {
+        for b in [B::Ready, B::Asleep, B::Failed] {
+            let v = out(b, r, false);
+            assert!(!v.closes && v.warning.is_none());
+            let d = v.decision.as_ref().expect("decision");
+            assert!(d.task_input.is_none());
+            assert_eq!(
+                b.step(d.box_input.as_ref().expect("box input")),
+                Ok(B::ReleaseFailed)
+            );
+        }
     }
 }
 
 #[test]
-fn failed_release_of_a_failed_box_closes_with_release_failed_and_warns() {
-    let v = release_outcome(TaskId::new(7), B::Failed, R::Failed);
+fn repeated_plain_close_failures_on_a_release_failed_box_stay_open() {
+    for r in [R::Failed, R::Left] {
+        let v = out(B::ReleaseFailed, r, false);
+        assert!(!v.closes && v.warning.is_none());
+        assert!(v.decision.is_none_or(|d| d.task_input.is_none()));
+    }
+}
+
+#[test]
+fn a_plain_close_with_a_driver_error_and_no_lease_rows_closes_with_a_warning() {
+    for b in [B::Ready, B::Asleep, B::Failed, B::ReleaseFailed] {
+        let v = out_rows(b, R::Failed, false, false);
+        assert!(v.closes, "{b:?}");
+        assert_eq!(
+            apply(&v, TaskState::Working, b),
+            (TaskState::Closed, B::ReleaseFailed)
+        );
+        let w = v.warning.expect("warning");
+        assert_eq!(w.code, "box_release_failed");
+        assert!(w.message.contains("Driver") && w.message.contains("manual release"));
+    }
+}
+
+#[test]
+fn a_plain_close_with_a_driver_error_and_lease_rows_left_stays_open() {
+    for b in [B::Ready, B::Failed, B::ReleaseFailed] {
+        let v = out_rows(b, R::Failed, false, true);
+        assert!(!v.closes && v.warning.is_none(), "{b:?}");
+    }
+}
+
+fn cause(v: ReleaseVerdict) -> String {
+    match v.decision.expect("decision").box_input {
+        Some(BoxInput::ReleaseErr { cause }) => cause,
+        other => format!("{other:?}"),
+    }
+}
+
+#[test]
+fn the_left_cause_names_the_items_and_not_the_driver() {
+    let c = cause(out(B::Ready, R::Left, false));
+    assert_eq!(c, "the Box release left: root /srv/t7; process 4242");
+    assert!(!c.contains("Driver"));
+    assert!(cause(out(B::Ready, R::Failed, false)).contains("Driver"));
+}
+
+#[test]
+fn a_forced_close_with_rows_left_closes_and_lists_them() {
+    for b in [B::Ready, B::Asleep, B::Failed, B::ReleaseFailed] {
+        let v = out(b, R::Left, true);
+        assert!(v.closes);
+        assert_eq!(
+            apply(&v, TaskState::Working, b),
+            (TaskState::Closed, B::ReleaseFailed)
+        );
+        let w = v.warning.expect("warning");
+        assert_eq!(w.code, "box_release_failed");
+        assert!(w.message.contains("root /srv/t7") && w.message.contains("process 4242"));
+        assert!(w.message.contains("manual cleanup"));
+        assert!(!w.message.contains("later release") && !w.message.contains("Driver"));
+    }
+}
+
+#[test]
+fn a_forced_close_after_a_driver_failure_closes_and_says_so() {
+    let v = out(B::Failed, R::Failed, true);
     assert!(v.closes);
     assert_eq!(
         apply(&v, TaskState::SetupFailed, B::Failed),
         (TaskState::Closed, B::ReleaseFailed)
     );
     let w = v.warning.expect("warning");
-    assert_eq!(w.code, "box_release_failed");
-    assert!(!w.message.contains("RAWDRIVER"));
-    assert!(w.message.contains("not deleted") && w.message.contains("handle kept"));
-}
-
-#[test]
-fn failed_release_of_a_release_failed_box_stays_release_failed() {
-    let v = release_outcome(TaskId::new(7), B::ReleaseFailed, R::Failed);
-    assert!(v.closes && v.warning.is_some());
-    assert_eq!(
-        apply(&v, TaskState::SetupFailed, B::ReleaseFailed),
-        (TaskState::Closed, B::ReleaseFailed)
-    );
+    assert!(w.message.contains("Driver") && w.message.contains("manual cleanup"));
+    assert!(!w.message.contains("later release") && !w.message.contains("RAWDRIVER"));
 }
 
 #[test]

@@ -1,8 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use moor_core::seam::clock::Ts;
-use moor_core::seam::driver::DriverError;
-use moor_core::{TaskId, TaskName};
+use moor_core::TaskId;
 
 use super::setup::{exit, start_req};
 use super::{req, world, world_at};
@@ -29,24 +28,6 @@ fn a_started_box_leaves_its_root_and_workdir_held() {
     };
     assert_eq!(state(LeaseKind::BoxRoot), vec![LeaseState::Held]);
     assert_eq!(state(LeaseKind::BoxDir), vec![LeaseState::Held]);
-}
-
-#[test]
-fn a_failed_acquire_leaves_the_root_planned() {
-    let w = world(FakeDriver::new().fail_acquire(DriverError::Failed {
-        summary: "boom".into(),
-    }));
-    run(&w.cx, &req("demo")).unwrap_err();
-    let store = w.cx.store().unwrap();
-    let task = store
-        .open_task_by_name(&TaskName::parse("demo").unwrap())
-        .unwrap()
-        .unwrap();
-    let rows = store.leases(task.id).unwrap();
-    assert_eq!(rows.len(), 1);
-    let row = rows.first().unwrap();
-    assert_eq!(row.kind, LeaseKind::BoxRoot);
-    assert_eq!(row.state, LeaseState::Planned);
 }
 
 #[test]

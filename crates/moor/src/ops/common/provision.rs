@@ -8,7 +8,7 @@ use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, Intent, IntentChange};
 use moor_core::domain::run::SyncMode;
 use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
-use moor_core::seam::driver::{AcquireReq, Acquired, DriverError, Released};
+use moor_core::seam::driver::{AcquireReq, Acquired};
 use moor_core::seam::rng::Rng;
 use moor_core::{BoxHandle, BoxPath, ErrorKind, ProviderId, TaskId, Warning};
 
@@ -21,10 +21,10 @@ use crate::ops::common::dotfiles;
 use crate::ops::common::facts::{provider_caps, require_reverse_tunnel, resolved};
 use crate::ops::common::identity;
 use crate::ops::common::setup;
-use crate::ops::common::view::task_view;
 use crate::store::lease::LeaseKind;
 use crate::store::{Store, TaskRow};
 
+use self::acquire_failed::failed;
 pub(crate) use self::lease::hold_root;
 use self::lease::hold_workdir;
 pub(crate) use self::outcome::Provisioned;
@@ -349,43 +349,7 @@ fn run_and_record(
     })
 }
 
-/// Records a failed acquire; returns the error, carrying the Task row, to report.
-fn failed(
-    cx: &Cx,
-    store: &Store,
-    id: TaskId,
-    entry: Entry,
-    req: &AcquireReq,
-    err: DriverError,
-) -> CommandError {
-    let cause = err.to_string();
-    let attempted: BoxHandle = cx.driver().planned_handle(req);
-    let mut lost = Decision::new(id);
-    lost.task_input = entry.begin().map(|_| TaskInput::AcquireFailed {
-        cause: cause.clone(),
-    });
-    let lost = lost
-        .box_input(BoxInput::AcquireFailed {
-            cause,
-            attempted: Some(attempted.clone()),
-        })
-        .intent(IntentChange::Clear);
-    if let Err(write) = store.apply(lost) {
-        return write.into();
-    }
-    if cx.driver().release(&attempted) == Ok(Released::AlreadyGone) {
-        let gone = Decision::new(id).box_input(BoxInput::DriverMissing);
-        if let Err(write) = store.apply(gone) {
-            return write.into();
-        }
-    }
-    let out = CommandError::from(err);
-    match reread(store, id) {
-        Ok(row) => out.with_value(serde_json::json!({ "task": task_view(&row, cx.config()) })),
-        Err(_) => out,
-    }
-}
-
+mod acquire_failed;
 mod lease;
 pub(crate) mod moor_yaml;
 mod outcome;

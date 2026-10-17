@@ -11,6 +11,7 @@ use moor_core::{BoxPath, CloseReq, ErrorKind, ProviderId, TaskId, TaskName};
 
 use super::run;
 use crate::cx::Cx;
+use crate::store::lease::LeaseKind;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::{Reply, ScriptedProc};
 use crate::testing::surface::FakeSurface;
@@ -21,6 +22,7 @@ mod branch;
 mod promote;
 mod proof;
 mod proxy;
+mod release;
 mod reports;
 mod teardown;
 mod transcript;
@@ -207,6 +209,10 @@ fn release_error_on_a_ready_box_keeps_the_task_open() {
         FakeSurface::new("/s"),
         0,
     );
+    f.cx.store()
+        .unwrap()
+        .plan_lease(f.id, LeaseKind::Compose, "proj")
+        .unwrap();
     let e = run(&f.cx, &req(false)).unwrap_err();
     assert_eq!(e.kind, ErrorKind::Failed);
     assert!(
@@ -214,11 +220,11 @@ fn release_error_on_a_ready_box_keeps_the_task_open() {
         "the adapter summary is surfaced"
     );
     assert_eq!(row(&f).state, TaskState::Working);
-    assert_eq!(box_state(&f), BoxState::Ready);
+    assert_eq!(box_state(&f), BoxState::ReleaseFailed);
 }
 
 #[test]
-fn release_error_on_a_failed_box_warns_and_closes() {
+fn a_forced_close_after_a_release_error_warns_and_closes() {
     let f = fx_with(
         FakeDriver::new().fail_release_always(DriverError::Failed {
             summary: RAW.into(),
@@ -230,7 +236,7 @@ fn release_error_on_a_failed_box_warns_and_closes() {
     store
         .apply(Decision::new(f.id).box_input(BoxInput::ReleaseErr { cause: "x".into() }))
         .unwrap();
-    let v = run(&f.cx, &req(false)).unwrap();
+    let v = run(&f.cx, &req(true)).unwrap();
     assert_eq!(v.task.state, TaskState::Closed);
     assert!(!v.box_deleted);
     assert_eq!(box_state(&f), BoxState::ReleaseFailed);

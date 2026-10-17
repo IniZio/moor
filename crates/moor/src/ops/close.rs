@@ -8,7 +8,7 @@ use moor_core::decide::close::{
 use moor_core::decide::transcript::Trigger;
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, ExtraEvent};
-use moor_core::seam::driver::{DriverError, Released};
+use moor_core::seam::driver::DriverError;
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::{PaneRef, SurfaceError, WorkspaceRef};
 use moor_core::view::CloseView;
@@ -19,6 +19,7 @@ use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::boxwork::{self, probe, BoxWork, BOXWORK_DEADLINE};
 use crate::ops::common::promote::promote_waiting;
+use crate::ops::common::release::release_box;
 use crate::ops::common::reports;
 use crate::ops::common::transcript::{self, Saved};
 use crate::ops::common::view::task_view;
@@ -56,8 +57,7 @@ pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
         reports::collect(cx, store, &row);
     }
     let box_deleted = if plan.release_box {
-        teardown::teardown(cx, &row, req.trust_moor_yaml);
-        release(cx, store, &row)?
+        release(cx, store, &row, req.trust_moor_yaml, req.force)?
     } else {
         store.apply(plan.decision_close.clone())?;
         false
@@ -278,21 +278,39 @@ fn facts(cx: &Cx, row: &TaskRow, box_check: BoxCheck) -> Result<CloseFacts, Comm
     })
 }
 
-/// Asks the Driver to release the Box and records the verdict.
+/// Releases the Box through the one release op and records the verdict.
 ///
 /// Returns whether the Box is now deleted.
-fn release(cx: &Cx, store: &Store, row: &TaskRow) -> Result<bool, CommandError> {
+fn release(
+    cx: &Cx,
+    store: &Store,
+    row: &TaskRow,
+    trust_moor_yaml: bool,
+    force: bool,
+) -> Result<bool, CommandError> {
     let Some(b) = row.boxed.as_ref() else {
         return Ok(false);
     };
     let Some(handle) = held(b) else {
         return Ok(false);
     };
-    let (result, cause) = match cx.driver().release(handle) {
-        Ok(Released::Deleted | Released::AlreadyGone) => (ReleaseResult::Deleted, None),
-        Err(e) => (ReleaseResult::Failed, Some(e)),
+    let report = release_box(cx, store, row, handle, trust_moor_yaml)?;
+    let (result, cause) = match (&report.driver, report.released) {
+        (Ok(_), true) => (ReleaseResult::Deleted, None),
+        (Err(e), _) => (ReleaseResult::Failed, Some(e.to_string())),
+        (Ok(_), false) => (
+            ReleaseResult::Left,
+            Some(format!("the Box release left: {}", report.left.join("; "))),
+        ),
     };
-    let verdict = release_outcome(row.id, b.state, result);
+    let verdict = release_outcome(
+        row.id,
+        b.state,
+        result,
+        force,
+        &report.left,
+        !report.released,
+    );
     if let Some(d) = verdict.decision {
         store.apply(d)?;
     }
@@ -300,13 +318,13 @@ fn release(cx: &Cx, store: &Store, row: &TaskRow) -> Result<bool, CommandError> 
         cx.warn(w);
     }
     if !verdict.closes {
-        let why = cause.map_or_else(
-            || "the Box could not be released".to_owned(),
-            |e| e.to_string(),
-        );
+        let why = cause.unwrap_or_else(|| "the Box could not be released".to_owned());
         return Err(
-            CommandError::new(ErrorKind::Failed, format!("{why}; the task stays open"))
-                .with_hint("try `moor close` again, or release the Box by hand"),
+            CommandError::new(ErrorKind::Failed, format!("{why}; the task stays open")).with_hint(
+                "try `moor close` again to retry the release, or `moor close --force` to \
+                 close anyway: it lists what is left on the Box for manual cleanup and \
+                 skips the unpushed-work check",
+            ),
         );
     }
     Ok(result == ReleaseResult::Deleted)

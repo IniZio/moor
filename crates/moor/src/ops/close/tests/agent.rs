@@ -9,6 +9,7 @@ use moor_core::{ErrorKind, TaskName};
 
 use super::teardown::{exec_calls, YAML};
 use super::{box_state, fx_with, req, row, run, Fx};
+use crate::store::lease::LeaseKind;
 use crate::testing::driver::FakeDriver;
 use crate::testing::surface::FakeSurface;
 
@@ -76,13 +77,17 @@ fn a_release_error_keeps_the_task_open_with_the_session_ended() {
         FakeSurface::new("/s"),
         0,
     );
+    f.cx.store()
+        .unwrap()
+        .plan_lease(f.id, LeaseKind::Compose, "proj")
+        .unwrap();
     let pane = open_pane(&f);
     live(&f, &pane);
     let e = run(&f.cx, &req(false)).unwrap_err();
     assert_eq!(e.kind, ErrorKind::Failed);
     assert!(!live_session(&f));
     assert_eq!(row(&f).state, TaskState::Working);
-    assert_eq!(box_state(&f), BoxState::Ready);
+    assert_eq!(box_state(&f), BoxState::ReleaseFailed);
     assert!(!f
         .surface
         .calls()

@@ -203,10 +203,6 @@ impl Store {
     }
 
     /// Count one release attempt and set `failure` to its summary (`None` clears it).
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "first used by the Box release op")
-    )]
     pub(crate) fn record_attempt(
         &self,
         id: LeaseId,
@@ -217,10 +213,6 @@ impl Store {
     }
 
     /// Delete the row; call only after release is verified. Returns whether a row was deleted.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "first used by the Box release op")
-    )]
     pub(crate) fn drop_lease(&self, id: LeaseId) -> Result<bool, StoreError> {
         let conn = self.writer()?;
         let changed = conn.execute("DELETE FROM box_lease WHERE id = ?", [id.0])?;
@@ -229,10 +221,6 @@ impl Store {
     }
 
     /// Leases of `task`, by id.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "first used by the Box release op")
-    )]
     pub(crate) fn leases(&self, task: TaskId) -> Result<Vec<LeaseRow>, StoreError> {
         let conn = self.reader()?;
         query(
