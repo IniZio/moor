@@ -3,7 +3,7 @@
 
 use moor_core::boxscript::quote;
 use moor_core::exec_env::MacTask;
-use moor_core::name::BoxPath;
+use moor_core::name::{BoxPath, TaskName};
 use moor_core::seam::driver::{BoxStep, ExecOutcome, StepDone};
 use moor_core::seam::engine::LaunchReq;
 use moor_core::task_key::{MacLayout, TaskKey};
@@ -13,7 +13,7 @@ use super::install::StepResult;
 use super::{fail, Failure, Launch};
 
 /// The macOS layout of a launch's Task, before the Box has been asked anything.
-pub(super) struct Mac {
+pub(in super::super) struct Mac {
     /// Every directory of the Task's Box.
     layout: MacLayout,
     /// The Task's key.
@@ -23,20 +23,20 @@ pub(super) struct Mac {
 /// A launch's Task on a macOS Box, with what the prepare step printed. The Box home is the
 /// Task's own; `login_home` is the Box user's real home, used only for read grants outside the
 /// Task.
-pub(super) struct MacBox {
+pub(in super::super) struct MacBox {
     /// Every directory of the Task's Box.
-    pub(super) layout: MacLayout,
+    pub(in super::super) layout: MacLayout,
     /// The Box user's real login home, not the Task's.
-    pub(super) login_home: BoxPath,
+    pub(in super::super) login_home: BoxPath,
     /// The Xcode developer directory, as resolved once by the prepare step.
-    pub(super) developer_dir: BoxPath,
+    pub(in super::super) developer_dir: BoxPath,
     /// The Box user is root.
-    pub(super) root: bool,
+    pub(in super::super) root: bool,
 }
 
 impl MacBox {
     /// The Box user's home: the Task's own.
-    pub(super) const fn home(&self) -> &BoxPath {
+    pub(in super::super) const fn home(&self) -> &BoxPath {
         &self.layout.home
     }
 }
@@ -61,12 +61,17 @@ impl Launch<'_> {
 impl Mac {
     /// The layout of `req`'s Task, when its workdir is in one.
     pub(super) fn find(req: &LaunchReq) -> Option<Self> {
-        let key = TaskKey::new(&req.task);
-        MacLayout::find(&req.workdir, &key).map(|layout| Self { layout, key })
+        Self::of(&req.workdir, &req.task)
+    }
+
+    /// The layout of the Task `task`, when `workdir` is in one.
+    pub(in super::super) fn of(workdir: &BoxPath, task: &TaskName) -> Option<Self> {
+        let key = TaskKey::new(task);
+        MacLayout::find(workdir, &key).map(|layout| Self { layout, key })
     }
 
     /// The Box user's home: the Task's own.
-    pub(super) const fn home(&self) -> &BoxPath {
+    pub(in super::super) const fn home(&self) -> &BoxPath {
         &self.layout.home
     }
 
@@ -81,7 +86,7 @@ impl Mac {
 
     /// The step that prepares the Task's directories and launch files, then prints the user id,
     /// the login shell's home and the resolved developer directory, one per line.
-    pub(super) fn prepare_step(&self) -> Result<BoxStep, Failure> {
+    pub(in super::super) fn prepare_step(&self) -> Result<BoxStep, Failure> {
         let script = self.layout.prepare_script().map_err(|e| fail("home", &e))?;
         let file = self
             .layout
@@ -94,7 +99,7 @@ impl Mac {
     }
 
     /// The Task on its Box, from the result of the prepare step.
-    pub(super) fn user(self, done: Option<StepResult>) -> Result<MacBox, Failure> {
+    pub(in super::super) fn user(self, done: Option<StepResult>) -> Result<MacBox, Failure> {
         let stdout = match done {
             Some(Ok(StepDone::Ran {
                 outcome: ExecOutcome::Exited { code: 0 },

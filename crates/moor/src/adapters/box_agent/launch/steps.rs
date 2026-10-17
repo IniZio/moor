@@ -1,8 +1,6 @@
 //! The Box steps of one launch, run as batches.
 
 use moor_core::boxscript::quote;
-use moor_core::config::{BoxCapability, RepoBox};
-use moor_core::mac_capability::{selected, MacCapability, Selection};
 use moor_core::name::BoxPath;
 use moor_core::seam::agent_profile::BoxSetup;
 use moor_core::seam::driver::{BoxStep, DriverError, ExecOutcome, StepDone};
@@ -12,10 +10,10 @@ use moor_core::seam::proc::{Deadline, Tool};
 use super::super::brief::{render, BriefInput};
 use super::super::nono_release::sha256_hex;
 use super::super::proxy_env;
-use super::super::sandbox::mac::MacInput;
-use super::super::sandbox::{self, SandboxInput};
+use super::super::sandbox;
 use super::gh;
 use super::install::{check_outcome, parse_platform, upload_steps, StepResult};
+use super::profile::{build, ProfileArgs};
 use super::{fail, Failure, Launch, Platform, AGENT_PATH_LINE, INSTALL_DEADLINE};
 
 /// Which launch step a batch step belongs to, and so how its failure is reported.
@@ -148,8 +146,7 @@ impl Launch<'_> {
         plan.os.clone_from(&os);
         let env_names = (self.profile.env(self.ctx).into_iter().map(|v| v.name)).collect();
         let exec = self.exec_env()?;
-        let mac = self.mac_grants(&os)?;
-        let profile = sandbox::profile(&SandboxInput {
+        let profile = build(ProfileArgs {
             os: &os,
             workdir: &self.ctx.workdir,
             home: &self.ctx.home,
@@ -159,15 +156,9 @@ impl Launch<'_> {
             set_vars: exec.vars,
             root: self.root,
             strip_env: &req.strip_env,
-            mac: self.mac.zip(mac.as_deref()).map(|(m, caps)| MacInput {
-                layout: &m.layout,
-                login_home: &m.login_home,
-                developer_dir: m.developer_dir.as_str(),
-                capabilities: caps,
-                sandbox: &req.mac_grants.sandbox,
-            }),
-        })
-        .map_err(|e| fail("sandbox", &e))?;
+            mac: self.mac,
+            grants: &req.mac_grants,
+        })?;
         let at = BoxPath::under(cred.as_str(), sandbox::PROFILE_FILE)
             .map_err(|e| fail("sandbox", &e))?;
         let put = BoxStep::Put {
@@ -180,32 +171,6 @@ impl Launch<'_> {
             self.plan_gh((&os, &arch), plan);
         }
         Ok(Some(at))
-    }
-
-    /// The capabilities to grant, when a Darwin Box runs the Task inside a Mac layout.
-    ///
-    /// # Errors
-    /// A launch that asks for capabilities but cannot grant them (not a Darwin Box, or no Mac
-    /// layout for the workdir) fails with the same text as the provision-time platform check.
-    fn mac_grants(&self, os: &str) -> Result<Option<Vec<MacCapability>>, Failure> {
-        let req = self.req;
-        if os != "Darwin" || self.mac.is_none() {
-            let asked = RepoBox {
-                capabilities: req.mac_grants.capabilities.clone(),
-                ..RepoBox::default()
-            };
-            return match asked.check_platform(false) {
-                Ok(()) => Ok(None),
-                Err(e) => Err(fail("sandbox", &e.in_file(".moor.yaml"))),
-            };
-        }
-        let has = |c| req.mac_grants.capabilities.contains(&c);
-        let sel = Selection {
-            xcode: has(BoxCapability::Xcode),
-            ios_simulator: has(BoxCapability::IosSimulator),
-            swiftpm_plugins: has(BoxCapability::SwiftpmPlugins),
-        };
-        Ok(Some(selected(sel)))
     }
 
     /// Adds the `gh` check to `plan`; a `gh` the host cannot fetch is a warning, not a failure.

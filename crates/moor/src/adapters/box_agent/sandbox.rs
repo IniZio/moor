@@ -259,14 +259,22 @@ pub(super) fn namespace_lines() -> Vec<String> {
     )]
 }
 
+/// The argv that starts the sandbox tool at `launcher` with the profile, ending in `--`; with
+/// `report` the tool prints its session diagnostics as JSON on stderr.
+pub(super) fn prefix(launcher: &BoxPath, profile_path: &BoxPath, report: bool) -> Vec<String> {
+    [launcher.as_str(), "-s", "run"]
+        .into_iter()
+        .chain(report.then_some("--diagnostics-json"))
+        .chain(["--profile", profile_path.as_str(), "--"])
+        .map(str::to_owned)
+        .collect()
+}
+
 /// The argv that runs `agent` under the sandbox tool at `launcher` with the profile.
 pub(super) fn wrap(launcher: &BoxPath, profile_path: &BoxPath, agent: &[String]) -> Vec<String> {
-    [launcher.as_str(), "-s", "run", "--profile"]
-        .into_iter()
-        .map(str::to_owned)
-        .chain([profile_path.as_str().to_owned(), "--".to_owned()])
-        .chain(agent.iter().cloned())
-        .collect()
+    let mut argv = prefix(launcher, profile_path, false);
+    argv.extend(agent.iter().cloned());
+    argv
 }
 
 pub(super) mod mac;
