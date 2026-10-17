@@ -47,7 +47,7 @@ toolchain write work: # the agent edits and builds in the working directory
 toolchain write home: # tools keep per-user state in the Box home
 toolchain write tmp: # tools write scratch files to the temporary directory
 toolchain write cache: # tools write caches to the cache directory
-toolchain read launch: # the agent reads the directory it was launched from
+toolchain read launch: # moor-written launch files are readable but not editable
 ";
     assert_eq!(render(Selection::default()), expected);
 }
@@ -63,7 +63,7 @@ toolchain write work: # the agent edits and builds in the working directory
 toolchain write home: # tools keep per-user state in the Box home
 toolchain write tmp: # tools write scratch files to the temporary directory
 toolchain write cache: # tools write caches to the cache directory
-toolchain read launch: # the agent reads the directory it was launched from
+toolchain read launch: # moor-written launch files are readable but not editable
 xcode-build write home:Library/Developer/Xcode # DerivedData and module cache
 xcode-build write home:Library/Caches # Xcode and clang write caches under the Box home
 xcode-build pref pref:com.apple.dt.Xcode # Xcode reads its preferences
@@ -92,7 +92,7 @@ toolchain write work: # the agent edits and builds in the working directory
 toolchain write home: # tools keep per-user state in the Box home
 toolchain write tmp: # tools write scratch files to the temporary directory
 toolchain write cache: # tools write caches to the cache directory
-toolchain read launch: # the agent reads the directory it was launched from
+toolchain read launch: # moor-written launch files are readable but not editable
 xcode-build write home:Library/Developer/Xcode # DerivedData and module cache
 xcode-build write home:Library/Caches # Xcode and clang write caches under the Box home
 xcode-build pref pref:com.apple.dt.Xcode # Xcode reads its preferences

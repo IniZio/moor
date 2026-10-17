@@ -241,7 +241,7 @@ static TOOLCHAIN: &[Reasoned] = &[
     r(
         TC,
         Grant::Read(p(MacRoot::Launch, "")),
-        "the agent reads the directory it was launched from",
+        "moor-written launch files are readable but not editable",
     ),
 ];
 
