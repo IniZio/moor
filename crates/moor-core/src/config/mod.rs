@@ -14,9 +14,10 @@ pub use controller::{
 pub use repo::{parse_repo, BoxCapability, RepoBox, RepoCompose, RepoConfig, RepoSandbox};
 
 pub use user::{
-    parse_user, AgentConfig, BoxConfig, BoxSize, ControllerClientConfig, CredentialSource,
-    DotfilesConfig, DriverConfig, GithubApp, GithubConfig, HerdrConfig, Identity, McpServer,
-    SurfaceConfig, ToolsConfig, UserConfig, DEFAULT_SLEEP_AFTER, DEFAULT_YOU_TOKEN_CMD,
+    parse_user, select_toolchains, AgentConfig, BoxConfig, BoxSize, ControllerClientConfig,
+    CredentialSource, DotfilesConfig, DriverConfig, GithubApp, GithubConfig, HerdrConfig,
+    HostToolchain, Identity, McpServer, SelectedToolchain, SurfaceConfig, ToolchainTable,
+    ToolsConfig, UserConfig, DEFAULT_SLEEP_AFTER, DEFAULT_YOU_TOKEN_CMD,
 };
 
 pub use settings::{CredPlan, Flags, Layer, Sourced, TaskSettings};
