@@ -4,7 +4,7 @@ use super::*;
 use crate::adapters::box_agent::nono_release::fake::{
     release_on, tarball, FakeFetch, READY_BINARY,
 };
-use moor_core::config::{BoxCapability, RepoSandbox};
+use moor_core::config::{BoxCapability, SelectedToolchain};
 use moor_core::seam::engine::MacGrants;
 use moor_core::task_key::{MacLayout, TaskKey};
 
@@ -33,6 +33,20 @@ fn prepared_launch(
     in_layout: bool,
     prepared: &'static str,
 ) -> Result<String, String> {
+    let grants = MacGrants {
+        capabilities,
+        ..MacGrants::default()
+    };
+    grants_launch(platform, grants, in_layout, prepared)
+}
+
+/// Like [`prepared_launch`], with the whole of `grants`.
+fn grants_launch(
+    platform: &str,
+    grants: MacGrants,
+    in_layout: bool,
+    prepared: &'static str,
+) -> Result<String, String> {
     let (os, arch) = platform.split_once(' ').unwrap();
     let os: &'static str = if os == "Darwin" { "Darwin" } else { "Linux" };
     let arch: &'static str = if arch == "arm64" { "arm64" } else { "x86_64" };
@@ -48,11 +62,7 @@ fn prepared_launch(
     let layout = MacLayout::new(&root, &TaskKey::new(&task)).unwrap();
     let r = LaunchReq {
         workdir: if in_layout { layout.work } else { root },
-        mac_grants: MacGrants {
-            capabilities,
-            sandbox: RepoSandbox::default(),
-            ..MacGrants::default()
-        },
+        mac_grants: grants,
         ..req_with_proxy(&s)
     };
     let release = Arc::new(release_on((os, arch), &fetch, &tarball(READY_BINARY)));
@@ -155,4 +165,80 @@ fn a_darwin_launch_without_a_mac_layout_and_with_capabilities_fails() {
         e.contains("box.capabilities applies only to a macOS Box"),
         "{e}"
     );
+}
+
+const WITH_ROOT: &str =
+    "501\n/Users/alice\n/Applications/Xcode.app/Contents/Developer\n/Users/alice/m\n";
+
+fn mise() -> SelectedToolchain {
+    SelectedToolchain {
+        name: "mise".to_owned(),
+        root: "/Users/alice/.local/share/mise".to_owned(),
+        env: vec![(
+            "MISE_DATA_DIR".to_owned(),
+            "/Users/alice/.local/share/mise".to_owned(),
+        )],
+        bin: vec!["/Users/alice/.local/share/mise/shims".to_owned()],
+    }
+}
+
+fn with_toolchains(toolchains: Vec<SelectedToolchain>) -> MacGrants {
+    MacGrants {
+        toolchains,
+        ..MacGrants::default()
+    }
+}
+
+#[test]
+fn a_selected_toolchain_gets_the_realpath_the_box_reported_as_a_read_grant() {
+    let prepared =
+        "501\n/Users/alice\n/Applications/Xcode.app/Contents/Developer\n/Volumes/data/mise\n";
+    let profile = grants_launch(
+        "Darwin arm64",
+        with_toolchains(vec![mise()]),
+        true,
+        prepared,
+    )
+    .unwrap();
+    let doc: serde_json::Value = serde_json::from_str(&profile).unwrap();
+    let read = doc.pointer("/filesystem/read").unwrap().to_string();
+    assert!(read.contains("/Volumes/data/mise"), "{read}");
+}
+
+#[test]
+fn a_toolchain_whose_realpath_is_in_the_credential_dirs_is_refused_by_name() {
+    let prepared =
+        "501\n/Users/alice\n/Applications/Xcode.app/Contents/Developer\n/Users/alice/.ssh\n";
+    let e = grants_launch(
+        "Darwin arm64",
+        with_toolchains(vec![mise()]),
+        true,
+        prepared,
+    )
+    .unwrap_err();
+    assert!(e.contains("host toolchain \"mise\""), "{e}");
+}
+
+#[test]
+fn a_toolchain_the_prepare_step_did_not_report_fails_the_home_step() {
+    let e = grants_launch(
+        "Darwin arm64",
+        with_toolchains(vec![mise()]),
+        true,
+        PREPARED,
+    )
+    .unwrap_err();
+    assert!(e.contains("mise"), "{e}");
+}
+
+#[test]
+fn a_linux_launch_with_toolchains_fails() {
+    let e = grants_launch(
+        "Linux x86_64",
+        with_toolchains(vec![mise()]),
+        true,
+        WITH_ROOT,
+    )
+    .unwrap_err();
+    assert!(e.contains("box.toolchains"), "{e}");
 }

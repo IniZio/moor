@@ -28,7 +28,7 @@ pub(super) fn sandbox(
     agent: &BoxAgent,
     req: &SandboxReq,
 ) -> Result<Option<Sandboxed>, EngineError> {
-    let Some(mac) = Mac::of(&req.workdir, &req.task) else {
+    let Some(mac) = Mac::of(&req.workdir, &req.task, &req.mac_grants.toolchains) else {
         return Ok(None);
     };
     prepare(agent, req, mac)

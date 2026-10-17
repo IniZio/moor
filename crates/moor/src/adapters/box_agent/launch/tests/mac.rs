@@ -234,3 +234,93 @@ fn assert_mac_path_between_developer_dir_and_agent(script: &str) {
 fn a_mac_launch_without_a_proxy_puts_the_launch_bin_on_path_before_the_agent() {
     assert_mac_path_between_developer_dir_and_agent(&mac_script(req));
 }
+
+fn tool(name: &str, root: &str) -> moor_core::config::SelectedToolchain {
+    moor_core::config::SelectedToolchain {
+        name: name.to_owned(),
+        root: root.to_owned(),
+        env: vec![(format!("{}_HOME", name.to_uppercase()), root.to_owned())],
+        bin: vec![format!("{root}/bin")],
+    }
+}
+
+fn mac_with(tools: Vec<moor_core::config::SelectedToolchain>) -> Mac {
+    let s = FakeSurface::new("/r");
+    let r = LaunchReq {
+        mac_grants: MacGrants {
+            toolchains: tools,
+            ..MacGrants::default()
+        },
+        ..req(&s)
+    };
+    Mac::find(&r).unwrap()
+}
+
+#[test]
+fn the_prepare_step_links_each_toolchain_after_the_developer_dir_line() {
+    let m = mac_with(vec![
+        tool("mise", "/Users/alice/m"),
+        tool("rbenv", "/Users/alice/r"),
+    ]);
+    let script = format!("{:?}", m.prepare_step().ok().unwrap());
+    let dev = script.find("developer-dir").unwrap();
+    let mise = script.find("toolchain \\\"mise").unwrap();
+    let rbenv = script.find("toolchain \\\"rbenv").unwrap();
+    assert!(dev < mise && mise < rbenv, "{script}");
+}
+
+#[test]
+fn the_user_reads_one_realpath_per_toolchain_in_order() {
+    let m = mac_with(vec![
+        tool("mise", "/Users/alice/m"),
+        tool("rbenv", "/Users/alice/r"),
+    ]);
+    let out = format!("{PRINTED}/Volumes/m\n/Volumes/r\n");
+    let b = m.user(Some(Ok(ran(0, &out)))).ok().unwrap();
+    assert_eq!(
+        b.toolchains,
+        vec![
+            ("mise".to_owned(), "/Volumes/m".to_owned()),
+            ("rbenv".to_owned(), "/Volumes/r".to_owned())
+        ]
+    );
+}
+
+#[test]
+fn a_missing_toolchain_line_fails_the_home_step_naming_it() {
+    let m = mac_with(vec![
+        tool("mise", "/Users/alice/m"),
+        tool("rbenv", "/Users/alice/r"),
+    ]);
+    let out = format!("{PRINTED}/Volumes/m\n");
+    let err = m.user(Some(Ok(ran(0, &out)))).err().unwrap();
+    assert_eq!(err.step, "home");
+    assert!(err.message.contains("rbenv"), "{}", err.message);
+}
+
+#[test]
+fn a_failed_prepare_step_names_the_selected_toolchains() {
+    let m = mac_with(vec![tool("mise", "/Users/alice/m")]);
+    let err = m.user(Some(Ok(ran(1, "")))).err().unwrap();
+    assert!(err.message.contains("mise"), "{}", err.message);
+}
+
+#[test]
+fn the_agent_env_carries_the_toolchain_env_and_bin_dirs() {
+    let m = mac_with(vec![
+        tool("mise", "/Users/alice/m"),
+        tool("rbenv", "/Users/alice/r"),
+    ]);
+    let task = m.task("abc123");
+    assert_eq!(
+        task.toolchain_env,
+        [
+            ("MISE_HOME".to_owned(), "/Users/alice/m".to_owned()),
+            ("RBENV_HOME".to_owned(), "/Users/alice/r".to_owned())
+        ]
+    );
+    assert_eq!(
+        task.toolchain_bin,
+        ["/Users/alice/m/bin", "/Users/alice/r/bin"]
+    );
+}

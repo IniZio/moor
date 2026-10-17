@@ -58,7 +58,7 @@ pub(in super::super) fn build(args: ProfileArgs) -> Result<String, Failure> {
             developer_dir: m.developer_dir.as_str(),
             capabilities: caps,
             sandbox: &args.grants.sandbox,
-            toolchains: &[],
+            toolchains: &m.toolchains,
         }),
     })
     .map_err(|e| fail("sandbox", &e))
@@ -77,6 +77,7 @@ fn mac_grants(
     if os != "Darwin" || !in_layout {
         let asked = RepoBox {
             capabilities: grants.capabilities.clone(),
+            toolchains: grants.toolchains.iter().map(|t| t.name.clone()).collect(),
             ..RepoBox::default()
         };
         return match asked.check_platform(false) {
