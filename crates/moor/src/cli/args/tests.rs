@@ -4,8 +4,8 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 
 use moor_core::{
-    CloseReq, CpReq, EnvReq, GateReq, RemoveReq, ReportReq, Request, RunReq, ShowReq, StartReq,
-    SteerReq, TaskId, TaskName, TaskReq, WaitFor, WaitReq,
+    BoxId, BoxName, CloseReq, CpReq, EnvReq, GateReq, RemoveReq, ReportReq, Request, RunReq,
+    ShowReq, StartReq, SteerReq, TaskReq, WaitFor, WaitReq,
 };
 
 use super::{parse, Action};
@@ -32,8 +32,8 @@ fn req(args: &[&str]) -> Request {
 }
 
 /// Valid task name.
-fn n(s: &str) -> TaskName {
-    TaskName::parse(s).expect("valid name")
+fn n(s: &str) -> BoxName {
+    BoxName::parse(s).expect("valid name")
 }
 
 /// Task request helper.
@@ -347,7 +347,7 @@ fn admin_verbs() {
 fn special_actions() {
     assert!(matches!(
         run(&["proxy", "serve", "7"]),
-        Ok((_, Action::ProxyServe(t))) if t == TaskId::new(7)
+        Ok((_, Action::ProxyServe(t))) if t == BoxId::new(7)
     ));
     assert!(matches!(run(&["call"]), Ok((_, Action::CallStdin))));
 }
