@@ -92,7 +92,11 @@ struct Grants {
 fn grants(presets: &[SandboxPreset], home: &str) -> Grants {
     let mut g = Grants::default();
     if presets.contains(&SandboxPreset::Android) {
-        g.allow = vec![format!("{home}/.android"), ANDROID_TMP.to_owned()];
+        g.allow = vec![
+            format!("{home}/.android"),
+            format!("{home}/.gradle"),
+            ANDROID_TMP.to_owned(),
+        ];
         g.allow_file = vec![KVM.to_owned()];
         g.read = vec![ANDROID_SDK.to_owned()];
     }

@@ -32,6 +32,8 @@ pub(super) enum Tag {
     GhPut,
     /// The sandbox profile.
     Profile,
+    /// Creating the directories a sandbox preset grants.
+    Prepare,
     /// The brief.
     Brief,
     /// A hook or preseed file.
@@ -45,7 +47,9 @@ impl Tag {
     fn failure(self, e: &impl ToString) -> Failure {
         match self {
             Self::Agent => fail("agent", e),
-            Self::Check | Self::Upload | Self::Recheck | Self::Profile => fail("sandbox", e),
+            Self::Check | Self::Upload | Self::Recheck | Self::Profile | Self::Prepare => {
+                fail("sandbox", e)
+            }
             Self::GhCheck | Self::GhPut => fail("gh", e),
             Self::Brief => fail("brief", e),
             Self::Hooks => fail("hooks", e),
@@ -154,7 +158,7 @@ impl Launch<'_> {
             presets: &req.sandbox,
         });
         for line in sandbox::preset_prepare(&req.sandbox, &self.ctx.home) {
-            plan.push(Tag::Profile, BoxStep::Run(line));
+            plan.push(Tag::Prepare, BoxStep::Run(line));
         }
         let at = BoxPath::under(cred.as_str(), sandbox::PROFILE_FILE)
             .map_err(|e| fail("sandbox", &e))?;
@@ -271,6 +275,15 @@ impl Launch<'_> {
                             }
                         }
                         code => return Err(fail("sandbox", &sandbox::check_failure(code))),
+                    },
+                    Tag::Prepare => match result.map_err(|e| tag.failure(&e))? {
+                        StepDone::Ran {
+                            outcome: ExecOutcome::Exited { code: 0 },
+                            ..
+                        } => {}
+                        _ => {
+                            return Err(fail("sandbox", &"creating the preset directories failed"))
+                        }
                     },
                     _ => result.map(drop).map_err(|e| tag.failure(&e))?,
                 }

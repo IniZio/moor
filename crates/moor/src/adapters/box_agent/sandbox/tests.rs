@@ -474,7 +474,7 @@ fn no_preset_leaves_the_profile_byte_identical() {
 }
 
 #[test]
-fn android_preset_adds_exactly_the_proven_grants() {
+fn android_preset_adds_exactly_the_preset_grants() {
     let (_, base) = plain(&[]);
     let (_, d) = plain(&[SandboxPreset::Android]);
     let added = |key: &str| -> Vec<String> {
@@ -486,7 +486,7 @@ fn android_preset_adds_exactly_the_proven_grants() {
     };
     assert_eq!(
         added("/filesystem/allow"),
-        ["/home/u/.android", "/tmp/android-root"]
+        ["/home/u/.android", "/home/u/.gradle", "/tmp/android-root"]
     );
     assert_eq!(added("/filesystem/allow_file"), ["/dev/kvm"]);
     assert_eq!(added("/filesystem/read"), ["/opt/android-sdk"]);
@@ -509,6 +509,9 @@ fn android_preset_ignores_repo_env_paths_and_repeats() {
 #[test]
 fn android_preset_prepares_its_directories() {
     let lines = preset_prepare(&[SandboxPreset::Android], &path("/home/u"));
-    assert_eq!(lines, ["mkdir -p '/home/u/.android' '/tmp/android-root'"]);
+    assert_eq!(
+        lines,
+        ["mkdir -p '/home/u/.android' '/home/u/.gradle' '/tmp/android-root'"]
+    );
     assert!(preset_prepare(&[], &path("/home/u")).is_empty());
 }
