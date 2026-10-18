@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use moor_core::activity::{Activity, AgentState, Source};
-use moor_core::TaskId;
+use moor_core::BoxId;
 
 use super::{cx, row, task};
 use crate::cx::Cx;
@@ -25,20 +25,20 @@ fn asking(q: &str) -> Reading {
     })
 }
 
-fn pass(cx: &Cx, id: TaskId, r: &Reading) {
+fn pass(cx: &Cx, id: BoxId, r: &Reading) {
     settle(cx, cx.store().unwrap(), &row(cx, id), r).unwrap();
 }
 
-fn kinds(cx: &Cx, id: TaskId) -> Vec<String> {
+fn kinds(cx: &Cx, id: BoxId) -> Vec<String> {
     let events = cx.store().unwrap().events(id, 100).unwrap();
     events.into_iter().map(|e| e.kind).collect()
 }
 
-fn asked(cx: &Cx, id: TaskId) -> usize {
+fn asked(cx: &Cx, id: BoxId) -> usize {
     kinds(cx, id).iter().filter(|k| *k == "needs_input").count()
 }
 
-fn setup() -> (tempfile::TempDir, Cx, TaskId) {
+fn setup() -> (tempfile::TempDir, Cx, BoxId) {
     let dir = tempfile::tempdir().unwrap();
     let (cx, _) = cx(dir.path(), &Arc::new(FakeEngine::new()));
     let id = task(&cx, true);

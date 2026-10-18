@@ -12,7 +12,7 @@ use moor_core::domain::task::TaskState;
 use moor_core::seam::engine::{EngineError, SessionRef, Steer, SteerOutcome};
 use moor_core::seam::proc::Deadline;
 use moor_core::view::steer::SteerValue;
-use moor_core::{ErrorKind, SteerReq, TaskId, Warning};
+use moor_core::{BoxId, ErrorKind, SteerReq, Warning};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -92,7 +92,7 @@ pub(crate) fn run(cx: &Cx, req: &SteerReq) -> Result<SteerValue, CommandError> {
 fn exited(
     cx: &Cx,
     store: &Store,
-    (id, name): (TaskId, &str),
+    (id, name): (BoxId, &str),
     session: &SessionRow,
     sent: String,
 ) -> Result<SteerValue, CommandError> {
@@ -250,7 +250,7 @@ fn choice(n: u32) -> Result<u8, CommandError> {
 /// Append the `steered` event.
 fn record(
     store: &Store,
-    id: TaskId,
+    id: BoxId,
     session: &SessionRow,
     message: &str,
     submit_retried: bool,

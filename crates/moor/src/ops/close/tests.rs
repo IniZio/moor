@@ -7,7 +7,7 @@ use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
 use moor_core::seam::proc::Tool;
 use moor_core::seam::surface::SurfaceError;
-use moor_core::{BoxPath, CloseReq, ErrorKind, ProviderId, TaskId, TaskName};
+use moor_core::{BoxId, BoxName, BoxPath, CloseReq, ErrorKind, ProviderId};
 
 use super::run;
 use crate::cx::Cx;
@@ -37,12 +37,12 @@ pub(super) struct Fx {
     pub(super) driver: Arc<FakeDriver>,
     pub(super) surface: Arc<FakeSurface>,
     pub(super) proc: Arc<ScriptedProc>,
-    pub(super) id: TaskId,
+    pub(super) id: BoxId,
 }
 
 pub(super) fn req(force: bool) -> CloseReq {
     CloseReq {
-        task: TaskName::parse("t").unwrap(),
+        task: BoxName::parse("t").unwrap(),
         force,
         trust_moor_yaml: false,
     }
@@ -113,11 +113,11 @@ pub(super) fn fx_box(
 }
 
 /// Admits task `t` with a Ready Box acquired from `driver`.
-fn admit(cx: &Cx, driver: &FakeDriver, dir: &Path) -> TaskId {
+fn admit(cx: &Cx, driver: &FakeDriver, dir: &Path) -> BoxId {
     let store = cx.store().unwrap();
     let id = store
         .apply(Decision::insert(NewTask {
-            name: TaskName::parse("t").unwrap(),
+            name: BoxName::parse("t").unwrap(),
             repo: "r".into(),
         }))
         .unwrap()
@@ -139,7 +139,7 @@ fn admit(cx: &Cx, driver: &FakeDriver, dir: &Path) -> TaskId {
         .acquire(&AcquireReq {
             provider,
             task: id,
-            name: TaskName::parse("t").unwrap(),
+            name: BoxName::parse("t").unwrap(),
             class: None,
             nonce: "n".to_owned(),
             worktree: None,

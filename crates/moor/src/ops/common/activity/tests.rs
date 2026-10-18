@@ -14,7 +14,7 @@ use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::DriverError;
 use moor_core::seam::engine::EngineError;
 use moor_core::seam::surface::PaneRef;
-use moor_core::{BoxHandle, ProviderId, TaskId, TaskName};
+use moor_core::{BoxHandle, BoxId, BoxName, ProviderId};
 
 use super::{read, settle, PaneLiveness, Reading};
 use crate::cx::Cx;
@@ -41,10 +41,10 @@ fn cx(dir: &Path, engine: &Arc<FakeEngine>) -> (Cx, Arc<ScriptedProc>) {
 }
 
 /// A working task `demo` with a ready Box and, when `session`, a live session.
-fn task(cx: &Cx, session: bool) -> TaskId {
+fn task(cx: &Cx, session: bool) -> BoxId {
     let store = cx.store().unwrap();
     let nt = NewTask {
-        name: TaskName::parse("demo").unwrap(),
+        name: BoxName::parse("demo").unwrap(),
         repo: "r".into(),
     };
     let id = store.apply(Decision::insert(nt)).unwrap().task;
@@ -76,7 +76,7 @@ fn task(cx: &Cx, session: bool) -> TaskId {
 }
 
 /// Begin a run of `id` owned by pid 4242.
-fn begin(cx: &Cx, id: TaskId) {
+fn begin(cx: &Cx, id: BoxId) {
     cx.store()
         .unwrap()
         .begin_run(NewRun {
@@ -90,7 +90,7 @@ fn begin(cx: &Cx, id: TaskId) {
         .unwrap();
 }
 
-fn row(cx: &Cx, id: TaskId) -> TaskRow {
+fn row(cx: &Cx, id: BoxId) -> TaskRow {
     cx.store().unwrap().task(id).unwrap().unwrap()
 }
 
@@ -120,7 +120,7 @@ fn state(r: &Reading) -> (AgentState, Source) {
     (a.state, a.source)
 }
 
-fn run_once(cx: &Cx, id: TaskId) -> Reading {
+fn run_once(cx: &Cx, id: BoxId) -> Reading {
     read(cx, cx.store().unwrap(), &row(cx, id), NOW).unwrap()
 }
 
@@ -204,7 +204,7 @@ fn run_in_flight_with_an_unreachable_box_is_busy_and_not_quiet() {
     let (cx, _) = cx(dir.path(), &engine);
     let store = cx.store().unwrap();
     let nt = NewTask {
-        name: TaskName::parse("demo").unwrap(),
+        name: BoxName::parse("demo").unwrap(),
         repo: "r".into(),
     };
     let id = store.apply(Decision::insert(nt)).unwrap().task;
@@ -348,7 +348,7 @@ fn unformable_hook_path_degrades_with_a_warning() {
     assert_eq!(cx.take_warnings().len(), 1);
 }
 
-fn idle_since(cx: &Cx, id: TaskId) -> Option<i64> {
+fn idle_since(cx: &Cx, id: BoxId) -> Option<i64> {
     cx.store()
         .unwrap()
         .reader()
@@ -365,7 +365,7 @@ fn reading(busy: bool, may_quiet: bool) -> Reading {
     Reading::new(None, PaneLiveness::Live, may_quiet, busy)
 }
 
-fn quiet(cx: &Cx, id: TaskId) {
+fn quiet(cx: &Cx, id: BoxId) {
     let d = Decision::new(id).task_input(TaskInput::AgentQuiet);
     cx.store().unwrap().apply(d).unwrap();
 }

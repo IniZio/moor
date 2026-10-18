@@ -6,7 +6,7 @@ use moor_core::domain::decision::{Decision, ExtraEvent, Field};
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::{PaneRef, SurfaceError};
 use moor_core::view::{AgentLaunchView, LaunchFailure};
-use moor_core::{TaskId, Warning};
+use moor_core::{BoxId, Warning};
 
 use super::launch::{record, to_json, TAIL_LINES};
 use crate::cx::Cx;
@@ -27,7 +27,7 @@ const PROMPT_READ: Duration = Duration::from_secs(5);
 ///
 /// An exit marker in the pane ends the live session and records the failure like any other
 /// launch failure; the returned view is the failed launch. Otherwise `agent` comes back as is.
-pub(super) fn run(cx: &Cx, store: &Store, id: TaskId, agent: AgentLaunchView) -> AgentLaunchView {
+pub(super) fn run(cx: &Cx, store: &Store, id: BoxId, agent: AgentLaunchView) -> AgentLaunchView {
     if !agent.launched {
         return agent;
     }
@@ -70,7 +70,7 @@ fn exited(cx: &Cx, code: i32, tail: &str) -> LaunchFailure {
 /// A prompt becomes an `agent_prompt_blocked` event and a warning that quotes its line; a
 /// failed read becomes an `agent_prompt_check_failed` event. A pane that is gone ends the
 /// watch quietly. An exit marker returns the live session id, the exit code and the pane tail.
-fn poll(cx: &Cx, store: &Store, id: TaskId) -> Option<(i64, i32, String)> {
+fn poll(cx: &Cx, store: &Store, id: BoxId) -> Option<(i64, i32, String)> {
     let live = match store.live_session(id) {
         Ok(Some(row)) => row,
         Ok(None) => return None,

@@ -4,7 +4,7 @@ use moor_core::domain::run::SyncMode;
 use moor_core::seam::agent_profile::ProxyAddr;
 use moor_core::seam::driver::{DriverError, ExecOutcome};
 use moor_core::secret::Secret;
-use moor_core::{BoxPath, TaskId};
+use moor_core::{BoxId, BoxPath};
 
 use super::{cfg, only, rig, run_setup, run_setup_with};
 use crate::ops::common::box_exec::BoxProxy;
@@ -42,7 +42,7 @@ fn setup_gets_the_proxy_and_ca_variables_the_agent_gets() {
         FakeDriver::new().peek_text("box-1", &environ, "HOME=/home/box\0"),
     );
     let proxy = BoxProxy {
-        task: TaskId::new(1),
+        task: BoxId::new(1),
         addr: ProxyAddr {
             box_port: 4000,
             nonce: Secret::new(b"s3cret-value".to_vec()),
@@ -107,7 +107,7 @@ fn without_a_proxy_setup_gets_reserved_and_credential_like_repo_env() {
 
 fn proxy() -> BoxProxy {
     BoxProxy {
-        task: TaskId::new(1),
+        task: BoxId::new(1),
         addr: ProxyAddr {
             box_port: 4000,
             nonce: Secret::new(b"s3cret-value".to_vec()),

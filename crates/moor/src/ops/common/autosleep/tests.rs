@@ -9,7 +9,7 @@ use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, SleepOutcome};
 use moor_core::secret::Secret;
-use moor_core::{ProviderId, TaskId, TaskName};
+use moor_core::{BoxId, BoxName, ProviderId};
 
 use super::run;
 use crate::cx::Cx;
@@ -30,7 +30,7 @@ struct Fx {
     _dir: tempfile::TempDir,
     cx: Cx,
     driver: Arc<FakeDriver>,
-    id: TaskId,
+    id: BoxId,
 }
 
 /// Task `t` with a live Box and a Working Task.
@@ -45,7 +45,7 @@ fn working_with(driver: FakeDriver) -> Fx {
         Arc::new(ScriptedProc::new()),
     );
     let store = cx.store().unwrap();
-    let name = TaskName::parse("t").unwrap();
+    let name = BoxName::parse("t").unwrap();
     let id = store
         .apply(Decision::insert(NewTask {
             name: name.clone(),
@@ -314,7 +314,7 @@ fn an_explicit_sleep_still_asks_the_driver() {
     pass(&f, LONG);
     auto_sleep(&f);
     let req = moor_core::TaskReq {
-        task: TaskName::parse("t").unwrap(),
+        task: BoxName::parse("t").unwrap(),
     };
     let err = crate::ops::sleep::run(&f.cx, &req);
     assert!(err.is_err());

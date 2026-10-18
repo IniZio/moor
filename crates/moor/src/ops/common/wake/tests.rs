@@ -10,7 +10,7 @@ use moor_core::seam::driver::{AcquireReq, Driver, DriverError, SleepOutcome};
 use moor_core::seam::engine::SessionRef;
 use moor_core::seam::proc::Tool;
 use moor_core::seam::surface::{PaneRef, SurfaceError};
-use moor_core::{BoxHandle, BoxPath, ErrorKind, ProviderId, TaskId, TaskName};
+use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, ErrorKind, ProviderId};
 
 use super::{wake_and_revive, wake_box_if_asleep, wake_with_tunnel};
 use crate::cx::Cx;
@@ -34,7 +34,7 @@ struct Fx {
     driver: Arc<FakeDriver>,
     surface: Arc<FakeSurface>,
     engine: Arc<FakeEngine>,
-    id: TaskId,
+    id: BoxId,
 }
 
 /// A launched session whose pane is `pane`.
@@ -49,7 +49,7 @@ fn session(pane: &str) -> SessionRef {
     }
 }
 
-fn acquire_req(provider: ProviderId, task: TaskId, name: TaskName) -> AcquireReq {
+fn acquire_req(provider: ProviderId, task: BoxId, name: BoxName) -> AcquireReq {
     AcquireReq {
         provider,
         task,
@@ -87,7 +87,7 @@ fn fx_with(driver: FakeDriver) -> Fx {
     )
     .with_engine(engine.clone());
     let store = cx.store().unwrap();
-    let name = TaskName::parse("t").unwrap();
+    let name = BoxName::parse("t").unwrap();
     let id = store
         .apply(Decision::insert(NewTask {
             name: name.clone(),
@@ -153,7 +153,7 @@ fn sleep(f: &Fx) {
 }
 
 fn row(f: &Fx) -> TaskRow {
-    let name = TaskName::parse("t").unwrap();
+    let name = BoxName::parse("t").unwrap();
     f.cx.store()
         .unwrap()
         .open_task_by_name(&name)
@@ -427,7 +427,7 @@ fn a_pane_closed_by_sleep_is_relaunched_on_wake() {
     crate::ops::sleep::run(
         &f.cx,
         &moor_core::TaskReq {
-            task: TaskName::parse("t").unwrap(),
+            task: BoxName::parse("t").unwrap(),
         },
     )
     .unwrap();
@@ -446,7 +446,7 @@ fn a_box_that_cannot_sleep_gets_its_agent_back() {
     f.surface.have_pane("p-1");
     f.surface.push_pane_obs("p-1", Err(SurfaceError::NotFound));
     let req = moor_core::TaskReq {
-        task: TaskName::parse("t").unwrap(),
+        task: BoxName::parse("t").unwrap(),
     };
     assert!(crate::ops::sleep::run(&f.cx, &req).is_err());
     assert!(f.surface.calls().contains(&"close_pane p-1".to_owned()));

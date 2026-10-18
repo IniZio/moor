@@ -3,7 +3,7 @@
 use moor_core::boxscript::boxwork::BOXWORK_NO_CHECKOUT;
 use moor_core::domain::run::SyncMode;
 use moor_core::seam::proc::Tool;
-use moor_core::{BoxPath, ErrorKind, StartReq, TaskId};
+use moor_core::{BoxId, BoxPath, ErrorKind, StartReq};
 
 use super::setup::{exit, failed_setup_with, setup_execs, start_req, warning_codes};
 use super::{world, World};
@@ -58,7 +58,7 @@ fn attached(driver: FakeDriver, live: bool) -> World {
     let first = run(&w.cx, &start_req()).unwrap();
     let store = w.cx.store().unwrap();
     let session = store
-        .begin_session(TaskId::new(first.task.id), "agent-1", None)
+        .begin_session(BoxId::new(first.task.id), "agent-1", None)
         .unwrap();
     if !live {
         store.end_session(session, Some(0), None).unwrap();
@@ -199,7 +199,7 @@ fn start_that_launches_the_agent_aborts_when_the_re_sync_fails() {
         .error
         .to_string()
         .contains("syncing the checkout into the Box failed"));
-    let id = TaskId::new(first.task.id);
+    let id = BoxId::new(first.task.id);
     let events = w.cx.store().unwrap().events(id, 50).unwrap();
     assert!(events.iter().any(|e| e.kind == "setup_failed"));
 }

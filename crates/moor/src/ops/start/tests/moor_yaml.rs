@@ -7,7 +7,7 @@ use std::sync::Arc;
 use moor_core::config::{MoorYamlSource, RepoEntry};
 use moor_core::seam::driver::DriverError;
 use moor_core::seam::proc::Tool;
-use moor_core::{BoxPath, ErrorKind, StartReq, TaskId, TaskName};
+use moor_core::{BoxId, BoxName, BoxPath, ErrorKind, StartReq};
 
 use super::setup::{is_setup_line, start_req, warning_codes};
 use super::{world_at, World};
@@ -51,7 +51,7 @@ fn lost_box_on_base(base: &str, worktree_yaml: Option<&str>) -> World {
     script_base_yaml(&w, Some(base));
     let err = run(&w.cx, &start_req()).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Failed);
-    let name = TaskName::parse("demo").unwrap();
+    let name = BoxName::parse("demo").unwrap();
     let row = w.cx.store().unwrap().open_task_by_name(&name).unwrap();
     let wt = row.unwrap().worktree.unwrap();
     std::fs::create_dir_all(&wt).unwrap();
@@ -143,7 +143,7 @@ fn a_changed_env_is_refused_for_a_replacement_box() {
 fn the_base_copy_is_read_by_host_git_in_the_main_checkout() {
     let w = failed_with(Some(BASE));
     run(&w.cx, &start_req()).unwrap();
-    let row = w.cx.store().unwrap().task(TaskId::new(1)).unwrap().unwrap();
+    let row = w.cx.store().unwrap().task(BoxId::new(1)).unwrap().unwrap();
     let base = row.base.clone().unwrap();
     let wt = std::path::PathBuf::from(row.worktree.unwrap());
     let repo = std::path::PathBuf::from(&row.repo);
@@ -183,7 +183,7 @@ fn a_replacement_box_starts_when_the_worktree_copy_equals_the_base_but_the_main_
     let w = world_at(driver, repo.path());
     script_base_yaml(&w, Some(BASE));
     run(&w.cx, &start_req()).unwrap_err();
-    let name = TaskName::parse("demo").unwrap();
+    let name = BoxName::parse("demo").unwrap();
     let row = w.cx.store().unwrap().open_task_by_name(&name).unwrap();
     let wt = row.unwrap().worktree.unwrap();
     std::fs::create_dir_all(&wt).unwrap();
@@ -282,7 +282,7 @@ fn a_worktree_moor_yaml_added_over_an_overlay_is_refused_without_trust() {
     script_base_yaml(&w, None);
     let err = run(&w.cx, &start_req()).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Failed);
-    let name = TaskName::parse("demo").unwrap();
+    let name = BoxName::parse("demo").unwrap();
     let row = w.cx.store().unwrap().open_task_by_name(&name).unwrap();
     let wt = row.unwrap().worktree.unwrap();
     std::fs::create_dir_all(&wt).unwrap();

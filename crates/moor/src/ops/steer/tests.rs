@@ -11,7 +11,7 @@ use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver};
 use moor_core::seam::engine::{EngineError, Steer, SteerOutcome};
 use moor_core::seam::proc::Tool;
-use moor_core::{ErrorKind, ProviderId, SteerReq, TaskId, TaskName};
+use moor_core::{BoxId, BoxName, ErrorKind, ProviderId, SteerReq};
 
 use std::time::Duration;
 
@@ -29,7 +29,7 @@ struct Fx {
     engine: Arc<FakeEngine>,
     driver: Arc<FakeDriver>,
     surface: Arc<FakeSurface>,
-    id: TaskId,
+    id: BoxId,
 }
 
 /// Task `t` with a ready Box, an Idle state and a live session `agent-1` in pane `p-1`.
@@ -70,9 +70,9 @@ fn fx_with(engine: FakeEngine, session: bool) -> Fx {
 }
 
 /// Task `t` with a ready Box.
-fn ready_task(cx: &Cx, driver: &FakeDriver) -> TaskId {
+fn ready_task(cx: &Cx, driver: &FakeDriver) -> BoxId {
     let store = cx.store().unwrap();
-    let name = TaskName::parse("t").unwrap();
+    let name = BoxName::parse("t").unwrap();
     let id = store
         .apply(Decision::insert(NewTask {
             name: name.clone(),
@@ -149,7 +149,7 @@ fn working() -> Probes {
 
 fn text(t: &str) -> SteerReq {
     SteerReq {
-        task: TaskName::parse("t").unwrap(),
+        task: BoxName::parse("t").unwrap(),
         text: Some(t.to_owned()),
         menu: None,
     }
@@ -157,7 +157,7 @@ fn text(t: &str) -> SteerReq {
 
 fn menu(n: u32) -> SteerReq {
     SteerReq {
-        task: TaskName::parse("t").unwrap(),
+        task: BoxName::parse("t").unwrap(),
         text: None,
         menu: Some(n),
     }
@@ -179,7 +179,7 @@ fn steered(f: &Fx) -> Vec<serde_json::Value> {
 fn an_unknown_task_is_refused() {
     let f = fx();
     let req = SteerReq {
-        task: TaskName::parse("other").unwrap(),
+        task: BoxName::parse("other").unwrap(),
         ..text("hi")
     };
     let err = run(&f.cx, &req).unwrap_err();

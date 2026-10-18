@@ -5,7 +5,7 @@ use moor_core::config::{parse_user, UserConfig};
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::seam::clock::Ts;
-use moor_core::{BoxHandle, ProviderId, RunId, TaskId, TaskName};
+use moor_core::{BoxHandle, BoxId, BoxName, ProviderId, RunId};
 
 use super::{agent_view, event_view, rfc3339, task_view, task_view_with_run};
 use crate::ops::common::activity::{PaneLiveness, Reading};
@@ -34,7 +34,7 @@ fn task_view_maps_row_without_box() {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(86_400_000)));
     let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
     let nt = NewTask {
-        name: TaskName::parse("t").unwrap(),
+        name: BoxName::parse("t").unwrap(),
         repo: "r".into(),
     };
     let id = store.apply(Decision::insert(nt)).unwrap().task;
@@ -63,7 +63,7 @@ fn task_view_maps_box() {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
     let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
     let nt = NewTask {
-        name: TaskName::parse("t").unwrap(),
+        name: BoxName::parse("t").unwrap(),
         repo: "r".into(),
     };
     let id = store.apply(Decision::insert(nt)).unwrap().task;
@@ -95,7 +95,7 @@ fn box_view_maps_sleep_reason() {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
     let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
     let nt = NewTask {
-        name: TaskName::parse("t").unwrap(),
+        name: BoxName::parse("t").unwrap(),
         repo: "r".into(),
     };
     let id = store.apply(Decision::insert(nt)).unwrap().task;
@@ -131,7 +131,7 @@ fn box_view_shows_configured_sleep_after() {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
     let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
     let nt = NewTask {
-        name: TaskName::parse("t").unwrap(),
+        name: BoxName::parse("t").unwrap(),
         repo: "r".into(),
     };
     let id = store.apply(Decision::insert(nt)).unwrap().task;
@@ -155,14 +155,14 @@ fn task_view_with_run_fills_run() {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
     let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
     let nt = NewTask {
-        name: TaskName::parse("t").unwrap(),
+        name: BoxName::parse("t").unwrap(),
         repo: "r".into(),
     };
     let id = store.apply(Decision::insert(nt)).unwrap().task;
     let row = store.task(id).unwrap().unwrap();
     let run = RunRow {
         id: RunId::new(5),
-        task: TaskId::new(id.get()),
+        task: BoxId::new(id.get()),
         argv: vec!["make".into(), "test".into()],
         record: None,
         sha: None,

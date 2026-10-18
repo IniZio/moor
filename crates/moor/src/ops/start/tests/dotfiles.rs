@@ -13,7 +13,7 @@ use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::ExecOutcome;
 use moor_core::seam::proc::{Deadline, Tool};
 use moor_core::view::{DotfilesView, StartView};
-use moor_core::{ErrorKind, StartReq, TaskId};
+use moor_core::{BoxId, ErrorKind, StartReq};
 
 use super::{hold, req, world_with, World};
 use crate::ops::start::run;
@@ -247,7 +247,7 @@ fn a_failing_install_stops_start_before_the_agent_with_the_log_tail() {
 
 /// The task is `SetupFailed` and keeps its ready Box.
 fn assert_task_kept_in_setup_failed(w: &World) {
-    let row = w.cx.store().unwrap().task(TaskId::new(1)).unwrap().unwrap();
+    let row = w.cx.store().unwrap().task(BoxId::new(1)).unwrap().unwrap();
     assert_eq!(row.state, TaskState::SetupFailed);
     assert_eq!(row.boxed.map(|b| b.state), Some(BoxState::Ready));
     assert!(!w.driver.calls().iter().any(|c| c.starts_with("release")));
@@ -255,7 +255,7 @@ fn assert_task_kept_in_setup_failed(w: &World) {
 
 /// The `setup_failed` event carries the log tail only.
 fn assert_event_tail(w: &World) {
-    let events = w.cx.store().unwrap().events(TaskId::new(1), 50).unwrap();
+    let events = w.cx.store().unwrap().events(BoxId::new(1), 50).unwrap();
     let failed = events.iter().find(|e| e.kind == "setup_failed").unwrap();
     let line = failed.payload.get("line").and_then(|l| l.as_str()).unwrap();
     assert!(
@@ -286,7 +286,7 @@ fn start_after_a_failed_dotfiles_run_re_applies_them_in_the_same_box() {
     assert_eq!(dotfiles_execs(&w).len(), 2);
     assert!(w.driver.execs().iter().all(|e| e.0.as_str() == "box-1"));
     assert_eq!(engine.launches().len(), 1);
-    let row = w.cx.store().unwrap().task(TaskId::new(1)).unwrap().unwrap();
+    let row = w.cx.store().unwrap().task(BoxId::new(1)).unwrap().unwrap();
     assert_eq!(row.state, TaskState::Working);
 }
 
@@ -327,7 +327,7 @@ fn a_retry_is_refused_while_another_op_holds_the_box_lock() {
     assert_eq!(err.error.to_string(), "box busy: sleep in progress");
     assert_eq!(dotfiles_execs(&w).len(), 1);
     assert!(engine.launches().is_empty());
-    let row = w.cx.store().unwrap().task(TaskId::new(1)).unwrap().unwrap();
+    let row = w.cx.store().unwrap().task(BoxId::new(1)).unwrap().unwrap();
     assert_eq!(row.state, TaskState::SetupFailed);
     assert!(row.intent.is_none());
 }
@@ -340,7 +340,7 @@ fn a_retry_holds_the_setup_intent_while_the_install_runs() {
     let (sink, db) = (seen.clone(), w.dir.path().join("moor.db"));
     w.driver.on_exec(move || {
         let clock = Arc::new(FakeClock::new(Ts::from_millis(1)));
-        let row = Store::open(&db, clock).unwrap().task(TaskId::new(1));
+        let row = Store::open(&db, clock).unwrap().task(BoxId::new(1));
         sink.lock().unwrap().push(row.unwrap().unwrap());
     });
     run(&w.cx, &goal_req()).unwrap();
@@ -349,7 +349,7 @@ fn a_retry_holds_the_setup_intent_while_the_install_runs() {
     let during = rows.pop().unwrap();
     assert_eq!(during.state, TaskState::SettingUp);
     assert!(matches!(&during.intent, Some(Intent::Setup { pid }) if *pid == std::process::id()));
-    let row = w.cx.store().unwrap().task(TaskId::new(1)).unwrap().unwrap();
+    let row = w.cx.store().unwrap().task(BoxId::new(1)).unwrap().unwrap();
     assert_eq!(row.state, TaskState::Working);
     assert!(row.intent.is_none());
 }
@@ -367,7 +367,7 @@ fn a_failed_retry_clears_the_setup_intent() {
     let (w, _, _repo) = dotfiles_world("setup: [a]\n", Some(src.path()), None, driver);
     run(&w.cx, &goal_req()).unwrap_err();
     run(&w.cx, &goal_req()).unwrap_err();
-    let row = w.cx.store().unwrap().task(TaskId::new(1)).unwrap().unwrap();
+    let row = w.cx.store().unwrap().task(BoxId::new(1)).unwrap().unwrap();
     assert_eq!(row.state, TaskState::SetupFailed);
     assert!(row.intent.is_none());
 }
@@ -387,7 +387,7 @@ fn a_setup_failure_is_kept_when_the_dotfiles_fail_too() {
         "{msg}"
     );
     assert!(engine.launches().is_empty());
-    let events = w.cx.store().unwrap().events(TaskId::new(1), 50).unwrap();
+    let events = w.cx.store().unwrap().events(BoxId::new(1), 50).unwrap();
     let lines: Vec<_> = events
         .iter()
         .filter(|e| e.kind == "setup_failed")

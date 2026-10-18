@@ -3,7 +3,7 @@ use std::sync::Arc;
 use moor_core::domain::decision::{Decision, NewTask};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::Acquired;
-use moor_core::{BoxHandle, BoxPath, TaskId, TaskName};
+use moor_core::{BoxHandle, BoxId, BoxName, BoxPath};
 
 use crate::ops::common::provision::hold_root;
 use crate::store::lease::{LeaseKind, LeaseState};
@@ -19,9 +19,9 @@ fn state_after_hold(got: &str, key: &str) -> Option<LeaseState> {
         Arc::new(FakeClock::new(Ts::from_millis(1_000))),
     )
     .unwrap();
-    let id: TaskId = store
+    let id: BoxId = store
         .apply(Decision::insert(NewTask {
-            name: TaskName::parse("demo").unwrap(),
+            name: BoxName::parse("demo").unwrap(),
             repo: "r".into(),
         }))
         .unwrap()

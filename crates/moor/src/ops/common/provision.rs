@@ -10,7 +10,7 @@ use moor_core::domain::run::SyncMode;
 use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
 use moor_core::seam::driver::{AcquireReq, Acquired, DriverError, Released};
 use moor_core::seam::rng::Rng;
-use moor_core::{BoxHandle, BoxPath, ErrorKind, ProviderId, TaskId, Warning};
+use moor_core::{BoxHandle, BoxId, BoxPath, ErrorKind, ProviderId, Warning};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -37,7 +37,7 @@ use self::retry::{dotfiles_retry, retry_dotfiles};
 ///
 /// # Errors
 /// The row is gone.
-pub(crate) fn reread(store: &Store, id: TaskId) -> Result<TaskRow, CommandError> {
+pub(crate) fn reread(store: &Store, id: BoxId) -> Result<TaskRow, CommandError> {
     store
         .task(id)?
         .ok_or_else(|| CommandError::new(ErrorKind::Internal, "started task vanished"))
@@ -136,7 +136,7 @@ fn entry_for(row: &TaskRow) -> Option<Entry> {
 pub(crate) fn provision(
     cx: &Cx,
     store: &Store,
-    id: TaskId,
+    id: BoxId,
     entry: Entry,
     cfg: &TaskSettings,
 ) -> Result<Provisioned, CommandError> {
@@ -205,7 +205,7 @@ pub(crate) fn nonce(rng: &dyn Rng) -> String {
 }
 
 /// Records an acquired Box under the setup intent.
-fn record_acquired(store: &Store, id: TaskId, got: &Acquired) -> Result<(), CommandError> {
+fn record_acquired(store: &Store, id: BoxId, got: &Acquired) -> Result<(), CommandError> {
     let acquired = Decision::new(id)
         .box_input(BoxInput::Acquired {
             handle: got.handle.clone(),
@@ -247,7 +247,7 @@ impl<'a> SetupTarget<'a> {
 fn sync_into_box(
     cx: &Cx,
     store: &Store,
-    id: TaskId,
+    id: BoxId,
     advance: bool,
     target: &SetupTarget<'_>,
     cfg: &TaskSettings,
@@ -259,7 +259,7 @@ fn sync_into_box(
 /// The Proxy setup runs through, started or reused; none when there is no setup or it will not start.
 fn setup_proxy(
     cx: &Cx,
-    id: TaskId,
+    id: BoxId,
     target: &SetupTarget<'_>,
     cfg: &TaskSettings,
 ) -> Option<BoxProxy> {
@@ -285,7 +285,7 @@ fn setup_proxy(
 fn run_and_record(
     cx: &Cx,
     store: &Store,
-    id: TaskId,
+    id: BoxId,
     advance: bool,
     target: &SetupTarget<'_>,
     cfg: &TaskSettings,
@@ -349,7 +349,7 @@ fn run_and_record(
 fn failed(
     cx: &Cx,
     store: &Store,
-    id: TaskId,
+    id: BoxId,
     entry: Entry,
     req: &AcquireReq,
     err: DriverError,

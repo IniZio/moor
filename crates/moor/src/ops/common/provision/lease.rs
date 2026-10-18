@@ -1,7 +1,7 @@
 //! Lease rows that track the Box a task acquires.
 
 use moor_core::seam::driver::Acquired;
-use moor_core::{BoxHandle, TaskId};
+use moor_core::{BoxHandle, BoxId};
 
 use crate::error::CommandError;
 use crate::store::lease::{LeaseId, LeaseKind};
@@ -12,7 +12,7 @@ use crate::store::Store;
 /// handle gets its own held row.
 pub(crate) fn hold_root(
     store: &Store,
-    id: TaskId,
+    id: BoxId,
     root: LeaseId,
     planned: &BoxHandle,
     got: &Acquired,
@@ -27,7 +27,7 @@ pub(crate) fn hold_root(
 }
 
 /// Plans and holds the lease on the acquired Box's working directory.
-pub(crate) fn hold_workdir(store: &Store, id: TaskId, got: &Acquired) -> Result<(), CommandError> {
+pub(crate) fn hold_workdir(store: &Store, id: BoxId, got: &Acquired) -> Result<(), CommandError> {
     let dir = store.plan_lease(id, LeaseKind::BoxDir, got.workdir.as_str())?;
     store.hold_lease(dir)?;
     Ok(())

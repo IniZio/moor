@@ -1,7 +1,7 @@
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::Decision;
 use moor_core::seam::proc::Tool;
-use moor_core::TaskId;
+use moor_core::BoxId;
 
 use super::setup::{exit, failed_setup_with, is_identity, is_setup_line, setup_execs, start_req};
 use super::{req, world_at, World};
@@ -28,7 +28,7 @@ fn observed(
     w: &World,
     v: &moor_core::view::StartView,
 ) -> (String, Vec<Option<String>>, Vec<Option<String>>) {
-    let row = w.cx.store().unwrap().task(TaskId::new(v.task.id));
+    let row = w.cx.store().unwrap().task(BoxId::new(v.task.id));
     let stored = row.unwrap().unwrap().boxed.unwrap().workdir.unwrap();
     let (mut setup, mut identity) = (Vec::new(), Vec::new());
     for (_, spec, _) in w.driver.execs() {
@@ -72,7 +72,7 @@ fn a_custom_work_root_is_the_root_of_the_probed_workdir() {
 fn every_box_exec_runs_from_the_task_worktree() {
     // crabbox derives its claim root from the host cwd, so a stray cwd gets the lease refused.
     let (w, v) = start(FakeDriver::new());
-    let row = w.cx.store().unwrap().task(TaskId::new(v.task.id));
+    let row = w.cx.store().unwrap().task(BoxId::new(v.task.id));
     let worktree = std::path::PathBuf::from(row.unwrap().unwrap().worktree.unwrap());
     let execs = w.driver.execs();
     assert!(execs.iter().any(|(_, s, _)| is_identity(&s.argv)));

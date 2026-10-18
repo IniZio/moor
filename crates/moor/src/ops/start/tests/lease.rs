@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::DriverError;
-use moor_core::{TaskId, TaskName};
+use moor_core::{BoxId, BoxName};
 
 use super::setup::{exit, start_req};
 use super::{req, world, world_at};
@@ -16,11 +16,7 @@ use crate::testing::driver::FakeDriver;
 fn a_started_box_leaves_its_root_and_workdir_held() {
     let w = world(FakeDriver::new());
     let v = run(&w.cx, &req("demo")).unwrap();
-    let rows =
-        w.cx.store()
-            .unwrap()
-            .leases(TaskId::new(v.task.id))
-            .unwrap();
+    let rows = w.cx.store().unwrap().leases(BoxId::new(v.task.id)).unwrap();
     let state = |kind| {
         rows.iter()
             .filter(|r| r.kind == kind)
@@ -39,7 +35,7 @@ fn a_failed_acquire_leaves_the_root_planned() {
     run(&w.cx, &req("demo")).unwrap_err();
     let store = w.cx.store().unwrap();
     let task = store
-        .open_task_by_name(&TaskName::parse("demo").unwrap())
+        .open_task_by_name(&BoxName::parse("demo").unwrap())
         .unwrap()
         .unwrap();
     let rows = store.leases(task.id).unwrap();
@@ -53,7 +49,7 @@ fn a_failed_acquire_leaves_the_root_planned() {
 fn leases_survive_reopening_the_store() {
     let w = world(FakeDriver::new());
     let v = run(&w.cx, &req("demo")).unwrap();
-    let id = TaskId::new(v.task.id);
+    let id = BoxId::new(v.task.id);
     let before = w.cx.store().unwrap().leases(id).unwrap();
     let path = w.cx.state_dir().unwrap().join(STORE_FILE);
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000_000)));
@@ -77,7 +73,7 @@ fn a_failed_setup_leaves_the_workdir_held() {
     w.driver.on_exec(move || {
         let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000_000)));
         let store = Store::open(&path, clock).unwrap();
-        let rows = store.leases(TaskId::new(1)).unwrap();
+        let rows = store.leases(BoxId::new(1)).unwrap();
         let dir: Vec<_> = rows
             .iter()
             .filter(|r| r.kind == LeaseKind::BoxDir)
@@ -88,11 +84,7 @@ fn a_failed_setup_leaves_the_workdir_held() {
     let v = run(&w.cx, &start_req()).unwrap();
     assert!(!v.setup.ok);
     assert_eq!(*seen.lock().unwrap(), vec![vec![LeaseState::Held]; 3]);
-    let rows =
-        w.cx.store()
-            .unwrap()
-            .leases(TaskId::new(v.task.id))
-            .unwrap();
+    let rows = w.cx.store().unwrap().leases(BoxId::new(v.task.id)).unwrap();
     let dir: Vec<_> = rows
         .iter()
         .filter(|r| r.kind == LeaseKind::BoxDir)

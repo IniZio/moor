@@ -9,7 +9,7 @@ use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::task::{SetupOutcome, TaskInput};
 use moor_core::name::BoxPath;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
-use moor_core::{BoxHandle, CpReq, ErrorKind, ProviderId, TaskId, TaskName};
+use moor_core::{BoxHandle, BoxId, BoxName, CpReq, ErrorKind, ProviderId};
 
 use super::run;
 use crate::cx::Cx;
@@ -25,7 +25,7 @@ struct Fx {
     dir: tempfile::TempDir,
     cx: Cx,
     driver: Arc<FakeDriver>,
-    id: TaskId,
+    id: BoxId,
 }
 
 /// Task `t`, inserted and admitted; `ready` also gives it a live Box.
@@ -40,7 +40,7 @@ fn fx_with(driver: FakeDriver, ready: bool) -> Fx {
         Arc::new(ScriptedProc::new()),
     );
     let store = cx.store().unwrap();
-    let name = TaskName::parse("t").unwrap();
+    let name = BoxName::parse("t").unwrap();
     let id = store
         .apply(Decision::insert(NewTask {
             name: name.clone(),
@@ -95,7 +95,7 @@ fn fx() -> Fx {
 
 fn req(src: &str, dest: &str) -> CpReq {
     CpReq {
-        task: TaskName::parse("t").unwrap(),
+        task: BoxName::parse("t").unwrap(),
         src: src.into(),
         dest: dest.into(),
     }
@@ -185,7 +185,7 @@ fn absolute_destination_is_kept() {
 fn unknown_task_is_refused_without_a_copy() {
     let f = fx();
     let mut r = req("a", "a");
-    r.task = TaskName::parse("nope").unwrap();
+    r.task = BoxName::parse("nope").unwrap();
     run(&f.cx, &r).unwrap_err();
     assert!(f.driver.copies().is_empty());
     assert_eq!(copied(&f), 0);
