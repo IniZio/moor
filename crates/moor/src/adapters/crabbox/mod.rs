@@ -1,5 +1,6 @@
 //! Crabbox adapter: the only code that knows crabbox terms.
 
+mod acquire;
 mod batch;
 mod caps;
 mod connect;
@@ -30,6 +31,7 @@ use moor_core::seam::driver::{
 };
 use moor_core::seam::proc::{Deadline, Proc, ProcError, ProcOutput, ProcSpec, Tool};
 
+use acquire::{check_shape, shape_env, size_of, static_env};
 use errors::{is_claim_race, map_error, Op};
 
 /// Time allowed for a warmup.
@@ -174,29 +176,6 @@ fn handle_of(provider: &str, name: &str) -> BoxHandle {
     BoxHandle::new(format!("{provider}/{name}"))
 }
 
-/// Adds the static provider's Box id and port to a call on `handle`.
-fn static_env(spec: ProcSpec, handle: &BoxHandle) -> ProcSpec {
-    match split_handle(handle) {
-        (Some(STATIC_PROVIDER), name) => spec
-            .env("CRABBOX_STATIC_ID", name)
-            .env("CRABBOX_STATIC_PORT", DEFAULT_SSH_PORT.to_string()),
-        _ => spec,
-    }
-}
-
-/// Maps a moor size to crabbox's machine class.
-fn size_of(size: Option<&str>) -> Result<&'static str, DriverError> {
-    match size.unwrap_or("small") {
-        "small" => Ok("standard"),
-        "medium" => Ok("fast"),
-        "large" => Ok("large"),
-        "xlarge" => Ok("beast"),
-        other => Err(DriverError::Failed {
-            summary: format!("unknown box size {other:?}"),
-        }),
-    }
-}
-
 /// Splits a handle into optional provider and Box name.
 fn split_handle(handle: &BoxHandle) -> (Option<&str>, &str) {
     match handle.as_str().split_once('/') {
@@ -237,13 +216,14 @@ impl Driver for Crabbox {
         let provider = req.provider.as_str();
         let name = box_name(req);
         let class = size_of(req.class.as_deref())?;
+        check_shape(provider, &req.shape)?;
         let mut spec = Self::spec(ACQUIRE_DEADLINE).args(["warmup", "--provider", provider]);
         if let Some(dir) = &req.worktree {
             spec = spec.cwd(dir);
         }
         spec = spec.args(["--slug", &name, "--class", class]);
         let handle = handle_of(provider, &name);
-        let spec = static_env(spec, &handle);
+        let spec = shape_env(static_env(spec, &handle), &req.shape);
         self.forget_targets(&handle);
         let out = self.call(Op::Acquire, Some(provider), &spec)?;
         let warm = parse::parse_warmup(&out.stdout).ok_or_else(|| unreadable("acquire"))?;
