@@ -87,7 +87,7 @@ pub(super) fn bare() -> Fx {
     let store = Store::open(&dir.path().join(STORE_FILE), clock.clone()).unwrap();
     let id = store
         .apply(Decision::insert(NewTask {
-            name: BoxName::parse("t").unwrap(),
+            name: BoxName::parse_allow_bare("t").unwrap(),
             repo: "r".into(),
         }))
         .unwrap()

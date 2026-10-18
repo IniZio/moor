@@ -129,7 +129,7 @@ fn acquire_holder(driver: &FakeDriver) -> BoxHandle {
         .acquire(&AcquireReq {
             provider: ProviderId::new(PROVIDER),
             task: BoxId::new(1),
-            name: BoxName::parse("holder").unwrap(),
+            name: BoxName::parse_allow_bare("holder").unwrap(),
             class: None,
             nonce: "n".to_owned(),
             worktree: None,
@@ -143,7 +143,7 @@ fn insert_holder(cx: &Cx, handle: BoxHandle, worktree: &Path) -> BoxId {
     let store = cx.store().unwrap();
     let id = store
         .apply(Decision::insert(NewTask {
-            name: BoxName::parse("holder").unwrap(),
+            name: BoxName::parse_allow_bare("holder").unwrap(),
             repo: "/repo".into(),
         }))
         .unwrap()
@@ -170,7 +170,7 @@ fn insert_holder(cx: &Cx, handle: BoxHandle, worktree: &Path) -> BoxId {
 
 fn start_req(name: &str) -> StartReq {
     StartReq {
-        name: BoxName::parse(name).unwrap(),
+        name: BoxName::parse_allow_bare(name).unwrap(),
         goal: None,
         issue: None,
         worktree: None,
@@ -195,7 +195,7 @@ fn waiting_directly(w: &World, name: &str) -> BoxId {
     let store = w.cx.store().unwrap();
     let id = store
         .apply(Decision::insert(NewTask {
-            name: BoxName::parse(name).unwrap(),
+            name: BoxName::parse_allow_bare(name).unwrap(),
             repo: "/repo".into(),
         }))
         .unwrap()
@@ -207,7 +207,7 @@ fn waiting_directly(w: &World, name: &str) -> BoxId {
 
 fn close_holder(w: &World) -> moor_core::view::CloseView {
     let req = CloseReq {
-        task: BoxName::parse("holder").unwrap(),
+        task: BoxName::parse_allow_bare("holder").unwrap(),
         force: false,
         trust_moor_yaml: false,
     };

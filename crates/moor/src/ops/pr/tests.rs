@@ -47,7 +47,7 @@ fn task(cx: &Cx) {
     let store = cx.store().unwrap();
     let id = store
         .apply(Decision::insert(NewTask {
-            name: BoxName::parse("t").unwrap(),
+            name: BoxName::parse_allow_bare("t").unwrap(),
             repo: "r".into(),
         }))
         .unwrap()

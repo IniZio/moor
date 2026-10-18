@@ -22,7 +22,7 @@ fn reg() -> ResumeReg {
         agent: "claude".to_owned(),
         state: PaneStatus::Idle,
         session_id: "abc-123".to_owned(),
-        task: BoxName::parse("a").expect("valid name"),
+        task: BoxName::parse_allow_bare("a").expect("valid name"),
     }
 }
 

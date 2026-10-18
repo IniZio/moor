@@ -82,7 +82,7 @@ fn prompt_of(row: PromptRow) -> Result<SlackPrompt, StoreError> {
         channel,
         thread_ts,
         message_ts,
-        task: parsed("slack prompt task", &task, BoxName::parse)?,
+        task: parsed("slack prompt task", &task, BoxName::parse_allow_bare)?,
         question,
         options: serde_json::from_str(&options)?,
         answer,
@@ -114,7 +114,7 @@ impl Store {
                 |r| r.get(0),
             )
             .optional()?;
-        raw.map(|name| parsed("slack thread task", &name, BoxName::parse))
+        raw.map(|name| parsed("slack thread task", &name, BoxName::parse_allow_bare))
             .transpose()
     }
 
@@ -157,7 +157,7 @@ impl Store {
                 Ok(SlackThread {
                     channel,
                     thread_ts,
-                    task: parsed("slack thread task", &task, BoxName::parse)?,
+                    task: parsed("slack thread task", &task, BoxName::parse_allow_bare)?,
                     owner,
                     status_ts,
                 })

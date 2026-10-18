@@ -51,7 +51,7 @@ fn lost_box_on_base(base: &str, worktree_yaml: Option<&str>) -> World {
     script_base_yaml(&w, Some(base));
     let err = run(&w.cx, &start_req()).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Failed);
-    let name = BoxName::parse("demo").unwrap();
+    let name = BoxName::parse_allow_bare("demo").unwrap();
     let row = w.cx.store().unwrap().open_task_by_name(&name).unwrap();
     let wt = row.unwrap().worktree.unwrap();
     std::fs::create_dir_all(&wt).unwrap();
@@ -183,7 +183,7 @@ fn a_replacement_box_starts_when_the_worktree_copy_equals_the_base_but_the_main_
     let w = world_at(driver, repo.path());
     script_base_yaml(&w, Some(BASE));
     run(&w.cx, &start_req()).unwrap_err();
-    let name = BoxName::parse("demo").unwrap();
+    let name = BoxName::parse_allow_bare("demo").unwrap();
     let row = w.cx.store().unwrap().open_task_by_name(&name).unwrap();
     let wt = row.unwrap().worktree.unwrap();
     std::fs::create_dir_all(&wt).unwrap();
@@ -282,7 +282,7 @@ fn a_worktree_moor_yaml_added_over_an_overlay_is_refused_without_trust() {
     script_base_yaml(&w, None);
     let err = run(&w.cx, &start_req()).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Failed);
-    let name = BoxName::parse("demo").unwrap();
+    let name = BoxName::parse_allow_bare("demo").unwrap();
     let row = w.cx.store().unwrap().open_task_by_name(&name).unwrap();
     let wt = row.unwrap().worktree.unwrap();
     std::fs::create_dir_all(&wt).unwrap();

@@ -303,7 +303,7 @@ pub(super) fn rig_with(extra: Vec<ResolvedRule>) -> Rig {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
     let store = Store::open(&dir.path().join("moor.db"), clock.clone()).unwrap();
     let nt = NewTask {
-        name: BoxName::parse("demo").unwrap(),
+        name: BoxName::parse_allow_bare("demo").unwrap(),
         repo: "r".into(),
     };
     let task = store.apply(Decision::insert(nt)).unwrap().task;

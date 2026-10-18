@@ -5,7 +5,7 @@ use serde_json::json;
 
 /// Valid Box name.
 fn n(s: &str) -> BoxName {
-    BoxName::parse(s).expect("valid name")
+    BoxName::parse_allow_bare(s).expect("valid name")
 }
 
 /// Variants carrying a task or arguments.

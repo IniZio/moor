@@ -111,7 +111,7 @@ fn exchange(cx: Cx, requests: &[Request]) -> (String, String, Vec<Value>) {
 
 fn start() -> Request {
     Request::Start(StartReq {
-        name: BoxName::parse("demo").expect("name"),
+        name: BoxName::parse_allow_bare("demo").expect("name"),
         goal: Some("ship it".into()),
         issue: None,
         worktree: None,
@@ -126,7 +126,7 @@ fn start() -> Request {
 
 fn show() -> Request {
     Request::Show(ShowReq {
-        task: Some(BoxName::parse("demo").expect("name")),
+        task: Some(BoxName::parse_allow_bare("demo").expect("name")),
         events: Some(100),
         agent: true,
         reports: true,
@@ -136,7 +136,7 @@ fn show() -> Request {
 
 fn steer() -> Request {
     Request::Steer(SteerReq {
-        task: BoxName::parse("demo").expect("name"),
+        task: BoxName::parse_allow_bare("demo").expect("name"),
         text: Some("continue".into()),
         menu: None,
     })

@@ -194,7 +194,7 @@ fn threads() -> Vec<SlackThread> {
     vec![SlackThread {
         channel: "C1".into(),
         thread_ts: "10.5".into(),
-        task: BoxName::parse("t1").unwrap(),
+        task: BoxName::parse_allow_bare("t1").unwrap(),
         owner: "U1".into(),
         status_ts: None,
     }]

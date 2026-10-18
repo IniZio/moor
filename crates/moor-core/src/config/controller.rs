@@ -78,13 +78,6 @@ fn normalize_url(url: &str) -> &str {
         .trim_end_matches('/')
 }
 
-/// A repo name becomes a directory name, so it must not carry path syntax.
-fn valid_repo_name(name: &str) -> bool {
-    let mut chars = name.chars();
-    chars.next().is_some_and(|c| c.is_ascii_alphanumeric())
-        && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
-}
-
 /// True when the url embeds a password or token. Urls reach clients inside
 /// clone errors, so secrets must not live in them. A bare user (`git@host`)
 /// is allowed for ssh forms only.
@@ -108,7 +101,7 @@ fn validate_repos(file: &str, repos: &RepoTable) -> Result<(), ConfigError> {
     for (name, entry) in repos {
         let at = |leaf: &str| format!("repos.{name}{leaf}");
         let fail = |leaf: &str, why: &str| Err(ConfigError::new(at(leaf), why).in_file(file));
-        if !valid_repo_name(name) {
+        if !crate::name::valid_repo_name(name) {
             return fail("", "name must match [A-Za-z0-9][A-Za-z0-9._-]*");
         }
         if entry.url.trim().is_empty() {

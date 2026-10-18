@@ -21,7 +21,7 @@ fn open(dir: &std::path::Path) -> Store {
 /// Insert a task by name.
 fn add(store: &Store, name: &str) -> BoxId {
     let nt = NewTask {
-        name: BoxName::parse(name).unwrap(),
+        name: BoxName::parse_allow_bare(name).unwrap(),
         repo: "r".into(),
     };
     store.apply(Decision::insert(nt)).unwrap().task
@@ -38,7 +38,7 @@ fn close(store: &Store, id: BoxId) {
 fn name_lookups_distinguish_open_from_latest() {
     let dir = tempfile::tempdir().unwrap();
     let store = open(dir.path());
-    let name = BoxName::parse("t").unwrap();
+    let name = BoxName::parse_allow_bare("t").unwrap();
     assert!(store.open_task_by_name(&name).unwrap().is_none());
     assert!(store.latest_task_by_name(&name).unwrap().is_none());
 

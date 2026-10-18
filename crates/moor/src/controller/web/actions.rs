@@ -206,5 +206,5 @@ fn parse<'a, T: Deserialize<'a>>(body: &'a [u8]) -> Result<T, String> {
 
 /// Parses a task name.
 fn name(s: &str) -> Result<BoxName, String> {
-    BoxName::parse(s).map_err(|e| e.to_string())
+    BoxName::parse_allow_bare(s).map_err(|e| e.to_string())
 }

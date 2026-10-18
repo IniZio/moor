@@ -118,7 +118,7 @@ fn ops() -> Vec<(&'static str, Op)> {
             let req = AcquireReq {
                 provider: ProviderId::new("sprites"),
                 task: BoxId::new(7),
-                name: BoxName::parse("t7").unwrap(),
+                name: BoxName::parse_allow_bare("t7").unwrap(),
                 class: None,
                 nonce: "ab12cd".to_owned(),
                 worktree: None,

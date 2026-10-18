@@ -67,7 +67,7 @@ fn wait_for_idle_returns_after_a_start_without_a_goal() {
     let w = world(FakeDriver::new());
     run(&w.cx, &req("demo")).unwrap();
     let wait = WaitReq {
-        task: BoxName::parse("demo").unwrap(),
+        task: BoxName::parse_allow_bare("demo").unwrap(),
         wait_for: Some(WaitFor::Idle),
         timeout_secs: Some(60),
     };
@@ -157,7 +157,7 @@ fn wait_fails_on_a_launch_failure() {
     let w = with_engine(&engine);
     run(&w.cx, &goal_req("demo")).unwrap();
     let wait = WaitReq {
-        task: BoxName::parse("demo").unwrap(),
+        task: BoxName::parse_allow_bare("demo").unwrap(),
         wait_for: Some(WaitFor::Idle),
         timeout_secs: Some(60),
     };
@@ -307,7 +307,7 @@ fn waiting_for_a_run_does_not_return_the_dispatch_failure() {
     let w = with_engine(&engine);
     run(&w.cx, &goal_req("demo")).unwrap();
     let wait = WaitReq {
-        task: BoxName::parse("demo").unwrap(),
+        task: BoxName::parse_allow_bare("demo").unwrap(),
         wait_for: Some(WaitFor::Run),
         timeout_secs: Some(60),
     };

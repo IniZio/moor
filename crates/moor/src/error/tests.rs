@@ -157,7 +157,7 @@ mod store_close {
 
     #[test]
     fn bad_name_is_usage() {
-        let err = BoxName::parse("Bad Name!").expect_err("rejected");
+        let err = BoxName::parse_allow_bare("Bad Name!").expect_err("rejected");
         assert_eq!(CommandError::from(err).kind, ErrorKind::Usage);
     }
 }

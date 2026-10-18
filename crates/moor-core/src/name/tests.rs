@@ -1,24 +1,24 @@
 //! Tests for name validation.
 
-use super::{BoxHandle, BoxId, BoxName, BoxPath, SessionId, Sha, TaskId, TaskName};
+use super::{next_box_name, BoxHandle, BoxId, BoxName, BoxPath, SessionId, Sha, TaskId, TaskName};
 
 /// Valid Box names parse.
 #[test]
 fn box_name_valid() {
-    assert_eq!(BoxName::parse("a").unwrap().as_str(), "a");
-    assert!(BoxName::parse("fix-bug-9").is_ok());
-    assert!(BoxName::parse("9lives").is_ok());
-    assert!(BoxName::parse(&"a".repeat(40)).is_ok());
+    assert_eq!(BoxName::parse_allow_bare("a").unwrap().as_str(), "a");
+    assert!(BoxName::parse_allow_bare("fix-bug-9").is_ok());
+    assert!(BoxName::parse_allow_bare("9lives").is_ok());
+    assert!(BoxName::parse_allow_bare(&"a".repeat(40)).is_ok());
 }
 
 /// Invalid Box names are rejected.
 #[test]
 fn box_name_invalid() {
-    assert!(BoxName::parse("").is_err());
-    assert!(BoxName::parse("Abc").is_err());
-    assert!(BoxName::parse("-abc").is_err());
-    assert!(BoxName::parse("a_b").is_err());
-    assert!(BoxName::parse(&"a".repeat(41)).is_err());
+    assert!(BoxName::parse_allow_bare("").is_err());
+    assert!(BoxName::parse_allow_bare("Abc").is_err());
+    assert!(BoxName::parse_allow_bare("-abc").is_err());
+    assert!(BoxName::parse_allow_bare("a_b").is_err());
+    assert!(BoxName::parse_allow_bare(&"a".repeat(41)).is_err());
 }
 
 /// Sha length and charset limits hold.
@@ -68,7 +68,7 @@ fn box_id_and_box_handle_serde_shape() {
 /// A Box name is a bare JSON string and still validates on the way in.
 #[test]
 fn box_name_wire_matches_task_name() {
-    let name = BoxName::parse("fix-bug-9").unwrap();
+    let name = BoxName::parse_allow_bare("fix-bug-9").unwrap();
     assert_eq!(serde_json::to_string(&name).unwrap(), "\"fix-bug-9\"");
     assert_eq!(
         serde_json::from_str::<BoxName>("\"fix-bug-9\"").unwrap(),
@@ -97,7 +97,76 @@ fn session_id_wire_is_bare_integer() {
 /// The old Task names are aliases of the Box types.
 #[test]
 fn task_aliases_are_box_types() {
-    let name: TaskName = BoxName::parse("a").unwrap();
+    let name: TaskName = BoxName::parse_allow_bare("a").unwrap();
     let _: BoxName = name;
     assert_eq!(TaskId::new(3), BoxId::new(3));
+}
+
+/// Strict names are `<repo>/<label>`.
+#[test]
+fn parse_accepts_repo_slash_label() {
+    assert_eq!(BoxName::parse("moor/7").unwrap().as_str(), "moor/7");
+    assert!(BoxName::parse("moor/fix-bug").is_ok());
+    assert!(BoxName::parse(&format!("moor/{}", "a".repeat(40))).is_ok());
+    assert!(BoxName::parse(&format!("{}/x", "a".repeat(40))).is_ok());
+}
+
+/// Strict parse rejects malformed and bare names.
+#[test]
+fn parse_rejects_malformed() {
+    for bad in [
+        "/a", "a/", "a//b", "a/b/c", "A/b", "-a/b", "a/-b", "fix-bug", "", "/",
+    ] {
+        assert!(BoxName::parse(bad).is_err(), "{bad}");
+    }
+    assert!(BoxName::parse(&format!("a/{}", "b".repeat(41))).is_err());
+    assert!(BoxName::parse(&format!("{}/b", "a".repeat(41))).is_err());
+}
+
+/// `parse_allow_bare` takes strict names and bare segments only.
+#[test]
+fn parse_allow_bare_accepts_bare_and_strict() {
+    assert!(BoxName::parse_allow_bare("fix-bug").is_ok());
+    assert!(BoxName::parse_allow_bare("slack-1700000000-000100").is_ok());
+    assert!(BoxName::parse_allow_bare("moor/7").is_ok());
+    assert!(BoxName::parse_allow_bare("a/b/c").is_err());
+    assert!(BoxName::parse_allow_bare("a/").is_err());
+}
+
+/// `repo` and `label` split a name.
+#[test]
+fn repo_and_label() {
+    let n = BoxName::parse("moor/fix").unwrap();
+    assert_eq!((n.repo(), n.label()), (Some("moor"), "fix"));
+    let b = BoxName::parse_allow_bare("fix").unwrap();
+    assert_eq!((b.repo(), b.label()), (None, "fix"));
+}
+
+/// The counter starts at 1.
+#[test]
+fn next_box_name_empty_starts_at_one() {
+    assert_eq!(next_box_name("moor", &[]).unwrap().as_str(), "moor/1");
+}
+
+/// The counter goes above the high-water mark and never fills gaps.
+#[test]
+fn next_box_name_uses_max_not_gap() {
+    assert_eq!(
+        next_box_name("moor", &[1, 2, 5]).unwrap().as_str(),
+        "moor/6"
+    );
+    assert_eq!(next_box_name("moor", &[9, 3]).unwrap().as_str(), "moor/10");
+}
+
+/// A closed Box's high n is still passed in, so it is not reused.
+#[test]
+fn next_box_name_stays_above_closed_high_n() {
+    assert_eq!(next_box_name("moor", &[1, 40]).unwrap().as_str(), "moor/41");
+}
+
+/// An invalid repo is an error.
+#[test]
+fn next_box_name_rejects_invalid_repo() {
+    assert!(next_box_name("Bad Repo", &[]).is_err());
+    assert!(next_box_name("a/b", &[1]).is_err());
 }

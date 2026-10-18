@@ -3,9 +3,9 @@
 /// A name or path that failed moor's validation.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum NameError {
-    /// The Box name is not 1-40 chars of `[a-z0-9-]` starting with `[a-z0-9]`.
+    /// The Box name is not `<repo>/<label>` (or a bare segment where allowed).
     #[error(
-        "invalid task name `{0}`: use 1-40 lowercase letters, digits or '-', not starting with '-'"
+        "invalid task name `{0}`: use <repo>/<label>, each part 1-40 lowercase letters, digits or '-', not starting with '-'"
     )]
     TaskName(String),
     /// The sha is not 4-40 hex chars.
@@ -19,7 +19,15 @@ pub enum NameError {
     RelPath(String),
 }
 
-/// A Box name, `[a-z0-9][a-z0-9-]{0,39}`.
+/// A repo registry name becomes a directory name, so it must not carry path syntax.
+#[must_use]
+pub fn valid_repo_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars.next().is_some_and(|c| c.is_ascii_alphanumeric())
+        && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+}
+
+/// A Box name: `<repo>/<label>`, or a bare segment from older stores.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct BoxName(String);
 
@@ -27,21 +35,54 @@ pub struct BoxName(String);
 pub type TaskName = BoxName;
 
 impl BoxName {
-    /// Validates and wraps a Box name.
+    /// Validates and wraps a strict Box name, `<repo>/<label>`.
+    ///
+    /// Exactly one `/`; each part is 1-40 chars of `[a-z0-9-]` not starting
+    /// with `-`, and the repo part is also a valid repo name.
     ///
     /// # Errors
     /// Returns [`NameError::TaskName`] when `s` breaks the name rule.
     pub fn parse(s: &str) -> Result<Self, NameError> {
-        let mut chars = s.chars();
-        let first_ok = chars
-            .next()
-            .is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit());
-        let rest_ok = chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
-        if first_ok && rest_ok && s.len() <= 40 {
+        match s.split_once('/') {
+            Some((repo, label))
+                if valid_segment(repo) && valid_segment(label) && valid_repo_name(repo) =>
+            {
+                Ok(Self(s.to_owned()))
+            }
+            _ => Err(NameError::TaskName(s.to_owned())),
+        }
+    }
+
+    /// Like [`BoxName::parse`], but also accepts a bare segment (no `/`, 1-40
+    /// chars of `[a-z0-9-]`, not starting with `-`).
+    ///
+    /// Bare names are accepted only until the store's next schema, because the
+    /// current store and Slack's `slack-<ts>` names still produce them. A string
+    /// containing `/` must pass the strict rule; it is never retried as bare.
+    ///
+    /// # Errors
+    /// Returns [`NameError::TaskName`] when `s` is neither a strict name nor a
+    /// bare segment.
+    pub fn parse_allow_bare(s: &str) -> Result<Self, NameError> {
+        if s.contains('/') {
+            Self::parse(s)
+        } else if valid_segment(s) {
             Ok(Self(s.to_owned()))
         } else {
             Err(NameError::TaskName(s.to_owned()))
         }
+    }
+
+    /// Returns the repo part, or `None` for a bare name.
+    #[must_use]
+    pub fn repo(&self) -> Option<&str> {
+        self.0.split_once('/').map(|(repo, _)| repo)
+    }
+
+    /// Returns the label part; the whole name when it is bare.
+    #[must_use]
+    pub fn label(&self) -> &str {
+        self.0.split_once('/').map_or(&self.0, |(_, label)| label)
     }
 
     /// Returns the name text.
@@ -49,6 +90,33 @@ impl BoxName {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+}
+
+/// True for 1-40 chars of `[a-z0-9-]` not starting with `-`.
+fn valid_segment(s: &str) -> bool {
+    let mut chars = s.chars();
+    chars
+        .next()
+        .is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+        && s.len() <= 40
+}
+
+/// Names the next Box of `repo`: `<repo>/<max(used)+1>`, starting at 1.
+///
+/// The caller passes every n ever handed out for the repo (the high-water
+/// mark), including closed Boxes, so an n is never reused. Its storage arrives
+/// with the store's next schema.
+///
+/// # Errors
+/// Returns [`NameError::TaskName`] when the result is not a valid name.
+pub fn next_box_name(repo: &str, used: &[u64]) -> Result<BoxName, NameError> {
+    let next = used
+        .iter()
+        .copied()
+        .max()
+        .map_or(1, |m| m.saturating_add(1));
+    BoxName::parse(&format!("{repo}/{next}"))
 }
 
 impl serde::Serialize for BoxName {
@@ -60,7 +128,7 @@ impl serde::Serialize for BoxName {
 impl<'de> serde::Deserialize<'de> for BoxName {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let s = String::deserialize(d)?;
-        Self::parse(&s).map_err(serde::de::Error::custom)
+        Self::parse_allow_bare(&s).map_err(serde::de::Error::custom)
     }
 }
 

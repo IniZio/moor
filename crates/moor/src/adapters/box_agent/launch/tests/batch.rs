@@ -39,7 +39,7 @@ fn driver(d: FakeDriver) -> Arc<FakeDriver> {
     d.acquire(&AcquireReq {
         provider: ProviderId::new("fake"),
         task: BoxId::new(1),
-        name: BoxName::parse("t1").unwrap(),
+        name: BoxName::parse_allow_bare("t1").unwrap(),
         class: None,
         nonce: "n0".to_owned(),
         worktree: None,
@@ -49,7 +49,7 @@ fn driver(d: FakeDriver) -> Arc<FakeDriver> {
 }
 
 fn req(s: &FakeSurface, proxy: bool) -> LaunchReq {
-    let name = BoxName::parse("t1").unwrap();
+    let name = BoxName::parse_allow_bare("t1").unwrap();
     let wt = s
         .create_worktree(&PathBuf::from("/r"), &name, None)
         .unwrap();
@@ -216,7 +216,7 @@ fn a_launch_with_no_environ_reports_the_home_step() {
     d.acquire(&AcquireReq {
         provider: ProviderId::new("fake"),
         task: BoxId::new(1),
-        name: BoxName::parse("t1").unwrap(),
+        name: BoxName::parse_allow_bare("t1").unwrap(),
         class: None,
         nonce: "n0".to_owned(),
         worktree: None,

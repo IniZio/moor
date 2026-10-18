@@ -16,7 +16,7 @@ fn setup(dir: &std::path::Path) -> (Store, BoxId) {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
     let store = Store::open(&dir.join("moor.db"), clock).unwrap();
     let nt = NewTask {
-        name: BoxName::parse("t").unwrap(),
+        name: BoxName::parse_allow_bare("t").unwrap(),
         repo: "r".into(),
     };
     let id = store.apply(Decision::insert(nt)).unwrap().task;

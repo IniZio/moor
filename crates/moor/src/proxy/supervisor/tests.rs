@@ -181,7 +181,7 @@ pub(super) fn no_creds() -> CredsFn {
 /// Insert a task, give it a live box from `driver` and a worktree.
 fn working_task(store: &Store, driver: &FakeDriver) -> BoxId {
     let nt = NewTask {
-        name: BoxName::parse("demo").unwrap(),
+        name: BoxName::parse_allow_bare("demo").unwrap(),
         repo: "r".into(),
     };
     let id = store.apply(Decision::insert(nt)).unwrap().task;
@@ -190,7 +190,7 @@ fn working_task(store: &Store, driver: &FakeDriver) -> BoxId {
         .acquire(&AcquireReq {
             provider: provider.clone(),
             task: id,
-            name: BoxName::parse("demo").unwrap(),
+            name: BoxName::parse_allow_bare("demo").unwrap(),
             class: None,
             nonce: "abc123".into(),
             worktree: None,
@@ -482,7 +482,7 @@ fn task_without_a_box_handle_is_refused_with_a_stderr_line() {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
     let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
     let nt = NewTask {
-        name: BoxName::parse("bare").unwrap(),
+        name: BoxName::parse_allow_bare("bare").unwrap(),
         repo: "r".into(),
     };
     let id = store.apply(Decision::insert(nt)).unwrap().task;

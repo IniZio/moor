@@ -8,12 +8,13 @@ use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
 use moor_core::seam::engine::{Engine, EngineError, LaunchReq};
 use moor_core::seam::surface::{Surface, SurfaceError};
-use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId, Secret};
+use moor_core::{BoxHandle, BoxId, BoxPath, ProviderId, Secret};
 
 use crate::adapters::box_agent::claude::Claude;
 use crate::adapters::box_agent::gh_release::fake::ready_release;
 use crate::adapters::box_agent::proxy_env;
 use crate::adapters::box_agent::BoxAgent;
+use crate::testing::box_name;
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
 use crate::testing::surface::FakeSurface;
@@ -34,7 +35,7 @@ fn driver(d: FakeDriver) -> Arc<FakeDriver> {
     d.acquire(&AcquireReq {
         provider: ProviderId::new("fake"),
         task: BoxId::new(1),
-        name: BoxName::parse("t1").unwrap(),
+        name: box_name("t1"),
         class: None,
         nonce: "n0".to_owned(),
         worktree: None,
@@ -48,14 +49,14 @@ fn surface(s: FakeSurface) -> Arc<FakeSurface> {
 }
 
 fn req(s: &FakeSurface) -> LaunchReq {
-    let wt = s.create_worktree(&PathBuf::from("/r"), &BoxName::parse("t1").unwrap(), None);
+    let wt = s.create_worktree(&PathBuf::from("/r"), &box_name("t1"), None);
     let wt = wt.unwrap();
     LaunchReq {
         handle: BoxHandle::new("box-1"),
         workdir: BoxPath::under("/work", "box-1").unwrap(),
         worktree: wt.path.clone(),
         workspace: s.ensure_workspace(&wt, "moor:t1").unwrap(),
-        task: BoxName::parse("t1").unwrap(),
+        task: box_name("t1"),
         branch: "moor/t1".to_owned(),
         goal: Some("fix x".to_owned()),
         resume: None,
@@ -296,7 +297,7 @@ fn a_box_without_a_home_fails_before_delivering() {
     d.acquire(&AcquireReq {
         provider: ProviderId::new("fake"),
         task: BoxId::new(1),
-        name: BoxName::parse("t1").unwrap(),
+        name: box_name("t1"),
         class: None,
         nonce: "n0".to_owned(),
         worktree: None,

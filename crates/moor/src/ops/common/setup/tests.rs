@@ -51,7 +51,7 @@ fn rig_on(dir: &Path, driver: FakeDriver, clock: Arc<FakeClock>) -> Rig {
         .acquire(&AcquireReq {
             provider: ProviderId::new("p"),
             task: BoxId::new(1),
-            name: BoxName::parse("demo").unwrap(),
+            name: BoxName::parse_allow_bare("demo").unwrap(),
             class: None,
             nonce: "n".to_owned(),
             worktree: None,

@@ -34,7 +34,7 @@ fn task_view_maps_row_without_box() {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(86_400_000)));
     let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
     let nt = NewTask {
-        name: BoxName::parse("t").unwrap(),
+        name: BoxName::parse_allow_bare("t").unwrap(),
         repo: "r".into(),
     };
     let id = store.apply(Decision::insert(nt)).unwrap().task;
@@ -63,7 +63,7 @@ fn task_view_maps_box() {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
     let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
     let nt = NewTask {
-        name: BoxName::parse("t").unwrap(),
+        name: BoxName::parse_allow_bare("t").unwrap(),
         repo: "r".into(),
     };
     let id = store.apply(Decision::insert(nt)).unwrap().task;
@@ -95,7 +95,7 @@ fn box_view_maps_sleep_reason() {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
     let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
     let nt = NewTask {
-        name: BoxName::parse("t").unwrap(),
+        name: BoxName::parse_allow_bare("t").unwrap(),
         repo: "r".into(),
     };
     let id = store.apply(Decision::insert(nt)).unwrap().task;
@@ -131,7 +131,7 @@ fn box_view_shows_configured_sleep_after() {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
     let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
     let nt = NewTask {
-        name: BoxName::parse("t").unwrap(),
+        name: BoxName::parse_allow_bare("t").unwrap(),
         repo: "r".into(),
     };
     let id = store.apply(Decision::insert(nt)).unwrap().task;
@@ -155,7 +155,7 @@ fn task_view_with_run_fills_run() {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
     let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
     let nt = NewTask {
-        name: BoxName::parse("t").unwrap(),
+        name: BoxName::parse_allow_bare("t").unwrap(),
         repo: "r".into(),
     };
     let id = store.apply(Decision::insert(nt)).unwrap().task;

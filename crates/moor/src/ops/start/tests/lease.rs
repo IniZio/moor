@@ -35,7 +35,7 @@ fn a_failed_acquire_leaves_the_root_planned() {
     run(&w.cx, &req("demo")).unwrap_err();
     let store = w.cx.store().unwrap();
     let task = store
-        .open_task_by_name(&BoxName::parse("demo").unwrap())
+        .open_task_by_name(&BoxName::parse_allow_bare("demo").unwrap())
         .unwrap()
         .unwrap();
     let rows = store.leases(task.id).unwrap();

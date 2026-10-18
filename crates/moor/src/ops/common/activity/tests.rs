@@ -44,7 +44,7 @@ fn cx(dir: &Path, engine: &Arc<FakeEngine>) -> (Cx, Arc<ScriptedProc>) {
 fn task(cx: &Cx, session: bool) -> BoxId {
     let store = cx.store().unwrap();
     let nt = NewTask {
-        name: BoxName::parse("demo").unwrap(),
+        name: BoxName::parse_allow_bare("demo").unwrap(),
         repo: "r".into(),
     };
     let id = store.apply(Decision::insert(nt)).unwrap().task;
@@ -204,7 +204,7 @@ fn run_in_flight_with_an_unreachable_box_is_busy_and_not_quiet() {
     let (cx, _) = cx(dir.path(), &engine);
     let store = cx.store().unwrap();
     let nt = NewTask {
-        name: BoxName::parse("demo").unwrap(),
+        name: BoxName::parse_allow_bare("demo").unwrap(),
         repo: "r".into(),
     };
     let id = store.apply(Decision::insert(nt)).unwrap().task;

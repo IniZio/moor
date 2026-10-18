@@ -41,7 +41,7 @@ fn fx(driver: FakeDriver, listings: &[&str]) -> Fx {
         Arc::new(FakeSurface::new(dir.path())),
         Arc::new(ScriptedProc::new()),
     );
-    let name = BoxName::parse("t").unwrap();
+    let name = BoxName::parse_allow_bare("t").unwrap();
     let store = cx.store().unwrap();
     let id = store
         .apply(Decision::insert(NewTask {

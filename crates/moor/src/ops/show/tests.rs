@@ -43,7 +43,7 @@ fn cx(dir: &Path, driver: &Arc<FakeDriver>) -> Cx {
 /// Request showing everything.
 fn req(task: Option<&str>, events: Option<u32>) -> ShowReq {
     ShowReq {
-        task: task.map(|t| BoxName::parse(t).unwrap()),
+        task: task.map(|t| BoxName::parse_allow_bare(t).unwrap()),
         events,
         agent: false,
         reports: false,
@@ -54,7 +54,7 @@ fn req(task: Option<&str>, events: Option<u32>) -> ShowReq {
 /// Insert a task by name.
 fn add(cx: &Cx, name: &str) -> BoxId {
     let nt = NewTask {
-        name: BoxName::parse(name).unwrap(),
+        name: BoxName::parse_allow_bare(name).unwrap(),
         repo: "r".into(),
     };
     cx.store()
@@ -71,7 +71,7 @@ fn ready_box(cx: &Cx, driver: &FakeDriver, id: BoxId) -> moor_core::BoxHandle {
         .acquire(&AcquireReq {
             provider: p.clone(),
             task: id,
-            name: BoxName::parse("demo").unwrap(),
+            name: BoxName::parse_allow_bare("demo").unwrap(),
             class: None,
             nonce: "abc123".into(),
             worktree: None,
@@ -248,7 +248,7 @@ fn working(cx: &Cx, driver: &FakeDriver, name: &str, session: Option<&str>) -> B
         .acquire(&AcquireReq {
             provider: ProviderId::new("p"),
             task: id,
-            name: BoxName::parse(name).unwrap(),
+            name: BoxName::parse_allow_bare(name).unwrap(),
             class: None,
             nonce: "abc123".into(),
             worktree: None,
@@ -507,7 +507,7 @@ fn a_task_freshly_started_is_not_idled_by_the_next_list() {
     let started = crate::ops::start::run(
         &cx,
         &StartReq {
-            name: BoxName::parse("demo").unwrap(),
+            name: BoxName::parse_allow_bare("demo").unwrap(),
             goal: Some("ship it".into()),
             issue: None,
             worktree: None,

@@ -65,7 +65,7 @@ impl Drop for StopOnDrop {
 /// Insert a task, give it a live box from `driver`, and reserve its proxy row.
 fn task_with_box(store: &Store, driver: &FakeDriver) -> (BoxId, BoxHandle) {
     let nt = NewTask {
-        name: BoxName::parse("demo").unwrap(),
+        name: BoxName::parse_allow_bare("demo").unwrap(),
         repo: "r".into(),
     };
     let id = store.apply(Decision::insert(nt)).unwrap().task;
@@ -74,7 +74,7 @@ fn task_with_box(store: &Store, driver: &FakeDriver) -> (BoxId, BoxHandle) {
         .acquire(&AcquireReq {
             provider: provider.clone(),
             task: id,
-            name: BoxName::parse("demo").unwrap(),
+            name: BoxName::parse_allow_bare("demo").unwrap(),
             class: None,
             nonce: "abc123".into(),
             worktree: None,

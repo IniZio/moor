@@ -46,7 +46,7 @@ fn open(dir: &Path) -> Store {
 
 fn add(store: &Store, name: &str) -> BoxId {
     let new = NewTask {
-        name: BoxName::parse(name).expect("name"),
+        name: BoxName::parse_allow_bare(name).expect("name"),
         repo: "r".into(),
     };
     store.apply(Decision::insert(new)).expect("insert").task

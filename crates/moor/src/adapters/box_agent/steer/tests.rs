@@ -31,7 +31,11 @@ fn obs(tail: &str) -> PaneObs {
 fn surface(reads: Vec<Result<PaneObs, SurfaceError>>) -> (Arc<FakeSurface>, SessionRef) {
     let s = FakeSurface::new("/r");
     let wt = s
-        .create_worktree(Path::new("/r"), &BoxName::parse("t1").unwrap(), None)
+        .create_worktree(
+            Path::new("/r"),
+            &BoxName::parse_allow_bare("t1").unwrap(),
+            None,
+        )
         .unwrap();
     let ws = s.ensure_workspace(&wt, "moor:t1").unwrap();
     let pane = s.open_pane(&ws, &PaneCmd::default()).unwrap();

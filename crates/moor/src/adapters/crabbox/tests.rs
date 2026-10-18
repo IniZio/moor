@@ -34,7 +34,7 @@ fn req(provider: &str, class: Option<&str>) -> AcquireReq {
     AcquireReq {
         provider: ProviderId::new(provider),
         task: BoxId::new(7),
-        name: BoxName::parse("t7").unwrap(),
+        name: BoxName::parse_allow_bare("t7").unwrap(),
         class: class.map(str::to_owned),
         nonce: "ab12cd".to_owned(),
         worktree: None,

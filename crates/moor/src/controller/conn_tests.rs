@@ -74,7 +74,7 @@ fn hello_then_version_echoes_id_and_envelope() {
 fn envelopes_match_moor_call() {
     let dir = tempfile::tempdir().expect("tempdir");
     let env = env(&dir);
-    let unknown = BoxName::parse("nope").expect("name");
+    let unknown = BoxName::parse_allow_bare("nope").expect("name");
     let requests = [
         Request::Version {},
         show(None),
@@ -93,7 +93,7 @@ fn envelopes_match_moor_call() {
 #[test]
 fn unknown_task_gives_error_envelope() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let unknown = BoxName::parse("nope").expect("name");
+    let unknown = BoxName::parse_allow_bare("nope").expect("name");
     let req = show(Some(unknown));
     let frames = run(&env(&dir), &[hello(), request("x", &req)]);
     assert_eq!(frames[1]["frame"], "response");

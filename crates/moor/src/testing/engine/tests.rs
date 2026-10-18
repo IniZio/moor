@@ -81,7 +81,7 @@ fn launch_req() -> LaunchReq {
         workdir: BoxPath::under("/work/box-1", "x").unwrap(),
         worktree: PathBuf::from("/host/wt"),
         workspace: WorkspaceRef::new("ws-1"),
-        task: BoxName::parse("t1").unwrap(),
+        task: BoxName::parse_allow_bare("t1").unwrap(),
         branch: "moor/t1".to_owned(),
         goal: None,
         resume: None,

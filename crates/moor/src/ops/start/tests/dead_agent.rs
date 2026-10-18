@@ -98,7 +98,7 @@ fn a_dead_agent_shows_as_failed_and_wait_fails() {
     assert_eq!(t.state, TaskState::Working);
     assert_eq!(t.agent.as_ref().unwrap().state, "failed");
     let wait = WaitReq {
-        task: BoxName::parse("demo").unwrap(),
+        task: BoxName::parse_allow_bare("demo").unwrap(),
         wait_for: Some(WaitFor::Idle),
         timeout_secs: Some(60),
     };

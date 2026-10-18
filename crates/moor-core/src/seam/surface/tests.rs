@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn label_is_moor_prefixed() {
-    let name = BoxName::parse("fix-bug").unwrap();
+    let name = BoxName::parse_allow_bare("fix-bug").unwrap();
     assert_eq!(workspace_label(&name), "moor:fix-bug");
 }
 

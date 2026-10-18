@@ -35,7 +35,7 @@ fn body(resp: &str) -> Value {
 }
 
 fn task(name: &str) -> BoxName {
-    BoxName::parse(name).unwrap()
+    BoxName::parse_allow_bare(name).unwrap()
 }
 
 fn recorded(calls: &Calls) -> Vec<Request> {
