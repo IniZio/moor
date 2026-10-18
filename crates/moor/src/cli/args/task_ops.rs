@@ -1,7 +1,7 @@
 //! Arguments of the Task-scoped verbs that take only a name plus a flag or path.
 
 use clap::Args;
-use moor_core::{CloseReq, CpReq, RemoveReq, TaskName, TaskReq};
+use moor_core::{BoxName, CloseReq, CpReq, RemoveReq, TaskReq};
 
 use super::task_name;
 
@@ -10,7 +10,7 @@ use super::task_name;
 pub(super) struct CloseArgs {
     /// Task name.
     #[arg(value_parser = task_name)]
-    pub(super) task: TaskName,
+    pub(super) task: BoxName,
     /// Close despite unsaved work.
     #[arg(long)]
     pub(super) force: bool,
@@ -34,7 +34,7 @@ impl From<CloseArgs> for CloseReq {
 pub(super) struct RemoveArgs {
     /// Task name.
     #[arg(value_parser = task_name)]
-    pub(super) task: TaskName,
+    pub(super) task: BoxName,
     /// Discard the Task's work.
     #[arg(long)]
     pub(super) discard: bool,
@@ -54,7 +54,7 @@ impl From<RemoveArgs> for RemoveReq {
 pub(super) struct CpArgs {
     /// Task name.
     #[arg(value_parser = task_name)]
-    pub(super) task: TaskName,
+    pub(super) task: BoxName,
     /// Source path in the Box; relative to its workdir and may not contain
     /// `..`. Use an absolute Box path to reach outside the workdir.
     pub(super) src: String,
@@ -77,7 +77,7 @@ impl From<CpArgs> for CpReq {
 pub(super) struct TaskArg {
     /// Task name.
     #[arg(value_parser = task_name)]
-    pub(super) task: TaskName,
+    pub(super) task: BoxName,
 }
 
 impl From<TaskArg> for TaskReq {

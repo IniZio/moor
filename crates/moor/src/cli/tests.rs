@@ -52,7 +52,7 @@ fn help_exits_zero() {
 fn proxy_serve_parses_task() {
     assert!(matches!(
         parse(argv(&["proxy", "serve", "7"])),
-        Parsed::ProxyServe { task, .. } if task == moor_core::TaskId::new(7)
+        Parsed::ProxyServe { task, .. } if task == moor_core::BoxId::new(7)
     ));
 }
 

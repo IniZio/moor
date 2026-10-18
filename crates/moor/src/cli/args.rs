@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use moor_core::{
-    ReportReq, Request, RunReq, ShowReq, StartReq, SteerReq, TaskId, TaskName, WaitFor, WaitReq,
+    BoxId, BoxName, ReportReq, Request, RunReq, ShowReq, StartReq, SteerReq, WaitFor, WaitReq,
 };
 
 use super::args_admin::{AdminCmd, GateCmd};
@@ -25,7 +25,7 @@ pub(super) enum Action {
     /// `call`: read a JSON request from stdin.
     CallStdin,
     /// Hidden `proxy serve <task>`: serve the credential proxy for that Task.
-    ProxyServe(TaskId),
+    ProxyServe(BoxId),
     /// `controller serve --config <file>`: run the controller daemon.
     ControllerServe(PathBuf),
     /// `controller attach [--socket <path>]`: bridge stdio to the controller socket.
@@ -39,8 +39,8 @@ pub(super) fn parse(args: Vec<OsString>) -> Result<(GlobalOpts, Action), clap::E
 }
 
 /// clap parser for a Task name.
-pub(super) fn task_name(s: &str) -> Result<TaskName, String> {
-    TaskName::parse(s).map_err(|e| e.to_string())
+pub(super) fn task_name(s: &str) -> Result<BoxName, String> {
+    BoxName::parse(s).map_err(|e| e.to_string())
 }
 
 /// Top-level command line.
@@ -126,7 +126,7 @@ impl Cmd {
 struct StartArgs {
     /// Task name.
     #[arg(value_parser = task_name)]
-    name: TaskName,
+    name: BoxName,
     /// Goal for the agent.
     #[arg(long)]
     goal: Option<String>,
@@ -178,7 +178,7 @@ impl From<StartArgs> for StartReq {
 struct RunArgs {
     /// Task name.
     #[arg(value_parser = task_name)]
-    task: TaskName,
+    task: BoxName,
     /// Skip the pre-run sync.
     #[arg(long)]
     no_sync: bool,
@@ -228,7 +228,7 @@ enum WaitForArg {
 struct WaitArgs {
     /// Task name.
     #[arg(value_parser = task_name)]
-    task: TaskName,
+    task: BoxName,
     /// State to wait for.
     #[arg(long = "for", value_enum)]
     wait_for: Option<WaitForArg>,
@@ -258,7 +258,7 @@ impl From<WaitArgs> for WaitReq {
 struct SteerArgs {
     /// Task name.
     #[arg(value_parser = task_name)]
-    task: TaskName,
+    task: BoxName,
     /// Text to send.
     #[arg(conflicts_with = "menu")]
     text: Option<String>,
@@ -282,7 +282,7 @@ impl From<SteerArgs> for SteerReq {
 struct ReportArgs {
     /// Task name.
     #[arg(value_parser = task_name)]
-    task: TaskName,
+    task: BoxName,
     /// Report kind.
     #[arg(long)]
     kind: String,
@@ -310,7 +310,7 @@ impl From<ReportArgs> for ReportReq {
 struct ShowArgs {
     /// Task name; all open Tasks when absent.
     #[arg(value_parser = task_name)]
-    task: Option<TaskName>,
+    task: Option<BoxName>,
     /// Include the last N events.
     #[arg(long, value_name = "N")]
     events: Option<u32>,

@@ -60,7 +60,7 @@ pub enum Parsed {
         /// Global options.
         opts: GlobalOpts,
         /// Task to serve.
-        task: moor_core::TaskId,
+        task: moor_core::BoxId,
     },
     /// Run the controller daemon from a config file.
     ControllerServe {
