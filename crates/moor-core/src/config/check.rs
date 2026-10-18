@@ -71,8 +71,8 @@ pub fn credential_like_env(s: &str) -> bool {
     MARKS.iter().any(|m| upper.contains(m))
 }
 
-/// True when `s` is set by moor or the sandbox profile, or can load code into the sandbox
-/// launcher, so a repo `env` may not set it for the agent.
+/// True when `s` is set by moor for the agent, or can load code into the agent's shell or
+/// runtime, so a repo `env` may not set it.
 #[must_use]
 pub fn agent_env_reserved(s: &str) -> bool {
     const FIXED: [&str; 34] = [
@@ -113,8 +113,6 @@ pub fn agent_env_reserved(s: &str) -> bool {
     ];
     FIXED.contains(&s)
         || s.starts_with("LD_")
-        || s.starts_with("NONO_")
-        || s.starts_with("XDG_")
         || s.starts_with("GIT_CONFIG_")
         || s.starts_with("CLAUDE_")
 }

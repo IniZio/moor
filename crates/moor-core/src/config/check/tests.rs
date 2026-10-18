@@ -148,3 +148,9 @@ fn repo_env_may_not_set_the_sandbox_signal() {
     assert!(agent_env_reserved("IS_SANDBOX"));
     assert!(!agent_env_reserved("IS_SANDBOXED"));
 }
+
+#[test]
+fn repo_env_may_set_nono_and_xdg_names() {
+    assert!(!agent_env_reserved("NONO_PROFILE"));
+    assert!(!agent_env_reserved("XDG_CONFIG_HOME"));
+}
