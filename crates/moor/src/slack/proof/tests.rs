@@ -28,6 +28,16 @@ fn store(dir: &Path) -> Store {
     Store::open(&dir.join("moor.db"), clock).unwrap()
 }
 
+/// Creates an open Box named `name`.
+fn new_box(store: &Store, name: &str) {
+    store
+        .apply(Decision::insert(NewTask {
+            name: BoxName::parse_allow_bare(name).unwrap(),
+            repo: "r".into(),
+        }))
+        .unwrap();
+}
+
 /// One request the fake Slack saw.
 struct Seen {
     /// Request path.
@@ -238,6 +248,7 @@ fn uploads_the_copy_into_the_thread() {
     let (dir, f) = (tempfile::tempdir().unwrap(), fake());
     write_copy(dir.path(), "out.txt", b"hello");
     let st = store(dir.path());
+    new_box(&st, "t1");
     run(
         &f,
         &st,
@@ -256,6 +267,7 @@ fn uploads_the_copy_into_the_thread() {
 fn refused_proof_posts_text_and_no_upload() {
     let (dir, f) = (tempfile::tempdir().unwrap(), fake());
     let st = store(dir.path());
+    new_box(&st, "t1");
     let p = payload("big.bin", "bb", Some("larger than the cap"));
     run(&f, &st, dir.path(), &mut Proofs::default(), &p);
     assert_eq!(
@@ -270,6 +282,7 @@ fn refused_proof_posts_text_and_no_upload() {
 fn missing_copy_posts_failure_text() {
     let (dir, f) = (tempfile::tempdir().unwrap(), fake());
     let st = store(dir.path());
+    new_box(&st, "t1");
     run(
         &f,
         &st,
@@ -293,6 +306,7 @@ fn failed_upload_posts_failure_text_without_the_token() {
     write_copy(dir.path(), "out.txt", b"hello");
     f.upload_down.store(true, Ordering::SeqCst);
     let st = store(dir.path());
+    new_box(&st, "t1");
     run(
         &f,
         &st,
@@ -315,6 +329,7 @@ fn restart_does_not_post_again_but_a_new_sha_does() {
     let (dir, f) = (tempfile::tempdir().unwrap(), fake());
     write_copy(dir.path(), "out.txt", b"hello");
     let st = store(dir.path());
+    new_box(&st, "t1");
     run(
         &f,
         &st,
@@ -349,6 +364,7 @@ fn text_post_failure_keeps_it_queued() {
     let (dir, f) = (tempfile::tempdir().unwrap(), fake());
     f.post_down.store(true, Ordering::SeqCst);
     let st = store(dir.path());
+    new_box(&st, "t1");
     let mut proofs = Proofs::default();
     let p = payload("big.bin", "bb", Some("too big"));
     run(&f, &st, dir.path(), &mut proofs, &p);
@@ -365,6 +381,7 @@ fn proof_without_thread_stays_queued_and_other_kinds_are_ignored() {
     let (dir, f) = (tempfile::tempdir().unwrap(), fake());
     write_copy(dir.path(), "out.txt", b"hello");
     let st = store(dir.path());
+    new_box(&st, "t1");
     let mut proofs = Proofs::default();
     proofs.fold(T1, "t1", "working", &payload("out.txt", "aa", None));
     proofs.fold(T1, "t1", "proof", &payload("out.txt", "aa", None));
