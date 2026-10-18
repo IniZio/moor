@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Fails when production Rust builds a Box-derived identifier outside the BoxKey seam.
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+pattern='"(moor-\{|\.moor-cred-\{|\.moor-tmp-\{|moor/\{|proof/\{)|join\("proof"\)\.join\('
+scan() {
+  grep -rnE "$pattern" \
+    --include='*.rs' \
+    --exclude='tests.rs' --exclude='box_key.rs' --exclude-dir=tests --exclude-dir=target \
+    "$@" || true
+}
+if [ "${1:-}" = "--selftest" ]; then
+  tmp=$(mktemp -d)
+  trap 'rm -rf "$tmp"' EXIT
+  echo 'let s = format!("moor-{}-{}", name, nonce);' >"$tmp/planted.rs"
+  if [ -z "$(scan "$tmp")" ]; then
+    echo "box-key selftest: planted violation not detected"
+    exit 1
+  fi
+  echo "box-key selftest: ok"
+  exit 0
+fi
+hits=$(scan crates/)
+if [ -n "$hits" ]; then
+  echo "box-key: identifiers built outside the BoxKey seam"
+  echo "$hits"
+  exit 1
+fi
+echo "box-key: ok"
