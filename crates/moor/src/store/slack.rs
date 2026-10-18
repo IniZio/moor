@@ -1,4 +1,4 @@
-//! Slack event dedup and the thread-to-Task binding.
+//! Slack event dedup and the binding of a Slack thread to a Box's primary Session.
 
 use moor_core::BoxName;
 use rusqlite::{params, OptionalExtension};
@@ -8,16 +8,16 @@ use super::{parsed, Store, StoreError};
 /// DDL for the Slack tables; idempotent so existing version-1 files gain them on open.
 pub(super) const SLACK_SQL: &str = include_str!("slack.sql");
 
-/// A Slack thread bound to a Task, with the user who started it and its status message.
+/// A Slack thread bound to a Box's Session, with the user who started it and its status message.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct SlackThread {
     /// Channel id the thread lives in.
     pub(crate) channel: String,
     /// Timestamp of the thread's root message.
     pub(crate) thread_ts: String,
-    /// The Task the thread drives.
+    /// The Box whose Session the thread drives.
     pub(crate) task: BoxName,
-    /// Slack user id of the Task owner.
+    /// Slack user id of the Box owner.
     pub(crate) owner: String,
     /// Timestamp of the edited status message, once posted.
     pub(crate) status_ts: Option<String>,
@@ -34,7 +34,7 @@ pub(crate) struct SlackPrompt {
     pub(crate) thread_ts: String,
     /// Timestamp of the prompt message.
     pub(crate) message_ts: String,
-    /// The Task that is waiting.
+    /// The Box whose Session is waiting.
     pub(crate) task: BoxName,
     /// The question asked.
     pub(crate) question: String,
@@ -46,7 +46,49 @@ pub(crate) struct SlackPrompt {
 
 /// Columns read for a [`SlackPrompt`], in [`prompt_from_row`] order.
 const PROMPT_COLS: &str =
-    "event_id, channel, thread_ts, message_ts, task, question, options, answer";
+    "p.event_id, p.channel, p.thread_ts, p.message_ts, b.name, p.question, p.options, p.answer";
+
+/// Joins a prompt to the Box its Session belongs to.
+const PROMPT_FROM: &str =
+    "slack_prompts p JOIN sessions s ON s.id = p.session JOIN boxes b ON b.id = s.box";
+
+/// Front name under which Slack threads are bound.
+const FRONT: &str = "slack";
+
+/// Conversation key of a Slack thread within the `bindings` table.
+fn conv_key(channel: &str, thread_ts: &str) -> String {
+    format!("{channel}/{thread_ts}")
+}
+
+/// Splits a conversation key back into channel and thread timestamp.
+fn split_conv_key(key: &str) -> Result<(String, String), StoreError> {
+    key.split_once('/')
+        .map(|(c, t)| (c.to_owned(), t.to_owned()))
+        .ok_or_else(|| StoreError::Corrupt(format!("slack conversation key `{key}`")))
+}
+
+/// The newest open Box with this name and its primary Session.
+fn open_box_session(conn: &rusqlite::Connection, name: &str) -> Result<(i64, i64), StoreError> {
+    conn.query_row(
+        "SELECT b.id, s.id FROM boxes b JOIN sessions s ON s.box = b.id AND s.ordinal = 1 \
+         WHERE b.name = ? AND b.state NOT IN ('closed','rejected') ORDER BY b.id DESC LIMIT 1",
+        params![name],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )
+    .optional()?
+    .ok_or_else(|| StoreError::Invalid(format!("no open Box named `{name}`")))
+}
+
+/// The newest Box with this name, in any state.
+fn newest_box(conn: &rusqlite::Connection, name: &str) -> Result<Option<i64>, StoreError> {
+    Ok(conn
+        .query_row(
+            "SELECT id FROM boxes WHERE name = ? ORDER BY id DESC LIMIT 1",
+            params![name],
+            |r| r.get(0),
+        )
+        .optional()?)
+}
 
 /// Raw prompt row: the task and options are still unparsed text.
 type PromptRow = (
@@ -109,8 +151,9 @@ impl Store {
         let raw: Option<String> = self
             .reader()?
             .query_row(
-                "SELECT task FROM slack_threads WHERE channel = ? AND thread_ts = ?",
-                params![channel, thread_ts],
+                "SELECT b.name FROM bindings g JOIN sessions s ON s.id = g.session \
+                 JOIN boxes b ON b.id = s.box WHERE g.front = ? AND g.conv_key = ?",
+                params![FRONT, conv_key(channel, thread_ts)],
                 |r| r.get(0),
             )
             .optional()?;
@@ -127,8 +170,8 @@ impl Store {
         Ok(self
             .reader()?
             .query_row(
-                "SELECT owner FROM slack_threads WHERE channel = ? AND thread_ts = ?",
-                params![channel, thread_ts],
+                "SELECT owner FROM bindings WHERE front = ? AND conv_key = ?",
+                params![FRONT, conv_key(channel, thread_ts)],
                 |r| r.get(0),
             )
             .optional()?)
@@ -138,22 +181,18 @@ impl Store {
     pub(crate) fn slack_threads(&self) -> Result<Vec<SlackThread>, StoreError> {
         let reader = self.reader()?;
         let mut stmt = reader.prepare(
-            "SELECT channel, thread_ts, task, owner, status_ts FROM slack_threads \
-             ORDER BY created_at, rowid",
+            "SELECT g.conv_key, b.name, g.owner, g.status_ts FROM bindings g \
+             JOIN sessions s ON s.id = g.session JOIN boxes b ON b.id = s.box \
+             WHERE g.front = ? ORDER BY g.created_at, g.rowid",
         )?;
         let rows = stmt
-            .query_map([], |r| {
-                Ok((
-                    r.get(0)?,
-                    r.get(1)?,
-                    r.get::<_, String>(2)?,
-                    r.get(3)?,
-                    r.get(4)?,
-                ))
+            .query_map(params![FRONT], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
             })?
-            .collect::<Result<Vec<(String, String, String, String, Option<String>)>, _>>()?;
+            .collect::<Result<Vec<(String, String, String, Option<String>)>, _>>()?;
         rows.into_iter()
-            .map(|(channel, thread_ts, task, owner, status_ts)| {
+            .map(|(key, task, owner, status_ts)| {
+                let (channel, thread_ts) = split_conv_key(&key)?;
                 Ok(SlackThread {
                     channel,
                     thread_ts,
@@ -173,13 +212,14 @@ impl Store {
         ts: &str,
     ) -> Result<(), StoreError> {
         self.writer()?.execute(
-            "UPDATE slack_threads SET status_ts = ? WHERE channel = ? AND thread_ts = ?",
-            params![ts, channel, thread_ts],
+            "UPDATE bindings SET status_ts = ? WHERE front = ? AND conv_key = ?",
+            params![ts, FRONT, conv_key(channel, thread_ts)],
         )?;
         Ok(())
     }
 
-    /// Binds a thread to a Task owned by `owner`; the first binding wins. True when this call created it.
+    /// Binds a thread to the primary Session of the newest open Box named `task`, owned by `owner`.
+    /// The first binding wins; true when this call created it. Errors when no such Box is open.
     pub(crate) fn bind_slack_thread(
         &self,
         channel: &str,
@@ -188,10 +228,19 @@ impl Store {
         owner: &str,
     ) -> Result<bool, StoreError> {
         let now = self.now();
-        let added = self.writer()?.execute(
-            "INSERT OR IGNORE INTO slack_threads (channel, thread_ts, task, owner, created_at) VALUES (?, ?, ?, ?, ?)",
-            params![channel, thread_ts, task.as_str(), owner, now.as_millis()],
+        let writer = self.writer()?;
+        let (_, session) = open_box_session(&writer, task.as_str())?;
+        let added = writer.execute(
+            "INSERT OR IGNORE INTO bindings (front, conv_key, session, owner, created_at) VALUES (?, ?, ?, ?, ?)",
+            params![
+                FRONT,
+                conv_key(channel, thread_ts),
+                session,
+                owner,
+                now.as_millis()
+            ],
         )?;
+        drop(writer);
         Ok(added == 1)
     }
 
@@ -215,11 +264,14 @@ impl Store {
         name: &str,
         sha256: &str,
     ) -> Result<bool, StoreError> {
-        Ok(self
-            .reader()?
+        let reader = self.reader()?;
+        let Some(box_id) = newest_box(&reader, task)? else {
+            return Ok(false);
+        };
+        Ok(reader
             .query_row(
-                "SELECT 1 FROM slack_proofs WHERE task = ? AND name = ? AND sha256 = ?",
-                params![task, name, sha256],
+                "SELECT 1 FROM slack_proofs WHERE box = ? AND name = ? AND sha256 = ?",
+                params![box_id, name, sha256],
                 |_| Ok(()),
             )
             .optional()?
@@ -234,10 +286,14 @@ impl Store {
         sha256: &str,
     ) -> Result<(), StoreError> {
         let now = self.now();
-        self.writer()?.execute(
-            "INSERT OR IGNORE INTO slack_proofs (task, name, sha256, posted_at) VALUES (?, ?, ?, ?)",
-            params![task, name, sha256, now.as_millis()],
+        let writer = self.writer()?;
+        let box_id = newest_box(&writer, task)?
+            .ok_or_else(|| StoreError::Invalid(format!("no Box named `{task}`")))?;
+        writer.execute(
+            "INSERT OR IGNORE INTO slack_proofs (box, name, sha256, posted_at) VALUES (?, ?, ?, ?)",
+            params![box_id, name, sha256, now.as_millis()],
         )?;
+        drop(writer);
         Ok(())
     }
 
@@ -245,22 +301,25 @@ impl Store {
     pub(crate) fn add_slack_prompt(&self, p: &SlackPrompt) -> Result<(), StoreError> {
         let now = self.now();
         let options = serde_json::to_string(&p.options)?;
-        self.writer()?.execute(
+        let writer = self.writer()?;
+        let (_, session) = open_box_session(&writer, p.task.as_str())?;
+        writer.execute(
             "INSERT OR IGNORE INTO slack_prompts \
-             (event_id, channel, thread_ts, message_ts, task, question, options, answer, created_at) \
+             (event_id, channel, thread_ts, message_ts, session, question, options, answer, created_at) \
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             params![
                 p.event_id,
                 p.channel,
                 p.thread_ts,
                 p.message_ts,
-                p.task.as_str(),
+                session,
                 p.question,
                 options,
                 p.answer,
                 now.as_millis()
             ],
         )?;
+        drop(writer);
         Ok(())
     }
 
@@ -273,7 +332,7 @@ impl Store {
         self.reader()?
             .query_row(
                 &format!(
-                    "SELECT {PROMPT_COLS} FROM slack_prompts WHERE channel = ? AND message_ts = ?"
+                    "SELECT {PROMPT_COLS} FROM {PROMPT_FROM} WHERE p.channel = ? AND p.message_ts = ?"
                 ),
                 params![channel, message_ts],
                 prompt_from_row,
@@ -292,9 +351,9 @@ impl Store {
         self.reader()?
             .query_row(
                 &format!(
-                    "SELECT {PROMPT_COLS} FROM slack_prompts \
-                     WHERE channel = ? AND thread_ts = ? AND answer IS NULL \
-                     ORDER BY event_id DESC LIMIT 1"
+                    "SELECT {PROMPT_COLS} FROM {PROMPT_FROM} \
+                     WHERE p.channel = ? AND p.thread_ts = ? AND p.answer IS NULL \
+                     ORDER BY p.event_id DESC LIMIT 1"
                 ),
                 params![channel, thread_ts],
                 prompt_from_row,
