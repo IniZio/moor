@@ -275,3 +275,14 @@ fn find_repo_by_name_and_url() {
     assert!(find_repo(&r, "nope").is_none());
     assert!(find_repo(&r, "https://example.com/o/other").is_none());
 }
+
+#[test]
+fn inline_moor_yaml_carries_the_sandbox_preset_and_rejects_unknown_ones() {
+    let ok = "repos:\n  a:\n    url: u\n    moor_yaml:\n      inline: 'sandbox: [android]'\n";
+    assert!(parse_controller("c.yaml", ok).is_ok());
+    let e = err("repos:\n  a:\n    url: u\n    moor_yaml:\n      inline: 'sandbox: [ios]'\n");
+    assert!(
+        e.to_string().contains("repos.a.moor_yaml.sandbox[0]"),
+        "{e}"
+    );
+}

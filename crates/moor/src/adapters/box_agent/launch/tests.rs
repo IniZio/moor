@@ -48,14 +48,15 @@ fn surface(s: FakeSurface) -> Arc<FakeSurface> {
 }
 
 fn req(s: &FakeSurface) -> LaunchReq {
-    let wt = s.create_worktree(&PathBuf::from("/r"), &TaskName::parse("t1").unwrap(), None);
-    let wt = wt.unwrap();
+    let t1 = TaskName::parse("t1").unwrap();
+    let wt = s.create_worktree(&PathBuf::from("/r"), &t1, None).unwrap();
     LaunchReq {
+        sandbox: Vec::new(),
         handle: BoxHandle::new("box-1"),
         workdir: BoxPath::under("/work", "box-1").unwrap(),
         worktree: wt.path.clone(),
         workspace: s.ensure_workspace(&wt, "moor:t1").unwrap(),
-        task: TaskName::parse("t1").unwrap(),
+        task: t1,
         branch: "moor/t1".to_owned(),
         goal: Some("fix x".to_owned()),
         resume: None,
@@ -88,9 +89,8 @@ fn launch(
     Result<String, EngineError>,
 ) {
     let (d, s) = (driver(d), surface(s));
-    let r = req(&s);
     let out = agent(&d, &s)
-        .launch(&r)
+        .launch(&req(&s))
         .map(|s| s.pane.unwrap().as_str().to_owned());
     (d, s, out)
 }

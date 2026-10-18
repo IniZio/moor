@@ -14,6 +14,14 @@ pub struct RepoCompose {
     pub project_prefix: Option<String>,
 }
 
+/// A moor-owned sandbox grant set a repo may opt into; the repo never names paths or devices itself.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SandboxPreset {
+    /// Android emulator access: `/dev/kvm`, the SDK, the AVD directory and the emulator's scratch directory.
+    Android,
+}
+
 /// `box:` section; only `size` is allowed at the repo layer.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields, default)]
@@ -39,6 +47,8 @@ pub struct RepoConfig {
     pub box_: RepoBox,
     /// Names of user credentials exposed on the Box.
     pub box_credentials: Vec<String>,
+    /// Sandbox presets for the agent.
+    pub sandbox: Vec<SandboxPreset>,
 }
 
 /// Parses and validates a `.moor.yaml` document.
@@ -66,6 +76,7 @@ impl RepoConfig {
                 "box_credentials",
                 self.box_credentials != other.box_credentials,
             ),
+            ("sandbox", self.sandbox != other.sandbox),
         ]
         .into_iter()
         .filter_map(|(key, changed)| changed.then_some(key))

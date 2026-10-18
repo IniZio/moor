@@ -59,6 +59,7 @@ pub(super) fn run(
     launch.resume = resume;
     let cfg = settings()?;
     launch.model = cfg.model.clone().map(|m| m.value);
+    launch.sandbox.clone_from(&cfg.sandbox);
     begin(cx, store, &row, &launch, &cfg)
 }
 
@@ -217,6 +218,7 @@ pub(super) fn launch_req(cx: &Cx, row: &TaskRow, setup_exit: Option<i32>) -> Opt
         proxy: None,
         origin: None,
         strip_env,
+        sandbox: Vec::new(),
     })
 }
 

@@ -1,7 +1,7 @@
 //! Repo config parse and validation tables.
 #![allow(clippy::panic, clippy::indexing_slicing, reason = "test assertions")]
 
-use super::{parse_repo, RepoConfig};
+use super::{parse_repo, RepoConfig, SandboxPreset};
 use crate::config::BoxSize;
 
 fn ok(text: &str) -> RepoConfig {
@@ -29,6 +29,7 @@ fn valueless_sections_are_defaults() {
         "teardown",
         "compose",
         "box_credentials",
+        "sandbox",
     ] {
         for t in [format!("{key}:"), format!("{key}: ~")] {
             assert_eq!(ok(&t), RepoConfig::default(), "{t:?}");
@@ -212,4 +213,23 @@ fn changed_keys_lists_env_and_box_in_file_order() {
     let a = ok("env:\n  A: b\nbox:\n  size: small\n");
     let b = ok("env:\n  A: c\nbox:\n  size: large\n");
     assert_eq!(a.changed_keys(&b), ["env", "box"]);
+}
+
+#[test]
+fn sandbox_android_parses() {
+    assert_eq!(ok("sandbox: [android]").sandbox, [SandboxPreset::Android]);
+}
+
+#[test]
+fn sandbox_rejects_unknown_presets_and_paths() {
+    rejects("sandbox: [ios]", "sandbox[0]", "ios");
+    rejects("sandbox: [android, /dev/kvm]", "sandbox[1]", "/dev/kvm");
+    rejects("sandbox: {allow: [/etc]}", "sandbox", "");
+}
+
+#[test]
+fn changed_keys_names_sandbox() {
+    let a = ok("setup: [make]\n");
+    let b = ok("setup: [make]\nsandbox: [android]\n");
+    assert_eq!(a.changed_keys(&b), ["sandbox"]);
 }

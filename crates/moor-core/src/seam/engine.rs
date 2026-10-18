@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::activity::Probes;
+use crate::config::SandboxPreset;
 use crate::name::{BoxHandle, BoxPath, NameError, TaskName};
 use crate::seam::agent_profile::{PromptMatch, ProxyAddr};
 use crate::seam::driver::DriverError;
@@ -71,6 +72,8 @@ pub struct LaunchReq {
     pub origin: Option<String>,
     /// Env var names removed from the agent's environment before hooks and the agent run.
     pub strip_env: Vec<String>,
+    /// Sandbox presets the repo opted into.
+    pub sandbox: Vec<SandboxPreset>,
 }
 
 impl LaunchReq {
@@ -116,6 +119,7 @@ impl PartialEq for LaunchReq {
             && proxy(&self.proxy) == proxy(&other.proxy)
             && self.origin == other.origin
             && self.strip_env == other.strip_env
+            && self.sandbox == other.sandbox
     }
 }
 

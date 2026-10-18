@@ -93,6 +93,7 @@ fn launch_req() -> LaunchReq {
         proxy: None,
         origin: None,
         strip_env: Vec::new(),
+        sandbox: Vec::new(),
     }
 }
 

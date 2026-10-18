@@ -7,8 +7,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::{
-    BoxSize, CredentialSource, DotfilesConfig, Identity, McpServer, RepoConfig, ToolsConfig,
-    UserConfig,
+    BoxSize, CredentialSource, DotfilesConfig, Identity, McpServer, RepoConfig, SandboxPreset,
+    ToolsConfig, UserConfig,
 };
 
 /// Provider when the user config names none.
@@ -112,6 +112,8 @@ pub struct TaskSettings {
     pub env: BTreeMap<String, String>,
     /// Repo compose project prefix.
     pub compose_prefix: Option<String>,
+    /// Repo sandbox presets.
+    pub sandbox: Vec<SandboxPreset>,
     /// User tool path overrides.
     pub tool_paths: ToolsConfig,
 }
@@ -184,6 +186,7 @@ impl TaskSettings {
             teardown: r.teardown.clone(),
             env: r.env.clone(),
             compose_prefix: r.compose.project_prefix.clone(),
+            sandbox: r.sandbox.clone(),
             tool_paths: user.tools.clone(),
         }
     }

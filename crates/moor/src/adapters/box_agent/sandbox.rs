@@ -2,6 +2,8 @@
 
 use std::collections::BTreeMap;
 
+use moor_core::boxscript::quote;
+use moor_core::config::SandboxPreset;
 use moor_core::exec_env;
 use moor_core::name::BoxPath;
 use serde_json::json;
@@ -63,6 +65,50 @@ pub(super) struct SandboxInput<'a> {
     pub(super) root: bool,
     /// Names that never reach the sandbox, whatever the repo or rules ask for.
     pub(super) strip_env: &'a [String],
+    /// Presets the repo opted into; each adds a fixed set of grants.
+    pub(super) presets: &'a [SandboxPreset],
+}
+
+/// Where the Android SDK lives in the Box image. Fixed, not taken from the repo's `ANDROID_HOME`,
+/// because a repo-chosen path would let the repo name what the agent may read.
+const ANDROID_SDK: &str = "/opt/android-sdk";
+/// The emulator's scratch directory, which must exist before the sandbox starts.
+const ANDROID_TMP: &str = "/tmp/android-root";
+/// The device nono opens read-write so the emulator may use KVM ioctls.
+const KVM: &str = "/dev/kvm";
+
+/// The paths a preset adds to the profile's `allow`, `allow_file` and `read` lists.
+#[derive(Default)]
+struct Grants {
+    /// Read-write directories.
+    allow: Vec<String>,
+    /// Read-write files and devices.
+    allow_file: Vec<String>,
+    /// Read-only directories.
+    read: Vec<String>,
+}
+
+/// The grants of `presets`, with paths under `home`.
+fn grants(presets: &[SandboxPreset], home: &str) -> Grants {
+    let mut g = Grants::default();
+    if presets.contains(&SandboxPreset::Android) {
+        g.allow = vec![format!("{home}/.android"), ANDROID_TMP.to_owned()];
+        g.allow_file = vec![KVM.to_owned()];
+        g.read = vec![ANDROID_SDK.to_owned()];
+    }
+    g
+}
+
+/// Shell lines that create the directories the presets grant, which the sandbox needs to exist.
+pub(super) fn preset_prepare(presets: &[SandboxPreset], home: &BoxPath) -> Vec<String> {
+    grants(presets, home.as_str())
+        .allow
+        .iter()
+        .map(|p| quote(p))
+        .reduce(|a, b| format!("{a} {b}"))
+        .map(|dirs| format!("mkdir -p {dirs}"))
+        .into_iter()
+        .collect()
 }
 
 /// True when `name` may be passed into the sandbox.
@@ -124,6 +170,33 @@ pub(super) fn profile(input: &SandboxInput) -> String {
         // Claude Code refuses bypassPermissions as root unless it is told it is sandboxed.
         set_vars.insert(ROOT_SANDBOX_VAR.to_owned(), "1".to_owned());
     }
+    let extra = grants(input.presets, home);
+    let allow: Vec<String> = [
+        input.workdir.as_str().to_owned(),
+        input.tmp.as_str().to_owned(),
+        at(".claude"),
+        at(".cache"),
+        at(".config/gh"),
+        at(".local/state/claude"),
+        at(".local/share/claude"),
+    ]
+    .into_iter()
+    .chain(extra.allow)
+    .collect();
+    let allow_file: Vec<String> = std::iter::once(at(".claude.json"))
+        .chain(extra.allow_file)
+        .collect();
+    let read: Vec<String> = [
+        input.cred.as_str().to_owned(),
+        "/usr/local/bin".to_owned(),
+        "/usr/local/lib".to_owned(),
+        at(".local/share/mise"),
+        at(".bun"),
+        at(".npm-global"),
+    ]
+    .into_iter()
+    .chain(extra.read)
+    .collect();
     let doc = json!({
         "meta": { "name": "moor-agent" },
         "groups": { "include": DEFAULT_GROUPS },
@@ -132,24 +205,9 @@ pub(super) fn profile(input: &SandboxInput) -> String {
         "workdir": { "access": "readwrite" },
         "filesystem": {
             "unix_socket_dir": ["/run/systemd/userdb"],
-            "allow": [
-                input.workdir.as_str(),
-                input.tmp.as_str(),
-                at(".claude"),
-                at(".cache"),
-                at(".config/gh"),
-                at(".local/state/claude"),
-                at(".local/share/claude"),
-            ],
-            "allow_file": [at(".claude.json")],
-            "read": [
-                input.cred.as_str(),
-                "/usr/local/bin",
-                "/usr/local/lib",
-                at(".local/share/mise"),
-                at(".bun"),
-                at(".npm-global"),
-            ],
+            "allow": allow,
+            "allow_file": allow_file,
+            "read": read,
             "read_file": ["/etc/gitconfig", at(".gitconfig")],
         },
         "environment": {

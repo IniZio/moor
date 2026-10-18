@@ -1,11 +1,12 @@
 use std::process::Command;
 
+use moor_core::config::SandboxPreset;
 use moor_core::name::BoxPath;
 use serde_json::Value;
 
 use super::{
-    check_failure, check_script, harden_lines, namespace_lines, profile, wrap, SandboxInput,
-    NOT_INSTALLED,
+    check_failure, check_script, harden_lines, namespace_lines, preset_prepare, profile, wrap,
+    SandboxInput, NOT_INSTALLED,
 };
 
 const SUM: &str = "6da665b61999570c10dffc7da78828fe1fb7f3cac53319e505cebecaef17037f";
@@ -30,6 +31,7 @@ fn doc_as(env_names: &[&str], root: bool) -> Value {
         set_vars: vec![("APP_MODE".to_owned(), "it's".to_owned())],
         root,
         strip_env: &[],
+        presets: &[],
     };
     serde_json::from_str(&profile(&input)).unwrap()
 }
@@ -138,6 +140,7 @@ fn doc_with_set_vars(
         set_vars,
         root: false,
         strip_env,
+        presets: &[],
     };
     serde_json::from_str(&profile(&input)).unwrap()
 }
@@ -439,4 +442,73 @@ fn root_with_an_unshare_lacking_kill_child_is_refused() {
     assert_eq!(code, Some(1));
     assert!(stderr.contains("--kill-child"), "{stderr}");
     assert_eq!(prefix, "");
+}
+
+fn with_presets(presets: &[SandboxPreset], set_vars: Vec<(String, String)>) -> (String, Value) {
+    let (w, h, c) = (path("/work/p"), path("/home/u"), path("/tmp/cred"));
+    let tmp = path("/home/u/.moor-tmp-t-n");
+    let input = SandboxInput {
+        workdir: &w,
+        home: &h,
+        cred: &c,
+        tmp: &tmp,
+        env_names: Vec::new(),
+        set_vars,
+        root: false,
+        strip_env: &[],
+        presets,
+    };
+    let text = profile(&input);
+    let doc = serde_json::from_str(&text).unwrap();
+    (text, doc)
+}
+
+fn plain(presets: &[SandboxPreset]) -> (String, Value) {
+    with_presets(presets, Vec::new())
+}
+
+#[test]
+fn no_preset_leaves_the_profile_byte_identical() {
+    let (text, _) = plain(&[]);
+    assert_eq!(text, include_str!("plain_profile.json").trim_end());
+}
+
+#[test]
+fn android_preset_adds_exactly_the_proven_grants() {
+    let (_, base) = plain(&[]);
+    let (_, d) = plain(&[SandboxPreset::Android]);
+    let added = |key: &str| -> Vec<String> {
+        let before = strings(at(&base, key));
+        strings(at(&d, key))
+            .into_iter()
+            .filter(|p| !before.contains(p))
+            .collect()
+    };
+    assert_eq!(
+        added("/filesystem/allow"),
+        ["/home/u/.android", "/tmp/android-root"]
+    );
+    assert_eq!(added("/filesystem/allow_file"), ["/dev/kvm"]);
+    assert_eq!(added("/filesystem/read"), ["/opt/android-sdk"]);
+    assert_eq!(added("/filesystem/read_file"), Vec::<String>::new());
+}
+
+#[test]
+fn android_preset_ignores_repo_env_paths_and_repeats() {
+    let env = vec![("ANDROID_HOME".to_owned(), "/etc".to_owned())];
+    let (_, once) = with_presets(&[SandboxPreset::Android], env.clone());
+    let (_, twice) = with_presets(&[SandboxPreset::Android, SandboxPreset::Android], env);
+    assert_eq!(
+        strings(at(&once, "/filesystem/read")),
+        strings(at(&twice, "/filesystem/read"))
+    );
+    assert_eq!(at(&once, "/filesystem"), at(&twice, "/filesystem"));
+    assert!(!strings(at(&once, "/filesystem/read")).contains(&"/etc".to_owned()));
+}
+
+#[test]
+fn android_preset_prepares_its_directories() {
+    let lines = preset_prepare(&[SandboxPreset::Android], &path("/home/u"));
+    assert_eq!(lines, ["mkdir -p '/home/u/.android' '/tmp/android-root'"]);
+    assert!(preset_prepare(&[], &path("/home/u")).is_empty());
 }

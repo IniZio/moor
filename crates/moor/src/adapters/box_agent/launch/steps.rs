@@ -151,7 +151,11 @@ impl Launch<'_> {
             set_vars: exec.vars,
             root: self.root,
             strip_env: &req.strip_env,
+            presets: &req.sandbox,
         });
+        for line in sandbox::preset_prepare(&req.sandbox, &self.ctx.home) {
+            plan.push(Tag::Profile, BoxStep::Run(line));
+        }
         let at = BoxPath::under(cred.as_str(), sandbox::PROFILE_FILE)
             .map_err(|e| fail("sandbox", &e))?;
         let put = BoxStep::Put {

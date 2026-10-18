@@ -79,6 +79,7 @@ fn req(s: &FakeSurface, proxy: bool) -> LaunchReq {
         }),
         origin: proxy.then(|| "git@github.com:o/n.git".to_owned()),
         strip_env: Vec::new(),
+        sandbox: Vec::new(),
     }
 }
 

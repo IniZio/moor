@@ -218,6 +218,7 @@ fn relaunch(
     let cfg = settings()?;
     launch.resume = resume;
     launch.model = cfg.model.clone().map(|m| m.value);
+    launch.sandbox.clone_from(&cfg.sandbox);
     if let Some(g) = &req.goal {
         let set = Fields {
             goal: Field::Set(g.clone()),

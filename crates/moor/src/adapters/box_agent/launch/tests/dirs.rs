@@ -56,6 +56,7 @@ fn req(s: &FakeSurface) -> LaunchReq {
         proxy: None,
         origin: None,
         strip_env: Vec::new(),
+        sandbox: Vec::new(),
     }
 }
 
