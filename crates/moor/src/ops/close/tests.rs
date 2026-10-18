@@ -137,6 +137,7 @@ fn admit(cx: &Cx, driver: &FakeDriver, dir: &Path) -> TaskId {
     store.apply(d).unwrap();
     let got = driver
         .acquire(&AcquireReq {
+            shape: moor_core::config::BoxShape::default(),
             provider,
             task: id,
             name: TaskName::parse("t").unwrap(),

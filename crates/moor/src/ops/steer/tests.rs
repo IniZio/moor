@@ -93,6 +93,7 @@ fn ready_task(cx: &Cx, driver: &FakeDriver) -> TaskId {
     store.apply(d).unwrap();
     let got = driver
         .acquire(&AcquireReq {
+            shape: moor_core::config::BoxShape::default(),
             provider,
             task: id,
             name,

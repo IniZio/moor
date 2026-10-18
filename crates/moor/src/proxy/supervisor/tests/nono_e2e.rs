@@ -72,6 +72,7 @@ fn task_with_box(store: &Store, driver: &FakeDriver) -> (TaskId, BoxHandle) {
     let provider = ProviderId::new("p");
     let got = driver
         .acquire(&AcquireReq {
+            shape: moor_core::config::BoxShape::default(),
             provider: provider.clone(),
             task: id,
             name: TaskName::parse("demo").unwrap(),

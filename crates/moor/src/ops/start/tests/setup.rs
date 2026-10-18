@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use moor_core::boxscript::setup::setup_script;
+use moor_core::config::BoxShape;
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Intent};
 use moor_core::domain::run::SyncMode;
@@ -209,6 +210,21 @@ fn the_checkout_syncs_in_its_own_exec_and_setup_runs_without_syncing() {
     assert_eq!(setup.sync, SyncMode::None);
     assert_eq!(setup.host_cwd, wt.map(Into::into));
     assert_eq!(setup.class.as_deref(), Some("large"));
+}
+
+#[test]
+fn the_repo_box_template_and_disk_reach_the_driver_on_acquire() {
+    let (w, _) = start_with(
+        "setup: [a]\nbox: {template: t, disk_gb: 20}\n",
+        FakeDriver::new(),
+    );
+    let want = BoxShape {
+        template: Some("t".to_owned()),
+        disk_gb: Some(20),
+    };
+    assert_eq!(w.driver.acquired_shapes(), [want]);
+    let (plain, _) = start_with("setup: [a]\n", FakeDriver::new());
+    assert_eq!(plain.driver.acquired_shapes(), [BoxShape::default()]);
 }
 
 #[test]

@@ -17,6 +17,7 @@ use super::FakeDriver;
 
 fn req() -> AcquireReq {
     AcquireReq {
+        shape: moor_core::config::BoxShape::default(),
         provider: ProviderId::new("fake"),
         task: TaskId::new(1),
         name: TaskName::parse("t1").unwrap(),

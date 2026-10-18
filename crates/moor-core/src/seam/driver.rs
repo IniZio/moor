@@ -7,6 +7,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use crate::config::BoxShape;
 use crate::domain::run::SyncMode;
 use crate::name::{BoxHandle, BoxPath, ProviderId, TaskId, TaskName};
 use crate::seam::proc::{Deadline, Output};
@@ -57,6 +58,8 @@ pub struct AcquireReq {
     pub nonce: String,
     /// Host directory to run the warmup in.
     pub worktree: Option<PathBuf>,
+    /// Template and disk size; empty asks the provider default.
+    pub shape: BoxShape,
 }
 
 /// A Box the Driver has handed over.

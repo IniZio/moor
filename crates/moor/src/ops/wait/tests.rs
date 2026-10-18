@@ -237,6 +237,7 @@ fn add_boxed(cx: &Cx) -> TaskId {
     let got = cx
         .driver()
         .acquire(&AcquireReq {
+            shape: moor_core::config::BoxShape::default(),
             provider: ProviderId::new("p"),
             task: id,
             name: TaskName::parse("demo").unwrap(),

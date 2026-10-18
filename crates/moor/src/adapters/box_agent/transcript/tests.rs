@@ -20,6 +20,7 @@ use crate::testing::surface::FakeSurface;
 fn live(driver: FakeDriver) -> Arc<FakeDriver> {
     let d = Arc::new(driver);
     d.acquire(&AcquireReq {
+        shape: moor_core::config::BoxShape::default(),
         provider: ProviderId::new("fake"),
         task: TaskId::new(1),
         name: TaskName::parse("t1").unwrap(),

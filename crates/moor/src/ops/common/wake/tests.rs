@@ -52,6 +52,7 @@ fn session(pane: &str) -> SessionRef {
 
 fn acquire_req(provider: ProviderId, task: TaskId, name: TaskName) -> AcquireReq {
     AcquireReq {
+        shape: moor_core::config::BoxShape::default(),
         provider,
         task,
         name,

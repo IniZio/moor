@@ -124,6 +124,7 @@ pub(in crate::ops::run) fn ready_with(driver: FakeDriver) -> Fx {
     let got = f
         .driver
         .acquire(&AcquireReq {
+            shape: moor_core::config::BoxShape::default(),
             provider,
             task: f.id,
             name: TaskName::parse("t").unwrap(),

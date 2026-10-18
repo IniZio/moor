@@ -66,6 +66,7 @@ fn fx_with(driver: FakeDriver, ready: bool) -> Fx {
     if ready {
         let got = driver
             .acquire(&AcquireReq {
+                shape: moor_core::config::BoxShape::default(),
                 provider,
                 task: id,
                 name,

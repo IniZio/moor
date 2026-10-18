@@ -10,6 +10,7 @@ use super::{FakeDriver, TunnelCall, TunnelReply};
 
 fn boxed(fake: &FakeDriver) -> BoxHandle {
     let got = fake.acquire(&AcquireReq {
+        shape: moor_core::config::BoxShape::default(),
         provider: ProviderId::new("fake"),
         task: TaskId::new(1),
         name: TaskName::parse("t1").unwrap(),

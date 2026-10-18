@@ -52,6 +52,7 @@ fn fx(driver: FakeDriver, listings: &[&str]) -> Fx {
         .task;
     let got = driver
         .acquire(&AcquireReq {
+            shape: moor_core::config::BoxShape::default(),
             provider: ProviderId::new("p"),
             task: id,
             name,

@@ -49,6 +49,7 @@ fn rig_on(dir: &Path, driver: FakeDriver, clock: Arc<FakeClock>) -> Rig {
     );
     let got = driver
         .acquire(&AcquireReq {
+            shape: moor_core::config::BoxShape::default(),
             provider: ProviderId::new("p"),
             task: TaskId::new(1),
             name: TaskName::parse("demo").unwrap(),

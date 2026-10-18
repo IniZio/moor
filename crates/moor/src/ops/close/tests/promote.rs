@@ -127,6 +127,7 @@ fn world_failing(
 fn acquire_holder(driver: &FakeDriver) -> BoxHandle {
     let got = driver
         .acquire(&AcquireReq {
+            shape: moor_core::config::BoxShape::default(),
             provider: ProviderId::new(PROVIDER),
             task: TaskId::new(1),
             name: TaskName::parse("holder").unwrap(),

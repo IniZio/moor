@@ -42,6 +42,7 @@ fn working(cx: &Cx, driver: &FakeDriver, name: &str, session: &str) -> TaskId {
     let id = store.apply(Decision::insert(nt)).unwrap().task;
     let got = driver
         .acquire(&AcquireReq {
+            shape: moor_core::config::BoxShape::default(),
             provider: ProviderId::new("p"),
             task: id,
             name: TaskName::parse(name).unwrap(),

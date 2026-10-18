@@ -116,6 +116,7 @@ fn ops() -> Vec<(&'static str, Op)> {
     vec![
         ("acquire", |c| {
             let req = AcquireReq {
+                shape: moor_core::config::BoxShape::default(),
                 provider: ProviderId::new("sprites"),
                 task: TaskId::new(7),
                 name: TaskName::parse("t7").unwrap(),

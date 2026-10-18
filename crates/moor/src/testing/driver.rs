@@ -9,6 +9,7 @@ use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
+use moor_core::config::BoxShape;
 use moor_core::seam::driver::{
     AcquireReq, Acquired, BoxListing, BoxStep, Driver, DriverCaps, DriverError, ExecOutcome,
     ExecSpec, Released, SleepKind, SleepOutcome, StepDone,
@@ -25,6 +26,7 @@ struct State {
     next: u32,
     live: Vec<String>,
     providers: Vec<(String, ProviderId)>,
+    shapes: Vec<BoxShape>,
     calls: Vec<String>,
     rec: script::Rec,
     fail_acquire: Option<DriverError>,
@@ -118,6 +120,11 @@ impl FakeDriver {
         self.st().calls.clone()
     }
 
+    /// The `shape` of every successful `acquire` so far, in call order.
+    pub(crate) fn acquired_shapes(&self) -> Vec<BoxShape> {
+        self.st().shapes.clone()
+    }
+
     /// Every `exec` so far: handle, spec and deadline, in call order.
     pub(crate) fn execs(&self) -> Vec<(BoxHandle, ExecSpec, Deadline)> {
         self.st().execs.clone()
@@ -144,6 +151,7 @@ impl Driver for FakeDriver {
         let id = format!("box-{}", s.next);
         s.live.push(id.clone());
         s.providers.push((id.clone(), req.provider.clone()));
+        s.shapes.push(req.shape.clone());
         let workdir = layout(s.work_root.as_deref(), &id, req.worktree.as_deref())?;
         Ok(Acquired {
             handle: BoxHandle::new(id),

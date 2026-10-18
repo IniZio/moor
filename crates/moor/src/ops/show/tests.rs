@@ -69,6 +69,7 @@ fn ready_box(cx: &Cx, driver: &FakeDriver, id: TaskId) -> moor_core::BoxHandle {
     let p = ProviderId::new("p");
     let got = driver
         .acquire(&AcquireReq {
+            shape: moor_core::config::BoxShape::default(),
             provider: p.clone(),
             task: id,
             name: TaskName::parse("demo").unwrap(),
@@ -246,6 +247,7 @@ fn working(cx: &Cx, driver: &FakeDriver, name: &str, session: Option<&str>) -> T
     let id = add(cx, name);
     let got = driver
         .acquire(&AcquireReq {
+            shape: moor_core::config::BoxShape::default(),
             provider: ProviderId::new("p"),
             task: id,
             name: TaskName::parse(name).unwrap(),

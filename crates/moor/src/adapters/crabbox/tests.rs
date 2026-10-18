@@ -2,7 +2,6 @@
 
 use std::path::Path;
 use std::sync::Arc;
-
 use std::time::Duration;
 
 use moor_core::domain::run::SyncMode;
@@ -35,6 +34,7 @@ fn req(provider: &str, class: Option<&str>) -> AcquireReq {
         provider: ProviderId::new(provider),
         task: TaskId::new(7),
         name: TaskName::parse("t7").unwrap(),
+        shape: moor_core::config::BoxShape::default(),
         class: class.map(str::to_owned),
         nonce: "ab12cd".to_owned(),
         worktree: None,

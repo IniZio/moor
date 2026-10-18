@@ -68,6 +68,7 @@ fn fx_surfaced(driver: FakeDriver, surface: FakeSurface, workspace: Option<&str>
     store.apply(d).unwrap();
     let got = driver
         .acquire(&AcquireReq {
+            shape: moor_core::config::BoxShape::default(),
             provider,
             task: id,
             name,

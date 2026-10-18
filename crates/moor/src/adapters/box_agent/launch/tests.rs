@@ -26,12 +26,9 @@ fn environ_path() -> BoxPath {
     BoxPath::restore("/proc/self/environ").unwrap()
 }
 
-fn driver(d: FakeDriver) -> Arc<FakeDriver> {
-    let d = Arc::new(
-        d.peek_text("box-1", &environ_path(), ENVIRON)
-            .run_stdout("Linux x86_64"),
-    );
+fn acquire_box(d: &FakeDriver) {
     d.acquire(&AcquireReq {
+        shape: moor_core::config::BoxShape::default(),
         provider: ProviderId::new("fake"),
         task: TaskId::new(1),
         name: TaskName::parse("t1").unwrap(),
@@ -40,6 +37,14 @@ fn driver(d: FakeDriver) -> Arc<FakeDriver> {
         worktree: None,
     })
     .unwrap();
+}
+
+fn driver(d: FakeDriver) -> Arc<FakeDriver> {
+    let d = Arc::new(
+        d.peek_text("box-1", &environ_path(), ENVIRON)
+            .run_stdout("Linux x86_64"),
+    );
+    acquire_box(&d);
     d
 }
 
@@ -293,15 +298,7 @@ fn a_failed_cleanup_is_named_in_the_error() {
 #[test]
 fn a_box_without_a_home_fails_before_delivering() {
     let d = Arc::new(FakeDriver::new().peek_text("box-1", &environ_path(), "PATH=/usr/bin\0"));
-    d.acquire(&AcquireReq {
-        provider: ProviderId::new("fake"),
-        task: TaskId::new(1),
-        name: TaskName::parse("t1").unwrap(),
-        class: None,
-        nonce: "n0".to_owned(),
-        worktree: None,
-    })
-    .unwrap();
+    acquire_box(&d);
     let s = surface(FakeSurface::new("/r"));
     let r = req(&s);
     let out = agent(&d, &s).launch(&r);

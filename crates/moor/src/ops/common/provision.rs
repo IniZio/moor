@@ -183,6 +183,7 @@ pub(crate) fn provision(
         class: Some(cfg.size.value.as_str().to_owned()),
         nonce: nonce(cx.rng()),
         worktree: task.worktree.as_deref().map(PathBuf::from),
+        shape: cfg.shape.clone(),
     };
     // The record exists before the Box does; a failed acquire leaves it `planned`.
     let planned = cx.driver().planned_handle(&req);
