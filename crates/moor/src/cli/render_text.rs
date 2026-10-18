@@ -135,6 +135,7 @@ fn start_text(value: &Value) -> Option<String> {
     {
         let _ = writeln!(out, "agent: launched under {sandbox}");
     }
+    setup_output(value, &mut out);
     promoted_line(value, &mut out);
     for w in value
         .get("warnings_inline")
@@ -146,6 +147,29 @@ fn start_text(value: &Value) -> Option<String> {
         let _ = writeln!(out, "warning: {w}");
     }
     Some(out)
+}
+
+/// The tail of a passing setup's output, indented under a `setup:` line like `moor show`'s.
+fn setup_output(value: &Value, out: &mut String) {
+    let Some(setup) = value.get("setup") else {
+        return;
+    };
+    let lines: Vec<&str> = setup
+        .get("output")
+        .and_then(Value::as_array)
+        .map(|a| a.iter().filter_map(Value::as_str).collect())
+        .unwrap_or_default();
+    if lines.is_empty() {
+        return;
+    }
+    let took = setup
+        .get("ms")
+        .and_then(Value::as_u64)
+        .map_or_else(String::new, |ms| format!(" in {}", duration_text(ms)));
+    let _ = writeln!(out, "setup: ok{took}, last {} lines:", lines.len());
+    for l in lines {
+        let _ = writeln!(out, "  {l}");
+    }
 }
 
 /// Text form of `close`: a status line, the transcript path, then queue promotions.

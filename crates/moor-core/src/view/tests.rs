@@ -111,6 +111,7 @@ fn start_view_keys_match_wire_shape() {
             ok: true,
             line: None,
             ms: Some(7),
+            output: Vec::new(),
         },
         dotfiles: DotfilesView::default(),
         agent: AgentLaunchView {

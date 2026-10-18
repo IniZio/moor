@@ -156,6 +156,9 @@ pub struct SetupView {
     pub line: Option<String>,
     /// Duration in milliseconds.
     pub ms: Option<u64>,
+    /// The last lines of a passing setup's output; a failure carries them in its warning.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub output: Vec<String>,
 }
 
 /// Outcome of dotfiles delivery.

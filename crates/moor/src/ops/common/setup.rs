@@ -15,6 +15,7 @@ use moor_core::{BoxHandle, BoxPath, Warning};
 
 use crate::cx::Cx;
 use crate::ops::common::box_exec::{self, BoxProxy, Site};
+use crate::ops::show::redact_nonce;
 
 /// How many trailing log lines a failure warning carries.
 const LOG_TAIL_LINES: usize = 20;
@@ -34,6 +35,8 @@ pub(crate) enum SetupRun {
     Ok {
         /// Time the script took, in milliseconds.
         ms: u64,
+        /// The last lines of the script's output, tidied and without the Proxy nonce.
+        tail: Vec<String>,
     },
     /// A line failed; later lines did not run.
     Failed {
@@ -59,17 +62,19 @@ impl SetupRun {
     pub(crate) fn view(&self) -> SetupView {
         match self {
             Self::Skipped => SetupView::default(),
-            Self::Ok { ms } => SetupView {
+            Self::Ok { ms, tail } => SetupView {
                 ran: true,
                 ok: true,
                 line: None,
                 ms: Some(*ms),
+                output: tail.clone(),
             },
             Self::Failed { line, ms, .. } => SetupView {
                 ran: true,
                 ok: false,
                 line: Some(line.clone()),
                 ms: Some(*ms),
+                output: Vec::new(),
             },
         }
     }
@@ -86,7 +91,7 @@ impl SetupRun {
     pub(crate) const fn ms(&self) -> Option<u64> {
         match self {
             Self::Skipped => None,
-            Self::Ok { ms } | Self::Failed { ms, .. } => Some(*ms),
+            Self::Ok { ms, .. } | Self::Failed { ms, .. } => Some(*ms),
         }
     }
 
@@ -153,14 +158,18 @@ pub(crate) fn run_setup(
         });
     let elapsed = cx.clock().instant().saturating_duration_since(started);
     let ms = u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX);
+    let nonce = proxy.map(|p| p.addr.nonce.expose());
     let (reason, exit) = match result {
-        Ok(ExecOutcome::Exited { code: 0 }) => return SetupRun::Ok { ms },
+        Ok(ExecOutcome::Exited { code: 0 }) => {
+            let tail = tail_lines(&fetch_log(cx, handle, workdir, worktree, nonce));
+            return SetupRun::Ok { ms, tail };
+        }
         Ok(ExecOutcome::Exited { code }) => (format!("exit {code}"), Some(code)),
         Ok(ExecOutcome::Interrupted) => ("interrupted".to_owned(), None),
         Err(Failure::Prepare(e)) => (e, None),
         Err(Failure::Exec(e)) => (e.to_string(), None),
     };
-    let log = fetch_log(cx, handle, workdir, worktree);
+    let log = fetch_log(cx, handle, workdir, worktree, nonce);
     let line = cfg
         .setup
         .get(failed_step(&log, cfg.setup.len()))
@@ -225,21 +234,26 @@ pub(crate) fn sync_checkout(
 fn failure_message(line: &str, reason: &str, workdir: &BoxPath, log: &str) -> String {
     let path = format!("{}/{LOG_REL}", workdir.as_str());
     let mut msg = format!("setup line `{line}` failed: {reason}\nfull log in the Box: {path}");
-    // A terminal shows only the last frame of a line redrawn with `\r`.
+    let tail = tail_lines(log);
+    if tail.is_empty() {
+        return msg;
+    }
+    let _ = write!(msg, "\nlast {} lines:\n{}", tail.len(), tail.join("\n"));
+    msg
+}
+
+/// The last [`LOG_TAIL_LINES`] lines of `log`, tidied. A terminal shows only the last frame of a
+/// line redrawn with `\r`.
+fn tail_lines(log: &str) -> Vec<String> {
     let lines: Vec<&str> = log
         .lines()
         .filter_map(|l| l.rsplit('\r').find(|seg| !seg.is_empty()))
         .collect();
-    if lines.is_empty() {
-        return msg;
-    }
-    let tail: Vec<String> = lines
+    lines
         .iter()
         .skip(lines.len().saturating_sub(LOG_TAIL_LINES))
         .map(|l| tidy(l))
-        .collect();
-    let _ = write!(msg, "\nlast {} lines:\n{}", tail.len(), tail.join("\n"));
-    msg
+        .collect()
 }
 
 /// Drops ANSI escape sequences and other control characters, and caps the length.
@@ -276,8 +290,15 @@ fn tidy(line: &str) -> String {
     cut
 }
 
-/// Copies the script's log out of the Box and reads it; empty when either step fails.
-fn fetch_log(cx: &Cx, handle: &BoxHandle, workdir: &BoxPath, worktree: &Path) -> String {
+/// Copies the script's log out of the Box and reads it with the Proxy `nonce` redacted; empty when
+/// either step fails.
+fn fetch_log(
+    cx: &Cx,
+    handle: &BoxHandle,
+    workdir: &BoxPath,
+    worktree: &Path,
+    nonce: Option<&[u8]>,
+) -> String {
     let to = worktree.join(".moor").join("setup.log");
     let Ok(from) = BoxPath::under(workdir.as_str(), LOG_REL) else {
         return String::new();
@@ -288,7 +309,8 @@ fn fetch_log(cx: &Cx, handle: &BoxHandle, workdir: &BoxPath, worktree: &Path) ->
     if !made || cx.driver().copy_out(handle, &from, &to, worktree).is_err() {
         return String::new();
     }
-    String::from_utf8_lossy(&std::fs::read(to).unwrap_or_default()).into_owned()
+    let log = String::from_utf8_lossy(&std::fs::read(to).unwrap_or_default()).into_owned();
+    redact_nonce(&log, nonce)
 }
 
 /// Index of the failing step: the last one the log announced, else the first.
