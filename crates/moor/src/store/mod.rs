@@ -29,6 +29,7 @@ mod proxy;
 mod reads;
 mod reports;
 mod runs;
+mod seq;
 mod slack;
 #[cfg(test)]
 mod tests;
