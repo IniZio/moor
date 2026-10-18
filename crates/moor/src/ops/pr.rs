@@ -21,6 +21,7 @@ pub(crate) fn open_pr_url(cx: &Cx, task: &str) -> Result<Option<String>, String>
     let Some(row) = store.open_task_by_name(&name).map_err(|e| e.to_string())? else {
         return Ok(None);
     };
+    let id = row.id;
     let (Some(branch), Some(worktree)) = (row.branch, row.worktree) else {
         return Ok(None);
     };
@@ -30,7 +31,13 @@ pub(crate) fn open_pr_url(cx: &Cx, task: &str) -> Result<Option<String>, String>
     let Some(repo) = cx.forge().repo_of(&origin) else {
         return Ok(None);
     };
-    cx.forge()
+    let url = cx
+        .forge()
         .open_pr(&repo, &branch)
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    // Recorded so the Box can be found by its pull request later.
+    if let Some(url) = &url {
+        store.add_box_ref(id, "pr", url).map_err(|e| e.to_string())?;
+    }
+    Ok(url)
 }
