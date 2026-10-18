@@ -1,6 +1,6 @@
 //! Parses app mentions and decides what each one does.
 
-use moor_core::name::{NameError, TaskName};
+use moor_core::name::{BoxName, NameError};
 
 /// Reply for text that is not a well-formed `start` command.
 const USAGE: &str = "Usage: `@moor start <repo> <goal>`";
@@ -23,7 +23,7 @@ pub(super) enum Action {
     /// Start this Task, then bind the thread to it.
     Start {
         /// Task name derived from the thread.
-        name: TaskName,
+        name: BoxName,
         /// Repo the Task works on.
         repo: String,
         /// What the Task should do.
@@ -67,7 +67,7 @@ pub(super) fn decide(
     user: &str,
     text: &str,
     thread: &str,
-    bound: Option<&TaskName>,
+    bound: Option<&BoxName>,
 ) -> Action {
     if !allow.channels.iter().any(|c| c == channel) {
         return Action::Ignore;
@@ -100,17 +100,17 @@ pub(super) fn decide(
 ///
 /// # Errors
 /// Returns the name error when the ts yields an invalid Task name.
-pub(super) fn task_name(thread: &str) -> Result<TaskName, NameError> {
-    TaskName::parse(&format!("slack-{}", thread.replace('.', "-")))
+pub(super) fn task_name(thread: &str) -> Result<BoxName, NameError> {
+    BoxName::parse(&format!("slack-{}", thread.replace('.', "-")))
 }
 
 /// Thread reply after a successful start.
-pub(super) fn started(name: &TaskName) -> String {
+pub(super) fn started(name: &BoxName) -> String {
     format!("Started Task `{}`.", name.as_str())
 }
 
 /// Thread reply after a failed start; `message` is the controller's error text.
-pub(super) fn failed(name: &TaskName, message: &str) -> String {
+pub(super) fn failed(name: &BoxName, message: &str) -> String {
     format!("Could not start Task `{}`: {message}", name.as_str())
 }
 

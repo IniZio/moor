@@ -4,13 +4,13 @@ use std::sync::Arc;
 use super::*;
 use crate::adapters::clock::SystemClock;
 use moor_core::seam::clock::Clock;
-use moor_core::TaskName;
+use moor_core::BoxName;
 
 fn thread() -> SlackThread {
     SlackThread {
         channel: "C1".into(),
         thread_ts: "1.0".into(),
-        task: TaskName::parse("fix-bug").unwrap(),
+        task: BoxName::parse("fix-bug").unwrap(),
         owner: "U1".into(),
         status_ts: None,
     }

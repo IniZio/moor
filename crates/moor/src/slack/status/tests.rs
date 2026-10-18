@@ -1,5 +1,5 @@
 use super::*;
-use moor_core::TaskName;
+use moor_core::BoxName;
 use serde_json::json;
 
 use crate::adapters::clock::SystemClock;
@@ -12,7 +12,7 @@ fn thread(ts: Option<&str>) -> SlackThread {
     SlackThread {
         channel: "C1".into(),
         thread_ts: "1.0".into(),
-        task: TaskName::parse("fix-bug").unwrap(),
+        task: BoxName::parse("fix-bug").unwrap(),
         owner: "U1".into(),
         status_ts: ts.map(str::to_owned),
     }
