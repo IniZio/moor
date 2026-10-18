@@ -21,7 +21,7 @@ const REASON: &str = "tunnel exited";
 impl Running<'_> {
     /// Replaces the dead tunnel; `None` means a new one is up and recorded.
     ///
-    /// The lease is renewed before each backoff wait and after each restart attempt,
+    /// The lease is renewed before each backoff wait, during each restart attempt and after it,
     /// so neither the wait nor a slow attempt lets it lapse.
     pub(super) fn revive(&self) -> Option<Stop> {
         let sink = &self.deps.stderr;
@@ -37,9 +37,9 @@ impl Running<'_> {
             self.deps.clock.sleep(wait);
             match bind::open(
                 self.deps,
+                (self.task, &self.owner),
                 &self.handle,
-                self.box_port,
-                self.live.port(),
+                (self.box_port, self.live.port()),
                 &self.worktree,
                 false,
             ) {

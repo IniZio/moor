@@ -98,9 +98,9 @@ impl Running<'_> {
     fn reopen(&self, seq: u64, fresh: bool) {
         let opened = bind::open(
             self.deps,
+            (self.task, &self.owner),
             &self.handle,
-            self.box_port,
-            self.live.port(),
+            (self.box_port, self.live.port()),
             &self.worktree,
             fresh,
         );

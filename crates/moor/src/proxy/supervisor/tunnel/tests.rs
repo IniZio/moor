@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use moor_core::seam::clock::{Clock, Ts};
@@ -11,13 +11,15 @@ use moor_core::seam::driver::{
     Released, SleepOutcome, TunnelHandle,
 };
 use moor_core::seam::proc::Deadline;
+use moor_core::secret::Secret;
 use moor_core::{BoxHandle, BoxPath, ProviderId, TaskId};
 
 use super::super::tests::{unrestartable, World, FIRST_TUNNEL_PID, NONCE_TEXT};
-use super::super::{start, Stop, LEASE};
-use crate::store::{Lease, Store};
+use super::super::{start, Stop, LEASE, TICK};
+use crate::store::{Lease, Reserve, Store};
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::{FakeDriver, TunnelReply};
+use crate::testing::rng::FakeRng;
 
 /// Events of one kind recorded for the task.
 fn events_of(w: &World, kind: &str) -> usize {
@@ -323,4 +325,36 @@ fn slow_restart_attempt_renews_the_lease_after_it_returns() {
     let rival = w.store.claim_lease(w.id, "other-owner", LEASE).unwrap();
     assert!(matches!(rival, Lease::Held { .. }));
     assert_eq!(w.row().lease_owner.as_deref(), Some(run.owner()));
+}
+
+#[test]
+fn slow_port_clear_keeps_the_lease_against_a_concurrent_reserve() {
+    let w = World::new([]);
+    let deps = w.deps();
+    let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
+    let seen = Arc::new(Mutex::new(None));
+    let (path, clock, id, out) = (
+        w.dir.path().join("moor.db"),
+        w.clock.clone(),
+        w.id,
+        seen.clone(),
+    );
+    // The clear runs 45 s; real pauses let the renewal thread keep pace with the fake clock.
+    w.driver.on_exec(move || {
+        for _ in 0..22 {
+            clock.sleep(TICK);
+            std::thread::sleep(Duration::from_millis(60));
+        }
+        let rival = Store::open(&path, clock.clone()).unwrap();
+        let nonce = Secret::new(b"rival-nonce".to_vec());
+        let got = rival.reserve(id, &nonce, &FakeRng::default(), LEASE);
+        *out.lock().unwrap() = Some(got.unwrap());
+    });
+
+    w.driver.end_tunnel(FIRST_TUNNEL_PID);
+    let stop = run.tick();
+
+    let got = seen.lock().unwrap().take();
+    assert!(matches!(got, Some(Reserve::Leased { .. })), "{got:?}");
+    assert!(stop.is_none());
 }

@@ -158,7 +158,7 @@ fn asleep(row: &TaskRow) -> bool {
 fn open_tunnel(
     deps: &Deps<'_>,
     (handle, box_port, host_port, worktree): (&BoxHandle, u16, u16, &Path),
-    task: TaskId,
+    (task, owner): (TaskId, &str),
 ) -> Option<Box<dyn TunnelHandle>> {
     // A Box that never had a tunnel has no stale listener to clear. A failed read counts as "had one".
     let fresh = matches!(deps.store.tunnel_opened(task), Ok(false));
@@ -169,7 +169,14 @@ fn open_tunnel(
             format_args!("cannot record the tunnel open: {err}"),
         );
     }
-    match bind::open(deps, handle, box_port, host_port, worktree, fresh) {
+    match bind::open(
+        deps,
+        (task, owner),
+        handle,
+        (box_port, host_port),
+        worktree,
+        fresh,
+    ) {
         Ok(tunnel) => Some(tunnel),
         Err(err) => {
             say(
@@ -214,7 +221,7 @@ pub(super) fn begin<'d>(deps: &'d Deps<'d>, task: TaskId) -> Result<Running<'d>,
         parked_tunnel()
     } else {
         let ends = (&handle, box_port, live.port(), worktree.as_path());
-        let Some(tunnel) = open_tunnel(deps, ends, task) else {
+        let Some(tunnel) = open_tunnel(deps, ends, (task, &owner)) else {
             live.stop();
             give_up(deps, task, &owner);
             return Err(1);

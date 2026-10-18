@@ -5,15 +5,16 @@
 //! `-R` listener port, until it times out. Every new `ssh -R` would then fail to bind.
 
 use std::path::Path;
+use std::sync::mpsc;
 use std::time::Duration;
 
 use moor_core::domain::run::SyncMode;
 use moor_core::seam::driver::{DriverError, ExecSpec, TunnelHandle};
 use moor_core::seam::proc::Deadline;
-use moor_core::BoxHandle;
+use moor_core::{BoxHandle, TaskId};
 
 use super::run::say;
-use super::Deps;
+use super::{Deps, TICK};
 
 /// Time allowed for the Box-side cleanup; a `crabbox run` on the external provider costs about 20 s
 /// before the script starts.
@@ -34,24 +35,55 @@ pub(super) fn clear_argv(box_port: u16) -> Vec<String> {
         .collect()
 }
 
+/// How often the renewal thread checks whether a heartbeat is due.
+const POLL: Duration = Duration::from_millis(20);
+
 /// Opens a tunnel serving `host_port` on `box_port` in the Box.
+///
+/// The lease `owner` holds on `task` is renewed every [`TICK`] while this runs: the port clear
+/// alone can outlast the lease, and a lapsed lease lets a concurrent `moor run` take the row over.
 ///
 /// Unless `fresh` (no tunnel was ever opened into this Box, or it just cold-booted, so no stale
 /// listener can exist), the
 /// port is freed first. A failed or timed-out cleanup is reported and the open goes ahead.
 pub(super) fn open(
     deps: &Deps<'_>,
+    (task, owner): (TaskId, &str),
     handle: &BoxHandle,
-    box_port: u16,
-    host_port: u16,
+    (box_port, host_port): (u16, u16),
     worktree: &Path,
     fresh: bool,
 ) -> Result<Box<dyn TunnelHandle>, DriverError> {
-    if !fresh {
-        clear(deps, handle, box_port, worktree);
-    }
-    deps.driver
-        .reverse_tunnel(handle, box_port, host_port, worktree)
+    renewing(deps, task, owner, || {
+        if !fresh {
+            clear(deps, handle, box_port, worktree);
+        }
+        deps.driver
+            .reverse_tunnel(handle, box_port, host_port, worktree)
+    })
+}
+
+/// Runs `work` while a scoped thread heartbeats the lease every [`TICK`].
+///
+/// A failed or refused heartbeat is not reported here: the caller beats again when `work` returns
+/// and acts on the outcome.
+fn renewing<T>(deps: &Deps<'_>, task: TaskId, owner: &str, work: impl FnOnce() -> T) -> T {
+    let (done, gone) = mpsc::channel::<()>();
+    std::thread::scope(|scope| {
+        scope.spawn(move || {
+            let mut last = deps.clock.instant();
+            // Disconnect is the signal to stop; nothing is ever sent.
+            while gone.recv_timeout(POLL) == Err(mpsc::RecvTimeoutError::Timeout) {
+                if deps.clock.instant().saturating_duration_since(last) >= TICK {
+                    last = deps.clock.instant();
+                    drop(deps.store.heartbeat(task, owner));
+                }
+            }
+        });
+        let out = work();
+        drop(done);
+        out
+    })
 }
 
 /// Ends any `sshd-session` holding `box_port` in the Box, reporting the outcome.
