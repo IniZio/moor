@@ -106,5 +106,7 @@ impl Store {
     }
 }
 
+mod refs;
+
 #[cfg(test)]
 mod tests;
