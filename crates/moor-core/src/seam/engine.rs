@@ -4,7 +4,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::activity::Probes;
-use crate::name::{BoxHandle, BoxName, BoxPath, NameError};
+use crate::box_key::BoxKey;
+use crate::name::{BoxHandle, BoxId, BoxName, BoxPath, NameError};
 use crate::seam::agent_profile::{PromptMatch, ProxyAddr};
 use crate::seam::driver::DriverError;
 use crate::seam::proc::Deadline;
@@ -39,6 +40,8 @@ pub struct LaunchNotice {
 /// What a launch needs to start the agent in a Box.
 #[derive(Debug, Clone)]
 pub struct LaunchReq {
+    /// The Box's key; its internal dirs derive from it.
+    pub id: BoxId,
     /// The Box to run in.
     pub handle: BoxHandle,
     /// The Box workdir the agent runs in.
@@ -87,11 +90,8 @@ impl LaunchReq {
     /// The names of the credential and tmp directories this launch creates under the Box home.
     #[must_use]
     pub fn dir_names(&self) -> (String, String) {
-        let (task, nonce) = (self.task.as_str(), &self.nonce);
-        (
-            format!(".moor-cred-{task}-{nonce}"),
-            format!(".moor-tmp-{task}-{nonce}"),
-        )
+        let key = BoxKey::new(self.id);
+        (key.cred_dir(&self.nonce), key.tmp_dir(&self.nonce))
     }
 }
 
@@ -99,7 +99,8 @@ impl PartialEq for LaunchReq {
     /// Proxies compare by port and nonce digest, since the nonce itself is not comparable.
     fn eq(&self, other: &Self) -> bool {
         let proxy = |p: &Option<Arc<ProxyAddr>>| p.as_ref().map(|a| (a.box_port, a.nonce.digest()));
-        self.handle == other.handle
+        self.id == other.id
+            && self.handle == other.handle
             && self.workdir == other.workdir
             && self.worktree == other.worktree
             && self.workspace == other.workspace

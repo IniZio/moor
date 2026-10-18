@@ -20,8 +20,8 @@ use crate::testing::driver::FakeDriver;
 use crate::testing::surface::FakeSurface;
 
 const ENVIRON: &str = "PATH=/usr/bin\0HOME=/home/box\0LANG=C\0";
-const CRED: &str = "/home/box/.moor-cred-t1-abc123";
-const TMP: &str = "/home/box/.moor-tmp-t1-abc123";
+const CRED: &str = "/home/box/.moor-cred-1-abc123";
+const TMP: &str = "/home/box/.moor-tmp-1-abc123";
 
 fn environ_path() -> BoxPath {
     BoxPath::restore("/proc/self/environ").unwrap()
@@ -52,6 +52,7 @@ fn req(s: &FakeSurface) -> LaunchReq {
     let wt = s.create_worktree(&PathBuf::from("/r"), &box_name("t1"), None);
     let wt = wt.unwrap();
     LaunchReq {
+        id: BoxId::new(1),
         handle: BoxHandle::new("box-1"),
         workdir: BoxPath::under("/work", "box-1").unwrap(),
         worktree: wt.path.clone(),

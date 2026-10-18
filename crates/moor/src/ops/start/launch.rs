@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use moor_core::activity::PaneStatus;
+use moor_core::box_key::BoxKey;
 use moor_core::config::TaskSettings;
 
 use moor_core::domain::boxes::BoxState;
@@ -145,7 +146,7 @@ fn record_session(
 ) -> Result<AgentLaunchView, CommandError> {
     let id = row.id;
     let sref = if session.id.is_empty() {
-        format!("moor-{}", id.get())
+        BoxKey::new(id).session_ref()
     } else {
         session.id
     };
@@ -199,6 +200,7 @@ pub(super) fn launch_req(cx: &Cx, row: &TaskRow, setup_exit: Option<i32>) -> Opt
     }
     let strip_env = box_exec::strip_env(cx, b.provider.as_str());
     Some(LaunchReq {
+        id: row.id,
         handle: b.handle.clone()?,
         workdir: recorded_workdir(b.workdir.as_deref()?)?,
         worktree: PathBuf::from(row.worktree.as_deref()?),

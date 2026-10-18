@@ -8,7 +8,7 @@ use moor_core::seam::driver::DriverError;
 use moor_core::seam::engine::{Engine, EngineError, LaunchReq, SessionRef, Steer, SteerOutcome};
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::{PaneRef, WorkspaceRef};
-use moor_core::{BoxHandle, BoxName, BoxPath};
+use moor_core::{BoxHandle, BoxId, BoxName, BoxPath};
 
 use super::FakeEngine;
 
@@ -77,6 +77,7 @@ fn counts_are_kept_per_session() {
 
 fn launch_req() -> LaunchReq {
     LaunchReq {
+        id: BoxId::new(1),
         handle: BoxHandle::new("box-1"),
         workdir: BoxPath::under("/work/box-1", "x").unwrap(),
         worktree: PathBuf::from("/host/wt"),

@@ -20,7 +20,7 @@ use crate::testing::driver::FakeDriver;
 use crate::testing::surface::FakeSurface;
 
 const ENVIRON: &str = "PATH=/usr/bin\0HOME=/home/box\0LANG=C\0";
-const CRED: &str = "/home/box/.moor-cred-t1-abc123";
+const CRED: &str = "/home/box/.moor-cred-1-abc123";
 const NONCE: &str = "distinct-nonce-7f3a91";
 
 fn exited(codes: &[i32]) -> Vec<Result<ExecOutcome, DriverError>> {
@@ -54,6 +54,7 @@ fn req(s: &FakeSurface, proxy: bool) -> LaunchReq {
         .create_worktree(&PathBuf::from("/r"), &name, None)
         .unwrap();
     LaunchReq {
+        id: BoxId::new(1),
         handle: BoxHandle::new("box-1"),
         workdir: BoxPath::under("/work", "box-1").unwrap(),
         worktree: wt.path.clone(),
