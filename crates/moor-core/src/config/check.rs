@@ -73,6 +73,9 @@ pub fn credential_like_env(s: &str) -> bool {
 
 /// True when `s` is set by moor for the agent, or can load code into the agent's shell or
 /// runtime, so a repo `env` may not set it.
+///
+/// That includes `GIT_CONFIG_*` and `XDG_CONFIG_HOME`, which can point git at a config that
+/// sets `core.fsmonitor`.
 #[must_use]
 pub fn agent_env_reserved(s: &str) -> bool {
     const FIXED: [&str; 34] = [
@@ -113,6 +116,7 @@ pub fn agent_env_reserved(s: &str) -> bool {
     ];
     FIXED.contains(&s)
         || s.starts_with("LD_")
+        || s == "XDG_CONFIG_HOME"
         || s.starts_with("GIT_CONFIG_")
         || s.starts_with("CLAUDE_")
 }

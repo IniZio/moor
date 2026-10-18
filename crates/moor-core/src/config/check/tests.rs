@@ -150,7 +150,13 @@ fn repo_env_may_not_set_the_sandbox_signal() {
 }
 
 #[test]
-fn repo_env_may_set_nono_and_xdg_names() {
+fn repo_env_may_not_redirect_git_config() {
+    assert!(agent_env_reserved("XDG_CONFIG_HOME"));
+    assert!(agent_env_reserved("GIT_CONFIG_COUNT"));
+}
+
+#[test]
+fn repo_env_may_set_nono_and_other_xdg_names() {
     assert!(!agent_env_reserved("NONO_PROFILE"));
-    assert!(!agent_env_reserved("XDG_CONFIG_HOME"));
+    assert!(!agent_env_reserved("XDG_DATA_HOME"));
 }
