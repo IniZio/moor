@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crate::domain::run::SyncMode;
-use crate::name::{BoxHandle, BoxPath, ProviderId, TaskId, TaskName};
+use crate::name::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId};
 use crate::seam::proc::{Deadline, Output};
 
 mod batch;
@@ -47,10 +47,10 @@ pub struct DriverCaps {
 pub struct AcquireReq {
     /// Provider to ask.
     pub provider: ProviderId,
-    /// Source for the per-Task Box name the adapter derives.
-    pub task: TaskId,
-    /// Task name the adapter embeds in the Box name.
-    pub name: TaskName,
+    /// Source for the per-Box name the adapter derives.
+    pub task: BoxId,
+    /// Box name the adapter embeds in the Box name.
+    pub name: BoxName,
     /// Box size (`small`, `medium`, `large`, `xlarge`); `small` when unset.
     pub class: Option<String>,
     /// Random suffix that keeps the Box name unique.

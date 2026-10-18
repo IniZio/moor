@@ -3,13 +3,13 @@
 use super::{Decision, ExtraEvent, Field, Fields, Intent, IntentChange, NewTask, TaskTarget};
 use crate::domain::event::Event;
 use crate::domain::task::{TaskInput, TaskState};
-use crate::name::{RunId, TaskId, TaskName};
+use crate::name::{BoxId, BoxName, RunId};
 
 /// `new` targets an existing task with nothing else set.
 #[test]
 fn new_is_empty() {
-    let d = Decision::new(TaskId::new(3));
-    assert_eq!(d.task, TaskTarget::Existing(TaskId::new(3)));
+    let d = Decision::new(BoxId::new(3));
+    assert_eq!(d.task, TaskTarget::Existing(BoxId::new(3)));
     assert!(d.task_input.is_none() && d.box_input.is_none());
     assert_eq!(d.set, Fields::default());
     assert_eq!(d.intent, IntentChange::Keep);
@@ -20,7 +20,7 @@ fn new_is_empty() {
 #[test]
 fn insert_sets_input() {
     let new = NewTask {
-        name: TaskName::parse("a").unwrap(),
+        name: BoxName::parse("a").unwrap(),
         repo: "r".into(),
     };
     let d = Decision::insert(new.clone());
@@ -35,7 +35,7 @@ fn builder_chains() {
         goal: Field::Set("g".into()),
         ..Fields::default()
     };
-    let d = Decision::new(TaskId::new(1))
+    let d = Decision::new(BoxId::new(1))
         .task_input(TaskInput::Admitted)
         .set(f.clone())
         .intent(IntentChange::Clear)

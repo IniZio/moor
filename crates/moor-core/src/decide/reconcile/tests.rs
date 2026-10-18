@@ -3,12 +3,12 @@
 use super::{reconcile, BoxFact};
 use crate::domain::boxes::{BoxInput, BoxState};
 use crate::domain::decision::TaskTarget;
-use crate::name::{BoxHandle, TaskId};
+use crate::name::{BoxHandle, BoxId};
 use crate::seam::driver::BoxListing;
 
 fn fact(n: i64, state: BoxState, h: Option<&str>) -> BoxFact {
     BoxFact {
-        task: TaskId::new(n),
+        task: BoxId::new(n),
         state,
         handle: h.map(BoxHandle::new),
     }
@@ -83,5 +83,5 @@ fn only_the_missing_row_is_decided() {
     ];
     let out = reconcile(&rows, &[listed("a", false)]);
     let tasks: Vec<_> = out.iter().map(|d| d.task.clone()).collect();
-    assert_eq!(tasks, [TaskTarget::Existing(TaskId::new(2))]);
+    assert_eq!(tasks, [TaskTarget::Existing(BoxId::new(2))]);
 }

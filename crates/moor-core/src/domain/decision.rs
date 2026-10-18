@@ -4,7 +4,7 @@ mod extra;
 
 use super::boxes::BoxInput;
 use super::task::TaskInput;
-use crate::name::{BoxHandle, ProviderId, RunId, TaskId, TaskName};
+use crate::name::{BoxHandle, BoxId, BoxName, ProviderId, RunId};
 
 pub use extra::ExtraEvent;
 
@@ -123,8 +123,8 @@ pub enum IntentChange {
 /// A task that does not exist yet.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewTask {
-    /// Task name.
-    pub name: TaskName,
+    /// Box name.
+    pub name: BoxName,
     /// Repo the task works on.
     pub repo: String,
 }
@@ -135,7 +135,7 @@ pub enum TaskTarget {
     /// Insert this task.
     New(NewTask),
     /// Update this task.
-    Existing(TaskId),
+    Existing(BoxId),
 }
 
 /// Everything one store write changes.
@@ -159,7 +159,7 @@ pub struct Decision {
 impl Decision {
     /// Starts a decision for an existing task.
     #[must_use]
-    pub fn new(task: TaskId) -> Self {
+    pub fn new(task: BoxId) -> Self {
         Self::base(TaskTarget::Existing(task), None)
     }
 
@@ -217,9 +217,9 @@ impl Decision {
     /// use moor_core::domain::decision::Decision;
     /// use moor_core::domain::event::Event;
     /// use moor_core::domain::task::TaskState;
-    /// use moor_core::name::TaskId;
+    /// use moor_core::name::BoxId;
     ///
-    /// let _ = Decision::new(TaskId::new(1)).event(Event::Closed { from: TaskState::Idle });
+    /// let _ = Decision::new(BoxId::new(1)).event(Event::Closed { from: TaskState::Idle });
     /// ```
     #[must_use]
     pub fn event(mut self, e: ExtraEvent) -> Self {

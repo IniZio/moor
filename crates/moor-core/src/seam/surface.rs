@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::activity::{PaneObs, PaneStatus};
-use crate::name::TaskName;
+use crate::name::BoxName;
 use crate::seam::proc::Deadline;
 
 /// A checked-out worktree and its branch.
@@ -74,7 +74,7 @@ pub struct ResumeReg {
     /// The agent's session id.
     pub session_id: String,
     /// The task `moor start --resume` restarts.
-    pub task: TaskName,
+    pub task: BoxName,
 }
 
 /// How the multiplexer answered a resume registration.
@@ -137,7 +137,7 @@ pub enum SurfaceError {
 
 /// Returns the Workspace label for a task, `moor:<name>`.
 #[must_use]
-pub fn workspace_label(name: &TaskName) -> String {
+pub fn workspace_label(name: &BoxName) -> String {
     format!("moor:{}", name.as_str())
 }
 
@@ -150,7 +150,7 @@ pub trait Surface: Send + Sync {
     fn create_worktree(
         &self,
         repo: &Path,
-        name: &TaskName,
+        name: &BoxName,
         base: Option<&str>,
     ) -> Result<Worktree, SurfaceError>;
 

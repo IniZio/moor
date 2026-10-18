@@ -4,7 +4,7 @@ use std::num::NonZeroU32;
 
 use super::{admit, promote_order, Admission, CapacityFacts, HeldBox};
 use crate::domain::boxes::BoxState;
-use crate::name::TaskId;
+use crate::name::BoxId;
 
 fn held(holder: &str, state: BoxState) -> HeldBox {
     HeldBox {
@@ -20,8 +20,8 @@ fn facts(limit: Option<u32>, boxes: Vec<HeldBox>) -> CapacityFacts {
     }
 }
 
-fn ids(raw: &[i64]) -> Vec<TaskId> {
-    raw.iter().map(|&v| TaskId::new(v)).collect()
+fn ids(raw: &[i64]) -> Vec<BoxId> {
+    raw.iter().map(|&v| BoxId::new(v)).collect()
 }
 
 #[test]

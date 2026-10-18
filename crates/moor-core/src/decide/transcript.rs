@@ -5,7 +5,7 @@ use std::io::{self, Read};
 
 use sha2::{Digest, Sha256};
 
-use crate::name::TaskId;
+use crate::name::BoxId;
 
 /// What ended the session whose transcript is saved.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,7 +42,7 @@ pub fn next_number<'a>(kinds: impl IntoIterator<Item = &'a str>) -> usize {
 
 /// The archive path under the state directory: `transcripts/<task>/<session>-<n>.tgz`.
 #[must_use]
-pub fn relative_path(task: TaskId, session: i64, n: usize) -> String {
+pub fn relative_path(task: BoxId, session: i64, n: usize) -> String {
     format!("transcripts/{}/{session}-{n}.tgz", task.get())
 }
 
