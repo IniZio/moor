@@ -3,7 +3,7 @@
 //! Both sides live in `meta` rows keyed per task, so no schema change is needed. A request carries
 //! a sequence number the supervisor echoes in its ack, which lets the op ignore stale acks.
 
-use moor_core::TaskId;
+use moor_core::BoxId;
 use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 
 use crate::store::{Store, StoreError};
@@ -86,17 +86,17 @@ impl TunnelAck {
 }
 
 /// Key of the request row of `task`.
-fn want_key(task: TaskId) -> String {
+fn want_key(task: BoxId) -> String {
     format!("tunnel_want:{}", task.get())
 }
 
 /// Key of the ack row of `task`.
-fn ack_key(task: TaskId) -> String {
+fn ack_key(task: BoxId) -> String {
     format!("tunnel_ack:{}", task.get())
 }
 
 /// Key of the row recording that a supervisor has opened a tunnel into the Box of `task`.
-fn opened_key(task: TaskId) -> String {
+fn opened_key(task: BoxId) -> String {
     format!("tunnel_opened:{}", task.get())
 }
 
@@ -142,7 +142,7 @@ fn put(conn: &Connection, key: &str, value: &str) -> Result<(), StoreError> {
 }
 
 /// Delete the request and ack rows of `task` on `conn`.
-pub(super) fn clear(conn: &Connection, task: TaskId) -> Result<(), StoreError> {
+pub(super) fn clear(conn: &Connection, task: BoxId) -> Result<(), StoreError> {
     conn.execute(
         "DELETE FROM meta WHERE k IN (?, ?, ?)",
         params![want_key(task), ack_key(task), opened_key(task)],
@@ -153,7 +153,7 @@ pub(super) fn clear(conn: &Connection, task: TaskId) -> Result<(), StoreError> {
 impl Store {
     /// Records the wanted tunnel state; the sequence number is the previous request's plus one, or
     /// 1 when there is none. Returns it.
-    pub(crate) fn request_tunnel(&self, task: TaskId, want: TunnelWant) -> Result<u64, StoreError> {
+    pub(crate) fn request_tunnel(&self, task: BoxId, want: TunnelWant) -> Result<u64, StoreError> {
         let key = want_key(task);
         let mut conn = self.writer()?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -175,7 +175,7 @@ impl Store {
     }
 
     /// The latest tunnel request of `task`, if any.
-    pub(crate) fn tunnel_request(&self, task: TaskId) -> Result<Option<TunnelRequest>, StoreError> {
+    pub(crate) fn tunnel_request(&self, task: BoxId) -> Result<Option<TunnelRequest>, StoreError> {
         let conn = self.reader()?;
         get(&conn, &want_key(task))?
             .map(|raw| {
@@ -186,26 +186,26 @@ impl Store {
     }
 
     /// Records the supervisor's answer to a tunnel request of `task`.
-    pub(crate) fn ack_tunnel(&self, task: TaskId, ack: &TunnelAck) -> Result<(), StoreError> {
+    pub(crate) fn ack_tunnel(&self, task: BoxId, ack: &TunnelAck) -> Result<(), StoreError> {
         let conn = self.writer()?;
         put(&conn, &ack_key(task), &ack.encode())
     }
 
     /// Records that a tunnel is about to be opened into the Box of `task`; it stays set until the
     /// proxy row is removed.
-    pub(crate) fn note_tunnel_opened(&self, task: TaskId) -> Result<(), StoreError> {
+    pub(crate) fn note_tunnel_opened(&self, task: BoxId) -> Result<(), StoreError> {
         let conn = self.writer()?;
         put(&conn, &opened_key(task), "1")
     }
 
     /// Whether a tunnel was ever opened into the Box of `task`.
-    pub(crate) fn tunnel_opened(&self, task: TaskId) -> Result<bool, StoreError> {
+    pub(crate) fn tunnel_opened(&self, task: BoxId) -> Result<bool, StoreError> {
         let conn = self.reader()?;
         Ok(get(&conn, &opened_key(task))?.is_some())
     }
 
     /// The latest tunnel ack of `task`, if any.
-    pub(crate) fn tunnel_ack(&self, task: TaskId) -> Result<Option<TunnelAck>, StoreError> {
+    pub(crate) fn tunnel_ack(&self, task: BoxId) -> Result<Option<TunnelAck>, StoreError> {
         let conn = self.reader()?;
         get(&conn, &ack_key(task))?
             .map(|raw| {

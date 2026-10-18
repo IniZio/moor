@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use moor_core::seam::clock::Ts;
 use moor_core::seam::rng::Rng;
-use moor_core::{Secret, TaskId};
+use moor_core::{BoxId, Secret};
 use rusqlite::{params, Connection, OptionalExtension, Row, TransactionBehavior};
 
 use super::{load_task, to_u32, Store, StoreError};
@@ -44,7 +44,7 @@ pub(crate) struct ReadyProc<'a> {
 /// A stored proxy row.
 pub(crate) struct ProxyRow {
     /// Owning task.
-    pub(crate) task: TaskId,
+    pub(crate) task: BoxId,
     /// Secret the box presents to the proxy.
     pub(crate) nonce: Secret,
     /// Reserved box port.
@@ -101,7 +101,7 @@ impl Store {
     /// host port, pid, handle or lease, unless a lease younger than `lease` is live.
     pub(crate) fn reserve(
         &self,
-        task: TaskId,
+        task: BoxId,
         nonce: &Secret,
         rng: &dyn Rng,
         lease: Duration,
@@ -152,7 +152,7 @@ impl Store {
     }
 
     /// The proxy row of `task`, if any.
-    pub(crate) fn proxy(&self, task: TaskId) -> Result<Option<ProxyRow>, StoreError> {
+    pub(crate) fn proxy(&self, task: BoxId) -> Result<Option<ProxyRow>, StoreError> {
         let conn = self.reader()?;
         conn.query_row(
             "SELECT task, nonce, box_port, host_port, pid, handle, ready, lease_owner, lease_heartbeat, boot_id \
@@ -178,7 +178,7 @@ impl Store {
 
     /// Reset the row of `task` to unready with no host port, pid, handle or lease, keeping its
     /// nonce and box port, so the next reservation restarts it on the same port.
-    pub(crate) fn expire_proxy(&self, task: TaskId) -> Result<bool, StoreError> {
+    pub(crate) fn expire_proxy(&self, task: BoxId) -> Result<bool, StoreError> {
         let now = self.now();
         let conn = self.writer()?;
         let changed = conn.execute(
@@ -191,7 +191,7 @@ impl Store {
     }
 
     /// Delete the proxy row of `task`; returns whether a row was deleted.
-    pub(crate) fn remove_proxy(&self, task: TaskId) -> Result<bool, StoreError> {
+    pub(crate) fn remove_proxy(&self, task: BoxId) -> Result<bool, StoreError> {
         let mut conn = self.writer()?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let changed = tx.execute("DELETE FROM proxy WHERE task = ?", [task.get()])?;
@@ -247,7 +247,7 @@ impl TryFrom<RawRow> for ProxyRow {
 
     fn try_from(r: RawRow) -> Result<Self, StoreError> {
         Ok(Self {
-            task: TaskId::new(r.task),
+            task: BoxId::new(r.task),
             nonce: Secret::new(r.nonce),
             box_port: to_port("box_port", r.box_port)?,
             host_port: r.host_port.map(|p| to_port("host_port", p)).transpose()?,
@@ -267,7 +267,7 @@ fn to_port(what: &str, v: i64) -> Result<u16, StoreError> {
 }
 
 /// Whether a row other than `task`'s holds `port`.
-fn held_by_other(conn: &Connection, task: TaskId, port: u16) -> Result<bool, StoreError> {
+fn held_by_other(conn: &Connection, task: BoxId, port: u16) -> Result<bool, StoreError> {
     Ok(conn
         .query_row(
             "SELECT 1 FROM proxy WHERE box_port = ? AND task <> ?",

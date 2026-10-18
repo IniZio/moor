@@ -5,7 +5,7 @@ use moor_core::domain::decision::{Decision, Field, Fields, IntentChange, NewTask
 use moor_core::domain::event::{box_events, task_events, Event};
 use moor_core::domain::task::{TaskInput, TaskState};
 use moor_core::seam::clock::Ts;
-use moor_core::TaskId;
+use moor_core::BoxId;
 use rusqlite::types::Value;
 use rusqlite::{params, Transaction, TransactionBehavior};
 
@@ -17,7 +17,7 @@ use moor_core::ProviderId;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Applied {
     /// The task written.
-    pub(crate) task: TaskId,
+    pub(crate) task: BoxId,
     /// Task state after the apply.
     pub(crate) task_state: TaskState,
     /// Box state after the apply, if the task has a box.
@@ -109,7 +109,7 @@ fn step_task(
     tx: &Transaction<'_>,
     now: Ts,
     d: &Decision,
-) -> Result<(TaskId, Option<BoxRow>, Step<TaskState>), StoreError> {
+) -> Result<(BoxId, Option<BoxRow>, Step<TaskState>), StoreError> {
     match &d.task {
         TaskTarget::New(new) => {
             let Some(input @ TaskInput::Insert) = &d.task_input else {
@@ -145,7 +145,7 @@ fn insert_task(
     new: &NewTask,
     state: TaskState,
     now: Ts,
-) -> Result<TaskId, StoreError> {
+) -> Result<BoxId, StoreError> {
     tx.execute(
         "INSERT INTO tasks (name, repo, state, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
         params![
@@ -156,14 +156,14 @@ fn insert_task(
             now.as_millis()
         ],
     )?;
-    Ok(TaskId::new(tx.last_insert_rowid()))
+    Ok(BoxId::new(tx.last_insert_rowid()))
 }
 
 /// Step the box state, creating the box row on the first input.
 fn step_box(
     tx: &Transaction<'_>,
     now: Ts,
-    id: TaskId,
+    id: BoxId,
     existing: Option<&BoxRow>,
     d: &Decision,
 ) -> Result<Option<Step<BoxState>>, StoreError> {
@@ -194,7 +194,7 @@ fn step_box(
 /// Write task state, fields and intent.
 fn write_task(
     tx: &Transaction<'_>,
-    id: TaskId,
+    id: BoxId,
     now: Ts,
     d: &Decision,
     step: &Step<TaskState>,
@@ -227,7 +227,7 @@ fn idle_since_sets(step: &Step<TaskState>, now: Ts) -> Sets {
 /// A task step out of Idle drops the recorded sleep refusal, so the next Idle stretch asks again.
 fn write_box(
     tx: &Transaction<'_>,
-    id: TaskId,
+    id: BoxId,
     now: Ts,
     d: &Decision,
     step: Option<&Step<BoxState>>,
@@ -378,7 +378,7 @@ pub(super) fn update(
 /// Insert one event row and return its id.
 pub(super) fn insert_event(
     tx: &Transaction<'_>,
-    task: TaskId,
+    task: BoxId,
     e: &Event,
     now: Ts,
 ) -> Result<i64, StoreError> {

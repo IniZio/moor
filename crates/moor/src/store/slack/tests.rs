@@ -1,13 +1,13 @@
 //! Tests for Slack event dedup and thread binding.
 
 use moor_core::seam::clock::Clock;
-use moor_core::TaskName;
+use moor_core::BoxName;
 
 use crate::store::tests::open;
 use crate::store::{SlackPrompt, SlackThread, Store};
 
-fn name(s: &str) -> TaskName {
-    TaskName::parse(s).unwrap()
+fn name(s: &str) -> BoxName {
+    BoxName::parse(s).unwrap()
 }
 
 #[test]

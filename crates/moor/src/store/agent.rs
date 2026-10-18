@@ -3,7 +3,7 @@
 use moor_core::activity::{HookCache, HookKind, HookRecord};
 use moor_core::domain::event::Event;
 use moor_core::seam::clock::Ts;
-use moor_core::TaskId;
+use moor_core::BoxId;
 use rusqlite::{params, OptionalExtension, Row, TransactionBehavior};
 use serde_json::{json, Value};
 
@@ -16,7 +16,7 @@ pub(crate) struct SessionRow {
     /// Row id.
     pub(crate) id: i64,
     /// Owning task.
-    pub(crate) task: TaskId,
+    pub(crate) task: BoxId,
     /// The agent's own session reference.
     pub(crate) session_ref: String,
     /// The agent's pane, if it has one.
@@ -35,7 +35,7 @@ pub(crate) struct SessionRow {
 
 impl Store {
     /// The newest session of `task` that has not ended.
-    pub(crate) fn live_session(&self, task: TaskId) -> Result<Option<SessionRow>, StoreError> {
+    pub(crate) fn live_session(&self, task: BoxId) -> Result<Option<SessionRow>, StoreError> {
         let conn = self.reader()?;
         Ok(conn
             .query_row(
@@ -48,7 +48,7 @@ impl Store {
     }
 
     /// Whether `task` has ever had a session, ended or not.
-    pub(crate) fn has_session(&self, task: TaskId) -> Result<bool, StoreError> {
+    pub(crate) fn has_session(&self, task: BoxId) -> Result<bool, StoreError> {
         let conn = self.reader()?;
         Ok(conn
             .query_row(
@@ -64,7 +64,7 @@ impl Store {
     /// touched.
     pub(crate) fn begin_session(
         &self,
-        task: TaskId,
+        task: BoxId,
         session_ref: &str,
         pane: Option<&str>,
     ) -> Result<i64, StoreError> {
@@ -129,7 +129,7 @@ impl Store {
     }
 
     /// Cache `record` as the latest hook report of `task`, stamped with the read time.
-    pub(crate) fn put_hook(&self, task: TaskId, record: &HookRecord) -> Result<(), StoreError> {
+    pub(crate) fn put_hook(&self, task: BoxId, record: &HookRecord) -> Result<(), StoreError> {
         let now = self.now();
         let json = serde_json::to_string(&record_json(record))?;
         let conn = self.writer()?;
@@ -143,7 +143,7 @@ impl Store {
     }
 
     /// The latest cached hook report of `task`.
-    pub(crate) fn hook(&self, task: TaskId) -> Result<Option<HookCache>, StoreError> {
+    pub(crate) fn hook(&self, task: BoxId) -> Result<Option<HookCache>, StoreError> {
         let conn = self.reader()?;
         let row: Option<(String, i64)> = conn
             .query_row(
@@ -166,7 +166,7 @@ impl Store {
 fn session_from_row(r: &Row<'_>) -> rusqlite::Result<SessionRow> {
     Ok(SessionRow {
         id: r.get(0)?,
-        task: TaskId::new(r.get(1)?),
+        task: BoxId::new(r.get(1)?),
         session_ref: r.get(2)?,
         pane: r.get(3)?,
         started_at: Ts::from_millis(r.get(4)?),

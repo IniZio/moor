@@ -9,7 +9,7 @@ use moor_core::domain::decision::{Decision, NewTask};
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::seam::rng::Rng;
 use moor_core::secret::Secret;
-use moor_core::{TaskId, TaskName};
+use moor_core::{BoxId, BoxName};
 
 use super::{Fenced, Lease, ProxyPorts, ReadyProc, Reserve, BOX_PORT_MAX, BOX_PORT_MIN};
 use crate::store::{Store, StoreError};
@@ -30,9 +30,9 @@ fn open(dir: &Path) -> (Store, Arc<FakeClock>) {
 }
 
 /// Insert a task by name.
-fn add(store: &Store, name: &str) -> TaskId {
+fn add(store: &Store, name: &str) -> BoxId {
     let nt = NewTask {
-        name: TaskName::parse(name).unwrap(),
+        name: BoxName::parse(name).unwrap(),
         repo: "r".into(),
     };
     store.apply(Decision::insert(nt)).unwrap().task
@@ -67,7 +67,7 @@ impl Rng for Scripted {
 }
 
 /// A store with one task that has a reserved proxy row.
-fn reserved(dir: &Path) -> (Store, Arc<FakeClock>, TaskId) {
+fn reserved(dir: &Path) -> (Store, Arc<FakeClock>, BoxId) {
     let (store, clock) = open(dir);
     let id = add(&store, "t");
     let outcome = store
@@ -78,7 +78,7 @@ fn reserved(dir: &Path) -> (Store, Arc<FakeClock>, TaskId) {
 }
 
 /// Kinds and payloads of the task's events, ascending.
-fn events_of(store: &Store, id: TaskId, kind: &str) -> Vec<serde_json::Value> {
+fn events_of(store: &Store, id: BoxId, kind: &str) -> Vec<serde_json::Value> {
     store
         .events(id, 100)
         .unwrap()
@@ -170,7 +170,7 @@ fn reserve_on_unknown_task_is_not_found() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let id = add(&store, "t");
-    let missing = TaskId::new(id.get() + 100);
+    let missing = BoxId::new(id.get() + 100);
     let err = store
         .reserve(missing, &secret(NONCE), &FakeRng::default(), LEASE)
         .unwrap_err();
@@ -322,7 +322,7 @@ fn mark_ready_records_ports_and_emits_one_event_without_nonce() {
 }
 
 /// The one `ProxyStarted` event carries the recorded values and no nonce.
-fn assert_started_payload(store: &Store, id: TaskId, box_port: u16) {
+fn assert_started_payload(store: &Store, id: BoxId, box_port: u16) {
     let events = events_of(store, id, "proxy_started");
     assert_eq!(events.len(), 1);
     let payload = events.first().unwrap();
@@ -362,7 +362,7 @@ fn tunnel_restarted_appends_event_without_nonce() {
 }
 
 /// A claims, stalls past the lease, and B takes over; returns the row's box port.
-fn taken_over(store: &Store, clock: &FakeClock, id: TaskId) -> u16 {
+fn taken_over(store: &Store, clock: &FakeClock, id: BoxId) -> u16 {
     store.claim_lease(id, "A", LEASE).unwrap();
     clock.sleep(LEASE);
     assert_eq!(store.claim_lease(id, "B", LEASE).unwrap(), Lease::Claimed);

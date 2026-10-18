@@ -6,7 +6,7 @@ use std::sync::Arc;
 use moor_core::domain::decision::{Decision, NewTask};
 use moor_core::seam::clock::Ts;
 use moor_core::secret::Secret;
-use moor_core::{TaskId, TaskName};
+use moor_core::{BoxId, BoxName};
 
 use super::super::Reserve;
 use super::{TunnelAck, TunnelRequest, TunnelWant};
@@ -21,9 +21,9 @@ fn open(dir: &Path) -> Store {
 }
 
 /// Insert a task by name.
-fn add(store: &Store, name: &str) -> TaskId {
+fn add(store: &Store, name: &str) -> BoxId {
     let nt = NewTask {
-        name: TaskName::parse(name).unwrap(),
+        name: BoxName::parse(name).unwrap(),
         repo: "r".into(),
     };
     store.apply(Decision::insert(nt)).unwrap().task

@@ -6,7 +6,7 @@ use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::task::{TaskInput, TaskState};
 use moor_core::seam::clock::Ts;
-use moor_core::{BoxHandle, ProviderId, TaskId, TaskName};
+use moor_core::{BoxHandle, BoxId, BoxName, ProviderId};
 
 use crate::testing::clock::FakeClock;
 
@@ -19,16 +19,16 @@ fn open(dir: &std::path::Path) -> Store {
 }
 
 /// Insert a task by name.
-fn add(store: &Store, name: &str) -> TaskId {
+fn add(store: &Store, name: &str) -> BoxId {
     let nt = NewTask {
-        name: TaskName::parse(name).unwrap(),
+        name: BoxName::parse(name).unwrap(),
         repo: "r".into(),
     };
     store.apply(Decision::insert(nt)).unwrap().task
 }
 
 /// Close a task.
-fn close(store: &Store, id: TaskId) {
+fn close(store: &Store, id: BoxId) {
     store
         .apply(Decision::new(id).task_input(TaskInput::Close))
         .unwrap();
@@ -38,7 +38,7 @@ fn close(store: &Store, id: TaskId) {
 fn name_lookups_distinguish_open_from_latest() {
     let dir = tempfile::tempdir().unwrap();
     let store = open(dir.path());
-    let name = TaskName::parse("t").unwrap();
+    let name = BoxName::parse("t").unwrap();
     assert!(store.open_task_by_name(&name).unwrap().is_none());
     assert!(store.latest_task_by_name(&name).unwrap().is_none());
 
@@ -86,7 +86,7 @@ fn box_rows_live_skips_deleted_boxes() {
 }
 
 /// Request a box for `id` on `provider`.
-fn request(store: &Store, id: TaskId, provider: &str) {
+fn request(store: &Store, id: BoxId, provider: &str) {
     let fields = Fields {
         box_provider: Field::Set(ProviderId::new(provider)),
         ..Fields::default()
@@ -98,7 +98,7 @@ fn request(store: &Store, id: TaskId, provider: &str) {
     store.apply(d).unwrap();
 }
 
-fn box_input(store: &Store, id: TaskId, input: BoxInput) {
+fn box_input(store: &Store, id: BoxId, input: BoxInput) {
     store.apply(Decision::new(id).box_input(input)).unwrap();
 }
 

@@ -3,7 +3,7 @@
 use moor_core::domain::decision::{Intent, IntentChange};
 use moor_core::domain::event::Event;
 use moor_core::seam::clock::Ts;
-use moor_core::{RunId, Sha, TaskId};
+use moor_core::{BoxId, RunId, Sha};
 use rusqlite::types::Value;
 use rusqlite::{params, OptionalExtension, Row, TransactionBehavior};
 
@@ -14,7 +14,7 @@ use super::{load_task, Store, StoreError};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct NewRun {
     /// Owning task.
-    pub(crate) task: TaskId,
+    pub(crate) task: BoxId,
     /// Command line.
     pub(crate) argv: Vec<String>,
     /// Gate name when the run is recorded.
@@ -55,7 +55,7 @@ pub(crate) struct RunRow {
     /// Run id.
     pub(crate) id: RunId,
     /// Owning task.
-    pub(crate) task: TaskId,
+    pub(crate) task: BoxId,
     /// Command line.
     pub(crate) argv: Vec<String>,
     /// Gate name when the run is recorded.
@@ -87,7 +87,7 @@ fn run_from_row(row: &Row<'_>) -> Result<RunRow, StoreError> {
         .transpose()?;
     Ok(RunRow {
         id: RunId::new(row.get("id")?),
-        task: TaskId::new(row.get("task")?),
+        task: BoxId::new(row.get("task")?),
         argv: serde_json::from_str(&argv)?,
         record: row.get("record")?,
         sha,
@@ -155,7 +155,7 @@ impl Store {
                 r.get(0)
             })
             .optional()?;
-        let task = TaskId::new(
+        let task = BoxId::new(
             task.ok_or_else(|| StoreError::Invalid(format!("unknown run {}", id.get())))?,
         );
         let changed = tx.execute(
@@ -190,7 +190,7 @@ impl Store {
     /// Record a run refused before any run row existed: one `ran` event with no run id.
     ///
     /// Writes no run row and leaves the task's intent untouched.
-    pub(crate) fn refused_run(&self, task: TaskId) -> Result<(), StoreError> {
+    pub(crate) fn refused_run(&self, task: BoxId) -> Result<(), StoreError> {
         let now = self.now();
         let mut conn = self.writer()?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -213,7 +213,7 @@ impl Store {
     /// run can be live under the per-Box lock, so a live pid on an older row is a reused pid.
     pub(crate) fn in_flight_run(
         &self,
-        task: TaskId,
+        task: BoxId,
         alive: &dyn Fn(u32) -> bool,
     ) -> Result<Option<RunRow>, StoreError> {
         let open = {
@@ -236,7 +236,7 @@ impl Store {
     }
 
     /// The task's most recent run, in flight or finished.
-    pub(crate) fn last_run(&self, task: TaskId) -> Result<Option<RunRow>, StoreError> {
+    pub(crate) fn last_run(&self, task: BoxId) -> Result<Option<RunRow>, StoreError> {
         let conn = self.reader()?;
         let mut stmt = conn.prepare(&format!(
             "{RUN_SELECT} WHERE task = ? ORDER BY id DESC LIMIT 1"
