@@ -11,8 +11,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use moor_core::domain::decision::{Decision, NewTask};
 use moor_core::seam::clock::Ts;
-use moor_core::BoxName;
+use moor_core::{BoxId, BoxName};
 use serde_json::{json, Value};
 
 use super::*;
@@ -200,9 +201,17 @@ fn threads() -> Vec<SlackThread> {
     }]
 }
 
+/// Id the tests give task `t1`.
+const T1: BoxId = BoxId::new(1);
+
 /// Writes the controller's copy of `name` for task `t1`.
 fn write_copy(state: &Path, name: &str, bytes: &[u8]) {
-    let path = state.join(copy_relpath("t1", name));
+    write_copy_for(state, T1, name, bytes);
+}
+
+/// Writes the controller's copy of `name` under Box `id`.
+fn write_copy_for(state: &Path, id: BoxId, name: &str, bytes: &[u8]) {
+    let path = state.join(copy_relpath(id, name));
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(path, bytes).unwrap();
 }
@@ -218,7 +227,7 @@ fn payload(name: &str, sha: &str, refused: Option<&str>) -> Value {
 
 /// Folds `payload` and posts what is due with a fresh queue.
 fn run(f: &Fake, store: &Store, state: &Path, proofs: &mut Proofs, payload: &Value) {
-    proofs.fold("t1", "proof", payload);
+    proofs.fold(T1, "t1", "proof", payload);
     let bot = Secret::new(TOKEN.as_bytes().to_vec());
     let log = |m: &str| assert!(!m.contains(TOKEN), "token leaked: {m}");
     proofs.post_due(store, &f.api(), &bot, &threads(), state, &log);
@@ -357,11 +366,39 @@ fn proof_without_thread_stays_queued_and_other_kinds_are_ignored() {
     write_copy(dir.path(), "out.txt", b"hello");
     let st = store(dir.path());
     let mut proofs = Proofs::default();
-    proofs.fold("t1", "working", &payload("out.txt", "aa", None));
-    proofs.fold("t1", "proof", &payload("out.txt", "aa", None));
+    proofs.fold(T1, "t1", "working", &payload("out.txt", "aa", None));
+    proofs.fold(T1, "t1", "proof", &payload("out.txt", "aa", None));
     let bot = Secret::new(TOKEN.as_bytes().to_vec());
     proofs.post_due(&st, &f.api(), &bot, &[], dir.path(), &|_| {});
     assert!(f.paths().is_empty());
     proofs.post_due(&st, &f.api(), &bot, &threads(), dir.path(), &|_| {});
     assert_eq!(f.uploads(), 1);
+}
+
+#[test]
+fn upload_reads_the_copy_under_the_box_id() {
+    let (dir, f) = (tempfile::tempdir().unwrap(), fake());
+    let st = store(dir.path());
+    let name = BoxName::parse("acme/web").unwrap();
+    let id = st
+        .apply(Decision::insert(NewTask {
+            name: name.clone(),
+            repo: "r".into(),
+        }))
+        .unwrap()
+        .task;
+    write_copy_for(dir.path(), id, "out.txt", b"by-id");
+    let threads = vec![SlackThread {
+        channel: "C1".into(),
+        thread_ts: "10.5".into(),
+        task: name,
+        owner: "U1".into(),
+        status_ts: None,
+    }];
+    let mut proofs = Proofs::default();
+    proofs.fold(id, "acme/web", "proof", &payload("out.txt", "aa", None));
+    let bot = Secret::new(TOKEN.as_bytes().to_vec());
+    proofs.post_due(&st, &f.api(), &bot, &threads, dir.path(), &|_| {});
+    assert_eq!(f.bodies("/upload/"), vec!["by-id".to_owned()]);
+    assert!(f.texts().is_empty());
 }

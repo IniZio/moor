@@ -4,6 +4,7 @@ use std::path::Path;
 
 use moor_core::decide::proof::copy_relpath;
 use moor_core::secret::Secret;
+use moor_core::BoxId;
 use serde_json::Value;
 
 use super::api::Api;
@@ -12,6 +13,8 @@ use crate::store::{SlackThread, Store};
 
 /// One proof event waiting to be posted.
 struct Queued {
+    /// Key of the Box the proof belongs to; names its copy directory.
+    id: BoxId,
     /// Task the proof belongs to.
     task: String,
     /// File name of the proof.
@@ -40,7 +43,7 @@ enum Outcome {
 impl Proofs {
     /// Queues a `proof` event; other kinds are ignored. A newer event for the same file
     /// replaces an older one that is still queued.
-    pub(super) fn fold(&mut self, task: &str, kind: &str, payload: &Value) {
+    pub(super) fn fold(&mut self, id: BoxId, task: &str, kind: &str, payload: &Value) {
         if kind != "proof" {
             return;
         }
@@ -50,6 +53,7 @@ impl Proofs {
         };
         self.queue.retain(|q| !(q.task == task && q.name == name));
         self.queue.push(Queued {
+            id,
             task: task.to_owned(),
             name: name.to_owned(),
             sha256: sha256.to_owned(),
@@ -148,7 +152,7 @@ fn upload(
     state_dir: &Path,
     q: &Queued,
 ) -> Result<(), String> {
-    let path = state_dir.join(copy_relpath(&q.task, &q.name));
+    let path = state_dir.join(copy_relpath(q.id, &q.name));
     let bytes = std::fs::read(path).map_err(|e| format!("cannot read the saved copy ({e})"))?;
     api.upload_file(bot, &thread.channel, &thread.thread_ts, &q.name, &bytes)
         .map_err(|e| e.to_string())

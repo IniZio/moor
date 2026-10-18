@@ -163,7 +163,7 @@ fn settle_open_records_and_copies_a_new_proof_file() {
     );
     assert_eq!(id.get(), 1);
     assert_eq!(
-        std::fs::read_to_string(dir.path().join("proof/t/shot.png")).unwrap(),
+        std::fs::read_to_string(dir.path().join("proof/1/shot.png")).unwrap(),
         "png!"
     );
 }
