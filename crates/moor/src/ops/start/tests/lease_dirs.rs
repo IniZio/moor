@@ -33,10 +33,13 @@ fn dirs(w: &World, id: BoxId) -> Vec<LeaseRow> {
 }
 
 /// Asserts the cred and tmp directories are leased in `state`.
-fn assert_dirs(rows: &[LeaseRow], state: LeaseState) {
+fn assert_dirs(rows: &[LeaseRow], id: BoxId, state: LeaseState) {
     assert_eq!(rows.len(), 2, "{rows:?}");
     assert!(rows.iter().all(|r| r.state == state), "{rows:?}");
-    for (row, name) in rows.iter().zip([".moor-cred-demo-", ".moor-tmp-demo-"]) {
+    for (row, name) in rows.iter().zip([
+        format!(".moor-cred-{}-", id.get()),
+        format!(".moor-tmp-{}-", id.get()),
+    ]) {
         assert!(
             row.key.starts_with(&format!("/home/box/{name}")),
             "{}",
@@ -50,7 +53,7 @@ fn a_launch_holds_its_credential_and_tmp_directories() {
     let engine = Arc::new(FakeEngine::new().box_home("/home/box"));
     let (w, id) = started(&engine);
     run(&w.cx, &goal_req("demo")).unwrap();
-    assert_dirs(&dirs(&w, id), LeaseState::Held);
+    assert_dirs(&dirs(&w, id), id, LeaseState::Held);
 }
 
 #[test]
@@ -63,7 +66,7 @@ fn a_failed_launch_leaves_its_directories_planned() {
     )));
     let (w, id) = started(&engine);
     run(&w.cx, &goal_req("demo")).unwrap();
-    assert_dirs(&dirs(&w, id), LeaseState::Planned);
+    assert_dirs(&dirs(&w, id), id, LeaseState::Planned);
 }
 
 #[test]

@@ -3,6 +3,7 @@
 use std::path::Path;
 use std::time::Duration;
 
+use moor_core::box_key::BoxKey;
 use moor_core::config::proxy::{ResolvedRule, FORGE_CREDENTIAL};
 use moor_core::config::TaskSettings;
 use moor_core::domain::run::SyncMode;
@@ -135,12 +136,7 @@ pub(crate) fn prepare(
     };
     let dir = BoxPath::under(
         box_home(cx, site)?.as_str(),
-        &format!(
-            ".moor-cred-{}-{:08x}{:08x}",
-            p.task.get(),
-            cx.rng().u32(),
-            cx.rng().u32()
-        ),
+        &BoxKey::new(p.task).cred_dir(&format!("{:08x}{:08x}", cx.rng().u32(), cx.rng().u32())),
     )
     .map_err(|e| e.to_string())?;
     create(cx, site, &dir)?;

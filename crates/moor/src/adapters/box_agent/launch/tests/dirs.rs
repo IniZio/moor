@@ -45,6 +45,7 @@ fn req(s: &FakeSurface) -> LaunchReq {
     );
     let wt = wt.unwrap();
     LaunchReq {
+        id: BoxId::new(1),
         handle: BoxHandle::new("box-1"),
         workdir: BoxPath::under("/work", "box-1").unwrap(),
         worktree: wt.path.clone(),
