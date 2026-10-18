@@ -22,6 +22,7 @@ const PASS_VARS: &[&str] = &[
     "YARN_CACHE_FOLDER",
     "YARN_GLOBAL_FOLDER",
     "npm_config_cache",
+    "JAVA_TOOL_OPTIONS",
 ];
 
 fn path(s: &str) -> BoxPath {
@@ -92,6 +93,17 @@ fn proxy_prelude_exports_from_the_staged_nonce() {
     for name in PASS_VARS {
         assert!(text.contains(&format!("export {name}=")), "{name}");
     }
+}
+
+#[test]
+fn proxy_prelude_unsets_the_java_shell_vars() {
+    let (cred, wd, e) = (path("/cred"), path("/work"), env());
+    let got = build(&ctx(&e, Some(&cred), Some(&wd)), Purpose::Run).unwrap();
+    let last = got.prelude.last().unwrap();
+    for name in ["moor_g", "moor_p", "moor_ts", "moor_jh"] {
+        assert!(last.split(' ').any(|w| w == name), "{name}");
+    }
+    assert!(got.prelude.join("\n").contains("export JAVA_TOOL_OPTIONS="));
 }
 
 #[test]
