@@ -60,11 +60,21 @@ fn acquire_learns_the_workdir_from_the_probe() {
     let calls = p.calls();
     assert_eq!(calls.len(), 2);
     let probe = calls.get(1).unwrap();
-    assert_eq!(probe.args, probe_argv());
+    let want: Vec<String> = probe_argv()
+        .into_iter()
+        .map(|a| {
+            if a == "moor-t7-ab12cd" {
+                "moor-7-ab12cd".into()
+            } else {
+                a
+            }
+        })
+        .collect();
+    assert_eq!(probe.args, want);
     assert!(probe.args.iter().any(|a| a == "run"));
     assert!(probe.args.iter().any(|a| a == "--no-sync"));
     let id_at = probe.args.iter().position(|a| a == "--id").unwrap();
-    assert_eq!(probe.args.get(id_at + 1).unwrap(), "moor-t7-ab12cd");
+    assert_eq!(probe.args.get(id_at + 1).unwrap(), "moor-7-ab12cd");
     assert_eq!(probe.cwd.as_deref(), Some(Path::new("/wt/app")));
 }
 

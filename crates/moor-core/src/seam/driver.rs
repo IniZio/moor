@@ -84,6 +84,8 @@ pub struct BoxListing {
     pub handle: BoxHandle,
     /// Provider, when known.
     pub provider: Option<ProviderId>,
+    /// The Box id the Driver's name for it carries, when it carries one.
+    pub id: Option<BoxId>,
     /// Whether the Box sleeps.
     pub asleep: bool,
 }

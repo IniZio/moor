@@ -24,13 +24,19 @@ pub struct BoxFact {
 /// row is mid-acquire (its handle may not exist yet), and other states are
 /// already past needing the Box. No task input is emitted: the task machine
 /// has no Box-gone transition. An asleep/awake mismatch with the provider is not handled yet.
+/// A row is live when its stored handle is listed or a listing carries its Box id.
 /// A failed listing must not call this; the op then decides nothing.
 #[must_use]
 pub fn reconcile(rows: &[BoxFact], listing: &[BoxListing]) -> Vec<Decision> {
     let listed: HashSet<&BoxHandle> = listing.iter().map(|l| &l.handle).collect();
+    let ids: HashSet<&BoxId> = listing.iter().filter_map(|l| l.id.as_ref()).collect();
     rows.iter()
         .filter(|r| matches!(r.state, BoxState::Ready | BoxState::Asleep))
-        .filter(|r| r.handle.as_ref().is_some_and(|h| !listed.contains(h)))
+        .filter(|r| {
+            r.handle
+                .as_ref()
+                .is_some_and(|h| !listed.contains(h) && !ids.contains(&r.task))
+        })
         .map(|r| Decision::new(r.task).box_input(BoxInput::DriverMissing))
         .collect()
 }

@@ -18,7 +18,15 @@ fn listed(h: &str, asleep: bool) -> BoxListing {
     BoxListing {
         handle: BoxHandle::new(h),
         provider: None,
+        id: None,
         asleep,
+    }
+}
+
+fn listed_as(h: &str, id: i64) -> BoxListing {
+    BoxListing {
+        id: Some(BoxId::new(id)),
+        ..listed(h, false)
     }
 }
 
@@ -84,4 +92,19 @@ fn only_the_missing_row_is_decided() {
     let out = reconcile(&rows, &[listed("a", false)]);
     let tasks: Vec<_> = out.iter().map(|d| d.task.clone()).collect();
     assert_eq!(tasks, [TaskTarget::Existing(BoxId::new(2))]);
+}
+
+#[test]
+fn live_box_named_with_a_slash_stays_live() {
+    let rows = [fact(7, BoxState::Ready, Some("prov/moor-7-a1b2c3"))];
+    let out = reconcile(&rows, &[listed_as("prov/MOOR-7-A1B2C3", 7)]);
+    assert!(out.is_empty());
+}
+
+#[test]
+fn differing_handle_with_another_box_id_is_gone() {
+    let rows = [fact(7, BoxState::Ready, Some("prov/moor-7-a1b2c3"))];
+    let out = reconcile(&rows, &[listed_as("prov/moor-8-a1b2c3", 8)]);
+    let tasks: Vec<_> = out.iter().map(|d| d.task.clone()).collect();
+    assert_eq!(tasks, [TaskTarget::Existing(BoxId::new(7))]);
 }
