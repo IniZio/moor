@@ -1,6 +1,9 @@
 //! Tests that the crabbox slug and static id come from the Box id, not its name.
 
-use moor_core::name::{BoxId, BoxName, ProviderId};
+use moor_core::decide::reconcile::{reconcile, BoxFact};
+use moor_core::domain::boxes::BoxState;
+use moor_core::domain::decision::TaskTarget;
+use moor_core::name::{BoxHandle, BoxId, BoxName, ProviderId};
 use moor_core::seam::driver::Driver;
 use moor_core::seam::proc::Tool;
 
@@ -46,12 +49,29 @@ fn static_id_of_slashed_name_has_no_slash() {
 }
 
 #[test]
-fn list_fills_id_from_slug() {
+fn slash_named_box_stays_live_through_list_and_reconcile() {
     let (p, c) = fixture();
-    let json = r#"[{"id":1,"labels":{"slug":"moor-7-a1b2c3"}},
-        {"id":2,"labels":{"slug":"moor-fix-bug-a1b2c3"}}]"#;
+    p.on(Tool::Crabbox, &["warmup"], Reply::Ok(WARMUP_OUT.to_owned()));
+    probe(&p);
+    let mut r = req("sprites", None);
+    r.name = BoxName::parse_allow_bare("web/fix-bug").unwrap();
+    let handle = c.acquire(&r).unwrap().handle;
+    let json = r#"[{"id":1,"labels":{"slug":"moor-7-ab12cd"}}]"#;
     p.on(Tool::Crabbox, &["list"], Reply::Ok(json.to_owned()));
-    let got = c.list(&ProviderId::new("sprites")).unwrap();
-    assert_eq!(got.first().unwrap().id, Some(BoxId::new(7)));
-    assert_eq!(got.get(1).unwrap().id, None);
+    let listing = c.list(&ProviderId::new("sprites")).unwrap();
+    let rows = [
+        BoxFact {
+            task: BoxId::new(7),
+            state: BoxState::Ready,
+            handle: Some(handle),
+        },
+        BoxFact {
+            task: BoxId::new(8),
+            state: BoxState::Ready,
+            handle: Some(BoxHandle::new("sprites/moor-8-ab12cd")),
+        },
+    ];
+    let out = reconcile(&rows, &listing);
+    let tasks: Vec<_> = out.iter().map(|d| d.task.clone()).collect();
+    assert_eq!(tasks, [TaskTarget::Existing(BoxId::new(8))]);
 }

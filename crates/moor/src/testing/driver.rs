@@ -186,9 +186,6 @@ impl Driver for FakeDriver {
             .map(|(h, _)| BoxListing {
                 handle: BoxHandle::new(h.clone()),
                 provider: Some(provider.clone()),
-                id: h
-                    .split_once('/')
-                    .and_then(|(_, slug)| moor_core::box_key::BoxKey::id_from_slug(slug)),
                 asleep: false,
             })
             .collect())

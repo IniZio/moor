@@ -287,7 +287,6 @@ impl Driver for Crabbox {
         Ok(items
             .into_iter()
             .map(|i| BoxListing {
-                id: BoxKey::id_from_slug(&i.name),
                 handle: handle_of(p, &i.name),
                 provider: Some(provider.clone()),
                 asleep: i.asleep,
