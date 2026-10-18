@@ -77,7 +77,8 @@ platform puts in the Box, such as platform tokens. moor removes them from
 every Box exec it runs: setup, teardown, `moor run`, and the agent (before its
 hooks). The agent also starts without crabbox's own variables: its gate names,
 `NSC_*` and `token`. The external provider adapter's README lists the names its
-platform injects (for agent37, see crabbox-agent37 below).
+platform injects (for agent37, see crabbox-agent37 below). Every other Box
+environment variable reaches the agent, so list platform secrets in `strip_env`.
 
 ```yaml
 drivers:
