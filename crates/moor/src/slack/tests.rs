@@ -7,7 +7,7 @@ use moor_core::domain::decision::{Decision, ExtraEvent, NewTask};
 use moor_core::domain::task::{SetupOutcome, TaskInput};
 use moor_core::request::{CloseReq, Request, StartReq, SteerReq};
 use moor_core::seam::clock::Ts;
-use moor_core::TaskName;
+use moor_core::BoxName;
 
 use super::answer::{handle_click, Fx, Ui};
 use super::command::Allow;
@@ -102,7 +102,7 @@ fn starts(seen: &Seen) -> Vec<&StartReq> {
         .collect()
 }
 
-fn bound(store: &Store, channel: &str, thread: &str) -> Option<TaskName> {
+fn bound(store: &Store, channel: &str, thread: &str) -> Option<BoxName> {
     store.slack_thread(channel, thread).unwrap()
 }
 
@@ -228,7 +228,7 @@ fn reply_to(event_id: &str, user: &str, channel: &str, text: &str) -> Mention {
 /// A store with a Task bound to thread `10.5` in `C1`, owned by `U1`.
 fn owned(dir: &std::path::Path) -> Store {
     let store = store(dir);
-    let name = TaskName::parse("slack-10-5").unwrap();
+    let name = BoxName::parse("slack-10-5").unwrap();
     assert!(store.bind_slack_thread("C1", "10.5", &name, "U1").unwrap());
     store
 }
@@ -287,7 +287,7 @@ fn reply_in_unbound_thread_is_ignored() {
 fn reply_in_disallowed_channel_is_ignored() {
     let dir = tempfile::tempdir().unwrap();
     let store = store(dir.path());
-    let name = TaskName::parse("slack-10-5").unwrap();
+    let name = BoxName::parse("slack-10-5").unwrap();
     store.bind_slack_thread("C9", "10.5", &name, "U1").unwrap();
     let seen = RefCell::default();
     run(&store, &reply_to("Ev2", "U1", "C9", "hello"), None, &seen);
@@ -347,7 +347,7 @@ fn redelivered_reply_is_handled_once() {
 
 /// Opens task `slack-10-5` with a `needs_input` event and records its prompt; returns the event id.
 fn prompted(store: &Store) -> i64 {
-    let name = TaskName::parse("slack-10-5").unwrap();
+    let name = BoxName::parse("slack-10-5").unwrap();
     let id = store
         .apply(Decision::insert(NewTask {
             name: name.clone(),
@@ -373,7 +373,7 @@ fn prompted(store: &Store) -> i64 {
 }
 
 /// Appends a new `needs_input` event to the task.
-fn ask(store: &Store, id: moor_core::TaskId) {
+fn ask(store: &Store, id: moor_core::BoxId) {
     store
         .apply(Decision::new(id).event(ExtraEvent::NeedsInput {
             question: Some("Which one?".into()),
@@ -498,7 +498,7 @@ fn click_on_prompt_after_newer_question_is_refused() {
     let store = owned(dir.path());
     prompted(&store);
     let row = store
-        .open_task_by_name(&TaskName::parse("slack-10-5").unwrap())
+        .open_task_by_name(&BoxName::parse("slack-10-5").unwrap())
         .unwrap()
         .unwrap();
     ask(&store, row.id);
@@ -520,7 +520,7 @@ fn click_after_agent_resumed_reports_working() {
     let store = owned(dir.path());
     prompted(&store);
     let row = store
-        .open_task_by_name(&TaskName::parse("slack-10-5").unwrap())
+        .open_task_by_name(&BoxName::parse("slack-10-5").unwrap())
         .unwrap()
         .unwrap();
     for input in [

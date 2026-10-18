@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use moor_core::seam::clock::Ts;
-use moor_core::TaskName;
+use moor_core::BoxName;
 use serde_json::{json, Value};
 
 use super::*;
@@ -194,7 +194,7 @@ fn threads() -> Vec<SlackThread> {
     vec![SlackThread {
         channel: "C1".into(),
         thread_ts: "10.5".into(),
-        task: TaskName::parse("t1").unwrap(),
+        task: BoxName::parse("t1").unwrap(),
         owner: "U1".into(),
         status_ts: None,
     }]
