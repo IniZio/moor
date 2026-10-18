@@ -75,7 +75,8 @@ commands fail with "box operation timed out".
 `drivers.<provider>.strip_env` lists env var names that the provider's
 platform puts in the Box, such as platform tokens. moor removes them from
 every Box exec it runs: setup, teardown, `moor run`, and the agent (before its
-hooks). The sandbox never passes them through. The external provider adapter's README lists the names its
+hooks). The agent also starts without crabbox's own variables: its gate names,
+`NSC_*` and `token`. The external provider adapter's README lists the names its
 platform injects (for agent37, see crabbox-agent37 below).
 
 ```yaml
