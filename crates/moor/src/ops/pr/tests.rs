@@ -88,6 +88,24 @@ fn found_pr_is_recorded_on_the_box() {
 }
 
 #[test]
+fn a_failed_pr_record_still_gives_the_url() {
+    let dir = tempfile::tempdir().unwrap();
+    let cx = cx(dir.path(), forge().with_open_pr("o", "r", "feat", URL));
+    task(&cx);
+    let db = cx.state_dir().unwrap().join("moor.db");
+    rusqlite::Connection::open(db)
+        .unwrap()
+        .execute_batch("DROP TABLE box_refs")
+        .unwrap();
+    assert_eq!(open_pr_url(&cx, "t"), Ok(Some(URL.to_owned())));
+    let warnings = cx.take_warnings();
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    let warning = warnings.first().unwrap();
+    assert_eq!(warning.code, "pr_record_failed");
+    assert!(warning.message.contains("box_refs"), "{warnings:?}");
+}
+
+#[test]
 fn an_unknown_task_has_no_url() {
     let dir = tempfile::tempdir().unwrap();
     let cx = cx(dir.path(), forge().with_open_pr("o", "r", "feat", URL));
