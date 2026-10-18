@@ -20,12 +20,34 @@ pub(super) fn create_worktree(
         cx.surface()
             .create_worktree(&facts.repo, &req.name, facts.from.as_deref())
     };
-    match create() {
+    let wt = match create() {
         Err(SurfaceError::Leftover { path }) => {
             clear(cx, &path, facts.from.as_deref())?;
-            Ok(create()?)
+            create()?
         }
-        other => Ok(other?),
+        other => other?,
+    };
+    refuse_owned(cx, &wt)?;
+    Ok(wt)
+}
+
+/// Refuses a worktree or branch the Surface returned that an open Box already holds.
+fn refuse_owned(cx: &Cx, wt: &Worktree) -> Result<(), CommandError> {
+    let path = wt.path.to_string_lossy();
+    let owner = cx.store()?.open_tasks()?.into_iter().find(|t| {
+        t.worktree.as_deref() == Some(path.as_ref()) || t.branch.as_deref() == Some(&wt.branch)
+    });
+    match owner {
+        Some(t) => Err(CommandError::new(
+            ErrorKind::Failed,
+            format!(
+                "the worktree {path} on branch {} belongs to open Box {}",
+                wt.branch,
+                t.name.as_str()
+            ),
+        )
+        .with_hint("pick another Box name")),
+        None => Ok(()),
     }
 }
 

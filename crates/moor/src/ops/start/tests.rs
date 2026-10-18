@@ -1,5 +1,4 @@
-use std::path::Path;
-use std::{sync::Arc, time::Duration};
+use std::{path::Path, sync::Arc, time::Duration};
 
 use moor_core::config::UserConfig;
 use moor_core::domain::boxes::{BoxInput, BoxState};
@@ -19,6 +18,7 @@ use crate::testing::{box_name, driver::FakeDriver};
 
 mod activity;
 mod base;
+mod branch_owner;
 mod capacity;
 mod dead_agent;
 mod dotfiles;
