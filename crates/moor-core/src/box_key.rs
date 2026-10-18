@@ -30,20 +30,6 @@ impl BoxKey {
         format!("moor-{}-{nonce}", self.0.get())
     }
 
-    /// The Box id a slug made by [`BoxKey::slug`] carries; `None` for any other slug.
-    #[must_use]
-    pub fn id_from_slug(slug: &str) -> Option<BoxId> {
-        let (id, nonce) = slug.strip_prefix("moor-")?.split_once('-')?;
-        let hex = !nonce.is_empty()
-            && nonce
-                .bytes()
-                .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'));
-        if id.is_empty() || !id.bytes().all(|b| b.is_ascii_digit()) || !hex {
-            return None;
-        }
-        id.parse().ok().map(BoxId::new)
-    }
-
     /// The session ref recorded when the Engine reports none, `moor-{id}`.
     #[must_use]
     pub fn session_ref(self) -> String {
@@ -73,19 +59,18 @@ impl BoxKey {
     pub fn proof_file(self, file: &str) -> PathBuf {
         self.proof_dir().join(file)
     }
-
-    /// The branch for this Box when [`branch`] is already taken: `{branch}-{id}`.
-    #[must_use]
-    pub fn branch_on_collision(self, name: &BoxName) -> String {
-        format!("{}-{}", branch(name), self.0.get())
-    }
 }
 
-/// The git branch of a new Box named `name`: `moor/{repo}-{n}`, with every `/`
-/// in the name flattened to `-` so the branch holds exactly one `/`.
+/// The git branch of a new Box named `name`: `moor/{repo}--{label}`.
+///
+/// The `/` of the name becomes `--`, so the branch holds exactly one `/`.
+/// Segments of a `<repo>/<label>` name cannot contain `--`, so the encoding is
+/// reversible and two such names never share a branch. A bare name containing
+/// `--` can share a branch with a `<repo>/<label>` name; that gap closes when
+/// bare names go with the next schema.
 #[must_use]
 pub fn branch(name: &BoxName) -> String {
-    format!("moor/{}", name.as_str().replace('/', "-"))
+    format!("moor/{}", name.as_str().replace('/', "--"))
 }
 
 #[cfg(test)]

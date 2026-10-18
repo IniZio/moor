@@ -170,3 +170,19 @@ fn next_box_name_rejects_invalid_repo() {
     assert!(next_box_name("Bad Repo", &[]).is_err());
     assert!(next_box_name("a/b", &[1]).is_err());
 }
+
+/// A `--` inside either segment of a strict name is rejected.
+#[test]
+fn parse_rejects_double_dash() {
+    for bad in ["a--b/c", "a/b--c"] {
+        assert!(BoxName::parse(bad).is_err(), "{bad}");
+        assert!(BoxName::parse_allow_bare(bad).is_err(), "{bad}");
+    }
+}
+
+/// A bare name may still hold `--`, because the store may hold such names.
+#[test]
+fn parse_allow_bare_keeps_double_dash() {
+    assert!(BoxName::parse_allow_bare("a--b").is_ok());
+    assert!(BoxName::parse("a--b").is_err());
+}
