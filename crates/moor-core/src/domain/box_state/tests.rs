@@ -1,8 +1,8 @@
-//! Tests for the Box state machine and the Task-state split.
+//! Tests for the Box state machine.
 
-use super::{box_may_sleep, split_task_state, BoxLifecycle, BoxLifecycleInput, StepError};
+use super::{box_may_sleep, BoxLifecycle, BoxLifecycleInput, StepError};
 use crate::domain::session_state::SessionState;
-use crate::domain::task::{SetupOutcome, TaskState};
+use crate::domain::task::SetupOutcome;
 use crate::domain::Illegal;
 
 use BoxLifecycle as S;
@@ -262,36 +262,4 @@ fn ended_sessions_do_not_block_sleep() {
     assert!(box_may_sleep(&[SS::Ended]));
     assert!(box_may_sleep(&[SS::Ended, SS::Idle]));
     assert!(!box_may_sleep(&[SS::Ended, SS::Working]));
-}
-
-/// Every Task state maps to exactly one pair.
-#[test]
-fn split_covers_every_task_state() {
-    let expected = |t: TaskState| match t {
-        TaskState::Checking => (S::Checking, None),
-        TaskState::Rejected => (S::Rejected, None),
-        TaskState::WaitingForBox => (S::WaitingForBox, None),
-        TaskState::SettingUp => (S::SettingUp, None),
-        TaskState::SetupFailed => (S::SetupFailed, None),
-        TaskState::Working => (S::Ready, Some(SS::Working)),
-        TaskState::Idle => (S::Ready, Some(SS::Idle)),
-        TaskState::Asleep => (S::Asleep, Some(SS::Idle)),
-        TaskState::Closed => (S::Closed, Some(SS::Ended)),
-    };
-    assert_eq!(TaskState::ALL.len(), 9);
-    for t in TaskState::ALL {
-        assert_eq!(split_task_state(t), expected(t), "{t:?}");
-    }
-}
-
-/// A sleeping Task's Session is never auto-ended, and liveness is preserved.
-#[test]
-fn split_keeps_liveness_and_never_ends_asleep_sessions() {
-    for t in TaskState::ALL {
-        let (b, s) = split_task_state(t);
-        assert_eq!(b.is_live(), t.is_live(), "{t:?}");
-        if b == S::Asleep {
-            assert_eq!(s, Some(SS::Idle));
-        }
-    }
 }

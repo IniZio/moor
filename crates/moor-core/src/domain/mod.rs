@@ -1,6 +1,7 @@
 //! Pure domain model: task and box state machines, events and store decisions.
 
 pub mod box_state;
+pub mod box_steps;
 pub mod boxes;
 pub mod decision;
 pub mod event;
