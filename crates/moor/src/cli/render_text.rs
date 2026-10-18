@@ -135,6 +135,7 @@ fn start_text(value: &Value) -> Option<String> {
         let name = view.get("name")?.as_str()?;
         let _ = writeln!(out, "open it with: moor open {name}");
     }
+    setup_output(value, &mut out);
     setup_failure_lines(value, &mut out);
     promoted_line(value, &mut out);
     for w in value
@@ -147,6 +148,24 @@ fn start_text(value: &Value) -> Option<String> {
         let _ = writeln!(out, "warning: {w}");
     }
     Some(out)
+}
+
+/// The tail of a passing setup's log, indented under a `setup:` line like `moor show`'s.
+fn setup_output(value: &Value, out: &mut String) {
+    if value.pointer("/setup/ok").and_then(Value::as_bool) != Some(true) {
+        return;
+    }
+    let Some(tail) = value.pointer("/setup/tail").and_then(Value::as_str) else {
+        return;
+    };
+    let took = value
+        .pointer("/setup/ms")
+        .and_then(Value::as_u64)
+        .map_or_else(String::new, |ms| format!(" in {}", duration_text(ms)));
+    let _ = writeln!(out, "setup: ok{took}, last {} lines:", tail.lines().count());
+    for l in tail.lines() {
+        let _ = writeln!(out, "  {l}");
+    }
 }
 
 /// Writes the failed step's log tail, the Box it is in and how to close it, for a start that
