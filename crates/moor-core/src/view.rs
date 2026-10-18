@@ -162,7 +162,7 @@ pub struct SetupView {
     pub line: Option<String>,
     /// Duration in milliseconds.
     pub ms: Option<u64>,
-    /// Last lines of the setup log after a failure.
+    /// Last lines of the setup log.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tail: Option<String>,
 }

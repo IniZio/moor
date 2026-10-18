@@ -15,6 +15,7 @@ use moor_core::{BoxHandle, BoxPath, Warning};
 
 use crate::cx::Cx;
 use crate::ops::common::box_exec::{self, BoxProxy, Site};
+use crate::ops::show::redact_nonce;
 
 /// How many trailing log lines a failure warning carries.
 const LOG_TAIL_LINES: usize = 20;
@@ -34,6 +35,9 @@ pub(crate) enum SetupRun {
     Ok {
         /// Time the script took, in milliseconds.
         ms: u64,
+        /// The last lines of the script's log, tidied and without the Proxy nonce; empty when the
+        /// log was unreadable.
+        tail: String,
     },
     /// A line failed; later lines did not run.
     Failed {
@@ -61,12 +65,12 @@ impl SetupRun {
     pub(crate) fn view(&self) -> SetupView {
         match self {
             Self::Skipped => SetupView::default(),
-            Self::Ok { ms } => SetupView {
+            Self::Ok { ms, tail } => SetupView {
                 ran: true,
                 ok: true,
                 line: None,
                 ms: Some(*ms),
-                tail: None,
+                tail: Some(tail.clone()).filter(|t| !t.is_empty()),
             },
             Self::Failed { line, ms, tail, .. } => SetupView {
                 ran: true,
@@ -90,7 +94,7 @@ impl SetupRun {
     pub(crate) const fn ms(&self) -> Option<u64> {
         match self {
             Self::Skipped => None,
-            Self::Ok { ms } | Self::Failed { ms, .. } => Some(*ms),
+            Self::Ok { ms, .. } | Self::Failed { ms, .. } => Some(*ms),
         }
     }
 
@@ -103,9 +107,9 @@ impl SetupRun {
 /// Runs the setup lines as one script in `workdir` after syncing the worktree as `sync` says,
 /// stopping at the first failure.
 ///
-/// Sync is one-way, so after a failure the script's log is copied back from the Box; the
-/// failing line comes from there. The script gets the environment the agent gets in the Box,
-/// including the Proxy variables when `proxy` is set.
+/// Sync is one-way, so the script's log is copied back from the Box; its tail and, after a
+/// failure, the failing line come from there. The script gets the environment the agent gets in
+/// the Box, including the Proxy variables when `proxy` is set.
 #[allow(
     clippy::too_many_arguments,
     reason = "the Box, its provider and workdir, worktree, settings, sync mode and Proxy"
@@ -129,42 +133,20 @@ pub(crate) fn run_setup(
         workdir: Some(workdir),
         worktree,
     };
-    let purpose = Purpose::Setup {
-        lines: cfg.setup.len(),
-    };
     let started = cx.clock().instant();
-    let result = box_exec::prepare(cx, &site, proxy, cfg, purpose)
-        .map_err(Failure::Prepare)
-        .and_then(|exec| {
-            let spec = ExecSpec {
-                argv: exec.argv(vec![
-                    "sh".to_owned(),
-                    "-c".to_owned(),
-                    setup_script(&cfg.setup),
-                ]),
-                env: exec.vars(),
-                cwd: exec.cwd(),
-                sync,
-                output: None,
-                host_cwd: Some(worktree.to_path_buf()),
-                class: Some(cfg.size.value.as_str().to_owned()),
-            };
-            let out = cx.driver().exec(handle, &spec, exec.deadline());
-            if matches!(out, Err(_) | Ok(ExecOutcome::Interrupted)) {
-                exec.cleanup(cx, &site);
-            }
-            out.map_err(Failure::Exec)
-        });
+    let result = exec_script(cx, &site, cfg, sync, proxy);
     let elapsed = cx.clock().instant().saturating_duration_since(started);
     let ms = u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX);
+    let nonce = proxy.map(|p| p.addr.nonce.expose());
+    let log = fetch_log(cx, handle, workdir, worktree, nonce);
+    let tail = tail_lines(&log).join("\n");
     let (reason, exit) = match result {
-        Ok(ExecOutcome::Exited { code: 0 }) => return SetupRun::Ok { ms },
+        Ok(ExecOutcome::Exited { code: 0 }) => return SetupRun::Ok { ms, tail },
         Ok(ExecOutcome::Exited { code }) => (format!("exit {code}"), Some(code)),
         Ok(ExecOutcome::Interrupted) => ("interrupted".to_owned(), None),
         Err(Failure::Prepare(e)) => (e, None),
         Err(Failure::Exec(e)) => (e.to_string(), None),
     };
-    let log = fetch_log(cx, handle, workdir, worktree);
     let line = cfg
         .setup
         .get(failed_step(&log, cfg.setup.len()))
@@ -178,8 +160,41 @@ pub(crate) fn run_setup(
         line,
         exit,
         ms,
-        tail: tail_lines(&log).join("\n"),
+        tail,
     }
+}
+
+/// Builds the setup environment and runs the script once; the staged credentials are removed when
+/// the exec does not run to an exit.
+fn exec_script(
+    cx: &Cx,
+    site: &Site<'_>,
+    cfg: &BoxSettings,
+    sync: SyncMode,
+    proxy: Option<&BoxProxy>,
+) -> Result<ExecOutcome, Failure> {
+    let purpose = Purpose::Setup {
+        lines: cfg.setup.len(),
+    };
+    let exec = box_exec::prepare(cx, site, proxy, cfg, purpose).map_err(Failure::Prepare)?;
+    let spec = ExecSpec {
+        argv: exec.argv(vec![
+            "sh".to_owned(),
+            "-c".to_owned(),
+            setup_script(&cfg.setup),
+        ]),
+        env: exec.vars(),
+        cwd: exec.cwd(),
+        sync,
+        output: None,
+        host_cwd: Some(site.worktree.to_path_buf()),
+        class: Some(cfg.size.value.as_str().to_owned()),
+    };
+    let out = cx.driver().exec(site.handle, &spec, exec.deadline());
+    if matches!(out, Err(_) | Ok(ExecOutcome::Interrupted)) {
+        exec.cleanup(cx, site);
+    }
+    out.map_err(Failure::Exec)
 }
 
 /// Why the script did not run to an exit.
@@ -290,8 +305,15 @@ fn tidy(line: &str) -> String {
     cut
 }
 
-/// Copies the script's log out of the Box and reads it; empty when either step fails.
-fn fetch_log(cx: &Cx, handle: &BoxHandle, workdir: &BoxPath, worktree: &Path) -> String {
+/// Copies the script's log out of the Box and reads it with the Proxy `nonce` redacted; empty when
+/// either step fails.
+fn fetch_log(
+    cx: &Cx,
+    handle: &BoxHandle,
+    workdir: &BoxPath,
+    worktree: &Path,
+    nonce: Option<&[u8]>,
+) -> String {
     let to = worktree.join(".moor").join("setup.log");
     let Ok(from) = BoxPath::under(workdir.as_str(), LOG_REL) else {
         return String::new();
@@ -302,7 +324,8 @@ fn fetch_log(cx: &Cx, handle: &BoxHandle, workdir: &BoxPath, worktree: &Path) ->
     if !made || cx.driver().copy_out(handle, &from, &to, worktree).is_err() {
         return String::new();
     }
-    String::from_utf8_lossy(&std::fs::read(to).unwrap_or_default()).into_owned()
+    let log = String::from_utf8_lossy(&std::fs::read(to).unwrap_or_default()).into_owned();
+    redact_nonce(&log, nonce)
 }
 
 /// Index of the failing step: the last one the log announced, else the first.

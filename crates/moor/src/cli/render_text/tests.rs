@@ -327,6 +327,30 @@ fn start_does_not_say_setup_failed_when_setup_passed_or_did_not_run() {
 }
 
 #[test]
+fn start_shows_the_tail_of_a_passing_setup() {
+    let v = json!({
+        "box": lifecycle_box("alpha", "ready", Some("ready")),
+        "setup": {"ran": true, "ok": true, "ms": 4200, "tail": "Got dependencies!\ndone"},
+    });
+    let (out, _) = render(&Response::ok("start", Some(v)), false);
+    assert_eq!(
+        out,
+        "started alpha (#7): ready/idle, box ready\nopen it with: moor open alpha\n\
+         setup: ok in 4s, last 2 lines:\n  Got dependencies!\n  done\n"
+    );
+}
+
+#[test]
+fn start_shows_no_setup_block_without_a_tail() {
+    let v = json!({
+        "box": lifecycle_box("alpha", "ready", Some("ready")),
+        "setup": {"ran": true, "ok": true, "ms": 4200},
+    });
+    let (out, _) = render(&Response::ok("start", Some(v)), false);
+    assert!(!out.contains("setup:"), "{out}");
+}
+
+#[test]
 fn start_says_attached_and_queued() {
     let v = json!({"box": lifecycle_box("alpha", "ready", Some("ready")), "attached": true});
     let (out, _) = render(&Response::ok("start", Some(v)), false);

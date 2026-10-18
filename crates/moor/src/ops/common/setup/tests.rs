@@ -22,6 +22,7 @@ use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
 use crate::testing::surface::FakeSurface;
 
+mod output;
 mod proxy;
 mod warning;
 
@@ -111,8 +112,13 @@ fn all_lines_passing_is_ok() {
         &cfg(&["a", "b"], &[]),
         SyncMode::Full,
     );
-    assert_eq!(got, SetupRun::Ok { ms: 0 });
-    assert!(r.driver.copies().is_empty());
+    assert_eq!(
+        got,
+        SetupRun::Ok {
+            ms: 0,
+            tail: String::new(),
+        }
+    );
     assert!(r.cx.take_warnings().is_empty());
 }
 
@@ -329,7 +335,14 @@ fn empty_setup_is_skipped_without_exec() {
 #[test]
 fn outcome_maps_skipped_and_ok_to_ok() {
     assert_eq!(SetupRun::Skipped.outcome(), SetupOutcome::Ok);
-    assert_eq!(SetupRun::Ok { ms: 0 }.outcome(), SetupOutcome::Ok);
+    assert_eq!(
+        SetupRun::Ok {
+            ms: 0,
+            tail: String::new(),
+        }
+        .outcome(),
+        SetupOutcome::Ok
+    );
     assert_eq!(
         SetupRun::Failed {
             line: "x".to_owned(),
@@ -348,7 +361,11 @@ fn outcome_maps_skipped_and_ok_to_ok() {
 fn view_maps_each_variant() {
     assert_eq!(SetupRun::Skipped.view(), SetupView::default());
     assert_eq!(
-        SetupRun::Ok { ms: 0 }.view(),
+        SetupRun::Ok {
+            ms: 0,
+            tail: String::new(),
+        }
+        .view(),
         SetupView {
             ran: true,
             ok: true,
@@ -378,7 +395,11 @@ fn view_maps_each_variant() {
 #[test]
 fn failed_is_true_only_for_failed() {
     assert!(!SetupRun::Skipped.failed());
-    assert!(!SetupRun::Ok { ms: 0 }.failed());
+    assert!(!SetupRun::Ok {
+        ms: 0,
+        tail: String::new(),
+    }
+    .failed());
     assert!(SetupRun::Failed {
         line: "x".to_owned(),
         exit: None,
