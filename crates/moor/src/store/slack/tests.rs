@@ -3,7 +3,7 @@
 use moor_core::seam::clock::Clock;
 use moor_core::BoxName;
 
-use crate::store::tests::open;
+use crate::store::tests::{new_task, open};
 use crate::store::{SlackPrompt, SlackThread, Store};
 
 fn name(s: &str) -> BoxName {
@@ -23,6 +23,8 @@ fn event_is_new_once() {
 fn thread_binding_first_wins() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
+    new_task(&store, "first");
+    new_task(&store, "second");
     assert_eq!(store.slack_thread("C1", "1.1").unwrap(), None);
     assert!(store
         .bind_slack_thread("C1", "1.1", &name("first"), "U1")
@@ -45,10 +47,11 @@ fn thread_binding_first_wins() {
 fn existing_v1_db_gains_tables() {
     let dir = tempfile::tempdir().unwrap();
     let (store, clock) = open(dir.path());
+    new_task(&store, "t");
     store
         .writer()
         .unwrap()
-        .execute_batch("DROP TABLE slack_events; DROP TABLE slack_threads;")
+        .execute_batch("DROP TABLE slack_events; DROP TABLE bindings;")
         .unwrap();
     drop(store);
     let path = dir.path().join("state").join("moor.db");
@@ -63,6 +66,8 @@ fn existing_v1_db_gains_tables() {
 fn owner_kept_from_first_bind() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
+    new_task(&store, "first");
+    new_task(&store, "second");
     assert_eq!(store.slack_thread_owner("C1", "1.1").unwrap(), None);
     store
         .bind_slack_thread("C1", "1.1", &name("first"), "U1")
@@ -80,6 +85,7 @@ fn owner_kept_from_first_bind() {
 fn status_ts_set_and_read() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
+    new_task(&store, "t");
     store
         .bind_slack_thread("C1", "1.1", &name("t"), "U1")
         .unwrap();
@@ -104,6 +110,8 @@ fn status_ts_set_and_read() {
 fn threads_listed_oldest_first() {
     let dir = tempfile::tempdir().unwrap();
     let (store, clock) = open(dir.path());
+    new_task(&store, "a");
+    new_task(&store, "b");
     assert!(store.slack_threads().unwrap().is_empty());
     store
         .bind_slack_thread("C1", "2.2", &name("b"), "U2")
@@ -151,6 +159,7 @@ fn prompt(event_id: i64, thread_ts: &str, message_ts: &str) -> SlackPrompt {
 fn prompt_posted_flag() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
+    new_task(&store, "t");
     assert!(!store.slack_prompt_posted(7).unwrap());
     store.add_slack_prompt(&prompt(7, "1.1", "2.2")).unwrap();
     assert!(store.slack_prompt_posted(7).unwrap());
@@ -161,6 +170,7 @@ fn prompt_posted_flag() {
 fn add_prompt_is_idempotent() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
+    new_task(&store, "t");
     store.add_slack_prompt(&prompt(7, "1.1", "2.2")).unwrap();
     store.add_slack_prompt(&prompt(7, "1.1", "9.9")).unwrap();
     assert_eq!(
@@ -174,6 +184,7 @@ fn add_prompt_is_idempotent() {
 fn prompt_found_by_message() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
+    new_task(&store, "t");
     store.add_slack_prompt(&prompt(7, "1.1", "2.2")).unwrap();
     assert_eq!(
         store.slack_prompt_by_message("C1", "2.2").unwrap(),
@@ -187,6 +198,7 @@ fn prompt_found_by_message() {
 fn open_prompt_is_newest_unanswered() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
+    new_task(&store, "t");
     assert_eq!(store.open_slack_prompt("C1", "1.1").unwrap(), None);
     store.add_slack_prompt(&prompt(5, "1.1", "2.2")).unwrap();
     store.add_slack_prompt(&prompt(9, "1.1", "3.3")).unwrap();
@@ -216,6 +228,7 @@ fn open_prompt_is_newest_unanswered() {
 fn prompt_answered_once() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
+    new_task(&store, "t");
     store.add_slack_prompt(&prompt(7, "1.1", "2.2")).unwrap();
     assert!(store.answer_slack_prompt(7, "1. a").unwrap());
     assert!(!store.answer_slack_prompt(7, "2. b").unwrap());
@@ -228,6 +241,7 @@ fn prompt_answered_once() {
 fn proof_posted_once_per_digest() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
+    new_task(&store, "t");
     assert!(!store.slack_proof_posted("t", "shot.png", "aa").unwrap());
     store
         .mark_slack_proof_posted("t", "shot.png", "aa")
@@ -245,6 +259,7 @@ fn proof_posted_once_per_digest() {
 fn proof_posted_survives_reopen() {
     let dir = tempfile::tempdir().unwrap();
     let (store, clock) = open(dir.path());
+    new_task(&store, "t");
     store
         .mark_slack_proof_posted("t", "shot.png", "aa")
         .unwrap();
@@ -253,4 +268,74 @@ fn proof_posted_survives_reopen() {
     let store = Store::open(&path, clock).unwrap();
     assert!(store.slack_proof_posted("t", "shot.png", "aa").unwrap());
     assert!(!store.slack_proof_posted("t", "shot.png", "bb").unwrap());
+}
+
+fn primary_session(store: &Store, id: moor_core::BoxId) -> i64 {
+    store
+        .reader()
+        .unwrap()
+        .query_row(
+            "SELECT id FROM sessions WHERE box = ?1 AND ordinal = 1",
+            [id.get()],
+            |r| r.get(0),
+        )
+        .unwrap()
+}
+
+#[test]
+fn binding_row_keys_front_and_conversation() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = open(dir.path());
+    let id = new_task(&store, "t");
+    store
+        .bind_slack_thread("C1", "1.1", &name("t"), "U1")
+        .unwrap();
+    let row: (String, String, i64) = store
+        .reader()
+        .unwrap()
+        .query_row("SELECT front, conv_key, session FROM bindings", [], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+        })
+        .unwrap();
+    assert_eq!(row, ("slack".into(), "C1/1.1".into(), primary_session(&store, id)));
+}
+
+#[test]
+fn binding_to_unknown_box_fails() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = open(dir.path());
+    assert!(store
+        .bind_slack_thread("C1", "1.1", &name("ghost"), "U1")
+        .is_err());
+    assert_eq!(store.slack_thread("C1", "1.1").unwrap(), None);
+}
+
+#[test]
+fn prompt_row_keys_session() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = open(dir.path());
+    let id = new_task(&store, "t");
+    store.add_slack_prompt(&prompt(7, "1.1", "2.2")).unwrap();
+    let session: i64 = store
+        .reader()
+        .unwrap()
+        .query_row("SELECT session FROM slack_prompts", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(session, primary_session(&store, id));
+}
+
+#[test]
+fn proof_row_keys_box() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = open(dir.path());
+    let id = new_task(&store, "t");
+    store
+        .mark_slack_proof_posted("t", "shot.png", "aa")
+        .unwrap();
+    let boxed: i64 = store
+        .reader()
+        .unwrap()
+        .query_row("SELECT box FROM slack_proofs", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(boxed, id.get());
 }
