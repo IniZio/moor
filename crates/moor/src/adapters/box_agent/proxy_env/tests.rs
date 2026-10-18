@@ -125,10 +125,11 @@ fn the_lines_never_contain_the_nonce_and_carry_the_exports() {
         "export GIT_CONFIG_VALUE_0='https://github.com/o/n.git'",
         "export GIT_CONFIG_KEY_1=remote.moor.fetch",
         "export GIT_CONFIG_VALUE_1='+refs/heads/*:refs/remotes/moor/*'",
-        "unset moor_nonce moor_bundle moor_sys moor_mark moor_f",
+        "unset moor_nonce moor_bundle moor_sys moor_mark moor_f moor_g moor_p moor_ts moor_jh",
     ] {
         assert!(lines.iter().any(|l| l == want), "missing {want}\n{text}");
     }
+    assert!(text.contains("export JAVA_TOOL_OPTIONS="), "{text}");
     for gone in ["insteadOf", "/t/", "MOOR_"] {
         assert!(!text.contains(gone), "{gone}\n{text}");
     }
@@ -234,6 +235,120 @@ fn the_script_runs_and_builds_the_environment_from_the_staged_nonce() {
         let v = env.get(name).map_or("", String::as_str);
         assert!(v.contains("127.0.0.1") && v.contains("localhost"), "{name}");
     }
+}
+
+/// The result of running the whole launch script in a real `sh` with a controlled PATH.
+struct Launch {
+    dir: tempfile::TempDir,
+    script: String,
+    env: HashMap<String, String>,
+    keytool_log: PathBuf,
+}
+
+/// Host tools the launch script may call, linked into the test PATH so a host JDK never leaks in.
+const HOST_TOOLS: [&str; 24] = [
+    "sh", "cat", "rm", "mkdir", "chmod", "grep", "sed", "awk", "mv", "cp", "mktemp", "cut", "tr",
+    "head", "tail", "env", "id", "dirname", "basename", "touch", "ls", "sort", "ln", "wc",
+];
+
+fn which(tool: &str) -> Option<PathBuf> {
+    std::env::split_paths(&std::env::var_os("PATH")?)
+        .map(|d| d.join(tool))
+        .find(|p| p.is_file())
+}
+
+/// Runs the launch script with `HOME`/`GRADLE_USER_HOME` under a temp dir and a PATH of fakes plus
+/// host tools only; a fake `keytool` is present only when `with_keytool`.
+fn run_launch(with_keytool: bool) -> Launch {
+    let dir = tempfile::TempDir::new().unwrap();
+    std::fs::write(dir.path().join(NONCE_FILE), SENTINEL).unwrap();
+    std::fs::write(dir.path().join("proxy-ca.pem"), CA).unwrap();
+    let bin = fake_sudo(dir.path());
+    for tool in HOST_TOOLS {
+        if let Some(src) = which(tool) {
+            std::os::unix::fs::symlink(src, bin.join(tool)).unwrap();
+        }
+    }
+    let keytool_log = dir.path().join("keytool.log");
+    if with_keytool {
+        let keytool = bin.join("keytool");
+        let body = format!(
+            "#!/bin/sh\necho \"$@\" >> '{}'\nwhile [ $# -gt 0 ]; do\n  case \"$1\" in -keystore|-destkeystore) : > \"$2\";; esac\n  shift\ndone\n",
+            keytool_log.display()
+        );
+        std::fs::write(&keytool, body).unwrap();
+        std::fs::set_permissions(&keytool, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let home = dir.path().join("home");
+    let gradle = dir.path().join("gradle");
+    std::fs::create_dir_all(&home).unwrap();
+    std::fs::create_dir_all(&gradle).unwrap();
+    std::fs::write(
+        gradle.join("gradle.properties"),
+        "org.gradle.jvmargs=-Xmx2560m\n",
+    )
+    .unwrap();
+    let lines = script_lines(&cred(dir.path()), &proxy(), &placeholder_env(), None).unwrap();
+    let script = format!("{}\nenv", lines.join("\n"));
+    let script_path = dir.path().join("launch.sh");
+    std::fs::write(&script_path, &script).unwrap();
+    let out = Command::new("sh")
+        .arg(&script_path)
+        .env_clear()
+        .env("PATH", &bin)
+        .env("HOME", &home)
+        .env("GRADLE_USER_HOME", &gradle)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    Launch {
+        env: parse_env(&out.stdout),
+        dir,
+        script,
+        keytool_log,
+    }
+}
+
+#[test]
+fn java_builds_get_the_proxy_without_the_nonce_in_argv_or_options() {
+    let l = run_launch(true);
+    let nonce = "sentinel-9c2e";
+    let opts = l.env.get("JAVA_TOOL_OPTIONS").expect("JAVA_TOOL_OPTIONS");
+    assert!(opts.contains("-Djavax.net.ssl.trustStore="), "{opts}");
+    assert!(
+        opts.contains(&format!("-Dhttps.proxyPort={PORT}")),
+        "{opts}"
+    );
+    assert!(!opts.contains(nonce), "{opts}");
+    let log = std::fs::read_to_string(&l.keytool_log).unwrap();
+    assert!(!log.is_empty() && !log.contains(nonce), "{log}");
+    assert!(!l.script.contains(nonce));
+    assert!(l.env.keys().all(|k| !k.starts_with("moor_")));
+    let props = l.dir.path().join("gradle/gradle.properties");
+    let mode = std::fs::metadata(&props).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o600);
+    let text = std::fs::read_to_string(&props).unwrap();
+    assert!(text.contains("org.gradle.jvmargs=-Xmx2560m"), "{text}");
+    assert!(
+        text.contains(&format!("systemProp.https.proxyPassword={nonce}")),
+        "{text}"
+    );
+}
+
+#[test]
+fn without_keytool_the_java_setup_changes_nothing() {
+    let l = run_launch(false);
+    assert!(!l.env.contains_key("JAVA_TOOL_OPTIONS"));
+    let text = std::fs::read_to_string(l.dir.path().join("gradle/gradle.properties")).unwrap();
+    assert_eq!(text, "org.gradle.jvmargs=-Xmx2560m\n");
+    assert!(!l.dir.path().join("home/.gradle").exists());
+    let proxy_url = format!("http://moor:sentinel-9c2e@127.0.0.1:{PORT}");
+    is(&l.env, "HTTPS_PROXY", &proxy_url);
+    assert_ca_vars(&l.env, l.dir.path(), &l.dir.path().join("ca-bundle.pem"));
 }
 
 /// A directory holding a `sudo` that always refuses.
