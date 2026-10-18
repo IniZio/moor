@@ -7,7 +7,7 @@ use moor_core::seam::clock::{Clock, Ts};
 use moor_core::seam::engine::{Engine, EngineError, SessionRef, Steer, SteerOutcome};
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::{PaneCmd, Surface, SurfaceError};
-use moor_core::{BoxHandle, BoxPath, TaskName};
+use moor_core::{BoxHandle, BoxName, BoxPath};
 
 use crate::adapters::box_agent::claude::Claude;
 use crate::adapters::box_agent::gh_release::fake::offline_release;
@@ -31,7 +31,7 @@ fn obs(tail: &str) -> PaneObs {
 fn surface(reads: Vec<Result<PaneObs, SurfaceError>>) -> (Arc<FakeSurface>, SessionRef) {
     let s = FakeSurface::new("/r");
     let wt = s
-        .create_worktree(Path::new("/r"), &TaskName::parse("t1").unwrap(), None)
+        .create_worktree(Path::new("/r"), &BoxName::parse("t1").unwrap(), None)
         .unwrap();
     let ws = s.ensure_workspace(&wt, "moor:t1").unwrap();
     let pane = s.open_pane(&ws, &PaneCmd::default()).unwrap();

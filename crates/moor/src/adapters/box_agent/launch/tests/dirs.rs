@@ -8,7 +8,7 @@ use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
 use moor_core::seam::engine::{Engine, EngineError, LaunchReq};
 use moor_core::seam::surface::Surface;
-use moor_core::{BoxHandle, BoxPath, ProviderId, TaskId, TaskName};
+use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId};
 
 use crate::adapters::box_agent::claude::Claude;
 use crate::adapters::box_agent::gh_release::fake::ready_release;
@@ -27,8 +27,8 @@ fn driver(d: FakeDriver) -> Arc<FakeDriver> {
     );
     d.acquire(&AcquireReq {
         provider: ProviderId::new("fake"),
-        task: TaskId::new(1),
-        name: TaskName::parse("t1").unwrap(),
+        task: BoxId::new(1),
+        name: BoxName::parse("t1").unwrap(),
         class: None,
         nonce: "n0".to_owned(),
         worktree: None,
@@ -38,14 +38,14 @@ fn driver(d: FakeDriver) -> Arc<FakeDriver> {
 }
 
 fn req(s: &FakeSurface) -> LaunchReq {
-    let wt = s.create_worktree(&PathBuf::from("/r"), &TaskName::parse("t1").unwrap(), None);
+    let wt = s.create_worktree(&PathBuf::from("/r"), &BoxName::parse("t1").unwrap(), None);
     let wt = wt.unwrap();
     LaunchReq {
         handle: BoxHandle::new("box-1"),
         workdir: BoxPath::under("/work", "box-1").unwrap(),
         worktree: wt.path.clone(),
         workspace: s.ensure_workspace(&wt, "moor:t1").unwrap(),
-        task: TaskName::parse("t1").unwrap(),
+        task: BoxName::parse("t1").unwrap(),
         branch: "moor/t1".to_owned(),
         goal: Some("fix x".to_owned()),
         resume: None,

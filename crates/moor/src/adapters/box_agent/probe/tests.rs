@@ -10,7 +10,7 @@ use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
 use moor_core::seam::engine::{Engine, SessionRef};
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::{PaneRef, SurfaceError};
-use moor_core::{BoxHandle, BoxPath, ProviderId, TaskId, TaskName};
+use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId};
 
 use crate::adapters::box_agent::gh_release::fake::offline_release;
 use crate::adapters::box_agent::BoxAgent;
@@ -109,8 +109,8 @@ fn live_driver(driver: FakeDriver) -> Arc<FakeDriver> {
     let d = Arc::new(driver);
     d.acquire(&AcquireReq {
         provider: ProviderId::new("fake"),
-        task: TaskId::new(1),
-        name: TaskName::parse("t1").unwrap(),
+        task: BoxId::new(1),
+        name: BoxName::parse("t1").unwrap(),
         class: None,
         nonce: "n0".to_owned(),
         worktree: None,

@@ -15,7 +15,7 @@ use std::thread::sleep;
 use std::time::Duration;
 
 use moor_core::activity::PaneObs;
-use moor_core::name::TaskName;
+use moor_core::name::BoxName;
 use moor_core::seam::clock::Clock;
 use moor_core::seam::proc::{Deadline, Proc, ProcSpec, Tool};
 use moor_core::seam::surface::{
@@ -166,7 +166,7 @@ impl Surface for Herdr {
     fn create_worktree(
         &self,
         repo: &Path,
-        name: &TaskName,
+        name: &BoxName,
         base: Option<&str>,
     ) -> Result<Worktree, SurfaceError> {
         let cwd = repo.to_string_lossy();

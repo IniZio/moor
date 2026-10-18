@@ -7,7 +7,7 @@ use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
 use moor_core::seam::engine::{Engine, EngineError, SessionRef};
 use moor_core::seam::proc::Deadline;
-use moor_core::{BoxHandle, BoxPath, ProviderId, TaskId, TaskName};
+use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId};
 
 use super::{decode, stream_script, ARCHIVE, STREAM_CAP, TOO_LARGE};
 use crate::adapters::box_agent::claude::Claude;
@@ -21,8 +21,8 @@ fn live(driver: FakeDriver) -> Arc<FakeDriver> {
     let d = Arc::new(driver);
     d.acquire(&AcquireReq {
         provider: ProviderId::new("fake"),
-        task: TaskId::new(1),
-        name: TaskName::parse("t1").unwrap(),
+        task: BoxId::new(1),
+        name: BoxName::parse("t1").unwrap(),
         class: None,
         nonce: "n0".to_owned(),
         worktree: None,
