@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::activity::PaneStatus;
-use moor_core::name::TaskName;
+use moor_core::name::BoxName;
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::seam::proc::Tool;
 use moor_core::seam::surface::{PaneRef, ResumeOutcome, ResumeReg, Surface, SurfaceError};
@@ -22,7 +22,7 @@ fn reg() -> ResumeReg {
         agent: "claude".to_owned(),
         state: PaneStatus::Idle,
         session_id: "abc-123".to_owned(),
-        task: TaskName::parse("a").expect("valid name"),
+        task: BoxName::parse("a").expect("valid name"),
     }
 }
 

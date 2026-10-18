@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::domain::run::SyncMode;
-use moor_core::name::{BoxHandle, BoxPath, ProviderId, TaskId, TaskName};
+use moor_core::name::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome, ExecSpec, Released};
 use moor_core::seam::proc::{Deadline, Output, Proc, ProcError, ProcOutput, ProcSpec, Tool};
 use zeroize::Zeroizing;
@@ -33,8 +33,8 @@ ready ssh=u@h:22 network=public workroot=/root/crabbox\n";
 fn req(provider: &str, class: Option<&str>) -> AcquireReq {
     AcquireReq {
         provider: ProviderId::new(provider),
-        task: TaskId::new(7),
-        name: TaskName::parse("t7").unwrap(),
+        task: BoxId::new(7),
+        name: BoxName::parse("t7").unwrap(),
         class: class.map(str::to_owned),
         nonce: "ab12cd".to_owned(),
         worktree: None,

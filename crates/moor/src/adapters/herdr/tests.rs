@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use moor_core::name::TaskName;
+use moor_core::name::BoxName;
 use moor_core::seam::proc::Tool;
 use moor_core::seam::surface::{
     Key, PaneCmd, PaneRef, Surface, SurfaceError, WorkspaceRef, Worktree,
@@ -34,8 +34,8 @@ fn fixture() -> (Arc<ScriptedProc>, Herdr) {
     (p, h)
 }
 
-fn name() -> TaskName {
-    TaskName::parse("a").expect("valid name")
+fn name() -> BoxName {
+    BoxName::parse("a").expect("valid name")
 }
 
 /// Args of the `i`th recorded call.

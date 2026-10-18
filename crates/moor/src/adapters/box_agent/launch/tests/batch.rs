@@ -9,7 +9,7 @@ use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
 use moor_core::seam::engine::{Engine, EngineError, LaunchReq};
 use moor_core::seam::surface::Surface;
-use moor_core::{BoxHandle, BoxPath, ProviderId, Secret, TaskId, TaskName};
+use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId, Secret};
 
 use crate::adapters::box_agent::claude::Claude;
 use crate::adapters::box_agent::gh_release::fake::ready_release;
@@ -38,8 +38,8 @@ fn driver(d: FakeDriver) -> Arc<FakeDriver> {
     );
     d.acquire(&AcquireReq {
         provider: ProviderId::new("fake"),
-        task: TaskId::new(1),
-        name: TaskName::parse("t1").unwrap(),
+        task: BoxId::new(1),
+        name: BoxName::parse("t1").unwrap(),
         class: None,
         nonce: "n0".to_owned(),
         worktree: None,
@@ -49,7 +49,7 @@ fn driver(d: FakeDriver) -> Arc<FakeDriver> {
 }
 
 fn req(s: &FakeSurface, proxy: bool) -> LaunchReq {
-    let name = TaskName::parse("t1").unwrap();
+    let name = BoxName::parse("t1").unwrap();
     let wt = s
         .create_worktree(&PathBuf::from("/r"), &name, None)
         .unwrap();
@@ -215,8 +215,8 @@ fn a_launch_with_no_environ_reports_the_home_step() {
     let d = Arc::new(FakeDriver::new().run_stdout("Linux x86_64"));
     d.acquire(&AcquireReq {
         provider: ProviderId::new("fake"),
-        task: TaskId::new(1),
-        name: TaskName::parse("t1").unwrap(),
+        task: BoxId::new(1),
+        name: BoxName::parse("t1").unwrap(),
         class: None,
         nonce: "n0".to_owned(),
         worktree: None,

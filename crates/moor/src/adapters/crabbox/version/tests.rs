@@ -2,7 +2,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use moor_core::domain::run::SyncMode;
-use moor_core::name::{BoxHandle, BoxPath, ProviderId, TaskId, TaskName};
+use moor_core::name::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecSpec};
 use moor_core::seam::proc::{Deadline, Tool};
 
@@ -117,8 +117,8 @@ fn ops() -> Vec<(&'static str, Op)> {
         ("acquire", |c| {
             let req = AcquireReq {
                 provider: ProviderId::new("sprites"),
-                task: TaskId::new(7),
-                name: TaskName::parse("t7").unwrap(),
+                task: BoxId::new(7),
+                name: BoxName::parse("t7").unwrap(),
                 class: None,
                 nonce: "ab12cd".to_owned(),
                 worktree: None,
