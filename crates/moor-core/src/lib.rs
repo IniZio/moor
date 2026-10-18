@@ -3,6 +3,7 @@
 
 pub mod activity;
 pub mod attention;
+pub mod box_key;
 pub mod boxscript;
 pub mod config;
 pub mod controller;
