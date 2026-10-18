@@ -11,7 +11,7 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 
 use moor_core::seam::clock::Ts;
-use moor_core::{Secret, TaskId};
+use moor_core::{BoxId, Secret};
 use nono_proxy::config::{EndpointRule, ExternalProxyConfig, InjectMode, RouteConfig};
 use nono_proxy::tls_intercept::{build_server_config, CertCache, EphemeralCa};
 use nono_proxy::ProxyConfig;
@@ -29,7 +29,7 @@ const SECRET: &str = "fake-chain-credential-5d1e";
 /// The Task Nonce used as proxy password.
 const NONCE: &str = "nonce_AbCdEf-0123456789";
 /// Task id whose CA directory the proxy uses.
-const TASK: TaskId = TaskId::new(9);
+const TASK: BoxId = BoxId::new(9);
 /// The GraphQL body the client posts.
 const BODY: &str =
     r#"{"query":"mutation { addStar(input:{starrableId:\"X\"}) { clientMutationId } }"}"#;

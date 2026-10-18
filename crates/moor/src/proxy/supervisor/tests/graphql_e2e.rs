@@ -13,7 +13,7 @@ use moor_core::domain::decision::{Decision, NewTask};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::forge::ForgeRepo;
 use moor_core::seam::proxy_host::ProxySpec;
-use moor_core::{Secret, TaskId, TaskName};
+use moor_core::{BoxId, BoxName, Secret};
 use rcgen::{
     BasicConstraints, CertificateParams, ExtendedKeyUsagePurpose, IsCa, Issuer, KeyPair,
     KeyUsagePurpose, SanType,
@@ -233,7 +233,7 @@ pub(super) struct Rig {
     /// The fake `api.github.com`.
     pub(super) up: Github,
     /// The Task.
-    pub(super) task: TaskId,
+    pub(super) task: BoxId,
     /// The started nono proxy and filter.
     pub(super) live: Option<Live>,
     /// Port of the GraphQL filter.
@@ -303,7 +303,7 @@ pub(super) fn rig_with(extra: Vec<ResolvedRule>) -> Rig {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
     let store = Store::open(&dir.path().join("moor.db"), clock.clone()).unwrap();
     let nt = NewTask {
-        name: TaskName::parse("demo").unwrap(),
+        name: BoxName::parse("demo").unwrap(),
         repo: "r".into(),
     };
     let task = store.apply(Decision::insert(nt)).unwrap().task;

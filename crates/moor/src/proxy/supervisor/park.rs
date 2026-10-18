@@ -1,7 +1,7 @@
 //! Parking the reverse tunnel while the Box sleeps and reopening it on wake.
 
 use moor_core::seam::driver::TunnelHandle;
-use moor_core::TaskId;
+use moor_core::BoxId;
 
 use super::bind;
 use super::run::{say, Running};
@@ -29,7 +29,7 @@ pub(super) fn parked_tunnel() -> Box<dyn TunnelHandle> {
 /// Whether a starting supervisor leaves the tunnel closed: the Box is asleep or the latest request is Parked.
 ///
 /// A store error is reported and the Box state decides alone.
-pub(super) fn starts_parked(deps: &Deps<'_>, task: TaskId, asleep: bool) -> bool {
+pub(super) fn starts_parked(deps: &Deps<'_>, task: BoxId, asleep: bool) -> bool {
     match deps.store.tunnel_request(task) {
         Ok(request) => asleep || request.is_some_and(|r| r.want == TunnelWant::Parked),
         Err(err) => {

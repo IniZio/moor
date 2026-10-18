@@ -22,7 +22,7 @@ use moor_core::seam::clock::Clock;
 use moor_core::seam::driver::Driver;
 use moor_core::seam::forge::Forge;
 use moor_core::seam::rng::Rng;
-use moor_core::TaskId;
+use moor_core::BoxId;
 
 use super::nono::capture::CredsFn;
 use crate::store::Store;
@@ -67,7 +67,7 @@ pub(crate) struct Deps<'a> {
 }
 
 /// Supervises the proxy of `task` until it must stop; returns the process exit code.
-pub(crate) fn serve(deps: &Deps<'_>, task: TaskId) -> u8 {
+pub(crate) fn serve(deps: &Deps<'_>, task: BoxId) -> u8 {
     match start(deps, task) {
         Err(code) => code,
         Ok(running) => loop {
@@ -83,6 +83,6 @@ pub(crate) fn serve(deps: &Deps<'_>, task: TaskId) -> u8 {
 }
 
 /// Claims the lease and brings the listener and tunnel up. `Err` carries the exit code.
-fn start<'d>(deps: &'d Deps<'d>, task: TaskId) -> Result<Running<'d>, u8> {
+fn start<'d>(deps: &'d Deps<'d>, task: BoxId) -> Result<Running<'d>, u8> {
     run::begin(deps, task)
 }

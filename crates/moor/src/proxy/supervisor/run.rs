@@ -9,7 +9,7 @@ use moor_core::domain::boxes::BoxState;
 use moor_core::domain::task::TaskState;
 use moor_core::seam::driver::TunnelHandle;
 use moor_core::seam::proxy_host::ProxySpec;
-use moor_core::{BoxHandle, Secret, TaskId};
+use moor_core::{BoxHandle, BoxId, Secret};
 
 use super::bind;
 use super::listen::{listen, Live};
@@ -38,7 +38,7 @@ pub(super) struct Running<'d> {
     /// Collaborators.
     pub(super) deps: &'d Deps<'d>,
     /// The supervised Task.
-    pub(super) task: TaskId,
+    pub(super) task: BoxId,
     /// Lease owner token.
     pub(super) owner: String,
     /// The nono proxy with its capture and log.
@@ -69,7 +69,7 @@ const fn terminal(state: TaskState) -> bool {
 }
 
 /// Gives up the lease; a failure only means the lease expires on its own.
-fn give_up(deps: &Deps<'_>, task: TaskId, owner: &str) {
+fn give_up(deps: &Deps<'_>, task: BoxId, owner: &str) {
     if let Err(err) = deps.store.release(task, owner) {
         say(
             &deps.stderr,
@@ -79,7 +79,7 @@ fn give_up(deps: &Deps<'_>, task: TaskId, owner: &str) {
 }
 
 /// Checks the Task, the proxy row, the spec and the Box handle, refusing with exit code 1 when any is missing.
-fn preflight(deps: &Deps<'_>, task: TaskId) -> Result<(TaskRow, BoxHandle, ProxySpec), u8> {
+fn preflight(deps: &Deps<'_>, task: BoxId) -> Result<(TaskRow, BoxHandle, ProxySpec), u8> {
     let sink = &deps.stderr;
     let task_row = match deps.store.task(task) {
         Ok(Some(row)) if !terminal(row.state) => row,
@@ -108,7 +108,7 @@ fn preflight(deps: &Deps<'_>, task: TaskId) -> Result<(TaskRow, BoxHandle, Proxy
 }
 
 /// Reads the proxy row's nonce and Box port, refusing with exit code 1 when the row is missing.
-fn reload(deps: &Deps<'_>, task: TaskId) -> Result<(Secret, u16), u8> {
+fn reload(deps: &Deps<'_>, task: BoxId) -> Result<(Secret, u16), u8> {
     match deps.store.proxy(task) {
         Ok(Some(row)) => Ok((row.nonce, row.box_port)),
         Ok(None) => {
@@ -129,7 +129,7 @@ fn reload(deps: &Deps<'_>, task: TaskId) -> Result<(Secret, u16), u8> {
 }
 
 /// Claims the lease and returns the owner token; `Err(0)` means another supervisor holds it.
-fn claim(deps: &Deps<'_>, task: TaskId) -> Result<String, u8> {
+fn claim(deps: &Deps<'_>, task: BoxId) -> Result<String, u8> {
     let owner = format!(
         "{:08x}{:08x}{:08x}{:08x}",
         deps.rng.u32(),
@@ -158,7 +158,7 @@ fn asleep(row: &TaskRow) -> bool {
 fn open_tunnel(
     deps: &Deps<'_>,
     (handle, box_port, host_port, worktree): (&BoxHandle, u16, u16, &Path),
-    task: TaskId,
+    task: BoxId,
 ) -> Option<Box<dyn TunnelHandle>> {
     // A Box that never had a tunnel has no stale listener to clear. A failed read counts as "had one".
     let fresh = matches!(deps.store.tunnel_opened(task), Ok(false));
@@ -184,7 +184,7 @@ fn open_tunnel(
 /// Claims the lease, starts the proxy and tunnel, and marks the row ready.
 ///
 /// A sleeping Box refuses connections, so a Box that is Asleep or was asked to park starts without a tunnel.
-pub(super) fn begin<'d>(deps: &'d Deps<'d>, task: TaskId) -> Result<Running<'d>, u8> {
+pub(super) fn begin<'d>(deps: &'d Deps<'d>, task: BoxId) -> Result<Running<'d>, u8> {
     let sink = &deps.stderr;
     let (task_row, handle, spec) = preflight(deps, task)?;
     let owner = claim(deps, task)?;
@@ -249,7 +249,7 @@ pub(super) fn begin<'d>(deps: &'d Deps<'d>, task: TaskId) -> Result<Running<'d>,
 }
 
 /// Extends the lease during startup; `Err` carries the exit code, with the lease given up unless it was lost.
-fn renew(deps: &Deps<'_>, task: TaskId, owner: &str) -> Result<(), u8> {
+fn renew(deps: &Deps<'_>, task: BoxId, owner: &str) -> Result<(), u8> {
     match deps.store.heartbeat(task, owner) {
         Ok(true) => Ok(()),
         Ok(false) => {
@@ -270,7 +270,7 @@ fn renew(deps: &Deps<'_>, task: TaskId, owner: &str) -> Result<(), u8> {
 /// Marks the row ready; `Err` carries the exit code, with the lease given up unless it was lost.
 fn mark(
     deps: &Deps<'_>,
-    task: TaskId,
+    task: BoxId,
     owner: &str,
     ports: ProxyPorts,
     handle: &BoxHandle,

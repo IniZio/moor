@@ -6,7 +6,7 @@ use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 use moor_core::seam::proxy_host::ProxySpec;
-use moor_core::TaskId;
+use moor_core::BoxId;
 
 use crate::proxy::nono::ca::ca_dir;
 
@@ -14,7 +14,7 @@ use crate::proxy::nono::ca::ca_dir;
 const SPEC_FILE: &str = "spec.json";
 
 /// `<state_dir>/proxy/<task>/spec.json`.
-pub(crate) fn spec_path(state_dir: &Path, task: TaskId) -> PathBuf {
+pub(crate) fn spec_path(state_dir: &Path, task: BoxId) -> PathBuf {
     ca_dir(state_dir, task).join(SPEC_FILE)
 }
 
@@ -39,7 +39,7 @@ pub(crate) fn write_spec(state_dir: &Path, spec: &ProxySpec) -> io::Result<()> {
 }
 
 /// Read the spec the host wrote for `task`.
-pub(crate) fn read_spec(state_dir: &Path, task: TaskId) -> io::Result<ProxySpec> {
+pub(crate) fn read_spec(state_dir: &Path, task: BoxId) -> io::Result<ProxySpec> {
     let bytes = fs::read(spec_path(state_dir, task))?;
     serde_json::from_slice(&bytes).map_err(io::Error::from)
 }

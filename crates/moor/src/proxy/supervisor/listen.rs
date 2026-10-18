@@ -6,7 +6,7 @@ use std::sync::Arc;
 use moor_core::config::proxy::{ResolvedInject, ResolvedRule};
 use moor_core::graphql_scope::RepoRef;
 use moor_core::seam::proxy_host::ProxySpec;
-use moor_core::{Secret, TaskId};
+use moor_core::{BoxId, Secret};
 
 use super::run::say;
 use super::Deps;
@@ -40,7 +40,7 @@ pub(super) struct Live {
 /// Loads the Task CA, opens the log and starts the filter and the proxy; the caller still holds the lease on failure.
 pub(super) fn listen(
     deps: &Deps<'_>,
-    task: TaskId,
+    task: BoxId,
     nonce: &Secret,
     spec: &ProxySpec,
 ) -> Result<Live, String> {
@@ -254,7 +254,7 @@ impl Live {
     }
 
     /// Moves the audit events recorded since the last call into the log and the store.
-    pub(super) fn drain(&self, deps: &Deps<'_>, task: TaskId) {
+    pub(super) fn drain(&self, deps: &Deps<'_>, task: BoxId) {
         let sink = TaskSink {
             log: &self.log,
             store: deps.store,
@@ -277,7 +277,7 @@ impl Live {
     }
 
     /// Removes the Task CA directory, which also holds the spec.
-    pub(super) fn forget(deps: &Deps<'_>, task: TaskId) {
+    pub(super) fn forget(deps: &Deps<'_>, task: BoxId) {
         if let Err(err) = ca::remove(deps.state_dir, task) {
             say(
                 &deps.stderr,

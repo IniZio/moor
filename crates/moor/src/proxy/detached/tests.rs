@@ -13,7 +13,7 @@ use moor_core::domain::decision::{Decision, NewTask};
 use moor_core::seam::clock::{Clock as _, Ts};
 use moor_core::seam::proc::Tool;
 use moor_core::seam::proxy_host::{ProxyHost, ProxyHostError, ProxySpec, ProxyStatus};
-use moor_core::{Secret, TaskId, TaskName};
+use moor_core::{BoxId, BoxName, Secret};
 
 use super::{base64url, log_path, new_nonce, tail, DetachedSupervisor, LEASE, TAIL_LINES, WAIT};
 use crate::store::{Fenced, ProxyPorts, ReadyProc, Store, STORE_FILE};
@@ -38,7 +38,7 @@ pub(super) struct Fx {
     /// The adapter under test.
     pub(super) sup: DetachedSupervisor,
     /// The Task every test works on.
-    pub(super) id: TaskId,
+    pub(super) id: BoxId,
 }
 
 /// Simulates a healthy supervisor for each spawned daemon: it takes the lease on the
@@ -47,7 +47,7 @@ pub(super) fn supervise(state: PathBuf) -> impl Fn(&DaemonCall) + Send + Sync + 
     move |d| {
         let clock = Arc::new(FakeClock::new(Ts::from_millis(1000)));
         let store = Store::open(&state.join(STORE_FILE), clock).unwrap();
-        let task = TaskId::new(d.call.args.get(2).unwrap().parse().unwrap());
+        let task = BoxId::new(d.call.args.get(2).unwrap().parse().unwrap());
         let owner = "fake-supervisor";
         store.claim_lease(task, owner, LEASE).unwrap();
         let row = store.proxy(task).unwrap().unwrap();
@@ -87,7 +87,7 @@ pub(super) fn bare() -> Fx {
     let store = Store::open(&dir.path().join(STORE_FILE), clock.clone()).unwrap();
     let id = store
         .apply(Decision::insert(NewTask {
-            name: TaskName::parse("t").unwrap(),
+            name: BoxName::parse("t").unwrap(),
             repo: "r".into(),
         }))
         .unwrap()
@@ -358,7 +358,7 @@ fn nonces_differ_across_draws() {
 #[test]
 fn log_path_is_under_proxy_dir() {
     assert_eq!(
-        log_path(Path::new("/s"), TaskId::new(7)),
+        log_path(Path::new("/s"), BoxId::new(7)),
         Path::new("/s/proxy/7.log")
     );
 }

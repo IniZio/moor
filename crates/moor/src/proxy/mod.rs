@@ -25,7 +25,7 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use moor_core::seam::clock::Clock;
-use moor_core::TaskId;
+use moor_core::BoxId;
 
 /// Append-only per-Task request log at `<state>/proxy/<task>.log`.
 pub(crate) struct ProxyLog {
@@ -40,7 +40,7 @@ impl ProxyLog {
     /// file (0600) and tightening both modes when they already exist.
     pub(crate) fn open(
         state_dir: &Path,
-        task: TaskId,
+        task: BoxId,
         clock: Arc<dyn Clock>,
     ) -> std::io::Result<Self> {
         let dir = state_dir.join("proxy");

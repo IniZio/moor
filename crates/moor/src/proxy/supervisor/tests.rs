@@ -14,7 +14,7 @@ use moor_core::seam::driver::{AcquireReq, Driver};
 use moor_core::seam::forge::ForgeRepo;
 use moor_core::seam::proxy_host::ProxySpec;
 use moor_core::secret::Secret;
-use moor_core::{ProviderId, TaskId, TaskName};
+use moor_core::{BoxId, BoxName, ProviderId};
 
 mod evict;
 mod front_e2e;
@@ -55,7 +55,7 @@ pub(super) struct World {
     /// Bytes the supervisor wrote to stderr.
     pub(super) err: Arc<Mutex<Vec<u8>>>,
     /// The task under test.
-    pub(super) id: TaskId,
+    pub(super) id: BoxId,
 }
 
 impl World {
@@ -179,9 +179,9 @@ pub(super) fn no_creds() -> CredsFn {
 }
 
 /// Insert a task, give it a live box from `driver` and a worktree.
-fn working_task(store: &Store, driver: &FakeDriver) -> TaskId {
+fn working_task(store: &Store, driver: &FakeDriver) -> BoxId {
     let nt = NewTask {
-        name: TaskName::parse("demo").unwrap(),
+        name: BoxName::parse("demo").unwrap(),
         repo: "r".into(),
     };
     let id = store.apply(Decision::insert(nt)).unwrap().task;
@@ -190,7 +190,7 @@ fn working_task(store: &Store, driver: &FakeDriver) -> TaskId {
         .acquire(&AcquireReq {
             provider: provider.clone(),
             task: id,
-            name: TaskName::parse("demo").unwrap(),
+            name: BoxName::parse("demo").unwrap(),
             class: None,
             nonce: "abc123".into(),
             worktree: None,
@@ -444,7 +444,7 @@ fn nonce_never_reaches_the_log_or_stderr_when_the_tunnel_fails() {
 fn missing_task_is_refused_with_a_stderr_line() {
     let w = World::new([]);
     let deps = w.deps();
-    let missing = TaskId::new(9_999);
+    let missing = BoxId::new(9_999);
 
     assert_eq!(start(&deps, missing).err(), Some(1));
 
@@ -482,7 +482,7 @@ fn task_without_a_box_handle_is_refused_with_a_stderr_line() {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
     let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
     let nt = NewTask {
-        name: TaskName::parse("bare").unwrap(),
+        name: BoxName::parse("bare").unwrap(),
         repo: "r".into(),
     };
     let id = store.apply(Decision::insert(nt)).unwrap().task;

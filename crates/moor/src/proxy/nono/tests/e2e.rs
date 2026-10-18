@@ -10,7 +10,7 @@ use std::time::Duration;
 use moor_core::config::proxy::{EndpointRule, ResolvedInject, ResolvedRule};
 use moor_core::domain::decision::{Decision, NewTask};
 use moor_core::seam::clock::{Clock, Ts};
-use moor_core::{Secret, TaskId, TaskName};
+use moor_core::{BoxId, BoxName, Secret};
 use tempfile::TempDir;
 use ureq::Agent;
 
@@ -29,7 +29,7 @@ const NONCE: &str = "nonce_AbCdEf-0123456789";
 /// What the client sends before the proxy swaps it out.
 const PLACEHOLDER: &str = "Bearer placeholder-not-real";
 /// Task id whose CA directory the proxy uses.
-const TASK: TaskId = TaskId::new(7);
+const TASK: BoxId = BoxId::new(7);
 
 /// Counts fetches per rule and lets a test make them fail.
 struct Fetches {
@@ -85,11 +85,11 @@ impl Rig {
     }
 
     /// A store with one task, and a proxy log for it.
-    fn store(&self) -> (Store, TaskId, ProxyLog) {
+    fn store(&self) -> (Store, BoxId, ProxyLog) {
         let store = Store::open(&self.state().join("moor.db"), self.clock.clone()).unwrap();
         let task = store
             .apply(Decision::insert(NewTask {
-                name: TaskName::parse("t").unwrap(),
+                name: BoxName::parse("t").unwrap(),
                 repo: "r".into(),
             }))
             .unwrap()
@@ -284,7 +284,7 @@ fn settle(rig: &Rig, sink: &Recorder, done: impl Fn(&[String]) -> bool) -> Vec<S
 }
 
 /// Event kinds of a task.
-fn kinds(store: &Store, task: TaskId) -> Vec<String> {
+fn kinds(store: &Store, task: BoxId) -> Vec<String> {
     store
         .events(task, 100)
         .unwrap()
