@@ -14,7 +14,7 @@ use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::{
     Key, PaneCmd, PaneRef, ResumeOutcome, ResumeReg, Surface, SurfaceError, WorkspaceRef, Worktree,
 };
-use moor_core::TaskName;
+use moor_core::BoxName;
 
 #[derive(Default)]
 struct State {
@@ -157,7 +157,7 @@ impl Surface for FakeSurface {
     fn create_worktree(
         &self,
         _repo: &Path,
-        name: &TaskName,
+        name: &BoxName,
         base: Option<&str>,
     ) -> Result<Worktree, SurfaceError> {
         let mut s = self.st();
@@ -357,7 +357,7 @@ mod tests {
     fn records_sends_and_reports_a_missing_pane() {
         let s = FakeSurface::new("/r");
         let wt = s
-            .create_worktree(Path::new("/repo"), &TaskName::parse("a").unwrap(), None)
+            .create_worktree(Path::new("/repo"), &BoxName::parse("a").unwrap(), None)
             .unwrap();
         let ws = s.ensure_workspace(&wt, "moor:a").unwrap();
         let pane = s.open_pane(&ws, &PaneCmd::default()).unwrap();

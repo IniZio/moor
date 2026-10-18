@@ -6,7 +6,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use moor_core::TaskId;
+use moor_core::BoxId;
 use signal_hook::consts::{SIGINT, SIGTERM};
 
 use moor_core::config::{DriverConfig, UserConfig};
@@ -159,7 +159,7 @@ fn parts(env: &Env) -> Result<CxParts, CommandError> {
 /// Run the credential proxy for `task` until a stop signal; returns the exit code.
 ///
 /// Setup failures are written to `stderr` as one `moor proxy: <error>` line.
-pub fn serve_proxy(env: &Env, task: TaskId, stderr: impl Write + Send + 'static) -> u8 {
+pub fn serve_proxy(env: &Env, task: BoxId, stderr: impl Write + Send + 'static) -> u8 {
     let sink: Sink = Arc::new(Mutex::new(stderr));
     match run_proxy(env, task, &sink) {
         Ok(code) => code,
@@ -175,7 +175,7 @@ pub fn serve_proxy(env: &Env, task: TaskId, stderr: impl Write + Send + 'static)
 }
 
 /// Builds the proxy's dependencies and serves; `Err` is a setup failure.
-fn run_proxy(env: &Env, task: TaskId, sink: &Sink) -> Result<u8, String> {
+fn run_proxy(env: &Env, task: BoxId, sink: &Sink) -> Result<u8, String> {
     let parts = parts(env).map_err(|e| e.error.to_string())?;
     let forge = Arc::clone(&parts.forge);
     let clock = Arc::clone(&parts.clock);
@@ -258,7 +258,7 @@ mod tests {
     use crate::testing::clock::FakeClock;
     use crate::testing::proc::{Reply, ScriptedProc};
     use moor_core::activity::PaneStatus;
-    use moor_core::name::TaskName;
+    use moor_core::name::BoxName;
     use moor_core::seam::clock::Ts;
     use moor_core::seam::forge::{Forge, ForgeRepo};
     use moor_core::seam::proc::Tool;
@@ -279,7 +279,7 @@ mod tests {
             agent: "claude".to_owned(),
             state: PaneStatus::Idle,
             session_id: "abc".to_owned(),
-            task: TaskName::parse("a").unwrap(),
+            task: BoxName::parse("a").unwrap(),
         };
         h.register_resume(&PaneRef::new("p"), &reg).unwrap();
         let calls = proc.calls();
@@ -344,7 +344,7 @@ mod tests {
             ("MOOR_STATE_DIR", state.to_str().unwrap()),
         ]);
         let out = Arc::new(Mutex::new(Vec::new()));
-        let code = serve_proxy(&env, TaskId::new(1), Shared(Arc::clone(&out)));
+        let code = serve_proxy(&env, BoxId::new(1), Shared(Arc::clone(&out)));
         assert_ne!(code, 0);
         let text = String::from_utf8(out.lock().unwrap().clone()).unwrap();
         assert!(text.starts_with("moor proxy: "), "{text}");

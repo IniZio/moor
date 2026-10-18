@@ -3,13 +3,13 @@
 use std::path::PathBuf;
 
 use moor_core::seam::proxy_host::{ProxyHost, ProxyHostError, ProxySpec, ProxyStatus};
-use moor_core::TaskId;
+use moor_core::BoxId;
 
 use super::{FakeProxyHost, ProxyHostCall, FAKE_BOX_PORT, FAKE_NONCE};
 
 fn spec(id: i64) -> ProxySpec {
     ProxySpec {
-        task: TaskId::new(id),
+        task: BoxId::new(id),
         box_handle: None,
         host_cwd: PathBuf::from("/work"),
         task_repo: None,
@@ -22,14 +22,14 @@ fn records_calls_in_order_across_clones() {
     let fake = FakeProxyHost::new();
     let host: &dyn ProxyHost = &fake.clone();
     host.ensure(&spec(1)).expect("ensure");
-    assert_eq!(host.status(TaskId::new(1)), Ok(ProxyStatus::Absent));
-    host.stop(TaskId::new(1)).expect("stop");
+    assert_eq!(host.status(BoxId::new(1)), Ok(ProxyStatus::Absent));
+    host.stop(BoxId::new(1)).expect("stop");
     assert_eq!(
         fake.calls(),
         vec![
             ProxyHostCall::Ensure(spec(1)),
-            ProxyHostCall::Status(TaskId::new(1)),
-            ProxyHostCall::Stop(TaskId::new(1)),
+            ProxyHostCall::Status(BoxId::new(1)),
+            ProxyHostCall::Stop(BoxId::new(1)),
         ]
     );
 }
@@ -52,7 +52,7 @@ fn scripted_endpoint_and_status() {
     let ep = fake.ensure(&spec(2)).expect("ensure");
     assert_eq!((ep.box_port, ep.nonce.expose()), (7, &b"abc"[..]));
     assert_eq!(
-        fake.status(TaskId::new(2)),
+        fake.status(BoxId::new(2)),
         Ok(ProxyStatus::Ready { box_port: 7 })
     );
 }
@@ -67,7 +67,7 @@ fn scripted_errors_are_returned_and_recorded() {
         Err(ProxyHostError::Failed("boom".into()))
     );
     assert_eq!(
-        fake.stop(TaskId::new(3)),
+        fake.stop(BoxId::new(3)),
         Err(ProxyHostError::Incomplete("slow".into()))
     );
     assert_eq!(fake.calls().len(), 2);

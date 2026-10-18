@@ -5,21 +5,21 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::domain::run::SyncMode;
-use moor_core::name::TaskName;
+use moor_core::name::BoxName;
 use moor_core::seam::driver::{
     AcquireReq, BoxStep, Driver, DriverError, ExecOutcome, ExecSpec, Released, SleepOutcome,
     StepDone,
 };
 use moor_core::seam::proc::{Deadline, Output};
-use moor_core::{BoxHandle, BoxPath, ProviderId, TaskId};
+use moor_core::{BoxHandle, BoxId, BoxPath, ProviderId};
 
 use super::FakeDriver;
 
 fn req() -> AcquireReq {
     AcquireReq {
         provider: ProviderId::new("fake"),
-        task: TaskId::new(1),
-        name: TaskName::parse("t1").unwrap(),
+        task: BoxId::new(1),
+        name: BoxName::parse("t1").unwrap(),
         class: None,
         nonce: "n0".to_owned(),
         worktree: None,
