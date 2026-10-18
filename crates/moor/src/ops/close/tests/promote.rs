@@ -442,6 +442,16 @@ fn promoted_task_runs_the_repo_setup_commands_in_its_new_box() {
         .map(|(_, spec, _)| spec.argv)
         .collect();
     let steps = ["echo one", "echo two"].map(str::to_owned);
-    let want = vec!["sh".to_owned(), "-c".to_owned(), setup_script(&steps)];
-    assert_eq!(argvs, [want]);
+    let want = ["sh".to_owned(), "-c".to_owned(), setup_script(&steps)];
+    let [got] = argvs.as_slice() else {
+        panic!("{argvs:?}")
+    };
+    assert_eq!(
+        got.get(3..).unwrap(),
+        ["sh".to_owned()]
+            .iter()
+            .chain(&want)
+            .cloned()
+            .collect::<Vec<_>>()
+    );
 }

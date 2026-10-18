@@ -217,7 +217,7 @@ fn a_proxied_argv_removes_the_staged_directory_in_the_same_exec() {
 }
 
 #[test]
-fn no_proxy_leaves_the_argv_unchanged() {
+fn no_proxy_wraps_the_argv_with_only_the_image_path_line() {
     let dir = tempfile::tempdir().unwrap();
     let r = rig(dir.path());
     let e = prepare(
@@ -228,7 +228,11 @@ fn no_proxy_leaves_the_argv_unchanged() {
         Purpose::Run,
     )
     .unwrap();
-    assert_eq!(e.argv(vec!["true".to_owned()]), vec!["true".to_owned()]);
+    let argv = e.argv(vec!["true".to_owned()]);
+    assert_eq!(argv.get(..2).unwrap(), ["sh", "-c"]);
+    assert!(argv.get(2).unwrap().contains("/etc/environment"));
+    assert!(!argv.get(2).unwrap().contains("PROXY"));
+    assert_eq!(argv.get(3..).unwrap(), ["sh", "true"]);
 }
 
 #[test]

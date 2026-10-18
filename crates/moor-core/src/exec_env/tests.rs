@@ -76,9 +76,7 @@ fn proxy_prelude_exports_from_the_staged_nonce() {
 fn no_proxy_means_no_proxy_exports() {
     let (wd, e) = (path("/work"), env());
     let got = build(&ctx(&e, None, Some(&wd)), Purpose::Run).unwrap();
-    assert!(got.prelude.is_empty());
-    let argv = vec!["ls".to_owned(), "-l".to_owned()];
-    assert_eq!(wrap_argv(&got, argv.clone(), None), argv);
+    assert_eq!(got.prelude, vec![image_path_line()]);
 }
 
 #[test]
@@ -113,6 +111,75 @@ fn wrap_argv_runs_the_prelude_first() {
     assert_eq!(wrap_argv(&got, argv.clone(), None), argv);
 }
 
+/// `PATH` after the image-path line reads `file`, starting from `start`.
+fn path_after(file: Option<&str>, start: &str) -> String {
+    static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let target = std::env::temp_dir().join(format!("moor-env-{}-{n}", std::process::id()));
+    let _ = std::fs::remove_file(&target);
+    if let Some(text) = file {
+        std::fs::write(&target, text).unwrap();
+    }
+    let line = image_path_line_for(target.to_str().unwrap());
+    let out = std::process::Command::new("sh")
+        .args([
+            "-c",
+            &format!("PATH={}\n{line}\necho \"$PATH\"", quote(start)),
+        ])
+        .output()
+        .unwrap();
+    let _ = std::fs::remove_file(&target);
+    assert!(out.status.success());
+    String::from_utf8(out.stdout).unwrap().trim_end().to_owned()
+}
+
+#[test]
+fn image_path_is_appended_after_the_exec_path() {
+    let got = path_after(
+        Some("LANG=C\nPATH=\"/opt/flutter/bin:/opt/android-sdk/platform-tools\"\n"),
+        "/usr/bin:/bin",
+    );
+    assert_eq!(
+        got,
+        "/usr/bin:/bin:/opt/flutter/bin:/opt/android-sdk/platform-tools"
+    );
+}
+
+#[test]
+fn image_path_unquoted_and_single_quoted_forms_work() {
+    assert_eq!(
+        path_after(Some("PATH=/opt/a/bin\n"), "/bin"),
+        "/bin:/opt/a/bin"
+    );
+    assert_eq!(
+        path_after(Some("PATH='/opt/a/bin'\n"), "/bin"),
+        "/bin:/opt/a/bin"
+    );
+}
+
+#[test]
+fn a_box_without_an_image_path_keeps_its_exec_path() {
+    assert_eq!(path_after(None, "/usr/bin:/bin"), "/usr/bin:/bin");
+    assert_eq!(
+        path_after(Some("LANG=C\n"), "/usr/bin:/bin"),
+        "/usr/bin:/bin"
+    );
+    assert_eq!(
+        path_after(Some("PATH=\n"), "/usr/bin:/bin"),
+        "/usr/bin:/bin"
+    );
+}
+
+#[test]
+fn the_image_path_line_leaves_no_variable_behind_and_runs_first() {
+    let (wd, e) = (path("/w"), env());
+    for purpose in [Purpose::Run, Purpose::Agent, Purpose::Teardown] {
+        let got = build(&ctx(&e, None, Some(&wd)), purpose).unwrap();
+        assert_eq!(got.prelude.first(), Some(&image_path_line()), "{purpose:?}");
+    }
+    assert!(!image_path_line().contains("export moor_"));
+}
+
 #[test]
 fn cleanup_traps_the_removal_and_does_not_exec() {
     let (cred, wd, e) = (path("/cred"), path("/w"), env());
@@ -128,10 +195,10 @@ fn cleanup_traps_the_removal_and_does_not_exec() {
     assert!(script.ends_with("\n\"$@\""));
     assert!(!script.contains("exec"));
     assert!(script.contains(got.prelude.first().unwrap().as_str()));
-    // Cleanup alone still wraps when the prelude is empty.
+    // Without a Proxy the prelude is the image path line alone.
     let bare = build(&ctx(&e, None, None), Purpose::Run).unwrap();
     let w = wrap_argv(&bare, strs(&["ls"]), Some(&dir));
-    let expect = format!("{trap}\"$@\"");
+    let expect = format!("{trap}{}\n\"$@\"", image_path_line());
     assert_eq!(w, strs(&["sh", "-c", &expect, "sh", "ls"]));
 }
 
@@ -297,7 +364,7 @@ fn stage_steps_put_the_nonce_private_and_the_ca_public() {
 }
 
 #[test]
-fn wrap_argv_unsets_first_even_without_a_prelude() {
+fn wrap_argv_unsets_first_even_without_a_proxy() {
     let (wd, e) = (path("/w"), env());
     let strip = strs(&["X", "Y"]);
     let mut b = ctx(&e, None, Some(&wd));
@@ -305,7 +372,13 @@ fn wrap_argv_unsets_first_even_without_a_prelude() {
     let got = build(&b, Purpose::Run).unwrap();
     assert_eq!(
         wrap_argv(&got, strs(&["ls"]), None),
-        strs(&["sh", "-c", "unset X Y\nexec \"$@\"", "sh", "ls"])
+        strs(&[
+            "sh",
+            "-c",
+            &format!("unset X Y\n{}\nexec \"$@\"", image_path_line()),
+            "sh",
+            "ls"
+        ])
     );
     let (cred, e2) = (path("/cred"), env());
     let mut p = ctx(&e2, Some(&cred), Some(&wd));

@@ -124,9 +124,12 @@ fn lines_run_as_one_generated_script_under_sh() {
     run_setup(&r.cx, &r.handle, &r.workdir, d.path(), &c, SyncMode::Full);
     let (h, spec, _) = only(r.driver.execs());
     assert_eq!(h, r.handle);
+    // The wrapper puts the Box's image PATH on the exec first; the script is the last argument.
+    assert_eq!(spec.argv.get(..2).unwrap(), ["sh", "-c"]);
+    assert!(spec.argv.get(2).unwrap().contains("/etc/environment"));
     assert_eq!(
-        spec.argv,
-        vec!["sh".to_owned(), "-c".to_owned(), setup_script(&c.setup)]
+        spec.argv.get(3..).unwrap(),
+        ["sh", "sh", "-c", setup_script(&c.setup).as_str()]
     );
 }
 
