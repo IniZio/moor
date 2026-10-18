@@ -410,7 +410,7 @@ fn a_store_read_error_during_promotion_is_a_warning_not_a_failed_close() {
     queue(&w, "first");
     let db = rusqlite::Connection::open(w.cx.state_dir().unwrap().join("moor.db")).unwrap();
     db.execute(
-        "UPDATE tasks SET name = '' WHERE state = 'waiting_for_box'",
+        "UPDATE boxes SET name = '' WHERE state = 'waiting_for_box'",
         [],
     )
     .unwrap();

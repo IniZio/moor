@@ -1,14 +1,20 @@
 //! The only writer of task/box state and events: `Store::apply` plus run records.
 
+use moor_core::domain::box_state::split_task_state;
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, IntentChange, NewTask, TaskTarget};
 use moor_core::domain::event::{box_events, task_events, Event};
+use moor_core::domain::session_state::SessionState;
 use moor_core::domain::task::{TaskInput, TaskState};
 use moor_core::seam::clock::Ts;
 use moor_core::BoxId;
 use rusqlite::types::Value;
 use rusqlite::{params, Transaction, TransactionBehavior};
 
+mod sql;
+
+pub(super) use self::sql::update;
+use self::sql::{field_value, flag, name_taken, text, Sets};
 use super::reads::live_holders_in;
 use super::{load_task, BoxRow, Store, StoreError, TaskRow};
 use moor_core::ProviderId;
@@ -33,9 +39,6 @@ struct Step<S> {
     /// State after.
     to: S,
 }
-
-/// Column assignments for one UPDATE.
-type Sets = Vec<(&'static str, Value)>;
 
 impl Store {
     /// Apply a decision atomically: rows and events together, or neither.
@@ -140,26 +143,32 @@ fn step_task(
 }
 
 /// Insert a fresh task row.
-fn insert_task(
+pub(super) fn insert_task(
     tx: &Transaction<'_>,
     new: &NewTask,
     state: TaskState,
     now: Ts,
 ) -> Result<BoxId, StoreError> {
     tx.execute(
-        "INSERT INTO tasks (name, repo, state, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO boxes (name, repo, state, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
         params![
             new.name.as_str(),
             new.repo,
-            state.as_str(),
+            split_task_state(state).0.as_str(),
             now.as_millis(),
             now.as_millis()
         ],
+    )
+    .map_err(|e| name_taken(e, new))?;
+    let id = tx.last_insert_rowid();
+    tx.execute(
+        "INSERT INTO sessions (box, ordinal, state, started_at) VALUES (?, 1, 'starting', ?)",
+        params![id, now.as_millis()],
     )?;
-    Ok(BoxId::new(tx.last_insert_rowid()))
+    Ok(BoxId::new(id))
 }
 
-/// Step the box state, creating the box row on the first input.
+/// Step the box state, recording the provider on the first input.
 fn step_box(
     tx: &Transaction<'_>,
     now: Ts,
@@ -185,8 +194,8 @@ fn step_box(
         return Err(StoreError::Invalid("new box needs box_provider".into()));
     };
     tx.execute(
-        "INSERT INTO boxes (task, provider, state, updated_at) VALUES (?, ?, ?, ?)",
-        params![id.get(), provider.as_str(), to.as_str(), now.as_millis()],
+        "UPDATE boxes SET provider = ?, driver_state = ?, driver_updated_at = ? WHERE id = ?",
+        params![provider.as_str(), to.as_str(), now.as_millis(), id.get()],
     )?;
     Ok(Some(Step { from: None, to }))
 }
@@ -200,13 +209,28 @@ fn write_task(
     step: &Step<TaskState>,
 ) -> Result<(), StoreError> {
     let mut sets = task_field_sets(&d.set);
+    let mut session = session_field_sets(&d.set);
     if d.task_input.is_some() {
-        sets.push(("state", Value::Text(step.to.as_str().to_owned())));
+        let (lifecycle, session_state) = split_task_state(step.to);
+        sets.push(("state", Value::Text(lifecycle.as_str().to_owned())));
         sets.extend(idle_since_sets(step, now));
+        if let Some(ss) = session_state {
+            session.push(("state", Value::Text(ss.as_str().to_owned())));
+            if ss == SessionState::Ended {
+                session.push(("ended_at", Value::Integer(now.as_millis())));
+            }
+        }
     }
     sets.extend(intent_sets(d.intent, now));
     sets.push(("updated_at", Value::Integer(now.as_millis())));
-    update(tx, "tasks", "id = ?", &[id.get()], &sets)
+    update(tx, "boxes", "id = ?", &[id.get()], &sets)?;
+    update(
+        tx,
+        "sessions",
+        "box = ? AND ordinal = 1",
+        &[id.get()],
+        &session,
+    )
 }
 
 /// `idle_since` follows the state: stamped on entering Idle, cleared on leaving it.
@@ -249,11 +273,11 @@ fn write_box(
         ));
     };
     if let Some(input) = &d.box_input {
-        sets.push(("state", Value::Text(step.to.as_str().to_owned())));
+        sets.push(("driver_state", Value::Text(step.to.as_str().to_owned())));
         sets.extend(input_handle_sets(input, &sets));
     }
-    sets.push(("updated_at", Value::Integer(now.as_millis())));
-    update(tx, "boxes", "task = ?", &[id.get()], &sets)
+    sets.push(("driver_updated_at", Value::Integer(now.as_millis())));
+    update(tx, "boxes", "id = ?", &[id.get()], &sets)
 }
 
 /// Handles carried by a box input, unless the Fields already set that column.
@@ -271,25 +295,6 @@ fn input_handle_sets(input: &BoxInput, taken: &Sets) -> Sets {
     }
 }
 
-/// Map a `Field` to a column value: `None` keeps, `Null` clears.
-fn field_value<T>(f: &Field<T>, conv: impl Fn(&T) -> Value) -> Option<Value> {
-    match f {
-        Field::Keep => None,
-        Field::Set(v) => Some(conv(v)),
-        Field::Clear => Some(Value::Null),
-    }
-}
-
-/// Text field to column value.
-fn text(f: &Field<String>) -> Option<Value> {
-    field_value(f, |s| Value::Text(s.clone()))
-}
-
-/// Bool field to column value.
-fn flag(f: &Field<bool>) -> Option<Value> {
-    field_value(f, |b| Value::Integer(i64::from(*b)))
-}
-
 /// Column assignments for the task fields.
 fn task_field_sets(s: &Fields) -> Sets {
     let all = [
@@ -299,14 +304,21 @@ fn task_field_sets(s: &Fields) -> Sets {
         ("branch", text(&s.branch)),
         ("worktree", text(&s.worktree)),
         ("bound", flag(&s.bound)),
-        ("workspace_id", text(&s.workspace_id)),
-        ("agent_session_id", text(&s.agent_session_id)),
         ("state_reason", text(&s.state_reason)),
         (
             "setup_failed_at",
             field_value(&s.setup_failed_at, |t| Value::Integer(*t)),
         ),
         ("launch_failure", text(&s.launch_failure)),
+    ];
+    all.into_iter().filter_map(|(c, v)| Some((c, v?))).collect()
+}
+
+/// Column assignments for the primary session fields.
+fn session_field_sets(s: &Fields) -> Sets {
+    let all = [
+        ("workspace_id", text(&s.workspace_id)),
+        ("agent_session_id", text(&s.agent_session_id)),
     ];
     all.into_iter().filter_map(|(c, v)| Some((c, v?))).collect()
 }
@@ -349,32 +361,6 @@ pub(super) fn intent_sets(change: IntentChange, now: Ts) -> Sets {
     ]
 }
 
-/// Run `UPDATE table SET .. WHERE cond` with static table, column and
-/// condition text; `args` bind the `?` placeholders in `cond`.
-pub(super) fn update(
-    tx: &Transaction<'_>,
-    table: &str,
-    cond: &str,
-    args: &[i64],
-    sets: &Sets,
-) -> Result<(), StoreError> {
-    if sets.is_empty() {
-        return Ok(());
-    }
-    let cols = sets
-        .iter()
-        .map(|(c, _)| format!("{c} = ?"))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let mut vals: Vec<Value> = sets.iter().map(|(_, v)| v.clone()).collect();
-    vals.extend(args.iter().map(|&a| Value::Integer(a)));
-    tx.execute(
-        &format!("UPDATE {table} SET {cols} WHERE {cond}"),
-        rusqlite::params_from_iter(vals),
-    )?;
-    Ok(())
-}
-
 /// Insert one event row and return its id.
 pub(super) fn insert_event(
     tx: &Transaction<'_>,
@@ -383,7 +369,7 @@ pub(super) fn insert_event(
     now: Ts,
 ) -> Result<i64, StoreError> {
     tx.execute(
-        "INSERT INTO events (task, kind, payload, ts) VALUES (?, ?, ?, ?)",
+        "INSERT INTO events (box, kind, payload, ts) VALUES (?, ?, ?, ?)",
         params![
             task.get(),
             e.kind(),
@@ -393,3 +379,6 @@ pub(super) fn insert_event(
     )?;
     Ok(tx.last_insert_rowid())
 }
+
+#[cfg(test)]
+mod tests;

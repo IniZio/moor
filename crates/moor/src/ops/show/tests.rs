@@ -378,7 +378,7 @@ fn idle_since(store: &Store, id: BoxId) -> Option<i64> {
         .reader()
         .unwrap()
         .query_row(
-            "SELECT idle_since FROM tasks WHERE id = ?",
+            "SELECT idle_since FROM boxes WHERE id = ?",
             [id.get()],
             |r| r.get(0),
         )

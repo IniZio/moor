@@ -47,7 +47,7 @@ fn a_supervisor_that_exits_on_the_signal_ends_the_wait_early() {
     f.proc.on_signal(move |_, _| {
         rusqlite::Connection::open(&db)
             .unwrap()
-            .execute("DELETE FROM proxy WHERE task = ?", [id])
+            .execute("DELETE FROM proxy WHERE box = ?", [id])
             .unwrap();
     });
     let start = f.clock.instant();

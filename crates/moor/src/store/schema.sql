@@ -1,25 +1,31 @@
 CREATE TABLE meta   (k TEXT PRIMARY KEY, v TEXT NOT NULL);
-CREATE TABLE tasks  (
+CREATE TABLE boxes  (
   id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, repo TEXT NOT NULL, issue TEXT, goal TEXT, base TEXT,
   branch TEXT, worktree TEXT, bound INTEGER NOT NULL DEFAULT 0,
-  workspace_id TEXT, agent_session_id TEXT,
   state TEXT NOT NULL, state_reason TEXT,
   intent_kind TEXT, intent_pid INTEGER, intent_run INTEGER, intent_at INTEGER, setup_failed_at INTEGER,
-  idle_since INTEGER, launch_failure TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
-CREATE UNIQUE INDEX tasks_open ON tasks(name) WHERE state NOT IN ('closed','rejected');
-CREATE TABLE boxes  (
-  task INTEGER PRIMARY KEY REFERENCES tasks(id), provider TEXT NOT NULL, handle TEXT, state TEXT NOT NULL,
-  attempted_handle TEXT, workdir TEXT, egress TEXT,
-  sleep_reason TEXT, updated_at INTEGER NOT NULL);
-CREATE TABLE events (id INTEGER PRIMARY KEY, task INTEGER NOT NULL REFERENCES tasks(id), kind TEXT NOT NULL,
-  payload TEXT NOT NULL, ts INTEGER NOT NULL);
-CREATE INDEX events_task ON events(task, id);
-CREATE TABLE sessions (id INTEGER PRIMARY KEY, task INTEGER NOT NULL, session_ref TEXT NOT NULL, pane TEXT, started_at INTEGER NOT NULL,
-  ended_at INTEGER, exit INTEGER, transcript_digest TEXT, registered_agent_session TEXT);
-CREATE TABLE runs   (id INTEGER PRIMARY KEY, task INTEGER NOT NULL, argv TEXT NOT NULL, record TEXT, sha TEXT, sync TEXT NOT NULL,
+  idle_since INTEGER, launch_failure TEXT,
+  provider TEXT, handle TEXT, driver_state TEXT, attempted_handle TEXT, workdir TEXT, egress TEXT, sleep_reason TEXT,
+  driver_updated_at INTEGER,
+  created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+CREATE UNIQUE INDEX boxes_open ON boxes(name) WHERE state NOT IN ('closed','rejected');
+CREATE TABLE repo_seq (repo TEXT PRIMARY KEY, next INTEGER NOT NULL);
+CREATE TABLE sessions (id INTEGER PRIMARY KEY, box INTEGER NOT NULL REFERENCES boxes(id), ordinal INTEGER NOT NULL,
+  agent TEXT, model TEXT, agent_session_id TEXT, workspace_id TEXT, pane TEXT, state TEXT NOT NULL,
+  started_at INTEGER NOT NULL, ended_at INTEGER, UNIQUE (box, ordinal));
+CREATE TABLE launches (id INTEGER PRIMARY KEY, box INTEGER NOT NULL REFERENCES boxes(id), session_ref TEXT NOT NULL, pane TEXT,
+  started_at INTEGER NOT NULL, ended_at INTEGER, exit INTEGER, transcript_digest TEXT, registered_agent_session TEXT);
+CREATE TABLE box_refs (box INTEGER NOT NULL REFERENCES boxes(id), kind TEXT NOT NULL CHECK (kind IN ('branch','pr','proof')),
+  value TEXT NOT NULL, PRIMARY KEY (box, kind, value));
+CREATE TABLE events (id INTEGER PRIMARY KEY, box INTEGER NOT NULL REFERENCES boxes(id), session INTEGER REFERENCES sessions(id),
+  kind TEXT NOT NULL, payload TEXT NOT NULL, ts INTEGER NOT NULL);
+CREATE INDEX events_box ON events(box, id);
+CREATE TABLE runs   (id INTEGER PRIMARY KEY, box INTEGER NOT NULL, argv TEXT NOT NULL, record TEXT, sha TEXT, sync TEXT NOT NULL,
   pid INTEGER NOT NULL, started_at INTEGER NOT NULL, finished_at INTEGER, exit INTEGER, interrupted INTEGER NOT NULL DEFAULT 0);
-CREATE TABLE reports(id INTEGER PRIMARY KEY, task INTEGER NOT NULL, kind TEXT NOT NULL, version INTEGER NOT NULL, path TEXT NOT NULL,
-  title TEXT, created_at INTEGER NOT NULL, UNIQUE (task, kind, version));
-CREATE TABLE hook_cache (task INTEGER PRIMARY KEY, record TEXT NOT NULL, at INTEGER NOT NULL);
-CREATE TABLE proxy  (task INTEGER PRIMARY KEY REFERENCES tasks(id), nonce BLOB NOT NULL, box_port INTEGER NOT NULL UNIQUE, host_port INTEGER, pid INTEGER, handle TEXT, ready INTEGER NOT NULL DEFAULT 0, lease_owner TEXT, lease_heartbeat INTEGER, boot_id TEXT, updated_at INTEGER NOT NULL);
-INSERT INTO meta (k, v) VALUES ('schema_version', '1');
+CREATE TABLE reports(id INTEGER PRIMARY KEY, box INTEGER NOT NULL, session INTEGER REFERENCES sessions(id), kind TEXT NOT NULL,
+  version INTEGER NOT NULL, path TEXT NOT NULL, title TEXT, created_at INTEGER NOT NULL, UNIQUE (box, kind, version));
+CREATE TABLE hook_cache (session INTEGER PRIMARY KEY REFERENCES sessions(id), record TEXT NOT NULL, at INTEGER NOT NULL);
+CREATE TABLE proxy  (box INTEGER PRIMARY KEY REFERENCES boxes(id), nonce BLOB NOT NULL, box_port INTEGER NOT NULL UNIQUE,
+  host_port INTEGER, pid INTEGER, handle TEXT, ready INTEGER NOT NULL DEFAULT 0, lease_owner TEXT, lease_heartbeat INTEGER,
+  boot_id TEXT, updated_at INTEGER NOT NULL);
+INSERT INTO meta (k, v) VALUES ('schema_version', '2');

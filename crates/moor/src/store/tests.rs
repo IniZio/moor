@@ -90,10 +90,39 @@ fn open_creates_wal_file_with_schema_version() {
             r.get(0)
         })
         .unwrap();
-    assert_eq!(v, "1");
+    assert_eq!(v, "2");
     drop(raw);
     let (store, _) = open(dir.path());
     assert!(store.open_tasks().unwrap().is_empty());
+}
+
+#[test]
+fn schema_version_is_two() {
+    let dir = tempfile::tempdir().unwrap();
+    drop(open(dir.path()));
+    let raw = rusqlite::Connection::open(dir.path().join("state").join("moor.db")).unwrap();
+    let v: String = raw
+        .query_row("SELECT v FROM meta WHERE k = 'schema_version'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(v, "2");
+}
+
+#[test]
+fn primary_session_row_exists_for_each_box() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = open(dir.path());
+    let id = new_task(&store, "t");
+    let raw = rusqlite::Connection::open(dir.path().join("state").join("moor.db")).unwrap();
+    let n: i64 = raw
+        .query_row(
+            "SELECT count(*) FROM sessions WHERE box = ?1 AND ordinal = 1",
+            [id.get()],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(n, 1);
 }
 
 #[test]
@@ -180,7 +209,7 @@ fn new_task_with_illegal_box_input_leaves_nothing() {
     let err = store.apply(d).unwrap_err();
     assert!(matches!(err, StoreError::Illegal(_)), "{err:?}");
     let path = dir.path().join("state").join("moor.db");
-    assert_eq!((count(&path, "tasks"), count(&path, "events")), (0, 0));
+    assert_eq!((count(&path, "boxes"), count(&path, "events")), (0, 0));
 }
 
 #[test]
@@ -227,9 +256,11 @@ fn readers_are_not_blocked_by_an_open_writer() {
     let path = dir.path().join("state").join("moor.db");
     let raw = rusqlite::Connection::open(&path).unwrap();
     raw.execute_batch(
-        "BEGIN EXCLUSIVE; UPDATE tasks SET goal = 'dirty'; \
-         INSERT INTO tasks (name, repo, state, created_at, updated_at) VALUES ('x', 'r', 'checking', 0, 0); \
-         INSERT INTO events (task, kind, payload, ts) VALUES (1, 'busy', '{}', 0);",
+        "BEGIN EXCLUSIVE; UPDATE boxes SET goal = 'dirty'; \
+         INSERT INTO boxes (name, repo, state, created_at, updated_at) VALUES ('x', 'r', 'checking', 0, 0); \
+         INSERT INTO sessions (box, ordinal, state, started_at) \
+         VALUES (last_insert_rowid(), 1, 'starting', 0); \
+         INSERT INTO events (box, kind, payload, ts) VALUES (1, 'busy', '{}', 0);",
     )
     .unwrap();
     let start = Instant::now();

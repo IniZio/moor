@@ -114,7 +114,7 @@ impl Store {
         }
         let existing: Option<(i64, Option<String>, Option<i64>)> = tx
             .query_row(
-                "SELECT box_port, lease_owner, lease_heartbeat FROM proxy WHERE task = ?",
+                "SELECT box_port, lease_owner, lease_heartbeat FROM proxy WHERE box = ?",
                 [task.get()],
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
@@ -134,14 +134,14 @@ impl Store {
             }
             tx.execute(
                 "UPDATE proxy SET nonce = ?, ready = 0, host_port = NULL, pid = NULL, handle = NULL, \
-                 lease_owner = NULL, lease_heartbeat = NULL, boot_id = NULL, updated_at = ? WHERE task = ?",
+                 lease_owner = NULL, lease_heartbeat = NULL, boot_id = NULL, updated_at = ? WHERE box = ?",
                 params![nonce.expose(), now.as_millis(), task.get()],
             )?;
             port
         } else {
             let port = free_port(&tx, rng)?;
             tx.execute(
-                    "INSERT INTO proxy (task, nonce, box_port, ready, updated_at) VALUES (?, ?, ?, 0, ?)",
+                    "INSERT INTO proxy (box, nonce, box_port, ready, updated_at) VALUES (?, ?, ?, 0, ?)",
                     params![task.get(), nonce.expose(), port, now.as_millis()],
                 )?;
             port
@@ -155,8 +155,8 @@ impl Store {
     pub(crate) fn proxy(&self, task: BoxId) -> Result<Option<ProxyRow>, StoreError> {
         let conn = self.reader()?;
         conn.query_row(
-            "SELECT task, nonce, box_port, host_port, pid, handle, ready, lease_owner, lease_heartbeat, boot_id \
-             FROM proxy WHERE task = ?",
+            "SELECT box, nonce, box_port, host_port, pid, handle, ready, lease_owner, lease_heartbeat, boot_id \
+             FROM proxy WHERE box = ?",
             [task.get()],
             raw_from_row,
         )
@@ -169,8 +169,8 @@ impl Store {
     pub(crate) fn proxies(&self) -> Result<Vec<ProxyRow>, StoreError> {
         let conn = self.reader()?;
         let mut stmt = conn.prepare(
-            "SELECT task, nonce, box_port, host_port, pid, handle, ready, lease_owner, lease_heartbeat, boot_id \
-             FROM proxy ORDER BY task",
+            "SELECT box, nonce, box_port, host_port, pid, handle, ready, lease_owner, lease_heartbeat, boot_id \
+             FROM proxy ORDER BY box",
         )?;
         let rows = stmt.query_and_then([], |r| ProxyRow::try_from(raw_from_row(r)?))?;
         rows.collect()
@@ -183,7 +183,7 @@ impl Store {
         let conn = self.writer()?;
         let changed = conn.execute(
             "UPDATE proxy SET ready = 0, host_port = NULL, pid = NULL, handle = NULL, \
-             lease_owner = NULL, lease_heartbeat = NULL, boot_id = NULL, updated_at = ? WHERE task = ?",
+             lease_owner = NULL, lease_heartbeat = NULL, boot_id = NULL, updated_at = ? WHERE box = ?",
             params![now.as_millis(), task.get()],
         )?;
         drop(conn);
@@ -194,7 +194,7 @@ impl Store {
     pub(crate) fn remove_proxy(&self, task: BoxId) -> Result<bool, StoreError> {
         let mut conn = self.writer()?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let changed = tx.execute("DELETE FROM proxy WHERE task = ?", [task.get()])?;
+        let changed = tx.execute("DELETE FROM proxy WHERE box = ?", [task.get()])?;
         park::clear(&tx, task)?;
         tx.commit()?;
         drop(conn);
@@ -270,7 +270,7 @@ fn to_port(what: &str, v: i64) -> Result<u16, StoreError> {
 fn held_by_other(conn: &Connection, task: BoxId, port: u16) -> Result<bool, StoreError> {
     Ok(conn
         .query_row(
-            "SELECT 1 FROM proxy WHERE box_port = ? AND task <> ?",
+            "SELECT 1 FROM proxy WHERE box_port = ? AND box <> ?",
             params![port, task.get()],
             |_| Ok(()),
         )

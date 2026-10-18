@@ -48,7 +48,7 @@ impl Store {
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let current: Option<(Option<String>, Option<i64>)> = tx
             .query_row(
-                "SELECT lease_owner, lease_heartbeat FROM proxy WHERE task = ?",
+                "SELECT lease_owner, lease_heartbeat FROM proxy WHERE box = ?",
                 [task.get()],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
@@ -63,7 +63,7 @@ impl Store {
         };
         let outcome = if free {
             tx.execute(
-                "UPDATE proxy SET lease_owner = ?, lease_heartbeat = ? WHERE task = ?",
+                "UPDATE proxy SET lease_owner = ?, lease_heartbeat = ? WHERE box = ?",
                 params![owner, now, task.get()],
             )?;
             Lease::Claimed
@@ -83,7 +83,7 @@ impl Store {
         let mut conn = self.writer()?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let changed = tx.execute(
-            "UPDATE proxy SET lease_heartbeat = ? WHERE task = ? AND lease_owner = ?",
+            "UPDATE proxy SET lease_heartbeat = ? WHERE box = ? AND lease_owner = ?",
             params![now, task.get(), owner],
         )?;
         if changed == 0 && !proxy_exists(&tx, task)? {
@@ -98,7 +98,7 @@ impl Store {
     pub(crate) fn release(&self, task: BoxId, owner: &str) -> Result<(), StoreError> {
         let conn = self.writer()?;
         conn.execute(
-            "UPDATE proxy SET lease_owner = NULL, lease_heartbeat = NULL WHERE task = ? AND lease_owner = ?",
+            "UPDATE proxy SET lease_owner = NULL, lease_heartbeat = NULL WHERE box = ? AND lease_owner = ?",
             params![task.get(), owner],
         )?;
         drop(conn);
@@ -120,7 +120,7 @@ impl Store {
         let changed = tx.execute(
             "UPDATE proxy SET box_port = ?, host_port = ?, pid = ?, handle = ?, ready = 1, boot_id = ?, \
              updated_at = ? \
-             WHERE task = ? AND lease_owner = ?",
+             WHERE box = ? AND lease_owner = ?",
             params![
                 ports.box_port,
                 ports.host_port,
@@ -163,7 +163,7 @@ impl Store {
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let holder: Option<Option<String>> = tx
             .query_row(
-                "SELECT lease_owner FROM proxy WHERE task = ?",
+                "SELECT lease_owner FROM proxy WHERE box = ?",
                 [task.get()],
                 |r| r.get(0),
             )
@@ -187,9 +187,11 @@ impl Store {
 /// Whether `task` has a proxy row.
 fn proxy_exists(conn: &Connection, task: BoxId) -> Result<bool, StoreError> {
     Ok(conn
-        .query_row("SELECT 1 FROM proxy WHERE task = ?", [task.get()], |_| {
-            Ok(())
-        })
+        .query_row(
+            "SELECT 1 FROM proxy WHERE box = ?",
+            [task.get()],
+            |_| Ok(()),
+        )
         .optional()?
         .is_some())
 }
