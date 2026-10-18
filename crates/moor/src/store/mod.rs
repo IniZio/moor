@@ -94,6 +94,9 @@ pub(crate) enum StoreError {
         /// Pid of the running controller.
         pid: String,
     },
+    /// Another process has the old state database open, so it cannot be moved aside.
+    #[error("another moor process is using the store; stop it before the old state database is replaced")]
+    StoreInUse,
     /// The writer mutex was poisoned.
     #[error("store writer poisoned")]
     Poisoned,
@@ -196,7 +199,7 @@ impl Store {
     /// Open (creating if needed) the store at `path`. The state directory is
     /// created 0700 and the db, `-wal` and `-shm` files are 0600.
     pub(crate) fn open(path: &Path, clock: Arc<dyn Clock>) -> Result<Self, StoreError> {
-        let _ = version::retire_v1(path)?;
+        let _retired = version::retire_v1(path)?;
         open::prepare(path)?;
         let mut conn = Connection::open(path)?;
         conn.busy_timeout(BUSY_TIMEOUT)?;
