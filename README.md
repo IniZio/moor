@@ -96,6 +96,19 @@ agent37's own auto-sleep off: moor sleeps the Box itself, and a Box with a
 live tunnel never looks idle to agent37. Without `pauseResume`, the Box
 cannot sleep and stays up.
 
+A repo can pick the agent37 VM image and disk in its `.moor.yaml`, next to `size`:
+
+```yaml
+box: { size: large, template: agent37-ubuntu, disk_gb: 40 }
+```
+
+moor passes `template` and `disk_gb` to the agent37 adapter on each Box
+acquire in the environment variables `CRABBOX_AGENT37_TEMPLATE` and
+`CRABBOX_AGENT37_DISK_GB`. Unset keys send no variable, so the provider
+default applies. moor does not check the disk size; the adapter does, and
+moor shows its error as is. Only the external (agent37) provider takes these
+keys. With any other provider, moor refuses the acquire and names the keys.
+
 ## JSON envelope
 
 `--json` prints one envelope on stdout:
