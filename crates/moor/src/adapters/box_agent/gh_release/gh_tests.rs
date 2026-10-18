@@ -3,15 +3,15 @@
 use std::io::Write as _;
 use std::sync::Arc;
 
-use super::fake::{ready_release, ready_release_with_gh, FakeFetch, READY_GH};
-use super::{sha256_hex, Asset, NonoRelease, ReleaseError, GH_VERSION};
+use super::fake::{ready_release_with_gh, FakeFetch, READY_GH};
+use super::{sha256_hex, Asset, GhRelease, ReleaseError, GH_VERSION};
 
 const GH_RELEASE: &str = "https://github.com/cli/cli/releases/download/v2.102.0";
 
 /// A release over the pinned gh table whose every download returns junk.
-fn pinned() -> (Arc<FakeFetch>, NonoRelease) {
+fn pinned() -> (Arc<FakeFetch>, GhRelease) {
     let fetch = Arc::new(FakeFetch::new(Ok(b"junk".to_vec())));
-    (fetch.clone(), NonoRelease::new(fetch, None))
+    (fetch.clone(), GhRelease::new(fetch, None))
 }
 
 #[test]
@@ -81,7 +81,6 @@ fn errors_name_the_tool_and_version() {
         message.contains("gh") && message.contains(GH_VERSION),
         "{message}"
     );
-    assert!(!message.contains("nono"), "{message}");
     let message = release
         .gh_binary("Linux", "riscv64")
         .unwrap_err()
@@ -93,25 +92,9 @@ fn errors_name_the_tool_and_version() {
 }
 
 #[test]
-fn ready_release_serves_both_tools() {
+fn ready_release_serves_gh() {
     let release = ready_release_with_gh();
     assert_eq!(release.gh_binary("Linux", "x86_64").unwrap(), READY_GH);
-    assert_eq!(
-        release.binary("Linux", "x86_64").unwrap(),
-        super::fake::READY_BINARY
-    );
-}
-
-#[test]
-fn plain_ready_release_cannot_serve_gh() {
-    let err = ready_release().gh_binary("Linux", "x86_64").unwrap_err();
-    assert!(
-        matches!(
-            err,
-            ReleaseError::Unsupported { .. } | ReleaseError::Checksum { .. }
-        ),
-        "{err}"
-    );
 }
 
 /// A zip holding `gh_x/bin/gh` and a decoy.
@@ -131,7 +114,7 @@ fn zip_release(
     served: Vec<u8>,
     bytes: &[u8],
     cache: Option<std::path::PathBuf>,
-) -> (Arc<FakeFetch>, NonoRelease) {
+) -> (Arc<FakeFetch>, GhRelease) {
     let sha256: &'static str = Box::leak(sha256_hex(bytes).into_boxed_str());
     let asset = Asset {
         release: "https://example.test/release",
@@ -142,7 +125,7 @@ fn zip_release(
     };
     let assets: &'static [Asset] = Box::leak(Box::new([asset]));
     let fetch = Arc::new(FakeFetch::new(Ok(served)));
-    let release = NonoRelease::new(fetch.clone(), cache).with_gh_assets(assets);
+    let release = GhRelease::with_assets(fetch.clone(), cache, assets);
     (fetch, release)
 }
 

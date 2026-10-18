@@ -1,12 +1,12 @@
 //! The Box agent kit, the one Engine adapter; agent-specific behaviour sits behind an `AgentProfile`.
 
+mod agent_env;
 mod brief;
 pub(crate) mod claude;
+pub(crate) mod gh_release;
 mod launch;
-pub(crate) mod nono_release;
 mod probe;
 mod proxy_env;
-mod sandbox;
 mod steer;
 mod transcript;
 
@@ -22,7 +22,7 @@ use moor_core::seam::engine::{Engine, EngineError, LaunchReq, SessionRef, Steer,
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::Surface;
 
-use self::nono_release::NonoRelease;
+use self::gh_release::GhRelease;
 
 /// An agent running in a Box, read through the Driver and the Surface.
 pub(crate) struct BoxAgent {
@@ -34,18 +34,18 @@ pub(crate) struct BoxAgent {
     profile: Arc<dyn AgentProfile>,
     /// Paces the submit key after typing.
     clock: Arc<dyn Clock>,
-    /// Fetches the sandbox tool for a Box that lacks it.
-    release: Arc<NonoRelease>,
+    /// Fetches the pinned gh for a Box that lacks it.
+    release: Arc<GhRelease>,
 }
 
 impl BoxAgent {
-    /// A kit over the given Driver, Surface, agent profile, clock and sandbox tool source.
+    /// A kit over the given Driver, Surface, agent profile, clock and gh source.
     pub(crate) fn new(
         driver: Arc<dyn Driver>,
         surface: Arc<dyn Surface>,
         profile: Arc<dyn AgentProfile>,
         clock: Arc<dyn Clock>,
-        release: Arc<NonoRelease>,
+        release: Arc<GhRelease>,
     ) -> Self {
         Self {
             driver,

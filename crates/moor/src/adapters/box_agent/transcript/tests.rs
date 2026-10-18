@@ -11,7 +11,7 @@ use moor_core::{BoxHandle, BoxPath, ProviderId, TaskId, TaskName};
 
 use super::{decode, stream_script, ARCHIVE, STREAM_CAP, TOO_LARGE};
 use crate::adapters::box_agent::claude::Claude;
-use crate::adapters::box_agent::nono_release::fake::offline_release;
+use crate::adapters::box_agent::gh_release::fake::offline_release;
 use crate::adapters::box_agent::BoxAgent;
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
@@ -38,7 +38,6 @@ fn session() -> SessionRef {
         workdir: BoxPath::under("/work", "box-1").unwrap(),
         worktree: PathBuf::from("/host/wt"),
         pane: None,
-        sandbox: None,
         warnings: Vec::new(),
     }
 }

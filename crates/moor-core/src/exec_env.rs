@@ -31,28 +31,6 @@ pub const TEARDOWN_DEADLINE: Duration = Duration::from_mins(30);
 /// Wall-clock allowance for one `moor run`.
 pub const RUN_DEADLINE: Duration = Duration::from_hours(24);
 
-/// Every variable name the prelude may export, which the sandbox must pass through.
-pub const PASS_VARS: &[&str] = &[
-    "HTTPS_PROXY",
-    "HTTP_PROXY",
-    "https_proxy",
-    "http_proxy",
-    "NO_PROXY",
-    "no_proxy",
-    "NODE_USE_ENV_PROXY",
-    "SSL_CERT_FILE",
-    "CURL_CA_BUNDLE",
-    "REQUESTS_CA_BUNDLE",
-    "GIT_SSL_CAINFO",
-    "NODE_EXTRA_CA_CERTS",
-    "YARN_HTTPS_PROXY",
-    "YARN_HTTP_PROXY",
-    "YARN_CA_FILE_PATH",
-    "YARN_CACHE_FOLDER",
-    "YARN_GLOBAL_FOLDER",
-    "npm_config_cache",
-];
-
 /// Why a command runs in the Box; sets only the deadline and the pty.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Purpose {
@@ -139,7 +117,7 @@ pub fn build(b: &BoxCtx<'_>, purpose: Purpose) -> Result<ExecEnv, String> {
         prelude.push(format!(
             "unset {NONCE_VAR} moor_bundle moor_sys moor_mark moor_f"
         ));
-        // The agent gets these through its sandbox profile instead.
+        // The agent launch script exports the repo env, these included, just before the agent starts.
         if !matches!(purpose, Purpose::Agent) {
             for name in ["GH_TOKEN", "GITHUB_TOKEN"] {
                 if let Some((_, v)) = b
@@ -341,7 +319,7 @@ fn proxy_lines(p: &ProxyCtx<'_>) -> Result<Vec<String>, String> {
     Ok(lines)
 }
 
-/// Shell lines that point Yarn and npm at the proxy, the CA bundle and a cache the sandbox can write.
+/// Shell lines that point Yarn and npm at the proxy, the CA bundle and a cache the agent can write.
 fn yarn_lines(box_port: u16) -> Vec<String> {
     let mut lines: Vec<String> = ["YARN_HTTPS_PROXY", "YARN_HTTP_PROXY"]
         .iter()

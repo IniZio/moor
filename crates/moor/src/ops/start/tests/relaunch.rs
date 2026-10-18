@@ -29,7 +29,6 @@ pub(super) fn session(pane: &str) -> SessionRef {
         workdir: BoxPath::under("/work", "box-1").unwrap(),
         worktree: PathBuf::from("/wt"),
         pane: Some(PaneRef::new(pane)),
-        sandbox: None,
         warnings: Vec::new(),
     }
 }

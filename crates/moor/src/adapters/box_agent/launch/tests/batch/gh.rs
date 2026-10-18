@@ -1,4 +1,4 @@
-//! The pinned `gh` reaches the Box the way `nono` does, only for a Proxy with a forge rule, and
+//! The pinned `gh` reaches the Box only for a Proxy with a forge rule, and
 //! a `gh` that cannot be delivered is a warning, not a failed launch.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -7,10 +7,12 @@ use std::sync::Arc;
 use moor_core::seam::agent_profile::ProxyAddr;
 use moor_core::seam::engine::{Engine, EngineError, LaunchReq, SessionRef};
 
-use super::{agent, driver, exited, ready_release, req, DriverError};
-use super::{FakeDriver, FakeSurface, NonoRelease};
+use super::{agent, driver, exited, req, DriverError};
+use super::{FakeDriver, FakeSurface, GhRelease};
+use crate::adapters::box_agent::gh_release::fake::{
+    offline_release, ready_release, ready_release_with_gh, READY_GH,
+};
 use crate::adapters::box_agent::launch::gh;
-use crate::adapters::box_agent::nono_release::fake::{ready_release_with_gh, READY_GH};
 
 const GH_PUT: &str = "/home/box/.local/bin/gh";
 
@@ -36,7 +38,7 @@ struct Run {
     out: Result<SessionRef, EngineError>,
 }
 
-fn run(d: FakeDriver, release: Arc<NonoRelease>, forge: Option<bool>) -> Run {
+fn run(d: FakeDriver, release: Arc<GhRelease>, forge: Option<bool>) -> Run {
     let d = driver(d);
     let s = Arc::new(FakeSurface::new("/r"));
     let r = forge.map_or_else(|| req(&s, false), |forge| forge_req(&s, forge));
@@ -44,9 +46,9 @@ fn run(d: FakeDriver, release: Arc<NonoRelease>, forge: Option<bool>) -> Run {
     Run { d, s, out }
 }
 
-/// Platform, agent and nono checks pass, then the gh check exits `gh_code`.
+/// Platform and agent checks pass, then the gh check exits `gh_code`.
 fn with_gh_check(gh_code: i32) -> FakeDriver {
-    FakeDriver::new().exec_results(exited(&[0, 0, 0, gh_code]))
+    FakeDriver::new().exec_results(exited(&[0, 0, gh_code]))
 }
 
 fn gh_puts(d: &FakeDriver) -> Vec<(String, Vec<u8>, u32)> {
@@ -101,7 +103,7 @@ fn an_installed_gh_is_not_uploaded() {
 
 #[test]
 fn a_gh_the_host_cannot_fetch_is_a_warning_and_the_agent_launches() {
-    let run = run(FakeDriver::new(), ready_release(), Some(true));
+    let run = run(FakeDriver::new(), offline_release(), Some(true));
     assert_launched_with_warning(&run);
     assert!(gh_puts(&run.d).is_empty());
 }
@@ -119,13 +121,13 @@ fn a_failed_gh_upload_is_a_warning_and_the_agent_launches() {
         .any(|p| p.1.as_str().ends_with("brief.md")));
 }
 
-fn run_failing_gh_put(d: FakeDriver, release: Arc<NonoRelease>) -> Run {
+fn run_failing_gh_put(d: FakeDriver, release: Arc<GhRelease>) -> Run {
     let d = driver(d);
     let s = Arc::new(FakeSurface::new("/r"));
     let (hook_d, seen) = (d.clone(), AtomicUsize::new(0));
     d.on_exec(move || {
-        // The fourth exec is the gh check; the next put is then the gh upload.
-        if seen.fetch_add(1, Ordering::SeqCst) == 3 {
+        // The third exec is the gh check; the next put is then the gh upload.
+        if seen.fetch_add(1, Ordering::SeqCst) == 2 {
             hook_d.set_fail_put(DriverError::Quota("upload broke".to_owned()));
         }
     });
@@ -172,4 +174,38 @@ fn no_proxy_means_no_gh_either() {
     let session = run.out.expect("launched");
     assert!(session.warnings.is_empty());
     assert!(gh_puts(&run.d).is_empty());
+}
+
+#[test]
+fn a_platform_the_box_cannot_report_is_a_warning_and_the_agent_launches() {
+    let d = FakeDriver::new().exec_results(exited(&[1]));
+    let run = run(d, ready_release_with_gh(), Some(true));
+    assert_launched_with_warning(&run);
+    assert!(gh_puts(&run.d).is_empty());
+}
+
+const GUARD: &str = "[ -r /proc/self/environ ] && [ -n \"$HOME\" ] || exit 1;";
+
+#[test]
+fn the_platform_script_does_nothing_unless_the_box_has_a_home() {
+    let run = run(FakeDriver::new(), ready_release_with_gh(), Some(true));
+    run.out.expect("launched");
+    let execs = run.d.execs();
+    let script = execs
+        .iter()
+        .flat_map(|e| e.1.argv.iter())
+        .find(|a| a.contains("mkdir"))
+        .expect("platform script");
+    assert!(script.starts_with(GUARD), "{script}");
+}
+
+#[test]
+fn a_proxy_without_a_forge_rule_reads_no_platform() {
+    let run = run(FakeDriver::new(), ready_release(), Some(false));
+    run.out.expect("launched");
+    let execs = run.d.execs();
+    assert!(execs
+        .iter()
+        .flat_map(|e| e.1.argv.iter())
+        .all(|a| !a.contains("uname")));
 }

@@ -19,7 +19,6 @@ fn session(id: &str) -> SessionRef {
         workdir: BoxPath::under("/work/box-1", "x").unwrap(),
         worktree: PathBuf::from("/host/wt"),
         pane: None,
-        sandbox: None,
         warnings: Vec::new(),
     }
 }

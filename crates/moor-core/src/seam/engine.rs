@@ -23,8 +23,6 @@ pub struct SessionRef {
     pub worktree: PathBuf,
     /// The agent's pane, if one exists.
     pub pane: Option<PaneRef>,
-    /// The sandbox the agent runs under, such as `nono 0.80.0`; none when unsandboxed.
-    pub sandbox: Option<String>,
     /// Non-fatal notices from the launch, for the caller to report; empty otherwise.
     pub warnings: Vec<LaunchNotice>,
 }

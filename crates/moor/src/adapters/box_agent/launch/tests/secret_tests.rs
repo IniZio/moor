@@ -29,19 +29,18 @@ fn assert_unsets_before_agent(script: &str) {
 }
 
 #[test]
-fn an_unsandboxed_script_unsets_the_configured_secrets_before_the_agent() {
+fn a_launch_without_a_proxy_unsets_the_configured_secrets_before_the_agent() {
     let script = launch_script(with_names);
     assert!(!script.contains("nono"), "{script}");
     assert_unsets_before_agent(&script);
 }
 
 #[test]
-fn a_sandboxed_script_unsets_the_configured_secrets_before_the_agent() {
+fn a_proxy_launch_unsets_the_configured_secrets_before_the_agent() {
     let script = launch_script(|s| LaunchReq {
         strip_env: names(),
         ..req_with_proxy(s)
     });
-    assert!(script.contains("nono"), "{script}");
     assert_unsets_before_agent(&script);
 }
 
@@ -50,7 +49,7 @@ fn the_unset_line_hides_the_configured_secrets_from_children() {
     let script = launch_script(with_names);
     let unset = script
         .lines()
-        .find(|l| l.starts_with("unset "))
+        .find(|l| l.starts_with(UNSET_LINE))
         .expect(&script);
     let out = Command::new("sh")
         .args(["-c", &format!("{unset}\nenv")])
@@ -69,5 +68,5 @@ fn the_unset_line_hides_the_configured_secrets_from_children() {
 #[test]
 fn an_empty_list_emits_no_unset_line() {
     let script = launch_script(req);
-    assert!(!script.lines().any(|l| l.starts_with("unset ")), "{script}");
+    assert!(!script.contains("PLATFORM_TOKEN"), "{script}");
 }

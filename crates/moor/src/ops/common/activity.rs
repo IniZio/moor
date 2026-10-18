@@ -320,7 +320,6 @@ pub(crate) fn session_ref(row: &TaskRow, id: String, pane: Option<String>) -> Op
         workdir: recorded_workdir(b.workdir.as_deref()?)?,
         worktree: PathBuf::from(row.worktree.as_deref()?),
         pane: pane.map(PaneRef::new),
-        sandbox: None,
         warnings: Vec::new(),
     })
 }

@@ -45,7 +45,6 @@ pub(super) fn run(cx: &Cx, store: &Store, id: TaskId, agent: AgentLaunchView) ->
     AgentLaunchView {
         launched: false,
         session: None,
-        sandbox: None,
         reason: Some(failure),
     }
 }

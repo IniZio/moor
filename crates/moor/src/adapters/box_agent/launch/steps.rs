@@ -8,11 +8,10 @@ use moor_core::seam::engine::LaunchNotice;
 use moor_core::seam::proc::{Deadline, Tool};
 
 use super::super::brief::{render, BriefInput};
-use super::super::nono_release::sha256_hex;
+use super::super::gh_release::sha256_hex;
 use super::super::proxy_env;
-use super::super::sandbox::{self, SandboxInput};
 use super::gh;
-use super::install::{check_outcome, parse_platform, upload_steps, StepResult};
+use super::install::{parse_platform, StepResult};
 use super::{fail, Failure, Launch, Platform, AGENT_PATH_LINE, INSTALL_DEADLINE};
 
 /// Which launch step a batch step belongs to, and so how its failure is reported.
@@ -20,18 +19,10 @@ use super::{fail, Failure, Launch, Platform, AGENT_PATH_LINE, INSTALL_DEADLINE};
 pub(super) enum Tag {
     /// The check that the agent command is on the Box's `PATH`.
     Agent,
-    /// The check that the sandbox tool is the pinned binary.
-    Check,
-    /// The upload of the pinned binary after the check found it missing.
-    Upload,
-    /// The check run again after the upload.
-    Recheck,
     /// The check that the Box has the pinned `gh`.
     GhCheck,
     /// The upload of the pinned `gh` after the check found it missing.
     GhPut,
-    /// The sandbox profile.
-    Profile,
     /// The brief.
     Brief,
     /// A hook or preseed file.
@@ -45,7 +36,6 @@ impl Tag {
     fn failure(self, e: &impl ToString) -> Failure {
         match self {
             Self::Agent => fail("agent", e),
-            Self::Check | Self::Upload | Self::Recheck | Self::Profile => fail("sandbox", e),
             Self::GhCheck | Self::GhPut => fail("gh", e),
             Self::Brief => fail("brief", e),
             Self::Hooks => fail("hooks", e),
@@ -64,8 +54,6 @@ pub(super) struct Plan {
     steps: Vec<BoxStep>,
     /// What each step is for.
     tags: Vec<Tag>,
-    /// The pinned binary and the script that checks it, when the check is a step.
-    check: Option<(Vec<u8>, String)>,
     /// The pinned `gh` binary, when the Box is to have it.
     gh: Option<Vec<u8>>,
     /// Notices raised while planning.
@@ -82,8 +70,6 @@ impl Plan {
 
 /// What the launch needs once its steps have run.
 pub(super) struct Staged {
-    /// The sandbox profile on the Box, when the agent runs sandboxed.
-    pub(super) sandboxed: Option<BoxPath>,
     /// The agent's hook files and step.
     pub(super) hooks: BoxSetup,
     /// The agent's preseed files and step.
@@ -125,45 +111,16 @@ fn gate(tag: Tag, result: Result<StepDone, DriverError>) -> Result<(), Failure> 
 }
 
 impl Launch<'_> {
-    /// Adds the sandbox check and profile to `plan` and returns the profile's path.
-    fn plan_sandbox(
-        &self,
-        platform: Platform,
-        plan: &mut Plan,
-    ) -> Result<Option<BoxPath>, Failure> {
-        if self.ctx.proxy.is_none() {
-            return Ok(None);
+    /// Adds the `gh` check to `plan` when the launch has a forge Proxy; a platform that cannot be
+    /// read is a warning, since the agent runs without `gh`.
+    fn plan_forge(&self, platform: Platform, plan: &mut Plan) {
+        if !self.ctx.proxy.as_ref().is_some_and(|p| p.forge) {
+            return;
         }
-        let (req, cred) = (self.req, self.cred);
-        let (os, arch) = platform.unwrap_or_else(|| parse_platform(None))?;
-        let bytes = (self.release.binary(&os, &arch)).map_err(|e| fail("sandbox", &e))?;
-        let script = sandbox::check_script(&sha256_hex(&bytes));
-        plan.push(Tag::Check, BoxStep::Run(script.clone()));
-        plan.check = Some((bytes, script));
-        let env_names = (self.profile.env(self.ctx).into_iter().map(|v| v.name)).collect();
-        let exec = self.exec_env()?;
-        let profile = sandbox::profile(&SandboxInput {
-            workdir: &self.ctx.workdir,
-            home: &self.ctx.home,
-            cred,
-            tmp: self.tmp,
-            env_names,
-            set_vars: exec.vars,
-            root: self.root,
-            strip_env: &req.strip_env,
-        });
-        let at = BoxPath::under(cred.as_str(), sandbox::PROFILE_FILE)
-            .map_err(|e| fail("sandbox", &e))?;
-        let put = BoxStep::Put {
-            path: at.clone(),
-            bytes: profile.into_bytes(),
-            mode: 0o600,
-        };
-        plan.push(Tag::Profile, put);
-        if self.ctx.proxy.as_ref().is_some_and(|p| p.forge) {
-            self.plan_gh((&os, &arch), plan);
+        match platform.unwrap_or_else(|| parse_platform(None)) {
+            Ok((os, arch)) => self.plan_gh((&os, &arch), plan),
+            Err(f) => plan.warnings.push(gh::not_delivered(&f.message)),
         }
-        Ok(Some(at))
     }
 
     /// Adds the `gh` check to `plan`; a `gh` the host cannot fetch is a warning, not a failure.
@@ -183,7 +140,7 @@ impl Launch<'_> {
     pub(super) fn plan(&self, platform: Platform, plan: &mut Plan) -> Result<Staged, Failure> {
         let (req, cred, ctx) = (self.req, self.cred, self.ctx);
         plan.push(Tag::Agent, BoxStep::Run(agent_check_script()));
-        let sandboxed = self.plan_sandbox(platform, plan)?;
+        self.plan_forge(platform, plan);
         let hooks = self
             .profile
             .hook_writer(ctx)
@@ -220,16 +177,11 @@ impl Launch<'_> {
                 plan.push(Tag::Proxy(text), step);
             }
         }
-        Ok(Staged {
-            sandboxed,
-            hooks,
-            preseed,
-        })
+        Ok(Staged { hooks, preseed })
     }
 
-    /// Runs the steps of `plan` as batches; a missing sandbox tool is uploaded and checked again
-    /// at the head of the next batch, ahead of the rest of the steps, and a missing `gh` is
-    /// uploaded there too. The result holds the notices of the launch.
+    /// Runs the steps of `plan` as batches; a missing `gh` is uploaded at the head of the next
+    /// batch, ahead of the rest of the steps. The result holds the notices of the launch.
     pub(super) fn execute(
         &self,
         connect: &[String],
@@ -258,16 +210,6 @@ impl Launch<'_> {
                     Tag::GhCheck | Tag::GhPut => {
                         self.gh_step(tag, result, plan, (&mut head, &mut warnings));
                     }
-                    Tag::Check | Tag::Recheck => match check_outcome(Some(result))? {
-                        0 => {}
-                        sandbox::NOT_INSTALLED if matches!(tag, Tag::Check) => {
-                            if let Some((bytes, script)) = &plan.check {
-                                let up = upload_steps(&self.ctx.home, bytes, script)?;
-                                head = [Tag::Upload, Tag::Recheck].into_iter().zip(up).collect();
-                            }
-                        }
-                        code => return Err(fail("sandbox", &sandbox::check_failure(code))),
-                    },
                     _ => result.map(drop).map_err(|e| tag.failure(&e))?,
                 }
             }

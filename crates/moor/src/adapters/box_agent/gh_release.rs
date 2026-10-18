@@ -1,4 +1,4 @@
-//! The pinned nono release, downloaded and verified on the host so the Box needs no egress.
+//! The pinned gh release, downloaded and verified on the host so the Box needs no egress.
 
 use std::fmt::Write as _;
 use std::io::Read;
@@ -12,14 +12,6 @@ use ureq::tls::{RootCerts, TlsConfig, TlsProvider};
 use ureq::Agent;
 
 use self::gh_assets::GH_ASSETS;
-use super::sandbox::NONO_VERSION;
-
-/// Where the upstream release assets are published; only the asset the fork lacks is fetched here.
-const UPSTREAM_RELEASE: &str = "https://github.com/nolabs-ai/nono/releases/download/v0.80.0";
-
-/// Where the fork's release assets are published. The fork carries the passthrough phantom-header
-/// strip and the upstream extra CA that moor needs.
-const FORK_RELEASE: &str = "https://github.com/IniZio/nono/releases/download/v0.80.0-moor.1";
 
 /// The pinned gh release.
 pub(super) const GH_VERSION: &str = "2.102.0";
@@ -42,89 +34,23 @@ pub(super) struct Asset {
     pub(super) sha256: &'static str,
 }
 
-/// The pinned assets by Box platform. Every row comes from the fork except Darwin `x86_64`, which
-/// the fork does not publish, so it stays on the upstream release.
-const ASSETS: &[Asset] = &[
-    Asset {
-        release: FORK_RELEASE,
-        os: "Linux",
-        arch: "x86_64",
-        name: "nono-v0.80.0-x86_64-unknown-linux-gnu.tar.gz",
-        sha256: "6204caef57aac110d491f01dcceb2745312cc7bdeb1db95576f77e4c92f7c6be",
-    },
-    Asset {
-        release: FORK_RELEASE,
-        os: "Linux",
-        arch: "aarch64",
-        name: "nono-v0.80.0-aarch64-unknown-linux-gnu.tar.gz",
-        sha256: "aa9ef2123e52dc5c086b80eceb4fa4918fc451220180b89aabbb8b561e73d198",
-    },
-    Asset {
-        release: FORK_RELEASE,
-        os: "Linux",
-        arch: "arm64",
-        name: "nono-v0.80.0-aarch64-unknown-linux-gnu.tar.gz",
-        sha256: "aa9ef2123e52dc5c086b80eceb4fa4918fc451220180b89aabbb8b561e73d198",
-    },
-    Asset {
-        release: UPSTREAM_RELEASE,
-        os: "Darwin",
-        arch: "x86_64",
-        name: "nono-v0.80.0-x86_64-apple-darwin.tar.gz",
-        sha256: "b354e674e6b4643ad5c572d148ae367bb0c5c103410fbc22923c5593a6f7d0b2",
-    },
-    Asset {
-        release: FORK_RELEASE,
-        os: "Darwin",
-        arch: "arm64",
-        name: "nono-v0.80.0-aarch64-apple-darwin.tar.gz",
-        sha256: "ff84a3a50bce1781f3f89b62e8760c30ee187d22ec1239374bfb6771b7bf7658",
-    },
-];
-
-/// A tool shipped in a release archive: what it is called, which version, and its binary's name.
-#[derive(Debug, Clone, Copy)]
-struct Tool {
-    /// Tool name, also the binary's file name in the archive.
-    name: &'static str,
-    /// Pinned version.
-    version: &'static str,
-}
-
-/// The nono sandbox.
-const NONO: Tool = Tool {
-    name: "nono",
-    version: NONO_VERSION,
-};
-
-/// The GitHub CLI.
-const GH: Tool = Tool {
-    name: "gh",
-    version: GH_VERSION,
-};
+/// The binary's name in the archive.
+const TOOL: &str = "gh";
 
 /// Why a pinned release could not be produced.
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum ReleaseError {
     /// No pinned asset for this Box platform.
-    #[error("{tool} {version} has no release for {os} {arch}")]
+    #[error("{TOOL} {GH_VERSION} has no release for {os} {arch}")]
     Unsupported {
-        /// Tool name.
-        tool: &'static str,
-        /// Tool version.
-        version: &'static str,
         /// `uname -s` of the Box.
         os: String,
         /// `uname -m` of the Box.
         arch: String,
     },
     /// The download does not match its pinned sha256.
-    #[error("the {tool} {version} download {asset} failed its sha256 check")]
+    #[error("the {TOOL} {GH_VERSION} download {asset} failed its sha256 check")]
     Checksum {
-        /// Tool name.
-        tool: &'static str,
-        /// Tool version.
-        version: &'static str,
         /// Release file name.
         asset: String,
     },
@@ -169,25 +95,28 @@ impl Fetch for UreqFetch {
     }
 }
 
-/// The pinned nono release, fetched on the host and cached.
-pub(crate) struct NonoRelease {
+/// The pinned gh release, fetched on the host and cached.
+pub(crate) struct GhRelease {
     /// Downloads assets.
     fetch: Arc<dyn Fetch>,
     /// Directory holding downloaded assets, if caching is on.
     cache: Option<PathBuf>,
-    /// Pinned nono assets by platform.
-    assets: &'static [Asset],
     /// Pinned gh assets by platform.
-    gh_assets: &'static [Asset],
+    assets: &'static [Asset],
 }
 
-impl NonoRelease {
+impl GhRelease {
     /// A release that downloads with `fetch` and caches under `cache`.
     pub(crate) fn new(fetch: Arc<dyn Fetch>, cache: Option<PathBuf>) -> Self {
-        Self::with_assets(fetch, cache, ASSETS)
+        Self {
+            fetch,
+            cache,
+            assets: GH_ASSETS,
+        }
     }
 
     /// Like `new` with a different asset table.
+    #[cfg(test)]
     pub(super) fn with_assets(
         fetch: Arc<dyn Fetch>,
         cache: Option<PathBuf>,
@@ -197,73 +126,39 @@ impl NonoRelease {
             fetch,
             cache,
             assets,
-            gh_assets: GH_ASSETS,
         }
-    }
-
-    /// Like `self` with a different gh asset table.
-    #[cfg(test)]
-    pub(super) fn with_gh_assets(self, assets: &'static [Asset]) -> Self {
-        Self {
-            gh_assets: assets,
-            ..self
-        }
-    }
-
-    /// The verified `nono` binary for the Box platform given by `uname -s` and `uname -m`.
-    pub(crate) fn binary(&self, os: &str, arch: &str) -> Result<Vec<u8>, ReleaseError> {
-        self.tool_binary(NONO, self.assets, os, arch)
     }
 
     /// The verified `gh` binary for the Box platform given by `uname -s` and `uname -m`.
     pub(super) fn gh_binary(&self, os: &str, arch: &str) -> Result<Vec<u8>, ReleaseError> {
-        self.tool_binary(GH, self.gh_assets, os, arch)
-    }
-
-    /// The binary of `tool` from the asset in `assets` that serves the platform.
-    fn tool_binary(
-        &self,
-        tool: Tool,
-        assets: &[Asset],
-        os: &str,
-        arch: &str,
-    ) -> Result<Vec<u8>, ReleaseError> {
-        let asset = assets
+        let asset = self
+            .assets
             .iter()
             .find(|a| a.os == os && a.arch == arch)
             .ok_or_else(|| ReleaseError::Unsupported {
-                tool: tool.name,
-                version: tool.version,
                 os: os.to_owned(),
                 arch: arch.to_owned(),
             })?;
-        let slot = format!("{}-v{}", tool.name, tool.version);
         let cached = self
             .cache
             .as_ref()
-            .map(|dir| dir.join(slot).join(asset.name));
+            .map(|dir| dir.join(format!("{TOOL}-v{GH_VERSION}")).join(asset.name));
         let archive = match cached.as_deref().and_then(|p| read_verified(p, asset)) {
             Some(bytes) => bytes,
-            None => self.download(tool, asset, cached.as_deref())?,
+            None => self.download(asset, cached.as_deref())?,
         };
-        extract(tool, asset, &archive)
+        extract(asset, &archive)
     }
 
     /// Fetches and verifies `asset`, then stores it at `cached`.
-    fn download(
-        &self,
-        tool: Tool,
-        asset: &Asset,
-        cached: Option<&Path>,
-    ) -> Result<Vec<u8>, ReleaseError> {
+    fn download(&self, asset: &Asset, cached: Option<&Path>) -> Result<Vec<u8>, ReleaseError> {
         let url = format!("{}/{}", asset.release, asset.name);
-        let bytes = self.fetch.get(&url).map_err(|e| {
-            ReleaseError::Download(format!("{} {} on the host: {e}", tool.name, tool.version))
-        })?;
+        let bytes = self
+            .fetch
+            .get(&url)
+            .map_err(|e| ReleaseError::Download(format!("{TOOL} {GH_VERSION} on the host: {e}")))?;
         if !matches_sum(&bytes, asset) {
             return Err(ReleaseError::Checksum {
-                tool: tool.name,
-                version: tool.version,
                 asset: asset.name.to_owned(),
             });
         }
@@ -308,22 +203,21 @@ fn store(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     })
 }
 
-/// The binary of `tool` in `archive`, a zip or gzip tarball by the asset's file name.
-fn extract(tool: Tool, asset: &Asset, archive: &[u8]) -> Result<Vec<u8>, ReleaseError> {
+/// The gh binary in `archive`, a zip or gzip tarball by the asset's file name.
+fn extract(asset: &Asset, archive: &[u8]) -> Result<Vec<u8>, ReleaseError> {
     let found = if Path::new(asset.name)
         .extension()
         .is_some_and(|e| e.eq_ignore_ascii_case("zip"))
     {
-        unzip_member(archive, tool.name)
+        unzip_member(archive, TOOL)
     } else {
-        untar_member(archive, tool.name)
+        untar_member(archive, TOOL)
     };
     found
-        .map_err(|e| ReleaseError::Extract(format!("{} {}: {e}", tool.name, tool.version)))?
+        .map_err(|e| ReleaseError::Extract(format!("{TOOL} {GH_VERSION}: {e}")))?
         .ok_or_else(|| {
             ReleaseError::Extract(format!(
-                "{} {}: the archive has no {} binary",
-                tool.name, tool.version, tool.name
+                "{TOOL} {GH_VERSION}: the archive has no {TOOL} binary"
             ))
         })
 }
