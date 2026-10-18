@@ -9,7 +9,7 @@ use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::task::{SetupOutcome, TaskInput};
 use moor_core::seam::clock::{Clock, Ts};
-use moor_core::{BoxHandle, ProviderId, TaskId, TaskName};
+use moor_core::{BoxHandle, BoxId, BoxName, ProviderId};
 
 use crate::testing::clock::FakeClock;
 
@@ -23,21 +23,21 @@ fn open(dir: &Path) -> (Store, Arc<FakeClock>) {
 }
 
 /// Insert a task by name.
-fn add(store: &Store, name: &str) -> TaskId {
+fn add(store: &Store, name: &str) -> BoxId {
     let nt = NewTask {
-        name: TaskName::parse(name).unwrap(),
+        name: BoxName::parse(name).unwrap(),
         repo: "r".into(),
     };
     store.apply(Decision::insert(nt)).unwrap().task
 }
 
 /// Step `id` with `input`.
-fn step(store: &Store, id: TaskId, input: TaskInput) {
+fn step(store: &Store, id: BoxId, input: TaskInput) {
     store.apply(Decision::new(id).task_input(input)).unwrap();
 }
 
 /// A task that is working: admitted, then its box ready.
-fn working(store: &Store, name: &str) -> TaskId {
+fn working(store: &Store, name: &str) -> BoxId {
     let id = add(store, name);
     let d = Decision::new(id)
         .task_input(TaskInput::Admitted)
@@ -59,7 +59,7 @@ fn working(store: &Store, name: &str) -> TaskId {
 }
 
 /// The `idle_since` column of a task.
-fn idle_since(store: &Store, id: TaskId) -> Option<i64> {
+fn idle_since(store: &Store, id: BoxId) -> Option<i64> {
     store
         .reader()
         .unwrap()
@@ -72,7 +72,7 @@ fn idle_since(store: &Store, id: TaskId) -> Option<i64> {
 }
 
 /// The state and update time columns of a task.
-fn state_cols(store: &Store, id: TaskId) -> (String, i64) {
+fn state_cols(store: &Store, id: BoxId) -> (String, i64) {
     store
         .reader()
         .unwrap()
@@ -168,7 +168,7 @@ fn session_writes_leave_task_columns_alone() {
 fn begin_session_on_unknown_task_is_not_found() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
-    let err = store.begin_session(TaskId::new(7), "s", None).unwrap_err();
+    let err = store.begin_session(BoxId::new(7), "s", None).unwrap_err();
     assert!(
         matches!(err, crate::store::StoreError::NotFound(_)),
         "{err:?}"

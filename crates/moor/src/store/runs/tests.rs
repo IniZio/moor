@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use moor_core::domain::decision::{Decision, Intent, NewTask};
 use moor_core::seam::clock::Ts;
-use moor_core::{RunId, Sha, TaskId, TaskName};
+use moor_core::{BoxId, BoxName, RunId, Sha};
 
 use crate::testing::clock::FakeClock;
 
@@ -22,16 +22,16 @@ fn open(dir: &Path) -> Store {
 }
 
 /// Insert a task by name.
-fn add(store: &Store, name: &str) -> TaskId {
+fn add(store: &Store, name: &str) -> BoxId {
     let nt = NewTask {
-        name: TaskName::parse(name).unwrap(),
+        name: BoxName::parse(name).unwrap(),
         repo: "r".into(),
     };
     store.apply(Decision::insert(nt)).unwrap().task
 }
 
 /// Begin a run on `task` owned by `pid`.
-fn begin(store: &Store, task: TaskId, record: Option<&str>, sha: Option<&str>, pid: u32) -> RunId {
+fn begin(store: &Store, task: BoxId, record: Option<&str>, sha: Option<&str>, pid: u32) -> RunId {
     store
         .begin_run(NewRun {
             task,
@@ -55,7 +55,7 @@ fn finish(store: &Store, run: RunId, exit: i32) {
 }
 
 /// How many `ran` events a task has.
-fn ran_events(store: &Store, task: TaskId) -> usize {
+fn ran_events(store: &Store, task: BoxId) -> usize {
     let events = store.events(task, 100).unwrap();
     events.iter().filter(|e| e.kind == "ran").count()
 }

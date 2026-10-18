@@ -5,18 +5,18 @@ use std::sync::Arc;
 use moor_core::domain::decision::{Decision, NewTask};
 use moor_core::domain::event::Event;
 use moor_core::seam::clock::Ts;
-use moor_core::{TaskId, TaskName};
+use moor_core::{BoxId, BoxName};
 use serde_json::json;
 
 use crate::store::{Store, StoreError};
 use crate::testing::clock::FakeClock;
 
 /// A store in a temp dir with one task.
-fn setup(dir: &std::path::Path) -> (Store, TaskId) {
+fn setup(dir: &std::path::Path) -> (Store, BoxId) {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
     let store = Store::open(&dir.join("moor.db"), clock).unwrap();
     let nt = NewTask {
-        name: TaskName::parse("t").unwrap(),
+        name: BoxName::parse("t").unwrap(),
         repo: "r".into(),
     };
     let id = store.apply(Decision::insert(nt)).unwrap().task;
@@ -101,7 +101,7 @@ fn unknown_task_is_not_found() {
     let (store, id) = setup(dir.path());
     let e = Event::ProxyCredentialFailed { rule: "gh".into() };
     let err = store
-        .record_proxy_event(TaskId::new(id.get() + 100), &e)
+        .record_proxy_event(BoxId::new(id.get() + 100), &e)
         .unwrap_err();
     assert!(matches!(err, StoreError::NotFound(_)), "{err:?}");
 }

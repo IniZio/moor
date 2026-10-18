@@ -9,7 +9,7 @@ use moor_core::domain::decision::Intent;
 use moor_core::domain::task::TaskState;
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::view::LaunchFailure;
-use moor_core::{BoxHandle, ProviderId, RunId, TaskId, TaskName};
+use moor_core::{BoxHandle, BoxId, BoxName, ProviderId, RunId};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Row, TransactionBehavior};
 
 /// File name of the state database inside the state directory.
@@ -71,7 +71,7 @@ pub(crate) enum StoreError {
     Illegal(#[from] moor_core::domain::Illegal),
     /// No such task.
     #[error("task {} not found", .0.get())]
-    NotFound(TaskId),
+    NotFound(BoxId),
     /// The decision or request was malformed.
     #[error("invalid: {0}")]
     Invalid(String),
@@ -108,9 +108,9 @@ pub(crate) struct BoxRow {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TaskRow {
     /// Task id.
-    pub(crate) id: TaskId,
+    pub(crate) id: BoxId,
     /// Task name.
-    pub(crate) name: TaskName,
+    pub(crate) name: BoxName,
     /// Repo the task works on.
     pub(crate) repo: String,
     /// Issue reference.
@@ -157,7 +157,7 @@ pub(crate) struct EventRow {
     /// Event id.
     pub(crate) id: i64,
     /// Owning task.
-    pub(crate) task: TaskId,
+    pub(crate) task: BoxId,
     /// Event kind.
     pub(crate) kind: String,
     /// Event fields without `kind`.
@@ -196,7 +196,7 @@ impl Store {
     }
 
     /// One task by id.
-    pub(crate) fn task(&self, id: TaskId) -> Result<Option<TaskRow>, StoreError> {
+    pub(crate) fn task(&self, id: BoxId) -> Result<Option<TaskRow>, StoreError> {
         load_task(&self.reader()?, id)
     }
 
@@ -211,7 +211,7 @@ impl Store {
     }
 
     /// The last `last` events of a task, ascending by id.
-    pub(crate) fn events(&self, id: TaskId, last: usize) -> Result<Vec<EventRow>, StoreError> {
+    pub(crate) fn events(&self, id: BoxId, last: usize) -> Result<Vec<EventRow>, StoreError> {
         let limit = i64::try_from(last).unwrap_or(i64::MAX);
         let conn = self.reader()?;
         let mut stmt = conn.prepare(
@@ -223,7 +223,7 @@ impl Store {
     }
 
     /// The task's latest `needs_input`, `busy` or `working` event; none when it has had none.
-    pub(crate) fn last_waiting_marker(&self, id: TaskId) -> Result<Option<EventRow>, StoreError> {
+    pub(crate) fn last_waiting_marker(&self, id: BoxId) -> Result<Option<EventRow>, StoreError> {
         let conn = self.reader()?;
         let mut stmt = conn.prepare(
             "SELECT id, task, kind, payload, ts FROM events \
@@ -281,7 +281,7 @@ fn init_schema(conn: &mut Connection) -> Result<(), StoreError> {
 }
 
 /// Load one task joined to its box, on any connection (used inside `apply`'s transaction too).
-pub(super) fn load_task(conn: &Connection, id: TaskId) -> Result<Option<TaskRow>, StoreError> {
+pub(super) fn load_task(conn: &Connection, id: BoxId) -> Result<Option<TaskRow>, StoreError> {
     let sql = format!("{TASK_SELECT} WHERE t.id = ?1");
     let mut stmt = conn.prepare(&sql)?;
     let mut rows = stmt.query_and_then([id.get()], task_from_row)?;
@@ -360,8 +360,8 @@ fn task_from_row(row: &Row<'_>) -> Result<TaskRow, StoreError> {
     let name: String = row.get(1)?;
     let state: String = row.get(11)?;
     Ok(TaskRow {
-        id: TaskId::new(row.get(0)?),
-        name: parsed("task name", &name, TaskName::parse)?,
+        id: BoxId::new(row.get(0)?),
+        name: parsed("task name", &name, BoxName::parse)?,
         repo: row.get(2)?,
         issue: row.get(3)?,
         goal: row.get(4)?,
@@ -392,7 +392,7 @@ fn event_from_row(row: &Row<'_>) -> Result<EventRow, StoreError> {
     let payload: String = row.get(3)?;
     Ok(EventRow {
         id: row.get(0)?,
-        task: TaskId::new(row.get(1)?),
+        task: BoxId::new(row.get(1)?),
         kind: row.get(2)?,
         payload: serde_json::from_str(&payload)?,
         ts: Ts::from_millis(row.get(4)?),

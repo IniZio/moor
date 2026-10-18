@@ -2,7 +2,7 @@
 
 use moor_core::attention::{open_limits, Limit};
 use moor_core::domain::event::Event;
-use moor_core::TaskId;
+use moor_core::BoxId;
 use rusqlite::TransactionBehavior;
 
 use crate::store::apply::insert_event;
@@ -13,7 +13,7 @@ impl Store {
     /// `AgentRateLimited`, `ProxyCredentialRejected` or `ProxyCredentialRecovered` event for `task`.
     ///
     /// Any other event kind is rejected, and so is a task that does not exist.
-    pub(crate) fn record_proxy_event(&self, task: TaskId, event: &Event) -> Result<(), StoreError> {
+    pub(crate) fn record_proxy_event(&self, task: BoxId, event: &Event) -> Result<(), StoreError> {
         if !matches!(
             event,
             Event::EgressRefused { .. }
@@ -44,7 +44,7 @@ impl Store {
     /// `proxy_credential_recovered` events, oldest first, as (kind, payload).
     pub(crate) fn proxy_limit_events(
         &self,
-        task: TaskId,
+        task: BoxId,
     ) -> Result<Vec<(String, serde_json::Value)>, StoreError> {
         let conn = self.reader()?;
         let mut stmt = conn.prepare(
@@ -60,7 +60,7 @@ impl Store {
     }
 
     /// The Task's open limits (`open_limits` over [`Store::proxy_limit_events`]).
-    pub(crate) fn open_limits(&self, task: TaskId) -> Result<Vec<Limit>, StoreError> {
+    pub(crate) fn open_limits(&self, task: BoxId) -> Result<Vec<Limit>, StoreError> {
         let events = self.proxy_limit_events(task)?;
         Ok(open_limits(events.iter().map(|(k, p)| (k.as_str(), p))))
     }

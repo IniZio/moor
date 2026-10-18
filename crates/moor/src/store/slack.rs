@@ -1,6 +1,6 @@
 //! Slack event dedup and the thread-to-Task binding.
 
-use moor_core::TaskName;
+use moor_core::BoxName;
 use rusqlite::{params, OptionalExtension};
 
 use super::{parsed, Store, StoreError};
@@ -16,7 +16,7 @@ pub(crate) struct SlackThread {
     /// Timestamp of the thread's root message.
     pub(crate) thread_ts: String,
     /// The Task the thread drives.
-    pub(crate) task: TaskName,
+    pub(crate) task: BoxName,
     /// Slack user id of the Task owner.
     pub(crate) owner: String,
     /// Timestamp of the edited status message, once posted.
@@ -35,7 +35,7 @@ pub(crate) struct SlackPrompt {
     /// Timestamp of the prompt message.
     pub(crate) message_ts: String,
     /// The Task that is waiting.
-    pub(crate) task: TaskName,
+    pub(crate) task: BoxName,
     /// The question asked.
     pub(crate) question: String,
     /// The offered options, in order.
@@ -82,7 +82,7 @@ fn prompt_of(row: PromptRow) -> Result<SlackPrompt, StoreError> {
         channel,
         thread_ts,
         message_ts,
-        task: parsed("slack prompt task", &task, TaskName::parse)?,
+        task: parsed("slack prompt task", &task, BoxName::parse)?,
         question,
         options: serde_json::from_str(&options)?,
         answer,
@@ -105,7 +105,7 @@ impl Store {
         &self,
         channel: &str,
         thread_ts: &str,
-    ) -> Result<Option<TaskName>, StoreError> {
+    ) -> Result<Option<BoxName>, StoreError> {
         let raw: Option<String> = self
             .reader()?
             .query_row(
@@ -114,7 +114,7 @@ impl Store {
                 |r| r.get(0),
             )
             .optional()?;
-        raw.map(|name| parsed("slack thread task", &name, TaskName::parse))
+        raw.map(|name| parsed("slack thread task", &name, BoxName::parse))
             .transpose()
     }
 
@@ -157,7 +157,7 @@ impl Store {
                 Ok(SlackThread {
                     channel,
                     thread_ts,
-                    task: parsed("slack thread task", &task, TaskName::parse)?,
+                    task: parsed("slack thread task", &task, BoxName::parse)?,
                     owner,
                     status_ts,
                 })
@@ -184,7 +184,7 @@ impl Store {
         &self,
         channel: &str,
         thread_ts: &str,
-        task: &TaskName,
+        task: &BoxName,
         owner: &str,
     ) -> Result<bool, StoreError> {
         let now = self.now();

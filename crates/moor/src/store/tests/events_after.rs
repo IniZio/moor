@@ -1,14 +1,14 @@
 use std::path::Path;
 
 use moor_core::domain::decision::{Decision, ExtraEvent};
-use moor_core::TaskId;
+use moor_core::BoxId;
 
 use super::super::reads::NamedEvent;
 use super::super::Store;
 use super::{new_task, open};
 
 /// Two tasks with interleaved session events, plus every event the store holds.
-fn seeded_events(dir: &Path) -> (Store, TaskId, Vec<NamedEvent>) {
+fn seeded_events(dir: &Path) -> (Store, BoxId, Vec<NamedEvent>) {
     let (store, _clock) = open(dir);
     let a = new_task(&store, "alpha");
     let b = new_task(&store, "beta");

@@ -6,7 +6,7 @@
 )]
 
 use moor_core::seam::clock::Ts;
-use moor_core::TaskId;
+use moor_core::BoxId;
 use rusqlite::{params, Connection, Row};
 
 use super::{parsed_opt, Store, StoreError};
@@ -138,7 +138,7 @@ pub(crate) struct LeaseRow {
     /// Row id.
     pub id: LeaseId,
     /// Owning Task.
-    pub task: TaskId,
+    pub task: BoxId,
     /// Resource kind.
     pub kind: LeaseKind,
     /// Path, UDID, compose project or process tag.
@@ -160,7 +160,7 @@ impl Store {
     /// unchanged, when `(task, kind, key)` is already recorded.
     pub(crate) fn plan_lease(
         &self,
-        task: TaskId,
+        task: BoxId,
         kind: LeaseKind,
         key: &str,
     ) -> Result<LeaseId, StoreError> {
@@ -208,7 +208,7 @@ impl Store {
     }
 
     /// Leases of `task`, by id.
-    pub(crate) fn leases(&self, task: TaskId) -> Result<Vec<LeaseRow>, StoreError> {
+    pub(crate) fn leases(&self, task: BoxId) -> Result<Vec<LeaseRow>, StoreError> {
         let conn = self.reader()?;
         query(
             &conn,
@@ -279,7 +279,7 @@ fn row(r: &Row<'_>) -> Result<LeaseRow, StoreError> {
     let size: Option<i64> = r.get(10)?;
     Ok(LeaseRow {
         id: LeaseId(r.get(0)?),
-        task: TaskId::new(r.get(1)?),
+        task: BoxId::new(r.get(1)?),
         kind: parsed_opt("lease kind", &kind, LeaseKind::parse)?,
         key: r.get(3)?,
         state: parsed_opt("lease state", &state, LeaseState::parse)?,

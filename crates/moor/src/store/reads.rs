@@ -2,7 +2,7 @@
 
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::task::TaskState;
-use moor_core::{ProviderId, TaskId, TaskName};
+use moor_core::{BoxId, BoxName, ProviderId};
 use rusqlite::Connection;
 
 use super::{
@@ -69,7 +69,7 @@ impl Store {
     }
 
     /// The live (neither closed nor rejected) task with this name.
-    pub(crate) fn open_task_by_name(&self, name: &TaskName) -> Result<Option<TaskRow>, StoreError> {
+    pub(crate) fn open_task_by_name(&self, name: &BoxName) -> Result<Option<TaskRow>, StoreError> {
         let tail = "WHERE t.name = ?1 AND t.state NOT IN ('closed', 'rejected') ORDER BY t.id DESC LIMIT 1";
         let rows = query_tasks(&self.reader()?, tail, [name.as_str()])?;
         Ok(rows.into_iter().next())
@@ -78,7 +78,7 @@ impl Store {
     /// The newest task with this name, open or closed.
     pub(crate) fn latest_task_by_name(
         &self,
-        name: &TaskName,
+        name: &BoxName,
     ) -> Result<Option<TaskRow>, StoreError> {
         let tail = "WHERE t.name = ?1 ORDER BY t.id DESC LIMIT 1";
         let rows = query_tasks(&self.reader()?, tail, [name.as_str()])?;
@@ -86,7 +86,7 @@ impl Store {
     }
 
     /// Boxes whose state counts toward capacity (starting, ready, asleep), with their task.
-    pub(crate) fn box_rows_live(&self) -> Result<Vec<(TaskId, BoxRow)>, StoreError> {
+    pub(crate) fn box_rows_live(&self) -> Result<Vec<(BoxId, BoxRow)>, StoreError> {
         let tail = "WHERE b.state IN (?1, ?2, ?3) ORDER BY t.id";
         let rows = query_tasks(&self.reader()?, tail, LIVE_STATES)?;
         Ok(rows

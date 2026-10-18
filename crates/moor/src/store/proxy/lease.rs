@@ -6,7 +6,7 @@
 use std::time::Duration;
 
 use moor_core::domain::event::Event;
-use moor_core::TaskId;
+use moor_core::BoxId;
 use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 
 use super::{ProxyPorts, ReadyProc};
@@ -39,7 +39,7 @@ impl Store {
     /// Take the lease when it is free, already `owner`'s, or its heartbeat is at least `lease` old.
     pub(crate) fn claim_lease(
         &self,
-        task: TaskId,
+        task: BoxId,
         owner: &str,
         lease: Duration,
     ) -> Result<Lease, StoreError> {
@@ -78,7 +78,7 @@ impl Store {
     }
 
     /// Refresh the heartbeat; `Ok(false)` if `owner` no longer holds the lease.
-    pub(crate) fn heartbeat(&self, task: TaskId, owner: &str) -> Result<bool, StoreError> {
+    pub(crate) fn heartbeat(&self, task: BoxId, owner: &str) -> Result<bool, StoreError> {
         let now = self.now().as_millis();
         let mut conn = self.writer()?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -95,7 +95,7 @@ impl Store {
     }
 
     /// Clear the lease if `owner` holds it; no-op otherwise.
-    pub(crate) fn release(&self, task: TaskId, owner: &str) -> Result<(), StoreError> {
+    pub(crate) fn release(&self, task: BoxId, owner: &str) -> Result<(), StoreError> {
         let conn = self.writer()?;
         conn.execute(
             "UPDATE proxy SET lease_owner = NULL, lease_heartbeat = NULL WHERE task = ? AND lease_owner = ?",
@@ -109,7 +109,7 @@ impl Store {
     /// `ProxyStarted` in one transaction, provided `owner` holds the lease.
     pub(crate) fn mark_ready(
         &self,
-        task: TaskId,
+        task: BoxId,
         owner: &str,
         ports: ProxyPorts,
         proc: ReadyProc<'_>,
@@ -153,7 +153,7 @@ impl Store {
     /// Append a `TunnelRestarted` event for `task`, provided `owner` holds the lease.
     pub(crate) fn tunnel_restarted(
         &self,
-        task: TaskId,
+        task: BoxId,
         owner: &str,
         box_port: u16,
         reason: &str,
@@ -185,7 +185,7 @@ impl Store {
 }
 
 /// Whether `task` has a proxy row.
-fn proxy_exists(conn: &Connection, task: TaskId) -> Result<bool, StoreError> {
+fn proxy_exists(conn: &Connection, task: BoxId) -> Result<bool, StoreError> {
     Ok(conn
         .query_row("SELECT 1 FROM proxy WHERE task = ?", [task.get()], |_| {
             Ok(())

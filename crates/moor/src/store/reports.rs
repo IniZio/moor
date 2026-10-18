@@ -6,7 +6,7 @@ use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::path::Path;
 
 use moor_core::seam::clock::Ts;
-use moor_core::TaskId;
+use moor_core::BoxId;
 use rusqlite::{params, OptionalExtension, Row, TransactionBehavior};
 
 use super::{Store, StoreError};
@@ -17,7 +17,7 @@ pub(crate) struct ReportRow {
     /// Row id.
     pub(crate) id: i64,
     /// Owning task.
-    pub(crate) task: TaskId,
+    pub(crate) task: BoxId,
     /// Report kind; versions are counted per kind.
     pub(crate) kind: String,
     /// Version number, starting at 1.
@@ -35,7 +35,7 @@ impl Store {
     /// Returns None and writes nothing when the latest stored version holds the same content.
     pub(crate) fn add_report(
         &self,
-        task: TaskId,
+        task: BoxId,
         kind: &str,
         content: &str,
         dir: &Path,
@@ -103,7 +103,7 @@ impl Store {
         not(test),
         expect(dead_code, reason = "read by show --reports, not yet wired")
     )]
-    pub(crate) fn reports(&self, task: TaskId) -> Result<Vec<ReportRow>, StoreError> {
+    pub(crate) fn reports(&self, task: BoxId) -> Result<Vec<ReportRow>, StoreError> {
         let conn = self.reader()?;
         let mut stmt = conn.prepare(
             "SELECT id, task, kind, version, path, title, created_at FROM reports \
@@ -132,7 +132,7 @@ fn write_private(file: &Path, content: &str) -> io::Result<()> {
 fn report_from_row(r: &Row<'_>) -> rusqlite::Result<ReportRow> {
     Ok(ReportRow {
         id: r.get(0)?,
-        task: TaskId::new(r.get(1)?),
+        task: BoxId::new(r.get(1)?),
         kind: r.get(2)?,
         version: r.get(3)?,
         path: r.get(4)?,

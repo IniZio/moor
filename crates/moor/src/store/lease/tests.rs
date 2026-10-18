@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use moor_core::domain::decision::{Decision, NewTask};
 use moor_core::seam::clock::Ts;
-use moor_core::{TaskId, TaskName};
+use moor_core::{BoxId, BoxName};
 
 use super::{LeaseKind, LeaseState, ProcessIds};
 use crate::store::Store;
@@ -29,9 +29,9 @@ fn open(dir: &Path) -> Store {
     Store::open(&dir.join("moor.db"), clock).unwrap()
 }
 
-fn add(store: &Store, name: &str) -> TaskId {
+fn add(store: &Store, name: &str) -> BoxId {
     let nt = NewTask {
-        name: TaskName::parse(name).unwrap(),
+        name: BoxName::parse(name).unwrap(),
         repo: "r".into(),
     };
     store.apply(Decision::insert(nt)).unwrap().task
@@ -85,7 +85,7 @@ fn failed_creation_leaves_planned_row_that_can_be_dropped() {
 fn foreign_key_rejects_unknown_task() {
     let dir = tempfile::tempdir().unwrap();
     let store = open(dir.path());
-    let err = store.plan_lease(TaskId::new(999), LeaseKind::BoxDir, "/x");
+    let err = store.plan_lease(BoxId::new(999), LeaseKind::BoxDir, "/x");
     assert!(err.is_err());
     assert!(store.all_leases().unwrap().is_empty());
 }

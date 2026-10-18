@@ -14,7 +14,7 @@ use moor_core::domain::decision::{
 };
 use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
 use moor_core::seam::clock::{Clock, Ts};
-use moor_core::{BoxHandle, ProviderId, RunId, TaskId, TaskName};
+use moor_core::{BoxHandle, BoxId, BoxName, ProviderId, RunId};
 
 use crate::testing::clock::FakeClock;
 
@@ -34,13 +34,13 @@ pub(super) fn open(dir: &Path) -> (Store, Arc<FakeClock>) {
 /// A new-task decision.
 fn insert(name: &str) -> Decision {
     Decision::insert(NewTask {
-        name: TaskName::parse(name).unwrap(),
+        name: BoxName::parse(name).unwrap(),
         repo: "r".into(),
     })
 }
 
 /// Insert a task and return its id.
-pub(super) fn new_task(store: &Store, name: &str) -> TaskId {
+pub(super) fn new_task(store: &Store, name: &str) -> BoxId {
     store.apply(insert(name)).unwrap().task
 }
 
@@ -58,7 +58,7 @@ fn eid(a: &Applied) -> i64 {
 }
 
 /// Event kinds of a task in id order.
-fn kinds(store: &Store, id: TaskId) -> Vec<String> {
+fn kinds(store: &Store, id: BoxId) -> Vec<String> {
     store
         .events(id, 100)
         .unwrap()
@@ -214,7 +214,7 @@ fn unknown_existing_id_is_not_found() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let err = store
-        .apply(Decision::new(TaskId::new(42)).task_input(TaskInput::Close))
+        .apply(Decision::new(BoxId::new(42)).task_input(TaskInput::Close))
         .unwrap_err();
     assert!(matches!(err, StoreError::NotFound(_)), "{err:?}");
 }
@@ -327,7 +327,7 @@ fn setup_failed_at_set_and_clear_round_trip() {
 }
 
 /// A task with a Ready box, as after provisioning.
-fn task_with_ready_box(store: &Store) -> TaskId {
+fn task_with_ready_box(store: &Store) -> BoxId {
     let id = new_task(store, "t");
     store
         .apply(
@@ -479,7 +479,7 @@ fn open_tasks_excludes_closed_and_rejected() {
 }
 
 /// Claim the only slot of provider `p` for `id`, or queue the task when it is taken.
-fn claim_last_slot(store: &Store, id: TaskId) -> Option<Applied> {
+fn claim_last_slot(store: &Store, id: BoxId) -> Option<Applied> {
     let provider = ProviderId::new("p");
     store
         .apply_admitting(&provider, |holders| {
