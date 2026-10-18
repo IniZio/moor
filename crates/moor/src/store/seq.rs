@@ -5,8 +5,9 @@
 //! and a number is never reused once a Box has taken it, even after the Box
 //! closes.
 
+use moor_core::domain::box_steps;
 use moor_core::domain::decision::NewTask;
-use moor_core::domain::task::TaskState;
+use moor_core::domain::task::TaskInput;
 use moor_core::name::next_box_name;
 use moor_core::{BoxId, BoxName};
 use rusqlite::{Transaction, TransactionBehavior};
@@ -63,7 +64,8 @@ impl Store {
             name: name.clone(),
             repo: repo.to_owned(),
         };
-        let id = super::apply::insert_task(&tx, &new, TaskState::Checking, self.now())?;
+        let (lifecycle, _) = box_steps::initial(&TaskInput::Insert)?;
+        let id = super::apply::insert_task(&tx, &new, lifecycle, self.now())?;
         tx.commit()?;
         drop(conn);
         Ok((id, name))
