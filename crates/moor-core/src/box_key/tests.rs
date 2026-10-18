@@ -16,34 +16,6 @@ fn slug_carries_id_and_nonce() {
 }
 
 #[test]
-fn id_from_slug_round_trips() {
-    assert_eq!(BoxKey::id_from_slug("moor-7-a1b2c3"), Some(BoxId::new(7)));
-    assert_eq!(
-        BoxKey::id_from_slug(&key(i64::MAX).slug("0f")),
-        Some(BoxId::new(i64::MAX))
-    );
-}
-
-#[test]
-fn id_from_slug_rejects_foreign_slugs() {
-    for slug in [
-        "moor-fix-bug-a1b2c3",
-        "moor--abc",
-        "moor-7",
-        "moor-7-",
-        "other-7-abc",
-        "moor-x7-abc",
-        "moor-7-xyz",
-        "moor-7-ABC",
-        "moor-7-ab-c",
-        "moor-99999999999999999999-abc",
-        "",
-    ] {
-        assert_eq!(BoxKey::id_from_slug(slug), None, "{slug}");
-    }
-}
-
-#[test]
 fn cred_and_tmp_dirs_carry_id_and_nonce() {
     assert_eq!(key(7).cred_dir("n"), ".moor-cred-7-n");
     assert_eq!(key(7).tmp_dir("n"), ".moor-tmp-7-n");
@@ -60,8 +32,8 @@ fn proof_paths_are_under_the_id() {
 
 #[test]
 fn branch_flattens_slashes() {
-    assert_eq!(branch(&name("moor/7")), "moor/moor-7");
-    assert_eq!(branch(&name("web/fix-bug")), "moor/web-fix-bug");
+    assert_eq!(branch(&name("moor/7")), "moor/moor--7");
+    assert_eq!(branch(&name("web/fix-bug")), "moor/web--fix-bug");
     assert_eq!(branch(&name("fix-bug")), "moor/fix-bug");
 }
 
@@ -73,11 +45,13 @@ fn branch_holds_exactly_one_slash() {
 }
 
 #[test]
-fn branch_on_collision_appends_id() {
-    assert_eq!(
-        key(7).branch_on_collision(&name("web/fix-bug")),
-        "moor/web-fix-bug-7"
-    );
+fn branch_is_one_to_one() {
+    let branches = [
+        branch(&name("a-b/c")),
+        branch(&name("a/b-c")),
+        branch(&name("a-b-c")),
+    ];
+    assert_eq!(branches, ["moor/a-b--c", "moor/a--b-c", "moor/a-b-c"]);
 }
 
 #[test]

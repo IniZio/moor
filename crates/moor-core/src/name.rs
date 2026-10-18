@@ -5,7 +5,7 @@
 pub enum NameError {
     /// The Box name is not `<repo>/<label>` (or a bare segment where allowed).
     #[error(
-        "invalid task name `{0}`: use <repo>/<label>, each part 1-40 lowercase letters, digits or '-', not starting with '-'"
+        "invalid task name `{0}`: use <repo>/<label>, each part 1-40 lowercase letters, digits or '-', not starting with '-' and without '--'"
     )]
     TaskName(String),
     /// The sha is not 4-40 hex chars.
@@ -38,14 +38,16 @@ impl BoxName {
     /// Validates and wraps a strict Box name, `<repo>/<label>`.
     ///
     /// Exactly one `/`; each part is 1-40 chars of `[a-z0-9-]` not starting
-    /// with `-`, and the repo part is also a valid repo name.
+    /// with `-` and free of `--`, and the repo part is also a valid repo name.
     ///
     /// # Errors
     /// Returns [`NameError::TaskName`] when `s` breaks the name rule.
     pub fn parse(s: &str) -> Result<Self, NameError> {
         match s.split_once('/') {
             Some((repo, label))
-                if valid_segment(repo) && valid_segment(label) && valid_repo_name(repo) =>
+                if valid_strict_segment(repo)
+                    && valid_strict_segment(label)
+                    && valid_repo_name(repo) =>
             {
                 Ok(Self(s.to_owned()))
             }
@@ -100,6 +102,11 @@ fn valid_segment(s: &str) -> bool {
         .is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
         && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
         && s.len() <= 40
+}
+
+/// A segment of a strict name: a valid segment without `--`, so `/` can map to `--` in a branch.
+fn valid_strict_segment(s: &str) -> bool {
+    valid_segment(s) && !s.contains("--")
 }
 
 /// Names the next Box of `repo`: `<repo>/<max(used)+1>`, starting at 1.

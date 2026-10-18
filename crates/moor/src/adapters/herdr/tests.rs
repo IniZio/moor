@@ -72,7 +72,7 @@ fn create_worktree_argv_and_parse() {
 }
 
 #[test]
-fn create_worktree_flattens_a_slash_name_into_one_branch_segment() {
+fn create_worktree_encodes_a_slash_name_into_one_branch_segment() {
     let (p, h) = fixture();
     p.on(Tool::Herdr, &["worktree", "create"], ok(WT_CREATED));
     let slashed = BoxName::parse_allow_bare("web/fix-bug").expect("valid name");
@@ -83,7 +83,7 @@ fn create_worktree_flattens_a_slash_name_into_one_branch_segment() {
     let at = argv.iter().position(|a| a == "--branch").expect("--branch");
     assert_eq!(
         argv.get(at + 1).map(AsRef::as_ref),
-        Some("moor/web-fix-bug")
+        Some("moor/web--fix-bug")
     );
 }
 
