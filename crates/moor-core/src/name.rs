@@ -3,7 +3,7 @@
 /// A name or path that failed moor's validation.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum NameError {
-    /// The task name is not 1-40 chars of `[a-z0-9-]` starting with `[a-z0-9]`.
+    /// The Box name is not 1-40 chars of `[a-z0-9-]` starting with `[a-z0-9]`.
     #[error(
         "invalid task name `{0}`: use 1-40 lowercase letters, digits or '-', not starting with '-'"
     )]
@@ -19,12 +19,15 @@ pub enum NameError {
     RelPath(String),
 }
 
-/// A task name, `[a-z0-9][a-z0-9-]{0,39}`.
+/// A Box name, `[a-z0-9][a-z0-9-]{0,39}`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct TaskName(String);
+pub struct BoxName(String);
 
-impl TaskName {
-    /// Validates and wraps a task name.
+/// Old name of [`BoxName`], kept while callers move over.
+pub type TaskName = BoxName;
+
+impl BoxName {
+    /// Validates and wraps a Box name.
     ///
     /// # Errors
     /// Returns [`NameError::TaskName`] when `s` breaks the name rule.
@@ -48,27 +51,30 @@ impl TaskName {
     }
 }
 
-impl serde::Serialize for TaskName {
+impl serde::Serialize for BoxName {
     fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         s.serialize_str(&self.0)
     }
 }
 
-impl<'de> serde::Deserialize<'de> for TaskName {
+impl<'de> serde::Deserialize<'de> for BoxName {
     fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let s = String::deserialize(d)?;
         Self::parse(&s).map_err(serde::de::Error::custom)
     }
 }
 
-/// A store-assigned task id; ordering is promotion order.
+/// A store-assigned Box id; the Box's key. Ordering is promotion order.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
 )]
 #[serde(transparent)]
-pub struct TaskId(i64);
+pub struct BoxId(i64);
 
-impl TaskId {
+/// Old name of [`BoxId`], kept while callers move over.
+pub type TaskId = BoxId;
+
+impl BoxId {
     /// Wraps a raw id.
     #[must_use]
     pub const fn new(v: i64) -> Self {
@@ -90,6 +96,27 @@ impl TaskId {
 pub struct RunId(i64);
 
 impl RunId {
+    /// Wraps a raw id.
+    #[must_use]
+    pub const fn new(v: i64) -> Self {
+        Self(v)
+    }
+
+    /// Returns the raw id.
+    #[must_use]
+    pub const fn get(self) -> i64 {
+        self.0
+    }
+}
+
+/// A store-assigned Session id: the row id of one agent session in a Box.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
+#[serde(transparent)]
+pub struct SessionId(i64);
+
+impl SessionId {
     /// Wraps a raw id.
     #[must_use]
     pub const fn new(v: i64) -> Self {

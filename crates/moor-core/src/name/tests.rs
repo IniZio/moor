@@ -1,24 +1,24 @@
 //! Tests for name validation.
 
-use super::{BoxHandle, BoxPath, Sha, TaskId, TaskName};
+use super::{BoxHandle, BoxId, BoxName, BoxPath, SessionId, Sha, TaskId, TaskName};
 
-/// Valid task names parse.
+/// Valid Box names parse.
 #[test]
-fn task_name_valid() {
-    assert_eq!(TaskName::parse("a").unwrap().as_str(), "a");
-    assert!(TaskName::parse("fix-bug-9").is_ok());
-    assert!(TaskName::parse("9lives").is_ok());
-    assert!(TaskName::parse(&"a".repeat(40)).is_ok());
+fn box_name_valid() {
+    assert_eq!(BoxName::parse("a").unwrap().as_str(), "a");
+    assert!(BoxName::parse("fix-bug-9").is_ok());
+    assert!(BoxName::parse("9lives").is_ok());
+    assert!(BoxName::parse(&"a".repeat(40)).is_ok());
 }
 
-/// Invalid task names are rejected.
+/// Invalid Box names are rejected.
 #[test]
-fn task_name_invalid() {
-    assert!(TaskName::parse("").is_err());
-    assert!(TaskName::parse("Abc").is_err());
-    assert!(TaskName::parse("-abc").is_err());
-    assert!(TaskName::parse("a_b").is_err());
-    assert!(TaskName::parse(&"a".repeat(41)).is_err());
+fn box_name_invalid() {
+    assert!(BoxName::parse("").is_err());
+    assert!(BoxName::parse("Abc").is_err());
+    assert!(BoxName::parse("-abc").is_err());
+    assert!(BoxName::parse("a_b").is_err());
+    assert!(BoxName::parse(&"a".repeat(41)).is_err());
 }
 
 /// Sha length and charset limits hold.
@@ -54,13 +54,50 @@ fn box_path_restore() {
     assert!(BoxPath::restore("/").is_err());
 }
 
-/// `TaskId` is a bare integer and `BoxHandle` a bare string in JSON.
+/// `BoxId` is a bare integer and `BoxHandle` a bare string in JSON.
 #[test]
-fn task_id_and_box_handle_serde_shape() {
-    let id = TaskId::new(7);
+fn box_id_and_box_handle_serde_shape() {
+    let id = BoxId::new(7);
     assert_eq!(serde_json::to_string(&id).unwrap(), "7");
-    assert_eq!(serde_json::from_str::<TaskId>("7").unwrap(), id);
+    assert_eq!(serde_json::from_str::<BoxId>("7").unwrap(), id);
     let h = BoxHandle::new("box-1");
     assert_eq!(serde_json::to_string(&h).unwrap(), "\"box-1\"");
     assert_eq!(serde_json::from_str::<BoxHandle>("\"box-1\"").unwrap(), h);
+}
+
+/// A Box name is a bare JSON string and still validates on the way in.
+#[test]
+fn box_name_wire_matches_task_name() {
+    let name = BoxName::parse("fix-bug-9").unwrap();
+    assert_eq!(serde_json::to_string(&name).unwrap(), "\"fix-bug-9\"");
+    assert_eq!(
+        serde_json::from_str::<BoxName>("\"fix-bug-9\"").unwrap(),
+        name
+    );
+    assert!(serde_json::from_str::<BoxName>("\"Bad\"").is_err());
+}
+
+/// A Box id is a bare JSON integer.
+#[test]
+fn box_id_wire_is_bare_integer() {
+    let id = BoxId::new(7);
+    assert_eq!(serde_json::to_string(&id).unwrap(), "7");
+    assert_eq!(serde_json::from_str::<BoxId>("7").unwrap(), id);
+}
+
+/// A Session id is a bare JSON integer.
+#[test]
+fn session_id_wire_is_bare_integer() {
+    let id = SessionId::new(7);
+    assert_eq!(serde_json::to_string(&id).unwrap(), "7");
+    assert_eq!(serde_json::from_str::<SessionId>("7").unwrap(), id);
+    assert_eq!(id.get(), 7);
+}
+
+/// The old Task names are aliases of the Box types.
+#[test]
+fn task_aliases_are_box_types() {
+    let name: TaskName = BoxName::parse("a").unwrap();
+    let _: BoxName = name;
+    assert_eq!(TaskId::new(3), BoxId::new(3));
 }
