@@ -118,7 +118,8 @@ pub fn build(b: &BoxCtx<'_>, purpose: Purpose) -> Result<ExecEnv, String> {
     if b.proxy.is_some() {
         prelude.extend(git_remote_lines(b.origin));
         prelude.push(format!(
-            "unset {NONCE_VAR} moor_bundle moor_sys moor_mark moor_f"
+            "unset {NONCE_VAR} moor_bundle moor_sys moor_mark moor_f {}",
+            java::JAVA_SHELL_VARS
         ));
         // The agent launch script exports the repo env, these included, just before the agent starts.
         if !matches!(purpose, Purpose::Agent) {
@@ -320,6 +321,7 @@ fn proxy_lines(p: &ProxyCtx<'_>) -> Result<Vec<String>, String> {
         ));
     }
     lines.push("export NODE_USE_ENV_PROXY=1".to_owned());
+    lines.extend(java::java_lines(p.box_port, &ca));
     Ok(lines)
 }
 
@@ -370,6 +372,8 @@ fn git_remote_lines(origin: Option<&str>) -> Vec<String> {
         },
     )
 }
+
+mod java;
 
 #[cfg(test)]
 mod tests;
