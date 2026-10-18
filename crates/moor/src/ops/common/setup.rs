@@ -307,10 +307,32 @@ fn fetch_log(
         .parent()
         .is_some_and(|dir| std::fs::create_dir_all(dir).is_ok());
     if !made || cx.driver().copy_out(handle, &from, &to, worktree).is_err() {
+        discard(&to);
         return String::new();
     }
-    let log = String::from_utf8_lossy(&std::fs::read(to).unwrap_or_default()).into_owned();
-    redact_nonce(&log, nonce)
+    if !std::fs::symlink_metadata(&to).is_ok_and(|m| m.file_type().is_file()) {
+        discard(&to);
+        return String::new();
+    }
+    let log = String::from_utf8_lossy(&std::fs::read(&to).unwrap_or_default()).into_owned();
+    let log = redact_nonce(&log, nonce);
+    if std::fs::write(&to, &log).is_err() {
+        discard(&to);
+    }
+    log
+}
+
+/// Removes whatever sits at `path`, without following a symlink there.
+fn discard(path: &Path) {
+    match std::fs::symlink_metadata(path) {
+        Ok(m) if m.file_type().is_dir() => {
+            let _ = std::fs::remove_dir_all(path);
+        }
+        Ok(_) => {
+            let _ = std::fs::remove_file(path);
+        }
+        Err(_) => {}
+    }
 }
 
 /// Index of the failing step: the last one the log announced, else the first.

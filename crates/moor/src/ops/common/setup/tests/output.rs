@@ -2,10 +2,11 @@
 
 use moor_core::domain::run::SyncMode;
 use moor_core::seam::agent_profile::ProxyAddr;
+use moor_core::seam::driver::DriverError;
 use moor_core::secret::Secret;
 use moor_core::{BoxPath, TaskId};
 
-use super::{cfg, rig, run_setup, run_setup_with, SetupRun};
+use super::{cfg, exits, only, rig, run_setup, run_setup_with, SetupRun};
 use crate::ops::common::box_exec::BoxProxy;
 use crate::testing::driver::FakeDriver;
 
@@ -96,4 +97,91 @@ fn a_failed_setup_view_has_no_output_because_the_warning_carries_it() {
         ms: 0,
     };
     assert!(failed.view().output.is_empty());
+}
+
+#[test]
+fn a_symlink_left_as_the_log_is_removed_and_its_target_untouched() {
+    let d = tempfile::tempdir().unwrap();
+    let out = tempfile::tempdir().unwrap();
+    let target = out.path().join("target");
+    std::fs::write(&target, "keep").unwrap();
+    let r = rig(
+        d.path(),
+        FakeDriver::new()
+            .exec_results(exits(&[1]))
+            .copy_symlink(&target),
+    );
+    run_setup(
+        &r.cx,
+        &r.handle,
+        &r.workdir,
+        d.path(),
+        &cfg(&["a"], &[]),
+        SyncMode::Full,
+    );
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), "keep");
+    assert!(std::fs::symlink_metadata(d.path().join(".moor/setup.log")).is_err());
+    let w = only(r.cx.take_warnings());
+    assert!(!w.message.contains("keep"), "{}", w.message);
+    assert!(!w.message.contains("last"), "{}", w.message);
+}
+
+#[test]
+fn a_failed_copy_leaves_no_partial_log_on_the_host() {
+    let d = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(d.path().join(".moor")).unwrap();
+    std::fs::write(d.path().join(".moor/setup.log"), "partial s3cret-value").unwrap();
+    let r = rig(
+        d.path(),
+        FakeDriver::new()
+            .exec_results(exits(&[1]))
+            .fail_copy_out(DriverError::Quota("q".into())),
+    );
+    run_setup(
+        &r.cx,
+        &r.handle,
+        &r.workdir,
+        d.path(),
+        &cfg(&["a"], &[]),
+        SyncMode::Full,
+    );
+    assert!(std::fs::symlink_metadata(d.path().join(".moor/setup.log")).is_err());
+}
+
+#[test]
+fn the_host_copy_of_the_log_and_the_failure_tail_hide_the_proxy_nonce() {
+    let d = tempfile::tempdir().unwrap();
+    let log = "moor setup: $ a\nHTTPS_PROXY=http://moor:s3cret-value@127.0.0.1:4000\n";
+    let r = rig(
+        d.path(),
+        FakeDriver::new().exec_results(exits(&[1])).copy_text(log),
+    );
+    let proxy = BoxProxy {
+        task: TaskId::new(1),
+        addr: ProxyAddr {
+            box_port: 4000,
+            nonce: Secret::new(b"s3cret-value".to_vec()),
+            ca_pem: "-----BEGIN CERTIFICATE-----\nca\n-----END CERTIFICATE-----\n".to_owned(),
+            forge: false,
+            box_env: Vec::new(),
+        },
+        origin: None,
+        rule_env: Vec::new(),
+    };
+    run_setup_with(
+        &r.cx,
+        &r.handle,
+        "p",
+        &r.workdir,
+        d.path(),
+        &cfg(&["a"], &[]),
+        SyncMode::Full,
+        Some(&proxy),
+    );
+    let host = std::fs::read_to_string(d.path().join(".moor/setup.log")).unwrap();
+    assert!(host.contains("<nonce>"), "{host}");
+    assert!(!host.contains("s3cret-value"), "{host}");
+    let w = only(r.cx.take_warnings());
+    assert!(w.message.contains("<nonce>"), "{}", w.message);
+    assert!(!w.message.contains("s3cret-value"), "{}", w.message);
 }
