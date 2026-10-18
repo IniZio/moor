@@ -5,14 +5,15 @@ use crate::store::StoreError;
 use moor_core::{ErrorKind, NameError};
 
 impl From<StoreError> for CommandError {
-    /// `Illegal` is a moor bug; a taken name or running controller is a refusal;
+    /// `Illegal` is a moor bug; a taken name, running controller or store in use
+    /// is a refusal;
     /// every other store failure is a plain failure.
     fn from(e: StoreError) -> Self {
         match e {
             StoreError::Illegal(_) => Self::new(ErrorKind::Internal, e),
-            StoreError::NameTaken(_) | StoreError::ControllerRunning { .. } => {
-                Self::new(ErrorKind::Refused, e)
-            }
+            StoreError::NameTaken(_)
+            | StoreError::ControllerRunning { .. }
+            | StoreError::StoreInUse => Self::new(ErrorKind::Refused, e),
             other => Self::new(ErrorKind::Failed, format!("state store error: {other}")),
         }
     }
