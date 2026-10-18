@@ -21,6 +21,17 @@ fn store(dir: &std::path::Path) -> Store {
     Store::open(&dir.join("moor.db"), clock).unwrap()
 }
 
+/// Creates an open Box named `name`.
+fn new_box(store: &Store, name: &str) -> moor_core::BoxId {
+    store
+        .apply(Decision::insert(NewTask {
+            name: BoxName::parse_allow_bare(name).unwrap(),
+            repo: "r".into(),
+        }))
+        .unwrap()
+        .task
+}
+
 fn mention(event_id: &str, user: &str, channel: &str, ts: &str, thread: Option<&str>) -> Mention {
     Mention {
         event_id: event_id.into(),
@@ -72,6 +83,9 @@ fn run(store: &Store, m: &Mention, fail: Option<&str>, seen: &RefCell<Seen>) {
         users: &users,
     };
     let mut call = |req: Request| {
+        if let (Request::Start(s), None) = (&req, fail) {
+            new_box(store, s.name.as_str());
+        }
         seen.borrow_mut().calls.push(req);
         fail.map_or(Ok(()), |m| Err(m.to_owned()))
     };
@@ -228,6 +242,7 @@ fn reply_to(event_id: &str, user: &str, channel: &str, text: &str) -> Mention {
 /// A store with a Task bound to thread `10.5` in `C1`, owned by `U1`.
 fn owned(dir: &std::path::Path) -> Store {
     let store = store(dir);
+    new_box(&store, "slack-10-5");
     let name = BoxName::parse_allow_bare("slack-10-5").unwrap();
     assert!(store.bind_slack_thread("C1", "10.5", &name, "U1").unwrap());
     store
@@ -287,6 +302,7 @@ fn reply_in_unbound_thread_is_ignored() {
 fn reply_in_disallowed_channel_is_ignored() {
     let dir = tempfile::tempdir().unwrap();
     let store = store(dir.path());
+    new_box(&store, "slack-10-5");
     let name = BoxName::parse_allow_bare("slack-10-5").unwrap();
     store.bind_slack_thread("C9", "10.5", &name, "U1").unwrap();
     let seen = RefCell::default();
@@ -348,13 +364,7 @@ fn redelivered_reply_is_handled_once() {
 /// Opens task `slack-10-5` with a `needs_input` event and records its prompt; returns the event id.
 fn prompted(store: &Store) -> i64 {
     let name = BoxName::parse_allow_bare("slack-10-5").unwrap();
-    let id = store
-        .apply(Decision::insert(NewTask {
-            name: name.clone(),
-            repo: "r".into(),
-        }))
-        .unwrap()
-        .task;
+    let id = store.open_task_by_name(&name).unwrap().unwrap().id;
     ask(store, id);
     let event_id = store.last_waiting_marker(id).unwrap().unwrap().id;
     store
