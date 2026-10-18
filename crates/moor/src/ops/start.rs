@@ -339,7 +339,7 @@ fn insert(
         issue: set_some(req.issue.clone()),
         goal: set_some(req.goal.clone()),
         base: Field::Set(facts.base.clone()),
-        branch: set_some(branch),
+        branch: set_some(branch.clone()),
         worktree: Field::Set(placed.wt.path.display().to_string()),
         bound: Field::Set(facts.bound.is_some()),
         workspace_id: Field::Set(placed.workspace.clone()),
@@ -355,7 +355,11 @@ fn insert(
             credentials: checked,
         });
     }
-    Ok(store.apply(decision)?.task)
+    let id = store.apply(decision)?.task;
+    if let Some(branch) = branch {
+        store.add_box_ref(id, "branch", &branch)?;
+    }
+    Ok(id)
 }
 
 #[cfg(test)]

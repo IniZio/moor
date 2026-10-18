@@ -75,6 +75,19 @@ fn an_open_pr_gives_its_url() {
 }
 
 #[test]
+fn found_pr_is_recorded_on_the_box() {
+    let dir = tempfile::tempdir().unwrap();
+    let cx = cx(dir.path(), forge().with_open_pr("o", "r", "feat", URL));
+    task(&cx);
+    let store = cx.store().unwrap();
+    let name = BoxName::parse_allow_bare("t").unwrap();
+    let id = store.open_task_by_name(&name).unwrap().unwrap().id;
+    assert_eq!(open_pr_url(&cx, "t"), Ok(Some(URL.to_owned())));
+    assert_eq!(open_pr_url(&cx, "t"), Ok(Some(URL.to_owned())));
+    assert_eq!(store.box_refs(id, "pr").unwrap(), vec![URL.to_owned()]);
+}
+
+#[test]
 fn an_unknown_task_has_no_url() {
     let dir = tempfile::tempdir().unwrap();
     let cx = cx(dir.path(), forge().with_open_pr("o", "r", "feat", URL));
