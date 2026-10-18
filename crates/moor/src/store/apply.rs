@@ -1,22 +1,24 @@
 //! The only writer of task/box state and events: `Store::apply` plus run records.
 
-use moor_core::domain::box_state::split_task_state;
 use moor_core::domain::boxes::{BoxInput, BoxState};
-use moor_core::domain::decision::{Decision, Field, Fields, IntentChange, NewTask, TaskTarget};
+use moor_core::domain::decision::{Decision, Field, Fields, IntentChange, TaskTarget};
 use moor_core::domain::event::{box_events, task_events, Event};
 use moor_core::domain::session_state::SessionState;
-use moor_core::domain::task::{TaskInput, TaskState};
+use moor_core::domain::task::TaskState;
 use moor_core::seam::clock::Ts;
 use moor_core::BoxId;
 use rusqlite::types::Value;
 use rusqlite::{params, Transaction, TransactionBehavior};
 
 mod sql;
+mod steps;
 
 pub(super) use self::sql::update;
-use self::sql::{field_value, flag, name_taken, text, Sets};
+use self::sql::{field_value, flag, text, Sets};
+pub(super) use self::steps::insert_task;
+use self::steps::{step_task, Parts};
 use super::reads::live_holders_in;
-use super::{load_task, BoxRow, Store, StoreError, TaskRow};
+use super::{BoxRow, Store, StoreError, TaskRow};
 use moor_core::ProviderId;
 
 /// Result of a committed `apply`.
@@ -76,9 +78,15 @@ impl Store {
 
 /// The body of `apply`, inside its transaction.
 fn apply_in(tx: &Transaction<'_>, now: Ts, d: Decision) -> Result<Applied, StoreError> {
-    let (id, existing, task_step) = step_task(tx, now, &d)?;
+    let (id, existing, task_step, parts) = step_task(tx, now, &d)?;
+    if let (TaskTarget::New(_), Field::Set(branch)) = (&d.task, &d.set.branch) {
+        tx.execute(
+            "INSERT INTO box_refs (box, kind, value) VALUES (?1, 'branch', ?2) ON CONFLICT DO NOTHING",
+            params![id.get(), branch],
+        )?;
+    }
     let box_step = step_box(tx, now, id, existing.as_ref(), &d)?;
-    write_task(tx, id, now, &d, &task_step)?;
+    write_task(tx, id, now, &d, &task_step, parts)?;
     write_box(tx, id, now, &d, box_step.as_ref(), &task_step)?;
     let mut events = Vec::new();
     if let Some(i) = &d.task_input {
@@ -105,67 +113,6 @@ fn apply_in(tx: &Transaction<'_>, now: Ts, d: Decision) -> Result<Applied, Store
         box_state: box_step.map(|s| s.to),
         events: ids,
     })
-}
-
-/// Resolve the task (inserting a new one) and step its state.
-fn step_task(
-    tx: &Transaction<'_>,
-    now: Ts,
-    d: &Decision,
-) -> Result<(BoxId, Option<BoxRow>, Step<TaskState>), StoreError> {
-    match &d.task {
-        TaskTarget::New(new) => {
-            let Some(input @ TaskInput::Insert) = &d.task_input else {
-                return Err(StoreError::Invalid(
-                    "new task needs the insert input".into(),
-                ));
-            };
-            let to = TaskState::initial(input)?;
-            let id = insert_task(tx, new, to, now)?;
-            Ok((id, None, Step { from: None, to }))
-        }
-        TaskTarget::Existing(id) => {
-            let row = load_task(tx, *id)?.ok_or(StoreError::NotFound(*id))?;
-            let to = match &d.task_input {
-                Some(i) => row.state.step(i)?,
-                None => row.state,
-            };
-            Ok((
-                *id,
-                row.boxed,
-                Step {
-                    from: Some(row.state),
-                    to,
-                },
-            ))
-        }
-    }
-}
-
-/// Insert a fresh task row.
-pub(super) fn insert_task(
-    tx: &Transaction<'_>,
-    new: &NewTask,
-    state: TaskState,
-    now: Ts,
-) -> Result<BoxId, StoreError> {
-    tx.execute(
-        "INSERT INTO boxes (name, repo, state, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-        params![
-            new.name.as_str(),
-            new.repo,
-            split_task_state(state).0.as_str(),
-            now.as_millis(),
-            now.as_millis()
-        ],
-    )
-    .map_err(|e| name_taken(e, new))?;
-    let id = tx.last_insert_rowid();
-    tx.execute(
-        "INSERT INTO sessions (box, ordinal, state, started_at) VALUES (?, 1, 'starting', ?)",
-        params![id, now.as_millis()],
-    )?;
-    Ok(BoxId::new(id))
 }
 
 /// Step the box state, recording the provider on the first input.
@@ -207,18 +154,16 @@ fn write_task(
     now: Ts,
     d: &Decision,
     step: &Step<TaskState>,
+    (lifecycle, session_state): Parts,
 ) -> Result<(), StoreError> {
     let mut sets = task_field_sets(&d.set);
     let mut session = session_field_sets(&d.set);
     if d.task_input.is_some() {
-        let (lifecycle, session_state) = split_task_state(step.to);
         sets.push(("state", Value::Text(lifecycle.as_str().to_owned())));
         sets.extend(idle_since_sets(step, now));
-        if let Some(ss) = session_state {
-            session.push(("state", Value::Text(ss.as_str().to_owned())));
-            if ss == SessionState::Ended {
-                session.push(("ended_at", Value::Integer(now.as_millis())));
-            }
+        session.push(("state", Value::Text(session_state.as_str().to_owned())));
+        if session_state == SessionState::Ended {
+            session.push(("ended_at", Value::Integer(now.as_millis())));
         }
     }
     sets.extend(intent_sets(d.intent, now));
@@ -230,7 +175,14 @@ fn write_task(
         "box = ? AND ordinal = 1",
         &[id.get()],
         &session,
-    )
+    )?;
+    if d.task_input.is_some() && !step.to.is_live() {
+        tx.execute(
+            "UPDATE sessions SET state = 'ended', ended_at = ? WHERE box = ? AND state != 'ended'",
+            params![now.as_millis(), id.get()],
+        )?;
+    }
+    Ok(())
 }
 
 /// `idle_since` follows the state: stamped on entering Idle, cleared on leaving it.
