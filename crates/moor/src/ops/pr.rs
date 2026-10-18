@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use moor_core::BoxName;
+use moor_core::{BoxName, Warning};
 
 use crate::cx::Cx;
 use crate::ops::common::proxy::origin;
@@ -35,9 +35,15 @@ pub(crate) fn open_pr_url(cx: &Cx, task: &str) -> Result<Option<String>, String>
         .forge()
         .open_pr(&repo, &branch)
         .map_err(|e| e.to_string())?;
-    // Recorded so the Box can be found by its pull request later.
+    // Recorded so the Box can be found by its pull request later. The URL is the answer, so a
+    // failed write only warns.
     if let Some(url) = &url {
-        store.add_box_ref(id, "pr", url).map_err(|e| e.to_string())?;
+        if let Err(e) = store.add_box_ref(id, "pr", url) {
+            cx.warn(Warning {
+                code: "pr_record_failed".to_owned(),
+                message: e.to_string(),
+            });
+        }
     }
     Ok(url)
 }
