@@ -1,6 +1,6 @@
 //! Slack event dedup and the binding of a Slack thread to a Box's primary Session.
 
-use moor_core::BoxName;
+use moor_core::{BoxId, BoxName};
 use rusqlite::{params, OptionalExtension};
 
 use super::{parsed, Store, StoreError};
@@ -77,17 +77,6 @@ fn open_box_session(conn: &rusqlite::Connection, name: &str) -> Result<(i64, i64
     )
     .optional()?
     .ok_or_else(|| StoreError::Invalid(format!("no open Box named `{name}`")))
-}
-
-/// The newest Box with this name, in any state.
-fn newest_box(conn: &rusqlite::Connection, name: &str) -> Result<Option<i64>, StoreError> {
-    Ok(conn
-        .query_row(
-            "SELECT id FROM boxes WHERE name = ? ORDER BY id DESC LIMIT 1",
-            params![name],
-            |r| r.get(0),
-        )
-        .optional()?)
 }
 
 /// Raw prompt row: the task and options are still unparsed text.
@@ -257,21 +246,18 @@ impl Store {
             .is_some())
     }
 
-    /// True once this proof file, at this exact content digest, was posted for the task.
+    /// True once this proof file, at this exact content digest, was posted for this Box.
     pub(crate) fn slack_proof_posted(
         &self,
-        task: &str,
+        id: BoxId,
         name: &str,
         sha256: &str,
     ) -> Result<bool, StoreError> {
-        let reader = self.reader()?;
-        let Some(box_id) = newest_box(&reader, task)? else {
-            return Ok(false);
-        };
-        Ok(reader
+        Ok(self
+            .reader()?
             .query_row(
                 "SELECT 1 FROM slack_proofs WHERE box = ? AND name = ? AND sha256 = ?",
-                params![box_id, name, sha256],
+                params![id.get(), name, sha256],
                 |_| Ok(()),
             )
             .optional()?
@@ -281,17 +267,15 @@ impl Store {
     /// Records a posted proof file; repeating the same name and digest is a no-op.
     pub(crate) fn mark_slack_proof_posted(
         &self,
-        task: &str,
+        id: BoxId,
         name: &str,
         sha256: &str,
     ) -> Result<(), StoreError> {
         let now = self.now();
         let writer = self.writer()?;
-        let box_id = newest_box(&writer, task)?
-            .ok_or_else(|| StoreError::Invalid(format!("no Box named `{task}`")))?;
         writer.execute(
             "INSERT OR IGNORE INTO slack_proofs (box, name, sha256, posted_at) VALUES (?, ?, ?, ?)",
-            params![box_id, name, sha256, now.as_millis()],
+            params![id.get(), name, sha256, now.as_millis()],
         )?;
         drop(writer);
         Ok(())

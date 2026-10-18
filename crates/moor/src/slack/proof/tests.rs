@@ -12,6 +12,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use moor_core::domain::decision::{Decision, NewTask};
+use moor_core::domain::task::TaskInput;
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, BoxName};
 use serde_json::{json, Value};
@@ -260,7 +261,7 @@ fn uploads_the_copy_into_the_thread() {
     let done = f.bodies("completeUploadExternal").join("");
     assert!(done.contains("C1") && done.contains("10.5"), "{done}");
     assert!(f.texts().is_empty());
-    assert!(st.slack_proof_posted("t1", "out.txt", "aa").unwrap());
+    assert!(st.slack_proof_posted(T1, "out.txt", "aa").unwrap());
 }
 
 #[test]
@@ -275,7 +276,7 @@ fn refused_proof_posts_text_and_no_upload() {
         vec!["Proof big.bin not uploaded: larger than the cap"]
     );
     assert!(f.paths().iter().all(|p| p.contains("chat.postMessage")));
-    assert!(st.slack_proof_posted("t1", "big.bin", "bb").unwrap());
+    assert!(st.slack_proof_posted(T1, "big.bin", "bb").unwrap());
 }
 
 #[test]
@@ -297,7 +298,7 @@ fn missing_copy_posts_failure_text() {
         "{texts:?}"
     );
     assert_eq!(f.uploads(), 0);
-    assert!(st.slack_proof_posted("t1", "gone.txt", "cc").unwrap());
+    assert!(st.slack_proof_posted(T1, "gone.txt", "cc").unwrap());
 }
 
 #[test]
@@ -321,7 +322,7 @@ fn failed_upload_posts_failure_text_without_the_token() {
         "{texts:?}"
     );
     assert!(!texts[0].contains(TOKEN));
-    assert!(st.slack_proof_posted("t1", "out.txt", "aa").unwrap());
+    assert!(st.slack_proof_posted(T1, "out.txt", "aa").unwrap());
 }
 
 #[test]
@@ -368,11 +369,11 @@ fn text_post_failure_keeps_it_queued() {
     let mut proofs = Proofs::default();
     let p = payload("big.bin", "bb", Some("too big"));
     run(&f, &st, dir.path(), &mut proofs, &p);
-    assert!(!st.slack_proof_posted("t1", "big.bin", "bb").unwrap());
+    assert!(!st.slack_proof_posted(T1, "big.bin", "bb").unwrap());
     f.post_down.store(false, Ordering::SeqCst);
     let bot = Secret::new(TOKEN.as_bytes().to_vec());
     proofs.post_due(&st, &f.api(), &bot, &threads(), dir.path(), &|_| {});
-    assert!(st.slack_proof_posted("t1", "big.bin", "bb").unwrap());
+    assert!(st.slack_proof_posted(T1, "big.bin", "bb").unwrap());
     assert_eq!(f.texts().len(), 2);
 }
 
@@ -418,4 +419,33 @@ fn upload_reads_the_copy_under_the_box_id() {
     proofs.post_due(&st, &f.api(), &bot, &threads, dir.path(), &|_| {});
     assert_eq!(f.bodies("/upload/"), vec!["by-id".to_owned()]);
     assert!(f.texts().is_empty());
+}
+
+#[test]
+fn replayed_proof_of_a_closed_box_is_not_posted_again() {
+    let (dir, f) = (tempfile::tempdir().unwrap(), fake());
+    write_copy_for(dir.path(), T1, "out.txt", b"hello");
+    let st = store(dir.path());
+    new_box(&st, "t1");
+    run(
+        &f,
+        &st,
+        dir.path(),
+        &mut Proofs::default(),
+        &payload("out.txt", "aa", None),
+    );
+    assert_eq!(f.uploads(), 1);
+    st.apply(Decision::new(T1).task_input(TaskInput::Close))
+        .unwrap();
+    new_box(&st, "t1");
+    run(
+        &f,
+        &st,
+        dir.path(),
+        &mut Proofs::default(),
+        &payload("out.txt", "aa", None),
+    );
+    assert_eq!(f.uploads(), 1, "the closed Box's proof was posted again");
+    assert!(f.texts().is_empty());
+    assert!(!st.slack_proof_posted(BoxId::new(2), "out.txt", "aa").unwrap());
 }
