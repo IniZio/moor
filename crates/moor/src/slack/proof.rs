@@ -19,7 +19,7 @@ struct Queued {
     task: String,
     /// File name of the proof.
     name: String,
-    /// Hash of the file content; with task and name it identifies the post.
+    /// Hash of the file content; with Box and name it identifies the post.
     sha256: String,
     /// Why the controller kept no copy, when it refused.
     refused: Option<String>,
@@ -115,7 +115,7 @@ fn post_one(cx: &Cx, thread: &SlackThread, q: &Queued) -> Outcome {
         state_dir,
         log,
     } = *cx;
-    match store.slack_proof_posted(&q.task, &q.name, &q.sha256) {
+    match store.slack_proof_posted(q.id, &q.name, &q.sha256) {
         Ok(false) => {}
         Ok(true) => return Outcome::Done,
         Err(e) => {
@@ -138,7 +138,7 @@ fn post_one(cx: &Cx, thread: &SlackThread, q: &Queued) -> Outcome {
             return Outcome::Retry;
         }
     }
-    if let Err(e) = store.mark_slack_proof_posted(&q.task, &q.name, &q.sha256) {
+    if let Err(e) = store.mark_slack_proof_posted(q.id, &q.name, &q.sha256) {
         log(&format!("slack proof: {e}"));
     }
     Outcome::Done
