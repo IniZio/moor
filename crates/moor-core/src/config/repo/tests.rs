@@ -114,6 +114,8 @@ fn removed_keys_are_unknown() {
         "record: {keep: [node_modules]}",
         "delivery: {mode: pr}",
         "egress: [x.io]",
+        "sandbox: [android]",
+        "sandbox: {}",
     ] {
         let key = t.split(':').next().unwrap_or(t);
         rejects(t, key, "unknown field");
