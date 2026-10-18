@@ -89,7 +89,7 @@ impl Rig {
         let store = Store::open(&self.state().join("moor.db"), self.clock.clone()).unwrap();
         let task = store
             .apply(Decision::insert(NewTask {
-                name: BoxName::parse("t").unwrap(),
+                name: BoxName::parse_allow_bare("t").unwrap(),
                 repo: "r".into(),
             }))
             .unwrap()

@@ -47,7 +47,7 @@ fn fx_surfaced(driver: FakeDriver, surface: FakeSurface, workspace: Option<&str>
         Arc::new(ScriptedProc::new()),
     );
     let store = cx.store().unwrap();
-    let name = BoxName::parse("t").unwrap();
+    let name = BoxName::parse_allow_bare("t").unwrap();
     let id = store
         .apply(Decision::insert(NewTask {
             name: name.clone(),
@@ -109,7 +109,7 @@ fn asleep(f: &Fx) {
 
 fn req() -> TaskReq {
     TaskReq {
-        task: BoxName::parse("t").unwrap(),
+        task: BoxName::parse_allow_bare("t").unwrap(),
     }
 }
 
@@ -168,7 +168,7 @@ fn second_open_focuses_again_without_waking() {
 fn unknown_task_is_failed_and_not_focused() {
     let f = fx();
     let r = TaskReq {
-        task: BoxName::parse("nope").unwrap(),
+        task: BoxName::parse_allow_bare("nope").unwrap(),
     };
     let err = run(&f.cx, &r).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Failed);
@@ -279,7 +279,7 @@ fn connect_without_a_workspace_is_refused() {
 fn connect_unknown_task_is_failed() {
     let f = fx();
     let r = TaskReq {
-        task: BoxName::parse("nope").unwrap(),
+        task: BoxName::parse_allow_bare("nope").unwrap(),
     };
     let err = connect(&f.cx, &r).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Failed);

@@ -20,7 +20,7 @@ fn new_is_empty() {
 #[test]
 fn insert_sets_input() {
     let new = NewTask {
-        name: BoxName::parse("a").unwrap(),
+        name: BoxName::parse_allow_bare("a").unwrap(),
         repo: "r".into(),
     };
     let d = Decision::insert(new.clone());

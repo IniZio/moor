@@ -28,7 +28,7 @@ fn allowed_start() {
     assert_eq!(
         got,
         Action::Start {
-            name: BoxName::parse("slack-1730000000-123456").unwrap(),
+            name: BoxName::parse_allow_bare("slack-1730000000-123456").unwrap(),
             repo: "acme/api".to_owned(),
             goal: "fix the bug".to_owned(),
         }
@@ -66,7 +66,7 @@ fn disallowed_channel_is_ignored() {
 
 #[test]
 fn bound_thread_refuses_second_start() {
-    let bound = BoxName::parse("slack-1-2").unwrap();
+    let bound = BoxName::parse_allow_bare("slack-1-2").unwrap();
     let got = run("C1", "U1", "<@UBOT> start r g", Some(&bound));
     assert!(
         matches!(&got, Action::Reply(t) if t.contains("`slack-1-2`")),
@@ -119,7 +119,7 @@ fn task_name_replaces_dot() {
 
 #[test]
 fn replies_name_the_task() {
-    let name = BoxName::parse("slack-1-2").unwrap();
+    let name = BoxName::parse_allow_bare("slack-1-2").unwrap();
     assert_eq!(started(&name), "Started Task `slack-1-2`.");
     assert!(failed(&name, "boom").contains("boom"));
 }

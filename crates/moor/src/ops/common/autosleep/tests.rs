@@ -45,7 +45,7 @@ fn working_with(driver: FakeDriver) -> Fx {
         Arc::new(ScriptedProc::new()),
     );
     let store = cx.store().unwrap();
-    let name = BoxName::parse("t").unwrap();
+    let name = BoxName::parse_allow_bare("t").unwrap();
     let id = store
         .apply(Decision::insert(NewTask {
             name: name.clone(),
@@ -314,7 +314,7 @@ fn an_explicit_sleep_still_asks_the_driver() {
     pass(&f, LONG);
     auto_sleep(&f);
     let req = moor_core::TaskReq {
-        task: BoxName::parse("t").unwrap(),
+        task: BoxName::parse_allow_bare("t").unwrap(),
     };
     let err = crate::ops::sleep::run(&f.cx, &req);
     assert!(err.is_err());

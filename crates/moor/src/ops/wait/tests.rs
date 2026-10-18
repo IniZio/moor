@@ -49,7 +49,7 @@ fn cx_with(dir: &Path, driver: FakeDriver) -> (Cx, Arc<ScriptedProc>) {
 /// Insert task `demo`.
 fn add(cx: &Cx) -> BoxId {
     let nt = NewTask {
-        name: BoxName::parse("demo").unwrap(),
+        name: BoxName::parse_allow_bare("demo").unwrap(),
         repo: "r".into(),
     };
     cx.store()
@@ -77,7 +77,7 @@ fn begin(cx: &Cx, task: BoxId) {
 /// A `wait` request for `demo`.
 fn req(wait_for: Option<WaitFor>, timeout_secs: Option<u64>) -> WaitReq {
     WaitReq {
-        task: BoxName::parse("demo").unwrap(),
+        task: BoxName::parse_allow_bare("demo").unwrap(),
         wait_for,
         timeout_secs,
     }
@@ -199,7 +199,7 @@ fn never_takes_the_box_lock() {
     )
     .unwrap();
     let show = ShowReq {
-        task: Some(BoxName::parse("demo").unwrap()),
+        task: Some(BoxName::parse_allow_bare("demo").unwrap()),
         events: None,
         agent: false,
         reports: false,
@@ -239,7 +239,7 @@ fn add_boxed(cx: &Cx) -> BoxId {
         .acquire(&AcquireReq {
             provider: ProviderId::new("p"),
             task: id,
-            name: BoxName::parse("demo").unwrap(),
+            name: BoxName::parse_allow_bare("demo").unwrap(),
             class: None,
             nonce: "abc123".into(),
             worktree: None,

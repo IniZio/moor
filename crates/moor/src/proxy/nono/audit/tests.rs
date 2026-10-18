@@ -294,7 +294,7 @@ fn task_sink_parts(dir: &Path) -> (Store, ProxyLog, BoxId) {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
     let store = Store::open(&dir.join("moor.db"), clock.clone()).unwrap();
     let new = NewTask {
-        name: BoxName::parse("t").unwrap(),
+        name: BoxName::parse_allow_bare("t").unwrap(),
         repo: "r".into(),
     };
     let task = store.apply(Decision::insert(new)).unwrap().task;

@@ -96,7 +96,7 @@ fn driver_limit(provider: &str, n: u32) -> BTreeMap<String, DriverConfig> {
 
 fn req(name: &str) -> StartReq {
     StartReq {
-        name: BoxName::parse(name).unwrap(),
+        name: BoxName::parse_allow_bare(name).unwrap(),
         goal: None,
         issue: None,
         worktree: None,

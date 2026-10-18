@@ -7,7 +7,7 @@ use crate::store::tests::open;
 use crate::store::{SlackPrompt, SlackThread, Store};
 
 fn name(s: &str) -> BoxName {
-    BoxName::parse(s).unwrap()
+    BoxName::parse_allow_bare(s).unwrap()
 }
 
 #[test]

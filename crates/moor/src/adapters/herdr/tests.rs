@@ -35,7 +35,7 @@ fn fixture() -> (Arc<ScriptedProc>, Herdr) {
 }
 
 fn name() -> BoxName {
-    BoxName::parse("a").expect("valid name")
+    BoxName::parse_allow_bare("a").expect("valid name")
 }
 
 /// Args of the `i`th recorded call.

@@ -35,7 +35,7 @@ fn engine_cx(dir: &Path, driver: &Arc<FakeDriver>, engine: &Arc<FakeEngine>) -> 
 /// Adds a Working Task `name` with a live Box and an open session `session`.
 fn working(cx: &Cx, driver: &FakeDriver, name: &str, session: &str) -> BoxId {
     let nt = NewTask {
-        name: BoxName::parse(name).unwrap(),
+        name: BoxName::parse_allow_bare(name).unwrap(),
         repo: "r".into(),
     };
     let store = cx.store().unwrap();
@@ -44,7 +44,7 @@ fn working(cx: &Cx, driver: &FakeDriver, name: &str, session: &str) -> BoxId {
         .acquire(&AcquireReq {
             provider: ProviderId::new("p"),
             task: id,
-            name: BoxName::parse(name).unwrap(),
+            name: BoxName::parse_allow_bare(name).unwrap(),
             class: None,
             nonce: "abc123".into(),
             worktree: None,

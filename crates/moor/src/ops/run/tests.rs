@@ -40,7 +40,7 @@ pub(in crate::ops::run) struct Fx {
 
 pub(in crate::ops::run) fn req(argv: &[&str]) -> RunReq {
     RunReq {
-        task: BoxName::parse("t").unwrap(),
+        task: BoxName::parse_allow_bare("t").unwrap(),
         no_sync: false,
         sync: false,
         record: None,
@@ -83,7 +83,7 @@ fn bare_with(driver: FakeDriver) -> Fx {
         .store()
         .unwrap()
         .apply(Decision::insert(NewTask {
-            name: BoxName::parse("t").unwrap(),
+            name: BoxName::parse_allow_bare("t").unwrap(),
             repo: "r".into(),
         }))
         .unwrap()
@@ -126,7 +126,7 @@ pub(in crate::ops::run) fn ready_with(driver: FakeDriver) -> Fx {
         .acquire(&AcquireReq {
             provider,
             task: f.id,
-            name: BoxName::parse("t").unwrap(),
+            name: BoxName::parse_allow_bare("t").unwrap(),
             class: None,
             nonce: "n".to_owned(),
             worktree: None,
@@ -244,7 +244,7 @@ fn refused(f: &Fx, r: &RunReq, kind: ErrorKind) -> String {
 fn unknown_task_is_refused() {
     let f = bare();
     let mut r = req(&["true"]);
-    r.task = BoxName::parse("nope").unwrap();
+    r.task = BoxName::parse_allow_bare("nope").unwrap();
     let before = f.driver.calls().len();
     assert_eq!(refused(&f, &r, ErrorKind::Failed), "no task nope");
     assert_eq!(f.driver.calls().len(), before);

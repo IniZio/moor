@@ -8,14 +8,14 @@ use moor_core::domain::task::{TaskInput, TaskState};
 use moor_core::seam::driver::DriverError;
 use moor_core::seam::proc::Tool;
 use moor_core::seam::surface::Surface;
-use moor_core::{BoxId, BoxName, BoxPath, ErrorKind, StartReq};
+use moor_core::{BoxId, BoxPath, ErrorKind, StartReq};
 
 use super::run;
 use crate::cx::Cx;
 use crate::ops::common::boxlock::BoxLock;
-use crate::testing::driver::FakeDriver;
 use crate::testing::proc::{Reply, ScriptedProc};
 use crate::testing::surface::FakeSurface;
+use crate::testing::{box_name, driver::FakeDriver};
 
 mod activity;
 mod base;
@@ -111,7 +111,7 @@ fn world_with(driver: FakeDriver, repo: &Path, config: UserConfig) -> World {
 /// A start request for `name`.
 fn req(name: &str) -> StartReq {
     StartReq {
-        name: BoxName::parse(name).unwrap(),
+        name: box_name(name),
         goal: None,
         issue: None,
         worktree: None,
@@ -165,7 +165,7 @@ fn start_excludes_scratch_dirs_when_a_worktree_is_bound() {
     let w = world(FakeDriver::new());
     let made = w
         .surface
-        .create_worktree(Path::new("/repo"), &BoxName::parse("pre").unwrap(), None)
+        .create_worktree(Path::new("/repo"), &box_name("pre"), None)
         .unwrap();
     let mut r = req("demo");
     r.worktree = Some(made.path.display().to_string());
@@ -180,7 +180,7 @@ fn exclude_failure_stops_start_before_any_worktree_exists() {
     let err = run(&w.cx, &req("demo")).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Failed);
     assert!(w.surface.calls().is_empty(), "{:?}", w.surface.calls());
-    let name = BoxName::parse("demo").unwrap();
+    let name = box_name("demo");
     assert!(w
         .cx
         .store()
@@ -251,7 +251,7 @@ fn acquire_failure_keeps_a_failed_task_row() {
         shown.pointer("/task/state"),
         Some(&serde_json::json!("setup_failed"))
     );
-    let name = BoxName::parse("demo").unwrap();
+    let name = box_name("demo");
     let row =
         w.cx.store()
             .unwrap()
@@ -281,7 +281,7 @@ fn acquire_failure_with_release_error_keeps_failed_and_original_error() {
         err.value.as_ref().unwrap().pointer("/task/state"),
         Some(&serde_json::json!("setup_failed"))
     );
-    let name = BoxName::parse("demo").unwrap();
+    let name = box_name("demo");
     let row = w.cx.store().unwrap().open_task_by_name(&name).unwrap();
     let b = row.unwrap().boxed.unwrap();
     assert_eq!(b.state, BoxState::Failed);
@@ -351,7 +351,7 @@ fn bound_worktree_skips_create_worktree() {
     let w = world(FakeDriver::new());
     let made = w
         .surface
-        .create_worktree(Path::new("/repo"), &BoxName::parse("pre").unwrap(), None)
+        .create_worktree(Path::new("/repo"), &box_name("pre"), None)
         .unwrap();
     let mut r = req("demo");
     r.worktree = Some(made.path.display().to_string());
@@ -448,7 +448,7 @@ fn unresolved_credential_rejects_before_any_side_effect() {
     );
     assert!(w.surface.calls().is_empty());
     assert!(w.driver.calls().is_empty());
-    let name = BoxName::parse("demo").unwrap();
+    let name = box_name("demo");
     assert!(w
         .cx
         .store()

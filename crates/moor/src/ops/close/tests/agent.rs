@@ -28,7 +28,11 @@ fn open_pane(f: &Fx) -> String {
     };
     let wt = f
         .surface
-        .create_worktree(Path::new("r"), &BoxName::parse("t").unwrap(), None)
+        .create_worktree(
+            Path::new("r"),
+            &BoxName::parse_allow_bare("t").unwrap(),
+            None,
+        )
         .unwrap();
     let ws = f.surface.ensure_workspace(&wt, "t").unwrap();
     let pane = f.surface.open_pane(&ws, &cmd).unwrap();

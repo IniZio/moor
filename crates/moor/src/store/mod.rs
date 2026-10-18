@@ -361,7 +361,7 @@ fn task_from_row(row: &Row<'_>) -> Result<TaskRow, StoreError> {
     let state: String = row.get(11)?;
     Ok(TaskRow {
         id: BoxId::new(row.get(0)?),
-        name: parsed("task name", &name, BoxName::parse)?,
+        name: parsed("task name", &name, BoxName::parse_allow_bare)?,
         repo: row.get(2)?,
         issue: row.get(3)?,
         goal: row.get(4)?,

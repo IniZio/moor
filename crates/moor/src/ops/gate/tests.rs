@@ -31,7 +31,7 @@ fn cx(dir: &Path) -> Cx {
 /// Insert a task by name.
 fn task(cx: &Cx, name: &str) -> BoxId {
     let nt = NewTask {
-        name: BoxName::parse(name).unwrap(),
+        name: BoxName::parse_allow_bare(name).unwrap(),
         repo: "r".into(),
     };
     cx.store()

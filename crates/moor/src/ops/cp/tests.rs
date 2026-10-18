@@ -40,7 +40,7 @@ fn fx_with(driver: FakeDriver, ready: bool) -> Fx {
         Arc::new(ScriptedProc::new()),
     );
     let store = cx.store().unwrap();
-    let name = BoxName::parse("t").unwrap();
+    let name = BoxName::parse_allow_bare("t").unwrap();
     let id = store
         .apply(Decision::insert(NewTask {
             name: name.clone(),
@@ -95,7 +95,7 @@ fn fx() -> Fx {
 
 fn req(src: &str, dest: &str) -> CpReq {
     CpReq {
-        task: BoxName::parse("t").unwrap(),
+        task: BoxName::parse_allow_bare("t").unwrap(),
         src: src.into(),
         dest: dest.into(),
     }
@@ -185,7 +185,7 @@ fn absolute_destination_is_kept() {
 fn unknown_task_is_refused_without_a_copy() {
     let f = fx();
     let mut r = req("a", "a");
-    r.task = BoxName::parse("nope").unwrap();
+    r.task = BoxName::parse_allow_bare("nope").unwrap();
     run(&f.cx, &r).unwrap_err();
     assert!(f.driver.copies().is_empty());
     assert_eq!(copied(&f), 0);

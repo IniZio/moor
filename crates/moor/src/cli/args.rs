@@ -40,7 +40,7 @@ pub(super) fn parse(args: Vec<OsString>) -> Result<(GlobalOpts, Action), clap::E
 
 /// clap parser for a Task name.
 pub(super) fn task_name(s: &str) -> Result<BoxName, String> {
-    BoxName::parse(s).map_err(|e| e.to_string())
+    BoxName::parse_allow_bare(s).map_err(|e| e.to_string())
 }
 
 /// Top-level command line.

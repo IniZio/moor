@@ -20,7 +20,7 @@ fn open(dir: &Path) -> Store {
 /// Insert a task by name.
 fn add(store: &Store, name: &str) -> BoxId {
     let nt = NewTask {
-        name: BoxName::parse(name).unwrap(),
+        name: BoxName::parse_allow_bare(name).unwrap(),
         repo: "r".into(),
     };
     store.apply(Decision::insert(nt)).unwrap().task

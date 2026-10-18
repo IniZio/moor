@@ -33,7 +33,7 @@ fn req(args: &[&str]) -> Request {
 
 /// Valid task name.
 fn n(s: &str) -> BoxName {
-    BoxName::parse(s).expect("valid name")
+    BoxName::parse_allow_bare(s).expect("valid name")
 }
 
 /// Task request helper.

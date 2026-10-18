@@ -36,7 +36,7 @@ fn fx_with(driver: FakeDriver) -> Fx {
         Arc::new(ScriptedProc::new()),
     );
     let store = cx.store().unwrap();
-    let name = BoxName::parse("t").unwrap();
+    let name = BoxName::parse_allow_bare("t").unwrap();
     let id = store
         .apply(Decision::insert(NewTask {
             name: name.clone(),
@@ -96,7 +96,7 @@ fn asleep(f: &Fx) {
 
 fn req() -> TaskReq {
     TaskReq {
-        task: BoxName::parse("t").unwrap(),
+        task: BoxName::parse_allow_bare("t").unwrap(),
     }
 }
 
@@ -166,7 +166,7 @@ fn gone_box_is_refused_without_a_resume() {
 fn unknown_task_is_failed() {
     let f = fx();
     let r = TaskReq {
-        task: BoxName::parse("nope").unwrap(),
+        task: BoxName::parse_allow_bare("nope").unwrap(),
     };
     let err = run(&f.cx, &r).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Failed);

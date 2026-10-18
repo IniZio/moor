@@ -101,7 +101,7 @@ pub(super) fn decide(
 /// # Errors
 /// Returns the name error when the ts yields an invalid Task name.
 pub(super) fn task_name(thread: &str) -> Result<BoxName, NameError> {
-    BoxName::parse(&format!("slack-{}", thread.replace('.', "-")))
+    BoxName::parse_allow_bare(&format!("slack-{}", thread.replace('.', "-")))
 }
 
 /// Thread reply after a successful start.

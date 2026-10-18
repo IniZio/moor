@@ -357,7 +357,11 @@ mod tests {
     fn records_sends_and_reports_a_missing_pane() {
         let s = FakeSurface::new("/r");
         let wt = s
-            .create_worktree(Path::new("/repo"), &BoxName::parse("a").unwrap(), None)
+            .create_worktree(
+                Path::new("/repo"),
+                &BoxName::parse_allow_bare("a").unwrap(),
+                None,
+            )
             .unwrap();
         let ws = s.ensure_workspace(&wt, "moor:a").unwrap();
         let pane = s.open_pane(&ws, &PaneCmd::default()).unwrap();

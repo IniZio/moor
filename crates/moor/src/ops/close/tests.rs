@@ -42,7 +42,7 @@ pub(super) struct Fx {
 
 pub(super) fn req(force: bool) -> CloseReq {
     CloseReq {
-        task: BoxName::parse("t").unwrap(),
+        task: BoxName::parse_allow_bare("t").unwrap(),
         force,
         trust_moor_yaml: false,
     }
@@ -117,7 +117,7 @@ fn admit(cx: &Cx, driver: &FakeDriver, dir: &Path) -> BoxId {
     let store = cx.store().unwrap();
     let id = store
         .apply(Decision::insert(NewTask {
-            name: BoxName::parse("t").unwrap(),
+            name: BoxName::parse_allow_bare("t").unwrap(),
             repo: "r".into(),
         }))
         .unwrap()
@@ -139,7 +139,7 @@ fn admit(cx: &Cx, driver: &FakeDriver, dir: &Path) -> BoxId {
         .acquire(&AcquireReq {
             provider,
             task: id,
-            name: BoxName::parse("t").unwrap(),
+            name: BoxName::parse_allow_bare("t").unwrap(),
             class: None,
             nonce: "n".to_owned(),
             worktree: None,

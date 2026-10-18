@@ -296,7 +296,7 @@ fn registrations(w: &World) -> Vec<String> {
 
 fn show_task() -> ShowReq {
     ShowReq {
-        task: Some(BoxName::parse("demo").unwrap()),
+        task: Some(BoxName::parse_allow_bare("demo").unwrap()),
         events: None,
         agent: false,
         reports: false,

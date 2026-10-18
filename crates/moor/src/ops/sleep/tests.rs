@@ -45,7 +45,7 @@ fn fx_with(driver: FakeDriver) -> Fx {
         Arc::new(ScriptedProc::new()),
     );
     let store = cx.store().unwrap();
-    let name = BoxName::parse("t").unwrap();
+    let name = BoxName::parse_allow_bare("t").unwrap();
     let id = store
         .apply(Decision::insert(NewTask {
             name: name.clone(),
@@ -107,7 +107,7 @@ fn idle_with(driver: FakeDriver) -> Fx {
 
 fn req() -> TaskReq {
     TaskReq {
-        task: BoxName::parse("t").unwrap(),
+        task: BoxName::parse_allow_bare("t").unwrap(),
     }
 }
 
@@ -277,7 +277,7 @@ fn a_later_successful_sleep_clears_the_reason() {
 fn unknown_task_fails() {
     let f = fx();
     let other = TaskReq {
-        task: BoxName::parse("nope").unwrap(),
+        task: BoxName::parse_allow_bare("nope").unwrap(),
     };
     let err = run(&f.cx, &other).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Failed);
@@ -330,7 +330,7 @@ fn starting() -> Fx {
     let store = cx.store().unwrap();
     let id = store
         .apply(Decision::insert(NewTask {
-            name: BoxName::parse("t").unwrap(),
+            name: BoxName::parse_allow_bare("t").unwrap(),
             repo: "r".into(),
         }))
         .unwrap()

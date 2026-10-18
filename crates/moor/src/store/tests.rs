@@ -34,7 +34,7 @@ pub(super) fn open(dir: &Path) -> (Store, Arc<FakeClock>) {
 /// A new-task decision.
 fn insert(name: &str) -> Decision {
     Decision::insert(NewTask {
-        name: BoxName::parse(name).unwrap(),
+        name: BoxName::parse_allow_bare(name).unwrap(),
         repo: "r".into(),
     })
 }

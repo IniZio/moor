@@ -43,7 +43,7 @@ fn fx() -> Fx {
         .store()
         .unwrap()
         .apply(Decision::insert(NewTask {
-            name: BoxName::parse("t").unwrap(),
+            name: BoxName::parse_allow_bare("t").unwrap(),
             repo: "r".into(),
         }))
         .unwrap()

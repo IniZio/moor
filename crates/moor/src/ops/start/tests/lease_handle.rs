@@ -21,7 +21,7 @@ fn state_after_hold(got: &str, key: &str) -> Option<LeaseState> {
     .unwrap();
     let id: BoxId = store
         .apply(Decision::insert(NewTask {
-            name: BoxName::parse("demo").unwrap(),
+            name: BoxName::parse_allow_bare("demo").unwrap(),
             repo: "r".into(),
         }))
         .unwrap()

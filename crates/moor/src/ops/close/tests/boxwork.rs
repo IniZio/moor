@@ -248,7 +248,7 @@ fn close_skips_the_probe_for_a_box_the_driver_no_longer_has() {
 fn close_skips_the_probe_for_a_box_that_never_got_a_handle() {
     let f = fx_probe(Some("ahead=1 dirty=1"));
     let store = f.cx.store().unwrap();
-    let name = BoxName::parse("u").unwrap();
+    let name = BoxName::parse_allow_bare("u").unwrap();
     let id = store
         .apply(Decision::insert(NewTask {
             name: name.clone(),
