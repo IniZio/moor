@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use moor_core::domain::box_state::BoxLifecycle;
+use moor_core::domain::box_steps;
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::Intent;
 use moor_core::domain::session_state::SessionState;
@@ -26,10 +27,11 @@ mod init;
 pub(crate) mod lease;
 mod open;
 mod proxy;
-mod reads;
+pub(super) mod reads;
 mod reports;
 mod runs;
 mod seq;
+mod sessions;
 mod slack;
 #[cfg(test)]
 mod tests;
@@ -83,6 +85,12 @@ pub(crate) enum StoreError {
     /// The decision or request was malformed.
     #[error("invalid: {0}")]
     Invalid(String),
+    /// A sleep was refused because other Sessions are still working.
+    #[error("sleep blocked: {busy} Sessions busy")]
+    SleepBlocked {
+        /// How many other Sessions are not idle.
+        busy: usize,
+    },
     /// A stored value could not be parsed.
     #[error("corrupt store: {0}")]
     Corrupt(String),
@@ -277,25 +285,7 @@ impl Store {
 
 /// Load one task joined to its box, on any connection (used inside `apply`'s transaction too).
 pub(super) fn load_task(conn: &Connection, id: BoxId) -> Result<Option<TaskRow>, StoreError> {
-    let sql = format!("{TASK_SELECT} WHERE b.id = ?1");
-    let mut stmt = conn.prepare(&sql)?;
-    let mut rows = stmt.query_and_then([id.get()], task_from_row)?;
-    rows.next().transpose()
-}
-
-/// Combine the Box lifecycle with its primary Session state into the task state.
-fn join_task_state(lifecycle: BoxLifecycle, session: SessionState) -> TaskState {
-    match lifecycle {
-        BoxLifecycle::Checking => TaskState::Checking,
-        BoxLifecycle::Rejected => TaskState::Rejected,
-        BoxLifecycle::WaitingForBox => TaskState::WaitingForBox,
-        BoxLifecycle::SettingUp => TaskState::SettingUp,
-        BoxLifecycle::SetupFailed => TaskState::SetupFailed,
-        BoxLifecycle::Ready if session == SessionState::Idle => TaskState::Idle,
-        BoxLifecycle::Ready => TaskState::Working,
-        BoxLifecycle::Asleep => TaskState::Asleep,
-        BoxLifecycle::Closed => TaskState::Closed,
-    }
+    Ok(reads::load_row_parts(conn, id)?.map(|(row, _, _)| row))
 }
 
 /// Convert a stored integer to `u32`.
@@ -349,6 +339,11 @@ fn box_from_row(row: &Row<'_>) -> Result<Option<BoxRow>, StoreError> {
 
 /// Map a `TASK_SELECT` row to a `TaskRow`.
 fn task_from_row(row: &Row<'_>) -> Result<TaskRow, StoreError> {
+    Ok(row_with_parts(row)?.0)
+}
+
+/// Map a `TASK_SELECT` row to a `TaskRow` and the states its summary state came from.
+fn row_with_parts(row: &Row<'_>) -> Result<(TaskRow, BoxLifecycle, SessionState), StoreError> {
     let name: String = row.get(1)?;
     let lifecycle: String = row.get(11)?;
     let session: Option<String> = row.get(30)?;
@@ -357,7 +352,7 @@ fn task_from_row(row: &Row<'_>) -> Result<TaskRow, StoreError> {
         None => SessionState::Starting,
     };
     let lifecycle = parsed_opt("box state", &lifecycle, BoxLifecycle::parse)?;
-    Ok(TaskRow {
+    let found = TaskRow {
         id: BoxId::new(row.get(0)?),
         name: parsed("task name", &name, BoxName::parse_allow_bare)?,
         repo: row.get(2)?,
@@ -369,7 +364,7 @@ fn task_from_row(row: &Row<'_>) -> Result<TaskRow, StoreError> {
         bound: row.get::<_, i64>(8)? != 0,
         workspace_id: row.get(9)?,
         agent_session_id: row.get(10)?,
-        state: join_task_state(lifecycle, session),
+        state: box_steps::summary(lifecycle, session),
         state_reason: row.get(12)?,
         intent: intent_from(row.get(13)?, row.get(14)?, row.get(15)?)?,
         intent_at: row.get::<_, Option<i64>>(16)?.map(Ts::from_millis),
@@ -382,7 +377,8 @@ fn task_from_row(row: &Row<'_>) -> Result<TaskRow, StoreError> {
             .map(|j| serde_json::from_str(&j))
             .transpose()?,
         boxed: box_from_row(row)?,
-    })
+    };
+    Ok((found, lifecycle, session))
 }
 
 /// Map an events row to an `EventRow`.

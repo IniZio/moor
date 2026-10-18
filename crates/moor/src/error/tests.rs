@@ -131,6 +131,13 @@ mod store_close {
     }
 
     #[test]
+    fn blocked_sleep_is_refused() {
+        let e = CommandError::from(StoreError::SleepBlocked { busy: 2 });
+        assert_eq!(e.kind, ErrorKind::Refused);
+        assert_eq!(e.error.to_string(), "sleep blocked: 2 Sessions busy");
+    }
+
+    #[test]
     fn other_store_error_is_failed_with_moor_wording() {
         let e = CommandError::from(StoreError::Poisoned);
         assert_eq!(e.kind, ErrorKind::Failed);

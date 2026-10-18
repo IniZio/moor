@@ -1,10 +1,9 @@
 //! The Box lifecycle machine: every state change is `step()`, and every other pair is an error.
 //!
-//! This will replace both the Box half of `TaskState` and `boxes::BoxState` when the schema
-//! changes over. Until then nothing uses it.
+//! This will replace `boxes::BoxState` when the schema changes over.
 
 use super::session_state::SessionState;
-use super::task::{SetupOutcome, TaskState};
+use super::task::SetupOutcome;
 use super::Illegal;
 
 /// Why a Box lifecycle step was refused.
@@ -204,22 +203,6 @@ pub fn box_may_sleep(sessions: &[SessionState]) -> bool {
     sessions
         .iter()
         .all(|s| matches!(s, SessionState::Idle | SessionState::Ended))
-}
-
-/// The Box and Session states that together stand for one Task state.
-#[must_use]
-pub const fn split_task_state(state: TaskState) -> (BoxLifecycle, Option<SessionState>) {
-    match state {
-        TaskState::Checking => (BoxLifecycle::Checking, None),
-        TaskState::Rejected => (BoxLifecycle::Rejected, None),
-        TaskState::WaitingForBox => (BoxLifecycle::WaitingForBox, None),
-        TaskState::SettingUp => (BoxLifecycle::SettingUp, None),
-        TaskState::SetupFailed => (BoxLifecycle::SetupFailed, None),
-        TaskState::Working => (BoxLifecycle::Ready, Some(SessionState::Working)),
-        TaskState::Idle => (BoxLifecycle::Ready, Some(SessionState::Idle)),
-        TaskState::Asleep => (BoxLifecycle::Asleep, Some(SessionState::Idle)),
-        TaskState::Closed => (BoxLifecycle::Closed, Some(SessionState::Ended)),
-    }
 }
 
 #[cfg(test)]
