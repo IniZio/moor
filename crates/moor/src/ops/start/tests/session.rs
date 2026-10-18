@@ -39,7 +39,7 @@ fn start_records_one_live_session_and_attach_adds_none() {
             .reader()
             .unwrap()
             .query_row(
-                "SELECT COUNT(*) FROM sessions WHERE task = ? AND ended_at IS NULL",
+                "SELECT COUNT(*) FROM launches WHERE box = ? AND ended_at IS NULL",
                 [id.get()],
                 |r| r.get(0),
             )

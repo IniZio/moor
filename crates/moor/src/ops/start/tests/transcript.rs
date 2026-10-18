@@ -27,7 +27,7 @@ fn first_digest(w: &World, id: BoxId) -> Option<String> {
         .reader()
         .unwrap()
         .query_row(
-            "SELECT transcript_digest FROM sessions WHERE task = ? ORDER BY id LIMIT 1",
+            "SELECT transcript_digest FROM launches WHERE box = ? ORDER BY id LIMIT 1",
             [id.get()],
             |r| r.get(0),
         )
@@ -55,7 +55,7 @@ fn relaunch_saves_the_transcript_before_ending_the_old_session() {
         let c = rusqlite::Connection::open(&db).unwrap();
         let open: i64 = c
             .query_row(
-                "SELECT COUNT(*) FROM sessions WHERE ended_at IS NULL",
+                "SELECT COUNT(*) FROM launches WHERE ended_at IS NULL",
                 [],
                 |r| r.get(0),
             )

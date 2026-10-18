@@ -1,7 +1,7 @@
 //! Read-only lookups by task name and live-box scans, built on the shared task row mapping.
 
+use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
-use moor_core::domain::task::TaskState;
 use moor_core::{BoxId, BoxName, ProviderId};
 use rusqlite::Connection;
 
@@ -32,7 +32,7 @@ pub(super) fn live_holders_in(
     conn: &Connection,
     provider: &ProviderId,
 ) -> Result<Vec<TaskRow>, StoreError> {
-    let tail = "WHERE b.provider = ?1 AND b.state IN (?2, ?3, ?4) ORDER BY t.id";
+    let tail = "WHERE b.provider = ?1 AND b.driver_state IN (?2, ?3, ?4) ORDER BY b.id";
     let [a, b, c] = LIVE_STATES;
     query_tasks(conn, tail, (provider.as_str(), a, b, c))
 }
@@ -56,8 +56,8 @@ impl Store {
         let limit = i64::try_from(limit).unwrap_or(i64::MAX);
         let conn = self.reader()?;
         let mut stmt = conn.prepare(
-            "SELECT e.id, e.task, e.kind, e.payload, e.ts, t.name FROM events e \
-             JOIN tasks t ON t.id = e.task WHERE e.id > ?1 ORDER BY e.id LIMIT ?2",
+            "SELECT e.id, e.box, e.kind, e.payload, e.ts, b.name FROM events e \
+             JOIN boxes b ON b.id = e.box WHERE e.id > ?1 ORDER BY e.id LIMIT ?2",
         )?;
         let rows = stmt.query_and_then((after, limit), |r| {
             Ok(NamedEvent {
@@ -70,7 +70,7 @@ impl Store {
 
     /// The live (neither closed nor rejected) task with this name.
     pub(crate) fn open_task_by_name(&self, name: &BoxName) -> Result<Option<TaskRow>, StoreError> {
-        let tail = "WHERE t.name = ?1 AND t.state NOT IN ('closed', 'rejected') ORDER BY t.id DESC LIMIT 1";
+        let tail = "WHERE b.name = ?1 AND b.state NOT IN ('closed', 'rejected') ORDER BY b.id DESC LIMIT 1";
         let rows = query_tasks(&self.reader()?, tail, [name.as_str()])?;
         Ok(rows.into_iter().next())
     }
@@ -80,14 +80,14 @@ impl Store {
         &self,
         name: &BoxName,
     ) -> Result<Option<TaskRow>, StoreError> {
-        let tail = "WHERE t.name = ?1 ORDER BY t.id DESC LIMIT 1";
+        let tail = "WHERE b.name = ?1 ORDER BY b.id DESC LIMIT 1";
         let rows = query_tasks(&self.reader()?, tail, [name.as_str()])?;
         Ok(rows.into_iter().next())
     }
 
     /// Boxes whose state counts toward capacity (starting, ready, asleep), with their task.
     pub(crate) fn box_rows_live(&self) -> Result<Vec<(BoxId, BoxRow)>, StoreError> {
-        let tail = "WHERE b.state IN (?1, ?2, ?3) ORDER BY t.id";
+        let tail = "WHERE b.driver_state IN (?1, ?2, ?3) ORDER BY b.id";
         let rows = query_tasks(&self.reader()?, tail, LIVE_STATES)?;
         Ok(rows
             .into_iter()
@@ -97,8 +97,12 @@ impl Store {
 
     /// Tasks queued for a box, oldest id first.
     pub(crate) fn waiting_tasks(&self) -> Result<Vec<TaskRow>, StoreError> {
-        let tail = "WHERE t.state = ?1 ORDER BY t.id";
-        query_tasks(&self.reader()?, tail, [TaskState::WaitingForBox.as_str()])
+        let tail = "WHERE b.state = ?1 ORDER BY b.id";
+        query_tasks(
+            &self.reader()?,
+            tail,
+            [BoxLifecycle::WaitingForBox.as_str()],
+        )
     }
 }
 

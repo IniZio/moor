@@ -121,7 +121,7 @@ fn waiting_tasks_returns_waiting_for_box_in_id_order() {
     store
         .writer()
         .unwrap()
-        .execute_batch("CREATE INDEX tasks_state_name ON tasks(state, name)")
+        .execute_batch("CREATE INDEX boxes_state_name ON boxes(state, name)")
         .unwrap();
     for id in [d, b, a] {
         let input = TaskInput::AtCapacity { max_boxes: 1 };
