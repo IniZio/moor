@@ -12,7 +12,7 @@ use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver};
-use moor_core::{ProviderId, TaskId, TaskName};
+use moor_core::{BoxId, BoxName, ProviderId};
 
 use crate::controller::watch::{stream, Limits};
 use crate::cx::Cx;
@@ -38,9 +38,9 @@ fn engine_cx(dir: &Path, driver: &Arc<FakeDriver>, engine: &Arc<FakeEngine>) -> 
 }
 
 /// Adds a Working Task `name` with a live Box and an open session `session`.
-fn working(cx: &Cx, driver: &FakeDriver, name: &str, session: &str) -> TaskId {
+fn working(cx: &Cx, driver: &FakeDriver, name: &str, session: &str) -> BoxId {
     let nt = NewTask {
-        name: TaskName::parse(name).unwrap(),
+        name: BoxName::parse(name).unwrap(),
         repo: "r".into(),
     };
     let store = cx.store().unwrap();
@@ -49,7 +49,7 @@ fn working(cx: &Cx, driver: &FakeDriver, name: &str, session: &str) -> TaskId {
         .acquire(&AcquireReq {
             provider: ProviderId::new("p"),
             task: id,
-            name: TaskName::parse(name).unwrap(),
+            name: BoxName::parse(name).unwrap(),
             class: None,
             nonce: "abc123".into(),
             worktree: None,
@@ -97,7 +97,7 @@ fn idle_hook(cx: &Cx) -> Probes {
 }
 
 /// A Working Task whose fake engine reports quiet, with the context that settles it.
-fn quiet_agent(dir: &Path) -> (Cx, TaskId) {
+fn quiet_agent(dir: &Path) -> (Cx, BoxId) {
     let driver = Arc::new(FakeDriver::new().exec_stdout([""]));
     let cx = engine_cx(dir, &driver, &Arc::new(FakeEngine::new()));
     let id = working(&cx, &driver, "a", "s-a");

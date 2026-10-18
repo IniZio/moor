@@ -8,7 +8,7 @@ use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::time::Duration;
 
-use moor_core::{CloseReq, Request, StartReq, SteerReq, TaskName};
+use moor_core::{BoxName, CloseReq, Request, StartReq, SteerReq};
 use serde_json::{json, Value};
 
 use super::{post, server_with_calls, Calls, Web, REFUSAL, TOKEN};
@@ -34,8 +34,8 @@ fn body(resp: &str) -> Value {
     serde_json::from_str(b).expect("json body")
 }
 
-fn task(name: &str) -> TaskName {
-    TaskName::parse(name).unwrap()
+fn task(name: &str) -> BoxName {
+    BoxName::parse(name).unwrap()
 }
 
 fn recorded(calls: &Calls) -> Vec<Request> {

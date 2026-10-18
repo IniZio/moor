@@ -1,6 +1,6 @@
 //! State-changing endpoints: CSRF gate, body parsing and `Request` building.
 
-use moor_core::name::TaskName;
+use moor_core::name::BoxName;
 use moor_core::request::{CloseReq, Request, StartReq, SteerReq};
 use serde::Deserialize;
 
@@ -205,6 +205,6 @@ fn parse<'a, T: Deserialize<'a>>(body: &'a [u8]) -> Result<T, String> {
 }
 
 /// Parses a task name.
-fn name(s: &str) -> Result<TaskName, String> {
-    TaskName::parse(s).map_err(|e| e.to_string())
+fn name(s: &str) -> Result<BoxName, String> {
+    BoxName::parse(s).map_err(|e| e.to_string())
 }

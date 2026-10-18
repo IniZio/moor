@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 use super::{handle, respond};
 use crate::env::Env;
 use crate::Moor;
-use moor_core::name::TaskName;
+use moor_core::name::BoxName;
 use moor_core::{Request, ShowReq};
 
 fn env(dir: &tempfile::TempDir) -> Env {
@@ -40,7 +40,7 @@ fn run_raw(env: &Env, input: &str) -> Vec<Value> {
         .collect()
 }
 
-fn show(task: Option<TaskName>) -> Request {
+fn show(task: Option<BoxName>) -> Request {
     Request::Show(ShowReq {
         task,
         events: None,
@@ -74,7 +74,7 @@ fn hello_then_version_echoes_id_and_envelope() {
 fn envelopes_match_moor_call() {
     let dir = tempfile::tempdir().expect("tempdir");
     let env = env(&dir);
-    let unknown = TaskName::parse("nope").expect("name");
+    let unknown = BoxName::parse("nope").expect("name");
     let requests = [
         Request::Version {},
         show(None),
@@ -93,7 +93,7 @@ fn envelopes_match_moor_call() {
 #[test]
 fn unknown_task_gives_error_envelope() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let unknown = TaskName::parse("nope").expect("name");
+    let unknown = BoxName::parse("nope").expect("name");
     let req = show(Some(unknown));
     let frames = run(&env(&dir), &[hello(), request("x", &req)]);
     assert_eq!(frames[1]["frame"], "response");

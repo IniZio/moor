@@ -10,7 +10,7 @@ use std::sync::Arc;
 use moor_core::config::parse_user;
 use moor_core::seam::proc::Tool;
 use moor_core::seam::proxy_host::ProxyHostError;
-use moor_core::{Request, ShowReq, StartReq, SteerReq, TaskName};
+use moor_core::{BoxName, Request, ShowReq, StartReq, SteerReq};
 use serde_json::{json, Value};
 
 use super::serve;
@@ -111,7 +111,7 @@ fn exchange(cx: Cx, requests: &[Request]) -> (String, String, Vec<Value>) {
 
 fn start() -> Request {
     Request::Start(StartReq {
-        name: TaskName::parse("demo").expect("name"),
+        name: BoxName::parse("demo").expect("name"),
         goal: Some("ship it".into()),
         issue: None,
         worktree: None,
@@ -126,7 +126,7 @@ fn start() -> Request {
 
 fn show() -> Request {
     Request::Show(ShowReq {
-        task: Some(TaskName::parse("demo").expect("name")),
+        task: Some(BoxName::parse("demo").expect("name")),
         events: Some(100),
         agent: true,
         reports: true,
@@ -136,7 +136,7 @@ fn show() -> Request {
 
 fn steer() -> Request {
     Request::Steer(SteerReq {
-        task: TaskName::parse("demo").expect("name"),
+        task: BoxName::parse("demo").expect("name"),
         text: Some("continue".into()),
         menu: None,
     })

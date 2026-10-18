@@ -22,7 +22,7 @@ use crate::store::{Store, STORE_FILE};
 use crate::testing::clock::FakeClock;
 use moor_core::domain::decision::{Decision, ExtraEvent, NewTask};
 use moor_core::seam::clock::Ts;
-use moor_core::{TaskId, TaskName};
+use moor_core::{BoxId, BoxName};
 
 fn env(dir: &tempfile::TempDir) -> Env {
     Env::from_pairs([
@@ -44,16 +44,16 @@ fn open(dir: &Path) -> Store {
     Store::open(&dir.join(STORE_FILE), clock).expect("store")
 }
 
-fn add(store: &Store, name: &str) -> TaskId {
+fn add(store: &Store, name: &str) -> BoxId {
     let new = NewTask {
-        name: TaskName::parse(name).expect("name"),
+        name: BoxName::parse(name).expect("name"),
         repo: "r".into(),
     };
     store.apply(Decision::insert(new)).expect("insert").task
 }
 
 /// Append `n` `copied` events to `id`.
-fn append(store: &Store, id: TaskId, n: usize) {
+fn append(store: &Store, id: BoxId, n: usize) {
     for i in 0..n {
         let event = ExtraEvent::Copied {
             from: format!("a{i}"),
