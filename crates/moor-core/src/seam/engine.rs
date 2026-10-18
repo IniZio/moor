@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::activity::Probes;
-use crate::name::{BoxHandle, BoxPath, NameError, TaskName};
+use crate::name::{BoxHandle, BoxName, BoxPath, NameError};
 use crate::seam::agent_profile::{PromptMatch, ProxyAddr};
 use crate::seam::driver::DriverError;
 use crate::seam::proc::Deadline;
@@ -47,8 +47,8 @@ pub struct LaunchReq {
     pub worktree: PathBuf,
     /// The Workspace that gets the agent's tab.
     pub workspace: WorkspaceRef,
-    /// The Task the agent works on.
-    pub task: TaskName,
+    /// The Box the agent works on.
+    pub task: BoxName,
     /// The Task branch the agent pushes to.
     pub branch: String,
     /// What the agent is asked to do.

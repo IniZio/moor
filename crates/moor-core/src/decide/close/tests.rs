@@ -5,7 +5,7 @@ use super::{
 };
 use crate::domain::boxes::BoxState;
 use crate::domain::task::{TaskInput, TaskState};
-use crate::name::TaskId;
+use crate::name::BoxId;
 
 use BoxState as B;
 use ReleaseResult as R;
@@ -13,7 +13,7 @@ use ReleaseResult as R;
 /// Clean facts for a working task with a Ready Box.
 fn facts() -> CloseFacts {
     CloseFacts {
-        task: TaskId::new(7),
+        task: BoxId::new(7),
         state: TaskState::Working,
         box_state: Some(B::Ready),
         has_handle: true,
@@ -236,7 +236,7 @@ fn apply(v: &ReleaseVerdict, task: TaskState, b: BoxState) -> (TaskState, BoxSta
 fn deleted_and_already_gone_mark_the_box_deleted() {
     for r in [R::Deleted, R::AlreadyGone] {
         for b in [B::Ready, B::Asleep, B::Failed, B::ReleaseFailed] {
-            let v = release_outcome(TaskId::new(7), b, r);
+            let v = release_outcome(BoxId::new(7), b, r);
             assert!(v.closes && v.warning.is_none());
             assert_eq!(
                 apply(&v, TaskState::Working, b),
@@ -249,14 +249,14 @@ fn deleted_and_already_gone_mark_the_box_deleted() {
 #[test]
 fn failed_release_of_a_live_box_keeps_the_task_open() {
     for b in [B::Ready, B::Asleep] {
-        let v = release_outcome(TaskId::new(7), b, R::Failed);
+        let v = release_outcome(BoxId::new(7), b, R::Failed);
         assert!(!v.closes && v.decision.is_none() && v.warning.is_none());
     }
 }
 
 #[test]
 fn failed_release_of_a_failed_box_closes_with_release_failed_and_warns() {
-    let v = release_outcome(TaskId::new(7), B::Failed, R::Failed);
+    let v = release_outcome(BoxId::new(7), B::Failed, R::Failed);
     assert!(v.closes);
     assert_eq!(
         apply(&v, TaskState::SetupFailed, B::Failed),
@@ -270,7 +270,7 @@ fn failed_release_of_a_failed_box_closes_with_release_failed_and_warns() {
 
 #[test]
 fn failed_release_of_a_release_failed_box_stays_release_failed() {
-    let v = release_outcome(TaskId::new(7), B::ReleaseFailed, R::Failed);
+    let v = release_outcome(BoxId::new(7), B::ReleaseFailed, R::Failed);
     assert!(v.closes && v.warning.is_some());
     assert_eq!(
         apply(&v, TaskState::SetupFailed, B::ReleaseFailed),

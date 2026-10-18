@@ -3,14 +3,14 @@
 use crate::domain::boxes::{BoxInput, BoxState};
 use crate::domain::decision::Decision;
 use crate::domain::task::{TaskInput, TaskState};
-use crate::name::TaskId;
+use crate::name::BoxId;
 use crate::response::Warning;
 
 /// What the close op read before deciding.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CloseFacts {
     /// The task being closed.
-    pub task: TaskId,
+    pub task: BoxId,
     /// Its current state.
     pub state: TaskState,
     /// Its Box state; `None` when no Box ever existed.
@@ -193,7 +193,7 @@ const fn releasable(s: BoxState) -> bool {
 /// A live Box (`Ready`/`Asleep`) that cannot be released keeps the task open;
 /// a `Failed` or `ReleaseFailed` Box does not hold the task back.
 #[must_use]
-pub fn release_outcome(task: TaskId, box_state: BoxState, r: ReleaseResult) -> ReleaseVerdict {
+pub fn release_outcome(task: BoxId, box_state: BoxState, r: ReleaseResult) -> ReleaseVerdict {
     let close = Decision::new(task).task_input(TaskInput::Close);
     match r {
         ReleaseResult::Deleted | ReleaseResult::AlreadyGone => ReleaseVerdict {

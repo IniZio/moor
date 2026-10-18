@@ -3,9 +3,9 @@
 use super::*;
 use serde_json::json;
 
-/// Valid task name.
-fn n(s: &str) -> TaskName {
-    TaskName::parse(s).expect("valid name")
+/// Valid Box name.
+fn n(s: &str) -> BoxName {
+    BoxName::parse(s).expect("valid name")
 }
 
 /// Variants carrying a task or arguments.

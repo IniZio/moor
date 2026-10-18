@@ -4,14 +4,14 @@ use std::collections::HashSet;
 
 use crate::domain::boxes::{BoxInput, BoxState};
 use crate::domain::decision::Decision;
-use crate::name::{BoxHandle, TaskId};
+use crate::name::{BoxHandle, BoxId};
 use crate::seam::driver::BoxListing;
 
 /// One stored Box row, as the op read it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BoxFact {
     /// The owning task.
-    pub task: TaskId,
+    pub task: BoxId,
     /// The Box state.
     pub state: BoxState,
     /// The stored Driver handle, if any.

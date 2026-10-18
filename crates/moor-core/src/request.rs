@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::name::TaskName;
+use crate::name::BoxName;
 
 /// One moor command with its arguments.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -83,8 +83,8 @@ impl Request {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StartReq {
-    /// Task name.
-    pub name: TaskName,
+    /// Box name.
+    pub name: BoxName,
     /// Goal text.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub goal: Option<String>,
@@ -122,8 +122,8 @@ pub struct StartReq {
     reason = "JSON wire shape is a public contract"
 )]
 pub struct RunReq {
-    /// Task name.
-    pub task: TaskName,
+    /// Box name.
+    pub task: BoxName,
     /// Skip syncing before the run.
     #[serde(default)]
     pub no_sync: bool,
@@ -149,8 +149,8 @@ pub struct RunReq {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WaitReq {
-    /// Task name.
-    pub task: TaskName,
+    /// Box name.
+    pub task: BoxName,
     /// Condition to wait for.
     #[serde(rename = "for", default, skip_serializing_if = "Option::is_none")]
     pub wait_for: Option<WaitFor>,
@@ -177,8 +177,8 @@ pub enum WaitFor {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SteerReq {
-    /// Task name.
-    pub task: TaskName,
+    /// Box name.
+    pub task: BoxName,
     /// Text to send.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
@@ -191,8 +191,8 @@ pub struct SteerReq {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ReportReq {
-    /// Task name.
-    pub task: TaskName,
+    /// Box name.
+    pub task: BoxName,
     /// Report kind.
     pub kind: String,
     /// Report title.
@@ -207,9 +207,9 @@ pub struct ReportReq {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ShowReq {
-    /// Task name; all tasks when absent.
+    /// Box name; all tasks when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub task: Option<TaskName>,
+    pub task: Option<BoxName>,
     /// Number of events to include.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub events: Option<u32>,
@@ -228,8 +228,8 @@ pub struct ShowReq {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CloseReq {
-    /// Task name.
-    pub task: TaskName,
+    /// Box name.
+    pub task: BoxName,
     /// Close despite unfinished work.
     #[serde(default)]
     pub force: bool,
@@ -242,8 +242,8 @@ pub struct CloseReq {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RemoveReq {
-    /// Task name.
-    pub task: TaskName,
+    /// Box name.
+    pub task: BoxName,
     /// Discard unmerged work.
     #[serde(default)]
     pub discard: bool,
@@ -253,8 +253,8 @@ pub struct RemoveReq {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CpReq {
-    /// Task name.
-    pub task: TaskName,
+    /// Box name.
+    pub task: BoxName,
     /// Source path.
     pub src: String,
     /// Destination path.
@@ -265,8 +265,8 @@ pub struct CpReq {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct TaskReq {
-    /// Task name.
-    pub task: TaskName,
+    /// Box name.
+    pub task: BoxName,
 }
 
 /// Arguments of `gate`.

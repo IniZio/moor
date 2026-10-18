@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::config::proxy::ResolvedRule;
-use crate::name::{BoxHandle, TaskId};
+use crate::name::{BoxHandle, BoxId};
 use crate::seam::forge::ForgeRepo;
 use crate::secret::Secret;
 
@@ -14,7 +14,7 @@ use crate::secret::Secret;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProxySpec {
     /// The Task the Proxy serves.
-    pub task: TaskId,
+    pub task: BoxId,
     /// The Task's Box, or `None` when it has none.
     pub box_handle: Option<BoxHandle>,
     /// The Task's worktree on the host.
@@ -85,13 +85,13 @@ pub trait ProxyHost: Send + Sync {
     ///
     /// # Errors
     /// Returns [`ProxyHostError::Failed`] when the state cannot be read.
-    fn status(&self, task: TaskId) -> Result<ProxyStatus, ProxyHostError>;
+    fn status(&self, task: BoxId) -> Result<ProxyStatus, ProxyHostError>;
 
     /// Stops the Task's Proxy and forgets it.
     ///
     /// # Errors
     /// Returns [`ProxyHostError::Incomplete`] when the stop did not fully succeed.
-    fn stop(&self, task: TaskId) -> Result<(), ProxyHostError>;
+    fn stop(&self, task: BoxId) -> Result<(), ProxyHostError>;
 }
 
 #[cfg(test)]
