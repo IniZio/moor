@@ -39,11 +39,11 @@ pub(super) fn render(b: &BriefInput) -> String {
         "You are running inside the Box, in the project working directory. Run builds, \
          tests and project tooling directly here.\n\n\
          Report the command's real exit code. Do not pipe its output through `tail` or `head`.\n\n\
-         You run in a sandbox. You have no sudo. The network is open, through the preset \
-         proxy (HTTPS_PROXY); do not unset or bypass it. GitHub access works for the Task \
+         Do not use sudo. The network is open. When HTTPS_PROXY is set, traffic goes through \
+         the preset proxy; do not unset or bypass it. GitHub access works for the Task \
          repo through gh and git as configured. Requests outside what the proxy rules allow go \
          out without credentials, so expect 401 or 404; the owner can add a rule. \
-         You can write only in the working directory and your own tool state. If a tool the \
+         Write only in the working directory and your own tool state. If a tool the \
          project needs is missing, do not try to install it: say which tool is missing and that \
          it belongs in the repo's setup commands, then continue with what is available. \
          Do not guess paths.\n\n\
@@ -143,11 +143,13 @@ mod tests {
     }
 
     #[test]
-    fn states_sandbox_limits_and_points_missing_tools_at_setup() {
+    fn states_limits_and_points_missing_tools_at_setup() {
         let out = render(&input(Some("g"), None));
-        assert!(out.contains("no sudo"));
-        assert!(!out.contains("including sudo"));
-        assert!(out.contains("The network is open"));
+        assert!(out.contains("Do not use sudo."));
+        assert!(!out.contains("sandbox"));
+        assert!(out.contains("The network is open."));
+        assert!(out.contains("When HTTPS_PROXY is set"));
+        assert!(out.contains("Write only in the working directory"));
         assert!(out.contains("expect 401 or 404"));
         assert!(out.contains("belongs in the repo's setup commands"));
         assert!(out.contains("Do not guess paths."));
