@@ -85,6 +85,23 @@ pub struct CredPlan {
     pub boxed: bool,
 }
 
+/// What a Box is built from, beyond its size class. Both unset means the provider default.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct BoxShape {
+    /// Provider template the Box is created from.
+    pub template: Option<String>,
+    /// Disk size in whole GB.
+    pub disk_gb: Option<u32>,
+}
+
+impl BoxShape {
+    /// True when neither template nor disk is set.
+    #[must_use]
+    pub const fn is_empty(&self) -> bool {
+        self.template.is_none() && self.disk_gb.is_none()
+    }
+}
+
 /// Everything a command needs from config, resolved once.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TaskSettings {
@@ -94,6 +111,8 @@ pub struct TaskSettings {
     pub provider: Sourced<String>,
     /// Box size: repo > user > default `small`.
     pub size: Sourced<BoxSize>,
+    /// Box template and disk: repo only.
+    pub shape: BoxShape,
     /// GitHub identity mode.
     pub identity: Identity,
     /// Sorted union of user credential names, box credential names and MCP refs.
@@ -175,6 +194,10 @@ impl TaskSettings {
             model,
             provider,
             size,
+            shape: BoxShape {
+                template: r.box_.template.clone(),
+                disk_gb: r.box_.disk_gb,
+            },
             identity: user.github.identity,
             credentials: plan_credentials(user, r),
             box_credentials: r.box_credentials.clone(),

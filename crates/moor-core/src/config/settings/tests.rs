@@ -179,3 +179,29 @@ fn layer_names() {
         assert_eq!(l.as_str(), n);
     }
 }
+
+#[test]
+fn shape_comes_from_repo() {
+    let s = resolve(
+        "{}",
+        Some("box: {template: tpl, disk_gb: 20}"),
+        &Flags::default(),
+    );
+    assert_eq!(
+        s.shape,
+        BoxShape {
+            template: Some("tpl".into()),
+            disk_gb: Some(20),
+        }
+    );
+    assert!(!s.shape.is_empty());
+}
+
+#[test]
+fn shape_empty_without_repo_keys() {
+    for r in [None, Some("{}"), Some("box: {size: large}")] {
+        let s = resolve("{}", r, &Flags::default());
+        assert_eq!(s.shape, BoxShape::default(), "{r:?}");
+        assert!(s.shape.is_empty());
+    }
+}

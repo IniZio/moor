@@ -14,12 +14,16 @@ pub struct RepoCompose {
     pub project_prefix: Option<String>,
 }
 
-/// `box:` section; only `size` is allowed at the repo layer.
+/// `box:` section; only `size`, `template` and `disk_gb` are allowed at the repo layer.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct RepoBox {
     /// Box size class; repo > user > default.
     pub size: Option<BoxSize>,
+    /// Box template name handed to the provider on acquire; unset keeps the provider default.
+    pub template: Option<String>,
+    /// Disk size in GB handed to the provider on acquire; the provider checks the range.
+    pub disk_gb: Option<u32>,
 }
 
 /// The repo config. Build it with [`parse_repo`].
@@ -77,6 +81,17 @@ impl RepoConfig {
         non_blank("setup", &self.setup)?;
         non_blank("teardown", &self.teardown)?;
         self.validate_box_credentials()?;
+        if self
+            .box_
+            .template
+            .as_deref()
+            .is_some_and(|t| t.trim().is_empty())
+        {
+            return Err(ConfigError::new(
+                "box.template",
+                "template must not be empty",
+            ));
+        }
         for name in self.env.keys() {
             let path = format!("env.{name}");
             check::env_name(name)

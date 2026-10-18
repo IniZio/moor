@@ -213,3 +213,41 @@ fn changed_keys_lists_env_and_box_in_file_order() {
     let b = ok("env:\n  A: c\nbox:\n  size: large\n");
     assert_eq!(a.changed_keys(&b), ["env", "box"]);
 }
+
+#[test]
+fn box_template_and_disk_gb_parse() {
+    let b = ok("box: {size: large, template: moor-doorlock-android, disk_gb: 20}").box_;
+    assert_eq!(b.size, Some(BoxSize::Large));
+    assert_eq!(b.template.as_deref(), Some("moor-doorlock-android"));
+    assert_eq!(b.disk_gb, Some(20));
+    assert_eq!(ok("box: {disk_gb: 0}").box_.disk_gb, Some(0));
+    assert_eq!(ok("box: {size: small}").box_.template, None);
+}
+
+#[test]
+fn box_template_and_disk_gb_reject_bad_values() {
+    for t in ["''", "'   '"] {
+        rejects(
+            &format!("box: {{template: {t}}}"),
+            "box.template",
+            "must not be empty",
+        );
+    }
+    for v in ["big", "-1", "2.5"] {
+        rejects(&format!("box: {{disk_gb: {v}}}"), "box.disk_gb", "disk_gb");
+    }
+    rejects("box: {image: x}", "box.image", "unknown field");
+}
+
+#[test]
+fn changed_keys_sees_box_template_and_disk_gb() {
+    let base = ok("box: {size: small}");
+    assert_eq!(
+        base.changed_keys(&ok("box: {size: small, template: t}")),
+        ["box"]
+    );
+    assert_eq!(
+        base.changed_keys(&ok("box: {size: small, disk_gb: 9}")),
+        ["box"]
+    );
+}

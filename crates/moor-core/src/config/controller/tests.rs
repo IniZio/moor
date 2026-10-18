@@ -196,6 +196,17 @@ fn repos_block_parses_path_and_inline() {
 }
 
 #[test]
+fn inline_moor_yaml_carries_box_template_and_disk() {
+    let ok = "repos:\n  a:\n    url: u\n    moor_yaml:\n      inline: |\n        box: {template: t, disk_gb: 20}\n";
+    assert!(parse_controller("c.yaml", ok).is_ok());
+    let bad =
+        "repos:\n  a:\n    url: u\n    moor_yaml:\n      inline: |\n        box: {template: ''}\n";
+    let e = err(bad).to_string();
+    assert!(e.contains("repos.a.moor_yaml"), "{e}");
+    assert!(e.contains("box.template"), "{e}");
+}
+
+#[test]
 fn repo_entry_unknown_key_names_path() {
     let e = err("repos:\n  app:\n    url: u\n    bogus: 1\n");
     assert!(e.to_string().contains("bogus"), "{e}");
