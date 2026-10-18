@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Fails when production Rust builds a Box-derived identifier outside the BoxKey seam.
+# It only catches literal patterns such as format!("moor-{..."); an identifier built
+# another way, for example by concat! or from a constant prefix, passes unseen.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
 pattern='"(moor-\{|\.moor-cred-\{|\.moor-tmp-\{|moor/\{|proof/\{)|join\("proof"\)\.join\('
