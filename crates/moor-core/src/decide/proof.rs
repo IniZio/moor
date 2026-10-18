@@ -3,6 +3,9 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
+use crate::box_key::BoxKey;
+use crate::name::BoxId;
+
 pub use crate::domain::proof::ProofFile;
 
 /// Directory, relative to the Box workdir, where agents write proof files.
@@ -91,10 +94,10 @@ pub fn fresh(listing: &[ProofFile], seen: &[ProofFile]) -> Vec<ProofFile> {
         .collect()
 }
 
-/// Where a copied proof file lives, relative to the state dir.
+/// Where a copied proof file lives, relative to the state dir: keyed by the Box id, never its name.
 #[must_use]
-pub fn copy_relpath(task: &str, name: &str) -> PathBuf {
-    PathBuf::from("proof").join(task).join(name)
+pub fn copy_relpath(id: BoxId, file: &str) -> PathBuf {
+    BoxKey::new(id).proof_file(file)
 }
 
 /// Plain sentence explaining why `file` is not copied, or `None` when it fits under `cap` bytes.

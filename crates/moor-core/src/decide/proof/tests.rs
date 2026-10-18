@@ -99,11 +99,20 @@ fn fresh_latest_seen_wins() {
 }
 
 #[test]
-fn copy_path_nests_under_task() {
+fn copy_path_nests_under_id() {
     assert_eq!(
-        copy_relpath("7", "sub/b.txt"),
+        copy_relpath(BoxId::new(7), "sub/b.txt"),
         PathBuf::from("proof/7/sub/b.txt")
     );
+}
+
+#[test]
+fn copy_path_ignores_box_name() {
+    let name = "web/fix-bug";
+    let id = BoxId::new(7);
+    let got = copy_relpath(id, "a.png");
+    assert_eq!(got, PathBuf::from("proof/7/a.png"));
+    assert!(!got.to_string_lossy().contains(name));
 }
 
 #[test]

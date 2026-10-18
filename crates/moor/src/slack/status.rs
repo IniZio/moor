@@ -276,7 +276,7 @@ pub(crate) fn follow(
                         .entry(e.task_name.clone())
                         .or_default()
                         .fold(&e.row.kind, &e.row.payload);
-                    proofs.fold(&e.task_name, &e.row.kind, &e.row.payload);
+                    proofs.fold(e.row.task, &e.task_name, &e.row.kind, &e.row.payload);
                     pending.fold(e.row.id, &e.task_name, &e.row.kind, &e.row.payload);
                 }
                 if events.len() == BATCH {

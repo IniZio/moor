@@ -19,6 +19,11 @@ use crate::testing::surface::FakeSurface;
 const A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const B: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
+/// Host proof copy dir for the fixture's Box.
+fn pdir(f: &Fx) -> std::path::PathBuf {
+    f.dir.path().join("proof").join(f.id.get().to_string())
+}
+
 struct Fx {
     dir: tempfile::TempDir,
     cx: Cx,
@@ -131,15 +136,9 @@ fn two_new_files_record_two_events_and_two_copies() {
     assert_eq!(copies.len(), 2);
     let (from, to): (Vec<_>, Vec<_>) = copies.iter().map(|c| (c.1.as_str(), &c.2)).unzip();
     assert!(from.iter().all(|p| p.contains("/.moor/proof/")), "{from:?}");
-    assert_eq!(
-        to,
-        [
-            &f.dir.path().join("proof/t/a.png"),
-            &f.dir.path().join("proof/t/b/c.txt")
-        ]
-    );
+    assert_eq!(to, [&pdir(&f).join("a.png"), &pdir(&f).join("b/c.txt")]);
     assert!(copies.iter().all(|c| c.3 == f.dir.path()));
-    assert!(f.dir.path().join("proof/t/b/c.txt").is_file());
+    assert!(pdir(&f).join("b/c.txt").is_file());
 }
 
 #[test]
@@ -234,7 +233,7 @@ fn a_symlinked_task_directory_is_refused_without_copying() {
     let f = fx(FakeDriver::new(), &[&listing]);
     let out = outside(&f);
     fs::create_dir_all(f.dir.path().join("proof")).unwrap();
-    std::os::unix::fs::symlink(&out, f.dir.path().join("proof/t")).unwrap();
+    std::os::unix::fs::symlink(&out, pdir(&f)).unwrap();
     let warnings = pass(&f, DEFAULT_PROOF_MAX_BYTES);
     assert_eq!(warnings.len(), 1, "{warnings:?}");
     assert!(
@@ -253,8 +252,8 @@ fn a_symlink_at_the_destination_is_refused_without_copying() {
     let out = outside(&f);
     let secret = out.join("secret");
     fs::write(&secret, "keep").unwrap();
-    fs::create_dir_all(f.dir.path().join("proof/t")).unwrap();
-    std::os::unix::fs::symlink(&secret, f.dir.path().join("proof/t/a.png")).unwrap();
+    fs::create_dir_all(pdir(&f)).unwrap();
+    std::os::unix::fs::symlink(&secret, pdir(&f).join("a.png")).unwrap();
     let warnings = pass(&f, DEFAULT_PROOF_MAX_BYTES);
     assert_eq!(warnings.len(), 1, "{warnings:?}");
     assert!(f.driver.copies().is_empty());
@@ -271,7 +270,7 @@ fn a_symlink_left_by_the_copy_is_removed_and_nothing_is_recorded() {
     let warnings = pass(&f, DEFAULT_PROOF_MAX_BYTES);
     assert_eq!(warnings.len(), 1, "{warnings:?}");
     assert!(warnings.iter().all(|w| w.contains("a.png")), "{warnings:?}");
-    let dest = f.dir.path().join("proof/t/a.png");
+    let dest = pdir(&f).join("a.png");
     assert!(fs::symlink_metadata(&dest).is_err());
     assert!(proofs(&f).is_empty());
     assert!(!target.exists());

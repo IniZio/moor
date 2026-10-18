@@ -110,7 +110,7 @@ fn sync_task(cx: &Cx, store: &Store, row: &TaskRow, cap: u64) -> Result<(), Stri
         if refused.is_none() {
             let from = BoxPath::under(workdir.as_str(), &format!("{PROOF_DIR}/{}", file.name))
                 .map_err(|e| format!("bad proof path {}: {e}", file.name))?;
-            let to = state.join(copy_relpath(row.name.as_str(), &file.name));
+            let to = state.join(copy_relpath(row.id, &file.name));
             if let Some(link) = symlink_on_path(&state.join("proof"), &to)? {
                 cx.warn(Warning {
                     code: "proof_failed".to_owned(),
