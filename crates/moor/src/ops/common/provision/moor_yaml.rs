@@ -42,7 +42,7 @@ impl Copies<'_> {
 
 /// Lets setup, relaunch and run use the worktree's `.moor.yaml` only when it matches the base commit.
 ///
-/// The agent can edit that file, and these commands run work outside the agent sandbox. A
+/// The agent can edit that file, and these commands run what it says outside the agent. A
 /// difference is refused unless the owner confirmed it with `trusted`, which warns once instead.
 /// On success it returns the repo config to use, parsed from the bytes that were compared.
 ///
@@ -60,7 +60,7 @@ pub(crate) fn guard(
             return Err(CommandError::new(
                 ErrorKind::Refused,
                 format!(
-                    "{}/{REPO_FILE} differs from base commit {}: {what}; moor will not run work outside the sandbox with it unconfirmed",
+                    "{}/{REPO_FILE} differs from base commit {}: {what}; moor will not run its commands unconfirmed",
                     copies.at, copies.rev
                 ),
             )
