@@ -202,6 +202,7 @@ impl Launch<'_> {
             issue: req.issue.as_deref(),
             branch: &req.branch,
             setup_exit: req.setup_exit,
+            simulator: req.mac_grants.sim_udid.is_some(),
         });
         let path = BoxPath::under(cred.as_str(), "brief.md").map_err(|e| fail("brief", &e))?;
         let bytes = brief.into_bytes();

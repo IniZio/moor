@@ -351,3 +351,31 @@ fn a_launch_without_a_simulator_device_exports_neither_simulator_variable() {
     assert!(!script.contains("MOOR_SIM_UDID"), "{script}");
     assert!(!script.contains("MOOR_SIM_SET"), "{script}");
 }
+
+fn sim_brief(udid: Option<&str>) -> String {
+    let d = driver(FakeDriver::new().run_stdout(MAC_PRINTED));
+    let s = Arc::new(FakeSurface::new("/r"));
+    let r = LaunchReq {
+        mac_grants: MacGrants {
+            sim_udid: udid.map(str::to_owned),
+            ..MacGrants::default()
+        },
+        ..req(&s)
+    };
+    agent(&d, &s).launch(&r).unwrap();
+    let bytes = d.puts().into_iter().next().unwrap().2;
+    String::from_utf8(bytes).unwrap()
+}
+
+#[test]
+fn a_launch_with_a_simulator_device_briefs_the_agent_on_simulator_proof() {
+    let brief = sim_brief(Some("UDID-1"));
+    assert!(brief.contains("generic/platform=iOS Simulator"), "{brief}");
+    assert!(brief.contains("$MOOR_SIM_SET"), "{brief}");
+}
+
+#[test]
+fn a_launch_without_a_simulator_device_says_nothing_of_the_simulator() {
+    let brief = sim_brief(None);
+    assert!(!brief.contains("MOOR_SIM"), "{brief}");
+}

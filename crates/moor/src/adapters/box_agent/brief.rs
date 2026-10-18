@@ -14,7 +14,29 @@ pub(super) struct BriefInput<'a> {
     pub(super) branch: &'a str,
     /// The exit code of a failed setup, if setup failed.
     pub(super) setup_exit: Option<i32>,
+    /// Whether the Task has its own iOS simulator.
+    pub(super) simulator: bool,
 }
+
+/// How to build for, drive and record the Task's own iOS simulator. xcodebuild cannot see
+/// a device in a custom device set, hence the generic destination.
+const SIMULATOR_GUIDE: &str = "This Task has its own iOS simulator, `$MOOR_SIM_UDID`, in the \
+    device set `$MOOR_SIM_SET`. Pass `--set \"$MOOR_SIM_SET\"` to every `xcrun simctl` call; do \
+    not use `booted` or the default set. The simulator is not booted: run \
+    `xcrun simctl --set \"$MOOR_SIM_SET\" bootstatus \"$MOOR_SIM_UDID\" -b`. Build with \
+    `-destination 'generic/platform=iOS Simulator'`, not `id=$MOOR_SIM_UDID`: xcodebuild cannot \
+    see a device in this set. Add `-derivedDataPath build/DerivedData` so the app is at \
+    `build/DerivedData/Build/Products/<configuration>-iphonesimulator/`. Install with \
+    `xcrun simctl --set \"$MOOR_SIM_SET\" install \"$MOOR_SIM_UDID\" <app>` and launch with \
+    `xcrun simctl --set \"$MOOR_SIM_SET\" launch \"$MOOR_SIM_UDID\" <bundle id>`. Run \
+    `mkdir -p .moor/proof` first. simctl needs an absolute path for the output file. Take a \
+    screenshot with `xcrun simctl --set \"$MOOR_SIM_SET\" io \"$MOOR_SIM_UDID\" screenshot \
+    \"$PWD/.moor/proof/<name>.png\"`. Record a video by starting \
+    `xcrun simctl --set \"$MOOR_SIM_SET\" io \"$MOOR_SIM_UDID\" recordVideo --codec=h264 \
+    \"$PWD/.moor/proof/<name>.mp4\" &` and keeping its pid; \
+    drive the app, then stop it with `kill -INT <pid>` and `wait` so the file is finalized. \
+    `kill -9` leaves an unplayable file. Files in `.moor/proof/` are collected by the owner's \
+    tooling; do not commit them. Attach them to the PR as above.\n\n";
 
 /// How to put proof screenshots and videos into the PR body.
 const PROOF_GUIDE: &str = "To show proof in the PR, such as a screenshot or a video, save it \
@@ -60,6 +82,9 @@ pub(super) fn render(b: &BriefInput) -> String {
          You may receive follow-up messages (steers) typed into this session.\n\n"
     );
     out.push_str(PROOF_GUIDE);
+    if b.simulator {
+        out.push_str(SIMULATOR_GUIDE);
+    }
     if let Some(n) = b.setup_exit {
         _ = write!(
             out,
@@ -90,7 +115,31 @@ mod tests {
             issue,
             branch: "moor/t1",
             setup_exit: None,
+            simulator: false,
         }
+    }
+
+    #[test]
+    fn simulator_guide_appears_only_with_a_simulator() {
+        let mut b = input(Some("g"), None);
+        assert!(!render(&b).contains("MOOR_SIM"));
+        b.simulator = true;
+        let out = render(&b);
+        for s in [
+            "--set \"$MOOR_SIM_SET\"",
+            "generic/platform=iOS Simulator",
+            "bootstatus",
+            "install",
+            "launch",
+            "mkdir -p .moor/proof",
+            "screenshot \"$PWD/.moor/proof/",
+            "recordVideo --codec=h264 \"$PWD/.moor/proof/",
+            "absolute path",
+            "kill -INT",
+        ] {
+            assert!(out.contains(s), "missing {s}");
+        }
+        assert!(!out.contains("/home/"));
     }
 
     #[test]
