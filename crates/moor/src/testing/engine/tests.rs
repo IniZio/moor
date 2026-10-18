@@ -8,7 +8,7 @@ use moor_core::seam::driver::DriverError;
 use moor_core::seam::engine::{Engine, EngineError, LaunchReq, SessionRef, Steer, SteerOutcome};
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::{PaneRef, WorkspaceRef};
-use moor_core::{BoxHandle, BoxPath, TaskName};
+use moor_core::{BoxHandle, BoxName, BoxPath};
 
 use super::FakeEngine;
 
@@ -81,7 +81,7 @@ fn launch_req() -> LaunchReq {
         workdir: BoxPath::under("/work/box-1", "x").unwrap(),
         worktree: PathBuf::from("/host/wt"),
         workspace: WorkspaceRef::new("ws-1"),
-        task: TaskName::parse("t1").unwrap(),
+        task: BoxName::parse("t1").unwrap(),
         branch: "moor/t1".to_owned(),
         goal: None,
         resume: None,

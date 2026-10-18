@@ -2,17 +2,17 @@
 
 use std::path::{Path, PathBuf};
 
-use moor_core::name::TaskName;
+use moor_core::name::BoxName;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, TunnelFailure, TunnelHandle};
-use moor_core::{BoxHandle, ProviderId, TaskId};
+use moor_core::{BoxHandle, BoxId, ProviderId};
 
 use super::{FakeDriver, TunnelCall, TunnelReply};
 
 fn boxed(fake: &FakeDriver) -> BoxHandle {
     let got = fake.acquire(&AcquireReq {
         provider: ProviderId::new("fake"),
-        task: TaskId::new(1),
-        name: TaskName::parse("t1").unwrap(),
+        task: BoxId::new(1),
+        name: BoxName::parse("t1").unwrap(),
         class: None,
         nonce: "n0".to_owned(),
         worktree: None,

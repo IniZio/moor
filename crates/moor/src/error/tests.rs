@@ -119,7 +119,7 @@ mod store_close {
     use crate::store::StoreError;
     use moor_core::decide::close::Refusal;
     use moor_core::domain::Illegal;
-    use moor_core::{ErrorKind, TaskName};
+    use moor_core::{BoxName, ErrorKind};
 
     #[test]
     fn illegal_store_error_is_internal() {
@@ -157,7 +157,7 @@ mod store_close {
 
     #[test]
     fn bad_name_is_usage() {
-        let err = TaskName::parse("Bad Name!").expect_err("rejected");
+        let err = BoxName::parse("Bad Name!").expect_err("rejected");
         assert_eq!(CommandError::from(err).kind, ErrorKind::Usage);
     }
 }

@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use moor_core::seam::proxy_host::{
     ProxyEndpoint, ProxyHost, ProxyHostError, ProxySpec, ProxyStatus,
 };
-use moor_core::{Secret, TaskId};
+use moor_core::{BoxId, Secret};
 use zeroize::Zeroizing;
 
 /// Box port returned by an unscripted `ensure`.
@@ -20,8 +20,8 @@ pub(crate) const FAKE_NONCE: &[u8] = b"fake-proxy-nonce";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ProxyHostCall {
     Ensure(ProxySpec),
-    Status(TaskId),
-    Stop(TaskId),
+    Status(BoxId),
+    Stop(BoxId),
 }
 
 struct State {
@@ -127,7 +127,7 @@ impl ProxyHost for FakeProxyHost {
         })
     }
 
-    fn status(&self, task: TaskId) -> Result<ProxyStatus, ProxyHostError> {
+    fn status(&self, task: BoxId) -> Result<ProxyStatus, ProxyHostError> {
         let mut s = self.lock();
         s.calls.push(ProxyHostCall::Status(task));
         if let Some(next) = s.upcoming.pop_front() {
@@ -136,7 +136,7 @@ impl ProxyHost for FakeProxyHost {
         s.status.clone()
     }
 
-    fn stop(&self, task: TaskId) -> Result<(), ProxyHostError> {
+    fn stop(&self, task: BoxId) -> Result<(), ProxyHostError> {
         let mut s = self.lock();
         s.calls.push(ProxyHostCall::Stop(task));
         s.stop_error.clone().map_or(Ok(()), Err)
