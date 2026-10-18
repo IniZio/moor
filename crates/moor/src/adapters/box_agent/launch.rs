@@ -15,19 +15,19 @@ use moor_core::Secret;
 
 use self::install::StepResult;
 use self::steps::{Plan, Staged};
-use super::nono_release::NonoRelease;
+use super::agent_env;
+use super::gh_release::GhRelease;
 use super::probe::HOOK_FILE;
 use super::proxy_env;
-use super::sandbox;
 
 /// Where the brief lands, relative to the Box workdir.
 const BRIEF_FILE: &str = ".moor/brief.md";
 /// Time allowed for removing the credential directory.
 const CLEANUP_DEADLINE: Duration = Duration::from_secs(30);
-/// Time allowed for checking and installing the sandbox tool on the Box.
+/// Time allowed for checking and installing the pinned `gh` on the Box.
 const INSTALL_DEADLINE: Duration = Duration::from_secs(300);
 
-/// The Box's operating system and architecture, read when the launch has a Proxy.
+/// The Box's operating system and architecture, read when the launch has a forge Proxy.
 type Platform = Option<Result<(String, String), Failure>>;
 
 /// The pane a launch opened, and its notices.
@@ -56,7 +56,7 @@ pub(super) fn launch(
     surface: &dyn Surface,
     profile: &dyn AgentProfile,
     req: &LaunchReq,
-    release: &NonoRelease,
+    release: &GhRelease,
 ) -> Result<SessionRef, EngineError> {
     let connect = driver
         .connect_argv(&req.handle, &req.worktree)
@@ -93,10 +93,6 @@ pub(super) fn launch(
             workdir: req.workdir.clone(),
             worktree: req.worktree.clone(),
             pane: Some(pane),
-            sandbox: ctx
-                .proxy
-                .is_some()
-                .then(|| format!("nono {}", sandbox::NONO_VERSION)),
             warnings,
         }),
         Err(mut f) => {
@@ -156,7 +152,7 @@ fn home_in(text: &str) -> Result<BoxPath, Failure> {
     BoxPath::restore(home).map_err(|e| fail("home", &e))
 }
 
-/// Looks the Box user up, and reads the Box platform when the launch has a Proxy, in one batch.
+/// Looks the Box user up, and reads the Box platform when the launch has a forge Proxy, in one batch.
 fn open_box(
     driver: &dyn Driver,
     req: &LaunchReq,
@@ -164,7 +160,8 @@ fn open_box(
 ) -> Result<((BoxPath, bool), Platform), Failure> {
     let environ = BoxPath::restore("/proc/self/environ").map_err(|e| fail("home", &e))?;
     let mut steps = vec![BoxStep::Peek(environ)];
-    if req.proxy.is_some() {
+    let forge = req.proxy.as_ref().is_some_and(|p| p.forge);
+    if forge {
         steps.push(install::platform_step(&req.dir_names().0));
     }
     let deadline = Deadline(INSTALL_DEADLINE);
@@ -172,10 +169,7 @@ fn open_box(
         .batch(&req.handle, connect, &steps, &req.worktree, deadline)
         .into_iter();
     let user = box_user(done.next())?;
-    let platform = req
-        .proxy
-        .is_some()
-        .then(|| install::parse_platform(done.next()));
+    let platform = forge.then(|| install::parse_platform(done.next()));
     Ok((user, platform))
 }
 
@@ -195,8 +189,8 @@ struct Launch<'a> {
     cred: &'a BoxPath,
     /// The agent's own temp directory on the Box.
     tmp: &'a BoxPath,
-    /// Fetches the sandbox tool for a Box that lacks it.
-    release: &'a NonoRelease,
+    /// Fetches the pinned `gh` for a Box that lacks it.
+    release: &'a GhRelease,
     /// The Box user is root.
     root: bool,
 }
@@ -239,21 +233,19 @@ impl Launch<'_> {
         let mut plan = Plan::default();
         let staged = self.plan(platform, &mut plan);
         let warnings = self.execute(connect, &plan)?;
-        let Staged {
-            sandboxed,
-            hooks,
-            preseed,
-        } = staged?;
+        let Staged { hooks, preseed } = staged?;
         let argv = self.argv();
         let exec = self.exec_env()?;
         let lines = self.proxy_lines()?;
+        let env = agent_env::export_lines(&exec.vars, self.root, &exec.unset);
+        let env = env.map_err(|e| fail("script", &e))?;
         let script = script_stripping(
             (cred, self.tmp),
             ctx,
             &hooks,
             &preseed,
             &argv,
-            (&lines, sandboxed.as_ref(), &exec.unset),
+            (&lines, &env, &exec.unset),
         );
         let script = script.map_err(|e| fail("script", &e))?;
         let line = format!(
@@ -284,9 +276,9 @@ fn script(
     hooks: &BoxSetup,
     preseed: &BoxSetup,
     argv: &[String],
-    (proxy, sandbox): (&[String], Option<&BoxPath>),
+    (proxy, env): (&[String], &[String]),
 ) -> Result<String, NameError> {
-    script_stripping(paths, ctx, hooks, preseed, argv, (proxy, sandbox, &[]))
+    script_stripping(paths, ctx, hooks, preseed, argv, (proxy, env, &[]))
 }
 
 /// The line that puts the agent's install directories on the Box's `PATH`, in the launch script
@@ -296,15 +288,15 @@ const AGENT_PATH_LINE: &str = "export PATH=\"$HOME/.local/bin:$HOME/.bun/bin:$PA
 /// The script the Box runs under `sh`; the credential directory goes once the brief is
 /// installed, and at exit or on a hangup, interrupt or terminate before then. With
 /// `proxy` lines the directory stays until the agent exits, since the CA bundle and the CA
-/// certificate live in it. With a `sandbox` profile the agent runs under `nono`.
-/// The `strip_env` names are unset before anything else runs.
+/// certificate live in it. The `strip_env` names and crabbox's own names are unset before anything
+/// else runs, and the `env` exports run just before the agent.
 fn script_stripping(
     (cred, tmp): (&BoxPath, &BoxPath),
     ctx: &LaunchCtx,
     hooks: &BoxSetup,
     preseed: &BoxSetup,
     argv: &[String],
-    (proxy, sandbox, strip_env): (&[String], Option<&BoxPath>, &[String]),
+    (proxy, env, strip_env): (&[String], &[String], &[String]),
 ) -> Result<String, NameError> {
     let workdir = ctx.workdir.as_str();
     let moor = quote(BoxPath::under(workdir, ".moor")?.as_str());
@@ -331,33 +323,23 @@ fn script_stripping(
         AGENT_PATH_LINE.to_owned(),
         format!("export TMPDIR={tmp} CLAUDE_CODE_TMPDIR={tmp}"),
     ];
-    // The platform's secrets go before anything else runs, sandboxed or not.
+    // The platform's secrets and crabbox's names go before anything else runs.
     let mut at = 4;
     if !strip_env.is_empty() {
         let names = strip_env.iter().map(|n| quote(n)).collect::<Vec<_>>();
         lines.insert(at, format!("unset {}", names.join(" ")));
         at += 1;
     }
+    for line in agent_env::clear_lines() {
+        lines.insert(at, line);
+        at += 1;
+    }
     if proxy.is_empty() {
         lines.insert(at + 1, remove);
     }
     lines.extend(proxy.iter().cloned());
-    let launcher = BoxPath::under(ctx.home.as_str(), ".local/bin/nono")?;
-    if sandbox.is_some() {
-        lines.extend(sandbox::harden_lines());
-        lines.extend(sandbox::namespace_lines());
-    }
-    let agent = sandbox.map_or_else(|| agent.clone(), |at| sandbox::wrap(&launcher, at, &agent));
-    let prefix = if sandbox.is_some() {
-        format!("${} ", sandbox::NAMESPACE_VAR)
-    } else {
-        String::new()
-    };
-    lines.push(format!(
-        "cd {} && {prefix}{}",
-        quote(workdir),
-        command_line(&agent)
-    ));
+    lines.extend(env.iter().cloned());
+    lines.push(format!("cd {} && {}", quote(workdir), command_line(&agent)));
     Ok(lines.join("\n"))
 }
 

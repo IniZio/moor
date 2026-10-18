@@ -144,7 +144,6 @@ fn record_session(
     session: SessionRef,
 ) -> Result<AgentLaunchView, CommandError> {
     let id = row.id;
-    let sandbox = session.sandbox.clone();
     let sref = if session.id.is_empty() {
         format!("moor-{}", id.get())
     } else {
@@ -167,7 +166,6 @@ fn record_session(
     Ok(AgentLaunchView {
         launched: true,
         session: Some(sref),
-        sandbox,
         reason: None,
     })
 }
@@ -189,7 +187,6 @@ fn record_failure(
     Ok(AgentLaunchView {
         launched: false,
         session: None,
-        sandbox: None,
         reason: Some(failure),
     })
 }

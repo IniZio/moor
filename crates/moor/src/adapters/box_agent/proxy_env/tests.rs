@@ -148,7 +148,7 @@ fn the_profile_env_comes_after_the_proxy_env() {
 }
 
 #[test]
-fn rule_and_repo_env_is_left_to_the_sandbox_profile() {
+fn rule_and_repo_env_is_left_to_the_launch_script() {
     let text = lines_for(None).join("\n");
     assert!(!text.contains("QUOTED"), "{text}");
     assert!(!text.contains("export GH_TOKEN="), "{text}");

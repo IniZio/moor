@@ -2,7 +2,7 @@
 
 use moor_core::seam::engine::LaunchNotice;
 
-use super::super::nono_release::GH_VERSION;
+use super::super::gh_release::GH_VERSION;
 
 /// Where `gh` lives, relative to the Box home.
 pub(super) const GH_PATH: &str = ".local/bin/gh";

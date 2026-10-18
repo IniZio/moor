@@ -2,6 +2,28 @@ use std::time::Duration;
 
 use super::*;
 
+/// Every proxy and CA variable name the prelude may export.
+const PASS_VARS: &[&str] = &[
+    "HTTPS_PROXY",
+    "HTTP_PROXY",
+    "https_proxy",
+    "http_proxy",
+    "NO_PROXY",
+    "no_proxy",
+    "NODE_USE_ENV_PROXY",
+    "SSL_CERT_FILE",
+    "CURL_CA_BUNDLE",
+    "REQUESTS_CA_BUNDLE",
+    "GIT_SSL_CAINFO",
+    "NODE_EXTRA_CA_CERTS",
+    "YARN_HTTPS_PROXY",
+    "YARN_HTTP_PROXY",
+    "YARN_CA_FILE_PATH",
+    "YARN_CACHE_FOLDER",
+    "YARN_GLOBAL_FOLDER",
+    "npm_config_cache",
+];
+
 fn path(s: &str) -> BoxPath {
     BoxPath::restore(s).unwrap()
 }

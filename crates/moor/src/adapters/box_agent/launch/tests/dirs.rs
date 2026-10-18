@@ -11,7 +11,7 @@ use moor_core::seam::surface::Surface;
 use moor_core::{BoxHandle, BoxPath, ProviderId, TaskId, TaskName};
 
 use crate::adapters::box_agent::claude::Claude;
-use crate::adapters::box_agent::nono_release::fake::ready_release;
+use crate::adapters::box_agent::gh_release::fake::ready_release;
 use crate::adapters::box_agent::BoxAgent;
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;

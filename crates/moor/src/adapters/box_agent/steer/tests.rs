@@ -10,7 +10,7 @@ use moor_core::seam::surface::{PaneCmd, Surface, SurfaceError};
 use moor_core::{BoxHandle, BoxPath, TaskName};
 
 use crate::adapters::box_agent::claude::Claude;
-use crate::adapters::box_agent::nono_release::fake::offline_release;
+use crate::adapters::box_agent::gh_release::fake::offline_release;
 use crate::adapters::box_agent::BoxAgent;
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
@@ -44,7 +44,6 @@ fn surface(reads: Vec<Result<PaneObs, SurfaceError>>) -> (Arc<FakeSurface>, Sess
         workdir: BoxPath::under("/work", "box-1").unwrap(),
         worktree: PathBuf::from("/host/wt"),
         pane: Some(pane),
-        sandbox: None,
         warnings: Vec::new(),
     };
     (Arc::new(s), session)

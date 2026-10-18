@@ -312,24 +312,10 @@ fn start_prints_inline_warnings_and_promotions() {
 }
 
 #[test]
-fn start_names_the_sandbox_a_launched_agent_runs_under() {
+fn start_keeps_its_output_for_a_launched_agent() {
     let v = json!({
         "task": lifecycle_task("alpha", "working", Some("ready")),
-        "agent": {"launched": true, "session": "s", "sandbox": "nono 0.80.0", "reason": null}
-    });
-    let (out, _) = render(&Response::ok("start", Some(v)), false);
-    assert_eq!(
-        out,
-        "started alpha (#7): working, box ready\nopen it with: moor open alpha\n\
-         agent: launched under nono 0.80.0\n"
-    );
-}
-
-#[test]
-fn start_keeps_its_output_for_an_unsandboxed_agent() {
-    let v = json!({
-        "task": lifecycle_task("alpha", "working", Some("ready")),
-        "agent": {"launched": true, "session": "s", "sandbox": null, "reason": null}
+        "agent": {"launched": true, "session": "s", "reason": null}
     });
     let (out, _) = render(&Response::ok("start", Some(v)), false);
     assert_eq!(
@@ -339,22 +325,22 @@ fn start_keeps_its_output_for_an_unsandboxed_agent() {
 }
 
 #[test]
-fn start_shows_a_sandbox_step_failure_as_a_warning() {
+fn start_shows_a_launch_step_failure_as_a_warning() {
     let reason = LaunchFailure {
-        step: "sandbox".to_owned(),
-        message: "nono install failed".to_owned(),
+        step: "hooks".to_owned(),
+        message: "hook install failed".to_owned(),
         tail: None,
         at: "2026-01-01T00:00:00Z".to_owned(),
     };
     let v = json!({
         "task": lifecycle_task("alpha", "working", Some("ready")),
-        "agent": {"launched": false, "session": null, "sandbox": null, "reason": reason},
+        "agent": {"launched": false, "session": null, "reason": reason},
         "warnings_inline": [reason.text()]
     });
     let (out, _) = render(&Response::ok("start", Some(v)), false);
     assert!(!out.contains("launched under"));
     assert!(out.ends_with(
-        "warning: agent dispatch failed: sandbox: nono install failed; re-run start to retry\n"
+        "warning: agent dispatch failed: hooks: hook install failed; re-run start to retry\n"
     ));
 }
 

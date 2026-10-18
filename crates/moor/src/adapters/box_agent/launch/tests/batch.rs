@@ -1,4 +1,5 @@
-//! A launch costs at most two Box calls after the connect lookup, and the nonce stays off argv.
+//! A launch without a missing `gh` costs two Box calls after the connect lookup, and the nonce
+//! stays off argv.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -11,11 +12,8 @@ use moor_core::seam::surface::Surface;
 use moor_core::{BoxHandle, BoxPath, ProviderId, Secret, TaskId, TaskName};
 
 use crate::adapters::box_agent::claude::Claude;
-use crate::adapters::box_agent::nono_release::fake::{
-    ready_release, release_of, tarball, FakeFetch,
-};
-use crate::adapters::box_agent::nono_release::NonoRelease;
-use crate::adapters::box_agent::sandbox::NOT_INSTALLED;
+use crate::adapters::box_agent::gh_release::fake::ready_release;
+use crate::adapters::box_agent::gh_release::GhRelease;
 use crate::adapters::box_agent::BoxAgent;
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
@@ -82,7 +80,7 @@ fn req(s: &FakeSurface, proxy: bool) -> LaunchReq {
     }
 }
 
-fn agent(d: &Arc<FakeDriver>, s: &Arc<FakeSurface>, release: Arc<NonoRelease>) -> BoxAgent {
+fn agent(d: &Arc<FakeDriver>, s: &Arc<FakeSurface>, release: Arc<GhRelease>) -> BoxAgent {
     BoxAgent::new(
         d.clone(),
         s.clone(),
@@ -98,16 +96,11 @@ struct Run {
     out: Result<(), EngineError>,
 }
 
-fn launch(proxy: bool, check_codes: &[i32], release: Arc<NonoRelease>) -> Run {
+fn launch(proxy: bool, check_codes: &[i32], release: Arc<GhRelease>) -> Run {
     let d = driver(FakeDriver::new().exec_results(exited(check_codes)));
     let s = Arc::new(FakeSurface::new("/r"));
     let out = agent(&d, &s, release).launch(&req(&s, proxy)).map(|_| ());
     Run { d, s, out }
-}
-
-fn missing_nono_release() -> Arc<NonoRelease> {
-    let fetch = Arc::new(FakeFetch::new(Ok(tarball(b"the binary"))));
-    Arc::new(release_of(&fetch, &tarball(b"the binary")))
 }
 
 fn box_calls(d: &FakeDriver) -> Vec<String> {
@@ -139,75 +132,6 @@ fn a_launch_without_a_proxy_makes_two_batch_calls_after_the_connect_lookup() {
     assert_connect_argv_reused(&run.d);
 }
 
-#[test]
-fn a_missing_nono_adds_only_the_upload_and_the_recheck_to_the_third_batch() {
-    let run = launch(true, &[0, 0, NOT_INSTALLED, 0], missing_nono_release());
-    run.out.unwrap();
-    assert_eq!(
-        box_calls(&run.d),
-        ["connect_argv", "batch", "batch", "batch"]
-    );
-    assert_connect_argv_reused(&run.d);
-    let puts = run.d.puts();
-    let first = puts.first().expect("a put");
-    assert_eq!(first.1.as_str(), "/home/box/.local/bin/nono");
-    assert_eq!(first.2, b"the binary");
-    assert_eq!(first.3, 0o755);
-    let execs = run.d.execs();
-    let scripts: Vec<_> = execs.iter().filter_map(|e| e.1.argv.get(2)).collect();
-    assert_eq!(scripts.len(), 4);
-    assert_eq!(scripts.get(3), scripts.get(2));
-}
-
-#[test]
-fn a_failed_recheck_refuses_the_launch_like_a_failed_first_check() {
-    let run = launch(true, &[0, 0, NOT_INSTALLED, 5], missing_nono_release());
-    let message = match run.out {
-        Err(EngineError::Failed {
-            step: "sandbox",
-            message,
-        }) => message,
-        other => format!("unexpected {other:?}"),
-    };
-    assert!(message.contains("Landlock"), "{message}");
-    assert!(run.s.opened().is_empty());
-}
-
-#[test]
-fn a_failed_nono_upload_is_a_sandbox_failure_and_stops_the_batch() {
-    let failing = FakeDriver::new()
-        .exec_results(exited(&[0, 0, NOT_INSTALLED]))
-        .fail_put(DriverError::Quota("upload broke".to_owned()));
-    let d = driver(failing);
-    let s = Arc::new(FakeSurface::new("/r"));
-    let out = agent(&d, &s, missing_nono_release()).launch(&req(&s, true));
-    match out {
-        Err(EngineError::Failed {
-            step: "sandbox",
-            message,
-        }) => assert!(message.contains("upload broke"), "{message}"),
-        other => unreachable!("unexpected {other:?}"),
-    }
-    let calls = box_calls(&d);
-    let launch_calls = calls.iter().take(4).map(String::as_str);
-    assert!(launch_calls.eq(["connect_argv", "batch", "batch", "batch"]));
-}
-
-#[test]
-fn a_failed_check_refuses_the_launch_before_anything_is_uploaded() {
-    let run = launch(true, &[0, 0, 5], ready_release());
-    let message = match run.out {
-        Err(EngineError::Failed {
-            step: "sandbox",
-            message,
-        }) => message,
-        other => format!("unexpected {other:?}"),
-    };
-    assert!(message.contains("Landlock"), "{message}");
-    assert!(run.d.puts().is_empty());
-    assert!(run.s.opened().is_empty());
-}
-
 fn agent_failure(run: Run) -> String {
     match run.out {
         Err(EngineError::Failed {
@@ -220,7 +144,7 @@ fn agent_failure(run: Run) -> String {
 
 #[test]
 fn a_missing_agent_refuses_a_proxy_launch_before_anything_is_uploaded() {
-    let run = launch(true, &[0, 1], ready_release());
+    let run = launch(true, &[1], ready_release());
     assert_eq!(
         box_calls(&run.d),
         ["connect_argv", "batch", "batch", "exec"]
@@ -284,21 +208,6 @@ fn the_nonce_reaches_the_box_only_through_its_staged_file() {
         .map(|p| (p.1.as_str().to_owned(), p.3))
         .collect();
     assert_eq!(holders, [(format!("{CRED}/proxy-nonce"), 0o600)]);
-}
-
-const GUARD: &str = "[ -r /proc/self/environ ] && [ -n \"$HOME\" ] || exit 1;";
-
-#[test]
-fn the_platform_script_does_nothing_unless_the_box_has_a_home() {
-    let run = launch(true, &[0, 0], ready_release());
-    run.out.unwrap();
-    let execs = run.d.execs();
-    let script = execs
-        .iter()
-        .flat_map(|e| e.1.argv.iter())
-        .find(|a| a.contains("mkdir"))
-        .expect("platform script");
-    assert!(script.starts_with(GUARD), "{script}");
 }
 
 #[test]

@@ -11,7 +11,7 @@ use moor_core::seam::surface::{Surface, SurfaceError};
 use moor_core::{BoxHandle, BoxPath, ProviderId, Secret, TaskId, TaskName};
 
 use crate::adapters::box_agent::claude::Claude;
-use crate::adapters::box_agent::nono_release::fake::ready_release;
+use crate::adapters::box_agent::gh_release::fake::ready_release;
 use crate::adapters::box_agent::proxy_env;
 use crate::adapters::box_agent::BoxAgent;
 use crate::testing::clock::FakeClock;
@@ -380,7 +380,7 @@ impl Scratch {
             &setup(hook_step),
             &setup("true"),
             &[],
-            (proxy, None),
+            (proxy, &[]),
         )
         .unwrap()
     }
@@ -592,9 +592,7 @@ fn the_agent_gets_the_proxy_env_while_the_cred_dir_lives_until_exit() {
     assert!(b.cred_gone());
 }
 
-#[path = "sandbox_tests.rs"]
-mod sandbox_tests;
-#[path = "secret_tests.rs"]
-mod secret_tests;
-
 mod batch;
+mod env_tests;
+mod proxy_launch_tests;
+mod secret_tests;

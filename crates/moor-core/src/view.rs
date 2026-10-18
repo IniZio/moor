@@ -176,8 +176,6 @@ pub struct AgentLaunchView {
     pub launched: bool,
     /// Agent session id.
     pub session: Option<String>,
-    /// The sandbox the agent runs under, such as `nono 0.80.0`; none when unsandboxed.
-    pub sandbox: Option<String>,
     /// Why the launch failed, when it did.
     pub reason: Option<LaunchFailure>,
 }
