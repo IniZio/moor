@@ -10,7 +10,7 @@ use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use moor_core::TaskId;
+use moor_core::BoxId;
 use nono_proxy::config::PreloadedCa;
 use nono_proxy::tls_intercept::EphemeralCa;
 use zeroize::Zeroizing;
@@ -59,12 +59,12 @@ impl TaskCa {
 }
 
 /// `<state_dir>/proxy/<task>/`, where the Task's CA lives.
-pub(crate) fn ca_dir(state_dir: &Path, task: TaskId) -> PathBuf {
+pub(crate) fn ca_dir(state_dir: &Path, task: BoxId) -> PathBuf {
     state_dir.join("proxy").join(task.get().to_string())
 }
 
 /// Path of the Task's CA certificate, which the Box trusts.
-pub(crate) fn cert_path(state_dir: &Path, task: TaskId) -> PathBuf {
+pub(crate) fn cert_path(state_dir: &Path, task: BoxId) -> PathBuf {
     ca_dir(state_dir, task).join(CERT_FILE)
 }
 
@@ -74,7 +74,7 @@ pub(crate) fn cert_path(state_dir: &Path, task: TaskId) -> PathBuf {
 ///
 /// A half-present or unparsable CA is an error naming the file: the Box
 /// trusts the old certificate, so a silent replacement would break it.
-pub(crate) fn load_or_create(state_dir: &Path, task: TaskId) -> std::io::Result<TaskCa> {
+pub(crate) fn load_or_create(state_dir: &Path, task: BoxId) -> std::io::Result<TaskCa> {
     let dir = ca_dir(state_dir, task);
     DirBuilder::new().recursive(true).mode(0o700).create(&dir)?;
     std::fs::set_permissions(&dir, Permissions::from_mode(0o700))?;
@@ -89,7 +89,7 @@ pub(crate) fn load_or_create(state_dir: &Path, task: TaskId) -> std::io::Result<
 }
 
 /// Removes the Task's CA directory and everything in it; Ok if absent.
-pub(crate) fn remove(state_dir: &Path, task: TaskId) -> std::io::Result<()> {
+pub(crate) fn remove(state_dir: &Path, task: BoxId) -> std::io::Result<()> {
     match std::fs::remove_dir_all(ca_dir(state_dir, task)) {
         Err(e) if e.kind() == ErrorKind::NotFound => Ok(()),
         other => other,
@@ -113,7 +113,7 @@ fn invalid(path: &Path) -> Error {
 }
 
 /// Generates a CA and writes cert and key atomically, key first.
-fn create(dir: &Path, key_path: &Path, cert_path: &Path, task: TaskId) -> std::io::Result<TaskCa> {
+fn create(dir: &Path, key_path: &Path, cert_path: &Path, task: BoxId) -> std::io::Result<TaskCa> {
     let cn = format!("moor task {}", task.get());
     let ca = EphemeralCa::generate_with_cn(&cn, VALIDITY)
         .map_err(|_| Error::other("proxy CA generation failed"))?;

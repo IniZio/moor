@@ -2,7 +2,7 @@
 
 use std::os::unix::fs::PermissionsExt;
 
-use moor_core::TaskId;
+use moor_core::BoxId;
 use nono_proxy::tls_intercept::EphemeralCa;
 
 use super::*;
@@ -14,8 +14,8 @@ fn mode(path: &Path) -> u32 {
 #[test]
 fn reload_returns_same_cert() {
     let state = tempfile::tempdir().unwrap();
-    let first = load_or_create(state.path(), TaskId::new(7)).unwrap();
-    let second = load_or_create(state.path(), TaskId::new(7)).unwrap();
+    let first = load_or_create(state.path(), BoxId::new(7)).unwrap();
+    let second = load_or_create(state.path(), BoxId::new(7)).unwrap();
     assert_eq!(first.cert_pem(), second.cert_pem());
     assert_eq!(*first.key_der, *second.key_der);
 }
@@ -23,8 +23,8 @@ fn reload_returns_same_cert() {
 #[test]
 fn files_and_dir_are_owner_only() {
     let state = tempfile::tempdir().unwrap();
-    load_or_create(state.path(), TaskId::new(7)).unwrap();
-    let dir = ca_dir(state.path(), TaskId::new(7));
+    load_or_create(state.path(), BoxId::new(7)).unwrap();
+    let dir = ca_dir(state.path(), BoxId::new(7));
     assert_eq!(dir, state.path().join("proxy").join("7"));
     assert_eq!(mode(&dir), 0o700);
     assert_eq!(mode(&dir.join("ca-key.pem")), 0o600);
@@ -34,8 +34,8 @@ fn files_and_dir_are_owner_only() {
 #[test]
 fn loose_modes_are_tightened() {
     let state = tempfile::tempdir().unwrap();
-    load_or_create(state.path(), TaskId::new(7)).unwrap();
-    let dir = ca_dir(state.path(), TaskId::new(7));
+    load_or_create(state.path(), BoxId::new(7)).unwrap();
+    let dir = ca_dir(state.path(), BoxId::new(7));
     for (p, m) in [
         (&dir, 0o755),
         (&dir.join("ca-key.pem"), 0o644),
@@ -43,7 +43,7 @@ fn loose_modes_are_tightened() {
     ] {
         std::fs::set_permissions(p, Permissions::from_mode(m)).unwrap();
     }
-    load_or_create(state.path(), TaskId::new(7)).unwrap();
+    load_or_create(state.path(), BoxId::new(7)).unwrap();
     assert_eq!(mode(&dir), 0o700);
     assert_eq!(mode(&dir.join("ca-key.pem")), 0o600);
     assert_eq!(mode(&dir.join("ca.pem")), 0o600);
@@ -52,19 +52,19 @@ fn loose_modes_are_tightened() {
 #[test]
 fn remove_deletes_and_is_idempotent() {
     let state = tempfile::tempdir().unwrap();
-    load_or_create(state.path(), TaskId::new(7)).unwrap();
-    remove(state.path(), TaskId::new(7)).unwrap();
-    assert!(!ca_dir(state.path(), TaskId::new(7)).exists());
-    remove(state.path(), TaskId::new(7)).unwrap();
+    load_or_create(state.path(), BoxId::new(7)).unwrap();
+    remove(state.path(), BoxId::new(7)).unwrap();
+    assert!(!ca_dir(state.path(), BoxId::new(7)).exists());
+    remove(state.path(), BoxId::new(7)).unwrap();
 }
 
 #[test]
 fn corrupt_key_errors_with_path_but_no_content() {
     let state = tempfile::tempdir().unwrap();
-    let ca = load_or_create(state.path(), TaskId::new(7)).unwrap();
-    let key_path = ca_dir(state.path(), TaskId::new(7)).join("ca-key.pem");
+    let ca = load_or_create(state.path(), BoxId::new(7)).unwrap();
+    let key_path = ca_dir(state.path(), BoxId::new(7)).join("ca-key.pem");
     std::fs::write(&key_path, "SECRET-GARBAGE-123").unwrap();
-    let err = load_or_create(state.path(), TaskId::new(7)).unwrap_err();
+    let err = load_or_create(state.path(), BoxId::new(7)).unwrap_err();
     let text = err.to_string();
     assert!(text.contains(&key_path.display().to_string()), "{text}");
     assert!(!text.contains("SECRET-GARBAGE-123"), "{text}");
@@ -78,21 +78,21 @@ fn corrupt_key_errors_with_path_but_no_content() {
 #[test]
 fn mismatched_key_and_cert_error() {
     let state = tempfile::tempdir().unwrap();
-    load_or_create(state.path(), TaskId::new(7)).unwrap();
-    let dir = ca_dir(state.path(), TaskId::new(7));
+    load_or_create(state.path(), BoxId::new(7)).unwrap();
+    let dir = ca_dir(state.path(), BoxId::new(7));
     let other = EphemeralCa::generate().unwrap();
     std::fs::write(dir.join("ca-key.pem"), other.key_pem().as_bytes()).unwrap();
-    let err = load_or_create(state.path(), TaskId::new(7)).unwrap_err();
+    let err = load_or_create(state.path(), BoxId::new(7)).unwrap_err();
     assert!(err.to_string().contains("ca-key.pem"));
 }
 
 #[test]
 fn only_one_file_present_errors_without_regenerating() {
     let state = tempfile::tempdir().unwrap();
-    load_or_create(state.path(), TaskId::new(7)).unwrap();
-    let dir = ca_dir(state.path(), TaskId::new(7));
+    load_or_create(state.path(), BoxId::new(7)).unwrap();
+    let dir = ca_dir(state.path(), BoxId::new(7));
     std::fs::remove_file(dir.join("ca.pem")).unwrap();
-    let err = load_or_create(state.path(), TaskId::new(7)).unwrap_err();
+    let err = load_or_create(state.path(), BoxId::new(7)).unwrap_err();
     assert!(err.to_string().contains("ca.pem"));
     assert!(!dir.join("ca.pem").exists());
 }
@@ -100,7 +100,7 @@ fn only_one_file_present_errors_without_regenerating() {
 #[test]
 fn debug_shows_no_key_or_cert() {
     let state = tempfile::tempdir().unwrap();
-    let ca = load_or_create(state.path(), TaskId::new(7)).unwrap();
+    let ca = load_or_create(state.path(), BoxId::new(7)).unwrap();
     let text = format!("{ca:?}");
     assert!(!text.contains("PRIVATE KEY"));
     assert!(!text.contains("CERTIFICATE"));
@@ -110,7 +110,7 @@ fn debug_shows_no_key_or_cert() {
 #[test]
 fn preloaded_round_trips_and_names_the_task() {
     let state = tempfile::tempdir().unwrap();
-    let ca = load_or_create(state.path(), TaskId::new(7)).unwrap();
+    let ca = load_or_create(state.path(), BoxId::new(7)).unwrap();
     let pre = ca.preloaded();
     assert_eq!(pre.cert_pem, ca.cert_pem());
     let rebuilt = EphemeralCa::from_existing(&pre.key_der, &pre.cert_pem).unwrap();

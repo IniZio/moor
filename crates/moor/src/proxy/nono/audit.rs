@@ -10,7 +10,7 @@ use std::sync::Mutex;
 use moor_core::config::proxy::{request_shape, ResolvedRule};
 use moor_core::domain::event::Event;
 use moor_core::seam::forge::ForgeRepo;
-use moor_core::TaskId;
+use moor_core::BoxId;
 use nono::undo::{NetworkAuditDecision, NetworkAuditDenialCategory, NetworkAuditEvent};
 use serde_json::Value;
 
@@ -165,7 +165,7 @@ pub(crate) struct TaskSink<'a> {
     /// Store receiving the Task's events.
     pub(crate) store: &'a Store,
     /// The Task the proxy serves.
-    pub(crate) task: TaskId,
+    pub(crate) task: BoxId,
 }
 
 impl EgressSink for TaskSink<'_> {

@@ -11,7 +11,7 @@ use moor_core::seam::driver::{
     Released, SleepOutcome, TunnelHandle,
 };
 use moor_core::seam::proc::Deadline;
-use moor_core::{BoxHandle, BoxPath, ProviderId, TaskId};
+use moor_core::{BoxHandle, BoxId, BoxPath, ProviderId};
 
 use super::super::tests::{unrestartable, World, FIRST_TUNNEL_PID, NONCE_TEXT};
 use super::super::{start, Stop, LEASE};
@@ -97,7 +97,7 @@ struct Rival {
     /// Database the rival opens.
     db: PathBuf,
     /// The contested task.
-    task: TaskId,
+    task: BoxId,
     /// Set once the rival wins the lease.
     won: Arc<AtomicBool>,
 }

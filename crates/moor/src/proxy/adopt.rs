@@ -8,7 +8,7 @@ use moor_core::domain::boxes::BoxState;
 use moor_core::seam::clock::Clock;
 use moor_core::seam::proc::Proc;
 use moor_core::seam::proxy_host::ProxyHost;
-use moor_core::TaskId;
+use moor_core::BoxId;
 
 use super::detached::{read_spec, DetachedSupervisor};
 use crate::store::{ProxyRow, Store, STORE_FILE};
@@ -43,7 +43,7 @@ pub(crate) fn reconcile(
         (Ok(rows), Ok(tasks)) => (rows, tasks),
         (Err(e), _) | (_, Err(e)) => return vec![format!("cannot read the proxy state: {e}")],
     };
-    let boxes: Vec<(TaskId, BoxState)> = tasks
+    let boxes: Vec<(BoxId, BoxState)> = tasks
         .iter()
         .filter_map(|t| Some((t.id, t.boxed.as_ref()?.state)))
         .collect();
@@ -94,7 +94,7 @@ fn settle(
     host: &DetachedSupervisor,
     store: &Store,
     state_dir: &Path,
-    task: TaskId,
+    task: BoxId,
     fate: &Fate,
 ) -> Result<(), String> {
     match fate {

@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use moor_core::config::proxy::{EndpointRule, ResolvedInject, ResolvedRule};
 use moor_core::seam::clock::Ts;
-use moor_core::{Secret, TaskId};
+use moor_core::{BoxId, Secret};
 use tempfile::TempDir;
 
 use super::upstream;
@@ -15,7 +15,7 @@ use crate::testing::clock::FakeClock;
 
 const SECRET: &str = "s3cr3t-credential-value-7f3a";
 const NONCE: &str = "nonce_AbCdEf-0123456789";
-const TASK: TaskId = TaskId::new(7);
+const TASK: BoxId = BoxId::new(7);
 
 /// Sends `GET <path>` with the Box placeholder; returns the status and what the upstream saw.
 fn fetch(path: &str) -> (Result<u16, String>, Vec<upstream::Seen>) {

@@ -12,7 +12,7 @@ use moor_core::seam::proxy_host::{
     ProxyEndpoint, ProxyHost, ProxyHostError, ProxySpec, ProxyStatus,
 };
 use moor_core::seam::rng::Rng;
-use moor_core::{Secret, TaskId};
+use moor_core::{BoxId, Secret};
 
 use crate::proxy::nono::ca::load_or_create;
 use crate::store::{ProxyRow, Reserve, Store, StoreError, STORE_FILE};
@@ -134,7 +134,7 @@ impl DetachedSupervisor {
     }
 
     /// Poll until the row is gone; false when it outlasts [`STOP_WAIT`].
-    fn wait_gone(&self, store: &Store, task: TaskId) -> bool {
+    fn wait_gone(&self, store: &Store, task: BoxId) -> bool {
         let start = self.clock.instant();
         loop {
             if !matches!(store.proxy(task), Ok(Some(_))) {
@@ -251,7 +251,7 @@ impl ProxyHost for DetachedSupervisor {
     }
 
     /// Classify the Task's proxy row without starting or changing anything.
-    fn status(&self, task: TaskId) -> Result<ProxyStatus, ProxyHostError> {
+    fn status(&self, task: BoxId) -> Result<ProxyStatus, ProxyHostError> {
         let failed = |e: &StoreError| {
             ProxyHostError::Failed(format!("the proxy state could not be used: {e}"))
         };
@@ -275,7 +275,7 @@ impl ProxyHost for DetachedSupervisor {
     /// was written in the current host boot, because a pid alone may have been reused. The row is
     /// removed whether or not the supervisor exited in time; a supervisor that outlasts the wait
     /// is reported as incomplete and keeps its CA directory. With no row only the CA directory is removed.
-    fn stop(&self, task: TaskId) -> Result<(), ProxyHostError> {
+    fn stop(&self, task: BoxId) -> Result<(), ProxyHostError> {
         let incomplete = |reason: String| Err(ProxyHostError::Incomplete(reason));
         let store = match self.store() {
             Ok(store) => store,
@@ -322,7 +322,7 @@ impl ProxyHost for DetachedSupervisor {
 }
 
 /// Where the Task's proxy supervisor writes its log.
-pub(crate) fn log_path(state_dir: &Path, task: TaskId) -> PathBuf {
+pub(crate) fn log_path(state_dir: &Path, task: BoxId) -> PathBuf {
     state_dir.join("proxy").join(format!("{}.log", task.get()))
 }
 

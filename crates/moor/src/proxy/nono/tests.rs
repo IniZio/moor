@@ -6,7 +6,7 @@ mod passthrough;
 pub(crate) mod upstream;
 
 use moor_core::config::proxy::{EndpointRule, ResolvedInject, ResolvedRule};
-use moor_core::{Secret, TaskId};
+use moor_core::{BoxId, Secret};
 use nono_proxy::config::InjectMode;
 
 use super::*;
@@ -44,8 +44,8 @@ fn cfg_chained(
     chain: Option<Chain<'_>>,
 ) -> NonoConfig {
     let state = tempfile::tempdir().unwrap();
-    let ca = ca::load_or_create(state.path(), TaskId::new(3)).unwrap();
-    let dir = ca::ca_dir(state.path(), TaskId::new(3));
+    let ca = ca::load_or_create(state.path(), BoxId::new(3)).unwrap();
+    let dir = ca::ca_dir(state.path(), BoxId::new(3));
     let nonce = Secret::new(NONCE.as_bytes().to_vec());
     build_config(&NonoSpec {
         rules,
@@ -191,8 +191,8 @@ fn debug_hides_the_nonce() {
 #[test]
 fn non_utf8_nonce_is_refused_without_echoing_it() {
     let state = tempfile::tempdir().unwrap();
-    let ca = ca::load_or_create(state.path(), TaskId::new(3)).unwrap();
-    let dir = ca::ca_dir(state.path(), TaskId::new(3));
+    let ca = ca::load_or_create(state.path(), BoxId::new(3)).unwrap();
+    let dir = ca::ca_dir(state.path(), BoxId::new(3));
     let nonce = Secret::new(vec![0xff, 0xfe, b'k']);
     let cfg = build_config(&NonoSpec {
         rules: &[],

@@ -9,7 +9,7 @@ use moor_core::config::proxy::{ResolvedInject, ResolvedRule};
 use moor_core::domain::decision::{Decision, NewTask};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::forge::ForgeRepo;
-use moor_core::{Secret, TaskId, TaskName};
+use moor_core::{BoxId, BoxName, Secret};
 use nono::undo::NetworkAuditEvent;
 use nono_proxy::capture::{CredentialCaptureBackend as _, CredentialCaptureRequest};
 use serde_json::{json, Value};
@@ -290,11 +290,11 @@ fn approval_decisions_are_ignored() {
 }
 
 /// A store with one task and a proxy log, both in `dir`.
-fn task_sink_parts(dir: &Path) -> (Store, ProxyLog, TaskId) {
+fn task_sink_parts(dir: &Path) -> (Store, ProxyLog, BoxId) {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
     let store = Store::open(&dir.join("moor.db"), clock.clone()).unwrap();
     let new = NewTask {
-        name: TaskName::parse("t").unwrap(),
+        name: BoxName::parse("t").unwrap(),
         repo: "r".into(),
     };
     let task = store.apply(Decision::insert(new)).unwrap().task;
@@ -406,7 +406,7 @@ fn task_sink_records_method_and_category_without_the_path() {
 fn task_sink_swallows_store_errors() {
     let dir = tempfile::tempdir().unwrap();
     let (store, log, task) = task_sink_parts(dir.path());
-    let missing = TaskId::new(task.get() + 100);
+    let missing = BoxId::new(task.get() + 100);
     let sink = TaskSink {
         log: &log,
         store: &store,

@@ -7,7 +7,7 @@ use std::time::Duration;
 use moor_core::domain::decision::{Decision, NewTask};
 use moor_core::seam::clock::{Clock as _, Ts};
 use moor_core::seam::proxy_host::{ProxyHost as _, ProxySpec, ProxyStatus};
-use moor_core::{Secret, TaskId, TaskName};
+use moor_core::{BoxId, BoxName, Secret};
 
 use super::reconcile;
 use crate::proxy::detached::{write_spec, DetachedSupervisor, LEASE};
@@ -27,7 +27,7 @@ struct Fx {
     clock: Arc<FakeClock>,
     store: Store,
     host: DetachedSupervisor,
-    id: TaskId,
+    id: BoxId,
 }
 
 /// A Task with a ready Box and a recorded Proxy whose supervisor is `PID` in boot `BOOT`.
@@ -40,7 +40,7 @@ fn fx() -> Fx {
     let store = Store::open(&dir.path().join(STORE_FILE), clock.clone()).unwrap();
     let id = store
         .apply(Decision::insert(NewTask {
-            name: TaskName::parse("t").unwrap(),
+            name: BoxName::parse("t").unwrap(),
             repo: "r".into(),
         }))
         .unwrap()
@@ -69,7 +69,7 @@ fn fx() -> Fx {
     let shared = f.clock.clone();
     f.proc.on_daemon(move |d| {
         let store = Store::open(&state.join(STORE_FILE), shared.clone()).unwrap();
-        let task = TaskId::new(d.call.args.get(2).unwrap().parse().unwrap());
+        let task = BoxId::new(d.call.args.get(2).unwrap().parse().unwrap());
         store.claim_lease(task, "new-supervisor", LEASE).unwrap();
         let box_port = store.proxy(task).unwrap().unwrap().box_port;
         let ports = ProxyPorts {

@@ -14,7 +14,7 @@ use moor_core::domain::task::{SetupOutcome, TaskInput};
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::seam::driver::{AcquireReq, Driver};
 use moor_core::seam::proxy_host::ProxySpec;
-use moor_core::{BoxHandle, ProviderId, Secret, TaskId, TaskName};
+use moor_core::{BoxHandle, BoxId, BoxName, ProviderId, Secret};
 use ureq::Agent;
 
 use crate::proxy::detached::write_spec;
@@ -63,9 +63,9 @@ impl Drop for StopOnDrop {
 }
 
 /// Insert a task, give it a live box from `driver`, and reserve its proxy row.
-fn task_with_box(store: &Store, driver: &FakeDriver) -> (TaskId, BoxHandle) {
+fn task_with_box(store: &Store, driver: &FakeDriver) -> (BoxId, BoxHandle) {
     let nt = NewTask {
-        name: TaskName::parse("demo").unwrap(),
+        name: BoxName::parse("demo").unwrap(),
         repo: "r".into(),
     };
     let id = store.apply(Decision::insert(nt)).unwrap().task;
@@ -74,7 +74,7 @@ fn task_with_box(store: &Store, driver: &FakeDriver) -> (TaskId, BoxHandle) {
         .acquire(&AcquireReq {
             provider: provider.clone(),
             task: id,
-            name: TaskName::parse("demo").unwrap(),
+            name: BoxName::parse("demo").unwrap(),
             class: None,
             nonce: "abc123".into(),
             worktree: None,
@@ -154,7 +154,7 @@ fn wait_for<T>(what: &str, mut done: impl FnMut() -> Option<T>) -> T {
 }
 
 /// Event kinds recorded for `task`.
-fn kinds(store: &Store, task: TaskId) -> Vec<String> {
+fn kinds(store: &Store, task: BoxId) -> Vec<String> {
     let events = store.events(task, 100).unwrap();
     events.into_iter().map(|e| e.kind).collect()
 }
@@ -186,7 +186,7 @@ fn assert_refused(client: &Agent, up: &Upstream) {
 }
 
 /// The refusal is recorded as an event and the allowed request is logged.
-fn assert_audited(store: &Store, id: TaskId, dir: &Path) {
+fn assert_audited(store: &Store, id: BoxId, dir: &Path) {
     wait_for("a refused-egress event", || {
         kinds(store, id)
             .iter()
