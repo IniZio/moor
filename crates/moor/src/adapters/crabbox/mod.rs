@@ -22,6 +22,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
+use moor_core::box_key::BoxKey;
 use moor_core::name::{BoxHandle, BoxPath, ProviderId};
 use moor_core::seam::clock::Clock;
 use moor_core::seam::driver::{
@@ -164,9 +165,9 @@ const CLAIM_RACE_BUDGET: Duration = Duration::from_secs(15);
 /// Pause between retries of a claim race.
 const CLAIM_RACE_PAUSE: Duration = Duration::from_secs(1);
 
-/// Per-Task Box name: `moor-{name}-{nonce}`.
-fn box_name(req: &AcquireReq) -> String {
-    format!("moor-{}-{}", req.name.as_str(), req.nonce)
+/// Per-Box crabbox slug, `moor-{id}-{nonce}`; the Box name never enters it.
+fn slug(req: &AcquireReq) -> String {
+    BoxKey::new(req.task).slug(&req.nonce)
 }
 
 /// The handle for a Box named `name` under `provider`.
@@ -235,7 +236,7 @@ impl Driver for Crabbox {
     fn acquire(&self, req: &AcquireReq) -> Result<Acquired, DriverError> {
         self.require_version()?;
         let provider = req.provider.as_str();
-        let name = box_name(req);
+        let name = slug(req);
         let class = size_of(req.class.as_deref())?;
         let mut spec = Self::spec(ACQUIRE_DEADLINE).args(["warmup", "--provider", provider]);
         if let Some(dir) = &req.worktree {
@@ -255,7 +256,7 @@ impl Driver for Crabbox {
     }
 
     fn planned_handle(&self, req: &AcquireReq) -> BoxHandle {
-        handle_of(req.provider.as_str(), &box_name(req))
+        handle_of(req.provider.as_str(), &slug(req))
     }
 
     fn release(&self, handle: &BoxHandle) -> Result<Released, DriverError> {
@@ -286,6 +287,7 @@ impl Driver for Crabbox {
         Ok(items
             .into_iter()
             .map(|i| BoxListing {
+                id: BoxKey::id_from_slug(&i.name),
                 handle: handle_of(p, &i.name),
                 provider: Some(provider.clone()),
                 asleep: i.asleep,

@@ -2,7 +2,6 @@
 
 use std::path::Path;
 use std::sync::Arc;
-
 use std::time::Duration;
 
 use moor_core::domain::run::SyncMode;
@@ -15,6 +14,7 @@ use super::parse::{parse_list, parse_warmup};
 use super::Crabbox;
 use crate::testing::proc::{Reply, ScriptedProc};
 
+mod slug;
 mod workdir;
 
 const PROBE_DIR: &str = "/root/crabbox/cbx_1/app";
@@ -102,7 +102,7 @@ fn acquire_runs_warmup_and_builds_handle() {
     p.on(Tool::Crabbox, &["warmup"], Reply::Ok(WARMUP_OUT.to_owned()));
     probe(&p);
     let got = c.acquire(&req("sprites", Some("small"))).unwrap();
-    assert_eq!(got.handle.as_str(), "sprites/moor-t7-ab12cd");
+    assert_eq!(got.handle.as_str(), "sprites/moor-7-ab12cd");
     assert_eq!(got.workdir.as_str(), PROBE_DIR);
     let calls = p.calls();
     let args = &calls.first().unwrap().args;
@@ -113,7 +113,7 @@ fn acquire_runs_warmup_and_builds_handle() {
             "--provider",
             "sprites",
             "--slug",
-            "moor-t7-ab12cd",
+            "moor-7-ab12cd",
             "--class",
             "standard"
         ]
@@ -142,11 +142,11 @@ fn ssh_calls_carry_static_env() {
     p.on(Tool::Crabbox, &["stop"], Reply::Ok(String::new()));
     probe(&p);
     c.acquire(&req("ssh", None)).unwrap();
-    c.release(&BoxHandle::new("ssh/moor-t7-ab12cd")).unwrap();
+    c.release(&BoxHandle::new("ssh/moor-7-ab12cd")).unwrap();
     for call in p.calls() {
         assert!(
             call.env
-                .contains(&("CRABBOX_STATIC_ID".into(), "moor-t7-ab12cd".into())),
+                .contains(&("CRABBOX_STATIC_ID".into(), "moor-7-ab12cd".into())),
             "{call:?}"
         );
         assert!(call
