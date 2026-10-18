@@ -170,7 +170,7 @@ impl Surface for Herdr {
         base: Option<&str>,
     ) -> Result<Worktree, SurfaceError> {
         let cwd = repo.to_string_lossy();
-        let branch = format!("moor/{}", name.as_str());
+        let branch = moor_core::box_key::branch(name);
         let label = workspace_label(name);
         let mut args = vec![
             "worktree",
