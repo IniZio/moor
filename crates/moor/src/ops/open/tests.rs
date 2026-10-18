@@ -9,7 +9,7 @@ use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
 use moor_core::seam::surface::SurfaceError;
-use moor_core::{ErrorKind, ProviderId, TaskId, TaskName, TaskReq};
+use moor_core::{BoxId, BoxName, ErrorKind, ProviderId, TaskReq};
 
 use super::{connect, run};
 use crate::cx::Cx;
@@ -23,7 +23,7 @@ struct Fx {
     cx: Cx,
     driver: Arc<FakeDriver>,
     surface: Arc<FakeSurface>,
-    id: TaskId,
+    id: BoxId,
 }
 
 /// Task `t` with a live Box, working, placed in workspace `ws-9`.
@@ -47,7 +47,7 @@ fn fx_surfaced(driver: FakeDriver, surface: FakeSurface, workspace: Option<&str>
         Arc::new(ScriptedProc::new()),
     );
     let store = cx.store().unwrap();
-    let name = TaskName::parse("t").unwrap();
+    let name = BoxName::parse("t").unwrap();
     let id = store
         .apply(Decision::insert(NewTask {
             name: name.clone(),
@@ -109,7 +109,7 @@ fn asleep(f: &Fx) {
 
 fn req() -> TaskReq {
     TaskReq {
-        task: TaskName::parse("t").unwrap(),
+        task: BoxName::parse("t").unwrap(),
     }
 }
 
@@ -168,7 +168,7 @@ fn second_open_focuses_again_without_waking() {
 fn unknown_task_is_failed_and_not_focused() {
     let f = fx();
     let r = TaskReq {
-        task: TaskName::parse("nope").unwrap(),
+        task: BoxName::parse("nope").unwrap(),
     };
     let err = run(&f.cx, &r).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Failed);
@@ -279,7 +279,7 @@ fn connect_without_a_workspace_is_refused() {
 fn connect_unknown_task_is_failed() {
     let f = fx();
     let r = TaskReq {
-        task: TaskName::parse("nope").unwrap(),
+        task: BoxName::parse("nope").unwrap(),
     };
     let err = connect(&f.cx, &r).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Failed);

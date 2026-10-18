@@ -7,7 +7,7 @@ use std::io::Write as _;
 use std::path::Path;
 use std::time::Duration;
 
-use moor_core::name::TaskId;
+use moor_core::name::BoxId;
 use moor_core::seam::clock::Clock;
 use moor_core::ErrorKind;
 
@@ -35,7 +35,7 @@ impl BoxLock {
     pub(crate) fn acquire(
         clock: &dyn Clock,
         state: &Path,
-        task: TaskId,
+        task: BoxId,
         op: &str,
         wait: Duration,
     ) -> Result<Self, CommandError> {

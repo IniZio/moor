@@ -72,7 +72,7 @@ fn an_explicit_base_is_recorded_and_branched_from_as_its_commit() {
     let stored =
         w.cx.store()
             .unwrap()
-            .task(moor_core::TaskId::new(v.task.id))
+            .task(moor_core::BoxId::new(v.task.id))
             .unwrap()
             .unwrap();
     assert_eq!(stored.base.as_deref(), Some(SHA.trim()));

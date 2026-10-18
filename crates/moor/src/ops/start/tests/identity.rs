@@ -3,7 +3,7 @@ use std::path::Path;
 use moor_core::boxscript::quote;
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::Decision;
-use moor_core::TaskId;
+use moor_core::BoxId;
 
 use super::moor_yaml::script_base_yaml;
 use super::setup::{
@@ -52,7 +52,7 @@ fn identity_is_set_in_the_box_before_the_first_setup_line() {
 #[test]
 fn identity_is_set_again_when_the_box_is_re_provisioned() {
     let (w, v) = start_as(("Ann Dev", "a@x.io"), "setup: [a]\n", FakeDriver::new());
-    let id = TaskId::new(v.task.id);
+    let id = BoxId::new(v.task.id);
     let store = w.cx.store().unwrap();
     let wt = store.task(id).unwrap().unwrap().worktree.unwrap();
     std::fs::create_dir_all(&wt).unwrap();

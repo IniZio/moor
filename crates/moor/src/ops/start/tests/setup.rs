@@ -10,7 +10,7 @@ use moor_core::domain::task::TaskState;
 use moor_core::exec_env::SETUP_LINE_DEADLINE;
 use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
 use moor_core::seam::proc::{Deadline, Tool};
-use moor_core::{BoxHandle, ErrorKind, StartReq, TaskId};
+use moor_core::{BoxHandle, BoxId, ErrorKind, StartReq};
 
 use self::Step::{Cmd, Sync};
 use super::moor_yaml::script_base_yaml;
@@ -144,7 +144,7 @@ pub(super) fn script_argv(steps: &[&str]) -> Vec<String> {
         .to_vec()
 }
 
-pub(super) fn kinds(w: &World, id: TaskId) -> Vec<String> {
+pub(super) fn kinds(w: &World, id: BoxId) -> Vec<String> {
     let events = w.cx.store().unwrap().events(id, 50).unwrap();
     events.into_iter().map(|e| e.kind).collect()
 }
@@ -154,7 +154,7 @@ pub(super) fn warning_codes(w: &World) -> Vec<String> {
 }
 
 pub(super) fn failed_at_set(w: &World, v: &moor_core::view::StartView) -> bool {
-    let row = w.cx.store().unwrap().task(TaskId::new(v.task.id));
+    let row = w.cx.store().unwrap().task(BoxId::new(v.task.id));
     row.unwrap().unwrap().setup_failed_at.is_some()
 }
 
@@ -194,7 +194,7 @@ fn the_checkout_syncs_in_its_own_exec_and_setup_runs_without_syncing() {
     let wt =
         w.cx.store()
             .unwrap()
-            .task(TaskId::new(v.task.id))
+            .task(BoxId::new(v.task.id))
             .unwrap()
             .unwrap()
             .worktree;
@@ -222,7 +222,7 @@ fn a_failing_setup_leaves_a_working_task_and_runs_nothing_more() {
     assert_eq!(v.setup.line.as_deref(), Some("b"));
     assert_eq!(setup_execs(&w).len(), 1);
     assert!(warning_codes(&w).contains(&"setup_failed".to_owned()));
-    let id = TaskId::new(v.task.id);
+    let id = BoxId::new(v.task.id);
     let events = w.cx.store().unwrap().events(id, 50).unwrap();
     let failed = events.iter().find(|e| e.kind == "setup_failed").unwrap();
     assert_eq!(failed.payload.get("line"), Some(&serde_json::json!("b")));
@@ -236,7 +236,7 @@ fn a_failed_setup_copies_its_log_out_of_the_box_into_the_worktree() {
     let wt =
         w.cx.store()
             .unwrap()
-            .task(TaskId::new(v.task.id))
+            .task(BoxId::new(v.task.id))
             .unwrap()
             .unwrap()
             .worktree;
@@ -253,7 +253,7 @@ fn a_failing_setup_marks_the_task_and_a_later_clean_setup_clears_it() {
     let (w, v) = start_with("setup: [a]\n", driver);
     assert!(!v.setup.ok);
     assert!(failed_at_set(&w, &v));
-    let id = TaskId::new(v.task.id);
+    let id = BoxId::new(v.task.id);
     let store = w.cx.store().unwrap();
     // A re-provision reads `.moor.yaml` from the worktree, not the invocation repo.
     let wt = store.task(id).unwrap().unwrap().worktree.unwrap();
@@ -317,7 +317,7 @@ fn a_failing_setup_on_a_re_provisioned_working_task_records_the_failing_line() {
         Cmd(Ok(exit(1))),
     ]));
     let (w, v) = start_with("setup: [a]\n", driver);
-    let id = TaskId::new(v.task.id);
+    let id = BoxId::new(v.task.id);
     let store = w.cx.store().unwrap();
     let wt = store.task(id).unwrap().unwrap().worktree.unwrap();
     std::fs::create_dir_all(&wt).unwrap();
@@ -347,21 +347,21 @@ fn setup_holds_the_setup_intent_and_clears_it_after() {
     let (sink, path) = (Arc::clone(&seen), w.dir.path().join("moor.db"));
     w.driver.on_exec(move || {
         let store = Store::open(&path, Arc::new(SystemClock::real())).unwrap();
-        let row = store.task(TaskId::new(1)).unwrap().unwrap();
+        let row = store.task(BoxId::new(1)).unwrap().unwrap();
         sink.lock().unwrap().push(row.intent);
     });
     let v = run(&w.cx, &start_req()).unwrap();
     let pid = std::process::id();
     // The checkout sync, the credential-directory mkdir and the setup script all run under it.
     assert_eq!(*seen.lock().unwrap(), [Some(Intent::Setup { pid }); 3]);
-    let row = w.cx.store().unwrap().task(TaskId::new(v.task.id));
+    let row = w.cx.store().unwrap().task(BoxId::new(v.task.id));
     assert_eq!(row.unwrap().unwrap().intent, None);
 }
 
 /// Like [`failed_setup_then`] with the first setup run on `driver`.
-pub(super) fn failed_setup_with(yaml: &str, driver: FakeDriver) -> (World, TaskId) {
+pub(super) fn failed_setup_with(yaml: &str, driver: FakeDriver) -> (World, BoxId) {
     let (w, v) = start_with("setup: [a]\n", driver);
-    let id = TaskId::new(v.task.id);
+    let id = BoxId::new(v.task.id);
     let wt = w.cx.store().unwrap().task(id).unwrap().unwrap().worktree;
     let wt = wt.unwrap();
     std::fs::create_dir_all(&wt).unwrap();
@@ -393,7 +393,7 @@ fn a_setup_run_records_its_duration_on_a_setup_finished_event() {
     let driver = FakeDriver::new().exec_results(scripted([Sync(Ok(exit(0))), Cmd(Ok(exit(0)))]));
     let (w, v) = start_with("setup: [a]\n", driver);
     assert_eq!(v.setup.ms, Some(0));
-    let id = TaskId::new(v.task.id);
+    let id = BoxId::new(v.task.id);
     let events = w.cx.store().unwrap().events(id, 50).unwrap();
     let got: Vec<_> = events
         .iter()
@@ -407,7 +407,7 @@ fn a_setup_run_records_its_duration_on_a_setup_finished_event() {
 fn a_failed_setup_records_its_duration_too() {
     let driver = FakeDriver::new().exec_results(scripted([Sync(Ok(exit(0))), Cmd(Ok(exit(1)))]));
     let (w, v) = start_with("setup: [a]\n", driver);
-    let id = TaskId::new(v.task.id);
+    let id = BoxId::new(v.task.id);
     let events = w.cx.store().unwrap().events(id, 50).unwrap();
     let got: Vec<_> = events
         .iter()
@@ -455,7 +455,7 @@ fn a_failed_checkout_sync_aborts_the_start_without_launching_the_agent() {
             "{msg}"
         );
         assert!(engine.launches().is_empty());
-        let id = TaskId::new(1);
+        let id = BoxId::new(1);
         let row = w.cx.store().unwrap().task(id).unwrap().unwrap();
         assert_eq!(row.state, TaskState::SetupFailed);
         assert!(row.intent.is_none() && row.setup_failed_at.is_some());

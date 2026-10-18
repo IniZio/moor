@@ -10,7 +10,7 @@ use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
 use moor_core::seam::driver::{AcquireReq, Driver, SleepKind, SleepOutcome};
 use moor_core::seam::surface::SurfaceError;
 use moor_core::secret::Secret;
-use moor_core::{ErrorKind, ProviderId, TaskId, TaskName, TaskReq};
+use moor_core::{BoxId, BoxName, ErrorKind, ProviderId, TaskReq};
 
 use super::run;
 use crate::cx::Cx;
@@ -29,7 +29,7 @@ struct Fx {
     cx: Cx,
     driver: Arc<FakeDriver>,
     surface: Arc<FakeSurface>,
-    id: TaskId,
+    id: BoxId,
 }
 
 /// Task `t` with a live Box, so the Task is Working.
@@ -45,7 +45,7 @@ fn fx_with(driver: FakeDriver) -> Fx {
         Arc::new(ScriptedProc::new()),
     );
     let store = cx.store().unwrap();
-    let name = TaskName::parse("t").unwrap();
+    let name = BoxName::parse("t").unwrap();
     let id = store
         .apply(Decision::insert(NewTask {
             name: name.clone(),
@@ -107,7 +107,7 @@ fn idle_with(driver: FakeDriver) -> Fx {
 
 fn req() -> TaskReq {
     TaskReq {
-        task: TaskName::parse("t").unwrap(),
+        task: BoxName::parse("t").unwrap(),
     }
 }
 
@@ -277,7 +277,7 @@ fn a_later_successful_sleep_clears_the_reason() {
 fn unknown_task_fails() {
     let f = fx();
     let other = TaskReq {
-        task: TaskName::parse("nope").unwrap(),
+        task: BoxName::parse("nope").unwrap(),
     };
     let err = run(&f.cx, &other).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Failed);
@@ -330,7 +330,7 @@ fn starting() -> Fx {
     let store = cx.store().unwrap();
     let id = store
         .apply(Decision::insert(NewTask {
-            name: TaskName::parse("t").unwrap(),
+            name: BoxName::parse("t").unwrap(),
             repo: "r".into(),
         }))
         .unwrap()

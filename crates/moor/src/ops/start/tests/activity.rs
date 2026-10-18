@@ -8,7 +8,7 @@ use moor_core::activity::{
 use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::domain::task::{TaskInput, TaskState};
 use moor_core::seam::clock::Ts;
-use moor_core::{ShowReq, TaskId, TaskName};
+use moor_core::{BoxId, BoxName, ShowReq};
 
 use super::{req, world, World};
 use crate::ops::common::activity::{read, settle};
@@ -42,9 +42,9 @@ fn probes(w: &World, hook: Option<HookKind>, pane: PaneStatus) -> Probes {
 }
 
 /// A started `demo` with a live session, probed as `probes` says; idle first when `idle`.
-fn started(idle: bool, probes: impl FnOnce(&World) -> Probes) -> (World, TaskId) {
+fn started(idle: bool, probes: impl FnOnce(&World) -> Probes) -> (World, BoxId) {
     let mut w = world(FakeDriver::new());
-    let id = TaskId::new(run(&w.cx, &req("demo")).unwrap().task.id);
+    let id = BoxId::new(run(&w.cx, &req("demo")).unwrap().task.id);
     let store = w.cx.store().unwrap();
     store.begin_session(id, SESSION, None).unwrap();
     if idle {
@@ -57,12 +57,12 @@ fn started(idle: bool, probes: impl FnOnce(&World) -> Probes) -> (World, TaskId)
     (w, id)
 }
 
-fn row(w: &World, id: TaskId) -> TaskRow {
+fn row(w: &World, id: BoxId) -> TaskRow {
     w.cx.store().unwrap().task(id).unwrap().unwrap()
 }
 
 /// The `idle_since` column of a task.
-fn idle_since(w: &World, id: TaskId) -> Option<i64> {
+fn idle_since(w: &World, id: BoxId) -> Option<i64> {
     w.cx.store()
         .unwrap()
         .reader()
@@ -104,7 +104,7 @@ fn start_wakes_an_idle_task_whose_hook_reports_working() {
 
 /// A started `demo` whose session is older than the startup grace, with no hook report
 /// and a fresh pane read of `pane`.
-fn aged_pane_only(pane: PaneStatus) -> (World, TaskId) {
+fn aged_pane_only(pane: PaneStatus) -> (World, BoxId) {
     let (w, id) = started(false, |w| probes(w, None, pane));
     w.cx.clock().sleep(STARTUP_GRACE + Duration::from_secs(1));
     (w, id)
@@ -141,7 +141,7 @@ fn start_does_not_quiet_a_task_on_a_pane_only_blocked_report() {
 }
 
 /// The newest session id of a task.
-fn newest_session(w: &World, id: TaskId) -> i64 {
+fn newest_session(w: &World, id: BoxId) -> i64 {
     w.cx.store()
         .unwrap()
         .reader()
@@ -192,7 +192,7 @@ fn start_sleeps_an_idle_task_past_the_threshold() {
 }
 
 /// The kinds of the events of a task.
-fn kinds(w: &World, id: TaskId) -> Vec<String> {
+fn kinds(w: &World, id: BoxId) -> Vec<String> {
     let events = w.cx.store().unwrap().events(id, 100).unwrap();
     events.into_iter().map(|e| e.kind).collect()
 }
@@ -243,8 +243,8 @@ fn a_fresh_start_settles_another_task() {
 #[test]
 fn a_task_that_cannot_be_settled_warns_and_the_others_still_settle() {
     let mut w = world(FakeDriver::new());
-    let bad = TaskId::new(run(&w.cx, &req("bad")).unwrap().task.id);
-    let id = TaskId::new(run(&w.cx, &req("demo")).unwrap().task.id);
+    let bad = BoxId::new(run(&w.cx, &req("bad")).unwrap().task.id);
+    let id = BoxId::new(run(&w.cx, &req("demo")).unwrap().task.id);
     w.cx.store()
         .unwrap()
         .begin_session(id, SESSION, None)
@@ -267,9 +267,9 @@ fn a_task_that_cannot_be_settled_warns_and_the_others_still_settle() {
 }
 
 /// A started `demo` whose session sits in pane `p-9` and whose hook reports session `agent-1`.
-fn hooked() -> (World, TaskId) {
+fn hooked() -> (World, BoxId) {
     let mut w = world(FakeDriver::new());
-    let id = TaskId::new(run(&w.cx, &req("demo")).unwrap().task.id);
+    let id = BoxId::new(run(&w.cx, &req("demo")).unwrap().task.id);
     w.cx.store()
         .unwrap()
         .begin_session(id, SESSION, Some("p-9"))
@@ -296,7 +296,7 @@ fn registrations(w: &World) -> Vec<String> {
 
 fn show_task() -> ShowReq {
     ShowReq {
-        task: Some(TaskName::parse("demo").unwrap()),
+        task: Some(BoxName::parse("demo").unwrap()),
         events: None,
         agent: false,
         reports: false,

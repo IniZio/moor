@@ -14,7 +14,7 @@ use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, SleepKind};
 use moor_core::seam::proc::Tool;
-use moor_core::{ProviderId, ShowReq, StartReq, TaskId, TaskName};
+use moor_core::{BoxId, BoxName, ProviderId, ShowReq, StartReq};
 
 mod attention;
 mod pane;
@@ -43,7 +43,7 @@ fn cx(dir: &Path, driver: &Arc<FakeDriver>) -> Cx {
 /// Request showing everything.
 fn req(task: Option<&str>, events: Option<u32>) -> ShowReq {
     ShowReq {
-        task: task.map(|t| TaskName::parse(t).unwrap()),
+        task: task.map(|t| BoxName::parse(t).unwrap()),
         events,
         agent: false,
         reports: false,
@@ -52,9 +52,9 @@ fn req(task: Option<&str>, events: Option<u32>) -> ShowReq {
 }
 
 /// Insert a task by name.
-fn add(cx: &Cx, name: &str) -> TaskId {
+fn add(cx: &Cx, name: &str) -> BoxId {
     let nt = NewTask {
-        name: TaskName::parse(name).unwrap(),
+        name: BoxName::parse(name).unwrap(),
         repo: "r".into(),
     };
     cx.store()
@@ -65,13 +65,13 @@ fn add(cx: &Cx, name: &str) -> TaskId {
 }
 
 /// Give a task a Ready box acquired from `driver`.
-fn ready_box(cx: &Cx, driver: &FakeDriver, id: TaskId) -> moor_core::BoxHandle {
+fn ready_box(cx: &Cx, driver: &FakeDriver, id: BoxId) -> moor_core::BoxHandle {
     let p = ProviderId::new("p");
     let got = driver
         .acquire(&AcquireReq {
             provider: p.clone(),
             task: id,
-            name: TaskName::parse("demo").unwrap(),
+            name: BoxName::parse("demo").unwrap(),
             class: None,
             nonce: "abc123".into(),
             worktree: None,
@@ -242,13 +242,13 @@ fn engine_cx(dir: &Path, driver: &Arc<FakeDriver>, engine: &Arc<FakeEngine>) -> 
 
 /// Add a working task `name` with a box live in `driver`, and a live session
 /// `session` when given.
-fn working(cx: &Cx, driver: &FakeDriver, name: &str, session: Option<&str>) -> TaskId {
+fn working(cx: &Cx, driver: &FakeDriver, name: &str, session: Option<&str>) -> BoxId {
     let id = add(cx, name);
     let got = driver
         .acquire(&AcquireReq {
             provider: ProviderId::new("p"),
             task: id,
-            name: TaskName::parse(name).unwrap(),
+            name: BoxName::parse(name).unwrap(),
             class: None,
             nonce: "abc123".into(),
             worktree: None,
@@ -373,7 +373,7 @@ fn pane_only(status: PaneStatus) -> Probes {
 }
 
 /// The `idle_since` column of a task.
-fn idle_since(store: &Store, id: TaskId) -> Option<i64> {
+fn idle_since(store: &Store, id: BoxId) -> Option<i64> {
     store
         .reader()
         .unwrap()
@@ -507,7 +507,7 @@ fn a_task_freshly_started_is_not_idled_by_the_next_list() {
     let started = crate::ops::start::run(
         &cx,
         &StartReq {
-            name: TaskName::parse("demo").unwrap(),
+            name: BoxName::parse("demo").unwrap(),
             goal: Some("ship it".into()),
             issue: None,
             worktree: None,
@@ -525,7 +525,7 @@ fn a_task_freshly_started_is_not_idled_by_the_next_list() {
     let t = first(&v);
     assert_eq!(t.state, TaskState::Working);
     assert!(t.agent.is_some());
-    let id = TaskId::new(started.task.id);
+    let id = BoxId::new(started.task.id);
     assert!(cx.store().unwrap().live_session(id).unwrap().is_some());
     assert_eq!(
         cx.store().unwrap().task(id).unwrap().unwrap().state,
@@ -534,7 +534,7 @@ fn a_task_freshly_started_is_not_idled_by_the_next_list() {
 }
 
 /// A task Idle since just now, with its agent still reporting idle.
-fn idle_task(dir: &Path, driver: &Arc<FakeDriver>) -> (Cx, TaskId) {
+fn idle_task(dir: &Path, driver: &Arc<FakeDriver>) -> (Cx, BoxId) {
     let cx = engine_cx(dir, driver, &Arc::new(FakeEngine::new()));
     let id = working(&cx, driver, "a", Some("s-a"));
     cx.store()

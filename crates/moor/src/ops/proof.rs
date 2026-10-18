@@ -15,7 +15,7 @@ use moor_core::domain::decision::{Decision, ExtraEvent};
 use moor_core::domain::run::SyncMode;
 use moor_core::seam::driver::{ExecOutcome, ExecSpec};
 use moor_core::seam::proc::{Deadline, Output};
-use moor_core::{BoxHandle, BoxPath, TaskId, Warning};
+use moor_core::{BoxHandle, BoxId, BoxPath, Warning};
 
 use crate::cx::Cx;
 use crate::store::{Store, TaskRow};
@@ -54,7 +54,7 @@ pub(crate) fn sync_proofs(cx: &Cx, store: &Store, cap: u64) {
 pub(crate) fn list(
     cx: &Cx,
     handle: &BoxHandle,
-    id: TaskId,
+    id: BoxId,
     at: Option<(&BoxPath, &Path)>,
 ) -> Result<Vec<ProofFile>, String> {
     let state = cx.state_dir().map_err(|e| e.error.to_string())?;

@@ -12,7 +12,7 @@ use moor_core::domain::task::TaskState;
 use moor_core::seam::engine::{EngineError, LaunchReq, SessionRef};
 use moor_core::seam::surface::{PaneRef, WorkspaceRef};
 use moor_core::view::{AgentLaunchView, LaunchFailure};
-use moor_core::{StartReq, TaskId, Warning};
+use moor_core::{BoxId, StartReq, Warning};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -40,7 +40,7 @@ pub(super) fn run(
     cx: &Cx,
     store: &Store,
     req: &StartReq,
-    id: TaskId,
+    id: BoxId,
     setup_exit: Option<i32>,
     settings: &dyn Fn() -> Result<TaskSettings, CommandError>,
 ) -> Result<AgentLaunchView, CommandError> {
@@ -121,7 +121,7 @@ pub(super) fn begin(
 fn plan_dirs(
     cx: &Cx,
     store: &Store,
-    id: TaskId,
+    id: BoxId,
     launch: &LaunchReq,
 ) -> Result<Result<Vec<LeaseId>, EngineError>, CommandError> {
     let (cred, tmp) = match cx.engine().launch_dirs(launch) {
@@ -174,7 +174,7 @@ fn record_session(
 fn record_failure(
     cx: &Cx,
     store: &Store,
-    id: TaskId,
+    id: BoxId,
     e: &EngineError,
 ) -> Result<AgentLaunchView, CommandError> {
     let mut failure = failure(cx, e);
@@ -252,7 +252,7 @@ pub(super) fn to_json(f: &LaunchFailure) -> Result<String, CommandError> {
 /// Writes the Task's launch failure column, with a `session_failed` event for a new failure.
 pub(super) fn record(
     store: &Store,
-    id: TaskId,
+    id: BoxId,
     column: Field<String>,
     failed: Option<&LaunchFailure>,
 ) -> Result<(), CommandError> {

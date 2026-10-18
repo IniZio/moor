@@ -8,7 +8,7 @@ use crate::cx::Cx;
 
 /// Group live Box rows by provider, keeping first-seen order.
 fn by_provider(
-    rows: Vec<(moor_core::TaskId, crate::store::BoxRow)>,
+    rows: Vec<(moor_core::BoxId, crate::store::BoxRow)>,
 ) -> Vec<(ProviderId, Vec<BoxFact>)> {
     let mut groups: Vec<(ProviderId, Vec<BoxFact>)> = Vec::new();
     for (task, b) in rows {

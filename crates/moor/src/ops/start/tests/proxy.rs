@@ -6,7 +6,7 @@ use std::sync::Arc;
 use moor_core::seam::forge::ForgeRepo;
 use moor_core::seam::proc::Tool;
 use moor_core::seam::proxy_host::ProxyHostError;
-use moor_core::{BoxHandle, StartReq, TaskId};
+use moor_core::{BoxHandle, BoxId, StartReq};
 
 use super::relaunch::{gone, session};
 use super::{req, world, World};
@@ -40,7 +40,7 @@ fn engine_world() -> (World, Arc<FakeEngine>) {
     (w, engine)
 }
 
-fn failure_step(w: &World, id: TaskId) -> (String, String, Option<String>) {
+fn failure_step(w: &World, id: BoxId) -> (String, String, Option<String>) {
     let row = w.cx.store().unwrap().task(id).unwrap().unwrap();
     let f = row.launch_failure.unwrap();
     (f.step, f.message, f.tail)
@@ -50,7 +50,7 @@ fn failure_step(w: &World, id: TaskId) -> (String, String, Option<String>) {
 fn the_first_launch_ensures_the_proxy_once_and_hands_the_agent_its_address() {
     let (w, engine, fake) = host_world(FakeProxyHost::new());
     let v = run(&w.cx, &goal_req()).unwrap();
-    let id = TaskId::new(v.task.id);
+    let id = BoxId::new(v.task.id);
     let row = w.cx.store().unwrap().task(id).unwrap().unwrap();
     assert_eq!(fake.calls().len(), 1);
     let spec = spec_of(&fake);
@@ -117,7 +117,7 @@ fn a_proxy_that_cannot_be_ensured_fails_the_launch_at_the_proxy_step() {
     let fake = FakeProxyHost::new().with_ensure_error(ProxyHostError::Failed("boom\ntail".into()));
     let (w, engine, _) = host_world(fake);
     let v = run(&w.cx, &goal_req()).unwrap();
-    let id = TaskId::new(v.task.id);
+    let id = BoxId::new(v.task.id);
     assert!(!v.agent.launched);
     assert_eq!(v.task.state, moor_core::domain::task::TaskState::Working);
     assert!(engine.launches().is_empty());
@@ -136,7 +136,7 @@ fn a_missing_default_credential_fails_the_proxy_step_naming_the_key() {
     );
     w.cx = w.cx.with_proxy_host(Arc::new(FakeProxyHost::new()));
     let v = run(&w.cx, &goal_req()).unwrap();
-    let (step, message, _) = failure_step(&w, TaskId::new(v.task.id));
+    let (step, message, _) = failure_step(&w, BoxId::new(v.task.id));
     assert_eq!(step, "proxy");
     assert!(
         message.contains(
@@ -153,7 +153,7 @@ fn only_the_last_lines_of_a_long_proxy_failure_are_kept() {
     let fake = FakeProxyHost::new().with_ensure_error(ProxyHostError::Failed(text));
     let (w, _, _) = host_world(fake);
     let v = run(&w.cx, &goal_req()).unwrap();
-    let (_, _, tail) = failure_step(&w, TaskId::new(v.task.id));
+    let (_, _, tail) = failure_step(&w, BoxId::new(v.task.id));
     let tail = tail.unwrap();
     assert_eq!(tail.lines().count(), TAIL_LINES);
     assert_eq!(tail.lines().last(), Some("line 25"));
@@ -163,7 +163,7 @@ fn only_the_last_lines_of_a_long_proxy_failure_are_kept() {
 fn the_nonce_stays_out_of_every_record_and_the_spec() {
     let (w, engine, fake) = host_world(FakeProxyHost::new());
     let v = run(&w.cx, &goal_req()).unwrap();
-    let id = TaskId::new(v.task.id);
+    let id = BoxId::new(v.task.id);
     let nonce = String::from_utf8(FAKE_NONCE.to_vec()).unwrap();
     let mut seen = vec![format!("{:?}", fake.calls())];
     for call in w.proc.calls() {

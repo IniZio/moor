@@ -10,7 +10,7 @@ use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
 use moor_core::seam::proc::Tool;
-use moor_core::{BoxHandle, BoxPath, CloseReq, ProviderId, ShowReq, StartReq, TaskId, TaskName};
+use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, CloseReq, ProviderId, ShowReq, StartReq};
 
 use crate::cx::Cx;
 use crate::ops::close::run as close;
@@ -31,7 +31,7 @@ const HEAD: &str = "0123456789abcdef0123456789abcdef01234567";
 struct World {
     cx: Cx,
     driver: Arc<FakeDriver>,
-    holder: TaskId,
+    holder: BoxId,
     _dir: tempfile::TempDir,
 }
 
@@ -128,8 +128,8 @@ fn acquire_holder(driver: &FakeDriver) -> BoxHandle {
     let got = driver
         .acquire(&AcquireReq {
             provider: ProviderId::new(PROVIDER),
-            task: TaskId::new(1),
-            name: TaskName::parse("holder").unwrap(),
+            task: BoxId::new(1),
+            name: BoxName::parse("holder").unwrap(),
             class: None,
             nonce: "n".to_owned(),
             worktree: None,
@@ -139,11 +139,11 @@ fn acquire_holder(driver: &FakeDriver) -> BoxHandle {
     got.handle
 }
 
-fn insert_holder(cx: &Cx, handle: BoxHandle, worktree: &Path) -> TaskId {
+fn insert_holder(cx: &Cx, handle: BoxHandle, worktree: &Path) -> BoxId {
     let store = cx.store().unwrap();
     let id = store
         .apply(Decision::insert(NewTask {
-            name: TaskName::parse("holder").unwrap(),
+            name: BoxName::parse("holder").unwrap(),
             repo: "/repo".into(),
         }))
         .unwrap()
@@ -170,7 +170,7 @@ fn insert_holder(cx: &Cx, handle: BoxHandle, worktree: &Path) -> TaskId {
 
 fn start_req(name: &str) -> StartReq {
     StartReq {
-        name: TaskName::parse(name).unwrap(),
+        name: BoxName::parse(name).unwrap(),
         goal: None,
         issue: None,
         worktree: None,
@@ -184,18 +184,18 @@ fn start_req(name: &str) -> StartReq {
 }
 
 /// Queues `name` through `start` at the limit.
-fn queue(w: &World, name: &str) -> TaskId {
+fn queue(w: &World, name: &str) -> BoxId {
     let v = start::run(&w.cx, &start_req(name)).unwrap();
     assert!(v.queued, "{name} should queue");
-    TaskId::new(v.task.id)
+    BoxId::new(v.task.id)
 }
 
 /// A waiting task made without consulting any limit.
-fn waiting_directly(w: &World, name: &str) -> TaskId {
+fn waiting_directly(w: &World, name: &str) -> BoxId {
     let store = w.cx.store().unwrap();
     let id = store
         .apply(Decision::insert(NewTask {
-            name: TaskName::parse(name).unwrap(),
+            name: BoxName::parse(name).unwrap(),
             repo: "/repo".into(),
         }))
         .unwrap()
@@ -207,18 +207,18 @@ fn waiting_directly(w: &World, name: &str) -> TaskId {
 
 fn close_holder(w: &World) -> moor_core::view::CloseView {
     let req = CloseReq {
-        task: TaskName::parse("holder").unwrap(),
+        task: BoxName::parse("holder").unwrap(),
         force: false,
         trust_moor_yaml: false,
     };
     close(&w.cx, &req).unwrap()
 }
 
-fn state_of(w: &World, id: TaskId) -> TaskState {
+fn state_of(w: &World, id: BoxId) -> TaskState {
     w.cx.store().unwrap().task(id).unwrap().unwrap().state
 }
 
-fn kinds(w: &World, id: TaskId) -> Vec<String> {
+fn kinds(w: &World, id: BoxId) -> Vec<String> {
     let events = w.cx.store().unwrap().events(id, 50).unwrap();
     events.into_iter().map(|e| e.kind).collect()
 }

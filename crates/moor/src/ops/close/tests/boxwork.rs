@@ -5,7 +5,7 @@ use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::task::{TaskInput, TaskState};
 use moor_core::seam::driver::{DriverError, ExecOutcome};
-use moor_core::{CloseReq, ErrorKind, ProviderId, TaskName};
+use moor_core::{BoxName, CloseReq, ErrorKind, ProviderId};
 
 use std::sync::Arc;
 
@@ -248,7 +248,7 @@ fn close_skips_the_probe_for_a_box_the_driver_no_longer_has() {
 fn close_skips_the_probe_for_a_box_that_never_got_a_handle() {
     let f = fx_probe(Some("ahead=1 dirty=1"));
     let store = f.cx.store().unwrap();
-    let name = TaskName::parse("u").unwrap();
+    let name = BoxName::parse("u").unwrap();
     let id = store
         .apply(Decision::insert(NewTask {
             name: name.clone(),

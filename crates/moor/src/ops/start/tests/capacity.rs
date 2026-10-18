@@ -8,7 +8,7 @@ use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::domain::task::{TaskInput, TaskState};
 use moor_core::seam::proc::Tool;
-use moor_core::{ProviderId, StartReq, TaskId, TaskName};
+use moor_core::{BoxId, BoxName, ProviderId, StartReq};
 use serde_json::json;
 
 use crate::cx::Cx;
@@ -96,7 +96,7 @@ fn driver_limit(provider: &str, n: u32) -> BTreeMap<String, DriverConfig> {
 
 fn req(name: &str) -> StartReq {
     StartReq {
-        name: TaskName::parse(name).unwrap(),
+        name: BoxName::parse(name).unwrap(),
         goal: None,
         issue: None,
         worktree: None,
@@ -109,12 +109,12 @@ fn req(name: &str) -> StartReq {
     }
 }
 
-fn state_of(w: &World, id: TaskId) -> TaskState {
+fn state_of(w: &World, id: BoxId) -> TaskState {
     w.cx.store().unwrap().task(id).unwrap().unwrap().state
 }
 
 /// Frees the Box of task `id` as if the driver lost it.
-fn free_box(w: &World, id: TaskId) {
+fn free_box(w: &World, id: BoxId) {
     w.cx.store()
         .unwrap()
         .apply(Decision::new(id).box_input(BoxInput::DriverMissing))
@@ -122,7 +122,7 @@ fn free_box(w: &World, id: TaskId) {
 }
 
 /// Moves the Box row of task `id` to `provider`.
-fn move_box_to(w: &World, id: TaskId, provider: &str) {
+fn move_box_to(w: &World, id: BoxId, provider: &str) {
     let set = Fields {
         box_provider: Field::Set(ProviderId::new(provider)),
         ..Fields::default()
@@ -134,11 +134,11 @@ fn move_box_to(w: &World, id: TaskId, provider: &str) {
 }
 
 /// Starts `holder` under the limit, so one Box is live.
-fn with_live_box(config: UserConfig) -> (World, TaskId) {
+fn with_live_box(config: UserConfig) -> (World, BoxId) {
     let w = world(config);
     let v = run(&w.cx, &req("holder")).unwrap();
     assert!(!v.queued);
-    (w, TaskId::new(v.task.id))
+    (w, BoxId::new(v.task.id))
 }
 
 #[test]
@@ -148,7 +148,7 @@ fn start_queues_when_box_limit_reached() {
     assert!(v.queued);
     assert_eq!(v.task.state, TaskState::WaitingForBox);
     assert_eq!(
-        state_of(&w, TaskId::new(v.task.id)),
+        state_of(&w, BoxId::new(v.task.id)),
         TaskState::WaitingForBox
     );
 }
@@ -158,7 +158,7 @@ fn queued_start_records_no_session() {
     let (w, _) = with_live_box(box_limit(1));
     let v = run(&w.cx, &req("waiter")).unwrap();
     assert_eq!(v.task.state, TaskState::WaitingForBox);
-    let id = TaskId::new(v.task.id);
+    let id = BoxId::new(v.task.id);
     let store = w.cx.store().unwrap();
     assert!(store.live_session(id).unwrap().is_none());
     assert!(!store.has_session(id).unwrap());
@@ -171,7 +171,7 @@ fn queued_start_records_the_limit_and_keeps_worktree_and_workspace() {
     let events =
         w.cx.store()
             .unwrap()
-            .events(TaskId::new(v.task.id), 50)
+            .events(BoxId::new(v.task.id), 50)
             .unwrap();
     let ev = events
         .iter()
@@ -208,7 +208,7 @@ fn queued_start_warns_with_the_driver_config_key() {
     let events =
         w.cx.store()
             .unwrap()
-            .events(TaskId::new(v.task.id), 50)
+            .events(BoxId::new(v.task.id), 50)
             .unwrap();
     let ev = events.iter().find(|e| e.kind == "waiting_for_box").unwrap();
     assert_eq!(ev.payload.get("max_boxes"), Some(&json!(1)));
@@ -230,7 +230,7 @@ fn start_again_after_a_box_is_freed_promotes_the_waiting_task() {
     let queued = run(&w.cx, &req("waiter")).unwrap();
     assert!(queued.queued);
     assert_eq!(w.driver.calls(), ["acquire", "exec box-1"]);
-    let id = TaskId::new(queued.task.id);
+    let id = BoxId::new(queued.task.id);
     free_box(&w, holder);
     let v = run(&w.cx, &req("waiter")).unwrap();
     assert!(!v.queued);
@@ -247,7 +247,7 @@ fn start_again_after_the_holder_closes_promotes_the_waiting_task() {
     let queued = run(&w.cx, &req("waiter")).unwrap();
     assert!(queued.queued);
     assert_eq!(w.driver.calls(), ["acquire", "exec box-1"]);
-    let id = TaskId::new(queued.task.id);
+    let id = BoxId::new(queued.task.id);
     let store = w.cx.store().unwrap();
     store
         .apply(

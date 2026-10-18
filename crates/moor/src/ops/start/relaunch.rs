@@ -9,7 +9,7 @@ use moor_core::seam::proc::Deadline;
 use moor_core::seam::proxy_host::ProxyStatus;
 use moor_core::seam::surface::{PaneRef, SurfaceError};
 use moor_core::view::AgentLaunchView;
-use moor_core::{ErrorKind, StartReq, TaskId, Warning};
+use moor_core::{BoxId, ErrorKind, StartReq, Warning};
 use std::path::Path;
 use std::time::Duration;
 
@@ -59,7 +59,7 @@ pub(super) fn run(
     cx: &Cx,
     store: &Store,
     req: &StartReq,
-    id: TaskId,
+    id: BoxId,
     (setup_exit, recreated): (Option<i32>, bool),
     settings: &dyn Fn() -> Result<TaskSettings, CommandError>,
 ) -> Result<AgentLaunchView, CommandError> {
@@ -177,7 +177,7 @@ fn on_live(cx: &Cx, store: &Store, req: &StartReq, row: &TaskRow, session: &Sess
 }
 
 /// Stores a given goal on the Task, replacing any it holds, so the launch brief carries it.
-fn store_goal(store: &Store, req: &StartReq, id: TaskId) -> Result<(), CommandError> {
+fn store_goal(store: &Store, req: &StartReq, id: BoxId) -> Result<(), CommandError> {
     let Some(g) = &req.goal else {
         return Ok(());
     };
@@ -259,7 +259,7 @@ fn relaunch(
 ///
 /// # Errors
 /// A store failure, or settings that cannot be resolved.
-pub(crate) fn revive_after_wake(cx: &Cx, store: &Store, id: TaskId) -> Result<(), CommandError> {
+pub(crate) fn revive_after_wake(cx: &Cx, store: &Store, id: BoxId) -> Result<(), CommandError> {
     let row = reread(store, id)?;
     if row.state != TaskState::Working {
         return Ok(());
@@ -303,7 +303,7 @@ pub(crate) fn revive_after_wake(cx: &Cx, store: &Store, id: TaskId) -> Result<()
 /// A relaunch touches the Box lease, which every tunnel restart rewrites, so launching into a
 /// restarting tunnel loses the claim. A Task with no live proxy is not waited for. After
 /// `TUNNEL_WAIT` the relaunch goes ahead anyway.
-fn await_tunnel(cx: &Cx, store: &Store, id: TaskId) {
+fn await_tunnel(cx: &Cx, store: &Store, id: BoxId) {
     let mut waited = Duration::ZERO;
     loop {
         let up = match cx.proxy_host().status(id) {
@@ -323,7 +323,7 @@ fn await_tunnel(cx: &Cx, store: &Store, id: TaskId) {
 }
 
 /// Whether the Task's tunnel restarted less than `window` ago.
-fn restarted_within(cx: &Cx, store: &Store, id: TaskId, window: Duration) -> bool {
+fn restarted_within(cx: &Cx, store: &Store, id: BoxId, window: Duration) -> bool {
     let now = cx.clock().now().as_millis();
     let window = i64::try_from(window.as_millis()).unwrap_or(i64::MAX);
     store.events(id, TUNNEL_EVENTS).is_ok_and(|events| {
@@ -346,7 +346,7 @@ fn ended(cx: &Cx, session: &SessionRow) -> Option<Ended> {
 }
 
 /// Warns that a given goal does not reach a live agent.
-fn warn_goal_ignored(cx: &Cx, req: &StartReq, task: &moor_core::TaskName) {
+fn warn_goal_ignored(cx: &Cx, req: &StartReq, task: &moor_core::BoxName) {
     if req.goal.is_some() {
         cx.warn(Warning {
             code: "goal_ignored".to_owned(),

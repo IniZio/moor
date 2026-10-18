@@ -8,7 +8,7 @@ use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, SleepKind};
-use moor_core::{ErrorKind, ProviderId, TaskId, TaskName, TaskReq};
+use moor_core::{BoxId, BoxName, ErrorKind, ProviderId, TaskReq};
 
 use super::run;
 use crate::cx::Cx;
@@ -21,7 +21,7 @@ struct Fx {
     _dir: tempfile::TempDir,
     cx: Cx,
     driver: Arc<FakeDriver>,
-    id: TaskId,
+    id: BoxId,
 }
 
 /// Task `t` with a live Box, working.
@@ -36,7 +36,7 @@ fn fx_with(driver: FakeDriver) -> Fx {
         Arc::new(ScriptedProc::new()),
     );
     let store = cx.store().unwrap();
-    let name = TaskName::parse("t").unwrap();
+    let name = BoxName::parse("t").unwrap();
     let id = store
         .apply(Decision::insert(NewTask {
             name: name.clone(),
@@ -96,7 +96,7 @@ fn asleep(f: &Fx) {
 
 fn req() -> TaskReq {
     TaskReq {
-        task: TaskName::parse("t").unwrap(),
+        task: BoxName::parse("t").unwrap(),
     }
 }
 
@@ -166,7 +166,7 @@ fn gone_box_is_refused_without_a_resume() {
 fn unknown_task_is_failed() {
     let f = fx();
     let r = TaskReq {
-        task: TaskName::parse("nope").unwrap(),
+        task: BoxName::parse("nope").unwrap(),
     };
     let err = run(&f.cx, &r).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Failed);

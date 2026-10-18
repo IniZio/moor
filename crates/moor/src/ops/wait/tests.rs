@@ -14,7 +14,7 @@ use moor_core::domain::task::{SetupOutcome, TaskInput};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, SleepKind};
 use moor_core::view::LaunchFailure;
-use moor_core::{ErrorKind, ProviderId, ShowReq, TaskId, TaskName, WaitFor, WaitReq};
+use moor_core::{BoxId, BoxName, ErrorKind, ProviderId, ShowReq, WaitFor, WaitReq};
 
 use super::run;
 use crate::cx::Cx;
@@ -47,9 +47,9 @@ fn cx_with(dir: &Path, driver: FakeDriver) -> (Cx, Arc<ScriptedProc>) {
 }
 
 /// Insert task `demo`.
-fn add(cx: &Cx) -> TaskId {
+fn add(cx: &Cx) -> BoxId {
     let nt = NewTask {
-        name: TaskName::parse("demo").unwrap(),
+        name: BoxName::parse("demo").unwrap(),
         repo: "r".into(),
     };
     cx.store()
@@ -60,7 +60,7 @@ fn add(cx: &Cx) -> TaskId {
 }
 
 /// Begin a run of `demo` owned by `PID`.
-fn begin(cx: &Cx, task: TaskId) {
+fn begin(cx: &Cx, task: BoxId) {
     cx.store()
         .unwrap()
         .begin_run(NewRun {
@@ -77,7 +77,7 @@ fn begin(cx: &Cx, task: TaskId) {
 /// A `wait` request for `demo`.
 fn req(wait_for: Option<WaitFor>, timeout_secs: Option<u64>) -> WaitReq {
     WaitReq {
-        task: TaskName::parse("demo").unwrap(),
+        task: BoxName::parse("demo").unwrap(),
         wait_for,
         timeout_secs,
     }
@@ -199,7 +199,7 @@ fn never_takes_the_box_lock() {
     )
     .unwrap();
     let show = ShowReq {
-        task: Some(TaskName::parse("demo").unwrap()),
+        task: Some(BoxName::parse("demo").unwrap()),
         events: None,
         agent: false,
         reports: false,
@@ -222,7 +222,7 @@ fn agent_cx(dir: &Path, probes: Probes) -> (Cx, Arc<FakeEngine>) {
 }
 
 /// Insert task `demo` with a Box the driver lists as live and a live agent session.
-fn add_live(cx: &Cx) -> TaskId {
+fn add_live(cx: &Cx) -> BoxId {
     let id = add_boxed(cx);
     cx.store()
         .unwrap()
@@ -232,14 +232,14 @@ fn add_live(cx: &Cx) -> TaskId {
 }
 
 /// Insert task `demo` with a Box the driver lists as live and no agent session.
-fn add_boxed(cx: &Cx) -> TaskId {
+fn add_boxed(cx: &Cx) -> BoxId {
     let id = add(cx);
     let got = cx
         .driver()
         .acquire(&AcquireReq {
             provider: ProviderId::new("p"),
             task: id,
-            name: TaskName::parse("demo").unwrap(),
+            name: BoxName::parse("demo").unwrap(),
             class: None,
             nonce: "abc123".into(),
             worktree: None,
@@ -463,7 +463,7 @@ fn launch_failure_sleep_label_follows_provider_sleep_support() {
 }
 
 /// Record an `agent_rate_limited` event for the `claude` rule on `task`.
-fn rate_limit(cx: &Cx, task: TaskId) {
+fn rate_limit(cx: &Cx, task: BoxId) {
     cx.store()
         .unwrap()
         .record_proxy_event(

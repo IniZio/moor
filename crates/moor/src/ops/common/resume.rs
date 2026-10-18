@@ -2,7 +2,7 @@
 
 use moor_core::activity::{AgentState, PaneStatus};
 use moor_core::seam::surface::{PaneRef, ResumeOutcome, ResumeReg};
-use moor_core::{TaskName, Warning};
+use moor_core::{BoxName, Warning};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -24,7 +24,7 @@ pub(crate) const fn pane_status(state: &AgentState) -> PaneStatus {
 /// Registers how to resume session `agent` in `pane`, for Task `task`; true when registered.
 ///
 /// A refusal or a failure is a warning, never an error.
-pub(crate) fn report(cx: &Cx, task: &TaskName, pane: &str, agent: &str, state: PaneStatus) -> bool {
+pub(crate) fn report(cx: &Cx, task: &BoxName, pane: &str, agent: &str, state: PaneStatus) -> bool {
     let reg = ResumeReg {
         agent: AGENT.to_owned(),
         state,
@@ -57,7 +57,7 @@ pub(crate) fn report(cx: &Cx, task: &TaskName, pane: &str, agent: &str, state: P
 pub(crate) fn ensure(
     cx: &Cx,
     store: &Store,
-    task: &TaskName,
+    task: &BoxName,
     session: &SessionRow,
     agent: Option<&str>,
     state: PaneStatus,

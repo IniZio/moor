@@ -4,7 +4,7 @@
 
 use std::time::Duration;
 
-use moor_core::{ErrorKind, TaskId};
+use moor_core::{BoxId, ErrorKind};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -21,7 +21,7 @@ const PARK_WAIT: Duration = Duration::from_secs(10);
 const RESTORE_WAIT: Duration = Duration::from_secs(90);
 
 /// Asks the Task's Proxy to kill its tunnel and stop reviving it, and waits for it to confirm.
-pub(crate) fn park_tunnel(cx: &Cx, store: &Store, task: TaskId) -> Result<(), CommandError> {
+pub(crate) fn park_tunnel(cx: &Cx, store: &Store, task: BoxId) -> Result<(), CommandError> {
     match request(cx, store, task, TunnelWant::Parked, PARK_WAIT)? {
         Reply::NoSupervisor | Reply::Got(TunnelAck::Parked { .. }) => Ok(()),
         Reply::Got(TunnelAck::Failed { error, .. }) => Err(CommandError::new(
@@ -42,7 +42,7 @@ pub(crate) fn park_tunnel(cx: &Cx, store: &Store, task: TaskId) -> Result<(), Co
 pub(crate) fn restore_tunnel(
     cx: &Cx,
     store: &Store,
-    task: TaskId,
+    task: BoxId,
     box_stayed_up: bool,
 ) -> Result<(), CommandError> {
     let want = if box_stayed_up {
@@ -86,7 +86,7 @@ fn unexpected() -> CommandError {
 fn request(
     cx: &Cx,
     store: &Store,
-    task: TaskId,
+    task: BoxId,
     ask: TunnelWant,
     patience: Duration,
 ) -> Result<Reply, CommandError> {
@@ -110,7 +110,7 @@ fn request(
 }
 
 /// Whether a ready proxy row has a supervisor that heartbeat within the lease window.
-fn supervisor_alive(cx: &Cx, store: &Store, task: TaskId) -> Result<bool, CommandError> {
+fn supervisor_alive(cx: &Cx, store: &Store, task: BoxId) -> Result<bool, CommandError> {
     let Some(row) = store.proxy(task)? else {
         return Ok(false);
     };

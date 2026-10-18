@@ -5,7 +5,7 @@ use moor_core::domain::boxes::BoxState;
 use moor_core::domain::task::TaskState;
 use moor_core::seam::driver::DriverError;
 use moor_core::seam::surface::{PaneCmd, Surface, SurfaceError};
-use moor_core::{ErrorKind, TaskName};
+use moor_core::{BoxName, ErrorKind};
 
 use super::teardown::{exec_calls, YAML};
 use super::{box_state, fx_with, req, row, run, Fx};
@@ -28,7 +28,7 @@ fn open_pane(f: &Fx) -> String {
     };
     let wt = f
         .surface
-        .create_worktree(Path::new("r"), &TaskName::parse("t").unwrap(), None)
+        .create_worktree(Path::new("r"), &BoxName::parse("t").unwrap(), None)
         .unwrap();
     let ws = f.surface.ensure_workspace(&wt, "t").unwrap();
     let pane = f.surface.open_pane(&ws, &cmd).unwrap();

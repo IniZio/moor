@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use moor_core::seam::engine::EngineError;
-use moor_core::{StartReq, TaskId};
+use moor_core::{BoxId, StartReq};
 
 use super::{req, world, World};
 use crate::ops::start::run;
@@ -18,15 +18,15 @@ fn goal_req(name: &str) -> StartReq {
 }
 
 /// A world whose Task `demo` has a ready Box with a known home and `engine` as its engine.
-fn started(engine: &Arc<FakeEngine>) -> (World, TaskId) {
+fn started(engine: &Arc<FakeEngine>) -> (World, BoxId) {
     let mut w = world(FakeDriver::new());
     w.cx = w.cx.with_engine(engine.clone());
     let v = run(&w.cx, &req("demo")).unwrap();
-    (w, TaskId::new(v.task.id))
+    (w, BoxId::new(v.task.id))
 }
 
 /// The Task's leases on the launch directories.
-fn dirs(w: &World, id: TaskId) -> Vec<LeaseRow> {
+fn dirs(w: &World, id: BoxId) -> Vec<LeaseRow> {
     let mut rows = w.cx.store().unwrap().leases(id).unwrap();
     rows.retain(|r| r.kind == LeaseKind::BoxDir && r.key.contains("/.moor-"));
     rows

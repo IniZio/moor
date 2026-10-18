@@ -6,7 +6,7 @@ use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::seam::agent_profile::FirstRunPrompt;
 use moor_core::seam::engine::{EngineError, LaunchReq, SessionRef};
 use moor_core::seam::surface::{PaneRef, ResumeOutcome, SurfaceError};
-use moor_core::{BoxHandle, BoxPath, ErrorKind, StartReq, TaskId};
+use moor_core::{BoxHandle, BoxId, BoxPath, ErrorKind, StartReq};
 
 use super::{req, world, World};
 use crate::ops::start::run;
@@ -44,7 +44,7 @@ pub(super) fn obs(exit_marker: Option<i32>) -> PaneObs {
 }
 
 /// A world with a Working task `demo` launched with "ship it" in pane `p-1`; the next launch opens `p-2`.
-pub(super) fn started() -> (World, Arc<FakeEngine>, TaskId) {
+pub(super) fn started() -> (World, Arc<FakeEngine>, BoxId) {
     let engine = Arc::new(
         FakeEngine::new()
             .launch_result(Ok(session("p-1")))
@@ -53,7 +53,7 @@ pub(super) fn started() -> (World, Arc<FakeEngine>, TaskId) {
     let mut w = world(FakeDriver::new());
     w.cx = w.cx.with_engine(engine.clone());
     let first = run(&w.cx, &goal_req("ship it")).unwrap();
-    (w, engine, TaskId::new(first.task.id))
+    (w, engine, BoxId::new(first.task.id))
 }
 
 /// The second launch request; fails unless there are exactly two.
@@ -63,7 +63,7 @@ fn relaunch_of(engine: &FakeEngine) -> LaunchReq {
     all.remove(1)
 }
 
-pub(super) fn set_agent_session(w: &World, id: TaskId, agent: &str) {
+pub(super) fn set_agent_session(w: &World, id: BoxId, agent: &str) {
     let set = Fields {
         agent_session_id: Field::Set(agent.into()),
         ..Fields::default()
@@ -74,7 +74,7 @@ pub(super) fn set_agent_session(w: &World, id: TaskId, agent: &str) {
         .unwrap();
 }
 
-fn live_pane(w: &World, id: TaskId) -> Option<String> {
+fn live_pane(w: &World, id: BoxId) -> Option<String> {
     w.cx.store()
         .unwrap()
         .live_session(id)
@@ -83,7 +83,7 @@ fn live_pane(w: &World, id: TaskId) -> Option<String> {
         .pane
 }
 
-fn exit_of_first_session(w: &World, id: TaskId) -> Option<i32> {
+fn exit_of_first_session(w: &World, id: BoxId) -> Option<i32> {
     w.cx.store()
         .unwrap()
         .reader()
@@ -229,7 +229,7 @@ fn a_failed_relaunch_records_no_relaunched_event_and_sets_the_failure() {
     );
     let mut w = world(FakeDriver::new());
     w.cx = w.cx.with_engine(engine);
-    let id = TaskId::new(run(&w.cx, &goal_req("ship it")).unwrap().task.id);
+    let id = BoxId::new(run(&w.cx, &goal_req("ship it")).unwrap().task.id);
     gone(&w);
     let v = run(&w.cx, &req("demo")).unwrap();
     assert!(!v.agent.launched);
@@ -279,7 +279,7 @@ fn a_relaunch_watches_its_new_pane_for_a_first_run_prompt() {
     let mut w = world(FakeDriver::new());
     w.cx = w.cx.with_engine(engine);
     let first = run(&w.cx, &goal_req("ship it")).unwrap();
-    let id = TaskId::new(first.task.id);
+    let id = BoxId::new(first.task.id);
     gone(&w);
     w.surface.push_pane_obs(
         "p-2",
@@ -300,7 +300,7 @@ fn a_relaunch_watches_its_new_pane_for_a_first_run_prompt() {
 }
 
 /// A world whose Working task `demo` has no goal and no session.
-fn goalless() -> (World, Arc<FakeEngine>, TaskId) {
+fn goalless() -> (World, Arc<FakeEngine>, BoxId) {
     let (w, engine, id) = started();
     let clear = Fields {
         goal: Field::Clear,
@@ -497,7 +497,7 @@ fn a_rejected_registration_is_a_warning_not_a_failure() {
 }
 
 /// A world with a Working goal-less task `demo`, no session, and stored agent session `agent-1`.
-fn idle_of_sessions() -> (World, Arc<FakeEngine>, TaskId) {
+fn idle_of_sessions() -> (World, Arc<FakeEngine>, BoxId) {
     let engine = Arc::new(FakeEngine::new().launch_result(Ok(session("p-1"))));
     let mut w = world(FakeDriver::new());
     w.cx = w.cx.with_engine(engine.clone());
@@ -509,7 +509,7 @@ fn idle_of_sessions() -> (World, Arc<FakeEngine>, TaskId) {
         },
     )
     .unwrap();
-    let id = TaskId::new(first.task.id);
+    let id = BoxId::new(first.task.id);
     set_agent_session(&w, id, "agent-1");
     (w, engine, id)
 }

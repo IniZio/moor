@@ -5,18 +5,18 @@ use std::time::Duration;
 use moor_core::domain::decision::ExtraEvent;
 use moor_core::seam::proxy_host::ProxyStatus;
 use moor_core::seam::surface::SurfaceError;
-use moor_core::TaskId;
+use moor_core::BoxId;
 
 use super::relaunch::{gone, obs, set_agent_session, started};
 use super::World;
 use crate::ops::start::revive_after_wake;
 use crate::testing::proxy_host::{FakeProxyHost, ProxyHostCall};
 
-fn revive(w: &World, id: TaskId) {
+fn revive(w: &World, id: BoxId) {
     revive_after_wake(&w.cx, w.cx.store().unwrap(), id).unwrap();
 }
 
-fn relaunched(w: &World, id: TaskId) -> Vec<serde_json::Value> {
+fn relaunched(w: &World, id: BoxId) -> Vec<serde_json::Value> {
     w.cx.store()
         .unwrap()
         .events(id, 100)

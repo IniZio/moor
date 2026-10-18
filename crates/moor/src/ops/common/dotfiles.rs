@@ -11,7 +11,7 @@ use moor_core::domain::run::SyncMode;
 use moor_core::seam::driver::{ExecOutcome, ExecSpec};
 use moor_core::seam::proc::{Deadline, Output, ProcSpec, Tool};
 use moor_core::view::DotfilesView;
-use moor_core::{BoxHandle, BoxPath, TaskId};
+use moor_core::{BoxHandle, BoxId, BoxPath};
 
 use crate::cx::Cx;
 
@@ -109,7 +109,7 @@ fn private_log(log: &Path) -> std::io::Result<()> {
 pub(crate) fn apply(
     cx: &Cx,
     handle: &BoxHandle,
-    id: TaskId,
+    id: BoxId,
     host_cwd: &Path,
     cfg: &TaskSettings,
 ) -> Result<DotfilesRun, DotfilesFailed> {

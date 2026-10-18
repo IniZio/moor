@@ -7,7 +7,7 @@ use std::time::Duration;
 use moor_core::domain::decision::{Decision, NewTask};
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::secret::Secret;
-use moor_core::{TaskId, TaskName};
+use moor_core::{BoxId, BoxName};
 
 use super::{park_tunnel, restore_tunnel, LEASE};
 use crate::cx::Cx;
@@ -23,7 +23,7 @@ struct Fx {
     _dir: tempfile::TempDir,
     cx: Cx,
     clock: Arc<FakeClock>,
-    id: TaskId,
+    id: BoxId,
 }
 
 /// A fixture whose task has no proxy row.
@@ -43,7 +43,7 @@ fn fx() -> Fx {
         .store()
         .unwrap()
         .apply(Decision::insert(NewTask {
-            name: TaskName::parse("t").unwrap(),
+            name: BoxName::parse("t").unwrap(),
             repo: "r".into(),
         }))
         .unwrap()

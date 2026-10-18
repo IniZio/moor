@@ -7,7 +7,7 @@ use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::task::TaskInput;
 use moor_core::seam::forge::{ForgeError, ForgeRepo};
 use moor_core::seam::proc::Tool;
-use moor_core::TaskName;
+use moor_core::BoxName;
 
 use super::open_pr_url;
 use crate::cx::Cx;
@@ -47,7 +47,7 @@ fn task(cx: &Cx) {
     let store = cx.store().unwrap();
     let id = store
         .apply(Decision::insert(NewTask {
-            name: TaskName::parse("t").unwrap(),
+            name: BoxName::parse("t").unwrap(),
             repo: "r".into(),
         }))
         .unwrap()

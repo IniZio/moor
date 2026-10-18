@@ -12,7 +12,7 @@ use moor_core::seam::driver::{DriverError, Released};
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::{PaneRef, SurfaceError, WorkspaceRef};
 use moor_core::view::CloseView;
-use moor_core::{BoxHandle, CloseReq, ErrorKind, TaskName, Warning};
+use moor_core::{BoxHandle, BoxName, CloseReq, ErrorKind, Warning};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -132,7 +132,7 @@ fn stop_agent(
 }
 
 /// The open task by name, else the newest closed one (the gate refuses it).
-fn find(store: &Store, name: &TaskName) -> Result<TaskRow, CommandError> {
+fn find(store: &Store, name: &BoxName) -> Result<TaskRow, CommandError> {
     if let Some(row) = store.open_task_by_name(name)? {
         return Ok(row);
     }

@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
 use moor_core::seam::proc::{Deadline, Tool};
-use moor_core::{BoxHandle, ProviderId, TaskId, TaskName};
+use moor_core::{BoxHandle, BoxId, BoxName, ProviderId};
 
 use super::{set_identity, IDENTITY_DEADLINE};
 use crate::cx::Cx;
@@ -34,8 +34,8 @@ fn rig(dir: &Path, driver: FakeDriver) -> Rig {
     let got = driver
         .acquire(&AcquireReq {
             provider: ProviderId::new("p"),
-            task: TaskId::new(1),
-            name: TaskName::parse("demo").unwrap(),
+            task: BoxId::new(1),
+            name: BoxName::parse("demo").unwrap(),
             class: None,
             nonce: "n".to_owned(),
             worktree: None,

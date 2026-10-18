@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use moor_core::activity::{HookRead, PaneObs, PaneRead, PaneStatus, Probes};
 use moor_core::seam::engine::EngineError;
-use moor_core::TaskId;
+use moor_core::BoxId;
 
 use super::{cx, row, run_once, task as plain_task, SESSION};
 use crate::cx::Cx;
@@ -14,7 +14,7 @@ use crate::ops::common::boxlock::BoxLock;
 use crate::testing::engine::FakeEngine;
 
 /// A working task whose live session has a registered agent session.
-fn task(cx: &Cx) -> TaskId {
+fn task(cx: &Cx) -> BoxId {
     let id = plain_task(cx, true);
     let store = cx.store().unwrap();
     let live = store.live_session(id).unwrap().unwrap();
@@ -34,7 +34,7 @@ fn exited_probes() -> Probes {
     }
 }
 
-fn exit_saves(cx: &Cx, id: TaskId) -> usize {
+fn exit_saves(cx: &Cx, id: BoxId) -> usize {
     let events = cx.store().unwrap().events(id, 100).unwrap();
     events
         .iter()
@@ -79,7 +79,7 @@ fn a_live_or_gone_pane_saves_nothing() {
     assert!(engine.transcripts().is_empty());
 }
 
-fn exited_fx(engine: FakeEngine) -> (tempfile::TempDir, Arc<FakeEngine>, Cx, TaskId) {
+fn exited_fx(engine: FakeEngine) -> (tempfile::TempDir, Arc<FakeEngine>, Cx, BoxId) {
     let dir = tempfile::tempdir().unwrap();
     let engine = Arc::new(engine.probes(SESSION, exited_probes()));
     let (cx, _) = cx(dir.path(), &engine);

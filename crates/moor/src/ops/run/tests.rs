@@ -11,7 +11,7 @@ use moor_core::domain::run::SyncMode;
 use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
 use moor_core::seam::proc::{Output, Tool};
-use moor_core::{BoxPath, ErrorKind, ProviderId, RunReq, TaskId, TaskName};
+use moor_core::{BoxId, BoxName, BoxPath, ErrorKind, ProviderId, RunReq};
 
 use super::{locked, run};
 use crate::cx::Cx;
@@ -35,12 +35,12 @@ pub(in crate::ops::run) struct Fx {
     pub(in crate::ops::run) cx: Cx,
     pub(in crate::ops::run) driver: Arc<FakeDriver>,
     pub(in crate::ops::run) proc: Arc<ScriptedProc>,
-    pub(in crate::ops::run) id: TaskId,
+    pub(in crate::ops::run) id: BoxId,
 }
 
 pub(in crate::ops::run) fn req(argv: &[&str]) -> RunReq {
     RunReq {
-        task: TaskName::parse("t").unwrap(),
+        task: BoxName::parse("t").unwrap(),
         no_sync: false,
         sync: false,
         record: None,
@@ -83,7 +83,7 @@ fn bare_with(driver: FakeDriver) -> Fx {
         .store()
         .unwrap()
         .apply(Decision::insert(NewTask {
-            name: TaskName::parse("t").unwrap(),
+            name: BoxName::parse("t").unwrap(),
             repo: "r".into(),
         }))
         .unwrap()
@@ -126,7 +126,7 @@ pub(in crate::ops::run) fn ready_with(driver: FakeDriver) -> Fx {
         .acquire(&AcquireReq {
             provider,
             task: f.id,
-            name: TaskName::parse("t").unwrap(),
+            name: BoxName::parse("t").unwrap(),
             class: None,
             nonce: "n".to_owned(),
             worktree: None,
@@ -244,7 +244,7 @@ fn refused(f: &Fx, r: &RunReq, kind: ErrorKind) -> String {
 fn unknown_task_is_refused() {
     let f = bare();
     let mut r = req(&["true"]);
-    r.task = TaskName::parse("nope").unwrap();
+    r.task = BoxName::parse("nope").unwrap();
     let before = f.driver.calls().len();
     assert_eq!(refused(&f, &r, ErrorKind::Failed), "no task nope");
     assert_eq!(f.driver.calls().len(), before);

@@ -11,7 +11,7 @@ use moor_core::seam::agent_profile::ProxyAddr;
 use moor_core::seam::driver::{ExecOutcome, ExecSpec};
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::proxy_host::ProxySpec;
-use moor_core::{BoxHandle, BoxPath, TaskId};
+use moor_core::{BoxHandle, BoxId, BoxPath};
 
 use crate::cx::Cx;
 use crate::ops::common::proxy::{box_env, origin, plan};
@@ -24,7 +24,7 @@ const STAGE_DEADLINE: Duration = Duration::from_secs(60);
 /// The Task's running Proxy, as a Box exec needs it.
 pub(crate) struct BoxProxy {
     /// The Task the Proxy serves; names the staged directory.
-    pub(crate) task: TaskId,
+    pub(crate) task: BoxId,
     /// The Proxy's address and credentials inside the Box.
     pub(crate) addr: ProxyAddr,
     /// The git origin URL of the worktree, when it has one.
@@ -51,7 +51,7 @@ pub(crate) struct Site<'a> {
 /// Returns a message when the plan cannot be made or the Proxy cannot start.
 pub(crate) fn proxy(
     cx: &Cx,
-    task: TaskId,
+    task: BoxId,
     handle: Option<BoxHandle>,
     worktree: &Path,
     cfg: &TaskSettings,

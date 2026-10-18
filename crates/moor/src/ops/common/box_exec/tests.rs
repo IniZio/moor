@@ -10,7 +10,7 @@ use moor_core::exec_env::{Purpose, CA_FILE, NONCE_FILE};
 use moor_core::seam::agent_profile::ProxyAddr;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
 use moor_core::secret::Secret;
-use moor_core::{BoxHandle, BoxPath, ProviderId, TaskId, TaskName};
+use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId};
 
 use super::{forge_routed, prepare, BoxProxy, Site};
 use crate::cx::Cx;
@@ -56,8 +56,8 @@ fn rig_driver(dir: &Path, config: UserConfig, driver: FakeDriver) -> Rig {
     let got = driver
         .acquire(&AcquireReq {
             provider: ProviderId::new("p"),
-            task: TaskId::new(1),
-            name: TaskName::parse("demo").unwrap(),
+            task: BoxId::new(1),
+            name: BoxName::parse("demo").unwrap(),
             class: None,
             nonce: "n".to_owned(),
             worktree: None,
@@ -99,7 +99,7 @@ fn cfg() -> TaskSettings {
 
 fn boxed_proxy() -> BoxProxy {
     BoxProxy {
-        task: TaskId::new(1),
+        task: BoxId::new(1),
         addr: ProxyAddr {
             box_port: 4000,
             nonce: Secret::new(b"s3cret".to_vec()),

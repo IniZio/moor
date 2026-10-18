@@ -8,7 +8,7 @@ use moor_core::domain::task::{TaskInput, TaskState};
 use moor_core::seam::driver::DriverError;
 use moor_core::seam::proc::Tool;
 use moor_core::seam::surface::Surface;
-use moor_core::{BoxPath, ErrorKind, StartReq, TaskId, TaskName};
+use moor_core::{BoxId, BoxName, BoxPath, ErrorKind, StartReq};
 
 use super::run;
 use crate::cx::Cx;
@@ -111,7 +111,7 @@ fn world_with(driver: FakeDriver, repo: &Path, config: UserConfig) -> World {
 /// A start request for `name`.
 fn req(name: &str) -> StartReq {
     StartReq {
-        name: TaskName::parse(name).unwrap(),
+        name: BoxName::parse(name).unwrap(),
         goal: None,
         issue: None,
         worktree: None,
@@ -133,7 +133,7 @@ fn happy_path_makes_a_working_task_with_a_ready_box() {
     assert_eq!(v.task.base.as_deref(), Some("abc123"));
     assert_eq!(v.task.workspace.as_deref(), Some("ws-1"));
     assert_eq!(v.task.branch.as_deref(), Some("demo"));
-    let row = w.cx.store().unwrap().task(TaskId::new(v.task.id));
+    let row = w.cx.store().unwrap().task(BoxId::new(v.task.id));
     let b = row.unwrap().unwrap().boxed.unwrap();
     assert_eq!(b.state, BoxState::Ready);
     assert_eq!(b.handle.unwrap().as_str(), "box-1");
@@ -144,7 +144,7 @@ fn happy_path_makes_a_working_task_with_a_ready_box() {
 fn happy_path_calls_seams_in_order_and_clears_intent() {
     let w = world(FakeDriver::new());
     let v = run(&w.cx, &req("demo")).unwrap();
-    let row = w.cx.store().unwrap().task(TaskId::new(v.task.id));
+    let row = w.cx.store().unwrap().task(BoxId::new(v.task.id));
     assert!(row.unwrap().unwrap().intent.is_none());
     assert_eq!(
         w.surface.calls(),
@@ -165,7 +165,7 @@ fn start_excludes_scratch_dirs_when_a_worktree_is_bound() {
     let w = world(FakeDriver::new());
     let made = w
         .surface
-        .create_worktree(Path::new("/repo"), &TaskName::parse("pre").unwrap(), None)
+        .create_worktree(Path::new("/repo"), &BoxName::parse("pre").unwrap(), None)
         .unwrap();
     let mut r = req("demo");
     r.worktree = Some(made.path.display().to_string());
@@ -180,7 +180,7 @@ fn exclude_failure_stops_start_before_any_worktree_exists() {
     let err = run(&w.cx, &req("demo")).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Failed);
     assert!(w.surface.calls().is_empty(), "{:?}", w.surface.calls());
-    let name = TaskName::parse("demo").unwrap();
+    let name = BoxName::parse("demo").unwrap();
     assert!(w
         .cx
         .store()
@@ -251,7 +251,7 @@ fn acquire_failure_keeps_a_failed_task_row() {
         shown.pointer("/task/state"),
         Some(&serde_json::json!("setup_failed"))
     );
-    let name = TaskName::parse("demo").unwrap();
+    let name = BoxName::parse("demo").unwrap();
     let row =
         w.cx.store()
             .unwrap()
@@ -281,7 +281,7 @@ fn acquire_failure_with_release_error_keeps_failed_and_original_error() {
         err.value.as_ref().unwrap().pointer("/task/state"),
         Some(&serde_json::json!("setup_failed"))
     );
-    let name = TaskName::parse("demo").unwrap();
+    let name = BoxName::parse("demo").unwrap();
     let row = w.cx.store().unwrap().open_task_by_name(&name).unwrap();
     let b = row.unwrap().boxed.unwrap();
     assert_eq!(b.state, BoxState::Failed);
@@ -292,7 +292,7 @@ fn acquire_failure_with_release_error_keeps_failed_and_original_error() {
 fn restart_of_a_closed_name_creates_a_new_task() {
     let w = world(FakeDriver::new());
     let first = run(&w.cx, &req("again")).unwrap();
-    let id = TaskId::new(first.task.id);
+    let id = BoxId::new(first.task.id);
     w.cx.store()
         .unwrap()
         .apply(
@@ -325,7 +325,7 @@ fn attach_writes_exactly_one_attached_event() {
     let count = |w: &World| {
         w.cx.store()
             .unwrap()
-            .events(TaskId::new(first.task.id), 100)
+            .events(BoxId::new(first.task.id), 100)
             .unwrap()
             .iter()
             .filter(|e| e.kind == "attached")
@@ -351,7 +351,7 @@ fn bound_worktree_skips_create_worktree() {
     let w = world(FakeDriver::new());
     let made = w
         .surface
-        .create_worktree(Path::new("/repo"), &TaskName::parse("pre").unwrap(), None)
+        .create_worktree(Path::new("/repo"), &BoxName::parse("pre").unwrap(), None)
         .unwrap();
     let mut r = req("demo");
     r.worktree = Some(made.path.display().to_string());
@@ -376,7 +376,7 @@ fn start_after_acquire_failure_gets_a_new_box() {
     let again = run(&w.cx, &req("demo")).unwrap();
     assert!(again.attached);
     assert_eq!(again.task.state, TaskState::Working);
-    let row = w.cx.store().unwrap().task(TaskId::new(again.task.id));
+    let row = w.cx.store().unwrap().task(BoxId::new(again.task.id));
     assert_eq!(row.unwrap().unwrap().boxed.unwrap().state, BoxState::Ready);
     assert_eq!(
         w.driver.calls(),
@@ -389,7 +389,7 @@ fn start_after_acquire_failure_gets_a_new_box() {
 fn start_on_a_gone_box_acquires_again_and_keeps_the_task_working() {
     let w = world(FakeDriver::new());
     let first = run(&w.cx, &req("demo")).unwrap();
-    let id = TaskId::new(first.task.id);
+    let id = BoxId::new(first.task.id);
     let store = w.cx.store().unwrap();
     store
         .apply(Decision::new(id).box_input(BoxInput::DriverMissing))
@@ -448,7 +448,7 @@ fn unresolved_credential_rejects_before_any_side_effect() {
     );
     assert!(w.surface.calls().is_empty());
     assert!(w.driver.calls().is_empty());
-    let name = TaskName::parse("demo").unwrap();
+    let name = BoxName::parse("demo").unwrap();
     assert!(w
         .cx
         .store()
@@ -464,7 +464,7 @@ fn start_refuses_while_another_op_holds_the_box_lock() {
     let _held = BoxLock::acquire(
         w.cx.clock(),
         w.cx.state_dir().unwrap(),
-        TaskId::new(1),
+        BoxId::new(1),
         "close",
         Duration::ZERO,
     )
@@ -480,7 +480,7 @@ fn hold(w: &World, op: &str) -> BoxLock {
     BoxLock::acquire(
         w.cx.clock(),
         w.cx.state_dir().unwrap(),
-        TaskId::new(1),
+        BoxId::new(1),
         op,
         Duration::ZERO,
     )
@@ -496,7 +496,7 @@ fn refused_start_provisions_when_retried_after_the_lock_is_released() {
     let again = run(&w.cx, &req("demo")).unwrap();
     assert!(again.attached);
     assert_eq!(again.task.state, TaskState::Working);
-    let row = w.cx.store().unwrap().task(TaskId::new(again.task.id));
+    let row = w.cx.store().unwrap().task(BoxId::new(again.task.id));
     assert_eq!(row.unwrap().unwrap().boxed.unwrap().state, BoxState::Ready);
     assert_eq!(w.driver.calls(), ["acquire", "exec box-1"]);
 }
@@ -505,7 +505,7 @@ fn refused_start_provisions_when_retried_after_the_lock_is_released() {
 fn start_on_a_lost_box_is_refused_while_another_op_holds_the_lock() {
     let w = world(FakeDriver::new());
     let first = run(&w.cx, &req("demo")).unwrap();
-    let id = TaskId::new(first.task.id);
+    let id = BoxId::new(first.task.id);
     w.cx.store()
         .unwrap()
         .apply(Decision::new(id).box_input(BoxInput::DriverMissing))
@@ -521,7 +521,7 @@ fn start_on_a_lost_box_is_refused_while_another_op_holds_the_lock() {
 fn reprovision_skips_when_another_start_already_gave_the_box_back() {
     let w = world(FakeDriver::new());
     let first = run(&w.cx, &req("demo")).unwrap();
-    let id = TaskId::new(first.task.id);
+    let id = BoxId::new(first.task.id);
     let store = w.cx.store().unwrap();
     store
         .apply(Decision::new(id).box_input(BoxInput::DriverMissing))
@@ -554,7 +554,7 @@ fn reprovision_skips_when_another_start_already_gave_the_box_back() {
 /// Starts `demo`, then leaves it as a provisioning that lost its Box handle.
 fn stuck_provisioning(w: &World) {
     let first = run(&w.cx, &req("demo")).unwrap();
-    let stuck = Decision::new(TaskId::new(first.task.id))
+    let stuck = Decision::new(BoxId::new(first.task.id))
         .set(Fields {
             box_handle: Field::Clear,
             ..Fields::default()

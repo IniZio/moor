@@ -9,7 +9,7 @@ use moor_core::decide::sleep::{sleep_due, SleepFacts, SleepVerdict};
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
 use moor_core::domain::task::TaskInput;
-use moor_core::name::{BoxHandle, TaskId};
+use moor_core::name::{BoxHandle, BoxId};
 use moor_core::seam::driver::SleepOutcome;
 use moor_core::seam::surface::{PaneRef, SurfaceError};
 use moor_core::{ErrorKind, Warning};
@@ -25,7 +25,7 @@ use crate::store::{Store, StoreError, TaskRow};
 ///
 /// A held Box lock, a Box that cannot be slept right now and a step the store refuses leave
 /// everything as it was. A Box with a recorded refusal is not asked again until the Task has left Idle. Any other failure becomes a warning.
-pub(crate) fn run(cx: &Cx, store: &Store, id: TaskId) {
+pub(crate) fn run(cx: &Cx, store: &Store, id: BoxId) {
     match try_sleep(cx, store, id) {
         Err(e) if e.kind != ErrorKind::Refused => cx.warn(Warning {
             code: "auto_sleep_failed".to_owned(),
@@ -47,7 +47,7 @@ fn due(cx: &Cx, row: &TaskRow) -> bool {
 }
 
 /// Sleep the Box once the Box lock is free and the Task is still due.
-fn try_sleep(cx: &Cx, store: &Store, id: TaskId) -> Result<(), CommandError> {
+fn try_sleep(cx: &Cx, store: &Store, id: BoxId) -> Result<(), CommandError> {
     let Some(row) = store.task(id)? else {
         return Ok(());
     };
@@ -95,7 +95,7 @@ fn try_sleep(cx: &Cx, store: &Store, id: TaskId) -> Result<(), CommandError> {
 pub(crate) fn sleep_parked(
     cx: &Cx,
     store: &Store,
-    id: TaskId,
+    id: BoxId,
     handle: &BoxHandle,
 ) -> Result<SleepOutcome, CommandError> {
     park_tunnel(cx, store, id)?;
@@ -117,7 +117,7 @@ pub(crate) fn sleep_parked(
 }
 
 /// Closes the live agent pane; a pane already gone is fine.
-fn close_agent_pane(cx: &Cx, store: &Store, id: TaskId) -> Result<(), CommandError> {
+fn close_agent_pane(cx: &Cx, store: &Store, id: BoxId) -> Result<(), CommandError> {
     let Some(session) = store.live_session(id)? else {
         return Ok(());
     };

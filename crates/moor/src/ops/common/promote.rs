@@ -7,7 +7,7 @@ use std::time::Duration;
 use moor_core::config::{Flags, TaskSettings};
 use moor_core::decide::capacity::promote_order;
 use moor_core::domain::task::TaskState;
-use moor_core::{ProviderId, TaskId, TaskName, Warning};
+use moor_core::{BoxId, BoxName, ProviderId, Warning};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -30,7 +30,7 @@ pub(crate) fn promote_waiting(
     store: &Store,
     provider: &ProviderId,
     op: &str,
-) -> Vec<TaskName> {
+) -> Vec<BoxName> {
     let mut promoted = Vec::new();
     if let Err(e) = promote_into(cx, store, provider, op, &mut promoted) {
         cx.warn(Warning {
@@ -47,12 +47,12 @@ fn promote_into(
     store: &Store,
     provider: &ProviderId,
     op: &str,
-    promoted: &mut Vec<TaskName>,
+    promoted: &mut Vec<BoxName>,
 ) -> Result<(), CommandError> {
     let Some(lim) = capacity::limit(cx.config(), provider.as_str()) else {
         return Ok(());
     };
-    let mut cfgs: HashMap<TaskId, (TaskName, TaskSettings)> = HashMap::new();
+    let mut cfgs: HashMap<BoxId, (BoxName, TaskSettings)> = HashMap::new();
     for row in store.waiting_tasks()? {
         let at = row.worktree.as_deref().unwrap_or(&row.repo);
         match settings(cx, Path::new(at), &Flags::default()) {
@@ -74,7 +74,7 @@ fn promote_into(
     let free = usize::try_from(lim.max.get())
         .unwrap_or(usize::MAX)
         .saturating_sub(held);
-    let ids: Vec<TaskId> = cfgs.keys().copied().collect();
+    let ids: Vec<BoxId> = cfgs.keys().copied().collect();
     let free = u32::try_from(free).unwrap_or(u32::MAX);
     for id in promote_order(&ids, free) {
         let Some((name, cfg)) = cfgs.get(&id) else {
@@ -91,11 +91,11 @@ fn promote_into(
 fn promote_one(
     cx: &Cx,
     store: &Store,
-    id: TaskId,
-    name: &TaskName,
+    id: BoxId,
+    name: &BoxName,
     op: &str,
     cfg: &TaskSettings,
-) -> Result<Option<TaskName>, CommandError> {
+) -> Result<Option<BoxName>, CommandError> {
     let _lock = match BoxLock::acquire(cx.clock(), cx.state_dir()?, id, op, PROMOTE_WAIT) {
         Ok(lock) => lock,
         Err(e) => {

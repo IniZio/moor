@@ -13,7 +13,7 @@ use moor_core::domain::event::CheckedCred;
 use moor_core::domain::task::{TaskInput, TaskState};
 use moor_core::seam::surface::{workspace_label, Worktree};
 use moor_core::view::StartView;
-use moor_core::{ErrorKind, StartReq, TaskId, Warning};
+use moor_core::{BoxId, ErrorKind, StartReq, Warning};
 
 use super::common::activity;
 use super::common::autosleep;
@@ -211,7 +211,7 @@ fn attach(
 }
 
 /// Moves an Idle Task being started to Working, so the launch check sees a Working Task.
-fn wake_idle(store: &Store, id: TaskId) -> Result<(), CommandError> {
+fn wake_idle(store: &Store, id: BoxId) -> Result<(), CommandError> {
     let row = reread(store, id)?;
     if row.state != TaskState::Idle {
         return Ok(());
@@ -333,7 +333,7 @@ fn insert(
     facts: &Facts,
     placed: &Placed,
     checked: Vec<CheckedCred>,
-) -> Result<TaskId, StoreError> {
+) -> Result<BoxId, StoreError> {
     let branch = Some(placed.wt.branch.clone()).filter(|b| !b.is_empty());
     let set = Fields {
         issue: set_some(req.issue.clone()),

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use moor_core::activity::{PaneObs, PaneStatus};
 use moor_core::domain::task::TaskState;
-use moor_core::{ErrorKind, ShowReq, StartReq, TaskId, TaskName, WaitFor, WaitReq};
+use moor_core::{BoxId, BoxName, ErrorKind, ShowReq, StartReq, WaitFor, WaitReq};
 
 use super::relaunch::{gone, session, started};
 use super::{req, world, World};
@@ -44,7 +44,7 @@ fn an_agent_that_exits_127_at_launch_is_a_launch_failure() {
         Ok(exited(127, "sh: claude: not found\nmoor: agent exited 127")),
     );
     let v = run(&w.cx, &goal_req("demo")).unwrap();
-    let id = TaskId::new(v.task.id);
+    let id = BoxId::new(v.task.id);
     let store = w.cx.store().unwrap();
     assert!(!v.agent.launched);
     assert!(v.agent.session.is_none());
@@ -98,7 +98,7 @@ fn a_dead_agent_shows_as_failed_and_wait_fails() {
     assert_eq!(t.state, TaskState::Working);
     assert_eq!(t.agent.as_ref().unwrap().state, "failed");
     let wait = WaitReq {
-        task: TaskName::parse("demo").unwrap(),
+        task: BoxName::parse("demo").unwrap(),
         wait_for: Some(WaitFor::Idle),
         timeout_secs: Some(60),
     };

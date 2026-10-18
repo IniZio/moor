@@ -13,7 +13,7 @@ use moor_core::seam::clock::{Clock, Ts};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
 use moor_core::seam::proc::Deadline;
 use moor_core::view::SetupView;
-use moor_core::{BoxHandle, BoxPath, ProviderId, TaskId, TaskName};
+use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId};
 
 use super::{run_setup as run_setup_with, sync_checkout, SetupRun};
 use crate::cx::Cx;
@@ -50,8 +50,8 @@ fn rig_on(dir: &Path, driver: FakeDriver, clock: Arc<FakeClock>) -> Rig {
     let got = driver
         .acquire(&AcquireReq {
             provider: ProviderId::new("p"),
-            task: TaskId::new(1),
-            name: TaskName::parse("demo").unwrap(),
+            task: BoxId::new(1),
+            name: BoxName::parse("demo").unwrap(),
             class: None,
             nonce: "n".to_owned(),
             worktree: None,

@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use moor_core::decide::proof::ProofFile;
 use moor_core::domain::boxes::BoxState;
 use moor_core::view::{AttentionView, EventView, PaneView, ShowView, TaskView};
-use moor_core::{ErrorKind, ShowReq, TaskId, Warning};
+use moor_core::{BoxId, ErrorKind, ShowReq, Warning};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -62,7 +62,7 @@ pub(crate) fn redact_nonce(text: &str, nonce: Option<&[u8]>) -> String {
 fn pane_view(
     reading: &activity::Reading,
     store: &Store,
-    task: TaskId,
+    task: BoxId,
 ) -> Result<Option<PaneView>, CommandError> {
     let Some(text) = reading.pane_text.as_deref() else {
         return Ok(None);
@@ -97,7 +97,7 @@ fn proof_files(cx: &Cx, row: &TaskRow) -> Option<Vec<ProofFile>> {
 }
 
 /// The task's open credential limits as views.
-fn attention(store: &Store, task: TaskId) -> Result<Vec<AttentionView>, CommandError> {
+fn attention(store: &Store, task: BoxId) -> Result<Vec<AttentionView>, CommandError> {
     Ok(store
         .open_limits(task)?
         .iter()

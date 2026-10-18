@@ -4,7 +4,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use moor_core::domain::decision::{Decision, NewTask};
-use moor_core::{ErrorKind, GateReq, Sha, TaskId, TaskName};
+use moor_core::{BoxId, BoxName, ErrorKind, GateReq, Sha};
 
 use super::run;
 use crate::cx::Cx;
@@ -29,9 +29,9 @@ fn cx(dir: &Path) -> Cx {
 }
 
 /// Insert a task by name.
-fn task(cx: &Cx, name: &str) -> TaskId {
+fn task(cx: &Cx, name: &str) -> BoxId {
     let nt = NewTask {
-        name: TaskName::parse(name).unwrap(),
+        name: BoxName::parse(name).unwrap(),
         repo: "r".into(),
     };
     cx.store()
@@ -42,7 +42,7 @@ fn task(cx: &Cx, name: &str) -> TaskId {
 }
 
 /// Record a finished run of `command` named `name` on `sha` with `exit`.
-fn record(cx: &Cx, task: TaskId, name: &str, sha: &str, command: &str, exit: i32) {
+fn record(cx: &Cx, task: BoxId, name: &str, sha: &str, command: &str, exit: i32) {
     let store = cx.store().unwrap();
     let id = store
         .begin_run(NewRun {

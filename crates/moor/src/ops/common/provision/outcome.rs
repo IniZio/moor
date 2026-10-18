@@ -2,8 +2,8 @@
 
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, IntentChange};
 use moor_core::domain::task::TaskInput;
+use moor_core::BoxId;
 use moor_core::ErrorKind;
-use moor_core::TaskId;
 
 use super::reread;
 use crate::cx::Cx;
@@ -38,7 +38,7 @@ impl Provisioned {
 pub(super) fn sync_failed(
     cx: &Cx,
     store: &Store,
-    id: TaskId,
+    id: BoxId,
     advance: bool,
     reason: String,
 ) -> CommandError {
@@ -76,7 +76,7 @@ pub(super) fn sync_failed(
 pub(super) fn dotfiles_failed(
     cx: &Cx,
     store: &Store,
-    id: TaskId,
+    id: BoxId,
     advance: bool,
     setup_line: Option<String>,
     failure: DotfilesFailed,

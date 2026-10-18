@@ -4,7 +4,7 @@ use std::sync::Arc;
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::Decision;
 use moor_core::seam::engine::EngineError;
-use moor_core::TaskId;
+use moor_core::BoxId;
 
 use super::relaunch::{gone, session, set_agent_session, started};
 use super::{req, World};
@@ -13,7 +13,7 @@ use crate::testing::engine::FakeEngine;
 
 const SHA_ABC: &str = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
 
-fn kinds(w: &World, id: TaskId) -> Vec<String> {
+fn kinds(w: &World, id: BoxId) -> Vec<String> {
     let ev = w.cx.store().unwrap().events(id, 100).unwrap();
     ev.into_iter()
         .map(|e| e.kind)
@@ -21,7 +21,7 @@ fn kinds(w: &World, id: TaskId) -> Vec<String> {
         .collect()
 }
 
-fn first_digest(w: &World, id: TaskId) -> Option<String> {
+fn first_digest(w: &World, id: BoxId) -> Option<String> {
     w.cx.store()
         .unwrap()
         .reader()
@@ -35,7 +35,7 @@ fn first_digest(w: &World, id: TaskId) -> Option<String> {
 }
 
 /// A started world whose engine serves `transcript`; the old session is still live in the hook.
-fn with_transcript(engine: FakeEngine) -> (World, Arc<FakeEngine>, TaskId) {
+fn with_transcript(engine: FakeEngine) -> (World, Arc<FakeEngine>, BoxId) {
     let (mut w, _, id) = started();
     let engine = Arc::new(engine.launch_result(Ok(session("p-2"))));
     w.cx = w.cx.with_engine(engine.clone());
