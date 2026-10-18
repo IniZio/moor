@@ -32,7 +32,7 @@ impl Seed {
         let db = Connection::open(path).ok()?;
         db.busy_timeout(Duration::from_secs(5)).unwrap();
         let ready = db.query_row(
-            "SELECT count(*) FROM sqlite_master WHERE name IN ('boxes', 'slack_threads')",
+            "SELECT count(*) FROM sqlite_master WHERE name IN ('boxes', 'bindings')",
             [],
             |row| row.get::<_, i64>(0),
         );
@@ -62,14 +62,15 @@ impl Seed {
             [task],
         )
         .unwrap();
+        let session = db.last_insert_rowid();
         db.execute(
             "INSERT INTO events (box, kind, payload, ts) VALUES (?1, 'working', '{}', 0)",
             [task],
         )
         .unwrap();
         db.execute(
-            "INSERT INTO slack_threads (channel, thread_ts, task, owner, created_at) VALUES (?1, ?2, ?3, ?4, 0)",
-            [CHANNEL, TS, TASK, USER],
+            "INSERT INTO bindings (front, conv_key, session, owner, created_at) VALUES ('slack', ?1, ?2, ?3, 0)",
+            rusqlite::params![format!("{CHANNEL}/{TS}"), session, USER],
         )
         .unwrap();
         rig.fake.wait_posts(1);
