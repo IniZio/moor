@@ -21,6 +21,9 @@ const NONCE_VAR: &str = "moor_nonce";
 /// System CA bundles, first existing one wins.
 const SYSTEM_BUNDLES: &str =
     "/etc/ssl/certs/ca-certificates.crt /etc/pki/tls/certs/ca-bundle.crt /etc/ssl/cert.pem";
+/// Where an image can record the `PATH` its Dockerfile `ENV` sets; non-interactive ssh execs do
+/// not inherit that `ENV`.
+const IMAGE_ENV_FILE: &str = "/etc/environment";
 /// The fetch refspec of the `moor` remote; a push records `refs/remotes/moor/<branch>` through it.
 const MOOR_FETCH: &str = "+refs/heads/*:refs/remotes/moor/*";
 
@@ -79,8 +82,8 @@ pub struct ExecEnv {
     pub vars: Vec<(String, String)>,
     /// Names to unset before the command runs (the strip names, deduplicated).
     pub unset: Vec<String>,
-    /// Shell lines run before the command; they never contain the nonce. Empty without a Proxy,
-    /// because there is then no push remote to set up.
+    /// Shell lines run before the command; they never contain the nonce. Always starts with
+    /// the image `PATH` line; the Proxy lines follow when there is a Proxy.
     pub prelude: Vec<String>,
     /// The working directory; none keeps the driver's default directory.
     pub cwd: Option<BoxPath>,
@@ -108,10 +111,10 @@ pub fn build(b: &BoxCtx<'_>, purpose: Purpose) -> Result<ExecEnv, String> {
             unset.push(name.clone());
         }
     }
-    let mut prelude = match &b.proxy {
-        Some(p) => proxy_lines(p)?,
-        None => Vec::new(),
-    };
+    let mut prelude = vec![image_path_line()];
+    if let Some(p) = &b.proxy {
+        prelude.extend(proxy_lines(p)?);
+    }
     if b.proxy.is_some() {
         prelude.extend(git_remote_lines(b.origin));
         prelude.push(format!(
@@ -170,7 +173,8 @@ pub fn merged_env(
 
 /// `argv` wrapped so the unset line and the prelude run first.
 ///
-/// With nothing to unset, an empty prelude and no `cleanup`, `argv` is unchanged. Otherwise it becomes
+/// [`build`] always yields a prelude, so `argv` is unchanged only for a hand-built [`ExecEnv`] with
+/// nothing to unset, an empty prelude and no `cleanup`. Otherwise it becomes
 /// `sh -c '<prelude>\nexec "$@"' sh argv...`. With `cleanup`, the script has no `exec`: it sets an
 /// `EXIT` trap that removes the `cleanup` directory (the staged credentials), runs the command, and
 /// exits with the command's status.
@@ -317,6 +321,20 @@ fn proxy_lines(p: &ProxyCtx<'_>) -> Result<Vec<String>, String> {
     }
     lines.push("export NODE_USE_ENV_PROXY=1".to_owned());
     Ok(lines)
+}
+
+/// The line that appends the `PATH` of [`IMAGE_ENV_FILE`], when it sets one, to the exec's `PATH`.
+fn image_path_line() -> String {
+    image_path_line_for(IMAGE_ENV_FILE)
+}
+
+/// [`image_path_line`] reading `file`. The image entries go last, so a command the exec's `PATH`
+/// already resolves keeps resolving to the same program; a Box without the file is unchanged.
+fn image_path_line_for(file: &str) -> String {
+    format!(
+        "moor_img=$(sed -n 's/^PATH=//p' {} 2>/dev/null | tail -n 1 | tr -d \"\\\"'\"); [ -z \"$moor_img\" ] || PATH=\"$PATH:$moor_img\"; unset moor_img",
+        quote(file)
+    )
 }
 
 /// Shell lines that point Yarn and npm at the proxy, the CA bundle and a cache the agent can write.

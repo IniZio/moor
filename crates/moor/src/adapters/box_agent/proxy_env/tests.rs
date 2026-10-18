@@ -76,7 +76,8 @@ fn without_a_proxy_the_environment_only_strips_names() {
     let strip = ["PLATFORM_TOKEN".to_owned()];
     let exec = super::exec_env(&w, None, &strip, None, &w).unwrap();
     assert_eq!(exec.unset, strip);
-    assert!(exec.prelude.is_empty() && exec.vars.is_empty());
+    assert!(exec.vars.is_empty());
+    assert!(exec.prelude.iter().all(|l| !l.contains("PROXY")));
 }
 
 fn lines_for(origin: Option<&str>) -> Vec<String> {
