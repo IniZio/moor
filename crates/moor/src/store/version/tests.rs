@@ -3,7 +3,7 @@
 use std::fs::File;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Barrier};
 
 use moor_core::seam::clock::Ts;
 use rusqlite::Connection;
@@ -26,6 +26,11 @@ fn make_db(dir: &Path, version: &str) -> PathBuf {
     conn.execute_batch("CREATE TABLE tasks (id INTEGER PRIMARY KEY);")
         .unwrap();
     path
+}
+
+/// Retires `db` and returns the backup path, releasing the lock at once.
+fn retire(db: &Path) -> Result<Option<PathBuf>, StoreError> {
+    retire_v1(db).map(|r| r.backup)
 }
 
 /// The path with `suffix` appended to its file name.
@@ -52,10 +57,10 @@ fn has_table(db: &Path, name: &str) -> bool {
 fn no_database_returns_none() {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("moor.db");
-    assert_eq!(retire_v1(&db).unwrap(), None);
+    assert_eq!(retire(&db).unwrap(), None);
     assert!(!db.exists());
     File::create(&db).unwrap();
-    assert_eq!(retire_v1(&db).unwrap(), None);
+    assert_eq!(retire(&db).unwrap(), None);
     assert!(db.exists());
 }
 
@@ -63,7 +68,7 @@ fn no_database_returns_none() {
 fn v1_database_is_moved_to_backup() {
     let dir = tempfile::tempdir().unwrap();
     let db = make_db(dir.path(), "1");
-    let bak = retire_v1(&db).unwrap().unwrap();
+    let bak = retire(&db).unwrap().unwrap();
     assert_eq!(bak, suffixed(&db, ".v1.bak"));
     assert!(has_table(&bak, "tasks"));
     assert!(!db.exists());
@@ -75,12 +80,12 @@ fn v1_database_is_moved_to_backup() {
 fn second_backup_takes_a_numbered_name() {
     let dir = tempfile::tempdir().unwrap();
     let db = make_db(dir.path(), "1");
-    let first = retire_v1(&db).unwrap().unwrap();
+    let first = retire(&db).unwrap().unwrap();
     make_db(dir.path(), "1");
-    let second = retire_v1(&db).unwrap().unwrap();
+    let second = retire(&db).unwrap().unwrap();
     assert_eq!(second, suffixed(&db, ".v1.bak.1"));
     make_db(dir.path(), "1");
-    let third = retire_v1(&db).unwrap().unwrap();
+    let third = retire(&db).unwrap().unwrap();
     assert_eq!(third, suffixed(&db, ".v1.bak.2"));
     assert!(first.exists() && second.exists() && third.exists());
 }
@@ -89,7 +94,7 @@ fn second_backup_takes_a_numbered_name() {
 fn other_version_is_left_alone() {
     let dir = tempfile::tempdir().unwrap();
     let db = make_db(dir.path(), "7");
-    assert_eq!(retire_v1(&db).unwrap(), None);
+    assert_eq!(retire(&db).unwrap(), None);
     assert!(has_table(&db, "tasks"));
     assert!(!suffixed(&db, ".v1.bak").exists());
 }
@@ -98,7 +103,7 @@ fn other_version_is_left_alone() {
 fn current_version_is_left_alone() {
     let dir = tempfile::tempdir().unwrap();
     let db = make_db(dir.path(), "2");
-    assert_eq!(retire_v1(&db).unwrap(), None);
+    assert_eq!(retire(&db).unwrap(), None);
     assert!(has_table(&db, "tasks"));
 }
 
@@ -114,7 +119,7 @@ fn running_controller_refuses_and_keeps_database() {
         .unwrap();
     writeln!(lock, "1\nsock").unwrap();
     lock.try_lock().unwrap();
-    let err = retire_v1(&db).unwrap_err();
+    let err = retire(&db).unwrap_err();
     assert!(
         matches!(&err, StoreError::ControllerRunning { pid } if pid == "1"),
         "{err:?}"
@@ -138,4 +143,103 @@ fn store_open_on_v1_creates_fresh_store() {
         .unwrap();
     assert_eq!(version, "2");
     assert!(suffixed(&db, ".v1.bak").exists());
+}
+
+/// Puts a v1 database into WAL mode with `rows` rows and returns an idle
+/// connection that keeps the `-wal` and `-shm` files alive.
+fn make_wal_db(dir: &Path, rows: i64) -> (PathBuf, Connection) {
+    let db = make_db(dir, "1");
+    let conn = Connection::open(&db).unwrap();
+    conn.pragma_update(None, "journal_mode", "WAL").unwrap();
+    for id in 1..=rows {
+        conn.execute("INSERT INTO tasks (id) VALUES (?1)", [id])
+            .unwrap();
+    }
+    (db, conn)
+}
+
+/// Number of rows in `tasks`.
+fn task_count(db: &Path) -> i64 {
+    Connection::open(db)
+        .unwrap()
+        .query_row("SELECT count(*) FROM tasks", [], |r| r.get(0))
+        .unwrap()
+}
+
+#[test]
+fn busy_reader_refuses_and_keeps_database_readable() {
+    let dir = tempfile::tempdir().unwrap();
+    let (db, writer) = make_wal_db(dir.path(), 3);
+    let reader = Connection::open(&db).unwrap();
+    reader
+        .execute_batch("BEGIN; SELECT count(*) FROM tasks;")
+        .unwrap();
+    for id in 10..15 {
+        writer
+            .execute("INSERT INTO tasks (id) VALUES (?1)", [id])
+            .unwrap();
+    }
+    let err = retire(&db).unwrap_err();
+    assert!(matches!(err, StoreError::StoreInUse), "{err:?}");
+    assert!(!suffixed(&db, ".v1.bak").exists());
+    reader.execute_batch("COMMIT").unwrap();
+    drop(reader);
+    drop(writer);
+    assert_eq!(task_count(&db), 8);
+}
+
+#[test]
+fn stale_controller_lock_does_not_block_retire() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = make_db(dir.path(), "1");
+    std::fs::write(dir.path().join("controller.sock.lock"), "999999\nsock").unwrap();
+    let bak = retire(&db).unwrap().unwrap();
+    assert!(has_table(&bak, "tasks"));
+}
+
+#[test]
+fn concurrent_opens_keep_one_backup_and_a_v2_store() {
+    for _ in 0..20 {
+        let dir = tempfile::tempdir().unwrap();
+        let db = make_db(dir.path(), "1");
+        let barrier = Arc::new(Barrier::new(2));
+        let handles: Vec<_> = (0..2)
+            .map(|_| {
+                let (db, barrier) = (db.clone(), Arc::clone(&barrier));
+                std::thread::spawn(move || {
+                    let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
+                    barrier.wait();
+                    Store::open(&db, clock).map(drop)
+                })
+            })
+            .collect();
+        for h in handles {
+            h.join().unwrap().unwrap();
+        }
+        let bak = suffixed(&db, ".v1.bak");
+        assert!(bak.exists());
+        assert!(!suffixed(&db, ".v1.bak.1").exists());
+        assert!(has_table(&bak, "tasks"));
+        let version: String = Connection::open(&db)
+            .unwrap()
+            .query_row("SELECT v FROM meta WHERE k = 'schema_version'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(version, crate::store::SCHEMA_VERSION);
+    }
+}
+
+#[test]
+fn wal_and_shm_move_beside_the_backup() {
+    let dir = tempfile::tempdir().unwrap();
+    let (db, idle) = make_wal_db(dir.path(), 4);
+    assert!(suffixed(&db, "-wal").exists() && suffixed(&db, "-shm").exists());
+    let bak = retire(&db).unwrap().unwrap();
+    assert!(suffixed(&bak, "-wal").exists());
+    assert!(suffixed(&bak, "-shm").exists());
+    assert!(!suffixed(&db, "-wal").exists());
+    assert!(!suffixed(&db, "-shm").exists());
+    drop(idle);
+    assert_eq!(task_count(&bak), 4);
 }
