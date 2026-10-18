@@ -51,7 +51,7 @@ impl Store {
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let latest: Option<(i64, String)> = tx
             .query_row(
-                "SELECT version, path FROM reports WHERE task = ? AND kind = ? \
+                "SELECT version, path FROM reports WHERE box = ? AND kind = ? \
                  ORDER BY version DESC LIMIT 1",
                 params![task.get(), kind],
                 |r| Ok((r.get(0)?, r.get(1)?)),
@@ -73,7 +73,7 @@ impl Store {
         write_private(&file, content)?;
         let stored = tx
             .execute(
-                "INSERT INTO reports (task, kind, version, path, title, created_at) \
+                "INSERT INTO reports (box, kind, version, path, title, created_at) \
                  VALUES (?, ?, ?, ?, NULL, ?)",
                 params![task.get(), kind, version, path, now.as_millis()],
             )
@@ -106,8 +106,8 @@ impl Store {
     pub(crate) fn reports(&self, task: BoxId) -> Result<Vec<ReportRow>, StoreError> {
         let conn = self.reader()?;
         let mut stmt = conn.prepare(
-            "SELECT id, task, kind, version, path, title, created_at FROM reports \
-             WHERE task = ? ORDER BY kind, version",
+            "SELECT id, box, kind, version, path, title, created_at FROM reports \
+             WHERE box = ? ORDER BY kind, version",
         )?;
         let rows = stmt
             .query_map([task.get()], report_from_row)?

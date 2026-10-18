@@ -89,7 +89,7 @@ fn exit_of_first_session(w: &World, id: BoxId) -> Option<i32> {
         .reader()
         .unwrap()
         .query_row(
-            "SELECT exit FROM sessions WHERE task = ? ORDER BY id LIMIT 1",
+            "SELECT exit FROM launches WHERE box = ? ORDER BY id LIMIT 1",
             [id.get()],
             |r| r.get(0),
         )

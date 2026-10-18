@@ -76,7 +76,7 @@ pub(crate) struct RunRow {
 
 /// Columns read into a [`RunRow`].
 const RUN_SELECT: &str =
-    "SELECT id, task, argv, record, sha, pid, exit, interrupted, started_at, finished_at FROM runs";
+    "SELECT id, box, argv, record, sha, pid, exit, interrupted, started_at, finished_at FROM runs";
 
 /// Map a `runs` row selected with [`RUN_SELECT`].
 fn run_from_row(row: &Row<'_>) -> Result<RunRow, StoreError> {
@@ -87,7 +87,7 @@ fn run_from_row(row: &Row<'_>) -> Result<RunRow, StoreError> {
         .transpose()?;
     Ok(RunRow {
         id: RunId::new(row.get("id")?),
-        task: BoxId::new(row.get("task")?),
+        task: BoxId::new(row.get("box")?),
         argv: serde_json::from_str(&argv)?,
         record: row.get("record")?,
         sha,
@@ -120,7 +120,7 @@ impl Store {
         }
         let argv = serde_json::to_string(&argv)?;
         tx.execute(
-            "INSERT INTO runs (task, argv, record, sha, sync, pid, started_at) \
+            "INSERT INTO runs (box, argv, record, sha, sync, pid, started_at) \
              VALUES (?, ?, ?, ?, ?, ?, ?)",
             params![
                 task.get(),
@@ -136,7 +136,7 @@ impl Store {
         let intent = IntentChange::Set(Intent::Running { run, pid });
         let mut sets = intent_sets(intent, now);
         sets.push(("updated_at", Value::Integer(now.as_millis())));
-        update(&tx, "tasks", "id = ?", &[task.get()], &sets)?;
+        update(&tx, "boxes", "id = ?", &[task.get()], &sets)?;
         insert_event(&tx, task, &Event::RunStarted { run }, now)?;
         tx.commit()?;
         drop(conn);
@@ -151,7 +151,7 @@ impl Store {
         let mut conn = self.writer()?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let task: Option<i64> = tx
-            .query_row("SELECT task FROM runs WHERE id = ?", [id.get()], |r| {
+            .query_row("SELECT box FROM runs WHERE id = ?", [id.get()], |r| {
                 r.get(0)
             })
             .optional()?;
@@ -170,7 +170,7 @@ impl Store {
         clear.push(("updated_at", Value::Integer(now.as_millis())));
         update(
             &tx,
-            "tasks",
+            "boxes",
             "id = ? AND intent_kind = 'running' AND intent_run = ?",
             &[task.get(), id.get()],
             &clear,
@@ -219,7 +219,7 @@ impl Store {
         let open = {
             let conn = self.reader()?;
             let mut stmt = conn.prepare(&format!(
-                "{RUN_SELECT} WHERE task = ? AND finished_at IS NULL ORDER BY id DESC"
+                "{RUN_SELECT} WHERE box = ? AND finished_at IS NULL ORDER BY id DESC"
             ))?;
             let rows = stmt.query_and_then([task.get()], run_from_row)?;
             rows.collect::<Result<Vec<_>, _>>()?
@@ -239,7 +239,7 @@ impl Store {
     pub(crate) fn last_run(&self, task: BoxId) -> Result<Option<RunRow>, StoreError> {
         let conn = self.reader()?;
         let mut stmt = conn.prepare(&format!(
-            "{RUN_SELECT} WHERE task = ? ORDER BY id DESC LIMIT 1"
+            "{RUN_SELECT} WHERE box = ? ORDER BY id DESC LIMIT 1"
         ))?;
         let mut rows = stmt.query_and_then([task.get()], run_from_row)?;
         rows.next().transpose()

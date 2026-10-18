@@ -48,7 +48,7 @@ impl Store {
     ) -> Result<Vec<(String, serde_json::Value)>, StoreError> {
         let conn = self.reader()?;
         let mut stmt = conn.prepare(
-            "SELECT kind, payload FROM events WHERE task = ?1 AND kind IN \
+            "SELECT kind, payload FROM events WHERE box = ?1 AND kind IN \
              ('agent_rate_limited', 'proxy_credential_rejected', 'proxy_credential_recovered') \
              ORDER BY id",
         )?;

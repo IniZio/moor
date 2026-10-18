@@ -15,7 +15,7 @@ use super::{parsed_opt, Store, StoreError};
 pub(super) const LEASE_SQL: &str = "\
 CREATE TABLE IF NOT EXISTS box_lease (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  task INTEGER NOT NULL REFERENCES tasks(id),
+  box INTEGER NOT NULL REFERENCES boxes(id),
   kind TEXT NOT NULL,
   key TEXT NOT NULL,
   state TEXT NOT NULL,
@@ -23,12 +23,12 @@ CREATE TABLE IF NOT EXISTS box_lease (
   pgid INTEGER, sid INTEGER, root_pid INTEGER, root_start INTEGER,
   size_at_release INTEGER,
   created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL,
-  UNIQUE(task, kind, key));
-CREATE INDEX IF NOT EXISTS box_lease_task ON box_lease(task);
+  UNIQUE(box, kind, key));
+CREATE INDEX IF NOT EXISTS box_lease_box ON box_lease(box);
 ";
 
 /// Columns read into a `LeaseRow`, in `row` order.
-const COLUMNS: &str = "id, task, kind, key, state, booted, pgid, sid, root_pid, root_start, \
+const COLUMNS: &str = "id, box, kind, key, state, booted, pgid, sid, root_pid, root_start, \
                        size_at_release, updated_at";
 
 /// What a leased resource is; `key` means a path, UDID, project or tag by kind.
@@ -157,7 +157,7 @@ pub(crate) struct LeaseRow {
 
 impl Store {
     /// Record a resource as `planned` before creating it. Returns the existing id, state
-    /// unchanged, when `(task, kind, key)` is already recorded.
+    /// unchanged, when `(box, kind, key)` is already recorded.
     pub(crate) fn plan_lease(
         &self,
         task: BoxId,
@@ -167,12 +167,12 @@ impl Store {
         let now = self.now().as_millis();
         let conn = self.writer()?;
         conn.execute(
-            "INSERT OR IGNORE INTO box_lease (task, kind, key, state, created_at, updated_at) \
+            "INSERT OR IGNORE INTO box_lease (box, kind, key, state, created_at, updated_at) \
              VALUES (?, ?, ?, 'planned', ?, ?)",
             params![task.get(), kind.as_str(), key, now, now],
         )?;
         let id = conn.query_row(
-            "SELECT id FROM box_lease WHERE task = ? AND kind = ? AND key = ?",
+            "SELECT id FROM box_lease WHERE box = ? AND kind = ? AND key = ?",
             params![task.get(), kind.as_str(), key],
             |r| r.get(0),
         )?;
@@ -212,7 +212,7 @@ impl Store {
         let conn = self.reader()?;
         query(
             &conn,
-            &format!("SELECT {COLUMNS} FROM box_lease WHERE task = ? ORDER BY id"),
+            &format!("SELECT {COLUMNS} FROM box_lease WHERE box = ? ORDER BY id"),
             params![task.get()],
         )
     }

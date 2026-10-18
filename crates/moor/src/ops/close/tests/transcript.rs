@@ -33,7 +33,7 @@ fn kinds(f: &Fx) -> Vec<String> {
 fn ended_digest(f: &Fx) -> Option<String> {
     let c = rusqlite::Connection::open(f.dir.path().join("moor.db")).unwrap();
     c.query_row(
-        "SELECT transcript_digest FROM sessions WHERE task = ?",
+        "SELECT transcript_digest FROM launches WHERE box = ?",
         [f.id.get()],
         |r| r.get(0),
     )

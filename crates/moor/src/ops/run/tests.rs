@@ -532,7 +532,7 @@ fn unreadable_head_records_and_reports_no_sha() {
 fn idle_since(f: &Fx) -> Option<i64> {
     let db = rusqlite::Connection::open(f.dir.path().join("moor.db")).unwrap();
     db.query_row(
-        "SELECT idle_since FROM tasks WHERE id = ?",
+        "SELECT idle_since FROM boxes WHERE id = ?",
         [f.id.get()],
         |r| r.get(0),
     )

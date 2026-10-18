@@ -323,7 +323,7 @@ fn an_exited_agent_names_its_code() {
             .reader()
             .unwrap()
             .query_row(
-                "SELECT exit FROM sessions WHERE task = ?",
+                "SELECT exit FROM launches WHERE box = ?",
                 [f.id.get()],
                 |r| r.get(0),
             )
@@ -517,7 +517,7 @@ fn an_exited_agent_has_its_transcript_saved_before_the_session_ends() {
         .reader()
         .unwrap()
         .query_row(
-            "SELECT transcript_digest FROM sessions WHERE task = ?",
+            "SELECT transcript_digest FROM launches WHERE box = ?",
             [f.id.get()],
             |r| r.get(0),
         )
