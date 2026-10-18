@@ -1,6 +1,8 @@
 //! Tests for Slack event dedup and thread binding.
 
 use moor_core::seam::clock::Clock;
+use moor_core::domain::decision::Decision;
+use moor_core::domain::task::TaskInput;
 use moor_core::BoxName;
 
 use crate::store::tests::{new_task, open};
@@ -241,33 +243,42 @@ fn prompt_answered_once() {
 fn proof_posted_once_per_digest() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
-    new_task(&store, "t");
-    assert!(!store.slack_proof_posted("t", "shot.png", "aa").unwrap());
-    store
-        .mark_slack_proof_posted("t", "shot.png", "aa")
-        .unwrap();
-    assert!(store.slack_proof_posted("t", "shot.png", "aa").unwrap());
-    assert!(!store.slack_proof_posted("t", "shot.png", "bb").unwrap());
-    assert!(!store.slack_proof_posted("u", "shot.png", "aa").unwrap());
-    store
-        .mark_slack_proof_posted("t", "shot.png", "aa")
-        .unwrap();
-    assert!(store.slack_proof_posted("t", "shot.png", "aa").unwrap());
+    let id = new_task(&store, "t");
+    let other = new_task(&store, "u");
+    assert!(!store.slack_proof_posted(id, "shot.png", "aa").unwrap());
+    store.mark_slack_proof_posted(id, "shot.png", "aa").unwrap();
+    assert!(store.slack_proof_posted(id, "shot.png", "aa").unwrap());
+    assert!(!store.slack_proof_posted(id, "shot.png", "bb").unwrap());
+    assert!(!store.slack_proof_posted(other, "shot.png", "aa").unwrap());
+    store.mark_slack_proof_posted(id, "shot.png", "aa").unwrap();
+    assert!(store.slack_proof_posted(id, "shot.png", "aa").unwrap());
 }
 
 #[test]
 fn proof_posted_survives_reopen() {
     let dir = tempfile::tempdir().unwrap();
     let (store, clock) = open(dir.path());
-    new_task(&store, "t");
-    store
-        .mark_slack_proof_posted("t", "shot.png", "aa")
-        .unwrap();
+    let id = new_task(&store, "t");
+    store.mark_slack_proof_posted(id, "shot.png", "aa").unwrap();
     drop(store);
     let path = dir.path().join("state").join("moor.db");
     let store = Store::open(&path, clock).unwrap();
-    assert!(store.slack_proof_posted("t", "shot.png", "aa").unwrap());
-    assert!(!store.slack_proof_posted("t", "shot.png", "bb").unwrap());
+    assert!(store.slack_proof_posted(id, "shot.png", "aa").unwrap());
+    assert!(!store.slack_proof_posted(id, "shot.png", "bb").unwrap());
+}
+
+#[test]
+fn proof_dedup_keys_on_box_not_name() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = open(dir.path());
+    let first = new_task(&store, "t");
+    store
+        .apply(Decision::new(first).task_input(TaskInput::Close))
+        .unwrap();
+    let second = new_task(&store, "t");
+    store.mark_slack_proof_posted(first, "shot.png", "aa").unwrap();
+    assert!(store.slack_proof_posted(first, "shot.png", "aa").unwrap());
+    assert!(!store.slack_proof_posted(second, "shot.png", "aa").unwrap());
 }
 
 fn primary_session(store: &Store, id: moor_core::BoxId) -> i64 {
@@ -329,9 +340,7 @@ fn proof_row_keys_box() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let id = new_task(&store, "t");
-    store
-        .mark_slack_proof_posted("t", "shot.png", "aa")
-        .unwrap();
+    store.mark_slack_proof_posted(id, "shot.png", "aa").unwrap();
     let boxed: i64 = store
         .reader()
         .unwrap()
