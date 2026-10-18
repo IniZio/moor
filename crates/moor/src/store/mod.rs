@@ -4,13 +4,17 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
+use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::Intent;
+use moor_core::domain::session_state::SessionState;
 use moor_core::domain::task::TaskState;
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::view::LaunchFailure;
 use moor_core::{BoxHandle, BoxId, BoxName, ProviderId, RunId};
-use rusqlite::{Connection, OpenFlags, OptionalExtension, Row, TransactionBehavior};
+use rusqlite::{Connection, OpenFlags, Row};
+
+use init::{parsed, parsed_opt};
 
 /// File name of the state database inside the state directory.
 pub(crate) const STORE_FILE: &str = "moor.db";
@@ -18,6 +22,7 @@ pub(crate) const STORE_FILE: &str = "moor.db";
 #[cfg_attr(not(test), expect(dead_code, reason = "used by ops, not yet wired"))]
 mod agent;
 mod apply;
+mod init;
 pub(crate) mod lease;
 mod open;
 mod proxy;
@@ -27,6 +32,7 @@ mod runs;
 mod slack;
 #[cfg(test)]
 mod tests;
+mod version;
 
 pub(crate) use agent::SessionRow;
 pub(crate) use proxy::{Fenced, Lease, ProxyPorts, ProxyRow, ReadyProc, Reserve};
@@ -35,16 +41,17 @@ pub(crate) use runs::{NewRun, RunOutcome, RunRow};
 pub(crate) use slack::{SlackPrompt, SlackThread};
 
 /// Schema version this build reads and writes.
-pub(crate) const SCHEMA_VERSION: &str = "1";
+pub(crate) const SCHEMA_VERSION: &str = "2";
 /// Full schema, applied once when the file has no `meta` table.
 const SCHEMA_SQL: &str = include_str!("schema.sql");
 /// How long a connection waits on a lock before `SQLITE_BUSY`.
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
-/// Column list shared by the task reads; box columns come from a left join.
-const TASK_SELECT: &str = "SELECT t.id, t.name, t.repo, t.issue, t.goal, t.base, t.branch, t.worktree, t.bound, \
-    t.workspace_id, t.agent_session_id, t.state, t.state_reason, t.intent_kind, t.intent_pid, t.intent_run, \
-    t.intent_at, t.setup_failed_at, t.created_at, t.updated_at, b.provider, b.handle, b.state, b.attempted_handle, b.workdir, \
-    b.egress, b.sleep_reason, b.updated_at, t.idle_since, t.launch_failure FROM tasks t LEFT JOIN boxes b ON b.task = t.id";
+/// Column list shared by the task reads; session columns come from the primary session.
+const TASK_SELECT: &str = "SELECT b.id, b.name, b.repo, b.issue, b.goal, b.base, b.branch, b.worktree, b.bound, \
+    s.workspace_id, s.agent_session_id, b.state, b.state_reason, b.intent_kind, b.intent_pid, b.intent_run, \
+    b.intent_at, b.setup_failed_at, b.created_at, b.updated_at, b.provider, b.handle, b.driver_state, \
+    b.attempted_handle, b.workdir, b.egress, b.sleep_reason, b.driver_updated_at, b.idle_since, b.launch_failure, \
+    s.state FROM boxes b LEFT JOIN sessions s ON s.box = b.id AND s.ordinal = 1";
 
 /// Store failure.
 #[derive(Debug, thiserror::Error)]
@@ -78,6 +85,15 @@ pub(crate) enum StoreError {
     /// A stored value could not be parsed.
     #[error("corrupt store: {0}")]
     Corrupt(String),
+    /// An open box already has this name.
+    #[error("name `{}` is taken by an open box", .0.as_str())]
+    NameTaken(BoxName),
+    /// A controller process holds the state directory.
+    #[error("a moor controller (pid {pid}) is running; stop it before the old state database is replaced")]
+    ControllerRunning {
+        /// Pid of the running controller.
+        pid: String,
+    },
     /// The writer mutex was poisoned.
     #[error("store writer poisoned")]
     Poisoned,
@@ -180,13 +196,14 @@ impl Store {
     /// Open (creating if needed) the store at `path`. The state directory is
     /// created 0700 and the db, `-wal` and `-shm` files are 0600.
     pub(crate) fn open(path: &Path, clock: Arc<dyn Clock>) -> Result<Self, StoreError> {
+        let _ = version::retire_v1(path)?;
         open::prepare(path)?;
         let mut conn = Connection::open(path)?;
         conn.busy_timeout(BUSY_TIMEOUT)?;
         conn.execute_batch(
             "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;",
         )?;
-        init_schema(&mut conn)?;
+        init::init_schema(&mut conn)?;
         open::tighten(path)?;
         Ok(Self {
             path: path.to_path_buf(),
@@ -204,7 +221,7 @@ impl Store {
     pub(crate) fn open_tasks(&self) -> Result<Vec<TaskRow>, StoreError> {
         let conn = self.reader()?;
         let sql =
-            format!("{TASK_SELECT} WHERE t.state NOT IN ('closed', 'rejected') ORDER BY t.id");
+            format!("{TASK_SELECT} WHERE b.state NOT IN ('closed', 'rejected') ORDER BY b.id");
         let mut stmt = conn.prepare(&sql)?;
         let rows = stmt.query_and_then([], task_from_row)?;
         rows.collect()
@@ -215,8 +232,8 @@ impl Store {
         let limit = i64::try_from(last).unwrap_or(i64::MAX);
         let conn = self.reader()?;
         let mut stmt = conn.prepare(
-            "SELECT id, task, kind, payload, ts FROM \
-             (SELECT id, task, kind, payload, ts FROM events WHERE task = ?1 ORDER BY id DESC LIMIT ?2) ORDER BY id",
+            "SELECT id, box, kind, payload, ts FROM \
+             (SELECT id, box, kind, payload, ts FROM events WHERE box = ?1 ORDER BY id DESC LIMIT ?2) ORDER BY id",
         )?;
         let rows = stmt.query_and_then((id.get(), limit), event_from_row)?;
         rows.collect()
@@ -226,8 +243,8 @@ impl Store {
     pub(crate) fn last_waiting_marker(&self, id: BoxId) -> Result<Option<EventRow>, StoreError> {
         let conn = self.reader()?;
         let mut stmt = conn.prepare(
-            "SELECT id, task, kind, payload, ts FROM events \
-             WHERE task = ?1 AND kind IN ('needs_input', 'busy', 'working') ORDER BY id DESC LIMIT 1",
+            "SELECT id, box, kind, payload, ts FROM events \
+             WHERE box = ?1 AND kind IN ('needs_input', 'busy', 'working') ORDER BY id DESC LIMIT 1",
         )?;
         let mut rows = stmt.query_and_then([id.get()], event_from_row)?;
         rows.next().transpose()
@@ -254,56 +271,27 @@ impl Store {
     }
 }
 
-/// Create the schema when `meta` is absent, else check the version.
-fn init_schema(conn: &mut Connection) -> Result<(), StoreError> {
-    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-    let has_meta: bool = tx.query_row(
-        "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'meta')",
-        [],
-        |r| r.get(0),
-    )?;
-    if has_meta {
-        let sql = "SELECT v FROM meta WHERE k = 'schema_version'";
-        let found: Option<String> = tx.query_row(sql, [], |r| r.get(0)).optional()?;
-        if found.as_deref() != Some(SCHEMA_VERSION) {
-            return Err(StoreError::Schema {
-                found: found.unwrap_or_else(|| "none".to_owned()),
-                want: SCHEMA_VERSION,
-            });
-        }
-    } else {
-        tx.execute_batch(SCHEMA_SQL)?;
-    }
-    tx.execute_batch(slack::SLACK_SQL)?;
-    tx.execute_batch(lease::LEASE_SQL)?;
-    tx.commit()?;
-    Ok(())
-}
-
 /// Load one task joined to its box, on any connection (used inside `apply`'s transaction too).
 pub(super) fn load_task(conn: &Connection, id: BoxId) -> Result<Option<TaskRow>, StoreError> {
-    let sql = format!("{TASK_SELECT} WHERE t.id = ?1");
+    let sql = format!("{TASK_SELECT} WHERE b.id = ?1");
     let mut stmt = conn.prepare(&sql)?;
     let mut rows = stmt.query_and_then([id.get()], task_from_row)?;
     rows.next().transpose()
 }
 
-/// Parse a stored text value, naming the column on failure.
-fn parsed<T, E: std::fmt::Display>(
-    what: &str,
-    raw: &str,
-    f: impl FnOnce(&str) -> Result<T, E>,
-) -> Result<T, StoreError> {
-    f(raw).map_err(|e| StoreError::Corrupt(format!("{what} `{raw}`: {e}")))
-}
-
-/// Parse a stored enum value that has an `Option`-returning parser.
-fn parsed_opt<T>(
-    what: &str,
-    raw: &str,
-    f: impl FnOnce(&str) -> Option<T>,
-) -> Result<T, StoreError> {
-    parsed(what, raw, |s| f(s).ok_or("unknown value"))
+/// Combine the Box lifecycle with its primary Session state into the task state.
+fn join_task_state(lifecycle: BoxLifecycle, session: SessionState) -> TaskState {
+    match lifecycle {
+        BoxLifecycle::Checking => TaskState::Checking,
+        BoxLifecycle::Rejected => TaskState::Rejected,
+        BoxLifecycle::WaitingForBox => TaskState::WaitingForBox,
+        BoxLifecycle::SettingUp => TaskState::SettingUp,
+        BoxLifecycle::SetupFailed => TaskState::SetupFailed,
+        BoxLifecycle::Ready if session == SessionState::Idle => TaskState::Idle,
+        BoxLifecycle::Ready => TaskState::Working,
+        BoxLifecycle::Asleep => TaskState::Asleep,
+        BoxLifecycle::Closed => TaskState::Closed,
+    }
 }
 
 /// Convert a stored integer to `u32`.
@@ -358,7 +346,13 @@ fn box_from_row(row: &Row<'_>) -> Result<Option<BoxRow>, StoreError> {
 /// Map a `TASK_SELECT` row to a `TaskRow`.
 fn task_from_row(row: &Row<'_>) -> Result<TaskRow, StoreError> {
     let name: String = row.get(1)?;
-    let state: String = row.get(11)?;
+    let lifecycle: String = row.get(11)?;
+    let session: Option<String> = row.get(30)?;
+    let session = match session {
+        Some(raw) => parsed_opt("session state", &raw, SessionState::parse)?,
+        None => SessionState::Starting,
+    };
+    let lifecycle = parsed_opt("box state", &lifecycle, BoxLifecycle::parse)?;
     Ok(TaskRow {
         id: BoxId::new(row.get(0)?),
         name: parsed("task name", &name, BoxName::parse_allow_bare)?,
@@ -371,7 +365,7 @@ fn task_from_row(row: &Row<'_>) -> Result<TaskRow, StoreError> {
         bound: row.get::<_, i64>(8)? != 0,
         workspace_id: row.get(9)?,
         agent_session_id: row.get(10)?,
-        state: parsed_opt("task state", &state, TaskState::parse)?,
+        state: join_task_state(lifecycle, session),
         state_reason: row.get(12)?,
         intent: intent_from(row.get(13)?, row.get(14)?, row.get(15)?)?,
         intent_at: row.get::<_, Option<i64>>(16)?.map(Ts::from_millis),

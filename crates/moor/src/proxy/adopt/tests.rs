@@ -61,7 +61,7 @@ fn fx() -> Fx {
         id,
     };
     f.exec(&format!(
-        "INSERT INTO boxes (task, provider, state, updated_at) VALUES ({}, 'crabbox', 'ready', 0)",
+        "UPDATE boxes SET provider = 'crabbox', driver_state = 'ready', driver_updated_at = 0 WHERE id = {}",
         id.get()
     ));
     write_spec(f.dir.path(), &f.spec()).unwrap();
@@ -223,7 +223,7 @@ fn a_task_without_a_usable_box_has_its_proxy_stopped_not_restarted() {
     let f = fx();
     f.record(BOOT);
     f.clock.sleep(LEASE + Duration::from_secs(1));
-    f.exec("UPDATE boxes SET state = 'deleted'");
+    f.exec("UPDATE boxes SET driver_state = 'deleted'");
 
     assert_eq!(f.settle(), Vec::<String>::new());
 

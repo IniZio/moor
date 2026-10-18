@@ -32,7 +32,7 @@ impl Seed {
         let db = Connection::open(path).ok()?;
         db.busy_timeout(Duration::from_secs(5)).unwrap();
         let ready = db.query_row(
-            "SELECT count(*) FROM sqlite_master WHERE name IN ('tasks', 'slack_threads')",
+            "SELECT count(*) FROM sqlite_master WHERE name IN ('boxes', 'slack_threads')",
             [],
             |row| row.get::<_, i64>(0),
         );
@@ -52,13 +52,18 @@ impl Seed {
             })
             .expect("controller never created its store");
         db.execute(
-            "INSERT INTO tasks (name, repo, state, created_at, updated_at) VALUES (?1, 'demo', 'working', 0, 0)",
+            "INSERT INTO boxes (name, repo, state, created_at, updated_at) VALUES (?1, 'demo', 'ready', 0, 0)",
             [TASK],
         )
         .unwrap();
         let task = db.last_insert_rowid();
         db.execute(
-            "INSERT INTO events (task, kind, payload, ts) VALUES (?1, 'working', '{}', 0)",
+            "INSERT INTO sessions (box, ordinal, state, started_at) VALUES (?1, 1, 'working', 0)",
+            [task],
+        )
+        .unwrap();
+        db.execute(
+            "INSERT INTO events (box, kind, payload, ts) VALUES (?1, 'working', '{}', 0)",
             [task],
         )
         .unwrap();
@@ -75,7 +80,7 @@ impl Seed {
     fn event(&self, kind: &str, payload: &str) {
         self.db
             .execute(
-                "INSERT INTO events (task, kind, payload, ts) VALUES (?1, ?2, ?3, 0)",
+                "INSERT INTO events (box, kind, payload, ts) VALUES (?1, ?2, ?3, 0)",
                 (self.task, kind, payload),
             )
             .unwrap();

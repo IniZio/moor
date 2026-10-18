@@ -269,7 +269,7 @@ fn undecodable_cache_degrades_to_no_cache_with_a_warning() {
     let id = task(&cx, true);
     let raw = rusqlite::Connection::open(dir.path().join("moor.db")).unwrap();
     raw.execute(
-        "INSERT INTO hook_cache (task, record, at) VALUES (?, '{\"kind\":\"nope\"}', 1)",
+        "INSERT INTO hook_cache (session, record, at) VALUES ((SELECT id FROM sessions WHERE box = ?1 AND ordinal = 1), '{\"kind\":\"nope\"}', 1)",
         [id.get()],
     )
     .unwrap();
@@ -291,7 +291,7 @@ fn cache_row_that_is_not_json_degrades_with_a_warning() {
     let id = task(&cx, true);
     let raw = rusqlite::Connection::open(dir.path().join("moor.db")).unwrap();
     raw.execute(
-        "INSERT INTO hook_cache (task, record, at) VALUES (?, 'not json', 1)",
+        "INSERT INTO hook_cache (session, record, at) VALUES ((SELECT id FROM sessions WHERE box = ?1 AND ordinal = 1), 'not json', 1)",
         [id.get()],
     )
     .unwrap();
@@ -354,7 +354,7 @@ fn idle_since(cx: &Cx, id: BoxId) -> Option<i64> {
         .reader()
         .unwrap()
         .query_row(
-            "SELECT idle_since FROM tasks WHERE id = ?",
+            "SELECT idle_since FROM boxes WHERE id = ?",
             [id.get()],
             |r| r.get(0),
         )

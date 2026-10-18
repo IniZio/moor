@@ -39,8 +39,8 @@ impl Store {
         let conn = self.reader()?;
         Ok(conn
             .query_row(
-                "SELECT id, task, session_ref, pane, started_at, ended_at, exit, transcript_digest, \
-                 registered_agent_session FROM sessions WHERE task = ? AND ended_at IS NULL ORDER BY id DESC LIMIT 1",
+                "SELECT id, box, session_ref, pane, started_at, ended_at, exit, transcript_digest, \
+                 registered_agent_session FROM launches WHERE box = ? AND ended_at IS NULL ORDER BY id DESC LIMIT 1",
                 [task.get()],
                 session_from_row,
             )
@@ -52,7 +52,7 @@ impl Store {
         let conn = self.reader()?;
         Ok(conn
             .query_row(
-                "SELECT 1 FROM sessions WHERE task = ? LIMIT 1",
+                "SELECT 1 FROM launches WHERE box = ? LIMIT 1",
                 [task.get()],
                 |_| Ok(()),
             )
@@ -75,7 +75,7 @@ impl Store {
             return Err(StoreError::NotFound(task));
         }
         tx.execute(
-            "INSERT INTO sessions (task, session_ref, pane, started_at) VALUES (?, ?, ?, ?)",
+            "INSERT INTO launches (box, session_ref, pane, started_at) VALUES (?, ?, ?, ?)",
             params![task.get(), session_ref, pane, now.as_millis()],
         )?;
         let id = tx.last_insert_rowid();
@@ -98,7 +98,7 @@ impl Store {
         let now = self.now();
         let conn = self.writer()?;
         conn.execute(
-            "UPDATE sessions SET ended_at = ?, exit = ?, transcript_digest = COALESCE(?, transcript_digest) \
+            "UPDATE launches SET ended_at = ?, exit = ?, transcript_digest = COALESCE(?, transcript_digest) \
              WHERE id = ? AND ended_at IS NULL",
             params![now.as_millis(), exit, transcript_digest, id],
         )?;
@@ -110,7 +110,7 @@ impl Store {
     pub(crate) fn set_registered_session(&self, id: i64, agent: &str) -> Result<(), StoreError> {
         let conn = self.writer()?;
         conn.execute(
-            "UPDATE sessions SET registered_agent_session = ? WHERE id = ?",
+            "UPDATE launches SET registered_agent_session = ? WHERE id = ?",
             params![agent, id],
         )?;
         drop(conn);
@@ -121,7 +121,7 @@ impl Store {
     pub(crate) fn set_transcript_digest(&self, id: i64, digest: &str) -> Result<(), StoreError> {
         let conn = self.writer()?;
         conn.execute(
-            "UPDATE sessions SET transcript_digest = ? WHERE id = ? AND ended_at IS NULL",
+            "UPDATE launches SET transcript_digest = ? WHERE id = ? AND ended_at IS NULL",
             params![digest, id],
         )?;
         drop(conn);
@@ -134,8 +134,9 @@ impl Store {
         let json = serde_json::to_string(&record_json(record))?;
         let conn = self.writer()?;
         conn.execute(
-            "INSERT INTO hook_cache (task, record, at) VALUES (?1, ?2, ?3) \
-             ON CONFLICT(task) DO UPDATE SET record = ?2, at = ?3",
+            "INSERT INTO hook_cache (session, record, at) \
+             VALUES ((SELECT id FROM sessions WHERE box = ?1 AND ordinal = 1), ?2, ?3) \
+             ON CONFLICT(session) DO UPDATE SET record = ?2, at = ?3",
             params![task.get(), json, now.as_millis()],
         )?;
         drop(conn);
@@ -147,7 +148,8 @@ impl Store {
         let conn = self.reader()?;
         let row: Option<(String, i64)> = conn
             .query_row(
-                "SELECT record, at FROM hook_cache WHERE task = ?",
+                "SELECT h.record, h.at FROM hook_cache h JOIN sessions s ON s.id = h.session \
+                 WHERE s.box = ? AND s.ordinal = 1",
                 [task.get()],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
@@ -162,7 +164,7 @@ impl Store {
     }
 }
 
-/// A session from a `sessions` row.
+/// A session from a `launches` row.
 fn session_from_row(r: &Row<'_>) -> rusqlite::Result<SessionRow> {
     Ok(SessionRow {
         id: r.get(0)?,

@@ -58,26 +58,26 @@ fn working(store: &Store, name: &str) -> BoxId {
     id
 }
 
-/// The `idle_since` column of a task.
+/// The `idle_since` column of a box.
 fn idle_since(store: &Store, id: BoxId) -> Option<i64> {
     store
         .reader()
         .unwrap()
         .query_row(
-            "SELECT idle_since FROM tasks WHERE id = ?",
+            "SELECT idle_since FROM boxes WHERE id = ?",
             [id.get()],
             |r| r.get(0),
         )
         .unwrap()
 }
 
-/// The state and update time columns of a task.
+/// The state and update time columns of a box.
 fn state_cols(store: &Store, id: BoxId) -> (String, i64) {
     store
         .reader()
         .unwrap()
         .query_row(
-            "SELECT state, updated_at FROM tasks WHERE id = ?",
+            "SELECT state, updated_at FROM boxes WHERE id = ?",
             [id.get()],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
@@ -143,7 +143,7 @@ fn end_session_records_outcome_once() {
     let c = rusqlite::Connection::open(dir.path().join("moor.db")).unwrap();
     let row: (i64, i32, String) = c
         .query_row(
-            "SELECT ended_at, exit, transcript_digest FROM sessions WHERE id = ?",
+            "SELECT ended_at, exit, transcript_digest FROM launches WHERE id = ?",
             [s],
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )
@@ -258,7 +258,8 @@ fn hook_cache_reads_a_legacy_blocked_row_as_its_message() {
     let id = add(&store, "t");
     let c = rusqlite::Connection::open(dir.path().join("moor.db")).unwrap();
     c.execute(
-        "INSERT INTO hook_cache (task, record, at) VALUES (?1, ?2, 1)",
+        "INSERT INTO hook_cache (session, record, at) \
+         VALUES ((SELECT id FROM sessions WHERE box = ?1 AND ordinal = 1), ?2, 1)",
         rusqlite::params![
             id.get(),
             r#"{"kind":"blocked","waiting_for":"X","session_id":null,"at":5}"#
