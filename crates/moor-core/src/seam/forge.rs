@@ -65,12 +65,6 @@ pub trait Forge: Send + Sync {
     /// # Errors
     /// Returns a [`ForgeError`] when the forge refuses or cannot be reached.
     fn repo_token(&self, repo: &ForgeRepo) -> Result<Secret, ForgeError>;
-
-    /// The web URL of the open pull request whose head is `branch` in `repo`, or `None` when there is none.
-    ///
-    /// # Errors
-    /// Returns a [`ForgeError`] when the forge refuses or cannot be reached.
-    fn open_pr(&self, repo: &ForgeRepo, branch: &str) -> Result<Option<String>, ForgeError>;
 }
 
 #[cfg(test)]
