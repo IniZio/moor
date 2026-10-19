@@ -54,6 +54,7 @@ impl Event {
             Self::ProxyCredentialRejected { .. } => "proxy_credential_rejected",
             Self::ProxyCredentialRecovered { .. } => "proxy_credential_recovered",
             Self::TurnDone { .. } => "turn_done",
+            Self::ArtifactPublished { .. } => "artifact_published",
         }
     }
 
@@ -63,6 +64,9 @@ impl Event {
         match serde_json::to_value(self) {
             Ok(serde_json::Value::Object(mut map)) => {
                 map.remove("kind");
+                if let Some(kind) = map.remove("artifact_kind") {
+                    map.insert("kind".to_owned(), kind);
+                }
                 serde_json::Value::Object(map)
             }
             _ => serde_json::Value::Object(serde_json::Map::new()),

@@ -175,6 +175,14 @@ fn all_events() -> Vec<Event> {
             steer: 1,
             outcome: TurnOutcome::Idle,
         },
+        Event::ArtifactPublished {
+            name: s("shot.png"),
+            version: 1,
+            kind: s("screenshot"),
+            content_type: s("image/png"),
+            size: 12,
+            sha256: s("ab"),
+        },
     ]
 }
 
@@ -238,6 +246,7 @@ const fn event_index(e: &Event) -> usize {
         Event::ProxyCredentialRejected { .. } => 44,
         Event::ProxyCredentialRecovered { .. } => 45,
         Event::TurnDone { .. } => 46,
+        Event::ArtifactPublished { .. } => 47,
     }
 }
 
@@ -245,7 +254,7 @@ const fn event_index(e: &Event) -> usize {
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 47);
+    assert_eq!(all.len(), 48);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }
@@ -517,6 +526,24 @@ fn turn_done_kind_and_payload() {
         assert_eq!(e.kind(), "turn_done");
         assert_eq!(e.payload(), serde_json::json!({"steer":7,"outcome":name}));
     }
+}
+
+/// `ArtifactPublished` keeps `kind` in the payload even though `kind` is the serde tag.
+#[test]
+fn artifact_published_kind_and_payload() {
+    let e = Event::ArtifactPublished {
+        name: s("shot.png"),
+        version: 2,
+        kind: s("screenshot"),
+        content_type: s("image/png"),
+        size: 12,
+        sha256: s("ab"),
+    };
+    assert_eq!(e.kind(), "artifact_published");
+    assert_eq!(
+        e.payload(),
+        serde_json::json!({"name":"shot.png","version":2,"kind":"screenshot","content_type":"image/png","size":12,"sha256":"ab"})
+    );
 }
 
 mod kinds;

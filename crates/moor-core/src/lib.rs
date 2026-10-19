@@ -2,6 +2,7 @@
 #![forbid(unsafe_code)]
 
 pub mod activity;
+pub mod artifact;
 pub mod attention;
 pub mod box_key;
 pub mod boxscript;

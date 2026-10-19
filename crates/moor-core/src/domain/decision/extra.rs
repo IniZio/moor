@@ -358,6 +358,7 @@ impl TryFrom<Event> for ExtraEvent {
             | Event::BoxGone
             | Event::BoxDeleted
             | Event::BoxReleaseFailed { .. }
+            | Event::ArtifactPublished { .. }
             | Event::SessionEnded { .. }) => Err(e),
         }
     }
