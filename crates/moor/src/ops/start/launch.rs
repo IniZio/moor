@@ -8,7 +8,6 @@ use moor_core::box_key::BoxKey;
 use moor_core::config::{Flags, TaskSettings};
 
 use moor_core::domain::box_state::BoxLifecycle;
-use moor_core::domain::box_steps;
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
 use moor_core::domain::session_state::SessionState;
@@ -86,8 +85,9 @@ fn not_working(
     let e = EngineError::Failed {
         step: "launch",
         message: format!(
-            "the Task is {}, not Working, so the agent was not launched",
-            box_steps::summary(row.lifecycle, row.session).as_str()
+            "the Box is {} with session {}, so the agent was not launched",
+            row.lifecycle.as_str(),
+            row.session.as_str()
         ),
     };
     record_failure(cx, store, row.id, &e)

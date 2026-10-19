@@ -110,7 +110,7 @@ fn two_reports_are_collected() {
         ("spec.md", "S body"),
     ]));
     let v = run(&f.cx, &req(false)).unwrap();
-    assert_eq!(v.task.state.as_str(), "closed");
+    assert_eq!(v.task.lifecycle, BoxLifecycle::Closed);
     assert_eq!(collect_execs(&f), 1);
     let peeks = peeked(&f);
     assert!(peeks.contains(&index_path().as_str().to_owned()));
@@ -161,7 +161,7 @@ fn failure_warns_and_close_proceeds() {
         }),
     ]));
     let v = run(&f.cx, &req(false)).unwrap();
-    assert_eq!(v.task.state.as_str(), "closed");
+    assert_eq!(v.task.lifecycle, BoxLifecycle::Closed);
     assert!(v.box_deleted);
     assert!(f.driver.calls().iter().any(|c| c == "release box-1"));
     assert!(kinds(&f).is_empty());
@@ -178,7 +178,7 @@ fn nonzero_exit_warns_and_close_proceeds() {
         Ok(ExecOutcome::Exited { code: 2 }),
     ]));
     let v = run(&f.cx, &req(false)).unwrap();
-    assert_eq!(v.task.state.as_str(), "closed");
+    assert_eq!(v.task.lifecycle, BoxLifecycle::Closed);
     assert!(kinds(&f).is_empty());
     assert!(f
         .cx
@@ -196,7 +196,7 @@ fn peek_failure_warns_and_close_proceeds() {
         }),
     );
     let v = run(&f.cx, &req(true)).unwrap();
-    assert_eq!(v.task.state.as_str(), "closed");
+    assert_eq!(v.task.lifecycle, BoxLifecycle::Closed);
     assert!(v.box_deleted);
     assert!(kinds(&f).is_empty());
     assert!(f
@@ -214,7 +214,7 @@ fn bad_name_is_skipped() {
         ("ok.md", "fine"),
     ]));
     let v = run(&f.cx, &req(false)).unwrap();
-    assert_eq!(v.task.state.as_str(), "closed");
+    assert_eq!(v.task.lifecycle, BoxLifecycle::Closed);
     assert_eq!(kinds(&f), [("ok".to_owned(), 1)]);
     let warnings = f.cx.take_warnings();
     assert!(warnings.iter().any(|w| w.code == "report_skipped"));
@@ -287,7 +287,7 @@ fn asleep_box_under_force_is_not_woken_to_collect() {
         .unwrap();
     assert_eq!(box_state(&f), BoxState::Asleep);
     let v = run(&f.cx, &req(true)).unwrap();
-    assert_eq!(v.task.state.as_str(), "closed");
+    assert_eq!(v.task.lifecycle, BoxLifecycle::Closed);
     assert_eq!(row(&f).lifecycle, BoxLifecycle::Closed);
     assert_eq!(collect_execs(&f), 0);
     assert!(!f.driver.calls().iter().any(|c| c.starts_with("wake")));
@@ -331,7 +331,7 @@ fn one_failed_store_does_not_stop_the_rest() {
     let blocker = reports_dir(&f).join(f.id.get().to_string()).join("b.v1.md");
     fs::create_dir_all(&blocker).unwrap();
     let v = run(&f.cx, &req(false)).unwrap();
-    assert_eq!(v.task.state.as_str(), "closed");
+    assert_eq!(v.task.lifecycle, BoxLifecycle::Closed);
     assert_eq!(kinds(&f), [("a".to_owned(), 1), ("c".to_owned(), 1)]);
     let warnings = f.cx.take_warnings();
     let skips = warnings
@@ -372,7 +372,7 @@ fn reports_are_collected_alone_when_the_batch_stops_at_the_recheck() {
         Err(DriverError::NotFound),
     ]));
     let v = run(&f.cx, &req(false)).unwrap();
-    assert_eq!(v.task.state.as_str(), "closed");
+    assert_eq!(v.task.lifecycle, BoxLifecycle::Closed);
     assert_eq!(kinds(&f), [("result".to_owned(), 1)]);
     assert_eq!(collect_execs(&f), 1);
 }

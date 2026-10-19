@@ -2,6 +2,8 @@
 
 use sha2::{Digest, Sha256};
 
+use moor_core::domain::box_state::BoxLifecycle;
+
 use super::teardown::{base_has, with_home, YAML};
 use super::{fx_with, req, run, Fx};
 use crate::testing::driver::FakeDriver;
@@ -31,7 +33,7 @@ fn a_ready_box_has_its_artifacts_collected_on_close() {
         .artifact_index([listing()])
         .copy_text(BODY));
     let v = run(&f.cx, &req(false)).unwrap();
-    assert_eq!(v.task.state.as_str(), "closed");
+    assert_eq!(v.task.lifecycle, BoxLifecycle::Closed);
     assert_eq!(published(&f), 1);
     let rows = f.cx.store().unwrap().artifacts(f.id).unwrap();
     assert_eq!(rows.len(), 1);

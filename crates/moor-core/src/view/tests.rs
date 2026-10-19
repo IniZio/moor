@@ -11,7 +11,8 @@ fn task() -> TaskView {
         repo: "r".into(),
         issue: None,
         goal: Some("g".into()),
-        state: TaskState::Working,
+        lifecycle: BoxLifecycle::Ready,
+        session_state: SessionState::Working,
         state_reason: None,
         base: None,
         branch: Some("b".into()),
@@ -39,7 +40,7 @@ fn task() -> TaskView {
 fn task_json() -> Value {
     json!({
         "id": 7, "name": "t", "repo": "r", "issue": null, "goal": "g",
-        "state": "working", "state_reason": null, "base": null, "branch": "b",
+        "lifecycle": "ready", "session_state": "working", "state_reason": null, "base": null, "branch": "b",
         "worktree": null, "workspace": null,
         "box": {"state": "ready", "provider": "p", "handle": "h",
                 "workdir": "/work/repo", "egress": "enforced", "asleep_since": null,

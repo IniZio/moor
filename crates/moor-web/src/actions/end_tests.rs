@@ -118,7 +118,7 @@ fn answer(script: &Script, request: &Request) -> Response {
             let tasks: Vec<Value> = script
                 .boxes
                 .iter()
-                .map(|(id, name, state)| json!({"id": id, "name": name, "state": state}))
+                .map(|(id, name, state)| json!({"id": id, "name": name, "lifecycle": state}))
                 .collect();
             Response::ok("show", Some(json!({"tasks": tasks})))
         }

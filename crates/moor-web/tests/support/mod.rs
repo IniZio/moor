@@ -216,7 +216,7 @@ impl Stack {
         self.http("POST", path, &extra, &body.to_string())
     }
 
-    /// One protocol-2 request straight to the controller; returns the envelope.
+    /// One request at the current controller protocol straight to the controller; returns the envelope.
     pub fn controller(&self, request: impl std::borrow::Borrow<Value>) -> Value {
         let stream = UnixStream::connect(&self.socket).unwrap();
         stream
@@ -224,7 +224,7 @@ impl Stack {
             .unwrap();
         let mut writer = stream.try_clone().unwrap();
         let mut reader = BufReader::new(stream);
-        let hello = json!({"frame": "hello", "protocol": 2});
+        let hello = json!({"frame": "hello", "protocol": moor_core::controller::PROTOCOL});
         let req = json!({"frame": "request", "id": "1", "request": request.borrow()});
         writeln!(writer, "{hello}").unwrap();
         writeln!(writer, "{req}").unwrap();

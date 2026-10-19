@@ -298,7 +298,7 @@ function updateNode(r, n) {
   const meta = [];
   if (n.box) meta.push('Box ' + n.box + (n.task && n.task.box_state ? ' (' + n.task.box_state + ')' : ''));
   if (n.task && n.task.branch) meta.push(n.task.branch);
-  if (n.task && n.task.state) meta.push('task ' + n.task.state);
+  if (n.task && n.task.lifecycle) meta.push('Box ' + n.task.lifecycle + ' / ' + n.task.session_state);
   if (ended) meta.push('ended');
   r.meta.textContent = meta.join(' · ');
   r.goal.textContent = (n.task && n.task.goal) || '';

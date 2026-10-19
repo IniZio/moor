@@ -179,7 +179,7 @@ fn start_on_a_setting_up_task_with_a_live_setup_owner_records_no_session() {
     assert!(crashed.is_err());
     w.driver.on_exec(|| {});
     let again = run(&w.cx, &start_req()).unwrap();
-    assert_eq!(again.task.state.as_str(), "setting_up");
+    assert_eq!(again.task.lifecycle, BoxLifecycle::SettingUp);
     let id = BoxId::new(again.task.id);
     let store = w.cx.store().unwrap();
     assert!(store.live_session(id).unwrap().is_none());

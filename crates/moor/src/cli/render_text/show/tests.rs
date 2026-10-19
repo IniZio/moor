@@ -7,7 +7,7 @@ use super::super::render;
 
 fn task(name: &str, with_box: bool) -> Value {
     json!({
-        "id": 1, "name": name, "repo": "/r", "state": "running",
+        "id": 1, "name": name, "repo": "/r", "lifecycle": "ready", "session_state": "idle",
         "branch": "moor/x", "worktree": "/w/x",
         "box": if with_box { json!({
             "state": "running", "provider": "local", "workdir": "/work",
@@ -30,7 +30,7 @@ fn empty_list_says_no_tasks() {
 #[test]
 fn list_one_task() {
     let out = show(json!({"tasks": [task("alpha", true)]}));
-    assert_eq!(out, "alpha  running  working  running  /work\n");
+    assert_eq!(out, "alpha  ready  idle  working  running  /work\n");
 }
 
 #[test]
@@ -38,7 +38,7 @@ fn list_two_tasks_aligns_columns_and_dashes_missing_box() {
     let out = show(json!({"tasks": [task("a", true), task("longer", false)]}));
     assert_eq!(
         out,
-        "a       running  working  running  /work\nlonger  running  working  -        -\n"
+        "a       ready  idle  working  running  /work\nlonger  ready  idle  working  -        -\n"
     );
 }
 
@@ -47,7 +47,7 @@ fn detail_with_box() {
     let out = show(json!({"task": task("alpha", true)}));
     assert_eq!(
         out,
-        "name:     alpha\nstate:    running\nrepo:     /r\nworktree: /w/x\nbranch:   moor/x\n\
+        "name:     alpha\nlifecycle: ready\nsession:   idle\nrepo:     /r\nworktree: /w/x\nbranch:   moor/x\n\
          box:      local running workdir=/work egress=none\nagent:    working pane=live\n"
     );
 }
@@ -126,7 +126,7 @@ fn list_prints_a_needs_attention_line_under_the_row() {
     let out = show(json!({"tasks": [with_attention(task("alpha", true)), task("b", true)]}));
     assert_eq!(
         out,
-        "alpha  running  working  running  /work\n  needs attention: Claude account rate limited (429)\nb      running  working  running  /work\n"
+        "alpha  ready  idle  working  running  /work\n  needs attention: Claude account rate limited (429)\nb      ready  idle  working  running  /work\n"
     );
 }
 

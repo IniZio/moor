@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::Path;
 
+use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
 use moor_core::seam::driver::DriverError;
 use moor_core::seam::surface::{PaneCmd, Surface, SurfaceError};
@@ -67,7 +68,7 @@ fn a_pane_already_gone_still_ends_the_session() {
     let v = run(&f.cx, &req(false)).unwrap();
     assert!(v.agent_stopped);
     assert!(!live_session(&f));
-    assert_eq!(v.task.state.as_str(), "closed");
+    assert_eq!(v.task.lifecycle, BoxLifecycle::Closed);
 }
 
 #[test]
@@ -98,7 +99,7 @@ fn a_task_with_no_session_closes_as_before() {
     let f = fx_with(FakeDriver::new(), FakeSurface::new("/s"), 0);
     let v = run(&f.cx, &req(false)).unwrap();
     assert!(!v.agent_stopped);
-    assert_eq!(v.task.state.as_str(), "closed");
+    assert_eq!(v.task.lifecycle, BoxLifecycle::Closed);
     assert!(!f
         .surface
         .calls()

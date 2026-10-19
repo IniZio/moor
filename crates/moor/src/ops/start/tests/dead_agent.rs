@@ -4,6 +4,7 @@ use moor_core::activity::{PaneObs, PaneStatus};
 use moor_core::{BoxId, BoxName, ErrorKind, ShowReq, StartReq, WaitFor, WaitReq};
 
 use super::relaunch::{gone, session, started};
+use super::state::WORKING;
 use super::{req, world, World};
 use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
@@ -95,7 +96,7 @@ fn a_dead_agent_shows_as_failed_and_wait_fails() {
     };
     let shown = crate::ops::show::run(&w.cx, &show).unwrap();
     let t = shown.tasks.as_ref().unwrap().first().unwrap();
-    assert_eq!(t.state.as_str(), "working");
+    assert_eq!((t.lifecycle, t.session_state), WORKING);
     assert_eq!(t.agent.as_ref().unwrap().state, "failed");
     let wait = WaitReq {
         task: BoxName::parse_allow_bare("demo").unwrap(),
