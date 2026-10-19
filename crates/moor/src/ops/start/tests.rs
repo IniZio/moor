@@ -24,6 +24,7 @@ mod dead_agent;
 mod dotfiles;
 mod exclude;
 mod exited_start;
+mod hold;
 mod identity;
 mod known_repo;
 mod launch_warnings;
