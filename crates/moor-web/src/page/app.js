@@ -58,11 +58,11 @@ function shortKey(k) {
   return k.length > 8 ? k.slice(0, 8) + '…' : k;
 }
 
-function prUrl(task) {
-  if (!task || !task.repo_url || !task.branch) return null;
-  const m = /^(?:https:\/\/github\.com\/|git@github\.com:)([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/.exec(task.repo_url.trim());
+function prUrl(view) {
+  if (!view || !view.repo_url || !view.branch) return null;
+  const m = /^(?:https:\/\/github\.com\/|git@github\.com:)([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/.exec(view.repo_url.trim());
   if (!m) return null;
-  return 'https://github.com/' + m[1] + '/' + m[2] + '/pulls?q=' + encodeURIComponent('head:' + task.branch);
+  return 'https://github.com/' + m[1] + '/' + m[2] + '/pulls?q=' + encodeURIComponent('head:' + view.branch);
 }
 
 function fmtSize(n) {
@@ -186,7 +186,7 @@ function makeNode(n) {
   li.setAttribute('role', 'treeitem');
   li.dataset.sid = String(n.session);
   const card = h('div', null, 'card');
-  const r = { li, card, box: n.box, request: n.request, qsig: null };
+  const r = { li, card, box: n.name, request: n.request, qsig: null };
   const sid = n.session;
 
   const head = h('div', null, 'row');
@@ -214,7 +214,7 @@ function makeNode(n) {
   r.askInput = control('input', 'Answer text for session ' + sid, { type: 'text', placeholder: 'type an answer' });
   const answerSend = control('button', 'Send answer for session ' + sid, { type: 'button', text: 'Send' });
   r.askOut = h('div', null, 'msg');
-  const sendAnswer = (body) => act('/answer', Object.assign({ task: r.box }, body), r.askOut);
+  const sendAnswer = (body) => act('/answer', Object.assign({ box: r.box }, body), r.askOut);
   answerSend.addEventListener('click', () => {
     const text = r.askInput.value.trim();
     if (text) sendAnswer({ text }).then((env) => { if (env && env.class === 'ok') r.askInput.value = ''; });
@@ -226,30 +226,30 @@ function makeNode(n) {
   r.sendAnswer = sendAnswer;
   card.appendChild(r.ask);
 
-  if (n.box) {
+  if (n.name) {
     const row = h('div', null, 'row');
     const steer = control('input', 'Steer text for session ' + sid, { type: 'text', placeholder: 'steer this worker' });
     const sb = control('button', 'Steer session ' + sid, { type: 'button', text: 'Steer' });
     const eb = control('button', 'End session ' + sid, { type: 'button', text: 'End session' });
-    const cb = control('button', 'Close box ' + n.box, { type: 'button', text: 'Close box', class: 'danger' });
+    const cb = control('button', 'Close box ' + n.name, { type: 'button', text: 'Close box', class: 'danger' });
     r.actOut = h('div', null, 'msg');
     sb.addEventListener('click', async () => {
       const text = steer.value.trim();
       if (!text) return;
-      const env = await act('/steer', { task: r.box, text }, r.actOut);
+      const env = await act('/steer', { box: r.box, text }, r.actOut);
       if (env && env.class === 'ok') steer.value = '';
     });
     steer.addEventListener('keydown', (e) => { if (e.key === 'Enter') sb.click(); });
-    eb.addEventListener('click', () => act('/end-session', { task: r.box }, r.actOut));
-    cb.addEventListener('click', () => confirmThen('Close box ' + n.box, 'Close Box ' + n.box + '?',
-      () => act('/close', { task: r.box }, r.actOut)));
+    eb.addEventListener('click', () => act('/end-session', { box: r.box }, r.actOut));
+    cb.addEventListener('click', () => confirmThen('Close box ' + n.name, 'Close Box ' + n.name + '?',
+      () => act('/close', { box: r.box }, r.actOut)));
     row.append(steer, sb, eb, cb);
     card.append(row, r.actOut);
 
-    const ab = control('button', 'Toggle artifacts of box ' + n.box, { type: 'button', text: 'Artifacts' });
+    const ab = control('button', 'Toggle artifacts of box ' + n.name, { type: 'button', text: 'Artifacts' });
     const list = h('div', null, 'artifacts');
     list.hidden = true;
-    const reload = () => { if (!list.hidden) loadArtifacts(n.box, list); };
+    const reload = () => { if (!list.hidden) loadArtifacts(n.name, list); };
     ab.addEventListener('click', () => { list.hidden = !list.hidden; reload(); });
     r.reloadArtifacts = reload;
     const artRow = h('div', null, 'row');
@@ -261,21 +261,21 @@ function makeNode(n) {
     const key = n.request.key;
     r.reqBox = h('div');
     const row = h('div', null, 'row');
-    const task = control('input', 'New worker task for request ' + key, { type: 'text', placeholder: 'worker task' });
+    const name = control('input', 'New worker Box for request ' + key, { type: 'text', placeholder: 'worker Box name' });
     const goal = control('input', 'New worker goal for request ' + key, { type: 'text', placeholder: 'worker goal' });
     const add = control('button', 'Add worker to request ' + key, { type: 'button', text: 'Add worker' });
     const end = control('button', 'End request ' + key, { type: 'button', text: 'End request', class: 'danger' });
     r.jobs = h('div', null, 'jobs');
     jobOut.set(key, r.jobs);
     add.addEventListener('click', () => {
-      if (!task.value.trim() || !goal.value.trim()) { show(r.jobs, 'Worker needs a task name and a goal.', 'bad'); return; }
-      startJob('/requests/' + encodeURIComponent(key) + '/workers', { task: task.value.trim(), goal: goal.value.trim() }, r.jobs,
-        () => { task.value = ''; goal.value = ''; });
+      if (!name.value.trim() || !goal.value.trim()) { show(r.jobs, 'Worker needs a Box name and a goal.', 'bad'); return; }
+      startJob('/requests/' + encodeURIComponent(key) + '/workers', { name: name.value.trim(), goal: goal.value.trim() }, r.jobs,
+        () => { name.value = ''; goal.value = ''; });
     });
     end.addEventListener('click', () => confirmThen('End request ' + key,
       'End request? This closes every worker Box and ends the request.',
       () => startJob('/requests/' + encodeURIComponent(key) + '/end', {}, r.jobs)));
-    row.append(task, goal, add, end);
+    row.append(name, goal, add, end);
     r.reqBox.append(row, r.jobs);
     card.appendChild(r.reqBox);
     card.classList.add('root');
@@ -290,20 +290,20 @@ function makeNode(n) {
 function updateNode(r, n) {
   const ended = n.state === 'gone' || !!(n.request && n.request.ended_at);
   const label = n.request ? 'Request ' + shortKey(n.request.key) + (n.request.repo ? ' · ' + n.request.repo : '')
-    : (n.task && n.task.name ? n.task.name : (n.box || 'Session')) + ' (session ' + n.session + ')';
+    : (n.box && n.box.name ? n.box.name : (n.name || 'Session')) + ' (session ' + n.session + ')';
   r.title.textContent = label;
   const state = (n.agent && n.agent.state) || n.state || '';
   r.badge.textContent = state.replace('_', ' ');
   r.badge.className = 'badge s-' + state;
   const meta = [];
-  if (n.box) meta.push('Box ' + n.box + (n.task && n.task.box_state ? ' (' + n.task.box_state + ')' : ''));
-  if (n.task && n.task.branch) meta.push(n.task.branch);
-  if (n.task && n.task.lifecycle) meta.push('Box ' + n.task.lifecycle + ' / ' + n.task.session_state);
+  if (n.name) meta.push('Box ' + n.name + (n.box && n.box.box_state ? ' (' + n.box.box_state + ')' : ''));
+  if (n.box && n.box.branch) meta.push(n.box.branch);
+  if (n.box && n.box.lifecycle) meta.push('Box ' + n.box.lifecycle + ' / ' + n.box.session_state);
   if (ended) meta.push('ended');
   r.meta.textContent = meta.join(' · ');
-  r.goal.textContent = (n.task && n.task.goal) || '';
+  r.goal.textContent = (n.box && n.box.goal) || '';
   r.goal.hidden = !r.goal.textContent;
-  const url = prUrl(n.task);
+  const url = prUrl(n.box);
   r.pr.hidden = !url;
   if (url) r.pr.href = url;
   r.card.classList.toggle('ended', ended);
@@ -431,10 +431,10 @@ $('new-start').addEventListener('click', () => {
   const out = $('new-out');
   const repo = $('new-repo').value;
   if (!repo) { show(out, 'No repo selected.', 'bad'); return; }
-  const task = $('new-task').value.trim();
+  const name = $('new-name').value.trim();
   const goal = $('new-goal').value.trim();
-  if (!repo || !task || !goal) { show(out, 'Pick a repo and fill in task and goal.', 'bad'); return; }
-  startJob('/requests', { repo, task, goal }, out, () => { $('new-task').value = ''; $('new-goal').value = ''; });
+  if (!repo || !name || !goal) { show(out, 'Pick a repo and fill in Box name and goal.', 'bad'); return; }
+  startJob('/requests', { repo, name, goal }, out, () => { $('new-name').value = ''; $('new-goal').value = ''; });
 });
 
 $('confirm-yes').addEventListener('click', () => $('confirm').close('yes'));

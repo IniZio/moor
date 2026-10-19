@@ -212,9 +212,9 @@ fn name(s: &str) -> BoxName {
     BoxName::parse_allow_bare(s).unwrap()
 }
 
-fn start_req(task: &str, goal: Option<&str>, repo: &str, parent: i64) -> Request {
+fn start_req(box_name: &str, goal: Option<&str>, repo: &str, parent: i64) -> Request {
     Request::Start(StartReq {
-        name: name(task),
+        name: name(box_name),
         goal: goal.map(str::to_owned),
         issue: None,
         worktree: None,
@@ -230,11 +230,11 @@ fn start_req(task: &str, goal: Option<&str>, repo: &str, parent: i64) -> Request
 }
 
 fn payload() -> Value {
-    json!({"repo": "r", "task": "t", "goal": "ship it"})
+    json!({"repo": "r", "name": "t", "goal": "ship it"})
 }
 
 #[test]
-fn new_task_opens_binds_and_starts_under_the_root() {
+fn new_request_opens_binds_and_starts_under_the_root() {
     let f = front(&script());
     let (key, job) = new_request(&f, &payload());
     assert_eq!(job["state"], "done", "{job}");
@@ -269,7 +269,7 @@ fn new_task_opens_binds_and_starts_under_the_root() {
 }
 
 #[test]
-fn new_task_records_the_request() {
+fn new_request_records_the_request() {
     let f = front(&script());
     let (key, _) = new_request(&f, &payload());
     let row = f.db.lock().unwrap().request(&key).unwrap().unwrap();
@@ -288,7 +288,7 @@ fn new_task_records_the_request() {
 #[test]
 fn empty_goal_sends_none() {
     let f = front(&script());
-    let (_, job) = new_request(&f, &json!({"repo": "r", "task": "t", "goal": ""}));
+    let (_, job) = new_request(&f, &json!({"repo": "r", "name": "t", "goal": ""}));
     assert_eq!(job["state"], "done", "{job}");
     let seen = f.seen.lock().unwrap().clone();
     assert_eq!(seen.last().unwrap(), &start_req("t", None, "r", 7));
@@ -341,7 +341,7 @@ fn failed_save_ends_the_root_and_sends_no_start() {
 #[test]
 fn unknown_repo_fails_before_anything_is_opened() {
     let f = front(&script());
-    let (key, job) = new_request(&f, &json!({"repo": "x", "task": "t", "goal": ""}));
+    let (key, job) = new_request(&f, &json!({"repo": "x", "name": "t", "goal": ""}));
     assert_eq!(job["state"], "failed", "{job}");
     assert_eq!(job["failure"]["step"], "repo");
     assert_eq!(
@@ -371,7 +371,7 @@ fn empty_repo_list_says_none_are_configured() {
 fn repo_matching_a_url_is_accepted() {
     let f = front(&script());
     let url = "https://example.com/r.git";
-    let (_, job) = new_request(&f, &json!({"repo": url, "task": "t", "goal": ""}));
+    let (_, job) = new_request(&f, &json!({"repo": url, "name": "t", "goal": ""}));
     assert_eq!(job["state"], "done", "{job}");
 }
 
@@ -390,7 +390,7 @@ fn failed_start_keeps_the_request_open_for_more_workers() {
     let resp = post(
         &f.web,
         &format!("/requests/{key}/workers"),
-        &json!({"task": "w2", "goal": ""}),
+        &json!({"name": "w2", "goal": ""}),
     );
     assert!(resp.starts_with("HTTP/1.1 202"), "{resp}");
     finished(&f, body(&resp)["job"].as_str().unwrap());
@@ -428,7 +428,7 @@ fn added_worker_sends_one_start_under_the_root() {
     let resp = post(
         &f.web,
         &format!("/requests/{key}/workers"),
-        &json!({"task": "w2", "goal": ""}),
+        &json!({"name": "w2", "goal": ""}),
     );
     assert!(resp.starts_with("HTTP/1.1 202"), "{resp}");
     let accepted = body(&resp);
@@ -445,7 +445,7 @@ fn worker_on_unknown_or_ended_request_is_refused() {
     let resp = post(
         &f.web,
         "/requests/nope/workers",
-        &json!({"task": "w", "goal": ""}),
+        &json!({"name": "w", "goal": ""}),
     );
     assert!(resp.starts_with("HTTP/1.1 404"), "{resp}");
     let (key, _) = new_request(&f, &payload());
@@ -454,7 +454,7 @@ fn worker_on_unknown_or_ended_request_is_refused() {
     let resp = post(
         &f.web,
         &format!("/requests/{key}/workers"),
-        &json!({"task": "w", "goal": ""}),
+        &json!({"name": "w", "goal": ""}),
     );
     assert!(resp.starts_with("HTTP/1.1 409"), "{resp}");
     assert_eq!(f.seen.lock().unwrap().len(), before);
@@ -465,9 +465,9 @@ fn bad_bodies_are_400_without_a_socket_request() {
     let f = front(&script());
     for (path, raw) in [
         ("/requests", "not json"),
-        ("/requests", r#"{"repo":"r","task":"t"}"#),
-        ("/requests", r#"{"repo":"r","task":"t","goal":"","x":1}"#),
-        ("/requests", r#"{"repo":"r","task":"Bad Name!","goal":""}"#),
+        ("/requests", r#"{"repo":"r","name":"t"}"#),
+        ("/requests", r#"{"repo":"r","name":"t","goal":"","x":1}"#),
+        ("/requests", r#"{"repo":"r","name":"Bad Name!","goal":""}"#),
     ] {
         let resp = send(&f.web, "POST", path, raw);
         assert!(resp.starts_with("HTTP/1.1 400"), "{path} {raw}: {resp}");
@@ -478,7 +478,7 @@ fn bad_bodies_are_400_without_a_socket_request() {
         &f.web,
         "POST",
         &format!("/requests/{key}/workers"),
-        r#"{"task":"w"}"#,
+        r#"{"name":"w"}"#,
     );
     assert!(resp.starts_with("HTTP/1.1 400"), "{resp}");
     assert_eq!(f.seen.lock().unwrap().len(), before);

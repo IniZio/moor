@@ -101,7 +101,7 @@ fn session(id: i64, parent: Option<i64>, bx: Option<&str>, ordinal: i64) -> Valu
            "workdir": bx.map(|b| format!("/w/{b}")), "ordinal": ordinal})
 }
 
-fn task(name: &str, state: &str, question: Option<&str>) -> Value {
+fn box_view(name: &str, state: &str, question: Option<&str>) -> Value {
     json!({
         "name": name, "repo": "app", "branch": format!("moor/{name}"), "lifecycle": "ready", "session_state": "working",
         "goal": format!("goal of {name}"),
@@ -118,8 +118,8 @@ pub(super) fn answers() -> Answers {
         session(2, Some(1), Some("app/1"), 1),
     ]});
     let show = json!({
-        "boxes": [task("app/1", "awake", None), task("app/2", "asleep", Some("ship it?"))],
-        "box": task("app/1", "awake", None),
+        "boxes": [box_view("app/1", "awake", None), box_view("app/2", "asleep", Some("ship it?"))],
+        "box": box_view("app/1", "awake", None),
         "events": [{"id": 1, "kind": "note", "payload": {}, "ts": 5}],
     });
     let repos = json!({"repos": [{"name": "app", "url": "https://example.test/app.git"}]});
@@ -252,8 +252,8 @@ fn tree_nests_children_with_box_and_agent_state() {
     let roots = body(&resp)["roots"].clone();
     assert_eq!(roots.as_array().unwrap().len(), 1);
     assert_eq!(roots[0]["session"], 1);
+    assert_eq!(roots[0]["name"], Value::Null);
     assert_eq!(roots[0]["box"], Value::Null);
-    assert_eq!(roots[0]["task"], Value::Null);
     let ids: Vec<&Value> = roots[0]["children"]
         .as_array()
         .unwrap()
@@ -264,14 +264,14 @@ fn tree_nests_children_with_box_and_agent_state() {
 }
 
 #[test]
-fn child_carries_task_and_agent_question() {
+fn child_carries_box_and_agent_question() {
     let dir = tempfile::tempdir().unwrap();
     let (web, _) = front(&dir, answers(), &[]);
     let second = body(&get(&web, "/tree"))["roots"][0]["children"][1].clone();
     assert_eq!(second["parent"], 1);
     assert_eq!(second["workdir"], "/w/app/2");
     assert_eq!(
-        second["task"],
+        second["box"],
         json!({"name": "app/2", "repo": "app", "repo_url": "https://example.test/app.git",
                "branch": "moor/app/2", "lifecycle": "ready", "session_state": "working", "goal": "goal of app/2",
                "box_state": "asleep"})
@@ -288,7 +288,7 @@ fn awake_child_has_no_question() {
     let dir = tempfile::tempdir().unwrap();
     let (web, _) = front(&dir, answers(), &[]);
     let kid = body(&get(&web, "/tree"))["roots"][0]["children"][0].clone();
-    assert_eq!(kid["task"]["box_state"], "awake");
+    assert_eq!(kid["box"]["box_state"], "awake");
     assert_eq!(kid["agent"]["question"], Value::Null);
 }
 
@@ -431,9 +431,9 @@ fn other_paths_fall_back() {
 #[test]
 fn a_worker_whose_session_ended_but_whose_box_is_open_stays_in_the_tree() {
     let dir = tempfile::tempdir().unwrap();
-    let mut open = task("app/3", "awake", None);
+    let mut open = box_view("app/3", "awake", None);
     open["id"] = json!(5);
-    let mut closed = task("app/3", "gone", None);
+    let mut closed = box_view("app/3", "gone", None);
     closed["id"] = json!(6);
     closed["lifecycle"] = json!("closed");
     let mut map = (*answers()).clone();
@@ -460,14 +460,14 @@ fn a_worker_whose_session_ended_but_whose_box_is_open_stays_in_the_tree() {
     assert_eq!(kids.len(), 1, "{kids:?}");
     assert_eq!(kids[0]["session"], 4);
     assert_eq!(kids[0]["state"], "ended");
-    assert_eq!(kids[0]["box"], "app/3");
-    assert_eq!(kids[0]["task"]["box_state"], "awake");
+    assert_eq!(kids[0]["name"], "app/3");
+    assert_eq!(kids[0]["box"]["box_state"], "awake");
 }
 
 #[test]
 fn a_gone_root_lists_its_ended_workers_whose_box_is_open() {
     let dir = tempfile::tempdir().unwrap();
-    let mut open = task("app/3", "awake", None);
+    let mut open = box_view("app/3", "awake", None);
     open["id"] = json!(5);
     let mut map = (*answers()).clone();
     map.insert(
@@ -486,5 +486,5 @@ fn a_gone_root_lists_its_ended_workers_whose_box_is_open() {
     let kids = roots[0]["children"].as_array().unwrap();
     assert_eq!(kids.len(), 1, "{kids:?}");
     assert_eq!(kids[0]["session"], 4);
-    assert_eq!(kids[0]["task"]["box_state"], "awake");
+    assert_eq!(kids[0]["box"]["box_state"], "awake");
 }
