@@ -9,7 +9,7 @@ use BoxLifecycle as S;
 use BoxLifecycleInput as I;
 use SessionState as SS;
 
-/// One of every input variant; `Sleep` carries all-Idle Sessions.
+/// One of every input variant; `Sleep` is by command.
 fn all_inputs() -> Vec<BoxLifecycleInput> {
     vec![
         I::Insert,
@@ -27,9 +27,7 @@ fn all_inputs() -> Vec<BoxLifecycleInput> {
             which: None,
         },
         I::Retry,
-        I::Sleep {
-            sessions: vec![SS::Idle],
-        },
+        I::Sleep { auto: false },
         I::Wake,
         I::Close,
     ]
@@ -78,14 +76,8 @@ fn legal() -> Vec<(BoxLifecycle, BoxLifecycleInput, BoxLifecycle)> {
             S::SetupFailed,
         ),
         (S::SetupFailed, I::Retry, S::SettingUp),
-        (S::Ready, I::Sleep { sessions: vec![] }, S::Asleep),
-        (
-            S::Ready,
-            I::Sleep {
-                sessions: vec![SS::Idle, SS::Idle],
-            },
-            S::Asleep,
-        ),
+        (S::Ready, I::Sleep { auto: false }, S::Asleep),
+        (S::Ready, I::Sleep { auto: true }, S::Asleep),
         (S::Asleep, I::Wake, S::Ready),
     ];
     for state in S::ALL.into_iter().filter(|st| st.is_live()) {
@@ -98,7 +90,7 @@ fn legal() -> Vec<(BoxLifecycle, BoxLifecycleInput, BoxLifecycle)> {
 fn every_legal_transition_steps() {
     for (from, input, to) in legal() {
         assert_eq!(
-            from.step(&input),
+            from.step(&[SS::Idle, SS::Idle], &input),
             Ok(to),
             "{} + {}",
             from.as_str(),
@@ -119,7 +111,7 @@ fn every_other_pair_is_illegal() {
                 continue;
             }
             assert_eq!(
-                from.step(&input),
+                from.step(&[SS::Idle], &input),
                 Err(StepError::Illegal(Illegal {
                     from: from.as_str().to_owned(),
                     input: input.name().to_owned(),
@@ -133,6 +125,16 @@ fn every_other_pair_is_illegal() {
 }
 
 #[test]
+fn auto_does_not_change_the_sleep_result() {
+    for sessions in [vec![SS::Idle], vec![SS::Working]] {
+        assert_eq!(
+            S::Ready.step(&sessions, &I::Sleep { auto: true }),
+            S::Ready.step(&sessions, &I::Sleep { auto: false })
+        );
+    }
+}
+
+#[test]
 fn legal_table_has_expected_size() {
     assert_eq!(legal().len(), 12 + 6);
 }
@@ -140,11 +142,9 @@ fn legal_table_has_expected_size() {
 #[test]
 fn sleep_is_refused_while_any_session_is_not_idle() {
     for busy in [SS::Starting, SS::Working] {
-        let input = I::Sleep {
-            sessions: vec![SS::Idle, busy],
-        };
+        let input = I::Sleep { auto: false };
         assert_eq!(
-            S::Ready.step(&input),
+            S::Ready.step(&[SS::Idle, busy], &input),
             Err(StepError::SleepBlocked { busy: 1 }),
             "{busy:?}"
         );
@@ -153,16 +153,18 @@ fn sleep_is_refused_while_any_session_is_not_idle() {
 
 #[test]
 fn blocked_sleep_differs_from_sleep_in_the_wrong_state() {
-    let input = I::Sleep {
-        sessions: vec![SS::Working, SS::Starting, SS::Idle, SS::Ended],
-    };
+    let input = I::Sleep { auto: false };
+    let sessions = [SS::Working, SS::Starting, SS::Idle, SS::Ended];
     assert_eq!(
-        S::Ready.step(&input),
+        S::Ready.step(&sessions, &input),
         Err(StepError::SleepBlocked { busy: 2 })
     );
-    assert!(matches!(S::Asleep.step(&input), Err(StepError::Illegal(_))));
     assert!(matches!(
-        S::SettingUp.step(&input),
+        S::Asleep.step(&sessions, &input),
+        Err(StepError::Illegal(_))
+    ));
+    assert!(matches!(
+        S::SettingUp.step(&sessions, &input),
         Err(StepError::Illegal(_))
     ));
 }
@@ -174,7 +176,7 @@ fn setup_outcome_survives_the_step_and_feeds_events() {
             line: "npm ci failed".to_owned(),
         },
     };
-    assert_eq!(S::SettingUp.step(&failed), Ok(S::Ready));
+    assert_eq!(S::SettingUp.step(&[], &failed), Ok(S::Ready));
     assert!(matches!(
         &failed,
         I::Ready { setup: SetupOutcome::Failed { line } } if line == "npm ci failed"
@@ -184,7 +186,7 @@ fn setup_outcome_survives_the_step_and_feeds_events() {
         cause: "denied".to_owned(),
         which: Some("api_key".to_owned()),
     };
-    assert_eq!(S::SettingUp.step(&cred), Ok(S::SetupFailed));
+    assert_eq!(S::SettingUp.step(&[], &cred), Ok(S::SetupFailed));
     assert!(matches!(
         &cred,
         I::SetupFailed { cause, which: Some(w) } if cause == "denied" && w == "api_key"
@@ -197,7 +199,7 @@ fn closed_and_rejected_are_terminal() {
         assert!(!from.is_live());
         for input in all_inputs() {
             assert!(
-                from.step(&input).is_err(),
+                from.step(&[], &input).is_err(),
                 "{} + {}",
                 from.as_str(),
                 input.name()
