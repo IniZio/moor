@@ -2,6 +2,7 @@
 #![allow(clippy::indexing_slicing, reason = "test assertions")]
 
 use moor_core::domain::decision::Decision;
+use moor_core::domain::session_state::SessionState;
 use moor_core::domain::task::TaskInput;
 use moor_core::BoxId;
 
@@ -132,4 +133,73 @@ fn ending_a_task_leaves_host_alone() {
     store.apply(Decision::new(id).task_input(reject)).unwrap();
     assert_eq!(row(&store, host), before);
     assert_eq!(row(&store, host).2, "working");
+}
+
+fn invalid_msg(err: StoreError) -> String {
+    let StoreError::Invalid(msg) = err else {
+        return format!("not Invalid: {err:?}");
+    };
+    msg
+}
+
+#[test]
+fn update_sets_agent_session_id_and_keeps_agent() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = store.open_host_session("/w", Some("claude"), None).unwrap();
+    let got = store.update_host_session(id, None, Some("abc")).unwrap();
+    assert_eq!(got.agent.as_deref(), Some("claude"));
+    assert_eq!(got.agent_session_id.as_deref(), Some("abc"));
+    assert_eq!(store.host_session(id).unwrap(), Some(got));
+}
+
+#[test]
+fn unknown_id_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let err = store.update_host_session(99, None, None).unwrap_err();
+    assert_eq!(invalid_msg(err), "no host Session 99");
+    let err = store.end_host_session(99).unwrap_err();
+    assert_eq!(invalid_msg(err), "no host Session 99");
+}
+
+#[test]
+fn box_session_id_is_refused() {
+    let (_dir, store, id, _host) = with_host("acme/1");
+    let box_session = store.box_sessions(id).unwrap()[0].id;
+    assert_eq!(store.host_session(box_session).unwrap(), None);
+    let err = store
+        .update_host_session(box_session, Some("x"), None)
+        .unwrap_err();
+    assert_eq!(invalid_msg(err), format!("no host Session {box_session}"));
+    let err = store.end_host_session(box_session).unwrap_err();
+    assert_eq!(invalid_msg(err), format!("no host Session {box_session}"));
+}
+
+#[test]
+fn end_sets_state_and_ended_at() {
+    let (_dir, store, _id, host) = with_host("acme/1");
+    let got = store.end_host_session(host).unwrap();
+    assert_eq!(got.state, SessionState::Ended);
+    assert!(got.ended_at.is_some());
+    assert_eq!(store.host_session(host).unwrap(), Some(got));
+    assert_eq!(row(&store, host).2, "ended");
+}
+
+#[test]
+fn update_after_end_is_refused() {
+    let (_dir, store, _id, host) = with_host("acme/1");
+    store.end_host_session(host).unwrap();
+    let err = store
+        .update_host_session(host, Some("x"), None)
+        .unwrap_err();
+    assert_eq!(invalid_msg(err), format!("host Session {host} has ended"));
+}
+
+#[test]
+fn end_twice_is_refused() {
+    let (_dir, store, _id, host) = with_host("acme/1");
+    store.end_host_session(host).unwrap();
+    let err = store.end_host_session(host).unwrap_err();
+    assert_eq!(invalid_msg(err), format!("host Session {host} has ended"));
 }

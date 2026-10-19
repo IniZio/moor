@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::name::BoxName;
+use crate::name::{BoxName, SessionId};
 
 /// One moor command with its arguments.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -22,6 +22,10 @@ pub enum Request {
     OpenSession(OpenSessionReq),
     /// Register a Session with no Box that runs on the host in a workdir.
     OpenHostSession(OpenHostSessionReq),
+    /// Record the agent or stored agent session of a host Session.
+    UpdateHostSession(UpdateHostSessionReq),
+    /// End a host Session.
+    EndHostSession(EndHostSessionReq),
     /// Publish a report.
     Report(ReportReq),
     /// Show tasks or one task.
@@ -68,6 +72,8 @@ impl Request {
             Self::EndSession(_) => "end-session",
             Self::OpenSession(_) => "open-session",
             Self::OpenHostSession(_) => "open-host-session",
+            Self::UpdateHostSession(_) => "update-host-session",
+            Self::EndHostSession(_) => "end-host-session",
             Self::Report(_) => "report",
             Self::Show(_) => "show",
             Self::Close(_) => "close",
@@ -235,6 +241,28 @@ pub struct OpenHostSessionReq {
     pub agent_session_id: Option<String>,
 }
 
+/// Arguments of `update-host-session`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UpdateHostSessionReq {
+    /// Session id.
+    pub session: SessionId,
+    /// Agent to record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<String>,
+    /// Stored agent session to record.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_session_id: Option<String>,
+}
+
+/// Arguments of `end-host-session`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EndHostSessionReq {
+    /// Session id.
+    pub session: SessionId,
+}
+
 /// Arguments of `report`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -339,5 +367,7 @@ pub struct EnvReq {
     pub repo: Option<String>,
 }
 
+#[cfg(test)]
+mod host_tests;
 #[cfg(test)]
 mod tests;
