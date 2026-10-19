@@ -6,7 +6,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use moor_core::request::{ReposReq, Request, SessionsReq, ShowReq, ShowSessionReq};
-use moor_core::response::ExitClass;
+use moor_core::response::{ErrorKind, ExitClass};
 use moor_core::BoxName;
 use serde_json::{json, Map, Value};
 
@@ -14,6 +14,7 @@ use crate::client::Client;
 use crate::db::{Db, RequestRow};
 use crate::http::{Handler, HttpRequest, HttpResponse, Reply};
 
+mod artifacts;
 #[cfg(test)]
 mod tests;
 
@@ -32,12 +33,26 @@ pub fn handler(client: Client, db: Arc<Mutex<Db>>, fallback: Handler) -> Handler
             "/tree" => tree(&client, &db),
             "/repos" => repos(&client),
             path => match path.strip_prefix("/boxes/") {
-                Some(name) => detail(&client, name),
+                Some(rest) => route_box(&client, req, rest),
                 None => return fallback(req),
             },
         };
         resp.into()
     })
+}
+
+/// Routes `/boxes/{name}`, `/boxes/{name}/artifacts` and `/boxes/{name}/artifacts/{file}`;
+/// a Box name may itself contain a slash.
+fn route_box(client: &Client, req: &HttpRequest, rest: &str) -> HttpResponse {
+    if let Some(name) = rest.strip_suffix("/artifacts") {
+        return artifacts::list(client, req, name);
+    }
+    if let Some((head, file)) = rest.rsplit_once('/') {
+        if let Some(name) = head.strip_suffix("/artifacts") {
+            return artifacts::read(client, req, name, file);
+        }
+    }
+    detail(client, rest)
 }
 
 /// A `200 OK` JSON response.
@@ -62,7 +77,15 @@ fn call(client: &Client, request: Request) -> Result<Value, HttpResponse> {
         Ok(body) => json_ok(&body),
         Err(e) => HttpResponse::text("502 Bad Gateway", e.to_string()),
     };
-    resp.status = "502 Bad Gateway";
+    let missing = envelope
+        .error
+        .as_ref()
+        .is_some_and(|e| e.kind == ErrorKind::NotFound);
+    resp.status = if missing {
+        "404 Not Found"
+    } else {
+        "502 Bad Gateway"
+    };
     Err(resp)
 }
 
