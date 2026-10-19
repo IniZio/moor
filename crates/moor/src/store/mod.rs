@@ -35,6 +35,7 @@ mod sessions;
 mod slack;
 #[cfg(test)]
 mod tests;
+mod turns;
 mod version;
 
 pub(crate) use agent::SessionRow;
