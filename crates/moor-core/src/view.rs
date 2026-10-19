@@ -264,9 +264,6 @@ pub struct ShowView {
     pub pane: Option<PaneView>,
     /// Reports, when requested.
     pub reports: Option<Vec<ReportView>>,
-    /// Proof files in the Box; absent when the Box could not be read.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub proofs: Option<Vec<crate::domain::proof::ProofFile>>,
 }
 
 /// `value` of `close`.

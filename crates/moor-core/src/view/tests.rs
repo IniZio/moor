@@ -138,7 +138,6 @@ fn start_view_keys_match_wire_shape() {
 #[test]
 fn show_view_keys_match_wire_shape() {
     let v = ShowView {
-        proofs: None,
         tasks: Some(vec![task()]),
         task: None,
         events: Some(vec![EventView {
@@ -173,7 +172,6 @@ fn show_view_keys_match_wire_shape() {
 #[test]
 fn show_view_absent_sections_are_null() {
     let v = ShowView {
-        proofs: None,
         tasks: Some(vec![]),
         task: None,
         events: None,
@@ -189,7 +187,6 @@ fn show_view_absent_sections_are_null() {
 #[test]
 fn show_view_single_task_omits_tasks() {
     let v = ShowView {
-        proofs: None,
         tasks: None,
         task: Some(task()),
         events: None,

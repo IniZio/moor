@@ -18,7 +18,6 @@ use moor_core::{BoxId, BoxName, ProviderId, ShowReq, StartReq};
 
 mod attention;
 mod pane;
-mod proof;
 
 use super::run;
 use crate::cx::Cx;
