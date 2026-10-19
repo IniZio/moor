@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use clap::Parser;
-use moor_web::actions;
+use moor_web::actions::{self, start::StartCtx};
 use moor_web::auth::read_token;
 use moor_web::client::Client;
 use moor_web::db::Db;
@@ -55,6 +55,19 @@ fn state_dir(given: Option<PathBuf>) -> Result<PathBuf, String> {
         .ok_or_else(|| "set --state-dir, XDG_STATE_HOME or HOME".to_owned())
 }
 
+/// Current time in unix seconds.
+#[allow(
+    clippy::disallowed_methods,
+    reason = "the daemon's one wall-clock read, injected into the handlers"
+)]
+fn unix_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .and_then(|d| i64::try_from(d.as_secs()).ok())
+        .unwrap_or(0)
+}
+
 /// Starts the daemon and parks the main thread.
 fn run(args: Args) -> Result<(), String> {
     let token = read_token(&args.token_file)?;
@@ -64,14 +77,24 @@ fn run(args: Args) -> Result<(), String> {
     let db = Arc::new(Mutex::new(db));
     let client = Client::new(args.socket);
     let jobs = Jobs::new();
-    let handler = jobs.handler(views::handler(
-        client.clone(),
-        db.clone(),
-        actions::handler(
+    let ctx = StartCtx {
+        client: client.clone(),
+        db: db.clone(),
+        jobs: jobs.clone(),
+        state_dir: dir,
+        clock: unix_now,
+    };
+    let handler = actions::start::handler(
+        ctx,
+        jobs.handler(views::handler(
             client.clone(),
-            watch::handler(client, db, RelayConfig::default()),
-        ),
-    ));
+            db.clone(),
+            actions::handler(
+                client.clone(),
+                watch::handler(client, db, RelayConfig::default()),
+            ),
+        )),
+    );
     let server = start(args.port, token, handler).map_err(|e| format!("listen: {e}"))?;
     writeln!(io::stdout(), "{}", server.url()).map_err(|e| e.to_string())?;
     loop {
