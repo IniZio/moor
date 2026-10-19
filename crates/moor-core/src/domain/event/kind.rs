@@ -2,7 +2,7 @@
 
 use super::{Event, ASSERTED_KINDS};
 
-impl<F: serde::Serialize> Event<F> {
+impl Event {
     /// The `snake_case` kind name; equals the serde tag.
     #[must_use]
     pub const fn kind(&self) -> &'static str {

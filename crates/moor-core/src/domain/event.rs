@@ -2,6 +2,7 @@
 
 use serde::Serialize;
 
+use crate::domain::box_state::BoxLifecycle;
 use crate::domain::task::{SetupOutcome, TaskInput, TaskState};
 pub use crate::domain::turn::TurnOutcome;
 use crate::name::RunId;
@@ -33,7 +34,7 @@ pub const ASSERTED_KINDS: [&str; 20] = [
 /// One recorded fact about a task, serialized with its `kind` tag.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum Event<F = TaskState> {
+pub enum Event {
     /// The task row was created.
     Started,
     /// Admission refused the task.
@@ -49,7 +50,7 @@ pub enum Event<F = TaskState> {
     /// Box setup began.
     SettingUp {
         /// The state the task left.
-        from: F,
+        from: BoxLifecycle,
     },
     /// The agent is working.
     Working,
@@ -86,7 +87,7 @@ pub enum Event<F = TaskState> {
     /// The task closed.
     Closed {
         /// The state the task left.
-        from: F,
+        from: BoxLifecycle,
     },
     /// A box was requested.
     BoxRequested,
@@ -337,7 +338,7 @@ pub enum Event<F = TaskState> {
 /// `from` is `None` for the initial insert; `Closed` then reports `to` as its origin.
 #[must_use]
 pub fn task_events(from: Option<TaskState>, to: TaskState, input: &TaskInput) -> Vec<Event> {
-    let origin = from.unwrap_or(to);
+    let origin = steps::lifecycle_of(from.unwrap_or(to));
     match input {
         TaskInput::Insert => vec![Event::Started],
         TaskInput::Rejected { reason } => vec![Event::Rejected {

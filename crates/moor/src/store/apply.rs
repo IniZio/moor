@@ -9,7 +9,6 @@ use moor_core::seam::clock::Ts;
 use moor_core::BoxId;
 use rusqlite::types::Value;
 use rusqlite::{params, Transaction, TransactionBehavior};
-use serde::Serialize;
 
 mod sql;
 mod steps;
@@ -107,7 +106,7 @@ fn apply_in(tx: &Transaction<'_>, now: Ts, d: Decision) -> Result<Applied, Store
         (None, None) => Vec::new(),
     };
     for e in &stepped {
-        ids.push(insert_row(tx, id, e, now)?);
+        ids.push(insert_event(tx, id, e, now)?);
     }
     let mut events = Vec::new();
     if let (Some(i), Some(s)) = (&d.box_input, &box_step) {
@@ -338,18 +337,8 @@ pub(super) fn intent_sets(change: IntentChange, now: Ts) -> Sets {
 /// Insert one event row, stamped with the Box's newest Session, and return its id.
 pub(super) fn insert_event(
     tx: &Transaction<'_>,
-    task: BoxId,
-    e: &Event,
-    now: Ts,
-) -> Result<i64, StoreError> {
-    insert_row(tx, task, e, now)
-}
-
-/// Insert an event row for any state type the event carries.
-fn insert_row<F: Serialize>(
-    tx: &Transaction<'_>,
     id: BoxId,
-    e: &Event<F>,
+    e: &Event,
     now: Ts,
 ) -> Result<i64, StoreError> {
     tx.execute(

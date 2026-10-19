@@ -1,10 +1,10 @@
 //! Tests for the decision builder and intents.
 
 use super::{Decision, ExtraEvent, Field, Fields, Intent, IntentChange, NewTask, TaskTarget};
+use crate::domain::box_state::BoxLifecycle;
 use crate::domain::box_state::BoxLifecycleInput;
 use crate::domain::event::Event;
 use crate::domain::session_state::SessionInput;
-use crate::domain::task::TaskState;
 use crate::name::{BoxId, BoxName, RunId};
 
 /// `new` targets an existing task with nothing else set.
@@ -95,7 +95,7 @@ fn intent_accessors() {
 fn derived_events_are_refused() {
     for e in [
         Event::Closed {
-            from: TaskState::Idle,
+            from: BoxLifecycle::Ready,
         },
         Event::BoxReady,
         Event::BoxFailed {

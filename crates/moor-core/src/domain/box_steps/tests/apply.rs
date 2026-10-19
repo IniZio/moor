@@ -3,7 +3,7 @@
 
 use super::*;
 use crate::domain::box_state::BoxLifecycleInput as L;
-use crate::domain::event::{lifecycle_events, session_events, task_events, Event};
+use crate::domain::event::{lifecycle_events, session_events, task_events};
 use crate::domain::session_state::SessionInput as S;
 use crate::domain::task::SetupOutcome;
 
@@ -51,33 +51,6 @@ fn pair(input: &TaskInput) -> (Option<L>, Option<S>) {
         TaskInput::Wake => (Some(L::Wake), Some(S::AgentBusy)),
         TaskInput::Close => (Some(L::Close), Some(S::End)),
     }
-}
-
-/// An old event with its origin state named by the Box lifecycle.
-fn convert(event: Event) -> Event<BoxLifecycle> {
-    match event {
-        Event::Started => Event::Started,
-        Event::Rejected { reason } => Event::Rejected { reason },
-        Event::WaitingForBox { max_boxes } => Event::WaitingForBox { max_boxes },
-        Event::SettingUp { from } => Event::SettingUp {
-            from: parts(from).0,
-        },
-        Event::Working => Event::Working,
-        Event::SetupFailed { line } => Event::SetupFailed { line },
-        Event::CredentialFailed { which, error } => Event::CredentialFailed { which, error },
-        Event::Idled => Event::Idled,
-        Event::Busy => Event::Busy,
-        Event::Asleep { auto } => Event::Asleep { auto },
-        Event::Woke => Event::Woke,
-        Event::Closed { from } => Event::Closed {
-            from: parts(from).0,
-        },
-        other => panic!("step never produces {other:?}"),
-    }
-}
-
-fn convert_all(events: Vec<Event>) -> Vec<Event<BoxLifecycle>> {
-    events.into_iter().map(convert).collect()
 }
 
 fn other_sessions() -> [Vec<SessionState>; 4] {
@@ -139,11 +112,7 @@ fn apply_events_match_old_events_for_every_ok_pair() {
                     (None, Some(s)) => session_events(s),
                     (None, None) => unreachable!("every input maps to one side"),
                 };
-                let want = convert_all(task_events(
-                    Some(state),
-                    summary(new_lc, new_primary),
-                    &input,
-                ));
+                let want = task_events(Some(state), summary(new_lc, new_primary), &input);
                 assert_eq!(got, want, "{state:?} + {others:?} + {input:?}");
                 compared += 1;
             }
@@ -159,7 +128,7 @@ fn apply_insert_matches_old_initial() {
     assert_eq!(session, SessionState::initial(&S::Open).unwrap());
 
     let got = lifecycle_events(None, lc, &L::Insert);
-    let want = convert_all(task_events(None, summary(lc, session), &TaskInput::Insert));
+    let want = task_events(None, summary(lc, session), &TaskInput::Insert);
     assert_eq!(got, want);
 }
 
