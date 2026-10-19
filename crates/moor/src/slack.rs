@@ -5,7 +5,6 @@ mod api;
 mod command;
 mod pr;
 mod prompt;
-mod proof;
 mod socket;
 mod status;
 

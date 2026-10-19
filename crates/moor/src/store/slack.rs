@@ -1,6 +1,6 @@
 //! Slack event dedup and the binding of a Slack thread to a Box's primary Session.
 
-use moor_core::{BoxId, BoxName};
+use moor_core::BoxName;
 use rusqlite::{params, OptionalExtension};
 
 use super::bindings::insert_binding;
@@ -219,41 +219,6 @@ impl Store {
             )
             .optional()?
             .is_some())
-    }
-
-    /// True once this proof file, at this exact content digest, was posted for this Box.
-    pub(crate) fn slack_proof_posted(
-        &self,
-        id: BoxId,
-        name: &str,
-        sha256: &str,
-    ) -> Result<bool, StoreError> {
-        Ok(self
-            .reader()?
-            .query_row(
-                "SELECT 1 FROM slack_proofs WHERE box = ? AND name = ? AND sha256 = ?",
-                params![id.get(), name, sha256],
-                |_| Ok(()),
-            )
-            .optional()?
-            .is_some())
-    }
-
-    /// Records a posted proof file; repeating the same name and digest is a no-op.
-    pub(crate) fn mark_slack_proof_posted(
-        &self,
-        id: BoxId,
-        name: &str,
-        sha256: &str,
-    ) -> Result<(), StoreError> {
-        let now = self.now();
-        let writer = self.writer()?;
-        writer.execute(
-            "INSERT OR IGNORE INTO slack_proofs (box, name, sha256, posted_at) VALUES (?, ?, ?, ?)",
-            params![id.get(), name, sha256, now.as_millis()],
-        )?;
-        drop(writer);
-        Ok(())
     }
 
     /// Records a posted prompt; ignored when the event already has one.
