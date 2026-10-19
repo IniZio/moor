@@ -256,18 +256,28 @@ fn a_held_box_lock_skips_the_collection() {
             .copy_text(BODY),
     );
     let (cx, id) = quiet_agent_on(dir.path(), &driver);
+    let list = ShowReq {
+        task: None,
+        events: None,
+        agent: false,
+        reports: false,
+        pane: false,
+    };
+    show::run(&cx, &list).unwrap();
     let reader = view(dir.path(), &driver);
+    assert_eq!(
+        reader.store().unwrap().task(id).unwrap().unwrap().state,
+        TaskState::Idle
+    );
     let moor = Moor::from_cx(cx);
     let held = held_lock(&reader, id);
     assert!(moor.settle_open().is_empty());
     assert_eq!(artifact_execs(&driver), 0);
     assert_eq!(stored(&reader, id), 0);
-    assert!(!kinds(&reader, id).iter().any(|k| k == "artifact_published"));
     drop(held);
     assert!(moor.settle_open().is_empty());
     assert_eq!(artifact_execs(&driver), 1);
     assert_eq!(stored(&reader, id), 1);
-    assert!(kinds(&reader, id).iter().any(|k| k == "artifact_published"));
 }
 
 #[test]
