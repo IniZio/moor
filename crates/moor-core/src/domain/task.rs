@@ -1,5 +1,7 @@
 //! The Task state machine: every state change is `step()`, and every other pair is an error.
 
+use super::box_state::BoxLifecycleInput as L;
+use super::session_state::SessionInput as S;
 use super::Illegal;
 
 /// Where a Task is in its life.
@@ -195,6 +197,53 @@ pub enum TaskInput {
 }
 
 impl TaskInput {
+    /// The Box lifecycle and Session inputs this input stands for.
+    #[must_use]
+    pub fn pair(&self) -> (Option<L>, Option<S>) {
+        let setup_failed = |cause: &String, which: Option<&String>| {
+            Some(L::SetupFailed {
+                cause: cause.clone(),
+                which: which.cloned(),
+            })
+        };
+        match self {
+            Self::Insert => (Some(L::Insert), Some(S::Open)),
+            Self::Rejected { reason } => (
+                Some(L::Rejected {
+                    reason: reason.clone(),
+                }),
+                None,
+            ),
+            Self::AtCapacity { max_boxes } => (
+                Some(L::AtCapacity {
+                    max_boxes: *max_boxes,
+                }),
+                None,
+            ),
+            Self::Admitted => (Some(L::Admitted), None),
+            Self::Promoted => (Some(L::Promoted), None),
+            Self::Retry => (Some(L::Retry), None),
+            Self::BoxReady { setup } => (
+                Some(L::Ready {
+                    setup: setup.clone(),
+                }),
+                Some(S::Started),
+            ),
+            Self::AcquireFailed { cause } => (setup_failed(cause, None), None),
+            Self::DotfilesFailed { error } | Self::SyncFailed { error } => {
+                (setup_failed(error, None), None)
+            }
+            Self::CredFailed { which, error } => (setup_failed(error, Some(which)), None),
+            Self::AgentQuiet => (None, Some(S::AgentQuiet)),
+            Self::AgentBusy => (None, Some(S::AgentBusy)),
+            Self::RunStarted => (None, Some(S::RunStarted)),
+            Self::SleepDue => (Some(L::Sleep { auto: true }), None),
+            Self::SleepCmd => (Some(L::Sleep { auto: false }), None),
+            Self::Wake => (Some(L::Wake), Some(S::AgentBusy)),
+            Self::Close => (Some(L::Close), Some(S::End)),
+        }
+    }
+
     /// The `snake_case` variant name.
     #[must_use]
     pub const fn name(&self) -> &'static str {
