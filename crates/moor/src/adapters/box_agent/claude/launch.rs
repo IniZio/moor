@@ -3,6 +3,7 @@
 use moor_core::boxscript::quote;
 use moor_core::name::{BoxPath, NameError};
 use moor_core::seam::agent_profile::{BoxFile, BoxSetup, EnvVar, Key, LaunchCtx};
+use moor_core::seam::engine::LaunchPrompt;
 use moor_core::Secret;
 use serde_json::{json, Value};
 
@@ -129,10 +130,14 @@ fs.writeFileSync(t, JSON.stringify(j, null, 2), { mode: 0o600 });
 fs.renameSync(t, p);
 "#;
 
-/// Arguments for a fresh session.
+/// Arguments for a fresh session, ending in the first prompt unless the launch asks for none.
 pub(super) fn argv(ctx: &LaunchCtx) -> Vec<String> {
     let mut argv = flags(ctx);
-    argv.push(PROMPT.to_owned());
+    match &ctx.prompt {
+        LaunchPrompt::Brief => argv.push(PROMPT.to_owned()),
+        LaunchPrompt::Text(text) => argv.push(text.clone()),
+        LaunchPrompt::None => {}
+    }
     argv
 }
 

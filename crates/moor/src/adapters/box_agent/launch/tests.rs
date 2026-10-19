@@ -6,7 +6,7 @@ use std::sync::Arc;
 use moor_core::seam::agent_profile::{AgentProfile, BoxSetup, LaunchCtx, ProxyAddr};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
-use moor_core::seam::engine::{Engine, EngineError, LaunchReq};
+use moor_core::seam::engine::{Engine, EngineError, LaunchPrompt, LaunchReq};
 use moor_core::seam::surface::{Surface, SurfaceError};
 use moor_core::{BoxHandle, BoxId, BoxPath, ProviderId, Secret};
 
@@ -68,6 +68,7 @@ fn req(s: &FakeSurface) -> LaunchReq {
         proxy: None,
         origin: None,
         strip_env: Vec::new(),
+        prompt: LaunchPrompt::Brief,
     }
 }
 
