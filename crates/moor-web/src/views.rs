@@ -1,11 +1,11 @@
 //! Read endpoints for the browser page: the request tree, the repo list and one Box.
 //!
-//! Only requests that never wake a Box are sent: `sessions`, `show`, `repos`.
+//! Only requests that never wake a Box are sent: `sessions`, `show`, `repos`, `show-session`.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use moor_core::request::{ReposReq, Request, SessionsReq, ShowReq};
+use moor_core::request::{ReposReq, Request, SessionsReq, ShowReq, ShowSessionReq};
 use moor_core::response::ExitClass;
 use moor_core::BoxName;
 use serde_json::{json, Map, Value};
@@ -212,11 +212,67 @@ fn tree(client: &Client, db: &Mutex<Db>) -> HttpResponse {
         Ok(rows) => rows,
         Err(e) => return HttpResponse::text("500 Internal Server Error", e.to_string()),
     };
-    json_ok(&json!({"roots": roots(&sessions, &tasks, &repos, &rows)}))
+    let stranded = stranded(client, &sessions, &tasks, &rows);
+    json_ok(&json!({"roots": roots(&sessions, &tasks, &repos, &rows, &stranded)}))
+}
+
+/// Whether a task view is for a Box that is still open.
+fn is_open(task: &Value) -> bool {
+    !matches!(text(task, "state"), Some("closed" | "rejected"))
+}
+
+/// Ended child Sessions of open requests whose Box is still open and has no live Session.
+fn stranded(client: &Client, sessions: &Value, tasks: &Value, rows: &[RequestRow]) -> Vec<Value> {
+    let open: HashSet<i64> = items(tasks, "tasks")
+        .iter()
+        .filter(|t| is_open(t))
+        .filter_map(|t| t.get("id").and_then(Value::as_i64))
+        .collect();
+    let mut hidden: HashSet<i64> = items(sessions, "sessions")
+        .iter()
+        .filter_map(|s| s.get("box_id").and_then(Value::as_i64))
+        .collect();
+    let mut out = Vec::new();
+    for row in rows.iter().filter(|r| r.ended_at.is_none()) {
+        let root = row.root_session.get();
+        let mut seen = HashSet::from([root]);
+        let mut walk = vec![root];
+        while let Some(parent) = walk.pop() {
+            let req = Request::ShowSession(ShowSessionReq {
+                session: moor_core::SessionId::new(parent),
+            });
+            let Ok(value) = call(client, req) else {
+                continue;
+            };
+            for kid in items(&value, "children") {
+                let id = id_of(kid);
+                if !seen.insert(id) {
+                    continue;
+                }
+                walk.push(id);
+                let box_id = kid.get("box_id").and_then(Value::as_i64);
+                if text(kid, "state") == Some("ended")
+                    && box_id.is_some_and(|b| open.contains(&b) && hidden.insert(b))
+                {
+                    out.push(
+                        json!({"session": id, "box": field(kid, "box"), "parent": root,
+                        "state": "ended", "workdir": null, "ordinal": null}),
+                    );
+                }
+            }
+        }
+    }
+    out
 }
 
 /// The root nodes: live roots, then request rows that are no longer live.
-fn roots(sessions: &Value, tasks: &Value, repos: &Value, rows: &[RequestRow]) -> Vec<Value> {
+fn roots(
+    sessions: &Value,
+    tasks: &Value,
+    repos: &Value,
+    rows: &[RequestRow],
+    stranded: &[Value],
+) -> Vec<Value> {
     let all = items(sessions, "sessions");
     let live: HashSet<i64> = all.iter().map(id_of).collect();
     let mut children: HashMap<i64, Vec<&Value>> = HashMap::new();
@@ -228,11 +284,16 @@ fn roots(sessions: &Value, tasks: &Value, repos: &Value, rows: &[RequestRow]) ->
         }
     }
     tops.sort_by_key(|s| order(s));
+    for s in stranded {
+        let parent = s.get("parent").and_then(Value::as_i64).unwrap_or(0);
+        children.entry(parent).or_default().push(s);
+    }
     let src = Source {
         children,
         live,
         tasks: items(tasks, "tasks")
             .iter()
+            .filter(|t| is_open(t))
             .filter_map(|t| Some((text(t, "name")?, t)))
             .collect(),
         urls: items(repos, "repos")
@@ -246,13 +307,13 @@ fn roots(sessions: &Value, tasks: &Value, repos: &Value, rows: &[RequestRow]) ->
     out.extend(
         rows.iter()
             .filter(|r| !src.live.contains(&r.root_session.get()))
-            .map(gone),
+            .map(|r| gone(r, &src, &mut seen)),
     );
     out
 }
 
 /// A root for a request whose Session is no longer live.
-fn gone(row: &RequestRow) -> Value {
+fn gone(row: &RequestRow, src: &Source, seen: &mut HashSet<i64>) -> Value {
     let mut node = Map::new();
     node.insert("session".into(), json!(row.root_session.get()));
     for key in ["parent", "box", "workdir", "ordinal", "task", "agent"] {
@@ -260,6 +321,19 @@ fn gone(row: &RequestRow) -> Value {
     }
     node.insert("state".into(), json!("gone"));
     node.insert("request".into(), request_json(row));
-    node.insert("children".into(), json!([]));
+    let mut kids: Vec<&Value> = src
+        .children
+        .get(&row.root_session.get())
+        .cloned()
+        .unwrap_or_default();
+    kids.sort_by_key(|k| order(k));
+    let mut nodes = Vec::new();
+    for kid in kids {
+        if seen.insert(id_of(kid)) {
+            nodes.push(src.node(kid, seen));
+        }
+    }
+    let kids = nodes;
+    node.insert("children".into(), json!(kids));
     Value::Object(node)
 }

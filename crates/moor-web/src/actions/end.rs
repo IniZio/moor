@@ -1,13 +1,14 @@
 //! Ending a whole request from the browser.
 //!
-//! Every live child Session is closed, deepest first, and only then the request's root
-//! host Session ends. If any child cannot be closed the root stays open, so the user can
-//! retry.
+//! Every child Session's open Box is closed, deepest first, and only then the request's
+//! root host Session ends. Ended child Sessions are walked too: their Box can stay open.
+//! If any child cannot be closed the root stays open, so the user can retry.
 
 use std::collections::HashSet;
 use std::sync::{Arc, PoisonError};
 
-use moor_core::request::{CloseReq, EndHostSessionReq, Request, SessionsReq};
+use moor_core::domain::session_state::SessionState;
+use moor_core::request::{CloseReq, EndHostSessionReq, Request, ShowReq, ShowSessionReq};
 use moor_core::response::ExitClass;
 use moor_core::{BoxName, SessionId};
 use serde_json::{json, Value};
@@ -21,12 +22,16 @@ use crate::jobs::{JobFailure, JobHandle};
 #[path = "end_tests.rs"]
 mod tests;
 
-/// A live descendant Session of the request root.
+/// A descendant Session of the request root, ended or not.
 struct Item {
     /// The Session.
     session: SessionId,
-    /// Name of its Box; none for a host Session.
+    /// Name of its Box.
     boxed: Option<String>,
+    /// Id of its Box.
+    box_id: Option<i64>,
+    /// Whether it has ended.
+    ended: bool,
 }
 
 /// Serves `POST /requests/{key}/end` and hands everything else to `fallback`.
@@ -76,7 +81,9 @@ fn run(ctx: &StartCtx, h: &JobHandle, key: &str, root: SessionId) -> Result<Valu
     let mut items = Vec::new();
     let mut seen = HashSet::from([root.get()]);
     collect(&ctx.client, root, &mut seen, &mut items)?;
-    let outcomes = close_all(&ctx.client, h, &items);
+    h.progress("listing open boxes");
+    let open = open_boxes(&ctx.client)?;
+    let outcomes = close_all(&ctx.client, h, &items, &open);
     let failed: Vec<String> = outcomes
         .iter()
         .filter(|o| o.get("ok") != Some(&Value::Bool(true)))
@@ -95,7 +102,10 @@ fn run(ctx: &StartCtx, h: &JobHandle, key: &str, root: SessionId) -> Result<Valu
     }
     h.progress("ending the request session");
     let req = Request::EndHostSession(EndHostSessionReq { session: root });
-    call(&ctx.client, req).map_err(|m| fail("end-root", m))?;
+    match call(&ctx.client, req) {
+        Err(m) if !m.contains("has ended") => return Err(fail("end-root", m)),
+        _ => {}
+    }
     h.progress("saving the request");
     ctx.db
         .lock()
@@ -105,18 +115,40 @@ fn run(ctx: &StartCtx, h: &JobHandle, key: &str, root: SessionId) -> Result<Valu
     Ok(json!({"key": key, "root": root, "closed": outcomes, "root_ended": true}))
 }
 
-/// Appends the live descendants of `parent` to `items`, deepest first.
+/// Ids of the Boxes still open.
+fn open_boxes(client: &Client) -> Result<HashSet<i64>, JobFailure> {
+    let req = Request::Show(ShowReq {
+        task: None,
+        events: None,
+        agent: false,
+        reports: false,
+        pane: false,
+    });
+    let value = call(client, req).map_err(|m| fail("list-boxes", m))?;
+    let tasks = value.get("tasks").and_then(Value::as_array);
+    Ok(tasks
+        .into_iter()
+        .flatten()
+        .filter(|t| {
+            !matches!(
+                t.get("state").and_then(Value::as_str),
+                Some("closed" | "rejected")
+            )
+        })
+        .filter_map(|t| t.get("id").and_then(Value::as_i64))
+        .collect())
+}
+
+/// Appends the descendants of `parent`, ended ones included, to `items`, deepest first.
 fn collect(
     client: &Client,
     parent: SessionId,
     seen: &mut HashSet<i64>,
     items: &mut Vec<Item>,
 ) -> Result<(), JobFailure> {
-    let req = Request::Sessions(SessionsReq {
-        parent: Some(parent),
-    });
+    let req = Request::ShowSession(ShowSessionReq { session: parent });
     let value = call(client, req).map_err(|m| fail("list-children", m))?;
-    let rows = value.get("sessions").and_then(Value::as_array);
+    let rows = value.get("children").and_then(Value::as_array);
     for row in rows.into_iter().flatten() {
         let Some(id) = row.get("session").and_then(Value::as_i64) else {
             continue;
@@ -127,18 +159,32 @@ fn collect(
         let session = SessionId::new(id);
         collect(client, session, seen, items)?;
         let boxed = row.get("box").and_then(Value::as_str).map(str::to_owned);
-        items.push(Item { session, boxed });
+        items.push(Item {
+            session,
+            boxed,
+            box_id: row.get("box_id").and_then(Value::as_i64),
+            ended: row.get("state").and_then(Value::as_str) == Some(SessionState::Ended.as_str()),
+        });
     }
     Ok(())
 }
 
-/// Closes each Box once and ends each host Session; keeps going past failures.
-fn close_all(client: &Client, h: &JobHandle, items: &[Item]) -> Vec<Value> {
+/// Closes each open Box once, by id since names get reused, and ends each live host
+/// Session; keeps going past failures.
+fn close_all(client: &Client, h: &JobHandle, items: &[Item], open: &HashSet<i64>) -> Vec<Value> {
     let mut closed = HashSet::new();
     let mut outcomes = Vec::new();
     for item in items {
         let request = match &item.boxed {
-            Some(name) if !closed.insert(name.clone()) => continue,
+            Some(name) if item.box_id.is_none() => Err(format!("no id for Box {name}")),
+            Some(_)
+                if !item
+                    .box_id
+                    .is_some_and(|id| open.contains(&id) && closed.insert(id)) =>
+            {
+                continue
+            }
+            None if item.ended => continue,
             Some(name) => {
                 h.progress(&format!("closing {name}"));
                 BoxName::parse_allow_bare(name)

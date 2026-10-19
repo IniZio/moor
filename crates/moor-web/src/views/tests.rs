@@ -335,3 +335,64 @@ fn other_paths_fall_back() {
     assert!(get(&web, "/other").ends_with("fallback"));
     assert!(seen.lock().unwrap().is_empty());
 }
+
+#[test]
+fn a_worker_whose_session_ended_but_whose_box_is_open_stays_in_the_tree() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut open = task("app/3", "awake", None);
+    open["id"] = json!(5);
+    let mut closed = task("app/3", "gone", None);
+    closed["id"] = json!(6);
+    closed["state"] = json!("closed");
+    let mut map = (*answers()).clone();
+    map.insert(
+        "sessions",
+        Response::ok(
+            "sessions",
+            Some(json!({"sessions": [session(1, None, None, 0)]})),
+        ),
+    );
+    map.insert(
+        "show",
+        Response::ok("show", Some(json!({"tasks": [closed, open]}))),
+    );
+    let kids = json!({"children": [
+        {"session": 4, "box": "app/3", "box_id": 5, "state": "ended"},
+        {"session": 3, "box": "app/3", "box_id": 6, "state": "ended"},
+        {"session": 2, "box": null, "state": "ended"},
+    ]});
+    map.insert("show-session", Response::ok("show-session", Some(kids)));
+    let (web, _) = front(&dir, Arc::new(map), &[row("k1", 1, None)]);
+    let roots = body(&get(&web, "/tree"))["roots"].clone();
+    let kids = roots[0]["children"].as_array().unwrap();
+    assert_eq!(kids.len(), 1, "{kids:?}");
+    assert_eq!(kids[0]["session"], 4);
+    assert_eq!(kids[0]["state"], "ended");
+    assert_eq!(kids[0]["box"], "app/3");
+    assert_eq!(kids[0]["task"]["box_state"], "awake");
+}
+
+#[test]
+fn a_gone_root_lists_its_ended_workers_whose_box_is_open() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut open = task("app/3", "awake", None);
+    open["id"] = json!(5);
+    let mut map = (*answers()).clone();
+    map.insert(
+        "sessions",
+        Response::ok("sessions", Some(json!({"sessions": []}))),
+    );
+    map.insert("show", Response::ok("show", Some(json!({"tasks": [open]}))));
+    let kids = json!({"children": [
+        {"session": 4, "box": "app/3", "box_id": 5, "state": "ended"},
+        {"session": 3, "box": "app/3", "box_id": 6, "state": "ended"},
+    ]});
+    map.insert("show-session", Response::ok("show-session", Some(kids)));
+    let (web, _) = front(&dir, Arc::new(map), &[row("k1", 1, None)]);
+    let roots = body(&get(&web, "/tree"))["roots"].clone();
+    assert_eq!(roots[0]["state"], "gone");
+    let kids = roots[0]["children"].as_array().unwrap();
+    assert_eq!(kids.len(), 1, "{kids:?}");
+    assert_eq!(kids[0]["session"], 4);
+    assert_eq!(kids[0]["task"]["box_state"], "awake");
+}
