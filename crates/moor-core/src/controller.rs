@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::name::SessionId;
+use crate::name::{BoxName, SessionId};
 use crate::request::Request;
 use crate::response::Response;
 
@@ -25,11 +25,59 @@ pub enum ClientFrame {
         /// The command to run.
         request: Box<Request>,
     },
-    /// Streams every stored event whose cursor is greater than `since`; 0 means from the start.
+    /// Streams stored events whose cursor is greater than `since`; 0 means from the start.
+    ///
+    /// Filtered-out events are skipped but still advance the stream's position, so resuming
+    /// from the last delivered cursor with the same filter leaves no gap.
     Watch {
         /// Last cursor the client has seen.
         since: i64,
+        /// Only these Boxes; all when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        boxes: Option<Vec<BoxName>>,
+        /// Only these event kinds; all when absent.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        kinds: Option<Vec<String>>,
+        /// Keep streaming new events; false sends a caught-up frame, then closes the stream.
+        #[serde(default = "follow_default", skip_serializing_if = "is_true")]
+        follow: bool,
     },
+}
+
+/// Serde default: a watch follows unless told otherwise.
+const fn follow_default() -> bool {
+    true
+}
+
+/// Serde skip predicate: omit `follow` when it is the default.
+#[allow(
+    clippy::trivially_copy_pass_by_ref,
+    reason = "serde's skip_serializing_if passes a reference"
+)]
+const fn is_true(value: &bool) -> bool {
+    *value
+}
+
+/// Which events a watch delivers; `None` matches everything.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct WatchFilter {
+    /// Only these Boxes.
+    pub boxes: Option<Vec<BoxName>>,
+    /// Only these event kinds.
+    pub kinds: Option<Vec<String>>,
+}
+
+impl WatchFilter {
+    /// Whether an event of Box `box_name` (none for a Box-less event) and kind `kind` passes.
+    #[must_use]
+    pub fn matches(&self, box_name: Option<&str>, kind: &str) -> bool {
+        self.boxes.as_ref().is_none_or(|boxes| {
+            box_name.is_some_and(|name| boxes.iter().any(|b| b.as_str() == name))
+        }) && self
+            .kinds
+            .as_ref()
+            .is_none_or(|kinds| kinds.iter().any(|k| k == kind))
+    }
 }
 
 /// A frame sent by the controller.
@@ -81,6 +129,11 @@ pub enum ServerFrame {
         payload: serde_json::Value,
         /// Event timestamp.
         ts: i64,
+    },
+    /// Sent once before the controller closes a watch with `follow` off; `cursor` is the last event id scanned, including events the filter skipped — resume from it.
+    CaughtUp {
+        /// Last event id scanned.
+        cursor: i64,
     },
 }
 

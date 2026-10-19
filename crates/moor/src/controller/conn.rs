@@ -2,7 +2,9 @@
 
 use std::io::{BufRead, Write};
 
-use moor_core::controller::{parse_frame, ClientFrame, FrameErrorKind, ServerFrame, PROTOCOL};
+use moor_core::controller::{
+    parse_frame, ClientFrame, FrameErrorKind, ServerFrame, WatchFilter, PROTOCOL,
+};
 use moor_core::{Request, Response};
 
 use super::progress::{respond_with_progress, INTERVAL};
@@ -18,7 +20,14 @@ pub(crate) fn handle(reader: impl BufRead, writer: impl Write, env: &Env) {
         reader,
         writer,
         |id, request, emit| respond_with_progress(env, id, request, INTERVAL, emit),
-        |writer, since| watch::stream(writer, env, since, watch::Limits::default()),
+        |writer, since, filter, follow| {
+            let ask = watch::Ask {
+                since,
+                filter: filter.clone(),
+                follow,
+            };
+            watch::stream(writer, env, ask, watch::Limits::default());
+        },
     );
 }
 
@@ -28,7 +37,7 @@ fn serve<W: Write>(
     reader: impl BufRead,
     mut writer: W,
     answer: impl Fn(&str, Request, &mut dyn FnMut(ServerFrame) -> bool) -> Response,
-    watch: impl Fn(&mut W, i64),
+    watch: impl Fn(&mut W, i64, &WatchFilter, bool),
 ) {
     let mut handshaken = false;
     for line in reader.lines() {
@@ -52,8 +61,13 @@ fn serve<W: Write>(
                 kind: FrameErrorKind::HelloRequired,
                 message: "watch arrived before hello".to_owned(),
             },
-            Ok(ClientFrame::Watch { since }) => {
-                watch(&mut writer, since);
+            Ok(ClientFrame::Watch {
+                since,
+                boxes,
+                kinds,
+                follow,
+            }) => {
+                watch(&mut writer, since, &WatchFilter { boxes, kinds }, follow);
                 return;
             }
             Ok(ClientFrame::Request { id, .. }) if !handshaken => ServerFrame::Error {
