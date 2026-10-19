@@ -1,5 +1,6 @@
 //! Events a decision may carry, and their conversion to and from stored events.
 
+use crate::decide::turn::TurnOutcome;
 use crate::domain::event::{CheckedCred, Event};
 use crate::name::RunId;
 
@@ -136,6 +137,13 @@ pub enum ExtraEvent {
         /// Whether the submit key was pressed a second time.
         submit_retried: bool,
     },
+    /// The agent finished the turn a steer started.
+    TurnDone {
+        /// The steer's id.
+        steer: i64,
+        /// How the turn ended.
+        outcome: TurnOutcome,
+    },
     /// A new or changed proof file was found in the Box.
     Proof {
         /// The file name under the proof directory.
@@ -234,6 +242,7 @@ impl From<ExtraEvent> for Event {
                 message,
                 submit_retried,
             },
+            ExtraEvent::TurnDone { steer, outcome } => Self::TurnDone { steer, outcome },
             ExtraEvent::ProxyStarted {
                 box_port,
                 host_port,
@@ -333,6 +342,7 @@ impl TryFrom<Event> for ExtraEvent {
                 message,
                 submit_retried,
             }),
+            Event::TurnDone { steer, outcome } => Ok(Self::TurnDone { steer, outcome }),
             Event::ProxyStarted {
                 box_port,
                 host_port,
