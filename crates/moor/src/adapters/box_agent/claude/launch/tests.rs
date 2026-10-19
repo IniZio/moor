@@ -136,7 +136,7 @@ fn argv_is_the_brief_prompt_alone_by_default() {
     let t = TempDir::new().unwrap();
     assert_eq!(
         Claude.argv(&ctx(t.path())),
-        strings(&["Read and follow .moor/brief.md"])
+        strings(&["--", "Read and follow .moor/brief.md"])
     );
 }
 
@@ -149,7 +149,7 @@ fn argv_names_the_model_before_the_prompt() {
     };
     assert_eq!(
         Claude.argv(&c),
-        strings(&["--model", "opus", "Read and follow .moor/brief.md"])
+        strings(&["--model", "opus", "--", "Read and follow .moor/brief.md"])
     );
 }
 
@@ -161,6 +161,7 @@ fn argv_asks_for_bypass_only_behind_a_proxy() {
         strings(&[
             "--permission-mode",
             "bypassPermissions",
+            "--",
             "Read and follow .moor/brief.md"
         ])
     );
