@@ -2,13 +2,14 @@
 
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, IntentChange, TaskTarget};
-use moor_core::domain::event::{box_events, task_events, Event};
+use moor_core::domain::event::{box_events, lifecycle_events, session_events, Event};
 use moor_core::domain::session_state::SessionState;
 use moor_core::domain::task::TaskState;
 use moor_core::seam::clock::Ts;
 use moor_core::BoxId;
 use rusqlite::types::Value;
 use rusqlite::{params, Transaction, TransactionBehavior};
+use serde::Serialize;
 
 mod sql;
 mod steps;
@@ -16,7 +17,7 @@ mod steps;
 pub(super) use self::sql::update;
 use self::sql::{field_value, flag, text, Sets};
 pub(super) use self::steps::insert_task;
-use self::steps::{step_task, Parts};
+use self::steps::{inputs, step_task, Parts};
 use super::reads::live_holders_in;
 use super::{BoxRow, Store, StoreError, TaskRow};
 use moor_core::ProviderId;
@@ -78,7 +79,13 @@ impl Store {
 
 /// The body of `apply`, inside its transaction.
 fn apply_in(tx: &Transaction<'_>, now: Ts, d: Decision) -> Result<Applied, StoreError> {
-    let (id, existing, task_step, parts) = step_task(tx, now, &d)?;
+    let steps::Stepped {
+        id,
+        existing,
+        summary: task_step,
+        parts,
+        from_lifecycle,
+    } = step_task(tx, now, &d)?;
     if let (TaskTarget::New(_), Field::Set(branch)) = (&d.task, &d.set.branch) {
         tx.execute(
             "INSERT INTO box_refs (box, kind, value) VALUES (?1, 'branch', ?2) ON CONFLICT DO NOTHING",
@@ -88,10 +95,17 @@ fn apply_in(tx: &Transaction<'_>, now: Ts, d: Decision) -> Result<Applied, Store
     let box_step = step_box(tx, now, id, existing.as_ref(), &d)?;
     write_task(tx, id, now, &d, &task_step, parts)?;
     write_box(tx, id, now, &d, box_step.as_ref(), &task_step)?;
-    let mut events = Vec::new();
-    if let Some(i) = &d.task_input {
-        events.extend(task_events(task_step.from, task_step.to, i));
+    let mut ids = Vec::new();
+    let (l, s) = inputs(&d);
+    let stepped = match (&l, &s) {
+        (Some(l), _) => lifecycle_events(from_lifecycle, parts.0, l),
+        (None, Some(s)) => session_events(s),
+        (None, None) => Vec::new(),
+    };
+    for e in &stepped {
+        ids.push(insert_row(tx, id, e, now)?);
     }
+    let mut events = Vec::new();
     if let (Some(i), Some(s)) = (&d.box_input, &box_step) {
         events.extend(box_events(
             s.from,
@@ -103,10 +117,9 @@ fn apply_in(tx: &Transaction<'_>, now: Ts, d: Decision) -> Result<Applied, Store
         ));
     }
     events.extend(d.events.into_iter().map(Event::from));
-    let ids = events
-        .iter()
-        .map(|e| insert_event(tx, id, e, now))
-        .collect::<Result<Vec<_>, _>>()?;
+    for e in &events {
+        ids.push(insert_event(tx, id, e, now)?);
+    }
     Ok(Applied {
         task: id,
         task_state: task_step.to,
@@ -158,7 +171,9 @@ fn write_task(
 ) -> Result<(), StoreError> {
     let mut sets = task_field_sets(&d.set);
     let mut session = session_field_sets(&d.set);
-    if d.task_input.is_some() {
+    let (l, s) = inputs(d);
+    let stepped = l.is_some() || s.is_some();
+    if stepped {
         sets.push(("state", Value::Text(lifecycle.as_str().to_owned())));
         sets.extend(idle_since_sets(step, now));
         session.push(("state", Value::Text(session_state.as_str().to_owned())));
@@ -176,7 +191,7 @@ fn write_task(
         &[id.get(), id.get()],
         &session,
     )?;
-    if d.task_input.is_some() && !step.to.is_live() {
+    if stepped && !step.to.is_live() {
         tx.execute(
             "UPDATE sessions SET state = 'ended', ended_at = ? WHERE box = ? AND state != 'ended'",
             params![now.as_millis(), id.get()],
@@ -320,11 +335,21 @@ pub(super) fn insert_event(
     e: &Event,
     now: Ts,
 ) -> Result<i64, StoreError> {
+    insert_row(tx, task, e, now)
+}
+
+/// Insert an event row for any state type the event carries.
+fn insert_row<F: Serialize>(
+    tx: &Transaction<'_>,
+    id: BoxId,
+    e: &Event<F>,
+    now: Ts,
+) -> Result<i64, StoreError> {
     tx.execute(
         "INSERT INTO events (box, session, kind, payload, ts) VALUES (?1, \
          (SELECT id FROM sessions WHERE box = ?1 ORDER BY ordinal DESC LIMIT 1), ?2, ?3, ?4)",
         params![
-            task.get(),
+            id.get(),
             e.kind(),
             e.payload().to_string(),
             now.as_millis()

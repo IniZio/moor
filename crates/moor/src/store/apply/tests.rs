@@ -268,3 +268,81 @@ fn insert_with_an_ended_parent_session_writes_no_box() {
         .unwrap();
     assert_eq!(boxes, 0);
 }
+
+/// Kinds and payloads of every event on the Box, in order.
+fn event_trail(
+    store: &crate::store::Store,
+    id: moor_core::BoxId,
+) -> Vec<(String, serde_json::Value)> {
+    store
+        .events(id, 100)
+        .unwrap()
+        .into_iter()
+        .map(|e| (e.kind, e.payload))
+        .collect()
+}
+
+#[test]
+fn closing_a_ready_box_records_the_box_state_as_from() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = ready(&store);
+    store
+        .apply(Decision::new(id).task_input(TaskInput::Close))
+        .unwrap();
+    let trail = event_trail(&store, id);
+    let closed = trail.iter().find(|(k, _)| k == "closed");
+    assert_eq!(
+        closed.map(|(_, p)| p),
+        Some(&serde_json::json!({"from": "ready"})),
+        "{trail:?}"
+    );
+}
+
+#[test]
+fn separate_close_inputs_match_the_combined_close() {
+    use moor_core::domain::box_state::BoxLifecycleInput;
+    use moor_core::domain::session_state::SessionInput;
+
+    let combined_dir = tempfile::tempdir().unwrap();
+    let (combined, _clock) = open(combined_dir.path());
+    let a = ready(&combined);
+    combined
+        .apply(Decision::new(a).task_input(TaskInput::Close))
+        .unwrap();
+
+    let split_dir = tempfile::tempdir().unwrap();
+    let (split, _clock) = open(split_dir.path());
+    let b = ready(&split);
+    split
+        .apply(
+            Decision::new(b)
+                .lifecycle(BoxLifecycleInput::Close)
+                .session(SessionInput::End),
+        )
+        .unwrap();
+
+    assert_eq!(event_trail(&combined, a), event_trail(&split, b));
+}
+
+#[test]
+fn setting_up_after_admission_records_checking_as_from() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = store.apply(insert("b")).unwrap().task;
+    let admit = Decision::new(id)
+        .task_input(TaskInput::Admitted)
+        .box_input(moor_core::domain::boxes::BoxInput::Requested)
+        .set(Fields {
+            box_provider: Field::Set(moor_core::ProviderId::new("p")),
+            ..Fields::default()
+        });
+    store.apply(admit).unwrap();
+    let trail = event_trail(&store, id);
+    let setting_up = trail.iter().find(|(k, _)| k == "setting_up");
+    assert_eq!(
+        setting_up.map(|(_, p)| p),
+        Some(&serde_json::json!({"from": "checking"})),
+        "{trail:?}"
+    );
+}

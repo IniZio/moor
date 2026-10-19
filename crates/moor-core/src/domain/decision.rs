@@ -2,7 +2,9 @@
 
 mod extra;
 
+use super::box_state::BoxLifecycleInput;
 use super::boxes::BoxInput;
+use super::session_state::SessionInput;
 use super::task::TaskInput;
 use crate::name::{BoxHandle, BoxId, BoxName, ProviderId, RunId};
 
@@ -145,6 +147,10 @@ pub struct Decision {
     pub task: TaskTarget,
     /// Task state machine input.
     pub task_input: Option<TaskInput>,
+    /// Box lifecycle input.
+    pub lifecycle_input: Option<BoxLifecycleInput>,
+    /// Primary Session input.
+    pub session_input: Option<SessionInput>,
     /// Box state machine input.
     pub box_input: Option<BoxInput>,
     /// Column changes.
@@ -162,20 +168,22 @@ impl Decision {
     /// Starts a decision for an existing task.
     #[must_use]
     pub fn new(task: BoxId) -> Self {
-        Self::base(TaskTarget::Existing(task), None)
+        Self::base(TaskTarget::Existing(task))
     }
 
     /// Starts a decision that inserts a task.
     #[must_use]
     pub fn insert(new: NewTask) -> Self {
-        Self::base(TaskTarget::New(new), Some(TaskInput::Insert))
+        Self::base(TaskTarget::New(new)).lifecycle(BoxLifecycleInput::Insert)
     }
 
     /// Builds a decision with no changes.
-    fn base(task: TaskTarget, task_input: Option<TaskInput>) -> Self {
+    fn base(task: TaskTarget) -> Self {
         Self {
             task,
-            task_input,
+            task_input: None,
+            lifecycle_input: None,
+            session_input: None,
             box_input: None,
             set: Fields::default(),
             intent: IntentChange::Keep,
@@ -188,6 +196,20 @@ impl Decision {
     #[must_use]
     pub fn task_input(mut self, i: TaskInput) -> Self {
         self.task_input = Some(i);
+        self
+    }
+
+    /// Sets the Box lifecycle input.
+    #[must_use]
+    pub fn lifecycle(mut self, i: BoxLifecycleInput) -> Self {
+        self.lifecycle_input = Some(i);
+        self
+    }
+
+    /// Sets the primary Session input.
+    #[must_use]
+    pub const fn session(mut self, i: SessionInput) -> Self {
+        self.session_input = Some(i);
         self
     }
 
