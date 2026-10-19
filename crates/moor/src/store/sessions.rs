@@ -23,7 +23,7 @@ impl Store {
     /// Open another Session on Box `id`, numbered after its last one, in the Starting state.
     ///
     /// # Errors
-    /// Returns [`StoreError::NotFound`] when the Box does not exist, or [`StoreError`] when the database fails.
+    /// Returns [`StoreError::NotFound`] when the Box does not exist, [`StoreError::Invalid`] when its current Session is not Ended, or [`StoreError`] when the database fails.
     pub(crate) fn open_session(&self, id: BoxId) -> Result<BoxSession, StoreError> {
         let now = self.now();
         let mut conn = self.writer()?;
@@ -33,6 +33,19 @@ impl Store {
             .optional()?;
         if exists.is_none() {
             return Err(StoreError::NotFound(id));
+        }
+        let current: Option<String> = tx
+            .query_row(
+                "SELECT state FROM sessions WHERE box = ?1 ORDER BY ordinal DESC LIMIT 1",
+                [id.get()],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if current.is_some_and(|state| state != SessionState::Ended.as_str()) {
+            return Err(StoreError::Invalid(format!(
+                "Box {} already has a live Session",
+                id.get()
+            )));
         }
         let ordinal: i64 = tx.query_row(
             "SELECT COALESCE(MAX(ordinal), 0) + 1 FROM sessions WHERE box = ?1",
