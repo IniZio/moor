@@ -16,6 +16,7 @@ use crate::testing::proc::{Reply, ScriptedProc};
 use crate::testing::surface::FakeSurface;
 
 mod agent;
+mod artifacts;
 mod boxwork;
 mod branch;
 mod promote;

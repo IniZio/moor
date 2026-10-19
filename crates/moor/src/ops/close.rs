@@ -16,6 +16,7 @@ use moor_core::{BoxHandle, BoxName, CloseReq, ErrorKind, Warning};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::agent_stop;
+use crate::ops::common::artifacts;
 use crate::ops::common::autosleep::task_dir;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::boxwork::{self, probe, BoxWork, BOXWORK_DEADLINE};
@@ -55,6 +56,7 @@ pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
         recheck_and_collect(cx, store, &row)?;
     } else {
         reports::collect(cx, store, &row);
+        collect_artifacts(cx, store, &row);
     }
     let box_deleted = if plan.release_box {
         teardown::teardown(cx, &row, req.trust_moor_yaml);
@@ -206,7 +208,35 @@ fn recheck_and_collect(cx: &Cx, store: &Store, row: &TaskRow) -> Result<(), Comm
         || reports::collect(cx, store, row),
         |i| reports::collect_from(cx, store, row, i, &mut done),
     );
+    collect_artifacts(cx, store, row);
     Ok(())
+}
+
+/// Collects the Box's artifacts when it is Ready; a Box that cannot run an exec has none to collect.
+fn collect_artifacts(cx: &Cx, store: &Store, row: &TaskRow) {
+    if let Some(b) = row.boxed.as_ref() {
+        if b.state == BoxState::Ready && b.handle.is_some() {
+            let cursor = store.newest_turn_event(row.id);
+            artifacts::collect(cx, store, row);
+            match cursor {
+                Ok(Some(through)) => {
+                    if let Err(e) = store.set_artifacts_through(row.id, through) {
+                        cx.warn(cursor_warning(&e.to_string()));
+                    }
+                }
+                Ok(None) => {}
+                Err(e) => cx.warn(cursor_warning(&e.to_string())),
+            }
+        }
+    }
+}
+
+/// Warns that the artifact cursor could not be read or moved.
+fn cursor_warning(reason: &str) -> Warning {
+    Warning {
+        code: "artifacts_collect_failed".to_owned(),
+        message: format!("artifacts were not fully saved: {reason}"),
+    }
 }
 
 /// Refuses when the second probe found unsaved work or could not tell.

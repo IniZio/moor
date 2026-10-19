@@ -78,7 +78,7 @@ pub(crate) fn parse_index(text: &str) -> (Vec<Entry>, usize) {
 }
 
 /// The Ready Box with a handle that Reports are collected from.
-fn target(row: &TaskRow) -> Option<(&BoxRow, &BoxHandle)> {
+pub(super) fn target(row: &TaskRow) -> Option<(&BoxRow, &BoxHandle)> {
     row.boxed
         .as_ref()
         .filter(|b| b.state == BoxState::Ready)
@@ -86,7 +86,7 @@ fn target(row: &TaskRow) -> Option<(&BoxRow, &BoxHandle)> {
 }
 
 /// The host directory the driver runs from.
-fn host_of(row: &TaskRow) -> &Path {
+pub(super) fn host_of(row: &TaskRow) -> &Path {
     Path::new(row.worktree.as_deref().unwrap_or(&row.repo))
 }
 

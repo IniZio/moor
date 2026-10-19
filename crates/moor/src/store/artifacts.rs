@@ -51,10 +51,6 @@ pub(crate) struct ArtifactRow {
 impl Store {
     /// Stores `bytes` as the next version of `name`, under `dir/<box id>/v<version>/<name>`.
     /// Returns None and writes nothing when the latest stored version has the same digest.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "read by later callers, not yet wired")
-    )]
     pub(crate) fn add_artifact(
         &self,
         task: BoxId,
@@ -283,6 +279,7 @@ fn artifact_from_row(r: &Row<'_>) -> rusqlite::Result<ArtifactRow> {
     })
 }
 
+mod due;
 mod manifest;
 #[cfg(test)]
 mod tests;

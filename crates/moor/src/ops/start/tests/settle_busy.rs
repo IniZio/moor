@@ -124,3 +124,23 @@ fn a_start_with_settles_running_during_setup_still_launches() {
     let id = BoxId::new(v.task.id);
     assert!(w.cx.store().unwrap().has_session(id).unwrap());
 }
+
+#[test]
+fn start_idles_a_quiet_box_without_reading_its_artifacts() {
+    let (w, id) = working_without_session();
+    w.cx.clock().sleep(Duration::from_secs(60));
+    let other = StartReq {
+        no_agent: true,
+        ..req("other")
+    };
+    run(&w.cx, &other).unwrap();
+    assert_eq!(state(&w, id), TaskState::Idle);
+    let reads_artifacts = w
+        .driver
+        .execs()
+        .iter()
+        .any(|(_, spec, _)| spec.argv.iter().any(|a| a.contains(".moor/artifacts")));
+    assert!(!reads_artifacts);
+    let due = w.cx.store().unwrap().artifacts_due().unwrap();
+    assert!(due.iter().any(|(due_id, _)| *due_id == id), "{due:?}");
+}

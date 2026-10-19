@@ -24,13 +24,15 @@ impl Moor {
     ///
     /// Autosleep runs with it, so an agent idle past its limit sleeps without a client.
     pub(crate) fn settle_open(&self) -> Vec<String> {
-        let settled = self
-            .cx
-            .store()
-            .and_then(|store| ops::settle_all(&self.cx, store));
         let mut out = Vec::new();
-        if let Err(e) = settled {
-            out.push(e.error.to_string());
+        match self.cx.store() {
+            Ok(store) => {
+                if let Err(e) = ops::settle_all(&self.cx, store) {
+                    out.push(e.error.to_string());
+                }
+                ops::common::artifacts::collect_due(&self.cx, store);
+            }
+            Err(e) => out.push(e.error.to_string()),
         }
         out.extend(self.cx.take_warnings().into_iter().map(|w| w.message));
         out

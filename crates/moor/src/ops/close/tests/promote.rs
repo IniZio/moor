@@ -270,7 +270,8 @@ fn promoted_task_goes_through_setting_up_and_gets_a_ready_box() {
     let b = row.boxed.expect("promoted task has a Box row");
     assert_eq!(b.state, BoxState::Ready);
     assert!(b.handle.is_some());
-    // The holder's acquire, two close probes and report collection come first; each is one exec and one peek.
+    // The holder's acquire, two close probes and report collection come first; each is one exec and one peek,
+    // and the close collects artifacts with one more exec.
     assert_eq!(
         w.driver.calls(),
         [
@@ -281,6 +282,7 @@ fn promoted_task_goes_through_setting_up_and_gets_a_ready_box() {
             format!("peek_file {HOLDER_BOX}"),
             format!("exec {HOLDER_BOX}"),
             format!("peek_file {HOLDER_BOX}"),
+            format!("exec {HOLDER_BOX}"),
             format!("release {HOLDER_BOX}"),
             "acquire".into(),
             // The promoted task has no setup, so its one exec is the checkout sync.
