@@ -65,6 +65,9 @@ removed_names removed-names-allowed pass <<'RS'
 const S: &str = "2 background tasks running";
 fn g(w: &[&str]) -> bool { matches!(w, [n, "background", "task"]) }
 RS
+removed_names removed-names-allowed-mixed fail <<'RS'
+// the background task and a Task
+RS
 removed_names removed-names-clean pass <<'RS'
 fn f(job: u8) {}
 RS

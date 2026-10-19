@@ -24,6 +24,7 @@ if [ -n "$hits" ]; then
 fi
 
 # The removed Task concept must not return in any file, test or not.
+# Allowlisted strings are cut out of each hit; the rest of the line is checked again.
 allow="$(mktemp)"
 trap 'rm -f "$allow"' EXIT
 grep -v -e '^#' -e '^[[:space:]]*$' "$here/removed-names.allow" > "$allow" || true
@@ -31,7 +32,21 @@ targets=()
 for t in crates tools README.md .github; do [ -e "$t" ] && targets+=("$t"); done
 task_hits=$(grep -rniI --exclude-dir=target --exclude=Cargo.lock -e task "${targets[@]}" \
   | grep -v -e '^tools/removed-names\.sh:' -e '^tools/lint-selftest\.sh:' -e '^tools/removed-names\.allow:' \
-  | grep -vFf "$allow" || true)
+  | awk -v allowfile="$allow" '
+      BEGIN { while ((getline line < allowfile) > 0) allowed[++n] = line }
+      {
+        rest = $0
+        if (match(rest, /^[^:]*:[0-9]+:/)) rest = substr(rest, RLENGTH + 1)
+        for (i = 1; i <= n; i++) {
+          out = ""
+          while ((k = index(rest, allowed[i])) > 0) {
+            out = out substr(rest, 1, k - 1) " "
+            rest = substr(rest, k + length(allowed[i]))
+          }
+          rest = out rest
+        }
+        if (tolower(rest) ~ /task/) print
+      }' || true)
 if [ -n "$task_hits" ]; then
   echo "removed-names: the removed Task concept found"
   echo "$task_hits"
