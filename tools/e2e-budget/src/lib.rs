@@ -227,11 +227,11 @@ pub fn model_request_failure(log: &str, after_ms: i64, route: &str) -> Option<&'
         .then_some("model requests rate limited: 429")
 }
 
-/// True when the task has an agent session id: the newest session row's registered id or the task's own.
+/// True when the Box has an agent session id: the newest launch's registered id or the newest session's own.
 ///
-/// Moor registers a session only on `settle()`, while the agent's hook sets the task's id at once.
-pub fn agent_session_set(registered: Option<&str>, task_id: Option<&str>) -> bool {
-    [registered, task_id]
+/// Moor registers a launch's session only on `settle()`, while the agent's hook sets the session's id at once.
+pub fn agent_session_set(registered: Option<&str>, session_id: Option<&str>) -> bool {
+    [registered, session_id]
         .into_iter()
         .any(|s| s.is_some_and(|s| !s.is_empty()))
 }

@@ -178,13 +178,13 @@ agent_check() {
   if [ -n "$ref" ]; then
     until_ms=$((t0 + 60000))
   else
-    ref="$(budget event-ts --db "$state/moor.db" --task "$name" --kind "$kind" --after-id "$after" 2>/dev/null)" || ref=""
+    ref="$(budget event-ts --db "$state/moor.db" --box "$name" --kind "$kind" --after-id "$after" 2>/dev/null)" || ref=""
     if [ -z "$ref" ]; then ref=$t0; fi
     until_ms=$((ref + 60000))
   fi
   while :; do
-    out="$(budget model-request --db "$state/moor.db" --task "$name" --state-dir "$state" --after-ms "$ref" 2>/dev/null)" && mreq=1 || mreq=0
-    budget agent-session --db "$state/moor.db" --task "$name" >/dev/null 2>&1 && sess=1 || sess=0
+    out="$(budget model-request --db "$state/moor.db" --box "$name" --state-dir "$state" --after-ms "$ref" 2>/dev/null)" && mreq=1 || mreq=0
+    budget agent-session --db "$state/moor.db" --box "$name" >/dev/null 2>&1 && sess=1 || sess=0
     if [ "$proc" = 0 ] || { [ "$mreq" = 1 ] && [ "$sess" = 1 ]; }; then break; fi
     [ "$(now_ms)" -lt "$until_ms" ] || break
     sleep 1
@@ -242,7 +242,7 @@ trace_summary() {
     }
     END { for (k in n) printf "  %-16s calls=%d total=%.1fs\n", k, n[k], s[k] }' "$state/moor-stderr.log" | sort
 }
-last_id() { budget last-id --db "$state/moor.db" --task "$name"; }
+last_id() { budget last-id --db "$state/moor.db" --box "$name"; }
 
 teardown() {
   local rc=$?
@@ -269,7 +269,7 @@ trap 'exit 143' TERM
 
 if [ "$dry" = 1 ]; then
   echo "+ (cd $pilot && MOOR_STATE_DIR=$state $moor --state-dir $state start $name --goal '$goal'${start_args[*]:+ ${start_args[*]}})   # timeout $(outer "$b_start_total")s"
-  echo "+ e2e-budget events --db $state/moor.db --task $name; e2e-budget start ... (budgets $b_box_ready/$b_proxy/$b_session/$b_start_total)"
+  echo "+ e2e-budget events --db $state/moor.db --box $name; e2e-budget start ... (budgets $b_box_ready/$b_proxy/$b_session/$b_start_total)"
   for ((n = 0; n < ${#box_steps[@]}; n++)); do
     echo "+ moor run $name -- sh -c '${box_steps[n]}'   # phase box_step.$((n + 1)), report only"
   done
@@ -292,7 +292,7 @@ echo "e2e-box: task $name, state dir $state"
 t0=$(now_ms)
 started=1
 if in_pilot mo "$(outer "$b_start_total")" start "$name" --goal "$goal" ${start_args[@]+"${start_args[@]}"} >"$scratch/start.log" 2>&1; then
-  budget events --db "$state/moor.db" --task "$name" >"$scratch/start.jsonl" || ok=0
+  budget events --db "$state/moor.db" --box "$name" >"$scratch/start.jsonl" || ok=0
   if [ "$ok" = 1 ]; then
     phase_lines start start --events "$scratch/start.jsonl" --box-ready "$b_box_ready" \
       --proxy "$b_proxy" --session "$b_session" --total "$b_start_total"
@@ -364,7 +364,7 @@ for ((n = 1; n <= cycles; n++)); do
     cmd_ms=$t0
     seen=0
     while :; do
-      budget events --db "$state/moor.db" --task "$name" --after-id "$after" >"$scratch/wake.jsonl" || true
+      budget events --db "$state/moor.db" --box "$name" --after-id "$after" >"$scratch/wake.jsonl" || true
       c="$(budget count --events "$scratch/wake.jsonl" --kind relaunched 2>/dev/null || echo 0)"
       if [ "${c:-0}" -ge 1 ] 2>/dev/null; then seen=1; break; fi
       [ $(($(now_ms) - t0)) -lt $((b_wake_total * 1000)) ] || break
@@ -420,7 +420,7 @@ else
 fi
 
 # no tunnel restarts over the whole Task
-if budget events --db "$state/moor.db" --task "$name" >"$scratch/all.jsonl"; then
+if budget events --db "$state/moor.db" --box "$name" >"$scratch/all.jsonl"; then
   restarts="$(budget count --events "$scratch/all.jsonl" --kind tunnel_restarted || echo -1)"
   if [ "$restarts" = 0 ]; then phase_pass assert.no_tunnel_restarts; else phase_fail assert.no_tunnel_restarts "tunnel restarted or count failed"; fi
 else
