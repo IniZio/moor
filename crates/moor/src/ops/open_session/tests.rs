@@ -168,6 +168,7 @@ fn an_asleep_box_is_refused_and_opens_nothing() {
     store.apply(d).unwrap();
     let err = run(&f.cx, &req()).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Refused);
+    assert!(err.hints.iter().any(|h| h.contains("moor wake t")));
     assert_eq!(store.box_sessions(f.id).unwrap().len(), 1);
     assert!(f.engine.launches().is_empty());
 }

@@ -67,10 +67,16 @@ fn check(store: &Store, row: &TaskRow, name: &str) -> Result<(), CommandError> {
         .as_ref()
         .is_some_and(|b| b.state == BoxState::Ready)
     {
-        return Err(CommandError::new(
-            ErrorKind::Refused,
-            format!("Box {name} is not Ready"),
-        ));
+        let err = CommandError::new(ErrorKind::Refused, format!("Box {name} is not Ready"));
+        let asleep = row
+            .boxed
+            .as_ref()
+            .is_some_and(|b| b.state == BoxState::Asleep);
+        return Err(if asleep {
+            err.with_hint(format!("run `moor wake {name}` first"))
+        } else {
+            err
+        });
     }
     let live = store
         .box_sessions(row.id)?
