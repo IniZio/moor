@@ -1,5 +1,6 @@
 //! Loopback HTTP/1.1 server: request parsing, authentication, CSRF checks and a pluggable handler.
 
+use std::borrow::Cow;
 use std::io::{self, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
 use std::sync::Arc;
@@ -37,11 +38,11 @@ pub struct HttpResponse {
     /// Status line text, such as `200 OK`.
     pub status: &'static str,
     /// `Content-Type` value.
-    pub content_type: &'static str,
+    pub content_type: Cow<'static, str>,
     /// Extra headers.
     pub headers: Vec<(&'static str, String)>,
-    /// Body text.
-    pub body: String,
+    /// Body bytes, sent unchanged.
+    pub body: Vec<u8>,
 }
 
 impl HttpResponse {
@@ -50,9 +51,9 @@ impl HttpResponse {
     pub fn text(status: &'static str, body: impl Into<String>) -> Self {
         Self {
             status,
-            content_type: "text/plain",
+            content_type: Cow::Borrowed("text/plain"),
             headers: Vec::new(),
-            body: body.into(),
+            body: body.into().into_bytes(),
         }
     }
 
@@ -61,9 +62,25 @@ impl HttpResponse {
     pub fn html(body: impl Into<String>) -> Self {
         Self {
             status: "200 OK",
-            content_type: "text/html; charset=utf-8",
+            content_type: Cow::Borrowed("text/html; charset=utf-8"),
             headers: Vec::new(),
-            body: body.into(),
+            body: body.into().into_bytes(),
+        }
+    }
+
+    /// A response carrying raw bytes under a content type known only at run time.
+    #[must_use]
+    pub const fn binary(
+        status: &'static str,
+        content_type: String,
+        headers: Vec<(&'static str, String)>,
+        body: Vec<u8>,
+    ) -> Self {
+        Self {
+            status,
+            content_type: Cow::Owned(content_type),
+            headers,
+            body,
         }
     }
 }
@@ -205,7 +222,7 @@ fn serve(mut stream: TcpStream, token: &str, handler: &Handler, lim: Limits) -> 
     respond(
         &mut stream,
         reply.status,
-        reply.content_type,
+        &reply.content_type,
         &extra,
         &reply.body,
     )
@@ -268,22 +285,33 @@ fn respond(
     status: &str,
     content_type: &str,
     extra: &[(&str, &str)],
-    body: &str,
+    body: impl AsRef<[u8]>,
 ) -> io::Result<()> {
+    let body = body.as_ref();
     let mut head = format!(
-        "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\n{COMMON_HEADERS}",
+        "HTTP/1.1 {status}\r\nContent-Type: {}\r\nContent-Length: {}\r\n{COMMON_HEADERS}",
+        no_breaks(content_type),
         body.len()
     );
     for (k, v) in extra {
-        head.push_str(k);
+        head.push_str(&no_breaks(k));
         head.push_str(": ");
-        head.push_str(v);
+        head.push_str(&no_breaks(v));
         head.push_str("\r\n");
     }
     head.push_str("\r\n");
-    head.push_str(body);
     out.write_all(head.as_bytes())?;
+    out.write_all(body)?;
     out.flush()
+}
+
+/// Drops CR and LF so a header field cannot start a new header or end the head.
+fn no_breaks(field: &str) -> Cow<'_, str> {
+    if field.contains(['\r', '\n']) {
+        Cow::Owned(field.replace(['\r', '\n'], ""))
+    } else {
+        Cow::Borrowed(field)
+    }
 }
 
 /// Writes the head of an event stream, with no length so the body can run on.
