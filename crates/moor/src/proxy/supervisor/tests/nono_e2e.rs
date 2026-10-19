@@ -11,7 +11,7 @@ use moor_core::config::proxy::{EndpointRule, ResolvedInject, ResolvedRule};
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::boxes::BoxInput;
-use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
+use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::seam::driver::{AcquireReq, Driver};
@@ -66,7 +66,7 @@ impl Drop for StopOnDrop {
 
 /// Insert a task, give it a live box from `driver`, and reserve its proxy row.
 fn task_with_box(store: &Store, driver: &FakeDriver) -> (BoxId, BoxHandle) {
-    let nt = NewTask {
+    let nt = NewBox {
         name: BoxName::parse_allow_bare("demo").unwrap(),
         repo: "r".into(),
     };

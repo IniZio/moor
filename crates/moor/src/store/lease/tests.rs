@@ -4,7 +4,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use moor_core::domain::decision::{Decision, NewTask};
+use moor_core::domain::decision::{Decision, NewBox};
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, BoxName};
 
@@ -30,7 +30,7 @@ fn open(dir: &Path) -> Store {
 }
 
 fn add(store: &Store, name: &str) -> BoxId {
-    let nt = NewTask {
+    let nt = NewBox {
         name: BoxName::parse_allow_bare(name).unwrap(),
         repo: "r".into(),
     };

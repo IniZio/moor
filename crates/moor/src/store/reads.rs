@@ -8,7 +8,7 @@ use moor_core::{BoxId, BoxName, ProviderId, SessionId};
 use rusqlite::{Connection, OptionalExtension};
 
 use super::{
-    event_from_row, task_from_row, DriverRow, EventRow, Store, StoreError, TaskRow, TASK_SELECT,
+    event_from_row, task_from_row, BoxRow, DriverRow, EventRow, Store, StoreError, BOX_SELECT,
 };
 
 /// Run a task query and map every row.
@@ -16,8 +16,8 @@ fn query_tasks(
     conn: &Connection,
     tail: &str,
     params: impl rusqlite::Params,
-) -> Result<Vec<TaskRow>, StoreError> {
-    let mut stmt = conn.prepare(&format!("{TASK_SELECT} {tail}"))?;
+) -> Result<Vec<BoxRow>, StoreError> {
+    let mut stmt = conn.prepare(&format!("{BOX_SELECT} {tail}"))?;
     let rows = stmt.query_and_then(params, task_from_row)?;
     rows.collect()
 }
@@ -33,7 +33,7 @@ const LIVE_STATES: [&str; 3] = [
 pub(super) fn live_holders_in(
     conn: &Connection,
     provider: &ProviderId,
-) -> Result<Vec<TaskRow>, StoreError> {
+) -> Result<Vec<BoxRow>, StoreError> {
     let tail = "WHERE b.provider = ?1 AND b.driver_state IN (?2, ?3, ?4) ORDER BY b.id";
     let [a, b, c] = LIVE_STATES;
     query_tasks(conn, tail, (provider.as_str(), a, b, c))
@@ -98,17 +98,14 @@ impl Store {
     }
 
     /// The live (neither closed nor rejected) task with this name.
-    pub(crate) fn open_task_by_name(&self, name: &BoxName) -> Result<Option<TaskRow>, StoreError> {
+    pub(crate) fn open_task_by_name(&self, name: &BoxName) -> Result<Option<BoxRow>, StoreError> {
         let tail = "WHERE b.name = ?1 AND b.state NOT IN ('closed', 'rejected') ORDER BY b.id DESC LIMIT 1";
         let rows = query_tasks(&self.reader()?, tail, [name.as_str()])?;
         Ok(rows.into_iter().next())
     }
 
     /// The newest task with this name, open or closed.
-    pub(crate) fn latest_task_by_name(
-        &self,
-        name: &BoxName,
-    ) -> Result<Option<TaskRow>, StoreError> {
+    pub(crate) fn latest_task_by_name(&self, name: &BoxName) -> Result<Option<BoxRow>, StoreError> {
         let tail = "WHERE b.name = ?1 ORDER BY b.id DESC LIMIT 1";
         let rows = query_tasks(&self.reader()?, tail, [name.as_str()])?;
         Ok(rows.into_iter().next())
@@ -144,7 +141,7 @@ impl Store {
     }
 
     /// Tasks queued for a box, oldest id first.
-    pub(crate) fn waiting_tasks(&self) -> Result<Vec<TaskRow>, StoreError> {
+    pub(crate) fn waiting_tasks(&self) -> Result<Vec<BoxRow>, StoreError> {
         let tail = "WHERE b.state = ?1 ORDER BY b.id";
         query_tasks(
             &self.reader()?,

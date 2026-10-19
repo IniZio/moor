@@ -397,7 +397,7 @@ fn box_sleep_serializes_reason_and_after() {
 }
 
 #[test]
-fn sleep_value_uses_box_key() {
+fn sleep_value_uses_driver_key() {
     let v = sleep::SleepValue {
         task: "t".into(),
         driver: Some(box_view(None, None)),
@@ -407,11 +407,11 @@ fn sleep_value_uses_box_key() {
     assert_eq!(j.get("task"), Some(&json!("t")));
     assert_eq!(j.get("woke"), Some(&json!(true)));
     assert_eq!(j.pointer("/driver/provider"), Some(&json!("p")));
-    assert!(j.get("driver").is_none());
+    assert!(j.get("box").is_none());
 }
 
 #[test]
-fn sleep_value_without_box_serializes_null() {
+fn sleep_value_without_driver_serializes_null() {
     let v = sleep::SleepValue {
         task: "t".into(),
         driver: None,

@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use moor_core::domain::decision::{Decision, NewTask};
+use moor_core::domain::decision::{Decision, NewBox};
 use moor_core::request::SessionsReq;
 use moor_core::{BoxName, Request, SessionId};
 use serde_json::json;
@@ -134,7 +134,7 @@ fn dispatch_returns_the_wire_shape_and_touches_no_box() {
 }
 
 fn box_child(cx: &Cx, dir: &Path, name: &str, parent: i64) -> i64 {
-    let nt = NewTask {
+    let nt = NewBox {
         name: BoxName::parse_allow_bare(name).unwrap(),
         repo: "r".into(),
     };

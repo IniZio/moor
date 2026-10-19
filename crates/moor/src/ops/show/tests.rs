@@ -11,7 +11,7 @@ use moor_core::activity::{
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
-use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
+use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, SleepKind};
@@ -26,7 +26,7 @@ mod pane;
 use super::run;
 use crate::cx::Cx;
 use crate::ops::common::activity::{self, Reading};
-use crate::store::{NewRun, Store, TaskRow};
+use crate::store::{BoxRow, NewRun, Store};
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::proc::{Reply, ScriptedProc};
@@ -35,7 +35,7 @@ use crate::testing::surface::FakeSurface;
 type Parts = (BoxLifecycle, SessionState);
 const WORKING: Parts = (BoxLifecycle::Ready, SessionState::Working);
 const IDLE: Parts = (BoxLifecycle::Ready, SessionState::Idle);
-fn parts(row: &TaskRow) -> Parts {
+fn parts(row: &BoxRow) -> Parts {
     (row.lifecycle, row.session)
 }
 
@@ -64,7 +64,7 @@ fn req(task: Option<&str>, events: Option<u32>) -> ShowReq {
 
 /// Insert a task by name.
 fn add(cx: &Cx, name: &str) -> BoxId {
-    let nt = NewTask {
+    let nt = NewBox {
         name: BoxName::parse_allow_bare(name).unwrap(),
         repo: "r".into(),
     };

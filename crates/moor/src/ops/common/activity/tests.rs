@@ -10,7 +10,7 @@ use moor_core::activity::{
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::BoxInput;
-use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
+use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::DriverError;
@@ -20,7 +20,7 @@ use moor_core::{BoxHandle, BoxId, BoxName, ProviderId};
 
 use super::{read, settle, PaneLiveness, Reading};
 use crate::cx::Cx;
-use crate::store::{NewRun, TaskRow};
+use crate::store::{BoxRow, NewRun};
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::proc::ScriptedProc;
@@ -45,7 +45,7 @@ fn cx(dir: &Path, engine: &Arc<FakeEngine>) -> (Cx, Arc<ScriptedProc>) {
 /// A working task `demo` with a ready Box and, when `session`, a live session.
 fn task(cx: &Cx, session: bool) -> BoxId {
     let store = cx.store().unwrap();
-    let nt = NewTask {
+    let nt = NewBox {
         name: BoxName::parse_allow_bare("demo").unwrap(),
         repo: "r".into(),
     };
@@ -93,15 +93,15 @@ fn begin(cx: &Cx, id: BoxId) {
         .unwrap();
 }
 
-fn row(cx: &Cx, id: BoxId) -> TaskRow {
+fn row(cx: &Cx, id: BoxId) -> BoxRow {
     cx.store().unwrap().task(id).unwrap().unwrap()
 }
 
-fn is_working(row: &TaskRow) -> bool {
+fn is_working(row: &BoxRow) -> bool {
     row.lifecycle == BoxLifecycle::Ready && !row.session.is_quiet()
 }
 
-fn is_idle(row: &TaskRow) -> bool {
+fn is_idle(row: &BoxRow) -> bool {
     row.lifecycle == BoxLifecycle::Ready && row.session.is_quiet()
 }
 
@@ -214,7 +214,7 @@ fn run_in_flight_with_an_unreachable_box_is_busy_and_not_quiet() {
     let engine = Arc::new(FakeEngine::new());
     let (cx, _) = cx(dir.path(), &engine);
     let store = cx.store().unwrap();
-    let nt = NewTask {
+    let nt = NewBox {
         name: BoxName::parse_allow_bare("demo").unwrap(),
         repo: "r".into(),
     };

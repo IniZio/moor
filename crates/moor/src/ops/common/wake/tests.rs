@@ -6,7 +6,7 @@ use std::sync::Arc;
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
-use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
+use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, SleepOutcome};
 use moor_core::seam::engine::SessionRef;
@@ -17,7 +17,7 @@ use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, ErrorKind, ProviderId};
 use super::{wake_and_revive, wake_box_if_asleep, wake_with_tunnel};
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::store::{Store, TaskRow};
+use crate::store::{BoxRow, Store};
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::proc::{Reply, ScriptedProc};
@@ -26,7 +26,7 @@ use crate::testing::surface::FakeSurface;
 mod tunnel;
 
 /// Wake and restore the tunnel, without relaunching the agent.
-fn wake_if_asleep(cx: &Cx, store: &Store, row: &TaskRow) -> Result<bool, CommandError> {
+fn wake_if_asleep(cx: &Cx, store: &Store, row: &BoxRow) -> Result<bool, CommandError> {
     wake_with_tunnel(cx, store, row).map(|w| w.any)
 }
 
@@ -91,7 +91,7 @@ fn fx_with(driver: FakeDriver) -> Fx {
     let store = cx.store().unwrap();
     let name = BoxName::parse_allow_bare("t").unwrap();
     let id = store
-        .apply(Decision::insert(NewTask {
+        .apply(Decision::insert(NewBox {
             name: name.clone(),
             repo: "r".into(),
         }))
@@ -155,7 +155,7 @@ fn sleep(f: &Fx) {
         .unwrap();
 }
 
-fn row(f: &Fx) -> TaskRow {
+fn row(f: &Fx) -> BoxRow {
     let name = BoxName::parse_allow_bare("t").unwrap();
     f.cx.store()
         .unwrap()

@@ -9,7 +9,7 @@ use moor_core::ErrorKind;
 
 use crate::error::CommandError;
 use crate::ops::common::provision::recorded_workdir;
-use crate::store::{Store, TaskRow};
+use crate::store::{BoxRow, Store};
 
 /// Where a run executes.
 pub(super) struct Target {
@@ -24,7 +24,7 @@ pub(super) struct Target {
 /// The Box and worktree a run uses, or the reason none can.
 ///
 /// A Box the driver no longer knows is also recorded as a refused run.
-pub(super) fn target(store: &Store, row: &TaskRow) -> Result<Target, CommandError> {
+pub(super) fn target(store: &Store, row: &BoxRow) -> Result<Target, CommandError> {
     let name = row.name.as_str();
     let failed = |msg: String| CommandError::new(ErrorKind::Failed, msg);
     if row.lifecycle == BoxLifecycle::WaitingForBox {

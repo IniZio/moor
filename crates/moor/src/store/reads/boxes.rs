@@ -1,6 +1,6 @@
 //! Lookups of open Boxes by repo and by checkout path.
 
-use super::super::{Store, StoreError, TaskRow};
+use super::super::{BoxRow, Store, StoreError};
 use super::query_tasks;
 
 impl Store {
@@ -9,7 +9,7 @@ impl Store {
     /// # Errors
     /// Returns [`StoreError`] when the database fails.
     #[cfg_attr(not(test), expect(dead_code, reason = "no caller outside tests yet"))]
-    pub(crate) fn open_boxes_by_repo(&self, repo: &str) -> Result<Vec<TaskRow>, StoreError> {
+    pub(crate) fn open_boxes_by_repo(&self, repo: &str) -> Result<Vec<BoxRow>, StoreError> {
         let tail = "WHERE b.repo = ?1 AND b.state NOT IN ('closed', 'rejected') ORDER BY b.id";
         query_tasks(&self.reader()?, tail, [repo])
     }
@@ -22,7 +22,7 @@ impl Store {
     /// # Errors
     /// Returns [`StoreError`] when the database fails.
     #[cfg_attr(not(test), expect(dead_code, reason = "no caller outside tests yet"))]
-    pub(crate) fn open_box_by_path(&self, path: &str) -> Result<Option<TaskRow>, StoreError> {
+    pub(crate) fn open_box_by_path(&self, path: &str) -> Result<Option<BoxRow>, StoreError> {
         let tail = "WHERE b.state NOT IN ('closed', 'rejected') AND b.worktree = ?1 \
             ORDER BY b.id DESC LIMIT 1";
         let rows = query_tasks(&self.reader()?, tail, [path])?;

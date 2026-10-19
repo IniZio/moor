@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use moor_core::config::Flags;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::BoxState;
-use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, NewTask};
+use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, NewBox};
 use moor_core::domain::event::CheckedCred;
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::surface::{workspace_label, Worktree};
@@ -27,7 +27,7 @@ use super::common::provisioning::dead_provisioning;
 use super::host_session::refuse_invalid;
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::store::{Store, StoreError, TaskRow};
+use crate::store::{BoxRow, Store, StoreError};
 
 mod base;
 mod known_repo;
@@ -139,7 +139,7 @@ fn reject(
         bound: Field::Set(facts.bound.is_some()),
         ..Fields::default()
     };
-    let new = NewTask {
+    let new = NewBox {
         name: req.name.clone(),
         repo: facts.repo.display().to_string(),
     };
@@ -172,12 +172,7 @@ fn raced(
 }
 
 /// Starts over on an open Task whose Box is lost; otherwise only attaches.
-fn attach(
-    cx: &Cx,
-    store: &Store,
-    req: &StartReq,
-    row: &TaskRow,
-) -> Result<StartView, CommandError> {
+fn attach(cx: &Cx, store: &Store, req: &StartReq, row: &BoxRow) -> Result<StartView, CommandError> {
     preflight::check_bound(cx, req, row)?;
     relaunch::check_resume(req, row)?;
     dead_provisioning(cx, row)?;
@@ -363,7 +358,7 @@ fn insert(
         workspace_id: Field::Set(placed.workspace.clone()),
         ..Fields::default()
     };
-    let new = NewTask {
+    let new = NewBox {
         name: req.name.clone(),
         repo: facts.repo.display().to_string(),
     };

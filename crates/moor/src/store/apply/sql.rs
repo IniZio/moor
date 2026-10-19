@@ -1,7 +1,7 @@
 //! Generic column-assignment helpers for the store writer.
 
 use moor_core::domain::decision::Field;
-use moor_core::domain::decision::NewTask;
+use moor_core::domain::decision::NewBox;
 use rusqlite::types::Value;
 use rusqlite::{ErrorCode, Transaction};
 
@@ -59,7 +59,7 @@ pub(in crate::store) fn update(
 const SQLITE_CONSTRAINT_UNIQUE: i32 = 2067;
 
 /// A UNIQUE failure on the open-name index is a taken name; other errors pass through.
-pub(super) fn name_taken(e: rusqlite::Error, new: &NewTask) -> StoreError {
+pub(super) fn name_taken(e: rusqlite::Error, new: &NewBox) -> StoreError {
     match &e {
         rusqlite::Error::SqliteFailure(f, msg)
             if f.code == ErrorCode::ConstraintViolation

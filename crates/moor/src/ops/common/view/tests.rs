@@ -3,7 +3,7 @@ use std::sync::Arc;
 use moor_core::activity::{Activity, AgentState, Source};
 use moor_core::config::{parse_user, UserConfig};
 use moor_core::domain::boxes::{BoxInput, BoxState};
-use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
+use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxHandle, BoxId, BoxName, ProviderId, RunId};
 
@@ -33,7 +33,7 @@ fn task_view_maps_row_without_box() {
     let dir = tempfile::tempdir().unwrap();
     let clock = Arc::new(FakeClock::new(Ts::from_millis(86_400_000)));
     let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
-    let nt = NewTask {
+    let nt = NewBox {
         name: BoxName::parse_allow_bare("t").unwrap(),
         repo: "r".into(),
     };
@@ -62,7 +62,7 @@ fn task_view_maps_box() {
     let dir = tempfile::tempdir().unwrap();
     let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
     let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
-    let nt = NewTask {
+    let nt = NewBox {
         name: BoxName::parse_allow_bare("t").unwrap(),
         repo: "r".into(),
     };
@@ -94,7 +94,7 @@ fn box_view_maps_sleep_reason() {
     let dir = tempfile::tempdir().unwrap();
     let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
     let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
-    let nt = NewTask {
+    let nt = NewBox {
         name: BoxName::parse_allow_bare("t").unwrap(),
         repo: "r".into(),
     };
@@ -130,7 +130,7 @@ fn box_view_shows_configured_sleep_after() {
     let dir = tempfile::tempdir().unwrap();
     let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
     let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
-    let nt = NewTask {
+    let nt = NewBox {
         name: BoxName::parse_allow_bare("t").unwrap(),
         repo: "r".into(),
     };
@@ -154,7 +154,7 @@ fn task_view_with_run_fills_run() {
     let dir = tempfile::tempdir().unwrap();
     let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
     let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
-    let nt = NewTask {
+    let nt = NewBox {
         name: BoxName::parse_allow_bare("t").unwrap(),
         repo: "r".into(),
     };

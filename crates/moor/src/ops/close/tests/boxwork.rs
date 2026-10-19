@@ -3,7 +3,7 @@
 use moor_core::boxscript::boxwork::{BOXWORK_FILE, BOXWORK_NO_CHECKOUT};
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
-use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
+use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::{DriverError, ExecOutcome};
 use moor_core::{BoxName, CloseReq, ErrorKind, ProviderId};
@@ -251,7 +251,7 @@ fn close_skips_the_probe_for_a_box_that_never_got_a_handle() {
     let store = f.cx.store().unwrap();
     let name = BoxName::parse_allow_bare("u").unwrap();
     let id = store
-        .apply(Decision::insert(NewTask {
+        .apply(Decision::insert(NewBox {
             name: name.clone(),
             repo: "r".into(),
         }))

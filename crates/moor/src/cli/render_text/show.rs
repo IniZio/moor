@@ -82,7 +82,7 @@ fn list(tasks: &[Value]) -> Option<String> {
                 t.pointer("/driver/state")
                     .and_then(Value::as_str)
                     .unwrap_or("-"),
-                t.pointer("/box/workdir")
+                t.pointer("/driver/workdir")
                     .and_then(Value::as_str)
                     .unwrap_or("-"),
             ])

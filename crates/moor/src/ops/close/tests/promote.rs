@@ -10,7 +10,7 @@ use moor_core::config::{BoxConfig, DriverConfig, UserConfig};
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
-use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
+use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
 use moor_core::seam::proc::Tool;
@@ -146,7 +146,7 @@ fn acquire_holder(driver: &FakeDriver) -> BoxHandle {
 fn insert_holder(cx: &Cx, handle: BoxHandle, worktree: &Path) -> BoxId {
     let store = cx.store().unwrap();
     let id = store
-        .apply(Decision::insert(NewTask {
+        .apply(Decision::insert(NewBox {
             name: BoxName::parse_allow_bare("holder").unwrap(),
             repo: "/repo".into(),
         }))
@@ -201,7 +201,7 @@ fn queue(w: &World, name: &str) -> BoxId {
 fn waiting_directly(w: &World, name: &str) -> BoxId {
     let store = w.cx.store().unwrap();
     let id = store
-        .apply(Decision::insert(NewTask {
+        .apply(Decision::insert(NewBox {
             name: BoxName::parse_allow_bare(name).unwrap(),
             repo: "/repo".into(),
         }))
@@ -221,7 +221,7 @@ fn close_holder(w: &World) -> moor_core::view::CloseView {
     close(&w.cx, &req).unwrap()
 }
 
-fn row_of(w: &World, id: BoxId) -> crate::store::TaskRow {
+fn row_of(w: &World, id: BoxId) -> crate::store::BoxRow {
     w.cx.store().unwrap().task(id).unwrap().unwrap()
 }
 

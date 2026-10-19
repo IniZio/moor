@@ -20,7 +20,7 @@ use crate::ops::common::activity::{self, session_ref};
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::transcript;
 use crate::ops::common::wake::wake_and_revive;
-use crate::store::{SessionRow, Store, TaskRow};
+use crate::store::{BoxRow, SessionRow, Store};
 
 /// Longest the send may take, pane reads included.
 const STEER_DEADLINE: Duration = Duration::from_secs(30);
@@ -111,7 +111,7 @@ fn exited(
 }
 
 /// Whether the Task or its Box is asleep.
-fn asleep(row: &TaskRow) -> bool {
+fn asleep(row: &BoxRow) -> bool {
     row.lifecycle == BoxLifecycle::Asleep
         || row
             .boxed
@@ -125,7 +125,7 @@ fn relaunch(name: &str) -> String {
 }
 
 /// The agent's state now; none when the Task has no agent to read.
-fn state_of(cx: &Cx, store: &Store, row: &TaskRow) -> Result<Option<AgentState>, CommandError> {
+fn state_of(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Option<AgentState>, CommandError> {
     let reading = activity::read(cx, store, row, cx.clock().now())?;
     Ok(reading.activity.map(|a| a.state))
 }
@@ -140,7 +140,7 @@ fn is_exit(steer: &Steer) -> bool {
 fn send(
     cx: &Cx,
     store: &Store,
-    row: &TaskRow,
+    row: &BoxRow,
     (name, session, sref): (&str, &SessionRow, &SessionRef),
     steer: &Steer,
     before: Option<&AgentState>,
@@ -178,7 +178,7 @@ fn send(
 fn answered(
     cx: &Cx,
     store: &Store,
-    row: &TaskRow,
+    row: &BoxRow,
     steer: &Steer,
     outcome: SteerOutcome,
 ) -> Result<bool, CommandError> {
@@ -197,7 +197,7 @@ fn answered(
 }
 
 /// Probes the agent once more after a menu choice; warns when it still waits.
-fn menu_answered(cx: &Cx, store: &Store, row: &TaskRow) -> Result<bool, CommandError> {
+fn menu_answered(cx: &Cx, store: &Store, row: &BoxRow) -> Result<bool, CommandError> {
     let waiting = matches!(
         state_of(cx, store, row)?,
         Some(AgentState::NeedsInput { .. })

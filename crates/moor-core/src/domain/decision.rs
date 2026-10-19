@@ -121,29 +121,29 @@ pub enum IntentChange {
     Clear,
 }
 
-/// A task that does not exist yet.
+/// A Box that does not exist yet.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NewTask {
+pub struct NewBox {
     /// Box name.
     pub name: BoxName,
-    /// Repo the task works on.
+    /// Repo the Box works on.
     pub repo: String,
 }
 
-/// The task a decision applies to.
+/// The Box a decision applies to.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TaskTarget {
-    /// Insert this task.
-    New(NewTask),
-    /// Update this task.
+pub enum BoxTarget {
+    /// Insert this Box.
+    New(NewBox),
+    /// Update this Box.
     Existing(BoxId),
 }
 
 /// Everything one store write changes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Decision {
-    /// The task to write.
-    pub task: TaskTarget,
+    /// The Box to write.
+    pub target: BoxTarget,
     /// Box lifecycle input.
     pub lifecycle_input: Option<BoxLifecycleInput>,
     /// Primary Session input.
@@ -165,19 +165,19 @@ impl Decision {
     /// Starts a decision for an existing task.
     #[must_use]
     pub fn new(task: BoxId) -> Self {
-        Self::base(TaskTarget::Existing(task))
+        Self::base(BoxTarget::Existing(task))
     }
 
     /// Starts a decision that inserts a task.
     #[must_use]
-    pub fn insert(new: NewTask) -> Self {
-        Self::base(TaskTarget::New(new)).lifecycle(BoxLifecycleInput::Insert)
+    pub fn insert(new: NewBox) -> Self {
+        Self::base(BoxTarget::New(new)).lifecycle(BoxLifecycleInput::Insert)
     }
 
     /// Builds a decision with no changes.
-    fn base(task: TaskTarget) -> Self {
+    fn base(target: BoxTarget) -> Self {
         Self {
-            task,
+            target,
             lifecycle_input: None,
             session_input: None,
             box_input: None,

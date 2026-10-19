@@ -16,7 +16,7 @@ use super::{req, world, World};
 use crate::ops::common::activity::{read, settle};
 use crate::ops::show;
 use crate::ops::start::run;
-use crate::store::TaskRow;
+use crate::store::BoxRow;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use moor_core::domain::box_state::BoxLifecycle;
@@ -60,7 +60,7 @@ fn started(idle: bool, probes: impl FnOnce(&World) -> Probes) -> (World, BoxId) 
     (w, id)
 }
 
-fn row(w: &World, id: BoxId) -> TaskRow {
+fn row(w: &World, id: BoxId) -> BoxRow {
     w.cx.store().unwrap().task(id).unwrap().unwrap()
 }
 

@@ -16,7 +16,7 @@ use crate::error::CommandError;
 use crate::ops::common::autosleep::{refuse, sleep_handle, sleep_parked, task_dir};
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::view::{hide_unsupported_box_sleep, task_view};
-use crate::store::TaskRow;
+use crate::store::BoxRow;
 
 /// Run `sleep`.
 pub(crate) fn run(cx: &Cx, req: &TaskReq) -> Result<SleepValue, CommandError> {
@@ -50,7 +50,7 @@ pub(crate) fn run(cx: &Cx, req: &TaskReq) -> Result<SleepValue, CommandError> {
 }
 
 /// Ask the Driver to sleep the Box and record the outcome.
-fn sleep_box(cx: &Cx, row: &TaskRow) -> Result<(), CommandError> {
+fn sleep_box(cx: &Cx, row: &BoxRow) -> Result<(), CommandError> {
     let store = cx.store()?;
     if row.lifecycle != BoxLifecycle::Ready {
         return Err(refuse(format!("the Box is {}", row.lifecycle.as_str())));

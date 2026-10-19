@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use moor_core::domain::box_state::BoxLifecycleInput;
-use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
+use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, BoxName};
@@ -20,7 +20,7 @@ fn open(dir: &std::path::Path) -> Store {
 
 /// Insert a Box named `name` in `repo`.
 fn add(store: &Store, name: &str, repo: &str) -> BoxId {
-    let nt = NewTask {
+    let nt = NewBox {
         name: BoxName::parse_allow_bare(name).unwrap(),
         repo: repo.into(),
     };
@@ -51,7 +51,7 @@ fn close(store: &Store, id: BoxId) {
 }
 
 /// Ids of the rows, in order.
-fn ids(rows: &[crate::store::TaskRow]) -> Vec<BoxId> {
+fn ids(rows: &[crate::store::BoxRow]) -> Vec<BoxId> {
     rows.iter().map(|r| r.id).collect()
 }
 

@@ -16,7 +16,7 @@ use super::listen::{listen, Live};
 use super::park::{parked_tunnel, starts_parked};
 use super::{Deps, Sink, LEASE};
 use crate::proxy::detached::read_spec;
-use crate::store::{Fenced, Lease, ProxyPorts, ReadyProc, TaskRow};
+use crate::store::{BoxRow, Fenced, Lease, ProxyPorts, ReadyProc};
 
 /// Why the supervisor stops.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -79,7 +79,7 @@ fn give_up(deps: &Deps<'_>, task: BoxId, owner: &str) {
 }
 
 /// Checks the Task, the proxy row, the spec and the Box handle, refusing with exit code 1 when any is missing.
-fn preflight(deps: &Deps<'_>, task: BoxId) -> Result<(TaskRow, BoxHandle, ProxySpec), u8> {
+fn preflight(deps: &Deps<'_>, task: BoxId) -> Result<(BoxRow, BoxHandle, ProxySpec), u8> {
     let sink = &deps.stderr;
     let task_row = match deps.store.task(task) {
         Ok(Some(row)) if !terminal(row.lifecycle) => row,
@@ -148,7 +148,7 @@ fn claim(deps: &Deps<'_>, task: BoxId) -> Result<String, u8> {
 }
 
 /// Whether the Task's Box is stored as Asleep.
-fn asleep(row: &TaskRow) -> bool {
+fn asleep(row: &BoxRow) -> bool {
     row.boxed
         .as_ref()
         .is_some_and(|b| b.state == BoxState::Asleep)
