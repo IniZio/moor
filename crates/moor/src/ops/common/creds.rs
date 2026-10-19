@@ -6,7 +6,7 @@
 use std::cell::RefCell;
 use std::path::Path;
 
-use moor_core::config::{check, CredPlan, CredentialSource, Layer, TaskSettings};
+use moor_core::config::{check, BoxSettings, CredPlan, CredentialSource, Layer};
 use moor_core::view::env::{EnvItem, EnvKind};
 
 use crate::adapters::creds::describe;
@@ -34,7 +34,7 @@ pub(crate) fn plain(kind: EnvKind, name: &str, detail: &str) -> EnvItem {
 }
 
 /// Every credential row, then user MCP rows, then repo MCP rows.
-pub(crate) fn checked(cx: &Cx, s: &TaskSettings, worktree: &Path) -> Checked {
+pub(crate) fn checked(cx: &Cx, s: &BoxSettings, worktree: &Path) -> Checked {
     let memo = Memo::new(cx);
     let credentials = s
         .credentials
@@ -49,7 +49,7 @@ pub(crate) fn checked(cx: &Cx, s: &TaskSettings, worktree: &Path) -> Checked {
 /// Credential and MCP items that do not resolve, limited to what this Task uses
 /// (credentials with `used == true`, every user MCP server, every repo `.mcp.json` server).
 /// Empty means the preflight passes.
-pub(crate) fn unresolved(cx: &Cx, s: &TaskSettings, worktree: &Path) -> Vec<EnvItem> {
+pub(crate) fn unresolved(cx: &Cx, s: &BoxSettings, worktree: &Path) -> Vec<EnvItem> {
     let memo = Memo::new(cx);
     let used: Vec<EnvItem> = s
         .used_credentials()
@@ -125,7 +125,7 @@ fn credential_item<'a>(memo: &Memo<'a>, c: &'a CredPlan) -> EnvItem {
 }
 
 /// User MCP servers; each resolves iff every `${REF}` names a credential that checks ok.
-fn user_mcp_items<'a>(memo: &Memo<'a>, s: &'a TaskSettings) -> Vec<EnvItem> {
+fn user_mcp_items<'a>(memo: &Memo<'a>, s: &'a BoxSettings) -> Vec<EnvItem> {
     s.mcp
         .iter()
         .map(|(name, srv)| {

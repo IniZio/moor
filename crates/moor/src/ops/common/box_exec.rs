@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use moor_core::box_key::BoxKey;
 use moor_core::config::proxy::{ResolvedRule, FORGE_CREDENTIAL};
-use moor_core::config::TaskSettings;
+use moor_core::config::BoxSettings;
 use moor_core::domain::run::SyncMode;
 use moor_core::exec_env::{self, BoxCtx, ExecEnv, ProxyCtx, Purpose, RUN_DEADLINE};
 use moor_core::seam::agent_profile::ProxyAddr;
@@ -55,7 +55,7 @@ pub(crate) fn proxy(
     task: BoxId,
     handle: Option<BoxHandle>,
     worktree: &Path,
-    cfg: &TaskSettings,
+    cfg: &BoxSettings,
 ) -> Result<BoxProxy, String> {
     let origin = origin(cx, worktree);
     let plan = plan(cx, origin.as_deref())?;
@@ -118,7 +118,7 @@ pub(crate) fn prepare(
     cx: &Cx,
     site: &Site<'_>,
     proxy: Option<&BoxProxy>,
-    cfg: &TaskSettings,
+    cfg: &BoxSettings,
     purpose: Purpose,
 ) -> Result<BoxExec, String> {
     let strip = strip_env(cx, site.provider);

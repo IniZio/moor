@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use moor_core::config::check::{agent_env_reserved, credential_like_env};
 use moor_core::config::proxy::{resolve_rules, ResolvedRule};
-use moor_core::config::TaskSettings;
+use moor_core::config::BoxSettings;
 use moor_core::seam::forge::ForgeRepo;
 use moor_core::seam::proc::{Deadline, ProcSpec, Tool};
 use moor_core::Warning;
@@ -38,7 +38,7 @@ pub(crate) struct ProxyPlan {
 
 /// The repo `env` the agent may see: credential-looking and moor-set names are dropped, each with
 /// an `agent_env_dropped` warning.
-pub(crate) fn agent_env(cx: &Cx, task: &TaskSettings) -> Vec<(String, String)> {
+pub(crate) fn agent_env(cx: &Cx, task: &BoxSettings) -> Vec<(String, String)> {
     let (kept, dropped): (Vec<_>, Vec<_>) = task
         .env
         .iter()

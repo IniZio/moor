@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use moor_core::config::{parse_repo, Flags, TaskSettings};
+use moor_core::config::{parse_repo, BoxSettings, Flags};
 use moor_core::{ErrorKind, StartReq, Warning};
 
 use super::super::common::facts::{resolved, settings};
@@ -21,7 +21,7 @@ pub(super) fn settings_at_base(
     repo: &Path,
     base: &str,
     flags: &Flags,
-) -> Result<TaskSettings, CommandError> {
+) -> Result<BoxSettings, CommandError> {
     let text = cx.git().file_at(repo, base, REPO_FILE).map_err(|e| {
         CommandError::new(
             ErrorKind::Failed,

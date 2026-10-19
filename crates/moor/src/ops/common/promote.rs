@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::path::Path;
 use std::time::Duration;
 
-use moor_core::config::{Flags, TaskSettings};
+use moor_core::config::{BoxSettings, Flags};
 use moor_core::decide::capacity::promote_order;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::{BoxId, BoxName, ProviderId, Warning};
@@ -52,7 +52,7 @@ fn promote_into(
     let Some(lim) = capacity::limit(cx.config(), provider.as_str()) else {
         return Ok(());
     };
-    let mut cfgs: HashMap<BoxId, (BoxName, TaskSettings)> = HashMap::new();
+    let mut cfgs: HashMap<BoxId, (BoxName, BoxSettings)> = HashMap::new();
     for row in store.waiting_tasks()? {
         let at = row.worktree.as_deref().unwrap_or(&row.repo);
         match settings(cx, Path::new(at), &Flags::default()) {
@@ -94,7 +94,7 @@ fn promote_one(
     id: BoxId,
     name: &BoxName,
     op: &str,
-    cfg: &TaskSettings,
+    cfg: &BoxSettings,
 ) -> Result<Option<BoxName>, CommandError> {
     let _lock = match BoxLock::acquire(cx.clock(), cx.state_dir()?, id, op, PROMOTE_WAIT) {
         Ok(lock) => lock,

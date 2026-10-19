@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use moor_core::config::{Flags, TaskSettings};
+use moor_core::config::{BoxSettings, Flags};
 
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
@@ -140,7 +140,7 @@ pub(crate) fn provision(
     store: &Store,
     id: BoxId,
     entry: Entry,
-    cfg: &TaskSettings,
+    cfg: &BoxSettings,
 ) -> Result<Provisioned, CommandError> {
     let task = reread(store, id)?;
     let provider = ProviderId::new(cfg.provider.value.clone());
@@ -252,7 +252,7 @@ fn sync_into_box(
     id: BoxId,
     advance: bool,
     target: &SetupTarget<'_>,
-    cfg: &TaskSettings,
+    cfg: &BoxSettings,
 ) -> Result<(), CommandError> {
     setup::sync_checkout(cx, target.handle, target.workdir, target.worktree, cfg)
         .map_err(|reason| sync_failed(cx, store, id, advance, target.handle, reason))
@@ -263,7 +263,7 @@ fn setup_proxy(
     cx: &Cx,
     id: BoxId,
     target: &SetupTarget<'_>,
-    cfg: &TaskSettings,
+    cfg: &BoxSettings,
 ) -> Option<BoxProxy> {
     if cfg.setup.is_empty() {
         return None;
@@ -290,7 +290,7 @@ fn run_and_record(
     id: BoxId,
     advance: bool,
     target: &SetupTarget<'_>,
-    cfg: &TaskSettings,
+    cfg: &BoxSettings,
 ) -> Result<Provisioned, CommandError> {
     identity::set_identity(cx, target.handle, target.worktree);
     sync_into_box(cx, store, id, advance, target, cfg)?;

@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use moor_core::config::TaskSettings;
+use moor_core::config::BoxSettings;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, Intent, IntentChange};
@@ -37,7 +37,7 @@ pub(super) fn retry_in_box(
     cx: &Cx,
     store: &Store,
     row: &BoxRow,
-    cfg: &TaskSettings,
+    cfg: &BoxSettings,
 ) -> Result<Provisioned, CommandError> {
     let Some((handle, workdir)) = kept_box(row) else {
         return Err(CommandError::new(ErrorKind::Internal, "kept Box vanished"));

@@ -5,7 +5,7 @@
 use std::path::{Path, PathBuf};
 
 use moor_core::boxscript::command_line;
-use moor_core::config::{Flags, TaskSettings};
+use moor_core::config::{BoxSettings, Flags};
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::Decision;
@@ -172,7 +172,7 @@ fn box_env(
     cx: &Cx,
     row: &BoxRow,
     target: &ready::Target,
-    cfg: &TaskSettings,
+    cfg: &BoxSettings,
 ) -> Result<BoxExec, CommandError> {
     let proxy = box_exec::proxy(
         cx,
