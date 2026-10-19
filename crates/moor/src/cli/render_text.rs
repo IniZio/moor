@@ -112,9 +112,9 @@ fn promoted_line(value: &Value, out: &mut String) {
 
 /// Text form of `start`: a status line, how to open a Task that has a Box, then notes.
 fn start_text(value: &Value) -> Option<String> {
-    let (head, state) = task_head(value, "box_row")?;
+    let (head, state) = task_head(value, "box")?;
     let flag = |key| value.get(key).and_then(Value::as_bool).unwrap_or(false);
-    let task = value.get("box_row")?;
+    let task = value.get("box")?;
     let box_state = task.pointer("/driver/state").and_then(Value::as_str);
     let mut out = if flag("queued") {
         format!("queued {head}: waiting for a free box\n")
@@ -155,7 +155,7 @@ fn setup_failure_lines(value: &Value, out: &mut String) {
     let Some(step) = value.get("failed_step").and_then(Value::as_str) else {
         return;
     };
-    let handle = value.get("box").and_then(Value::as_str);
+    let handle = value.get("handle").and_then(Value::as_str);
     let _ = match handle {
         Some(h) => writeln!(out, "{step} failed in Box {h}:"),
         None => writeln!(out, "{step} failed:"),
@@ -168,7 +168,7 @@ fn setup_failure_lines(value: &Value, out: &mut String) {
     {
         let _ = writeln!(out, "  {l}");
     }
-    if let Some(name) = value.pointer("/box_row/name").and_then(Value::as_str) {
+    if let Some(name) = value.pointer("/box/name").and_then(Value::as_str) {
         let _ = writeln!(out, "close it with: moor close {name}");
     }
 }

@@ -92,7 +92,7 @@ fn an_empty_cache_is_cloned_and_the_task_uses_the_cache_path() {
             dest.display().to_string()
         ]]
     );
-    assert_eq!(v.box_row.repo, dest.display().to_string());
+    assert_eq!(v.boxed.repo, dest.display().to_string());
     assert!(!git_calls(&w)
         .iter()
         .any(|a| a == &["rev-parse", "--show-toplevel"]));
@@ -104,7 +104,7 @@ fn a_cache_with_a_checkout_is_not_cloned_again() {
     std::fs::create_dir_all(cache(&w, "app").join(".git")).unwrap();
     let v = run(&w.cx, &repo_req("app")).unwrap();
     assert!(cloned(&w).is_empty());
-    assert_eq!(v.box_row.repo, cache(&w, "app").display().to_string());
+    assert_eq!(v.boxed.repo, cache(&w, "app").display().to_string());
 }
 
 #[test]
@@ -130,7 +130,7 @@ fn a_default_branch_is_fetched_and_its_sha_is_the_base() {
     assert!(git_calls(&w)
         .iter()
         .any(|a| a == &["fetch", "origin", REFSPEC]));
-    assert_eq!(v.box_row.base.as_deref(), Some(SHA));
+    assert_eq!(v.boxed.base.as_deref(), Some(SHA));
 }
 
 #[test]
@@ -149,7 +149,7 @@ fn repo_together_with_worktree_is_a_usage_error() {
 fn a_repo_is_found_by_url() {
     let w = known(table(&[("app", entry(URL, None))]));
     let v = run(&w.cx, &repo_req("https://example.com/acme/app")).unwrap();
-    assert_eq!(v.box_row.repo, cache(&w, "app").display().to_string());
+    assert_eq!(v.boxed.repo, cache(&w, "app").display().to_string());
     assert_eq!(cloned(&w).len(), 1);
 }
 

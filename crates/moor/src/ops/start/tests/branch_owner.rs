@@ -9,7 +9,7 @@ use crate::testing::driver::FakeDriver;
 fn a_worktree_that_belongs_to_another_open_box_is_refused() {
     let w = world(FakeDriver::new());
     let a = run(&w.cx, &req("alpha")).unwrap();
-    let path = a.box_row.worktree.unwrap();
+    let path = a.boxed.worktree.unwrap();
     w.surface.set_next_worktree(Worktree {
         path: path.clone().into(),
         branch: "alpha".to_owned(),
@@ -36,6 +36,6 @@ fn start_records_branch_ref() {
     let refs =
         w.cx.store()
             .unwrap()
-            .box_refs(BoxId::new(v.box_row.id), "branch");
+            .box_refs(BoxId::new(v.boxed.id), "branch");
     assert_eq!(refs.unwrap(), vec!["demo".to_string()]);
 }

@@ -193,7 +193,8 @@ pub struct AgentLaunchView {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct StartView {
     /// The Box row.
-    pub box_row: BoxView,
+    #[serde(rename = "box")]
+    pub boxed: BoxView,
     /// Box already existed.
     pub attached: bool,
     /// Task is queued for capacity.
@@ -212,8 +213,8 @@ pub struct StartView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub failed_step: Option<String>,
     /// Handle of the Box kept after a failed step.
-    #[serde(rename = "box", skip_serializing_if = "Option::is_none")]
-    pub boxed: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub handle: Option<String>,
 }
 
 /// One event row.

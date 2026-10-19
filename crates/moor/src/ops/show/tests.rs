@@ -537,13 +537,13 @@ fn a_task_freshly_started_is_not_idled_by_the_next_list() {
         },
     )
     .unwrap();
-    let s = &started.box_row;
+    let s = &started.boxed;
     assert_eq!((s.lifecycle, s.session_state), WORKING);
     let v = run(&cx, &req(None, None)).unwrap();
     let t = first(&v);
     assert_eq!((t.lifecycle, t.session_state), WORKING);
     assert!(t.agent.is_some());
-    let id = BoxId::new(started.box_row.id);
+    let id = BoxId::new(started.boxed.id);
     assert!(cx.store().unwrap().live_session(id).unwrap().is_some());
     let row = cx.store().unwrap().task(id).unwrap().unwrap();
     assert_eq!(parts(&row), WORKING);

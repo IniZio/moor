@@ -273,7 +273,7 @@ fn lifecycle_box(name: &str, lifecycle: &str, box_state: Option<&str>) -> serde_
 
 #[test]
 fn start_prints_name_state_box_and_how_to_open() {
-    let v = json!({"box_row": lifecycle_box("alpha", "ready", Some("ready")), "attached": false});
+    let v = json!({"box": lifecycle_box("alpha", "ready", Some("ready")), "attached": false});
     let (out, _) = render(&Response::ok("start", Some(v)), false);
     assert_eq!(
         out,
@@ -284,7 +284,7 @@ fn start_prints_name_state_box_and_how_to_open() {
 #[test]
 fn start_says_setup_failed_and_keeps_the_open_hint() {
     let v = json!({
-        "box_row": lifecycle_box("alpha", "ready", Some("ready")),
+        "box": lifecycle_box("alpha", "ready", Some("ready")),
         "setup": {"ran": true, "ok": false, "line": "make: *** [deps] Error 2"},
         "warnings_inline": []
     });
@@ -298,10 +298,10 @@ fn start_says_setup_failed_and_keeps_the_open_hint() {
 #[test]
 fn start_names_the_failed_step_its_tail_the_box_and_how_to_close_it() {
     let v = json!({
-        "box_row": lifecycle_box("alpha", "ready", Some("ready")),
+        "box": lifecycle_box("alpha", "ready", Some("ready")),
         "setup": {"ran": true, "ok": false, "tail": "npm ERR! missing\nexit 1"},
         "failed_step": "setup",
-        "box": "box-9",
+        "handle": "box-9",
     });
     let (out, _) = render(&Response::ok("start", Some(v)), false);
     assert_eq!(
@@ -317,7 +317,7 @@ fn start_does_not_say_setup_failed_when_setup_passed_or_did_not_run() {
         json!({"ran": true, "ok": true}),
         json!({"ran": false, "ok": false}),
     ] {
-        let v = json!({"box_row": lifecycle_box("alpha", "ready", Some("ready")), "setup": setup});
+        let v = json!({"box": lifecycle_box("alpha", "ready", Some("ready")), "setup": setup});
         let (out, _) = render(&Response::ok("start", Some(v)), false);
         assert_eq!(
             out,
@@ -328,17 +328,17 @@ fn start_does_not_say_setup_failed_when_setup_passed_or_did_not_run() {
 
 #[test]
 fn start_says_attached_and_queued() {
-    let v = json!({"box_row": lifecycle_box("alpha", "ready", Some("ready")), "attached": true});
+    let v = json!({"box": lifecycle_box("alpha", "ready", Some("ready")), "attached": true});
     let (out, _) = render(&Response::ok("start", Some(v)), false);
     assert!(out.starts_with("attached alpha (#7): ready/idle, box ready\n"));
-    let v = json!({"box_row": lifecycle_box("alpha", "waiting_for_box", None), "queued": true});
+    let v = json!({"box": lifecycle_box("alpha", "waiting_for_box", None), "queued": true});
     let (out, _) = render(&Response::ok("start", Some(v)), false);
     assert_eq!(out, "queued alpha (#7): waiting for a free box\n");
 }
 
 #[test]
 fn start_omits_open_hint_for_a_box_that_cannot_be_opened() {
-    let v = json!({"box_row": lifecycle_box("alpha", "ready", Some("failed"))});
+    let v = json!({"box": lifecycle_box("alpha", "ready", Some("failed"))});
     let (out, _) = render(&Response::ok("start", Some(v)), false);
     assert_eq!(out, "started alpha (#7): ready/idle, box failed\n");
 }
@@ -346,7 +346,7 @@ fn start_omits_open_hint_for_a_box_that_cannot_be_opened() {
 #[test]
 fn start_prints_inline_warnings_and_promotions() {
     let v = json!({
-        "box_row": lifecycle_box("alpha", "ready", Some("ready")),
+        "box": lifecycle_box("alpha", "ready", Some("ready")),
         "promoted": ["beta", "gamma"],
         "warnings_inline": ["agent dispatch failed: no pane"]
     });
@@ -361,7 +361,7 @@ fn start_prints_inline_warnings_and_promotions() {
 #[test]
 fn start_keeps_its_output_for_a_launched_agent() {
     let v = json!({
-        "box_row": lifecycle_box("alpha", "ready", Some("ready")),
+        "box": lifecycle_box("alpha", "ready", Some("ready")),
         "agent": {"launched": true, "session": "s", "reason": null}
     });
     let (out, _) = render(&Response::ok("start", Some(v)), false);
@@ -380,7 +380,7 @@ fn start_shows_a_launch_step_failure_as_a_warning() {
         at: "2026-01-01T00:00:00Z".to_owned(),
     };
     let v = json!({
-        "box_row": lifecycle_box("alpha", "ready", Some("ready")),
+        "box": lifecycle_box("alpha", "ready", Some("ready")),
         "agent": {"launched": false, "session": null, "reason": reason},
         "warnings_inline": [reason.text()]
     });

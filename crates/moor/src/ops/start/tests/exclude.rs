@@ -41,7 +41,7 @@ fn exclude_failure_stops_start_before_any_worktree_exists() {
 fn attach_excludes_scratch_dirs_again() {
     let w = world(FakeDriver::new());
     let first = run(&w.cx, &req("demo")).unwrap();
-    let wt = std::path::PathBuf::from(first.box_row.worktree.unwrap());
+    let wt = std::path::PathBuf::from(first.boxed.worktree.unwrap());
     let before = exclude_calls(&w);
     assert!(run(&w.cx, &req("demo")).unwrap().attached);
     assert_eq!(exclude_calls(&w), before + 1);

@@ -103,7 +103,7 @@ fn agent_and_run_nested_keys() {
 #[test]
 fn start_view_keys_match_wire_shape() {
     let v = StartView {
-        box_row: sample_box(),
+        boxed: sample_box(),
         attached: false,
         queued: false,
         promoted: vec!["a".into()],
@@ -122,12 +122,12 @@ fn start_view_keys_match_wire_shape() {
         },
         warnings_inline: vec![],
         failed_step: None,
-        boxed: None,
+        handle: None,
     };
     assert_eq!(
         serde_json::to_value(v).ok(),
         Some(json!({
-            "box_row": box_json(), "attached": false, "queued": false, "promoted": ["a"],
+            "box": box_json(), "attached": false, "queued": false, "promoted": ["a"],
             "setup": {"ran": true, "ok": true, "line": null, "ms": 7},
             "dotfiles": {"ran": false, "ok": false, "ms": null},
             "agent": {"launched": true, "session": "s", "reason": null},

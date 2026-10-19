@@ -19,7 +19,7 @@ fn idle() -> (World, BoxId) {
         no_agent: true,
         ..req("demo")
     };
-    let id = BoxId::new(run(&w.cx, &start).unwrap().box_row.id);
+    let id = BoxId::new(run(&w.cx, &start).unwrap().boxed.id);
     let quiet = Decision::new(id).session(SessionInput::AgentQuiet);
     w.cx.store().unwrap().apply(quiet).unwrap();
     (w, id)

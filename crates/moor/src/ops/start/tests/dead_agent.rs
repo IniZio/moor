@@ -44,7 +44,7 @@ fn an_agent_that_exits_127_at_launch_is_a_launch_failure() {
         Ok(exited(127, "sh: claude: not found\nmoor: agent exited 127")),
     );
     let v = run(&w.cx, &goal_req("demo")).unwrap();
-    let id = BoxId::new(v.box_row.id);
+    let id = BoxId::new(v.boxed.id);
     let store = w.cx.store().unwrap();
     assert!(!v.agent.launched);
     assert!(v.agent.session.is_none());

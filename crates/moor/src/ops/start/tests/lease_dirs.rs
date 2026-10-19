@@ -22,7 +22,7 @@ fn started(engine: &Arc<FakeEngine>) -> (World, BoxId) {
     let mut w = world(FakeDriver::new());
     w.cx = w.cx.with_engine(engine.clone());
     let v = run(&w.cx, &req("demo")).unwrap();
-    (w, BoxId::new(v.box_row.id))
+    (w, BoxId::new(v.boxed.id))
 }
 
 /// The Task's leases on the launch directories.

@@ -58,7 +58,7 @@ fn attached(driver: FakeDriver, live: bool) -> World {
     let first = run(&w.cx, &start_req()).unwrap();
     let store = w.cx.store().unwrap();
     let session = store
-        .begin_session(BoxId::new(first.box_row.id), "agent-1", None)
+        .begin_session(BoxId::new(first.boxed.id), "agent-1", None)
         .unwrap();
     if !live {
         store.end_session(session, Some(0), None).unwrap();
@@ -199,7 +199,7 @@ fn start_that_launches_the_agent_aborts_when_the_re_sync_fails() {
         .error
         .to_string()
         .contains("syncing the checkout into the Box failed"));
-    let id = BoxId::new(first.box_row.id);
+    let id = BoxId::new(first.boxed.id);
     let events = w.cx.store().unwrap().events(id, 50).unwrap();
     assert!(events.iter().any(|e| e.kind == "setup_failed"));
 }

@@ -19,7 +19,7 @@ fn a_started_box_leaves_its_root_and_workdir_held() {
     let rows =
         w.cx.store()
             .unwrap()
-            .leases(BoxId::new(v.box_row.id))
+            .leases(BoxId::new(v.boxed.id))
             .unwrap();
     let state = |kind| {
         rows.iter()
@@ -53,7 +53,7 @@ fn a_failed_acquire_leaves_the_root_planned() {
 fn leases_survive_reopening_the_store() {
     let w = world(FakeDriver::new());
     let v = run(&w.cx, &req("demo")).unwrap();
-    let id = BoxId::new(v.box_row.id);
+    let id = BoxId::new(v.boxed.id);
     let before = w.cx.store().unwrap().leases(id).unwrap();
     let path = w.cx.state_dir().unwrap().join(STORE_FILE);
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000_000)));
@@ -91,7 +91,7 @@ fn a_failed_setup_leaves_the_workdir_held() {
     let rows =
         w.cx.store()
             .unwrap()
-            .leases(BoxId::new(v.box_row.id))
+            .leases(BoxId::new(v.boxed.id))
             .unwrap();
     let dir: Vec<_> = rows
         .iter()

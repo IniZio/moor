@@ -142,14 +142,11 @@ fn happy_path_makes_a_working_task_with_a_ready_box() {
     let w = world(FakeDriver::new());
     let v = run(&w.cx, &req("demo")).unwrap();
     assert!(!v.attached);
-    assert_eq!(
-        (v.box_row.lifecycle, v.box_row.session_state),
-        state::WORKING
-    );
-    assert_eq!(v.box_row.base.as_deref(), Some("abc123"));
-    assert_eq!(v.box_row.workspace.as_deref(), Some("ws-1"));
-    assert_eq!(v.box_row.branch.as_deref(), Some("demo"));
-    let row = w.cx.store().unwrap().task(BoxId::new(v.box_row.id));
+    assert_eq!((v.boxed.lifecycle, v.boxed.session_state), state::WORKING);
+    assert_eq!(v.boxed.base.as_deref(), Some("abc123"));
+    assert_eq!(v.boxed.workspace.as_deref(), Some("ws-1"));
+    assert_eq!(v.boxed.branch.as_deref(), Some("demo"));
+    let row = w.cx.store().unwrap().task(BoxId::new(v.boxed.id));
     let b = row.unwrap().unwrap().boxed.unwrap();
     assert_eq!(b.state, BoxState::Ready);
     assert_eq!(b.handle.unwrap().as_str(), "box-1");
@@ -160,7 +157,7 @@ fn happy_path_makes_a_working_task_with_a_ready_box() {
 fn happy_path_calls_seams_in_order_and_clears_intent() {
     let w = world(FakeDriver::new());
     let v = run(&w.cx, &req("demo")).unwrap();
-    let row = w.cx.store().unwrap().task(BoxId::new(v.box_row.id));
+    let row = w.cx.store().unwrap().task(BoxId::new(v.boxed.id));
     assert!(row.unwrap().unwrap().intent.is_none());
     assert_eq!(
         w.surface.calls(),
@@ -178,7 +175,7 @@ fn acquire_failure_keeps_a_failed_task_row() {
     assert_eq!(err.kind, ErrorKind::Failed);
     let shown = err.value.as_ref().expect("outcome rides the error");
     assert_eq!(
-        shown.pointer("/box_row/lifecycle"),
+        shown.pointer("/box/lifecycle"),
         Some(&serde_json::json!("setup_failed"))
     );
     let name = box_name("demo");
@@ -208,7 +205,7 @@ fn acquire_failure_with_release_error_keeps_failed_and_original_error() {
     let err = run(&w.cx, &req("demo")).unwrap_err();
     assert!(err.error.to_string().contains("boom"), "{err:?}");
     assert_eq!(
-        err.value.as_ref().unwrap().pointer("/box_row/lifecycle"),
+        err.value.as_ref().unwrap().pointer("/box/lifecycle"),
         Some(&serde_json::json!("setup_failed"))
     );
     let name = box_name("demo");
@@ -222,7 +219,7 @@ fn acquire_failure_with_release_error_keeps_failed_and_original_error() {
 fn restart_of_a_closed_name_creates_a_new_task() {
     let w = world(FakeDriver::new());
     let first = run(&w.cx, &req("again")).unwrap();
-    let id = BoxId::new(first.box_row.id);
+    let id = BoxId::new(first.boxed.id);
     w.cx.store()
         .unwrap()
         .apply(
@@ -234,9 +231,9 @@ fn restart_of_a_closed_name_creates_a_new_task() {
         .unwrap();
     let second = run(&w.cx, &req("again")).unwrap();
     assert!(!second.attached);
-    assert_ne!(second.box_row.id, first.box_row.id);
+    assert_ne!(second.boxed.id, first.boxed.id);
     assert_eq!(
-        (second.box_row.lifecycle, second.box_row.session_state),
+        (second.boxed.lifecycle, second.boxed.session_state),
         state::WORKING
     );
 }
@@ -247,7 +244,7 @@ fn open_name_attaches_with_only_a_checkout_sync() {
     let first = run(&w.cx, &req("demo")).unwrap();
     let again = run(&w.cx, &req("demo")).unwrap();
     assert!(again.attached);
-    assert_eq!(again.box_row.id, first.box_row.id);
+    assert_eq!(again.boxed.id, first.boxed.id);
     assert_eq!(
         w.driver.calls(),
         ["acquire", "exec box-1", "sweep box-1", "exec box-1"]
@@ -262,7 +259,7 @@ fn attach_writes_exactly_one_attached_event() {
     let count = |w: &World| {
         w.cx.store()
             .unwrap()
-            .events(BoxId::new(first.box_row.id), 100)
+            .events(BoxId::new(first.boxed.id), 100)
             .unwrap()
             .iter()
             .filter(|e| e.kind == "attached")
@@ -294,17 +291,14 @@ fn bound_worktree_skips_create_worktree() {
     r.worktree = Some(made.path.display().to_string());
     let v = run(&w.cx, &r).unwrap();
     let wt = made.path.display().to_string();
-    assert_eq!(v.box_row.worktree.as_deref(), Some(wt.as_str()));
+    assert_eq!(v.boxed.worktree.as_deref(), Some(wt.as_str()));
     assert_eq!(w.surface.calls().len(), 2);
     assert!(!w
         .surface
         .calls()
         .iter()
         .any(|c| c == "create_worktree demo"));
-    assert_eq!(
-        (v.box_row.lifecycle, v.box_row.session_state),
-        state::WORKING
-    );
+    assert_eq!((v.boxed.lifecycle, v.boxed.session_state), state::WORKING);
 }
 
 #[test]
@@ -316,10 +310,10 @@ fn start_after_acquire_failure_gets_a_new_box() {
     let again = run(&w.cx, &req("demo")).unwrap();
     assert!(again.attached);
     assert_eq!(
-        (again.box_row.lifecycle, again.box_row.session_state),
+        (again.boxed.lifecycle, again.boxed.session_state),
         state::WORKING
     );
-    let row = w.cx.store().unwrap().task(BoxId::new(again.box_row.id));
+    let row = w.cx.store().unwrap().task(BoxId::new(again.boxed.id));
     assert_eq!(row.unwrap().unwrap().boxed.unwrap().state, BoxState::Ready);
     assert_eq!(
         w.driver.calls(),
@@ -332,14 +326,14 @@ fn start_after_acquire_failure_gets_a_new_box() {
 fn start_on_a_gone_box_acquires_again_and_keeps_the_task_working() {
     let w = world(FakeDriver::new());
     let first = run(&w.cx, &req("demo")).unwrap();
-    let id = BoxId::new(first.box_row.id);
+    let id = BoxId::new(first.boxed.id);
     let store = w.cx.store().unwrap();
     store
         .apply(Decision::new(id).box_input(BoxInput::DriverMissing))
         .unwrap();
     let again = run(&w.cx, &req("demo")).unwrap();
     assert_eq!(
-        (again.box_row.lifecycle, again.box_row.session_state),
+        (again.boxed.lifecycle, again.boxed.session_state),
         state::WORKING
     );
     let b = store.task(id).unwrap().unwrap().boxed.unwrap();
@@ -395,7 +389,7 @@ fn unresolved_credential_rejects_before_any_side_effect() {
     assert_eq!(err.kind, ErrorKind::Failed);
     assert!(err.error.to_string().contains("MISSING"), "{err:?}");
     assert_eq!(
-        err.value.as_ref().unwrap().pointer("/box_row/lifecycle"),
+        err.value.as_ref().unwrap().pointer("/box/lifecycle"),
         Some(&serde_json::json!("rejected"))
     );
     assert!(w.surface.calls().is_empty());
@@ -448,10 +442,10 @@ fn refused_start_provisions_when_retried_after_the_lock_is_released() {
     let again = run(&w.cx, &req("demo")).unwrap();
     assert!(again.attached);
     assert_eq!(
-        (again.box_row.lifecycle, again.box_row.session_state),
+        (again.boxed.lifecycle, again.boxed.session_state),
         state::WORKING
     );
-    let row = w.cx.store().unwrap().task(BoxId::new(again.box_row.id));
+    let row = w.cx.store().unwrap().task(BoxId::new(again.boxed.id));
     assert_eq!(row.unwrap().unwrap().boxed.unwrap().state, BoxState::Ready);
     assert_eq!(w.driver.calls(), ["acquire", "exec box-1"]);
 }
@@ -460,7 +454,7 @@ fn refused_start_provisions_when_retried_after_the_lock_is_released() {
 fn start_on_a_lost_box_is_refused_while_another_op_holds_the_lock() {
     let w = world(FakeDriver::new());
     let first = run(&w.cx, &req("demo")).unwrap();
-    let id = BoxId::new(first.box_row.id);
+    let id = BoxId::new(first.boxed.id);
     w.cx.store()
         .unwrap()
         .apply(Decision::new(id).box_input(BoxInput::DriverMissing))
@@ -476,7 +470,7 @@ fn start_on_a_lost_box_is_refused_while_another_op_holds_the_lock() {
 fn reprovision_skips_when_another_start_already_gave_the_box_back() {
     let w = world(FakeDriver::new());
     let first = run(&w.cx, &req("demo")).unwrap();
-    let id = BoxId::new(first.box_row.id);
+    let id = BoxId::new(first.boxed.id);
     let store = w.cx.store().unwrap();
     store
         .apply(Decision::new(id).box_input(BoxInput::DriverMissing))
@@ -521,7 +515,7 @@ fn reprovision_skips_when_another_start_already_gave_the_box_back() {
 /// Starts `demo`, then leaves it as a provisioning that lost its Box handle.
 fn stuck_provisioning(w: &World) {
     let first = run(&w.cx, &req("demo")).unwrap();
-    let stuck = Decision::new(BoxId::new(first.box_row.id))
+    let stuck = Decision::new(BoxId::new(first.boxed.id))
         .set(Fields {
             box_handle: Field::Clear,
             ..Fields::default()
