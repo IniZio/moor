@@ -4,6 +4,7 @@ use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, IntentCha
 use moor_core::domain::task::TaskInput;
 use moor_core::BoxId;
 use moor_core::ErrorKind;
+use moor_core::Warning;
 
 use super::reread;
 use crate::cx::Cx;
@@ -66,6 +67,15 @@ pub(super) fn sync_failed(
         Ok(row) => out.with_value(serde_json::json!({ "task": task_view(&row, cx.config()) })),
         Err(_) => out,
     }
+}
+
+/// Warns that the dotfiles failed and returns the run to report; the Box carries on without them.
+pub(super) fn dotfiles_warned(cx: &Cx, failure: DotfilesFailed) -> DotfilesRun {
+    cx.warn(Warning {
+        code: "dotfiles_failed".to_owned(),
+        message: format!("dotfiles failed:\n{}", failure.tail),
+    });
+    DotfilesRun::Failed { tail: failure.tail }
 }
 
 /// Records a failed dotfiles step and returns the error, carrying the Task row, to report.
