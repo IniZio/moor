@@ -1,39 +1,26 @@
 //! Verdict on whether the turn a steer message started is done.
 
-use crate::activity::{HookKind, HookRecord};
+use crate::domain::event::TurnOutcome;
 use crate::seam::clock::Ts;
 
-/// How a finished turn ended.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum TurnOutcome {
+/// What a hook report said about the agent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HookSignal {
     /// The agent finished and waits for input.
     Idle,
     /// The agent waits on an answer.
-    NeedsInput,
-    /// The agent's pane is gone.
-    Exited,
-}
-
-impl TurnOutcome {
-    /// The wire name of the outcome.
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Idle => "idle",
-            Self::NeedsInput => "needs_input",
-            Self::Exited => "exited",
-        }
-    }
+    Blocked,
+    /// Any other report: the agent is still working.
+    Other,
 }
 
 /// What the turn decider can observe.
 #[derive(Debug, Clone, Copy)]
-pub struct TurnFacts<'a> {
+pub struct TurnFacts {
     /// The newest unanswered steer: its event id and when it was sent.
     pub steer: Option<(i64, Ts)>,
-    /// The last hook report for the Task.
-    pub hook: Option<&'a HookRecord>,
+    /// The last hook report for the Task and when it was written.
+    pub hook: Option<(HookSignal, Ts)>,
     /// Whether the agent's pane has exited.
     pub pane_exited: bool,
 }
@@ -42,16 +29,19 @@ pub struct TurnFacts<'a> {
 /// event id with the outcome. An exited pane wins; otherwise only an Idle or
 /// Blocked report written after the steer counts.
 #[must_use]
-pub fn turn_done(f: &TurnFacts<'_>) -> Option<(i64, TurnOutcome)> {
+pub fn turn_done(f: &TurnFacts) -> Option<(i64, TurnOutcome)> {
     let (id, sent) = f.steer?;
     if f.pane_exited {
         return Some((id, TurnOutcome::Exited));
     }
-    let hook = f.hook.filter(|h| h.at > sent)?;
-    match hook.kind {
-        HookKind::Idle => Some((id, TurnOutcome::Idle)),
-        HookKind::Blocked => Some((id, TurnOutcome::NeedsInput)),
-        HookKind::Starting | HookKind::Busy => None,
+    let (signal, at) = f.hook?;
+    if at <= sent {
+        return None;
+    }
+    match signal {
+        HookSignal::Idle => Some((id, TurnOutcome::Idle)),
+        HookSignal::Blocked => Some((id, TurnOutcome::NeedsInput)),
+        HookSignal::Other => None,
     }
 }
 
