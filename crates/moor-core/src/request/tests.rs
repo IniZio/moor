@@ -65,6 +65,7 @@ fn with_args() -> Vec<Request> {
             events: Some(2),
             agent: false,
             reports: true,
+            artifacts: false,
             pane: false,
         }),
         Request::Close(CloseReq {

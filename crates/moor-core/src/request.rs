@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::name::{BoxName, SessionId};
 
+mod artifacts;
+pub use artifacts::{ArtifactReadReq, ArtifactsReq, ARTIFACT_CHUNK};
 mod binding;
 pub use binding::{BindSessionReq, SessionBindingReq};
 mod repos;
@@ -77,6 +79,10 @@ pub enum Request {
     ProxyCheck {},
     /// List the repos the controller knows.
     Repos(ReposReq),
+    /// List a task's artifacts.
+    Artifacts(ArtifactsReq),
+    /// Read a byte range of one artifact.
+    ArtifactRead(ArtifactReadReq),
     /// Print version information.
     Version {},
 }
@@ -116,6 +122,8 @@ impl Request {
             Self::GithubLogin {} => "github-login",
             Self::ProxyCheck {} => "proxy-check",
             Self::Repos(_) => "repos",
+            Self::Artifacts(_) => "artifacts",
+            Self::ArtifactRead(_) => "artifact-read",
             Self::Version {} => "version",
         }
     }
@@ -290,6 +298,10 @@ pub struct ReportReq {
 /// Arguments of `show`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "JSON wire shape is a public contract"
+)]
 pub struct ShowReq {
     /// Box name; all tasks when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -303,6 +315,9 @@ pub struct ShowReq {
     /// Include reports.
     #[serde(default)]
     pub reports: bool,
+    /// Include the latest version of each artifact.
+    #[serde(default)]
+    pub artifacts: bool,
     /// Include pane contents.
     #[serde(default)]
     pub pane: bool,

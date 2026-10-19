@@ -18,34 +18,52 @@ use moor_core::controller::{parse_frame, ClientFrame, PROTOCOL};
 use moor_core::name::SessionId;
 use moor_core::response::{ErrorKind, ErrorView, Response};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 
 use super::handler;
 use crate::client::Client;
 use crate::db::{Db, RequestRow};
 use crate::http::{start, HttpResponse, Server};
 
-const TOKEN: &str = "t0ken";
+pub(super) const TOKEN: &str = "t0ken";
 
 /// Command names the fake controller received, in order.
-type Seen = Arc<Mutex<Vec<String>>>;
+pub(super) type Seen = Arc<Mutex<Vec<String>>>;
 
 /// Answers by command name.
-type Answers = Arc<HashMap<&'static str, Response>>;
+pub(super) type Answers = Arc<HashMap<&'static str, Response>>;
 
-fn serve(socket: &Path, answers: Answers) -> Seen {
-    let listener = UnixListener::bind(socket).unwrap();
-    let seen = Seen::default();
-    let record = seen.clone();
-    std::thread::spawn(move || {
-        for stream in listener.incoming() {
-            let (record, answers) = (record.clone(), answers.clone());
-            std::thread::spawn(move || converse(&record, &answers, stream.unwrap()));
-        }
-    });
-    seen
+/// Answers a request, given as its wire JSON.
+pub(super) type Responder = Arc<dyn Fn(&Value) -> Response + Send + Sync>;
+
+/// Requests the fake controller received, as wire JSON, in order.
+pub(super) type Sent = Arc<Mutex<Vec<Value>>>;
+
+/// The same answer for every request of a command; an unknown command is a usage error.
+pub(super) fn by_command(answers: Answers) -> Responder {
+    Arc::new(move |req| {
+        let cmd = req["cmd"].as_str().unwrap_or_default();
+        answers
+            .get(cmd)
+            .cloned()
+            .unwrap_or_else(|| failure(cmd, ErrorKind::Usage))
+    })
 }
 
-fn converse(seen: &Seen, answers: &Answers, stream: UnixStream) {
+fn serve_with(socket: &Path, respond: Responder) -> (Seen, Sent) {
+    let listener = UnixListener::bind(socket).unwrap();
+    let (seen, sent) = (Seen::default(), Sent::default());
+    let (record, log) = (seen.clone(), sent.clone());
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let (record, log, respond) = (record.clone(), log.clone(), respond.clone());
+            std::thread::spawn(move || converse(&record, &log, &respond, stream.unwrap()));
+        }
+    });
+    (seen, sent)
+}
+
+fn converse(seen: &Seen, sent: &Sent, respond: &Responder, stream: UnixStream) {
     let mut reader = BufReader::new(stream.try_clone().unwrap());
     let mut writer = stream;
     let mut line = String::new();
@@ -59,18 +77,16 @@ fn converse(seen: &Seen, answers: &Answers, stream: UnixStream) {
         let ClientFrame::Request { id, request } = parse_frame(line.trim_end()).unwrap() else {
             return;
         };
-        let cmd = request.cmd();
-        seen.lock().unwrap().push(cmd.to_owned());
-        let envelope = answers
-            .get(cmd)
-            .cloned()
-            .unwrap_or_else(|| failure(cmd, ErrorKind::Usage));
+        seen.lock().unwrap().push(request.cmd().to_owned());
+        let wire = serde_json::to_value(&*request).unwrap();
+        let envelope = respond(&wire);
+        sent.lock().unwrap().push(wire);
         let frame = json!({"frame": "response", "id": id, "envelope": envelope});
         writeln!(writer, "{frame}").unwrap();
     }
 }
 
-fn failure(cmd: &str, kind: ErrorKind) -> Response {
+pub(super) fn failure(cmd: &str, kind: ErrorKind) -> Response {
     let error = ErrorView {
         kind,
         message: "no".to_owned(),
@@ -95,7 +111,7 @@ fn task(name: &str, state: &str, question: Option<&str>) -> Value {
     })
 }
 
-fn answers() -> Answers {
+pub(super) fn answers() -> Answers {
     let sessions = json!({"sessions": [
         session(3, Some(1), Some("app/2"), 2),
         session(1, None, None, 0),
@@ -107,11 +123,60 @@ fn answers() -> Answers {
         "events": [{"id": 1, "kind": "note", "payload": {}, "ts": 5}],
     });
     let repos = json!({"repos": [{"name": "app", "url": "https://example.test/app.git"}]});
+    let note = b"hello";
     Arc::new(HashMap::from([
         ("sessions", Response::ok("sessions", Some(sessions))),
         ("show", Response::ok("show", Some(show))),
         ("repos", Response::ok("repos", Some(repos))),
+        (
+            "artifacts",
+            Response::ok(
+                "artifacts",
+                Some(json!([record("note.txt", "text/plain", 1, note)])),
+            ),
+        ),
+        (
+            "artifact-read",
+            Response::ok("artifact-read", Some(chunk(note, 0, 512, &sha(note)))),
+        ),
     ]))
+}
+
+pub(super) fn sha(bytes: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(bytes))
+}
+
+pub(super) fn record(name: &str, content_type: &str, version: u32, bytes: &[u8]) -> Value {
+    json!({"name": name, "version": version, "kind": "file", "content_type": content_type,
+           "size": bytes.len(), "sha256": sha(bytes), "created_at": "2026-01-01T00:00:00Z"})
+}
+
+fn b64(bytes: &[u8]) -> String {
+    const DIGITS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::new();
+    for group in bytes.chunks(3) {
+        let mut n = 0u32;
+        for i in 0..3 {
+            n = (n << 8) | u32::from(group.get(i).copied().unwrap_or(0));
+        }
+        for i in 0..4 {
+            if i <= group.len() {
+                let six = usize::try_from((n >> (18 - 6 * i)) & 63).unwrap();
+                out.push(char::from(DIGITS[six]));
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    out
+}
+
+/// The `artifact-read` value for `len` bytes of `file` from `offset`, claiming hash `claimed`.
+pub(super) fn chunk(file: &[u8], offset: usize, len: usize, claimed: &str) -> Value {
+    let start = offset.min(file.len());
+    let end = (start + len).min(file.len());
+    json!({"data_b64": b64(&file[start..end]), "size": file.len(), "sha256": claimed,
+           "eof": end == file.len()})
 }
 
 fn row(key: &str, session: i64, ended: Option<i64>) -> RequestRow {
@@ -129,18 +194,32 @@ fn fallback() -> crate::http::Handler {
 }
 
 /// Starts the front over a fake controller; the socket directory outlives the test body.
-fn front(dir: &tempfile::TempDir, answers: Answers, rows: &[RequestRow]) -> (Server, Seen) {
+pub(super) fn front(
+    dir: &tempfile::TempDir,
+    answers: Answers,
+    rows: &[RequestRow],
+) -> (Server, Seen) {
+    let (web, seen, _) = front_with(dir, by_command(answers), rows);
+    (web, seen)
+}
+
+/// Like `front`, with answers computed from each request.
+pub(super) fn front_with(
+    dir: &tempfile::TempDir,
+    respond: Responder,
+    rows: &[RequestRow],
+) -> (Server, Seen, Sent) {
     let sock = dir.path().join("c.sock");
-    let seen = serve(&sock, answers);
+    let (seen, sent) = serve_with(&sock, respond);
     let db = Db::open(&dir.path().join("web.db")).unwrap();
     for r in rows {
         db.insert_request(r).unwrap();
     }
     let handler = handler(Client::new(sock), Arc::new(Mutex::new(db)), fallback());
-    (start(0, TOKEN.to_owned(), handler).unwrap(), seen)
+    (start(0, TOKEN.to_owned(), handler).unwrap(), seen, sent)
 }
 
-fn get(web: &Server, path: &str) -> String {
+pub(super) fn get(web: &Server, path: &str) -> String {
     send(web.addr(), "GET", path)
 }
 
@@ -159,7 +238,7 @@ fn send(addr: std::net::SocketAddr, method: &str, path: &str) -> String {
     out
 }
 
-fn body(resp: &str) -> Value {
+pub(super) fn body(resp: &str) -> Value {
     let (_, text) = resp.split_once("\r\n\r\n").unwrap();
     serde_json::from_str(text).unwrap()
 }
@@ -262,12 +341,27 @@ fn cycles_do_not_loop() {
 fn reads_send_only_commands_that_do_not_wake() {
     let dir = tempfile::tempdir().unwrap();
     let (web, seen) = front(&dir, answers(), &[]);
-    for path in ["/tree", "/repos", "/boxes/x"] {
+    let paths = [
+        "/tree",
+        "/repos",
+        "/boxes/x",
+        "/boxes/app/1/artifacts",
+        "/boxes/app/1/artifacts/note.txt",
+    ];
+    for path in paths {
         assert!(get(&web, path).starts_with("HTTP/1.1 200"), "{path}");
     }
     let seen = seen.lock().unwrap().clone();
-    assert_eq!(seen.len(), 5, "{seen:?}");
-    let allowed = ["sessions", "show", "repos", "show-session"];
+    assert!(seen.len() >= 7, "{seen:?}");
+    assert!(seen.iter().any(|c| c == "artifact-read"), "{seen:?}");
+    let allowed = [
+        "sessions",
+        "show",
+        "repos",
+        "show-session",
+        "artifacts",
+        "artifact-read",
+    ];
     assert!(
         seen.iter().all(|c| allowed.contains(&c.as_str())),
         "{seen:?}"

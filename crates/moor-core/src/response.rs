@@ -31,6 +31,9 @@ pub enum ErrorKind {
     Failed,
     /// Bug in moor.
     Internal,
+    /// Named thing does not exist.
+    #[serde(rename = "not_found")]
+    NotFound,
 }
 
 impl From<ErrorKind> for ExitClass {
@@ -39,7 +42,7 @@ impl From<ErrorKind> for ExitClass {
         match kind {
             ErrorKind::Usage => Self::Usage,
             ErrorKind::Refused => Self::Refused,
-            ErrorKind::Failed | ErrorKind::Internal => Self::Failed,
+            ErrorKind::Failed | ErrorKind::Internal | ErrorKind::NotFound => Self::Failed,
         }
     }
 }

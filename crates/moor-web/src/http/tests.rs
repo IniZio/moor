@@ -342,3 +342,47 @@ fn unauthenticated_stream_is_refused_and_never_runs() {
     assert!(!resp.contains("event-stream"));
     assert!(seen.lock().unwrap().is_empty());
 }
+
+#[test]
+fn binary_body_is_written_verbatim_with_runtime_type() {
+    let bytes = vec![0xff, 0x00, 0x89, b'P'];
+    let resp = HttpResponse::binary(
+        "200 OK",
+        "image/png".to_owned(),
+        vec![("Content-Disposition", "attachment".to_owned())],
+        bytes.clone(),
+    );
+    let extra: Vec<(&str, &str)> = resp.headers.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    let mut out = Vec::new();
+    respond(
+        &mut out,
+        resp.status,
+        &resp.content_type,
+        &extra,
+        &resp.body,
+    )
+    .unwrap();
+    let split = out.windows(4).position(|w| w == b"\r\n\r\n").unwrap() + 4;
+    let head = String::from_utf8(out[..split].to_vec()).unwrap();
+    assert!(head.starts_with("HTTP/1.1 200 OK\r\n"));
+    assert!(head.contains("Content-Type: image/png\r\n"));
+    assert!(head.contains("Content-Length: 4\r\n"));
+    assert!(head.contains("Content-Disposition: attachment\r\n"));
+    assert_eq!(&out[split..], bytes.as_slice());
+}
+
+#[test]
+fn line_breaks_in_header_values_are_dropped() {
+    let mut out = Vec::new();
+    respond(
+        &mut out,
+        "200 OK",
+        "text/plain\r\nX-Evil: 1",
+        &[("X-A", "b\r\nSet-Cookie: c")],
+        "",
+    )
+    .unwrap();
+    let text = String::from_utf8(out).unwrap();
+    assert!(!text.contains("\r\nX-Evil"));
+    assert!(!text.contains("\r\nSet-Cookie"));
+}

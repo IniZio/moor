@@ -70,6 +70,7 @@ fn show_leaves_a_task_while_an_op_holds_its_box() {
         events: None,
         agent: false,
         reports: false,
+        artifacts: false,
         pane: false,
     };
     show::run(&w.cx, &list).unwrap();

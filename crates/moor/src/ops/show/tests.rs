@@ -16,6 +16,7 @@ use moor_core::seam::driver::{AcquireReq, Driver, DriverError, SleepKind};
 use moor_core::seam::proc::Tool;
 use moor_core::{BoxId, BoxName, ProviderId, ShowReq, StartReq};
 
+mod artifacts;
 mod attention;
 mod pane;
 
@@ -46,6 +47,7 @@ fn req(task: Option<&str>, events: Option<u32>) -> ShowReq {
         events,
         agent: false,
         reports: false,
+        artifacts: false,
         pane: false,
     }
 }

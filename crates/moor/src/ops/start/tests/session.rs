@@ -140,6 +140,7 @@ fn a_launch_failure_shows_as_failed_and_is_not_idled_by_the_next_list() {
         events: None,
         agent: true,
         reports: false,
+        artifacts: false,
         pane: false,
     };
     let shown = crate::ops::show::run(&w.cx, &req).unwrap();

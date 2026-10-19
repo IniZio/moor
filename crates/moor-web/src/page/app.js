@@ -65,6 +65,47 @@ function prUrl(task) {
   return 'https://github.com/' + m[1] + '/' + m[2] + '/pulls?q=' + encodeURIComponent('head:' + task.branch);
 }
 
+function fmtSize(n) {
+  if (typeof n !== 'number') return '';
+  if (n < 1024) return n + ' B';
+  const units = ['KB', 'MB', 'GB'];
+  let v = n / 1024;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+  return v.toFixed(v < 10 ? 1 : 0) + ' ' + units[i];
+}
+
+async function loadArtifacts(box, list) {
+  const base = '/boxes/' + encodeURIComponent(box) + '/artifacts/';
+  try {
+    const res = await api('/boxes/' + encodeURIComponent(box) + '/artifacts');
+    if (!res.ok || !res.json) { show(list, res.status + ': ' + res.text, 'bad'); return; }
+    const files = Array.isArray(res.json) ? res.json : res.json.artifacts || [];
+    list.textContent = '';
+    list.className = 'artifacts';
+    if (!files.length) { list.appendChild(h('div', 'No artifacts yet.', 'muted')); return; }
+    for (const f of files) {
+      const url = base + encodeURIComponent(f.name) + '?v=' + encodeURIComponent(f.version);
+      const link = h('a');
+      link.href = url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      if (String(f.content_type).startsWith('image/')) {
+        const img = h('img');
+        img.src = url;
+        img.alt = f.name;
+        img.className = 'thumb';
+        link.append(img);
+      } else {
+        link.textContent = f.name + ' (' + fmtSize(f.size) + ')';
+      }
+      list.appendChild(h('div')).appendChild(link);
+    }
+  } catch (e) {
+    show(list, 'request failed: ' + e.message, 'bad');
+  }
+}
+
 async function act(path, body, out) {
   show(out, 'working…');
   try {
@@ -204,6 +245,16 @@ function makeNode(n) {
       () => act('/close', { task: r.box }, r.actOut)));
     row.append(steer, sb, eb, cb);
     card.append(row, r.actOut);
+
+    const ab = control('button', 'Toggle artifacts of box ' + n.box, { type: 'button', text: 'Artifacts' });
+    const list = h('div', null, 'artifacts');
+    list.hidden = true;
+    const reload = () => { if (!list.hidden) loadArtifacts(n.box, list); };
+    ab.addEventListener('click', () => { list.hidden = !list.hidden; reload(); });
+    r.reloadArtifacts = reload;
+    const artRow = h('div', null, 'row');
+    artRow.appendChild(ab);
+    card.append(artRow, list);
   }
 
   if (n.request) {
@@ -343,6 +394,9 @@ function connect() {
     if (f.box) parts.push('box ' + f.box);
     if (f.session != null) parts.push('session ' + f.session);
     feedLine(parts.join(' · '));
+    if (f.kind === 'artifact_published') {
+      for (const r of nodes.values()) if (r.box === f.box && r.reloadArtifacts) r.reloadArtifacts();
+    }
     scheduleTree();
   };
 }

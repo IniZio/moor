@@ -23,6 +23,7 @@ fn show() -> Request {
         events: None,
         agent: false,
         reports: false,
+        artifacts: false,
         pane: false,
     })
 }

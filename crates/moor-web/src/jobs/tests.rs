@@ -268,7 +268,7 @@ fn routes_serve_snapshot_events_and_404() {
     };
     assert_eq!(resp.status, "200 OK");
     assert_eq!(resp.content_type, "application/json");
-    let body: Value = serde_json::from_str(&resp.body).unwrap();
+    let body: Value = serde_json::from_slice(&resp.body).unwrap();
     assert_eq!(body["state"], "done");
     assert_eq!(body["result"], 5);
 

@@ -261,6 +261,7 @@ fn a_held_box_lock_skips_the_collection() {
         events: None,
         agent: false,
         reports: false,
+        artifacts: false,
         pane: false,
     };
     show::run(&cx, &list).unwrap();
@@ -294,6 +295,7 @@ fn an_idle_written_by_show_is_collected_by_the_next_pass() {
         events: None,
         agent: false,
         reports: false,
+        artifacts: false,
         pane: false,
     };
     show::run(&cx, &list).unwrap();

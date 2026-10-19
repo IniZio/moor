@@ -69,9 +69,9 @@ fn end(ctx: &StartCtx, key: &str) -> HttpResponse {
     });
     HttpResponse {
         status: "202 Accepted",
-        content_type: "application/json",
+        content_type: "application/json".into(),
         headers: Vec::new(),
-        body: json!({"key": key, "job": job}).to_string(),
+        body: json!({"key": key, "job": job}).to_string().into_bytes(),
     }
 }
 
@@ -122,6 +122,7 @@ fn open_boxes(client: &Client) -> Result<HashSet<i64>, JobFailure> {
         events: None,
         agent: false,
         reports: false,
+        artifacts: false,
         pane: false,
     });
     let value = call(client, req).map_err(|m| fail("list-boxes", m))?;

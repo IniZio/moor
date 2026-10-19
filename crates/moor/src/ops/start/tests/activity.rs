@@ -174,6 +174,7 @@ fn start_does_not_revive_a_task_whose_session_ended() {
         events: None,
         agent: false,
         reports: false,
+        artifacts: false,
         pane: false,
     };
     show::run(&w.cx, &list).unwrap();
@@ -300,6 +301,7 @@ fn show_task() -> ShowReq {
         events: None,
         agent: false,
         reports: false,
+        artifacts: false,
         pane: false,
     }
 }
