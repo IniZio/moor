@@ -1,4 +1,6 @@
-//! Typed `value` payload for `end-session` (JSON wire shape).
+//! Typed `value` payloads for the session commands (JSON wire shape).
+
+use crate::name::SessionId;
 
 /// Result of `end-session`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -26,9 +28,21 @@ pub struct OpenSessionValue {
     pub pane: Option<String>,
 }
 
+/// Result of `open-host-session`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct HostSessionValue {
+    /// Id of the new host Session.
+    pub session: SessionId,
+    /// Directory the agent runs in.
+    pub workdir: String,
+    /// Session state.
+    pub state: String,
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{EndSessionValue, OpenSessionValue};
+    use super::{EndSessionValue, HostSessionValue, OpenSessionValue};
+    use crate::name::SessionId;
     use serde_json::json;
 
     #[test]
@@ -56,6 +70,19 @@ mod tests {
         assert_eq!(
             serde_json::to_value(&v).expect("serialize"),
             json!({"task": "x", "session": 8, "ordinal": 3, "pane": "p1"})
+        );
+    }
+
+    #[test]
+    fn host_value_serializes_fields() {
+        let v = HostSessionValue {
+            session: SessionId::new(9),
+            workdir: "/w".into(),
+            state: "running".into(),
+        };
+        assert_eq!(
+            serde_json::to_value(&v).expect("serialize"),
+            json!({"session": 9, "workdir": "/w", "state": "running"})
         );
     }
 }

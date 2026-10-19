@@ -20,6 +20,8 @@ pub enum Request {
     EndSession(EndSessionReq),
     /// Open a fresh agent session on a ready box, seeded with a first prompt.
     OpenSession(OpenSessionReq),
+    /// Register a Session with no Box that runs on the host in a workdir.
+    OpenHostSession(OpenHostSessionReq),
     /// Publish a report.
     Report(ReportReq),
     /// Show tasks or one task.
@@ -65,6 +67,7 @@ impl Request {
             Self::Steer(_) => "steer",
             Self::EndSession(_) => "end-session",
             Self::OpenSession(_) => "open-session",
+            Self::OpenHostSession(_) => "open-host-session",
             Self::Report(_) => "report",
             Self::Show(_) => "show",
             Self::Close(_) => "close",
@@ -216,6 +219,20 @@ pub struct OpenSessionReq {
     pub task: String,
     /// Text the agent receives as its first prompt.
     pub seed: String,
+}
+
+/// Arguments of `open-host-session`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OpenHostSessionReq {
+    /// Absolute directory the agent runs in on the host.
+    pub workdir: String,
+    /// Agent to run.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<String>,
+    /// Stored agent session to resume.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_session_id: Option<String>,
 }
 
 /// Arguments of `report`.

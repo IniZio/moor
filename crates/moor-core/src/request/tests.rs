@@ -370,6 +370,29 @@ fn open_session_round_trips() {
 }
 
 #[test]
+fn open_host_session_round_trips() {
+    let bare: Request =
+        serde_json::from_value(json!({"cmd": "open-host-session", "workdir": "/w"}))
+            .expect("parse");
+    assert_eq!(
+        bare,
+        Request::OpenHostSession(OpenHostSessionReq {
+            workdir: "/w".into(),
+            agent: None,
+            agent_session_id: None
+        })
+    );
+    assert_eq!(bare.cmd(), "open-host-session");
+    let full = json!({"cmd": "open-host-session", "workdir": "/w", "agent": "claude", "agent_session_id": "s1"});
+    let req: Request = serde_json::from_value(full.clone()).expect("parse");
+    assert_eq!(serde_json::to_value(&req).expect("serialize"), full);
+    assert!(serde_json::from_value::<Request>(
+        json!({"cmd": "open-host-session", "workdir": "/w", "bogus": 1})
+    )
+    .is_err());
+}
+
+#[test]
 fn start_without_hold_parses_as_false_and_hold_round_trips() {
     let bare: StartReq = serde_json::from_value(json!({"name": "a"})).expect("parses");
     assert!(!bare.hold);

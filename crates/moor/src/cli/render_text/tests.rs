@@ -251,6 +251,13 @@ fn open_session_prints_ordinal_id_and_pane() {
     assert_eq!(out, "opened Session 3 (id 9) in t1\n");
 }
 
+#[test]
+fn open_host_session_prints_id_and_workdir() {
+    let v = json!({"session": 12, "workdir": "/dir", "state": "open"});
+    let (out, _) = render(&Response::ok("open-host-session", Some(v)), false);
+    assert_eq!(out, "host Session 12 working in /dir\n");
+}
+
 /// A task row named `name` in `state`, with an optional Box state.
 fn lifecycle_task(name: &str, state: &str, box_state: Option<&str>) -> serde_json::Value {
     let b = box_state.map(|s| json!({"state": s, "provider": "local"}));
