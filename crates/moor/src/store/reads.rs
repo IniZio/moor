@@ -3,8 +3,9 @@
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::session_state::SessionState;
+use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, BoxName, ProviderId};
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 
 use super::{
     event_from_row, row_with_parts, task_from_row, BoxRow, EventRow, Store, StoreError, TaskRow,
@@ -105,6 +106,26 @@ impl Store {
             .into_iter()
             .filter_map(|t| t.boxed.map(|b| (t.id, b)))
             .collect())
+    }
+
+    /// Newest `steered` event of a Box with no `turn_done` event answering it, as (event id, ts).
+    ///
+    /// # Errors
+    /// Returns [`StoreError`] when the database fails.
+    #[cfg_attr(not(test), expect(dead_code, reason = "no caller outside tests yet"))]
+    pub(crate) fn unanswered_steer(&self, task: BoxId) -> Result<Option<(i64, Ts)>, StoreError> {
+        let row = self
+            .reader()?
+            .query_row(
+                "SELECT s.id, s.ts FROM events s WHERE s.box = ?1 AND s.kind = 'steered' \
+                 AND s.id = (SELECT MAX(id) FROM events WHERE box = ?1 AND kind = 'steered') \
+                 AND NOT EXISTS (SELECT 1 FROM events d WHERE d.box = ?1 AND d.kind = 'turn_done' \
+                 AND json_extract(d.payload, '$.steer') = s.id)",
+                [task.get()],
+                |r| Ok((r.get::<_, i64>(0)?, Ts::from_millis(r.get::<_, i64>(1)?))),
+            )
+            .optional()?;
+        Ok(row)
     }
 
     /// Tasks queued for a box, oldest id first.

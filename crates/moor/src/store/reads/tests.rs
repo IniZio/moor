@@ -165,3 +165,53 @@ fn live_holders_lists_only_the_providers_live_boxes_in_id_order() {
     );
     assert!(holders.iter().all(|t| t.boxed.is_some()));
 }
+
+/// Insert a raw event row and return its id.
+fn event(store: &Store, id: BoxId, kind: &str, payload: &str, ts: i64) -> i64 {
+    let conn = store.writer().unwrap();
+    conn.execute(
+        "INSERT INTO events (box, kind, payload, ts) VALUES (?1, ?2, ?3, ?4)",
+        rusqlite::params![id.get(), kind, payload, ts],
+    )
+    .unwrap();
+    conn.last_insert_rowid()
+}
+
+#[test]
+fn unanswered_steer_is_the_newest_steer_without_turn_done() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(dir.path());
+    let id = add(&store, "a");
+    event(&store, id, "steered", "{}", 10);
+    let newest = event(&store, id, "steered", "{}", 20);
+    assert_eq!(
+        store.unanswered_steer(id).unwrap(),
+        Some((newest, Ts::from_millis(20)))
+    );
+}
+
+#[test]
+fn answered_newest_steer_yields_none_even_with_older_unanswered() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(dir.path());
+    let id = add(&store, "a");
+    event(&store, id, "steered", "{}", 10);
+    let newest = event(&store, id, "steered", "{}", 20);
+    event(
+        &store,
+        id,
+        "turn_done",
+        &format!("{{\"steer\":{newest}}}"),
+        30,
+    );
+    assert_eq!(store.unanswered_steer(id).unwrap(), None);
+}
+
+#[test]
+fn no_steer_yields_none() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(dir.path());
+    let id = add(&store, "a");
+    event(&store, id, "turn_done", "{\"steer\":1}", 30);
+    assert_eq!(store.unanswered_steer(id).unwrap(), None);
+}
