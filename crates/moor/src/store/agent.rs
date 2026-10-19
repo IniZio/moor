@@ -76,6 +76,19 @@ impl Store {
         if load_task(&tx, task)?.is_none() {
             return Err(StoreError::NotFound(task));
         }
+        let current: Option<String> = tx
+            .query_row(
+                "SELECT state FROM sessions WHERE box = ?1 ORDER BY ordinal DESC LIMIT 1",
+                [task.get()],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if current.is_some_and(|state| state == "ended") {
+            return Err(StoreError::Invalid(format!(
+                "Box {} has no live Session to launch into",
+                task.get()
+            )));
+        }
         tx.execute(
             "INSERT INTO launches (box, session_ref, pane, started_at, session) VALUES (?1, ?2, ?3, ?4, \
              (SELECT id FROM sessions WHERE box = ?1 ORDER BY ordinal DESC LIMIT 1))",
