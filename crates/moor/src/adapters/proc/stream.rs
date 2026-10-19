@@ -99,6 +99,9 @@ fn sinks(
     }
 }
 
+/// Longest line the gate buffers; a longer one is cut here and handled as two.
+const LINE_CAP: usize = 8 * 1024;
+
 /// Where a gated stream stands relative to its marker lines.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Phase {
@@ -135,7 +138,7 @@ impl Gate {
         let mut out = Vec::new();
         for &b in chunk {
             self.line.push(b);
-            if b == b'\n' {
+            if b == b'\n' || self.line.len() >= LINE_CAP {
                 self.finish_line(&mut out);
             }
         }
