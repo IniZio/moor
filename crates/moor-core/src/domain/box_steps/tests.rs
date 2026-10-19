@@ -99,3 +99,42 @@ fn initial_rejects_other_inputs() {
     let err = initial(&TaskInput::Admitted).unwrap_err();
     assert_eq!(err, TaskState::initial(&TaskInput::Admitted).unwrap_err());
 }
+
+#[test]
+fn ready_with_ended_primary_is_idle() {
+    assert_eq!(
+        summary(BoxLifecycle::Ready, SessionState::Ended),
+        TaskState::Idle
+    );
+}
+
+#[test]
+fn sleep_with_ended_primary_keeps_it_ended() {
+    for input in [TaskInput::SleepDue, TaskInput::SleepCmd] {
+        let got = step(BoxLifecycle::Ready, SessionState::Ended, &[], &input);
+        assert_eq!(got, Ok((BoxLifecycle::Asleep, SessionState::Ended)));
+    }
+}
+
+#[test]
+fn session_inputs_leave_ended_primary_ended() {
+    for input in [
+        TaskInput::AgentBusy,
+        TaskInput::AgentQuiet,
+        TaskInput::RunStarted,
+    ] {
+        let got = step(BoxLifecycle::Ready, SessionState::Ended, &[], &input);
+        assert_eq!(got, Ok((BoxLifecycle::Ready, SessionState::Ended)));
+    }
+}
+
+#[test]
+fn wake_with_ended_primary_readies_box() {
+    let got = step(
+        BoxLifecycle::Asleep,
+        SessionState::Ended,
+        &[],
+        &TaskInput::Wake,
+    );
+    assert_eq!(got, Ok((BoxLifecycle::Ready, SessionState::Ended)));
+}
