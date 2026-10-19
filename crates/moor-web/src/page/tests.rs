@@ -170,3 +170,18 @@ fn script_creates_controls_only_through_the_helper() {
         }
     }
 }
+
+#[test]
+fn script_shows_artifacts_per_box_and_reloads_on_publish() {
+    assert!(APP_JS.contains("'Artifacts'"), "panel label");
+    assert!(APP_JS.contains("No artifacts yet."), "empty text");
+    assert!(APP_JS.contains("'artifact_published'"), "SSE kind");
+    assert!(
+        APP_JS.contains("'/boxes/' + encodeURIComponent(box) + '/artifacts'"),
+        "list url"
+    );
+    assert!(
+        APP_JS.contains("encodeURIComponent(f.name)"),
+        "download url name"
+    );
+}
