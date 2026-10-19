@@ -82,22 +82,17 @@ fn zero_proof_cap_names_key() {
 }
 
 #[test]
-fn web_section_parses_and_defaults_to_none() {
-    let c = parse_controller("c.yaml", "web: {port: 8765, token_file: /x/token}\n")
-        .unwrap_or_else(|e| panic!("{e}"));
-    let web = c.web.unwrap_or_else(|| panic!("web missing"));
-    assert_eq!(web.port, 8765);
-    assert_eq!(web.token_file, std::path::PathBuf::from("/x/token"));
-    let c = parse_controller("c.yaml", "socket: /a\n").unwrap_or_else(|e| panic!("{e}"));
-    assert_eq!(c.web, None);
-}
-
-#[test]
-fn web_unknown_key_and_zero_port_are_rejected() {
-    let e = err("web: {port: 1, token_file: /t, bogus: 1}\n");
-    assert!(e.to_string().contains("bogus"), "{e}");
-    let e = err("web: {port: 0, token_file: /t}\n");
-    assert_eq!(e.path, "web.port");
+fn removed_web_key_points_to_moor_web() {
+    for text in [
+        "web: {port: 8765, token_file: x}\n",
+        "web: ~\n",
+        "web:\n",
+        "web: null\n",
+    ] {
+        let e = err(text);
+        assert_eq!(e.path, "web", "{text}");
+        assert!(e.to_string().contains("moor-web"), "{text}: {e}");
+    }
 }
 
 const SLACK: &str = "slack:

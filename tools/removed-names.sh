@@ -6,7 +6,7 @@ cd_repo_root
 names=(
   proxy_gate MOOR_PROXY_UPSTREAM MOOR_GH_API MOOR_GH_REPO MOOR_PUSH_URL
   PROXY_SERVED gh_shim model_route ModelRoute ANTHROPIC_BASE_URL insteadOf
-  RouteRow RouteTable
+  RouteRow RouteTable WebConfig web_feed start_web
 )
 args=()
 for n in "${names[@]}"; do args+=(-e "$n"); done

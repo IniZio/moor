@@ -1,10 +1,15 @@
-//! Tests for the web token file.
+//! Tests for secret file reading.
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt as _;
 use std::path::Path;
 
-use super::read_token;
+use super::read_secret;
+
+/// Reads `path` as a token file.
+fn read_token(path: &Path) -> Result<String, String> {
+    read_secret(path, "token file")
+}
 
 /// Writes `body` to `dir/token` with `mode`.
 fn token_file(dir: &Path, body: &str, mode: u32) -> std::path::PathBuf {

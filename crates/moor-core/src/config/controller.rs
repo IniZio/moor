@@ -22,12 +22,30 @@ pub struct ControllerConfig {
     /// Largest proof file, in bytes, the controller copies to its state dir; must be above 0.
     /// None means 104857600 (100 MB).
     pub proof_max_bytes: Option<u64>,
-    /// Loopback-only web UI; None means it is not served.
-    pub web: Option<WebConfig>,
+    /// Removed key, kept only so a stale config gets a pointed error.
+    /// Double option so a present-but-null `web:` still counts as present.
+    #[serde(default, deserialize_with = "present_key")]
+    #[allow(
+        clippy::option_option,
+        reason = "outer Some means the key was present, even when null"
+    )]
+    web: Option<Option<serde_json::Value>>,
     /// Slack Socket Mode app; None means it is not started.
     pub slack: Option<SlackConfig>,
     /// Repos the controller may clone on its own host, keyed by name.
     pub repos: RepoTable,
+}
+
+/// Wraps whatever follows the key in `Some`, so a null value stays distinguishable from a missing key.
+#[allow(
+    clippy::option_option,
+    reason = "outer Some means the key was present, even when null"
+)]
+fn present_key<'de, D>(d: D) -> Result<Option<Option<serde_json::Value>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::<serde_json::Value>::deserialize(d).map(Some)
 }
 
 /// A repo the controller can clone and start Tasks in.
@@ -141,16 +159,6 @@ fn validate_repos(file: &str, repos: &RepoTable) -> Result<(), ConfigError> {
     Ok(())
 }
 
-/// The optional web UI section of the controller config.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct WebConfig {
-    /// TCP port on the loopback interface; must be above 0.
-    pub port: u16,
-    /// File holding the bearer token; must not be empty.
-    pub token_file: PathBuf,
-}
-
 /// Slack Socket Mode app settings.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -249,13 +257,12 @@ pub fn parse_controller(file: &str, text: &str) -> Result<ControllerConfig, Conf
     if cfg.proof_max_bytes == Some(0) {
         return Err(ConfigError::new("proof_max_bytes", "must be above 0").in_file(file));
     }
-    if let Some(web) = &cfg.web {
-        if web.port == 0 {
-            return Err(ConfigError::new("web.port", "must be above 0").in_file(file));
-        }
-        if web.token_file.as_os_str().is_empty() {
-            return Err(ConfigError::new("web.token_file", "must not be empty").in_file(file));
-        }
+    if cfg.web.is_some() {
+        return Err(ConfigError::new(
+            "web",
+            "was removed from the controller config; run the separate moor-web daemon for the web UI",
+        )
+        .in_file(file));
     }
     if let Some(slack) = &cfg.slack {
         validate_slack(file, slack)?;

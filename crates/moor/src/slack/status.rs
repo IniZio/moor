@@ -2,7 +2,6 @@
 
 use std::collections::HashMap;
 use std::fmt::Write;
-use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -112,9 +111,8 @@ pub(super) fn escape(s: &str) -> String {
         .replace('>', "&gt;")
 }
 
-/// The message text for `task`; names the loopback web UI when `web` is known
-/// and links the Task branch's open pull request when `pr` is known.
-pub(super) fn render(task: &str, view: &View, web: Option<SocketAddr>, pr: Option<&str>) -> String {
+/// The message text for `task`; links the Task branch's open pull request when `pr` is known.
+pub(super) fn render(task: &str, view: &View, pr: Option<&str>) -> String {
     let state = match &view.state {
         State::Starting => "starting".to_owned(),
         State::Working => "working".to_owned(),
@@ -144,13 +142,6 @@ pub(super) fn render(task: &str, view: &View, web: Option<SocketAddr>, pr: Optio
     }
     if let Some(url) = pr {
         let _ = write!(text, "\n<{}|Pull request>", escape(url).replace('|', "%7C"));
-    }
-    if let Some(addr) = web {
-        let _ = write!(
-            text,
-            "\nWeb UI: http://{addr}/ (loopback on the moor host; reach it with `ssh -L {port}:{addr} <host>`)",
-            port = addr.port()
-        );
     }
     text
 }
@@ -191,7 +182,6 @@ impl Planner {
         &self,
         threads: &[SlackThread],
         views: &HashMap<String, View>,
-        web: Option<SocketAddr>,
         prs: &HashMap<String, String>,
         now: Instant,
     ) -> Vec<Step> {
@@ -202,7 +192,6 @@ impl Planner {
             let text = render(
                 t.task.as_str(),
                 &view,
-                web,
                 prs.get(t.task.as_str()).map(String::as_str),
             );
             let sent = self.sent.get(&key);
@@ -239,7 +228,6 @@ pub(crate) fn follow(
     env: &Env,
     api: &Api,
     bot: &Secret,
-    web: Option<SocketAddr>,
     pr_of: &PrOf,
     log: &(dyn Fn(&str) + Send + Sync),
 ) {
@@ -288,7 +276,7 @@ pub(crate) fn follow(
         match store.slack_threads() {
             Ok(threads) => {
                 prs.refresh(&threads, &views, pr_of, clock.instant());
-                for step in planner.plan(&threads, &views, web, prs.urls(), clock.instant()) {
+                for step in planner.plan(&threads, &views, prs.urls(), clock.instant()) {
                     let ok = send(&store, api, bot, &step, log);
                     planner.record(&step, clock.instant(), ok);
                 }
