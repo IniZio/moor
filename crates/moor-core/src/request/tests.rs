@@ -336,3 +336,15 @@ fn connect_parses_and_roundtrips() {
     let back: Request = serde_json::from_value(serde_json::to_value(&r).unwrap()).unwrap();
     assert_eq!(back, r);
 }
+
+#[test]
+fn end_session_round_trips() {
+    let req: Request =
+        serde_json::from_value(json!({"cmd": "end-session", "task": "x"})).expect("parse");
+    assert_eq!(req, Request::EndSession(EndSessionReq { task: "x".into() }));
+    assert_eq!(req.cmd(), "end-session");
+    assert_eq!(
+        serde_json::to_value(&req).expect("serialize"),
+        json!({"cmd": "end-session", "task": "x"})
+    );
+}
