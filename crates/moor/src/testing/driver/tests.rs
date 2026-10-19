@@ -389,3 +389,24 @@ fn batch_stops_after_a_failed_run() {
     assert_eq!(done.len(), 1);
     assert_eq!(fake.execs().len(), 1);
 }
+
+#[test]
+fn artifact_index_text_goes_only_to_the_artifacts_exec() {
+    let (fake, h) = fake_with_box();
+    let fake = fake.exec_stdout(["plain"]).artifact_index(["listing"]);
+    let dir = tempfile::tempdir().unwrap();
+    let run = |script: &str, name: &str| {
+        let log = dir.path().join(name);
+        let mut s = spec(&["sh", "-c", script]);
+        s.output = Some(Output::Log(log.clone()));
+        fake.exec(&h, &s, DL).unwrap();
+        std::fs::read_to_string(log).unwrap_or_default()
+    };
+    assert_eq!(run("ls .moor/artifacts", "a1"), "listing");
+    assert_eq!(run("echo hi", "o1"), "plain");
+    assert_eq!(run("ls .moor/artifacts", "a2"), "");
+    fake.push_artifact_index("later");
+    assert_eq!(run("echo hi", "o2"), "");
+    assert_eq!(run("ls .moor/artifacts", "a3"), "later");
+    assert_eq!(run("echo hi", "o3"), "");
+}

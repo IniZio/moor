@@ -130,7 +130,7 @@ fn run(f: &Fx) -> usize {
 #[test]
 fn fresh_file_is_stored_with_an_event() {
     let f = fx();
-    f.driver.push_exec_stdout(line("a.md", b"hello"));
+    f.driver.push_artifact_index(line("a.md", b"hello"));
     f.driver.set_copy_text("hello");
     assert_eq!(run(&f), 1);
     assert!(codes(&f).is_empty());
@@ -155,9 +155,9 @@ fn fresh_file_is_stored_with_an_event() {
 fn unchanged_file_is_not_copied_again() {
     let f = fx();
     f.driver.set_copy_text("hello");
-    f.driver.push_exec_stdout(line("a.md", b"hello"));
+    f.driver.push_artifact_index(line("a.md", b"hello"));
     assert_eq!(run(&f), 1);
-    f.driver.push_exec_stdout(line("a.md", b"hello"));
+    f.driver.push_artifact_index(line("a.md", b"hello"));
     assert_eq!(run(&f), 0);
     assert_eq!(f.driver.copies().len(), 1);
     assert_eq!(versions(&f).len(), 1);
@@ -167,10 +167,10 @@ fn unchanged_file_is_not_copied_again() {
 fn changed_file_becomes_the_next_version() {
     let f = fx();
     f.driver.set_copy_text("one");
-    f.driver.push_exec_stdout(line("a.md", b"one"));
+    f.driver.push_artifact_index(line("a.md", b"one"));
     assert_eq!(run(&f), 1);
     f.driver.set_copy_text("two!");
-    f.driver.push_exec_stdout(line("a.md", b"two!"));
+    f.driver.push_artifact_index(line("a.md", b"two!"));
     assert_eq!(run(&f), 1);
     assert_eq!(versions(&f), vec![("a.md".into(), 1), ("a.md".into(), 2)]);
 }
@@ -179,7 +179,7 @@ fn changed_file_becomes_the_next_version() {
 fn mismatched_copy_stores_nothing_then_good_bytes_are_stored() {
     let f = fx();
     f.driver.set_copy_text("other");
-    f.driver.push_exec_stdout(line("a.md", b"hello"));
+    f.driver.push_artifact_index(line("a.md", b"hello"));
     assert_eq!(run(&f), 0);
     let w = warnings(&f);
     assert_eq!(w.len(), 1);
@@ -188,7 +188,7 @@ fn mismatched_copy_stores_nothing_then_good_bytes_are_stored() {
     assert!(!w[0].message.contains("other"));
     assert!(versions(&f).is_empty());
     f.driver.set_copy_text("hello");
-    f.driver.push_exec_stdout(line("a.md", b"hello"));
+    f.driver.push_artifact_index(line("a.md", b"hello"));
     assert_eq!(run(&f), 1);
     assert_eq!(versions(&f), vec![("a.md".to_owned(), 1)]);
 }
@@ -198,7 +198,7 @@ fn size_mismatch_is_refused() {
     let f = fx();
     f.driver.set_copy_text("hello");
     f.driver
-        .push_exec_stdout(format!("a.md\t4\t{}\n", sha(b"hello")));
+        .push_artifact_index(format!("a.md\t4\t{}\n", sha(b"hello")));
     assert_eq!(run(&f), 0);
     assert_eq!(codes(&f), vec!["artifact_skipped"]);
 }
@@ -209,12 +209,12 @@ fn copy_failure_warns_and_a_later_collect_stores() {
         summary: "boom".into(),
     }));
     f.driver.set_copy_text("hello");
-    f.driver.push_exec_stdout(line("a.md", b"hello"));
+    f.driver.push_artifact_index(line("a.md", b"hello"));
     assert_eq!(run(&f), 0);
     let w = warnings(&f);
     assert_eq!(w[0].code, "artifact_skipped");
     assert!(w[0].message.contains("a.md") && w[0].message.contains("boom"));
-    f.driver.push_exec_stdout(line("a.md", b"hello"));
+    f.driver.push_artifact_index(line("a.md", b"hello"));
     assert_eq!(run(&f), 1);
 }
 
@@ -224,7 +224,7 @@ fn symlink_copy_is_refused_and_nothing_escapes_staging() {
     let secret = outside.path().join("secret.txt");
     fs::write(&secret, "keep").unwrap();
     let f = fx_with(FakeDriver::new().copy_symlink(&secret));
-    f.driver.push_exec_stdout(line("a.md", b"keep"));
+    f.driver.push_artifact_index(line("a.md", b"keep"));
     assert_eq!(run(&f), 0);
     assert_eq!(codes(&f), vec!["artifact_skipped"]);
     assert!(versions(&f).is_empty());
@@ -249,7 +249,7 @@ fn invalid_names_and_bad_lines_are_skipped() {
     let mut out = line("a.md", b"hello");
     out.push_str(&line("../x", b"hello"));
     out.push_str("garbage\n");
-    f.driver.push_exec_stdout(out);
+    f.driver.push_artifact_index(out);
     assert_eq!(run(&f), 1);
     assert_eq!(codes(&f), vec!["artifact_skipped"]);
     assert_eq!(f.driver.copies().len(), 1);

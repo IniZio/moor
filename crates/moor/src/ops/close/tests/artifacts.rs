@@ -28,7 +28,9 @@ fn published(f: &Fx) -> usize {
 
 #[test]
 fn a_ready_box_has_its_artifacts_collected_on_close() {
-    let f = fx(FakeDriver::new().exec_stdout([listing()]).copy_text(BODY));
+    let f = fx(FakeDriver::new()
+        .artifact_index([listing()])
+        .copy_text(BODY));
     let v = run(&f.cx, &req(false)).unwrap();
     assert_eq!(v.task.state, TaskState::Closed);
     assert_eq!(published(&f), 1);
@@ -39,7 +41,9 @@ fn a_ready_box_has_its_artifacts_collected_on_close() {
 
 #[test]
 fn force_close_collects_artifacts_too() {
-    let f = fx(FakeDriver::new().exec_stdout([listing()]).copy_text(BODY));
+    let f = fx(FakeDriver::new()
+        .artifact_index([listing()])
+        .copy_text(BODY));
     run(&f.cx, &req(true)).unwrap();
     assert_eq!(published(&f), 1);
 }
@@ -47,7 +51,9 @@ fn force_close_collects_artifacts_too() {
 #[test]
 fn collection_runs_before_teardown_and_release() {
     let f = fx(with_home(
-        FakeDriver::new().exec_stdout([listing()]).copy_text(BODY),
+        FakeDriver::new()
+            .artifact_index([listing()])
+            .copy_text(BODY),
     ));
     std::fs::write(f.dir.path().join(".moor.yaml"), YAML).unwrap();
     base_has(&f, YAML);

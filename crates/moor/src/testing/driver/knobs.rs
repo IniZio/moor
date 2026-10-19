@@ -6,18 +6,23 @@ use moor_core::seam::proc::Output;
 use super::{FakeDriver, State};
 
 impl State {
-    /// The text an `exec` writes to its log: the next scripted stdout, or nothing for an
-    /// artifact index with none scripted.
+    /// The text an `exec` writes to its log. An artifact index exec takes the next artifact
+    /// index text, or writes an empty file; any other exec takes the next scripted stdout.
     pub(super) fn log_text(&mut self, spec: &ExecSpec) -> Option<String> {
-        let empty = spec.argv.iter().any(|a| a.contains(".moor/artifacts"));
-        matches!(spec.output, Some(Output::Log(_)))
-            .then(|| {
-                self.exec_stdout
-                    .pop_front()
-                    .or_else(|| empty.then(String::new))
-            })
-            .flatten()
+        if !matches!(spec.output, Some(Output::Log(_))) {
+            return None;
+        }
+        if is_artifact_index(spec) {
+            return Some(self.artifact_index.pop_front().unwrap_or_default());
+        }
+        self.exec_stdout.pop_front()
     }
+}
+
+/// Whether the `sh -c` script of `spec` reads the Box's `.moor/artifacts` directory.
+fn is_artifact_index(spec: &ExecSpec) -> bool {
+    matches!(spec.argv.as_slice(), [sh, c, script, ..]
+        if sh == "sh" && c == "-c" && script.contains(".moor/artifacts"))
 }
 
 impl FakeDriver {
@@ -74,8 +79,26 @@ impl FakeDriver {
         s.copy_symlink = None;
     }
 
-    /// Queues more text for later `exec` calls to write to their `Output::Log` file.
-    pub(crate) fn push_exec_stdout(&self, out: impl Into<String>) {
-        self.st().exec_stdout.push_back(out.into());
+    /// Queues text that later non-artifact `exec` calls write to their `Output::Log` file,
+    /// served in order.
+    pub(crate) fn exec_stdout(self, out: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.st()
+            .exec_stdout
+            .extend(out.into_iter().map(Into::into));
+        self
+    }
+
+    /// Queues the listings the artifact index exec writes, served in order. Only an exec whose
+    /// `sh -c` script reads `.moor/artifacts` consumes them; it writes an empty file once none remain.
+    pub(crate) fn artifact_index(self, out: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        self.st()
+            .artifact_index
+            .extend(out.into_iter().map(Into::into));
+        self
+    }
+
+    /// Queues one more artifact index listing, without consuming the driver.
+    pub(crate) fn push_artifact_index(&self, text: impl Into<String>) {
+        self.st().artifact_index.push_back(text.into());
     }
 }

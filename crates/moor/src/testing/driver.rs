@@ -37,6 +37,7 @@ struct State {
     copy_symlink: Option<PathBuf>,
     exec_results: VecDeque<Result<ExecOutcome, DriverError>>,
     exec_stdout: VecDeque<String>,
+    artifact_index: VecDeque<String>,
     execs: Vec<(BoxHandle, ExecSpec, Deadline)>,
     sweeps: Vec<(BoxHandle, ExecSpec, Deadline)>,
     fail_sweep: Option<DriverError>,
@@ -101,14 +102,6 @@ impl FakeDriver {
         rs: impl IntoIterator<Item = Result<ExecOutcome, DriverError>>,
     ) -> Self {
         self.st().exec_results.extend(rs);
-        self
-    }
-
-    /// Queues text that later `exec` calls write to their `Output::Log` file, served in order.
-    pub(crate) fn exec_stdout(self, out: impl IntoIterator<Item = impl Into<String>>) -> Self {
-        self.st()
-            .exec_stdout
-            .extend(out.into_iter().map(Into::into));
         self
     }
 
