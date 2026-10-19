@@ -6,9 +6,9 @@ use std::time::Duration;
 
 use moor_core::activity::AgentState;
 use moor_core::decide::transcript::Trigger;
+use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, ExtraEvent};
-use moor_core::domain::task::TaskState;
 use moor_core::seam::engine::{EngineError, SessionRef, Steer, SteerOutcome};
 use moor_core::seam::proc::Deadline;
 use moor_core::view::steer::SteerValue;
@@ -112,7 +112,7 @@ fn exited(
 
 /// Whether the Task or its Box is asleep.
 fn asleep(row: &TaskRow) -> bool {
-    row.state == TaskState::Asleep
+    row.lifecycle == BoxLifecycle::Asleep
         || row
             .boxed
             .as_ref()

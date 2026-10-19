@@ -1,10 +1,10 @@
 //! The only writer of task/box state and events: `Store::apply` plus run records.
 
+use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, IntentChange, TaskTarget};
 use moor_core::domain::event::{box_events, lifecycle_events, session_events, Event};
 use moor_core::domain::session_state::SessionState;
-use moor_core::domain::task::TaskState;
 use moor_core::seam::clock::Ts;
 use moor_core::BoxId;
 use rusqlite::types::Value;
@@ -27,8 +27,10 @@ use moor_core::ProviderId;
 pub(crate) struct Applied {
     /// The task written.
     pub(crate) task: BoxId,
-    /// Task state after the apply.
-    pub(crate) task_state: TaskState,
+    /// Box lifecycle after the apply.
+    pub(crate) lifecycle: BoxLifecycle,
+    /// Primary Session state after the apply.
+    pub(crate) session: SessionState,
     /// Box state after the apply, if the task has a box.
     pub(crate) box_state: Option<BoxState>,
     /// Ids of the events inserted, in order.
@@ -82,10 +84,13 @@ fn apply_in(tx: &Transaction<'_>, now: Ts, d: Decision) -> Result<Applied, Store
     let steps::Stepped {
         id,
         existing,
-        summary: task_step,
         parts,
-        from_lifecycle,
+        from,
     } = step_task(tx, now, &d)?;
+    let quiet = Step {
+        from: from.map(is_quiet),
+        to: is_quiet(parts),
+    };
     if let (TaskTarget::New(_), Field::Set(branch)) = (&d.task, &d.set.branch) {
         tx.execute(
             "INSERT INTO box_refs (box, kind, value) VALUES (?1, 'branch', ?2) ON CONFLICT DO NOTHING",
@@ -93,11 +98,11 @@ fn apply_in(tx: &Transaction<'_>, now: Ts, d: Decision) -> Result<Applied, Store
         )?;
     }
     let box_step = step_box(tx, now, id, existing.as_ref(), &d)?;
-    write_task(tx, id, now, &d, &task_step, parts)?;
-    write_box(tx, id, now, &d, box_step.as_ref(), &task_step)?;
+    write_task(tx, id, now, &d, &quiet, parts)?;
+    write_box(tx, id, now, &d, box_step.as_ref(), &quiet)?;
     let mut ids = Vec::new();
     let stepped = match (&d.lifecycle_input, &d.session_input) {
-        (Some(l), _) => lifecycle_events(from_lifecycle, parts.0, l),
+        (Some(l), _) => lifecycle_events(from.map(|p| p.0), parts.0, l),
         (None, Some(s)) => session_events(s),
         (None, None) => Vec::new(),
     };
@@ -121,7 +126,8 @@ fn apply_in(tx: &Transaction<'_>, now: Ts, d: Decision) -> Result<Applied, Store
     }
     Ok(Applied {
         task: id,
-        task_state: task_step.to,
+        lifecycle: parts.0,
+        session: parts.1,
         box_state: box_step.map(|s| s.to),
         events: ids,
     })
@@ -165,7 +171,7 @@ fn write_task(
     id: BoxId,
     now: Ts,
     d: &Decision,
-    step: &Step<TaskState>,
+    step: &Step<bool>,
     (lifecycle, session_state): Parts,
 ) -> Result<(), StoreError> {
     let mut sets = task_field_sets(&d.set);
@@ -189,7 +195,7 @@ fn write_task(
         &[id.get(), id.get()],
         &session,
     )?;
-    if stepped && !step.to.is_live() {
+    if stepped && !lifecycle.is_live() {
         tx.execute(
             "UPDATE sessions SET state = 'ended', ended_at = ? WHERE box = ? AND state != 'ended'",
             params![now.as_millis(), id.get()],
@@ -198,32 +204,35 @@ fn write_task(
     Ok(())
 }
 
-/// `idle_since` follows the state: stamped on entering Idle, cleared on leaving it.
-fn idle_since_sets(step: &Step<TaskState>, now: Ts) -> Sets {
+/// A Ready Box whose primary Session is idle or ended.
+fn is_quiet((lifecycle, session): Parts) -> bool {
+    lifecycle == BoxLifecycle::Ready && session.is_quiet()
+}
+
+/// `idle_since` follows quietness: stamped on becoming quiet, cleared on leaving it.
+fn idle_since_sets(step: &Step<bool>, now: Ts) -> Sets {
     match (step.from, step.to) {
-        (from, TaskState::Idle) if from != Some(TaskState::Idle) => {
+        (from, true) if from != Some(true) => {
             vec![("idle_since", Value::Integer(now.as_millis()))]
         }
-        (Some(TaskState::Idle), to) if to != TaskState::Idle => {
-            vec![("idle_since", Value::Null)]
-        }
+        (Some(true), false) => vec![("idle_since", Value::Null)],
         _ => Vec::new(),
     }
 }
 
 /// Write box state, fields and handles; box fields without a box are invalid.
 ///
-/// A task step out of Idle drops the recorded sleep refusal, so the next Idle stretch asks again.
+/// A step out of quiet drops the recorded sleep refusal, so the next Idle stretch asks again.
 fn write_box(
     tx: &Transaction<'_>,
     id: BoxId,
     now: Ts,
     d: &Decision,
     step: Option<&Step<BoxState>>,
-    task: &Step<TaskState>,
+    quiet: &Step<bool>,
 ) -> Result<(), StoreError> {
     let mut sets = box_field_sets(&d.set);
-    if task.from == Some(TaskState::Idle) && task.to != TaskState::Idle {
+    if quiet.from == Some(true) && !quiet.to {
         if let Some(i) = sets.iter().position(|(c, _)| *c == "sleep_reason") {
             sets.remove(i);
         }

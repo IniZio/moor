@@ -3,8 +3,8 @@
 use moor_core::activity::PaneStatus;
 use moor_core::config::{Flags, TaskSettings};
 use moor_core::decide::transcript::Trigger;
+use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
-use moor_core::domain::task::TaskState;
 use moor_core::seam::engine::LaunchPrompt;
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::proxy_host::ProxyStatus;
@@ -67,7 +67,7 @@ pub(super) fn run(
     settings: &dyn Fn() -> Result<TaskSettings, CommandError>,
 ) -> Result<AgentLaunchView, CommandError> {
     let row = reread(store, id)?;
-    if req.no_agent || row.state != TaskState::Working {
+    if req.no_agent || !launch::working(&row) {
         return launch::run(cx, store, req, id, setup_exit, settings);
     }
     match store.live_session(id)? {
@@ -112,7 +112,7 @@ pub(super) fn will_launch(
     if req.no_agent {
         return Ok(false);
     }
-    if !matches!(row.state, TaskState::Working | TaskState::Idle) {
+    if row.lifecycle != BoxLifecycle::Ready {
         return Ok(true);
     }
     Ok(store.live_session(row.id)?.map_or_else(
@@ -273,11 +273,11 @@ fn relaunch(
 /// A store failure, or settings that cannot be resolved.
 pub(crate) fn revive_after_wake(cx: &Cx, store: &Store, id: BoxId) -> Result<(), CommandError> {
     let row = reread(store, id)?;
-    if !matches!(row.state, TaskState::Working | TaskState::Idle) {
+    if row.lifecycle != BoxLifecycle::Ready {
         return Ok(());
     }
     let ended_pane = match store.live_session(id)? {
-        Some(s) if row.state == TaskState::Working => match ended(cx, &s) {
+        Some(s) if launch::working(&row) => match ended(cx, &s) {
             Some(end) => Some((s, end)),
             None => return Ok(()),
         },

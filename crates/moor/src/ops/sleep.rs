@@ -4,10 +4,10 @@
 
 use std::collections::HashMap;
 
-use moor_core::domain::box_state::BoxLifecycleInput;
+use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
+use moor_core::domain::box_steps::summary;
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields};
-use moor_core::domain::task::TaskState;
 use moor_core::seam::driver::SleepOutcome;
 use moor_core::view::sleep::SleepValue;
 use moor_core::{ErrorKind, TaskReq};
@@ -38,7 +38,7 @@ pub(crate) fn run(cx: &Cx, req: &TaskReq) -> Result<SleepValue, CommandError> {
         })
     };
     let row = reload()?;
-    if row.state != TaskState::Asleep {
+    if row.lifecycle != BoxLifecycle::Asleep {
         sleep_box(cx, &row)?;
     }
     let mut boxed = task_view(&reload()?, cx.config()).r#box;
@@ -53,8 +53,11 @@ pub(crate) fn run(cx: &Cx, req: &TaskReq) -> Result<SleepValue, CommandError> {
 /// Ask the Driver to sleep the Box and record the outcome.
 fn sleep_box(cx: &Cx, row: &TaskRow) -> Result<(), CommandError> {
     let store = cx.store()?;
-    if !matches!(row.state, TaskState::Idle | TaskState::Working) {
-        return Err(refuse(format!("the task is {}", row.state.as_str())));
+    if row.lifecycle != BoxLifecycle::Ready {
+        return Err(refuse(format!(
+            "the task is {}",
+            summary(row.lifecycle, row.session).as_str()
+        )));
     }
     let handle = sleep_handle(cx, row)?;
     match sleep_parked(cx, store, row.id, &handle, task_dir(row))? {

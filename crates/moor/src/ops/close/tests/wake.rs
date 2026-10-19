@@ -2,12 +2,11 @@
 
 use std::time::Duration;
 
-use moor_core::domain::task::TaskState;
-
 use super::boxwork::{fx_woken, put_to_sleep};
 use super::{req, row, run, Fx};
 use crate::store::{ProxyPorts, ReadyProc, TunnelAck};
 use crate::testing::rng::FakeRng;
+use moor_core::domain::box_state::BoxLifecycle;
 
 /// Give the Task a live Proxy: a ready row held by a fresh lease.
 fn live_proxy(f: &Fx) {
@@ -45,8 +44,8 @@ fn a_broken_tunnel_does_not_block_closing_an_asleep_box() {
     };
     store.ack_tunnel(f.id, &failed).unwrap();
     let v = run(&f.cx, &req(false)).unwrap();
-    assert_eq!(v.task.state, TaskState::Closed);
-    assert_eq!(row(&f).state, TaskState::Closed);
+    assert_eq!(v.task.state.as_str(), "closed");
+    assert_eq!(row(&f).lifecycle, BoxLifecycle::Closed);
     assert!(f.driver.calls().iter().any(|c| c.starts_with("wake")));
     assert!(store.tunnel_request(f.id).unwrap().is_none());
 }

@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use moor_core::config::Flags;
-use moor_core::domain::task::TaskState;
+use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::view::{AgentLaunchView, DotfilesView, SetupView, StartView};
 
 use crate::cx::Cx;
@@ -28,7 +28,7 @@ pub(super) fn with_provider(
     row: &TaskRow,
     attached: bool,
 ) -> Result<StartView, CommandError> {
-    if row.state != TaskState::WaitingForBox {
+    if row.lifecycle != BoxLifecycle::WaitingForBox {
         return Ok(view(cx, row, attached));
     }
     let at = row.worktree.as_deref().unwrap_or(&row.repo);
@@ -57,7 +57,7 @@ pub(super) fn view(cx: &Cx, row: &TaskRow, attached: bool) -> StartView {
     StartView {
         task,
         attached,
-        queued: row.state == TaskState::WaitingForBox,
+        queued: row.lifecycle == BoxLifecycle::WaitingForBox,
         promoted: Vec::new(),
         setup: SetupView::default(),
         dotfiles: DotfilesView::default(),

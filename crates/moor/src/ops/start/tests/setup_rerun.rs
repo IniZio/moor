@@ -4,7 +4,6 @@ use std::path::Path;
 
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Intent, IntentChange};
-use moor_core::domain::task::TaskState;
 use moor_core::{BoxHandle, BoxId};
 
 use super::moor_yaml::script_base_yaml;
@@ -13,9 +12,11 @@ use super::setup::{
     argvs, execs, exit, failed_at_set, failed_setup_with, kinds, script_argv, scripted,
     setup_execs, start_req, start_with, warning_codes, Step,
 };
+use super::state::working;
 use super::{world_at, World};
 use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
+use moor_core::domain::box_state::BoxLifecycle;
 
 /// Starts `demo` with a failing first setup, then points its worktree at `yaml`.
 fn failed_setup_then(yaml: &str, results: [Step; 4]) -> (World, BoxId) {
@@ -178,7 +179,7 @@ fn start_on_a_setting_up_task_with_a_live_setup_owner_records_no_session() {
     assert!(crashed.is_err());
     w.driver.on_exec(|| {});
     let again = run(&w.cx, &start_req()).unwrap();
-    assert_eq!(again.task.state, TaskState::SettingUp);
+    assert_eq!(again.task.state.as_str(), "setting_up");
     let id = BoxId::new(again.task.id);
     let store = w.cx.store().unwrap();
     assert!(store.live_session(id).unwrap().is_none());
@@ -198,7 +199,7 @@ fn start_does_not_re_run_setup_for_a_setting_up_task_whose_setup_owner_died() {
     assert!(crashed.is_err());
     let id = BoxId::new(1);
     let row = w.cx.store().unwrap().task(id).unwrap().unwrap();
-    assert_eq!(row.state, TaskState::SettingUp);
+    assert_eq!(row.lifecycle, BoxLifecycle::SettingUp);
     assert_eq!(row.boxed.map(|b| b.state), Some(BoxState::Ready));
     assert_eq!(
         row.intent,
@@ -215,5 +216,5 @@ fn start_does_not_re_run_setup_for_a_setting_up_task_whose_setup_owner_died() {
     assert!(failed_at_set(&w, &again));
     let row = w.cx.store().unwrap().task(id).unwrap().unwrap();
     assert_eq!(row.intent, None);
-    assert_eq!(row.state, TaskState::Working);
+    assert!(working(&row));
 }

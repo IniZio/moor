@@ -5,18 +5,19 @@ use std::sync::{Arc, Mutex};
 
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::Intent;
-use moor_core::domain::task::TaskState;
 use moor_core::{ErrorKind, StartReq, TaskId};
 
 use super::moor_yaml::script_base_yaml;
 use super::setup::Step::{Cmd, Sync};
 use super::setup::{exit, kinds, scripted, setup_execs, start_req, Step};
+use super::state::working;
 use super::{hold, world_at, World};
 use crate::adapters::clock::SystemClock;
 use crate::ops::start::run;
 use crate::store::Store;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
+use moor_core::domain::box_state::BoxLifecycle;
 
 const YAML: &str = "setup: [a]\n";
 
@@ -79,7 +80,7 @@ fn a_failed_sync_keeps_the_box_and_says_how_to_debug_retry_and_close_it() {
     assert!(engine.launches().is_empty());
     assert!(!w.driver.calls().iter().any(|c| c.starts_with("release")));
     assert_eq!(box_state(&w), Some(BoxState::Ready));
-    assert_eq!(row(&w).state, TaskState::SetupFailed);
+    assert_eq!(row(&w).lifecycle, BoxLifecycle::SetupFailed);
 }
 
 #[test]
@@ -133,7 +134,7 @@ fn start_after_a_failed_sync_retries_in_the_same_box_and_launches() {
     assert!(setup_execs(&w).iter().all(|e| e.0.as_str() == "box-1"));
     assert_eq!(engine.launches().len(), 1);
     let row = row(&w);
-    assert_eq!(row.state, TaskState::Working);
+    assert!(working(&row));
     assert!(row.intent.is_none());
     assert!(kinds(&w, row.id).contains(&"setup_finished".to_owned()));
 }
@@ -147,7 +148,7 @@ fn a_retry_that_fails_to_sync_again_keeps_the_box_and_stays_setup_failed() {
     assert_eq!(field(&err.value.unwrap(), "failed_step"), "sync");
     assert!(engine.launches().is_empty());
     let row = row(&w);
-    assert_eq!(row.state, TaskState::SetupFailed);
+    assert_eq!(row.lifecycle, BoxLifecycle::SetupFailed);
     assert!(row.intent.is_none() && row.setup_failed_at.is_some());
     assert_eq!(box_state(&w), Some(BoxState::Ready));
     let calls = w.driver.calls();
@@ -186,5 +187,5 @@ fn a_retry_in_the_kept_box_is_refused_while_another_op_holds_the_lock() {
     assert_eq!(err.kind, ErrorKind::Refused);
     assert_eq!(err.error.to_string(), "box busy: close in progress");
     assert_eq!(w.driver.execs().len(), execs);
-    assert_eq!(row(&w).state, TaskState::SetupFailed);
+    assert_eq!(row(&w).lifecycle, BoxLifecycle::SetupFailed);
 }

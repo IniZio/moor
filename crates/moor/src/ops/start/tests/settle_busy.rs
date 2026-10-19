@@ -1,15 +1,16 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use moor_core::domain::task::TaskState;
 use moor_core::request::{WaitEventsReq, WaitMode};
 use moor_core::{BoxId, BoxName, ShowReq, StartReq};
 
+use super::state::{idle, working};
 use super::{req, world, world_at, World};
 use crate::cx::Cx;
 use crate::ops::common::boxlock::BoxLock;
 use crate::ops::start::{run, settle_all};
 use crate::ops::{show, wait_events};
+use crate::store::TaskRow;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 
@@ -25,8 +26,8 @@ fn working_without_session() -> (World, BoxId) {
     (w, id)
 }
 
-fn state(w: &World, id: BoxId) -> TaskState {
-    w.cx.store().unwrap().task(id).unwrap().unwrap().state
+fn row(w: &World, id: BoxId) -> TaskRow {
+    w.cx.store().unwrap().task(id).unwrap().unwrap()
 }
 
 #[test]
@@ -42,10 +43,10 @@ fn settle_leaves_a_task_while_an_op_holds_its_box() {
     )
     .unwrap();
     settle_all(&w.cx, w.cx.store().unwrap()).unwrap();
-    assert_eq!(state(&w, id), TaskState::Working);
+    assert!(working(&row(&w, id)));
     drop(held);
     settle_all(&w.cx, w.cx.store().unwrap()).unwrap();
-    assert_eq!(state(&w, id), TaskState::Idle);
+    assert!(idle(&row(&w, id)));
 }
 
 /// Holds the Box of `id` as a start would, with the Task old enough to be read as quiet.
@@ -74,7 +75,7 @@ fn show_leaves_a_task_while_an_op_holds_its_box() {
         pane: false,
     };
     show::run(&w.cx, &list).unwrap();
-    assert_eq!(state(&w, id), TaskState::Working);
+    assert!(working(&row(&w, id)));
 }
 
 #[test]
@@ -89,7 +90,7 @@ fn wait_events_leaves_a_task_while_an_op_holds_its_box() {
         timeout_secs: Some(0),
     };
     let _ = wait_events::run(&w.cx, &wait);
-    assert_eq!(state(&w, id), TaskState::Working);
+    assert!(working(&row(&w, id)));
 }
 
 /// Happy path only: settles run during setup, before the Task is ready, and the agent launches.
@@ -134,7 +135,7 @@ fn start_idles_a_quiet_box_without_reading_its_artifacts() {
         ..req("other")
     };
     run(&w.cx, &other).unwrap();
-    assert_eq!(state(&w, id), TaskState::Idle);
+    assert!(idle(&row(&w, id)));
     let reads_artifacts = w
         .driver
         .execs()

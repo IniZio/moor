@@ -4,9 +4,10 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
+use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::run::SyncMode;
-use moor_core::domain::task::TaskState;
+use moor_core::domain::session_state::SessionState;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome, ExecSpec};
 use moor_core::seam::proc::Tool;
@@ -96,7 +97,8 @@ fn rows(dir: &Path, handle: BoxHandle) -> (TaskRow, BoxRow) {
         bound: false,
         workspace_id: None,
         agent_session_id: None,
-        state: TaskState::Working,
+        lifecycle: BoxLifecycle::Ready,
+        session: SessionState::Working,
         state_reason: None,
         intent: None,
         intent_at: None,

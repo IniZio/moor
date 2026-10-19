@@ -3,14 +3,12 @@
 use moor_core::controller::ServerFrame;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
-use moor_core::domain::session_state::SessionState;
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, BoxName, ProviderId, SessionId};
 use rusqlite::{Connection, OptionalExtension};
 
 use super::{
-    event_from_row, row_with_parts, task_from_row, BoxRow, EventRow, Store, StoreError, TaskRow,
-    TASK_SELECT,
+    event_from_row, task_from_row, BoxRow, EventRow, Store, StoreError, TaskRow, TASK_SELECT,
 };
 
 /// Run a task query and map every row.
@@ -22,16 +20,6 @@ fn query_tasks(
     let mut stmt = conn.prepare(&format!("{TASK_SELECT} {tail}"))?;
     let rows = stmt.query_and_then(params, task_from_row)?;
     rows.collect()
-}
-
-/// Load one Box row with its lifecycle and the primary Session state its summary came from.
-pub(super) fn load_row_parts(
-    conn: &Connection,
-    id: BoxId,
-) -> Result<Option<(TaskRow, BoxLifecycle, SessionState)>, StoreError> {
-    let mut stmt = conn.prepare(&format!("{TASK_SELECT} WHERE b.id = ?1"))?;
-    let mut rows = stmt.query_and_then([id.get()], row_with_parts)?;
-    rows.next().transpose()
 }
 
 /// Box states that count toward capacity, as SQL parameters.

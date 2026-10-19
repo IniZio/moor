@@ -6,7 +6,6 @@ use moor_core::boxscript::setup::setup_script;
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Intent};
 use moor_core::domain::run::SyncMode;
-use moor_core::domain::task::TaskState;
 use moor_core::exec_env::SETUP_LINE_DEADLINE;
 use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
 use moor_core::seam::proc::{Deadline, Tool};
@@ -21,6 +20,7 @@ use crate::store::Store;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::proc::Reply;
+use moor_core::domain::box_state::BoxLifecycle;
 
 const LINE_DEADLINE: Duration = SETUP_LINE_DEADLINE;
 
@@ -161,7 +161,7 @@ pub(super) fn failed_at_set(w: &World, v: &moor_core::view::StartView) -> bool {
 #[test]
 fn setup_lines_run_in_order_in_the_box_workdir() {
     let (w, v) = start_with("setup: [a, b]\n", FakeDriver::new());
-    assert_eq!(v.task.state, TaskState::Working);
+    assert_eq!(v.task.state.as_str(), "working");
     assert!(v.setup.ran && v.setup.ok);
     assert_eq!(v.setup.line, None);
     let seen: Vec<_> = setup_execs(&w)
@@ -217,7 +217,7 @@ fn a_failing_setup_leaves_a_working_task_and_runs_nothing_more() {
         .exec_results(scripted([Sync(Ok(exit(0))), Cmd(Ok(exit(1)))]))
         .copy_text("moor setup: $ a\nmoor setup: $ b\n");
     let (w, v) = start_with("setup: [a, b, c]\n", driver);
-    assert_eq!(v.task.state, TaskState::Working);
+    assert_eq!(v.task.state.as_str(), "working");
     assert!(v.setup.ran && !v.setup.ok);
     assert_eq!(v.setup.line.as_deref(), Some("b"));
     assert_eq!(setup_execs(&w).len(), 1);
@@ -311,7 +311,7 @@ fn no_setup_lines_means_setup_did_not_run() {
         execs.first().expect("one exec").1.argv,
         ["git", "rev-parse", "--git-dir"]
     );
-    assert_eq!(v.task.state, TaskState::Working);
+    assert_eq!(v.task.state.as_str(), "working");
 }
 
 #[test]
@@ -334,7 +334,7 @@ fn a_timed_out_setup_counts_as_a_failing_line() {
         ]))
         .copy_text("moor setup: $ a\nmoor setup: $ b\n");
     let (w, v) = start_with("setup: [a, b, c]\n", driver);
-    assert_eq!(v.task.state, TaskState::Working);
+    assert_eq!(v.task.state.as_str(), "working");
     assert!(v.setup.ran && !v.setup.ok);
     assert_eq!(v.setup.line.as_deref(), Some("b"));
     assert_eq!(setup_execs(&w).len(), 1);
@@ -361,7 +361,7 @@ fn a_failing_setup_on_a_re_provisioned_working_task_records_the_failing_line() {
         .apply(Decision::new(id).box_input(BoxInput::DriverMissing))
         .unwrap();
     let again = run(&w.cx, &start_req()).unwrap();
-    assert_eq!(again.task.state, TaskState::Working);
+    assert_eq!(again.task.state.as_str(), "working");
     assert_eq!(again.setup.line.as_deref(), Some("a"));
     let events = store.events(id, 50).unwrap();
     let lines: Vec<_> = events
@@ -407,7 +407,7 @@ pub(super) fn failed_setup_with(yaml: &str, driver: FakeDriver) -> (World, BoxId
 #[test]
 fn an_unset_author_runs_setup_without_touching_git_config() {
     let (w, v) = start_with("setup: [a, b]\n", FakeDriver::new());
-    assert_eq!(v.task.state, TaskState::Working);
+    assert_eq!(v.task.state.as_str(), "working");
     assert!(v.setup.ran && v.setup.ok);
     assert_eq!(argvs(&w), [script_argv(&["a", "b"])]);
 }
@@ -416,7 +416,7 @@ fn an_unset_author_runs_setup_without_touching_git_config() {
 fn a_failing_identity_exec_warns_and_setup_still_runs() {
     let driver = FakeDriver::new().exec_results([Ok(exit(1))]);
     let (w, v) = start_as(("Ann Dev", "a@x.io"), "setup: [a]\n", driver);
-    assert_eq!(v.task.state, TaskState::Working);
+    assert_eq!(v.task.state.as_str(), "working");
     assert!(v.setup.ran && v.setup.ok);
     assert_eq!(argvs(&w).last(), Some(&script_argv(&["a"])));
     assert!(warning_codes(&w).contains(&"identity_failed".to_owned()));
@@ -491,7 +491,7 @@ fn a_failed_checkout_sync_aborts_the_start_without_launching_the_agent() {
         assert!(engine.launches().is_empty());
         let id = BoxId::new(1);
         let row = w.cx.store().unwrap().task(id).unwrap().unwrap();
-        assert_eq!(row.state, TaskState::SetupFailed);
+        assert_eq!(row.lifecycle, BoxLifecycle::SetupFailed);
         assert!(row.intent.is_none() && row.setup_failed_at.is_some());
         assert!(kinds(&w, id).contains(&"setup_failed".to_owned()));
         let argvs: Vec<_> = execs(&w).into_iter().map(|e| e.1.argv).collect();

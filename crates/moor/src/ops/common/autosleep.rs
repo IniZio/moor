@@ -40,7 +40,8 @@ pub(crate) fn run(cx: &Cx, store: &Store, id: BoxId) {
 /// Whether `row` has been Idle long enough to sleep.
 fn due(cx: &Cx, row: &TaskRow) -> bool {
     let facts = SleepFacts {
-        state: row.state,
+        lifecycle: row.lifecycle,
+        session: row.session,
         idle_since: row.idle_since,
         now: cx.clock().now(),
         after: cx.config().box_.sleep_after(),

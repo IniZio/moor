@@ -5,9 +5,9 @@
 use std::fs;
 use std::path::Path;
 
+use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, ExtraEvent};
-use moor_core::domain::task::TaskState;
 use moor_core::name::{BoxHandle, BoxPath};
 use moor_core::view::run::CpValue;
 use moor_core::{CpReq, ErrorKind};
@@ -74,7 +74,7 @@ pub(crate) fn run(cx: &Cx, req: &CpReq) -> Result<CpValue, CommandError> {
 /// The handle of the Task's ready Box, or a refusal.
 fn usable_handle(row: &TaskRow) -> Result<BoxHandle, CommandError> {
     let refuse = |why: &str| CommandError::new(ErrorKind::Refused, why.to_owned());
-    if row.state == TaskState::WaitingForBox {
+    if row.lifecycle == BoxLifecycle::WaitingForBox {
         return Err(refuse("the task is waiting for a Box"));
     }
     let b = row

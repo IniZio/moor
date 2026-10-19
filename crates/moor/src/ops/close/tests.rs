@@ -1,11 +1,11 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use moor_core::domain::box_state::BoxLifecycleInput;
+use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::session_state::SessionInput;
-use moor_core::domain::task::{SetupOutcome, TaskState};
+use moor_core::domain::task::SetupOutcome;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
 use moor_core::seam::proc::Tool;
 use moor_core::seam::surface::SurfaceError;
@@ -165,6 +165,10 @@ pub(super) fn row(f: &Fx) -> crate::store::TaskRow {
     f.cx.store().unwrap().task(f.id).unwrap().unwrap()
 }
 
+pub(super) fn is_working(r: &crate::store::TaskRow) -> bool {
+    r.lifecycle == BoxLifecycle::Ready && !r.session.is_quiet()
+}
+
 pub(super) fn box_state(f: &Fx) -> BoxState {
     row(f).boxed.unwrap().state
 }
@@ -173,7 +177,7 @@ pub(super) fn box_state(f: &Fx) -> BoxState {
 fn clean_close_deletes_the_box_and_closes() {
     let f = fx();
     let v = run(&f.cx, &req(false)).unwrap();
-    assert_eq!(v.task.state, TaskState::Closed);
+    assert_eq!(v.task.state.as_str(), "closed");
     assert!(v.box_deleted && v.workspace_closed && !v.worktree_kept);
     assert_eq!(box_state(&f), BoxState::Deleted);
     assert!(f.driver.calls().iter().any(|c| c.starts_with("release")));
@@ -185,10 +189,10 @@ fn unpushed_work_is_refused_without_force() {
     let f = fx_with(FakeDriver::new(), FakeSurface::new("/s"), 2);
     let e = run(&f.cx, &req(false)).unwrap_err();
     assert_eq!(e.kind, ErrorKind::Refused);
-    assert_eq!(row(&f).state, TaskState::Working);
+    assert!(is_working(&row(&f)));
     assert!(!f.driver.calls().iter().any(|c| c.starts_with("release")));
     let v = run(&f.cx, &req(true)).unwrap();
-    assert_eq!(v.task.state, TaskState::Closed);
+    assert_eq!(v.task.state.as_str(), "closed");
 }
 
 #[test]
@@ -216,7 +220,7 @@ fn release_error_on_a_ready_box_keeps_the_task_open() {
         e.error.to_string().contains(RAW),
         "the adapter summary is surfaced"
     );
-    assert_eq!(row(&f).state, TaskState::Working);
+    assert!(is_working(&row(&f)));
     assert_eq!(box_state(&f), BoxState::Ready);
 }
 
@@ -234,7 +238,7 @@ fn release_error_on_a_failed_box_warns_and_closes() {
         .apply(Decision::new(f.id).box_input(BoxInput::ReleaseErr { cause: "x".into() }))
         .unwrap();
     let v = run(&f.cx, &req(false)).unwrap();
-    assert_eq!(v.task.state, TaskState::Closed);
+    assert_eq!(v.task.state.as_str(), "closed");
     assert!(!v.box_deleted);
     assert_eq!(box_state(&f), BoxState::ReleaseFailed);
     let warnings = f.cx.take_warnings();
@@ -250,7 +254,7 @@ fn missing_workspace_is_tolerated() {
         0,
     );
     let v = run(&f.cx, &req(false)).unwrap();
-    assert_eq!(v.task.state, TaskState::Closed);
+    assert_eq!(v.task.state.as_str(), "closed");
     assert!(v.workspace_closed);
     assert!(f.cx.take_warnings().is_empty());
 }

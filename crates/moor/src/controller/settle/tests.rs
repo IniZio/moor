@@ -6,12 +6,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::activity::{HookKind, HookRead, HookRecord, PaneObs, PaneRead, PaneStatus, Probes};
-use moor_core::domain::box_state::BoxLifecycleInput;
+use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::ExtraEvent;
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
-use moor_core::domain::session_state::SessionInput;
-use moor_core::domain::task::{SetupOutcome, TaskState};
+use moor_core::domain::session_state::{SessionInput, SessionState};
+use moor_core::domain::task::SetupOutcome;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver, ExecOutcome};
 use moor_core::{BoxId, BoxName, ProviderId, ShowReq};
@@ -160,7 +160,10 @@ fn pass_settles_a_quiet_agent_without_any_client() {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
     let store = Store::open(&dir.path().join(STORE_FILE), clock).unwrap();
     let row = store.task(id).unwrap().unwrap();
-    assert_eq!(row.state, TaskState::Idle);
+    assert_eq!(
+        (row.lifecycle, row.session),
+        (BoxLifecycle::Ready, SessionState::Idle)
+    );
     let kinds: Vec<String> = store
         .events_after(0, 100)
         .unwrap()
@@ -269,9 +272,10 @@ fn a_held_box_lock_skips_the_collection() {
     };
     show::run(&cx, &list).unwrap();
     let reader = view(dir.path(), &driver);
+    let row = reader.store().unwrap().task(id).unwrap().unwrap();
     assert_eq!(
-        reader.store().unwrap().task(id).unwrap().unwrap().state,
-        TaskState::Idle
+        (row.lifecycle, row.session),
+        (BoxLifecycle::Ready, SessionState::Idle)
     );
     let moor = Moor::from_cx(cx);
     let held = held_lock(&reader, id);
@@ -302,9 +306,10 @@ fn an_idle_written_by_show_is_collected_by_the_next_pass() {
         pane: false,
     };
     show::run(&cx, &list).unwrap();
+    let row = cx.store().unwrap().task(id).unwrap().unwrap();
     assert_eq!(
-        cx.store().unwrap().task(id).unwrap().unwrap().state,
-        TaskState::Idle
+        (row.lifecycle, row.session),
+        (BoxLifecycle::Ready, SessionState::Idle)
     );
     assert_eq!(artifact_execs(&driver), 0);
     let messages = Moor::from_cx(cx).settle_open();
@@ -341,9 +346,10 @@ fn a_steered_turn_on_an_idle_box_ends_and_collects_in_one_pass() {
     let moor = Moor::from_cx(cx);
     let cx = view(dir.path(), &driver);
     assert!(moor.settle_open().is_empty());
+    let row = cx.store().unwrap().task(id).unwrap().unwrap();
     assert_eq!(
-        cx.store().unwrap().task(id).unwrap().unwrap().state,
-        TaskState::Idle
+        (row.lifecycle, row.session),
+        (BoxLifecycle::Ready, SessionState::Idle)
     );
     assert_eq!(stored(&cx, id), 0);
     let steered = ExtraEvent::Steered {
@@ -377,9 +383,10 @@ fn a_failed_index_warns_and_the_box_still_idles() {
         "{messages:?}"
     );
     let cx = view(dir.path(), &driver);
+    let row = cx.store().unwrap().task(id).unwrap().unwrap();
     assert_eq!(
-        cx.store().unwrap().task(id).unwrap().unwrap().state,
-        TaskState::Idle
+        (row.lifecycle, row.session),
+        (BoxLifecycle::Ready, SessionState::Idle)
     );
     assert_eq!(stored(&cx, id), 0);
 }

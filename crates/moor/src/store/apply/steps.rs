@@ -4,35 +4,31 @@ use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput, StepError};
 use moor_core::domain::box_steps;
 use moor_core::domain::decision::{Decision, NewTask, TaskTarget};
 use moor_core::domain::session_state::{SessionInput, SessionState};
-use moor_core::domain::task::TaskState;
 use moor_core::seam::clock::Ts;
 use moor_core::BoxId;
 use rusqlite::{params, Transaction};
 
 use super::sql::name_taken;
-use super::Step;
-use crate::store::{reads::load_row_parts, sessions::live_parent, BoxRow, StoreError};
+use crate::store::{load_task, sessions::live_parent, BoxRow, StoreError};
 
 /// The Box and primary Session states a step leaves behind.
 pub(super) type Parts = (BoxLifecycle, SessionState);
 
-/// A decision resolved against its Box: the row, the stepped states and the lifecycle it left.
+/// A decision resolved against its Box: the row, the stepped states and the states it left.
 pub(super) struct Stepped {
     /// The Box written.
     pub(super) id: BoxId,
     /// The Box row before the step, if it existed.
     pub(super) existing: Option<BoxRow>,
-    /// The combined state callers still read.
-    pub(super) summary: Step<TaskState>,
     /// What the writer stores.
     pub(super) parts: Parts,
-    /// The lifecycle before the step; `None` for a fresh Box.
-    pub(super) from_lifecycle: Option<BoxLifecycle>,
+    /// The states before the step; `None` for a fresh Box.
+    pub(super) from: Option<Parts>,
 }
 
 /// Resolve the Box (inserting a new one) and step its lifecycle and primary Session.
 ///
-/// The summary is the combined state callers still read; the parts are what the writer stores.
+/// The parts are what the writer stores.
 pub(super) fn step_task(
     tx: &Transaction<'_>,
     now: Ts,
@@ -49,38 +45,30 @@ pub(super) fn step_task(
                 SessionState::initial(&SessionInput::Open)?,
             );
             let id = insert_task(tx, new, parts.0, d.parent_session, now)?;
-            let to = box_steps::summary(parts.0, parts.1);
             Ok(Stepped {
                 id,
                 existing: None,
-                summary: Step { from: None, to },
                 parts,
-                from_lifecycle: None,
+                from: None,
             })
         }
         TaskTarget::Existing(id) => {
-            let (row, lifecycle, session) =
-                load_row_parts(tx, *id)?.ok_or(StoreError::NotFound(*id))?;
+            let row = load_task(tx, *id)?.ok_or(StoreError::NotFound(*id))?;
+            let (lifecycle, session) = (row.lifecycle, row.session);
             let parts = if l.is_some() || s.is_some() {
                 let others = read_others(tx, *id)?;
-                box_steps::apply(lifecycle, session, &others, l, s).map_err(
-                    |e| match e {
-                        StepError::Illegal(i) => StoreError::Illegal(i),
-                        StepError::SleepBlocked { busy } => StoreError::SleepBlocked { busy },
-                    },
-                )?
+                box_steps::apply(lifecycle, session, &others, l, s).map_err(|e| match e {
+                    StepError::Illegal(i) => StoreError::Illegal(i),
+                    StepError::SleepBlocked { busy } => StoreError::SleepBlocked { busy },
+                })?
             } else {
                 (lifecycle, session)
             };
             Ok(Stepped {
                 id: *id,
                 existing: row.boxed,
-                summary: Step {
-                    from: Some(box_steps::summary(lifecycle, session)),
-                    to: box_steps::summary(parts.0, parts.1),
-                },
                 parts,
-                from_lifecycle: Some(lifecycle),
+                from: Some((lifecycle, session)),
             })
         }
     }

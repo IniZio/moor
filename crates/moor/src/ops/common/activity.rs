@@ -6,10 +6,10 @@ use std::time::Duration;
 use moor_core::activity::{
     decide, may_apply_quiet, Activity, AgentState, HookRead, PaneRead, PaneStatus, Probes,
 };
+use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
 use moor_core::domain::event::Event;
 use moor_core::domain::session_state::SessionInput;
-use moor_core::domain::task::TaskState;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::engine::SessionRef;
 use moor_core::seam::proc::Deadline;
@@ -250,9 +250,9 @@ pub(crate) fn settle(
     }
     register_session(cx, store, row, reading)?;
     note_needs_input(store, row, reading)?;
-    let input = match row.state {
-        TaskState::Working if !reading.busy() && reading.may_quiet => SessionInput::AgentQuiet,
-        TaskState::Idle if reading.busy() => SessionInput::AgentBusy,
+    let input = match (row.lifecycle == BoxLifecycle::Ready, row.session.is_quiet()) {
+        (true, false) if !reading.busy() && reading.may_quiet => SessionInput::AgentQuiet,
+        (true, true) if reading.busy() => SessionInput::AgentBusy,
         _ => return Ok(()),
     };
     // An op that owns the Box decides where the Task goes; hold the lock across the write.

@@ -207,11 +207,9 @@ fn task_row_reports_the_current_session_state() {
     store.open_session(id).unwrap();
     set_current_state(&store, id, "working");
     let conn = store.writer().unwrap();
-    let (_, _, session) = crate::store::reads::load_row_parts(&conn, id)
-        .unwrap()
-        .unwrap();
+    let row = crate::store::load_task(&conn, id).unwrap().unwrap();
     drop(conn);
-    assert_eq!(session.as_str(), "working");
+    assert_eq!(row.session.as_str(), "working");
 }
 
 #[test]

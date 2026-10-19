@@ -3,11 +3,11 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use moor_core::domain::box_state::BoxLifecycleInput;
+use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::session_state::SessionInput;
-use moor_core::domain::task::{SetupOutcome, TaskState};
+use moor_core::domain::task::SetupOutcome;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, SleepOutcome};
 use moor_core::seam::engine::SessionRef;
 use moor_core::seam::proc::Tool;
@@ -198,7 +198,8 @@ fn asleep_task_and_box_are_woken() {
     assert!(f.driver.calls().contains(&"wake box-1".to_owned()));
     assert_eq!(wake_calls(&f), 1);
     let r = row(&f);
-    assert_eq!(r.state, TaskState::Working);
+    assert_eq!(r.lifecycle, BoxLifecycle::Ready);
+    assert!(!r.session.is_quiet());
     assert_eq!(r.boxed.unwrap().state, BoxState::Ready);
     assert!(kinds(&f).contains(&"woke".to_owned()));
 }
@@ -209,7 +210,9 @@ fn awake_task_is_left_alone() {
     let store = f.cx.store().unwrap();
     assert!(!wake_if_asleep(&f.cx, store, &row(&f)).unwrap());
     assert_eq!(wake_calls(&f), 0);
-    assert_eq!(row(&f).state, TaskState::Working);
+    let r = row(&f);
+    assert_eq!(r.lifecycle, BoxLifecycle::Ready);
+    assert!(!r.session.is_quiet());
 }
 
 #[test]
@@ -219,7 +222,7 @@ fn failed_resume_leaves_task_and_box_asleep() {
     let store = f.cx.store().unwrap();
     assert!(wake_if_asleep(&f.cx, store, &row(&f)).is_err());
     let r = row(&f);
-    assert_eq!(r.state, TaskState::Asleep);
+    assert_eq!(r.lifecycle, BoxLifecycle::Asleep);
     assert_eq!(r.boxed.unwrap().state, BoxState::Asleep);
     assert!(!kinds(&f).contains(&"woke".to_owned()));
 }
@@ -247,12 +250,13 @@ fn asleep_task_with_ready_box_wakes_only_the_task() {
     store
         .apply(Decision::new(f.id).lifecycle(BoxLifecycleInput::Sleep { auto: false }))
         .unwrap();
-    assert_eq!(row(&f).state, TaskState::Asleep);
+    assert_eq!(row(&f).lifecycle, BoxLifecycle::Asleep);
     let ready_before = kinds(&f).iter().filter(|k| *k == "box_ready").count();
     assert!(wake_if_asleep(&f.cx, store, &row(&f)).unwrap());
     assert_eq!(wake_calls(&f), 0);
     let r = row(&f);
-    assert_eq!(r.state, TaskState::Working);
+    assert_eq!(r.lifecycle, BoxLifecycle::Ready);
+    assert!(!r.session.is_quiet());
     assert_eq!(r.boxed.unwrap().state, BoxState::Ready);
     let after = kinds(&f);
     assert!(after.contains(&"woke".to_owned()));
@@ -273,7 +277,8 @@ fn asleep_box_with_working_task_wakes_only_the_box() {
     assert!(wake_if_asleep(&f.cx, store, &row(&f)).unwrap());
     assert_eq!(wake_calls(&f), 1);
     let r = row(&f);
-    assert_eq!(r.state, TaskState::Working);
+    assert_eq!(r.lifecycle, BoxLifecycle::Ready);
+    assert!(!r.session.is_quiet());
     assert_eq!(r.boxed.unwrap().state, BoxState::Ready);
     assert!(!kinds(&f).contains(&"woke".to_owned()));
 }
@@ -322,7 +327,7 @@ fn failed_workdir_lookup_after_wake_leaves_task_and_box_asleep() {
     let store = f.cx.store().unwrap();
     assert!(wake_if_asleep(&f.cx, store, &row(&f)).is_err());
     let r = row(&f);
-    assert_eq!(r.state, TaskState::Asleep);
+    assert_eq!(r.lifecycle, BoxLifecycle::Asleep);
     assert_eq!(r.boxed.unwrap().state, BoxState::Asleep);
     assert_eq!(stored_workdir(&f), None);
     assert!(wake_if_asleep(&f.cx, store, &row(&f)).unwrap());

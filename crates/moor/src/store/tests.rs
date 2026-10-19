@@ -8,13 +8,13 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use moor_core::domain::box_state::BoxLifecycleInput;
+use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{
     Decision, ExtraEvent, Field, Fields, Intent, IntentChange, NewTask,
 };
-use moor_core::domain::session_state::SessionInput;
-use moor_core::domain::task::{SetupOutcome, TaskState};
+use moor_core::domain::session_state::{SessionInput, SessionState};
+use moor_core::domain::task::SetupOutcome;
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::{BoxHandle, BoxId, BoxName, ProviderId, RunId};
 
@@ -147,7 +147,8 @@ fn full_lifecycle_rows_and_events() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let id = new_task(&store, "t");
-    assert_eq!(store.task(id).unwrap().unwrap().state, TaskState::Checking);
+    let row = store.task(id).unwrap().unwrap();
+    assert_eq!(row.lifecycle, BoxLifecycle::Checking);
 
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
@@ -155,8 +156,8 @@ fn full_lifecycle_rows_and_events() {
         .set(provider());
     let a = store.apply(d).unwrap();
     assert_eq!(
-        (a.task_state, a.box_state),
-        (TaskState::SettingUp, Some(BoxState::Starting))
+        (a.lifecycle, a.box_state),
+        (BoxLifecycle::SettingUp, Some(BoxState::Starting))
     );
 
     let handle = BoxHandle::new("h1");
@@ -170,7 +171,8 @@ fn full_lifecycle_rows_and_events() {
         });
     store.apply(d).unwrap();
     let row = store.task(id).unwrap().unwrap();
-    assert_eq!(row.state, TaskState::Working);
+    assert_eq!(row.lifecycle, BoxLifecycle::Ready);
+    assert_eq!(row.session, SessionState::Working);
     let b = row.boxed.unwrap();
     assert_eq!((b.state, b.handle), (BoxState::Ready, Some(handle)));
 
@@ -186,8 +188,8 @@ fn full_lifecycle_rows_and_events() {
     assert_eq!(a.events.len(), 3);
     let row = store.task(id).unwrap().unwrap();
     assert_eq!(
-        (row.state, row.boxed.unwrap().state),
-        (TaskState::Closed, BoxState::Deleted)
+        (row.lifecycle, row.boxed.unwrap().state),
+        (BoxLifecycle::Closed, BoxState::Deleted)
     );
     let want = [
         "started",
@@ -238,8 +240,8 @@ fn illegal_task_step_changes_nothing() {
     ));
     let row = store.task(id).unwrap().unwrap();
     assert_eq!(
-        (row.state, row.goal, row.boxed),
-        (TaskState::Checking, None, None)
+        (row.lifecycle, row.goal, row.boxed),
+        (BoxLifecycle::Checking, None, None)
     );
     assert_eq!(store.events(id, 100).unwrap().len(), before);
 }
@@ -296,8 +298,8 @@ fn box_fields_without_a_box_roll_back_the_task_step() {
     let id = new_task(&store, "t");
     let before = store.task(id).unwrap().unwrap();
     assert_eq!(
-        (before.state, before.boxed.is_none()),
-        (TaskState::Checking, true)
+        (before.lifecycle, before.boxed.is_none()),
+        (BoxLifecycle::Checking, true)
     );
     let events_before = kinds(&store, id);
     // step_task (Checking -> SettingUp) and write_task both succeed; only
@@ -312,7 +314,7 @@ fn box_fields_without_a_box_roll_back_the_task_step() {
     assert!(matches!(err, StoreError::Invalid(_)), "{err:?}");
     let after = store.task(id).unwrap().unwrap();
     assert_eq!(after, before);
-    assert_eq!(after.state, TaskState::Checking);
+    assert_eq!(after.lifecycle, BoxLifecycle::Checking);
     assert_eq!(kinds(&store, id), events_before);
     let path = dir.path().join("state").join("moor.db");
     assert_eq!(
@@ -424,8 +426,8 @@ fn sleep_reason_is_set_without_changing_states() {
     let b = after.boxed.unwrap();
     assert_eq!(b.sleep_reason.as_deref(), Some("no wake"));
     assert_eq!(
-        (after.state, b.state),
-        (before.state, before.boxed.unwrap().state)
+        (after.lifecycle, b.state),
+        (before.lifecycle, before.boxed.unwrap().state)
     );
 }
 
@@ -583,9 +585,12 @@ fn two_tasks_racing_for_the_last_slot_cannot_both_be_admitted() {
         let second = rival.join().unwrap();
         [first, second]
     });
-    let states = [a, b].map(|id| store.task(id).unwrap().unwrap().state);
+    let states = [a, b].map(|id| store.task(id).unwrap().unwrap().lifecycle);
     assert_eq!(admitted.map(|x| x.is_some()), [true, true]);
-    assert_eq!(states, [TaskState::SettingUp, TaskState::WaitingForBox]);
+    assert_eq!(
+        states,
+        [BoxLifecycle::SettingUp, BoxLifecycle::WaitingForBox]
+    );
     assert_eq!(
         live_holders_in(&store.reader().unwrap(), &provider)
             .unwrap()

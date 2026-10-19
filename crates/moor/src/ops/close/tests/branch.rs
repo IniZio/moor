@@ -3,7 +3,6 @@
 use std::sync::Arc;
 
 use moor_core::domain::decision::{Decision, Field, Fields};
-use moor_core::domain::task::TaskState;
 use moor_core::seam::proc::Tool;
 use moor_core::BoxPath;
 
@@ -129,7 +128,7 @@ fn a_remote_tip_ahead_of_the_branch_is_fast_forwarded() {
     p.on(Tool::Git, &["merge"], Reply::Ok(String::new()));
     let f = fx(p);
     let v = run(&f.cx, &req(false)).unwrap();
-    assert_eq!(v.task.state, TaskState::Closed);
+    assert_eq!(v.task.state.as_str(), "closed");
     assert!(merged(&f));
     assert!(warning_codes(&f).is_empty());
     let fetched = f.proc.calls().iter().any(|c| {
@@ -147,7 +146,7 @@ fn a_diverged_branch_is_left_alone_with_a_warning() {
     p.on(Tool::Git, &["fetch"], Reply::Ok(String::new()));
     let f = fx(p);
     let v = run(&f.cx, &req(false)).unwrap();
-    assert_eq!(v.task.state, TaskState::Closed);
+    assert_eq!(v.task.state.as_str(), "closed");
     assert!(!merged(&f));
     assert_eq!(warning_codes(&f), ["branch_not_synced"]);
     assert!(v.worktree_kept);
@@ -166,7 +165,7 @@ fn a_dirty_worktree_is_left_alone_with_a_warning() {
     p.on(Tool::Git, &["fetch"], Reply::Ok(String::new()));
     let f = fx(p);
     let v = run(&f.cx, &req(true)).unwrap();
-    assert_eq!(v.task.state, TaskState::Closed);
+    assert_eq!(v.task.state.as_str(), "closed");
     assert!(!merged(&f));
     assert_eq!(warning_codes(&f), ["branch_not_synced"]);
 }
@@ -185,7 +184,7 @@ fn a_failed_fetch_warns_and_close_still_succeeds() {
     );
     let f = fx(p);
     let v = run(&f.cx, &req(false)).unwrap();
-    assert_eq!(v.task.state, TaskState::Closed);
+    assert_eq!(v.task.state.as_str(), "closed");
     assert!(v.box_deleted);
     assert!(!merged(&f));
     assert_eq!(warning_codes(&f), ["branch_not_synced"]);
@@ -196,7 +195,7 @@ fn a_branch_never_pushed_is_skipped_without_a_warning() {
     let p = scripted("", false);
     let f = fx(p);
     let v = run(&f.cx, &req(false)).unwrap();
-    assert_eq!(v.task.state, TaskState::Closed);
+    assert_eq!(v.task.state.as_str(), "closed");
     assert!(v.box_deleted);
     assert!(!merged(&f));
     let fetched = f

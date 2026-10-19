@@ -1,6 +1,5 @@
 //! Close copies the Box's published artifacts into the local store before teardown.
 
-use moor_core::domain::task::TaskState;
 use sha2::{Digest, Sha256};
 
 use super::teardown::{base_has, with_home, YAML};
@@ -32,7 +31,7 @@ fn a_ready_box_has_its_artifacts_collected_on_close() {
         .artifact_index([listing()])
         .copy_text(BODY));
     let v = run(&f.cx, &req(false)).unwrap();
-    assert_eq!(v.task.state, TaskState::Closed);
+    assert_eq!(v.task.state.as_str(), "closed");
     assert_eq!(published(&f), 1);
     let rows = f.cx.store().unwrap().artifacts(f.id).unwrap();
     assert_eq!(rows.len(), 1);

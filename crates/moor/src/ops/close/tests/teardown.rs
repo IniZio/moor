@@ -1,10 +1,10 @@
+use moor_core::domain::box_state::BoxLifecycle;
 use std::fs;
 use std::sync::Arc;
 
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::domain::run::SyncMode;
-use moor_core::domain::task::TaskState;
 use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
 use moor_core::seam::proc::Tool;
 use moor_core::seam::proxy_host::ProxyHostError;
@@ -104,7 +104,7 @@ fn failing_teardown_warns_and_still_releases() {
     );
     let v = run(&f.cx, &req(false)).unwrap();
     assert!(v.box_deleted);
-    assert_eq!(v.task.state, TaskState::Closed);
+    assert_eq!(v.task.state.as_str(), "closed");
     let warnings = f.cx.take_warnings();
     assert!(warnings.iter().any(|w| w.code == "teardown_failed"));
 }
@@ -198,7 +198,7 @@ fn gone_box_skips_teardown() {
         .unwrap();
     run(&f.cx, &req(false)).unwrap();
     assert_eq!(exec_calls(&f), 0);
-    assert_eq!(row(&f).state, TaskState::Closed);
+    assert_eq!(row(&f).lifecycle, BoxLifecycle::Closed);
 }
 
 #[test]
@@ -223,7 +223,7 @@ fn close_waits_for_the_box_lock_then_refuses_when_busy() {
     assert!(e.error.to_string().contains("run"), "{}", e.error);
     assert!(f.cx.clock().instant() - from >= WAIT);
     assert_eq!(exec_calls(&f), 0);
-    assert_ne!(row(&f).state, TaskState::Closed);
+    assert_ne!(row(&f).lifecycle, BoxLifecycle::Closed);
     assert_eq!(box_state(&f), BoxState::Ready);
 }
 
@@ -300,7 +300,7 @@ fn invalid_repo_config_warns_and_still_closes_without_teardown() {
     let f = fx_yaml(FakeDriver::new(), "teardown: [\n");
     let v = run(&f.cx, &req(false)).unwrap();
     assert!(v.box_deleted);
-    assert_eq!(v.task.state, TaskState::Closed);
+    assert_eq!(v.task.state.as_str(), "closed");
     assert_eq!(exec_calls(&f), 0);
     assert!(f
         .cx
@@ -336,7 +336,7 @@ fn changed_moor_yaml_tears_down_with_the_base_copy_and_warns() {
     base_has(&f, BASE_YAML);
     let v = run(&f.cx, &req(false)).unwrap();
     assert!(v.box_deleted);
-    assert_eq!(v.task.state, TaskState::Closed);
+    assert_eq!(v.task.state.as_str(), "closed");
     let spec = only_exec(&f);
     assert!(script_of(&spec).contains("echo base"));
     assert!(!script_of(&spec).contains("rm -rf cache"));

@@ -3,13 +3,15 @@ use std::num::NonZeroU32;
 use std::path::Path;
 use std::sync::Arc;
 
+use super::is_working;
+
 use moor_core::boxscript::setup::setup_script;
 use moor_core::config::{BoxConfig, DriverConfig, UserConfig};
-use moor_core::domain::box_state::BoxLifecycleInput;
+use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::session_state::SessionInput;
-use moor_core::domain::task::{SetupOutcome, TaskState};
+use moor_core::domain::task::SetupOutcome;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
 use moor_core::seam::proc::Tool;
 use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, CloseReq, ProviderId, ShowReq, StartReq};
@@ -219,8 +221,12 @@ fn close_holder(w: &World) -> moor_core::view::CloseView {
     close(&w.cx, &req).unwrap()
 }
 
-fn state_of(w: &World, id: BoxId) -> TaskState {
-    w.cx.store().unwrap().task(id).unwrap().unwrap().state
+fn row_of(w: &World, id: BoxId) -> crate::store::TaskRow {
+    w.cx.store().unwrap().task(id).unwrap().unwrap()
+}
+
+fn lifecycle_of(w: &World, id: BoxId) -> BoxLifecycle {
+    row_of(w, id).lifecycle
 }
 
 fn kinds(w: &World, id: BoxId) -> Vec<String> {
@@ -245,7 +251,7 @@ fn close_promotes_the_oldest_waiter_of_the_provider() {
     let v = close_holder(&w);
     assert!(v.box_deleted);
     assert_eq!(v.promoted, ["first"]);
-    assert_eq!(state_of(&w, second), TaskState::WaitingForBox);
+    assert_eq!(lifecycle_of(&w, second), BoxLifecycle::WaitingForBox);
 }
 
 #[test]
@@ -254,8 +260,8 @@ fn a_younger_waiter_stays_queued_when_one_slot_frees() {
     let first = queue(&w, "first");
     let second = queue(&w, "second");
     close_holder(&w);
-    assert_ne!(state_of(&w, first), TaskState::WaitingForBox);
-    assert_eq!(state_of(&w, second), TaskState::WaitingForBox);
+    assert_ne!(lifecycle_of(&w, first), BoxLifecycle::WaitingForBox);
+    assert_eq!(lifecycle_of(&w, second), BoxLifecycle::WaitingForBox);
     assert_eq!(acquires(&w), 1);
 }
 
@@ -269,7 +275,7 @@ fn promoted_task_goes_through_setting_up_and_gets_a_ready_box() {
     assert!(at("waiting_for_box") < at("setting_up"), "{seen:?}");
     assert!(at("setting_up") < at("working"), "{seen:?}");
     let row = w.cx.store().unwrap().task(id).unwrap().unwrap();
-    assert_eq!(row.state, TaskState::Working);
+    assert!(is_working(&row));
     let b = row.boxed.expect("promoted task has a Box row");
     assert_eq!(b.state, BoxState::Ready);
     assert!(b.handle.is_some());
@@ -301,7 +307,7 @@ fn a_waiter_on_a_provider_without_reverse_tunnel_is_not_provisioned() {
     let v = close_holder(&w);
     assert!(v.promoted.is_empty());
     assert_eq!(acquires(&w), 0);
-    assert_ne!(state_of(&w, id), TaskState::Working);
+    assert!(!is_working(&row_of(&w, id)));
 }
 
 #[test]
@@ -328,7 +334,7 @@ fn failed_acquire_of_the_promoted_task_does_not_fail_the_close() {
     assert!(v.box_deleted);
     assert!(!v.promoted.contains(&"first".to_owned()));
     assert!(warning_codes(&w).contains(&"promote_failed".to_owned()));
-    assert_ne!(state_of(&w, id), TaskState::Working);
+    assert!(!is_working(&row_of(&w, id)));
 }
 
 #[test]
@@ -348,7 +354,7 @@ fn show_does_not_promote_a_waiter_when_a_slot_is_free() {
         pane: false,
     };
     show::run(&w.cx, &req).unwrap();
-    assert_eq!(state_of(&w, id), TaskState::WaitingForBox);
+    assert_eq!(lifecycle_of(&w, id), BoxLifecycle::WaitingForBox);
     assert_eq!(acquires(&w), 0);
 }
 
@@ -367,7 +373,7 @@ fn a_waiter_is_not_promoted_when_the_freed_box_was_of_another_provider() {
     let v = close_holder(&w);
     assert!(v.box_deleted);
     assert!(v.promoted.is_empty());
-    assert_eq!(state_of(&w, id), TaskState::WaitingForBox);
+    assert_eq!(lifecycle_of(&w, id), BoxLifecycle::WaitingForBox);
     assert_eq!(acquires(&w), 0);
 }
 
@@ -377,7 +383,7 @@ fn nothing_is_promoted_without_a_configured_limit() {
     let id = waiting_directly(&w, "first");
     let v = close_holder(&w);
     assert!(v.promoted.is_empty());
-    assert_eq!(state_of(&w, id), TaskState::WaitingForBox);
+    assert_eq!(lifecycle_of(&w, id), BoxLifecycle::WaitingForBox);
     assert_eq!(acquires(&w), 0);
 }
 
@@ -408,7 +414,7 @@ fn a_waiter_whose_box_lock_is_held_is_skipped_with_a_warning() {
     let skipped = warnings.iter().find(|x| x.code == "promote_skipped");
     let message = &skipped.expect("promote_skipped warning").message;
     assert!(message.starts_with("cannot promote first:"), "{message}");
-    assert_eq!(state_of(&w, id), TaskState::WaitingForBox);
+    assert_eq!(lifecycle_of(&w, id), BoxLifecycle::WaitingForBox);
     assert_eq!(acquires(&w), 0);
 }
 
@@ -439,7 +445,7 @@ fn promoted_task_runs_the_repo_setup_commands_in_its_new_box() {
     let w = world_at(limit(1), FakeDriver::new(), repo.path());
     let id = queue(&w, "first");
     close_holder(&w);
-    assert_eq!(state_of(&w, id), TaskState::Working);
+    assert!(is_working(&row_of(&w, id)));
     let handle = w.cx.store().unwrap().task(id).unwrap().unwrap();
     let handle = handle.boxed.unwrap().handle.expect("promoted Box handle");
     let argvs: Vec<_> = w

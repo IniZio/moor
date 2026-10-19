@@ -4,11 +4,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use moor_core::domain::box_state::BoxLifecycleInput;
+use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
-use moor_core::domain::session_state::SessionInput;
-use moor_core::domain::task::{SetupOutcome, TaskState};
+use moor_core::domain::session_state::{SessionInput, SessionState};
+use moor_core::domain::task::SetupOutcome;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, SleepOutcome};
 use moor_core::secret::Secret;
 use moor_core::{BoxId, BoxName, ProviderId};
@@ -118,10 +118,10 @@ fn kinds(f: &Fx) -> Vec<String> {
     rows.into_iter().map(|e| e.kind).collect()
 }
 
-/// Task and Box states now.
-fn states(f: &Fx) -> (TaskState, BoxState) {
+/// Box lifecycle, Session and Box states now.
+fn states(f: &Fx) -> (BoxLifecycle, SessionState, BoxState) {
     let row = f.cx.store().unwrap().task(f.id).unwrap().unwrap();
-    (row.state, row.boxed.unwrap().state)
+    (row.lifecycle, row.session, row.boxed.unwrap().state)
 }
 
 fn sleep_calls(f: &Fx) -> usize {
@@ -170,7 +170,10 @@ fn a_task_idle_long_enough_sleeps() {
     let f = idle();
     pass(&f, LONG);
     auto_sleep(&f);
-    assert_eq!(states(&f), (TaskState::Asleep, BoxState::Asleep));
+    assert_eq!(
+        states(&f),
+        (BoxLifecycle::Asleep, SessionState::Idle, BoxState::Asleep)
+    );
     let k = kinds(&f);
     assert!(k.contains(&"asleep".to_owned()), "{k:?}");
     assert!(k.contains(&"box_asleep".to_owned()), "{k:?}");
@@ -182,7 +185,10 @@ fn a_native_sleep_counts_as_slept() {
     let f = idle_with(FakeDriver::new().sleep_outcome(SleepOutcome::Native));
     pass(&f, LONG);
     auto_sleep(&f);
-    assert_eq!(states(&f), (TaskState::Asleep, BoxState::Asleep));
+    assert_eq!(
+        states(&f),
+        (BoxLifecycle::Asleep, SessionState::Idle, BoxState::Asleep)
+    );
 }
 
 #[test]
@@ -190,7 +196,10 @@ fn a_task_not_idle_long_enough_is_left_alone() {
     let f = idle();
     pass(&f, Duration::from_mins(29));
     auto_sleep(&f);
-    assert_eq!(states(&f), (TaskState::Idle, BoxState::Ready));
+    assert_eq!(
+        states(&f),
+        (BoxLifecycle::Ready, SessionState::Idle, BoxState::Ready)
+    );
     assert_eq!(sleep_calls(&f), 0);
 }
 
@@ -199,7 +208,10 @@ fn a_working_task_never_sleeps() {
     let f = working_with(FakeDriver::new());
     pass(&f, LONG);
     auto_sleep(&f);
-    assert_eq!(states(&f), (TaskState::Working, BoxState::Ready));
+    assert_eq!(
+        states(&f),
+        (BoxLifecycle::Ready, SessionState::Working, BoxState::Ready)
+    );
     assert_eq!(sleep_calls(&f), 0);
 }
 
@@ -216,7 +228,10 @@ fn a_held_box_lock_skips_the_sleep_silently() {
     )
     .unwrap();
     auto_sleep(&f);
-    assert_eq!(states(&f), (TaskState::Idle, BoxState::Ready));
+    assert_eq!(
+        states(&f),
+        (BoxLifecycle::Ready, SessionState::Idle, BoxState::Ready)
+    );
     assert_eq!(sleep_calls(&f), 0);
     assert!(f.cx.take_warnings().is_empty());
 }
@@ -237,7 +252,7 @@ fn a_run_in_flight_skips_the_sleep() {
         .unwrap();
     pass(&f, LONG);
     auto_sleep(&f);
-    assert_eq!(states(&f).1, BoxState::Ready);
+    assert_eq!(states(&f).2, BoxState::Ready);
     assert_eq!(sleep_calls(&f), 0);
 }
 
@@ -249,7 +264,10 @@ fn a_box_that_cannot_sleep_stays_up_and_says_why_once() {
     pass(&f, LONG);
     auto_sleep(&f);
     auto_sleep(&f);
-    assert_eq!(states(&f), (TaskState::Idle, BoxState::Ready));
+    assert_eq!(
+        states(&f),
+        (BoxLifecycle::Ready, SessionState::Idle, BoxState::Ready)
+    );
     assert_eq!(sleep_calls(&f), 1);
     let row = f.cx.store().unwrap().task(f.id).unwrap().unwrap();
     let shown = task_view(&row, f.cx.config()).r#box.unwrap().sleep.reason;
@@ -294,7 +312,7 @@ fn leaving_idle_clears_the_refusal() {
     pass(&f, LONG);
     auto_sleep(&f);
     step(&f, SessionInput::AgentBusy);
-    assert_eq!(states(&f).0, TaskState::Working);
+    assert_eq!(states(&f).1, SessionState::Working);
     assert_eq!(reason(&f), None);
 }
 
@@ -330,7 +348,10 @@ fn an_unknown_provider_stays_up_and_says_why() {
     let f = idle_with(FakeDriver::new().sleep_outcome(SleepOutcome::CannotSleep(reason.into())));
     pass(&f, LONG);
     auto_sleep(&f);
-    assert_eq!(states(&f), (TaskState::Idle, BoxState::Ready));
+    assert_eq!(
+        states(&f),
+        (BoxLifecycle::Ready, SessionState::Idle, BoxState::Ready)
+    );
     let row = f.cx.store().unwrap().task(f.id).unwrap().unwrap();
     let shown = task_view(&row, f.cx.config()).r#box.unwrap().sleep.reason;
     assert_eq!(shown.as_deref(), Some(reason));
@@ -343,7 +364,10 @@ fn a_driver_failure_warns_and_changes_nothing() {
     }));
     pass(&f, LONG);
     auto_sleep(&f);
-    assert_eq!(states(&f), (TaskState::Idle, BoxState::Ready));
+    assert_eq!(
+        states(&f),
+        (BoxLifecycle::Ready, SessionState::Idle, BoxState::Ready)
+    );
     let warned = f.cx.take_warnings();
     assert_eq!(warned.len(), 1);
     assert_eq!(warned.first().unwrap().code, "auto_sleep_failed");
@@ -361,7 +385,10 @@ fn auto_sleep_parks_a_live_proxy_tunnel_first() {
     auto_sleep(&f);
     let r = tunnel_request(&f).unwrap();
     assert_eq!((r.want, r.seq), (TunnelWant::Parked, 1));
-    assert_eq!(states(&f), (TaskState::Asleep, BoxState::Asleep));
+    assert_eq!(
+        states(&f),
+        (BoxLifecycle::Asleep, SessionState::Idle, BoxState::Asleep)
+    );
 }
 
 #[test]
@@ -396,6 +423,9 @@ fn auto_sleep_still_sleeps_when_the_sweep_times_out() {
     let f = idle_with(driver);
     pass(&f, LONG);
     auto_sleep(&f);
-    assert_eq!(states(&f), (TaskState::Asleep, BoxState::Asleep));
+    assert_eq!(
+        states(&f),
+        (BoxLifecycle::Asleep, SessionState::Idle, BoxState::Asleep)
+    );
     assert_eq!(sleep_calls(&f), 1);
 }

@@ -3,10 +3,9 @@
 use std::path::Path;
 
 use moor_core::config::TaskSettings;
-use moor_core::domain::box_state::BoxLifecycleInput;
+use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, Intent, IntentChange};
-use moor_core::domain::task::TaskState;
 use moor_core::{BoxHandle, BoxPath, ErrorKind};
 
 use super::{recorded_workdir, run_and_record, Provisioned, SetupTarget};
@@ -17,7 +16,7 @@ use crate::store::{Store, TaskRow};
 /// The kept Box's handle and workdir, when the Task failed setup on a Box that is still ready.
 fn kept_box(row: &TaskRow) -> Option<(&BoxHandle, BoxPath)> {
     let boxed = row.boxed.as_ref().filter(|b| b.state == BoxState::Ready)?;
-    if row.state != TaskState::SetupFailed {
+    if row.lifecycle != BoxLifecycle::SetupFailed {
         return None;
     }
     let workdir = boxed.workdir.as_deref().and_then(recorded_workdir)?;

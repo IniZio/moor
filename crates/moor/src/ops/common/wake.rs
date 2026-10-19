@@ -4,11 +4,10 @@
 
 use std::collections::HashMap;
 
-use moor_core::domain::box_state::BoxLifecycleInput;
+use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::domain::session_state::SessionInput;
-use moor_core::domain::task::TaskState;
 use moor_core::view::sleep::SleepValue;
 use moor_core::{ErrorKind, TaskReq};
 
@@ -74,7 +73,7 @@ struct Woke {
 
 /// Wake the Task and Box when Asleep and report what was woken.
 fn wake(cx: &Cx, store: &Store, row: &TaskRow) -> Result<Woke, CommandError> {
-    let task_asleep = row.state == TaskState::Asleep;
+    let task_asleep = row.lifecycle == BoxLifecycle::Asleep;
     let box_asleep = row
         .boxed
         .as_ref()

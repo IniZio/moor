@@ -8,11 +8,11 @@ use moor_core::activity::{
     AgentState, HookKind, HookRead, HookRecord, PaneObs, PaneRead, PaneStatus, Probes, Source,
     STARTUP_GRACE,
 };
-use moor_core::domain::box_state::BoxLifecycleInput;
+use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
-use moor_core::domain::session_state::SessionInput;
-use moor_core::domain::task::{SetupOutcome, TaskState};
+use moor_core::domain::session_state::{SessionInput, SessionState};
+use moor_core::domain::task::SetupOutcome;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, SleepKind};
 use moor_core::seam::proc::Tool;
@@ -26,11 +26,18 @@ mod pane;
 use super::run;
 use crate::cx::Cx;
 use crate::ops::common::activity::{self, Reading};
-use crate::store::{NewRun, Store};
+use crate::store::{NewRun, Store, TaskRow};
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::proc::{Reply, ScriptedProc};
 use crate::testing::surface::FakeSurface;
+
+type Parts = (BoxLifecycle, SessionState);
+const WORKING: Parts = (BoxLifecycle::Ready, SessionState::Working);
+const IDLE: Parts = (BoxLifecycle::Ready, SessionState::Idle);
+fn parts(row: &TaskRow) -> Parts {
+    (row.lifecycle, row.session)
+}
 
 /// Context over `driver` with state under `dir`.
 fn cx(dir: &Path, driver: &Arc<FakeDriver>) -> Cx {
@@ -361,7 +368,7 @@ fn show_leaves_the_task_row_untouched() {
     let cx = engine_cx(dir.path(), &driver, &engine);
     let store = cx.store().unwrap();
     let before = store.task(id).unwrap();
-    assert_eq!(before.as_ref().unwrap().state, TaskState::Working);
+    assert_eq!(parts(before.as_ref().unwrap()), WORKING);
     run(&cx, &req(Some("a"), None)).unwrap();
     assert_eq!(store.task(id).unwrap(), before);
 }
@@ -402,9 +409,9 @@ fn list_settles_a_quiet_agent_to_idle() {
     let cx = engine_cx(dir.path(), &driver, &engine);
     let v = run(&cx, &req(None, None)).unwrap();
     let row = cx.store().unwrap().task(id).unwrap().unwrap();
-    assert_eq!(row.state, TaskState::Idle);
+    assert_eq!(parts(&row), IDLE);
     assert!(idle_since(cx.store().unwrap(), id).is_some());
-    assert_eq!(first(&v).state, TaskState::Idle);
+    assert_eq!(first(&v).state.as_str(), "idle");
 }
 
 #[test]
@@ -421,13 +428,13 @@ fn list_settles_a_busy_agent_to_working() {
     let cx = engine_cx(dir.path(), &driver, &engine);
     run(&cx, &req(None, None)).unwrap();
     let row = cx.store().unwrap().task(id).unwrap().unwrap();
-    assert_eq!(row.state, TaskState::Working);
+    assert_eq!(parts(&row), WORKING);
     assert!(idle_since(cx.store().unwrap(), id).is_none());
 }
 
 /// List a Working Task whose session is older than the startup grace and whose only
 /// report is the pane's `status`; return the reading and the task's state afterwards.
-fn pane_only_reading(status: PaneStatus) -> (Reading, TaskState) {
+fn pane_only_reading(status: PaneStatus) -> (Reading, Parts) {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(FakeDriver::new());
     let cx = engine_cx(dir.path(), &driver, &Arc::new(FakeEngine::new()));
@@ -440,7 +447,7 @@ fn pane_only_reading(status: PaneStatus) -> (Reading, TaskState) {
     let row = store.task(id).unwrap().unwrap();
     let now = cx.clock().now();
     let reading = activity::read(&cx, store, &row, now).unwrap();
-    (reading, row.state)
+    (reading, parts(&row))
 }
 
 #[test]
@@ -450,7 +457,7 @@ fn list_does_not_idle_on_a_pane_only_idle_report() {
     assert_eq!(a.source, Source::Herdr);
     assert_eq!(a.state, AgentState::Idle);
     assert!(!reading.may_quiet);
-    assert_eq!(state, TaskState::Working);
+    assert_eq!(state, WORKING);
 }
 
 #[test]
@@ -460,7 +467,7 @@ fn list_does_not_idle_on_a_pane_only_blocked_report() {
     assert_eq!(a.source, Source::Herdr);
     assert!(matches!(a.state, AgentState::NeedsInput { .. }));
     assert!(!reading.may_quiet);
-    assert_eq!(state, TaskState::Working);
+    assert_eq!(state, WORKING);
 }
 
 #[test]
@@ -530,17 +537,15 @@ fn a_task_freshly_started_is_not_idled_by_the_next_list() {
         },
     )
     .unwrap();
-    assert_eq!(started.task.state, TaskState::Working);
+    assert_eq!(started.task.state.as_str(), "working");
     let v = run(&cx, &req(None, None)).unwrap();
     let t = first(&v);
-    assert_eq!(t.state, TaskState::Working);
+    assert_eq!(t.state.as_str(), "working");
     assert!(t.agent.is_some());
     let id = BoxId::new(started.task.id);
     assert!(cx.store().unwrap().live_session(id).unwrap().is_some());
-    assert_eq!(
-        cx.store().unwrap().task(id).unwrap().unwrap().state,
-        TaskState::Working
-    );
+    let row = cx.store().unwrap().task(id).unwrap().unwrap();
+    assert_eq!(parts(&row), WORKING);
 }
 
 /// A task Idle since just now, with its agent still reporting idle.
@@ -565,8 +570,8 @@ fn list_sleeps_a_task_idle_past_the_threshold() {
     cx.clock().sleep(LONG);
     let v = run(&cx, &req(None, None)).unwrap();
     let row = cx.store().unwrap().task(id).unwrap().unwrap();
-    assert_eq!(row.state, TaskState::Asleep);
-    assert_eq!(first(&v).state, TaskState::Asleep);
+    assert_eq!(row.lifecycle, BoxLifecycle::Asleep);
+    assert_eq!(first(&v).state.as_str(), "asleep");
     assert_eq!(first(&v).r#box.as_ref().unwrap().state, BoxState::Asleep);
 }
 
@@ -577,7 +582,7 @@ fn list_leaves_a_recently_idle_task_up() {
     let (cx, id) = idle_task(dir.path(), &driver);
     run(&cx, &req(None, None)).unwrap();
     let row = cx.store().unwrap().task(id).unwrap().unwrap();
-    assert_eq!(row.state, TaskState::Idle);
+    assert_eq!(parts(&row), IDLE);
 }
 
 #[test]
@@ -588,6 +593,6 @@ fn showing_one_task_does_not_sleep_it() {
     cx.clock().sleep(LONG);
     run(&cx, &req(Some("a"), None)).unwrap();
     let row = cx.store().unwrap().task(id).unwrap().unwrap();
-    assert_eq!(row.state, TaskState::Idle);
+    assert_eq!(parts(&row), IDLE);
     assert!(!driver.calls().iter().any(|c| c.starts_with("sleep ")));
 }

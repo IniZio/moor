@@ -119,7 +119,7 @@ fn a_proxy_that_cannot_be_ensured_fails_the_launch_at_the_proxy_step() {
     let v = run(&w.cx, &goal_req()).unwrap();
     let id = BoxId::new(v.task.id);
     assert!(!v.agent.launched);
-    assert_eq!(v.task.state, moor_core::domain::task::TaskState::Working);
+    assert_eq!(v.task.state.as_str(), "working");
     assert!(engine.launches().is_empty());
     let (step, message, tail) = failure_step(&w, id);
     assert_eq!(step, "proxy");

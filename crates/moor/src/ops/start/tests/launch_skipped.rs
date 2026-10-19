@@ -1,10 +1,10 @@
 use moor_core::config::Flags;
 use moor_core::domain::decision::Decision;
 use moor_core::domain::session_state::SessionInput;
-use moor_core::domain::task::TaskState;
 use moor_core::{BoxId, StartReq};
 use std::path::Path;
 
+use super::state::idle as is_idle;
 use super::{req, world, World};
 use crate::ops::common::facts::settings;
 use crate::ops::start::launch;
@@ -46,7 +46,7 @@ fn a_launch_skipped_because_the_task_is_not_working_is_recorded() {
     assert_eq!(failure.step, "launch");
     assert!(failure.message.contains("idle"), "{}", failure.message);
     let row = w.cx.store().unwrap().task(id).unwrap().unwrap();
-    assert_eq!(row.state, TaskState::Idle);
+    assert!(is_idle(&row));
     assert!(row.launch_failure.is_some());
 }
 
