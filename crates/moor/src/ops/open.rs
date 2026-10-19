@@ -5,14 +5,14 @@
 use moor_core::seam::proc::Tool;
 use moor_core::seam::surface::WorkspaceRef;
 use moor_core::view::sleep::SleepValue;
-use moor_core::{ErrorKind, TaskReq};
+use moor_core::{BoxReq, ErrorKind};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::wake::wake_task;
 
 /// Run `open`.
-pub(crate) fn run(cx: &Cx, req: &TaskReq) -> Result<SleepValue, CommandError> {
+pub(crate) fn run(cx: &Cx, req: &BoxReq) -> Result<SleepValue, CommandError> {
     wake_task(cx, req, "open", |row| {
         let workspace = row
             .workspace_id
@@ -37,7 +37,7 @@ pub(crate) struct ConnectValue {
 
 /// Run `connect`: wake like `open`, but hand the focus command back
 /// instead of running it.
-pub(crate) fn connect(cx: &Cx, req: &TaskReq) -> Result<ConnectValue, CommandError> {
+pub(crate) fn connect(cx: &Cx, req: &BoxReq) -> Result<ConnectValue, CommandError> {
     let mut workspace = None;
     let slept = wake_task(cx, req, "connect", |row| {
         workspace =

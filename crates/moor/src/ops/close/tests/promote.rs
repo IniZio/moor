@@ -214,7 +214,7 @@ fn waiting_directly(w: &World, name: &str) -> BoxId {
 
 fn close_holder(w: &World) -> moor_core::view::CloseView {
     let req = CloseReq {
-        task: BoxName::parse_allow_bare("holder").unwrap(),
+        box_name: BoxName::parse_allow_bare("holder").unwrap(),
         force: false,
         trust_moor_yaml: false,
     };
@@ -346,7 +346,7 @@ fn show_does_not_promote_a_waiter_when_a_slot_is_free() {
         .apply(Decision::new(w.holder).box_input(BoxInput::DriverMissing))
         .unwrap();
     let req = ShowReq {
-        task: None,
+        box_name: None,
         events: None,
         agent: false,
         reports: false,

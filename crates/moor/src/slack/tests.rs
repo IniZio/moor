@@ -7,7 +7,7 @@ use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::decision::{Decision, ExtraEvent, NewBox};
 use moor_core::domain::session_state::SessionInput;
-use moor_core::request::{CloseReq, Request, StartReq, SteerReq};
+use moor_core::request::{CloseReq, Request, StartReq};
 use moor_core::seam::clock::Ts;
 use moor_core::BoxName;
 
@@ -262,12 +262,12 @@ fn owner_reply_steers_the_task() {
         &seen,
     );
     let seen = seen.into_inner();
-    let Some(Request::Steer(SteerReq { task, text, menu })) = seen.calls.first() else {
+    let Some(Request::Steer(req)) = seen.calls.first() else {
         unreachable!("expected steer, got {:?}", seen.calls);
     };
-    assert_eq!(task.as_str(), "slack-10-5");
-    assert_eq!(text.as_deref(), Some("try the other test"));
-    assert_eq!(*menu, None);
+    assert_eq!(req.box_name.as_str(), "slack-10-5");
+    assert_eq!(req.text.as_deref(), Some("try the other test"));
+    assert_eq!(req.menu, None);
     assert!(seen.replies.is_empty());
 }
 
@@ -322,14 +322,14 @@ fn owner_close_closes_without_force() {
     run(&store, &reply_to("Ev2", "U1", "C1", "close"), None, &seen);
     let seen = seen.into_inner();
     let Some(Request::Close(CloseReq {
-        task,
+        box_name,
         force,
         trust_moor_yaml,
     })) = seen.calls.first()
     else {
         unreachable!("expected close, got {:?}", seen.calls);
     };
-    assert_eq!(task.as_str(), "slack-10-5");
+    assert_eq!(box_name.as_str(), "slack-10-5");
     assert!(!force && !trust_moor_yaml);
 }
 

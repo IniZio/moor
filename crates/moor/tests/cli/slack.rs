@@ -147,7 +147,7 @@ impl Rig {
             json!({"frame": "hello", "protocol": moor_core::controller::PROTOCOL}).to_string(),
         );
         let request =
-            json!({"frame": "request", "id": "1", "request": {"cmd": "show", "task": task}});
+            json!({"frame": "request", "id": "1", "request": {"cmd": "show", "box": task}});
         exchange(request.to_string())["envelope"].clone()
     }
 

@@ -21,6 +21,29 @@ pub struct SessionsReq {
     pub parent: Option<SessionId>,
 }
 
+/// Arguments of `end-session`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EndSessionReq {
+    /// Box name.
+    #[serde(rename = "box")]
+    pub box_name: String,
+}
+
+/// Arguments of `open-session`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OpenSessionReq {
+    /// Box name.
+    #[serde(rename = "box")]
+    pub box_name: String,
+    /// Text the agent receives as its first prompt.
+    pub seed: String,
+    /// Parent Session of the Session this request opens.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<SessionId>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::Request;

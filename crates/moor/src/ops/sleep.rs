@@ -9,7 +9,7 @@ use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::seam::driver::SleepOutcome;
 use moor_core::view::sleep::SleepValue;
-use moor_core::{ErrorKind, TaskReq};
+use moor_core::{BoxReq, ErrorKind};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -19,21 +19,24 @@ use crate::ops::common::view::{hide_unsupported_box_sleep, task_view};
 use crate::store::BoxRow;
 
 /// Run `sleep`.
-pub(crate) fn run(cx: &Cx, req: &TaskReq) -> Result<SleepValue, CommandError> {
+pub(crate) fn run(cx: &Cx, req: &BoxReq) -> Result<SleepValue, CommandError> {
     let store = cx.store()?;
     let id = store
-        .open_task_by_name(&req.task)?
+        .open_task_by_name(&req.box_name)?
         .ok_or_else(|| {
             CommandError::new(
                 ErrorKind::Failed,
-                format!("no open task {}", req.task.as_str()),
+                format!("no open task {}", req.box_name.as_str()),
             )
         })?
         .id;
     let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "sleep", boxlock::WAIT)?;
     let reload = || {
         store.task(id)?.ok_or_else(|| {
-            CommandError::new(ErrorKind::Failed, format!("no task {}", req.task.as_str()))
+            CommandError::new(
+                ErrorKind::Failed,
+                format!("no task {}", req.box_name.as_str()),
+            )
         })
     };
     let row = reload()?;
@@ -43,7 +46,7 @@ pub(crate) fn run(cx: &Cx, req: &TaskReq) -> Result<SleepValue, CommandError> {
     let mut boxed = task_view(&reload()?, cx.config()).driver;
     hide_unsupported_box_sleep(boxed.as_mut(), cx, &mut HashMap::new());
     Ok(SleepValue {
-        task: req.task.as_str().to_owned(),
+        task: req.box_name.as_str().to_owned(),
         driver: boxed,
         woke: false,
     })

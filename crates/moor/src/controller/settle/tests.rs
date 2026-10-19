@@ -263,7 +263,7 @@ fn a_held_box_lock_skips_the_collection() {
     );
     let (cx, id) = quiet_agent_on(dir.path(), &driver);
     let list = ShowReq {
-        task: None,
+        box_name: None,
         events: None,
         agent: false,
         reports: false,
@@ -298,7 +298,7 @@ fn an_idle_written_by_show_is_collected_by_the_next_pass() {
     );
     let (cx, id) = quiet_agent_on(dir.path(), &driver);
     let list = ShowReq {
-        task: None,
+        box_name: None,
         events: None,
         agent: false,
         reports: false,

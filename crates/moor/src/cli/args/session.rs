@@ -106,7 +106,7 @@ impl From<SessionCmd> for Request {
                 parent: a.parent.map(SessionId::new),
             }),
             None => Self::OpenSession(OpenSessionReq {
-                task: a.task.map(|t| t.as_str().to_string()).unwrap_or_default(),
+                box_name: a.task.map(|t| t.as_str().to_string()).unwrap_or_default(),
                 seed: a.seed.or(a.seed_file).unwrap_or_default(),
                 parent: a.parent.map(SessionId::new),
             }),

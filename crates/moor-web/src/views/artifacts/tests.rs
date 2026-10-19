@@ -136,7 +136,7 @@ fn artifact_list_passes_the_all_flag() {
     assert!(get(&web, "/boxes/app/1/artifacts?all=1").starts_with("HTTP/1.1 200"));
     let sent = sent.lock().unwrap().clone();
     assert_eq!(sent.len(), 2, "{sent:?}");
-    assert_eq!(sent[0]["task"], "app/1");
+    assert_eq!(sent[0]["box"], "app/1");
     assert_ne!(sent[0]["all"], true);
     assert_eq!(sent[1]["all"], true);
 }
@@ -163,7 +163,7 @@ fn a_binary_artifact_is_reassembled_from_three_reads() {
     assert_hardened(&resp);
     let reads = reads(&sent);
     assert_eq!(reads.len(), 3, "{reads:?}");
-    assert_eq!(reads[0]["task"], "app/1");
+    assert_eq!(reads[0]["box"], "app/1");
     assert_eq!(reads[0]["name"], "out.bin");
     assert_eq!(reads[0]["len"], 512 * 1024);
     let offsets: Vec<u64> = reads

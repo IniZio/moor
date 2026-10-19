@@ -156,7 +156,7 @@ impl Cmd {
             Self::WaitEvents(a) => Action::Request(Request::WaitEvents(a.into())),
             Self::Steer(a) => Action::Request(Request::Steer(a.into())),
             Self::End(a) => Action::Request(Request::EndSession(EndSessionReq {
-                task: a.task.as_str().to_string(),
+                box_name: a.task.as_str().to_string(),
             })),
             Self::Session(c) => Action::Request(c.into()),
             Self::Report(a) => Action::Request(Request::Report(a.into())),
@@ -275,7 +275,7 @@ struct RunArgs {
 impl From<RunArgs> for RunReq {
     fn from(a: RunArgs) -> Self {
         Self {
-            task: a.task,
+            box_name: a.task,
             no_sync: a.no_sync,
             sync: a.sync,
             record: a.record,
@@ -303,7 +303,7 @@ struct SteerArgs {
 impl From<SteerArgs> for SteerReq {
     fn from(a: SteerArgs) -> Self {
         Self {
-            task: a.task,
+            box_name: a.task,
             text: a.text,
             menu: a.menu,
         }
@@ -330,7 +330,7 @@ struct ReportArgs {
 impl From<ReportArgs> for ReportReq {
     fn from(a: ReportArgs) -> Self {
         Self {
-            task: a.task,
+            box_name: a.task,
             kind: a.kind,
             title: a.title,
             file: a.file,
@@ -368,7 +368,7 @@ struct ShowArgs {
 impl From<ShowArgs> for ShowReq {
     fn from(a: ShowArgs) -> Self {
         Self {
-            task: a.task,
+            box_name: a.task,
             events: a.events,
             agent: a.agent,
             reports: a.reports,

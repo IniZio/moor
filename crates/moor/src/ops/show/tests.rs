@@ -53,7 +53,7 @@ fn cx(dir: &Path, driver: &Arc<FakeDriver>) -> Cx {
 /// Request showing everything.
 fn req(task: Option<&str>, events: Option<u32>) -> ShowReq {
     ShowReq {
-        task: task.map(|t| BoxName::parse_allow_bare(t).unwrap()),
+        box_name: task.map(|t| BoxName::parse_allow_bare(t).unwrap()),
         events,
         agent: false,
         reports: false,

@@ -32,9 +32,9 @@ const STEER_DEADLINE: Duration = Duration::from_secs(30);
 /// does not fit what the agent shows, or the send failed.
 pub(crate) fn run(cx: &Cx, req: &SteerReq) -> Result<SteerValue, CommandError> {
     let store = cx.store()?;
-    let name = req.task.as_str();
+    let name = req.box_name.as_str();
     let id = store
-        .open_task_by_name(&req.task)?
+        .open_task_by_name(&req.box_name)?
         .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no open task {name}")))?
         .id;
     let no_agent = || {
@@ -215,7 +215,7 @@ fn menu_answered(cx: &Cx, store: &Store, row: &BoxRow) -> Result<bool, CommandEr
 ///
 /// A blocked agent takes a menu choice only: `--menu N`, or a lone digit as the text.
 fn choose(req: &SteerReq, state: Option<&AgentState>) -> Result<Steer, CommandError> {
-    let task = req.task.as_str();
+    let task = req.box_name.as_str();
     let waiting = match state {
         Some(AgentState::NeedsInput { question, .. }) => Some(question),
         _ => None,

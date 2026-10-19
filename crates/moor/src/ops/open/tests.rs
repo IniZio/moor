@@ -11,7 +11,7 @@ use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
 use moor_core::seam::surface::SurfaceError;
-use moor_core::{BoxId, BoxName, ErrorKind, ProviderId, TaskReq};
+use moor_core::{BoxId, BoxName, BoxReq, ErrorKind, ProviderId};
 
 use super::{connect, run};
 use crate::cx::Cx;
@@ -110,9 +110,9 @@ fn asleep(f: &Fx) {
     store.apply(d).unwrap();
 }
 
-fn req() -> TaskReq {
-    TaskReq {
-        task: BoxName::parse_allow_bare("t").unwrap(),
+fn req() -> BoxReq {
+    BoxReq {
+        box_name: BoxName::parse_allow_bare("t").unwrap(),
     }
 }
 
@@ -176,8 +176,8 @@ fn second_open_focuses_again_without_waking() {
 #[test]
 fn unknown_task_is_failed_and_not_focused() {
     let f = fx();
-    let r = TaskReq {
-        task: BoxName::parse_allow_bare("nope").unwrap(),
+    let r = BoxReq {
+        box_name: BoxName::parse_allow_bare("nope").unwrap(),
     };
     let err = run(&f.cx, &r).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Failed);
@@ -288,8 +288,8 @@ fn connect_without_a_workspace_is_refused() {
 #[test]
 fn connect_unknown_task_is_failed() {
     let f = fx();
-    let r = TaskReq {
-        task: BoxName::parse_allow_bare("nope").unwrap(),
+    let r = BoxReq {
+        box_name: BoxName::parse_allow_bare("nope").unwrap(),
     };
     let err = connect(&f.cx, &r).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Failed);

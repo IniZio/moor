@@ -264,7 +264,7 @@ fn event_frame_golden_without_box_or_session() {
 
 #[test]
 fn protocol_is_four_and_old_hello_still_parses() {
-    assert_eq!(PROTOCOL, 4);
+    assert_eq!(PROTOCOL, 5);
     let got = parse_frame(r#"{"frame":"hello","protocol":1}"#);
     assert_eq!(got, Ok(ClientFrame::Hello { protocol: 1 }));
 }

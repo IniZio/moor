@@ -39,7 +39,7 @@ fn version_reports_build_info() {
 fn other_ops_are_not_implemented() {
     let cx = cx();
     let req = Request::Remove(RemoveReq {
-        task: moor_core::name::BoxName::parse_allow_bare("t").unwrap(),
+        box_name: moor_core::name::BoxName::parse_allow_bare("t").unwrap(),
         discard: false,
     });
     let err = dispatch(&cx, req).expect_err("not implemented");

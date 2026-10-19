@@ -35,7 +35,13 @@ pub(super) fn list(client: &Client, req: &HttpRequest, name: &str) -> HttpRespon
         Err(resp) => return resp,
     };
     let all = req.query_param("all") == Some("1");
-    match call(client, Request::Artifacts(ArtifactsReq { task, all })) {
+    match call(
+        client,
+        Request::Artifacts(ArtifactsReq {
+            box_name: task,
+            all,
+        }),
+    ) {
         Ok(value) => json_ok(&value),
         Err(resp) => resp,
     }
@@ -90,7 +96,7 @@ fn fetch(
         let chunk = call(
             client,
             Request::ArtifactRead(ArtifactReadReq {
-                task: task.clone(),
+                box_name: task.clone(),
                 name: file.to_owned(),
                 version: Some(version),
                 offset,
@@ -158,7 +164,7 @@ pub(super) fn read(client: &Client, req: &HttpRequest, name: &str, file: &str) -
     let listed = match call(
         client,
         Request::Artifacts(ArtifactsReq {
-            task: task.clone(),
+            box_name: task.clone(),
             all: true,
         }),
     ) {

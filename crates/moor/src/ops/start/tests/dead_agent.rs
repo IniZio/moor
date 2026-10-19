@@ -87,7 +87,7 @@ fn a_dead_agent_shows_as_failed_and_wait_fails() {
     w.surface.push_pane_obs("p-1", Ok(exited(127, "")));
     run(&w.cx, &goal_req("demo")).unwrap();
     let show = ShowReq {
-        task: None,
+        box_name: None,
         events: None,
         agent: true,
         reports: false,
@@ -99,7 +99,7 @@ fn a_dead_agent_shows_as_failed_and_wait_fails() {
     assert_eq!((t.lifecycle, t.session_state), WORKING);
     assert_eq!(t.agent.as_ref().unwrap().state, "failed");
     let wait = WaitReq {
-        task: BoxName::parse_allow_bare("demo").unwrap(),
+        box_name: BoxName::parse_allow_bare("demo").unwrap(),
         wait_for: Some(WaitFor::Idle),
         timeout_secs: Some(60),
     };

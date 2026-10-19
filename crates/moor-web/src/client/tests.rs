@@ -19,7 +19,7 @@ use super::*;
 
 fn show() -> Request {
     Request::Show(ShowReq {
-        task: None,
+        box_name: None,
         events: None,
         agent: false,
         reports: false,

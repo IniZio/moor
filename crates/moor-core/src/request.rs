@@ -11,7 +11,7 @@ pub use binding::{BindSessionReq, SessionBindingReq};
 mod repos;
 pub use repos::ReposReq;
 mod session;
-pub use session::{SessionsReq, ShowSessionReq};
+pub use session::{EndSessionReq, OpenSessionReq, SessionsReq, ShowSessionReq};
 mod wait;
 pub use wait::{WaitEventsReq, WaitFor, WaitMode, WaitReq};
 
@@ -58,15 +58,15 @@ pub enum Request {
     /// Copy a file into a task's box.
     Cp(CpReq),
     /// Open a task's workspace.
-    Open(TaskReq),
+    Open(BoxReq),
     /// Open a shell in a task's box.
-    Shell(TaskReq),
+    Shell(BoxReq),
     /// Sleep a task's box.
-    Sleep(TaskReq),
+    Sleep(BoxReq),
     /// Wake a task's box.
-    Wake(TaskReq),
+    Wake(BoxReq),
     /// Wake a task's box and return the command that attaches to its workspace; the caller runs it.
-    Connect(TaskReq),
+    Connect(BoxReq),
     /// Check a gate.
     Gate(GateReq),
     /// Show the layered environment.
@@ -183,7 +183,8 @@ pub struct StartReq {
 )]
 pub struct RunReq {
     /// Box name.
-    pub task: BoxName,
+    #[serde(rename = "box")]
+    pub box_name: BoxName,
     /// Skip syncing before the run.
     #[serde(default)]
     pub no_sync: bool,
@@ -210,34 +211,14 @@ pub struct RunReq {
 #[serde(deny_unknown_fields)]
 pub struct SteerReq {
     /// Box name.
-    pub task: BoxName,
+    #[serde(rename = "box")]
+    pub box_name: BoxName,
     /// Text to send.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
     /// Menu entry to pick.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub menu: Option<u32>,
-}
-
-/// Arguments of `end-session`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct EndSessionReq {
-    /// Task name.
-    pub task: String,
-}
-
-/// Arguments of `open-session`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct OpenSessionReq {
-    /// Task name.
-    pub task: String,
-    /// Text the agent receives as its first prompt.
-    pub seed: String,
-    /// Parent Session of the Session this request opens.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub parent: Option<SessionId>,
 }
 
 /// Arguments of `open-host-session`.
@@ -284,7 +265,8 @@ pub struct EndHostSessionReq {
 #[serde(deny_unknown_fields)]
 pub struct ReportReq {
     /// Box name.
-    pub task: BoxName,
+    #[serde(rename = "box")]
+    pub box_name: BoxName,
     /// Report kind.
     pub kind: String,
     /// Report title.
@@ -305,7 +287,8 @@ pub struct ReportReq {
 pub struct ShowReq {
     /// Box name; all tasks when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub task: Option<BoxName>,
+    #[serde(rename = "box")]
+    pub box_name: Option<BoxName>,
     /// Number of events to include.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub events: Option<u32>,
@@ -328,7 +311,8 @@ pub struct ShowReq {
 #[serde(deny_unknown_fields)]
 pub struct CloseReq {
     /// Box name.
-    pub task: BoxName,
+    #[serde(rename = "box")]
+    pub box_name: BoxName,
     /// Close despite unfinished work.
     #[serde(default)]
     pub force: bool,
@@ -342,7 +326,8 @@ pub struct CloseReq {
 #[serde(deny_unknown_fields)]
 pub struct RemoveReq {
     /// Box name.
-    pub task: BoxName,
+    #[serde(rename = "box")]
+    pub box_name: BoxName,
     /// Discard unmerged work.
     #[serde(default)]
     pub discard: bool,
@@ -353,7 +338,8 @@ pub struct RemoveReq {
 #[serde(deny_unknown_fields)]
 pub struct CpReq {
     /// Box name.
-    pub task: BoxName,
+    #[serde(rename = "box")]
+    pub box_name: BoxName,
     /// Source path.
     pub src: String,
     /// Destination path.
@@ -363,9 +349,10 @@ pub struct CpReq {
 /// Arguments of commands that take only a task.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct TaskReq {
+pub struct BoxReq {
     /// Box name.
-    pub task: BoxName,
+    #[serde(rename = "box")]
+    pub box_name: BoxName,
 }
 
 /// Arguments of `gate`.

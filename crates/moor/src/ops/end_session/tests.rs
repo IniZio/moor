@@ -115,7 +115,9 @@ fn ready_task(cx: &Cx, driver: &FakeDriver) -> BoxId {
 }
 
 fn req() -> EndSessionReq {
-    EndSessionReq { task: "t".into() }
+    EndSessionReq {
+        box_name: "t".into(),
+    }
 }
 
 fn kinds(f: &Fx) -> Vec<String> {
@@ -220,7 +222,13 @@ fn the_transcript_is_saved_with_the_end_trigger() {
 #[test]
 fn an_unknown_task_is_not_found() {
     let f = fx_with(true);
-    let err = run(&f.cx, &EndSessionReq { task: "x".into() }).unwrap_err();
+    let err = run(
+        &f.cx,
+        &EndSessionReq {
+            box_name: "x".into(),
+        },
+    )
+    .unwrap_err();
     assert_eq!(err.kind, ErrorKind::Failed);
     assert!(err.error.to_string().contains("no open task x"));
 }

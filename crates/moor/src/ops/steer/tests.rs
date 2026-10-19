@@ -152,7 +152,7 @@ fn working() -> Probes {
 
 fn text(t: &str) -> SteerReq {
     SteerReq {
-        task: BoxName::parse_allow_bare("t").unwrap(),
+        box_name: BoxName::parse_allow_bare("t").unwrap(),
         text: Some(t.to_owned()),
         menu: None,
     }
@@ -160,7 +160,7 @@ fn text(t: &str) -> SteerReq {
 
 fn menu(n: u32) -> SteerReq {
     SteerReq {
-        task: BoxName::parse_allow_bare("t").unwrap(),
+        box_name: BoxName::parse_allow_bare("t").unwrap(),
         text: None,
         menu: Some(n),
     }
@@ -193,7 +193,7 @@ fn steered_id(f: &Fx) -> i64 {
 fn an_unknown_task_is_refused() {
     let f = fx();
     let req = SteerReq {
-        task: BoxName::parse_allow_bare("other").unwrap(),
+        box_name: BoxName::parse_allow_bare("other").unwrap(),
         ..text("hi")
     };
     let err = run(&f.cx, &req).unwrap_err();

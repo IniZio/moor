@@ -122,7 +122,7 @@ fn answer(script: &Script, request: &Request) -> Response {
                 .collect();
             Response::ok("show", Some(json!({"tasks": tasks})))
         }
-        Request::Close(c) if Some(c.task.as_str()) == script.refuse_close => {
+        Request::Close(c) if Some(c.box_name.as_str()) == script.refuse_close => {
             refused("close", "has unmerged work")
         }
         Request::EndHostSession(e) if Some(e.session.get()) == script.refuse_end => {
@@ -239,7 +239,7 @@ fn end_request(f: &Front) -> Value {
 
 fn close(task: &str) -> Request {
     Request::Close(CloseReq {
-        task: BoxName::parse_allow_bare(task).unwrap(),
+        box_name: BoxName::parse_allow_bare(task).unwrap(),
         force: false,
         trust_moor_yaml: false,
     })

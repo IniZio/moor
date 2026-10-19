@@ -7,7 +7,7 @@ use crate::request::Request;
 use crate::response::Response;
 
 /// Protocol revision a client announces in its hello frame.
-pub const PROTOCOL: u32 = 4;
+pub const PROTOCOL: u32 = 5;
 
 /// A frame sent by a client.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -23,7 +23,7 @@ use crate::store::{artifacts::ArtifactRow, Store};
 /// [`CommandError`] when the Task is unknown or a store read fails.
 pub(crate) fn list(cx: &Cx, req: &ArtifactsReq) -> Result<Vec<ArtifactView>, CommandError> {
     let store = cx.store()?;
-    let task = task_id(store, &req.task)?;
+    let task = task_id(store, &req.box_name)?;
     let rows = if req.all {
         store.artifacts(task)?
     } else {
@@ -58,7 +58,8 @@ pub(crate) fn read(cx: &Cx, req: &ArtifactReadReq) -> Result<ArtifactChunk, Comm
         ));
     }
     let store = cx.store()?;
-    let task = task_id(store, &req.task)?;
+    let name = req.box_name.as_str();
+    let task = task_id(store, &req.box_name)?;
     let rows = store.artifacts(task)?;
     let row = rows
         .iter()
@@ -68,7 +69,7 @@ pub(crate) fn read(cx: &Cx, req: &ArtifactReadReq) -> Result<ArtifactChunk, Comm
             let which = req.version.map_or_else(String::new, |v| format!(" v{v}"));
             CommandError::new(
                 ErrorKind::NotFound,
-                format!("no artifact {}{which} for {}", req.name, req.task.as_str()),
+                format!("no artifact {}{which} for {name}", req.name),
             )
         })?;
     let box_dir = cx

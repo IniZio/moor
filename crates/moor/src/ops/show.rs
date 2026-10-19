@@ -99,7 +99,7 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
     reconcile::run(cx);
     let store = cx.store()?;
     let now = cx.clock().now();
-    let Some(name) = &req.task else {
+    let Some(name) = &req.box_name else {
         let mut tasks: Vec<TaskView> = Vec::new();
         let mut sleep_caps = HashMap::new();
         for mut row in store.open_tasks()? {

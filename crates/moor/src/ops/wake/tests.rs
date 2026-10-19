@@ -10,7 +10,7 @@ use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, SleepKind};
-use moor_core::{BoxId, BoxName, ErrorKind, ProviderId, TaskReq};
+use moor_core::{BoxId, BoxName, BoxReq, ErrorKind, ProviderId};
 
 use super::run;
 use crate::cx::Cx;
@@ -97,9 +97,9 @@ fn asleep(f: &Fx) {
     store.apply(d).unwrap();
 }
 
-fn req() -> TaskReq {
-    TaskReq {
-        task: BoxName::parse_allow_bare("t").unwrap(),
+fn req() -> BoxReq {
+    BoxReq {
+        box_name: BoxName::parse_allow_bare("t").unwrap(),
     }
 }
 
@@ -174,8 +174,8 @@ fn gone_box_is_refused_without_a_resume() {
 #[test]
 fn unknown_task_is_failed() {
     let f = fx();
-    let r = TaskReq {
-        task: BoxName::parse_allow_bare("nope").unwrap(),
+    let r = BoxReq {
+        box_name: BoxName::parse_allow_bare("nope").unwrap(),
     };
     let err = run(&f.cx, &r).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Failed);

@@ -334,8 +334,8 @@ fn an_explicit_sleep_still_asks_the_driver() {
     let f = refusing();
     pass(&f, LONG);
     auto_sleep(&f);
-    let req = moor_core::TaskReq {
-        task: BoxName::parse_allow_bare("t").unwrap(),
+    let req = moor_core::BoxReq {
+        box_name: BoxName::parse_allow_bare("t").unwrap(),
     };
     let err = crate::ops::sleep::run(&f.cx, &req);
     assert!(err.is_err());

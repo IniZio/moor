@@ -44,7 +44,7 @@ pub(super) struct Fx {
 
 pub(super) fn req(force: bool) -> CloseReq {
     CloseReq {
-        task: BoxName::parse_allow_bare("t").unwrap(),
+        box_name: BoxName::parse_allow_bare("t").unwrap(),
         force,
         trust_moor_yaml: false,
     }

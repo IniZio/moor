@@ -37,7 +37,7 @@ use crate::store::{BoxRow, DriverRow, Store};
 /// seconds and a closed Task cannot get a new proxy row. Waiting tasks are then promoted.
 pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
     let store = cx.store()?;
-    let first = find(store, &req.task)?;
+    let first = find(store, &req.box_name)?;
     let lock = BoxLock::acquire(
         cx.clock(),
         cx.state_dir()?,

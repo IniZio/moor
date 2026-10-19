@@ -12,7 +12,7 @@ use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, SleepKind, SleepOutcome};
 use moor_core::seam::surface::SurfaceError;
 use moor_core::secret::Secret;
-use moor_core::{BoxId, BoxName, ErrorKind, ProviderId, TaskReq};
+use moor_core::{BoxId, BoxName, BoxReq, ErrorKind, ProviderId};
 
 use super::run;
 use crate::cx::Cx;
@@ -108,9 +108,9 @@ fn idle_with(driver: FakeDriver) -> Fx {
     f
 }
 
-fn req() -> TaskReq {
-    TaskReq {
-        task: BoxName::parse_allow_bare("t").unwrap(),
+fn req() -> BoxReq {
+    BoxReq {
+        box_name: BoxName::parse_allow_bare("t").unwrap(),
     }
 }
 
@@ -287,8 +287,8 @@ fn a_later_successful_sleep_clears_the_reason() {
 #[test]
 fn unknown_task_fails() {
     let f = fx();
-    let other = TaskReq {
-        task: BoxName::parse_allow_bare("nope").unwrap(),
+    let other = BoxReq {
+        box_name: BoxName::parse_allow_bare("nope").unwrap(),
     };
     let err = run(&f.cx, &other).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Failed);

@@ -27,11 +27,10 @@ pub(crate) fn run(cx: &Cx, req: &WaitReq) -> Result<WaitValue, CommandError> {
     let started = clock.instant();
     reconcile::run(cx);
     let store = cx.store()?;
+    let name = req.box_name.as_str();
     let id = store
-        .latest_task_by_name(&req.task)?
-        .ok_or_else(|| {
-            CommandError::new(ErrorKind::Failed, format!("no task {}", req.task.as_str()))
-        })?
+        .latest_task_by_name(&req.box_name)?
+        .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no task {name}")))?
         .id;
     let want = req.wait_for.unwrap_or(WaitFor::Idle);
     let timeout = req
@@ -39,9 +38,9 @@ pub(crate) fn run(cx: &Cx, req: &WaitReq) -> Result<WaitValue, CommandError> {
         .map_or(DEFAULT_TIMEOUT, Duration::from_secs);
     loop {
         let elapsed = clock.instant().saturating_duration_since(started);
-        let row = store.task(id)?.ok_or_else(|| {
-            CommandError::new(ErrorKind::Failed, format!("no task {}", req.task.as_str()))
-        })?;
+        let row = store
+            .task(id)?
+            .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no task {name}")))?;
         let reading = activity::read(cx, store, &row, clock.now())?;
         if let Some(failure) = reading
             .launch_failure

@@ -42,7 +42,7 @@ pub(in crate::ops::run) struct Fx {
 
 pub(in crate::ops::run) fn req(argv: &[&str]) -> RunReq {
     RunReq {
-        task: BoxName::parse_allow_bare("t").unwrap(),
+        box_name: BoxName::parse_allow_bare("t").unwrap(),
         no_sync: false,
         sync: false,
         record: None,
@@ -247,7 +247,7 @@ fn refused(f: &Fx, r: &RunReq, kind: ErrorKind) -> String {
 fn unknown_task_is_refused() {
     let f = bare();
     let mut r = req(&["true"]);
-    r.task = BoxName::parse_allow_bare("nope").unwrap();
+    r.box_name = BoxName::parse_allow_bare("nope").unwrap();
     let before = f.driver.calls().len();
     assert_eq!(refused(&f, &r, ErrorKind::Failed), "no task nope");
     assert_eq!(f.driver.calls().len(), before);
