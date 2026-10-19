@@ -10,6 +10,7 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::capacity;
 use crate::ops::common::facts::settings;
+use crate::ops::common::provision::Provisioned;
 use crate::ops::common::view::{hide_unsupported_sleep, task_view};
 use crate::store::TaskRow;
 
@@ -62,5 +63,17 @@ pub(super) fn view(cx: &Cx, row: &TaskRow, attached: bool) -> StartView {
         dotfiles: DotfilesView::default(),
         agent: AgentLaunchView::default(),
         warnings_inline: Vec::new(),
+        failed_step: None,
+        boxed: None,
+    }
+}
+
+/// Puts what provisioning ran in the view; a failed setup line also names the step and the Box.
+pub(super) fn set_provisioned(v: &mut StartView, p: &Provisioned) {
+    v.setup = p.setup.view();
+    v.dotfiles = p.dotfiles.view();
+    if p.setup.failed() {
+        v.failed_step = Some("setup".to_owned());
+        v.boxed = v.task.r#box.as_ref().and_then(|b| b.handle.clone());
     }
 }

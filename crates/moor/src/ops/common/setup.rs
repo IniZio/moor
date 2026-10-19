@@ -43,6 +43,8 @@ pub(crate) enum SetupRun {
         exit: Option<i32>,
         /// Time the script took, in milliseconds.
         ms: u64,
+        /// The last lines of the script's log, tidied; empty when the log was unreadable.
+        tail: String,
     },
 }
 
@@ -64,12 +66,14 @@ impl SetupRun {
                 ok: true,
                 line: None,
                 ms: Some(*ms),
+                tail: None,
             },
-            Self::Failed { line, ms, .. } => SetupView {
+            Self::Failed { line, ms, tail, .. } => SetupView {
                 ran: true,
                 ok: false,
                 line: Some(line.clone()),
                 ms: Some(*ms),
+                tail: Some(tail.clone()).filter(|t| !t.is_empty()),
             },
         }
     }
@@ -170,7 +174,12 @@ pub(crate) fn run_setup(
         code: "setup_failed".to_owned(),
         message: failure_message(&line, &reason, workdir, &log),
     });
-    SetupRun::Failed { line, exit, ms }
+    SetupRun::Failed {
+        line,
+        exit,
+        ms,
+        tail: tail_lines(&log).join("\n"),
+    }
 }
 
 /// Why the script did not run to an exit.
@@ -225,21 +234,26 @@ pub(crate) fn sync_checkout(
 fn failure_message(line: &str, reason: &str, workdir: &BoxPath, log: &str) -> String {
     let path = format!("{}/{LOG_REL}", workdir.as_str());
     let mut msg = format!("setup line `{line}` failed: {reason}\nfull log in the Box: {path}");
+    let tail = tail_lines(log);
+    if tail.is_empty() {
+        return msg;
+    }
+    let _ = write!(msg, "\nlast {} lines:\n{}", tail.len(), tail.join("\n"));
+    msg
+}
+
+/// The last lines of `log`, each tidied.
+fn tail_lines(log: &str) -> Vec<String> {
     // A terminal shows only the last frame of a line redrawn with `\r`.
     let lines: Vec<&str> = log
         .lines()
         .filter_map(|l| l.rsplit('\r').find(|seg| !seg.is_empty()))
         .collect();
-    if lines.is_empty() {
-        return msg;
-    }
-    let tail: Vec<String> = lines
+    lines
         .iter()
         .skip(lines.len().saturating_sub(LOG_TAIL_LINES))
         .map(|l| tidy(l))
-        .collect();
-    let _ = write!(msg, "\nlast {} lines:\n{}", tail.len(), tail.join("\n"));
-    msg
+        .collect()
 }
 
 /// Drops ANSI escape sequences and other control characters, and caps the length.

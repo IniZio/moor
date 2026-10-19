@@ -282,6 +282,22 @@ fn start_says_setup_failed_and_keeps_the_open_hint() {
 }
 
 #[test]
+fn start_names_the_failed_step_its_tail_the_box_and_how_to_close_it() {
+    let v = json!({
+        "task": lifecycle_task("alpha", "working", Some("ready")),
+        "setup": {"ran": true, "ok": false, "tail": "npm ERR! missing\nexit 1"},
+        "failed_step": "setup",
+        "box": "box-9",
+    });
+    let (out, _) = render(&Response::ok("start", Some(v)), false);
+    assert_eq!(
+        out,
+        "started alpha (#7): working, box ready, setup failed\nopen it with: moor open alpha\n\
+         setup failed in Box box-9:\n  npm ERR! missing\n  exit 1\nclose it with: moor close alpha\n"
+    );
+}
+
+#[test]
 fn start_does_not_say_setup_failed_when_setup_passed_or_did_not_run() {
     for setup in [
         json!({"ran": true, "ok": true}),

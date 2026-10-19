@@ -230,6 +230,40 @@ fn a_failing_setup_leaves_a_working_task_and_runs_nothing_more() {
 }
 
 #[test]
+fn a_failing_setup_names_the_step_tail_and_box_in_json_and_text() {
+    let driver = FakeDriver::new()
+        .exec_results(scripted([Sync(Ok(exit(0))), Cmd(Ok(exit(1)))]))
+        .copy_text("moor setup: $ a\nboom: no such file\n");
+    let (_, v) = start_with("setup: [a]\n", driver);
+    assert_eq!(v.failed_step.as_deref(), Some("setup"));
+    assert_eq!(v.boxed.as_deref(), Some("box-1"));
+    let json = serde_json::to_value(&v).unwrap();
+    assert_eq!(json.pointer("/failed_step"), Some(&"setup".into()));
+    assert_eq!(json.pointer("/box"), Some(&"box-1".into()));
+    assert_eq!(
+        json.pointer("/setup/tail"),
+        Some(&"moor setup: $ a\nboom: no such file".into())
+    );
+    let out = crate::cli::render(
+        &moor_core::Response::ok("start", Some(json)),
+        &crate::cli::GlobalOpts::default(),
+    )
+    .stdout;
+    assert!(out.starts_with("started demo (#1): working, box ready, setup failed\n"));
+    assert!(out.contains(
+        "setup failed in Box box-1:\n  moor setup: $ a\n  boom: no such file\nclose it with: moor close demo\n"
+    ));
+    assert!(out.contains("open it with: moor open demo\n"));
+}
+
+#[test]
+fn a_clean_setup_names_no_failed_step() {
+    let driver = FakeDriver::new().exec_results(scripted([Sync(Ok(exit(0))), Cmd(Ok(exit(0)))]));
+    let (_, v) = start_with("setup: [a]\n", driver);
+    assert_eq!((v.failed_step, v.boxed), (None, None));
+}
+
+#[test]
 fn a_failed_setup_copies_its_log_out_of_the_box_into_the_worktree() {
     let driver = FakeDriver::new().exec_results(scripted([Sync(Ok(exit(0))), Cmd(Ok(exit(1)))]));
     let (w, v) = start_with("setup: [a]\n", driver);
