@@ -314,7 +314,7 @@ fn note_needs_input(store: &Store, row: &TaskRow, reading: &Reading) -> Result<(
     else {
         return Ok(());
     };
-    let event = Event::NeedsInput {
+    let event: Event = Event::NeedsInput {
         question: question.clone(),
         options: options.clone(),
     };

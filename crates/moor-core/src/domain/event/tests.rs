@@ -498,7 +498,7 @@ fn box_failure_events_carry_handle() {
 /// `SessionEnded` names itself and carries the documented payload.
 #[test]
 fn session_ended_kind_and_payload() {
-    let e = Event::SessionEnded {
+    let e: Event = Event::SessionEnded {
         session: 3,
         cause: s("exited"),
         exit: None,
@@ -522,7 +522,7 @@ fn turn_done_kind_and_payload() {
         (TurnOutcome::NeedsInput, "needs_input"),
         (TurnOutcome::Exited, "exited"),
     ] {
-        let e = Event::TurnDone { steer: 7, outcome };
+        let e: Event = Event::TurnDone { steer: 7, outcome };
         assert_eq!(e.kind(), "turn_done");
         assert_eq!(e.payload(), serde_json::json!({"steer":7,"outcome":name}));
     }
@@ -531,7 +531,7 @@ fn turn_done_kind_and_payload() {
 /// `ArtifactPublished` carries its artifact kind as `artifact_kind`, since `kind` is the tag.
 #[test]
 fn artifact_published_kind_and_payload() {
-    let e = Event::ArtifactPublished {
+    let e: Event = Event::ArtifactPublished {
         name: s("shot.png"),
         version: 2,
         artifact_kind: s("screenshot"),

@@ -8,7 +8,7 @@ fn s(v: &str) -> String {
 
 #[test]
 fn relaunched_cause_is_omitted_when_none() {
-    let e = Event::Relaunched {
+    let e: Event = Event::Relaunched {
         old_pane: None,
         new_pane: None,
         goal: None,
@@ -19,7 +19,7 @@ fn relaunched_cause_is_omitted_when_none() {
 
 #[test]
 fn relaunched_cause_is_in_payload_when_set() {
-    let e = Event::Relaunched {
+    let e: Event = Event::Relaunched {
         old_pane: None,
         new_pane: None,
         goal: None,

@@ -9,7 +9,7 @@ fn s(v: &str) -> String {
 /// The egress and proxy credential events serialize with their kind tag and payload.
 #[test]
 fn egress_events_serialize_with_kind_tag() {
-    let cases = [
+    let cases: [(Event, &str, serde_json::Value); 7] = [
         (
             Event::EgressRefused {
                 host: s("h"),
