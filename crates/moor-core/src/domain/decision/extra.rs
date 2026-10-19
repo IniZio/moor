@@ -1,7 +1,6 @@
 //! Events a decision may carry, and their conversion to and from stored events.
 
-use crate::decide::turn::TurnOutcome;
-use crate::domain::event::{CheckedCred, Event};
+use crate::domain::event::{CheckedCred, Event, TurnOutcome};
 use crate::name::RunId;
 
 /// An event a caller may pass; every other kind is derived from state steps.

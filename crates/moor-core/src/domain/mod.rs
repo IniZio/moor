@@ -9,6 +9,7 @@ pub mod proof;
 pub mod run;
 pub mod session_state;
 pub mod task;
+pub mod turn;
 
 /// A state machine input that is not legal from the current state.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

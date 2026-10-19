@@ -2,8 +2,8 @@
 
 use serde::Serialize;
 
-use crate::decide::turn::TurnOutcome;
 use crate::domain::task::{SetupOutcome, TaskInput, TaskState};
+pub use crate::domain::turn::TurnOutcome;
 use crate::name::RunId;
 
 /// The event kinds the event tests pin. Frozen.
