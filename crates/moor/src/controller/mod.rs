@@ -43,12 +43,7 @@ pub fn serve(env: &Env, config: &Path, stderr: impl Write + Send + 'static) -> u
             for line in Moor::reconcile_proxies(&running.env) {
                 log(&sink, &format!("proxy: {line}"));
             }
-            settle::spawn(
-                &running.env,
-                running.settle_every,
-                running.proof_max_bytes,
-                &sink,
-            );
+            settle::spawn(&running.env, running.settle_every, &sink);
             if let Some(slack) = running.slack.take() {
                 let out = Sink::clone(&sink);
                 slack.spawn(
@@ -109,8 +104,6 @@ struct Running {
     env: Arc<Env>,
     /// Time between settle passes.
     settle_every: Duration,
-    /// Largest proof file, in bytes, copied to the state directory.
-    proof_max_bytes: u64,
 }
 
 /// Loads `config`, takes the instance lock and binds the socket.
@@ -151,7 +144,6 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
         slack,
         env: Arc::new(env),
         settle_every: cfg.settle_every(),
-        proof_max_bytes: cfg.proof_max_bytes(),
     })
 }
 

@@ -287,18 +287,6 @@ pub enum Event {
         /// The tool rule whose credential failed.
         rule: String,
     },
-    /// A new or changed proof file was found in the Box.
-    Proof {
-        /// The file name under the proof directory.
-        name: String,
-        /// The file size in bytes.
-        size: u64,
-        /// The hex SHA-256 digest of the file.
-        sha256: String,
-        /// Why the file was not copied, when it was over the size cap.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        refused: Option<String>,
-    },
     /// An upstream answered a credential rule's request with 429: the account behind the rule is rate limited.
     AgentRateLimited {
         /// The credential rule whose account is rate limited.
@@ -385,8 +373,6 @@ mod boxes;
 mod checked;
 mod kind;
 
-#[cfg(test)]
-mod proof_tests;
 #[cfg(test)]
 mod proxy_tests;
 #[cfg(test)]

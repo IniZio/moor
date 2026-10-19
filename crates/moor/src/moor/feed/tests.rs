@@ -4,7 +4,6 @@ use std::path::Path;
 use std::sync::Arc;
 
 use moor_core::activity::{HookKind, HookRead, HookRecord, PaneObs, PaneRead, PaneStatus, Probes};
-use moor_core::config::DEFAULT_PROOF_MAX_BYTES;
 use moor_core::controller::ServerFrame;
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
@@ -128,7 +127,7 @@ fn events_after_maps_rows_to_frames_strictly_after_the_cursor() {
 fn settle_open_stores_an_idled_event_for_a_quiet_agent() {
     let dir = tempfile::tempdir().unwrap();
     let moor = Moor::from_cx(quiet_agent(dir.path()));
-    let msgs = moor.settle_open(DEFAULT_PROOF_MAX_BYTES);
+    let msgs = moor.settle_open();
     assert!(msgs.is_empty(), "{msgs:?}");
     let frames = moor.events_after(0, 100).unwrap();
     assert!(
@@ -136,34 +135,5 @@ fn settle_open_stores_an_idled_event_for_a_quiet_agent() {
             .iter()
             .any(|f| matches!(f, ServerFrame::Event { kind, .. } if kind == "idled")),
         "{frames:?}"
-    );
-}
-
-#[test]
-fn settle_open_records_and_copies_a_new_proof_file() {
-    let dir = tempfile::tempdir().unwrap();
-    let driver = Arc::new(
-        FakeDriver::new()
-            .exec_stdout([
-                "shot.png\t4\taaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
-            ])
-            .copy_text("png!"),
-    );
-    let cx = engine_cx(dir.path(), &driver, &Arc::new(FakeEngine::new()));
-    let id = working(&cx, &driver, "t", "s-1");
-    let moor = Moor::from_cx(cx);
-    let msgs = moor.settle_open(DEFAULT_PROOF_MAX_BYTES);
-    assert!(msgs.is_empty(), "{msgs:?}");
-    let frames = moor.events_after(0, 100).unwrap();
-    assert!(
-        frames
-            .iter()
-            .any(|f| matches!(f, ServerFrame::Event { kind, r#box, .. } if kind == "proof" && r#box.as_deref() == Some("t"))),
-        "{frames:?}"
-    );
-    assert_eq!(id.get(), 1);
-    assert_eq!(
-        std::fs::read_to_string(dir.path().join("proof/1/shot.png")).unwrap(),
-        "png!"
     );
 }

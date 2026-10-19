@@ -24,7 +24,7 @@ fn refs_listed_by_kind_in_insert_order() {
         ["acme/app#9", "acme/app#3"]
     );
     assert_eq!(store.box_refs(id, "branch").unwrap(), ["feat/x"]);
-    assert!(store.box_refs(id, "proof").unwrap().is_empty());
+    assert!(store.box_refs(id, "other").unwrap().is_empty());
 }
 
 #[test]
