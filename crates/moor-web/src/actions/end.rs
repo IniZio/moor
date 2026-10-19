@@ -132,7 +132,7 @@ fn open_boxes(client: &Client) -> Result<HashSet<i64>, JobFailure> {
         .flatten()
         .filter(|t| {
             !matches!(
-                t.get("state").and_then(Value::as_str),
+                t.get("lifecycle").and_then(Value::as_str),
                 Some("closed" | "rejected")
             )
         })

@@ -103,7 +103,7 @@ fn session(id: i64, parent: Option<i64>, bx: Option<&str>, ordinal: i64) -> Valu
 
 fn task(name: &str, state: &str, question: Option<&str>) -> Value {
     json!({
-        "name": name, "repo": "app", "branch": format!("moor/{name}"), "state": "running",
+        "name": name, "repo": "app", "branch": format!("moor/{name}"), "lifecycle": "ready", "session_state": "working",
         "goal": format!("goal of {name}"),
         "box": {"state": state},
         "agent": {"state": if question.is_some() { "needs_input" } else { "working" },
@@ -273,7 +273,7 @@ fn child_carries_task_and_agent_question() {
     assert_eq!(
         second["task"],
         json!({"name": "app/2", "repo": "app", "repo_url": "https://example.test/app.git",
-               "branch": "moor/app/2", "state": "running", "goal": "goal of app/2",
+               "branch": "moor/app/2", "lifecycle": "ready", "session_state": "working", "goal": "goal of app/2",
                "box_state": "asleep"})
     );
     assert_eq!(
@@ -435,7 +435,7 @@ fn a_worker_whose_session_ended_but_whose_box_is_open_stays_in_the_tree() {
     open["id"] = json!(5);
     let mut closed = task("app/3", "gone", None);
     closed["id"] = json!(6);
-    closed["state"] = json!("closed");
+    closed["lifecycle"] = json!("closed");
     let mut map = (*answers()).clone();
     map.insert(
         "sessions",

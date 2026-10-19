@@ -69,12 +69,13 @@ fn list(tasks: &[Value]) -> Option<String> {
     if tasks.is_empty() {
         return Some("no tasks\n".to_owned());
     }
-    let rows: Vec<[&str; 5]> = tasks
+    let rows: Vec<[&str; 6]> = tasks
         .iter()
         .map(|t| {
             Some([
                 t.get("name")?.as_str()?,
-                field(t, "state"),
+                field(t, "lifecycle"),
+                field(t, "session_state"),
                 t.pointer("/agent/state")
                     .and_then(Value::as_str)
                     .unwrap_or("-"),
@@ -87,7 +88,7 @@ fn list(tasks: &[Value]) -> Option<String> {
             ])
         })
         .collect::<Option<_>>()?;
-    let mut widths = [0usize; 4];
+    let mut widths = [0usize; 5];
     for row in &rows {
         for (w, cell) in widths.iter_mut().zip(row) {
             *w = (*w).max(cell.len());
@@ -97,16 +98,18 @@ fn list(tasks: &[Value]) -> Option<String> {
     for (r, t) in rows.iter().zip(tasks) {
         let _ = writeln!(
             out,
-            "{:<w0$}  {:<w1$}  {:<w2$}  {:<w3$}  {}",
+            "{:<w0$}  {:<w1$}  {:<w2$}  {:<w3$}  {:<w4$}  {}",
             r[0],
             r[1],
             r[2],
             r[3],
             r[4],
+            r[5],
             w0 = widths[0],
             w1 = widths[1],
             w2 = widths[2],
             w3 = widths[3],
+            w4 = widths[4],
         );
         write_attention(&mut out, t, "  ");
     }
@@ -139,7 +142,8 @@ fn agent_block(out: &mut String, a: &Value) {
 fn detail(task: &Value, value: &Value) -> Option<String> {
     let mut out = String::new();
     let _ = writeln!(out, "name:     {}", task.get("name")?.as_str()?);
-    let _ = writeln!(out, "state:    {}", field(task, "state"));
+    let _ = writeln!(out, "lifecycle: {}", field(task, "lifecycle"));
+    let _ = writeln!(out, "session:   {}", field(task, "session_state"));
     let _ = writeln!(out, "repo:     {}", field(task, "repo"));
     let _ = writeln!(out, "worktree: {}", field(task, "worktree"));
     let _ = writeln!(out, "branch:   {}", field(task, "branch"));

@@ -142,7 +142,7 @@ fn happy_path_makes_a_working_task_with_a_ready_box() {
     let w = world(FakeDriver::new());
     let v = run(&w.cx, &req("demo")).unwrap();
     assert!(!v.attached);
-    assert_eq!(v.task.state.as_str(), "working");
+    assert_eq!((v.task.lifecycle, v.task.session_state), state::WORKING);
     assert_eq!(v.task.base.as_deref(), Some("abc123"));
     assert_eq!(v.task.workspace.as_deref(), Some("ws-1"));
     assert_eq!(v.task.branch.as_deref(), Some("demo"));
@@ -175,7 +175,7 @@ fn acquire_failure_keeps_a_failed_task_row() {
     assert_eq!(err.kind, ErrorKind::Failed);
     let shown = err.value.as_ref().expect("outcome rides the error");
     assert_eq!(
-        shown.pointer("/task/state"),
+        shown.pointer("/task/lifecycle"),
         Some(&serde_json::json!("setup_failed"))
     );
     let name = box_name("demo");
@@ -205,7 +205,7 @@ fn acquire_failure_with_release_error_keeps_failed_and_original_error() {
     let err = run(&w.cx, &req("demo")).unwrap_err();
     assert!(err.error.to_string().contains("boom"), "{err:?}");
     assert_eq!(
-        err.value.as_ref().unwrap().pointer("/task/state"),
+        err.value.as_ref().unwrap().pointer("/task/lifecycle"),
         Some(&serde_json::json!("setup_failed"))
     );
     let name = box_name("demo");
@@ -232,7 +232,10 @@ fn restart_of_a_closed_name_creates_a_new_task() {
     let second = run(&w.cx, &req("again")).unwrap();
     assert!(!second.attached);
     assert_ne!(second.task.id, first.task.id);
-    assert_eq!(second.task.state.as_str(), "working");
+    assert_eq!(
+        (second.task.lifecycle, second.task.session_state),
+        state::WORKING
+    );
 }
 
 #[test]
@@ -295,7 +298,7 @@ fn bound_worktree_skips_create_worktree() {
         .calls()
         .iter()
         .any(|c| c == "create_worktree demo"));
-    assert_eq!(v.task.state.as_str(), "working");
+    assert_eq!((v.task.lifecycle, v.task.session_state), state::WORKING);
 }
 
 #[test]
@@ -306,7 +309,10 @@ fn start_after_acquire_failure_gets_a_new_box() {
     run(&w.cx, &req("demo")).unwrap_err();
     let again = run(&w.cx, &req("demo")).unwrap();
     assert!(again.attached);
-    assert_eq!(again.task.state.as_str(), "working");
+    assert_eq!(
+        (again.task.lifecycle, again.task.session_state),
+        state::WORKING
+    );
     let row = w.cx.store().unwrap().task(BoxId::new(again.task.id));
     assert_eq!(row.unwrap().unwrap().boxed.unwrap().state, BoxState::Ready);
     assert_eq!(
@@ -326,7 +332,10 @@ fn start_on_a_gone_box_acquires_again_and_keeps_the_task_working() {
         .apply(Decision::new(id).box_input(BoxInput::DriverMissing))
         .unwrap();
     let again = run(&w.cx, &req("demo")).unwrap();
-    assert_eq!(again.task.state.as_str(), "working");
+    assert_eq!(
+        (again.task.lifecycle, again.task.session_state),
+        state::WORKING
+    );
     let b = store.task(id).unwrap().unwrap().boxed.unwrap();
     assert_eq!(b.state, BoxState::Ready);
     assert_ne!(b.handle.unwrap().as_str(), "box-1");
@@ -380,7 +389,7 @@ fn unresolved_credential_rejects_before_any_side_effect() {
     assert_eq!(err.kind, ErrorKind::Failed);
     assert!(err.error.to_string().contains("MISSING"), "{err:?}");
     assert_eq!(
-        err.value.as_ref().unwrap().pointer("/task/state"),
+        err.value.as_ref().unwrap().pointer("/task/lifecycle"),
         Some(&serde_json::json!("rejected"))
     );
     assert!(w.surface.calls().is_empty());
@@ -432,7 +441,10 @@ fn refused_start_provisions_when_retried_after_the_lock_is_released() {
     drop(held);
     let again = run(&w.cx, &req("demo")).unwrap();
     assert!(again.attached);
-    assert_eq!(again.task.state.as_str(), "working");
+    assert_eq!(
+        (again.task.lifecycle, again.task.session_state),
+        state::WORKING
+    );
     let row = w.cx.store().unwrap().task(BoxId::new(again.task.id));
     assert_eq!(row.unwrap().unwrap().boxed.unwrap().state, BoxState::Ready);
     assert_eq!(w.driver.calls(), ["acquire", "exec box-1"]);

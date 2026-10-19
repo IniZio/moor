@@ -294,6 +294,23 @@ fn ready_box_with_ended_session_reads_idle() {
     assert_eq!(row.idle_since.unwrap().as_millis(), 1_005_000);
 }
 
+#[test]
+fn ready_box_without_a_session_row_reads_starting() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = ready_box(&store);
+    let conn = store.writer().unwrap();
+    conn.execute("UPDATE events SET session = NULL WHERE box = ?", [id.get()])
+        .unwrap();
+    conn.execute("DELETE FROM sessions WHERE box = ?", [id.get()])
+        .unwrap();
+    drop(conn);
+    let row = store.task(id).unwrap().unwrap();
+    assert_eq!(row.lifecycle, BoxLifecycle::Ready);
+    assert_eq!(row.session, SessionState::Starting);
+    assert!(!row.session.is_quiet());
+}
+
 fn parent_of(store: &crate::store::Store, session: i64) -> Option<i64> {
     store
         .reader()

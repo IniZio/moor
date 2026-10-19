@@ -4,7 +4,6 @@ use std::collections::HashMap;
 
 use moor_core::activity::AgentState;
 use moor_core::config::UserConfig;
-use moor_core::domain::box_steps;
 use moor_core::domain::boxes::BoxState;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::SleepKind;
@@ -120,7 +119,8 @@ pub(crate) fn task_view_with_run(
         repo: row.repo.clone(),
         issue: row.issue.clone(),
         goal: row.goal.clone(),
-        state: box_steps::summary(row.lifecycle, row.session),
+        lifecycle: row.lifecycle,
+        session_state: row.session,
         state_reason: row.state_reason.clone(),
         base: row.base.clone(),
         branch: row.branch.clone(),

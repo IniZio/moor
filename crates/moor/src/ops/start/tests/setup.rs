@@ -13,6 +13,7 @@ use moor_core::{BoxHandle, BoxId, ErrorKind, StartReq};
 
 use self::Step::{Cmd, Sync};
 use super::moor_yaml::script_base_yaml;
+use super::state::WORKING;
 use super::{req, world_at, World};
 use crate::adapters::clock::SystemClock;
 use crate::ops::start::run;
@@ -161,7 +162,7 @@ pub(super) fn failed_at_set(w: &World, v: &moor_core::view::StartView) -> bool {
 #[test]
 fn setup_lines_run_in_order_in_the_box_workdir() {
     let (w, v) = start_with("setup: [a, b]\n", FakeDriver::new());
-    assert_eq!(v.task.state.as_str(), "working");
+    assert_eq!((v.task.lifecycle, v.task.session_state), WORKING);
     assert!(v.setup.ran && v.setup.ok);
     assert_eq!(v.setup.line, None);
     let seen: Vec<_> = setup_execs(&w)
@@ -217,7 +218,7 @@ fn a_failing_setup_leaves_a_working_task_and_runs_nothing_more() {
         .exec_results(scripted([Sync(Ok(exit(0))), Cmd(Ok(exit(1)))]))
         .copy_text("moor setup: $ a\nmoor setup: $ b\n");
     let (w, v) = start_with("setup: [a, b, c]\n", driver);
-    assert_eq!(v.task.state.as_str(), "working");
+    assert_eq!((v.task.lifecycle, v.task.session_state), WORKING);
     assert!(v.setup.ran && !v.setup.ok);
     assert_eq!(v.setup.line.as_deref(), Some("b"));
     assert_eq!(setup_execs(&w).len(), 1);
@@ -249,7 +250,7 @@ fn a_failing_setup_names_the_step_tail_and_box_in_json_and_text() {
         &crate::cli::GlobalOpts::default(),
     )
     .stdout;
-    assert!(out.starts_with("started demo (#1): working, box ready, setup failed\n"));
+    assert!(out.starts_with("started demo (#1): ready/working, box ready, setup failed\n"));
     assert!(out.contains(
         "setup failed in Box box-1:\n  moor setup: $ a\n  boom: no such file\nclose it with: moor close demo\n"
     ));
@@ -311,7 +312,7 @@ fn no_setup_lines_means_setup_did_not_run() {
         execs.first().expect("one exec").1.argv,
         ["git", "rev-parse", "--git-dir"]
     );
-    assert_eq!(v.task.state.as_str(), "working");
+    assert_eq!((v.task.lifecycle, v.task.session_state), WORKING);
 }
 
 #[test]
@@ -334,7 +335,7 @@ fn a_timed_out_setup_counts_as_a_failing_line() {
         ]))
         .copy_text("moor setup: $ a\nmoor setup: $ b\n");
     let (w, v) = start_with("setup: [a, b, c]\n", driver);
-    assert_eq!(v.task.state.as_str(), "working");
+    assert_eq!((v.task.lifecycle, v.task.session_state), WORKING);
     assert!(v.setup.ran && !v.setup.ok);
     assert_eq!(v.setup.line.as_deref(), Some("b"));
     assert_eq!(setup_execs(&w).len(), 1);
@@ -361,7 +362,7 @@ fn a_failing_setup_on_a_re_provisioned_working_task_records_the_failing_line() {
         .apply(Decision::new(id).box_input(BoxInput::DriverMissing))
         .unwrap();
     let again = run(&w.cx, &start_req()).unwrap();
-    assert_eq!(again.task.state.as_str(), "working");
+    assert_eq!((again.task.lifecycle, again.task.session_state), WORKING);
     assert_eq!(again.setup.line.as_deref(), Some("a"));
     let events = store.events(id, 50).unwrap();
     let lines: Vec<_> = events
@@ -407,7 +408,7 @@ pub(super) fn failed_setup_with(yaml: &str, driver: FakeDriver) -> (World, BoxId
 #[test]
 fn an_unset_author_runs_setup_without_touching_git_config() {
     let (w, v) = start_with("setup: [a, b]\n", FakeDriver::new());
-    assert_eq!(v.task.state.as_str(), "working");
+    assert_eq!((v.task.lifecycle, v.task.session_state), WORKING);
     assert!(v.setup.ran && v.setup.ok);
     assert_eq!(argvs(&w), [script_argv(&["a", "b"])]);
 }
@@ -416,7 +417,7 @@ fn an_unset_author_runs_setup_without_touching_git_config() {
 fn a_failing_identity_exec_warns_and_setup_still_runs() {
     let driver = FakeDriver::new().exec_results([Ok(exit(1))]);
     let (w, v) = start_as(("Ann Dev", "a@x.io"), "setup: [a]\n", driver);
-    assert_eq!(v.task.state.as_str(), "working");
+    assert_eq!((v.task.lifecycle, v.task.session_state), WORKING);
     assert!(v.setup.ran && v.setup.ok);
     assert_eq!(argvs(&w).last(), Some(&script_argv(&["a"])));
     assert!(warning_codes(&w).contains(&"identity_failed".to_owned()));

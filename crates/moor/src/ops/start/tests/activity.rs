@@ -10,6 +10,7 @@ use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, BoxName, ShowReq};
 
+use super::state::WORKING;
 use super::state::{idle, working};
 use super::{req, world, World};
 use crate::ops::common::activity::{read, settle};
@@ -85,7 +86,7 @@ fn start_idles_a_working_task_whose_hook_reports_idle_then_wakes_it() {
     assert!(working(&row(&w, id)));
     let v = run(&w.cx, &req("demo")).unwrap();
     assert!(v.attached);
-    assert_eq!(v.task.state.as_str(), "working");
+    assert_eq!((v.task.lifecycle, v.task.session_state), WORKING);
     assert!(working(&row(&w, id)));
     let k = kinds(&w, id);
     let idled = k.iter().position(|x| x == "idled").unwrap();
@@ -100,7 +101,7 @@ fn start_wakes_an_idle_task_whose_hook_reports_working() {
     });
     assert!(idle(&row(&w, id)));
     let v = run(&w.cx, &req("demo")).unwrap();
-    assert_eq!(v.task.state.as_str(), "working");
+    assert_eq!((v.task.lifecycle, v.task.session_state), WORKING);
     assert!(working(&row(&w, id)));
 }
 
@@ -124,7 +125,7 @@ fn start_on_pane_only(pane: PaneStatus) -> AgentState {
 
     let v = run(&w.cx, &req("demo")).unwrap();
     assert!(v.attached);
-    assert_eq!(v.task.state.as_str(), "working");
+    assert_eq!((v.task.lifecycle, v.task.session_state), WORKING);
     assert!(working(&row(&w, id)));
     activity.state
 }
@@ -190,7 +191,7 @@ fn start_sleeps_an_idle_task_past_the_threshold() {
     });
     w.cx.clock().sleep(Duration::from_mins(31));
     let v = run(&w.cx, &req("demo")).unwrap();
-    assert_eq!(v.task.state.as_str(), "asleep");
+    assert_eq!(v.task.lifecycle, BoxLifecycle::Asleep);
     assert_eq!(row(&w, id).lifecycle, BoxLifecycle::Asleep);
 }
 
@@ -206,7 +207,7 @@ fn restarting_an_idle_task_whose_agent_is_busy_ends_working_with_a_busy_event() 
         probes(w, Some(HookKind::Busy), PaneStatus::Unknown)
     });
     let v = run(&w.cx, &req("demo")).unwrap();
-    assert_eq!(v.task.state.as_str(), "working");
+    assert_eq!((v.task.lifecycle, v.task.session_state), WORKING);
     assert!(working(&row(&w, id)));
     assert!(kinds(&w, id).contains(&"busy".to_owned()));
 }
@@ -217,7 +218,7 @@ fn restarting_an_idle_task_whose_agent_is_live_and_idle_ends_working_with_a_busy
         probes(w, Some(HookKind::Idle), PaneStatus::Unknown)
     });
     let v = run(&w.cx, &req("demo")).unwrap();
-    assert_eq!(v.task.state.as_str(), "working");
+    assert_eq!((v.task.lifecycle, v.task.session_state), WORKING);
     assert!(working(&row(&w, id)));
     assert!(kinds(&w, id).contains(&"busy".to_owned()));
 }
@@ -228,7 +229,7 @@ fn restarting_a_working_task_whose_agent_is_busy_leaves_it_working() {
         probes(w, Some(HookKind::Busy), PaneStatus::Unknown)
     });
     let v = run(&w.cx, &req("demo")).unwrap();
-    assert_eq!(v.task.state.as_str(), "working");
+    assert_eq!((v.task.lifecycle, v.task.session_state), WORKING);
     assert!(working(&row(&w, id)));
     assert!(!kinds(&w, id).contains(&"idled".to_owned()));
 }

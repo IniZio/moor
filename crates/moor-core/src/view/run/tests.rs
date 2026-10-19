@@ -3,8 +3,9 @@
 use serde_json::json;
 
 use super::{CpValue, RunValue, WaitRunView, WaitValue};
+use crate::domain::box_state::BoxLifecycle;
 use crate::domain::run::SyncMode;
-use crate::domain::task::TaskState;
+use crate::domain::session_state::SessionState;
 use crate::name::RunId;
 use crate::request::WaitFor;
 use crate::view::TaskView;
@@ -16,7 +17,8 @@ fn task() -> TaskView {
         repo: "r".into(),
         issue: None,
         goal: None,
-        state: TaskState::Working,
+        lifecycle: BoxLifecycle::Ready,
+        session_state: SessionState::Working,
         state_reason: None,
         base: None,
         branch: None,

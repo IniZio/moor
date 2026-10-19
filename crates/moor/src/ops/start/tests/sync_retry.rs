@@ -92,7 +92,7 @@ fn a_failed_sync_names_the_step_the_tail_and_the_box_in_the_error_value() {
     assert_eq!(field(&value, "box"), "box-1");
     assert!(value.get("log_tail").is_none());
     let task = value.get("task").unwrap();
-    assert_eq!(field(task, "state"), "setup_failed");
+    assert_eq!(field(task, "lifecycle"), "setup_failed");
 }
 
 #[test]
