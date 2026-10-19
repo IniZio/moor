@@ -3,7 +3,7 @@
 use std::ffi::OsString;
 use std::path::PathBuf;
 
-use moor_core::request::EndSessionReq;
+use moor_core::request::{EndSessionReq, OpenSessionReq};
 use moor_core::{
     BoxId, BoxName, CloseReq, CpReq, EnvReq, GateReq, RemoveReq, ReportReq, Request, RunReq,
     ShowReq, StartReq, SteerReq, TaskReq, WaitFor, WaitReq,
@@ -220,6 +220,43 @@ fn end_parses_to_end_session() {
         Request::EndSession(EndSessionReq { task: "t1".into() })
     );
     assert!(run(&["end"]).is_err());
+}
+
+#[test]
+fn session_open_takes_seed_text() {
+    assert_eq!(
+        req(&["session", "open", "t1", "--seed", "hi"]),
+        Request::OpenSession(OpenSessionReq {
+            task: "t1".into(),
+            seed: "hi".into()
+        })
+    );
+}
+
+#[test]
+fn session_open_reads_seed_file_verbatim() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("seed.txt");
+    std::fs::write(&path, "line one\n  line two\n\n").expect("write");
+    let p = path.to_str().expect("utf8");
+    assert_eq!(
+        req(&["session", "open", "t1", "--seed-file", p]),
+        Request::OpenSession(OpenSessionReq {
+            task: "t1".into(),
+            seed: "line one\n  line two\n\n".into()
+        })
+    );
+    assert!(run(&["session", "open", "t1", "--seed-file", "/no/such/file"]).is_err());
+}
+
+#[test]
+fn session_open_needs_exactly_one_seed_source() {
+    assert!(run(&["session", "open", "t1"]).is_err());
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("seed.txt");
+    std::fs::write(&path, "x").expect("write");
+    let p = path.to_str().expect("utf8");
+    assert!(run(&["session", "open", "t1", "--seed", "a", "--seed-file", p]).is_err());
 }
 
 #[test]
