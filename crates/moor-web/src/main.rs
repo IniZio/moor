@@ -12,6 +12,7 @@ use moor_web::auth::read_token;
 use moor_web::client::Client;
 use moor_web::db::Db;
 use moor_web::http::start;
+use moor_web::jobs::Jobs;
 use moor_web::views;
 use moor_web::watch::{self, RelayConfig};
 
@@ -62,14 +63,15 @@ fn run(args: Args) -> Result<(), String> {
     let db = Db::open(&dir.join("web.db")).map_err(|e| e.to_string())?;
     let db = Arc::new(Mutex::new(db));
     let client = Client::new(args.socket);
-    let handler = views::handler(
+    let jobs = Jobs::new();
+    let handler = jobs.handler(views::handler(
         client.clone(),
         db.clone(),
         actions::handler(
             client.clone(),
             watch::handler(client, db, RelayConfig::default()),
         ),
-    );
+    ));
     let server = start(args.port, token, handler).map_err(|e| format!("listen: {e}"))?;
     writeln!(io::stdout(), "{}", server.url()).map_err(|e| e.to_string())?;
     loop {
