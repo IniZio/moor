@@ -122,6 +122,19 @@ fn render_json_version_is_single_line() {
 }
 
 #[test]
+fn render_json_open_session_prints_value_fields() {
+    let v = serde_json::json!({"task": "t1", "session": 9, "ordinal": 3, "pane": "p4"});
+    let opts = GlobalOpts {
+        json: true,
+        ..GlobalOpts::default()
+    };
+    let o = render(&Response::ok("open-session", Some(v)), &opts);
+    let got: serde_json::Value = serde_json::from_str(&o.stdout).expect("json");
+    assert_eq!(got.pointer("/value/session"), Some(&serde_json::json!(9)));
+    assert_eq!(got.pointer("/value/pane"), Some(&serde_json::json!("p4")));
+}
+
+#[test]
 fn render_json_end_session_prints_value_fields() {
     let v = serde_json::json!({"task": "t1", "session": 7, "ordinal": 2, "box_kept": true});
     let opts = GlobalOpts {

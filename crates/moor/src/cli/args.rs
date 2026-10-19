@@ -12,8 +12,10 @@ use moor_core::{
 use super::args_admin::{AdminCmd, GateCmd};
 use super::args_probe::Flags;
 use super::GlobalOpts;
+use session::SessionCmd;
 use task_ops::{CloseArgs, CpArgs, RemoveArgs, TaskArg};
 
+mod session;
 mod task_ops;
 #[cfg(test)]
 mod tests;
@@ -74,6 +76,9 @@ enum Cmd {
     Steer(SteerArgs),
     /// End the agent Session; keep the Box open.
     End(TaskArg),
+    /// Agent Session verbs.
+    #[command(subcommand)]
+    Session(SessionCmd),
     /// File a Report.
     Report(ReportArgs),
     /// Show one Task or all open Tasks.
@@ -112,6 +117,7 @@ impl Cmd {
             Self::End(a) => Action::Request(Request::EndSession(EndSessionReq {
                 task: a.task.as_str().to_string(),
             })),
+            Self::Session(c) => Action::Request(Request::OpenSession(c.into())),
             Self::Report(a) => Action::Request(Request::Report(a.into())),
             Self::Show(a) => Action::Request(Request::Show(a.into())),
             Self::Close(a) => Action::Request(Request::Close(a.into())),
