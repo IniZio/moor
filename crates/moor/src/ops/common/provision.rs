@@ -17,7 +17,7 @@ use crate::error::CommandError;
 use crate::ops::common::box_exec::{self, BoxProxy};
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::capacity;
-use crate::ops::common::dotfiles;
+use crate::ops::common::dotfiles::{self, DotfilesRun};
 use crate::ops::common::facts::{provider_caps, require_reverse_tunnel, resolved};
 use crate::ops::common::identity;
 use crate::ops::common::setup;
@@ -28,7 +28,7 @@ use crate::store::{Store, TaskRow};
 pub(crate) use self::lease::hold_root;
 use self::lease::hold_workdir;
 pub(crate) use self::outcome::Provisioned;
-use self::outcome::{dotfiles_failed, sync_failed};
+use self::outcome::{dotfiles_warned, sync_failed};
 pub(crate) use self::rerun::ResyncGates;
 use self::rerun::{note_setup_not_rerun, resync};
 use self::retry::{dotfiles_retry, retry_dotfiles};
@@ -304,15 +304,16 @@ fn run_and_record(
         SyncMode::None,
         proxy.as_ref(),
     );
-    let setup_line = match run.outcome() {
-        SetupOutcome::Failed { line } => Some(line),
-        SetupOutcome::Ok => None,
-    };
     let dotfiles = match dotfiles::apply(cx, target.handle, id, target.worktree, cfg) {
         Ok(d) => d,
-        Err(f) => return Err(dotfiles_failed(cx, store, id, advance, setup_line, f)),
+        Err(f) => dotfiles_warned(cx, f),
     };
     let mut done = Decision::new(id);
+    if let DotfilesRun::Failed { tail } = &dotfiles {
+        done = done.event(ExtraEvent::SetupFailed {
+            line: format!("dotfiles: {tail}"),
+        });
+    }
     done.task_input = advance.then(|| TaskInput::BoxReady {
         setup: run.outcome(),
     });

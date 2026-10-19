@@ -34,6 +34,11 @@ pub(crate) enum DotfilesRun {
         /// Time the step took, in milliseconds.
         ms: u64,
     },
+    /// The install failed; the Box carries on without the dotfiles.
+    Failed {
+        /// The last output lines, or the reason when there was no output.
+        tail: String,
+    },
 }
 
 impl DotfilesRun {
@@ -45,6 +50,11 @@ impl DotfilesRun {
                 ran: true,
                 ok: true,
                 ms: Some(*ms),
+            },
+            Self::Failed { .. } => DotfilesView {
+                ran: true,
+                ok: false,
+                ms: None,
             },
         }
     }

@@ -1,24 +1,20 @@
 use std::fmt::Write as _;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::boxscript::quote;
 use moor_core::config::{DotfilesConfig, UserConfig};
 use moor_core::domain::boxes::BoxState;
-use moor_core::domain::decision::Intent;
 use moor_core::domain::run::SyncMode;
 use moor_core::domain::task::TaskState;
-use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::ExecOutcome;
 use moor_core::seam::proc::{Deadline, Tool};
 use moor_core::view::{DotfilesView, StartView};
-use moor_core::{BoxId, ErrorKind, StartReq};
+use moor_core::{BoxId, StartReq};
 
-use super::{hold, req, world_with, World};
+use super::{req, world_with, World};
 use crate::ops::start::run;
-use crate::store::Store;
-use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::proc::Reply;
@@ -223,38 +219,32 @@ fn failed_start() -> (World, Arc<FakeEngine>, tempfile::TempDir, tempfile::TempD
     (w, engine, repo, src)
 }
 
+/// The dotfiles warning carries the last 20 log lines.
+fn assert_warned_with_tail(w: &World) {
+    let warnings = w.cx.take_warnings();
+    let warn = warnings
+        .iter()
+        .find(|x| x.code == "dotfiles_failed")
+        .unwrap();
+    assert!(warn.message.starts_with("dotfiles failed:\n"), "{warn:?}");
+    assert!(warn.message.contains("row-25"), "{warn:?}");
+    assert!(warn.message.contains("row-06"), "{warn:?}");
+    assert!(!warn.message.contains("row-05"), "{warn:?}");
+}
+
 #[test]
-fn a_failing_install_stops_start_before_the_agent_with_the_log_tail() {
+fn a_failing_install_does_not_stop_start_and_warns_with_the_log_tail() {
     let (w, engine, _repo, _src) = failed_start();
-    let err = run(&w.cx, &goal_req()).unwrap_err();
-    let msg = err.error.to_string();
-    assert!(msg.contains("row-25"), "{msg}");
-    assert!(msg.contains("row-06"), "{msg}");
-    assert!(!msg.contains("row-05"), "{msg}");
-    assert!(!msg.contains("row-01"), "{msg}");
+    let v = run(&w.cx, &goal_req()).unwrap();
+    assert_eq!(v.task.state, TaskState::Working);
+    assert!(v.dotfiles.ran && !v.dotfiles.ok);
+    assert_eq!(engine.launches().len(), 1);
 
-    assert_task_kept_in_setup_failed(&w);
-    assert!(engine.launches().is_empty());
-    assert_event_tail(&w);
-    let calls = w.driver.calls();
-    let last_exec = calls.iter().rposition(|c| c == "exec box-1").unwrap();
-    assert_eq!(
-        last_exec,
-        calls.len() - 1,
-        "nothing after dotfiles: {calls:?}"
-    );
-}
+    assert_warned_with_tail(&w);
 
-/// The task is `SetupFailed` and keeps its ready Box.
-fn assert_task_kept_in_setup_failed(w: &World) {
     let row = w.cx.store().unwrap().task(BoxId::new(1)).unwrap().unwrap();
-    assert_eq!(row.state, TaskState::SetupFailed);
     assert_eq!(row.boxed.map(|b| b.state), Some(BoxState::Ready));
-    assert!(!w.driver.calls().iter().any(|c| c.starts_with("release")));
-}
-
-/// The `setup_failed` event carries the log tail only.
-fn assert_event_tail(w: &World) {
+    assert!(row.intent.is_none());
     let events = w.cx.store().unwrap().events(BoxId::new(1), 50).unwrap();
     let failed = events.iter().find(|e| e.kind == "setup_failed").unwrap();
     let line = failed.payload.get("line").and_then(|l| l.as_str()).unwrap();
@@ -262,32 +252,6 @@ fn assert_event_tail(w: &World) {
         line.contains("row-25") && !line.contains("row-05"),
         "{line}"
     );
-}
-
-#[test]
-fn start_after_a_failed_dotfiles_run_re_applies_them_in_the_same_box() {
-    let (w, engine, _repo, _src) = failed_start();
-    run(&w.cx, &goal_req()).unwrap_err();
-    let v = run(&w.cx, &goal_req()).unwrap();
-    assert_eq!(v.task.state, TaskState::Working);
-    assert_eq!(
-        v.dotfiles,
-        DotfilesView {
-            ran: true,
-            ok: true,
-            ms: Some(0)
-        }
-    );
-    let puts: Vec<_> = (w.driver.puts().into_iter())
-        .filter(|p| !is_staged(p.1.as_str()))
-        .collect();
-    assert_eq!(puts.len(), 2);
-    assert!(puts.iter().all(|p| p.0.as_str() == "box-1"));
-    assert_eq!(dotfiles_execs(&w).len(), 2);
-    assert!(w.driver.execs().iter().all(|e| e.0.as_str() == "box-1"));
-    assert_eq!(engine.launches().len(), 1);
-    let row = w.cx.store().unwrap().task(BoxId::new(1)).unwrap().unwrap();
-    assert_eq!(row.state, TaskState::Working);
 }
 
 #[test]
@@ -318,91 +282,10 @@ fn dotfiles_still_run_when_a_setup_line_fails() {
 }
 
 #[test]
-fn a_retry_is_refused_while_another_op_holds_the_box_lock() {
-    let (w, engine, _repo, _src) = failed_start();
-    run(&w.cx, &goal_req()).unwrap_err();
-    let _held = hold(&w, "sleep");
-    let err = run(&w.cx, &goal_req()).unwrap_err();
-    assert_eq!(err.kind, ErrorKind::Refused);
-    assert_eq!(err.error.to_string(), "box busy: sleep in progress");
-    assert_eq!(dotfiles_execs(&w).len(), 1);
-    assert!(engine.launches().is_empty());
-    let row = w.cx.store().unwrap().task(BoxId::new(1)).unwrap().unwrap();
-    assert_eq!(row.state, TaskState::SetupFailed);
-    assert!(row.intent.is_none());
-}
-
-#[test]
-fn a_retry_holds_the_setup_intent_while_the_install_runs() {
-    let (w, _, _repo, _src) = failed_start();
-    run(&w.cx, &goal_req()).unwrap_err();
-    let seen = Arc::new(Mutex::new(Vec::new()));
-    let (sink, db) = (seen.clone(), w.dir.path().join("moor.db"));
-    w.driver.on_exec(move || {
-        let clock = Arc::new(FakeClock::new(Ts::from_millis(1)));
-        let row = Store::open(&db, clock).unwrap().task(BoxId::new(1));
-        sink.lock().unwrap().push(row.unwrap().unwrap());
-    });
-    run(&w.cx, &goal_req()).unwrap();
-    let mut rows = seen.lock().unwrap().split_off(0);
-    assert_eq!(rows.len(), 1);
-    let during = rows.pop().unwrap();
-    assert_eq!(during.state, TaskState::SettingUp);
-    assert!(matches!(&during.intent, Some(Intent::Setup { pid }) if *pid == std::process::id()));
-    let row = w.cx.store().unwrap().task(BoxId::new(1)).unwrap().unwrap();
-    assert_eq!(row.state, TaskState::Working);
-    assert!(row.intent.is_none());
-}
-
-#[test]
-fn a_failed_retry_clears_the_setup_intent() {
-    let src = tempfile::tempdir().unwrap();
-    let driver = FakeDriver::new().exec_results([
-        Ok(exit(0)),
-        Ok(exit(0)),
-        Ok(exit(0)),
-        Ok(exit(1)),
-        Ok(exit(1)),
-    ]);
-    let (w, _, _repo) = dotfiles_world("setup: [a]\n", Some(src.path()), None, driver);
-    run(&w.cx, &goal_req()).unwrap_err();
-    run(&w.cx, &goal_req()).unwrap_err();
-    let row = w.cx.store().unwrap().task(BoxId::new(1)).unwrap().unwrap();
-    assert_eq!(row.state, TaskState::SetupFailed);
-    assert!(row.intent.is_none());
-}
-
-#[test]
-fn a_setup_failure_is_kept_when_the_dotfiles_fail_too() {
-    let src = tempfile::tempdir().unwrap();
-    let driver =
-        FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(0)), Ok(exit(1)), Ok(exit(1))]);
-    let (w, engine, _repo) = dotfiles_world("setup: [make-it]\n", Some(src.path()), None, driver);
-    log_writer(&w);
-    let err = run(&w.cx, &goal_req()).unwrap_err();
-    let msg = err.error.to_string();
-    assert!(msg.contains("setup failed: make-it"), "{msg}");
-    assert!(
-        msg.contains("dotfiles failed:") && msg.contains("row-25"),
-        "{msg}"
-    );
-    assert!(engine.launches().is_empty());
-    let events = w.cx.store().unwrap().events(BoxId::new(1), 50).unwrap();
-    let lines: Vec<_> = events
-        .iter()
-        .filter(|e| e.kind == "setup_failed")
-        .filter_map(|e| e.payload.get("line").and_then(|l| l.as_str()))
-        .collect();
-    assert_eq!(lines.len(), 2, "{lines:?}");
-    assert!(lines.iter().any(|l| l.contains("make-it")), "{lines:?}");
-    assert!(lines.iter().any(|l| l.contains("row-25")), "{lines:?}");
-}
-
-#[test]
 fn the_host_log_and_its_directory_are_owner_only() {
     use std::os::unix::fs::PermissionsExt;
     let (w, _, _repo, _src) = failed_start();
-    run(&w.cx, &goal_req()).unwrap_err();
+    run(&w.cx, &goal_req()).unwrap();
     let dir = w.dir.path().join("dotfiles");
     let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
     assert_eq!(mode(&dir), 0o700);
@@ -410,14 +293,16 @@ fn the_host_log_and_its_directory_are_owner_only() {
 }
 
 #[test]
-fn each_run_uploads_to_a_different_directory() {
-    let (w, _, _repo, _src) = failed_start();
-    run(&w.cx, &goal_req()).unwrap_err();
-    run(&w.cx, &goal_req()).unwrap();
-    let puts = w.driver.puts();
-    let paths: Vec<_> = (puts.iter().map(|p| p.1.as_str()))
-        .filter(|p| !is_staged(p))
-        .collect();
-    assert_eq!(paths.len(), 2);
-    assert_ne!(paths.first(), paths.last());
+fn a_failed_setup_line_still_fails_setup_when_the_dotfiles_fail_too() {
+    let src = tempfile::tempdir().unwrap();
+    let driver =
+        FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(0)), Ok(exit(1)), Ok(exit(1))]);
+    let (w, engine, _repo) = dotfiles_world("setup: [make-it]\n", Some(src.path()), None, driver);
+    log_writer(&w);
+    let v = run(&w.cx, &goal_req()).unwrap();
+    assert!(v.setup.ran && !v.setup.ok);
+    assert!(v.dotfiles.ran && !v.dotfiles.ok);
+    assert_eq!(engine.launches().len(), 1);
+    let warnings = w.cx.take_warnings();
+    assert!(warnings.iter().any(|x| x.code == "dotfiles_failed"));
 }
