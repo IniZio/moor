@@ -68,17 +68,10 @@ fn zero_settle_interval_names_key() {
 }
 
 #[test]
-fn proof_cap_defaults_and_parses() {
-    assert_eq!(ControllerConfig::default().proof_max_bytes(), 104_857_600);
-    let c = parse_controller("c.yaml", "proof_max_bytes: 2048\n").unwrap_or_else(|e| panic!("{e}"));
-    assert_eq!(c.proof_max_bytes(), 2048);
-}
-
-#[test]
-fn zero_proof_cap_names_key() {
-    let e = err("proof_max_bytes: 0\n");
+fn removed_proof_cap_key_is_unknown() {
+    let e = err("proof_max_bytes: 1024\n");
     assert_eq!(e.path, "proof_max_bytes");
-    assert_eq!(e.file, "c.yaml");
+    assert!(e.reason.contains("unknown field"), "{e}");
 }
 
 #[test]
