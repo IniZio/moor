@@ -10,9 +10,11 @@ CREATE TABLE boxes  (
   created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
 CREATE UNIQUE INDEX boxes_open ON boxes(name) WHERE state NOT IN ('closed','rejected');
 CREATE TABLE repo_seq (repo TEXT PRIMARY KEY, next INTEGER NOT NULL);
-CREATE TABLE sessions (id INTEGER PRIMARY KEY, box INTEGER NOT NULL REFERENCES boxes(id), ordinal INTEGER NOT NULL,
+CREATE TABLE sessions (id INTEGER PRIMARY KEY, box INTEGER REFERENCES boxes(id), ordinal INTEGER NOT NULL,
   agent TEXT, model TEXT, agent_session_id TEXT, workspace_id TEXT, pane TEXT, state TEXT NOT NULL,
-  started_at INTEGER NOT NULL, ended_at INTEGER, UNIQUE (box, ordinal));
+  started_at INTEGER NOT NULL, ended_at INTEGER, parent_session INTEGER REFERENCES sessions(id), workdir TEXT,
+  CHECK (box IS NOT NULL OR workdir IS NOT NULL), UNIQUE (box, ordinal));
+CREATE INDEX sessions_parent ON sessions(parent_session);
 CREATE TABLE launches (id INTEGER PRIMARY KEY, box INTEGER NOT NULL REFERENCES boxes(id), session_ref TEXT NOT NULL, pane TEXT,
   started_at INTEGER NOT NULL, ended_at INTEGER, exit INTEGER, transcript_digest TEXT, registered_agent_session TEXT,
   session INTEGER REFERENCES sessions(id));
@@ -29,4 +31,4 @@ CREATE TABLE hook_cache (session INTEGER PRIMARY KEY REFERENCES sessions(id), re
 CREATE TABLE proxy  (box INTEGER PRIMARY KEY REFERENCES boxes(id), nonce BLOB NOT NULL, box_port INTEGER NOT NULL UNIQUE,
   host_port INTEGER, pid INTEGER, handle TEXT, ready INTEGER NOT NULL DEFAULT 0, lease_owner TEXT, lease_heartbeat INTEGER,
   boot_id TEXT, updated_at INTEGER NOT NULL);
-INSERT INTO meta (k, v) VALUES ('schema_version', '3');
+INSERT INTO meta (k, v) VALUES ('schema_version', '4');

@@ -141,7 +141,7 @@ fn store_open_on_v1_creates_fresh_store() {
             r.get(0)
         })
         .unwrap();
-    assert_eq!(version, "3");
+    assert_eq!(version, "4");
     assert!(suffixed(&db, ".v1.bak").exists());
 }
 
