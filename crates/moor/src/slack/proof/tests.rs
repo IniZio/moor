@@ -447,5 +447,7 @@ fn replayed_proof_of_a_closed_box_is_not_posted_again() {
     );
     assert_eq!(f.uploads(), 1, "the closed Box's proof was posted again");
     assert!(f.texts().is_empty());
-    assert!(!st.slack_proof_posted(BoxId::new(2), "out.txt", "aa").unwrap());
+    assert!(!st
+        .slack_proof_posted(BoxId::new(2), "out.txt", "aa")
+        .unwrap());
 }
