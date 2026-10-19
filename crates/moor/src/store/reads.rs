@@ -1,10 +1,11 @@
 //! Read-only lookups by task name and live-box scans, built on the shared task row mapping.
 
+use moor_core::controller::ServerFrame;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::session_state::SessionState;
 use moor_core::seam::clock::Ts;
-use moor_core::{BoxId, BoxName, ProviderId};
+use moor_core::{BoxId, BoxName, ProviderId, SessionId};
 use rusqlite::{Connection, OptionalExtension};
 
 use super::{
@@ -57,6 +58,22 @@ pub(crate) struct NamedEvent {
     pub(crate) row: EventRow,
     /// Name of the owning Task.
     pub(crate) task_name: String,
+    /// The Box's Session the event belongs to, when one had started.
+    pub(crate) session: Option<SessionId>,
+}
+
+impl NamedEvent {
+    /// The wire frame for this event.
+    pub(crate) fn into_frame(self) -> ServerFrame {
+        ServerFrame::Event {
+            cursor: self.row.id,
+            r#box: Some(self.task_name),
+            session: self.session,
+            kind: self.row.kind,
+            payload: self.row.payload,
+            ts: self.row.ts.as_millis(),
+        }
+    }
 }
 
 impl Store {
@@ -69,13 +86,16 @@ impl Store {
         let limit = i64::try_from(limit).unwrap_or(i64::MAX);
         let conn = self.reader()?;
         let mut stmt = conn.prepare(
-            "SELECT e.id, e.box, e.kind, e.payload, e.ts, b.name FROM events e \
-             JOIN boxes b ON b.id = e.box WHERE e.id > ?1 ORDER BY e.id LIMIT ?2",
+            "SELECT e.id, e.box, e.kind, e.payload, e.ts, b.name, \
+             COALESCE(e.session, (SELECT s.id FROM sessions s WHERE s.box = e.box \
+             AND s.started_at <= e.ts ORDER BY s.ordinal DESC LIMIT 1)) \
+             FROM events e JOIN boxes b ON b.id = e.box WHERE e.id > ?1 ORDER BY e.id LIMIT ?2",
         )?;
         let rows = stmt.query_and_then((after, limit), |r| {
             Ok(NamedEvent {
                 row: event_from_row(r)?,
                 task_name: r.get(5)?,
+                session: r.get::<_, Option<i64>>(6)?.map(SessionId::new),
             })
         })?;
         rows.collect()

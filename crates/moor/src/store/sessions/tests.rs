@@ -53,11 +53,12 @@ fn open_session_is_allowed_when_the_box_has_no_session() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
     let id = new_task(&store, "acme/1");
-    store
-        .writer()
-        .unwrap()
-        .execute("DELETE FROM sessions WHERE box = ?", [id.get()])
+    let conn = store.writer().unwrap();
+    conn.execute("UPDATE events SET session = NULL WHERE box = ?", [id.get()])
         .unwrap();
+    conn.execute("DELETE FROM sessions WHERE box = ?", [id.get()])
+        .unwrap();
+    drop(conn);
     assert_eq!(store.open_session(id).unwrap().ordinal, 1);
 }
 

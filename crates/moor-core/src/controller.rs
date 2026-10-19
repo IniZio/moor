@@ -2,11 +2,12 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::name::SessionId;
 use crate::request::Request;
 use crate::response::Response;
 
 /// Protocol revision a client announces in its hello frame.
-pub const PROTOCOL: u32 = 1;
+pub const PROTOCOL: u32 = 2;
 
 /// A frame sent by a client.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -68,8 +69,12 @@ pub enum ServerFrame {
     Event {
         /// The event's store id; resume a watch from the last one seen.
         cursor: i64,
-        /// Name of the Task the event belongs to.
-        task: String,
+        /// Name of the Box the event belongs to; absent for events without a Box.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        r#box: Option<String>,
+        /// Id of the Session the event belongs to, when known.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        session: Option<SessionId>,
         /// Event kind.
         kind: String,
         /// Kind-specific data.

@@ -313,7 +313,7 @@ pub(super) fn intent_sets(change: IntentChange, now: Ts) -> Sets {
     ]
 }
 
-/// Insert one event row and return its id.
+/// Insert one event row, stamped with the Box's newest Session, and return its id.
 pub(super) fn insert_event(
     tx: &Transaction<'_>,
     task: BoxId,
@@ -321,7 +321,8 @@ pub(super) fn insert_event(
     now: Ts,
 ) -> Result<i64, StoreError> {
     tx.execute(
-        "INSERT INTO events (box, kind, payload, ts) VALUES (?, ?, ?, ?)",
+        "INSERT INTO events (box, session, kind, payload, ts) VALUES (?1, \
+         (SELECT id FROM sessions WHERE box = ?1 ORDER BY ordinal DESC LIMIT 1), ?2, ?3, ?4)",
         params![
             task.get(),
             e.kind(),

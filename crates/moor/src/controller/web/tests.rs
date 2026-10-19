@@ -107,7 +107,8 @@ fn task(name: &str) -> TaskView {
 fn event(cursor: i64) -> ServerFrame {
     ServerFrame::Event {
         cursor,
-        task: "alpha".into(),
+        r#box: Some("alpha".into()),
+        session: None,
         kind: "k".into(),
         payload: serde_json::json!({}),
         ts: 0,

@@ -9,6 +9,7 @@ use serde_json::{json, Value};
 use super::{handle, respond};
 use crate::env::Env;
 use crate::Moor;
+use moor_core::controller::PROTOCOL;
 use moor_core::name::BoxName;
 use moor_core::{Request, ShowReq};
 
@@ -51,7 +52,7 @@ fn show(task: Option<BoxName>) -> Request {
 }
 
 fn hello() -> Value {
-    json!({"frame": "hello", "protocol": 1})
+    json!({"frame": "hello", "protocol": PROTOCOL})
 }
 
 fn request(id: &str, request: &Request) -> Value {
@@ -63,7 +64,7 @@ fn hello_then_version_echoes_id_and_envelope() {
     let dir = tempfile::tempdir().expect("tempdir");
     let frames = run(&env(&dir), &[hello(), request("r1", &Request::Version {})]);
     assert_eq!(frames.len(), 2);
-    assert_eq!(frames[0], json!({"frame": "hello", "protocol": 1}));
+    assert_eq!(frames[0], json!({"frame": "hello", "protocol": PROTOCOL}));
     assert_eq!(frames[1]["frame"], "response");
     assert_eq!(frames[1]["id"], "r1");
     let expected = serde_json::to_value(Moor::version()).expect("value");
@@ -112,9 +113,20 @@ fn wrong_protocol_is_rejected_then_session_recovers() {
     assert_eq!(frames[0]["frame"], "error");
     assert_eq!(frames[0]["kind"], "unsupported-protocol");
     let message = frames[0]["message"].as_str().expect("message");
-    assert!(message.contains("99") && message.contains('1'), "{message}");
+    assert!(message.contains("99") && message.contains('2'), "{message}");
     assert_eq!(frames[1]["frame"], "hello");
     assert_eq!(frames[2]["frame"], "response");
+}
+
+#[test]
+fn old_protocol_hello_is_rejected_and_current_one_accepted() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let old = json!({"frame": "hello", "protocol": 1});
+    let frames = run(&env(&dir), &[old, hello()]);
+    assert_eq!(frames[0]["frame"], "error");
+    assert_eq!(frames[0]["kind"], "unsupported-protocol");
+    assert_eq!(frames[1]["frame"], "hello");
+    assert_eq!(frames[1]["protocol"], PROTOCOL);
 }
 
 #[test]
@@ -131,8 +143,8 @@ fn malformed_frames_keep_the_connection_open() {
     let input = concat!(
         "{not json\n",
         "\n",
-        "{\"frame\":\"hello\",\"protocol\":1,\"extra\":true}\n",
-        "{\"frame\":\"hello\",\"protocol\":1}\n",
+        "{\"frame\":\"hello\",\"protocol\":2,\"extra\":true}\n",
+        "{\"frame\":\"hello\",\"protocol\":2}\n",
         "{\"frame\":\"request\",\"id\":\"r1\",\"request\":{\"cmd\":\"version\"}}\n",
     );
     let frames = run_raw(&env(&dir), input);

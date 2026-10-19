@@ -84,7 +84,7 @@ fn world(host: FakeProxyHost) -> (Cx, World) {
 /// Serve hello then `requests` over `cx`; return every byte read and every byte written.
 fn exchange(cx: Cx, requests: &[Request]) -> (String, String, Vec<Value>) {
     let moor = Moor::from_cx(cx);
-    let mut lines = vec![json!({"frame": "hello", "protocol": 1})];
+    let mut lines = vec![json!({"frame": "hello", "protocol": moor_core::controller::PROTOCOL})];
     for (i, r) in requests.iter().enumerate() {
         lines.push(json!({"frame": "request", "id": format!("r{i}"), "request": r}));
     }

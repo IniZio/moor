@@ -10,7 +10,7 @@ moor_core::activity	moor_core::seam::clock
 moor_core::decide	moor_core::box_key,moor_core::domain,moor_core::name,moor_core::seam,moor_core::response,moor_core::request
 moor_core::exec_env	moor_core::boxscript,moor_core::name,moor_core::seam,moor_core::secret
 moor_core::config	moor_core::name,moor_core::secret
-moor_core::controller	moor_core::request,moor_core::response
+moor_core::controller	moor_core::name,moor_core::request,moor_core::response
 moor_core::graphql_scope	
 moor_core::seam	moor_core::activity,moor_core::box_key,moor_core::domain,moor_core::name,moor_core::secret,moor_core::config
 moor_core::view	moor_core::domain,moor_core::name,moor_core::config,moor_core::request

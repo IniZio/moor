@@ -110,8 +110,8 @@ fn events_after_maps_rows_to_frames_strictly_after_the_cursor() {
     let all = moor.events_after(0, 100).unwrap();
     assert!(all.len() >= 2, "{all:?}");
     let first = match all.first() {
-        Some(ServerFrame::Event { cursor, task, .. }) => {
-            assert_eq!(task, "alpha");
+        Some(ServerFrame::Event { cursor, r#box, .. }) => {
+            assert_eq!(r#box.as_deref(), Some("alpha"));
             *cursor
         }
         other => unreachable!("not an event: {other:?}"),
@@ -158,7 +158,7 @@ fn settle_open_records_and_copies_a_new_proof_file() {
     assert!(
         frames
             .iter()
-            .any(|f| matches!(f, ServerFrame::Event { kind, task, .. } if kind == "proof" && task.as_str() == "t")),
+            .any(|f| matches!(f, ServerFrame::Event { kind, r#box, .. } if kind == "proof" && r#box.as_deref() == Some("t"))),
         "{frames:?}"
     );
     assert_eq!(id.get(), 1);
