@@ -1,4 +1,4 @@
-//! Auto-sleep: park the Box of a Task whose agent has been quiet long enough.
+//! Auto-sleep: park a Box whose agent has been quiet long enough.
 //!
 //! Runs only where activity already settles Working and Idle. It never waits for the Box
 //! lock and never fails the caller.
@@ -23,10 +23,10 @@ use crate::ops::common::park::{park_tunnel, restore_tunnel};
 use crate::ops::start::revive_after_wake;
 use crate::store::{BoxRow, Store, StoreError};
 
-/// Sleep the Box of task `id` when its Task has been Idle for `box.sleep_after`.
+/// Sleep the machine of Box `id` when the Box has been Idle for `box.sleep_after`.
 ///
 /// A held Box lock, a Box that cannot be slept right now and a step the store refuses leave
-/// everything as it was. A Box with a recorded refusal is not asked again until the Task has left Idle. Any other failure becomes a warning.
+/// everything as it was. A Box with a recorded refusal is not asked again until it has left Idle. Any other failure becomes a warning.
 pub(crate) fn run(cx: &Cx, store: &Store, id: BoxId) {
     match try_sleep(cx, store, id) {
         Err(e) if e.kind != ErrorKind::Refused => cx.warn(Warning {
@@ -49,7 +49,7 @@ fn due(cx: &Cx, row: &BoxRow) -> bool {
     sleep_due(&facts) == SleepVerdict::Due
 }
 
-/// Sleep the Box once the Box lock is free and the Task is still due.
+/// Sleep the machine once the Box lock is free and the Box is still due.
 fn try_sleep(cx: &Cx, store: &Store, id: BoxId) -> Result<(), CommandError> {
     let Some(row) = store.box_row(id)? else {
         return Ok(());
@@ -68,7 +68,7 @@ fn try_sleep(cx: &Cx, store: &Store, id: BoxId) -> Result<(), CommandError> {
         return Ok(());
     }
     let handle = sleep_handle(cx, &row)?;
-    let decision = match sleep_parked(cx, store, id, &handle, task_dir(&row))? {
+    let decision = match sleep_parked(cx, store, id, &handle, box_dir(&row))? {
         SleepOutcome::Slept | SleepOutcome::Native => Decision::new(id)
             .lifecycle(BoxLifecycleInput::Sleep { auto: true })
             .box_input(BoxInput::Sleep)
@@ -89,7 +89,7 @@ fn try_sleep(cx: &Cx, store: &Store, id: BoxId) -> Result<(), CommandError> {
     }
 }
 
-/// Park the Task's Proxy tunnel, end the agent's pane, then ask the Driver to sleep the Box.
+/// Park the Proxy tunnel, end the agent's pane, then ask the Driver to sleep the machine.
 ///
 /// The agent's ssh session would otherwise outlive the Box until its keepalive gave up. A wake
 /// finds the pane gone and relaunches the agent. A Box that stays awake gets its tunnel back
@@ -140,8 +140,8 @@ fn close_agent_pane(cx: &Cx, store: &Store, id: BoxId) -> Result<(), CommandErro
     }
 }
 
-/// The directory crabbox runs from for the Task: its worktree, else its repo.
-pub(crate) fn task_dir(row: &BoxRow) -> &Path {
+/// The directory crabbox runs from for the Box: its worktree, else its repo.
+pub(crate) fn box_dir(row: &BoxRow) -> &Path {
     Path::new(row.worktree.as_deref().unwrap_or(&row.repo))
 }
 
@@ -150,12 +150,12 @@ pub(crate) fn refuse(why: String) -> CommandError {
     CommandError::new(ErrorKind::Refused, why)
 }
 
-/// The handle of the Task's ready Box when no run is in flight, or a refusal.
+/// The handle of the ready Box when no run is in flight, or a refusal.
 pub(crate) fn sleep_handle(cx: &Cx, row: &BoxRow) -> Result<BoxHandle, CommandError> {
     let b = row
         .boxed
         .as_ref()
-        .ok_or_else(|| refuse("the task has no Box".to_owned()))?;
+        .ok_or_else(|| refuse("the Box has no machine".to_owned()))?;
     match b.state {
         BoxState::Ready => {}
         BoxState::Gone | BoxState::Deleted => return Err(refuse("the Box is gone".to_owned())),

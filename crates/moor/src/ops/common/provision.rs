@@ -1,4 +1,4 @@
-//! Box provisioning shared by the task ops: acquire for a new Task, or again for a lost Box.
+//! Box provisioning shared by the Box ops: acquire a machine for a new Box, or again for a lost one.
 
 use std::path::{Path, PathBuf};
 
@@ -23,7 +23,7 @@ use crate::ops::common::dotfiles::{self, DotfilesRun};
 use crate::ops::common::facts::{provider_caps, require_reverse_tunnel, resolved};
 use crate::ops::common::identity;
 use crate::ops::common::setup;
-use crate::ops::common::view::task_view;
+use crate::ops::common::view::box_view;
 use crate::store::lease::LeaseKind;
 use crate::store::{BoxRow, Store};
 
@@ -35,31 +35,31 @@ pub(crate) use self::rerun::ResyncGates;
 use self::rerun::{note_setup_not_rerun, resync};
 use self::retry::{kept_box_retry, retry_in_box};
 
-/// Re-reads a Task row that must exist.
+/// Re-reads a Box row that must exist.
 ///
 /// # Errors
 /// The row is gone.
 pub(crate) fn reread(store: &Store, id: BoxId) -> Result<BoxRow, CommandError> {
     store
         .box_row(id)?
-        .ok_or_else(|| CommandError::new(ErrorKind::Internal, "started task vanished"))
+        .ok_or_else(|| CommandError::new(ErrorKind::Internal, "started Box vanished"))
 }
 
-/// Where the Task stands when its Box is wanted.
+/// Where the Box stands when its machine is wanted.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Entry {
-    /// A new Task still being checked.
+    /// A new Box still being checked.
     Fresh,
-    /// A Task whose setup failed.
+    /// A Box whose setup failed.
     Retry,
-    /// A working Task that lost its Box; its state stays.
+    /// A working Box that lost its machine; its state stays.
     Stay,
-    /// A Task queued until a Box slot frees.
+    /// A Box queued until a machine slot frees.
     Waiting,
 }
 
 impl Entry {
-    /// The Task input that starts the step, if any.
+    /// The Box input that starts the step, if any.
     const fn begin(self) -> Option<BoxLifecycleInput> {
         match self {
             Self::Fresh => Some(BoxLifecycleInput::Admitted),
@@ -70,7 +70,7 @@ impl Entry {
     }
 }
 
-/// Gives a Task with no Box, a failed setup in a lost Box or a lost Box a Box again.
+/// Gives a Box with no machine, a failed setup in a lost machine or a lost machine a machine again.
 ///
 /// Returns what ran, or `None` when nothing was provisioned. The Box lock is held while
 /// provisioning and the row is read again under it; another op holding it is
@@ -114,12 +114,12 @@ pub(crate) fn reprovision(
     provision(cx, store, row.id, entry, &cfg).map(Some)
 }
 
-/// Rebuilds the Box path from the workdir text stored on the Task row.
+/// Rebuilds the machine path from the workdir text stored on the Box row.
 pub(crate) fn recorded_workdir(stored: &str) -> Option<BoxPath> {
     BoxPath::restore(stored).ok()
 }
 
-/// How a Task that wants a Box starts over; `None` when it has one or is being provisioned.
+/// How a Box that wants a machine starts over; `None` when it has one or is being provisioned.
 fn entry_for(row: &BoxRow) -> Option<Entry> {
     let box_state = row.boxed.as_ref().map(|b| b.state);
     match (row.lifecycle, box_state) {
@@ -131,9 +131,9 @@ fn entry_for(row: &BoxRow) -> Option<Entry> {
     }
 }
 
-/// Admits the Task, acquires its Box and records the outcome.
+/// Admits the Box, acquires its machine and records the outcome.
 ///
-/// A new or waiting Task at the Box limit is queued (or left waiting) and the
+/// A new or waiting Box at the machine limit is queued (or left waiting) and the
 /// driver is not called. The caller holds the Box lock.
 pub(crate) fn provision(
     cx: &Cx,
@@ -142,7 +142,7 @@ pub(crate) fn provision(
     entry: Entry,
     cfg: &BoxSettings,
 ) -> Result<Provisioned, CommandError> {
-    let task = reread(store, id)?;
+    let started = reread(store, id)?;
     let provider = ProviderId::new(cfg.provider.value.clone());
     require_reverse_tunnel(cfg, provider_caps(cx, cfg)?)?;
     let mut requested = Decision::new(id);
@@ -177,14 +177,14 @@ pub(crate) fn provision(
     } else {
         store.apply(requested)?;
     }
-    let worktree = PathBuf::from(task.worktree.as_deref().unwrap_or(&task.repo));
+    let worktree = PathBuf::from(started.worktree.as_deref().unwrap_or(&started.repo));
     let req = AcquireReq {
         provider,
         box_id: id,
-        name: task.name,
+        name: started.name,
         class: Some(cfg.size.value.as_str().to_owned()),
         nonce: nonce(cx.rng()),
-        worktree: task.worktree.as_deref().map(PathBuf::from),
+        worktree: started.worktree.as_deref().map(PathBuf::from),
     };
     // The record exists before the Box does; a failed acquire leaves it `planned`.
     let planned = cx.driver().planned_handle(&req);
@@ -230,7 +230,7 @@ struct SetupTarget<'a> {
     handle: &'a BoxHandle,
     /// Working directory in the Box.
     workdir: &'a BoxPath,
-    /// Worktree on the host the Task works in.
+    /// Worktree on the host the Box works in.
     worktree: &'a Path,
 }
 
@@ -282,7 +282,7 @@ fn setup_proxy(
 
 /// Runs repo setup in a Box under the setup intent and records how it ended, clearing the intent.
 ///
-/// `advance` moves the Task on to working; a Task already working gets a `setup_failed` event
+/// `advance` moves the Box on to working; a Box already working gets a `setup_failed` event
 /// instead.
 fn run_and_record(
     cx: &Cx,
@@ -352,7 +352,7 @@ fn run_and_record(
     })
 }
 
-/// Records a failed acquire; returns the error, carrying the Task row, to report.
+/// Records a failed acquire; returns the error, carrying the Box row, to report.
 fn failed(
     cx: &Cx,
     store: &Store,
@@ -385,7 +385,7 @@ fn failed(
     }
     let out = CommandError::from(err);
     match reread(store, id) {
-        Ok(row) => out.with_value(serde_json::json!({ "box": task_view(&row, cx.config()) })),
+        Ok(row) => out.with_value(serde_json::json!({ "box": box_view(&row, cx.config()) })),
         Err(_) => out,
     }
 }

@@ -80,7 +80,7 @@ fn drop_releases_the_lock() {
 }
 
 #[test]
-fn other_tasks_do_not_contend() {
+fn other_boxes_do_not_contend() {
     let dir = tempfile::tempdir().unwrap();
     let clock = FakeClock::new(Ts::from_millis(0));
     let _a = BoxLock::acquire(&clock, dir.path(), BoxId::new(1), "start", WAIT).unwrap();

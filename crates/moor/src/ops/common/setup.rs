@@ -49,7 +49,7 @@ pub(crate) enum SetupRun {
 }
 
 impl SetupRun {
-    /// The outcome recorded on the Task.
+    /// The outcome recorded on the Box.
     pub(crate) fn outcome(&self) -> SetupOutcome {
         match self {
             Self::Skipped | Self::Ok { .. } => SetupOutcome::Ok,

@@ -9,11 +9,11 @@ use moor_core::{BoxReq, ErrorKind};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::wake::wake_task;
+use crate::ops::common::wake::wake_box;
 
 /// Run `open`.
 pub(crate) fn run(cx: &Cx, req: &BoxReq) -> Result<SleepValue, CommandError> {
-    wake_task(cx, req, "open", |row| {
+    wake_box(cx, req, "open", |row| {
         let workspace = row
             .workspace_id
             .as_deref()
@@ -39,7 +39,7 @@ pub(crate) struct ConnectValue {
 /// instead of running it.
 pub(crate) fn connect(cx: &Cx, req: &BoxReq) -> Result<ConnectValue, CommandError> {
     let mut workspace = None;
-    let slept = wake_task(cx, req, "connect", |row| {
+    let slept = wake_box(cx, req, "connect", |row| {
         workspace =
             Some(row.workspace_id.clone().ok_or_else(|| {
                 CommandError::new(ErrorKind::Refused, "the Task has no Workspace")

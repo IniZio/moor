@@ -27,7 +27,7 @@ struct Fx {
     row: BoxRow,
 }
 
-/// A Task with a Box that has a handle; Ready when `ready`.
+/// A Box with a machine that has a handle; Ready when `ready`.
 fn fixture(driver: FakeDriver, ready: bool) -> Fx {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(driver);

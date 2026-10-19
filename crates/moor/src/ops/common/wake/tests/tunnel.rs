@@ -1,4 +1,4 @@
-//! Waking a Box brings the Task's Proxy tunnel back before the op proceeds.
+//! Waking a Box brings its Proxy tunnel back before the op proceeds.
 
 use std::time::Duration;
 
@@ -10,7 +10,7 @@ use super::{fx, row, sleep, wake_and_revive, wake_box_if_asleep, wake_if_asleep,
 use crate::store::{ProxyPorts, ReadyProc, TunnelAck, TunnelWant};
 use crate::testing::rng::FakeRng;
 
-/// Give the Task a live Proxy: a ready row held by a fresh lease.
+/// Give the Box a live Proxy: a ready row held by a fresh lease.
 fn live_proxy(f: &Fx) {
     let store = f.cx.store().unwrap();
     let lease = Duration::from_secs(30);

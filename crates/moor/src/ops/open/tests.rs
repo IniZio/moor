@@ -187,7 +187,7 @@ fn unknown_task_is_failed_and_not_focused() {
     let err = run(&f.cx, &r).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Failed);
     assert!(
-        err.error.to_string().contains("no open task"),
+        err.error.to_string().contains("no open Box"),
         "{}",
         err.error
     );
@@ -298,5 +298,5 @@ fn connect_unknown_task_is_failed() {
     };
     let err = connect(&f.cx, &r).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Failed);
-    assert!(err.error.to_string().contains("no open task"));
+    assert!(err.error.to_string().contains("no open Box"));
 }

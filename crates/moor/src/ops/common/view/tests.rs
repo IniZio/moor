@@ -7,7 +7,7 @@ use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxHandle, BoxId, BoxName, ProviderId, RunId};
 
-use super::{agent_view, event_view, rfc3339, task_view, task_view_with_run};
+use super::{agent_view, box_view, box_view_with_run, event_view, rfc3339};
 use crate::ops::common::activity::{PaneLiveness, Reading};
 use crate::store::{RunRow, Store};
 use crate::testing::clock::FakeClock;
@@ -29,7 +29,7 @@ fn rfc3339_out_of_range_falls_back_to_raw_millis() {
 }
 
 #[test]
-fn task_view_maps_row_without_box() {
+fn box_view_maps_row_without_box() {
     let dir = tempfile::tempdir().unwrap();
     let clock = Arc::new(FakeClock::new(Ts::from_millis(86_400_000)));
     let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
@@ -43,7 +43,7 @@ fn task_view_maps_row_without_box() {
         ..Fields::default()
     };
     store.apply(Decision::new(id).set(fields)).unwrap();
-    let v = task_view(&store.box_row(id).unwrap().unwrap(), &UserConfig::default());
+    let v = box_view(&store.box_row(id).unwrap().unwrap(), &UserConfig::default());
     assert_eq!(
         (v.id, v.name.as_str(), v.repo.as_str()),
         (id.get(), "t", "r")
@@ -58,7 +58,7 @@ fn task_view_maps_row_without_box() {
 }
 
 #[test]
-fn task_view_maps_box() {
+fn box_view_maps_box() {
     let dir = tempfile::tempdir().unwrap();
     let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
     let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
@@ -79,7 +79,7 @@ fn task_view_maps_box() {
             handle: BoxHandle::new("h"),
         }))
         .unwrap();
-    let b = task_view(&store.box_row(id).unwrap().unwrap(), &UserConfig::default())
+    let b = box_view(&store.box_row(id).unwrap().unwrap(), &UserConfig::default())
         .driver
         .unwrap();
     assert_eq!(
@@ -106,7 +106,7 @@ fn box_view_maps_sleep_reason() {
     store
         .apply(Decision::new(id).set(fields).box_input(BoxInput::Requested))
         .unwrap();
-    let b = task_view(&store.box_row(id).unwrap().unwrap(), &UserConfig::default())
+    let b = box_view(&store.box_row(id).unwrap().unwrap(), &UserConfig::default())
         .driver
         .unwrap();
     assert_eq!(
@@ -118,7 +118,7 @@ fn box_view_maps_sleep_reason() {
         ..Fields::default()
     };
     store.apply(Decision::new(id).set(fields)).unwrap();
-    let b = task_view(&store.box_row(id).unwrap().unwrap(), &UserConfig::default())
+    let b = box_view(&store.box_row(id).unwrap().unwrap(), &UserConfig::default())
         .driver
         .unwrap();
     assert_eq!(b.sleep.after.as_deref(), Some("30m"));
@@ -143,14 +143,14 @@ fn box_view_shows_configured_sleep_after() {
         .apply(Decision::new(id).set(fields).box_input(BoxInput::Requested))
         .unwrap();
     let config: UserConfig = parse_user("u.yaml", "box: {sleep_after: 45m}").unwrap();
-    let b = task_view(&store.box_row(id).unwrap().unwrap(), &config)
+    let b = box_view(&store.box_row(id).unwrap().unwrap(), &config)
         .driver
         .unwrap();
     assert_eq!(b.sleep.after.as_deref(), Some("45m"));
 }
 
 #[test]
-fn task_view_with_run_fills_run() {
+fn box_view_with_run_fills_run() {
     let dir = tempfile::tempdir().unwrap();
     let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
     let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
@@ -172,13 +172,13 @@ fn task_view_with_run_fills_run() {
         started_at: Ts::from_millis(86_400_000),
         finished_at: None,
     };
-    let r = task_view_with_run(&row, Some(&run), &UserConfig::default())
+    let r = box_view_with_run(&row, Some(&run), &UserConfig::default())
         .run
         .unwrap();
     assert_eq!(r.id, 5);
     assert_eq!(r.argv, ["make", "test"]);
     assert_eq!(r.started_at, "1970-01-02T00:00:00Z");
-    assert!(task_view_with_run(&row, None, &UserConfig::default())
+    assert!(box_view_with_run(&row, None, &UserConfig::default())
         .run
         .is_none());
 }

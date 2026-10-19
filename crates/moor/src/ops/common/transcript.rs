@@ -131,7 +131,7 @@ pub(crate) fn save_on_exit(
     Ok(())
 }
 
-/// Whether an exit save failed or was skipped since the Task's latest session started.
+/// Whether an exit save failed or was skipped since the Box's latest session started.
 fn exit_save_ended(store: &Store, row: &BoxRow) -> Result<bool, CommandError> {
     let events = store.events(row.id, usize::MAX)?;
     Ok(events

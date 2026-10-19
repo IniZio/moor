@@ -1,4 +1,4 @@
-//! Settles which `.moor.yaml` moor uses for a Task, and refuses one edited since the Task started.
+//! Settles which `.moor.yaml` moor uses for a Box, and refuses one edited since the Box started.
 //!
 //! Setup re-runs, agent relaunches and `moor run` share [`guard`]; close's teardown uses
 //! [`for_teardown`], which never refuses. Both return the config parsed from the exact bytes they
@@ -20,7 +20,7 @@ const REPO_FILE: &str = ".moor.yaml";
 struct Copies<'a> {
     /// Directory holding the worktree copy.
     at: &'a str,
-    /// Base commit, or a placeholder when the Task has none.
+    /// Base commit, or a placeholder when the Box has none.
     rev: &'a str,
     /// Worktree text; `None` when the file is absent.
     current: Option<String>,

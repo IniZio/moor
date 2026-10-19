@@ -99,7 +99,7 @@ fn cfg() -> BoxSettings {
 
 fn boxed_proxy() -> BoxProxy {
     BoxProxy {
-        task: BoxId::new(1),
+        box_id: BoxId::new(1),
         addr: ProxyAddr {
             box_port: 4000,
             nonce: Secret::new(b"s3cret".to_vec()),

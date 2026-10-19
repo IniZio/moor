@@ -1,4 +1,4 @@
-//! Lease rows that track the Box a task acquires.
+//! Lease rows that track the machine a Box acquires.
 
 use moor_core::seam::driver::Acquired;
 use moor_core::{BoxHandle, BoxId};

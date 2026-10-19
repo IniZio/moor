@@ -1,4 +1,4 @@
-//! Tests for waking an Asleep Task and Box.
+//! Tests for waking an Asleep Box and machine.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -51,10 +51,10 @@ fn session(pane: &str) -> SessionRef {
     }
 }
 
-fn acquire_req(provider: ProviderId, task: BoxId, name: BoxName) -> AcquireReq {
+fn acquire_req(provider: ProviderId, box_id: BoxId, name: BoxName) -> AcquireReq {
     AcquireReq {
         provider,
-        box_id: task,
+        box_id,
         name,
         class: None,
         nonce: "n".to_owned(),
@@ -73,7 +73,7 @@ fn git_proc() -> Arc<ScriptedProc> {
     proc
 }
 
-/// Task `t` Working with a Ready Box.
+/// Box `t` Working with a Ready machine.
 fn fx_with(driver: FakeDriver) -> Fx {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(driver);
@@ -140,7 +140,7 @@ fn fx() -> Fx {
     fx_with(FakeDriver::new())
 }
 
-/// Put the Task and Box to sleep.
+/// Put the Box and machine to sleep.
 fn sleep(f: &Fx) {
     let store = f.cx.store().unwrap();
     store
@@ -190,7 +190,7 @@ fn wake_calls(f: &Fx) -> usize {
 }
 
 #[test]
-fn asleep_task_and_box_are_woken() {
+fn asleep_box_and_machine_are_woken() {
     let f = fx();
     sleep(&f);
     let store = f.cx.store().unwrap();
@@ -205,7 +205,7 @@ fn asleep_task_and_box_are_woken() {
 }
 
 #[test]
-fn awake_task_is_left_alone() {
+fn awake_box_is_left_alone() {
     let f = fx();
     let store = f.cx.store().unwrap();
     assert!(!wake_if_asleep(&f.cx, store, &row(&f)).unwrap());
@@ -216,7 +216,7 @@ fn awake_task_is_left_alone() {
 }
 
 #[test]
-fn failed_resume_leaves_task_and_box_asleep() {
+fn failed_resume_leaves_box_and_machine_asleep() {
     let f = fx_with(FakeDriver::new().fail_wake(DriverError::NotFound));
     sleep(&f);
     let store = f.cx.store().unwrap();
@@ -241,7 +241,7 @@ fn gone_box_is_refused_without_a_driver_call() {
 }
 
 #[test]
-fn asleep_task_with_ready_box_wakes_only_the_task() {
+fn asleep_box_with_ready_machine_wakes_only_the_box() {
     let f = fx();
     let store = f.cx.store().unwrap();
     store
@@ -267,7 +267,7 @@ fn asleep_task_with_ready_box_wakes_only_the_task() {
 }
 
 #[test]
-fn asleep_box_with_working_task_wakes_only_the_box() {
+fn asleep_machine_with_working_box_wakes_only_the_machine() {
     let f = fx();
     let store = f.cx.store().unwrap();
     store
@@ -319,7 +319,7 @@ fn waking_a_box_without_a_stored_workdir_probes_once_and_stores_it() {
 }
 
 #[test]
-fn failed_workdir_lookup_after_wake_leaves_task_and_box_asleep() {
+fn failed_workdir_lookup_after_wake_leaves_box_and_machine_asleep() {
     let f = fx();
     sleep(&f);
     clear_workdir(&f);
@@ -335,7 +335,7 @@ fn failed_workdir_lookup_after_wake_leaves_task_and_box_asleep() {
 }
 
 #[test]
-fn waking_only_the_task_does_not_look_the_workdir_up() {
+fn waking_only_the_box_does_not_look_the_workdir_up() {
     let f = fx();
     let store = f.cx.store().unwrap();
     store
@@ -348,7 +348,7 @@ fn waking_only_the_task_does_not_look_the_workdir_up() {
     assert_eq!(workdir_calls(&f), 0);
 }
 
-/// Gives the Task a live agent session in pane `p-1` that can be resumed.
+/// Gives the Box a live agent session in pane `p-1` that can be resumed.
 fn with_agent(f: &Fx) {
     let store = f.cx.store().unwrap();
     store.begin_session(f.id, "agent-1", Some("p-1")).unwrap();
@@ -400,7 +400,7 @@ fn waking_a_box_whose_agent_is_live_does_not_relaunch() {
 }
 
 #[test]
-fn waking_only_the_task_does_not_probe_the_agent() {
+fn waking_only_the_box_does_not_probe_the_agent() {
     let f = fx();
     with_agent(&f);
     let store = f.cx.store().unwrap();

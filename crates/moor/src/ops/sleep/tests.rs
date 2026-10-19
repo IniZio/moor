@@ -17,7 +17,7 @@ use moor_core::{BoxId, BoxName, BoxReq, ErrorKind, ProviderId};
 use super::run;
 use crate::cx::Cx;
 use crate::ops::common::boxlock::BoxLock;
-use crate::ops::common::view::task_view;
+use crate::ops::common::view::box_view;
 use crate::store::{
     Fenced, NewRun, ProxyPorts, ReadyProc, Reserve, TunnelAck, TunnelRequest, TunnelWant,
 };
@@ -259,7 +259,7 @@ fn cannot_sleep_refuses_and_stores_the_reason() {
     assert_eq!(session(&f), SessionState::Idle);
     assert_eq!(reason(&f).as_deref(), Some("provider cannot wake"));
     let row = f.cx.store().unwrap().box_row(f.id).unwrap().unwrap();
-    let shown = task_view(&row, f.cx.config()).driver.unwrap().sleep.reason;
+    let shown = box_view(&row, f.cx.config()).driver.unwrap().sleep.reason;
     assert_eq!(shown.as_deref(), Some("provider cannot wake"));
     assert!(!kinds(&f).contains(&"asleep".to_owned()));
 }
