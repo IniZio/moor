@@ -48,6 +48,7 @@ struct State {
     fail_wake: Option<DriverError>,
     sleep_outcome: Option<SleepOutcome>,
     on_exec: Option<Arc<ExecHook>>,
+    after_exec: Option<Arc<ExecHook>>,
     on_wake: Option<Arc<ExecHook>>,
     work_root: Option<String>,
     fail_workdir: Option<DriverError>,
@@ -226,9 +227,16 @@ impl Driver for FakeDriver {
         if let (Some(Output::Log(path)), Some(text)) = (&spec.output, s.exec_stdout.pop_front()) {
             write_bytes(path, text.as_bytes())?;
         }
-        s.exec_results
+        let out = s
+            .exec_results
             .pop_front()
-            .unwrap_or(Ok(ExecOutcome::Exited { code: 0 }))
+            .unwrap_or(Ok(ExecOutcome::Exited { code: 0 }));
+        let hook = s.after_exec.clone();
+        drop(s);
+        if let Some(hook) = hook {
+            hook();
+        }
+        out
     }
 
     fn copy_out(
