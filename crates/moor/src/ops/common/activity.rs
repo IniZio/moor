@@ -227,6 +227,8 @@ fn note_agent_session(
 ///
 /// The agent session id of the live session is registered with the multiplexer when it is not yet.
 ///
+/// A Task whose Box an op holds, or that has an intent set, is not moved.
+///
 /// A Working Task goes Idle only when the reading `may_quiet` and is not busy; an Idle Task
 /// goes back to Working when the reading is busy. Nothing else decides quiet: a gone pane, an
 /// idle status or a dropped hook read never idles a Task. If the row changed since the read,
@@ -252,6 +254,19 @@ pub(crate) fn settle(
         TaskState::Idle if reading.busy() => TaskInput::AgentBusy,
         _ => return Ok(()),
     };
+    // An op that owns the Box decides where the Task goes; hold the lock across the write.
+    let Ok(_held) = BoxLock::acquire(
+        cx.clock(),
+        cx.state_dir()?,
+        row.id,
+        "settle",
+        Duration::ZERO,
+    ) else {
+        return Ok(());
+    };
+    if row.intent.is_some() {
+        return Ok(());
+    }
     match store.apply(Decision::new(row.id).task_input(input)) {
         Ok(_) | Err(StoreError::Illegal(_)) => Ok(()),
         Err(e) => Err(e.into()),

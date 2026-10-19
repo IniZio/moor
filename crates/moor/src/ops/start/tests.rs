@@ -43,6 +43,7 @@ mod relaunch_yaml;
 mod rerun;
 mod revive;
 mod session;
+mod settle_busy;
 mod setup;
 mod setup_rerun;
 mod sync_retry;

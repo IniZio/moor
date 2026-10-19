@@ -133,6 +133,11 @@ impl FakeDriver {
         self.st().on_exec = Some(Arc::new(f));
     }
 
+    /// Runs `f` at the end of every later `exec`, outside the Driver's lock.
+    pub(crate) fn after_exec(&self, f: impl Fn() + Send + Sync + 'static) {
+        self.st().after_exec = Some(Arc::new(f));
+    }
+
     /// Runs `f` inside every later `wake` that succeeds, outside the Driver's lock; models a resume that cold-boots.
     pub(crate) fn on_wake(&self, f: impl Fn() + Send + Sync + 'static) {
         self.st().on_wake = Some(Arc::new(f));
