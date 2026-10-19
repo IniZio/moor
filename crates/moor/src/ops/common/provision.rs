@@ -31,7 +31,7 @@ pub(crate) use self::outcome::Provisioned;
 use self::outcome::{dotfiles_warned, sync_failed};
 pub(crate) use self::rerun::ResyncGates;
 use self::rerun::{note_setup_not_rerun, resync};
-use self::retry::{dotfiles_retry, retry_dotfiles};
+use self::retry::{kept_box_retry, retry_in_box};
 
 /// Re-reads a Task row that must exist.
 ///
@@ -86,14 +86,16 @@ pub(crate) fn reprovision(
     gates: &ResyncGates,
 ) -> Result<Option<Provisioned>, CommandError> {
     let ready = row.boxed.as_ref().map(|b| b.state) == Some(BoxState::Ready);
-    if entry_for(row).is_none() && !dotfiles_retry(row) && !ready {
+    if entry_for(row).is_none() && !kept_box_retry(row) && !ready {
         return Ok(None);
     }
     let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, row.id, op, boxlock::WAIT)?;
     let row = reread(store, row.id)?;
     let entry = entry_for(&row);
-    if dotfiles_retry(&row) {
-        return retry_dotfiles(cx, store, &row).map(Some);
+    if kept_box_retry(&row) {
+        let repo = moor_yaml::guard(cx, &row, trusted)?;
+        let cfg = resolved(cx, repo.as_ref(), &Flags::default());
+        return retry_in_box(cx, store, &row, &cfg).map(Some);
     }
     let Some(entry) = entry else {
         if ready {
@@ -253,7 +255,7 @@ fn sync_into_box(
     cfg: &TaskSettings,
 ) -> Result<(), CommandError> {
     setup::sync_checkout(cx, target.handle, target.workdir, target.worktree, cfg)
-        .map_err(|reason| sync_failed(cx, store, id, advance, reason))
+        .map_err(|reason| sync_failed(cx, store, id, advance, target.handle, reason))
 }
 
 /// The Proxy setup runs through, started or reused; none when there is no setup or it will not start.

@@ -1,10 +1,10 @@
-//! What provisioning ran in a Box, and how a failed dotfiles step is recorded.
+//! What provisioning ran in a Box, and how a failed step is recorded and reported.
 
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, IntentChange};
 use moor_core::domain::task::TaskInput;
 use moor_core::BoxId;
 use moor_core::ErrorKind;
-use moor_core::Warning;
+use moor_core::{BoxHandle, Warning};
 
 use super::reread;
 use crate::cx::Cx;
@@ -41,6 +41,7 @@ pub(super) fn sync_failed(
     store: &Store,
     id: BoxId,
     advance: bool,
+    handle: &BoxHandle,
     reason: String,
 ) -> CommandError {
     let mut done = Decision::new(id);
@@ -62,11 +63,41 @@ pub(super) fn sync_failed(
     if let Err(write) = store.apply(done) {
         return write.into();
     }
+    step_failed(cx, store, id, "sync", handle, reason)
+}
+
+/// The error for a provisioning step that failed in a Box that is kept for debugging.
+///
+/// `step` is `sync`, `setup` or `credential`. The message is the reason, which carries the
+/// output tail when there is one; the hints say where the Box is, how to retry and how to close.
+pub(super) fn step_failed(
+    cx: &Cx,
+    store: &Store,
+    id: BoxId,
+    step: &str,
+    handle: &BoxHandle,
+    reason: String,
+) -> CommandError {
+    let log_tail = reason.clone();
     let out = CommandError::new(ErrorKind::Failed, reason);
-    match reread(store, id) {
-        Ok(row) => out.with_value(serde_json::json!({ "task": task_view(&row, cx.config()) })),
-        Err(_) => out,
-    }
+    let Ok(row) = reread(store, id) else {
+        return out;
+    };
+    let name = row.name.as_str().to_owned();
+    out.with_hint(format!(
+        "the {step} step failed; Box {} is kept for debugging and the agent did not start",
+        handle.as_str()
+    ))
+    .with_hint(format!("`moor start {name}` again retries on this Box"))
+    .with_hint(format!(
+        "`moor close {name}` closes it; add --force to discard unpushed work in the Box"
+    ))
+    .with_value(serde_json::json!({
+        "task": task_view(&row, cx.config()),
+        "failed_step": step,
+        "log_tail": log_tail,
+        "box": handle.as_str(),
+    }))
 }
 
 /// Warns that the dotfiles failed and returns the run to report; the Box carries on without them.
@@ -76,50 +107,4 @@ pub(super) fn dotfiles_warned(cx: &Cx, failure: DotfilesFailed) -> DotfilesRun {
         message: format!("dotfiles failed:\n{}", failure.tail),
     });
     DotfilesRun::Failed { tail: failure.tail }
-}
-
-/// Records a failed dotfiles step and returns the error, carrying the Task row, to report.
-///
-/// The Box is kept. `advance` moves the Task to setup-failed; a Task already working gets a
-/// `setup_failed` event instead. A repo setup line that failed earlier in the same step is
-/// kept as its own `setup_failed` event and named in the error, so neither failure is lost.
-pub(super) fn dotfiles_failed(
-    cx: &Cx,
-    store: &Store,
-    id: BoxId,
-    advance: bool,
-    setup_line: Option<String>,
-    failure: DotfilesFailed,
-) -> CommandError {
-    let tail = failure.tail;
-    let mut done = Decision::new(id);
-    if advance {
-        done.task_input = Some(TaskInput::DotfilesFailed {
-            error: tail.clone(),
-        });
-    }
-    if let Some(line) = &setup_line {
-        done = done.event(ExtraEvent::SetupFailed { line: line.clone() });
-    }
-    if !advance {
-        done = done.event(ExtraEvent::SetupFailed { line: tail.clone() });
-    }
-    let done = done
-        .set(Fields {
-            setup_failed_at: Field::Set(cx.clock().now().as_millis()),
-            ..Fields::default()
-        })
-        .intent(IntentChange::Clear);
-    if let Err(write) = store.apply(done) {
-        return write.into();
-    }
-    let setup = setup_line.map_or_else(String::new, |l| format!("setup failed: {l}\n"));
-    let out = CommandError::new(
-        ErrorKind::Failed,
-        format!("{setup}dotfiles failed:\n{tail}"),
-    );
-    match reread(store, id) {
-        Ok(row) => out.with_value(serde_json::json!({ "task": task_view(&row, cx.config()) })),
-        Err(_) => out,
-    }
 }

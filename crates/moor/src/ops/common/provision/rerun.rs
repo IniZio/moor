@@ -107,7 +107,7 @@ pub(super) fn resync(
     };
     if (gates.launching)()? {
         let advance = row.state == TaskState::SettingUp;
-        return Err(sync_failed(cx, store, row.id, advance, reason));
+        return Err(sync_failed(cx, store, row.id, advance, handle, reason));
     }
     cx.warn(Warning {
         code: "resync_failed".to_owned(),
