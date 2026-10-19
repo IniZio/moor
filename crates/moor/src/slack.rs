@@ -9,7 +9,6 @@ mod proof;
 mod socket;
 mod status;
 
-use std::net::SocketAddr;
 use std::sync::mpsc::{self, Receiver};
 use std::sync::Arc;
 use std::thread;
@@ -67,9 +66,8 @@ impl Slack {
     /// Starts the socket thread, the worker and the status follower for the life of the process.
     ///
     /// Starting a Task can take minutes, so the socket thread only queues mentions.
-    /// `web` is the controller's web address, used for links in status messages.
-    /// `pr_of` finds the open pull request of a Task's branch for the same messages.
-    pub(crate) fn spawn(self, env: &Env, log: Log, web: Option<SocketAddr>, pr_of: Arc<PrOf>) {
+    /// `pr_of` finds the open pull request of a Task's branch for status messages.
+    pub(crate) fn spawn(self, env: &Env, log: Log, pr_of: Arc<PrOf>) {
         let (tx, rx) = mpsc::channel();
         let api = Arc::new(self.api);
         let socket_api = Arc::clone(&api);
@@ -83,7 +81,6 @@ impl Slack {
                 &status_env,
                 &status_api,
                 &status_token,
-                web,
                 &*pr_of,
                 &*status_log,
             );

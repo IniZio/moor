@@ -64,17 +64,7 @@ fn make_repo(dir: &Path) {
 
 impl Rig {
     pub(crate) fn start() -> Self {
-        Self::start_with(None)
-    }
-
-    /// Starts a controller that also serves the web UI on loopback `web_port` when given.
-    pub(crate) fn start_with(web_port: Option<u16>) -> Self {
         let root = fresh_dir("slack");
-        let web = web_port.map_or_else(String::new, |port| {
-            let token = root.join("web.token");
-            secret_file(&token, "web-secret");
-            format!("web:\n  port: {port}\n  token_file: {}\n", token.display())
-        });
         let fake = FakeSlack::start();
         let (app, bot) = (root.join("app.token"), root.join("bot.token"));
         secret_file(&app, APP_TOKEN);
@@ -87,7 +77,7 @@ impl Rig {
         std::fs::write(
             &config,
             format!(
-                "socket: {}\nstate_dir: {}\nrepos:\n  demo:\n    url: {}\nslack:\n  app_token_file: {}\n  bot_token_file: {}\n  channels: [{CHANNEL}]\n  users: [{USER}]\n  api_base: {}\n{web}",
+                "socket: {}\nstate_dir: {}\nrepos:\n  demo:\n    url: {}\nslack:\n  app_token_file: {}\n  bot_token_file: {}\n  channels: [{CHANNEL}]\n  users: [{USER}]\n  api_base: {}\n",
                 socket.display(),
                 root.join("state").display(),
                 repo.display(),

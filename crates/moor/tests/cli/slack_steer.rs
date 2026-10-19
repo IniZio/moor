@@ -6,7 +6,6 @@
 
 #![allow(clippy::indexing_slicing, reason = "test code")]
 
-use std::net::TcpListener;
 use std::path::Path;
 use std::time::Duration;
 
@@ -102,15 +101,6 @@ fn reply(rig: &Rig, n: u32, user: &str, text: &str, subtype: Option<&str>, bot_i
         subtype,
         bot_id,
     });
-}
-
-/// A loopback port that is free right now.
-fn free_port() -> u16 {
-    TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
 }
 
 /// The posts after the status message.
@@ -285,17 +275,8 @@ fn rapid_changes_coalesce_into_one_edit_per_window() {
 }
 
 #[test]
-fn status_links_the_web_ui_when_configured() {
-    let port = free_port();
-    let rig = Rig::start_with(Some(port));
-    let seed = Seed::bind(&rig);
-    let link = format!("http://127.0.0.1:{port}/");
-    assert!(seed.status.text.contains(&link), "{}", seed.status.text);
-}
-
-#[test]
 fn tokens_never_appear_in_posted_text_or_stderr() {
-    let mut rig = Rig::start_with(Some(free_port()));
+    let mut rig = Rig::start();
     let seed = Seed::bind(&rig);
     reply(&rig, 1, USER, "also add tests", None, None);
     reply(&rig, 2, OTHER, "stop", None, None);
@@ -312,7 +293,7 @@ fn tokens_never_appear_in_posted_text_or_stderr() {
         .chain([stderr])
         .collect();
     for text in texts {
-        for token in [APP_TOKEN, BOT_TOKEN, "web-secret"] {
+        for token in [APP_TOKEN, BOT_TOKEN] {
             assert!(!text.contains(token), "{token} leaked in {text}");
         }
     }
