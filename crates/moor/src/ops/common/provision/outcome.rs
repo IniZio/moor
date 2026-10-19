@@ -63,29 +63,27 @@ pub(super) fn sync_failed(
     if let Err(write) = store.apply(done) {
         return write.into();
     }
-    step_failed(cx, store, id, "sync", handle, reason)
+    sync_step_failed(cx, store, id, handle, reason)
 }
 
-/// The error for a provisioning step that failed in a Box that is kept for debugging.
+/// The error for a failed sync step in a Box that is kept for debugging.
 ///
-/// `step` is `sync`, `setup` or `credential`. The message is the reason, which carries the
+/// The message is the reason, which carries the
 /// output tail when there is one; the hints say where the Box is, how to retry and how to close.
-pub(super) fn step_failed(
+fn sync_step_failed(
     cx: &Cx,
     store: &Store,
     id: BoxId,
-    step: &str,
     handle: &BoxHandle,
     reason: String,
 ) -> CommandError {
-    let log_tail = reason.clone();
     let out = CommandError::new(ErrorKind::Failed, reason);
     let Ok(row) = reread(store, id) else {
         return out;
     };
     let name = row.name.as_str().to_owned();
     out.with_hint(format!(
-        "the {step} step failed; Box {} is kept for debugging and the agent did not start",
+        "the sync step failed; Box {} is kept for debugging and the agent did not start",
         handle.as_str()
     ))
     .with_hint(format!("`moor start {name}` again retries on this Box"))
@@ -94,8 +92,7 @@ pub(super) fn step_failed(
     ))
     .with_value(serde_json::json!({
         "task": task_view(&row, cx.config()),
-        "failed_step": step,
-        "log_tail": log_tail,
+        "failed_step": "sync",
         "box": handle.as_str(),
     }))
 }
