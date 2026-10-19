@@ -144,7 +144,6 @@ impl Store {
     ///
     /// # Errors
     /// Returns [`StoreError`] when the database fails or a stored state is unknown.
-    #[cfg_attr(not(test), expect(dead_code, reason = "no caller outside tests yet"))]
     pub(crate) fn box_sessions(&self, id: BoxId) -> Result<Vec<BoxSession>, StoreError> {
         let conn = self.reader()?;
         let mut stmt = conn
