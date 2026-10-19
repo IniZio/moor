@@ -33,6 +33,9 @@ fn a_worktree_that_belongs_to_another_open_box_is_refused() {
 fn start_records_branch_ref() {
     let w = world(FakeDriver::new());
     let v = run(&w.cx, &req("demo")).unwrap();
-    let refs = w.cx.store().unwrap().box_refs(BoxId::new(v.task.id), "branch");
+    let refs =
+        w.cx.store()
+            .unwrap()
+            .box_refs(BoxId::new(v.task.id), "branch");
     assert_eq!(refs.unwrap(), vec!["demo".to_string()]);
 }
