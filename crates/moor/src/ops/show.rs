@@ -3,11 +3,12 @@
 
 use std::collections::HashMap;
 
-use moor_core::view::{AttentionView, EventView, PaneView, ShowView, TaskView};
+use moor_core::view::{ArtifactView, AttentionView, EventView, PaneView, ShowView, TaskView};
 use moor_core::{BoxId, ErrorKind, ShowReq};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
+use crate::ops::artifacts::artifact_view;
 use crate::ops::common::view::{
     agent_view, event_view, hide_unsupported_sleep, hide_unsupported_sleep_cached,
     task_view_with_run,
@@ -84,6 +85,15 @@ fn attention(store: &Store, task: BoxId) -> Result<Vec<AttentionView>, CommandEr
         .collect())
 }
 
+/// The latest version of each of the task's artifacts as views.
+fn artifacts_of(store: &Store, task: BoxId) -> Result<Vec<ArtifactView>, CommandError> {
+    Ok(store
+        .latest_artifacts(task)?
+        .iter()
+        .map(artifact_view)
+        .collect())
+}
+
 /// Run `show`.
 pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
     reconcile::run(cx);
@@ -131,13 +141,18 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
         }
         None => None,
     };
+    let artifacts = if req.artifacts {
+        Some(artifacts_of(store, row.id)?)
+    } else {
+        None
+    };
     Ok(ShowView {
         tasks: None,
         task: Some(detail),
         events,
         pane: pane.filter(|_| req.pane),
         reports: None,
-        artifacts: None,
+        artifacts,
     })
 }
 

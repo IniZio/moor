@@ -116,10 +116,6 @@ impl Store {
     }
 
     /// Every stored Artifact version of the Box, by name then version.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "read by later callers, not yet wired")
-    )]
     pub(crate) fn artifacts(&self, task: BoxId) -> Result<Vec<ArtifactRow>, StoreError> {
         let conn = self.reader()?;
         let mut stmt = conn.prepare(&format!(
@@ -132,10 +128,6 @@ impl Store {
     }
 
     /// The newest stored version of each Artifact name of the Box, by name.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "read by later callers, not yet wired")
-    )]
     pub(crate) fn latest_artifacts(&self, task: BoxId) -> Result<Vec<ArtifactRow>, StoreError> {
         let conn = self.reader()?;
         latest_in(&conn, task)

@@ -163,3 +163,5 @@ fn slack_token_file_must_be_owner_only() {
     );
     assert!(!stop.message.contains("xtok"));
 }
+
+mod artifacts;
