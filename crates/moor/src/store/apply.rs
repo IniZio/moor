@@ -172,8 +172,8 @@ fn write_task(
     update(
         tx,
         "sessions",
-        "box = ? AND ordinal = 1",
-        &[id.get()],
+        "box = ? AND ordinal = (SELECT MAX(ordinal) FROM sessions WHERE box = ?)",
+        &[id.get(), id.get()],
         &session,
     )?;
     if d.task_input.is_some() && !step.to.is_live() {
