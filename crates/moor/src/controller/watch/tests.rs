@@ -15,11 +15,12 @@ use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
-use super::{run, stream, Limits, Shared};
+use super::{run, stream, Ask, Limits, Shared};
 use crate::controller::conn::handle;
 use crate::env::Env;
 use crate::store::{Store, STORE_FILE};
 use crate::testing::clock::FakeClock;
+use moor_core::controller::WatchFilter;
 use moor_core::domain::decision::{Decision, ExtraEvent, NewTask};
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, BoxName};
@@ -37,6 +38,18 @@ fn fast(buffer: usize) -> Limits {
         poll: Duration::from_millis(10),
         batch: 3,
     }
+}
+
+fn ask(since: i64, filter: WatchFilter, follow: bool) -> Ask {
+    Ask {
+        since,
+        filter,
+        follow,
+    }
+}
+
+fn everything() -> WatchFilter {
+    WatchFilter::default()
 }
 
 fn open(dir: &Path) -> Store {
@@ -134,7 +147,7 @@ fn stream_from_zero_delivers_every_event_in_order_with_box_names() {
     append(&store, id, 2);
     let stored = store.events_after(0, 100).expect("events");
     let (mut probe, out) = Probe::new(stored.len());
-    stream(&mut probe, &env(&dir), 0, fast(16));
+    stream(&mut probe, &env(&dir), ask(0, everything(), true), fast(16));
     let got = frames(&out);
     assert_eq!(got.len(), stored.len());
     for (frame, event) in got.iter().zip(&stored) {
@@ -156,7 +169,8 @@ fn stream_follows_events_appended_after_it_started() {
     let seen = ids(&store).len();
     let (mut probe, out) = Probe::new(seen + 2);
     let env = env(&dir);
-    let watcher = thread::spawn(move || stream(&mut probe, &env, 0, fast(16)));
+    let watcher =
+        thread::spawn(move || stream(&mut probe, &env, ask(0, everything(), true), fast(16)));
     thread::sleep(Duration::from_millis(50));
     append(&store, id, 2);
     watcher.join().expect("watcher");
@@ -171,7 +185,7 @@ fn reconnect_from_cursor_has_no_duplicates_or_gaps() {
     let have = ids(&store).len();
     append(&store, id, 5usize.saturating_sub(have).max(1));
     let (mut first, out1) = Probe::new(3);
-    stream(&mut first, &env(&dir), 0, fast(16));
+    stream(&mut first, &env(&dir), ask(0, everything(), true), fast(16));
     let run1 = cursors(&frames(&out1));
     assert_eq!(run1.len(), 3);
 
@@ -179,7 +193,12 @@ fn reconnect_from_cursor_has_no_duplicates_or_gaps() {
     let all = ids(&store);
     let resume = *run1.last().expect("third cursor");
     let (mut second, out2) = Probe::new(all.len() - 3);
-    stream(&mut second, &env(&dir), resume, fast(16));
+    stream(
+        &mut second,
+        &env(&dir),
+        ask(resume, everything(), true),
+        fast(16),
+    );
     let run2 = cursors(&frames(&out2));
 
     assert!(run2.windows(2).all(|w| w[0] < w[1]), "{run2:?}");
@@ -201,7 +220,15 @@ fn slow_client_is_dropped_without_blocking_the_poller() {
     let shared = Arc::new(Shared::default());
     let flags = Arc::clone(&shared);
     let env = env(&dir);
-    let watcher = thread::spawn(move || run(&mut probe, &env, 0, fast(4), &flags));
+    let watcher = thread::spawn(move || {
+        run(
+            &mut probe,
+            &env,
+            ask(0, everything(), true),
+            fast(4),
+            &flags,
+        );
+    });
 
     let deadline = Instant::now() + Duration::from_secs(4);
     while !shared.overflow.load(std::sync::atomic::Ordering::Acquire) {
@@ -266,11 +293,140 @@ fn unopenable_store_ends_the_stream_with_a_store_unavailable_frame() {
         ("MOOR_CONFIG", "/nonexistent/moor.yaml"),
     ]);
     let (mut probe, out) = Probe::new(usize::MAX);
-    stream(&mut probe, &env, 7, fast(4));
+    stream(&mut probe, &env, ask(7, everything(), true), fast(4));
 
     let got = frames(&out);
     assert_eq!(got.len(), 1, "{got:?}");
     assert_eq!(got[0]["frame"], "error");
     assert_eq!(got[0]["kind"], "store-unavailable");
     assert!(got[0]["message"].as_str().expect("message").contains('7'));
+}
+
+fn only_boxes(names: &[&str]) -> WatchFilter {
+    WatchFilter {
+        boxes: Some(
+            names
+                .iter()
+                .map(|n| BoxName::parse_allow_bare(n).expect("name"))
+                .collect(),
+        ),
+        kinds: None,
+    }
+}
+
+fn only_kinds(kinds: &[&str]) -> WatchFilter {
+    WatchFilter {
+        boxes: None,
+        kinds: Some(kinds.iter().map(|k| (*k).to_string()).collect()),
+    }
+}
+
+fn read_once(dir: &tempfile::TempDir, since: i64, filter: &WatchFilter) -> Vec<Value> {
+    let (mut probe, out) = Probe::new(usize::MAX);
+    stream(
+        &mut probe,
+        &env(dir),
+        ask(since, filter.clone(), false),
+        fast(16),
+    );
+    frames(&out)
+}
+
+#[test]
+fn kinds_filter_delivers_only_those_kinds() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let store = open(dir.path());
+    let id = add(&store, "alpha");
+    append(&store, id, 3);
+    let got = read_once(&dir, 0, &only_kinds(&["copied"]));
+    let (_, got) = got.split_last().expect("caught-up frame");
+    assert_eq!(got.len(), 3);
+    assert!(got.iter().all(|f| f["kind"] == "copied"), "{got:?}");
+    assert!(ids(&store).len() > 3, "other kinds exist and were skipped");
+}
+
+#[test]
+fn boxes_filter_delivers_only_those_boxes() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let store = open(dir.path());
+    let alpha = add(&store, "alpha");
+    let beta = add(&store, "beta");
+    append(&store, alpha, 2);
+    append(&store, beta, 2);
+    let got = read_once(&dir, 0, &only_boxes(&["beta"]));
+    let (_, got) = got.split_last().expect("caught-up frame");
+    assert!(!got.is_empty());
+    assert!(got.iter().all(|f| f["box"] == "beta"), "{got:?}");
+    assert!(got.len() < ids(&store).len());
+}
+
+#[test]
+fn skipped_events_advance_the_cursor_so_resume_has_no_gap_or_duplicates() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let store = open(dir.path());
+    let alpha = add(&store, "alpha");
+    let beta = add(&store, "beta");
+    append(&store, alpha, 4);
+    append(&store, beta, 4);
+    let filter = only_boxes(&["beta"]);
+    let events = |since| {
+        let got = read_once(&dir, since, &filter);
+        cursors(&got[..got.len() - 1])
+    };
+    let full = events(0);
+    let resume = full[1];
+    let rest = events(resume);
+    assert_eq!(rest, full[2..], "resume yields exactly the remainder");
+    let last = *ids(&store).last().expect("last");
+    assert!(events(last).is_empty());
+}
+
+#[test]
+fn without_follow_the_stream_ends_with_one_caught_up_frame() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let store = open(dir.path());
+    let id = add(&store, "alpha");
+    append(&store, id, 7);
+    let got = read_once(&dir, 0, &everything());
+    let (last, events) = got.split_last().expect("frames");
+    assert_eq!(cursors(events), ids(&store));
+    assert!(events.iter().all(|f| f["frame"] == "event"), "{got:?}");
+    assert_eq!(last["frame"], "caught-up");
+    assert_eq!(last["cursor"], *ids(&store).last().expect("newest"));
+}
+
+#[test]
+fn caught_up_cursor_counts_trailing_events_the_filter_skipped() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let store = open(dir.path());
+    let alpha = add(&store, "alpha");
+    let beta = add(&store, "beta");
+    append(&store, beta, 2);
+    append(&store, alpha, 4);
+    let filter = only_boxes(&["beta"]);
+    let got = read_once(&dir, 0, &filter);
+    let (last, events) = got.split_last().expect("frames");
+    assert!(!events.is_empty());
+    assert!(events.iter().all(|f| f["frame"] == "event"), "{got:?}");
+    let newest = *ids(&store).last().expect("newest");
+    assert_eq!(last["frame"], "caught-up");
+    assert_eq!(last["cursor"], newest);
+    assert!(newest > *cursors(events).last().expect("delivered"));
+
+    let resumed = read_once(&dir, newest, &filter);
+    assert_eq!(resumed.len(), 1, "{resumed:?}");
+    assert_eq!(resumed[0]["frame"], "caught-up");
+    assert_eq!(resumed[0]["cursor"], newest);
+}
+
+#[test]
+fn empty_store_catches_up_at_the_requested_cursor() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let got = read_once(&dir, 0, &everything());
+    assert_eq!(got.len(), 1, "{got:?}");
+    assert_eq!(got[0]["frame"], "caught-up");
+    assert_eq!(got[0]["cursor"], 0);
+    let nothing = read_once(&dir, 0, &only_kinds(&["nothing"]));
+    assert_eq!(nothing.len(), 1);
+    assert_eq!(nothing[0]["frame"], "caught-up");
 }

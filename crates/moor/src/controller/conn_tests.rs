@@ -6,10 +6,10 @@ use std::io::Cursor;
 
 use serde_json::{json, Value};
 
-use super::{handle, respond};
+use super::{handle, respond, serve};
 use crate::env::Env;
 use crate::Moor;
-use moor_core::controller::PROTOCOL;
+use moor_core::controller::{WatchFilter, PROTOCOL};
 use moor_core::name::BoxName;
 use moor_core::{Request, ShowReq};
 
@@ -163,4 +163,27 @@ fn request_before_hello_is_rejected_with_its_id() {
     assert_eq!(frames[0]["frame"], "error");
     assert_eq!(frames[0]["kind"], "hello-required");
     assert_eq!(frames[0]["id"], "early");
+}
+
+#[test]
+fn watch_frame_filter_and_follow_reach_the_stream() {
+    let input = format!(
+        "{}\n{}\n",
+        hello(),
+        json!({"frame": "watch", "since": 5, "boxes": ["a"], "kinds": ["idled"], "follow": false})
+    );
+    let seen = std::cell::RefCell::new(None);
+    serve(
+        Cursor::new(input.into_bytes()),
+        Vec::new(),
+        |_, _, _| Moor::version(),
+        |_, since, filter: &WatchFilter, follow| {
+            *seen.borrow_mut() = Some((since, filter.clone(), follow));
+        },
+    );
+    let filter = WatchFilter {
+        boxes: Some(vec![BoxName::parse_allow_bare("a").expect("name")]),
+        kinds: Some(vec!["idled".to_owned()]),
+    };
+    assert_eq!(seen.into_inner(), Some((5, filter, false)));
 }

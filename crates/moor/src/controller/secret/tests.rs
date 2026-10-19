@@ -99,7 +99,7 @@ fn exchange(cx: Cx, requests: &[Request]) -> (String, String, Vec<Value>) {
         Cursor::new(input.clone().into_bytes()),
         &mut out,
         |_, r, _| moor.call(r),
-        |_, _| {},
+        |_, _, _, _| {},
     );
     let out = String::from_utf8(out).expect("utf8");
     let frames = out

@@ -14,7 +14,7 @@ use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver};
 use moor_core::{BoxId, BoxName, ProviderId};
 
-use crate::controller::watch::{stream, Limits};
+use crate::controller::watch::{stream, Ask, Limits};
 use crate::cx::Cx;
 use crate::env::Env;
 use crate::store::{Store, STORE_FILE};
@@ -162,7 +162,10 @@ fn stream_delivers_idle_without_any_show() {
     stream(
         &mut StopAtIdled(Vec::new(), Arc::clone(&seen)),
         &env,
-        0,
+        Ask {
+            follow: true,
+            ..Ask::default()
+        },
         limits,
     );
     let text = seen.lock().unwrap().clone();
