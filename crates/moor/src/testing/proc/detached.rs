@@ -41,6 +41,7 @@ pub(super) fn call_of(spec: &ProcSpec) -> Call {
             Stdin::Bytes(b) => b.clone(),
             _ => Vec::new(),
         },
+        stderr_gate: spec.stderr_gate.clone(),
     }
 }
 

@@ -11,6 +11,7 @@ use moor_core::seam::proc::{Deadline, Output, Tool};
 use crate::adapters::crabbox::Crabbox;
 use crate::testing::clock::FakeClock;
 use crate::testing::proc::{Call, Reply, ScriptedProc};
+use crate::testing::rng::FakeRng;
 
 fn spec(sync: SyncMode) -> ExecSpec {
     ExecSpec {
@@ -323,7 +324,7 @@ fn claim_race_is_retried_until_the_call_succeeds() {
         &["--version"],
         Reply::Ok("crabbox 0.72.0-moor.7\n".into()),
     );
-    let c = Crabbox::new(p.clone(), clock.clone());
+    let c = Crabbox::new(p.clone(), clock.clone(), Arc::new(FakeRng::default()));
     assert_eq!(exec_once(&c), Ok(ExecOutcome::Exited { code: 0 }));
     assert_eq!(run_calls(&p), 2);
     assert_eq!(clock.now(), Ts::from_millis(1000));
@@ -342,7 +343,7 @@ fn claim_race_is_retried_through_a_long_tunnel_restart() {
         &["--version"],
         Reply::Ok("crabbox 0.72.0-moor.7\n".into()),
     );
-    let c = Crabbox::new(p.clone(), clock.clone());
+    let c = Crabbox::new(p.clone(), clock.clone(), Arc::new(FakeRng::default()));
     assert_eq!(exec_once(&c), Ok(ExecOutcome::Exited { code: 0 }));
     assert_eq!(run_calls(&p), 13);
     assert_eq!(clock.now(), Ts::from_millis(12_000));
@@ -358,7 +359,7 @@ fn claim_race_gives_up_after_the_budget() {
         &["--version"],
         Reply::Ok("crabbox 0.72.0-moor.7\n".into()),
     );
-    let c = Crabbox::new(p.clone(), clock.clone());
+    let c = Crabbox::new(p.clone(), clock.clone(), Arc::new(FakeRng::default()));
     let err = exec_once(&c).unwrap_err();
     assert_eq!(run_calls(&p), 16);
     assert_eq!(clock.now(), Ts::from_millis(15_000));
@@ -402,4 +403,61 @@ fn cd_wrapper_enters_directory_and_keeps_arguments() {
     let text = String::from_utf8(out.stdout).unwrap();
     assert!(text.starts_with("/\n"), "{text}");
     assert!(text.ends_with(r#"[a b  c][it's "q" $HOME]"#), "{text}");
+}
+
+fn after_dashes(call: &Call) -> &[String] {
+    let pos = call.args.iter().position(|a| a == "--").unwrap();
+    call.args.get(pos + 1..).unwrap()
+}
+
+#[test]
+fn streamed_exec_wraps_the_command_in_the_stderr_gate() {
+    let mut s = spec(SyncMode::None);
+    s.output = Some(Output::Inherit);
+    let (_, call) = run_with(&s, ok());
+    let gate = call.stderr_gate.clone().expect("streamed exec sets a gate");
+    assert_ne!(gate.begin, gate.end);
+    assert_eq!(
+        after_dashes(&call),
+        [
+            "sh",
+            "-c",
+            super::STDERR_GATE,
+            "sh",
+            &gate.begin,
+            &gate.end,
+            "true"
+        ]
+    );
+}
+
+#[test]
+fn streamed_exec_with_cwd_runs_the_cd_wrapper_inside_the_gate() {
+    let mut s = spec(SyncMode::None);
+    s.output = Some(Output::Inherit);
+    s.cwd = Some(moor_core::name::BoxPath::under("/w", "d").unwrap());
+    let (_, call) = run_with(&s, ok());
+    assert_eq!(
+        after_dashes(&call).get(6..).unwrap(),
+        ["sh", "-c", super::CD_THEN_EXEC, "sh", "/w/d", "true"]
+    );
+}
+
+#[test]
+fn captured_exec_has_no_gate_and_no_wrapper() {
+    let (_, call) = run_with(&spec(SyncMode::None), ok());
+    assert_eq!(call.stderr_gate, None);
+    assert_eq!(after_dashes(&call), ["true"]);
+}
+
+#[test]
+fn gate_brackets_stderr_and_keeps_stdout_and_exit_code() {
+    let out = std::process::Command::new("sh")
+        .args(["-c", super::STDERR_GATE, "sh", "B", "E"])
+        .args(["sh", "-c", "echo out; echo err >&2; exit 3"])
+        .output()
+        .unwrap();
+    assert_eq!(String::from_utf8(out.stderr).unwrap(), "B\nerr\nE\n");
+    assert_eq!(String::from_utf8(out.stdout).unwrap(), "out\n");
+    assert_eq!(out.status.code(), Some(3));
 }
