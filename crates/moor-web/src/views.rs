@@ -104,9 +104,7 @@ fn detail(client: &Client, name: &str) -> HttpResponse {
         pane: false,
     });
     match call(client, show) {
-        Ok(v) => json_ok(
-            &json!({"task": field(&v, "task"), "events": field(&v, "events"), "proofs": field(&v, "proofs")}),
-        ),
+        Ok(v) => json_ok(&json!({"task": field(&v, "task"), "events": field(&v, "events")})),
         Err(resp) => resp,
     }
 }

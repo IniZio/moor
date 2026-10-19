@@ -105,7 +105,6 @@ fn answers() -> Answers {
         "tasks": [task("app/1", "awake", None), task("app/2", "asleep", Some("ship it?"))],
         "task": task("app/1", "awake", None),
         "events": [{"id": 1, "kind": "note", "payload": {}, "ts": 5}],
-        "proofs": [{"name": "p.txt", "size": 3, "sha256": "ab"}],
     });
     let repos = json!({"repos": [{"name": "app", "url": "https://example.test/app.git"}]});
     Arc::new(HashMap::from([
@@ -287,13 +286,12 @@ fn repos_are_listed() {
 }
 
 #[test]
-fn box_detail_returns_events_and_proofs() {
+fn box_detail_returns_task_and_events() {
     let dir = tempfile::tempdir().unwrap();
     let (web, seen) = front(&dir, answers(), &[]);
     let v = body(&get(&web, "/boxes/app/1"));
     assert_eq!(v["task"]["name"], "app/1");
     assert_eq!(v["events"][0]["kind"], "note");
-    assert_eq!(v["proofs"][0]["name"], "p.txt");
     assert_eq!(*seen.lock().unwrap(), ["show"]);
 }
 
