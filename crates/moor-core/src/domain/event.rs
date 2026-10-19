@@ -2,6 +2,7 @@
 
 use serde::Serialize;
 
+use crate::decide::turn::TurnOutcome;
 use crate::domain::task::{SetupOutcome, TaskInput, TaskState};
 use crate::name::RunId;
 
@@ -28,17 +29,6 @@ pub const ASSERTED_KINDS: [&str; 20] = [
     "copied",
     "credential_failed",
 ];
-
-/// One credential an admission check looked at; never carries a value.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct CheckedCred {
-    /// The credential name.
-    pub name: String,
-    /// The config layer that defines it.
-    pub source: String,
-    /// Whether it resolved.
-    pub resolves: bool,
-}
 
 /// One recorded fact about a task, serialized with its `kind` tag.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -330,6 +320,13 @@ pub enum Event {
         /// The credential rule that works again.
         rule: String,
     },
+    /// The agent finished the turn a steer started.
+    TurnDone {
+        /// The steer's id.
+        steer: i64,
+        /// How the turn ended.
+        outcome: TurnOutcome,
+    },
 }
 
 /// The events a task step produces.
@@ -382,8 +379,10 @@ pub fn task_events(from: Option<TaskState>, to: TaskState, input: &TaskInput) ->
 }
 
 pub use boxes::box_events;
+pub use checked::CheckedCred;
 
 mod boxes;
+mod checked;
 mod kind;
 
 #[cfg(test)]
