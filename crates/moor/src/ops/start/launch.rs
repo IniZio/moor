@@ -56,7 +56,7 @@ pub(super) fn run(
         return Ok(AgentLaunchView::default());
     }
     let Some(mut launch) = launch_req(cx, &row, setup_exit) else {
-        return Ok(AgentLaunchView::default());
+        return not_working(cx, store, &row, req.hold);
     };
     launch.resume = resume;
     if req.hold {
@@ -65,6 +65,30 @@ pub(super) fn run(
     let cfg = settings()?;
     launch.model = cfg.model.clone().map(|m| m.value);
     begin(cx, store, &row, &launch, &cfg)
+}
+
+/// Records why an agent that should launch on a ready Box did not, unless the Task is held.
+fn not_working(
+    cx: &Cx,
+    store: &Store,
+    row: &TaskRow,
+    hold: bool,
+) -> Result<AgentLaunchView, CommandError> {
+    let ready = row
+        .boxed
+        .as_ref()
+        .is_some_and(|b| b.state == BoxState::Ready);
+    if hold || !ready || row.state == TaskState::Working {
+        return Ok(AgentLaunchView::default());
+    }
+    let e = EngineError::Failed {
+        step: "launch",
+        message: format!(
+            "the Task is {}, not Working, so the agent was not launched",
+            row.state.as_str()
+        ),
+    };
+    record_failure(cx, store, row.id, &e)
 }
 
 /// Launches the agent of `row` with `seed` as its first prompt, on a Session the caller opened.
