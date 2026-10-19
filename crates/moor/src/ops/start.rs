@@ -33,6 +33,7 @@ mod launch;
 mod leftover;
 mod preflight;
 mod relaunch;
+mod reopen;
 mod response;
 mod watch;
 
@@ -197,6 +198,9 @@ fn attach(
         row.boxed.as_ref().map(|b| b.state),
         Some(BoxState::Failed | BoxState::Gone)
     );
+    if !req.no_agent && (req.goal.is_some() || req.resume) {
+        reopen::ended_session(store, row.id)?;
+    }
     wake_idle(store, row.id)?;
     let agent = relaunch::run(cx, store, req, row.id, (setup_exit, recreated), &settings)?;
     let agent = watch::run(cx, store, row.id, agent);
