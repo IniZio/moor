@@ -160,10 +160,10 @@ fn detail_omits_the_line_without_attention() {
 #[test]
 fn show_session_renders_host_with_child() {
     let v = json!({
-        "session": 5, "task": null, "ordinal": 1, "parent": null, "workdir": "/w",
+        "session": 5, "box": null, "ordinal": 1, "parent": null, "workdir": "/w",
         "agent": "claude", "agent_session_id": "abc", "state": "working",
         "started_at": "t", "ended_at": null,
-        "children": [{"session": 7, "task": "box-name", "state": "working"}]
+        "children": [{"session": 7, "box": "box-name", "state": "working"}]
     });
     let out = render(&Response::ok("show-session", Some(v)), false).0;
     assert_eq!(

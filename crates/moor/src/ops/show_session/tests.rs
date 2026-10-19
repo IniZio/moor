@@ -40,7 +40,7 @@ fn a_host_session_shows_its_workdir_agent_session_and_state() {
         .unwrap();
     let v = run(&cx, &req(id)).unwrap();
     assert_eq!(v.session.get(), id);
-    assert_eq!(v.task, None);
+    assert_eq!(v.box_name, None);
     assert_eq!(v.workdir.as_deref(), Some("/home/me/proj"));
     assert_eq!(v.agent.as_deref(), Some("claude"));
     assert_eq!(v.agent_session_id.as_deref(), Some("abc"));
@@ -67,7 +67,7 @@ fn children_list_with_their_task_and_state() {
     assert_eq!(v.children.len(), 1);
     let c = v.children.first().unwrap();
     assert_eq!(c.session.get(), child);
-    assert_eq!(c.task, None);
+    assert_eq!(c.box_name, None);
     assert_eq!(c.state, "working");
     assert_eq!(
         run(&cx, &req(child)).unwrap().parent,

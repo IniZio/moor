@@ -45,8 +45,9 @@ pub struct SessionView {
     /// Session id.
     pub session: SessionId,
     /// Box name; `None` for a host Session.
-    pub task: Option<String>,
-    /// Position among the task's Sessions.
+    #[serde(rename = "box")]
+    pub box_name: Option<String>,
+    /// Position among the Box's Sessions.
     pub ordinal: i64,
     /// Id of the parent Session, if any.
     pub parent: Option<SessionId>,
@@ -72,7 +73,8 @@ pub struct SessionChildView {
     /// Child Session id.
     pub session: SessionId,
     /// Box name; `None` for a host Session.
-    pub task: Option<String>,
+    #[serde(rename = "box")]
+    pub box_name: Option<String>,
     /// Child Session state.
     pub state: String,
 }
@@ -115,7 +117,7 @@ mod tests {
     fn session_view_serializes_null_options_and_children() {
         let v = SessionView {
             session: SessionId::new(1),
-            task: None,
+            box_name: None,
             ordinal: 0,
             parent: None,
             workdir: Some("/w".into()),
@@ -126,16 +128,16 @@ mod tests {
             ended_at: None,
             children: vec![SessionChildView {
                 session: SessionId::new(2),
-                task: None,
+                box_name: None,
                 state: "ended".into(),
             }],
         };
         assert_eq!(
             serde_json::to_value(&v).expect("serialize"),
-            json!({"session": 1, "task": null, "ordinal": 0, "parent": null,
+            json!({"session": 1, "box": null, "ordinal": 0, "parent": null,
                 "workdir": "/w", "agent": null, "agent_session_id": "a1",
                 "state": "running", "started_at": 10, "ended_at": null,
-                "children": [{"session": 2, "task": null, "state": "ended"}]})
+                "children": [{"session": 2, "box": null, "state": "ended"}]})
         );
     }
 
@@ -219,7 +221,7 @@ mod tests {
     fn session_view_round_trips_with_child() {
         let v = SessionView {
             session: SessionId::new(1),
-            task: Some("demo".into()),
+            box_name: Some("demo".into()),
             ordinal: 0,
             parent: None,
             workdir: Some("/w".into()),
@@ -230,7 +232,7 @@ mod tests {
             ended_at: Some(20),
             children: vec![SessionChildView {
                 session: SessionId::new(2),
-                task: None,
+                box_name: None,
                 state: "ended".into(),
             }],
         };
