@@ -32,7 +32,8 @@ fn missing_ready_and_asleep_become_gone() {
     assert_eq!(out.len(), 2);
     for (d, r) in out.iter().zip(&rows) {
         assert_eq!(d.box_input, Some(BoxInput::DriverMissing));
-        assert_eq!(d.task_input, None);
+        assert_eq!(d.lifecycle_input, None);
+        assert_eq!(d.session_input, None);
         assert_eq!(
             r.state.step(&BoxInput::DriverMissing).ok(),
             Some(BoxState::Gone)

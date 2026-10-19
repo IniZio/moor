@@ -7,6 +7,52 @@ use crate::domain::event::{lifecycle_events, session_events, task_events, Event}
 use crate::domain::session_state::SessionInput as S;
 use crate::domain::task::SetupOutcome;
 
+/// The Box lifecycle and Session inputs an old input stands for.
+fn pair(input: &TaskInput) -> (Option<L>, Option<S>) {
+    let setup_failed = |cause: &String, which: Option<&String>| {
+        Some(L::SetupFailed {
+            cause: cause.clone(),
+            which: which.cloned(),
+        })
+    };
+    match input {
+        TaskInput::Insert => (Some(L::Insert), Some(S::Open)),
+        TaskInput::Rejected { reason } => (
+            Some(L::Rejected {
+                reason: reason.clone(),
+            }),
+            None,
+        ),
+        TaskInput::AtCapacity { max_boxes } => (
+            Some(L::AtCapacity {
+                max_boxes: *max_boxes,
+            }),
+            None,
+        ),
+        TaskInput::Admitted => (Some(L::Admitted), None),
+        TaskInput::Promoted => (Some(L::Promoted), None),
+        TaskInput::Retry => (Some(L::Retry), None),
+        TaskInput::BoxReady { setup } => (
+            Some(L::Ready {
+                setup: setup.clone(),
+            }),
+            Some(S::Started),
+        ),
+        TaskInput::AcquireFailed { cause } => (setup_failed(cause, None), None),
+        TaskInput::DotfilesFailed { error } | TaskInput::SyncFailed { error } => {
+            (setup_failed(error, None), None)
+        }
+        TaskInput::CredFailed { which, error } => (setup_failed(error, Some(which)), None),
+        TaskInput::AgentQuiet => (None, Some(S::AgentQuiet)),
+        TaskInput::AgentBusy => (None, Some(S::AgentBusy)),
+        TaskInput::RunStarted => (None, Some(S::RunStarted)),
+        TaskInput::SleepDue => (Some(L::Sleep { auto: true }), None),
+        TaskInput::SleepCmd => (Some(L::Sleep { auto: false }), None),
+        TaskInput::Wake => (Some(L::Wake), Some(S::AgentBusy)),
+        TaskInput::Close => (Some(L::Close), Some(S::End)),
+    }
+}
+
 /// An old event with its origin state named by the Box lifecycle.
 fn convert(event: Event) -> Event<BoxLifecycle> {
     match event {
@@ -54,7 +100,7 @@ fn apply_matches_old_step_for_every_pair() {
                     continue;
                 }
                 cases += 1;
-                let (l, s) = input.pair();
+                let (l, s) = pair(&input);
                 let want = step(lifecycle, primary, &others, &input);
                 let got = apply(lifecycle, primary, &others, l.as_ref(), s.as_ref());
                 let ctx = format!("{state:?} + {others:?} + {input:?}");
@@ -82,7 +128,7 @@ fn apply_events_match_old_events_for_every_ok_pair() {
                 if input == TaskInput::Insert {
                     continue;
                 }
-                let (l, s) = input.pair();
+                let (l, s) = pair(&input);
                 let Ok((new_lc, new_primary)) =
                     apply(lifecycle, primary, &others, l.as_ref(), s.as_ref())
                 else {
@@ -131,7 +177,7 @@ fn apply_setup_outcome_failed_matches_old() {
     let input = TaskInput::BoxReady {
         setup: SetupOutcome::Failed { line: "l".into() },
     };
-    let (l, s) = input.pair();
+    let (l, s) = pair(&input);
     let got = apply(
         BoxLifecycle::SettingUp,
         SessionState::Starting,

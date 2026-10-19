@@ -1,8 +1,10 @@
 //! The close decider: the data-loss gate and the release rules.
 
+use crate::domain::box_state::BoxLifecycleInput;
 use crate::domain::boxes::{BoxInput, BoxState};
 use crate::domain::decision::Decision;
-use crate::domain::task::{TaskInput, TaskState};
+use crate::domain::session_state::SessionInput;
+use crate::domain::task::TaskState;
 use crate::name::BoxId;
 use crate::response::Warning;
 
@@ -176,7 +178,9 @@ pub fn close_gate(f: &CloseFacts, force: bool) -> Result<ClosePlan, Refusal> {
     Ok(ClosePlan {
         release_box: f.has_handle && f.box_state.is_some_and(releasable),
         close_workspace: true,
-        decision_close: Decision::new(f.task).task_input(TaskInput::Close),
+        decision_close: Decision::new(f.task)
+            .lifecycle(BoxLifecycleInput::Close)
+            .session(SessionInput::End),
     })
 }
 
@@ -194,7 +198,9 @@ const fn releasable(s: BoxState) -> bool {
 /// a `Failed` or `ReleaseFailed` Box does not hold the task back.
 #[must_use]
 pub fn release_outcome(task: BoxId, box_state: BoxState, r: ReleaseResult) -> ReleaseVerdict {
-    let close = Decision::new(task).task_input(TaskInput::Close);
+    let close = Decision::new(task)
+        .lifecycle(BoxLifecycleInput::Close)
+        .session(SessionInput::End);
     match r {
         ReleaseResult::Deleted | ReleaseResult::AlreadyGone => ReleaseVerdict {
             decision: Some(close.box_input(BoxInput::Released)),
