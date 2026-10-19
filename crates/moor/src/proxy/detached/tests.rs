@@ -113,10 +113,10 @@ impl Fx {
     /// The spec the adapter is asked to ensure.
     pub(super) fn spec(&self) -> ProxySpec {
         ProxySpec {
-            task: self.id,
+            box_id: self.id,
             box_handle: None,
             host_cwd: PathBuf::from("/work"),
-            task_repo: None,
+            box_repo: None,
             rules: Vec::new(),
         }
     }

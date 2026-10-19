@@ -54,7 +54,7 @@ fn session(pane: &str) -> SessionRef {
 fn acquire_req(provider: ProviderId, task: BoxId, name: BoxName) -> AcquireReq {
     AcquireReq {
         provider,
-        task,
+        box_id: task,
         name,
         class: None,
         nonce: "n".to_owned(),

@@ -82,10 +82,10 @@ impl World {
                 .unwrap(),
         );
         let mut spec = ProxySpec {
-            task: id,
+            box_id: id,
             box_handle: None,
             host_cwd: PathBuf::from(WORKTREE),
-            task_repo: Some(ForgeRepo::new("o", "n")),
+            box_repo: Some(ForgeRepo::new("o", "n")),
             rules: Vec::new(),
         };
         edit(&mut spec);
@@ -190,7 +190,7 @@ fn working_task(store: &Store, driver: &FakeDriver) -> BoxId {
     let got = driver
         .acquire(&AcquireReq {
             provider: ProviderId::new("p"),
-            task: id,
+            box_id: id,
             name: BoxName::parse_allow_bare("demo").unwrap(),
             class: None,
             nonce: "abc123".into(),

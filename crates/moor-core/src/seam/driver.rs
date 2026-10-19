@@ -48,7 +48,7 @@ pub struct AcquireReq {
     /// Provider to ask.
     pub provider: ProviderId,
     /// Source for the per-Box name the adapter derives.
-    pub task: BoxId,
+    pub box_id: BoxId,
     /// Box name the adapter embeds in the Box name.
     pub name: BoxName,
     /// Box size (`small`, `medium`, `large`, `xlarge`); `small` when unset.
@@ -101,7 +101,7 @@ pub struct ExecSpec {
     pub sync: SyncMode,
     /// Where to stream output; captured when unset.
     pub output: Option<Output>,
-    /// Host directory (the Task worktree) the driver process runs from.
+    /// Host directory (the Box worktree) the driver process runs from.
     pub host_cwd: Option<PathBuf>,
     /// Box size (`small`, `medium`, `large`, `xlarge`); none is passed when unset.
     pub class: Option<String>,
@@ -211,7 +211,7 @@ pub trait Driver: Send + Sync {
     /// Returns a [`DriverError`] when the provider is unknown or unreachable.
     fn caps(&self, provider: &ProviderId) -> Result<DriverCaps, DriverError>;
 
-    /// Gets a new Box for a Task.
+    /// Gets a new Box for a Box row.
     ///
     /// # Errors
     /// Returns [`DriverError::Capacity`], `Quota`, `Auth` and the like.
@@ -221,7 +221,7 @@ pub trait Driver: Send + Sync {
     /// still name the half-made Box for release.
     fn planned_handle(&self, req: &AcquireReq) -> BoxHandle;
 
-    /// Releases a Box; an already-gone Box is not an error. `worktree` is the Task's
+    /// Releases a Box; an already-gone Box is not an error. `worktree` is the Box's
     /// worktree, the directory the Driver runs from so the lease matches the same repo.
     ///
     /// # Errors

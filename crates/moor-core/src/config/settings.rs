@@ -28,7 +28,7 @@ pub enum Layer {
     Default,
     /// The agent profile.
     Agent,
-    /// Read from git itself (the effective config for the Task worktree).
+    /// Read from git itself (the effective config for the Box worktree).
     Git,
 }
 
@@ -70,7 +70,7 @@ pub struct Flags {
     pub model: Option<String>,
 }
 
-/// One credential the task may need, with how and where it is defined.
+/// One credential the box may need, with how and where it is defined.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CredPlan {
     /// Credential name.
@@ -188,7 +188,7 @@ impl BoxSettings {
         }
     }
 
-    /// Credentials the task needs, in name order.
+    /// Credentials the box needs, in name order.
     pub fn used_credentials(&self) -> impl Iterator<Item = &CredPlan> {
         self.credentials.iter().filter(|c| c.used)
     }

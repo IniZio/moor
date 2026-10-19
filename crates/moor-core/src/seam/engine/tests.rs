@@ -30,7 +30,7 @@ fn dir_names_come_from_the_box_id() {
         workdir: BoxPath::under("/work", "box-1").unwrap(),
         worktree: PathBuf::from("/wt"),
         workspace: WorkspaceRef::new("ws-1"),
-        task: BoxName::parse_allow_bare("web/fix-bug").unwrap(),
+        box_name: BoxName::parse_allow_bare("web/fix-bug").unwrap(),
         branch: String::new(),
         goal: None,
         resume: None,

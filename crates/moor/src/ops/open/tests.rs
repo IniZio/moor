@@ -71,7 +71,7 @@ fn fx_surfaced(driver: FakeDriver, surface: FakeSurface, workspace: Option<&str>
     let got = driver
         .acquire(&AcquireReq {
             provider,
-            task: id,
+            box_id: id,
             name,
             class: None,
             nonce: "n".to_owned(),

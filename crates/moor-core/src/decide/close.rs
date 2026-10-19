@@ -10,8 +10,8 @@ use crate::response::Warning;
 /// What the close op read before deciding.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CloseFacts {
-    /// The task being closed.
-    pub task: BoxId,
+    /// The box being closed.
+    pub box_id: BoxId,
     /// Its Box lifecycle state.
     pub lifecycle: BoxLifecycle,
     /// The state of its primary Session.
@@ -20,9 +20,9 @@ pub struct CloseFacts {
     pub box_state: Option<BoxState>,
     /// Whether a Driver handle is stored (kept even after a failed acquire).
     pub has_handle: bool,
-    /// The task name, used in recovery commands.
+    /// The box name, used in recovery commands.
     pub name: String,
-    /// The task branch; `None` when it is not known.
+    /// The box branch; `None` when it is not known.
     pub branch: Option<String>,
     /// Commits in the host worktree not pushed anywhere.
     pub unpushed: u32,
@@ -64,8 +64,8 @@ pub struct ClosePlan {
 /// Why a close is refused.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum Refusal {
-    /// The task is already closed or was rejected.
-    #[error("task is already closed")]
+    /// The box is already closed or was rejected.
+    #[error("Box is already closed")]
     AlreadyClosed,
     /// Work would be lost.
     #[error(
@@ -83,25 +83,25 @@ pub enum Refusal {
     #[error(
         "the Box holds work that is not on the host ({ahead} unpushed commit(s), \
          {dirty} uncommitted file(s)); to keep it {}; \
-         or run `moor close {task} --force` to discard it",
+         or run `moor close {name} --force` to discard it",
         if *ahead == 0 {
             format!(
                 "commit it in the Box and, if the Box has the moor remote, run \
                  `git push moor HEAD:refs/heads/{branch}` there \
-                 (inspect it first with `moor run {task} --no-sync -- git status`)"
+                 (inspect it first with `moor run {name} --no-sync -- git status`)"
             )
         } else {
             format!(
-                "run `moor run {task} --no-sync -- git bundle create .moor/rescue.bundle HEAD --not --remotes`, \
-                 then `moor cp {task} .moor/rescue.bundle .`, \
+                "run `moor run {name} --no-sync -- git bundle create .moor/rescue.bundle HEAD --not --remotes`, \
+                 then `moor cp {name} .moor/rescue.bundle .`, \
                  then `git fetch ./rescue.bundle HEAD:{branch}`; or push from the Box"
             )
         }
     )]
     UnsavedInBox {
-        /// The task name.
-        task: String,
-        /// The task branch, or a placeholder when unknown.
+        /// The box name.
+        name: String,
+        /// The box branch, or a placeholder when unknown.
         branch: String,
         /// Commits not pushed or reachable from the host.
         ahead: u32,
@@ -137,14 +137,14 @@ pub struct ReleaseVerdict {
     pub decision: Option<Decision>,
     /// A moor-worded warning for the caller.
     pub warning: Option<Warning>,
-    /// False when the task must stay open and the close fails.
+    /// False when the box must stay open and the close fails.
     pub closes: bool,
 }
 
 /// Decides whether `f` may close, and what closing involves.
 ///
 /// # Errors
-/// [`Refusal::AlreadyClosed`] for a closed task; when `force` is false,
+/// [`Refusal::AlreadyClosed`] for a closed box; when `force` is false,
 /// [`Refusal::UnpushedWork`] for unsaved host work, [`Refusal::UnsavedInBox`]
 /// for work only in the Box, and [`Refusal::BoxUnchecked`] when the Box could
 /// not be checked.
@@ -162,7 +162,7 @@ pub fn close_gate(f: &CloseFacts, force: bool) -> Result<ClosePlan, Refusal> {
         match &f.box_check {
             BoxCheck::Unsaved { ahead, dirty } if *ahead > 0 || *dirty > 0 => {
                 return Err(Refusal::UnsavedInBox {
-                    task: f.name.clone(),
+                    name: f.name.clone(),
                     branch: f.branch.clone().unwrap_or_else(|| "<branch>".to_owned()),
                     ahead: *ahead,
                     dirty: *dirty,
@@ -179,7 +179,7 @@ pub fn close_gate(f: &CloseFacts, force: bool) -> Result<ClosePlan, Refusal> {
     Ok(ClosePlan {
         release_box: f.has_handle && f.box_state.is_some_and(releasable),
         close_workspace: true,
-        decision_close: Decision::new(f.task)
+        decision_close: Decision::new(f.box_id)
             .lifecycle(BoxLifecycleInput::Close)
             .session(SessionInput::End),
     })
@@ -193,13 +193,13 @@ const fn releasable(s: BoxState) -> bool {
     )
 }
 
-/// Maps a release result to the decision that closes the task.
+/// Maps a release result to the decision that closes the Box.
 ///
-/// A live Box (`Ready`/`Asleep`) that cannot be released keeps the task open;
-/// a `Failed` or `ReleaseFailed` Box does not hold the task back.
+/// A live Box (`Ready`/`Asleep`) that cannot be released keeps the Box open;
+/// a `Failed` or `ReleaseFailed` Box does not hold the close back.
 #[must_use]
-pub fn release_outcome(task: BoxId, box_state: BoxState, r: ReleaseResult) -> ReleaseVerdict {
-    let close = Decision::new(task)
+pub fn release_outcome(box_id: BoxId, box_state: BoxState, r: ReleaseResult) -> ReleaseVerdict {
+    let close = Decision::new(box_id)
         .lifecycle(BoxLifecycleInput::Close)
         .session(SessionInput::End);
     match r {
@@ -237,7 +237,7 @@ fn failed_close(close: Decision, from: BoxState) -> Decision {
 fn release_warning() -> Warning {
     Warning {
         code: "box_release_failed".to_owned(),
-        message: "the task is closed but its Box was not deleted; \
+        message: "the Box is closed but was not deleted on the Driver; \
                   its handle kept for manual release"
             .to_owned(),
     }

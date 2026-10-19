@@ -69,7 +69,7 @@ fn working_with(driver: FakeDriver) -> Fx {
     let got = driver
         .acquire(&AcquireReq {
             provider,
-            task: id,
+            box_id: id,
             name,
             class: None,
             nonce: "n".to_owned(),

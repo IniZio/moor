@@ -308,10 +308,10 @@ pub(super) fn rig_with(extra: Vec<ResolvedRule>) -> Rig {
     };
     let task = store.apply(Decision::insert(nt)).unwrap().task;
     let spec = ProxySpec {
-        task,
+        box_id: task,
         box_handle: None,
         host_cwd: "/wt".into(),
-        task_repo: Some(ForgeRepo {
+        box_repo: Some(ForgeRepo {
             owner: "o".to_owned(),
             name: "r".to_owned(),
         }),

@@ -106,7 +106,7 @@ fn a_launch_records_a_session_with_its_pane() {
     let launches = engine.launches();
     let l = launches.first().unwrap();
     assert_eq!(l.goal.as_deref(), Some("ship it"));
-    assert_eq!(l.task.as_str(), "demo");
+    assert_eq!(l.box_name.as_str(), "demo");
     assert_eq!(l.setup_exit, None);
 }
 

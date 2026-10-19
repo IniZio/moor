@@ -19,7 +19,7 @@ pub enum HookSignal {
 pub struct TurnFacts {
     /// The newest unanswered steer: its event id and when it was sent.
     pub steer: Option<(i64, Ts)>,
-    /// The last hook report for the Task and when it was written.
+    /// The last hook report for the Box and when it was written.
     pub hook: Option<(HookSignal, Ts)>,
     /// Whether the agent's pane has exited.
     pub pane_exited: bool,

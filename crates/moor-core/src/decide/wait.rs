@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use crate::request::WaitFor;
 
-/// What `wait` can observe about a Task.
+/// What `wait` can observe about a Box.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WaitFacts {
     /// An agent is currently working.

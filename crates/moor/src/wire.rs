@@ -283,7 +283,7 @@ mod tests {
             agent: "claude".to_owned(),
             state: PaneStatus::Idle,
             session_id: "abc".to_owned(),
-            task: BoxName::parse_allow_bare("a").unwrap(),
+            box_name: BoxName::parse_allow_bare("a").unwrap(),
         };
         h.register_resume(&PaneRef::new("p"), &reg).unwrap();
         let calls = proc.calls();

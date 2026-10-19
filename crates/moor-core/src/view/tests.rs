@@ -50,12 +50,12 @@ fn box_json() -> Value {
 }
 
 #[test]
-fn task_row_keys_match_wire_shape() {
+fn box_row_keys_match_wire_shape() {
     assert_eq!(serde_json::to_value(sample_box()).ok(), Some(box_json()));
 }
 
 #[test]
-fn task_without_box_serializes_null() {
+fn box_without_driver_serializes_null() {
     let mut t = sample_box();
     t.driver = None;
     let v = serde_json::to_value(t).ok();
@@ -191,7 +191,7 @@ fn show_view_absent_sections_are_null() {
 }
 
 #[test]
-fn show_view_single_task_omits_tasks() {
+fn show_view_single_box_omits_boxes() {
     let v = ShowView {
         boxes: None,
         boxed: Some(sample_box()),

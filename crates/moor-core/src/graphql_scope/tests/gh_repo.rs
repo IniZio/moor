@@ -2,7 +2,7 @@
 
 use serde_json::{json, Value};
 
-use super::{allowed, denied, under_task};
+use super::{allowed, denied, under_box};
 
 const FRAG_OLD: &str = "fragment repo on Repository { id name owner { login } hasIssuesEnabled description hasWikiEnabled viewerPermission defaultBranchRef { name } }";
 const FRAG_NEW: &str = "fragment repo on Repository { id databaseId name owner { login } sshUrl hasIssuesEnabled description hasWikiEnabled viewerPermission defaultBranchRef { name } }";
@@ -30,7 +30,7 @@ fn both(query: &str, vars: impl Fn(&str) -> Value) {
 }
 
 #[test]
-fn gh_repository_queries_are_scoped_to_the_task_repo() {
+fn gh_repository_queries_are_scoped_to_the_box_repo() {
     let by_name = |o: &str| json!({"owner": o, "name": "moor"});
     both(&format!("{FRAG_OLD}{INFO}"), by_name);
     both(&format!("{FRAG_NEW}{INFO}"), by_name);
@@ -39,7 +39,7 @@ fn gh_repository_queries_are_scoped_to_the_task_repo() {
 }
 
 #[test]
-fn gh_pr_and_issue_queries_are_scoped_to_the_task_repo() {
+fn gh_pr_and_issue_queries_are_scoped_to_the_box_repo() {
     let by_repo = |o: &str| json!({"owner": o, "repo": "moor", "pr_number": 1});
     both(BY_NUMBER, by_repo);
     both(
@@ -53,7 +53,7 @@ fn gh_pr_and_issue_queries_are_scoped_to_the_task_repo() {
 }
 
 #[test]
-fn gh_pr_view_with_classic_project_cards_is_scoped_to_the_task_repo() {
+fn gh_pr_view_with_classic_project_cards_is_scoped_to_the_box_repo() {
     both(
         VIEW,
         |o| json!({"owner": o, "repo": "moor", "pr_number": 1}),
@@ -63,7 +63,7 @@ fn gh_pr_view_with_classic_project_cards_is_scoped_to_the_task_repo() {
 #[test]
 fn classic_project_card_content_stays_denied() {
     denied(
-        &under_task(
+        &under_box(
             "pullRequest(number: 1) { projectCards(first: 1) { nodes { project { columns(first: 1) { nodes { cards(first: 1) { nodes { note } } } } } } } }",
         ),
         &json!({}),
@@ -74,17 +74,17 @@ fn classic_project_card_content_stays_denied() {
 #[test]
 fn parent_content_stays_denied() {
     denied(
-        &under_task("parent { issues { nodes { title } } }"),
+        &under_box("parent { issues { nodes { title } } }"),
         &json!({}),
         "parent.issues",
     );
     denied(
-        &under_task("parent { defaultBranchRef { target { oid } } }"),
+        &under_box("parent { defaultBranchRef { target { oid } } }"),
         &json!({}),
         "refname.target",
     );
     denied(
-        &under_task("parent { pullRequests { nodes { number } } }"),
+        &under_box("parent { pullRequests { nodes { number } } }"),
         &json!({}),
         "parent.pullRequests",
     );

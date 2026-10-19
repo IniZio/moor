@@ -5,7 +5,7 @@
 pub enum NameError {
     /// The Box name is not `<repo>/<label>` (or a bare segment where allowed).
     #[error(
-        "invalid task name `{0}`: use <repo>/<label>, each part 1-40 lowercase letters, digits or '-', not starting with '-' and without '--'"
+        "invalid Box name `{0}`: use <repo>/<label>, each part 1-40 lowercase letters, digits or '-', not starting with '-' and without '--'"
     )]
     BoxName(String),
     /// The sha is not 4-40 hex chars.

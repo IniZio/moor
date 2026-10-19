@@ -67,7 +67,7 @@ fn box_id_and_box_handle_serde_shape() {
 
 /// A Box name is a bare JSON string and still validates on the way in.
 #[test]
-fn box_name_wire_matches_task_name() {
+fn box_name_wire_matches_box_name() {
     let name = BoxName::parse_allow_bare("fix-bug-9").unwrap();
     assert_eq!(serde_json::to_string(&name).unwrap(), "\"fix-bug-9\"");
     assert_eq!(

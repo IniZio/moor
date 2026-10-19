@@ -97,7 +97,7 @@ impl Herdr {
             "--",
             "moor",
             "start",
-            reg.task.as_str(),
+            reg.box_name.as_str(),
             "--resume",
         ]);
         match out {

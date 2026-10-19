@@ -258,7 +258,7 @@ impl Launch<'_> {
             .open_pane(
                 &req.workspace,
                 &PaneCmd {
-                    label: format!("agent:{}", req.task.as_str()),
+                    label: format!("agent:{}", req.box_name.as_str()),
                     argv: vec!["sh".to_owned(), "-c".to_owned(), line],
                     cwd: Some(req.worktree.clone()),
                     env: Vec::new(),

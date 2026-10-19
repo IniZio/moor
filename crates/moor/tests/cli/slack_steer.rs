@@ -208,7 +208,7 @@ fn a_close_the_task_refuses_is_posted_verbatim() {
         .unwrap();
     reply(&rig, 1, USER, "close", None, None);
     let (posts, _) = rig.fake.wait_until("the close error", |p, _| p.len() >= 2);
-    assert_eq!(posts[1].text, "task is already closed");
+    assert_eq!(posts[1].text, "Box is already closed");
     assert_eq!(posts[1].thread_ts, TS);
 }
 

@@ -2,7 +2,7 @@
 
 use serde_json::json;
 
-use super::{allowed, denied, needs, under_task};
+use super::{allowed, denied, needs, under_box};
 
 const STATUS: &str = r"
 query PullRequestStatus($q: String!) {
@@ -17,7 +17,7 @@ query PullRequestStatus($q: String!) {
 }";
 
 #[test]
-fn search_is_confined_to_the_task_repo() {
+fn search_is_confined_to_the_box_repo() {
     let ok = json!({"q": "repo:IniZio/moor state:open is:pr author:@me"});
     allowed(STATUS, &ok);
     allowed(STATUS, &json!({"q": "REPO:inizio/MOOR is:pr label:wip"}));
@@ -137,7 +137,7 @@ fn merging_is_refused() {
 fn other_repo_pull_requests_stay_hidden() {
     let refs = "refs(first: 5, refPrefix: \"refs/heads/\") { nodes { name associatedPullRequests { nodes { number url
         baseRepository { nameWithOwner } } } } }";
-    allowed(&under_task(refs), &json!({}));
+    allowed(&under_box(refs), &json!({}));
     for (sel, field) in [
         (
             "defaultBranchRef { associatedPullRequests { nodes { title } } }",
@@ -160,10 +160,10 @@ fn other_repo_pull_requests_stay_hidden() {
             "issue.state",
         ),
     ] {
-        denied(&under_task(sel), &json!({}), field);
+        denied(&under_box(sel), &json!({}), field);
     }
     allowed(
-        &under_task("pullRequest(number: 1) { closingIssuesReferences { nodes { id number url repository { name owner { login } } } } }"),
+        &under_box("pullRequest(number: 1) { closingIssuesReferences { nodes { id number url repository { name owner { login } } } } }"),
         &json!({}),
     );
 }
@@ -180,7 +180,7 @@ fn gh_breakage_fields_are_allowed() {
         "pullRequest(number: 1) { projectItems(first: 5) { nodes { id fieldValueByName(name: \"Status\") { ... on ProjectV2ItemFieldSingleSelectValue { optionId name } } } } }",
         "defaultBranchRef { rules(first: 5) { nodes { type } } }",
     ] {
-        allowed(&under_task(sel), &json!({}));
+        allowed(&under_box(sel), &json!({}));
     }
 }
 

@@ -263,7 +263,7 @@ pub(super) fn launch_req(cx: &Cx, row: &BoxRow, setup_exit: Option<i32>) -> Opti
         workdir: recorded_workdir(b.workdir.as_deref()?)?,
         worktree: PathBuf::from(row.worktree.as_deref()?),
         workspace: WorkspaceRef::new(row.workspace_id.as_deref()?),
-        task: row.name.clone(),
+        box_name: row.name.clone(),
         branch: row.branch.clone().unwrap_or_default(),
         goal: row.goal.clone(),
         resume: None,

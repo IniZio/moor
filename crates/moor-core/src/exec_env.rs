@@ -56,7 +56,7 @@ pub struct ProxyCtx<'a> {
     pub cred: &'a BoxPath,
 }
 
-/// What the environment is built from. Per-Task home, xcconfig and Box tag variables for Mac Boxes
+/// What the environment is built from. Per-Box home, xcconfig and Box tag variables for Mac Boxes
 /// are added here, so every purpose gets them.
 #[derive(Debug, Clone, Copy)]
 pub struct BoxCtx<'a> {

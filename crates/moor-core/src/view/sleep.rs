@@ -8,7 +8,7 @@ pub struct SleepValue {
     /// Box name.
     #[serde(rename = "box")]
     pub box_name: String,
-    /// The Task's Box after the command.
+    /// The Box after the command.
     pub driver: Option<DriverView>,
     /// Whether this call resumed the Box; `sleep` always reports false.
     pub woke: bool,

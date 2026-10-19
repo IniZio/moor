@@ -123,7 +123,7 @@ pub struct HookRecord {
     pub at: Ts,
 }
 
-/// The last hook report seen for a Task.
+/// The last hook report seen for a Box.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HookCache {
     /// The report.
@@ -343,10 +343,10 @@ pub fn decide(probes: &Probes, cache: Option<&HookCache>, now: Ts, started: Ts) 
     from_pane(&probes.pane)
 }
 
-/// Whether a reading may move a Working Task to Idle.
+/// Whether a reading may move a Working Box to Idle.
 ///
 /// Only a hook report (fresh or cached) of idle or blocked, an exited or vanished pane,
-/// or no live session may. `probes` is `None` when the Task has no live session. Pane
+/// or no live session may. `probes` is `None` when the Box has no live session. Pane
 /// and multiplexer evidence alone may be shown but never applied.
 #[must_use]
 pub const fn may_apply_quiet(activity: &Activity, probes: Option<&Probes>) -> bool {

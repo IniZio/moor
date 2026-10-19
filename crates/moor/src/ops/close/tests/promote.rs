@@ -132,7 +132,7 @@ fn acquire_holder(driver: &FakeDriver) -> BoxHandle {
     let got = driver
         .acquire(&AcquireReq {
             provider: ProviderId::new(PROVIDER),
-            task: BoxId::new(1),
+            box_id: BoxId::new(1),
             name: BoxName::parse_allow_bare("holder").unwrap(),
             class: None,
             nonce: "n".to_owned(),

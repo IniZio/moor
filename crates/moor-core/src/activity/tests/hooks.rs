@@ -1,6 +1,6 @@
 //! Hook reading, cache and startup rules.
 
-use super::{asking, fresh, obs, said, waiting, Case, OLD, SILENT, TASKS};
+use super::{asking, fresh, obs, said, waiting, Case, BACKGROUND, OLD, SILENT};
 use crate::activity::Source as Src;
 use crate::activity::{
     AgentState as S, HookKind as K, HookRead, HookRecord, PaneRead, PaneStatus as P,
@@ -23,21 +23,21 @@ fn fresh_hook_states() {
 }
 
 #[test]
-fn background_tasks_override_idle_hooks() {
-    let idle = || obs(P::Idle, TASKS);
+fn background_override_idle_hooks() {
+    let idle = || obs(P::Idle, BACKGROUND);
     Case::new("fresh idle", fresh(K::Idle), idle()).expect(S::Working, Src::Pane);
     Case::new("busy stays", fresh(K::Busy), idle()).expect(S::Working, Src::Hooks);
     Case::new("cached idle", HookRead::TimedOut, idle())
         .cache(K::Idle, 10)
         .expect(S::Working, Src::Pane);
     Case::new(
-        "zero tasks",
+        "zero",
         fresh(K::Idle),
         obs(P::Idle, "0 background tasks running"),
     )
     .expect(S::Idle, Src::Hooks);
     Case::new(
-        "one task",
+        "one",
         fresh(K::Idle),
         obs(P::Idle, "ok\n1 background task running\n"),
     )
@@ -53,9 +53,9 @@ fn background_markers_in_real_wordings() {
     ] {
         Case::new(text, fresh(K::Idle), obs(P::Idle, text)).expect(S::Working, Src::Pane);
     }
-    let old = format!("{TASKS}\n1\n2\n3\n4\n5\n6\n");
+    let old = format!("{BACKGROUND}\n1\n2\n3\n4\n5\n6\n");
     Case::new("old scrollback", fresh(K::Idle), obs(P::Idle, &old)).expect(S::Idle, Src::Hooks);
-    let near = format!("{TASKS}\n\n2\n3\n4\n5\n6\n");
+    let near = format!("{BACKGROUND}\n\n2\n3\n4\n5\n6\n");
     Case::new("within six lines", fresh(K::Idle), obs(P::Idle, &near))
         .expect(S::Working, Src::Pane);
 }

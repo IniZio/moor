@@ -44,7 +44,7 @@ fn working(cx: &Cx, driver: &FakeDriver, name: &str, session: &str) -> BoxId {
     let got = driver
         .acquire(&AcquireReq {
             provider: ProviderId::new("p"),
-            task: id,
+            box_id: id,
             name: BoxName::parse_allow_bare(name).unwrap(),
             class: None,
             nonce: "abc123".into(),

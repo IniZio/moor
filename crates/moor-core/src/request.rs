@@ -19,17 +19,17 @@ pub use wait::{WaitEventsReq, WaitFor, WaitMode, WaitReq};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "cmd", rename_all = "kebab-case", deny_unknown_fields)]
 pub enum Request {
-    /// Create a task.
+    /// Create a box.
     Start(StartReq),
-    /// Run a command in a task's box.
+    /// Run a command in a box.
     Run(RunReq),
-    /// Wait for a task condition.
+    /// Wait for a box condition.
     Wait(WaitReq),
     /// Wait for events from several Boxes.
     WaitEvents(WaitEventsReq),
-    /// Send input to a task's agent.
+    /// Send input to a box's agent.
     Steer(SteerReq),
-    /// End a task's live agent session and keep its box.
+    /// End a Box's live agent session and keep the Box.
     EndSession(EndSessionReq),
     /// Open a fresh agent session on a ready box, seeded with a first prompt.
     OpenSession(OpenSessionReq),
@@ -49,23 +49,23 @@ pub enum Request {
     Sessions(SessionsReq),
     /// Publish a report.
     Report(ReportReq),
-    /// Show tasks or one task.
+    /// Show boxes or one box.
     Show(ShowReq),
-    /// Close a task.
+    /// Close a box.
     Close(CloseReq),
-    /// Remove a task.
+    /// Remove a box.
     Remove(RemoveReq),
-    /// Copy a file into a task's box.
+    /// Copy a file into a box.
     Cp(CpReq),
-    /// Open a task's workspace.
+    /// Open a box's workspace.
     Open(BoxReq),
-    /// Open a shell in a task's box.
+    /// Open a shell in a box.
     Shell(BoxReq),
-    /// Sleep a task's box.
+    /// Sleep a box.
     Sleep(BoxReq),
-    /// Wake a task's box.
+    /// Wake a box.
     Wake(BoxReq),
-    /// Wake a task's box and return the command that attaches to its workspace; the caller runs it.
+    /// Wake a box and return the command that attaches to its workspace; the caller runs it.
     Connect(BoxReq),
     /// Check a gate.
     Gate(GateReq),
@@ -79,7 +79,7 @@ pub enum Request {
     ProxyCheck {},
     /// List the repos the controller knows.
     Repos(ReposReq),
-    /// List a task's artifacts.
+    /// List a box's artifacts.
     Artifacts(ArtifactsReq),
     /// Read a byte range of one artifact.
     ArtifactRead(ArtifactReadReq),
@@ -163,7 +163,7 @@ pub struct StartReq {
     /// Resume the agent's stored session instead of starting a fresh one.
     #[serde(default)]
     pub resume: bool,
-    /// Launch the agent with the Task's `.moor.yaml` even when it differs from its base commit.
+    /// Launch the agent with the Box's `.moor.yaml` even when it differs from its base commit.
     #[serde(default)]
     pub trust_moor_yaml: bool,
     /// Repo known to the controller, by name or url; resolved on the controller host instead of the invocation directory.
@@ -197,7 +197,7 @@ pub struct RunReq {
     /// Command and arguments.
     #[serde(default)]
     pub argv: Vec<String>,
-    /// Run even when the Task's `.moor.yaml` differs from its base commit.
+    /// Run even when the Box's `.moor.yaml` differs from its base commit.
     #[serde(default)]
     pub trust_moor_yaml: bool,
     /// Program output goes to moor's own stdout and stderr instead of the run log.
@@ -285,7 +285,7 @@ pub struct ReportReq {
     reason = "JSON wire shape is a public contract"
 )]
 pub struct ShowReq {
-    /// Box name; all tasks when absent.
+    /// Box name; all boxes when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(rename = "box")]
     pub box_name: Option<BoxName>,
@@ -346,7 +346,7 @@ pub struct CpReq {
     pub dest: String,
 }
 
-/// Arguments of commands that take only a task.
+/// Arguments of commands that take only a box.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BoxReq {

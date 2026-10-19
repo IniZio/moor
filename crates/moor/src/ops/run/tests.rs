@@ -127,7 +127,7 @@ pub(in crate::ops::run) fn ready_with(driver: FakeDriver) -> Fx {
         .driver
         .acquire(&AcquireReq {
             provider,
-            task: f.id,
+            box_id: f.id,
             name: BoxName::parse_allow_bare("t").unwrap(),
             class: None,
             nonce: "n".to_owned(),

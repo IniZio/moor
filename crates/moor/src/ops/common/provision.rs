@@ -180,7 +180,7 @@ pub(crate) fn provision(
     let worktree = PathBuf::from(task.worktree.as_deref().unwrap_or(&task.repo));
     let req = AcquireReq {
         provider,
-        task: id,
+        box_id: id,
         name: task.name,
         class: Some(cfg.size.value.as_str().to_owned()),
         nonce: nonce(cx.rng()),

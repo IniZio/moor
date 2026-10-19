@@ -61,12 +61,12 @@ fn slash_named_box_stays_live_through_list_and_reconcile() {
     let listing = c.list(&ProviderId::new("sprites")).unwrap();
     let rows = [
         BoxFact {
-            task: BoxId::new(7),
+            box_id: BoxId::new(7),
             state: BoxState::Ready,
             handle: Some(handle),
         },
         BoxFact {
-            task: BoxId::new(8),
+            box_id: BoxId::new(8),
             state: BoxState::Ready,
             handle: Some(BoxHandle::new("sprites/moor-8-ab12cd")),
         },

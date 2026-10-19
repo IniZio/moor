@@ -1,4 +1,4 @@
-//! Typed task events. State events are derived from steps, so a row and its event cannot disagree.
+//! Typed box events. State events are derived from steps, so a row and its event cannot disagree.
 
 use serde::Serialize;
 
@@ -30,25 +30,25 @@ pub const ASSERTED_KINDS: [&str; 20] = [
     "credential_failed",
 ];
 
-/// One recorded fact about a task, serialized with its `kind` tag.
+/// One recorded fact about a box, serialized with its `kind` tag.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Event {
-    /// The task row was created.
+    /// The box row was created.
     Started,
-    /// Admission refused the task.
+    /// Admission refused the box.
     Rejected {
-        /// Why the task was refused.
+        /// Why the box was refused.
         reason: String,
     },
-    /// The task waits for a free box slot.
+    /// The Box waits for a free slot.
     WaitingForBox {
         /// The capacity limit that was hit.
         max_boxes: u32,
     },
     /// Box setup began.
     SettingUp {
-        /// The state the task left.
+        /// The state the box left.
         from: BoxLifecycle,
     },
     /// The agent is working.
@@ -76,16 +76,16 @@ pub enum Event {
     Idled,
     /// The agent became busy again.
     Busy,
-    /// The task went to sleep.
+    /// The box went to sleep.
     Asleep {
         /// True when the sleep timer fired, false for an explicit command.
         auto: bool,
     },
-    /// The task woke.
+    /// The box woke.
     Woke,
-    /// The task closed.
+    /// The box closed.
     Closed {
-        /// The state the task left.
+        /// The state the box left.
         from: BoxLifecycle,
     },
     /// A box was requested.
@@ -112,7 +112,7 @@ pub enum Event {
         /// The Box handle kept for manual release.
         handle: Option<String>,
     },
-    /// The driver refused to sleep an idle task's box, so it keeps running.
+    /// The driver refused to sleep an idle box, so it keeps running.
     StaysUp {
         /// The driver's reason.
         reason: String,
@@ -179,7 +179,7 @@ pub enum Event {
         /// The run id.
         run: RunId,
     },
-    /// A start attached to an existing open task.
+    /// A start attached to an existing open box.
     Attached,
     /// Close ended the live agent sessions.
     SessionsStopped {
@@ -241,7 +241,7 @@ pub enum Event {
         /// Whether the submit key was pressed a second time.
         submit_retried: bool,
     },
-    /// The Proxy for the task is ready to accept connections.
+    /// The Proxy for the box is ready to accept connections.
     ProxyStarted {
         /// Port the Box side connects to.
         box_port: u16,
@@ -259,7 +259,7 @@ pub enum Event {
         /// Why the tunnel was restarted.
         reason: String,
     },
-    /// The Task's Proxy refused a connection to a host not allowed for the Task.
+    /// The Box's Proxy refused a connection to a host not allowed for the Box.
     EgressRefused {
         /// The host the connection was for.
         host: String,
