@@ -170,14 +170,48 @@ fn ending_twice_refuses_the_second_time_without_a_new_event() {
 }
 
 #[test]
-fn a_launch_that_already_stopped_is_refused() {
+fn a_launch_that_already_stopped_still_ends_the_session() {
     let f = fx_with(true);
     let store = f.cx.store().unwrap();
     let launch = store.live_session(f.id).unwrap().unwrap();
     store.end_session(launch.id, None, None).unwrap();
-    let err = run(&f.cx, &req()).unwrap_err();
-    assert_eq!(err.kind, ErrorKind::Refused);
-    assert_eq!(count(&f, "session_ended"), 0);
+    run(&f.cx, &req()).unwrap();
+    let first = store.box_sessions(f.id).unwrap().pop().unwrap();
+    assert_eq!(first.state, SessionState::Ended);
+    let ended = store
+        .events(f.id, 100)
+        .unwrap()
+        .into_iter()
+        .find(|e| e.kind == "session_ended")
+        .unwrap();
+    assert_eq!(
+        ended.payload.get("cause").and_then(|c| c.as_str()),
+        Some("requested")
+    );
+    assert!(!f
+        .surface
+        .calls()
+        .iter()
+        .any(|c| c.starts_with("close_pane")));
+    assert_eq!(count(&f, "transcript_saved"), 0);
+}
+
+#[test]
+fn the_transcript_is_saved_with_the_end_trigger() {
+    let f = fx_with(true);
+    run(&f.cx, &req()).unwrap();
+    let saved =
+        f.cx.store()
+            .unwrap()
+            .events(f.id, 100)
+            .unwrap()
+            .into_iter()
+            .find(|e| e.kind == "transcript_saved")
+            .unwrap();
+    assert_eq!(
+        saved.payload.get("trigger").and_then(|t| t.as_str()),
+        Some("end")
+    );
 }
 
 #[test]
