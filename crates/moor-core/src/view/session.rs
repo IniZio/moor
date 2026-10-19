@@ -1,6 +1,6 @@
 //! Typed `value` payloads for the session commands (JSON wire shape).
 
-use crate::name::SessionId;
+use crate::name::{BoxId, SessionId};
 
 /// Result of `end-session`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -47,6 +47,9 @@ pub struct SessionView {
     /// Box name; `None` for a host Session.
     #[serde(rename = "box")]
     pub box_name: Option<String>,
+    /// Id of the Box; `None` for a host Session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub box_id: Option<BoxId>,
     /// Position among the Box's Sessions.
     pub ordinal: i64,
     /// Id of the parent Session, if any.
@@ -75,6 +78,9 @@ pub struct SessionChildView {
     /// Box name; `None` for a host Session.
     #[serde(rename = "box")]
     pub box_name: Option<String>,
+    /// Id of the Box; `None` for a host Session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub box_id: Option<BoxId>,
     /// Child Session state.
     pub state: String,
 }
@@ -94,6 +100,9 @@ pub struct SessionListItem {
     /// Box name; `None` for a host Session.
     #[serde(rename = "box")]
     pub box_name: Option<String>,
+    /// Id of the Box; `None` for a host Session.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub box_id: Option<BoxId>,
     /// Id of the parent Session, if any.
     pub parent: Option<SessionId>,
     /// Session state.
@@ -118,6 +127,7 @@ mod tests {
         let v = SessionView {
             session: SessionId::new(1),
             box_name: None,
+            box_id: None,
             ordinal: 0,
             parent: None,
             workdir: Some("/w".into()),
@@ -129,6 +139,7 @@ mod tests {
             children: vec![SessionChildView {
                 session: SessionId::new(2),
                 box_name: None,
+                box_id: None,
                 state: "ended".into(),
             }],
         };
@@ -189,6 +200,7 @@ mod tests {
                 SessionListItem {
                     session: SessionId::new(1),
                     box_name: None,
+                    box_id: None,
                     parent: None,
                     state: "running".into(),
                     workdir: Some("/w".into()),
@@ -197,6 +209,7 @@ mod tests {
                 SessionListItem {
                     session: SessionId::new(2),
                     box_name: Some("demo".into()),
+                    box_id: None,
                     parent: Some(SessionId::new(1)),
                     state: "ended".into(),
                     workdir: None,
@@ -222,6 +235,7 @@ mod tests {
         let v = SessionView {
             session: SessionId::new(1),
             box_name: Some("demo".into()),
+            box_id: None,
             ordinal: 0,
             parent: None,
             workdir: Some("/w".into()),
@@ -233,11 +247,26 @@ mod tests {
             children: vec![SessionChildView {
                 session: SessionId::new(2),
                 box_name: None,
+                box_id: None,
                 state: "ended".into(),
             }],
         };
         let json = serde_json::to_value(&v).expect("serialize");
         let back: SessionView = serde_json::from_value(json).expect("deserialize");
         assert_eq!(back, v);
+    }
+
+    #[test]
+    fn a_box_session_carries_its_box_id() {
+        let v = SessionChildView {
+            session: SessionId::new(2),
+            box_name: Some("demo".into()),
+            box_id: Some(crate::name::BoxId::new(5)),
+            state: "ended".into(),
+        };
+        assert_eq!(
+            serde_json::to_value(&v).expect("serialize"),
+            json!({"session": 2, "box": "demo", "box_id": 5, "state": "ended"})
+        );
     }
 }

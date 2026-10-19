@@ -1,7 +1,7 @@
 //! Reading one Session, and the child Sessions of a parent, with the Box each belongs to.
 
 use moor_core::domain::session_state::SessionState;
-use moor_core::BoxName;
+use moor_core::{BoxId, BoxName};
 use rusqlite::{OptionalExtension, Row};
 
 use super::super::{parsed, parsed_opt, Store, StoreError};
@@ -13,6 +13,8 @@ pub(crate) struct SessionRecord {
     pub(crate) id: i64,
     /// Name of the Box the Session runs in; `None` for a host Session.
     pub(crate) task: Option<BoxName>,
+    /// Id of that Box.
+    pub(crate) box_id: Option<BoxId>,
     /// Position among the Box's Sessions, starting at 1.
     pub(crate) ordinal: i64,
     /// Row id of the parent Session, when it has one.
@@ -33,7 +35,7 @@ pub(crate) struct SessionRecord {
 
 /// Columns of a Session row, in the order [`SessionRecord::from_row`] reads them.
 const SELECT: &str = "SELECT s.id, b.name, s.ordinal, s.parent_session, s.workdir, s.agent, \
-     s.agent_session_id, s.state, s.started_at, s.ended_at \
+     s.agent_session_id, s.state, s.started_at, s.ended_at, s.box \
      FROM sessions s LEFT JOIN boxes b ON b.id = s.box";
 
 impl SessionRecord {
@@ -60,6 +62,7 @@ impl SessionRecord {
                 state: parsed_opt("session state", &state, SessionState::parse)?,
                 started_at: row.get(8)?,
                 ended_at: row.get(9)?,
+                box_id: row.get::<_, Option<i64>>(10)?.map(BoxId::new),
             })
         })();
         Ok(parsed_row)
