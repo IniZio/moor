@@ -80,6 +80,7 @@ fn start_sends_the_cli_request() {
         base: None,
         model: None,
         no_agent: false,
+        hold: false,
         resume: false,
         trust_moor_yaml: false,
         repo: Some("app".into()),

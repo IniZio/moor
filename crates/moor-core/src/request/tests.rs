@@ -21,6 +21,7 @@ fn with_args() -> Vec<Request> {
             base: None,
             model: None,
             no_agent: true,
+            hold: false,
             resume: false,
             trust_moor_yaml: false,
             repo: None,
@@ -366,4 +367,16 @@ fn open_session_round_trips() {
         serde_json::to_value(&req).expect("serialize"),
         json!({"cmd": "open-session", "task": "x", "seed": "hi"})
     );
+}
+
+#[test]
+fn start_without_hold_parses_as_false_and_hold_round_trips() {
+    let bare: StartReq = serde_json::from_value(json!({"name": "a"})).expect("parses");
+    assert!(!bare.hold);
+    let held: StartReq =
+        serde_json::from_value(json!({"name": "a", "hold": true})).expect("parses");
+    assert!(held.hold);
+    let back: StartReq =
+        serde_json::from_str(&serde_json::to_string(&held).expect("ser")).expect("de");
+    assert_eq!(back, held);
 }
