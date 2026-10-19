@@ -19,6 +19,8 @@ pub enum Request {
     Run(RunReq),
     /// Wait for a task condition.
     Wait(WaitReq),
+    /// Wait for events from several Boxes.
+    WaitEvents(WaitEventsReq),
     /// Send input to a task's agent.
     Steer(SteerReq),
     /// End a task's live agent session and keep its box.
@@ -79,6 +81,7 @@ impl Request {
             Self::Start(_) => "start",
             Self::Run(_) => "run",
             Self::Wait(_) => "wait",
+            Self::WaitEvents(_) => "wait-events",
             Self::Steer(_) => "steer",
             Self::EndSession(_) => "end-session",
             Self::OpenSession(_) => "open-session",

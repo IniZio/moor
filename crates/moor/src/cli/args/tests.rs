@@ -7,7 +7,7 @@ use moor_core::controller::WatchFilter;
 use moor_core::request::{EndSessionReq, OpenHostSessionReq, OpenSessionReq};
 use moor_core::{
     BoxId, BoxName, CloseReq, CpReq, EnvReq, GateReq, RemoveReq, ReportReq, Request, RunReq,
-    ShowReq, StartReq, SteerReq, TaskReq, WaitFor, WaitReq,
+    ShowReq, StartReq, SteerReq, TaskReq, WaitEventsReq, WaitFor, WaitMode, WaitReq,
 };
 
 use super::{parse_ignoring_env as parse, Action};
@@ -576,4 +576,44 @@ fn valid_task_name_parses() {
             pane: false,
         })
     );
+}
+
+#[test]
+fn wait_events_parses_all_flags() {
+    assert_eq!(
+        req(&[
+            "wait-events",
+            "a",
+            "b",
+            "--kind",
+            "turn_done",
+            "--all",
+            "--since",
+            "7",
+            "--timeout",
+            "30"
+        ]),
+        Request::WaitEvents(WaitEventsReq {
+            boxes: vec![n("a"), n("b")],
+            kinds: Some(vec!["turn_done".into()]),
+            mode: WaitMode::All,
+            since: Some(7),
+            timeout_secs: Some(30),
+        })
+    );
+}
+
+#[test]
+fn wait_events_defaults_and_needs_a_box() {
+    assert_eq!(
+        req(&["wait-events", "a"]),
+        Request::WaitEvents(WaitEventsReq {
+            boxes: vec![n("a")],
+            kinds: None,
+            mode: WaitMode::Any,
+            since: None,
+            timeout_secs: None,
+        })
+    );
+    assert!(run(&["wait-events"]).is_err());
 }

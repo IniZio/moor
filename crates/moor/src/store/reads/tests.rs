@@ -215,3 +215,14 @@ fn no_steer_yields_none() {
     event(&store, id, "turn_done", "{\"steer\":1}", 30);
     assert_eq!(store.unanswered_steer(id).unwrap(), None);
 }
+
+#[test]
+fn last_event_id_is_zero_without_events_then_the_newest_id() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(dir.path());
+    assert_eq!(store.last_event_id().unwrap(), 0);
+    add(&store, "alpha");
+    let newest = store.events_after(0, 1000).unwrap().last().unwrap().row.id;
+    assert!(newest > 0);
+    assert_eq!(store.last_event_id().unwrap(), newest);
+}

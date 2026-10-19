@@ -27,7 +27,7 @@ pub(crate) fn respond_with_progress(
     let cmd = request.cmd();
     if matches!(
         request,
-        Request::Start(_) | Request::Wait(_) | Request::Run(_)
+        Request::Start(_) | Request::Wait(_) | Request::WaitEvents(_) | Request::Run(_)
     ) {
         report_while(cmd, id, interval, emit, || conn::respond(env, request))
     } else {

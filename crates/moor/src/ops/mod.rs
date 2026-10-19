@@ -25,6 +25,7 @@ mod start;
 mod steer;
 mod version;
 mod wait;
+mod wait_events;
 mod wake;
 
 pub(crate) use start::settle_all;
@@ -44,6 +45,7 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         Request::Env(r) => to_value(&env::run(cx, &r)?),
         Request::Run(r) => to_value(&run::run(cx, &r)?),
         Request::Wait(r) => to_value(&wait::run(cx, &r)?),
+        Request::WaitEvents(r) => to_value(&wait_events::run(cx, &r)?),
         Request::Cp(r) => to_value(&cp::run(cx, &r)?),
         Request::Sleep(r) => to_value(&sleep::run(cx, &r)?),
         Request::Wake(r) => to_value(&wake::run(cx, &r)?),

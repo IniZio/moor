@@ -101,6 +101,14 @@ impl Store {
         rows.collect()
     }
 
+    /// Highest event id, or 0 when no event is stored.
+    pub(crate) fn last_event_id(&self) -> Result<i64, StoreError> {
+        let max: Option<i64> = self
+            .reader()?
+            .query_row("SELECT MAX(id) FROM events", [], |r| r.get(0))?;
+        Ok(max.unwrap_or(0))
+    }
+
     /// The live (neither closed nor rejected) task with this name.
     pub(crate) fn open_task_by_name(&self, name: &BoxName) -> Result<Option<TaskRow>, StoreError> {
         let tail = "WHERE b.name = ?1 AND b.state NOT IN ('closed', 'rejected') ORDER BY b.id DESC LIMIT 1";
