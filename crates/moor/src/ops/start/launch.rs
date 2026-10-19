@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use moor_core::activity::PaneStatus;
 use moor_core::box_key::BoxKey;
-use moor_core::config::TaskSettings;
+use moor_core::config::{Flags, TaskSettings};
 
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
@@ -18,6 +18,7 @@ use moor_core::{BoxId, StartReq, Warning};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::box_exec;
+use crate::ops::common::facts::settings;
 use crate::ops::common::provision::{nonce, recorded_workdir, reread};
 use crate::ops::common::resume;
 use crate::ops::common::view::rfc3339;
@@ -61,6 +62,28 @@ pub(super) fn run(
     let cfg = settings()?;
     launch.model = cfg.model.clone().map(|m| m.value);
     begin(cx, store, &row, &launch, &cfg)
+}
+
+/// Launches the agent of `row` with `seed` as its first prompt, on a Session the caller opened.
+///
+/// # Errors
+/// A store failure, or settings that cannot be resolved.
+pub(crate) fn begin_seeded(
+    cx: &Cx,
+    store: &Store,
+    row: &TaskRow,
+    seed: String,
+) -> Result<AgentLaunchView, CommandError> {
+    let mut working = row.clone();
+    working.state = TaskState::Working;
+    let Some(mut launch) = launch_req(cx, &working, None) else {
+        return Ok(AgentLaunchView::default());
+    };
+    let at = row.worktree.as_deref().unwrap_or(&row.repo);
+    let cfg = settings(cx, std::path::Path::new(at), &Flags::default())?;
+    launch.model = cfg.model.clone().map(|m| m.value);
+    launch.prompt = LaunchPrompt::Text(seed);
+    begin(cx, store, &working, &launch, &cfg)
 }
 
 /// Launches `launch` and records the session, or the failure, on the Task `row`.

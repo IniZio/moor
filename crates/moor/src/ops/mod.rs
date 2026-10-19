@@ -12,6 +12,7 @@ mod end_session;
 pub(crate) mod env;
 mod gate;
 mod open;
+mod open_session;
 pub(crate) mod pr;
 pub(crate) mod proof;
 mod run;
@@ -46,6 +47,7 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         Request::Connect(r) => to_value(&open::connect(cx, &r)?),
         Request::Steer(r) => to_value(&steer::run(cx, &r)?),
         Request::EndSession(r) => to_value(&end_session::run(cx, &r)?),
+        Request::OpenSession(r) => to_value(&open_session::run(cx, &r)?),
         other => Err(CommandError::not_implemented(other.cmd())),
     }
 }
