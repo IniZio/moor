@@ -13,9 +13,22 @@ pub struct EndSessionValue {
     pub box_kept: bool,
 }
 
+/// Result of `open-session`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct OpenSessionValue {
+    /// Task name.
+    pub task: String,
+    /// Id of the new Session.
+    pub session: i64,
+    /// Position of the new Session among the task's Sessions.
+    pub ordinal: i64,
+    /// Pane the agent runs in, when known.
+    pub pane: Option<String>,
+}
+
 #[cfg(test)]
 mod tests {
-    use super::EndSessionValue;
+    use super::{EndSessionValue, OpenSessionValue};
     use serde_json::json;
 
     #[test]
@@ -29,6 +42,20 @@ mod tests {
         assert_eq!(
             serde_json::to_value(&v).expect("serialize"),
             json!({"task": "x", "session": 7, "ordinal": 2, "box_kept": true})
+        );
+    }
+
+    #[test]
+    fn open_value_serializes_fields() {
+        let v = OpenSessionValue {
+            task: "x".into(),
+            session: 8,
+            ordinal: 3,
+            pane: Some("p1".into()),
+        };
+        assert_eq!(
+            serde_json::to_value(&v).expect("serialize"),
+            json!({"task": "x", "session": 8, "ordinal": 3, "pane": "p1"})
         );
     }
 }
