@@ -117,7 +117,7 @@ pub(crate) enum StoreError {
 
 /// Box row joined to a task.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct BoxRow {
+pub(crate) struct DriverRow {
     /// Driver provider id.
     pub(crate) provider: ProviderId,
     /// Driver handle once acquired.
@@ -182,7 +182,7 @@ pub(crate) struct TaskRow {
     /// Last update.
     pub(crate) updated_at: Ts,
     /// The task's box, if any.
-    pub(crate) boxed: Option<BoxRow>,
+    pub(crate) boxed: Option<DriverRow>,
 }
 
 /// Event row.
@@ -327,13 +327,13 @@ fn intent_from(
     }
 }
 
-/// Map the joined box columns (offset 20..=27) to a `BoxRow`, if the box exists.
-fn box_from_row(row: &Row<'_>) -> Result<Option<BoxRow>, StoreError> {
+/// Map the joined box columns (offset 20..=27) to a `DriverRow`, if the box exists.
+fn box_from_row(row: &Row<'_>) -> Result<Option<DriverRow>, StoreError> {
     let Some(provider) = row.get::<_, Option<String>>(20)? else {
         return Ok(None);
     };
     let state: String = row.get(22)?;
-    Ok(Some(BoxRow {
+    Ok(Some(DriverRow {
         provider: ProviderId::new(provider),
         handle: row.get::<_, Option<String>>(21)?.map(BoxHandle::new),
         state: parsed_opt("box state", &state, BoxState::parse)?,

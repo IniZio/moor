@@ -8,7 +8,7 @@ use moor_core::{BoxId, BoxName, ProviderId, SessionId};
 use rusqlite::{Connection, OptionalExtension};
 
 use super::{
-    event_from_row, task_from_row, BoxRow, EventRow, Store, StoreError, TaskRow, TASK_SELECT,
+    event_from_row, task_from_row, DriverRow, EventRow, Store, StoreError, TaskRow, TASK_SELECT,
 };
 
 /// Run a task query and map every row.
@@ -115,7 +115,7 @@ impl Store {
     }
 
     /// Boxes whose state counts toward capacity (starting, ready, asleep), with their task.
-    pub(crate) fn box_rows_live(&self) -> Result<Vec<(BoxId, BoxRow)>, StoreError> {
+    pub(crate) fn box_rows_live(&self) -> Result<Vec<(BoxId, DriverRow)>, StoreError> {
         let tail = "WHERE b.driver_state IN (?1, ?2, ?3) ORDER BY b.id";
         let rows = query_tasks(&self.reader()?, tail, LIVE_STATES)?;
         Ok(rows

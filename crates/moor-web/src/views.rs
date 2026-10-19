@@ -206,7 +206,7 @@ impl Source<'_> {
             "lifecycle": field(t, "lifecycle"),
             "session_state": field(t, "session_state"),
             "goal": field(t, "goal"),
-            "box_state": t.get("box").map_or(Value::Null, |b| field(b, "state")),
+            "box_state": t.get("driver").map_or(Value::Null, |b| field(b, "state")),
         })
     }
 }

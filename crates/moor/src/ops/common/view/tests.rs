@@ -49,7 +49,7 @@ fn task_view_maps_row_without_box() {
         (id.get(), "t", "r")
     );
     assert_eq!(v.goal.as_deref(), Some("g"));
-    assert!(v.r#box.is_none() && v.agent.is_none() && v.run.is_none());
+    assert!(v.driver.is_none() && v.agent.is_none() && v.run.is_none());
     assert_eq!(v.updated_at, "1970-01-02T00:00:00Z");
     let events = store.events(id, 10).unwrap();
     let ev = event_view(events.first().unwrap());
@@ -80,7 +80,7 @@ fn task_view_maps_box() {
         }))
         .unwrap();
     let b = task_view(&store.task(id).unwrap().unwrap(), &UserConfig::default())
-        .r#box
+        .driver
         .unwrap();
     assert_eq!(
         (b.state, b.provider.as_str(), b.handle.as_deref()),
@@ -107,7 +107,7 @@ fn box_view_maps_sleep_reason() {
         .apply(Decision::new(id).set(fields).box_input(BoxInput::Requested))
         .unwrap();
     let b = task_view(&store.task(id).unwrap().unwrap(), &UserConfig::default())
-        .r#box
+        .driver
         .unwrap();
     assert_eq!(
         (b.sleep.after.as_deref(), b.sleep.reason),
@@ -119,7 +119,7 @@ fn box_view_maps_sleep_reason() {
     };
     store.apply(Decision::new(id).set(fields)).unwrap();
     let b = task_view(&store.task(id).unwrap().unwrap(), &UserConfig::default())
-        .r#box
+        .driver
         .unwrap();
     assert_eq!(b.sleep.after.as_deref(), Some("30m"));
     assert_eq!(b.sleep.reason.as_deref(), Some("provider cannot wake"));
@@ -144,7 +144,7 @@ fn box_view_shows_configured_sleep_after() {
         .unwrap();
     let config: UserConfig = parse_user("u.yaml", "box: {sleep_after: 45m}").unwrap();
     let b = task_view(&store.task(id).unwrap().unwrap(), &config)
-        .r#box
+        .driver
         .unwrap();
     assert_eq!(b.sleep.after.as_deref(), Some("45m"));
 }

@@ -270,7 +270,7 @@ fn a_box_that_cannot_sleep_stays_up_and_says_why_once() {
     );
     assert_eq!(sleep_calls(&f), 1);
     let row = f.cx.store().unwrap().task(f.id).unwrap().unwrap();
-    let shown = task_view(&row, f.cx.config()).r#box.unwrap().sleep.reason;
+    let shown = task_view(&row, f.cx.config()).driver.unwrap().sleep.reason;
     assert_eq!(shown.as_deref(), Some("provider cannot wake"));
     let stays = kinds(&f).iter().filter(|k| *k == "stays_up").count();
     assert_eq!(stays, 1);
@@ -353,7 +353,7 @@ fn an_unknown_provider_stays_up_and_says_why() {
         (BoxLifecycle::Ready, SessionState::Idle, BoxState::Ready)
     );
     let row = f.cx.store().unwrap().task(f.id).unwrap().unwrap();
-    let shown = task_view(&row, f.cx.config()).r#box.unwrap().sleep.reason;
+    let shown = task_view(&row, f.cx.config()).driver.unwrap().sleep.reason;
     assert_eq!(shown.as_deref(), Some(reason));
 }
 

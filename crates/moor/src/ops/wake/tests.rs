@@ -125,7 +125,7 @@ fn asleep_task_wakes_its_box() {
     let v = run(&f.cx, &req()).unwrap();
     assert!(v.woke);
     assert_eq!(v.task, "t");
-    assert_eq!(v.r#box.unwrap().state, BoxState::Ready);
+    assert_eq!(v.driver.unwrap().state, BoxState::Ready);
     assert!(f.driver.calls().contains(&"wake box-1".to_owned()));
     assert_eq!(wakes(&f), 1);
     assert_eq!(states(&f), (BoxLifecycle::Ready, BoxState::Ready));
@@ -206,6 +206,6 @@ fn sleep_label_follows_provider_sleep_support() {
         let f = fx_with(FakeDriver::new().sleep_kind(kind));
         asleep(&f);
         let v = run(&f.cx, &req()).unwrap();
-        assert_eq!(v.r#box.unwrap().sleep.after.as_deref(), after);
+        assert_eq!(v.driver.unwrap().sleep.after.as_deref(), after);
     }
 }

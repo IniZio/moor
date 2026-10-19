@@ -12,7 +12,7 @@ use moor_core::{BoxHandle, BoxPath, Warning};
 
 use super::provision::recorded_workdir;
 use crate::cx::Cx;
-use crate::store::{BoxRow, Store, TaskRow};
+use crate::store::{DriverRow, Store, TaskRow};
 
 /// Wall-clock allowance for the index script.
 pub(crate) const INDEX_DEADLINE: Duration = Duration::from_secs(60);
@@ -78,7 +78,7 @@ pub(crate) fn parse_index(text: &str) -> (Vec<Entry>, usize) {
 }
 
 /// The Ready Box with a handle that Reports are collected from.
-pub(super) fn target(row: &TaskRow) -> Option<(&BoxRow, &BoxHandle)> {
+pub(super) fn target(row: &TaskRow) -> Option<(&DriverRow, &BoxHandle)> {
     row.boxed
         .as_ref()
         .filter(|b| b.state == BoxState::Ready)

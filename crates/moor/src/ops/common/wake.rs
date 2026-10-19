@@ -153,11 +153,11 @@ pub(crate) fn wake_task(
     let woke = wake_and_revive(cx, store, &reload()?)?;
     let row = reload()?;
     held(&row)?;
-    let mut boxed = task_view(&row, cx.config()).r#box;
+    let mut boxed = task_view(&row, cx.config()).driver;
     hide_unsupported_box_sleep(boxed.as_mut(), cx, &mut HashMap::new());
     Ok(SleepValue {
         task: req.task.as_str().to_owned(),
-        r#box: boxed,
+        driver: boxed,
         woke,
     })
 }

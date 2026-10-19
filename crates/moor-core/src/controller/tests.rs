@@ -11,7 +11,7 @@ fn err_parts(line: &str) -> (Option<String>, FrameErrorKind) {
 
 #[test]
 fn parses_hello() {
-    let got = parse_frame(r#"{"frame":"hello","protocol":3}"#);
+    let got = parse_frame(&format!(r#"{{"frame":"hello","protocol":{PROTOCOL}}}"#));
     assert_eq!(got, Ok(ClientFrame::Hello { protocol: PROTOCOL }));
 }
 
@@ -48,7 +48,10 @@ fn non_object_has_no_id() {
 #[test]
 fn server_hello_shape() {
     let line = ServerFrame::Hello { protocol: PROTOCOL }.to_line();
-    assert_eq!(line, "{\"frame\":\"hello\",\"protocol\":3}\n");
+    assert_eq!(
+        line,
+        format!("{{\"frame\":\"hello\",\"protocol\":{PROTOCOL}}}\n")
+    );
 }
 
 #[test]
@@ -260,8 +263,8 @@ fn event_frame_golden_without_box_or_session() {
 }
 
 #[test]
-fn protocol_is_three_and_old_hello_still_parses() {
-    assert_eq!(PROTOCOL, 3);
+fn protocol_is_four_and_old_hello_still_parses() {
+    assert_eq!(PROTOCOL, 4);
     let got = parse_frame(r#"{"frame":"hello","protocol":1}"#);
     assert_eq!(got, Ok(ClientFrame::Hello { protocol: 1 }));
 }

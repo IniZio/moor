@@ -105,7 +105,7 @@ fn task(name: &str, state: &str, question: Option<&str>) -> Value {
     json!({
         "name": name, "repo": "app", "branch": format!("moor/{name}"), "lifecycle": "ready", "session_state": "working",
         "goal": format!("goal of {name}"),
-        "box": {"state": state},
+        "driver": {"state": state},
         "agent": {"state": if question.is_some() { "needs_input" } else { "working" },
                   "question": question, "options": if question.is_some() { json!(["yes", "no"]) } else { json!([]) }},
     })

@@ -13,7 +13,7 @@ use moor_core::{BoxHandle, BoxPath};
 
 use super::provision::recorded_workdir;
 use crate::cx::Cx;
-use crate::store::{BoxRow, TaskRow};
+use crate::store::{DriverRow, TaskRow};
 
 /// Wall-clock allowance for the probe script.
 pub(crate) const BOXWORK_DEADLINE: Duration = Duration::from_secs(60);
@@ -72,7 +72,7 @@ pub(crate) struct ProbePlan {
 ///
 /// Anything that stops the probe from giving a definite answer is
 /// [`BoxWork::Unknown`], so a caller never mistakes a failed probe for a clean Box.
-pub(crate) fn probe(cx: &Cx, task: &TaskRow, boxed: &BoxRow) -> BoxWork {
+pub(crate) fn probe(cx: &Cx, task: &TaskRow, boxed: &DriverRow) -> BoxWork {
     let plan = match plan(cx, task, boxed) {
         Ok(plan) => plan,
         Err(work) => return work,
@@ -88,7 +88,7 @@ pub(crate) fn probe(cx: &Cx, task: &TaskRow, boxed: &BoxRow) -> BoxWork {
 }
 
 /// Builds the probe for the Box of `boxed`; the `Err` is the answer when no probe can be sent.
-pub(crate) fn plan(cx: &Cx, task: &TaskRow, boxed: &BoxRow) -> Result<ProbePlan, BoxWork> {
+pub(crate) fn plan(cx: &Cx, task: &TaskRow, boxed: &DriverRow) -> Result<ProbePlan, BoxWork> {
     let handle = boxed.handle.as_ref().ok_or("the box has no handle")?;
     let worktree = Path::new(task.worktree.as_deref().ok_or("the task has no worktree")?);
     let head = cx

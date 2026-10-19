@@ -24,7 +24,7 @@ fn task() -> TaskView {
         branch: None,
         worktree: None,
         workspace: None,
-        r#box: None,
+        driver: None,
         agent: None,
         run: None,
         updated_at: "2026-01-01T00:00:00Z".into(),
