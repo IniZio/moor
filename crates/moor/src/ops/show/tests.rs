@@ -8,9 +8,11 @@ use moor_core::activity::{
     AgentState, HookKind, HookRead, HookRecord, PaneObs, PaneRead, PaneStatus, Probes, Source,
     STARTUP_GRACE,
 };
+use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
-use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
+use moor_core::domain::session_state::SessionInput;
+use moor_core::domain::task::{SetupOutcome, TaskState};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, SleepKind};
 use moor_core::seam::proc::Tool;
@@ -85,7 +87,7 @@ fn ready_box(cx: &Cx, driver: &FakeDriver, id: BoxId) -> moor_core::BoxHandle {
     };
     let store = cx.store().unwrap();
     let d = Decision::new(id)
-        .task_input(TaskInput::Admitted)
+        .lifecycle(BoxLifecycleInput::Admitted)
         .box_input(BoxInput::Requested)
         .set(fields);
     store.apply(d).unwrap();
@@ -114,7 +116,9 @@ fn show_lists_open_tasks_with_no_selection() {
     add(&cx, "a");
     add(&cx, "b");
     let closed = add(&cx, "c");
-    let close = Decision::new(closed).task_input(TaskInput::Close);
+    let close = Decision::new(closed)
+        .lifecycle(BoxLifecycleInput::Close)
+        .session(SessionInput::End);
     cx.store().unwrap().apply(close).unwrap();
     let v = run(&cx, &req(None, None)).unwrap();
     let names: Vec<_> = v.tasks.iter().flatten().map(|t| t.name.clone()).collect();
@@ -188,7 +192,7 @@ fn named_task_returns_last_events() {
     let id = add(&cx, "a");
     cx.store()
         .unwrap()
-        .apply(Decision::new(id).task_input(TaskInput::Admitted))
+        .apply(Decision::new(id).lifecycle(BoxLifecycleInput::Admitted))
         .unwrap();
     let v = run(&cx, &req(Some("a"), Some(1))).unwrap();
     assert!(v.tasks.is_none());
@@ -258,7 +262,7 @@ fn working(cx: &Cx, driver: &FakeDriver, name: &str, session: Option<&str>) -> B
         .unwrap();
     let store = cx.store().unwrap();
     let d = Decision::new(id)
-        .task_input(TaskInput::Admitted)
+        .lifecycle(BoxLifecycleInput::Admitted)
         .box_input(BoxInput::Requested)
         .set(Fields {
             box_provider: Field::Set(ProviderId::new("p")),
@@ -266,9 +270,10 @@ fn working(cx: &Cx, driver: &FakeDriver, name: &str, session: Option<&str>) -> B
         });
     store.apply(d).unwrap();
     let d = Decision::new(id)
-        .task_input(TaskInput::BoxReady {
+        .lifecycle(BoxLifecycleInput::Ready {
             setup: SetupOutcome::Ok,
         })
+        .session(SessionInput::Started)
         .box_input(BoxInput::Acquired { handle: got.handle })
         .set(Fields {
             worktree: Field::Set("/wt".into()),
@@ -410,7 +415,7 @@ fn list_settles_a_busy_agent_to_working() {
     let id = working(&cx, &driver, "a", Some("s-a"));
     cx.store()
         .unwrap()
-        .apply(Decision::new(id).task_input(TaskInput::AgentQuiet))
+        .apply(Decision::new(id).session(SessionInput::AgentQuiet))
         .unwrap();
     let engine = Arc::new(FakeEngine::new().probes("s-a", hook(&cx, HookKind::Busy)));
     let cx = engine_cx(dir.path(), &driver, &engine);
@@ -544,7 +549,7 @@ fn idle_task(dir: &Path, driver: &Arc<FakeDriver>) -> (Cx, BoxId) {
     let id = working(&cx, driver, "a", Some("s-a"));
     cx.store()
         .unwrap()
-        .apply(Decision::new(id).task_input(TaskInput::AgentQuiet))
+        .apply(Decision::new(id).session(SessionInput::AgentQuiet))
         .unwrap();
     let engine = Arc::new(FakeEngine::new().probes("s-a", hook(&cx, HookKind::Idle)));
     (engine_cx(dir, driver, &engine), id)

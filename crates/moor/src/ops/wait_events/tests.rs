@@ -5,9 +5,11 @@ use std::sync::Arc;
 
 use moor_core::activity::{HookKind, HookRead, HookRecord, PaneObs, PaneRead, PaneStatus, Probes};
 use moor_core::controller::ServerFrame;
+use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, NewTask};
-use moor_core::domain::task::{SetupOutcome, TaskInput};
+use moor_core::domain::session_state::SessionInput;
+use moor_core::domain::task::SetupOutcome;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::AcquireReq;
 use moor_core::{BoxId, BoxName, ErrorKind, ProviderId, WaitEventsReq, WaitMode};
@@ -107,7 +109,7 @@ fn ready(cx: &Cx, n: &str) -> BoxId {
         .unwrap();
     let store = cx.store().unwrap();
     let d = Decision::new(id)
-        .task_input(TaskInput::Admitted)
+        .lifecycle(BoxLifecycleInput::Admitted)
         .box_input(BoxInput::Requested)
         .set(Fields {
             box_provider: Field::Set(ProviderId::new("p")),
@@ -115,9 +117,10 @@ fn ready(cx: &Cx, n: &str) -> BoxId {
         });
     store.apply(d).unwrap();
     let d = Decision::new(id)
-        .task_input(TaskInput::BoxReady {
+        .lifecycle(BoxLifecycleInput::Ready {
             setup: SetupOutcome::Ok,
         })
+        .session(SessionInput::Started)
         .box_input(BoxInput::Acquired { handle: got.handle })
         .set(Fields {
             worktree: Field::Set("/wt".into()),
@@ -293,7 +296,11 @@ fn a_closed_box_fails_before_waiting() {
     let id = add(&cx, "alpha");
     cx.store()
         .unwrap()
-        .apply(Decision::new(id).task_input(TaskInput::Close))
+        .apply(
+            Decision::new(id)
+                .lifecycle(BoxLifecycleInput::Close)
+                .session(SessionInput::End),
+        )
         .unwrap();
     let before = cx.clock().now();
     let e = run(&cx, &req(&["alpha"], WaitMode::Any)).unwrap_err();

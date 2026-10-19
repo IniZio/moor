@@ -7,7 +7,8 @@ use moor_core::config::{Flags, TaskSettings};
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, Intent, IntentChange};
 use moor_core::domain::run::SyncMode;
-use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
+use moor_core::domain::task::{SetupOutcome, TaskState};
+use moor_core::domain::{box_state::BoxLifecycleInput, session_state::SessionInput};
 use moor_core::seam::driver::{AcquireReq, Acquired, DriverError, Released};
 use moor_core::seam::rng::Rng;
 use moor_core::{BoxHandle, BoxId, BoxPath, ErrorKind, ProviderId, Warning};
@@ -58,11 +59,11 @@ pub(crate) enum Entry {
 
 impl Entry {
     /// The Task input that starts the step, if any.
-    const fn begin(self) -> Option<TaskInput> {
+    const fn begin(self) -> Option<BoxLifecycleInput> {
         match self {
-            Self::Fresh => Some(TaskInput::Admitted),
-            Self::Waiting => Some(TaskInput::Promoted),
-            Self::Retry => Some(TaskInput::Retry),
+            Self::Fresh => Some(BoxLifecycleInput::Admitted),
+            Self::Waiting => Some(BoxLifecycleInput::Promoted),
+            Self::Retry => Some(BoxLifecycleInput::Retry),
             Self::Stay => None,
         }
     }
@@ -146,7 +147,7 @@ pub(crate) fn provision(
     let provider = ProviderId::new(cfg.provider.value.clone());
     require_reverse_tunnel(cfg, provider_caps(cx, cfg)?)?;
     let mut requested = Decision::new(id);
-    requested.task_input = entry.begin();
+    requested.lifecycle_input = entry.begin();
     let requested = requested
         .box_input(BoxInput::Requested)
         .set(Fields {
@@ -165,10 +166,10 @@ pub(crate) fn provision(
             };
             full = true;
             (entry == Entry::Fresh).then(|| {
-                let queued = TaskInput::AtCapacity {
+                let queued = BoxLifecycleInput::AtCapacity {
                     max_boxes: lim.max.get(),
                 };
-                Decision::new(id).task_input(queued)
+                Decision::new(id).lifecycle(queued)
             })
         })?;
         if full {
@@ -316,9 +317,13 @@ fn run_and_record(
             line: format!("dotfiles: {tail}"),
         });
     }
-    done.task_input = advance.then(|| TaskInput::BoxReady {
-        setup: run.outcome(),
-    });
+    if advance {
+        done = done
+            .lifecycle(BoxLifecycleInput::Ready {
+                setup: run.outcome(),
+            })
+            .session(SessionInput::Started);
+    }
     if let Some(ms) = run.ms() {
         done = done.event(ExtraEvent::SetupFinished {
             ms,
@@ -360,8 +365,9 @@ fn failed(
     let cause = err.to_string();
     let attempted: BoxHandle = cx.driver().planned_handle(req);
     let mut lost = Decision::new(id);
-    lost.task_input = entry.begin().map(|_| TaskInput::AcquireFailed {
+    lost.lifecycle_input = entry.begin().map(|_| BoxLifecycleInput::SetupFailed {
         cause: cause.clone(),
+        which: None,
     });
     let lost = lost
         .box_input(BoxInput::AcquireFailed {

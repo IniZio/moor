@@ -3,8 +3,10 @@
 use std::cell::RefCell;
 use std::sync::Arc;
 
+use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::decision::{Decision, ExtraEvent, NewTask};
-use moor_core::domain::task::{SetupOutcome, TaskInput};
+use moor_core::domain::session_state::SessionInput;
+use moor_core::domain::task::SetupOutcome;
 use moor_core::request::{CloseReq, Request, StartReq, SteerReq};
 use moor_core::seam::clock::Ts;
 use moor_core::BoxName;
@@ -533,15 +535,15 @@ fn click_after_agent_resumed_reports_working() {
         .open_task_by_name(&BoxName::parse_allow_bare("slack-10-5").unwrap())
         .unwrap()
         .unwrap();
-    for input in [
-        TaskInput::Admitted,
-        TaskInput::BoxReady {
-            setup: SetupOutcome::Ok,
-        },
+    for d in [
+        Decision::new(row.id).lifecycle(BoxLifecycleInput::Admitted),
+        Decision::new(row.id)
+            .lifecycle(BoxLifecycleInput::Ready {
+                setup: SetupOutcome::Ok,
+            })
+            .session(SessionInput::Started),
     ] {
-        store
-            .apply(Decision::new(row.id).task_input(input))
-            .unwrap();
+        store.apply(d).unwrap();
     }
     let seen = RefCell::default();
     run_click(&store, &click("E1", "U1", 1), &seen);

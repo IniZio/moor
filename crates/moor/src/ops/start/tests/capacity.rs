@@ -4,9 +4,11 @@ use std::path::Path;
 use std::sync::Arc;
 
 use moor_core::config::{BoxConfig, DriverConfig, UserConfig};
+use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields};
-use moor_core::domain::task::{TaskInput, TaskState};
+use moor_core::domain::session_state::SessionInput;
+use moor_core::domain::task::TaskState;
 use moor_core::seam::proc::Tool;
 use moor_core::{BoxId, BoxName, ProviderId, StartReq};
 use serde_json::json;
@@ -260,7 +262,8 @@ fn start_again_after_the_holder_closes_promotes_the_waiting_task() {
     store
         .apply(
             Decision::new(holder)
-                .task_input(TaskInput::Close)
+                .lifecycle(BoxLifecycleInput::Close)
+                .session(SessionInput::End)
                 .box_input(BoxInput::Released),
         )
         .unwrap();

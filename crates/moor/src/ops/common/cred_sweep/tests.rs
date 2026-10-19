@@ -5,9 +5,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::box_key::CRED_SWEEP_SCRIPT;
+use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
-use moor_core::domain::task::{SetupOutcome, TaskInput};
+use moor_core::domain::session_state::SessionInput;
+use moor_core::domain::task::SetupOutcome;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
 use moor_core::{BoxName, ProviderId};
 
@@ -52,7 +54,7 @@ fn fixture(driver: FakeDriver, ready: bool) -> Fx {
         ..Fields::default()
     };
     let d = Decision::new(id)
-        .task_input(TaskInput::Admitted)
+        .lifecycle(BoxLifecycleInput::Admitted)
         .box_input(BoxInput::Requested)
         .set(fields);
     store.apply(d).unwrap();
@@ -67,9 +69,10 @@ fn fixture(driver: FakeDriver, ready: bool) -> Fx {
         })
         .unwrap();
     let d = Decision::new(id)
-        .task_input(TaskInput::BoxReady {
+        .lifecycle(BoxLifecycleInput::Ready {
             setup: SetupOutcome::Ok,
         })
+        .session(SessionInput::Started)
         .box_input(BoxInput::Acquired { handle: got.handle });
     store.apply(d).unwrap();
     if !ready {

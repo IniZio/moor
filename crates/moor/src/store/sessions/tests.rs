@@ -1,10 +1,11 @@
 //! Tests for opening and listing Sessions of a Box.
 #![allow(clippy::indexing_slicing, reason = "test assertions")]
 
+use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields};
-use moor_core::domain::session_state::SessionState;
-use moor_core::domain::task::{SetupOutcome, TaskInput};
+use moor_core::domain::session_state::{SessionInput, SessionState};
+use moor_core::domain::task::SetupOutcome;
 use moor_core::{BoxId, ProviderId};
 
 use crate::store::tests::{new_task, open};
@@ -142,20 +143,26 @@ fn closing_a_box_ends_every_session() {
     let (store, _clock) = open(dir.path());
     let id = new_task(&store, "acme/1");
     let admit = Decision::new(id)
-        .task_input(TaskInput::Admitted)
+        .lifecycle(BoxLifecycleInput::Admitted)
         .box_input(BoxInput::Requested)
         .set(Fields {
             box_provider: Field::Set(ProviderId::new("p")),
             ..Fields::default()
         });
     store.apply(admit).unwrap();
-    let up = TaskInput::BoxReady {
-        setup: SetupOutcome::Ok,
-    };
-    store.apply(Decision::new(id).task_input(up)).unwrap();
+    let up = Decision::new(id)
+        .lifecycle(BoxLifecycleInput::Ready {
+            setup: SetupOutcome::Ok,
+        })
+        .session(SessionInput::Started);
+    store.apply(up).unwrap();
     add_working_session(&store, id);
     store
-        .apply(Decision::new(id).task_input(TaskInput::Close))
+        .apply(
+            Decision::new(id)
+                .lifecycle(BoxLifecycleInput::Close)
+                .session(SessionInput::End),
+        )
         .unwrap();
     assert_eq!(session_states(&store, id), ["ended", "ended"]);
 }
@@ -166,27 +173,29 @@ fn rejecting_a_box_ends_every_session() {
     let (store, _clock) = open(dir.path());
     let id = new_task(&store, "acme/1");
     add_working_session(&store, id);
-    let reject = TaskInput::Rejected {
+    let reject = Decision::new(id).lifecycle(BoxLifecycleInput::Rejected {
         reason: "no".into(),
-    };
-    store.apply(Decision::new(id).task_input(reject)).unwrap();
+    });
+    store.apply(reject).unwrap();
     assert_eq!(session_states(&store, id), ["ended", "ended"]);
 }
 
 fn ready_box(store: &crate::store::Store) -> BoxId {
     let id = new_task(store, "acme/1");
     let admit = Decision::new(id)
-        .task_input(TaskInput::Admitted)
+        .lifecycle(BoxLifecycleInput::Admitted)
         .box_input(BoxInput::Requested)
         .set(Fields {
             box_provider: Field::Set(ProviderId::new("p")),
             ..Fields::default()
         });
     store.apply(admit).unwrap();
-    let up = TaskInput::BoxReady {
-        setup: SetupOutcome::Ok,
-    };
-    store.apply(Decision::new(id).task_input(up)).unwrap();
+    let up = Decision::new(id)
+        .lifecycle(BoxLifecycleInput::Ready {
+            setup: SetupOutcome::Ok,
+        })
+        .session(SessionInput::Started);
+    store.apply(up).unwrap();
     id
 }
 

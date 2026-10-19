@@ -7,10 +7,12 @@
 use std::path::{Path, PathBuf};
 
 use moor_core::config::Flags;
+use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, NewTask};
 use moor_core::domain::event::CheckedCred;
-use moor_core::domain::task::{TaskInput, TaskState};
+use moor_core::domain::session_state::SessionInput;
+use moor_core::domain::task::TaskState;
 use moor_core::seam::surface::{workspace_label, Worktree};
 use moor_core::view::StartView;
 use moor_core::{BoxId, ErrorKind, SessionId, StartReq, Warning};
@@ -149,10 +151,10 @@ fn reject(
                 .parent_session(req.parent.map(SessionId::get)),
         )?
         .task;
-    let rejected = TaskInput::Rejected {
+    let rejected = BoxLifecycleInput::Rejected {
         reason: reason.to_owned(),
     };
-    store.apply(Decision::new(id).task_input(rejected))?;
+    store.apply(Decision::new(id).lifecycle(rejected))?;
     let row = reread(store, id)?;
     let shown = serde_json::to_value(view(cx, &row, false))
         .map_err(|e| CommandError::new(ErrorKind::Internal, e))?;
@@ -233,7 +235,7 @@ fn wake_idle(store: &Store, id: BoxId) -> Result<(), CommandError> {
     if row.state != TaskState::Idle {
         return Ok(());
     }
-    match store.apply(Decision::new(id).task_input(TaskInput::AgentBusy)) {
+    match store.apply(Decision::new(id).session(SessionInput::AgentBusy)) {
         Ok(_) | Err(StoreError::Illegal(_)) => Ok(()),
         Err(e) => Err(e.into()),
     }

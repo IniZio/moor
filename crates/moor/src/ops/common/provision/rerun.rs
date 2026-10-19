@@ -3,10 +3,12 @@
 
 use moor_core::config::Flags;
 use moor_core::decide::intent::setup_dead;
+use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, IntentChange};
 use moor_core::domain::run::SyncMode;
-use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
+use moor_core::domain::session_state::SessionInput;
+use moor_core::domain::task::{SetupOutcome, TaskState};
 use moor_core::Warning;
 use std::path::Path;
 
@@ -155,9 +157,11 @@ fn record_interrupted(cx: &Cx, store: &Store, row: &TaskRow) -> Result<(), Comma
     let line = "setup was interrupted".to_owned();
     let mut done = Decision::new(row.id);
     if row.state == TaskState::SettingUp {
-        done.task_input = Some(TaskInput::BoxReady {
-            setup: SetupOutcome::Failed { line },
-        });
+        done = done
+            .lifecycle(BoxLifecycleInput::Ready {
+                setup: SetupOutcome::Failed { line },
+            })
+            .session(SessionInput::Started);
     } else {
         done = done.event(ExtraEvent::SetupFailed { line });
     }

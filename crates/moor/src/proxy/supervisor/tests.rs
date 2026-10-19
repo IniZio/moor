@@ -8,7 +8,8 @@ use std::time::{Duration, Instant};
 
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
-use moor_core::domain::task::{SetupOutcome, TaskInput};
+use moor_core::domain::task::SetupOutcome;
+use moor_core::domain::{box_state::BoxLifecycleInput, session_state::SessionInput};
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::seam::driver::{AcquireReq, Driver};
 use moor_core::seam::forge::ForgeRepo;
@@ -150,7 +151,8 @@ impl World {
     /// Mark the task closed and its box released.
     pub(super) fn close_task(&self) {
         let d = Decision::new(self.id)
-            .task_input(TaskInput::Close)
+            .lifecycle(BoxLifecycleInput::Close)
+            .session(SessionInput::End)
             .box_input(BoxInput::Released);
         self.store.apply(d).unwrap();
     }
@@ -185,10 +187,9 @@ fn working_task(store: &Store, driver: &FakeDriver) -> BoxId {
         repo: "r".into(),
     };
     let id = store.apply(Decision::insert(nt)).unwrap().task;
-    let provider = ProviderId::new("p");
     let got = driver
         .acquire(&AcquireReq {
-            provider: provider.clone(),
+            provider: ProviderId::new("p"),
             task: id,
             name: BoxName::parse_allow_bare("demo").unwrap(),
             class: None,
@@ -197,17 +198,18 @@ fn working_task(store: &Store, driver: &FakeDriver) -> BoxId {
         })
         .unwrap();
     let d = Decision::new(id)
-        .task_input(TaskInput::Admitted)
+        .lifecycle(BoxLifecycleInput::Admitted)
         .box_input(BoxInput::Requested)
         .set(Fields {
-            box_provider: Field::Set(provider),
+            box_provider: Field::Set(ProviderId::new("p")),
             ..Fields::default()
         });
     store.apply(d).unwrap();
     let d = Decision::new(id)
-        .task_input(TaskInput::BoxReady {
+        .lifecycle(BoxLifecycleInput::Ready {
             setup: SetupOutcome::Ok,
         })
+        .session(SessionInput::Started)
         .box_input(BoxInput::Acquired { handle: got.handle })
         .set(Fields {
             worktree: Field::Set(WORKTREE.into()),

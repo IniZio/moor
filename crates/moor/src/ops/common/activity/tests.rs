@@ -7,9 +7,11 @@ use moor_core::activity::{
     AgentState, HookKind, HookRead, HookRecord, PaneObs, PaneRead, PaneStatus, Probes, Source,
     STARTUP_GRACE,
 };
+use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
-use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
+use moor_core::domain::session_state::SessionInput;
+use moor_core::domain::task::{SetupOutcome, TaskState};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::DriverError;
 use moor_core::seam::engine::EngineError;
@@ -49,7 +51,7 @@ fn task(cx: &Cx, session: bool) -> BoxId {
     };
     let id = store.apply(Decision::insert(nt)).unwrap().task;
     let d = Decision::new(id)
-        .task_input(TaskInput::Admitted)
+        .lifecycle(BoxLifecycleInput::Admitted)
         .box_input(BoxInput::Requested)
         .set(Fields {
             box_provider: Field::Set(ProviderId::new("p")),
@@ -57,9 +59,10 @@ fn task(cx: &Cx, session: bool) -> BoxId {
         });
     store.apply(d).unwrap();
     let d = Decision::new(id)
-        .task_input(TaskInput::BoxReady {
+        .lifecycle(BoxLifecycleInput::Ready {
             setup: SetupOutcome::Ok,
         })
+        .session(SessionInput::Started)
         .box_input(BoxInput::Acquired {
             handle: BoxHandle::new("h"),
         })
@@ -209,7 +212,7 @@ fn run_in_flight_with_an_unreachable_box_is_busy_and_not_quiet() {
     };
     let id = store.apply(Decision::insert(nt)).unwrap().task;
     let d = Decision::new(id)
-        .task_input(TaskInput::Admitted)
+        .lifecycle(BoxLifecycleInput::Admitted)
         .box_input(BoxInput::Requested)
         .set(Fields {
             box_provider: Field::Set(ProviderId::new("p")),
@@ -366,7 +369,7 @@ fn reading(busy: bool, may_quiet: bool) -> Reading {
 }
 
 fn quiet(cx: &Cx, id: BoxId) {
-    let d = Decision::new(id).task_input(TaskInput::AgentQuiet);
+    let d = Decision::new(id).session(SessionInput::AgentQuiet);
     cx.store().unwrap().apply(d).unwrap();
 }
 
@@ -487,7 +490,7 @@ fn settle_swallows_a_lost_race_and_keeps_the_new_state() {
     assert_eq!(row(&cx, id).state, TaskState::Idle);
 
     let stale = row(&cx, id);
-    let d = Decision::new(id).task_input(TaskInput::AgentBusy);
+    let d = Decision::new(id).session(SessionInput::AgentBusy);
     cx.store().unwrap().apply(d).unwrap();
     settle(&cx, cx.store().unwrap(), &stale, &reading(true, false)).unwrap();
     assert_eq!(row(&cx, id).state, TaskState::Working);

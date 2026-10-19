@@ -4,9 +4,11 @@
 
 use std::collections::HashMap;
 
+use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields};
-use moor_core::domain::task::{TaskInput, TaskState};
+use moor_core::domain::session_state::SessionInput;
+use moor_core::domain::task::TaskState;
 use moor_core::view::sleep::SleepValue;
 use moor_core::{ErrorKind, TaskReq};
 
@@ -104,7 +106,9 @@ fn wake(cx: &Cx, store: &Store, row: &TaskRow) -> Result<Woke, CommandError> {
     }
     let mut d = Decision::new(row.id);
     if task_asleep {
-        d = d.task_input(TaskInput::Wake);
+        d = d
+            .lifecycle(BoxLifecycleInput::Wake)
+            .session(SessionInput::AgentBusy);
     }
     if box_asleep {
         d = d.box_input(BoxInput::Wake);

@@ -1,8 +1,9 @@
 //! Tests for parking and reopening the tunnel, run against fakes.
 
+use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::Decision;
-use moor_core::domain::task::TaskInput;
+use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::clock::Clock;
 
 use super::super::tests::{World, FIRST_TUNNEL_PID};
@@ -117,10 +118,10 @@ fn failed_reopen_acks_the_error_and_keeps_the_proxy_running() {
 
 /// Puts the Task and its Box to sleep, as the sleep command does.
 fn sleep_box(w: &World) {
-    let quiet = Decision::new(w.id).task_input(TaskInput::AgentQuiet);
+    let quiet = Decision::new(w.id).session(SessionInput::AgentQuiet);
     w.store.apply(quiet).unwrap();
     let d = Decision::new(w.id)
-        .task_input(TaskInput::SleepCmd)
+        .lifecycle(BoxLifecycleInput::Sleep { auto: false })
         .box_input(BoxInput::Sleep);
     w.store.apply(d).unwrap();
 }

@@ -6,7 +6,8 @@ use moor_core::activity::{
     STARTUP_GRACE,
 };
 use moor_core::domain::decision::{Decision, Field, Fields};
-use moor_core::domain::task::{TaskInput, TaskState};
+use moor_core::domain::session_state::SessionInput;
+use moor_core::domain::task::TaskState;
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, BoxName, ShowReq};
 
@@ -49,7 +50,7 @@ fn started(idle: bool, probes: impl FnOnce(&World) -> Probes) -> (World, BoxId) 
     store.begin_session(id, SESSION, None).unwrap();
     if idle {
         store
-            .apply(Decision::new(id).task_input(TaskInput::AgentQuiet))
+            .apply(Decision::new(id).session(SessionInput::AgentQuiet))
             .unwrap();
     }
     let engine = Arc::new(FakeEngine::new().probes(SESSION, probes(&w)));

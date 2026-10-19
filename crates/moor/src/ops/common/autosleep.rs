@@ -7,9 +7,9 @@ use std::path::Path;
 use std::time::Duration;
 
 use moor_core::decide::sleep::{sleep_due, SleepFacts, SleepVerdict};
+use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
-use moor_core::domain::task::TaskInput;
 use moor_core::name::{BoxHandle, BoxId};
 use moor_core::seam::driver::SleepOutcome;
 use moor_core::seam::surface::{PaneRef, SurfaceError};
@@ -69,7 +69,7 @@ fn try_sleep(cx: &Cx, store: &Store, id: BoxId) -> Result<(), CommandError> {
     let handle = sleep_handle(cx, &row)?;
     let decision = match sleep_parked(cx, store, id, &handle, task_dir(&row))? {
         SleepOutcome::Slept | SleepOutcome::Native => Decision::new(id)
-            .task_input(TaskInput::SleepDue)
+            .lifecycle(BoxLifecycleInput::Sleep { auto: true })
             .box_input(BoxInput::Sleep)
             .set(Fields {
                 box_sleep_reason: Field::Clear,

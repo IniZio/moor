@@ -1,7 +1,8 @@
 //! Tests for the writer: name collisions on insert.
 
+use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
-use moor_core::domain::task::TaskInput;
+use moor_core::domain::session_state::SessionInput;
 use moor_core::BoxName;
 
 use crate::store::tests::open;
@@ -30,7 +31,11 @@ fn closed_name_can_be_reused() {
     let (store, _clock) = open(dir.path());
     let id = store.apply(insert("dup")).unwrap().task;
     store
-        .apply(Decision::new(id).task_input(TaskInput::Close))
+        .apply(
+            Decision::new(id)
+                .lifecycle(BoxLifecycleInput::Close)
+                .session(SessionInput::End),
+        )
         .unwrap();
     store.apply(insert("dup")).unwrap();
 }
@@ -58,17 +63,22 @@ fn states(store: &crate::store::Store, id: moor_core::BoxId) -> (String, String)
 fn ready(store: &crate::store::Store) -> moor_core::BoxId {
     let id = store.apply(insert("b")).unwrap().task;
     let admit = Decision::new(id)
-        .task_input(TaskInput::Admitted)
+        .lifecycle(BoxLifecycleInput::Admitted)
         .box_input(moor_core::domain::boxes::BoxInput::Requested)
         .set(Fields {
             box_provider: Field::Set(moor_core::ProviderId::new("p")),
             ..Fields::default()
         });
     store.apply(admit).unwrap();
-    let up = TaskInput::BoxReady {
-        setup: moor_core::domain::task::SetupOutcome::Ok,
-    };
-    store.apply(Decision::new(id).task_input(up)).unwrap();
+    store
+        .apply(
+            Decision::new(id)
+                .lifecycle(BoxLifecycleInput::Ready {
+                    setup: moor_core::domain::task::SetupOutcome::Ok,
+                })
+                .session(SessionInput::Started),
+        )
+        .unwrap();
     id
 }
 
@@ -122,11 +132,11 @@ fn box_steps_between_working_and_idle() {
     let id = ready(&store);
     assert_eq!(states(&store, id), ("ready".into(), "working".into()));
     store
-        .apply(Decision::new(id).task_input(TaskInput::AgentQuiet))
+        .apply(Decision::new(id).session(SessionInput::AgentQuiet))
         .unwrap();
     assert_eq!(states(&store, id), ("ready".into(), "idle".into()));
     store
-        .apply(Decision::new(id).task_input(TaskInput::AgentBusy))
+        .apply(Decision::new(id).session(SessionInput::AgentBusy))
         .unwrap();
     assert_eq!(states(&store, id), ("ready".into(), "working".into()));
 }
@@ -145,7 +155,7 @@ fn sleep_is_refused_while_another_session_works() {
         )
         .unwrap();
     let err = store
-        .apply(Decision::new(id).task_input(TaskInput::SleepDue))
+        .apply(Decision::new(id).lifecycle(BoxLifecycleInput::Sleep { auto: true }))
         .unwrap_err();
     assert!(
         matches!(err, StoreError::SleepBlocked { busy: 1 }),
@@ -155,7 +165,7 @@ fn sleep_is_refused_while_another_session_works() {
 }
 
 #[test]
-fn task_input_updates_only_the_current_session() {
+fn step_updates_only_the_current_session() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
     let id = ready(&store);
@@ -170,7 +180,7 @@ fn task_input_updates_only_the_current_session() {
     store.open_session(id).unwrap();
     set_current_state(&store, id, "working");
     store
-        .apply(Decision::new(id).task_input(TaskInput::AgentQuiet))
+        .apply(Decision::new(id).session(SessionInput::AgentQuiet))
         .unwrap();
     let states: Vec<String> = store
         .box_sessions(id)
@@ -220,10 +230,10 @@ fn ended_other_sessions_do_not_block_sleep() {
     store.open_session(id).unwrap();
     set_current_state(&store, id, "working");
     store
-        .apply(Decision::new(id).task_input(TaskInput::AgentQuiet))
+        .apply(Decision::new(id).session(SessionInput::AgentQuiet))
         .unwrap();
     store
-        .apply(Decision::new(id).task_input(TaskInput::SleepDue))
+        .apply(Decision::new(id).lifecycle(BoxLifecycleInput::Sleep { auto: true }))
         .unwrap();
     assert_eq!(states(&store, id).0, "asleep");
 }
@@ -288,7 +298,11 @@ fn closing_a_ready_box_records_the_box_state_as_from() {
     let (store, _clock) = open(dir.path());
     let id = ready(&store);
     store
-        .apply(Decision::new(id).task_input(TaskInput::Close))
+        .apply(
+            Decision::new(id)
+                .lifecycle(BoxLifecycleInput::Close)
+                .session(SessionInput::End),
+        )
         .unwrap();
     let trail = event_trail(&store, id);
     let closed = trail.iter().find(|(k, _)| k == "closed");
@@ -308,7 +322,11 @@ fn separate_close_inputs_match_the_combined_close() {
     let (combined, _clock) = open(combined_dir.path());
     let a = ready(&combined);
     combined
-        .apply(Decision::new(a).task_input(TaskInput::Close))
+        .apply(
+            Decision::new(a)
+                .lifecycle(BoxLifecycleInput::Close)
+                .session(SessionInput::End),
+        )
         .unwrap();
 
     let split_dir = tempfile::tempdir().unwrap();
@@ -331,7 +349,7 @@ fn setting_up_after_admission_records_checking_as_from() {
     let (store, _clock) = open(dir.path());
     let id = store.apply(insert("b")).unwrap().task;
     let admit = Decision::new(id)
-        .task_input(TaskInput::Admitted)
+        .lifecycle(BoxLifecycleInput::Admitted)
         .box_input(moor_core::domain::boxes::BoxInput::Requested)
         .set(Fields {
             box_provider: Field::Set(moor_core::ProviderId::new("p")),

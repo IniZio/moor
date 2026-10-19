@@ -4,9 +4,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use moor_core::activity::{HookKind, HookRead, HookRecord, PaneRead, Probes};
+use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
-use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
+use moor_core::domain::session_state::SessionInput;
+use moor_core::domain::task::{SetupOutcome, TaskState};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver};
 use moor_core::seam::engine::{EngineError, Steer, SteerOutcome};
@@ -87,7 +89,7 @@ fn ready_task(cx: &Cx, driver: &FakeDriver) -> BoxId {
         ..Fields::default()
     };
     let d = Decision::new(id)
-        .task_input(TaskInput::Admitted)
+        .lifecycle(BoxLifecycleInput::Admitted)
         .box_input(BoxInput::Requested)
         .set(fields);
     store.apply(d).unwrap();
@@ -102,9 +104,10 @@ fn ready_task(cx: &Cx, driver: &FakeDriver) -> BoxId {
         })
         .unwrap();
     let d = Decision::new(id)
-        .task_input(TaskInput::BoxReady {
+        .lifecycle(BoxLifecycleInput::Ready {
             setup: SetupOutcome::Ok,
         })
+        .session(SessionInput::Started)
         .box_input(BoxInput::Acquired {
             handle: got.handle.clone(),
         })
@@ -266,10 +269,10 @@ fn an_unchecked_submit_warns() {
 fn an_asleep_task_wakes_before_the_send() {
     let f = fx();
     let store = f.cx.store().unwrap();
-    let quiet = Decision::new(f.id).task_input(TaskInput::AgentQuiet);
+    let quiet = Decision::new(f.id).session(SessionInput::AgentQuiet);
     store.apply(quiet).unwrap();
     let d = Decision::new(f.id)
-        .task_input(TaskInput::SleepCmd)
+        .lifecycle(BoxLifecycleInput::Sleep { auto: false })
         .box_input(BoxInput::Sleep);
     store.apply(d).unwrap();
     run(&f.cx, &text("hi")).unwrap();
@@ -418,10 +421,10 @@ fn hold_lock(f: &Fx) -> BoxLock {
 
 fn put_to_sleep(f: &Fx) {
     let store = f.cx.store().unwrap();
-    let quiet = Decision::new(f.id).task_input(TaskInput::AgentQuiet);
+    let quiet = Decision::new(f.id).session(SessionInput::AgentQuiet);
     store.apply(quiet).unwrap();
     let d = Decision::new(f.id)
-        .task_input(TaskInput::SleepCmd)
+        .lifecycle(BoxLifecycleInput::Sleep { auto: false })
         .box_input(BoxInput::Sleep);
     store.apply(d).unwrap();
 }

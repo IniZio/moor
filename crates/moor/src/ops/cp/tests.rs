@@ -4,9 +4,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
-use moor_core::domain::task::{SetupOutcome, TaskInput};
+use moor_core::domain::session_state::SessionInput;
+use moor_core::domain::task::SetupOutcome;
 use moor_core::name::BoxPath;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
 use moor_core::{BoxHandle, BoxId, BoxName, CpReq, ErrorKind, ProviderId};
@@ -56,11 +58,11 @@ fn fx_with(driver: FakeDriver, ready: bool) -> Fx {
             ..Fields::default()
         };
         Decision::new(id)
-            .task_input(TaskInput::Admitted)
+            .lifecycle(BoxLifecycleInput::Admitted)
             .box_input(BoxInput::Requested)
             .set(fields)
     } else {
-        Decision::new(id).task_input(TaskInput::AtCapacity { max_boxes: 1 })
+        Decision::new(id).lifecycle(BoxLifecycleInput::AtCapacity { max_boxes: 1 })
     };
     store.apply(d).unwrap();
     if ready {
@@ -75,9 +77,10 @@ fn fx_with(driver: FakeDriver, ready: bool) -> Fx {
             })
             .unwrap();
         let d = Decision::new(id)
-            .task_input(TaskInput::BoxReady {
+            .lifecycle(BoxLifecycleInput::Ready {
                 setup: SetupOutcome::Ok,
             })
+            .session(SessionInput::Started)
             .box_input(BoxInput::Acquired { handle: got.handle });
         store.apply(d).unwrap();
     }
@@ -271,7 +274,11 @@ fn closed_task_with_a_release_failed_box_is_refused_without_a_copy() {
     let d = Decision::new(f.id).box_input(BoxInput::ReleaseErr { cause: "x".into() });
     store.apply(d).unwrap();
     store
-        .apply(Decision::new(f.id).task_input(TaskInput::Close))
+        .apply(
+            Decision::new(f.id)
+                .lifecycle(BoxLifecycleInput::Close)
+                .session(SessionInput::End),
+        )
         .unwrap();
     let err = run(&f.cx, &req("a", "a")).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Failed);
@@ -293,12 +300,12 @@ fn box_that_is_not_ready_is_refused_without_a_copy() {
 fn sleep(f: &Fx) {
     let store = f.cx.store().unwrap();
     store
-        .apply(Decision::new(f.id).task_input(TaskInput::AgentQuiet))
+        .apply(Decision::new(f.id).session(SessionInput::AgentQuiet))
         .unwrap();
     store
         .apply(
             Decision::new(f.id)
-                .task_input(TaskInput::SleepCmd)
+                .lifecycle(BoxLifecycleInput::Sleep { auto: false })
                 .box_input(BoxInput::Sleep),
         )
         .unwrap();

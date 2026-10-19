@@ -4,9 +4,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
-use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
+use moor_core::domain::session_state::SessionInput;
+use moor_core::domain::task::{SetupOutcome, TaskState};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, SleepKind, SleepOutcome};
 use moor_core::seam::surface::SurfaceError;
 use moor_core::secret::Secret;
@@ -60,7 +62,7 @@ fn fx_with(driver: FakeDriver) -> Fx {
         ..Fields::default()
     };
     let d = Decision::new(id)
-        .task_input(TaskInput::Admitted)
+        .lifecycle(BoxLifecycleInput::Admitted)
         .box_input(BoxInput::Requested)
         .set(fields);
     store.apply(d).unwrap();
@@ -75,9 +77,10 @@ fn fx_with(driver: FakeDriver) -> Fx {
         })
         .unwrap();
     let d = Decision::new(id)
-        .task_input(TaskInput::BoxReady {
+        .lifecycle(BoxLifecycleInput::Ready {
             setup: SetupOutcome::Ok,
         })
+        .session(SessionInput::Started)
         .box_input(BoxInput::Acquired { handle: got.handle });
     store.apply(d).unwrap();
     Fx {
@@ -100,7 +103,7 @@ fn idle() -> Fx {
 
 fn idle_with(driver: FakeDriver) -> Fx {
     let f = fx_with(driver);
-    let d = Decision::new(f.id).task_input(TaskInput::AgentQuiet);
+    let d = Decision::new(f.id).session(SessionInput::AgentQuiet);
     f.cx.store().unwrap().apply(d).unwrap();
     f
 }
@@ -336,7 +339,7 @@ fn starting() -> Fx {
         .unwrap()
         .task;
     let d = Decision::new(id)
-        .task_input(TaskInput::Admitted)
+        .lifecycle(BoxLifecycleInput::Admitted)
         .box_input(BoxInput::Requested)
         .set(Fields {
             box_provider: Field::Set(ProviderId::new("p")),
@@ -384,9 +387,10 @@ fn refuses_a_task_that_is_still_setting_up() {
 fn refuses_a_working_task_whose_box_is_starting() {
     let f = starting();
     let d = Decision::new(f.id)
-        .task_input(TaskInput::BoxReady {
+        .lifecycle(BoxLifecycleInput::Ready {
             setup: SetupOutcome::Ok,
         })
+        .session(SessionInput::Started)
         .set(with_handle());
     f.cx.store().unwrap().apply(d).unwrap();
     assert_eq!(states(&f), (TaskState::Working, BoxState::Starting));
@@ -397,9 +401,10 @@ fn refuses_a_working_task_whose_box_is_starting() {
 fn refuses_a_working_task_whose_box_failed() {
     let f = starting();
     let d = Decision::new(f.id)
-        .task_input(TaskInput::BoxReady {
+        .lifecycle(BoxLifecycleInput::Ready {
             setup: SetupOutcome::Ok,
         })
+        .session(SessionInput::Started)
         .box_input(BoxInput::AcquireFailed {
             cause: "no capacity".to_owned(),
             attempted: None,

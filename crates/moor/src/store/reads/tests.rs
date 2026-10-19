@@ -2,9 +2,11 @@
 
 use std::sync::Arc;
 
+use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
-use moor_core::domain::task::{TaskInput, TaskState};
+use moor_core::domain::session_state::SessionInput;
+use moor_core::domain::task::TaskState;
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxHandle, BoxId, BoxName, ProviderId};
 
@@ -30,7 +32,11 @@ fn add(store: &Store, name: &str) -> BoxId {
 /// Close a task.
 fn close(store: &Store, id: BoxId) {
     store
-        .apply(Decision::new(id).task_input(TaskInput::Close))
+        .apply(
+            Decision::new(id)
+                .lifecycle(BoxLifecycleInput::Close)
+                .session(SessionInput::End),
+        )
         .unwrap();
 }
 
@@ -70,7 +76,7 @@ fn box_rows_live_skips_deleted_boxes() {
     let _none = add(&store, "none");
     for id in [live, gone] {
         let d = Decision::new(id)
-            .task_input(TaskInput::Admitted)
+            .lifecycle(BoxLifecycleInput::Admitted)
             .box_input(BoxInput::Requested)
             .set(fields.clone());
         store.apply(d).unwrap();
@@ -92,7 +98,7 @@ fn request(store: &Store, id: BoxId, provider: &str) {
         ..Fields::default()
     };
     let d = Decision::new(id)
-        .task_input(TaskInput::Admitted)
+        .lifecycle(BoxLifecycleInput::Admitted)
         .box_input(BoxInput::Requested)
         .set(fields);
     store.apply(d).unwrap();
@@ -124,8 +130,8 @@ fn waiting_tasks_returns_waiting_for_box_in_id_order() {
         .execute_batch("CREATE INDEX boxes_state_name ON boxes(state, name)")
         .unwrap();
     for id in [d, b, a] {
-        let input = TaskInput::AtCapacity { max_boxes: 1 };
-        store.apply(Decision::new(id).task_input(input)).unwrap();
+        let input = BoxLifecycleInput::AtCapacity { max_boxes: 1 };
+        store.apply(Decision::new(id).lifecycle(input)).unwrap();
     }
     let waiting = store.waiting_tasks().unwrap();
     assert_eq!(waiting.iter().map(|t| t.id).collect::<Vec<_>>(), [d, b, a]);
