@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::activity::{HookRead, PaneObs, PaneRead, PaneStatus, Probes};
+use moor_core::domain::task::TaskState;
 use moor_core::seam::engine::EngineError;
 use moor_core::BoxId;
 
@@ -59,8 +60,6 @@ fn the_first_exited_settle_saves_the_transcript_once() {
     assert_eq!(exit_saves(&cx, id), 0);
     settle(&cx, cx.store().unwrap(), &row(&cx, id), &reading).unwrap();
     assert_eq!(exit_saves(&cx, id), 1);
-    let session = cx.store().unwrap().live_session(id).unwrap().unwrap();
-    assert!(session.transcript_digest.is_some());
     settle(&cx, cx.store().unwrap(), &row(&cx, id), &run_once(&cx, id)).unwrap();
     assert_eq!(exit_saves(&cx, id), 1);
     assert_eq!(engine.transcripts().len(), 1);
@@ -147,8 +146,6 @@ fn a_failed_exit_save_of_one_session_does_not_block_the_next() {
     let store = cx.store().unwrap();
     let r = run_once(&cx, id);
     settle(&cx, store, &row(&cx, id), &r).unwrap();
-    let first = store.live_session(id).unwrap().unwrap();
-    store.end_session(first.id, None, None).unwrap();
     let second = store.begin_session(id, "sess-2", None).unwrap();
     store.set_registered_session(second, "agent-2").unwrap();
     let r = run_once(&cx, id);
@@ -175,4 +172,27 @@ fn an_exit_save_with_nothing_to_archive_is_recorded_once() {
         .collect();
     assert_eq!(kinds, ["transcript_skipped"]);
     assert_eq!(engine.transcripts().len(), 1);
+}
+
+#[test]
+fn an_exited_agent_ends_its_session_after_the_save_and_the_task_reads_idle() {
+    let (_dir, _engine, cx, id) = exited_fx(FakeEngine::new().transcript_text("abc"));
+    let store = cx.store().unwrap();
+    for _ in 0..2 {
+        let r = run_once(&cx, id);
+        settle(&cx, store, &row(&cx, id), &r).unwrap();
+    }
+    let kinds: Vec<_> = store
+        .events(id, 100)
+        .unwrap()
+        .into_iter()
+        .filter(|e| e.kind == "transcript_saved" || e.kind == "session_ended")
+        .collect();
+    let names: Vec<_> = kinds.iter().map(|e| e.kind.as_str()).collect();
+    assert_eq!(names, ["transcript_saved", "session_ended"]);
+    let ended = &kinds.last().unwrap().payload;
+    assert_eq!(ended["cause"], "exited");
+    assert_eq!(ended["exit"], 1);
+    assert!(store.live_session(id).unwrap().is_none());
+    assert_eq!(store.task(id).unwrap().unwrap().state, TaskState::Idle);
 }
