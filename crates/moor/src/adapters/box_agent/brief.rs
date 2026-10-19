@@ -65,7 +65,14 @@ pub(super) fn render(b: &BriefInput) -> String {
          a Markdown file at `.moor/reports/<kind>.md` in your working directory; do not \
          commit it. Writing again with the same kind adds a new version. Name that path in \
          your final message. A Report never means the Task is finished; keep working \
-         until the goal is met, and do not stop after reporting.\n",
+         until the goal is met, and do not stop after reporting.\n\n",
+    );
+    out.push_str(
+        "To show a human a file (a screenshot, a recording, a log), copy it into \
+         `.moor/artifacts/` in your working directory, using a plain file name with its \
+         extension. Do not commit it. Writing a file again with the same name adds a new \
+         version. It is collected when you finish your turn. Name the files you published \
+         in your final message.\n",
     );
     out
 }
@@ -119,6 +126,16 @@ mod tests {
         assert!(out.contains("may be shallow"));
         assert!(out.contains("git fetch --deepen=50 moor"));
         assert!(out.contains("git fetch --unshallow moor"));
+    }
+
+    #[test]
+    fn says_how_to_publish_artifacts() {
+        let out = render(&input(Some("g"), None));
+        assert!(out.contains(".moor/artifacts/"));
+        assert!(out.contains("Do not commit it"));
+        assert!(out.contains("adds a new version"));
+        assert!(out.contains("when you finish your turn"));
+        assert!(out.contains("Name the files you published in your final message"));
     }
 
     #[test]
