@@ -79,12 +79,13 @@ pub(crate) fn run(cx: &Cx, req: &SteerReq) -> Result<SteerValue, CommandError> {
     else {
         return exited(cx, store, (id, name), &session, sent);
     };
-    record(store, id, &session, &sent, outcome.submit_retried)?;
+    let steer_id = record(store, id, &session, &sent, outcome.submit_retried)?;
     let answered_menu = answered(cx, store, &row, &steer, outcome)?;
     Ok(SteerValue {
         task: name.to_owned(),
         sent,
         answered_menu,
+        steer: steer_id,
     })
 }
 
@@ -96,7 +97,7 @@ fn exited(
     session: &SessionRow,
     sent: String,
 ) -> Result<SteerValue, CommandError> {
-    record(store, id, session, &sent, false)?;
+    let steer = record(store, id, session, &sent, false)?;
     cx.warn(Warning {
         code: "agent_exited".to_owned(),
         message: "the agent exited and its session ended".to_owned(),
@@ -105,6 +106,7 @@ fn exited(
         task: name.to_owned(),
         sent,
         answered_menu: false,
+        steer,
     })
 }
 
@@ -247,14 +249,14 @@ fn choice(n: u32) -> Result<u8, CommandError> {
         .ok_or_else(|| CommandError::new(ErrorKind::Usage, format!("no menu choice {n}")))
 }
 
-/// Append the `steered` event.
+/// Append the `steered` event; its id.
 fn record(
     store: &Store,
     id: BoxId,
     session: &SessionRow,
     message: &str,
     submit_retried: bool,
-) -> Result<(), CommandError> {
+) -> Result<i64, CommandError> {
     let who = if session.session_ref.is_empty() {
         session.pane.as_deref().unwrap_or_default()
     } else {
@@ -265,8 +267,12 @@ fn record(
         message: message.to_owned(),
         submit_retried,
     };
-    store.apply(Decision::new(id).event(event))?;
-    Ok(())
+    let applied = store.apply(Decision::new(id).event(event))?;
+    applied
+        .events
+        .first()
+        .copied()
+        .ok_or_else(|| CommandError::new(ErrorKind::Failed, "the steered event was not recorded"))
 }
 
 #[cfg(test)]
