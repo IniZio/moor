@@ -237,12 +237,12 @@ fn collection_runs_before_teardown_and_release() {
     let execs = exec_at(&f);
     assert_eq!(
         execs.len(),
-        5,
-        "probe, recheck, collection, credential dir, teardown: {calls:?}"
+        6,
+        "probe, recheck, collection, artifacts, credential dir, teardown: {calls:?}"
     );
-    let (collect, teardown) = (execs.get(2).unwrap(), execs.get(4).unwrap());
+    let (collect, teardown) = (execs.get(2).unwrap(), execs.get(5).unwrap());
     let specs = f.driver.execs();
-    let (c, t) = (&specs.get(2).unwrap().1, &specs.get(4).unwrap().1);
+    let (c, t) = (&specs.get(2).unwrap().1, &specs.get(5).unwrap().1);
     assert_eq!(c.sync, SyncMode::None);
     assert!(c.argv.iter().any(|a| a.contains("reports.index")));
     assert_eq!(t.sync, SyncMode::Full);
@@ -359,7 +359,7 @@ fn recheck_probe_and_report_index_share_one_batch() {
     let after_acquire: Vec<&str> = calls.iter().skip(1).map(String::as_str).collect();
     assert_eq!(
         after_acquire,
-        ["batch", "batch", "peek_file", "release"],
+        ["batch", "batch", "peek_file", "exec", "release"],
         "{calls:?}"
     );
 }

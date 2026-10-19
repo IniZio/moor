@@ -230,7 +230,7 @@ impl Driver for FakeDriver {
         if !s.live.iter().any(|h| h == handle.as_str()) {
             return Err(DriverError::NotFound);
         }
-        if let (Some(Output::Log(path)), Some(text)) = (&spec.output, s.exec_stdout.pop_front()) {
+        if let (Some(Output::Log(path)), Some(text)) = (&spec.output, s.log_text(spec)) {
             write_bytes(path, text.as_bytes())?;
         }
         let out = s

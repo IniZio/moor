@@ -18,6 +18,7 @@ use moor_core::Warning;
 
 use crate::cx::Cx;
 use crate::error::CommandError;
+use crate::ops::common::artifacts;
 use crate::ops::common::boxlock::BoxLock;
 use crate::ops::common::provision::recorded_workdir;
 use crate::ops::common::resume;
@@ -227,7 +228,8 @@ fn note_agent_session(
 ///
 /// The agent session id of the live session is registered with the multiplexer when it is not yet.
 ///
-/// A Task whose Box an op holds, or that has an intent set, is not moved.
+/// A Task whose Box an op holds, or that has an intent set, is not moved. A Task that goes
+/// Idle has its Box's artifacts collected before the Box lock is dropped.
 ///
 /// A Working Task goes Idle only when the reading `may_quiet` and is not busy; an Idle Task
 /// goes back to Working when the reading is busy. Nothing else decides quiet: a gone pane, an
@@ -255,19 +257,21 @@ pub(crate) fn settle(
         _ => return Ok(()),
     };
     // An op that owns the Box decides where the Task goes; hold the lock across the write.
-    let Ok(_held) = BoxLock::acquire(
+    let held = BoxLock::acquire(
         cx.clock(),
         cx.state_dir()?,
         row.id,
         "settle",
         Duration::ZERO,
-    ) else {
-        return Ok(());
-    };
-    if row.intent.is_some() {
+    );
+    if held.is_err() || row.intent.is_some() {
         return Ok(());
     }
     match store.apply(Decision::new(row.id).task_input(input)) {
+        Ok(_) if row.state == TaskState::Working => {
+            artifacts::collect(cx, store, row);
+            Ok(())
+        }
         Ok(_) | Err(StoreError::Illegal(_)) => Ok(()),
         Err(e) => Err(e.into()),
     }

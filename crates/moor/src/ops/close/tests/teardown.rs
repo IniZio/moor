@@ -140,6 +140,7 @@ fn interrupted_teardown_removes_the_staged_credential_dir() {
             Ok(ExecOutcome::Exited { code: 0 }),
             Ok(ExecOutcome::Exited { code: 0 }),
             Ok(ExecOutcome::Exited { code: 0 }),
+            Ok(ExecOutcome::Exited { code: 0 }),
             Ok(ExecOutcome::Interrupted),
         ]),
         YAML,
@@ -149,8 +150,8 @@ fn interrupted_teardown_removes_the_staged_credential_dir() {
     let execs = f.driver.execs();
     assert_eq!(
         execs.len(),
-        6,
-        "probe, recheck, collection, mkdir, teardown, rm"
+        7,
+        "probe, recheck, collection, artifacts, mkdir, teardown, rm"
     );
     let argv = &execs.last().unwrap().1.argv;
     assert!(

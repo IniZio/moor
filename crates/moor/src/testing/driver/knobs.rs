@@ -1,8 +1,24 @@
 //! Setup knobs for the Driver fake: where boxes live and which calls fail.
 
-use moor_core::seam::driver::DriverError;
+use moor_core::seam::driver::{DriverError, ExecSpec};
+use moor_core::seam::proc::Output;
 
-use super::FakeDriver;
+use super::{FakeDriver, State};
+
+impl State {
+    /// The text an `exec` writes to its log: the next scripted stdout, or nothing for an
+    /// artifact index with none scripted.
+    pub(super) fn log_text(&mut self, spec: &ExecSpec) -> Option<String> {
+        let empty = spec.argv.iter().any(|a| a.contains(".moor/artifacts"));
+        matches!(spec.output, Some(Output::Log(_)))
+            .then(|| {
+                self.exec_stdout
+                    .pop_front()
+                    .or_else(|| empty.then(String::new))
+            })
+            .flatten()
+    }
+}
 
 impl FakeDriver {
     /// Puts every box workdir under `root` instead of `/work`.
@@ -49,5 +65,17 @@ impl FakeDriver {
     pub(crate) fn fail_copy_out(self, e: DriverError) -> Self {
         self.st().fail_copy_out = Some(e);
         self
+    }
+
+    /// Replaces the text later `copy_out` calls write, without consuming the driver.
+    pub(crate) fn set_copy_text(&self, content: impl AsRef<[u8]>) {
+        let mut s = self.st();
+        s.copy_content = Some(content.as_ref().to_vec());
+        s.copy_symlink = None;
+    }
+
+    /// Queues more text for later `exec` calls to write to their `Output::Log` file.
+    pub(crate) fn push_exec_stdout(&self, out: impl Into<String>) {
+        self.st().exec_stdout.push_back(out.into());
     }
 }

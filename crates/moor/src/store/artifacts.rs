@@ -51,10 +51,6 @@ pub(crate) struct ArtifactRow {
 impl Store {
     /// Stores `bytes` as the next version of `name`, under `dir/<box id>/v<version>/<name>`.
     /// Returns None and writes nothing when the latest stored version has the same digest.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "read by later callers, not yet wired")
-    )]
     pub(crate) fn add_artifact(
         &self,
         task: BoxId,
@@ -132,10 +128,6 @@ impl Store {
     }
 
     /// The newest stored version of each Artifact name of the Box, by name.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "read by later callers, not yet wired")
-    )]
     pub(crate) fn latest_artifacts(&self, task: BoxId) -> Result<Vec<ArtifactRow>, StoreError> {
         let conn = self.reader()?;
         latest_in(&conn, task)

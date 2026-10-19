@@ -2,6 +2,7 @@
 
 pub(crate) mod activity;
 pub(crate) mod agent_stop;
+pub(crate) mod artifacts;
 pub(crate) mod autosleep;
 pub(crate) mod box_exec;
 pub(crate) mod boxlock;
