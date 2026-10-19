@@ -3,8 +3,10 @@
 use super::{
     close_gate, release_outcome, BoxCheck, CloseFacts, Refusal, ReleaseResult, ReleaseVerdict,
 };
+use crate::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use crate::domain::boxes::BoxState;
-use crate::domain::task::{TaskInput, TaskState};
+use crate::domain::session_state::SessionInput;
+use crate::domain::task::TaskState;
 use crate::name::BoxId;
 
 use BoxState as B;
@@ -154,7 +156,11 @@ fn clean_ready_box_is_released_and_closed() {
     let plan = close_gate(&facts(), false).ok();
     let plan = plan.expect("plan");
     assert!(plan.release_box && plan.close_workspace);
-    assert_eq!(plan.decision_close.task_input, Some(TaskInput::Close));
+    assert_eq!(
+        plan.decision_close.lifecycle_input,
+        Some(BoxLifecycleInput::Close)
+    );
+    assert_eq!(plan.decision_close.session_input, Some(SessionInput::End));
 }
 
 #[test]
@@ -225,11 +231,14 @@ fn release_is_planned_only_for_a_releasable_box_with_a_handle() {
 }
 
 /// Applies a verdict's decision to the machines, returning the final states.
-fn apply(v: &ReleaseVerdict, task: TaskState, b: BoxState) -> (TaskState, BoxState) {
+fn apply(v: &ReleaseVerdict, life: BoxLifecycle, b: BoxState) -> (BoxLifecycle, BoxState) {
     let d = v.decision.as_ref().expect("decision");
-    let t = d.task_input.as_ref().map_or(Ok(task), |i| task.step(i));
+    let l = d
+        .lifecycle_input
+        .as_ref()
+        .map_or(Ok(life), |i| life.step(&[], i));
     let bx = d.box_input.as_ref().map_or(Ok(b), |i| b.step(i));
-    (t.expect("task step"), bx.expect("box step"))
+    (l.expect("lifecycle step"), bx.expect("box step"))
 }
 
 #[test]
@@ -239,8 +248,8 @@ fn deleted_and_already_gone_mark_the_box_deleted() {
             let v = release_outcome(BoxId::new(7), b, r);
             assert!(v.closes && v.warning.is_none());
             assert_eq!(
-                apply(&v, TaskState::Working, b),
-                (TaskState::Closed, B::Deleted)
+                apply(&v, BoxLifecycle::Ready, b),
+                (BoxLifecycle::Closed, B::Deleted)
             );
         }
     }
@@ -259,8 +268,8 @@ fn failed_release_of_a_failed_box_closes_with_release_failed_and_warns() {
     let v = release_outcome(BoxId::new(7), B::Failed, R::Failed);
     assert!(v.closes);
     assert_eq!(
-        apply(&v, TaskState::SetupFailed, B::Failed),
-        (TaskState::Closed, B::ReleaseFailed)
+        apply(&v, BoxLifecycle::SetupFailed, B::Failed),
+        (BoxLifecycle::Closed, B::ReleaseFailed)
     );
     let w = v.warning.expect("warning");
     assert_eq!(w.code, "box_release_failed");
@@ -273,8 +282,8 @@ fn failed_release_of_a_release_failed_box_stays_release_failed() {
     let v = release_outcome(BoxId::new(7), B::ReleaseFailed, R::Failed);
     assert!(v.closes && v.warning.is_some());
     assert_eq!(
-        apply(&v, TaskState::SetupFailed, B::ReleaseFailed),
-        (TaskState::Closed, B::ReleaseFailed)
+        apply(&v, BoxLifecycle::SetupFailed, B::ReleaseFailed),
+        (BoxLifecycle::Closed, B::ReleaseFailed)
     );
 }
 

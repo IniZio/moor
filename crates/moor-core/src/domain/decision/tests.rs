@@ -4,7 +4,7 @@ use super::{Decision, ExtraEvent, Field, Fields, Intent, IntentChange, NewTask, 
 use crate::domain::box_state::BoxLifecycleInput;
 use crate::domain::event::Event;
 use crate::domain::session_state::SessionInput;
-use crate::domain::task::{TaskInput, TaskState};
+use crate::domain::task::TaskState;
 use crate::name::{BoxId, BoxName, RunId};
 
 /// `new` targets an existing task with nothing else set.
@@ -12,7 +12,7 @@ use crate::name::{BoxId, BoxName, RunId};
 fn new_is_empty() {
     let d = Decision::new(BoxId::new(3));
     assert_eq!(d.task, TaskTarget::Existing(BoxId::new(3)));
-    assert!(d.task_input.is_none() && d.box_input.is_none());
+    assert!(d.lifecycle_input.is_none() && d.session_input.is_none() && d.box_input.is_none());
     assert_eq!(d.set, Fields::default());
     assert_eq!(d.intent, IntentChange::Keep);
     assert!(d.events.is_empty());
@@ -28,7 +28,7 @@ fn insert_sets_input() {
     let d = Decision::insert(new.clone());
     assert_eq!(d.task, TaskTarget::New(new));
     assert_eq!(d.lifecycle_input, Some(BoxLifecycleInput::Insert));
-    assert_eq!(d.task_input, None);
+    assert_eq!(d.session_input, None);
 }
 
 /// The Box lifecycle and Session builders set their inputs.
@@ -39,7 +39,6 @@ fn lifecycle_and_session_builders() {
         .session(SessionInput::AgentBusy);
     assert_eq!(d.lifecycle_input, Some(BoxLifecycleInput::Wake));
     assert_eq!(d.session_input, Some(SessionInput::AgentBusy));
-    assert_eq!(d.task_input, None);
 }
 
 /// Builder methods chain and keep order of events.
@@ -50,14 +49,14 @@ fn builder_chains() {
         ..Fields::default()
     };
     let d = Decision::new(BoxId::new(1))
-        .task_input(TaskInput::Admitted)
+        .lifecycle(BoxLifecycleInput::Admitted)
         .set(f.clone())
         .intent(IntentChange::Clear)
         .event(ExtraEvent::RunStarted { run: RunId::new(1) })
         .event(ExtraEvent::SessionStarted {
             session: "s".into(),
         });
-    assert_eq!(d.task_input, Some(TaskInput::Admitted));
+    assert_eq!(d.lifecycle_input, Some(BoxLifecycleInput::Admitted));
     assert_eq!(d.set, f);
     assert_eq!(d.intent, IntentChange::Clear);
     assert_eq!(
