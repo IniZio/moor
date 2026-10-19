@@ -2,6 +2,7 @@
 
 pub mod binding;
 pub mod env;
+pub mod repos;
 pub mod run;
 pub mod session;
 pub mod sleep;

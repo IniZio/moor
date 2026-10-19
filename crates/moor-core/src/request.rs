@@ -6,6 +6,8 @@ use crate::name::{BoxName, SessionId};
 
 mod binding;
 pub use binding::{BindSessionReq, SessionBindingReq};
+mod repos;
+pub use repos::ReposReq;
 mod session;
 pub use session::ShowSessionReq;
 mod wait;
@@ -71,6 +73,8 @@ pub enum Request {
     GithubLogin {},
     /// Check the credential proxy.
     ProxyCheck {},
+    /// List the repos the controller knows.
+    Repos(ReposReq),
     /// Print version information.
     Version {},
 }
@@ -108,6 +112,7 @@ impl Request {
             Self::GithubSetup {} => "github-setup",
             Self::GithubLogin {} => "github-login",
             Self::ProxyCheck {} => "proxy-check",
+            Self::Repos(_) => "repos",
             Self::Version {} => "version",
         }
     }
