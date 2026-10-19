@@ -238,8 +238,8 @@ impl Driver for Slow<'_> {
         self.inner.planned_handle(req)
     }
 
-    fn release(&self, h: &BoxHandle) -> Result<Released, DriverError> {
-        self.inner.release(h)
+    fn release(&self, h: &BoxHandle, w: Option<&Path>) -> Result<Released, DriverError> {
+        self.inner.release(h, w)
     }
 
     fn list(&self, p: &ProviderId) -> Result<Vec<BoxListing>, DriverError> {
@@ -294,12 +294,12 @@ impl Driver for Slow<'_> {
         self.inner.reverse_tunnel(h, bp, hp, c)
     }
 
-    fn sleep(&self, h: &BoxHandle) -> Result<SleepOutcome, DriverError> {
-        self.inner.sleep(h)
+    fn sleep(&self, h: &BoxHandle, w: Option<&Path>) -> Result<SleepOutcome, DriverError> {
+        self.inner.sleep(h, w)
     }
 
-    fn wake(&self, h: &BoxHandle) -> Result<(), DriverError> {
-        self.inner.wake(h)
+    fn wake(&self, h: &BoxHandle, w: Option<&Path>) -> Result<(), DriverError> {
+        self.inner.wake(h, w)
     }
 }
 

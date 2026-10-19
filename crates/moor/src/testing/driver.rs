@@ -155,7 +155,7 @@ impl Driver for FakeDriver {
         BoxHandle::new(format!("box-{}", self.st().next + 1))
     }
 
-    fn release(&self, handle: &BoxHandle) -> Result<Released, DriverError> {
+    fn release(&self, handle: &BoxHandle, _: Option<&Path>) -> Result<Released, DriverError> {
         let mut s = self.st();
         s.note(format!("release {}", handle.as_str()));
         if let Some(e) = s
@@ -344,7 +344,7 @@ impl Driver for FakeDriver {
         self.run_batch(handle, connect, steps, host_cwd, deadline)
     }
 
-    fn sleep(&self, handle: &BoxHandle) -> Result<SleepOutcome, DriverError> {
+    fn sleep(&self, handle: &BoxHandle, _: Option<&Path>) -> Result<SleepOutcome, DriverError> {
         let mut s = self.st();
         s.note(format!("sleep {}", handle.as_str()));
         if !s.live.iter().any(|h| h == handle.as_str()) {
@@ -356,7 +356,7 @@ impl Driver for FakeDriver {
         Ok(s.sleep_outcome.clone().unwrap_or(SleepOutcome::Slept))
     }
 
-    fn wake(&self, handle: &BoxHandle) -> Result<(), DriverError> {
+    fn wake(&self, handle: &BoxHandle, _: Option<&Path>) -> Result<(), DriverError> {
         let mut s = self.st();
         s.note(format!("wake {}", handle.as_str()));
         if !s.live.iter().any(|h| h == handle.as_str()) {

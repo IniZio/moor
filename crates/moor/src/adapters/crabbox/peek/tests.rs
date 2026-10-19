@@ -323,7 +323,7 @@ fn release_makes_the_next_lookup_resolve_again() {
     scripted(&p, Reply::Ok("x".to_owned()));
     p.on(Tool::Crabbox, &["stop"], Reply::Ok(String::new()));
     peek(&c, "a").unwrap();
-    c.release(&BoxHandle::new("p/box")).unwrap();
+    c.release(&BoxHandle::new("p/box"), None).unwrap();
     peek(&c, "a").unwrap();
     assert_eq!(lookups(&p), 2);
 }
@@ -339,7 +339,7 @@ fn wake_makes_the_next_lookup_resolve_again() {
         Reply::Ok(r#"[{"id":"p","sleep":"suspend","wake":true}]"#.to_owned()),
     );
     peek(&c, "a").unwrap();
-    let _ = c.wake(&BoxHandle::new("p/box"));
+    let _ = c.wake(&BoxHandle::new("p/box"), None);
     peek(&c, "a").unwrap();
     assert_eq!(lookups(&p), 2);
 }

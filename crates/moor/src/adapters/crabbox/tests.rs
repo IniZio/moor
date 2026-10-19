@@ -142,16 +142,16 @@ fn ssh_calls_carry_static_env() {
     p.on(Tool::Crabbox, &["stop"], Reply::Ok(String::new()));
     probe(&p);
     c.acquire(&req("ssh", None)).unwrap();
-    c.release(&BoxHandle::new("ssh/moor-7-ab12cd")).unwrap();
+    let handle = BoxHandle::new("ssh/moor-7-ab12cd");
+    c.release(&handle, None).unwrap();
     for call in p.calls() {
         assert!(
             call.env
                 .contains(&("CRABBOX_STATIC_ID".into(), "moor-7-ab12cd".into())),
             "{call:?}"
         );
-        assert!(call
-            .env
-            .contains(&("CRABBOX_STATIC_PORT".into(), "22".into())));
+        let port = ("CRABBOX_STATIC_PORT".into(), "22".into());
+        assert!(call.env.contains(&port));
     }
 }
 
@@ -251,7 +251,7 @@ fn acquire_failure_maps_through_errors() {
 fn release_stops_by_provider_and_name() {
     let (p, c) = fixture();
     p.on(Tool::Crabbox, &["stop"], Reply::Ok(String::new()));
-    let got = c.release(&BoxHandle::new("sprites/moor-t7")).unwrap();
+    let got = c.release(&BoxHandle::new("sprites/moor-t7"), None).unwrap();
     assert_eq!(got, Released::Deleted);
     let calls = p.calls();
     let call = calls.first().unwrap();
@@ -273,7 +273,7 @@ fn release_stops_by_provider_and_name() {
 fn release_not_found_is_already_gone() {
     let (p, c) = fixture();
     p.on(Tool::Crabbox, &["stop"], fail(4, "lease not found\n"));
-    let got = c.release(&BoxHandle::new("sprites/moor-t7")).unwrap();
+    let got = c.release(&BoxHandle::new("sprites/moor-t7"), None).unwrap();
     assert_eq!(got, Released::AlreadyGone);
 }
 
@@ -281,7 +281,7 @@ fn release_not_found_is_already_gone() {
 fn release_bare_name_omits_provider() {
     let (p, c) = fixture();
     p.on(Tool::Crabbox, &["stop"], Reply::Ok(String::new()));
-    c.release(&BoxHandle::new("moor-t7")).unwrap();
+    c.release(&BoxHandle::new("moor-t7"), None).unwrap();
     let calls = p.calls();
     assert_eq!(
         calls.first().unwrap().args,
@@ -293,7 +293,7 @@ fn release_bare_name_omits_provider() {
 fn release_other_failure_is_error() {
     let (p, c) = fixture();
     p.on(Tool::Crabbox, &["stop"], fail(1, "boom"));
-    assert!(c.release(&BoxHandle::new("sprites/x")).is_err());
+    assert!(c.release(&BoxHandle::new("sprites/x"), None).is_err());
 }
 
 #[test]
