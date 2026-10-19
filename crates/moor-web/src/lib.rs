@@ -5,6 +5,7 @@ pub mod auth;
 pub mod client;
 pub mod db;
 pub mod http;
+pub mod jobs;
 pub mod sse;
 pub mod views;
 pub mod watch;
