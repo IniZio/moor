@@ -10,7 +10,6 @@ use moor_core::secret::Secret;
 use serde_json::Value;
 
 use super::api::Api;
-use super::pr::{PrCache, PrOf};
 use super::prompt::Pending;
 use crate::adapters::clock::SystemClock;
 use crate::env::Env;
@@ -110,8 +109,8 @@ pub(super) fn escape(s: &str) -> String {
         .replace('>', "&gt;")
 }
 
-/// The message text for `task`; links the Task branch's open pull request when `pr` is known.
-pub(super) fn render(task: &str, view: &View, pr: Option<&str>) -> String {
+/// The message text for `task`.
+pub(super) fn render(task: &str, view: &View) -> String {
     let state = match &view.state {
         State::Starting => "starting".to_owned(),
         State::Working => "working".to_owned(),
@@ -138,9 +137,6 @@ pub(super) fn render(task: &str, view: &View, pr: Option<&str>) -> String {
             BoxState::Deleted => "deleted",
         };
         let _ = write!(text, "\nBox: {b}");
-    }
-    if let Some(url) = pr {
-        let _ = write!(text, "\n<{}|Pull request>", escape(url).replace('|', "%7C"));
     }
     text
 }
@@ -181,18 +177,13 @@ impl Planner {
         &self,
         threads: &[SlackThread],
         views: &HashMap<String, View>,
-        prs: &HashMap<String, String>,
         now: Instant,
     ) -> Vec<Step> {
         let mut steps = Vec::new();
         for t in threads {
             let key = (t.channel.clone(), t.thread_ts.clone());
             let view = views.get(t.task.as_str()).cloned().unwrap_or_default();
-            let text = render(
-                t.task.as_str(),
-                &view,
-                prs.get(t.task.as_str()).map(String::as_str),
-            );
+            let text = render(t.task.as_str(), &view);
             let sent = self.sent.get(&key);
             if t.status_ts.is_some() && sent.and_then(|s| s.text.as_ref()) == Some(&text) {
                 continue;
@@ -223,13 +214,7 @@ impl Planner {
 }
 
 /// Follows the event feed for the life of the process, keeping thread status messages current.
-pub(crate) fn follow(
-    env: &Env,
-    api: &Api,
-    bot: &Secret,
-    pr_of: &PrOf,
-    log: &(dyn Fn(&str) + Send + Sync),
-) {
+pub(crate) fn follow(env: &Env, api: &Api, bot: &Secret, log: &(dyn Fn(&str) + Send + Sync)) {
     let clock: Arc<dyn Clock> = loop {
         match SystemClock::from_env(env) {
             Ok(clock) => break Arc::new(clock),
@@ -251,7 +236,6 @@ pub(crate) fn follow(
     let mut views: HashMap<String, View> = HashMap::new();
     let mut pending = Pending::default();
     let mut planner = Planner::default();
-    let mut prs = PrCache::default();
     let mut cursor = 0;
     loop {
         match store.events_after(cursor, BATCH) {
@@ -272,8 +256,7 @@ pub(crate) fn follow(
         }
         match store.slack_threads() {
             Ok(threads) => {
-                prs.refresh(&threads, &views, pr_of, clock.instant());
-                for step in planner.plan(&threads, &views, prs.urls(), clock.instant()) {
+                for step in planner.plan(&threads, &views, clock.instant()) {
                     let ok = send(&store, api, bot, &step, log);
                     planner.record(&step, clock.instant(), ok);
                 }

@@ -15,7 +15,6 @@ use std::io::{BufReader, Write};
 use std::os::unix::fs::{DirBuilderExt as _, PermissionsExt as _};
 use std::os::unix::net::UnixListener;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
 use std::time::Duration;
@@ -23,7 +22,7 @@ use std::time::Duration;
 use moor_core::config::{parse_controller, parse_repo, MoorYamlSource, RepoTable, SlackConfig};
 
 use crate::env::Env;
-use crate::slack::{PrOf, Slack};
+use crate::slack::Slack;
 use crate::Moor;
 
 /// Shared destination for diagnostics.
@@ -46,11 +45,7 @@ pub fn serve(env: &Env, config: &Path, stderr: impl Write + Send + 'static) -> u
             settle::spawn(&running.env, running.settle_every, &sink);
             if let Some(slack) = running.slack.take() {
                 let out = Sink::clone(&sink);
-                slack.spawn(
-                    &running.env,
-                    Arc::new(move |line| log(&out, line)),
-                    pr_lookup(&running.env, &sink),
-                );
+                slack.spawn(&running.env, Arc::new(move |line| log(&out, line)));
                 log(&sink, "slack: socket mode on");
             }
             running.accept_loop(&sink);
@@ -61,24 +56,6 @@ pub fn serve(env: &Env, config: &Path, stderr: impl Write + Send + 'static) -> u
             stop.code
         }
     }
-}
-
-/// Finds a Task's open pull request through the forge, on the controller host only.
-///
-/// Any failure yields `None`; the first failure is logged.
-fn pr_lookup(env: &Arc<Env>, sink: &Sink) -> Arc<PrOf> {
-    let env = Arc::clone(env);
-    let sink = Sink::clone(sink);
-    let warned = AtomicBool::new(false);
-    Arc::new(move |task| match Moor::open_pr_url(&env, task) {
-        Ok(url) => url,
-        Err(e) => {
-            if !warned.swap(true, Ordering::Relaxed) {
-                log(&sink, &format!("slack: pull request lookup failed: {e}"));
-            }
-            None
-        }
-    })
 }
 
 /// Why the controller did not start.

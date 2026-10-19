@@ -15,7 +15,6 @@ mod gate;
 mod host_session;
 mod open;
 mod open_session;
-pub(crate) mod pr;
 mod repos;
 mod run;
 mod sessions;
