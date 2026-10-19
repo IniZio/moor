@@ -18,7 +18,7 @@ use crate::proxy::nono::tests::upstream::{self, Upstream};
 const BASIC: &str = "bW9vcjpub25jZV9ncWwtMDEyMzQ1Njc4OQ==";
 /// The body the front refuses an origin-form or `https://` request with.
 const REFUSAL: &str = r#"{"message":"moor: only CONNECT or http:// requests are allowed"}"#;
-/// A GraphQL query for a repository that is not the Task's.
+/// A GraphQL query for a repository that is not the Box's.
 const OTHER_REPO: &str = r#"{"query":"query{repository(owner:\"victim\",name:\"secrets\"){id}}"}"#;
 
 /// Rig plus fake upstreams for the two hosts nono dials itself.
@@ -148,8 +148,8 @@ impl Front {
         assert!(self.claude.seen().is_empty(), "claude host was reached");
         assert!(self.git.seen().is_empty(), "github-git host was reached");
         let rig = &self.rig;
-        rig.live.as_ref().unwrap().drain(&rig.deps(), rig.task);
-        let events = rig.store.events(rig.task, 100).unwrap();
+        rig.live.as_ref().unwrap().drain(&rig.deps(), rig.box_id);
+        let events = rig.store.events(rig.box_id, 100).unwrap();
         let noisy: Vec<_> = events
             .iter()
             .filter(|e| e.kind.contains("egress") || e.kind.contains("credential"))

@@ -217,7 +217,7 @@ fn chain_cfg(rules: &[ResolvedRule]) -> NonoConfig {
     let chain = Chain {
         proxy: "127.0.0.1:9911".parse().unwrap(),
         host: GITHUB_API_HOST,
-        ca_pem: Path::new("/tmp/task-ca.pem"),
+        ca_pem: Path::new("/tmp/box-ca.pem"),
     };
     cfg_chained(rules, Some(Path::new("/tmp/up.pem")), Some(chain))
 }
@@ -246,7 +246,7 @@ fn chain_sends_every_host_through_the_proxy_with_no_bypass() {
 }
 
 #[test]
-fn chained_host_routes_trust_the_task_ca_and_others_keep_upstream() {
+fn chained_host_routes_trust_the_box_ca_and_others_keep_upstream() {
     let rules = [
         rule(
             "gh",
@@ -265,7 +265,7 @@ fn chained_host_routes_trust_the_task_ca_and_others_keep_upstream() {
     };
     assert_eq!(
         by_host("api.github.com").as_deref(),
-        Some("/tmp/task-ca.pem")
+        Some("/tmp/box-ca.pem")
     );
     assert_eq!(by_host("o.test:8443").as_deref(), Some("/tmp/up.pem"));
     assert_eq!(
@@ -279,7 +279,7 @@ fn chained_config_trusts_the_filter_ca_for_every_upstream() {
     let rules = [rule("gh", &[GITHUB_API_HOST], bearer())];
     assert_eq!(
         chain_cfg(&rules).inner().upstream_extra_ca_pems,
-        vec!["/tmp/task-ca.pem".to_owned()]
+        vec!["/tmp/box-ca.pem".to_owned()]
     );
 }
 

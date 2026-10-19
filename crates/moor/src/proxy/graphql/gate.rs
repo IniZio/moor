@@ -20,7 +20,7 @@ pub(super) enum Gate {
     /// Forward the request head and these exact body bytes.
     Forward(Vec<u8>),
     /// Forward the request without its credential, with these exact body
-    /// bytes. The request is outside the Task repo or could not be judged.
+    /// bytes. The request is outside the Box repo or could not be judged.
     Anonymous(Vec<u8>),
     /// Refuse with this status and message; the reason is recorded.
     Refuse(u16, String),

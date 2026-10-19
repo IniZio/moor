@@ -15,7 +15,7 @@ const BASIC: &str = "bW9vcjpub25jZV9ncWwtMDEyMzQ1Njc4OQ==";
 const WRONG_BASIC: &str = "bW9vcjp3cm9uZy1ub25jZS0wMDAw";
 /// Loopback spellings a Box can name in a `CONNECT` authority, IPv6 bracketed.
 const LOOPBACK_TARGETS: [&str; 3] = ["127.0.0.1", "[::1]", "localhost"];
-/// A GraphQL query for a repository that is not the Task's.
+/// A GraphQL query for a repository that is not the Box's.
 const OTHER_REPO: &str = r#"{"query":"query{repository(owner:\"victim\",name:\"secrets\"){id}}"}"#;
 /// Longest any single read waits.
 const IO: Duration = Duration::from_secs(5);
@@ -144,11 +144,11 @@ fn service() -> Service {
     Service { port, hits, stop }
 }
 
-/// Every event payload recorded for the Task, as text, after a drain.
+/// Every event payload recorded for the Box, as text, after a drain.
 fn payloads(rig: &Rig) -> Vec<(String, String)> {
-    rig.live.as_ref().unwrap().drain(&rig.deps(), rig.task);
+    rig.live.as_ref().unwrap().drain(&rig.deps(), rig.box_id);
     rig.store
-        .events(rig.task, 100)
+        .events(rig.box_id, 100)
         .unwrap()
         .into_iter()
         .map(|e| (e.kind, e.payload.to_string()))

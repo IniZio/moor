@@ -17,9 +17,9 @@ use crate::store::{ProxyRow, Store, STORE_FILE};
 enum Fate {
     /// The supervisor is ours and healthy: leave it running.
     Keep,
-    /// The Task needs its Proxy but the supervisor is gone: start another on the same port.
+    /// The Box needs its Proxy but the supervisor is gone: start another on the same port.
     Restart,
-    /// The Task no longer needs a Proxy.
+    /// The Box no longer needs a Proxy.
     Stop,
 }
 
@@ -27,8 +27,8 @@ enum Fate {
 ///
 /// A row is kept only when its pid is alive, leads its own process group, belongs to the
 /// current boot and holds a live lease: a pid alone may have been reused. Any other row of a
-/// Task with a Box is restarted from the spec saved at its last `ensure`, keeping its box port.
-/// Rows of Tasks without a usable Box are stopped. A failure for one Task never stops the rest.
+/// A Box with a ready machine is restarted from the spec saved at its last `ensure`, keeping its box port.
+/// Rows of Boxes without a usable machine are stopped. A failure for one Box never stops the rest.
 pub(crate) fn reconcile(
     host: &DetachedSupervisor,
     proc: &dyn Proc,
@@ -39,11 +39,11 @@ pub(crate) fn reconcile(
         Ok(store) => store,
         Err(e) => return vec![format!("cannot read the proxy state: {e}")],
     };
-    let (rows, tasks) = match (store.proxies(), store.open_boxes()) {
-        (Ok(rows), Ok(tasks)) => (rows, tasks),
+    let (rows, live) = match (store.proxies(), store.open_boxes()) {
+        (Ok(rows), Ok(live)) => (rows, live),
         (Err(e), _) | (_, Err(e)) => return vec![format!("cannot read the proxy state: {e}")],
     };
-    let boxes: Vec<(BoxId, BoxState)> = tasks
+    let boxes: Vec<(BoxId, BoxState)> = live
         .iter()
         .filter_map(|t| Some((t.id, t.boxed.as_ref()?.state)))
         .collect();
@@ -60,7 +60,7 @@ pub(crate) fn reconcile(
                 Some(scope.spawn(move || {
                     settle(host, store, state_dir, row.box_id, &fate)
                         .err()
-                        .map(|e| format!("task {}: {e}", row.box_id.get()))
+                        .map(|e| format!("Box {}: {e}", row.box_id.get()))
                 }))
             })
             .collect();
@@ -70,7 +70,7 @@ pub(crate) fn reconcile(
     })
 }
 
-/// The fate of `row`, or `None` when the Task is asleep and its Proxy is left alone.
+/// The fate of `row`, or `None` when the Box is asleep and its Proxy is left alone.
 fn fate(
     host: &DetachedSupervisor,
     proc: &dyn Proc,
@@ -92,21 +92,21 @@ fn fate(
     Some(if ours { Fate::Keep } else { Fate::Restart })
 }
 
-/// Carries out `fate` for `task`.
+/// Carries out `fate` for `box_id`.
 fn settle(
     host: &DetachedSupervisor,
     store: &Store,
     state_dir: &Path,
-    task: BoxId,
+    box_id: BoxId,
     fate: &Fate,
 ) -> Result<(), String> {
     match fate {
         Fate::Keep => Ok(()),
-        Fate::Stop => host.stop(task).map_err(|e| e.to_string()),
+        Fate::Stop => host.stop(box_id).map_err(|e| e.to_string()),
         Fate::Restart => {
             // Without the saved spec the row stays expired, so the next `ensure` restarts it.
-            store.expire_proxy(task).map_err(|e| e.to_string())?;
-            let spec = read_spec(state_dir, task)
+            store.expire_proxy(box_id).map_err(|e| e.to_string())?;
+            let spec = read_spec(state_dir, box_id)
                 .map_err(|e| format!("cannot restart the proxy without its spec: {e}"))?;
             host.ensure(&spec).map(drop).map_err(|e| e.to_string())
         }

@@ -64,7 +64,7 @@ fn in_repo(node: &Value, repo: &RepoRef) -> bool {
     })
 }
 
-/// In-memory per-Task cache of node-id verdicts.
+/// In-memory per-Box cache of node-id verdicts.
 #[derive(Default)]
 pub(crate) struct NodeCache(Mutex<HashMap<String, bool>>);
 
@@ -79,7 +79,7 @@ impl NodeCache {
         self.lock().get(id.as_str()).copied()
     }
 
-    /// Records whether `id` belongs to the Task repository.
+    /// Records whether `id` belongs to the Box repository.
     pub(crate) fn put(&self, id: &NodeId, belongs: bool) {
         self.lock().insert(id.as_str().to_owned(), belongs);
     }

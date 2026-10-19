@@ -50,7 +50,7 @@ fn parked_supervisor_never_reopens_a_dead_tunnel() {
 }
 
 #[test]
-fn parked_supervisor_still_beats_and_stops_when_the_task_closes() {
+fn parked_supervisor_still_beats_and_stops_when_the_box_closes() {
     let w = World::new([]);
     let deps = w.deps();
     let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
@@ -62,7 +62,7 @@ fn parked_supervisor_still_beats_and_stops_when_the_task_closes() {
     assert!(run.tick().is_none());
     assert!(w.row().lease_heartbeat.unwrap() > before);
 
-    w.close_task();
+    w.close_box();
     assert!(matches!(run.tick(), Some(Stop::Closed)));
 }
 
@@ -116,7 +116,7 @@ fn failed_reopen_acks_the_error_and_keeps_the_proxy_running() {
     assert!(w.row().lease_owner.is_some());
 }
 
-/// Puts the Task and its Box to sleep, as the sleep command does.
+/// Puts the Box and its machine to sleep, as the sleep command does.
 fn sleep_box(w: &World) {
     let quiet = Decision::new(w.id).session(SessionInput::AgentQuiet);
     w.store.apply(quiet).unwrap();

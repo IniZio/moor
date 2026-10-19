@@ -1,7 +1,7 @@
 //! Loopback tests of the GraphQL filter against a fake upstream.
 //!
 //! The client behaves like nono: it opens a tunnel with `CONNECT`, does TLS
-//! under the Task CA and sends requests that already carry the credential.
+//! under the Box CA and sends requests that already carry the credential.
 
 mod egress;
 mod framing;
@@ -248,14 +248,14 @@ struct Rig {
     filter: GraphqlFilter,
     /// The fake upstream behind it.
     up: Up,
-    /// PEM of the Task CA the client trusts.
+    /// PEM of the Box CA the client trusts.
     ca_pem: String,
     /// How many times the filter asked for the cached credential to be dropped.
     evictions: Arc<AtomicUsize>,
 }
 
-/// The repo every test scopes the Task to.
-fn task() -> RepoRef {
+/// The repo every test scopes the Box to.
+fn box_repo() -> RepoRef {
     RepoRef::new("IniZio", "moor")
 }
 
@@ -273,7 +273,7 @@ fn rig_with(f: Responder, guard: Guard) -> Rig {
     let evictions = Arc::new(AtomicUsize::new(0));
     let filter = GraphqlFilter::start(FilterSpec {
         ca,
-        repo: Some(task()),
+        repo: Some(box_repo()),
         host: "api.github.com".to_owned(),
         port: 443,
         rule: RULE.to_owned(),
@@ -362,7 +362,7 @@ fn raw_connect(addr: SocketAddr, target: &str) -> io::Result<(TcpStream, u16)> {
 }
 
 impl Client {
-    /// Tunnels to `target`, then does TLS trusting only the Task CA.
+    /// Tunnels to `target`, then does TLS trusting only the Box CA.
     fn open(addr: SocketAddr, ca_pem: &str, target: &str) -> io::Result<Self> {
         let (tcp, status) = raw_connect(addr, target)?;
         if status != 200 {
@@ -424,7 +424,7 @@ fn repo_query(owner: &str, name: &str, operation: &str) -> String {
     json!({"query": query, "variables": {"owner": owner, "name": name}}).to_string()
 }
 
-/// A mutation that is allowed only if `repository_id` is in the Task repo.
+/// A mutation that is allowed only if `repository_id` is in the Box repo.
 fn create_pr(repository_id: &str) -> String {
     let query = "mutation($input: CreatePullRequestInput!) { \
          createPullRequest(input: $input) { pullRequest { id number url } } }";

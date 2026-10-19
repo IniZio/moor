@@ -8,7 +8,7 @@ fn has_token(w: &Wire) -> bool {
 }
 
 #[test]
-fn task_repo_query_is_forwarded_verbatim_and_reply_returned_unchanged() {
+fn box_repo_query_is_forwarded_verbatim_and_reply_returned_unchanged() {
     let reply = chunked_reply(&[r#"{"data":"#, r#"{"ok":"#, "true}}"]);
     let rig = rig(fixed(reply.clone()));
     let mut client = rig.client();
@@ -65,10 +65,10 @@ fn node_id_of_another_repo_is_forwarded_anonymously_after_one_lookup() {
 }
 
 #[test]
-fn node_id_of_task_repo_is_looked_up_then_forwarded() {
+fn node_id_of_box_repo_is_looked_up_then_forwarded() {
     let rig = rig(standard(nodes_reply(&["IniZio/moor"])));
     let mut client = rig.client();
-    let sent = post("/graphql", &create_pr("R_task"));
+    let sent = post("/graphql", &create_pr("R_box"));
     let resp = client.call(&sent);
     assert_eq!(resp.status(), 200);
     assert_eq!(String::from_utf8_lossy(&resp.body), OK_BODY);
@@ -85,7 +85,7 @@ fn node_id_of_task_repo_is_looked_up_then_forwarded() {
 #[test]
 fn node_lookup_is_cached_per_filter() {
     let rig = rig(standard(nodes_reply(&["IniZio/moor"])));
-    let sent = post("/graphql", &create_pr("R_task"));
+    let sent = post("/graphql", &create_pr("R_box"));
     for _ in 0..2 {
         let resp = rig.client().call(&sent);
         assert_eq!(resp.status(), 200);
@@ -113,7 +113,7 @@ fn foreign_node_verdict_is_cached_too() {
 /// Runs a node-check request against an upstream whose lookup answer is `bad`.
 fn failed_lookup_goes_anonymous_and_is_not_cached(bad: Vec<u8>) {
     let rig = rig(standard(bad));
-    let sent = post("/graphql", &create_pr("R_task"));
+    let sent = post("/graphql", &create_pr("R_box"));
     for _ in 0..2 {
         assert_eq!(rig.client().call(&sent).status(), 200);
     }
@@ -161,7 +161,7 @@ fn lookup_with_graphql_errors_goes_anonymous() {
         r#"{"data":{"nodes":[{"__typename":"Repository","nameWithOwner":"IniZio/moor"}]},"errors":[{"message":"x"}]}"#,
     );
     let rig = rig(standard(errors));
-    let resp = rig.client().call(&post("/graphql", &create_pr("R_task")));
+    let resp = rig.client().call(&post("/graphql", &create_pr("R_box")));
     assert_eq!(resp.status(), 200);
     let seen = rig.requests();
     assert_eq!(seen.len(), 2);

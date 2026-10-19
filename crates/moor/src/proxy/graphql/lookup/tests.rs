@@ -71,7 +71,7 @@ fn hostile_id_is_escaped_not_injected() {
 }
 
 #[test]
-fn task_repo_nodes_resolve_true() {
+fn box_repo_nodes_resolve_true() {
     let ids = ids(&["R", "P", "I"]);
     let body = answer(&json!([
         { "__typename": "Repository", "nameWithOwner": "IniZio/moor" },

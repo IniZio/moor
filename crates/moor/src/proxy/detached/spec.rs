@@ -10,12 +10,12 @@ use moor_core::BoxId;
 
 use crate::proxy::nono::ca::ca_dir;
 
-/// Name of the spec file inside the Task's proxy directory.
+/// Name of the spec file inside the Box's proxy directory.
 const SPEC_FILE: &str = "spec.json";
 
-/// `<state_dir>/proxy/<task>/spec.json`.
-pub(crate) fn spec_path(state_dir: &Path, task: BoxId) -> PathBuf {
-    ca_dir(state_dir, task).join(SPEC_FILE)
+/// `<state_dir>/proxy/<box_id>/spec.json`.
+pub(crate) fn spec_path(state_dir: &Path, box_id: BoxId) -> PathBuf {
+    ca_dir(state_dir, box_id).join(SPEC_FILE)
 }
 
 /// Write the spec owner-only: a temporary file in the same directory, then a rename.
@@ -38,8 +38,8 @@ pub(crate) fn write_spec(state_dir: &Path, spec: &ProxySpec) -> io::Result<()> {
     fs::rename(&tmp, &path)
 }
 
-/// Read the spec the host wrote for `task`.
-pub(crate) fn read_spec(state_dir: &Path, task: BoxId) -> io::Result<ProxySpec> {
-    let bytes = fs::read(spec_path(state_dir, task))?;
+/// Read the spec the host wrote for `box_id`.
+pub(crate) fn read_spec(state_dir: &Path, box_id: BoxId) -> io::Result<ProxySpec> {
+    let bytes = fs::read(spec_path(state_dir, box_id))?;
     serde_json::from_slice(&bytes).map_err(io::Error::from)
 }

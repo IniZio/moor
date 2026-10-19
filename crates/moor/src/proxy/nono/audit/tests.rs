@@ -1,4 +1,4 @@
-//! Tests for draining nono's audit into log lines and Task events.
+//! Tests for draining nono's audit into log lines and Box events.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -289,7 +289,7 @@ fn approval_decisions_are_ignored() {
     assert!(run(&events).is_empty());
 }
 
-/// A store with one task and a proxy log, both in `dir`.
+/// A store with one Box and a proxy log, both in `dir`.
 fn box_sink_parts(dir: &Path) -> (Store, ProxyLog, BoxId) {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
     let store = Store::open(&dir.join("moor.db"), clock.clone()).unwrap();
@@ -297,19 +297,19 @@ fn box_sink_parts(dir: &Path) -> (Store, ProxyLog, BoxId) {
         name: BoxName::parse_allow_bare("t").unwrap(),
         repo: "r".into(),
     };
-    let task = store.apply(Decision::insert(new)).unwrap().box_id;
-    let log = ProxyLog::open(dir, task, clock).unwrap();
-    (store, log, task)
+    let box_id = store.apply(Decision::insert(new)).unwrap().box_id;
+    let log = ProxyLog::open(dir, box_id, clock).unwrap();
+    (store, log, box_id)
 }
 
 #[test]
-fn task_sink_writes_events_and_a_path_free_log() {
+fn box_sink_writes_events_and_a_path_free_log() {
     let dir = tempfile::tempdir().unwrap();
-    let (store, log, task) = box_sink_parts(dir.path());
+    let (store, log, box_id) = box_sink_parts(dir.path());
     let sink = BoxSink {
         log: &log,
         store: &store,
-        task,
+        box_id,
     };
     let (capture, _) = counting_capture();
     let events = [
@@ -336,7 +336,7 @@ fn task_sink_writes_events_and_a_path_free_log() {
     ];
     apply(&events, &capture, &Withheld::default(), &sink);
 
-    let rows = store.events(task, 100).unwrap();
+    let rows = store.events(box_id, 100).unwrap();
     let of = |kind: &str| {
         rows.iter()
             .filter(|r| r.kind == kind)
@@ -349,9 +349,12 @@ fn task_sink_writes_events_and_a_path_free_log() {
     );
     assert_eq!(of("proxy_credential_failed"), [json!({"rule": "gh"})]);
 
-    let text =
-        std::fs::read_to_string(dir.path().join("proxy").join(format!("{}.log", task.get())))
-            .unwrap();
+    let text = std::fs::read_to_string(
+        dir.path()
+            .join("proxy")
+            .join(format!("{}.log", box_id.get())),
+    )
+    .unwrap();
     let lines: Vec<_> = text.lines().collect();
     assert!(lines.iter().any(|l| l.ends_with("POST gh 200")), "{text}");
     assert!(
@@ -362,13 +365,13 @@ fn task_sink_writes_events_and_a_path_free_log() {
 }
 
 #[test]
-fn task_sink_records_method_and_category_without_the_path() {
+fn box_sink_records_method_and_category_without_the_path() {
     let dir = tempfile::tempdir().unwrap();
-    let (store, log, task) = box_sink_parts(dir.path());
+    let (store, log, box_id) = box_sink_parts(dir.path());
     let sink = BoxSink {
         log: &log,
         store: &store,
-        task,
+        box_id,
     };
     let (capture, _) = counting_capture();
     let denied = event(
@@ -387,7 +390,7 @@ fn task_sink_records_method_and_category_without_the_path() {
         &sink,
     );
 
-    let rows = store.events(task, 100).unwrap();
+    let rows = store.events(box_id, 100).unwrap();
     let got: Vec<_> = rows.iter().map(|r| r.payload.clone()).collect();
     assert!(got.contains(&json!(
         {"host": "evil.test", "rule": null, "method": "GET", "category": "host_denied"}
@@ -403,14 +406,14 @@ fn task_sink_records_method_and_category_without_the_path() {
 }
 
 #[test]
-fn task_sink_swallows_store_errors() {
+fn box_sink_swallows_store_errors() {
     let dir = tempfile::tempdir().unwrap();
-    let (store, log, task) = box_sink_parts(dir.path());
-    let missing = BoxId::new(task.get() + 100);
+    let (store, log, box_id) = box_sink_parts(dir.path());
+    let missing = BoxId::new(box_id.get() + 100);
     let sink = BoxSink {
         log: &log,
         store: &store,
-        task: missing,
+        box_id: missing,
     };
     sink.refused("h.test", None, None, None);
     sink.credential_failed("gh");
@@ -497,11 +500,11 @@ fn non_credential_hosts_and_injected_requests_are_not_withheld() {
 #[test]
 fn withheld_event_and_log_never_hold_the_raw_path() {
     let dir = tempfile::tempdir().unwrap();
-    let (store, log, task) = box_sink_parts(dir.path());
+    let (store, log, box_id) = box_sink_parts(dir.path());
     let sink = BoxSink {
         log: &log,
         store: &store,
-        task,
+        box_id,
     };
     let (capture, _) = counting_capture();
     let watch = Withheld::new(&[gh_rule()], Some(ForgeRepo::new("acme", "widgets")));
@@ -516,7 +519,7 @@ fn withheld_event_and_log_never_hold_the_raw_path() {
         &sink,
     );
 
-    let rows = store.events(task, 100).unwrap();
+    let rows = store.events(box_id, 100).unwrap();
     let withheld: Vec<_> = rows
         .iter()
         .filter(|r| r.kind == "credential_withheld")
@@ -533,9 +536,12 @@ fn withheld_event_and_log_never_hold_the_raw_path() {
     );
     let stored =
         serde_json::to_string(&rows.iter().map(|r| r.payload.clone()).collect::<Vec<_>>()).unwrap();
-    let text =
-        std::fs::read_to_string(dir.path().join("proxy").join(format!("{}.log", task.get())))
-            .unwrap();
+    let text = std::fs::read_to_string(
+        dir.path()
+            .join("proxy")
+            .join(format!("{}.log", box_id.get())),
+    )
+    .unwrap();
     for seen in [stored, text] {
         assert!(!seen.contains("hunter2") && !seen.contains("42"), "{seen}");
     }

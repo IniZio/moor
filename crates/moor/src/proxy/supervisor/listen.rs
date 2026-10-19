@@ -1,4 +1,4 @@
-//! The nono proxy of one supervised Task, with its capture and request log.
+//! The nono proxy of one supervised Box, with its capture and request log.
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -33,29 +33,29 @@ pub(super) struct Live {
     pub(super) capture: Arc<MoorCapture>,
     /// Credential hosts watched for requests forwarded without a credential.
     withheld: Withheld,
-    /// The Task's request log.
+    /// The Box's request log.
     pub(super) log: ProxyLog,
 }
 
-/// Loads the Task CA, opens the log and starts the filter and the proxy; the caller still holds the lease on failure.
+/// Loads the Box CA, opens the log and starts the filter and the proxy; the caller still holds the lease on failure.
 pub(super) fn listen(
     deps: &Deps<'_>,
-    task: BoxId,
+    box_id: BoxId,
     nonce: &Secret,
     spec: &ProxySpec,
 ) -> Result<Live, String> {
-    let ca = ca::load_or_create(deps.state_dir, task)
+    let ca = ca::load_or_create(deps.state_dir, box_id)
         .map_err(|err| format!("cannot load the proxy CA: {err}"))?;
     let withheld = Withheld::new(&spec.rules, spec.box_repo.clone());
     let capture = new_capture(deps, spec);
     let internal = internal_token()?;
     let graphql = start_filter(deps, spec, &ca, &capture)?;
-    let ca_pem = ca::cert_path(deps.state_dir, task);
+    let ca_pem = ca::cert_path(deps.state_dir, box_id);
     let cfg = build_config(&NonoSpec {
         rules: &spec.rules,
         nonce: &internal,
         ca: &ca,
-        ca_dir: &ca::ca_dir(deps.state_dir, task),
+        ca_dir: &ca::ca_dir(deps.state_dir, box_id),
         upstream_ca: deps.upstream_ca.as_deref(),
         chain: graphql.as_ref().map(|f| Chain {
             proxy: f.addr(),
@@ -63,7 +63,7 @@ pub(super) fn listen(
             ca_pem: &ca_pem,
         }),
     });
-    let log = match ProxyLog::open(deps.state_dir, task, Arc::clone(&deps.clock)) {
+    let log = match ProxyLog::open(deps.state_dir, box_id, Arc::clone(&deps.clock)) {
         Ok(log) => log,
         Err(err) => {
             stop_filter(graphql);
@@ -254,11 +254,11 @@ impl Live {
     }
 
     /// Moves the audit events recorded since the last call into the log and the store.
-    pub(super) fn drain(&self, deps: &Deps<'_>, task: BoxId) {
+    pub(super) fn drain(&self, deps: &Deps<'_>, box_id: BoxId) {
         let sink = BoxSink {
             log: &self.log,
             store: deps.store,
-            task,
+            box_id,
         };
         apply(
             &self.proxy.drain_audit(),
@@ -276,9 +276,9 @@ impl Live {
         }
     }
 
-    /// Removes the Task CA directory, which also holds the spec.
-    pub(super) fn forget(deps: &Deps<'_>, task: BoxId) {
-        if let Err(err) = ca::remove(deps.state_dir, task) {
+    /// Removes the Box CA directory, which also holds the spec.
+    pub(super) fn forget(deps: &Deps<'_>, box_id: BoxId) {
+        if let Err(err) = ca::remove(deps.state_dir, box_id) {
             say(
                 &deps.stderr,
                 format_args!("cannot remove the proxy CA: {err}"),

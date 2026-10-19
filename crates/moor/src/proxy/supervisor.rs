@@ -1,7 +1,7 @@
-//! The per-Task proxy supervisor run by `moor proxy serve <task>`.
+//! The per-Box proxy supervisor run by `moor proxy serve <box>`.
 //!
-//! It claims the lease on the Task's proxy row, starts the nono proxy, opens the reverse
-//! tunnel into the Box and marks the row ready. It then heartbeats until the Task closes, the
+//! It claims the lease on the Box's proxy row, starts the nono proxy, opens the reverse
+//! tunnel into the machine and marks the row ready. It then heartbeats until the Box closes, the
 //! lease is lost, the tunnel dies or a signal arrives.
 
 mod bind;
@@ -38,11 +38,11 @@ pub(crate) type Sink = Arc<Mutex<dyn Write + Send>>;
 
 /// Everything the supervisor needs from the outside.
 pub(crate) struct Deps<'a> {
-    /// Task and proxy rows.
+    /// Box and proxy rows.
     pub(crate) store: &'a Store,
     /// Opens the reverse tunnel into the Box.
     pub(crate) driver: &'a dyn Driver,
-    /// Forge the Task repo lives on.
+    /// Forge the Box repo lives on.
     pub(crate) forge: Arc<dyn Forge>,
     /// Source of time and sleeping.
     pub(crate) clock: Arc<dyn Clock>,
@@ -66,9 +66,9 @@ pub(crate) struct Deps<'a> {
     pub(crate) stderr: Sink,
 }
 
-/// Supervises the proxy of `task` until it must stop; returns the process exit code.
-pub(crate) fn serve(deps: &Deps<'_>, task: BoxId) -> u8 {
-    match start(deps, task) {
+/// Supervises the proxy of `box_id` until it must stop; returns the process exit code.
+pub(crate) fn serve(deps: &Deps<'_>, box_id: BoxId) -> u8 {
+    match start(deps, box_id) {
         Err(code) => code,
         Ok(running) => loop {
             if deps.stop.load(Ordering::Acquire) {
@@ -83,6 +83,6 @@ pub(crate) fn serve(deps: &Deps<'_>, task: BoxId) -> u8 {
 }
 
 /// Claims the lease and brings the listener and tunnel up. `Err` carries the exit code.
-fn start<'d>(deps: &'d Deps<'d>, task: BoxId) -> Result<Running<'d>, u8> {
-    run::begin(deps, task)
+fn start<'d>(deps: &'d Deps<'d>, box_id: BoxId) -> Result<Running<'d>, u8> {
+    run::begin(deps, box_id)
 }
