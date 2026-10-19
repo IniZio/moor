@@ -28,7 +28,7 @@ pub(crate) fn run(cx: &Cx, req: &CpReq) -> Result<CpValue, CommandError> {
     }
     let store = cx.store()?;
     let id = store
-        .open_task_by_name(&req.box_name)?
+        .open_box_by_name(&req.box_name)?
         .ok_or_else(|| {
             CommandError::new(
                 ErrorKind::Failed,
@@ -38,7 +38,7 @@ pub(crate) fn run(cx: &Cx, req: &CpReq) -> Result<CpValue, CommandError> {
         .id;
     let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "cp", boxlock::WAIT)?;
     let reload = || {
-        store.task(id)?.ok_or_else(|| {
+        store.box_row(id)?.ok_or_else(|| {
             CommandError::new(
                 ErrorKind::Failed,
                 format!("no task {}", req.box_name.as_str()),

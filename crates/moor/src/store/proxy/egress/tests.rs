@@ -11,7 +11,7 @@ use serde_json::json;
 use crate::store::{Store, StoreError};
 use crate::testing::clock::FakeClock;
 
-/// A store in a temp dir with one task.
+/// A store in a temp dir with one box.
 fn setup(dir: &std::path::Path) -> (Store, BoxId) {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
     let store = Store::open(&dir.join("moor.db"), clock).unwrap();
@@ -19,7 +19,7 @@ fn setup(dir: &std::path::Path) -> (Store, BoxId) {
         name: BoxName::parse_allow_bare("t").unwrap(),
         repo: "r".into(),
     };
-    let id = store.apply(Decision::insert(nt)).unwrap().task;
+    let id = store.apply(Decision::insert(nt)).unwrap().box_id;
     (store, id)
 }
 
@@ -96,7 +96,7 @@ fn other_events_are_rejected() {
 }
 
 #[test]
-fn unknown_task_is_not_found() {
+fn unknown_box_is_not_found() {
     let dir = tempfile::tempdir().unwrap();
     let (store, id) = setup(dir.path());
     let e = Event::ProxyCredentialFailed { rule: "gh".into() };

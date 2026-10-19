@@ -8,7 +8,7 @@ use moor_core::BoxName;
 use crate::store::tests::open;
 use crate::store::StoreError;
 
-/// A new-task decision.
+/// A new-box decision.
 fn insert(name: &str) -> Decision {
     Decision::insert(NewBox {
         name: BoxName::parse_allow_bare(name).unwrap(),
@@ -29,7 +29,7 @@ fn open_name_collision_is_name_taken() {
 fn closed_name_can_be_reused() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
-    let id = store.apply(insert("dup")).unwrap().task;
+    let id = store.apply(insert("dup")).unwrap().box_id;
     store
         .apply(
             Decision::new(id)
@@ -61,7 +61,7 @@ fn states(store: &crate::store::Store, id: moor_core::BoxId) -> (String, String)
 
 /// Move a fresh Box to Ready with a working primary Session.
 fn ready(store: &crate::store::Store) -> moor_core::BoxId {
-    let id = store.apply(insert("b")).unwrap().task;
+    let id = store.apply(insert("b")).unwrap().box_id;
     let admit = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
         .box_input(moor_core::domain::boxes::BoxInput::Requested)
@@ -88,7 +88,7 @@ fn insert_records_the_branch_ref() {
     let (store, _clock) = open(dir.path());
     let mut d = insert("b");
     d.set.branch = Field::Set("feat/x".into());
-    let id = store.apply(d).unwrap().task;
+    let id = store.apply(d).unwrap().box_id;
     assert_eq!(store.box_refs(id, "branch").unwrap(), ["feat/x"]);
 }
 
@@ -192,7 +192,7 @@ fn step_updates_only_the_current_session() {
 }
 
 #[test]
-fn task_row_reports_the_current_session_state() {
+fn box_row_reports_the_current_session_state() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
     let id = ready(&store);
@@ -207,7 +207,7 @@ fn task_row_reports_the_current_session_state() {
     store.open_session(id).unwrap();
     set_current_state(&store, id, "working");
     let conn = store.writer().unwrap();
-    let row = crate::store::load_task(&conn, id).unwrap().unwrap();
+    let row = crate::store::load_box(&conn, id).unwrap().unwrap();
     drop(conn);
     assert_eq!(row.session.as_str(), "working");
 }
@@ -244,8 +244,8 @@ fn insert_writes_parent_session_on_the_first_session() {
     let child = store
         .apply(insert("child").parent_session(Some(parent)))
         .unwrap()
-        .task;
-    let plain = store.apply(insert("plain")).unwrap().task;
+        .box_id;
+    let plain = store.apply(insert("plain")).unwrap().box_id;
     let conn = store.writer().unwrap();
     let get = |id: moor_core::BoxId| -> Option<i64> {
         conn.query_row(
@@ -345,7 +345,7 @@ fn separate_close_inputs_match_the_combined_close() {
 fn setting_up_after_admission_records_checking_as_from() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
-    let id = store.apply(insert("b")).unwrap().task;
+    let id = store.apply(insert("b")).unwrap().box_id;
     let admit = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
         .box_input(moor_core::domain::boxes::BoxInput::Requested)

@@ -31,7 +31,7 @@ pub(crate) fn run(cx: &Cx, req: &SessionsReq) -> Result<SessionsValue, CommandEr
         .into_iter()
         .map(|r| SessionListItem {
             session: SessionId::new(r.id),
-            box_name: r.task.map(|t| t.as_str().to_owned()),
+            box_name: r.box_name.map(|t| t.as_str().to_owned()),
             box_id: r.box_id,
             parent: r.parent.map(SessionId::new),
             state: r.state.as_str().to_owned(),

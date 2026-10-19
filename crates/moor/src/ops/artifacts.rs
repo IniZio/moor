@@ -151,7 +151,7 @@ fn io_error(row: &ArtifactRow, e: &std::io::Error) -> CommandError {
 /// Resolve the newest Task with this name.
 fn task_id(store: &Store, name: &BoxName) -> Result<moor_core::BoxId, CommandError> {
     store
-        .latest_task_by_name(name)?
+        .latest_box_by_name(name)?
         .map(|t| t.id)
         .ok_or_else(|| CommandError::new(ErrorKind::NotFound, format!("no task {}", name.as_str())))
 }

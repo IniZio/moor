@@ -61,7 +61,7 @@ fn admit(cx: &Cx, driver: &FakeDriver, dir: &Path) -> BoxId {
             repo: "r".into(),
         }))
         .unwrap()
-        .task;
+        .box_id;
     let provider = ProviderId::new("p");
     let fields = Fields {
         box_provider: Field::Set(provider.clone()),
@@ -96,7 +96,7 @@ fn admit(cx: &Cx, driver: &FakeDriver, dir: &Path) -> BoxId {
 }
 
 fn row(f: &Fx) -> BoxRow {
-    f.cx.store().unwrap().task(f.id).unwrap().unwrap()
+    f.cx.store().unwrap().box_row(f.id).unwrap().unwrap()
 }
 
 fn sha(bytes: &[u8]) -> String {

@@ -28,7 +28,7 @@ fn observed(
     w: &World,
     v: &moor_core::view::StartView,
 ) -> (String, Vec<Option<String>>, Vec<Option<String>>) {
-    let row = w.cx.store().unwrap().task(BoxId::new(v.boxed.id));
+    let row = w.cx.store().unwrap().box_row(BoxId::new(v.boxed.id));
     let stored = row.unwrap().unwrap().boxed.unwrap().workdir.unwrap();
     let (mut setup, mut identity) = (Vec::new(), Vec::new());
     for (_, spec, _) in w.driver.execs() {
@@ -72,7 +72,7 @@ fn a_custom_work_root_is_the_root_of_the_probed_workdir() {
 fn every_box_exec_runs_from_the_task_worktree() {
     // crabbox derives its claim root from the host cwd, so a stray cwd gets the lease refused.
     let (w, v) = start(FakeDriver::new());
-    let row = w.cx.store().unwrap().task(BoxId::new(v.boxed.id));
+    let row = w.cx.store().unwrap().box_row(BoxId::new(v.boxed.id));
     let worktree = std::path::PathBuf::from(row.unwrap().unwrap().worktree.unwrap());
     let execs = w.driver.execs();
     assert!(execs.iter().any(|(_, s, _)| is_identity(&s.argv)));
@@ -110,7 +110,7 @@ fn start_in_a_replaced_box_runs_setup_in_a_workdir_whose_root_holds_a_parent_com
         .and_then(|e| e.1.cwd.as_ref())
         .map(|p| p.as_str().to_owned());
     assert_eq!(cwd.as_deref(), Some("/w/bin/../box/cbx_2/demo"));
-    let row = w.cx.store().unwrap().task(id).unwrap().unwrap();
+    let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(
         row.boxed.unwrap().workdir.as_deref(),
         Some("/w/bin/../box/cbx_2/demo")

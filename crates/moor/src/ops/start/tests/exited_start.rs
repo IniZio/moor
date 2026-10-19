@@ -85,7 +85,7 @@ fn check_second_session(w: &World, engine: &FakeEngine, id: BoxId) {
             .unwrap()
             .id;
     assert_eq!(launches.last().copied().flatten(), Some(second));
-    let task = w.cx.store().unwrap().task(id).unwrap().unwrap();
+    let task = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert!(working(&task));
 }
 

@@ -96,7 +96,7 @@ fn fx_with(driver: FakeDriver) -> Fx {
             repo: "r".into(),
         }))
         .unwrap()
-        .task;
+        .box_id;
     let provider = ProviderId::new("p");
     let fields = Fields {
         box_provider: Field::Set(provider.clone()),
@@ -159,7 +159,7 @@ fn row(f: &Fx) -> BoxRow {
     let name = BoxName::parse_allow_bare("t").unwrap();
     f.cx.store()
         .unwrap()
-        .open_task_by_name(&name)
+        .open_box_by_name(&name)
         .unwrap()
         .unwrap()
 }

@@ -72,7 +72,7 @@ fn add(cx: &Cx, name: &str) -> BoxId {
         .unwrap()
         .apply(Decision::insert(nt))
         .unwrap()
-        .task
+        .box_id
 }
 
 /// Give a task a Ready box acquired from `driver`.
@@ -225,7 +225,7 @@ fn task_shows_its_in_flight_run() {
     cx.store()
         .unwrap()
         .begin_run(NewRun {
-            task: id,
+            box_id: id,
             argv: vec!["make".into(), "test".into()],
             record: None,
             sha: None,
@@ -367,10 +367,10 @@ fn show_leaves_the_task_row_untouched() {
     let engine = Arc::new(FakeEngine::new().probes("s-a", hook(&cx, HookKind::Idle)));
     let cx = engine_cx(dir.path(), &driver, &engine);
     let store = cx.store().unwrap();
-    let before = store.task(id).unwrap();
+    let before = store.box_row(id).unwrap();
     assert_eq!(parts(before.as_ref().unwrap()), WORKING);
     run(&cx, &req(Some("a"), None)).unwrap();
-    assert_eq!(store.task(id).unwrap(), before);
+    assert_eq!(store.box_row(id).unwrap(), before);
 }
 
 /// Probes whose pane alone reports `status`, with no hook report.
@@ -408,7 +408,7 @@ fn list_settles_a_quiet_agent_to_idle() {
     let engine = Arc::new(FakeEngine::new().probes("s-a", hook(&cx, HookKind::Idle)));
     let cx = engine_cx(dir.path(), &driver, &engine);
     let v = run(&cx, &req(None, None)).unwrap();
-    let row = cx.store().unwrap().task(id).unwrap().unwrap();
+    let row = cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(parts(&row), IDLE);
     assert!(idle_since(cx.store().unwrap(), id).is_some());
     assert_eq!((first(&v).lifecycle, first(&v).session_state), IDLE);
@@ -427,7 +427,7 @@ fn list_settles_a_busy_agent_to_working() {
     let engine = Arc::new(FakeEngine::new().probes("s-a", hook(&cx, HookKind::Busy)));
     let cx = engine_cx(dir.path(), &driver, &engine);
     run(&cx, &req(None, None)).unwrap();
-    let row = cx.store().unwrap().task(id).unwrap().unwrap();
+    let row = cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(parts(&row), WORKING);
     assert!(idle_since(cx.store().unwrap(), id).is_none());
 }
@@ -444,7 +444,7 @@ fn pane_only_reading(status: PaneStatus) -> (Reading, Parts) {
     cx.clock().sleep(STARTUP_GRACE + Duration::from_secs(60));
     run(&cx, &req(None, None)).unwrap();
     let store = cx.store().unwrap();
-    let row = store.task(id).unwrap().unwrap();
+    let row = store.box_row(id).unwrap().unwrap();
     let now = cx.clock().now();
     let reading = activity::read(&cx, store, &row, now).unwrap();
     (reading, parts(&row))
@@ -545,7 +545,7 @@ fn a_task_freshly_started_is_not_idled_by_the_next_list() {
     assert!(t.agent.is_some());
     let id = BoxId::new(started.boxed.id);
     assert!(cx.store().unwrap().live_session(id).unwrap().is_some());
-    let row = cx.store().unwrap().task(id).unwrap().unwrap();
+    let row = cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(parts(&row), WORKING);
 }
 
@@ -570,7 +570,7 @@ fn list_sleeps_a_task_idle_past_the_threshold() {
     let (cx, id) = idle_task(dir.path(), &driver);
     cx.clock().sleep(LONG);
     let v = run(&cx, &req(None, None)).unwrap();
-    let row = cx.store().unwrap().task(id).unwrap().unwrap();
+    let row = cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(row.lifecycle, BoxLifecycle::Asleep);
     assert_eq!(first(&v).lifecycle, BoxLifecycle::Asleep);
     assert_eq!(first(&v).driver.as_ref().unwrap().state, BoxState::Asleep);
@@ -582,7 +582,7 @@ fn list_leaves_a_recently_idle_task_up() {
     let driver = Arc::new(FakeDriver::new());
     let (cx, id) = idle_task(dir.path(), &driver);
     run(&cx, &req(None, None)).unwrap();
-    let row = cx.store().unwrap().task(id).unwrap().unwrap();
+    let row = cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(parts(&row), IDLE);
 }
 
@@ -593,7 +593,7 @@ fn showing_one_task_does_not_sleep_it() {
     let (cx, id) = idle_task(dir.path(), &driver);
     cx.clock().sleep(LONG);
     run(&cx, &req(Some("a"), None)).unwrap();
-    let row = cx.store().unwrap().task(id).unwrap().unwrap();
+    let row = cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(parts(&row), IDLE);
     assert!(!driver.calls().iter().any(|c| c.starts_with("sleep ")));
 }

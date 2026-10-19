@@ -93,7 +93,7 @@ impl Rig {
                 repo: "r".into(),
             }))
             .unwrap()
-            .task;
+            .box_id;
         let log = ProxyLog::open(&self.state(), task, self.clock.clone()).unwrap();
         (store, task, log)
     }

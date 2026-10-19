@@ -60,7 +60,7 @@ fn an_agent_that_exits_127_at_launch_is_a_launch_failure() {
             "agent dispatch failed: launch: {NOT_FOUND}; re-run start to retry"
         )]
     );
-    assert!(store.task(id).unwrap().unwrap().launch_failure.is_some());
+    assert!(store.box_row(id).unwrap().unwrap().launch_failure.is_some());
     assert!(store.live_session(id).unwrap().is_none());
     let events = store.events(id, 50).unwrap();
     let failed = events.iter().find(|e| e.kind == "session_failed").unwrap();
@@ -120,7 +120,7 @@ fn a_relaunched_agent_that_exits_127_is_a_launch_failure() {
     let store = w.cx.store().unwrap();
     assert!(!v.agent.launched);
     assert_eq!(v.agent.reason.unwrap().message, NOT_FOUND);
-    assert!(store.task(id).unwrap().unwrap().launch_failure.is_some());
+    assert!(store.box_row(id).unwrap().unwrap().launch_failure.is_some());
     assert!(store.live_session(id).unwrap().is_none());
     let events = store.events(id, 50).unwrap();
     assert!(events.iter().any(|e| e.kind == "session_failed"));

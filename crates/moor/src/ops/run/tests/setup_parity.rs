@@ -36,7 +36,7 @@ fn with_env_yaml() -> Fx {
 
 /// The spec setup would exec for this Task's Box.
 fn setup_spec(f: &Fx) -> ExecSpec {
-    let row = f.cx.store().unwrap().task(f.id).unwrap().unwrap();
+    let row = f.cx.store().unwrap().box_row(f.id).unwrap().unwrap();
     let repo = moor_yaml::guard(&f.cx, &row, false).unwrap();
     let cfg = resolved(&f.cx, repo.as_ref(), &Flags::default());
     let boxed = row.boxed.unwrap();

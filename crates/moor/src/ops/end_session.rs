@@ -27,14 +27,14 @@ pub(crate) fn run(cx: &Cx, req: &EndSessionReq) -> Result<EndSessionValue, Comma
     let parsed = BoxName::parse_allow_bare(name)
         .map_err(|e| CommandError::new(ErrorKind::Usage, e.to_string()))?;
     let id = store
-        .open_task_by_name(&parsed)?
+        .open_box_by_name(&parsed)?
         .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no open task {name}")))?
         .id;
     let no_session =
         || CommandError::new(ErrorKind::Refused, format!("no live Session in Box {name}"));
     let reload = || {
         store
-            .task(id)?
+            .box_row(id)?
             .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no task {name}")))
     };
     let _held = BoxLock::acquire(

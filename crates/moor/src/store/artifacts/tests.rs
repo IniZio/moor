@@ -19,13 +19,13 @@ fn open(dir: &Path) -> Store {
     Store::open(&dir.join("moor.db"), clock).unwrap()
 }
 
-/// Insert a task by name.
+/// Insert a box by name.
 fn add(store: &Store, name: &str) -> BoxId {
     let nt = NewBox {
         name: BoxName::parse_allow_bare(name).unwrap(),
         repo: "r".into(),
     };
-    store.apply(Decision::insert(nt)).unwrap().task
+    store.apply(Decision::insert(nt)).unwrap().box_id
 }
 
 /// Mode bits of `path`.

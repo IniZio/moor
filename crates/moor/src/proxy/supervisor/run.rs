@@ -81,7 +81,7 @@ fn give_up(deps: &Deps<'_>, task: BoxId, owner: &str) {
 /// Checks the Task, the proxy row, the spec and the Box handle, refusing with exit code 1 when any is missing.
 fn preflight(deps: &Deps<'_>, task: BoxId) -> Result<(BoxRow, BoxHandle, ProxySpec), u8> {
     let sink = &deps.stderr;
-    let task_row = match deps.store.task(task) {
+    let task_row = match deps.store.box_row(task) {
         Ok(Some(row)) if !terminal(row.lifecycle) => row,
         Ok(_) => {
             say(
@@ -324,7 +324,7 @@ impl Running<'_> {
             return stop;
         }
         self.live.drain(self.deps, self.task);
-        match self.deps.store.task(self.task) {
+        match self.deps.store.box_row(self.task) {
             Ok(Some(row)) if !terminal(row.lifecycle) => {}
             Ok(_) => return Some(Stop::Closed),
             Err(err) => {

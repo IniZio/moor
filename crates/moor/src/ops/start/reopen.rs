@@ -25,7 +25,7 @@ pub(super) fn ended_session(
     if !ended {
         return Ok(false);
     }
-    let prior = store.task(id)?;
+    let prior = store.box_row(id)?;
     let next = store.open_child_session(id, parent)?;
     store.start_session(next.id)?;
     if let Some(row) = prior {

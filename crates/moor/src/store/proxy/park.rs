@@ -1,6 +1,6 @@
-//! Tunnel park requests: how an op asks a task's proxy supervisor to park or restore its tunnel.
+//! Tunnel park requests: how an op asks a box's proxy supervisor to park or restore its tunnel.
 //!
-//! Both sides live in `meta` rows keyed per task, so no schema change is needed. A request carries
+//! Both sides live in `meta` rows keyed per box, so no schema change is needed. A request carries
 //! a sequence number the supervisor echoes in its ack, which lets the op ignore stale acks.
 
 use moor_core::BoxId;
@@ -24,7 +24,7 @@ pub(crate) enum TunnelWant {
 pub(crate) struct TunnelRequest {
     /// The wanted state.
     pub(crate) want: TunnelWant,
-    /// Request number, counting up from 1 per task.
+    /// Request number, counting up from 1 per box.
     pub(crate) seq: u64,
 }
 
@@ -85,19 +85,19 @@ impl TunnelAck {
     }
 }
 
-/// Key of the request row of `task`.
-fn want_key(task: BoxId) -> String {
-    format!("tunnel_want:{}", task.get())
+/// Key of the request row of `box_id`.
+fn want_key(box_id: BoxId) -> String {
+    format!("tunnel_want:{}", box_id.get())
 }
 
-/// Key of the ack row of `task`.
-fn ack_key(task: BoxId) -> String {
-    format!("tunnel_ack:{}", task.get())
+/// Key of the ack row of `box_id`.
+fn ack_key(box_id: BoxId) -> String {
+    format!("tunnel_ack:{}", box_id.get())
 }
 
-/// Key of the row recording that a supervisor has opened a tunnel into the Box of `task`.
-fn opened_key(task: BoxId) -> String {
-    format!("tunnel_opened:{}", task.get())
+/// Key of the row recording that a supervisor has opened a tunnel into the Box of `box_id`.
+fn opened_key(box_id: BoxId) -> String {
+    format!("tunnel_opened:{}", box_id.get())
 }
 
 /// Stored form of a request.
@@ -141,11 +141,11 @@ fn put(conn: &Connection, key: &str, value: &str) -> Result<(), StoreError> {
     Ok(())
 }
 
-/// Delete the request and ack rows of `task` on `conn`.
-pub(super) fn clear(conn: &Connection, task: BoxId) -> Result<(), StoreError> {
+/// Delete the request and ack rows of `box_id` on `conn`.
+pub(super) fn clear(conn: &Connection, box_id: BoxId) -> Result<(), StoreError> {
     conn.execute(
         "DELETE FROM meta WHERE k IN (?, ?, ?)",
-        params![want_key(task), ack_key(task), opened_key(task)],
+        params![want_key(box_id), ack_key(box_id), opened_key(box_id)],
     )?;
     Ok(())
 }
@@ -153,8 +153,12 @@ pub(super) fn clear(conn: &Connection, task: BoxId) -> Result<(), StoreError> {
 impl Store {
     /// Records the wanted tunnel state; the sequence number is the previous request's plus one, or
     /// 1 when there is none. Returns it.
-    pub(crate) fn request_tunnel(&self, task: BoxId, want: TunnelWant) -> Result<u64, StoreError> {
-        let key = want_key(task);
+    pub(crate) fn request_tunnel(
+        &self,
+        box_id: BoxId,
+        want: TunnelWant,
+    ) -> Result<u64, StoreError> {
+        let key = want_key(box_id);
         let mut conn = self.writer()?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let prev = match get(&tx, &key)? {
@@ -174,10 +178,13 @@ impl Store {
         Ok(seq)
     }
 
-    /// The latest tunnel request of `task`, if any.
-    pub(crate) fn tunnel_request(&self, task: BoxId) -> Result<Option<TunnelRequest>, StoreError> {
+    /// The latest tunnel request of `box_id`, if any.
+    pub(crate) fn tunnel_request(
+        &self,
+        box_id: BoxId,
+    ) -> Result<Option<TunnelRequest>, StoreError> {
         let conn = self.reader()?;
-        get(&conn, &want_key(task))?
+        get(&conn, &want_key(box_id))?
             .map(|raw| {
                 decode_request(&raw)
                     .ok_or_else(|| StoreError::Corrupt(format!("tunnel request `{raw}`")))
@@ -185,29 +192,29 @@ impl Store {
             .transpose()
     }
 
-    /// Records the supervisor's answer to a tunnel request of `task`.
-    pub(crate) fn ack_tunnel(&self, task: BoxId, ack: &TunnelAck) -> Result<(), StoreError> {
+    /// Records the supervisor's answer to a tunnel request of `box_id`.
+    pub(crate) fn ack_tunnel(&self, box_id: BoxId, ack: &TunnelAck) -> Result<(), StoreError> {
         let conn = self.writer()?;
-        put(&conn, &ack_key(task), &ack.encode())
+        put(&conn, &ack_key(box_id), &ack.encode())
     }
 
-    /// Records that a tunnel is about to be opened into the Box of `task`; it stays set until the
+    /// Records that a tunnel is about to be opened into the Box of `box_id`; it stays set until the
     /// proxy row is removed.
-    pub(crate) fn note_tunnel_opened(&self, task: BoxId) -> Result<(), StoreError> {
+    pub(crate) fn note_tunnel_opened(&self, box_id: BoxId) -> Result<(), StoreError> {
         let conn = self.writer()?;
-        put(&conn, &opened_key(task), "1")
+        put(&conn, &opened_key(box_id), "1")
     }
 
-    /// Whether a tunnel was ever opened into the Box of `task`.
-    pub(crate) fn tunnel_opened(&self, task: BoxId) -> Result<bool, StoreError> {
+    /// Whether a tunnel was ever opened into the Box of `box_id`.
+    pub(crate) fn tunnel_opened(&self, box_id: BoxId) -> Result<bool, StoreError> {
         let conn = self.reader()?;
-        Ok(get(&conn, &opened_key(task))?.is_some())
+        Ok(get(&conn, &opened_key(box_id))?.is_some())
     }
 
-    /// The latest tunnel ack of `task`, if any.
-    pub(crate) fn tunnel_ack(&self, task: BoxId) -> Result<Option<TunnelAck>, StoreError> {
+    /// The latest tunnel ack of `box_id`, if any.
+    pub(crate) fn tunnel_ack(&self, box_id: BoxId) -> Result<Option<TunnelAck>, StoreError> {
         let conn = self.reader()?;
-        get(&conn, &ack_key(task))?
+        get(&conn, &ack_key(box_id))?
             .map(|raw| {
                 TunnelAck::decode(&raw)
                     .ok_or_else(|| StoreError::Corrupt(format!("tunnel ack `{raw}`")))

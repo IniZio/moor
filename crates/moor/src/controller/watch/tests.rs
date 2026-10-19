@@ -62,7 +62,7 @@ fn add(store: &Store, name: &str) -> BoxId {
         name: BoxName::parse_allow_bare(name).expect("name"),
         repo: "r".into(),
     };
-    store.apply(Decision::insert(new)).expect("insert").task
+    store.apply(Decision::insert(new)).expect("insert").box_id
 }
 
 /// Append `n` `copied` events to `id`.

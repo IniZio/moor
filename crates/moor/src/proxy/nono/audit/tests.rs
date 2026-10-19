@@ -297,7 +297,7 @@ fn box_sink_parts(dir: &Path) -> (Store, ProxyLog, BoxId) {
         name: BoxName::parse_allow_bare("t").unwrap(),
         repo: "r".into(),
     };
-    let task = store.apply(Decision::insert(new)).unwrap().task;
+    let task = store.apply(Decision::insert(new)).unwrap().box_id;
     let log = ProxyLog::open(dir, task, clock).unwrap();
     (store, log, task)
 }

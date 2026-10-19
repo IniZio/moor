@@ -47,7 +47,7 @@ fn fx() -> Fx {
             repo: "r".into(),
         }))
         .unwrap()
-        .task;
+        .box_id;
     Fx {
         _dir: dir,
         cx,

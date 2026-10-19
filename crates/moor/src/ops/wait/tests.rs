@@ -58,15 +58,15 @@ fn add(cx: &Cx) -> BoxId {
         .unwrap()
         .apply(Decision::insert(nt))
         .unwrap()
-        .task
+        .box_id
 }
 
 /// Begin a run of `demo` owned by `PID`.
-fn begin(cx: &Cx, task: BoxId) {
+fn begin(cx: &Cx, box_id: BoxId) {
     cx.store()
         .unwrap()
         .begin_run(NewRun {
-            task,
+            box_id,
             argv: vec!["make".into(), "test".into()],
             record: None,
             sha: None,
@@ -371,11 +371,11 @@ fn waiting_leaves_the_task_row_alone() {
     let dir = tempfile::tempdir().unwrap();
     let (cx, _) = agent_cx(dir.path(), hook(HookKind::Idle));
     let id = add_live(&cx);
-    let before = cx.store().unwrap().task(id).unwrap().unwrap();
+    let before = cx.store().unwrap().box_row(id).unwrap().unwrap();
     for _ in 0..3 {
         let v = run(&cx, &req(None, Some(1))).unwrap();
         assert!(!v.timed_out);
-        assert_eq!(cx.store().unwrap().task(id).unwrap().unwrap(), before);
+        assert_eq!(cx.store().unwrap().box_row(id).unwrap().unwrap(), before);
     }
 }
 
@@ -469,11 +469,11 @@ fn launch_failure_sleep_label_follows_provider_sleep_support() {
 }
 
 /// Record an `agent_rate_limited` event for the `claude` rule on `task`.
-fn rate_limit(cx: &Cx, task: BoxId) {
+fn rate_limit(cx: &Cx, box_id: BoxId) {
     cx.store()
         .unwrap()
         .record_proxy_event(
-            task,
+            box_id,
             &Event::AgentRateLimited {
                 rule: "claude".into(),
                 status: 429,

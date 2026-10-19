@@ -52,10 +52,7 @@ fn start_with_an_unknown_parent_is_refused_before_any_box() {
     let err = run(&w.cx, &child("demo", 999)).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Refused);
     let store = w.cx.store().unwrap();
-    assert!(store
-        .open_task_by_name(&req("demo").name)
-        .unwrap()
-        .is_none());
+    assert!(store.open_box_by_name(&req("demo").name).unwrap().is_none());
     assert!(w.driver.calls().is_empty());
 }
 
@@ -67,9 +64,6 @@ fn start_with_an_ended_parent_is_refused_before_any_box() {
     store.end_host_session(parent).unwrap();
     let err = run(&w.cx, &child("demo", parent)).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Refused);
-    assert!(store
-        .open_task_by_name(&req("demo").name)
-        .unwrap()
-        .is_none());
+    assert!(store.open_box_by_name(&req("demo").name).unwrap().is_none());
     assert!(w.driver.calls().is_empty());
 }

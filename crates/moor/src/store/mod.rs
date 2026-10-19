@@ -52,7 +52,7 @@ pub(crate) const SCHEMA_VERSION: &str = "4";
 const SCHEMA_SQL: &str = include_str!("schema.sql");
 /// How long a connection waits on a lock before `SQLITE_BUSY`.
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
-/// Column list shared by the task reads; session columns come from the current session.
+/// Column list shared by the box reads; session columns come from the current session.
 const BOX_SELECT: &str = "SELECT b.id, b.name, b.repo, b.issue, b.goal, b.base, b.branch, b.worktree, b.bound, \
     s.workspace_id, s.agent_session_id, b.state, b.state_reason, b.intent_kind, b.intent_pid, b.intent_run, \
     b.intent_at, b.setup_failed_at, b.created_at, b.updated_at, b.provider, b.handle, b.driver_state, \
@@ -80,11 +80,11 @@ pub(crate) enum StoreError {
         /// Version this build needs.
         want: &'static str,
     },
-    /// A task input or box input was illegal in the current state.
+    /// A box input or box input was illegal in the current state.
     #[error("{0}")]
     Illegal(#[from] moor_core::domain::Illegal),
-    /// No such task.
-    #[error("task {} not found", .0.get())]
+    /// No such box.
+    #[error("box {} not found", .0.get())]
     NotFound(BoxId),
     /// The decision or request was malformed.
     #[error("invalid: {0}")]
@@ -115,7 +115,7 @@ pub(crate) enum StoreError {
     Poisoned,
 }
 
-/// Box row joined to a task.
+/// Box row joined to a box.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DriverRow {
     /// Driver provider id.
@@ -136,14 +136,14 @@ pub(crate) struct DriverRow {
     pub(crate) updated_at: Ts,
 }
 
-/// Task row with its optional box.
+/// Box row with its optional box.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct BoxRow {
-    /// Task id.
+    /// Box id.
     pub(crate) id: BoxId,
-    /// Task name.
+    /// Box name.
     pub(crate) name: BoxName,
-    /// Repo the task works on.
+    /// Repo the box works on.
     pub(crate) repo: String,
     /// Issue reference.
     pub(crate) issue: Option<String>,
@@ -173,7 +173,7 @@ pub(crate) struct BoxRow {
     pub(crate) intent_at: Option<Ts>,
     /// When setup last failed, if it has.
     pub(crate) setup_failed_at: Option<Ts>,
-    /// When the task last became Idle; none while it is not Idle.
+    /// When the box last became Idle; none while it is not Idle.
     pub(crate) idle_since: Option<Ts>,
     /// Why the last agent launch failed; cleared by a launch that succeeds.
     pub(crate) launch_failure: Option<LaunchFailure>,
@@ -181,7 +181,7 @@ pub(crate) struct BoxRow {
     pub(crate) created_at: Ts,
     /// Last update.
     pub(crate) updated_at: Ts,
-    /// The task's box, if any.
+    /// The box's box, if any.
     pub(crate) boxed: Option<DriverRow>,
 }
 
@@ -190,8 +190,8 @@ pub(crate) struct BoxRow {
 pub(crate) struct EventRow {
     /// Event id.
     pub(crate) id: i64,
-    /// Owning task.
-    pub(crate) task: BoxId,
+    /// Owning box.
+    pub(crate) box_id: BoxId,
     /// Event kind.
     pub(crate) kind: String,
     /// Event fields without `kind`.
@@ -230,21 +230,21 @@ impl Store {
         })
     }
 
-    /// One task by id.
-    pub(crate) fn task(&self, id: BoxId) -> Result<Option<BoxRow>, StoreError> {
-        load_task(&self.reader()?, id)
+    /// One box by id.
+    pub(crate) fn box_row(&self, id: BoxId) -> Result<Option<BoxRow>, StoreError> {
+        load_box(&self.reader()?, id)
     }
 
-    /// Tasks that are neither closed nor rejected, by id ascending.
-    pub(crate) fn open_tasks(&self) -> Result<Vec<BoxRow>, StoreError> {
+    /// Boxes that are neither closed nor rejected, by id ascending.
+    pub(crate) fn open_boxes(&self) -> Result<Vec<BoxRow>, StoreError> {
         let conn = self.reader()?;
         let sql = format!("{BOX_SELECT} WHERE b.state NOT IN ('closed', 'rejected') ORDER BY b.id");
         let mut stmt = conn.prepare(&sql)?;
-        let rows = stmt.query_and_then([], task_from_row)?;
+        let rows = stmt.query_and_then([], box_from_row)?;
         rows.collect()
     }
 
-    /// The last `last` events of a task, ascending by id.
+    /// The last `last` events of a box, ascending by id.
     pub(crate) fn events(&self, id: BoxId, last: usize) -> Result<Vec<EventRow>, StoreError> {
         let limit = i64::try_from(last).unwrap_or(i64::MAX);
         let conn = self.reader()?;
@@ -256,7 +256,7 @@ impl Store {
         rows.collect()
     }
 
-    /// The task's latest `needs_input`, `busy` or `working` event; none when it has had none.
+    /// The box's latest `needs_input`, `busy` or `working` event; none when it has had none.
     pub(crate) fn last_waiting_marker(&self, id: BoxId) -> Result<Option<EventRow>, StoreError> {
         let conn = self.reader()?;
         let mut stmt = conn.prepare(
@@ -288,10 +288,10 @@ impl Store {
     }
 }
 
-/// Load one task joined to its box, on any connection (used inside `apply`'s transaction too).
-pub(super) fn load_task(conn: &Connection, id: BoxId) -> Result<Option<BoxRow>, StoreError> {
+/// Load one box joined to its box, on any connection (used inside `apply`'s transaction too).
+pub(super) fn load_box(conn: &Connection, id: BoxId) -> Result<Option<BoxRow>, StoreError> {
     let mut stmt = conn.prepare(&format!("{BOX_SELECT} WHERE b.id = ?1"))?;
-    let mut rows = stmt.query_and_then([id.get()], task_from_row)?;
+    let mut rows = stmt.query_and_then([id.get()], box_from_row)?;
     rows.next().transpose()
 }
 
@@ -327,7 +327,7 @@ fn intent_from(
 }
 
 /// Map the joined box columns (offset 20..=27) to a `DriverRow`, if the box exists.
-fn box_from_row(row: &Row<'_>) -> Result<Option<DriverRow>, StoreError> {
+fn driver_from_row(row: &Row<'_>) -> Result<Option<DriverRow>, StoreError> {
     let Some(provider) = row.get::<_, Option<String>>(20)? else {
         return Ok(None);
     };
@@ -345,7 +345,7 @@ fn box_from_row(row: &Row<'_>) -> Result<Option<DriverRow>, StoreError> {
 }
 
 /// Map a `BOX_SELECT` row to a `BoxRow`.
-fn task_from_row(row: &Row<'_>) -> Result<BoxRow, StoreError> {
+fn box_from_row(row: &Row<'_>) -> Result<BoxRow, StoreError> {
     let name: String = row.get(1)?;
     let lifecycle: String = row.get(11)?;
     let session: Option<String> = row.get(30)?;
@@ -356,7 +356,7 @@ fn task_from_row(row: &Row<'_>) -> Result<BoxRow, StoreError> {
     let lifecycle = parsed_opt("box state", &lifecycle, BoxLifecycle::parse)?;
     Ok(BoxRow {
         id: BoxId::new(row.get(0)?),
-        name: parsed("task name", &name, BoxName::parse_allow_bare)?,
+        name: parsed("box name", &name, BoxName::parse_allow_bare)?,
         repo: row.get(2)?,
         issue: row.get(3)?,
         goal: row.get(4)?,
@@ -379,7 +379,7 @@ fn task_from_row(row: &Row<'_>) -> Result<BoxRow, StoreError> {
             .get::<_, Option<String>>(29)?
             .map(|j| serde_json::from_str(&j))
             .transpose()?,
-        boxed: box_from_row(row)?,
+        boxed: driver_from_row(row)?,
     })
 }
 
@@ -388,7 +388,7 @@ fn event_from_row(row: &Row<'_>) -> Result<EventRow, StoreError> {
     let payload: String = row.get(3)?;
     Ok(EventRow {
         id: row.get(0)?,
-        task: BoxId::new(row.get(1)?),
+        box_id: BoxId::new(row.get(1)?),
         kind: row.get(2)?,
         payload: serde_json::from_str(&payload)?,
         ts: Ts::from_millis(row.get(4)?),

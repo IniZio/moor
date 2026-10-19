@@ -21,7 +21,7 @@ fn a_worktree_that_belongs_to_another_open_box_is_refused() {
         "{}",
         err.error.to_string()
     );
-    let open = w.cx.store().unwrap().open_tasks().unwrap();
+    let open = w.cx.store().unwrap().open_boxes().unwrap();
     let bound = open
         .iter()
         .filter(|t| t.worktree.as_deref() == Some(path.as_str()))

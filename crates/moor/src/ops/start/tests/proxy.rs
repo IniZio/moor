@@ -42,7 +42,7 @@ fn engine_world() -> (World, Arc<FakeEngine>) {
 }
 
 fn failure_step(w: &World, id: BoxId) -> (String, String, Option<String>) {
-    let row = w.cx.store().unwrap().task(id).unwrap().unwrap();
+    let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
     let f = row.launch_failure.unwrap();
     (f.step, f.message, f.tail)
 }
@@ -52,7 +52,7 @@ fn the_first_launch_ensures_the_proxy_once_and_hands_the_agent_its_address() {
     let (w, engine, fake) = host_world(FakeProxyHost::new());
     let v = run(&w.cx, &goal_req()).unwrap();
     let id = BoxId::new(v.boxed.id);
-    let row = w.cx.store().unwrap().task(id).unwrap().unwrap();
+    let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(fake.calls().len(), 1);
     let spec = spec_of(&fake);
     assert_eq!(spec.box_id, id);

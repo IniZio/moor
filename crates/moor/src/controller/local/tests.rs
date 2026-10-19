@@ -18,7 +18,7 @@ fn prints_stored_events_then_caught_up_and_returns() {
         name: BoxName::parse_allow_bare("a").unwrap(),
         repo: "r".into(),
     };
-    let id = store.apply(Decision::insert(new)).unwrap().task;
+    let id = store.apply(Decision::insert(new)).unwrap().box_id;
     for i in 0..2 {
         let event = ExtraEvent::Copied {
             from: format!("a{i}"),

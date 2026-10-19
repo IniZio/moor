@@ -166,7 +166,7 @@ fn a_given_goal_relaunches_with_a_fresh_brief_and_is_stored() {
     let second = relaunch_of(&engine);
     assert_eq!(second.goal.as_deref(), Some("new goal"));
     assert_eq!(second.resume, None);
-    let row = w.cx.store().unwrap().task(id).unwrap().unwrap();
+    let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(row.goal.as_deref(), Some("new goal"));
 }
 
@@ -216,7 +216,7 @@ fn a_given_goal_with_a_live_pane_warns_and_changes_nothing() {
     );
     assert_eq!(engine.launches().len(), 1);
     assert_eq!(live_pane(&w, id).as_deref(), Some("p-1"));
-    let row = w.cx.store().unwrap().task(id).unwrap().unwrap();
+    let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(row.goal.as_deref(), Some("ship it"));
 }
 
@@ -259,7 +259,7 @@ fn a_failed_relaunch_records_no_relaunched_event_and_sets_the_failure() {
     let v = run(&w.cx, &req("demo")).unwrap();
     assert!(!v.agent.launched);
     let store = w.cx.store().unwrap();
-    assert!(store.task(id).unwrap().unwrap().launch_failure.is_some());
+    assert!(store.box_row(id).unwrap().unwrap().launch_failure.is_some());
     let events = store.events(id, 100).unwrap();
     assert!(events.iter().all(|e| e.kind != "relaunched"));
 }
@@ -345,7 +345,7 @@ fn a_goal_on_a_goalless_task_without_a_session_is_stored_and_launches_once() {
     assert!(v.agent.launched);
     assert_eq!(engine.launches().len(), 2);
     assert_eq!(relaunch_of(&engine).goal.as_deref(), Some("late goal"));
-    let row = w.cx.store().unwrap().task(id).unwrap().unwrap();
+    let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(row.goal.as_deref(), Some("late goal"));
 }
 
@@ -399,7 +399,7 @@ fn a_given_goal_replaces_the_stored_goal_when_there_is_no_session() {
     assert!(v.agent.launched);
     assert_eq!(engine.launches().len(), 2);
     assert_eq!(relaunch_of(&engine).goal.as_deref(), Some("second goal"));
-    let row = store.task(id).unwrap().unwrap();
+    let row = store.box_row(id).unwrap().unwrap();
     assert_eq!(row.goal.as_deref(), Some("second goal"));
 }
 

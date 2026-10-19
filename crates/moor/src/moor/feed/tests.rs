@@ -40,7 +40,7 @@ fn working(cx: &Cx, driver: &FakeDriver, name: &str, session: &str) -> BoxId {
         repo: "r".into(),
     };
     let store = cx.store().unwrap();
-    let id = store.apply(Decision::insert(nt)).unwrap().task;
+    let id = store.apply(Decision::insert(nt)).unwrap().box_id;
     let got = driver
         .acquire(&AcquireReq {
             provider: ProviderId::new("p"),

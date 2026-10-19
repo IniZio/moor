@@ -46,7 +46,7 @@ fn fixture(driver: FakeDriver, ready: bool) -> Fx {
             repo: "r".into(),
         }))
         .unwrap()
-        .task;
+        .box_id;
     let provider = ProviderId::new("p");
     let fields = Fields {
         box_provider: Field::Set(provider.clone()),
@@ -80,7 +80,7 @@ fn fixture(driver: FakeDriver, ready: bool) -> Fx {
             .apply(Decision::new(id).box_input(BoxInput::Sleep))
             .unwrap();
     }
-    let row = store.task(id).unwrap().unwrap();
+    let row = store.box_row(id).unwrap().unwrap();
     Fx {
         _dir: dir,
         cx,

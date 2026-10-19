@@ -89,7 +89,7 @@ fn bare_with(driver: FakeDriver) -> Fx {
             repo: "r".into(),
         }))
         .unwrap()
-        .task;
+        .box_id;
     Fx {
         dir,
         cx,
@@ -330,7 +330,7 @@ fn wake_calls(f: &Fx) -> usize {
 }
 
 fn box_state(f: &Fx) -> BoxState {
-    let row = f.cx.store().unwrap().task(f.id).unwrap().unwrap();
+    let row = f.cx.store().unwrap().box_row(f.id).unwrap().unwrap();
     row.boxed.unwrap().state
 }
 
@@ -406,7 +406,7 @@ fn provisioning_that_died_while_waiting_for_the_lock_is_refused() {
         .unwrap();
     f.proc.dead(4242);
     f.cx.clock().sleep(Duration::from_secs(121));
-    let row = store.task(f.id).unwrap().unwrap();
+    let row = store.box_row(f.id).unwrap().unwrap();
     let e = locked(&f.cx, store, &req(&["true"]), &row).unwrap_err();
     assert_eq!(e.kind, ErrorKind::Failed);
     assert_eq!(e.error.to_string(), "provisioning dead; run moor close t");
@@ -543,7 +543,7 @@ fn idle_since(f: &Fx) -> Option<i64> {
 }
 
 fn state(f: &Fx) -> (BoxLifecycle, SessionState) {
-    let row = f.cx.store().unwrap().task(f.id).unwrap().unwrap();
+    let row = f.cx.store().unwrap().box_row(f.id).unwrap().unwrap();
     (row.lifecycle, row.session)
 }
 
@@ -587,7 +587,7 @@ fn run_started_losing_a_race_is_ignored() {
     let f = ready();
     go_idle(&f);
     let store = f.cx.store().unwrap();
-    let stale = store.task(f.id).unwrap().unwrap();
+    let stale = store.box_row(f.id).unwrap().unwrap();
     store
         .apply(Decision::new(f.id).session(SessionInput::AgentBusy))
         .unwrap();

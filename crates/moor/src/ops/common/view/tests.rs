@@ -37,13 +37,13 @@ fn task_view_maps_row_without_box() {
         name: BoxName::parse_allow_bare("t").unwrap(),
         repo: "r".into(),
     };
-    let id = store.apply(Decision::insert(nt)).unwrap().task;
+    let id = store.apply(Decision::insert(nt)).unwrap().box_id;
     let fields = Fields {
         goal: Field::Set("g".into()),
         ..Fields::default()
     };
     store.apply(Decision::new(id).set(fields)).unwrap();
-    let v = task_view(&store.task(id).unwrap().unwrap(), &UserConfig::default());
+    let v = task_view(&store.box_row(id).unwrap().unwrap(), &UserConfig::default());
     assert_eq!(
         (v.id, v.name.as_str(), v.repo.as_str()),
         (id.get(), "t", "r")
@@ -66,7 +66,7 @@ fn task_view_maps_box() {
         name: BoxName::parse_allow_bare("t").unwrap(),
         repo: "r".into(),
     };
-    let id = store.apply(Decision::insert(nt)).unwrap().task;
+    let id = store.apply(Decision::insert(nt)).unwrap().box_id;
     let fields = Fields {
         box_provider: Field::Set(ProviderId::new("p")),
         ..Fields::default()
@@ -79,7 +79,7 @@ fn task_view_maps_box() {
             handle: BoxHandle::new("h"),
         }))
         .unwrap();
-    let b = task_view(&store.task(id).unwrap().unwrap(), &UserConfig::default())
+    let b = task_view(&store.box_row(id).unwrap().unwrap(), &UserConfig::default())
         .driver
         .unwrap();
     assert_eq!(
@@ -98,7 +98,7 @@ fn box_view_maps_sleep_reason() {
         name: BoxName::parse_allow_bare("t").unwrap(),
         repo: "r".into(),
     };
-    let id = store.apply(Decision::insert(nt)).unwrap().task;
+    let id = store.apply(Decision::insert(nt)).unwrap().box_id;
     let fields = Fields {
         box_provider: Field::Set(ProviderId::new("p")),
         ..Fields::default()
@@ -106,7 +106,7 @@ fn box_view_maps_sleep_reason() {
     store
         .apply(Decision::new(id).set(fields).box_input(BoxInput::Requested))
         .unwrap();
-    let b = task_view(&store.task(id).unwrap().unwrap(), &UserConfig::default())
+    let b = task_view(&store.box_row(id).unwrap().unwrap(), &UserConfig::default())
         .driver
         .unwrap();
     assert_eq!(
@@ -118,7 +118,7 @@ fn box_view_maps_sleep_reason() {
         ..Fields::default()
     };
     store.apply(Decision::new(id).set(fields)).unwrap();
-    let b = task_view(&store.task(id).unwrap().unwrap(), &UserConfig::default())
+    let b = task_view(&store.box_row(id).unwrap().unwrap(), &UserConfig::default())
         .driver
         .unwrap();
     assert_eq!(b.sleep.after.as_deref(), Some("30m"));
@@ -134,7 +134,7 @@ fn box_view_shows_configured_sleep_after() {
         name: BoxName::parse_allow_bare("t").unwrap(),
         repo: "r".into(),
     };
-    let id = store.apply(Decision::insert(nt)).unwrap().task;
+    let id = store.apply(Decision::insert(nt)).unwrap().box_id;
     let fields = Fields {
         box_provider: Field::Set(ProviderId::new("p")),
         ..Fields::default()
@@ -143,7 +143,7 @@ fn box_view_shows_configured_sleep_after() {
         .apply(Decision::new(id).set(fields).box_input(BoxInput::Requested))
         .unwrap();
     let config: UserConfig = parse_user("u.yaml", "box: {sleep_after: 45m}").unwrap();
-    let b = task_view(&store.task(id).unwrap().unwrap(), &config)
+    let b = task_view(&store.box_row(id).unwrap().unwrap(), &config)
         .driver
         .unwrap();
     assert_eq!(b.sleep.after.as_deref(), Some("45m"));
@@ -158,11 +158,11 @@ fn task_view_with_run_fills_run() {
         name: BoxName::parse_allow_bare("t").unwrap(),
         repo: "r".into(),
     };
-    let id = store.apply(Decision::insert(nt)).unwrap().task;
-    let row = store.task(id).unwrap().unwrap();
+    let id = store.apply(Decision::insert(nt)).unwrap().box_id;
+    let row = store.box_row(id).unwrap().unwrap();
     let run = RunRow {
         id: RunId::new(5),
-        task: BoxId::new(id.get()),
+        box_id: BoxId::new(id.get()),
         argv: vec!["make".into(), "test".into()],
         record: None,
         sha: None,

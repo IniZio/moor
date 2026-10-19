@@ -51,14 +51,14 @@ fn due(cx: &Cx, row: &BoxRow) -> bool {
 
 /// Sleep the Box once the Box lock is free and the Task is still due.
 fn try_sleep(cx: &Cx, store: &Store, id: BoxId) -> Result<(), CommandError> {
-    let Some(row) = store.task(id)? else {
+    let Some(row) = store.box_row(id)? else {
         return Ok(());
     };
     if !due(cx, &row) {
         return Ok(());
     }
     let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "sleep", Duration::ZERO)?;
-    let Some(row) = store.task(id)? else {
+    let Some(row) = store.box_row(id)? else {
         return Ok(());
     };
     if !due(cx, &row) {
@@ -107,7 +107,7 @@ pub(crate) fn sleep_parked(
         let _ = restore_tunnel(cx, store, id, true);
         return Err(e);
     }
-    if let Ok(Some(row)) = store.task(id) {
+    if let Ok(Some(row)) = store.box_row(id) {
         cred_sweep::sweep(cx, &row);
     }
     let slept = cx.driver().sleep(handle, Some(worktree));

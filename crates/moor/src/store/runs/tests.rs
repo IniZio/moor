@@ -21,20 +21,20 @@ fn open(dir: &Path) -> Store {
     Store::open(&dir.join("moor.db"), clock).unwrap()
 }
 
-/// Insert a task by name.
+/// Insert a box by name.
 fn add(store: &Store, name: &str) -> BoxId {
     let nt = NewBox {
         name: BoxName::parse_allow_bare(name).unwrap(),
         repo: "r".into(),
     };
-    store.apply(Decision::insert(nt)).unwrap().task
+    store.apply(Decision::insert(nt)).unwrap().box_id
 }
 
-/// Begin a run on `task` owned by `pid`.
-fn begin(store: &Store, task: BoxId, record: Option<&str>, sha: Option<&str>, pid: u32) -> RunId {
+/// Begin a run on `box_id` owned by `pid`.
+fn begin(store: &Store, box_id: BoxId, record: Option<&str>, sha: Option<&str>, pid: u32) -> RunId {
     store
         .begin_run(NewRun {
-            task,
+            box_id,
             argv: vec!["cargo".into(), "test".into()],
             record: record.map(str::to_owned),
             sha: sha.map(|s| Sha::parse(s).unwrap()),
@@ -54,9 +54,9 @@ fn finish(store: &Store, run: RunId, exit: i32) {
     store.finish_run(run, out).unwrap();
 }
 
-/// How many `ran` events a task has.
-fn ran_events(store: &Store, task: BoxId) -> usize {
-    let events = store.events(task, 100).unwrap();
+/// How many `ran` events a box has.
+fn ran_events(store: &Store, box_id: BoxId) -> usize {
+    let events = store.events(box_id, 100).unwrap();
     events.iter().filter(|e| e.kind == "ran").count()
 }
 
@@ -64,40 +64,40 @@ fn ran_events(store: &Store, task: BoxId) -> usize {
 fn in_flight_run_is_returned_while_pid_is_alive() {
     let dir = tempfile::tempdir().unwrap();
     let store = open(dir.path());
-    let task = add(&store, "t");
-    assert!(store.in_flight_run(task, &|_| true).unwrap().is_none());
+    let box_id = add(&store, "t");
+    assert!(store.in_flight_run(box_id, &|_| true).unwrap().is_none());
 
-    let run = begin(&store, task, None, None, 42);
+    let run = begin(&store, box_id, None, None, 42);
     let seen = store
-        .in_flight_run(task, &|pid| pid == 42)
+        .in_flight_run(box_id, &|pid| pid == 42)
         .unwrap()
         .unwrap();
-    assert_eq!((seen.id, seen.task, seen.pid), (run, task, 42));
+    assert_eq!((seen.id, seen.box_id, seen.pid), (run, box_id, 42));
     assert_eq!(seen.finished_at, None);
-    assert_eq!(ran_events(&store, task), 0);
+    assert_eq!(ran_events(&store, box_id), 0);
 
     finish(&store, run, 0);
-    assert!(store.in_flight_run(task, &|_| true).unwrap().is_none());
+    assert!(store.in_flight_run(box_id, &|_| true).unwrap().is_none());
 }
 
 #[test]
 fn dead_pid_run_is_interrupted_once() {
     let dir = tempfile::tempdir().unwrap();
     let store = open(dir.path());
-    let task = add(&store, "t");
-    let run = begin(&store, task, Some("lint"), Some(SHA_A), 42);
+    let box_id = add(&store, "t");
+    let run = begin(&store, box_id, Some("lint"), Some(SHA_A), 42);
 
-    assert!(store.in_flight_run(task, &|_| false).unwrap().is_none());
-    assert_eq!(ran_events(&store, task), 1);
-    assert_eq!(store.task(task).unwrap().unwrap().intent, None);
-    let events = store.events(task, 100).unwrap();
+    assert!(store.in_flight_run(box_id, &|_| false).unwrap().is_none());
+    assert_eq!(ran_events(&store, box_id), 1);
+    assert_eq!(store.box_row(box_id).unwrap().unwrap().intent, None);
+    let events = store.events(box_id, 100).unwrap();
     assert_eq!(
         events.last().unwrap().payload,
         serde_json::json!({"run": run.get(), "exit": null, "interrupted": true})
     );
 
-    assert!(store.in_flight_run(task, &|_| false).unwrap().is_none());
-    assert_eq!(ran_events(&store, task), 1);
+    assert!(store.in_flight_run(box_id, &|_| false).unwrap().is_none());
+    assert_eq!(ran_events(&store, box_id), 1);
 
     let rows = store.recorded_runs("abcdef").unwrap();
     assert_eq!(rows.len(), 1);
@@ -110,13 +110,13 @@ fn dead_pid_run_is_interrupted_once() {
 fn finishing_a_finished_run_changes_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let store = open(dir.path());
-    let task = add(&store, "t");
-    let run = begin(&store, task, Some("lint"), Some(SHA_A), 42);
+    let box_id = add(&store, "t");
+    let run = begin(&store, box_id, Some("lint"), Some(SHA_A), 42);
     finish(&store, run, 3);
 
     finish(&store, run, 9);
-    assert!(store.in_flight_run(task, &|_| false).unwrap().is_none());
-    assert_eq!(ran_events(&store, task), 1);
+    assert!(store.in_flight_run(box_id, &|_| false).unwrap().is_none());
+    assert_eq!(ran_events(&store, box_id), 1);
     let rows = store.recorded_runs("abcdef").unwrap();
     let row = rows.first().unwrap();
     assert_eq!((row.exit, row.interrupted), (Some(3), false));
@@ -136,22 +136,25 @@ fn finishing_a_finished_run_changes_nothing() {
 fn healing_keeps_a_running_intent_of_another_run() {
     let dir = tempfile::tempdir().unwrap();
     let store = open(dir.path());
-    let task = add(&store, "t");
-    let old = begin(&store, task, None, None, 1);
-    let new = begin(&store, task, None, None, 2);
+    let box_id = add(&store, "t");
+    let old = begin(&store, box_id, None, None, 1);
+    let new = begin(&store, box_id, None, None, 2);
 
-    let seen = store.in_flight_run(task, &|pid| pid == 2).unwrap().unwrap();
+    let seen = store
+        .in_flight_run(box_id, &|pid| pid == 2)
+        .unwrap()
+        .unwrap();
     assert_eq!(seen.id, new);
-    assert_eq!(ran_events(&store, task), 1);
+    assert_eq!(ran_events(&store, box_id), 1);
     assert_eq!(
-        store.task(task).unwrap().unwrap().intent,
+        store.box_row(box_id).unwrap().unwrap().intent,
         Some(Intent::Running { run: new, pid: 2 })
     );
     assert_ne!(old, new);
 }
 
 #[test]
-fn recorded_runs_match_prefix_across_tasks_and_names() {
+fn recorded_runs_match_prefix_across_boxes_and_names() {
     let dir = tempfile::tempdir().unwrap();
     let store = open(dir.path());
     let a = add(&store, "a");
@@ -171,7 +174,7 @@ fn recorded_runs_match_prefix_across_tasks_and_names() {
     let rows = store.recorded_runs("ABCDEF12").unwrap();
     let ids: Vec<_> = rows.iter().map(|r| r.id).collect();
     assert_eq!(ids, [first, second, other_name]);
-    assert_eq!(rows.get(1).unwrap().task, b);
+    assert_eq!(rows.get(1).unwrap().box_id, b);
     assert_eq!(rows.get(2).unwrap().record.as_deref(), Some("test"));
     assert_eq!(store.recorded_runs("abcd").unwrap().len(), 4);
     assert!(store.recorded_runs("ffff").unwrap().is_empty());
@@ -181,13 +184,13 @@ fn recorded_runs_match_prefix_across_tasks_and_names() {
 fn recorded_runs_carry_what_the_gate_needs() {
     let dir = tempfile::tempdir().unwrap();
     let store = open(dir.path());
-    let task = add(&store, "t");
-    let run = begin(&store, task, Some("lint"), Some(SHA_A), 2);
+    let box_id = add(&store, "t");
+    let run = begin(&store, box_id, Some("lint"), Some(SHA_A), 2);
     finish(&store, run, 1);
 
     let rows = store.recorded_runs("abcdef").unwrap();
     let last = rows.first().unwrap();
-    assert_eq!((last.id, last.task), (run, task));
+    assert_eq!((last.id, last.box_id), (run, box_id));
     assert_eq!(last.sha.as_ref().unwrap().as_str(), SHA_A);
     assert_eq!(last.record.as_deref(), Some("lint"));
     assert_eq!(last.argv, ["cargo", "test"]);
@@ -200,33 +203,36 @@ fn recorded_runs_carry_what_the_gate_needs() {
 fn refused_run_emits_one_ran_event_without_a_run() {
     let dir = tempfile::tempdir().unwrap();
     let store = open(dir.path());
-    let task = add(&store, "t");
-    let before = store.task(task).unwrap().unwrap();
-    store.refused_run(task).unwrap();
-    let events = store.events(task, 100).unwrap();
+    let box_id = add(&store, "t");
+    let before = store.box_row(box_id).unwrap().unwrap();
+    store.refused_run(box_id).unwrap();
+    let events = store.events(box_id, 100).unwrap();
     let ran: Vec<_> = events.iter().filter(|e| e.kind == "ran").collect();
     assert_eq!(ran.len(), 1);
     let payload = &ran.first().unwrap().payload;
     assert!(payload["run"].is_null(), "{payload}");
     assert!(payload["exit"].is_null(), "{payload}");
     assert_eq!(payload["interrupted"], false);
-    assert!(store.last_run(task).unwrap().is_none());
-    assert_eq!(store.task(task).unwrap().unwrap().intent, before.intent);
+    assert!(store.last_run(box_id).unwrap().is_none());
+    assert_eq!(
+        store.box_row(box_id).unwrap().unwrap().intent,
+        before.intent
+    );
 }
 
 #[test]
 fn refused_run_leaves_an_in_flight_run_alone() {
     let dir = tempfile::tempdir().unwrap();
     let store = open(dir.path());
-    let task = add(&store, "t");
-    let run = begin(&store, task, None, None, 7);
-    store.refused_run(task).unwrap();
-    let live = store.in_flight_run(task, &|_| true).unwrap().unwrap();
+    let box_id = add(&store, "t");
+    let run = begin(&store, box_id, None, None, 7);
+    store.refused_run(box_id).unwrap();
+    let live = store.in_flight_run(box_id, &|_| true).unwrap().unwrap();
     assert_eq!(live.id, run);
     assert_eq!(live.finished_at, None);
     assert_eq!(
-        store.task(task).unwrap().unwrap().intent,
+        store.box_row(box_id).unwrap().unwrap().intent,
         Some(Intent::Running { run, pid: 7 })
     );
-    assert_eq!(ran_events(&store, task), 1);
+    assert_eq!(ran_events(&store, box_id), 1);
 }

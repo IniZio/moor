@@ -116,7 +116,7 @@ pub(crate) fn save_on_exit(
     ) else {
         return Ok(());
     };
-    let Some(row) = store.task(row.id)? else {
+    let Some(row) = store.box_row(row.id)? else {
         return Ok(());
     };
     let Some(session) = store.live_session(row.id)?.filter(|s| s.id == probed) else {

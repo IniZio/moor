@@ -116,7 +116,7 @@ fn a_close_after_an_exit_save_of_the_same_transcript_writes_nothing_more() {
     let store = f.cx.store().unwrap();
     let sid = store.begin_session(f.id, "s-1", Some("p-1")).unwrap();
     store.set_registered_session(sid, "agent-1").unwrap();
-    let row = store.task(f.id).unwrap().unwrap();
+    let row = store.box_row(f.id).unwrap().unwrap();
     let live = store.live_session(f.id).unwrap().unwrap();
     save_on_exit(&f.cx, store, &row, live.id).unwrap();
     let first = files(&f);
@@ -138,7 +138,7 @@ fn a_close_after_the_transcript_changed_saves_again() {
     let store = f.cx.store().unwrap();
     let sid = store.begin_session(f.id, "s-1", Some("p-1")).unwrap();
     store.set_registered_session(sid, "agent-1").unwrap();
-    let row = store.task(f.id).unwrap().unwrap();
+    let row = store.box_row(f.id).unwrap().unwrap();
     let live = store.live_session(f.id).unwrap().unwrap();
     save_on_exit(&f.cx, store, &row, live.id).unwrap();
     run(&f.cx, &req(false)).unwrap();
@@ -163,7 +163,7 @@ fn a_failed_close_save_keeps_the_exit_digest() {
     let store = f.cx.store().unwrap();
     let sid = store.begin_session(f.id, "s-1", Some("p-1")).unwrap();
     store.set_registered_session(sid, "agent-1").unwrap();
-    let row = store.task(f.id).unwrap().unwrap();
+    let row = store.box_row(f.id).unwrap().unwrap();
     let live = store.live_session(f.id).unwrap().unwrap();
     save_on_exit(&f.cx, store, &row, live.id).unwrap();
     engine.fail_next_transcript(EngineError::Transcript("archive: exit 3".into()));

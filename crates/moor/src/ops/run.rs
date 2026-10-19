@@ -45,12 +45,12 @@ pub(crate) fn run(cx: &Cx, req: &RunReq) -> Result<RunValue, CommandError> {
     let store = cx.store()?;
     let name = req.box_name.as_str();
     let found = store
-        .latest_task_by_name(&req.box_name)?
+        .latest_box_by_name(&req.box_name)?
         .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no task {name}")))?;
     dead_provisioning(cx, &found)?;
     let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, found.id, "run", boxlock::WAIT)?;
     let row = store
-        .task(found.id)?
+        .box_row(found.id)?
         .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no task {name}")))?;
     locked(cx, store, req, &row)
 }
@@ -64,7 +64,7 @@ fn locked(cx: &Cx, store: &Store, req: &RunReq, row: &BoxRow) -> Result<RunValue
         .is_some_and(|b| matches!(b.state, BoxState::Gone | BoxState::Deleted));
     let woken;
     let row = if !gone && wake_and_revive(cx, store, row)? {
-        woken = store.task(row.id)?.ok_or_else(|| {
+        woken = store.box_row(row.id)?.ok_or_else(|| {
             CommandError::new(ErrorKind::Failed, format!("no task {}", row.name.as_str()))
         })?;
         &woken
@@ -88,7 +88,7 @@ fn launch(
     let sync = sync::choose(cx, store, req, row)?;
     let (sha, argv) = plan(cx, req, &target.worktree, &cfg.setup)?;
     let id = store.begin_run(NewRun {
-        task: row.id,
+        box_id: row.id,
         argv: req.argv.clone(),
         record: req.record.clone(),
         sha: sha.clone(),

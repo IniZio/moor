@@ -49,7 +49,7 @@ fn task(cx: &Cx, session: bool) -> BoxId {
         name: BoxName::parse_allow_bare("demo").unwrap(),
         repo: "r".into(),
     };
-    let id = store.apply(Decision::insert(nt)).unwrap().task;
+    let id = store.apply(Decision::insert(nt)).unwrap().box_id;
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
         .box_input(BoxInput::Requested)
@@ -83,7 +83,7 @@ fn begin(cx: &Cx, id: BoxId) {
     cx.store()
         .unwrap()
         .begin_run(NewRun {
-            task: id,
+            box_id: id,
             argv: vec!["make".into()],
             record: None,
             sha: None,
@@ -94,7 +94,7 @@ fn begin(cx: &Cx, id: BoxId) {
 }
 
 fn row(cx: &Cx, id: BoxId) -> BoxRow {
-    cx.store().unwrap().task(id).unwrap().unwrap()
+    cx.store().unwrap().box_row(id).unwrap().unwrap()
 }
 
 fn is_working(row: &BoxRow) -> bool {
@@ -218,7 +218,7 @@ fn run_in_flight_with_an_unreachable_box_is_busy_and_not_quiet() {
         name: BoxName::parse_allow_bare("demo").unwrap(),
         repo: "r".into(),
     };
-    let id = store.apply(Decision::insert(nt)).unwrap().task;
+    let id = store.apply(Decision::insert(nt)).unwrap().box_id;
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
         .box_input(BoxInput::Requested)

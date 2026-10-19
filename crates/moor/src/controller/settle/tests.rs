@@ -49,7 +49,7 @@ fn working(cx: &Cx, driver: &FakeDriver, name: &str, session: &str) -> BoxId {
         repo: "r".into(),
     };
     let store = cx.store().unwrap();
-    let id = store.apply(Decision::insert(nt)).unwrap().task;
+    let id = store.apply(Decision::insert(nt)).unwrap().box_id;
     let got = driver
         .acquire(&AcquireReq {
             provider: ProviderId::new("p"),
@@ -159,7 +159,7 @@ fn pass_settles_a_quiet_agent_without_any_client() {
     assert!(messages.is_empty(), "{messages:?}");
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
     let store = Store::open(&dir.path().join(STORE_FILE), clock).unwrap();
-    let row = store.task(id).unwrap().unwrap();
+    let row = store.box_row(id).unwrap().unwrap();
     assert_eq!(
         (row.lifecycle, row.session),
         (BoxLifecycle::Ready, SessionState::Idle)
@@ -272,7 +272,7 @@ fn a_held_box_lock_skips_the_collection() {
     };
     show::run(&cx, &list).unwrap();
     let reader = view(dir.path(), &driver);
-    let row = reader.store().unwrap().task(id).unwrap().unwrap();
+    let row = reader.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(
         (row.lifecycle, row.session),
         (BoxLifecycle::Ready, SessionState::Idle)
@@ -306,7 +306,7 @@ fn an_idle_written_by_show_is_collected_by_the_next_pass() {
         pane: false,
     };
     show::run(&cx, &list).unwrap();
-    let row = cx.store().unwrap().task(id).unwrap().unwrap();
+    let row = cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(
         (row.lifecycle, row.session),
         (BoxLifecycle::Ready, SessionState::Idle)
@@ -346,7 +346,7 @@ fn a_steered_turn_on_an_idle_box_ends_and_collects_in_one_pass() {
     let moor = Moor::from_cx(cx);
     let cx = view(dir.path(), &driver);
     assert!(moor.settle_open().is_empty());
-    let row = cx.store().unwrap().task(id).unwrap().unwrap();
+    let row = cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(
         (row.lifecycle, row.session),
         (BoxLifecycle::Ready, SessionState::Idle)
@@ -383,7 +383,7 @@ fn a_failed_index_warns_and_the_box_still_idles() {
         "{messages:?}"
     );
     let cx = view(dir.path(), &driver);
-    let row = cx.store().unwrap().task(id).unwrap().unwrap();
+    let row = cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(
         (row.lifecycle, row.session),
         (BoxLifecycle::Ready, SessionState::Idle)

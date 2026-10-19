@@ -45,7 +45,7 @@ pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
         "close",
         boxlock::WAIT,
     )?;
-    let mut row = store.task(first.id)?.unwrap_or(first);
+    let mut row = store.box_row(first.id)?.unwrap_or(first);
     let box_check = box_check(cx, store, &mut row, req.force)?;
     let probed_clean = matches!(box_check, BoxCheck::Clean);
     let plan = close_gate(&facts(cx, &row, box_check)?, req.force)?;
@@ -76,7 +76,7 @@ pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
         });
     }
     let provider = row.boxed.as_ref().map(|b| b.provider.clone());
-    let closed = store.task(row.id)?.unwrap_or(row);
+    let closed = store.box_row(row.id)?.unwrap_or(row);
     let promoted = provider.map_or_else(Vec::new, |p| {
         promote_waiting(cx, store, &p, "close")
             .iter()
@@ -104,10 +104,10 @@ fn save_transcript(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Option<Saved>
 
 /// The open task by name, else the newest closed one (the gate refuses it).
 fn find(store: &Store, name: &BoxName) -> Result<BoxRow, CommandError> {
-    if let Some(row) = store.open_task_by_name(name)? {
+    if let Some(row) = store.open_box_by_name(name)? {
         return Ok(row);
     }
-    store.latest_task_by_name(name)?.ok_or_else(|| {
+    store.latest_box_by_name(name)?.ok_or_else(|| {
         CommandError::new(
             ErrorKind::Failed,
             format!("no task named {}", name.as_str()),
@@ -148,7 +148,7 @@ fn box_check(
     // The tunnel stays parked: close needs the Box awake, not reachable through the Proxy.
     match wake_box_if_asleep(cx, store, row) {
         Ok(true) => {
-            if let Some(fresh) = store.task(row.id)? {
+            if let Some(fresh) = store.box_row(row.id)? {
                 *row = fresh;
             }
         }

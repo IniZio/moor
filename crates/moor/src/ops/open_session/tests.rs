@@ -73,7 +73,7 @@ fn ready_task(cx: &Cx, driver: &FakeDriver) -> BoxId {
             repo: "r".into(),
         }))
         .unwrap()
-        .task;
+        .box_id;
     let provider = ProviderId::new("p");
     let fields = Fields {
         box_provider: Field::Set(provider.clone()),

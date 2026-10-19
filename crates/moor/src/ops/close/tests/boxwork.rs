@@ -256,7 +256,7 @@ fn close_skips_the_probe_for_a_box_that_never_got_a_handle() {
             repo: "r".into(),
         }))
         .unwrap()
-        .task;
+        .box_id;
     let fields = Fields {
         box_provider: Field::Set(ProviderId::new("p")),
         ..Fields::default()

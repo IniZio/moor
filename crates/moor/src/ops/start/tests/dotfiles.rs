@@ -243,7 +243,12 @@ fn a_failing_install_does_not_stop_start_and_warns_with_the_log_tail() {
 
     assert_warned_with_tail(&w);
 
-    let row = w.cx.store().unwrap().task(BoxId::new(1)).unwrap().unwrap();
+    let row =
+        w.cx.store()
+            .unwrap()
+            .box_row(BoxId::new(1))
+            .unwrap()
+            .unwrap();
     assert_eq!(row.boxed.map(|b| b.state), Some(BoxState::Ready));
     assert!(row.intent.is_none());
     let events = w.cx.store().unwrap().events(BoxId::new(1), 50).unwrap();

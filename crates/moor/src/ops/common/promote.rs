@@ -53,7 +53,7 @@ fn promote_into(
         return Ok(());
     };
     let mut cfgs: HashMap<BoxId, (BoxName, BoxSettings)> = HashMap::new();
-    for row in store.waiting_tasks()? {
+    for row in store.waiting_boxes()? {
         let at = row.worktree.as_deref().unwrap_or(&row.repo);
         match settings(cx, Path::new(at), &Flags::default()) {
             Ok(cfg) if cfg.provider.value == provider.as_str() => {

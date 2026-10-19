@@ -60,7 +60,7 @@ pub(crate) fn collect_due(cx: &Cx, store: &Store) {
         else {
             continue;
         };
-        let Ok(Some(row)) = store.task(id) else {
+        let Ok(Some(row)) = store.box_row(id) else {
             continue;
         };
         let ready = row

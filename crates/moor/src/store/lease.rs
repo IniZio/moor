@@ -137,8 +137,8 @@ pub(crate) struct ProcessIds {
 pub(crate) struct LeaseRow {
     /// Row id.
     pub id: LeaseId,
-    /// Owning Task.
-    pub task: BoxId,
+    /// Owning Box.
+    pub box_id: BoxId,
     /// Resource kind.
     pub kind: LeaseKind,
     /// Path, UDID, compose project or process tag.
@@ -160,7 +160,7 @@ impl Store {
     /// unchanged, when `(box, kind, key)` is already recorded.
     pub(crate) fn plan_lease(
         &self,
-        task: BoxId,
+        box_id: BoxId,
         kind: LeaseKind,
         key: &str,
     ) -> Result<LeaseId, StoreError> {
@@ -169,11 +169,11 @@ impl Store {
         conn.execute(
             "INSERT OR IGNORE INTO box_lease (box, kind, key, state, created_at, updated_at) \
              VALUES (?, ?, ?, 'planned', ?, ?)",
-            params![task.get(), kind.as_str(), key, now, now],
+            params![box_id.get(), kind.as_str(), key, now, now],
         )?;
         let id = conn.query_row(
             "SELECT id FROM box_lease WHERE box = ? AND kind = ? AND key = ?",
-            params![task.get(), kind.as_str(), key],
+            params![box_id.get(), kind.as_str(), key],
             |r| r.get(0),
         )?;
         drop(conn);
@@ -207,13 +207,13 @@ impl Store {
         Ok(changed > 0)
     }
 
-    /// Leases of `task`, by id.
-    pub(crate) fn leases(&self, task: BoxId) -> Result<Vec<LeaseRow>, StoreError> {
+    /// Leases of `box_id`, by id.
+    pub(crate) fn leases(&self, box_id: BoxId) -> Result<Vec<LeaseRow>, StoreError> {
         let conn = self.reader()?;
         query(
             &conn,
             &format!("SELECT {COLUMNS} FROM box_lease WHERE box = ? ORDER BY id"),
-            params![task.get()],
+            params![box_id.get()],
         )
     }
 
@@ -279,7 +279,7 @@ fn row(r: &Row<'_>) -> Result<LeaseRow, StoreError> {
     let size: Option<i64> = r.get(10)?;
     Ok(LeaseRow {
         id: LeaseId(r.get(0)?),
-        task: BoxId::new(r.get(1)?),
+        box_id: BoxId::new(r.get(1)?),
         kind: parsed_opt("lease kind", &kind, LeaseKind::parse)?,
         key: r.get(3)?,
         state: parsed_opt("lease state", &state, LeaseState::parse)?,

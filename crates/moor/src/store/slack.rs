@@ -17,7 +17,7 @@ pub(crate) struct SlackThread {
     /// Timestamp of the thread's root message.
     pub(crate) thread_ts: String,
     /// The Box whose Session the thread drives.
-    pub(crate) task: BoxName,
+    pub(crate) box_name: BoxName,
     /// Slack user id of the Box owner.
     pub(crate) owner: String,
     /// Timestamp of the edited status message, once posted.
@@ -36,7 +36,7 @@ pub(crate) struct SlackPrompt {
     /// Timestamp of the prompt message.
     pub(crate) message_ts: String,
     /// The Box whose Session is waiting.
-    pub(crate) task: BoxName,
+    pub(crate) box_name: BoxName,
     /// The question asked.
     pub(crate) question: String,
     /// The offered options, in order.
@@ -80,7 +80,7 @@ fn open_box_session(conn: &rusqlite::Connection, name: &str) -> Result<(i64, i64
     .ok_or_else(|| StoreError::Invalid(format!("no open Box named `{name}`")))
 }
 
-/// Raw prompt row: the task and options are still unparsed text.
+/// Raw prompt row: the box and options are still unparsed text.
 type PromptRow = (
     i64,
     String,
@@ -108,13 +108,17 @@ fn prompt_from_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<PromptRow> {
 
 /// Parses a raw prompt row into a [`SlackPrompt`].
 fn prompt_of(row: PromptRow) -> Result<SlackPrompt, StoreError> {
-    let (event_id, channel, thread_ts, message_ts, task, question, options, answer) = row;
+    let (event_id, channel, thread_ts, message_ts, box_name, question, options, answer) = row;
     Ok(SlackPrompt {
         event_id,
         channel,
         thread_ts,
         message_ts,
-        task: parsed("slack prompt task", &task, BoxName::parse_allow_bare)?,
+        box_name: parsed(
+            "slack prompt box name",
+            &box_name,
+            BoxName::parse_allow_bare,
+        )?,
         question,
         options: serde_json::from_str(&options)?,
         answer,
@@ -132,7 +136,7 @@ impl Store {
         Ok(added == 1)
     }
 
-    /// The Task bound to a Slack thread; `None` when unbound or bound to a host Session.
+    /// The Box bound to a Slack thread; `None` when unbound or bound to a host Session.
     pub(crate) fn slack_thread(
         &self,
         channel: &str,
@@ -140,10 +144,10 @@ impl Store {
     ) -> Result<Option<BoxName>, StoreError> {
         Ok(self
             .binding(FRONT, &conv_key(channel, thread_ts))?
-            .and_then(|b| b.task))
+            .and_then(|b| b.box_name))
     }
 
-    /// The owner of the Task bound to a thread, if bound.
+    /// The owner of the Box bound to a thread, if bound.
     pub(crate) fn slack_thread_owner(
         &self,
         channel: &str,
@@ -163,12 +167,12 @@ impl Store {
     pub(crate) fn slack_threads(&self) -> Result<Vec<SlackThread>, StoreError> {
         let mut threads = Vec::new();
         for b in self.bindings(FRONT)? {
-            let Some(task) = b.task else { continue };
+            let Some(box_name) = b.box_name else { continue };
             let (channel, thread_ts) = split_conv_key(&b.key)?;
             threads.push(SlackThread {
                 channel,
                 thread_ts,
-                task,
+                box_name,
                 owner: b.owner,
                 status_ts: b.status_ts,
             });
@@ -190,18 +194,18 @@ impl Store {
         Ok(())
     }
 
-    /// Binds a thread to the primary Session of the newest open Box named `task`, owned by `owner`.
+    /// Binds a thread to the primary Session of the newest open Box named `box_name`, owned by `owner`.
     /// The first binding wins; true when this call created it. Errors when no such Box is open.
     pub(crate) fn bind_slack_thread(
         &self,
         channel: &str,
         thread_ts: &str,
-        task: &BoxName,
+        box_name: &BoxName,
         owner: &str,
     ) -> Result<bool, StoreError> {
         let now = self.now();
         let writer = self.writer()?;
-        let (_, session) = open_box_session(&writer, task.as_str())?;
+        let (_, session) = open_box_session(&writer, box_name.as_str())?;
         let key = conv_key(channel, thread_ts);
         let added = insert_binding(&writer, FRONT, &key, session, owner, now.as_millis())?;
         drop(writer);
@@ -226,7 +230,7 @@ impl Store {
         let now = self.now();
         let options = serde_json::to_string(&p.options)?;
         let writer = self.writer()?;
-        let (_, session) = open_box_session(&writer, p.task.as_str())?;
+        let (_, session) = open_box_session(&writer, p.box_name.as_str())?;
         writer.execute(
             "INSERT OR IGNORE INTO slack_prompts \
              (event_id, channel, thread_ts, message_ts, session, question, options, answer, created_at) \

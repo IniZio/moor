@@ -34,7 +34,7 @@ fn add(store: &Store, name: &str) -> BoxId {
         name: BoxName::parse_allow_bare(name).unwrap(),
         repo: "r".into(),
     };
-    store.apply(Decision::insert(nt)).unwrap().task
+    store.apply(Decision::insert(nt)).unwrap().box_id
 }
 
 #[test]
@@ -82,7 +82,7 @@ fn failed_creation_leaves_planned_row_that_can_be_dropped() {
 }
 
 #[test]
-fn foreign_key_rejects_unknown_task() {
+fn foreign_key_rejects_unknown_box() {
     let dir = tempfile::tempdir().unwrap();
     let store = open(dir.path());
     let err = store.plan_lease(BoxId::new(999), LeaseKind::BoxDir, "/x");

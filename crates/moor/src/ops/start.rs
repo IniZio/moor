@@ -76,7 +76,7 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
         store.check_parent(parent.get()).map_err(refuse_invalid)?;
     }
     settle_all(cx, store)?;
-    if let Some(row) = store.open_task_by_name(&req.name)? {
+    if let Some(row) = store.open_box_by_name(&req.name)? {
         return attach(cx, store, req, &row);
     }
     if req.resume {
@@ -149,7 +149,7 @@ fn reject(
                 .set(set)
                 .parent_session(req.parent.map(SessionId::get)),
         )?
-        .task;
+        .box_id;
     let rejected = BoxLifecycleInput::Rejected {
         reason: reason.to_owned(),
     };
@@ -167,7 +167,7 @@ fn raced(
     req: &StartReq,
     lost: impl Into<CommandError>,
 ) -> Result<StartView, CommandError> {
-    let open = store.open_task_by_name(&req.name)?;
+    let open = store.open_box_by_name(&req.name)?;
     open.map_or_else(|| Err(lost.into()), |row| attach(cx, store, req, &row))
 }
 
@@ -239,7 +239,7 @@ fn wake_idle(store: &Store, id: BoxId) -> Result<(), CommandError> {
 ///
 /// Runs before the start, which may then leave the Task it starts in another state.
 pub(crate) fn settle_all(cx: &Cx, store: &Store) -> Result<(), CommandError> {
-    for row in &store.open_tasks()? {
+    for row in &store.open_boxes()? {
         let ready = row.boxed.as_ref().map(|b| b.state) == Some(BoxState::Ready);
         if !ready || row.setup_failed_at.is_some() {
             continue;
@@ -370,7 +370,7 @@ fn insert(
             credentials: checked,
         });
     }
-    Ok(store.apply(decision)?.task)
+    Ok(store.apply(decision)?.box_id)
 }
 
 #[cfg(test)]

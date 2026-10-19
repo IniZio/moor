@@ -17,7 +17,7 @@ impl Store {
     /// Returns [`StoreError`] when the database fails.
     pub(crate) fn record_turn_done(
         &self,
-        task: BoxId,
+        box_id: BoxId,
         steer: i64,
         outcome: TurnOutcome,
     ) -> Result<bool, StoreError> {
@@ -27,13 +27,13 @@ impl Store {
         let answered: bool = tx.query_row(
             "SELECT EXISTS (SELECT 1 FROM events WHERE box = ?1 AND kind = 'turn_done' \
              AND json_extract(payload, '$.steer') = ?2)",
-            (task.get(), steer),
+            (box_id.get(), steer),
             |r| r.get(0),
         )?;
         if answered {
             return Ok(false);
         }
-        insert_event(&tx, task, &Event::TurnDone { steer, outcome }, now)?;
+        insert_event(&tx, box_id, &Event::TurnDone { steer, outcome }, now)?;
         tx.commit()?;
         drop(conn);
         Ok(true)

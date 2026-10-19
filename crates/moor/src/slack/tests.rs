@@ -31,7 +31,7 @@ fn new_box(store: &Store, name: &str) -> moor_core::BoxId {
             repo: "r".into(),
         }))
         .unwrap()
-        .task
+        .box_id
 }
 
 fn mention(event_id: &str, user: &str, channel: &str, ts: &str, thread: Option<&str>) -> Mention {
@@ -366,7 +366,7 @@ fn redelivered_reply_is_handled_once() {
 /// Opens task `slack-10-5` with a `needs_input` event and records its prompt; returns the event id.
 fn prompted(store: &Store) -> i64 {
     let name = BoxName::parse_allow_bare("slack-10-5").unwrap();
-    let id = store.open_task_by_name(&name).unwrap().unwrap().id;
+    let id = store.open_box_by_name(&name).unwrap().unwrap().id;
     ask(store, id);
     let event_id = store.last_waiting_marker(id).unwrap().unwrap().id;
     store
@@ -375,7 +375,7 @@ fn prompted(store: &Store) -> i64 {
             channel: "C1".into(),
             thread_ts: "10.5".into(),
             message_ts: "20.1".into(),
-            task: name,
+            box_name: name,
             question: "Which one?".into(),
             options: vec!["alpha".into(), "beta".into()],
             answer: None,
@@ -510,7 +510,7 @@ fn click_on_prompt_after_newer_question_is_refused() {
     let store = owned(dir.path());
     prompted(&store);
     let row = store
-        .open_task_by_name(&BoxName::parse_allow_bare("slack-10-5").unwrap())
+        .open_box_by_name(&BoxName::parse_allow_bare("slack-10-5").unwrap())
         .unwrap()
         .unwrap();
     ask(&store, row.id);
@@ -532,7 +532,7 @@ fn click_after_agent_resumed_reports_working() {
     let store = owned(dir.path());
     prompted(&store);
     let row = store
-        .open_task_by_name(&BoxName::parse_allow_bare("slack-10-5").unwrap())
+        .open_box_by_name(&BoxName::parse_allow_bare("slack-10-5").unwrap())
         .unwrap()
         .unwrap();
     for d in [

@@ -66,7 +66,7 @@ fn seed(dir: &Path) -> Vec<u8> {
             repo: "r".into(),
         }))
         .expect("task")
-        .task;
+        .box_id;
     let root = dir.join("artifacts");
     let big = patterned(BIG_LEN);
     store

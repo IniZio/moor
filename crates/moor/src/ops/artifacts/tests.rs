@@ -43,7 +43,7 @@ fn task(cx: &Cx, n: &str) -> BoxId {
         .unwrap()
         .apply(Decision::insert(nt))
         .unwrap()
-        .task
+        .box_id
 }
 
 fn publish(cx: &Cx, t: BoxId, file: &str, bytes: &[u8]) {

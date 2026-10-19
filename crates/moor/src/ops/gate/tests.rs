@@ -38,15 +38,15 @@ fn task(cx: &Cx, name: &str) -> BoxId {
         .unwrap()
         .apply(Decision::insert(nt))
         .unwrap()
-        .task
+        .box_id
 }
 
 /// Record a finished run of `command` named `name` on `sha` with `exit`.
-fn record(cx: &Cx, task: BoxId, name: &str, sha: &str, command: &str, exit: i32) {
+fn record(cx: &Cx, box_id: BoxId, name: &str, sha: &str, command: &str, exit: i32) {
     let store = cx.store().unwrap();
     let id = store
         .begin_run(NewRun {
-            task,
+            box_id,
             argv: command.split(' ').map(str::to_owned).collect(),
             record: Some(name.to_owned()),
             sha: Some(Sha::parse(sha).unwrap()),

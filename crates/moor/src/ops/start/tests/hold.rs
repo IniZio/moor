@@ -30,7 +30,7 @@ fn a_held_start_launches_without_a_prompt_and_keeps_the_goal() {
     let row =
         w.cx.store()
             .unwrap()
-            .task(moor_core::BoxId::new(v.boxed.id))
+            .box_row(moor_core::BoxId::new(v.boxed.id))
             .unwrap()
             .unwrap();
     assert_eq!(row.goal.as_deref(), Some("ship it"));

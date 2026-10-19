@@ -93,12 +93,12 @@ fn answer(prompt: &SlackPrompt, owner: &str, choice: u32, store: &Store, fx: &mu
     if let Some(state) = state {
         let text = format!(
             "This prompt is no longer open: {} is now {state}.",
-            prompt.task.as_str()
+            prompt.box_name.as_str()
         );
         return (fx.reply)(channel, thread, &text);
     }
     let steer = Request::Steer(SteerReq {
-        box_name: prompt.task.clone(),
+        box_name: prompt.box_name.clone(),
         text: None,
         menu: Some(choice),
     });
@@ -111,7 +111,7 @@ fn answer(prompt: &SlackPrompt, owner: &str, choice: u32, store: &Store, fx: &mu
         Ok(false) => return,
         Err(e) => return (fx.log)(&format!("slack: {e}")),
     }
-    let task = prompt.task.as_str();
+    let task = prompt.box_name.as_str();
     let text = prompt::text(task, owner, &prompt.question);
     let blocks = prompt::answered_blocks(task, owner, &prompt.question, &label, owner);
     fx.ui.update(channel, &prompt.message_ts, &text, &blocks);
@@ -120,7 +120,7 @@ fn answer(prompt: &SlackPrompt, owner: &str, choice: u32, store: &Store, fx: &mu
 /// None while `prompt` is the task's live question; otherwise the state to report.
 fn live_state(prompt: &SlackPrompt, store: &Store) -> Result<Option<&'static str>, String> {
     let Some(row) = store
-        .open_task_by_name(&prompt.task)
+        .open_box_by_name(&prompt.box_name)
         .map_err(|e| e.to_string())?
     else {
         return Ok(Some("closed"));

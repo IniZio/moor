@@ -10,7 +10,7 @@ fn the_box_egress_is_left_unrecorded_and_never_warned_about() {
     let repo = tempfile::tempdir().unwrap();
     let w = world_with(FakeDriver::new(), repo.path(), config);
     let v = crate::ops::start::run(&w.cx, &req("demo")).unwrap();
-    let row = w.cx.store().unwrap().task(BoxId::new(v.boxed.id));
+    let row = w.cx.store().unwrap().box_row(BoxId::new(v.boxed.id));
     let egress = row.unwrap().unwrap().boxed.unwrap().egress;
     assert_eq!(egress, None);
     assert!(!w
@@ -45,7 +45,7 @@ fn launch_strip_env(config_yaml: &str) -> Vec<String> {
     let repo = tempfile::tempdir().unwrap();
     let w = world_with(FakeDriver::new(), repo.path(), config);
     let v = crate::ops::start::run(&w.cx, &req("demo")).unwrap();
-    let row = w.cx.store().unwrap().task(BoxId::new(v.boxed.id));
+    let row = w.cx.store().unwrap().box_row(BoxId::new(v.boxed.id));
     let row = row.unwrap().unwrap();
     super::super::launch::launch_req(&w.cx, &row, None)
         .unwrap()
