@@ -18,7 +18,7 @@ fn task() -> TaskView {
         branch: Some("b".into()),
         worktree: None,
         workspace: None,
-        r#box: Some(BoxView {
+        driver: Some(DriverView {
             state: BoxState::Ready,
             provider: "p".into(),
             handle: Some("h".into()),
@@ -42,7 +42,7 @@ fn task_json() -> Value {
         "id": 7, "name": "t", "repo": "r", "issue": null, "goal": "g",
         "lifecycle": "ready", "session_state": "working", "state_reason": null, "base": null, "branch": "b",
         "worktree": null, "workspace": null,
-        "box": {"state": "ready", "provider": "p", "handle": "h",
+        "driver": {"state": "ready", "provider": "p", "handle": "h",
                 "workdir": "/work/repo", "egress": "enforced", "asleep_since": null,
                 "sleep": {"after": null, "reason": null}},
         "agent": null, "run": null, "updated_at": "2026-01-01T00:00:00Z"
@@ -57,9 +57,9 @@ fn task_row_keys_match_wire_shape() {
 #[test]
 fn task_without_box_serializes_null() {
     let mut t = task();
-    t.r#box = None;
+    t.driver = None;
     let v = serde_json::to_value(t).ok();
-    assert_eq!(v.and_then(|v| v.get("box").cloned()), Some(Value::Null));
+    assert_eq!(v.and_then(|v| v.get("driver").cloned()), Some(Value::Null));
 }
 
 #[test]
@@ -370,8 +370,8 @@ fn env_row_value_kind() {
     assert_eq!(j.pointer("/rows/4/value_kind"), Some(&json!("plain")));
 }
 
-fn box_view(after: Option<&str>, reason: Option<&str>) -> BoxView {
-    BoxView {
+fn box_view(after: Option<&str>, reason: Option<&str>) -> DriverView {
+    DriverView {
         state: BoxState::Ready,
         provider: "p".into(),
         handle: None,
@@ -400,26 +400,26 @@ fn box_sleep_serializes_reason_and_after() {
 fn sleep_value_uses_box_key() {
     let v = sleep::SleepValue {
         task: "t".into(),
-        r#box: Some(box_view(None, None)),
+        driver: Some(box_view(None, None)),
         woke: true,
     };
     let j = serde_json::to_value(&v).unwrap();
     assert_eq!(j.get("task"), Some(&json!("t")));
     assert_eq!(j.get("woke"), Some(&json!(true)));
-    assert_eq!(j.pointer("/box/provider"), Some(&json!("p")));
-    assert!(j.get("r#box").is_none());
+    assert_eq!(j.pointer("/driver/provider"), Some(&json!("p")));
+    assert!(j.get("driver").is_none());
 }
 
 #[test]
 fn sleep_value_without_box_serializes_null() {
     let v = sleep::SleepValue {
         task: "t".into(),
-        r#box: None,
+        driver: None,
         woke: false,
     };
     assert_eq!(
         serde_json::to_value(&v).unwrap(),
-        json!({"task": "t", "box": null, "woke": false})
+        json!({"task": "t", "driver": null, "woke": false})
     );
 }
 

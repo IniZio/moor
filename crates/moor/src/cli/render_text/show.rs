@@ -79,7 +79,7 @@ fn list(tasks: &[Value]) -> Option<String> {
                 t.pointer("/agent/state")
                     .and_then(Value::as_str)
                     .unwrap_or("-"),
-                t.pointer("/box/state")
+                t.pointer("/driver/state")
                     .and_then(Value::as_str)
                     .unwrap_or("-"),
                 t.pointer("/box/workdir")
@@ -147,7 +147,7 @@ fn detail(task: &Value, value: &Value) -> Option<String> {
     let _ = writeln!(out, "repo:     {}", field(task, "repo"));
     let _ = writeln!(out, "worktree: {}", field(task, "worktree"));
     let _ = writeln!(out, "branch:   {}", field(task, "branch"));
-    match task.get("box").filter(|b| !b.is_null()) {
+    match task.get("driver").filter(|b| !b.is_null()) {
         Some(b) => {
             let _ = writeln!(
                 out,

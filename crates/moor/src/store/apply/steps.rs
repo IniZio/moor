@@ -9,7 +9,7 @@ use moor_core::BoxId;
 use rusqlite::{params, Transaction};
 
 use super::sql::name_taken;
-use crate::store::{load_task, sessions::live_parent, BoxRow, StoreError};
+use crate::store::{load_task, sessions::live_parent, DriverRow, StoreError};
 
 /// The Box and primary Session states a step leaves behind.
 pub(super) type Parts = (BoxLifecycle, SessionState);
@@ -19,7 +19,7 @@ pub(super) struct Stepped {
     /// The Box written.
     pub(super) id: BoxId,
     /// The Box row before the step, if it existed.
-    pub(super) existing: Option<BoxRow>,
+    pub(super) existing: Option<DriverRow>,
     /// What the writer stores.
     pub(super) parts: Parts,
     /// The states before the step; `None` for a fresh Box.

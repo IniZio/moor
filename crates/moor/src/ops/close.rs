@@ -25,7 +25,7 @@ use crate::ops::common::reports;
 use crate::ops::common::transcript::{self, Saved};
 use crate::ops::common::view::task_view;
 use crate::ops::common::wake::wake_box_if_asleep;
-use crate::store::{BoxRow, Store, TaskRow};
+use crate::store::{DriverRow, Store, TaskRow};
 
 /// Closes a task: gate, transcript save, agent stop, Box teardown and release, Workspace close.
 ///
@@ -116,7 +116,7 @@ fn find(store: &Store, name: &BoxName) -> Result<TaskRow, CommandError> {
 }
 
 /// The Driver handle to release: the acquired one, else one a failed acquire left.
-const fn held(b: &BoxRow) -> Option<&BoxHandle> {
+const fn held(b: &DriverRow) -> Option<&BoxHandle> {
     match (&b.handle, &b.attempted_handle) {
         (Some(h), _) | (None, Some(h)) => Some(h),
         (None, None) => None,

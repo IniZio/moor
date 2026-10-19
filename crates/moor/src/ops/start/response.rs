@@ -74,6 +74,6 @@ pub(super) fn set_provisioned(v: &mut StartView, p: &Provisioned) {
     v.dotfiles = p.dotfiles.view();
     if p.setup.failed() {
         v.failed_step = Some("setup".to_owned());
-        v.boxed = v.task.r#box.as_ref().and_then(|b| b.handle.clone());
+        v.boxed = v.task.driver.as_ref().and_then(|b| b.handle.clone());
     }
 }

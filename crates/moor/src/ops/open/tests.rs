@@ -156,7 +156,7 @@ fn asleep_task_is_woken_then_focused() {
     let v = run(&f.cx, &req()).unwrap();
     assert!(v.woke);
     assert_eq!(v.task, "t");
-    assert_eq!(v.r#box.unwrap().state, BoxState::Ready);
+    assert_eq!(v.driver.unwrap().state, BoxState::Ready);
     assert_eq!(wakes(&f), 1);
     assert_eq!(focuses(&f), vec!["focus_workspace ws-9".to_owned()]);
     assert_eq!(states(&f), (BoxLifecycle::Ready, BoxState::Ready));

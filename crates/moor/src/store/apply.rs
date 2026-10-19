@@ -18,7 +18,7 @@ use self::sql::{field_value, flag, text, Sets};
 pub(super) use self::steps::insert_task;
 use self::steps::{step_task, Parts};
 use super::reads::live_holders_in;
-use super::{BoxRow, Store, StoreError, TaskRow};
+use super::{DriverRow, Store, StoreError, TaskRow};
 use moor_core::ProviderId;
 
 /// Result of a committed `apply`.
@@ -137,7 +137,7 @@ fn step_box(
     tx: &Transaction<'_>,
     now: Ts,
     id: BoxId,
-    existing: Option<&BoxRow>,
+    existing: Option<&DriverRow>,
     d: &Decision,
 ) -> Result<Option<Step<BoxState>>, StoreError> {
     let Some(input) = &d.box_input else {

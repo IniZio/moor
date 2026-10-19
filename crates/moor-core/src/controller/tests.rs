@@ -11,7 +11,7 @@ fn err_parts(line: &str) -> (Option<String>, FrameErrorKind) {
 
 #[test]
 fn parses_hello() {
-    let got = parse_frame(r#"{"frame":"hello","protocol":3}"#);
+    let got = parse_frame(&format!(r#"{{"frame":"hello","protocol":{PROTOCOL}}}"#));
     assert_eq!(got, Ok(ClientFrame::Hello { protocol: PROTOCOL }));
 }
 
@@ -48,7 +48,10 @@ fn non_object_has_no_id() {
 #[test]
 fn server_hello_shape() {
     let line = ServerFrame::Hello { protocol: PROTOCOL }.to_line();
-    assert_eq!(line, "{\"frame\":\"hello\",\"protocol\":3}\n");
+    assert_eq!(
+        line,
+        format!("{{\"frame\":\"hello\",\"protocol\":{PROTOCOL}}}\n")
+    );
 }
 
 #[test]

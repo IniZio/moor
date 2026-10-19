@@ -45,7 +45,7 @@ fn cp_prints_its_confirmation() {
 /// Builds a sleep/wake value for task `task` with an optional Box state.
 fn sleep_value(task: &str, state: Option<&str>, woke: bool) -> serde_json::Value {
     let b = state.map(|s| json!({"state": s, "sleep": {"after": null, "reason": null}}));
-    json!({"task": task, "box": b, "woke": woke})
+    json!({"task": task, "driver": b, "woke": woke})
 }
 
 #[test]

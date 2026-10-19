@@ -433,7 +433,7 @@ fn sleep_label_follows_provider_sleep_support() {
         let (cx, _) = cx_with(dir.path(), FakeDriver::new().sleep_kind(kind));
         add_boxed(&cx);
         let v = run(&cx, &req(None, None)).unwrap();
-        assert_eq!(v.task.r#box.unwrap().sleep.after.as_deref(), after);
+        assert_eq!(v.task.driver.unwrap().sleep.after.as_deref(), after);
     }
 }
 

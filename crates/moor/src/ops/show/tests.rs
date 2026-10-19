@@ -113,7 +113,7 @@ fn first(v: &moor_core::view::ShowView) -> &moor_core::view::TaskView {
 /// Box state of the only task, as the view reports it.
 fn box_state(cx: &Cx) -> BoxState {
     let v = run(cx, &req(None, None)).unwrap();
-    first(&v).r#box.as_ref().unwrap().state
+    first(&v).driver.as_ref().unwrap().state
 }
 
 #[test]
@@ -142,10 +142,10 @@ fn sleep_label_follows_provider_sleep_support() {
         let id = add(&cx, "a");
         ready_box(&cx, &driver, id);
         let v = run(&cx, &req(Some("a"), None)).unwrap();
-        let shown = v.task.unwrap().r#box.unwrap().sleep.after;
+        let shown = v.task.unwrap().driver.unwrap().sleep.after;
         assert_eq!(shown.as_deref(), after);
         let v = run(&cx, &req(None, None)).unwrap();
-        let listed = first(&v).r#box.as_ref().unwrap().sleep.after.clone();
+        let listed = first(&v).driver.as_ref().unwrap().sleep.after.clone();
         assert_eq!(listed.as_deref(), after);
     }
 }
@@ -573,7 +573,7 @@ fn list_sleeps_a_task_idle_past_the_threshold() {
     let row = cx.store().unwrap().task(id).unwrap().unwrap();
     assert_eq!(row.lifecycle, BoxLifecycle::Asleep);
     assert_eq!(first(&v).lifecycle, BoxLifecycle::Asleep);
-    assert_eq!(first(&v).r#box.as_ref().unwrap().state, BoxState::Asleep);
+    assert_eq!(first(&v).driver.as_ref().unwrap().state, BoxState::Asleep);
 }
 
 #[test]

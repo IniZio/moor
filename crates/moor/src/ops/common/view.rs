@@ -7,14 +7,14 @@ use moor_core::config::UserConfig;
 use moor_core::domain::boxes::BoxState;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::SleepKind;
-use moor_core::view::{AgentView, BoxSleepView, BoxView, EventView, RunView, TaskView};
+use moor_core::view::{AgentView, BoxSleepView, DriverView, EventView, RunView, TaskView};
 use moor_core::ProviderId;
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
 use crate::cx::Cx;
 use crate::ops::common::activity::Reading;
-use crate::store::{BoxRow, EventRow, RunRow, TaskRow};
+use crate::store::{DriverRow, EventRow, RunRow, TaskRow};
 
 #[cfg(test)]
 mod tests;
@@ -64,7 +64,7 @@ pub(crate) fn agent_view(reading: &Reading) -> Option<AgentView> {
 }
 
 /// The handle to show: live, or the attempted one once the Box failed.
-fn box_handle(b: &BoxRow) -> Option<String> {
+fn box_handle(b: &DriverRow) -> Option<String> {
     let h = match b.state {
         BoxState::Gone | BoxState::Deleted => None,
         BoxState::Failed | BoxState::ReleaseFailed => {
@@ -76,8 +76,8 @@ fn box_handle(b: &BoxRow) -> Option<String> {
 }
 
 /// Map a Box row to its view.
-fn box_view(b: &BoxRow, config: &UserConfig) -> BoxView {
-    BoxView {
+fn box_view(b: &DriverRow, config: &UserConfig) -> DriverView {
+    DriverView {
         state: b.state,
         provider: b.provider.as_str().to_owned(),
         handle: box_handle(b),
@@ -126,7 +126,7 @@ pub(crate) fn task_view_with_run(
         branch: row.branch.clone(),
         worktree: row.worktree.clone(),
         workspace: row.workspace_id.clone(),
-        r#box: row.boxed.as_ref().map(|b| box_view(b, config)),
+        driver: row.boxed.as_ref().map(|b| box_view(b, config)),
         agent: None,
         run: run.map(run_view),
         updated_at: rfc3339(row.updated_at),
@@ -147,12 +147,12 @@ pub(crate) fn hide_unsupported_sleep_cached(
     cx: &Cx,
     cache: &mut HashMap<String, bool>,
 ) {
-    hide_unsupported_box_sleep(view.r#box.as_mut(), cx, cache);
+    hide_unsupported_box_sleep(view.driver.as_mut(), cx, cache);
 }
 
 /// Drop the idle-sleep label from `b` when its provider cannot sleep.
 pub(crate) fn hide_unsupported_box_sleep(
-    b: Option<&mut BoxView>,
+    b: Option<&mut DriverView>,
     cx: &Cx,
     cache: &mut HashMap<String, bool>,
 ) {

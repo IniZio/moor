@@ -115,7 +115,7 @@ fn start_text(value: &Value) -> Option<String> {
     let (head, state) = task_head(value)?;
     let flag = |key| value.get(key).and_then(Value::as_bool).unwrap_or(false);
     let task = value.get("task")?;
-    let box_state = task.pointer("/box/state").and_then(Value::as_str);
+    let box_state = task.pointer("/driver/state").and_then(Value::as_str);
     let mut out = if flag("queued") {
         format!("queued {head}: waiting for a free box\n")
     } else {
@@ -229,7 +229,7 @@ fn sleep_line(cmd: &str, value: &Value) -> Option<String> {
             format!("{task} was not asleep\n")
         });
     }
-    let state = value.pointer("/box/state").and_then(Value::as_str);
+    let state = value.pointer("/driver/state").and_then(Value::as_str);
     Some(match state {
         Some(s) if s != "asleep" => format!("{task}: box is {s}\n"),
         _ => format!("{task} is asleep\n"),
