@@ -18,6 +18,7 @@ use moor_core::Warning;
 
 use crate::cx::Cx;
 use crate::error::CommandError;
+use crate::ops::common::boxlock::BoxLock;
 use crate::ops::common::provision::recorded_workdir;
 use crate::ops::common::resume;
 use crate::ops::common::transcript;
@@ -221,7 +222,8 @@ fn note_agent_session(
     Ok(())
 }
 
-/// Move the Task's state to match `reading`, and save the transcript of an agent first seen exited.
+/// Move the Task's state to match `reading`, and save the transcript of an agent first seen exited
+/// and end its session.
 ///
 /// The agent session id of the live session is registered with the multiplexer when it is not yet.
 ///
@@ -240,6 +242,7 @@ pub(crate) fn settle(
 ) -> Result<(), CommandError> {
     if let (PaneLiveness::Exited, Some(probed)) = (reading.pane, reading.session) {
         transcript::save_on_exit(cx, store, row, probed)?;
+        end_exited_session(cx, store, row, reading, probed)?;
     }
     register_session(cx, store, row, reading)?;
     note_needs_input(store, row, reading)?;
@@ -252,6 +255,36 @@ pub(crate) fn settle(
         Ok(_) | Err(StoreError::Illegal(_)) => Ok(()),
         Err(e) => Err(e.into()),
     }
+}
+
+/// Ends the current session of an agent seen exited, once its transcript is saved.
+///
+/// Nothing is ended when the live session is not the probed one, or while another operation holds the Box lock, so the save is retried first.
+fn end_exited_session(
+    cx: &Cx,
+    store: &Store,
+    row: &TaskRow,
+    reading: &Reading,
+    probed: i64,
+) -> Result<(), CommandError> {
+    if store.live_session(row.id)?.is_none_or(|s| s.id != probed) {
+        return Ok(());
+    }
+    let Ok(_held) = BoxLock::acquire(
+        cx.clock(),
+        cx.state_dir()?,
+        row.id,
+        "session end",
+        Duration::ZERO,
+    ) else {
+        return Ok(());
+    };
+    let exit = match reading.activity.as_ref().map(|a| &a.state) {
+        Some(AgentState::Exited { code }) => Some(*code),
+        _ => None,
+    };
+    store.end_current_session(row.id, "exited", exit)?;
+    Ok(())
 }
 
 /// Append a `needs_input` event when the agent starts waiting for the user.
