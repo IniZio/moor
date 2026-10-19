@@ -11,6 +11,56 @@ use crate::store::tests::{new_task, open};
 use crate::store::StoreError;
 use moor_core::seam::clock::Clock;
 
+fn set_current(store: &crate::store::Store, id: BoxId, state: &str) {
+    store
+        .writer()
+        .unwrap()
+        .execute(
+            "UPDATE sessions SET state = ? WHERE box = ? AND ordinal = (SELECT MAX(ordinal) FROM sessions WHERE box = ?)",
+            (state, id.get(), id.get()),
+        )
+        .unwrap();
+}
+
+fn end_current(store: &crate::store::Store, id: BoxId) {
+    set_current(store, id, "ended");
+}
+
+#[test]
+fn open_session_is_refused_while_the_current_session_is_live() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = new_task(&store, "acme/1");
+    for state in ["starting", "working", "idle"] {
+        set_current(&store, id, state);
+        let err = store.open_session(id).unwrap_err();
+        assert!(matches!(err, StoreError::Invalid(_)), "{state}: {err:?}");
+    }
+    assert_eq!(store.box_sessions(id).unwrap().len(), 1);
+}
+
+#[test]
+fn open_session_is_allowed_after_the_current_session_ended() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = new_task(&store, "acme/1");
+    end_current(&store, id);
+    assert_eq!(store.open_session(id).unwrap().ordinal, 2);
+}
+
+#[test]
+fn open_session_is_allowed_when_the_box_has_no_session() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = new_task(&store, "acme/1");
+    store
+        .writer()
+        .unwrap()
+        .execute("DELETE FROM sessions WHERE box = ?", [id.get()])
+        .unwrap();
+    assert_eq!(store.open_session(id).unwrap().ordinal, 1);
+}
+
 #[test]
 fn new_box_has_one_starting_session() {
     let dir = tempfile::tempdir().unwrap();
@@ -27,14 +77,16 @@ fn open_session_numbers_after_the_last() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
     let id = new_task(&store, "acme/1");
+    end_current(&store, id);
     let second = store.open_session(id).unwrap();
+    end_current(&store, id);
     let third = store.open_session(id).unwrap();
     assert_eq!((second.ordinal, third.ordinal), (2, 3));
     assert_eq!(second.state, SessionState::Starting);
     let listed = store.box_sessions(id).unwrap();
     let ordinals: Vec<i64> = listed.iter().map(|s| s.ordinal).collect();
     assert_eq!(ordinals, [1, 2, 3]);
-    assert_eq!(listed[1], second);
+    assert_eq!(listed[1].id, second.id);
     assert_eq!(listed[2], third);
 }
 
@@ -44,9 +96,11 @@ fn sessions_stay_with_their_box() {
     let (store, _clock) = open(dir.path());
     let a = new_task(&store, "acme/1");
     let b = new_task(&store, "acme/2");
+    end_current(&store, a);
     store.open_session(a).unwrap();
     assert_eq!(store.box_sessions(a).unwrap().len(), 2);
     assert_eq!(store.box_sessions(b).unwrap().len(), 1);
+    end_current(&store, b);
     assert_eq!(store.open_session(b).unwrap().ordinal, 2);
 }
 

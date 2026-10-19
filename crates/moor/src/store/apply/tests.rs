@@ -159,6 +159,14 @@ fn task_input_updates_only_the_current_session() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
     let id = ready(&store);
+    store
+        .writer()
+        .unwrap()
+        .execute(
+            "UPDATE sessions SET state = 'ended' WHERE box = ? AND ordinal = 1",
+            [id.get()],
+        )
+        .unwrap();
     store.open_session(id).unwrap();
     set_current_state(&store, id, "working");
     store
@@ -170,7 +178,7 @@ fn task_input_updates_only_the_current_session() {
         .iter()
         .map(|s| s.state.as_str().to_owned())
         .collect();
-    assert_eq!(states, ["working", "idle"]);
+    assert_eq!(states, ["ended", "idle"]);
 }
 
 #[test]
