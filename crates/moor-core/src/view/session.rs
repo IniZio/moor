@@ -40,7 +40,7 @@ pub struct HostSessionValue {
 }
 
 /// Result of `show-session`: one Session with its children.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SessionView {
     /// Session id.
     pub session: SessionId,
@@ -67,7 +67,7 @@ pub struct SessionView {
 }
 
 /// One child Session in a `SessionView`.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SessionChildView {
     /// Child Session id.
     pub session: SessionId,
@@ -77,10 +77,36 @@ pub struct SessionChildView {
     pub state: String,
 }
 
+/// Result of `sessions`: live Sessions ordered by id.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct SessionsValue {
+    /// The Sessions.
+    pub sessions: Vec<SessionListItem>,
+}
+
+/// One Session in a `SessionsValue`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct SessionListItem {
+    /// Session id.
+    pub session: SessionId,
+    /// Box name; `None` for a host Session.
+    #[serde(rename = "box")]
+    pub box_name: Option<String>,
+    /// Id of the parent Session, if any.
+    pub parent: Option<SessionId>,
+    /// Session state.
+    pub state: String,
+    /// Directory the agent runs in.
+    pub workdir: Option<String>,
+    /// Position among the Box's Sessions.
+    pub ordinal: i64,
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        EndSessionValue, HostSessionValue, OpenSessionValue, SessionChildView, SessionView,
+        EndSessionValue, HostSessionValue, OpenSessionValue, SessionChildView, SessionListItem,
+        SessionView, SessionsValue,
     };
     use crate::name::SessionId;
     use serde_json::json;
@@ -152,5 +178,64 @@ mod tests {
             serde_json::to_value(&v).expect("serialize"),
             json!({"session": 9, "workdir": "/w", "state": "running"})
         );
+    }
+
+    #[test]
+    fn sessions_value_round_trips_with_box_key() {
+        let v = SessionsValue {
+            sessions: vec![
+                SessionListItem {
+                    session: SessionId::new(1),
+                    box_name: None,
+                    parent: None,
+                    state: "running".into(),
+                    workdir: Some("/w".into()),
+                    ordinal: 0,
+                },
+                SessionListItem {
+                    session: SessionId::new(2),
+                    box_name: Some("demo".into()),
+                    parent: Some(SessionId::new(1)),
+                    state: "ended".into(),
+                    workdir: None,
+                    ordinal: 1,
+                },
+            ],
+        };
+        let json = serde_json::to_value(&v).expect("serialize");
+        assert_eq!(
+            json.pointer("/sessions/1/box"),
+            Some(&serde_json::Value::from("demo"))
+        );
+        assert_eq!(
+            json.pointer("/sessions/0/box"),
+            Some(&serde_json::Value::Null)
+        );
+        let back: SessionsValue = serde_json::from_value(json).expect("deserialize");
+        assert_eq!(back, v);
+    }
+
+    #[test]
+    fn session_view_round_trips_with_child() {
+        let v = SessionView {
+            session: SessionId::new(1),
+            task: Some("demo".into()),
+            ordinal: 0,
+            parent: None,
+            workdir: Some("/w".into()),
+            agent: Some("claude".into()),
+            agent_session_id: None,
+            state: "running".into(),
+            started_at: 10,
+            ended_at: Some(20),
+            children: vec![SessionChildView {
+                session: SessionId::new(2),
+                task: None,
+                state: "ended".into(),
+            }],
+        };
+        let json = serde_json::to_value(&v).expect("serialize");
+        let back: SessionView = serde_json::from_value(json).expect("deserialize");
+        assert_eq!(back, v);
     }
 }

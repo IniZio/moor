@@ -92,3 +92,51 @@ fn children_list_box_and_host_sessions_oldest_first() {
         .unwrap()
         .is_empty());
 }
+
+#[test]
+fn live_sessions_skip_ended_ones_and_come_back_in_id_order() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let a = store.open_host_session("/a", None, None).unwrap();
+    let gone = store.open_host_session("/gone", None, None).unwrap();
+    let b = store.open_host_session("/b", None, None).unwrap();
+    store
+        .writer()
+        .unwrap()
+        .execute("UPDATE sessions SET state = 'ended' WHERE id = ?", [gone])
+        .unwrap();
+    let ids: Vec<i64> = store
+        .live_sessions()
+        .unwrap()
+        .iter()
+        .map(|s| s.id)
+        .collect();
+    assert_eq!(ids, vec![a, b]);
+}
+
+#[test]
+fn live_sessions_carry_the_box_name_and_parent_of_a_box_session() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let root = store.open_host_session("/w", None, None).unwrap();
+    let id = new_task(&store, "acme/1");
+    end_current(&store, id);
+    let child = store.open_child_session(id, Some(root)).unwrap();
+    let name = BoxName::parse_allow_bare("acme/1").unwrap();
+    let shape = |rows: Vec<super::SessionRecord>| {
+        rows.into_iter()
+            .map(|r| (r.id, r.task, r.parent))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        shape(store.live_sessions().unwrap()),
+        [
+            (root, None, None),
+            (child.id, Some(name.clone()), Some(root))
+        ]
+    );
+    assert_eq!(
+        shape(store.session_children(root).unwrap()),
+        [(child.id, Some(name), Some(root))]
+    );
+}

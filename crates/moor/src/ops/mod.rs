@@ -19,6 +19,7 @@ pub(crate) mod pr;
 pub(crate) mod proof;
 mod repos;
 mod run;
+mod sessions;
 pub(crate) mod show;
 mod show_session;
 mod sleep;
@@ -42,6 +43,7 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         Request::Show(r) => to_value(&show::run(cx, &r)?),
         Request::ShowSession(r) => to_value(&show_session::run(cx, &r)?),
         Request::Repos(r) => to_value(&repos::run(cx, &r)),
+        Request::Sessions(r) => to_value(&sessions::run(cx, &r)?),
         Request::Close(r) => to_value(&close::run(cx, &r)?),
         Request::Gate(r) => to_value(&gate::run(cx, &r)?),
         Request::Env(r) => to_value(&env::run(cx, &r)?),
