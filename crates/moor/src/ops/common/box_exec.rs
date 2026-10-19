@@ -256,8 +256,16 @@ fn create(cx: &Cx, site: &Site<'_>, dir: &BoxPath) -> Result<(), String> {
         .exec(site.handle, &spec, Deadline(CLEANUP_DEADLINE))
     {
         Ok(ExecOutcome::Exited { code: 0 }) => Ok(()),
-        _ => Err(format!(
-            "{} already exists or could not be created on the Box",
+        Ok(ExecOutcome::Exited { code }) => Err(format!(
+            "{} already exists or could not be created on the Box (mkdir exited with code {code})",
+            dir.as_str()
+        )),
+        Ok(other) => Err(format!(
+            "{} could not be created on the Box: mkdir ended with {other:?}",
+            dir.as_str()
+        )),
+        Err(e) => Err(format!(
+            "{} could not be created on the Box: {e}",
             dir.as_str()
         )),
     }
