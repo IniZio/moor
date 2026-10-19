@@ -41,6 +41,7 @@ fn dir_names_come_from_the_box_id() {
         proxy: None,
         origin: None,
         strip_env: Vec::new(),
+        prompt: LaunchPrompt::Brief,
     };
     let (cred, tmp) = req.dir_names();
     assert_eq!(

@@ -37,6 +37,18 @@ pub struct LaunchNotice {
     pub message: String,
 }
 
+/// The first prompt the agent starts with.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum LaunchPrompt {
+    /// The prompt derived from the brief.
+    #[default]
+    Brief,
+    /// This text, verbatim.
+    Text(String),
+    /// No first prompt; the agent waits for input.
+    None,
+}
+
 /// What a launch needs to start the agent in a Box.
 #[derive(Debug, Clone)]
 pub struct LaunchReq {
@@ -72,6 +84,8 @@ pub struct LaunchReq {
     pub origin: Option<String>,
     /// Env var names removed from the agent's environment before hooks and the agent run.
     pub strip_env: Vec<String>,
+    /// The first prompt the agent starts with.
+    pub prompt: LaunchPrompt,
 }
 
 impl LaunchReq {
@@ -115,6 +129,7 @@ impl PartialEq for LaunchReq {
             && proxy(&self.proxy) == proxy(&other.proxy)
             && self.origin == other.origin
             && self.strip_env == other.strip_env
+            && self.prompt == other.prompt
     }
 }
 

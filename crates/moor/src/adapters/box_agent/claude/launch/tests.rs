@@ -12,6 +12,7 @@ use std::process::{Command, Stdio};
 use moor_core::activity::HookKind;
 use moor_core::name::BoxPath;
 use moor_core::seam::agent_profile::{AgentProfile, BoxSetup, Key, LaunchCtx, ProxyAddr};
+use moor_core::seam::engine::LaunchPrompt;
 use moor_core::Secret;
 use serde_json::{json, Value};
 use tempfile::TempDir;
@@ -19,6 +20,7 @@ use tempfile::TempDir;
 use super::super::Claude;
 
 mod bypass;
+mod prompt;
 
 fn ctx(dir: &Path) -> LaunchCtx {
     let root = dir.to_str().unwrap();
@@ -27,6 +29,7 @@ fn ctx(dir: &Path) -> LaunchCtx {
         workdir: BoxPath::under(root, "work").unwrap(),
         proxy: None,
         home: BoxPath::under(root, "home").unwrap(),
+        prompt: LaunchPrompt::Brief,
     }
 }
 

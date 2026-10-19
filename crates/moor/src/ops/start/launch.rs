@@ -10,7 +10,7 @@ use moor_core::config::TaskSettings;
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
 use moor_core::domain::task::TaskState;
-use moor_core::seam::engine::{EngineError, LaunchReq, SessionRef};
+use moor_core::seam::engine::{EngineError, LaunchPrompt, LaunchReq, SessionRef};
 use moor_core::seam::surface::{PaneRef, WorkspaceRef};
 use moor_core::view::{AgentLaunchView, LaunchFailure};
 use moor_core::{BoxId, StartReq, Warning};
@@ -216,6 +216,7 @@ pub(super) fn launch_req(cx: &Cx, row: &TaskRow, setup_exit: Option<i32>) -> Opt
         proxy: None,
         origin: None,
         strip_env,
+        prompt: LaunchPrompt::Brief,
     })
 }
 

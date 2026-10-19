@@ -18,6 +18,7 @@ fn launch_script(req: impl FnOnce(&FakeSurface) -> LaunchReq) -> String {
 fn with_names(s: &FakeSurface) -> LaunchReq {
     LaunchReq {
         strip_env: names(),
+        prompt: LaunchPrompt::Brief,
         ..req(s)
     }
 }
@@ -39,6 +40,7 @@ fn a_launch_without_a_proxy_unsets_the_configured_secrets_before_the_agent() {
 fn a_proxy_launch_unsets_the_configured_secrets_before_the_agent() {
     let script = launch_script(|s| LaunchReq {
         strip_env: names(),
+        prompt: LaunchPrompt::Brief,
         ..req_with_proxy(s)
     });
     assert_unsets_before_agent(&script);
