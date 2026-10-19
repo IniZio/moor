@@ -28,6 +28,7 @@ mod exited_start;
 mod hold;
 mod identity;
 mod known_repo;
+mod launch_skipped;
 mod launch_warnings;
 mod lease;
 mod lease_dirs;
