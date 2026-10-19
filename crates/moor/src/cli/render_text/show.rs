@@ -24,6 +24,31 @@ pub(super) fn show_text(value: &Value) -> Option<String> {
     Some(out)
 }
 
+/// Renders a `show-session` value, or `None` when it lacks the expected shape.
+pub(super) fn session_text(value: &Value) -> Option<String> {
+    let id = value.get("session")?.as_i64()?;
+    let state = value.get("state")?.as_str()?;
+    let kind = value.get("task").and_then(Value::as_str).unwrap_or("host");
+    let mut out = format!("Session {id} {state} ({kind})");
+    if let Some(dir) = value.get("workdir").and_then(Value::as_str) {
+        let _ = write!(out, " in {dir}");
+    }
+    out.push('\n');
+    if let Some(agent) = value.get("agent_session_id").and_then(Value::as_str) {
+        let _ = writeln!(out, "agent session {agent}");
+    }
+    for child in value.get("children")?.as_array()? {
+        let name = child.get("task").and_then(Value::as_str).unwrap_or("host");
+        let _ = writeln!(
+            out,
+            "  child {} {name} {}",
+            child.get("session")?.as_i64()?,
+            child.get("state")?.as_str()?
+        );
+    }
+    Some(out)
+}
+
 /// A string field, or `-` when absent or null.
 fn field<'a>(v: &'a Value, key: &str) -> &'a str {
     v.get(key).and_then(Value::as_str).unwrap_or("-")

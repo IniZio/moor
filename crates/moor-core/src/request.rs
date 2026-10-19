@@ -6,6 +6,8 @@ use crate::name::{BoxName, SessionId};
 
 mod binding;
 pub use binding::{BindSessionReq, SessionBindingReq};
+mod session;
+pub use session::ShowSessionReq;
 
 /// One moor command with its arguments.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -33,6 +35,8 @@ pub enum Request {
     BindSession(BindSessionReq),
     /// Look up the Session a conversation key is bound to.
     SessionBinding(SessionBindingReq),
+    /// Show one Session with its child Sessions.
+    ShowSession(ShowSessionReq),
     /// Publish a report.
     Report(ReportReq),
     /// Show tasks or one task.
@@ -83,6 +87,7 @@ impl Request {
             Self::EndHostSession(_) => "end-host-session",
             Self::BindSession(_) => "bind-session",
             Self::SessionBinding(_) => "session-binding",
+            Self::ShowSession(_) => "show-session",
             Self::Report(_) => "report",
             Self::Show(_) => "show",
             Self::Close(_) => "close",

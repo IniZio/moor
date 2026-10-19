@@ -156,3 +156,18 @@ fn detail_omits_the_line_without_attention() {
     let out = show(json!({"task": task("alpha", true)}));
     assert!(!out.contains("needs attention"));
 }
+
+#[test]
+fn show_session_renders_host_with_child() {
+    let v = json!({
+        "session": 5, "task": null, "ordinal": 1, "parent": null, "workdir": "/w",
+        "agent": "claude", "agent_session_id": "abc", "state": "working",
+        "started_at": "t", "ended_at": null,
+        "children": [{"session": 7, "task": "box-name", "state": "working"}]
+    });
+    let out = render(&Response::ok("show-session", Some(v)), false).0;
+    assert_eq!(
+        out,
+        "Session 5 working (host) in /w\nagent session abc\n  child 7 box-name working\n"
+    );
+}

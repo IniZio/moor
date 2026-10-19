@@ -39,11 +39,79 @@ pub struct HostSessionValue {
     pub state: String,
 }
 
+/// Result of `show-session`: one Session with its children.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct SessionView {
+    /// Session id.
+    pub session: SessionId,
+    /// Box name; `None` for a host Session.
+    pub task: Option<String>,
+    /// Position among the task's Sessions.
+    pub ordinal: i64,
+    /// Id of the parent Session, if any.
+    pub parent: Option<SessionId>,
+    /// Directory the agent runs in.
+    pub workdir: Option<String>,
+    /// Agent that runs the Session.
+    pub agent: Option<String>,
+    /// Agent's own session id.
+    pub agent_session_id: Option<String>,
+    /// Session state.
+    pub state: String,
+    /// Start time, Unix milliseconds.
+    pub started_at: i64,
+    /// End time, Unix milliseconds; `None` while running.
+    pub ended_at: Option<i64>,
+    /// Sessions whose parent is this one.
+    pub children: Vec<SessionChildView>,
+}
+
+/// One child Session in a `SessionView`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct SessionChildView {
+    /// Child Session id.
+    pub session: SessionId,
+    /// Box name; `None` for a host Session.
+    pub task: Option<String>,
+    /// Child Session state.
+    pub state: String,
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{EndSessionValue, HostSessionValue, OpenSessionValue};
+    use super::{
+        EndSessionValue, HostSessionValue, OpenSessionValue, SessionChildView, SessionView,
+    };
     use crate::name::SessionId;
     use serde_json::json;
+
+    #[test]
+    fn session_view_serializes_null_options_and_children() {
+        let v = SessionView {
+            session: SessionId::new(1),
+            task: None,
+            ordinal: 0,
+            parent: None,
+            workdir: Some("/w".into()),
+            agent: None,
+            agent_session_id: Some("a1".into()),
+            state: "running".into(),
+            started_at: 10,
+            ended_at: None,
+            children: vec![SessionChildView {
+                session: SessionId::new(2),
+                task: None,
+                state: "ended".into(),
+            }],
+        };
+        assert_eq!(
+            serde_json::to_value(&v).expect("serialize"),
+            json!({"session": 1, "task": null, "ordinal": 0, "parent": null,
+                "workdir": "/w", "agent": null, "agent_session_id": "a1",
+                "state": "running", "started_at": 10, "ended_at": null,
+                "children": [{"session": 2, "task": null, "state": "ended"}]})
+        );
+    }
 
     #[test]
     fn value_serializes_four_fields() {

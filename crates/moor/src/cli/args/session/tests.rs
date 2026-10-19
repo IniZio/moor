@@ -2,7 +2,9 @@
 
 use std::ffi::OsString;
 
-use moor_core::request::{EndHostSessionReq, OpenHostSessionReq, UpdateHostSessionReq};
+use moor_core::request::{
+    EndHostSessionReq, OpenHostSessionReq, ShowSessionReq, UpdateHostSessionReq,
+};
 use moor_core::{Request, SessionId};
 
 use crate::cli::args::{parse_ignoring_env as parse, Action};
@@ -107,4 +109,25 @@ fn parent_defaults_from_moor_session_env() {
         .expect("session open");
     assert_eq!(env_of(start), Some("MOOR_SESSION".into()));
     assert_eq!(env_of(open), Some("MOOR_SESSION".into()));
+}
+
+#[test]
+fn show_session_maps_to_show_session() {
+    assert_eq!(
+        req(&["show", "--session", "5"]),
+        Request::ShowSession(ShowSessionReq {
+            session: SessionId::new(5)
+        })
+    );
+}
+
+#[test]
+fn show_session_refuses_task_and_flags() {
+    assert!(run(&["show", "--session", "5", "sometask"]).is_err());
+    assert!(run(&["show", "--session", "5", "--pane"]).is_err());
+}
+
+#[test]
+fn plain_show_stays_show() {
+    assert!(matches!(req(&["show"]), Request::Show(_)));
 }
