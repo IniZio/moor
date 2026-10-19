@@ -30,7 +30,7 @@ pub const fn summary(lifecycle: BoxLifecycle, primary: SessionState) -> TaskStat
         BoxLifecycle::SettingUp => TaskState::SettingUp,
         BoxLifecycle::SetupFailed => TaskState::SetupFailed,
         BoxLifecycle::Ready => match primary {
-            SessionState::Idle => TaskState::Idle,
+            SessionState::Idle | SessionState::Ended => TaskState::Idle,
             _ => TaskState::Working,
         },
         BoxLifecycle::Asleep => TaskState::Asleep,
@@ -122,6 +122,15 @@ impl Cx<'_> {
         s.step(i).map_err(|_| self.illegal())
     }
 
+    /// Steps the primary Session; an Ended one stays Ended, as it takes no further input.
+    fn primary_after(&self, i: &SessionInput) -> Result<SessionState, StepError> {
+        if self.primary == SessionState::Ended {
+            Ok(self.primary)
+        } else {
+            self.sess(self.primary, i)
+        }
+    }
+
     /// A Box-only input leaves the primary Session as it was.
     fn box_only(&self, i: &BoxLifecycleInput) -> Parts {
         Ok((self.boxed(self.lifecycle, i)?, self.primary))
@@ -138,7 +147,7 @@ impl Cx<'_> {
     /// A Session input, legal only while the Box is Ready.
     fn ready_only(&self, i: &SessionInput) -> Parts {
         if self.lifecycle == BoxLifecycle::Ready {
-            Ok((self.lifecycle, self.sess(self.primary, i)?))
+            Ok((self.lifecycle, self.primary_after(i)?))
         } else {
             Err(self.illegal())
         }
@@ -156,7 +165,11 @@ impl Cx<'_> {
     fn lifecycle_change(&self) -> Parts {
         let ready = self.lifecycle == BoxLifecycle::Ready;
         match self.input {
-            I::SleepDue if ready && self.primary != SessionState::Idle => Err(self.illegal()),
+            I::SleepDue
+                if ready && !matches!(self.primary, SessionState::Idle | SessionState::Ended) =>
+            {
+                Err(self.illegal())
+            }
 
             I::SleepCmd if ready && self.primary == SessionState::Working => {
                 self.sleep(self.sess(self.primary, &SessionInput::AgentQuiet)?)
@@ -164,7 +177,7 @@ impl Cx<'_> {
             I::SleepDue | I::SleepCmd => self.sleep(self.primary),
             I::Wake => {
                 let lc = self.boxed(self.lifecycle, &BoxLifecycleInput::Wake)?;
-                Ok((lc, self.sess(self.primary, &SessionInput::AgentBusy)?))
+                Ok((lc, self.primary_after(&SessionInput::AgentBusy)?))
             }
             _ => {
                 let lc = self.boxed(self.lifecycle, &BoxLifecycleInput::Close)?;
