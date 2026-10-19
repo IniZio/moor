@@ -270,3 +270,45 @@ fn hook_cache_reads_a_legacy_blocked_row_as_its_message() {
     assert_eq!(rec.kind, HookKind::Blocked);
     assert_eq!(rec.message.as_deref(), Some("X"));
 }
+
+#[test]
+fn begin_session_records_the_current_box_session() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = add(&store, "t");
+    let second = store.open_session(id).unwrap();
+    store.begin_session(id, "s1", None).unwrap();
+    let live = store.live_session(id).unwrap().unwrap();
+    assert_eq!(live.session, Some(second.id));
+}
+
+#[test]
+fn hook_follows_the_current_session() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = add(&store, "t");
+    let record = |kind| HookRecord {
+        kind,
+        session_id: None,
+        message: None,
+        at: Ts::from_millis(5),
+    };
+    store.put_hook(id, &record(HookKind::Busy)).unwrap();
+    let second = store.open_session(id).unwrap();
+    assert_eq!(store.hook(id).unwrap(), None);
+    store.put_hook(id, &record(HookKind::Idle)).unwrap();
+    let conn = store.writer().unwrap();
+    let cached: i64 = conn
+        .query_row(
+            "SELECT session FROM hook_cache WHERE session = ?",
+            [second.id],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let total: i64 = conn
+        .query_row("SELECT count(*) FROM hook_cache", [], |r| r.get(0))
+        .unwrap();
+    drop(conn);
+    assert_eq!((cached, total), (second.id, 2));
+    assert_eq!(store.hook(id).unwrap().unwrap().record.kind, HookKind::Idle);
+}

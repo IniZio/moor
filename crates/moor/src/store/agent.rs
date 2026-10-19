@@ -31,6 +31,8 @@ pub(crate) struct SessionRow {
     pub(crate) transcript_digest: Option<String>,
     /// The agent session id last registered for resume against this session's pane.
     pub(crate) registered_agent_session: Option<String>,
+    /// The Box's Session current when the agent started.
+    pub(crate) session: Option<i64>,
 }
 
 impl Store {
@@ -40,7 +42,7 @@ impl Store {
         Ok(conn
             .query_row(
                 "SELECT id, box, session_ref, pane, started_at, ended_at, exit, transcript_digest, \
-                 registered_agent_session FROM launches WHERE box = ? AND ended_at IS NULL ORDER BY id DESC LIMIT 1",
+                 registered_agent_session, session FROM launches WHERE box = ? AND ended_at IS NULL ORDER BY id DESC LIMIT 1",
                 [task.get()],
                 session_from_row,
             )
@@ -75,7 +77,8 @@ impl Store {
             return Err(StoreError::NotFound(task));
         }
         tx.execute(
-            "INSERT INTO launches (box, session_ref, pane, started_at) VALUES (?, ?, ?, ?)",
+            "INSERT INTO launches (box, session_ref, pane, started_at, session) VALUES (?1, ?2, ?3, ?4, \
+             (SELECT id FROM sessions WHERE box = ?1 ORDER BY ordinal DESC LIMIT 1))",
             params![task.get(), session_ref, pane, now.as_millis()],
         )?;
         let id = tx.last_insert_rowid();
@@ -135,7 +138,7 @@ impl Store {
         let conn = self.writer()?;
         conn.execute(
             "INSERT INTO hook_cache (session, record, at) \
-             VALUES ((SELECT id FROM sessions WHERE box = ?1 AND ordinal = 1), ?2, ?3) \
+             VALUES ((SELECT id FROM sessions WHERE box = ?1 ORDER BY ordinal DESC LIMIT 1), ?2, ?3) \
              ON CONFLICT(session) DO UPDATE SET record = ?2, at = ?3",
             params![task.get(), json, now.as_millis()],
         )?;
@@ -149,7 +152,7 @@ impl Store {
         let row: Option<(String, i64)> = conn
             .query_row(
                 "SELECT h.record, h.at FROM hook_cache h JOIN sessions s ON s.id = h.session \
-                 WHERE s.box = ? AND s.ordinal = 1",
+                 WHERE s.box = ?1 AND s.ordinal = (SELECT MAX(ordinal) FROM sessions WHERE box = ?1)",
                 [task.get()],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
@@ -176,6 +179,7 @@ fn session_from_row(r: &Row<'_>) -> rusqlite::Result<SessionRow> {
         exit: r.get(6)?,
         transcript_digest: r.get(7)?,
         registered_agent_session: r.get(8)?,
+        session: r.get(9)?,
     })
 }
 
