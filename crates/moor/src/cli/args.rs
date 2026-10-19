@@ -4,6 +4,7 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
+use moor_core::request::EndSessionReq;
 use moor_core::{
     BoxId, BoxName, ReportReq, Request, RunReq, ShowReq, StartReq, SteerReq, WaitFor, WaitReq,
 };
@@ -71,6 +72,8 @@ enum Cmd {
     Wait(WaitArgs),
     /// Send text or a menu choice to the agent.
     Steer(SteerArgs),
+    /// End the agent Session; keep the Box open.
+    End(TaskArg),
     /// File a Report.
     Report(ReportArgs),
     /// Show one Task or all open Tasks.
@@ -106,6 +109,9 @@ impl Cmd {
             Self::Run(a) => Action::Request(Request::Run(a.into())),
             Self::Wait(a) => Action::Request(Request::Wait(a.into())),
             Self::Steer(a) => Action::Request(Request::Steer(a.into())),
+            Self::End(a) => Action::Request(Request::EndSession(EndSessionReq {
+                task: a.task.as_str().to_string(),
+            })),
             Self::Report(a) => Action::Request(Request::Report(a.into())),
             Self::Show(a) => Action::Request(Request::Show(a.into())),
             Self::Close(a) => Action::Request(Request::Close(a.into())),
