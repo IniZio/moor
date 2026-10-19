@@ -7,15 +7,15 @@ use moor_core::decide::close::{
 };
 use moor_core::decide::transcript::Trigger;
 use moor_core::domain::boxes::BoxState;
-use moor_core::domain::decision::{Decision, ExtraEvent};
 use moor_core::seam::driver::{DriverError, Released};
 use moor_core::seam::proc::Deadline;
-use moor_core::seam::surface::{PaneRef, SurfaceError, WorkspaceRef};
+use moor_core::seam::surface::{SurfaceError, WorkspaceRef};
 use moor_core::view::CloseView;
 use moor_core::{BoxHandle, BoxName, CloseReq, ErrorKind, Warning};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
+use crate::ops::common::agent_stop;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::boxwork::{self, probe, BoxWork, BOXWORK_DEADLINE};
 use crate::ops::common::promote::promote_waiting;
@@ -49,7 +49,7 @@ pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
     let plan = close_gate(&facts(cx, &row, box_check)?, req.force)?;
     let saved = save_transcript(cx, store, &row)?;
     let digest = saved.as_ref().map(|t| t.digest.as_str());
-    let agent_stopped = stop_agent(cx, store, &row, digest)?;
+    let agent_stopped = agent_stop::stop_agent(cx, store, &row, digest)?;
     if probed_clean {
         recheck_and_collect(cx, store, &row)?;
     } else {
@@ -97,38 +97,6 @@ fn save_transcript(cx: &Cx, store: &Store, row: &TaskRow) -> Result<Option<Saved
         return Ok(None);
     };
     Ok(transcript::save(cx, store, row, &session, Trigger::Close))
-}
-
-/// Closes the live agent pane and ends its session, with the digest of its saved transcript;
-/// a pane already gone is fine.
-///
-/// Returns whether a session was ended.
-fn stop_agent(
-    cx: &Cx,
-    store: &Store,
-    row: &TaskRow,
-    digest: Option<&str>,
-) -> Result<bool, CommandError> {
-    let Some(session) = store.live_session(row.id)? else {
-        return Ok(false);
-    };
-    if let Some(pane) = session.pane.as_deref() {
-        match cx.surface().close_pane(&PaneRef::new(pane)) {
-            Ok(()) | Err(SurfaceError::NotFound) => {}
-            Err(e) => {
-                return Err(CommandError::new(
-                    ErrorKind::Failed,
-                    format!("could not close the agent pane: {e}; the task stays open"),
-                )
-                .with_hint("try `moor close` again, or close the pane by hand"));
-            }
-        }
-    }
-    store.end_session(session.id, None, digest)?;
-    store.apply(Decision::new(row.id).event(ExtraEvent::SessionsStopped {
-        sessions: vec![session.session_ref],
-    }))?;
-    Ok(true)
 }
 
 /// The open task by name, else the newest closed one (the gate refuses it).
