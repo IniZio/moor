@@ -88,6 +88,10 @@ impl Request {
 /// Arguments of `start`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[allow(
+    clippy::struct_excessive_bools,
+    reason = "JSON wire shape is a public contract"
+)]
 pub struct StartReq {
     /// Box name.
     pub name: BoxName,
@@ -109,6 +113,9 @@ pub struct StartReq {
     /// Skip starting an agent.
     #[serde(default)]
     pub no_agent: bool,
+    /// Launch the agent with no first prompt.
+    #[serde(default)]
+    pub hold: bool,
     /// Resume the agent's stored session instead of starting a fresh one.
     #[serde(default)]
     pub resume: bool,

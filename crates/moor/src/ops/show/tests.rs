@@ -514,6 +514,7 @@ fn a_task_freshly_started_is_not_idled_by_the_next_list() {
             base: None,
             model: None,
             no_agent: false,
+            hold: false,
             resume: false,
             trust_moor_yaml: false,
             repo: None,
