@@ -208,6 +208,18 @@ fn claim_race_is_a_clear_message() {
 }
 
 #[test]
+fn shallow_host_checkout_says_how_to_deepen_it() {
+    let e = map_error(
+        Op::Exec,
+        Some("p"),
+        &nz(1, "local Git seed rev-list failed: exit status 128"),
+    );
+    let msg = e.to_string();
+    assert!(msg.contains("shallow"), "{msg}");
+    assert!(msg.contains("git fetch --unshallow"), "{msg}");
+}
+
+#[test]
 fn claim_race_needs_exit_two_and_the_words() {
     assert!(is_claim_race(&nz(2, "lease cbx_1 claim changed; retry\n")));
     assert!(!is_claim_race(&nz(1, "lease cbx_1 claim changed; retry")));

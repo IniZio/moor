@@ -77,6 +77,13 @@ fn classify_text(code: i32, text: &str) -> Option<DriverError> {
             summary: "the Box lease was busy; try again".to_owned(),
         });
     }
+    if text.contains("local git seed rev-list failed") {
+        return Some(DriverError::Failed {
+            summary: "the host checkout is shallow, so crabbox could not seed Git from it; \
+                      run `git fetch --unshallow` in the host checkout and retry"
+                .to_owned(),
+        });
+    }
     if text.contains("quota") {
         return Some(DriverError::Quota("the plan limit was reached".to_owned()));
     }
