@@ -42,6 +42,33 @@ exec_env() {
   echo "lint-selftest: $1 ok"
 }
 
+# removed_names <case> <expect: pass|fail> ; fake .rs source on stdin, scanned by tools/removed-names.sh
+removed_names() {
+  local d="$dir/removed-names-case"
+  rm -rf "$d"; mkdir -p "$d/crates"
+  cat > "$d/crates/fake.rs"
+  local rc=0 out
+  out="$(MOOR_SCAN_ROOT="$d" "$root/tools/removed-names.sh" 2>&1)" || rc=$?
+  if { [ "$2" = pass ] && [ "$rc" -ne 0 ]; } || { [ "$2" = fail ] && [ "$rc" -eq 0 ]; }; then
+    echo "lint-selftest: $1 FAILED (expected $2)"; echo "$out"; exit 1
+  fi
+  echo "lint-selftest: $1 ok"
+}
+
+removed_names removed-names-type fail <<'RS'
+struct NewTask;
+RS
+removed_names removed-names-ident fail <<'RS'
+fn f(task_input: u8) {}
+RS
+removed_names removed-names-allowed pass <<'RS'
+const S: &str = "2 background tasks running";
+fn g(w: &[&str]) -> bool { matches!(w, [n, "background", "task"]) }
+RS
+removed_names removed-names-clean pass <<'RS'
+fn f(job: u8) {}
+RS
+
 exec_env exec-env-shorthand fail <<'RS'
 fn f(env: Vec<(String, String)>) {
     let _ = ExecSpec {
