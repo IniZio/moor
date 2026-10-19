@@ -59,6 +59,9 @@ pub(super) fn run(
         return Ok(AgentLaunchView::default());
     };
     launch.resume = resume;
+    if req.hold {
+        launch.prompt = LaunchPrompt::None;
+    }
     let cfg = settings()?;
     launch.model = cfg.model.clone().map(|m| m.value);
     begin(cx, store, &row, &launch, &cfg)
