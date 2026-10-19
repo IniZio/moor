@@ -2,6 +2,7 @@
 members = [
   "crates/moor",
   "crates/moor-core",
+  "crates/moor-web",
   "tools/layering",
   "tools/e2e-budget",
 ]

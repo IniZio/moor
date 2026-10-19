@@ -2031,6 +2031,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "moor-web"
+version = "0.2.0"
+dependencies = [
+ "clap",
+ "moor-core",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+]
+
+[[package]]
 name = "multiversion_no_op"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
