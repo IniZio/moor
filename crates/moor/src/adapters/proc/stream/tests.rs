@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use moor_core::seam::proc::{Deadline, Output, Proc, ProcError, ProcSpec, Tool};
+use moor_core::seam::proc::{Deadline, Output, Proc, ProcError, ProcSpec, StderrGate, Tool};
 use rustix::process::{getpid, kill_process, Signal};
 use tempfile::TempDir;
 
@@ -334,4 +334,71 @@ fn inherit_sends_child_stderr_to_the_stderr_writer_and_tail() {
         other => unreachable!("expected NonZero, got {other:?}"),
     }
     assert_eq!(cap.0.lock().unwrap().as_slice(), b"live\n");
+}
+
+fn gate() -> StderrGate {
+    StderrGate {
+        begin: "moor-b".into(),
+        end: "moor-e".into(),
+    }
+}
+
+#[test]
+fn gate_forwards_only_lines_between_the_markers() {
+    let script = "echo 'running on host printf moor-b ...' >&2; echo moor-b >&2; \
+                  echo hello >&2; echo moor-e >&2; echo 'run summary' >&2";
+    let cap = Capture::default();
+    let flag = Arc::new(AtomicBool::new(false));
+    let spec = sh(script, 5).stderr_gate(gate());
+    sh_proc()
+        .stream_to(&spec, &Output::Inherit, &flag, Box::new(cap.clone()))
+        .unwrap();
+    let shown = String::from_utf8(cap.0.lock().unwrap().clone()).unwrap();
+    assert_eq!(shown, "hello\n", "stderr shown to the user");
+}
+
+#[test]
+fn gate_handles_crlf_markers_and_an_unterminated_last_line() {
+    let script = "printf 'moor-b\\r\\none\\r\\ntwo' >&2";
+    let cap = Capture::default();
+    let flag = Arc::new(AtomicBool::new(false));
+    let spec = sh(script, 5).stderr_gate(gate());
+    sh_proc()
+        .stream_to(&spec, &Output::Inherit, &flag, Box::new(cap.clone()))
+        .unwrap();
+    assert_eq!(cap.0.lock().unwrap().as_slice(), b"one\r\ntwo");
+}
+
+#[test]
+fn gate_never_opened_shows_nothing_but_the_error_keeps_the_tail() {
+    let cap = Capture::default();
+    let flag = Arc::new(AtomicBool::new(false));
+    let spec = sh("echo 'sync failed' >&2; exit 5", 5).stderr_gate(gate());
+    let r = sh_proc().stream_to(&spec, &Output::Inherit, &flag, Box::new(cap.clone()));
+    match r {
+        Err(ProcError::NonZero {
+            code, stderr_tail, ..
+        }) => {
+            assert_eq!(code, 5);
+            assert_eq!(stderr_tail, "sync failed\n");
+        }
+        other => unreachable!("expected NonZero, got {other:?}"),
+    }
+    assert!(cap.0.lock().unwrap().is_empty());
+}
+
+#[test]
+fn gate_tail_keeps_marker_and_filtered_lines() {
+    let script = "echo moor-b >&2; echo hello >&2; echo moor-e >&2; echo after >&2; exit 1";
+    let cap = Capture::default();
+    let flag = Arc::new(AtomicBool::new(false));
+    let spec = sh(script, 5).stderr_gate(gate());
+    let r = sh_proc().stream_to(&spec, &Output::Inherit, &flag, Box::new(cap.clone()));
+    match r {
+        Err(ProcError::NonZero { stderr_tail, .. }) => {
+            assert_eq!(stderr_tail, "moor-b\nhello\nmoor-e\nafter\n");
+        }
+        other => unreachable!("expected NonZero, got {other:?}"),
+    }
+    assert_eq!(cap.0.lock().unwrap().as_slice(), b"hello\n");
 }
