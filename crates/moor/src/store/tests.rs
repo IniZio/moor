@@ -91,14 +91,14 @@ fn open_creates_wal_file_with_schema_version() {
             r.get(0)
         })
         .unwrap();
-    assert_eq!(v, "3");
+    assert_eq!(v, "4");
     drop(raw);
     let (store, _) = open(dir.path());
     assert!(store.open_tasks().unwrap().is_empty());
 }
 
 #[test]
-fn schema_version_is_three() {
+fn schema_version_is_four() {
     let dir = tempfile::tempdir().unwrap();
     drop(open(dir.path()));
     let raw = rusqlite::Connection::open(dir.path().join("state").join("moor.db")).unwrap();
@@ -107,7 +107,7 @@ fn schema_version_is_three() {
             r.get(0)
         })
         .unwrap();
-    assert_eq!(v, "3");
+    assert_eq!(v, "4");
 }
 
 #[test]
