@@ -79,6 +79,11 @@ fn all_events() -> Vec<Event> {
             to: s("b"),
         },
         Event::SessionStarted { session: s("x") },
+        Event::SessionEnded {
+            session: 3,
+            cause: s("exited"),
+            exit: Some(0),
+        },
         Event::SessionFailed {
             step: s("pane"),
             message: s("m"),
@@ -211,29 +216,30 @@ const fn event_index(e: &Event) -> usize {
         Event::Ran { .. } => 20,
         Event::Copied { .. } => 21,
         Event::SessionStarted { .. } => 22,
-        Event::SessionFailed { .. } => 23,
-        Event::Relaunched { .. } => 24,
-        Event::Checked { .. } => 25,
-        Event::RunStarted { .. } => 26,
-        Event::Attached => 27,
-        Event::SessionsStopped { .. } => 28,
-        Event::AgentPromptBlocked { .. } => 29,
-        Event::AgentPromptCheckFailed { .. } => 30,
-        Event::TranscriptSaved { .. } => 31,
-        Event::TranscriptFailed { .. } => 32,
-        Event::TranscriptSkipped { .. } => 33,
-        Event::Steered { .. } => 34,
-        Event::ProxyStarted { .. } => 35,
-        Event::TunnelRestarted { .. } => 36,
-        Event::SetupFinished { .. } => 37,
-        Event::EgressRefused { .. } => 38,
-        Event::CredentialWithheld { .. } => 39,
-        Event::ProxyCredentialFailed { .. } => 40,
-        Event::NeedsInput { .. } => 41,
-        Event::Proof { .. } => 42,
-        Event::AgentRateLimited { .. } => 43,
-        Event::ProxyCredentialRejected { .. } => 44,
-        Event::ProxyCredentialRecovered { .. } => 45,
+        Event::SessionEnded { .. } => 23,
+        Event::SessionFailed { .. } => 24,
+        Event::Relaunched { .. } => 25,
+        Event::Checked { .. } => 26,
+        Event::RunStarted { .. } => 27,
+        Event::Attached => 28,
+        Event::SessionsStopped { .. } => 29,
+        Event::AgentPromptBlocked { .. } => 30,
+        Event::AgentPromptCheckFailed { .. } => 31,
+        Event::TranscriptSaved { .. } => 32,
+        Event::TranscriptFailed { .. } => 33,
+        Event::TranscriptSkipped { .. } => 34,
+        Event::Steered { .. } => 35,
+        Event::ProxyStarted { .. } => 36,
+        Event::TunnelRestarted { .. } => 37,
+        Event::SetupFinished { .. } => 38,
+        Event::EgressRefused { .. } => 39,
+        Event::CredentialWithheld { .. } => 40,
+        Event::ProxyCredentialFailed { .. } => 41,
+        Event::NeedsInput { .. } => 42,
+        Event::Proof { .. } => 43,
+        Event::AgentRateLimited { .. } => 44,
+        Event::ProxyCredentialRejected { .. } => 45,
+        Event::ProxyCredentialRecovered { .. } => 46,
     }
 }
 
@@ -241,7 +247,7 @@ const fn event_index(e: &Event) -> usize {
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 46);
+    assert_eq!(all.len(), 47);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }
@@ -479,6 +485,25 @@ fn box_failure_events_carry_handle() {
             error: s("c"),
             handle: Some(s("p/x"))
         }]
+    );
+}
+
+/// `SessionEnded` names itself and carries the documented payload.
+#[test]
+fn session_ended_kind_and_payload() {
+    let e = Event::SessionEnded {
+        session: 3,
+        cause: s("exited"),
+        exit: None,
+    };
+    assert_eq!(e.kind(), "session_ended");
+    assert_eq!(
+        serde_json::to_value(&e).unwrap(),
+        serde_json::json!({"kind":"session_ended","session":3,"cause":"exited","exit":null})
+    );
+    assert_eq!(
+        e.payload(),
+        serde_json::json!({"session":3,"cause":"exited","exit":null})
     );
 }
 
