@@ -101,9 +101,11 @@ cannot sleep and stays up.
 ### Box image requirements
 
 The Box image must provide `sh`, `git`, `curl`, `tar` and `unzip`. moor's
-scripts run under `sh` and use `git` for the checkout. If one is missing,
-setup prints a warning naming it, in the terminal and in `.moor/setup.log`,
-and carries on. Setup does not fail because of it.
+scripts run under `sh` and use `git` for the checkout. When the repo has
+setup lines, the setup script checks for these tools first. If one is missing,
+it prints a warning naming it, in the terminal and in `.moor/setup.log`, and
+carries on. Setup does not fail because of it. A repo with no setup lines
+runs no setup script, so nothing is checked.
 
 ## JSON envelope
 
