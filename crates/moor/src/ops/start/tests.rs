@@ -34,6 +34,7 @@ mod moor_yaml;
 mod provider_caps;
 mod proxy;
 mod relaunch;
+mod relaunch_sessions;
 mod relaunch_yaml;
 mod rerun;
 mod revive;
