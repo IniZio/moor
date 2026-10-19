@@ -14,7 +14,8 @@ CREATE TABLE sessions (id INTEGER PRIMARY KEY, box INTEGER NOT NULL REFERENCES b
   agent TEXT, model TEXT, agent_session_id TEXT, workspace_id TEXT, pane TEXT, state TEXT NOT NULL,
   started_at INTEGER NOT NULL, ended_at INTEGER, UNIQUE (box, ordinal));
 CREATE TABLE launches (id INTEGER PRIMARY KEY, box INTEGER NOT NULL REFERENCES boxes(id), session_ref TEXT NOT NULL, pane TEXT,
-  started_at INTEGER NOT NULL, ended_at INTEGER, exit INTEGER, transcript_digest TEXT, registered_agent_session TEXT);
+  started_at INTEGER NOT NULL, ended_at INTEGER, exit INTEGER, transcript_digest TEXT, registered_agent_session TEXT,
+  session INTEGER REFERENCES sessions(id));
 CREATE TABLE box_refs (box INTEGER NOT NULL REFERENCES boxes(id), kind TEXT NOT NULL CHECK (kind IN ('branch','pr','proof')),
   value TEXT NOT NULL, PRIMARY KEY (box, kind, value));
 CREATE TABLE events (id INTEGER PRIMARY KEY, box INTEGER NOT NULL REFERENCES boxes(id), session INTEGER REFERENCES sessions(id),
@@ -28,4 +29,4 @@ CREATE TABLE hook_cache (session INTEGER PRIMARY KEY REFERENCES sessions(id), re
 CREATE TABLE proxy  (box INTEGER PRIMARY KEY REFERENCES boxes(id), nonce BLOB NOT NULL, box_port INTEGER NOT NULL UNIQUE,
   host_port INTEGER, pid INTEGER, handle TEXT, ready INTEGER NOT NULL DEFAULT 0, lease_owner TEXT, lease_heartbeat INTEGER,
   boot_id TEXT, updated_at INTEGER NOT NULL);
-INSERT INTO meta (k, v) VALUES ('schema_version', '2');
+INSERT INTO meta (k, v) VALUES ('schema_version', '3');
