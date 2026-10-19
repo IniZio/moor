@@ -319,9 +319,9 @@ fn new_key() -> String {
 fn accepted(key: &str, job: &str) -> HttpResponse {
     HttpResponse {
         status: "202 Accepted",
-        content_type: "application/json",
+        content_type: "application/json".into(),
         headers: Vec::new(),
-        body: json!({"key": key, "job": job}).to_string(),
+        body: json!({"key": key, "job": job}).to_string().into_bytes(),
     }
 }
 

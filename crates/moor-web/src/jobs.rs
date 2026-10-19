@@ -270,7 +270,7 @@ impl Jobs {
             return Some(Reply::Stream(Box::new(move |out| jobs.stream(&id, out))));
         }
         let mut ok = HttpResponse::text("200 OK", snapshot.to_string());
-        ok.content_type = "application/json";
+        ok.content_type = "application/json".into();
         Some(ok.into())
     }
 

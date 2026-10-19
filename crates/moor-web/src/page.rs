@@ -18,7 +18,7 @@ pub fn handler(fallback: Handler) -> Handler {
             ("GET", "/") => HttpResponse::html(INDEX_HTML),
             ("GET", "/app.js") => {
                 let mut resp = HttpResponse::html(APP_JS);
-                resp.content_type = "text/javascript; charset=utf-8";
+                resp.content_type = "text/javascript; charset=utf-8".into();
                 resp
             }
             _ => return fallback(req),

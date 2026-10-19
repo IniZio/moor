@@ -36,9 +36,9 @@ fn run(client: &Client, req: &HttpRequest) -> HttpResponse {
         Ok(envelope) => match serde_json::to_string(&envelope) {
             Ok(body) => HttpResponse {
                 status: "200 OK",
-                content_type: "application/json",
+                content_type: "application/json".into(),
                 headers: Vec::new(),
-                body,
+                body: body.into_bytes(),
             },
             Err(e) => HttpResponse::text("500 Internal Server Error", e.to_string()),
         },

@@ -44,9 +44,9 @@ pub fn handler(client: Client, db: Arc<Mutex<Db>>, fallback: Handler) -> Handler
 fn json_ok(body: &Value) -> HttpResponse {
     HttpResponse {
         status: "200 OK",
-        content_type: "application/json",
+        content_type: "application/json".into(),
         headers: Vec::new(),
-        body: body.to_string(),
+        body: body.to_string().into_bytes(),
     }
 }
 
