@@ -23,7 +23,7 @@ fn task(cx: &Cx) -> BoxId {
     id
 }
 
-fn exited_probes() -> Probes {
+pub(super) fn exited_probes() -> Probes {
     Probes {
         hook: HookRead::Absent,
         pane: PaneRead::Fresh(PaneObs {
