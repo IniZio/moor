@@ -2,7 +2,7 @@
 
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior};
 
-use super::{lease, slack, StoreError, SCHEMA_SQL, SCHEMA_VERSION};
+use super::{artifacts, lease, slack, StoreError, SCHEMA_SQL, SCHEMA_VERSION};
 
 /// Add the launch-to-session link, backfilling each launch to its Box's
 /// first Session.
@@ -72,6 +72,7 @@ fn rebuild(conn: &mut Connection, found: &str) -> Result<(), StoreError> {
     )?;
     tx.execute_batch(slack::SLACK_SQL)?;
     tx.execute_batch(lease::LEASE_SQL)?;
+    tx.execute_batch(artifacts::ARTIFACTS_SQL)?;
     tx.commit()?;
     Ok(())
 }
@@ -116,6 +117,7 @@ pub(super) fn init_schema(conn: &mut Connection) -> Result<(), StoreError> {
     }
     tx.execute_batch(slack::SLACK_SQL)?;
     tx.execute_batch(lease::LEASE_SQL)?;
+    tx.execute_batch(artifacts::ARTIFACTS_SQL)?;
     tx.commit()?;
     Ok(())
 }

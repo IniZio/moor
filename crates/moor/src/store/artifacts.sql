@@ -1,0 +1,1 @@
+CREATE TABLE IF NOT EXISTS artifacts (id INTEGER PRIMARY KEY, box INTEGER NOT NULL REFERENCES boxes(id), session INTEGER REFERENCES sessions(id), name TEXT NOT NULL, version INTEGER NOT NULL, kind TEXT NOT NULL, content_type TEXT NOT NULL, size INTEGER NOT NULL, sha256 TEXT NOT NULL, path TEXT NOT NULL, created_at INTEGER NOT NULL, UNIQUE (box, name, version));
