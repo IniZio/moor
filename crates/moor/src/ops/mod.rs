@@ -8,6 +8,7 @@ use crate::error::CommandError;
 mod close;
 pub(crate) mod common;
 mod cp;
+mod end_session;
 pub(crate) mod env;
 mod gate;
 mod open;
@@ -44,6 +45,7 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         Request::Open(r) => to_value(&open::run(cx, &r)?),
         Request::Connect(r) => to_value(&open::connect(cx, &r)?),
         Request::Steer(r) => to_value(&steer::run(cx, &r)?),
+        Request::EndSession(r) => to_value(&end_session::run(cx, &r)?),
         other => Err(CommandError::not_implemented(other.cmd())),
     }
 }
