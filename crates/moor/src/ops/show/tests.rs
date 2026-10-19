@@ -16,6 +16,7 @@ use moor_core::seam::driver::{AcquireReq, Driver, DriverError, SleepKind};
 use moor_core::seam::proc::Tool;
 use moor_core::{BoxId, BoxName, ProviderId, ShowReq, StartReq};
 
+mod artifacts;
 mod attention;
 mod pane;
 
