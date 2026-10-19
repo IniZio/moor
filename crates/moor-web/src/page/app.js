@@ -145,7 +145,7 @@ function makeNode(n) {
   li.setAttribute('role', 'treeitem');
   li.dataset.sid = String(n.session);
   const card = h('div', null, 'card');
-  const r = { li, card, box: n.box, request: n.request, qsig: null, proofKey: null };
+  const r = { li, card, box: n.box, request: n.request, qsig: null };
   const sid = n.session;
 
   const head = h('div', null, 'row');
@@ -204,13 +204,6 @@ function makeNode(n) {
       () => act('/close', { task: r.box }, r.actOut)));
     row.append(steer, sb, eb, cb);
     card.append(row, r.actOut);
-
-    r.proofs = h('details');
-    r.proofs.appendChild(h('summary', 'Proof files'));
-    r.proofList = h('div', null, 'msg');
-    r.proofs.appendChild(r.proofList);
-    r.proofs.addEventListener('toggle', () => { if (r.proofs.open) loadProofs(r); });
-    card.appendChild(r.proofs);
   }
 
   if (n.request) {
@@ -307,23 +300,6 @@ function dropNode(li) {
   li.remove();
 }
 
-async function loadProofs(r) {
-  if (!r.box || !r.proofs) return;
-  try {
-    const res = await api('/boxes/' + encodeURIComponent(r.box));
-    if (!res.ok || !res.json) { r.proofList.textContent = 'could not load proofs: ' + res.text; return; }
-    const { proofs = [], events = [] } = res.json;
-    r.proofList.textContent = '';
-    if (!proofs.length) r.proofList.appendChild(h('div', 'No proof files yet.', 'muted'));
-    for (const p of proofs) r.proofList.appendChild(h('div', p.name + ' (' + p.size + ' bytes)'));
-    for (const ev of events.filter((e) => e.kind === 'proof').slice(-10)) {
-      r.proofList.appendChild(h('div', 'proof event ' + fmtTime(ev.ts) + ' ' + JSON.stringify(ev.payload), 'muted'));
-    }
-  } catch (e) {
-    r.proofList.textContent = 'could not load proofs: ' + e.message;
-  }
-}
-
 async function refreshTree() {
   try {
     const res = await api('/tree');
@@ -367,9 +343,6 @@ function connect() {
     if (f.box) parts.push('box ' + f.box);
     if (f.session != null) parts.push('session ' + f.session);
     feedLine(parts.join(' · '));
-    if (f.kind === 'proof' && f.box) {
-      for (const r of nodes.values()) if (r.box === f.box && r.proofs && r.proofs.open) loadProofs(r);
-    }
     scheduleTree();
   };
 }
