@@ -160,6 +160,7 @@ pub(super) fn build(path: &str, body: &[u8]) -> Result<Request, String> {
                 base: None,
                 model: None,
                 no_agent: false,
+                hold: false,
                 resume: false,
                 trust_moor_yaml: false,
                 repo: Some(b.repo),
