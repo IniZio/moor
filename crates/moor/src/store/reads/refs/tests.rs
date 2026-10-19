@@ -41,10 +41,7 @@ fn boxes_found_by_kind_and_value() {
         store.boxes_by_ref("pr", "acme/app#7").unwrap(),
         [first, second]
     );
-    assert_eq!(
-        store.boxes_by_ref("branch", "acme/app#7").unwrap(),
-        [other]
-    );
+    assert_eq!(store.boxes_by_ref("branch", "acme/app#7").unwrap(), [other]);
     assert!(store.boxes_by_ref("pr", "acme/app#8").unwrap().is_empty());
 }
 

@@ -1,8 +1,8 @@
 //! Tests for Slack event dedup and thread binding.
 
-use moor_core::seam::clock::Clock;
 use moor_core::domain::decision::Decision;
 use moor_core::domain::task::TaskInput;
+use moor_core::seam::clock::Clock;
 use moor_core::BoxName;
 
 use crate::store::tests::{new_task, open};
@@ -276,7 +276,9 @@ fn proof_dedup_keys_on_box_not_name() {
         .apply(Decision::new(first).task_input(TaskInput::Close))
         .unwrap();
     let second = new_task(&store, "t");
-    store.mark_slack_proof_posted(first, "shot.png", "aa").unwrap();
+    store
+        .mark_slack_proof_posted(first, "shot.png", "aa")
+        .unwrap();
     assert!(store.slack_proof_posted(first, "shot.png", "aa").unwrap());
     assert!(!store.slack_proof_posted(second, "shot.png", "aa").unwrap());
 }
@@ -308,7 +310,10 @@ fn binding_row_keys_front_and_conversation() {
             Ok((r.get(0)?, r.get(1)?, r.get(2)?))
         })
         .unwrap();
-    assert_eq!(row, ("slack".into(), "C1/1.1".into(), primary_session(&store, id)));
+    assert_eq!(
+        row,
+        ("slack".into(), "C1/1.1".into(), primary_session(&store, id))
+    );
 }
 
 #[test]
