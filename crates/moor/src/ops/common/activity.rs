@@ -240,6 +240,7 @@ pub(crate) fn settle(
     row: &TaskRow,
     reading: &Reading,
 ) -> Result<(), CommandError> {
+    turn::note_turn_done(store, row, reading)?;
     if let (PaneLiveness::Exited, Some(probed)) = (reading.pane, reading.session) {
         transcript::save_on_exit(cx, store, row, probed)?;
         end_exited_session(cx, store, row, reading, probed)?;
@@ -373,6 +374,8 @@ const fn liveness(pane: &PaneRead, activity: &Activity) -> PaneLiveness {
         _ => PaneLiveness::Live,
     }
 }
+
+mod turn;
 
 #[cfg(test)]
 mod tests;
