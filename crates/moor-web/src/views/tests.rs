@@ -1,0 +1,337 @@
+//! Tests for the read endpoints, over a fake controller socket.
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::indexing_slicing,
+    reason = "tests assert on fixed fixtures"
+)]
+
+use std::collections::HashMap;
+use std::io::{BufRead, BufReader, Read, Write};
+use std::net::TcpStream;
+use std::os::unix::net::{UnixListener, UnixStream};
+use std::path::Path;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use moor_core::controller::{parse_frame, ClientFrame, PROTOCOL};
+use moor_core::name::SessionId;
+use moor_core::response::{ErrorKind, ErrorView, Response};
+use serde_json::{json, Value};
+
+use super::handler;
+use crate::client::Client;
+use crate::db::{Db, RequestRow};
+use crate::http::{start, HttpResponse, Server};
+
+const TOKEN: &str = "t0ken";
+
+/// Command names the fake controller received, in order.
+type Seen = Arc<Mutex<Vec<String>>>;
+
+/// Answers by command name.
+type Answers = Arc<HashMap<&'static str, Response>>;
+
+fn serve(socket: &Path, answers: Answers) -> Seen {
+    let listener = UnixListener::bind(socket).unwrap();
+    let seen = Seen::default();
+    let record = seen.clone();
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let (record, answers) = (record.clone(), answers.clone());
+            std::thread::spawn(move || converse(&record, &answers, stream.unwrap()));
+        }
+    });
+    seen
+}
+
+fn converse(seen: &Seen, answers: &Answers, stream: UnixStream) {
+    let mut reader = BufReader::new(stream.try_clone().unwrap());
+    let mut writer = stream;
+    let mut line = String::new();
+    reader.read_line(&mut line).unwrap();
+    writeln!(writer, r#"{{"frame":"hello","protocol":{PROTOCOL}}}"#).unwrap();
+    loop {
+        line.clear();
+        if reader.read_line(&mut line).unwrap() == 0 {
+            return;
+        }
+        let ClientFrame::Request { id, request } = parse_frame(line.trim_end()).unwrap() else {
+            return;
+        };
+        let cmd = request.cmd();
+        seen.lock().unwrap().push(cmd.to_owned());
+        let envelope = answers
+            .get(cmd)
+            .cloned()
+            .unwrap_or_else(|| failure(cmd, ErrorKind::Usage));
+        let frame = json!({"frame": "response", "id": id, "envelope": envelope});
+        writeln!(writer, "{frame}").unwrap();
+    }
+}
+
+fn failure(cmd: &str, kind: ErrorKind) -> Response {
+    let error = ErrorView {
+        kind,
+        message: "no".to_owned(),
+        hints: Vec::new(),
+        context: Vec::new(),
+    };
+    Response::err(cmd, error)
+}
+
+fn session(id: i64, parent: Option<i64>, bx: Option<&str>, ordinal: i64) -> Value {
+    json!({"session": id, "box": bx, "parent": parent, "state": "active",
+           "workdir": bx.map(|b| format!("/w/{b}")), "ordinal": ordinal})
+}
+
+fn task(name: &str, state: &str, question: Option<&str>) -> Value {
+    json!({
+        "name": name, "repo": "app", "branch": format!("moor/{name}"), "state": "running",
+        "goal": format!("goal of {name}"),
+        "box": {"state": state},
+        "agent": {"state": if question.is_some() { "needs_input" } else { "working" },
+                  "question": question, "options": if question.is_some() { json!(["yes", "no"]) } else { json!([]) }},
+    })
+}
+
+fn answers() -> Answers {
+    let sessions = json!({"sessions": [
+        session(3, Some(1), Some("app/2"), 2),
+        session(1, None, None, 0),
+        session(2, Some(1), Some("app/1"), 1),
+    ]});
+    let show = json!({
+        "tasks": [task("app/1", "awake", None), task("app/2", "asleep", Some("ship it?"))],
+        "task": task("app/1", "awake", None),
+        "events": [{"id": 1, "kind": "note", "payload": {}, "ts": 5}],
+        "proofs": [{"name": "p.txt", "size": 3, "sha256": "ab"}],
+    });
+    let repos = json!({"repos": [{"name": "app", "url": "https://example.test/app.git"}]});
+    Arc::new(HashMap::from([
+        ("sessions", Response::ok("sessions", Some(sessions))),
+        ("show", Response::ok("show", Some(show))),
+        ("repos", Response::ok("repos", Some(repos))),
+    ]))
+}
+
+fn row(key: &str, session: i64, ended: Option<i64>) -> RequestRow {
+    RequestRow {
+        key: key.to_owned(),
+        root_session: SessionId::new(session),
+        repo: "app".to_owned(),
+        created_at: 10,
+        ended_at: ended,
+    }
+}
+
+fn fallback() -> crate::http::Handler {
+    Arc::new(|_| HttpResponse::text("200 OK", "fallback").into())
+}
+
+/// Starts the front over a fake controller; the socket directory outlives the test body.
+fn front(dir: &tempfile::TempDir, answers: Answers, rows: &[RequestRow]) -> (Server, Seen) {
+    let sock = dir.path().join("c.sock");
+    let seen = serve(&sock, answers);
+    let db = Db::open(&dir.path().join("web.db")).unwrap();
+    for r in rows {
+        db.insert_request(r).unwrap();
+    }
+    let handler = handler(Client::new(sock), Arc::new(Mutex::new(db)), fallback());
+    (start(0, TOKEN.to_owned(), handler).unwrap(), seen)
+}
+
+fn get(web: &Server, path: &str) -> String {
+    send(web.addr(), "GET", path)
+}
+
+fn send(addr: std::net::SocketAddr, method: &str, path: &str) -> String {
+    let mut s = TcpStream::connect(addr).unwrap();
+    s.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+    write!(
+        s,
+        "{method} {path} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\n\
+         Authorization: Bearer {TOKEN}\r\nX-Moor-Csrf: 1\r\nContent-Length: 0\r\n\r\n",
+        addr.port()
+    )
+    .unwrap();
+    let mut out = String::new();
+    let _ = s.read_to_string(&mut out);
+    out
+}
+
+fn body(resp: &str) -> Value {
+    let (_, text) = resp.split_once("\r\n\r\n").unwrap();
+    serde_json::from_str(text).unwrap()
+}
+
+#[test]
+fn tree_nests_children_with_box_and_agent_state() {
+    let dir = tempfile::tempdir().unwrap();
+    let (web, _) = front(&dir, answers(), &[]);
+    let resp = get(&web, "/tree");
+    assert!(resp.starts_with("HTTP/1.1 200"), "{resp}");
+    let roots = body(&resp)["roots"].clone();
+    assert_eq!(roots.as_array().unwrap().len(), 1);
+    assert_eq!(roots[0]["session"], 1);
+    assert_eq!(roots[0]["box"], Value::Null);
+    assert_eq!(roots[0]["task"], Value::Null);
+    let ids: Vec<&Value> = roots[0]["children"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|k| &k["session"])
+        .collect();
+    assert_eq!(ids, [2, 3]);
+}
+
+#[test]
+fn child_carries_task_and_agent_question() {
+    let dir = tempfile::tempdir().unwrap();
+    let (web, _) = front(&dir, answers(), &[]);
+    let second = body(&get(&web, "/tree"))["roots"][0]["children"][1].clone();
+    assert_eq!(second["parent"], 1);
+    assert_eq!(second["workdir"], "/w/app/2");
+    assert_eq!(
+        second["task"],
+        json!({"name": "app/2", "repo": "app", "repo_url": "https://example.test/app.git",
+               "branch": "moor/app/2", "state": "running", "goal": "goal of app/2",
+               "box_state": "asleep"})
+    );
+    assert_eq!(
+        second["agent"],
+        json!({"state": "needs_input", "question": "ship it?", "options": ["yes", "no"]})
+    );
+    assert_eq!(second["children"], json!([]));
+}
+
+#[test]
+fn awake_child_has_no_question() {
+    let dir = tempfile::tempdir().unwrap();
+    let (web, _) = front(&dir, answers(), &[]);
+    let kid = body(&get(&web, "/tree"))["roots"][0]["children"][0].clone();
+    assert_eq!(kid["task"]["box_state"], "awake");
+    assert_eq!(kid["agent"]["question"], Value::Null);
+}
+
+#[test]
+fn request_row_attaches_to_its_root() {
+    let dir = tempfile::tempdir().unwrap();
+    let (web, _) = front(&dir, answers(), &[row("k1", 1, None)]);
+    let roots = body(&get(&web, "/tree"))["roots"].clone();
+    assert_eq!(
+        roots[0]["request"],
+        json!({"key": "k1", "repo": "app", "created_at": 10, "ended_at": null})
+    );
+    assert_eq!(roots[0]["children"][0]["request"], Value::Null);
+}
+
+#[test]
+fn ended_root_not_live_is_listed_as_gone() {
+    let dir = tempfile::tempdir().unwrap();
+    let (web, _) = front(
+        &dir,
+        answers(),
+        &[row("k1", 1, None), row("k2", 9, Some(20))],
+    );
+    let roots = body(&get(&web, "/tree"))["roots"].clone();
+    let roots = roots.as_array().unwrap();
+    assert_eq!(roots.len(), 2);
+    let gone = &roots[1];
+    assert_eq!(gone["session"], 9);
+    assert_eq!(gone["state"], "gone");
+    assert_eq!(gone["request"]["ended_at"], 20);
+    assert_eq!(gone["children"], json!([]));
+}
+
+#[test]
+fn cycles_do_not_loop() {
+    let dir = tempfile::tempdir().unwrap();
+    let sessions = json!({"sessions": [
+        session(1, None, None, 0),
+        session(2, Some(1), None, 0),
+        session(1, Some(2), None, 0),
+    ]});
+    let mut map = (*answers()).clone();
+    map.insert("sessions", Response::ok("sessions", Some(sessions)));
+    let (web, _) = front(&dir, Arc::new(map), &[]);
+    let resp = get(&web, "/tree");
+    assert!(resp.starts_with("HTTP/1.1 200"), "{resp}");
+}
+
+#[test]
+fn reads_send_only_commands_that_do_not_wake() {
+    let dir = tempfile::tempdir().unwrap();
+    let (web, seen) = front(&dir, answers(), &[]);
+    for path in ["/tree", "/repos", "/boxes/x"] {
+        assert!(get(&web, path).starts_with("HTTP/1.1 200"), "{path}");
+    }
+    let seen = seen.lock().unwrap().clone();
+    assert_eq!(seen.len(), 5, "{seen:?}");
+    let allowed = ["sessions", "show", "repos", "show-session"];
+    assert!(
+        seen.iter().all(|c| allowed.contains(&c.as_str())),
+        "{seen:?}"
+    );
+}
+
+#[test]
+fn repos_are_listed() {
+    let dir = tempfile::tempdir().unwrap();
+    let (web, _) = front(&dir, answers(), &[]);
+    let resp = get(&web, "/repos");
+    assert_eq!(
+        body(&resp),
+        json!({"repos": [{"name": "app", "url": "https://example.test/app.git"}]})
+    );
+}
+
+#[test]
+fn box_detail_returns_events_and_proofs() {
+    let dir = tempfile::tempdir().unwrap();
+    let (web, seen) = front(&dir, answers(), &[]);
+    let v = body(&get(&web, "/boxes/app/1"));
+    assert_eq!(v["task"]["name"], "app/1");
+    assert_eq!(v["events"][0]["kind"], "note");
+    assert_eq!(v["proofs"][0]["name"], "p.txt");
+    assert_eq!(*seen.lock().unwrap(), ["show"]);
+}
+
+#[test]
+fn bad_box_name_is_400() {
+    let dir = tempfile::tempdir().unwrap();
+    let (web, seen) = front(&dir, answers(), &[]);
+    assert!(get(&web, "/boxes/Bad%20Name").starts_with("HTTP/1.1 400"));
+    assert!(seen.lock().unwrap().is_empty());
+}
+
+#[test]
+fn refused_envelope_is_502_with_the_envelope() {
+    let dir = tempfile::tempdir().unwrap();
+    let refusal = failure("show", ErrorKind::Refused);
+    let map = HashMap::from([("show", refusal)]);
+    let (web, _) = front(&dir, Arc::new(map), &[]);
+    let resp = get(&web, "/boxes/x");
+    assert!(resp.starts_with("HTTP/1.1 502"), "{resp}");
+    assert_eq!(body(&resp)["class"], "refused");
+}
+
+#[test]
+fn unreachable_controller_is_502() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Db::open(&dir.path().join("web.db")).unwrap();
+    let client = Client::new(dir.path().join("missing.sock"));
+    let h = handler(client, Arc::new(Mutex::new(db)), fallback());
+    let web = start(0, TOKEN.to_owned(), h).unwrap();
+    for path in ["/tree", "/repos", "/boxes/x"] {
+        assert!(get(&web, path).starts_with("HTTP/1.1 502"), "{path}");
+    }
+}
+
+#[test]
+fn other_paths_fall_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let (web, seen) = front(&dir, answers(), &[]);
+    assert!(get(&web, "/other").ends_with("fallback"));
+    assert!(seen.lock().unwrap().is_empty());
+}

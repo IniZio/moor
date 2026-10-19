@@ -6,4 +6,5 @@ pub mod client;
 pub mod db;
 pub mod http;
 pub mod sse;
+pub mod views;
 pub mod watch;
