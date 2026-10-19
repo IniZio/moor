@@ -1,9 +1,11 @@
 //! Close checks the Box for work that exists nowhere else.
 
 use moor_core::boxscript::boxwork::{BOXWORK_FILE, BOXWORK_NO_CHECKOUT};
+use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
-use moor_core::domain::task::{TaskInput, TaskState};
+use moor_core::domain::session_state::SessionInput;
+use moor_core::domain::task::TaskState;
 use moor_core::seam::driver::{DriverError, ExecOutcome};
 use moor_core::{BoxName, CloseReq, ErrorKind, ProviderId};
 
@@ -65,12 +67,12 @@ pub(super) fn fx_woken(text: &str) -> Fx {
 pub(super) fn put_to_sleep(f: &Fx) {
     let store = f.cx.store().unwrap();
     store
-        .apply(Decision::new(f.id).task_input(TaskInput::AgentQuiet))
+        .apply(Decision::new(f.id).session(SessionInput::AgentQuiet))
         .unwrap();
     store
         .apply(
             Decision::new(f.id)
-                .task_input(TaskInput::SleepCmd)
+                .lifecycle(BoxLifecycleInput::Sleep { auto: false })
                 .box_input(BoxInput::Sleep),
         )
         .unwrap();
@@ -263,7 +265,7 @@ fn close_skips_the_probe_for_a_box_that_never_got_a_handle() {
     store
         .apply(
             Decision::new(id)
-                .task_input(TaskInput::Admitted)
+                .lifecycle(BoxLifecycleInput::Admitted)
                 .box_input(BoxInput::Requested)
                 .set(fields),
         )
@@ -272,8 +274,9 @@ fn close_skips_the_probe_for_a_box_that_never_got_a_handle() {
     store
         .apply(
             Decision::new(id)
-                .task_input(TaskInput::AcquireFailed {
+                .lifecycle(BoxLifecycleInput::SetupFailed {
                     cause: cause.clone(),
+                    which: None,
                 })
                 .box_input(BoxInput::AcquireFailed {
                     cause,

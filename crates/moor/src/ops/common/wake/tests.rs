@@ -3,9 +3,11 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
-use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
+use moor_core::domain::session_state::SessionInput;
+use moor_core::domain::task::{SetupOutcome, TaskState};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, SleepOutcome};
 use moor_core::seam::engine::SessionRef;
 use moor_core::seam::proc::Tool;
@@ -104,7 +106,7 @@ fn fx_with(driver: FakeDriver) -> Fx {
     store
         .apply(
             Decision::new(id)
-                .task_input(TaskInput::Admitted)
+                .lifecycle(BoxLifecycleInput::Admitted)
                 .box_input(BoxInput::Requested)
                 .set(fields),
         )
@@ -113,9 +115,10 @@ fn fx_with(driver: FakeDriver) -> Fx {
     store
         .apply(
             Decision::new(id)
-                .task_input(TaskInput::BoxReady {
+                .lifecycle(BoxLifecycleInput::Ready {
                     setup: SetupOutcome::Ok,
                 })
+                .session(SessionInput::Started)
                 .box_input(BoxInput::Acquired { handle: got.handle })
                 .set(Fields {
                     box_workdir: Field::Set(got.workdir.as_str().to_owned()),
@@ -141,12 +144,12 @@ fn fx() -> Fx {
 fn sleep(f: &Fx) {
     let store = f.cx.store().unwrap();
     store
-        .apply(Decision::new(f.id).task_input(TaskInput::AgentQuiet))
+        .apply(Decision::new(f.id).session(SessionInput::AgentQuiet))
         .unwrap();
     store
         .apply(
             Decision::new(f.id)
-                .task_input(TaskInput::SleepCmd)
+                .lifecycle(BoxLifecycleInput::Sleep { auto: false })
                 .box_input(BoxInput::Sleep),
         )
         .unwrap();
@@ -239,10 +242,10 @@ fn asleep_task_with_ready_box_wakes_only_the_task() {
     let f = fx();
     let store = f.cx.store().unwrap();
     store
-        .apply(Decision::new(f.id).task_input(TaskInput::AgentQuiet))
+        .apply(Decision::new(f.id).session(SessionInput::AgentQuiet))
         .unwrap();
     store
-        .apply(Decision::new(f.id).task_input(TaskInput::SleepCmd))
+        .apply(Decision::new(f.id).lifecycle(BoxLifecycleInput::Sleep { auto: false }))
         .unwrap();
     assert_eq!(row(&f).state, TaskState::Asleep);
     let ready_before = kinds(&f).iter().filter(|k| *k == "box_ready").count();
@@ -331,10 +334,10 @@ fn waking_only_the_task_does_not_look_the_workdir_up() {
     let f = fx();
     let store = f.cx.store().unwrap();
     store
-        .apply(Decision::new(f.id).task_input(TaskInput::AgentQuiet))
+        .apply(Decision::new(f.id).session(SessionInput::AgentQuiet))
         .unwrap();
     store
-        .apply(Decision::new(f.id).task_input(TaskInput::SleepCmd))
+        .apply(Decision::new(f.id).lifecycle(BoxLifecycleInput::Sleep { auto: false }))
         .unwrap();
     assert!(wake_if_asleep(&f.cx, store, &row(&f)).unwrap());
     assert_eq!(workdir_calls(&f), 0);
@@ -397,10 +400,10 @@ fn waking_only_the_task_does_not_probe_the_agent() {
     with_agent(&f);
     let store = f.cx.store().unwrap();
     store
-        .apply(Decision::new(f.id).task_input(TaskInput::AgentQuiet))
+        .apply(Decision::new(f.id).session(SessionInput::AgentQuiet))
         .unwrap();
     store
-        .apply(Decision::new(f.id).task_input(TaskInput::SleepCmd))
+        .apply(Decision::new(f.id).lifecycle(BoxLifecycleInput::Sleep { auto: false }))
         .unwrap();
     f.surface.push_pane_obs("p-1", Err(SurfaceError::NotFound));
     assert!(wake_and_revive(&f.cx, store, &row(&f)).unwrap());

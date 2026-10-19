@@ -1,7 +1,7 @@
 //! What provisioning ran in a Box, and how a failed step is recorded and reported.
 
+use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, IntentChange};
-use moor_core::domain::task::TaskInput;
 use moor_core::BoxId;
 use moor_core::ErrorKind;
 use moor_core::{BoxHandle, Warning};
@@ -46,8 +46,9 @@ pub(super) fn sync_failed(
 ) -> CommandError {
     let mut done = Decision::new(id);
     if advance {
-        done.task_input = Some(TaskInput::SyncFailed {
-            error: reason.clone(),
+        done.lifecycle_input = Some(BoxLifecycleInput::SetupFailed {
+            cause: reason.clone(),
+            which: None,
         });
     } else {
         done = done.event(ExtraEvent::SetupFailed {

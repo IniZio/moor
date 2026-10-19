@@ -4,9 +4,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
-use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
+use moor_core::domain::session_state::SessionInput;
+use moor_core::domain::task::{SetupOutcome, TaskState};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, SleepOutcome};
 use moor_core::secret::Secret;
 use moor_core::{BoxId, BoxName, ProviderId};
@@ -60,7 +62,7 @@ fn working_with(driver: FakeDriver) -> Fx {
         ..Fields::default()
     };
     let d = Decision::new(id)
-        .task_input(TaskInput::Admitted)
+        .lifecycle(BoxLifecycleInput::Admitted)
         .box_input(BoxInput::Requested)
         .set(fields);
     store.apply(d).unwrap();
@@ -75,9 +77,10 @@ fn working_with(driver: FakeDriver) -> Fx {
         })
         .unwrap();
     let d = Decision::new(id)
-        .task_input(TaskInput::BoxReady {
+        .lifecycle(BoxLifecycleInput::Ready {
             setup: SetupOutcome::Ok,
         })
+        .session(SessionInput::Started)
         .box_input(BoxInput::Acquired { handle: got.handle });
     store.apply(d).unwrap();
     Fx {
@@ -91,7 +94,7 @@ fn working_with(driver: FakeDriver) -> Fx {
 /// A fixture whose Task became Idle just now.
 fn idle_with(driver: FakeDriver) -> Fx {
     let f = working_with(driver);
-    let d = Decision::new(f.id).task_input(TaskInput::AgentQuiet);
+    let d = Decision::new(f.id).session(SessionInput::AgentQuiet);
     f.cx.store().unwrap().apply(d).unwrap();
     f
 }
@@ -261,10 +264,10 @@ fn reason(f: &Fx) -> Option<String> {
     row.boxed.unwrap().sleep_reason
 }
 
-fn step(f: &Fx, input: TaskInput) {
+fn step(f: &Fx, input: SessionInput) {
     f.cx.store()
         .unwrap()
-        .apply(Decision::new(f.id).task_input(input))
+        .apply(Decision::new(f.id).session(input))
         .unwrap();
 }
 
@@ -290,7 +293,7 @@ fn leaving_idle_clears_the_refusal() {
     let f = refusing();
     pass(&f, LONG);
     auto_sleep(&f);
-    step(&f, TaskInput::AgentBusy);
+    step(&f, SessionInput::AgentBusy);
     assert_eq!(states(&f).0, TaskState::Working);
     assert_eq!(reason(&f), None);
 }
@@ -300,8 +303,8 @@ fn the_next_idle_stretch_asks_again() {
     let f = refusing();
     pass(&f, LONG);
     auto_sleep(&f);
-    step(&f, TaskInput::AgentBusy);
-    step(&f, TaskInput::AgentQuiet);
+    step(&f, SessionInput::AgentBusy);
+    step(&f, SessionInput::AgentQuiet);
     pass(&f, LONG);
     auto_sleep(&f);
     assert_eq!(sleep_calls(&f), 2);

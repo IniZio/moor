@@ -1,9 +1,9 @@
 //! Tests for Sessions that run on the host.
 #![allow(clippy::indexing_slicing, reason = "test assertions")]
 
+use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::decision::Decision;
 use moor_core::domain::session_state::SessionState;
-use moor_core::domain::task::TaskInput;
 use moor_core::BoxId;
 
 use crate::store::tests::{new_task, open};
@@ -127,10 +127,10 @@ fn ending_and_reopening_a_box_session_leaves_host_alone() {
 fn ending_a_task_leaves_host_alone() {
     let (_dir, store, id, host) = with_host("acme/1");
     let before = row(&store, host);
-    let reject = TaskInput::Rejected {
+    let reject = BoxLifecycleInput::Rejected {
         reason: "no".into(),
     };
-    store.apply(Decision::new(id).task_input(reject)).unwrap();
+    store.apply(Decision::new(id).lifecycle(reject)).unwrap();
     assert_eq!(row(&store, host), before);
     assert_eq!(row(&store, host).2, "working");
 }

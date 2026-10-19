@@ -5,9 +5,11 @@ use std::sync::Arc;
 
 use moor_core::boxscript::setup::setup_script;
 use moor_core::config::{BoxConfig, DriverConfig, UserConfig};
+use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
-use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
+use moor_core::domain::session_state::SessionInput;
+use moor_core::domain::task::{SetupOutcome, TaskState};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
 use moor_core::seam::proc::Tool;
 use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, CloseReq, ProviderId, ShowReq, StartReq};
@@ -155,14 +157,15 @@ fn insert_holder(cx: &Cx, handle: BoxHandle, worktree: &Path) -> BoxId {
         ..Fields::default()
     };
     let d = Decision::new(id)
-        .task_input(TaskInput::Admitted)
+        .lifecycle(BoxLifecycleInput::Admitted)
         .box_input(BoxInput::Requested)
         .set(fields);
     store.apply(d).unwrap();
     let d = Decision::new(id)
-        .task_input(TaskInput::BoxReady {
+        .lifecycle(BoxLifecycleInput::Ready {
             setup: SetupOutcome::Ok,
         })
+        .session(SessionInput::Started)
         .box_input(BoxInput::Acquired { handle });
     store.apply(d).unwrap();
     id
@@ -202,7 +205,7 @@ fn waiting_directly(w: &World, name: &str) -> BoxId {
         }))
         .unwrap()
         .task;
-    let d = Decision::new(id).task_input(TaskInput::AtCapacity { max_boxes: 1 });
+    let d = Decision::new(id).lifecycle(BoxLifecycleInput::AtCapacity { max_boxes: 1 });
     store.apply(d).unwrap();
     id
 }

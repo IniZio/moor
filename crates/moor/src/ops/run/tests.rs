@@ -5,10 +5,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::boxscript::command_line;
+use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, Intent, IntentChange, NewTask};
 use moor_core::domain::run::SyncMode;
-use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
+use moor_core::domain::session_state::SessionInput;
+use moor_core::domain::task::{SetupOutcome, TaskState};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
 use moor_core::seam::proc::{Output, Tool};
 use moor_core::{BoxId, BoxName, BoxPath, ErrorKind, ProviderId, RunReq};
@@ -117,7 +119,7 @@ pub(in crate::ops::run) fn ready_with(driver: FakeDriver) -> Fx {
         ..Fields::default()
     };
     let d = Decision::new(f.id)
-        .task_input(TaskInput::Admitted)
+        .lifecycle(BoxLifecycleInput::Admitted)
         .box_input(BoxInput::Requested)
         .set(fields);
     store.apply(d).unwrap();
@@ -136,9 +138,10 @@ pub(in crate::ops::run) fn ready_with(driver: FakeDriver) -> Fx {
     f.driver
         .set_peek_text(got.handle.as_str(), &environ, "HOME=/home/box\0");
     let d = Decision::new(f.id)
-        .task_input(TaskInput::BoxReady {
+        .lifecycle(BoxLifecycleInput::Ready {
             setup: SetupOutcome::Ok,
         })
+        .session(SessionInput::Started)
         .box_input(BoxInput::Acquired { handle: got.handle })
         .set(Fields {
             box_workdir: Field::Set(got.workdir.as_str().to_owned()),
@@ -281,7 +284,7 @@ fn task_waiting_for_a_box_is_refused() {
     let f = bare();
     f.cx.store()
         .unwrap()
-        .apply(Decision::new(f.id).task_input(TaskInput::AtCapacity { max_boxes: 1 }))
+        .apply(Decision::new(f.id).lifecycle(BoxLifecycleInput::AtCapacity { max_boxes: 1 }))
         .unwrap();
     let msg = refused(&f, &req(&["true"]), ErrorKind::Refused);
     assert_eq!(msg, "t is waiting for a free box");
@@ -307,12 +310,12 @@ fn gone_box_is_refused_and_recorded() {
 fn sleep(f: &Fx) {
     let store = f.cx.store().unwrap();
     store
-        .apply(Decision::new(f.id).task_input(TaskInput::AgentQuiet))
+        .apply(Decision::new(f.id).session(SessionInput::AgentQuiet))
         .unwrap();
     store
         .apply(
             Decision::new(f.id)
-                .task_input(TaskInput::SleepCmd)
+                .lifecycle(BoxLifecycleInput::Sleep { auto: false })
                 .box_input(BoxInput::Sleep),
         )
         .unwrap();
@@ -546,7 +549,7 @@ fn state(f: &Fx) -> TaskState {
 fn go_idle(f: &Fx) {
     f.cx.store()
         .unwrap()
-        .apply(Decision::new(f.id).task_input(TaskInput::AgentQuiet))
+        .apply(Decision::new(f.id).session(SessionInput::AgentQuiet))
         .unwrap();
 }
 
@@ -585,7 +588,7 @@ fn run_started_losing_a_race_is_ignored() {
     let store = f.cx.store().unwrap();
     let stale = store.task(f.id).unwrap().unwrap();
     store
-        .apply(Decision::new(f.id).task_input(TaskInput::AgentBusy))
+        .apply(Decision::new(f.id).session(SessionInput::AgentBusy))
         .unwrap();
     let v = locked(&f.cx, store, &req(&["true"]), &stale).unwrap();
     assert!(v.ran);

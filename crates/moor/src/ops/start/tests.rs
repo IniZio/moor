@@ -1,9 +1,11 @@
 use std::{path::Path, sync::Arc, time::Duration};
 
 use moor_core::config::UserConfig;
+use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, Intent, IntentChange};
-use moor_core::domain::task::{TaskInput, TaskState};
+use moor_core::domain::session_state::SessionInput;
+use moor_core::domain::task::TaskState;
 use moor_core::seam::driver::DriverError;
 use moor_core::seam::proc::Tool;
 use moor_core::seam::surface::Surface;
@@ -222,7 +224,8 @@ fn restart_of_a_closed_name_creates_a_new_task() {
         .unwrap()
         .apply(
             Decision::new(id)
-                .task_input(TaskInput::Close)
+                .lifecycle(BoxLifecycleInput::Close)
+                .session(SessionInput::End)
                 .box_input(BoxInput::Released),
         )
         .unwrap();

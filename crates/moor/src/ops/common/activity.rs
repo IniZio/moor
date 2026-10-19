@@ -8,7 +8,8 @@ use moor_core::activity::{
 };
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
 use moor_core::domain::event::Event;
-use moor_core::domain::task::{TaskInput, TaskState};
+use moor_core::domain::session_state::SessionInput;
+use moor_core::domain::task::TaskState;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::engine::SessionRef;
 use moor_core::seam::proc::Deadline;
@@ -250,8 +251,8 @@ pub(crate) fn settle(
     register_session(cx, store, row, reading)?;
     note_needs_input(store, row, reading)?;
     let input = match row.state {
-        TaskState::Working if !reading.busy() && reading.may_quiet => TaskInput::AgentQuiet,
-        TaskState::Idle if reading.busy() => TaskInput::AgentBusy,
+        TaskState::Working if !reading.busy() && reading.may_quiet => SessionInput::AgentQuiet,
+        TaskState::Idle if reading.busy() => SessionInput::AgentBusy,
         _ => return Ok(()),
     };
     // An op that owns the Box decides where the Task goes; hold the lock across the write.
@@ -267,7 +268,7 @@ pub(crate) fn settle(
     if row.intent.is_some() {
         return Ok(());
     }
-    match store.apply(Decision::new(row.id).task_input(input)) {
+    match store.apply(Decision::new(row.id).session(input)) {
         Ok(_) | Err(StoreError::Illegal(_)) => Ok(()),
         Err(e) => Err(e.into()),
     }

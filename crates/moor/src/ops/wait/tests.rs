@@ -7,10 +7,12 @@ use std::time::Duration;
 use moor_core::activity::{
     HookKind, HookRead, HookRecord, PaneObs, PaneRead, PaneStatus, Probes, STARTUP_GRACE,
 };
+use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::event::Event;
-use moor_core::domain::task::{SetupOutcome, TaskInput};
+use moor_core::domain::session_state::SessionInput;
+use moor_core::domain::task::SetupOutcome;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, SleepKind};
 use moor_core::view::LaunchFailure;
@@ -248,7 +250,7 @@ fn add_boxed(cx: &Cx) -> BoxId {
         .unwrap();
     let store = cx.store().unwrap();
     let d = Decision::new(id)
-        .task_input(TaskInput::Admitted)
+        .lifecycle(BoxLifecycleInput::Admitted)
         .box_input(BoxInput::Requested)
         .set(Fields {
             box_provider: Field::Set(ProviderId::new("p")),
@@ -256,9 +258,10 @@ fn add_boxed(cx: &Cx) -> BoxId {
         });
     store.apply(d).unwrap();
     let d = Decision::new(id)
-        .task_input(TaskInput::BoxReady {
+        .lifecycle(BoxLifecycleInput::Ready {
             setup: SetupOutcome::Ok,
         })
+        .session(SessionInput::Started)
         .box_input(BoxInput::Acquired { handle: got.handle })
         .set(Fields {
             worktree: Field::Set("/wt".into()),

@@ -4,10 +4,12 @@ use std::fmt::Write;
 use std::fs;
 use std::path::PathBuf;
 
+use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::Decision;
 use moor_core::domain::run::SyncMode;
-use moor_core::domain::task::{TaskInput, TaskState};
+use moor_core::domain::session_state::SessionInput;
+use moor_core::domain::task::TaskState;
 use moor_core::seam::driver::{DriverError, ExecOutcome};
 use moor_core::BoxPath;
 
@@ -275,12 +277,12 @@ fn asleep_box_under_force_is_not_woken_to_collect() {
     let f = fx(driver_with(&[("result.md", "R")]));
     let store = f.cx.store().unwrap();
     store
-        .apply(Decision::new(f.id).task_input(TaskInput::AgentQuiet))
+        .apply(Decision::new(f.id).session(SessionInput::AgentQuiet))
         .unwrap();
     store
         .apply(
             Decision::new(f.id)
-                .task_input(TaskInput::SleepCmd)
+                .lifecycle(BoxLifecycleInput::Sleep { auto: false })
                 .box_input(BoxInput::Sleep),
         )
         .unwrap();

@@ -3,9 +3,10 @@
 use std::path::Path;
 
 use moor_core::config::TaskSettings;
+use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, Intent, IntentChange};
-use moor_core::domain::task::{TaskInput, TaskState};
+use moor_core::domain::task::TaskState;
 use moor_core::{BoxHandle, BoxPath, ErrorKind};
 
 use super::{recorded_workdir, run_and_record, Provisioned, SetupTarget};
@@ -43,7 +44,7 @@ pub(super) fn retry_in_box(
         return Err(CommandError::new(ErrorKind::Internal, "kept Box vanished"));
     };
     let begin = Decision::new(row.id)
-        .task_input(TaskInput::Retry)
+        .lifecycle(BoxLifecycleInput::Retry)
         .intent(IntentChange::Set(Intent::Setup {
             pid: std::process::id(),
         }));

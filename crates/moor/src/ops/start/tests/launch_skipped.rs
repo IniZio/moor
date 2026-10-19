@@ -1,6 +1,7 @@
 use moor_core::config::Flags;
 use moor_core::domain::decision::Decision;
-use moor_core::domain::task::{TaskInput, TaskState};
+use moor_core::domain::session_state::SessionInput;
+use moor_core::domain::task::TaskState;
 use moor_core::{BoxId, StartReq};
 use std::path::Path;
 
@@ -19,7 +20,7 @@ fn idle() -> (World, BoxId) {
         ..req("demo")
     };
     let id = BoxId::new(run(&w.cx, &start).unwrap().task.id);
-    let quiet = Decision::new(id).task_input(TaskInput::AgentQuiet);
+    let quiet = Decision::new(id).session(SessionInput::AgentQuiet);
     w.cx.store().unwrap().apply(quiet).unwrap();
     (w, id)
 }

@@ -4,7 +4,8 @@ use std::time::Duration;
 
 use moor_core::activity::{PaneObs, PaneStatus};
 use moor_core::domain::decision::Decision;
-use moor_core::domain::task::{TaskInput, TaskState};
+use moor_core::domain::session_state::SessionInput;
+use moor_core::domain::task::TaskState;
 use moor_core::seam::agent_profile::FirstRunPrompt;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::ExecOutcome;
@@ -197,7 +198,7 @@ fn restarting_an_idle_task_with_a_goal_and_no_session_wakes_and_launches_once() 
         store.end_session(live.id, Some(0), None).unwrap();
     }
     store
-        .apply(Decision::new(id).task_input(TaskInput::AgentQuiet))
+        .apply(Decision::new(id).session(SessionInput::AgentQuiet))
         .unwrap();
     assert_eq!(store.task(id).unwrap().unwrap().state, TaskState::Idle);
     let again = run(&w.cx, &req("demo")).unwrap();
@@ -216,7 +217,7 @@ fn restarting_an_idle_task_without_a_goal_or_session_wakes_it_and_launches_nothi
     let id = BoxId::new(first.task.id);
     let store = w.cx.store().unwrap();
     store
-        .apply(Decision::new(id).task_input(TaskInput::AgentQuiet))
+        .apply(Decision::new(id).session(SessionInput::AgentQuiet))
         .unwrap();
     let again = run(&w.cx, &req("demo")).unwrap();
     assert_eq!(again.task.state, TaskState::Working);

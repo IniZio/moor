@@ -8,9 +8,11 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use moor_core::config::proxy::{EndpointRule, ResolvedInject, ResolvedRule};
+use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
-use moor_core::domain::task::{SetupOutcome, TaskInput};
+use moor_core::domain::session_state::SessionInput;
+use moor_core::domain::task::SetupOutcome;
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::seam::driver::{AcquireReq, Driver};
 use moor_core::seam::proxy_host::ProxySpec;
@@ -81,7 +83,7 @@ fn task_with_box(store: &Store, driver: &FakeDriver) -> (BoxId, BoxHandle) {
         })
         .unwrap();
     let d = Decision::new(id)
-        .task_input(TaskInput::Admitted)
+        .lifecycle(BoxLifecycleInput::Admitted)
         .box_input(BoxInput::Requested)
         .set(Fields {
             box_provider: Field::Set(provider),
@@ -89,9 +91,10 @@ fn task_with_box(store: &Store, driver: &FakeDriver) -> (BoxId, BoxHandle) {
         });
     store.apply(d).unwrap();
     let d = Decision::new(id)
-        .task_input(TaskInput::BoxReady {
+        .lifecycle(BoxLifecycleInput::Ready {
             setup: SetupOutcome::Ok,
         })
+        .session(SessionInput::Started)
         .box_input(BoxInput::Acquired {
             handle: got.handle.clone(),
         })

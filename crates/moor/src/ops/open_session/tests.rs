@@ -3,10 +3,11 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
-use moor_core::domain::session_state::SessionState;
-use moor_core::domain::task::{SetupOutcome, TaskInput};
+use moor_core::domain::session_state::{SessionInput, SessionState};
+use moor_core::domain::task::SetupOutcome;
 use moor_core::request::OpenSessionReq;
 use moor_core::seam::driver::{AcquireReq, Driver};
 use moor_core::seam::engine::{EngineError, LaunchPrompt};
@@ -81,7 +82,7 @@ fn ready_task(cx: &Cx, driver: &FakeDriver) -> BoxId {
         ..Fields::default()
     };
     let d = Decision::new(id)
-        .task_input(TaskInput::Admitted)
+        .lifecycle(BoxLifecycleInput::Admitted)
         .box_input(BoxInput::Requested)
         .set(fields);
     store.apply(d).unwrap();
@@ -96,9 +97,10 @@ fn ready_task(cx: &Cx, driver: &FakeDriver) -> BoxId {
         })
         .unwrap();
     let d = Decision::new(id)
-        .task_input(TaskInput::BoxReady {
+        .lifecycle(BoxLifecycleInput::Ready {
             setup: SetupOutcome::Ok,
         })
+        .session(SessionInput::Started)
         .box_input(BoxInput::Acquired {
             handle: got.handle.clone(),
         })
@@ -175,10 +177,10 @@ fn a_live_session_is_refused_and_opens_nothing() {
 fn an_asleep_box_is_refused_and_opens_nothing() {
     let f = fx(FakeEngine::new(), false);
     let store = f.cx.store().unwrap();
-    let quiet = Decision::new(f.id).task_input(TaskInput::AgentQuiet);
+    let quiet = Decision::new(f.id).session(SessionInput::AgentQuiet);
     store.apply(quiet).unwrap();
     let d = Decision::new(f.id)
-        .task_input(TaskInput::SleepCmd)
+        .lifecycle(BoxLifecycleInput::Sleep { auto: false })
         .box_input(BoxInput::Sleep);
     store.apply(d).unwrap();
     let err = run(&f.cx, &req()).unwrap_err();

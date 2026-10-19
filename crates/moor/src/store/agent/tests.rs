@@ -5,9 +5,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::activity::{HookKind, HookRecord};
+use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
-use moor_core::domain::task::{SetupOutcome, TaskInput};
+use moor_core::domain::session_state::SessionInput;
+use moor_core::domain::task::SetupOutcome;
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::{BoxHandle, BoxId, BoxName, ProviderId};
 
@@ -31,16 +33,16 @@ fn add(store: &Store, name: &str) -> BoxId {
     store.apply(Decision::insert(nt)).unwrap().task
 }
 
-/// Step `id` with `input`.
-fn step(store: &Store, id: BoxId, input: TaskInput) {
-    store.apply(Decision::new(id).task_input(input)).unwrap();
+/// Step `id`'s session with `input`.
+fn step(store: &Store, id: BoxId, input: SessionInput) {
+    store.apply(Decision::new(id).session(input)).unwrap();
 }
 
 /// A task that is working: admitted, then its box ready.
 fn working(store: &Store, name: &str) -> BoxId {
     let id = add(store, name);
     let d = Decision::new(id)
-        .task_input(TaskInput::Admitted)
+        .lifecycle(BoxLifecycleInput::Admitted)
         .box_input(BoxInput::Requested)
         .set(Fields {
             box_provider: Field::Set(ProviderId::new("p")),
@@ -48,9 +50,10 @@ fn working(store: &Store, name: &str) -> BoxId {
         });
     store.apply(d).unwrap();
     let d = Decision::new(id)
-        .task_input(TaskInput::BoxReady {
+        .lifecycle(BoxLifecycleInput::Ready {
             setup: SetupOutcome::Ok,
         })
+        .session(SessionInput::Started)
         .box_input(BoxInput::Acquired {
             handle: BoxHandle::new("h"),
         });
@@ -214,7 +217,7 @@ fn idle_since_is_set_on_quiet_and_cleared_on_busy() {
     let id = working(&store, "t");
     assert_eq!(idle_since(&store, id), None);
     clock.sleep(Duration::from_millis(40));
-    step(&store, id, TaskInput::AgentQuiet);
+    step(&store, id, SessionInput::AgentQuiet);
     assert_eq!(idle_since(&store, id), Some(1_040));
     clock.sleep(Duration::from_millis(40));
     store
@@ -224,7 +227,7 @@ fn idle_since_is_set_on_quiet_and_cleared_on_busy() {
         }))
         .unwrap();
     assert_eq!(idle_since(&store, id), Some(1_040));
-    step(&store, id, TaskInput::AgentBusy);
+    step(&store, id, SessionInput::AgentBusy);
     assert_eq!(idle_since(&store, id), None);
 }
 
@@ -233,8 +236,10 @@ fn idle_since_clears_when_idle_goes_to_sleep() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let id = working(&store, "t");
-    step(&store, id, TaskInput::AgentQuiet);
-    step(&store, id, TaskInput::SleepCmd);
+    step(&store, id, SessionInput::AgentQuiet);
+    store
+        .apply(Decision::new(id).lifecycle(BoxLifecycleInput::Sleep { auto: false }))
+        .unwrap();
     assert_eq!(idle_since(&store, id), None);
 }
 
@@ -243,10 +248,14 @@ fn rejected_step_leaves_idle_since_unchanged() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let id = working(&store, "t");
-    step(&store, id, TaskInput::AgentQuiet);
+    step(&store, id, SessionInput::AgentQuiet);
     let want = idle_since(&store, id);
     assert!(store
-        .apply(Decision::new(id).task_input(TaskInput::Wake))
+        .apply(
+            Decision::new(id)
+                .lifecycle(BoxLifecycleInput::Wake)
+                .session(SessionInput::AgentBusy)
+        )
         .is_err());
     assert_eq!(idle_since(&store, id), want);
 }

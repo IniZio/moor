@@ -4,9 +4,10 @@
 
 use std::collections::HashMap;
 
+use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields};
-use moor_core::domain::task::{TaskInput, TaskState};
+use moor_core::domain::task::TaskState;
 use moor_core::seam::driver::SleepOutcome;
 use moor_core::view::sleep::SleepValue;
 use moor_core::{ErrorKind, TaskReq};
@@ -64,7 +65,7 @@ fn sleep_box(cx: &Cx, row: &TaskRow) -> Result<(), CommandError> {
             };
             store.apply(
                 Decision::new(row.id)
-                    .task_input(TaskInput::SleepCmd)
+                    .lifecycle(BoxLifecycleInput::Sleep { auto: false })
                     .box_input(BoxInput::Sleep)
                     .set(fields),
             )?;

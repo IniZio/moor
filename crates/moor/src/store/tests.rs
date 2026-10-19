@@ -8,11 +8,13 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{
     Decision, ExtraEvent, Field, Fields, Intent, IntentChange, NewTask,
 };
-use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
+use moor_core::domain::session_state::SessionInput;
+use moor_core::domain::task::{SetupOutcome, TaskState};
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::{BoxHandle, BoxId, BoxName, ProviderId, RunId};
 
@@ -148,7 +150,7 @@ fn full_lifecycle_rows_and_events() {
     assert_eq!(store.task(id).unwrap().unwrap().state, TaskState::Checking);
 
     let d = Decision::new(id)
-        .task_input(TaskInput::Admitted)
+        .lifecycle(BoxLifecycleInput::Admitted)
         .box_input(BoxInput::Requested)
         .set(provider());
     let a = store.apply(d).unwrap();
@@ -159,9 +161,10 @@ fn full_lifecycle_rows_and_events() {
 
     let handle = BoxHandle::new("h1");
     let d = Decision::new(id)
-        .task_input(TaskInput::BoxReady {
+        .lifecycle(BoxLifecycleInput::Ready {
             setup: SetupOutcome::Ok,
         })
+        .session(SessionInput::Started)
         .box_input(BoxInput::Acquired {
             handle: handle.clone(),
         });
@@ -172,7 +175,8 @@ fn full_lifecycle_rows_and_events() {
     assert_eq!((b.state, b.handle), (BoxState::Ready, Some(handle)));
 
     let d = Decision::new(id)
-        .task_input(TaskInput::Close)
+        .lifecycle(BoxLifecycleInput::Close)
+        .session(SessionInput::End)
         .box_input(BoxInput::Released)
         .event(ExtraEvent::Copied {
             from: "a".into(),
@@ -224,7 +228,8 @@ fn illegal_task_step_changes_nothing() {
         ..provider()
     };
     let d = Decision::new(id)
-        .task_input(TaskInput::Wake)
+        .lifecycle(BoxLifecycleInput::Wake)
+        .session(SessionInput::AgentBusy)
         .box_input(BoxInput::Requested)
         .set(set);
     assert!(matches!(
@@ -244,7 +249,11 @@ fn unknown_existing_id_is_not_found() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let err = store
-        .apply(Decision::new(BoxId::new(42)).task_input(TaskInput::Close))
+        .apply(
+            Decision::new(BoxId::new(42))
+                .lifecycle(BoxLifecycleInput::Close)
+                .session(SessionInput::End),
+        )
         .unwrap_err();
     assert!(matches!(err, StoreError::NotFound(_)), "{err:?}");
 }
@@ -272,7 +281,11 @@ fn readers_are_not_blocked_by_an_open_writer() {
     raw.execute_batch("COMMIT").unwrap();
     assert_eq!(store.open_tasks().unwrap().len(), 2);
     store
-        .apply(Decision::new(id).task_input(TaskInput::Close))
+        .apply(
+            Decision::new(id)
+                .lifecycle(BoxLifecycleInput::Close)
+                .session(SessionInput::End),
+        )
         .unwrap();
 }
 
@@ -290,7 +303,7 @@ fn box_fields_without_a_box_roll_back_the_task_step() {
     // step_task (Checking -> SettingUp) and write_task both succeed; only
     // write_box fails, so the task UPDATE must be rolled back.
     let d = Decision::new(id)
-        .task_input(TaskInput::Admitted)
+        .lifecycle(BoxLifecycleInput::Admitted)
         .set(Fields {
             box_workdir: Field::Set("/w".into()),
             ..Fields::default()
@@ -364,7 +377,7 @@ fn task_with_ready_box(store: &Store) -> BoxId {
     store
         .apply(
             Decision::new(id)
-                .task_input(TaskInput::Admitted)
+                .lifecycle(BoxLifecycleInput::Admitted)
                 .box_input(BoxInput::Requested)
                 .set(provider()),
         )
@@ -372,9 +385,10 @@ fn task_with_ready_box(store: &Store) -> BoxId {
     store
         .apply(
             Decision::new(id)
-                .task_input(TaskInput::BoxReady {
+                .lifecycle(BoxLifecycleInput::Ready {
                     setup: SetupOutcome::Ok,
                 })
+                .session(SessionInput::Started)
                 .box_input(BoxInput::Acquired {
                     handle: BoxHandle::new("h1"),
                 }),
@@ -494,12 +508,18 @@ fn open_tasks_excludes_closed_and_rejected() {
     let closed = new_task(&store, "b");
     let rejected = new_task(&store, "c");
     store
-        .apply(Decision::new(closed).task_input(TaskInput::Close))
+        .apply(
+            Decision::new(closed)
+                .lifecycle(BoxLifecycleInput::Close)
+                .session(SessionInput::End),
+        )
         .unwrap();
     store
-        .apply(Decision::new(rejected).task_input(TaskInput::Rejected {
-            reason: "no".into(),
-        }))
+        .apply(
+            Decision::new(rejected).lifecycle(BoxLifecycleInput::Rejected {
+                reason: "no".into(),
+            }),
+        )
         .unwrap();
     let open_ids: Vec<_> = store
         .open_tasks()
@@ -517,11 +537,11 @@ fn claim_last_slot(store: &Store, id: BoxId) -> Option<Applied> {
         .apply_admitting(&provider, |holders| {
             let d = Decision::new(id);
             Some(if holders.is_empty() {
-                d.task_input(TaskInput::Admitted)
+                d.lifecycle(BoxLifecycleInput::Admitted)
                     .box_input(BoxInput::Requested)
                     .set(self::provider())
             } else {
-                d.task_input(TaskInput::AtCapacity { max_boxes: 1 })
+                d.lifecycle(BoxLifecycleInput::AtCapacity { max_boxes: 1 })
             })
         })
         .unwrap()
@@ -554,7 +574,7 @@ fn two_tasks_racing_for_the_last_slot_cannot_both_be_admitted() {
                 std::thread::sleep(Duration::from_millis(300));
                 Some(
                     Decision::new(a)
-                        .task_input(TaskInput::Admitted)
+                        .lifecycle(BoxLifecycleInput::Admitted)
                         .box_input(BoxInput::Requested)
                         .set(self::provider()),
                 )

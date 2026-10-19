@@ -4,9 +4,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
-use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
+use moor_core::domain::session_state::SessionInput;
+use moor_core::domain::task::{SetupOutcome, TaskState};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, SleepKind};
 use moor_core::{BoxId, BoxName, ErrorKind, ProviderId, TaskReq};
 
@@ -50,7 +52,7 @@ fn fx_with(driver: FakeDriver) -> Fx {
         ..Fields::default()
     };
     let d = Decision::new(id)
-        .task_input(TaskInput::Admitted)
+        .lifecycle(BoxLifecycleInput::Admitted)
         .box_input(BoxInput::Requested)
         .set(fields);
     store.apply(d).unwrap();
@@ -65,9 +67,10 @@ fn fx_with(driver: FakeDriver) -> Fx {
         })
         .unwrap();
     let d = Decision::new(id)
-        .task_input(TaskInput::BoxReady {
+        .lifecycle(BoxLifecycleInput::Ready {
             setup: SetupOutcome::Ok,
         })
+        .session(SessionInput::Started)
         .box_input(BoxInput::Acquired { handle: got.handle });
     store.apply(d).unwrap();
     Fx {
@@ -86,10 +89,10 @@ fn fx() -> Fx {
 fn asleep(f: &Fx) {
     let store = f.cx.store().unwrap();
     store
-        .apply(Decision::new(f.id).task_input(TaskInput::AgentQuiet))
+        .apply(Decision::new(f.id).session(SessionInput::AgentQuiet))
         .unwrap();
     let d = Decision::new(f.id)
-        .task_input(TaskInput::SleepCmd)
+        .lifecycle(BoxLifecycleInput::Sleep { auto: false })
         .box_input(BoxInput::Sleep);
     store.apply(d).unwrap();
 }

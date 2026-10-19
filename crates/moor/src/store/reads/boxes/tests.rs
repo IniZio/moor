@@ -2,8 +2,9 @@
 
 use std::sync::Arc;
 
+use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
-use moor_core::domain::task::TaskInput;
+use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, BoxName};
 
@@ -41,7 +42,11 @@ fn add_at(store: &Store, name: &str, repo: &str, path: &str, bound: bool) -> Box
 /// Close a Box.
 fn close(store: &Store, id: BoxId) {
     store
-        .apply(Decision::new(id).task_input(TaskInput::Close))
+        .apply(
+            Decision::new(id)
+                .lifecycle(BoxLifecycleInput::Close)
+                .session(SessionInput::End),
+        )
         .unwrap();
 }
 

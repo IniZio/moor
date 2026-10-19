@@ -9,7 +9,8 @@ use moor_core::config::{Flags, TaskSettings};
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::Decision;
 use moor_core::domain::run::SyncMode;
-use moor_core::domain::task::{TaskInput, TaskState};
+use moor_core::domain::session_state::SessionInput;
+use moor_core::domain::task::TaskState;
 use moor_core::exec_env::Purpose;
 use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
 use moor_core::seam::proc::Output;
@@ -196,7 +197,7 @@ fn mark_working(store: &Store, row: &TaskRow) -> Result<(), CommandError> {
     if row.state != TaskState::Idle {
         return Ok(());
     }
-    match store.apply(Decision::new(row.id).task_input(TaskInput::RunStarted)) {
+    match store.apply(Decision::new(row.id).session(SessionInput::RunStarted)) {
         Ok(_) | Err(StoreError::Illegal(_)) => Ok(()),
         Err(e) => Err(e.into()),
     }
