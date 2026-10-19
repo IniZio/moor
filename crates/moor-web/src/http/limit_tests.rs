@@ -20,7 +20,7 @@ const GOOD: &str = "GET / HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer t0ken\r\n
 
 /// Starts a server with `limits` whose handler serves a fixed page.
 fn server(limits: Limits) -> Server {
-    let handler: Handler = Arc::new(|_| HttpResponse::html("<h1>page</h1>"));
+    let handler: Handler = Arc::new(|_| HttpResponse::html("<h1>page</h1>").into());
     start_with(0, TOKEN.into(), handler, limits).unwrap()
 }
 
