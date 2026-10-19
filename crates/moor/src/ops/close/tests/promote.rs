@@ -339,6 +339,7 @@ fn show_does_not_promote_a_waiter_when_a_slot_is_free() {
         events: None,
         agent: false,
         reports: false,
+        artifacts: false,
         pane: false,
     };
     show::run(&w.cx, &req).unwrap();

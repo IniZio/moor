@@ -46,6 +46,7 @@ fn req(task: Option<&str>, events: Option<u32>) -> ShowReq {
         events,
         agent: false,
         reports: false,
+        artifacts: false,
         pane: false,
     }
 }

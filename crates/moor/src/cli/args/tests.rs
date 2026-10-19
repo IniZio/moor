@@ -395,6 +395,7 @@ fn show_and_list_alias() {
         events: Some(3),
         agent: true,
         reports: true,
+        artifacts: false,
         pane: true,
     });
     let a = ["t1", "--events", "3", "--agent", "--reports", "--pane"];
@@ -409,6 +410,7 @@ fn show_and_list_alias() {
             events: None,
             agent: false,
             reports: false,
+            artifacts: false,
             pane: false
         })
     );
@@ -536,6 +538,7 @@ fn valid_task_name_parses() {
             events: None,
             agent: false,
             reports: false,
+            artifacts: false,
             pane: false,
         })
     );

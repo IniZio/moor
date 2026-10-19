@@ -24,8 +24,9 @@ pub use name::{
     TaskName,
 };
 pub use request::{
-    CloseReq, CpReq, EnvReq, GateReq, RemoveReq, ReportReq, Request, RunReq, ShowReq, StartReq,
-    SteerReq, TaskReq, WaitEventsReq, WaitFor, WaitMode, WaitReq,
+    ArtifactReadReq, ArtifactsReq, CloseReq, CpReq, EnvReq, GateReq, RemoveReq, ReportReq, Request,
+    RunReq, ShowReq, StartReq, SteerReq, TaskReq, WaitEventsReq, WaitFor, WaitMode, WaitReq,
+    ARTIFACT_CHUNK,
 };
 pub use response::{ErrorKind, ErrorView, ExitClass, Response, Warning, SCHEMA};
 pub use secret::{Digest, Secret};

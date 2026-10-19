@@ -250,6 +250,38 @@ pub struct ReportView {
     pub path: String,
 }
 
+/// One artifact row.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ArtifactView {
+    /// Artifact name.
+    pub name: String,
+    /// Artifact version.
+    pub version: u32,
+    /// Artifact kind.
+    pub kind: String,
+    /// MIME content type.
+    pub content_type: String,
+    /// Size in bytes.
+    pub size: u64,
+    /// SHA-256 of the content, hex.
+    pub sha256: String,
+    /// Creation time.
+    pub created_at: String,
+}
+
+/// `value` of `artifact-read`: one byte range of an artifact.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ArtifactChunk {
+    /// Base64 of the bytes read.
+    pub data_b64: String,
+    /// Size of the whole file in bytes.
+    pub size: u64,
+    /// SHA-256 of the whole file, hex.
+    pub sha256: String,
+    /// The range reaches the end of the file.
+    pub eof: bool,
+}
+
 /// `value` of `show`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ShowView {
@@ -264,6 +296,8 @@ pub struct ShowView {
     pub pane: Option<PaneView>,
     /// Reports, when requested.
     pub reports: Option<Vec<ReportView>>,
+    /// Latest version of each artifact, when requested.
+    pub artifacts: Option<Vec<ArtifactView>>,
 }
 
 /// `value` of `close`.

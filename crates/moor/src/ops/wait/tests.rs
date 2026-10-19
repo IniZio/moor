@@ -203,6 +203,7 @@ fn never_takes_the_box_lock() {
         events: None,
         agent: false,
         reports: false,
+        artifacts: false,
         pane: true,
     };
     let began = cx.clock().now();

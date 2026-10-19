@@ -372,6 +372,7 @@ impl From<ShowArgs> for ShowReq {
             events: a.events,
             agent: a.agent,
             reports: a.reports,
+            artifacts: false,
             pane: a.pane,
         }
     }

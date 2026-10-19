@@ -122,6 +122,7 @@ fn open_boxes(client: &Client) -> Result<HashSet<i64>, JobFailure> {
         events: None,
         agent: false,
         reports: false,
+        artifacts: false,
         pane: false,
     });
     let value = call(client, req).map_err(|m| fail("list-boxes", m))?;

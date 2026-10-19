@@ -101,6 +101,7 @@ fn detail(client: &Client, name: &str) -> HttpResponse {
         events: Some(BOX_EVENTS),
         agent: true,
         reports: false,
+        artifacts: false,
         pane: false,
     });
     match call(client, show) {
@@ -196,6 +197,7 @@ fn tree(client: &Client, db: &Mutex<Db>) -> HttpResponse {
                 events: None,
                 agent: true,
                 reports: false,
+                artifacts: false,
                 pane: false,
             });
             Ok((s, call(client, req)?))
