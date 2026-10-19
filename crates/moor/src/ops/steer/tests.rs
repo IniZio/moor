@@ -175,6 +175,17 @@ fn steered(f: &Fx) -> Vec<serde_json::Value> {
         .collect()
 }
 
+fn steered_id(f: &Fx) -> i64 {
+    let rows = f.cx.store().unwrap().events(f.id, 100).unwrap();
+    let ids: Vec<i64> = rows
+        .into_iter()
+        .filter(|e| e.kind == "steered")
+        .map(|e| e.id)
+        .collect();
+    assert_eq!(ids.len(), 1);
+    ids.first().copied().unwrap()
+}
+
 #[test]
 fn an_unknown_task_is_refused() {
     let f = fx();
@@ -205,6 +216,7 @@ fn text_goes_to_the_agent_and_is_recorded() {
     let v = run(&f.cx, &text("do x")).unwrap();
     assert_eq!((v.task.as_str(), v.sent.as_str()), ("t", "do x"));
     assert!(!v.answered_menu);
+    assert_eq!(v.steer, steered_id(&f));
     assert_eq!(
         f.engine.steers(),
         vec![("agent-1".to_owned(), Steer::Text("do x".into()))]
@@ -289,6 +301,7 @@ fn an_exit_steer_on_a_gone_pane_succeeds_and_ends_the_session() {
     let v = run(&f.cx, &text(" /exit ")).unwrap();
     assert_eq!(v.sent, " /exit ");
     assert!(!v.answered_menu);
+    assert_eq!(v.steer, steered_id(&f));
     assert!(!live(&f));
     let warned = f.cx.take_warnings();
     assert_eq!(
