@@ -2,7 +2,6 @@
 
 use moor_core::activity::HookKind;
 use moor_core::decide::turn::{turn_done, HookSignal, TurnFacts};
-use moor_core::domain::decision::{Decision, ExtraEvent};
 
 use super::{PaneLiveness, Reading};
 use crate::error::CommandError;
@@ -20,7 +19,7 @@ pub(super) fn note_turn_done(
     let Some(steer) = store.unanswered_steer(row.id)? else {
         return Ok(());
     };
-    let cache = store.hook(row.id).ok().flatten();
+    let cache = store.hook(row.id)?;
     let facts = TurnFacts {
         steer: Some(steer),
         hook: cache.as_ref().map(|c| {
@@ -34,7 +33,7 @@ pub(super) fn note_turn_done(
         pane_exited: reading.pane == PaneLiveness::Exited,
     };
     if let Some((steer, outcome)) = turn_done(&facts) {
-        store.apply(Decision::new(row.id).event(ExtraEvent::TurnDone { steer, outcome }))?;
+        store.record_turn_done(row.id, steer, outcome)?;
     }
     Ok(())
 }
