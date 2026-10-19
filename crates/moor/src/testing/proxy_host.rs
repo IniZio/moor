@@ -127,18 +127,18 @@ impl ProxyHost for FakeProxyHost {
         })
     }
 
-    fn status(&self, task: BoxId) -> Result<ProxyStatus, ProxyHostError> {
+    fn status(&self, box_id: BoxId) -> Result<ProxyStatus, ProxyHostError> {
         let mut s = self.lock();
-        s.calls.push(ProxyHostCall::Status(task));
+        s.calls.push(ProxyHostCall::Status(box_id));
         if let Some(next) = s.upcoming.pop_front() {
             return Ok(next);
         }
         s.status.clone()
     }
 
-    fn stop(&self, task: BoxId) -> Result<(), ProxyHostError> {
+    fn stop(&self, box_id: BoxId) -> Result<(), ProxyHostError> {
         let mut s = self.lock();
-        s.calls.push(ProxyHostCall::Stop(task));
+        s.calls.push(ProxyHostCall::Stop(box_id));
         s.stop_error.clone().map_or(Ok(()), Err)
     }
 }

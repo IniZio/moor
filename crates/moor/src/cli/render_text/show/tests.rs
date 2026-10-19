@@ -5,7 +5,7 @@ use serde_json::{json, Value};
 
 use super::super::render;
 
-fn task(name: &str, with_box: bool) -> Value {
+fn row(name: &str, with_box: bool) -> Value {
     json!({
         "id": 1, "name": name, "repo": "/r", "lifecycle": "ready", "session_state": "idle",
         "branch": "moor/x", "worktree": "/w/x",
@@ -23,19 +23,19 @@ fn show(v: Value) -> String {
 }
 
 #[test]
-fn empty_list_says_no_tasks() {
-    assert_eq!(show(json!({"boxes": []})), "no tasks\n");
+fn empty_list_says_no_boxes() {
+    assert_eq!(show(json!({"boxes": []})), "no Boxes\n");
 }
 
 #[test]
-fn list_one_task() {
-    let out = show(json!({"boxes": [task("alpha", true)]}));
+fn list_one_box() {
+    let out = show(json!({"boxes": [row("alpha", true)]}));
     assert_eq!(out, "alpha  ready  idle  working  running  /work\n");
 }
 
 #[test]
-fn list_two_tasks_aligns_columns_and_dashes_missing_box() {
-    let out = show(json!({"boxes": [task("a", true), task("longer", false)]}));
+fn list_two_boxes_aligns_columns_and_dashes_missing_box() {
+    let out = show(json!({"boxes": [row("a", true), row("longer", false)]}));
     assert_eq!(
         out,
         "a       ready  idle  working  running  /work\nlonger  ready  idle  working  -        -\n"
@@ -44,7 +44,7 @@ fn list_two_tasks_aligns_columns_and_dashes_missing_box() {
 
 #[test]
 fn detail_with_box() {
-    let out = show(json!({"box": task("alpha", true)}));
+    let out = show(json!({"box": row("alpha", true)}));
     assert_eq!(
         out,
         "name:     alpha\nlifecycle: ready\nsession:   idle\nrepo:     /r\nworktree: /w/x\nbranch:   moor/x\n\
@@ -54,8 +54,8 @@ fn detail_with_box() {
 
 #[test]
 fn detail_lists_the_question_and_numbered_options() {
-    let mut t = task("alpha", false);
-    t.as_object_mut().expect("task is an object").insert(
+    let mut t = row("alpha", false);
+    t.as_object_mut().expect("row is an object").insert(
         "agent".into(),
         json!({
             "state": "needs_input", "pane": "live",
@@ -72,14 +72,14 @@ fn detail_lists_the_question_and_numbered_options() {
 
 #[test]
 fn detail_without_box() {
-    let out = show(json!({"box": task("alpha", false)}));
+    let out = show(json!({"box": row("alpha", false)}));
     assert!(out.contains("box:      none\n"));
 }
 
 #[test]
 fn detail_with_events_setup_and_pane() {
     let out = show(json!({
-        "box": task("alpha", true),
+        "box": row("alpha", true),
         "setup": {"ran": true, "ok": true},
         "dotfiles": {"ran": true, "ok": false},
         "events": [{"id": 1, "kind": "started", "payload": {}, "ts": "2026-01-01T00:00:00Z"}],
@@ -92,7 +92,7 @@ fn detail_with_events_setup_and_pane() {
 
 #[test]
 fn json_form_keeps_the_raw_value() {
-    let v = json!({"boxes": [task("alpha", true)]});
+    let v = json!({"boxes": [row("alpha", true)]});
     let out = crate::cli::render_json::render(&Response::ok("show", Some(v.clone())));
     let parsed: Value = serde_json::from_str(&out).expect("json");
     assert_eq!(parsed.get("value"), Some(&v));
@@ -106,7 +106,7 @@ fn warnings_still_go_to_stderr() {
         message: "careful".into(),
     });
     let (out, err) = render(&resp, false);
-    assert_eq!(out, "no tasks\n");
+    assert_eq!(out, "no Boxes\n");
     assert_eq!(err, "moor: warning: careful\n");
 }
 
@@ -123,7 +123,7 @@ fn with_attention(mut t: Value) -> Value {
 
 #[test]
 fn list_prints_a_needs_attention_line_under_the_row() {
-    let out = show(json!({"boxes": [with_attention(task("alpha", true)), task("b", true)]}));
+    let out = show(json!({"boxes": [with_attention(row("alpha", true)), row("b", true)]}));
     assert_eq!(
         out,
         "alpha  ready  idle  working  running  /work\n  needs attention: Claude account rate limited (429)\nb      ready  idle  working  running  /work\n"
@@ -132,7 +132,7 @@ fn list_prints_a_needs_attention_line_under_the_row() {
 
 #[test]
 fn detail_prints_a_needs_attention_line() {
-    let out = show(json!({"box": with_attention(task("alpha", true))}));
+    let out = show(json!({"box": with_attention(row("alpha", true))}));
     assert!(out.contains(
         "agent:    working pane=live\nneeds attention: Claude account rate limited (429)\n"
     ));
@@ -140,7 +140,7 @@ fn detail_prints_a_needs_attention_line() {
 
 #[test]
 fn detail_omits_the_line_without_attention() {
-    let out = show(json!({"box": task("alpha", true)}));
+    let out = show(json!({"box": row("alpha", true)}));
     assert!(!out.contains("needs attention"));
 }
 

@@ -201,7 +201,7 @@ fn real_git_unpushed_excludes_base() {
     std::fs::write(d.join("a.txt"), "a").unwrap();
     git_in(d, &["add", "a.txt"]);
     git_in(d, &["commit", "-q", "-m", "base"]);
-    git_in(d, &["checkout", "-q", "-b", "task"]);
+    git_in(d, &["checkout", "-q", "-b", "work"]);
     std::fs::write(d.join("b.txt"), "b").unwrap();
     git_in(d, &["add", "b.txt"]);
     git_in(d, &["commit", "-q", "-m", "work"]);

@@ -160,7 +160,7 @@ fn redelivered_event_does_nothing() {
 }
 
 #[test]
-fn second_mention_in_thread_names_the_bound_task() {
+fn second_mention_in_thread_names_the_bound_box() {
     let dir = tempfile::tempdir().unwrap();
     let store = store(dir.path());
     let seen = RefCell::default();
@@ -241,7 +241,7 @@ fn reply_to(event_id: &str, user: &str, channel: &str, text: &str) -> Mention {
     }
 }
 
-/// A store with a Task bound to thread `10.5` in `C1`, owned by `U1`.
+/// A store with a Box bound to thread `10.5` in `C1`, owned by `U1`.
 fn owned(dir: &std::path::Path) -> Store {
     let store = store(dir);
     new_box(&store, "slack-10-5");
@@ -251,7 +251,7 @@ fn owned(dir: &std::path::Path) -> Store {
 }
 
 #[test]
-fn owner_reply_steers_the_task() {
+fn owner_reply_steers_the_box() {
     let dir = tempfile::tempdir().unwrap();
     let store = owned(dir.path());
     let seen = RefCell::default();
@@ -363,7 +363,7 @@ fn redelivered_reply_is_handled_once() {
     assert_eq!(seen.into_inner().calls.len(), 1);
 }
 
-/// Opens task `slack-10-5` with a `needs_input` event and records its prompt; returns the event id.
+/// Opens Box `slack-10-5` with a `needs_input` event and records its prompt; returns the event id.
 fn prompted(store: &Store) -> i64 {
     let name = BoxName::parse_allow_bare("slack-10-5").unwrap();
     let id = store.open_box_by_name(&name).unwrap().unwrap().id;
@@ -384,7 +384,7 @@ fn prompted(store: &Store) -> i64 {
     event_id
 }
 
-/// Appends a new `needs_input` event to the task.
+/// Appends a new `needs_input` event to the Box.
 fn ask(store: &Store, id: moor_core::BoxId) {
     store
         .apply(Decision::new(id).event(ExtraEvent::NeedsInput {

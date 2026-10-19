@@ -20,8 +20,8 @@ pub(crate) const CHANNEL: &str = "C0ALLOWED";
 pub(crate) const USER: &str = "U0ALLOWED";
 /// Ts of the first mention in most tests.
 pub(crate) const TS: &str = "1730000000.000100";
-/// Task name the first mention maps to.
-pub(crate) const TASK: &str = "slack-1730000000-000100";
+/// Box name the first mention maps to.
+pub(crate) const BOX_NAME: &str = "slack-1730000000-000100";
 /// Pause that lets a wrongly emitted second reply arrive before the test counts replies.
 pub(crate) const QUIET: Duration = Duration::from_millis(600);
 
@@ -129,8 +129,8 @@ impl Rig {
         });
     }
 
-    /// The `show` envelope for `task` as the controller socket answers it.
-    pub(crate) fn show(&self, task: &str) -> Value {
+    /// The `show` envelope for `box_name` as the controller socket answers it.
+    pub(crate) fn show(&self, box_name: &str) -> Value {
         let writer = UnixStream::connect(&self.socket).unwrap();
         writer
             .set_read_timeout(Some(Duration::from_secs(10)))
@@ -147,13 +147,13 @@ impl Rig {
             json!({"frame": "hello", "protocol": moor_core::controller::PROTOCOL}).to_string(),
         );
         let request =
-            json!({"frame": "request", "id": "1", "request": {"cmd": "show", "box": task}});
+            json!({"frame": "request", "id": "1", "request": {"cmd": "show", "box": box_name}});
         exchange(request.to_string())["envelope"].clone()
     }
 
-    /// True when the controller knows a Task called `task`.
-    pub(crate) fn has_task(&self, task: &str) -> bool {
-        self.show(task)["class"] != "failed"
+    /// True when the controller knows a Box called `box_name`.
+    pub(crate) fn has_box(&self, box_name: &str) -> bool {
+        self.show(box_name)["class"] != "failed"
     }
 
     /// Kills the controller and returns everything it wrote to stderr.
@@ -177,14 +177,14 @@ impl Drop for Rig {
 }
 
 #[test]
-fn allowed_mention_starts_a_task_and_replies_in_the_thread() {
+fn allowed_mention_starts_a_box_and_replies_in_the_thread() {
     let rig = Rig::start();
     rig.mention(1, USER, "<@UBOT> start demo fix the thing", TS, None);
     assert_eq!(rig.fake.wait_acks(1), ["env-1"]);
     let posts = rig.fake.wait_posts(1);
     assert_eq!(posts[0].channel, CHANNEL);
     assert_eq!(posts[0].thread_ts, TS);
-    assert!(posts[0].text.contains(TASK), "{}", posts[0].text);
+    assert!(posts[0].text.contains(BOX_NAME), "{}", posts[0].text);
     let requests = rig.fake.requests();
     assert!(requests
         .iter()
@@ -229,9 +229,9 @@ fn second_mention_in_a_thread_starts_nothing_new() {
     );
     let posts = rig.fake.wait_posts(2);
     assert_eq!(posts[1].thread_ts, TS);
-    assert!(posts[1].text.contains(TASK), "{}", posts[1].text);
+    assert!(posts[1].text.contains(BOX_NAME), "{}", posts[1].text);
     assert!(!posts[1].text.contains("000200"), "{}", posts[1].text);
-    assert!(!rig.has_task("slack-1730000005-000200"));
+    assert!(!rig.has_box("slack-1730000005-000200"));
 }
 
 #[test]
@@ -243,7 +243,7 @@ fn user_off_the_allow_list_is_refused_and_nothing_starts() {
     assert!(posts[0].text.contains("<@U0OTHER>"), "{}", posts[0].text);
     std::thread::sleep(QUIET);
     assert_eq!(rig.fake.posts().len(), 1);
-    assert!(!rig.has_task(TASK));
+    assert!(!rig.has_box(BOX_NAME));
 }
 
 #[test]

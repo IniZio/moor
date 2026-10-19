@@ -34,13 +34,13 @@ fn req(args: &[&str]) -> Request {
     }
 }
 
-/// Valid task name.
+/// Valid Box name.
 fn n(s: &str) -> BoxName {
     BoxName::parse_allow_bare(s).expect("valid name")
 }
 
-/// Task request helper.
-fn task(t: &str) -> BoxReq {
+/// Box request helper.
+fn box_req(t: &str) -> BoxReq {
     BoxReq { box_name: n(t) }
 }
 
@@ -263,7 +263,7 @@ fn session_open_host_takes_workdir_agent_and_session() {
 }
 
 #[test]
-fn session_open_host_refuses_task_seed_and_missing_workdir() {
+fn session_open_host_refuses_box_seed_and_missing_workdir() {
     assert!(run(&["session", "open", "--host", "t", "--workdir", "/w"]).is_err());
     assert!(run(&[
         "session",
@@ -419,11 +419,11 @@ fn show_and_list_alias() {
 }
 
 #[test]
-fn task_verbs() {
-    assert_eq!(req(&["open", "t1"]), Request::Open(task("t1")));
-    assert_eq!(req(&["shell", "t1"]), Request::Shell(task("t1")));
-    assert_eq!(req(&["sleep", "t1"]), Request::Sleep(task("t1")));
-    assert_eq!(req(&["wake", "t1"]), Request::Wake(task("t1")));
+fn box_verbs() {
+    assert_eq!(req(&["open", "t1"]), Request::Open(box_req("t1")));
+    assert_eq!(req(&["shell", "t1"]), Request::Shell(box_req("t1")));
+    assert_eq!(req(&["sleep", "t1"]), Request::Sleep(box_req("t1")));
+    assert_eq!(req(&["wake", "t1"]), Request::Wake(box_req("t1")));
 }
 
 #[test]
@@ -520,7 +520,7 @@ fn global_flags_anywhere() {
 }
 
 #[test]
-fn invalid_task_name_is_a_clap_error() {
+fn invalid_box_name_is_a_clap_error() {
     for args in [
         &["start", "BAD_Name"][..],
         &["close", "A"],
@@ -532,7 +532,7 @@ fn invalid_task_name_is_a_clap_error() {
 }
 
 #[test]
-fn valid_task_name_parses() {
+fn valid_box_name_parses() {
     assert_eq!(
         req(&["show", "a-1"]),
         Request::Show(ShowReq {

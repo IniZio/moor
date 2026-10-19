@@ -10,7 +10,7 @@ use super::box_name;
 enum WaitForArg {
     /// Agent idle.
     Idle,
-    /// Task done.
+    /// Box done.
     Done,
     /// Agent needs input, or is idle.
     Input,

@@ -41,9 +41,9 @@ fn run_raw(env: &Env, input: &str) -> Vec<Value> {
         .collect()
 }
 
-fn show(task: Option<BoxName>) -> Request {
+fn show(box_name: Option<BoxName>) -> Request {
     Request::Show(ShowReq {
-        box_name: task,
+        box_name,
         events: None,
         agent: false,
         reports: false,
@@ -93,7 +93,7 @@ fn envelopes_match_moor_call() {
 }
 
 #[test]
-fn unknown_task_gives_error_envelope() {
+fn unknown_box_gives_error_envelope() {
     let dir = tempfile::tempdir().expect("tempdir");
     let unknown = BoxName::parse_allow_bare("nope").expect("name");
     let req = show(Some(unknown));

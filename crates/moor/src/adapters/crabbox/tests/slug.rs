@@ -72,6 +72,6 @@ fn slash_named_box_stays_live_through_list_and_reconcile() {
         },
     ];
     let out = reconcile(&rows, &listing);
-    let tasks: Vec<_> = out.iter().map(|d| d.target.clone()).collect();
-    assert_eq!(tasks, [BoxTarget::Existing(BoxId::new(8))]);
+    let boxes: Vec<_> = out.iter().map(|d| d.target.clone()).collect();
+    assert_eq!(boxes, [BoxTarget::Existing(BoxId::new(8))]);
 }

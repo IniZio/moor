@@ -1,8 +1,8 @@
-//! Thread replies steer and close a Task, and one status message follows it, against the fake Slack.
+//! Thread replies steer and close a Box, and one status message follows it, against the fake Slack.
 //!
-//! The rig has no box provider, so a Task cannot be started from Slack here. Each test seeds the
-//! controller's store with an open Task and a bound thread instead, then drives the real Slack
-//! handlers; events are appended to the store to stand in for the Task's progress.
+//! The rig has no box provider, so a Box cannot be started from Slack here. Each test seeds the
+//! controller's store with an open Box and a bound thread instead, then drives the real Slack
+//! handlers; events are appended to the store to stand in for the Box's progress.
 
 #![allow(clippy::indexing_slicing, reason = "test code")]
 
@@ -11,16 +11,16 @@ use std::time::Duration;
 
 use rusqlite::Connection;
 
-use super::slack::{Rig, CHANNEL, QUIET, TASK, TS, USER};
+use super::slack::{Rig, BOX_NAME, CHANNEL, QUIET, TS, USER};
 use super::slack_fake::{Post, Reply, Update, APP_TOKEN, BOT_TOKEN};
 
-/// A second user who is not the Task owner.
+/// A second user who is not the Box owner.
 const OTHER: &str = "U0OTHER";
 
 /// The store the controller shares with the test.
 struct Seed {
     db: Connection,
-    task: i64,
+    box_id: i64,
     /// The status message the controller posted for the thread.
     status: Post,
 }
@@ -38,7 +38,7 @@ impl Seed {
         ready.is_ok_and(|n| n == 2).then_some(db)
     }
 
-    /// Waits for the controller's store, inserts a working Task bound to the thread `TS`, and waits
+    /// Waits for the controller's store, inserts a working Box bound to the thread `TS`, and waits
     /// for its status message so later posts are all replies.
     fn bind(rig: &Rig) -> Self {
         let path = rig.root.join("state").join("moor.db");
@@ -53,19 +53,19 @@ impl Seed {
             .expect("controller never created its store");
         db.execute(
             "INSERT INTO boxes (name, repo, state, created_at, updated_at) VALUES (?1, 'demo', 'ready', 0, 0)",
-            [TASK],
+            [BOX_NAME],
         )
         .unwrap();
-        let task = db.last_insert_rowid();
+        let box_id = db.last_insert_rowid();
         db.execute(
             "INSERT INTO sessions (box, ordinal, state, started_at) VALUES (?1, 1, 'working', 0)",
-            [task],
+            [box_id],
         )
         .unwrap();
         let session = db.last_insert_rowid();
         db.execute(
             "INSERT INTO events (box, kind, payload, ts) VALUES (?1, 'working', '{}', 0)",
-            [task],
+            [box_id],
         )
         .unwrap();
         db.execute(
@@ -74,15 +74,15 @@ impl Seed {
         )
         .unwrap();
         let status = rig.fake.wait_posts(1).remove(0);
-        Self { db, task, status }
+        Self { db, box_id, status }
     }
 
-    /// Appends a Task event of `kind` with a JSON `payload`.
+    /// Appends a Box event of `kind` with a JSON `payload`.
     fn event(&self, kind: &str, payload: &str) {
         self.db
             .execute(
                 "INSERT INTO events (box, kind, payload, ts) VALUES (?1, ?2, ?3, 0)",
-                (self.task, kind, payload),
+                (self.box_id, kind, payload),
             )
             .unwrap();
     }
@@ -109,18 +109,18 @@ fn replies(posts: &[Post]) -> Vec<&Post> {
 }
 
 #[test]
-fn owner_reply_steers_the_task() {
+fn owner_reply_steers_the_box() {
     let rig = Rig::start();
     let _seed = Seed::bind(&rig);
     reply(&rig, 1, USER, "also add tests", None, None);
     let (posts, _) = rig
         .fake
         .wait_until("the steer outcome", |p, _| p.len() >= 2);
-    // No agent runs in the rig, so the Task refuses the steer; the refusal reaching the thread
-    // verbatim shows the text was routed to the Task for its owner.
+    // No agent runs in the rig, so the Box refuses the steer; the refusal reaching the thread
+    // verbatim shows the text was routed to the Box for its owner.
     let outcome = &replies(&posts)[0].text;
     assert!(outcome.contains("no live agent session"), "{outcome}");
-    assert!(outcome.contains(TASK), "{outcome}");
+    assert!(outcome.contains(BOX_NAME), "{outcome}");
     assert_eq!(posts[1].thread_ts, TS);
 }
 
@@ -132,7 +132,7 @@ fn reply_from_another_user_is_refused_with_an_owner_mention() {
     reply(&rig, 2, OTHER, "close", None, None);
     let (posts, _) = rig.fake.wait_until("two refusals", |p, _| p.len() >= 3);
     for refusal in replies(&posts) {
-        assert_eq!(refusal.text, format!("Only <@{USER}> can steer this Task."));
+        assert_eq!(refusal.text, format!("Only <@{USER}> can steer this Box."));
         assert_eq!(refusal.thread_ts, TS);
     }
     std::thread::sleep(QUIET);
@@ -179,31 +179,31 @@ fn bots_edits_joins_and_unbound_threads_are_ignored() {
 }
 
 #[test]
-fn close_in_the_thread_closes_the_task() {
+fn close_in_the_thread_closes_the_box() {
     let rig = Rig::start();
     let _seed = Seed::bind(&rig);
     reply(&rig, 1, USER, "close", None, None);
     let updates = rig.fake.wait_updates(1);
     assert!(updates[0].text.contains("closed"), "{}", updates[0].text);
-    let shown = rig.show(TASK);
+    let shown = rig.show(BOX_NAME);
     assert_eq!(shown["value"]["box"]["lifecycle"], "closed", "{shown}");
     assert_eq!(rig.fake.posts().len(), 1, "{:?}", rig.fake.posts());
 }
 
 #[test]
-fn a_close_the_task_refuses_is_posted_verbatim() {
+fn a_close_the_box_refuses_is_posted_verbatim() {
     let rig = Rig::start();
     let seed = Seed::bind(&rig);
     seed.db
         .execute(
             "UPDATE boxes SET state = 'closed' WHERE id = ?1",
-            [seed.task],
+            [seed.box_id],
         )
         .unwrap();
     seed.db
         .execute(
             "UPDATE sessions SET state = 'ended' WHERE box = ?1",
-            [seed.task],
+            [seed.box_id],
         )
         .unwrap();
     reply(&rig, 1, USER, "close", None, None);
@@ -220,13 +220,13 @@ fn assert_edits_target(updates: &[Update], status: &Post) {
 }
 
 #[test]
-fn one_status_message_is_posted_then_edited_through_the_task_life() {
+fn one_status_message_is_posted_then_edited_through_the_box_life() {
     let rig = Rig::start();
     let seed = Seed::bind(&rig);
     let status = seed.status.clone();
     assert_eq!(status.thread_ts, TS);
     assert!(status.text.contains("working"), "{}", status.text);
-    assert!(status.text.contains(TASK), "{}", status.text);
+    assert!(status.text.contains(BOX_NAME), "{}", status.text);
 
     seed.event("idled", "{}");
     let updates = rig.fake.wait_updates(1);

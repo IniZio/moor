@@ -19,12 +19,12 @@ fn main() -> ExitCode {
         Parsed::Done(out) => out,
         Parsed::Request(inv) => run(env, inv),
         Parsed::CallStdin(opts) => run_call(env, opts),
-        Parsed::ProxyServe { opts, task } => {
+        Parsed::ProxyServe { opts, box_id } => {
             let env = match &opts.state_dir {
                 Some(dir) => env.with_state_dir(dir),
                 None => env,
             };
-            return ExitCode::from(moor::serve_proxy(&env, task, std::io::stderr()));
+            return ExitCode::from(moor::serve_proxy(&env, box_id, std::io::stderr()));
         }
         Parsed::ControllerServe { opts, config } => {
             let env = match &opts.state_dir {

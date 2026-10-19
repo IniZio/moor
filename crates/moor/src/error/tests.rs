@@ -37,12 +37,12 @@ fn usage_kind_is_usage_class() {
 #[test]
 fn value_rides_the_failure_envelope() {
     let resp = CommandError::new(ErrorKind::Failed, "boom")
-        .with_value(serde_json::json!({"task": {"state": "setup_failed"}}))
+        .with_value(serde_json::json!({"box": {"state": "setup_failed"}}))
         .into_response("start", vec![]);
     assert_eq!(resp.class, ExitClass::Failed);
     let value = resp.value.expect("value present");
     assert_eq!(
-        value.pointer("/task/state"),
+        value.pointer("/box/state"),
         Some(&serde_json::json!("setup_failed"))
     );
     let bare = CommandError::new(ErrorKind::Failed, "boom").into_response("start", vec![]);
@@ -67,7 +67,7 @@ mod seam_driver_surface {
         assert_eq!(e.kind, ErrorKind::Refused);
         assert_eq!(
             e.hints,
-            vec!["retry after another Task closes; `moor show` lists holders".to_owned()]
+            vec!["retry after another Box closes; `moor show` lists holders".to_owned()]
         );
     }
 

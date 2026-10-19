@@ -89,12 +89,12 @@ fn structured_text(cmd: &str, value: &Value) -> Option<String> {
 }
 
 /// `(name (#id), lifecycle/session_state)` for a Box, or `None` when a part is missing.
-fn task_head(value: &Value, key: &str) -> Option<(String, String)> {
-    let task = value.get(key)?;
-    let name = task.get("name")?.as_str()?;
-    let id = task.get("id")?.as_i64()?;
-    let lifecycle = task.get("lifecycle")?.as_str()?;
-    let session = task.get("session_state")?.as_str()?;
+fn box_head(value: &Value, key: &str) -> Option<(String, String)> {
+    let view = value.get(key)?;
+    let name = view.get("name")?.as_str()?;
+    let id = view.get("id")?.as_i64()?;
+    let lifecycle = view.get("lifecycle")?.as_str()?;
+    let session = view.get("session_state")?.as_str()?;
     Some((format!("{name} (#{id})"), format!("{lifecycle}/{session}")))
 }
 
@@ -110,12 +110,12 @@ fn promoted_line(value: &Value, out: &mut String) {
     }
 }
 
-/// Text form of `start`: a status line, how to open a Task that has a Box, then notes.
+/// Text form of `start`: a status line, how to open a Box that has a machine, then notes.
 fn start_text(value: &Value) -> Option<String> {
-    let (head, state) = task_head(value, "box")?;
+    let (head, state) = box_head(value, "box")?;
     let flag = |key| value.get(key).and_then(Value::as_bool).unwrap_or(false);
-    let task = value.get("box")?;
-    let box_state = task.pointer("/driver/state").and_then(Value::as_str);
+    let view = value.get("box")?;
+    let box_state = view.pointer("/driver/state").and_then(Value::as_str);
     let mut out = if flag("queued") {
         format!("queued {head}: waiting for a free box\n")
     } else {
@@ -132,7 +132,7 @@ fn start_text(value: &Value) -> Option<String> {
         format!("{verb} {head}: {state}, {box_text}{suffix}\n")
     };
     if matches!(box_state, Some("ready" | "starting" | "asleep")) {
-        let name = task.get("name")?.as_str()?;
+        let name = view.get("name")?.as_str()?;
         let _ = writeln!(out, "open it with: moor open {name}");
     }
     setup_failure_lines(value, &mut out);
@@ -175,7 +175,7 @@ fn setup_failure_lines(value: &Value, out: &mut String) {
 
 /// Text form of `close`: a status line, the transcript path, then queue promotions.
 fn close_text(value: &Value) -> Option<String> {
-    let (head, _) = task_head(value, "box")?;
+    let (head, _) = box_head(value, "box")?;
     let deleted = value.get("box_deleted")?.as_bool()?;
     let outcome = if deleted { "box deleted" } else { "box kept" };
     let mut out = format!("closed {head}, {outcome}\n");
@@ -199,7 +199,7 @@ fn duration_text(ms: u64) -> String {
 
 /// Text form of `wait`: one line naming the condition, whether it held, and the time spent.
 fn wait_text(value: &Value) -> Option<String> {
-    let (head, _) = task_head(value, "box")?;
+    let (head, _) = box_head(value, "box")?;
     let cond = value.get("for")?.as_str()?;
     let after = duration_text(value.get("waited_ms")?.as_u64()?);
     if value.get("timed_out")?.as_bool()? {
@@ -218,33 +218,33 @@ fn version_line(value: &Value) -> Option<String> {
     Some(format!("moor {version} {commit} schema={schema}\n"))
 }
 
-/// Formats the `sleep`/`wake` line, or `None` when the task name is missing or mistyped.
+/// Formats the `sleep`/`wake` line, or `None` when the Box name is missing or mistyped.
 fn sleep_line(cmd: &str, value: &Value) -> Option<String> {
-    let task = value.get("box")?.as_str()?;
+    let box_name = value.get("box")?.as_str()?;
     if cmd == "wake" {
         let woke = value.get("woke")?.as_bool()?;
         return Some(if woke {
-            format!("{task} woke\n")
+            format!("{box_name} woke\n")
         } else {
-            format!("{task} was not asleep\n")
+            format!("{box_name} was not asleep\n")
         });
     }
     let state = value.pointer("/driver/state").and_then(Value::as_str);
     Some(match state {
-        Some(s) if s != "asleep" => format!("{task}: box is {s}\n"),
-        _ => format!("{task} is asleep\n"),
+        Some(s) if s != "asleep" => format!("{box_name}: box is {s}\n"),
+        _ => format!("{box_name} is asleep\n"),
     })
 }
 
-/// Formats the `steer` line, or `None` when the task name is missing or mistyped.
+/// Formats the `steer` line, or `None` when the Box name is missing or mistyped.
 fn steer_line(value: &Value) -> Option<String> {
-    let task = value.get("box")?.as_str()?;
-    Some(format!("steered {task}\n"))
+    let box_name = value.get("box")?.as_str()?;
+    Some(format!("steered {box_name}\n"))
 }
 
 /// Formats the `end-session` line, or `None` when a field is missing or mistyped.
 fn end_session_line(value: &Value) -> Option<String> {
-    let task = value.get("box")?.as_str()?;
+    let box_name = value.get("box")?.as_str()?;
     let ordinal = value.get("ordinal")?.as_i64()?;
     let id = value.get("session")?.as_i64()?;
     let kept = if value.get("box_kept")?.as_bool()? {
@@ -253,13 +253,13 @@ fn end_session_line(value: &Value) -> Option<String> {
         "Box not kept"
     };
     Some(format!(
-        "ended Session {ordinal} (id {id}) in {task}; {kept}\n"
+        "ended Session {ordinal} (id {id}) in {box_name}; {kept}\n"
     ))
 }
 
 /// Formats the `open-session` line, or `None` when a field is missing or mistyped.
 fn open_session_line(value: &Value) -> Option<String> {
-    let task = value.get("box")?.as_str()?;
+    let box_name = value.get("box")?.as_str()?;
     let ordinal = value.get("ordinal")?.as_i64()?;
     let id = value.get("session")?.as_i64()?;
     let pane = value
@@ -268,7 +268,7 @@ fn open_session_line(value: &Value) -> Option<String> {
         .map(|p| format!("; pane {p}"))
         .unwrap_or_default();
     Some(format!(
-        "opened Session {ordinal} (id {id}) in {task}{pane}\n"
+        "opened Session {ordinal} (id {id}) in {box_name}{pane}\n"
     ))
 }
 

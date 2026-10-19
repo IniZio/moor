@@ -1,4 +1,4 @@
-//! Text form of the `show` value: a task table, or one task's detail block.
+//! Text form of the `show` value: a Box table, or one Box's detail block.
 
 use std::fmt::Write as _;
 
@@ -10,7 +10,7 @@ mod tests;
 /// Renders a `show` value, or `None` when it lacks the expected shape.
 pub(super) fn show_text(value: &Value) -> Option<String> {
     let mut out = match value.get("box") {
-        Some(task) if !task.is_null() => detail(task, value)?,
+        Some(view) if !view.is_null() => detail(view, value)?,
         _ => list(value.get("boxes")?.as_array()?)?,
     };
     if let Some(pane) = value.get("pane").filter(|p| !p.is_null()) {
@@ -54,9 +54,9 @@ fn field<'a>(v: &'a Value, key: &str) -> &'a str {
     v.get(key).and_then(Value::as_str).unwrap_or("-")
 }
 
-/// A `needs attention: <message>` line per entry of the task's `attention`, prefixed by `indent`.
-fn write_attention(out: &mut String, task: &Value, indent: &str) {
-    let Some(items) = task.get("attention").and_then(Value::as_array) else {
+/// A `needs attention: <message>` line per entry of the Box's `attention`, prefixed by `indent`.
+fn write_attention(out: &mut String, view: &Value, indent: &str) {
+    let Some(items) = view.get("attention").and_then(Value::as_array) else {
         return;
     };
     for item in items {
@@ -64,12 +64,12 @@ fn write_attention(out: &mut String, task: &Value, indent: &str) {
     }
 }
 
-/// One aligned line per task, each followed by its attention lines.
-fn list(tasks: &[Value]) -> Option<String> {
-    if tasks.is_empty() {
-        return Some("no tasks\n".to_owned());
+/// One aligned line per Box, each followed by its attention lines.
+fn list(boxes: &[Value]) -> Option<String> {
+    if boxes.is_empty() {
+        return Some("no Boxes\n".to_owned());
     }
-    let rows: Vec<[&str; 6]> = tasks
+    let rows: Vec<[&str; 6]> = boxes
         .iter()
         .map(|t| {
             Some([
@@ -95,7 +95,7 @@ fn list(tasks: &[Value]) -> Option<String> {
         }
     }
     let mut out = String::new();
-    for (r, t) in rows.iter().zip(tasks) {
+    for (r, t) in rows.iter().zip(boxes) {
         let _ = writeln!(
             out,
             "{:<w0$}  {:<w1$}  {:<w2$}  {:<w3$}  {:<w4$}  {}",
@@ -138,16 +138,16 @@ fn agent_block(out: &mut String, a: &Value) {
     }
 }
 
-/// The detail block for one task.
-fn detail(task: &Value, value: &Value) -> Option<String> {
+/// The detail block for one Box.
+fn detail(view: &Value, value: &Value) -> Option<String> {
     let mut out = String::new();
-    let _ = writeln!(out, "name:     {}", task.get("name")?.as_str()?);
-    let _ = writeln!(out, "lifecycle: {}", field(task, "lifecycle"));
-    let _ = writeln!(out, "session:   {}", field(task, "session_state"));
-    let _ = writeln!(out, "repo:     {}", field(task, "repo"));
-    let _ = writeln!(out, "worktree: {}", field(task, "worktree"));
-    let _ = writeln!(out, "branch:   {}", field(task, "branch"));
-    match task.get("driver").filter(|b| !b.is_null()) {
+    let _ = writeln!(out, "name:     {}", view.get("name")?.as_str()?);
+    let _ = writeln!(out, "lifecycle: {}", field(view, "lifecycle"));
+    let _ = writeln!(out, "session:   {}", field(view, "session_state"));
+    let _ = writeln!(out, "repo:     {}", field(view, "repo"));
+    let _ = writeln!(out, "worktree: {}", field(view, "worktree"));
+    let _ = writeln!(out, "branch:   {}", field(view, "branch"));
+    match view.get("driver").filter(|b| !b.is_null()) {
         Some(b) => {
             let _ = writeln!(
                 out,
@@ -160,14 +160,14 @@ fn detail(task: &Value, value: &Value) -> Option<String> {
         }
         None => out.push_str("box:      none\n"),
     }
-    if let Some(a) = task.get("agent").filter(|a| !a.is_null()) {
+    if let Some(a) = view.get("agent").filter(|a| !a.is_null()) {
         agent_block(&mut out, a);
     }
-    write_attention(&mut out, task, "");
+    write_attention(&mut out, view, "");
     for key in ["setup", "dotfiles"] {
         let Some(s) = value
             .get(key)
-            .or_else(|| task.get(key))
+            .or_else(|| view.get(key))
             .filter(|s| !s.is_null())
         else {
             continue;

@@ -37,7 +37,7 @@ struct Fake {
 impl Fake {
     fn push_event(&self, cursor: i64) {
         let line = format!(
-            r#"{{"frame":"event","cursor":{cursor},"kind":"task.created","payload":{{"n":{cursor}}},"ts":{cursor}}}"#
+            r#"{{"frame":"event","cursor":{cursor},"kind":"box_ready","payload":{{"n":{cursor}}},"ts":{cursor}}}"#
         );
         self.lines.lock().unwrap().push((cursor, line));
     }

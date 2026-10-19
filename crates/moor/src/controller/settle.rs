@@ -7,7 +7,7 @@ use super::{log, Sink};
 use crate::env::Env;
 use crate::Moor;
 
-/// Settles every open Task each `every` on a detached thread, for the life of the process.
+/// Settles every open Box each `every` on a detached thread, for the life of the process.
 ///
 /// Each tick wires fresh adapters so config and tool changes apply; a failure is
 /// logged to `sink` and the next tick still runs.

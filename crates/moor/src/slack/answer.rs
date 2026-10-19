@@ -81,7 +81,7 @@ pub(super) fn answer_open(
     }
 }
 
-/// Steers menu `choice` when the prompt is still the task's live question, then records the answer.
+/// Steers menu `choice` when the prompt is still the Box's live question, then records the answer.
 fn answer(prompt: &SlackPrompt, owner: &str, choice: u32, store: &Store, fx: &mut Fx<'_>) {
     let channel = prompt.channel.as_str();
     let thread = prompt.thread_ts.as_str();
@@ -111,13 +111,13 @@ fn answer(prompt: &SlackPrompt, owner: &str, choice: u32, store: &Store, fx: &mu
         Ok(false) => return,
         Err(e) => return (fx.log)(&format!("slack: {e}")),
     }
-    let task = prompt.box_name.as_str();
-    let text = prompt::text(task, owner, &prompt.question);
-    let blocks = prompt::answered_blocks(task, owner, &prompt.question, &label, owner);
+    let name = prompt.box_name.as_str();
+    let text = prompt::text(name, owner, &prompt.question);
+    let blocks = prompt::answered_blocks(name, owner, &prompt.question, &label, owner);
     fx.ui.update(channel, &prompt.message_ts, &text, &blocks);
 }
 
-/// None while `prompt` is the task's live question; otherwise the state to report.
+/// None while `prompt` is the Box's live question; otherwise the state to report.
 fn live_state(prompt: &SlackPrompt, store: &Store) -> Result<Option<&'static str>, String> {
     let Some(row) = store
         .open_box_by_name(&prompt.box_name)
