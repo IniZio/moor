@@ -8,6 +8,7 @@ use std::process::ExitCode;
 
 use moor::cli::{self, GlobalOpts, Invocation, Output, Parsed};
 use moor::env::Env;
+use moor::moor_core::controller::WatchFilter;
 use moor::moor_core::Request;
 use moor::Moor;
 
@@ -45,8 +46,37 @@ fn main() -> ExitCode {
                 std::io::stderr(),
             ));
         }
+        Parsed::Events {
+            opts,
+            since,
+            filter,
+            follow,
+        } => {
+            let env = match &opts.state_dir {
+                Some(dir) => env.with_state_dir(dir),
+                None => env,
+            };
+            return run_events(&env, since, &filter, follow);
+        }
     };
     emit(&output)
+}
+
+/// Stream events as JSON lines from the configured controller, else the local store.
+fn run_events(env: &Env, since: i64, filter: &WatchFilter, follow: bool) -> ExitCode {
+    let mut out = std::io::stdout().lock();
+    let result = match moor::client::configured_target(env) {
+        Some(target) => moor::client::watch(env, &target, since, filter, follow, &mut out)
+            .map_err(|e| e.to_string()),
+        None => moor::controller::watch_local(env, since, filter, follow, &mut out),
+    };
+    match result {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            let _ = writeln!(std::io::stderr(), "{e}");
+            ExitCode::FAILURE
+        }
+    }
 }
 
 /// Read a request from stdin and run it; always JSON output.
