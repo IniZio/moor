@@ -1,9 +1,9 @@
 //! Steps a Box and its primary Session through their own machines for one decision.
 
-use moor_core::domain::box_state::{BoxLifecycle, StepError};
+use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput, StepError};
 use moor_core::domain::box_steps;
 use moor_core::domain::decision::{Decision, NewTask, TaskTarget};
-use moor_core::domain::session_state::SessionState;
+use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::domain::task::{TaskInput, TaskState};
 use moor_core::seam::clock::Ts;
 use moor_core::BoxId;
@@ -16,57 +16,82 @@ use crate::store::{reads::load_row_parts, sessions::live_parent, BoxRow, StoreEr
 /// The Box and primary Session states a step leaves behind.
 pub(super) type Parts = (BoxLifecycle, SessionState);
 
+/// A decision resolved against its Box: the row, the stepped states and the lifecycle it left.
+pub(super) struct Stepped {
+    /// The Box written.
+    pub(super) id: BoxId,
+    /// The Box row before the step, if it existed.
+    pub(super) existing: Option<BoxRow>,
+    /// The combined state callers still read.
+    pub(super) summary: Step<TaskState>,
+    /// What the writer stores.
+    pub(super) parts: Parts,
+    /// The lifecycle before the step; `None` for a fresh Box.
+    pub(super) from_lifecycle: Option<BoxLifecycle>,
+}
+
+/// The lifecycle and Session inputs a decision carries, whichever way it was built.
+pub(super) fn inputs(d: &Decision) -> (Option<BoxLifecycleInput>, Option<SessionInput>) {
+    d.task_input.as_ref().map_or_else(
+        || (d.lifecycle_input.clone(), d.session_input.clone()),
+        TaskInput::pair,
+    )
+}
+
 /// Resolve the Box (inserting a new one) and step its lifecycle and primary Session.
 ///
-/// The `Step` carries the combined summary events use; the parts are what the writer stores.
+/// The summary is the combined state callers still read; the parts are what the writer stores.
 pub(super) fn step_task(
     tx: &Transaction<'_>,
     now: Ts,
     d: &Decision,
-) -> Result<(BoxId, Option<BoxRow>, Step<TaskState>, Parts), StoreError> {
+) -> Result<Stepped, StoreError> {
+    let (l, s) = inputs(d);
     match &d.task {
         TaskTarget::New(new) => {
-            let Some(input @ TaskInput::Insert) = &d.task_input else {
+            let Some(BoxLifecycleInput::Insert) = &l else {
                 return Err(StoreError::Invalid("new Box needs the insert input".into()));
             };
-            let parts = box_steps::initial(input)?;
+            let parts = (
+                BoxLifecycle::initial(&BoxLifecycleInput::Insert)?,
+                SessionState::initial(&SessionInput::Open)?,
+            );
             let id = insert_task(tx, new, parts.0, d.parent_session, now)?;
             let to = box_steps::summary(parts.0, parts.1);
-            Ok((id, None, Step { from: None, to }, parts))
+            Ok(Stepped {
+                id,
+                existing: None,
+                summary: Step { from: None, to },
+                parts,
+                from_lifecycle: None,
+            })
         }
         TaskTarget::Existing(id) => {
             let (row, lifecycle, session) =
                 load_row_parts(tx, *id)?.ok_or(StoreError::NotFound(*id))?;
-            let from = (lifecycle, session);
-            let parts = match &d.task_input {
-                Some(i) => step_parts(from, i, tx, *id)?,
-                None => from,
+            let parts = if l.is_some() || s.is_some() {
+                let others = read_others(tx, *id)?;
+                box_steps::apply(lifecycle, session, &others, l.as_ref(), s.as_ref()).map_err(
+                    |e| match e {
+                        StepError::Illegal(i) => StoreError::Illegal(i),
+                        StepError::SleepBlocked { busy } => StoreError::SleepBlocked { busy },
+                    },
+                )?
+            } else {
+                (lifecycle, session)
             };
-            Ok((
-                *id,
-                row.boxed,
-                Step {
-                    from: Some(box_steps::summary(from.0, from.1)),
+            Ok(Stepped {
+                id: *id,
+                existing: row.boxed,
+                summary: Step {
+                    from: Some(box_steps::summary(lifecycle, session)),
                     to: box_steps::summary(parts.0, parts.1),
                 },
                 parts,
-            ))
+                from_lifecycle: Some(lifecycle),
+            })
         }
     }
-}
-
-/// Apply `input` to `from`, refusing a sleep while another Session is busy.
-fn step_parts(
-    from: Parts,
-    input: &TaskInput,
-    tx: &Transaction<'_>,
-    id: BoxId,
-) -> Result<Parts, StoreError> {
-    let others = read_others(tx, id)?;
-    box_steps::step(from.0, from.1, &others, input).map_err(|e| match e {
-        StepError::Illegal(i) => StoreError::Illegal(i),
-        StepError::SleepBlocked { busy } => StoreError::SleepBlocked { busy },
-    })
 }
 
 /// States of the Box's Sessions other than the current one.

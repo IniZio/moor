@@ -1,7 +1,9 @@
 //! Tests for the decision builder and intents.
 
 use super::{Decision, ExtraEvent, Field, Fields, Intent, IntentChange, NewTask, TaskTarget};
+use crate::domain::box_state::BoxLifecycleInput;
 use crate::domain::event::Event;
+use crate::domain::session_state::SessionInput;
 use crate::domain::task::{TaskInput, TaskState};
 use crate::name::{BoxId, BoxName, RunId};
 
@@ -25,7 +27,19 @@ fn insert_sets_input() {
     };
     let d = Decision::insert(new.clone());
     assert_eq!(d.task, TaskTarget::New(new));
-    assert_eq!(d.task_input, Some(TaskInput::Insert));
+    assert_eq!(d.lifecycle_input, Some(BoxLifecycleInput::Insert));
+    assert_eq!(d.task_input, None);
+}
+
+/// The Box lifecycle and Session builders set their inputs.
+#[test]
+fn lifecycle_and_session_builders() {
+    let d = Decision::new(BoxId::new(1))
+        .lifecycle(BoxLifecycleInput::Wake)
+        .session(SessionInput::AgentBusy);
+    assert_eq!(d.lifecycle_input, Some(BoxLifecycleInput::Wake));
+    assert_eq!(d.session_input, Some(SessionInput::AgentBusy));
+    assert_eq!(d.task_input, None);
 }
 
 /// Builder methods chain and keep order of events.
