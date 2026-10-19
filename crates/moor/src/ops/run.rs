@@ -1,4 +1,4 @@
-//! `run`: execute a command on the Task's Box, keep a run record, report how it ended.
+//! `run`: execute a command on the Box's machine, keep a run record, report how it ended.
 //!
 //! The Box lock is held from the run row's creation to its completion.
 
@@ -34,7 +34,7 @@ mod sync;
 /// Run `run`.
 ///
 /// # Errors
-/// [`CommandError`] when the command could not start: unknown Task, no usable Box, a busy Box,
+/// [`CommandError`] when the command could not start: unknown Box, no usable machine, a busy machine,
 /// a `.moor.yaml` that differs from the base commit without trust, or a failure of the driver or the store before the command ran.
 pub(crate) fn run(cx: &Cx, req: &RunReq) -> Result<RunValue, CommandError> {
     if req.argv.is_empty() {
@@ -46,12 +46,12 @@ pub(crate) fn run(cx: &Cx, req: &RunReq) -> Result<RunValue, CommandError> {
     let name = req.box_name.as_str();
     let found = store
         .latest_box_by_name(&req.box_name)?
-        .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no task {name}")))?;
+        .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no Box {name}")))?;
     dead_provisioning(cx, &found)?;
     let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, found.id, "run", boxlock::WAIT)?;
     let row = store
         .box_row(found.id)?
-        .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no task {name}")))?;
+        .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no Box {name}")))?;
     locked(cx, store, req, &row)
 }
 
@@ -65,7 +65,7 @@ fn locked(cx: &Cx, store: &Store, req: &RunReq, row: &BoxRow) -> Result<RunValue
     let woken;
     let row = if !gone && wake_and_revive(cx, store, row)? {
         woken = store.box_row(row.id)?.ok_or_else(|| {
-            CommandError::new(ErrorKind::Failed, format!("no task {}", row.name.as_str()))
+            CommandError::new(ErrorKind::Failed, format!("no Box {}", row.name.as_str()))
         })?;
         &woken
     } else {
@@ -157,7 +157,7 @@ fn exec_in_box(
     result
 }
 
-/// Where in the Box the Task's commands run.
+/// Where in the machine the Box's commands run.
 fn site<'a>(row: &'a BoxRow, target: &'a ready::Target) -> Site<'a> {
     Site {
         handle: &target.handle,
@@ -192,7 +192,7 @@ fn box_env(
         .map_err(|m| CommandError::new(ErrorKind::Failed, m))
 }
 
-/// An Idle Task becomes Working for the run; a row that changed since it was read is left as is.
+/// An Idle Box becomes Working for the run; a row that changed since it was read is left as is.
 fn mark_working(store: &Store, row: &BoxRow) -> Result<(), CommandError> {
     if !(row.lifecycle == BoxLifecycle::Ready && row.session.is_quiet()) {
         return Ok(());

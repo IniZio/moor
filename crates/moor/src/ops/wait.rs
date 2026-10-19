@@ -1,4 +1,4 @@
-//! `wait`: poll a task until it is idle or its run ends, or the timeout elapses.
+//! `wait`: poll a Box until it is idle or its run ends, or the timeout elapses.
 //!
 //! Never takes the Box lock: it only reads, and heals dead runs through the store.
 
@@ -30,7 +30,7 @@ pub(crate) fn run(cx: &Cx, req: &WaitReq) -> Result<WaitValue, CommandError> {
     let name = req.box_name.as_str();
     let id = store
         .latest_box_by_name(&req.box_name)?
-        .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no task {name}")))?
+        .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no Box {name}")))?
         .id;
     let want = req.wait_for.unwrap_or(WaitFor::Idle);
     let timeout = req
@@ -40,7 +40,7 @@ pub(crate) fn run(cx: &Cx, req: &WaitReq) -> Result<WaitValue, CommandError> {
         let elapsed = clock.instant().saturating_duration_since(started);
         let row = store
             .box_row(id)?
-            .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no task {name}")))?;
+            .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no Box {name}")))?;
         let reading = activity::read(cx, store, &row, clock.now())?;
         if let Some(failure) = reading
             .launch_failure
@@ -71,11 +71,11 @@ pub(crate) fn run(cx: &Cx, req: &WaitReq) -> Result<WaitValue, CommandError> {
             Some(r) => Some(r.clone()),
             None => store.last_run(id)?,
         };
-        let mut task = box_view_with_run(&row, in_flight.as_ref(), cx.config());
-        task.agent = agent_view(&reading);
-        hide_unsupported_sleep(&mut task, cx);
+        let mut view = box_view_with_run(&row, in_flight.as_ref(), cx.config());
+        view.agent = agent_view(&reading);
+        hide_unsupported_sleep(&mut view, cx);
         return Ok(WaitValue {
-            boxed: task,
+            boxed: view,
             timed_out: verdict == WaitVerdict::TimedOut,
             waited_ms: u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX),
             wait_for: want,
@@ -84,7 +84,7 @@ pub(crate) fn run(cx: &Cx, req: &WaitReq) -> Result<WaitValue, CommandError> {
     }
 }
 
-/// A `Failed` error carrying the Task as it stands, with `attention` filled in.
+/// A `Failed` error carrying the Box as it stands, with `attention` filled in.
 fn failed(
     cx: &Cx,
     row: &BoxRow,
@@ -92,12 +92,12 @@ fn failed(
     text: impl Into<String>,
     attention: Vec<AttentionView>,
 ) -> Result<CommandError, CommandError> {
-    let mut task = box_view_with_run(row, None, cx.config());
-    task.agent = agent_view(reading);
-    task.attention = attention;
-    hide_unsupported_sleep(&mut task, cx);
+    let mut view = box_view_with_run(row, None, cx.config());
+    view.agent = agent_view(reading);
+    view.attention = attention;
+    hide_unsupported_sleep(&mut view, cx);
     let shown =
-        serde_json::to_value(&task).map_err(|e| CommandError::new(ErrorKind::Internal, e))?;
+        serde_json::to_value(&view).map_err(|e| CommandError::new(ErrorKind::Internal, e))?;
     Ok(CommandError::new(ErrorKind::Failed, text.into()).with_value(shown))
 }
 

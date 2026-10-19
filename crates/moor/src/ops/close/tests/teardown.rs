@@ -311,7 +311,7 @@ fn invalid_repo_config_warns_and_still_closes_without_teardown() {
 
 const BASE_YAML: &str = "teardown: ['echo base']\n";
 
-/// The Task has a base commit holding `base` as its `.moor.yaml`.
+/// The Box has a base commit holding `base` as its `.moor.yaml`.
 pub(super) fn base_has(f: &Fx, base: &str) {
     let fields = Fields {
         base: Field::Set("abc".into()),

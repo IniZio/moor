@@ -27,14 +27,14 @@ use crate::ops::common::view::box_view;
 use crate::ops::common::wake::wake_box_if_asleep;
 use crate::store::{BoxRow, DriverRow, Store};
 
-/// Closes a task: gate, transcript save, agent stop, Box teardown and release, Workspace close.
+/// Closes a Box: gate, transcript save, agent stop, machine teardown and release, Workspace close.
 ///
 /// The Box lock is held from the gate to the Workspace close and dropped before promotion, which
-/// takes the locks of the waiting tasks. The Box is released before the Workspace closes. The
+/// takes the locks of the waiting Boxes. The machine is released before the Workspace closes. The
 /// worktree goes too, before the Workspace, but only when moor created it and its work is pushed
 /// and clean. The agent stops first, so the session stays ended when the release fails and the
-/// task stays open. The Task's proxy supervisor stops after the lock is dropped: the wait can take
-/// seconds and a closed Task cannot get a new proxy row. Waiting tasks are then promoted.
+/// Box stays open. The Box's proxy supervisor stops after the lock is dropped: the wait can take
+/// seconds and a closed Box cannot get a new proxy row. Waiting Boxes are then promoted.
 pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
     let store = cx.store()?;
     let first = find(store, &req.box_name)?;
@@ -72,7 +72,7 @@ pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
     if let Err(e) = cx.proxy_host().stop(row.id) {
         cx.warn(Warning {
             code: "proxy_stop_failed".to_owned(),
-            message: format!("{e}; the task is closed anyway"),
+            message: format!("{e}; the Box is closed anyway"),
         });
     }
     let provider = row.boxed.as_ref().map(|b| b.provider.clone());
@@ -102,16 +102,13 @@ fn save_transcript(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Option<Saved>
     Ok(transcript::save(cx, store, row, &session, Trigger::Close))
 }
 
-/// The open task by name, else the newest closed one (the gate refuses it).
+/// The open Box by name, else the newest closed one (the gate refuses it).
 fn find(store: &Store, name: &BoxName) -> Result<BoxRow, CommandError> {
     if let Some(row) = store.open_box_by_name(name)? {
         return Ok(row);
     }
     store.latest_box_by_name(name)?.ok_or_else(|| {
-        CommandError::new(
-            ErrorKind::Failed,
-            format!("no task named {}", name.as_str()),
-        )
+        CommandError::new(ErrorKind::Failed, format!("no Box named {}", name.as_str()))
     })
 }
 
@@ -155,13 +152,13 @@ fn box_check(
         Ok(false) => {}
         // The driver has forgotten the Box: nothing to save, and release treats it as deleted.
         Err(e) if e.error.downcast_ref::<DriverError>() == Some(&DriverError::NotFound) => {
-            return Ok(BoxCheck::Skipped)
+            return Ok(BoxCheck::Skipped);
         }
         Err(e) => {
             return Ok(BoxCheck::Unknown(format!(
                 "could not wake the Box: {}",
                 e.error
-            )))
+            )));
         }
     }
     // A Box that never got ready, or whose release already failed, has no reachable work tree.
@@ -305,7 +302,7 @@ fn release(cx: &Cx, store: &Store, row: &BoxRow) -> Result<bool, CommandError> {
             |e| e.to_string(),
         );
         return Err(
-            CommandError::new(ErrorKind::Failed, format!("{why}; the task stays open"))
+            CommandError::new(ErrorKind::Failed, format!("{why}; the Box stays open"))
                 .with_hint("try `moor close` again, or release the Box by hand"),
         );
     }
@@ -322,7 +319,7 @@ fn close_workspace(cx: &Cx, row: &BoxRow, plan: &ClosePlan) -> bool {
         Err(_) => {
             cx.warn(Warning {
                 code: "workspace_close_failed".to_owned(),
-                message: "the task is closed but its Workspace could not be closed; \
+                message: "the Box is closed but its Workspace could not be closed; \
                           close it by hand"
                     .to_owned(),
             });

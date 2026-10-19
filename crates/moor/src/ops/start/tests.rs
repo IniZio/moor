@@ -138,7 +138,7 @@ fn req(name: &str) -> StartReq {
 }
 
 #[test]
-fn happy_path_makes_a_working_task_with_a_ready_box() {
+fn happy_path_makes_a_working_box_with_a_ready_box() {
     let w = world(FakeDriver::new());
     let v = run(&w.cx, &req("demo")).unwrap();
     assert!(!v.attached);
@@ -167,7 +167,7 @@ fn happy_path_calls_seams_in_order_and_clears_intent() {
 }
 
 #[test]
-fn acquire_failure_keeps_a_failed_task_row() {
+fn acquire_failure_keeps_a_failed_box_row() {
     let w = world(FakeDriver::new().fail_acquire(DriverError::Failed {
         summary: "boom".into(),
     }));
@@ -216,7 +216,7 @@ fn acquire_failure_with_release_error_keeps_failed_and_original_error() {
 }
 
 #[test]
-fn restart_of_a_closed_name_creates_a_new_task() {
+fn restart_of_a_closed_name_creates_a_new_box() {
     let w = world(FakeDriver::new());
     let first = run(&w.cx, &req("again")).unwrap();
     let id = BoxId::new(first.boxed.id);
@@ -323,7 +323,7 @@ fn start_after_acquire_failure_gets_a_new_box() {
 }
 
 #[test]
-fn start_on_a_gone_box_acquires_again_and_keeps_the_task_working() {
+fn start_on_a_gone_box_acquires_again_and_keeps_the_box_working() {
     let w = world(FakeDriver::new());
     let first = run(&w.cx, &req("demo")).unwrap();
     let id = BoxId::new(first.boxed.id);
@@ -421,7 +421,7 @@ fn start_refuses_while_another_op_holds_the_box_lock() {
     assert!(w.driver.calls().is_empty());
 }
 
-/// Holds the Box lock of task 1 as `op`.
+/// Holds the lock of Box 1 as `op`.
 fn hold(w: &World, op: &str) -> BoxLock {
     BoxLock::acquire(
         w.cx.clock(),

@@ -16,18 +16,18 @@ use crate::error::CommandError;
 use crate::ops::common::view::rfc3339;
 use crate::store::{artifacts::ArtifactRow, Store};
 
-/// List a Task's Artifacts: the newest version of each name, or every version with `all`.
+/// List a Box's Artifacts: the newest version of each name, or every version with `all`.
 /// Read-only: no reconcile and no Box lock.
 ///
 /// # Errors
-/// [`CommandError`] when the Task is unknown or a store read fails.
+/// [`CommandError`] when the Box is unknown or a store read fails.
 pub(crate) fn list(cx: &Cx, req: &ArtifactsReq) -> Result<Vec<ArtifactView>, CommandError> {
     let store = cx.store()?;
-    let task = task_id(store, &req.box_name)?;
+    let box_id = named_box(store, &req.box_name)?;
     let rows = if req.all {
-        store.artifacts(task)?
+        store.artifacts(box_id)?
     } else {
-        store.latest_artifacts(task)?
+        store.latest_artifacts(box_id)?
     };
     Ok(rows.iter().map(artifact_view).collect())
 }
@@ -59,8 +59,8 @@ pub(crate) fn read(cx: &Cx, req: &ArtifactReadReq) -> Result<ArtifactChunk, Comm
     }
     let store = cx.store()?;
     let name = req.box_name.as_str();
-    let task = task_id(store, &req.box_name)?;
-    let rows = store.artifacts(task)?;
+    let box_id = named_box(store, &req.box_name)?;
+    let rows = store.artifacts(box_id)?;
     let row = rows
         .iter()
         .filter(|r| r.name == req.name && req.version.is_none_or(|v| i64::from(v) == r.version))
@@ -75,7 +75,7 @@ pub(crate) fn read(cx: &Cx, req: &ArtifactReadReq) -> Result<ArtifactChunk, Comm
     let box_dir = cx
         .state_dir()?
         .join("artifacts")
-        .join(task.get().to_string());
+        .join(box_id.get().to_string());
     let version_dir = box_dir.join(format!("v{}", row.version));
     let file = version_dir.join(&row.name);
     let refused = || {
@@ -148,12 +148,12 @@ fn io_error(row: &ArtifactRow, e: &std::io::Error) -> CommandError {
     )
 }
 
-/// Resolve the newest Task with this name.
-fn task_id(store: &Store, name: &BoxName) -> Result<moor_core::BoxId, CommandError> {
+/// Resolve the newest Box with this name.
+fn named_box(store: &Store, name: &BoxName) -> Result<moor_core::BoxId, CommandError> {
     store
         .latest_box_by_name(name)?
         .map(|t| t.id)
-        .ok_or_else(|| CommandError::new(ErrorKind::NotFound, format!("no task {}", name.as_str())))
+        .ok_or_else(|| CommandError::new(ErrorKind::NotFound, format!("no Box {}", name.as_str())))
 }
 
 #[cfg(test)]

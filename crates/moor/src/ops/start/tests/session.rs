@@ -111,7 +111,7 @@ fn a_launch_records_a_session_with_its_pane() {
 }
 
 #[test]
-fn a_failed_launch_records_no_session_and_leaves_the_task_working() {
+fn a_failed_launch_records_no_session_and_leaves_the_box_working() {
     let engine = Arc::new(
         FakeEngine::new().launch_result(Err(launch_error("pane", "no tab\nline one\nline two"))),
     );
@@ -189,7 +189,7 @@ fn starting_again_launches_once_and_clears_the_failure() {
 }
 
 #[test]
-fn restarting_an_idle_task_with_a_goal_and_no_session_wakes_and_launches_once() {
+fn restarting_an_idle_box_with_a_goal_and_no_session_wakes_and_launches_once() {
     let engine = Arc::new(FakeEngine::new());
     let w = with_engine(&engine);
     let first = run(&w.cx, &goal_req("demo")).unwrap();
@@ -211,7 +211,7 @@ fn restarting_an_idle_task_with_a_goal_and_no_session_wakes_and_launches_once() 
 }
 
 #[test]
-fn restarting_an_idle_task_without_a_goal_or_session_wakes_it_and_launches_nothing() {
+fn restarting_an_idle_box_without_a_goal_or_session_wakes_it_and_launches_nothing() {
     let engine = Arc::new(FakeEngine::new());
     let w = with_engine(&engine);
     let first = run(&w.cx, &req("demo")).unwrap();
@@ -328,7 +328,7 @@ fn pane_tail(tail: &str) -> PaneObs {
     }
 }
 
-/// The recorded (kind, payload) pairs of the task.
+/// The recorded (kind, payload) pairs of the Box.
 fn events_of(w: &World, id: BoxId) -> Vec<(String, serde_json::Value)> {
     w.cx.store()
         .unwrap()

@@ -69,12 +69,12 @@ pub(super) fn proc(unpushed: u32) -> Arc<ScriptedProc> {
     Arc::new(p)
 }
 
-/// A Ready task with a Box from `driver` that probes clean.
+/// A Ready Box with a machine from `driver` that probes clean.
 pub(super) fn fx_with(driver: FakeDriver, surface: FakeSurface, unpushed: u32) -> Fx {
     fx_box(driver, surface, unpushed, Some("ahead=0 dirty=0"))
 }
 
-/// A Ready task with a Box from `driver`; the worktree is a real directory.
+/// A Ready Box with a machine from `driver`; the worktree is a real directory.
 ///
 /// `boxwork` is what the probe reads back from the first Box's recorded workdir
 /// (`/work/box-1`); `None` leaves it unscripted, so the probe cannot tell.
@@ -114,7 +114,7 @@ pub(super) fn fx_box(
     }
 }
 
-/// Admits task `t` with a Ready Box acquired from `driver`.
+/// Admits Box `t` with a Ready machine acquired from `driver`.
 fn admit(cx: &Cx, driver: &FakeDriver, dir: &Path) -> BoxId {
     let store = cx.store().unwrap();
     let id = store
@@ -206,7 +206,7 @@ fn release_not_found_counts_as_deleted() {
 }
 
 #[test]
-fn release_error_on_a_ready_box_keeps_the_task_open() {
+fn release_error_on_a_ready_box_keeps_the_box_open() {
     let f = fx_with(
         FakeDriver::new().fail_release_always(DriverError::Failed {
             summary: RAW.into(),

@@ -49,7 +49,7 @@ fn a_host_session_shows_its_workdir_agent_session_and_state() {
 }
 
 #[test]
-fn children_list_with_their_task_and_state() {
+fn children_list_with_their_box_and_state() {
     let dir = tempfile::tempdir().unwrap();
     let cx = cx(dir.path());
     let store = cx.store().unwrap();

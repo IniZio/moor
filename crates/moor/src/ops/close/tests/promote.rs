@@ -63,7 +63,7 @@ fn driver_limit(n: u32) -> UserConfig {
     }
 }
 
-/// A live Box held by task `holder`, bound to `config` and `driver`.
+/// A live machine held by Box `holder`, bound to `config` and `driver`.
 fn world(config: UserConfig, driver: FakeDriver) -> World {
     world_at(config, driver, Path::new("/repo"))
 }
@@ -197,7 +197,7 @@ fn queue(w: &World, name: &str) -> BoxId {
     BoxId::new(v.boxed.id)
 }
 
-/// A waiting task made without consulting any limit.
+/// A waiting Box made without consulting any limit.
 fn waiting_directly(w: &World, name: &str) -> BoxId {
     let store = w.cx.store().unwrap();
     let id = store
@@ -266,7 +266,7 @@ fn a_younger_waiter_stays_queued_when_one_slot_frees() {
 }
 
 #[test]
-fn promoted_task_goes_through_setting_up_and_gets_a_ready_box() {
+fn promoted_box_goes_through_setting_up_and_gets_a_ready_box() {
     let w = world(limit(1), FakeDriver::new());
     let id = queue(&w, "first");
     close_holder(&w);
@@ -276,7 +276,7 @@ fn promoted_task_goes_through_setting_up_and_gets_a_ready_box() {
     assert!(at("setting_up") < at("working"), "{seen:?}");
     let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert!(is_working(&row));
-    let b = row.boxed.expect("promoted task has a Box row");
+    let b = row.boxed.expect("promoted Box has a machine row");
     assert_eq!(b.state, BoxState::Ready);
     assert!(b.handle.is_some());
     // The holder's acquire, two close probes and report collection come first; each is one exec and one peek,
@@ -294,7 +294,7 @@ fn promoted_task_goes_through_setting_up_and_gets_a_ready_box() {
             format!("exec {HOLDER_BOX}"),
             format!("release {HOLDER_BOX}"),
             "acquire".into(),
-            // The promoted task has no setup, so its one exec is the checkout sync.
+            // The promoted Box has no setup, so its one exec is the checkout sync.
             "exec box-2".into(),
         ]
     );
@@ -319,7 +319,7 @@ fn driver_limit_frees_a_slot_for_the_waiter_too() {
 }
 
 #[test]
-fn failed_acquire_of_the_promoted_task_does_not_fail_the_close() {
+fn failed_acquire_of_the_promoted_box_does_not_fail_the_close() {
     let failure = DriverError::Failed {
         summary: "no capacity".into(),
     };
@@ -388,7 +388,7 @@ fn nothing_is_promoted_without_a_configured_limit() {
 }
 
 #[test]
-fn close_with_no_waiting_tasks_promotes_nothing() {
+fn close_with_no_waiting_boxes_promotes_nothing() {
     let w = world(limit(1), FakeDriver::new());
     let v = close_holder(&w);
     assert!(v.box_deleted);
@@ -435,7 +435,7 @@ fn a_store_read_error_during_promotion_is_a_warning_not_a_failed_close() {
 }
 
 #[test]
-fn promoted_task_runs_the_repo_setup_commands_in_its_new_box() {
+fn promoted_box_runs_the_repo_setup_commands_in_its_new_box() {
     let repo = tempfile::tempdir().unwrap();
     std::fs::write(
         repo.path().join(".moor.yaml"),

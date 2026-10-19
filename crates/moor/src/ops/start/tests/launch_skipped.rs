@@ -11,7 +11,7 @@ use crate::ops::start::launch;
 use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
 
-/// An Idle Task with a goal, a ready Box and no Session.
+/// An Idle Box with a goal, a ready machine and no Session.
 fn idle() -> (World, BoxId) {
     let w = world(FakeDriver::new());
     let start = StartReq {
@@ -34,7 +34,7 @@ fn launch_with(w: &World, id: BoxId, start: &StartReq) -> moor_core::view::Agent
 }
 
 #[test]
-fn a_launch_skipped_because_the_task_is_not_working_is_recorded() {
+fn a_launch_skipped_because_the_box_is_not_working_is_recorded() {
     let (w, id) = idle();
     let start = StartReq {
         goal: Some("ship it".into()),

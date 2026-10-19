@@ -1,4 +1,4 @@
-//! The base a new Task worktree branches from.
+//! The base a new Box worktree branches from.
 
 use std::path::Path;
 
@@ -12,7 +12,7 @@ use crate::error::CommandError;
 /// The repo config file name.
 const REPO_FILE: &str = ".moor.yaml";
 
-/// Settings for an unbound Task, taking the repo config from `base` because the Box checks that out.
+/// Settings for an unbound Box, taking the repo config from `base` because the machine checks that out.
 ///
 /// A host `.moor.yaml` that differs from the base copy warns and is not used. With no base copy,
 /// the checkout's own file is read.
@@ -46,12 +46,12 @@ pub(super) fn settings_at_base(
     Ok(resolved(cx, Some(&repo_cfg), flags))
 }
 
-/// The base recorded for the Task and the ref its worktree branches from.
+/// The base recorded for the Box and the ref its worktree branches from.
 ///
-/// An explicit base is resolved to its commit, so a branch that moves later cannot change the Task's base.
+/// An explicit base is resolved to its commit, so a branch that moves later cannot change the Box's base.
 ///
 /// Without an explicit base or a bound worktree the remote default branch is fetched first and
-/// its commit is the base, so the Task branch tracks nothing. A failed fetch warns and leaves the
+/// its commit is the base, so the Box branch tracks nothing. A failed fetch warns and leaves the
 /// local branch as the base.
 pub(super) fn resolve(
     cx: &Cx,

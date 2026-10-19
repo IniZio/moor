@@ -1,4 +1,4 @@
-//! What `run` checks before it touches the Box: the Task must hold a usable Box.
+//! What `run` checks before it touches the machine: the Box must hold a usable machine.
 
 use std::path::PathBuf;
 
@@ -17,7 +17,7 @@ pub(super) struct Target {
     pub(super) handle: BoxHandle,
     /// Working directory in the Box; the driver's default when unrecorded.
     pub(super) workdir: Option<BoxPath>,
-    /// The Task's worktree on the host.
+    /// The Box's worktree on the host.
     pub(super) worktree: PathBuf,
 }
 

@@ -1,4 +1,4 @@
-//! The per-task proxy is ensured through the proxy host before every agent launch.
+//! The per-Box proxy is ensured through the proxy host before every agent launch.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -194,7 +194,7 @@ fn env_of<'a>(env: &'a [(String, String)], key: &str) -> Option<&'a str> {
 }
 
 #[test]
-fn the_spec_carries_the_task_repo_and_resolved_rules() {
+fn the_spec_carries_the_box_repo_and_resolved_rules() {
     let (mut w, engine, fake) = host_world(FakeProxyHost::new());
     w.cx = w.cx.with_forge(Arc::new(
         FakeForge::new().with_repo("git@github.com:o/r.git", ForgeRepo::new("o", "r")),

@@ -11,7 +11,7 @@ use crate::error::CommandError;
 use crate::ops::common::creds::unresolved;
 use crate::store::BoxRow;
 
-/// Why the Task must be rejected, naming each unresolved item; `None` when all resolve.
+/// Why the Box must be rejected, naming each unresolved item; `None` when all resolve.
 pub(super) fn rejection(cx: &Cx, settings: &BoxSettings, worktree: &Path) -> Option<String> {
     let failing = unresolved(cx, settings, worktree);
     if failing.is_empty() {
@@ -28,7 +28,7 @@ pub(super) fn rejection(cx: &Cx, settings: &BoxSettings, worktree: &Path) -> Opt
     Some(format!("unresolved: {}", lines.join("; ")))
 }
 
-/// The credentials the Task uses, all resolved; names and layers only.
+/// The credentials the Box uses, all resolved; names and layers only.
 pub(super) fn checked(settings: &BoxSettings) -> Vec<CheckedCred> {
     settings
         .used_credentials()
@@ -40,7 +40,7 @@ pub(super) fn checked(settings: &BoxSettings) -> Vec<CheckedCred> {
         .collect()
 }
 
-/// Refuses a `--worktree` that differs from the open Task's worktree.
+/// Refuses a `--worktree` that differs from the open Box's worktree.
 pub(super) fn check_bound(cx: &Cx, req: &StartReq, row: &BoxRow) -> Result<(), CommandError> {
     let (Some(want), Some(have)) = (&req.worktree, &row.worktree) else {
         return Ok(());
@@ -55,7 +55,7 @@ pub(super) fn check_bound(cx: &Cx, req: &StartReq, row: &BoxRow) -> Result<(), C
     Err(CommandError::new(
         ErrorKind::Refused,
         format!(
-            "task {} is already bound to {have}, not {}",
+            "Box {} is already bound to {have}, not {}",
             req.name.as_str(),
             want.display()
         ),

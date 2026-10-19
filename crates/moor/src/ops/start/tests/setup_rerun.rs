@@ -31,8 +31,7 @@ fn not_rerun_warning(w: &World) -> Vec<String> {
         .collect()
 }
 
-const BY_HAND: &str =
-    "`moor start` does not re-run it; run each `setup:` line by hand with `moor run demo -- '<line>'`";
+const BY_HAND: &str = "`moor start` does not re-run it; run each `setup:` line by hand with `moor run demo -- '<line>'`";
 
 #[test]
 fn start_after_a_failed_setup_does_not_re_run_setup_and_warns() {
@@ -167,7 +166,7 @@ fn start_leaves_setup_alone_when_the_setup_owner_is_alive() {
 }
 
 #[test]
-fn start_on_a_setting_up_task_with_a_live_setup_owner_records_no_session() {
+fn start_on_a_setting_up_box_with_a_live_setup_owner_records_no_session() {
     let repo = tempfile::tempdir().unwrap();
     std::fs::write(repo.path().join(".moor.yaml"), "setup: [a]\n").unwrap();
     let w = world_at(FakeDriver::new(), repo.path());
@@ -187,7 +186,7 @@ fn start_on_a_setting_up_task_with_a_live_setup_owner_records_no_session() {
 }
 
 #[test]
-fn start_does_not_re_run_setup_for_a_setting_up_task_whose_setup_owner_died() {
+fn start_does_not_re_run_setup_for_a_setting_up_box_whose_setup_owner_died() {
     let repo = tempfile::tempdir().unwrap();
     std::fs::write(repo.path().join(".moor.yaml"), "setup: [a]\n").unwrap();
     let w = world_at(FakeDriver::new(), repo.path());

@@ -96,7 +96,7 @@ pub(crate) fn run(cx: &Cx, req: &WaitEventsReq) -> Result<WaitEventsValue, Comma
     }
 }
 
-/// The latest Task of each name; an empty, unknown or closed list is refused.
+/// The latest Box of each name; an empty, unknown or closed list is refused.
 fn resolve<'a>(
     store: &Store,
     names: &'a [BoxName],
@@ -110,12 +110,12 @@ fn resolve<'a>(
     let mut watched = Vec::new();
     for name in names {
         let row = store.latest_box_by_name(name)?.ok_or_else(|| {
-            CommandError::new(ErrorKind::Failed, format!("no task {}", name.as_str()))
+            CommandError::new(ErrorKind::Failed, format!("no Box {}", name.as_str()))
         })?;
         if !row.lifecycle.is_live() {
             return Err(CommandError::new(
                 ErrorKind::Failed,
-                format!("task {} is closed", name.as_str()),
+                format!("Box {} is closed", name.as_str()),
             ));
         }
         watched.push((row.id, name));
@@ -143,7 +143,7 @@ fn settle(
         if warned.insert(id) {
             cx.warn(Warning {
                 code: "settle_failed".to_owned(),
-                message: format!("could not settle task {}: {}", id.get(), e.error),
+                message: format!("could not settle Box {}: {}", id.get(), e.error),
             });
         }
     }

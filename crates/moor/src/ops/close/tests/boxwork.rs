@@ -62,7 +62,7 @@ pub(super) fn fx_woken(text: &str) -> Fx {
     }
 }
 
-/// Puts the Task and its Box to sleep.
+/// Puts the Box and its machine to sleep.
 pub(super) fn put_to_sleep(f: &Fx) {
     let store = f.cx.store().unwrap();
     store
@@ -102,10 +102,10 @@ fn text(e: &CommandError) -> String {
 
 /// Closing without `--force` is refused and changes nothing.
 fn refused(f: &Fx) -> CommandError {
-    let (task, boxed) = (row(f).lifecycle, box_state(f));
+    let (lifecycle_before, boxed) = (row(f).lifecycle, box_state(f));
     let e = run(&f.cx, &req(false)).unwrap_err();
     assert_eq!(e.kind, ErrorKind::Refused);
-    assert_eq!(row(f).lifecycle, task);
+    assert_eq!(row(f).lifecycle, lifecycle_before);
     assert_eq!(box_state(f), boxed);
     assert_eq!(count(f, "release"), 0);
     e

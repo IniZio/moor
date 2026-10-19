@@ -213,7 +213,7 @@ fn the_checkout_syncs_in_its_own_exec_and_setup_runs_without_syncing() {
 }
 
 #[test]
-fn a_failing_setup_leaves_a_working_task_and_runs_nothing_more() {
+fn a_failing_setup_leaves_a_working_box_and_runs_nothing_more() {
     let driver = FakeDriver::new()
         .exec_results(scripted([Sync(Ok(exit(0))), Cmd(Ok(exit(1)))]))
         .copy_text("moor setup: $ a\nmoor setup: $ b\n");
@@ -283,7 +283,7 @@ fn a_failed_setup_copies_its_log_out_of_the_box_into_the_worktree() {
 }
 
 #[test]
-fn a_failing_setup_marks_the_task_and_a_later_clean_setup_clears_it() {
+fn a_failing_setup_marks_the_box_and_a_later_clean_setup_clears_it() {
     let driver = FakeDriver::new().exec_results(scripted([Sync(Ok(exit(0))), Cmd(Ok(exit(1)))]));
     let (w, v) = start_with("setup: [a]\n", driver);
     assert!(!v.setup.ok);
@@ -344,7 +344,7 @@ fn a_timed_out_setup_counts_as_a_failing_line() {
 }
 
 #[test]
-fn a_failing_setup_on_a_re_provisioned_working_task_records_the_failing_line() {
+fn a_failing_setup_on_a_re_provisioned_working_box_records_the_failing_line() {
     let driver = FakeDriver::new().exec_results(scripted([
         Sync(Ok(exit(0))),
         Cmd(Ok(exit(0))),

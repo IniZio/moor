@@ -69,7 +69,7 @@ fn a_custom_work_root_is_the_root_of_the_probed_workdir() {
 }
 
 #[test]
-fn every_box_exec_runs_from_the_task_worktree() {
+fn every_box_exec_runs_from_the_box_worktree() {
     // crabbox derives its claim root from the host cwd, so a stray cwd gets the lease refused.
     let (w, v) = start(FakeDriver::new());
     let row = w.cx.store().unwrap().box_row(BoxId::new(v.boxed.id));

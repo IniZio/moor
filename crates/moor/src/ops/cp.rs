@@ -1,4 +1,4 @@
-//! `cp`: copy a file or directory out of a Task's Box to the host.
+//! `cp`: copy a file or directory out of a Box's machine to the host.
 //!
 //! Holds the Box lock for the copy and never syncs the worktree.
 
@@ -32,7 +32,7 @@ pub(crate) fn run(cx: &Cx, req: &CpReq) -> Result<CpValue, CommandError> {
         .ok_or_else(|| {
             CommandError::new(
                 ErrorKind::Failed,
-                format!("no open task {}", req.box_name.as_str()),
+                format!("no open Box {}", req.box_name.as_str()),
             )
         })?
         .id;
@@ -41,7 +41,7 @@ pub(crate) fn run(cx: &Cx, req: &CpReq) -> Result<CpValue, CommandError> {
         store.box_row(id)?.ok_or_else(|| {
             CommandError::new(
                 ErrorKind::Failed,
-                format!("no task {}", req.box_name.as_str()),
+                format!("no Box {}", req.box_name.as_str()),
             )
         })
     };
@@ -74,16 +74,16 @@ pub(crate) fn run(cx: &Cx, req: &CpReq) -> Result<CpValue, CommandError> {
     })
 }
 
-/// The handle of the Task's ready Box, or a refusal.
+/// The handle of the Box's ready machine, or a refusal.
 fn usable_handle(row: &BoxRow) -> Result<BoxHandle, CommandError> {
     let refuse = |why: &str| CommandError::new(ErrorKind::Refused, why.to_owned());
     if row.lifecycle == BoxLifecycle::WaitingForBox {
-        return Err(refuse("the task is waiting for a Box"));
+        return Err(refuse("the Box is waiting for a machine"));
     }
     let b = row
         .boxed
         .as_ref()
-        .ok_or_else(|| refuse("the task has no Box"))?;
+        .ok_or_else(|| refuse("the Box has no machine"))?;
     match b.state {
         BoxState::Ready => {}
         BoxState::Gone | BoxState::Deleted => return Err(refuse("the Box is gone")),

@@ -79,7 +79,7 @@ fn an_unknown_repo_is_refused_and_lists_the_known_ones() {
 }
 
 #[test]
-fn an_empty_cache_is_cloned_and_the_task_uses_the_cache_path() {
+fn an_empty_cache_is_cloned_and_the_box_uses_the_cache_path() {
     let w = known(table(&[("app", entry(URL, None))]));
     let v = run(&w.cx, &repo_req("app")).unwrap();
     let dest = cache(&w, "app");

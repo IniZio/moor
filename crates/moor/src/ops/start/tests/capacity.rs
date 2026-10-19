@@ -123,7 +123,7 @@ fn lifecycle_of(w: &World, id: BoxId) -> BoxLifecycle {
         .lifecycle
 }
 
-/// Frees the Box of task `id` as if the driver lost it.
+/// Frees the machine of Box `id` as if the driver lost it.
 fn free_box(w: &World, id: BoxId) {
     w.cx.store()
         .unwrap()
@@ -131,7 +131,7 @@ fn free_box(w: &World, id: BoxId) {
         .unwrap();
 }
 
-/// Moves the Box row of task `id` to `provider`.
+/// Moves the machine row of Box `id` to `provider`.
 fn move_box_to(w: &World, id: BoxId, provider: &str) {
     let set = Fields {
         box_provider: Field::Set(ProviderId::new(provider)),
@@ -235,7 +235,7 @@ fn start_again_while_still_full_keeps_waiting() {
 }
 
 #[test]
-fn start_again_after_a_box_is_freed_promotes_the_waiting_task() {
+fn start_again_after_a_box_is_freed_promotes_the_waiting_box() {
     let (w, holder) = with_live_box(box_limit(1));
     let queued = run(&w.cx, &req("waiter")).unwrap();
     assert!(queued.queued);
@@ -258,7 +258,7 @@ fn start_again_after_a_box_is_freed_promotes_the_waiting_task() {
 }
 
 #[test]
-fn start_again_after_the_holder_closes_promotes_the_waiting_task() {
+fn start_again_after_the_holder_closes_promotes_the_waiting_box() {
     let (w, holder) = with_live_box(box_limit(1));
     let queued = run(&w.cx, &req("waiter")).unwrap();
     assert!(queued.queued);

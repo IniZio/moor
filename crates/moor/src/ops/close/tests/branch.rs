@@ -1,4 +1,4 @@
-//! Close brings the kept worktree and Task branch up to the remote tip, and only by fast-forward.
+//! Close brings the kept worktree and Box branch up to the remote tip, and only by fast-forward.
 
 use std::sync::Arc;
 
@@ -16,7 +16,7 @@ use crate::testing::surface::FakeSurface;
 const BRANCH: &str = "moor/t";
 const REMOTE: &str = "fedcba9876543210fedcba9876543210fedcba98";
 
-/// Git answers shared by every scenario: nothing unpushed, HEAD on the Task branch.
+/// Git answers shared by every scenario: nothing unpushed, HEAD on the Box branch.
 fn base(status: &str) -> ScriptedProc {
     scripted(status, true)
 }

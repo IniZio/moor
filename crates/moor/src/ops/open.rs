@@ -1,4 +1,4 @@
-//! `open`: wake a Task's asleep Box, then focus its Workspace.
+//! `open`: wake an asleep Box, then focus its Workspace.
 //!
 //! Holds the Box lock while the Box resumes.
 
@@ -17,7 +17,7 @@ pub(crate) fn run(cx: &Cx, req: &BoxReq) -> Result<SleepValue, CommandError> {
         let workspace = row
             .workspace_id
             .as_deref()
-            .ok_or_else(|| CommandError::new(ErrorKind::Refused, "the Task has no Workspace"))?;
+            .ok_or_else(|| CommandError::new(ErrorKind::Refused, "the Box has no Workspace"))?;
         cx.surface()
             .focus_workspace(&WorkspaceRef::new(workspace))?;
         Ok(())
@@ -42,7 +42,7 @@ pub(crate) fn connect(cx: &Cx, req: &BoxReq) -> Result<ConnectValue, CommandErro
     let slept = wake_box(cx, req, "connect", |row| {
         workspace =
             Some(row.workspace_id.clone().ok_or_else(|| {
-                CommandError::new(ErrorKind::Refused, "the Task has no Workspace")
+                CommandError::new(ErrorKind::Refused, "the Box has no Workspace")
             })?);
         Ok(())
     })?;

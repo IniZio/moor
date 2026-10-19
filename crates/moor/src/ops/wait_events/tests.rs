@@ -93,7 +93,7 @@ fn boxes_of(frames: &[ServerFrame]) -> Vec<String> {
         .collect()
 }
 
-/// A task named `n` whose Box is Ready.
+/// A Box named `n` whose machine is Ready.
 fn ready(cx: &Cx, n: &str) -> BoxId {
     let id = add(cx, n);
     let got = cx
@@ -219,7 +219,7 @@ fn an_unknown_box_fails_before_waiting() {
     let before = cx.clock().now();
     let e = run(&cx, &req(&["alpha", "ghost"], WaitMode::Any)).unwrap_err();
     assert_eq!(e.kind, ErrorKind::Failed);
-    assert!(e.error.to_string().contains("no task ghost"), "{}", e.error);
+    assert!(e.error.to_string().contains("no Box ghost"), "{}", e.error);
     assert_eq!(cx.clock().now().as_millis(), before.as_millis());
 }
 
@@ -306,7 +306,7 @@ fn a_closed_box_fails_before_waiting() {
     let e = run(&cx, &req(&["alpha"], WaitMode::Any)).unwrap_err();
     assert_eq!(e.kind, ErrorKind::Failed);
     assert!(
-        e.error.to_string().contains("task alpha is closed"),
+        e.error.to_string().contains("Box alpha is closed"),
         "{}",
         e.error
     );

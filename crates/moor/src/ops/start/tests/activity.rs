@@ -64,7 +64,7 @@ fn row(w: &World, id: BoxId) -> BoxRow {
     w.cx.store().unwrap().box_row(id).unwrap().unwrap()
 }
 
-/// The `idle_since` column of a task.
+/// The `idle_since` column of a Box.
 fn idle_since(w: &World, id: BoxId) -> Option<i64> {
     w.cx.store()
         .unwrap()
@@ -79,7 +79,7 @@ fn idle_since(w: &World, id: BoxId) -> Option<i64> {
 }
 
 #[test]
-fn start_idles_a_working_task_whose_hook_reports_idle_then_wakes_it() {
+fn start_idles_a_working_box_whose_hook_reports_idle_then_wakes_it() {
     let (w, id) = started(false, |w| {
         probes(w, Some(HookKind::Idle), PaneStatus::Unknown)
     });
@@ -95,7 +95,7 @@ fn start_idles_a_working_task_whose_hook_reports_idle_then_wakes_it() {
 }
 
 #[test]
-fn start_wakes_an_idle_task_whose_hook_reports_working() {
+fn start_wakes_an_idle_box_whose_hook_reports_working() {
     let (w, id) = started(true, |w| {
         probes(w, Some(HookKind::Busy), PaneStatus::Unknown)
     });
@@ -113,8 +113,8 @@ fn aged_pane_only(pane: PaneStatus) -> (World, BoxId) {
     (w, id)
 }
 
-/// Reads `pane` with no hook report, returning the reading's state, then starts the task.
-/// Asserts the pane-only reading never quiets the task.
+/// Reads `pane` with no hook report, returning the reading's state, then starts the Box.
+/// Asserts the pane-only reading never quiets the Box.
 fn start_on_pane_only(pane: PaneStatus) -> AgentState {
     let (w, id) = aged_pane_only(pane);
     let store = w.cx.store().unwrap();
@@ -131,19 +131,19 @@ fn start_on_pane_only(pane: PaneStatus) -> AgentState {
 }
 
 #[test]
-fn start_does_not_quiet_a_task_on_a_pane_only_idle_report() {
+fn start_does_not_quiet_a_box_on_a_pane_only_idle_report() {
     assert_eq!(start_on_pane_only(PaneStatus::Idle), AgentState::Idle);
 }
 
 #[test]
-fn start_does_not_quiet_a_task_on_a_pane_only_blocked_report() {
+fn start_does_not_quiet_a_box_on_a_pane_only_blocked_report() {
     assert!(matches!(
         start_on_pane_only(PaneStatus::Blocked),
         AgentState::NeedsInput { .. }
     ));
 }
 
-/// The newest session id of a task.
+/// The newest session id of a Box.
 fn newest_session(w: &World, id: BoxId) -> i64 {
     w.cx.store()
         .unwrap()
@@ -158,7 +158,7 @@ fn newest_session(w: &World, id: BoxId) -> i64 {
 }
 
 #[test]
-fn start_does_not_revive_a_task_whose_session_ended() {
+fn start_does_not_revive_a_box_whose_session_ended() {
     let (w, id) = started(false, |w| probes(w, None, PaneStatus::Unknown));
     let store = w.cx.store().unwrap();
     while let Some(live) = store.live_session(id).unwrap() {
@@ -185,7 +185,7 @@ fn start_does_not_revive_a_task_whose_session_ended() {
 }
 
 #[test]
-fn start_sleeps_an_idle_task_past_the_threshold() {
+fn start_sleeps_an_idle_box_past_the_threshold() {
     let (w, id) = started(true, |w| {
         probes(w, Some(HookKind::Idle), PaneStatus::Unknown)
     });
@@ -195,14 +195,14 @@ fn start_sleeps_an_idle_task_past_the_threshold() {
     assert_eq!(row(&w, id).lifecycle, BoxLifecycle::Asleep);
 }
 
-/// The kinds of the events of a task.
+/// The kinds of the events of a Box.
 fn kinds(w: &World, id: BoxId) -> Vec<String> {
     let events = w.cx.store().unwrap().events(id, 100).unwrap();
     events.into_iter().map(|e| e.kind).collect()
 }
 
 #[test]
-fn restarting_an_idle_task_whose_agent_is_busy_ends_working_with_a_busy_event() {
+fn restarting_an_idle_box_whose_agent_is_busy_ends_working_with_a_busy_event() {
     let (w, id) = started(true, |w| {
         probes(w, Some(HookKind::Busy), PaneStatus::Unknown)
     });
@@ -213,7 +213,7 @@ fn restarting_an_idle_task_whose_agent_is_busy_ends_working_with_a_busy_event() 
 }
 
 #[test]
-fn restarting_an_idle_task_whose_agent_is_live_and_idle_ends_working_with_a_busy_event() {
+fn restarting_an_idle_box_whose_agent_is_live_and_idle_ends_working_with_a_busy_event() {
     let (w, id) = started(true, |w| {
         probes(w, Some(HookKind::Idle), PaneStatus::Unknown)
     });
@@ -224,7 +224,7 @@ fn restarting_an_idle_task_whose_agent_is_live_and_idle_ends_working_with_a_busy
 }
 
 #[test]
-fn restarting_a_working_task_whose_agent_is_busy_leaves_it_working() {
+fn restarting_a_working_box_whose_agent_is_busy_leaves_it_working() {
     let (w, id) = started(false, |w| {
         probes(w, Some(HookKind::Busy), PaneStatus::Unknown)
     });
@@ -235,7 +235,7 @@ fn restarting_a_working_task_whose_agent_is_busy_leaves_it_working() {
 }
 
 #[test]
-fn a_fresh_start_settles_another_task() {
+fn a_fresh_start_settles_another_box() {
     let (w, id) = started(false, |w| {
         probes(w, Some(HookKind::Idle), PaneStatus::Unknown)
     });
@@ -245,7 +245,7 @@ fn a_fresh_start_settles_another_task() {
 }
 
 #[test]
-fn a_task_that_cannot_be_settled_warns_and_the_others_still_settle() {
+fn a_box_that_cannot_be_settled_warns_and_the_others_still_settle() {
     let mut w = world(FakeDriver::new());
     let bad = BoxId::new(run(&w.cx, &req("bad")).unwrap().boxed.id);
     let id = BoxId::new(run(&w.cx, &req("demo")).unwrap().boxed.id);
@@ -298,7 +298,7 @@ fn registrations(w: &World) -> Vec<String> {
         .collect()
 }
 
-fn show_task() -> ShowReq {
+fn show_box() -> ShowReq {
     ShowReq {
         box_name: Some(BoxName::parse_allow_bare("demo").unwrap()),
         events: None,
@@ -322,7 +322,7 @@ fn the_first_hook_session_id_is_registered_once() {
 fn an_id_a_show_stored_first_is_still_registered_by_the_next_start() {
     let (w, id) = hooked();
     w.surface.have_pane("p-9");
-    show::run(&w.cx, &show_task()).unwrap();
+    show::run(&w.cx, &show_box()).unwrap();
     assert_eq!(row(&w, id).agent_session_id.as_deref(), Some("agent-1"));
     assert!(registrations(&w).is_empty());
     run(&w.cx, &req("demo")).unwrap();

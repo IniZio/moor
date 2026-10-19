@@ -80,7 +80,7 @@ fn an_explicit_base_is_recorded_and_branched_from_as_its_commit() {
 }
 
 #[test]
-fn an_unknown_base_is_refused_without_creating_a_task() {
+fn an_unknown_base_is_refused_without_creating_a_box() {
     let w = world(FakeDriver::new());
     w.proc
         .before(Tool::Git, &["rev-parse", "--verify"], failing());
@@ -105,7 +105,7 @@ fn a_leftover_worktree_with_unpushed_commits_refuses_the_start() {
     let text = err.error.to_string();
     assert!(text.contains(&*stale.path().to_string_lossy()), "{text}");
     assert!(text.contains("2 unpushed"), "{text}");
-    assert!(err.hints.iter().any(|h| h.contains("another Task name")));
+    assert!(err.hints.iter().any(|h| h.contains("another Box name")));
     assert!(!w.surface.calls().iter().any(|c| c.starts_with("remove")));
 }
 

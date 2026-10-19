@@ -17,7 +17,7 @@ use crate::store::{BoxRow, Store};
 /// Run `open-session`.
 ///
 /// # Errors
-/// [`CommandError`] when the Task is unknown, its Box is not Ready, a Session is still live, or
+/// [`CommandError`] when the Box is unknown, its machine is not Ready, a Session is still live, or
 /// the agent could not be launched.
 pub(crate) fn run(cx: &Cx, req: &OpenSessionReq) -> Result<OpenSessionValue, CommandError> {
     let store = cx.store()?;
@@ -26,7 +26,7 @@ pub(crate) fn run(cx: &Cx, req: &OpenSessionReq) -> Result<OpenSessionValue, Com
         .map_err(|e| CommandError::new(ErrorKind::Usage, e.to_string()))?;
     let id = store
         .open_box_by_name(&parsed)?
-        .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no open task {name}")))?
+        .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no open Box {name}")))?
         .id;
     if let Some(parent) = req.parent {
         store.check_parent(parent.get()).map_err(refuse_invalid)?;
@@ -34,7 +34,7 @@ pub(crate) fn run(cx: &Cx, req: &OpenSessionReq) -> Result<OpenSessionValue, Com
     let reload = || {
         store
             .box_row(id)?
-            .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no task {name}")))
+            .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no Box {name}")))
     };
     check(store, &reload()?, name)?;
     let _held = BoxLock::acquire(

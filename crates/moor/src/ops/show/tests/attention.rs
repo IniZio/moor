@@ -10,7 +10,7 @@ use super::{add, cx, req};
 use crate::cx::Cx;
 use crate::testing::driver::FakeDriver;
 
-/// Record an event for task `a`'s id.
+/// Record an event for Box `a`'s id.
 fn record(cx: &Cx, id: moor_core::BoxId, event: &Event) {
     cx.store().unwrap().record_proxy_event(id, event).unwrap();
 }

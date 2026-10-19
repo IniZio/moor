@@ -1,4 +1,4 @@
-//! `sleep`: park a Task's Box.
+//! `sleep`: park a Box's machine.
 //!
 //! Holds the Box lock for the call. Works from Idle, or from Working when no run is in flight.
 
@@ -26,7 +26,7 @@ pub(crate) fn run(cx: &Cx, req: &BoxReq) -> Result<SleepValue, CommandError> {
         .ok_or_else(|| {
             CommandError::new(
                 ErrorKind::Failed,
-                format!("no open task {}", req.box_name.as_str()),
+                format!("no open Box {}", req.box_name.as_str()),
             )
         })?
         .id;
@@ -35,7 +35,7 @@ pub(crate) fn run(cx: &Cx, req: &BoxReq) -> Result<SleepValue, CommandError> {
         store.box_row(id)?.ok_or_else(|| {
             CommandError::new(
                 ErrorKind::Failed,
-                format!("no task {}", req.box_name.as_str()),
+                format!("no Box {}", req.box_name.as_str()),
             )
         })
     };

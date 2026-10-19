@@ -39,7 +39,7 @@ pub(super) fn script_base_yaml(w: &World, yaml: Option<&str>) {
 /// Starts `demo` on a base holding `base` with the Box acquire failing, then leaves
 /// `worktree_yaml` in its worktree.
 ///
-/// The Task is left `SetupFailed` with a lost Box, so the next start provisions a new one.
+/// The Box is left `SetupFailed` with a lost machine, so the next start provisions a new one.
 /// `None` removes the worktree's `.moor.yaml`.
 fn lost_box_on_base(base: &str, worktree_yaml: Option<&str>) -> World {
     let repo = tempfile::tempdir().unwrap();
