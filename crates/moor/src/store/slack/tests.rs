@@ -353,3 +353,35 @@ fn proof_row_keys_box() {
         .unwrap();
     assert_eq!(boxed, id.get());
 }
+
+fn bind_host_thread(store: &Store, thread_ts: &str) {
+    let session = store.open_host_session("/w", None, None).unwrap();
+    assert!(store
+        .bind_session("slack", &format!("C1/{thread_ts}"), session, "U1")
+        .unwrap());
+}
+
+#[test]
+fn host_bound_thread_has_no_box() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = open(dir.path());
+    bind_host_thread(&store, "1.0");
+    assert_eq!(store.slack_thread("C1", "1.0").unwrap(), None);
+}
+
+#[test]
+fn threads_skip_host_bound_and_keep_box_bound() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = open(dir.path());
+    new_task(&store, "t");
+    bind_host_thread(&store, "1.0");
+    store
+        .bind_slack_thread("C1", "2.0", &name("t"), "U2")
+        .unwrap();
+    let threads = store.slack_threads().unwrap();
+    let seen: Vec<_> = threads
+        .iter()
+        .map(|t| (t.thread_ts.as_str(), &t.task))
+        .collect();
+    assert_eq!(seen, [("2.0", &name("t"))]);
+}

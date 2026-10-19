@@ -3,6 +3,7 @@
 use moor_core::{BoxId, BoxName};
 use rusqlite::{params, OptionalExtension};
 
+use super::bindings::insert_binding;
 use super::{parsed, Store, StoreError};
 
 /// DDL for the Slack tables; idempotent so existing version-1 files gain them on open.
@@ -50,7 +51,7 @@ const PROMPT_COLS: &str =
 
 /// Joins a prompt to the Box its Session belongs to.
 const PROMPT_FROM: &str =
-    "slack_prompts p JOIN sessions s ON s.id = p.session JOIN boxes b ON b.id = s.box";
+    "slack_prompts p JOIN sessions s ON s.id = p.session LEFT JOIN boxes b ON b.id = s.box";
 
 /// Front name under which Slack threads are bound.
 const FRONT: &str = "slack";
@@ -131,23 +132,15 @@ impl Store {
         Ok(added == 1)
     }
 
-    /// The Task bound to a Slack thread, if any.
+    /// The Task bound to a Slack thread; `None` when unbound or bound to a host Session.
     pub(crate) fn slack_thread(
         &self,
         channel: &str,
         thread_ts: &str,
     ) -> Result<Option<BoxName>, StoreError> {
-        let raw: Option<String> = self
-            .reader()?
-            .query_row(
-                "SELECT b.name FROM bindings g JOIN sessions s ON s.id = g.session \
-                 JOIN boxes b ON b.id = s.box WHERE g.front = ? AND g.conv_key = ?",
-                params![FRONT, conv_key(channel, thread_ts)],
-                |r| r.get(0),
-            )
-            .optional()?;
-        raw.map(|name| parsed("slack thread task", &name, BoxName::parse_allow_bare))
-            .transpose()
+        Ok(self
+            .binding(FRONT, &conv_key(channel, thread_ts))?
+            .and_then(|b| b.task))
     }
 
     /// The owner of the Task bound to a thread, if bound.
@@ -166,31 +159,21 @@ impl Store {
             .optional()?)
     }
 
-    /// All bound threads, oldest first.
+    /// All Box-bound threads, oldest first; host-bound threads are skipped.
     pub(crate) fn slack_threads(&self) -> Result<Vec<SlackThread>, StoreError> {
-        let reader = self.reader()?;
-        let mut stmt = reader.prepare(
-            "SELECT g.conv_key, b.name, g.owner, g.status_ts FROM bindings g \
-             JOIN sessions s ON s.id = g.session JOIN boxes b ON b.id = s.box \
-             WHERE g.front = ? ORDER BY g.created_at, g.rowid",
-        )?;
-        let rows = stmt
-            .query_map(params![FRONT], |r| {
-                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
-            })?
-            .collect::<Result<Vec<(String, String, String, Option<String>)>, _>>()?;
-        rows.into_iter()
-            .map(|(key, task, owner, status_ts)| {
-                let (channel, thread_ts) = split_conv_key(&key)?;
-                Ok(SlackThread {
-                    channel,
-                    thread_ts,
-                    task: parsed("slack thread task", &task, BoxName::parse_allow_bare)?,
-                    owner,
-                    status_ts,
-                })
-            })
-            .collect()
+        let mut threads = Vec::new();
+        for b in self.bindings(FRONT)? {
+            let Some(task) = b.task else { continue };
+            let (channel, thread_ts) = split_conv_key(&b.key)?;
+            threads.push(SlackThread {
+                channel,
+                thread_ts,
+                task,
+                owner: b.owner,
+                status_ts: b.status_ts,
+            });
+        }
+        Ok(threads)
     }
 
     /// Records the timestamp of a thread's status message.
@@ -219,18 +202,10 @@ impl Store {
         let now = self.now();
         let writer = self.writer()?;
         let (_, session) = open_box_session(&writer, task.as_str())?;
-        let added = writer.execute(
-            "INSERT OR IGNORE INTO bindings (front, conv_key, session, owner, created_at) VALUES (?, ?, ?, ?, ?)",
-            params![
-                FRONT,
-                conv_key(channel, thread_ts),
-                session,
-                owner,
-                now.as_millis()
-            ],
-        )?;
+        let key = conv_key(channel, thread_ts);
+        let added = insert_binding(&writer, FRONT, &key, session, owner, now.as_millis())?;
         drop(writer);
-        Ok(added == 1)
+        Ok(added)
     }
 
     /// True once a prompt was recorded for this `needs_input` event.
@@ -316,7 +291,7 @@ impl Store {
         self.reader()?
             .query_row(
                 &format!(
-                    "SELECT {PROMPT_COLS} FROM {PROMPT_FROM} WHERE p.channel = ? AND p.message_ts = ?"
+                    "SELECT {PROMPT_COLS} FROM {PROMPT_FROM} WHERE b.id IS NOT NULL AND p.channel = ? AND p.message_ts = ?"
                 ),
                 params![channel, message_ts],
                 prompt_from_row,
@@ -336,7 +311,7 @@ impl Store {
             .query_row(
                 &format!(
                     "SELECT {PROMPT_COLS} FROM {PROMPT_FROM} \
-                     WHERE p.channel = ? AND p.thread_ts = ? AND p.answer IS NULL \
+                     WHERE b.id IS NOT NULL AND p.channel = ? AND p.thread_ts = ? AND p.answer IS NULL \
                      ORDER BY p.event_id DESC LIMIT 1"
                 ),
                 params![channel, thread_ts],

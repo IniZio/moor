@@ -5,6 +5,7 @@ use moor_core::{ErrorKind, Request};
 use crate::cx::Cx;
 use crate::error::CommandError;
 
+mod binding;
 mod close;
 pub(crate) mod common;
 mod cp;
@@ -52,6 +53,8 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         Request::OpenHostSession(r) => to_value(&host_session::open(cx, &r)?),
         Request::UpdateHostSession(r) => to_value(&host_session::update(cx, &r)?),
         Request::EndHostSession(r) => to_value(&host_session::end(cx, &r)?),
+        Request::BindSession(r) => to_value(&binding::bind(cx, &r)?),
+        Request::SessionBinding(r) => to_value(&binding::lookup(cx, &r)?),
         other => Err(CommandError::not_implemented(other.cmd())),
     }
 }

@@ -4,6 +4,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::name::{BoxName, SessionId};
 
+mod binding;
+pub use binding::{BindSessionReq, SessionBindingReq};
+
 /// One moor command with its arguments.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "cmd", rename_all = "kebab-case", deny_unknown_fields)]
@@ -26,6 +29,10 @@ pub enum Request {
     UpdateHostSession(UpdateHostSessionReq),
     /// End a host Session.
     EndHostSession(EndHostSessionReq),
+    /// Bind a conversation key to a Session.
+    BindSession(BindSessionReq),
+    /// Look up the Session a conversation key is bound to.
+    SessionBinding(SessionBindingReq),
     /// Publish a report.
     Report(ReportReq),
     /// Show tasks or one task.
@@ -74,6 +81,8 @@ impl Request {
             Self::OpenHostSession(_) => "open-host-session",
             Self::UpdateHostSession(_) => "update-host-session",
             Self::EndHostSession(_) => "end-host-session",
+            Self::BindSession(_) => "bind-session",
+            Self::SessionBinding(_) => "session-binding",
             Self::Report(_) => "report",
             Self::Show(_) => "show",
             Self::Close(_) => "close",
