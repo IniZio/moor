@@ -129,6 +129,7 @@ impl Cmd {
 
 /// Arguments of `start`.
 #[derive(Debug, Args)]
+#[allow(clippy::struct_excessive_bools, reason = "one field per CLI flag")]
 struct StartArgs {
     /// Task name.
     #[arg(value_parser = task_name)]
@@ -154,6 +155,9 @@ struct StartArgs {
     /// Do not launch an agent.
     #[arg(long)]
     no_agent: bool,
+    /// Launch the agent with no first prompt.
+    #[arg(long, conflicts_with = "no_agent")]
+    hold: bool,
     /// Resume the agent's stored session.
     #[arg(long)]
     resume: bool,
@@ -173,6 +177,7 @@ impl From<StartArgs> for StartReq {
             repo: a.repo,
             model: a.model,
             no_agent: a.no_agent,
+            hold: a.hold,
             resume: a.resume,
             trust_moor_yaml: a.trust_moor_yaml,
         }
