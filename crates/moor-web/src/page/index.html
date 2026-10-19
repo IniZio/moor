@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>moor</title>
+<style>
+:root { --bg:#f6f7f9; --fg:#1b1f24; --mut:#667085; --card:#fff; --line:#d0d5dd; --acc:#2457d6; --ok:#177245; --warn:#a15c00; --bad:#b42318; --ask:#7a3dd1; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg:#14171c; --fg:#e6e8eb; --mut:#98a2b3; --card:#1d2129; --line:#364152; --acc:#7aa2ff; --ok:#4cc38a; --warn:#f0b24a; --bad:#ff7b72; --ask:#b794f4; }
+}
+* { box-sizing: border-box; }
+body { margin:0; font:14px/1.45 system-ui, sans-serif; background:var(--bg); color:var(--fg); }
+header { display:flex; gap:1rem; align-items:center; padding:.6rem 1rem; border-bottom:1px solid var(--line); background:var(--card); position:sticky; top:0; z-index:1; }
+header h1 { font-size:1.1rem; margin:0; }
+main { display:grid; grid-template-columns:minmax(0,2fr) minmax(260px,1fr); gap:1rem; padding:1rem; }
+@media (max-width: 800px) { main { grid-template-columns:1fr; } }
+section { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:.75rem; margin-bottom:1rem; }
+h2 { font-size:.95rem; margin:0 0 .5rem; }
+button, input, select, textarea { font:inherit; color:inherit; background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:.25rem .5rem; }
+button { cursor:pointer; background:var(--card); }
+button:hover { border-color:var(--acc); }
+button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible, a:focus-visible { outline:2px solid var(--acc); outline-offset:1px; }
+button.danger { color:var(--bad); }
+a { color:var(--acc); }
+.row { display:flex; flex-wrap:wrap; gap:.4rem; align-items:center; margin:.3rem 0; }
+.row input[type=text] { flex:1 1 10rem; min-width:6rem; }
+.muted { color:var(--mut); font-size:.85em; }
+.badge { padding:0 .45rem; border-radius:999px; border:1px solid currentColor; font-size:.8em; }
+.s-running, .s-working { color:var(--acc); }
+.s-done, .s-ended, .s-ok { color:var(--ok); }
+.s-needs_input { color:var(--ask); font-weight:600; }
+.s-failed, .s-error { color:var(--bad); }
+.s-gone, .s-idle { color:var(--mut); }
+ul[role=tree], ul[role=group] { list-style:none; margin:0; padding:0; }
+ul[role=group] { margin-left:1.2rem; border-left:2px solid var(--line); padding-left:.6rem; }
+[role=treeitem] { margin:.4rem 0; }
+.card { border:1px solid var(--line); border-radius:8px; padding:.5rem .6rem; background:var(--bg); }
+.card.root { border-width:2px; }
+.card.ended { opacity:.7; }
+.ask { border:1px solid var(--ask); border-radius:6px; padding:.4rem; margin:.4rem 0; }
+.msg { font-size:.85em; margin:.2rem 0; white-space:pre-wrap; }
+.msg.bad { color:var(--bad); }
+.msg.warn { color:var(--warn); }
+.jobs { font:12px ui-monospace, monospace; color:var(--mut); }
+details { margin:.3rem 0; }
+#feed { list-style:none; margin:0; padding:0; max-height:70vh; overflow:auto; font:12px ui-monospace, monospace; }
+#feed li { border-bottom:1px solid var(--line); padding:.2rem 0; }
+dialog { background:var(--card); color:var(--fg); border:1px solid var(--line); border-radius:8px; }
+dialog::backdrop { background:rgba(0,0,0,.45); }
+[hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<header>
+  <h1>moor</h1>
+  <span id="conn" role="status" aria-label="Event stream status" class="badge s-idle">connecting</span>
+  <span id="asks" role="status" aria-label="Open questions" class="muted"></span>
+</header>
+<main>
+  <div>
+    <section aria-label="New request">
+      <h2>New request</h2>
+      <div class="row">
+        <select id="new-repo" aria-label="Repository for new request"></select>
+        <input id="new-task" type="text" aria-label="New request task name" placeholder="task name">
+      </div>
+      <div class="row">
+        <input id="new-goal" type="text" aria-label="New request goal" placeholder="goal">
+        <button id="new-start" type="button" aria-label="Start request">Start</button>
+      </div>
+      <div id="new-out" role="status" aria-label="New request progress"></div>
+    </section>
+    <section aria-label="Requests">
+      <h2>Requests</h2>
+      <p id="empty" class="muted">No requests yet.</p>
+      <ul id="tree" role="tree" aria-label="Requests and worker sessions"></ul>
+    </section>
+  </div>
+  <section aria-label="Live events">
+    <h2>Live events</h2>
+    <ul id="feed" role="log" aria-live="polite" aria-label="Live event feed"></ul>
+  </section>
+</main>
+<dialog id="confirm" aria-label="Confirmation dialog">
+  <p id="confirm-text"></p>
+  <div class="row">
+    <button id="confirm-yes" type="button" aria-label="Confirm action">Confirm</button>
+    <button id="confirm-no" type="button" aria-label="Cancel action">Cancel</button>
+  </div>
+</dialog>
+<script src="/app.js" defer></script>
+</body>
+</html>

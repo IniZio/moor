@@ -84,7 +84,7 @@ fn run(args: Args) -> Result<(), String> {
         state_dir: dir,
         clock: unix_now,
     };
-    let handler = actions::start::handler(
+    let handler = moor_web::page::handler(actions::start::handler(
         ctx.clone(),
         actions::end::handler(
             ctx,
@@ -97,7 +97,7 @@ fn run(args: Args) -> Result<(), String> {
                 ),
             )),
         ),
-    );
+    ));
     let server = start(args.port, token, handler).map_err(|e| format!("listen: {e}"))?;
     writeln!(io::stdout(), "{}", server.url()).map_err(|e| e.to_string())?;
     loop {
