@@ -67,7 +67,7 @@ fn split_conv_key(key: &str) -> Result<(String, String), StoreError> {
         .ok_or_else(|| StoreError::Corrupt(format!("slack conversation key `{key}`")))
 }
 
-/// The newest open Box with this name and its primary Session.
+/// The newest open Box with this name and its first Session.
 fn open_box_session(conn: &rusqlite::Connection, name: &str) -> Result<(i64, i64), StoreError> {
     conn.query_row(
         "SELECT b.id, s.id FROM boxes b JOIN sessions s ON s.box = b.id AND s.ordinal = 1 \
