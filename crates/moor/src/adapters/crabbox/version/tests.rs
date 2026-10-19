@@ -125,7 +125,7 @@ fn ops() -> Vec<(&'static str, Op)> {
             };
             c.acquire(&req).is_err()
         }),
-        ("release", |c| c.release(&handle()).is_err()),
+        ("release", |c| c.release(&handle(), None).is_err()),
         ("list", |c| c.list(&ProviderId::new("sprites")).is_err()),
         ("workdir", |c| {
             c.workdir(&handle(), Path::new("/wt")).is_err()
@@ -164,8 +164,8 @@ fn ops() -> Vec<(&'static str, Op)> {
         ("reverse_tunnel", |c| {
             c.reverse_tunnel(&handle(), 1, 2, Path::new("/wt")).is_err()
         }),
-        ("sleep", |c| c.sleep(&handle()).is_err()),
-        ("wake", |c| c.wake(&handle()).is_err()),
+        ("sleep", |c| c.sleep(&handle(), None).is_err()),
+        ("wake", |c| c.wake(&handle(), None).is_err()),
     ]
 }
 

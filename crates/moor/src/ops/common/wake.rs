@@ -3,7 +3,6 @@
 //! The caller holds the Box lock and passes a row read after taking it.
 
 use std::collections::HashMap;
-use std::path::Path;
 
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields};
@@ -13,6 +12,7 @@ use moor_core::{ErrorKind, TaskReq};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
+use crate::ops::common::autosleep::task_dir;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::park::restore_tunnel;
 use crate::ops::common::provision::recorded_workdir;
@@ -92,12 +92,12 @@ fn wake(cx: &Cx, store: &Store, row: &TaskRow) -> Result<Woke, CommandError> {
             let handle = b.handle.as_ref().ok_or_else(|| {
                 CommandError::new(ErrorKind::Refused, "the Box has not been acquired")
             })?;
-            cx.driver().wake(handle)?;
+            cx.driver().wake(handle, Some(task_dir(row)))?;
             if b.workdir
                 .as_deref()
                 .is_none_or(|w| recorded_workdir(w).is_none())
             {
-                let worktree = Path::new(row.worktree.as_deref().unwrap_or(&row.repo));
+                let worktree = task_dir(row);
                 workdir = Some(cx.driver().workdir(handle, worktree)?);
             }
         }

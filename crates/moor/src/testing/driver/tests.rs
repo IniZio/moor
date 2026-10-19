@@ -34,7 +34,7 @@ fn shared_arc_sees_calls_and_vanished_box_is_already_gone() {
     assert_eq!(got.as_ref().map(|a| a.handle.as_str()), Ok("box-1"));
     fake.forget(&BoxHandle::new("box-1"));
     assert_eq!(
-        driver.release(&BoxHandle::new("box-1")),
+        driver.release(&BoxHandle::new("box-1"), None),
         Ok(Released::AlreadyGone)
     );
     assert_eq!(fake.calls(), ["acquire", "release box-1"]);
@@ -249,13 +249,16 @@ fn sleep_and_wake_are_recorded_and_can_fail_once() {
         .fail_sleep(DriverError::Unavailable("x".into()))
         .fail_wake(DriverError::Timeout(Duration::from_secs(1)));
     let h = fake.acquire(&req()).unwrap().handle;
-    assert_eq!(fake.sleep(&h), Err(DriverError::Unavailable("x".into())));
-    assert_eq!(fake.sleep(&h), Ok(SleepOutcome::Slept));
     assert_eq!(
-        fake.wake(&h),
+        fake.sleep(&h, None),
+        Err(DriverError::Unavailable("x".into()))
+    );
+    assert_eq!(fake.sleep(&h, None), Ok(SleepOutcome::Slept));
+    assert_eq!(
+        fake.wake(&h, None),
         Err(DriverError::Timeout(Duration::from_secs(1)))
     );
-    assert_eq!(fake.wake(&h), Ok(()));
+    assert_eq!(fake.wake(&h, None), Ok(()));
     assert_eq!(
         fake.calls(),
         [
@@ -272,10 +275,10 @@ fn sleep_and_wake_are_recorded_and_can_fail_once() {
 fn sleep_outcome_is_scripted_and_gone_box_is_not_found() {
     let fake = FakeDriver::new().sleep_outcome(SleepOutcome::Native);
     let h = fake.acquire(&req()).unwrap().handle;
-    assert_eq!(fake.sleep(&h), Ok(SleepOutcome::Native));
+    assert_eq!(fake.sleep(&h, None), Ok(SleepOutcome::Native));
     fake.forget(&h);
-    assert_eq!(fake.sleep(&h), Err(DriverError::NotFound));
-    assert_eq!(fake.wake(&h), Err(DriverError::NotFound));
+    assert_eq!(fake.sleep(&h, None), Err(DriverError::NotFound));
+    assert_eq!(fake.wake(&h, None), Err(DriverError::NotFound));
 }
 
 #[test]
@@ -340,9 +343,9 @@ fn on_wake_runs_after_a_successful_wake_only() {
     fake.on_wake(move || {
         seen.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     });
-    assert!(fake.wake(&h).is_err());
+    assert!(fake.wake(&h, None).is_err());
     assert_eq!(hits.load(std::sync::atomic::Ordering::SeqCst), 0);
-    assert_eq!(fake.wake(&h), Ok(()));
+    assert_eq!(fake.wake(&h, None), Ok(()));
     assert_eq!(hits.load(std::sync::atomic::Ordering::SeqCst), 1);
 }
 

@@ -221,11 +221,13 @@ pub trait Driver: Send + Sync {
     /// still name the half-made Box for release.
     fn planned_handle(&self, req: &AcquireReq) -> BoxHandle;
 
-    /// Releases a Box; an already-gone Box is not an error.
+    /// Releases a Box; an already-gone Box is not an error. `worktree` is the Task's
+    /// worktree, the directory the Driver runs from so the lease matches the same repo.
     ///
     /// # Errors
     /// Returns a [`DriverError`] when the release fails.
-    fn release(&self, handle: &BoxHandle) -> Result<Released, DriverError>;
+    fn release(&self, handle: &BoxHandle, worktree: Option<&Path>)
+        -> Result<Released, DriverError>;
 
     /// Lists the Boxes the Driver knows under one provider. Each listing's
     /// handle equals the handle `acquire` returned for that Box.
@@ -338,17 +340,21 @@ pub trait Driver: Send + Sync {
         run_each(self, handle, steps, host_cwd, deadline)
     }
 
-    /// Puts the Box to sleep when its provider lets the Driver do so.
+    /// Puts the Box to sleep when its provider lets the Driver do so, running from `worktree`.
     ///
     /// # Errors
     /// Returns a [`DriverError`] when the provider cannot be asked or the suspend fails.
-    fn sleep(&self, handle: &BoxHandle) -> Result<SleepOutcome, DriverError>;
+    fn sleep(
+        &self,
+        handle: &BoxHandle,
+        worktree: Option<&Path>,
+    ) -> Result<SleepOutcome, DriverError>;
 
-    /// Wakes a sleeping Box.
+    /// Wakes a sleeping Box, running from `worktree`.
     ///
     /// # Errors
     /// Returns a [`DriverError`] when the resume fails.
-    fn wake(&self, handle: &BoxHandle) -> Result<(), DriverError>;
+    fn wake(&self, handle: &BoxHandle, worktree: Option<&Path>) -> Result<(), DriverError>;
 }
 
 #[cfg(test)]

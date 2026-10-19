@@ -29,7 +29,7 @@ impl Driver for Scripted {
     fn planned_handle(&self, _: &AcquireReq) -> BoxHandle {
         BoxHandle::new("h")
     }
-    fn release(&self, _: &BoxHandle) -> Result<Released, DriverError> {
+    fn release(&self, _: &BoxHandle, _: Option<&Path>) -> Result<Released, DriverError> {
         no()
     }
     fn list(&self, _: &ProviderId) -> Result<Vec<BoxListing>, DriverError> {
@@ -87,10 +87,10 @@ impl Driver for Scripted {
     ) -> Result<Box<dyn TunnelHandle>, DriverError> {
         no()
     }
-    fn sleep(&self, _: &BoxHandle) -> Result<SleepOutcome, DriverError> {
+    fn sleep(&self, _: &BoxHandle, _: Option<&Path>) -> Result<SleepOutcome, DriverError> {
         no()
     }
-    fn wake(&self, _: &BoxHandle) -> Result<(), DriverError> {
+    fn wake(&self, _: &BoxHandle, _: Option<&Path>) -> Result<(), DriverError> {
         no()
     }
 }

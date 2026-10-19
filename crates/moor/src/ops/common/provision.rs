@@ -369,7 +369,7 @@ fn failed(
     if let Err(write) = store.apply(lost) {
         return write.into();
     }
-    if cx.driver().release(&attempted) == Ok(Released::AlreadyGone) {
+    if cx.driver().release(&attempted, req.worktree.as_deref()) == Ok(Released::AlreadyGone) {
         let gone = Decision::new(id).box_input(BoxInput::DriverMissing);
         if let Err(write) = store.apply(gone) {
             return write.into();

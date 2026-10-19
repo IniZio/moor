@@ -13,7 +13,7 @@ use moor_core::{ErrorKind, TaskReq};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::autosleep::{refuse, sleep_handle, sleep_parked};
+use crate::ops::common::autosleep::{refuse, sleep_handle, sleep_parked, task_dir};
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::view::{hide_unsupported_box_sleep, task_view};
 use crate::store::TaskRow;
@@ -56,7 +56,7 @@ fn sleep_box(cx: &Cx, row: &TaskRow) -> Result<(), CommandError> {
         return Err(refuse(format!("the task is {}", row.state.as_str())));
     }
     let handle = sleep_handle(cx, row)?;
-    match sleep_parked(cx, store, row.id, &handle)? {
+    match sleep_parked(cx, store, row.id, &handle, task_dir(row))? {
         SleepOutcome::Slept | SleepOutcome::Native => {
             let fields = Fields {
                 box_sleep_reason: Field::Clear,

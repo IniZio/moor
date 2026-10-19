@@ -16,8 +16,7 @@ mod tunnel;
 mod version;
 mod workdir;
 
-use std::collections::BTreeMap;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
@@ -259,12 +258,19 @@ impl Driver for Crabbox {
         handle_of(req.provider.as_str(), &slug(req))
     }
 
-    fn release(&self, handle: &BoxHandle) -> Result<Released, DriverError> {
+    fn release(
+        &self,
+        handle: &BoxHandle,
+        worktree: Option<&Path>,
+    ) -> Result<Released, DriverError> {
         self.require_version()?;
-        let spec = Self::spec(QUICK_DEADLINE)
+        let mut spec = Self::spec(QUICK_DEADLINE)
             .arg("stop")
             .args(target_args(handle))
             .arg("--delete");
+        if let Some(dir) = worktree {
+            spec = spec.cwd(dir);
+        }
         let spec = static_env(spec, handle);
         let result = self.call(Op::Release, split_handle(handle).0, &spec);
         self.forget_targets(handle);
@@ -365,14 +371,18 @@ impl Driver for Crabbox {
         connect::connect_argv(self, handle, host_cwd)
     }
 
-    fn sleep(&self, handle: &BoxHandle) -> Result<SleepOutcome, DriverError> {
-        let result = sleep::sleep(self, handle);
+    fn sleep(
+        &self,
+        handle: &BoxHandle,
+        worktree: Option<&Path>,
+    ) -> Result<SleepOutcome, DriverError> {
+        let result = sleep::sleep(self, handle, worktree);
         self.forget_targets(handle);
         result
     }
 
-    fn wake(&self, handle: &BoxHandle) -> Result<(), DriverError> {
-        let result = sleep::wake(self, handle);
+    fn wake(&self, handle: &BoxHandle, worktree: Option<&Path>) -> Result<(), DriverError> {
+        let result = sleep::wake(self, handle, worktree);
         self.forget_targets(handle);
         result
     }
