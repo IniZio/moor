@@ -135,24 +135,6 @@ fn agent_block(out: &mut String, a: &Value) {
     }
 }
 
-/// The proof lines of the detail block: `name  size  sha256` per file.
-fn proof_block(out: &mut String, files: &[Value]) {
-    if files.is_empty() {
-        out.push_str("proof:    none\n");
-        return;
-    }
-    out.push_str("proof:\n");
-    for f in files {
-        let size = f.get("size").and_then(Value::as_u64).unwrap_or(0);
-        let _ = writeln!(
-            out,
-            "  {}  {size}  {}",
-            field(f, "name"),
-            field(f, "sha256")
-        );
-    }
-}
-
 /// The detail block for one task.
 fn detail(task: &Value, value: &Value) -> Option<String> {
     let mut out = String::new();
@@ -194,9 +176,6 @@ fn detail(task: &Value, value: &Value) -> Option<String> {
             (true, false) => "failed",
         };
         let _ = writeln!(out, "{key}: {status}");
-    }
-    if let Some(files) = value.get("proofs").and_then(Value::as_array) {
-        proof_block(&mut out, files);
     }
     if let Some(events) = value.get("events").and_then(Value::as_array) {
         out.push_str("events:\n");

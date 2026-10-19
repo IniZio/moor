@@ -110,19 +110,6 @@ fn warnings_still_go_to_stderr() {
     assert_eq!(err, "moor: warning: careful\n");
 }
 
-#[test]
-fn detail_lists_proof_files() {
-    let hash = "a".repeat(64);
-    let out = show(json!({
-        "task": task("x", true),
-        "proofs": [{"name": "run.log", "size": 12, "sha256": hash}]
-    }));
-    assert!(
-        out.contains(&format!("proof:\n  run.log  12  {hash}\n")),
-        "{out}"
-    );
-}
-
 fn with_attention(mut t: Value) -> Value {
     t.as_object_mut().unwrap().insert(
         "attention".into(),

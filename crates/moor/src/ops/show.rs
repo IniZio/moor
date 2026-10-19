@@ -3,10 +3,8 @@
 
 use std::collections::HashMap;
 
-use moor_core::decide::proof::ProofFile;
-use moor_core::domain::boxes::BoxState;
 use moor_core::view::{AttentionView, EventView, PaneView, ShowView, TaskView};
-use moor_core::{BoxId, ErrorKind, ShowReq, Warning};
+use moor_core::{BoxId, ErrorKind, ShowReq};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -15,7 +13,7 @@ use crate::ops::common::view::{
     task_view_with_run,
 };
 use crate::ops::common::{activity, autosleep, reconcile};
-use crate::store::{Store, TaskRow};
+use crate::store::Store;
 
 /// Lines of the pane kept as the tail.
 const PANE_LINES: usize = 40;
@@ -77,25 +75,6 @@ fn pane_view(
     }))
 }
 
-/// Proof files in the task's Box; none, with a warning, when the Box cannot be read.
-fn proof_files(cx: &Cx, row: &TaskRow) -> Option<Vec<ProofFile>> {
-    let handle = row
-        .boxed
-        .as_ref()
-        .filter(|b| b.state == BoxState::Ready)
-        .and_then(|b| b.handle.as_ref())?;
-    match crate::ops::proof::list(cx, handle, row.id, None) {
-        Ok(files) => Some(files),
-        Err(why) => {
-            cx.warn(Warning {
-                code: "proof_unavailable".to_owned(),
-                message: format!("could not list proof files: {why}"),
-            });
-            None
-        }
-    }
-}
-
 /// The task's open credential limits as views.
 fn attention(store: &Store, task: BoxId) -> Result<Vec<AttentionView>, CommandError> {
     Ok(store
@@ -131,7 +110,6 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
             events: None,
             pane: None,
             reports: None,
-            proofs: None,
         });
     };
     let row = store.latest_task_by_name(name)?.ok_or_else(|| {
@@ -158,7 +136,6 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
         events,
         pane: pane.filter(|_| req.pane),
         reports: None,
-        proofs: proof_files(cx, &row),
     })
 }
 
