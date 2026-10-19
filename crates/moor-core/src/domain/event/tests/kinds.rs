@@ -11,11 +11,7 @@ fn kind_equals_serde_tag_and_payload_has_no_kind() {
         );
         let p = e.payload();
         assert!(p.is_object());
-        if let Event::ArtifactPublished { kind, .. } = &e {
-            assert_eq!(p.get("kind").and_then(|k| k.as_str()), Some(kind.as_str()));
-        } else {
-            assert!(p.get("kind").is_none(), "{e:?}");
-        }
+        assert!(p.get("kind").is_none(), "{e:?}");
     }
 }
 

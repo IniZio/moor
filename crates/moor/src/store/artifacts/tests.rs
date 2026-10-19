@@ -210,7 +210,7 @@ fn add_records_event_and_writes_manifest() {
         serde_json::json!({
             "name": "a.log",
             "version": 1,
-            "kind": row.kind,
+            "artifact_kind": row.kind,
             "content_type": row.content_type,
             "size": 1,
             "sha256": row.sha256,
