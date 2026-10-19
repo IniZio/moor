@@ -31,6 +31,7 @@ impl Event {
             Self::Ran { .. } => "ran",
             Self::Copied { .. } => "copied",
             Self::SessionStarted { .. } => "session_started",
+            Self::SessionEnded { .. } => "session_ended",
             Self::SessionFailed { .. } => "session_failed",
             Self::Relaunched { .. } => "relaunched",
             Self::Checked { .. } => "checked",
