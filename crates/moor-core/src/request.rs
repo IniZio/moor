@@ -9,7 +9,7 @@ pub use binding::{BindSessionReq, SessionBindingReq};
 mod repos;
 pub use repos::ReposReq;
 mod session;
-pub use session::ShowSessionReq;
+pub use session::{SessionsReq, ShowSessionReq};
 mod wait;
 pub use wait::{WaitEventsReq, WaitFor, WaitMode, WaitReq};
 
@@ -43,6 +43,8 @@ pub enum Request {
     SessionBinding(SessionBindingReq),
     /// Show one Session with its child Sessions.
     ShowSession(ShowSessionReq),
+    /// List live Sessions, optionally only the children of one.
+    Sessions(SessionsReq),
     /// Publish a report.
     Report(ReportReq),
     /// Show tasks or one task.
@@ -97,6 +99,7 @@ impl Request {
             Self::BindSession(_) => "bind-session",
             Self::SessionBinding(_) => "session-binding",
             Self::ShowSession(_) => "show-session",
+            Self::Sessions(_) => "sessions",
             Self::Report(_) => "report",
             Self::Show(_) => "show",
             Self::Close(_) => "close",

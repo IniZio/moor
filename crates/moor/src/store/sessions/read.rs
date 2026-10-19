@@ -37,6 +37,11 @@ const SELECT: &str = "SELECT s.id, b.name, s.ordinal, s.parent_session, s.workdi
      FROM sessions s LEFT JOIN boxes b ON b.id = s.box";
 
 impl SessionRecord {
+    /// Whether the Session has ended.
+    pub(crate) fn is_ended(&self) -> bool {
+        self.state == SessionState::Ended || self.ended_at.is_some()
+    }
+
     /// Read a row of [`SELECT`], parsing its Box name and state.
     fn from_row(row: &Row<'_>) -> rusqlite::Result<Result<Self, StoreError>> {
         let name: Option<String> = row.get(1)?;
@@ -75,6 +80,19 @@ impl Store {
         )
         .optional()?
         .transpose()
+    }
+
+    /// Sessions that have not ended, oldest first (by id).
+    ///
+    /// # Errors
+    /// Returns [`StoreError`] when the database fails or a stored name or state is unknown.
+    pub(crate) fn live_sessions(&self) -> Result<Vec<SessionRecord>, StoreError> {
+        let conn = self.reader()?;
+        let mut stmt = conn.prepare(&format!(
+            "{SELECT} WHERE s.state <> ?1 AND s.ended_at IS NULL ORDER BY s.id"
+        ))?;
+        let rows = stmt.query_map([SessionState::Ended.as_str()], SessionRecord::from_row)?;
+        rows.map(|row| row?).collect()
     }
 
     /// Sessions whose parent is `parent`, oldest first (by id).

@@ -13,6 +13,7 @@ fn n(s: &str) -> BoxName {
 fn with_args() -> Vec<Request> {
     let t = || TaskReq { task: n("a") };
     vec![
+        Request::Sessions(SessionsReq { parent: None }),
         Request::Start(StartReq {
             name: n("a"),
             goal: Some("g".into()),
@@ -110,7 +111,7 @@ fn all() -> Vec<Request> {
 #[test]
 fn cmd_equals_serde_tag_and_roundtrips() {
     let reqs = all();
-    assert_eq!(reqs.len(), 22);
+    assert_eq!(reqs.len(), 23);
     for r in reqs {
         let text = serde_json::to_string(&r).unwrap();
         assert!(

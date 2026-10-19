@@ -12,6 +12,15 @@ pub struct ShowSessionReq {
     pub session: SessionId,
 }
 
+/// Arguments of `sessions`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SessionsReq {
+    /// Only the direct children of this Session; every live Session when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<SessionId>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::Request;
@@ -30,6 +39,30 @@ mod tests {
         );
         assert_eq!(req.cmd(), "show-session");
         assert_eq!(serde_json::to_value(&req).expect("serialize"), wire);
+    }
+
+    #[test]
+    fn sessions_round_trips_with_and_without_parent() {
+        let bare = json!({"cmd": "sessions"});
+        let req: Request = serde_json::from_value(bare.clone()).expect("parse");
+        assert_eq!(req, Request::Sessions(SessionsReq { parent: None }));
+        assert_eq!(req.cmd(), "sessions");
+        assert_eq!(serde_json::to_value(&req).expect("serialize"), bare);
+        let wire = json!({"cmd": "sessions", "parent": 3});
+        let req: Request = serde_json::from_value(wire.clone()).expect("parse");
+        assert_eq!(
+            req,
+            Request::Sessions(SessionsReq {
+                parent: Some(SessionId::new(3))
+            })
+        );
+        assert_eq!(serde_json::to_value(&req).expect("serialize"), wire);
+    }
+
+    #[test]
+    fn sessions_refuses_unknown_field() {
+        let wire = json!({"cmd": "sessions", "x": 1});
+        assert!(serde_json::from_value::<Request>(wire).is_err());
     }
 
     #[test]
