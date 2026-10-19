@@ -3,12 +3,11 @@
 use std::ffi::OsString;
 use std::path::PathBuf;
 
-use clap::{Args, Parser, Subcommand, ValueEnum};
+use clap::{Args, Parser, Subcommand};
 use moor_core::controller::WatchFilter;
 use moor_core::request::{EndSessionReq, ShowSessionReq};
 use moor_core::{
-    BoxId, BoxName, ReportReq, Request, RunReq, SessionId, ShowReq, StartReq, SteerReq, WaitFor,
-    WaitReq,
+    BoxId, BoxName, ReportReq, Request, RunReq, SessionId, ShowReq, StartReq, SteerReq,
 };
 
 use super::args_admin::{AdminCmd, GateCmd};
@@ -17,12 +16,14 @@ use super::GlobalOpts;
 use events::EventsArgs;
 use session::SessionCmd;
 use task_ops::{CloseArgs, CpArgs, RemoveArgs, TaskArg};
+use wait::WaitArgs;
 
 mod events;
 mod session;
 mod task_ops;
 #[cfg(test)]
 mod tests;
+mod wait;
 
 /// What a parsed command line asks for.
 #[derive(Debug)]
@@ -276,49 +277,6 @@ impl From<RunArgs> for RunReq {
             argv: a.cmd,
             trust_moor_yaml: a.trust_moor_yaml,
             inherit_output: false,
-        }
-    }
-}
-
-/// States `wait --for` accepts.
-#[derive(Debug, Clone, Copy, ValueEnum)]
-enum WaitForArg {
-    /// Agent idle.
-    Idle,
-    /// Task done.
-    Done,
-    /// Agent needs input, or is idle.
-    Input,
-    /// Run finished.
-    Run,
-}
-
-/// Arguments of `wait`.
-#[derive(Debug, Args)]
-struct WaitArgs {
-    /// Task name.
-    #[arg(value_parser = task_name)]
-    task: BoxName,
-    /// State to wait for.
-    #[arg(long = "for", value_enum)]
-    wait_for: Option<WaitForArg>,
-    /// Timeout in seconds (default 1800).
-    #[arg(long, value_name = "S")]
-    timeout: Option<u64>,
-}
-
-impl From<WaitArgs> for WaitReq {
-    fn from(a: WaitArgs) -> Self {
-        let wait_for = a.wait_for.map(|w| match w {
-            WaitForArg::Idle => WaitFor::Idle,
-            WaitForArg::Done => WaitFor::Done,
-            WaitForArg::Input => WaitFor::Input,
-            WaitForArg::Run => WaitFor::Run,
-        });
-        Self {
-            task: a.task,
-            wait_for,
-            timeout_secs: a.timeout,
         }
     }
 }
