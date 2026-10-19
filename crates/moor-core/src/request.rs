@@ -143,6 +143,9 @@ pub struct StartReq {
     /// Repo known to the controller, by name or url; resolved on the controller host instead of the invocation directory.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repo: Option<String>,
+    /// Parent Session of the Session this request opens.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<SessionId>,
 }
 
 /// Arguments of `run`.
@@ -234,6 +237,9 @@ pub struct OpenSessionReq {
     pub task: String,
     /// Text the agent receives as its first prompt.
     pub seed: String,
+    /// Parent Session of the Session this request opens.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<SessionId>,
 }
 
 /// Arguments of `open-host-session`.
@@ -248,6 +254,9 @@ pub struct OpenHostSessionReq {
     /// Stored agent session to resume.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_session_id: Option<String>,
+    /// Parent Session of the host Session this request opens.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<SessionId>,
 }
 
 /// Arguments of `update-host-session`.

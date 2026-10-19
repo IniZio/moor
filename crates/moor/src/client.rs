@@ -216,7 +216,7 @@ fn session(
         writer,
         &ClientFrame::Request {
             id: REQUEST_ID.to_owned(),
-            request: request.clone(),
+            request: Box::new(request.clone()),
         },
     )
     .map_err(ClientError::Protocol)?;

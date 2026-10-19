@@ -22,7 +22,7 @@ pub enum ClientFrame {
         /// Client-chosen id echoed on the matching response.
         id: String,
         /// The command to run.
-        request: Request,
+        request: Box<Request>,
     },
     /// Streams every stored event whose cursor is greater than `since`; 0 means from the start.
     Watch {

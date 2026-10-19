@@ -25,6 +25,7 @@ fn with_args() -> Vec<Request> {
             resume: false,
             trust_moor_yaml: false,
             repo: None,
+            parent: None,
         }),
         Request::Run(RunReq {
             task: n("a"),
@@ -359,7 +360,8 @@ fn open_session_round_trips() {
         req,
         Request::OpenSession(OpenSessionReq {
             task: "x".into(),
-            seed: "hi".into()
+            seed: "hi".into(),
+            parent: None,
         })
     );
     assert_eq!(req.cmd(), "open-session");
@@ -379,7 +381,8 @@ fn open_host_session_round_trips() {
         Request::OpenHostSession(OpenHostSessionReq {
             workdir: "/w".into(),
             agent: None,
-            agent_session_id: None
+            agent_session_id: None,
+            parent: None,
         })
     );
     assert_eq!(bare.cmd(), "open-host-session");
@@ -393,6 +396,14 @@ fn open_host_session_round_trips() {
 }
 
 #[test]
+fn open_host_session_parent_parses_and_round_trips() {
+    let json = json!({"cmd": "open-host-session", "workdir": "/w", "parent": 4});
+    let req: Request = serde_json::from_value(json.clone()).expect("parse");
+    assert!(matches!(&req, Request::OpenHostSession(r) if r.parent == Some(SessionId::new(4))));
+    assert_eq!(serde_json::to_value(&req).expect("serialize"), json);
+}
+
+#[test]
 fn start_without_hold_parses_as_false_and_hold_round_trips() {
     let bare: StartReq = serde_json::from_value(json!({"name": "a"})).expect("parses");
     assert!(!bare.hold);
@@ -402,4 +413,56 @@ fn start_without_hold_parses_as_false_and_hold_round_trips() {
     let back: StartReq =
         serde_json::from_str(&serde_json::to_string(&held).expect("ser")).expect("de");
     assert_eq!(back, held);
+}
+
+#[test]
+fn start_parent_parses_and_defaults_none() {
+    let with: Request =
+        serde_json::from_value(json!({"cmd": "start", "name": "x", "parent": 7})).expect("parses");
+    assert!(matches!(with, Request::Start(r) if r.parent == Some(SessionId::new(7))));
+    let bare: Request =
+        serde_json::from_value(json!({"cmd": "start", "name": "x"})).expect("parses");
+    assert!(matches!(bare, Request::Start(r) if r.parent.is_none()));
+}
+
+#[test]
+fn open_session_parent_parses_and_defaults_none() {
+    let with: Request = serde_json::from_value(
+        json!({"cmd": "open-session", "task": "t", "seed": "s", "parent": 3}),
+    )
+    .expect("parses");
+    assert!(matches!(with, Request::OpenSession(r) if r.parent == Some(SessionId::new(3))));
+    let bare: Request =
+        serde_json::from_value(json!({"cmd": "open-session", "task": "t", "seed": "s"}))
+            .expect("parses");
+    assert!(matches!(bare, Request::OpenSession(r) if r.parent.is_none()));
+}
+
+#[test]
+fn parent_is_omitted_when_none() {
+    let start = StartReq {
+        name: n("x"),
+        goal: None,
+        issue: None,
+        worktree: None,
+        base: None,
+        model: None,
+        no_agent: false,
+        hold: false,
+        resume: false,
+        trust_moor_yaml: false,
+        repo: None,
+        parent: None,
+    };
+    assert!(!serde_json::to_string(&start)
+        .expect("ser")
+        .contains("parent"));
+    let open = OpenSessionReq {
+        task: "t".into(),
+        seed: "s".into(),
+        parent: None,
+    };
+    assert!(!serde_json::to_string(&open)
+        .expect("ser")
+        .contains("parent"));
 }

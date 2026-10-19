@@ -282,3 +282,87 @@ fn ready_box_with_ended_session_reads_idle() {
     assert_eq!(row.state.as_str(), "idle");
     assert_eq!(row.idle_since.unwrap().as_millis(), 1_005_000);
 }
+
+fn parent_of(store: &crate::store::Store, session: i64) -> Option<i64> {
+    store
+        .reader()
+        .unwrap()
+        .query_row(
+            "SELECT parent_session FROM sessions WHERE id = ?",
+            [session],
+            |row| row.get(0),
+        )
+        .unwrap()
+}
+
+#[test]
+fn open_child_session_records_a_box_or_host_parent() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = new_task(&store, "acme/1");
+    let other = new_task(&store, "acme/2");
+    let box_parent = store.box_sessions(other).unwrap()[0].id;
+    let host = store.open_host_session("/w", None, None).unwrap();
+    end_current(&store, id);
+    let child = store.open_child_session(id, Some(box_parent)).unwrap();
+    assert_eq!(parent_of(&store, child.id), Some(box_parent));
+    end_current(&store, id);
+    let child = store.open_child_session(id, Some(host)).unwrap();
+    assert_eq!(parent_of(&store, child.id), Some(host));
+}
+
+#[test]
+fn open_session_leaves_the_parent_unset() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = new_task(&store, "acme/1");
+    end_current(&store, id);
+    let session = store.open_session(id).unwrap();
+    assert_eq!(parent_of(&store, session.id), None);
+}
+
+#[test]
+fn check_parent_accepts_live_box_and_host_sessions() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = new_task(&store, "acme/1");
+    store
+        .check_parent(store.box_sessions(id).unwrap()[0].id)
+        .unwrap();
+    let host = store.open_host_session("/w", None, None).unwrap();
+    store.check_parent(host).unwrap();
+}
+
+#[test]
+fn check_parent_refuses_unknown_and_ended_sessions() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let err = store.check_parent(9999).unwrap_err();
+    assert!(
+        matches!(&err, StoreError::Invalid(m) if m == "no Session 9999"),
+        "{err:?}"
+    );
+    let host = store.open_host_session("/w", None, None).unwrap();
+    store.end_host_session(host).unwrap();
+    let err = store.check_parent(host).unwrap_err();
+    assert!(
+        matches!(&err, StoreError::Invalid(m) if m == &format!("Session {host} has ended")),
+        "{err:?}"
+    );
+}
+
+#[test]
+fn open_child_session_refuses_an_ended_parent_and_writes_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = new_task(&store, "acme/1");
+    end_current(&store, id);
+    let host = store.open_host_session("/w", None, None).unwrap();
+    store.end_host_session(host).unwrap();
+    let err = store.open_child_session(id, Some(host)).unwrap_err();
+    assert!(
+        matches!(&err, StoreError::Invalid(m) if m == &format!("Session {host} has ended")),
+        "{err:?}"
+    );
+    assert_eq!(store.box_sessions(id).unwrap().len(), 1);
+}

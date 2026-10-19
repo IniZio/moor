@@ -11,7 +11,7 @@ use rusqlite::{params, Transaction};
 
 use super::sql::name_taken;
 use super::Step;
-use crate::store::{reads::load_row_parts, BoxRow, StoreError};
+use crate::store::{reads::load_row_parts, sessions::live_parent, BoxRow, StoreError};
 
 /// The Box and primary Session states a step leaves behind.
 pub(super) type Parts = (BoxLifecycle, SessionState);
@@ -30,7 +30,7 @@ pub(super) fn step_task(
                 return Err(StoreError::Invalid("new Box needs the insert input".into()));
             };
             let parts = box_steps::initial(input)?;
-            let id = insert_task(tx, new, parts.0, now)?;
+            let id = insert_task(tx, new, parts.0, d.parent_session, now)?;
             let to = box_steps::summary(parts.0, parts.1);
             Ok((id, None, Step { from: None, to }, parts))
         }
@@ -86,8 +86,12 @@ pub(in crate::store) fn insert_task(
     tx: &Transaction<'_>,
     new: &NewTask,
     lifecycle: BoxLifecycle,
+    parent_session: Option<i64>,
     now: Ts,
 ) -> Result<BoxId, StoreError> {
+    if let Some(p) = parent_session {
+        live_parent(tx, p)?;
+    }
     tx.execute(
         "INSERT INTO boxes (name, repo, state, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
         params![
@@ -101,8 +105,8 @@ pub(in crate::store) fn insert_task(
     .map_err(|e| name_taken(e, new))?;
     let id = tx.last_insert_rowid();
     tx.execute(
-        "INSERT INTO sessions (box, ordinal, state, started_at) VALUES (?, 1, 'starting', ?)",
-        params![id, now.as_millis()],
+        "INSERT INTO sessions (box, ordinal, state, started_at, parent_session) VALUES (?, 1, 'starting', ?, ?)",
+        params![id, now.as_millis(), parent_session],
     )?;
     Ok(BoxId::new(id))
 }

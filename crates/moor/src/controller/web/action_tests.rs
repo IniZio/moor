@@ -84,6 +84,7 @@ fn start_sends_the_cli_request() {
         resume: false,
         trust_moor_yaml: false,
         repo: Some("app".into()),
+        parent: None,
     });
     assert_eq!(recorded(&calls), vec![expected]);
 }

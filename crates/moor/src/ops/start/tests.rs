@@ -33,6 +33,7 @@ mod lease_dirs;
 mod lease_handle;
 mod leftover;
 mod moor_yaml;
+mod parent;
 mod provider_caps;
 mod proxy;
 mod relaunch;
@@ -127,6 +128,7 @@ fn req(name: &str) -> StartReq {
         resume: false,
         trust_moor_yaml: false,
         repo: None,
+        parent: None,
     }
 }
 

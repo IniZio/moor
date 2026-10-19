@@ -6,7 +6,8 @@ use std::path::PathBuf;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use moor_core::request::EndSessionReq;
 use moor_core::{
-    BoxId, BoxName, ReportReq, Request, RunReq, ShowReq, StartReq, SteerReq, WaitFor, WaitReq,
+    BoxId, BoxName, ReportReq, Request, RunReq, SessionId, ShowReq, StartReq, SteerReq, WaitFor,
+    WaitReq,
 };
 
 use super::args_admin::{AdminCmd, GateCmd};
@@ -38,6 +39,26 @@ pub(super) enum Action {
 /// Parse argv (program name first) into global options and an action.
 pub(super) fn parse(args: Vec<OsString>) -> Result<(GlobalOpts, Action), clap::Error> {
     let cli = Cli::try_parse_from(args)?;
+    Ok((cli.flags.into(), cli.command.into_action()))
+}
+
+/// `parse` with the `MOOR_SESSION` default of `--parent` ignored, so tests do not
+/// depend on the process environment.
+#[cfg(test)]
+pub(super) fn parse_ignoring_env(args: Vec<OsString>) -> Result<(GlobalOpts, Action), clap::Error> {
+    use clap::{CommandFactory, FromArgMatches};
+    fn strip(cmd: clap::Command) -> clap::Command {
+        cmd.mut_args(|a| {
+            if a.get_id() == "parent" {
+                a.env(None::<&str>)
+            } else {
+                a
+            }
+        })
+        .mut_subcommands(strip)
+    }
+    let matches = strip(Cli::command()).try_get_matches_from(args)?;
+    let cli = Cli::from_arg_matches(&matches)?;
     Ok((cli.flags.into(), cli.command.into_action()))
 }
 
@@ -170,6 +191,9 @@ struct StartArgs {
     /// Launch the agent with the Task's .moor.yaml even when it differs from its base commit.
     #[arg(long)]
     trust_moor_yaml: bool,
+    /// Parent Session id; defaults to the `MOOR_SESSION` of the calling agent.
+    #[arg(long, value_name = "ID", env = "MOOR_SESSION")]
+    parent: Option<i64>,
 }
 
 impl From<StartArgs> for StartReq {
@@ -186,6 +210,7 @@ impl From<StartArgs> for StartReq {
             hold: a.hold,
             resume: a.resume,
             trust_moor_yaml: a.trust_moor_yaml,
+            parent: a.parent.map(SessionId::new),
         }
     }
 }

@@ -203,3 +203,61 @@ fn end_twice_is_refused() {
     let err = store.end_host_session(host).unwrap_err();
     assert_eq!(invalid_msg(err), format!("host Session {host} has ended"));
 }
+
+fn parent_col(store: &Store, id: i64) -> Option<i64> {
+    store
+        .reader()
+        .unwrap()
+        .query_row(
+            "SELECT parent_session FROM sessions WHERE id = ?",
+            [id],
+            |r| r.get(0),
+        )
+        .unwrap()
+}
+
+fn session_count(store: &Store) -> i64 {
+    store
+        .reader()
+        .unwrap()
+        .query_row("SELECT COUNT(*) FROM sessions", [], |r| r.get(0))
+        .unwrap()
+}
+
+#[test]
+fn a_child_host_session_records_its_live_parent() {
+    let (_dir, store, _id, host) = with_host("p");
+    let child = store
+        .open_child_host_session("/w", None, None, Some(host))
+        .unwrap();
+    assert_eq!(parent_col(&store, child), Some(host));
+}
+
+#[test]
+fn a_child_host_session_with_an_unknown_parent_is_refused_and_not_inserted() {
+    let (_dir, store, _id, _host) = with_host("p");
+    let before = session_count(&store);
+    let err = store
+        .open_child_host_session("/w", None, None, Some(999))
+        .unwrap_err();
+    assert!(
+        matches!(&err, StoreError::Invalid(m) if m == "no Session 999"),
+        "{err:?}"
+    );
+    assert_eq!(session_count(&store), before);
+}
+
+#[test]
+fn a_child_host_session_with_an_ended_parent_is_refused_and_not_inserted() {
+    let (_dir, store, _id, host) = with_host("p");
+    store.end_host_session(host).unwrap();
+    let before = session_count(&store);
+    let err = store
+        .open_child_host_session("/w", None, None, Some(host))
+        .unwrap_err();
+    assert!(
+        matches!(&err, StoreError::Invalid(m) if m == &format!("Session {host} has ended")),
+        "{err:?}"
+    );
+    assert_eq!(session_count(&store), before);
+}

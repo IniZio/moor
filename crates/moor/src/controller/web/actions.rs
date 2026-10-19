@@ -164,6 +164,7 @@ pub(super) fn build(path: &str, body: &[u8]) -> Result<Request, String> {
                 resume: false,
                 trust_moor_yaml: false,
                 repo: Some(b.repo),
+                parent: None,
             }))
         }
         "/steer" => {

@@ -28,6 +28,7 @@ fn req(workdir: &str) -> OpenHostSessionReq {
         workdir: workdir.to_owned(),
         agent: Some("claude".to_owned()),
         agent_session_id: None,
+        parent: None,
     }
 }
 
@@ -133,4 +134,33 @@ fn dispatch_routes_update_and_end() {
     )
     .unwrap();
     assert!(e.get("state").is_some());
+}
+
+#[test]
+fn open_with_a_live_parent_records_parent_session() {
+    let dir = tempfile::tempdir().unwrap();
+    let cx = cx(dir.path());
+    let parent = open(&cx, &req("/home/me/proj")).unwrap();
+    let mut child_req = req("/home/me/proj");
+    child_req.parent = Some(parent.session);
+    let child = open(&cx, &child_req).unwrap();
+    let db = rusqlite::Connection::open(dir.path().join("moor.db")).unwrap();
+    let got: Option<i64> = db
+        .query_row(
+            "SELECT parent_session FROM sessions WHERE id = ?1",
+            [child.session.get()],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(got, Some(parent.session.get()));
+}
+
+#[test]
+fn open_with_an_unknown_parent_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let cx = cx(dir.path());
+    let mut bad = req("/home/me/proj");
+    bad.parent = Some(SessionId::new(999));
+    let err = open(&cx, &bad).unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Refused);
 }

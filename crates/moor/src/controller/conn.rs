@@ -65,7 +65,7 @@ fn serve<W: Write>(
                 let emit = &mut |frame: ServerFrame| {
                     writer.write_all(frame.to_line().as_bytes()).is_ok() && writer.flush().is_ok()
                 };
-                let envelope = answer(&id, request, emit);
+                let envelope = answer(&id, *request, emit);
                 ServerFrame::Response { id, envelope }
             }
         };
