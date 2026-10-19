@@ -184,7 +184,7 @@ impl RunId {
     }
 }
 
-/// A store-assigned Session id: the row id of one agent session in a Box.
+/// A store-assigned Session id: the row id of one Session, in a Box or on the host.
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
 )]

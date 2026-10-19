@@ -80,6 +80,7 @@ fn structured_text(cmd: &str, value: &Value) -> Option<String> {
         "wait" => wait_text(value),
         "end-session" => end_session_line(value),
         "open-session" => open_session_line(value),
+        "open-host-session" => host_session_line(value),
         _ => None,
     }
 }
@@ -265,6 +266,13 @@ fn open_session_line(value: &Value) -> Option<String> {
     Some(format!(
         "opened Session {ordinal} (id {id}) in {task}{pane}\n"
     ))
+}
+
+/// Formats the `open-host-session` line, or `None` when a field is missing or mistyped.
+fn host_session_line(value: &Value) -> Option<String> {
+    let id = value.get("session")?.as_i64()?;
+    let workdir = value.get("workdir")?.as_str()?;
+    Some(format!("host Session {id} working in {workdir}\n"))
 }
 
 /// Text form of the `env` view: agent, github, token lines, then one line per item.

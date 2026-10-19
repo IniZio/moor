@@ -117,7 +117,7 @@ impl Cmd {
             Self::End(a) => Action::Request(Request::EndSession(EndSessionReq {
                 task: a.task.as_str().to_string(),
             })),
-            Self::Session(c) => Action::Request(Request::OpenSession(c.into())),
+            Self::Session(c) => Action::Request(c.into()),
             Self::Report(a) => Action::Request(Request::Report(a.into())),
             Self::Show(a) => Action::Request(Request::Show(a.into())),
             Self::Close(a) => Action::Request(Request::Close(a.into())),

@@ -3,7 +3,7 @@
 use std::ffi::OsString;
 use std::path::PathBuf;
 
-use moor_core::request::{EndSessionReq, OpenSessionReq};
+use moor_core::request::{EndSessionReq, OpenHostSessionReq, OpenSessionReq};
 use moor_core::{
     BoxId, BoxName, CloseReq, CpReq, EnvReq, GateReq, RemoveReq, ReportReq, Request, RunReq,
     ShowReq, StartReq, SteerReq, TaskReq, WaitFor, WaitReq,
@@ -231,6 +231,55 @@ fn session_open_takes_seed_text() {
             seed: "hi".into()
         })
     );
+}
+
+#[test]
+fn session_open_host_takes_workdir_agent_and_session() {
+    assert_eq!(
+        req(&[
+            "session",
+            "open",
+            "--host",
+            "--workdir",
+            "/w",
+            "--agent",
+            "claude",
+            "--agent-session-id",
+            "abc"
+        ]),
+        Request::OpenHostSession(OpenHostSessionReq {
+            workdir: "/w".into(),
+            agent: Some("claude".into()),
+            agent_session_id: Some("abc".into()),
+        })
+    );
+}
+
+#[test]
+fn session_open_host_refuses_task_seed_and_missing_workdir() {
+    assert!(run(&["session", "open", "--host", "t", "--workdir", "/w"]).is_err());
+    assert!(run(&[
+        "session",
+        "open",
+        "--host",
+        "--workdir",
+        "/w",
+        "--seed",
+        "x"
+    ])
+    .is_err());
+    assert!(run(&["session", "open", "--host"]).is_err());
+    assert!(run(&["session", "open", "t1", "--workdir", "/w"]).is_err());
+}
+
+#[test]
+fn session_open_host_makes_relative_workdir_absolute() {
+    let r = req(&["session", "open", "--host", "--workdir", "w"]);
+    assert!(matches!(
+        r,
+        Request::OpenHostSession(ref h)
+            if std::path::Path::new(&h.workdir).is_absolute() && h.workdir.ends_with('w')
+    ));
 }
 
 #[test]
