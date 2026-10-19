@@ -381,7 +381,8 @@ impl TryFrom<Event> for ExtraEvent {
             | Event::BoxAsleep
             | Event::BoxGone
             | Event::BoxDeleted
-            | Event::BoxReleaseFailed { .. }) => Err(e),
+            | Event::BoxReleaseFailed { .. }
+            | Event::SessionEnded { .. }) => Err(e),
         }
     }
 }
