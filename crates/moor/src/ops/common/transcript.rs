@@ -15,7 +15,7 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::activity::session_ref;
 use crate::ops::common::boxlock::BoxLock;
-use crate::store::{SessionRow, Store, TaskRow};
+use crate::store::{BoxRow, SessionRow, Store};
 
 /// A transcript saved on the host.
 pub(crate) struct Saved {
@@ -33,7 +33,7 @@ pub(crate) struct Saved {
 pub(crate) fn save(
     cx: &Cx,
     store: &Store,
-    row: &TaskRow,
+    row: &BoxRow,
     session: &SessionRow,
     trigger: Trigger,
 ) -> Option<Saved> {
@@ -69,7 +69,7 @@ pub(crate) fn save(
 }
 
 /// Records that no save was made for `trigger`, with the reason.
-pub(crate) fn record_skipped(store: &Store, row: &TaskRow, trigger: Trigger, reason: &str) {
+pub(crate) fn record_skipped(store: &Store, row: &BoxRow, trigger: Trigger, reason: &str) {
     record(store, row, skipped(trigger, reason));
 }
 
@@ -104,7 +104,7 @@ impl From<String> for TryError {
 pub(crate) fn save_on_exit(
     cx: &Cx,
     store: &Store,
-    row: &TaskRow,
+    row: &BoxRow,
     probed: i64,
 ) -> Result<(), CommandError> {
     let Ok(_held) = BoxLock::acquire(
@@ -132,7 +132,7 @@ pub(crate) fn save_on_exit(
 }
 
 /// Whether an exit save failed or was skipped since the Task's latest session started.
-fn exit_save_ended(store: &Store, row: &TaskRow) -> Result<bool, CommandError> {
+fn exit_save_ended(store: &Store, row: &BoxRow) -> Result<bool, CommandError> {
     let events = store.events(row.id, usize::MAX)?;
     Ok(events
         .iter()
@@ -145,7 +145,7 @@ fn exit_save_ended(store: &Store, row: &TaskRow) -> Result<bool, CommandError> {
 }
 
 /// Records `event`; a store failure is dropped so the caller carries on.
-fn record(store: &Store, row: &TaskRow, event: ExtraEvent) {
+fn record(store: &Store, row: &BoxRow, event: ExtraEvent) {
     let _ = store.apply(Decision::new(row.id).event(event));
 }
 
@@ -156,7 +156,7 @@ fn record(store: &Store, row: &TaskRow, event: ExtraEvent) {
 fn try_save(
     cx: &Cx,
     store: &Store,
-    row: &TaskRow,
+    row: &BoxRow,
     session: &SessionRow,
     s: &SessionRef,
 ) -> Result<Option<(Saved, bool)>, TryError> {

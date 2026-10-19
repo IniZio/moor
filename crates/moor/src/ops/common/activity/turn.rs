@@ -5,7 +5,7 @@ use moor_core::decide::turn::{turn_done, HookSignal, TurnFacts};
 
 use super::{PaneLiveness, Reading};
 use crate::error::CommandError;
-use crate::store::{Store, TaskRow};
+use crate::store::{BoxRow, Store};
 
 /// Append one `turn_done` event when the newest unanswered steer's turn is over.
 ///
@@ -13,7 +13,7 @@ use crate::store::{Store, TaskRow};
 /// state step or session end so neither can lose it.
 pub(super) fn note_turn_done(
     store: &Store,
-    row: &TaskRow,
+    row: &BoxRow,
     reading: &Reading,
 ) -> Result<(), CommandError> {
     let Some(steer) = store.unanswered_steer(row.id)? else {

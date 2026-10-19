@@ -10,7 +10,7 @@ use moor_core::activity::{
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::boxes::BoxInput;
-use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
+use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::event::Event;
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::clock::Ts;
@@ -50,7 +50,7 @@ fn cx_with(dir: &Path, driver: FakeDriver) -> (Cx, Arc<ScriptedProc>) {
 
 /// Insert task `demo`.
 fn add(cx: &Cx) -> BoxId {
-    let nt = NewTask {
+    let nt = NewBox {
         name: BoxName::parse_allow_bare("demo").unwrap(),
         repo: "r".into(),
     };

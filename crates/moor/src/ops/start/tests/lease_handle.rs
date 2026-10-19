@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use moor_core::domain::decision::{Decision, NewTask};
+use moor_core::domain::decision::{Decision, NewBox};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::Acquired;
 use moor_core::{BoxHandle, BoxId, BoxName, BoxPath};
@@ -20,7 +20,7 @@ fn state_after_hold(got: &str, key: &str) -> Option<LeaseState> {
     )
     .unwrap();
     let id: BoxId = store
-        .apply(Decision::insert(NewTask {
+        .apply(Decision::insert(NewBox {
             name: BoxName::parse_allow_bare("demo").unwrap(),
             repo: "r".into(),
         }))

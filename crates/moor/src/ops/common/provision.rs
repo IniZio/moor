@@ -25,7 +25,7 @@ use crate::ops::common::identity;
 use crate::ops::common::setup;
 use crate::ops::common::view::task_view;
 use crate::store::lease::LeaseKind;
-use crate::store::{Store, TaskRow};
+use crate::store::{BoxRow, Store};
 
 pub(crate) use self::lease::hold_root;
 use self::lease::hold_workdir;
@@ -39,7 +39,7 @@ use self::retry::{kept_box_retry, retry_in_box};
 ///
 /// # Errors
 /// The row is gone.
-pub(crate) fn reread(store: &Store, id: BoxId) -> Result<TaskRow, CommandError> {
+pub(crate) fn reread(store: &Store, id: BoxId) -> Result<BoxRow, CommandError> {
     store
         .task(id)?
         .ok_or_else(|| CommandError::new(ErrorKind::Internal, "started task vanished"))
@@ -82,7 +82,7 @@ impl Entry {
 pub(crate) fn reprovision(
     cx: &Cx,
     store: &Store,
-    row: &TaskRow,
+    row: &BoxRow,
     op: &str,
     trusted: bool,
     gates: &ResyncGates,
@@ -120,7 +120,7 @@ pub(crate) fn recorded_workdir(stored: &str) -> Option<BoxPath> {
 }
 
 /// How a Task that wants a Box starts over; `None` when it has one or is being provisioned.
-fn entry_for(row: &TaskRow) -> Option<Entry> {
+fn entry_for(row: &BoxRow) -> Option<Entry> {
     let box_state = row.boxed.as_ref().map(|b| b.state);
     match (row.lifecycle, box_state) {
         (BoxLifecycle::Checking, None) if row.intent.is_none() => Some(Entry::Fresh),

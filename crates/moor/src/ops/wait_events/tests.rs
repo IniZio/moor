@@ -8,7 +8,7 @@ use moor_core::controller::ServerFrame;
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::boxes::BoxInput;
-use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, NewTask};
+use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, NewBox};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::AcquireReq;
@@ -43,7 +43,7 @@ fn name(n: &str) -> BoxName {
 }
 
 fn add(cx: &Cx, n: &str) -> BoxId {
-    let nt = NewTask {
+    let nt = NewBox {
         name: name(n),
         repo: "r".into(),
     };

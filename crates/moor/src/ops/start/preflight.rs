@@ -9,7 +9,7 @@ use moor_core::{ErrorKind, StartReq};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::creds::unresolved;
-use crate::store::TaskRow;
+use crate::store::BoxRow;
 
 /// Why the Task must be rejected, naming each unresolved item; `None` when all resolve.
 pub(super) fn rejection(cx: &Cx, settings: &TaskSettings, worktree: &Path) -> Option<String> {
@@ -41,7 +41,7 @@ pub(super) fn checked(settings: &TaskSettings) -> Vec<CheckedCred> {
 }
 
 /// Refuses a `--worktree` that differs from the open Task's worktree.
-pub(super) fn check_bound(cx: &Cx, req: &StartReq, row: &TaskRow) -> Result<(), CommandError> {
+pub(super) fn check_bound(cx: &Cx, req: &StartReq, row: &BoxRow) -> Result<(), CommandError> {
     let (Some(want), Some(have)) = (&req.worktree, &row.worktree) else {
         return Ok(());
     };

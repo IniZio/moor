@@ -14,7 +14,7 @@ use time::OffsetDateTime;
 
 use crate::cx::Cx;
 use crate::ops::common::activity::Reading;
-use crate::store::{DriverRow, EventRow, RunRow, TaskRow};
+use crate::store::{BoxRow, DriverRow, EventRow, RunRow};
 
 #[cfg(test)]
 mod tests;
@@ -101,7 +101,7 @@ fn run_view(r: &RunRow) -> RunView {
 }
 
 /// Map a Task row to the shared Task view; `agent` and `run` stay empty.
-pub(crate) fn task_view(row: &TaskRow, config: &UserConfig) -> TaskView {
+pub(crate) fn task_view(row: &BoxRow, config: &UserConfig) -> TaskView {
     task_view_with_run(row, None, config)
 }
 
@@ -109,7 +109,7 @@ pub(crate) fn task_view(row: &TaskRow, config: &UserConfig) -> TaskView {
 ///
 /// `agent` stays empty.
 pub(crate) fn task_view_with_run(
-    row: &TaskRow,
+    row: &BoxRow,
     run: Option<&RunRow>,
     config: &UserConfig,
 ) -> TaskView {

@@ -2,7 +2,7 @@ use std::path::Path;
 
 use moor_core::seam::proc::Tool;
 use moor_core::seam::surface::Surface;
-use moor_core::TaskName;
+use moor_core::BoxName;
 
 use super::moor_yaml::script_base_yaml;
 use super::setup::{execs, is_setup_line, setup_execs};
@@ -188,7 +188,7 @@ fn a_bound_worktree_keeps_its_own_file_over_a_different_base_copy() {
         .surface
         .create_worktree(
             Path::new("/repo"),
-            &TaskName::parse("repo/pre").unwrap(),
+            &BoxName::parse("repo/pre").unwrap(),
             None,
         )
         .unwrap();

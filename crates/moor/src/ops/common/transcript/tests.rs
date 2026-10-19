@@ -5,7 +5,7 @@ use moor_core::decide::transcript::Trigger;
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::boxes::{BoxInput, BoxState};
-use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
+use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::engine::EngineError;
 use moor_core::{BoxName, ProviderId};
@@ -13,7 +13,7 @@ use serde_json::json;
 
 use super::save;
 use crate::cx::Cx;
-use crate::store::{SessionRow, TaskRow};
+use crate::store::{BoxRow, SessionRow};
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::proc::ScriptedProc;
@@ -33,7 +33,7 @@ fn fx(engine: FakeEngine) -> (tempfile::TempDir, Cx) {
     (dir, cx)
 }
 
-fn ready(cx: &Cx, dir: &std::path::Path) -> (TaskRow, SessionRow) {
+fn ready(cx: &Cx, dir: &std::path::Path) -> (BoxRow, SessionRow) {
     let (row, session) = unregistered(cx, dir);
     let store = cx.store().unwrap();
     store.set_registered_session(session.id, "agent-1").unwrap();
@@ -41,10 +41,10 @@ fn ready(cx: &Cx, dir: &std::path::Path) -> (TaskRow, SessionRow) {
     (row, session)
 }
 
-fn unregistered(cx: &Cx, dir: &std::path::Path) -> (TaskRow, SessionRow) {
+fn unregistered(cx: &Cx, dir: &std::path::Path) -> (BoxRow, SessionRow) {
     let store = cx.store().unwrap();
     let id = store
-        .apply(Decision::insert(NewTask {
+        .apply(Decision::insert(NewBox {
             name: BoxName::parse_allow_bare("t").unwrap(),
             repo: "r".into(),
         }))

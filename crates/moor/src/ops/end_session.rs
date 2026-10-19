@@ -14,7 +14,7 @@ use crate::ops::common::agent_stop::stop_agent;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::transcript;
 use crate::ops::common::wake::wake_and_revive;
-use crate::store::{Store, TaskRow};
+use crate::store::{BoxRow, Store};
 
 /// Run `end-session`.
 ///
@@ -66,7 +66,7 @@ pub(crate) fn run(cx: &Cx, req: &EndSessionReq) -> Result<EndSessionValue, Comma
 }
 
 /// Row id and ordinal of the Box's current Session when it has not ended.
-fn live_session(store: &Store, row: &TaskRow) -> Result<Option<(i64, i64)>, CommandError> {
+fn live_session(store: &Store, row: &BoxRow) -> Result<Option<(i64, i64)>, CommandError> {
     Ok(store
         .box_sessions(row.id)?
         .pop()
@@ -89,7 +89,7 @@ fn reword(e: CommandError, name: &str) -> CommandError {
 }
 
 /// Whether the Task or its Box is asleep.
-fn asleep(row: &TaskRow) -> bool {
+fn asleep(row: &BoxRow) -> bool {
     row.lifecycle == BoxLifecycle::Asleep
         || row
             .boxed

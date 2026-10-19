@@ -9,7 +9,7 @@ use moor_core::{ErrorKind, RunReq};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxwork::{self, BoxWork};
-use crate::store::{Store, TaskRow};
+use crate::store::{BoxRow, Store};
 
 /// Refuses `--sync` together with `--no-sync`.
 ///
@@ -37,7 +37,7 @@ pub(super) fn choose(
     cx: &Cx,
     store: &Store,
     req: &RunReq,
-    row: &TaskRow,
+    row: &BoxRow,
 ) -> Result<SyncMode, CommandError> {
     usage(req)?;
     if req.no_sync {

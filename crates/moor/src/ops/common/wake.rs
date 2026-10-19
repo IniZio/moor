@@ -19,7 +19,7 @@ use crate::ops::common::park::restore_tunnel;
 use crate::ops::common::provision::recorded_workdir;
 use crate::ops::common::view::{hide_unsupported_box_sleep, task_view};
 use crate::ops::start::revive_after_wake;
-use crate::store::{Store, TaskRow};
+use crate::store::{BoxRow, Store};
 
 /// Wake the Task and its Box when either is Asleep, leaving the Proxy tunnel parked.
 ///
@@ -35,7 +35,7 @@ use crate::store::{Store, TaskRow};
 pub(crate) fn wake_box_if_asleep(
     cx: &Cx,
     store: &Store,
-    row: &TaskRow,
+    row: &BoxRow,
 ) -> Result<bool, CommandError> {
     wake(cx, store, row).map(|w| w.any)
 }
@@ -45,7 +45,7 @@ pub(crate) fn wake_box_if_asleep(
 /// A Box can cold-boot on resume and lose its agent process. The tunnel comes
 /// back first because the agent reaches the model through the Proxy. When the
 /// tunnel or the relaunch fails the Box stays awake and the error is returned.
-pub(crate) fn wake_and_revive(cx: &Cx, store: &Store, row: &TaskRow) -> Result<bool, CommandError> {
+pub(crate) fn wake_and_revive(cx: &Cx, store: &Store, row: &BoxRow) -> Result<bool, CommandError> {
     let woke = wake_with_tunnel(cx, store, row)?;
     if woke.box_resumed {
         revive_after_wake(cx, store, row.id)?;
@@ -54,7 +54,7 @@ pub(crate) fn wake_and_revive(cx: &Cx, store: &Store, row: &TaskRow) -> Result<b
 }
 
 /// Wake the Task and Box, then restore the tunnel when the Box was resumed.
-fn wake_with_tunnel(cx: &Cx, store: &Store, row: &TaskRow) -> Result<Woke, CommandError> {
+fn wake_with_tunnel(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Woke, CommandError> {
     let woke = wake(cx, store, row)?;
     if woke.box_resumed {
         // The Box stays awake when the tunnel cannot return; the op fails instead.
@@ -72,7 +72,7 @@ struct Woke {
 }
 
 /// Wake the Task and Box when Asleep and report what was woken.
-fn wake(cx: &Cx, store: &Store, row: &TaskRow) -> Result<Woke, CommandError> {
+fn wake(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Woke, CommandError> {
     let task_asleep = row.lifecycle == BoxLifecycle::Asleep;
     let box_asleep = row
         .boxed
@@ -132,7 +132,7 @@ pub(crate) fn wake_task(
     cx: &Cx,
     req: &TaskReq,
     op: &str,
-    held: impl FnOnce(&TaskRow) -> Result<(), CommandError>,
+    held: impl FnOnce(&BoxRow) -> Result<(), CommandError>,
 ) -> Result<SleepValue, CommandError> {
     let store = cx.store()?;
     let id = store

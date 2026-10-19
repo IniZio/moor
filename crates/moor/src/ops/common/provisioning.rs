@@ -5,10 +5,10 @@ use moor_core::ErrorKind;
 
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::store::TaskRow;
+use crate::store::BoxRow;
 
 /// Refuses a task whose provisioning owner died before recording a Box.
-pub(crate) fn dead_provisioning(cx: &Cx, row: &TaskRow) -> Result<(), CommandError> {
+pub(crate) fn dead_provisioning(cx: &Cx, row: &BoxRow) -> Result<(), CommandError> {
     let (Some(intent), Some(at)) = (row.intent, row.intent_at) else {
         return Ok(());
     };

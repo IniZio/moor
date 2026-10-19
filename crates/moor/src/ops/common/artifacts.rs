@@ -18,7 +18,7 @@ use super::boxlock::BoxLock;
 use super::provision::recorded_workdir;
 use super::reports::{host_of, target};
 use crate::cx::Cx;
-use crate::store::{Store, TaskRow};
+use crate::store::{BoxRow, Store};
 
 /// Wall-clock allowance for the index script.
 const INDEX_DEADLINE: Duration = Duration::from_secs(60);
@@ -93,7 +93,7 @@ fn failed(cx: &Cx, reason: &str) {
 ///
 /// A failure only warns, so the caller's outcome never changes. File contents never appear in
 /// a warning. The caller holds the Box lock.
-pub(crate) fn collect(cx: &Cx, store: &Store, row: &TaskRow) -> usize {
+pub(crate) fn collect(cx: &Cx, store: &Store, row: &BoxRow) -> usize {
     let Some((b, handle)) = target(row) else {
         return 0;
     };
@@ -119,7 +119,7 @@ pub(crate) fn collect(cx: &Cx, store: &Store, row: &TaskRow) -> usize {
 fn run(
     cx: &Cx,
     store: &Store,
-    row: &TaskRow,
+    row: &BoxRow,
     (handle, workdir): (&BoxHandle, &BoxPath),
     stored: &mut usize,
 ) -> Result<(), String> {
@@ -135,7 +135,7 @@ fn run(
 fn stage_and_store(
     cx: &Cx,
     store: &Store,
-    row: &TaskRow,
+    row: &BoxRow,
     (handle, workdir): (&BoxHandle, &BoxPath),
     (dir, staging): (&Path, &Path),
     stored: &mut usize,
@@ -185,7 +185,7 @@ fn stage_and_store(
 fn store_one(
     cx: &Cx,
     store: &Store,
-    row: &TaskRow,
+    row: &BoxRow,
     (handle, workdir): (&BoxHandle, &BoxPath),
     (dir, staging): (&Path, &Path),
     file: &ArtifactFile,

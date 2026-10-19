@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::box_state::SetupOutcome;
-use moor_core::domain::decision::{Decision, ExtraEvent, NewTask};
+use moor_core::domain::decision::{Decision, ExtraEvent, NewBox};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::request::{CloseReq, Request, StartReq, SteerReq};
 use moor_core::seam::clock::Ts;
@@ -26,7 +26,7 @@ fn store(dir: &std::path::Path) -> Store {
 /// Creates an open Box named `name`.
 fn new_box(store: &Store, name: &str) -> moor_core::BoxId {
     store
-        .apply(Decision::insert(NewTask {
+        .apply(Decision::insert(NewBox {
             name: BoxName::parse_allow_bare(name).unwrap(),
             repo: "r".into(),
         }))

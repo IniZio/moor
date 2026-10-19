@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use moor_core::domain::decision::{Decision, NewTask};
+use moor_core::domain::decision::{Decision, NewBox};
 use moor_core::seam::clock::{Clock as _, Ts};
 use moor_core::seam::proxy_host::{ProxyHost as _, ProxySpec, ProxyStatus};
 use moor_core::{BoxId, BoxName, Secret};
@@ -39,7 +39,7 @@ fn fx() -> Fx {
     let rng = Arc::new(FakeRng::default());
     let store = Store::open(&dir.path().join(STORE_FILE), clock.clone()).unwrap();
     let id = store
-        .apply(Decision::insert(NewTask {
+        .apply(Decision::insert(NewBox {
             name: BoxName::parse_allow_bare("t").unwrap(),
             repo: "r".into(),
         }))

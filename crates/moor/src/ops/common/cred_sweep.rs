@@ -12,13 +12,13 @@ use moor_core::seam::driver::ExecSpec;
 use moor_core::seam::proc::Deadline;
 
 use crate::cx::Cx;
-use crate::store::TaskRow;
+use crate::store::BoxRow;
 
 /// Wall-clock allowance for the sweep.
 const SWEEP_DEADLINE: Duration = Duration::from_secs(15);
 
 /// Removes stale credential directories from the Task's Box; best effort, never fails.
-pub(crate) fn sweep(cx: &Cx, row: &TaskRow) {
+pub(crate) fn sweep(cx: &Cx, row: &BoxRow) {
     let Some(boxed) = row.boxed.as_ref().filter(|b| b.state == BoxState::Ready) else {
         return;
     };

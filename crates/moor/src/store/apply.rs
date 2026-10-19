@@ -2,7 +2,7 @@
 
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::{BoxInput, BoxState};
-use moor_core::domain::decision::{Decision, Field, Fields, IntentChange, TaskTarget};
+use moor_core::domain::decision::{BoxTarget, Decision, Field, Fields, IntentChange};
 use moor_core::domain::event::{box_events, lifecycle_events, session_events, Event};
 use moor_core::domain::session_state::SessionState;
 use moor_core::seam::clock::Ts;
@@ -18,7 +18,7 @@ use self::sql::{field_value, flag, text, Sets};
 pub(super) use self::steps::insert_task;
 use self::steps::{step_task, Parts};
 use super::reads::live_holders_in;
-use super::{DriverRow, Store, StoreError, TaskRow};
+use super::{BoxRow, DriverRow, Store, StoreError};
 use moor_core::ProviderId;
 
 /// Result of a committed `apply`.
@@ -63,7 +63,7 @@ impl Store {
     pub(crate) fn apply_admitting(
         &self,
         provider: &ProviderId,
-        decide: impl FnOnce(Vec<TaskRow>) -> Option<Decision>,
+        decide: impl FnOnce(Vec<BoxRow>) -> Option<Decision>,
     ) -> Result<Option<Applied>, StoreError> {
         let now = self.now();
         let mut conn = self.writer()?;
@@ -90,7 +90,7 @@ fn apply_in(tx: &Transaction<'_>, now: Ts, d: Decision) -> Result<Applied, Store
         from: from.map(is_quiet),
         to: is_quiet(parts),
     };
-    if let (TaskTarget::New(_), Field::Set(branch)) = (&d.task, &d.set.branch) {
+    if let (BoxTarget::New(_), Field::Set(branch)) = (&d.target, &d.set.branch) {
         tx.execute(
             "INSERT INTO box_refs (box, kind, value) VALUES (?1, 'branch', ?2) ON CONFLICT DO NOTHING",
             params![id.get(), branch],

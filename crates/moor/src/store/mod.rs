@@ -53,7 +53,7 @@ const SCHEMA_SQL: &str = include_str!("schema.sql");
 /// How long a connection waits on a lock before `SQLITE_BUSY`.
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 /// Column list shared by the task reads; session columns come from the current session.
-const TASK_SELECT: &str = "SELECT b.id, b.name, b.repo, b.issue, b.goal, b.base, b.branch, b.worktree, b.bound, \
+const BOX_SELECT: &str = "SELECT b.id, b.name, b.repo, b.issue, b.goal, b.base, b.branch, b.worktree, b.bound, \
     s.workspace_id, s.agent_session_id, b.state, b.state_reason, b.intent_kind, b.intent_pid, b.intent_run, \
     b.intent_at, b.setup_failed_at, b.created_at, b.updated_at, b.provider, b.handle, b.driver_state, \
     b.attempted_handle, b.workdir, b.egress, b.sleep_reason, b.driver_updated_at, b.idle_since, b.launch_failure, \
@@ -138,7 +138,7 @@ pub(crate) struct DriverRow {
 
 /// Task row with its optional box.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct TaskRow {
+pub(crate) struct BoxRow {
     /// Task id.
     pub(crate) id: BoxId,
     /// Task name.
@@ -231,15 +231,14 @@ impl Store {
     }
 
     /// One task by id.
-    pub(crate) fn task(&self, id: BoxId) -> Result<Option<TaskRow>, StoreError> {
+    pub(crate) fn task(&self, id: BoxId) -> Result<Option<BoxRow>, StoreError> {
         load_task(&self.reader()?, id)
     }
 
     /// Tasks that are neither closed nor rejected, by id ascending.
-    pub(crate) fn open_tasks(&self) -> Result<Vec<TaskRow>, StoreError> {
+    pub(crate) fn open_tasks(&self) -> Result<Vec<BoxRow>, StoreError> {
         let conn = self.reader()?;
-        let sql =
-            format!("{TASK_SELECT} WHERE b.state NOT IN ('closed', 'rejected') ORDER BY b.id");
+        let sql = format!("{BOX_SELECT} WHERE b.state NOT IN ('closed', 'rejected') ORDER BY b.id");
         let mut stmt = conn.prepare(&sql)?;
         let rows = stmt.query_and_then([], task_from_row)?;
         rows.collect()
@@ -290,8 +289,8 @@ impl Store {
 }
 
 /// Load one task joined to its box, on any connection (used inside `apply`'s transaction too).
-pub(super) fn load_task(conn: &Connection, id: BoxId) -> Result<Option<TaskRow>, StoreError> {
-    let mut stmt = conn.prepare(&format!("{TASK_SELECT} WHERE b.id = ?1"))?;
+pub(super) fn load_task(conn: &Connection, id: BoxId) -> Result<Option<BoxRow>, StoreError> {
+    let mut stmt = conn.prepare(&format!("{BOX_SELECT} WHERE b.id = ?1"))?;
     let mut rows = stmt.query_and_then([id.get()], task_from_row)?;
     rows.next().transpose()
 }
@@ -345,8 +344,8 @@ fn box_from_row(row: &Row<'_>) -> Result<Option<DriverRow>, StoreError> {
     }))
 }
 
-/// Map a `TASK_SELECT` row to a `TaskRow`.
-fn task_from_row(row: &Row<'_>) -> Result<TaskRow, StoreError> {
+/// Map a `BOX_SELECT` row to a `BoxRow`.
+fn task_from_row(row: &Row<'_>) -> Result<BoxRow, StoreError> {
     let name: String = row.get(1)?;
     let lifecycle: String = row.get(11)?;
     let session: Option<String> = row.get(30)?;
@@ -355,7 +354,7 @@ fn task_from_row(row: &Row<'_>) -> Result<TaskRow, StoreError> {
         None => SessionState::Starting,
     };
     let lifecycle = parsed_opt("box state", &lifecycle, BoxLifecycle::parse)?;
-    Ok(TaskRow {
+    Ok(BoxRow {
         id: BoxId::new(row.get(0)?),
         name: parsed("task name", &name, BoxName::parse_allow_bare)?,
         repo: row.get(2)?,
