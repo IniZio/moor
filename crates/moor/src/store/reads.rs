@@ -112,7 +112,6 @@ impl Store {
     ///
     /// # Errors
     /// Returns [`StoreError`] when the database fails.
-    #[cfg_attr(not(test), expect(dead_code, reason = "no caller outside tests yet"))]
     pub(crate) fn unanswered_steer(&self, task: BoxId) -> Result<Option<(i64, Ts)>, StoreError> {
         let row = self
             .reader()?
