@@ -348,3 +348,22 @@ fn end_session_round_trips() {
         json!({"cmd": "end-session", "task": "x"})
     );
 }
+
+#[test]
+fn open_session_round_trips() {
+    let req: Request =
+        serde_json::from_value(json!({"cmd": "open-session", "task": "x", "seed": "hi"}))
+            .expect("parse");
+    assert_eq!(
+        req,
+        Request::OpenSession(OpenSessionReq {
+            task: "x".into(),
+            seed: "hi".into()
+        })
+    );
+    assert_eq!(req.cmd(), "open-session");
+    assert_eq!(
+        serde_json::to_value(&req).expect("serialize"),
+        json!({"cmd": "open-session", "task": "x", "seed": "hi"})
+    );
+}
