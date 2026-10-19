@@ -41,6 +41,13 @@ fn with_args() -> Vec<Request> {
             wait_for: Some(WaitFor::Idle),
             timeout_secs: Some(3),
         }),
+        Request::WaitEvents(WaitEventsReq {
+            boxes: vec![n("a"), n("b")],
+            kinds: Some(vec!["turn_done".into()]),
+            mode: WaitMode::All,
+            since: Some(7),
+            timeout_secs: Some(3),
+        }),
         Request::Steer(SteerReq {
             task: n("a"),
             text: Some("x".into()),
@@ -102,7 +109,7 @@ fn all() -> Vec<Request> {
 #[test]
 fn cmd_equals_serde_tag_and_roundtrips() {
     let reqs = all();
-    assert_eq!(reqs.len(), 20);
+    assert_eq!(reqs.len(), 21);
     for r in reqs {
         let text = serde_json::to_string(&r).unwrap();
         assert!(
@@ -465,4 +472,23 @@ fn parent_is_omitted_when_none() {
     assert!(!serde_json::to_string(&open)
         .expect("ser")
         .contains("parent"));
+}
+
+#[test]
+fn wait_events_roundtrips_from_json() {
+    let r: Request =
+        serde_json::from_str(r#"{"cmd":"wait-events","boxes":["a","b"],"mode":"all"}"#).unwrap();
+    assert_eq!(
+        r,
+        Request::WaitEvents(WaitEventsReq {
+            boxes: vec![n("a"), n("b")],
+            kinds: None,
+            mode: WaitMode::All,
+            since: None,
+            timeout_secs: None,
+        })
+    );
+    assert_eq!(r.cmd(), "wait-events");
+    let back: Request = serde_json::from_str(&serde_json::to_string(&r).unwrap()).unwrap();
+    assert_eq!(back, r);
 }

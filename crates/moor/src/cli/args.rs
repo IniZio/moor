@@ -17,6 +17,7 @@ use events::EventsArgs;
 use session::SessionCmd;
 use task_ops::{CloseArgs, CpArgs, RemoveArgs, TaskArg};
 use wait::WaitArgs;
+use wait_events::WaitEventsArgs;
 
 mod events;
 mod session;
@@ -24,6 +25,7 @@ mod task_ops;
 #[cfg(test)]
 mod tests;
 mod wait;
+mod wait_events;
 
 /// What a parsed command line asks for.
 #[derive(Debug)]
@@ -106,6 +108,8 @@ enum Cmd {
     Run(RunArgs),
     /// Wait for a Task state.
     Wait(WaitArgs),
+    /// Wait for events from several Boxes.
+    WaitEvents(WaitEventsArgs),
     /// Send text or a menu choice to the agent.
     Steer(SteerArgs),
     /// End the agent Session; keep the Box open.
@@ -149,6 +153,7 @@ impl Cmd {
             Self::Start(a) => Action::Request(Request::Start(a.into())),
             Self::Run(a) => Action::Request(Request::Run(a.into())),
             Self::Wait(a) => Action::Request(Request::Wait(a.into())),
+            Self::WaitEvents(a) => Action::Request(Request::WaitEvents(a.into())),
             Self::Steer(a) => Action::Request(Request::Steer(a.into())),
             Self::End(a) => Action::Request(Request::EndSession(EndSessionReq {
                 task: a.task.as_str().to_string(),
