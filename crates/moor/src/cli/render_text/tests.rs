@@ -234,6 +234,13 @@ fn steer_prints_one_line() {
     assert_eq!(out, "steered t1\n");
 }
 
+#[test]
+fn end_session_prints_ordinal_id_and_box_kept() {
+    let v = json!({"task": "t1", "session": 7, "ordinal": 2, "box_kept": true});
+    let (out, _) = render(&Response::ok("end-session", Some(v)), false);
+    assert_eq!(out, "ended Session 2 (id 7) in t1; Box kept open\n");
+}
+
 /// A task row named `name` in `state`, with an optional Box state.
 fn lifecycle_task(name: &str, state: &str, box_state: Option<&str>) -> serde_json::Value {
     let b = box_state.map(|s| json!({"state": s, "provider": "local"}));
