@@ -103,6 +103,14 @@ fn names_parse_and_serde_agree() {
 }
 
 #[test]
+fn only_idle_and_ended_are_quiet() {
+    for state in S::ALL {
+        let want = matches!(state, S::Idle | S::Ended);
+        assert_eq!(state.is_quiet(), want, "{}", state.as_str());
+    }
+}
+
+#[test]
 fn input_names_are_unique_snake_case() {
     let mut names: Vec<_> = all_inputs().iter().map(SessionInput::name).collect();
     for n in &names {

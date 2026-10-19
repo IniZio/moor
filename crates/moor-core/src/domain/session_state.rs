@@ -31,6 +31,12 @@ impl SessionState {
         }
     }
 
+    /// Whether the Session lets its Box sleep: Idle or Ended.
+    #[must_use]
+    pub const fn is_quiet(self) -> bool {
+        matches!(self, Self::Idle | Self::Ended)
+    }
+
     /// Parses a `snake_case` state name.
     #[must_use]
     pub fn parse(s: &str) -> Option<Self> {
