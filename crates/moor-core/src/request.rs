@@ -198,6 +198,37 @@ pub struct WaitReq {
     pub timeout_secs: Option<u64>,
 }
 
+/// Arguments of `wait-events`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WaitEventsReq {
+    /// Boxes to watch.
+    pub boxes: Vec<BoxName>,
+    /// Event kinds that count; any kind when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kinds: Option<Vec<String>>,
+    /// Whether any or all Boxes must match.
+    #[serde(default)]
+    pub mode: WaitMode,
+    /// Event cursor to start after; the newest when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub since: Option<i64>,
+    /// Timeout in seconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_secs: Option<u64>,
+}
+
+/// How `wait-events` combines Boxes.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WaitMode {
+    /// One matching Box is enough.
+    #[default]
+    Any,
+    /// Every Box must match.
+    All,
+}
+
 /// Condition for `wait`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
