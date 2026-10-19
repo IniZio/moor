@@ -1,4 +1,4 @@
-//! Tests for the CONNECT-only front listener.
+//! Tests for the front listener.
 
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
@@ -150,7 +150,7 @@ fn assert_refused(request: &[u8]) {
     assert!(reply.starts_with("HTTP/1.1 403 Forbidden\r\n"), "{reply}");
     assert!(reply.contains("Content-Type: application/json\r\n"));
     assert!(reply.contains("Connection: close\r\n"));
-    assert!(reply.ends_with(r#"{"message":"moor: only CONNECT is allowed"}"#));
+    assert!(reply.ends_with(r#"{"message":"moor: only CONNECT or http:// requests are allowed"}"#));
     thread::sleep(Duration::from_millis(200));
     assert!(nono.seen.try_recv().is_err(), "nono received bytes");
     front.stop();
@@ -205,16 +205,112 @@ fn origin_form_reverse_request_is_refused() {
 }
 
 #[test]
-fn absolute_form_requests_are_refused() {
-    assert_refused(b"GET http://example.com/ HTTP/1.1\r\nHost: example.com\r\n\r\n");
+fn origin_form_and_https_absolute_requests_are_refused() {
+    let basic = basic();
+    let auth = format!("Proxy-Authorization: Basic {basic}\r\n");
+    assert_refused(format!("GET /x HTTP/1.1\r\nHost: x\r\n{auth}\r\n").as_bytes());
+    assert_refused(
+        format!("GET https://example.com/ HTTP/1.1\r\nHost: x\r\n{auth}\r\n").as_bytes(),
+    );
+    assert_refused(
+        format!("GET http://u:p@example.com/ HTTP/1.1\r\nHost: x\r\n{auth}\r\n").as_bytes(),
+    );
+    assert_refused(
+        format!("GET http://example.com/#f HTTP/1.1\r\nHost: x\r\n{auth}\r\n").as_bytes(),
+    );
+}
+
+#[test]
+fn absolute_form_without_credential_is_rejected() {
+    assert_unauthorized("GET http://example.com/ HTTP/1.1\r\nHost: example.com\r\n\r\n");
+}
+
+#[test]
+fn plain_get_becomes_connect_then_origin_form_request() {
     let nono = fake(Answer::Echo);
-    let req = format!("GET http://{}/x HTTP/1.1\r\nHost: x\r\n\r\n", nono.addr);
     let front = start(nono.addr);
     let mut c = dial(&front);
+    let basic = basic();
+    let req = format!(
+        "GET http://example.com/x?a=1 HTTP/1.1\r\nHost: example.com\r\nProxy-Authorization: Basic {basic}\r\nProxy-Connection: keep-alive\r\nConnection: keep-alive, X-Hop\r\nX-Hop: 1\r\nAccept: */*\r\n\r\n"
+    );
     c.write_all(req.as_bytes()).unwrap();
-    assert!(read_all(&mut c).starts_with("HTTP/1.1 403 Forbidden"));
+    let connect = String::from_utf8(nono.seen.recv_timeout(WAIT).unwrap()).unwrap();
+    assert_eq!(
+        connect,
+        "CONNECT example.com:80 HTTP/1.1\r\nHost: example.com:80\r\nProxy-Authorization: Bearer internal-token-456\r\n\r\n"
+    );
+    let tunneled = String::from_utf8(nono.seen.recv_timeout(WAIT).unwrap()).unwrap();
+    assert_eq!(
+        tunneled,
+        "GET /x?a=1 HTTP/1.1\r\nHost: example.com\r\nAccept: */*\r\nConnection: close\r\n\r\n"
+    );
+    assert_eq!(read_exact_len(&mut c, tunneled.len()), tunneled.as_bytes());
+    front.stop();
+}
+
+#[test]
+fn plain_post_body_and_default_host_arrive_intact() {
+    let nono = fake(Answer::Echo);
+    let front = start(nono.addr);
+    let mut c = dial(&front);
+    let basic = basic();
+    let req = format!(
+        "POST http://example.com:8080 HTTP/1.1\r\nProxy-Authorization: Basic {basic}\r\nContent-Length: 4\r\n\r\nbody"
+    );
+    c.write_all(req.as_bytes()).unwrap();
+    let connect = String::from_utf8(nono.seen.recv_timeout(WAIT).unwrap()).unwrap();
+    assert!(
+        connect.starts_with("CONNECT example.com:8080 HTTP/1.1\r\n"),
+        "{connect}"
+    );
+    let head = String::from_utf8(nono.seen.recv_timeout(WAIT).unwrap()).unwrap();
+    assert_eq!(
+        head,
+        "POST / HTTP/1.1\r\nContent-Length: 4\r\nHost: example.com:8080\r\nConnection: close\r\n\r\n"
+    );
+    assert_eq!(nono.seen.recv_timeout(WAIT).unwrap(), b"body");
+    front.stop();
+}
+
+#[test]
+fn connection_header_cannot_drop_host_or_content_length() {
+    let nono = fake(Answer::Echo);
+    let front = start(nono.addr);
+    let mut c = dial(&front);
+    let basic = basic();
+    let req = format!(
+        "POST http://example.com/ HTTP/1.1\r\nHost: example.com\r\nProxy-Authorization: Basic {basic}\r\nConnection: host, content-length\r\nContent-Length: 4\r\n\r\nbody"
+    );
+    c.write_all(req.as_bytes()).unwrap();
+    let _connect = nono.seen.recv_timeout(WAIT).unwrap();
+    let head = String::from_utf8(nono.seen.recv_timeout(WAIT).unwrap()).unwrap();
+    assert_eq!(
+        head,
+        "POST / HTTP/1.1\r\nHost: example.com\r\nContent-Length: 4\r\nConnection: close\r\n\r\n"
+    );
+    front.stop();
+}
+
+#[test]
+fn refused_plain_request_is_relayed_and_nothing_enters_the_tunnel() {
+    let nono = fake(Answer::Deny);
+    let front = start(nono.addr);
+    let mut c = dial(&front);
+    let basic = basic();
+    let req = format!(
+        "POST http://example.com/ HTTP/1.1\r\nProxy-Authorization: Basic {basic}\r\nContent-Length: 4\r\n\r\nbody"
+    );
+    c.write_all(req.as_bytes()).unwrap();
+    let reply = read_all(&mut c);
+    assert!(reply.starts_with("HTTP/1.1 407 "), "{reply}");
+    assert!(nono
+        .seen
+        .recv_timeout(WAIT)
+        .unwrap()
+        .starts_with(b"CONNECT example.com:80 "));
     thread::sleep(Duration::from_millis(200));
-    assert!(nono.seen.try_recv().is_err());
+    assert!(nono.seen.try_recv().is_err(), "request entered the tunnel");
     front.stop();
 }
 

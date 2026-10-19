@@ -1,10 +1,11 @@
-//! CONNECT-only listener placed in front of the embedded nono proxy.
+//! Listener placed in front of the embedded nono proxy; it passes CONNECT and
+//! plain-HTTP proxy requests, both as a CONNECT.
 //!
 //! nono also serves origin-form requests (its reverse mode), which dial the
 //! upstream directly with the credential injected and skip the external
-//! proxy, and so skip moor's GraphQL filter. The Box only needs CONNECT
-//! through `HTTPS_PROXY`, so this listener forwards a CONNECT and refuses
-//! every other request before nono sees a byte of it.
+//! proxy, and so skip moor's GraphQL filter. This listener forwards a CONNECT,
+//! turns an absolute-form `http://` request into one (see `plain`), and
+//! refuses every other request before nono sees a byte of it.
 //!
 //! The Box authenticates to this listener with its own nonce. The listener
 //! then swaps that credential for an internal token that only the supervisor
@@ -24,6 +25,7 @@ use std::time::Duration;
 use moor_core::Secret;
 
 mod auth;
+mod plain;
 
 /// Largest request or response head accepted.
 const MAX_HEAD: usize = 8 * 1024;
@@ -40,7 +42,7 @@ const DRAIN_TIMEOUT: Duration = Duration::from_secs(1);
 /// Most bytes drained from a refused client.
 const DRAIN_LIMIT: u64 = 64 * 1024;
 /// Body of the refusal.
-const REFUSAL_BODY: &str = r#"{"message":"moor: only CONNECT is allowed"}"#;
+const REFUSAL_BODY: &str = r#"{"message":"moor: only CONNECT or http:// requests are allowed"}"#;
 /// Body of the credential refusal.
 const AUTH_BODY: &str = r#"{"message":"moor: proxy authentication required"}"#;
 
@@ -167,17 +169,43 @@ fn read_head(src: &mut impl Read) -> Option<Head> {
 fn serve(mut client: TcpStream, target: SocketAddr, creds: &Creds) {
     let _ = client.set_read_timeout(Some(REQUEST_TIMEOUT));
     let _ = client.set_write_timeout(Some(TARGET_TIMEOUT));
-    let head = match read_head(&mut client) {
-        Some(head) if is_connect(&head.bytes) => head,
-        _ => return refuse(client),
+    let Some(head) = read_head(&mut client) else {
+        return refuse(client);
     };
+    if !is_connect(&head.bytes) {
+        return serve_plain(client, target, creds, &head);
+    }
     let Some(rewritten) = auth::authorize(&head.bytes, &creds.box_nonce, &creds.internal) else {
         return deny_auth(client);
     };
     let Some(upstream) = open_upstream(target, &rewritten) else {
         return refuse(client);
     };
-    relay(client, upstream, &head.rest);
+    relay(client, upstream, &Entry::Connect, &head.rest);
+}
+
+/// Handles an absolute-form `http://` request as a CONNECT to nono; every
+/// other non-CONNECT request is refused.
+fn serve_plain(client: TcpStream, target: SocketAddr, creds: &Creds, head: &Head) {
+    let Some(plain) = plain::parse(&head.bytes) else {
+        return refuse(client);
+    };
+    if auth::authorize(&head.bytes, &creds.box_nonce, &creds.internal).is_none() {
+        return deny_auth(client);
+    }
+    let connect = plain::connect_head(&plain.authority, creds.internal.expose());
+    let Some(upstream) = open_upstream(target, &connect) else {
+        return refuse(client);
+    };
+    relay(client, upstream, &Entry::Plain(plain.request), &head.rest);
+}
+
+/// How the client entered the tunnel.
+enum Entry {
+    /// A CONNECT: nono's answer goes to the client.
+    Connect,
+    /// A plain request: the bytes to write into the tunnel once nono accepts.
+    Plain(Vec<u8>),
 }
 
 /// Connects to nono and writes the rewritten head.
@@ -192,17 +220,23 @@ fn open_upstream(target: SocketAddr, head: &[u8]) -> Option<TcpStream> {
 /// Relays nono's answer, then splices the tunnel when nono accepted it.
 /// Client bytes sent after the head stay buffered until nono answers 2xx, so
 /// a refused CONNECT never leaves nono a second request on the connection.
-fn relay(mut client: TcpStream, mut upstream: TcpStream, client_rest: &[u8]) {
+fn relay(mut client: TcpStream, mut upstream: TcpStream, entry: &Entry, client_rest: &[u8]) {
     let Some(answer) = read_head(&mut upstream) else {
         return refuse(client);
     };
-    if client.write_all(&answer.bytes).is_err() {
+    let success = is_success(&answer.bytes);
+    if (!success || matches!(entry, Entry::Connect)) && client.write_all(&answer.bytes).is_err() {
         return;
     }
-    if !is_success(&answer.bytes) {
+    if !success {
         let _ = client.write_all(&answer.rest);
         let _ = client.shutdown(Shutdown::Write);
         return;
+    }
+    if let Entry::Plain(request) = entry {
+        if upstream.write_all(request).is_err() {
+            return;
+        }
     }
     if client.write_all(&answer.rest).is_err() || upstream.write_all(client_rest).is_err() {
         return;

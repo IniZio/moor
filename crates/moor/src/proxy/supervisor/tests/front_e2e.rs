@@ -1,4 +1,5 @@
-//! The front listener passes only `CONNECT`: origin-form and absolute-form requests never reach nono or any upstream.
+//! The front listener passes `CONNECT` and absolute-form `http://` requests, the latter as a `CONNECT`.
+//! Origin-form requests never reach nono or any upstream, and a plain request never carries a credential.
 //!
 //! The `CONNECT` path through the front is covered by `graphql_e2e`, whose client goes through the front port.
 
@@ -15,8 +16,8 @@ use crate::proxy::nono::tests::upstream::{self, Upstream};
 
 /// `base64("moor:" + NONCE)`, the `Proxy-Authorization` credential of a sandbox client.
 const BASIC: &str = "bW9vcjpub25jZV9ncWwtMDEyMzQ1Njc4OQ==";
-/// The body the front answers every non-`CONNECT` request with.
-const REFUSAL: &str = r#"{"message":"moor: only CONNECT is allowed"}"#;
+/// The body the front refuses an origin-form or `https://` request with.
+const REFUSAL: &str = r#"{"message":"moor: only CONNECT or http:// requests are allowed"}"#;
 /// A GraphQL query for a repository that is not the Task's.
 const OTHER_REPO: &str = r#"{"query":"query{repository(owner:\"victim\",name:\"secrets\"){id}}"}"#;
 
@@ -222,28 +223,50 @@ fn origin_form_git_route_is_refused_before_nono() {
 }
 
 #[test]
-fn absolute_form_requests_are_refused_before_nono() {
+fn absolute_form_without_proxy_credential_is_rejected_before_nono() {
     let f = front();
     let nono = f.rig.live.as_ref().unwrap().nono_port();
     let nono_url = format!("http://127.0.0.1:{nono}/github-api__0/graphql");
     let host = format!("127.0.0.1:{nono}");
-    for extra in credentials() {
-        f.refused(&request("GET", &nono_url, &host, &extra, ""));
-        f.refused(&request(
-            "POST",
-            "http://api.github.com/graphql",
-            "api.github.com",
-            &extra,
-            OTHER_REPO,
-        ));
-        f.refused(&request(
-            "POST",
-            &format!("http://localhost:{}/v1/messages", f.claude.port),
-            "localhost",
-            &extra,
-            "{}",
-        ));
+    let port = f.rig.live.as_ref().unwrap().port();
+    for extra in credentials()
+        .into_iter()
+        .filter(|e| e.iter().all(|h| h.starts_with("Authorization")))
+    {
+        let reply = send(port, &request("GET", &nono_url, &host, &extra, ""));
+        assert_eq!(reply.status, 407, "{}", reply.body);
     }
     f.assert_untouched();
+    f.stop();
+}
+
+#[test]
+fn plain_request_to_the_nono_port_is_refused_by_the_guard() {
+    let f = front();
+    let nono = f.rig.live.as_ref().unwrap().nono_port();
+    let port = f.rig.live.as_ref().unwrap().port();
+    let extra = [format!("Proxy-Authorization: Basic {BASIC}")];
+    let target = format!("http://127.0.0.1:{nono}/github-api__0/graphql");
+    let reply = send(
+        port,
+        &request("GET", &target, &format!("127.0.0.1:{nono}"), &extra, ""),
+    );
+    assert_eq!(reply.status, 502, "{}", reply.body);
+    assert!(f.rig.seen().is_empty(), "api.github.com was reached");
+    f.stop();
+}
+
+#[test]
+fn plain_request_to_a_brokered_host_carries_no_credential() {
+    let f = front();
+    let port = f.rig.live.as_ref().unwrap().port();
+    let extra = [format!("Proxy-Authorization: Basic {BASIC}")];
+    let target = format!("http://localhost:{}/v1/messages", f.claude.port);
+    let reply = send(port, &request("POST", &target, "localhost", &extra, "{}"));
+    assert!(!(200..300).contains(&reply.status), "{}", reply.body);
+    for seen in f.claude.seen().iter().chain(f.git.seen().iter()) {
+        assert!(seen.authorization.is_none(), "credential leaked: {seen:?}");
+    }
+    assert!(!reply.body.contains(SECRET));
     f.stop();
 }

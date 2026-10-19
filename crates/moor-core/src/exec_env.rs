@@ -312,7 +312,7 @@ fn proxy_lines(p: &ProxyCtx<'_>) -> Result<Vec<String>, String> {
     lines.extend(yarn_lines(p.box_port));
     for name in ["NO_PROXY", "no_proxy"] {
         lines.push(format!(
-            "export {name}=\"127.0.0.1,localhost${{{name}:+,${name}}}\""
+            "export {name}=\"127.0.0.1,localhost,::1${{{name}:+,${name}}}\""
         ));
     }
     lines.push("export NODE_USE_ENV_PROXY=1".to_owned());
