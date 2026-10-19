@@ -92,7 +92,7 @@ fn header<'a>(head: &'a str, name: &str) -> Option<&'a str> {
 }
 
 /// Serves one chained connection.
-fn serve(mut tcp: TcpStream, ca: &ca::TaskCa, seen: &Mutex<Captured>) {
+fn serve(mut tcp: TcpStream, ca: &ca::BoxCa, seen: &Mutex<Captured>) {
     tcp.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
     let connect = read_head(&mut tcp);
     seen.lock().unwrap_or_else(PoisonError::into_inner).connect = connect;
@@ -124,7 +124,7 @@ fn serve(mut tcp: TcpStream, ca: &ca::TaskCa, seen: &Mutex<Captured>) {
 }
 
 /// Starts the filter; it serves the first connection it gets.
-fn start_filter(ca: ca::TaskCa) -> Filter {
+fn start_filter(ca: ca::BoxCa) -> Filter {
     let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
     listener.set_nonblocking(true).unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -148,7 +148,7 @@ fn start_filter(ca: ca::TaskCa) -> Filter {
 }
 
 /// nono config: one `api.github.com` route chained through `filter_port`.
-fn chained_config(ca: &ca::TaskCa, ca_dir: &Path, filter_port: u16) -> ProxyConfig {
+fn chained_config(ca: &ca::BoxCa, ca_dir: &Path, filter_port: u16) -> ProxyConfig {
     let route = RouteConfig {
         prefix: route_prefix("gh", 0),
         upstream: "https://api.github.com".to_owned(),

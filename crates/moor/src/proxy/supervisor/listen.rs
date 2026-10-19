@@ -16,7 +16,7 @@ use crate::proxy::graphql::http::Head;
 use crate::proxy::graphql::upstream::Upstream;
 use crate::proxy::graphql::{FilterSpec, GraphqlFilter};
 use crate::proxy::guard::Guard;
-use crate::proxy::nono::audit::{apply, EgressSink, TaskSink, Withheld};
+use crate::proxy::nono::audit::{apply, BoxSink, EgressSink, Withheld};
 use crate::proxy::nono::capture::{sources_for, MoorCapture};
 use crate::proxy::nono::{build_config, ca, Chain, NonoProxy, NonoSpec, GITHUB_API_HOST};
 use crate::proxy::ProxyLog;
@@ -173,7 +173,7 @@ pub(super) fn evict_credentialed(
 fn start_filter(
     deps: &Deps<'_>,
     spec: &ProxySpec,
-    ca: &ca::TaskCa,
+    ca: &ca::BoxCa,
     capture: &Arc<MoorCapture>,
 ) -> Result<Option<GraphqlFilter>, String> {
     let rule = spec
@@ -255,7 +255,7 @@ impl Live {
 
     /// Moves the audit events recorded since the last call into the log and the store.
     pub(super) fn drain(&self, deps: &Deps<'_>, task: BoxId) {
-        let sink = TaskSink {
+        let sink = BoxSink {
             log: &self.log,
             store: deps.store,
             task,

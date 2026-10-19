@@ -158,17 +158,17 @@ fn bare_host(host: &str) -> &str {
     }
 }
 
-/// Production sink: proxy log lines and store events for one Task.
-pub(crate) struct TaskSink<'a> {
-    /// The Task's request log.
+/// Production sink: proxy log lines and store events for one Box.
+pub(crate) struct BoxSink<'a> {
+    /// The Box's request log.
     pub(crate) log: &'a ProxyLog,
-    /// Store receiving the Task's events.
+    /// Store receiving the Box's events.
     pub(crate) store: &'a Store,
-    /// The Task the proxy serves.
+    /// The Box the proxy serves.
     pub(crate) task: BoxId,
 }
 
-impl EgressSink for TaskSink<'_> {
+impl EgressSink for BoxSink<'_> {
     fn allowed(&self, method: &str, route: &str, status: u16) {
         self.log.record(method, route, status);
     }
