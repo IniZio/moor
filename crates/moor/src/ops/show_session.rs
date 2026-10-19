@@ -22,13 +22,13 @@ pub(crate) fn run(cx: &Cx, req: &ShowSessionReq) -> Result<SessionView, CommandE
         .into_iter()
         .map(|c| SessionChildView {
             session: SessionId::new(c.id),
-            task: c.task.map(|t| t.as_str().to_owned()),
+            box_name: c.task.map(|t| t.as_str().to_owned()),
             state: c.state.as_str().to_owned(),
         })
         .collect();
     Ok(SessionView {
         session: SessionId::new(row.id),
-        task: row.task.map(|t| t.as_str().to_owned()),
+        box_name: row.task.map(|t| t.as_str().to_owned()),
         ordinal: row.ordinal,
         parent: row.parent.map(SessionId::new),
         workdir: row.workdir,

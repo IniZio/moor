@@ -28,7 +28,7 @@ pub(super) fn show_text(value: &Value) -> Option<String> {
 pub(super) fn session_text(value: &Value) -> Option<String> {
     let id = value.get("session")?.as_i64()?;
     let state = value.get("state")?.as_str()?;
-    let kind = value.get("task").and_then(Value::as_str).unwrap_or("host");
+    let kind = value.get("box").and_then(Value::as_str).unwrap_or("host");
     let mut out = format!("Session {id} {state} ({kind})");
     if let Some(dir) = value.get("workdir").and_then(Value::as_str) {
         let _ = write!(out, " in {dir}");
@@ -38,7 +38,7 @@ pub(super) fn session_text(value: &Value) -> Option<String> {
         let _ = writeln!(out, "agent session {agent}");
     }
     for child in value.get("children")?.as_array()? {
-        let name = child.get("task").and_then(Value::as_str).unwrap_or("host");
+        let name = child.get("box").and_then(Value::as_str).unwrap_or("host");
         let _ = writeln!(
             out,
             "  child {} {name} {}",
