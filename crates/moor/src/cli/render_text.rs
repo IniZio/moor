@@ -51,12 +51,6 @@ fn render_value(resp: &Response, out: &mut String) {
             return;
         }
     }
-    if resp.cmd == "end-session" {
-        if let Some(line) = end_session_line(value) {
-            out.push_str(&line);
-            return;
-        }
-    }
     if resp.cmd == "cp" {
         if let Some(text) = value.get("confirmation").and_then(Value::as_str) {
             out.push_str(text);
@@ -84,6 +78,8 @@ fn structured_text(cmd: &str, value: &Value) -> Option<String> {
         "start" => start_text(value),
         "close" => close_text(value),
         "wait" => wait_text(value),
+        "end-session" => end_session_line(value),
+        "open-session" => open_session_line(value),
         _ => None,
     }
 }
@@ -228,6 +224,21 @@ fn end_session_line(value: &Value) -> Option<String> {
     };
     Some(format!(
         "ended Session {ordinal} (id {id}) in {task}; {kept}\n"
+    ))
+}
+
+/// Formats the `open-session` line, or `None` when a field is missing or mistyped.
+fn open_session_line(value: &Value) -> Option<String> {
+    let task = value.get("task")?.as_str()?;
+    let ordinal = value.get("ordinal")?.as_i64()?;
+    let id = value.get("session")?.as_i64()?;
+    let pane = value
+        .get("pane")
+        .and_then(Value::as_str)
+        .map(|p| format!("; pane {p}"))
+        .unwrap_or_default();
+    Some(format!(
+        "opened Session {ordinal} (id {id}) in {task}{pane}\n"
     ))
 }
 
