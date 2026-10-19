@@ -3,13 +3,13 @@
 use clap::Args;
 use moor_core::{BoxName, WaitEventsReq, WaitMode};
 
-use super::task_name;
+use super::box_name;
 
 /// Arguments of `wait-events`.
 #[derive(Debug, Args)]
 pub(super) struct WaitEventsArgs {
     /// Box names to watch.
-    #[arg(required = true, value_parser = task_name)]
+    #[arg(required = true, value_parser = box_name)]
     boxes: Vec<BoxName>,
     /// Event kind to match; repeatable.
     #[arg(long = "kind", value_name = "KIND")]

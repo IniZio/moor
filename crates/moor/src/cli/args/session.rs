@@ -6,7 +6,7 @@ use moor_core::request::{
 };
 use moor_core::{BoxName, SessionId};
 
-use super::task_name;
+use super::box_name;
 
 /// Verbs under `session`.
 #[derive(Debug, Subcommand)]
@@ -44,9 +44,9 @@ pub(super) struct EndArgs {
 #[derive(Debug, Args)]
 #[command(group(ArgGroup::new("seed_src").args(["seed", "seed_file"])))]
 pub(super) struct OpenArgs {
-    /// Task name.
-    #[arg(value_parser = task_name, required_unless_present = "host", conflicts_with = "host")]
-    task: Option<BoxName>,
+    /// Box name.
+    #[arg(value_parser = box_name, required_unless_present = "host", conflicts_with = "host")]
+    name: Option<BoxName>,
     /// Text for the agent's first prompt.
     #[arg(long, value_name = "TEXT", required_unless_present_any = ["seed_file", "host"], conflicts_with = "host")]
     seed: Option<String>,
@@ -106,7 +106,7 @@ impl From<SessionCmd> for Request {
                 parent: a.parent.map(SessionId::new),
             }),
             None => Self::OpenSession(OpenSessionReq {
-                box_name: a.task.map(|t| t.as_str().to_string()).unwrap_or_default(),
+                box_name: a.name.map(|t| t.as_str().to_string()).unwrap_or_default(),
                 seed: a.seed.or(a.seed_file).unwrap_or_default(),
                 parent: a.parent.map(SessionId::new),
             }),
