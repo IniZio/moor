@@ -33,26 +33,22 @@ impl Store {
     }
 
     /// Newest `idled` or `turn_done` event id of the Box, none when it has had neither.
-    pub(crate) fn newest_turn_event(&self, task: BoxId) -> Result<Option<i64>, StoreError> {
+    pub(crate) fn newest_turn_event(&self, id: BoxId) -> Result<Option<i64>, StoreError> {
         let conn = self.reader()?;
         let newest: Option<i64> = conn
-            .query_row(NEWEST_TURN_EVENT, params![task.get()], |r| r.get(0))
+            .query_row(NEWEST_TURN_EVENT, params![id.get()], |r| r.get(0))
             .optional()?
             .flatten();
         Ok(newest)
     }
 
     /// Records that artifacts were collected through event `through`; never moves backwards.
-    pub(crate) fn set_artifacts_through(
-        &self,
-        task: BoxId,
-        through: i64,
-    ) -> Result<(), StoreError> {
+    pub(crate) fn set_artifacts_through(&self, id: BoxId, through: i64) -> Result<(), StoreError> {
         let conn = self.writer()?;
         conn.execute(
             "INSERT INTO artifact_cursors (box, through) VALUES (?1, ?2) \
              ON CONFLICT(box) DO UPDATE SET through = MAX(through, excluded.through)",
-            params![task.get(), through],
+            params![id.get(), through],
         )?;
         drop(conn);
         Ok(())

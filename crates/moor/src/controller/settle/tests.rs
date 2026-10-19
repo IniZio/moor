@@ -328,7 +328,7 @@ fn a_pass_with_no_new_idle_reads_no_artifacts() {
 }
 
 #[test]
-fn a_steered_turn_on_an_idle_task_ends_and_collects_in_one_pass() {
+fn a_steered_turn_on_an_idle_box_ends_and_collects_in_one_pass() {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(FakeDriver::new().copy_text(BODY));
     let later = Some(Ts::from_millis(i64::MAX / 4));
@@ -362,7 +362,7 @@ fn a_steered_turn_on_an_idle_task_ends_and_collects_in_one_pass() {
 }
 
 #[test]
-fn a_failed_index_warns_and_the_task_still_idles() {
+fn a_failed_index_warns_and_the_box_still_idles() {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(FakeDriver::new().exec_results([Ok(ExecOutcome::Exited { code: 1 })]));
     let (cx, id) = quiet_agent_on(dir.path(), &driver);

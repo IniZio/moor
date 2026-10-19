@@ -49,7 +49,7 @@ fn fx_with(driver: FakeDriver) -> Fx {
     }
 }
 
-/// Admits task `t` with a Ready Box whose recorded workdir is `/work/box-1`.
+/// Admits Box `t` and makes it Ready with recorded workdir `/work/box-1`.
 fn admit(cx: &Cx, driver: &FakeDriver, dir: &Path) -> BoxId {
     let store = cx.store().unwrap();
     let name = BoxName::parse_allow_bare("t").unwrap();

@@ -125,7 +125,7 @@ fn a_start_with_settles_running_during_setup_still_launches() {
 }
 
 #[test]
-fn start_idles_a_quiet_task_without_reading_its_box_for_artifacts() {
+fn start_idles_a_quiet_box_without_reading_its_artifacts() {
     let (w, id) = working_without_session();
     w.cx.clock().sleep(Duration::from_secs(60));
     let other = StartReq {
@@ -141,5 +141,5 @@ fn start_idles_a_quiet_task_without_reading_its_box_for_artifacts() {
         .any(|(_, spec, _)| spec.argv.iter().any(|a| a.contains(".moor/artifacts")));
     assert!(!reads_artifacts);
     let due = w.cx.store().unwrap().artifacts_due().unwrap();
-    assert!(due.iter().any(|(task, _)| *task == id), "{due:?}");
+    assert!(due.iter().any(|(due_id, _)| *due_id == id), "{due:?}");
 }
