@@ -18,6 +18,7 @@ use moor_core::{ErrorKind, Warning};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::BoxLock;
+use crate::ops::common::cred_sweep;
 use crate::ops::common::park::{park_tunnel, restore_tunnel};
 use crate::ops::start::revive_after_wake;
 use crate::store::{Store, StoreError, TaskRow};
@@ -92,7 +93,7 @@ fn try_sleep(cx: &Cx, store: &Store, id: BoxId) -> Result<(), CommandError> {
 /// The agent's ssh session would otherwise outlive the Box until its keepalive gave up. A wake
 /// finds the pane gone and relaunches the agent. A Box that stays awake gets its tunnel back
 /// and its agent relaunched. Both are best effort: the sleep result is what the caller needs
-/// to see.
+/// to see. Stale credential directories are swept first, because a sleeping Box keeps its disk.
 pub(crate) fn sleep_parked(
     cx: &Cx,
     store: &Store,
@@ -104,6 +105,9 @@ pub(crate) fn sleep_parked(
     if let Err(e) = close_agent_pane(cx, store, id) {
         let _ = restore_tunnel(cx, store, id, true);
         return Err(e);
+    }
+    if let Ok(Some(row)) = store.task(id) {
+        cred_sweep::sweep(cx, &row);
     }
     let slept = cx.driver().sleep(handle, Some(worktree));
     if !matches!(slept, Ok(SleepOutcome::Slept | SleepOutcome::Native)) {

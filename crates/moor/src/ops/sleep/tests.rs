@@ -7,7 +7,7 @@ use std::time::Duration;
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
-use moor_core::seam::driver::{AcquireReq, Driver, SleepKind, SleepOutcome};
+use moor_core::seam::driver::{AcquireReq, Driver, DriverError, SleepKind, SleepOutcome};
 use moor_core::seam::surface::SurfaceError;
 use moor_core::secret::Secret;
 use moor_core::{BoxId, BoxName, ErrorKind, ProviderId, TaskReq};
@@ -504,6 +504,25 @@ fn sleep_with_the_pane_already_gone_still_sleeps() {
         .unwrap()
         .begin_session(f.id, "agent-1", Some("p-1"))
         .unwrap();
+    run(&f.cx, &req()).unwrap();
+    assert_eq!(states(&f), (TaskState::Asleep, BoxState::Asleep));
+}
+
+#[test]
+fn sleep_sweeps_stale_credential_dirs_before_the_box_sleeps() {
+    let f = idle();
+    run(&f.cx, &req()).unwrap();
+    let calls = f.driver.calls();
+    let at_sweep = calls.iter().position(|c| c.starts_with("sweep ")).unwrap();
+    let at_nap = calls.iter().position(|c| c.starts_with("sleep ")).unwrap();
+    assert!(at_sweep < at_nap, "{calls:?}");
+    assert_eq!(f.driver.sweeps().len(), 1);
+}
+
+#[test]
+fn sleep_still_sleeps_when_the_sweep_times_out() {
+    let driver = FakeDriver::new().fail_sweep(DriverError::Timeout(Duration::from_secs(15)));
+    let f = idle_with(driver);
     run(&f.cx, &req()).unwrap();
     assert_eq!(states(&f), (TaskState::Asleep, BoxState::Asleep));
 }

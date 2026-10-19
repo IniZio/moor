@@ -7,6 +7,21 @@ use std::path::PathBuf;
 
 use crate::name::{BoxId, BoxName};
 
+/// Shell script that removes stale `.moor-cred-*` directories from a Box home.
+///
+/// Runs on the Box. A directory is live when any process names its path in its command line or
+/// environment: a launch script holds `rm -rf <dir>` in its command line, a proxied agent holds
+/// variables that point into it. Nothing is removed without `/proc` or `$HOME`. The globs expand
+/// before `grep` starts, so `grep` never reads its own command line. A directory named only by a
+/// process the sweeper cannot read (another uid, or a non-dumpable process) counts as stale and is
+/// removed, since `grep` cannot read those `/proc` entries.
+pub const CRED_SWEEP_SCRIPT: &str = "[ -d /proc/self ] && h=${HOME%/} && [ -n \"$h\" ] || exit 0; \
+for d in \"$h\"/.moor-cred-*; do \
+[ -d \"$d\" ] || continue; \
+grep -qsF -- \"$d\" /proc/[0-9]*/cmdline /proc/[0-9]*/environ && continue; \
+rm -rf -- \"$d\"; \
+done";
+
 /// Derives a Box's internal identifiers from its id.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BoxKey(BoxId);
