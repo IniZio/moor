@@ -132,6 +132,7 @@ fn show() -> Request {
         events: Some(100),
         agent: true,
         reports: true,
+        artifacts: false,
         pane: true,
     })
 }

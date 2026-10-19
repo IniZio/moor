@@ -91,6 +91,7 @@ fn a_dead_agent_shows_as_failed_and_wait_fails() {
         events: None,
         agent: true,
         reports: false,
+        artifacts: false,
         pane: false,
     };
     let shown = crate::ops::show::run(&w.cx, &show).unwrap();

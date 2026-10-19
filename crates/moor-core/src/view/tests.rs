@@ -157,6 +157,7 @@ fn show_view_keys_match_wire_shape() {
             title: None,
             path: "p".into(),
         }]),
+        artifacts: None,
     };
     assert_eq!(
         serde_json::to_value(v).ok(),
@@ -164,7 +165,8 @@ fn show_view_keys_match_wire_shape() {
             "tasks": [task_json()], "task": null,
             "events": [{"id": 1, "kind": "ran", "payload": {"a": 1}, "ts": "t"}],
             "pane": {"tail": "x", "status": "ok"},
-            "reports": [{"id": 2, "kind": "k", "version": 1, "title": null, "path": "p"}]
+            "reports": [{"id": 2, "kind": "k", "version": 1, "title": null, "path": "p"}],
+            "artifacts": null
         }))
     );
 }
@@ -177,10 +179,13 @@ fn show_view_absent_sections_are_null() {
         events: None,
         pane: None,
         reports: None,
+        artifacts: None,
     };
     assert_eq!(
         serde_json::to_value(v).ok(),
-        Some(json!({"tasks": [], "task": null, "events": null, "pane": null, "reports": null}))
+        Some(
+            json!({"tasks": [], "task": null, "events": null, "pane": null, "reports": null, "artifacts": null})
+        )
     );
 }
 
@@ -192,10 +197,13 @@ fn show_view_single_task_omits_tasks() {
         events: None,
         pane: None,
         reports: None,
+        artifacts: None,
     };
     assert_eq!(
         serde_json::to_value(v).ok(),
-        Some(json!({"task": task_json(), "events": null, "pane": null, "reports": null}))
+        Some(
+            json!({"task": task_json(), "events": null, "pane": null, "reports": null, "artifacts": null})
+        )
     );
 }
 

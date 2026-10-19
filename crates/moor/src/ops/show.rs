@@ -110,6 +110,7 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
             events: None,
             pane: None,
             reports: None,
+            artifacts: None,
         });
     };
     let row = store.latest_task_by_name(name)?.ok_or_else(|| {
@@ -136,6 +137,7 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
         events,
         pane: pane.filter(|_| req.pane),
         reports: None,
+        artifacts: None,
     })
 }
 

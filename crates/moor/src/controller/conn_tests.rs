@@ -47,6 +47,7 @@ fn show(task: Option<BoxName>) -> Request {
         events: None,
         agent: false,
         reports: false,
+        artifacts: false,
         pane: false,
     })
 }
