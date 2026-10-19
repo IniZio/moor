@@ -9,7 +9,7 @@ use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 use std::thread;
 
-use moor_core::seam::proc::{Output, ProcError, ProcSpec};
+use moor_core::seam::proc::{Output, ProcError, ProcSpec, StderrGate};
 use signal_hook::consts::{SIGINT, SIGTERM};
 
 use super::{
@@ -99,10 +99,83 @@ fn sinks(
     }
 }
 
+/// Where a gated stream stands relative to its marker lines.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Phase {
+    /// The begin marker has not appeared.
+    Before,
+    /// Between the markers: lines are forwarded.
+    Open,
+    /// The end marker has passed.
+    After,
+}
+
+/// Line filter that forwards only what lies between two marker lines.
+struct Gate {
+    /// The marker lines, matched whole.
+    markers: StderrGate,
+    /// Position relative to the markers.
+    phase: Phase,
+    /// Bytes of the line being read.
+    line: Vec<u8>,
+}
+
+impl Gate {
+    /// A closed gate over `markers`.
+    const fn new(markers: StderrGate) -> Self {
+        Self {
+            markers,
+            phase: Phase::Before,
+            line: Vec::new(),
+        }
+    }
+
+    /// Takes the next bytes and returns the ones to forward.
+    fn feed(&mut self, chunk: &[u8]) -> Vec<u8> {
+        let mut out = Vec::new();
+        for &b in chunk {
+            self.line.push(b);
+            if b == b'\n' {
+                self.finish_line(&mut out);
+            }
+        }
+        out
+    }
+
+    /// Handles a final line that never got its newline; call at EOF.
+    fn finish(&mut self) -> Vec<u8> {
+        let mut out = Vec::new();
+        if !self.line.is_empty() {
+            self.finish_line(&mut out);
+        }
+        out
+    }
+
+    /// Classifies the buffered line, appending it to `out` when it is forwarded.
+    fn finish_line(&mut self, out: &mut Vec<u8>) {
+        let line = std::mem::take(&mut self.line);
+        let text = line.strip_suffix(b"\n").unwrap_or(&line);
+        let text = text.strip_suffix(b"\r").unwrap_or(text);
+        match self.phase {
+            Phase::Before if text == self.markers.begin.as_bytes() => self.phase = Phase::Open,
+            Phase::Open if text == self.markers.end.as_bytes() => self.phase = Phase::After,
+            Phase::Open => out.extend_from_slice(&line),
+            Phase::Before | Phase::After => {}
+        }
+    }
+}
+
+/// Writes and flushes `bytes`, returning whether the sink still works.
+fn emit(sink: &mut impl Write, bytes: &[u8]) -> bool {
+    bytes.is_empty() || sink.write_all(bytes).and_then(|()| sink.flush()).is_ok()
+}
+
 /// Copies `src` to `sink` as it arrives, keeping the last [`TAIL`] bytes in
 /// `tail` as they come so a reader need not wait for EOF.
+/// With a `gate`, the sink gets only the lines between its markers, but the
+/// tail still keeps every byte.
 /// Keeps draining when the sink fails so the child never blocks on a full pipe.
-fn tee(mut src: impl Read, mut sink: impl Write, tail: &Mutex<Vec<u8>>) {
+fn tee(mut src: impl Read, mut sink: impl Write, tail: &Mutex<Vec<u8>>, mut gate: Option<Gate>) {
     let mut buf = [0u8; 8192];
     let mut writable = true;
     loop {
@@ -114,12 +187,18 @@ fn tee(mut src: impl Read, mut sink: impl Write, tail: &Mutex<Vec<u8>>) {
         };
         let chunk = buf.get(..n).unwrap_or_default();
         if writable {
-            writable = sink.write_all(chunk).and_then(|()| sink.flush()).is_ok();
+            writable = match gate.as_mut() {
+                Some(g) => emit(&mut sink, &g.feed(chunk)),
+                None => emit(&mut sink, chunk),
+            };
         }
         let mut tail = tail.lock().unwrap_or_else(PoisonError::into_inner);
         tail.extend_from_slice(chunk);
         let excess = tail.len().saturating_sub(TAIL);
         tail.drain(..excess);
+    }
+    if let (true, Some(g)) = (writable, gate.as_mut()) {
+        emit(&mut sink, &g.finish());
     }
 }
 
@@ -165,9 +244,10 @@ impl SystemProc {
         let tail = Arc::new(Mutex::new(Vec::new()));
         let (ttx, trx) = mpsc::channel();
         let tee_tail = Arc::clone(&tail);
+        let gate = spec.stderr_gate.clone().map(Gate::new);
         thread::spawn(move || {
             if let Some(p) = err_pipe {
-                tee(p, err_sink, &tee_tail);
+                tee(p, err_sink, &tee_tail, gate);
             }
             ttx.send(()).ok();
         });

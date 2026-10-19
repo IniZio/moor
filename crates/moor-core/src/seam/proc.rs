@@ -1,16 +1,12 @@
 //! Proc seam: the single spawner every adapter shells out through.
 
-use std::ffi::OsString;
-use std::fmt;
-use std::path::PathBuf;
-use std::time::Duration;
-
 use crate::secret::Secret;
-
+use std::{ffi::OsString, fmt, path::PathBuf, time::Duration};
 mod first_line;
+mod gate;
 mod signal;
-
 pub use first_line::FirstLineError;
+pub use gate::StderrGate;
 pub use signal::{check_group, Signal};
 
 /// An external program moor may run.
@@ -154,6 +150,8 @@ pub struct ProcSpec {
     pub stdin: Stdin,
     /// Time limit.
     pub deadline: Deadline,
+    /// Only stderr lines strictly between the begin and end marker lines are forwarded or logged by `Proc::run_streamed`; other calls ignore it.
+    pub stderr_gate: Option<StderrGate>,
 }
 
 impl ProcSpec {
@@ -167,6 +165,7 @@ impl ProcSpec {
             env: EnvAllow::default(),
             stdin: Stdin::Null,
             deadline,
+            stderr_gate: None,
         }
     }
 
@@ -329,7 +328,8 @@ pub trait Proc: Send + Sync {
 
     /// Runs to completion with output streamed to `out`; interrupting moor
     /// stops the child's process group. A non-zero exit is
-    /// [`ProcError::NonZero`] with empty `stdout` and the stderr tail.
+    /// [`ProcError::NonZero`] with empty `stdout` and the stderr tail. With
+    /// `spec.stderr_gate` set only gated stderr is shown; the tail keeps every line.
     ///
     /// # Errors
     /// [`ProcError`] on spawn failure, timeout, signal, interrupt or non-zero exit.
