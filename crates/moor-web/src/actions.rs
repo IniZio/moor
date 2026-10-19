@@ -6,6 +6,7 @@
 use crate::client::Client;
 use crate::http::{Handler, HttpRequest, HttpResponse, Reply};
 
+pub mod end;
 pub mod start;
 mod steer;
 

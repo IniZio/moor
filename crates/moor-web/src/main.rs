@@ -85,15 +85,18 @@ fn run(args: Args) -> Result<(), String> {
         clock: unix_now,
     };
     let handler = actions::start::handler(
-        ctx,
-        jobs.handler(views::handler(
-            client.clone(),
-            db.clone(),
-            actions::handler(
+        ctx.clone(),
+        actions::end::handler(
+            ctx,
+            jobs.handler(views::handler(
                 client.clone(),
-                watch::handler(client, db, RelayConfig::default()),
-            ),
-        )),
+                db.clone(),
+                actions::handler(
+                    client.clone(),
+                    watch::handler(client, db, RelayConfig::default()),
+                ),
+            )),
+        ),
     );
     let server = start(args.port, token, handler).map_err(|e| format!("listen: {e}"))?;
     writeln!(io::stdout(), "{}", server.url()).map_err(|e| e.to_string())?;
