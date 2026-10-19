@@ -18,6 +18,8 @@ pub enum Request {
     Steer(SteerReq),
     /// End a task's live agent session and keep its box.
     EndSession(EndSessionReq),
+    /// Open a fresh agent session on a ready box, seeded with a first prompt.
+    OpenSession(OpenSessionReq),
     /// Publish a report.
     Report(ReportReq),
     /// Show tasks or one task.
@@ -62,6 +64,7 @@ impl Request {
             Self::Wait(_) => "wait",
             Self::Steer(_) => "steer",
             Self::EndSession(_) => "end-session",
+            Self::OpenSession(_) => "open-session",
             Self::Report(_) => "report",
             Self::Show(_) => "show",
             Self::Close(_) => "close",
@@ -196,6 +199,16 @@ pub struct SteerReq {
 pub struct EndSessionReq {
     /// Task name.
     pub task: String,
+}
+
+/// Arguments of `open-session`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OpenSessionReq {
+    /// Task name.
+    pub task: String,
+    /// Text the agent receives as its first prompt.
+    pub seed: String,
 }
 
 /// Arguments of `report`.
