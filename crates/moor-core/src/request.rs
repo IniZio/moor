@@ -16,6 +16,8 @@ pub enum Request {
     Wait(WaitReq),
     /// Send input to a task's agent.
     Steer(SteerReq),
+    /// End a task's live agent session and keep its box.
+    EndSession(EndSessionReq),
     /// Publish a report.
     Report(ReportReq),
     /// Show tasks or one task.
@@ -59,6 +61,7 @@ impl Request {
             Self::Run(_) => "run",
             Self::Wait(_) => "wait",
             Self::Steer(_) => "steer",
+            Self::EndSession(_) => "end-session",
             Self::Report(_) => "report",
             Self::Show(_) => "show",
             Self::Close(_) => "close",
@@ -185,6 +188,14 @@ pub struct SteerReq {
     /// Menu entry to pick.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub menu: Option<u32>,
+}
+
+/// Arguments of `end-session`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EndSessionReq {
+    /// Task name.
+    pub task: String,
 }
 
 /// Arguments of `report`.
