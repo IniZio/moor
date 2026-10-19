@@ -24,7 +24,7 @@ pub use name::{
 };
 pub use request::{
     CloseReq, CpReq, EnvReq, GateReq, RemoveReq, ReportReq, Request, RunReq, ShowReq, StartReq,
-    SteerReq, TaskReq, WaitFor, WaitReq,
+    SteerReq, TaskReq, WaitEventsReq, WaitFor, WaitMode, WaitReq,
 };
 pub use response::{ErrorKind, ErrorView, ExitClass, Response, Warning, SCHEMA};
 pub use secret::{Digest, Secret};
