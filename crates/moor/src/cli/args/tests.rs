@@ -3,6 +3,7 @@
 use std::ffi::OsString;
 use std::path::PathBuf;
 
+use moor_core::request::EndSessionReq;
 use moor_core::{
     BoxId, BoxName, CloseReq, CpReq, EnvReq, GateReq, RemoveReq, ReportReq, Request, RunReq,
     ShowReq, StartReq, SteerReq, TaskReq, WaitFor, WaitReq,
@@ -196,6 +197,15 @@ fn wait_for_and_timeout() {
         })
     );
     assert!(run(&["wait", "t1", "--for", "bogus"]).is_err());
+}
+
+#[test]
+fn end_parses_to_end_session() {
+    assert_eq!(
+        req(&["end", "t1"]),
+        Request::EndSession(EndSessionReq { task: "t1".into() })
+    );
+    assert!(run(&["end"]).is_err());
 }
 
 #[test]

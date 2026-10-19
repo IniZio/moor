@@ -51,6 +51,12 @@ fn render_value(resp: &Response, out: &mut String) {
             return;
         }
     }
+    if resp.cmd == "end-session" {
+        if let Some(line) = end_session_line(value) {
+            out.push_str(&line);
+            return;
+        }
+    }
     if resp.cmd == "cp" {
         if let Some(text) = value.get("confirmation").and_then(Value::as_str) {
             out.push_str(text);
@@ -208,6 +214,21 @@ fn sleep_line(cmd: &str, value: &Value) -> Option<String> {
 fn steer_line(value: &Value) -> Option<String> {
     let task = value.get("task")?.as_str()?;
     Some(format!("steered {task}\n"))
+}
+
+/// Formats the `end-session` line, or `None` when a field is missing or mistyped.
+fn end_session_line(value: &Value) -> Option<String> {
+    let task = value.get("task")?.as_str()?;
+    let ordinal = value.get("ordinal")?.as_i64()?;
+    let id = value.get("session")?.as_i64()?;
+    let kept = if value.get("box_kept")?.as_bool()? {
+        "Box kept open"
+    } else {
+        "Box not kept"
+    };
+    Some(format!(
+        "ended Session {ordinal} (id {id}) in {task}; {kept}\n"
+    ))
 }
 
 /// Text form of the `env` view: agent, github, token lines, then one line per item.
