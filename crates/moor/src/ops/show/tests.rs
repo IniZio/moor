@@ -18,6 +18,7 @@ use moor_core::{BoxId, BoxName, ProviderId, ShowReq, StartReq};
 
 mod artifacts;
 mod attention;
+mod events;
 mod pane;
 
 use super::run;
