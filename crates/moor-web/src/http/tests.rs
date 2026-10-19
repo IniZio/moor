@@ -118,11 +118,19 @@ fn server() -> (Server, Seen) {
     let handler: Handler = Arc::new(move |req| {
         log.lock().unwrap().push(req.path.clone());
         match (req.method.as_str(), req.path.as_str()) {
-            ("GET", "/") => HttpResponse::html("<h1>page</h1>"),
-            ("POST", "/echo") => {
-                HttpResponse::text("200 OK", String::from_utf8_lossy(&req.body).into_owned())
+            ("GET", "/") => HttpResponse::html("<h1>page</h1>").into(),
+            ("GET", "/stream") => {
+                let log = Arc::clone(&log);
+                Reply::Stream(Box::new(move |out| {
+                    log.lock().unwrap().push("stream body".into());
+                    out.write_all(b"data: one\n\n")?;
+                    out.write_all(b"data: two\n\n")
+                }))
             }
-            _ => HttpResponse::text("404 Not Found", "not found"),
+            ("POST", "/echo") => {
+                HttpResponse::text("200 OK", String::from_utf8_lossy(&req.body).into_owned()).into()
+            }
+            _ => HttpResponse::text("404 Not Found", "not found").into(),
         }
     });
     (start(0, TOKEN.into(), handler).unwrap(), seen)
@@ -308,4 +316,29 @@ fn malformed_request_line_is_a_bad_request() {
     let mut out = String::new();
     s.read_to_string(&mut out).unwrap();
     assert!(out.starts_with("HTTP/1.1 400"), "{out}");
+}
+
+#[test]
+fn stream_reply_sends_event_stream_head_then_frames() {
+    let (web, _) = server();
+    let resp = fetch(&web, "GET", "/stream", &[&bearer()]);
+    assert!(resp.starts_with("HTTP/1.1 200 OK"), "{resp}");
+    assert!(resp.contains("Content-Type: text/event-stream"));
+    assert!(resp.contains("Cache-Control: no-store"));
+    assert!(resp.contains("Connection: close"));
+    assert!(resp.contains("Content-Security-Policy: default-src 'none'"));
+    assert!(!resp.contains("Content-Length"));
+    assert!(
+        resp.ends_with("\r\n\r\ndata: one\n\ndata: two\n\n"),
+        "{resp}"
+    );
+}
+
+#[test]
+fn unauthenticated_stream_is_refused_and_never_runs() {
+    let (web, seen) = server();
+    let resp = fetch(&web, "GET", "/stream", &[]);
+    assert!(resp.starts_with("HTTP/1.1 401"), "{resp}");
+    assert!(!resp.contains("event-stream"));
+    assert!(seen.lock().unwrap().is_empty());
 }

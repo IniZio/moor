@@ -3,13 +3,15 @@
 use std::io::{self, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::sync::{Arc, Mutex};
 use std::thread;
 
 use clap::Parser;
 use moor_web::auth::read_token;
 use moor_web::client::Client;
 use moor_web::db::Db;
-use moor_web::http::{placeholder_handler, start};
+use moor_web::http::start;
+use moor_web::watch::{self, RelayConfig};
 
 /// Command line of the daemon.
 #[derive(Parser)]
@@ -55,10 +57,15 @@ fn run(args: Args) -> Result<(), String> {
     let token = read_token(&args.token_file)?;
     let dir = state_dir(args.state_dir)?;
     std::fs::create_dir_all(&dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
-    let _db = Db::open(&dir.join("web.db")).map_err(|e| e.to_string())?;
-    let _client = Client::new(args.socket);
-    let server =
-        start(args.port, token, placeholder_handler()).map_err(|e| format!("listen: {e}"))?;
+    let db = Db::open(&dir.join("web.db")).map_err(|e| e.to_string())?;
+    let db = Arc::new(Mutex::new(db));
+    let client = Client::new(args.socket);
+    let server = start(
+        args.port,
+        token,
+        watch::handler(client, db, RelayConfig::default()),
+    )
+    .map_err(|e| format!("listen: {e}"))?;
     writeln!(io::stdout(), "{}", server.url()).map_err(|e| e.to_string())?;
     loop {
         thread::park();
