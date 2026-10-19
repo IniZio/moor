@@ -2,7 +2,7 @@
 
 use super::*;
 
-type Ev = Event<BoxLifecycle>;
+type Ev = Event;
 
 fn s(v: &str) -> String {
     v.to_string()

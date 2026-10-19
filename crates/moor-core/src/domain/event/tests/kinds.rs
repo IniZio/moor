@@ -18,7 +18,7 @@ fn kind_equals_serde_tag_and_payload_has_no_kind() {
 #[test]
 fn unit_variants_have_empty_payload() {
     for e in [
-        Event::<TaskState>::Started,
+        Event::Started,
         Event::Working,
         Event::Idled,
         Event::Busy,
@@ -35,7 +35,7 @@ fn unit_variants_have_empty_payload() {
 
 #[test]
 fn payload_carries_fields() {
-    let e: Event = Event::Ran {
+    let e = Event::Ran {
         run: Some(RunId::new(7)),
         exit: None,
         interrupted: true,
@@ -45,7 +45,7 @@ fn payload_carries_fields() {
         e.payload(),
         serde_json::json!({"run": 7, "exit": null, "interrupted": true})
     );
-    let e: Event = Event::Ran {
+    let e = Event::Ran {
         run: None,
         exit: None,
         interrupted: false,
@@ -56,7 +56,7 @@ fn payload_carries_fields() {
         e.payload(),
         serde_json::json!({"run": null, "exit": null, "interrupted": false})
     );
-    let e: Event = Event::Ran {
+    let e = Event::Ran {
         run: Some(RunId::new(7)),
         exit: None,
         interrupted: false,
@@ -67,14 +67,14 @@ fn payload_carries_fields() {
         serde_json::json!({"run": 7, "exit": null, "interrupted": false, "error": "busy"})
     );
     let e = Event::Closed {
-        from: TaskState::WaitingForBox,
+        from: BoxLifecycle::WaitingForBox,
     };
     assert_eq!(e.payload(), serde_json::json!({"from": "waiting_for_box"}));
 }
 
 #[test]
 fn stays_up_payload_carries_reason() {
-    let e: Event = Event::StaysUp { reason: s("busy") };
+    let e = Event::StaysUp { reason: s("busy") };
     assert_eq!(e.kind(), "stays_up");
     assert_eq!(e.payload(), serde_json::json!({"reason": "busy"}));
     assert_eq!(
@@ -86,14 +86,14 @@ fn stays_up_payload_carries_reason() {
 
 #[test]
 fn is_asserted_matches_list() {
-    assert!(Event::<TaskState>::Started.is_asserted());
-    assert!(!Event::<TaskState>::BoxRequested.is_asserted());
-    assert!(!Event::<TaskState>::Checked {
+    assert!(Event::Started.is_asserted());
+    assert!(!Event::BoxRequested.is_asserted());
+    assert!(!Event::Checked {
         credentials: vec![]
     }
     .is_asserted());
-    assert!(!Event::<TaskState>::RunStarted { run: RunId::new(1) }.is_asserted());
-    assert!(!Event::<TaskState>::BoxReleaseFailed {
+    assert!(!Event::RunStarted { run: RunId::new(1) }.is_asserted());
+    assert!(!Event::BoxReleaseFailed {
         error: s("c"),
         handle: None
     }
@@ -105,7 +105,7 @@ fn is_asserted_matches_list() {
 /// The Proxy nonce is a secret; the payload carries exactly these keys.
 #[test]
 fn proxy_started_payload_has_no_nonce() {
-    let e: Event = Event::ProxyStarted {
+    let e = Event::ProxyStarted {
         box_port: 1,
         host_port: 2,
         pid: 3,
