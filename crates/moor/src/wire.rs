@@ -116,9 +116,14 @@ fn parts(env: &Env) -> Result<CxParts, CommandError> {
         extra_env,
         Arc::clone(&clock) as Arc<dyn Clock>,
     ));
+    let rng: Arc<dyn Rng> = Arc::new(SystemRng);
     let driver: Arc<dyn Driver> = Arc::new(
-        Crabbox::new(Arc::clone(&proc), Arc::clone(&clock) as Arc<dyn Clock>)
-            .with_lookup_deadlines(lookup_deadlines(&config.drivers)),
+        Crabbox::new(
+            Arc::clone(&proc),
+            Arc::clone(&clock) as Arc<dyn Clock>,
+            Arc::clone(&rng),
+        )
+        .with_lookup_deadlines(lookup_deadlines(&config.drivers)),
     );
     let engine = BoxAgent::new(
         Arc::clone(&driver),
@@ -130,7 +135,6 @@ fn parts(env: &Env) -> Result<CxParts, CommandError> {
             env.xdg("XDG_CACHE_HOME", ".cache", "moor"),
         )),
     );
-    let rng: Arc<dyn Rng> = Arc::new(SystemRng);
     let state_dir = env.state_dir();
     let proxy_host = Arc::new(DetachedSupervisor::new(
         Arc::clone(&proc),

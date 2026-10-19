@@ -23,12 +23,12 @@ use std::time::Duration;
 
 use moor_core::box_key::BoxKey;
 use moor_core::name::{BoxHandle, BoxPath, ProviderId};
-use moor_core::seam::clock::Clock;
 use moor_core::seam::driver::{
     AcquireReq, Acquired, BoxListing, BoxStep, Driver, DriverCaps, DriverError, ExecOutcome,
     ExecSpec, Released, SleepOutcome, StepDone, TunnelHandle,
 };
 use moor_core::seam::proc::{Deadline, Proc, ProcError, ProcOutput, ProcSpec, Tool};
+use moor_core::seam::{clock::Clock, rng::Rng};
 
 use errors::{is_claim_race, map_error, Op};
 
@@ -53,6 +53,8 @@ pub(crate) struct Crabbox {
     proc: Arc<dyn Proc>,
     /// Source of the waits between claim race retries.
     clock: Arc<dyn Clock>,
+    /// Source of the per-exec stderr markers.
+    rng: Arc<dyn Rng>,
     /// Set once crabbox has passed the version check.
     version_ok: OnceLock<()>,
     /// Lookup deadlines that replace the built-in ones, keyed by provider id.
@@ -62,11 +64,12 @@ pub(crate) struct Crabbox {
 }
 
 impl Crabbox {
-    /// Wraps a spawner.
-    pub(crate) fn new(proc: Arc<dyn Proc>, clock: Arc<dyn Clock>) -> Self {
+    /// Wraps a spawner, a clock and a marker source.
+    pub(crate) fn new(proc: Arc<dyn Proc>, clock: Arc<dyn Clock>, rng: Arc<dyn Rng>) -> Self {
         Self {
             proc,
             clock,
+            rng,
             version_ok: OnceLock::new(),
             lookup_deadlines: BTreeMap::new(),
             targets: Mutex::new(HashMap::new()),
@@ -88,14 +91,12 @@ impl Crabbox {
 
     /// Time allowed for an ssh target lookup on `provider`.
     pub(super) fn lookup_deadline(&self, provider: &str) -> Duration {
-        self.lookup_deadlines
-            .get(provider)
-            .copied()
-            .unwrap_or(if provider == "external" {
-                EXTERNAL_LOOKUP_DEADLINE
-            } else {
-                LOOKUP_DEADLINE
-            })
+        let built_in = if provider == "external" {
+            EXTERNAL_LOOKUP_DEADLINE
+        } else {
+            LOOKUP_DEADLINE
+        };
+        *self.lookup_deadlines.get(provider).unwrap_or(&built_in)
     }
 
     /// Refuses a crabbox older than moor supports; asks once and remembers a pass.
@@ -121,9 +122,10 @@ impl Crabbox {
     /// Like [`Self::fake`], but still asks crabbox for its version.
     #[cfg(test)]
     pub(crate) fn fake_unchecked(proc: Arc<dyn Proc>) -> Self {
-        use crate::testing::clock::FakeClock;
+        use crate::testing::{clock::FakeClock, rng::FakeRng};
         use moor_core::seam::clock::Ts;
-        Self::new(proc, Arc::new(FakeClock::new(Ts::from_millis(0))))
+        let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
+        Self::new(proc, clock, Arc::new(FakeRng::default()))
     }
 
     /// Runs `call`, trying again while crabbox reports a claim race, for up to `CLAIM_RACE_BUDGET` of waiting.
@@ -209,12 +211,8 @@ fn split_handle(handle: &BoxHandle) -> (Option<&str>, &str) {
 /// Selector arguments that name one Box.
 fn target_args(handle: &BoxHandle) -> Vec<String> {
     let (provider, name) = split_handle(handle);
-    let mut args = Vec::new();
-    if let Some(p) = provider {
-        args.extend(["--provider".to_owned(), p.to_owned()]);
-    }
-    args.extend(["--id".to_owned(), name.to_owned()]);
-    args
+    let provider = provider.into_iter().flat_map(|p| ["--provider", p]);
+    provider.chain(["--id", name]).map(str::to_owned).collect()
 }
 
 /// Error for output moor cannot read.
