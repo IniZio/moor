@@ -15,7 +15,7 @@ use crate::store::StoreError;
 /// Run `open-host-session`.
 ///
 /// # Errors
-/// [`CommandError`] when the workdir is empty or not absolute, or the store write fails.
+/// [`CommandError`] when the workdir is empty or not absolute, the parent is unknown or ended, or the store write fails.
 pub(crate) fn open(cx: &Cx, req: &OpenHostSessionReq) -> Result<HostSessionValue, CommandError> {
     if req.workdir.is_empty() || !Path::new(&req.workdir).is_absolute() {
         return Err(CommandError::new(
@@ -23,11 +23,15 @@ pub(crate) fn open(cx: &Cx, req: &OpenHostSessionReq) -> Result<HostSessionValue
             format!("workdir must be an absolute path, got {:?}", req.workdir),
         ));
     }
-    let session = cx.store()?.open_host_session(
-        &req.workdir,
-        req.agent.as_deref(),
-        req.agent_session_id.as_deref(),
-    )?;
+    let session = cx
+        .store()?
+        .open_child_host_session(
+            &req.workdir,
+            req.agent.as_deref(),
+            req.agent_session_id.as_deref(),
+            req.parent.map(SessionId::get),
+        )
+        .map_err(refuse_invalid)?;
     Ok(HostSessionValue {
         session: SessionId::new(session),
         workdir: req.workdir.clone(),

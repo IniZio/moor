@@ -227,3 +227,44 @@ fn ended_other_sessions_do_not_block_sleep() {
         .unwrap();
     assert_eq!(states(&store, id).0, "asleep");
 }
+
+#[test]
+fn insert_writes_parent_session_on_the_first_session() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let parent = store.open_host_session("/w", None, None).unwrap();
+    let child = store
+        .apply(insert("child").parent_session(Some(parent)))
+        .unwrap()
+        .task;
+    let plain = store.apply(insert("plain")).unwrap().task;
+    let conn = store.writer().unwrap();
+    let get = |id: moor_core::BoxId| -> Option<i64> {
+        conn.query_row(
+            "SELECT parent_session FROM sessions WHERE box = ?",
+            [id.get()],
+            |r| r.get(0),
+        )
+        .unwrap()
+    };
+    assert_eq!(get(child), Some(parent));
+    assert_eq!(get(plain), None);
+}
+
+#[test]
+fn insert_with_an_ended_parent_session_writes_no_box() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let parent = store.open_host_session("/w", None, None).unwrap();
+    store.end_host_session(parent).unwrap();
+    let err = store
+        .apply(insert("child").parent_session(Some(parent)))
+        .unwrap_err();
+    assert!(matches!(err, StoreError::Invalid(_)), "{err:?}");
+    let boxes: i64 = store
+        .writer()
+        .unwrap()
+        .query_row("SELECT COUNT(*) FROM boxes", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(boxes, 0);
+}

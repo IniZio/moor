@@ -9,11 +9,15 @@ use crate::store::Store;
 
 /// Opens and starts a new Session when the Box's current one has ended, and says whether it did.
 ///
-/// The new Session inherits the workspace and the agent session of the one it follows.
+/// The new Session records `parent` as its parent and inherits the workspace and the agent session of the one it follows.
 ///
 /// # Errors
 /// A store failure.
-pub(super) fn ended_session(store: &Store, id: BoxId) -> Result<bool, CommandError> {
+pub(super) fn ended_session(
+    store: &Store,
+    id: BoxId,
+    parent: Option<i64>,
+) -> Result<bool, CommandError> {
     let ended = store
         .box_sessions(id)?
         .last()
@@ -22,7 +26,7 @@ pub(super) fn ended_session(store: &Store, id: BoxId) -> Result<bool, CommandErr
         return Ok(false);
     }
     let prior = store.task(id)?;
-    let next = store.open_session(id)?;
+    let next = store.open_child_session(id, parent)?;
     store.start_session(next.id)?;
     if let Some(row) = prior {
         let carry = Fields {

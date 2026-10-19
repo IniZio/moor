@@ -9,7 +9,7 @@ use moor_core::{
     ShowReq, StartReq, SteerReq, TaskReq, WaitFor, WaitReq,
 };
 
-use super::{parse, Action};
+use super::{parse_ignoring_env as parse, Action};
 use crate::cli::GlobalOpts;
 
 /// Parse `moor <args>` into opts and action.
@@ -74,6 +74,7 @@ fn start_with_all_flags() {
             resume: true,
             trust_moor_yaml: false,
             repo: None,
+            parent: None,
         })
     );
 }
@@ -228,7 +229,8 @@ fn session_open_takes_seed_text() {
         req(&["session", "open", "t1", "--seed", "hi"]),
         Request::OpenSession(OpenSessionReq {
             task: "t1".into(),
-            seed: "hi".into()
+            seed: "hi".into(),
+            parent: None,
         })
     );
 }
@@ -251,6 +253,7 @@ fn session_open_host_takes_workdir_agent_and_session() {
             workdir: "/w".into(),
             agent: Some("claude".into()),
             agent_session_id: Some("abc".into()),
+            parent: None,
         })
     );
 }
@@ -292,7 +295,8 @@ fn session_open_reads_seed_file_verbatim() {
         req(&["session", "open", "t1", "--seed-file", p]),
         Request::OpenSession(OpenSessionReq {
             task: "t1".into(),
-            seed: "line one\n  line two\n\n".into()
+            seed: "line one\n  line two\n\n".into(),
+            parent: None,
         })
     );
     assert!(run(&["session", "open", "t1", "--seed-file", "/no/such/file"]).is_err());

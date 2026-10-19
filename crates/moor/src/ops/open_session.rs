@@ -4,11 +4,12 @@ use moor_core::domain::boxes::BoxState;
 use moor_core::domain::session_state::SessionState;
 use moor_core::request::OpenSessionReq;
 use moor_core::view::session::OpenSessionValue;
-use moor_core::{BoxName, ErrorKind};
+use moor_core::{BoxName, ErrorKind, SessionId};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
+use crate::ops::host_session::refuse_invalid;
 use crate::ops::start::begin_seeded;
 use crate::store::{Store, TaskRow};
 
@@ -26,6 +27,9 @@ pub(crate) fn run(cx: &Cx, req: &OpenSessionReq) -> Result<OpenSessionValue, Com
         .open_task_by_name(&parsed)?
         .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no open task {name}")))?
         .id;
+    if let Some(parent) = req.parent {
+        store.check_parent(parent.get()).map_err(refuse_invalid)?;
+    }
     let reload = || {
         store
             .task(id)?
@@ -41,7 +45,7 @@ pub(crate) fn run(cx: &Cx, req: &OpenSessionReq) -> Result<OpenSessionValue, Com
     )?;
     let row = reload()?;
     check(store, &row, name)?;
-    let next = store.open_session(id)?;
+    let next = store.open_child_session(id, req.parent.map(SessionId::get))?;
     store.start_session(next.id)?;
     let view = begin_seeded(cx, store, &row, req.seed.clone())?;
     if !view.launched {

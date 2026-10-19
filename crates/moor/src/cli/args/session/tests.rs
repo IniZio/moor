@@ -1,11 +1,11 @@
-//! Tests for the `session set` and `session end` arguments.
+//! Tests for the `session` arguments and the `--parent` flag.
 
 use std::ffi::OsString;
 
-use moor_core::request::{EndHostSessionReq, UpdateHostSessionReq};
+use moor_core::request::{EndHostSessionReq, OpenHostSessionReq, UpdateHostSessionReq};
 use moor_core::{Request, SessionId};
 
-use crate::cli::args::{parse, Action};
+use crate::cli::args::{parse_ignoring_env as parse, Action};
 
 /// Parse `moor <args>`.
 fn run(args: &[&str]) -> Result<Action, clap::Error> {
@@ -49,4 +49,62 @@ fn session_end_takes_id() {
             session: SessionId::new(4),
         })
     );
+}
+
+#[test]
+fn session_open_parent_lands_in_request() {
+    let r = req(&["session", "open", "t", "--seed", "x", "--parent", "7"]);
+    assert!(
+        matches!(&r, Request::OpenSession(o) if o.parent == Some(SessionId::new(7))),
+        "{r:?}"
+    );
+}
+
+#[test]
+fn session_open_host_parent_lands_in_request() {
+    let r = req(&[
+        "session",
+        "open",
+        "--host",
+        "--workdir",
+        "/w",
+        "--parent",
+        "4",
+    ]);
+    assert_eq!(
+        r,
+        Request::OpenHostSession(OpenHostSessionReq {
+            workdir: "/w".into(),
+            agent: None,
+            agent_session_id: None,
+            parent: Some(SessionId::new(4)),
+        })
+    );
+}
+
+#[test]
+fn start_parent_lands_in_request() {
+    let r = req(&["start", "t", "--parent", "7"]);
+    assert!(
+        matches!(&r, Request::Start(s) if s.parent == Some(SessionId::new(7))),
+        "{r:?}"
+    );
+}
+
+#[test]
+fn parent_defaults_from_moor_session_env() {
+    use clap::CommandFactory;
+    let cmd = crate::cli::args::Cli::command();
+    let env_of = |c: &clap::Command| {
+        c.get_arguments()
+            .find(|a| a.get_id() == "parent")
+            .and_then(|a| a.get_env().map(std::ffi::OsStr::to_os_string))
+    };
+    let start = cmd.find_subcommand("start").expect("start");
+    let open = cmd
+        .find_subcommand("session")
+        .and_then(|s| s.find_subcommand("open"))
+        .expect("session open");
+    assert_eq!(env_of(start), Some("MOOR_SESSION".into()));
+    assert_eq!(env_of(open), Some("MOOR_SESSION".into()));
 }

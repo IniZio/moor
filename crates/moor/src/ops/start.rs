@@ -13,7 +13,7 @@ use moor_core::domain::event::CheckedCred;
 use moor_core::domain::task::{TaskInput, TaskState};
 use moor_core::seam::surface::{workspace_label, Worktree};
 use moor_core::view::StartView;
-use moor_core::{BoxId, ErrorKind, StartReq, Warning};
+use moor_core::{BoxId, ErrorKind, SessionId, StartReq, Warning};
 
 use super::common::activity;
 use super::common::autosleep;
@@ -23,6 +23,7 @@ use super::common::provision::{
     moor_yaml, provision, reprovision, reread, Entry, Provisioned, ResyncGates,
 };
 use super::common::provisioning::dead_provisioning;
+use super::host_session::refuse_invalid;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::store::{Store, StoreError, TaskRow};
@@ -70,6 +71,9 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     let store = cx.store()?;
     let (repo, bound, req) = locate(cx, req)?;
     let req = &req;
+    if let Some(parent) = req.parent {
+        store.check_parent(parent.get()).map_err(refuse_invalid)?;
+    }
     settle_all(cx, store)?;
     if let Some(row) = store.open_task_by_name(&req.name)? {
         return attach(cx, store, req, &row);
@@ -137,7 +141,13 @@ fn reject(
         name: req.name.clone(),
         repo: facts.repo.display().to_string(),
     };
-    let id = store.apply(Decision::insert(new).set(set))?.task;
+    let id = store
+        .apply(
+            Decision::insert(new)
+                .set(set)
+                .parent_session(req.parent.map(SessionId::get)),
+        )?
+        .task;
     let rejected = TaskInput::Rejected {
         reason: reason.to_owned(),
     };
@@ -202,7 +212,7 @@ fn attach(
         Some(BoxState::Failed | BoxState::Gone)
     );
     if !req.no_agent && (req.goal.is_some() || req.resume) {
-        reopen::ended_session(store, row.id)?;
+        reopen::ended_session(store, row.id, req.parent.map(SessionId::get))?;
     }
     wake_idle(store, row.id)?;
     let agent = relaunch::run(cx, store, req, row.id, (setup_exit, recreated), &settings)?;
@@ -355,7 +365,9 @@ fn insert(
         name: req.name.clone(),
         repo: facts.repo.display().to_string(),
     };
-    let mut decision = Decision::insert(new).set(set);
+    let mut decision = Decision::insert(new)
+        .set(set)
+        .parent_session(req.parent.map(SessionId::get));
     if !checked.is_empty() {
         decision = decision.event(ExtraEvent::Checked {
             credentials: checked,

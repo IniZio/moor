@@ -10,7 +10,7 @@ use moor_core::domain::task::{SetupOutcome, TaskInput};
 use moor_core::request::OpenSessionReq;
 use moor_core::seam::driver::{AcquireReq, Driver};
 use moor_core::seam::engine::{EngineError, LaunchPrompt};
-use moor_core::{BoxId, BoxName, ErrorKind, ProviderId};
+use moor_core::{BoxId, BoxName, ErrorKind, ProviderId, SessionId};
 
 use super::run;
 use crate::cx::Cx;
@@ -113,6 +113,7 @@ fn req() -> OpenSessionReq {
     OpenSessionReq {
         task: "t".into(),
         seed: "pick up here".into(),
+        parent: None,
     }
 }
 
@@ -200,8 +201,82 @@ fn an_unknown_task_is_not_found() {
         &OpenSessionReq {
             task: "x".into(),
             seed: String::new(),
+            parent: None,
         },
     )
     .unwrap_err();
     assert_eq!(err.kind, ErrorKind::Failed);
+}
+
+/// The `parent_session` column of Session `id`.
+fn parent_of(f: &Fx, id: i64) -> Option<i64> {
+    let raw = rusqlite::Connection::open(f.cx.state_dir().unwrap().join("moor.db")).unwrap();
+    raw.query_row(
+        "SELECT parent_session FROM sessions WHERE id = ?1",
+        [id],
+        |r| r.get(0),
+    )
+    .unwrap()
+}
+
+#[test]
+fn a_live_parent_is_recorded_on_the_new_session() {
+    let f = fx(FakeEngine::new(), false);
+    let parent =
+        f.cx.store()
+            .unwrap()
+            .open_host_session("/w", None, None)
+            .unwrap();
+    let v = run(
+        &f.cx,
+        &OpenSessionReq {
+            parent: Some(SessionId::new(parent)),
+            ..req()
+        },
+    )
+    .unwrap();
+    assert_eq!(parent_of(&f, v.session), Some(parent));
+}
+
+#[test]
+fn no_parent_is_recorded_when_none_is_given() {
+    let f = fx(FakeEngine::new(), false);
+    let v = run(&f.cx, &req()).unwrap();
+    assert_eq!(parent_of(&f, v.session), None);
+}
+
+#[test]
+fn an_unknown_parent_is_refused_and_opens_nothing() {
+    let f = fx(FakeEngine::new(), false);
+    let err = run(
+        &f.cx,
+        &OpenSessionReq {
+            parent: Some(SessionId::new(9999)),
+            ..req()
+        },
+    )
+    .unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Refused);
+    assert!(err.error.to_string().contains("no Session 9999"));
+    assert_eq!(f.cx.store().unwrap().box_sessions(f.id).unwrap().len(), 1);
+    assert!(f.engine.launches().is_empty());
+}
+
+#[test]
+fn an_ended_parent_is_refused_and_opens_nothing() {
+    let f = fx(FakeEngine::new(), false);
+    let store = f.cx.store().unwrap();
+    let parent = store.open_host_session("/w", None, None).unwrap();
+    store.end_host_session(parent).unwrap();
+    let err = run(
+        &f.cx,
+        &OpenSessionReq {
+            parent: Some(SessionId::new(parent)),
+            ..req()
+        },
+    )
+    .unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Refused);
+    assert_eq!(store.box_sessions(f.id).unwrap().len(), 1);
+    assert!(f.engine.launches().is_empty());
 }

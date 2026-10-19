@@ -235,6 +235,7 @@ fn handle(mention: &Mention, store: &Store, allow: &Allow<'_>, fx: &mut Fx<'_>) 
                 resume: false,
                 trust_moor_yaml: false,
                 repo: Some(repo),
+                parent: None,
             };
             match (fx.call)(Request::Start(req)) {
                 Ok(()) => {

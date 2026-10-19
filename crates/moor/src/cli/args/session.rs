@@ -65,6 +65,9 @@ pub(super) struct OpenArgs {
     /// Existing agent session to resume in the host Session.
     #[arg(long, value_name = "ID", requires = "host")]
     agent_session_id: Option<String>,
+    /// Parent Session id; defaults to the `MOOR_SESSION` of the calling agent.
+    #[arg(long, value_name = "ID", env = "MOOR_SESSION")]
+    parent: Option<i64>,
 }
 
 /// clap parser for `--seed-file`: the file's content, verbatim.
@@ -100,10 +103,12 @@ impl From<SessionCmd> for Request {
                 workdir,
                 agent: a.agent,
                 agent_session_id: a.agent_session_id,
+                parent: a.parent.map(SessionId::new),
             }),
             None => Self::OpenSession(OpenSessionReq {
                 task: a.task.map(|t| t.as_str().to_string()).unwrap_or_default(),
                 seed: a.seed.or(a.seed_file).unwrap_or_default(),
+                parent: a.parent.map(SessionId::new),
             }),
         }
     }

@@ -10,7 +10,7 @@ use moor_core::seam::proc::Deadline;
 use moor_core::seam::proxy_host::ProxyStatus;
 use moor_core::seam::surface::{PaneRef, SurfaceError};
 use moor_core::view::AgentLaunchView;
-use moor_core::{BoxId, ErrorKind, StartReq, Warning};
+use moor_core::{BoxId, ErrorKind, SessionId, StartReq, Warning};
 use std::path::Path;
 use std::time::Duration;
 
@@ -244,7 +244,7 @@ fn relaunch(
     let digest = saved.as_ref().map(|t| t.digest.as_str());
     store.end_session(old.id, exit, digest)?;
     store.end_current_session(id, "relaunch", exit)?;
-    let next = store.open_session(id)?;
+    let next = store.open_child_session(id, req.parent.map(SessionId::get))?;
     store.start_session(next.id)?;
     let view = launch::begin(cx, store, &row, &launch, &cfg)?;
     if view.launched {
@@ -280,7 +280,7 @@ pub(crate) fn revive_after_wake(cx: &Cx, store: &Store, id: BoxId) -> Result<(),
         Some(_) => return Ok(()),
         None => None,
     };
-    if ended_pane.is_none() && !(revivable(&row) && reopen::ended_session(store, id)?) {
+    if ended_pane.is_none() && !(revivable(&row) && reopen::ended_session(store, id, None)?) {
         return Ok(());
     }
     super::wake_idle(store, id)?;
@@ -297,6 +297,7 @@ pub(crate) fn revive_after_wake(cx: &Cx, store: &Store, id: BoxId) -> Result<(),
         trust_moor_yaml: false,
         repo: None,
         hold: false,
+        parent: None,
     };
     let settings = || {
         let at = row.worktree.as_deref().unwrap_or(&row.repo);

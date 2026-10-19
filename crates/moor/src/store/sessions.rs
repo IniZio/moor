@@ -19,12 +19,49 @@ pub(crate) struct BoxSession {
     pub(crate) state: SessionState,
 }
 
+/// Succeed when Session `parent` exists and has not ended, reading through `conn`.
+///
+/// Call it inside a write transaction so the parent cannot end between the check and the insert.
+///
+/// # Errors
+/// Returns [`StoreError::Invalid`] when the Session is unknown or ended, or [`StoreError`] when the database fails.
+pub(in crate::store) fn live_parent(
+    conn: &rusqlite::Connection,
+    parent: i64,
+) -> Result<(), StoreError> {
+    let row: Option<(String, Option<i64>)> = conn
+        .query_row(
+            "SELECT state, ended_at FROM sessions WHERE id = ?1",
+            [parent],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
+    match row {
+        None => Err(StoreError::Invalid(format!("no Session {parent}"))),
+        Some((state, ended_at)) if state == SessionState::Ended.as_str() || ended_at.is_some() => {
+            Err(StoreError::Invalid(format!("Session {parent} has ended")))
+        }
+        Some(_) => Ok(()),
+    }
+}
+
 impl Store {
-    /// Open another Session on Box `id`, numbered after its last one, in the Starting state.
+    /// Open a Session on Box `id` with no parent.
+    #[cfg(test)]
+    pub(crate) fn open_session(&self, id: BoxId) -> Result<BoxSession, StoreError> {
+        self.open_child_session(id, None)
+    }
+
+    /// Open another Session on Box `id`, numbered after its last one, in the Starting state,
+    /// recording `parent` as its parent Session.
     ///
     /// # Errors
     /// Returns [`StoreError::NotFound`] when the Box does not exist, [`StoreError::Invalid`] when its current Session is not Ended, or [`StoreError`] when the database fails.
-    pub(crate) fn open_session(&self, id: BoxId) -> Result<BoxSession, StoreError> {
+    pub(crate) fn open_child_session(
+        &self,
+        id: BoxId,
+        parent: Option<i64>,
+    ) -> Result<BoxSession, StoreError> {
         let now = self.now();
         let mut conn = self.writer()?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -52,10 +89,14 @@ impl Store {
             [id.get()],
             |row| row.get(0),
         )?;
+        if let Some(p) = parent {
+            live_parent(&tx, p)?;
+        }
         let state = SessionState::Starting;
         tx.execute(
-            "INSERT INTO sessions (box, ordinal, state, started_at) VALUES (?1, ?2, ?3, ?4)",
-            (id.get(), ordinal, state.as_str(), now.as_millis()),
+            "INSERT INTO sessions (box, ordinal, state, started_at, parent_session) \
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            (id.get(), ordinal, state.as_str(), now.as_millis(), parent),
         )?;
         let session = BoxSession {
             id: tx.last_insert_rowid(),
@@ -65,6 +106,14 @@ impl Store {
         tx.commit()?;
         drop(conn);
         Ok(session)
+    }
+
+    /// Succeed when Session `parent` exists and has not ended.
+    ///
+    /// # Errors
+    /// Returns [`StoreError::Invalid`] when the Session is unknown or ended, or [`StoreError`] when the database fails.
+    pub(crate) fn check_parent(&self, parent: i64) -> Result<(), StoreError> {
+        live_parent(&self.reader()?, parent)
     }
 
     /// Move a Starting Session to Working, the way a Box's first Session does once its agent runs.

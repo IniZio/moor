@@ -65,18 +65,36 @@ fn load_live(conn: &Connection, id: i64) -> Result<HostRow, StoreError> {
 }
 
 impl Store {
-    /// Register a Session that runs on the host in `workdir`, with no Box; returns its id.
-    ///
-    /// The Session is Working at once and records no events, since events belong to a Box.
+    /// Register a Session that runs on the host in `workdir`, with no parent; returns its id.
     ///
     /// # Errors
-    /// Returns [`StoreError::Invalid`] when `workdir` is empty, [`StoreError::Illegal`] when the
-    /// Session cannot start, or [`StoreError`] when the database fails.
+    /// As [`Store::open_child_host_session`].
+    #[cfg(test)]
     pub(crate) fn open_host_session(
         &self,
         workdir: &str,
         agent: Option<&str>,
         agent_session_id: Option<&str>,
+    ) -> Result<i64, StoreError> {
+        self.open_child_host_session(workdir, agent, agent_session_id, None)
+    }
+
+    /// Register a Session that runs on the host in `workdir`, with no Box, under `parent` when
+    /// given; returns its id.
+    ///
+    /// The Session is Working at once and records no events, since events belong to a Box. The
+    /// parent is checked in the same transaction as the insert.
+    ///
+    /// # Errors
+    /// Returns [`StoreError::Invalid`] when `workdir` is empty or `parent` is unknown or has
+    /// ended, [`StoreError::Illegal`] when the Session cannot start, or [`StoreError`] when the
+    /// database fails.
+    pub(crate) fn open_child_host_session(
+        &self,
+        workdir: &str,
+        agent: Option<&str>,
+        agent_session_id: Option<&str>,
+        parent: Option<i64>,
     ) -> Result<i64, StoreError> {
         if workdir.is_empty() {
             return Err(StoreError::Invalid(
@@ -87,10 +105,26 @@ impl Store {
         let now = self.now();
         let mut conn = self.writer()?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        if let Some(p) = parent {
+            let row: Option<(String, Option<i64>)> = tx
+                .query_row(
+                    "SELECT state, ended_at FROM sessions WHERE id = ?1",
+                    [p],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .optional()?;
+            match row {
+                None => return Err(StoreError::Invalid(format!("no Session {p}"))),
+                Some((s, ended_at)) if s == SessionState::Ended.as_str() || ended_at.is_some() => {
+                    return Err(StoreError::Invalid(format!("Session {p} has ended")));
+                }
+                Some(_) => {}
+            }
+        }
         tx.execute(
-            "INSERT INTO sessions (box, ordinal, state, started_at, workdir, agent, agent_session_id) \
-             VALUES (NULL, 1, ?1, ?2, ?3, ?4, ?5)",
-            (state.as_str(), now.as_millis(), workdir, agent, agent_session_id),
+            "INSERT INTO sessions (box, ordinal, state, started_at, workdir, agent, agent_session_id, parent_session) \
+             VALUES (NULL, 1, ?1, ?2, ?3, ?4, ?5, ?6)",
+            (state.as_str(), now.as_millis(), workdir, agent, agent_session_id, parent),
         )?;
         let id = tx.last_insert_rowid();
         tx.commit()?;

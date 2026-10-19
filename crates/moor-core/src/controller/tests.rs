@@ -20,7 +20,7 @@ fn parses_request() {
     let got = parse_frame(r#"{"frame":"request","id":"1","request":{"cmd":"version"}}"#);
     assert!(matches!(
         got,
-        Ok(ClientFrame::Request { ref id, request: Request::Version {} }) if id == "1"
+        Ok(ClientFrame::Request { ref id, ref request }) if id == "1" && **request == Request::Version {}
     ));
 }
 
@@ -121,7 +121,7 @@ fn client_frames_round_trip_through_parse_frame() {
     assert_eq!(parse_frame(&hello.to_line()), Ok(hello));
     let request = ClientFrame::Request {
         id: "9".into(),
-        request: Request::Version {},
+        request: Box::new(Request::Version {}),
     };
     assert_eq!(parse_frame(&request.to_line()), Ok(request));
     let watch = ClientFrame::Watch { since: 3 };
@@ -175,4 +175,11 @@ fn progress_shape() {
         line,
         "{\"frame\":\"progress\",\"id\":\"4\",\"message\":\"step\"}\n"
     );
+}
+
+#[test]
+fn request_frame_json_is_unchanged_by_boxing() {
+    let line = r#"{"frame":"request","id":"2","request":{"cmd":"open-host-session","workdir":"/w","parent":4}}"#;
+    let frame = parse_frame(line).unwrap_or_else(|e| panic!("{e:?}"));
+    assert_eq!(frame.to_line().trim_end(), line);
 }

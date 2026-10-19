@@ -6,7 +6,7 @@ use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::seam::agent_profile::FirstRunPrompt;
 use moor_core::seam::engine::{EngineError, LaunchReq, SessionRef};
 use moor_core::seam::surface::{PaneRef, ResumeOutcome, SurfaceError};
-use moor_core::{BoxHandle, BoxId, BoxPath, ErrorKind, StartReq};
+use moor_core::{BoxHandle, BoxId, BoxPath, ErrorKind, SessionId, StartReq};
 
 use super::{req, world, World};
 use crate::ops::start::run;
@@ -115,6 +115,31 @@ fn a_gone_pane_relaunches_with_the_newest_goal() {
     assert_eq!(second.goal.as_deref(), Some("ship it"));
     assert_eq!(second.resume, None);
     assert_eq!(live_pane(&w, id).as_deref(), Some("p-2"));
+}
+
+#[test]
+fn a_relaunch_records_the_given_parent_session() {
+    let (w, _engine, id) = started();
+    gone(&w);
+    let store = w.cx.store().unwrap();
+    let parent = store.open_host_session("/w", None, None).unwrap();
+    run(
+        &w.cx,
+        &StartReq {
+            parent: Some(SessionId::new(parent)),
+            ..goal_req("again")
+        },
+    )
+    .unwrap();
+    let raw = rusqlite::Connection::open(w.cx.state_dir().unwrap().join("moor.db")).unwrap();
+    let got: Option<i64> = raw
+        .query_row(
+            "SELECT parent_session FROM sessions WHERE box = ?1 ORDER BY ordinal DESC LIMIT 1",
+            [id.get()],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(got, Some(parent));
 }
 
 #[test]

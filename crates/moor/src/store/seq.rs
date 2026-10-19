@@ -65,7 +65,7 @@ impl Store {
             repo: repo.to_owned(),
         };
         let (lifecycle, _) = box_steps::initial(&TaskInput::Insert)?;
-        let id = super::apply::insert_task(&tx, &new, lifecycle, self.now())?;
+        let id = super::apply::insert_task(&tx, &new, lifecycle, None, self.now())?;
         tx.commit()?;
         drop(conn);
         Ok((id, name))

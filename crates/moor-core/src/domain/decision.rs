@@ -154,6 +154,8 @@ pub struct Decision {
     /// Caller-supplied events appended after the derived ones. Derived state
     /// events cannot be passed here; see [`ExtraEvent`].
     pub events: Vec<ExtraEvent>,
+    /// Parent Session of the first Session, for a Decision that inserts a task.
+    pub parent_session: Option<i64>,
 }
 
 impl Decision {
@@ -178,6 +180,7 @@ impl Decision {
             set: Fields::default(),
             intent: IntentChange::Keep,
             events: Vec::new(),
+            parent_session: None,
         }
     }
 
@@ -206,6 +209,13 @@ impl Decision {
     #[must_use]
     pub const fn intent(mut self, c: IntentChange) -> Self {
         self.intent = c;
+        self
+    }
+
+    /// Sets the parent Session of the first Session; ignored for an existing task.
+    #[must_use]
+    pub const fn parent_session(mut self, parent: Option<i64>) -> Self {
+        self.parent_session = parent;
         self
     }
 
