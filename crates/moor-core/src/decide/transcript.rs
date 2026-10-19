@@ -14,6 +14,8 @@ pub enum Trigger {
     Relaunch,
     /// The Task was closed.
     Close,
+    /// The session was ended on request, leaving the Box open.
+    End,
     /// The agent was first seen to have exited.
     Exit,
 }
@@ -25,6 +27,7 @@ impl Trigger {
         match self {
             Self::Relaunch => "relaunch",
             Self::Close => "close",
+            Self::End => "end",
             Self::Exit => "exit",
         }
     }
