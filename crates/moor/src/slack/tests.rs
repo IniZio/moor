@@ -4,9 +4,9 @@ use std::cell::RefCell;
 use std::sync::Arc;
 
 use moor_core::domain::box_state::BoxLifecycleInput;
+use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::decision::{Decision, ExtraEvent, NewTask};
 use moor_core::domain::session_state::SessionInput;
-use moor_core::domain::task::SetupOutcome;
 use moor_core::request::{CloseReq, Request, StartReq, SteerReq};
 use moor_core::seam::clock::Ts;
 use moor_core::BoxName;

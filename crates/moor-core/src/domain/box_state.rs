@@ -3,8 +3,19 @@
 //! This will replace `boxes::BoxState` when the schema changes over.
 
 use super::session_state::SessionState;
-pub use super::task::SetupOutcome;
 use super::Illegal;
+
+/// How a Box's setup script ended.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SetupOutcome {
+    /// Setup passed.
+    Ok,
+    /// Setup failed; the Box is still ready, with a warning.
+    Failed {
+        /// The failing output line.
+        line: String,
+    },
+}
 
 /// Why a Box lifecycle step was refused.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

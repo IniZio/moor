@@ -6,8 +6,8 @@ use std::time::Duration;
 
 use moor_core::boxscript::setup::setup_script;
 use moor_core::config::{Flags, TaskSettings, UserConfig};
+use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::run::SyncMode;
-use moor_core::domain::task::SetupOutcome;
 use moor_core::exec_env::SETUP_LINE_DEADLINE;
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};

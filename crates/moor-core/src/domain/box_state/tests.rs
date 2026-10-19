@@ -1,8 +1,7 @@
 //! Tests for the Box state machine.
 
-use super::{box_may_sleep, BoxLifecycle, BoxLifecycleInput, StepError};
+use super::{box_may_sleep, BoxLifecycle, BoxLifecycleInput, SetupOutcome, StepError};
 use crate::domain::session_state::SessionState;
-use crate::domain::task::SetupOutcome;
 use crate::domain::Illegal;
 
 use BoxLifecycle as S;

@@ -5,10 +5,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::domain::box_state::BoxLifecycleInput;
+use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::session_state::SessionInput;
-use moor_core::domain::task::SetupOutcome;
 use moor_core::name::BoxPath;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
 use moor_core::{BoxHandle, BoxId, BoxName, CpReq, ErrorKind, ProviderId};

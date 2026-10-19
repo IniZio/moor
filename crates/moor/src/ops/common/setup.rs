@@ -5,8 +5,8 @@ use std::path::Path;
 
 use moor_core::boxscript::setup::setup_script;
 use moor_core::config::TaskSettings;
+use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::run::SyncMode;
-use moor_core::domain::task::SetupOutcome;
 use moor_core::exec_env::{Purpose, SETUP_LINE_DEADLINE};
 use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
 use moor_core::seam::proc::Deadline;

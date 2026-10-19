@@ -1,11 +1,11 @@
 //! Tests for opening and listing Sessions of a Box.
 #![allow(clippy::indexing_slicing, reason = "test assertions")]
 
+use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::domain::session_state::{SessionInput, SessionState};
-use moor_core::domain::task::SetupOutcome;
 use moor_core::{BoxId, ProviderId};
 
 use crate::store::tests::{new_task, open};
