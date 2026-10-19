@@ -37,7 +37,7 @@ mod reopen;
 mod response;
 mod watch;
 
-use response::{queued_view, set_agent, view, with_provider};
+use response::{queued_view, set_agent, set_provisioned, view, with_provider};
 
 pub(crate) use launch::begin_seeded;
 pub(crate) use relaunch::revive_after_wake;
@@ -113,8 +113,7 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     let agent = watch::run(cx, store, id, agent);
     let row = reread(store, id)?;
     let mut v = queued_view(cx, &row, false, &cfg.provider.value);
-    v.setup = done.setup.view();
-    v.dotfiles = done.dotfiles.view();
+    set_provisioned(&mut v, &done);
     set_agent(&mut v, agent);
     Ok(v)
 }
@@ -211,8 +210,7 @@ fn attach(
     let row = &reread(store, row.id)?;
     let mut v = with_provider(cx, row, true)?;
     if let Some(p) = reprovisioned {
-        v.setup = p.setup.view();
-        v.dotfiles = p.dotfiles.view();
+        set_provisioned(&mut v, &p);
     }
     set_agent(&mut v, agent);
     Ok(v)

@@ -130,6 +130,7 @@ fn start_text(value: &Value) -> Option<String> {
         let name = task.get("name")?.as_str()?;
         let _ = writeln!(out, "open it with: moor open {name}");
     }
+    setup_failure_lines(value, &mut out);
     promoted_line(value, &mut out);
     for w in value
         .get("warnings_inline")
@@ -141,6 +142,30 @@ fn start_text(value: &Value) -> Option<String> {
         let _ = writeln!(out, "warning: {w}");
     }
     Some(out)
+}
+
+/// Writes the failed step's log tail, the Box it is in and how to close it, for a start that
+/// carried on past a failed step.
+fn setup_failure_lines(value: &Value, out: &mut String) {
+    let Some(step) = value.get("failed_step").and_then(Value::as_str) else {
+        return;
+    };
+    let handle = value.get("box").and_then(Value::as_str);
+    let _ = match handle {
+        Some(h) => writeln!(out, "{step} failed in Box {h}:"),
+        None => writeln!(out, "{step} failed:"),
+    };
+    for l in value
+        .pointer("/setup/tail")
+        .and_then(Value::as_str)
+        .into_iter()
+        .flat_map(str::lines)
+    {
+        let _ = writeln!(out, "  {l}");
+    }
+    if let Some(name) = value.pointer("/task/name").and_then(Value::as_str) {
+        let _ = writeln!(out, "close it with: moor close {name}");
+    }
 }
 
 /// Text form of `close`: a status line, the transcript path, then queue promotions.

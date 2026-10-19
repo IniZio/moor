@@ -157,6 +157,9 @@ pub struct SetupView {
     pub line: Option<String>,
     /// Duration in milliseconds.
     pub ms: Option<u64>,
+    /// Last lines of the setup log after a failure.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tail: Option<String>,
 }
 
 /// Outcome of dotfiles delivery.
@@ -200,6 +203,12 @@ pub struct StartView {
     pub agent: AgentLaunchView,
     /// Warnings raised while starting.
     pub warnings_inline: Vec<String>,
+    /// The provisioning step that failed while the Task carried on, such as `setup`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub failed_step: Option<String>,
+    /// Handle of the Box kept after a failed step.
+    #[serde(rename = "box", skip_serializing_if = "Option::is_none")]
+    pub boxed: Option<String>,
 }
 
 /// One event row.

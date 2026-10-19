@@ -111,6 +111,7 @@ fn start_view_keys_match_wire_shape() {
             ok: true,
             line: None,
             ms: Some(7),
+            tail: None,
         },
         dotfiles: DotfilesView::default(),
         agent: AgentLaunchView {
@@ -119,6 +120,8 @@ fn start_view_keys_match_wire_shape() {
             reason: None,
         },
         warnings_inline: vec![],
+        failed_step: None,
+        boxed: None,
     };
     assert_eq!(
         serde_json::to_value(v).ok(),

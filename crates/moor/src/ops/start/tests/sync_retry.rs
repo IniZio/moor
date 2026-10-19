@@ -95,6 +95,33 @@ fn a_failed_sync_names_the_step_the_tail_and_the_box_in_the_error_value() {
 }
 
 #[test]
+fn a_failed_sync_shows_the_message_and_every_hint_in_text_and_the_fields_in_json() {
+    let (w, _) = world_with_setup([Sync(Ok(exit(1)))]);
+    let err = start(&w).unwrap_err();
+    let resp = err.into_response("start", Vec::new());
+    let shown = crate::cli::render(&resp, &crate::cli::GlobalOpts::default());
+    assert_eq!(shown.stdout, "");
+    assert_eq!(
+        shown.stderr,
+        "moor: syncing the checkout into the Box failed: exit 1; the sync failed or left no git \
+         checkout (with submodules, push HEAD to origin first)\n\
+         hint: the sync step failed; Box box-1 is kept for debugging and the agent did not start\n\
+         hint: `moor start demo` again retries on this Box\n\
+         hint: `moor close demo` closes it; add --force to discard unpushed work in the Box\n"
+    );
+    let opts = crate::cli::GlobalOpts {
+        json: true,
+        ..crate::cli::GlobalOpts::default()
+    };
+    let json: serde_json::Value =
+        serde_json::from_str(&crate::cli::render(&resp, &opts).stdout).unwrap();
+    assert_eq!(json.pointer("/value/failed_step"), Some(&"sync".into()));
+    assert_eq!(json.pointer("/value/box"), Some(&"box-1".into()));
+    let tail = json.pointer("/value/log_tail").and_then(|t| t.as_str());
+    assert!(tail.is_some_and(|t| t.contains("exit 1")));
+}
+
+#[test]
 fn start_after_a_failed_sync_retries_in_the_same_box_and_launches() {
     let (w, engine) = world_with_setup([Sync(Ok(exit(1))), Sync(Ok(exit(0))), Cmd(Ok(exit(0)))]);
     start(&w).unwrap_err();

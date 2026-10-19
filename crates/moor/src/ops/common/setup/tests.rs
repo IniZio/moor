@@ -168,6 +168,7 @@ fn failing_line_comes_from_the_log_and_warns() {
             line: "bad".to_owned(),
             exit: Some(3),
             ms: 0,
+            tail: "moor setup: $ a\nmoor setup: $ bad".to_owned(),
         }
     );
     assert_eq!(r.driver.execs().len(), 1);
@@ -206,6 +207,7 @@ fn the_last_announced_line_fails() {
             line: "b".to_owned(),
             exit: Some(1),
             ms: 0,
+            tail: "moor setup: $ a\nmoor setup: $ b".to_owned(),
         }
     );
 }
@@ -231,6 +233,7 @@ fn a_failed_copy_falls_back_to_the_first_line() {
             line: "a".to_owned(),
             exit: Some(1),
             ms: 0,
+            tail: String::new(),
         }
     );
 }
@@ -256,6 +259,7 @@ fn driver_timeout_fails_the_line() {
             line: "slow".to_owned(),
             exit: None,
             ms: 0,
+            tail: "moor setup: $ slow".to_owned(),
         }
     );
     assert_eq!(r.driver.execs().len(), 1);
@@ -328,6 +332,7 @@ fn outcome_maps_skipped_and_ok_to_ok() {
             line: "x".to_owned(),
             exit: None,
             ms: 0,
+            tail: String::new(),
         }
         .outcome(),
         SetupOutcome::Failed {
@@ -345,7 +350,8 @@ fn view_maps_each_variant() {
             ran: true,
             ok: true,
             line: None,
-            ms: Some(0)
+            ms: Some(0),
+            tail: None,
         }
     );
     assert_eq!(
@@ -353,13 +359,15 @@ fn view_maps_each_variant() {
             line: "x".to_owned(),
             exit: None,
             ms: 0,
+            tail: String::new(),
         }
         .view(),
         SetupView {
             ran: true,
             ok: false,
             line: Some("x".to_owned()),
-            ms: Some(0)
+            ms: Some(0),
+            tail: None,
         }
     );
 }
@@ -372,6 +380,7 @@ fn failed_is_true_only_for_failed() {
         line: "x".to_owned(),
         exit: None,
         ms: 0,
+        tail: String::new(),
     }
     .failed());
 }
@@ -409,6 +418,7 @@ fn interrupted_line_fails_and_stops_the_run() {
             line: "a".to_owned(),
             exit: None,
             ms: 0,
+            tail: "moor setup: $ a".to_owned(),
         }
     );
     assert_eq!(r.driver.execs().len(), 1);
