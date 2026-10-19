@@ -33,7 +33,7 @@ pub const ASSERTED_KINDS: [&str; 20] = [
 /// One recorded fact about a task, serialized with its `kind` tag.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum Event {
+pub enum Event<F = TaskState> {
     /// The task row was created.
     Started,
     /// Admission refused the task.
@@ -49,7 +49,7 @@ pub enum Event {
     /// Box setup began.
     SettingUp {
         /// The state the task left.
-        from: TaskState,
+        from: F,
     },
     /// The agent is working.
     Working,
@@ -86,7 +86,7 @@ pub enum Event {
     /// The task closed.
     Closed {
         /// The state the task left.
-        from: TaskState,
+        from: F,
     },
     /// A box was requested.
     BoxRequested,
@@ -383,10 +383,12 @@ pub fn task_events(from: Option<TaskState>, to: TaskState, input: &TaskInput) ->
 
 pub use boxes::box_events;
 pub use checked::CheckedCred;
+pub use steps::{lifecycle_events, session_events};
 
 mod boxes;
 mod checked;
 mod kind;
+mod steps;
 
 #[cfg(test)]
 mod proxy_tests;

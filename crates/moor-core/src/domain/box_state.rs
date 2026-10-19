@@ -3,7 +3,7 @@
 //! This will replace `boxes::BoxState` when the schema changes over.
 
 use super::session_state::SessionState;
-use super::task::SetupOutcome;
+pub use super::task::SetupOutcome;
 use super::Illegal;
 
 /// Why a Box lifecycle step was refused.
@@ -101,7 +101,12 @@ impl BoxLifecycle {
     /// # Errors
     /// Returns [`StepError::Illegal`] for any pair outside the transition table, and
     /// [`StepError::SleepBlocked`] for `Sleep` from Ready while a live Session is not Idle.
-    pub fn step(self, input: &BoxLifecycleInput) -> Result<Self, StepError> {
+    /// `sessions` are the states of the Box's Sessions; only `Sleep` reads them.
+    pub fn step(
+        self,
+        sessions: &[SessionState],
+        input: &BoxLifecycleInput,
+    ) -> Result<Self, StepError> {
         use BoxLifecycleInput as I;
         let to = match (self, input) {
             (Self::Checking, I::Rejected { .. }) => Self::Rejected,
@@ -111,7 +116,7 @@ impl BoxLifecycle {
             | (Self::SetupFailed, I::Retry) => Self::SettingUp,
             (Self::SettingUp, I::Ready { .. }) | (Self::Asleep, I::Wake) => Self::Ready,
             (Self::SettingUp, I::SetupFailed { .. }) => Self::SetupFailed,
-            (Self::Ready, I::Sleep { sessions }) => {
+            (Self::Ready, I::Sleep { .. }) => {
                 if !box_may_sleep(sessions) {
                     let busy = sessions
                         .iter()
@@ -168,8 +173,8 @@ pub enum BoxLifecycleInput {
     Retry,
     /// The Box sleeps, by age or by command; legal only when every Session is Idle.
     Sleep {
-        /// The states of the Box's Sessions.
-        sessions: Vec<SessionState>,
+        /// True when the sleep comes from age, false when by command.
+        auto: bool,
     },
     /// The Box wakes.
     Wake,
