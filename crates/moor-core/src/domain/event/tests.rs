@@ -1,6 +1,7 @@
 //! Tests for the event kinds, payloads and step-to-event tables.
 
 use super::*;
+use crate::decide::turn::TurnOutcome;
 use crate::domain::boxes::{BoxInput, BoxState};
 use crate::name::BoxHandle;
 
@@ -177,6 +178,10 @@ fn all_events() -> Vec<Event> {
             status: 401,
         },
         Event::ProxyCredentialRecovered { rule: s("r") },
+        Event::TurnDone {
+            steer: 1,
+            outcome: TurnOutcome::Idle,
+        },
     ]
 }
 
@@ -240,6 +245,7 @@ const fn event_index(e: &Event) -> usize {
         Event::AgentRateLimited { .. } => 44,
         Event::ProxyCredentialRejected { .. } => 45,
         Event::ProxyCredentialRecovered { .. } => 46,
+        Event::TurnDone { .. } => 47,
     }
 }
 
@@ -247,7 +253,7 @@ const fn event_index(e: &Event) -> usize {
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 47);
+    assert_eq!(all.len(), 48);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }
@@ -505,6 +511,20 @@ fn session_ended_kind_and_payload() {
         e.payload(),
         serde_json::json!({"session":3,"cause":"exited","exit":null})
     );
+}
+
+/// `TurnDone` names itself and carries the steer id and each outcome.
+#[test]
+fn turn_done_kind_and_payload() {
+    for (outcome, name) in [
+        (TurnOutcome::Idle, "idle"),
+        (TurnOutcome::NeedsInput, "needs_input"),
+        (TurnOutcome::Exited, "exited"),
+    ] {
+        let e = Event::TurnDone { steer: 7, outcome };
+        assert_eq!(e.kind(), "turn_done");
+        assert_eq!(e.payload(), serde_json::json!({"steer":7,"outcome":name}));
+    }
 }
 
 mod kinds;
