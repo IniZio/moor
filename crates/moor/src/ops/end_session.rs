@@ -37,22 +37,23 @@ pub(crate) fn run(cx: &Cx, req: &EndSessionReq) -> Result<EndSessionValue, Comma
             .task(id)?
             .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no task {name}")))
     };
+    let _held = BoxLock::acquire(
+        cx.clock(),
+        cx.state_dir()?,
+        id,
+        "end-session",
+        boxlock::WAIT,
+    )?;
     if asleep(&reload()?) {
-        let _held = BoxLock::acquire(
-            cx.clock(),
-            cx.state_dir()?,
-            id,
-            "end-session",
-            boxlock::WAIT,
-        )?;
         wake_and_revive(cx, store, &reload()?)?;
     }
     let row = reload()?;
     let (session, ordinal) = live_session(store, &row)?.ok_or_else(no_session)?;
-    let launch = store.live_session(id)?.ok_or_else(no_session)?;
-    let saved = transcript::save(cx, store, &row, &launch, Trigger::Close);
-    stop_agent(cx, store, &row, saved.as_ref().map(|t| t.digest.as_str()))
-        .map_err(|e| reword(e, name))?;
+    if let Some(launch) = store.live_session(id)? {
+        let saved = transcript::save(cx, store, &row, &launch, Trigger::End);
+        stop_agent(cx, store, &row, saved.as_ref().map(|t| t.digest.as_str()))
+            .map_err(|e| reword(e, name))?;
+    }
     if !store.end_current_session(id, "requested", None)? {
         return Err(no_session());
     }
