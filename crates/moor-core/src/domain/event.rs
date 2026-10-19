@@ -315,6 +315,24 @@ pub enum Event {
         /// How the turn ended.
         outcome: TurnOutcome,
     },
+    /// A Box file was stored as a new artifact version.
+    ArtifactPublished {
+        /// The file name.
+        name: String,
+        /// The version number, starting at 1.
+        version: i64,
+        /// The artifact kind, such as `screenshot` or `log`.
+        ///
+        /// Serialized as `artifact_kind` because `kind` is the tag; `payload` restores it.
+        #[serde(rename = "artifact_kind")]
+        kind: String,
+        /// The content type.
+        content_type: String,
+        /// Size in bytes.
+        size: u64,
+        /// Lowercase hex SHA-256 of the contents.
+        sha256: String,
+    },
 }
 
 /// The events a task step produces.
