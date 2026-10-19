@@ -151,6 +151,15 @@ pub enum Event {
         /// The session id.
         session: String,
     },
+    /// A session ended while the Box stayed open.
+    SessionEnded {
+        /// The sessions row id.
+        session: i64,
+        /// Why it ended, such as `exited`, `relaunch` or `requested`.
+        cause: String,
+        /// The exit code, if known.
+        exit: Option<i32>,
+    },
     /// The agent launch failed, so no session started.
     SessionFailed {
         /// The launch step that failed.
