@@ -154,6 +154,56 @@ fn git_seed_source_stays_local_without_gitlinks() {
     );
 }
 
+fn seed_source_with_shallow(shallow: Reply, sync: SyncMode) -> (Option<String>, usize) {
+    let p = Arc::new(ScriptedProc::new());
+    p.on(
+        Tool::Git,
+        &["rev-parse", "--is-shallow-repository"],
+        shallow,
+    );
+    p.on(Tool::Crabbox, &["run"], ok());
+    let c = Crabbox::fake(p.clone());
+    let mut s = spec(sync);
+    s.host_cwd = Some(PathBuf::from("/work/tree"));
+    c.exec(
+        &BoxHandle::new("sprites/moor-t7-ab12cd"),
+        &s,
+        Deadline(Duration::from_secs(90)),
+    )
+    .unwrap();
+    let calls = p.calls();
+    let git = calls.iter().filter(|c| c.tool == Tool::Git).count();
+    let source = calls
+        .iter()
+        .find(|c| c.tool == Tool::Crabbox)
+        .and_then(|c| {
+            c.env
+                .iter()
+                .find(|(k, _)| k == "CRABBOX_SYNC_GIT_SEED_SOURCE")
+                .map(|(_, v)| v.clone())
+        });
+    (source, git)
+}
+
+#[test]
+fn git_seed_source_is_origin_for_a_shallow_checkout() {
+    let (source, _) = seed_source_with_shallow(Reply::Ok("true\n".to_owned()), SyncMode::Full);
+    assert_eq!(source.as_deref(), Some("origin"));
+}
+
+#[test]
+fn git_seed_source_stays_local_when_the_shallow_probe_fails() {
+    let (source, _) = seed_source_with_shallow(fail(128, "not a repo"), SyncMode::Full);
+    assert_eq!(source.as_deref(), Some("local"));
+}
+
+#[test]
+fn exec_without_full_sync_runs_no_git_probe() {
+    let (source, git) = seed_source_with_shallow(Reply::Ok("true\n".to_owned()), SyncMode::None);
+    assert_eq!(git, 0);
+    assert_eq!(source.as_deref(), Some("local"));
+}
+
 #[test]
 fn host_cwd_is_the_proc_cwd() {
     let mut s = spec(SyncMode::Full);

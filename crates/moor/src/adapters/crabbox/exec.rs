@@ -17,20 +17,27 @@ const CD_THEN_EXEC: &str = r#"cd "$1" && shift && exec "$@""#;
 ///
 /// Crabbox's offline `local` seed rejects any tree with a submodule gitlink
 /// (`prepare complete local Git seed snapshot: gitlink`), initialised or not,
-/// in the index or in HEAD. Such trees use `origin`, which skips gitlink
-/// entries. A probe that fails counts as no gitlink, and an exec that does
-/// not sync skips both probes.
+/// in the index or in HEAD, and its rev-list fails on a shallow clone. Such
+/// trees use `origin`, which skips gitlink entries and needs no full history.
+/// A probe that fails counts as a negative, and an exec that does not sync
+/// skips every probe.
 fn seed_source(cb: &Crabbox, spec: &ExecSpec) -> &'static str {
     let (SyncMode::Full, Some(dir)) = (spec.sync, &spec.host_cwd) else {
         return "local";
     };
-    let has_gitlink = |args: &[&str]| {
+    let probe = |args: &[&str], hit: &dyn Fn(&str) -> bool| {
         let probe = ProcSpec::new(Tool::Git, Deadline(GITLINK_PROBE_TIMEOUT))
             .args(args)
             .cwd(dir);
-        matches!(cb.proc.run(&probe), Ok(out) if out.stdout.lines().any(|l| l.starts_with("160000 ")))
+        matches!(cb.proc.run(&probe), Ok(out) if hit(&out.stdout))
     };
-    if has_gitlink(&["ls-files", "-s"]) || has_gitlink(&["ls-tree", "-r", "HEAD"]) {
+    let has_gitlink = |s: &str| s.lines().any(|l| l.starts_with("160000 "));
+    if probe(&["ls-files", "-s"], &has_gitlink)
+        || probe(&["ls-tree", "-r", "HEAD"], &has_gitlink)
+        || probe(&["rev-parse", "--is-shallow-repository"], &|s| {
+            s.trim() == "true"
+        })
+    {
         "origin"
     } else {
         "local"
