@@ -84,7 +84,7 @@ fn proof_files(cx: &Cx, row: &TaskRow) -> Option<Vec<ProofFile>> {
         .as_ref()
         .filter(|b| b.state == BoxState::Ready)
         .and_then(|b| b.handle.as_ref())?;
-    match crate::ops::proof::list(cx, handle, row.id, None) {
+    match crate::ops::proof::list(cx, handle, row.id, None, None) {
         Ok(files) => Some(files),
         Err(why) => {
             cx.warn(Warning {

@@ -10,21 +10,25 @@ use crate::Moor;
 /// Settles every open Task each `every` on a detached thread, for the life of the process.
 ///
 /// Each tick wires fresh adapters so config and tool changes apply; a failure is
-/// logged to `sink` and the next tick still runs.
+/// logged to `sink` and the next tick still runs. The thread owns the proof
+/// backoff, since `Moor` is rebuilt every tick.
 pub(super) fn spawn(env: &Env, every: Duration, proof_cap: u64, sink: &Sink) {
     let env = env.clone();
     let sink = Sink::clone(sink);
-    thread::spawn(move || loop {
-        thread::sleep(every);
-        tick(&env, proof_cap, &sink);
+    thread::spawn(move || {
+        let backoff = Moor::settle_backoff();
+        loop {
+            thread::sleep(every);
+            tick(&env, |moor| moor.settle_open(proof_cap, &backoff), &sink);
+        }
     });
 }
 
 /// One wired pass; every warning and failure goes to `sink`.
-fn tick(env: &Env, proof_cap: u64, sink: &Sink) {
+fn tick(env: &Env, settle: impl FnOnce(&Moor) -> Vec<String>, sink: &Sink) {
     match Moor::from_env(env) {
         Ok(moor) => {
-            for msg in moor.settle_open(proof_cap) {
+            for msg in settle(&moor) {
                 log(sink, &format!("settle: {msg}"));
             }
         }

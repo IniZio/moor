@@ -15,6 +15,7 @@ use moor_core::{BoxId, BoxName, ProviderId};
 
 use super::Moor;
 use crate::cx::Cx;
+use crate::ops::proof::ProofBackoff;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::proc::ScriptedProc;
@@ -128,7 +129,7 @@ fn events_after_maps_rows_to_frames_strictly_after_the_cursor() {
 fn settle_open_stores_an_idled_event_for_a_quiet_agent() {
     let dir = tempfile::tempdir().unwrap();
     let moor = Moor::from_cx(quiet_agent(dir.path()));
-    let msgs = moor.settle_open(DEFAULT_PROOF_MAX_BYTES);
+    let msgs = moor.settle_open(DEFAULT_PROOF_MAX_BYTES, &ProofBackoff::default());
     assert!(msgs.is_empty(), "{msgs:?}");
     let frames = moor.events_after(0, 100).unwrap();
     assert!(
@@ -144,15 +145,15 @@ fn settle_open_records_and_copies_a_new_proof_file() {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(
         FakeDriver::new()
-            .exec_stdout([
+            .run_stdout(
                 "shot.png\t4\taaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
-            ])
+            )
             .copy_text("png!"),
     );
     let cx = engine_cx(dir.path(), &driver, &Arc::new(FakeEngine::new()));
     let id = working(&cx, &driver, "t", "s-1");
     let moor = Moor::from_cx(cx);
-    let msgs = moor.settle_open(DEFAULT_PROOF_MAX_BYTES);
+    let msgs = moor.settle_open(DEFAULT_PROOF_MAX_BYTES, &ProofBackoff::default());
     assert!(msgs.is_empty(), "{msgs:?}");
     let frames = moor.events_after(0, 100).unwrap();
     assert!(

@@ -17,6 +17,7 @@ use moor_core::{BoxId, BoxName, ProviderId};
 use crate::controller::watch::{stream, Ask, Limits};
 use crate::cx::Cx;
 use crate::env::Env;
+use crate::ops::proof::ProofBackoff;
 use crate::store::{Store, STORE_FILE};
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
@@ -129,7 +130,7 @@ impl Write for StopAtIdled {
 fn pass_settles_a_quiet_agent_without_any_client() {
     let dir = tempfile::tempdir().unwrap();
     let (cx, id) = quiet_agent(dir.path());
-    let messages = Moor::from_cx(cx).settle_open(DEFAULT_PROOF_MAX_BYTES);
+    let messages = Moor::from_cx(cx).settle_open(DEFAULT_PROOF_MAX_BYTES, &ProofBackoff::default());
     assert!(messages.is_empty(), "{messages:?}");
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
     let store = Store::open(&dir.path().join(STORE_FILE), clock).unwrap();
@@ -148,7 +149,7 @@ fn pass_settles_a_quiet_agent_without_any_client() {
 fn stream_delivers_idle_without_any_show() {
     let dir = tempfile::tempdir().unwrap();
     let (cx, _) = quiet_agent(dir.path());
-    Moor::from_cx(cx).settle_open(DEFAULT_PROOF_MAX_BYTES);
+    Moor::from_cx(cx).settle_open(DEFAULT_PROOF_MAX_BYTES, &ProofBackoff::default());
     let env = Env::from_pairs([
         ("MOOR_STATE_DIR", dir.path().to_str().unwrap()),
         ("MOOR_CONFIG", "/nonexistent/moor.yaml"),

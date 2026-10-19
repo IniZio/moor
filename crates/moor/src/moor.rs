@@ -14,6 +14,11 @@ pub struct Moor {
 }
 
 impl Moor {
+    /// Fresh proof backoff for a caller that outlives one `Moor`.
+    pub(crate) fn settle_backoff() -> ops::proof::ProofBackoff {
+        ops::proof::ProofBackoff::default()
+    }
+
     /// Build from a captured environment.
     pub fn from_env(env: &Env) -> Result<Self, CommandError> {
         Ok(Self {
