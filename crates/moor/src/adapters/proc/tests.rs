@@ -246,3 +246,23 @@ fn alive_sees_own_pid_and_rejects_absent_ones() {
     assert!(!p.alive(u32::MAX));
     assert!(!p.alive(0x7fff_ffff));
 }
+
+#[test]
+fn crabbox_grace_ignores_the_deadline() {
+    assert_eq!(
+        super::grace::grace_for(Tool::Crabbox, Duration::from_secs(1)),
+        Duration::from_secs(35)
+    );
+}
+
+#[test]
+fn other_tools_grace_is_capped_by_the_deadline() {
+    assert_eq!(
+        super::grace::grace_for(Tool::Ssh, Duration::from_secs(1)),
+        Duration::from_secs(1)
+    );
+    assert_eq!(
+        super::grace::grace_for(Tool::Ssh, Duration::from_secs(60)),
+        Duration::from_secs(2)
+    );
+}

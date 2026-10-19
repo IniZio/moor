@@ -14,17 +14,16 @@ use moor_core::seam::proc::{
     ChildHandle, Output, Proc, ProcError, ProcOutput, ProcSpec, Signal as GroupSignal, Tool,
 };
 use rustix::io::Errno;
-use rustix::process::{test_kill_process, Signal};
+use rustix::process::test_kill_process;
 use zeroize::Zeroizing;
 
 use crate::env::Env;
 use env::{resolve, Snapshot};
+use grace::{terminate, GRACE};
 use signal::{is_group_leader, send_group, signal_group, to_pid};
 use stdin::stdin_for;
 use trace::Trace;
 
-/// Longest wait between SIGTERM and SIGKILL.
-const GRACE: Duration = Duration::from_secs(2);
 /// Poll interval while waiting for a child.
 const POLL: Duration = Duration::from_millis(10);
 /// Spawn attempts when the program file is briefly busy (`ETXTBSY`).
@@ -211,25 +210,6 @@ fn gone() -> io::Error {
     io::Error::other("child waiter vanished")
 }
 
-/// SIGTERM the group, wait a short grace, SIGKILL the group, reap the leader.
-fn terminate(pid: u32, rx: &Receiver<Waited>, deadline: Duration) -> io::Result<()> {
-    signal_group(pid, Signal::TERM);
-    let grace = GRACE.min(deadline.max(POLL));
-    let exited = match rx.recv_timeout(grace) {
-        Ok(st) => {
-            st?;
-            true
-        }
-        Err(RecvTimeoutError::Timeout) => false,
-        Err(RecvTimeoutError::Disconnected) => return Err(gone()),
-    };
-    signal_group(pid, Signal::KILL);
-    if !exited {
-        rx.recv().map_err(|_| gone())??;
-    }
-    Ok(())
-}
-
 /// Error for a child that exited without success; never carries stdout.
 fn failure(status: ExitStatus, err: &[u8]) -> ProcError {
     status.code().map_or_else(
@@ -292,7 +272,7 @@ impl SystemProc {
         let status = match rx.recv_timeout(limit) {
             Ok(st) => st.map_err(ProcError::Spawn)?,
             Err(RecvTimeoutError::Timeout) => {
-                terminate(pid, &rx, limit).map_err(ProcError::Spawn)?;
+                terminate(pid, &rx, spec.tool, limit).map_err(ProcError::Spawn)?;
                 wait_eof(&erx, etx);
                 return Err(ProcError::Timeout {
                     tool: spec.tool,
@@ -380,6 +360,7 @@ mod boot;
 mod child;
 mod detached;
 mod env;
+mod grace;
 mod signal;
 mod stdin;
 mod stream;

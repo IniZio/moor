@@ -336,6 +336,42 @@ fn inherit_sends_child_stderr_to_the_stderr_writer_and_tail() {
     assert_eq!(cap.0.lock().unwrap().as_slice(), b"live\n");
 }
 
+#[test]
+fn second_interrupt_cuts_the_crabbox_grace_short_after_one_notice() {
+    let dir = TempDir::new().unwrap();
+    let ready = dir.path().join("ready");
+    let env = Env::from_pairs([("MOOR_CRABBOX_BIN".to_owned(), "/bin/sh".to_owned())]);
+    let proc = SystemProc::new(&env, &ToolPaths::default());
+    let body = format!(
+        "trap '' TERM\ntouch {}\nwhile :; do sleep 1; done",
+        ready.display()
+    );
+    let spec = ProcSpec::new(Tool::Crabbox, Deadline(Duration::from_secs(60)))
+        .arg("-c")
+        .arg(body);
+    let cap = Capture::default();
+    let flag = Arc::new(AtomicBool::new(false));
+    let t = Instant::now();
+    let r = std::thread::scope(|s| {
+        s.spawn(|| {
+            wait_for(&ready);
+            flag.store(true, Ordering::SeqCst);
+            std::thread::sleep(Duration::from_millis(500));
+            let seen = String::from_utf8_lossy(&cap.0.lock().unwrap()).into_owned();
+            assert_eq!(seen.matches("waiting for crabbox").count(), 1, "{seen}");
+            flag.store(true, Ordering::SeqCst);
+        });
+        proc.stream_to(&spec, &Output::Inherit, &flag, Box::new(cap.clone()))
+    });
+    assert!(matches!(r, Err(ProcError::Interrupted)), "{r:?}");
+    assert!(t.elapsed() < Duration::from_secs(5), "{:?}", t.elapsed());
+    let seen = String::from_utf8_lossy(&cap.0.lock().unwrap()).into_owned();
+    assert_eq!(
+        seen,
+        "waiting for crabbox to release the Box workspace (Ctrl-C again to force)\n"
+    );
+}
+
 fn gate() -> StderrGate {
     StderrGate {
         begin: "moor-b".into(),
