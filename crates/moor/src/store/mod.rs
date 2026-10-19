@@ -49,12 +49,13 @@ pub(crate) const SCHEMA_VERSION: &str = "3";
 const SCHEMA_SQL: &str = include_str!("schema.sql");
 /// How long a connection waits on a lock before `SQLITE_BUSY`.
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
-/// Column list shared by the task reads; session columns come from the primary session.
+/// Column list shared by the task reads; session columns come from the current session.
 const TASK_SELECT: &str = "SELECT b.id, b.name, b.repo, b.issue, b.goal, b.base, b.branch, b.worktree, b.bound, \
     s.workspace_id, s.agent_session_id, b.state, b.state_reason, b.intent_kind, b.intent_pid, b.intent_run, \
     b.intent_at, b.setup_failed_at, b.created_at, b.updated_at, b.provider, b.handle, b.driver_state, \
     b.attempted_handle, b.workdir, b.egress, b.sleep_reason, b.driver_updated_at, b.idle_since, b.launch_failure, \
-    s.state FROM boxes b LEFT JOIN sessions s ON s.box = b.id AND s.ordinal = 1";
+    s.state FROM boxes b LEFT JOIN sessions s ON s.box = b.id \
+    AND s.ordinal = (SELECT MAX(ordinal) FROM sessions WHERE box = b.id)";
 
 /// Store failure.
 #[derive(Debug, thiserror::Error)]
