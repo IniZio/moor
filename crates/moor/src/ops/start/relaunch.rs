@@ -5,6 +5,7 @@ use moor_core::config::{Flags, TaskSettings};
 use moor_core::decide::transcript::Trigger;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
 use moor_core::domain::task::TaskState;
+use moor_core::seam::engine::LaunchPrompt;
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::proxy_host::ProxyStatus;
 use moor_core::seam::surface::{PaneRef, SurfaceError};
@@ -218,6 +219,9 @@ fn relaunch(
     };
     let cfg = settings()?;
     launch.resume = resume;
+    if req.hold {
+        launch.prompt = LaunchPrompt::None;
+    }
     launch.model = cfg.model.clone().map(|m| m.value);
     if let Some(g) = &req.goal {
         let set = Fields {
