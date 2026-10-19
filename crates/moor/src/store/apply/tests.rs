@@ -103,6 +103,18 @@ fn failed_insert_leaves_no_box_and_no_branch_ref() {
     }
 }
 
+/// Force the highest-ordinal Session into `state`.
+fn set_current_state(store: &crate::store::Store, id: moor_core::BoxId, state: &str) {
+    store
+        .writer()
+        .unwrap()
+        .execute(
+            "UPDATE sessions SET state = ?2 WHERE box = ?1 AND ordinal = (SELECT MAX(ordinal) FROM sessions WHERE box = ?1)",
+            rusqlite::params![id.get(), state],
+        )
+        .unwrap();
+}
+
 #[test]
 fn box_steps_between_working_and_idle() {
     let dir = tempfile::tempdir().unwrap();
@@ -125,13 +137,10 @@ fn sleep_is_refused_while_another_session_works() {
     let (store, _clock) = open(dir.path());
     let id = ready(&store);
     store
-        .apply(Decision::new(id).task_input(TaskInput::AgentQuiet))
-        .unwrap();
-    store
         .writer()
         .unwrap()
         .execute(
-            "INSERT INTO sessions (box, ordinal, state, started_at) VALUES (?, 2, 'working', 0)",
+            "INSERT INTO sessions (box, ordinal, state, started_at) VALUES (?, 2, 'idle', 0)",
             [id.get()],
         )
         .unwrap();
@@ -143,4 +152,70 @@ fn sleep_is_refused_while_another_session_works() {
         "{err:?}"
     );
     assert_eq!(states(&store, id).0, "ready");
+}
+
+#[test]
+fn task_input_updates_only_the_current_session() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = ready(&store);
+    store.open_session(id).unwrap();
+    set_current_state(&store, id, "working");
+    store
+        .apply(Decision::new(id).task_input(TaskInput::AgentQuiet))
+        .unwrap();
+    let states: Vec<String> = store
+        .box_sessions(id)
+        .unwrap()
+        .iter()
+        .map(|s| s.state.as_str().to_owned())
+        .collect();
+    assert_eq!(states, ["working", "idle"]);
+}
+
+#[test]
+fn task_row_reports_the_current_session_state() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = ready(&store);
+    store
+        .writer()
+        .unwrap()
+        .execute(
+            "UPDATE sessions SET state = 'ended' WHERE box = ? AND ordinal = 1",
+            [id.get()],
+        )
+        .unwrap();
+    store.open_session(id).unwrap();
+    set_current_state(&store, id, "working");
+    let conn = store.writer().unwrap();
+    let (_, _, session) = crate::store::reads::load_row_parts(&conn, id)
+        .unwrap()
+        .unwrap();
+    drop(conn);
+    assert_eq!(session.as_str(), "working");
+}
+
+#[test]
+fn ended_other_sessions_do_not_block_sleep() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = ready(&store);
+    store
+        .writer()
+        .unwrap()
+        .execute(
+            "UPDATE sessions SET state = 'ended' WHERE box = ? AND ordinal = 1",
+            [id.get()],
+        )
+        .unwrap();
+    store.open_session(id).unwrap();
+    set_current_state(&store, id, "working");
+    store
+        .apply(Decision::new(id).task_input(TaskInput::AgentQuiet))
+        .unwrap();
+    store
+        .apply(Decision::new(id).task_input(TaskInput::SleepDue))
+        .unwrap();
+    assert_eq!(states(&store, id).0, "asleep");
 }
