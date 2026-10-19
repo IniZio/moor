@@ -130,14 +130,15 @@ fs.writeFileSync(t, JSON.stringify(j, null, 2), { mode: 0o600 });
 fs.renameSync(t, p);
 "#;
 
-/// Arguments for a fresh session, ending in the first prompt unless the launch asks for none.
+/// Arguments for a fresh session, ending in `--` and the first prompt unless the launch asks for none.
 pub(super) fn argv(ctx: &LaunchCtx) -> Vec<String> {
     let mut argv = flags(ctx);
-    match &ctx.prompt {
-        LaunchPrompt::Brief => argv.push(PROMPT.to_owned()),
-        LaunchPrompt::Text(text) => argv.push(text.clone()),
-        LaunchPrompt::None => {}
-    }
+    let prompt = match &ctx.prompt {
+        LaunchPrompt::Brief => PROMPT,
+        LaunchPrompt::Text(text) => text,
+        LaunchPrompt::None => return argv,
+    };
+    argv.extend(["--".to_owned(), prompt.to_owned()]);
     argv
 }
 

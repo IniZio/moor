@@ -8,7 +8,28 @@ fn argv_passes_caller_text_verbatim_as_the_prompt() {
         prompt: LaunchPrompt::Text(text.into()),
         ..ctx(t.path())
     };
-    assert_eq!(Claude.argv(&c), strings(&[text]));
+    assert_eq!(Claude.argv(&c), strings(&["--", text]));
+}
+
+#[test]
+fn argv_keeps_a_dash_led_text_out_of_the_option_parser() {
+    let t = TempDir::new().unwrap();
+    let c = LaunchCtx {
+        model: Some("opus".into()),
+        prompt: LaunchPrompt::Text("-rf hello".into()),
+        ..proxied(t.path())
+    };
+    assert_eq!(
+        Claude.argv(&c),
+        strings(&[
+            "--model",
+            "opus",
+            "--permission-mode",
+            "bypassPermissions",
+            "--",
+            "-rf hello"
+        ])
+    );
 }
 
 #[test]
