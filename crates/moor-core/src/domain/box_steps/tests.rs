@@ -138,3 +138,6 @@ fn wake_with_ended_primary_readies_box() {
     );
     assert_eq!(got, Ok((BoxLifecycle::Ready, SessionState::Ended)));
 }
+
+mod apply;
+mod golden;
