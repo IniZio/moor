@@ -238,6 +238,9 @@ fn relaunch(
     };
     let digest = saved.as_ref().map(|t| t.digest.as_str());
     store.end_session(old.id, exit, digest)?;
+    store.end_current_session(id, "relaunch", exit)?;
+    let next = store.open_session(id)?;
+    store.start_session(next.id)?;
     let view = launch::begin(cx, store, &row, &launch, &cfg)?;
     if view.launched {
         let new_pane = store.live_session(id)?.and_then(|s| s.pane);
