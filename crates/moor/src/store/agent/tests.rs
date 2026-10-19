@@ -13,7 +13,7 @@ use moor_core::{BoxHandle, BoxId, BoxName, ProviderId};
 
 use crate::testing::clock::FakeClock;
 
-use crate::store::Store;
+use crate::store::{Store, StoreError};
 
 /// Open a store in a temp dir with a fake clock.
 fn open(dir: &Path) -> (Store, Arc<FakeClock>) {
@@ -271,11 +271,44 @@ fn hook_cache_reads_a_legacy_blocked_row_as_its_message() {
     assert_eq!(rec.message.as_deref(), Some("X"));
 }
 
+fn set_session_state(store: &Store, id: BoxId, state: &str) {
+    store
+        .writer()
+        .unwrap()
+        .execute(
+            "UPDATE sessions SET state = ? WHERE box = ? AND ordinal = (SELECT MAX(ordinal) FROM sessions WHERE box = ?)",
+            (state, id.get(), id.get()),
+        )
+        .unwrap();
+}
+
+#[test]
+fn begin_session_refuses_an_ended_current_session() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = add(&store, "t");
+    set_session_state(&store, id, "ended");
+    let err = store.begin_session(id, "s1", None).unwrap_err();
+    assert!(matches!(err, StoreError::Invalid(_)), "{err:?}");
+    assert_eq!(store.live_session(id).unwrap(), None);
+}
+
+#[test]
+fn begin_session_allows_a_starting_or_working_current_session() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = add(&store, "t");
+    store.begin_session(id, "s1", None).unwrap();
+    set_session_state(&store, id, "working");
+    store.begin_session(id, "s2", None).unwrap();
+}
+
 #[test]
 fn begin_session_records_the_current_box_session() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
     let id = add(&store, "t");
+    set_session_state(&store, id, "ended");
     let second = store.open_session(id).unwrap();
     store.begin_session(id, "s1", None).unwrap();
     let live = store.live_session(id).unwrap().unwrap();
@@ -294,6 +327,7 @@ fn hook_follows_the_current_session() {
         at: Ts::from_millis(5),
     };
     store.put_hook(id, &record(HookKind::Busy)).unwrap();
+    set_session_state(&store, id, "ended");
     let second = store.open_session(id).unwrap();
     assert_eq!(store.hook(id).unwrap(), None);
     store.put_hook(id, &record(HookKind::Idle)).unwrap();
