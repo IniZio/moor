@@ -187,7 +187,7 @@ fn record(tx: Transaction<'_>, f: &Fresh<'_>, box_dir: &Path) -> Result<Artifact
     let event = Event::ArtifactPublished {
         name: f.name.to_owned(),
         version: f.version,
-        kind,
+        artifact_kind: kind,
         content_type,
         size: f.size,
         sha256: f.sha256.clone(),

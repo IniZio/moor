@@ -322,10 +322,7 @@ pub enum Event {
         /// The version number, starting at 1.
         version: i64,
         /// The artifact kind, such as `screenshot` or `log`.
-        ///
-        /// Serialized as `artifact_kind` because `kind` is the tag; `payload` restores it.
-        #[serde(rename = "artifact_kind")]
-        kind: String,
+        artifact_kind: String,
         /// The content type.
         content_type: String,
         /// Size in bytes.

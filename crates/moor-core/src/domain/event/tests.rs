@@ -178,7 +178,7 @@ fn all_events() -> Vec<Event> {
         Event::ArtifactPublished {
             name: s("shot.png"),
             version: 1,
-            kind: s("screenshot"),
+            artifact_kind: s("screenshot"),
             content_type: s("image/png"),
             size: 12,
             sha256: s("ab"),
@@ -528,13 +528,13 @@ fn turn_done_kind_and_payload() {
     }
 }
 
-/// `ArtifactPublished` keeps `kind` in the payload even though `kind` is the serde tag.
+/// `ArtifactPublished` carries its artifact kind as `artifact_kind`, since `kind` is the tag.
 #[test]
 fn artifact_published_kind_and_payload() {
     let e = Event::ArtifactPublished {
         name: s("shot.png"),
         version: 2,
-        kind: s("screenshot"),
+        artifact_kind: s("screenshot"),
         content_type: s("image/png"),
         size: 12,
         sha256: s("ab"),
@@ -542,7 +542,7 @@ fn artifact_published_kind_and_payload() {
     assert_eq!(e.kind(), "artifact_published");
     assert_eq!(
         e.payload(),
-        serde_json::json!({"name":"shot.png","version":2,"kind":"screenshot","content_type":"image/png","size":12,"sha256":"ab"})
+        serde_json::json!({"name":"shot.png","version":2,"artifact_kind":"screenshot","content_type":"image/png","size":12,"sha256":"ab"})
     );
 }
 
