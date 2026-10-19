@@ -5,8 +5,7 @@ use super::{
 };
 use crate::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use crate::domain::boxes::BoxState;
-use crate::domain::session_state::SessionInput;
-use crate::domain::task::TaskState;
+use crate::domain::session_state::{SessionInput, SessionState};
 use crate::name::BoxId;
 
 use BoxState as B;
@@ -16,7 +15,8 @@ use ReleaseResult as R;
 fn facts() -> CloseFacts {
     CloseFacts {
         task: BoxId::new(7),
-        state: TaskState::Working,
+        lifecycle: BoxLifecycle::Ready,
+        session: SessionState::Working,
         box_state: Some(B::Ready),
         has_handle: true,
         name: "fix-bug".to_owned(),
@@ -191,17 +191,26 @@ fn refusal_text_suggests_force_and_names_no_driver() {
 
 #[test]
 fn closed_and_rejected_tasks_are_refused() {
-    for state in [TaskState::Closed, TaskState::Rejected] {
-        let f = CloseFacts { state, ..facts() };
+    for lifecycle in [BoxLifecycle::Closed, BoxLifecycle::Rejected] {
+        let f = CloseFacts {
+            lifecycle,
+            ..facts()
+        };
         assert_eq!(close_gate(&f, true).err(), Some(Refusal::AlreadyClosed));
     }
 }
 
 #[test]
 fn every_live_state_closes() {
-    for state in TaskState::ALL.into_iter().filter(|s| s.is_live()) {
-        let f = CloseFacts { state, ..facts() };
-        assert!(close_gate(&f, false).is_ok(), "{state:?}");
+    for lifecycle in BoxLifecycle::ALL.into_iter().filter(|l| l.is_live()) {
+        for session in SessionState::ALL {
+            let f = CloseFacts {
+                lifecycle,
+                session,
+                ..facts()
+            };
+            assert!(close_gate(&f, false).is_ok(), "{lifecycle:?} {session:?}");
+        }
     }
 }
 

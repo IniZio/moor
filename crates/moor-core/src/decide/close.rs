@@ -1,10 +1,9 @@
 //! The close decider: the data-loss gate and the release rules.
 
-use crate::domain::box_state::BoxLifecycleInput;
+use crate::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use crate::domain::boxes::{BoxInput, BoxState};
 use crate::domain::decision::Decision;
-use crate::domain::session_state::SessionInput;
-use crate::domain::task::TaskState;
+use crate::domain::session_state::{SessionInput, SessionState};
 use crate::name::BoxId;
 use crate::response::Warning;
 
@@ -13,8 +12,10 @@ use crate::response::Warning;
 pub struct CloseFacts {
     /// The task being closed.
     pub task: BoxId,
-    /// Its current state.
-    pub state: TaskState,
+    /// Its Box lifecycle state.
+    pub lifecycle: BoxLifecycle,
+    /// The state of its primary Session.
+    pub session: SessionState,
     /// Its Box state; `None` when no Box ever existed.
     pub box_state: Option<BoxState>,
     /// Whether a Driver handle is stored (kept even after a failed acquire).
@@ -148,7 +149,7 @@ pub struct ReleaseVerdict {
 /// for work only in the Box, and [`Refusal::BoxUnchecked`] when the Box could
 /// not be checked.
 pub fn close_gate(f: &CloseFacts, force: bool) -> Result<ClosePlan, Refusal> {
-    if !f.state.is_live() {
+    if !f.lifecycle.is_live() {
         return Err(Refusal::AlreadyClosed);
     }
     if !force {

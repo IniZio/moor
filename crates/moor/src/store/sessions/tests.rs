@@ -1,7 +1,7 @@
 //! Tests for opening and listing Sessions of a Box.
 #![allow(clippy::indexing_slicing, reason = "test assertions")]
 
-use moor_core::domain::box_state::BoxLifecycleInput;
+use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::domain::session_state::{SessionInput, SessionState};
@@ -289,7 +289,8 @@ fn ready_box_with_ended_session_reads_idle() {
     clock.sleep(std::time::Duration::from_secs(5));
     store.end_current_session(id, "exited", None).unwrap();
     let row = store.task(id).unwrap().unwrap();
-    assert_eq!(row.state.as_str(), "idle");
+    assert_eq!(row.lifecycle, BoxLifecycle::Ready);
+    assert!(row.session.is_quiet());
     assert_eq!(row.idle_since.unwrap().as_millis(), 1_005_000);
 }
 

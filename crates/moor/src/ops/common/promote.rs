@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use moor_core::config::{Flags, TaskSettings};
 use moor_core::decide::capacity::promote_order;
-use moor_core::domain::task::TaskState;
+use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::{BoxId, BoxName, ProviderId, Warning};
 
 use crate::cx::Cx;
@@ -107,7 +107,7 @@ fn promote_one(
         }
     };
     let row = reread(store, id)?;
-    if row.state != TaskState::WaitingForBox || row.intent.is_some() {
+    if row.lifecycle != BoxLifecycle::WaitingForBox || row.intent.is_some() {
         return Ok(None);
     }
     if let Err(e) = provision(cx, store, id, Entry::Waiting, cfg) {
@@ -118,5 +118,5 @@ fn promote_one(
         return Ok(None);
     }
     let after = reread(store, id)?;
-    Ok((after.state != TaskState::WaitingForBox).then_some(after.name))
+    Ok((after.lifecycle != BoxLifecycle::WaitingForBox).then_some(after.name))
 }

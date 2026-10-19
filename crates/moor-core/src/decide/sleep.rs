@@ -2,14 +2,17 @@
 
 use std::time::Duration;
 
-use crate::domain::task::TaskState;
+use crate::domain::box_state::BoxLifecycle;
+use crate::domain::session_state::SessionState;
 use crate::seam::clock::Ts;
 
 /// What auto-sleep can observe about a Task.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SleepFacts {
-    /// The Task's current state.
-    pub state: TaskState,
+    /// The Box lifecycle state.
+    pub lifecycle: BoxLifecycle,
+    /// The state of the primary Session.
+    pub session: SessionState,
     /// When the Task last became Idle, if known.
     pub idle_since: Option<Ts>,
     /// The current time.
@@ -33,7 +36,7 @@ pub enum SleepVerdict {
 /// A clock that went backwards is never due.
 #[must_use]
 pub fn sleep_due(f: &SleepFacts) -> SleepVerdict {
-    if f.state != TaskState::Idle {
+    if !(f.lifecycle == BoxLifecycle::Ready && f.session.is_quiet()) {
         return SleepVerdict::NotIdle;
     }
     let Some(since) = f.idle_since else {

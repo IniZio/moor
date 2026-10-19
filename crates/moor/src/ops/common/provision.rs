@@ -4,11 +4,12 @@ use std::path::{Path, PathBuf};
 
 use moor_core::config::{Flags, TaskSettings};
 
+use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, Intent, IntentChange};
 use moor_core::domain::run::SyncMode;
-use moor_core::domain::task::{SetupOutcome, TaskState};
-use moor_core::domain::{box_state::BoxLifecycleInput, session_state::SessionInput};
+use moor_core::domain::session_state::SessionInput;
+use moor_core::domain::task::SetupOutcome;
 use moor_core::seam::driver::{AcquireReq, Acquired, DriverError, Released};
 use moor_core::seam::rng::Rng;
 use moor_core::{BoxHandle, BoxId, BoxPath, ErrorKind, ProviderId, Warning};
@@ -121,13 +122,11 @@ pub(crate) fn recorded_workdir(stored: &str) -> Option<BoxPath> {
 /// How a Task that wants a Box starts over; `None` when it has one or is being provisioned.
 fn entry_for(row: &TaskRow) -> Option<Entry> {
     let box_state = row.boxed.as_ref().map(|b| b.state);
-    match (row.state, box_state) {
-        (TaskState::Checking, None) if row.intent.is_none() => Some(Entry::Fresh),
-        (TaskState::WaitingForBox, None) if row.intent.is_none() => Some(Entry::Waiting),
-        (TaskState::SetupFailed, Some(BoxState::Failed | BoxState::Gone)) => Some(Entry::Retry),
-        (TaskState::Working | TaskState::Idle, Some(BoxState::Failed | BoxState::Gone)) => {
-            Some(Entry::Stay)
-        }
+    match (row.lifecycle, box_state) {
+        (BoxLifecycle::Checking, None) if row.intent.is_none() => Some(Entry::Fresh),
+        (BoxLifecycle::WaitingForBox, None) if row.intent.is_none() => Some(Entry::Waiting),
+        (BoxLifecycle::SetupFailed, Some(BoxState::Failed | BoxState::Gone)) => Some(Entry::Retry),
+        (BoxLifecycle::Ready, Some(BoxState::Failed | BoxState::Gone)) => Some(Entry::Stay),
         _ => None,
     }
 }

@@ -2,11 +2,10 @@
 
 use std::sync::Arc;
 
-use moor_core::domain::box_state::BoxLifecycleInput;
+use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::session_state::SessionInput;
-use moor_core::domain::task::TaskState;
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxHandle, BoxId, BoxName, ProviderId};
 
@@ -53,7 +52,7 @@ fn name_lookups_distinguish_open_from_latest() {
     close(&store, first);
     assert!(store.open_task_by_name(&name).unwrap().is_none());
     let latest = store.latest_task_by_name(&name).unwrap().unwrap();
-    assert_eq!((latest.id, latest.state), (first, TaskState::Closed));
+    assert_eq!((latest.id, latest.lifecycle), (first, BoxLifecycle::Closed));
 
     let second = add(&store, "t");
     assert_eq!(store.open_task_by_name(&name).unwrap().unwrap().id, second);
@@ -135,7 +134,9 @@ fn waiting_tasks_returns_waiting_for_box_in_id_order() {
     }
     let waiting = store.waiting_tasks().unwrap();
     assert_eq!(waiting.iter().map(|t| t.id).collect::<Vec<_>>(), [d, b, a]);
-    assert!(waiting.iter().all(|t| t.state == TaskState::WaitingForBox));
+    assert!(waiting
+        .iter()
+        .all(|t| t.lifecycle == BoxLifecycle::WaitingForBox));
 }
 
 #[test]

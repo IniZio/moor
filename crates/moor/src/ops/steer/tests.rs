@@ -4,11 +4,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use moor_core::activity::{HookKind, HookRead, HookRecord, PaneRead, Probes};
-use moor_core::domain::box_state::BoxLifecycleInput;
+use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::session_state::SessionInput;
-use moor_core::domain::task::{SetupOutcome, TaskState};
+use moor_core::domain::task::SetupOutcome;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver};
 use moor_core::seam::engine::{EngineError, Steer, SteerOutcome};
@@ -277,7 +277,7 @@ fn an_asleep_task_wakes_before_the_send() {
     store.apply(d).unwrap();
     run(&f.cx, &text("hi")).unwrap();
     let row = store.task(f.id).unwrap().unwrap();
-    assert_ne!(row.state, TaskState::Asleep);
+    assert_ne!(row.lifecycle, BoxLifecycle::Asleep);
     assert_eq!(row.boxed.unwrap().state, BoxState::Ready);
     assert!(f.driver.calls().iter().any(|c| c.starts_with("wake ")));
     assert_eq!(f.engine.steers().len(), 1);

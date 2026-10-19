@@ -4,11 +4,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use moor_core::domain::box_state::BoxLifecycleInput;
+use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
-use moor_core::domain::session_state::SessionInput;
-use moor_core::domain::task::{SetupOutcome, TaskState};
+use moor_core::domain::session_state::{SessionInput, SessionState};
+use moor_core::domain::task::SetupOutcome;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, SleepKind};
 use moor_core::{BoxId, BoxName, ErrorKind, ProviderId, TaskReq};
 
@@ -103,9 +103,13 @@ fn req() -> TaskReq {
     }
 }
 
-fn states(f: &Fx) -> (TaskState, BoxState) {
+fn states(f: &Fx) -> (BoxLifecycle, BoxState) {
     let row = f.cx.store().unwrap().task(f.id).unwrap().unwrap();
-    (row.state, row.boxed.unwrap().state)
+    (row.lifecycle, row.boxed.unwrap().state)
+}
+
+fn session(f: &Fx) -> SessionState {
+    f.cx.store().unwrap().task(f.id).unwrap().unwrap().session
 }
 
 fn wakes(f: &Fx) -> usize {
@@ -117,14 +121,15 @@ fn wakes(f: &Fx) -> usize {
 fn asleep_task_wakes_its_box() {
     let f = fx();
     asleep(&f);
-    assert_eq!(states(&f), (TaskState::Asleep, BoxState::Asleep));
+    assert_eq!(states(&f), (BoxLifecycle::Asleep, BoxState::Asleep));
     let v = run(&f.cx, &req()).unwrap();
     assert!(v.woke);
     assert_eq!(v.task, "t");
     assert_eq!(v.r#box.unwrap().state, BoxState::Ready);
     assert!(f.driver.calls().contains(&"wake box-1".to_owned()));
     assert_eq!(wakes(&f), 1);
-    assert_eq!(states(&f), (TaskState::Working, BoxState::Ready));
+    assert_eq!(states(&f), (BoxLifecycle::Ready, BoxState::Ready));
+    assert_eq!(session(&f), SessionState::Working);
 }
 
 #[test]
@@ -133,7 +138,8 @@ fn task_that_is_not_asleep_is_left_alone() {
     let v = run(&f.cx, &req()).unwrap();
     assert!(!v.woke);
     assert_eq!(wakes(&f), 0);
-    assert_eq!(states(&f), (TaskState::Working, BoxState::Ready));
+    assert_eq!(states(&f), (BoxLifecycle::Ready, BoxState::Ready));
+    assert_eq!(session(&f), SessionState::Working);
 }
 
 #[test]
@@ -150,7 +156,7 @@ fn failed_resume_leaves_task_and_box_asleep() {
     let f = fx_with(FakeDriver::new().fail_wake(DriverError::Quota("q".into())));
     asleep(&f);
     run(&f.cx, &req()).unwrap_err();
-    assert_eq!(states(&f), (TaskState::Asleep, BoxState::Asleep));
+    assert_eq!(states(&f), (BoxLifecycle::Asleep, BoxState::Asleep));
 }
 
 #[test]
@@ -162,7 +168,7 @@ fn gone_box_is_refused_without_a_resume() {
     let err = run(&f.cx, &req()).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Refused);
     assert_eq!(wakes(&f), 0);
-    assert_eq!(states(&f).0, TaskState::Asleep);
+    assert_eq!(states(&f).0, BoxLifecycle::Asleep);
 }
 
 #[test]

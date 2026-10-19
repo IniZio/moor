@@ -6,11 +6,11 @@ use std::path::{Path, PathBuf};
 
 use moor_core::boxscript::command_line;
 use moor_core::config::{Flags, TaskSettings};
+use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::Decision;
 use moor_core::domain::run::SyncMode;
 use moor_core::domain::session_state::SessionInput;
-use moor_core::domain::task::TaskState;
 use moor_core::exec_env::Purpose;
 use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
 use moor_core::seam::proc::Output;
@@ -194,7 +194,7 @@ fn box_env(
 
 /// An Idle Task becomes Working for the run; a row that changed since it was read is left as is.
 fn mark_working(store: &Store, row: &TaskRow) -> Result<(), CommandError> {
-    if row.state != TaskState::Idle {
+    if !(row.lifecycle == BoxLifecycle::Ready && row.session.is_quiet()) {
         return Ok(());
     }
     match store.apply(Decision::new(row.id).session(SessionInput::RunStarted)) {

@@ -1,9 +1,9 @@
 //! `end-session`: end the Box's live agent Session and keep the Box open for a later one.
 
 use moor_core::decide::transcript::Trigger;
+use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::session_state::SessionState;
-use moor_core::domain::task::TaskState;
 use moor_core::request::EndSessionReq;
 use moor_core::view::session::EndSessionValue;
 use moor_core::{BoxName, ErrorKind};
@@ -90,7 +90,7 @@ fn reword(e: CommandError, name: &str) -> CommandError {
 
 /// Whether the Task or its Box is asleep.
 fn asleep(row: &TaskRow) -> bool {
-    row.state == TaskState::Asleep
+    row.lifecycle == BoxLifecycle::Asleep
         || row
             .boxed
             .as_ref()

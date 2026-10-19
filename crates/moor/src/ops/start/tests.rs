@@ -1,11 +1,10 @@
 use std::{path::Path, sync::Arc, time::Duration};
 
 use moor_core::config::UserConfig;
-use moor_core::domain::box_state::BoxLifecycleInput;
+use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, Intent, IntentChange};
 use moor_core::domain::session_state::SessionInput;
-use moor_core::domain::task::TaskState;
 use moor_core::seam::driver::DriverError;
 use moor_core::seam::proc::Tool;
 use moor_core::seam::surface::Surface;
@@ -49,6 +48,7 @@ mod session;
 mod settle_busy;
 mod setup;
 mod setup_rerun;
+mod state;
 mod sync_retry;
 mod transcript;
 mod workdir;
@@ -142,7 +142,7 @@ fn happy_path_makes_a_working_task_with_a_ready_box() {
     let w = world(FakeDriver::new());
     let v = run(&w.cx, &req("demo")).unwrap();
     assert!(!v.attached);
-    assert_eq!(v.task.state, TaskState::Working);
+    assert_eq!(v.task.state.as_str(), "working");
     assert_eq!(v.task.base.as_deref(), Some("abc123"));
     assert_eq!(v.task.workspace.as_deref(), Some("ws-1"));
     assert_eq!(v.task.branch.as_deref(), Some("demo"));
@@ -185,7 +185,7 @@ fn acquire_failure_keeps_a_failed_task_row() {
             .open_task_by_name(&name)
             .unwrap()
             .unwrap();
-    assert_eq!(row.state, TaskState::SetupFailed);
+    assert_eq!(row.lifecycle, BoxLifecycle::SetupFailed);
     assert_eq!(row.boxed.unwrap().state, BoxState::Gone);
     assert!(row.intent.is_none());
     assert_eq!(w.driver.calls(), ["acquire", "release box-1"]);
@@ -232,7 +232,7 @@ fn restart_of_a_closed_name_creates_a_new_task() {
     let second = run(&w.cx, &req("again")).unwrap();
     assert!(!second.attached);
     assert_ne!(second.task.id, first.task.id);
-    assert_eq!(second.task.state, TaskState::Working);
+    assert_eq!(second.task.state.as_str(), "working");
 }
 
 #[test]
@@ -295,7 +295,7 @@ fn bound_worktree_skips_create_worktree() {
         .calls()
         .iter()
         .any(|c| c == "create_worktree demo"));
-    assert_eq!(v.task.state, TaskState::Working);
+    assert_eq!(v.task.state.as_str(), "working");
 }
 
 #[test]
@@ -306,7 +306,7 @@ fn start_after_acquire_failure_gets_a_new_box() {
     run(&w.cx, &req("demo")).unwrap_err();
     let again = run(&w.cx, &req("demo")).unwrap();
     assert!(again.attached);
-    assert_eq!(again.task.state, TaskState::Working);
+    assert_eq!(again.task.state.as_str(), "working");
     let row = w.cx.store().unwrap().task(BoxId::new(again.task.id));
     assert_eq!(row.unwrap().unwrap().boxed.unwrap().state, BoxState::Ready);
     assert_eq!(
@@ -326,7 +326,7 @@ fn start_on_a_gone_box_acquires_again_and_keeps_the_task_working() {
         .apply(Decision::new(id).box_input(BoxInput::DriverMissing))
         .unwrap();
     let again = run(&w.cx, &req("demo")).unwrap();
-    assert_eq!(again.task.state, TaskState::Working);
+    assert_eq!(again.task.state.as_str(), "working");
     let b = store.task(id).unwrap().unwrap().boxed.unwrap();
     assert_eq!(b.state, BoxState::Ready);
     assert_ne!(b.handle.unwrap().as_str(), "box-1");
@@ -432,7 +432,7 @@ fn refused_start_provisions_when_retried_after_the_lock_is_released() {
     drop(held);
     let again = run(&w.cx, &req("demo")).unwrap();
     assert!(again.attached);
-    assert_eq!(again.task.state, TaskState::Working);
+    assert_eq!(again.task.state.as_str(), "working");
     let row = w.cx.store().unwrap().task(BoxId::new(again.task.id));
     assert_eq!(row.unwrap().unwrap().boxed.unwrap().state, BoxState::Ready);
     assert_eq!(w.driver.calls(), ["acquire", "exec box-1"]);

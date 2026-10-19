@@ -2,8 +2,8 @@
 
 use std::path::PathBuf;
 
+use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
-use moor_core::domain::task::TaskState;
 use moor_core::name::{BoxHandle, BoxPath};
 use moor_core::ErrorKind;
 
@@ -27,7 +27,7 @@ pub(super) struct Target {
 pub(super) fn target(store: &Store, row: &TaskRow) -> Result<Target, CommandError> {
     let name = row.name.as_str();
     let failed = |msg: String| CommandError::new(ErrorKind::Failed, msg);
-    if row.state == TaskState::WaitingForBox {
+    if row.lifecycle == BoxLifecycle::WaitingForBox {
         return Err(CommandError::new(
             ErrorKind::Refused,
             format!("{name} is waiting for a free box"),

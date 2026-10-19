@@ -4,11 +4,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use moor_core::domain::box_state::BoxLifecycleInput;
+use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
-use moor_core::domain::session_state::SessionInput;
-use moor_core::domain::task::{SetupOutcome, TaskState};
+use moor_core::domain::session_state::{SessionInput, SessionState};
+use moor_core::domain::task::SetupOutcome;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, SleepKind, SleepOutcome};
 use moor_core::seam::surface::SurfaceError;
 use moor_core::secret::Secret;
@@ -121,9 +121,13 @@ fn kinds(f: &Fx) -> Vec<String> {
 }
 
 /// Task and Box states now.
-fn states(f: &Fx) -> (TaskState, BoxState) {
+fn states(f: &Fx) -> (BoxLifecycle, BoxState) {
     let row = f.cx.store().unwrap().task(f.id).unwrap().unwrap();
-    (row.state, row.boxed.unwrap().state)
+    (row.lifecycle, row.boxed.unwrap().state)
+}
+
+fn session(f: &Fx) -> SessionState {
+    f.cx.store().unwrap().task(f.id).unwrap().unwrap().session
 }
 
 /// The stored sleep reason of the Box.
@@ -192,7 +196,7 @@ fn begin_run(f: &Fx) {
 fn sleeps_an_idle_task() {
     let f = idle();
     let v = run(&f.cx, &req()).unwrap();
-    assert_eq!(states(&f), (TaskState::Asleep, BoxState::Asleep));
+    assert_eq!(states(&f), (BoxLifecycle::Asleep, BoxState::Asleep));
     let k = kinds(&f);
     assert!(k.contains(&"asleep".to_owned()), "{k:?}");
     assert!(k.contains(&"box_asleep".to_owned()), "{k:?}");
@@ -205,9 +209,10 @@ fn sleeps_an_idle_task() {
 #[test]
 fn sleeps_a_working_task_without_a_run() {
     let f = fx();
-    assert_eq!(states(&f).0, TaskState::Working);
+    assert_eq!(states(&f).0, BoxLifecycle::Ready);
+    assert_eq!(session(&f), SessionState::Working);
     run(&f.cx, &req()).unwrap();
-    assert_eq!(states(&f), (TaskState::Asleep, BoxState::Asleep));
+    assert_eq!(states(&f), (BoxLifecycle::Asleep, BoxState::Asleep));
 }
 
 #[test]
@@ -222,14 +227,15 @@ fn refuses_while_a_run_is_in_flight() {
         err.error
     );
     assert_eq!(sleep_calls(&f), 0);
-    assert_eq!(states(&f), (TaskState::Working, BoxState::Ready));
+    assert_eq!(states(&f), (BoxLifecycle::Ready, BoxState::Ready));
+    assert_eq!(session(&f), SessionState::Working);
 }
 
 #[test]
 fn native_sleep_transitions_like_slept() {
     let f = idle_with(FakeDriver::new().sleep_outcome(SleepOutcome::Native));
     run(&f.cx, &req()).unwrap();
-    assert_eq!(states(&f), (TaskState::Asleep, BoxState::Asleep));
+    assert_eq!(states(&f), (BoxLifecycle::Asleep, BoxState::Asleep));
 }
 
 #[test]
@@ -244,7 +250,8 @@ fn cannot_sleep_refuses_and_stores_the_reason() {
         "{}",
         err.error
     );
-    assert_eq!(states(&f), (TaskState::Idle, BoxState::Ready));
+    assert_eq!(states(&f), (BoxLifecycle::Ready, BoxState::Ready));
+    assert_eq!(session(&f), SessionState::Idle);
     assert_eq!(reason(&f).as_deref(), Some("provider cannot wake"));
     let row = f.cx.store().unwrap().task(f.id).unwrap().unwrap();
     let shown = task_view(&row, f.cx.config()).r#box.unwrap().sleep.reason;
@@ -259,7 +266,8 @@ fn unknown_provider_refuses_naming_the_provider() {
     let err = run(&f.cx, &req()).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Refused);
     assert!(err.error.to_string().contains(why), "{}", err.error);
-    assert_eq!(states(&f), (TaskState::Idle, BoxState::Ready));
+    assert_eq!(states(&f), (BoxLifecycle::Ready, BoxState::Ready));
+    assert_eq!(session(&f), SessionState::Idle);
     assert_eq!(reason(&f).as_deref(), Some(why));
 }
 
@@ -315,7 +323,7 @@ fn an_asleep_task_is_left_alone() {
     let v = run(&f.cx, &req()).unwrap();
     assert!(!v.woke);
     assert_eq!(sleep_calls(&f), 1);
-    assert_eq!(states(&f), (TaskState::Asleep, BoxState::Asleep));
+    assert_eq!(states(&f), (BoxLifecycle::Asleep, BoxState::Asleep));
 }
 
 /// A Task and Box seeded through `Requested`: Task `SettingUp`, Box Starting.
@@ -379,7 +387,7 @@ fn refuses_a_task_that_is_still_setting_up() {
         handle: moor_core::name::BoxHandle::new("box-1"),
     });
     f.cx.store().unwrap().apply(d).unwrap();
-    assert_eq!(states(&f), (TaskState::SettingUp, BoxState::Ready));
+    assert_eq!(states(&f), (BoxLifecycle::SettingUp, BoxState::Ready));
     assert_refused_untouched(&f);
 }
 
@@ -393,7 +401,8 @@ fn refuses_a_working_task_whose_box_is_starting() {
         .session(SessionInput::Started)
         .set(with_handle());
     f.cx.store().unwrap().apply(d).unwrap();
-    assert_eq!(states(&f), (TaskState::Working, BoxState::Starting));
+    assert_eq!(states(&f), (BoxLifecycle::Ready, BoxState::Starting));
+    assert_eq!(session(&f), SessionState::Working);
     assert_refused_untouched(&f);
 }
 
@@ -411,7 +420,8 @@ fn refuses_a_working_task_whose_box_failed() {
         })
         .set(with_handle());
     f.cx.store().unwrap().apply(d).unwrap();
-    assert_eq!(states(&f), (TaskState::Working, BoxState::Failed));
+    assert_eq!(states(&f), (BoxLifecycle::Ready, BoxState::Failed));
+    assert_eq!(session(&f), SessionState::Working);
     assert_refused_untouched(&f);
 }
 
@@ -423,7 +433,8 @@ fn refuses_an_idle_task_whose_ready_box_has_no_handle() {
         ..Fields::default()
     });
     f.cx.store().unwrap().apply(d).unwrap();
-    assert_eq!(states(&f), (TaskState::Idle, BoxState::Ready));
+    assert_eq!(states(&f), (BoxLifecycle::Ready, BoxState::Ready));
+    assert_eq!(session(&f), SessionState::Idle);
     assert_refused_untouched(&f);
 }
 
@@ -447,7 +458,7 @@ fn sleep_parks_a_live_proxy_tunnel_first() {
     run(&f.cx, &req()).unwrap();
     let r = tunnel_request(&f).unwrap();
     assert_eq!((r.want, r.seq), (TunnelWant::Parked, 1));
-    assert_eq!(states(&f), (TaskState::Asleep, BoxState::Asleep));
+    assert_eq!(states(&f), (BoxLifecycle::Asleep, BoxState::Asleep));
 }
 
 #[test]
@@ -456,7 +467,8 @@ fn sleep_leaves_the_box_awake_when_the_tunnel_never_parks() {
     live_proxy(&f);
     assert!(run(&f.cx, &req()).is_err());
     assert_eq!(sleep_calls(&f), 0);
-    assert_eq!(states(&f), (TaskState::Idle, BoxState::Ready));
+    assert_eq!(states(&f), (BoxLifecycle::Ready, BoxState::Ready));
+    assert_eq!(session(&f), SessionState::Idle);
 }
 
 #[test]
@@ -499,7 +511,8 @@ fn sleep_closes_the_pane_before_pausing_the_box() {
     let err = run(&f.cx, &req()).unwrap_err();
     assert!(err.error.to_string().contains("agent pane"), "{err:?}");
     assert_eq!(sleep_calls(&f), 0);
-    assert_eq!(states(&f), (TaskState::Idle, BoxState::Ready));
+    assert_eq!(states(&f), (BoxLifecycle::Ready, BoxState::Ready));
+    assert_eq!(session(&f), SessionState::Idle);
 }
 
 #[test]
@@ -510,7 +523,7 @@ fn sleep_with_the_pane_already_gone_still_sleeps() {
         .begin_session(f.id, "agent-1", Some("p-1"))
         .unwrap();
     run(&f.cx, &req()).unwrap();
-    assert_eq!(states(&f), (TaskState::Asleep, BoxState::Asleep));
+    assert_eq!(states(&f), (BoxLifecycle::Asleep, BoxState::Asleep));
 }
 
 #[test]
@@ -529,5 +542,5 @@ fn sleep_still_sleeps_when_the_sweep_times_out() {
     let driver = FakeDriver::new().fail_sweep(DriverError::Timeout(Duration::from_secs(15)));
     let f = idle_with(driver);
     run(&f.cx, &req()).unwrap();
-    assert_eq!(states(&f), (TaskState::Asleep, BoxState::Asleep));
+    assert_eq!(states(&f), (BoxLifecycle::Asleep, BoxState::Asleep));
 }

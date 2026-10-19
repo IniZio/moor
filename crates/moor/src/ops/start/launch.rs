@@ -7,9 +7,11 @@ use moor_core::activity::PaneStatus;
 use moor_core::box_key::BoxKey;
 use moor_core::config::{Flags, TaskSettings};
 
+use moor_core::domain::box_state::BoxLifecycle;
+use moor_core::domain::box_steps;
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
-use moor_core::domain::task::TaskState;
+use moor_core::domain::session_state::SessionState;
 use moor_core::seam::engine::{EngineError, LaunchPrompt, LaunchReq, SessionRef};
 use moor_core::seam::surface::{PaneRef, WorkspaceRef};
 use moor_core::view::{AgentLaunchView, LaunchFailure};
@@ -78,14 +80,14 @@ fn not_working(
         .boxed
         .as_ref()
         .is_some_and(|b| b.state == BoxState::Ready);
-    if hold || !ready || row.state == TaskState::Working {
+    if hold || !ready || (row.lifecycle == BoxLifecycle::Ready && !row.session.is_quiet()) {
         return Ok(AgentLaunchView::default());
     }
     let e = EngineError::Failed {
         step: "launch",
         message: format!(
             "the Task is {}, not Working, so the agent was not launched",
-            row.state.as_str()
+            box_steps::summary(row.lifecycle, row.session).as_str()
         ),
     };
     record_failure(cx, store, row.id, &e)
@@ -102,7 +104,8 @@ pub(crate) fn begin_seeded(
     seed: String,
 ) -> Result<AgentLaunchView, CommandError> {
     let mut working = row.clone();
-    working.state = TaskState::Working;
+    working.lifecycle = BoxLifecycle::Ready;
+    working.session = SessionState::Working;
     let Some(mut launch) = launch_req(cx, &working, None) else {
         return Ok(AgentLaunchView::default());
     };
@@ -242,10 +245,15 @@ fn record_failure(
     })
 }
 
+/// Whether `row` is Ready and its session still has work to do.
+pub(super) fn working(row: &TaskRow) -> bool {
+    row.lifecycle == BoxLifecycle::Ready && !row.session.is_quiet()
+}
+
 /// What the Engine needs to launch `row`'s agent; none unless the Task is Working with a ready Box.
 pub(super) fn launch_req(cx: &Cx, row: &TaskRow, setup_exit: Option<i32>) -> Option<LaunchReq> {
     let b = row.boxed.as_ref().filter(|b| b.state == BoxState::Ready)?;
-    if row.state != TaskState::Working {
+    if !working(row) {
         return None;
     }
     let strip_env = box_exec::strip_env(cx, b.provider.as_str());

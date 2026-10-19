@@ -1,11 +1,10 @@
 //! Close checks the Box for work that exists nowhere else.
 
 use moor_core::boxscript::boxwork::{BOXWORK_FILE, BOXWORK_NO_CHECKOUT};
-use moor_core::domain::box_state::BoxLifecycleInput;
+use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::session_state::SessionInput;
-use moor_core::domain::task::TaskState;
 use moor_core::seam::driver::{DriverError, ExecOutcome};
 use moor_core::{BoxName, CloseReq, ErrorKind, ProviderId};
 
@@ -103,10 +102,10 @@ fn text(e: &CommandError) -> String {
 
 /// Closing without `--force` is refused and changes nothing.
 fn refused(f: &Fx) -> CommandError {
-    let (task, boxed) = (row(f).state, box_state(f));
+    let (task, boxed) = (row(f).lifecycle, box_state(f));
     let e = run(&f.cx, &req(false)).unwrap_err();
     assert_eq!(e.kind, ErrorKind::Refused);
-    assert_eq!(row(f).state, task);
+    assert_eq!(row(f).lifecycle, task);
     assert_eq!(box_state(f), boxed);
     assert_eq!(count(f, "release"), 0);
     e
@@ -144,7 +143,7 @@ fn close_refuses_a_box_with_only_uncommitted_changes() {
 fn close_proceeds_when_the_box_probe_is_clean() {
     let f = fx_probe(Some("ahead=0 dirty=0"));
     let v = run(&f.cx, &req(false)).unwrap();
-    assert_eq!(v.task.state, TaskState::Closed);
+    assert_eq!(v.task.state.as_str(), "closed");
     assert_eq!(box_state(&f), BoxState::Deleted);
     assert_eq!(probes(&f), 2, "the probe ran before and after the stop");
 }
@@ -168,7 +167,7 @@ fn close_wakes_a_sleeping_box_and_refuses_when_it_holds_unsaved_work() {
     assert!(text(&e).contains("the Box holds work"), "{}", text(&e));
     assert_eq!(count(&f, "wake"), 1);
     assert_eq!(count(&f, "exec"), 1);
-    assert_ne!(row(&f).state, TaskState::Closed);
+    assert_ne!(row(&f).lifecycle, BoxLifecycle::Closed);
     assert_ne!(box_state(&f), BoxState::Deleted);
     assert_eq!(count(&f, "release"), 0);
 }
@@ -178,7 +177,7 @@ fn close_wakes_a_sleeping_box_and_proceeds_when_it_is_clean() {
     let f = fx_woken("ahead=0 dirty=0");
     put_to_sleep(&f);
     let v = run(&f.cx, &req(false)).unwrap();
-    assert_eq!(v.task.state, TaskState::Closed);
+    assert_eq!(v.task.state.as_str(), "closed");
     assert_eq!(count(&f, "wake"), 1);
     assert_eq!(probes(&f), 2);
 }
@@ -202,7 +201,7 @@ fn close_proceeds_when_the_driver_no_longer_has_the_box_on_probe() {
     let h = row(&f).boxed.unwrap().handle.unwrap();
     f.driver.forget(&h);
     let v = run(&f.cx, &req(false)).unwrap();
-    assert_eq!(v.task.state, TaskState::Closed);
+    assert_eq!(v.task.state.as_str(), "closed");
 }
 
 #[test]
@@ -211,14 +210,14 @@ fn close_proceeds_when_the_driver_no_longer_has_the_box_on_wake() {
     let f = fx_box(driver, surface(), 0, Some("ahead=0 dirty=0"));
     put_to_sleep(&f);
     let v = run(&f.cx, &req(false)).unwrap();
-    assert_eq!(v.task.state, TaskState::Closed);
+    assert_eq!(v.task.state.as_str(), "closed");
 }
 
 #[test]
 fn force_closes_a_box_with_unsaved_work_without_probing() {
     let f = fx_probe(Some("ahead=4 dirty=1"));
     let v = run(&f.cx, &req(true)).unwrap();
-    assert_eq!(v.task.state, TaskState::Closed);
+    assert_eq!(v.task.state.as_str(), "closed");
     assert_eq!(probes(&f), 0);
     assert_eq!(count(&f, "wake"), 0);
 }
@@ -228,7 +227,7 @@ fn force_closes_a_sleeping_box_without_waking_or_probing_it() {
     let f = fx_probe(Some("ahead=4 dirty=1"));
     put_to_sleep(&f);
     let v = run(&f.cx, &req(true)).unwrap();
-    assert_eq!(v.task.state, TaskState::Closed);
+    assert_eq!(v.task.state.as_str(), "closed");
     assert_eq!(count(&f, "exec"), 0);
     assert_eq!(count(&f, "wake"), 0);
 }
@@ -242,7 +241,7 @@ fn close_skips_the_probe_for_a_box_the_driver_no_longer_has() {
         .unwrap();
     assert_eq!(box_state(&f), BoxState::Gone);
     let v = run(&f.cx, &req(false)).unwrap();
-    assert_eq!(v.task.state, TaskState::Closed);
+    assert_eq!(v.task.state.as_str(), "closed");
     assert_eq!(count(&f, "exec"), 0);
 }
 
@@ -293,7 +292,7 @@ fn close_skips_the_probe_for_a_box_that_never_got_a_handle() {
         },
     )
     .unwrap();
-    assert_eq!(v.task.state, TaskState::Closed);
+    assert_eq!(v.task.state.as_str(), "closed");
     assert_eq!(count(&f, "exec"), 0);
 }
 
@@ -321,7 +320,7 @@ fn close_refuses_when_the_agent_writes_between_the_probe_and_the_stop() {
     // The recheck shares a batch with the report index script, so that script runs too.
     assert_eq!(count(&f, "exec"), 3);
     assert_eq!(count(&f, "release"), 0);
-    assert_ne!(row(&f).state, TaskState::Closed);
+    assert_ne!(row(&f).lifecycle, BoxLifecycle::Closed);
     assert_ne!(box_state(&f), BoxState::Deleted);
     assert!(f.cx.store().unwrap().live_session(f.id).unwrap().is_none());
 }
@@ -366,5 +365,5 @@ fn close_refuses_when_the_recheck_finds_no_git_checkout() {
         "{t}"
     );
     assert_eq!(count(&f, "release"), 0);
-    assert_ne!(row(&f).state, TaskState::Closed);
+    assert_ne!(row(&f).lifecycle, BoxLifecycle::Closed);
 }

@@ -5,7 +5,6 @@ use std::time::Duration;
 use moor_core::activity::{PaneObs, PaneStatus};
 use moor_core::domain::decision::Decision;
 use moor_core::domain::session_state::SessionInput;
-use moor_core::domain::task::TaskState;
 use moor_core::seam::agent_profile::FirstRunPrompt;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::ExecOutcome;
@@ -13,6 +12,7 @@ use moor_core::seam::engine::EngineError;
 use moor_core::seam::surface::SurfaceError;
 use moor_core::{BoxId, BoxName, ErrorKind, ShowReq, StartReq, WaitFor, WaitReq};
 
+use super::state::idle;
 use super::{req, world, world_at, World};
 use crate::ops::common::boxlock::BoxLock;
 use crate::ops::start::run;
@@ -46,7 +46,7 @@ fn start_records_one_live_session_and_attach_adds_none() {
             )
             .unwrap()
     };
-    assert_eq!(first.task.state, TaskState::Working);
+    assert_eq!(first.task.state.as_str(), "working");
     assert_eq!(sessions(), 1);
     run(&w.cx, &goal_req("demo")).unwrap();
     assert_eq!(sessions(), 1);
@@ -59,7 +59,7 @@ fn start_without_a_goal_records_no_session() {
     let first = run(&w.cx, &req("demo")).unwrap();
     let id = BoxId::new(first.task.id);
     run(&w.cx, &req("demo")).unwrap();
-    assert_eq!(first.task.state, TaskState::Working);
+    assert_eq!(first.task.state.as_str(), "working");
     assert!(!w.cx.store().unwrap().has_session(id).unwrap());
 }
 
@@ -118,7 +118,7 @@ fn a_failed_launch_records_no_session_and_leaves_the_task_working() {
     let v = run(&w.cx, &goal_req("demo")).unwrap();
     let id = BoxId::new(v.task.id);
     let store = w.cx.store().unwrap();
-    assert_eq!(v.task.state, TaskState::Working);
+    assert_eq!(v.task.state.as_str(), "working");
     assert!(!v.agent.launched);
     assert!(!store.has_session(id).unwrap());
     let f = v.agent.reason.unwrap();
@@ -146,7 +146,7 @@ fn a_launch_failure_shows_as_failed_and_is_not_idled_by_the_next_list() {
     };
     let shown = crate::ops::show::run(&w.cx, &req).unwrap();
     let t = shown.tasks.as_ref().unwrap().first().unwrap();
-    assert_eq!(t.state, TaskState::Working);
+    assert_eq!(t.state.as_str(), "working");
     let a = t.agent.as_ref().unwrap();
     assert_eq!(a.state, "failed");
     assert!(!a.launched);
@@ -200,9 +200,9 @@ fn restarting_an_idle_task_with_a_goal_and_no_session_wakes_and_launches_once() 
     store
         .apply(Decision::new(id).session(SessionInput::AgentQuiet))
         .unwrap();
-    assert_eq!(store.task(id).unwrap().unwrap().state, TaskState::Idle);
+    assert!(idle(&store.task(id).unwrap().unwrap()));
     let again = run(&w.cx, &req("demo")).unwrap();
-    assert_eq!(again.task.state, TaskState::Working);
+    assert_eq!(again.task.state.as_str(), "working");
     assert!(again.agent.launched);
     assert_eq!(engine.launches().len(), 2);
     let events = store.events(id, 100).unwrap();
@@ -220,7 +220,7 @@ fn restarting_an_idle_task_without_a_goal_or_session_wakes_it_and_launches_nothi
         .apply(Decision::new(id).session(SessionInput::AgentQuiet))
         .unwrap();
     let again = run(&w.cx, &req("demo")).unwrap();
-    assert_eq!(again.task.state, TaskState::Working);
+    assert_eq!(again.task.state.as_str(), "working");
     assert!(store
         .events(id, 100)
         .unwrap()
@@ -236,7 +236,7 @@ fn rerunning_after_a_failed_launch_launches_once_and_stays_working() {
     let first = run(&w.cx, &goal_req("demo")).unwrap();
     let id = BoxId::new(first.task.id);
     let again = run(&w.cx, &req("demo")).unwrap();
-    assert_eq!(again.task.state, TaskState::Working);
+    assert_eq!(again.task.state.as_str(), "working");
     assert!(again.agent.launched);
     assert_eq!(engine.launches().len(), 2);
     let store = w.cx.store().unwrap();

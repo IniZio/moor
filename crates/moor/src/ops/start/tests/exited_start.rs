@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
 use moor_core::activity::{HookRead, PaneObs, PaneRead, PaneStatus, Probes};
-use moor_core::domain::task::TaskState;
 use moor_core::{BoxId, StartReq};
 
 use super::relaunch::session;
+use super::state::working;
 use super::{req, world, World};
 use crate::ops::start::{run, settle_all};
 use crate::testing::driver::FakeDriver;
@@ -86,7 +86,7 @@ fn check_second_session(w: &World, engine: &FakeEngine, id: BoxId) {
             .id;
     assert_eq!(launches.last().copied().flatten(), Some(second));
     let task = w.cx.store().unwrap().task(id).unwrap().unwrap();
-    assert_eq!(task.state, TaskState::Working);
+    assert!(working(&task));
 }
 
 #[test]

@@ -5,8 +5,8 @@ use std::fmt::Arguments;
 use std::path::{Path, PathBuf};
 use std::sync::PoisonError;
 
+use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
-use moor_core::domain::task::TaskState;
 use moor_core::seam::driver::TunnelHandle;
 use moor_core::seam::proxy_host::ProxySpec;
 use moor_core::{BoxHandle, BoxId, Secret};
@@ -63,9 +63,9 @@ pub(super) fn say(sink: &Sink, args: Arguments<'_>) {
     ));
 }
 
-/// Whether no more work can happen on a Task in `state`.
-const fn terminal(state: TaskState) -> bool {
-    matches!(state, TaskState::Closed | TaskState::Rejected)
+/// Whether no more work can happen on a Task in `lifecycle`.
+const fn terminal(lifecycle: BoxLifecycle) -> bool {
+    matches!(lifecycle, BoxLifecycle::Closed | BoxLifecycle::Rejected)
 }
 
 /// Gives up the lease; a failure only means the lease expires on its own.
@@ -82,7 +82,7 @@ fn give_up(deps: &Deps<'_>, task: BoxId, owner: &str) {
 fn preflight(deps: &Deps<'_>, task: BoxId) -> Result<(TaskRow, BoxHandle, ProxySpec), u8> {
     let sink = &deps.stderr;
     let task_row = match deps.store.task(task) {
-        Ok(Some(row)) if !terminal(row.state) => row,
+        Ok(Some(row)) if !terminal(row.lifecycle) => row,
         Ok(_) => {
             say(
                 sink,
@@ -325,7 +325,7 @@ impl Running<'_> {
         }
         self.live.drain(self.deps, self.task);
         match self.deps.store.task(self.task) {
-            Ok(Some(row)) if !terminal(row.state) => {}
+            Ok(Some(row)) if !terminal(row.lifecycle) => {}
             Ok(_) => return Some(Stop::Closed),
             Err(err) => {
                 say(

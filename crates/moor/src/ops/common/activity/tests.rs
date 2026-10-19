@@ -7,11 +7,11 @@ use moor_core::activity::{
     AgentState, HookKind, HookRead, HookRecord, PaneObs, PaneRead, PaneStatus, Probes, Source,
     STARTUP_GRACE,
 };
-use moor_core::domain::box_state::BoxLifecycleInput;
+use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::session_state::SessionInput;
-use moor_core::domain::task::{SetupOutcome, TaskState};
+use moor_core::domain::task::SetupOutcome;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::DriverError;
 use moor_core::seam::engine::EngineError;
@@ -95,6 +95,14 @@ fn begin(cx: &Cx, id: BoxId) {
 
 fn row(cx: &Cx, id: BoxId) -> TaskRow {
     cx.store().unwrap().task(id).unwrap().unwrap()
+}
+
+fn is_working(row: &TaskRow) -> bool {
+    row.lifecycle == BoxLifecycle::Ready && !row.session.is_quiet()
+}
+
+fn is_idle(row: &TaskRow) -> bool {
+    row.lifecycle == BoxLifecycle::Ready && row.session.is_quiet()
 }
 
 fn rec(kind: HookKind) -> HookRecord {
@@ -387,7 +395,7 @@ fn settle_idles_a_working_task_that_may_quiet() {
         &reading(false, true),
     )
     .unwrap();
-    assert_eq!(row(&cx, id).state, TaskState::Idle);
+    assert!(is_idle(&row(&cx, id)));
     assert!(idle_since(&cx, id).is_some());
 }
 
@@ -406,7 +414,7 @@ fn settle_returns_an_idle_task_to_working_when_busy() {
         &reading(true, false),
     )
     .unwrap();
-    assert_eq!(row(&cx, id).state, TaskState::Working);
+    assert!(is_working(&row(&cx, id)));
     assert_eq!(idle_since(&cx, id), None);
 }
 
@@ -423,7 +431,7 @@ fn settle_leaves_a_working_task_that_may_not_quiet() {
         &reading(false, false),
     )
     .unwrap();
-    assert_eq!(row(&cx, id).state, TaskState::Working);
+    assert!(is_working(&row(&cx, id)));
 }
 
 #[test]
@@ -458,7 +466,7 @@ fn settle_leaves_a_working_task_when_only_the_pane_reports_idle() {
         assert_eq!(state(&r), (want, Source::Herdr), "{status:?}");
         assert!(!r.may_quiet, "{status:?}");
         settle(&cx, cx.store().unwrap(), &row(&cx, id), &r).unwrap();
-        assert_eq!(row(&cx, id).state, TaskState::Working, "{status:?}");
+        assert!(is_working(&row(&cx, id)), "{status:?}");
         assert_eq!(idle_since(&cx, id), None);
     }
 }
@@ -475,7 +483,7 @@ fn settle_leaves_a_working_task_when_the_hook_read_is_dropped() {
     let id = task(&cx, true);
     let r = run_once(&cx, id);
     settle(&cx, cx.store().unwrap(), &row(&cx, id), &r).unwrap();
-    assert_eq!(row(&cx, id).state, TaskState::Working);
+    assert!(is_working(&row(&cx, id)));
 }
 
 #[test]
@@ -487,13 +495,13 @@ fn settle_swallows_a_lost_race_and_keeps_the_new_state() {
     let stale = row(&cx, id);
     quiet(&cx, id);
     settle(&cx, cx.store().unwrap(), &stale, &reading(false, true)).unwrap();
-    assert_eq!(row(&cx, id).state, TaskState::Idle);
+    assert!(is_idle(&row(&cx, id)));
 
     let stale = row(&cx, id);
     let d = Decision::new(id).session(SessionInput::AgentBusy);
     cx.store().unwrap().apply(d).unwrap();
     settle(&cx, cx.store().unwrap(), &stale, &reading(true, false)).unwrap();
-    assert_eq!(row(&cx, id).state, TaskState::Working);
+    assert!(is_working(&row(&cx, id)));
 }
 
 #[test]

@@ -4,11 +4,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use moor_core::domain::box_state::BoxLifecycleInput;
+use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
-use moor_core::domain::session_state::SessionInput;
-use moor_core::domain::task::{SetupOutcome, TaskState};
+use moor_core::domain::session_state::{SessionInput, SessionState};
+use moor_core::domain::task::SetupOutcome;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
 use moor_core::seam::surface::SurfaceError;
 use moor_core::{BoxId, BoxName, ErrorKind, ProviderId, TaskReq};
@@ -116,9 +116,13 @@ fn req() -> TaskReq {
     }
 }
 
-fn states(f: &Fx) -> (TaskState, BoxState) {
+fn states(f: &Fx) -> (BoxLifecycle, BoxState) {
     let row = f.cx.store().unwrap().task(f.id).unwrap().unwrap();
-    (row.state, row.boxed.unwrap().state)
+    (row.lifecycle, row.boxed.unwrap().state)
+}
+
+fn session(f: &Fx) -> SessionState {
+    f.cx.store().unwrap().task(f.id).unwrap().unwrap().session
 }
 
 fn wakes(f: &Fx) -> usize {
@@ -141,7 +145,8 @@ fn awake_task_focuses_its_workspace() {
     assert!(!v.woke);
     assert_eq!(wakes(&f), 0);
     assert_eq!(focuses(&f), vec!["focus_workspace ws-9".to_owned()]);
-    assert_eq!(states(&f), (TaskState::Working, BoxState::Ready));
+    assert_eq!(states(&f), (BoxLifecycle::Ready, BoxState::Ready));
+    assert_eq!(session(&f), SessionState::Working);
 }
 
 #[test]
@@ -154,7 +159,8 @@ fn asleep_task_is_woken_then_focused() {
     assert_eq!(v.r#box.unwrap().state, BoxState::Ready);
     assert_eq!(wakes(&f), 1);
     assert_eq!(focuses(&f), vec!["focus_workspace ws-9".to_owned()]);
-    assert_eq!(states(&f), (TaskState::Working, BoxState::Ready));
+    assert_eq!(states(&f), (BoxLifecycle::Ready, BoxState::Ready));
+    assert_eq!(session(&f), SessionState::Working);
 }
 
 #[test]
@@ -189,7 +195,7 @@ fn failed_resume_leaves_box_asleep_and_unfocused() {
     let f = fx_with(FakeDriver::new().fail_wake(DriverError::Quota("q".into())));
     asleep(&f);
     run(&f.cx, &req()).unwrap_err();
-    assert_eq!(states(&f), (TaskState::Asleep, BoxState::Asleep));
+    assert_eq!(states(&f), (BoxLifecycle::Asleep, BoxState::Asleep));
     assert!(focuses(&f).is_empty());
 }
 
@@ -250,7 +256,8 @@ fn failed_focus_after_a_wake_leaves_the_box_awake() {
     asleep(&f);
     run(&f.cx, &req()).unwrap_err();
     assert_eq!(wakes(&f), 1);
-    assert_eq!(states(&f), (TaskState::Working, BoxState::Ready));
+    assert_eq!(states(&f), (BoxLifecycle::Ready, BoxState::Ready));
+    assert_eq!(session(&f), SessionState::Working);
     let v = run(&f.cx, &req()).unwrap();
     assert!(!v.woke);
     assert_eq!(wakes(&f), 1);

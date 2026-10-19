@@ -3,12 +3,12 @@
 
 use moor_core::config::Flags;
 use moor_core::decide::intent::setup_dead;
-use moor_core::domain::box_state::BoxLifecycleInput;
+use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, IntentChange};
 use moor_core::domain::run::SyncMode;
 use moor_core::domain::session_state::SessionInput;
-use moor_core::domain::task::{SetupOutcome, TaskState};
+use moor_core::domain::task::SetupOutcome;
 use moor_core::Warning;
 use std::path::Path;
 
@@ -108,7 +108,7 @@ pub(super) fn resync(
         return Ok(());
     };
     if (gates.launching)()? {
-        let advance = row.state == TaskState::SettingUp;
+        let advance = row.lifecycle == BoxLifecycle::SettingUp;
         return Err(sync_failed(cx, store, row.id, advance, handle, reason));
     }
     cx.warn(Warning {
@@ -138,9 +138,7 @@ pub(super) fn note_setup_not_rerun(
         }
         record_interrupted(cx, store, row)?;
         format!("setup was interrupted; {by_hand}")
-    } else if let (TaskState::Working | TaskState::Idle, Some(at)) =
-        (row.state, row.setup_failed_at)
-    {
+    } else if let (BoxLifecycle::Ready, Some(at)) = (row.lifecycle, row.setup_failed_at) {
         format!("setup failed at {}; {by_hand}", rfc3339(at))
     } else {
         return Ok(());
@@ -156,7 +154,7 @@ pub(super) fn note_setup_not_rerun(
 fn record_interrupted(cx: &Cx, store: &Store, row: &TaskRow) -> Result<(), CommandError> {
     let line = "setup was interrupted".to_owned();
     let mut done = Decision::new(row.id);
-    if row.state == TaskState::SettingUp {
+    if row.lifecycle == BoxLifecycle::SettingUp {
         done = done
             .lifecycle(BoxLifecycleInput::Ready {
                 setup: SetupOutcome::Failed { line },

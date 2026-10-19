@@ -2,13 +2,12 @@ use std::fs;
 use std::path::Path;
 
 use moor_core::domain::boxes::BoxState;
-use moor_core::domain::task::TaskState;
 use moor_core::seam::driver::DriverError;
 use moor_core::seam::surface::{PaneCmd, Surface, SurfaceError};
 use moor_core::{BoxName, ErrorKind};
 
 use super::teardown::{exec_calls, YAML};
-use super::{box_state, fx_with, req, row, run, Fx};
+use super::{box_state, fx_with, is_working, req, row, run, Fx};
 use crate::testing::driver::FakeDriver;
 use crate::testing::surface::FakeSurface;
 
@@ -68,7 +67,7 @@ fn a_pane_already_gone_still_ends_the_session() {
     let v = run(&f.cx, &req(false)).unwrap();
     assert!(v.agent_stopped);
     assert!(!live_session(&f));
-    assert_eq!(v.task.state, TaskState::Closed);
+    assert_eq!(v.task.state.as_str(), "closed");
 }
 
 #[test]
@@ -85,7 +84,7 @@ fn a_release_error_keeps_the_task_open_with_the_session_ended() {
     let e = run(&f.cx, &req(false)).unwrap_err();
     assert_eq!(e.kind, ErrorKind::Failed);
     assert!(!live_session(&f));
-    assert_eq!(row(&f).state, TaskState::Working);
+    assert!(is_working(&row(&f)));
     assert_eq!(box_state(&f), BoxState::Ready);
     assert!(!f
         .surface
@@ -99,7 +98,7 @@ fn a_task_with_no_session_closes_as_before() {
     let f = fx_with(FakeDriver::new(), FakeSurface::new("/s"), 0);
     let v = run(&f.cx, &req(false)).unwrap();
     assert!(!v.agent_stopped);
-    assert_eq!(v.task.state, TaskState::Closed);
+    assert_eq!(v.task.state.as_str(), "closed");
     assert!(!f
         .surface
         .calls()
@@ -118,7 +117,7 @@ fn a_pane_close_failure_keeps_the_session_and_the_task() {
     let e = run(&f.cx, &req(false)).unwrap_err();
     assert_eq!(e.kind, ErrorKind::Failed);
     assert!(live_session(&f));
-    assert_eq!(row(&f).state, TaskState::Working);
+    assert!(is_working(&row(&f)));
     assert!(!f.driver.calls().iter().any(|c| c.starts_with("release")));
 }
 

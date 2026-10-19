@@ -2,7 +2,6 @@
 
 use std::sync::Arc;
 
-use moor_core::domain::task::TaskState;
 use moor_core::seam::proxy_host::ProxyHostError;
 
 use super::{fx, req, run, Fx};
@@ -22,7 +21,7 @@ fn close_stops_the_task_proxy_once_without_a_warning() {
 
     let v = run(&f.cx, &req(false)).unwrap();
 
-    assert_eq!(v.task.state, TaskState::Closed);
+    assert_eq!(v.task.state.as_str(), "closed");
     assert_eq!(fake.calls(), [ProxyHostCall::Stop(f.id)]);
     assert!(f.cx.take_warnings().is_empty());
 }
@@ -35,7 +34,7 @@ fn an_incomplete_stop_only_warns() {
 
     let v = run(&f.cx, &req(false)).unwrap();
 
-    assert_eq!(v.task.state, TaskState::Closed);
+    assert_eq!(v.task.state.as_str(), "closed");
     assert_eq!(fake.calls(), [ProxyHostCall::Stop(f.id)]);
     let warnings = f.cx.take_warnings();
     let stops: Vec<_> = warnings

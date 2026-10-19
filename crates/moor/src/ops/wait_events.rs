@@ -112,7 +112,7 @@ fn resolve<'a>(
         let row = store.latest_task_by_name(name)?.ok_or_else(|| {
             CommandError::new(ErrorKind::Failed, format!("no task {}", name.as_str()))
         })?;
-        if !row.state.is_live() {
+        if !row.lifecycle.is_live() {
             return Err(CommandError::new(
                 ErrorKind::Failed,
                 format!("task {} is closed", name.as_str()),

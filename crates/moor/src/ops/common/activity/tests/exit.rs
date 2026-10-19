@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::activity::{HookRead, PaneObs, PaneRead, PaneStatus, Probes};
-use moor_core::domain::task::TaskState;
+use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::seam::engine::EngineError;
 use moor_core::BoxId;
 
@@ -196,5 +196,7 @@ fn an_exited_agent_ends_its_session_after_the_save_and_the_task_reads_idle() {
     assert_eq!(ended["cause"], "exited");
     assert_eq!(ended["exit"], 1);
     assert!(store.live_session(id).unwrap().is_none());
-    assert_eq!(store.task(id).unwrap().unwrap().state, TaskState::Idle);
+    let after = store.task(id).unwrap().unwrap();
+    assert_eq!(after.lifecycle, BoxLifecycle::Ready);
+    assert!(after.session.is_quiet());
 }

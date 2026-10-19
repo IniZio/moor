@@ -7,12 +7,11 @@
 use std::path::{Path, PathBuf};
 
 use moor_core::config::Flags;
-use moor_core::domain::box_state::BoxLifecycleInput;
+use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, NewTask};
 use moor_core::domain::event::CheckedCred;
 use moor_core::domain::session_state::SessionInput;
-use moor_core::domain::task::TaskState;
 use moor_core::seam::surface::{workspace_label, Worktree};
 use moor_core::view::StartView;
 use moor_core::{BoxId, ErrorKind, SessionId, StartReq, Warning};
@@ -232,7 +231,7 @@ fn attach(
 /// Moves an Idle Task being started to Working, so the launch check sees a Working Task.
 fn wake_idle(store: &Store, id: BoxId) -> Result<(), CommandError> {
     let row = reread(store, id)?;
-    if row.state != TaskState::Idle {
+    if !(row.lifecycle == BoxLifecycle::Ready && row.session.is_quiet()) {
         return Ok(());
     }
     match store.apply(Decision::new(id).session(SessionInput::AgentBusy)) {

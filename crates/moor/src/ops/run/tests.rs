@@ -5,12 +5,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::boxscript::command_line;
-use moor_core::domain::box_state::BoxLifecycleInput;
+use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, Intent, IntentChange, NewTask};
 use moor_core::domain::run::SyncMode;
-use moor_core::domain::session_state::SessionInput;
-use moor_core::domain::task::{SetupOutcome, TaskState};
+use moor_core::domain::session_state::{SessionInput, SessionState};
+use moor_core::domain::task::SetupOutcome;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
 use moor_core::seam::proc::{Output, Tool};
 use moor_core::{BoxId, BoxName, BoxPath, ErrorKind, ProviderId, RunReq};
@@ -542,8 +542,9 @@ fn idle_since(f: &Fx) -> Option<i64> {
     .unwrap()
 }
 
-fn state(f: &Fx) -> TaskState {
-    f.cx.store().unwrap().task(f.id).unwrap().unwrap().state
+fn state(f: &Fx) -> (BoxLifecycle, SessionState) {
+    let row = f.cx.store().unwrap().task(f.id).unwrap().unwrap();
+    (row.lifecycle, row.session)
 }
 
 fn go_idle(f: &Fx) {
@@ -559,7 +560,7 @@ fn run_on_an_idle_task_leaves_it_working() {
     go_idle(&f);
     assert!(idle_since(&f).is_some());
     run(&f.cx, &req(&["true"])).unwrap();
-    assert_eq!(state(&f), TaskState::Working);
+    assert_eq!(state(&f), (BoxLifecycle::Ready, SessionState::Working));
     assert_eq!(idle_since(&f), None);
     assert_eq!(kinds(&f).iter().filter(|k| *k == "busy").count(), 1);
 }
@@ -569,7 +570,7 @@ fn run_on_a_working_task_applies_nothing() {
     let f = ready();
     let busy = |f: &Fx| kinds(f).iter().filter(|k| *k == "busy").count();
     run(&f.cx, &req(&["true"])).unwrap();
-    assert_eq!(state(&f), TaskState::Working);
+    assert_eq!(state(&f), (BoxLifecycle::Ready, SessionState::Working));
     assert_eq!(busy(&f), 0);
 }
 
@@ -578,7 +579,7 @@ fn run_on_an_asleep_task_wakes_it_without_run_started() {
     let f = ready();
     sleep(&f);
     run(&f.cx, &req(&["true"])).unwrap();
-    assert_eq!(state(&f), TaskState::Working);
+    assert_eq!(state(&f), (BoxLifecycle::Ready, SessionState::Working));
 }
 
 #[test]
@@ -592,5 +593,5 @@ fn run_started_losing_a_race_is_ignored() {
         .unwrap();
     let v = locked(&f.cx, store, &req(&["true"]), &stale).unwrap();
     assert!(v.ran);
-    assert_eq!(state(&f), TaskState::Working);
+    assert_eq!(state(&f), (BoxLifecycle::Ready, SessionState::Working));
 }
