@@ -16,7 +16,6 @@ mod host_session;
 mod open;
 mod open_session;
 pub(crate) mod pr;
-pub(crate) mod proof;
 mod repos;
 mod run;
 mod sessions;

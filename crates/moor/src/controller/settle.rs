@@ -11,20 +11,20 @@ use crate::Moor;
 ///
 /// Each tick wires fresh adapters so config and tool changes apply; a failure is
 /// logged to `sink` and the next tick still runs.
-pub(super) fn spawn(env: &Env, every: Duration, proof_cap: u64, sink: &Sink) {
+pub(super) fn spawn(env: &Env, every: Duration, sink: &Sink) {
     let env = env.clone();
     let sink = Sink::clone(sink);
     thread::spawn(move || loop {
         thread::sleep(every);
-        tick(&env, proof_cap, &sink);
+        tick(&env, &sink);
     });
 }
 
 /// One wired pass; every warning and failure goes to `sink`.
-fn tick(env: &Env, proof_cap: u64, sink: &Sink) {
+fn tick(env: &Env, sink: &Sink) {
     match Moor::from_env(env) {
         Ok(moor) => {
-            for msg in moor.settle_open(proof_cap) {
+            for msg in moor.settle_open() {
                 log(sink, &format!("settle: {msg}"));
             }
         }

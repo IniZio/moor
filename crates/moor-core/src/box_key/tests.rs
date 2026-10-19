@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use super::*;
 
 fn key(n: i64) -> BoxKey {
@@ -19,15 +17,6 @@ fn slug_carries_id_and_nonce() {
 fn cred_and_tmp_dirs_carry_id_and_nonce() {
     assert_eq!(key(7).cred_dir("n"), ".moor-cred-7-n");
     assert_eq!(key(7).tmp_dir("n"), ".moor-tmp-7-n");
-}
-
-#[test]
-fn proof_paths_are_under_the_id() {
-    assert_eq!(key(7).proof_dir(), PathBuf::from("proof/7"));
-    assert_eq!(
-        key(7).proof_file("sub/b.txt"),
-        PathBuf::from("proof/7/sub/b.txt")
-    );
 }
 
 #[test]

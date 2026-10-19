@@ -1,4 +1,4 @@
-//! Refs a Box carries: its branch, pull request and proof links.
+//! Refs a Box carries: its branch and pull request links.
 
 use moor_core::BoxId;
 

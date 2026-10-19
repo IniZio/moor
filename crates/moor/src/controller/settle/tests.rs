@@ -6,7 +6,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::activity::{HookKind, HookRead, HookRecord, PaneObs, PaneRead, PaneStatus, Probes};
-use moor_core::config::DEFAULT_PROOF_MAX_BYTES;
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
@@ -129,7 +128,7 @@ impl Write for StopAtIdled {
 fn pass_settles_a_quiet_agent_without_any_client() {
     let dir = tempfile::tempdir().unwrap();
     let (cx, id) = quiet_agent(dir.path());
-    let messages = Moor::from_cx(cx).settle_open(DEFAULT_PROOF_MAX_BYTES);
+    let messages = Moor::from_cx(cx).settle_open();
     assert!(messages.is_empty(), "{messages:?}");
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
     let store = Store::open(&dir.path().join(STORE_FILE), clock).unwrap();
@@ -148,7 +147,7 @@ fn pass_settles_a_quiet_agent_without_any_client() {
 fn stream_delivers_idle_without_any_show() {
     let dir = tempfile::tempdir().unwrap();
     let (cx, _) = quiet_agent(dir.path());
-    Moor::from_cx(cx).settle_open(DEFAULT_PROOF_MAX_BYTES);
+    Moor::from_cx(cx).settle_open();
     let env = Env::from_pairs([
         ("MOOR_STATE_DIR", dir.path().to_str().unwrap()),
         ("MOOR_CONFIG", "/nonexistent/moor.yaml"),

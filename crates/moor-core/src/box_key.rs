@@ -1,9 +1,7 @@
 //! Every internal identifier of a Box, derived from its [`BoxId`].
 //!
-//! The Box name is for display and lookup only: slugs, directories and proof
-//! paths come from the id, so a name with `/` or of any legal length is safe.
-
-use std::path::PathBuf;
+//! The Box name is for display and lookup only: slugs and directories
+//! come from the id, so a name with `/` or of any legal length is safe.
 
 use crate::name::{BoxId, BoxName};
 
@@ -61,18 +59,6 @@ impl BoxKey {
     #[must_use]
     pub fn tmp_dir(self, nonce: &str) -> String {
         format!(".moor-tmp-{}-{nonce}", self.0.get())
-    }
-
-    /// Where the host keeps this Box's proof copies, relative to the state dir: `proof/{id}`.
-    #[must_use]
-    pub fn proof_dir(self) -> PathBuf {
-        PathBuf::from("proof").join(self.0.get().to_string())
-    }
-
-    /// Where the host keeps the proof copy `file`, relative to the state dir.
-    #[must_use]
-    pub fn proof_file(self, file: &str) -> PathBuf {
-        self.proof_dir().join(file)
     }
 }
 

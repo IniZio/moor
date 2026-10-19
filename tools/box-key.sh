@@ -4,7 +4,7 @@
 # another way, for example by concat! or from a constant prefix, passes unseen.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel)"
-pattern='"(moor-\{|\.moor-cred-\{|\.moor-tmp-\{|moor/\{|proof/\{)|join\("proof"\)\.join\('
+pattern='"(moor-\{|\.moor-cred-\{|\.moor-tmp-\{|moor/\{)'
 scan() {
   grep -rnE "$pattern" \
     --include='*.rs' \
