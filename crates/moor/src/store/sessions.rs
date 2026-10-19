@@ -24,7 +24,6 @@ impl Store {
     ///
     /// # Errors
     /// Returns [`StoreError::NotFound`] when the Box does not exist, or [`StoreError`] when the database fails.
-    #[cfg_attr(not(test), expect(dead_code, reason = "no caller outside tests yet"))]
     pub(crate) fn open_session(&self, id: BoxId) -> Result<BoxSession, StoreError> {
         let now = self.now();
         let mut conn = self.writer()?;
@@ -55,6 +54,29 @@ impl Store {
         Ok(session)
     }
 
+    /// Move a Starting Session to Working, the way a Box's first Session does once its agent runs.
+    ///
+    /// # Errors
+    /// Returns [`StoreError::Illegal`] when the Session is not Starting, or [`StoreError`] when the database fails.
+    pub(crate) fn start_session(&self, session: i64) -> Result<(), StoreError> {
+        let mut conn = self.writer()?;
+        let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let state: String = tx.query_row(
+            "SELECT state FROM sessions WHERE id = ?1",
+            [session],
+            |row| row.get(0),
+        )?;
+        let to = parsed_opt("session state", &state, SessionState::parse)?
+            .step(&SessionInput::Started)?;
+        tx.execute(
+            "UPDATE sessions SET state = ?1 WHERE id = ?2",
+            (to.as_str(), session),
+        )?;
+        tx.commit()?;
+        drop(conn);
+        Ok(())
+    }
+
     /// End Box `id`'s current Session and its linked launch in one transaction.
     ///
     /// Returns `false`, writing nothing, when the Box has no Session or its current one already ended.
@@ -63,7 +85,6 @@ impl Store {
     /// # Errors
     /// Returns [`StoreError::NotFound`] when the Box does not exist, [`StoreError::Illegal`] when the
     /// Session cannot end, or [`StoreError`] when the database fails.
-    #[cfg_attr(not(test), expect(dead_code, reason = "no caller outside tests yet"))]
     pub(crate) fn end_current_session(
         &self,
         id: BoxId,
