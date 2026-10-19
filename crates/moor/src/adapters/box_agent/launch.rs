@@ -73,6 +73,7 @@ pub(super) fn launch(
             forge: p.forge,
         }),
         home,
+        prompt: req.prompt.clone(),
     };
     let (cred, tmp) = dirs_in(&ctx.home, req).map_err(failed)?;
     let launch = Launch {
