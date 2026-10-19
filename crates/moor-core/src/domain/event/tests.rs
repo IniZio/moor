@@ -1,7 +1,6 @@
 //! Tests for the event kinds, payloads and step-to-event tables.
 
 use super::*;
-use crate::decide::turn::TurnOutcome;
 use crate::domain::boxes::{BoxInput, BoxState};
 use crate::name::BoxHandle;
 
