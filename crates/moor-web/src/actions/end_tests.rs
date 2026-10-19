@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use moor_core::controller::{parse_frame, ClientFrame, PROTOCOL};
-use moor_core::request::{CloseReq, EndHostSessionReq, Request, SessionsReq};
+use moor_core::request::{CloseReq, EndHostSessionReq, Request, ShowSessionReq};
 use moor_core::response::{ErrorKind, ErrorView, Response};
 use moor_core::{BoxName, SessionId};
 use serde_json::{json, Value};
@@ -33,15 +33,43 @@ const ROOT: i64 = 7;
 /// Requests the fake controller received, in arrival order.
 type Seen = Arc<Mutex<Vec<Request>>>;
 
-/// The live Sessions and which calls the fake controller refuses.
+/// One non-root Session the fake controller knows, ended or not.
+#[derive(Clone)]
+struct Child {
+    parent: i64,
+    session: i64,
+    /// Name and id of its Box; none for a host Session.
+    boxed: Option<(&'static str, i64)>,
+    state: &'static str,
+}
+
+fn child(parent: i64, session: i64, boxed: Option<(&'static str, i64)>) -> Child {
+    Child {
+        parent,
+        session,
+        boxed,
+        state: "working",
+    }
+}
+
+fn ended(mut c: Child) -> Child {
+    c.state = "ended";
+    c
+}
+
+/// The Sessions and Boxes the fake controller reports, and which calls it refuses.
 #[derive(Clone, Default)]
 struct Script {
-    /// `(parent, session, box)` of every live non-root Session.
-    tree: Vec<(i64, i64, Option<&'static str>)>,
+    /// Every non-root Session.
+    tree: Vec<Child>,
+    /// `(id, name, state)` of every task `show` lists.
+    boxes: Vec<(i64, &'static str, &'static str)>,
     /// Box whose close is refused.
     refuse_close: Option<&'static str>,
     /// Session whose end is refused.
     refuse_end: Option<i64>,
+    /// The root already ended, so ending it is refused.
+    root_ended: bool,
 }
 
 fn refused(cmd: &str, message: &str) -> Response {
@@ -71,20 +99,37 @@ fn serve(socket: &Path, script: &Script) -> Seen {
 
 fn answer(script: &Script, request: &Request) -> Response {
     match request {
-        Request::Sessions(SessionsReq { parent }) => {
+        Request::ShowSession(ShowSessionReq { session }) => {
             let rows: Vec<Value> = script
                 .tree
                 .iter()
-                .filter(|(p, _, _)| Some(SessionId::new(*p)) == *parent)
-                .map(|(p, s, b)| json!({"session": s, "box": b, "parent": p}))
+                .filter(|c| SessionId::new(c.parent) == *session)
+                .map(|c| {
+                    let mut row = json!({"session": c.session, "box": c.boxed.map(|b| b.0), "state": c.state});
+                    if let (Some((_, id @ 1..)), Some(map)) = (c.boxed, row.as_object_mut()) {
+                        map.insert("box_id".to_owned(), json!(id));
+                    }
+                    row
+                })
                 .collect();
-            Response::ok("sessions", Some(json!({"sessions": rows})))
+            Response::ok("show-session", Some(json!({"children": rows})))
+        }
+        Request::Show(_) => {
+            let tasks: Vec<Value> = script
+                .boxes
+                .iter()
+                .map(|(id, name, state)| json!({"id": id, "name": name, "state": state}))
+                .collect();
+            Response::ok("show", Some(json!({"tasks": tasks})))
         }
         Request::Close(c) if Some(c.task.as_str()) == script.refuse_close => {
             refused("close", "has unmerged work")
         }
         Request::EndHostSession(e) if Some(e.session.get()) == script.refuse_end => {
             refused("end-host-session", "still busy")
+        }
+        Request::EndHostSession(e) if e.session.get() == ROOT && script.root_ended => {
+            refused("end-host-session", "host Session 7 has ended")
         }
         _ => Response::ok("done", Some(json!({}))),
     }
@@ -210,7 +255,7 @@ fn end_session(session: i64) -> Request {
 fn mutations(f: &Front) -> Vec<Request> {
     let seen = f.seen.lock().unwrap().clone();
     seen.into_iter()
-        .filter(|r| !matches!(r, Request::Sessions(_)))
+        .filter(|r| !matches!(r, Request::ShowSession(_) | Request::Show(_)))
         .collect()
 }
 
@@ -220,7 +265,12 @@ fn ended_at(f: &Front) -> Option<i64> {
 
 fn tree() -> Script {
     Script {
-        tree: vec![(ROOT, 10, Some("a")), (ROOT, 11, Some("b")), (10, 12, None)],
+        tree: vec![
+            child(ROOT, 10, Some(("a", 1))),
+            child(ROOT, 11, Some(("b", 2))),
+            child(10, 12, None),
+        ],
+        boxes: vec![(1, "a", "working"), (2, "b", "working")],
         ..Script::default()
     }
 }
@@ -291,7 +341,11 @@ fn refused_root_end_fails_the_end_root_step() {
 #[test]
 fn a_box_shared_by_two_children_is_closed_once() {
     let script = Script {
-        tree: vec![(ROOT, 10, Some("a")), (ROOT, 11, Some("a"))],
+        tree: vec![
+            child(ROOT, 10, Some(("a", 1))),
+            child(ROOT, 11, Some(("a", 1))),
+        ],
+        boxes: vec![(1, "a", "working")],
         ..Script::default()
     };
     let f = front(&script, None);
@@ -322,3 +376,6 @@ fn other_paths_reach_the_fallback() {
     let resp = post(&f.web, "/requests");
     assert!(resp.ends_with("fallback"), "{resp}");
 }
+
+#[path = "end_tests/ended.rs"]
+mod ended;
