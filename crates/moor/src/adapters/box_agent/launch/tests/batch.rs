@@ -7,7 +7,7 @@ use std::sync::Arc;
 use moor_core::seam::agent_profile::ProxyAddr;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
-use moor_core::seam::engine::{Engine, EngineError, LaunchReq};
+use moor_core::seam::engine::{Engine, EngineError, LaunchPrompt, LaunchReq};
 use moor_core::seam::surface::Surface;
 use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId, Secret};
 
@@ -78,6 +78,7 @@ fn req(s: &FakeSurface, proxy: bool) -> LaunchReq {
         }),
         origin: proxy.then(|| "git@github.com:o/n.git".to_owned()),
         strip_env: Vec::new(),
+        prompt: LaunchPrompt::Brief,
     }
 }
 

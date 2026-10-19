@@ -39,6 +39,7 @@ impl Scratch {
             workdir: BoxPath::under(root, "work").unwrap(),
             proxy: Some(proxy_addr()),
             home: BoxPath::under(root, "home").unwrap(),
+            prompt: LaunchPrompt::Brief,
         }
     }
 
@@ -57,6 +58,7 @@ impl Scratch {
             workdir: BoxPath::under(root, "work").unwrap(),
             proxy: None,
             home: BoxPath::under(root, "home").unwrap(),
+            prompt: LaunchPrompt::Brief,
         };
         let setup = |step: &str| BoxSetup {
             files: Vec::new(),
