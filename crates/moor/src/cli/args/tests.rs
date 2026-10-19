@@ -70,6 +70,7 @@ fn start_with_all_flags() {
             base: Some("main".into()),
             model: Some("haiku".into()),
             no_agent: true,
+            hold: false,
             resume: true,
             trust_moor_yaml: false,
             repo: None,
@@ -87,6 +88,19 @@ fn start_trust_moor_yaml_flag() {
         req(&["start", "demo"]),
         Request::Start(s) if !s.trust_moor_yaml
     ));
+}
+
+#[test]
+fn start_hold_flag() {
+    assert!(matches!(
+        req(&["start", "t", "--hold"]),
+        Request::Start(s) if s.hold
+    ));
+    assert!(matches!(
+        req(&["start", "t"]),
+        Request::Start(s) if !s.hold
+    ));
+    assert!(run(&["start", "t", "--hold", "--no-agent"]).is_err());
 }
 
 #[test]

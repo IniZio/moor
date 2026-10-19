@@ -231,6 +231,7 @@ fn handle(mention: &Mention, store: &Store, allow: &Allow<'_>, fx: &mut Fx<'_>) 
                 base: None,
                 model: None,
                 no_agent: false,
+                hold: false,
                 resume: false,
                 trust_moor_yaml: false,
                 repo: Some(repo),
