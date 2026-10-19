@@ -43,6 +43,7 @@ mod revive;
 mod session;
 mod setup;
 mod setup_rerun;
+mod sync_retry;
 mod transcript;
 mod workdir;
 
