@@ -20,6 +20,7 @@ mod activity;
 mod base;
 mod branch_owner;
 mod capacity;
+mod cred_sweep;
 mod dead_agent;
 mod dotfiles;
 mod exclude;
@@ -158,7 +159,7 @@ fn happy_path_calls_seams_in_order_and_clears_intent() {
         w.surface.calls(),
         ["create_worktree demo", "ensure_workspace moor:demo"]
     );
-    assert_eq!(w.driver.calls(), ["acquire", "exec box-1"]);
+    assert_eq!(w.driver.calls(), ["acquire", "exec box-1", "sweep box-1"]);
 }
 
 #[test]
@@ -236,7 +237,10 @@ fn open_name_attaches_with_only_a_checkout_sync() {
     let again = run(&w.cx, &req("demo")).unwrap();
     assert!(again.attached);
     assert_eq!(again.task.id, first.task.id);
-    assert_eq!(w.driver.calls(), ["acquire", "exec box-1", "exec box-1"]);
+    assert_eq!(
+        w.driver.calls(),
+        ["acquire", "exec box-1", "sweep box-1", "exec box-1"]
+    );
     assert_eq!(w.surface.calls().len(), 2);
 }
 
@@ -323,7 +327,13 @@ fn start_on_a_gone_box_acquires_again_and_keeps_the_task_working() {
     assert_ne!(b.handle.unwrap().as_str(), "box-1");
     assert_eq!(
         w.driver.calls(),
-        ["acquire", "exec box-1", "acquire", "exec box-2"]
+        [
+            "acquire",
+            "exec box-1",
+            "sweep box-1",
+            "acquire",
+            "exec box-2"
+        ]
     );
 }
 
@@ -436,7 +446,7 @@ fn start_on_a_lost_box_is_refused_while_another_op_holds_the_lock() {
     let err = run(&w.cx, &req("demo")).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Refused);
     assert_eq!(err.error.to_string(), "box busy: close in progress");
-    assert_eq!(w.driver.calls(), ["acquire", "exec box-1"]);
+    assert_eq!(w.driver.calls(), ["acquire", "exec box-1", "sweep box-1"]);
 }
 
 #[test]
@@ -452,7 +462,13 @@ fn reprovision_skips_when_another_start_already_gave_the_box_back() {
     run(&w.cx, &req("demo")).unwrap();
     assert_eq!(
         w.driver.calls(),
-        ["acquire", "exec box-1", "acquire", "exec box-2"]
+        [
+            "acquire",
+            "exec box-1",
+            "sweep box-1",
+            "acquire",
+            "exec box-2"
+        ]
     );
     let run = crate::ops::common::provision::reprovision(
         &w.cx,
@@ -469,7 +485,13 @@ fn reprovision_skips_when_another_start_already_gave_the_box_back() {
     assert!(run.is_none());
     assert_eq!(
         w.driver.calls(),
-        ["acquire", "exec box-1", "acquire", "exec box-2"]
+        [
+            "acquire",
+            "exec box-1",
+            "sweep box-1",
+            "acquire",
+            "exec box-2"
+        ]
     );
 }
 

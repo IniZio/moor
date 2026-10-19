@@ -19,6 +19,7 @@ use super::reopen;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
+use crate::ops::common::cred_sweep;
 use crate::ops::common::facts::settings;
 use crate::ops::common::provision::reread;
 use crate::ops::common::resume;
@@ -84,9 +85,11 @@ pub(super) fn run(
         if req.goal.is_some() || row.goal.is_some() || resumes(req, &row) {
             let cfg = settings()?;
             store_goal(store, req, id)?;
+            sweep_creds(cx, store, id);
             return launch::run(cx, store, req, id, setup_exit, &|| Ok(cfg.clone()));
         }
         store_goal(store, req, id)?;
+        sweep_creds(cx, store, id);
         return launch::run(cx, store, req, id, setup_exit, settings);
     };
     let Some(end) = ended(cx, &old) else {
@@ -246,6 +249,7 @@ fn relaunch(
     store.end_current_session(id, "relaunch", exit)?;
     let next = store.open_child_session(id, req.parent.map(SessionId::get))?;
     store.start_session(next.id)?;
+    sweep_creds(cx, store, id);
     let view = launch::begin(cx, store, &row, &launch, &cfg)?;
     if view.launched {
         let new_pane = store.live_session(id)?.and_then(|s| s.pane);
@@ -304,6 +308,7 @@ pub(crate) fn revive_after_wake(cx: &Cx, store: &Store, id: BoxId) -> Result<(),
         settings(cx, Path::new(at), &Flags::default())
     };
     let Some((old, end)) = &ended_pane else {
+        sweep_creds(cx, store, id);
         launch::run(cx, store, &req, id, None, &settings)?;
         return Ok(());
     };
@@ -316,6 +321,13 @@ pub(crate) fn revive_after_wake(cx: &Cx, store: &Store, id: BoxId) -> Result<(),
         &settings,
     )?;
     Ok(())
+}
+
+/// Removes stale Proxy-credential directories from the Box before an agent launches, best effort.
+pub(super) fn sweep_creds(cx: &Cx, store: &Store, id: BoxId) {
+    if let Ok(row) = reread(store, id) {
+        cred_sweep::sweep(cx, &row);
+    }
 }
 
 /// Whether `row` holds a goal or an agent session to start again.

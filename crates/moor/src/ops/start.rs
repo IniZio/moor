@@ -111,6 +111,7 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
         } else {
             Provisioned::skipped()
         };
+        relaunch::sweep_creds(cx, store, id);
         let agent = launch::run(cx, store, req, id, done.setup.exit(), &|| Ok(cfg.clone()))?;
         (done, agent)
     };

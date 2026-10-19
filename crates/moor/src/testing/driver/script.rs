@@ -38,6 +38,31 @@ pub(super) fn layout(
 }
 
 impl FakeDriver {
+    /// Makes every credential sweep fail with `e`.
+    pub(crate) fn fail_sweep(self, e: DriverError) -> Self {
+        self.st().fail_sweep = Some(e);
+        self
+    }
+
+    /// Every credential sweep so far; kept out of [`FakeDriver::execs`].
+    pub(crate) fn sweeps(&self) -> Vec<(BoxHandle, ExecSpec, Deadline)> {
+        self.st().sweeps.clone()
+    }
+
+    pub(super) fn sweep_exec(
+        &self,
+        handle: &BoxHandle,
+        spec: &ExecSpec,
+        deadline: Deadline,
+    ) -> Result<ExecOutcome, DriverError> {
+        let mut s = self.st();
+        s.note(format!("sweep {}", handle.as_str()));
+        s.sweeps.push((handle.clone(), spec.clone(), deadline));
+        s.fail_sweep
+            .clone()
+            .map_or(Ok(ExecOutcome::Exited { code: 0 }), Err)
+    }
+
     /// Makes `peek_file` of `path` in the Box `handle` return `text`.
     pub(crate) fn peek_text(self, handle: &str, path: &BoxPath, text: &str) -> Self {
         self.set_peek_text(handle, path, text);
