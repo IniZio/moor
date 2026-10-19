@@ -36,14 +36,14 @@ fn start_with_a_parent_records_it_on_the_first_session() {
             .open_host_session("/w", None, None)
             .unwrap();
     let v = run(&w.cx, &child("demo", parent)).unwrap();
-    assert_eq!(parents(&w, v.task.id), vec![Some(parent)]);
+    assert_eq!(parents(&w, v.box_row.id), vec![Some(parent)]);
 }
 
 #[test]
 fn start_without_a_parent_leaves_it_null() {
     let w = world(FakeDriver::new());
     let v = run(&w.cx, &req("demo")).unwrap();
-    assert!(parents(&w, v.task.id).iter().all(Option::is_none));
+    assert!(parents(&w, v.box_row.id).iter().all(Option::is_none));
 }
 
 #[test]

@@ -75,7 +75,7 @@ pub(crate) fn run(cx: &Cx, req: &WaitReq) -> Result<WaitValue, CommandError> {
         task.agent = agent_view(&reading);
         hide_unsupported_sleep(&mut task, cx);
         return Ok(WaitValue {
-            task,
+            boxed: task,
             timed_out: verdict == WaitVerdict::TimedOut,
             waited_ms: u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX),
             wait_for: want,

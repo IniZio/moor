@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use moor_core::view::{ArtifactView, AttentionView, EventView, PaneView, ShowView, TaskView};
+use moor_core::view::{ArtifactView, AttentionView, BoxView, EventView, PaneView, ShowView};
 use moor_core::{BoxId, ErrorKind, ShowReq};
 
 use crate::cx::Cx;
@@ -100,7 +100,7 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
     let store = cx.store()?;
     let now = cx.clock().now();
     let Some(name) = &req.box_name else {
-        let mut tasks: Vec<TaskView> = Vec::new();
+        let mut tasks: Vec<BoxView> = Vec::new();
         let mut sleep_caps = HashMap::new();
         for mut row in store.open_tasks()? {
             let reading = activity::read(cx, store, &row, now)?;
@@ -115,8 +115,8 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
             tasks.push(view);
         }
         return Ok(ShowView {
-            tasks: Some(tasks),
-            task: None,
+            boxes: Some(tasks),
+            boxed: None,
             events: None,
             pane: None,
             reports: None,
@@ -147,8 +147,8 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
         None
     };
     Ok(ShowView {
-        tasks: None,
-        task: Some(detail),
+        boxes: None,
+        boxed: Some(detail),
         events,
         pane: pane.filter(|_| req.pane),
         reports: None,

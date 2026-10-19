@@ -128,7 +128,7 @@ fn detail(client: &Client, name: &str) -> HttpResponse {
         pane: false,
     });
     match call(client, show) {
-        Ok(v) => json_ok(&json!({"task": field(&v, "task"), "events": field(&v, "events")})),
+        Ok(v) => json_ok(&json!({"box": field(&v, "box"), "events": field(&v, "events")})),
         Err(resp) => resp,
     }
 }
@@ -247,7 +247,7 @@ fn is_open(task: &Value) -> bool {
 
 /// Ended child Sessions of open requests whose Box is still open and has no live Session.
 fn stranded(client: &Client, sessions: &Value, tasks: &Value, rows: &[RequestRow]) -> Vec<Value> {
-    let open: HashSet<i64> = items(tasks, "tasks")
+    let open: HashSet<i64> = items(tasks, "boxes")
         .iter()
         .filter(|t| is_open(t))
         .filter_map(|t| t.get("id").and_then(Value::as_i64))
@@ -315,7 +315,7 @@ fn roots(
     let src = Source {
         children,
         live,
-        tasks: items(tasks, "tasks")
+        tasks: items(tasks, "boxes")
             .iter()
             .filter(|t| is_open(t))
             .filter_map(|t| Some((text(t, "name")?, t)))

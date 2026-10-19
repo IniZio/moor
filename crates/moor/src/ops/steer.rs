@@ -82,7 +82,7 @@ pub(crate) fn run(cx: &Cx, req: &SteerReq) -> Result<SteerValue, CommandError> {
     let steer_id = record(store, id, &session, &sent, outcome.submit_retried)?;
     let answered_menu = answered(cx, store, &row, &steer, outcome)?;
     Ok(SteerValue {
-        task: name.to_owned(),
+        box_name: name.to_owned(),
         sent,
         answered_menu,
         steer: steer_id,
@@ -103,7 +103,7 @@ fn exited(
         message: "the agent exited and its session ended".to_owned(),
     });
     Ok(SteerValue {
-        task: name.to_owned(),
+        box_name: name.to_owned(),
         sent,
         answered_menu: false,
         steer,

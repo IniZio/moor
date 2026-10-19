@@ -52,7 +52,7 @@ fn identity_is_set_in_the_box_before_the_first_setup_line() {
 #[test]
 fn identity_is_set_again_when_the_box_is_re_provisioned() {
     let (w, v) = start_as(("Ann Dev", "a@x.io"), "setup: [a]\n", FakeDriver::new());
-    let id = BoxId::new(v.task.id);
+    let id = BoxId::new(v.box_row.id);
     let store = w.cx.store().unwrap();
     let wt = store.task(id).unwrap().unwrap().worktree.unwrap();
     std::fs::create_dir_all(&wt).unwrap();

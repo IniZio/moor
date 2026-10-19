@@ -55,7 +55,7 @@ pub(super) fn view(cx: &Cx, row: &BoxRow, attached: bool) -> StartView {
     let mut task = task_view(row, cx.config());
     hide_unsupported_sleep(&mut task, cx);
     StartView {
-        task,
+        box_row: task,
         attached,
         queued: row.lifecycle == BoxLifecycle::WaitingForBox,
         promoted: Vec::new(),
@@ -74,6 +74,6 @@ pub(super) fn set_provisioned(v: &mut StartView, p: &Provisioned) {
     v.dotfiles = p.dotfiles.view();
     if p.setup.failed() {
         v.failed_step = Some("setup".to_owned());
-        v.boxed = v.task.driver.as_ref().and_then(|b| b.handle.clone());
+        v.boxed = v.box_row.driver.as_ref().and_then(|b| b.handle.clone());
     }
 }

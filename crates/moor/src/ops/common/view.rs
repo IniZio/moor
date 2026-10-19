@@ -7,7 +7,7 @@ use moor_core::config::UserConfig;
 use moor_core::domain::boxes::BoxState;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::SleepKind;
-use moor_core::view::{AgentView, BoxSleepView, DriverView, EventView, RunView, TaskView};
+use moor_core::view::{AgentView, BoxSleepView, BoxView, DriverView, EventView, RunView};
 use moor_core::ProviderId;
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
@@ -101,7 +101,7 @@ fn run_view(r: &RunRow) -> RunView {
 }
 
 /// Map a Task row to the shared Task view; `agent` and `run` stay empty.
-pub(crate) fn task_view(row: &BoxRow, config: &UserConfig) -> TaskView {
+pub(crate) fn task_view(row: &BoxRow, config: &UserConfig) -> BoxView {
     task_view_with_run(row, None, config)
 }
 
@@ -112,8 +112,8 @@ pub(crate) fn task_view_with_run(
     row: &BoxRow,
     run: Option<&RunRow>,
     config: &UserConfig,
-) -> TaskView {
-    TaskView {
+) -> BoxView {
+    BoxView {
         id: row.id.get(),
         name: row.name.as_str().to_owned(),
         repo: row.repo.clone(),
@@ -137,13 +137,13 @@ pub(crate) fn task_view_with_run(
 /// Drop the idle-sleep label when the Box's provider cannot sleep.
 ///
 /// A provider whose capabilities cannot be read keeps the label.
-pub(crate) fn hide_unsupported_sleep(view: &mut TaskView, cx: &Cx) {
+pub(crate) fn hide_unsupported_sleep(view: &mut BoxView, cx: &Cx) {
     hide_unsupported_sleep_cached(view, cx, &mut HashMap::new());
 }
 
 /// Like [`hide_unsupported_sleep`], reading each provider's capabilities once per `cache`.
 pub(crate) fn hide_unsupported_sleep_cached(
-    view: &mut TaskView,
+    view: &mut BoxView,
     cx: &Cx,
     cache: &mut HashMap<String, bool>,
 ) {

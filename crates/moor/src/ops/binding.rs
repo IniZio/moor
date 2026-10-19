@@ -56,7 +56,7 @@ fn value(b: Binding) -> BindingValue {
         front: b.front,
         key: b.key,
         session: SessionId::new(b.session),
-        task: b.task.map(|t| t.as_str().to_owned()),
+        box_name: b.task.map(|t| t.as_str().to_owned()),
         owner: b.owner,
     }
 }

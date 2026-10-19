@@ -92,7 +92,7 @@ fn sync_step_failed(
         "`moor close {name}` closes it; add --force to discard unpushed work in the Box"
     ))
     .with_value(serde_json::json!({
-        "task": task_view(&row, cx.config()),
+        "box_row": task_view(&row, cx.config()),
         "failed_step": "sync",
         "box": handle.as_str(),
     }))

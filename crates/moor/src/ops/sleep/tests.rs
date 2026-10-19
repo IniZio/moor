@@ -200,7 +200,7 @@ fn sleeps_an_idle_task() {
     let k = kinds(&f);
     assert!(k.contains(&"asleep".to_owned()), "{k:?}");
     assert!(k.contains(&"box_asleep".to_owned()), "{k:?}");
-    assert_eq!(v.task, "t");
+    assert_eq!(v.box_name, "t");
     assert!(!v.woke);
     assert_eq!(v.driver.unwrap().state, BoxState::Asleep);
     assert_eq!(sleep_calls(&f), 1);

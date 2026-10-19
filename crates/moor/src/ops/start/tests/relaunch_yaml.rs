@@ -103,7 +103,7 @@ fn a_relaunch_after_a_failed_setup_warns_once_each_for_setup_and_moor_yaml() {
     assert!(first.setup.ran && !first.setup.ok);
     assert_eq!(engine.launches().len(), 1);
     gone(&w);
-    write_worktree_yaml(&w, BoxId::new(first.task.id), CHANGED);
+    write_worktree_yaml(&w, BoxId::new(first.box_row.id), CHANGED);
     script_base_yaml(&w, Some(BASE));
     drop(w.cx.take_warnings());
     let again = run(&w.cx, &trusted()).unwrap();
@@ -130,7 +130,7 @@ fn idle_with(yaml: &str) -> (World, Arc<FakeEngine>, BoxId) {
         },
     )
     .unwrap();
-    let id = BoxId::new(first.task.id);
+    let id = BoxId::new(first.box_row.id);
     script_base_yaml(&w, Some(BASE));
     write_worktree_yaml(&w, id, yaml);
     (w, engine, id)

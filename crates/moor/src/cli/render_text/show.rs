@@ -9,9 +9,9 @@ mod tests;
 
 /// Renders a `show` value, or `None` when it lacks the expected shape.
 pub(super) fn show_text(value: &Value) -> Option<String> {
-    let mut out = match value.get("task") {
+    let mut out = match value.get("box") {
         Some(task) if !task.is_null() => detail(task, value)?,
-        _ => list(value.get("tasks")?.as_array()?)?,
+        _ => list(value.get("boxes")?.as_array()?)?,
     };
     if let Some(pane) = value.get("pane").filter(|p| !p.is_null()) {
         let tail = pane.get("tail")?.as_str()?;

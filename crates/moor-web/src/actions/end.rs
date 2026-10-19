@@ -126,7 +126,7 @@ fn open_boxes(client: &Client) -> Result<HashSet<i64>, JobFailure> {
         pane: false,
     });
     let value = call(client, req).map_err(|m| fail("list-boxes", m))?;
-    let tasks = value.get("tasks").and_then(Value::as_array);
+    let tasks = value.get("boxes").and_then(Value::as_array);
     Ok(tasks
         .into_iter()
         .flatten()

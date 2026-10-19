@@ -45,7 +45,7 @@ fn exited_agent() -> (World, Arc<FakeEngine>, BoxId) {
         },
     )
     .unwrap();
-    let id = BoxId::new(first.task.id);
+    let id = BoxId::new(first.box_row.id);
     settle_all(&w.cx, w.cx.store().unwrap()).unwrap();
     let store = w.cx.store().unwrap();
     assert!(store.live_session(id).unwrap().is_none());

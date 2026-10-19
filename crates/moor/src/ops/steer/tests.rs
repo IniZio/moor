@@ -217,7 +217,7 @@ fn a_task_without_a_live_session_is_refused_naming_start_goal() {
 fn text_goes_to_the_agent_and_is_recorded() {
     let f = fx_with(FakeEngine::new().probes("agent-1", working()), true);
     let v = run(&f.cx, &text("do x")).unwrap();
-    assert_eq!((v.task.as_str(), v.sent.as_str()), ("t", "do x"));
+    assert_eq!((v.box_name.as_str(), v.sent.as_str()), ("t", "do x"));
     assert!(!v.answered_menu);
     assert_eq!(v.steer, steered_id(&f));
     assert_eq!(

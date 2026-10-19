@@ -53,7 +53,7 @@ pub(super) fn started() -> (World, Arc<FakeEngine>, BoxId) {
     let mut w = world(FakeDriver::new());
     w.cx = w.cx.with_engine(engine.clone());
     let first = run(&w.cx, &goal_req("ship it")).unwrap();
-    (w, engine, BoxId::new(first.task.id))
+    (w, engine, BoxId::new(first.box_row.id))
 }
 
 /// The second launch request; fails unless there are exactly two.
@@ -254,7 +254,7 @@ fn a_failed_relaunch_records_no_relaunched_event_and_sets_the_failure() {
     );
     let mut w = world(FakeDriver::new());
     w.cx = w.cx.with_engine(engine);
-    let id = BoxId::new(run(&w.cx, &goal_req("ship it")).unwrap().task.id);
+    let id = BoxId::new(run(&w.cx, &goal_req("ship it")).unwrap().box_row.id);
     gone(&w);
     let v = run(&w.cx, &req("demo")).unwrap();
     assert!(!v.agent.launched);
@@ -304,7 +304,7 @@ fn a_relaunch_watches_its_new_pane_for_a_first_run_prompt() {
     let mut w = world(FakeDriver::new());
     w.cx = w.cx.with_engine(engine);
     let first = run(&w.cx, &goal_req("ship it")).unwrap();
-    let id = BoxId::new(first.task.id);
+    let id = BoxId::new(first.box_row.id);
     gone(&w);
     w.surface.push_pane_obs(
         "p-2",
@@ -534,7 +534,7 @@ fn idle_of_sessions() -> (World, Arc<FakeEngine>, BoxId) {
         },
     )
     .unwrap();
-    let id = BoxId::new(first.task.id);
+    let id = BoxId::new(first.box_row.id);
     set_agent_session(&w, id, "agent-1");
     (w, engine, id)
 }

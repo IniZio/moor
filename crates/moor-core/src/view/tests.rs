@@ -4,8 +4,8 @@ use super::*;
 use crate::attention::{Limit, LimitKind};
 use serde_json::{json, Value};
 
-fn task() -> TaskView {
-    TaskView {
+fn sample_box() -> BoxView {
+    BoxView {
         id: 7,
         name: "t".into(),
         repo: "r".into(),
@@ -37,7 +37,7 @@ fn task() -> TaskView {
     }
 }
 
-fn task_json() -> Value {
+fn box_json() -> Value {
     json!({
         "id": 7, "name": "t", "repo": "r", "issue": null, "goal": "g",
         "lifecycle": "ready", "session_state": "working", "state_reason": null, "base": null, "branch": "b",
@@ -51,12 +51,12 @@ fn task_json() -> Value {
 
 #[test]
 fn task_row_keys_match_wire_shape() {
-    assert_eq!(serde_json::to_value(task()).ok(), Some(task_json()));
+    assert_eq!(serde_json::to_value(sample_box()).ok(), Some(box_json()));
 }
 
 #[test]
 fn task_without_box_serializes_null() {
-    let mut t = task();
+    let mut t = sample_box();
     t.driver = None;
     let v = serde_json::to_value(t).ok();
     assert_eq!(v.and_then(|v| v.get("driver").cloned()), Some(Value::Null));
@@ -64,7 +64,7 @@ fn task_without_box_serializes_null() {
 
 #[test]
 fn agent_and_run_nested_keys() {
-    let mut t = task();
+    let mut t = sample_box();
     t.agent = Some(AgentView {
         launched: true,
         pane: "live".into(),
@@ -103,7 +103,7 @@ fn agent_and_run_nested_keys() {
 #[test]
 fn start_view_keys_match_wire_shape() {
     let v = StartView {
-        task: task(),
+        box_row: sample_box(),
         attached: false,
         queued: false,
         promoted: vec!["a".into()],
@@ -127,7 +127,7 @@ fn start_view_keys_match_wire_shape() {
     assert_eq!(
         serde_json::to_value(v).ok(),
         Some(json!({
-            "task": task_json(), "attached": false, "queued": false, "promoted": ["a"],
+            "box_row": box_json(), "attached": false, "queued": false, "promoted": ["a"],
             "setup": {"ran": true, "ok": true, "line": null, "ms": 7},
             "dotfiles": {"ran": false, "ok": false, "ms": null},
             "agent": {"launched": true, "session": "s", "reason": null},
@@ -139,8 +139,8 @@ fn start_view_keys_match_wire_shape() {
 #[test]
 fn show_view_keys_match_wire_shape() {
     let v = ShowView {
-        tasks: Some(vec![task()]),
-        task: None,
+        boxes: Some(vec![sample_box()]),
+        boxed: None,
         events: Some(vec![EventView {
             id: 1,
             kind: "ran".into(),
@@ -163,7 +163,7 @@ fn show_view_keys_match_wire_shape() {
     assert_eq!(
         serde_json::to_value(v).ok(),
         Some(json!({
-            "tasks": [task_json()], "task": null,
+            "boxes": [box_json()], "box": null,
             "events": [{"id": 1, "kind": "ran", "payload": {"a": 1}, "ts": "t"}],
             "pane": {"tail": "x", "status": "ok"},
             "reports": [{"id": 2, "kind": "k", "version": 1, "title": null, "path": "p"}],
@@ -175,8 +175,8 @@ fn show_view_keys_match_wire_shape() {
 #[test]
 fn show_view_absent_sections_are_null() {
     let v = ShowView {
-        tasks: Some(vec![]),
-        task: None,
+        boxes: Some(vec![]),
+        boxed: None,
         events: None,
         pane: None,
         reports: None,
@@ -185,7 +185,7 @@ fn show_view_absent_sections_are_null() {
     assert_eq!(
         serde_json::to_value(v).ok(),
         Some(
-            json!({"tasks": [], "task": null, "events": null, "pane": null, "reports": null, "artifacts": null})
+            json!({"boxes": [], "box": null, "events": null, "pane": null, "reports": null, "artifacts": null})
         )
     );
 }
@@ -193,8 +193,8 @@ fn show_view_absent_sections_are_null() {
 #[test]
 fn show_view_single_task_omits_tasks() {
     let v = ShowView {
-        tasks: None,
-        task: Some(task()),
+        boxes: None,
+        boxed: Some(sample_box()),
         events: None,
         pane: None,
         reports: None,
@@ -203,7 +203,7 @@ fn show_view_single_task_omits_tasks() {
     assert_eq!(
         serde_json::to_value(v).ok(),
         Some(
-            json!({"task": task_json(), "events": null, "pane": null, "reports": null, "artifacts": null})
+            json!({"box": box_json(), "events": null, "pane": null, "reports": null, "artifacts": null})
         )
     );
 }
@@ -211,7 +211,7 @@ fn show_view_single_task_omits_tasks() {
 #[test]
 fn close_view_keys_match_wire_shape() {
     let v = CloseView {
-        task: task(),
+        boxed: sample_box(),
         box_deleted: true,
         workspace_closed: false,
         agent_stopped: true,
@@ -222,7 +222,7 @@ fn close_view_keys_match_wire_shape() {
     assert_eq!(
         serde_json::to_value(v).ok(),
         Some(json!({
-            "task": task_json(), "box_deleted": true, "workspace_closed": false,
+            "box": box_json(), "box_deleted": true, "workspace_closed": false,
             "agent_stopped": true, "transcript": null, "worktree_kept": true, "promoted": []
         }))
     );
@@ -399,39 +399,38 @@ fn box_sleep_serializes_reason_and_after() {
 #[test]
 fn sleep_value_uses_driver_key() {
     let v = sleep::SleepValue {
-        task: "t".into(),
+        box_name: "t".into(),
         driver: Some(box_view(None, None)),
         woke: true,
     };
     let j = serde_json::to_value(&v).unwrap();
-    assert_eq!(j.get("task"), Some(&json!("t")));
+    assert_eq!(j.get("box"), Some(&json!("t")));
     assert_eq!(j.get("woke"), Some(&json!(true)));
     assert_eq!(j.pointer("/driver/provider"), Some(&json!("p")));
-    assert!(j.get("box").is_none());
 }
 
 #[test]
 fn sleep_value_without_driver_serializes_null() {
     let v = sleep::SleepValue {
-        task: "t".into(),
+        box_name: "t".into(),
         driver: None,
         woke: false,
     };
     assert_eq!(
         serde_json::to_value(&v).unwrap(),
-        json!({"task": "t", "driver": null, "woke": false})
+        json!({"box": "t", "driver": null, "woke": false})
     );
 }
 
 #[test]
 fn empty_attention_omits_the_key() {
-    let v = serde_json::to_value(task()).ok();
+    let v = serde_json::to_value(sample_box()).ok();
     assert_eq!(v.map(|v| v.get("attention").cloned()), Some(None));
 }
 
 #[test]
 fn open_attention_serializes_the_array() {
-    let mut t = task();
+    let mut t = sample_box();
     t.attention = vec![AttentionView {
         kind: "agent_rate_limited".into(),
         rule: "claude".into(),

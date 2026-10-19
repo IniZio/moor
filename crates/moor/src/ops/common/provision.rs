@@ -385,7 +385,7 @@ fn failed(
     }
     let out = CommandError::from(err);
     match reread(store, id) {
-        Ok(row) => out.with_value(serde_json::json!({ "task": task_view(&row, cx.config()) })),
+        Ok(row) => out.with_value(serde_json::json!({ "box_row": task_view(&row, cx.config()) })),
         Err(_) => out,
     }
 }

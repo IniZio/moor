@@ -106,8 +106,8 @@ fn ready_box(cx: &Cx, driver: &FakeDriver, id: BoxId) -> moor_core::BoxHandle {
 }
 
 /// The first row of a list-mode view.
-fn first(v: &moor_core::view::ShowView) -> &moor_core::view::TaskView {
-    v.tasks.as_ref().unwrap().first().unwrap()
+fn first(v: &moor_core::view::ShowView) -> &moor_core::view::BoxView {
+    v.boxes.as_ref().unwrap().first().unwrap()
 }
 
 /// Box state of the only task, as the view reports it.
@@ -128,9 +128,9 @@ fn show_lists_open_tasks_with_no_selection() {
         .session(SessionInput::End);
     cx.store().unwrap().apply(close).unwrap();
     let v = run(&cx, &req(None, None)).unwrap();
-    let names: Vec<_> = v.tasks.iter().flatten().map(|t| t.name.clone()).collect();
+    let names: Vec<_> = v.boxes.iter().flatten().map(|t| t.name.clone()).collect();
     assert_eq!(names, ["a", "b"]);
-    assert!(v.task.is_none() && v.events.is_none());
+    assert!(v.boxed.is_none() && v.events.is_none());
 }
 
 #[test]
@@ -142,7 +142,7 @@ fn sleep_label_follows_provider_sleep_support() {
         let id = add(&cx, "a");
         ready_box(&cx, &driver, id);
         let v = run(&cx, &req(Some("a"), None)).unwrap();
-        let shown = v.task.unwrap().driver.unwrap().sleep.after;
+        let shown = v.boxed.unwrap().driver.unwrap().sleep.after;
         assert_eq!(shown.as_deref(), after);
         let v = run(&cx, &req(None, None)).unwrap();
         let listed = first(&v).driver.as_ref().unwrap().sleep.after.clone();
@@ -202,8 +202,8 @@ fn named_task_returns_last_events() {
         .apply(Decision::new(id).lifecycle(BoxLifecycleInput::Admitted))
         .unwrap();
     let v = run(&cx, &req(Some("a"), Some(1))).unwrap();
-    assert!(v.tasks.is_none());
-    assert_eq!(v.task.unwrap().name, "a");
+    assert!(v.boxes.is_none());
+    assert_eq!(v.boxed.unwrap().name, "a");
     assert_eq!(v.events.unwrap().len(), 1);
 }
 
@@ -221,7 +221,7 @@ fn task_shows_its_in_flight_run() {
     let cx = cx(dir.path(), &Arc::new(FakeDriver::new()));
     let id = add(&cx, "a");
     let before = run(&cx, &req(Some("a"), None)).unwrap();
-    assert!(before.task.unwrap().run.is_none());
+    assert!(before.boxed.unwrap().run.is_none());
     cx.store()
         .unwrap()
         .begin_run(NewRun {
@@ -234,9 +234,9 @@ fn task_shows_its_in_flight_run() {
         })
         .unwrap();
     let v = run(&cx, &req(Some("a"), None)).unwrap();
-    let r = v.task.unwrap().run.unwrap();
+    let r = v.boxed.unwrap().run.unwrap();
     assert_eq!(r.argv, ["make", "test"]);
-    assert!(v.tasks.is_none());
+    assert!(v.boxes.is_none());
     let listed = run(&cx, &req(None, None)).unwrap();
     assert!(first(&listed).run.is_some());
 }
@@ -326,7 +326,7 @@ fn list_and_detail_report_the_same_agent() {
         .unwrap();
     let detail = run(&cx, &req(Some("a"), None))
         .unwrap()
-        .task
+        .boxed
         .unwrap()
         .agent
         .unwrap();
@@ -477,7 +477,7 @@ fn task_without_a_live_session_has_no_agent() {
     let cx = engine_cx(dir.path(), &driver, &Arc::new(FakeEngine::new()));
     working(&cx, &driver, "a", None);
     let v = run(&cx, &req(Some("a"), None)).unwrap();
-    assert!(v.task.unwrap().agent.is_none());
+    assert!(v.boxed.unwrap().agent.is_none());
 }
 
 /// Context over `driver` whose git answers a repo at `/repo`, so `start` can run.
@@ -537,13 +537,13 @@ fn a_task_freshly_started_is_not_idled_by_the_next_list() {
         },
     )
     .unwrap();
-    let s = &started.task;
+    let s = &started.box_row;
     assert_eq!((s.lifecycle, s.session_state), WORKING);
     let v = run(&cx, &req(None, None)).unwrap();
     let t = first(&v);
     assert_eq!((t.lifecycle, t.session_state), WORKING);
     assert!(t.agent.is_some());
-    let id = BoxId::new(started.task.id);
+    let id = BoxId::new(started.box_row.id);
     assert!(cx.store().unwrap().live_session(id).unwrap().is_some());
     let row = cx.store().unwrap().task(id).unwrap().unwrap();
     assert_eq!(parts(&row), WORKING);
