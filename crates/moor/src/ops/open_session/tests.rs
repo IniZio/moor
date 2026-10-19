@@ -23,6 +23,7 @@ struct Fx {
     _dir: tempfile::TempDir,
     cx: Cx,
     engine: Arc<FakeEngine>,
+    driver: Arc<FakeDriver>,
     id: BoxId,
 }
 
@@ -56,6 +57,7 @@ fn fx(engine: FakeEngine, live: bool) -> Fx {
         _dir: dir,
         cx,
         engine,
+        driver,
         id,
     }
 }
@@ -145,6 +147,18 @@ fn a_ready_box_opens_the_next_session_seeded_with_the_text() {
         store.live_session(f.id).unwrap().unwrap().pane.as_deref(),
         Some("p-1")
     );
+}
+
+#[test]
+fn an_open_sweeps_stale_credential_dirs_before_launching() {
+    let f = fx(FakeEngine::new(), false);
+    run(&f.cx, &req()).unwrap();
+    let sweeps = f.driver.sweeps();
+    assert_eq!(sweeps.len(), 1);
+    let script = sweeps.first().and_then(|s| s.1.argv.get(2)).unwrap();
+    assert!(script.contains(".moor-cred-"));
+    assert!(f.driver.calls().iter().any(|c| c.starts_with("sweep ")));
+    assert_eq!(f.engine.launches().len(), 1);
 }
 
 #[test]
