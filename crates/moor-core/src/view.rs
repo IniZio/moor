@@ -1,5 +1,6 @@
 //! Typed `value` payloads for `start`, `show` and `close` (JSON wire shape).
 
+pub mod binding;
 pub mod env;
 pub mod run;
 pub mod session;
