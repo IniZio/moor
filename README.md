@@ -39,8 +39,7 @@ These commands work today:
 parse but return the error "`moor <cmd>` is not implemented yet".
 
 The Slack bot token needs the `chat:write` scope for posting and updating
-messages and ephemeral replies, and `files:write` for uploading proof files
-into a Task's thread.
+messages and ephemeral replies.
 
 Global flags: `--json`, `--quiet`, `--state-dir DIR`. State lives in
 `moor.db` inside the state directory, set by `--state-dir`, `MOOR_STATE_DIR`,

@@ -12,7 +12,6 @@ use serde_json::Value;
 use super::api::Api;
 use super::pr::{PrCache, PrOf};
 use super::prompt::Pending;
-use super::proof::Proofs;
 use crate::adapters::clock::SystemClock;
 use crate::env::Env;
 use crate::store::{SlackThread, Store, STORE_FILE};
@@ -252,7 +251,6 @@ pub(crate) fn follow(
     let mut views: HashMap<String, View> = HashMap::new();
     let mut pending = Pending::default();
     let mut planner = Planner::default();
-    let mut proofs = Proofs::default();
     let mut prs = PrCache::default();
     let mut cursor = 0;
     loop {
@@ -264,7 +262,6 @@ pub(crate) fn follow(
                         .entry(e.task_name.clone())
                         .or_default()
                         .fold(&e.row.kind, &e.row.payload);
-                    proofs.fold(e.row.task, &e.task_name, &e.row.kind, &e.row.payload);
                     pending.fold(e.row.id, &e.task_name, &e.row.kind, &e.row.payload);
                 }
                 if events.len() == BATCH {
@@ -281,10 +278,6 @@ pub(crate) fn follow(
                     planner.record(&step, clock.instant(), ok);
                 }
                 pending.post_due(&store, api, bot, &threads, log);
-                match env.state_dir() {
-                    Some(dir) => proofs.post_due(&store, api, bot, &threads, &dir, log),
-                    None => log("slack status: no state directory, proofs not posted"),
-                }
             }
             Err(e) => log(&format!("slack status: {e}")),
         }
