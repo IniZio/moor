@@ -69,9 +69,9 @@ fn step_parts(
     })
 }
 
-/// States of the Box's Sessions after the primary one.
+/// States of the Box's Sessions other than the current one.
 fn read_others(tx: &Transaction<'_>, id: BoxId) -> Result<Vec<SessionState>, StoreError> {
-    let mut stmt = tx.prepare("SELECT state FROM sessions WHERE box = ? AND ordinal > 1")?;
+    let mut stmt = tx.prepare("SELECT state FROM sessions WHERE box = ?1 AND ordinal < (SELECT MAX(ordinal) FROM sessions WHERE box = ?1)")?;
     let rows = stmt.query_map(params![id.get()], |r| r.get::<_, String>(0))?;
     rows.map(|s| {
         let s = s?;
