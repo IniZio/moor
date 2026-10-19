@@ -186,7 +186,11 @@ fn a_bound_worktree_keeps_its_own_file_over_a_different_base_copy() {
     let w = world(FakeDriver::new());
     let made = w
         .surface
-        .create_worktree(Path::new("/repo"), &TaskName::parse("pre").unwrap(), None)
+        .create_worktree(
+            Path::new("/repo"),
+            &TaskName::parse("repo/pre").unwrap(),
+            None,
+        )
         .unwrap();
     std::fs::create_dir_all(&made.path).unwrap();
     std::fs::write(made.path.join(".moor.yaml"), "setup: [worktree-line]\n").unwrap();
