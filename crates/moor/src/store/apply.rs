@@ -17,7 +17,7 @@ mod steps;
 pub(super) use self::sql::update;
 use self::sql::{field_value, flag, text, Sets};
 pub(super) use self::steps::insert_task;
-use self::steps::{inputs, step_task, Parts};
+use self::steps::{step_task, Parts};
 use super::reads::live_holders_in;
 use super::{BoxRow, Store, StoreError, TaskRow};
 use moor_core::ProviderId;
@@ -96,8 +96,7 @@ fn apply_in(tx: &Transaction<'_>, now: Ts, d: Decision) -> Result<Applied, Store
     write_task(tx, id, now, &d, &task_step, parts)?;
     write_box(tx, id, now, &d, box_step.as_ref(), &task_step)?;
     let mut ids = Vec::new();
-    let (l, s) = inputs(&d);
-    let stepped = match (&l, &s) {
+    let stepped = match (&d.lifecycle_input, &d.session_input) {
         (Some(l), _) => lifecycle_events(from_lifecycle, parts.0, l),
         (None, Some(s)) => session_events(s),
         (None, None) => Vec::new(),
@@ -171,8 +170,7 @@ fn write_task(
 ) -> Result<(), StoreError> {
     let mut sets = task_field_sets(&d.set);
     let mut session = session_field_sets(&d.set);
-    let (l, s) = inputs(d);
-    let stepped = l.is_some() || s.is_some();
+    let stepped = d.lifecycle_input.is_some() || d.session_input.is_some();
     if stepped {
         sets.push(("state", Value::Text(lifecycle.as_str().to_owned())));
         sets.extend(idle_since_sets(step, now));
@@ -348,12 +346,7 @@ fn insert_row<F: Serialize>(
     tx.execute(
         "INSERT INTO events (box, session, kind, payload, ts) VALUES (?1, \
          (SELECT id FROM sessions WHERE box = ?1 ORDER BY ordinal DESC LIMIT 1), ?2, ?3, ?4)",
-        params![
-            id.get(),
-            e.kind(),
-            e.payload().to_string(),
-            now.as_millis()
-        ],
+        params![id.get(), e.kind(), e.payload().to_string(), now.as_millis()],
     )?;
     Ok(tx.last_insert_rowid())
 }

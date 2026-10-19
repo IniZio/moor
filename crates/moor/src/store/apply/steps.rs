@@ -4,7 +4,7 @@ use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput, StepError};
 use moor_core::domain::box_steps;
 use moor_core::domain::decision::{Decision, NewTask, TaskTarget};
 use moor_core::domain::session_state::{SessionInput, SessionState};
-use moor_core::domain::task::{TaskInput, TaskState};
+use moor_core::domain::task::TaskState;
 use moor_core::seam::clock::Ts;
 use moor_core::BoxId;
 use rusqlite::{params, Transaction};
@@ -30,14 +30,6 @@ pub(super) struct Stepped {
     pub(super) from_lifecycle: Option<BoxLifecycle>,
 }
 
-/// The lifecycle and Session inputs a decision carries, whichever way it was built.
-pub(super) fn inputs(d: &Decision) -> (Option<BoxLifecycleInput>, Option<SessionInput>) {
-    d.task_input.as_ref().map_or_else(
-        || (d.lifecycle_input.clone(), d.session_input.clone()),
-        TaskInput::pair,
-    )
-}
-
 /// Resolve the Box (inserting a new one) and step its lifecycle and primary Session.
 ///
 /// The summary is the combined state callers still read; the parts are what the writer stores.
@@ -46,10 +38,10 @@ pub(super) fn step_task(
     now: Ts,
     d: &Decision,
 ) -> Result<Stepped, StoreError> {
-    let (l, s) = inputs(d);
+    let (l, s) = (d.lifecycle_input.as_ref(), d.session_input.as_ref());
     match &d.task {
         TaskTarget::New(new) => {
-            let Some(BoxLifecycleInput::Insert) = &l else {
+            let Some(BoxLifecycleInput::Insert) = l else {
                 return Err(StoreError::Invalid("new Box needs the insert input".into()));
             };
             let parts = (
@@ -71,7 +63,7 @@ pub(super) fn step_task(
                 load_row_parts(tx, *id)?.ok_or(StoreError::NotFound(*id))?;
             let parts = if l.is_some() || s.is_some() {
                 let others = read_others(tx, *id)?;
-                box_steps::apply(lifecycle, session, &others, l.as_ref(), s.as_ref()).map_err(
+                box_steps::apply(lifecycle, session, &others, l, s).map_err(
                     |e| match e {
                         StepError::Illegal(i) => StoreError::Illegal(i),
                         StepError::SleepBlocked { busy } => StoreError::SleepBlocked { busy },

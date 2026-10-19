@@ -5,7 +5,6 @@ mod extra;
 use super::box_state::BoxLifecycleInput;
 use super::boxes::BoxInput;
 use super::session_state::SessionInput;
-use super::task::TaskInput;
 use crate::name::{BoxHandle, BoxId, BoxName, ProviderId, RunId};
 
 pub use extra::ExtraEvent;
@@ -145,8 +144,6 @@ pub enum TaskTarget {
 pub struct Decision {
     /// The task to write.
     pub task: TaskTarget,
-    /// Task state machine input.
-    pub task_input: Option<TaskInput>,
     /// Box lifecycle input.
     pub lifecycle_input: Option<BoxLifecycleInput>,
     /// Primary Session input.
@@ -181,7 +178,6 @@ impl Decision {
     fn base(task: TaskTarget) -> Self {
         Self {
             task,
-            task_input: None,
             lifecycle_input: None,
             session_input: None,
             box_input: None,
@@ -190,13 +186,6 @@ impl Decision {
             events: Vec::new(),
             parent_session: None,
         }
-    }
-
-    /// Sets the task input.
-    #[must_use]
-    pub fn task_input(mut self, i: TaskInput) -> Self {
-        self.task_input = Some(i);
-        self
     }
 
     /// Sets the Box lifecycle input.
