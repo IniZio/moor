@@ -17,6 +17,9 @@ use crate::env::Env;
 use crate::error::CommandError;
 
 pub mod remote;
+pub mod watch;
+
+pub use watch::watch;
 
 /// Id carried by the single request of a session.
 const REQUEST_ID: &str = "1";
@@ -112,6 +115,17 @@ pub fn call(
     request: &Request,
     on_progress: impl FnMut(&str),
 ) -> Result<Response, ClientError> {
+    with_transport(env, target, |reader, mut writer| {
+        session(reader, &mut writer, request, on_progress)
+    })
+}
+
+/// Open the transport to `target` and run `exchange` over it.
+fn with_transport<T>(
+    env: &Env,
+    target: &Target,
+    exchange: impl FnOnce(&mut dyn BufRead, &mut dyn Write) -> Result<T, SessionError>,
+) -> Result<T, ClientError> {
     match target {
         Target::Socket(socket) => {
             let unreachable = |e: std::io::Error| ClientError::Unreachable {
@@ -122,25 +136,22 @@ pub fn call(
             let mut writer = stream
                 .try_clone()
                 .map_err(|e| ClientError::Protocol(format!("clone socket: {e}")))?;
-            session(BufReader::new(stream), &mut writer, request, on_progress).map_err(
-                |e| match e {
-                    SessionError::LostBeforeHello(msg) => ClientError::Protocol(msg),
-                    SessionError::Client(e) => e,
-                },
-            )
+            exchange(&mut BufReader::new(stream), &mut writer).map_err(|e| match e {
+                SessionError::LostBeforeHello(msg) => ClientError::Protocol(msg),
+                SessionError::Client(e) => e,
+            })
         }
-        Target::Ssh(host) => call_ssh(env, target, host, request, on_progress),
+        Target::Ssh(host) => call_ssh(env, target, host, exchange),
     }
 }
 
-/// Session over `ssh -T <host> moor controller attach`.
-fn call_ssh(
+/// Transport over `ssh -T <host> moor controller attach`.
+fn call_ssh<T>(
     env: &Env,
     target: &Target,
     host: &str,
-    request: &Request,
-    on_progress: impl FnMut(&str),
-) -> Result<Response, ClientError> {
+    exchange: impl FnOnce(&mut dyn BufRead, &mut dyn Write) -> Result<T, SessionError>,
+) -> Result<T, ClientError> {
     let unreachable = |detail: String| ClientError::Unreachable {
         target: target.clone(),
         detail,
@@ -156,7 +167,7 @@ fn call_ssh(
         let _ = child.wait();
         return Err(ClientError::Protocol("ssh pipes unavailable".to_owned()));
     };
-    let result = session(BufReader::new(stdout), &mut stdin, request, on_progress);
+    let result = exchange(&mut BufReader::new(stdout), &mut stdin);
     drop(stdin);
     let result = result.map_err(|e| match e {
         SessionError::LostBeforeHello(msg) => {
@@ -191,6 +202,21 @@ fn exit_note(child: &mut Child) -> String {
     String::new()
 }
 
+/// Send the hello and check the controller's reply.
+fn handshake(reader: &mut impl BufRead, writer: &mut impl Write) -> Result<(), SessionError> {
+    send(writer, &ClientFrame::Hello { protocol: PROTOCOL })
+        .map_err(SessionError::LostBeforeHello)?;
+    let line = read_line(reader).map_err(SessionError::LostBeforeHello)?;
+    match parse_frame(&line)? {
+        ServerFrame::Hello { protocol } if protocol == PROTOCOL => Ok(()),
+        ServerFrame::Hello { protocol } => Err(ClientError::Protocol(format!(
+            "controller speaks protocol {protocol}, this client speaks {PROTOCOL}"
+        ))
+        .into()),
+        other => Err(unexpected(&other, "hello").into()),
+    }
+}
+
 /// The hello, request and progress exchange over an open transport.
 fn session(
     mut reader: impl BufRead,
@@ -198,19 +224,7 @@ fn session(
     request: &Request,
     mut on_progress: impl FnMut(&str),
 ) -> Result<Response, SessionError> {
-    send(writer, &ClientFrame::Hello { protocol: PROTOCOL })
-        .map_err(SessionError::LostBeforeHello)?;
-    let line = read_line(&mut reader).map_err(SessionError::LostBeforeHello)?;
-    match parse_frame(&line)? {
-        ServerFrame::Hello { protocol } if protocol == PROTOCOL => {}
-        ServerFrame::Hello { protocol } => {
-            return Err(ClientError::Protocol(format!(
-                "controller speaks protocol {protocol}, this client speaks {PROTOCOL}"
-            ))
-            .into());
-        }
-        other => return Err(unexpected(&other, "hello").into()),
-    }
+    handshake(&mut reader, writer)?;
 
     send(
         writer,

@@ -3,6 +3,7 @@
 use std::ffi::OsString;
 use std::path::PathBuf;
 
+use moor_core::controller::WatchFilter;
 use moor_core::request::{EndSessionReq, OpenHostSessionReq, OpenSessionReq};
 use moor_core::{
     BoxId, BoxName, CloseReq, CpReq, EnvReq, GateReq, RemoveReq, ReportReq, Request, RunReq,
@@ -485,6 +486,44 @@ fn controller_attach_socket_is_optional() {
         run(&["controller", "attach", "--socket", "/x"]),
         Ok((_, Action::ControllerAttach(Some(p)))) if p.as_path() == std::path::Path::new("/x")
     ));
+}
+
+#[test]
+fn events_defaults_to_everything_from_zero() {
+    assert!(matches!(
+        run(&["events"]),
+        Ok((_, Action::Events { since: 0, filter, follow: false })) if filter == WatchFilter::default()
+    ));
+}
+
+#[test]
+fn events_takes_since_boxes_kinds_and_follow() {
+    let (_, action) = run(&[
+        "events",
+        "--since",
+        "5",
+        "--box",
+        "a",
+        "--box",
+        "b",
+        "--kind",
+        "turn_done",
+        "--follow",
+    ])
+    .expect("parses");
+    let want = WatchFilter {
+        boxes: Some(vec![n("a"), n("b")]),
+        kinds: Some(vec!["turn_done".to_string()]),
+    };
+    assert!(matches!(
+        action,
+        Action::Events { since: 5, filter, follow: true } if filter == want
+    ));
+}
+
+#[test]
+fn events_rejects_an_invalid_box_name() {
+    assert!(run(&["events", "--box", "bad name!"]).is_err());
 }
 
 #[test]

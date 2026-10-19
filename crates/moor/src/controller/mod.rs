@@ -2,11 +2,14 @@
 
 pub mod attach;
 mod conn;
+mod local;
 mod progress;
 mod settle;
 mod watch;
 mod web;
 mod web_feed;
+
+pub use local::watch_local;
 
 use std::fs::{self, File, TryLockError};
 use std::io::{BufReader, Write};

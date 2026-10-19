@@ -76,6 +76,17 @@ pub enum Parsed {
         /// Controller socket override.
         socket: Option<std::path::PathBuf>,
     },
+    /// Print the event stream as JSON lines.
+    Events {
+        /// Global options.
+        opts: GlobalOpts,
+        /// Only events after this id.
+        since: i64,
+        /// Which events to print.
+        filter: moor_core::controller::WatchFilter,
+        /// Keep streaming.
+        follow: bool,
+    },
     /// Nothing to run; print this.
     Done(Output),
 }
@@ -90,6 +101,19 @@ pub fn parse(args: Vec<OsString>) -> Parsed {
         Ok((opts, Action::ProxyServe(task))) => Parsed::ProxyServe { opts, task },
         Ok((opts, Action::ControllerServe(config))) => Parsed::ControllerServe { opts, config },
         Ok((opts, Action::ControllerAttach(socket))) => Parsed::ControllerAttach { opts, socket },
+        Ok((
+            opts,
+            Action::Events {
+                since,
+                filter,
+                follow,
+            },
+        )) => Parsed::Events {
+            opts,
+            since,
+            filter,
+            follow,
+        },
         Err(err) => Parsed::Done(clap_output(&err, cmd, &raw)),
     }
 }

@@ -4,6 +4,7 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
+use moor_core::controller::WatchFilter;
 use moor_core::request::{EndSessionReq, ShowSessionReq};
 use moor_core::{
     BoxId, BoxName, ReportReq, Request, RunReq, SessionId, ShowReq, StartReq, SteerReq, WaitFor,
@@ -13,9 +14,11 @@ use moor_core::{
 use super::args_admin::{AdminCmd, GateCmd};
 use super::args_probe::Flags;
 use super::GlobalOpts;
+use events::EventsArgs;
 use session::SessionCmd;
 use task_ops::{CloseArgs, CpArgs, RemoveArgs, TaskArg};
 
+mod events;
 mod session;
 mod task_ops;
 #[cfg(test)]
@@ -34,6 +37,15 @@ pub(super) enum Action {
     ControllerServe(PathBuf),
     /// `controller attach [--socket <path>]`: bridge stdio to the controller socket.
     ControllerAttach(Option<PathBuf>),
+    /// `events`: print the event stream as JSON lines.
+    Events {
+        /// Only events after this id.
+        since: i64,
+        /// Which events to print.
+        filter: WatchFilter,
+        /// Keep streaming.
+        follow: bool,
+    },
 }
 
 /// Parse argv (program name first) into global options and an action.
@@ -122,6 +134,8 @@ enum Cmd {
     /// Check a gate; record one with `moor run --record <name>`.
     #[command(subcommand)]
     Gate(GateCmd),
+    /// Print stored events as JSON lines; --follow keeps streaming (dev tool).
+    Events(EventsArgs),
     /// Admin verbs.
     #[command(flatten)]
     Admin(AdminCmd),
@@ -155,6 +169,14 @@ impl Cmd {
             Self::Sleep(a) => Action::Request(Request::Sleep(a.into())),
             Self::Wake(a) => Action::Request(Request::Wake(a.into())),
             Self::Gate(g) => Action::Request(Request::Gate(g.into())),
+            Self::Events(a) => {
+                let (since, filter, follow) = a.into_parts();
+                Action::Events {
+                    since,
+                    filter,
+                    follow,
+                }
+            }
             Self::Admin(a) => a.into_action(),
         }
     }
