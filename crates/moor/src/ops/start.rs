@@ -39,6 +39,7 @@ mod watch;
 
 use response::{queued_view, set_agent, view, with_provider};
 
+pub(crate) use launch::begin_seeded;
 pub(crate) use relaunch::revive_after_wake;
 
 /// What `start` learns before it changes anything.
