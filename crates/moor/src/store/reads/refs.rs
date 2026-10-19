@@ -1,4 +1,4 @@
-//! Refs a Box carries: its branch and pull request links.
+//! Refs a Box carries, such as its branch.
 
 use moor_core::BoxId;
 
@@ -9,6 +9,7 @@ impl Store {
     ///
     /// # Errors
     /// Returns [`StoreError`] when `kind` is unknown or the database fails.
+    #[cfg_attr(not(test), expect(dead_code, reason = "no caller outside tests yet"))]
     pub(crate) fn add_box_ref(
         &self,
         id: BoxId,
