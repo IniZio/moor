@@ -258,6 +258,13 @@ fn open_host_session_prints_id_and_workdir() {
     assert_eq!(out, "host Session 12 working in /dir\n");
 }
 
+#[test]
+fn end_host_session_prints_id_and_workdir() {
+    let v = json!({"session": 3, "workdir": "/dir", "state": "ended"});
+    let (out, _) = render(&Response::ok("end-host-session", Some(v)), false);
+    assert_eq!(out, "host Session 3 working in /dir\n");
+}
+
 /// A task row named `name` in `state`, with an optional Box state.
 fn lifecycle_task(name: &str, state: &str, box_state: Option<&str>) -> serde_json::Value {
     let b = box_state.map(|s| json!({"state": s, "provider": "local"}));

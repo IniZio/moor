@@ -1,8 +1,10 @@
 //! Arguments of the `session` verbs.
 
 use clap::{ArgGroup, Args, Subcommand};
-use moor_core::request::{OpenHostSessionReq, OpenSessionReq, Request};
-use moor_core::BoxName;
+use moor_core::request::{
+    EndHostSessionReq, OpenHostSessionReq, OpenSessionReq, Request, UpdateHostSessionReq,
+};
+use moor_core::{BoxName, SessionId};
 
 use super::task_name;
 
@@ -11,6 +13,31 @@ use super::task_name;
 pub(super) enum SessionCmd {
     /// Start a new agent Session on an existing Box.
     Open(OpenArgs),
+    /// Change the agent or agent session recorded on a host Session.
+    Set(SetArgs),
+    /// End a host Session.
+    End(EndArgs),
+}
+
+/// Arguments of `session set`: the Session id and at least one field to change.
+#[derive(Debug, Args)]
+#[command(group(ArgGroup::new("fields").args(["agent", "agent_session_id"]).required(true).multiple(true)))]
+pub(super) struct SetArgs {
+    /// Numeric Session id.
+    id: i64,
+    /// Agent to record on the Session.
+    #[arg(long, value_name = "NAME")]
+    agent: Option<String>,
+    /// Agent session to record on the Session.
+    #[arg(long, value_name = "ID")]
+    agent_session_id: Option<String>,
+}
+
+/// Arguments of `session end`.
+#[derive(Debug, Args)]
+pub(super) struct EndArgs {
+    /// Numeric Session id.
+    id: i64,
 }
 
 /// Arguments of `session open`: a Box Session (task + seed) or, with `--host`, a host Session.
@@ -53,7 +80,21 @@ fn absolute_dir(path: &str) -> Result<String, String> {
 
 impl From<SessionCmd> for Request {
     fn from(cmd: SessionCmd) -> Self {
-        let SessionCmd::Open(a) = cmd;
+        let a = match cmd {
+            SessionCmd::Open(a) => a,
+            SessionCmd::Set(a) => {
+                return Self::UpdateHostSession(UpdateHostSessionReq {
+                    session: SessionId::new(a.id),
+                    agent: a.agent,
+                    agent_session_id: a.agent_session_id,
+                })
+            }
+            SessionCmd::End(a) => {
+                return Self::EndHostSession(EndHostSessionReq {
+                    session: SessionId::new(a.id),
+                })
+            }
+        };
         match a.workdir {
             Some(workdir) => Self::OpenHostSession(OpenHostSessionReq {
                 workdir,
@@ -67,3 +108,6 @@ impl From<SessionCmd> for Request {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

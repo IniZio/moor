@@ -80,7 +80,9 @@ fn structured_text(cmd: &str, value: &Value) -> Option<String> {
         "wait" => wait_text(value),
         "end-session" => end_session_line(value),
         "open-session" => open_session_line(value),
-        "open-host-session" => host_session_line(value),
+        "open-host-session" | "update-host-session" | "end-host-session" => {
+            host_session_line(value)
+        }
         _ => None,
     }
 }
