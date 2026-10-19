@@ -1,8 +1,76 @@
 //! Entry point of the moor web front daemon.
 
+use std::io::{self, Write};
+use std::path::PathBuf;
 use std::process::ExitCode;
+use std::thread;
 
-#[allow(clippy::missing_const_for_fn, reason = "`main` may not be a const fn")]
+use clap::Parser;
+use moor_web::auth::read_token;
+use moor_web::client::Client;
+use moor_web::db::Db;
+use moor_web::http::{placeholder_handler, start};
+
+/// Command line of the daemon.
+#[derive(Parser)]
+#[command(
+    name = "moor-web",
+    version,
+    about = "Web front for the moor controller"
+)]
+struct Args {
+    /// Controller socket to dial.
+    #[arg(long, env = "MOOR_WEB_SOCKET")]
+    socket: PathBuf,
+    /// Loopback port to listen on; 0 picks a free one.
+    #[arg(long, default_value_t = 0)]
+    port: u16,
+    /// File holding the access token.
+    #[arg(long, env = "MOOR_WEB_TOKEN_FILE")]
+    token_file: PathBuf,
+    /// Directory for the front's own state; defaults to `$XDG_STATE_HOME/moor-web`
+    /// or `$HOME/.local/state/moor-web`.
+    #[arg(long, env = "MOOR_WEB_STATE_DIR")]
+    state_dir: Option<PathBuf>,
+}
+
+/// The state directory given, or the default under the user's state home.
+fn state_dir(given: Option<PathBuf>) -> Result<PathBuf, String> {
+    if let Some(dir) = given {
+        return Ok(dir);
+    }
+    let var = |k: &str| {
+        std::env::var_os(k)
+            .filter(|v| !v.is_empty())
+            .map(PathBuf::from)
+    };
+    var("XDG_STATE_HOME")
+        .or_else(|| var("HOME").map(|h| h.join(".local").join("state")))
+        .map(|base| base.join("moor-web"))
+        .ok_or_else(|| "set --state-dir, XDG_STATE_HOME or HOME".to_owned())
+}
+
+/// Starts the daemon and parks the main thread.
+fn run(args: Args) -> Result<(), String> {
+    let token = read_token(&args.token_file)?;
+    let dir = state_dir(args.state_dir)?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
+    let _db = Db::open(&dir.join("web.db")).map_err(|e| e.to_string())?;
+    let _client = Client::new(args.socket);
+    let server =
+        start(args.port, token, placeholder_handler()).map_err(|e| format!("listen: {e}"))?;
+    writeln!(io::stdout(), "{}", server.url()).map_err(|e| e.to_string())?;
+    loop {
+        thread::park();
+    }
+}
+
 fn main() -> ExitCode {
-    ExitCode::SUCCESS
+    match run(Args::parse()) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(msg) => {
+            let _ = writeln!(io::stderr(), "moor-web: {msg}");
+            ExitCode::FAILURE
+        }
+    }
 }
