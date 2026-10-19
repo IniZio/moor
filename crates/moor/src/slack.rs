@@ -3,7 +3,6 @@
 mod answer;
 mod api;
 mod command;
-mod pr;
 mod prompt;
 mod socket;
 mod status;
@@ -24,7 +23,6 @@ use crate::Moor;
 use answer::{answer_open, handle_click, Fx, Ui};
 use api::Api;
 use command::{decide, failed, reply_action, started, Action, Allow, ReplyAction};
-pub(crate) use pr::PrOf;
 use socket::{Inbound, Mention};
 
 /// Diagnostic sink for the controller log.
@@ -65,8 +63,7 @@ impl Slack {
     /// Starts the socket thread, the worker and the status follower for the life of the process.
     ///
     /// Starting a Task can take minutes, so the socket thread only queues mentions.
-    /// `pr_of` finds the open pull request of a Task's branch for status messages.
-    pub(crate) fn spawn(self, env: &Env, log: Log, pr_of: Arc<PrOf>) {
+    pub(crate) fn spawn(self, env: &Env, log: Log) {
         let (tx, rx) = mpsc::channel();
         let api = Arc::new(self.api);
         let socket_api = Arc::clone(&api);
@@ -76,13 +73,7 @@ impl Slack {
         let status_token = self.status_token;
         let status_log = Arc::clone(&log);
         thread::spawn(move || {
-            status::follow(
-                &status_env,
-                &status_api,
-                &status_token,
-                &*pr_of,
-                &*status_log,
-            );
+            status::follow(&status_env, &status_api, &status_token, &*status_log);
         });
         thread::spawn(move || socket::run(&socket_api, &app_token, &tx, &thread::sleep));
         let worker = Worker {
