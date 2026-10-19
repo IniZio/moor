@@ -4,6 +4,7 @@ use std::fmt;
 
 use crate::activity::HookRecord;
 use crate::name::{BoxPath, NameError};
+use crate::seam::engine::LaunchPrompt;
 use crate::secret::Secret;
 
 /// The Proxy's address as the Box sees it.
@@ -62,6 +63,8 @@ pub struct LaunchCtx {
     pub proxy: Option<ProxyAddr>,
     /// The Box user's home directory.
     pub home: BoxPath,
+    /// The first prompt a fresh session starts with.
+    pub prompt: LaunchPrompt,
 }
 
 /// A file to put in the Box.
@@ -226,6 +229,7 @@ mod tests {
             workdir: BoxPath::restore("/work").unwrap(),
             proxy: Some(proxy()),
             home: BoxPath::restore("/home/u").unwrap(),
+            prompt: LaunchPrompt::Brief,
         };
         assert!(!format!("{ctx:?}").contains("sentinel-9c2e"));
     }
