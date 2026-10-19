@@ -402,3 +402,14 @@ fn gate_tail_keeps_marker_and_filtered_lines() {
     }
     assert_eq!(cap.0.lock().unwrap().as_slice(), b"hello\n");
 }
+
+#[test]
+fn gate_cuts_a_line_without_newline_at_the_cap() {
+    let mut open = super::Gate::new(gate());
+    assert!(open.feed(b"moor-b\n").is_empty());
+    assert_eq!(open.feed(&[b'x'; 8192]).len(), 8192, "flushed at the cap");
+    assert!(open.line.is_empty());
+    let mut closed = super::Gate::new(gate());
+    assert!(closed.feed(&vec![b'x'; 20000]).is_empty());
+    assert!(closed.line.len() < 8192, "dropped, not buffered");
+}
