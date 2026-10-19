@@ -23,6 +23,7 @@ mod capacity;
 mod dead_agent;
 mod dotfiles;
 mod exclude;
+mod exited_start;
 mod identity;
 mod known_repo;
 mod launch_warnings;
