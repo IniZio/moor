@@ -215,7 +215,7 @@
     es.onmessage = function (m) {
       try {
         var e = JSON.parse(m.data);
-        $('last-event').textContent = 'Last event: ' + e.task + ' · ' + e.kind + ' · ' + new Date(e.ts).toLocaleTimeString();
+        $('last-event').textContent = 'Last event: ' + (e.box || '(no box)') + ' · ' + e.kind + ' · ' + new Date(e.ts).toLocaleTimeString();
       } catch (_) { /* ignore malformed frame */ }
       refreshSoon();
     };

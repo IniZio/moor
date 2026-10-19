@@ -3,6 +3,7 @@ use std::os::unix::net::UnixListener;
 use std::path::Path;
 use std::thread::JoinHandle;
 
+use moor_core::controller::PROTOCOL;
 use moor_core::{ExitClass, Request, ShowReq};
 
 use super::*;
@@ -43,7 +44,7 @@ fn serve(socket: &Path, steps: Vec<Vec<String>>) -> JoinHandle<Vec<String>> {
 }
 
 fn hello() -> String {
-    r#"{"frame":"hello","protocol":1}"#.to_owned()
+    format!(r#"{{"frame":"hello","protocol":{PROTOCOL}}}"#)
 }
 
 #[test]
@@ -73,7 +74,7 @@ fn happy_path_collects_progress_in_order() {
     assert_eq!(resp.cmd, "show");
     assert_eq!(resp.class, ExitClass::Ok);
     let lines = server.join().unwrap();
-    assert_eq!(lines.first().unwrap(), r#"{"frame":"hello","protocol":1}"#);
+    assert_eq!(lines.first().unwrap(), &hello());
     let req = lines.get(1).unwrap();
     assert!(req.contains(r#""frame":"request""#) && req.contains(r#""id":"1""#));
 }
@@ -246,7 +247,9 @@ fn ssh_protocol_mismatch_names_both_versions() {
     let err = call(&env, &ssh_target(), &show(), |_| {}).unwrap_err();
     let msg = err.to_string();
     assert!(
-        matches!(err, ClientError::Protocol(_)) && msg.contains('9') && msg.contains('1'),
+        matches!(err, ClientError::Protocol(_))
+            && msg.contains('9')
+            && msg.contains(&PROTOCOL.to_string()),
         "{msg}"
     );
 }

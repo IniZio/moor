@@ -6,6 +6,7 @@ use moor_core::ShowReq;
 
 use super::Moor;
 use crate::ops;
+use crate::store::reads::NamedEvent;
 
 impl Moor {
     /// Rows of every open Task, as `show` lists them.
@@ -32,16 +33,7 @@ impl Moor {
         let events = store
             .events_after(after, limit)
             .map_err(|e| e.to_string())?;
-        Ok(events
-            .into_iter()
-            .map(|e| ServerFrame::Event {
-                cursor: e.row.id,
-                task: e.task_name,
-                kind: e.row.kind,
-                payload: e.row.payload,
-                ts: e.row.ts.as_millis(),
-            })
-            .collect())
+        Ok(events.into_iter().map(NamedEvent::into_frame).collect())
     }
 
     /// Settle every open Task once, as `start` does; returns failure and warning messages to log.

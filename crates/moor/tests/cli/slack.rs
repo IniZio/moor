@@ -153,7 +153,9 @@ impl Rig {
             reader.read_line(&mut reply).unwrap();
             serde_json::from_str::<Value>(&reply).unwrap()
         };
-        exchange(json!({"frame": "hello", "protocol": 1}).to_string());
+        exchange(
+            json!({"frame": "hello", "protocol": moor_core::controller::PROTOCOL}).to_string(),
+        );
         let request =
             json!({"frame": "request", "id": "1", "request": {"cmd": "show", "task": task}});
         exchange(request.to_string())["envelope"].clone()

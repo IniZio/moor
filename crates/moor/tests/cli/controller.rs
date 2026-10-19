@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
+use moor_core::controller::PROTOCOL;
 use serde_json::{json, Value};
 
 use super::fresh_dir;
@@ -146,8 +147,8 @@ impl Client {
     }
 
     fn hello(&mut self) {
-        let reply = self.send(r#"{"frame":"hello","protocol":1}"#);
-        assert_eq!(reply, json!({"frame": "hello", "protocol": 1}));
+        let reply = self.send(&format!(r#"{{"frame":"hello","protocol":{PROTOCOL}}}"#));
+        assert_eq!(reply, json!({"frame": "hello", "protocol": PROTOCOL}));
     }
 
     fn request(&mut self, id: &str, request: &str) -> Value {

@@ -127,7 +127,7 @@ fn cursors(frames: &[Value]) -> Vec<i64> {
 }
 
 #[test]
-fn stream_from_zero_delivers_every_event_in_order_with_task_names() {
+fn stream_from_zero_delivers_every_event_in_order_with_box_names() {
     let dir = tempfile::tempdir().expect("tempdir");
     let store = open(dir.path());
     let id = add(&store, "alpha");
@@ -140,7 +140,7 @@ fn stream_from_zero_delivers_every_event_in_order_with_task_names() {
     for (frame, event) in got.iter().zip(&stored) {
         assert_eq!(frame["frame"], "event");
         assert_eq!(frame["cursor"], event.row.id);
-        assert_eq!(frame["task"], "alpha");
+        assert_eq!(frame["box"], "alpha");
         assert_eq!(frame["kind"], event.row.kind.as_str());
         assert_eq!(frame["payload"], event.row.payload);
         assert_eq!(frame["ts"], event.row.ts.as_millis());
@@ -234,7 +234,7 @@ fn watch_before_hello_is_refused_and_the_connection_keeps_serving() {
     let dir = tempfile::tempdir().expect("tempdir");
     let input = [
         json!({"frame": "watch", "since": 0}),
-        json!({"frame": "hello", "protocol": 1}),
+        json!({"frame": "hello", "protocol": moor_core::controller::PROTOCOL}),
         json!({"frame": "request", "id": "r1", "request": {"cmd": "version"}}),
     ]
     .iter()

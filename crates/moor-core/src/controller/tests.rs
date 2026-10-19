@@ -11,7 +11,7 @@ fn err_parts(line: &str) -> (Option<String>, FrameErrorKind) {
 
 #[test]
 fn parses_hello() {
-    let got = parse_frame(r#"{"frame":"hello","protocol":1}"#);
+    let got = parse_frame(r#"{"frame":"hello","protocol":2}"#);
     assert_eq!(got, Ok(ClientFrame::Hello { protocol: PROTOCOL }));
 }
 
@@ -48,7 +48,7 @@ fn non_object_has_no_id() {
 #[test]
 fn server_hello_shape() {
     let line = ServerFrame::Hello { protocol: PROTOCOL }.to_line();
-    assert_eq!(line, "{\"frame\":\"hello\",\"protocol\":1}\n");
+    assert_eq!(line, "{\"frame\":\"hello\",\"protocol\":2}\n");
 }
 
 #[test]
@@ -90,7 +90,8 @@ fn watch_unknown_field_is_malformed() {
 fn event_frame_serializes() {
     let frame = ServerFrame::Event {
         cursor: 7,
-        task: "fix-login".to_owned(),
+        r#box: Some("fix-login".to_owned()),
+        session: None,
         kind: "idled".to_owned(),
         payload: serde_json::json!({"a": 1}),
         ts: 123,
@@ -98,8 +99,82 @@ fn event_frame_serializes() {
     let got = serde_json::to_string(&frame).unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(
         got,
-        r#"{"frame":"event","cursor":7,"task":"fix-login","kind":"idled","payload":{"a":1},"ts":123}"#
+        r#"{"frame":"event","cursor":7,"box":"fix-login","kind":"idled","payload":{"a":1},"ts":123}"#
     );
+}
+
+#[test]
+fn event_frame_golden_with_session() {
+    let line = ServerFrame::Event {
+        cursor: 7,
+        r#box: Some("t".into()),
+        session: Some(SessionId::new(3)),
+        kind: "idled".into(),
+        payload: serde_json::json!({"a": 1}),
+        ts: 5,
+    }
+    .to_line();
+    assert_eq!(
+        line,
+        "{\"frame\":\"event\",\"cursor\":7,\"box\":\"t\",\"session\":3,\"kind\":\"idled\",\"payload\":{\"a\":1},\"ts\":5}\n"
+    );
+    let parsed = parse_server_frame(&line).expect("parses");
+    assert!(matches!(
+        parsed,
+        ServerFrame::Event { session: Some(s), .. } if s == SessionId::new(3)
+    ));
+}
+
+#[test]
+fn event_frame_golden_without_session() {
+    let line = ServerFrame::Event {
+        cursor: 7,
+        r#box: Some("t".into()),
+        session: None,
+        kind: "idled".into(),
+        payload: serde_json::json!({"a": 1}),
+        ts: 5,
+    }
+    .to_line();
+    assert_eq!(
+        line,
+        "{\"frame\":\"event\",\"cursor\":7,\"box\":\"t\",\"kind\":\"idled\",\"payload\":{\"a\":1},\"ts\":5}\n"
+    );
+    let parsed = parse_server_frame(&line).expect("parses");
+    assert!(matches!(parsed, ServerFrame::Event { session: None, .. }));
+}
+
+#[test]
+fn event_frame_golden_without_box_or_session() {
+    let line = ServerFrame::Event {
+        cursor: 7,
+        r#box: None,
+        session: None,
+        kind: "idled".into(),
+        payload: serde_json::json!({"a": 1}),
+        ts: 5,
+    }
+    .to_line();
+    assert_eq!(
+        line,
+        "{\"frame\":\"event\",\"cursor\":7,\"kind\":\"idled\",\"payload\":{\"a\":1},\"ts\":5}\n"
+    );
+    let parsed = parse_server_frame(&line).expect("parses");
+    assert!(matches!(
+        parsed,
+        ServerFrame::Event {
+            r#box: None,
+            session: None,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn protocol_is_two_and_old_hello_still_parses() {
+    assert_eq!(PROTOCOL, 2);
+    let got = parse_frame(r#"{"frame":"hello","protocol":1}"#);
+    assert_eq!(got, Ok(ClientFrame::Hello { protocol: 1 }));
 }
 
 #[test]
@@ -152,10 +227,19 @@ fn server_frames_round_trip_through_parse_server_frame() {
         },
         ServerFrame::Event {
             cursor: 7,
-            task: "t".into(),
+            r#box: Some("t".into()),
+            session: Some(SessionId::new(3)),
             kind: "idled".into(),
             payload: serde_json::json!({"a": 1}),
             ts: 123,
+        },
+        ServerFrame::Event {
+            cursor: 8,
+            r#box: Some("t".into()),
+            session: None,
+            kind: "idled".into(),
+            payload: serde_json::json!({}),
+            ts: 124,
         },
     ];
     for frame in frames {
