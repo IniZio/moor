@@ -2,6 +2,7 @@
 
 pub mod env;
 pub mod run;
+pub mod session;
 pub mod sleep;
 pub mod steer;
 
