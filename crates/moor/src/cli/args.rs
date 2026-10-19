@@ -4,7 +4,7 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use moor_core::request::EndSessionReq;
+use moor_core::request::{EndSessionReq, ShowSessionReq};
 use moor_core::{
     BoxId, BoxName, ReportReq, Request, RunReq, SessionId, ShowReq, StartReq, SteerReq, WaitFor,
     WaitReq,
@@ -140,6 +140,12 @@ impl Cmd {
             })),
             Self::Session(c) => Action::Request(c.into()),
             Self::Report(a) => Action::Request(Request::Report(a.into())),
+            Self::Show(ShowArgs {
+                session: Some(session),
+                ..
+            }) => Action::Request(Request::ShowSession(ShowSessionReq {
+                session: SessionId::new(session),
+            })),
             Self::Show(a) => Action::Request(Request::Show(a.into())),
             Self::Close(a) => Action::Request(Request::Close(a.into())),
             Self::Remove(a) => Action::Request(Request::Remove(a.into())),
@@ -353,6 +359,13 @@ struct ShowArgs {
     /// Task name; all open Tasks when absent.
     #[arg(value_parser = task_name)]
     task: Option<BoxName>,
+    /// Show one Session (host or Box) by id, with its child Sessions.
+    #[arg(
+        long,
+        value_name = "ID",
+        conflicts_with_all = ["task", "events", "agent", "reports", "pane"]
+    )]
+    session: Option<i64>,
     /// Include the last N events.
     #[arg(long, value_name = "N")]
     events: Option<u32>,

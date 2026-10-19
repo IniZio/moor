@@ -8,6 +8,8 @@ use rusqlite::{OptionalExtension, TransactionBehavior};
 use super::apply::insert_event;
 use super::{parsed_opt, Store, StoreError};
 
+mod read;
+
 /// One Session of a Box.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct BoxSession {

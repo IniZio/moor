@@ -75,6 +75,7 @@ fn structured_text(cmd: &str, value: &Value) -> Option<String> {
             .ok()
             .map(|view| env_text(&view)),
         "show" => show::show_text(value),
+        "show-session" => show::session_text(value),
         "start" => start_text(value),
         "close" => close_text(value),
         "wait" => wait_text(value),
