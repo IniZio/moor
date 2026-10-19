@@ -98,6 +98,13 @@ agent37's own auto-sleep off: moor sleeps the Box itself, and a Box with a
 live tunnel never looks idle to agent37. Without `pauseResume`, the Box
 cannot sleep and stays up.
 
+### Box image requirements
+
+The Box image must provide `sh`, `git`, `curl`, `tar` and `unzip`. moor's
+scripts run under `sh` and use `git` for the checkout. If one is missing,
+setup prints a warning naming it, in the terminal and in `.moor/setup.log`,
+and carries on. Setup does not fail because of it.
+
 ## JSON envelope
 
 `--json` prints one envelope on stdout:
