@@ -241,13 +241,7 @@ fn open_name_attaches_with_only_a_checkout_sync() {
     assert_eq!(again.task.id, first.task.id);
     assert_eq!(
         w.driver.calls(),
-        [
-            "acquire",
-            "exec box-1",
-            "sweep box-1",
-            "exec box-1",
-            "exec box-1"
-        ]
+        ["acquire", "exec box-1", "sweep box-1", "exec box-1"]
     );
     assert_eq!(w.surface.calls().len(), 2);
 }

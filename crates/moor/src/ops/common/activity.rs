@@ -18,7 +18,6 @@ use moor_core::Warning;
 
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::artifacts;
 use crate::ops::common::boxlock::BoxLock;
 use crate::ops::common::provision::recorded_workdir;
 use crate::ops::common::resume;
@@ -228,13 +227,14 @@ fn note_agent_session(
 ///
 /// The agent session id of the live session is registered with the multiplexer when it is not yet.
 ///
-/// A Task whose Box an op holds, or that has an intent set, is not moved. A Task that goes
-/// Idle has its Box's artifacts collected before the Box lock is dropped.
+/// A Task whose Box an op holds, or that has an intent set, is not moved.
 ///
 /// A Working Task goes Idle only when the reading `may_quiet` and is not busy; an Idle Task
 /// goes back to Working when the reading is busy. Nothing else decides quiet: a gone pane, an
 /// idle status or a dropped hook read never idles a Task. If the row changed since the read,
 /// the store refuses the step and the Task is left as the other writer set it.
+///
+/// Returns whether the Task went Idle or a `turn_done` was written.
 ///
 /// # Errors
 /// A store failure other than a refused step.
@@ -243,8 +243,8 @@ pub(crate) fn settle(
     store: &Store,
     row: &TaskRow,
     reading: &Reading,
-) -> Result<(), CommandError> {
-    turn::note_turn_done(store, row, reading)?;
+) -> Result<bool, CommandError> {
+    let turn_done = turn::note_turn_done(store, row, reading)?;
     if let (PaneLiveness::Exited, Some(probed)) = (reading.pane, reading.session) {
         transcript::save_on_exit(cx, store, row, probed)?;
         end_exited_session(cx, store, row, reading, probed)?;
@@ -254,25 +254,24 @@ pub(crate) fn settle(
     let input = match row.state {
         TaskState::Working if !reading.busy() && reading.may_quiet => TaskInput::AgentQuiet,
         TaskState::Idle if reading.busy() => TaskInput::AgentBusy,
-        _ => return Ok(()),
+        _ => return Ok(turn_done),
     };
     // An op that owns the Box decides where the Task goes; hold the lock across the write.
-    let held = BoxLock::acquire(
+    let Ok(_held) = BoxLock::acquire(
         cx.clock(),
         cx.state_dir()?,
         row.id,
         "settle",
         Duration::ZERO,
-    );
-    if held.is_err() || row.intent.is_some() {
-        return Ok(());
+    ) else {
+        return Ok(turn_done);
+    };
+    if row.intent.is_some() {
+        return Ok(turn_done);
     }
     match store.apply(Decision::new(row.id).task_input(input)) {
-        Ok(_) if row.state == TaskState::Working => {
-            artifacts::collect(cx, store, row);
-            Ok(())
-        }
-        Ok(_) | Err(StoreError::Illegal(_)) => Ok(()),
+        Ok(_) => Ok(turn_done || row.state == TaskState::Working),
+        Err(StoreError::Illegal(_)) => Ok(turn_done),
         Err(e) => Err(e.into()),
     }
 }

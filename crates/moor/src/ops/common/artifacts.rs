@@ -7,12 +7,14 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use moor_core::artifact::{fresh, parse_index, valid_name, ArtifactFile};
+use moor_core::domain::boxes::BoxState;
 use moor_core::domain::run::SyncMode;
 use moor_core::seam::driver::{ExecOutcome, ExecSpec};
 use moor_core::seam::proc::{Deadline, Output};
-use moor_core::{BoxHandle, BoxPath, Warning};
+use moor_core::{BoxHandle, BoxId, BoxPath, Warning};
 use sha2::{Digest, Sha256};
 
+use super::boxlock::BoxLock;
 use super::provision::recorded_workdir;
 use super::reports::{host_of, target};
 use crate::cx::Cx;
@@ -40,6 +42,32 @@ find . -maxdepth 1 -type f ! -name '*
   printf '%s\t%s\t%s\n' "$n" "$s" "$h"
 done
 "#;
+
+/// Collects the artifacts of each Box in `due` that is Ready and idle of any operation.
+///
+/// A Box whose lock an operation holds is skipped; the next pass or the close collects it.
+/// Never errors; a failure warns.
+pub(crate) fn collect_due(cx: &Cx, store: &Store, due: &[BoxId]) {
+    let Ok(state_dir) = cx.state_dir() else {
+        return;
+    };
+    for &id in due {
+        let Ok(_lock) = BoxLock::acquire(cx.clock(), state_dir, id, "artifacts", Duration::ZERO)
+        else {
+            continue;
+        };
+        let Ok(Some(row)) = store.task(id) else {
+            continue;
+        };
+        let ready = row
+            .boxed
+            .as_ref()
+            .is_some_and(|b| b.state == BoxState::Ready && b.handle.is_some());
+        if ready && row.intent.is_none() {
+            collect(cx, store, &row);
+        }
+    }
+}
 
 /// Copies new or changed artifacts from a Ready Box into the store; returns how many were stored.
 ///

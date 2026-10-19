@@ -270,14 +270,12 @@ fn promoted_task_goes_through_setting_up_and_gets_a_ready_box() {
     let b = row.boxed.expect("promoted task has a Box row");
     assert_eq!(b.state, BoxState::Ready);
     assert!(b.handle.is_some());
-    // The holder's acquire, its sync and artifact collection when the next start settles it, two
-    // close probes and report collection come first; each probe is one exec and one peek, and the
-    // close collects artifacts with one more exec.
+    // The holder's acquire, two close probes and report collection come first; each is one exec and one peek,
+    // and the close collects artifacts with one more exec.
     assert_eq!(
         w.driver.calls(),
         [
             "acquire".to_owned(),
-            format!("exec {HOLDER_BOX}"),
             format!("exec {HOLDER_BOX}"),
             format!("peek_file {HOLDER_BOX}"),
             format!("exec {HOLDER_BOX}"),

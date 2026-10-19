@@ -10,14 +10,14 @@ use crate::store::{Store, TaskRow};
 /// Append one `turn_done` event when the newest unanswered steer's turn is over.
 ///
 /// A steer that already has a `turn_done` is not answered again. It is written before any
-/// state step or session end so neither can lose it.
+/// state step or session end so neither can lose it. Returns whether one was written.
 pub(super) fn note_turn_done(
     store: &Store,
     row: &TaskRow,
     reading: &Reading,
-) -> Result<(), CommandError> {
+) -> Result<bool, CommandError> {
     let Some(steer) = store.unanswered_steer(row.id)? else {
-        return Ok(());
+        return Ok(false);
     };
     let cache = store.hook(row.id)?;
     let facts = TurnFacts {
@@ -34,6 +34,7 @@ pub(super) fn note_turn_done(
     };
     if let Some((steer, outcome)) = turn_done(&facts) {
         store.record_turn_done(row.id, steer, outcome)?;
+        return Ok(true);
     }
-    Ok(())
+    Ok(false)
 }

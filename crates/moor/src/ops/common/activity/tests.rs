@@ -530,7 +530,6 @@ fn a_new_hook_session_id_is_stored_once() {
     assert_eq!(row(&cx, id).updated_at, updated);
 }
 
-mod artifacts;
 mod exit;
 mod needs_input;
 mod turn;

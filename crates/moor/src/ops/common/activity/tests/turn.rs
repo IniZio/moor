@@ -4,10 +4,11 @@ use std::sync::Arc;
 
 use moor_core::activity::{HookKind, Probes};
 use moor_core::domain::decision::{Decision, ExtraEvent};
+use moor_core::domain::task::TaskState;
 use moor_core::BoxId;
 
 use super::exit::exited_probes;
-use super::{cx, hook, row, run_once, settle, task, SESSION};
+use super::{cx, hook, quiet, row, run_once, settle, task, PaneLiveness, Reading, SESSION};
 use crate::cx::Cx;
 use crate::store::EventRow;
 use crate::testing::engine::FakeEngine;
@@ -107,4 +108,31 @@ fn no_steer_writes_no_turn_done() {
     let (_dir, cx, id) = fx(hook(HookKind::Idle));
     settle_once(&cx, id);
     assert!(events(&cx, id, "turn_done").is_empty());
+}
+
+#[test]
+fn settle_reports_a_working_task_that_idled() {
+    let (_dir, cx, id) = fx(hook(HookKind::Busy));
+    let reading = Reading::new(None, PaneLiveness::Live, true, false);
+    assert!(settle(&cx, cx.store().unwrap(), &row(&cx, id), &reading).unwrap());
+    assert_eq!(row(&cx, id).state, TaskState::Idle);
+}
+
+#[test]
+fn settle_reports_nothing_when_nothing_changed() {
+    let (_dir, cx, id) = fx(hook(HookKind::Busy));
+    let reading = Reading::new(None, PaneLiveness::Live, false, false);
+    assert!(!settle(&cx, cx.store().unwrap(), &row(&cx, id), &reading).unwrap());
+    assert_eq!(row(&cx, id).state, TaskState::Working);
+}
+
+#[test]
+fn settle_reports_a_turn_done_written_for_an_idle_task() {
+    let (_dir, cx, id) = fx(hook(HookKind::Idle));
+    quiet(&cx, id);
+    steer(&cx, id);
+    let reading = run_once(&cx, id);
+    assert!(settle(&cx, cx.store().unwrap(), &row(&cx, id), &reading).unwrap());
+    assert_eq!(events(&cx, id, "turn_done").len(), 1);
+    assert_eq!(row(&cx, id).state, TaskState::Idle);
 }

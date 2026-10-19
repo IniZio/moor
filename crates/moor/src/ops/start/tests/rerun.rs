@@ -153,11 +153,9 @@ fn attach_syncs_a_box_with_no_unsaved_work() {
 
 #[test]
 fn attach_syncs_a_box_with_no_checkout() {
-    let w = attached_with_session(FakeDriver::new().exec_results([
-        Ok(exit(0)),
-        Ok(exit(0)),
-        Ok(exit(BOXWORK_NO_CHECKOUT)),
-    ]));
+    let w = attached_with_session(
+        FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(BOXWORK_NO_CHECKOUT))]),
+    );
     probe_says(&w, "");
     run(&w.cx, &start_req()).unwrap();
     assert_eq!(checkout_syncs(&w), [SyncMode::Full, SyncMode::Full]);
@@ -183,8 +181,7 @@ fn attach_to_a_live_agent_never_syncs_and_warns() {
 
 #[test]
 fn attach_warns_when_the_re_sync_fails_and_no_agent_is_live() {
-    let driver =
-        FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(0)), Ok(exit(0)), Ok(exit(1))]);
+    let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(0)), Ok(exit(1))]);
     let w = attached_with_session(driver);
     probe_says(&w, "ahead=0 dirty=0");
     run(&w.cx, &start_req()).unwrap();
@@ -193,7 +190,7 @@ fn attach_warns_when_the_re_sync_fails_and_no_agent_is_live() {
 
 #[test]
 fn start_that_launches_the_agent_aborts_when_the_re_sync_fails() {
-    let w = world(FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(0)), Ok(exit(1))]));
+    let w = world(FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(1))]));
     let first = run(&w.cx, &start_req()).unwrap();
     let mut again = start_req();
     again.goal = Some("fix it".to_owned());
