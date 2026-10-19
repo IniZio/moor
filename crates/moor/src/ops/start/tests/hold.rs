@@ -1,9 +1,9 @@
 use moor_core::seam::engine::LaunchPrompt;
-use moor_core::StartReq;
+use moor_core::{BoxId, StartReq};
 
-use super::relaunch::{gone, started};
+use super::relaunch::{gone, session, set_agent_session, started};
 use super::{req, world};
-use crate::ops::start::run;
+use crate::ops::start::{revive_after_wake, run};
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use std::sync::Arc;
@@ -66,4 +66,24 @@ fn a_relaunch_without_hold_uses_the_brief() {
         engine.launches().get(1).unwrap().prompt,
         LaunchPrompt::Brief
     );
+}
+
+#[test]
+fn a_wake_revive_of_a_held_session_resumes_without_a_first_prompt() {
+    let engine = Arc::new(
+        FakeEngine::new()
+            .launch_result(Ok(session("p-1")))
+            .launch_result(Ok(session("p-2"))),
+    );
+    let mut w = world(FakeDriver::new());
+    w.cx = w.cx.with_engine(engine.clone());
+    let v = run(&w.cx, &held(Some("ship it"))).unwrap();
+    let id = BoxId::new(v.task.id);
+    set_agent_session(&w, id, "agent-1");
+    gone(&w);
+    revive_after_wake(&w.cx, w.cx.store().unwrap(), id).unwrap();
+    let all = engine.launches();
+    assert_eq!(all.len(), 2);
+    let second = all.get(1).unwrap();
+    assert_eq!(second.resume.as_deref(), Some("agent-1"));
 }
