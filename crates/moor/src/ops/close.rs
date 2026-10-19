@@ -216,8 +216,26 @@ fn recheck_and_collect(cx: &Cx, store: &Store, row: &TaskRow) -> Result<(), Comm
 fn collect_artifacts(cx: &Cx, store: &Store, row: &TaskRow) {
     if let Some(b) = row.boxed.as_ref() {
         if b.state == BoxState::Ready && b.handle.is_some() {
+            let cursor = store.newest_turn_event(row.id);
             artifacts::collect(cx, store, row);
+            match cursor {
+                Ok(Some(through)) => {
+                    if let Err(e) = store.set_artifacts_through(row.id, through) {
+                        cx.warn(cursor_warning(&e.to_string()));
+                    }
+                }
+                Ok(None) => {}
+                Err(e) => cx.warn(cursor_warning(&e.to_string())),
+            }
         }
+    }
+}
+
+/// Warns that the artifact cursor could not be read or moved.
+fn cursor_warning(reason: &str) -> Warning {
+    Warning {
+        code: "artifacts_collect_failed".to_owned(),
+        message: format!("artifacts were not fully saved: {reason}"),
     }
 }
 

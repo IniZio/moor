@@ -241,10 +241,8 @@ fn wake_idle(store: &Store, id: BoxId) -> Result<(), CommandError> {
 
 /// Moves each open Task with a ready Box and no failed setup between Working and Idle.
 ///
-/// Runs before the start, which may then leave the Task it starts in another state. Returns
-/// the Boxes whose settle moved the Task or wrote a `turn_done`, in order.
-pub(crate) fn settle_all(cx: &Cx, store: &Store) -> Result<Vec<BoxId>, CommandError> {
-    let mut changed = Vec::new();
+/// Runs before the start, which may then leave the Task it starts in another state.
+pub(crate) fn settle_all(cx: &Cx, store: &Store) -> Result<(), CommandError> {
     for row in &store.open_tasks()? {
         let ready = row.boxed.as_ref().map(|b| b.state) == Some(BoxState::Ready);
         if !ready || row.setup_failed_at.is_some() {
@@ -252,20 +250,16 @@ pub(crate) fn settle_all(cx: &Cx, store: &Store) -> Result<Vec<BoxId>, CommandEr
         }
         let settled = activity::read(cx, store, row, cx.clock().now())
             .and_then(|reading| activity::settle(cx, store, row, &reading));
-        match settled {
-            Ok(true) => changed.push(row.id),
-            Ok(false) => {}
-            Err(e) => {
-                cx.warn(Warning {
-                    code: "settle_failed".to_owned(),
-                    message: format!("could not settle task {}: {}", row.id.get(), e.error),
-                });
-                continue;
-            }
+        if let Err(e) = settled {
+            cx.warn(Warning {
+                code: "settle_failed".to_owned(),
+                message: format!("could not settle task {}: {}", row.id.get(), e.error),
+            });
+            continue;
         }
         autosleep::run(cx, store, row.id);
     }
-    Ok(changed)
+    Ok(())
 }
 
 /// An absolute form of `path`, relative to the invocation directory.

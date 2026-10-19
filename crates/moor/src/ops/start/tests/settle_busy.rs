@@ -140,4 +140,6 @@ fn start_idles_a_quiet_task_without_reading_its_box_for_artifacts() {
         .iter()
         .any(|(_, spec, _)| spec.argv.iter().any(|a| a.contains(".moor/artifacts")));
     assert!(!reads_artifacts);
+    let due = w.cx.store().unwrap().artifacts_due().unwrap();
+    assert!(due.iter().any(|(task, _)| *task == id), "{due:?}");
 }

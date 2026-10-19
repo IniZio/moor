@@ -234,8 +234,6 @@ fn note_agent_session(
 /// idle status or a dropped hook read never idles a Task. If the row changed since the read,
 /// the store refuses the step and the Task is left as the other writer set it.
 ///
-/// Returns whether the Task went Idle or a `turn_done` was written.
-///
 /// # Errors
 /// A store failure other than a refused step.
 pub(crate) fn settle(
@@ -243,8 +241,8 @@ pub(crate) fn settle(
     store: &Store,
     row: &TaskRow,
     reading: &Reading,
-) -> Result<bool, CommandError> {
-    let turn_done = turn::note_turn_done(store, row, reading)?;
+) -> Result<(), CommandError> {
+    turn::note_turn_done(store, row, reading)?;
     if let (PaneLiveness::Exited, Some(probed)) = (reading.pane, reading.session) {
         transcript::save_on_exit(cx, store, row, probed)?;
         end_exited_session(cx, store, row, reading, probed)?;
@@ -254,7 +252,7 @@ pub(crate) fn settle(
     let input = match row.state {
         TaskState::Working if !reading.busy() && reading.may_quiet => TaskInput::AgentQuiet,
         TaskState::Idle if reading.busy() => TaskInput::AgentBusy,
-        _ => return Ok(turn_done),
+        _ => return Ok(()),
     };
     // An op that owns the Box decides where the Task goes; hold the lock across the write.
     let Ok(_held) = BoxLock::acquire(
@@ -264,14 +262,13 @@ pub(crate) fn settle(
         "settle",
         Duration::ZERO,
     ) else {
-        return Ok(turn_done);
+        return Ok(());
     };
     if row.intent.is_some() {
-        return Ok(turn_done);
+        return Ok(());
     }
     match store.apply(Decision::new(row.id).task_input(input)) {
-        Ok(_) => Ok(turn_done || row.state == TaskState::Working),
-        Err(StoreError::Illegal(_)) => Ok(turn_done),
+        Ok(_) | Err(StoreError::Illegal(_)) => Ok(()),
         Err(e) => Err(e.into()),
     }
 }

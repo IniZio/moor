@@ -283,6 +283,7 @@ fn artifact_from_row(r: &Row<'_>) -> rusqlite::Result<ArtifactRow> {
     })
 }
 
+mod due;
 mod manifest;
 #[cfg(test)]
 mod tests;

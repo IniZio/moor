@@ -11,7 +11,7 @@ use moor_core::domain::boxes::BoxState;
 use moor_core::domain::run::SyncMode;
 use moor_core::seam::driver::{ExecOutcome, ExecSpec};
 use moor_core::seam::proc::{Deadline, Output};
-use moor_core::{BoxHandle, BoxId, BoxPath, Warning};
+use moor_core::{BoxHandle, BoxPath, Warning};
 use sha2::{Digest, Sha256};
 
 use super::boxlock::BoxLock;
@@ -43,15 +43,19 @@ find . -maxdepth 1 -type f ! -name '*
 done
 "#;
 
-/// Collects the artifacts of each Box in `due` that is Ready and idle of any operation.
+/// Collects the artifacts of each Box whose newest idle or finished turn is past its cursor.
 ///
-/// A Box whose lock an operation holds is skipped; the next pass or the close collects it.
-/// Never errors; a failure warns.
-pub(crate) fn collect_due(cx: &Cx, store: &Store, due: &[BoxId]) {
+/// A Box whose lock an operation holds is skipped and stays due for the next pass. The cursor
+/// moves only after a collect. Never errors; a failure warns.
+pub(crate) fn collect_due(cx: &Cx, store: &Store) {
     let Ok(state_dir) = cx.state_dir() else {
         return;
     };
-    for &id in due {
+    let due = match store.artifacts_due() {
+        Ok(due) => due,
+        Err(e) => return failed(cx, &e.to_string()),
+    };
+    for (id, newest) in due {
         let Ok(_lock) = BoxLock::acquire(cx.clock(), state_dir, id, "artifacts", Duration::ZERO)
         else {
             continue;
@@ -63,10 +67,26 @@ pub(crate) fn collect_due(cx: &Cx, store: &Store, due: &[BoxId]) {
             .boxed
             .as_ref()
             .is_some_and(|b| b.state == BoxState::Ready && b.handle.is_some());
-        if ready && row.intent.is_none() {
-            collect(cx, store, &row);
+        if !ready || row.intent.is_some() {
+            continue;
+        }
+        let cursor = match store.newest_turn_event(id) {
+            Ok(found) => found.unwrap_or(newest),
+            Err(e) => return failed(cx, &e.to_string()),
+        };
+        collect(cx, store, &row);
+        if let Err(e) = store.set_artifacts_through(id, cursor) {
+            failed(cx, &e.to_string());
         }
     }
+}
+
+/// Warns that the artifact pass could not use the store.
+fn failed(cx: &Cx, reason: &str) {
+    cx.warn(Warning {
+        code: "artifacts_collect_failed".to_owned(),
+        message: format!("artifacts were not fully saved: {reason}"),
+    });
 }
 
 /// Copies new or changed artifacts from a Ready Box into the store; returns how many were stored.

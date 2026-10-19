@@ -12,14 +12,14 @@ use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::task::{SetupOutcome, TaskInput, TaskState};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver, ExecOutcome};
-use moor_core::{BoxId, BoxName, ProviderId};
+use moor_core::{BoxId, BoxName, ProviderId, ShowReq};
 use sha2::{Digest, Sha256};
 
 use crate::controller::watch::{stream, Ask, Limits};
 use crate::cx::Cx;
 use crate::env::Env;
-use crate::ops::common::artifacts::collect_due;
 use crate::ops::common::boxlock::BoxLock;
+use crate::ops::show;
 use crate::store::{Store, STORE_FILE};
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
@@ -236,6 +236,17 @@ fn an_agent_that_idles_has_its_artifacts_collected() {
     assert_eq!(stored(&cx, id), 1);
 }
 
+fn held_lock(cx: &Cx, id: BoxId) -> BoxLock {
+    BoxLock::acquire(
+        cx.clock(),
+        cx.state_dir().unwrap(),
+        id,
+        "close",
+        Duration::ZERO,
+    )
+    .unwrap()
+}
+
 #[test]
 fn a_held_box_lock_skips_the_collection() {
     let dir = tempfile::tempdir().unwrap();
@@ -245,21 +256,65 @@ fn a_held_box_lock_skips_the_collection() {
             .copy_text(BODY),
     );
     let (cx, id) = quiet_agent_on(dir.path(), &driver);
-    let held = BoxLock::acquire(
-        cx.clock(),
-        cx.state_dir().unwrap(),
-        id,
-        "close",
-        Duration::ZERO,
-    )
-    .unwrap();
-    collect_due(&cx, cx.store().unwrap(), &[id]);
+    let reader = view(dir.path(), &driver);
+    let moor = Moor::from_cx(cx);
+    let held = held_lock(&reader, id);
+    assert!(moor.settle_open().is_empty());
     assert_eq!(artifact_execs(&driver), 0);
-    assert_eq!(stored(&cx, id), 0);
+    assert_eq!(stored(&reader, id), 0);
+    assert!(!kinds(&reader, id).iter().any(|k| k == "artifact_published"));
     drop(held);
-    collect_due(&cx, cx.store().unwrap(), &[id]);
+    assert!(moor.settle_open().is_empty());
     assert_eq!(artifact_execs(&driver), 1);
+    assert_eq!(stored(&reader, id), 1);
+    assert!(kinds(&reader, id).iter().any(|k| k == "artifact_published"));
+}
+
+#[test]
+fn an_idle_written_by_show_is_collected_by_the_next_pass() {
+    let dir = tempfile::tempdir().unwrap();
+    let driver = Arc::new(
+        FakeDriver::new()
+            .artifact_index([listing()])
+            .copy_text(BODY),
+    );
+    let (cx, id) = quiet_agent_on(dir.path(), &driver);
+    let list = ShowReq {
+        task: None,
+        events: None,
+        agent: false,
+        reports: false,
+        pane: false,
+    };
+    show::run(&cx, &list).unwrap();
+    assert_eq!(
+        cx.store().unwrap().task(id).unwrap().unwrap().state,
+        TaskState::Idle
+    );
+    assert_eq!(artifact_execs(&driver), 0);
+    let messages = Moor::from_cx(cx).settle_open();
+    assert!(messages.is_empty(), "{messages:?}");
+    let cx = view(dir.path(), &driver);
+    assert!(kinds(&cx, id).iter().any(|k| k == "artifact_published"));
     assert_eq!(stored(&cx, id), 1);
+}
+
+#[test]
+fn a_pass_with_no_new_idle_reads_no_artifacts() {
+    let dir = tempfile::tempdir().unwrap();
+    let driver = Arc::new(
+        FakeDriver::new()
+            .artifact_index([listing()])
+            .copy_text(BODY),
+    );
+    let (cx, id) = quiet_agent_on(dir.path(), &driver);
+    let moor = Moor::from_cx(cx);
+    assert!(moor.settle_open().is_empty());
+    assert_eq!(artifact_execs(&driver), 1);
+    assert!(moor.settle_open().is_empty());
+    assert!(moor.settle_open().is_empty());
+    assert_eq!(artifact_execs(&driver), 1);
+    assert_eq!(stored(&view(dir.path(), &driver), id), 1);
 }
 
 #[test]
