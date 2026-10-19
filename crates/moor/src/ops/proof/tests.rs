@@ -244,14 +244,6 @@ fn store_workdir(f: &Fx) {
     f.cx.store().unwrap().apply(d).unwrap();
 }
 
-/// The Box handle of the Task.
-fn handle(f: &Fx) -> moor_core::BoxHandle {
-    let rows = f.cx.store().unwrap().open_tasks().unwrap();
-    rows.into_iter()
-        .find_map(|r| r.boxed.and_then(|b| b.handle))
-        .unwrap()
-}
-
 /// Where the planted symlinks point; nothing may appear here.
 fn outside(f: &Fx) -> std::path::PathBuf {
     let out = f.dir.path().join("outside");
@@ -306,34 +298,6 @@ fn a_symlink_left_by_the_copy_is_removed_and_nothing_is_recorded() {
     assert!(fs::symlink_metadata(&dest).is_err());
     assert!(proofs(&f).is_empty());
     assert!(!target.exists());
-}
-
-#[test]
-fn consecutive_listings_use_distinct_log_files() {
-    let f = fx(FakeDriver::new().exec_stdout(["", ""]), &[]);
-    let handle = handle(&f);
-    for _ in 0..2 {
-        super::list(&f.cx, &handle, f.id, None, None).unwrap();
-    }
-    let logs: Vec<_> = f
-        .driver
-        .execs()
-        .iter()
-        .filter_map(|e| match &e.1.output {
-            Some(moor_core::seam::proc::Output::Log(p)) => Some(p.clone()),
-            _ => None,
-        })
-        .collect();
-    assert_eq!(logs.len(), 2);
-    assert_ne!(logs.first(), logs.get(1));
-}
-
-#[test]
-fn a_listing_that_wrote_no_log_is_an_error() {
-    let f = fx(FakeDriver::new(), &[]);
-    let handle = handle(&f);
-    let err = super::list(&f.cx, &handle, f.id, None, None).unwrap_err();
-    assert!(err.contains("listing"), "{err}");
 }
 
 #[test]

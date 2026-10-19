@@ -2,6 +2,7 @@
 //! Each task's agent is read once per command; a named task reads only its own.
 
 use std::collections::HashMap;
+use std::path::Path;
 
 use moor_core::decide::proof::ProofFile;
 use moor_core::domain::boxes::BoxState;
@@ -10,6 +11,7 @@ use moor_core::{BoxId, ErrorKind, ShowReq, Warning};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
+use crate::ops::common::provision::recorded_workdir;
 use crate::ops::common::view::{
     agent_view, event_view, hide_unsupported_sleep, hide_unsupported_sleep_cached,
     task_view_with_run,
@@ -84,7 +86,16 @@ fn proof_files(cx: &Cx, row: &TaskRow) -> Option<Vec<ProofFile>> {
         .as_ref()
         .filter(|b| b.state == BoxState::Ready)
         .and_then(|b| b.handle.as_ref())?;
-    match crate::ops::proof::list(cx, handle, row.id, None, None) {
+    let b = row.boxed.as_ref()?;
+    let Some(workdir) = b.workdir.as_deref().and_then(recorded_workdir) else {
+        cx.warn(Warning {
+            code: "proof_unavailable".to_owned(),
+            message: "could not list proof files: the Box workdir is not recorded".to_owned(),
+        });
+        return None;
+    };
+    let host = Path::new(row.worktree.as_deref().unwrap_or(&row.repo));
+    match crate::ops::proof::list_batched(cx, handle, &workdir, host) {
         Ok(files) => Some(files),
         Err(why) => {
             cx.warn(Warning {

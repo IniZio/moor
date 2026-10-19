@@ -5,7 +5,6 @@ use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
@@ -15,10 +14,9 @@ use moor_core::decide::proof::{
 };
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, ExtraEvent};
-use moor_core::domain::run::SyncMode;
 use moor_core::seam::clock::Ts;
-use moor_core::seam::driver::{BoxStep, ExecOutcome, ExecSpec, StepDone};
-use moor_core::seam::proc::{Deadline, Output};
+use moor_core::seam::driver::{BoxStep, ExecOutcome, StepDone};
+use moor_core::seam::proc::Deadline;
 use moor_core::{BoxHandle, BoxId, BoxPath, Warning};
 
 use crate::cx::Cx;
@@ -28,9 +26,6 @@ use crate::store::{Store, TaskRow};
 
 /// Wall-clock allowance for the listing script.
 const LISTING_DEADLINE: Duration = Duration::from_secs(30);
-
-/// Makes each listing log name unique within the process.
-static LISTING_SEQ: AtomicU64 = AtomicU64::new(0);
 
 /// How long a Box is left alone after a failed pass.
 const BACKOFF: Duration = Duration::from_secs(300);
@@ -110,54 +105,9 @@ fn lock(cx: &Cx, state: &Path, id: BoxId) -> Option<BoxLock> {
     BoxLock::acquire(cx.clock(), state, id, "proof", Duration::ZERO).ok()
 }
 
-/// Runs the listing in the Box without syncing and parses what it printed. `cwd` and
-/// `host_cwd` are the Box workdir and host worktree to run in, when known. Every call logs
-/// to its own file, and a log that is missing after the run is an error, not an empty listing.
-pub(crate) fn list(
-    cx: &Cx,
-    handle: &BoxHandle,
-    id: BoxId,
-    cwd: Option<&BoxPath>,
-    host_cwd: Option<&Path>,
-) -> Result<Vec<ProofFile>, String> {
-    let state = cx.state_dir().map_err(|e| e.error.to_string())?;
-    let seq = LISTING_SEQ.fetch_add(1, Ordering::Relaxed);
-    let log = state.join(format!(
-        "proof-listing-{}-{}-{seq}.log",
-        id.get(),
-        std::process::id()
-    ));
-    let spec = ExecSpec {
-        argv: listing_argv(),
-        env: Vec::new(),
-        cwd: cwd.cloned(),
-        sync: SyncMode::None,
-        output: Some(Output::Log(log.clone())),
-        host_cwd: host_cwd.map(Path::to_path_buf),
-        class: None,
-    };
-    let ran = cx.driver().exec(handle, &spec, Deadline(LISTING_DEADLINE));
-    let text = fs::read_to_string(&log);
-    let _ = fs::remove_file(&log);
-    match ran {
-        Ok(ExecOutcome::Exited { code: 0 }) => {}
-        Ok(ExecOutcome::Exited { code }) => return Err(format!("the listing exited {code}")),
-        Ok(ExecOutcome::Interrupted) => return Err("the listing was interrupted".to_owned()),
-        Err(e) => return Err(format!("the listing could not run: {e}")),
-    }
-    let text = match text {
-        Ok(t) => t,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => {
-            return Err("the listing wrote no output".to_owned())
-        }
-        Err(e) => return Err(format!("cannot read the listing: {e}")),
-    };
-    Ok(parse_listing(&text))
-}
-
-/// Runs the listing as a batched step in `workdir`, which goes over the Box's own shell
-/// and never queues on the provider's workspace owner.
-fn list_batched(
+/// Runs the listing as one ssh `batch` step in `workdir` and parses its stdout. It never
+/// runs `crabbox run`, so it never syncs or queues on the provider's workspace owner.
+pub(crate) fn list_batched(
     cx: &Cx,
     handle: &BoxHandle,
     workdir: &BoxPath,
