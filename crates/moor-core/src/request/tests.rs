@@ -101,6 +101,7 @@ fn all() -> Vec<Request> {
         Request::GithubSetup {},
         Request::GithubLogin {},
         Request::ProxyCheck {},
+        Request::Repos(ReposReq {}),
         Request::Version {},
     ]);
     v
@@ -109,7 +110,7 @@ fn all() -> Vec<Request> {
 #[test]
 fn cmd_equals_serde_tag_and_roundtrips() {
     let reqs = all();
-    assert_eq!(reqs.len(), 21);
+    assert_eq!(reqs.len(), 22);
     for r in reqs {
         let text = serde_json::to_string(&r).unwrap();
         assert!(
