@@ -14,6 +14,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use super::launch;
+use super::reopen;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
@@ -264,15 +265,21 @@ fn relaunch(
 /// A store failure, or settings that cannot be resolved.
 pub(crate) fn revive_after_wake(cx: &Cx, store: &Store, id: BoxId) -> Result<(), CommandError> {
     let row = reread(store, id)?;
-    if row.state != TaskState::Working {
+    if !matches!(row.state, TaskState::Working | TaskState::Idle) {
         return Ok(());
     }
-    let Some(old) = store.live_session(id)? else {
-        return Ok(());
+    let ended_pane = match store.live_session(id)? {
+        Some(s) if row.state == TaskState::Working => match ended(cx, &s) {
+            Some(end) => Some((s, end)),
+            None => return Ok(()),
+        },
+        Some(_) => return Ok(()),
+        None => None,
     };
-    let Some(end) = ended(cx, &old) else {
+    if ended_pane.is_none() && !(revivable(&row) && reopen::ended_session(store, id)?) {
         return Ok(());
-    };
+    }
+    super::wake_idle(store, id)?;
     await_tunnel(cx, store, id);
     let req = StartReq {
         name: row.name.clone(),
@@ -290,15 +297,28 @@ pub(crate) fn revive_after_wake(cx: &Cx, store: &Store, id: BoxId) -> Result<(),
         let at = row.worktree.as_deref().unwrap_or(&row.repo);
         settings(cx, Path::new(at), &Flags::default())
     };
+    let Some((old, end)) = &ended_pane else {
+        launch::run(cx, store, &req, id, None, &settings)?;
+        return Ok(());
+    };
     relaunch(
         cx,
         store,
         &req,
-        (&old, &end),
+        (old, end),
         (false, Some("wake")),
         &settings,
     )?;
     Ok(())
+}
+
+/// Whether `row` holds a goal or an agent session to start again.
+fn revivable(row: &TaskRow) -> bool {
+    row.goal.is_some()
+        || row
+            .agent_session_id
+            .as_deref()
+            .is_some_and(|s| !s.is_empty())
 }
 
 /// Waits until the Task's tunnel is up and has not restarted for `TUNNEL_SETTLE`.
