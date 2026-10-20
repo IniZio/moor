@@ -57,36 +57,35 @@ pub(crate) fn record(
         let channel = mention.channel.as_str();
         let thread = mention.thread_ts.as_deref().unwrap_or(&mention.ts);
         let existing = db.thread(channel, thread)?;
-        Ok(
-            match decide(
-                allow,
-                channel,
-                &mention.user,
-                &mention.text,
-                thread,
-                existing.as_ref(),
-            ) {
-                Action::Ignore => None,
-                Action::Reply(text) => Some(Job::Reply {
+        let action = decide(
+            allow,
+            channel,
+            &mention.user,
+            &mention.text,
+            thread,
+            existing.as_ref(),
+        );
+        Ok(match action {
+            Action::Ignore => None,
+            Action::Reply(text) => Some(Job::Reply {
+                channel: channel.to_owned(),
+                thread: thread.to_owned(),
+                text,
+            }),
+            Action::Start { name, repo, goal } => {
+                let row = SlackThread {
                     channel: channel.to_owned(),
-                    thread: thread.to_owned(),
-                    text,
-                }),
-                Action::Start { name, repo, goal } => {
-                    let row = SlackThread {
-                        channel: channel.to_owned(),
-                        thread_ts: thread.to_owned(),
-                        box_name: name,
-                        repo,
-                        goal,
-                        owner: mention.user.clone(),
-                        state: ThreadState::Starting,
-                    };
-                    db.insert_starting(&row, now)?;
-                    Some(Job::Start(row))
-                }
-            },
-        )
+                    thread_ts: thread.to_owned(),
+                    box_name: name,
+                    repo,
+                    goal,
+                    owner: mention.user.clone(),
+                    state: ThreadState::Starting,
+                };
+                db.insert_starting(&row, now)?;
+                Some(Job::Start(row))
+            }
+        })
     })
 }
 
@@ -182,7 +181,7 @@ enum Attempt {
     /// Nothing was sent yet, so an error frame proves the start never ran.
     First,
     /// A start may have run. `start` attaches only to an open Box, so a blind resend after
-    /// the first Box closed would make a second Box with the same name: ask `show` first.
+    /// the first Box closed would make a second Box with the same name; `show` goes first.
     /// No client error can prove that nothing runs, so any error leaves the row unsure.
     Again,
 }
