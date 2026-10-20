@@ -25,6 +25,7 @@ fn slash(envelope_id: &str, user: &str, channel: &str, text: &str) -> Slash {
         channel: channel.into(),
         user: user.into(),
         text: text.into(),
+        trigger_id: None,
     }
 }
 
@@ -36,7 +37,10 @@ fn run(db: &Db, s: &Slash) -> (String, Option<Job>) {
         channels: &channels,
         users: &users,
     };
-    let (ack, job) = record(s, db, &allow, 1_000).unwrap();
+    let state = std::path::Path::new("/nonexistent");
+    let (kept, job) = record(s, db, &allow, state, 1_000, &|_| {}).unwrap();
+    assert_eq!(kept.then, None);
+    let ack = kept.ack.unwrap();
     (ack["text"].as_str().unwrap().to_owned(), job)
 }
 
@@ -178,10 +182,12 @@ fn checked(
     let mut reply = |_: &str, _: &str, _: &str| panic!("the check posts no thread reply");
     let mut say = |c: &str, t: &str| said.borrow_mut().push((c.to_owned(), t.to_owned()));
     let log = |line: &str| logged.borrow_mut().push(line.to_owned());
+    let mut check_token = |_| panic!("the check checks no token");
     let mut fx = Fx {
         call: &mut call,
         reply: &mut reply,
         say: &mut say,
+        check_token: &mut check_token,
         log: &log,
     };
     check_repo(&mut fx, "C1", repo);

@@ -14,19 +14,12 @@ mod api;
 )]
 mod command;
 pub mod config;
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the /moor login check runs the token turn")
-)]
 mod coordinator;
-#[cfg_attr(
-    not(test),
-    expect(dead_code, reason = "the /moor login check stores credentials")
-)]
 mod credentials;
 mod daemon;
 mod db;
 mod dial;
+mod login;
 mod secret_file;
 mod slash;
 mod socket;

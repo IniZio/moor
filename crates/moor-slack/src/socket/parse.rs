@@ -1,8 +1,10 @@
 //! Parsing of Socket Mode envelopes into what the worker consumes.
 
+use moor_core::secret::Secret;
 use serde_json::Value;
 
-use super::{Click, Mention, Slash};
+use super::{Click, Mention, Slash, TokenSubmission};
+use crate::login::{LOGIN_CALLBACK, TOKEN_INPUT};
 
 /// The command inside a `slash_commands` envelope, if it is a well-formed one.
 pub(super) fn parse_slash(envelope: &Value) -> Option<Slash> {
@@ -13,6 +15,36 @@ pub(super) fn parse_slash(envelope: &Value) -> Option<Slash> {
         channel: text(payload.get("channel_id"))?,
         user: text(payload.get("user_id"))?,
         text: text(payload.get("text")).unwrap_or_default(),
+        trigger_id: text(payload.get("trigger_id")),
+    })
+}
+
+/// The login modal inside an `interactive` `view_submission` envelope, if it is one.
+pub(super) fn parse_submission(envelope: &Value) -> Option<TokenSubmission> {
+    let payload = envelope.get("payload")?;
+    if payload.get("type")?.as_str()? != "view_submission" {
+        return None;
+    }
+    let view = payload.get("view")?;
+    if view.get("callback_id")?.as_str()? != LOGIN_CALLBACK {
+        return None;
+    }
+    let input = view
+        .get("state")?
+        .get("values")?
+        .get(TOKEN_INPUT)?
+        .get(TOKEN_INPUT)?;
+    let token = input
+        .get("value")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let text = |value: Option<&Value>| value?.as_str().map(str::to_owned);
+    Some(TokenSubmission {
+        envelope_id: text(envelope.get("envelope_id"))?,
+        user: text(payload.get("user").and_then(|u| u.get("id")))?,
+        view_id: text(view.get("id"))?,
+        agent: text(view.get("private_metadata")).unwrap_or_default(),
+        token: Secret::new(token.trim().as_bytes().to_vec()),
     })
 }
 

@@ -1,6 +1,7 @@
 //! The start path: the socket thread records each mention in `slack.db` before Slack gets
 //! its ack, and the worker turns each recorded start into a Box over the controller socket.
-//! The worker also checks each repo a user adds to a channel.
+//! The worker also checks each repo a user adds to a channel, and each Claude token a user
+//! pastes.
 
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::time::Instant;
@@ -14,6 +15,7 @@ use serde_json::Value;
 use crate::command::{decide, failed, started, Action, Allow};
 use crate::db::{Db, SlackThread, ThreadState};
 use crate::dial::Backoff;
+use crate::login::TokenCheck;
 use crate::slash::check_repo;
 use crate::socket::Mention;
 
@@ -25,12 +27,14 @@ pub(crate) struct Fx<'a> {
     pub(crate) reply: &'a mut dyn FnMut(&str, &str, &str),
     /// Posts `(channel, text)` at the top level of a channel.
     pub(crate) say: &'a mut dyn FnMut(&str, &str),
+    /// Checks a pasted Claude token, stores it when Claude takes it, and updates the modal.
+    pub(crate) check_token: &'a mut dyn FnMut(TokenCheck),
     /// Writes one diagnostic line.
     pub(crate) log: &'a dyn Fn(&str),
 }
 
-/// What the worker does for one recorded mention.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// What the worker does for one recorded mention or command.
+#[derive(Debug, PartialEq, Eq)]
 pub(crate) enum Job {
     /// Post `text` in a thread.
     Reply {
@@ -50,6 +54,8 @@ pub(crate) enum Job {
         /// The repo as the user typed it.
         repo: String,
     },
+    /// Check a pasted Claude token and store it when Claude takes it.
+    CheckToken(TokenCheck),
 }
 
 /// Records one mention in a single transaction: its event id and, for an allowed start, the
@@ -123,6 +129,7 @@ pub(crate) fn serve(jobs: &Receiver<Job>, db: &Db, left: Vec<SlackThread>, fx: &
                 }
             }
             Ok(Job::CheckRepo { channel, repo }) => check_repo(fx, &channel, &repo),
+            Ok(Job::CheckToken(check)) => (fx.check_token)(check),
             Err(RecvTimeoutError::Timeout) => {}
             Err(RecvTimeoutError::Disconnected) => return,
         }

@@ -73,6 +73,21 @@ coordinator:
 At start the front runs `claude --version` and logs it. A missing binary or
 an older version leaves the coordinator unavailable.
 
+Each person links their own Claude token. Turn on Interactivity in the Slack
+app config. Socket Mode needs no request URL. A user on the `users` list
+runs these in any channel:
+
+- `/moor login` opens a form. Run `claude setup-token` on your own machine
+  and paste the token it prints. The front checks the token with one call
+  to Claude on `haiku`. It stores the token only when Claude accepts it, in
+  `credentials/claude/<Slack user id>` under the state directory, mode 0600.
+  The token reaches Claude Code on a pipe at descriptor 3, never in argv,
+  the environment, `slack.db` or the log.
+- `/moor logout` deletes your token file.
+
+Both commands take an optional agent name. `claude` is the default and, for
+now, the only agent.
+
 `moor-slack` keeps its state in `slack.db`. A `slack.db` that another build
 of `moor-slack` wrote at a different schema is refused at startup. Move it
 aside and start again with a fresh one.

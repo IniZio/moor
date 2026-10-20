@@ -15,8 +15,10 @@ use tungstenite::{client, Message, WebSocket};
 
 use super::api::Api;
 
+mod items;
 mod parse;
-use parse::{parse_click, parse_mention, parse_slash};
+pub(super) use items::{AfterAck, Kept, Slash, TokenSubmission};
+use parse::{parse_click, parse_mention, parse_slash, parse_submission};
 
 /// First wait after a failed or finished connection.
 const MIN_BACKOFF: Duration = Duration::from_secs(1);
@@ -69,21 +71,8 @@ pub(super) struct Click {
     pub choice: u32,
 }
 
-/// A `/moor` slash command.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct Slash {
-    /// Envelope id, used as the dedupe id.
-    pub envelope_id: String,
-    /// Channel the command was run in.
-    pub channel: String,
-    /// User who ran it.
-    pub user: String,
-    /// Everything after the command name.
-    pub text: String,
-}
-
 /// What the socket thread hands to its intake.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 pub(super) enum Inbound {
     /// An app mention or thread reply.
     Mention(Mention),
@@ -91,19 +80,17 @@ pub(super) enum Inbound {
     Click(Click),
     /// A slash command.
     Slash(Slash),
+    /// A submitted login modal.
+    Submission(TokenSubmission),
 }
 
-/// Takes each mention, click and command before Slack gets the ack for its envelope.
+/// Takes each item before Slack gets the ack for its envelope.
 pub(super) trait Intake {
     /// Keeps `item`, or says why its envelope gets no ack.
     fn take(&self, item: Inbound) -> Result<Kept, NotKept>;
-}
 
-/// What the ack of a kept item carries.
-#[derive(Debug, Default, PartialEq, Eq)]
-pub(super) struct Kept {
-    /// The ack's `payload`, such as the text Slack shows the user who ran a command.
-    pub ack: Option<Value>,
+    /// Does what a kept item asked for once its ack is sent.
+    fn after_ack(&self, _then: AfterAck) {}
 }
 
 /// Why an intake did not keep an item.
@@ -287,12 +274,24 @@ fn handle_envelope(
             Flow::Continue,
             parse_mention(&envelope).map(Inbound::Mention),
         ),
-        Some("interactive") => (Flow::Continue, parse_click(&envelope).map(Inbound::Click)),
+        Some("interactive") => (
+            Flow::Continue,
+            parse_click(&envelope)
+                .map(Inbound::Click)
+                .or_else(|| parse_submission(&envelope).map(Inbound::Submission)),
+        ),
         Some("slash_commands") => (Flow::Continue, parse_slash(&envelope).map(Inbound::Slash)),
         _ => (Flow::Continue, None),
     };
     match item.map_or_else(|| Ok(Kept::default()), |item| intake.take(item)) {
-        Ok(kept) => ack(ws, &envelope, kept.ack).map(|()| flow),
+        Ok(kept) => {
+            ack(ws, &envelope, kept.ack)?;
+            if let Some(then) = kept.then {
+                flush(ws)?;
+                intake.after_ack(then);
+            }
+            Ok(flow)
+        }
         Err(NotKept::Failed) => Ok(flow),
         Err(NotKept::Gone) => Err(SocketError::ReceiverGone),
     }

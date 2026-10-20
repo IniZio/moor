@@ -137,10 +137,12 @@ fn with_hooks(
             .replies
             .push((c.to_owned(), String::new(), text.to_owned()));
     };
+    let mut check_token = |_| {};
     let mut fx = Fx {
         call: &mut call,
         reply: &mut reply,
         say: &mut say,
+        check_token: &mut check_token,
         log,
     };
     step(&mut fx);
