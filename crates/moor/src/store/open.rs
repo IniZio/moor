@@ -33,7 +33,7 @@ pub(super) fn tighten(db: &Path) -> io::Result<()> {
 }
 
 /// The db path with `suffix` appended to its full file name.
-fn sibling(db: &Path, suffix: &str) -> PathBuf {
+pub(super) fn sibling(db: &Path, suffix: &str) -> PathBuf {
     let mut name = db.as_os_str().to_owned();
     name.push(suffix);
     PathBuf::from(name)

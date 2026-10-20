@@ -209,8 +209,10 @@ pub(crate) struct Store {
 
 impl Store {
     /// Open (creating if needed) the store at `path`. The state directory is
-    /// created 0700 and the db, `-wal` and `-shm` files are 0600.
+    /// created 0700 and the db, `-wal` and `-shm` files are 0600. A db at another schema
+    /// version is refused before anything writes to it or changes a mode.
     pub(crate) fn open(path: &Path, clock: Arc<dyn Clock>) -> Result<Self, StoreError> {
+        init::refuse_other_version(path)?;
         open::prepare(path)?;
         let mut conn = Connection::open(path)?;
         conn.busy_timeout(BUSY_TIMEOUT)?;
