@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use moor_core::name::{BoxId, BoxName};
 use rusqlite::types::Type;
-use rusqlite::{params, Connection, OptionalExtension, Row, TransactionBehavior};
+use rusqlite::{params, Connection, OptionalExtension, Row, Transaction, TransactionBehavior};
 
 /// How long a writer waits on a locked database.
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
@@ -92,6 +92,17 @@ impl Db {
             ));
         }
         Ok(Self { conn })
+    }
+
+    /// Runs `write` in one immediate transaction, so nothing it wrote stays when it fails.
+    pub(crate) fn atomically<T>(
+        &self,
+        write: impl FnOnce() -> rusqlite::Result<T>,
+    ) -> rusqlite::Result<T> {
+        let tx = Transaction::new_unchecked(&self.conn, TransactionBehavior::Immediate)?;
+        let out = write()?;
+        tx.commit()?;
+        Ok(out)
     }
 
     /// Records a Slack event id at `now`; true the first time, false on redelivery.

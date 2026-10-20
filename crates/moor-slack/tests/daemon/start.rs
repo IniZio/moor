@@ -11,6 +11,11 @@ use super::support::controller::{FakeController, Scripted};
 use super::support::slack_fake::{Mention, APP_TOKEN, BOT_TOKEN};
 use super::support::{Rig, BOX_NAME, CHANNEL, QUIET, TS, USER};
 
+/// Ts of a second thread.
+const TS2: &str = "1730000005.000200";
+/// Box name the second thread maps to.
+const BOX2: &str = "slack-1730000005-000200";
+
 /// A `start` or `show` reply that names Box 7 called `name`.
 fn names_box(cmd: &str, name: &str) -> Scripted {
     let value = json!({"box": {"id": 7, "name": name, "branch": format!("moor/{name}")}});
@@ -186,4 +191,73 @@ fn starting_row_left_by_a_stopped_daemon_is_settled_at_startup() {
         seen.requests.iter().all(|r| matches!(r, Request::Show(_))) && seen.requests.len() == 1
     });
     assert!(shows_only, "one show and no start after the restart");
+}
+
+/// The text of the post in `thread`, failing the test when there is none.
+fn post_in(rig: &Rig, thread: &str) -> String {
+    let posts = rig.slack.posts();
+    let post = posts.iter().find(|p| p.thread_ts == thread);
+    post.map_or_else(
+        || panic!("no post in {thread}: {posts:?}"),
+        |p| p.text.clone(),
+    )
+}
+
+#[test]
+fn mention_acked_while_the_worker_waits_survives_a_crash() {
+    let (mut rig, controller) = Rig::start();
+    controller.keep_boxes();
+    controller.script("start", Scripted::Hold);
+    rig.mention(1, USER, "<@UBOT> start demo fix the thing", TS, None);
+    controller.wait_until("the held start", |seen| !seen.requests.is_empty());
+    rig.mention(2, USER, "<@UBOT> start demo other thing", TS2, None);
+    rig.slack.wait_acks(2);
+    rig.kill_daemon();
+    rig.spawn_daemon();
+    rig.slack.wait_posts(2);
+    assert_eq!(post_in(&rig, TS2), format!("Started Box `{BOX2}`."));
+    let second: Vec<_> = starts(&controller)
+        .into_iter()
+        .filter(|s| s.0 == BOX2)
+        .collect();
+    let want = (
+        BOX2.to_owned(),
+        Some("demo".to_owned()),
+        Some("other thing".to_owned()),
+    );
+    assert_eq!(second, [want]);
+}
+
+#[test]
+fn starts_lost_while_the_controller_is_down_run_once_it_is_back() {
+    let mut rig = Rig::new();
+    rig.spawn_daemon();
+    rig.slack.wait_connected();
+    rig.mention(1, USER, "<@UBOT> start demo fix the thing", TS, None);
+    rig.mention(2, USER, "<@UBOT> start demo other thing", TS2, None);
+    rig.wait_stderr(&format!("start of {BOX2}"));
+    let controller = rig.serve(PROTOCOL);
+    controller.keep_boxes();
+    rig.slack.wait_posts(2);
+    assert_eq!(post_in(&rig, TS), format!("Started Box `{BOX_NAME}`."));
+    assert_eq!(post_in(&rig, TS2), format!("Started Box `{BOX2}`."));
+    let names: Vec<_> = starts(&controller).into_iter().map(|s| s.0).collect();
+    assert_eq!(names, [BOX_NAME, BOX2], "one start per thread");
+    assert_eq!(controller.boxes(), [BOX_NAME, BOX2]);
+}
+
+#[test]
+fn a_thread_the_controller_cannot_answer_holds_up_no_other_thread() {
+    let (rig, controller) = Rig::start();
+    controller.keep_boxes();
+    controller.script("start", Scripted::Hangup);
+    controller.script("show", Scripted::Hangup);
+    controller.script("show", Scripted::Hangup);
+    rig.mention(1, USER, "<@UBOT> start demo fix the thing", TS, None);
+    rig.wait_stderr(&format!("start of {BOX_NAME}"));
+    rig.mention(2, USER, "<@UBOT> start demo other thing", TS2, None);
+    let posts = rig.slack.wait_posts(2);
+    let threads: Vec<_> = posts.iter().map(|p| p.thread_ts.as_str()).collect();
+    assert_eq!(threads, [TS2, TS], "the second thread is not held up");
+    assert_eq!(controller.boxes(), [BOX2, BOX_NAME]);
 }

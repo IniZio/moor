@@ -1,7 +1,8 @@
-//! The worker: turns an allowed mention into a Box over the controller socket and binds the
-//! thread to it.
+//! The start path: the socket thread records each mention in `slack.db` before Slack gets
+//! its ack, and the worker turns each recorded start into a Box over the controller socket.
 
-use std::time::Duration;
+use std::sync::mpsc::{Receiver, RecvTimeoutError};
+use std::time::Instant;
 
 use moor_client::ClientError;
 use moor_core::name::{BoxId, BoxName};
@@ -22,68 +23,165 @@ pub(crate) struct Fx<'a> {
     pub(crate) reply: &'a mut dyn FnMut(&str, &str, &str),
     /// Writes one diagnostic line.
     pub(crate) log: &'a dyn Fn(&str),
-    /// Waits before the controller is asked again.
-    pub(crate) wait: &'a dyn Fn(Duration),
-    /// The current time in unix seconds.
-    pub(crate) now: fn() -> i64,
 }
 
-/// The request a start sends next.
-#[derive(Clone, Copy)]
-enum Step {
-    /// Send `start`.
-    Start,
-    /// Ask `show` whether the Box exists.
-    Show,
+/// What the worker does for one recorded mention.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Job {
+    /// Post `text` in a thread.
+    Reply {
+        /// Channel id of the thread.
+        channel: String,
+        /// Timestamp of the thread's root message.
+        thread: String,
+        /// What to post.
+        text: String,
+    },
+    /// Send the first `start` for this row, already `starting` in `slack.db`.
+    Start(SlackThread),
 }
 
-/// Applies one mention: dedupe, then reply, or start a Box and bind the thread to it.
-pub(crate) fn handle(mention: &Mention, db: &Db, allow: &Allow<'_>, fx: &mut Fx<'_>) {
-    match db.event_once(&mention.event_id, (fx.now)()) {
-        Ok(true) => {}
-        Ok(false) => return,
-        Err(e) => return (fx.log)(&format!("slack.db: {e}")),
-    }
-    if mention.reply {
-        return;
-    }
-    let channel = mention.channel.as_str();
-    let thread = mention.thread_ts.as_deref().unwrap_or(&mention.ts);
-    let row = match db.thread(channel, thread) {
-        Ok(row) => row,
-        Err(e) => return (fx.log)(&format!("slack.db: {e}")),
-    };
-    let bound = row.as_ref().map(|t| &t.box_name);
-    match decide(allow, channel, &mention.user, &mention.text, thread, bound) {
-        Action::Ignore => {}
-        Action::Reply(text) => (fx.reply)(channel, thread, &text),
-        Action::Start { name, repo, goal } => {
-            let row = SlackThread {
-                channel: channel.to_owned(),
-                thread_ts: thread.to_owned(),
-                box_name: name,
-                repo,
-                goal,
-                owner: mention.user.clone(),
-                state: ThreadState::Starting,
-            };
-            match db.insert_starting(&row, (fx.now)()) {
-                Ok(()) => settle(db, fx, &row, Step::Start),
-                Err(e) => (fx.log)(&format!("slack.db: {e}")),
+/// Records one mention in a single transaction: its event id and, for an allowed start, the
+/// thread's `starting` row with the goal, repo and owner. Returns what the worker does next,
+/// or nothing for a redelivered event.
+pub(crate) fn record(
+    mention: &Mention,
+    db: &Db,
+    allow: &Allow<'_>,
+    now: i64,
+) -> rusqlite::Result<Option<Job>> {
+    db.atomically(|| {
+        if !db.event_once(&mention.event_id, now)? || mention.reply {
+            return Ok(None);
+        }
+        let channel = mention.channel.as_str();
+        let thread = mention.thread_ts.as_deref().unwrap_or(&mention.ts);
+        let row = db.thread(channel, thread)?;
+        let bound = row.as_ref().map(|t| &t.box_name);
+        Ok(
+            match decide(allow, channel, &mention.user, &mention.text, thread, bound) {
+                Action::Ignore => None,
+                Action::Reply(text) => Some(Job::Reply {
+                    channel: channel.to_owned(),
+                    thread: thread.to_owned(),
+                    text,
+                }),
+                Action::Start { name, repo, goal } => {
+                    let row = SlackThread {
+                        channel: channel.to_owned(),
+                        thread_ts: thread.to_owned(),
+                        box_name: name,
+                        repo,
+                        goal,
+                        owner: mention.user.clone(),
+                        state: ThreadState::Starting,
+                    };
+                    db.insert_starting(&row, now)?;
+                    Some(Job::Start(row))
+                }
+            },
+        )
+    })
+}
+
+/// Runs each job as it arrives and asks again about unsure starts on a backoff timer, so a
+/// start the controller cannot confirm never holds up another thread. `left` holds the rows
+/// an earlier run left `starting`, read before any mention was recorded, so no job names
+/// them; they are asked about first.
+pub(crate) fn serve(jobs: &Receiver<Job>, db: &Db, left: Vec<SlackThread>, fx: &mut Fx<'_>) {
+    let mut unsure = Unsure::new(left);
+    loop {
+        if unsure.due.is_some_and(|due| due <= now()) {
+            unsure.retry(db, fx);
+            continue;
+        }
+        match next_job(jobs, unsure.due) {
+            Ok(Job::Reply {
+                channel,
+                thread,
+                text,
+            }) => (fx.reply)(&channel, &thread, &text),
+            Ok(Job::Start(row)) => {
+                if !settle(db, fx, &row, Attempt::First) {
+                    unsure.add(row);
+                }
             }
+            Err(RecvTimeoutError::Timeout) => {}
+            Err(RecvTimeoutError::Disconnected) => return,
         }
     }
 }
 
-/// Settles every row left in `starting` by an earlier run, oldest first.
-pub(crate) fn resume(db: &Db, fx: &mut Fx<'_>) {
-    match db.starting() {
-        Ok(rows) => rows.iter().for_each(|row| settle(db, fx, row, Step::Show)),
-        Err(e) => (fx.log)(&format!("slack.db: {e}")),
+/// The next job, waiting no later than `due` when it is set.
+fn next_job(jobs: &Receiver<Job>, due: Option<Instant>) -> Result<Job, RecvTimeoutError> {
+    due.map_or_else(
+        || jobs.recv().map_err(|_| RecvTimeoutError::Disconnected),
+        |due| jobs.recv_timeout(due.saturating_duration_since(now())),
+    )
+}
+
+/// The current instant; `recv_timeout` waits on real time, so retry deadlines do too.
+#[allow(
+    clippy::disallowed_methods,
+    reason = "the worker waits with recv_timeout, which runs on real time"
+)]
+fn now() -> Instant {
+    Instant::now()
+}
+
+/// Starts the controller has not confirmed, asked about again together on one timer.
+struct Unsure {
+    /// The rows, oldest first.
+    rows: Vec<SlackThread>,
+    /// Wait after a round that leaves rows unsure; it grows until a round settles them all.
+    backoff: Backoff,
+    /// When the next round runs; `None` while no row is unsure.
+    due: Option<Instant>,
+}
+
+impl Unsure {
+    /// Rows an earlier run left `starting`, due at once.
+    fn new(rows: Vec<SlackThread>) -> Self {
+        let due = (!rows.is_empty()).then(now);
+        Self {
+            rows,
+            backoff: Backoff::new(),
+            due,
+        }
+    }
+
+    /// Adds a row whose first start was not confirmed.
+    fn add(&mut self, row: SlackThread) {
+        self.rows.push(row);
+        if self.due.is_none() {
+            self.due = Some(now() + self.backoff.next());
+        }
+    }
+
+    /// Asks once about each row and keeps the ones still unsure.
+    fn retry(&mut self, db: &Db, fx: &mut Fx<'_>) {
+        self.rows.retain(|row| !settle(db, fx, row, Attempt::Again));
+        self.due = if self.rows.is_empty() {
+            self.backoff = Backoff::new();
+            None
+        } else {
+            Some(now() + self.backoff.next())
+        };
     }
 }
 
-/// How the start of one thread ends.
+/// Whether a `start` for the row may already have reached the controller.
+#[derive(Clone, Copy)]
+enum Attempt {
+    /// Nothing was sent yet, so an error frame proves the start never ran.
+    First,
+    /// A start may have run. `start` attaches only to an open Box, so a blind resend after
+    /// the first Box closed would make a second Box with the same name: ask `show` first.
+    /// No client error can prove that nothing runs, so any error leaves the row unsure.
+    Again,
+}
+
+/// How one attempt at a start ends.
 enum Outcome {
     /// The controller named this Box, with its id and branch.
     Bound(BoxId, Option<String>),
@@ -101,89 +199,71 @@ enum Shown {
     Settled(Outcome),
 }
 
-/// Most `start` requests one row may lose before the worker leaves it for the next startup.
-const MAX_LOST_STARTS: u32 = 3;
-
-/// Moves a `starting` row to bound or deleted, or leaves it `starting` when unsure.
-fn settle(db: &Db, fx: &mut Fx<'_>, row: &SlackThread, step: Step) {
-    match drive(fx, row, step) {
-        Outcome::Bound(box_id, branch) => bind(db, fx, row, box_id, branch.as_deref()),
-        Outcome::Refused(message) => refuse(db, fx, row, &message),
+/// Tries once to settle `row`: binds or deletes it, or logs why it stays `starting`.
+/// Returns whether the row is settled.
+fn settle(db: &Db, fx: &mut Fx<'_>, row: &SlackThread, attempt: Attempt) -> bool {
+    match ask(fx, row, attempt) {
+        Outcome::Bound(box_id, branch) => {
+            bind(db, fx, row, box_id, branch.as_deref());
+            true
+        }
+        Outcome::Refused(message) => {
+            refuse(db, fx, row, &message);
+            true
+        }
         Outcome::Unsure(why) => {
             let name = row.box_name.as_str();
-            (fx.log)(&format!(
-                "start of {name}: {why}; checked again at the next startup"
-            ));
+            (fx.log)(&format!("start of {name}: {why}; asking again"));
+            false
         }
     }
 }
 
-/// Sends requests until the start of `row` is settled.
-///
-/// After a lost connection the worker waits with backoff and asks `show` first: `start`
-/// attaches only to an open Box, so a blind resend after the first Box closed would make
-/// a second Box with the same name. Once a start may have reached the controller, no client
-/// error can prove that nothing runs, so such an error leaves the row unsure.
-fn drive(fx: &mut Fx<'_>, row: &SlackThread, mut step: Step) -> Outcome {
-    let mut backoff = Backoff::new();
-    let mut lost_starts = 0;
-    let mut sure = matches!(step, Step::Start);
-    loop {
-        let e = match ((fx.call)(request(row, step)), step) {
-            (Ok(reply), Step::Start) => return start_outcome(reply),
-            (Ok(reply), Step::Show) => match shown(reply, &row.box_name) {
-                Shown::Absent => {
-                    step = Step::Start;
-                    continue;
-                }
-                Shown::Settled(outcome) => return outcome,
-            },
-            (Err(e), _) if !lost(&e) && sure => return Outcome::Refused(e.to_string()),
-            (Err(e), _) if !lost(&e) => return Outcome::Unsure(e.to_string()),
-            (Err(e), _) => e,
-        };
-        if matches!(step, Step::Start) {
-            sure = false;
-            lost_starts += 1;
-            if lost_starts >= MAX_LOST_STARTS {
-                return Outcome::Unsure(e.to_string());
-            }
+/// Sends at most one `show` and one `start` for `row`, so each attempt ends within the
+/// client's timeouts.
+fn ask(fx: &mut Fx<'_>, row: &SlackThread, attempt: Attempt) -> Outcome {
+    if matches!(attempt, Attempt::Again) {
+        match (fx.call)(show_request(row)).map(|reply| shown(reply, &row.box_name)) {
+            Ok(Shown::Absent) => {}
+            Ok(Shown::Settled(outcome)) => return outcome,
+            Err(e) => return Outcome::Unsure(e.to_string()),
         }
-        (fx.log)(&format!(
-            "start of {}: {e}; asking again",
-            row.box_name.as_str()
-        ));
-        (fx.wait)(backoff.next());
-        step = Step::Show;
+    }
+    match (fx.call)(start_request(row)) {
+        Ok(reply) => start_outcome(reply),
+        Err(e) if matches!(attempt, Attempt::First) && !lost(&e) => Outcome::Refused(e.to_string()),
+        Err(e) => Outcome::Unsure(e.to_string()),
     }
 }
 
-/// The request for `step` of `row`'s start.
-fn request(row: &SlackThread, step: Step) -> Request {
-    match step {
-        Step::Start => Request::Start(StartReq {
-            name: row.box_name.clone(),
-            goal: Some(row.goal.clone()),
-            issue: None,
-            worktree: None,
-            base: None,
-            model: None,
-            no_agent: false,
-            hold: false,
-            resume: false,
-            trust_moor_yaml: false,
-            repo: Some(row.repo.clone()),
-            parent: None,
-        }),
-        Step::Show => Request::Show(ShowReq {
-            box_name: Some(row.box_name.clone()),
-            events: None,
-            agent: false,
-            reports: false,
-            artifacts: false,
-            pane: false,
-        }),
-    }
+/// The `start` request for `row`.
+fn start_request(row: &SlackThread) -> Request {
+    Request::Start(StartReq {
+        name: row.box_name.clone(),
+        goal: Some(row.goal.clone()),
+        issue: None,
+        worktree: None,
+        base: None,
+        model: None,
+        no_agent: false,
+        hold: false,
+        resume: false,
+        trust_moor_yaml: false,
+        repo: Some(row.repo.clone()),
+        parent: None,
+    })
+}
+
+/// The `show` request for `row`'s Box.
+fn show_request(row: &SlackThread) -> Request {
+    Request::Show(ShowReq {
+        box_name: Some(row.box_name.clone()),
+        events: None,
+        agent: false,
+        reports: false,
+        artifacts: false,
+        pane: false,
+    })
 }
 
 /// The outcome of a `start` reply: its Box, or the controller's refusal.
