@@ -4,7 +4,9 @@
 
 use std::fs::{self, DirBuilder, OpenOptions};
 use std::io::{self, Write as _};
-use std::os::unix::fs::{DirBuilderExt as _, OpenOptionsExt as _, PermissionsExt as _};
+use std::os::unix::fs::{
+    DirBuilderExt as _, MetadataExt as _, OpenOptionsExt as _, PermissionsExt as _,
+};
 use std::path::{Path, PathBuf};
 
 use moor_core::secret::Secret;
@@ -97,9 +99,9 @@ pub(crate) fn store(
 ) -> Result<(), String> {
     let path = credential_path(state_dir, agent, user);
     let dir = agent_dir(state_dir, agent);
-    private_dir(&state_dir.join("credentials"))
-        .and_then(|()| private_dir(&dir))
-        .map_err(|e| format!("{}: {e}", dir.display()))?;
+    let parent = state_dir.join("credentials");
+    private_dir(&parent, daemon_uid()).map_err(|e| format!("{}: {e}", parent.display()))?;
+    private_dir(&dir, daemon_uid()).map_err(|e| format!("{}: {e}", dir.display()))?;
     let temp = dir.join(format!(".{}.tmp", user.as_str()));
     let write = || -> io::Result<()> {
         remove_if_present(&temp)?;
@@ -130,14 +132,31 @@ pub(crate) fn config_dir(
     agent: AgentKind,
     user: &SlackUser,
 ) -> Result<PathBuf, String> {
-    let dir = state_dir.join(agent.name()).join(user.as_str());
-    private_dir(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let parent = state_dir.join(agent.name());
+    let dir = parent.join(user.as_str());
+    for dir in [&parent, &dir] {
+        private_dir(dir, daemon_uid()).map_err(|e| format!("{}: {e}", dir.display()))?;
+    }
     Ok(dir)
 }
 
-/// Creates `dir` and its missing parents, and leaves `dir` itself mode 0700.
-fn private_dir(dir: &Path) -> io::Result<()> {
-    DirBuilder::new().recursive(true).mode(0o700).create(dir)?;
+/// The user id the daemon runs as.
+fn daemon_uid() -> u32 {
+    rustix::process::geteuid().as_raw()
+}
+
+/// Creates `dir` mode 0700, or checks the one there, then leaves it mode 0700. A symlink, a
+/// file, or a directory that `owner` does not own is refused and left as it is.
+fn private_dir(dir: &Path, owner: u32) -> io::Result<()> {
+    match DirBuilder::new().mode(0o700).create(dir) {
+        Err(e) if e.kind() != io::ErrorKind::AlreadyExists => return Err(e),
+        _ => {}
+    }
+    let meta = fs::symlink_metadata(dir)?;
+    if !meta.is_dir() || meta.uid() != owner {
+        let why = "not a directory that this user owns";
+        return Err(io::Error::new(io::ErrorKind::PermissionDenied, why));
+    }
     fs::set_permissions(dir, fs::Permissions::from_mode(0o700))
 }
 
