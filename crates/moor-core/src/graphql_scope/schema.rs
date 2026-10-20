@@ -112,6 +112,7 @@ pub(super) const SHAPES: &[Shape] = &[
         name: "repoid",
         leaves: &[
             "id",
+            "databaseId",
             "name",
             "nameWithOwner",
             "url",

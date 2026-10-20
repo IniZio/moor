@@ -51,6 +51,7 @@ pub(super) const SHAPES: &[Shape] = &[
             ("mergedBy", C("actor")),
             ("headRepository", C("repoid")),
             ("baseRepository", C("repoid")),
+            ("repository", C("repoid")),
             ("headRepositoryOwner", C("actor")),
             ("headRef", C("ref")),
             ("baseRef", C("ref")),

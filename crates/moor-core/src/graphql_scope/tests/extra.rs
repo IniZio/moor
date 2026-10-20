@@ -113,9 +113,9 @@ fn node_results_are_read_as_pull_requests() {
         "not `Issue`",
     );
     denied(
-        "{ node(id: \"X\") { ... on PullRequest { repository { name } } } }",
+        "{ node(id: \"X\") { ... on PullRequest { timelineItems { totalCount } } } }",
         &json!({}),
-        "pr.repository",
+        "pr.timelineItems",
     );
     denied("{ node(id: \"X\") { ... on PullRequest { headRepository { object(expression: \"a\") { id } } } } }", &json!({}), "object");
 }
