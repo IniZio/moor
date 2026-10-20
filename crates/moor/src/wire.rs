@@ -35,7 +35,7 @@ use crate::cx::{Cx, CxParts};
 use crate::env::Env;
 use crate::error::CommandError;
 use crate::proxy::adopt;
-use crate::proxy::detached::DetachedSupervisor;
+use crate::proxy::detached::{DetachedSupervisor, TunnelCheck};
 use crate::proxy::nono::capture::CredsFn;
 use crate::proxy::{serve, Deps, Sink};
 
@@ -100,14 +100,39 @@ pub(crate) fn reconcile_proxies(env: &Env) -> Vec<String> {
         Err(e) => return vec![e.error.to_string()],
     };
     let proc: Arc<dyn Proc> = Arc::new(SystemProc::new(env, &tool_paths(&config)));
-    let host = DetachedSupervisor::new(
+    let rng: Arc<dyn Rng> = Arc::new(SystemRng);
+    let crabbox = Crabbox::new(
         Arc::clone(&proc),
         Arc::clone(&clock) as Arc<dyn Clock>,
-        Arc::new(SystemRng),
+        Arc::clone(&rng),
+    );
+    let host = proxy_host(
+        &proc,
+        &clock,
+        &rng,
         Some(state_dir.clone()),
-    )
-    .keeping_nonce();
-    adopt::reconcile(&host, proc.as_ref(), clock, &state_dir)
+        Arc::new(crabbox),
+    );
+    adopt::reconcile(&host.keeping_nonce(), proc.as_ref(), clock, &state_dir)
+}
+
+/// The detached Proxy host over `state_dir`, which checks `crabbox` before it retires a running
+/// supervisor.
+fn proxy_host(
+    proc: &Arc<dyn Proc>,
+    clock: &Arc<SystemClock>,
+    rng: &Arc<dyn Rng>,
+    state_dir: Option<PathBuf>,
+    crabbox: Arc<Crabbox>,
+) -> DetachedSupervisor {
+    let clock = Arc::clone(clock) as Arc<dyn Clock>;
+    let check = tunnel_check(crabbox);
+    DetachedSupervisor::new(Arc::clone(proc), clock, Arc::clone(rng), state_dir, check)
+}
+
+/// Refuses to retire a running supervisor while crabbox is too old to open the socket tunnel.
+fn tunnel_check(crabbox: Arc<Crabbox>) -> TunnelCheck {
+    Arc::new(move || crabbox.require_version().map_err(|e| e.to_string()))
 }
 
 /// Real adapters from the environment, not yet assembled into a context, and the warning
@@ -139,7 +164,8 @@ fn parts(env: &Env, sockets: PathBuf) -> Result<(CxParts, Option<Warning>), Comm
     .with_lookup_deadlines(lookup_deadlines(&config.drivers))
     .with_state_dir(state_dir.clone(), sockets);
     let link_warning = crabbox.link_warning();
-    let driver: Arc<dyn Driver> = Arc::new(crabbox);
+    let crabbox = Arc::new(crabbox);
+    let driver: Arc<dyn Driver> = Arc::clone(&crabbox) as Arc<dyn Driver>;
     let engine = BoxAgent::new(
         Arc::clone(&driver),
         Arc::clone(&surface),
@@ -150,12 +176,7 @@ fn parts(env: &Env, sockets: PathBuf) -> Result<(CxParts, Option<Warning>), Comm
             env.xdg("XDG_CACHE_HOME", ".cache", "moor"),
         )),
     );
-    let proxy_host = Arc::new(DetachedSupervisor::new(
-        Arc::clone(&proc),
-        Arc::clone(&clock) as Arc<dyn Clock>,
-        Arc::clone(&rng),
-        state_dir.clone(),
-    ));
+    let proxy_host = Arc::new(proxy_host(&proc, &clock, &rng, state_dir.clone(), crabbox));
     let parts = CxParts {
         state_dir,
         clock,

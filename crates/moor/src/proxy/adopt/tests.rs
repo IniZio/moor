@@ -50,6 +50,7 @@ fn fx() -> Fx {
         clock.clone(),
         rng,
         Some(dir.path().to_path_buf()),
+        Arc::new(|| Ok(())),
     )
     .keeping_nonce();
     let f = Fx {
@@ -252,6 +253,7 @@ fn an_ordinary_ensure_on_a_stale_row_draws_a_new_nonce() {
         f.clock.clone(),
         Arc::new(FakeRng::default()),
         Some(f.dir.path().to_path_buf()),
+        Arc::new(|| Ok(())),
     );
 
     let endpoint = host.ensure(&f.spec()).unwrap();

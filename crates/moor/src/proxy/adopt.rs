@@ -27,9 +27,10 @@ enum Fate {
 ///
 /// A row is kept only when its pid is alive, leads its own process group, belongs to the
 /// current boot, holds a live lease and runs the socket front: a pid alone may have been reused,
-/// and an older moor's TCP front refuses a Box with no nonce. Any other row of a
-/// A Box with a ready machine is restarted from the spec saved at its last `ensure`, keeping its box port.
-/// Rows of Boxes without a usable machine are stopped. A failure for one Box never stops the rest.
+/// and an older moor's TCP front refuses a Box with no nonce. Any other row of a Box with a ready
+/// machine is retired and restarted from the spec saved at its last `ensure`, keeping its box
+/// port. Rows of Boxes without a usable machine are stopped. A failure for one Box never stops
+/// the rest.
 pub(crate) fn reconcile(
     host: &DetachedSupervisor,
     proc: &dyn Proc,
@@ -107,7 +108,7 @@ fn settle(
         Fate::Stop => host.stop(box_id).map_err(|e| e.to_string()),
         Fate::Restart => {
             // Without the saved spec the row stays expired, so the next `ensure` restarts it.
-            store.expire_proxy(box_id).map_err(|e| e.to_string())?;
+            host.retire(store, box_id)?;
             let spec = read_spec(state_dir, box_id)
                 .map_err(|e| format!("cannot restart the proxy without its spec: {e}"))?;
             host.ensure(&spec).map(drop).map_err(|e| e.to_string())
