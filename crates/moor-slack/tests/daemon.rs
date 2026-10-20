@@ -11,3 +11,7 @@ mod support;
 
 #[path = "daemon/connect.rs"]
 mod connect;
+#[path = "daemon/smoke.rs"]
+mod smoke;
+#[path = "daemon/start.rs"]
+mod start;

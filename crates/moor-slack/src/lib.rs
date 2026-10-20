@@ -5,19 +5,21 @@ use std::sync::Arc;
 
 #[expect(
     dead_code,
-    reason = "the replies and edits are posted once the worker handles mentions"
+    reason = "edits, blocks and ephemeral posts come with status messages and prompts"
 )]
 mod api;
 #[expect(
     dead_code,
-    reason = "the worker parses mentions with these once it handles them"
+    reason = "thread replies are parsed once the worker steers and closes Boxes"
 )]
 mod command;
 pub mod config;
 mod daemon;
+mod db;
 mod dial;
 mod secret_file;
 mod socket;
+mod worker;
 
 pub use daemon::{run, Settings};
 

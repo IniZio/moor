@@ -9,6 +9,7 @@
 )]
 
 pub(crate) mod controller;
+mod real;
 pub(crate) mod slack_fake;
 
 use std::os::unix::fs::PermissionsExt as _;
@@ -19,6 +20,7 @@ use std::time::Duration;
 use moor_core::controller::PROTOCOL;
 
 use controller::FakeController;
+use real::RealController;
 use slack_fake::{FakeSlack, Mention, APP_TOKEN, BOT_TOKEN};
 
 /// Channel the daemon is configured to answer in.
@@ -104,6 +106,11 @@ impl Rig {
         FakeController::serve(&self.socket(), protocol)
     }
 
+    /// Starts a real controller with no repos on the rig's socket.
+    pub(crate) fn real_controller(&self) -> RealController {
+        RealController::start(self.root.path(), &self.socket())
+    }
+
     /// Spawns the daemon with a clean environment; its stderr goes to a file.
     pub(crate) fn spawn_daemon(&mut self) {
         let child = Command::new(env!("CARGO_BIN_EXE_moor-slack"))
@@ -114,12 +121,33 @@ impl Rig {
             .arg(self.socket())
             .arg("--config")
             .arg(self.path("slack.yaml"))
+            .arg("--state-dir")
+            .arg(self.path("state-slack"))
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(std::fs::File::create(self.path("slack.err")).unwrap())
             .spawn()
             .unwrap();
         self.daemon = Some(child);
+    }
+
+    /// Kills the daemon and waits for it to exit.
+    pub(crate) fn kill_daemon(&mut self) {
+        if let Some(mut child) = self.daemon.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+    }
+
+    /// Polls the daemon's stderr until it contains `text`; fails the test after ten seconds.
+    pub(crate) fn wait_stderr(&self, text: &str) {
+        for _ in 0..500 {
+            if self.stderr().contains(text) {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        panic!("stderr never showed {text:?}: {}", self.stderr());
     }
 
     /// Everything the daemon wrote to stderr so far.
