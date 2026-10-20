@@ -2,6 +2,7 @@
 
 use std::io::{self, Cursor, Read};
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -15,6 +16,19 @@ use crate::testing::proc::{Reply, ScriptedProc};
 const SSH_LINE: &str = "ssh -p 2222 user@1.2.3.4\n";
 const BINARY: [u8; 5] = [0xff, 0xfe, 0x00, 0x80, 0x0a];
 const BIG: u64 = 50 * 1024 * 1024;
+
+/// Bytes pulled from the counted source so far.
+static PULLED: AtomicUsize = AtomicUsize::new(0);
+
+struct Counted<R>(R);
+
+impl<R: Read> Read for Counted<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let n = self.0.read(buf)?;
+        PULLED.fetch_add(n, Ordering::SeqCst);
+        Ok(n)
+    }
+}
 
 type Got = Vec<(String, Option<Vec<u8>>)>;
 
@@ -110,11 +124,11 @@ fn big_entry() -> Box<dyn Read + Send> {
     h.set_path("big.bin").unwrap();
     h.set_cksum();
     let pad = vec![0u8; (512 - (BIG % 512) as usize) % 512 + 1024];
-    Box::new(
+    Box::new(Counted(
         Cursor::new(h.as_bytes().to_vec())
             .chain(io::repeat(b'x').take(BIG))
             .chain(Cursor::new(pad)),
-    )
+    ))
 }
 
 #[test]
@@ -213,11 +227,20 @@ fn no_names_means_no_process_at_all() {
 #[test]
 fn large_entry_streams_without_being_buffered() {
     let (p, c) = fixture();
+    PULLED.store(0, Ordering::SeqCst);
     p.on(Tool::Ssh, &[], Reply::Reader(big_entry));
     let mut seen = None;
     let mut sink = |name: &str, reader: Option<&mut dyn Read>| {
         assert_eq!(name, "big.bin");
-        seen = Some(io::copy(&mut reader.unwrap(), &mut io::sink()).unwrap());
+        let reader = reader.unwrap();
+        let mut first = [0u8; 4096];
+        let head = reader.read(&mut first).unwrap();
+        let pulled = PULLED.load(Ordering::SeqCst);
+        assert!(
+            pulled < 1024 * 1024,
+            "buffered {pulled} bytes before the sink read"
+        );
+        seen = Some(head as u64 + io::copy(reader, &mut io::sink()).unwrap());
     };
     c.stream_files(
         &BoxHandle::new("p/box"),
