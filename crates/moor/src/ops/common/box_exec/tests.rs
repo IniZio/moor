@@ -390,3 +390,73 @@ fn rules_without_a_forge_credential_do_not() {
     assert!(!forge_routed(&[rule_with("other")]));
     assert!(!forge_routed(&[]));
 }
+
+/// The directory a private `mkdir` argv creates.
+fn mkdir_path(argv: &[String]) -> Option<&str> {
+    match argv {
+        [m, flag, mode, end, path] if [m, flag, mode, end] == ["mkdir", "-m", "700", "--"] => {
+            Some(path)
+        }
+        _ => None,
+    }
+}
+
+fn lost() -> DriverError {
+    DriverError::Transport {
+        stderr_tail: "Connection reset by peer".to_owned(),
+    }
+}
+
+#[test]
+fn a_lost_connection_during_mkdir_retries_under_a_fresh_name() {
+    let dir = tempfile::tempdir().unwrap();
+    let driver = home_driver().exec_results([Err(lost()), Ok(ExecOutcome::Exited { code: 0 })]);
+    let r = rig_driver(dir.path(), crate::testing::cx::fake_config(), driver);
+    let p = boxed_proxy();
+    let e = run_prepare(&r, dir.path(), Some(&p)).unwrap();
+    let [first, second]: [Vec<String>; 2] = argvs(&r).try_into().unwrap();
+    let (first, second) = (mkdir_path(&first).unwrap(), mkdir_path(&second).unwrap());
+    assert_ne!(first, second);
+    assert_eq!(e.staged.unwrap().as_str(), second);
+    let warned: Vec<String> = r.cx.take_warnings().into_iter().map(|w| w.code).collect();
+    assert_eq!(warned, ["box_ssh_retry"]);
+}
+
+#[test]
+fn a_connection_that_stays_lost_fails_after_two_retries() {
+    let dir = tempfile::tempdir().unwrap();
+    let driver = home_driver().exec_results([Err(lost()), Err(lost()), Err(lost())]);
+    let r = rig_driver(dir.path(), crate::testing::cx::fake_config(), driver);
+    let p = boxed_proxy();
+    let err = run_prepare(&r, dir.path(), Some(&p)).err().unwrap();
+    assert!(
+        err.contains("moor lost the ssh connection to the Box"),
+        "{err}"
+    );
+    assert_eq!(argvs(&r).len(), 3);
+}
+
+#[test]
+fn a_lost_connection_while_finding_the_box_home_is_retried() {
+    let dir = tempfile::tempdir().unwrap();
+    let driver = home_driver().fail_peek(lost());
+    let r = rig_driver(dir.path(), crate::testing::cx::fake_config(), driver);
+    let p = boxed_proxy();
+    let e = run_prepare(&r, dir.path(), Some(&p)).unwrap();
+    assert!(e.staged.unwrap().as_str().starts_with("/home/box/"));
+    assert_eq!(r.cx.take_warnings().len(), 1);
+}
+
+#[test]
+fn a_lost_connection_while_staging_retries_under_a_fresh_name() {
+    let dir = tempfile::tempdir().unwrap();
+    let driver = home_driver().fail_put(lost());
+    let r = rig_driver(dir.path(), crate::testing::cx::fake_config(), driver);
+    let p = boxed_proxy();
+    let e = run_prepare(&r, dir.path(), Some(&p)).unwrap();
+    let [first, rm, second]: [Vec<String>; 3] = argvs(&r).try_into().unwrap();
+    let (first, second) = (mkdir_path(&first).unwrap(), mkdir_path(&second).unwrap());
+    assert_eq!(rm, ["rm", "-rf", first]);
+    assert_ne!(first, second);
+    assert_eq!(e.staged.unwrap().as_str(), second);
+}

@@ -9,10 +9,10 @@ use moor_core::config::BoxSettings;
 use moor_core::domain::run::SyncMode;
 use moor_core::exec_env::{self, BoxCtx, ExecEnv, ProxyCtx, Purpose, RUN_DEADLINE};
 use moor_core::seam::agent_profile::ProxyAddr;
-use moor_core::seam::driver::{ExecOutcome, ExecSpec};
+use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::proxy_host::ProxySpec;
-use moor_core::{BoxHandle, BoxId, BoxPath};
+use moor_core::{BoxHandle, BoxId, BoxPath, Warning};
 
 use crate::cx::Cx;
 use crate::ops::common::proxy::{box_env, origin, plan};
@@ -21,6 +21,10 @@ use crate::ops::common::proxy::{box_env, origin, plan};
 const CLEANUP_DEADLINE: Duration = Duration::from_secs(30);
 /// Time allowed for staging the nonce and the CA.
 const STAGE_DEADLINE: Duration = Duration::from_secs(60);
+/// Retries of a step before the user's command after the ssh connection drops.
+const LOST_RETRIES: u32 = 2;
+/// Pause before such a retry.
+const LOST_PAUSE: Duration = Duration::from_secs(2);
 
 /// The Box's running Proxy, as a Box exec needs it.
 pub(crate) struct BoxProxy {
@@ -134,13 +138,15 @@ pub(crate) fn prepare(
         let env = exec_env::build(&ctx, purpose)?;
         return Ok(BoxExec { env, staged: None });
     };
-    let dir = BoxPath::under(
-        box_home(cx, site)?.as_str(),
-        &BoxKey::new(p.box_id).cred_dir(&format!("{:08x}{:08x}", cx.rng().u32(), cx.rng().u32())),
-    )
-    .map_err(|e| e.to_string())?;
-    create(cx, site, &dir)?;
-    stage(cx, site, &dir, &p.addr)?;
+    let home = retry_lost(cx, || box_home(cx, site))?;
+    let dir = retry_lost(cx, || {
+        let name = format!("{:08x}{:08x}", cx.rng().u32(), cx.rng().u32());
+        let dir = BoxPath::under(home.as_str(), &BoxKey::new(p.box_id).cred_dir(&name))
+            .map_err(|e| StepError::Other(e.to_string()))?;
+        create(cx, site, &dir)?;
+        stage(cx, site, &dir, &p.addr)?;
+        Ok(dir)
+    })?;
     let merged = exec_env::merged_env(repo_env, p.rule_env.clone());
     let ctx = BoxCtx {
         env: &merged,
@@ -164,14 +170,55 @@ pub(crate) fn prepare(
     }
 }
 
+/// Why a step before the user's command failed.
+enum StepError {
+    /// The ssh connection dropped; the step can be tried again.
+    Lost(String),
+    /// Any other failure.
+    Other(String),
+}
+
+impl StepError {
+    /// `message` for the driver error `e`, kept retryable when `e` is a lost connection.
+    const fn from_driver(e: &DriverError, message: String) -> Self {
+        if matches!(e, DriverError::Transport { .. }) {
+            Self::Lost(message)
+        } else {
+            Self::Other(message)
+        }
+    }
+}
+
+/// Runs `step`, again up to `LOST_RETRIES` times while the ssh connection drops, warning each time.
+///
+/// Only moor's own steps before the user's command go through here: that command may have run
+/// when the connection dropped, so it is never repeated.
+fn retry_lost<T>(cx: &Cx, mut step: impl FnMut() -> Result<T, StepError>) -> Result<T, String> {
+    let mut retries = 0;
+    loop {
+        match step() {
+            Ok(v) => return Ok(v),
+            Err(StepError::Lost(m)) if retries < LOST_RETRIES => {
+                retries += 1;
+                cx.warn(Warning {
+                    code: "box_ssh_retry".to_owned(),
+                    message: format!("{m}; retrying ({retries} of {LOST_RETRIES})"),
+                });
+                cx.clock().sleep(LOST_PAUSE);
+            }
+            Err(StepError::Lost(m) | StepError::Other(m)) => return Err(m),
+        }
+    }
+}
+
 /// Writes the Proxy nonce and CA into `dir` in the Box; a failure removes `dir` and names the step.
-fn stage(cx: &Cx, site: &Site<'_>, dir: &BoxPath, addr: &ProxyAddr) -> Result<(), String> {
-    let staged = exec_env::stage_steps(dir, &addr.nonce, &addr.ca_pem)?;
+fn stage(cx: &Cx, site: &Site<'_>, dir: &BoxPath, addr: &ProxyAddr) -> Result<(), StepError> {
+    let staged = exec_env::stage_steps(dir, &addr.nonce, &addr.ca_pem).map_err(StepError::Other)?;
     let (steps, texts): (Vec<_>, Vec<_>) = staged.into_iter().unzip();
     let driver = cx.driver();
-    let failed = |text: &str, why: &dyn ToString| {
+    let failed = |text: &str, e: &DriverError| {
         remove(cx, site, dir);
-        format!("{text}: {}", why.to_string())
+        StepError::from_driver(e, format!("{text}: {e}"))
     };
     let connect = driver
         .connect_argv(site.handle, site.worktree)
@@ -182,7 +229,10 @@ fn stage(cx: &Cx, site: &Site<'_>, dir: &BoxPath, addr: &ProxyAddr) -> Result<()
         match results.get(i) {
             Some(Ok(_)) => {}
             Some(Err(e)) => return Err(failed(text, e)),
-            None => return Err(failed(text, &"the step did not run")),
+            None => {
+                remove(cx, site, dir);
+                return Err(StepError::Other(format!("{text}: the step did not run")));
+            }
         }
     }
     Ok(())
@@ -220,22 +270,23 @@ impl BoxExec {
 }
 
 /// The Box user's home, read from the environment of a process on the Box.
-fn box_home(cx: &Cx, site: &Site<'_>) -> Result<BoxPath, String> {
-    let environ = BoxPath::restore("/proc/self/environ").map_err(|e| e.to_string())?;
+fn box_home(cx: &Cx, site: &Site<'_>) -> Result<BoxPath, StepError> {
+    let other = |m: &str| StepError::Other(m.to_owned());
+    let environ = BoxPath::restore("/proc/self/environ").map_err(|e| other(&e.to_string()))?;
     let text = cx
         .driver()
         .peek_file(site.handle, &environ, site.worktree)
-        .map_err(|e| format!("could not find the Box home: {e}"))?
-        .ok_or("the Box has no process environment")?;
+        .map_err(|e| StepError::from_driver(&e, format!("could not find the Box home: {e}")))?
+        .ok_or_else(|| other("the Box has no process environment"))?;
     let home = text
         .split('\0')
         .find_map(|kv| kv.strip_prefix("HOME="))
-        .ok_or("the Box user has no home directory")?;
-    BoxPath::restore(home).map_err(|e| e.to_string())
+        .ok_or_else(|| other("the Box user has no home directory"))?;
+    BoxPath::restore(home).map_err(|e| other(&e.to_string()))
 }
 
 /// Creates `dir` private and new; fails when the path exists or cannot be made.
-fn create(cx: &Cx, site: &Site<'_>, dir: &BoxPath) -> Result<(), String> {
+fn create(cx: &Cx, site: &Site<'_>, dir: &BoxPath) -> Result<(), StepError> {
     let spec = ExecSpec {
         argv: vec![
             "mkdir".into(),
@@ -256,17 +307,17 @@ fn create(cx: &Cx, site: &Site<'_>, dir: &BoxPath) -> Result<(), String> {
         .exec(site.handle, &spec, Deadline(CLEANUP_DEADLINE))
     {
         Ok(ExecOutcome::Exited { code: 0 }) => Ok(()),
-        Ok(ExecOutcome::Exited { code }) => Err(format!(
+        Ok(ExecOutcome::Exited { code }) => Err(StepError::Other(format!(
             "{} already exists or could not be created on the Box (mkdir exited with code {code})",
             dir.as_str()
-        )),
-        Ok(other) => Err(format!(
+        ))),
+        Ok(other) => Err(StepError::Other(format!(
             "{} could not be created on the Box: mkdir ended with {other:?}",
             dir.as_str()
-        )),
-        Err(e) => Err(format!(
-            "{} could not be created on the Box: {e}",
-            dir.as_str()
+        ))),
+        Err(e) => Err(StepError::from_driver(
+            &e,
+            format!("{} could not be created on the Box: {e}", dir.as_str()),
         )),
     }
 }
