@@ -351,6 +351,18 @@ impl Driver for FakeDriver {
         self.run_batch(handle, connect, steps, host_cwd, deadline)
     }
 
+    fn stream_files(
+        &self,
+        handle: &BoxHandle,
+        dir: &BoxPath,
+        names: &[String],
+        _: &Path,
+        _: Deadline,
+        sink: &mut dyn FnMut(&str, Option<&mut dyn std::io::Read>),
+    ) -> Result<(), DriverError> {
+        self.run_stream(handle, dir, names, sink)
+    }
+
     fn sleep(&self, handle: &BoxHandle, _: Option<&Path>) -> Result<SleepOutcome, DriverError> {
         let mut s = self.st();
         s.note(format!("sleep {}", handle.as_str()));

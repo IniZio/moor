@@ -158,6 +158,9 @@ pub(super) struct Rec {
     connects: Vec<Vec<String>>,
     run_stdout: String,
     run_queue: std::collections::VecDeque<String>,
+    box_files: Vec<(String, Option<Vec<u8>>)>,
+    fail_stream: Option<(usize, DriverError)>,
+    streams: Vec<(BoxHandle, BoxPath, Vec<String>)>,
 }
 
 impl State {
@@ -265,13 +268,96 @@ impl FakeDriver {
                 };
                 let outcome = self.exec(handle, &spec, deadline)?;
                 let mut s = self.st();
-                let stdout = s
-                    .rec
-                    .run_queue
-                    .pop_front()
-                    .unwrap_or_else(|| s.rec.run_stdout.clone());
+                let stdout = if script.contains(".moor/artifacts") {
+                    s.artifact_index.pop_front().unwrap_or_default()
+                } else {
+                    s.rec
+                        .run_queue
+                        .pop_front()
+                        .unwrap_or_else(|| s.rec.run_stdout.clone())
+                };
                 Ok(StepDone::Ran { outcome, stdout })
             }
         }
+    }
+}
+
+impl FakeDriver {
+    /// A regular file `name` in the Box that `stream_files` can stream.
+    pub(crate) fn box_file(self, name: &str, bytes: &[u8]) -> Self {
+        self.put_box_file(name, bytes);
+        self
+    }
+
+    /// Adds or replaces the streamable file `name`, even mid-run.
+    pub(crate) fn put_box_file(&self, name: &str, bytes: &[u8]) {
+        self.set_box_entry(name, Some(bytes.to_vec()));
+    }
+
+    /// An entry `name` that `stream_files` hands over as a non-regular file.
+    pub(crate) fn box_special(self, name: &str) -> Self {
+        self.set_box_entry(name, None);
+        self
+    }
+
+    fn set_box_entry(&self, name: &str, bytes: Option<Vec<u8>>) {
+        let mut s = self.st();
+        s.rec.box_files.retain(|(n, _)| n != name);
+        s.rec.box_files.push((name.to_owned(), bytes));
+    }
+
+    /// The next `stream_files` hands over its first `n` available files, then fails once with `err`.
+    pub(crate) fn fail_stream_after(&self, n: usize, err: DriverError) {
+        self.st().rec.fail_stream = Some((n, err));
+    }
+
+    /// Every `stream_files` so far: handle, directory and requested names, in call order.
+    pub(crate) fn streams(&self) -> Vec<(BoxHandle, BoxPath, Vec<String>)> {
+        self.st().rec.streams.clone()
+    }
+
+    /// Streams the configured entries among `names`; `Unsupported` when the Box has none.
+    pub(super) fn run_stream(
+        &self,
+        handle: &BoxHandle,
+        dir: &BoxPath,
+        names: &[String],
+        sink: &mut dyn FnMut(&str, Option<&mut dyn std::io::Read>),
+    ) -> Result<(), DriverError> {
+        let (entries, fail) = {
+            let mut s = self.st();
+            s.note(format!("stream_files {}", handle.as_str()));
+            s.rec
+                .streams
+                .push((handle.clone(), dir.clone(), names.to_vec()));
+            if !s.live.iter().any(|h| h == handle.as_str()) {
+                return Err(DriverError::NotFound);
+            }
+            if s.rec.box_files.is_empty() {
+                return Err(DriverError::Unsupported("streaming files"));
+            }
+            let entries: Vec<_> = names
+                .iter()
+                .filter_map(|n| {
+                    let (_, b) = s.rec.box_files.iter().find(|(f, _)| f == n)?;
+                    Some((n.clone(), b.clone()))
+                })
+                .collect();
+            (entries, s.rec.fail_stream.take())
+        };
+        let limit = fail.as_ref().map_or(usize::MAX, |(n, _)| *n);
+        for (i, (name, bytes)) in entries.iter().enumerate() {
+            if i >= limit {
+                break;
+            }
+            match bytes {
+                Some(b) => {
+                    let mut r: &[u8] = b;
+                    sink(name, Some(&mut r));
+                }
+                None => sink(name, None),
+            }
+        }
+        fail.map_or(Ok(()), |(_, e)| Err(e))
     }
 }

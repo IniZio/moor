@@ -1,8 +1,8 @@
 //! Artifact versions kept per Box; contents live as files, rows hold the path.
 
-use std::fs::{self, DirBuilder, OpenOptions, Permissions};
-use std::io::{self, Write};
-use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
+use std::fs::{self, DirBuilder, Permissions};
+use std::io;
+use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 use moor_core::artifact::{content_type, kind_of, valid_name};
@@ -10,7 +10,6 @@ use moor_core::domain::event::Event;
 use moor_core::seam::clock::Ts;
 use moor_core::BoxId;
 use rusqlite::{params, OptionalExtension, Row, Transaction, TransactionBehavior};
-use sha2::{Digest, Sha256};
 
 use super::{Store, StoreError};
 
@@ -51,6 +50,8 @@ pub(crate) struct ArtifactRow {
 impl Store {
     /// Stores `bytes` as the next version of `name`, under `dir/<box id>/v<version>/<name>`.
     /// Returns None and writes nothing when the latest stored version has the same digest.
+    /// This is the in-memory form tests use; the collect path stages files and moves them.
+    #[cfg(test)]
     pub(crate) fn add_artifact(
         &self,
         box_id: BoxId,
@@ -58,13 +59,70 @@ impl Store {
         bytes: &[u8],
         dir: &Path,
     ) -> Result<Option<ArtifactRow>, StoreError> {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+
+        use sha2::{Digest, Sha256};
+
+        let contents = Contents {
+            sha256: format!("{:x}", Sha256::digest(bytes)),
+            size: bytes.len() as u64,
+        };
+        self.add_version(box_id, name, dir, contents, |file| {
+            fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o600)
+                .open(file)?
+                .write_all(bytes)?;
+            fs::set_permissions(file, Permissions::from_mode(0o600))
+        })
+    }
+
+    /// Stores the regular file at `staged` as the next version of `name` by moving it under
+    /// `dir/<box id>/v<version>/<name>`; `sha256` is its digest, already checked by the caller.
+    /// Returns None and leaves `staged` in place when the latest stored version has the same digest.
+    pub(crate) fn add_artifact_staged(
+        &self,
+        box_id: BoxId,
+        name: &str,
+        staged: &Path,
+        sha256: &str,
+        dir: &Path,
+    ) -> Result<Option<ArtifactRow>, StoreError> {
+        let meta = fs::symlink_metadata(staged)?;
+        if !meta.file_type().is_file() {
+            return Err(StoreError::Io(io::Error::other(format!(
+                "{} is not a regular file",
+                staged.display()
+            ))));
+        }
+        let contents = Contents {
+            sha256: sha256.to_owned(),
+            size: meta.len(),
+        };
+        self.add_version(box_id, name, dir, contents, |file| {
+            move_private(staged, file)
+        })
+    }
+
+    /// Records the next version of `name` unless the digest matches the latest one, calling
+    /// `place` to put the contents at the version's path; `place` runs inside the transaction.
+    fn add_version(
+        &self,
+        box_id: BoxId,
+        name: &str,
+        dir: &Path,
+        contents: Contents,
+        place: impl FnOnce(&Path) -> io::Result<()>,
+    ) -> Result<Option<ArtifactRow>, StoreError> {
+        let Contents { sha256, size } = contents;
         if !valid_name(name) {
             return Err(StoreError::Io(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 format!("invalid artifact name `{name}`"),
             )));
         }
-        let sha256 = format!("{:x}", Sha256::digest(bytes));
         let now = self.now();
         let mut conn = self.writer()?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -89,12 +147,12 @@ impl Store {
             .recursive(true)
             .mode(0o700)
             .create(&version_dir)?;
-        write_private(&file, bytes)?;
+        place(&file)?;
         let fresh = Fresh {
             box_id,
             name,
             version,
-            size: bytes.len() as u64,
+            size,
             sha256,
             path: file.to_string_lossy().into_owned(),
             now,
@@ -128,6 +186,14 @@ impl Store {
         let conn = self.reader()?;
         latest_in(&conn, box_id)
     }
+}
+
+/// Digest and size of the bytes of a version.
+struct Contents {
+    /// Lowercase hex digest.
+    sha256: String,
+    /// Size in bytes.
+    size: u64,
 }
 
 /// A version about to be recorded.
@@ -250,15 +316,19 @@ fn clear_stale(file: &Path) -> io::Result<()> {
     }
 }
 
-/// Creates `file` new, readable by the owner only, and writes `bytes` to it.
-fn write_private(file: &Path, bytes: &[u8]) -> io::Result<()> {
-    OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .open(file)?
-        .write_all(bytes)?;
-    fs::set_permissions(file, Permissions::from_mode(0o600))
+/// Moves the regular file `from` to the new path `to`, readable by the owner only.
+///
+/// Falls back to copy and remove when the two paths are on different filesystems.
+fn move_private(from: &Path, to: &Path) -> io::Result<()> {
+    match fs::rename(from, to) {
+        Ok(()) => {}
+        Err(e) if e.kind() == io::ErrorKind::CrossesDevices => {
+            fs::copy(from, to)?;
+            fs::remove_file(from)?;
+        }
+        Err(e) => return Err(e),
+    }
+    fs::set_permissions(to, Permissions::from_mode(0o600))
 }
 
 /// Map an `artifacts` row selected in `COLUMNS` order.
