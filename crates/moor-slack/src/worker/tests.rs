@@ -192,7 +192,22 @@ fn second_mention_in_thread_names_the_bound_box() {
         panic!("no reply: {again:?}");
     };
     assert_eq!(thread, "10.5");
-    assert!(text.contains("slack-10-5"), "{text}");
+    assert!(text.contains("already runs Box `slack-10-5`"), "{text}");
+}
+
+#[test]
+fn second_mention_while_the_start_is_unconfirmed_says_it_is_still_starting() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = db(dir.path());
+    let row = recorded_start(&db);
+    let again = record_one(&db, &mention("Ev2", "U1", "C1", "11.0", Some("10.5")));
+    let Some(Job::Reply { thread, text, .. }) = again else {
+        panic!("no reply: {again:?}");
+    };
+    assert_eq!(thread, "10.5");
+    assert!(text.contains("`slack-10-5` is still starting"), "{text}");
+    assert!(!text.contains("runs"), "{text}");
+    assert_eq!(db.thread("C1", "10.5").unwrap(), Some(row));
 }
 
 #[test]
