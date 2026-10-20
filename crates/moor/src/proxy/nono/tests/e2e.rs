@@ -224,11 +224,11 @@ fn get(agent: &Agent, url: &str) -> Result<u16, String> {
 
 /// Sink that records calls as text.
 #[derive(Default)]
-struct Recorder(Mutex<Vec<String>>);
+pub(super) struct Recorder(Mutex<Vec<String>>);
 
 impl Recorder {
     /// Recorded calls.
-    fn calls(&self) -> Vec<String> {
+    pub(super) fn calls(&self) -> Vec<String> {
         self.0
             .lock()
             .unwrap_or_else(PoisonError::into_inner)

@@ -3,6 +3,7 @@
 mod chain;
 mod e2e;
 mod passthrough;
+mod uploads;
 pub(crate) mod upstream;
 
 use moor_core::config::proxy::{EndpointRule, ResolvedInject, ResolvedRule};
