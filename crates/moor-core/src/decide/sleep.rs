@@ -6,33 +6,33 @@ use crate::domain::box_state::BoxLifecycle;
 use crate::domain::session_state::SessionState;
 use crate::seam::clock::Ts;
 
-/// What auto-sleep can observe about a Task.
+/// What auto-sleep can observe about a Box.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SleepFacts {
     /// The Box lifecycle state.
     pub lifecycle: BoxLifecycle,
     /// The state of the primary Session.
     pub session: SessionState,
-    /// When the Task last became Idle, if known.
+    /// When the Box last became Idle, if known.
     pub idle_since: Option<Ts>,
     /// The current time.
     pub now: Ts,
-    /// How long a Task must stay Idle before it sleeps.
+    /// How long a Box must stay Idle before it sleeps.
     pub after: Duration,
 }
 
 /// Outcome of one auto-sleep check.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SleepVerdict {
-    /// The Task has been Idle long enough to sleep.
+    /// The Box has been Idle long enough to sleep.
     Due,
-    /// The Task is Idle but not for long enough, or its idle time is unknown.
+    /// The Box is Idle but not for long enough, or its idle time is unknown.
     NotYet,
-    /// The Task is not Idle.
+    /// The Box is not Idle.
     NotIdle,
 }
 
-/// Decides auto-sleep: only an Idle Task is due, once `now - idle_since >= after`.
+/// Decides auto-sleep: only an Idle Box is due, once `now - idle_since >= after`.
 /// A clock that went backwards is never due.
 #[must_use]
 pub fn sleep_due(f: &SleepFacts) -> SleepVerdict {

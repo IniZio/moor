@@ -3,12 +3,12 @@
 
 use moor_core::config::Flags;
 use moor_core::decide::intent::setup_dead;
+use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, IntentChange};
 use moor_core::domain::run::SyncMode;
 use moor_core::domain::session_state::SessionInput;
-use moor_core::domain::task::SetupOutcome;
 use moor_core::Warning;
 use std::path::Path;
 
@@ -20,19 +20,19 @@ use crate::ops::common::boxwork::{self, BoxWork};
 use crate::ops::common::facts::resolved;
 use crate::ops::common::setup;
 use crate::ops::common::view::rfc3339;
-use crate::store::{Store, TaskRow};
+use crate::store::{BoxRow, Store};
 
-/// Decides whether a start syncs the host checkout into the Task's existing Box.
+/// Decides whether a start syncs the host checkout into the existing Box.
 ///
 /// A sync resets the Box checkout to the host's: HEAD, branches and remote-tracking refs move
-/// even when every commit is pushed. A Task that has had an agent session is therefore synced
+/// even when every commit is pushed. A Box that has had an agent session is therefore synced
 /// only when the Box holds no work that exists nowhere else, or has no git checkout at all
 /// (an earlier sync failed); otherwise the sync is skipped with a warning. While an agent session
 /// is live no sync is made at all: the agent may be writing files in the checkout.
 pub(super) fn rerun_sync(
     cx: &Cx,
     store: &Store,
-    row: &TaskRow,
+    row: &BoxRow,
     gates: &ResyncGates,
 ) -> Result<SyncMode, CommandError> {
     if (gates.agent_live)()? {
@@ -85,7 +85,7 @@ pub(crate) struct ResyncGates<'a> {
 pub(super) fn resync(
     cx: &Cx,
     store: &Store,
-    row: &TaskRow,
+    row: &BoxRow,
     trusted: bool,
     gates: &ResyncGates,
 ) -> Result<(), CommandError> {
@@ -125,7 +125,7 @@ pub(super) fn resync(
 pub(super) fn note_setup_not_rerun(
     cx: &Cx,
     store: &Store,
-    row: &TaskRow,
+    row: &BoxRow,
 ) -> Result<(), CommandError> {
     if row.boxed.as_ref().map(|b| b.state) != Some(BoxState::Ready) {
         return Ok(());
@@ -151,7 +151,7 @@ pub(super) fn note_setup_not_rerun(
 }
 
 /// Records a dead setup as failed, as a failed setup run would, without running anything.
-fn record_interrupted(cx: &Cx, store: &Store, row: &TaskRow) -> Result<(), CommandError> {
+fn record_interrupted(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
     let line = "setup was interrupted".to_owned();
     let mut done = Decision::new(row.id);
     if row.lifecycle == BoxLifecycle::SettingUp {

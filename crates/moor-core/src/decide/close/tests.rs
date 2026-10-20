@@ -11,10 +11,10 @@ use crate::name::BoxId;
 use BoxState as B;
 use ReleaseResult as R;
 
-/// Clean facts for a working task with a Ready Box.
+/// Clean facts for a working Box with a Ready lifecycle.
 fn facts() -> CloseFacts {
     CloseFacts {
-        task: BoxId::new(7),
+        box_id: BoxId::new(7),
         lifecycle: BoxLifecycle::Ready,
         session: SessionState::Working,
         box_state: Some(B::Ready),
@@ -37,7 +37,7 @@ fn box_with_unsaved_work_is_refused_with_recovery_commands() {
     assert_eq!(
         err,
         Refusal::UnsavedInBox {
-            task: "fix-bug".to_owned(),
+            name: "fix-bug".to_owned(),
             branch: "moor/fix-bug".to_owned(),
             ahead: 2,
             dirty: 3,
@@ -190,7 +190,7 @@ fn refusal_text_suggests_force_and_names_no_driver() {
 }
 
 #[test]
-fn closed_and_rejected_tasks_are_refused() {
+fn closed_and_rejected_boxes_are_refused() {
     for lifecycle in [BoxLifecycle::Closed, BoxLifecycle::Rejected] {
         let f = CloseFacts {
             lifecycle,
@@ -265,7 +265,7 @@ fn deleted_and_already_gone_mark_the_box_deleted() {
 }
 
 #[test]
-fn failed_release_of_a_live_box_keeps_the_task_open() {
+fn failed_release_of_a_live_box_keeps_the_box_open() {
     for b in [B::Ready, B::Asleep] {
         let v = release_outcome(BoxId::new(7), b, R::Failed);
         assert!(!v.closes && v.decision.is_none() && v.warning.is_none());

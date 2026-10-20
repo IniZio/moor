@@ -1,4 +1,4 @@
-//! Tests for the persisted per-Task CA.
+//! Tests for the persisted per-Box CA.
 
 use std::os::unix::fs::PermissionsExt;
 
@@ -108,14 +108,14 @@ fn debug_shows_no_key_or_cert() {
 }
 
 #[test]
-fn preloaded_round_trips_and_names_the_task() {
+fn preloaded_round_trips_and_names_the_box() {
     let state = tempfile::tempdir().unwrap();
     let ca = load_or_create(state.path(), BoxId::new(7)).unwrap();
     let pre = ca.preloaded();
     assert_eq!(pre.cert_pem, ca.cert_pem());
     let rebuilt = EphemeralCa::from_existing(&pre.key_der, &pre.cert_pem).unwrap();
     assert_eq!(rebuilt.cert_pem(), ca.cert_pem());
-    let cn = b"moor task 7";
+    let cn = b"moor box 7";
     let der = rcgen_free_der(ca.cert_pem());
     assert!(der.windows(cn.len()).any(|w| w == cn));
 }

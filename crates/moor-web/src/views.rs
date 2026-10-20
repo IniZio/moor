@@ -116,11 +116,11 @@ fn repos(client: &Client) -> HttpResponse {
 
 /// `GET /boxes/{name}`.
 fn detail(client: &Client, name: &str) -> HttpResponse {
-    let Ok(task) = BoxName::parse_allow_bare(name) else {
+    let Ok(box_name) = BoxName::parse_allow_bare(name) else {
         return HttpResponse::text("400 Bad Request", "bad box name");
     };
     let show = Request::Show(ShowReq {
-        task: Some(task),
+        box_name: Some(box_name),
         events: Some(BOX_EVENTS),
         agent: true,
         reports: false,
@@ -128,7 +128,7 @@ fn detail(client: &Client, name: &str) -> HttpResponse {
         pane: false,
     });
     match call(client, show) {
-        Ok(v) => json_ok(&json!({"task": field(&v, "task"), "events": field(&v, "events")})),
+        Ok(v) => json_ok(&json!({"box": field(&v, "box"), "events": field(&v, "events")})),
         Err(resp) => resp,
     }
 }
@@ -139,8 +139,8 @@ struct Source<'a> {
     children: HashMap<i64, Vec<&'a Value>>,
     /// Live Session ids.
     live: HashSet<i64>,
-    /// Task views by Box name.
-    tasks: HashMap<&'a str, &'a Value>,
+    /// Box views by Box name.
+    boxes: HashMap<&'a str, &'a Value>,
     /// Repo urls by name.
     urls: HashMap<&'a str, &'a str>,
     /// Request rows by root Session id.
@@ -167,7 +167,7 @@ impl Source<'_> {
     /// One Session with its descendants; `seen` stops cycles.
     fn node(&self, session: &Value, seen: &mut HashSet<i64>) -> Value {
         let id = id_of(session);
-        let task = text(session, "box").and_then(|b| self.tasks.get(b).copied());
+        let view = text(session, "box").and_then(|b| self.boxes.get(b).copied());
         let mut kids: Vec<&Value> = self.children.get(&id).cloned().unwrap_or_default();
         kids.sort_by_key(|k| order(k));
         let mut children = Vec::new();
@@ -180,12 +180,12 @@ impl Source<'_> {
             "session": id,
             "parent": field(session, "parent"),
             "state": field(session, "state"),
-            "box": field(session, "box"),
+            "name": field(session, "box"),
             "workdir": field(session, "workdir"),
             "ordinal": field(session, "ordinal"),
             "request": self.requests.get(&id).map(|r| request_json(r)),
-            "task": task.map(|t| self.task(t)),
-            "agent": task.and_then(|t| t.get("agent")).map(|a| json!({
+            "box": view.map(|t| self.box_summary(t)),
+            "agent": view.and_then(|t| t.get("agent")).map(|a| json!({
                 "state": field(a, "state"),
                 "question": field(a, "question"),
                 "options": field(a, "options"),
@@ -194,8 +194,8 @@ impl Source<'_> {
         })
     }
 
-    /// The task summary the page shows.
-    fn task(&self, t: &Value) -> Value {
+    /// The Box summary the page shows.
+    fn box_summary(&self, t: &Value) -> Value {
         let repo = text(t, "repo");
         let url = repo.and_then(|r| self.urls.get(r).copied());
         json!({
@@ -206,7 +206,7 @@ impl Source<'_> {
             "lifecycle": field(t, "lifecycle"),
             "session_state": field(t, "session_state"),
             "goal": field(t, "goal"),
-            "box_state": t.get("box").map_or(Value::Null, |b| field(b, "state")),
+            "box_state": t.get("driver").map_or(Value::Null, |b| field(b, "state")),
         })
     }
 }
@@ -217,7 +217,7 @@ fn tree(client: &Client, db: &Mutex<Db>) -> HttpResponse {
     let show = sessions
         .and_then(|s| {
             let req = Request::Show(ShowReq {
-                task: None,
+                box_name: None,
                 events: None,
                 agent: true,
                 reports: false,
@@ -227,7 +227,7 @@ fn tree(client: &Client, db: &Mutex<Db>) -> HttpResponse {
             Ok((s, call(client, req)?))
         })
         .and_then(|(s, t)| Ok((s, t, call(client, Request::Repos(ReposReq {}))?)));
-    let (sessions, tasks, repos) = match show {
+    let (sessions, boxes, repos) = match show {
         Ok(all) => all,
         Err(resp) => return resp,
     };
@@ -236,18 +236,18 @@ fn tree(client: &Client, db: &Mutex<Db>) -> HttpResponse {
         Ok(rows) => rows,
         Err(e) => return HttpResponse::text("500 Internal Server Error", e.to_string()),
     };
-    let stranded = stranded(client, &sessions, &tasks, &rows);
-    json_ok(&json!({"roots": roots(&sessions, &tasks, &repos, &rows, &stranded)}))
+    let stranded = stranded(client, &sessions, &boxes, &rows);
+    json_ok(&json!({"roots": roots(&sessions, &boxes, &repos, &rows, &stranded)}))
 }
 
-/// Whether a task view is for a Box that is still open.
-fn is_open(task: &Value) -> bool {
-    !matches!(text(task, "lifecycle"), Some("closed" | "rejected"))
+/// Whether a Box view is for a Box that is still open.
+fn is_open(view: &Value) -> bool {
+    !matches!(text(view, "lifecycle"), Some("closed" | "rejected"))
 }
 
 /// Ended child Sessions of open requests whose Box is still open and has no live Session.
-fn stranded(client: &Client, sessions: &Value, tasks: &Value, rows: &[RequestRow]) -> Vec<Value> {
-    let open: HashSet<i64> = items(tasks, "tasks")
+fn stranded(client: &Client, sessions: &Value, boxes: &Value, rows: &[RequestRow]) -> Vec<Value> {
+    let open: HashSet<i64> = items(boxes, "boxes")
         .iter()
         .filter(|t| is_open(t))
         .filter_map(|t| t.get("id").and_then(Value::as_i64))
@@ -292,7 +292,7 @@ fn stranded(client: &Client, sessions: &Value, tasks: &Value, rows: &[RequestRow
 /// The root nodes: live roots, then request rows that are no longer live.
 fn roots(
     sessions: &Value,
-    tasks: &Value,
+    boxes: &Value,
     repos: &Value,
     rows: &[RequestRow],
     stranded: &[Value],
@@ -315,7 +315,7 @@ fn roots(
     let src = Source {
         children,
         live,
-        tasks: items(tasks, "tasks")
+        boxes: items(boxes, "boxes")
             .iter()
             .filter(|t| is_open(t))
             .filter_map(|t| Some((text(t, "name")?, t)))
@@ -340,7 +340,7 @@ fn roots(
 fn gone(row: &RequestRow, src: &Source, seen: &mut HashSet<i64>) -> Value {
     let mut node = Map::new();
     node.insert("session".into(), json!(row.root_session.get()));
-    for key in ["parent", "box", "workdir", "ordinal", "task", "agent"] {
+    for key in ["parent", "name", "workdir", "ordinal", "box", "agent"] {
         node.insert(key.into(), Value::Null);
     }
     node.insert("state".into(), json!("gone"));

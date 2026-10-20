@@ -42,7 +42,7 @@ pub(super) fn all() -> impl Iterator<Item = &'static Shape> {
 pub(super) const PAGE_INFO: &[&str] =
     &["hasNextPage", "hasPreviousPage", "startCursor", "endCursor"];
 
-/// Context of the Task repo and of objects found by ID.
+/// Context of the Box repo and of objects found by ID.
 pub(super) const REPO: &str = "repo";
 /// Context of a mutation payload.
 pub(super) const PAYLOAD: &str = "payload";

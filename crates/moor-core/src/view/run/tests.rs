@@ -8,10 +8,10 @@ use crate::domain::run::SyncMode;
 use crate::domain::session_state::SessionState;
 use crate::name::RunId;
 use crate::request::WaitFor;
-use crate::view::TaskView;
+use crate::view::BoxView;
 
-fn task() -> TaskView {
-    TaskView {
+fn sample_box() -> BoxView {
+    BoxView {
         id: 1,
         name: "t".into(),
         repo: "r".into(),
@@ -24,7 +24,7 @@ fn task() -> TaskView {
         branch: None,
         worktree: None,
         workspace: None,
-        r#box: None,
+        driver: None,
         agent: None,
         run: None,
         updated_at: "2026-01-01T00:00:00Z".into(),
@@ -79,9 +79,9 @@ fn wait_value_shape() {
         exit: None,
         interrupted: false,
     };
-    let task_json = serde_json::to_value(task()).unwrap();
+    let box_json = serde_json::to_value(sample_box()).unwrap();
     let v = WaitValue {
-        task: task(),
+        boxed: sample_box(),
         timed_out: false,
         waited_ms: 5,
         wait_for: WaitFor::Run,
@@ -89,7 +89,7 @@ fn wait_value_shape() {
     };
     assert_eq!(
         serde_json::to_value(&v).unwrap(),
-        json!({"task": task_json, "timed_out": false, "waited_ms": 5, "for": "run",
+        json!({"box": box_json, "timed_out": false, "waited_ms": 5, "for": "run",
                "run": {"id": 3, "argv": ["make"], "in_flight": true, "exit": null,
                        "interrupted": false}})
     );
@@ -97,9 +97,9 @@ fn wait_value_shape() {
 
 #[test]
 fn wait_value_without_run_is_null() {
-    let task_json = serde_json::to_value(task()).unwrap();
+    let box_json = serde_json::to_value(sample_box()).unwrap();
     let v = WaitValue {
-        task: task(),
+        boxed: sample_box(),
         timed_out: true,
         waited_ms: 0,
         wait_for: WaitFor::Idle,
@@ -107,7 +107,7 @@ fn wait_value_without_run_is_null() {
     };
     assert_eq!(
         serde_json::to_value(&v).unwrap(),
-        json!({"task": task_json, "timed_out": true, "waited_ms": 0, "for": "idle", "run": null})
+        json!({"box": box_json, "timed_out": true, "waited_ms": 0, "for": "idle", "run": null})
     );
 }
 

@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use moor_core::domain::decision::{Decision, NewTask};
+use moor_core::domain::decision::{Decision, NewBox};
 use moor_core::seam::clock::{Clock as _, Ts};
 use moor_core::seam::proc::Tool;
 use moor_core::seam::proxy_host::{ProxyHost, ProxyHostError, ProxySpec, ProxyStatus};
@@ -37,27 +37,27 @@ pub(super) struct Fx {
     pub(super) rng: Arc<FakeRng>,
     /// The adapter under test.
     pub(super) sup: DetachedSupervisor,
-    /// The Task every test works on.
+    /// The Box every test works on.
     pub(super) id: BoxId,
 }
 
 /// Simulates a healthy supervisor for each spawned daemon: it takes the lease on the
-/// task named in the daemon's arguments and marks the proxy ready.
+/// Box named in the daemon's arguments and marks the proxy ready.
 pub(super) fn supervise(state: PathBuf) -> impl Fn(&DaemonCall) + Send + Sync + 'static {
     move |d| {
         let clock = Arc::new(FakeClock::new(Ts::from_millis(1000)));
         let store = Store::open(&state.join(STORE_FILE), clock).unwrap();
-        let task = BoxId::new(d.call.args.get(2).unwrap().parse().unwrap());
+        let box_id = BoxId::new(d.call.args.get(2).unwrap().parse().unwrap());
         let owner = "fake-supervisor";
-        store.claim_lease(task, owner, LEASE).unwrap();
-        let row = store.proxy(task).unwrap().unwrap();
+        store.claim_lease(box_id, owner, LEASE).unwrap();
+        let row = store.proxy(box_id).unwrap().unwrap();
         let ports = ProxyPorts {
             box_port: row.box_port,
             host_port: HOST_PORT,
         };
         let applied = store
             .mark_ready(
-                task,
+                box_id,
                 owner,
                 ports,
                 ReadyProc {
@@ -86,12 +86,12 @@ pub(super) fn bare() -> Fx {
     let rng = Arc::new(FakeRng::default());
     let store = Store::open(&dir.path().join(STORE_FILE), clock.clone()).unwrap();
     let id = store
-        .apply(Decision::insert(NewTask {
+        .apply(Decision::insert(NewBox {
             name: BoxName::parse_allow_bare("t").unwrap(),
             repo: "r".into(),
         }))
         .unwrap()
-        .task;
+        .box_id;
     let sup = DetachedSupervisor::new(
         proc.clone(),
         clock.clone(),
@@ -113,10 +113,10 @@ impl Fx {
     /// The spec the adapter is asked to ensure.
     pub(super) fn spec(&self) -> ProxySpec {
         ProxySpec {
-            task: self.id,
+            box_id: self.id,
             box_handle: None,
             host_cwd: PathBuf::from("/work"),
-            task_repo: None,
+            box_repo: None,
             rules: Vec::new(),
         }
     }
@@ -139,12 +139,12 @@ impl Fx {
             .unwrap();
     }
 
-    /// Whether the Task still has a proxy row.
+    /// Whether the Box still has a proxy row.
     pub(super) fn has_row(&self) -> bool {
         self.store.proxy(self.id).unwrap().is_some()
     }
 
-    /// The nonce stored on the Task's row, as text.
+    /// The nonce stored on the Box's row, as text.
     fn nonce_text(&self) -> String {
         let row = self.store.proxy(self.id).unwrap().unwrap();
         String::from_utf8(row.nonce.expose().to_vec()).unwrap()
@@ -183,7 +183,7 @@ fn the_first_ensure_spawns_one_supervisor_and_returns_its_address() {
     assert_eq!(d.log, log_path(f.dir.path(), f.id));
     // Creating the log file is the spawner's job, so it can pick the mode.
     assert!(!d.log.exists());
-    // The directory holding every Task's spec, CA and log is owner-only.
+    // The directory holding every Box's spec, CA and log is owner-only.
     let mode = std::fs::metadata(d.log.parent().unwrap())
         .unwrap()
         .permissions()

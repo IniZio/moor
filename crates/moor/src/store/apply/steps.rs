@@ -2,14 +2,14 @@
 
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput, StepError};
 use moor_core::domain::box_steps;
-use moor_core::domain::decision::{Decision, NewTask, TaskTarget};
+use moor_core::domain::decision::{BoxTarget, Decision, NewBox};
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::seam::clock::Ts;
 use moor_core::BoxId;
 use rusqlite::{params, Transaction};
 
 use super::sql::name_taken;
-use crate::store::{load_task, sessions::live_parent, BoxRow, StoreError};
+use crate::store::{load_box, sessions::live_parent, DriverRow, StoreError};
 
 /// The Box and primary Session states a step leaves behind.
 pub(super) type Parts = (BoxLifecycle, SessionState);
@@ -19,7 +19,7 @@ pub(super) struct Stepped {
     /// The Box written.
     pub(super) id: BoxId,
     /// The Box row before the step, if it existed.
-    pub(super) existing: Option<BoxRow>,
+    pub(super) existing: Option<DriverRow>,
     /// What the writer stores.
     pub(super) parts: Parts,
     /// The states before the step; `None` for a fresh Box.
@@ -29,14 +29,10 @@ pub(super) struct Stepped {
 /// Resolve the Box (inserting a new one) and step its lifecycle and primary Session.
 ///
 /// The parts are what the writer stores.
-pub(super) fn step_task(
-    tx: &Transaction<'_>,
-    now: Ts,
-    d: &Decision,
-) -> Result<Stepped, StoreError> {
+pub(super) fn step_box(tx: &Transaction<'_>, now: Ts, d: &Decision) -> Result<Stepped, StoreError> {
     let (l, s) = (d.lifecycle_input.as_ref(), d.session_input.as_ref());
-    match &d.task {
-        TaskTarget::New(new) => {
+    match &d.target {
+        BoxTarget::New(new) => {
             let Some(BoxLifecycleInput::Insert) = l else {
                 return Err(StoreError::Invalid("new Box needs the insert input".into()));
             };
@@ -44,7 +40,7 @@ pub(super) fn step_task(
                 BoxLifecycle::initial(&BoxLifecycleInput::Insert)?,
                 SessionState::initial(&SessionInput::Open)?,
             );
-            let id = insert_task(tx, new, parts.0, d.parent_session, now)?;
+            let id = insert_box(tx, new, parts.0, d.parent_session, now)?;
             Ok(Stepped {
                 id,
                 existing: None,
@@ -52,8 +48,8 @@ pub(super) fn step_task(
                 from: None,
             })
         }
-        TaskTarget::Existing(id) => {
-            let row = load_task(tx, *id)?.ok_or(StoreError::NotFound(*id))?;
+        BoxTarget::Existing(id) => {
+            let row = load_box(tx, *id)?.ok_or(StoreError::NotFound(*id))?;
             let (lifecycle, session) = (row.lifecycle, row.session);
             let parts = if l.is_some() || s.is_some() {
                 let others = read_others(tx, *id)?;
@@ -87,9 +83,9 @@ fn read_others(tx: &Transaction<'_>, id: BoxId) -> Result<Vec<SessionState>, Sto
 }
 
 /// Insert a fresh Box row with its primary Session.
-pub(in crate::store) fn insert_task(
+pub(in crate::store) fn insert_box(
     tx: &Transaction<'_>,
-    new: &NewTask,
+    new: &NewBox,
     lifecycle: BoxLifecycle,
     parent_session: Option<i64>,
     now: Ts,

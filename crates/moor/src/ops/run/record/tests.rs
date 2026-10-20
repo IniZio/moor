@@ -20,7 +20,7 @@ fn record_req(argv: &[&str]) -> RunReq {
     r
 }
 
-/// A Ready Task whose worktree is clean.
+/// A Ready Box whose worktree is clean.
 fn clean() -> Fx {
     clean_with(FakeDriver::new())
 }

@@ -52,7 +52,7 @@ github-uploads:
   hosts: [uploads.github.com]
   credential: forge
   # The allow path cannot name the repo (the proxy strips query strings), so
-  # a Task with no repo gets no upload rule.
+  # a Box with no repo gets no upload rule.
   requires_repo: true
   inject:
     header: Authorization

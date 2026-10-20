@@ -1,4 +1,4 @@
-//! Report versions kept per task; contents live as files, rows hold the path.
+//! Report versions kept per box; contents live as files, rows hold the path.
 
 use std::fs::{self, DirBuilder, OpenOptions, Permissions};
 use std::io::{self, Write};
@@ -11,13 +11,13 @@ use rusqlite::{params, OptionalExtension, Row, TransactionBehavior};
 
 use super::{Store, StoreError};
 
-/// One stored version of a Task's Report.
+/// One stored version of a Box's Report.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ReportRow {
     /// Row id.
     pub(crate) id: i64,
-    /// Owning task.
-    pub(crate) task: BoxId,
+    /// Owning box.
+    pub(crate) box_id: BoxId,
     /// Report kind; versions are counted per kind.
     pub(crate) kind: String,
     /// Version number, starting at 1.
@@ -31,11 +31,11 @@ pub(crate) struct ReportRow {
 }
 
 impl Store {
-    /// Stores `content` as the next version of `kind`, under `dir/<task id>/<kind>.v<version>.md`.
+    /// Stores `content` as the next version of `kind`, under `dir/<box id>/<kind>.v<version>.md`.
     /// Returns None and writes nothing when the latest stored version holds the same content.
     pub(crate) fn add_report(
         &self,
-        task: BoxId,
+        box_id: BoxId,
         kind: &str,
         content: &str,
         dir: &Path,
@@ -53,7 +53,7 @@ impl Store {
             .query_row(
                 "SELECT version, path FROM reports WHERE box = ? AND kind = ? \
                  ORDER BY version DESC LIMIT 1",
-                params![task.get(), kind],
+                params![box_id.get(), kind],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .optional()?;
@@ -63,19 +63,19 @@ impl Store {
             }
         }
         let version = latest.map_or(1, |(v, _)| v + 1);
-        let task_dir = dir.join(task.get().to_string());
+        let box_dir = dir.join(box_id.get().to_string());
         DirBuilder::new()
             .recursive(true)
             .mode(0o700)
-            .create(&task_dir)?;
-        let file = task_dir.join(format!("{kind}.v{version}.md"));
+            .create(&box_dir)?;
+        let file = box_dir.join(format!("{kind}.v{version}.md"));
         let path = file.to_string_lossy().into_owned();
         write_private(&file, content)?;
         let stored = tx
             .execute(
                 "INSERT INTO reports (box, kind, version, path, title, created_at) \
                  VALUES (?, ?, ?, ?, NULL, ?)",
-                params![task.get(), kind, version, path, now.as_millis()],
+                params![box_id.get(), kind, version, path, now.as_millis()],
             )
             .map(|_| tx.last_insert_rowid())
             .and_then(|id| tx.commit().map(|()| id));
@@ -89,7 +89,7 @@ impl Store {
         drop(conn);
         Ok(Some(ReportRow {
             id,
-            task,
+            box_id,
             kind: kind.to_owned(),
             version,
             path,
@@ -98,19 +98,19 @@ impl Store {
         }))
     }
 
-    /// Every stored Report version of the Task, by kind then version.
+    /// Every stored Report version of the Box, by kind then version.
     #[cfg_attr(
         not(test),
         expect(dead_code, reason = "read by show --reports, not yet wired")
     )]
-    pub(crate) fn reports(&self, task: BoxId) -> Result<Vec<ReportRow>, StoreError> {
+    pub(crate) fn reports(&self, box_id: BoxId) -> Result<Vec<ReportRow>, StoreError> {
         let conn = self.reader()?;
         let mut stmt = conn.prepare(
             "SELECT id, box, kind, version, path, title, created_at FROM reports \
              WHERE box = ? ORDER BY kind, version",
         )?;
         let rows = stmt
-            .query_map([task.get()], report_from_row)?
+            .query_map([box_id.get()], report_from_row)?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
     }
@@ -132,7 +132,7 @@ fn write_private(file: &Path, content: &str) -> io::Result<()> {
 fn report_from_row(r: &Row<'_>) -> rusqlite::Result<ReportRow> {
     Ok(ReportRow {
         id: r.get(0)?,
-        task: BoxId::new(r.get(1)?),
+        box_id: BoxId::new(r.get(1)?),
         kind: r.get(2)?,
         version: r.get(3)?,
         path: r.get(4)?,

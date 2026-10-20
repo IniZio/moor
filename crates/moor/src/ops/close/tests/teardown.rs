@@ -104,7 +104,7 @@ fn failing_teardown_warns_and_still_releases() {
     );
     let v = run(&f.cx, &req(false)).unwrap();
     assert!(v.box_deleted);
-    assert_eq!(v.task.lifecycle, BoxLifecycle::Closed);
+    assert_eq!(v.boxed.lifecycle, BoxLifecycle::Closed);
     let warnings = f.cx.take_warnings();
     assert!(warnings.iter().any(|w| w.code == "teardown_failed"));
 }
@@ -300,7 +300,7 @@ fn invalid_repo_config_warns_and_still_closes_without_teardown() {
     let f = fx_yaml(FakeDriver::new(), "teardown: [\n");
     let v = run(&f.cx, &req(false)).unwrap();
     assert!(v.box_deleted);
-    assert_eq!(v.task.lifecycle, BoxLifecycle::Closed);
+    assert_eq!(v.boxed.lifecycle, BoxLifecycle::Closed);
     assert_eq!(exec_calls(&f), 0);
     assert!(f
         .cx
@@ -311,7 +311,7 @@ fn invalid_repo_config_warns_and_still_closes_without_teardown() {
 
 const BASE_YAML: &str = "teardown: ['echo base']\n";
 
-/// The Task has a base commit holding `base` as its `.moor.yaml`.
+/// The Box has a base commit holding `base` as its `.moor.yaml`.
 pub(super) fn base_has(f: &Fx, base: &str) {
     let fields = Fields {
         base: Field::Set("abc".into()),
@@ -336,7 +336,7 @@ fn changed_moor_yaml_tears_down_with_the_base_copy_and_warns() {
     base_has(&f, BASE_YAML);
     let v = run(&f.cx, &req(false)).unwrap();
     assert!(v.box_deleted);
-    assert_eq!(v.task.lifecycle, BoxLifecycle::Closed);
+    assert_eq!(v.boxed.lifecycle, BoxLifecycle::Closed);
     let spec = only_exec(&f);
     assert!(script_of(&spec).contains("echo base"));
     assert!(!script_of(&spec).contains("rm -rf cache"));

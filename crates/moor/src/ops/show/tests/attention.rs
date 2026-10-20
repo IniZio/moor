@@ -3,14 +3,14 @@
 use std::sync::Arc;
 
 use moor_core::domain::event::Event;
-use moor_core::view::TaskView;
+use moor_core::view::BoxView;
 
 use super::super::run;
 use super::{add, cx, req};
 use crate::cx::Cx;
 use crate::testing::driver::FakeDriver;
 
-/// Record an event for task `a`'s id.
+/// Record an event for Box `a`'s id.
 fn record(cx: &Cx, id: moor_core::BoxId, event: &Event) {
     cx.store().unwrap().record_proxy_event(id, event).unwrap();
 }
@@ -25,7 +25,7 @@ fn limited() -> Event {
 }
 
 /// The attention kind and message of `view`.
-fn first_attention(view: &TaskView) -> (String, String) {
+fn first_attention(view: &BoxView) -> (String, String) {
     let a = view.attention.first().expect("attention");
     (a.kind.clone(), a.message.clone())
 }
@@ -42,11 +42,11 @@ fn rate_limit_shows_in_list_and_detail() {
     );
     let listed = run(&cx, &req(None, None)).unwrap();
     assert_eq!(
-        first_attention(listed.tasks.unwrap().first().unwrap()),
+        first_attention(listed.boxes.unwrap().first().unwrap()),
         want
     );
     let detail = run(&cx, &req(Some("a"), None)).unwrap();
-    assert_eq!(first_attention(&detail.task.unwrap()), want);
+    assert_eq!(first_attention(&detail.boxed.unwrap()), want);
 }
 
 #[test]
@@ -56,7 +56,7 @@ fn rate_limit_serializes_into_json() {
     let id = add(&cx, "a");
     record(&cx, id, &limited());
     let v = run(&cx, &req(Some("a"), None)).unwrap();
-    let json = serde_json::to_value(v.task.unwrap()).unwrap();
+    let json = serde_json::to_value(v.boxed.unwrap()).unwrap();
     assert_eq!(
         json.pointer("/attention/0/kind").unwrap(),
         "agent_rate_limited"
@@ -77,8 +77,8 @@ fn recovery_clears_attention_and_the_json_key() {
         },
     );
     let listed = run(&cx, &req(None, None)).unwrap();
-    assert!(listed.tasks.unwrap().first().unwrap().attention.is_empty());
-    let detail = run(&cx, &req(Some("a"), None)).unwrap().task.unwrap();
+    assert!(listed.boxes.unwrap().first().unwrap().attention.is_empty());
+    let detail = run(&cx, &req(Some("a"), None)).unwrap().boxed.unwrap();
     assert!(detail.attention.is_empty());
     let json = serde_json::to_value(detail).unwrap();
     assert!(json.get("attention").is_none());

@@ -49,7 +49,7 @@ struct NewBody {
     /// Repo to work in.
     repo: String,
     /// Name of the first worker.
-    task: String,
+    name: String,
     /// Goal text; empty means none.
     goal: String,
 }
@@ -59,7 +59,7 @@ struct NewBody {
 #[serde(deny_unknown_fields)]
 struct WorkerBody {
     /// Name of the worker.
-    task: String,
+    name: String,
     /// Goal text; empty means none.
     goal: String,
 }
@@ -90,8 +90,8 @@ fn create(ctx: &StartCtx, body: &[u8]) -> HttpResponse {
         Ok(b) => b,
         Err(msg) => return bad(msg),
     };
-    let task = match name(&b.task) {
-        Ok(task) => task,
+    let box_name = match name(&b.name) {
+        Ok(box_name) => box_name,
         Err(msg) => return bad(msg),
     };
     let key = new_key();
@@ -99,7 +99,7 @@ fn create(ctx: &StartCtx, body: &[u8]) -> HttpResponse {
     let goal = goal(b.goal);
     let job = ctx.jobs.spawn("new request", move |h| {
         let root = open_root(&ctx2, h, &key2, &b.repo)?;
-        let start = start(&ctx2.client, h, &b.repo, root, task, goal)?;
+        let start = start(&ctx2.client, h, &b.repo, root, box_name, goal)?;
         Ok(json!({"key": key2, "root": root, "start": start}))
     });
     accepted(&key, &job)
@@ -111,8 +111,8 @@ fn add_worker(ctx: &StartCtx, key: &str, body: &[u8]) -> HttpResponse {
         Ok(b) => b,
         Err(msg) => return bad(msg),
     };
-    let task = match name(&b.task) {
-        Ok(task) => task,
+    let box_name = match name(&b.name) {
+        Ok(box_name) => box_name,
         Err(msg) => return bad(msg),
     };
     let row = ctx
@@ -130,7 +130,7 @@ fn add_worker(ctx: &StartCtx, key: &str, body: &[u8]) -> HttpResponse {
     }
     let (client, goal) = (ctx.client.clone(), goal(b.goal));
     let job = ctx.jobs.spawn("add worker", move |h| {
-        let start = start(&client, h, &row.repo, row.root_session, task, goal)?;
+        let start = start(&client, h, &row.repo, row.root_session, box_name, goal)?;
         Ok(json!({"key": row.key, "root": row.root_session, "start": start}))
     });
     accepted(key, &job)
@@ -250,7 +250,7 @@ fn start(
     h: &JobHandle,
     repo: &str,
     root: SessionId,
-    task: BoxName,
+    box_name: BoxName,
     goal: Option<String>,
 ) -> Result<Value, JobFailure> {
     call(
@@ -258,7 +258,7 @@ fn start(
         h,
         ("start", "starting the worker"),
         Request::Start(StartReq {
-            name: task,
+            name: box_name,
             goal,
             issue: None,
             worktree: None,
@@ -340,7 +340,7 @@ fn parse<'a, T: Deserialize<'a>>(body: &'a [u8]) -> Result<T, String> {
     serde_json::from_slice(body).map_err(|e| format!("bad json: {e}"))
 }
 
-/// Parses a task name.
+/// Parses a Box name.
 fn name(s: &str) -> Result<BoxName, String> {
     BoxName::parse_allow_bare(s).map_err(|e| e.to_string())
 }

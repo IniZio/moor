@@ -8,13 +8,13 @@ use rusqlite::types::Value;
 use rusqlite::{params, OptionalExtension, Row, TransactionBehavior};
 
 use super::apply::{insert_event, intent_sets, update};
-use super::{load_task, Store, StoreError};
+use super::{load_box, Store, StoreError};
 
 /// A run to record.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct NewRun {
-    /// Owning task.
-    pub(crate) task: BoxId,
+    /// Owning box.
+    pub(crate) box_id: BoxId,
     /// Command line.
     pub(crate) argv: Vec<String>,
     /// Gate name when the run is recorded.
@@ -54,8 +54,8 @@ impl RunOutcome {
 pub(crate) struct RunRow {
     /// Run id.
     pub(crate) id: RunId,
-    /// Owning task.
-    pub(crate) task: BoxId,
+    /// Owning box.
+    pub(crate) box_id: BoxId,
     /// Command line.
     pub(crate) argv: Vec<String>,
     /// Gate name when the run is recorded.
@@ -87,7 +87,7 @@ fn run_from_row(row: &Row<'_>) -> Result<RunRow, StoreError> {
         .transpose()?;
     Ok(RunRow {
         id: RunId::new(row.get("id")?),
-        task: BoxId::new(row.get("box")?),
+        box_id: BoxId::new(row.get("box")?),
         argv: serde_json::from_str(&argv)?,
         record: row.get("record")?,
         sha,
@@ -105,7 +105,7 @@ impl Store {
     /// Record a run start: run row, `Running` intent and `run_started` event.
     pub(crate) fn begin_run(&self, r: NewRun) -> Result<RunId, StoreError> {
         let NewRun {
-            task,
+            box_id,
             argv,
             record,
             sha,
@@ -115,15 +115,15 @@ impl Store {
         let now = self.now();
         let mut conn = self.writer()?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        if load_task(&tx, task)?.is_none() {
-            return Err(StoreError::NotFound(task));
+        if load_box(&tx, box_id)?.is_none() {
+            return Err(StoreError::NotFound(box_id));
         }
         let argv = serde_json::to_string(&argv)?;
         tx.execute(
             "INSERT INTO runs (box, argv, record, sha, sync, pid, started_at) \
              VALUES (?, ?, ?, ?, ?, ?, ?)",
             params![
-                task.get(),
+                box_id.get(),
                 argv,
                 record,
                 sha.as_ref().map(|s| s.as_str().to_owned()),
@@ -136,8 +136,8 @@ impl Store {
         let intent = IntentChange::Set(Intent::Running { run, pid });
         let mut sets = intent_sets(intent, now);
         sets.push(("updated_at", Value::Integer(now.as_millis())));
-        update(&tx, "boxes", "id = ?", &[task.get()], &sets)?;
-        insert_event(&tx, task, &Event::RunStarted { run }, now)?;
+        update(&tx, "boxes", "id = ?", &[box_id.get()], &sets)?;
+        insert_event(&tx, box_id, &Event::RunStarted { run }, now)?;
         tx.commit()?;
         drop(conn);
         Ok(run)
@@ -150,13 +150,13 @@ impl Store {
         let now = self.now();
         let mut conn = self.writer()?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let task: Option<i64> = tx
+        let box_id: Option<i64> = tx
             .query_row("SELECT box FROM runs WHERE id = ?", [id.get()], |r| {
                 r.get(0)
             })
             .optional()?;
-        let task = BoxId::new(
-            task.ok_or_else(|| StoreError::Invalid(format!("unknown run {}", id.get())))?,
+        let box_id = BoxId::new(
+            box_id.ok_or_else(|| StoreError::Invalid(format!("unknown run {}", id.get())))?,
         );
         let changed = tx.execute(
             "UPDATE runs SET finished_at = ?, exit = ?, interrupted = ? \
@@ -172,7 +172,7 @@ impl Store {
             &tx,
             "boxes",
             "id = ? AND intent_kind = 'running' AND intent_run = ?",
-            &[task.get(), id.get()],
+            &[box_id.get(), id.get()],
             &clear,
         )?;
         let ran = Event::Ran {
@@ -181,7 +181,7 @@ impl Store {
             interrupted: out.interrupted,
             error: out.error,
         };
-        insert_event(&tx, task, &ran, now)?;
+        insert_event(&tx, box_id, &ran, now)?;
         tx.commit()?;
         drop(conn);
         Ok(())
@@ -189,8 +189,8 @@ impl Store {
 
     /// Record a run refused before any run row existed: one `ran` event with no run id.
     ///
-    /// Writes no run row and leaves the task's intent untouched.
-    pub(crate) fn refused_run(&self, task: BoxId) -> Result<(), StoreError> {
+    /// Writes no run row and leaves the box's intent untouched.
+    pub(crate) fn refused_run(&self, box_id: BoxId) -> Result<(), StoreError> {
         let now = self.now();
         let mut conn = self.writer()?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -200,20 +200,20 @@ impl Store {
             interrupted: false,
             error: None,
         };
-        insert_event(&tx, task, &ran, now)?;
+        insert_event(&tx, box_id, &ran, now)?;
         tx.commit()?;
         drop(conn);
         Ok(())
     }
 
-    /// The task's run still in flight, judged by `alive` on the runner pid.
+    /// The box's run still in flight, judged by `alive` on the runner pid.
     ///
-    /// Open runs of the task whose runner is gone are finished as interrupted, so callers never
+    /// Open runs of the box whose runner is gone are finished as interrupted, so callers never
     /// see them. Older open runs are finished the same way even when their pid is alive: only one
     /// run can be live under the per-Box lock, so a live pid on an older row is a reused pid.
     pub(crate) fn in_flight_run(
         &self,
-        task: BoxId,
+        box_id: BoxId,
         alive: &dyn Fn(u32) -> bool,
     ) -> Result<Option<RunRow>, StoreError> {
         let open = {
@@ -221,7 +221,7 @@ impl Store {
             let mut stmt = conn.prepare(&format!(
                 "{RUN_SELECT} WHERE box = ? AND finished_at IS NULL ORDER BY id DESC"
             ))?;
-            let rows = stmt.query_and_then([task.get()], run_from_row)?;
+            let rows = stmt.query_and_then([box_id.get()], run_from_row)?;
             rows.collect::<Result<Vec<_>, _>>()?
         };
         let mut found = None;
@@ -235,13 +235,13 @@ impl Store {
         Ok(found)
     }
 
-    /// The task's most recent run, in flight or finished.
-    pub(crate) fn last_run(&self, task: BoxId) -> Result<Option<RunRow>, StoreError> {
+    /// The box's most recent run, in flight or finished.
+    pub(crate) fn last_run(&self, box_id: BoxId) -> Result<Option<RunRow>, StoreError> {
         let conn = self.reader()?;
         let mut stmt = conn.prepare(&format!(
             "{RUN_SELECT} WHERE box = ? ORDER BY id DESC LIMIT 1"
         ))?;
-        let mut rows = stmt.query_and_then([task.get()], run_from_row)?;
+        let mut rows = stmt.query_and_then([box_id.get()], run_from_row)?;
         rows.next().transpose()
     }
 

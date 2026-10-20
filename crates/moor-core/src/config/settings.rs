@@ -28,7 +28,7 @@ pub enum Layer {
     Default,
     /// The agent profile.
     Agent,
-    /// Read from git itself (the effective config for the Task worktree).
+    /// Read from git itself (the effective config for the Box worktree).
     Git,
 }
 
@@ -70,7 +70,7 @@ pub struct Flags {
     pub model: Option<String>,
 }
 
-/// One credential the task may need, with how and where it is defined.
+/// One credential the box may need, with how and where it is defined.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CredPlan {
     /// Credential name.
@@ -87,7 +87,7 @@ pub struct CredPlan {
 
 /// Everything a command needs from config, resolved once.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TaskSettings {
+pub struct BoxSettings {
     /// Agent model: flag > user.
     pub model: Option<Sourced<String>>,
     /// Box provider: user > default; never the repo.
@@ -149,7 +149,7 @@ fn plan_credentials(uc: &UserConfig, repo: &RepoConfig) -> Vec<CredPlan> {
         .collect()
 }
 
-impl TaskSettings {
+impl BoxSettings {
     /// Resolves settings for one command. `repo` is `None` outside a repo.
     #[must_use]
     pub fn resolve(user: &UserConfig, repo: Option<&RepoConfig>, flags: &Flags) -> Self {
@@ -188,7 +188,7 @@ impl TaskSettings {
         }
     }
 
-    /// Credentials the task needs, in name order.
+    /// Credentials the box needs, in name order.
     pub fn used_credentials(&self) -> impl Iterator<Item = &CredPlan> {
         self.credentials.iter().filter(|c| c.used)
     }

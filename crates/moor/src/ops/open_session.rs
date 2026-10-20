@@ -12,29 +12,29 @@ use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::cred_sweep;
 use crate::ops::host_session::refuse_invalid;
 use crate::ops::start::begin_seeded;
-use crate::store::{Store, TaskRow};
+use crate::store::{BoxRow, Store};
 
 /// Run `open-session`.
 ///
 /// # Errors
-/// [`CommandError`] when the Task is unknown, its Box is not Ready, a Session is still live, or
+/// [`CommandError`] when the Box is unknown, its machine is not Ready, a Session is still live, or
 /// the agent could not be launched.
 pub(crate) fn run(cx: &Cx, req: &OpenSessionReq) -> Result<OpenSessionValue, CommandError> {
     let store = cx.store()?;
-    let name = req.task.as_str();
+    let name = req.box_name.as_str();
     let parsed = BoxName::parse_allow_bare(name)
         .map_err(|e| CommandError::new(ErrorKind::Usage, e.to_string()))?;
     let id = store
-        .open_task_by_name(&parsed)?
-        .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no open task {name}")))?
+        .open_box_by_name(&parsed)?
+        .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no open Box {name}")))?
         .id;
     if let Some(parent) = req.parent {
         store.check_parent(parent.get()).map_err(refuse_invalid)?;
     }
     let reload = || {
         store
-            .task(id)?
-            .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no task {name}")))
+            .box_row(id)?
+            .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no Box {name}")))
     };
     check(store, &reload()?, name)?;
     let _held = BoxLock::acquire(
@@ -59,7 +59,7 @@ pub(crate) fn run(cx: &Cx, req: &OpenSessionReq) -> Result<OpenSessionValue, Com
         return Err(CommandError::new(ErrorKind::Failed, message));
     }
     Ok(OpenSessionValue {
-        task: name.to_owned(),
+        box_name: name.to_owned(),
         session: next.id,
         ordinal: next.ordinal,
         pane: store.live_session(id)?.and_then(|s| s.pane),
@@ -67,7 +67,7 @@ pub(crate) fn run(cx: &Cx, req: &OpenSessionReq) -> Result<OpenSessionValue, Com
 }
 
 /// Refuses a Box that is not Ready or whose current Session has not ended.
-fn check(store: &Store, row: &TaskRow, name: &str) -> Result<(), CommandError> {
+fn check(store: &Store, row: &BoxRow, name: &str) -> Result<(), CommandError> {
     if !row
         .boxed
         .as_ref()

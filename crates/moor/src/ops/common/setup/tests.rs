@@ -5,9 +5,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::boxscript::setup::setup_script;
-use moor_core::config::{Flags, TaskSettings, UserConfig};
+use moor_core::config::{BoxSettings, Flags, UserConfig};
+use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::run::SyncMode;
-use moor_core::domain::task::SetupOutcome;
 use moor_core::exec_env::SETUP_LINE_DEADLINE;
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
@@ -50,7 +50,7 @@ fn rig_on(dir: &Path, driver: FakeDriver, clock: Arc<FakeClock>) -> Rig {
     let got = driver
         .acquire(&AcquireReq {
             provider: ProviderId::new("p"),
-            task: BoxId::new(1),
+            box_id: BoxId::new(1),
             name: BoxName::parse_allow_bare("demo").unwrap(),
             class: None,
             nonce: "n".to_owned(),
@@ -65,8 +65,8 @@ fn rig_on(dir: &Path, driver: FakeDriver, clock: Arc<FakeClock>) -> Rig {
     }
 }
 
-fn cfg(setup: &[&str], env: &[(&str, &str)]) -> TaskSettings {
-    let mut c = TaskSettings::resolve(&UserConfig::default(), None, &Flags::default());
+fn cfg(setup: &[&str], env: &[(&str, &str)]) -> BoxSettings {
+    let mut c = BoxSettings::resolve(&UserConfig::default(), None, &Flags::default());
     c.setup = setup.iter().map(|s| (*s).to_owned()).collect();
     c.env = env
         .iter()
@@ -81,7 +81,7 @@ fn run_setup(
     handle: &BoxHandle,
     workdir: &BoxPath,
     worktree: &Path,
-    cfg: &TaskSettings,
+    cfg: &BoxSettings,
     sync: SyncMode,
 ) -> SetupRun {
     run_setup_with(cx, handle, "p", workdir, worktree, cfg, sync, None)

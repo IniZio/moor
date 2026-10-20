@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use moor_core::config::proxy::{EndpointRule, ResolvedInject, ResolvedRule};
-use moor_core::domain::decision::{Decision, NewTask};
+use moor_core::domain::decision::{Decision, NewBox};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::forge::ForgeRepo;
 use moor_core::seam::proxy_host::ProxySpec;
@@ -31,7 +31,7 @@ use crate::testing::driver::FakeDriver;
 use crate::testing::forge::FakeForge;
 use crate::testing::rng::FakeRng;
 
-/// The Task Nonce the client uses as proxy password.
+/// The Box nonce the client uses as proxy password.
 pub(super) const NONCE: &str = "nonce_gql-0123456789";
 /// The credential the fake credential source returns.
 pub(super) const SECRET: &str = "gh-fake-token-77";
@@ -222,7 +222,7 @@ pub(super) fn github_rule() -> ResolvedRule {
 pub(super) struct Rig {
     /// Keeps the state directory alive.
     pub(super) dir: tempfile::TempDir,
-    /// Task and event store.
+    /// Box and event store.
     pub(super) store: Store,
     /// Clock shared with the store.
     clock: Arc<FakeClock>,
@@ -232,13 +232,13 @@ pub(super) struct Rig {
     rng: FakeRng,
     /// The fake `api.github.com`.
     pub(super) up: Github,
-    /// The Task.
-    pub(super) task: BoxId,
+    /// The Box.
+    pub(super) box_id: BoxId,
     /// The started nono proxy and filter.
     pub(super) live: Option<Live>,
     /// Port of the GraphQL filter.
     filter_port: u16,
-    /// PEM of the Task CA the client trusts.
+    /// PEM of the Box CA the client trusts.
     pub(super) ca_pem: String,
     /// How many times the credential source ran.
     pub(super) fetches: Arc<AtomicUsize>,
@@ -291,7 +291,7 @@ impl Rig {
     }
 }
 
-/// Starts `listen` for a Task on repo `o/r` with the GitHub rule.
+/// Starts `listen` for a Box on repo `o/r` with the GitHub rule.
 fn rig() -> Rig {
     rig_with(Vec::new())
 }
@@ -302,16 +302,16 @@ pub(super) fn rig_with(extra: Vec<ResolvedRule>) -> Rig {
     let up = start_github(dir.path());
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
     let store = Store::open(&dir.path().join("moor.db"), clock.clone()).unwrap();
-    let nt = NewTask {
+    let nt = NewBox {
         name: BoxName::parse_allow_bare("demo").unwrap(),
         repo: "r".into(),
     };
-    let task = store.apply(Decision::insert(nt)).unwrap().task;
+    let box_id = store.apply(Decision::insert(nt)).unwrap().box_id;
     let spec = ProxySpec {
-        task,
+        box_id,
         box_handle: None,
         host_cwd: "/wt".into(),
-        task_repo: Some(ForgeRepo {
+        box_repo: Some(ForgeRepo {
             owner: "o".to_owned(),
             name: "r".to_owned(),
         }),
@@ -324,16 +324,16 @@ pub(super) fn rig_with(extra: Vec<ResolvedRule>) -> Rig {
         driver: FakeDriver::new(),
         rng: FakeRng::default(),
         up,
-        task,
+        box_id,
         live: None,
         filter_port: 0,
         ca_pem: String::new(),
         fetches: Arc::new(AtomicUsize::new(0)),
     };
     let nonce = Secret::new(NONCE.as_bytes().to_vec());
-    let live = listen(&rig.deps(), task, &nonce, &spec).unwrap();
+    let live = listen(&rig.deps(), box_id, &nonce, &spec).unwrap();
     rig.filter_port = live.graphql_addr().unwrap().port();
-    rig.ca_pem = crate::proxy::nono::ca::load_or_create(rig.dir.path(), task)
+    rig.ca_pem = crate::proxy::nono::ca::load_or_create(rig.dir.path(), box_id)
         .unwrap()
         .cert_pem()
         .to_owned();
@@ -356,7 +356,7 @@ fn query(client: &Agent, owner: &str, name: &str) -> (u16, String) {
 }
 
 #[test]
-fn task_repo_query_reaches_github_with_the_credential() {
+fn box_repo_query_reaches_github_with_the_credential() {
     let rig = rig();
     let (status, body) = query(&rig.client(), "o", "r");
     assert_eq!((status, body.as_str()), (200, GRAPHQL_REPLY));
@@ -386,10 +386,10 @@ fn other_repo_query_reaches_github_without_any_credential() {
     assert_eq!(only.authorization, None);
     assert!(!only.head.contains(SECRET), "{}", only.head);
     assert!(!only.head.contains("placeholder"), "{}", only.head);
-    rig.live.as_ref().unwrap().drain(&rig.deps(), rig.task);
+    rig.live.as_ref().unwrap().drain(&rig.deps(), rig.box_id);
     let refused = rig
         .store
-        .events(rig.task, 100)
+        .events(rig.box_id, 100)
         .unwrap()
         .into_iter()
         .any(|e| e.kind == "egress_refused");
@@ -404,10 +404,10 @@ fn anonymous_401_does_not_evict_the_cached_credential() {
     assert_eq!(status, 401);
     let (status, _) = query(&rig.client(), "victim", "other");
     assert_eq!(status, 401);
-    rig.live.as_ref().unwrap().drain(&rig.deps(), rig.task);
+    rig.live.as_ref().unwrap().drain(&rig.deps(), rig.box_id);
     let withheld: Vec<String> = rig
         .store
-        .events(rig.task, 100)
+        .events(rig.box_id, 100)
         .unwrap()
         .into_iter()
         .filter(|e| e.kind == "credential_withheld")

@@ -30,12 +30,12 @@ fn parse_box(name: &str) -> Result<BoxName, HttpResponse> {
 
 /// `GET /boxes/{name}/artifacts` with optional `?all=1`.
 pub(super) fn list(client: &Client, req: &HttpRequest, name: &str) -> HttpResponse {
-    let task = match parse_box(name) {
-        Ok(task) => task,
+    let box_name = match parse_box(name) {
+        Ok(box_name) => box_name,
         Err(resp) => return resp,
     };
     let all = req.query_param("all") == Some("1");
-    match call(client, Request::Artifacts(ArtifactsReq { task, all })) {
+    match call(client, Request::Artifacts(ArtifactsReq { box_name, all })) {
         Ok(value) => json_ok(&value),
         Err(resp) => resp,
     }
@@ -80,7 +80,7 @@ struct Fetched {
 /// Reads every chunk of `file` at `version` and checks size and sha256.
 fn fetch(
     client: &Client,
-    task: &BoxName,
+    box_name: &BoxName,
     file: &str,
     version: u32,
 ) -> Result<Fetched, HttpResponse> {
@@ -90,7 +90,7 @@ fn fetch(
         let chunk = call(
             client,
             Request::ArtifactRead(ArtifactReadReq {
-                task: task.clone(),
+                box_name: box_name.clone(),
                 name: file.to_owned(),
                 version: Some(version),
                 offset,
@@ -143,8 +143,8 @@ fn file_headers(content_type: &str, file: &str) -> Vec<(&'static str, String)> {
 
 /// `GET /boxes/{name}/artifacts/{file}` with optional `?v=N`.
 pub(super) fn read(client: &Client, req: &HttpRequest, name: &str, file: &str) -> HttpResponse {
-    let task = match parse_box(name) {
-        Ok(task) => task,
+    let box_name = match parse_box(name) {
+        Ok(box_name) => box_name,
         Err(resp) => return resp,
     };
     if !valid_name(file) {
@@ -158,7 +158,7 @@ pub(super) fn read(client: &Client, req: &HttpRequest, name: &str, file: &str) -
     let listed = match call(
         client,
         Request::Artifacts(ArtifactsReq {
-            task: task.clone(),
+            box_name: box_name.clone(),
             all: true,
         }),
     ) {
@@ -173,7 +173,7 @@ pub(super) fn read(client: &Client, req: &HttpRequest, name: &str, file: &str) -
     } else {
         content_type
     };
-    match fetch(client, &task, file, version) {
+    match fetch(client, &box_name, file, version) {
         Ok(f) => {
             let headers = file_headers(&content_type, file);
             HttpResponse::binary("200 OK", content_type, headers, f.bytes)

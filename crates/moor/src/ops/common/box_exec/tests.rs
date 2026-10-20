@@ -5,7 +5,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use moor_core::config::proxy::{ResolvedInject, ResolvedRule, FORGE_CREDENTIAL};
-use moor_core::config::{parse_user, Flags, TaskSettings, UserConfig};
+use moor_core::config::{parse_user, BoxSettings, Flags, UserConfig};
 use moor_core::exec_env::{Purpose, CA_FILE, NONCE_FILE};
 use moor_core::seam::agent_profile::ProxyAddr;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
@@ -56,7 +56,7 @@ fn rig_driver(dir: &Path, config: UserConfig, driver: FakeDriver) -> Rig {
     let got = driver
         .acquire(&AcquireReq {
             provider: ProviderId::new("p"),
-            task: BoxId::new(1),
+            box_id: BoxId::new(1),
             name: BoxName::parse_allow_bare("demo").unwrap(),
             class: None,
             nonce: "n".to_owned(),
@@ -91,15 +91,15 @@ fn argvs(r: &Rig) -> Vec<Vec<String>> {
         .collect()
 }
 
-fn cfg() -> TaskSettings {
-    let mut c = TaskSettings::resolve(&UserConfig::default(), None, &Flags::default());
+fn cfg() -> BoxSettings {
+    let mut c = BoxSettings::resolve(&UserConfig::default(), None, &Flags::default());
     c.env = [("REPO".to_owned(), "1".to_owned())].into();
     c
 }
 
 fn boxed_proxy() -> BoxProxy {
     BoxProxy {
-        task: BoxId::new(1),
+        box_id: BoxId::new(1),
         addr: ProxyAddr {
             box_port: 4000,
             nonce: Secret::new(b"s3cret".to_vec()),

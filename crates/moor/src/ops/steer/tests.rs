@@ -4,11 +4,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use moor_core::activity::{HookKind, HookRead, HookRecord, PaneRead, Probes};
+use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
-use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
+use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::SessionInput;
-use moor_core::domain::task::SetupOutcome;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver};
 use moor_core::seam::engine::{EngineError, Steer, SteerOutcome};
@@ -34,7 +34,7 @@ struct Fx {
     id: BoxId,
 }
 
-/// Task `t` with a ready Box, an Idle state and a live session `agent-1` in pane `p-1`.
+/// Box `t` with a ready machine, an Idle state and a live session `agent-1` in pane `p-1`.
 fn fx_with(engine: FakeEngine, session: bool) -> Fx {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(FakeDriver::new());
@@ -54,7 +54,7 @@ fn fx_with(engine: FakeEngine, session: bool) -> Fx {
         proc,
     )
     .with_engine(engine.clone());
-    let id = ready_task(&cx, &driver);
+    let id = ready_box(&cx, &driver);
     if session {
         cx.store()
             .unwrap()
@@ -71,17 +71,17 @@ fn fx_with(engine: FakeEngine, session: bool) -> Fx {
     }
 }
 
-/// Task `t` with a ready Box.
-fn ready_task(cx: &Cx, driver: &FakeDriver) -> BoxId {
+/// Box `t` with a ready machine.
+fn ready_box(cx: &Cx, driver: &FakeDriver) -> BoxId {
     let store = cx.store().unwrap();
     let name = BoxName::parse_allow_bare("t").unwrap();
     let id = store
-        .apply(Decision::insert(NewTask {
+        .apply(Decision::insert(NewBox {
             name: name.clone(),
             repo: "r".into(),
         }))
         .unwrap()
-        .task;
+        .box_id;
     let provider = ProviderId::new("p");
     let fields = Fields {
         box_provider: Field::Set(provider.clone()),
@@ -96,7 +96,7 @@ fn ready_task(cx: &Cx, driver: &FakeDriver) -> BoxId {
     let got = driver
         .acquire(&AcquireReq {
             provider,
-            task: id,
+            box_id: id,
             name,
             class: None,
             nonce: "n".to_owned(),
@@ -152,7 +152,7 @@ fn working() -> Probes {
 
 fn text(t: &str) -> SteerReq {
     SteerReq {
-        task: BoxName::parse_allow_bare("t").unwrap(),
+        box_name: BoxName::parse_allow_bare("t").unwrap(),
         text: Some(t.to_owned()),
         menu: None,
     }
@@ -160,7 +160,7 @@ fn text(t: &str) -> SteerReq {
 
 fn menu(n: u32) -> SteerReq {
     SteerReq {
-        task: BoxName::parse_allow_bare("t").unwrap(),
+        box_name: BoxName::parse_allow_bare("t").unwrap(),
         text: None,
         menu: Some(n),
     }
@@ -190,19 +190,19 @@ fn steered_id(f: &Fx) -> i64 {
 }
 
 #[test]
-fn an_unknown_task_is_refused() {
+fn an_unknown_box_is_refused() {
     let f = fx();
     let req = SteerReq {
-        task: BoxName::parse_allow_bare("other").unwrap(),
+        box_name: BoxName::parse_allow_bare("other").unwrap(),
         ..text("hi")
     };
     let err = run(&f.cx, &req).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Failed);
-    assert!(err.error.to_string().contains("no open task other"));
+    assert!(err.error.to_string().contains("no open Box other"));
 }
 
 #[test]
-fn a_task_without_a_live_session_is_refused_naming_start_goal() {
+fn a_box_without_a_live_session_is_refused_naming_start_goal() {
     let f = fx_with(FakeEngine::new(), false);
     let err = run(&f.cx, &text("hi")).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Refused);
@@ -217,7 +217,7 @@ fn a_task_without_a_live_session_is_refused_naming_start_goal() {
 fn text_goes_to_the_agent_and_is_recorded() {
     let f = fx_with(FakeEngine::new().probes("agent-1", working()), true);
     let v = run(&f.cx, &text("do x")).unwrap();
-    assert_eq!((v.task.as_str(), v.sent.as_str()), ("t", "do x"));
+    assert_eq!((v.box_name.as_str(), v.sent.as_str()), ("t", "do x"));
     assert!(!v.answered_menu);
     assert_eq!(v.steer, steered_id(&f));
     assert_eq!(
@@ -266,7 +266,7 @@ fn an_unchecked_submit_warns() {
 }
 
 #[test]
-fn an_asleep_task_wakes_before_the_send() {
+fn an_asleep_box_wakes_before_the_send() {
     let f = fx();
     let store = f.cx.store().unwrap();
     let quiet = Decision::new(f.id).session(SessionInput::AgentQuiet);
@@ -276,7 +276,7 @@ fn an_asleep_task_wakes_before_the_send() {
         .box_input(BoxInput::Sleep);
     store.apply(d).unwrap();
     run(&f.cx, &text("hi")).unwrap();
-    let row = store.task(f.id).unwrap().unwrap();
+    let row = store.box_row(f.id).unwrap().unwrap();
     assert_ne!(row.lifecycle, BoxLifecycle::Asleep);
     assert_eq!(row.boxed.unwrap().state, BoxState::Ready);
     assert!(f.driver.calls().iter().any(|c| c.starts_with("wake ")));
@@ -438,7 +438,7 @@ fn steering_during_a_run_is_sent_while_the_box_lock_is_held() {
 }
 
 #[test]
-fn an_asleep_task_under_a_held_lock_is_refused_and_nothing_is_sent() {
+fn an_asleep_box_under_a_held_lock_is_refused_and_nothing_is_sent() {
     let f = fx();
     put_to_sleep(&f);
     let _held = hold_lock(&f);
@@ -449,7 +449,7 @@ fn an_asleep_task_under_a_held_lock_is_refused_and_nothing_is_sent() {
 }
 
 #[test]
-fn an_asleep_task_without_a_live_session_is_refused_without_a_wake() {
+fn an_asleep_box_without_a_live_session_is_refused_without_a_wake() {
     let f = fx_with(FakeEngine::new(), false);
     put_to_sleep(&f);
     let err = run(&f.cx, &text("hi")).unwrap_err();

@@ -1,4 +1,4 @@
-//! Settles which `.moor.yaml` moor uses for a Task, and refuses one edited since the Task started.
+//! Settles which `.moor.yaml` moor uses for a Box, and refuses one edited since the Box started.
 //!
 //! Setup re-runs, agent relaunches and `moor run` share [`guard`]; close's teardown uses
 //! [`for_teardown`], which never refuses. Both return the config parsed from the exact bytes they
@@ -11,7 +11,7 @@ use moor_core::{ErrorKind, Warning};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::store::TaskRow;
+use crate::store::BoxRow;
 
 /// File name of the repo config.
 const REPO_FILE: &str = ".moor.yaml";
@@ -20,7 +20,7 @@ const REPO_FILE: &str = ".moor.yaml";
 struct Copies<'a> {
     /// Directory holding the worktree copy.
     at: &'a str,
-    /// Base commit, or a placeholder when the Task has none.
+    /// Base commit, or a placeholder when the Box has none.
     rev: &'a str,
     /// Worktree text; `None` when the file is absent.
     current: Option<String>,
@@ -50,7 +50,7 @@ impl Copies<'_> {
 /// A refused difference, an unreadable file or base commit, or a config that does not parse.
 pub(crate) fn guard(
     cx: &Cx,
-    row: &TaskRow,
+    row: &BoxRow,
     trusted: bool,
 ) -> Result<Option<RepoConfig>, CommandError> {
     let copies = read_copies(cx, row)?;
@@ -80,7 +80,7 @@ pub(crate) fn guard(
 /// An unreadable file or base commit, or a config that does not parse.
 pub(crate) fn for_teardown(
     cx: &Cx,
-    row: &TaskRow,
+    row: &BoxRow,
     trusted: bool,
 ) -> Result<Option<RepoConfig>, CommandError> {
     let copies = read_copies(cx, row)?;
@@ -103,7 +103,7 @@ pub(crate) fn for_teardown(
 }
 
 /// Reads the worktree copy and the base-commit copy once.
-fn read_copies<'a>(cx: &Cx, row: &'a TaskRow) -> Result<Copies<'a>, CommandError> {
+fn read_copies<'a>(cx: &Cx, row: &'a BoxRow) -> Result<Copies<'a>, CommandError> {
     let at = row.worktree.as_deref().unwrap_or(&row.repo);
     let path = Path::new(at).join(REPO_FILE);
     let current = match std::fs::read_to_string(&path) {

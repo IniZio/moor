@@ -15,7 +15,7 @@ fn numbers_count_earlier_saves_only() {
 }
 
 #[test]
-fn path_names_task_session_and_number() {
+fn path_names_box_session_and_number() {
     assert_eq!(relative_path(BoxId::new(4), 9, 2), "transcripts/4/9-2.tgz");
 }
 

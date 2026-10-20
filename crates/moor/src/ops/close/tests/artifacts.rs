@@ -33,7 +33,7 @@ fn a_ready_box_has_its_artifacts_collected_on_close() {
         .artifact_index([listing()])
         .copy_text(BODY));
     let v = run(&f.cx, &req(false)).unwrap();
-    assert_eq!(v.task.lifecycle, BoxLifecycle::Closed);
+    assert_eq!(v.boxed.lifecycle, BoxLifecycle::Closed);
     assert_eq!(published(&f), 1);
     let rows = f.cx.store().unwrap().artifacts(f.id).unwrap();
     assert_eq!(rows.len(), 1);

@@ -12,7 +12,7 @@ pub(crate) struct SessionRecord {
     /// Row id of the Session.
     pub(crate) id: i64,
     /// Name of the Box the Session runs in; `None` for a host Session.
-    pub(crate) task: Option<BoxName>,
+    pub(crate) box_name: Option<BoxName>,
     /// Id of that Box.
     pub(crate) box_id: Option<BoxId>,
     /// Position among the Box's Sessions, starting at 1.
@@ -51,8 +51,8 @@ impl SessionRecord {
         let parsed_row = (|| {
             Ok(Self {
                 id: row.get(0)?,
-                task: name
-                    .map(|n| parsed("session task", &n, BoxName::parse_allow_bare))
+                box_name: name
+                    .map(|n| parsed("session box name", &n, BoxName::parse_allow_bare))
                     .transpose()?,
                 ordinal: row.get(2)?,
                 parent: row.get(3)?,

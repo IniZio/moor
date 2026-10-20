@@ -1,11 +1,11 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
-use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
+use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::SessionInput;
-use moor_core::domain::task::SetupOutcome;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
 use moor_core::seam::proc::Tool;
 use moor_core::seam::surface::SurfaceError;
@@ -44,7 +44,7 @@ pub(super) struct Fx {
 
 pub(super) fn req(force: bool) -> CloseReq {
     CloseReq {
-        task: BoxName::parse_allow_bare("t").unwrap(),
+        box_name: BoxName::parse_allow_bare("t").unwrap(),
         force,
         trust_moor_yaml: false,
     }
@@ -69,12 +69,12 @@ pub(super) fn proc(unpushed: u32) -> Arc<ScriptedProc> {
     Arc::new(p)
 }
 
-/// A Ready task with a Box from `driver` that probes clean.
+/// A Ready Box with a machine from `driver` that probes clean.
 pub(super) fn fx_with(driver: FakeDriver, surface: FakeSurface, unpushed: u32) -> Fx {
     fx_box(driver, surface, unpushed, Some("ahead=0 dirty=0"))
 }
 
-/// A Ready task with a Box from `driver`; the worktree is a real directory.
+/// A Ready Box with a machine from `driver`; the worktree is a real directory.
 ///
 /// `boxwork` is what the probe reads back from the first Box's recorded workdir
 /// (`/work/box-1`); `None` leaves it unscripted, so the probe cannot tell.
@@ -114,16 +114,16 @@ pub(super) fn fx_box(
     }
 }
 
-/// Admits task `t` with a Ready Box acquired from `driver`.
+/// Admits Box `t` with a Ready machine acquired from `driver`.
 fn admit(cx: &Cx, driver: &FakeDriver, dir: &Path) -> BoxId {
     let store = cx.store().unwrap();
     let id = store
-        .apply(Decision::insert(NewTask {
+        .apply(Decision::insert(NewBox {
             name: BoxName::parse_allow_bare("t").unwrap(),
             repo: "r".into(),
         }))
         .unwrap()
-        .task;
+        .box_id;
     let provider = ProviderId::new("p");
     let fields = Fields {
         box_provider: Field::Set(provider.clone()),
@@ -140,7 +140,7 @@ fn admit(cx: &Cx, driver: &FakeDriver, dir: &Path) -> BoxId {
     let got = driver
         .acquire(&AcquireReq {
             provider,
-            task: id,
+            box_id: id,
             name: BoxName::parse_allow_bare("t").unwrap(),
             class: None,
             nonce: "n".to_owned(),
@@ -161,11 +161,11 @@ pub(super) fn fx() -> Fx {
     fx_with(FakeDriver::new(), FakeSurface::new(PathBuf::from("/s")), 0)
 }
 
-pub(super) fn row(f: &Fx) -> crate::store::TaskRow {
-    f.cx.store().unwrap().task(f.id).unwrap().unwrap()
+pub(super) fn row(f: &Fx) -> crate::store::BoxRow {
+    f.cx.store().unwrap().box_row(f.id).unwrap().unwrap()
 }
 
-pub(super) fn is_working(r: &crate::store::TaskRow) -> bool {
+pub(super) fn is_working(r: &crate::store::BoxRow) -> bool {
     r.lifecycle == BoxLifecycle::Ready && !r.session.is_quiet()
 }
 
@@ -177,7 +177,7 @@ pub(super) fn box_state(f: &Fx) -> BoxState {
 fn clean_close_deletes_the_box_and_closes() {
     let f = fx();
     let v = run(&f.cx, &req(false)).unwrap();
-    assert_eq!(v.task.lifecycle, BoxLifecycle::Closed);
+    assert_eq!(v.boxed.lifecycle, BoxLifecycle::Closed);
     assert!(v.box_deleted && v.workspace_closed && !v.worktree_kept);
     assert_eq!(box_state(&f), BoxState::Deleted);
     assert!(f.driver.calls().iter().any(|c| c.starts_with("release")));
@@ -192,7 +192,7 @@ fn unpushed_work_is_refused_without_force() {
     assert!(is_working(&row(&f)));
     assert!(!f.driver.calls().iter().any(|c| c.starts_with("release")));
     let v = run(&f.cx, &req(true)).unwrap();
-    assert_eq!(v.task.lifecycle, BoxLifecycle::Closed);
+    assert_eq!(v.boxed.lifecycle, BoxLifecycle::Closed);
 }
 
 #[test]
@@ -206,7 +206,7 @@ fn release_not_found_counts_as_deleted() {
 }
 
 #[test]
-fn release_error_on_a_ready_box_keeps_the_task_open() {
+fn release_error_on_a_ready_box_keeps_the_box_open() {
     let f = fx_with(
         FakeDriver::new().fail_release_always(DriverError::Failed {
             summary: RAW.into(),
@@ -238,7 +238,7 @@ fn release_error_on_a_failed_box_warns_and_closes() {
         .apply(Decision::new(f.id).box_input(BoxInput::ReleaseErr { cause: "x".into() }))
         .unwrap();
     let v = run(&f.cx, &req(false)).unwrap();
-    assert_eq!(v.task.lifecycle, BoxLifecycle::Closed);
+    assert_eq!(v.boxed.lifecycle, BoxLifecycle::Closed);
     assert!(!v.box_deleted);
     assert_eq!(box_state(&f), BoxState::ReleaseFailed);
     let warnings = f.cx.take_warnings();
@@ -254,7 +254,7 @@ fn missing_workspace_is_tolerated() {
         0,
     );
     let v = run(&f.cx, &req(false)).unwrap();
-    assert_eq!(v.task.lifecycle, BoxLifecycle::Closed);
+    assert_eq!(v.boxed.lifecycle, BoxLifecycle::Closed);
     assert!(v.workspace_closed);
     assert!(f.cx.take_warnings().is_empty());
 }

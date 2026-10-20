@@ -13,7 +13,7 @@ pub struct ProxyAddr {
     pub box_port: u16,
     /// The per-launch nonce the Box presents; its only credential.
     pub nonce: Secret,
-    /// The public Task CA certificate in PEM form; not secret.
+    /// The public Box CA certificate in PEM form; not secret.
     pub ca_pem: String,
     /// Non-secret environment pairs from the tool rules, already resolved.
     pub box_env: Vec<(String, String)>,

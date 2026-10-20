@@ -6,10 +6,10 @@ use std::time::Duration;
 
 use moor_core::activity::{HookKind, HookRecord};
 use moor_core::domain::box_state::BoxLifecycleInput;
+use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::boxes::BoxInput;
-use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
+use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::SessionInput;
-use moor_core::domain::task::SetupOutcome;
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::{BoxHandle, BoxId, BoxName, ProviderId};
 
@@ -24,13 +24,13 @@ fn open(dir: &Path) -> (Store, Arc<FakeClock>) {
     (store, clock)
 }
 
-/// Insert a task by name.
+/// Insert a box by name.
 fn add(store: &Store, name: &str) -> BoxId {
-    let nt = NewTask {
+    let nt = NewBox {
         name: BoxName::parse_allow_bare(name).unwrap(),
         repo: "r".into(),
     };
-    store.apply(Decision::insert(nt)).unwrap().task
+    store.apply(Decision::insert(nt)).unwrap().box_id
 }
 
 /// Step `id`'s session with `input`.
@@ -38,7 +38,7 @@ fn step(store: &Store, id: BoxId, input: SessionInput) {
     store.apply(Decision::new(id).session(input)).unwrap();
 }
 
-/// A task that is working: admitted, then its box ready.
+/// A box that is working: admitted, then its box ready.
 fn working(store: &Store, name: &str) -> BoxId {
     let id = add(store, name);
     let d = Decision::new(id)
@@ -155,7 +155,7 @@ fn end_session_records_outcome_once() {
 }
 
 #[test]
-fn session_writes_leave_task_columns_alone() {
+fn session_writes_leave_box_columns_alone() {
     let dir = tempfile::tempdir().unwrap();
     let (store, clock) = open(dir.path());
     let id = working(&store, "t");
@@ -168,7 +168,7 @@ fn session_writes_leave_task_columns_alone() {
 }
 
 #[test]
-fn begin_session_on_unknown_task_is_not_found() {
+fn begin_session_on_unknown_box_is_not_found() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let err = store.begin_session(BoxId::new(7), "s", None).unwrap_err();

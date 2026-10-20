@@ -6,7 +6,7 @@ use moor_core::domain::decision::Decision;
 use moor_core::domain::session_state::SessionState;
 use moor_core::BoxId;
 
-use crate::store::tests::{new_task, open};
+use crate::store::tests::{new_box, open};
 use crate::store::{Store, StoreError};
 
 type Row = (Option<i64>, Option<String>, String, Option<i64>, i64);
@@ -38,7 +38,7 @@ fn agent_cols(store: &Store, id: i64) -> (Option<String>, Option<String>) {
 fn with_host(name: &str) -> (tempfile::TempDir, Store, BoxId, i64) {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
-    let id = new_task(&store, name);
+    let id = new_box(&store, name);
     let host = store.open_host_session("/w", None, None).unwrap();
     (dir, store, id, host)
 }
@@ -80,7 +80,7 @@ fn event_count(store: &Store) -> i64 {
 fn host_session_records_no_events() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
-    new_task(&store, "acme/1");
+    new_box(&store, "acme/1");
     let before = event_count(&store);
     store.open_host_session("/w", None, None).unwrap();
     assert_eq!(event_count(&store), before);
@@ -109,7 +109,7 @@ fn box_reads_never_see_host_sessions() {
     let sessions = store.box_sessions(id).unwrap();
     assert!(sessions.iter().all(|s| s.id != host));
     assert_eq!(sessions.len(), 1);
-    assert!(store.task(id).unwrap().is_some());
+    assert!(store.box_row(id).unwrap().is_some());
 }
 
 #[test]
@@ -124,7 +124,7 @@ fn ending_and_reopening_a_box_session_leaves_host_alone() {
 }
 
 #[test]
-fn ending_a_task_leaves_host_alone() {
+fn ending_a_box_leaves_host_alone() {
     let (_dir, store, id, host) = with_host("acme/1");
     let before = row(&store, host);
     let reject = BoxLifecycleInput::Rejected {

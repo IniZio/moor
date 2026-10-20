@@ -7,15 +7,15 @@ use moor_core::Warning;
 
 use crate::adapters::git::BranchSync;
 use crate::cx::Cx;
-use crate::store::TaskRow;
+use crate::store::BoxRow;
 
-/// Brings the kept worktree and its local Task branch up to the remote tip, so they show the
+/// Brings the kept worktree and its local Box branch up to the remote tip, so they show the
 /// work the agent pushed from the Box.
 ///
 /// Only a fast-forward moves anything; every other outcome leaves the checkout alone and warns.
 ///
 /// Returns false when the sync was skipped with a warning.
-pub(super) fn sync_branch(cx: &Cx, row: &TaskRow) -> bool {
+pub(super) fn sync_branch(cx: &Cx, row: &BoxRow) -> bool {
     let (Some(wt), Some(branch)) = (row.worktree.as_deref(), row.branch.as_deref()) else {
         return true;
     };
@@ -25,7 +25,7 @@ pub(super) fn sync_branch(cx: &Cx, row: &TaskRow) -> bool {
     }
     let why = match cx.git().sync_branch(wt, branch) {
         Ok(BranchSync::FastForwarded | BranchSync::UpToDate | BranchSync::NotPushed) => {
-            return true
+            return true;
         }
         Ok(BranchSync::Diverged) => format!(
             "the local branch {branch} and the remote one have each moved on; \
@@ -49,7 +49,7 @@ pub(super) fn sync_branch(cx: &Cx, row: &TaskRow) -> bool {
 /// Removes the worktree moor created when its work is safe; otherwise keeps it and says why.
 ///
 /// Returns whether the worktree is gone.
-pub(super) fn remove_worktree(cx: &Cx, row: &TaskRow, synced: bool) -> bool {
+pub(super) fn remove_worktree(cx: &Cx, row: &BoxRow, synced: bool) -> bool {
     let Some(wt) = row.worktree.as_deref().filter(|_| !row.bound) else {
         return false;
     };
@@ -79,7 +79,7 @@ pub(super) fn remove_worktree(cx: &Cx, row: &TaskRow, synced: bool) -> bool {
         Err(e) => {
             cx.warn(Warning {
                 code: "worktree_remove_failed".to_owned(),
-                message: format!("the task is closed but its worktree could not be removed: {e}"),
+                message: format!("the Box is closed but its worktree could not be removed: {e}"),
             });
             false
         }

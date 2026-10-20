@@ -4,7 +4,7 @@
 
 use moor_core::BoxId;
 
-use crate::store::tests::{new_task, open};
+use crate::store::tests::{new_box, open};
 use crate::store::{Store, StoreError};
 
 fn box_session(store: &Store, id: BoxId) -> i64 {
@@ -27,20 +27,20 @@ fn host_session_binds_and_resolves_back() {
     assert_eq!(found.front, "cli");
     assert_eq!(found.key, "k1");
     assert_eq!(found.session, session);
-    assert_eq!(found.task, None);
+    assert_eq!(found.box_name, None);
     assert_eq!(found.owner, "U1");
 }
 
 #[test]
-fn box_session_binds_with_its_task_name() {
+fn box_session_binds_with_its_box_name() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
-    let id = new_task(&store, "acme/1");
+    let id = new_box(&store, "acme/1");
     let session = box_session(&store, id);
     assert!(store.bind_session("cli", "k1", session, "U1").unwrap());
     let found = store.binding("cli", "k1").unwrap().unwrap();
     assert_eq!(found.session, session);
-    assert_eq!(found.task.unwrap().as_str(), "acme/1");
+    assert_eq!(found.box_name.unwrap().as_str(), "acme/1");
 }
 
 #[test]
@@ -95,15 +95,15 @@ fn bindings_list_host_and_box_oldest_first() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let host = store.open_host_session("/w", None, None).unwrap();
-    let id = new_task(&store, "acme/1");
+    let id = new_box(&store, "acme/1");
     let boxed = box_session(&store, id);
     store.bind_session("cli", "a", host, "U1").unwrap();
     store.bind_session("cli", "b", boxed, "U2").unwrap();
     let all = store.bindings("cli").unwrap();
     let keys: Vec<&str> = all.iter().map(|b| b.key.as_str()).collect();
     assert_eq!(keys, ["a", "b"]);
-    assert_eq!(all[0].task, None);
-    assert!(all[1].task.is_some());
+    assert_eq!(all[0].box_name, None);
+    assert!(all[1].box_name.is_some());
 }
 
 #[test]

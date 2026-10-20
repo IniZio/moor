@@ -1,4 +1,4 @@
-//! Parking and restoring a Task's Proxy tunnel on behalf of sleep and wake.
+//! Parking and restoring a Box's Proxy tunnel on behalf of sleep and wake.
 //!
 //! The supervisor owns the tunnel; ops only ask through the store and wait for its answer.
 
@@ -20,9 +20,9 @@ const PARK_WAIT: Duration = Duration::from_secs(10);
 /// Time the supervisor gets to bring the tunnel up; a reverse tunnel can be slow to become ready.
 const RESTORE_WAIT: Duration = Duration::from_secs(90);
 
-/// Asks the Task's Proxy to kill its tunnel and stop reviving it, and waits for it to confirm.
-pub(crate) fn park_tunnel(cx: &Cx, store: &Store, task: BoxId) -> Result<(), CommandError> {
-    match request(cx, store, task, TunnelWant::Parked, PARK_WAIT)? {
+/// Asks the Box's Proxy to kill its tunnel and stop reviving it, and waits for it to confirm.
+pub(crate) fn park_tunnel(cx: &Cx, store: &Store, box_id: BoxId) -> Result<(), CommandError> {
+    match request(cx, store, box_id, TunnelWant::Parked, PARK_WAIT)? {
         Reply::NoSupervisor | Reply::Got(TunnelAck::Parked { .. }) => Ok(()),
         Reply::Got(TunnelAck::Failed { error, .. }) => Err(CommandError::new(
             ErrorKind::Failed,
@@ -36,13 +36,13 @@ pub(crate) fn park_tunnel(cx: &Cx, store: &Store, task: BoxId) -> Result<(), Com
     }
 }
 
-/// Asks the Task's Proxy to bring its tunnel back up and waits until it is up.
+/// Asks the Box's Proxy to bring its tunnel back up and waits until it is up.
 ///
 /// `box_stayed_up` is true when the Box never stopped, so a stale session may still hold the port.
 pub(crate) fn restore_tunnel(
     cx: &Cx,
     store: &Store,
-    task: BoxId,
+    box_id: BoxId,
     box_stayed_up: bool,
 ) -> Result<(), CommandError> {
     let want = if box_stayed_up {
@@ -50,7 +50,7 @@ pub(crate) fn restore_tunnel(
     } else {
         TunnelWant::Up
     };
-    match request(cx, store, task, want, RESTORE_WAIT)? {
+    match request(cx, store, box_id, want, RESTORE_WAIT)? {
         Reply::NoSupervisor | Reply::Got(TunnelAck::Up { .. }) => Ok(()),
         Reply::Got(TunnelAck::Failed { error, .. }) => Err(CommandError::new(
             ErrorKind::Failed,
@@ -86,18 +86,18 @@ fn unexpected() -> CommandError {
 fn request(
     cx: &Cx,
     store: &Store,
-    task: BoxId,
+    box_id: BoxId,
     ask: TunnelWant,
     patience: Duration,
 ) -> Result<Reply, CommandError> {
-    if !supervisor_alive(cx, store, task)? {
+    if !supervisor_alive(cx, store, box_id)? {
         return Ok(Reply::NoSupervisor);
     }
-    let seq = store.request_tunnel(task, ask)?;
+    let seq = store.request_tunnel(box_id, ask)?;
     let clock = cx.clock();
     let deadline = clock.instant() + patience;
     loop {
-        if let Some(ack) = store.tunnel_ack(task)? {
+        if let Some(ack) = store.tunnel_ack(box_id)? {
             if ack.seq() == seq {
                 return Ok(Reply::Got(ack));
             }
@@ -110,8 +110,8 @@ fn request(
 }
 
 /// Whether a ready proxy row has a supervisor that heartbeat within the lease window.
-fn supervisor_alive(cx: &Cx, store: &Store, task: BoxId) -> Result<bool, CommandError> {
-    let Some(row) = store.proxy(task)? else {
+fn supervisor_alive(cx: &Cx, store: &Store, box_id: BoxId) -> Result<bool, CommandError> {
+    let Some(row) = store.proxy(box_id)? else {
         return Ok(false);
     };
     let (true, Some(_), Some(beat)) = (row.ready, row.lease_owner, row.lease_heartbeat) else {

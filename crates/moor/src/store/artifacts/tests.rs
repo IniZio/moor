@@ -5,7 +5,7 @@ use std::os::unix::fs::{symlink, PermissionsExt};
 use std::path::Path;
 use std::sync::Arc;
 
-use moor_core::domain::decision::{Decision, NewTask};
+use moor_core::domain::decision::{Decision, NewBox};
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, BoxName};
 use sha2::{Digest, Sha256};
@@ -19,13 +19,13 @@ fn open(dir: &Path) -> Store {
     Store::open(&dir.join("moor.db"), clock).unwrap()
 }
 
-/// Insert a task by name.
+/// Insert a box by name.
 fn add(store: &Store, name: &str) -> BoxId {
-    let nt = NewTask {
+    let nt = NewBox {
         name: BoxName::parse_allow_bare(name).unwrap(),
         repo: "r".into(),
     };
-    store.apply(Decision::insert(nt)).unwrap().task
+    store.apply(Decision::insert(nt)).unwrap().box_id
 }
 
 /// Mode bits of `path`.

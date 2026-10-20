@@ -13,7 +13,7 @@ use moor_core::{BoxHandle, BoxPath};
 
 use super::provision::recorded_workdir;
 use crate::cx::Cx;
-use crate::store::{BoxRow, TaskRow};
+use crate::store::{BoxRow, DriverRow};
 
 /// Wall-clock allowance for the probe script.
 pub(crate) const BOXWORK_DEADLINE: Duration = Duration::from_secs(60);
@@ -68,12 +68,12 @@ pub(crate) struct ProbePlan {
     worktree: PathBuf,
 }
 
-/// Runs the probe script in the Task's Box and reads its result back.
+/// Runs the probe script in the Box and reads its result back.
 ///
 /// Anything that stops the probe from giving a definite answer is
 /// [`BoxWork::Unknown`], so a caller never mistakes a failed probe for a clean Box.
-pub(crate) fn probe(cx: &Cx, task: &TaskRow, boxed: &BoxRow) -> BoxWork {
-    let plan = match plan(cx, task, boxed) {
+pub(crate) fn probe(cx: &Cx, row: &BoxRow, boxed: &DriverRow) -> BoxWork {
+    let plan = match plan(cx, row, boxed) {
         Ok(plan) => plan,
         Err(work) => return work,
     };
@@ -88,9 +88,9 @@ pub(crate) fn probe(cx: &Cx, task: &TaskRow, boxed: &BoxRow) -> BoxWork {
 }
 
 /// Builds the probe for the Box of `boxed`; the `Err` is the answer when no probe can be sent.
-pub(crate) fn plan(cx: &Cx, task: &TaskRow, boxed: &BoxRow) -> Result<ProbePlan, BoxWork> {
+pub(crate) fn plan(cx: &Cx, row: &BoxRow, boxed: &DriverRow) -> Result<ProbePlan, BoxWork> {
     let handle = boxed.handle.as_ref().ok_or("the box has no handle")?;
-    let worktree = Path::new(task.worktree.as_deref().ok_or("the task has no worktree")?);
+    let worktree = Path::new(row.worktree.as_deref().ok_or("the Box has no worktree")?);
     let head = cx
         .git()
         .head(worktree)
@@ -100,7 +100,7 @@ pub(crate) fn plan(cx: &Cx, task: &TaskRow, boxed: &BoxRow) -> Result<ProbePlan,
     }
     // A base that names a branch is skipped: its commits are reachable from the host HEAD.
     let mut saved = vec![head.as_str()];
-    saved.extend(task.base.as_deref().filter(|b| is_full_sha(b)));
+    saved.extend(row.base.as_deref().filter(|b| is_full_sha(b)));
     let script = boxwork_script(&saved).ok_or("cannot build the probe script")?;
     let workdir = match boxed.workdir.as_deref().and_then(recorded_workdir) {
         Some(w) => w,

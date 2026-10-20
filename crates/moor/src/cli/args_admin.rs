@@ -81,8 +81,8 @@ pub(super) struct ControllerServeArgs {
 /// Arguments of `proxy serve`.
 #[derive(Debug, Args)]
 pub(super) struct ServeArgs {
-    /// Task id to serve.
-    task: i64,
+    /// Box id to serve.
+    box_id: i64,
 }
 
 impl AdminCmd {
@@ -93,7 +93,7 @@ impl AdminCmd {
             Self::Github(GithubCmd::Setup) => Action::Request(Request::GithubSetup {}),
             Self::Github(GithubCmd::Login) => Action::Request(Request::GithubLogin {}),
             Self::Proxy(ProxyCmd::Check) => Action::Request(Request::ProxyCheck {}),
-            Self::Proxy(ProxyCmd::Serve(a)) => Action::ProxyServe(BoxId::new(a.task)),
+            Self::Proxy(ProxyCmd::Serve(a)) => Action::ProxyServe(BoxId::new(a.box_id)),
             Self::Controller(ControllerCmd::Serve(a)) => Action::ControllerServe(a.config),
             Self::Controller(ControllerCmd::Attach(a)) => Action::ControllerAttach(a.socket),
             Self::Call => Action::CallStdin,

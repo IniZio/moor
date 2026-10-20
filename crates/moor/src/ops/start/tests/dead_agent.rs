@@ -44,7 +44,7 @@ fn an_agent_that_exits_127_at_launch_is_a_launch_failure() {
         Ok(exited(127, "sh: claude: not found\nmoor: agent exited 127")),
     );
     let v = run(&w.cx, &goal_req("demo")).unwrap();
-    let id = BoxId::new(v.task.id);
+    let id = BoxId::new(v.boxed.id);
     let store = w.cx.store().unwrap();
     assert!(!v.agent.launched);
     assert!(v.agent.session.is_none());
@@ -60,7 +60,7 @@ fn an_agent_that_exits_127_at_launch_is_a_launch_failure() {
             "agent dispatch failed: launch: {NOT_FOUND}; re-run start to retry"
         )]
     );
-    assert!(store.task(id).unwrap().unwrap().launch_failure.is_some());
+    assert!(store.box_row(id).unwrap().unwrap().launch_failure.is_some());
     assert!(store.live_session(id).unwrap().is_none());
     let events = store.events(id, 50).unwrap();
     let failed = events.iter().find(|e| e.kind == "session_failed").unwrap();
@@ -87,7 +87,7 @@ fn a_dead_agent_shows_as_failed_and_wait_fails() {
     w.surface.push_pane_obs("p-1", Ok(exited(127, "")));
     run(&w.cx, &goal_req("demo")).unwrap();
     let show = ShowReq {
-        task: None,
+        box_name: None,
         events: None,
         agent: true,
         reports: false,
@@ -95,11 +95,11 @@ fn a_dead_agent_shows_as_failed_and_wait_fails() {
         pane: false,
     };
     let shown = crate::ops::show::run(&w.cx, &show).unwrap();
-    let t = shown.tasks.as_ref().unwrap().first().unwrap();
+    let t = shown.boxes.as_ref().unwrap().first().unwrap();
     assert_eq!((t.lifecycle, t.session_state), WORKING);
     assert_eq!(t.agent.as_ref().unwrap().state, "failed");
     let wait = WaitReq {
-        task: BoxName::parse_allow_bare("demo").unwrap(),
+        box_name: BoxName::parse_allow_bare("demo").unwrap(),
         wait_for: Some(WaitFor::Idle),
         timeout_secs: Some(60),
     };
@@ -120,7 +120,7 @@ fn a_relaunched_agent_that_exits_127_is_a_launch_failure() {
     let store = w.cx.store().unwrap();
     assert!(!v.agent.launched);
     assert_eq!(v.agent.reason.unwrap().message, NOT_FOUND);
-    assert!(store.task(id).unwrap().unwrap().launch_failure.is_some());
+    assert!(store.box_row(id).unwrap().unwrap().launch_failure.is_some());
     assert!(store.live_session(id).unwrap().is_none());
     let events = store.events(id, 50).unwrap();
     assert!(events.iter().any(|e| e.kind == "session_failed"));

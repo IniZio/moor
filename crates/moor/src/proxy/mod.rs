@@ -1,10 +1,10 @@
-//! Per-Task egress proxy and its request log.
+//! Per-Box egress proxy and its request log.
 //!
 //! The log is the only file the proxy writes. It records the time, method,
 //! route name and status of each request, and never the nonce, headers or
 //! bodies.
 //!
-//! The nono module embeds nono-proxy as each Task's egress proxy.
+//! The nono module embeds nono-proxy as each Box's egress proxy.
 //!
 //! The supervisor owns the proxy's lifetime.
 
@@ -27,7 +27,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use moor_core::seam::clock::Clock;
 use moor_core::BoxId;
 
-/// Append-only per-Task request log at `<state>/proxy/<task>.log`.
+/// Append-only per-Box request log at `<state>/proxy/<box_id>.log`.
 pub(crate) struct ProxyLog {
     /// Open log file; the lock keeps each line whole.
     file: Mutex<File>,
@@ -36,17 +36,17 @@ pub(crate) struct ProxyLog {
 }
 
 impl ProxyLog {
-    /// Opens the log for `task`, creating `<state_dir>/proxy` (0700) and the
+    /// Opens the log for `box_id`, creating `<state_dir>/proxy` (0700) and the
     /// file (0600) and tightening both modes when they already exist.
     pub(crate) fn open(
         state_dir: &Path,
-        task: BoxId,
+        box_id: BoxId,
         clock: Arc<dyn Clock>,
     ) -> std::io::Result<Self> {
         let dir = state_dir.join("proxy");
         DirBuilder::new().recursive(true).mode(0o700).create(&dir)?;
         std::fs::set_permissions(&dir, Permissions::from_mode(0o700))?;
-        let path = dir.join(format!("{}.log", task.get()));
+        let path = dir.join(format!("{}.log", box_id.get()));
         let file = OpenOptions::new()
             .create(true)
             .append(true)

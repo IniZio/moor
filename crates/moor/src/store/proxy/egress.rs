@@ -6,14 +6,18 @@ use moor_core::BoxId;
 use rusqlite::TransactionBehavior;
 
 use crate::store::apply::insert_event;
-use crate::store::{load_task, Store, StoreError};
+use crate::store::{load_box, Store, StoreError};
 
 impl Store {
     /// Append an `EgressRefused`, `CredentialWithheld`, `ProxyCredentialFailed`,
-    /// `AgentRateLimited`, `ProxyCredentialRejected` or `ProxyCredentialRecovered` event for `task`.
+    /// `AgentRateLimited`, `ProxyCredentialRejected` or `ProxyCredentialRecovered` event for `box_id`.
     ///
-    /// Any other event kind is rejected, and so is a task that does not exist.
-    pub(crate) fn record_proxy_event(&self, task: BoxId, event: &Event) -> Result<(), StoreError> {
+    /// Any other event kind is rejected, and so is a box that does not exist.
+    pub(crate) fn record_proxy_event(
+        &self,
+        box_id: BoxId,
+        event: &Event,
+    ) -> Result<(), StoreError> {
         if !matches!(
             event,
             Event::EgressRefused { .. }
@@ -31,20 +35,20 @@ impl Store {
         let now = self.now();
         let mut conn = self.writer()?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        if load_task(&tx, task)?.is_none() {
-            return Err(StoreError::NotFound(task));
+        if load_box(&tx, box_id)?.is_none() {
+            return Err(StoreError::NotFound(box_id));
         }
-        insert_event(&tx, task, event, now)?;
+        insert_event(&tx, box_id, event, now)?;
         tx.commit()?;
         drop(conn);
         Ok(())
     }
 
-    /// The Task's `agent_rate_limited`, `proxy_credential_rejected` and
+    /// The Box's `agent_rate_limited`, `proxy_credential_rejected` and
     /// `proxy_credential_recovered` events, oldest first, as (kind, payload).
     pub(crate) fn proxy_limit_events(
         &self,
-        task: BoxId,
+        box_id: BoxId,
     ) -> Result<Vec<(String, serde_json::Value)>, StoreError> {
         let conn = self.reader()?;
         let mut stmt = conn.prepare(
@@ -52,16 +56,16 @@ impl Store {
              ('agent_rate_limited', 'proxy_credential_rejected', 'proxy_credential_recovered') \
              ORDER BY id",
         )?;
-        let rows = stmt.query_and_then([task.get()], |row| {
+        let rows = stmt.query_and_then([box_id.get()], |row| {
             let payload: String = row.get(1)?;
             Ok::<_, StoreError>((row.get::<_, String>(0)?, serde_json::from_str(&payload)?))
         })?;
         rows.collect()
     }
 
-    /// The Task's open limits (`open_limits` over [`Store::proxy_limit_events`]).
-    pub(crate) fn open_limits(&self, task: BoxId) -> Result<Vec<Limit>, StoreError> {
-        let events = self.proxy_limit_events(task)?;
+    /// The Box's open limits (`open_limits` over [`Store::proxy_limit_events`]).
+    pub(crate) fn open_limits(&self, box_id: BoxId) -> Result<Vec<Limit>, StoreError> {
+        let events = self.proxy_limit_events(box_id)?;
         Ok(open_limits(events.iter().map(|(k, p)| (k.as_str(), p))))
     }
 }

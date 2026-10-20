@@ -1,4 +1,4 @@
-//! Stopping a task's live agent: close its pane, end its session.
+//! Stopping a Box's live agent: close its pane, end its session.
 
 use moor_core::domain::decision::{Decision, ExtraEvent};
 use moor_core::seam::surface::{PaneRef, SurfaceError};
@@ -6,7 +6,7 @@ use moor_core::ErrorKind;
 
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::store::{Store, TaskRow};
+use crate::store::{BoxRow, Store};
 
 /// Closes the live agent pane and ends its session, with the digest of its saved transcript;
 /// a pane already gone is fine.
@@ -15,7 +15,7 @@ use crate::store::{Store, TaskRow};
 pub(crate) fn stop_agent(
     cx: &Cx,
     store: &Store,
-    row: &TaskRow,
+    row: &BoxRow,
     digest: Option<&str>,
 ) -> Result<bool, CommandError> {
     let Some(session) = store.live_session(row.id)? else {
@@ -27,7 +27,7 @@ pub(crate) fn stop_agent(
             Err(e) => {
                 return Err(CommandError::new(
                     ErrorKind::Failed,
-                    format!("could not close the agent pane: {e}; the task stays open"),
+                    format!("could not close the agent pane: {e}; the Box stays open"),
                 )
                 .with_hint("try `moor close` again, or close the pane by hand"));
             }

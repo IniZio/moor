@@ -5,7 +5,7 @@ use std::sync::Arc;
 use moor_core::activity::{Activity, AgentState, Source};
 use moor_core::BoxId;
 
-use super::{cx, row, task};
+use super::{cx, row, working_box};
 use crate::cx::Cx;
 use crate::ops::common::activity::{settle, PaneLiveness, Reading};
 use crate::testing::engine::FakeEngine;
@@ -41,7 +41,7 @@ fn asked(cx: &Cx, id: BoxId) -> usize {
 fn setup() -> (tempfile::TempDir, Cx, BoxId) {
     let dir = tempfile::tempdir().unwrap();
     let (cx, _) = cx(dir.path(), &Arc::new(FakeEngine::new()));
-    let id = task(&cx, true);
+    let id = working_box(&cx, true);
     (dir, cx, id)
 }
 

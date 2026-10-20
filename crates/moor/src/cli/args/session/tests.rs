@@ -122,8 +122,8 @@ fn show_session_maps_to_show_session() {
 }
 
 #[test]
-fn show_session_refuses_task_and_flags() {
-    assert!(run(&["show", "--session", "5", "sometask"]).is_err());
+fn show_session_refuses_box_and_flags() {
+    assert!(run(&["show", "--session", "5", "somebox"]).is_err());
     assert!(run(&["show", "--session", "5", "--pane"]).is_err());
 }
 

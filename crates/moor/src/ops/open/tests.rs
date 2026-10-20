@@ -4,14 +4,14 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
-use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
+use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::{SessionInput, SessionState};
-use moor_core::domain::task::SetupOutcome;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
 use moor_core::seam::surface::SurfaceError;
-use moor_core::{BoxId, BoxName, ErrorKind, ProviderId, TaskReq};
+use moor_core::{BoxId, BoxName, BoxReq, ErrorKind, ProviderId};
 
 use super::{connect, run};
 use crate::cx::Cx;
@@ -28,7 +28,7 @@ struct Fx {
     id: BoxId,
 }
 
-/// Task `t` with a live Box, working, placed in workspace `ws-9`.
+/// Box `t` with a live machine, working, placed in workspace `ws-9`.
 fn fx_with(driver: FakeDriver) -> Fx {
     fx_placed(driver, Some("ws-9"))
 }
@@ -51,12 +51,12 @@ fn fx_surfaced(driver: FakeDriver, surface: FakeSurface, workspace: Option<&str>
     let store = cx.store().unwrap();
     let name = BoxName::parse_allow_bare("t").unwrap();
     let id = store
-        .apply(Decision::insert(NewTask {
+        .apply(Decision::insert(NewBox {
             name: name.clone(),
             repo: "r".into(),
         }))
         .unwrap()
-        .task;
+        .box_id;
     let provider = ProviderId::new("p");
     let fields = Fields {
         box_provider: Field::Set(provider.clone()),
@@ -71,7 +71,7 @@ fn fx_surfaced(driver: FakeDriver, surface: FakeSurface, workspace: Option<&str>
     let got = driver
         .acquire(&AcquireReq {
             provider,
-            task: id,
+            box_id: id,
             name,
             class: None,
             nonce: "n".to_owned(),
@@ -98,7 +98,7 @@ fn fx() -> Fx {
     fx_with(FakeDriver::new())
 }
 
-/// The fixture put to sleep: Task Asleep and Box Asleep.
+/// The fixture put to sleep: Box Asleep and machine Asleep.
 fn asleep(f: &Fx) {
     let store = f.cx.store().unwrap();
     store
@@ -110,19 +110,24 @@ fn asleep(f: &Fx) {
     store.apply(d).unwrap();
 }
 
-fn req() -> TaskReq {
-    TaskReq {
-        task: BoxName::parse_allow_bare("t").unwrap(),
+fn req() -> BoxReq {
+    BoxReq {
+        box_name: BoxName::parse_allow_bare("t").unwrap(),
     }
 }
 
 fn states(f: &Fx) -> (BoxLifecycle, BoxState) {
-    let row = f.cx.store().unwrap().task(f.id).unwrap().unwrap();
+    let row = f.cx.store().unwrap().box_row(f.id).unwrap().unwrap();
     (row.lifecycle, row.boxed.unwrap().state)
 }
 
 fn session(f: &Fx) -> SessionState {
-    f.cx.store().unwrap().task(f.id).unwrap().unwrap().session
+    f.cx.store()
+        .unwrap()
+        .box_row(f.id)
+        .unwrap()
+        .unwrap()
+        .session
 }
 
 fn wakes(f: &Fx) -> usize {
@@ -139,7 +144,7 @@ fn focuses(f: &Fx) -> Vec<String> {
 }
 
 #[test]
-fn awake_task_focuses_its_workspace() {
+fn awake_box_focuses_its_workspace() {
     let f = fx();
     let v = run(&f.cx, &req()).unwrap();
     assert!(!v.woke);
@@ -150,13 +155,13 @@ fn awake_task_focuses_its_workspace() {
 }
 
 #[test]
-fn asleep_task_is_woken_then_focused() {
+fn asleep_box_is_woken_then_focused() {
     let f = fx();
     asleep(&f);
     let v = run(&f.cx, &req()).unwrap();
     assert!(v.woke);
-    assert_eq!(v.task, "t");
-    assert_eq!(v.r#box.unwrap().state, BoxState::Ready);
+    assert_eq!(v.box_name, "t");
+    assert_eq!(v.driver.unwrap().state, BoxState::Ready);
     assert_eq!(wakes(&f), 1);
     assert_eq!(focuses(&f), vec!["focus_workspace ws-9".to_owned()]);
     assert_eq!(states(&f), (BoxLifecycle::Ready, BoxState::Ready));
@@ -174,15 +179,15 @@ fn second_open_focuses_again_without_waking() {
 }
 
 #[test]
-fn unknown_task_is_failed_and_not_focused() {
+fn unknown_box_is_failed_and_not_focused() {
     let f = fx();
-    let r = TaskReq {
-        task: BoxName::parse_allow_bare("nope").unwrap(),
+    let r = BoxReq {
+        box_name: BoxName::parse_allow_bare("nope").unwrap(),
     };
     let err = run(&f.cx, &r).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Failed);
     assert!(
-        err.error.to_string().contains("no open task"),
+        err.error.to_string().contains("no open Box"),
         "{}",
         err.error
     );
@@ -212,7 +217,7 @@ fn gone_box_is_refused_without_a_resume_or_focus() {
 }
 
 #[test]
-fn task_without_a_workspace_is_refused() {
+fn box_without_a_workspace_is_refused() {
     let f = fx_placed(FakeDriver::new(), None);
     let err = run(&f.cx, &req()).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Refused);
@@ -220,14 +225,14 @@ fn task_without_a_workspace_is_refused() {
 }
 
 #[test]
-fn value_serializes_task_box_and_woke() {
+fn value_serializes_box_and_woke() {
     let f = fx();
     let v = run(&f.cx, &req()).unwrap();
     let j = serde_json::to_value(&v).unwrap();
     let obj = j.as_object().unwrap();
-    assert_eq!(obj["task"], "t");
+    assert_eq!(obj["box"], "t");
     assert_eq!(obj["woke"], false);
-    assert!(obj.contains_key("box"));
+    assert!(obj.contains_key("driver"));
 }
 
 #[test]
@@ -286,12 +291,12 @@ fn connect_without_a_workspace_is_refused() {
 }
 
 #[test]
-fn connect_unknown_task_is_failed() {
+fn connect_unknown_box_is_failed() {
     let f = fx();
-    let r = TaskReq {
-        task: BoxName::parse_allow_bare("nope").unwrap(),
+    let r = BoxReq {
+        box_name: BoxName::parse_allow_bare("nope").unwrap(),
     };
     let err = connect(&f.cx, &r).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Failed);
-    assert!(err.error.to_string().contains("no open task"));
+    assert!(err.error.to_string().contains("no open Box"));
 }

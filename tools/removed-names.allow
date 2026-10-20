@@ -1,0 +1,8 @@
+# Fixed strings, one per line; each is cut out of a scanned line before the rest is checked for the Task word.
+# Claude Code's own TUI status text, parsed in crates/moor-core/src/activity*.
+background task
+# Token match for that same status text in crates/moor-core/src/activity.rs.
+"background", "task" | "tasks"
+"background", "task"]
+# English word, unrelated to the removed concept.
+multitask

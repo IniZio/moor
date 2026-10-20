@@ -39,7 +39,7 @@ pub(super) fn script_base_yaml(w: &World, yaml: Option<&str>) {
 /// Starts `demo` on a base holding `base` with the Box acquire failing, then leaves
 /// `worktree_yaml` in its worktree.
 ///
-/// The Task is left `SetupFailed` with a lost Box, so the next start provisions a new one.
+/// The Box is left `SetupFailed` with a lost machine, so the next start provisions a new one.
 /// `None` removes the worktree's `.moor.yaml`.
 fn lost_box_on_base(base: &str, worktree_yaml: Option<&str>) -> World {
     let repo = tempfile::tempdir().unwrap();
@@ -52,7 +52,7 @@ fn lost_box_on_base(base: &str, worktree_yaml: Option<&str>) -> World {
     let err = run(&w.cx, &start_req()).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Failed);
     let name = BoxName::parse_allow_bare("demo").unwrap();
-    let row = w.cx.store().unwrap().open_task_by_name(&name).unwrap();
+    let row = w.cx.store().unwrap().open_box_by_name(&name).unwrap();
     let wt = row.unwrap().worktree.unwrap();
     std::fs::create_dir_all(&wt).unwrap();
     let file = Path::new(&wt).join(".moor.yaml");
@@ -143,7 +143,12 @@ fn a_changed_env_is_refused_for_a_replacement_box() {
 fn the_base_copy_is_read_by_host_git_in_the_main_checkout() {
     let w = failed_with(Some(BASE));
     run(&w.cx, &start_req()).unwrap();
-    let row = w.cx.store().unwrap().task(BoxId::new(1)).unwrap().unwrap();
+    let row =
+        w.cx.store()
+            .unwrap()
+            .box_row(BoxId::new(1))
+            .unwrap()
+            .unwrap();
     let base = row.base.clone().unwrap();
     let wt = std::path::PathBuf::from(row.worktree.unwrap());
     let repo = std::path::PathBuf::from(&row.repo);
@@ -184,7 +189,7 @@ fn a_replacement_box_starts_when_the_worktree_copy_equals_the_base_but_the_main_
     script_base_yaml(&w, Some(BASE));
     run(&w.cx, &start_req()).unwrap_err();
     let name = BoxName::parse_allow_bare("demo").unwrap();
-    let row = w.cx.store().unwrap().open_task_by_name(&name).unwrap();
+    let row = w.cx.store().unwrap().open_box_by_name(&name).unwrap();
     let wt = row.unwrap().worktree.unwrap();
     std::fs::create_dir_all(&wt).unwrap();
     std::fs::write(Path::new(&wt).join(".moor.yaml"), BASE).unwrap();
@@ -283,7 +288,7 @@ fn a_worktree_moor_yaml_added_over_an_overlay_is_refused_without_trust() {
     let err = run(&w.cx, &start_req()).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Failed);
     let name = BoxName::parse_allow_bare("demo").unwrap();
-    let row = w.cx.store().unwrap().open_task_by_name(&name).unwrap();
+    let row = w.cx.store().unwrap().open_box_by_name(&name).unwrap();
     let wt = row.unwrap().worktree.unwrap();
     std::fs::create_dir_all(&wt).unwrap();
     std::fs::write(Path::new(&wt).join(".moor.yaml"), "setup: [curl evil]\n").unwrap();

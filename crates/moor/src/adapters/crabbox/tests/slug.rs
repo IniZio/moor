@@ -2,7 +2,7 @@
 
 use moor_core::decide::reconcile::{reconcile, BoxFact};
 use moor_core::domain::boxes::BoxState;
-use moor_core::domain::decision::TaskTarget;
+use moor_core::domain::decision::BoxTarget;
 use moor_core::name::{BoxHandle, BoxId, BoxName, ProviderId};
 use moor_core::seam::driver::Driver;
 use moor_core::seam::proc::Tool;
@@ -61,17 +61,17 @@ fn slash_named_box_stays_live_through_list_and_reconcile() {
     let listing = c.list(&ProviderId::new("sprites")).unwrap();
     let rows = [
         BoxFact {
-            task: BoxId::new(7),
+            box_id: BoxId::new(7),
             state: BoxState::Ready,
             handle: Some(handle),
         },
         BoxFact {
-            task: BoxId::new(8),
+            box_id: BoxId::new(8),
             state: BoxState::Ready,
             handle: Some(BoxHandle::new("sprites/moor-8-ab12cd")),
         },
     ];
     let out = reconcile(&rows, &listing);
-    let tasks: Vec<_> = out.iter().map(|d| d.task.clone()).collect();
-    assert_eq!(tasks, [TaskTarget::Existing(BoxId::new(8))]);
+    let boxes: Vec<_> = out.iter().map(|d| d.target.clone()).collect();
+    assert_eq!(boxes, [BoxTarget::Existing(BoxId::new(8))]);
 }

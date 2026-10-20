@@ -2,7 +2,7 @@
 //!
 //! The rig has no agent, so steer refuses every answer; the tests assert that an answer reached
 //! steer (its refusal lands in the thread), not that it succeeded. Like the steer tests, each test
-//! seeds the store with a working Task bound to the thread and appends events to stand in for progress.
+//! seeds the store with a working Box bound to the thread and appends events to stand in for progress.
 
 #![allow(clippy::indexing_slicing, reason = "test code")]
 
@@ -12,10 +12,10 @@ use std::time::Duration;
 use rusqlite::Connection;
 use serde_json::Value;
 
-use super::slack::{Rig, CHANNEL, QUIET, TASK, TS, USER};
+use super::slack::{Rig, BOX_NAME, CHANNEL, QUIET, TS, USER};
 use super::slack_fake::{Click, Post};
 
-/// A second user who is not the Task owner.
+/// A second user who is not the Box owner.
 const OTHER: &str = "U0OTHER";
 /// A question with two options.
 const PAYLOAD: &str = r#"{"question":"Proceed?","options":["Yes","No"]}"#;
@@ -23,7 +23,7 @@ const PAYLOAD: &str = r#"{"question":"Proceed?","options":["Yes","No"]}"#;
 /// The store the controller shares with the test.
 struct Seed {
     db: Connection,
-    task: i64,
+    box_id: i64,
 }
 
 impl Seed {
@@ -39,7 +39,7 @@ impl Seed {
         ready.is_ok_and(|n| n == 2).then_some(db)
     }
 
-    /// Inserts a working Task bound to the thread `TS` and waits for its status message.
+    /// Inserts a working Box bound to the thread `TS` and waits for its status message.
     fn bind(rig: &Rig) -> Self {
         let path = rig.root.join("state").join("moor.db");
         let db = (0..200)
@@ -53,19 +53,19 @@ impl Seed {
             .expect("controller never created its store");
         db.execute(
             "INSERT INTO boxes (name, repo, state, created_at, updated_at) VALUES (?1, 'demo', 'ready', 0, 0)",
-            [TASK],
+            [BOX_NAME],
         )
         .unwrap();
-        let task = db.last_insert_rowid();
+        let box_id = db.last_insert_rowid();
         db.execute(
             "INSERT INTO sessions (box, ordinal, state, started_at) VALUES (?1, 1, 'working', 0)",
-            [task],
+            [box_id],
         )
         .unwrap();
         let session = db.last_insert_rowid();
         db.execute(
             "INSERT INTO events (box, kind, payload, ts) VALUES (?1, 'working', '{}', 0)",
-            [task],
+            [box_id],
         )
         .unwrap();
         db.execute(
@@ -74,15 +74,15 @@ impl Seed {
         )
         .unwrap();
         rig.fake.wait_posts(1);
-        Self { db, task }
+        Self { db, box_id }
     }
 
-    /// Appends a Task event of `kind` with a JSON `payload`.
+    /// Appends a Box event of `kind` with a JSON `payload`.
     fn event(&self, kind: &str, payload: &str) {
         self.db
             .execute(
                 "INSERT INTO events (box, kind, payload, ts) VALUES (?1, ?2, ?3, 0)",
-                (self.task, kind, payload),
+                (self.box_id, kind, payload),
             )
             .unwrap();
     }
@@ -113,7 +113,7 @@ fn click(rig: &Rig, n: u32, user: &str, prompt: &Post, choice: u32) {
     });
 }
 
-/// Starts a rig with a Task that already asked `PAYLOAD`; returns the prompt post.
+/// Starts a rig with a Box that already asked `PAYLOAD`; returns the prompt post.
 fn asked() -> (Rig, Seed, Post) {
     let rig = Rig::start();
     let seed = Seed::bind(&rig);
@@ -156,7 +156,7 @@ fn an_owner_click_on_a_live_prompt_reaches_steer() {
     // routed through the menu path rather than refused as stale or foreign.
     let outcome = &posts[2].text;
     assert!(!outcome.contains("no longer open"), "{outcome}");
-    assert!(outcome.contains(TASK), "{outcome}");
+    assert!(outcome.contains(BOX_NAME), "{outcome}");
     assert_eq!(posts[2].thread_ts, TS);
     assert!(rig.fake.ephemerals().is_empty());
     assert!(rig.fake.updates().is_empty(), "{:?}", rig.fake.updates());
@@ -216,6 +216,6 @@ fn a_digit_reply_from_the_owner_reaches_steer() {
         bot_id: None,
     });
     let posts = rig.fake.wait_posts(3);
-    assert!(posts[2].text.contains(TASK), "{}", posts[2].text);
+    assert!(posts[2].text.contains(BOX_NAME), "{}", posts[2].text);
     assert_eq!(posts[2].thread_ts, TS);
 }

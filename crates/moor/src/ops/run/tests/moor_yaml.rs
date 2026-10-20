@@ -11,7 +11,7 @@ use crate::testing::proc::Reply;
 const BASE: &str = "setup: [a]\n";
 const CHANGED: &str = "setup: [a, b]\n";
 
-/// A Ready Task whose base commit holds `base` as its `.moor.yaml`, and whose worktree holds `now`.
+/// A Ready Box whose base commit holds `base` as its `.moor.yaml`, and whose worktree holds `now`.
 fn with_yaml(base: Option<&str>, now: &str) -> Fx {
     let f = ready();
     if let Some(text) = base {

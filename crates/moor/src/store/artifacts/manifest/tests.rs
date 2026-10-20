@@ -10,7 +10,7 @@ use super::{write_manifest, ArtifactRow};
 fn row(name: &str, version: i64, kind: &str, ct: &str, created_ms: i64) -> ArtifactRow {
     ArtifactRow {
         id: version,
-        task: BoxId::new(1),
+        box_id: BoxId::new(1),
         session: None,
         name: name.to_owned(),
         version,

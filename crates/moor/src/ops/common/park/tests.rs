@@ -1,10 +1,10 @@
-//! Tests for parking and restoring the Task's Proxy tunnel.
+//! Tests for parking and restoring the Box's Proxy tunnel.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use moor_core::domain::decision::{Decision, NewTask};
+use moor_core::domain::decision::{Decision, NewBox};
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::secret::Secret;
 use moor_core::{BoxId, BoxName};
@@ -18,7 +18,7 @@ use crate::testing::proc::ScriptedProc;
 use crate::testing::rng::FakeRng;
 use crate::testing::surface::FakeSurface;
 
-/// A context over a fresh store, the clock it runs on and one task without a proxy row.
+/// A context over a fresh store, the clock it runs on and one Box without a proxy row.
 struct Fx {
     _dir: tempfile::TempDir,
     cx: Cx,
@@ -26,7 +26,7 @@ struct Fx {
     id: BoxId,
 }
 
-/// A fixture whose task has no proxy row.
+/// A fixture whose Box has no proxy row.
 fn fx() -> Fx {
     let dir = tempfile::tempdir().unwrap();
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
@@ -42,12 +42,12 @@ fn fx() -> Fx {
     let id = cx
         .store()
         .unwrap()
-        .apply(Decision::insert(NewTask {
+        .apply(Decision::insert(NewBox {
             name: BoxName::parse_allow_bare("t").unwrap(),
             repo: "r".into(),
         }))
         .unwrap()
-        .task;
+        .box_id;
     Fx {
         _dir: dir,
         cx,

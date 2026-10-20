@@ -1,11 +1,11 @@
-//! `run`: execute a command on the Task's Box, keep a run record, report how it ended.
+//! `run`: execute a command on the Box's machine, keep a run record, report how it ended.
 //!
 //! The Box lock is held from the run row's creation to its completion.
 
 use std::path::{Path, PathBuf};
 
 use moor_core::boxscript::command_line;
-use moor_core::config::{Flags, TaskSettings};
+use moor_core::config::{BoxSettings, Flags};
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::Decision;
@@ -25,7 +25,7 @@ use crate::ops::common::facts::resolved;
 use crate::ops::common::provision::moor_yaml;
 use crate::ops::common::provisioning::dead_provisioning;
 use crate::ops::common::wake::wake_and_revive;
-use crate::store::{NewRun, RunOutcome, Store, StoreError, TaskRow};
+use crate::store::{BoxRow, NewRun, RunOutcome, Store, StoreError};
 
 mod ready;
 mod record;
@@ -34,7 +34,7 @@ mod sync;
 /// Run `run`.
 ///
 /// # Errors
-/// [`CommandError`] when the command could not start: unknown Task, no usable Box, a busy Box,
+/// [`CommandError`] when the command could not start: unknown Box, no usable machine, a busy machine,
 /// a `.moor.yaml` that differs from the base commit without trust, or a failure of the driver or the store before the command ran.
 pub(crate) fn run(cx: &Cx, req: &RunReq) -> Result<RunValue, CommandError> {
     if req.argv.is_empty() {
@@ -43,20 +43,20 @@ pub(crate) fn run(cx: &Cx, req: &RunReq) -> Result<RunValue, CommandError> {
     record::usage(req)?;
     sync::usage(req)?;
     let store = cx.store()?;
-    let name = req.task.as_str();
+    let name = req.box_name.as_str();
     let found = store
-        .latest_task_by_name(&req.task)?
-        .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no task {name}")))?;
+        .latest_box_by_name(&req.box_name)?
+        .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no Box {name}")))?;
     dead_provisioning(cx, &found)?;
     let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, found.id, "run", boxlock::WAIT)?;
     let row = store
-        .task(found.id)?
-        .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no task {name}")))?;
+        .box_row(found.id)?
+        .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no Box {name}")))?;
     locked(cx, store, req, &row)
 }
 
 /// The part of `run` that needs the Box lock, on the row read after taking it.
-fn locked(cx: &Cx, store: &Store, req: &RunReq, row: &TaskRow) -> Result<RunValue, CommandError> {
+fn locked(cx: &Cx, store: &Store, req: &RunReq, row: &BoxRow) -> Result<RunValue, CommandError> {
     dead_provisioning(cx, row)?;
     let gone = row
         .boxed
@@ -64,8 +64,8 @@ fn locked(cx: &Cx, store: &Store, req: &RunReq, row: &TaskRow) -> Result<RunValu
         .is_some_and(|b| matches!(b.state, BoxState::Gone | BoxState::Deleted));
     let woken;
     let row = if !gone && wake_and_revive(cx, store, row)? {
-        woken = store.task(row.id)?.ok_or_else(|| {
-            CommandError::new(ErrorKind::Failed, format!("no task {}", row.name.as_str()))
+        woken = store.box_row(row.id)?.ok_or_else(|| {
+            CommandError::new(ErrorKind::Failed, format!("no Box {}", row.name.as_str()))
         })?;
         &woken
     } else {
@@ -80,7 +80,7 @@ fn launch(
     cx: &Cx,
     store: &Store,
     req: &RunReq,
-    row: &TaskRow,
+    row: &BoxRow,
     target: &ready::Target,
 ) -> Result<RunValue, CommandError> {
     let repo = moor_yaml::guard(cx, row, req.trust_moor_yaml)?;
@@ -88,7 +88,7 @@ fn launch(
     let sync = sync::choose(cx, store, req, row)?;
     let (sha, argv) = plan(cx, req, &target.worktree, &cfg.setup)?;
     let id = store.begin_run(NewRun {
-        task: row.id,
+        box_id: row.id,
         argv: req.argv.clone(),
         record: req.record.clone(),
         sha: sha.clone(),
@@ -145,7 +145,7 @@ fn launch(
 /// Runs the command; when it may never have started, drops the staged Proxy nonce.
 fn exec_in_box(
     cx: &Cx,
-    row: &TaskRow,
+    row: &BoxRow,
     target: &ready::Target,
     exec: &BoxExec,
     spec: &ExecSpec,
@@ -157,8 +157,8 @@ fn exec_in_box(
     result
 }
 
-/// Where in the Box the Task's commands run.
-fn site<'a>(row: &'a TaskRow, target: &'a ready::Target) -> Site<'a> {
+/// Where in the machine the Box's commands run.
+fn site<'a>(row: &'a BoxRow, target: &'a ready::Target) -> Site<'a> {
     Site {
         handle: &target.handle,
         provider: row.boxed.as_ref().map_or("", |b| b.provider.as_str()),
@@ -170,9 +170,9 @@ fn site<'a>(row: &'a TaskRow, target: &'a ready::Target) -> Site<'a> {
 /// The environment every Box exec gets; without the Proxy the command still runs, and warns.
 fn box_env(
     cx: &Cx,
-    row: &TaskRow,
+    row: &BoxRow,
     target: &ready::Target,
-    cfg: &TaskSettings,
+    cfg: &BoxSettings,
 ) -> Result<BoxExec, CommandError> {
     let proxy = box_exec::proxy(
         cx,
@@ -192,8 +192,8 @@ fn box_env(
         .map_err(|m| CommandError::new(ErrorKind::Failed, m))
 }
 
-/// An Idle Task becomes Working for the run; a row that changed since it was read is left as is.
-fn mark_working(store: &Store, row: &TaskRow) -> Result<(), CommandError> {
+/// An Idle Box becomes Working for the run; a row that changed since it was read is left as is.
+fn mark_working(store: &Store, row: &BoxRow) -> Result<(), CommandError> {
     if !(row.lifecycle == BoxLifecycle::Ready && row.session.is_quiet()) {
         return Ok(());
     }

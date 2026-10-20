@@ -13,7 +13,7 @@ mod quiet;
 const NOW: i64 = 1_000_000;
 /// A session age well past the startup grace.
 const OLD: i64 = 3600;
-const TASKS: &str = "2 background tasks running";
+const BACKGROUND: &str = "2 background tasks running";
 
 const fn ts(secs_ago: i64) -> Ts {
     Ts::from_millis(NOW - secs_ago * 1000)

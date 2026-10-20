@@ -33,7 +33,7 @@ ready ssh=u@h:22 network=public workroot=/root/crabbox\n";
 fn req(provider: &str, class: Option<&str>) -> AcquireReq {
     AcquireReq {
         provider: ProviderId::new(provider),
-        task: BoxId::new(7),
+        box_id: BoxId::new(7),
         name: BoxName::parse_allow_bare("t7").unwrap(),
         class: class.map(str::to_owned),
         nonce: "ab12cd".to_owned(),

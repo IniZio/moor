@@ -1,8 +1,8 @@
 # moor
 
-moor is a per-person workflow layer that runs coding agents in Boxes. It
-tracks each unit of work as a Task: a named worktree, a Workspace, and a Box
-the agent runs in.
+moor is a per-person workflow layer that runs coding agents in Boxes. A Box
+is the unit of work: a named worktree, a Workspace, and a machine from the
+Driver. Agents run in Sessions on a Box.
 
 ## Commands
 
@@ -10,27 +10,27 @@ These commands work today:
 
 - `moor version` prints the crate version, the git commit, and the envelope
   schema version (`1`).
-- `moor start NAME` creates a Task with its worktree and Workspace and
-  acquires its Box, or attaches to the open Task of that name. Flags: `--goal`,
+- `moor start NAME` creates a Box with its worktree and Workspace and
+  acquires its machine, or attaches to the open Box of that name. Flags: `--goal`,
   `--issue`, `--worktree`, `--base`, `--model`, `--no-agent`.
-- `moor show [NAME]` reports all Tasks, or one Task in detail. `--events N`
+- `moor show [NAME]` reports all Boxes, or one Box in detail. `--events N`
   adds the last N events. `list` is an alias.
-- `moor close NAME` checks for unsaved work, releases the Box, and closes the
+- `moor close NAME` checks for unsaved work, releases the Box's machine, and closes the
   Workspace. The worktree is kept. `--force` closes despite unsaved work.
-- `moor run NAME -- CMD...` runs a command in the Task's Box. It syncs the
-  host worktree first only until an agent has launched for the Task. `--sync`
-  syncs only if the Box has no unsaved work; otherwise, or if that cannot be
+- `moor run NAME -- CMD...` runs a command in the Box's machine. It syncs the
+  host worktree first only until an agent has launched for the Box. `--sync`
+  syncs only if the Box's machine has no unsaved work; otherwise, or if that cannot be
   checked, it exits 125 and does not run: save the work first or use
   `--no-sync`, which never syncs. Not both. `--record NAME` records the run.
-- `moor wait NAME` waits for the Task to be idle, done, or finished with a
+- `moor wait NAME` waits for the Box to be idle, done, or finished with a
   run (`--for idle|done|run|input`). `input` currently returns at the same
   points as `idle` and exists so callers state their intent. `--timeout S`
   bounds the wait (default 1800).
 - `moor steer NAME TEXT` sends text, or `--menu N` a menu choice, to the
-  Task's agent.
-- `moor cp` copies a file or directory out of the Task's Box to the host.
+  Box's agent.
+- `moor cp` copies a file or directory out of the Box's machine to the host.
   `moor open`, `moor sleep` and `moor wake` open the Workspace, and sleep or
-  wake the Box.
+  wake the Box's machine.
 - `moor gate` records or checks a gate; `moor env [REPO]` previews the
   layered agent environment.
 - `moor call` runs a JSON request read from stdin.

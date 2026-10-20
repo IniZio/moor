@@ -7,14 +7,14 @@ use moor_core::config::UserConfig;
 use moor_core::domain::boxes::BoxState;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::SleepKind;
-use moor_core::view::{AgentView, BoxSleepView, BoxView, EventView, RunView, TaskView};
+use moor_core::view::{AgentView, BoxSleepView, BoxView, DriverView, EventView, RunView};
 use moor_core::ProviderId;
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
 use crate::cx::Cx;
 use crate::ops::common::activity::Reading;
-use crate::store::{BoxRow, EventRow, RunRow, TaskRow};
+use crate::store::{BoxRow, DriverRow, EventRow, RunRow};
 
 #[cfg(test)]
 mod tests;
@@ -31,7 +31,7 @@ pub(crate) fn rfc3339(ts: Ts) -> String {
         .unwrap_or_else(|| ms.to_string())
 }
 
-/// Map a reading to the agent view; none when the Task has no agent.
+/// Map a reading to the agent view; none when the Box has no agent.
 pub(crate) fn agent_view(reading: &Reading) -> Option<AgentView> {
     if let Some(failure) = &reading.launch_failure {
         return Some(AgentView {
@@ -64,7 +64,7 @@ pub(crate) fn agent_view(reading: &Reading) -> Option<AgentView> {
 }
 
 /// The handle to show: live, or the attempted one once the Box failed.
-fn box_handle(b: &BoxRow) -> Option<String> {
+fn box_handle(b: &DriverRow) -> Option<String> {
     let h = match b.state {
         BoxState::Gone | BoxState::Deleted => None,
         BoxState::Failed | BoxState::ReleaseFailed => {
@@ -76,8 +76,8 @@ fn box_handle(b: &BoxRow) -> Option<String> {
 }
 
 /// Map a Box row to its view.
-fn box_view(b: &BoxRow, config: &UserConfig) -> BoxView {
-    BoxView {
+fn driver_view(b: &DriverRow, config: &UserConfig) -> DriverView {
+    DriverView {
         state: b.state,
         provider: b.provider.as_str().to_owned(),
         handle: box_handle(b),
@@ -100,20 +100,20 @@ fn run_view(r: &RunRow) -> RunView {
     }
 }
 
-/// Map a Task row to the shared Task view; `agent` and `run` stay empty.
-pub(crate) fn task_view(row: &TaskRow, config: &UserConfig) -> TaskView {
-    task_view_with_run(row, None, config)
+/// Map a Box row to the shared view; `agent` and `run` stay empty.
+pub(crate) fn box_view(row: &BoxRow, config: &UserConfig) -> BoxView {
+    box_view_with_run(row, None, config)
 }
 
-/// Map a Task row to the shared Task view, showing `run` when one is in flight.
+/// Map a Box row to the shared view, showing `run` when one is in flight.
 ///
 /// `agent` stays empty.
-pub(crate) fn task_view_with_run(
-    row: &TaskRow,
+pub(crate) fn box_view_with_run(
+    row: &BoxRow,
     run: Option<&RunRow>,
     config: &UserConfig,
-) -> TaskView {
-    TaskView {
+) -> BoxView {
+    BoxView {
         id: row.id.get(),
         name: row.name.as_str().to_owned(),
         repo: row.repo.clone(),
@@ -126,7 +126,7 @@ pub(crate) fn task_view_with_run(
         branch: row.branch.clone(),
         worktree: row.worktree.clone(),
         workspace: row.workspace_id.clone(),
-        r#box: row.boxed.as_ref().map(|b| box_view(b, config)),
+        driver: row.boxed.as_ref().map(|b| driver_view(b, config)),
         agent: None,
         run: run.map(run_view),
         updated_at: rfc3339(row.updated_at),
@@ -137,22 +137,22 @@ pub(crate) fn task_view_with_run(
 /// Drop the idle-sleep label when the Box's provider cannot sleep.
 ///
 /// A provider whose capabilities cannot be read keeps the label.
-pub(crate) fn hide_unsupported_sleep(view: &mut TaskView, cx: &Cx) {
+pub(crate) fn hide_unsupported_sleep(view: &mut BoxView, cx: &Cx) {
     hide_unsupported_sleep_cached(view, cx, &mut HashMap::new());
 }
 
 /// Like [`hide_unsupported_sleep`], reading each provider's capabilities once per `cache`.
 pub(crate) fn hide_unsupported_sleep_cached(
-    view: &mut TaskView,
+    view: &mut BoxView,
     cx: &Cx,
     cache: &mut HashMap<String, bool>,
 ) {
-    hide_unsupported_box_sleep(view.r#box.as_mut(), cx, cache);
+    hide_unsupported_box_sleep(view.driver.as_mut(), cx, cache);
 }
 
 /// Drop the idle-sleep label from `b` when its provider cannot sleep.
 pub(crate) fn hide_unsupported_box_sleep(
-    b: Option<&mut BoxView>,
+    b: Option<&mut DriverView>,
     cx: &Cx,
     cache: &mut HashMap<String, bool>,
 ) {

@@ -13,15 +13,15 @@ use moor_core::{
 use super::args_admin::{AdminCmd, GateCmd};
 use super::args_probe::Flags;
 use super::GlobalOpts;
+use box_ops::{BoxArg, CloseArgs, CpArgs, RemoveArgs};
 use events::EventsArgs;
 use session::SessionCmd;
-use task_ops::{CloseArgs, CpArgs, RemoveArgs, TaskArg};
 use wait::WaitArgs;
 use wait_events::WaitEventsArgs;
 
+mod box_ops;
 mod events;
 mod session;
-mod task_ops;
 #[cfg(test)]
 mod tests;
 mod wait;
@@ -34,7 +34,7 @@ pub(super) enum Action {
     Request(Request),
     /// `call`: read a JSON request from stdin.
     CallStdin,
-    /// Hidden `proxy serve <task>`: serve the credential proxy for that Task.
+    /// Hidden `proxy serve <box_id>`: serve the credential proxy for that Box.
     ProxyServe(BoxId),
     /// `controller serve --config <file>`: run the controller daemon.
     ControllerServe(PathBuf),
@@ -77,8 +77,8 @@ pub(super) fn parse_ignoring_env(args: Vec<OsString>) -> Result<(GlobalOpts, Act
     Ok((cli.flags.into(), cli.command.into_action()))
 }
 
-/// clap parser for a Task name.
-pub(super) fn task_name(s: &str) -> Result<BoxName, String> {
+/// clap parser for a Box name.
+pub(super) fn box_name(s: &str) -> Result<BoxName, String> {
     BoxName::parse_allow_bare(s).map_err(|e| e.to_string())
 }
 
@@ -102,40 +102,40 @@ struct Cli {
 /// Every verb.
 #[derive(Debug, Subcommand)]
 enum Cmd {
-    /// Create or attach a Task.
+    /// Create or attach a Box.
     Start(StartArgs),
-    /// Run a command in the Task's Box.
+    /// Run a command in the Box.
     Run(RunArgs),
-    /// Wait for a Task state.
+    /// Wait for a Box state.
     Wait(WaitArgs),
     /// Wait for events from several Boxes.
     WaitEvents(WaitEventsArgs),
     /// Send text or a menu choice to the agent.
     Steer(SteerArgs),
     /// End the agent Session; keep the Box open.
-    End(TaskArg),
+    End(BoxArg),
     /// Agent Session verbs.
     #[command(subcommand)]
     Session(SessionCmd),
     /// File a Report.
     Report(ReportArgs),
-    /// Show one Task or all open Tasks.
+    /// Show one Box or all open Boxes.
     #[command(visible_alias = "list")]
     Show(ShowArgs),
-    /// Close a Task.
+    /// Close a Box.
     Close(CloseArgs),
-    /// Remove a Task.
+    /// Remove a Box.
     Remove(RemoveArgs),
     /// Copy a file to or from the Box.
     Cp(CpArgs),
-    /// Focus the Task's Workspace.
-    Open(TaskArg),
+    /// Focus the Box's Workspace.
+    Open(BoxArg),
     /// Open a shell in the Box.
-    Shell(TaskArg),
-    /// Put the Task to sleep.
-    Sleep(TaskArg),
-    /// Wake a sleeping Task.
-    Wake(TaskArg),
+    Shell(BoxArg),
+    /// Put the Box to sleep.
+    Sleep(BoxArg),
+    /// Wake a sleeping Box.
+    Wake(BoxArg),
     /// Check a gate; record one with `moor run --record <name>`.
     #[command(subcommand)]
     Gate(GateCmd),
@@ -156,7 +156,7 @@ impl Cmd {
             Self::WaitEvents(a) => Action::Request(Request::WaitEvents(a.into())),
             Self::Steer(a) => Action::Request(Request::Steer(a.into())),
             Self::End(a) => Action::Request(Request::EndSession(EndSessionReq {
-                task: a.task.as_str().to_string(),
+                box_name: a.name.as_str().to_string(),
             })),
             Self::Session(c) => Action::Request(c.into()),
             Self::Report(a) => Action::Request(Request::Report(a.into())),
@@ -192,8 +192,8 @@ impl Cmd {
 #[derive(Debug, Args)]
 #[allow(clippy::struct_excessive_bools, reason = "one field per CLI flag")]
 struct StartArgs {
-    /// Task name.
-    #[arg(value_parser = task_name)]
+    /// Box name.
+    #[arg(value_parser = box_name)]
     name: BoxName,
     /// Goal for the agent.
     #[arg(long)]
@@ -222,7 +222,7 @@ struct StartArgs {
     /// Resume the agent's stored session.
     #[arg(long)]
     resume: bool,
-    /// Launch the agent with the Task's .moor.yaml even when it differs from its base commit.
+    /// Launch the agent with the Box's .moor.yaml even when it differs from its base commit.
     #[arg(long)]
     trust_moor_yaml: bool,
     /// Parent Session id; defaults to the `MOOR_SESSION` of the calling agent.
@@ -252,9 +252,9 @@ impl From<StartArgs> for StartReq {
 /// Arguments of `run`.
 #[derive(Debug, Args)]
 struct RunArgs {
-    /// Task name.
-    #[arg(value_parser = task_name)]
-    task: BoxName,
+    /// Box name.
+    #[arg(value_parser = box_name)]
+    name: BoxName,
     /// Skip the pre-run sync.
     #[arg(long)]
     no_sync: bool,
@@ -264,7 +264,7 @@ struct RunArgs {
     /// Record the run under this name.
     #[arg(long, value_name = "NAME")]
     record: Option<String>,
-    /// Run even when the Task's .moor.yaml differs from its base commit.
+    /// Run even when the Box's .moor.yaml differs from its base commit.
     #[arg(long)]
     trust_moor_yaml: bool,
     /// Command and its arguments.
@@ -275,7 +275,7 @@ struct RunArgs {
 impl From<RunArgs> for RunReq {
     fn from(a: RunArgs) -> Self {
         Self {
-            task: a.task,
+            box_name: a.name,
             no_sync: a.no_sync,
             sync: a.sync,
             record: a.record,
@@ -289,9 +289,9 @@ impl From<RunArgs> for RunReq {
 /// Arguments of `steer`.
 #[derive(Debug, Args)]
 struct SteerArgs {
-    /// Task name.
-    #[arg(value_parser = task_name)]
-    task: BoxName,
+    /// Box name.
+    #[arg(value_parser = box_name)]
+    name: BoxName,
     /// Text to send.
     #[arg(conflicts_with = "menu")]
     text: Option<String>,
@@ -303,7 +303,7 @@ struct SteerArgs {
 impl From<SteerArgs> for SteerReq {
     fn from(a: SteerArgs) -> Self {
         Self {
-            task: a.task,
+            box_name: a.name,
             text: a.text,
             menu: a.menu,
         }
@@ -313,9 +313,9 @@ impl From<SteerArgs> for SteerReq {
 /// Arguments of `report`.
 #[derive(Debug, Args)]
 struct ReportArgs {
-    /// Task name.
-    #[arg(value_parser = task_name)]
-    task: BoxName,
+    /// Box name.
+    #[arg(value_parser = box_name)]
+    name: BoxName,
     /// Report kind.
     #[arg(long)]
     kind: String,
@@ -330,7 +330,7 @@ struct ReportArgs {
 impl From<ReportArgs> for ReportReq {
     fn from(a: ReportArgs) -> Self {
         Self {
-            task: a.task,
+            box_name: a.name,
             kind: a.kind,
             title: a.title,
             file: a.file,
@@ -341,14 +341,14 @@ impl From<ReportArgs> for ReportReq {
 /// Arguments of `show`.
 #[derive(Debug, Args)]
 struct ShowArgs {
-    /// Task name; all open Tasks when absent.
-    #[arg(value_parser = task_name)]
-    task: Option<BoxName>,
+    /// Box name; all open Boxes when absent.
+    #[arg(value_parser = box_name)]
+    name: Option<BoxName>,
     /// Show one Session (host or Box) by id, with its child Sessions.
     #[arg(
         long,
         value_name = "ID",
-        conflicts_with_all = ["task", "events", "agent", "reports", "pane"]
+        conflicts_with_all = ["name", "events", "agent", "reports", "pane"]
     )]
     session: Option<i64>,
     /// Include the last N events.
@@ -368,7 +368,7 @@ struct ShowArgs {
 impl From<ShowArgs> for ShowReq {
     fn from(a: ShowArgs) -> Self {
         Self {
-            task: a.task,
+            box_name: a.name,
             events: a.events,
             agent: a.agent,
             reports: a.reports,

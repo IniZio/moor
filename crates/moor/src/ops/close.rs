@@ -17,27 +17,27 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::agent_stop;
 use crate::ops::common::artifacts;
-use crate::ops::common::autosleep::task_dir;
+use crate::ops::common::autosleep::box_dir;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::boxwork::{self, probe, BoxWork, BOXWORK_DEADLINE};
 use crate::ops::common::promote::promote_waiting;
 use crate::ops::common::reports;
 use crate::ops::common::transcript::{self, Saved};
-use crate::ops::common::view::task_view;
+use crate::ops::common::view::box_view;
 use crate::ops::common::wake::wake_box_if_asleep;
-use crate::store::{BoxRow, Store, TaskRow};
+use crate::store::{BoxRow, DriverRow, Store};
 
-/// Closes a task: gate, transcript save, agent stop, Box teardown and release, Workspace close.
+/// Closes a Box: gate, transcript save, agent stop, machine teardown and release, Workspace close.
 ///
 /// The Box lock is held from the gate to the Workspace close and dropped before promotion, which
-/// takes the locks of the waiting tasks. The Box is released before the Workspace closes. The
+/// takes the locks of the waiting Boxes. The machine is released before the Workspace closes. The
 /// worktree goes too, before the Workspace, but only when moor created it and its work is pushed
 /// and clean. The agent stops first, so the session stays ended when the release fails and the
-/// task stays open. The Task's proxy supervisor stops after the lock is dropped: the wait can take
-/// seconds and a closed Task cannot get a new proxy row. Waiting tasks are then promoted.
+/// Box stays open. The Box's proxy supervisor stops after the lock is dropped: the wait can take
+/// seconds and a closed Box cannot get a new proxy row. Waiting Boxes are then promoted.
 pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
     let store = cx.store()?;
-    let first = find(store, &req.task)?;
+    let first = find(store, &req.box_name)?;
     let lock = BoxLock::acquire(
         cx.clock(),
         cx.state_dir()?,
@@ -45,7 +45,7 @@ pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
         "close",
         boxlock::WAIT,
     )?;
-    let mut row = store.task(first.id)?.unwrap_or(first);
+    let mut row = store.box_row(first.id)?.unwrap_or(first);
     let box_check = box_check(cx, store, &mut row, req.force)?;
     let probed_clean = matches!(box_check, BoxCheck::Clean);
     let plan = close_gate(&facts(cx, &row, box_check)?, req.force)?;
@@ -72,11 +72,11 @@ pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
     if let Err(e) = cx.proxy_host().stop(row.id) {
         cx.warn(Warning {
             code: "proxy_stop_failed".to_owned(),
-            message: format!("{e}; the task is closed anyway"),
+            message: format!("{e}; the Box is closed anyway"),
         });
     }
     let provider = row.boxed.as_ref().map(|b| b.provider.clone());
-    let closed = store.task(row.id)?.unwrap_or(row);
+    let closed = store.box_row(row.id)?.unwrap_or(row);
     let promoted = provider.map_or_else(Vec::new, |p| {
         promote_waiting(cx, store, &p, "close")
             .iter()
@@ -84,7 +84,7 @@ pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
             .collect()
     });
     Ok(CloseView {
-        task: task_view(&closed, cx.config()),
+        boxed: box_view(&closed, cx.config()),
         box_deleted,
         workspace_closed,
         agent_stopped,
@@ -95,28 +95,25 @@ pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
 }
 
 /// Saves the live agent's transcript while the Box is still Ready; a failure only records an event.
-fn save_transcript(cx: &Cx, store: &Store, row: &TaskRow) -> Result<Option<Saved>, CommandError> {
+fn save_transcript(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Option<Saved>, CommandError> {
     let Some(session) = store.live_session(row.id)? else {
         return Ok(None);
     };
     Ok(transcript::save(cx, store, row, &session, Trigger::Close))
 }
 
-/// The open task by name, else the newest closed one (the gate refuses it).
-fn find(store: &Store, name: &BoxName) -> Result<TaskRow, CommandError> {
-    if let Some(row) = store.open_task_by_name(name)? {
+/// The open Box by name, else the newest closed one (the gate refuses it).
+fn find(store: &Store, name: &BoxName) -> Result<BoxRow, CommandError> {
+    if let Some(row) = store.open_box_by_name(name)? {
         return Ok(row);
     }
-    store.latest_task_by_name(name)?.ok_or_else(|| {
-        CommandError::new(
-            ErrorKind::Failed,
-            format!("no task named {}", name.as_str()),
-        )
+    store.latest_box_by_name(name)?.ok_or_else(|| {
+        CommandError::new(ErrorKind::Failed, format!("no Box named {}", name.as_str()))
     })
 }
 
 /// The Driver handle to release: the acquired one, else one a failed acquire left.
-const fn held(b: &BoxRow) -> Option<&BoxHandle> {
+const fn held(b: &DriverRow) -> Option<&BoxHandle> {
     match (&b.handle, &b.attempted_handle) {
         (Some(h), _) | (None, Some(h)) => Some(h),
         (None, None) => None,
@@ -130,14 +127,14 @@ const fn held(b: &BoxRow) -> Option<&BoxHandle> {
 fn box_check(
     cx: &Cx,
     store: &Store,
-    row: &mut TaskRow,
+    row: &mut BoxRow,
     force: bool,
 ) -> Result<BoxCheck, CommandError> {
     // --force discards Box work, so the Box is neither woken nor probed.
     if force {
         return Ok(BoxCheck::Skipped);
     }
-    let live = |r: &TaskRow| {
+    let live = |r: &BoxRow| {
         r.boxed.as_ref().is_some_and(|b| {
             b.handle.is_some() && !matches!(b.state, BoxState::Gone | BoxState::Deleted)
         })
@@ -148,20 +145,20 @@ fn box_check(
     // The tunnel stays parked: close needs the Box awake, not reachable through the Proxy.
     match wake_box_if_asleep(cx, store, row) {
         Ok(true) => {
-            if let Some(fresh) = store.task(row.id)? {
+            if let Some(fresh) = store.box_row(row.id)? {
                 *row = fresh;
             }
         }
         Ok(false) => {}
         // The driver has forgotten the Box: nothing to save, and release treats it as deleted.
         Err(e) if e.error.downcast_ref::<DriverError>() == Some(&DriverError::NotFound) => {
-            return Ok(BoxCheck::Skipped)
+            return Ok(BoxCheck::Skipped);
         }
         Err(e) => {
             return Ok(BoxCheck::Unknown(format!(
                 "could not wake the Box: {}",
                 e.error
-            )))
+            )));
         }
     }
     // A Box that never got ready, or whose release already failed, has no reachable work tree.
@@ -181,7 +178,7 @@ fn box_check(
 /// write between the first probe and the stop. The agent stays stopped when this refuses, and
 /// no Report is stored then. The probe and the Report index run as one batch; when it stops
 /// early, Reports are collected on their own.
-fn recheck_and_collect(cx: &Cx, store: &Store, row: &TaskRow) -> Result<(), CommandError> {
+fn recheck_and_collect(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
     let Some(b) = row.boxed.as_ref().filter(|b| b.state == BoxState::Ready) else {
         reports::collect(cx, store, row);
         return Ok(());
@@ -213,7 +210,7 @@ fn recheck_and_collect(cx: &Cx, store: &Store, row: &TaskRow) -> Result<(), Comm
 }
 
 /// Collects the Box's artifacts when it is Ready; a Box that cannot run an exec has none to collect.
-fn collect_artifacts(cx: &Cx, store: &Store, row: &TaskRow) {
+fn collect_artifacts(cx: &Cx, store: &Store, row: &BoxRow) {
     if let Some(b) = row.boxed.as_ref() {
         if b.state == BoxState::Ready && b.handle.is_some() {
             let cursor = store.newest_turn_event(row.id);
@@ -240,7 +237,7 @@ fn cursor_warning(reason: &str) -> Warning {
 }
 
 /// Refuses when the second probe found unsaved work or could not tell.
-fn recheck_verdict(cx: &Cx, row: &TaskRow, work: BoxWork) -> Result<(), CommandError> {
+fn recheck_verdict(cx: &Cx, row: &BoxRow, work: BoxWork) -> Result<(), CommandError> {
     let check = match work {
         BoxWork::Clean | BoxWork::Gone => return Ok(()),
         BoxWork::Unsaved { ahead, dirty } => BoxCheck::Unsaved { ahead, dirty },
@@ -257,7 +254,7 @@ fn recheck_verdict(cx: &Cx, row: &TaskRow, work: BoxWork) -> Result<(), CommandE
 }
 
 /// Reads the unsaved-work facts the gate decides on.
-fn facts(cx: &Cx, row: &TaskRow, box_check: BoxCheck) -> Result<CloseFacts, CommandError> {
+fn facts(cx: &Cx, row: &BoxRow, box_check: BoxCheck) -> Result<CloseFacts, CommandError> {
     let (mut unpushed, mut dirty) = (0, false);
     if let Some(wt) = row.worktree.as_deref().map(Path::new) {
         let failed = |e| CommandError::new(ErrorKind::Failed, e);
@@ -265,7 +262,7 @@ fn facts(cx: &Cx, row: &TaskRow, box_check: BoxCheck) -> Result<CloseFacts, Comm
         dirty = cx.git().dirty(wt).map_err(failed)?;
     }
     Ok(CloseFacts {
-        task: row.id,
+        box_id: row.id,
         name: row.name.as_str().to_owned(),
         branch: row.branch.clone(),
         lifecycle: row.lifecycle,
@@ -281,14 +278,14 @@ fn facts(cx: &Cx, row: &TaskRow, box_check: BoxCheck) -> Result<CloseFacts, Comm
 /// Asks the Driver to release the Box and records the verdict.
 ///
 /// Returns whether the Box is now deleted.
-fn release(cx: &Cx, store: &Store, row: &TaskRow) -> Result<bool, CommandError> {
+fn release(cx: &Cx, store: &Store, row: &BoxRow) -> Result<bool, CommandError> {
     let Some(b) = row.boxed.as_ref() else {
         return Ok(false);
     };
     let Some(handle) = held(b) else {
         return Ok(false);
     };
-    let (result, cause) = match cx.driver().release(handle, Some(task_dir(row))) {
+    let (result, cause) = match cx.driver().release(handle, Some(box_dir(row))) {
         Ok(Released::Deleted | Released::AlreadyGone) => (ReleaseResult::Deleted, None),
         Err(e) => (ReleaseResult::Failed, Some(e)),
     };
@@ -305,7 +302,7 @@ fn release(cx: &Cx, store: &Store, row: &TaskRow) -> Result<bool, CommandError> 
             |e| e.to_string(),
         );
         return Err(
-            CommandError::new(ErrorKind::Failed, format!("{why}; the task stays open"))
+            CommandError::new(ErrorKind::Failed, format!("{why}; the Box stays open"))
                 .with_hint("try `moor close` again, or release the Box by hand"),
         );
     }
@@ -313,7 +310,7 @@ fn release(cx: &Cx, store: &Store, row: &TaskRow) -> Result<bool, CommandError> 
 }
 
 /// Closes the Workspace; a missing one is success, other failures warn.
-fn close_workspace(cx: &Cx, row: &TaskRow, plan: &ClosePlan) -> bool {
+fn close_workspace(cx: &Cx, row: &BoxRow, plan: &ClosePlan) -> bool {
     let Some(id) = row.workspace_id.as_deref().filter(|_| plan.close_workspace) else {
         return false;
     };
@@ -322,7 +319,7 @@ fn close_workspace(cx: &Cx, row: &TaskRow, plan: &ClosePlan) -> bool {
         Err(_) => {
             cx.warn(Warning {
                 code: "workspace_close_failed".to_owned(),
-                message: "the task is closed but its Workspace could not be closed; \
+                message: "the Box is closed but its Workspace could not be closed; \
                           close it by hand"
                     .to_owned(),
             });

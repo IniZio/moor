@@ -4,9 +4,9 @@ use std::fmt::Write as _;
 use std::path::Path;
 
 use moor_core::boxscript::setup::setup_script;
-use moor_core::config::TaskSettings;
+use moor_core::config::BoxSettings;
+use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::run::SyncMode;
-use moor_core::domain::task::SetupOutcome;
 use moor_core::exec_env::{Purpose, SETUP_LINE_DEADLINE};
 use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
 use moor_core::seam::proc::Deadline;
@@ -49,7 +49,7 @@ pub(crate) enum SetupRun {
 }
 
 impl SetupRun {
-    /// The outcome recorded on the Task.
+    /// The outcome recorded on the Box.
     pub(crate) fn outcome(&self) -> SetupOutcome {
         match self {
             Self::Skipped | Self::Ok { .. } => SetupOutcome::Ok,
@@ -116,7 +116,7 @@ pub(crate) fn run_setup(
     provider: &str,
     workdir: &BoxPath,
     worktree: &Path,
-    cfg: &TaskSettings,
+    cfg: &BoxSettings,
     sync: SyncMode,
     proxy: Option<&BoxProxy>,
 ) -> SetupRun {
@@ -200,7 +200,7 @@ pub(crate) fn sync_checkout(
     handle: &BoxHandle,
     workdir: &BoxPath,
     worktree: &Path,
-    cfg: &TaskSettings,
+    cfg: &BoxSettings,
 ) -> Result<(), String> {
     let spec = ExecSpec {
         argv: ["git", "rev-parse", "--git-dir"]

@@ -49,20 +49,20 @@ fn help_exits_zero() {
 }
 
 #[test]
-fn proxy_serve_parses_task() {
+fn proxy_serve_parses_box_id() {
     assert!(matches!(
         parse(argv(&["proxy", "serve", "7"])),
-        Parsed::ProxyServe { task, .. } if task == moor_core::BoxId::new(7)
+        Parsed::ProxyServe { box_id, .. } if box_id == moor_core::BoxId::new(7)
     ));
 }
 
 #[test]
-fn proxy_serve_without_task_is_usage() {
+fn proxy_serve_without_box_id_is_usage() {
     assert_eq!(done(&["proxy", "serve"]).code, 2);
 }
 
 #[test]
-fn proxy_serve_non_numeric_task_is_usage() {
+fn proxy_serve_non_numeric_box_id_is_usage() {
     assert_eq!(done(&["proxy", "serve", "abc"]).code, 2);
 }
 
@@ -123,7 +123,7 @@ fn render_json_version_is_single_line() {
 
 #[test]
 fn render_json_open_session_prints_value_fields() {
-    let v = serde_json::json!({"task": "t1", "session": 9, "ordinal": 3, "pane": "p4"});
+    let v = serde_json::json!({"box": "t1", "session": 9, "ordinal": 3, "pane": "p4"});
     let opts = GlobalOpts {
         json: true,
         ..GlobalOpts::default()
@@ -136,7 +136,7 @@ fn render_json_open_session_prints_value_fields() {
 
 #[test]
 fn render_json_end_session_prints_value_fields() {
-    let v = serde_json::json!({"task": "t1", "session": 7, "ordinal": 2, "box_kept": true});
+    let v = serde_json::json!({"box": "t1", "session": 7, "ordinal": 2, "box_kept": true});
     let opts = GlobalOpts {
         json: true,
         ..GlobalOpts::default()

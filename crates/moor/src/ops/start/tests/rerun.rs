@@ -1,4 +1,4 @@
-//! Tests for how a start on an existing Task re-syncs the Box checkout.
+//! Tests for how a start on an existing Box re-syncs the machine checkout.
 
 use moor_core::boxscript::boxwork::BOXWORK_NO_CHECKOUT;
 use moor_core::domain::run::SyncMode;
@@ -11,7 +11,7 @@ use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::Reply;
 
-/// A failed first setup on a Task whose agent session is `live` or has ended.
+/// A failed first setup on a Box whose agent session is `live` or has ended.
 fn resumed(live: bool) -> World {
     let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(0)), Ok(exit(1))]);
     let (w, id) = failed_setup_with("setup: [a]\n", driver);
@@ -24,7 +24,7 @@ fn resumed(live: bool) -> World {
     w
 }
 
-/// A failed first setup on a Task whose agent session has ended.
+/// A failed first setup on a Box whose agent session has ended.
 fn resumed_with_session() -> World {
     resumed(false)
 }
@@ -51,14 +51,14 @@ fn probe_says(w: &World, result: &str) {
     w.driver.set_peek_text("box-1", &path, result);
 }
 
-/// A started Task whose agent session is `live` or has ended, ready to be started again with no
+/// A started Box whose agent session is `live` or has ended, ready to be started again with no
 /// setup to re-run.
 fn attached(driver: FakeDriver, live: bool) -> World {
     let w = world(driver);
     let first = run(&w.cx, &start_req()).unwrap();
     let store = w.cx.store().unwrap();
     let session = store
-        .begin_session(BoxId::new(first.task.id), "agent-1", None)
+        .begin_session(BoxId::new(first.boxed.id), "agent-1", None)
         .unwrap();
     if !live {
         store.end_session(session, Some(0), None).unwrap();
@@ -67,7 +67,7 @@ fn attached(driver: FakeDriver, live: bool) -> World {
     w
 }
 
-/// A started Task whose agent session has ended.
+/// A started Box whose agent session has ended.
 fn attached_with_session(driver: FakeDriver) -> World {
     attached(driver, false)
 }
@@ -136,7 +136,7 @@ fn restart_after_a_failed_setup_before_any_agent_session_syncs_without_a_resync_
 }
 
 #[test]
-fn attach_to_a_task_with_no_session_syncs_the_checkout_alone() {
+fn attach_to_a_box_with_no_session_syncs_the_checkout_alone() {
     let w = world(FakeDriver::new());
     run(&w.cx, &start_req()).unwrap();
     run(&w.cx, &start_req()).unwrap();
@@ -199,7 +199,7 @@ fn start_that_launches_the_agent_aborts_when_the_re_sync_fails() {
         .error
         .to_string()
         .contains("syncing the checkout into the Box failed"));
-    let id = BoxId::new(first.task.id);
+    let id = BoxId::new(first.boxed.id);
     let events = w.cx.store().unwrap().events(id, 50).unwrap();
     assert!(events.iter().any(|e| e.kind == "setup_failed"));
 }
@@ -247,6 +247,11 @@ fn restart_after_a_failed_setup_that_launches_the_agent_aborts_when_the_sync_fai
         .contains("syncing the checkout into the Box failed"));
     assert_eq!(setup_execs(&w).len(), 1);
     let store = w.cx.store().unwrap();
-    assert!(store.task(id).unwrap().unwrap().setup_failed_at.is_some());
+    assert!(store
+        .box_row(id)
+        .unwrap()
+        .unwrap()
+        .setup_failed_at
+        .is_some());
     assert!(store.live_session(id).unwrap().is_none());
 }

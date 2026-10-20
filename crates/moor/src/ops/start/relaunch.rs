@@ -1,7 +1,7 @@
-//! Starts the agent again for a Working Task whose pane is gone or has exited.
+//! Starts the agent again for a Working Box whose pane is gone or has exited.
 
 use moor_core::activity::PaneStatus;
-use moor_core::config::{Flags, TaskSettings};
+use moor_core::config::{BoxSettings, Flags};
 use moor_core::decide::transcript::Trigger;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
@@ -24,7 +24,7 @@ use crate::ops::common::facts::settings;
 use crate::ops::common::provision::reread;
 use crate::ops::common::resume;
 use crate::ops::common::transcript;
-use crate::store::{SessionRow, Store, TaskRow};
+use crate::store::{BoxRow, SessionRow, Store};
 
 /// Time allowed for reading a pane to see whether it ended.
 const PANE_DEADLINE: Duration = Duration::from_secs(5);
@@ -46,7 +46,7 @@ enum Ended {
     Exited(i32),
 }
 
-/// Launches, or relaunches, the agent of an attached Task.
+/// Launches, or relaunches, the agent of an attached Box.
 ///
 /// The Box lock is held from the live-session check through the launch, so two starts cannot both
 /// launch; it is released on return, before anything waits on the agent.
@@ -64,7 +64,7 @@ pub(super) fn run(
     req: &StartReq,
     id: BoxId,
     (setup_exit, recreated): (Option<i32>, bool),
-    settings: &dyn Fn() -> Result<TaskSettings, CommandError>,
+    settings: &dyn Fn() -> Result<BoxSettings, CommandError>,
 ) -> Result<AgentLaunchView, CommandError> {
     let row = reread(store, id)?;
     if req.no_agent || !launch::working(&row) {
@@ -76,7 +76,7 @@ pub(super) fn run(
             return Ok(AgentLaunchView::default());
         }
         None if row.goal.is_none() && req.goal.is_none() && !req.resume => {
-            return Ok(AgentLaunchView::default())
+            return Ok(AgentLaunchView::default());
         }
         _ => {}
     }
@@ -107,7 +107,7 @@ pub(super) fn will_launch(
     cx: &Cx,
     store: &Store,
     req: &StartReq,
-    row: &TaskRow,
+    row: &BoxRow,
 ) -> Result<bool, CommandError> {
     if req.no_agent {
         return Ok(false);
@@ -122,14 +122,14 @@ pub(super) fn will_launch(
 }
 
 /// Whether an agent session of `row` exists and has not ended.
-pub(super) fn agent_live(cx: &Cx, store: &Store, row: &TaskRow) -> Result<bool, CommandError> {
+pub(super) fn agent_live(cx: &Cx, store: &Store, row: &BoxRow) -> Result<bool, CommandError> {
     Ok(store
         .live_session(row.id)?
         .is_some_and(|s| ended(cx, &s).is_none()))
 }
 
 /// Whether `req` resumes the stored agent session of `row`.
-fn resumes(req: &StartReq, row: &TaskRow) -> bool {
+fn resumes(req: &StartReq, row: &BoxRow) -> bool {
     req.resume
         && req.goal.is_none()
         && row
@@ -138,11 +138,11 @@ fn resumes(req: &StartReq, row: &TaskRow) -> bool {
             .is_some_and(|s| !s.is_empty())
 }
 
-/// Refuses `--resume` for a Task with no stored agent session.
+/// Refuses `--resume` for a Box with no stored agent session.
 ///
 /// # Errors
 /// [`ErrorKind::Refused`] when `req` resumes without a goal and `row` holds no session id.
-pub(super) fn check_resume(req: &StartReq, row: &TaskRow) -> Result<(), CommandError> {
+pub(super) fn check_resume(req: &StartReq, row: &BoxRow) -> Result<(), CommandError> {
     let stored = row
         .agent_session_id
         .as_deref()
@@ -160,7 +160,7 @@ pub(super) fn nothing_to_resume() -> CommandError {
 
 /// Handles a start that finds the agent live: warns of a goal it cannot take, and with
 /// `--resume` registers the session with the multiplexer again.
-fn on_live(cx: &Cx, store: &Store, req: &StartReq, row: &TaskRow, session: &SessionRow) {
+fn on_live(cx: &Cx, store: &Store, req: &StartReq, row: &BoxRow, session: &SessionRow) {
     warn_goal_ignored(cx, req, &row.name);
     let (true, Some(pane)) = (req.resume, session.pane.as_deref()) else {
         return;
@@ -181,7 +181,7 @@ fn on_live(cx: &Cx, store: &Store, req: &StartReq, row: &TaskRow, session: &Sess
     }
 }
 
-/// Stores a given goal on the Task, replacing any it holds, so the launch brief carries it.
+/// Stores a given goal on the Box, replacing any it holds, so the launch brief carries it.
 fn store_goal(store: &Store, req: &StartReq, id: BoxId) -> Result<(), CommandError> {
     let Some(g) = &req.goal else {
         return Ok(());
@@ -196,17 +196,17 @@ fn store_goal(store: &Store, req: &StartReq, id: BoxId) -> Result<(), CommandErr
 
 /// Replaces the ended session `old` with a new one.
 ///
-/// A given goal replaces the Task's goal and starts a fresh brief. Without one the agent resumes
-/// its stored session, else starts a fresh brief with the Task's goal. The old tab stays.
+/// A given goal replaces the Box's goal and starts a fresh brief. Without one the agent resumes
+/// its stored session, else starts a fresh brief with the Box's goal. The old tab stays.
 fn relaunch(
     cx: &Cx,
     store: &Store,
     req: &StartReq,
     (old, end): (&SessionRow, &Ended),
     (recreated, cause): (bool, Option<&str>),
-    settings: &dyn Fn() -> Result<TaskSettings, CommandError>,
+    settings: &dyn Fn() -> Result<BoxSettings, CommandError>,
 ) -> Result<AgentLaunchView, CommandError> {
-    let id = old.task;
+    let id = old.box_id;
     let mut row = reread(store, id)?;
     let resume = match &req.goal {
         Some(_) => None,
@@ -266,8 +266,8 @@ fn relaunch(
 
 /// Starts the agent again after a Box wake when its pane did not survive.
 ///
-/// The caller holds the Box lock. A live agent, or a Task with no live session or not Working, is
-/// left alone. The stored agent session is resumed; a Task with neither one nor a goal stays as is.
+/// The caller holds the Box lock. A live agent, or a Box with no live session or not Working, is
+/// left alone. The stored agent session is resumed; a Box with neither one nor a goal stays as is.
 ///
 /// # Errors
 /// A store failure, or settings that cannot be resolved.
@@ -331,7 +331,7 @@ pub(super) fn sweep_creds(cx: &Cx, store: &Store, id: BoxId) {
 }
 
 /// Whether `row` holds a goal or an agent session to start again.
-fn revivable(row: &TaskRow) -> bool {
+fn revivable(row: &BoxRow) -> bool {
     row.goal.is_some()
         || row
             .agent_session_id
@@ -339,10 +339,10 @@ fn revivable(row: &TaskRow) -> bool {
             .is_some_and(|s| !s.is_empty())
 }
 
-/// Waits until the Task's tunnel is up and has not restarted for `TUNNEL_SETTLE`.
+/// Waits until the Box's tunnel is up and has not restarted for `TUNNEL_SETTLE`.
 ///
 /// A relaunch touches the Box lease, which every tunnel restart rewrites, so launching into a
-/// restarting tunnel loses the claim. A Task with no live proxy is not waited for. After
+/// restarting tunnel loses the claim. A Box with no live proxy is not waited for. After
 /// `TUNNEL_WAIT` the relaunch goes ahead anyway.
 fn await_tunnel(cx: &Cx, store: &Store, id: BoxId) {
     let mut waited = Duration::ZERO;
@@ -363,7 +363,7 @@ fn await_tunnel(cx: &Cx, store: &Store, id: BoxId) {
     }
 }
 
-/// Whether the Task's tunnel restarted less than `window` ago.
+/// Whether the Box's tunnel restarted less than `window` ago.
 fn restarted_within(cx: &Cx, store: &Store, id: BoxId, window: Duration) -> bool {
     let now = cx.clock().now().as_millis();
     let window = i64::try_from(window.as_millis()).unwrap_or(i64::MAX);
@@ -387,13 +387,13 @@ fn ended(cx: &Cx, session: &SessionRow) -> Option<Ended> {
 }
 
 /// Warns that a given goal does not reach a live agent.
-fn warn_goal_ignored(cx: &Cx, req: &StartReq, task: &moor_core::BoxName) {
+fn warn_goal_ignored(cx: &Cx, req: &StartReq, name: &moor_core::BoxName) {
     if req.goal.is_some() {
         cx.warn(Warning {
             code: "goal_ignored".to_owned(),
             message: format!(
                 "--goal ignored: the agent for {} is live; use moor steer",
-                task.as_str()
+                name.as_str()
             ),
         });
     }

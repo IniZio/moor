@@ -1,4 +1,4 @@
-//! A manual `moor run <task> -- '<setup line>'` runs like setup: same env, same workdir.
+//! A manual `moor run <Box> -- '<setup line>'` runs like setup: same env, same workdir.
 
 use moor_core::config::Flags;
 use moor_core::domain::decision::{Decision, Field, Fields};
@@ -17,7 +17,7 @@ use crate::ops::run::run;
 
 const YAML: &str = "setup: [make deps]\nenv:\n  B: \"2\"\n  A: \"1\"\n";
 
-/// A Ready Task whose worktree and base commit both hold `.moor.yaml` as `YAML`.
+/// A Ready Box whose worktree and base commit both hold `.moor.yaml` as `YAML`.
 fn with_env_yaml() -> Fx {
     let f = ready();
     std::fs::write(f.dir.path().join(".moor.yaml"), YAML).unwrap();
@@ -34,9 +34,9 @@ fn with_env_yaml() -> Fx {
     f
 }
 
-/// The spec setup would exec for this Task's Box.
+/// The spec setup would exec for this Box's machine.
 fn setup_spec(f: &Fx) -> ExecSpec {
-    let row = f.cx.store().unwrap().task(f.id).unwrap().unwrap();
+    let row = f.cx.store().unwrap().box_row(f.id).unwrap().unwrap();
     let repo = moor_yaml::guard(&f.cx, &row, false).unwrap();
     let cfg = resolved(&f.cx, repo.as_ref(), &Flags::default());
     let boxed = row.boxed.unwrap();
@@ -97,7 +97,7 @@ fn recorded_run_has_the_repo_env_too() {
 }
 
 #[test]
-fn task_without_a_recorded_workdir_keeps_the_driver_default_cwd() {
+fn box_without_a_recorded_workdir_keeps_the_driver_default_cwd() {
     let f = ready();
     f.cx.store()
         .unwrap()

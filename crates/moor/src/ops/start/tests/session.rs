@@ -34,7 +34,7 @@ fn start_records_one_live_session_and_attach_adds_none() {
     let engine = Arc::new(FakeEngine::new());
     let w = with_engine(&engine);
     let first = run(&w.cx, &goal_req("demo")).unwrap();
-    let id = BoxId::new(first.task.id);
+    let id = BoxId::new(first.boxed.id);
     let store = w.cx.store().unwrap();
     let sessions = || -> i64 {
         store
@@ -47,7 +47,7 @@ fn start_records_one_live_session_and_attach_adds_none() {
             )
             .unwrap()
     };
-    assert_eq!((first.task.lifecycle, first.task.session_state), WORKING);
+    assert_eq!((first.boxed.lifecycle, first.boxed.session_state), WORKING);
     assert_eq!(sessions(), 1);
     run(&w.cx, &goal_req("demo")).unwrap();
     assert_eq!(sessions(), 1);
@@ -58,9 +58,9 @@ fn start_records_one_live_session_and_attach_adds_none() {
 fn start_without_a_goal_records_no_session() {
     let w = world(FakeDriver::new());
     let first = run(&w.cx, &req("demo")).unwrap();
-    let id = BoxId::new(first.task.id);
+    let id = BoxId::new(first.boxed.id);
     run(&w.cx, &req("demo")).unwrap();
-    assert_eq!((first.task.lifecycle, first.task.session_state), WORKING);
+    assert_eq!((first.boxed.lifecycle, first.boxed.session_state), WORKING);
     assert!(!w.cx.store().unwrap().has_session(id).unwrap());
 }
 
@@ -69,7 +69,7 @@ fn wait_for_idle_returns_after_a_start_without_a_goal() {
     let w = world(FakeDriver::new());
     run(&w.cx, &req("demo")).unwrap();
     let wait = WaitReq {
-        task: BoxName::parse_allow_bare("demo").unwrap(),
+        box_name: BoxName::parse_allow_bare("demo").unwrap(),
         wait_for: Some(WaitFor::Idle),
         timeout_secs: Some(60),
     };
@@ -98,7 +98,7 @@ fn a_launch_records_a_session_with_its_pane() {
     let engine = Arc::new(FakeEngine::new());
     let w = with_engine(&engine);
     let v = run(&w.cx, &goal_req("demo")).unwrap();
-    let id = BoxId::new(v.task.id);
+    let id = BoxId::new(v.boxed.id);
     assert!(v.agent.launched);
     let s = w.cx.store().unwrap().live_session(id).unwrap().unwrap();
     assert_eq!(s.pane.as_deref(), Some("p-1"));
@@ -106,20 +106,20 @@ fn a_launch_records_a_session_with_its_pane() {
     let launches = engine.launches();
     let l = launches.first().unwrap();
     assert_eq!(l.goal.as_deref(), Some("ship it"));
-    assert_eq!(l.task.as_str(), "demo");
+    assert_eq!(l.box_name.as_str(), "demo");
     assert_eq!(l.setup_exit, None);
 }
 
 #[test]
-fn a_failed_launch_records_no_session_and_leaves_the_task_working() {
+fn a_failed_launch_records_no_session_and_leaves_the_box_working() {
     let engine = Arc::new(
         FakeEngine::new().launch_result(Err(launch_error("pane", "no tab\nline one\nline two"))),
     );
     let w = with_engine(&engine);
     let v = run(&w.cx, &goal_req("demo")).unwrap();
-    let id = BoxId::new(v.task.id);
+    let id = BoxId::new(v.boxed.id);
     let store = w.cx.store().unwrap();
-    assert_eq!((v.task.lifecycle, v.task.session_state), WORKING);
+    assert_eq!((v.boxed.lifecycle, v.boxed.session_state), WORKING);
     assert!(!v.agent.launched);
     assert!(!store.has_session(id).unwrap());
     let f = v.agent.reason.unwrap();
@@ -129,7 +129,7 @@ fn a_failed_launch_records_no_session_and_leaves_the_task_working() {
         v.warnings_inline,
         ["agent dispatch failed: pane: no tab; re-run start to retry"]
     );
-    assert!(store.task(id).unwrap().unwrap().launch_failure.is_some());
+    assert!(store.box_row(id).unwrap().unwrap().launch_failure.is_some());
 }
 
 #[test]
@@ -138,7 +138,7 @@ fn a_launch_failure_shows_as_failed_and_is_not_idled_by_the_next_list() {
     let w = with_engine(&engine);
     run(&w.cx, &goal_req("demo")).unwrap();
     let req = ShowReq {
-        task: None,
+        box_name: None,
         events: None,
         agent: true,
         reports: false,
@@ -146,7 +146,7 @@ fn a_launch_failure_shows_as_failed_and_is_not_idled_by_the_next_list() {
         pane: false,
     };
     let shown = crate::ops::show::run(&w.cx, &req).unwrap();
-    let t = shown.tasks.as_ref().unwrap().first().unwrap();
+    let t = shown.boxes.as_ref().unwrap().first().unwrap();
     assert_eq!((t.lifecycle, t.session_state), WORKING);
     let a = t.agent.as_ref().unwrap();
     assert_eq!(a.state, "failed");
@@ -160,7 +160,7 @@ fn wait_fails_on_a_launch_failure() {
     let w = with_engine(&engine);
     run(&w.cx, &goal_req("demo")).unwrap();
     let wait = WaitReq {
-        task: BoxName::parse_allow_bare("demo").unwrap(),
+        box_name: BoxName::parse_allow_bare("demo").unwrap(),
         wait_for: Some(WaitFor::Idle),
         timeout_secs: Some(60),
     };
@@ -177,23 +177,23 @@ fn starting_again_launches_once_and_clears_the_failure() {
     let engine = Arc::new(FakeEngine::new().launch_result(Err(launch_error("pane", "no tab"))));
     let w = with_engine(&engine);
     let first = run(&w.cx, &goal_req("demo")).unwrap();
-    let id = BoxId::new(first.task.id);
+    let id = BoxId::new(first.boxed.id);
     let again = run(&w.cx, &goal_req("demo")).unwrap();
     assert!(again.agent.launched);
     assert!(again.agent.reason.is_none());
     let store = w.cx.store().unwrap();
-    assert!(store.task(id).unwrap().unwrap().launch_failure.is_none());
+    assert!(store.box_row(id).unwrap().unwrap().launch_failure.is_none());
     assert!(store.live_session(id).unwrap().is_some());
     run(&w.cx, &goal_req("demo")).unwrap();
     assert_eq!(engine.launches().len(), 2);
 }
 
 #[test]
-fn restarting_an_idle_task_with_a_goal_and_no_session_wakes_and_launches_once() {
+fn restarting_an_idle_box_with_a_goal_and_no_session_wakes_and_launches_once() {
     let engine = Arc::new(FakeEngine::new());
     let w = with_engine(&engine);
     let first = run(&w.cx, &goal_req("demo")).unwrap();
-    let id = BoxId::new(first.task.id);
+    let id = BoxId::new(first.boxed.id);
     let store = w.cx.store().unwrap();
     while let Some(live) = store.live_session(id).unwrap() {
         store.end_session(live.id, Some(0), None).unwrap();
@@ -201,9 +201,9 @@ fn restarting_an_idle_task_with_a_goal_and_no_session_wakes_and_launches_once() 
     store
         .apply(Decision::new(id).session(SessionInput::AgentQuiet))
         .unwrap();
-    assert!(idle(&store.task(id).unwrap().unwrap()));
+    assert!(idle(&store.box_row(id).unwrap().unwrap()));
     let again = run(&w.cx, &req("demo")).unwrap();
-    assert_eq!((again.task.lifecycle, again.task.session_state), WORKING);
+    assert_eq!((again.boxed.lifecycle, again.boxed.session_state), WORKING);
     assert!(again.agent.launched);
     assert_eq!(engine.launches().len(), 2);
     let events = store.events(id, 100).unwrap();
@@ -211,17 +211,17 @@ fn restarting_an_idle_task_with_a_goal_and_no_session_wakes_and_launches_once() 
 }
 
 #[test]
-fn restarting_an_idle_task_without_a_goal_or_session_wakes_it_and_launches_nothing() {
+fn restarting_an_idle_box_without_a_goal_or_session_wakes_it_and_launches_nothing() {
     let engine = Arc::new(FakeEngine::new());
     let w = with_engine(&engine);
     let first = run(&w.cx, &req("demo")).unwrap();
-    let id = BoxId::new(first.task.id);
+    let id = BoxId::new(first.boxed.id);
     let store = w.cx.store().unwrap();
     store
         .apply(Decision::new(id).session(SessionInput::AgentQuiet))
         .unwrap();
     let again = run(&w.cx, &req("demo")).unwrap();
-    assert_eq!((again.task.lifecycle, again.task.session_state), WORKING);
+    assert_eq!((again.boxed.lifecycle, again.boxed.session_state), WORKING);
     assert!(store
         .events(id, 100)
         .unwrap()
@@ -235,9 +235,9 @@ fn rerunning_after_a_failed_launch_launches_once_and_stays_working() {
     let engine = Arc::new(FakeEngine::new().launch_result(Err(launch_error("pane", "no tab"))));
     let w = with_engine(&engine);
     let first = run(&w.cx, &goal_req("demo")).unwrap();
-    let id = BoxId::new(first.task.id);
+    let id = BoxId::new(first.boxed.id);
     let again = run(&w.cx, &req("demo")).unwrap();
-    assert_eq!((again.task.lifecycle, again.task.session_state), WORKING);
+    assert_eq!((again.boxed.lifecycle, again.boxed.session_state), WORKING);
     assert!(again.agent.launched);
     assert_eq!(engine.launches().len(), 2);
     let store = w.cx.store().unwrap();
@@ -286,7 +286,7 @@ fn a_failed_setup_still_launches_with_its_exit_code() {
 fn a_launch_failure_stays_in_the_events_after_a_successful_retry() {
     let engine = Arc::new(FakeEngine::new().launch_result(Err(launch_error("pane", "no tab"))));
     let w = with_engine(&engine);
-    let id = BoxId::new(run(&w.cx, &goal_req("demo")).unwrap().task.id);
+    let id = BoxId::new(run(&w.cx, &goal_req("demo")).unwrap().boxed.id);
     run(&w.cx, &goal_req("demo")).unwrap();
     let kinds: Vec<_> =
         w.cx.store()
@@ -310,7 +310,7 @@ fn waiting_for_a_run_does_not_return_the_dispatch_failure() {
     let w = with_engine(&engine);
     run(&w.cx, &goal_req("demo")).unwrap();
     let wait = WaitReq {
-        task: BoxName::parse_allow_bare("demo").unwrap(),
+        box_name: BoxName::parse_allow_bare("demo").unwrap(),
         wait_for: Some(WaitFor::Run),
         timeout_secs: Some(60),
     };
@@ -328,7 +328,7 @@ fn pane_tail(tail: &str) -> PaneObs {
     }
 }
 
-/// The recorded (kind, payload) pairs of the task.
+/// The recorded (kind, payload) pairs of the Box.
 fn events_of(w: &World, id: BoxId) -> Vec<(String, serde_json::Value)> {
     w.cx.store()
         .unwrap()
@@ -361,7 +361,7 @@ fn a_first_run_prompt_in_the_pane_is_recorded_and_warned() {
     w.surface
         .push_pane_obs("p-1", Ok(pane_tail("Do you trust this folder?")));
     let v = run(&w.cx, &goal_req("demo")).unwrap();
-    let events = events_of(&w, BoxId::new(v.task.id));
+    let events = events_of(&w, BoxId::new(v.boxed.id));
     let blocked = events.iter().find(|(k, _)| k == "agent_prompt_blocked");
     assert_eq!(
         blocked.unwrap().1,
@@ -383,7 +383,7 @@ fn no_prompt_within_the_window_records_nothing_and_polls_a_bounded_number_of_tim
     let w = prompting();
     w.surface.push_pane_obs("p-1", Ok(pane_tail("working")));
     let v = run(&w.cx, &goal_req("demo")).unwrap();
-    let events = events_of(&w, BoxId::new(v.task.id));
+    let events = events_of(&w, BoxId::new(v.boxed.id));
     assert!(!events.iter().any(|(k, _)| k.starts_with("agent_prompt")));
     assert_eq!(pane_reads(&w), 17);
     assert!(w.cx.take_warnings().is_empty());
@@ -403,7 +403,7 @@ fn a_failed_pane_read_records_a_check_failure_and_start_succeeds() {
     let w = prompting();
     w.surface.push_pane_obs("p-1", Err(SurfaceError::Timeout));
     let v = run(&w.cx, &goal_req("demo")).unwrap();
-    let events = events_of(&w, BoxId::new(v.task.id));
+    let events = events_of(&w, BoxId::new(v.boxed.id));
     let failed = events
         .iter()
         .find(|(k, _)| k == "agent_prompt_check_failed")
@@ -421,7 +421,7 @@ fn a_gone_pane_stops_the_watch_after_one_read() {
     let w = prompting();
     w.surface.push_pane_obs("p-1", Err(SurfaceError::NotFound));
     let v = run(&w.cx, &goal_req("demo")).unwrap();
-    let events = events_of(&w, BoxId::new(v.task.id));
+    let events = events_of(&w, BoxId::new(v.boxed.id));
     assert!(!events.iter().any(|(k, _)| k.starts_with("agent_prompt")));
     assert_eq!(pane_reads(&w), 1);
 }
@@ -432,7 +432,7 @@ fn the_watch_matches_only_the_last_forty_pane_lines() {
     let tail = format!("trust this folder\n{}", "x\n".repeat(40));
     w.surface.push_pane_obs("p-1", Ok(pane_tail(&tail)));
     let v = run(&w.cx, &goal_req("demo")).unwrap();
-    let events = events_of(&w, BoxId::new(v.task.id));
+    let events = events_of(&w, BoxId::new(v.boxed.id));
     assert!(!events.iter().any(|(k, _)| k == "agent_prompt_blocked"));
 }
 
@@ -442,7 +442,7 @@ fn a_prompt_exactly_forty_lines_from_the_bottom_is_matched() {
     let tail = format!("trust this folder\n{}", "x\n".repeat(39));
     w.surface.push_pane_obs("p-1", Ok(pane_tail(&tail)));
     let v = run(&w.cx, &goal_req("demo")).unwrap();
-    let events = events_of(&w, BoxId::new(v.task.id));
+    let events = events_of(&w, BoxId::new(v.boxed.id));
     assert!(events.iter().any(|(k, _)| k == "agent_prompt_blocked"));
 }
 
@@ -462,7 +462,7 @@ fn a_retry_that_launches_after_a_failed_launch_watches_the_new_pane() {
     let again = run(&w.cx, &goal_req("demo")).unwrap();
     assert!(again.agent.launched);
     assert_eq!(pane_reads(&w), 1);
-    let events = events_of(&w, BoxId::new(again.task.id));
+    let events = events_of(&w, BoxId::new(again.boxed.id));
     assert!(events.iter().any(|(k, _)| k == "agent_prompt_blocked"));
 }
 

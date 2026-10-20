@@ -38,7 +38,7 @@ fn driver(d: FakeDriver) -> Arc<FakeDriver> {
     );
     d.acquire(&AcquireReq {
         provider: ProviderId::new("fake"),
-        task: BoxId::new(1),
+        box_id: BoxId::new(1),
         name: BoxName::parse_allow_bare("t1").unwrap(),
         class: None,
         nonce: "n0".to_owned(),
@@ -59,7 +59,7 @@ fn req(s: &FakeSurface, proxy: bool) -> LaunchReq {
         workdir: BoxPath::under("/work", "box-1").unwrap(),
         worktree: wt.path.clone(),
         workspace: s.ensure_workspace(&wt, "moor:t1").unwrap(),
-        task: name,
+        box_name: name,
         branch: "moor/t1".to_owned(),
         goal: Some("fix x".to_owned()),
         resume: None,
@@ -217,7 +217,7 @@ fn a_launch_with_no_environ_reports_the_home_step() {
     let d = Arc::new(FakeDriver::new().run_stdout("Linux x86_64"));
     d.acquire(&AcquireReq {
         provider: ProviderId::new("fake"),
-        task: BoxId::new(1),
+        box_id: BoxId::new(1),
         name: BoxName::parse_allow_bare("t1").unwrap(),
         class: None,
         nonce: "n0".to_owned(),

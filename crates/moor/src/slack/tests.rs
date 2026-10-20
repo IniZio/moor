@@ -4,10 +4,10 @@ use std::cell::RefCell;
 use std::sync::Arc;
 
 use moor_core::domain::box_state::BoxLifecycleInput;
-use moor_core::domain::decision::{Decision, ExtraEvent, NewTask};
+use moor_core::domain::box_state::SetupOutcome;
+use moor_core::domain::decision::{Decision, ExtraEvent, NewBox};
 use moor_core::domain::session_state::SessionInput;
-use moor_core::domain::task::SetupOutcome;
-use moor_core::request::{CloseReq, Request, StartReq, SteerReq};
+use moor_core::request::{CloseReq, Request, StartReq};
 use moor_core::seam::clock::Ts;
 use moor_core::BoxName;
 
@@ -26,12 +26,12 @@ fn store(dir: &std::path::Path) -> Store {
 /// Creates an open Box named `name`.
 fn new_box(store: &Store, name: &str) -> moor_core::BoxId {
     store
-        .apply(Decision::insert(NewTask {
+        .apply(Decision::insert(NewBox {
             name: BoxName::parse_allow_bare(name).unwrap(),
             repo: "r".into(),
         }))
         .unwrap()
-        .task
+        .box_id
 }
 
 fn mention(event_id: &str, user: &str, channel: &str, ts: &str, thread: Option<&str>) -> Mention {
@@ -160,7 +160,7 @@ fn redelivered_event_does_nothing() {
 }
 
 #[test]
-fn second_mention_in_thread_names_the_bound_task() {
+fn second_mention_in_thread_names_the_bound_box() {
     let dir = tempfile::tempdir().unwrap();
     let store = store(dir.path());
     let seen = RefCell::default();
@@ -241,7 +241,7 @@ fn reply_to(event_id: &str, user: &str, channel: &str, text: &str) -> Mention {
     }
 }
 
-/// A store with a Task bound to thread `10.5` in `C1`, owned by `U1`.
+/// A store with a Box bound to thread `10.5` in `C1`, owned by `U1`.
 fn owned(dir: &std::path::Path) -> Store {
     let store = store(dir);
     new_box(&store, "slack-10-5");
@@ -251,7 +251,7 @@ fn owned(dir: &std::path::Path) -> Store {
 }
 
 #[test]
-fn owner_reply_steers_the_task() {
+fn owner_reply_steers_the_box() {
     let dir = tempfile::tempdir().unwrap();
     let store = owned(dir.path());
     let seen = RefCell::default();
@@ -262,12 +262,12 @@ fn owner_reply_steers_the_task() {
         &seen,
     );
     let seen = seen.into_inner();
-    let Some(Request::Steer(SteerReq { task, text, menu })) = seen.calls.first() else {
+    let Some(Request::Steer(req)) = seen.calls.first() else {
         unreachable!("expected steer, got {:?}", seen.calls);
     };
-    assert_eq!(task.as_str(), "slack-10-5");
-    assert_eq!(text.as_deref(), Some("try the other test"));
-    assert_eq!(*menu, None);
+    assert_eq!(req.box_name.as_str(), "slack-10-5");
+    assert_eq!(req.text.as_deref(), Some("try the other test"));
+    assert_eq!(req.menu, None);
     assert!(seen.replies.is_empty());
 }
 
@@ -322,14 +322,14 @@ fn owner_close_closes_without_force() {
     run(&store, &reply_to("Ev2", "U1", "C1", "close"), None, &seen);
     let seen = seen.into_inner();
     let Some(Request::Close(CloseReq {
-        task,
+        box_name,
         force,
         trust_moor_yaml,
     })) = seen.calls.first()
     else {
         unreachable!("expected close, got {:?}", seen.calls);
     };
-    assert_eq!(task.as_str(), "slack-10-5");
+    assert_eq!(box_name.as_str(), "slack-10-5");
     assert!(!force && !trust_moor_yaml);
 }
 
@@ -363,10 +363,10 @@ fn redelivered_reply_is_handled_once() {
     assert_eq!(seen.into_inner().calls.len(), 1);
 }
 
-/// Opens task `slack-10-5` with a `needs_input` event and records its prompt; returns the event id.
+/// Opens Box `slack-10-5` with a `needs_input` event and records its prompt; returns the event id.
 fn prompted(store: &Store) -> i64 {
     let name = BoxName::parse_allow_bare("slack-10-5").unwrap();
-    let id = store.open_task_by_name(&name).unwrap().unwrap().id;
+    let id = store.open_box_by_name(&name).unwrap().unwrap().id;
     ask(store, id);
     let event_id = store.last_waiting_marker(id).unwrap().unwrap().id;
     store
@@ -375,7 +375,7 @@ fn prompted(store: &Store) -> i64 {
             channel: "C1".into(),
             thread_ts: "10.5".into(),
             message_ts: "20.1".into(),
-            task: name,
+            box_name: name,
             question: "Which one?".into(),
             options: vec!["alpha".into(), "beta".into()],
             answer: None,
@@ -384,7 +384,7 @@ fn prompted(store: &Store) -> i64 {
     event_id
 }
 
-/// Appends a new `needs_input` event to the task.
+/// Appends a new `needs_input` event to the Box.
 fn ask(store: &Store, id: moor_core::BoxId) {
     store
         .apply(Decision::new(id).event(ExtraEvent::NeedsInput {
@@ -510,7 +510,7 @@ fn click_on_prompt_after_newer_question_is_refused() {
     let store = owned(dir.path());
     prompted(&store);
     let row = store
-        .open_task_by_name(&BoxName::parse_allow_bare("slack-10-5").unwrap())
+        .open_box_by_name(&BoxName::parse_allow_bare("slack-10-5").unwrap())
         .unwrap()
         .unwrap();
     ask(&store, row.id);
@@ -532,7 +532,7 @@ fn click_after_agent_resumed_reports_working() {
     let store = owned(dir.path());
     prompted(&store);
     let row = store
-        .open_task_by_name(&BoxName::parse_allow_bare("slack-10-5").unwrap())
+        .open_box_by_name(&BoxName::parse_allow_bare("slack-10-5").unwrap())
         .unwrap()
         .unwrap();
     for d in [

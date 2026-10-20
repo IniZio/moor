@@ -6,7 +6,7 @@
 //! closes.
 
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
-use moor_core::domain::decision::NewTask;
+use moor_core::domain::decision::NewBox;
 use moor_core::name::next_box_name;
 use moor_core::{BoxId, BoxName};
 use rusqlite::{Transaction, TransactionBehavior};
@@ -59,12 +59,12 @@ impl Store {
         let mut conn = self.writer()?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let name = next_name(&tx, repo)?;
-        let new = NewTask {
+        let new = NewBox {
             name: name.clone(),
             repo: repo.to_owned(),
         };
         let lifecycle = BoxLifecycle::initial(&BoxLifecycleInput::Insert)?;
-        let id = super::apply::insert_task(&tx, &new, lifecycle, None, self.now())?;
+        let id = super::apply::insert_box(&tx, &new, lifecycle, None, self.now())?;
         tx.commit()?;
         drop(conn);
         Ok((id, name))

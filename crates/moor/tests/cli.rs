@@ -192,7 +192,7 @@ fn json_run_is_125() {
 }
 
 #[test]
-fn text_run_of_unknown_task_is_125_with_empty_stdout() {
+fn text_run_of_unknown_box_is_125_with_empty_stdout() {
     let r = run(&["run", "foo", "--", "true"], None);
     assert_eq!(r.code, 125, "stderr={:?}", r.stderr);
     assert!(r.stdout.is_empty(), "stdout: {:?}", r.stdout);

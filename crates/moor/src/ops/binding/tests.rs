@@ -49,14 +49,14 @@ fn find_req(key: &str) -> SessionBindingReq {
 }
 
 #[test]
-fn binding_a_host_session_creates_it_with_no_task() {
+fn binding_a_host_session_creates_it_with_no_box() {
     let dir = tempfile::tempdir().unwrap();
     let cx = cx(dir.path());
     let s = host_session(&cx);
     let v = bind(&cx, &bind_req("k", s)).unwrap();
     assert!(v.created);
     assert_eq!(v.binding.session, s);
-    assert_eq!(v.binding.task, None);
+    assert_eq!(v.binding.box_name, None);
     assert_eq!(v.binding.owner, "u1");
 }
 

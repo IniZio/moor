@@ -19,7 +19,7 @@ use super::*;
 
 fn show() -> Request {
     Request::Show(ShowReq {
-        task: None,
+        box_name: None,
         events: None,
         agent: false,
         reports: false,
@@ -63,7 +63,7 @@ fn error_frame() -> String {
 
 fn event(cursor: i64, extra: &str) -> String {
     format!(
-        r#"{{"frame":"event","cursor":{cursor},{extra}"kind":"task.created","payload":{{"n":{cursor}}},"ts":{}}}"#,
+        r#"{{"frame":"event","cursor":{cursor},{extra}"kind":"box_ready","payload":{{"n":{cursor}}},"ts":{}}}"#,
         cursor * 10
     )
 }
@@ -179,7 +179,7 @@ fn watch_sends_since_filter_and_follow() {
     let server = serve(&sock, vec![vec![hello()], vec![]]);
     let filter = WatchFilter {
         boxes: Some(vec![BoxName::parse("repo/one").unwrap()]),
-        kinds: Some(vec!["task.created".to_owned()]),
+        kinds: Some(vec!["box_ready".to_owned()]),
     };
     let watch = Client::new(&sock).watch(42, filter, false).unwrap();
     assert!(collect(watch).is_empty());
@@ -191,7 +191,7 @@ fn watch_sends_since_filter_and_follow() {
             "frame": "watch",
             "since": 42,
             "boxes": ["repo/one"],
-            "kinds": ["task.created"],
+            "kinds": ["box_ready"],
             "follow": false,
         })
     );
@@ -237,7 +237,7 @@ fn watch_yields_events_then_caught_up_then_ends() {
                 cursor: 1,
                 box_name: Some("repo/one".to_owned()),
                 session: Some(SessionId::new(7)),
-                kind: "task.created".to_owned(),
+                kind: "box_ready".to_owned(),
                 payload: serde_json::json!({"n": 1}),
                 ts: 10,
             }),
@@ -245,7 +245,7 @@ fn watch_yields_events_then_caught_up_then_ends() {
                 cursor: 2,
                 box_name: None,
                 session: None,
-                kind: "task.created".to_owned(),
+                kind: "box_ready".to_owned(),
                 payload: serde_json::json!({"n": 2}),
                 ts: 20,
             }),

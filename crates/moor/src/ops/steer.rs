@@ -1,6 +1,6 @@
-//! `steer`: send a message or a menu choice to the Task's agent.
+//! `steer`: send a message or a menu choice to the Box's agent.
 //!
-//! The Box lock is taken only to wake an asleep Task, so a Task can be steered during a run.
+//! The Box lock is taken only to wake an asleep Box, so a Box can be steered during a run.
 
 use std::time::Duration;
 
@@ -20,7 +20,7 @@ use crate::ops::common::activity::{self, session_ref};
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::transcript;
 use crate::ops::common::wake::wake_and_revive;
-use crate::store::{SessionRow, Store, TaskRow};
+use crate::store::{BoxRow, SessionRow, Store};
 
 /// Longest the send may take, pane reads included.
 const STEER_DEADLINE: Duration = Duration::from_secs(30);
@@ -28,28 +28,28 @@ const STEER_DEADLINE: Duration = Duration::from_secs(30);
 /// Run `steer`.
 ///
 /// # Errors
-/// [`CommandError`] when the Task is unknown or has no live agent, the agent ended, the choice
+/// [`CommandError`] when the Box is unknown or has no live agent, the agent ended, the choice
 /// does not fit what the agent shows, or the send failed.
 pub(crate) fn run(cx: &Cx, req: &SteerReq) -> Result<SteerValue, CommandError> {
     let store = cx.store()?;
-    let name = req.task.as_str();
+    let name = req.box_name.as_str();
     let id = store
-        .open_task_by_name(&req.task)?
-        .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no open task {name}")))?
+        .open_box_by_name(&req.box_name)?
+        .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no open Box {name}")))?
         .id;
     let no_agent = || {
         CommandError::new(
             ErrorKind::Refused,
             format!(
-                "no live agent session for task {name}; start it with {}",
+                "no live agent session for Box {name}; start it with {}",
                 relaunch(name)
             ),
         )
     };
     let reload = || {
         store
-            .task(id)?
-            .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no task {name}")))
+            .box_row(id)?
+            .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no Box {name}")))
     };
     if store.live_session(id)?.is_none() {
         return Err(no_agent());
@@ -82,7 +82,7 @@ pub(crate) fn run(cx: &Cx, req: &SteerReq) -> Result<SteerValue, CommandError> {
     let steer_id = record(store, id, &session, &sent, outcome.submit_retried)?;
     let answered_menu = answered(cx, store, &row, &steer, outcome)?;
     Ok(SteerValue {
-        task: name.to_owned(),
+        box_name: name.to_owned(),
         sent,
         answered_menu,
         steer: steer_id,
@@ -103,15 +103,15 @@ fn exited(
         message: "the agent exited and its session ended".to_owned(),
     });
     Ok(SteerValue {
-        task: name.to_owned(),
+        box_name: name.to_owned(),
         sent,
         answered_menu: false,
         steer,
     })
 }
 
-/// Whether the Task or its Box is asleep.
-fn asleep(row: &TaskRow) -> bool {
+/// Whether the Box or its machine is asleep.
+fn asleep(row: &BoxRow) -> bool {
     row.lifecycle == BoxLifecycle::Asleep
         || row
             .boxed
@@ -124,8 +124,8 @@ fn relaunch(name: &str) -> String {
     format!("`moor start {name} --goal \"...\"`")
 }
 
-/// The agent's state now; none when the Task has no agent to read.
-fn state_of(cx: &Cx, store: &Store, row: &TaskRow) -> Result<Option<AgentState>, CommandError> {
+/// The agent's state now; none when the Box has no agent to read.
+fn state_of(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Option<AgentState>, CommandError> {
     let reading = activity::read(cx, store, row, cx.clock().now())?;
     Ok(reading.activity.map(|a| a.state))
 }
@@ -140,7 +140,7 @@ fn is_exit(steer: &Steer) -> bool {
 fn send(
     cx: &Cx,
     store: &Store,
-    row: &TaskRow,
+    row: &BoxRow,
     (name, session, sref): (&str, &SessionRow, &SessionRef),
     steer: &Steer,
     before: Option<&AgentState>,
@@ -178,7 +178,7 @@ fn send(
 fn answered(
     cx: &Cx,
     store: &Store,
-    row: &TaskRow,
+    row: &BoxRow,
     steer: &Steer,
     outcome: SteerOutcome,
 ) -> Result<bool, CommandError> {
@@ -197,7 +197,7 @@ fn answered(
 }
 
 /// Probes the agent once more after a menu choice; warns when it still waits.
-fn menu_answered(cx: &Cx, store: &Store, row: &TaskRow) -> Result<bool, CommandError> {
+fn menu_answered(cx: &Cx, store: &Store, row: &BoxRow) -> Result<bool, CommandError> {
     let waiting = matches!(
         state_of(cx, store, row)?,
         Some(AgentState::NeedsInput { .. })
@@ -215,7 +215,7 @@ fn menu_answered(cx: &Cx, store: &Store, row: &TaskRow) -> Result<bool, CommandE
 ///
 /// A blocked agent takes a menu choice only: `--menu N`, or a lone digit as the text.
 fn choose(req: &SteerReq, state: Option<&AgentState>) -> Result<Steer, CommandError> {
-    let task = req.task.as_str();
+    let box_name = req.box_name.as_str();
     let waiting = match state {
         Some(AgentState::NeedsInput { question, .. }) => Some(question),
         _ => None,
@@ -224,7 +224,7 @@ fn choose(req: &SteerReq, state: Option<&AgentState>) -> Result<Steer, CommandEr
         (Some(n), _, Some(_)) => Ok(Steer::Menu(choice(n)?)),
         (Some(_), _, None) => Err(CommandError::new(
             ErrorKind::Refused,
-            format!("the agent of {task} is not waiting at a menu"),
+            format!("the agent of {box_name} is not waiting at a menu"),
         )),
         (None, Some(t), None) => Ok(Steer::Text(t.to_owned())),
         (None, Some(t), Some(w)) => match t.parse::<u8>() {
@@ -232,7 +232,7 @@ fn choose(req: &SteerReq, state: Option<&AgentState>) -> Result<Steer, CommandEr
             _ => Err(CommandError::new(
                 ErrorKind::Refused,
                 format!(
-                    "the agent of {task} is blocked (waiting for: {}); answer with `moor steer {task} --menu N` or open the Workspace with `moor start {task}`",
+                    "the agent of {box_name} is blocked (waiting for: {}); answer with `moor steer {box_name} --menu N` or open the Workspace with `moor start {box_name}`",
                     w.as_deref().unwrap_or("input")
                 ),
             )),

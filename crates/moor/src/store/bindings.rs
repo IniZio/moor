@@ -15,7 +15,7 @@ pub(crate) struct Binding {
     /// Id of the bound Session.
     pub(crate) session: i64,
     /// Name of the Session's Box; `None` for a host Session.
-    pub(crate) task: Option<BoxName>,
+    pub(crate) box_name: Option<BoxName>,
     /// The front's id of the user who started the conversation.
     pub(crate) owner: String,
     /// Timestamp of the edited status message, once posted.
@@ -46,13 +46,13 @@ fn row_of(r: &rusqlite::Row<'_>) -> rusqlite::Result<BindingRow> {
 
 /// Parses a raw binding row into a [`Binding`].
 fn binding_of(row: BindingRow) -> Result<Binding, StoreError> {
-    let (front, key, session, task, owner, status_ts) = row;
+    let (front, key, session, box_name, owner, status_ts) = row;
     Ok(Binding {
         front,
         key,
         session,
-        task: task
-            .map(|n| parsed("binding task", &n, BoxName::parse_allow_bare))
+        box_name: box_name
+            .map(|n| parsed("binding box name", &n, BoxName::parse_allow_bare))
             .transpose()?,
         owner,
         status_ts,

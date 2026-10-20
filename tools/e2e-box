@@ -7,22 +7,22 @@ usage() {
   cat <<'EOF'
 usage: tools/e2e-box --provider-config FILE --moor-config FILE --pilot REPO [options]
 
-Drives one Task through start, N sleep/wake cycles and close on a real Box,
+Drives one Box through start, N sleep/wake cycles and close on a real Box,
 timing each phase against a budget. Exit 0 only if every phase passes.
 
 required:
   --provider-config FILE  crabbox config naming the Box provider (exported as CRABBOX_CONFIG)
   --moor-config FILE      moor config naming the Box provider (exported as MOOR_CONFIG for every
                           moor call; the user's own config is never inherited)
-  --pilot REPO            git repository to run the Task from
+  --pilot REPO            git repository to run the Box from
 
 options:
   --cycles N              sleep/wake cycles (default 2)
-  --name TASK             Task name (default e2e-<epoch>)
+  --name NAME             Box name (default e2e-<epoch>)
   --moor BIN              moor binary (default: built from this repo)
   --state-dir DIR         moor state dir (default: fresh mktemp -d)
   --goal TEXT             goal passed to `moor start --goal` (default: "Reply with OK and wait.");
-                          a Task without a goal skips the agent launch, so the agent checks need one
+                          a Box without a goal skips the agent launch, so the agent checks need one
   --start-arg ARG         extra argument for `moor start` (repeatable)
   --box-step CMD          shell command run on the Box via `moor run` after start,
                           before the agent check; timed as box_step.N, report only
@@ -45,9 +45,9 @@ not in --box-step.
 Failed phases print the real elapsed time, the phase budget (none for asserts)
 and a short reason: PHASE wake1 took=45.0s budget=45.0s FAIL (no relaunched event)
 
-Agent checks (assert.agent_start, assert.agentN): the agent process runs on the Box, the Task's
+Agent checks (assert.agent_start, assert.agentN): the agent process runs on the Box, the Box's
 proxy log shows a successful POST claude within 60 s of session_started (after a wake, of a
-`moor steer <task> "Reply with OK."`, timed as wake<N>.steer, because a resumed agent stays idle),
+`moor steer <name> "Reply with OK."`, timed as wake<N>.steer, because a resumed agent stays idle),
 and moor.db has a registered agent session. A FAIL names the failed part and prints the agent
 pane tail (moor show --pane). A failed steer is a FAIL with its stderr tail.
 
@@ -56,7 +56,7 @@ Needs jq, ps, awk, crabbox, cargo.
 Every moor stderr is appended to <state-dir>/moor-stderr.log. With
 MOOR_TRACE_CRABBOX=1 the run ends with per crabbox subcommand call counts and
 total seconds. A failed phase never stops later cycles: each one is attempted
-while the Task exists, and a phase that could not run is reported SKIP. A run with any SKIP ends
+while the Box exists, and a phase that could not run is reported SKIP. A run with any SKIP ends
 INCOMPLETE (exit 3), never PASS.
 EOF
 }
@@ -169,7 +169,7 @@ assert_rc() { if [ "$2" -eq 0 ]; then phase_pass "$1"; else phase_fail "$1" "$3"
 box_run() { mo 180 run "$name" --no-sync -- "$@"; }
 agent_up() { box_run sh -c "pgrep -f '[c]laude' >/dev/null"; }
 # agent_check PHASE KIND [AFTER_ID] [REF_MS]: the agent process runs, the proxy log shows a model POST within 60 s
-# of the newest KIND event (or of REF_MS, when given), and the Task has a registered agent session. A FAIL names
+# of the newest KIND event (or of REF_MS, when given), and the Box has a registered agent session. A FAIL names
 # the missing part and prints the agent pane tail, so a screen that blocks the goal is visible.
 agent_check() {
   local phase=$1 kind=$2 after=${3:-0} ref=${4:-} t0 why="" mreq=0 sess=0 proc=0 out="" limited="" until_ms
@@ -178,13 +178,13 @@ agent_check() {
   if [ -n "$ref" ]; then
     until_ms=$((t0 + 60000))
   else
-    ref="$(budget event-ts --db "$state/moor.db" --task "$name" --kind "$kind" --after-id "$after" 2>/dev/null)" || ref=""
+    ref="$(budget event-ts --db "$state/moor.db" --box "$name" --kind "$kind" --after-id "$after" 2>/dev/null)" || ref=""
     if [ -z "$ref" ]; then ref=$t0; fi
     until_ms=$((ref + 60000))
   fi
   while :; do
-    out="$(budget model-request --db "$state/moor.db" --task "$name" --state-dir "$state" --after-ms "$ref" 2>/dev/null)" && mreq=1 || mreq=0
-    budget agent-session --db "$state/moor.db" --task "$name" >/dev/null 2>&1 && sess=1 || sess=0
+    out="$(budget model-request --db "$state/moor.db" --box "$name" --state-dir "$state" --after-ms "$ref" 2>/dev/null)" && mreq=1 || mreq=0
+    budget agent-session --db "$state/moor.db" --box "$name" >/dev/null 2>&1 && sess=1 || sess=0
     if [ "$proc" = 0 ] || { [ "$mreq" = 1 ] && [ "$sess" = 1 ]; }; then break; fi
     [ "$(now_ms)" -lt "$until_ms" ] || break
     sleep 1
@@ -233,7 +233,7 @@ tunnel_diag() {
   echo "tunnel processes (pid ppid etimes args):"
   echo "$out"
 }
-task_exists() { mo 60 --json show "$name" >/dev/null 2>&1; }
+box_exists() { mo 60 --json show "$name" >/dev/null 2>&1; }
 trace_summary() {
   [ -n "${MOOR_TRACE_CRABBOX:-}" ] && [ -s "$state/moor-stderr.log" ] || return 0
   echo "crabbox calls (from $state/moor-stderr.log):"
@@ -242,7 +242,7 @@ trace_summary() {
     }
     END { for (k in n) printf "  %-16s calls=%d total=%.1fs\n", k, n[k], s[k] }' "$state/moor-stderr.log" | sort
 }
-last_id() { budget last-id --db "$state/moor.db" --task "$name"; }
+last_id() { budget last-id --db "$state/moor.db" --box "$name"; }
 
 teardown() {
   local rc=$?
@@ -269,12 +269,12 @@ trap 'exit 143' TERM
 
 if [ "$dry" = 1 ]; then
   echo "+ (cd $pilot && MOOR_STATE_DIR=$state $moor --state-dir $state start $name --goal '$goal'${start_args[*]:+ ${start_args[*]}})   # timeout $(outer "$b_start_total")s"
-  echo "+ e2e-budget events --db $state/moor.db --task $name; e2e-budget start ... (budgets $b_box_ready/$b_proxy/$b_session/$b_start_total)"
+  echo "+ e2e-budget events --db $state/moor.db --box $name; e2e-budget start ... (budgets $b_box_ready/$b_proxy/$b_session/$b_start_total)"
   for ((n = 0; n < ${#box_steps[@]}; n++)); do
     echo "+ moor run $name -- sh -c '${box_steps[n]}'   # phase box_step.$((n + 1)), report only"
   done
   echo "+ poll for a tunnel --reverse process (assert.tunnel_seen)"
-  echo "+ assert.agent_start: pgrep claude on the Box, then poll <= 60s after session_started for a POST claude 2xx in <state>/proxy/<task id>.log and a registered agent session in moor.db (read-only); on FAIL print moor show --pane tail"
+  echo "+ assert.agent_start: pgrep claude on the Box, then poll <= 60s after session_started for a POST claude 2xx in <state>/proxy/<box id>.log and a registered agent session in moor.db (read-only); on FAIL print moor show --pane tail"
   echo "+ moor run $name --no-sync -- test -e .git"
   for ((n = 1; n <= cycles; n++)); do
     echo "+ cycle $n: moor sleep $name (<= ${b_sleep}s); poll for the tunnel --reverse process to vanish; sleep$n.other_tunnels is informational (<= ${b_tunnels}s)"
@@ -287,12 +287,12 @@ if [ "$dry" = 1 ]; then
   exit 0
 fi
 
-echo "e2e-box: task $name, state dir $state"
+echo "e2e-box: Box $name, state dir $state"
 # start
 t0=$(now_ms)
 started=1
 if in_pilot mo "$(outer "$b_start_total")" start "$name" --goal "$goal" ${start_args[@]+"${start_args[@]}"} >"$scratch/start.log" 2>&1; then
-  budget events --db "$state/moor.db" --task "$name" >"$scratch/start.jsonl" || ok=0
+  budget events --db "$state/moor.db" --box "$name" >"$scratch/start.jsonl" || ok=0
   if [ "$ok" = 1 ]; then
     phase_lines start start --events "$scratch/start.jsonl" --box-ready "$b_box_ready" \
       --proxy "$b_proxy" --session "$b_session" --total "$b_start_total"
@@ -303,10 +303,10 @@ else
   echo "e2e-box: moor start failed:"; tail -n 15 "$scratch/start.log" || true
   phase_fail start "moor start failed" "$t0" "$b_start_total"; ok=0
 fi
-if task_exists; then
+if box_exists; then
   info="$(in_pilot mo 60 --json show "$name" 2>/dev/null || true)"
-  provider="$(echo "$info" | jq -r '.value.task.box.provider // empty' 2>/dev/null || true)"
-  handle="$(echo "$info" | jq -r '.value.task.box.handle // empty' 2>/dev/null || true)"
+  provider="$(echo "$info" | jq -r '.value.box.driver.provider // empty' 2>/dev/null || true)"
+  handle="$(echo "$info" | jq -r '.value.box.driver.handle // empty' 2>/dev/null || true)"
   box="${handle#*/}"
   [ -n "$provider" ] && [ -n "$box" ] || echo "e2e-box: could not read Box provider/name from moor show"
   step=0
@@ -336,7 +336,7 @@ fi
 
 # cycles
 for ((n = 1; n <= cycles; n++)); do
-  if ! task_exists; then
+  if ! box_exists; then
     for p in "sleep$n" "sleep$n.tunnels_gone" "wake$n" "wake$n.steer" "assert.agent$n"; do phase_skip "$p"; done
     continue
   fi
@@ -364,7 +364,7 @@ for ((n = 1; n <= cycles; n++)); do
     cmd_ms=$t0
     seen=0
     while :; do
-      budget events --db "$state/moor.db" --task "$name" --after-id "$after" >"$scratch/wake.jsonl" || true
+      budget events --db "$state/moor.db" --box "$name" --after-id "$after" >"$scratch/wake.jsonl" || true
       c="$(budget count --events "$scratch/wake.jsonl" --kind relaunched 2>/dev/null || echo 0)"
       if [ "${c:-0}" -ge 1 ] 2>/dev/null; then seen=1; break; fi
       [ $(($(now_ms) - t0)) -lt $((b_wake_total * 1000)) ] || break
@@ -419,8 +419,8 @@ else
   phase_fail close.box_gone "Box not closed or unknown"
 fi
 
-# no tunnel restarts over the whole Task
-if budget events --db "$state/moor.db" --task "$name" >"$scratch/all.jsonl"; then
+# no tunnel restarts over the whole Box
+if budget events --db "$state/moor.db" --box "$name" >"$scratch/all.jsonl"; then
   restarts="$(budget count --events "$scratch/all.jsonl" --kind tunnel_restarted || echo -1)"
   if [ "$restarts" = 0 ]; then phase_pass assert.no_tunnel_restarts; else phase_fail assert.no_tunnel_restarts "tunnel restarted or count failed"; fi
 else

@@ -36,7 +36,7 @@ impl LaunchFailure {
     }
 }
 
-/// Agent activity on a Task row.
+/// Agent activity on a Box row.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct AgentView {
     /// Whether the agent was launched.
@@ -57,7 +57,7 @@ pub struct AgentView {
     pub reason: Option<LaunchFailure>,
 }
 
-/// The in-flight run on a Task row.
+/// The in-flight run on a Box row.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct RunView {
     /// Run id.
@@ -77,9 +77,9 @@ pub struct BoxSleepView {
     pub reason: Option<String>,
 }
 
-/// A Task's Box.
+/// A Box.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-pub struct BoxView {
+pub struct DriverView {
     /// Box lifecycle state.
     pub state: BoxState,
     /// Provider id.
@@ -111,12 +111,12 @@ pub struct AttentionView {
     pub message: String,
 }
 
-/// The shared Task row.
+/// The shared Box row.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-pub struct TaskView {
-    /// Task id.
+pub struct BoxView {
+    /// Box id.
     pub id: i64,
-    /// Task name.
+    /// Box name.
     pub name: String,
     /// Repo path or alias.
     pub repo: String,
@@ -139,14 +139,14 @@ pub struct TaskView {
     /// Workspace id.
     pub workspace: Option<String>,
     /// The Box, when one exists.
-    pub r#box: Option<BoxView>,
+    pub driver: Option<DriverView>,
     /// Agent activity.
     pub agent: Option<AgentView>,
     /// In-flight run.
     pub run: Option<RunView>,
     /// RFC3339 UTC last update.
     pub updated_at: String,
-    /// Open problems with the agent's model account; non-empty means the Task needs attention.
+    /// Open problems with the agent's model account; non-empty means the Box needs attention.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub attention: Vec<AttentionView>,
 }
@@ -192,11 +192,12 @@ pub struct AgentLaunchView {
 /// `value` of `start`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct StartView {
-    /// The Task row.
-    pub task: TaskView,
-    /// Task already existed.
+    /// The Box row.
+    #[serde(rename = "box")]
+    pub boxed: BoxView,
+    /// Box already existed.
     pub attached: bool,
-    /// Task is queued for capacity.
+    /// Box is queued for capacity.
     pub queued: bool,
     /// Names promoted from the queue.
     pub promoted: Vec<String>,
@@ -208,12 +209,12 @@ pub struct StartView {
     pub agent: AgentLaunchView,
     /// Warnings raised while starting.
     pub warnings_inline: Vec<String>,
-    /// The provisioning step that failed while the Task carried on, such as `setup`.
+    /// The provisioning step that failed while the Box carried on, such as `setup`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub failed_step: Option<String>,
     /// Handle of the Box kept after a failed step.
-    #[serde(rename = "box", skip_serializing_if = "Option::is_none")]
-    pub boxed: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub handle: Option<String>,
 }
 
 /// One event row.
@@ -288,11 +289,12 @@ pub struct ArtifactChunk {
 /// `value` of `show`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ShowView {
-    /// Per-Task rows; absent when a single Task is selected.
+    /// Per-Box rows; absent when a single Box is selected.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tasks: Option<Vec<TaskView>>,
-    /// The selected Task.
-    pub task: Option<TaskView>,
+    pub boxes: Option<Vec<BoxView>>,
+    /// The selected Box.
+    #[serde(rename = "box")]
+    pub boxed: Option<BoxView>,
     /// Events, when requested.
     pub events: Option<Vec<EventView>>,
     /// Pane, when requested.
@@ -310,8 +312,9 @@ pub struct ShowView {
 )]
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct CloseView {
-    /// The Task row.
-    pub task: TaskView,
+    /// The Box row.
+    #[serde(rename = "box")]
+    pub boxed: BoxView,
     /// Box was deleted.
     pub box_deleted: bool,
     /// Workspace was closed.

@@ -21,25 +21,25 @@ pub(crate) const fn pane_status(state: &AgentState) -> PaneStatus {
     }
 }
 
-/// Registers how to resume session `agent` in `pane`, for Task `task`; true when registered.
+/// Registers how to resume session `agent` in `pane`, for Box `name`; true when registered.
 ///
 /// A refusal or a failure is a warning, never an error.
-pub(crate) fn report(cx: &Cx, task: &BoxName, pane: &str, agent: &str, state: PaneStatus) -> bool {
+pub(crate) fn report(cx: &Cx, name: &BoxName, pane: &str, agent: &str, state: PaneStatus) -> bool {
     let reg = ResumeReg {
         agent: AGENT.to_owned(),
         state,
         session_id: agent.to_owned(),
-        task: task.clone(),
+        box_name: name.clone(),
     };
     let message = match cx.surface().register_resume(&PaneRef::new(pane), &reg) {
         Ok(ResumeOutcome::Registered) => return true,
         Ok(ResumeOutcome::Rejected(code)) => {
             format!(
                 "the multiplexer declined to register resume for {}: {code}",
-                task.as_str()
+                name.as_str()
             )
         }
-        Err(e) => format!("could not register resume for {}: {e}", task.as_str()),
+        Err(e) => format!("could not register resume for {}: {e}", name.as_str()),
     };
     cx.warn(Warning {
         code: "resume_not_registered".to_owned(),
@@ -57,7 +57,7 @@ pub(crate) fn report(cx: &Cx, task: &BoxName, pane: &str, agent: &str, state: Pa
 pub(crate) fn ensure(
     cx: &Cx,
     store: &Store,
-    task: &BoxName,
+    name: &BoxName,
     session: &SessionRow,
     agent: Option<&str>,
     state: PaneStatus,
@@ -69,7 +69,7 @@ pub(crate) fn ensure(
     if session.registered_agent_session.as_deref() == Some(agent) {
         return Ok(());
     }
-    if report(cx, task, pane, agent, state) {
+    if report(cx, name, pane, agent, state) {
         store.set_registered_session(session.id, agent)?;
     }
     Ok(())

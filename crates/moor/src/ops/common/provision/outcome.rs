@@ -11,7 +11,7 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::dotfiles::{DotfilesFailed, DotfilesRun};
 use crate::ops::common::setup::SetupRun;
-use crate::ops::common::view::task_view;
+use crate::ops::common::view::box_view;
 use crate::store::Store;
 
 /// What provisioning ran in the Box: repo setup, then dotfiles.
@@ -32,10 +32,10 @@ impl Provisioned {
     }
 }
 
-/// Records a failed checkout sync and returns the error, carrying the Task row, to report.
+/// Records a failed checkout sync and returns the error, carrying the Box row, to report.
 ///
-/// The Box is kept and the agent does not start. `advance` moves the Task to setup-failed; a
-/// Task already working gets a `setup_failed` event instead.
+/// The Box is kept and the agent does not start. `advance` moves the Box to setup-failed; a
+/// Box already working gets a `setup_failed` event instead.
 pub(super) fn sync_failed(
     cx: &Cx,
     store: &Store,
@@ -92,9 +92,9 @@ fn sync_step_failed(
         "`moor close {name}` closes it; add --force to discard unpushed work in the Box"
     ))
     .with_value(serde_json::json!({
-        "task": task_view(&row, cx.config()),
+        "box": box_view(&row, cx.config()),
         "failed_step": "sync",
-        "box": handle.as_str(),
+        "handle": handle.as_str(),
     }))
 }
 

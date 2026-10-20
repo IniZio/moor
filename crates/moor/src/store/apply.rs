@@ -1,8 +1,8 @@
-//! The only writer of task/box state and events: `Store::apply` plus run records.
+//! The only writer of box/box state and events: `Store::apply` plus run records.
 
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::{BoxInput, BoxState};
-use moor_core::domain::decision::{Decision, Field, Fields, IntentChange, TaskTarget};
+use moor_core::domain::decision::{BoxTarget, Decision, Field, Fields, IntentChange};
 use moor_core::domain::event::{box_events, lifecycle_events, session_events, Event};
 use moor_core::domain::session_state::SessionState;
 use moor_core::seam::clock::Ts;
@@ -15,22 +15,22 @@ mod steps;
 
 pub(super) use self::sql::update;
 use self::sql::{field_value, flag, text, Sets};
-pub(super) use self::steps::insert_task;
-use self::steps::{step_task, Parts};
+pub(super) use self::steps::insert_box;
+use self::steps::{step_box, Parts};
 use super::reads::live_holders_in;
-use super::{BoxRow, Store, StoreError, TaskRow};
+use super::{BoxRow, DriverRow, Store, StoreError};
 use moor_core::ProviderId;
 
 /// Result of a committed `apply`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Applied {
-    /// The task written.
-    pub(crate) task: BoxId,
+    /// The box written.
+    pub(crate) box_id: BoxId,
     /// Box lifecycle after the apply.
     pub(crate) lifecycle: BoxLifecycle,
     /// Primary Session state after the apply.
     pub(crate) session: SessionState,
-    /// Box state after the apply, if the task has a box.
+    /// Box state after the apply, if the box has a box.
     pub(crate) box_state: Option<BoxState>,
     /// Ids of the events inserted, in order.
     pub(crate) events: Vec<i64>,
@@ -63,7 +63,7 @@ impl Store {
     pub(crate) fn apply_admitting(
         &self,
         provider: &ProviderId,
-        decide: impl FnOnce(Vec<TaskRow>) -> Option<Decision>,
+        decide: impl FnOnce(Vec<BoxRow>) -> Option<Decision>,
     ) -> Result<Option<Applied>, StoreError> {
         let now = self.now();
         let mut conn = self.writer()?;
@@ -85,19 +85,19 @@ fn apply_in(tx: &Transaction<'_>, now: Ts, d: Decision) -> Result<Applied, Store
         existing,
         parts,
         from,
-    } = step_task(tx, now, &d)?;
+    } = step_box(tx, now, &d)?;
     let quiet = Step {
         from: from.map(is_quiet),
         to: is_quiet(parts),
     };
-    if let (TaskTarget::New(_), Field::Set(branch)) = (&d.task, &d.set.branch) {
+    if let (BoxTarget::New(_), Field::Set(branch)) = (&d.target, &d.set.branch) {
         tx.execute(
             "INSERT INTO box_refs (box, kind, value) VALUES (?1, 'branch', ?2) ON CONFLICT DO NOTHING",
             params![id.get(), branch],
         )?;
     }
-    let box_step = step_box(tx, now, id, existing.as_ref(), &d)?;
-    write_task(tx, id, now, &d, &quiet, parts)?;
+    let box_step = step_driver(tx, now, id, existing.as_ref(), &d)?;
+    write_box_row(tx, id, now, &d, &quiet, parts)?;
     write_box(tx, id, now, &d, box_step.as_ref(), &quiet)?;
     let mut ids = Vec::new();
     let stepped = match (&d.lifecycle_input, &d.session_input) {
@@ -124,7 +124,7 @@ fn apply_in(tx: &Transaction<'_>, now: Ts, d: Decision) -> Result<Applied, Store
         ids.push(insert_event(tx, id, e, now)?);
     }
     Ok(Applied {
-        task: id,
+        box_id: id,
         lifecycle: parts.0,
         session: parts.1,
         box_state: box_step.map(|s| s.to),
@@ -133,11 +133,11 @@ fn apply_in(tx: &Transaction<'_>, now: Ts, d: Decision) -> Result<Applied, Store
 }
 
 /// Step the box state, recording the provider on the first input.
-fn step_box(
+fn step_driver(
     tx: &Transaction<'_>,
     now: Ts,
     id: BoxId,
-    existing: Option<&BoxRow>,
+    existing: Option<&DriverRow>,
     d: &Decision,
 ) -> Result<Option<Step<BoxState>>, StoreError> {
     let Some(input) = &d.box_input else {
@@ -164,8 +164,8 @@ fn step_box(
     Ok(Some(Step { from: None, to }))
 }
 
-/// Write task state, fields and intent.
-fn write_task(
+/// Write box state, fields and intent.
+fn write_box_row(
     tx: &Transaction<'_>,
     id: BoxId,
     now: Ts,
@@ -173,7 +173,7 @@ fn write_task(
     step: &Step<bool>,
     (lifecycle, session_state): Parts,
 ) -> Result<(), StoreError> {
-    let mut sets = task_field_sets(&d.set);
+    let mut sets = box_field_sets(&d.set);
     let mut session = session_field_sets(&d.set);
     let stepped = d.lifecycle_input.is_some() || d.session_input.is_some();
     if stepped {
@@ -230,7 +230,7 @@ fn write_box(
     step: Option<&Step<BoxState>>,
     quiet: &Step<bool>,
 ) -> Result<(), StoreError> {
-    let mut sets = box_field_sets(&d.set);
+    let mut sets = driver_field_sets(&d.set);
     if quiet.from == Some(true) && !quiet.to {
         if let Some(i) = sets.iter().position(|(c, _)| *c == "sleep_reason") {
             sets.remove(i);
@@ -242,7 +242,7 @@ fn write_box(
             return Ok(());
         }
         return Err(StoreError::Invalid(
-            "box fields set but the task has no box".into(),
+            "Box fields set but the Box has no machine".into(),
         ));
     };
     if let Some(input) = &d.box_input {
@@ -268,8 +268,8 @@ fn input_handle_sets(input: &BoxInput, taken: &Sets) -> Sets {
     }
 }
 
-/// Column assignments for the task fields.
-fn task_field_sets(s: &Fields) -> Sets {
+/// Column assignments for the box fields.
+fn box_field_sets(s: &Fields) -> Sets {
     let all = [
         ("issue", text(&s.issue)),
         ("goal", text(&s.goal)),
@@ -297,7 +297,7 @@ fn session_field_sets(s: &Fields) -> Sets {
 }
 
 /// Column assignments for the box fields.
-fn box_field_sets(s: &Fields) -> Sets {
+fn driver_field_sets(s: &Fields) -> Sets {
     let all = [
         (
             "provider",

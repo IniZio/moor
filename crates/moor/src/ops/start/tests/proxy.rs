@@ -1,4 +1,4 @@
-//! The per-task proxy is ensured through the proxy host before every agent launch.
+//! The per-Box proxy is ensured through the proxy host before every agent launch.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -42,7 +42,7 @@ fn engine_world() -> (World, Arc<FakeEngine>) {
 }
 
 fn failure_step(w: &World, id: BoxId) -> (String, String, Option<String>) {
-    let row = w.cx.store().unwrap().task(id).unwrap().unwrap();
+    let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
     let f = row.launch_failure.unwrap();
     (f.step, f.message, f.tail)
 }
@@ -51,11 +51,11 @@ fn failure_step(w: &World, id: BoxId) -> (String, String, Option<String>) {
 fn the_first_launch_ensures_the_proxy_once_and_hands_the_agent_its_address() {
     let (w, engine, fake) = host_world(FakeProxyHost::new());
     let v = run(&w.cx, &goal_req()).unwrap();
-    let id = BoxId::new(v.task.id);
-    let row = w.cx.store().unwrap().task(id).unwrap().unwrap();
+    let id = BoxId::new(v.boxed.id);
+    let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(fake.calls().len(), 1);
     let spec = spec_of(&fake);
-    assert_eq!(spec.task, id);
+    assert_eq!(spec.box_id, id);
     assert_eq!(spec.box_handle, Some(BoxHandle::new("box-1")));
     assert_eq!(spec.host_cwd, PathBuf::from(row.worktree.unwrap()));
     let launches = engine.launches();
@@ -118,9 +118,9 @@ fn a_proxy_that_cannot_be_ensured_fails_the_launch_at_the_proxy_step() {
     let fake = FakeProxyHost::new().with_ensure_error(ProxyHostError::Failed("boom\ntail".into()));
     let (w, engine, _) = host_world(fake);
     let v = run(&w.cx, &goal_req()).unwrap();
-    let id = BoxId::new(v.task.id);
+    let id = BoxId::new(v.boxed.id);
     assert!(!v.agent.launched);
-    assert_eq!((v.task.lifecycle, v.task.session_state), WORKING);
+    assert_eq!((v.boxed.lifecycle, v.boxed.session_state), WORKING);
     assert!(engine.launches().is_empty());
     let (step, message, tail) = failure_step(&w, id);
     assert_eq!(step, "proxy");
@@ -137,7 +137,7 @@ fn a_missing_default_credential_fails_the_proxy_step_naming_the_key() {
     );
     w.cx = w.cx.with_proxy_host(Arc::new(FakeProxyHost::new()));
     let v = run(&w.cx, &goal_req()).unwrap();
-    let (step, message, _) = failure_step(&w, BoxId::new(v.task.id));
+    let (step, message, _) = failure_step(&w, BoxId::new(v.boxed.id));
     assert_eq!(step, "proxy");
     assert!(
         message.contains(
@@ -154,7 +154,7 @@ fn only_the_last_lines_of_a_long_proxy_failure_are_kept() {
     let fake = FakeProxyHost::new().with_ensure_error(ProxyHostError::Failed(text));
     let (w, _, _) = host_world(fake);
     let v = run(&w.cx, &goal_req()).unwrap();
-    let (_, _, tail) = failure_step(&w, BoxId::new(v.task.id));
+    let (_, _, tail) = failure_step(&w, BoxId::new(v.boxed.id));
     let tail = tail.unwrap();
     assert_eq!(tail.lines().count(), TAIL_LINES);
     assert_eq!(tail.lines().last(), Some("line 25"));
@@ -164,7 +164,7 @@ fn only_the_last_lines_of_a_long_proxy_failure_are_kept() {
 fn the_nonce_stays_out_of_every_record_and_the_spec() {
     let (w, engine, fake) = host_world(FakeProxyHost::new());
     let v = run(&w.cx, &goal_req()).unwrap();
-    let id = BoxId::new(v.task.id);
+    let id = BoxId::new(v.boxed.id);
     let nonce = String::from_utf8(FAKE_NONCE.to_vec()).unwrap();
     let mut seen = vec![format!("{:?}", fake.calls())];
     for call in w.proc.calls() {
@@ -194,7 +194,7 @@ fn env_of<'a>(env: &'a [(String, String)], key: &str) -> Option<&'a str> {
 }
 
 #[test]
-fn the_spec_carries_the_task_repo_and_resolved_rules() {
+fn the_spec_carries_the_box_repo_and_resolved_rules() {
     let (mut w, engine, fake) = host_world(FakeProxyHost::new());
     w.cx = w.cx.with_forge(Arc::new(
         FakeForge::new().with_repo("git@github.com:o/r.git", ForgeRepo::new("o", "r")),
@@ -206,7 +206,7 @@ fn the_spec_carries_the_task_repo_and_resolved_rules() {
     );
     run(&w.cx, &goal_req()).unwrap();
     let spec = spec_of(&fake);
-    assert_eq!(spec.task_repo, Some(ForgeRepo::new("o", "r")));
+    assert_eq!(spec.box_repo, Some(ForgeRepo::new("o", "r")));
     let names: Vec<&str> = spec.rules.iter().map(|r| r.name.as_str()).collect();
     assert_eq!(
         names,
@@ -230,7 +230,7 @@ fn without_an_origin_only_the_rules_that_need_no_repo_remain() {
     let (w, engine, fake) = host_world(FakeProxyHost::new());
     run(&w.cx, &goal_req()).unwrap();
     let spec = spec_of(&fake);
-    assert_eq!(spec.task_repo, None);
+    assert_eq!(spec.box_repo, None);
     let names: Vec<&str> = spec.rules.iter().map(|r| r.name.as_str()).collect();
     assert!(names.contains(&"claude"), "{names:?}");
     assert!(!names.contains(&"github-api"), "{names:?}");

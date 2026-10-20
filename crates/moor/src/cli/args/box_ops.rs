@@ -1,20 +1,20 @@
-//! Arguments of the Task-scoped verbs that take only a name plus a flag or path.
+//! Arguments of the Box-scoped verbs that take only a name plus a flag or path.
 
 use clap::Args;
-use moor_core::{BoxName, CloseReq, CpReq, RemoveReq, TaskReq};
+use moor_core::{BoxName, BoxReq, CloseReq, CpReq, RemoveReq};
 
-use super::task_name;
+use super::box_name;
 
 /// Arguments of `close`.
 #[derive(Debug, Args)]
 pub(super) struct CloseArgs {
-    /// Task name.
-    #[arg(value_parser = task_name)]
-    pub(super) task: BoxName,
+    /// Box name.
+    #[arg(value_parser = box_name)]
+    pub(super) name: BoxName,
     /// Close despite unsaved work.
     #[arg(long)]
     pub(super) force: bool,
-    /// Run teardown even when the Task's .moor.yaml differs from its base commit.
+    /// Run teardown even when the Box's .moor.yaml differs from its base commit.
     #[arg(long)]
     pub(super) trust_moor_yaml: bool,
 }
@@ -22,7 +22,7 @@ pub(super) struct CloseArgs {
 impl From<CloseArgs> for CloseReq {
     fn from(a: CloseArgs) -> Self {
         Self {
-            task: a.task,
+            box_name: a.name,
             force: a.force,
             trust_moor_yaml: a.trust_moor_yaml,
         }
@@ -32,10 +32,10 @@ impl From<CloseArgs> for CloseReq {
 /// Arguments of `remove`.
 #[derive(Debug, Args)]
 pub(super) struct RemoveArgs {
-    /// Task name.
-    #[arg(value_parser = task_name)]
-    pub(super) task: BoxName,
-    /// Discard the Task's work.
+    /// Box name.
+    #[arg(value_parser = box_name)]
+    pub(super) name: BoxName,
+    /// Discard the Box's work.
     #[arg(long)]
     pub(super) discard: bool,
 }
@@ -43,7 +43,7 @@ pub(super) struct RemoveArgs {
 impl From<RemoveArgs> for RemoveReq {
     fn from(a: RemoveArgs) -> Self {
         Self {
-            task: a.task,
+            box_name: a.name,
             discard: a.discard,
         }
     }
@@ -52,9 +52,9 @@ impl From<RemoveArgs> for RemoveReq {
 /// Arguments of `cp`.
 #[derive(Debug, Args)]
 pub(super) struct CpArgs {
-    /// Task name.
-    #[arg(value_parser = task_name)]
-    pub(super) task: BoxName,
+    /// Box name.
+    #[arg(value_parser = box_name)]
+    pub(super) name: BoxName,
     /// Source path in the Box; relative to its workdir and may not contain
     /// `..`. Use an absolute Box path to reach outside the workdir.
     pub(super) src: String,
@@ -65,23 +65,23 @@ pub(super) struct CpArgs {
 impl From<CpArgs> for CpReq {
     fn from(a: CpArgs) -> Self {
         Self {
-            task: a.task,
+            box_name: a.name,
             src: a.src,
             dest: a.dest,
         }
     }
 }
 
-/// A lone Task argument.
+/// A lone Box argument.
 #[derive(Debug, Args)]
-pub(super) struct TaskArg {
-    /// Task name.
-    #[arg(value_parser = task_name)]
-    pub(super) task: BoxName,
+pub(super) struct BoxArg {
+    /// Box name.
+    #[arg(value_parser = box_name)]
+    pub(super) name: BoxName,
 }
 
-impl From<TaskArg> for TaskReq {
-    fn from(a: TaskArg) -> Self {
-        Self { task: a.task }
+impl From<BoxArg> for BoxReq {
+    fn from(a: BoxArg) -> Self {
+        Self { box_name: a.name }
     }
 }

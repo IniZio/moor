@@ -8,15 +8,15 @@ use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::seam::engine::EngineError;
 use moor_core::BoxId;
 
-use super::{cx, row, run_once, task as plain_task, SESSION};
+use super::{cx, row, run_once, working_box, SESSION};
 use crate::cx::Cx;
 use crate::ops::common::activity::{settle, PaneLiveness, Reading};
 use crate::ops::common::boxlock::BoxLock;
 use crate::testing::engine::FakeEngine;
 
-/// A working task whose live session has a registered agent session.
-fn task(cx: &Cx) -> BoxId {
-    let id = plain_task(cx, true);
+/// A working Box whose live session has a registered agent session.
+fn registered_box(cx: &Cx) -> BoxId {
+    let id = working_box(cx, true);
     let store = cx.store().unwrap();
     let live = store.live_session(id).unwrap().unwrap();
     store.set_registered_session(live.id, "agent-1").unwrap();
@@ -55,7 +55,7 @@ fn the_first_exited_settle_saves_the_transcript_once() {
             .transcript_text("abc"),
     );
     let (cx, _) = cx(dir.path(), &engine);
-    let id = task(&cx);
+    let id = registered_box(&cx);
     let reading = run_once(&cx, id);
     assert_eq!(exit_saves(&cx, id), 0);
     settle(&cx, cx.store().unwrap(), &row(&cx, id), &reading).unwrap();
@@ -70,7 +70,7 @@ fn a_live_or_gone_pane_saves_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let engine = Arc::new(FakeEngine::new().transcript_text("abc"));
     let (cx, _) = cx(dir.path(), &engine);
-    let id = task(&cx);
+    let id = registered_box(&cx);
     for pane in [PaneLiveness::Live, PaneLiveness::Gone] {
         let r = Reading::new(None, pane, false, false);
         settle(&cx, cx.store().unwrap(), &row(&cx, id), &r).unwrap();
@@ -82,7 +82,7 @@ fn exited_fx(engine: FakeEngine) -> (tempfile::TempDir, Arc<FakeEngine>, Cx, Box
     let dir = tempfile::tempdir().unwrap();
     let engine = Arc::new(engine.probes(SESSION, exited_probes()));
     let (cx, _) = cx(dir.path(), &engine);
-    let id = task(&cx);
+    let id = registered_box(&cx);
     (dir, engine, cx, id)
 }
 
@@ -177,7 +177,7 @@ fn an_exit_save_with_nothing_to_archive_is_recorded_once() {
 }
 
 #[test]
-fn an_exited_agent_ends_its_session_after_the_save_and_the_task_reads_idle() {
+fn an_exited_agent_ends_its_session_after_the_save_and_the_box_reads_idle() {
     let (_dir, _engine, cx, id) = exited_fx(FakeEngine::new().transcript_text("abc"));
     let store = cx.store().unwrap();
     for _ in 0..2 {
@@ -196,7 +196,7 @@ fn an_exited_agent_ends_its_session_after_the_save_and_the_task_reads_idle() {
     assert_eq!(ended["cause"], "exited");
     assert_eq!(ended["exit"], 1);
     assert!(store.live_session(id).unwrap().is_none());
-    let after = store.task(id).unwrap().unwrap();
+    let after = store.box_row(id).unwrap().unwrap();
     assert_eq!(after.lifecycle, BoxLifecycle::Ready);
     assert!(after.session.is_quiet());
 }

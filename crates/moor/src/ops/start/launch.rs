@@ -1,11 +1,11 @@
-//! Launches the agent of a Working Task and records how that ended.
+//! Launches the agent of a Working Box and records how that ended.
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use moor_core::activity::PaneStatus;
 use moor_core::box_key::BoxKey;
-use moor_core::config::{Flags, TaskSettings};
+use moor_core::config::{BoxSettings, Flags};
 
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
@@ -25,17 +25,17 @@ use crate::ops::common::resume;
 use crate::ops::common::view::rfc3339;
 use crate::ops::show::redact_nonce;
 use crate::store::lease::{LeaseId, LeaseKind};
-use crate::store::{Store, TaskRow};
+use crate::store::{BoxRow, Store};
 
 /// Lines of a failure's output kept as its tail.
 pub(super) const TAIL_LINES: usize = 10;
 
-/// Launches the agent when the Task is Working with a ready Box, a goal and no live session.
+/// Launches the agent when the Box is Working with a ready machine, a goal and no live session.
 ///
 /// `setup_exit` is the exit code of a setup that just failed; the agent still launches then.
-/// A launch that fails is recorded on the Task, which stays Working with no session, and
+/// A launch that fails is recorded on the Box, which stays Working with no session, and
 /// is reported in the view; a later launch that succeeds clears it. `settings` yields the
-/// Task's settings, which supply both the model and the proxy's egress.
+/// Box's settings, which supply both the model and the proxy's egress.
 ///
 /// # Errors
 /// A store failure, or settings that cannot be resolved.
@@ -45,7 +45,7 @@ pub(super) fn run(
     req: &StartReq,
     id: BoxId,
     setup_exit: Option<i32>,
-    settings: &dyn Fn() -> Result<TaskSettings, CommandError>,
+    settings: &dyn Fn() -> Result<BoxSettings, CommandError>,
 ) -> Result<AgentLaunchView, CommandError> {
     let row = reread(store, id)?;
     let resume = row
@@ -68,11 +68,11 @@ pub(super) fn run(
     begin(cx, store, &row, &launch, &cfg)
 }
 
-/// Records why an agent that should launch on a ready Box did not, unless the Task is held.
+/// Records why an agent that should launch on a ready machine did not, unless the Box is held.
 fn not_working(
     cx: &Cx,
     store: &Store,
-    row: &TaskRow,
+    row: &BoxRow,
     hold: bool,
 ) -> Result<AgentLaunchView, CommandError> {
     let ready = row
@@ -100,7 +100,7 @@ fn not_working(
 pub(crate) fn begin_seeded(
     cx: &Cx,
     store: &Store,
-    row: &TaskRow,
+    row: &BoxRow,
     seed: String,
 ) -> Result<AgentLaunchView, CommandError> {
     let mut working = row.clone();
@@ -116,15 +116,15 @@ pub(crate) fn begin_seeded(
     begin(cx, store, &working, &launch, &cfg)
 }
 
-/// Launches `launch` and records the session, or the failure, on the Task `row`.
+/// Launches `launch` and records the session, or the failure, on the Box `row`.
 ///
 /// `cfg` supplies the egress the proxy plan allows.
 pub(super) fn begin(
     cx: &Cx,
     store: &Store,
-    row: &TaskRow,
+    row: &BoxRow,
     launch: &LaunchReq,
-    cfg: &TaskSettings,
+    cfg: &BoxSettings,
 ) -> Result<AgentLaunchView, CommandError> {
     let id = row.id;
     let handle = row.boxed.as_ref().and_then(|b| b.handle.clone());
@@ -189,11 +189,11 @@ fn plan_dirs(
     ]))
 }
 
-/// Records the launched `session` on the Task `row` and reports it.
+/// Records the launched `session` on the Box `row` and reports it.
 fn record_session(
     cx: &Cx,
     store: &Store,
-    row: &TaskRow,
+    row: &BoxRow,
     launch: &LaunchReq,
     session: SessionRef,
 ) -> Result<AgentLaunchView, CommandError> {
@@ -224,7 +224,7 @@ fn record_session(
     })
 }
 
-/// Records a failed launch on the Task, which stays Working with no session, and reports it.
+/// Records a failed launch on the Box, which stays Working with no session, and reports it.
 fn record_failure(
     cx: &Cx,
     store: &Store,
@@ -246,12 +246,12 @@ fn record_failure(
 }
 
 /// Whether `row` is Ready and its session still has work to do.
-pub(super) fn working(row: &TaskRow) -> bool {
+pub(super) fn working(row: &BoxRow) -> bool {
     row.lifecycle == BoxLifecycle::Ready && !row.session.is_quiet()
 }
 
-/// What the Engine needs to launch `row`'s agent; none unless the Task is Working with a ready Box.
-pub(super) fn launch_req(cx: &Cx, row: &TaskRow, setup_exit: Option<i32>) -> Option<LaunchReq> {
+/// What the Engine needs to launch `row`'s agent; none unless the Box is Working with a ready machine.
+pub(super) fn launch_req(cx: &Cx, row: &BoxRow, setup_exit: Option<i32>) -> Option<LaunchReq> {
     let b = row.boxed.as_ref().filter(|b| b.state == BoxState::Ready)?;
     if !working(row) {
         return None;
@@ -263,7 +263,7 @@ pub(super) fn launch_req(cx: &Cx, row: &TaskRow, setup_exit: Option<i32>) -> Opt
         workdir: recorded_workdir(b.workdir.as_deref()?)?,
         worktree: PathBuf::from(row.worktree.as_deref()?),
         workspace: WorkspaceRef::new(row.workspace_id.as_deref()?),
-        task: row.name.clone(),
+        box_name: row.name.clone(),
         branch: row.branch.clone().unwrap_or_default(),
         goal: row.goal.clone(),
         resume: None,
@@ -305,12 +305,12 @@ fn failure(cx: &Cx, e: &EngineError) -> LaunchFailure {
     }
 }
 
-/// The failure as the JSON kept on the Task row.
+/// The failure as the JSON kept on the Box row.
 pub(super) fn to_json(f: &LaunchFailure) -> Result<String, CommandError> {
     serde_json::to_string(f).map_err(|e| CommandError::new(moor_core::ErrorKind::Internal, e))
 }
 
-/// Writes the Task's launch failure column, with a `session_failed` event for a new failure.
+/// Writes the Box's launch failure column, with a `session_failed` event for a new failure.
 pub(super) fn record(
     store: &Store,
     id: BoxId,

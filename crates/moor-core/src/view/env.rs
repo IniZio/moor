@@ -3,11 +3,11 @@
 //! Carries `rows`, `provider` and `credentials`, plus `repo`, `agent`
 //! and `github`, which reports the GitHub identity and token resolution.
 //! Layers are [`crate::config::Layer`]; `agent` and `provider` come straight from
-//! the resolved task settings.
+//! the resolved box settings.
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::{Layer, TaskSettings};
+use crate::config::{BoxSettings, Layer};
 
 /// Kind of an environment item.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -187,7 +187,7 @@ impl EnvView {
     #[must_use]
     pub fn new(
         repo: String,
-        settings: &TaskSettings,
+        settings: &BoxSettings,
         github: EnvGithub,
         items: Vec<EnvItem>,
     ) -> Self {

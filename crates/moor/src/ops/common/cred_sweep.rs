@@ -1,6 +1,6 @@
 //! Removes credential directories a failed cleanup left on a Box.
 //!
-//! Run while the caller holds the Box lock, so no launch or exec of this Task is starting.
+//! Run while the caller holds the Box lock, so no launch or exec of this Box is starting.
 
 use std::path::Path;
 use std::time::Duration;
@@ -12,13 +12,13 @@ use moor_core::seam::driver::ExecSpec;
 use moor_core::seam::proc::Deadline;
 
 use crate::cx::Cx;
-use crate::store::TaskRow;
+use crate::store::BoxRow;
 
 /// Wall-clock allowance for the sweep.
 const SWEEP_DEADLINE: Duration = Duration::from_secs(15);
 
-/// Removes stale credential directories from the Task's Box; best effort, never fails.
-pub(crate) fn sweep(cx: &Cx, row: &TaskRow) {
+/// Removes stale credential directories from the Box; best effort, never fails.
+pub(crate) fn sweep(cx: &Cx, row: &BoxRow) {
     let Some(boxed) = row.boxed.as_ref().filter(|b| b.state == BoxState::Ready) else {
         return;
     };

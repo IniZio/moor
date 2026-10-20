@@ -115,10 +115,15 @@ fn req(name: &str) -> StartReq {
 }
 
 fn lifecycle_of(w: &World, id: BoxId) -> BoxLifecycle {
-    w.cx.store().unwrap().task(id).unwrap().unwrap().lifecycle
+    w.cx.store()
+        .unwrap()
+        .box_row(id)
+        .unwrap()
+        .unwrap()
+        .lifecycle
 }
 
-/// Frees the Box of task `id` as if the driver lost it.
+/// Frees the machine of Box `id` as if the driver lost it.
 fn free_box(w: &World, id: BoxId) {
     w.cx.store()
         .unwrap()
@@ -126,7 +131,7 @@ fn free_box(w: &World, id: BoxId) {
         .unwrap();
 }
 
-/// Moves the Box row of task `id` to `provider`.
+/// Moves the machine row of Box `id` to `provider`.
 fn move_box_to(w: &World, id: BoxId, provider: &str) {
     let set = Fields {
         box_provider: Field::Set(ProviderId::new(provider)),
@@ -143,7 +148,7 @@ fn with_live_box(config: UserConfig) -> (World, BoxId) {
     let w = world(config);
     let v = run(&w.cx, &req("holder")).unwrap();
     assert!(!v.queued);
-    (w, BoxId::new(v.task.id))
+    (w, BoxId::new(v.boxed.id))
 }
 
 #[test]
@@ -151,9 +156,9 @@ fn start_queues_when_box_limit_reached() {
     let (w, _) = with_live_box(box_limit(1));
     let v = run(&w.cx, &req("waiter")).unwrap();
     assert!(v.queued);
-    assert_eq!(v.task.lifecycle, BoxLifecycle::WaitingForBox);
+    assert_eq!(v.boxed.lifecycle, BoxLifecycle::WaitingForBox);
     assert_eq!(
-        lifecycle_of(&w, BoxId::new(v.task.id)),
+        lifecycle_of(&w, BoxId::new(v.boxed.id)),
         BoxLifecycle::WaitingForBox
     );
 }
@@ -162,8 +167,8 @@ fn start_queues_when_box_limit_reached() {
 fn queued_start_records_no_session() {
     let (w, _) = with_live_box(box_limit(1));
     let v = run(&w.cx, &req("waiter")).unwrap();
-    assert_eq!(v.task.lifecycle, BoxLifecycle::WaitingForBox);
-    let id = BoxId::new(v.task.id);
+    assert_eq!(v.boxed.lifecycle, BoxLifecycle::WaitingForBox);
+    let id = BoxId::new(v.boxed.id);
     let store = w.cx.store().unwrap();
     assert!(store.live_session(id).unwrap().is_none());
     assert!(!store.has_session(id).unwrap());
@@ -176,7 +181,7 @@ fn queued_start_records_the_limit_and_keeps_worktree_and_workspace() {
     let events =
         w.cx.store()
             .unwrap()
-            .events(BoxId::new(v.task.id), 50)
+            .events(BoxId::new(v.boxed.id), 50)
             .unwrap();
     let ev = events
         .iter()
@@ -213,7 +218,7 @@ fn queued_start_warns_with_the_driver_config_key() {
     let events =
         w.cx.store()
             .unwrap()
-            .events(BoxId::new(v.task.id), 50)
+            .events(BoxId::new(v.boxed.id), 50)
             .unwrap();
     let ev = events.iter().find(|e| e.kind == "waiting_for_box").unwrap();
     assert_eq!(ev.payload.get("max_boxes"), Some(&json!(1)));
@@ -225,17 +230,17 @@ fn start_again_while_still_full_keeps_waiting() {
     run(&w.cx, &req("waiter")).unwrap();
     let again = run(&w.cx, &req("waiter")).unwrap();
     assert!(again.queued);
-    assert_eq!(again.task.lifecycle, BoxLifecycle::WaitingForBox);
+    assert_eq!(again.boxed.lifecycle, BoxLifecycle::WaitingForBox);
     assert_eq!(w.driver.calls(), ["acquire", "exec box-1", "sweep box-1"]);
 }
 
 #[test]
-fn start_again_after_a_box_is_freed_promotes_the_waiting_task() {
+fn start_again_after_a_box_is_freed_promotes_the_waiting_box() {
     let (w, holder) = with_live_box(box_limit(1));
     let queued = run(&w.cx, &req("waiter")).unwrap();
     assert!(queued.queued);
     assert_eq!(w.driver.calls(), ["acquire", "exec box-1", "sweep box-1"]);
-    let id = BoxId::new(queued.task.id);
+    let id = BoxId::new(queued.boxed.id);
     free_box(&w, holder);
     let v = run(&w.cx, &req("waiter")).unwrap();
     assert!(!v.queued);
@@ -253,12 +258,12 @@ fn start_again_after_a_box_is_freed_promotes_the_waiting_task() {
 }
 
 #[test]
-fn start_again_after_the_holder_closes_promotes_the_waiting_task() {
+fn start_again_after_the_holder_closes_promotes_the_waiting_box() {
     let (w, holder) = with_live_box(box_limit(1));
     let queued = run(&w.cx, &req("waiter")).unwrap();
     assert!(queued.queued);
     assert_eq!(w.driver.calls(), ["acquire", "exec box-1", "sweep box-1"]);
-    let id = BoxId::new(queued.task.id);
+    let id = BoxId::new(queued.boxed.id);
     let store = w.cx.store().unwrap();
     store
         .apply(
@@ -288,7 +293,7 @@ fn start_acquires_without_any_limit() {
     let (w, _) = with_live_box(UserConfig::default());
     let v = run(&w.cx, &req("second")).unwrap();
     assert!(!v.queued);
-    assert_eq!((v.task.lifecycle, v.task.session_state), WORKING);
+    assert_eq!((v.boxed.lifecycle, v.boxed.session_state), WORKING);
     assert_eq!(
         w.driver.calls(),
         [
@@ -326,7 +331,7 @@ fn limit_ignores_live_boxes_of_another_provider() {
     move_box_to(&w, holder, "other-provider");
     let v = run(&w.cx, &req("second")).unwrap();
     assert!(!v.queued);
-    assert_eq!((v.task.lifecycle, v.task.session_state), WORKING);
+    assert_eq!((v.boxed.lifecycle, v.boxed.session_state), WORKING);
     assert_eq!(
         w.driver.calls(),
         [
@@ -372,7 +377,7 @@ fn driver_limit_overrides_the_box_limit() {
     let (w, _) = with_live_box(config);
     let v = run(&w.cx, &req("second")).unwrap();
     assert!(!v.queued);
-    assert_eq!((v.task.lifecycle, v.task.session_state), WORKING);
+    assert_eq!((v.boxed.lifecycle, v.boxed.session_state), WORKING);
     assert_eq!(
         w.driver.calls(),
         [
@@ -407,6 +412,6 @@ fn asleep_box_still_counts_toward_the_limit() {
         .unwrap();
     let v = run(&w.cx, &req("waiter")).unwrap();
     assert!(v.queued);
-    assert_eq!(v.task.lifecycle, BoxLifecycle::WaitingForBox);
+    assert_eq!(v.boxed.lifecycle, BoxLifecycle::WaitingForBox);
     assert_eq!(w.driver.calls(), ["acquire", "exec box-1", "sweep box-1"]);
 }

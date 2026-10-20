@@ -9,10 +9,10 @@ use std::time::{Duration, Instant};
 
 use moor_core::config::proxy::{EndpointRule, ResolvedInject, ResolvedRule};
 use moor_core::domain::box_state::BoxLifecycleInput;
+use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::boxes::BoxInput;
-use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
+use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::SessionInput;
-use moor_core::domain::task::SetupOutcome;
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::seam::driver::{AcquireReq, Driver};
 use moor_core::seam::proxy_host::ProxySpec;
@@ -28,7 +28,7 @@ use crate::testing::driver::FakeDriver;
 use crate::testing::forge::FakeForge;
 use crate::testing::rng::FakeRng;
 
-/// The Task Nonce the client uses as proxy password.
+/// The Box nonce the client uses as proxy password.
 const NONCE: &str = "nonce_e2e-0123456789";
 /// What the client sends before the proxy swaps it out.
 const PLACEHOLDER: &str = "Bearer placeholder-not-real";
@@ -64,18 +64,18 @@ impl Drop for StopOnDrop {
     }
 }
 
-/// Insert a task, give it a live box from `driver`, and reserve its proxy row.
-fn task_with_box(store: &Store, driver: &FakeDriver) -> (BoxId, BoxHandle) {
-    let nt = NewTask {
+/// Insert a Box, give it a live machine from `driver`, and reserve its proxy row.
+fn box_with_machine(store: &Store, driver: &FakeDriver) -> (BoxId, BoxHandle) {
+    let nt = NewBox {
         name: BoxName::parse_allow_bare("demo").unwrap(),
         repo: "r".into(),
     };
-    let id = store.apply(Decision::insert(nt)).unwrap().task;
+    let id = store.apply(Decision::insert(nt)).unwrap().box_id;
     let provider = ProviderId::new("p");
     let got = driver
         .acquire(&AcquireReq {
             provider: provider.clone(),
-            task: id,
+            box_id: id,
             name: BoxName::parse_allow_bare("demo").unwrap(),
             class: None,
             nonce: "abc123".into(),
@@ -156,9 +156,9 @@ fn wait_for<T>(what: &str, mut done: impl FnMut() -> Option<T>) -> T {
         .unwrap_or_else(|| unreachable!("timed out waiting for {what}"))
 }
 
-/// Event kinds recorded for `task`.
-fn kinds(store: &Store, task: BoxId) -> Vec<String> {
-    let events = store.events(task, 100).unwrap();
+/// Event kinds recorded for `box_id`.
+fn kinds(store: &Store, box_id: BoxId) -> Vec<String> {
+    let events = store.events(box_id, 100).unwrap();
     events.into_iter().map(|e| e.kind).collect()
 }
 
@@ -212,12 +212,12 @@ fn serve_injects_the_credential_audits_requests_and_stops() {
     let clock = Arc::new(PacedClock(FakeClock::new(Ts::from_millis(1_000))));
     let store = Store::open(&dir.path().join("moor.db"), clock.clone()).unwrap();
     let driver = FakeDriver::new().reverse_tunnels();
-    let (id, handle) = task_with_box(&store, &driver);
+    let (id, handle) = box_with_machine(&store, &driver);
     let spec = ProxySpec {
-        task: id,
+        box_id: id,
         box_handle: Some(handle),
         host_cwd: "/wt".into(),
-        task_repo: None,
+        box_repo: None,
         rules: vec![rule(up.port)],
     };
     write_spec(dir.path(), &spec).unwrap();

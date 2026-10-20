@@ -6,12 +6,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::activity::{HookKind, HookRead, HookRecord, PaneObs, PaneRead, PaneStatus, Probes};
+use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::ExtraEvent;
-use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
+use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::{SessionInput, SessionState};
-use moor_core::domain::task::SetupOutcome;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver, ExecOutcome};
 use moor_core::{BoxId, BoxName, ProviderId, ShowReq};
@@ -42,18 +42,18 @@ fn engine_cx(dir: &Path, driver: &Arc<FakeDriver>, engine: &Arc<FakeEngine>) -> 
     .with_engine(engine.clone())
 }
 
-/// Adds a Working Task `name` with a live Box and an open session `session`.
+/// Adds a Working Box `name` with a live Box and an open session `session`.
 fn working(cx: &Cx, driver: &FakeDriver, name: &str, session: &str) -> BoxId {
-    let nt = NewTask {
+    let nt = NewBox {
         name: BoxName::parse_allow_bare(name).unwrap(),
         repo: "r".into(),
     };
     let store = cx.store().unwrap();
-    let id = store.apply(Decision::insert(nt)).unwrap().task;
+    let id = store.apply(Decision::insert(nt)).unwrap().box_id;
     let got = driver
         .acquire(&AcquireReq {
             provider: ProviderId::new("p"),
-            task: id,
+            box_id: id,
             name: BoxName::parse_allow_bare(name).unwrap(),
             class: None,
             nonce: "abc123".into(),
@@ -107,7 +107,7 @@ fn idle_hook_at(at: Ts) -> Probes {
     }
 }
 
-/// A Working Task whose fake engine reports quiet, with the context that settles it.
+/// A Working Box whose fake engine reports quiet, with the context that settles it.
 fn quiet_agent(dir: &Path) -> (Cx, BoxId) {
     quiet_agent_on(dir, &Arc::new(FakeDriver::new().exec_stdout([""])))
 }
@@ -159,7 +159,7 @@ fn pass_settles_a_quiet_agent_without_any_client() {
     assert!(messages.is_empty(), "{messages:?}");
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
     let store = Store::open(&dir.path().join(STORE_FILE), clock).unwrap();
-    let row = store.task(id).unwrap().unwrap();
+    let row = store.box_row(id).unwrap().unwrap();
     assert_eq!(
         (row.lifecycle, row.session),
         (BoxLifecycle::Ready, SessionState::Idle)
@@ -263,7 +263,7 @@ fn a_held_box_lock_skips_the_collection() {
     );
     let (cx, id) = quiet_agent_on(dir.path(), &driver);
     let list = ShowReq {
-        task: None,
+        box_name: None,
         events: None,
         agent: false,
         reports: false,
@@ -272,7 +272,7 @@ fn a_held_box_lock_skips_the_collection() {
     };
     show::run(&cx, &list).unwrap();
     let reader = view(dir.path(), &driver);
-    let row = reader.store().unwrap().task(id).unwrap().unwrap();
+    let row = reader.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(
         (row.lifecycle, row.session),
         (BoxLifecycle::Ready, SessionState::Idle)
@@ -298,7 +298,7 @@ fn an_idle_written_by_show_is_collected_by_the_next_pass() {
     );
     let (cx, id) = quiet_agent_on(dir.path(), &driver);
     let list = ShowReq {
-        task: None,
+        box_name: None,
         events: None,
         agent: false,
         reports: false,
@@ -306,7 +306,7 @@ fn an_idle_written_by_show_is_collected_by_the_next_pass() {
         pane: false,
     };
     show::run(&cx, &list).unwrap();
-    let row = cx.store().unwrap().task(id).unwrap().unwrap();
+    let row = cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(
         (row.lifecycle, row.session),
         (BoxLifecycle::Ready, SessionState::Idle)
@@ -346,7 +346,7 @@ fn a_steered_turn_on_an_idle_box_ends_and_collects_in_one_pass() {
     let moor = Moor::from_cx(cx);
     let cx = view(dir.path(), &driver);
     assert!(moor.settle_open().is_empty());
-    let row = cx.store().unwrap().task(id).unwrap().unwrap();
+    let row = cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(
         (row.lifecycle, row.session),
         (BoxLifecycle::Ready, SessionState::Idle)
@@ -383,7 +383,7 @@ fn a_failed_index_warns_and_the_box_still_idles() {
         "{messages:?}"
     );
     let cx = view(dir.path(), &driver);
-    let row = cx.store().unwrap().task(id).unwrap().unwrap();
+    let row = cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(
         (row.lifecycle, row.session),
         (BoxLifecycle::Ready, SessionState::Idle)

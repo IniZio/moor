@@ -160,12 +160,12 @@ fn parts(env: &Env) -> Result<CxParts, CommandError> {
     })
 }
 
-/// Run the credential proxy for `task` until a stop signal; returns the exit code.
+/// Run the credential proxy for `box_id` until a stop signal; returns the exit code.
 ///
 /// Setup failures are written to `stderr` as one `moor proxy: <error>` line.
-pub fn serve_proxy(env: &Env, task: BoxId, stderr: impl Write + Send + 'static) -> u8 {
+pub fn serve_proxy(env: &Env, box_id: BoxId, stderr: impl Write + Send + 'static) -> u8 {
     let sink: Sink = Arc::new(Mutex::new(stderr));
-    match run_proxy(env, task, &sink) {
+    match run_proxy(env, box_id, &sink) {
         Ok(code) => code,
         Err(e) => {
             // The sink is the only channel left; a failed write has nowhere to go.
@@ -179,7 +179,7 @@ pub fn serve_proxy(env: &Env, task: BoxId, stderr: impl Write + Send + 'static) 
 }
 
 /// Builds the proxy's dependencies and serves; `Err` is a setup failure.
-fn run_proxy(env: &Env, task: BoxId, sink: &Sink) -> Result<u8, String> {
+fn run_proxy(env: &Env, box_id: BoxId, sink: &Sink) -> Result<u8, String> {
     let parts = parts(env).map_err(|e| e.error.to_string())?;
     let forge = Arc::clone(&parts.forge);
     let clock = Arc::clone(&parts.clock);
@@ -214,7 +214,7 @@ fn run_proxy(env: &Env, task: BoxId, sink: &Sink) -> Result<u8, String> {
         stop,
         stderr: Arc::clone(sink),
     };
-    Ok(serve(&deps, task))
+    Ok(serve(&deps, box_id))
 }
 
 /// The GitHub forge; `pass_env` names unset in `env` are skipped.
@@ -283,7 +283,7 @@ mod tests {
             agent: "claude".to_owned(),
             state: PaneStatus::Idle,
             session_id: "abc".to_owned(),
-            task: BoxName::parse_allow_bare("a").unwrap(),
+            box_name: BoxName::parse_allow_bare("a").unwrap(),
         };
         h.register_resume(&PaneRef::new("p"), &reg).unwrap();
         let calls = proc.calls();
@@ -336,7 +336,7 @@ mod tests {
     }
 
     #[test]
-    fn serving_an_unknown_task_fails_with_one_stderr_line() {
+    fn serving_an_unknown_box_fails_with_one_stderr_line() {
         let home = tempfile::tempdir().unwrap();
         let root = home.path().to_str().unwrap();
         let state = home.path().join("state");

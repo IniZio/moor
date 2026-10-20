@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::Intent;
-use moor_core::{ErrorKind, StartReq, TaskId};
+use moor_core::{BoxId, ErrorKind, StartReq};
 
 use super::moor_yaml::script_base_yaml;
 use super::setup::Step::{Cmd, Sync};
@@ -32,7 +32,7 @@ fn world_with_setup(results: impl IntoIterator<Item = Step>) -> (World, Arc<Fake
     (w, engine)
 }
 
-/// Puts the repo's `.moor.yaml` into the Task's worktree, as a checked-out repo has it.
+/// Puts the repo's `.moor.yaml` into the Box's worktree, as a checked-out repo has it.
 fn checked_out(w: &World) {
     let wt = row(w).worktree.unwrap();
     std::fs::create_dir_all(&wt).unwrap();
@@ -52,8 +52,12 @@ fn field<'a>(v: &'a serde_json::Value, key: &str) -> &'a serde_json::Value {
     v.get(key).unwrap()
 }
 
-fn row(w: &World) -> crate::store::TaskRow {
-    w.cx.store().unwrap().task(TaskId::new(1)).unwrap().unwrap()
+fn row(w: &World) -> crate::store::BoxRow {
+    w.cx.store()
+        .unwrap()
+        .box_row(BoxId::new(1))
+        .unwrap()
+        .unwrap()
 }
 
 fn box_state(w: &World) -> Option<BoxState> {
@@ -89,10 +93,10 @@ fn a_failed_sync_names_the_step_the_tail_and_the_box_in_the_error_value() {
     let err = start(&w).unwrap_err();
     let value = err.value.unwrap();
     assert_eq!(field(&value, "failed_step"), "sync");
-    assert_eq!(field(&value, "box"), "box-1");
+    assert_eq!(field(&value, "handle"), "box-1");
     assert!(value.get("log_tail").is_none());
-    let task = value.get("task").unwrap();
-    assert_eq!(field(task, "lifecycle"), "setup_failed");
+    let boxed = value.get("box").unwrap();
+    assert_eq!(field(boxed, "lifecycle"), "setup_failed");
 }
 
 #[test]
@@ -117,7 +121,7 @@ fn a_failed_sync_shows_the_message_and_every_hint_in_text_and_the_fields_in_json
     let json: serde_json::Value =
         serde_json::from_str(&crate::cli::render(&resp, &opts).stdout).unwrap();
     assert_eq!(json.pointer("/value/failed_step"), Some(&"sync".into()));
-    assert_eq!(json.pointer("/value/box"), Some(&"box-1".into()));
+    assert_eq!(json.pointer("/value/handle"), Some(&"box-1".into()));
     assert!(json.pointer("/value/log_tail").is_none());
 }
 
@@ -165,7 +169,7 @@ fn a_retry_in_the_kept_box_holds_the_setup_intent_while_it_runs() {
     let (sink, path) = (Arc::clone(&seen), w.dir.path().join("moor.db"));
     w.driver.on_exec(move || {
         let store = Store::open(&path, Arc::new(SystemClock::real())).unwrap();
-        let row = store.task(TaskId::new(1)).unwrap().unwrap();
+        let row = store.box_row(BoxId::new(1)).unwrap().unwrap();
         sink.lock().unwrap().push(row.intent);
     });
     start(&w).unwrap();

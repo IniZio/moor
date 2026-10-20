@@ -4,13 +4,13 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
-use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
+use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::{SessionInput, SessionState};
-use moor_core::domain::task::SetupOutcome;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, SleepKind};
-use moor_core::{BoxId, BoxName, ErrorKind, ProviderId, TaskReq};
+use moor_core::{BoxId, BoxName, BoxReq, ErrorKind, ProviderId};
 
 use super::run;
 use crate::cx::Cx;
@@ -26,7 +26,7 @@ struct Fx {
     id: BoxId,
 }
 
-/// Task `t` with a live Box, working.
+/// Box `t` with a live machine, working.
 fn fx_with(driver: FakeDriver) -> Fx {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(driver);
@@ -40,12 +40,12 @@ fn fx_with(driver: FakeDriver) -> Fx {
     let store = cx.store().unwrap();
     let name = BoxName::parse_allow_bare("t").unwrap();
     let id = store
-        .apply(Decision::insert(NewTask {
+        .apply(Decision::insert(NewBox {
             name: name.clone(),
             repo: "r".into(),
         }))
         .unwrap()
-        .task;
+        .box_id;
     let provider = ProviderId::new("p");
     let fields = Fields {
         box_provider: Field::Set(provider.clone()),
@@ -59,7 +59,7 @@ fn fx_with(driver: FakeDriver) -> Fx {
     let got = driver
         .acquire(&AcquireReq {
             provider,
-            task: id,
+            box_id: id,
             name,
             class: None,
             nonce: "n".to_owned(),
@@ -85,7 +85,7 @@ fn fx() -> Fx {
     fx_with(FakeDriver::new())
 }
 
-/// The fixture put to sleep: Task Asleep and Box Asleep.
+/// The fixture put to sleep: Box Asleep and machine Asleep.
 fn asleep(f: &Fx) {
     let store = f.cx.store().unwrap();
     store
@@ -97,19 +97,24 @@ fn asleep(f: &Fx) {
     store.apply(d).unwrap();
 }
 
-fn req() -> TaskReq {
-    TaskReq {
-        task: BoxName::parse_allow_bare("t").unwrap(),
+fn req() -> BoxReq {
+    BoxReq {
+        box_name: BoxName::parse_allow_bare("t").unwrap(),
     }
 }
 
 fn states(f: &Fx) -> (BoxLifecycle, BoxState) {
-    let row = f.cx.store().unwrap().task(f.id).unwrap().unwrap();
+    let row = f.cx.store().unwrap().box_row(f.id).unwrap().unwrap();
     (row.lifecycle, row.boxed.unwrap().state)
 }
 
 fn session(f: &Fx) -> SessionState {
-    f.cx.store().unwrap().task(f.id).unwrap().unwrap().session
+    f.cx.store()
+        .unwrap()
+        .box_row(f.id)
+        .unwrap()
+        .unwrap()
+        .session
 }
 
 fn wakes(f: &Fx) -> usize {
@@ -118,14 +123,14 @@ fn wakes(f: &Fx) -> usize {
 }
 
 #[test]
-fn asleep_task_wakes_its_box() {
+fn asleep_box_wakes_its_box() {
     let f = fx();
     asleep(&f);
     assert_eq!(states(&f), (BoxLifecycle::Asleep, BoxState::Asleep));
     let v = run(&f.cx, &req()).unwrap();
     assert!(v.woke);
-    assert_eq!(v.task, "t");
-    assert_eq!(v.r#box.unwrap().state, BoxState::Ready);
+    assert_eq!(v.box_name, "t");
+    assert_eq!(v.driver.unwrap().state, BoxState::Ready);
     assert!(f.driver.calls().contains(&"wake box-1".to_owned()));
     assert_eq!(wakes(&f), 1);
     assert_eq!(states(&f), (BoxLifecycle::Ready, BoxState::Ready));
@@ -133,7 +138,7 @@ fn asleep_task_wakes_its_box() {
 }
 
 #[test]
-fn task_that_is_not_asleep_is_left_alone() {
+fn box_that_is_not_asleep_is_left_alone() {
     let f = fx();
     let v = run(&f.cx, &req()).unwrap();
     assert!(!v.woke);
@@ -152,7 +157,7 @@ fn second_wake_does_nothing() {
 }
 
 #[test]
-fn failed_resume_leaves_task_and_box_asleep() {
+fn failed_resume_leaves_box_and_box_asleep() {
     let f = fx_with(FakeDriver::new().fail_wake(DriverError::Quota("q".into())));
     asleep(&f);
     run(&f.cx, &req()).unwrap_err();
@@ -172,10 +177,10 @@ fn gone_box_is_refused_without_a_resume() {
 }
 
 #[test]
-fn unknown_task_is_failed() {
+fn unknown_box_is_failed() {
     let f = fx();
-    let r = TaskReq {
-        task: BoxName::parse_allow_bare("nope").unwrap(),
+    let r = BoxReq {
+        box_name: BoxName::parse_allow_bare("nope").unwrap(),
     };
     let err = run(&f.cx, &r).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Failed);
@@ -206,6 +211,6 @@ fn sleep_label_follows_provider_sleep_support() {
         let f = fx_with(FakeDriver::new().sleep_kind(kind));
         asleep(&f);
         let v = run(&f.cx, &req()).unwrap();
-        assert_eq!(v.r#box.unwrap().sleep.after.as_deref(), after);
+        assert_eq!(v.driver.unwrap().sleep.after.as_deref(), after);
     }
 }

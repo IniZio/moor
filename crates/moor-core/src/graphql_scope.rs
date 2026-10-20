@@ -1,5 +1,5 @@
 //! Scope check for GitHub GraphQL requests: decides from the request alone whether it touches
-//! only the Task repo, so a broad user token cannot reach other repos through the proxy.
+//! only the Box repo, so a broad user token cannot reach other repos through the proxy.
 //!
 //! The policy is an allow-list: besides the root rules, every field under a root field must be
 //! listed for the kind of object it is selected on, so account data and other repos stay out of
@@ -77,15 +77,15 @@ impl Reason {
 /// Outcome of judging a GraphQL request.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Verdict {
-    /// Every field is confined to the Task repo.
+    /// Every field is confined to the Box repo.
     Allow,
-    /// Allowed only if each listed node ID resolves to an object in the Task repo.
+    /// Allowed only if each listed node ID resolves to an object in the Box repo.
     NeedsNodeCheck(Vec<NodeId>),
     /// The request is refused.
     Deny(Reason),
 }
 
-/// Judges a GraphQL request body against the Task repo.
+/// Judges a GraphQL request body against the Box repo.
 #[must_use]
 pub fn judge(body: &[u8], repo: &RepoRef) -> Verdict {
     match scope(body, repo) {

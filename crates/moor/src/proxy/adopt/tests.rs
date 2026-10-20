@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use moor_core::domain::decision::{Decision, NewTask};
+use moor_core::domain::decision::{Decision, NewBox};
 use moor_core::seam::clock::{Clock as _, Ts};
 use moor_core::seam::proxy_host::{ProxyHost as _, ProxySpec, ProxyStatus};
 use moor_core::{BoxId, BoxName, Secret};
@@ -30,7 +30,7 @@ struct Fx {
     id: BoxId,
 }
 
-/// A Task with a ready Box and a recorded Proxy whose supervisor is `PID` in boot `BOOT`.
+/// A Box with a ready machine and a recorded Proxy whose supervisor is `PID` in boot `BOOT`.
 fn fx() -> Fx {
     let dir = tempfile::tempdir().unwrap();
     let proc = Arc::new(ScriptedProc::new());
@@ -39,12 +39,12 @@ fn fx() -> Fx {
     let rng = Arc::new(FakeRng::default());
     let store = Store::open(&dir.path().join(STORE_FILE), clock.clone()).unwrap();
     let id = store
-        .apply(Decision::insert(NewTask {
+        .apply(Decision::insert(NewBox {
             name: BoxName::parse_allow_bare("t").unwrap(),
             repo: "r".into(),
         }))
         .unwrap()
-        .task;
+        .box_id;
     let host = DetachedSupervisor::new(
         proc.clone(),
         clock.clone(),
@@ -69,9 +69,9 @@ fn fx() -> Fx {
     let shared = f.clock.clone();
     f.proc.on_daemon(move |d| {
         let store = Store::open(&state.join(STORE_FILE), shared.clone()).unwrap();
-        let task = BoxId::new(d.call.args.get(2).unwrap().parse().unwrap());
-        store.claim_lease(task, "new-supervisor", LEASE).unwrap();
-        let box_port = store.proxy(task).unwrap().unwrap().box_port;
+        let box_id = BoxId::new(d.call.args.get(2).unwrap().parse().unwrap());
+        store.claim_lease(box_id, "new-supervisor", LEASE).unwrap();
+        let box_port = store.proxy(box_id).unwrap().unwrap().box_port;
         let ports = ProxyPorts {
             box_port,
             host_port: 41000,
@@ -82,7 +82,7 @@ fn fx() -> Fx {
             boot_id: Some(BOOT),
         };
         let _ = store
-            .mark_ready(task, "new-supervisor", ports, proc)
+            .mark_ready(box_id, "new-supervisor", ports, proc)
             .unwrap();
     });
     f
@@ -91,10 +91,10 @@ fn fx() -> Fx {
 impl Fx {
     fn spec(&self) -> ProxySpec {
         ProxySpec {
-            task: self.id,
+            box_id: self.id,
             box_handle: None,
             host_cwd: PathBuf::from("/work"),
-            task_repo: None,
+            box_repo: None,
             rules: Vec::new(),
         }
     }
@@ -219,7 +219,7 @@ fn a_stale_lease_is_restarted_on_the_same_box_port() {
 }
 
 #[test]
-fn a_task_without_a_usable_box_has_its_proxy_stopped_not_restarted() {
+fn a_box_without_a_usable_box_has_its_proxy_stopped_not_restarted() {
     let f = fx();
     f.record(BOOT);
     f.clock.sleep(LEASE + Duration::from_secs(1));

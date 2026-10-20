@@ -40,7 +40,8 @@ pub enum WaitMode {
 #[serde(deny_unknown_fields)]
 pub struct WaitReq {
     /// Box name.
-    pub task: BoxName,
+    #[serde(rename = "box")]
+    pub box_name: BoxName,
     /// Condition to wait for.
     #[serde(rename = "for", default, skip_serializing_if = "Option::is_none")]
     pub wait_for: Option<WaitFor>,
@@ -55,7 +56,7 @@ pub struct WaitReq {
 pub enum WaitFor {
     /// Agent idle.
     Idle,
-    /// Task done.
+    /// Box done.
     Done,
     /// Run finished.
     Run,

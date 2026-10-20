@@ -15,7 +15,7 @@ pub use resolve::{default_rules, resolve_rules, EndpointRule, ResolvedInject, Re
 pub use shape::request_shape;
 use template::{check_slots, FORM_SLOTS, REPO_SLOTS};
 
-/// Credential name that means the Task's forge token rather than a `credentials:` entry.
+/// Credential name that means the Box's forge token rather than a `credentials:` entry.
 pub const FORGE_CREDENTIAL: &str = "forge";
 
 /// Header carrying the credential when `inject.header` is unset.
@@ -95,17 +95,17 @@ pub struct ToolRule {
     ///
     /// `METHODS` is `*` or `GET|POST`-style; in the path `*` matches one
     /// segment and `**` any number. `{repo}` and `{repo:urlenc}` are filled
-    /// from the Task repo.
+    /// from the Box repo.
     pub allow: Vec<String>,
     /// Box environment variables; values may use the repo placeholders.
     pub box_env: BTreeMap<String, String>,
-    /// Drop the rule for a Task with no repo even when no allow entry or Box
+    /// Drop the rule for a Box with no repo even when no allow entry or Box
     /// variable uses `{repo}`.
     pub requires_repo: bool,
 }
 
 impl ToolRule {
-    /// Whether the rule needs the Task repo: `requires_repo`, or any allow entry or Box variable uses it.
+    /// Whether the rule needs the Box repo: `requires_repo`, or any allow entry or Box variable uses it.
     pub(super) fn needs_repo(&self) -> bool {
         self.requires_repo
             || self.allow.iter().any(|a| template::uses_repo(a))

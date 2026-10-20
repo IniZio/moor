@@ -3,14 +3,14 @@
 use clap::{Args, ValueEnum};
 use moor_core::{BoxName, WaitFor, WaitReq};
 
-use super::task_name;
+use super::box_name;
 
 /// States `wait --for` accepts.
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum WaitForArg {
     /// Agent idle.
     Idle,
-    /// Task done.
+    /// Box done.
     Done,
     /// Agent needs input, or is idle.
     Input,
@@ -21,9 +21,9 @@ enum WaitForArg {
 /// Arguments of `wait`.
 #[derive(Debug, Args)]
 pub(super) struct WaitArgs {
-    /// Task name.
-    #[arg(value_parser = task_name)]
-    task: BoxName,
+    /// Box name.
+    #[arg(value_parser = box_name)]
+    name: BoxName,
     /// State to wait for.
     #[arg(long = "for", value_enum)]
     wait_for: Option<WaitForArg>,
@@ -41,7 +41,7 @@ impl From<WaitArgs> for WaitReq {
             WaitForArg::Run => WaitFor::Run,
         });
         Self {
-            task: a.task,
+            box_name: a.name,
             wait_for,
             timeout_secs: a.timeout,
         }

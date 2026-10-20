@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 
 use base64::Engine as _;
 use moor_core::controller::PROTOCOL;
-use moor_core::domain::decision::{Decision, NewTask};
+use moor_core::domain::decision::{Decision, NewBox};
 use moor_core::name::BoxName;
 use moor_core::{ArtifactReadReq, ArtifactsReq, Request, ARTIFACT_CHUNK};
 use serde_json::{json, Value};
@@ -22,7 +22,7 @@ use crate::store::Store;
 use crate::testing::clock::FakeClock;
 use moor_core::seam::clock::Ts;
 
-const TASK: &str = "web-box";
+const BOX_NAME: &str = "web-box";
 const OLD_LEN: usize = 5;
 const CHUNK: usize = 512 * 1024;
 const BIG_LEN: usize = CHUNK * 2 + 100 * 1024;
@@ -59,14 +59,14 @@ impl Write for Quiet {
 fn seed(dir: &Path) -> Vec<u8> {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000_000)));
     let store = Store::open(&dir.join("moor.db"), clock).expect("store");
-    let name = BoxName::parse_allow_bare(TASK).expect("name");
+    let name = BoxName::parse_allow_bare(BOX_NAME).expect("name");
     let id = store
-        .apply(Decision::insert(NewTask {
+        .apply(Decision::insert(NewBox {
             name,
             repo: "r".into(),
         }))
-        .expect("task")
-        .task;
+        .expect("box")
+        .box_id;
     let root = dir.join("artifacts");
     let big = patterned(BIG_LEN);
     store
@@ -126,7 +126,10 @@ impl Fixture {
     }
 
     fn list(&mut self, all: bool) -> Vec<Value> {
-        let (env, _) = self.call(&Request::Artifacts(ArtifactsReq { task: task(), all }));
+        let (env, _) = self.call(&Request::Artifacts(ArtifactsReq {
+            box_name: box_name(),
+            all,
+        }));
         assert_eq!(env["class"], "ok", "{env}");
         let value = &env["value"];
         value
@@ -139,7 +142,7 @@ impl Fixture {
 
     fn read(&mut self, name: &str, version: Option<u32>, offset: u64) -> (Value, usize) {
         self.call(&Request::ArtifactRead(ArtifactReadReq {
-            task: task(),
+            box_name: box_name(),
             name: name.to_owned(),
             version,
             offset,
@@ -169,8 +172,8 @@ impl Fixture {
     }
 }
 
-fn task() -> BoxName {
-    BoxName::parse_allow_bare(TASK).expect("name")
+fn box_name() -> BoxName {
+    BoxName::parse_allow_bare(BOX_NAME).expect("name")
 }
 
 fn entry<'a>(list: &'a [Value], name: &str, version: u64) -> &'a Value {
@@ -213,16 +216,16 @@ fn explicit_version_reads_the_old_bytes() {
 }
 
 #[test]
-fn missing_task_name_or_version_is_not_found() {
+fn missing_box_name_or_version_is_not_found() {
     let mut f = fixture();
     let ghost = BoxName::parse_allow_bare("ghost").expect("name");
     let (env, _) = f.call(&Request::Artifacts(ArtifactsReq {
-        task: ghost.clone(),
+        box_name: ghost.clone(),
         all: false,
     }));
     assert_eq!(env["error"]["kind"], "not_found", "{env}");
     let (env, _) = f.call(&Request::ArtifactRead(ArtifactReadReq {
-        task: ghost,
+        box_name: ghost,
         name: "demo.log".to_owned(),
         version: None,
         offset: 0,

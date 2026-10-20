@@ -1,15 +1,15 @@
 //! Typed `value` payload for `sleep` and `wake` (JSON wire shape).
 
-use super::BoxView;
+use super::DriverView;
 
 /// Result of `sleep` or `wake`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct SleepValue {
-    /// Task name.
-    pub task: String,
-    /// The Task's Box after the command.
+    /// Box name.
     #[serde(rename = "box")]
-    pub r#box: Option<BoxView>,
+    pub box_name: String,
+    /// The Box after the command.
+    pub driver: Option<DriverView>,
     /// Whether this call resumed the Box; `sleep` always reports false.
     pub woke: bool,
 }

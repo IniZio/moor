@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use moor_core::config::TaskSettings;
+use moor_core::config::BoxSettings;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, Intent, IntentChange};
@@ -11,10 +11,10 @@ use moor_core::{BoxHandle, BoxPath, ErrorKind};
 use super::{recorded_workdir, run_and_record, Provisioned, SetupTarget};
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::store::{Store, TaskRow};
+use crate::store::{BoxRow, Store};
 
-/// The kept Box's handle and workdir, when the Task failed setup on a Box that is still ready.
-fn kept_box(row: &TaskRow) -> Option<(&BoxHandle, BoxPath)> {
+/// The kept Box's handle and workdir, when the Box failed setup on a machine that is still ready.
+fn kept_box(row: &BoxRow) -> Option<(&BoxHandle, BoxPath)> {
     let boxed = row.boxed.as_ref().filter(|b| b.state == BoxState::Ready)?;
     if row.lifecycle != BoxLifecycle::SetupFailed {
         return None;
@@ -23,8 +23,8 @@ fn kept_box(row: &TaskRow) -> Option<(&BoxHandle, BoxPath)> {
     Some((boxed.handle.as_ref()?, workdir))
 }
 
-/// Whether the Task failed setup on a Box that is still ready, so its steps run again in it.
-pub(super) fn kept_box_retry(row: &TaskRow) -> bool {
+/// Whether the Box failed setup on a machine that is still ready, so its steps run again in it.
+pub(super) fn kept_box_retry(row: &BoxRow) -> bool {
     kept_box(row).is_some()
 }
 
@@ -36,8 +36,8 @@ pub(super) fn kept_box_retry(row: &TaskRow) -> bool {
 pub(super) fn retry_in_box(
     cx: &Cx,
     store: &Store,
-    row: &TaskRow,
-    cfg: &TaskSettings,
+    row: &BoxRow,
+    cfg: &BoxSettings,
 ) -> Result<Provisioned, CommandError> {
     let Some((handle, workdir)) = kept_box(row) else {
         return Err(CommandError::new(ErrorKind::Internal, "kept Box vanished"));

@@ -14,28 +14,28 @@ use crate::ops::common::agent_stop::stop_agent;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::transcript;
 use crate::ops::common::wake::wake_and_revive;
-use crate::store::{Store, TaskRow};
+use crate::store::{BoxRow, Store};
 
 /// Run `end-session`.
 ///
 /// # Errors
-/// [`CommandError`] when the Task is unknown, the Box has no live Session, or the agent pane
+/// [`CommandError`] when the Box is unknown, the Box has no live Session, or the agent pane
 /// could not be closed.
 pub(crate) fn run(cx: &Cx, req: &EndSessionReq) -> Result<EndSessionValue, CommandError> {
     let store = cx.store()?;
-    let name = req.task.as_str();
+    let name = req.box_name.as_str();
     let parsed = BoxName::parse_allow_bare(name)
         .map_err(|e| CommandError::new(ErrorKind::Usage, e.to_string()))?;
     let id = store
-        .open_task_by_name(&parsed)?
-        .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no open task {name}")))?
+        .open_box_by_name(&parsed)?
+        .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no open Box {name}")))?
         .id;
     let no_session =
         || CommandError::new(ErrorKind::Refused, format!("no live Session in Box {name}"));
     let reload = || {
         store
-            .task(id)?
-            .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no task {name}")))
+            .box_row(id)?
+            .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no Box {name}")))
     };
     let _held = BoxLock::acquire(
         cx.clock(),
@@ -58,7 +58,7 @@ pub(crate) fn run(cx: &Cx, req: &EndSessionReq) -> Result<EndSessionValue, Comma
         return Err(no_session());
     }
     Ok(EndSessionValue {
-        task: name.to_owned(),
+        box_name: name.to_owned(),
         session,
         ordinal,
         box_kept: true,
@@ -66,7 +66,7 @@ pub(crate) fn run(cx: &Cx, req: &EndSessionReq) -> Result<EndSessionValue, Comma
 }
 
 /// Row id and ordinal of the Box's current Session when it has not ended.
-fn live_session(store: &Store, row: &TaskRow) -> Result<Option<(i64, i64)>, CommandError> {
+fn live_session(store: &Store, row: &BoxRow) -> Result<Option<(i64, i64)>, CommandError> {
     Ok(store
         .box_sessions(row.id)?
         .pop()
@@ -82,14 +82,14 @@ fn reword(e: CommandError, name: &str) -> CommandError {
     let text = e
         .error
         .to_string()
-        .replace("the task stays open", "the Session stays live");
+        .replace("the Box stays open", "the Session stays live");
     CommandError::new(e.kind, text).with_hint(format!(
         "try `moor end {name}` again, or close the pane by hand"
     ))
 }
 
-/// Whether the Task or its Box is asleep.
-fn asleep(row: &TaskRow) -> bool {
+/// Whether the Box or its machine is asleep.
+fn asleep(row: &BoxRow) -> bool {
     row.lifecycle == BoxLifecycle::Asleep
         || row
             .boxed

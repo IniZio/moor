@@ -2,7 +2,7 @@
 //!
 //! Both commands find the Box from `--id` and the local lease claim. crabbox reads its
 //! config file and names the claiming repo from the directory it runs in, so these calls
-//! run from the Task's worktree, as the warmup did.
+//! run from the Box's worktree, as the warmup did.
 
 use std::path::Path;
 use std::time::Duration;

@@ -10,11 +10,11 @@ use crate::cx::Cx;
 use crate::ops::common::boxlock::BoxLock;
 use crate::ops::start::{run, settle_all};
 use crate::ops::{show, wait_events};
-use crate::store::TaskRow;
+use crate::store::BoxRow;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 
-/// A Working Task with a goal, a ready Box and no Session.
+/// A Working Box with a goal, a ready machine and no Session.
 fn working_without_session() -> (World, BoxId) {
     let w = world(FakeDriver::new());
     let start = StartReq {
@@ -22,16 +22,16 @@ fn working_without_session() -> (World, BoxId) {
         no_agent: true,
         ..req("demo")
     };
-    let id = BoxId::new(run(&w.cx, &start).unwrap().task.id);
+    let id = BoxId::new(run(&w.cx, &start).unwrap().boxed.id);
     (w, id)
 }
 
-fn row(w: &World, id: BoxId) -> TaskRow {
-    w.cx.store().unwrap().task(id).unwrap().unwrap()
+fn row(w: &World, id: BoxId) -> BoxRow {
+    w.cx.store().unwrap().box_row(id).unwrap().unwrap()
 }
 
 #[test]
-fn settle_leaves_a_task_while_an_op_holds_its_box() {
+fn settle_leaves_a_box_while_an_op_holds_its_box() {
     let (w, id) = working_without_session();
     w.cx.clock().sleep(Duration::from_secs(60));
     let held = BoxLock::acquire(
@@ -49,7 +49,7 @@ fn settle_leaves_a_task_while_an_op_holds_its_box() {
     assert!(idle(&row(&w, id)));
 }
 
-/// Holds the Box of `id` as a start would, with the Task old enough to be read as quiet.
+/// Holds the machine of `id` as a start would, with the Box old enough to be read as quiet.
 fn busy(w: &World, id: BoxId) -> BoxLock {
     w.cx.clock().sleep(Duration::from_secs(60));
     BoxLock::acquire(
@@ -63,11 +63,11 @@ fn busy(w: &World, id: BoxId) -> BoxLock {
 }
 
 #[test]
-fn show_leaves_a_task_while_an_op_holds_its_box() {
+fn show_leaves_a_box_while_an_op_holds_its_box() {
     let (w, id) = working_without_session();
     let _held = busy(&w, id);
     let list = ShowReq {
-        task: None,
+        box_name: None,
         events: None,
         agent: false,
         reports: false,
@@ -79,7 +79,7 @@ fn show_leaves_a_task_while_an_op_holds_its_box() {
 }
 
 #[test]
-fn wait_events_leaves_a_task_while_an_op_holds_its_box() {
+fn wait_events_leaves_a_box_while_an_op_holds_its_box() {
     let (w, id) = working_without_session();
     let _held = busy(&w, id);
     let wait = WaitEventsReq {
@@ -93,7 +93,7 @@ fn wait_events_leaves_a_task_while_an_op_holds_its_box() {
     assert!(working(&row(&w, id)));
 }
 
-/// Happy path only: settles run during setup, before the Task is ready, and the agent launches.
+/// Happy path only: settles run during setup, before the Box is ready, and the agent launches.
 #[test]
 fn a_start_with_settles_running_during_setup_still_launches() {
     let repo = tempfile::tempdir().unwrap();
@@ -122,7 +122,7 @@ fn a_start_with_settles_running_during_setup_still_launches() {
     let v = run(&w.cx, &start).unwrap();
     assert!(v.agent.launched);
     assert_eq!(engine.launches().len(), 1);
-    let id = BoxId::new(v.task.id);
+    let id = BoxId::new(v.boxed.id);
     assert!(w.cx.store().unwrap().has_session(id).unwrap());
 }
 

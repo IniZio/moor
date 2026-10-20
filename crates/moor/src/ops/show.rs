@@ -1,17 +1,17 @@
-//! `show`: reconcile, then report tasks, one task's detail and its events.
-//! Each task's agent is read once per command; a named task reads only its own.
+//! `show`: reconcile, then report Boxes, one Box's detail and its events.
+//! Each Box's agent is read once per command; a named Box reads only its own.
 
 use std::collections::HashMap;
 
-use moor_core::view::{ArtifactView, AttentionView, EventView, PaneView, ShowView, TaskView};
+use moor_core::view::{ArtifactView, AttentionView, BoxView, EventView, PaneView, ShowView};
 use moor_core::{BoxId, ErrorKind, ShowReq};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::artifacts::artifact_view;
 use crate::ops::common::view::{
-    agent_view, event_view, hide_unsupported_sleep, hide_unsupported_sleep_cached,
-    task_view_with_run,
+    agent_view, box_view_with_run, event_view, hide_unsupported_sleep,
+    hide_unsupported_sleep_cached,
 };
 use crate::ops::common::{activity, autosleep, reconcile};
 use crate::store::Store;
@@ -25,7 +25,7 @@ const REDACTED: &str = "<nonce>";
 /// Length of a base64url-encoded 32-byte nonce.
 const NONCE_LEN: usize = 43;
 
-/// `text` with the task's proxy nonce, and any `moor:<43 base64url chars>@` userinfo,
+/// `text` with the Box's proxy nonce, and any `moor:<43 base64url chars>@` userinfo,
 /// replaced by `<nonce>`. The proxy URL in the agent's environment carries the nonce.
 pub(crate) fn redact_nonce(text: &str, nonce: Option<&[u8]>) -> String {
     const USER: &str = "moor:";
@@ -57,16 +57,16 @@ pub(crate) fn redact_nonce(text: &str, nonce: Option<&[u8]>) -> String {
 }
 
 /// The pane section of a reading: its last lines and liveness; none without an observation.
-/// The task's proxy nonce is redacted from the tail.
+/// The Box's proxy nonce is redacted from the tail.
 fn pane_view(
     reading: &activity::Reading,
     store: &Store,
-    task: BoxId,
+    box_id: BoxId,
 ) -> Result<Option<PaneView>, CommandError> {
     let Some(text) = reading.pane_text.as_deref() else {
         return Ok(None);
     };
-    let row = store.proxy(task)?;
+    let row = store.proxy(box_id)?;
     let skip = text.lines().count().saturating_sub(PANE_LINES);
     let tail = text.lines().skip(skip).collect::<Vec<_>>().join("\n");
     let tail = redact_nonce(&tail, row.as_ref().map(|r| r.nonce.expose()));
@@ -76,19 +76,19 @@ fn pane_view(
     }))
 }
 
-/// The task's open credential limits as views.
-fn attention(store: &Store, task: BoxId) -> Result<Vec<AttentionView>, CommandError> {
+/// The Box's open credential limits as views.
+fn attention(store: &Store, box_id: BoxId) -> Result<Vec<AttentionView>, CommandError> {
     Ok(store
-        .open_limits(task)?
+        .open_limits(box_id)?
         .iter()
         .map(AttentionView::from)
         .collect())
 }
 
-/// The latest version of each of the task's artifacts as views.
-fn artifacts_of(store: &Store, task: BoxId) -> Result<Vec<ArtifactView>, CommandError> {
+/// The latest version of each of the Box's artifacts as views.
+fn artifacts_of(store: &Store, box_id: BoxId) -> Result<Vec<ArtifactView>, CommandError> {
     Ok(store
-        .latest_artifacts(task)?
+        .latest_artifacts(box_id)?
         .iter()
         .map(artifact_view)
         .collect())
@@ -99,37 +99,37 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
     reconcile::run(cx);
     let store = cx.store()?;
     let now = cx.clock().now();
-    let Some(name) = &req.task else {
-        let mut tasks: Vec<TaskView> = Vec::new();
+    let Some(name) = &req.box_name else {
+        let mut boxes: Vec<BoxView> = Vec::new();
         let mut sleep_caps = HashMap::new();
-        for mut row in store.open_tasks()? {
+        for mut row in store.open_boxes()? {
             let reading = activity::read(cx, store, &row, now)?;
             activity::settle(cx, store, &row, &reading)?;
             autosleep::run(cx, store, row.id);
-            row = store.task(row.id)?.unwrap_or(row);
+            row = store.box_row(row.id)?.unwrap_or(row);
             let in_flight = store.in_flight_run(row.id, &|pid| cx.proc().alive(pid))?;
-            let mut view = task_view_with_run(&row, in_flight.as_ref(), cx.config());
+            let mut view = box_view_with_run(&row, in_flight.as_ref(), cx.config());
             view.agent = agent_view(&reading);
             view.attention = attention(store, row.id)?;
             hide_unsupported_sleep_cached(&mut view, cx, &mut sleep_caps);
-            tasks.push(view);
+            boxes.push(view);
         }
         return Ok(ShowView {
-            tasks: Some(tasks),
-            task: None,
+            boxes: Some(boxes),
+            boxed: None,
             events: None,
             pane: None,
             reports: None,
             artifacts: None,
         });
     };
-    let row = store.latest_task_by_name(name)?.ok_or_else(|| {
-        CommandError::new(ErrorKind::Failed, format!("no task {}", name.as_str()))
-    })?;
+    let row = store
+        .latest_box_by_name(name)?
+        .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no Box {}", name.as_str())))?;
     let in_flight = store.in_flight_run(row.id, &|pid| cx.proc().alive(pid))?;
     let reading = activity::read(cx, store, &row, now)?;
     let (agent, pane) = (agent_view(&reading), pane_view(&reading, store, row.id)?);
-    let mut detail = task_view_with_run(&row, in_flight.as_ref(), cx.config());
+    let mut detail = box_view_with_run(&row, in_flight.as_ref(), cx.config());
     detail.agent = agent;
     detail.attention = attention(store, row.id)?;
     hide_unsupported_sleep(&mut detail, cx);
@@ -147,8 +147,8 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
         None
     };
     Ok(ShowView {
-        tasks: None,
-        task: Some(detail),
+        boxes: None,
+        boxed: Some(detail),
         events,
         pane: pane.filter(|_| req.pane),
         reports: None,

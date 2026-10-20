@@ -11,7 +11,7 @@ use crate::proxy::supervisor::LEASE;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 
-/// Show task `a` over a pane of fifty numbered lines.
+/// Show Box `a` over a pane of fifty numbered lines.
 fn show_pane(pane: bool, session: Option<&str>) -> moor_core::view::ShowView {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(FakeDriver::new());
@@ -50,7 +50,7 @@ fn pane_is_null_without_the_flag_or_a_session() {
 
 const NONCE: &str = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-abcde";
 
-/// Show task `a` over a pane whose text is `tail`, with a proxy row for `nonce` if asked.
+/// Show Box `a` over a pane whose text is `tail`, with a proxy row for `nonce` if asked.
 fn show_tail(tail: &str, nonce: &str, proxy_row: bool) -> String {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(FakeDriver::new());

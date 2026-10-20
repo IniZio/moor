@@ -17,15 +17,15 @@ fn goal_req(name: &str) -> StartReq {
     }
 }
 
-/// A world whose Task `demo` has a ready Box with a known home and `engine` as its engine.
+/// A world whose Box `demo` has a ready machine with a known home and `engine` as its engine.
 fn started(engine: &Arc<FakeEngine>) -> (World, BoxId) {
     let mut w = world(FakeDriver::new());
     w.cx = w.cx.with_engine(engine.clone());
     let v = run(&w.cx, &req("demo")).unwrap();
-    (w, BoxId::new(v.task.id))
+    (w, BoxId::new(v.boxed.id))
 }
 
-/// The Task's leases on the launch directories.
+/// The Box's leases on the launch directories.
 fn dirs(w: &World, id: BoxId) -> Vec<LeaseRow> {
     let mut rows = w.cx.store().unwrap().leases(id).unwrap();
     rows.retain(|r| r.kind == LeaseKind::BoxDir && r.key.contains("/.moor-"));

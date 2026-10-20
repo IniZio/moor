@@ -169,9 +169,9 @@ fn socket_envelope_equals_call_envelope() {
     let inputs = [
         r#"{"cmd":"version"}"#,
         r#"{"cmd":"show"}"#,
-        r#"{"cmd":"show","task":"nope"}"#,
+        r#"{"cmd":"show","box":"nope"}"#,
         r#"{"cmd":"start","name":"foo"}"#,
-        r#"{"cmd":"run","task":"foo","argv":["true"]}"#,
+        r#"{"cmd":"run","box":"foo","argv":["true"]}"#,
     ];
     for (n, input) in inputs.iter().enumerate() {
         let over_socket = client.request(&n.to_string(), input);

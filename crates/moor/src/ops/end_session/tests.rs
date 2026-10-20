@@ -3,11 +3,11 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
-use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
+use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::{SessionInput, SessionState};
-use moor_core::domain::task::SetupOutcome;
 use moor_core::request::EndSessionReq;
 use moor_core::seam::driver::{AcquireReq, Driver};
 use moor_core::seam::proc::Tool;
@@ -28,7 +28,7 @@ struct Fx {
     id: BoxId,
 }
 
-/// Task `t` with a ready Box and, when `session`, a live launch in pane `p-1` that registered an
+/// Box `t` with a ready machine and, when `session`, a live launch in pane `p-1` that registered an
 /// agent session.
 fn fx_with(session: bool) -> Fx {
     let dir = tempfile::tempdir().unwrap();
@@ -49,7 +49,7 @@ fn fx_with(session: bool) -> Fx {
         proc,
     )
     .with_engine(engine);
-    let id = ready_task(&cx, &driver);
+    let id = ready_box(&cx, &driver);
     if session {
         let store = cx.store().unwrap();
         let launch = store.begin_session(id, "s-1", Some("p-1")).unwrap();
@@ -65,17 +65,17 @@ fn fx_with(session: bool) -> Fx {
     }
 }
 
-/// Task `t` with a ready Box.
-fn ready_task(cx: &Cx, driver: &FakeDriver) -> BoxId {
+/// Box `t` with a ready machine.
+fn ready_box(cx: &Cx, driver: &FakeDriver) -> BoxId {
     let store = cx.store().unwrap();
     let name = BoxName::parse_allow_bare("t").unwrap();
     let id = store
-        .apply(Decision::insert(NewTask {
+        .apply(Decision::insert(NewBox {
             name: name.clone(),
             repo: "r".into(),
         }))
         .unwrap()
-        .task;
+        .box_id;
     let provider = ProviderId::new("p");
     let fields = Fields {
         box_provider: Field::Set(provider.clone()),
@@ -90,7 +90,7 @@ fn ready_task(cx: &Cx, driver: &FakeDriver) -> BoxId {
     let got = driver
         .acquire(&AcquireReq {
             provider,
-            task: id,
+            box_id: id,
             name,
             class: None,
             nonce: "n".to_owned(),
@@ -115,7 +115,9 @@ fn ready_task(cx: &Cx, driver: &FakeDriver) -> BoxId {
 }
 
 fn req() -> EndSessionReq {
-    EndSessionReq { task: "t".into() }
+    EndSessionReq {
+        box_name: "t".into(),
+    }
 }
 
 fn kinds(f: &Fx) -> Vec<String> {
@@ -135,7 +137,7 @@ fn a_live_session_ends_and_the_box_stays_ready() {
     let sessions = store.box_sessions(f.id).unwrap();
     let first = sessions.first().unwrap();
     assert_eq!(
-        (v.task.as_str(), v.session, v.ordinal, v.box_kept),
+        (v.box_name.as_str(), v.session, v.ordinal, v.box_kept),
         ("t", first.id, first.ordinal, true)
     );
     assert_eq!(first.state, SessionState::Ended);
@@ -155,7 +157,7 @@ fn a_live_session_ends_and_the_box_stays_ready() {
     );
     assert!(f.surface.calls().iter().any(|c| c == "close_pane p-1"));
     assert!(store.live_session(f.id).unwrap().is_none());
-    let row = store.open_task_by_name(&BoxName::parse_allow_bare("t").unwrap());
+    let row = store.open_box_by_name(&BoxName::parse_allow_bare("t").unwrap());
     let row = row.unwrap().unwrap();
     assert_eq!(row.boxed.unwrap().state, BoxState::Ready);
     assert_eq!(row.lifecycle, BoxLifecycle::Ready);
@@ -218,11 +220,17 @@ fn the_transcript_is_saved_with_the_end_trigger() {
 }
 
 #[test]
-fn an_unknown_task_is_not_found() {
+fn an_unknown_box_is_not_found() {
     let f = fx_with(true);
-    let err = run(&f.cx, &EndSessionReq { task: "x".into() }).unwrap_err();
+    let err = run(
+        &f.cx,
+        &EndSessionReq {
+            box_name: "x".into(),
+        },
+    )
+    .unwrap_err();
     assert_eq!(err.kind, ErrorKind::Failed);
-    assert!(err.error.to_string().contains("no open task x"));
+    assert!(err.error.to_string().contains("no open Box x"));
 }
 
 #[test]
@@ -236,7 +244,7 @@ fn an_asleep_box_wakes_before_the_session_ends() {
         .box_input(BoxInput::Sleep);
     store.apply(d).unwrap();
     run(&f.cx, &req()).unwrap();
-    let row = store.task(f.id).unwrap().unwrap();
+    let row = store.box_row(f.id).unwrap().unwrap();
     assert_ne!(row.lifecycle, BoxLifecycle::Asleep);
     assert_eq!(row.boxed.unwrap().state, BoxState::Ready);
     assert!(f.driver.calls().iter().any(|c| c.starts_with("wake ")));

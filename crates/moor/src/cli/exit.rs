@@ -8,7 +8,7 @@ const RUN_NOT_STARTED: u8 = 125;
 /// Exit code when the `run` was interrupted.
 const RUN_INTERRUPTED: u8 = 130;
 
-/// Exit code when `wait` gave up before the Task settled.
+/// Exit code when `wait` gave up before the Box settled.
 const WAIT_TIMED_OUT: u8 = 124;
 
 /// Maps `resp` to a process exit code.

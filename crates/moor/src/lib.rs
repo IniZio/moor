@@ -21,6 +21,6 @@ mod testing;
 mod wire;
 
 pub use crate::moor::Moor;
-/// Run the credential proxy for a Task until a stop signal; returns the exit code.
+/// Run the credential proxy for a Box until a stop signal; returns the exit code.
 pub use crate::wire::serve_proxy;
 pub use moor_core;

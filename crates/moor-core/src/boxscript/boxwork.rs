@@ -46,7 +46,7 @@ pub fn is_full_sha(s: &str) -> bool {
 
 /// Script run with `sh -c` in the Box workdir.
 ///
-/// `saved` are commit shas whose history counts as saved (task base, host HEAD). Returns `None`
+/// `saved` are commit shas whose history counts as saved (box base, host HEAD). Returns `None`
 /// when any entry is not a full 40-hex sha. Any git failure makes the script exit non-zero; a workdir with no git checkout exits
 /// [`BOXWORK_NO_CHECKOUT`], so a missing checkout never reads as clean.
 #[must_use]

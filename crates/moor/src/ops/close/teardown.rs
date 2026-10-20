@@ -15,13 +15,13 @@ use crate::cx::Cx;
 use crate::ops::common::box_exec::{self, Site};
 use crate::ops::common::facts::resolved;
 use crate::ops::common::provision::{moor_yaml::for_teardown, recorded_workdir};
-use crate::store::TaskRow;
+use crate::store::BoxRow;
 
 /// Runs the repo `teardown:` lines as one synced script in a ready Box.
 ///
 /// Nothing runs without lines or a live Box; a failure only warns. A worktree `.moor.yaml` that
 /// differs from the base commit is not used unless `trusted`. The env is the agent's Box env.
-pub(super) fn teardown(cx: &Cx, row: &TaskRow, trusted: bool) {
+pub(super) fn teardown(cx: &Cx, row: &BoxRow, trusted: bool) {
     let ready = row.boxed.as_ref().filter(|b| b.state == BoxState::Ready);
     let Some((b, handle)) = ready.and_then(|b| Some((b, held(b)?))) else {
         return;

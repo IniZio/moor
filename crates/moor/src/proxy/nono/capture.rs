@@ -94,7 +94,7 @@ fn forge_fetch(forge: &Arc<dyn Forge>, repo: Option<&ForgeRepo>) -> FetchFn {
     Arc::new(move || {
         let repo = repo
             .as_ref()
-            .ok_or_else(|| format!("{FORGE_KEY}: the Task has no forge repo"))?;
+            .ok_or_else(|| format!("{FORGE_KEY}: the Box has no forge repo"))?;
         forge
             .repo_token(repo)
             .map_err(|_| format!("{FORGE_KEY} unavailable"))

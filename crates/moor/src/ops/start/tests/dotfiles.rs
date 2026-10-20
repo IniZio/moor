@@ -151,7 +151,7 @@ fn dotfiles_run_after_setup_and_before_the_agent_launches() {
     let (w, engine, _repo) =
         dotfiles_world("setup: [a]\n", Some(src.path()), None, FakeDriver::new());
     let v = started(&w);
-    assert_eq!((v.task.lifecycle, v.task.session_state), WORKING);
+    assert_eq!((v.boxed.lifecycle, v.boxed.session_state), WORKING);
     assert!(v.agent.launched);
     assert_eq!(engine.launches().len(), 1);
 
@@ -197,7 +197,7 @@ fn a_configured_install_script_with_a_space_is_quoted_and_guarded() {
     assert_eq!(argvs, [want]);
 }
 
-/// Writes a 25-line host log for the dotfiles exec of task 1 on each exec.
+/// Writes a 25-line host log for the dotfiles exec of Box 1 on each exec.
 fn log_writer(w: &World) {
     let log = w.dir.path().join("dotfiles/1.log");
     w.driver.on_exec(move || {
@@ -237,13 +237,18 @@ fn assert_warned_with_tail(w: &World) {
 fn a_failing_install_does_not_stop_start_and_warns_with_the_log_tail() {
     let (w, engine, _repo, _src) = failed_start();
     let v = run(&w.cx, &goal_req()).unwrap();
-    assert_eq!((v.task.lifecycle, v.task.session_state), WORKING);
+    assert_eq!((v.boxed.lifecycle, v.boxed.session_state), WORKING);
     assert!(v.dotfiles.ran && !v.dotfiles.ok);
     assert_eq!(engine.launches().len(), 1);
 
     assert_warned_with_tail(&w);
 
-    let row = w.cx.store().unwrap().task(BoxId::new(1)).unwrap().unwrap();
+    let row =
+        w.cx.store()
+            .unwrap()
+            .box_row(BoxId::new(1))
+            .unwrap()
+            .unwrap();
     assert_eq!(row.boxed.map(|b| b.state), Some(BoxState::Ready));
     assert!(row.intent.is_none());
     let events = w.cx.store().unwrap().events(BoxId::new(1), 50).unwrap();
@@ -272,7 +277,7 @@ fn dotfiles_still_run_when_a_setup_line_fails() {
         FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(0)), Ok(exit(1)), Ok(exit(0))]);
     let (w, engine, _repo) = dotfiles_world("setup: [a]\n", Some(src.path()), None, driver);
     let v = started(&w);
-    assert_eq!((v.task.lifecycle, v.task.session_state), WORKING);
+    assert_eq!((v.boxed.lifecycle, v.boxed.session_state), WORKING);
     assert!(v.setup.ran && !v.setup.ok);
     assert!(v.dotfiles.ran && v.dotfiles.ok);
     assert_eq!(w.driver.execs().len(), 4);

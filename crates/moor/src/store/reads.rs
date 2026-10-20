@@ -1,4 +1,4 @@
-//! Read-only lookups by task name and live-box scans, built on the shared task row mapping.
+//! Read-only lookups by box name and live-box scans, built on the shared box row mapping.
 
 use moor_core::controller::ServerFrame;
 use moor_core::domain::box_state::BoxLifecycle;
@@ -8,17 +8,17 @@ use moor_core::{BoxId, BoxName, ProviderId, SessionId};
 use rusqlite::{Connection, OptionalExtension};
 
 use super::{
-    event_from_row, task_from_row, BoxRow, EventRow, Store, StoreError, TaskRow, TASK_SELECT,
+    box_from_row, event_from_row, BoxRow, DriverRow, EventRow, Store, StoreError, BOX_SELECT,
 };
 
-/// Run a task query and map every row.
-fn query_tasks(
+/// Run a box query and map every row.
+fn query_boxes(
     conn: &Connection,
     tail: &str,
     params: impl rusqlite::Params,
-) -> Result<Vec<TaskRow>, StoreError> {
-    let mut stmt = conn.prepare(&format!("{TASK_SELECT} {tail}"))?;
-    let rows = stmt.query_and_then(params, task_from_row)?;
+) -> Result<Vec<BoxRow>, StoreError> {
+    let mut stmt = conn.prepare(&format!("{BOX_SELECT} {tail}"))?;
+    let rows = stmt.query_and_then(params, box_from_row)?;
     rows.collect()
 }
 
@@ -29,23 +29,23 @@ const LIVE_STATES: [&str; 3] = [
     BoxState::Asleep.as_str(),
 ];
 
-/// Tasks holding a live Box of `provider` as seen on `conn`, oldest id first.
+/// Boxes holding a live Box of `provider` as seen on `conn`, oldest id first.
 pub(super) fn live_holders_in(
     conn: &Connection,
     provider: &ProviderId,
-) -> Result<Vec<TaskRow>, StoreError> {
+) -> Result<Vec<BoxRow>, StoreError> {
     let tail = "WHERE b.provider = ?1 AND b.driver_state IN (?2, ?3, ?4) ORDER BY b.id";
     let [a, b, c] = LIVE_STATES;
-    query_tasks(conn, tail, (provider.as_str(), a, b, c))
+    query_boxes(conn, tail, (provider.as_str(), a, b, c))
 }
 
-/// An event with the name of the Task that owns it.
+/// An event with the name of the Box that owns it.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct NamedEvent {
     /// The stored event.
     pub(crate) row: EventRow,
-    /// Name of the owning Task.
-    pub(crate) task_name: String,
+    /// Name of the owning Box.
+    pub(crate) box_name: String,
     /// The Box's Session the event belongs to, when one had started.
     pub(crate) session: Option<SessionId>,
 }
@@ -55,7 +55,7 @@ impl NamedEvent {
     pub(crate) fn into_frame(self) -> ServerFrame {
         ServerFrame::Event {
             cursor: self.row.id,
-            r#box: Some(self.task_name),
+            r#box: Some(self.box_name),
             session: self.session,
             kind: self.row.kind,
             payload: self.row.payload,
@@ -82,7 +82,7 @@ impl Store {
         let rows = stmt.query_and_then((after, limit), |r| {
             Ok(NamedEvent {
                 row: event_from_row(r)?,
-                task_name: r.get(5)?,
+                box_name: r.get(5)?,
                 session: r.get::<_, Option<i64>>(6)?.map(SessionId::new),
             })
         })?;
@@ -97,27 +97,24 @@ impl Store {
         Ok(max.unwrap_or(0))
     }
 
-    /// The live (neither closed nor rejected) task with this name.
-    pub(crate) fn open_task_by_name(&self, name: &BoxName) -> Result<Option<TaskRow>, StoreError> {
+    /// The live (neither closed nor rejected) box with this name.
+    pub(crate) fn open_box_by_name(&self, name: &BoxName) -> Result<Option<BoxRow>, StoreError> {
         let tail = "WHERE b.name = ?1 AND b.state NOT IN ('closed', 'rejected') ORDER BY b.id DESC LIMIT 1";
-        let rows = query_tasks(&self.reader()?, tail, [name.as_str()])?;
+        let rows = query_boxes(&self.reader()?, tail, [name.as_str()])?;
         Ok(rows.into_iter().next())
     }
 
-    /// The newest task with this name, open or closed.
-    pub(crate) fn latest_task_by_name(
-        &self,
-        name: &BoxName,
-    ) -> Result<Option<TaskRow>, StoreError> {
+    /// The newest box with this name, open or closed.
+    pub(crate) fn latest_box_by_name(&self, name: &BoxName) -> Result<Option<BoxRow>, StoreError> {
         let tail = "WHERE b.name = ?1 ORDER BY b.id DESC LIMIT 1";
-        let rows = query_tasks(&self.reader()?, tail, [name.as_str()])?;
+        let rows = query_boxes(&self.reader()?, tail, [name.as_str()])?;
         Ok(rows.into_iter().next())
     }
 
-    /// Boxes whose state counts toward capacity (starting, ready, asleep), with their task.
-    pub(crate) fn box_rows_live(&self) -> Result<Vec<(BoxId, BoxRow)>, StoreError> {
+    /// Boxes whose state counts toward capacity (starting, ready, asleep), with their box.
+    pub(crate) fn box_rows_live(&self) -> Result<Vec<(BoxId, DriverRow)>, StoreError> {
         let tail = "WHERE b.driver_state IN (?1, ?2, ?3) ORDER BY b.id";
-        let rows = query_tasks(&self.reader()?, tail, LIVE_STATES)?;
+        let rows = query_boxes(&self.reader()?, tail, LIVE_STATES)?;
         Ok(rows
             .into_iter()
             .filter_map(|t| t.boxed.map(|b| (t.id, b)))
@@ -128,7 +125,7 @@ impl Store {
     ///
     /// # Errors
     /// Returns [`StoreError`] when the database fails.
-    pub(crate) fn unanswered_steer(&self, task: BoxId) -> Result<Option<(i64, Ts)>, StoreError> {
+    pub(crate) fn unanswered_steer(&self, box_id: BoxId) -> Result<Option<(i64, Ts)>, StoreError> {
         let row = self
             .reader()?
             .query_row(
@@ -136,17 +133,17 @@ impl Store {
                  AND s.id = (SELECT MAX(id) FROM events WHERE box = ?1 AND kind = 'steered') \
                  AND NOT EXISTS (SELECT 1 FROM events d WHERE d.box = ?1 AND d.kind = 'turn_done' \
                  AND json_extract(d.payload, '$.steer') = s.id)",
-                [task.get()],
+                [box_id.get()],
                 |r| Ok((r.get::<_, i64>(0)?, Ts::from_millis(r.get::<_, i64>(1)?))),
             )
             .optional()?;
         Ok(row)
     }
 
-    /// Tasks queued for a box, oldest id first.
-    pub(crate) fn waiting_tasks(&self) -> Result<Vec<TaskRow>, StoreError> {
+    /// Boxes queued for a box, oldest id first.
+    pub(crate) fn waiting_boxes(&self) -> Result<Vec<BoxRow>, StoreError> {
         let tail = "WHERE b.state = ?1 ORDER BY b.id";
-        query_tasks(
+        query_boxes(
             &self.reader()?,
             tail,
             [BoxLifecycle::WaitingForBox.as_str()],

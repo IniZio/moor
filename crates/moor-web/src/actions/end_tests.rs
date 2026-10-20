@@ -62,7 +62,7 @@ fn ended(mut c: Child) -> Child {
 struct Script {
     /// Every non-root Session.
     tree: Vec<Child>,
-    /// `(id, name, state)` of every task `show` lists.
+    /// `(id, name, state)` of every Box `show` lists.
     boxes: Vec<(i64, &'static str, &'static str)>,
     /// Box whose close is refused.
     refuse_close: Option<&'static str>,
@@ -115,14 +115,14 @@ fn answer(script: &Script, request: &Request) -> Response {
             Response::ok("show-session", Some(json!({"children": rows})))
         }
         Request::Show(_) => {
-            let tasks: Vec<Value> = script
+            let box_views: Vec<Value> = script
                 .boxes
                 .iter()
                 .map(|(id, name, state)| json!({"id": id, "name": name, "lifecycle": state}))
                 .collect();
-            Response::ok("show", Some(json!({"tasks": tasks})))
+            Response::ok("show", Some(json!({"boxes": box_views})))
         }
-        Request::Close(c) if Some(c.task.as_str()) == script.refuse_close => {
+        Request::Close(c) if Some(c.box_name.as_str()) == script.refuse_close => {
             refused("close", "has unmerged work")
         }
         Request::EndHostSession(e) if Some(e.session.get()) == script.refuse_end => {
@@ -237,9 +237,9 @@ fn end_request(f: &Front) -> Value {
     panic!("job still running");
 }
 
-fn close(task: &str) -> Request {
+fn close(box_name: &str) -> Request {
     Request::Close(CloseReq {
-        task: BoxName::parse_allow_bare(task).unwrap(),
+        box_name: BoxName::parse_allow_bare(box_name).unwrap(),
         force: false,
         trust_moor_yaml: false,
     })

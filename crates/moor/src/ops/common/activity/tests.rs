@@ -7,11 +7,11 @@ use moor_core::activity::{
     AgentState, HookKind, HookRead, HookRecord, PaneObs, PaneRead, PaneStatus, Probes, Source,
     STARTUP_GRACE,
 };
+use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::BoxInput;
-use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
+use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::SessionInput;
-use moor_core::domain::task::SetupOutcome;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::DriverError;
 use moor_core::seam::engine::EngineError;
@@ -20,7 +20,7 @@ use moor_core::{BoxHandle, BoxId, BoxName, ProviderId};
 
 use super::{read, settle, PaneLiveness, Reading};
 use crate::cx::Cx;
-use crate::store::{NewRun, TaskRow};
+use crate::store::{BoxRow, NewRun};
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::proc::ScriptedProc;
@@ -42,14 +42,14 @@ fn cx(dir: &Path, engine: &Arc<FakeEngine>) -> (Cx, Arc<ScriptedProc>) {
     (cx, proc)
 }
 
-/// A working task `demo` with a ready Box and, when `session`, a live session.
-fn task(cx: &Cx, session: bool) -> BoxId {
+/// A working Box `demo` with a ready machine and, when `session`, a live session.
+fn working_box(cx: &Cx, session: bool) -> BoxId {
     let store = cx.store().unwrap();
-    let nt = NewTask {
+    let nt = NewBox {
         name: BoxName::parse_allow_bare("demo").unwrap(),
         repo: "r".into(),
     };
-    let id = store.apply(Decision::insert(nt)).unwrap().task;
+    let id = store.apply(Decision::insert(nt)).unwrap().box_id;
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
         .box_input(BoxInput::Requested)
@@ -83,7 +83,7 @@ fn begin(cx: &Cx, id: BoxId) {
     cx.store()
         .unwrap()
         .begin_run(NewRun {
-            task: id,
+            box_id: id,
             argv: vec!["make".into()],
             record: None,
             sha: None,
@@ -93,15 +93,15 @@ fn begin(cx: &Cx, id: BoxId) {
         .unwrap();
 }
 
-fn row(cx: &Cx, id: BoxId) -> TaskRow {
-    cx.store().unwrap().task(id).unwrap().unwrap()
+fn row(cx: &Cx, id: BoxId) -> BoxRow {
+    cx.store().unwrap().box_row(id).unwrap().unwrap()
 }
 
-fn is_working(row: &TaskRow) -> bool {
+fn is_working(row: &BoxRow) -> bool {
     row.lifecycle == BoxLifecycle::Ready && !row.session.is_quiet()
 }
 
-fn is_idle(row: &TaskRow) -> bool {
+fn is_idle(row: &BoxRow) -> bool {
     row.lifecycle == BoxLifecycle::Ready && row.session.is_quiet()
 }
 
@@ -140,7 +140,7 @@ fn no_live_session_means_no_agent_and_no_probe() {
     let dir = tempfile::tempdir().unwrap();
     let engine = Arc::new(FakeEngine::new());
     let (cx, _) = cx(dir.path(), &engine);
-    let id = task(&cx, false);
+    let id = working_box(&cx, false);
     let r = run_once(&cx, id);
     assert_eq!(r.activity, None);
     assert!(!r.busy());
@@ -154,7 +154,7 @@ fn run_in_flight_without_a_session_is_busy_and_not_quiet() {
     let dir = tempfile::tempdir().unwrap();
     let engine = Arc::new(FakeEngine::new());
     let (cx, _) = cx(dir.path(), &engine);
-    let id = task(&cx, false);
+    let id = working_box(&cx, false);
     begin(&cx, id);
     let r = run_once(&cx, id);
     assert_eq!(r.activity, None);
@@ -168,7 +168,7 @@ fn one_read_probes_once_and_decides_from_the_hook() {
     let dir = tempfile::tempdir().unwrap();
     let engine = Arc::new(FakeEngine::new().probes(SESSION, hook(HookKind::Idle)));
     let (cx, _) = cx(dir.path(), &engine);
-    let id = task(&cx, true);
+    let id = working_box(&cx, true);
     let r = run_once(&cx, id);
     assert_eq!(state(&r), (AgentState::Idle, Source::Hooks));
     assert_eq!(r.pane, PaneLiveness::Live);
@@ -182,7 +182,7 @@ fn run_in_flight_forces_working() {
     let dir = tempfile::tempdir().unwrap();
     let engine = Arc::new(FakeEngine::new().probes(SESSION, hook(HookKind::Idle)));
     let (cx, _) = cx(dir.path(), &engine);
-    let id = task(&cx, true);
+    let id = working_box(&cx, true);
     begin(&cx, id);
     let r = run_once(&cx, id);
     assert_eq!(state(&r).0, AgentState::Working);
@@ -200,7 +200,7 @@ fn run_in_flight_with_a_gone_pane_is_busy_and_not_quiet() {
     };
     let engine = Arc::new(FakeEngine::new().probes(SESSION, gone));
     let (cx, _) = cx(dir.path(), &engine);
-    let id = task(&cx, true);
+    let id = working_box(&cx, true);
     begin(&cx, id);
     let r = run_once(&cx, id);
     assert!(r.busy());
@@ -214,11 +214,11 @@ fn run_in_flight_with_an_unreachable_box_is_busy_and_not_quiet() {
     let engine = Arc::new(FakeEngine::new());
     let (cx, _) = cx(dir.path(), &engine);
     let store = cx.store().unwrap();
-    let nt = NewTask {
+    let nt = NewBox {
         name: BoxName::parse_allow_bare("demo").unwrap(),
         repo: "r".into(),
     };
-    let id = store.apply(Decision::insert(nt)).unwrap().task;
+    let id = store.apply(Decision::insert(nt)).unwrap().box_id;
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
         .box_input(BoxInput::Requested)
@@ -242,7 +242,7 @@ fn run_with_a_dead_runner_does_not_force_working() {
     let engine = Arc::new(FakeEngine::new().probes(SESSION, hook(HookKind::Idle)));
     let (cx, proc) = cx(dir.path(), &engine);
     proc.dead(4242);
-    let id = task(&cx, true);
+    let id = working_box(&cx, true);
     begin(&cx, id);
     assert_eq!(state(&run_once(&cx, id)).0, AgentState::Idle);
 }
@@ -252,7 +252,7 @@ fn fresh_hook_is_cached_and_a_timeout_keeps_it() {
     let dir = tempfile::tempdir().unwrap();
     let engine = Arc::new(FakeEngine::new().probes(SESSION, hook(HookKind::Busy)));
     let (cx, _) = cx(dir.path(), &engine);
-    let id = task(&cx, true);
+    let id = working_box(&cx, true);
     run_once(&cx, id);
     let cached = cx.store().unwrap().hook(id).unwrap().expect("cached");
     assert_eq!(cached.record.kind, HookKind::Busy);
@@ -277,7 +277,7 @@ fn undecodable_cache_degrades_to_no_cache_with_a_warning() {
     };
     let engine = Arc::new(FakeEngine::new().probes(SESSION, dropped));
     let (cx, _) = cx(dir.path(), &engine);
-    let id = task(&cx, true);
+    let id = working_box(&cx, true);
     let raw = rusqlite::Connection::open(dir.path().join("moor.db")).unwrap();
     raw.execute(
         "INSERT INTO hook_cache (session, record, at) VALUES ((SELECT id FROM sessions WHERE box = ?1 AND ordinal = 1), '{\"kind\":\"nope\"}', 1)",
@@ -299,7 +299,7 @@ fn cache_row_that_is_not_json_degrades_with_a_warning() {
     let dir = tempfile::tempdir().unwrap();
     let engine = Arc::new(FakeEngine::new());
     let (cx, _) = cx(dir.path(), &engine);
-    let id = task(&cx, true);
+    let id = working_box(&cx, true);
     let raw = rusqlite::Connection::open(dir.path().join("moor.db")).unwrap();
     raw.execute(
         "INSERT INTO hook_cache (session, record, at) VALUES ((SELECT id FROM sessions WHERE box = ?1 AND ordinal = 1), 'not json', 1)",
@@ -339,7 +339,7 @@ fn pane_liveness_tells_gone_from_exited_from_live() {
         };
         let engine = Arc::new(FakeEngine::new().probes(SESSION, p));
         let (cx, _) = cx(dir.path(), &engine);
-        let id = task(&cx, true);
+        let id = working_box(&cx, true);
         assert_eq!(run_once(&cx, id).pane, want);
     }
     assert_eq!(PaneLiveness::Exited.as_str(), "exited");
@@ -353,7 +353,7 @@ fn unformable_hook_path_degrades_with_a_warning() {
     });
     let engine = Arc::new(FakeEngine::new().fail_probe(SESSION, e));
     let (cx, _) = cx(dir.path(), &engine);
-    let id = task(&cx, true);
+    let id = working_box(&cx, true);
     let r = run_once(&cx, id);
     assert_eq!(state(&r), (AgentState::Unknown, Source::Timeout));
     assert_eq!(cx.take_warnings().len(), 1);
@@ -382,11 +382,11 @@ fn quiet(cx: &Cx, id: BoxId) {
 }
 
 #[test]
-fn settle_idles_a_working_task_that_may_quiet() {
+fn settle_idles_a_working_box_that_may_quiet() {
     let dir = tempfile::tempdir().unwrap();
     let engine = Arc::new(FakeEngine::new());
     let (cx, _) = cx(dir.path(), &engine);
-    let id = task(&cx, true);
+    let id = working_box(&cx, true);
     assert_eq!(idle_since(&cx, id), None);
     settle(
         &cx,
@@ -400,11 +400,11 @@ fn settle_idles_a_working_task_that_may_quiet() {
 }
 
 #[test]
-fn settle_returns_an_idle_task_to_working_when_busy() {
+fn settle_returns_an_idle_box_to_working_when_busy() {
     let dir = tempfile::tempdir().unwrap();
     let engine = Arc::new(FakeEngine::new());
     let (cx, _) = cx(dir.path(), &engine);
-    let id = task(&cx, true);
+    let id = working_box(&cx, true);
     quiet(&cx, id);
     assert!(idle_since(&cx, id).is_some());
     settle(
@@ -419,11 +419,11 @@ fn settle_returns_an_idle_task_to_working_when_busy() {
 }
 
 #[test]
-fn settle_leaves_a_working_task_that_may_not_quiet() {
+fn settle_leaves_a_working_box_that_may_not_quiet() {
     let dir = tempfile::tempdir().unwrap();
     let engine = Arc::new(FakeEngine::new());
     let (cx, _) = cx(dir.path(), &engine);
-    let id = task(&cx, true);
+    let id = working_box(&cx, true);
     settle(
         &cx,
         cx.store().unwrap(),
@@ -435,7 +435,7 @@ fn settle_leaves_a_working_task_that_may_not_quiet() {
 }
 
 #[test]
-fn settle_leaves_a_working_task_when_only_the_pane_reports_idle() {
+fn settle_leaves_a_working_box_when_only_the_pane_reports_idle() {
     let cases = [
         (PaneStatus::Idle, AgentState::Idle),
         (
@@ -459,7 +459,7 @@ fn settle_leaves_a_working_task_when_only_the_pane_reports_idle() {
         };
         let engine = Arc::new(FakeEngine::new().probes(SESSION, p));
         let (cx, _) = cx(dir.path(), &engine);
-        let id = task(&cx, true);
+        let id = working_box(&cx, true);
         let grace = i64::try_from(STARTUP_GRACE.as_millis()).unwrap();
         let later = Ts::from_millis(NOW.as_millis() + 2 * grace);
         let r = read(&cx, cx.store().unwrap(), &row(&cx, id), later).unwrap();
@@ -472,7 +472,7 @@ fn settle_leaves_a_working_task_when_only_the_pane_reports_idle() {
 }
 
 #[test]
-fn settle_leaves_a_working_task_when_the_hook_read_is_dropped() {
+fn settle_leaves_a_working_box_when_the_hook_read_is_dropped() {
     let dir = tempfile::tempdir().unwrap();
     let p = Probes {
         hook: HookRead::TimedOut,
@@ -480,7 +480,7 @@ fn settle_leaves_a_working_task_when_the_hook_read_is_dropped() {
     };
     let engine = Arc::new(FakeEngine::new().probes(SESSION, p));
     let (cx, _) = cx(dir.path(), &engine);
-    let id = task(&cx, true);
+    let id = working_box(&cx, true);
     let r = run_once(&cx, id);
     settle(&cx, cx.store().unwrap(), &row(&cx, id), &r).unwrap();
     assert!(is_working(&row(&cx, id)));
@@ -491,7 +491,7 @@ fn settle_swallows_a_lost_race_and_keeps_the_new_state() {
     let dir = tempfile::tempdir().unwrap();
     let engine = Arc::new(FakeEngine::new());
     let (cx, _) = cx(dir.path(), &engine);
-    let id = task(&cx, true);
+    let id = working_box(&cx, true);
     let stale = row(&cx, id);
     quiet(&cx, id);
     settle(&cx, cx.store().unwrap(), &stale, &reading(false, true)).unwrap();
@@ -509,7 +509,7 @@ fn the_stored_pane_reaches_the_probe() {
     let dir = tempfile::tempdir().unwrap();
     let engine = Arc::new(FakeEngine::new());
     let (cx, _) = cx(dir.path(), &engine);
-    let id = task(&cx, false);
+    let id = working_box(&cx, false);
     cx.store()
         .unwrap()
         .begin_session(id, SESSION, Some("p1"))
@@ -531,7 +531,7 @@ fn a_new_hook_session_id_is_stored_once() {
     });
     let engine = Arc::new(FakeEngine::new().probes(SESSION, with_id));
     let (cx, _) = cx(dir.path(), &engine);
-    let id = task(&cx, true);
+    let id = working_box(&cx, true);
     run_once(&cx, id);
     assert_eq!(row(&cx, id).agent_session_id.as_deref(), Some("agent-1"));
     let before = cx.store().unwrap().events(id, 100).unwrap().len();

@@ -6,7 +6,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use moor_core::boxscript::quote;
-use moor_core::config::TaskSettings;
+use moor_core::config::BoxSettings;
 use moor_core::domain::run::SyncMode;
 use moor_core::seam::driver::{ExecOutcome, ExecSpec};
 use moor_core::seam::proc::{Deadline, Output, ProcSpec, Tool};
@@ -121,7 +121,7 @@ pub(crate) fn apply(
     handle: &BoxHandle,
     id: BoxId,
     host_cwd: &Path,
-    cfg: &TaskSettings,
+    cfg: &BoxSettings,
 ) -> Result<DotfilesRun, DotfilesFailed> {
     let Some(d) = &cfg.dotfiles else {
         return Ok(DotfilesRun::Skipped);

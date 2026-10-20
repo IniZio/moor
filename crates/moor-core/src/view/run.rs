@@ -3,7 +3,7 @@
 use crate::domain::run::SyncMode;
 use crate::name::RunId;
 use crate::request::WaitFor;
-use crate::view::TaskView;
+use crate::view::BoxView;
 
 /// Payload of `run`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -48,8 +48,9 @@ pub struct WaitRunView {
 /// Payload of `wait`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct WaitValue {
-    /// The Task as last seen.
-    pub task: TaskView,
+    /// The Box as last seen.
+    #[serde(rename = "box")]
+    pub boxed: BoxView,
     /// Whether the timeout elapsed before the condition held.
     pub timed_out: bool,
     /// Milliseconds spent waiting.

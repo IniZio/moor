@@ -68,11 +68,11 @@ fn a_pane_already_gone_still_ends_the_session() {
     let v = run(&f.cx, &req(false)).unwrap();
     assert!(v.agent_stopped);
     assert!(!live_session(&f));
-    assert_eq!(v.task.lifecycle, BoxLifecycle::Closed);
+    assert_eq!(v.boxed.lifecycle, BoxLifecycle::Closed);
 }
 
 #[test]
-fn a_release_error_keeps_the_task_open_with_the_session_ended() {
+fn a_release_error_keeps_the_box_open_with_the_session_ended() {
     let f = fx_with(
         FakeDriver::new().fail_release_always(DriverError::Failed {
             summary: "x".into(),
@@ -95,11 +95,11 @@ fn a_release_error_keeps_the_task_open_with_the_session_ended() {
 }
 
 #[test]
-fn a_task_with_no_session_closes_as_before() {
+fn a_box_with_no_session_closes_as_before() {
     let f = fx_with(FakeDriver::new(), FakeSurface::new("/s"), 0);
     let v = run(&f.cx, &req(false)).unwrap();
     assert!(!v.agent_stopped);
-    assert_eq!(v.task.lifecycle, BoxLifecycle::Closed);
+    assert_eq!(v.boxed.lifecycle, BoxLifecycle::Closed);
     assert!(!f
         .surface
         .calls()
@@ -108,7 +108,7 @@ fn a_task_with_no_session_closes_as_before() {
 }
 
 #[test]
-fn a_pane_close_failure_keeps_the_session_and_the_task() {
+fn a_pane_close_failure_keeps_the_session_and_the_box() {
     let f = fx_with(
         FakeDriver::new(),
         FakeSurface::new("/s").fail_close_pane(SurfaceError::Timeout),

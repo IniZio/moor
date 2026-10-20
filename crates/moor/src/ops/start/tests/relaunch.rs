@@ -43,7 +43,7 @@ pub(super) fn obs(exit_marker: Option<i32>) -> PaneObs {
     }
 }
 
-/// A world with a Working task `demo` launched with "ship it" in pane `p-1`; the next launch opens `p-2`.
+/// A world with a Working Box `demo` launched with "ship it" in pane `p-1`; the next launch opens `p-2`.
 pub(super) fn started() -> (World, Arc<FakeEngine>, BoxId) {
     let engine = Arc::new(
         FakeEngine::new()
@@ -53,7 +53,7 @@ pub(super) fn started() -> (World, Arc<FakeEngine>, BoxId) {
     let mut w = world(FakeDriver::new());
     w.cx = w.cx.with_engine(engine.clone());
     let first = run(&w.cx, &goal_req("ship it")).unwrap();
-    (w, engine, BoxId::new(first.task.id))
+    (w, engine, BoxId::new(first.boxed.id))
 }
 
 /// The second launch request; fails unless there are exactly two.
@@ -166,7 +166,7 @@ fn a_given_goal_relaunches_with_a_fresh_brief_and_is_stored() {
     let second = relaunch_of(&engine);
     assert_eq!(second.goal.as_deref(), Some("new goal"));
     assert_eq!(second.resume, None);
-    let row = w.cx.store().unwrap().task(id).unwrap().unwrap();
+    let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(row.goal.as_deref(), Some("new goal"));
 }
 
@@ -216,7 +216,7 @@ fn a_given_goal_with_a_live_pane_warns_and_changes_nothing() {
     );
     assert_eq!(engine.launches().len(), 1);
     assert_eq!(live_pane(&w, id).as_deref(), Some("p-1"));
-    let row = w.cx.store().unwrap().task(id).unwrap().unwrap();
+    let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(row.goal.as_deref(), Some("ship it"));
 }
 
@@ -254,12 +254,12 @@ fn a_failed_relaunch_records_no_relaunched_event_and_sets_the_failure() {
     );
     let mut w = world(FakeDriver::new());
     w.cx = w.cx.with_engine(engine);
-    let id = BoxId::new(run(&w.cx, &goal_req("ship it")).unwrap().task.id);
+    let id = BoxId::new(run(&w.cx, &goal_req("ship it")).unwrap().boxed.id);
     gone(&w);
     let v = run(&w.cx, &req("demo")).unwrap();
     assert!(!v.agent.launched);
     let store = w.cx.store().unwrap();
-    assert!(store.task(id).unwrap().unwrap().launch_failure.is_some());
+    assert!(store.box_row(id).unwrap().unwrap().launch_failure.is_some());
     let events = store.events(id, 100).unwrap();
     assert!(events.iter().all(|e| e.kind != "relaunched"));
 }
@@ -304,7 +304,7 @@ fn a_relaunch_watches_its_new_pane_for_a_first_run_prompt() {
     let mut w = world(FakeDriver::new());
     w.cx = w.cx.with_engine(engine);
     let first = run(&w.cx, &goal_req("ship it")).unwrap();
-    let id = BoxId::new(first.task.id);
+    let id = BoxId::new(first.boxed.id);
     gone(&w);
     w.surface.push_pane_obs(
         "p-2",
@@ -324,7 +324,7 @@ fn a_relaunch_watches_its_new_pane_for_a_first_run_prompt() {
     assert_eq!(blocked.payload.get("prompt"), Some(&"folder_trust".into()));
 }
 
-/// A world whose Working task `demo` has no goal and no session.
+/// A world whose Working Box `demo` has no goal and no session.
 fn goalless() -> (World, Arc<FakeEngine>, BoxId) {
     let (w, engine, id) = started();
     let clear = Fields {
@@ -339,13 +339,13 @@ fn goalless() -> (World, Arc<FakeEngine>, BoxId) {
 }
 
 #[test]
-fn a_goal_on_a_goalless_task_without_a_session_is_stored_and_launches_once() {
+fn a_goal_on_a_goalless_box_without_a_session_is_stored_and_launches_once() {
     let (w, engine, id) = goalless();
     let v = run(&w.cx, &goal_req("late goal")).unwrap();
     assert!(v.agent.launched);
     assert_eq!(engine.launches().len(), 2);
     assert_eq!(relaunch_of(&engine).goal.as_deref(), Some("late goal"));
-    let row = w.cx.store().unwrap().task(id).unwrap().unwrap();
+    let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(row.goal.as_deref(), Some("late goal"));
 }
 
@@ -360,7 +360,7 @@ fn a_second_start_without_a_goal_does_not_launch_again() {
 }
 
 #[test]
-fn an_issue_alone_does_not_launch_a_goalless_task() {
+fn an_issue_alone_does_not_launch_a_goalless_box() {
     let (w, engine, _id) = goalless();
     let issue = StartReq {
         issue: Some("42".into()),
@@ -372,7 +372,7 @@ fn an_issue_alone_does_not_launch_a_goalless_task() {
 }
 
 #[test]
-fn a_goal_on_a_goalless_task_with_a_live_pane_warns() {
+fn a_goal_on_a_goalless_box_with_a_live_pane_warns() {
     let (w, engine, id) = started();
     let clear = Fields {
         goal: Field::Clear,
@@ -399,7 +399,7 @@ fn a_given_goal_replaces_the_stored_goal_when_there_is_no_session() {
     assert!(v.agent.launched);
     assert_eq!(engine.launches().len(), 2);
     assert_eq!(relaunch_of(&engine).goal.as_deref(), Some("second goal"));
-    let row = store.task(id).unwrap().unwrap();
+    let row = store.box_row(id).unwrap().unwrap();
     assert_eq!(row.goal.as_deref(), Some("second goal"));
 }
 
@@ -439,7 +439,7 @@ fn resume_with_an_empty_stored_session_is_refused() {
 }
 
 #[test]
-fn resume_of_a_task_that_does_not_exist_is_refused() {
+fn resume_of_a_box_that_does_not_exist_is_refused() {
     let w = world(FakeDriver::new());
     let e = run(&w.cx, &resume_req()).unwrap_err();
     assert_eq!(e.error.to_string(), "no agent session to resume");
@@ -521,7 +521,7 @@ fn a_rejected_registration_is_a_warning_not_a_failure() {
     assert!(msg.message.ends_with("invalid_resume_argv"), "{msg:?}");
 }
 
-/// A world with a Working goal-less task `demo`, no session, and stored agent session `agent-1`.
+/// A world with a Working goal-less Box `demo`, no session, and stored agent session `agent-1`.
 fn idle_of_sessions() -> (World, Arc<FakeEngine>, BoxId) {
     let engine = Arc::new(FakeEngine::new().launch_result(Ok(session("p-1"))));
     let mut w = world(FakeDriver::new());
@@ -534,7 +534,7 @@ fn idle_of_sessions() -> (World, Arc<FakeEngine>, BoxId) {
         },
     )
     .unwrap();
-    let id = BoxId::new(first.task.id);
+    let id = BoxId::new(first.boxed.id);
     set_agent_session(&w, id, "agent-1");
     (w, engine, id)
 }

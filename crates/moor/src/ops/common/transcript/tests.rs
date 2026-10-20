@@ -3,17 +3,17 @@ use std::os::unix::fs::PermissionsExt;
 
 use moor_core::decide::transcript::Trigger;
 use moor_core::domain::box_state::BoxLifecycleInput;
+use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::boxes::{BoxInput, BoxState};
-use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
+use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::SessionInput;
-use moor_core::domain::task::SetupOutcome;
 use moor_core::seam::engine::EngineError;
 use moor_core::{BoxName, ProviderId};
 use serde_json::json;
 
 use super::save;
 use crate::cx::Cx;
-use crate::store::{SessionRow, TaskRow};
+use crate::store::{BoxRow, SessionRow};
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::proc::ScriptedProc;
@@ -33,7 +33,7 @@ fn fx(engine: FakeEngine) -> (tempfile::TempDir, Cx) {
     (dir, cx)
 }
 
-fn ready(cx: &Cx, dir: &std::path::Path) -> (TaskRow, SessionRow) {
+fn ready(cx: &Cx, dir: &std::path::Path) -> (BoxRow, SessionRow) {
     let (row, session) = unregistered(cx, dir);
     let store = cx.store().unwrap();
     store.set_registered_session(session.id, "agent-1").unwrap();
@@ -41,15 +41,15 @@ fn ready(cx: &Cx, dir: &std::path::Path) -> (TaskRow, SessionRow) {
     (row, session)
 }
 
-fn unregistered(cx: &Cx, dir: &std::path::Path) -> (TaskRow, SessionRow) {
+fn unregistered(cx: &Cx, dir: &std::path::Path) -> (BoxRow, SessionRow) {
     let store = cx.store().unwrap();
     let id = store
-        .apply(Decision::insert(NewTask {
+        .apply(Decision::insert(NewBox {
             name: BoxName::parse_allow_bare("t").unwrap(),
             repo: "r".into(),
         }))
         .unwrap()
-        .task;
+        .box_id;
     let fields = Fields {
         box_provider: Field::Set(ProviderId::new("p")),
         worktree: Field::Set(dir.display().to_string()),
@@ -72,7 +72,7 @@ fn unregistered(cx: &Cx, dir: &std::path::Path) -> (TaskRow, SessionRow) {
     store.apply(d).unwrap();
     store.begin_session(id, "s-1", Some("p-1")).unwrap();
     (
-        store.task(id).unwrap().unwrap(),
+        store.box_row(id).unwrap().unwrap(),
         store.live_session(id).unwrap().unwrap(),
     )
 }
@@ -187,7 +187,7 @@ fn a_session_without_a_registered_agent_session_is_skipped_without_asking_the_en
 }
 
 #[test]
-fn a_session_unregistered_but_known_to_the_task_is_archived() {
+fn a_session_unregistered_but_known_to_the_box_is_archived() {
     let engine = Arc::new(FakeEngine::new().transcript_text("abc"));
     let (dir, cx) = fx(FakeEngine::new());
     let cx = cx.with_engine(engine.clone());
@@ -198,7 +198,7 @@ fn a_session_unregistered_but_known_to_the_task_is_archived() {
         ..Fields::default()
     };
     store.apply(Decision::new(row.id).set(set)).unwrap();
-    let row = store.task(row.id).unwrap().unwrap();
+    let row = store.box_row(row.id).unwrap().unwrap();
     assert!(save(&cx, store, &row, &session, Trigger::Close).is_some());
     assert_eq!(engine.transcripts().len(), 1);
 }

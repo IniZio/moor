@@ -1,15 +1,15 @@
-//! `start` (minimal): check credentials, create the Task, its worktree and Workspace, acquire the Box.
+//! `start` (minimal): check credentials, create the Box, its worktree and Workspace, acquire the machine.
 //!
-//! It queues the Task when the box limit for its provider is reached. On a new Box it runs the repo
+//! It queues the Box when the machine limit for its provider is reached. On a new machine it runs the repo
 //! setup, then the dotfiles, before the agent launches.
-//! It launches the agent for a Working Task with a goal.
+//! It launches the agent for a Working Box with a goal.
 
 use std::path::{Path, PathBuf};
 
 use moor_core::config::Flags;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::BoxState;
-use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, NewTask};
+use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, NewBox};
 use moor_core::domain::event::CheckedCred;
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::surface::{workspace_label, Worktree};
@@ -27,7 +27,7 @@ use super::common::provisioning::dead_provisioning;
 use super::host_session::refuse_invalid;
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::store::{Store, StoreError, TaskRow};
+use crate::store::{BoxRow, Store, StoreError};
 
 mod base;
 mod known_repo;
@@ -56,7 +56,7 @@ struct Facts {
     from: Option<String>,
 }
 
-/// Where the Task works.
+/// Where the Box works.
 struct Placed {
     /// Worktree and its branch.
     wt: Worktree,
@@ -64,7 +64,7 @@ struct Placed {
     workspace: String,
 }
 
-/// Starts or attaches to the Task named in `req`.
+/// Starts or attaches to the Box named in `req`.
 ///
 /// # Errors
 /// [`CommandError`] when a read, a seam call or a store write fails.
@@ -76,7 +76,7 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
         store.check_parent(parent.get()).map_err(refuse_invalid)?;
     }
     settle_all(cx, store)?;
-    if let Some(row) = store.open_task_by_name(&req.name)? {
+    if let Some(row) = store.open_box_by_name(&req.name)? {
         return attach(cx, store, req, &row);
     }
     if req.resume {
@@ -124,7 +124,7 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     Ok(v)
 }
 
-/// Records a rejected Task, with no worktree or Workspace, and fails with the outcome.
+/// Records a rejected Box, with no worktree or Workspace, and fails with the outcome.
 fn reject(
     cx: &Cx,
     store: &Store,
@@ -139,7 +139,7 @@ fn reject(
         bound: Field::Set(facts.bound.is_some()),
         ..Fields::default()
     };
-    let new = NewTask {
+    let new = NewBox {
         name: req.name.clone(),
         repo: facts.repo.display().to_string(),
     };
@@ -149,7 +149,7 @@ fn reject(
                 .set(set)
                 .parent_session(req.parent.map(SessionId::get)),
         )?
-        .task;
+        .box_id;
     let rejected = BoxLifecycleInput::Rejected {
         reason: reason.to_owned(),
     };
@@ -160,24 +160,19 @@ fn reject(
     Err(CommandError::new(ErrorKind::Failed, reason.to_owned()).with_value(shown))
 }
 
-/// Another start made the Task first: attach to it, else report `lost`.
+/// Another start made the Box first: attach to it, else report `lost`.
 fn raced(
     cx: &Cx,
     store: &Store,
     req: &StartReq,
     lost: impl Into<CommandError>,
 ) -> Result<StartView, CommandError> {
-    let open = store.open_task_by_name(&req.name)?;
+    let open = store.open_box_by_name(&req.name)?;
     open.map_or_else(|| Err(lost.into()), |row| attach(cx, store, req, &row))
 }
 
-/// Starts over on an open Task whose Box is lost; otherwise only attaches.
-fn attach(
-    cx: &Cx,
-    store: &Store,
-    req: &StartReq,
-    row: &TaskRow,
-) -> Result<StartView, CommandError> {
+/// Starts over on an open Box whose machine is lost; otherwise only attaches.
+fn attach(cx: &Cx, store: &Store, req: &StartReq, row: &BoxRow) -> Result<StartView, CommandError> {
     preflight::check_bound(cx, req, row)?;
     relaunch::check_resume(req, row)?;
     dead_provisioning(cx, row)?;
@@ -228,7 +223,7 @@ fn attach(
     Ok(v)
 }
 
-/// Moves an Idle Task being started to Working, so the launch check sees a Working Task.
+/// Moves an Idle Box being started to Working, so the launch check sees a Working Box.
 fn wake_idle(store: &Store, id: BoxId) -> Result<(), CommandError> {
     let row = reread(store, id)?;
     if !(row.lifecycle == BoxLifecycle::Ready && row.session.is_quiet()) {
@@ -240,11 +235,11 @@ fn wake_idle(store: &Store, id: BoxId) -> Result<(), CommandError> {
     }
 }
 
-/// Moves each open Task with a ready Box and no failed setup between Working and Idle.
+/// Moves each open Box with a ready machine and no failed setup between Working and Idle.
 ///
-/// Runs before the start, which may then leave the Task it starts in another state.
+/// Runs before the start, which may then leave the Box it starts in another state.
 pub(crate) fn settle_all(cx: &Cx, store: &Store) -> Result<(), CommandError> {
-    for row in &store.open_tasks()? {
+    for row in &store.open_boxes()? {
         let ready = row.boxed.as_ref().map(|b| b.state) == Some(BoxState::Ready);
         if !ready || row.setup_failed_at.is_some() {
             continue;
@@ -254,7 +249,7 @@ pub(crate) fn settle_all(cx: &Cx, store: &Store) -> Result<(), CommandError> {
         if let Err(e) = settled {
             cx.warn(Warning {
                 code: "settle_failed".to_owned(),
-                message: format!("could not settle task {}: {}", row.id.get(), e.error),
+                message: format!("could not settle Box {}: {}", row.id.get(), e.error),
             });
             continue;
         }
@@ -297,7 +292,7 @@ fn locate(cx: &Cx, req: &StartReq) -> Result<(PathBuf, Option<PathBuf>, StartReq
     Ok((repo, bound, req.clone()))
 }
 
-/// Reads the base the Task starts from; changes nothing.
+/// Reads the base the Box starts from; changes nothing.
 fn gather(
     cx: &Cx,
     req: &StartReq,
@@ -318,7 +313,7 @@ fn gather(
 ///
 /// The exclude file lives in the common git dir, so hiding from a bound worktree or the repo covers
 /// every worktree.
-/// Doing it first means a failure leaves no worktree without a Task row.
+/// Doing it first means a failure leaves no worktree without a Box row.
 fn place(cx: &Cx, req: &StartReq, facts: &Facts) -> Result<Placed, CommandError> {
     cx.git()
         .exclude_scratch(facts.bound.as_deref().unwrap_or(&facts.repo))
@@ -344,7 +339,7 @@ fn set_some<T>(v: Option<T>) -> Field<T> {
     v.map_or(Field::Keep, Field::Set)
 }
 
-/// Inserts the Task row with everything known before the Box.
+/// Inserts the Box row with everything known before the machine.
 fn insert(
     store: &Store,
     req: &StartReq,
@@ -363,7 +358,7 @@ fn insert(
         workspace_id: Field::Set(placed.workspace.clone()),
         ..Fields::default()
     };
-    let new = NewTask {
+    let new = NewBox {
         name: req.name.clone(),
         repo: facts.repo.display().to_string(),
     };
@@ -375,7 +370,7 @@ fn insert(
             credentials: checked,
         });
     }
-    Ok(store.apply(decision)?.task)
+    Ok(store.apply(decision)?.box_id)
 }
 
 #[cfg(test)]

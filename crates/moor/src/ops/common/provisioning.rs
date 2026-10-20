@@ -1,14 +1,14 @@
-//! Whether a Task's provisioning is still alive.
+//! Whether a Box's provisioning is still alive.
 
 use moor_core::decide::intent::{age, provisioning_dead};
 use moor_core::ErrorKind;
 
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::store::TaskRow;
+use crate::store::BoxRow;
 
-/// Refuses a task whose provisioning owner died before recording a Box.
-pub(crate) fn dead_provisioning(cx: &Cx, row: &TaskRow) -> Result<(), CommandError> {
+/// Refuses a Box whose provisioning owner died before recording a machine.
+pub(crate) fn dead_provisioning(cx: &Cx, row: &BoxRow) -> Result<(), CommandError> {
     let (Some(intent), Some(at)) = (row.intent, row.intent_at) else {
         return Ok(());
     };

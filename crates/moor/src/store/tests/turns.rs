@@ -1,12 +1,12 @@
 use moor_core::domain::event::TurnOutcome;
 
-use super::{new_task, open};
+use super::{new_box, open};
 
 #[test]
 fn a_steer_gets_one_turn_done_however_often_it_is_recorded() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
-    let id = new_task(&store, "alpha");
+    let id = new_box(&store, "alpha");
     assert!(store.record_turn_done(id, 7, TurnOutcome::Idle).unwrap());
     assert!(!store.record_turn_done(id, 7, TurnOutcome::Exited).unwrap());
     let done: Vec<_> = store

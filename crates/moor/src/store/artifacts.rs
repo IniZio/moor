@@ -27,7 +27,7 @@ pub(crate) struct ArtifactRow {
     /// Row id.
     pub(crate) id: i64,
     /// Owning Box.
-    pub(crate) task: BoxId,
+    pub(crate) box_id: BoxId,
     /// Session that was newest when this version was stored.
     pub(crate) session: Option<i64>,
     /// File name; versions are counted per name.
@@ -53,7 +53,7 @@ impl Store {
     /// Returns None and writes nothing when the latest stored version has the same digest.
     pub(crate) fn add_artifact(
         &self,
-        task: BoxId,
+        box_id: BoxId,
         name: &str,
         bytes: &[u8],
         dir: &Path,
@@ -72,7 +72,7 @@ impl Store {
             .query_row(
                 "SELECT version, sha256 FROM artifacts WHERE box = ? AND name = ? \
                  ORDER BY version DESC LIMIT 1",
-                params![task.get(), name],
+                params![box_id.get(), name],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .optional()?;
@@ -80,7 +80,7 @@ impl Store {
             return Ok(None);
         }
         let version = latest.map_or(1, |(v, _)| v + 1);
-        let box_dir = dir.join(task.get().to_string());
+        let box_dir = dir.join(box_id.get().to_string());
         let version_dir = box_dir.join(format!("v{version}"));
         let file = version_dir.join(name);
         refuse_symlink(dir, &file)?;
@@ -91,7 +91,7 @@ impl Store {
             .create(&version_dir)?;
         write_private(&file, bytes)?;
         let fresh = Fresh {
-            task,
+            box_id,
             name,
             version,
             size: bytes.len() as u64,
@@ -112,28 +112,28 @@ impl Store {
     }
 
     /// Every stored Artifact version of the Box, by name then version.
-    pub(crate) fn artifacts(&self, task: BoxId) -> Result<Vec<ArtifactRow>, StoreError> {
+    pub(crate) fn artifacts(&self, box_id: BoxId) -> Result<Vec<ArtifactRow>, StoreError> {
         let conn = self.reader()?;
         let mut stmt = conn.prepare(&format!(
             "SELECT {COLUMNS} FROM artifacts WHERE box = ? ORDER BY name, version"
         ))?;
         let rows = stmt
-            .query_map([task.get()], artifact_from_row)?
+            .query_map([box_id.get()], artifact_from_row)?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(rows)
     }
 
     /// The newest stored version of each Artifact name of the Box, by name.
-    pub(crate) fn latest_artifacts(&self, task: BoxId) -> Result<Vec<ArtifactRow>, StoreError> {
+    pub(crate) fn latest_artifacts(&self, box_id: BoxId) -> Result<Vec<ArtifactRow>, StoreError> {
         let conn = self.reader()?;
-        latest_in(&conn, task)
+        latest_in(&conn, box_id)
     }
 }
 
 /// A version about to be recorded.
 struct Fresh<'a> {
     /// Owning Box.
-    task: BoxId,
+    box_id: BoxId,
     /// File name.
     name: &'a str,
     /// Version number.
@@ -160,7 +160,7 @@ fn record(tx: Transaction<'_>, f: &Fresh<'_>, box_dir: &Path) -> Result<Artifact
          (SELECT id FROM sessions WHERE box = ?1 ORDER BY ordinal DESC LIMIT 1), \
          ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
         params![
-            f.task.get(),
+            f.box_id.get(),
             f.name,
             f.version,
             kind,
@@ -180,8 +180,8 @@ fn record(tx: Transaction<'_>, f: &Fresh<'_>, box_dir: &Path) -> Result<Artifact
         size: f.size,
         sha256: f.sha256.clone(),
     };
-    super::apply::insert_event(&tx, f.task, &event, f.now)?;
-    let rows = latest_in(&tx, f.task)?;
+    super::apply::insert_event(&tx, f.box_id, &event, f.now)?;
+    let rows = latest_in(&tx, f.box_id)?;
     manifest::write_manifest(box_dir, &rows, f.now)?;
     let row = tx.query_row(
         &format!("SELECT {COLUMNS} FROM artifacts WHERE id = ?"),
@@ -193,13 +193,13 @@ fn record(tx: Transaction<'_>, f: &Fresh<'_>, box_dir: &Path) -> Result<Artifact
 }
 
 /// Newest version per name for the Box, read on `conn`.
-fn latest_in(conn: &rusqlite::Connection, task: BoxId) -> Result<Vec<ArtifactRow>, StoreError> {
+fn latest_in(conn: &rusqlite::Connection, box_id: BoxId) -> Result<Vec<ArtifactRow>, StoreError> {
     let mut stmt = conn.prepare(&format!(
         "SELECT {COLUMNS} FROM artifacts a WHERE box = ?1 AND version = \
          (SELECT MAX(version) FROM artifacts WHERE box = a.box AND name = a.name) ORDER BY name"
     ))?;
     let rows = stmt
-        .query_map([task.get()], artifact_from_row)?
+        .query_map([box_id.get()], artifact_from_row)?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(rows)
 }
@@ -266,7 +266,7 @@ fn artifact_from_row(r: &Row<'_>) -> rusqlite::Result<ArtifactRow> {
     let size: i64 = r.get(7)?;
     Ok(ArtifactRow {
         id: r.get(0)?,
-        task: BoxId::new(r.get(1)?),
+        box_id: BoxId::new(r.get(1)?),
         session: r.get(2)?,
         name: r.get(3)?,
         version: r.get(4)?,

@@ -223,7 +223,7 @@ fn cwd_of(p: &ScriptedProc, verb: &str) -> Option<std::path::PathBuf> {
 }
 
 #[test]
-fn pause_runs_from_the_task_worktree() {
+fn pause_runs_from_the_box_worktree() {
     let (p, c) = fixture();
     p.on(Tool::Crabbox, &["pause"], Reply::Ok(String::new()));
     let tree = Path::new("/work/tree");
@@ -232,7 +232,7 @@ fn pause_runs_from_the_task_worktree() {
 }
 
 #[test]
-fn resume_runs_from_the_task_worktree() {
+fn resume_runs_from_the_box_worktree() {
     let (p, c) = fixture();
     p.on(Tool::Crabbox, &["resume"], Reply::Ok(String::new()));
     let tree = Path::new("/work/tree");
@@ -241,7 +241,7 @@ fn resume_runs_from_the_task_worktree() {
 }
 
 #[test]
-fn stop_runs_from_the_task_worktree() {
+fn stop_runs_from_the_box_worktree() {
     let (p, c) = fixture();
     p.on(Tool::Crabbox, &["stop"], Reply::Ok(String::new()));
     let tree = Path::new("/work/tree");

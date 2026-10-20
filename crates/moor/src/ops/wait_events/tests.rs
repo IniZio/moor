@@ -6,10 +6,10 @@ use std::sync::Arc;
 use moor_core::activity::{HookKind, HookRead, HookRecord, PaneObs, PaneRead, PaneStatus, Probes};
 use moor_core::controller::ServerFrame;
 use moor_core::domain::box_state::BoxLifecycleInput;
+use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::boxes::BoxInput;
-use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, NewTask};
+use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, NewBox};
 use moor_core::domain::session_state::SessionInput;
-use moor_core::domain::task::SetupOutcome;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::AcquireReq;
 use moor_core::{BoxId, BoxName, ErrorKind, ProviderId, WaitEventsReq, WaitMode};
@@ -43,7 +43,7 @@ fn name(n: &str) -> BoxName {
 }
 
 fn add(cx: &Cx, n: &str) -> BoxId {
-    let nt = NewTask {
+    let nt = NewBox {
         name: name(n),
         repo: "r".into(),
     };
@@ -51,7 +51,7 @@ fn add(cx: &Cx, n: &str) -> BoxId {
         .unwrap()
         .apply(Decision::insert(nt))
         .unwrap()
-        .task
+        .box_id
 }
 
 fn attached(cx: &Cx, id: BoxId) {
@@ -93,14 +93,14 @@ fn boxes_of(frames: &[ServerFrame]) -> Vec<String> {
         .collect()
 }
 
-/// A task named `n` whose Box is Ready.
+/// A Box named `n` whose machine is Ready.
 fn ready(cx: &Cx, n: &str) -> BoxId {
     let id = add(cx, n);
     let got = cx
         .driver()
         .acquire(&AcquireReq {
             provider: ProviderId::new("p"),
-            task: id,
+            box_id: id,
             name: name(n),
             class: None,
             nonce: "abc123".into(),
@@ -219,7 +219,7 @@ fn an_unknown_box_fails_before_waiting() {
     let before = cx.clock().now();
     let e = run(&cx, &req(&["alpha", "ghost"], WaitMode::Any)).unwrap_err();
     assert_eq!(e.kind, ErrorKind::Failed);
-    assert!(e.error.to_string().contains("no task ghost"), "{}", e.error);
+    assert!(e.error.to_string().contains("no Box ghost"), "{}", e.error);
     assert_eq!(cx.clock().now().as_millis(), before.as_millis());
 }
 
@@ -306,7 +306,7 @@ fn a_closed_box_fails_before_waiting() {
     let e = run(&cx, &req(&["alpha"], WaitMode::Any)).unwrap_err();
     assert_eq!(e.kind, ErrorKind::Failed);
     assert!(
-        e.error.to_string().contains("task alpha is closed"),
+        e.error.to_string().contains("Box alpha is closed"),
         "{}",
         e.error
     );

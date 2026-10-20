@@ -16,14 +16,14 @@ use super::listen::{listen, Live};
 use super::park::{parked_tunnel, starts_parked};
 use super::{Deps, Sink, LEASE};
 use crate::proxy::detached::read_spec;
-use crate::store::{Fenced, Lease, ProxyPorts, ReadyProc, TaskRow};
+use crate::store::{BoxRow, Fenced, Lease, ProxyPorts, ReadyProc};
 
 /// Why the supervisor stops.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Stop {
     /// A signal asked it to.
     Signal,
-    /// The Task closed or went away.
+    /// The Box closed or went away.
     Closed,
     /// Another supervisor took the lease.
     LostLease,
@@ -37,8 +37,8 @@ pub(super) enum Stop {
 pub(super) struct Running<'d> {
     /// Collaborators.
     pub(super) deps: &'d Deps<'d>,
-    /// The supervised Task.
-    pub(super) task: BoxId,
+    /// The supervised Box.
+    pub(super) box_id: BoxId,
     /// Lease owner token.
     pub(super) owner: String,
     /// The nono proxy with its capture and log.
@@ -63,14 +63,14 @@ pub(super) fn say(sink: &Sink, args: Arguments<'_>) {
     ));
 }
 
-/// Whether no more work can happen on a Task in `lifecycle`.
+/// Whether no more work can happen on a Box in `lifecycle`.
 const fn terminal(lifecycle: BoxLifecycle) -> bool {
     matches!(lifecycle, BoxLifecycle::Closed | BoxLifecycle::Rejected)
 }
 
 /// Gives up the lease; a failure only means the lease expires on its own.
-fn give_up(deps: &Deps<'_>, task: BoxId, owner: &str) {
-    if let Err(err) = deps.store.release(task, owner) {
+fn give_up(deps: &Deps<'_>, box_id: BoxId, owner: &str) {
+    if let Err(err) = deps.store.release(box_id, owner) {
         say(
             &deps.stderr,
             format_args!("cannot release the lease: {err}"),
@@ -78,43 +78,43 @@ fn give_up(deps: &Deps<'_>, task: BoxId, owner: &str) {
     }
 }
 
-/// Checks the Task, the proxy row, the spec and the Box handle, refusing with exit code 1 when any is missing.
-fn preflight(deps: &Deps<'_>, task: BoxId) -> Result<(TaskRow, BoxHandle, ProxySpec), u8> {
+/// Checks the Box, the proxy row, the spec and the machine handle, refusing with exit code 1 when any is missing.
+fn preflight(deps: &Deps<'_>, box_id: BoxId) -> Result<(BoxRow, BoxHandle, ProxySpec), u8> {
     let sink = &deps.stderr;
-    let task_row = match deps.store.task(task) {
+    let box_row = match deps.store.box_row(box_id) {
         Ok(Some(row)) if !terminal(row.lifecycle) => row,
         Ok(_) => {
             say(
                 sink,
-                format_args!("task {} is missing or closed", task.get()),
+                format_args!("Box {} is missing or closed", box_id.get()),
             );
             return Err(1);
         }
         Err(err) => {
-            say(sink, format_args!("cannot read the task: {err}"));
+            say(sink, format_args!("cannot read the Box: {err}"));
             return Err(1);
         }
     };
-    reload(deps, task)?;
-    let Some(handle) = task_row.boxed.as_ref().and_then(|b| b.handle.clone()) else {
-        say(sink, format_args!("task {} has no box", task.get()));
+    reload(deps, box_id)?;
+    let Some(handle) = box_row.boxed.as_ref().and_then(|b| b.handle.clone()) else {
+        say(sink, format_args!("Box {} has no machine", box_id.get()));
         return Err(1);
     };
-    let Ok(spec) = read_spec(deps.state_dir, task) else {
-        say(sink, format_args!("no proxy spec for task {}", task.get()));
+    let Ok(spec) = read_spec(deps.state_dir, box_id) else {
+        say(sink, format_args!("no proxy spec for Box {}", box_id.get()));
         return Err(1);
     };
-    Ok((task_row, handle, spec))
+    Ok((box_row, handle, spec))
 }
 
 /// Reads the proxy row's nonce and Box port, refusing with exit code 1 when the row is missing.
-fn reload(deps: &Deps<'_>, task: BoxId) -> Result<(Secret, u16), u8> {
-    match deps.store.proxy(task) {
+fn reload(deps: &Deps<'_>, box_id: BoxId) -> Result<(Secret, u16), u8> {
+    match deps.store.proxy(box_id) {
         Ok(Some(row)) => Ok((row.nonce, row.box_port)),
         Ok(None) => {
             say(
                 &deps.stderr,
-                format_args!("task {} has no proxy row", task.get()),
+                format_args!("Box {} has no proxy row", box_id.get()),
             );
             Err(1)
         }
@@ -129,7 +129,7 @@ fn reload(deps: &Deps<'_>, task: BoxId) -> Result<(Secret, u16), u8> {
 }
 
 /// Claims the lease and returns the owner token; `Err(0)` means another supervisor holds it.
-fn claim(deps: &Deps<'_>, task: BoxId) -> Result<String, u8> {
+fn claim(deps: &Deps<'_>, box_id: BoxId) -> Result<String, u8> {
     let owner = format!(
         "{:08x}{:08x}{:08x}{:08x}",
         deps.rng.u32(),
@@ -137,7 +137,7 @@ fn claim(deps: &Deps<'_>, task: BoxId) -> Result<String, u8> {
         deps.rng.u32(),
         deps.rng.u32()
     );
-    match deps.store.claim_lease(task, &owner, LEASE) {
+    match deps.store.claim_lease(box_id, &owner, LEASE) {
         Ok(Lease::Claimed) => Ok(owner),
         Ok(Lease::Held { .. }) => Err(0),
         Err(err) => {
@@ -147,8 +147,8 @@ fn claim(deps: &Deps<'_>, task: BoxId) -> Result<String, u8> {
     }
 }
 
-/// Whether the Task's Box is stored as Asleep.
-fn asleep(row: &TaskRow) -> bool {
+/// Whether the Box is stored as Asleep.
+fn asleep(row: &BoxRow) -> bool {
     row.boxed
         .as_ref()
         .is_some_and(|b| b.state == BoxState::Asleep)
@@ -158,12 +158,12 @@ fn asleep(row: &TaskRow) -> bool {
 fn open_tunnel(
     deps: &Deps<'_>,
     (handle, box_port, host_port, worktree): (&BoxHandle, u16, u16, &Path),
-    task: BoxId,
+    box_id: BoxId,
 ) -> Option<Box<dyn TunnelHandle>> {
     // A Box that never had a tunnel has no stale listener to clear. A failed read counts as "had one".
-    let fresh = matches!(deps.store.tunnel_opened(task), Ok(false));
+    let fresh = matches!(deps.store.tunnel_opened(box_id), Ok(false));
     // Set before opening, so a crash mid-open still marks the Box.
-    if let Err(err) = deps.store.note_tunnel_opened(task) {
+    if let Err(err) = deps.store.note_tunnel_opened(box_id) {
         say(
             &deps.stderr,
             format_args!("cannot record the tunnel open: {err}"),
@@ -183,40 +183,40 @@ fn open_tunnel(
 
 /// Claims the lease, starts the proxy and tunnel, and marks the row ready.
 ///
-/// A sleeping Box refuses connections, so a Box that is Asleep or was asked to park starts without a tunnel.
-pub(super) fn begin<'d>(deps: &'d Deps<'d>, task: BoxId) -> Result<Running<'d>, u8> {
+/// A sleeping machine refuses connections, so a Box that is Asleep or was asked to park starts without a tunnel.
+pub(super) fn begin<'d>(deps: &'d Deps<'d>, box_id: BoxId) -> Result<Running<'d>, u8> {
     let sink = &deps.stderr;
-    let (task_row, handle, spec) = preflight(deps, task)?;
-    let owner = claim(deps, task)?;
+    let (box_row, handle, spec) = preflight(deps, box_id)?;
+    let owner = claim(deps, box_id)?;
     // Another `moor start` may have re-reserved the row before the claim, so read it again.
-    let (nonce, box_port) = match reload(deps, task) {
+    let (nonce, box_port) = match reload(deps, box_id) {
         Ok(found) => found,
         Err(code) => {
-            give_up(deps, task, &owner);
+            give_up(deps, box_id, &owner);
             return Err(code);
         }
     };
-    let worktree = PathBuf::from(task_row.worktree.as_deref().unwrap_or(&task_row.repo));
-    let live = match listen(deps, task, &nonce, &spec) {
+    let worktree = PathBuf::from(box_row.worktree.as_deref().unwrap_or(&box_row.repo));
+    let live = match listen(deps, box_id, &nonce, &spec) {
         Ok(live) => live,
         Err(msg) => {
             say(sink, format_args!("{msg}"));
-            give_up(deps, task, &owner);
+            give_up(deps, box_id, &owner);
             return Err(1);
         }
     };
-    if let Err(code) = renew(deps, task, &owner) {
+    if let Err(code) = renew(deps, box_id, &owner) {
         live.stop();
         return Err(code);
     }
-    let parked = starts_parked(deps, task, asleep(&task_row));
+    let parked = starts_parked(deps, box_id, asleep(&box_row));
     let tunnel = if parked {
         parked_tunnel()
     } else {
         let ends = (&handle, box_port, live.port(), worktree.as_path());
-        let Some(tunnel) = open_tunnel(deps, ends, task) else {
+        let Some(tunnel) = open_tunnel(deps, ends, box_id) else {
             live.stop();
-            give_up(deps, task, &owner);
+            give_up(deps, box_id, &owner);
             return Err(1);
         };
         tunnel
@@ -225,14 +225,14 @@ pub(super) fn begin<'d>(deps: &'d Deps<'d>, task: BoxId) -> Result<Running<'d>, 
         box_port,
         host_port: live.port(),
     };
-    if let Err(code) = mark(deps, task, &owner, ports, &handle) {
+    if let Err(code) = mark(deps, box_id, &owner, ports, &handle) {
         drop(tunnel);
         live.stop();
         return Err(code);
     }
     let run = Running {
         deps,
-        task,
+        box_id,
         owner,
         live,
         tunnel: RefCell::new(tunnel),
@@ -249,8 +249,8 @@ pub(super) fn begin<'d>(deps: &'d Deps<'d>, task: BoxId) -> Result<Running<'d>, 
 }
 
 /// Extends the lease during startup; `Err` carries the exit code, with the lease given up unless it was lost.
-fn renew(deps: &Deps<'_>, task: BoxId, owner: &str) -> Result<(), u8> {
-    match deps.store.heartbeat(task, owner) {
+fn renew(deps: &Deps<'_>, box_id: BoxId, owner: &str) -> Result<(), u8> {
+    match deps.store.heartbeat(box_id, owner) {
         Ok(true) => Ok(()),
         Ok(false) => {
             say(
@@ -261,7 +261,7 @@ fn renew(deps: &Deps<'_>, task: BoxId, owner: &str) -> Result<(), u8> {
         }
         Err(err) => {
             say(&deps.stderr, format_args!("heartbeat failed: {err}"));
-            give_up(deps, task, owner);
+            give_up(deps, box_id, owner);
             Err(1)
         }
     }
@@ -270,14 +270,14 @@ fn renew(deps: &Deps<'_>, task: BoxId, owner: &str) -> Result<(), u8> {
 /// Marks the row ready; `Err` carries the exit code, with the lease given up unless it was lost.
 fn mark(
     deps: &Deps<'_>,
-    task: BoxId,
+    box_id: BoxId,
     owner: &str,
     ports: ProxyPorts,
     handle: &BoxHandle,
 ) -> Result<(), u8> {
-    renew(deps, task, owner)?;
+    renew(deps, box_id, owner)?;
     match deps.store.mark_ready(
-        task,
+        box_id,
         owner,
         ports,
         ReadyProc {
@@ -299,7 +299,7 @@ fn mark(
                 &deps.stderr,
                 format_args!("cannot mark the proxy ready: {err}"),
             );
-            give_up(deps, task, owner);
+            give_up(deps, box_id, owner);
             Err(1)
         }
     }
@@ -308,7 +308,7 @@ fn mark(
 impl Running<'_> {
     /// Extends the lease; `None` means it is still held.
     pub(super) fn beat(&self) -> Option<Stop> {
-        match self.deps.store.heartbeat(self.task, &self.owner) {
+        match self.deps.store.heartbeat(self.box_id, &self.owner) {
             Ok(true) => None,
             Ok(false) => Some(Stop::LostLease),
             Err(err) => {
@@ -318,19 +318,19 @@ impl Running<'_> {
         }
     }
 
-    /// Heartbeats and checks the Task and tunnel; `None` means keep running.
+    /// Heartbeats and checks the Box and tunnel; `None` means keep running.
     pub(super) fn tick(&self) -> Option<Stop> {
         if let stop @ Some(_) = self.beat() {
             return stop;
         }
-        self.live.drain(self.deps, self.task);
-        match self.deps.store.task(self.task) {
+        self.live.drain(self.deps, self.box_id);
+        match self.deps.store.box_row(self.box_id) {
             Ok(Some(row)) if !terminal(row.lifecycle) => {}
             Ok(_) => return Some(Stop::Closed),
             Err(err) => {
                 say(
                     &self.deps.stderr,
-                    format_args!("cannot read the task: {err}"),
+                    format_args!("cannot read the Box: {err}"),
                 );
                 return Some(Stop::Failed);
             }
@@ -346,20 +346,20 @@ impl Running<'_> {
     pub(super) fn finish(self, stop: Stop) -> u8 {
         let Self {
             deps,
-            task,
+            box_id,
             owner,
             live,
             tunnel,
             ..
         } = self;
-        live.drain(deps, task);
+        live.drain(deps, box_id);
         live.stop();
         drop(tunnel);
         if stop != Stop::LostLease {
-            give_up(deps, task, &owner);
+            give_up(deps, box_id, &owner);
         }
         if matches!(stop, Stop::Closed | Stop::Signal) {
-            if let Err(err) = deps.store.remove_proxy(task) {
+            if let Err(err) = deps.store.remove_proxy(box_id) {
                 say(
                     &deps.stderr,
                     format_args!("cannot remove the proxy row: {err}"),
@@ -367,7 +367,7 @@ impl Running<'_> {
             }
         }
         if stop == Stop::Closed {
-            Live::forget(deps, task);
+            Live::forget(deps, box_id);
         }
         u8::from(!matches!(stop, Stop::Closed | Stop::Signal))
     }

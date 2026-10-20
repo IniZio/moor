@@ -1,5 +1,5 @@
 //! Loopback filter that nono chains GitHub API traffic through so each
-//! GraphQL request is judged against the Task repo before it leaves.
+//! GraphQL request is judged against the Box repo before it leaves.
 
 use std::collections::VecDeque;
 use std::fmt;
@@ -38,11 +38,11 @@ const EGRESS_RULE: &str = "egress";
 /// Most refusals kept before the oldest is dropped.
 const MAX_REFUSALS: usize = 1024;
 
-/// What the filter needs for one Task.
+/// What the filter needs for one Box.
 pub(crate) struct FilterSpec {
-    /// The Task CA the filter presents to nono.
+    /// The Box CA the filter presents to nono.
     pub(crate) ca: EphemeralCa,
-    /// The Task repo, if known; without it every GraphQL request goes out
+    /// The Box repo, if known; without it every GraphQL request goes out
     /// without its credential.
     pub(crate) repo: Option<RepoRef>,
     /// The only host the filter tunnels to, such as `api.github.com`.
@@ -90,7 +90,7 @@ pub(crate) enum FilterError {
 
 /// State shared by the acceptor and every connection thread.
 pub(super) struct Shared {
-    /// The Task repo, if known.
+    /// The Box repo, if known.
     pub(super) repo: Option<RepoRef>,
     /// The only tunnel host.
     pub(super) host: String,

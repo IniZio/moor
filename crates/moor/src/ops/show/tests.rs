@@ -8,11 +8,11 @@ use moor_core::activity::{
     AgentState, HookKind, HookRead, HookRecord, PaneObs, PaneRead, PaneStatus, Probes, Source,
     STARTUP_GRACE,
 };
+use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
-use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
+use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::{SessionInput, SessionState};
-use moor_core::domain::task::SetupOutcome;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, SleepKind};
 use moor_core::seam::proc::Tool;
@@ -26,7 +26,7 @@ mod pane;
 use super::run;
 use crate::cx::Cx;
 use crate::ops::common::activity::{self, Reading};
-use crate::store::{NewRun, Store, TaskRow};
+use crate::store::{BoxRow, NewRun, Store};
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::proc::{Reply, ScriptedProc};
@@ -35,7 +35,7 @@ use crate::testing::surface::FakeSurface;
 type Parts = (BoxLifecycle, SessionState);
 const WORKING: Parts = (BoxLifecycle::Ready, SessionState::Working);
 const IDLE: Parts = (BoxLifecycle::Ready, SessionState::Idle);
-fn parts(row: &TaskRow) -> Parts {
+fn parts(row: &BoxRow) -> Parts {
     (row.lifecycle, row.session)
 }
 
@@ -51,9 +51,9 @@ fn cx(dir: &Path, driver: &Arc<FakeDriver>) -> Cx {
 }
 
 /// Request showing everything.
-fn req(task: Option<&str>, events: Option<u32>) -> ShowReq {
+fn req(box_name: Option<&str>, events: Option<u32>) -> ShowReq {
     ShowReq {
-        task: task.map(|t| BoxName::parse_allow_bare(t).unwrap()),
+        box_name: box_name.map(|t| BoxName::parse_allow_bare(t).unwrap()),
         events,
         agent: false,
         reports: false,
@@ -62,9 +62,9 @@ fn req(task: Option<&str>, events: Option<u32>) -> ShowReq {
     }
 }
 
-/// Insert a task by name.
+/// Insert a Box by name.
 fn add(cx: &Cx, name: &str) -> BoxId {
-    let nt = NewTask {
+    let nt = NewBox {
         name: BoxName::parse_allow_bare(name).unwrap(),
         repo: "r".into(),
     };
@@ -72,16 +72,16 @@ fn add(cx: &Cx, name: &str) -> BoxId {
         .unwrap()
         .apply(Decision::insert(nt))
         .unwrap()
-        .task
+        .box_id
 }
 
-/// Give a task a Ready box acquired from `driver`.
+/// Give a Box a Ready box acquired from `driver`.
 fn ready_box(cx: &Cx, driver: &FakeDriver, id: BoxId) -> moor_core::BoxHandle {
     let p = ProviderId::new("p");
     let got = driver
         .acquire(&AcquireReq {
             provider: p.clone(),
-            task: id,
+            box_id: id,
             name: BoxName::parse_allow_bare("demo").unwrap(),
             class: None,
             nonce: "abc123".into(),
@@ -106,18 +106,18 @@ fn ready_box(cx: &Cx, driver: &FakeDriver, id: BoxId) -> moor_core::BoxHandle {
 }
 
 /// The first row of a list-mode view.
-fn first(v: &moor_core::view::ShowView) -> &moor_core::view::TaskView {
-    v.tasks.as_ref().unwrap().first().unwrap()
+fn first(v: &moor_core::view::ShowView) -> &moor_core::view::BoxView {
+    v.boxes.as_ref().unwrap().first().unwrap()
 }
 
-/// Box state of the only task, as the view reports it.
+/// Machine state of the only Box, as the view reports it.
 fn box_state(cx: &Cx) -> BoxState {
     let v = run(cx, &req(None, None)).unwrap();
-    first(&v).r#box.as_ref().unwrap().state
+    first(&v).driver.as_ref().unwrap().state
 }
 
 #[test]
-fn show_lists_open_tasks_with_no_selection() {
+fn show_lists_open_boxes_with_no_selection() {
     let dir = tempfile::tempdir().unwrap();
     let cx = cx(dir.path(), &Arc::new(FakeDriver::new()));
     add(&cx, "a");
@@ -128,9 +128,9 @@ fn show_lists_open_tasks_with_no_selection() {
         .session(SessionInput::End);
     cx.store().unwrap().apply(close).unwrap();
     let v = run(&cx, &req(None, None)).unwrap();
-    let names: Vec<_> = v.tasks.iter().flatten().map(|t| t.name.clone()).collect();
+    let names: Vec<_> = v.boxes.iter().flatten().map(|t| t.name.clone()).collect();
     assert_eq!(names, ["a", "b"]);
-    assert!(v.task.is_none() && v.events.is_none());
+    assert!(v.boxed.is_none() && v.events.is_none());
 }
 
 #[test]
@@ -142,10 +142,10 @@ fn sleep_label_follows_provider_sleep_support() {
         let id = add(&cx, "a");
         ready_box(&cx, &driver, id);
         let v = run(&cx, &req(Some("a"), None)).unwrap();
-        let shown = v.task.unwrap().r#box.unwrap().sleep.after;
+        let shown = v.boxed.unwrap().driver.unwrap().sleep.after;
         assert_eq!(shown.as_deref(), after);
         let v = run(&cx, &req(None, None)).unwrap();
-        let listed = first(&v).r#box.as_ref().unwrap().sleep.after.clone();
+        let listed = first(&v).driver.as_ref().unwrap().sleep.after.clone();
         assert_eq!(listed.as_deref(), after);
     }
 }
@@ -193,7 +193,7 @@ fn unsupported_list_is_skipped_silently() {
 }
 
 #[test]
-fn named_task_returns_last_events() {
+fn named_box_returns_last_events() {
     let dir = tempfile::tempdir().unwrap();
     let cx = cx(dir.path(), &Arc::new(FakeDriver::new()));
     let id = add(&cx, "a");
@@ -202,30 +202,30 @@ fn named_task_returns_last_events() {
         .apply(Decision::new(id).lifecycle(BoxLifecycleInput::Admitted))
         .unwrap();
     let v = run(&cx, &req(Some("a"), Some(1))).unwrap();
-    assert!(v.tasks.is_none());
-    assert_eq!(v.task.unwrap().name, "a");
+    assert!(v.boxes.is_none());
+    assert_eq!(v.boxed.unwrap().name, "a");
     assert_eq!(v.events.unwrap().len(), 1);
 }
 
 #[test]
-fn unknown_task_name_fails() {
+fn unknown_box_name_fails() {
     let dir = tempfile::tempdir().unwrap();
     let cx = cx(dir.path(), &Arc::new(FakeDriver::new()));
     let e = run(&cx, &req(Some("nope"), None)).unwrap_err();
-    assert!(e.error.to_string().contains("no task nope"));
+    assert!(e.error.to_string().contains("no Box nope"));
 }
 
 #[test]
-fn task_shows_its_in_flight_run() {
+fn box_shows_its_in_flight_run() {
     let dir = tempfile::tempdir().unwrap();
     let cx = cx(dir.path(), &Arc::new(FakeDriver::new()));
     let id = add(&cx, "a");
     let before = run(&cx, &req(Some("a"), None)).unwrap();
-    assert!(before.task.unwrap().run.is_none());
+    assert!(before.boxed.unwrap().run.is_none());
     cx.store()
         .unwrap()
         .begin_run(NewRun {
-            task: id,
+            box_id: id,
             argv: vec!["make".into(), "test".into()],
             record: None,
             sha: None,
@@ -234,9 +234,9 @@ fn task_shows_its_in_flight_run() {
         })
         .unwrap();
     let v = run(&cx, &req(Some("a"), None)).unwrap();
-    let r = v.task.unwrap().run.unwrap();
+    let r = v.boxed.unwrap().run.unwrap();
     assert_eq!(r.argv, ["make", "test"]);
-    assert!(v.tasks.is_none());
+    assert!(v.boxes.is_none());
     let listed = run(&cx, &req(None, None)).unwrap();
     assert!(first(&listed).run.is_some());
 }
@@ -253,14 +253,14 @@ fn engine_cx(dir: &Path, driver: &Arc<FakeDriver>, engine: &Arc<FakeEngine>) -> 
     .with_engine(engine.clone())
 }
 
-/// Add a working task `name` with a box live in `driver`, and a live session
+/// Add a working Box `name` with a box live in `driver`, and a live session
 /// `session` when given.
 fn working(cx: &Cx, driver: &FakeDriver, name: &str, session: Option<&str>) -> BoxId {
     let id = add(cx, name);
     let got = driver
         .acquire(&AcquireReq {
             provider: ProviderId::new("p"),
-            task: id,
+            box_id: id,
             name: BoxName::parse_allow_bare(name).unwrap(),
             class: None,
             nonce: "abc123".into(),
@@ -326,7 +326,7 @@ fn list_and_detail_report_the_same_agent() {
         .unwrap();
     let detail = run(&cx, &req(Some("a"), None))
         .unwrap()
-        .task
+        .boxed
         .unwrap()
         .agent
         .unwrap();
@@ -338,7 +338,7 @@ fn list_and_detail_report_the_same_agent() {
 }
 
 #[test]
-fn each_task_is_probed_once_per_command() {
+fn each_box_is_probed_once_per_command() {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(FakeDriver::new());
     let cx = engine_cx(dir.path(), &driver, &Arc::new(FakeEngine::new()));
@@ -359,7 +359,7 @@ fn each_task_is_probed_once_per_command() {
 }
 
 #[test]
-fn show_leaves_the_task_row_untouched() {
+fn show_leaves_the_box_row_untouched() {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(FakeDriver::new());
     let cx = engine_cx(dir.path(), &driver, &Arc::new(FakeEngine::new()));
@@ -367,10 +367,10 @@ fn show_leaves_the_task_row_untouched() {
     let engine = Arc::new(FakeEngine::new().probes("s-a", hook(&cx, HookKind::Idle)));
     let cx = engine_cx(dir.path(), &driver, &engine);
     let store = cx.store().unwrap();
-    let before = store.task(id).unwrap();
+    let before = store.box_row(id).unwrap();
     assert_eq!(parts(before.as_ref().unwrap()), WORKING);
     run(&cx, &req(Some("a"), None)).unwrap();
-    assert_eq!(store.task(id).unwrap(), before);
+    assert_eq!(store.box_row(id).unwrap(), before);
 }
 
 /// Probes whose pane alone reports `status`, with no hook report.
@@ -386,7 +386,7 @@ fn pane_only(status: PaneStatus) -> Probes {
     }
 }
 
-/// The `idle_since` column of a task.
+/// The `idle_since` column of a Box.
 fn idle_since(store: &Store, id: BoxId) -> Option<i64> {
     store
         .reader()
@@ -408,7 +408,7 @@ fn list_settles_a_quiet_agent_to_idle() {
     let engine = Arc::new(FakeEngine::new().probes("s-a", hook(&cx, HookKind::Idle)));
     let cx = engine_cx(dir.path(), &driver, &engine);
     let v = run(&cx, &req(None, None)).unwrap();
-    let row = cx.store().unwrap().task(id).unwrap().unwrap();
+    let row = cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(parts(&row), IDLE);
     assert!(idle_since(cx.store().unwrap(), id).is_some());
     assert_eq!((first(&v).lifecycle, first(&v).session_state), IDLE);
@@ -427,13 +427,13 @@ fn list_settles_a_busy_agent_to_working() {
     let engine = Arc::new(FakeEngine::new().probes("s-a", hook(&cx, HookKind::Busy)));
     let cx = engine_cx(dir.path(), &driver, &engine);
     run(&cx, &req(None, None)).unwrap();
-    let row = cx.store().unwrap().task(id).unwrap().unwrap();
+    let row = cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(parts(&row), WORKING);
     assert!(idle_since(cx.store().unwrap(), id).is_none());
 }
 
-/// List a Working Task whose session is older than the startup grace and whose only
-/// report is the pane's `status`; return the reading and the task's state afterwards.
+/// List a Working Box whose session is older than the startup grace and whose only
+/// report is the pane's `status`; return the reading and the Box's state afterwards.
 fn pane_only_reading(status: PaneStatus) -> (Reading, Parts) {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(FakeDriver::new());
@@ -444,7 +444,7 @@ fn pane_only_reading(status: PaneStatus) -> (Reading, Parts) {
     cx.clock().sleep(STARTUP_GRACE + Duration::from_secs(60));
     run(&cx, &req(None, None)).unwrap();
     let store = cx.store().unwrap();
-    let row = store.task(id).unwrap().unwrap();
+    let row = store.box_row(id).unwrap().unwrap();
     let now = cx.clock().now();
     let reading = activity::read(&cx, store, &row, now).unwrap();
     (reading, parts(&row))
@@ -471,13 +471,13 @@ fn list_does_not_idle_on_a_pane_only_blocked_report() {
 }
 
 #[test]
-fn task_without_a_live_session_has_no_agent() {
+fn box_without_a_live_session_has_no_agent() {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(FakeDriver::new());
     let cx = engine_cx(dir.path(), &driver, &Arc::new(FakeEngine::new()));
     working(&cx, &driver, "a", None);
     let v = run(&cx, &req(Some("a"), None)).unwrap();
-    assert!(v.task.unwrap().agent.is_none());
+    assert!(v.boxed.unwrap().agent.is_none());
 }
 
 /// Context over `driver` whose git answers a repo at `/repo`, so `start` can run.
@@ -515,7 +515,7 @@ fn start_cx(dir: &Path, driver: &Arc<FakeDriver>) -> Cx {
 }
 
 #[test]
-fn a_task_freshly_started_is_not_idled_by_the_next_list() {
+fn a_box_freshly_started_is_not_idled_by_the_next_list() {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(FakeDriver::new());
     let cx = start_cx(dir.path(), &driver);
@@ -537,20 +537,20 @@ fn a_task_freshly_started_is_not_idled_by_the_next_list() {
         },
     )
     .unwrap();
-    let s = &started.task;
+    let s = &started.boxed;
     assert_eq!((s.lifecycle, s.session_state), WORKING);
     let v = run(&cx, &req(None, None)).unwrap();
     let t = first(&v);
     assert_eq!((t.lifecycle, t.session_state), WORKING);
     assert!(t.agent.is_some());
-    let id = BoxId::new(started.task.id);
+    let id = BoxId::new(started.boxed.id);
     assert!(cx.store().unwrap().live_session(id).unwrap().is_some());
-    let row = cx.store().unwrap().task(id).unwrap().unwrap();
+    let row = cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(parts(&row), WORKING);
 }
 
-/// A task Idle since just now, with its agent still reporting idle.
-fn idle_task(dir: &Path, driver: &Arc<FakeDriver>) -> (Cx, BoxId) {
+/// A Box Idle since just now, with its agent still reporting idle.
+fn idle_box(dir: &Path, driver: &Arc<FakeDriver>) -> (Cx, BoxId) {
     let cx = engine_cx(dir, driver, &Arc::new(FakeEngine::new()));
     let id = working(&cx, driver, "a", Some("s-a"));
     cx.store()
@@ -564,36 +564,36 @@ fn idle_task(dir: &Path, driver: &Arc<FakeDriver>) -> (Cx, BoxId) {
 const LONG: Duration = Duration::from_mins(31);
 
 #[test]
-fn list_sleeps_a_task_idle_past_the_threshold() {
+fn list_sleeps_a_box_idle_past_the_threshold() {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(FakeDriver::new());
-    let (cx, id) = idle_task(dir.path(), &driver);
+    let (cx, id) = idle_box(dir.path(), &driver);
     cx.clock().sleep(LONG);
     let v = run(&cx, &req(None, None)).unwrap();
-    let row = cx.store().unwrap().task(id).unwrap().unwrap();
+    let row = cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(row.lifecycle, BoxLifecycle::Asleep);
     assert_eq!(first(&v).lifecycle, BoxLifecycle::Asleep);
-    assert_eq!(first(&v).r#box.as_ref().unwrap().state, BoxState::Asleep);
+    assert_eq!(first(&v).driver.as_ref().unwrap().state, BoxState::Asleep);
 }
 
 #[test]
-fn list_leaves_a_recently_idle_task_up() {
+fn list_leaves_a_recently_idle_box_up() {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(FakeDriver::new());
-    let (cx, id) = idle_task(dir.path(), &driver);
+    let (cx, id) = idle_box(dir.path(), &driver);
     run(&cx, &req(None, None)).unwrap();
-    let row = cx.store().unwrap().task(id).unwrap().unwrap();
+    let row = cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(parts(&row), IDLE);
 }
 
 #[test]
-fn showing_one_task_does_not_sleep_it() {
+fn showing_one_box_does_not_sleep_it() {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(FakeDriver::new());
-    let (cx, id) = idle_task(dir.path(), &driver);
+    let (cx, id) = idle_box(dir.path(), &driver);
     cx.clock().sleep(LONG);
     run(&cx, &req(Some("a"), None)).unwrap();
-    let row = cx.store().unwrap().task(id).unwrap().unwrap();
+    let row = cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(parts(&row), IDLE);
     assert!(!driver.calls().iter().any(|c| c.starts_with("sleep ")));
 }

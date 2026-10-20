@@ -8,10 +8,10 @@ fn n(s: &str) -> BoxName {
     BoxName::parse_allow_bare(s).expect("valid name")
 }
 
-/// Variants carrying a task or arguments.
+/// Variants carrying a box or arguments.
 #[allow(clippy::too_many_lines, reason = "one sample per request variant")]
 fn with_args() -> Vec<Request> {
-    let t = || TaskReq { task: n("a") };
+    let t = || BoxReq { box_name: n("a") };
     vec![
         Request::Sessions(SessionsReq { parent: None }),
         Request::Start(StartReq {
@@ -29,7 +29,7 @@ fn with_args() -> Vec<Request> {
             parent: None,
         }),
         Request::Run(RunReq {
-            task: n("a"),
+            box_name: n("a"),
             no_sync: false,
             sync: false,
             record: None,
@@ -38,7 +38,7 @@ fn with_args() -> Vec<Request> {
             inherit_output: false,
         }),
         Request::Wait(WaitReq {
-            task: n("a"),
+            box_name: n("a"),
             wait_for: Some(WaitFor::Idle),
             timeout_secs: Some(3),
         }),
@@ -50,18 +50,18 @@ fn with_args() -> Vec<Request> {
             timeout_secs: Some(3),
         }),
         Request::Steer(SteerReq {
-            task: n("a"),
+            box_name: n("a"),
             text: Some("x".into()),
             menu: None,
         }),
         Request::Report(ReportReq {
-            task: n("a"),
+            box_name: n("a"),
             kind: "k".into(),
             title: None,
             file: None,
         }),
         Request::Show(ShowReq {
-            task: None,
+            box_name: None,
             events: Some(2),
             agent: false,
             reports: true,
@@ -69,16 +69,16 @@ fn with_args() -> Vec<Request> {
             pane: false,
         }),
         Request::Close(CloseReq {
-            task: n("a"),
+            box_name: n("a"),
             force: true,
             trust_moor_yaml: true,
         }),
         Request::Remove(RemoveReq {
-            task: n("a"),
+            box_name: n("a"),
             discard: false,
         }),
         Request::Cp(CpReq {
-            task: n("a"),
+            box_name: n("a"),
             src: "s".into(),
             dest: "d".into(),
         }),
@@ -128,27 +128,27 @@ fn cmd_equals_serde_tag_and_roundtrips() {
 
 #[test]
 fn close_roundtrips_from_json() {
-    let r: Request = serde_json::from_str(r#"{"cmd":"close","task":"a","force":true}"#).unwrap();
+    let r: Request = serde_json::from_str(r#"{"cmd":"close","box":"a","force":true}"#).unwrap();
     assert_eq!(
         r,
         Request::Close(CloseReq {
-            task: n("a"),
+            box_name: n("a"),
             force: true,
             trust_moor_yaml: false
         })
     );
     assert_eq!(
         serde_json::to_value(&r).unwrap(),
-        json!({"cmd":"close","task":"a","force":true,"trust_moor_yaml":false})
+        json!({"cmd":"close","box":"a","force":true,"trust_moor_yaml":false})
     );
 }
 
 #[test]
 fn close_trust_moor_yaml_defaults_false_and_roundtrips() {
-    let r: Request = serde_json::from_str(r#"{"cmd":"close","task":"a"}"#).unwrap();
+    let r: Request = serde_json::from_str(r#"{"cmd":"close","box":"a"}"#).unwrap();
     assert!(matches!(&r, Request::Close(c) if !c.trust_moor_yaml));
     let r: Request =
-        serde_json::from_str(r#"{"cmd":"close","task":"a","trust_moor_yaml":true}"#).unwrap();
+        serde_json::from_str(r#"{"cmd":"close","box":"a","trust_moor_yaml":true}"#).unwrap();
     assert!(matches!(&r, Request::Close(c) if c.trust_moor_yaml));
     let back: Request = serde_json::from_str(&serde_json::to_string(&r).unwrap()).unwrap();
     assert_eq!(back, r);
@@ -168,7 +168,7 @@ fn start_repo_roundtrips_and_defaults_none() {
 
 #[test]
 fn unknown_field_rejected() {
-    let r = serde_json::from_str::<Request>(r#"{"cmd":"close","task":"a","bogus":1}"#);
+    let r = serde_json::from_str::<Request>(r#"{"cmd":"close","box":"a","bogus":1}"#);
     assert!(r.is_err());
     let r = serde_json::from_str::<Request>(r#"{"cmd":"nope"}"#);
     assert!(r.is_err());
@@ -192,29 +192,29 @@ fn unit_variants_reject_unknown_fields() {
 
 #[test]
 fn defaults_and_renames() {
-    let r: Request = serde_json::from_str(r#"{"cmd":"wait","task":"a","for":"done"}"#).unwrap();
+    let r: Request = serde_json::from_str(r#"{"cmd":"wait","box":"a","for":"done"}"#).unwrap();
     assert_eq!(
         r,
         Request::Wait(WaitReq {
-            task: n("a"),
+            box_name: n("a"),
             wait_for: Some(WaitFor::Done),
             timeout_secs: None
         })
     );
-    let r: Request = serde_json::from_str(r#"{"cmd":"wait","task":"a","for":"input"}"#).unwrap();
+    let r: Request = serde_json::from_str(r#"{"cmd":"wait","box":"a","for":"input"}"#).unwrap();
     assert_eq!(
         r,
         Request::Wait(WaitReq {
-            task: n("a"),
+            box_name: n("a"),
             wait_for: Some(WaitFor::Input),
             timeout_secs: None
         })
     );
-    let r: Request = serde_json::from_str(r#"{"cmd":"run","task":"a"}"#).unwrap();
+    let r: Request = serde_json::from_str(r#"{"cmd":"run","box":"a"}"#).unwrap();
     assert_eq!(
         r,
         Request::Run(RunReq {
-            task: n("a"),
+            box_name: n("a"),
             no_sync: false,
             sync: false,
             record: None,
@@ -245,12 +245,12 @@ fn none_fields_omitted() {
 
 #[test]
 fn run_argv_roundtrips() {
-    let v = json!({"cmd":"run","task":"a","no_sync":false,"sync":false,"argv":["ls","-la"],"trust_moor_yaml":false});
+    let v = json!({"cmd":"run","box":"a","no_sync":false,"sync":false,"argv":["ls","-la"],"trust_moor_yaml":false});
     let r: Request = serde_json::from_value(v.clone()).unwrap();
     assert_eq!(
         r,
         Request::Run(RunReq {
-            task: n("a"),
+            box_name: n("a"),
             no_sync: false,
             sync: false,
             record: None,
@@ -264,10 +264,10 @@ fn run_argv_roundtrips() {
 
 #[test]
 fn run_inherit_output_is_not_settable_from_json() {
-    let v = json!({"cmd":"run","task":"a","inherit_output":true});
+    let v = json!({"cmd":"run","box":"a","inherit_output":true});
     assert!(serde_json::from_value::<Request>(v).is_err());
     let r = RunReq {
-        task: n("a"),
+        box_name: n("a"),
         no_sync: false,
         sync: false,
         record: None,
@@ -303,11 +303,11 @@ fn gate_command_is_optional_on_the_wire() {
 #[test]
 fn run_sync_flag_parses_and_defaults_off() {
     let with: Request =
-        serde_json::from_str(r#"{"cmd":"run","task":"a","sync":true,"argv":["ls"]}"#).unwrap();
+        serde_json::from_str(r#"{"cmd":"run","box":"a","sync":true,"argv":["ls"]}"#).unwrap();
     assert_eq!(
         with,
         Request::Run(RunReq {
-            task: n("a"),
+            box_name: n("a"),
             no_sync: false,
             sync: true,
             record: None,
@@ -316,9 +316,9 @@ fn run_sync_flag_parses_and_defaults_off() {
             inherit_output: false,
         })
     );
-    let without: Request = serde_json::from_str(r#"{"cmd":"run","task":"a"}"#).unwrap();
+    let without: Request = serde_json::from_str(r#"{"cmd":"run","box":"a"}"#).unwrap();
     let want = Request::Run(RunReq {
-        task: n("a"),
+        box_name: n("a"),
         no_sync: false,
         sync: false,
         record: None,
@@ -331,11 +331,11 @@ fn run_sync_flag_parses_and_defaults_off() {
 
 #[test]
 fn run_trust_moor_yaml_defaults_false_and_roundtrips() {
-    let r: Request = serde_json::from_str(r#"{"cmd":"run","task":"a"}"#).unwrap();
+    let r: Request = serde_json::from_str(r#"{"cmd":"run","box":"a"}"#).unwrap();
     assert!(matches!(r, Request::Run(ref s) if !s.trust_moor_yaml));
 
     let r: Request =
-        serde_json::from_str(r#"{"cmd":"run","task":"a","trust_moor_yaml":true}"#).unwrap();
+        serde_json::from_str(r#"{"cmd":"run","box":"a","trust_moor_yaml":true}"#).unwrap();
     assert!(matches!(r, Request::Run(ref s) if s.trust_moor_yaml));
     let back: Request = serde_json::from_value(serde_json::to_value(&r).unwrap()).unwrap();
     assert_eq!(back, r);
@@ -343,8 +343,8 @@ fn run_trust_moor_yaml_defaults_false_and_roundtrips() {
 
 #[test]
 fn connect_parses_and_roundtrips() {
-    let r: Request = serde_json::from_str(r#"{"cmd":"connect","task":"t1"}"#).unwrap();
-    assert_eq!(r, Request::Connect(TaskReq { task: n("t1") }));
+    let r: Request = serde_json::from_str(r#"{"cmd":"connect","box":"t1"}"#).unwrap();
+    assert_eq!(r, Request::Connect(BoxReq { box_name: n("t1") }));
     let back: Request = serde_json::from_value(serde_json::to_value(&r).unwrap()).unwrap();
     assert_eq!(back, r);
 }
@@ -352,24 +352,29 @@ fn connect_parses_and_roundtrips() {
 #[test]
 fn end_session_round_trips() {
     let req: Request =
-        serde_json::from_value(json!({"cmd": "end-session", "task": "x"})).expect("parse");
-    assert_eq!(req, Request::EndSession(EndSessionReq { task: "x".into() }));
+        serde_json::from_value(json!({"cmd": "end-session", "box": "x"})).expect("parse");
+    assert_eq!(
+        req,
+        Request::EndSession(EndSessionReq {
+            box_name: "x".into()
+        })
+    );
     assert_eq!(req.cmd(), "end-session");
     assert_eq!(
         serde_json::to_value(&req).expect("serialize"),
-        json!({"cmd": "end-session", "task": "x"})
+        json!({"cmd": "end-session", "box": "x"})
     );
 }
 
 #[test]
 fn open_session_round_trips() {
     let req: Request =
-        serde_json::from_value(json!({"cmd": "open-session", "task": "x", "seed": "hi"}))
+        serde_json::from_value(json!({"cmd": "open-session", "box": "x", "seed": "hi"}))
             .expect("parse");
     assert_eq!(
         req,
         Request::OpenSession(OpenSessionReq {
-            task: "x".into(),
+            box_name: "x".into(),
             seed: "hi".into(),
             parent: None,
         })
@@ -377,7 +382,7 @@ fn open_session_round_trips() {
     assert_eq!(req.cmd(), "open-session");
     assert_eq!(
         serde_json::to_value(&req).expect("serialize"),
-        json!({"cmd": "open-session", "task": "x", "seed": "hi"})
+        json!({"cmd": "open-session", "box": "x", "seed": "hi"})
     );
 }
 
@@ -438,12 +443,12 @@ fn start_parent_parses_and_defaults_none() {
 #[test]
 fn open_session_parent_parses_and_defaults_none() {
     let with: Request = serde_json::from_value(
-        json!({"cmd": "open-session", "task": "t", "seed": "s", "parent": 3}),
+        json!({"cmd": "open-session", "box": "t", "seed": "s", "parent": 3}),
     )
     .expect("parses");
     assert!(matches!(with, Request::OpenSession(r) if r.parent == Some(SessionId::new(3))));
     let bare: Request =
-        serde_json::from_value(json!({"cmd": "open-session", "task": "t", "seed": "s"}))
+        serde_json::from_value(json!({"cmd": "open-session", "box": "t", "seed": "s"}))
             .expect("parses");
     assert!(matches!(bare, Request::OpenSession(r) if r.parent.is_none()));
 }
@@ -468,7 +473,7 @@ fn parent_is_omitted_when_none() {
         .expect("ser")
         .contains("parent"));
     let open = OpenSessionReq {
-        task: "t".into(),
+        box_name: "t".into(),
         seed: "s".into(),
         parent: None,
     };

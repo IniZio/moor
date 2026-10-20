@@ -8,11 +8,11 @@ use moor_core::activity::{
     HookKind, HookRead, HookRecord, PaneObs, PaneRead, PaneStatus, Probes, STARTUP_GRACE,
 };
 use moor_core::domain::box_state::BoxLifecycleInput;
+use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::boxes::BoxInput;
-use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
+use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::event::Event;
 use moor_core::domain::session_state::SessionInput;
-use moor_core::domain::task::SetupOutcome;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, SleepKind};
 use moor_core::view::LaunchFailure;
@@ -48,9 +48,9 @@ fn cx_with(dir: &Path, driver: FakeDriver) -> (Cx, Arc<ScriptedProc>) {
     (cx, proc)
 }
 
-/// Insert task `demo`.
+/// Insert Box `demo`.
 fn add(cx: &Cx) -> BoxId {
-    let nt = NewTask {
+    let nt = NewBox {
         name: BoxName::parse_allow_bare("demo").unwrap(),
         repo: "r".into(),
     };
@@ -58,15 +58,15 @@ fn add(cx: &Cx) -> BoxId {
         .unwrap()
         .apply(Decision::insert(nt))
         .unwrap()
-        .task
+        .box_id
 }
 
 /// Begin a run of `demo` owned by `PID`.
-fn begin(cx: &Cx, task: BoxId) {
+fn begin(cx: &Cx, box_id: BoxId) {
     cx.store()
         .unwrap()
         .begin_run(NewRun {
-            task,
+            box_id,
             argv: vec!["make".into(), "test".into()],
             record: None,
             sha: None,
@@ -79,7 +79,7 @@ fn begin(cx: &Cx, task: BoxId) {
 /// A `wait` request for `demo`.
 fn req(wait_for: Option<WaitFor>, timeout_secs: Option<u64>) -> WaitReq {
     WaitReq {
-        task: BoxName::parse_allow_bare("demo").unwrap(),
+        box_name: BoxName::parse_allow_bare("demo").unwrap(),
         wait_for,
         timeout_secs,
     }
@@ -133,7 +133,7 @@ fn reports_the_in_flight_run_with_its_argv() {
     let r = v.run.unwrap();
     assert!(r.in_flight);
     assert_eq!(r.argv, ["make", "test"]);
-    assert!(v.task.run.is_some());
+    assert!(v.boxed.run.is_some());
 }
 
 #[test]
@@ -149,7 +149,7 @@ fn a_run_whose_process_is_gone_reports_interrupted() {
     assert!(!r.in_flight);
     assert!(r.interrupted);
     assert_eq!(r.argv, ["make", "test"]);
-    assert!(v.task.run.is_none());
+    assert!(v.boxed.run.is_none());
 }
 
 #[test]
@@ -179,12 +179,12 @@ fn run_waits_only_for_the_run() {
 }
 
 #[test]
-fn unknown_task_fails_like_show() {
+fn unknown_box_fails_like_show() {
     let dir = tempfile::tempdir().unwrap();
     let (cx, _) = cx(dir.path());
     let err = run(&cx, &req(None, None)).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Failed);
-    assert_eq!(err.error.to_string(), "no task demo");
+    assert_eq!(err.error.to_string(), "no Box demo");
 }
 
 #[test]
@@ -201,7 +201,7 @@ fn never_takes_the_box_lock() {
     )
     .unwrap();
     let show = ShowReq {
-        task: Some(BoxName::parse_allow_bare("demo").unwrap()),
+        box_name: Some(BoxName::parse_allow_bare("demo").unwrap()),
         events: None,
         agent: false,
         reports: false,
@@ -224,7 +224,7 @@ fn agent_cx(dir: &Path, probes: Probes) -> (Cx, Arc<FakeEngine>) {
     (cx.with_engine(engine.clone()), engine)
 }
 
-/// Insert task `demo` with a Box the driver lists as live and a live agent session.
+/// Insert Box `demo` with a machine the driver lists as live and a live agent session.
 fn add_live(cx: &Cx) -> BoxId {
     let id = add_boxed(cx);
     cx.store()
@@ -234,14 +234,14 @@ fn add_live(cx: &Cx) -> BoxId {
     id
 }
 
-/// Insert task `demo` with a Box the driver lists as live and no agent session.
+/// Insert Box `demo` with a machine the driver lists as live and no agent session.
 fn add_boxed(cx: &Cx) -> BoxId {
     let id = add(cx);
     let got = cx
         .driver()
         .acquire(&AcquireReq {
             provider: ProviderId::new("p"),
-            task: id,
+            box_id: id,
             name: BoxName::parse_allow_bare("demo").unwrap(),
             class: None,
             nonce: "abc123".into(),
@@ -350,7 +350,7 @@ fn the_payload_carries_the_agent() {
     let (cx, _) = agent_cx(dir.path(), hook(HookKind::Blocked));
     add_live(&cx);
     let v = run(&cx, &req(None, None)).unwrap();
-    let a = v.task.agent.expect("an agent view");
+    let a = v.boxed.agent.expect("an agent view");
     assert_eq!(a.state, "needs_input");
     assert_eq!(a.source, "hooks");
     assert_eq!(a.pane, "live");
@@ -358,24 +358,24 @@ fn the_payload_carries_the_agent() {
 }
 
 #[test]
-fn a_task_without_a_session_has_no_agent_in_the_payload() {
+fn a_box_without_a_session_has_no_agent_in_the_payload() {
     let dir = tempfile::tempdir().unwrap();
     let (cx, _) = cx(dir.path());
     add(&cx);
     let v = run(&cx, &req(None, None)).unwrap();
-    assert!(v.task.agent.is_none());
+    assert!(v.boxed.agent.is_none());
 }
 
 #[test]
-fn waiting_leaves_the_task_row_alone() {
+fn waiting_leaves_the_box_row_alone() {
     let dir = tempfile::tempdir().unwrap();
     let (cx, _) = agent_cx(dir.path(), hook(HookKind::Idle));
     let id = add_live(&cx);
-    let before = cx.store().unwrap().task(id).unwrap().unwrap();
+    let before = cx.store().unwrap().box_row(id).unwrap().unwrap();
     for _ in 0..3 {
         let v = run(&cx, &req(None, Some(1))).unwrap();
         assert!(!v.timed_out);
-        assert_eq!(cx.store().unwrap().task(id).unwrap().unwrap(), before);
+        assert_eq!(cx.store().unwrap().box_row(id).unwrap().unwrap(), before);
     }
 }
 
@@ -433,7 +433,7 @@ fn sleep_label_follows_provider_sleep_support() {
         let (cx, _) = cx_with(dir.path(), FakeDriver::new().sleep_kind(kind));
         add_boxed(&cx);
         let v = run(&cx, &req(None, None)).unwrap();
-        assert_eq!(v.task.r#box.unwrap().sleep.after.as_deref(), after);
+        assert_eq!(v.boxed.driver.unwrap().sleep.after.as_deref(), after);
     }
 }
 
@@ -460,18 +460,20 @@ fn launch_failure_sleep_label_follows_provider_sleep_support() {
         let e = run(&cx, &req(None, None)).unwrap_err();
         let shown = e.value.unwrap();
         assert_eq!(
-            shown.pointer("/box/sleep/after").and_then(|v| v.as_str()),
+            shown
+                .pointer("/driver/sleep/after")
+                .and_then(|v| v.as_str()),
             after
         );
     }
 }
 
-/// Record an `agent_rate_limited` event for the `claude` rule on `task`.
-fn rate_limit(cx: &Cx, task: BoxId) {
+/// Record an `agent_rate_limited` event for the `claude` rule on `Box`.
+fn rate_limit(cx: &Cx, box_id: BoxId) {
     cx.store()
         .unwrap()
         .record_proxy_event(
-            task,
+            box_id,
             &Event::AgentRateLimited {
                 rule: "claude".into(),
                 status: 429,
@@ -520,7 +522,7 @@ fn a_recovered_rate_limit_no_longer_fails_the_wait() {
         .unwrap();
     let v = run(&cx, &req(None, None)).unwrap();
     assert!(!v.timed_out);
-    assert!(v.task.attention.is_empty());
+    assert!(v.boxed.attention.is_empty());
 }
 
 #[test]

@@ -15,7 +15,7 @@ use crate::testing::clock::FakeClock;
 
 const SECRET: &str = "s3cr3t-credential-value-7f3a";
 const NONCE: &str = "nonce_AbCdEf-0123456789";
-const TASK: BoxId = BoxId::new(7);
+const BOX_ID: BoxId = BoxId::new(7);
 
 /// Sends `GET <path>` with the Box placeholder; returns the status and what the upstream saw.
 fn fetch(path: &str) -> (Result<u16, String>, Vec<upstream::Seen>) {
@@ -46,17 +46,17 @@ fn fetch(path: &str) -> (Result<u16, String>, Vec<upstream::Seen>) {
         clock,
     ));
     let state = dir.path().join("state");
-    let ca = ca::load_or_create(&state, TASK).unwrap();
+    let ca = ca::load_or_create(&state, BOX_ID).unwrap();
     let nonce = Secret::new(NONCE.as_bytes().to_vec());
     let mut cfg = build_config(&NonoSpec {
         rules: &rules,
         nonce: &nonce,
         ca: &ca,
-        ca_dir: &ca::ca_dir(&state, TASK),
+        ca_dir: &ca::ca_dir(&state, BOX_ID),
         upstream_ca: Some(&up.ca_path),
         chain: None,
     });
-    // Stands in for the chained filter's Task CA, trusted for every upstream.
+    // Stands in for the chained filter's Box CA, trusted for every upstream.
     cfg.0.upstream_extra_ca_pems = vec![up.ca_path.to_string_lossy().into_owned()];
     let proxy = NonoProxy::start(cfg, capture).unwrap();
     let agent = upstream::client(proxy.port(), NONCE, ca.cert_pem());

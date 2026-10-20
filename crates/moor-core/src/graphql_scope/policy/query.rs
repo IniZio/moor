@@ -1,4 +1,4 @@
-//! Allow-list for the text of a `search` query: only the Task repo and the qualifiers gh emits.
+//! Allow-list for the text of a `search` query: only the Box repo and the qualifiers gh emits.
 
 use super::super::{Reason, RepoRef};
 
@@ -62,7 +62,7 @@ fn qualifier_ok(key: &str, value: &str) -> bool {
     NAMED.contains(&key) && is_name(value)
 }
 
-/// Requires every token to be allowed and the query to name the Task repo exactly once.
+/// Requires every token to be allowed and the query to name the Box repo exactly once.
 pub(super) fn search_scope(query: &str, repo: &RepoRef) -> Result<(), Reason> {
     let want = format!("{}/{}", repo.owner, repo.name);
     let mut seen = false;

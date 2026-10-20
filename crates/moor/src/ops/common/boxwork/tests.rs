@@ -15,7 +15,7 @@ use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId};
 
 use super::{probe, BoxWork};
 use crate::cx::Cx;
-use crate::store::{BoxRow, TaskRow};
+use crate::store::{BoxRow, DriverRow};
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::{Reply, ScriptedProc};
 use crate::testing::surface::FakeSurface;
@@ -30,8 +30,8 @@ struct Rig {
     cx: Cx,
     driver: Arc<FakeDriver>,
     proc: Arc<ScriptedProc>,
-    task: TaskRow,
-    boxed: BoxRow,
+    row: BoxRow,
+    boxed: DriverRow,
 }
 
 fn result_path() -> BoxPath {
@@ -51,19 +51,19 @@ fn rig(dir: &Path, driver: FakeDriver) -> Rig {
     let got = driver
         .acquire(&AcquireReq {
             provider: ProviderId::new("p"),
-            task: BoxId::new(1),
+            box_id: BoxId::new(1),
             name: BoxName::parse_allow_bare("demo").unwrap(),
             class: None,
             nonce: "n".to_owned(),
             worktree: None,
         })
         .unwrap();
-    let (task, boxed) = rows(dir, got.handle);
+    let (row, boxed) = rows(dir, got.handle);
     let r = Rig {
         cx,
         driver,
         proc,
-        task,
+        row,
         boxed,
     };
     r.proc.on(
@@ -74,8 +74,8 @@ fn rig(dir: &Path, driver: FakeDriver) -> Rig {
     r
 }
 
-fn rows(dir: &Path, handle: BoxHandle) -> (TaskRow, BoxRow) {
-    let boxed = BoxRow {
+fn rows(dir: &Path, handle: BoxHandle) -> (BoxRow, DriverRow) {
+    let boxed = DriverRow {
         provider: ProviderId::new("p"),
         handle: Some(handle),
         state: BoxState::Ready,
@@ -85,7 +85,7 @@ fn rows(dir: &Path, handle: BoxHandle) -> (TaskRow, BoxRow) {
         sleep_reason: None,
         updated_at: Ts::from_millis(0),
     };
-    let task = TaskRow {
+    let row = BoxRow {
         id: BoxId::new(1),
         name: BoxName::parse_allow_bare("demo").unwrap(),
         repo: dir.display().to_string(),
@@ -109,7 +109,7 @@ fn rows(dir: &Path, handle: BoxHandle) -> (TaskRow, BoxRow) {
         updated_at: Ts::from_millis(0),
         boxed: Some(boxed.clone()),
     };
-    (task, boxed)
+    (row, boxed)
 }
 
 fn with_result(dir: &Path, text: &str) -> Rig {
@@ -124,7 +124,7 @@ fn first_exec(r: &Rig) -> ExecSpec {
 }
 
 fn run(r: &Rig) -> BoxWork {
-    probe(&r.cx, &r.task, &r.boxed)
+    probe(&r.cx, &r.row, &r.boxed)
 }
 
 fn is_unknown(w: &BoxWork) -> bool {
@@ -229,7 +229,7 @@ fn missing_handle_is_unknown() {
 fn missing_worktree_is_unknown() {
     let d = tempfile::tempdir().unwrap();
     let mut r = with_result(d.path(), "ahead=0 dirty=0");
-    r.task.worktree = None;
+    r.row.worktree = None;
     assert!(is_unknown(&run(&r)));
     assert!(r.driver.execs().is_empty());
 }
@@ -257,7 +257,7 @@ fn host_git_failure_is_unknown() {
         stderr: "fatal: not a git repository".to_owned(),
     };
     let (r, cx) = with_head_reply(d.path(), reply);
-    assert!(is_unknown(&probe(&cx, &r.task, &r.boxed)));
+    assert!(is_unknown(&probe(&cx, &r.row, &r.boxed)));
     assert!(r.driver.execs().is_empty());
 }
 
@@ -265,7 +265,7 @@ fn host_git_failure_is_unknown() {
 fn host_head_that_is_not_a_full_sha_is_unknown() {
     let d = tempfile::tempdir().unwrap();
     let (r, cx) = with_head_reply(d.path(), Reply::Ok("HEAD\n".to_owned()));
-    assert!(is_unknown(&probe(&cx, &r.task, &r.boxed)));
+    assert!(is_unknown(&probe(&cx, &r.row, &r.boxed)));
     assert!(r.driver.execs().is_empty());
 }
 
@@ -273,7 +273,7 @@ fn host_head_that_is_not_a_full_sha_is_unknown() {
 fn branch_name_base_is_skipped() {
     let d = tempfile::tempdir().unwrap();
     let mut r = rig(d.path(), FakeDriver::new());
-    r.task.base = Some("origin/main".to_owned());
+    r.row.base = Some("origin/main".to_owned());
     let _ = run(&r);
     let script = first_exec(&r).argv.concat();
     assert!(script.contains(HEAD));
@@ -284,7 +284,7 @@ fn branch_name_base_is_skipped() {
 fn sha_base_is_saved_too() {
     let d = tempfile::tempdir().unwrap();
     let mut r = rig(d.path(), FakeDriver::new());
-    r.task.base = Some(OTHER.to_owned());
+    r.row.base = Some(OTHER.to_owned());
     let _ = run(&r);
     let script = first_exec(&r).argv.concat();
     assert!(script.contains(HEAD));
@@ -324,7 +324,7 @@ fn probe_script_enters_the_workdir_first() {
 fn plan_then_read_matches_probe() {
     let d = tempfile::tempdir().unwrap();
     let r = with_result(d.path(), "ahead=2 dirty=0");
-    let plan = super::plan(&r.cx, &r.task, &r.boxed).unwrap();
+    let plan = super::plan(&r.cx, &r.row, &r.boxed).unwrap();
     assert_eq!(plan.steps.len(), 2);
     let mut none = std::iter::empty();
     assert_eq!(

@@ -6,17 +6,17 @@ use std::path::Path;
 use std::sync::Arc;
 
 use moor_core::domain::box_state::BoxLifecycleInput;
+use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::boxes::BoxInput;
-use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
+use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::SessionInput;
-use moor_core::domain::task::SetupOutcome;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
 use moor_core::{BoxId, BoxName, ProviderId, Warning};
 use sha2::{Digest, Sha256};
 
 use super::collect;
 use crate::cx::Cx;
-use crate::store::TaskRow;
+use crate::store::BoxRow;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
 use crate::testing::surface::FakeSurface;
@@ -56,12 +56,12 @@ fn admit(cx: &Cx, driver: &FakeDriver, dir: &Path) -> BoxId {
     let store = cx.store().unwrap();
     let name = BoxName::parse_allow_bare("t").unwrap();
     let id = store
-        .apply(Decision::insert(NewTask {
+        .apply(Decision::insert(NewBox {
             name: name.clone(),
             repo: "r".into(),
         }))
         .unwrap()
-        .task;
+        .box_id;
     let provider = ProviderId::new("p");
     let fields = Fields {
         box_provider: Field::Set(provider.clone()),
@@ -78,7 +78,7 @@ fn admit(cx: &Cx, driver: &FakeDriver, dir: &Path) -> BoxId {
     let got = driver
         .acquire(&AcquireReq {
             provider,
-            task: id,
+            box_id: id,
             name,
             class: None,
             nonce: "n".to_owned(),
@@ -95,8 +95,8 @@ fn admit(cx: &Cx, driver: &FakeDriver, dir: &Path) -> BoxId {
     id
 }
 
-fn row(f: &Fx) -> TaskRow {
-    f.cx.store().unwrap().task(f.id).unwrap().unwrap()
+fn row(f: &Fx) -> BoxRow {
+    f.cx.store().unwrap().box_row(f.id).unwrap().unwrap()
 }
 
 fn sha(bytes: &[u8]) -> String {

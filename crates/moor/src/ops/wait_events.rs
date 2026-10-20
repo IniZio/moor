@@ -66,7 +66,7 @@ pub(crate) fn run(cx: &Cx, req: &WaitEventsReq) -> Result<WaitEventsValue, Comma
             let short = batch.len() < BATCH;
             for event in batch {
                 cursor = event.row.id;
-                let name = watched.iter().find(|(id, _)| *id == event.row.task);
+                let name = watched.iter().find(|(id, _)| *id == event.row.box_id);
                 let kind_ok = req
                     .kinds
                     .as_ref()
@@ -96,7 +96,7 @@ pub(crate) fn run(cx: &Cx, req: &WaitEventsReq) -> Result<WaitEventsValue, Comma
     }
 }
 
-/// The latest Task of each name; an empty, unknown or closed list is refused.
+/// The latest Box of each name; an empty, unknown or closed list is refused.
 fn resolve<'a>(
     store: &Store,
     names: &'a [BoxName],
@@ -109,13 +109,13 @@ fn resolve<'a>(
     }
     let mut watched = Vec::new();
     for name in names {
-        let row = store.latest_task_by_name(name)?.ok_or_else(|| {
-            CommandError::new(ErrorKind::Failed, format!("no task {}", name.as_str()))
+        let row = store.latest_box_by_name(name)?.ok_or_else(|| {
+            CommandError::new(ErrorKind::Failed, format!("no Box {}", name.as_str()))
         })?;
         if !row.lifecycle.is_live() {
             return Err(CommandError::new(
                 ErrorKind::Failed,
-                format!("task {} is closed", name.as_str()),
+                format!("Box {} is closed", name.as_str()),
             ));
         }
         watched.push((row.id, name));
@@ -130,7 +130,7 @@ fn settle(
     id: BoxId,
     warned: &mut BTreeSet<BoxId>,
 ) -> Result<(), CommandError> {
-    let Some(row) = store.task(id)? else {
+    let Some(row) = store.box_row(id)? else {
         return Ok(());
     };
     let ready = row.boxed.as_ref().map(|b| b.state) == Some(BoxState::Ready);
@@ -143,7 +143,7 @@ fn settle(
         if warned.insert(id) {
             cx.warn(Warning {
                 code: "settle_failed".to_owned(),
-                message: format!("could not settle task {}: {}", id.get(), e.error),
+                message: format!("could not settle Box {}: {}", id.get(), e.error),
             });
         }
     }

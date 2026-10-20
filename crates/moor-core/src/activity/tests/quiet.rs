@@ -1,6 +1,6 @@
 //! Which readings may apply quiet.
 
-use super::{exited, fresh, obs, Case, TASKS};
+use super::{exited, fresh, obs, Case, BACKGROUND};
 use crate::activity::{
     may_apply_quiet, Activity, AgentState as S, HookKind as K, HookRead, PaneRead, PaneStatus as P,
     Source,
@@ -51,9 +51,9 @@ fn other_readings_do_not_apply() {
         &Case::new("starting", a(), obs(P::Idle, "")).started(5)
     ));
     assert!(!quiet(&Case::new(
-        "tasks override",
+        "background override",
         fresh(K::Idle),
-        obs(P::Idle, TASKS)
+        obs(P::Idle, BACKGROUND)
     )));
 }
 

@@ -325,8 +325,8 @@ fn rate_limited_post_fails_with_a_plain_reason() {
 }
 
 #[test]
-fn agent_session_is_set_by_either_the_registered_row_or_the_task() {
-    // After start: session row unregistered, the hook already set the task's id.
+fn agent_session_is_set_by_either_the_registered_launch_or_the_session() {
+    // After start: launch unregistered, the hook already set the session's id.
     assert!(agent_session_set(None, Some("abc")));
     assert!(agent_session_set(Some(""), Some("abc")));
     assert!(agent_session_set(Some("abc"), None));

@@ -5,9 +5,9 @@
 pub enum NameError {
     /// The Box name is not `<repo>/<label>` (or a bare segment where allowed).
     #[error(
-        "invalid task name `{0}`: use <repo>/<label>, each part 1-40 lowercase letters, digits or '-', not starting with '-' and without '--'"
+        "invalid Box name `{0}`: use <repo>/<label>, each part 1-40 lowercase letters, digits or '-', not starting with '-' and without '--'"
     )]
-    TaskName(String),
+    BoxName(String),
     /// The sha is not 4-40 hex chars.
     #[error("invalid sha `{0}`: use 4-40 hex characters")]
     Sha(String),
@@ -31,9 +31,6 @@ pub fn valid_repo_name(name: &str) -> bool {
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct BoxName(String);
 
-/// Old name of [`BoxName`], kept while callers move over.
-pub type TaskName = BoxName;
-
 impl BoxName {
     /// Validates and wraps a strict Box name, `<repo>/<label>`.
     ///
@@ -41,7 +38,7 @@ impl BoxName {
     /// with `-` and free of `--`, and the repo part is also a valid repo name.
     ///
     /// # Errors
-    /// Returns [`NameError::TaskName`] when `s` breaks the name rule.
+    /// Returns [`NameError::BoxName`] when `s` breaks the name rule.
     pub fn parse(s: &str) -> Result<Self, NameError> {
         match s.split_once('/') {
             Some((repo, label))
@@ -51,7 +48,7 @@ impl BoxName {
             {
                 Ok(Self(s.to_owned()))
             }
-            _ => Err(NameError::TaskName(s.to_owned())),
+            _ => Err(NameError::BoxName(s.to_owned())),
         }
     }
 
@@ -63,7 +60,7 @@ impl BoxName {
     /// containing `/` must pass the strict rule; it is never retried as bare.
     ///
     /// # Errors
-    /// Returns [`NameError::TaskName`] when `s` is neither a strict name nor a
+    /// Returns [`NameError::BoxName`] when `s` is neither a strict name nor a
     /// bare segment.
     pub fn parse_allow_bare(s: &str) -> Result<Self, NameError> {
         if s.contains('/') {
@@ -71,7 +68,7 @@ impl BoxName {
         } else if valid_segment(s) {
             Ok(Self(s.to_owned()))
         } else {
-            Err(NameError::TaskName(s.to_owned()))
+            Err(NameError::BoxName(s.to_owned()))
         }
     }
 
@@ -116,7 +113,7 @@ fn valid_strict_segment(s: &str) -> bool {
 /// with the store's next schema.
 ///
 /// # Errors
-/// Returns [`NameError::TaskName`] when the result is not a valid name.
+/// Returns [`NameError::BoxName`] when the result is not a valid name.
 pub fn next_box_name(repo: &str, used: &[u64]) -> Result<BoxName, NameError> {
     let next = used
         .iter()
@@ -145,9 +142,6 @@ impl<'de> serde::Deserialize<'de> for BoxName {
 )]
 #[serde(transparent)]
 pub struct BoxId(i64);
-
-/// Old name of [`BoxId`], kept while callers move over.
-pub type TaskId = BoxId;
 
 impl BoxId {
     /// Wraps a raw id.

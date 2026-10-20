@@ -2,7 +2,7 @@ use std::path::Path;
 
 use moor_core::seam::proc::Tool;
 use moor_core::seam::surface::Surface;
-use moor_core::TaskName;
+use moor_core::BoxName;
 
 use super::moor_yaml::script_base_yaml;
 use super::setup::{execs, is_setup_line, setup_execs};
@@ -42,7 +42,7 @@ fn a_fetched_default_branch_is_the_base() {
     let v = run(&w.cx, &req("demo")).unwrap();
     assert!(fetched(&w));
     assert_eq!(w.surface.bases(), [Some("c643cc8a".to_owned())]);
-    assert_eq!(v.task.base.as_deref(), Some("c643cc8a"));
+    assert_eq!(v.boxed.base.as_deref(), Some("c643cc8a"));
     assert!(w.cx.take_warnings().is_empty());
 }
 
@@ -61,7 +61,7 @@ fn a_failed_fetch_falls_back_to_the_local_branch_with_a_warning() {
     );
     let v = run(&w.cx, &req("demo")).unwrap();
     assert_eq!(w.surface.bases(), [None]);
-    assert_eq!(v.task.base.as_deref(), Some("abc123"));
+    assert_eq!(v.boxed.base.as_deref(), Some("abc123"));
     let warnings = w.cx.take_warnings();
     assert!(
         warnings.iter().any(|x| x.code == "fetch_failed"),
@@ -80,7 +80,7 @@ fn an_explicit_base_is_not_fetched() {
     let v = run(&w.cx, &r).unwrap();
     assert!(!fetched(&w));
     assert_eq!(w.surface.bases(), [Some(SHA.to_owned())]);
-    assert_eq!(v.task.base.as_deref(), Some(SHA));
+    assert_eq!(v.boxed.base.as_deref(), Some(SHA));
 }
 
 #[test]
@@ -89,7 +89,7 @@ fn a_repo_without_a_remote_default_is_not_fetched() {
     let v = run(&w.cx, &req("demo")).unwrap();
     assert!(!fetched(&w));
     assert_eq!(w.surface.bases(), [None]);
-    assert_eq!(v.task.base.as_deref(), Some("abc123"));
+    assert_eq!(v.boxed.base.as_deref(), Some("abc123"));
     assert!(w.cx.take_warnings().is_empty());
 }
 
@@ -188,7 +188,7 @@ fn a_bound_worktree_keeps_its_own_file_over_a_different_base_copy() {
         .surface
         .create_worktree(
             Path::new("/repo"),
-            &TaskName::parse("repo/pre").unwrap(),
+            &BoxName::parse("repo/pre").unwrap(),
             None,
         )
         .unwrap();

@@ -1,7 +1,7 @@
 //! Pane and multiplexer readings.
 
 use super::said;
-use super::{asking, exited, fresh, obs, waiting, Case, SILENT, TASKS};
+use super::{asking, exited, fresh, obs, waiting, Case, BACKGROUND, SILENT};
 use crate::activity::menu_options;
 use crate::activity::Source as Src;
 use crate::activity::{AgentState as S, HookKind as K, HookRead, PaneRead, PaneStatus as P};
@@ -34,8 +34,9 @@ fn absent_hook_uses_herdr_status() {
 #[test]
 fn absent_hook_reads_the_pane_text() {
     let a = || HookRead::Absent;
-    Case::new("idle with tasks", a(), obs(P::Idle, TASKS)).expect(S::Working, Src::Pane);
-    Case::new("unknown with tasks", a(), obs(P::Unknown, TASKS)).expect(S::Working, Src::Pane);
+    Case::new("idle with background", a(), obs(P::Idle, BACKGROUND)).expect(S::Working, Src::Pane);
+    Case::new("unknown with background", a(), obs(P::Unknown, BACKGROUND))
+        .expect(S::Working, Src::Pane);
     Case::new("unknown without", a(), obs(P::Unknown, "hello")).expect(S::Unknown, Src::Pane);
     Case::new("no pane", a(), PaneRead::Absent).expect(S::Unknown, Src::Pane);
     Case::new("pane timed out", a(), PaneRead::TimedOut).expect(S::Unknown, Src::Timeout);

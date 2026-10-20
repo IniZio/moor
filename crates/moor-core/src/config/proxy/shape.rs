@@ -3,7 +3,7 @@
 /// Shortest hex segment treated as a git object id (abbreviated oids start at 7).
 const MIN_OID_LEN: usize = 7;
 
-/// Slot for the Task repo as `owner/name`.
+/// Slot for the Box repo as `owner/name`.
 const REPO_SLOT: &str = "{repo}";
 
 /// Path words followed by a name that is free text: it becomes `*`.
@@ -26,7 +26,7 @@ const REF_TAILS: &[&str] = &["refs", "ref", "matching-refs"];
 /// Templates a request as an `allow` entry: `METHOD /path`.
 ///
 /// The path is normalised as the proxy matcher does (percent-decoded, empty
-/// and `.` segments dropped, `..` resolved). The Task repo's `owner/name`
+/// and `.` segments dropped, `..` resolved). The Box repo's `owner/name`
 /// after `repos` becomes `{repo}`; another repo's owner and name stay literal.
 /// Numeric and hex object-id segments become `*`, as does the name after a
 /// name slot such as `workflows`. Text after a free-text word such as
@@ -136,7 +136,7 @@ fn push_ref_tail(out: &mut String, rest: &[&str]) {
     }
 }
 
-/// Appends the owner and name following `repos` (`{repo}` for the Task repo)
+/// Appends the owner and name following `repos` (`{repo}` for the Box repo)
 /// and returns how many segments it used.
 fn push_repo(out: &mut String, rest: &[&str], (owner, name): (&str, &str)) -> Option<usize> {
     let Some(&o) = rest.first() else {

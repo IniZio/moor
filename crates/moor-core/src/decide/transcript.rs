@@ -12,7 +12,7 @@ use crate::name::BoxId;
 pub enum Trigger {
     /// The agent was started again.
     Relaunch,
-    /// The Task was closed.
+    /// The Box was closed.
     Close,
     /// The session was ended on request, leaving the Box open.
     End,
@@ -43,10 +43,10 @@ pub fn next_number<'a>(kinds: impl IntoIterator<Item = &'a str>) -> usize {
         + 1
 }
 
-/// The archive path under the state directory: `transcripts/<task>/<session>-<n>.tgz`.
+/// The archive path under the state directory: `transcripts/<box>/<session>-<n>.tgz`.
 #[must_use]
-pub fn relative_path(task: BoxId, session: i64, n: usize) -> String {
-    format!("transcripts/{}/{session}-{n}.tgz", task.get())
+pub fn relative_path(box_id: BoxId, session: i64, n: usize) -> String {
+    format!("transcripts/{}/{session}-{n}.tgz", box_id.get())
 }
 
 /// Whether an archive with `digest` repeats the one already stored for the session.

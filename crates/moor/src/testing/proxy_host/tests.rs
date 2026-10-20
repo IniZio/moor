@@ -9,10 +9,10 @@ use super::{FakeProxyHost, ProxyHostCall, FAKE_BOX_PORT, FAKE_NONCE};
 
 fn spec(id: i64) -> ProxySpec {
     ProxySpec {
-        task: BoxId::new(id),
+        box_id: BoxId::new(id),
         box_handle: None,
         host_cwd: PathBuf::from("/work"),
-        task_repo: None,
+        box_repo: None,
         rules: Vec::new(),
     }
 }

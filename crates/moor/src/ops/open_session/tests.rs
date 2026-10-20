@@ -4,10 +4,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use moor_core::domain::box_state::BoxLifecycleInput;
+use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::boxes::BoxInput;
-use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
+use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::{SessionInput, SessionState};
-use moor_core::domain::task::SetupOutcome;
 use moor_core::request::OpenSessionReq;
 use moor_core::seam::driver::{AcquireReq, Driver};
 use moor_core::seam::engine::{EngineError, LaunchPrompt};
@@ -28,7 +28,7 @@ struct Fx {
     id: BoxId,
 }
 
-/// Task `t` with a ready Box whose first Session ended, or is still live when `live`.
+/// Box `t` with a ready machine whose first Session ended, or is still live when `live`.
 fn fx(engine: FakeEngine, live: bool) -> Fx {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(FakeDriver::new());
@@ -48,7 +48,7 @@ fn fx(engine: FakeEngine, live: bool) -> Fx {
         proc,
     )
     .with_engine(engine.clone());
-    let id = ready_task(&cx, &driver);
+    let id = ready_box(&cx, &driver);
     let store = cx.store().unwrap();
     store.begin_session(id, "s-1", Some("p-0")).unwrap();
     if !live {
@@ -63,17 +63,17 @@ fn fx(engine: FakeEngine, live: bool) -> Fx {
     }
 }
 
-/// Task `t` with a ready Box.
-fn ready_task(cx: &Cx, driver: &FakeDriver) -> BoxId {
+/// Box `t` with a ready machine.
+fn ready_box(cx: &Cx, driver: &FakeDriver) -> BoxId {
     let store = cx.store().unwrap();
     let name = BoxName::parse_allow_bare("t").unwrap();
     let id = store
-        .apply(Decision::insert(NewTask {
+        .apply(Decision::insert(NewBox {
             name: name.clone(),
             repo: "r".into(),
         }))
         .unwrap()
-        .task;
+        .box_id;
     let provider = ProviderId::new("p");
     let fields = Fields {
         box_provider: Field::Set(provider.clone()),
@@ -89,7 +89,7 @@ fn ready_task(cx: &Cx, driver: &FakeDriver) -> BoxId {
     let got = driver
         .acquire(&AcquireReq {
             provider,
-            task: id,
+            box_id: id,
             name,
             class: None,
             nonce: "n".to_owned(),
@@ -115,7 +115,7 @@ fn ready_task(cx: &Cx, driver: &FakeDriver) -> BoxId {
 
 fn req() -> OpenSessionReq {
     OpenSessionReq {
-        task: "t".into(),
+        box_name: "t".into(),
         seed: "pick up here".into(),
         parent: None,
     }
@@ -135,7 +135,7 @@ fn a_ready_box_opens_the_next_session_seeded_with_the_text() {
     assert_eq!(sessions.len(), 2);
     let next = sessions.get(1).unwrap();
     assert_eq!(
-        (v.task.as_str(), v.session, v.ordinal, v.pane.as_deref()),
+        (v.box_name.as_str(), v.session, v.ordinal, v.pane.as_deref()),
         ("t", next.id, 2, Some("p-1"))
     );
     assert_eq!(next.state, SessionState::Working);
@@ -210,12 +210,12 @@ fn a_failed_launch_records_the_failure_and_ends_the_new_session() {
 }
 
 #[test]
-fn an_unknown_task_is_not_found() {
+fn an_unknown_box_is_not_found() {
     let f = fx(FakeEngine::new(), false);
     let err = run(
         &f.cx,
         &OpenSessionReq {
-            task: "x".into(),
+            box_name: "x".into(),
             seed: String::new(),
             parent: None,
         },

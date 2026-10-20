@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use moor_core::domain::decision::{Decision, NewTask};
+use moor_core::domain::decision::{Decision, NewBox};
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::seam::rng::Rng;
 use moor_core::secret::Secret;
@@ -29,13 +29,13 @@ fn open(dir: &Path) -> (Store, Arc<FakeClock>) {
     (store, clock)
 }
 
-/// Insert a task by name.
+/// Insert a box by name.
 fn add(store: &Store, name: &str) -> BoxId {
-    let nt = NewTask {
+    let nt = NewBox {
         name: BoxName::parse_allow_bare(name).unwrap(),
         repo: "r".into(),
     };
-    store.apply(Decision::insert(nt)).unwrap().task
+    store.apply(Decision::insert(nt)).unwrap().box_id
 }
 
 /// A secret holding `bytes`.
@@ -66,7 +66,7 @@ impl Rng for Scripted {
     }
 }
 
-/// A store with one task that has a reserved proxy row.
+/// A store with one box that has a reserved proxy row.
 fn reserved(dir: &Path) -> (Store, Arc<FakeClock>, BoxId) {
     let (store, clock) = open(dir);
     let id = add(&store, "t");
@@ -77,7 +77,7 @@ fn reserved(dir: &Path) -> (Store, Arc<FakeClock>, BoxId) {
     (store, clock, id)
 }
 
-/// Kinds and payloads of the task's events, ascending.
+/// Kinds and payloads of the box's events, ascending.
 fn events_of(store: &Store, id: BoxId, kind: &str) -> Vec<serde_json::Value> {
     store
         .events(id, 100)
@@ -102,7 +102,7 @@ fn reserve_returns_port_in_range_and_stores_nonce_unready() {
     };
     assert!((BOX_PORT_MIN..=BOX_PORT_MAX).contains(&port), "{port}");
     let row = store.proxy(id).unwrap().unwrap();
-    assert_eq!(row.task, id);
+    assert_eq!(row.box_id, id);
     assert_eq!(row.box_port, port);
     assert_eq!(row.nonce.expose(), NONCE);
     assert!(!row.ready);
@@ -110,7 +110,7 @@ fn reserve_returns_port_in_range_and_stores_nonce_unready() {
 }
 
 #[test]
-fn reserve_skips_port_held_by_another_task() {
+fn reserve_skips_port_held_by_another_box() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let a = add(&store, "a");
@@ -166,7 +166,7 @@ fn rereserve_refuses_while_lease_is_live() {
 }
 
 #[test]
-fn reserve_on_unknown_task_is_not_found() {
+fn reserve_on_unknown_box_is_not_found() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let id = add(&store, "t");

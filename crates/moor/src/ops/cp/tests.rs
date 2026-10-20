@@ -5,10 +5,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::domain::box_state::BoxLifecycleInput;
+use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::boxes::{BoxInput, BoxState};
-use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
+use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::SessionInput;
-use moor_core::domain::task::SetupOutcome;
 use moor_core::name::BoxPath;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
 use moor_core::{BoxHandle, BoxId, BoxName, CpReq, ErrorKind, ProviderId};
@@ -30,7 +30,7 @@ struct Fx {
     id: BoxId,
 }
 
-/// Task `t`, inserted and admitted; `ready` also gives it a live Box.
+/// Box `t`, inserted and admitted; `ready` also gives it a live machine.
 fn fx_with(driver: FakeDriver, ready: bool) -> Fx {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(driver);
@@ -44,12 +44,12 @@ fn fx_with(driver: FakeDriver, ready: bool) -> Fx {
     let store = cx.store().unwrap();
     let name = BoxName::parse_allow_bare("t").unwrap();
     let id = store
-        .apply(Decision::insert(NewTask {
+        .apply(Decision::insert(NewBox {
             name: name.clone(),
             repo: "r".into(),
         }))
         .unwrap()
-        .task;
+        .box_id;
     let provider = ProviderId::new("p");
     let d = if ready {
         let fields = Fields {
@@ -69,7 +69,7 @@ fn fx_with(driver: FakeDriver, ready: bool) -> Fx {
         let got = driver
             .acquire(&AcquireReq {
                 provider,
-                task: id,
+                box_id: id,
                 name,
                 class: None,
                 nonce: "n".to_owned(),
@@ -98,13 +98,13 @@ fn fx() -> Fx {
 
 fn req(src: &str, dest: &str) -> CpReq {
     CpReq {
-        task: BoxName::parse_allow_bare("t").unwrap(),
+        box_name: BoxName::parse_allow_bare("t").unwrap(),
         src: src.into(),
         dest: dest.into(),
     }
 }
 
-/// Kinds of the events recorded for the task.
+/// Kinds of the events recorded for the Box.
 fn kinds(f: &Fx) -> Vec<String> {
     let rows = f.cx.store().unwrap().events(f.id, 100).unwrap();
     rows.into_iter().map(|e| e.kind).collect()
@@ -166,7 +166,7 @@ fn relative_destination_is_absolute_from_the_callers_cwd() {
 }
 
 #[test]
-fn copy_runs_from_the_task_worktree_while_the_destination_stays_under_the_callers_cwd() {
+fn copy_runs_from_the_box_worktree_while_the_destination_stays_under_the_callers_cwd() {
     let f = fx();
     run(&f.cx, &req("a", "out/a.txt")).unwrap();
     let (_, _, to, host_cwd) = first_copy(&f);
@@ -185,10 +185,10 @@ fn absolute_destination_is_kept() {
 }
 
 #[test]
-fn unknown_task_is_refused_without_a_copy() {
+fn unknown_box_is_refused_without_a_copy() {
     let f = fx();
     let mut r = req("a", "a");
-    r.task = BoxName::parse_allow_bare("nope").unwrap();
+    r.box_name = BoxName::parse_allow_bare("nope").unwrap();
     run(&f.cx, &r).unwrap_err();
     assert!(f.driver.copies().is_empty());
     assert_eq!(copied(&f), 0);
@@ -215,7 +215,7 @@ fn gone_box_is_refused_without_a_copy() {
 }
 
 #[test]
-fn task_waiting_for_a_box_is_refused_without_a_copy() {
+fn box_waiting_for_a_box_is_refused_without_a_copy() {
     let f = fx_with(FakeDriver::new(), false);
     let err = run(&f.cx, &req("a", "a")).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Refused);
@@ -268,7 +268,7 @@ fn copy_never_syncs() {
 }
 
 #[test]
-fn closed_task_with_a_release_failed_box_is_refused_without_a_copy() {
+fn closed_box_with_a_release_failed_box_is_refused_without_a_copy() {
     let f = fx();
     let store = f.cx.store().unwrap();
     let d = Decision::new(f.id).box_input(BoxInput::ReleaseErr { cause: "x".into() });
@@ -322,7 +322,7 @@ fn wake_calls(f: &Fx) -> usize {
 fn box_state(f: &Fx) -> BoxState {
     f.cx.store()
         .unwrap()
-        .task(f.id)
+        .box_row(f.id)
         .unwrap()
         .unwrap()
         .boxed

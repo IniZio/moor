@@ -1,6 +1,6 @@
 //! Tests for name validation.
 
-use super::{next_box_name, BoxHandle, BoxId, BoxName, BoxPath, SessionId, Sha, TaskId, TaskName};
+use super::{next_box_name, BoxHandle, BoxId, BoxName, BoxPath, SessionId, Sha};
 
 /// Valid Box names parse.
 #[test]
@@ -67,7 +67,7 @@ fn box_id_and_box_handle_serde_shape() {
 
 /// A Box name is a bare JSON string and still validates on the way in.
 #[test]
-fn box_name_wire_matches_task_name() {
+fn box_name_wire_matches_box_name() {
     let name = BoxName::parse_allow_bare("fix-bug-9").unwrap();
     assert_eq!(serde_json::to_string(&name).unwrap(), "\"fix-bug-9\"");
     assert_eq!(
@@ -92,14 +92,6 @@ fn session_id_wire_is_bare_integer() {
     assert_eq!(serde_json::to_string(&id).unwrap(), "7");
     assert_eq!(serde_json::from_str::<SessionId>("7").unwrap(), id);
     assert_eq!(id.get(), 7);
-}
-
-/// The old Task names are aliases of the Box types.
-#[test]
-fn task_aliases_are_box_types() {
-    let name: TaskName = BoxName::parse_allow_bare("a").unwrap();
-    let _: BoxName = name;
-    assert_eq!(TaskId::new(3), BoxId::new(3));
 }
 
 /// Strict names are `<repo>/<label>`.

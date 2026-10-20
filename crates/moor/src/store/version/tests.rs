@@ -12,7 +12,7 @@ use super::retire_v1;
 use crate::store::{Store, StoreError};
 use crate::testing::clock::FakeClock;
 
-/// Creates a database at `dir/moor.db` holding a `meta` row and a `tasks` table.
+/// Creates a database at `dir/moor.db` holding a `meta` row and a `boxes` table.
 fn make_db(dir: &Path, version: &str) -> PathBuf {
     let path = dir.join("moor.db");
     let conn = Connection::open(&path).unwrap();
@@ -23,7 +23,7 @@ fn make_db(dir: &Path, version: &str) -> PathBuf {
         [version],
     )
     .unwrap();
-    conn.execute_batch("CREATE TABLE tasks (id INTEGER PRIMARY KEY);")
+    conn.execute_batch("CREATE TABLE boxes (id INTEGER PRIMARY KEY);")
         .unwrap();
     path
 }
@@ -70,7 +70,7 @@ fn v1_database_is_moved_to_backup() {
     let db = make_db(dir.path(), "1");
     let bak = retire(&db).unwrap().unwrap();
     assert_eq!(bak, suffixed(&db, ".v1.bak"));
-    assert!(has_table(&bak, "tasks"));
+    assert!(has_table(&bak, "boxes"));
     assert!(!db.exists());
     assert!(!suffixed(&db, "-wal").exists());
     assert!(!suffixed(&db, "-shm").exists());
@@ -95,7 +95,7 @@ fn other_version_is_left_alone() {
     let dir = tempfile::tempdir().unwrap();
     let db = make_db(dir.path(), "7");
     assert_eq!(retire(&db).unwrap(), None);
-    assert!(has_table(&db, "tasks"));
+    assert!(has_table(&db, "boxes"));
     assert!(!suffixed(&db, ".v1.bak").exists());
 }
 
@@ -104,7 +104,7 @@ fn current_version_is_left_alone() {
     let dir = tempfile::tempdir().unwrap();
     let db = make_db(dir.path(), "2");
     assert_eq!(retire(&db).unwrap(), None);
-    assert!(has_table(&db, "tasks"));
+    assert!(has_table(&db, "boxes"));
 }
 
 #[test]
@@ -124,7 +124,7 @@ fn running_controller_refuses_and_keeps_database() {
         matches!(&err, StoreError::ControllerRunning { pid } if pid == "1"),
         "{err:?}"
     );
-    assert!(has_table(&db, "tasks"));
+    assert!(has_table(&db, "boxes"));
     assert!(!suffixed(&db, ".v1.bak").exists());
 }
 
@@ -152,17 +152,17 @@ fn make_wal_db(dir: &Path, rows: i64) -> (PathBuf, Connection) {
     let conn = Connection::open(&db).unwrap();
     conn.pragma_update(None, "journal_mode", "WAL").unwrap();
     for id in 1..=rows {
-        conn.execute("INSERT INTO tasks (id) VALUES (?1)", [id])
+        conn.execute("INSERT INTO boxes (id) VALUES (?1)", [id])
             .unwrap();
     }
     (db, conn)
 }
 
-/// Number of rows in `tasks`.
-fn task_count(db: &Path) -> i64 {
+/// Number of rows in `boxes`.
+fn box_count(db: &Path) -> i64 {
     Connection::open(db)
         .unwrap()
-        .query_row("SELECT count(*) FROM tasks", [], |r| r.get(0))
+        .query_row("SELECT count(*) FROM boxes", [], |r| r.get(0))
         .unwrap()
 }
 
@@ -172,11 +172,11 @@ fn busy_reader_refuses_and_keeps_database_readable() {
     let (db, writer) = make_wal_db(dir.path(), 3);
     let reader = Connection::open(&db).unwrap();
     reader
-        .execute_batch("BEGIN; SELECT count(*) FROM tasks;")
+        .execute_batch("BEGIN; SELECT count(*) FROM boxes;")
         .unwrap();
     for id in 10..15 {
         writer
-            .execute("INSERT INTO tasks (id) VALUES (?1)", [id])
+            .execute("INSERT INTO boxes (id) VALUES (?1)", [id])
             .unwrap();
     }
     let err = retire(&db).unwrap_err();
@@ -185,7 +185,7 @@ fn busy_reader_refuses_and_keeps_database_readable() {
     reader.execute_batch("COMMIT").unwrap();
     drop(reader);
     drop(writer);
-    assert_eq!(task_count(&db), 8);
+    assert_eq!(box_count(&db), 8);
 }
 
 #[test]
@@ -194,7 +194,7 @@ fn stale_controller_lock_does_not_block_retire() {
     let db = make_db(dir.path(), "1");
     std::fs::write(dir.path().join("controller.sock.lock"), "999999\nsock").unwrap();
     let bak = retire(&db).unwrap().unwrap();
-    assert!(has_table(&bak, "tasks"));
+    assert!(has_table(&bak, "boxes"));
 }
 
 #[test]
@@ -219,7 +219,7 @@ fn concurrent_opens_keep_one_backup_and_a_v2_store() {
         let bak = suffixed(&db, ".v1.bak");
         assert!(bak.exists());
         assert!(!suffixed(&db, ".v1.bak.1").exists());
-        assert!(has_table(&bak, "tasks"));
+        assert!(has_table(&bak, "boxes"));
         let version: String = Connection::open(&db)
             .unwrap()
             .query_row("SELECT v FROM meta WHERE k = 'schema_version'", [], |r| {
@@ -241,5 +241,5 @@ fn wal_and_shm_move_beside_the_backup() {
     assert!(!suffixed(&db, "-wal").exists());
     assert!(!suffixed(&db, "-shm").exists());
     drop(idle);
-    assert_eq!(task_count(&bak), 4);
+    assert_eq!(box_count(&bak), 4);
 }

@@ -1,6 +1,6 @@
-//! Per-Task interception CA that survives a proxy restart.
+//! Per-Box interception CA that survives a proxy restart.
 //!
-//! The Box trusts the certificate for the Task's whole life, so the CA is
+//! The machine trusts the certificate for the Box's whole life, so the CA is
 //! persisted under the state directory and reloaded rather than regenerated.
 //! The private key stays on the host and is never logged or put in an error.
 
@@ -22,22 +22,22 @@ const CERT_FILE: &str = "ca.pem";
 /// How long a generated CA certificate is valid.
 const VALIDITY: Duration = Duration::from_hours(90 * 24);
 
-/// The Task's interception CA. The key never leaves the host and is never
+/// The Box's interception CA. The key never leaves the host and is never
 /// shown by `Debug`.
-pub(crate) struct TaskCa {
+pub(crate) struct BoxCa {
     /// PKCS#8 DER private key, zeroized on drop.
     key_der: Zeroizing<Vec<u8>>,
     /// PEM certificate (public).
     cert_pem: String,
 }
 
-impl std::fmt::Debug for TaskCa {
+impl std::fmt::Debug for BoxCa {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("TaskCa(..)")
+        f.write_str("BoxCa(..)")
     }
 }
 
-impl TaskCa {
+impl BoxCa {
     /// The PEM certificate the Box trusts.
     pub(crate) fn cert_pem(&self) -> &str {
         &self.cert_pem
@@ -58,39 +58,39 @@ impl TaskCa {
     }
 }
 
-/// `<state_dir>/proxy/<task>/`, where the Task's CA lives.
-pub(crate) fn ca_dir(state_dir: &Path, task: BoxId) -> PathBuf {
-    state_dir.join("proxy").join(task.get().to_string())
+/// `<state_dir>/proxy/<box_id>/`, where the Box's CA lives.
+pub(crate) fn ca_dir(state_dir: &Path, box_id: BoxId) -> PathBuf {
+    state_dir.join("proxy").join(box_id.get().to_string())
 }
 
-/// Path of the Task's CA certificate, which the Box trusts.
-pub(crate) fn cert_path(state_dir: &Path, task: BoxId) -> PathBuf {
-    ca_dir(state_dir, task).join(CERT_FILE)
+/// Path of the Box's CA certificate, which the machine trusts.
+pub(crate) fn cert_path(state_dir: &Path, box_id: BoxId) -> PathBuf {
+    ca_dir(state_dir, box_id).join(CERT_FILE)
 }
 
-/// Loads the Task's CA, or generates and persists one when neither file
+/// Loads the Box's CA, or generates and persists one when neither file
 /// exists. Directory and files are owner-only; looser existing modes are
 /// tightened.
 ///
 /// A half-present or unparsable CA is an error naming the file: the Box
 /// trusts the old certificate, so a silent replacement would break it.
-pub(crate) fn load_or_create(state_dir: &Path, task: BoxId) -> std::io::Result<TaskCa> {
-    let dir = ca_dir(state_dir, task);
+pub(crate) fn load_or_create(state_dir: &Path, box_id: BoxId) -> std::io::Result<BoxCa> {
+    let dir = ca_dir(state_dir, box_id);
     DirBuilder::new().recursive(true).mode(0o700).create(&dir)?;
     std::fs::set_permissions(&dir, Permissions::from_mode(0o700))?;
     let key_path = dir.join(KEY_FILE);
     let cert_path = dir.join(CERT_FILE);
     match (key_path.exists(), cert_path.exists()) {
-        (false, false) => create(&dir, &key_path, &cert_path, task),
+        (false, false) => create(&dir, &key_path, &cert_path, box_id),
         (true, true) => load(&key_path, &cert_path),
         (true, false) => Err(missing(&cert_path)),
         (false, true) => Err(missing(&key_path)),
     }
 }
 
-/// Removes the Task's CA directory and everything in it; Ok if absent.
-pub(crate) fn remove(state_dir: &Path, task: BoxId) -> std::io::Result<()> {
-    match std::fs::remove_dir_all(ca_dir(state_dir, task)) {
+/// Removes the Box's CA directory and everything in it; Ok if absent.
+pub(crate) fn remove(state_dir: &Path, box_id: BoxId) -> std::io::Result<()> {
+    match std::fs::remove_dir_all(ca_dir(state_dir, box_id)) {
         Err(e) if e.kind() == ErrorKind::NotFound => Ok(()),
         other => other,
     }
@@ -113,20 +113,20 @@ fn invalid(path: &Path) -> Error {
 }
 
 /// Generates a CA and writes cert and key atomically, key first.
-fn create(dir: &Path, key_path: &Path, cert_path: &Path, task: BoxId) -> std::io::Result<TaskCa> {
-    let cn = format!("moor task {}", task.get());
+fn create(dir: &Path, key_path: &Path, cert_path: &Path, box_id: BoxId) -> std::io::Result<BoxCa> {
+    let cn = format!("moor box {}", box_id.get());
     let ca = EphemeralCa::generate_with_cn(&cn, VALIDITY)
         .map_err(|_| Error::other("proxy CA generation failed"))?;
     write_private(dir, key_path, ca.key_pem().as_bytes())?;
     write_private(dir, cert_path, ca.cert_pem().as_bytes())?;
-    Ok(TaskCa {
+    Ok(BoxCa {
         key_der: Zeroizing::new(ca.key_der().to_vec()),
         cert_pem: ca.cert_pem().to_owned(),
     })
 }
 
 /// Reads both files and checks that the key matches the certificate.
-fn load(key_path: &Path, cert_path: &Path) -> std::io::Result<TaskCa> {
+fn load(key_path: &Path, cert_path: &Path) -> std::io::Result<BoxCa> {
     let key_pem = Zeroizing::new(std::fs::read_to_string(key_path).map_err(|_| invalid(key_path))?);
     let cert_pem = std::fs::read_to_string(cert_path).map_err(|_| invalid(cert_path))?;
     let combined = Zeroizing::new(format!("{}\n{cert_pem}", key_pem.as_str()));
@@ -135,7 +135,7 @@ fn load(key_path: &Path, cert_path: &Path) -> std::io::Result<TaskCa> {
     EphemeralCa::from_existing(&key_der, &cert_pem).map_err(|_| invalid(key_path))?;
     std::fs::set_permissions(key_path, Permissions::from_mode(0o600))?;
     std::fs::set_permissions(cert_path, Permissions::from_mode(0o600))?;
-    Ok(TaskCa { key_der, cert_pem })
+    Ok(BoxCa { key_der, cert_pem })
 }
 
 /// Writes `bytes` to `path` via a 0600 temp file and a rename, so the file

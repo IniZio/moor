@@ -111,7 +111,7 @@ fn name(s: &str) -> BoxName {
 
 fn steer(text: Option<&str>, menu: Option<u32>) -> Request {
     Request::Steer(SteerReq {
-        task: name("t"),
+        box_name: name("t"),
         text: text.map(str::to_owned),
         menu,
     })
@@ -122,24 +122,26 @@ fn each_action_makes_one_request_and_returns_the_envelope() {
     let cases = [
         (
             "/steer",
-            json!({"task": "t", "text": "go"}),
+            json!({"box": "t", "text": "go"}),
             steer(Some("go"), None),
         ),
         (
             "/answer",
-            json!({"task": "t", "option": 2}),
+            json!({"box": "t", "option": 2}),
             steer(None, Some(2)),
         ),
         (
             "/end-session",
-            json!({"task": "t"}),
-            Request::EndSession(EndSessionReq { task: "t".into() }),
+            json!({"box": "t"}),
+            Request::EndSession(EndSessionReq {
+                box_name: "t".into(),
+            }),
         ),
         (
             "/close",
-            json!({"task": "t"}),
+            json!({"box": "t"}),
             Request::Close(CloseReq {
-                task: name("t"),
+                box_name: name("t"),
                 force: false,
                 trust_moor_yaml: false,
             }),
@@ -169,7 +171,7 @@ fn refusal_envelope_passes_through_unchanged() {
     );
     let dir = tempfile::tempdir().unwrap();
     let (web, seen) = front(&dir, &refusal);
-    let resp = post(&web, "/close", &json!({"task": "t"}));
+    let resp = post(&web, "/close", &json!({"box": "t"}));
     assert!(resp.starts_with("HTTP/1.1 200"), "{resp}");
     let envelope = body(&resp);
     assert_eq!(envelope["class"], "refused");
@@ -186,9 +188,9 @@ fn malformed_body_is_400_without_a_socket_request() {
     let (web, seen) = front(&dir, &ok_envelope());
     for (path, raw) in [
         ("/steer", "not json"),
-        ("/steer", r#"{"task":"t"}"#),
-        ("/answer", r#"{"task":"t"}"#),
-        ("/close", r#"{"task":"t","extra":1}"#),
+        ("/steer", r#"{"box":"t"}"#),
+        ("/answer", r#"{"box":"t"}"#),
+        ("/close", r#"{"box":"t","extra":1}"#),
     ] {
         let resp = send(&web, "POST", path, raw);
         assert!(resp.starts_with("HTTP/1.1 400"), "{path} {raw}: {resp}");
@@ -201,7 +203,7 @@ fn unreachable_controller_is_502() {
     let dir = tempfile::tempdir().unwrap();
     let client = Client::new(dir.path().join("missing.sock"));
     let web = start(0, TOKEN.to_owned(), handler(client, fallback())).unwrap();
-    let resp = post(&web, "/close", &json!({"task": "t"}));
+    let resp = post(&web, "/close", &json!({"box": "t"}));
     assert!(resp.starts_with("HTTP/1.1 502"), "{resp}");
 }
 
@@ -240,7 +242,7 @@ fn mid_exchange_io_error_is_502() {
         let sock = dir.path().join("c.sock");
         let seen = serve_then_drop(&sock, tail);
         let web = start(0, TOKEN.to_owned(), handler(Client::new(sock), fallback())).unwrap();
-        let resp = post(&web, "/close", &json!({"task": "t"}));
+        let resp = post(&web, "/close", &json!({"box": "t"}));
         assert!(resp.starts_with("HTTP/1.1 502"), "{tail:?}: {resp}");
         assert_eq!(seen.lock().unwrap().len(), 1, "{tail:?}");
     }
@@ -255,7 +257,7 @@ fn other_requests_reach_the_fallback() {
         get.starts_with("HTTP/1.1 200") && get.ends_with("fallback"),
         "{get}"
     );
-    let unknown = post(&web, "/nope", &json!({"task": "t"}));
+    let unknown = post(&web, "/nope", &json!({"box": "t"}));
     assert!(unknown.ends_with("fallback"), "{unknown}");
     assert!(seen.lock().unwrap().is_empty());
 }

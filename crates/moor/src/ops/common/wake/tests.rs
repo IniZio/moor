@@ -1,13 +1,13 @@
-//! Tests for waking an Asleep Task and Box.
+//! Tests for waking an Asleep Box and machine.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
-use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
+use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::SessionInput;
-use moor_core::domain::task::SetupOutcome;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, SleepOutcome};
 use moor_core::seam::engine::SessionRef;
 use moor_core::seam::proc::Tool;
@@ -17,7 +17,7 @@ use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, ErrorKind, ProviderId};
 use super::{wake_and_revive, wake_box_if_asleep, wake_with_tunnel};
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::store::{Store, TaskRow};
+use crate::store::{BoxRow, Store};
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::proc::{Reply, ScriptedProc};
@@ -26,7 +26,7 @@ use crate::testing::surface::FakeSurface;
 mod tunnel;
 
 /// Wake and restore the tunnel, without relaunching the agent.
-fn wake_if_asleep(cx: &Cx, store: &Store, row: &TaskRow) -> Result<bool, CommandError> {
+fn wake_if_asleep(cx: &Cx, store: &Store, row: &BoxRow) -> Result<bool, CommandError> {
     wake_with_tunnel(cx, store, row).map(|w| w.any)
 }
 
@@ -51,10 +51,10 @@ fn session(pane: &str) -> SessionRef {
     }
 }
 
-fn acquire_req(provider: ProviderId, task: BoxId, name: BoxName) -> AcquireReq {
+fn acquire_req(provider: ProviderId, box_id: BoxId, name: BoxName) -> AcquireReq {
     AcquireReq {
         provider,
-        task,
+        box_id,
         name,
         class: None,
         nonce: "n".to_owned(),
@@ -73,7 +73,7 @@ fn git_proc() -> Arc<ScriptedProc> {
     proc
 }
 
-/// Task `t` Working with a Ready Box.
+/// Box `t` Working with a Ready machine.
 fn fx_with(driver: FakeDriver) -> Fx {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(driver);
@@ -91,12 +91,12 @@ fn fx_with(driver: FakeDriver) -> Fx {
     let store = cx.store().unwrap();
     let name = BoxName::parse_allow_bare("t").unwrap();
     let id = store
-        .apply(Decision::insert(NewTask {
+        .apply(Decision::insert(NewBox {
             name: name.clone(),
             repo: "r".into(),
         }))
         .unwrap()
-        .task;
+        .box_id;
     let provider = ProviderId::new("p");
     let fields = Fields {
         box_provider: Field::Set(provider.clone()),
@@ -140,7 +140,7 @@ fn fx() -> Fx {
     fx_with(FakeDriver::new())
 }
 
-/// Put the Task and Box to sleep.
+/// Put the Box and machine to sleep.
 fn sleep(f: &Fx) {
     let store = f.cx.store().unwrap();
     store
@@ -155,11 +155,11 @@ fn sleep(f: &Fx) {
         .unwrap();
 }
 
-fn row(f: &Fx) -> TaskRow {
+fn row(f: &Fx) -> BoxRow {
     let name = BoxName::parse_allow_bare("t").unwrap();
     f.cx.store()
         .unwrap()
-        .open_task_by_name(&name)
+        .open_box_by_name(&name)
         .unwrap()
         .unwrap()
 }
@@ -190,7 +190,7 @@ fn wake_calls(f: &Fx) -> usize {
 }
 
 #[test]
-fn asleep_task_and_box_are_woken() {
+fn asleep_box_and_machine_are_woken() {
     let f = fx();
     sleep(&f);
     let store = f.cx.store().unwrap();
@@ -205,7 +205,7 @@ fn asleep_task_and_box_are_woken() {
 }
 
 #[test]
-fn awake_task_is_left_alone() {
+fn awake_box_is_left_alone() {
     let f = fx();
     let store = f.cx.store().unwrap();
     assert!(!wake_if_asleep(&f.cx, store, &row(&f)).unwrap());
@@ -216,7 +216,7 @@ fn awake_task_is_left_alone() {
 }
 
 #[test]
-fn failed_resume_leaves_task_and_box_asleep() {
+fn failed_resume_leaves_box_and_machine_asleep() {
     let f = fx_with(FakeDriver::new().fail_wake(DriverError::NotFound));
     sleep(&f);
     let store = f.cx.store().unwrap();
@@ -241,7 +241,7 @@ fn gone_box_is_refused_without_a_driver_call() {
 }
 
 #[test]
-fn asleep_task_with_ready_box_wakes_only_the_task() {
+fn asleep_box_with_ready_machine_wakes_only_the_box() {
     let f = fx();
     let store = f.cx.store().unwrap();
     store
@@ -267,7 +267,7 @@ fn asleep_task_with_ready_box_wakes_only_the_task() {
 }
 
 #[test]
-fn asleep_box_with_working_task_wakes_only_the_box() {
+fn asleep_machine_with_working_box_wakes_only_the_machine() {
     let f = fx();
     let store = f.cx.store().unwrap();
     store
@@ -319,7 +319,7 @@ fn waking_a_box_without_a_stored_workdir_probes_once_and_stores_it() {
 }
 
 #[test]
-fn failed_workdir_lookup_after_wake_leaves_task_and_box_asleep() {
+fn failed_workdir_lookup_after_wake_leaves_box_and_machine_asleep() {
     let f = fx();
     sleep(&f);
     clear_workdir(&f);
@@ -335,7 +335,7 @@ fn failed_workdir_lookup_after_wake_leaves_task_and_box_asleep() {
 }
 
 #[test]
-fn waking_only_the_task_does_not_look_the_workdir_up() {
+fn waking_only_the_box_does_not_look_the_workdir_up() {
     let f = fx();
     let store = f.cx.store().unwrap();
     store
@@ -348,7 +348,7 @@ fn waking_only_the_task_does_not_look_the_workdir_up() {
     assert_eq!(workdir_calls(&f), 0);
 }
 
-/// Gives the Task a live agent session in pane `p-1` that can be resumed.
+/// Gives the Box a live agent session in pane `p-1` that can be resumed.
 fn with_agent(f: &Fx) {
     let store = f.cx.store().unwrap();
     store.begin_session(f.id, "agent-1", Some("p-1")).unwrap();
@@ -400,7 +400,7 @@ fn waking_a_box_whose_agent_is_live_does_not_relaunch() {
 }
 
 #[test]
-fn waking_only_the_task_does_not_probe_the_agent() {
+fn waking_only_the_box_does_not_probe_the_agent() {
     let f = fx();
     with_agent(&f);
     let store = f.cx.store().unwrap();
@@ -434,8 +434,8 @@ fn a_pane_closed_by_sleep_is_relaunched_on_wake() {
     f.surface.have_pane("p-1");
     crate::ops::sleep::run(
         &f.cx,
-        &moor_core::TaskReq {
-            task: BoxName::parse_allow_bare("t").unwrap(),
+        &moor_core::BoxReq {
+            box_name: BoxName::parse_allow_bare("t").unwrap(),
         },
     )
     .unwrap();
@@ -453,8 +453,8 @@ fn a_box_that_cannot_sleep_gets_its_agent_back() {
     with_agent(&f);
     f.surface.have_pane("p-1");
     f.surface.push_pane_obs("p-1", Err(SurfaceError::NotFound));
-    let req = moor_core::TaskReq {
-        task: BoxName::parse_allow_bare("t").unwrap(),
+    let req = moor_core::BoxReq {
+        box_name: BoxName::parse_allow_bare("t").unwrap(),
     };
     assert!(crate::ops::sleep::run(&f.cx, &req).is_err());
     assert!(f.surface.calls().contains(&"close_pane p-1".to_owned()));

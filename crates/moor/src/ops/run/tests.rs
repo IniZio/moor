@@ -5,12 +5,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::boxscript::command_line;
+use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
-use moor_core::domain::decision::{Decision, Field, Fields, Intent, IntentChange, NewTask};
+use moor_core::domain::decision::{Decision, Field, Fields, Intent, IntentChange, NewBox};
 use moor_core::domain::run::SyncMode;
 use moor_core::domain::session_state::{SessionInput, SessionState};
-use moor_core::domain::task::SetupOutcome;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
 use moor_core::seam::proc::{Output, Tool};
 use moor_core::{BoxId, BoxName, BoxPath, ErrorKind, ProviderId, RunReq};
@@ -42,7 +42,7 @@ pub(in crate::ops::run) struct Fx {
 
 pub(in crate::ops::run) fn req(argv: &[&str]) -> RunReq {
     RunReq {
-        task: BoxName::parse_allow_bare("t").unwrap(),
+        box_name: BoxName::parse_allow_bare("t").unwrap(),
         no_sync: false,
         sync: false,
         record: None,
@@ -76,7 +76,7 @@ fn context(dir: &std::path::Path, driver: &Arc<FakeDriver>) -> (Cx, Arc<Scripted
     (cx, proc)
 }
 
-/// A Task `t` with no Box yet.
+/// A Box `t` with no machine yet.
 fn bare_with(driver: FakeDriver) -> Fx {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(driver);
@@ -84,12 +84,12 @@ fn bare_with(driver: FakeDriver) -> Fx {
     let id = cx
         .store()
         .unwrap()
-        .apply(Decision::insert(NewTask {
+        .apply(Decision::insert(NewBox {
             name: BoxName::parse_allow_bare("t").unwrap(),
             repo: "r".into(),
         }))
         .unwrap()
-        .task;
+        .box_id;
     Fx {
         dir,
         cx,
@@ -107,7 +107,7 @@ pub(in crate::ops::run) fn ready() -> Fx {
     ready_with(FakeDriver::new())
 }
 
-/// A Ready Task `t` with a Box from `driver`.
+/// A Ready Box `t` with a machine from `driver`.
 pub(in crate::ops::run) fn ready_with(driver: FakeDriver) -> Fx {
     let f = bare_with(driver);
     let store = f.cx.store().unwrap();
@@ -127,7 +127,7 @@ pub(in crate::ops::run) fn ready_with(driver: FakeDriver) -> Fx {
         .driver
         .acquire(&AcquireReq {
             provider,
-            task: f.id,
+            box_id: f.id,
             name: BoxName::parse_allow_bare("t").unwrap(),
             class: None,
             nonce: "n".to_owned(),
@@ -151,7 +151,7 @@ pub(in crate::ops::run) fn ready_with(driver: FakeDriver) -> Fx {
     f
 }
 
-/// Event kinds recorded for the task, in order.
+/// Event kinds recorded for the Box, in order.
 fn kinds(f: &Fx) -> Vec<String> {
     f.cx.store()
         .unwrap()
@@ -213,7 +213,7 @@ fn json_output_goes_to_a_run_log_under_the_state_dir() {
 }
 
 #[test]
-fn sync_class_and_directories_come_from_the_task() {
+fn sync_class_and_directories_come_from_the_box() {
     let f = ready();
     let mut r = req(&["true"]);
     r.no_sync = true;
@@ -244,12 +244,12 @@ fn refused(f: &Fx, r: &RunReq, kind: ErrorKind) -> String {
 }
 
 #[test]
-fn unknown_task_is_refused() {
+fn unknown_box_is_refused() {
     let f = bare();
     let mut r = req(&["true"]);
-    r.task = BoxName::parse_allow_bare("nope").unwrap();
+    r.box_name = BoxName::parse_allow_bare("nope").unwrap();
     let before = f.driver.calls().len();
-    assert_eq!(refused(&f, &r, ErrorKind::Failed), "no task nope");
+    assert_eq!(refused(&f, &r, ErrorKind::Failed), "no Box nope");
     assert_eq!(f.driver.calls().len(), before);
 }
 
@@ -270,7 +270,7 @@ fn empty_argv_is_usage() {
 }
 
 #[test]
-fn task_without_a_box_is_refused() {
+fn box_without_a_box_is_refused() {
     let f = bare();
     assert_eq!(
         refused(&f, &req(&["true"]), ErrorKind::Failed),
@@ -280,7 +280,7 @@ fn task_without_a_box_is_refused() {
 }
 
 #[test]
-fn task_waiting_for_a_box_is_refused() {
+fn box_waiting_for_a_box_is_refused() {
     let f = bare();
     f.cx.store()
         .unwrap()
@@ -306,7 +306,7 @@ fn gone_box_is_refused_and_recorded() {
     assert!(f.cx.store().unwrap().last_run(f.id).unwrap().is_none());
 }
 
-/// Put the Task and Box to sleep.
+/// Put the Box and machine to sleep.
 fn sleep(f: &Fx) {
     let store = f.cx.store().unwrap();
     store
@@ -330,7 +330,7 @@ fn wake_calls(f: &Fx) -> usize {
 }
 
 fn box_state(f: &Fx) -> BoxState {
-    let row = f.cx.store().unwrap().task(f.id).unwrap().unwrap();
+    let row = f.cx.store().unwrap().box_row(f.id).unwrap().unwrap();
     row.boxed.unwrap().state
 }
 
@@ -406,7 +406,7 @@ fn provisioning_that_died_while_waiting_for_the_lock_is_refused() {
         .unwrap();
     f.proc.dead(4242);
     f.cx.clock().sleep(Duration::from_secs(121));
-    let row = store.task(f.id).unwrap().unwrap();
+    let row = store.box_row(f.id).unwrap().unwrap();
     let e = locked(&f.cx, store, &req(&["true"]), &row).unwrap_err();
     assert_eq!(e.kind, ErrorKind::Failed);
     assert_eq!(e.error.to_string(), "provisioning dead; run moor close t");
@@ -531,7 +531,7 @@ fn unreadable_head_records_and_reports_no_sha() {
     assert_eq!(row.sha, None);
 }
 
-/// The task's `idle_since` column, read over a second connection.
+/// The Box's `idle_since` column, read over a second connection.
 fn idle_since(f: &Fx) -> Option<i64> {
     let db = rusqlite::Connection::open(f.dir.path().join("moor.db")).unwrap();
     db.query_row(
@@ -543,7 +543,7 @@ fn idle_since(f: &Fx) -> Option<i64> {
 }
 
 fn state(f: &Fx) -> (BoxLifecycle, SessionState) {
-    let row = f.cx.store().unwrap().task(f.id).unwrap().unwrap();
+    let row = f.cx.store().unwrap().box_row(f.id).unwrap().unwrap();
     (row.lifecycle, row.session)
 }
 
@@ -555,7 +555,7 @@ fn go_idle(f: &Fx) {
 }
 
 #[test]
-fn run_on_an_idle_task_leaves_it_working() {
+fn run_on_an_idle_box_leaves_it_working() {
     let f = ready();
     go_idle(&f);
     assert!(idle_since(&f).is_some());
@@ -566,7 +566,7 @@ fn run_on_an_idle_task_leaves_it_working() {
 }
 
 #[test]
-fn run_on_a_working_task_applies_nothing() {
+fn run_on_a_working_box_applies_nothing() {
     let f = ready();
     let busy = |f: &Fx| kinds(f).iter().filter(|k| *k == "busy").count();
     run(&f.cx, &req(&["true"])).unwrap();
@@ -575,7 +575,7 @@ fn run_on_a_working_task_applies_nothing() {
 }
 
 #[test]
-fn run_on_an_asleep_task_wakes_it_without_run_started() {
+fn run_on_an_asleep_box_wakes_it_without_run_started() {
     let f = ready();
     sleep(&f);
     run(&f.cx, &req(&["true"])).unwrap();
@@ -587,7 +587,7 @@ fn run_started_losing_a_race_is_ignored() {
     let f = ready();
     go_idle(&f);
     let store = f.cx.store().unwrap();
-    let stale = store.task(f.id).unwrap().unwrap();
+    let stale = store.box_row(f.id).unwrap().unwrap();
     store
         .apply(Decision::new(f.id).session(SessionInput::AgentBusy))
         .unwrap();

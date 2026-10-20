@@ -5,10 +5,10 @@ use std::num::NonZeroU32;
 use crate::domain::boxes::BoxState;
 use crate::name::BoxId;
 
-/// A Box some task holds, as the start op read it.
+/// A Box slot as the start op read it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HeldBox {
-    /// Name of the task holding the Box.
+    /// Name of the Box holding the slot.
     pub holder: String,
     /// The Box's state.
     pub state: BoxState,
@@ -30,7 +30,7 @@ pub enum Admission {
     Admitted,
     /// Every slot is taken.
     AtCapacity {
-        /// A task holding a slot.
+        /// A Box holding a slot.
         holder: String,
         /// The configured limit.
         limit: NonZeroU32,
@@ -67,7 +67,7 @@ pub fn admit(f: &CapacityFacts) -> Admission {
     }
 }
 
-/// Picks which waiting tasks to promote into `free` slots, oldest id first.
+/// Picks which waiting boxes to promote into `free` slots, oldest id first.
 #[must_use]
 pub fn promote_order(waiting: &[BoxId], free: u32) -> Vec<BoxId> {
     let mut ids = waiting.to_vec();

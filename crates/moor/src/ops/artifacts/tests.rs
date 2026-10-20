@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
-use moor_core::domain::decision::{Decision, NewTask};
+use moor_core::domain::decision::{Decision, NewBox};
 use moor_core::request::{ArtifactReadReq, ArtifactsReq, ARTIFACT_CHUNK};
 use moor_core::{BoxId, BoxName, ErrorKind, Request};
 use serde_json::json;
@@ -34,8 +34,8 @@ fn name(s: &str) -> BoxName {
     BoxName::parse_allow_bare(s).unwrap()
 }
 
-fn task(cx: &Cx, n: &str) -> BoxId {
-    let nt = NewTask {
+fn new_box(cx: &Cx, n: &str) -> BoxId {
+    let nt = NewBox {
         name: name(n),
         repo: "r".into(),
     };
@@ -43,7 +43,7 @@ fn task(cx: &Cx, n: &str) -> BoxId {
         .unwrap()
         .apply(Decision::insert(nt))
         .unwrap()
-        .task
+        .box_id
 }
 
 fn publish(cx: &Cx, t: BoxId, file: &str, bytes: &[u8]) {
@@ -55,12 +55,15 @@ fn publish(cx: &Cx, t: BoxId, file: &str, bytes: &[u8]) {
 }
 
 fn list_req(n: &str, all: bool) -> ArtifactsReq {
-    ArtifactsReq { task: name(n), all }
+    ArtifactsReq {
+        box_name: name(n),
+        all,
+    }
 }
 
 fn read_req(n: &str, file: &str, version: Option<u32>, offset: u64, len: u64) -> ArtifactReadReq {
     ArtifactReadReq {
-        task: name(n),
+        box_name: name(n),
         name: file.into(),
         version,
         offset,
@@ -72,7 +75,7 @@ fn read_req(n: &str, file: &str, version: Option<u32>, offset: u64, len: u64) ->
 fn list_shows_the_latest_version_or_every_version() {
     let dir = tempfile::tempdir().unwrap();
     let cx = cx(dir.path());
-    let t = task(&cx, "a");
+    let t = new_box(&cx, "a");
     publish(&cx, t, "log.txt", b"one");
     publish(&cx, t, "log.txt", b"two");
     publish(&cx, t, "shot.png", b"png");
@@ -95,7 +98,7 @@ fn list_shows_the_latest_version_or_every_version() {
 fn dispatch_returns_the_wire_shape() {
     let dir = tempfile::tempdir().unwrap();
     let cx = cx(dir.path());
-    let t = task(&cx, "a");
+    let t = new_box(&cx, "a");
     publish(&cx, t, "log.txt", b"hello");
     let got = dispatch(&cx, Request::Artifacts(list_req("a", false))).unwrap();
     assert_eq!(got.pointer("/0/name"), Some(&json!("log.txt")));
@@ -112,7 +115,7 @@ fn dispatch_returns_the_wire_shape() {
 fn chunked_reads_reassemble_to_the_stored_digest() {
     let dir = tempfile::tempdir().unwrap();
     let cx = cx(dir.path());
-    let t = task(&cx, "a");
+    let t = new_box(&cx, "a");
     let bytes: Vec<u8> = (0..100u8).collect();
     publish(&cx, t, "data.bin", &bytes);
     let mut got = Vec::new();
@@ -131,7 +134,7 @@ fn chunked_reads_reassemble_to_the_stored_digest() {
 fn a_named_version_is_read_not_the_latest() {
     let dir = tempfile::tempdir().unwrap();
     let cx = cx(dir.path());
-    let t = task(&cx, "a");
+    let t = new_box(&cx, "a");
     publish(&cx, t, "log.txt", b"one");
     publish(&cx, t, "log.txt", b"two");
     let c = read(&cx, &read_req("a", "log.txt", Some(1), 0, 10)).unwrap();
@@ -142,7 +145,7 @@ fn a_named_version_is_read_not_the_latest() {
 fn a_length_above_the_chunk_cap_is_clamped() {
     let dir = tempfile::tempdir().unwrap();
     let cx = cx(dir.path());
-    let t = task(&cx, "a");
+    let t = new_box(&cx, "a");
     publish(&cx, t, "big.bin", &vec![7u8; 600 * 1024]);
     let c = read(&cx, &read_req("a", "big.bin", None, 0, u64::MAX)).unwrap();
     assert_eq!(
@@ -157,7 +160,7 @@ fn a_length_above_the_chunk_cap_is_clamped() {
 fn an_offset_at_the_end_is_empty_eof_and_past_it_is_usage() {
     let dir = tempfile::tempdir().unwrap();
     let cx = cx(dir.path());
-    let t = task(&cx, "a");
+    let t = new_box(&cx, "a");
     publish(&cx, t, "log.txt", b"abc");
     let c = read(&cx, &read_req("a", "log.txt", None, 3, 5)).unwrap();
     assert!(c.eof && c.data_b64.is_empty());
@@ -166,10 +169,10 @@ fn an_offset_at_the_end_is_empty_eof_and_past_it_is_usage() {
 }
 
 #[test]
-fn unknown_task_name_or_version_is_not_found() {
+fn unknown_box_name_or_version_is_not_found() {
     let dir = tempfile::tempdir().unwrap();
     let cx = cx(dir.path());
-    let t = task(&cx, "a");
+    let t = new_box(&cx, "a");
     publish(&cx, t, "log.txt", b"one");
     let e = list(&cx, &list_req("nope", false)).unwrap_err();
     assert_eq!(e.kind, ErrorKind::NotFound);
@@ -185,7 +188,7 @@ fn unknown_task_name_or_version_is_not_found() {
 fn a_missing_file_on_disk_is_not_found() {
     let dir = tempfile::tempdir().unwrap();
     let cx = cx(dir.path());
-    let t = task(&cx, "a");
+    let t = new_box(&cx, "a");
     publish(&cx, t, "log.txt", b"one");
     let file = dir
         .path()
@@ -201,7 +204,7 @@ fn a_missing_file_on_disk_is_not_found() {
 fn a_bad_name_is_usage() {
     let dir = tempfile::tempdir().unwrap();
     let cx = cx(dir.path());
-    task(&cx, "a");
+    new_box(&cx, "a");
     for bad in ["../x", "a/b", ""] {
         let e = read(&cx, &read_req("a", bad, None, 0, 1)).unwrap_err();
         assert_eq!(e.kind, ErrorKind::Usage, "{bad}");
@@ -212,7 +215,7 @@ fn a_bad_name_is_usage() {
 fn a_symlinked_file_is_refused() {
     let dir = tempfile::tempdir().unwrap();
     let cx = cx(dir.path());
-    let t = task(&cx, "a");
+    let t = new_box(&cx, "a");
     publish(&cx, t, "log.txt", b"one");
     let secret = dir.path().join("secret");
     fs::write(&secret, b"s3cret").unwrap();
@@ -232,7 +235,7 @@ fn a_symlinked_file_is_refused() {
 fn a_symlinked_version_dir_is_refused() {
     let dir = tempfile::tempdir().unwrap();
     let cx = cx(dir.path());
-    let t = task(&cx, "a");
+    let t = new_box(&cx, "a");
     publish(&cx, t, "log.txt", b"one");
     let box_dir = dir.path().join("artifacts").join(t.get().to_string());
     let moved = dir.path().join("elsewhere");

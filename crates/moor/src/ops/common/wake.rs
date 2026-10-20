@@ -1,4 +1,4 @@
-//! Wake an Asleep Task and Box before an op acts on them.
+//! Wake an Asleep Box and machine before an op acts on them.
 //!
 //! The caller holds the Box lock and passes a row read after taking it.
 
@@ -9,33 +9,33 @@ use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::view::sleep::SleepValue;
-use moor_core::{ErrorKind, TaskReq};
+use moor_core::{BoxReq, ErrorKind};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::autosleep::task_dir;
+use crate::ops::common::autosleep::box_dir;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::park::restore_tunnel;
 use crate::ops::common::provision::recorded_workdir;
-use crate::ops::common::view::{hide_unsupported_box_sleep, task_view};
+use crate::ops::common::view::{box_view, hide_unsupported_box_sleep};
 use crate::ops::start::revive_after_wake;
-use crate::store::{Store, TaskRow};
+use crate::store::{BoxRow, Store};
 
-/// Wake the Task and its Box when either is Asleep, leaving the Proxy tunnel parked.
+/// Wake the Box and its machine when either is Asleep, leaving the Proxy tunnel parked.
 ///
 /// For callers that need the Box awake but not reachable through the Proxy.
 /// A Gone Box is never resumed. A Box keeps its working directory across
 /// pause and resume, so a usable stored workdir is reused without asking the
 /// Driver. Only a Box with no usable stored workdir is looked up and stored
 /// with the wake. When the Driver fails to resume the Box or to find its
-/// workdir, nothing is applied and the Task and Box stay Asleep, so the next
+/// workdir, nothing is applied and the Box and machine stay Asleep, so the next
 /// call tries both again.
 /// `Ok(true)` when it woke anything. The Proxy tunnel stays parked and no agent
 /// is relaunched; close uses this since it needs neither.
 pub(crate) fn wake_box_if_asleep(
     cx: &Cx,
     store: &Store,
-    row: &TaskRow,
+    row: &BoxRow,
 ) -> Result<bool, CommandError> {
     wake(cx, store, row).map(|w| w.any)
 }
@@ -45,7 +45,7 @@ pub(crate) fn wake_box_if_asleep(
 /// A Box can cold-boot on resume and lose its agent process. The tunnel comes
 /// back first because the agent reaches the model through the Proxy. When the
 /// tunnel or the relaunch fails the Box stays awake and the error is returned.
-pub(crate) fn wake_and_revive(cx: &Cx, store: &Store, row: &TaskRow) -> Result<bool, CommandError> {
+pub(crate) fn wake_and_revive(cx: &Cx, store: &Store, row: &BoxRow) -> Result<bool, CommandError> {
     let woke = wake_with_tunnel(cx, store, row)?;
     if woke.box_resumed {
         revive_after_wake(cx, store, row.id)?;
@@ -53,8 +53,8 @@ pub(crate) fn wake_and_revive(cx: &Cx, store: &Store, row: &TaskRow) -> Result<b
     Ok(woke.any)
 }
 
-/// Wake the Task and Box, then restore the tunnel when the Box was resumed.
-fn wake_with_tunnel(cx: &Cx, store: &Store, row: &TaskRow) -> Result<Woke, CommandError> {
+/// Wake the Box and machine, then restore the tunnel when the machine was resumed.
+fn wake_with_tunnel(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Woke, CommandError> {
     let woke = wake(cx, store, row)?;
     if woke.box_resumed {
         // The Box stays awake when the tunnel cannot return; the op fails instead.
@@ -65,20 +65,20 @@ fn wake_with_tunnel(cx: &Cx, store: &Store, row: &TaskRow) -> Result<Woke, Comma
 
 /// What `wake` did.
 struct Woke {
-    /// The Task or the Box was Asleep and is awake now.
+    /// The Box or the machine was Asleep and is awake now.
     any: bool,
     /// The Driver resumed the Box.
     box_resumed: bool,
 }
 
-/// Wake the Task and Box when Asleep and report what was woken.
-fn wake(cx: &Cx, store: &Store, row: &TaskRow) -> Result<Woke, CommandError> {
-    let task_asleep = row.lifecycle == BoxLifecycle::Asleep;
+/// Wake the Box and machine when Asleep and report what was woken.
+fn wake(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Woke, CommandError> {
+    let row_asleep = row.lifecycle == BoxLifecycle::Asleep;
     let box_asleep = row
         .boxed
         .as_ref()
         .is_some_and(|b| b.state == BoxState::Asleep);
-    if !task_asleep && !box_asleep {
+    if !row_asleep && !box_asleep {
         return Ok(Woke {
             any: false,
             box_resumed: false,
@@ -93,18 +93,18 @@ fn wake(cx: &Cx, store: &Store, row: &TaskRow) -> Result<Woke, CommandError> {
             let handle = b.handle.as_ref().ok_or_else(|| {
                 CommandError::new(ErrorKind::Refused, "the Box has not been acquired")
             })?;
-            cx.driver().wake(handle, Some(task_dir(row)))?;
+            cx.driver().wake(handle, Some(box_dir(row)))?;
             if b.workdir
                 .as_deref()
                 .is_none_or(|w| recorded_workdir(w).is_none())
             {
-                let worktree = task_dir(row);
+                let worktree = box_dir(row);
                 workdir = Some(cx.driver().workdir(handle, worktree)?);
             }
         }
     }
     let mut d = Decision::new(row.id);
-    if task_asleep {
+    if row_asleep {
         d = d
             .lifecycle(BoxLifecycleInput::Wake)
             .session(SessionInput::AgentBusy);
@@ -125,39 +125,42 @@ fn wake(cx: &Cx, store: &Store, row: &TaskRow) -> Result<Woke, CommandError> {
     })
 }
 
-/// Wake the open Task named by `req` under its Box lock and build the value.
+/// Wake the open Box named by `req` under its Box lock and build the value.
 ///
 /// `held` runs on the woken row while the lock is still held.
-pub(crate) fn wake_task(
+pub(crate) fn wake_box(
     cx: &Cx,
-    req: &TaskReq,
+    req: &BoxReq,
     op: &str,
-    held: impl FnOnce(&TaskRow) -> Result<(), CommandError>,
+    held: impl FnOnce(&BoxRow) -> Result<(), CommandError>,
 ) -> Result<SleepValue, CommandError> {
     let store = cx.store()?;
     let id = store
-        .open_task_by_name(&req.task)?
+        .open_box_by_name(&req.box_name)?
         .ok_or_else(|| {
             CommandError::new(
                 ErrorKind::Failed,
-                format!("no open task {}", req.task.as_str()),
+                format!("no open Box {}", req.box_name.as_str()),
             )
         })?
         .id;
     let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, op, boxlock::WAIT)?;
     let reload = || {
-        store.task(id)?.ok_or_else(|| {
-            CommandError::new(ErrorKind::Failed, format!("no task {}", req.task.as_str()))
+        store.box_row(id)?.ok_or_else(|| {
+            CommandError::new(
+                ErrorKind::Failed,
+                format!("no Box {}", req.box_name.as_str()),
+            )
         })
     };
     let woke = wake_and_revive(cx, store, &reload()?)?;
     let row = reload()?;
     held(&row)?;
-    let mut boxed = task_view(&row, cx.config()).r#box;
+    let mut boxed = box_view(&row, cx.config()).driver;
     hide_unsupported_box_sleep(boxed.as_mut(), cx, &mut HashMap::new());
     Ok(SleepValue {
-        task: req.task.as_str().to_owned(),
-        r#box: boxed,
+        box_name: req.box_name.as_str().to_owned(),
+        driver: boxed,
         woke,
     })
 }

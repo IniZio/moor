@@ -37,7 +37,7 @@ pub enum ResolvedInject {
     },
 }
 
-/// A rule with the Task repo filled in.
+/// A rule with the Box repo filled in.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResolvedRule {
     /// Rule name.

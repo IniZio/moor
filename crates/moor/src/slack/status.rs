@@ -1,4 +1,4 @@
-//! Keeps one status message per Slack thread current as its Task's events arrive.
+//! Keeps one status message per Slack thread current as its Box's events arrive.
 
 use std::collections::HashMap;
 use std::fmt::Write;
@@ -24,7 +24,7 @@ const BATCH: usize = 500;
 /// Longest question shown, in characters.
 const QUESTION_MAX: usize = 300;
 
-/// Where the Task is in its life.
+/// Where the Box is in its life.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(super) enum State {
     /// Created or setting up; not yet working.
@@ -34,19 +34,19 @@ pub(super) enum State {
     Working,
     /// The agent is quiet.
     Idle,
-    /// The Task is asleep.
+    /// The Box is asleep.
     Asleep,
     /// The agent asked a question.
     NeedsInput(String),
-    /// The Task closed.
+    /// The Box closed.
     Closed,
-    /// Admission refused the Task.
+    /// Admission refused the Box.
     Rejected(String),
     /// Box setup failed.
     SetupFailed(String),
 }
 
-/// What is known about the Task's Box.
+/// What is known about the Box's machine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum BoxState {
     /// Requested, not yet ready.
@@ -63,12 +63,12 @@ pub(super) enum BoxState {
     Deleted,
 }
 
-/// The status of one Task, folded from its events.
+/// The status of one Box, folded from its events.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub(super) struct View {
-    /// Task state.
+    /// Box state.
     pub state: State,
-    /// Box state, once any box event arrived.
+    /// Machine state, once any machine event arrived.
     pub boxed: Option<BoxState>,
 }
 
@@ -109,8 +109,8 @@ pub(super) fn escape(s: &str) -> String {
         .replace('>', "&gt;")
 }
 
-/// The message text for `task`.
-pub(super) fn render(task: &str, view: &View) -> String {
+/// The message text for `name`.
+pub(super) fn render(name: &str, view: &View) -> String {
     let state = match &view.state {
         State::Starting => "starting".to_owned(),
         State::Working => "working".to_owned(),
@@ -126,7 +126,7 @@ pub(super) fn render(task: &str, view: &View) -> String {
         State::Rejected(r) => format!("rejected: {}", escape(r)),
         State::SetupFailed(l) => format!("setup failed: {}", escape(l)),
     };
-    let mut text = format!("*{}*: {state}", escape(task));
+    let mut text = format!("*{}*: {state}", escape(name));
     if let Some(b) = view.boxed {
         let b = match b {
             BoxState::Requested => "requested",
@@ -182,8 +182,8 @@ impl Planner {
         let mut steps = Vec::new();
         for t in threads {
             let key = (t.channel.clone(), t.thread_ts.clone());
-            let view = views.get(t.task.as_str()).cloned().unwrap_or_default();
-            let text = render(t.task.as_str(), &view);
+            let view = views.get(t.box_name.as_str()).cloned().unwrap_or_default();
+            let text = render(t.box_name.as_str(), &view);
             let sent = self.sent.get(&key);
             if t.status_ts.is_some() && sent.and_then(|s| s.text.as_ref()) == Some(&text) {
                 continue;
@@ -243,10 +243,10 @@ pub(crate) fn follow(env: &Env, api: &Api, bot: &Secret, log: &(dyn Fn(&str) + S
                 for e in &events {
                     cursor = cursor.max(e.row.id);
                     views
-                        .entry(e.task_name.clone())
+                        .entry(e.box_name.clone())
                         .or_default()
                         .fold(&e.row.kind, &e.row.payload);
-                    pending.fold(e.row.id, &e.task_name, &e.row.kind, &e.row.payload);
+                    pending.fold(e.row.id, &e.box_name, &e.row.kind, &e.row.payload);
                 }
                 if events.len() == BATCH {
                     continue;

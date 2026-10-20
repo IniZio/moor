@@ -42,10 +42,10 @@ fn cp_prints_its_confirmation() {
     assert_eq!(out, "copied a to b (3 bytes)\n");
 }
 
-/// Builds a sleep/wake value for task `task` with an optional Box state.
-fn sleep_value(task: &str, state: Option<&str>, woke: bool) -> serde_json::Value {
+/// Builds a sleep/wake value for Box `box_name` with an optional Box state.
+fn sleep_value(box_name: &str, state: Option<&str>, woke: bool) -> serde_json::Value {
     let b = state.map(|s| json!({"state": s, "sleep": {"after": null, "reason": null}}));
-    json!({"task": task, "box": b, "woke": woke})
+    json!({"box": box_name, "driver": b, "woke": woke})
 }
 
 #[test]
@@ -75,8 +75,8 @@ fn wake_prints_whether_it_woke() {
 fn malformed_sleep_value_falls_back_to_json() {
     let (out, _) = render(&Response::ok("sleep", Some(json!({"woke": false}))), false);
     assert!(out.contains("\"woke\": false"));
-    let (out, _) = render(&Response::ok("wake", Some(json!({"task": 3}))), false);
-    assert!(out.contains("\"task\": 3"));
+    let (out, _) = render(&Response::ok("wake", Some(json!({"box": 3}))), false);
+    assert!(out.contains("\"box\": 3"));
 }
 
 #[test]
@@ -229,24 +229,24 @@ fn quiet_run_drops_warnings_and_stays_empty() {
 
 #[test]
 fn steer_prints_one_line() {
-    let v = json!({"task": "t1", "sent": "hi", "answered_menu": false});
+    let v = json!({"box": "t1", "sent": "hi", "answered_menu": false});
     let (out, _) = render(&Response::ok("steer", Some(v)), false);
     assert_eq!(out, "steered t1\n");
 }
 
 #[test]
 fn end_session_prints_ordinal_id_and_box_kept() {
-    let v = json!({"task": "t1", "session": 7, "ordinal": 2, "box_kept": true});
+    let v = json!({"box": "t1", "session": 7, "ordinal": 2, "box_kept": true});
     let (out, _) = render(&Response::ok("end-session", Some(v)), false);
     assert_eq!(out, "ended Session 2 (id 7) in t1; Box kept open\n");
 }
 
 #[test]
 fn open_session_prints_ordinal_id_and_pane() {
-    let v = json!({"task": "t1", "session": 9, "ordinal": 3, "pane": "p4"});
+    let v = json!({"box": "t1", "session": 9, "ordinal": 3, "pane": "p4"});
     let (out, _) = render(&Response::ok("open-session", Some(v)), false);
     assert_eq!(out, "opened Session 3 (id 9) in t1; pane p4\n");
-    let v = json!({"task": "t1", "session": 9, "ordinal": 3, "pane": null});
+    let v = json!({"box": "t1", "session": 9, "ordinal": 3, "pane": null});
     let (out, _) = render(&Response::ok("open-session", Some(v)), false);
     assert_eq!(out, "opened Session 3 (id 9) in t1\n");
 }
@@ -266,14 +266,14 @@ fn end_host_session_prints_id_and_workdir() {
 }
 
 /// A Box named `name` in `lifecycle`, with an optional Box state.
-fn lifecycle_task(name: &str, lifecycle: &str, box_state: Option<&str>) -> serde_json::Value {
+fn lifecycle_box(name: &str, lifecycle: &str, box_state: Option<&str>) -> serde_json::Value {
     let b = box_state.map(|s| json!({"state": s, "provider": "local"}));
-    json!({"id": 7, "name": name, "lifecycle": lifecycle, "session_state": "idle", "box": b})
+    json!({"id": 7, "name": name, "lifecycle": lifecycle, "session_state": "idle", "driver": b})
 }
 
 #[test]
 fn start_prints_name_state_box_and_how_to_open() {
-    let v = json!({"task": lifecycle_task("alpha", "ready", Some("ready")), "attached": false});
+    let v = json!({"box": lifecycle_box("alpha", "ready", Some("ready")), "attached": false});
     let (out, _) = render(&Response::ok("start", Some(v)), false);
     assert_eq!(
         out,
@@ -284,7 +284,7 @@ fn start_prints_name_state_box_and_how_to_open() {
 #[test]
 fn start_says_setup_failed_and_keeps_the_open_hint() {
     let v = json!({
-        "task": lifecycle_task("alpha", "ready", Some("ready")),
+        "box": lifecycle_box("alpha", "ready", Some("ready")),
         "setup": {"ran": true, "ok": false, "line": "make: *** [deps] Error 2"},
         "warnings_inline": []
     });
@@ -298,10 +298,10 @@ fn start_says_setup_failed_and_keeps_the_open_hint() {
 #[test]
 fn start_names_the_failed_step_its_tail_the_box_and_how_to_close_it() {
     let v = json!({
-        "task": lifecycle_task("alpha", "ready", Some("ready")),
+        "box": lifecycle_box("alpha", "ready", Some("ready")),
         "setup": {"ran": true, "ok": false, "tail": "npm ERR! missing\nexit 1"},
         "failed_step": "setup",
-        "box": "box-9",
+        "handle": "box-9",
     });
     let (out, _) = render(&Response::ok("start", Some(v)), false);
     assert_eq!(
@@ -317,7 +317,7 @@ fn start_does_not_say_setup_failed_when_setup_passed_or_did_not_run() {
         json!({"ran": true, "ok": true}),
         json!({"ran": false, "ok": false}),
     ] {
-        let v = json!({"task": lifecycle_task("alpha", "ready", Some("ready")), "setup": setup});
+        let v = json!({"box": lifecycle_box("alpha", "ready", Some("ready")), "setup": setup});
         let (out, _) = render(&Response::ok("start", Some(v)), false);
         assert_eq!(
             out,
@@ -328,17 +328,17 @@ fn start_does_not_say_setup_failed_when_setup_passed_or_did_not_run() {
 
 #[test]
 fn start_says_attached_and_queued() {
-    let v = json!({"task": lifecycle_task("alpha", "ready", Some("ready")), "attached": true});
+    let v = json!({"box": lifecycle_box("alpha", "ready", Some("ready")), "attached": true});
     let (out, _) = render(&Response::ok("start", Some(v)), false);
     assert!(out.starts_with("attached alpha (#7): ready/idle, box ready\n"));
-    let v = json!({"task": lifecycle_task("alpha", "waiting_for_box", None), "queued": true});
+    let v = json!({"box": lifecycle_box("alpha", "waiting_for_box", None), "queued": true});
     let (out, _) = render(&Response::ok("start", Some(v)), false);
     assert_eq!(out, "queued alpha (#7): waiting for a free box\n");
 }
 
 #[test]
 fn start_omits_open_hint_for_a_box_that_cannot_be_opened() {
-    let v = json!({"task": lifecycle_task("alpha", "ready", Some("failed"))});
+    let v = json!({"box": lifecycle_box("alpha", "ready", Some("failed"))});
     let (out, _) = render(&Response::ok("start", Some(v)), false);
     assert_eq!(out, "started alpha (#7): ready/idle, box failed\n");
 }
@@ -346,7 +346,7 @@ fn start_omits_open_hint_for_a_box_that_cannot_be_opened() {
 #[test]
 fn start_prints_inline_warnings_and_promotions() {
     let v = json!({
-        "task": lifecycle_task("alpha", "ready", Some("ready")),
+        "box": lifecycle_box("alpha", "ready", Some("ready")),
         "promoted": ["beta", "gamma"],
         "warnings_inline": ["agent dispatch failed: no pane"]
     });
@@ -361,7 +361,7 @@ fn start_prints_inline_warnings_and_promotions() {
 #[test]
 fn start_keeps_its_output_for_a_launched_agent() {
     let v = json!({
-        "task": lifecycle_task("alpha", "ready", Some("ready")),
+        "box": lifecycle_box("alpha", "ready", Some("ready")),
         "agent": {"launched": true, "session": "s", "reason": null}
     });
     let (out, _) = render(&Response::ok("start", Some(v)), false);
@@ -380,7 +380,7 @@ fn start_shows_a_launch_step_failure_as_a_warning() {
         at: "2026-01-01T00:00:00Z".to_owned(),
     };
     let v = json!({
-        "task": lifecycle_task("alpha", "ready", Some("ready")),
+        "box": lifecycle_box("alpha", "ready", Some("ready")),
         "agent": {"launched": false, "session": null, "reason": reason},
         "warnings_inline": [reason.text()]
     });
@@ -394,12 +394,12 @@ fn start_shows_a_launch_step_failure_as_a_warning() {
 #[test]
 fn close_prints_name_and_box_outcome() {
     let v = json!({
-        "task": lifecycle_task("alpha", "closed", None),
+        "box": lifecycle_box("alpha", "closed", None),
         "box_deleted": true, "worktree_kept": true, "promoted": []
     });
     let (out, _) = render(&Response::ok("close", Some(v)), false);
     assert_eq!(out, "closed alpha (#7), box deleted\n");
-    let v = json!({"task": lifecycle_task("alpha", "closed", None), "box_deleted": false});
+    let v = json!({"box": lifecycle_box("alpha", "closed", None), "box_deleted": false});
     let (out, _) = render(&Response::ok("close", Some(v)), false);
     assert_eq!(out, "closed alpha (#7), box kept\n");
 }
@@ -407,7 +407,7 @@ fn close_prints_name_and_box_outcome() {
 #[test]
 fn close_prints_transcript_and_promotions() {
     let v = json!({
-        "task": lifecycle_task("alpha", "closed", None),
+        "box": lifecycle_box("alpha", "closed", None),
         "box_deleted": true, "transcript": "/t/alpha.md", "promoted": ["beta"]
     });
     let (out, _) = render(&Response::ok("close", Some(v)), false);
@@ -419,7 +419,7 @@ fn close_prints_transcript_and_promotions() {
 
 fn wait_value(cond: &str, timed_out: bool, waited_ms: u64) -> serde_json::Value {
     json!({
-        "task": lifecycle_task("alpha", "ready", Some("ready")),
+        "box": lifecycle_box("alpha", "ready", Some("ready")),
         "timed_out": timed_out,
         "waited_ms": waited_ms,
         "for": cond,

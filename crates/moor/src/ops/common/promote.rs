@@ -1,10 +1,10 @@
-//! Promotes Tasks waiting for a Box into the slots a closed Box freed.
+//! Promotes Boxes waiting for a machine into the slots a closed one freed.
 
 use std::collections::HashMap;
 use std::path::Path;
 use std::time::Duration;
 
-use moor_core::config::{Flags, TaskSettings};
+use moor_core::config::{BoxSettings, Flags};
 use moor_core::decide::capacity::promote_order;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::{BoxId, BoxName, ProviderId, Warning};
@@ -20,10 +20,10 @@ use crate::store::Store;
 /// How long `close` waits for a waiter's Box lock before skipping that waiter.
 pub(crate) const PROMOTE_WAIT: Duration = Duration::from_secs(1);
 
-/// Promotes the oldest tasks waiting for a Box of `provider` into its free slots.
+/// Promotes the oldest boxes waiting for a Box of `provider` into its free slots.
 ///
-/// Returns the names of the tasks that left waiting with a Box acquired, in promotion
-/// order. Promotion is best effort: a task that cannot be promoted, or an error
+/// Returns the names of the boxes that left waiting with a Box acquired, in promotion
+/// order. Promotion is best effort: a Box that cannot be promoted, or an error
 /// that stops the pass, becomes a warning and the pass ends with what it did.
 pub(crate) fn promote_waiting(
     cx: &Cx,
@@ -35,7 +35,7 @@ pub(crate) fn promote_waiting(
     if let Err(e) = promote_into(cx, store, provider, op, &mut promoted) {
         cx.warn(Warning {
             code: "promote_failed".to_owned(),
-            message: format!("cannot promote waiting tasks: {}", e.error),
+            message: format!("cannot promote waiting Boxes: {}", e.error),
         });
     }
     promoted
@@ -52,8 +52,8 @@ fn promote_into(
     let Some(lim) = capacity::limit(cx.config(), provider.as_str()) else {
         return Ok(());
     };
-    let mut cfgs: HashMap<BoxId, (BoxName, TaskSettings)> = HashMap::new();
-    for row in store.waiting_tasks()? {
+    let mut cfgs: HashMap<BoxId, (BoxName, BoxSettings)> = HashMap::new();
+    for row in store.waiting_boxes()? {
         let at = row.worktree.as_deref().unwrap_or(&row.repo);
         match settings(cx, Path::new(at), &Flags::default()) {
             Ok(cfg) if cfg.provider.value == provider.as_str() => {
@@ -87,14 +87,14 @@ fn promote_into(
     Ok(())
 }
 
-/// Promotes one waiting task under its Box lock; `None` when it stays waiting.
+/// Promotes one waiting Box under its Box lock; `None` when it stays waiting.
 fn promote_one(
     cx: &Cx,
     store: &Store,
     id: BoxId,
     name: &BoxName,
     op: &str,
-    cfg: &TaskSettings,
+    cfg: &BoxSettings,
 ) -> Result<Option<BoxName>, CommandError> {
     let _lock = match BoxLock::acquire(cx.clock(), cx.state_dir()?, id, op, PROMOTE_WAIT) {
         Ok(lock) => lock,

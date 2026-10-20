@@ -1,4 +1,4 @@
-//! The one read of a Task's agent: probe once, decide, keep the hook cache.
+//! The one read of a Box's agent: probe once, decide, keep the hook cache.
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -23,7 +23,7 @@ use crate::ops::common::boxlock::BoxLock;
 use crate::ops::common::provision::recorded_workdir;
 use crate::ops::common::resume;
 use crate::ops::common::transcript;
-use crate::store::{Store, StoreError, TaskRow};
+use crate::store::{BoxRow, Store, StoreError};
 
 /// Allowance for the pane observation in one probe.
 ///
@@ -39,7 +39,7 @@ pub(crate) enum PaneLiveness {
     Live,
     /// The pane exists and shows the agent ended.
     Exited,
-    /// There is no pane: it vanished, was never recorded, or the Task has no agent.
+    /// There is no pane: it vanished, was never recorded, or the Box has no agent.
     Gone,
 }
 
@@ -54,29 +54,29 @@ impl PaneLiveness {
     }
 }
 
-/// What one read of a Task's agent found.
+/// What one read of a Box's agent found.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Reading {
-    /// The agent's state; none when the Task has no live session.
+    /// The agent's state; none when the Box has no live session.
     pub(crate) activity: Option<Activity>,
     /// Whether the pane is there.
     pub(crate) pane: PaneLiveness,
-    /// Whether this reading may move a Working Task to Idle.
+    /// Whether this reading may move a Working Box to Idle.
     pub(crate) may_quiet: bool,
-    /// Whether a run of the Task is in flight.
+    /// Whether a run of the Box is in flight.
     run_in_flight: bool,
     /// The live session this reading probed.
     pub(crate) session: Option<i64>,
-    /// Why the agent never launched; the Task has no session then.
+    /// Why the agent never launched; the Box has no session then.
     pub(crate) launch_failure: Option<LaunchFailure>,
-    /// The agent's own session id, from the hook seen or the Task.
+    /// The agent's own session id, from the hook seen or the Box.
     agent_session: Option<String>,
     /// The pane text this reading observed; none when the pane gave no observation.
     pub(crate) pane_text: Option<String>,
 }
 
 impl Reading {
-    /// Whether the Task counts as busy: a run is in flight or the agent is busy.
+    /// Whether the Box counts as busy: a run is in flight or the agent is busy.
     pub(crate) fn busy(&self) -> bool {
         self.run_in_flight || self.activity.as_ref().is_some_and(|a| a.state.busy())
     }
@@ -101,7 +101,7 @@ impl Reading {
         }
     }
 
-    /// No agent to read; a run in flight still keeps the Task busy.
+    /// No agent to read; a run in flight still keeps the Box busy.
     const fn none(run_in_flight: bool) -> Self {
         Self {
             activity: None,
@@ -115,7 +115,7 @@ impl Reading {
         }
     }
 
-    /// No agent because its launch failed; the Task is never quiet for that.
+    /// No agent because its launch failed; the Box is never quiet for that.
     const fn launch_failed(run_in_flight: bool, failure: LaunchFailure) -> Self {
         Self {
             activity: None,
@@ -132,19 +132,14 @@ impl Reading {
 
 /// Read `row`'s agent once.
 ///
-/// This is the only caller of `Engine::probe`. A Task with no live session, or whose Box has
+/// This is the only caller of `Engine::probe`. A Box with no live session, or whose machine has
 /// no handle or workdir to reach, has no agent and is not probed; a run in flight still makes it busy. A fresh hook report is
 /// cached; a dropped read leaves the cache as it was. A run in flight forces `Working` whatever
 /// the probe says; the reading keeps the probe's source, as no source names a run.
 ///
 /// # Errors
 /// A store failure other than an undecodable cache row.
-pub(crate) fn read(
-    cx: &Cx,
-    store: &Store,
-    row: &TaskRow,
-    now: Ts,
-) -> Result<Reading, CommandError> {
+pub(crate) fn read(cx: &Cx, store: &Store, row: &BoxRow, now: Ts) -> Result<Reading, CommandError> {
     let in_flight = store
         .in_flight_run(row.id, &|pid| cx.proc().alive(pid))?
         .is_some();
@@ -206,12 +201,8 @@ pub(crate) fn read(
     })
 }
 
-/// Keep the agent's own session id on the Task; written only when it changed.
-fn note_agent_session(
-    store: &Store,
-    row: &TaskRow,
-    seen: Option<&str>,
-) -> Result<(), CommandError> {
+/// Keep the agent's own session id on the Box; written only when it changed.
+fn note_agent_session(store: &Store, row: &BoxRow, seen: Option<&str>) -> Result<(), CommandError> {
     let Some(id) = seen.filter(|id| row.agent_session_id.as_deref() != Some(id)) else {
         return Ok(());
     };
@@ -223,24 +214,24 @@ fn note_agent_session(
     Ok(())
 }
 
-/// Move the Task's state to match `reading`, and save the transcript of an agent first seen exited
+/// Move the Box's state to match `reading`, and save the transcript of an agent first seen exited
 /// and end its session.
 ///
 /// The agent session id of the live session is registered with the multiplexer when it is not yet.
 ///
-/// A Task whose Box an op holds, or that has an intent set, is not moved.
+/// A Box that an op holds, or that has an intent set, is not moved.
 ///
-/// A Working Task goes Idle only when the reading `may_quiet` and is not busy; an Idle Task
+/// A Working Box goes Idle only when the reading `may_quiet` and is not busy; an Idle Box
 /// goes back to Working when the reading is busy. Nothing else decides quiet: a gone pane, an
-/// idle status or a dropped hook read never idles a Task. If the row changed since the read,
-/// the store refuses the step and the Task is left as the other writer set it.
+/// idle status or a dropped hook read never idles a Box. If the row changed since the read,
+/// the store refuses the step and the Box is left as the other writer set it.
 ///
 /// # Errors
 /// A store failure other than a refused step.
 pub(crate) fn settle(
     cx: &Cx,
     store: &Store,
-    row: &TaskRow,
+    row: &BoxRow,
     reading: &Reading,
 ) -> Result<(), CommandError> {
     turn::note_turn_done(store, row, reading)?;
@@ -255,7 +246,7 @@ pub(crate) fn settle(
         (true, true) if reading.busy() => SessionInput::AgentBusy,
         _ => return Ok(()),
     };
-    // An op that owns the Box decides where the Task goes; hold the lock across the write.
+    // An op that owns the Box decides where the Box goes; hold the lock across the write.
     let Ok(_held) = BoxLock::acquire(
         cx.clock(),
         cx.state_dir()?,
@@ -280,7 +271,7 @@ pub(crate) fn settle(
 fn end_exited_session(
     cx: &Cx,
     store: &Store,
-    row: &TaskRow,
+    row: &BoxRow,
     reading: &Reading,
     probed: i64,
 ) -> Result<(), CommandError> {
@@ -306,10 +297,10 @@ fn end_exited_session(
 
 /// Append a `needs_input` event when the agent starts waiting for the user.
 ///
-/// A waiting episode ends when the Task turns busy or working again, so the event is skipped
+/// A waiting episode ends when the Box turns busy or working again, so the event is skipped
 /// while the latest of those markers is a `needs_input` with the same question and options.
 /// It is written before any state step so a refused step cannot lose it.
-fn note_needs_input(store: &Store, row: &TaskRow, reading: &Reading) -> Result<(), CommandError> {
+fn note_needs_input(store: &Store, row: &BoxRow, reading: &Reading) -> Result<(), CommandError> {
     let Some(AgentState::NeedsInput { question, options }) =
         reading.activity.as_ref().map(|a| &a.state)
     else {
@@ -335,7 +326,7 @@ fn note_needs_input(store: &Store, row: &TaskRow, reading: &Reading) -> Result<(
 fn register_session(
     cx: &Cx,
     store: &Store,
-    row: &TaskRow,
+    row: &BoxRow,
     reading: &Reading,
 ) -> Result<(), CommandError> {
     if reading.pane != PaneLiveness::Live
@@ -362,7 +353,7 @@ fn register_session(
 
 /// The session as the Engine needs it; none when the Box cannot be reached.
 ///
-pub(crate) fn session_ref(row: &TaskRow, id: String, pane: Option<String>) -> Option<SessionRef> {
+pub(crate) fn session_ref(row: &BoxRow, id: String, pane: Option<String>) -> Option<SessionRef> {
     let b = row.boxed.as_ref()?;
     Some(SessionRef {
         id,

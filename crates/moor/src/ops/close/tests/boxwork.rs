@@ -3,7 +3,7 @@
 use moor_core::boxscript::boxwork::{BOXWORK_FILE, BOXWORK_NO_CHECKOUT};
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
-use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
+use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::{DriverError, ExecOutcome};
 use moor_core::{BoxName, CloseReq, ErrorKind, ProviderId};
@@ -62,7 +62,7 @@ pub(super) fn fx_woken(text: &str) -> Fx {
     }
 }
 
-/// Puts the Task and its Box to sleep.
+/// Puts the Box and its machine to sleep.
 pub(super) fn put_to_sleep(f: &Fx) {
     let store = f.cx.store().unwrap();
     store
@@ -102,10 +102,10 @@ fn text(e: &CommandError) -> String {
 
 /// Closing without `--force` is refused and changes nothing.
 fn refused(f: &Fx) -> CommandError {
-    let (task, boxed) = (row(f).lifecycle, box_state(f));
+    let (lifecycle_before, boxed) = (row(f).lifecycle, box_state(f));
     let e = run(&f.cx, &req(false)).unwrap_err();
     assert_eq!(e.kind, ErrorKind::Refused);
-    assert_eq!(row(f).lifecycle, task);
+    assert_eq!(row(f).lifecycle, lifecycle_before);
     assert_eq!(box_state(f), boxed);
     assert_eq!(count(f, "release"), 0);
     e
@@ -143,7 +143,7 @@ fn close_refuses_a_box_with_only_uncommitted_changes() {
 fn close_proceeds_when_the_box_probe_is_clean() {
     let f = fx_probe(Some("ahead=0 dirty=0"));
     let v = run(&f.cx, &req(false)).unwrap();
-    assert_eq!(v.task.lifecycle, BoxLifecycle::Closed);
+    assert_eq!(v.boxed.lifecycle, BoxLifecycle::Closed);
     assert_eq!(box_state(&f), BoxState::Deleted);
     assert_eq!(probes(&f), 2, "the probe ran before and after the stop");
 }
@@ -177,7 +177,7 @@ fn close_wakes_a_sleeping_box_and_proceeds_when_it_is_clean() {
     let f = fx_woken("ahead=0 dirty=0");
     put_to_sleep(&f);
     let v = run(&f.cx, &req(false)).unwrap();
-    assert_eq!(v.task.lifecycle, BoxLifecycle::Closed);
+    assert_eq!(v.boxed.lifecycle, BoxLifecycle::Closed);
     assert_eq!(count(&f, "wake"), 1);
     assert_eq!(probes(&f), 2);
 }
@@ -201,7 +201,7 @@ fn close_proceeds_when_the_driver_no_longer_has_the_box_on_probe() {
     let h = row(&f).boxed.unwrap().handle.unwrap();
     f.driver.forget(&h);
     let v = run(&f.cx, &req(false)).unwrap();
-    assert_eq!(v.task.lifecycle, BoxLifecycle::Closed);
+    assert_eq!(v.boxed.lifecycle, BoxLifecycle::Closed);
 }
 
 #[test]
@@ -210,14 +210,14 @@ fn close_proceeds_when_the_driver_no_longer_has_the_box_on_wake() {
     let f = fx_box(driver, surface(), 0, Some("ahead=0 dirty=0"));
     put_to_sleep(&f);
     let v = run(&f.cx, &req(false)).unwrap();
-    assert_eq!(v.task.lifecycle, BoxLifecycle::Closed);
+    assert_eq!(v.boxed.lifecycle, BoxLifecycle::Closed);
 }
 
 #[test]
 fn force_closes_a_box_with_unsaved_work_without_probing() {
     let f = fx_probe(Some("ahead=4 dirty=1"));
     let v = run(&f.cx, &req(true)).unwrap();
-    assert_eq!(v.task.lifecycle, BoxLifecycle::Closed);
+    assert_eq!(v.boxed.lifecycle, BoxLifecycle::Closed);
     assert_eq!(probes(&f), 0);
     assert_eq!(count(&f, "wake"), 0);
 }
@@ -227,7 +227,7 @@ fn force_closes_a_sleeping_box_without_waking_or_probing_it() {
     let f = fx_probe(Some("ahead=4 dirty=1"));
     put_to_sleep(&f);
     let v = run(&f.cx, &req(true)).unwrap();
-    assert_eq!(v.task.lifecycle, BoxLifecycle::Closed);
+    assert_eq!(v.boxed.lifecycle, BoxLifecycle::Closed);
     assert_eq!(count(&f, "exec"), 0);
     assert_eq!(count(&f, "wake"), 0);
 }
@@ -241,7 +241,7 @@ fn close_skips_the_probe_for_a_box_the_driver_no_longer_has() {
         .unwrap();
     assert_eq!(box_state(&f), BoxState::Gone);
     let v = run(&f.cx, &req(false)).unwrap();
-    assert_eq!(v.task.lifecycle, BoxLifecycle::Closed);
+    assert_eq!(v.boxed.lifecycle, BoxLifecycle::Closed);
     assert_eq!(count(&f, "exec"), 0);
 }
 
@@ -251,12 +251,12 @@ fn close_skips_the_probe_for_a_box_that_never_got_a_handle() {
     let store = f.cx.store().unwrap();
     let name = BoxName::parse_allow_bare("u").unwrap();
     let id = store
-        .apply(Decision::insert(NewTask {
+        .apply(Decision::insert(NewBox {
             name: name.clone(),
             repo: "r".into(),
         }))
         .unwrap()
-        .task;
+        .box_id;
     let fields = Fields {
         box_provider: Field::Set(ProviderId::new("p")),
         ..Fields::default()
@@ -286,13 +286,13 @@ fn close_skips_the_probe_for_a_box_that_never_got_a_handle() {
     let v = run(
         &f.cx,
         &CloseReq {
-            task: name,
+            box_name: name,
             force: false,
             trust_moor_yaml: false,
         },
     )
     .unwrap();
-    assert_eq!(v.task.lifecycle, BoxLifecycle::Closed);
+    assert_eq!(v.boxed.lifecycle, BoxLifecycle::Closed);
     assert_eq!(count(&f, "exec"), 0);
 }
 

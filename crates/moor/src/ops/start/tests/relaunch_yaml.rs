@@ -16,15 +16,15 @@ use crate::testing::engine::FakeEngine;
 const BASE: &str = "setup: [a]\nenv:\n  A: \"1\"\n";
 const CHANGED: &str = "setup: [a]\nenv:\n  A: \"2\"\n";
 
-/// Leaves `yaml` as the `.moor.yaml` in the worktree of task `id`.
+/// Leaves `yaml` as the `.moor.yaml` in the worktree of Box `id`.
 fn write_worktree_yaml(w: &World, id: BoxId, yaml: &str) {
-    let wt = w.cx.store().unwrap().task(id).unwrap().unwrap().worktree;
+    let wt = w.cx.store().unwrap().box_row(id).unwrap().unwrap().worktree;
     let wt = wt.unwrap();
     std::fs::create_dir_all(&wt).unwrap();
     std::fs::write(Path::new(&wt).join(".moor.yaml"), yaml).unwrap();
 }
 
-/// A started Task whose agent is gone, over a base holding `BASE`, with `yaml` in its worktree.
+/// A started Box whose agent is gone, over a base holding `BASE`, with `yaml` in its worktree.
 fn gone_with(yaml: &str) -> (World, Arc<FakeEngine>, BoxId) {
     let (w, engine, id) = started();
     script_base_yaml(&w, Some(BASE));
@@ -103,7 +103,7 @@ fn a_relaunch_after_a_failed_setup_warns_once_each_for_setup_and_moor_yaml() {
     assert!(first.setup.ran && !first.setup.ok);
     assert_eq!(engine.launches().len(), 1);
     gone(&w);
-    write_worktree_yaml(&w, BoxId::new(first.task.id), CHANGED);
+    write_worktree_yaml(&w, BoxId::new(first.boxed.id), CHANGED);
     script_base_yaml(&w, Some(BASE));
     drop(w.cx.take_warnings());
     let again = run(&w.cx, &trusted()).unwrap();
@@ -116,7 +116,7 @@ fn a_relaunch_after_a_failed_setup_warns_once_each_for_setup_and_moor_yaml() {
     assert_eq!(count("setup_not_rerun"), 1);
 }
 
-/// A Task with a finished setup, no session ever launched and no goal, over a `BASE` base,
+/// A Box with a finished setup, no session ever launched and no goal, over a `BASE` base,
 /// with `yaml` in its worktree.
 fn idle_with(yaml: &str) -> (World, Arc<FakeEngine>, BoxId) {
     let engine = Arc::new(FakeEngine::new().launch_result(Ok(session("p-1"))));
@@ -130,14 +130,14 @@ fn idle_with(yaml: &str) -> (World, Arc<FakeEngine>, BoxId) {
         },
     )
     .unwrap();
-    let id = BoxId::new(first.task.id);
+    let id = BoxId::new(first.boxed.id);
     script_base_yaml(&w, Some(BASE));
     write_worktree_yaml(&w, id, yaml);
     (w, engine, id)
 }
 
 fn goal_of(w: &World, id: BoxId) -> Option<String> {
-    w.cx.store().unwrap().task(id).unwrap().unwrap().goal
+    w.cx.store().unwrap().box_row(id).unwrap().unwrap().goal
 }
 
 #[test]

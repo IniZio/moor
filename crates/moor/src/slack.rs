@@ -1,4 +1,4 @@
-//! Slack Socket Mode front end: an app mention in an allowed channel starts a Task.
+//! Slack Socket Mode front end: an app mention in an allowed channel starts a Box.
 
 mod answer;
 mod api;
@@ -40,7 +40,7 @@ pub(crate) struct Slack {
     status_token: Secret,
     /// Channel ids where mentions are answered.
     channels: Vec<String>,
-    /// User ids who may start Tasks.
+    /// User ids who may start Boxes.
     users: Vec<String>,
 }
 
@@ -62,7 +62,7 @@ impl Slack {
 
     /// Starts the socket thread, the worker and the status follower for the life of the process.
     ///
-    /// Starting a Task can take minutes, so the socket thread only queues mentions.
+    /// Starting a Box can take minutes, so the socket thread only queues mentions.
     pub(crate) fn spawn(self, env: &Env, log: Log) {
         let (tx, rx) = mpsc::channel();
         let api = Arc::new(self.api);
@@ -98,7 +98,7 @@ struct Worker {
     bot_token: Secret,
     /// Channel ids where mentions are answered.
     channels: Vec<String>,
-    /// User ids who may start Tasks.
+    /// User ids who may start Boxes.
     users: Vec<String>,
     /// Controller log.
     log: Log,
@@ -182,7 +182,7 @@ impl Ui for ApiUi<'_> {
     }
 }
 
-/// Applies one event: dedupe, then steer or close a bound Task, or decide, start and bind.
+/// Applies one event: dedupe, then steer or close a bound Box, or decide, start and bind.
 fn handle(mention: &Mention, store: &Store, allow: &Allow<'_>, fx: &mut Fx<'_>) {
     match store.slack_event_once(&mention.event_id) {
         Ok(true) => {}
@@ -237,7 +237,7 @@ fn handle(mention: &Mention, store: &Store, allow: &Allow<'_>, fx: &mut Fx<'_>) 
     }
 }
 
-/// Applies a plain thread reply: the Task owner answers an open prompt, steers or closes;
+/// Applies a plain thread reply: the Box owner answers an open prompt, steers or closes;
 /// anyone else is refused.
 fn handle_reply(mention: &Mention, store: &Store, allow: &Allow<'_>, fx: &mut Fx<'_>) {
     let channel = mention.channel.as_str();
@@ -247,11 +247,11 @@ fn handle_reply(mention: &Mention, store: &Store, allow: &Allow<'_>, fx: &mut Fx
     if !allow.channels.iter().any(|c| c == channel) {
         return;
     }
-    let found = store.slack_thread(channel, thread).and_then(|task| {
+    let found = store.slack_thread(channel, thread).and_then(|bx| {
         let owner = store.slack_thread_owner(channel, thread)?;
-        Ok(task.zip(owner))
+        Ok(bx.zip(owner))
     });
-    let (task, owner) = match found {
+    let (bx, owner) = match found {
         Ok(Some(pair)) => pair,
         Ok(None) => return,
         Err(e) => return (fx.log)(&format!("slack: {e}")),
@@ -267,12 +267,12 @@ fn handle_reply(mention: &Mention, store: &Store, allow: &Allow<'_>, fx: &mut Fx
         ReplyAction::Ignore => return,
         ReplyAction::Refuse(text) => return (fx.reply)(channel, thread, &text),
         ReplyAction::Steer(text) => (fx.call)(Request::Steer(SteerReq {
-            task,
+            box_name: bx,
             text: Some(text),
             menu: None,
         })),
         ReplyAction::Close => (fx.call)(Request::Close(CloseReq {
-            task,
+            box_name: bx,
             force: false,
             trust_moor_yaml: false,
         })),

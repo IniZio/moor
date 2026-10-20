@@ -1,4 +1,4 @@
-//! Open rate-limit and credential problems derived from a Task's events.
+//! Open rate-limit and credential problems derived from a Box's events.
 
 use serde_json::Value;
 
@@ -60,7 +60,7 @@ impl Limit {
     }
 }
 
-/// Open limits from a Task's events in insertion order, given as (kind, payload) pairs.
+/// Open limits from a Box's events in insertion order, given as (kind, payload) pairs.
 ///
 /// Per rule, the latest of `agent_rate_limited`, `proxy_credential_rejected` and
 /// `proxy_credential_recovered` wins; a rule whose latest is recovered has no open

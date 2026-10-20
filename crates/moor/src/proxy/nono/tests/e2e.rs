@@ -8,14 +8,14 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use moor_core::config::proxy::{EndpointRule, ResolvedInject, ResolvedRule};
-use moor_core::domain::decision::{Decision, NewTask};
+use moor_core::domain::decision::{Decision, NewBox};
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::{BoxId, BoxName, Secret};
 use tempfile::TempDir;
 use ureq::Agent;
 
 use super::upstream::{self, Upstream};
-use crate::proxy::nono::audit::{self, EgressSink, TaskSink, Withheld};
+use crate::proxy::nono::audit::{self, BoxSink, EgressSink, Withheld};
 use crate::proxy::nono::capture::{MoorCapture, RuleSource, CACHE_TTL};
 use crate::proxy::nono::{build_config, ca, NonoProxy, NonoSpec};
 use crate::proxy::ProxyLog;
@@ -24,12 +24,12 @@ use crate::testing::clock::FakeClock;
 
 /// The credential every rule fetches.
 const SECRET: &str = "s3cr3t-credential-value-7f3a";
-/// The Task Nonce used as proxy password.
+/// The Box nonce used as proxy password.
 const NONCE: &str = "nonce_AbCdEf-0123456789";
 /// What the client sends before the proxy swaps it out.
 const PLACEHOLDER: &str = "Bearer placeholder-not-real";
-/// Task id whose CA directory the proxy uses.
-const TASK: BoxId = BoxId::new(7);
+/// Box id whose CA directory the proxy uses.
+const BOX_ID: BoxId = BoxId::new(7);
 
 /// Counts fetches per rule and lets a test make them fail.
 struct Fetches {
@@ -55,11 +55,11 @@ struct Rig {
     capture: Arc<MoorCapture>,
     /// Source of time for the capture.
     clock: Arc<FakeClock>,
-    /// The Task CA.
-    ca: ca::TaskCa,
+    /// The Box CA.
+    ca: ca::BoxCa,
     /// Running proxy.
     proxy: Option<NonoProxy>,
-    /// Task Nonce.
+    /// Box nonce.
     nonce: Secret,
 }
 
@@ -74,7 +74,7 @@ impl Rig {
         self.proxy.as_ref().unwrap()
     }
 
-    /// A client through the running proxy trusting the Task CA.
+    /// A client through the running proxy trusting the Box CA.
     fn client(&self) -> Agent {
         client(self.proxy().port(), self.ca.cert_pem())
     }
@@ -84,18 +84,18 @@ impl Rig {
         format!("https://localhost:{}{path}", self.up.port)
     }
 
-    /// A store with one task, and a proxy log for it.
+    /// A store with one Box, and a proxy log for it.
     fn store(&self) -> (Store, BoxId, ProxyLog) {
         let store = Store::open(&self.state().join("moor.db"), self.clock.clone()).unwrap();
-        let task = store
-            .apply(Decision::insert(NewTask {
+        let box_id = store
+            .apply(Decision::insert(NewBox {
                 name: BoxName::parse_allow_bare("t").unwrap(),
                 repo: "r".into(),
             }))
             .unwrap()
-            .task;
-        let log = ProxyLog::open(&self.state(), task, self.clock.clone()).unwrap();
-        (store, task, log)
+            .box_id;
+        let log = ProxyLog::open(&self.state(), box_id, self.clock.clone()).unwrap();
+        (store, box_id, log)
     }
 }
 
@@ -148,15 +148,15 @@ fn source(count: &Arc<AtomicUsize>, fail: &Arc<AtomicBool>, user: Option<&str>) 
     }
 }
 
-/// Starts a proxy for `rules` over `up`, with the given Task CA and capture.
+/// Starts a proxy for `rules` over `up`, with the given Box CA and capture.
 fn start_proxy(
     dir: &Path,
     nonce: &Secret,
-    ca: &ca::TaskCa,
+    ca: &ca::BoxCa,
     ups: [&Upstream; 2],
     capture: &Arc<MoorCapture>,
 ) -> NonoProxy {
-    let ca_dir = ca::ca_dir(&dir.join("state"), TASK);
+    let ca_dir = ca::ca_dir(&dir.join("state"), BOX_ID);
     let rules = rules(ups[0].port, ups[1].port);
     let cfg = build_config(&NonoSpec {
         rules: &rules,
@@ -191,7 +191,7 @@ fn rig() -> Rig {
         ),
     ]);
     let capture = Arc::new(MoorCapture::new(sources, clock.clone()));
-    let ca = ca::load_or_create(&dir.path().join("state"), TASK).unwrap();
+    let ca = ca::load_or_create(&dir.path().join("state"), BOX_ID).unwrap();
     let nonce = Secret::new(NONCE.as_bytes().to_vec());
     let proxy = start_proxy(dir.path(), &nonce, &ca, [&up, &up2], &capture);
     Rig {
@@ -283,10 +283,10 @@ fn settle(rig: &Rig, sink: &Recorder, done: impl Fn(&[String]) -> bool) -> Vec<S
     sink.calls()
 }
 
-/// Event kinds of a task.
-fn kinds(store: &Store, task: BoxId) -> Vec<String> {
+/// Event kinds of a Box.
+fn kinds(store: &Store, box_id: BoxId) -> Vec<String> {
     store
-        .events(task, 100)
+        .events(box_id, 100)
         .unwrap()
         .into_iter()
         .map(|e| e.kind)
@@ -357,11 +357,11 @@ fn unlisted_host_is_refused_and_reaches_the_sinks() {
         "{calls:?}"
     );
 
-    let (store, task, log) = rig.store();
-    let task_sink = TaskSink {
+    let (store, box_id, log) = rig.store();
+    let box_sink = BoxSink {
         log: &log,
         store: &store,
-        task,
+        box_id,
     };
     let again = rig.client();
     assert!(get(&again, "https://example.invalid/anything").is_err());
@@ -370,25 +370,25 @@ fn unlisted_host_is_refused_and_reaches_the_sinks() {
             &rig.proxy().drain_audit(),
             &rig.capture,
             &Withheld::default(),
-            &task_sink,
+            &box_sink,
         );
-        if kinds(&store, task).iter().any(|k| k == "egress_refused") {
+        if kinds(&store, box_id).iter().any(|k| k == "egress_refused") {
             break;
         }
         std::thread::sleep(Duration::from_millis(50));
     }
-    let found = kinds(&store, task);
+    let found = kinds(&store, box_id);
     assert!(found.iter().any(|k| k == "egress_refused"), "{found:?}");
 }
 
 #[test]
-fn task_ca_is_reused_across_restart_and_key_is_private() {
+fn box_ca_is_reused_across_restart_and_key_is_private() {
     let mut rig = rig();
     let old_pem = rig.ca.cert_pem().to_owned();
     rig.proxy.take().unwrap().stop();
-    let again = ca::load_or_create(&rig.state(), TASK).unwrap();
+    let again = ca::load_or_create(&rig.state(), BOX_ID).unwrap();
     assert_eq!(again.cert_pem(), old_pem);
-    let key = ca::ca_dir(&rig.state(), TASK).join("ca-key.pem");
+    let key = ca::ca_dir(&rig.state(), BOX_ID).join("ca-key.pem");
     let mode = std::fs::metadata(&key).unwrap().permissions().mode() & 0o777;
     assert_eq!(mode, 0o600);
 
@@ -456,19 +456,19 @@ fn fetch_failure_is_reported_and_never_reaches_upstream() {
         "{calls:?}"
     );
 
-    let (store, task, log) = rig.store();
-    let task_sink = TaskSink {
+    let (store, box_id, log) = rig.store();
+    let box_sink = BoxSink {
         log: &log,
         store: &store,
-        task,
+        box_id,
     };
-    task_sink.credential_failed("hdr");
+    box_sink.credential_failed("hdr");
     assert!(
-        kinds(&store, task)
+        kinds(&store, box_id)
             .iter()
             .any(|k| k == "proxy_credential_failed"),
         "{:?}",
-        kinds(&store, task)
+        kinds(&store, box_id)
     );
 
     rig.fetches.fail.store(false, Ordering::SeqCst);
@@ -479,11 +479,11 @@ fn fetch_failure_is_reported_and_never_reaches_upstream() {
 fn secret_bytes_never_appear_in_logs_debug_or_errors() {
     let rig = rig();
     let agent = rig.client();
-    let (store, task, log) = rig.store();
-    let sink = TaskSink {
+    let (store, box_id, log) = rig.store();
+    let sink = BoxSink {
         log: &log,
         store: &store,
-        task,
+        box_id,
     };
     let mut texts = vec![
         format!("{:?}", rig.proxy()),
@@ -508,9 +508,9 @@ fn secret_bytes_never_appear_in_logs_debug_or_errors() {
     let log_path = rig
         .state()
         .join("proxy")
-        .join(format!("{}.log", task.get()));
+        .join(format!("{}.log", box_id.get()));
     texts.push(std::fs::read_to_string(log_path).unwrap());
-    for e in store.events(task, 100).unwrap() {
+    for e in store.events(box_id, 100).unwrap() {
         texts.push(format!("{e:?}"));
     }
     let rules = rules(rig.up.port, rig.up2.port);
@@ -518,7 +518,7 @@ fn secret_bytes_never_appear_in_logs_debug_or_errors() {
         rules: &rules,
         nonce: &rig.nonce,
         ca: &rig.ca,
-        ca_dir: &ca::ca_dir(&rig.state(), TASK),
+        ca_dir: &ca::ca_dir(&rig.state(), BOX_ID),
         upstream_ca: None,
         chain: None,
     });
