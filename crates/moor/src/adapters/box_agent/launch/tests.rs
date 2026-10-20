@@ -338,7 +338,7 @@ fn launch_with_proxy() -> (Arc<FakeDriver>, Arc<FakeSurface>) {
 }
 
 #[test]
-fn a_proxy_launch_stages_the_public_ca() {
+fn a_proxy_launch_stages_only_the_brief() {
     let (d, _) = launch_with_proxy();
     let staged: Vec<_> = d
         .puts()
@@ -346,15 +346,14 @@ fn a_proxy_launch_stages_the_public_ca() {
         .filter(|p| p.1.as_str().starts_with(&format!("{CRED}/")))
         .map(|p| (p.1.as_str().to_owned(), p.3))
         .collect();
-    assert!(staged.contains(&(format!("{CRED}/proxy-ca.pem"), 0o644)));
-    assert!(staged.iter().all(|(path, _)| !path.contains("/bin/")));
+    assert_eq!(staged, [(format!("{CRED}/brief.md"), 0o600)]);
 }
 
 #[test]
-fn a_proxy_launch_keeps_the_cred_dir_for_the_agent_and_exports_the_proxy_env() {
+fn a_proxy_launch_removes_the_cred_dir_after_the_brief_and_exports_the_proxy_env() {
     let (_, s) = launch_with_proxy();
     let script = script_of(&pane_line(&s));
-    assert!(!script.contains(&format!("\nrm -rf '{CRED}'")), "{script}");
+    assert!(script.contains(&format!("\nrm -rf '{CRED}'\n")), "{script}");
     for want in [
         "GIT_CONFIG_COUNT=2",
         "remote.moor.url",
@@ -367,10 +366,9 @@ fn a_proxy_launch_keeps_the_cred_dir_for_the_agent_and_exports_the_proxy_env() {
 }
 
 #[test]
-fn the_agent_gets_the_proxy_env_while_the_cred_dir_lives_until_exit() {
+fn the_agent_gets_the_proxy_env_and_the_ca_after_the_cred_dir_is_gone() {
     let b = Scratch::new();
     let cred = b.path("home/.moor-cred-t1-x");
-    std::fs::write(cred.join("proxy-ca.pem"), proxy_addr().ca_pem).unwrap();
     b.stub(
         "claude",
         &format!(
@@ -394,7 +392,14 @@ fn the_agent_gets_the_proxy_env_while_the_cred_dir_lives_until_exit() {
         "{env}"
     );
     assert!(!env.contains("GH_TOKEN"), "{env}");
-    assert!(b.path("started.dir").exists());
+    let ca = b.path("home/.moor-proxy/ca.pem");
+    assert_eq!(
+        line("NODE_EXTRA_CA_CERTS="),
+        format!("NODE_EXTRA_CA_CERTS={}", ca.display()),
+        "{env}"
+    );
+    assert_eq!(std::fs::read_to_string(&ca).unwrap(), proxy_addr().ca_pem);
+    assert!(!b.path("started.dir").exists());
     assert!(b.cred_gone());
 }
 

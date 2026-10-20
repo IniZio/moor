@@ -2,17 +2,17 @@
 
 use moor_core::seam::driver::DriverError;
 
-use super::stage::{command_execs, command_results};
 use super::{ready_with, req};
 use crate::ops::run::run;
+use crate::testing::driver::FakeDriver;
 
 #[test]
 fn a_lost_connection_during_the_command_is_not_retried() {
-    let f = ready_with(command_results([Err(DriverError::Transport {
+    let f = ready_with(FakeDriver::new().exec_results([Err(DriverError::Transport {
         stderr_tail: "Connection reset by peer".into(),
     })]));
     run(&f.cx, &req(&["true"])).unwrap_err();
-    assert_eq!(command_execs(&f).len(), 1);
+    assert_eq!(f.driver.execs().len(), 1);
     let events = f.cx.store().unwrap().events(f.id, 1000).unwrap();
     let ran = events.iter().find(|e| e.kind == "ran").unwrap();
     assert_eq!(ran.payload.get("exit"), Some(&serde_json::Value::Null));
@@ -24,9 +24,9 @@ fn a_lost_connection_during_the_command_is_not_retried() {
 
 #[test]
 fn a_timeout_during_the_command_is_not_retried() {
-    let f = ready_with(command_results([Err(DriverError::Timeout(
+    let f = ready_with(FakeDriver::new().exec_results([Err(DriverError::Timeout(
         std::time::Duration::from_secs(30),
     ))]));
     run(&f.cx, &req(&["true"])).unwrap_err();
-    assert_eq!(command_execs(&f).len(), 1);
+    assert_eq!(f.driver.execs().len(), 1);
 }

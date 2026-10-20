@@ -270,7 +270,6 @@ fn a_failed_setup_still_launches_with_its_exit_code() {
     std::fs::write(repo.path().join(".moor.yaml"), "setup: [bad]\n").unwrap();
     let driver = FakeDriver::new().exec_results([
         Ok(ExecOutcome::Exited { code: 0 }),
-        Ok(ExecOutcome::Exited { code: 0 }),
         Ok(ExecOutcome::Exited { code: 3 }),
     ]);
     let engine = Arc::new(FakeEngine::new());

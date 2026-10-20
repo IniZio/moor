@@ -6,13 +6,14 @@ use std::time::Duration;
 use crate::boxscript::quote;
 use crate::name::BoxPath;
 use crate::name::DirectHost;
-use crate::seam::driver::BoxStep;
 use crate::seam::forge::ForgeRepo;
 use crate::seam::proc::Deadline;
 
-/// The staged public CA certificate file name inside the credential directory.
-pub const CA_FILE: &str = "proxy-ca.pem";
-/// The CA bundle built in the credential directory when the system bundle cannot be edited.
+/// The Box directory the prelude writes the public Proxy CA into, as shell text that expands on the Box.
+const PROXY_DIR: &str = "$HOME/.moor-proxy";
+/// The public Proxy CA certificate in [`PROXY_DIR`].
+const CA_FILE: &str = "ca.pem";
+/// The CA bundle built in [`PROXY_DIR`] when the system bundle cannot be edited.
 const BUNDLE_FILE: &str = "ca-bundle.pem";
 /// System CA bundles, first existing one wins.
 const SYSTEM_BUNDLES: &str =
@@ -46,13 +47,13 @@ pub enum Purpose {
     Agent,
 }
 
-/// Where the Proxy CA was staged and which port the Box reaches the Proxy on.
+/// The Proxy CA the prelude writes and the port the Box reaches the Proxy on.
 #[derive(Debug, Clone, Copy)]
 pub struct ProxyCtx<'a> {
     /// The Proxy port inside the Box.
     pub box_port: u16,
-    /// The Box directory where [`stage_steps`] put the CA.
-    pub cred: &'a BoxPath,
+    /// The public Proxy CA certificate in PEM form.
+    pub ca_pem: &'a str,
     /// Hosts the Box reaches without the Proxy.
     pub direct: &'a [DirectHost],
 }
@@ -95,7 +96,7 @@ pub struct ExecEnv {
 /// purpose.
 ///
 /// # Errors
-/// Returns a message when an env name is not a shell identifier or a credential path is invalid.
+/// Returns a message when an env name is not a shell identifier.
 pub fn build(b: &BoxCtx<'_>, purpose: Purpose) -> Result<ExecEnv, String> {
     if let Some(bad) = b.env.iter().find(|(n, _)| !is_identifier(n)) {
         return Err(format!("{:?} is not a shell variable name", bad.0));
@@ -111,7 +112,7 @@ pub fn build(b: &BoxCtx<'_>, purpose: Purpose) -> Result<ExecEnv, String> {
     }
     let mut prelude = vec![image_path_line()];
     if let Some(p) = &b.proxy {
-        prelude.extend(proxy_lines(p)?);
+        prelude.extend(proxy_lines(p));
     }
     if b.proxy.is_some() {
         prelude.extend(git_remote_lines(b.origin));
@@ -173,32 +174,19 @@ pub fn merged_env(
 /// `argv` wrapped so the unset line and the prelude run first.
 ///
 /// [`build`] always yields a prelude, so `argv` is unchanged only for a hand-built [`ExecEnv`] with
-/// nothing to unset, an empty prelude and no `cleanup`. Otherwise it becomes
-/// `sh -c '<prelude>\nexec "$@"' sh argv...`. With `cleanup`, the script has no `exec`: it sets an
-/// `EXIT` trap that removes the `cleanup` directory (the staged credentials), runs the command, and
-/// exits with the command's status.
+/// nothing to unset and an empty prelude. Otherwise it becomes
+/// `sh -c '<prelude>\nexec "$@"' sh argv...`.
 #[must_use]
-pub fn wrap_argv(env: &ExecEnv, argv: Vec<String>, cleanup: Option<&BoxPath>) -> Vec<String> {
-    if env.unset.is_empty() && env.prelude.is_empty() && cleanup.is_none() {
+pub fn wrap_argv(env: &ExecEnv, argv: Vec<String>) -> Vec<String> {
+    if env.unset.is_empty() && env.prelude.is_empty() {
         return argv;
     }
     let mut lines = Vec::new();
-    if let Some(dir) = cleanup {
-        let rm = format!("rm -rf {}", quote(dir.as_str()));
-        lines.push(format!("trap {} EXIT", quote(&rm)));
-    }
     if !env.unset.is_empty() {
         lines.push(format!("unset {}", env.unset.join(" ")));
     }
     lines.extend(env.prelude.iter().cloned());
-    lines.push(
-        if cleanup.is_some() {
-            r#""$@""#
-        } else {
-            r#"exec "$@""#
-        }
-        .to_owned(),
-    );
+    lines.push(r#"exec "$@""#.to_owned());
     let mut out = vec![
         "sh".to_owned(),
         "-c".to_owned(),
@@ -207,20 +195,6 @@ pub fn wrap_argv(env: &ExecEnv, argv: Vec<String>, cleanup: Option<&BoxPath>) ->
     ];
     out.extend(argv);
     out
-}
-
-/// The step that stages the public Proxy CA certificate in `cred`, as `<cred>/proxy-ca.pem`
-/// (mode 0644), with the text a failure of it is reported under.
-///
-/// # Errors
-/// Returns a message when the credential path is invalid.
-pub fn stage_steps(cred: &BoxPath, ca_pem: &str) -> Result<[(BoxStep, &'static str); 1], String> {
-    let ca = BoxStep::Put {
-        path: cred_file(cred, CA_FILE)?,
-        bytes: ca_pem.as_bytes().to_vec(),
-        mode: 0o644,
-    };
-    Ok([(ca, "could not stage the proxy CA")])
 }
 
 /// `https://github.com/<owner>/<name>.git` for a GitHub origin (`https://github.com/o/n(.git)`,
@@ -258,23 +232,38 @@ fn is_identifier(name: &str) -> bool {
         && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
-/// `rel` under the credential directory.
-fn cred_file(cred: &BoxPath, rel: &str) -> Result<BoxPath, String> {
-    BoxPath::under(cred.as_str(), rel).map_err(|e| e.to_string())
+/// Shell that runs `write` into the temp file `file.$$` and moves it, mode 0644, over `file` when
+/// the two differ; the temp file never outlives the line.
+///
+/// The rename is atomic, so an exec running at the same time reads either the old or the new file.
+fn write_if_changed(write: &str, file: &str) -> String {
+    let tmp = format!("\"{file}.$$\"");
+    format!(
+        "{{ {write} >{tmp} && chmod 644 {tmp} && {{ cmp -s {tmp} \"{file}\" || mv -f {tmp} \"{file}\"; }}; rm -f {tmp}; }}"
+    )
 }
 
-/// Lines that trust the CA and export the Proxy variables.
-fn proxy_lines(p: &ProxyCtx<'_>) -> Result<Vec<String>, String> {
-    let ca = quote(cred_file(p.cred, CA_FILE)?.as_str());
-    let built = quote(cred_file(p.cred, BUNDLE_FILE)?.as_str());
+/// Lines that write the CA, trust it and export the Proxy variables.
+fn proxy_lines(p: &ProxyCtx<'_>) -> Vec<String> {
+    let ca_file = format!("{PROXY_DIR}/{CA_FILE}");
+    let ca = format!("\"{ca_file}\"");
+    let built = format!("\"{PROXY_DIR}/{BUNDLE_FILE}\"");
     let mut lines = vec![
         "unset GH_TOKEN GITHUB_TOKEN".to_owned(),
+        format!(
+            "mkdir -p \"{PROXY_DIR}\" && {}",
+            write_if_changed(&format!("printf '%s' {}", quote(p.ca_pem)), &ca_file)
+        ),
         "moor_sys=; for moor_f in ".to_owned()
             + SYSTEM_BUNDLES
             + "; do [ -f \"$moor_f\" ] && { moor_sys=$moor_f; break; }; done",
         format!("moor_mark=$(sed -n 2p {ca})"),
         format!(
-            "if [ -n \"$moor_sys\" ] && sudo -n true 2>/dev/null && {{ grep -qF \"$moor_mark\" \"$moor_sys\" || sudo -n tee -a \"$moor_sys\" <{ca} >/dev/null; }}; then moor_bundle=$moor_sys; else moor_bundle={built}; {{ if [ -n \"$moor_sys\" ]; then cat \"$moor_sys\"; fi; cat {ca}; }} >\"$moor_bundle\" && chmod 644 \"$moor_bundle\"; fi"
+            "if [ -n \"$moor_sys\" ] && sudo -n true 2>/dev/null && {{ grep -qF \"$moor_mark\" \"$moor_sys\" || sudo -n tee -a \"$moor_sys\" <{ca} >/dev/null; }}; then moor_bundle=$moor_sys; else moor_bundle={built}; {}; fi",
+            write_if_changed(
+                &format!("{{ if [ -n \"$moor_sys\" ]; then cat \"$moor_sys\"; fi; cat {ca}; }}"),
+                "$moor_bundle"
+            )
         ),
     ];
     for name in [
@@ -302,7 +291,7 @@ fn proxy_lines(p: &ProxyCtx<'_>) -> Result<Vec<String>, String> {
     }
     lines.push("export NODE_USE_ENV_PROXY=1".to_owned());
     lines.extend(java::java_lines(p.box_port, &ca, p.direct));
-    Ok(lines)
+    lines
 }
 
 /// The line that appends the `PATH` of [`IMAGE_ENV_FILE`], when it sets one, to the exec's `PATH`.

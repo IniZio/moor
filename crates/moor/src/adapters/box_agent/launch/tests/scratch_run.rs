@@ -44,11 +44,9 @@ impl Scratch {
     }
 
     pub(super) fn proxy_lines(&self) -> Vec<String> {
-        let root = self.dir.path().to_str().unwrap();
-        let cred = BoxPath::under(root, "home/.moor-cred-t1-x").unwrap();
         let env = Claude.env(&self.proxy_ctx());
         let origin = Some("git@github.com:o/n.git");
-        proxy_env::script_lines(&cred, &proxy_addr(), &env, origin).unwrap()
+        proxy_env::script_lines(&proxy_addr(), &env, origin).unwrap()
     }
 
     pub(super) fn script_with(&self, hook_step: &str, proxy: &[String]) -> String {

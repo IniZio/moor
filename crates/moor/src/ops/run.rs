@@ -12,7 +12,7 @@ use moor_core::domain::decision::Decision;
 use moor_core::domain::run::SyncMode;
 use moor_core::domain::session_state::SessionInput;
 use moor_core::exec_env::Purpose;
-use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
+use moor_core::seam::driver::{ExecOutcome, ExecSpec};
 use moor_core::seam::proc::Output;
 use moor_core::view::run::RunValue;
 use moor_core::{ErrorKind, RunId, RunReq, Sha};
@@ -117,7 +117,7 @@ fn launch(
         host_cwd: Some(target.worktree.clone()),
         class: Some(cfg.size.value.as_str().to_owned()),
     };
-    let outcome = match exec_in_box(cx, row, target, &exec, &spec) {
+    let outcome = match cx.driver().exec(&target.handle, &spec, exec.deadline()) {
         Ok(outcome) => outcome,
         Err(e) => {
             let message = e.to_string();
@@ -140,21 +140,6 @@ fn launch(
         record: req.record.clone(),
         log,
     })
-}
-
-/// Runs the command; when it may never have started, drops the staged Proxy files.
-fn exec_in_box(
-    cx: &Cx,
-    row: &BoxRow,
-    target: &ready::Target,
-    exec: &BoxExec,
-    spec: &ExecSpec,
-) -> Result<ExecOutcome, DriverError> {
-    let result = cx.driver().exec(&target.handle, spec, exec.deadline());
-    if matches!(result, Err(_) | Ok(ExecOutcome::Interrupted)) {
-        exec.cleanup(cx, &site(row, target));
-    }
-    result
 }
 
 /// Where in the machine the Box's commands run.

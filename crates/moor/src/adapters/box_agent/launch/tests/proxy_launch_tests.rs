@@ -1,4 +1,4 @@
-//! A launch with a Proxy exports its environment and stages its files.
+//! A launch with a Proxy exports its environment.
 
 use super::*;
 
@@ -14,7 +14,7 @@ fn a_launch_without_a_proxy_installs_nothing() {
 }
 
 #[test]
-fn a_failed_proxy_stage_removes_the_cred_dir() {
+fn a_failed_put_removes_the_cred_dir() {
     let (d, s) = (
         driver(FakeDriver::new().fail_put(DriverError::NotFound)),
         surface(FakeSurface::new("/r")),

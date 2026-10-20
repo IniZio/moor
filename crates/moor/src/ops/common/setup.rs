@@ -187,11 +187,9 @@ fn exec_script(
         host_cwd: Some(site.worktree.to_path_buf()),
         class: Some(cfg.size.value.as_str().to_owned()),
     };
-    let out = cx.driver().exec(site.handle, &spec, exec.deadline());
-    if matches!(out, Err(_) | Ok(ExecOutcome::Interrupted)) {
-        exec.cleanup(cx, site);
-    }
-    out.map_err(Failure::Exec)
+    cx.driver()
+        .exec(site.handle, &spec, exec.deadline())
+        .map_err(Failure::Exec)
 }
 
 /// A setup that failed because the Proxy would not start; no line ran, so none is blamed.

@@ -6,7 +6,6 @@ use moor_core::domain::run::SyncMode;
 use moor_core::seam::driver::ExecSpec;
 use moor_core::BoxHandle;
 
-use super::stage::command_execs;
 use super::{command, ready, req, Fx};
 use crate::ops::common::box_exec;
 use crate::ops::common::facts::resolved;
@@ -42,7 +41,7 @@ fn setup_spec(f: &Fx) -> ExecSpec {
     let boxed = row.boxed.unwrap();
     let workdir = recorded_workdir(boxed.workdir.as_deref().unwrap()).unwrap();
     let handle: BoxHandle = boxed.handle.unwrap();
-    let before = command_execs(f).len();
+    let before = f.driver.execs().len();
     let proxy = box_exec::proxy(&f.cx, f.id, Some(handle.clone()), f.dir.path(), &cfg).ok();
     let provider = boxed.provider.as_str();
     let (worktree, sync) = (f.dir.path(), SyncMode::Full);
@@ -56,7 +55,7 @@ fn setup_spec(f: &Fx) -> ExecSpec {
         sync,
         proxy.as_ref(),
     );
-    command_execs(f).remove(before).1
+    f.driver.execs().remove(before).1
 }
 
 /// The repo `env:` entries of the exec, apart from the Proxy variables.
@@ -73,7 +72,7 @@ fn run_of_a_setup_line_has_the_env_and_cwd_setup_has() {
     let f = with_env_yaml();
     let setup = setup_spec(&f);
     run(&f.cx, &req(&["make deps"])).unwrap();
-    let (_, spec, _) = command_execs(&f).remove(1);
+    let (_, spec, _) = f.driver.execs().remove(1);
     assert_eq!(command(&spec.argv), ["sh", "-c", "make deps"]);
     assert_eq!(repo_vars(&spec), [("A", "1"), ("B", "2")]);
     assert_eq!(spec.env, setup.env);
@@ -92,7 +91,7 @@ fn recorded_run_has_the_repo_env_too() {
     let mut r = req(&["true"]);
     r.record = Some("ci".into());
     run(&f.cx, &r).unwrap();
-    let (_, spec, _) = command_execs(&f).remove(0);
+    let (_, spec, _) = f.driver.execs().remove(0);
     assert_eq!(repo_vars(&spec), [("A", "1"), ("B", "2")]);
 }
 
@@ -107,6 +106,6 @@ fn box_without_a_recorded_workdir_keeps_the_driver_default_cwd() {
         }))
         .unwrap();
     run(&f.cx, &req(&["true"])).unwrap();
-    let (_, spec, _) = command_execs(&f).remove(0);
+    let (_, spec, _) = f.driver.execs().remove(0);
     assert_eq!(spec.cwd, None);
 }

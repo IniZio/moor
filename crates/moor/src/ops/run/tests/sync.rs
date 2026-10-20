@@ -5,7 +5,6 @@ use moor_core::domain::run::SyncMode;
 use moor_core::seam::driver::{DriverError, ExecOutcome};
 use moor_core::{BoxPath, ErrorKind, RunReq};
 
-use super::stage::command_execs;
 use super::{ran_events, ready, ready_with, req, run, Fx};
 use crate::testing::driver::FakeDriver;
 
@@ -52,7 +51,7 @@ fn box_with_an_agent_session_is_not_synced() {
     with_session(&f);
     let v = run(&f.cx, &req(&[USER_CMD])).unwrap();
     assert_eq!(v.sync, SyncMode::None);
-    let (_, spec, _) = command_execs(&f).remove(0);
+    let (_, spec, _) = f.driver.execs().remove(0);
     assert_eq!(spec.sync, SyncMode::None);
 }
 
@@ -61,7 +60,7 @@ fn box_without_an_agent_session_is_synced() {
     let f = ready();
     let v = run(&f.cx, &req(&[USER_CMD])).unwrap();
     assert_eq!(v.sync, SyncMode::Full);
-    let (_, spec, _) = command_execs(&f).remove(0);
+    let (_, spec, _) = f.driver.execs().remove(0);
     assert_eq!(spec.sync, SyncMode::Full);
 }
 
@@ -80,7 +79,7 @@ fn sync_overrides_the_session_default_when_the_box_is_clean() {
     let v = run(&f.cx, &sync_req()).unwrap();
     assert_eq!(v.sync, SyncMode::Full);
     assert_eq!(user_execs(&f), 1);
-    let (_, spec, _) = command_execs(&f).pop().unwrap();
+    let (_, spec, _) = f.driver.execs().pop().unwrap();
     assert_eq!(spec.sync, SyncMode::Full);
     assert_eq!(ran_events(&f), 1);
 }

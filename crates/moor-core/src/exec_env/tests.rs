@@ -32,16 +32,19 @@ fn env() -> Vec<(String, String)> {
     vec![("A".to_owned(), "a".to_owned())]
 }
 
+/// A Proxy CA certificate, with a quote to check the prelude's quoting.
+const PEM: &str = "-----BEGIN CERTIFICATE-----\nQUJD'REVG\n-----END CERTIFICATE-----\n";
+
 fn ctx<'a>(
     env: &'a [(String, String)],
-    cred: Option<&'a BoxPath>,
+    ca_pem: Option<&'a str>,
     workdir: Option<&'a BoxPath>,
 ) -> BoxCtx<'a> {
     BoxCtx {
         env,
-        proxy: cred.map(|cred| ProxyCtx {
+        proxy: ca_pem.map(|ca_pem| ProxyCtx {
             box_port: 4321,
-            cred,
+            ca_pem,
             direct: &[],
         }),
         origin: Some("https://github.com/o/n.git"),
@@ -52,8 +55,8 @@ fn ctx<'a>(
 
 #[test]
 fn every_purpose_shares_vars_prelude_and_cwd() {
-    let (cred, wd, e) = (path("/cred"), path("/work"), env());
-    let b = ctx(&e, Some(&cred), Some(&wd));
+    let (wd, e) = (path("/work"), env());
+    let b = ctx(&e, Some(PEM), Some(&wd));
     let min = |m| Some(Deadline(Duration::from_mins(m)));
     let table = [
         (Purpose::Setup { lines: 2 }, min(60), false),
@@ -81,8 +84,8 @@ fn every_purpose_shares_vars_prelude_and_cwd() {
 
 #[test]
 fn every_proxy_variable_is_the_box_port_with_no_userinfo() {
-    let (cred, wd, e) = (path("/cred"), path("/work"), env());
-    let got = build(&ctx(&e, Some(&cred), Some(&wd)), Purpose::Run).unwrap();
+    let (wd, e) = (path("/work"), env());
+    let got = build(&ctx(&e, Some(PEM), Some(&wd)), Purpose::Run).unwrap();
     let names = [
         "HTTPS_PROXY",
         "HTTP_PROXY",
@@ -107,7 +110,7 @@ fn every_proxy_variable_is_the_box_port_with_no_userinfo() {
     let text = got.prelude.join("\n");
     assert!(!text.contains('@'), "{text}");
     assert!(text.contains("export SSL_CERT_FILE="));
-    assert!(text.contains("export NODE_EXTRA_CA_CERTS='/cred/proxy-ca.pem'"));
+    assert!(text.contains("export NODE_EXTRA_CA_CERTS=\"$HOME/.moor-proxy/ca.pem\""));
     assert!(text.contains("GIT_CONFIG_VALUE_0='https://github.com/o/n.git'"));
     for name in PASS_VARS {
         assert!(text.contains(&format!("export {name}=")), "{name}");
@@ -116,8 +119,8 @@ fn every_proxy_variable_is_the_box_port_with_no_userinfo() {
 
 /// `NO_PROXY` and `no_proxy` after the prelude's exports, starting from `start` for both.
 fn no_proxy_after(direct: &[crate::name::DirectHost], start: &str) -> String {
-    let (cred, wd, e) = (path("/cred"), path("/work"), env());
-    let mut b = ctx(&e, Some(&cred), Some(&wd));
+    let (wd, e) = (path("/work"), env());
+    let mut b = ctx(&e, Some(PEM), Some(&wd));
     b.proxy = b.proxy.map(|p| ProxyCtx { direct, ..p });
     let got = build(&b, Purpose::Run).unwrap();
     let exports: Vec<&String> = got
@@ -167,8 +170,8 @@ fn without_direct_hosts_no_proxy_holds_only_loopback() {
 
 #[test]
 fn proxy_prelude_unsets_the_java_shell_vars() {
-    let (cred, wd, e) = (path("/cred"), path("/work"), env());
-    let got = build(&ctx(&e, Some(&cred), Some(&wd)), Purpose::Run).unwrap();
+    let (wd, e) = (path("/work"), env());
+    let got = build(&ctx(&e, Some(PEM), Some(&wd)), Purpose::Run).unwrap();
     let last = got.prelude.last().unwrap();
     for name in ["moor_g", "moor_p", "moor_ts", "moor_jh"] {
         assert!(last.split(' ').any(|w| w == name), "{name}");
@@ -192,9 +195,9 @@ fn workdir_none_means_cwd_none() {
 
 #[test]
 fn a_bad_env_name_is_an_error() {
-    let (wd, cred) = (path("/work"), path("/cred"));
+    let wd = path("/work");
     let bad = vec![("A B".to_owned(), "x".to_owned())];
-    assert!(build(&ctx(&bad, Some(&cred), Some(&wd)), Purpose::Agent).is_err());
+    assert!(build(&ctx(&bad, Some(PEM), Some(&wd)), Purpose::Agent).is_err());
 }
 
 fn strs(v: &[&str]) -> Vec<String> {
@@ -203,16 +206,16 @@ fn strs(v: &[&str]) -> Vec<String> {
 
 #[test]
 fn wrap_argv_runs_the_prelude_first() {
-    let (cred, wd, e) = (path("/cred"), path("/w"), env());
-    let mut got = build(&ctx(&e, Some(&cred), Some(&wd)), Purpose::Run).unwrap();
+    let (wd, e) = (path("/w"), env());
+    let mut got = build(&ctx(&e, Some(PEM), Some(&wd)), Purpose::Run).unwrap();
     let argv = strs(&["ls", "-l"]);
     let script = format!("{}\nexec \"$@\"", got.prelude.join("\n"));
     assert_eq!(
-        wrap_argv(&got, argv.clone(), None),
+        wrap_argv(&got, argv.clone()),
         [strs(&["sh", "-c", &script, "sh"]), argv.clone()].concat()
     );
     got.prelude.clear();
-    assert_eq!(wrap_argv(&got, argv.clone(), None), argv);
+    assert_eq!(wrap_argv(&got, argv.clone()), argv);
 }
 
 /// `PATH` after the image-path line reads `file`, starting from `start`.
@@ -285,49 +288,6 @@ fn the_image_path_line_leaves_no_variable_behind_and_runs_first() {
 }
 
 #[test]
-fn cleanup_traps_the_removal_and_does_not_exec() {
-    let (cred, wd, e) = (path("/cred"), path("/w"), env());
-    let got = build(&ctx(&e, Some(&cred), Some(&wd)), Purpose::Run).unwrap();
-    let dir = path("/it's/cred");
-    let wrapped = wrap_argv(&got, strs(&["ls"]), Some(&dir));
-    assert_eq!(wrapped.len(), 5, "{wrapped:?}");
-    let script = wrapped.get(2).unwrap();
-    assert_eq!(wrapped.get(..2).unwrap(), strs(&["sh", "-c"]));
-    assert_eq!(wrapped.get(3..).unwrap(), strs(&["sh", "ls"]));
-    let trap = format!("trap {} EXIT\n", quote("rm -rf '/it'\\''s/cred'"));
-    assert!(script.starts_with(&trap), "{script}");
-    assert!(script.ends_with("\n\"$@\""));
-    assert!(!script.contains("exec"));
-    assert!(script.contains(got.prelude.first().unwrap().as_str()));
-    // Without a Proxy the prelude is the image path line alone.
-    let bare = build(&ctx(&e, None, None), Purpose::Run).unwrap();
-    let w = wrap_argv(&bare, strs(&["ls"]), Some(&dir));
-    let expect = format!("{trap}{}\n\"$@\"", image_path_line());
-    assert_eq!(w, strs(&["sh", "-c", &expect, "sh", "ls"]));
-}
-
-#[test]
-fn cleanup_removes_the_directory_and_keeps_the_exit_status() {
-    let e = env();
-    let bare = build(&ctx(&e, None, None), Purpose::Run).unwrap();
-    for (cmd, code) in [("exit 0", 0), ("exit 3", 3)] {
-        let name = format!("moor-exec-env-{}-{code}", std::process::id());
-        let dir = std::env::temp_dir().join(name);
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("proxy-ca.pem"), "x").unwrap();
-        let bp = BoxPath::restore(dir.to_str().unwrap()).unwrap();
-        let w = wrap_argv(&bare, strs(&["sh", "-c", cmd]), Some(&bp));
-        let (prog, args) = w.split_first().unwrap();
-        let status = std::process::Command::new(prog)
-            .args(args)
-            .status()
-            .unwrap();
-        assert_eq!(status.code(), Some(code), "{cmd}");
-        assert!(!dir.exists(), "{cmd}");
-    }
-}
-
-#[test]
 fn setup_deadline_scales_with_lines() {
     let (wd, e) = (path("/w"), env());
     let b = ctx(&e, None, Some(&wd));
@@ -388,13 +348,13 @@ fn other_origins_are_not_github() {
 
 #[test]
 fn strip_is_the_same_for_every_purpose_and_leaves_vars() {
-    let (cred, wd) = (path("/cred"), path("/work"));
+    let wd = path("/work");
     let e = vec![
         ("A".to_owned(), "a".to_owned()),
         ("ANTHROPIC_API_KEY".to_owned(), "k".to_owned()),
     ];
     let strip = strs(&["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY"]);
-    let mut b = ctx(&e, Some(&cred), Some(&wd));
+    let mut b = ctx(&e, Some(PEM), Some(&wd));
     b.strip = &strip;
     let first = build(&b, Purpose::Run).unwrap();
     assert_eq!(first.unset, strs(&["ANTHROPIC_API_KEY", "OPENAI_API_KEY"]));
@@ -422,8 +382,8 @@ fn a_bad_strip_name_is_an_error() {
 
 #[test]
 fn prelude_exports_yarn_after_the_proxy_and_before_no_proxy() {
-    let (cred, wd, e) = (path("/cred"), path("/work"), env());
-    let got = build(&ctx(&e, Some(&cred), Some(&wd)), Purpose::Agent).unwrap();
+    let (wd, e) = (path("/work"), env());
+    let got = build(&ctx(&e, Some(PEM), Some(&wd)), Purpose::Agent).unwrap();
     let at = |needle: &str| got.prelude.iter().position(|l| l.contains(needle)).unwrap();
     let yarn = [
         "export YARN_HTTPS_PROXY=\"http://127.0.0.1:4321\"",
@@ -448,21 +408,6 @@ fn prelude_exports_yarn_after_the_proxy_and_before_no_proxy() {
 }
 
 #[test]
-fn stage_steps_put_only_the_public_ca() {
-    let cred = path("/cred");
-    let [(c, cmsg)] = stage_steps(&cred, "PEM").unwrap();
-    assert_eq!(
-        c,
-        BoxStep::Put {
-            path: path("/cred/proxy-ca.pem"),
-            bytes: b"PEM".to_vec(),
-            mode: 0o644
-        }
-    );
-    assert_eq!(cmsg, "could not stage the proxy CA");
-}
-
-#[test]
 fn wrap_argv_unsets_first_even_without_a_proxy() {
     let (wd, e) = (path("/w"), env());
     let strip = strs(&["X", "Y"]);
@@ -470,7 +415,7 @@ fn wrap_argv_unsets_first_even_without_a_proxy() {
     b.strip = &strip;
     let got = build(&b, Purpose::Run).unwrap();
     assert_eq!(
-        wrap_argv(&got, strs(&["ls"]), None),
+        wrap_argv(&got, strs(&["ls"])),
         strs(&[
             "sh",
             "-c",
@@ -479,20 +424,20 @@ fn wrap_argv_unsets_first_even_without_a_proxy() {
             "ls"
         ])
     );
-    let (cred, e2) = (path("/cred"), env());
-    let mut p = ctx(&e2, Some(&cred), Some(&wd));
+    let e2 = env();
+    let mut p = ctx(&e2, Some(PEM), Some(&wd));
     p.strip = &strip;
     let with = build(&p, Purpose::Run).unwrap();
-    let w = wrap_argv(&with, strs(&["ls"]), None);
+    let w = wrap_argv(&with, strs(&["ls"]));
     assert!(w.get(2).unwrap().starts_with("unset X Y\n"), "{w:?}");
     assert!(w.get(2).unwrap().contains("\nunset GH_TOKEN"));
 }
 
 #[test]
 fn exec_purposes_reexport_the_token_after_the_unset_and_the_agent_does_not() {
-    let (cred, wd) = (path("/cred"), path("/work"));
+    let wd = path("/work");
     let e = vec![("GH_TOKEN".to_owned(), "moor-proxy".to_owned())];
-    let b = ctx(&e, Some(&cred), Some(&wd));
+    let b = ctx(&e, Some(PEM), Some(&wd));
     for purpose in [Purpose::Run, Purpose::Setup { lines: 1 }, Purpose::Teardown] {
         let got = build(&b, purpose).unwrap();
         let at = |needle: &str| got.prelude.iter().position(|l| l == needle).unwrap();
@@ -507,13 +452,140 @@ fn exec_purposes_reexport_the_token_after_the_unset_and_the_agent_does_not() {
 
 #[test]
 fn a_stripped_token_is_not_reexported() {
-    let (cred, wd) = (path("/cred"), path("/work"));
+    let wd = path("/work");
     let e = vec![("GH_TOKEN".to_owned(), "moor-proxy".to_owned())];
     let strip = ["GH_TOKEN".to_owned()];
     let b = BoxCtx {
         strip: &strip,
-        ..ctx(&e, Some(&cred), Some(&wd))
+        ..ctx(&e, Some(PEM), Some(&wd))
     };
     let got = build(&b, Purpose::Run).unwrap();
     assert!(!got.prelude.join("\n").contains("export GH_TOKEN="));
+}
+
+/// A fresh directory under the system temp dir, removed when dropped.
+struct TempHome(std::path::PathBuf);
+
+impl TempHome {
+    fn new() -> Self {
+        static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let dir = std::env::temp_dir().join(format!("moor-home-{}-{n}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("bin")).unwrap();
+        let sudo = dir.join("bin/sudo");
+        std::fs::write(&sudo, "#!/bin/sh\nexit 1\n").unwrap();
+        std::fs::set_permissions(&sudo, std::os::unix::fs::PermissionsExt::from_mode(0o755))
+            .unwrap();
+        Self(dir)
+    }
+
+    fn proxy_dir(&self) -> std::path::PathBuf {
+        self.0.join(".moor-proxy")
+    }
+
+    /// The prelude lines that write the CA and build the bundle, run under `sh` with this `HOME`
+    /// and a `sudo` that always fails; the child prints the bundle path the exports use.
+    fn spawn(&self) -> std::process::Child {
+        let got = build(&ctx(&[], Some(PEM), None), Purpose::Run).unwrap();
+        let from = got
+            .prelude
+            .iter()
+            .position(|l| l.starts_with("mkdir -p \"$HOME/.moor-proxy\""))
+            .unwrap();
+        let to = got
+            .prelude
+            .iter()
+            .position(|l| l.starts_with("if [ -n \"$moor_sys\" ]"))
+            .unwrap();
+        let mut script = got.prelude.get(from..=to).unwrap().join("\n");
+        script.push_str("\nprintf '%s' \"$moor_bundle\"");
+        let path = format!(
+            "{}:{}",
+            self.0.join("bin").display(),
+            std::env::var("PATH").unwrap_or_default()
+        );
+        std::process::Command::new("sh")
+            .args(["-c", &script])
+            .env("HOME", &self.0)
+            .env("PATH", path)
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .unwrap()
+    }
+
+    fn run(&self) -> String {
+        let out = self.spawn().wait_with_output().unwrap();
+        assert!(out.status.success());
+        String::from_utf8(out.stdout).unwrap()
+    }
+
+    /// The names in the proxy directory, sorted.
+    fn names(&self) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(self.proxy_dir())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    }
+
+    fn read(&self, name: &str) -> String {
+        std::fs::read_to_string(self.proxy_dir().join(name)).unwrap()
+    }
+
+    fn inode(&self, name: &str) -> u64 {
+        std::os::unix::fs::MetadataExt::ino(
+            &std::fs::metadata(self.proxy_dir().join(name)).unwrap(),
+        )
+    }
+}
+
+impl Drop for TempHome {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+#[test]
+fn the_prelude_writes_the_ca_and_bundle_under_home_with_no_temp_file_left() {
+    let home = TempHome::new();
+    let bundle = home.run();
+    assert_eq!(
+        bundle,
+        home.proxy_dir().join("ca-bundle.pem").display().to_string()
+    );
+    assert_eq!(home.names(), ["ca-bundle.pem", "ca.pem"]);
+    assert_eq!(home.read("ca.pem"), PEM);
+    assert!(home.read("ca-bundle.pem").ends_with(PEM));
+}
+
+#[test]
+fn a_second_prelude_keeps_an_unchanged_ca_and_replaces_a_stale_one() {
+    let home = TempHome::new();
+    home.run();
+    let (ca, bundle) = (home.inode("ca.pem"), home.inode("ca-bundle.pem"));
+    home.run();
+    assert_eq!(
+        (home.inode("ca.pem"), home.inode("ca-bundle.pem")),
+        (ca, bundle)
+    );
+    std::fs::write(home.proxy_dir().join("ca.pem"), "stale").unwrap();
+    home.run();
+    assert_eq!(home.read("ca.pem"), PEM);
+    assert_eq!(home.names(), ["ca-bundle.pem", "ca.pem"]);
+}
+
+#[test]
+fn preludes_running_at_once_leave_one_whole_ca() {
+    let home = TempHome::new();
+    for _ in 0..10 {
+        let children: Vec<_> = (0..4).map(|_| home.spawn()).collect();
+        for child in children {
+            assert!(child.wait_with_output().unwrap().status.success());
+        }
+        assert_eq!(home.read("ca.pem"), PEM);
+        assert!(home.read("ca-bundle.pem").ends_with(PEM));
+        assert_eq!(home.names(), ["ca-bundle.pem", "ca.pem"]);
+    }
 }

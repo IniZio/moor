@@ -4,7 +4,7 @@ use sha2::{Digest, Sha256};
 
 use moor_core::domain::box_state::BoxLifecycle;
 
-use super::teardown::{base_has, with_home, YAML};
+use super::teardown::{base_has, YAML};
 use super::{fx_with, req, run, Fx};
 use crate::testing::driver::FakeDriver;
 use crate::testing::surface::FakeSurface;
@@ -51,11 +51,9 @@ fn force_close_collects_artifacts_too() {
 
 #[test]
 fn collection_runs_before_teardown_and_release() {
-    let f = fx(with_home(
-        FakeDriver::new()
-            .artifact_index([listing()])
-            .copy_text(BODY),
-    ));
+    let f = fx(FakeDriver::new()
+        .artifact_index([listing()])
+        .copy_text(BODY));
     std::fs::write(f.dir.path().join(".moor.yaml"), YAML).unwrap();
     base_has(&f, YAML);
     run(&f.cx, &req(false)).unwrap();

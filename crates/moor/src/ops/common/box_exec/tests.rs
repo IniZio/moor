@@ -6,9 +6,9 @@ use std::sync::Arc;
 
 use moor_core::config::proxy::{ResolvedInject, ResolvedRule, FORGE_CREDENTIAL};
 use moor_core::config::{parse_user, BoxSettings, Flags, UserConfig};
-use moor_core::exec_env::{Purpose, CA_FILE};
+use moor_core::exec_env::Purpose;
 use moor_core::seam::agent_profile::ProxyAddr;
-use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
+use moor_core::seam::driver::{AcquireReq, Driver};
 use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId};
 
 use super::{forge_routed, prepare, BoxProxy, Site};
@@ -30,16 +30,6 @@ fn rig(dir: &Path) -> Rig {
 
 fn rig_with(dir: &Path, config: UserConfig) -> Rig {
     rig_driver(dir, config, FakeDriver::new())
-}
-
-/// A rig whose Box user's home is `/home/box`.
-fn home_rig(dir: &Path) -> Rig {
-    rig_driver(dir, crate::testing::cx::fake_config(), home_driver())
-}
-
-fn home_driver() -> FakeDriver {
-    let environ = BoxPath::restore("/proc/self/environ").unwrap();
-    FakeDriver::new().peek_text("box-1", &environ, "PATH=/bin\0HOME=/home/box\0")
 }
 
 fn rig_driver(dir: &Path, config: UserConfig, driver: FakeDriver) -> Rig {
@@ -81,15 +71,6 @@ impl Rig {
     }
 }
 
-/// The argv of every Box exec so far, in order.
-fn argvs(r: &Rig) -> Vec<Vec<String>> {
-    r.driver
-        .execs()
-        .into_iter()
-        .map(|(_, s, _)| s.argv)
-        .collect()
-}
-
 fn cfg() -> BoxSettings {
     let mut c = BoxSettings::resolve(&UserConfig::default(), None, &Flags::default());
     c.env = [("REPO".to_owned(), "1".to_owned())].into();
@@ -98,7 +79,6 @@ fn cfg() -> BoxSettings {
 
 fn boxed_proxy() -> BoxProxy {
     BoxProxy {
-        box_id: BoxId::new(1),
         addr: ProxyAddr {
             box_port: 4000,
             ca_pem: "CA-PEM".to_owned(),
@@ -112,9 +92,10 @@ fn boxed_proxy() -> BoxProxy {
 }
 
 #[test]
-fn a_proxy_stages_only_the_ca_and_the_prelude_exports_the_proxy() {
+fn a_proxy_runs_no_box_step_and_the_prelude_writes_the_ca_and_exports_the_proxy() {
     let dir = tempfile::tempdir().unwrap();
-    let r = home_rig(dir.path());
+    let r = rig(dir.path());
+    let calls = r.driver.calls().len();
     let p = boxed_proxy();
     let e = prepare(
         &r.cx,
@@ -124,13 +105,7 @@ fn a_proxy_stages_only_the_ca_and_the_prelude_exports_the_proxy() {
         Purpose::Run,
     )
     .unwrap();
-    let staged = e.staged.clone().unwrap();
-    assert!(staged.as_str().starts_with("/home/box/.moor-cred-1-"));
-    let peek = |f: &str| {
-        let path = BoxPath::under(staged.as_str(), f).unwrap();
-        r.driver.peek_file(&r.handle, &path, dir.path()).unwrap()
-    };
-    assert_eq!(peek(CA_FILE).as_deref(), Some("CA-PEM"));
+    assert_eq!(r.driver.calls().len(), calls, "{:?}", r.driver.calls());
     assert_eq!(
         e.vars(),
         [
@@ -143,13 +118,16 @@ fn a_proxy_stages_only_the_ca_and_the_prelude_exports_the_proxy() {
         script.contains("HTTPS_PROXY=\"http://127.0.0.1:4000\""),
         "{script}"
     );
-    assert!(!script.contains("s3cret"), "{script}");
+    assert!(
+        script.contains("printf '%s' 'CA-PEM' >\"$HOME/.moor-proxy/ca.pem.$$\""),
+        "{script}"
+    );
 }
 
 #[test]
 fn a_proxy_keeps_credential_like_and_reserved_repo_env_without_warning() {
     let dir = tempfile::tempdir().unwrap();
-    let r = home_rig(dir.path());
+    let r = rig(dir.path());
     let mut c = cfg();
     c.env.insert("STRIPE_TEST_KEY".to_owned(), "sk".to_owned());
     c.env.insert("NODE_OPTIONS".to_owned(), "--x".to_owned());
@@ -187,35 +165,6 @@ fn no_proxy_gives_the_repo_env_and_no_proxy_variables() {
     .unwrap();
     assert_eq!(e.vars(), vec![("REPO".to_owned(), "1".to_owned())]);
     assert!(r.driver.execs().is_empty());
-}
-
-#[test]
-fn a_proxied_argv_removes_the_staged_directory_in_the_same_exec() {
-    let dir = tempfile::tempdir().unwrap();
-    let r = home_rig(dir.path());
-    let p = boxed_proxy();
-    let e = prepare(
-        &r.cx,
-        &r.site(Some(&r.workdir), dir.path()),
-        Some(&p),
-        &cfg(),
-        Purpose::Run,
-    )
-    .unwrap();
-    let staged = e.staged.clone().unwrap();
-    let script = e.argv(vec!["true".to_owned()]).join(" ");
-    assert!(script.contains("trap"), "{script}");
-    let trap = script
-        .lines()
-        .find(|l| l.contains("trap"))
-        .unwrap_or_default();
-    assert!(
-        trap.contains("rm -rf") && trap.contains(staged.as_str()),
-        "{script}"
-    );
-    assert!(argvs(&r)
-        .iter()
-        .all(|a| a.first().map(String::as_str) != Some("rm")));
 }
 
 #[test]
@@ -277,84 +226,6 @@ fn another_providers_strip_env_is_not_applied() {
     assert_eq!(e.vars(), vec![("REPO".to_owned(), "1".to_owned())]);
 }
 
-fn run_prepare(r: &Rig, dir: &Path, p: Option<&BoxProxy>) -> Result<super::BoxExec, String> {
-    prepare(
-        &r.cx,
-        &r.site(Some(&r.workdir), dir),
-        p,
-        &cfg(),
-        Purpose::Run,
-    )
-}
-
-#[test]
-fn the_staged_directory_is_private_to_the_box_user_and_named_with_64_random_bits() {
-    let dir = tempfile::tempdir().unwrap();
-    let r = home_rig(dir.path());
-    let p = boxed_proxy();
-    let e = run_prepare(&r, dir.path(), Some(&p)).unwrap();
-    let staged = e.staged.clone().unwrap();
-    let tail = staged
-        .as_str()
-        .strip_prefix("/home/box/.moor-cred-1-")
-        .unwrap();
-    assert!(
-        tail.len() == 16 && tail.chars().all(|c| c.is_ascii_hexdigit()),
-        "{tail}"
-    );
-    assert_eq!(argvs(&r), [["mkdir", "-m", "700", "--", staged.as_str()]]);
-    for (_, path, ..) in r.driver.puts() {
-        assert!(!path.as_str().starts_with("/tmp"), "{}", path.as_str());
-    }
-    let script = e.argv(vec!["true".to_owned()]).join(" ");
-    assert!(!script.contains("/tmp"), "{script}");
-}
-
-#[test]
-fn a_path_that_already_exists_is_refused_and_left_alone() {
-    let dir = tempfile::tempdir().unwrap();
-    let driver = home_driver().exec_results([Ok(ExecOutcome::Exited { code: 1 })]);
-    let r = rig_driver(dir.path(), crate::testing::cx::fake_config(), driver);
-    let p = boxed_proxy();
-    let err = run_prepare(&r, dir.path(), Some(&p)).err().unwrap();
-    assert!(err.contains("already exists"), "{err}");
-    let execs = argvs(&r);
-    assert_eq!(execs.len(), 1);
-    assert!(execs
-        .iter()
-        .all(|a| a.first().map(String::as_str) != Some("rm")));
-    assert!(r.driver.puts().is_empty());
-}
-
-#[test]
-fn a_staging_failure_removes_the_directory_and_returns_the_error() {
-    let dir = tempfile::tempdir().unwrap();
-    let driver = home_driver().fail_put(DriverError::Unavailable("down".into()));
-    let r = rig_driver(dir.path(), crate::testing::cx::fake_config(), driver);
-    let p = boxed_proxy();
-    let err = run_prepare(&r, dir.path(), Some(&p)).err().unwrap();
-    assert!(err.contains("could not stage"), "{err}");
-    let [mkdir, rm] = argvs(&r).try_into().unwrap();
-    assert_eq!(rm, ["rm", "-rf", mkdir.last().unwrap().as_str()]);
-}
-
-#[test]
-fn cleanup_removes_the_staged_directory_and_is_a_no_op_without_a_proxy() {
-    let dir = tempfile::tempdir().unwrap();
-    let r = home_rig(dir.path());
-    let p = boxed_proxy();
-    let e = run_prepare(&r, dir.path(), Some(&p)).unwrap();
-    let staged = e.staged.clone().unwrap();
-    e.cleanup(&r.cx, &r.site(Some(&r.workdir), dir.path()));
-    let [_, rm] = argvs(&r).try_into().unwrap();
-    assert_eq!(rm, ["rm", "-rf", staged.as_str()]);
-
-    let r = rig(dir.path());
-    let e = run_prepare(&r, dir.path(), None).unwrap();
-    e.cleanup(&r.cx, &r.site(Some(&r.workdir), dir.path()));
-    assert!(r.driver.execs().is_empty());
-}
-
 fn rule_with(credential: &str) -> ResolvedRule {
     ResolvedRule {
         name: "r".to_owned(),
@@ -378,148 +249,4 @@ fn a_forge_rule_marks_the_proxy_as_forge_routed() {
 fn rules_without_a_forge_credential_do_not() {
     assert!(!forge_routed(&[rule_with("other")]));
     assert!(!forge_routed(&[]));
-}
-
-/// The directory a private `mkdir` argv creates.
-fn mkdir_path(argv: &[String]) -> Option<&str> {
-    match argv {
-        [m, flag, mode, end, path] if [m, flag, mode, end] == ["mkdir", "-m", "700", "--"] => {
-            Some(path)
-        }
-        _ => None,
-    }
-}
-
-fn lost() -> DriverError {
-    DriverError::Transport {
-        stderr_tail: "Connection reset by peer".to_owned(),
-    }
-}
-
-#[test]
-fn a_lost_connection_during_mkdir_retries_under_a_fresh_name() {
-    let dir = tempfile::tempdir().unwrap();
-    let driver = home_driver().exec_results([Err(lost()), Ok(ExecOutcome::Exited { code: 0 })]);
-    let r = rig_driver(dir.path(), crate::testing::cx::fake_config(), driver);
-    let p = boxed_proxy();
-    let e = run_prepare(&r, dir.path(), Some(&p)).unwrap();
-    let [first, second]: [Vec<String>; 2] = argvs(&r).try_into().unwrap();
-    let (first, second) = (mkdir_path(&first).unwrap(), mkdir_path(&second).unwrap());
-    assert_ne!(first, second);
-    assert_eq!(e.staged.unwrap().as_str(), second);
-    let warned: Vec<String> = r.cx.take_warnings().into_iter().map(|w| w.code).collect();
-    assert_eq!(warned, ["box_ssh_retry"]);
-}
-
-#[test]
-fn a_connection_that_stays_lost_fails_after_two_retries() {
-    let dir = tempfile::tempdir().unwrap();
-    let driver = home_driver().exec_results([Err(lost()), Err(lost()), Err(lost())]);
-    let r = rig_driver(dir.path(), crate::testing::cx::fake_config(), driver);
-    let p = boxed_proxy();
-    let err = run_prepare(&r, dir.path(), Some(&p)).err().unwrap();
-    assert!(
-        err.contains("moor lost the ssh connection to the Box"),
-        "{err}"
-    );
-    assert_eq!(argvs(&r).len(), 3);
-}
-
-#[test]
-fn a_lost_connection_while_finding_the_box_home_is_retried() {
-    let dir = tempfile::tempdir().unwrap();
-    let driver = home_driver().fail_peek(lost());
-    let r = rig_driver(dir.path(), crate::testing::cx::fake_config(), driver);
-    let p = boxed_proxy();
-    let e = run_prepare(&r, dir.path(), Some(&p)).unwrap();
-    assert!(e.staged.unwrap().as_str().starts_with("/home/box/"));
-    assert_eq!(r.cx.take_warnings().len(), 1);
-}
-
-#[test]
-fn a_lost_connection_while_staging_retries_under_a_fresh_name() {
-    let dir = tempfile::tempdir().unwrap();
-    let driver = home_driver().fail_put(lost());
-    let r = rig_driver(dir.path(), crate::testing::cx::fake_config(), driver);
-    let p = boxed_proxy();
-    let e = run_prepare(&r, dir.path(), Some(&p)).unwrap();
-    let [first, rm, second]: [Vec<String>; 3] = argvs(&r).try_into().unwrap();
-    let (first, second) = (mkdir_path(&first).unwrap(), mkdir_path(&second).unwrap());
-    assert_eq!(rm, ["rm", "-rf", first]);
-    assert_ne!(first, second);
-    assert_eq!(e.staged.unwrap().as_str(), second);
-}
-
-fn timed_out(secs: u64) -> DriverError {
-    DriverError::Timeout(std::time::Duration::from_secs(secs))
-}
-
-#[test]
-fn a_timeout_during_mkdir_retries_under_a_fresh_name() {
-    let dir = tempfile::tempdir().unwrap();
-    let driver =
-        home_driver().exec_results([Err(timed_out(30)), Ok(ExecOutcome::Exited { code: 0 })]);
-    let r = rig_driver(dir.path(), crate::testing::cx::fake_config(), driver);
-    let p = boxed_proxy();
-    let e = run_prepare(&r, dir.path(), Some(&p)).unwrap();
-    let [first, second]: [Vec<String>; 2] = argvs(&r).try_into().unwrap();
-    let (first, second) = (mkdir_path(&first).unwrap(), mkdir_path(&second).unwrap());
-    assert_ne!(first, second);
-    assert_eq!(e.staged.unwrap().as_str(), second);
-    let warned: Vec<String> = r.cx.take_warnings().into_iter().map(|w| w.code).collect();
-    assert_eq!(warned, ["box_ssh_retry"]);
-}
-
-#[test]
-fn a_timeout_while_finding_the_box_home_is_retried() {
-    let dir = tempfile::tempdir().unwrap();
-    let driver = home_driver().fail_peek(timed_out(5));
-    let r = rig_driver(dir.path(), crate::testing::cx::fake_config(), driver);
-    let p = boxed_proxy();
-    let e = run_prepare(&r, dir.path(), Some(&p)).unwrap();
-    assert!(e.staged.unwrap().as_str().starts_with("/home/box/"));
-    assert_eq!(r.cx.take_warnings().len(), 1);
-}
-
-#[test]
-fn a_timeout_while_staging_retries_under_a_fresh_name() {
-    let dir = tempfile::tempdir().unwrap();
-    let driver = home_driver().fail_put(timed_out(60));
-    let r = rig_driver(dir.path(), crate::testing::cx::fake_config(), driver);
-    let p = boxed_proxy();
-    let e = run_prepare(&r, dir.path(), Some(&p)).unwrap();
-    let [first, rm, second]: [Vec<String>; 3] = argvs(&r).try_into().unwrap();
-    let (first, second) = (mkdir_path(&first).unwrap(), mkdir_path(&second).unwrap());
-    assert_eq!(rm, ["rm", "-rf", first]);
-    assert_ne!(first, second);
-    assert_eq!(e.staged.unwrap().as_str(), second);
-}
-
-#[test]
-fn a_timeout_that_persists_fails_after_two_retries() {
-    let dir = tempfile::tempdir().unwrap();
-    let driver =
-        home_driver().exec_results([Err(timed_out(30)), Err(timed_out(30)), Err(timed_out(30))]);
-    let r = rig_driver(dir.path(), crate::testing::cx::fake_config(), driver);
-    let p = boxed_proxy();
-    let err = run_prepare(&r, dir.path(), Some(&p)).err().unwrap();
-    assert!(err.contains("timed out after 30s"), "{err}");
-    assert!(!err.contains("already exists"), "{err}");
-    assert_eq!(argvs(&r).len(), 3);
-}
-
-#[test]
-fn the_box_home_lookup_outlasts_a_slow_gateway_connect() {
-    let dir = tempfile::tempdir().unwrap();
-    let r = home_rig(dir.path());
-    let p = boxed_proxy();
-    run_prepare(&r, dir.path(), Some(&p)).unwrap();
-    let calls = r.driver.box_calls();
-    assert!(!calls.iter().any(|c| c == "peek_file"), "{calls:?}");
-    let first = r.driver.batch_deadlines().first().copied();
-    // One ssh connect through the gateway was measured at 9.7 s.
-    assert!(
-        first.is_some_and(|d| d.0 >= std::time::Duration::from_secs(10)),
-        "{first:?}"
-    );
 }
