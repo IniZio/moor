@@ -327,6 +327,33 @@ fn stop_returns_promptly_and_removes_the_socket() {
     assert!(UnixStream::connect(&path).is_err());
 }
 
+/// Each stopping front's acceptor is still in its poll when the successor binds.
+#[test]
+fn a_successor_bound_while_a_front_stops_keeps_its_socket() {
+    let nono = fake(Answer::Echo);
+    let (dir, mut front) = start(nono.addr);
+    for _ in 0..3 {
+        let stopping = thread::spawn(move || front.stop());
+        thread::sleep(Duration::from_millis(20));
+
+        front = Front::start(
+            nono.addr,
+            socket_in(&dir, uid()),
+            Secret::new(INTERNAL.as_bytes().to_vec()),
+        )
+        .unwrap();
+        stopping.join().unwrap();
+
+        let mut c = dial(&front);
+        c.write_all(connect_head().as_bytes()).unwrap();
+        assert_eq!(
+            nono.seen.recv_timeout(WAIT).unwrap(),
+            FORWARDED_HEAD.as_bytes()
+        );
+    }
+    front.stop();
+}
+
 /// A hard link reaches a listener whose path is gone, so it shows the listener closed.
 #[test]
 fn rebind_and_stop_close_the_listener_they_replace() {
