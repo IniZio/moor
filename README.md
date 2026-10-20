@@ -106,6 +106,8 @@ it prints a warning naming it, in the terminal and in `.moor/setup.log`, and
 carries on. Setup does not fail because of it. A repo with no setup lines
 runs no setup script, so nothing is checked.
 
+For an Android app with an emulator, see the [Android recipe](docs/android.md).
+
 ## Direct hosts
 
 `proxy.direct` lists hosts the Box reaches without the moor Proxy, such as
