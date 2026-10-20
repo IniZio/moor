@@ -56,3 +56,32 @@ fn slack_db_at_another_schema_stops_startup_and_is_kept() {
         assert_eq!(std::fs::read(state.join("slack.db")).unwrap(), before);
     }
 }
+
+#[test]
+fn the_coordinator_version_is_logged_at_startup() {
+    let mut rig = Rig::new();
+    rig.use_fake_claude(None);
+    rig.spawn_daemon();
+    rig.wait_stderr("coordinator: Claude Code 2.1.304");
+}
+
+#[test]
+fn a_claude_code_older_than_2_1_304_leaves_the_coordinator_unavailable() {
+    let mut rig = Rig::new();
+    rig.use_fake_claude(Some("2.1.303 (Claude Code)"));
+    rig.spawn_daemon();
+    rig.wait_stderr("coordinator unavailable: Claude Code 2.1.303 is older than 2.1.304");
+    rig.slack.wait_connected();
+    assert_eq!(
+        rig.wait_exit(Duration::from_millis(200)),
+        None,
+        "the daemon keeps running"
+    );
+}
+
+#[test]
+fn no_coordinator_in_the_config_leaves_it_unavailable() {
+    let mut rig = Rig::new();
+    rig.spawn_daemon();
+    rig.wait_stderr("coordinator unavailable: the config has no coordinator.binary");
+}

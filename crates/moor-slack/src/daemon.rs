@@ -14,6 +14,7 @@ use moor_core::secret::Secret;
 use crate::api::Api;
 use crate::command::Allow;
 use crate::config::{parse_config, Config};
+use crate::coordinator::claude::{Claude, HostEnv};
 use crate::db::{Db, SlackThread};
 use crate::secret_file::read_secret;
 use crate::socket::{self, Inbound, Intake, Kept, NotKept};
@@ -32,8 +33,10 @@ pub struct Settings {
     pub config: PathBuf,
     /// Directory for the front's own state, `slack.db`.
     pub state_dir: PathBuf,
-    /// Home directory that `~` in token paths expands to.
+    /// Home directory that `~` in token paths expands to; also `HOME` for the coordinator.
     pub home: Option<PathBuf>,
+    /// `USER` for the coordinator.
+    pub user: Option<String>,
     /// The current time in unix seconds.
     pub clock: fn() -> i64,
 }
@@ -48,6 +51,8 @@ struct Loaded {
     app_token: Secret,
     /// Bot token for posting replies.
     bot_token: Secret,
+    /// The checked Claude Code binary, or why the coordinator cannot run.
+    coordinator: Result<Claude, String>,
     /// `slack.db`, opened at this build's schema; the Socket Mode thread records mentions in it.
     db: Db,
     /// Path of `slack.db`, which the worker opens again on its own thread.
@@ -68,10 +73,15 @@ pub fn run(settings: &Settings, log: Log) -> Result<(), String> {
         api,
         app_token,
         bot_token,
+        coordinator,
         db,
         db_path,
         left,
     } = load(settings)?;
+    match &coordinator {
+        Ok(claude) => log(&format!("coordinator: Claude Code {}", claude.version())),
+        Err(why) => log(&format!("coordinator unavailable: {why}")),
+    }
     let client = Client::new(&settings.socket);
     let (jobs_tx, jobs_rx) = mpsc::channel();
     let (feed_tx, feed_rx) = mpsc::channel();
@@ -106,6 +116,7 @@ pub fn run(settings: &Settings, log: Log) -> Result<(), String> {
 }
 
 /// Reads the config and both token files, and opens `slack.db`, so a bad file stops startup.
+/// A missing or old Claude Code does not stop it; the coordinator is then unavailable.
 fn load(settings: &Settings) -> Result<Loaded, String> {
     let path = &settings.config;
     let text =
@@ -122,11 +133,20 @@ fn load(settings: &Settings) -> Result<Loaded, String> {
     let db_path = dir.join("slack.db");
     let db = Db::open(&db_path).map_err(|e| format!("open slack.db: {e}"))?;
     let left = db.starting().map_err(|e| format!("read slack.db: {e}"))?;
+    let host = HostEnv {
+        home: settings.home.clone(),
+        user: settings.user.clone(),
+    };
+    let coordinator = cfg.coordinator.as_ref().map_or_else(
+        || Err("the config has no coordinator.binary".to_owned()),
+        |c| Claude::probe(&c.binary, host),
+    );
     Ok(Loaded {
         cfg,
         api: Arc::new(api),
         app_token,
         bot_token,
+        coordinator,
         db,
         db_path,
         left,
