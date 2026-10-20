@@ -233,17 +233,19 @@ fn is_identifier(name: &str) -> bool {
 }
 
 /// Shell that runs `write` into the temp file `file.$$` and moves it, mode 0644, over `file` when
-/// the two differ; the temp file never outlives the line.
+/// the two differ; the temp file never outlives the line, and the line fails when `file` could not
+/// be written.
 ///
 /// The rename is atomic, so an exec running at the same time reads either the old or the new file.
 fn write_if_changed(write: &str, file: &str) -> String {
     let tmp = format!("\"{file}.$$\"");
     format!(
-        "{{ {write} >{tmp} && chmod 644 {tmp} && {{ cmp -s {tmp} \"{file}\" || mv -f {tmp} \"{file}\"; }}; rm -f {tmp}; }}"
+        "{{ if {write} >{tmp} && chmod 644 {tmp} && {{ cmp -s {tmp} \"{file}\" || mv -f {tmp} \"{file}\"; }}; then rm -f {tmp}; else rm -f {tmp}; false; fi; }}"
     )
 }
 
-/// Lines that write the CA, trust it and export the Proxy variables.
+/// Lines that write the CA, trust it and export the Proxy variables. When the CA cannot be
+/// written, the exec stops before the command with a message naming the CA path.
 fn proxy_lines(p: &ProxyCtx<'_>) -> Vec<String> {
     let ca_file = format!("{PROXY_DIR}/{CA_FILE}");
     let ca = format!("\"{ca_file}\"");
@@ -251,7 +253,7 @@ fn proxy_lines(p: &ProxyCtx<'_>) -> Vec<String> {
     let mut lines = vec![
         "unset GH_TOKEN GITHUB_TOKEN".to_owned(),
         format!(
-            "mkdir -p \"{PROXY_DIR}\" && {}",
+            "mkdir -p \"{PROXY_DIR}\" && {} || {{ echo \"moor: the Proxy CA could not be written to {ca_file}\" >&2; exit 1; }}",
             write_if_changed(&format!("printf '%s' {}", quote(p.ca_pem)), &ca_file)
         ),
         "moor_sys=; for moor_f in ".to_owned()
