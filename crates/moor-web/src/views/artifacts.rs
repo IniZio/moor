@@ -10,8 +10,8 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 use super::{call, envelope_value, field, items, json_ok, text};
-use crate::client::Client;
 use crate::http::{Download, Fill, HttpRequest, HttpResponse, Reply};
+use moor_client::Client;
 use range::Wanted;
 
 /// Content type used when the record's value is not a safe header value.

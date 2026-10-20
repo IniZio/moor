@@ -1,4 +1,4 @@
-//! Guards the dependency rule: the web front never links the `moor` crate.
+//! Guards the dependency rule: the web front and its socket client never link the `moor` crate.
 
 #![allow(
     clippy::unwrap_used,
@@ -13,7 +13,10 @@ use std::process::Command;
 
 use serde_json::{json, Value};
 
-const RULE: &str = "moor-web must depend on moor-core only, never on the moor crate";
+const RULE: &str = "moor-web and moor-client must never depend on the moor crate";
+
+/// Packages that talk to the controller over its socket and so must not link `moor`.
+const SOCKET_CRATES: [&str; 2] = ["moor-web", "moor-client"];
 
 /// Walks the resolved graph from the package named `root_name`, over every
 /// dependency kind. Returns the package names from root to `moor` if reachable.
@@ -158,11 +161,13 @@ fn walk_survives_cycles() {
 }
 
 #[test]
-fn moor_web_does_not_depend_on_moor() {
+fn socket_crates_do_not_depend_on_moor() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../Cargo.toml");
     let metadata = cargo_metadata(&root, true);
-    if let Some(path) = reaches_moor(&metadata, "moor-web") {
-        panic!("{RULE}: {}", path.join(" -> "));
+    for name in SOCKET_CRATES {
+        if let Some(path) = reaches_moor(&metadata, name) {
+            panic!("{RULE}: {}", path.join(" -> "));
+        }
     }
 }
 

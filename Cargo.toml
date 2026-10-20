@@ -1,6 +1,7 @@
 [workspace]
 members = [
   "crates/moor",
+  "crates/moor-client",
   "crates/moor-core",
   "crates/moor-web",
   "tools/layering",

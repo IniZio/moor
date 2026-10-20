@@ -19,10 +19,10 @@ use moor_core::{BoxName, SessionId};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::client::Client;
 use crate::db::{Db, RequestRow};
 use crate::http::{Handler, HttpRequest, HttpResponse, Reply};
 use crate::jobs::{JobFailure, JobHandle, Jobs};
+use moor_client::Client;
 
 #[cfg(test)]
 mod tests;

@@ -21,9 +21,9 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 use super::handler;
-use crate::client::Client;
 use crate::db::{Db, RequestRow};
 use crate::http::{start, HttpResponse, Server};
+use moor_client::Client;
 
 pub(super) const TOKEN: &str = "t0ken";
 

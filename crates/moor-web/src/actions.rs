@@ -3,8 +3,8 @@
 //! Each action makes exactly one socket request and returns the controller's envelope
 //! unchanged. Auth and CSRF are enforced by the HTTP server before the handler runs.
 
-use crate::client::Client;
 use crate::http::{Handler, HttpRequest, HttpResponse, Reply};
+use moor_client::Client;
 
 pub mod end;
 pub mod start;

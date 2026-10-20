@@ -10,9 +10,9 @@ use moor_core::response::{ErrorKind, ExitClass, Response};
 use moor_core::BoxName;
 use serde_json::{json, Map, Value};
 
-use crate::client::Client;
 use crate::db::{Db, RequestRow};
 use crate::http::{Handler, HttpRequest, HttpResponse, Reply};
+use moor_client::Client;
 
 mod artifacts;
 #[cfg(test)]
