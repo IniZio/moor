@@ -396,3 +396,18 @@ fn an_exited_pane_with_a_stored_id_registers_nothing() {
         "{codes:?}"
     );
 }
+
+#[test]
+fn a_box_whose_setup_failed_still_settles_its_live_agent() {
+    let (w, id) = started(false, |w| {
+        probes(w, Some(HookKind::Idle), PaneStatus::Unknown)
+    });
+    let failed = Decision::new(id).set(Fields {
+        setup_failed_at: Field::Set(w.cx.clock().now().as_millis()),
+        ..Fields::default()
+    });
+    w.cx.store().unwrap().apply(failed).unwrap();
+    run(&w.cx, &req("other")).unwrap();
+    assert!(idle(&row(&w, id)));
+    assert!(kinds(&w, id).contains(&"idled".to_owned()));
+}

@@ -235,13 +235,13 @@ fn wake_idle(store: &Store, id: BoxId) -> Result<(), CommandError> {
     }
 }
 
-/// Moves each open Box with a ready machine and no failed setup between Working and Idle.
+/// Moves each open Box with a ready machine between Working and Idle.
 ///
 /// Runs before the start, which may then leave the Box it starts in another state.
 pub(crate) fn settle_all(cx: &Cx, store: &Store) -> Result<(), CommandError> {
     for row in &store.open_boxes()? {
         let ready = row.boxed.as_ref().map(|b| b.state) == Some(BoxState::Ready);
-        if !ready || row.setup_failed_at.is_some() {
+        if !ready {
             continue;
         }
         let settled = activity::read(cx, store, row, cx.clock().now())
