@@ -9,7 +9,6 @@ use moor_core::{BoxName, ErrorKind, SessionId};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
-use crate::ops::common::cred_sweep;
 use crate::ops::host_session::refuse_invalid;
 use crate::ops::start::begin_seeded;
 use crate::store::{BoxRow, Store};
@@ -48,7 +47,6 @@ pub(crate) fn run(cx: &Cx, req: &OpenSessionReq) -> Result<OpenSessionValue, Com
     check(store, &row, name)?;
     let next = store.open_child_session(id, req.parent.map(SessionId::get))?;
     store.start_session(next.id)?;
-    cred_sweep::sweep(cx, &row);
     let view = begin_seeded(cx, store, &row, req.seed.clone())?;
     if !view.launched {
         store.end_current_session(id, "launch_failed", None)?;

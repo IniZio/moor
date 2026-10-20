@@ -18,7 +18,7 @@ use crate::cx::Cx;
 use crate::ops::common::proxy::{box_env, origin, plan};
 
 /// Time allowed for one of moor's own short commands on the Box: creating or removing the
-/// staged directory, or sweeping stale credential directories.
+/// staged directory.
 pub(crate) const STEP_DEADLINE: Duration = Duration::from_secs(30);
 /// Time allowed for staging the CA.
 const STAGE_DEADLINE: Duration = Duration::from_secs(60);
@@ -207,8 +207,8 @@ impl StepError {
 /// warning each time.
 ///
 /// Only moor's own commands that are safe to repeat go through here: the steps before the
-/// user's command, and the credential sweep. The user's command may have run when the
-/// connection dropped, so it is never repeated.
+/// user's command. The user's command may have run when the connection dropped, so it is never
+/// repeated.
 pub(crate) fn retry_lost<T>(
     cx: &Cx,
     mut step: impl FnMut() -> Result<T, StepError>,

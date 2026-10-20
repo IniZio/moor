@@ -390,35 +390,3 @@ fn auto_sleep_of_a_box_that_cannot_sleep_asks_for_a_clearing_restore() {
     let r = tunnel_request(&f).unwrap();
     assert_eq!((r.want, r.seq), (TunnelWant::UpAwake, 2));
 }
-
-#[test]
-fn auto_sleep_sweeps_stale_credential_dirs_before_the_box_sleeps() {
-    let f = idle();
-    pass(&f, LONG);
-    auto_sleep(&f);
-    let calls = f.driver.calls();
-    let at_sweep = calls.iter().position(|c| c.starts_with("sweep ")).unwrap();
-    let at_nap = calls.iter().position(|c| c.starts_with("sleep ")).unwrap();
-    assert!(at_sweep < at_nap, "{calls:?}");
-    assert_eq!(f.driver.sweeps().len(), 1);
-}
-
-#[test]
-fn auto_sleep_tries_a_timed_out_sweep_once_warns_and_still_sleeps() {
-    let driver = FakeDriver::new().fail_sweep(DriverError::Timeout(Duration::from_secs(30)));
-    let f = idle_with(driver);
-    pass(&f, LONG);
-    auto_sleep(&f);
-    assert_eq!(
-        states(&f),
-        (BoxLifecycle::Asleep, SessionState::Idle, BoxState::Asleep)
-    );
-    assert_eq!(sleep_calls(&f), 1);
-    assert_eq!(
-        f.driver.sweeps().len(),
-        1,
-        "a settle tick never retries inline"
-    );
-    let codes: Vec<_> = f.cx.take_warnings().into_iter().map(|w| w.code).collect();
-    assert_eq!(codes, ["cred_sweep_failed"]);
-}

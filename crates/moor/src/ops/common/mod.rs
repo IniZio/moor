@@ -8,7 +8,6 @@ pub(crate) mod box_exec;
 pub(crate) mod boxlock;
 pub(crate) mod boxwork;
 pub(crate) mod capacity;
-pub(crate) mod cred_sweep;
 pub(crate) mod creds;
 pub(crate) mod dotfiles;
 pub(crate) mod facts;
