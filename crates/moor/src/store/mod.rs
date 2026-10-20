@@ -38,7 +38,6 @@ mod slack;
 #[cfg(test)]
 mod tests;
 mod turns;
-mod version;
 
 pub(crate) use agent::SessionRow;
 pub(crate) use proxy::{Fenced, Lease, ProxyRow, ReadyProc, Reserve};
@@ -72,9 +71,16 @@ pub(crate) enum StoreError {
     /// The state directory or a database file could not be prepared.
     #[error("io: {0}")]
     Io(#[from] std::io::Error),
-    /// The file was written by a different schema version.
-    #[error("schema version `{found}` does not match `{want}`")]
+    /// The file was written by a different schema version. moor never upgrades or removes it.
+    #[error(
+        "the state database {} has schema version `{found}` and this moor reads only `{want}`; \
+         use a fresh state dir: set MOOR_STATE_DIR to a new directory, or move the old one away \
+         (moor does not delete it)",
+        db.display()
+    )]
     Schema {
+        /// The database file.
+        db: PathBuf,
         /// Version found in `meta`.
         found: String,
         /// Version this build needs.
@@ -101,15 +107,6 @@ pub(crate) enum StoreError {
     /// An open box already has this name.
     #[error("name `{}` is taken by an open box", .0.as_str())]
     NameTaken(BoxName),
-    /// A controller process holds the state directory.
-    #[error("a moor controller (pid {pid}) is running; stop it before the old state database is replaced")]
-    ControllerRunning {
-        /// Pid of the running controller.
-        pid: String,
-    },
-    /// Another process has the old state database open, so it cannot be moved aside.
-    #[error("another moor process is using the store; stop it before the old state database is replaced")]
-    StoreInUse,
     /// The writer mutex was poisoned.
     #[error("store writer poisoned")]
     Poisoned,
@@ -214,14 +211,13 @@ impl Store {
     /// Open (creating if needed) the store at `path`. The state directory is
     /// created 0700 and the db, `-wal` and `-shm` files are 0600.
     pub(crate) fn open(path: &Path, clock: Arc<dyn Clock>) -> Result<Self, StoreError> {
-        let _retired = version::retire_v1(path)?;
         open::prepare(path)?;
         let mut conn = Connection::open(path)?;
         conn.busy_timeout(BUSY_TIMEOUT)?;
         conn.execute_batch(
             "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;",
         )?;
-        init::init_schema(&mut conn)?;
+        init::init_schema(&mut conn, path)?;
         open::tighten(path)?;
         Ok(Self {
             path: path.to_path_buf(),

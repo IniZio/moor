@@ -271,36 +271,23 @@ fn schema_version(db: &Path) -> Option<String> {
 }
 
 #[test]
-fn upgrade_guard_sees_a_controller_on_a_custom_socket() {
+fn a_state_dir_from_another_schema_version_is_refused_and_kept() {
     let sandbox = Sandbox::new();
-    let mut config = std::fs::read_to_string(&sandbox.config).unwrap();
-    config.push_str("settle_every_secs: 3600\n");
-    std::fs::write(&sandbox.config, config).unwrap();
-    let controller = Controller::start(&sandbox);
     let state = sandbox.root.join("state");
+    std::fs::create_dir_all(&state).unwrap();
     let db = state.join("moor.db");
-    Client::connect(&sandbox.socket).hello();
-    let old = state.join("old.db");
-    rusqlite::Connection::open(&old)
+    rusqlite::Connection::open(&db)
         .unwrap()
         .execute_batch(
             "CREATE TABLE meta (k TEXT PRIMARY KEY, v TEXT NOT NULL);
-             INSERT INTO meta (k, v) VALUES ('schema_version', '1');",
+             INSERT INTO meta (k, v) VALUES ('schema_version', '4');",
         )
         .unwrap();
-    std::fs::rename(&old, &db).unwrap();
     let out = sandbox.command().arg("list").output().unwrap();
     let stderr = String::from_utf8(out.stderr).unwrap();
-    assert_ne!(
-        out.status.code(),
-        Some(0),
-        "old store retired under a running controller"
-    );
-    assert!(
-        stderr.contains(&format!("controller (pid {})", controller.child.id())),
-        "{stderr}"
-    );
-    assert_eq!(schema_version(&db).as_deref(), Some("1"));
+    assert_ne!(out.status.code(), Some(0), "{stderr}");
+    assert!(stderr.contains("use a fresh state dir"), "{stderr}");
+    assert_eq!(schema_version(&db).as_deref(), Some("4"));
 }
 
 #[test]
