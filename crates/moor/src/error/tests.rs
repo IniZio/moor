@@ -158,7 +158,7 @@ mod store_close {
     fn already_closed_is_refused_without_hint() {
         let e = CommandError::from(Refusal::AlreadyClosed);
         assert_eq!(e.kind, ErrorKind::Refused);
-        assert_eq!(e.error.to_string(), "task is already closed");
+        assert_eq!(e.error.to_string(), "Box is already closed");
         assert!(e.hints.is_empty());
     }
 

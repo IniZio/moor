@@ -13,7 +13,7 @@ const VIEWER_FIELDS: &[&str] = &["login", "id", "__typename"];
 const SEARCH_ARGS: &[&str] = &["query", "type", "first", "last", "after", "before"];
 
 impl<'a> Policy<'a> {
-    /// Allows `search(type: ISSUE, query: ...)` confined to the Task repo.
+    /// Allows `search(type: ISSUE, query: ...)` confined to the Box repo.
     pub(super) fn search(&mut self, field: &'a Field) -> Result<(), Reason> {
         Self::only_args(field, SEARCH_ARGS)?;
         let kind = field.args.iter().find(|(k, _)| k == "type");
@@ -54,7 +54,7 @@ impl<'a> Policy<'a> {
         self.check_fields(&fields?, "pr", 2)
     }
 
-    /// Requires `repository(owner, name)` to name the Task repo.
+    /// Requires `repository(owner, name)` to name the Box repo.
     pub(super) fn repository(&self, field: &Field) -> Result<(), Reason> {
         Self::only_args(field, &["owner", "name"])?;
         let owner = self.arg_str(field, "owner")?;
@@ -65,7 +65,7 @@ impl<'a> Policy<'a> {
             return Ok(());
         }
         Err(Reason::new(format!(
-            "field `repository` names `{owner}/{name}`, not the Task repo"
+            "field `repository` names `{owner}/{name}`, not the Box repo"
         )))
     }
 

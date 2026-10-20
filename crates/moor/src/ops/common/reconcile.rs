@@ -13,7 +13,7 @@ fn by_provider(
     let mut groups: Vec<(ProviderId, Vec<BoxFact>)> = Vec::new();
     for (task, b) in rows {
         let fact = BoxFact {
-            task,
+            box_id: task,
             state: b.state,
             handle: b.handle,
         };

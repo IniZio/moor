@@ -7,7 +7,7 @@ use crate::domain::event::Event;
 use crate::domain::session_state::SessionInput;
 use crate::name::{BoxId, BoxName, RunId};
 
-/// `new` targets an existing task with nothing else set.
+/// `new` targets an existing box with nothing else set.
 #[test]
 fn new_is_empty() {
     let d = Decision::new(BoxId::new(3));

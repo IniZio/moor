@@ -1,4 +1,4 @@
-//! Proxy host seam: starts, inspects and stops the Proxy that serves a Task's Box.
+//! Proxy host seam: starts, inspects and stops the Proxy that serves a Box.
 
 use std::fmt;
 use std::path::PathBuf;
@@ -10,17 +10,17 @@ use crate::name::{BoxHandle, BoxId};
 use crate::seam::forge::ForgeRepo;
 use crate::secret::Secret;
 
-/// What the Proxy host needs to run a Task's Proxy; it holds no secret values.
+/// What the Proxy host needs to run a Box's Proxy; it holds no secret values.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProxySpec {
-    /// The Task the Proxy serves.
-    pub task: BoxId,
-    /// The Task's Box, or `None` when it has none.
+    /// The Box the Proxy serves.
+    pub box_id: BoxId,
+    /// The Box, or `None` when it has none.
     pub box_handle: Option<BoxHandle>,
-    /// The Task's worktree on the host.
+    /// The Box's worktree on the host.
     pub host_cwd: PathBuf,
-    /// The forge repo the Task works on, when known.
-    pub task_repo: Option<ForgeRepo>,
+    /// The forge repo the Box works on, when known.
+    pub box_repo: Option<ForgeRepo>,
     /// The resolved tool rules the Proxy enforces.
     #[serde(default)]
     pub rules: Vec<ResolvedRule>,
@@ -32,7 +32,7 @@ pub struct ProxyEndpoint {
     pub box_port: u16,
     /// The per-launch nonce the Box presents; its only credential.
     pub nonce: Secret,
-    /// The public Task CA certificate in PEM form; not secret.
+    /// The public Box CA certificate in PEM form; not secret.
     pub ca_pem: String,
 }
 
@@ -46,10 +46,10 @@ impl fmt::Debug for ProxyEndpoint {
     }
 }
 
-/// Where a Task's Proxy is in its life.
+/// Where a Box's Proxy is in its life.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProxyStatus {
-    /// No Proxy exists for the Task.
+    /// No Proxy exists for the Box.
     Absent,
     /// The Proxy was launched and is not yet ready.
     Starting,
@@ -73,25 +73,25 @@ pub enum ProxyHostError {
     Incomplete(String),
 }
 
-/// Runs Proxies for Tasks, behind whichever implementation is wired.
+/// Runs Proxies for Boxes, behind whichever implementation is wired.
 pub trait ProxyHost: Send + Sync {
-    /// Starts the Task's Proxy if needed and returns its endpoint.
+    /// Starts the Box's Proxy if needed and returns its endpoint.
     ///
     /// # Errors
     /// Returns [`ProxyHostError::Failed`] when the Proxy cannot be made ready.
     fn ensure(&self, spec: &ProxySpec) -> Result<ProxyEndpoint, ProxyHostError>;
 
-    /// Reports the state of the Task's Proxy.
+    /// Reports the state of the Box's Proxy.
     ///
     /// # Errors
     /// Returns [`ProxyHostError::Failed`] when the state cannot be read.
-    fn status(&self, task: BoxId) -> Result<ProxyStatus, ProxyHostError>;
+    fn status(&self, box_id: BoxId) -> Result<ProxyStatus, ProxyHostError>;
 
-    /// Stops the Task's Proxy and forgets it.
+    /// Stops the Box's Proxy and forgets it.
     ///
     /// # Errors
     /// Returns [`ProxyHostError::Incomplete`] when the stop did not fully succeed.
-    fn stop(&self, task: BoxId) -> Result<(), ProxyHostError>;
+    fn stop(&self, box_id: BoxId) -> Result<(), ProxyHostError>;
 }
 
 #[cfg(test)]

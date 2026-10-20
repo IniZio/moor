@@ -58,7 +58,7 @@ struct Policy<'a> {
     op: &'a Op,
     /// Request variables.
     vars: &'a Map<String, Json>,
-    /// The Task repo.
+    /// The Box repo.
     repo: &'a RepoRef,
     /// Selections visited so far.
     visits: usize,

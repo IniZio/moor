@@ -61,10 +61,10 @@ pub(crate) fn proxy(
     let plan = plan(cx, origin.as_deref())?;
     let repo_env: Vec<(String, String)> = cfg.env.clone().into_iter().collect();
     let spec = ProxySpec {
-        task,
+        box_id: task,
         box_handle: handle,
         host_cwd: worktree.to_path_buf(),
-        task_repo: plan.repo,
+        box_repo: plan.repo,
         rules: plan.rules,
     };
     let rule_env = box_env(&spec.rules);

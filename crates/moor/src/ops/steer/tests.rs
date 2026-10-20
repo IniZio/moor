@@ -96,7 +96,7 @@ fn ready_task(cx: &Cx, driver: &FakeDriver) -> BoxId {
     let got = driver
         .acquire(&AcquireReq {
             provider,
-            task: id,
+            box_id: id,
             name,
             class: None,
             nonce: "n".to_owned(),

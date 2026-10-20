@@ -63,14 +63,14 @@ pub struct LaunchReq {
     /// The Workspace that gets the agent's tab.
     pub workspace: WorkspaceRef,
     /// The Box the agent works on.
-    pub task: BoxName,
-    /// The Task branch the agent pushes to.
+    pub box_name: BoxName,
+    /// The Box branch the agent pushes to.
     pub branch: String,
     /// What the agent is asked to do.
     pub goal: Option<String>,
     /// The stored agent session to continue instead of reading the brief.
     pub resume: Option<String>,
-    /// The Issue text, when the Task came from one.
+    /// The Issue text, when the Box came from one.
     pub issue: Option<String>,
     /// The exit code of a failed setup, if setup failed.
     pub setup_exit: Option<i32>,
@@ -80,7 +80,7 @@ pub struct LaunchReq {
     pub nonce: String,
     /// The Proxy the agent reaches GitHub and its model through; none means no Proxy env and no bypass.
     pub proxy: Option<Arc<ProxyAddr>>,
-    /// The task repo's git origin URL; GitHub push and `gh` routing apply only when it names a GitHub repo.
+    /// The box repo's git origin URL; GitHub push and `gh` routing apply only when it names a GitHub repo.
     pub origin: Option<String>,
     /// Env var names removed from the agent's environment before hooks and the agent run.
     pub strip_env: Vec<String>,
@@ -92,7 +92,7 @@ impl LaunchReq {
     /// The credential and tmp directories this launch creates under the Box home `home`.
     ///
     /// # Errors
-    /// [`NameError`] when `home` and the Task name do not form a valid Box path.
+    /// [`NameError`] when `home` and the Box name do not form a valid Box path.
     pub fn dirs_under(&self, home: &BoxPath) -> Result<(BoxPath, BoxPath), NameError> {
         let (cred, tmp) = self.dir_names();
         Ok((
@@ -118,7 +118,7 @@ impl PartialEq for LaunchReq {
             && self.workdir == other.workdir
             && self.worktree == other.worktree
             && self.workspace == other.workspace
-            && self.task == other.task
+            && self.box_name == other.box_name
             && self.branch == other.branch
             && self.goal == other.goal
             && self.resume == other.resume
@@ -171,7 +171,7 @@ pub enum EngineError {
     /// The agent's pane no longer exists.
     #[error("the agent pane is gone")]
     PaneGone,
-    /// The Task has no agent session.
+    /// The Box has no agent session.
     #[error("no agent session")]
     NoSession,
     /// The transcript could not be archived or copied out.

@@ -56,7 +56,7 @@ pub struct WaitReq {
 pub enum WaitFor {
     /// Agent idle.
     Idle,
-    /// Task done.
+    /// Box done.
     Done,
     /// Run finished.
     Run,

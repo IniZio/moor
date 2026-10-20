@@ -20,8 +20,8 @@ pub(crate) fn spec_path(state_dir: &Path, task: BoxId) -> PathBuf {
 
 /// Write the spec owner-only: a temporary file in the same directory, then a rename.
 pub(crate) fn write_spec(state_dir: &Path, spec: &ProxySpec) -> io::Result<()> {
-    let path = spec_path(state_dir, spec.task);
-    let dir = ca_dir(state_dir, spec.task);
+    let path = spec_path(state_dir, spec.box_id);
+    let dir = ca_dir(state_dir, spec.box_id);
     DirBuilder::new().recursive(true).mode(0o700).create(&dir)?;
     fs::set_permissions(&dir, Permissions::from_mode(0o700))?;
     let bytes = serde_json::to_vec(spec).map_err(io::Error::from)?;

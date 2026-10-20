@@ -168,7 +168,7 @@ const CLAIM_RACE_PAUSE: Duration = Duration::from_secs(1);
 
 /// Per-Box crabbox slug, `moor-{id}-{nonce}`; the Box name never enters it.
 fn slug(req: &AcquireReq) -> String {
-    BoxKey::new(req.task).slug(&req.nonce)
+    BoxKey::new(req.box_id).slug(&req.nonce)
 }
 
 /// The handle for a Box named `name` under `provider`.

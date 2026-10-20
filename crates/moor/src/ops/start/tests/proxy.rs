@@ -55,7 +55,7 @@ fn the_first_launch_ensures_the_proxy_once_and_hands_the_agent_its_address() {
     let row = w.cx.store().unwrap().task(id).unwrap().unwrap();
     assert_eq!(fake.calls().len(), 1);
     let spec = spec_of(&fake);
-    assert_eq!(spec.task, id);
+    assert_eq!(spec.box_id, id);
     assert_eq!(spec.box_handle, Some(BoxHandle::new("box-1")));
     assert_eq!(spec.host_cwd, PathBuf::from(row.worktree.unwrap()));
     let launches = engine.launches();
@@ -206,7 +206,7 @@ fn the_spec_carries_the_task_repo_and_resolved_rules() {
     );
     run(&w.cx, &goal_req()).unwrap();
     let spec = spec_of(&fake);
-    assert_eq!(spec.task_repo, Some(ForgeRepo::new("o", "r")));
+    assert_eq!(spec.box_repo, Some(ForgeRepo::new("o", "r")));
     let names: Vec<&str> = spec.rules.iter().map(|r| r.name.as_str()).collect();
     assert_eq!(
         names,
@@ -230,7 +230,7 @@ fn without_an_origin_only_the_rules_that_need_no_repo_remain() {
     let (w, engine, fake) = host_world(FakeProxyHost::new());
     run(&w.cx, &goal_req()).unwrap();
     let spec = spec_of(&fake);
-    assert_eq!(spec.task_repo, None);
+    assert_eq!(spec.box_repo, None);
     let names: Vec<&str> = spec.rules.iter().map(|r| r.name.as_str()).collect();
     assert!(names.contains(&"claude"), "{names:?}");
     assert!(!names.contains(&"github-api"), "{names:?}");

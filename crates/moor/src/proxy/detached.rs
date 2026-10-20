@@ -189,7 +189,7 @@ impl ProxyHost for DetachedSupervisor {
     /// supervisor is started, unless one already holds a live lease. The nonce never appears in
     /// arguments, environment, logs or errors.
     fn ensure(&self, spec: &ProxySpec) -> Result<ProxyEndpoint, ProxyHostError> {
-        let task = spec.task;
+        let task = spec.box_id;
         let Some(state) = self.state_dir.as_deref() else {
             return Err(fail(
                 "the state directory is not usable: no state directory: set MOOR_STATE_DIR, \

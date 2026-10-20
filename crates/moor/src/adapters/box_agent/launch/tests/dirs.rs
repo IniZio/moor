@@ -27,7 +27,7 @@ fn driver(d: FakeDriver) -> Arc<FakeDriver> {
     );
     d.acquire(&AcquireReq {
         provider: ProviderId::new("fake"),
-        task: BoxId::new(1),
+        box_id: BoxId::new(1),
         name: BoxName::parse_allow_bare("t1").unwrap(),
         class: None,
         nonce: "n0".to_owned(),
@@ -50,7 +50,7 @@ fn req(s: &FakeSurface) -> LaunchReq {
         workdir: BoxPath::under("/work", "box-1").unwrap(),
         worktree: wt.path.clone(),
         workspace: s.ensure_workspace(&wt, "moor:t1").unwrap(),
-        task: BoxName::parse_allow_bare("t1").unwrap(),
+        box_name: BoxName::parse_allow_bare("t1").unwrap(),
         branch: "moor/t1".to_owned(),
         goal: Some("fix x".to_owned()),
         resume: None,

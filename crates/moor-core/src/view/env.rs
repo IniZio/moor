@@ -3,7 +3,7 @@
 //! Carries `rows`, `provider` and `credentials`, plus `repo`, `agent`
 //! and `github`, which reports the GitHub identity and token resolution.
 //! Layers are [`crate::config::Layer`]; `agent` and `provider` come straight from
-//! the resolved task settings.
+//! the resolved box settings.
 
 use serde::{Deserialize, Serialize};
 

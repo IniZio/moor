@@ -75,7 +75,7 @@ fn task_with_box(store: &Store, driver: &FakeDriver) -> (BoxId, BoxHandle) {
     let got = driver
         .acquire(&AcquireReq {
             provider: provider.clone(),
-            task: id,
+            box_id: id,
             name: BoxName::parse_allow_bare("demo").unwrap(),
             class: None,
             nonce: "abc123".into(),
@@ -214,10 +214,10 @@ fn serve_injects_the_credential_audits_requests_and_stops() {
     let driver = FakeDriver::new().reverse_tunnels();
     let (id, handle) = task_with_box(&store, &driver);
     let spec = ProxySpec {
-        task: id,
+        box_id: id,
         box_handle: Some(handle),
         host_cwd: "/wt".into(),
-        task_repo: None,
+        box_repo: None,
         rules: vec![rule(up.port)],
     };
     write_spec(dir.path(), &spec).unwrap();

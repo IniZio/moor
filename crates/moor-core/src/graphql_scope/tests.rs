@@ -125,7 +125,7 @@ query RepositoryID($owner: String!, $name: String!) {
   repository(owner: $owner, name: $name) { id }
 }";
 
-fn on_task() -> Value {
+fn on_box() -> Value {
     json!({"owner": "IniZio", "repo": "moor", "name": "moor", "pr_number": 139,
            "number": 139, "limit": 2, "state": ["OPEN"], "states": ["OPEN"],
            "headRefName": "next", "head": "next", "endCursor": null})
@@ -144,7 +144,7 @@ fn captured_read_shapes_are_allowed() {
         GH_STACK_BY_NUMBER,
         REPOSITORY_ID,
     ] {
-        allowed(query, &on_task());
+        allowed(query, &on_box());
     }
 }
 
@@ -494,7 +494,7 @@ fn oversized_body_is_denied() {
 fn deep_nesting_is_denied() {
     let chain = |n: usize| {
         let open = "organization { ".repeat(n);
-        under_task(&format!("owner {{ {open}id{} }}", " }".repeat(n)))
+        under_box(&format!("owner {{ {open}id{} }}", " }".repeat(n)))
     };
     denied(&chain(40), &json!({}), "deep");
     allowed(&chain(3), &json!({}));
@@ -517,12 +517,12 @@ fn lexing_edge_cases() {
     denied("{ viewer { login } } \u{1F600}", &json!({}), "malformed");
 }
 
-pub(super) fn under_task(selection: &str) -> String {
+pub(super) fn under_box(selection: &str) -> String {
     format!("{{ repository(owner: \"IniZio\", name: \"moor\") {{ {selection} }} }}")
 }
 
 #[test]
-fn reaching_other_repos_through_the_task_repo_is_denied() {
+fn reaching_other_repos_through_the_box_repo_is_denied() {
     for (selection, field) in [
         (
             r#"assignableUsers { nodes { repositoriesContributedTo { nodes { nameWithOwner
@@ -550,13 +550,13 @@ fn reaching_other_repos_through_the_task_repo_is_denied() {
             "repoid.object",
         ),
     ] {
-        denied(&under_task(selection), &json!({}), field);
+        denied(&under_box(selection), &json!({}), field);
     }
 }
 
 #[test]
 fn leaf_fields_take_no_selection() {
-    denied(&under_task("name { x }"), &json!({}), "takes no selection");
+    denied(&under_box("name { x }"), &json!({}), "takes no selection");
 }
 
 #[test]
@@ -574,9 +574,9 @@ fn every_link_names_a_known_context() {
 fn connection_plumbing_is_allowed() {
     let sel = "pullRequests(first: 5) { totalCount pageInfo { hasNextPage endCursor }
         edges { cursor node { number author { login } } } nodes { number } }";
-    allowed(&under_task(sel), &json!({}));
+    allowed(&under_box(sel), &json!({}));
     denied(
-        &under_task("pullRequests { edges { node { number } other } }"),
+        &under_box("pullRequests { edges { node { number } other } }"),
         &json!({}),
         "other",
     );

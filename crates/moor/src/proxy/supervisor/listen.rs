@@ -46,7 +46,7 @@ pub(super) fn listen(
 ) -> Result<Live, String> {
     let ca = ca::load_or_create(deps.state_dir, task)
         .map_err(|err| format!("cannot load the proxy CA: {err}"))?;
-    let withheld = Withheld::new(&spec.rules, spec.task_repo.clone());
+    let withheld = Withheld::new(&spec.rules, spec.box_repo.clone());
     let capture = new_capture(deps, spec);
     let internal = internal_token()?;
     let graphql = start_filter(deps, spec, &ca, &capture)?;
@@ -103,7 +103,7 @@ fn new_capture(deps: &Deps<'_>, spec: &ProxySpec) -> Arc<MoorCapture> {
         &spec.rules,
         Arc::clone(&deps.creds),
         Arc::clone(&deps.forge),
-        spec.task_repo.clone(),
+        spec.box_repo.clone(),
     );
     let mut capture = MoorCapture::new(sources, Arc::clone(&deps.clock));
     capture.defer_evictions(
@@ -195,7 +195,7 @@ fn start_filter(
     GraphqlFilter::start(FilterSpec {
         ca: ephemeral,
         repo: spec
-            .task_repo
+            .box_repo
             .as_ref()
             .map(|r| RepoRef::new(&r.owner, &r.name)),
         host: GITHUB_API_HOST.to_owned(),

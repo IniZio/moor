@@ -8,7 +8,7 @@ fn n(s: &str) -> BoxName {
     BoxName::parse_allow_bare(s).expect("valid name")
 }
 
-/// Variants carrying a task or arguments.
+/// Variants carrying a box or arguments.
 #[allow(clippy::too_many_lines, reason = "one sample per request variant")]
 fn with_args() -> Vec<Request> {
     let t = || BoxReq { box_name: n("a") };

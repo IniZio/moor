@@ -78,7 +78,7 @@ fn admit(cx: &Cx, driver: &FakeDriver, dir: &Path) -> BoxId {
     let got = driver
         .acquire(&AcquireReq {
             provider,
-            task: id,
+            box_id: id,
             name,
             class: None,
             nonce: "n".to_owned(),

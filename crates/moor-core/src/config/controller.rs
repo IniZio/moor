@@ -16,7 +16,7 @@ pub struct ControllerConfig {
     pub socket: Option<String>,
     /// moor state directory override; `~` allowed. None means the process default.
     pub state_dir: Option<String>,
-    /// Seconds between passes that settle every open Task's agent state; must be above 0.
+    /// Seconds between passes that settle every open Box's agent state; must be above 0.
     /// None means 5.
     pub settle_every_secs: Option<u64>,
     /// Removed key, kept only so a stale config gets a pointed error.
@@ -45,13 +45,13 @@ where
     Option::<serde_json::Value>::deserialize(d).map(Some)
 }
 
-/// A repo the controller can clone and start Tasks in.
+/// A repo the controller can clone and start Boxes in.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RepoEntry {
     /// Clone URL, handed to the host's own `git clone`.
     pub url: String,
-    /// Branch new Tasks start from; None means the repo's default branch.
+    /// Branch new Boxes start from; None means the repo's default branch.
     #[serde(default)]
     pub default_branch: Option<String>,
     /// `.moor.yaml` to use when the repo has none.
@@ -164,9 +164,9 @@ pub struct SlackConfig {
     pub app_token_file: PathBuf,
     /// File holding the bot token (`xoxb-`).
     pub bot_token_file: PathBuf,
-    /// Channel ids that may start Tasks, such as `C0123ABC`; must not be empty.
+    /// Channel ids that may start Boxes, such as `C0123ABC`; must not be empty.
     pub channels: Vec<String>,
-    /// User ids that may start Tasks, such as `U0123ABC`; must not be empty.
+    /// User ids that may start Boxes, such as `U0123ABC`; must not be empty.
     pub users: Vec<String>,
     /// Slack Web API base URL without a trailing `/`; `https://` or loopback `http://` only.
     #[serde(default = "default_slack_api_base")]

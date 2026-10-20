@@ -8,7 +8,7 @@ use crate::seam::driver::BoxListing;
 
 fn fact(n: i64, state: BoxState, h: Option<&str>) -> BoxFact {
     BoxFact {
-        task: BoxId::new(n),
+        box_id: BoxId::new(n),
         state,
         handle: h.map(BoxHandle::new),
     }
@@ -83,8 +83,8 @@ fn only_the_missing_row_is_decided() {
         fact(2, BoxState::Ready, Some("b")),
     ];
     let out = reconcile(&rows, &[listed("a", false)]);
-    let tasks: Vec<_> = out.iter().map(|d| d.target.clone()).collect();
-    assert_eq!(tasks, [BoxTarget::Existing(BoxId::new(2))]);
+    let boxes: Vec<_> = out.iter().map(|d| d.target.clone()).collect();
+    assert_eq!(boxes, [BoxTarget::Existing(BoxId::new(2))]);
 }
 
 #[test]
@@ -92,8 +92,8 @@ fn foreign_moor_slug_does_not_keep_a_row_live() {
     let rows = [fact(7, BoxState::Ready, Some("prov/moor-7-a1b2c3"))];
     let l = listed("prov/moor-7-ffffff", false);
     let out = reconcile(&rows, &[l]);
-    let tasks: Vec<_> = out.iter().map(|d| d.target.clone()).collect();
-    assert_eq!(tasks, [BoxTarget::Existing(BoxId::new(7))]);
+    let boxes: Vec<_> = out.iter().map(|d| d.target.clone()).collect();
+    assert_eq!(boxes, [BoxTarget::Existing(BoxId::new(7))]);
 }
 
 #[test]
@@ -101,6 +101,6 @@ fn digit_bare_name_slug_does_not_keep_a_row_live() {
     let rows = [fact(42, BoxState::Ready, Some("prov/moor-42-0c0c0c"))];
     let l = listed("prov/moor-42-a1b2c3", false);
     let out = reconcile(&rows, &[l]);
-    let tasks: Vec<_> = out.iter().map(|d| d.target.clone()).collect();
-    assert_eq!(tasks, [BoxTarget::Existing(BoxId::new(42))]);
+    let boxes: Vec<_> = out.iter().map(|d| d.target.clone()).collect();
+    assert_eq!(boxes, [BoxTarget::Existing(BoxId::new(42))]);
 }

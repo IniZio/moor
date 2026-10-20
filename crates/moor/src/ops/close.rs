@@ -265,7 +265,7 @@ fn facts(cx: &Cx, row: &BoxRow, box_check: BoxCheck) -> Result<CloseFacts, Comma
         dirty = cx.git().dirty(wt).map_err(failed)?;
     }
     Ok(CloseFacts {
-        task: row.id,
+        box_id: row.id,
         name: row.name.as_str().to_owned(),
         branch: row.branch.clone(),
         lifecycle: row.lifecycle,

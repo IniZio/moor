@@ -34,7 +34,7 @@ fn driver(d: FakeDriver) -> Arc<FakeDriver> {
     );
     d.acquire(&AcquireReq {
         provider: ProviderId::new("fake"),
-        task: BoxId::new(1),
+        box_id: BoxId::new(1),
         name: box_name("t1"),
         class: None,
         nonce: "n0".to_owned(),
@@ -57,7 +57,7 @@ fn req(s: &FakeSurface) -> LaunchReq {
         workdir: BoxPath::under("/work", "box-1").unwrap(),
         worktree: wt.path.clone(),
         workspace: s.ensure_workspace(&wt, "moor:t1").unwrap(),
-        task: box_name("t1"),
+        box_name: box_name("t1"),
         branch: "moor/t1".to_owned(),
         goal: Some("fix x".to_owned()),
         resume: None,
@@ -298,7 +298,7 @@ fn a_box_without_a_home_fails_before_delivering() {
     let d = Arc::new(FakeDriver::new().peek_text("box-1", &environ_path(), "PATH=/usr/bin\0"));
     d.acquire(&AcquireReq {
         provider: ProviderId::new("fake"),
-        task: BoxId::new(1),
+        box_id: BoxId::new(1),
         name: box_name("t1"),
         class: None,
         nonce: "n0".to_owned(),

@@ -1,4 +1,4 @@
-//! Requests that list and read a task's versioned artifacts.
+//! Requests that list and read a box's versioned artifacts.
 
 use serde::{Deserialize, Serialize};
 
@@ -44,7 +44,7 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn task() -> BoxName {
+    fn box_name() -> BoxName {
         BoxName::parse("repo/alpha").expect("box name")
     }
 
@@ -55,7 +55,7 @@ mod tests {
         assert_eq!(
             req,
             Request::Artifacts(ArtifactsReq {
-                box_name: task(),
+                box_name: box_name(),
                 all: true
             })
         );
@@ -70,7 +70,7 @@ mod tests {
         assert_eq!(
             req,
             Request::Artifacts(ArtifactsReq {
-                box_name: task(),
+                box_name: box_name(),
                 all: false
             })
         );
@@ -84,7 +84,7 @@ mod tests {
         });
         let req: Request = serde_json::from_value(wire.clone()).expect("parse");
         let want = ArtifactReadReq {
-            box_name: task(),
+            box_name: box_name(),
             name: "a.txt".into(),
             version: Some(2),
             offset: 10,
@@ -100,7 +100,7 @@ mod tests {
         let wire = json!({"cmd": "artifact-read", "box": "repo/alpha", "name": "a", "len": 5});
         let req: Request = serde_json::from_value(wire).expect("parse");
         let want = ArtifactReadReq {
-            box_name: task(),
+            box_name: box_name(),
             name: "a".into(),
             version: None,
             offset: 0,

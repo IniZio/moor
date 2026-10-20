@@ -241,7 +241,7 @@ fn add_boxed(cx: &Cx) -> BoxId {
         .driver()
         .acquire(&AcquireReq {
             provider: ProviderId::new("p"),
-            task: id,
+            box_id: id,
             name: BoxName::parse_allow_bare("demo").unwrap(),
             class: None,
             nonce: "abc123".into(),

@@ -29,7 +29,7 @@ pub(crate) fn report(cx: &Cx, task: &BoxName, pane: &str, agent: &str, state: Pa
         agent: AGENT.to_owned(),
         state,
         session_id: agent.to_owned(),
-        task: task.clone(),
+        box_name: task.clone(),
     };
     let message = match cx.surface().register_resume(&PaneRef::new(pane), &reg) {
         Ok(ResumeOutcome::Registered) => return true,

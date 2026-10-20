@@ -36,7 +36,7 @@ impl LaunchFailure {
     }
 }
 
-/// Agent activity on a Task row.
+/// Agent activity on a Box row.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct AgentView {
     /// Whether the agent was launched.
@@ -57,7 +57,7 @@ pub struct AgentView {
     pub reason: Option<LaunchFailure>,
 }
 
-/// The in-flight run on a Task row.
+/// The in-flight run on a Box row.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct RunView {
     /// Run id.
@@ -77,7 +77,7 @@ pub struct BoxSleepView {
     pub reason: Option<String>,
 }
 
-/// A Task's Box.
+/// A Box.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct DriverView {
     /// Box lifecycle state.
@@ -146,7 +146,7 @@ pub struct BoxView {
     pub run: Option<RunView>,
     /// RFC3339 UTC last update.
     pub updated_at: String,
-    /// Open problems with the agent's model account; non-empty means the Task needs attention.
+    /// Open problems with the agent's model account; non-empty means the Box needs attention.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub attention: Vec<AttentionView>,
 }
@@ -197,7 +197,7 @@ pub struct StartView {
     pub boxed: BoxView,
     /// Box already existed.
     pub attached: bool,
-    /// Task is queued for capacity.
+    /// Box is queued for capacity.
     pub queued: bool,
     /// Names promoted from the queue.
     pub promoted: Vec<String>,
@@ -209,7 +209,7 @@ pub struct StartView {
     pub agent: AgentLaunchView,
     /// Warnings raised while starting.
     pub warnings_inline: Vec<String>,
-    /// The provisioning step that failed while the Task carried on, such as `setup`.
+    /// The provisioning step that failed while the Box carried on, such as `setup`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub failed_step: Option<String>,
     /// Handle of the Box kept after a failed step.

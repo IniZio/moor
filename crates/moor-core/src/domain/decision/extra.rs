@@ -6,7 +6,7 @@ use crate::name::RunId;
 /// An event a caller may pass; every other kind is derived from state steps.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExtraEvent {
-    /// The driver refused to sleep an idle task's box, so it keeps running.
+    /// The driver refused to sleep an idle box, so it keeps running.
     StaysUp {
         /// The driver's reason.
         reason: String,
@@ -34,7 +34,7 @@ pub enum ExtraEvent {
         /// The session id.
         session: String,
     },
-    /// The agent launch failed; the Task stays in its state, so no step derives it.
+    /// The agent launch failed; the Box stays in its state, so no step derives it.
     SessionFailed {
         /// The launch step that failed.
         step: String,
@@ -52,7 +52,7 @@ pub enum ExtraEvent {
         /// Why the agent was relaunched; `None` for a plain `moor start`.
         cause: Option<String>,
     },
-    /// Setup failed on a Task that stays in its state, so no step derives it.
+    /// Setup failed on a Box that stays in its state, so no step derives it.
     SetupFailed {
         /// The failing output line.
         line: String,
@@ -74,7 +74,7 @@ pub enum ExtraEvent {
         /// The run id.
         run: RunId,
     },
-    /// A start attached to an existing open task.
+    /// A start attached to an existing open box.
     Attached,
     /// Close ended the live agent sessions.
     SessionsStopped {
@@ -143,7 +143,7 @@ pub enum ExtraEvent {
         /// How the turn ended.
         outcome: TurnOutcome,
     },
-    /// The Proxy for the task is ready to accept connections.
+    /// The Proxy for the box is ready to accept connections.
     ProxyStarted {
         /// Port the Box side connects to.
         box_port: u16,

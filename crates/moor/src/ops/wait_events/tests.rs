@@ -100,7 +100,7 @@ fn ready(cx: &Cx, n: &str) -> BoxId {
         .driver()
         .acquire(&AcquireReq {
             provider: ProviderId::new("p"),
-            task: id,
+            box_id: id,
             name: name(n),
             class: None,
             nonce: "abc123".into(),

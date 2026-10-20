@@ -21,7 +21,7 @@ fn live(driver: FakeDriver) -> Arc<FakeDriver> {
     let d = Arc::new(driver);
     d.acquire(&AcquireReq {
         provider: ProviderId::new("fake"),
-        task: BoxId::new(1),
+        box_id: BoxId::new(1),
         name: BoxName::parse_allow_bare("t1").unwrap(),
         class: None,
         nonce: "n0".to_owned(),

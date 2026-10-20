@@ -73,8 +73,8 @@ pub struct ResumeReg {
     pub state: PaneStatus,
     /// The agent's session id.
     pub session_id: String,
-    /// The task `moor start --resume` restarts.
-    pub task: BoxName,
+    /// The box `moor start --resume` restarts.
+    pub box_name: BoxName,
 }
 
 /// How the multiplexer answered a resume registration.
@@ -121,7 +121,7 @@ pub enum SurfaceError {
     /// The surface backend cannot be reached.
     #[error("surface unavailable: {0}")]
     Unavailable(String),
-    /// Creating the worktree failed because one is left on the Task's branch.
+    /// Creating the worktree failed because one is left on the Box's branch.
     #[error("a worktree is left at {}", path.display())]
     Leftover {
         /// Where the leftover worktree is.
@@ -135,7 +135,7 @@ pub enum SurfaceError {
     },
 }
 
-/// Returns the Workspace label for a task, `moor:<name>`.
+/// Returns the Workspace label for a box, `moor:<name>`.
 #[must_use]
 pub fn workspace_label(name: &BoxName) -> String {
     format!("moor:{}", name.as_str())
