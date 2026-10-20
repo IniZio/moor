@@ -1,8 +1,6 @@
 //! The record a question tool's hook writes, and the notice that follows it.
 
-use moor_core::activity::{
-    decide, AgentState, HookRead, PaneObs, PaneRead, PaneStatus, Probes,
-};
+use moor_core::activity::{decide, AgentState, HookRead, PaneObs, PaneRead, PaneStatus, Probes};
 use moor_core::seam::agent_profile::AgentProfile;
 use moor_core::seam::clock::Ts;
 use serde_json::json;
@@ -69,7 +67,13 @@ fn check_question_and_options(path: Option<&str>) {
     let t = TempDir::new().unwrap();
     let c = ctx(t.path());
     install(&Claude.hook_writer(&c).unwrap());
-    run_hook_on(&c, "waiting_input", "PreToolUse", Some(&ask_payload()), path);
+    run_hook_on(
+        &c,
+        "waiting_input",
+        "PreToolUse",
+        Some(&ask_payload()),
+        path,
+    );
     assert_eq!(reported(&state_file(&c)), asking());
 }
 
@@ -77,13 +81,34 @@ fn check_notice_keeps_question(path: Option<&str>) {
     let t = TempDir::new().unwrap();
     let c = ctx(t.path());
     install(&Claude.hook_writer(&c).unwrap());
-    run_hook_on(&c, "waiting_input", "PreToolUse", Some(&ask_payload()), path);
-    run_hook_on(&c, "waiting_input", "Notification", Some(&notice_payload()), path);
+    run_hook_on(
+        &c,
+        "waiting_input",
+        "PreToolUse",
+        Some(&ask_payload()),
+        path,
+    );
+    run_hook_on(
+        &c,
+        "waiting_input",
+        "Notification",
+        Some(&notice_payload()),
+        path,
+    );
     assert_eq!(reported(&state_file(&c)), asking());
     run_hook_on(&c, "working", "PostToolUse", Some("{}"), path);
-    run_hook_on(&c, "waiting_input", "Notification", Some(&notice_payload()), path);
+    run_hook_on(
+        &c,
+        "waiting_input",
+        "Notification",
+        Some(&notice_payload()),
+        path,
+    );
     let after = Claude.parse_hook(&state_file(&c)).unwrap();
-    assert_eq!(after.message.as_deref(), Some("Claude needs your permission"));
+    assert_eq!(
+        after.message.as_deref(),
+        Some("Claude needs your permission")
+    );
 }
 
 #[test]
