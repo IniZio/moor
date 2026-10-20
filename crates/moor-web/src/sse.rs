@@ -2,7 +2,7 @@
 
 use moor_core::controller::ServerFrame;
 
-use crate::client::EventRecord;
+use moor_client::EventRecord;
 
 /// Comment line sent while the stream is idle.
 pub const KEEPALIVE: &[u8] = b": keepalive\n\n";

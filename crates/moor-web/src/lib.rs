@@ -2,7 +2,6 @@
 
 pub mod actions;
 pub mod auth;
-pub mod client;
 pub mod db;
 pub mod http;
 pub mod jobs;

@@ -9,10 +9,10 @@ use std::time::Duration;
 
 use moor_core::controller::WatchFilter;
 
-use crate::client::{Client, WatchItem};
 use crate::db::Db;
 use crate::http::{placeholder_handler, Handler, HttpRequest, Reply};
 use crate::sse;
+use moor_client::{Client, WatchItem};
 
 /// Timing and buffering of a relay.
 #[derive(Clone, Copy, Debug)]
@@ -81,7 +81,7 @@ impl Relay<'_> {
     /// Forwards items from `rx` until the connection ends or the browser write fails.
     fn pump(
         &mut self,
-        rx: &Receiver<Result<WatchItem, crate::client::ClientError>>,
+        rx: &Receiver<Result<WatchItem, moor_client::ClientError>>,
     ) -> io::Result<Option<String>> {
         loop {
             match rx.recv_timeout(self.config.keepalive) {

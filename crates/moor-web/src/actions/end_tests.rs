@@ -21,10 +21,10 @@ use serde_json::{json, Value};
 
 use super::handler;
 use crate::actions::start::StartCtx;
-use crate::client::Client;
 use crate::db::{Db, RequestRow};
 use crate::http::{start, HttpResponse, Server};
 use crate::jobs::Jobs;
+use moor_client::Client;
 
 const TOKEN: &str = "t0ken";
 const KEY: &str = "k1";

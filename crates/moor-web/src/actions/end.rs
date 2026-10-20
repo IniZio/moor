@@ -14,9 +14,9 @@ use moor_core::{BoxName, SessionId};
 use serde_json::{json, Value};
 
 use super::start::StartCtx;
-use crate::client::Client;
 use crate::http::{Handler, HttpRequest, HttpResponse, Reply};
 use crate::jobs::{JobFailure, JobHandle};
+use moor_client::Client;
 
 #[cfg(test)]
 #[path = "end_tests.rs"]

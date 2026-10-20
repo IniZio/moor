@@ -19,8 +19,8 @@ use moor_core::BoxName;
 use serde_json::{json, Value};
 
 use super::handler;
-use crate::client::Client;
 use crate::http::{start, HttpResponse, Server};
+use moor_client::Client;
 
 const TOKEN: &str = "t0ken";
 

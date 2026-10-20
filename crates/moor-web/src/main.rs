@@ -7,9 +7,9 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use clap::Parser;
+use moor_client::Client;
 use moor_web::actions::{self, start::StartCtx};
 use moor_web::auth::read_token;
-use moor_web::client::Client;
 use moor_web::db::Db;
 use moor_web::http::start;
 use moor_web::jobs::Jobs;

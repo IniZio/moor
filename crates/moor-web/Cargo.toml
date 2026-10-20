@@ -13,6 +13,7 @@ name = "moor-web"
 path = "src/main.rs"
 
 [dependencies]
+moor-client = { path = "../moor-client" }
 moor-core = { path = "../moor-core" }
 clap = { version = "4", features = ["derive", "env"] }
 serde = { version = "1", features = ["derive"] }

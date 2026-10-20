@@ -2018,6 +2018,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "moor-client"
+version = "0.2.0"
+dependencies = [
+ "moor-core",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
 name = "moor-core"
 version = "0.2.0"
 dependencies = [
@@ -2035,6 +2044,7 @@ name = "moor-web"
 version = "0.2.0"
 dependencies = [
  "clap",
+ "moor-client",
  "moor-core",
  "rusqlite",
  "serde",
