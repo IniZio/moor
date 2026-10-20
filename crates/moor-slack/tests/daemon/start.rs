@@ -193,6 +193,27 @@ fn starting_row_left_by_a_stopped_daemon_is_settled_at_startup() {
     assert!(shows_only, "one show and no start after the restart");
 }
 
+#[test]
+fn start_sent_again_after_a_restart_carries_the_stored_goal() {
+    let mut rig = Rig::new();
+    rig.spawn_daemon();
+    rig.slack.wait_connected();
+    rig.mention(1, USER, "<@UBOT> start demo fix the thing", TS, None);
+    rig.wait_stderr("asking again");
+    rig.kill_daemon();
+    let controller = rig.serve(PROTOCOL);
+    controller.keep_boxes();
+    rig.spawn_daemon();
+    let posts = rig.slack.wait_posts(1);
+    assert_eq!(posts[0].text, format!("Started Box `{BOX_NAME}`."));
+    let want = (
+        BOX_NAME.to_owned(),
+        Some("demo".to_owned()),
+        Some("fix the thing".to_owned()),
+    );
+    assert_eq!(starts(&controller), [want]);
+}
+
 /// The text of the post in `thread`, failing the test when there is none.
 fn post_in(rig: &Rig, thread: &str) -> String {
     let posts = rig.slack.posts();
