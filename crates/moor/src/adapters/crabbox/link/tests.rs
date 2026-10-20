@@ -121,6 +121,7 @@ fn fail(stderr: &str) -> Reply {
 struct Lab {
     _dir: TempDir,
     state: PathBuf,
+    sockets: PathBuf,
     proc: Arc<ScriptedProc>,
     clock: Arc<FakeClock>,
     ssh: Arc<Mutex<OpenSsh>>,
@@ -143,6 +144,7 @@ fn lab_in(state: PathBuf, dir: TempDir) -> Lab {
             Reply::Computed(Arc::new(move |args| model.lock().unwrap().reply(args))),
         );
     Lab {
+        sockets: dir.path().join("sockets"),
         _dir: dir,
         state,
         proc,
@@ -154,9 +156,14 @@ fn lab_in(state: PathBuf, dir: TempDir) -> Lab {
 impl Lab {
     /// A driver wired the way the controller wires one on every settle tick.
     fn driver(&self) -> Crabbox {
+        self.driver_in(self.state.clone())
+    }
+
+    /// A driver like [`Lab::driver`] whose state dir is `state`.
+    fn driver_in(&self, state: PathBuf) -> Crabbox {
         let clock: Arc<dyn Clock> = self.clock.clone();
         let driver = Crabbox::new(self.proc.clone(), clock, Arc::new(FakeRng::default()))
-            .with_state_dir(Some(self.state.clone()));
+            .with_state_dir(Some(state), self.sockets.clone());
         driver.version_ok.set(()).unwrap();
         driver
     }
@@ -204,8 +211,9 @@ impl Lab {
     }
 
     fn link_files(&self) -> Vec<PathBuf> {
-        std::fs::read_dir(self.state.join("ssh"))
-            .unwrap()
+        [self.state.join("ssh"), self.sockets.clone()]
+            .iter()
+            .flat_map(|d| std::fs::read_dir(d).unwrap())
             .map(|e| e.unwrap().path())
             .collect()
     }
@@ -348,15 +356,47 @@ fn release_removes_the_socket_of_a_dead_master() {
 }
 
 #[test]
-fn a_socket_path_ssh_cannot_bind_connects_per_call() {
+fn a_state_dir_too_deep_for_a_socket_still_shares_one_connection() {
     let dir = tempfile::tempdir().unwrap();
-    let socket_len = SSH_MAX_PATH + 1;
-    let pad = socket_len - dir.path().as_os_str().len() - "/".len() - "/ssh/".len() - 16;
-    let lab = lab_in(dir.path().join("d".repeat(pad)), dir);
+    let deep = dir.path().join("d".repeat(SSH_MAX_PATH));
+    let lab = lab_in(deep, dir);
     for _ in 0..3 {
         assert_eq!(lab.probe_tick().unwrap().as_deref(), Some(HOOK));
     }
-    assert_eq!(lab.connects(), 3);
+    assert_eq!(lab.connects(), 1, "ssh connections over 3 ticks");
+    assert_eq!(lab.driver().link_warning(), None);
+}
+
+#[test]
+fn two_state_dirs_never_share_a_master() {
+    let lab = lab();
+    lab.probe_tick().unwrap();
+    let other = lab.driver_in(lab.state.with_file_name("other"));
+    let path = BoxPath::under("/work", ".moor/agent-state.json").unwrap();
+    other
+        .peek_file(&handle(), &path, Path::new("/host/wt"))
+        .unwrap();
+    assert_eq!(lab.connects(), 2, "one master per state dir");
+}
+
+#[test]
+fn a_socket_dir_others_can_enter_is_a_warning_and_calls_connect_on_their_own() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let lab = lab();
+    std::fs::create_dir(&lab.sockets).unwrap();
+    std::fs::set_permissions(&lab.sockets, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let warning = lab.driver().link_warning().expect("a warning");
+    assert_eq!(warning.code, "ssh_not_shared");
+    assert!(
+        warning.message.contains(&lab.sockets.display().to_string()),
+        "{}",
+        warning.message
+    );
+    for _ in 0..2 {
+        assert_eq!(lab.probe_tick().unwrap().as_deref(), Some(HOOK));
+    }
+    assert_eq!(lab.connects(), 2, "no master in a shared directory");
 }
 
 #[test]
