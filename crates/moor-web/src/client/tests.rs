@@ -442,6 +442,26 @@ fn a_bytes_frame_over_the_cap_is_a_protocol_error() {
 }
 
 #[test]
+fn a_bytes_frame_for_another_request_is_a_protocol_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let sock = dir.path().join("c.sock");
+    let mut reply = br#"{"frame":"bytes","id":"2","len":2}"#.to_vec();
+    reply.extend_from_slice(b"\nab");
+    reply.extend_from_slice(&response_line());
+    let server = answer_raw(&sock, reply);
+    let mut calls = 0;
+    let err = Client::new(&sock)
+        .read(show(), |_| {
+            calls += 1;
+            Ok(())
+        })
+        .unwrap_err();
+    assert!(matches!(err, ClientError::Protocol(_)), "{err}");
+    assert_eq!(calls, 0);
+    server.join().unwrap();
+}
+
+#[test]
 fn a_bytes_frame_cut_short_is_an_error() {
     let dir = tempfile::tempdir().unwrap();
     let sock = dir.path().join("c.sock");
