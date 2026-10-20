@@ -2,9 +2,11 @@
 
 use crate::secret::Secret;
 use std::{ffi::OsString, fmt, path::PathBuf, time::Duration};
+mod error;
 mod first_line;
 mod gate;
 mod signal;
+pub use error::ProcError;
 pub use first_line::FirstLineError;
 pub use gate::StderrGate;
 pub use signal::{check_group, Signal};
@@ -240,49 +242,6 @@ pub struct ProcOutput {
     pub truncated: bool,
 }
 
-/// Why a child did not succeed.
-#[derive(Debug)]
-pub enum ProcError {
-    /// The program could not be started.
-    Spawn(std::io::Error),
-    /// The deadline passed and the child was killed.
-    Timeout {
-        /// Program that timed out.
-        tool: Tool,
-        /// Deadline that elapsed.
-        after: Duration,
-    },
-    /// The child died from a signal.
-    Signalled(i32),
-    /// moor was interrupted and the child was stopped.
-    Interrupted,
-    /// The child exited non-zero.
-    NonZero {
-        /// Exit code.
-        code: i32,
-        /// Captured stdout.
-        stdout: String,
-        /// Last ~2 KiB of stderr.
-        stderr_tail: String,
-    },
-}
-
-impl fmt::Display for ProcError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Spawn(e) => write!(f, "could not start program: {e}"),
-            Self::Timeout { tool, after } => {
-                write!(f, "{} timed out after {}s", tool.program(), after.as_secs())
-            }
-            Self::Signalled(s) => write!(f, "program killed by signal {s}"),
-            Self::Interrupted => f.write_str("interrupted"),
-            Self::NonZero { code, .. } => write!(f, "program exited with code {code}"),
-        }
-    }
-}
-
-impl std::error::Error for ProcError {}
-
 /// How a long-lived child ended.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ExitInfo {
@@ -334,6 +293,24 @@ pub trait Proc: Send + Sync {
     /// # Errors
     /// [`ProcError`] on spawn failure, timeout, signal, interrupt or non-zero exit.
     fn run_streamed(&self, spec: &ProcSpec, out: &Output) -> Result<(), ProcError>;
+
+    /// Runs to completion, handing raw stdout to `read` as it arrives; stdout is never held whole.
+    /// `read` is called once after the child starts and may stop before EOF; the rest of stdout is
+    /// discarded. A non-zero exit is [`ProcError::NonZero`] with empty `stdout` and the stderr tail.
+    ///
+    /// # Errors
+    /// [`ProcError`] on spawn failure, timeout, signal, interrupt or non-zero exit.
+    fn run_reading(
+        &self,
+        spec: &ProcSpec,
+        read: &mut dyn FnMut(&mut dyn std::io::Read),
+    ) -> Result<(), ProcError> {
+        let _ = (spec, read);
+        Err(ProcError::Spawn(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "streamed stdout is not supported",
+        )))
+    }
 
     /// Starts a child and leaves it running.
     ///
