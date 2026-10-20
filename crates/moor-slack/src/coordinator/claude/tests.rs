@@ -174,7 +174,7 @@ fn a_run_past_its_limit_is_killed_with_its_whole_group() {
     let script = format!("sleep 60 & echo $! > {}; sleep 30", pid_file.display());
     cmd.args(["-c", &script]);
     let started = now();
-    let ran = run(cmd, b"", Duration::from_millis(500)).unwrap();
+    let ran = run(cmd, b"", None, Duration::from_millis(500)).unwrap();
     assert!(ran.timed_out);
     let took = started.elapsed();
     assert!(
@@ -191,6 +191,21 @@ fn a_run_past_its_limit_is_killed_with_its_whole_group() {
         std::thread::sleep(Duration::from_millis(20));
     }
     panic!("the grandchild outlived the run");
+}
+
+#[test]
+fn a_token_the_child_never_reads_cannot_hold_the_run_past_its_limit() {
+    let token = Secret::new(vec![b'x'; 1 << 20]);
+    let mut cmd = Command::new("/bin/sh");
+    cmd.args(["-c", "exec sleep 30"]);
+    let (sent, ended) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let ran = run(cmd, b"", Some(&token), Duration::from_millis(500));
+        let _ = sent.send(ran.map(|ran| ran.timed_out));
+    });
+    let ended = ended.recv_timeout(Duration::from_secs(10));
+    let timed_out = ended.unwrap_or_else(|_| panic!("the run did not end at its limit"));
+    assert!(timed_out.unwrap());
 }
 
 /// The current instant, to time one run.

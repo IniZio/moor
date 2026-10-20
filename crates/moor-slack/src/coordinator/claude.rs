@@ -1,7 +1,7 @@
 //! Everything that knows Claude Code: the version gate, the argv and cleared environment of a
 //! turn, the token on a pipe at fd 3, and the `result` event of `stream-json` output.
 
-use std::io::{self, Read, Write as _};
+use std::io::{self, PipeWriter, Read, Write as _};
 use std::os::fd::OwnedFd;
 use std::os::unix::process::CommandExt as _;
 use std::path::{Path, PathBuf};
@@ -94,7 +94,7 @@ impl Claude {
         cmd.arg("--version");
         clear_env(&mut cmd, &host);
         let shown = binary.display();
-        let ran = run(cmd, b"", VERSION_LIMIT).map_err(|e| format!("{shown}: {e}"))?;
+        let ran = run(cmd, b"", None, VERSION_LIMIT).map_err(|e| format!("{shown}: {e}"))?;
         let out = String::from_utf8_lossy(&ran.stdout);
         let version = out.split_whitespace().next().unwrap_or_default().to_owned();
         match parse_version(&version) {
@@ -163,14 +163,8 @@ impl CredentialCheck for Claude {
         let unavailable = |why: String| CheckError::Unavailable(redact(&why, token));
         let mut cmd = self.turn(CHECK_MODEL, config_dir);
         cmd.current_dir(config_dir);
-        let pipe = token_pipe(token).map_err(|e| unavailable(format!("token pipe: {e}")))?;
-        cmd.fd_mappings(vec![FdMapping {
-            parent_fd: pipe,
-            child_fd: TOKEN_FD,
-        }])
-        .map_err(|_| unavailable("token pipe: descriptor in use".to_owned()))?;
         let shown = self.binary.display();
-        let ran = run(cmd, CHECK_INPUT.as_bytes(), CHECK_LIMIT)
+        let ran = run(cmd, CHECK_INPUT.as_bytes(), Some(token), CHECK_LIMIT)
             .map_err(|e| unavailable(format!("{shown}: {e}")))?;
         if ran.timed_out {
             let limit = CHECK_LIMIT.as_secs();
@@ -212,14 +206,6 @@ fn clear_env(cmd: &mut Command, host: &HostEnv) {
     if let Some(user) = &host.user {
         cmd.env("USER", user);
     }
-}
-
-/// A pipe that holds `token` with its write end closed; returns the read end.
-fn token_pipe(token: &Secret) -> io::Result<OwnedFd> {
-    let (reader, mut writer) = io::pipe()?;
-    writer.write_all(token.expose())?;
-    drop(writer);
-    Ok(OwnedFd::from(reader))
 }
 
 /// `major.minor.patch`, when `text` is one.
@@ -279,55 +265,73 @@ fn redact(text: &str, token: &Secret) -> String {
     text.chars().take(MAX_REASON).collect()
 }
 
-/// Runs `cmd` in its own process group with `input` on stdin, and collects its output. At
-/// `limit` the whole group is killed. Any process the group still holds after the leader
-/// exits is killed too, so nothing outlives the run.
-fn run(mut cmd: Command, input: &[u8], limit: Duration) -> io::Result<Ran> {
+/// Runs `cmd` in its own process group with `input` on stdin and `token`, when given, on a
+/// pipe at [`TOKEN_FD`], and collects its output. Both are written after the spawn, so
+/// `limit` covers a child that never reads them; at `limit` the whole group is killed. Any
+/// process the group still holds after the leader exits is killed too, so nothing outlives
+/// the run.
+fn run(mut cmd: Command, input: &[u8], token: Option<&Secret>, limit: Duration) -> io::Result<Ran> {
     cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .process_group(0);
+    let token = token
+        .map(|token| token_pipe(&mut cmd).map(|pipe| (pipe, token)))
+        .transpose()?;
     let mut child = cmd.spawn()?;
+    // Dropping `cmd` closes this process's copy of the pipe's read end, so a write to a child
+    // that is gone fails instead of blocking.
+    drop(cmd);
     let group = Pid::from_child(&child);
-    let stdin = child.stdin.take();
-    let input = input.to_vec();
-    let writer = thread::spawn(move || {
-        if let Some(mut stdin) = stdin {
-            let _ = stdin.write_all(&input);
+    thread::scope(|scope| {
+        let stdin = child.stdin.take();
+        scope.spawn(move || stdin.map(|mut stdin| stdin.write_all(input)));
+        if let Some((mut pipe, token)) = token {
+            scope.spawn(move || pipe.write_all(token.expose()));
         }
-    });
-    let (done_tx, done) = mpsc::channel();
-    let stdout = child.stdout.take();
-    let out = thread::spawn(move || {
-        let bytes = read_capped(stdout);
-        let _ = done_tx.send(());
-        bytes
-    });
-    let stderr = child.stderr.take();
-    let err = thread::spawn(move || read_capped(stderr));
-    let timed_out = matches!(done.recv_timeout(limit), Err(RecvTimeoutError::Timeout));
-    if !timed_out {
-        wait_up_to(&mut child, EXIT_GRACE)?;
-    }
-    let _ = kill_process_group(group, Signal::KILL);
-    child.wait()?;
-    let _ = writer.join();
-    Ok(Ran {
-        stdout: out.join().unwrap_or_default(),
-        stderr: err.join().unwrap_or_default(),
-        timed_out,
+        let (done_tx, done) = mpsc::channel();
+        let stdout = child.stdout.take();
+        let out = scope.spawn(move || {
+            let bytes = read_capped(stdout);
+            let _ = done_tx.send(());
+            bytes
+        });
+        let stderr = child.stderr.take();
+        let err = scope.spawn(move || read_capped(stderr));
+        let timed_out = matches!(done.recv_timeout(limit), Err(RecvTimeoutError::Timeout));
+        if !timed_out {
+            wait_up_to(&mut child, EXIT_GRACE);
+        }
+        let _ = kill_process_group(group, Signal::KILL);
+        child.wait()?;
+        Ok(Ran {
+            stdout: out.join().unwrap_or_default(),
+            stderr: err.join().unwrap_or_default(),
+            timed_out,
+        })
     })
 }
 
-/// Waits for `child` to exit, at most `limit`.
-fn wait_up_to(child: &mut Child, limit: Duration) -> io::Result<()> {
+/// Maps a new pipe's read end to [`TOKEN_FD`] in `cmd`; returns its write end.
+fn token_pipe(cmd: &mut Command) -> io::Result<PipeWriter> {
+    let (reader, writer) = io::pipe()?;
+    let mapping = FdMapping {
+        parent_fd: OwnedFd::from(reader),
+        child_fd: TOKEN_FD,
+    };
+    cmd.fd_mappings(vec![mapping])
+        .map_err(|_| io::Error::other("token pipe: descriptor in use"))?;
+    Ok(writer)
+}
+
+/// Waits for `child` to exit, at most `limit`; an error from the wait ends it early.
+fn wait_up_to(child: &mut Child, limit: Duration) {
     let step = Duration::from_millis(20);
     let mut waited = Duration::ZERO;
-    while child.try_wait()?.is_none() && waited < limit {
+    while matches!(child.try_wait(), Ok(None)) && waited < limit {
         thread::sleep(step);
         waited += step;
     }
-    Ok(())
 }
 
 /// Reads `stream` to its end and keeps the first [`MAX_OUTPUT`] bytes.
