@@ -8,13 +8,26 @@ fn allow() -> (Vec<String>, Vec<String>) {
 }
 
 /// Runs `decide` for the allowed channel and user unless overridden.
-fn run(channel: &str, user: &str, text: &str, bound: Option<&BoxName>) -> Action {
+fn run(channel: &str, user: &str, text: &str, existing: Option<&SlackThread>) -> Action {
     let (channels, users) = allow();
     let allow = Allow {
         channels: &channels,
         users: &users,
     };
-    decide(&allow, channel, user, text, "1730000000.123456", bound)
+    decide(&allow, channel, user, text, "1730000000.123456", existing)
+}
+
+/// A thread row for Box `slack-1-2` in `state`.
+fn row(state: ThreadState) -> SlackThread {
+    SlackThread {
+        channel: "C1".to_owned(),
+        thread_ts: "1.2".to_owned(),
+        box_name: BoxName::parse_allow_bare("slack-1-2").unwrap(),
+        repo: "r".to_owned(),
+        goal: "g".to_owned(),
+        owner: "U1".to_owned(),
+        state,
+    }
 }
 
 /// The usage reply.
@@ -66,10 +79,27 @@ fn disallowed_channel_is_ignored() {
 
 #[test]
 fn bound_thread_refuses_second_start() {
-    let bound = BoxName::parse_allow_bare("slack-1-2").unwrap();
+    let bound = row(ThreadState::Bound {
+        box_id: moor_core::name::BoxId::new(7),
+        branch: None,
+    });
     let got = run("C1", "U1", "<@UBOT> start r g", Some(&bound));
     assert!(
-        matches!(&got, Action::Reply(t) if t.contains("`slack-1-2`")),
+        matches!(&got, Action::Reply(t) if t.contains("already runs Box `slack-1-2`")),
+        "got {got:?}"
+    );
+}
+
+#[test]
+fn starting_thread_says_its_box_is_still_starting() {
+    let got = run(
+        "C1",
+        "U1",
+        "<@UBOT> start r g",
+        Some(&row(ThreadState::Starting)),
+    );
+    assert!(
+        matches!(&got, Action::Reply(t) if t.contains("`slack-1-2` is still starting") && !t.contains("runs")),
         "got {got:?}"
     );
 }

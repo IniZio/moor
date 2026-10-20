@@ -56,10 +56,16 @@ pub(crate) fn record(
         }
         let channel = mention.channel.as_str();
         let thread = mention.thread_ts.as_deref().unwrap_or(&mention.ts);
-        let row = db.thread(channel, thread)?;
-        let bound = row.as_ref().map(|t| &t.box_name);
+        let existing = db.thread(channel, thread)?;
         Ok(
-            match decide(allow, channel, &mention.user, &mention.text, thread, bound) {
+            match decide(
+                allow,
+                channel,
+                &mention.user,
+                &mention.text,
+                thread,
+                existing.as_ref(),
+            ) {
                 Action::Ignore => None,
                 Action::Reply(text) => Some(Job::Reply {
                     channel: channel.to_owned(),
