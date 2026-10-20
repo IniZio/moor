@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use crate::boxscript::quote;
 use crate::name::BoxPath;
+use crate::name::DirectHost;
 use crate::seam::driver::BoxStep;
 use crate::seam::forge::ForgeRepo;
 use crate::seam::proc::Deadline;
@@ -57,6 +58,8 @@ pub struct ProxyCtx<'a> {
     pub box_port: u16,
     /// The Box directory where [`stage_steps`] put the nonce and the CA.
     pub cred: &'a BoxPath,
+    /// Hosts the Box reaches without the Proxy.
+    pub direct: &'a [DirectHost],
 }
 
 /// What the environment is built from. Per-Box home, xcconfig and Box tag variables for Mac Boxes
@@ -315,13 +318,18 @@ fn proxy_lines(p: &ProxyCtx<'_>) -> Result<Vec<String>, String> {
         ));
     }
     lines.extend(yarn_lines(p.box_port));
+    let direct: String = p
+        .direct
+        .iter()
+        .map(|h| [",", &h.no_proxy()].concat())
+        .collect();
     for name in ["NO_PROXY", "no_proxy"] {
         lines.push(format!(
-            "export {name}=\"127.0.0.1,localhost,::1${{{name}:+,${name}}}\""
+            "export {name}=\"127.0.0.1,localhost,::1{direct}${{{name}:+,${name}}}\""
         ));
     }
     lines.push("export NODE_USE_ENV_PROXY=1".to_owned());
-    lines.extend(java::java_lines(p.box_port, &ca));
+    lines.extend(java::java_lines(p.box_port, &ca, p.direct));
     Ok(lines)
 }
 

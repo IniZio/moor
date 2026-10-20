@@ -43,6 +43,7 @@ fn ctx<'a>(
         proxy: cred.map(|cred| ProxyCtx {
             box_port: 4321,
             cred,
+            direct: &[],
         }),
         origin: Some("https://github.com/o/n.git"),
         workdir,
@@ -93,6 +94,57 @@ fn proxy_prelude_exports_from_the_staged_nonce() {
     for name in PASS_VARS {
         assert!(text.contains(&format!("export {name}=")), "{name}");
     }
+}
+
+/// `NO_PROXY` and `no_proxy` after the prelude's exports, starting from `start` for both.
+fn no_proxy_after(direct: &[crate::name::DirectHost], start: &str) -> String {
+    let (cred, wd, e) = (path("/cred"), path("/work"), env());
+    let mut b = ctx(&e, Some(&cred), Some(&wd));
+    b.proxy = b.proxy.map(|p| ProxyCtx { direct, ..p });
+    let got = build(&b, Purpose::Run).unwrap();
+    let exports: Vec<&String> = got
+        .prelude
+        .iter()
+        .filter(|l| l.starts_with("export NO_PROXY=") || l.starts_with("export no_proxy="))
+        .collect();
+    assert_eq!(exports.len(), 2, "{:?}", got.prelude);
+    let script = format!(
+        "NO_PROXY={0}; no_proxy={0}\n{1}\necho \"$NO_PROXY $no_proxy\"",
+        quote(start),
+        exports
+            .iter()
+            .map(|l| l.as_str())
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+    let out = std::process::Command::new("sh")
+        .args(["-c", &script])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    String::from_utf8(out.stdout).unwrap().trim_end().to_owned()
+}
+
+#[test]
+fn direct_hosts_join_no_proxy_before_the_existing_value() {
+    let direct =
+        crate::config::parse_repo("m.yaml", "proxy: {direct: [dl.google.com, .gradle.org]}")
+            .unwrap()
+            .proxy
+            .direct;
+    let want = "127.0.0.1,localhost,::1,dl.google.com,.gradle.org,corp.example";
+    assert_eq!(
+        no_proxy_after(&direct, "corp.example"),
+        format!("{want} {want}")
+    );
+}
+
+#[test]
+fn without_direct_hosts_no_proxy_holds_only_loopback() {
+    assert_eq!(
+        no_proxy_after(&[], ""),
+        "127.0.0.1,localhost,::1 127.0.0.1,localhost,::1"
+    );
 }
 
 #[test]

@@ -71,6 +71,7 @@ pub(super) fn launch(
             ca_pem: p.ca_pem.clone(),
             box_env: p.box_env.clone(),
             forge: p.forge,
+            direct: p.direct.clone(),
         }),
         home,
         prompt: req.prompt.clone(),

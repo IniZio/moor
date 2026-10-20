@@ -40,6 +40,7 @@ pub(super) fn exec_env(
             proxy: proxy.map(|p| ProxyCtx {
                 box_port: p.box_port,
                 cred,
+                direct: &p.direct,
             }),
             origin,
             workdir: Some(workdir),
@@ -66,6 +67,7 @@ pub(super) fn script_lines(
             proxy: Some(ProxyCtx {
                 box_port: proxy.box_port,
                 cred,
+                direct: &proxy.direct,
             }),
             origin,
             workdir: None,

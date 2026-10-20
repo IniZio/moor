@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use super::java_lines;
+use crate::config::parse_repo;
+use crate::name::DirectHost;
 
 const NONCE: &str = "n0nc3-s3cr3t";
 const TOOLS: [&str; 10] = [
@@ -57,7 +59,12 @@ impl Scratch {
 
     /// Run the lines, then `env`; returns the resulting environment.
     fn run(&self, extra: &[(&str, &str)]) -> HashMap<String, String> {
-        let lines = java_lines(4321, "'/ca dir/proxy-ca.pem'");
+        self.run_direct(&[], extra)
+    }
+
+    /// [`Self::run`] with `direct` hosts.
+    fn run_direct(&self, direct: &[DirectHost], extra: &[(&str, &str)]) -> HashMap<String, String> {
+        let lines = java_lines(4321, "'/ca dir/proxy-ca.pem'", direct);
         let script = format!("moor_nonce={NONCE}\n{}\nenv", lines.join("\n"));
         let path = self.root.join("launch.sh");
         fs::write(&path, &script).unwrap();
@@ -282,4 +289,47 @@ fn without_keytool_nothing_is_written_or_exported() {
     let env = s.run(&[]);
     assert!(!env.contains_key("JAVA_TOOL_OPTIONS"));
     assert!(!s.home().join(".gradle").exists());
+}
+
+/// The `proxy.direct` hosts of a repo config listing `entries`.
+fn direct(entries: &str) -> Vec<DirectHost> {
+    parse_repo("m.yaml", &format!("proxy: {{direct: [{entries}]}}"))
+        .unwrap()
+        .proxy
+        .direct
+}
+
+/// The `-D` options `JAVA_TOOL_OPTIONS` holds.
+fn java_opts(env: &HashMap<String, String>) -> Vec<String> {
+    env.get("JAVA_TOOL_OPTIONS")
+        .unwrap()
+        .split(' ')
+        .map(str::to_owned)
+        .collect()
+}
+
+/// Asserts both schemes skip the Proxy for exactly `hosts`, in `gradle.properties` and `JAVA_TOOL_OPTIONS`.
+fn assert_non_proxy(s: &Scratch, env: &HashMap<String, String>, hosts: &str) {
+    let text = fs::read_to_string(s.home().join(".gradle/gradle.properties")).unwrap();
+    let opts = java_opts(env);
+    for scheme in ["http", "https"] {
+        let line = format!("systemProp.{scheme}.nonProxyHosts={hosts}");
+        assert!(text.lines().any(|l| l == line), "{line}\n{text}");
+        let opt = format!("-D{scheme}.nonProxyHosts={hosts}");
+        assert!(opts.contains(&opt), "{opt} in {opts:?}");
+    }
+}
+
+#[test]
+fn direct_hosts_join_the_gradle_and_java_non_proxy_lists() {
+    let s = with_keytool("direct");
+    let env = s.run_direct(&direct("dl.google.com, .gradle.org"), &[]);
+    assert_non_proxy(&s, &env, "127.0.0.1|localhost|dl.google.com|*.gradle.org");
+}
+
+#[test]
+fn without_direct_hosts_the_jvm_skips_the_proxy_for_loopback_only() {
+    let s = with_keytool("nodirect");
+    let env = s.run(&[]);
+    assert_non_proxy(&s, &env, "127.0.0.1|localhost");
 }
