@@ -9,7 +9,7 @@ use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
 use moor_core::seam::driver::TunnelHandle;
 use moor_core::seam::proxy_host::ProxySpec;
-use moor_core::{BoxHandle, BoxId, Secret};
+use moor_core::{BoxHandle, BoxId};
 
 use super::bind;
 use super::listen::{listen, Live};
@@ -109,10 +109,10 @@ fn preflight(deps: &Deps<'_>, box_id: BoxId) -> Result<(BoxRow, BoxHandle, Proxy
     Ok((box_row, handle, spec))
 }
 
-/// Reads the proxy row's nonce and Box port, refusing with exit code 1 when the row is missing.
-fn reload(deps: &Deps<'_>, box_id: BoxId) -> Result<(Secret, u16), u8> {
+/// Reads the proxy row's Box port, refusing with exit code 1 when the row is missing.
+fn reload(deps: &Deps<'_>, box_id: BoxId) -> Result<u16, u8> {
     match deps.store.proxy(box_id) {
-        Ok(Some(row)) => Ok((row.nonce, row.box_port)),
+        Ok(Some(row)) => Ok(row.box_port),
         Ok(None) => {
             say(
                 &deps.stderr,
@@ -198,7 +198,7 @@ pub(super) fn begin<'d>(deps: &'d Deps<'d>, box_id: BoxId) -> Result<Running<'d>
     let (box_row, handle, spec) = preflight(deps, box_id)?;
     let owner = claim(deps, box_id)?;
     // Another `moor start` may have re-reserved the row before the claim, so read it again.
-    let (nonce, box_port) = match reload(deps, box_id) {
+    let box_port = match reload(deps, box_id) {
         Ok(found) => found,
         Err(code) => {
             give_up(deps, box_id, &owner);
@@ -206,7 +206,7 @@ pub(super) fn begin<'d>(deps: &'d Deps<'d>, box_id: BoxId) -> Result<Running<'d>
         }
     };
     let worktree = PathBuf::from(box_row.worktree.as_deref().unwrap_or(&box_row.repo));
-    let live = match listen(deps, box_id, &nonce, &spec) {
+    let live = match listen(deps, box_id, &spec) {
         Ok(live) => live,
         Err(msg) => {
             say(sink, format_args!("{msg}"));

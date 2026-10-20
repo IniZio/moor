@@ -7,12 +7,10 @@
 //! turns an absolute-form `http://` request into one (see `plain`), and
 //! refuses every other request before nono sees a byte of it.
 //!
-//! It listens on a Unix socket that only moor's user can open (see `socket`), and the Box
-//! reaches it only through its reverse tunnel.
+//! It listens on a Unix socket that only moor's user can open (see `socket`).
 //!
-//! The Box authenticates to this listener with its own nonce. The listener
-//! then swaps that credential for an internal token that only the supervisor
-//! and nono know, so a request the Box loops back into nono's own port cannot
+//! It replaces any proxy credential the Box sends with an internal token that only the
+//! supervisor and nono know, so a request the Box loops back into nono's own port cannot
 //! present anything nono accepts.
 //!
 //! Request bytes carry credentials, so nothing here logs them.
@@ -51,16 +49,6 @@ const DRAIN_TIMEOUT: Duration = Duration::from_secs(1);
 const DRAIN_LIMIT: u64 = 64 * 1024;
 /// Body of the refusal.
 const REFUSAL_BODY: &str = r#"{"message":"moor: only CONNECT or http:// requests are allowed"}"#;
-/// Body of the credential refusal.
-const AUTH_BODY: &str = r#"{"message":"moor: proxy authentication required"}"#;
-
-/// The two credentials: what the Box presents and what nono checks.
-struct Creds {
-    /// Credential the Box presents.
-    box_nonce: Secret,
-    /// Session token nono checks; never shown to the Box.
-    internal: Secret,
-}
 
 /// Listener that passes only CONNECT requests to `target` (nono).
 pub(crate) struct Front {
@@ -81,20 +69,14 @@ impl fmt::Debug for Front {
 }
 
 impl Front {
-    /// Binds `socket`, replacing a stale file, and starts accepting. `box_nonce`
-    /// is the credential the Box presents; `internal` is the session token
-    /// nono checks, never shown to the Box.
+    /// Binds `socket`, replacing a stale file, and starts accepting. `internal`
+    /// is the session token nono checks, never shown to the Box.
     pub(crate) fn start(
         target: SocketAddr,
         socket: FrontSocket,
-        box_nonce: Secret,
         internal: Secret,
     ) -> Result<Self, String> {
-        let creds = Arc::new(Creds {
-            box_nonce,
-            internal,
-        });
-        let handler: Handler = Arc::new(move |client| serve(client, target, &creds));
+        let handler: Handler = Arc::new(move |client| serve(client, target, &internal));
         let listening = socket.listen(true, &handler)?;
         Ok(Self {
             socket,
@@ -108,8 +90,7 @@ impl Front {
         self.socket.path()
     }
 
-    /// Binds the socket again when its file is gone; a tunnel reaches the new socket on its
-    /// next connection. `Err` says why it could not.
+    /// Binds the socket again when its file is gone.
     pub(crate) fn rebind(&self) -> Result<(), String> {
         if !self.socket.gone() {
             return Ok(());
@@ -168,17 +149,17 @@ fn read_head(src: &mut impl Read) -> Option<Head> {
 }
 
 /// Handles one client connection.
-fn serve(mut client: UnixStream, target: SocketAddr, creds: &Creds) {
+fn serve(mut client: UnixStream, target: SocketAddr, internal: &Secret) {
     let _ = client.set_read_timeout(Some(REQUEST_TIMEOUT));
     let _ = client.set_write_timeout(Some(TARGET_TIMEOUT));
     let Some(head) = read_head(&mut client) else {
         return refuse(client);
     };
     if !is_connect(&head.bytes) {
-        return serve_plain(client, target, creds, &head);
+        return serve_plain(client, target, internal, &head);
     }
-    let Some(rewritten) = auth::authorize(&head.bytes, &creds.box_nonce, &creds.internal) else {
-        return deny_auth(client);
+    let Some(rewritten) = auth::with_token(&head.bytes, internal) else {
+        return refuse(client);
     };
     let Some(upstream) = open_upstream(target, &rewritten) else {
         return refuse(client);
@@ -188,14 +169,11 @@ fn serve(mut client: UnixStream, target: SocketAddr, creds: &Creds) {
 
 /// Handles an absolute-form `http://` request as a CONNECT to nono; every
 /// other non-CONNECT request is refused.
-fn serve_plain(client: UnixStream, target: SocketAddr, creds: &Creds, head: &Head) {
+fn serve_plain(client: UnixStream, target: SocketAddr, internal: &Secret, head: &Head) {
     let Some(plain) = plain::parse(&head.bytes) else {
         return refuse(client);
     };
-    if auth::authorize(&head.bytes, &creds.box_nonce, &creds.internal).is_none() {
-        return deny_auth(client);
-    }
-    let connect = plain::connect_head(&plain.authority, creds.internal.expose());
+    let connect = plain::connect_head(&plain.authority, internal.expose());
     let Some(upstream) = open_upstream(target, &connect) else {
         return refuse(client);
     };
@@ -246,8 +224,7 @@ fn relay(mut client: UnixStream, mut upstream: TcpStream, entry: &Entry, client_
     splice(client, upstream);
 }
 
-/// Copies both directions until each side ends or idles out, closing the write half of each
-/// receiver when its sender ends.
+/// Copies both directions until each side ends or idles out.
 fn splice(mut client: UnixStream, mut upstream: TcpStream) {
     let _ = client.set_read_timeout(Some(TUNNEL_IDLE));
     let _ = upstream.set_read_timeout(Some(TUNNEL_IDLE));
@@ -268,30 +245,17 @@ fn splice(mut client: UnixStream, mut upstream: TcpStream) {
     }
 }
 
-/// Answers 403 and closes so the client reads the reply before the close.
+/// Answers 403, closes the write half and drains what the client still sends, so
+/// the client reads the reply before the close.
 fn refuse(mut client: UnixStream) {
     let reply = format!(
         "HTTP/1.1 403 Forbidden\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{REFUSAL_BODY}",
         REFUSAL_BODY.len()
     );
-    finish_refusal(&mut client, &reply);
-}
-
-/// Writes `reply`, closes the write half and drains what the client still sends.
-fn finish_refusal(client: &mut UnixStream, reply: &str) {
     let _ = client.write_all(reply.as_bytes());
     let _ = client.shutdown(Shutdown::Write);
     let _ = client.set_read_timeout(Some(DRAIN_TIMEOUT));
-    let _ = io::copy(&mut (&mut *client).take(DRAIN_LIMIT), &mut io::sink());
-}
-
-/// Answers 407 and closes the same way a refusal does.
-fn deny_auth(mut client: UnixStream) {
-    let reply = format!(
-        "HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm=\"moor\"\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{AUTH_BODY}",
-        AUTH_BODY.len()
-    );
-    finish_refusal(&mut client, &reply);
+    let _ = io::copy(&mut (&mut client).take(DRAIN_LIMIT), &mut io::sink());
 }
 
 /// True when nono's status line carries a 2xx code.
