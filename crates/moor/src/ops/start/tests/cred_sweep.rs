@@ -28,7 +28,7 @@ fn a_start_sweeps_stale_credential_dirs_before_launching() {
 
 #[test]
 fn a_start_through_a_slow_gateway_still_finishes_the_sweep() {
-    let driver = FakeDriver::new().sweep_takes(Duration::from_secs(28));
+    let driver = FakeDriver::new().sweep_takes(Duration::from_millis(29_950));
     let mut w = world(driver);
     w.cx = w.cx.with_engine(Arc::new(FakeEngine::new()));
     let goal = StartReq {

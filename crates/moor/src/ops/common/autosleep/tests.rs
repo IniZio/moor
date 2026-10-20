@@ -418,8 +418,8 @@ fn auto_sleep_sweeps_stale_credential_dirs_before_the_box_sleeps() {
 }
 
 #[test]
-fn auto_sleep_still_sleeps_when_the_sweep_times_out() {
-    let driver = FakeDriver::new().fail_sweep(DriverError::Timeout(Duration::from_secs(15)));
+fn auto_sleep_tries_a_timed_out_sweep_once_warns_and_still_sleeps() {
+    let driver = FakeDriver::new().fail_sweep(DriverError::Timeout(Duration::from_secs(30)));
     let f = idle_with(driver);
     pass(&f, LONG);
     auto_sleep(&f);
@@ -428,4 +428,11 @@ fn auto_sleep_still_sleeps_when_the_sweep_times_out() {
         (BoxLifecycle::Asleep, SessionState::Idle, BoxState::Asleep)
     );
     assert_eq!(sleep_calls(&f), 1);
+    assert_eq!(
+        f.driver.sweeps().len(),
+        1,
+        "a settle tick never retries inline"
+    );
+    let codes: Vec<_> = f.cx.take_warnings().into_iter().map(|w| w.code).collect();
+    assert_eq!(codes, ["cred_sweep_failed"]);
 }
