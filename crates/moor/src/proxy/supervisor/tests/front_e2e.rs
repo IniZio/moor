@@ -133,7 +133,7 @@ fn credentials() -> Vec<Vec<String>> {
 impl Front {
     /// Sends `raw` to the front port and expects the refusal.
     fn refused(&self, raw: &str) {
-        let port = self.rig.live.as_ref().unwrap().port();
+        let port = self.rig.box_port;
         let reply = send(port, raw);
         assert_eq!(reply.status, 403, "unexpected answer: {}", reply.body);
         assert_eq!(reply.body, REFUSAL);
@@ -162,16 +162,6 @@ impl Front {
     fn stop(mut self) {
         self.rig.live.take().unwrap().stop();
     }
-}
-
-#[test]
-fn front_is_not_the_nono_port() {
-    let f = front();
-    assert_ne!(
-        f.rig.live.as_ref().unwrap().port(),
-        f.rig.live.as_ref().unwrap().nono_port()
-    );
-    f.stop();
 }
 
 #[test]
@@ -228,7 +218,7 @@ fn absolute_form_without_proxy_credential_is_rejected_before_nono() {
     let nono = f.rig.live.as_ref().unwrap().nono_port();
     let nono_url = format!("http://127.0.0.1:{nono}/github-api__0/graphql");
     let host = format!("127.0.0.1:{nono}");
-    let port = f.rig.live.as_ref().unwrap().port();
+    let port = f.rig.box_port;
     for extra in credentials()
         .into_iter()
         .filter(|e| e.iter().all(|h| h.starts_with("Authorization")))
@@ -244,7 +234,7 @@ fn absolute_form_without_proxy_credential_is_rejected_before_nono() {
 fn plain_request_to_the_nono_port_is_refused_by_the_guard() {
     let f = front();
     let nono = f.rig.live.as_ref().unwrap().nono_port();
-    let port = f.rig.live.as_ref().unwrap().port();
+    let port = f.rig.box_port;
     let extra = [format!("Proxy-Authorization: Basic {BASIC}")];
     let target = format!("http://127.0.0.1:{nono}/github-api__0/graphql");
     let reply = send(
@@ -259,7 +249,7 @@ fn plain_request_to_the_nono_port_is_refused_by_the_guard() {
 #[test]
 fn plain_request_to_a_brokered_host_carries_no_credential() {
     let f = front();
-    let port = f.rig.live.as_ref().unwrap().port();
+    let port = f.rig.box_port;
     let extra = [format!("Proxy-Authorization: Basic {BASIC}")];
     let target = format!("http://localhost:{}/v1/messages", f.claude.port);
     let reply = send(port, &request("POST", &target, "localhost", &extra, "{}"));

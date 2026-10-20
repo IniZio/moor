@@ -39,7 +39,7 @@ pub(crate) enum TunnelReply {
 pub(crate) struct TunnelCall {
     pub(crate) handle: BoxHandle,
     pub(crate) box_port: u16,
-    pub(crate) host_port: u16,
+    pub(crate) socket: PathBuf,
     pub(crate) host_cwd: PathBuf,
 }
 
@@ -144,7 +144,7 @@ impl FakeDriver {
         &self,
         handle: &BoxHandle,
         box_port: u16,
-        host_port: u16,
+        socket: &Path,
         host_cwd: &Path,
     ) -> Opened {
         let mut s = self.st();
@@ -152,7 +152,7 @@ impl FakeDriver {
         s.tunnel.calls.push(TunnelCall {
             handle: handle.clone(),
             box_port,
-            host_port,
+            socket: socket.to_path_buf(),
             host_cwd: host_cwd.to_path_buf(),
         });
         if !s.live.iter().any(|h| h == handle.as_str()) {

@@ -147,8 +147,6 @@ pub enum ExtraEvent {
     ProxyStarted {
         /// Port the Box side connects to.
         box_port: u16,
-        /// Port the Proxy listens on, on the host.
-        host_port: u16,
         /// Process id of the Proxy.
         pid: u32,
         /// Opaque handle that identifies the Proxy process to its runner.
@@ -233,12 +231,10 @@ impl From<ExtraEvent> for Event {
             ExtraEvent::TurnDone { steer, outcome } => Self::TurnDone { steer, outcome },
             ExtraEvent::ProxyStarted {
                 box_port,
-                host_port,
                 pid,
                 handle,
             } => Self::ProxyStarted {
                 box_port,
-                host_port,
                 pid,
                 handle,
             },
@@ -322,12 +318,10 @@ impl TryFrom<Event> for ExtraEvent {
             Event::TurnDone { steer, outcome } => Ok(Self::TurnDone { steer, outcome }),
             Event::ProxyStarted {
                 box_port,
-                host_port,
                 pid,
                 handle,
             } => Ok(Self::ProxyStarted {
                 box_port,
-                host_port,
                 pid,
                 handle,
             }),

@@ -17,9 +17,7 @@ use super::run;
 use crate::cx::Cx;
 use crate::ops::common::boxlock::BoxLock;
 use crate::ops::common::view::box_view;
-use crate::store::{
-    Fenced, NewRun, ProxyPorts, ReadyProc, Reserve, TunnelAck, TunnelRequest, TunnelWant,
-};
+use crate::store::{Fenced, NewRun, ReadyProc, Reserve, TunnelAck, TunnelRequest, TunnelWant};
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
 use crate::testing::rng::FakeRng;
@@ -147,16 +145,12 @@ fn live_proxy(f: &Fx) {
     assert!(matches!(got, Reserve::Reserved(_)), "{got:?}");
     store.claim_lease(f.id, "A", lease).unwrap();
     let box_port = store.proxy(f.id).unwrap().unwrap().box_port;
-    let ports = ProxyPorts {
-        box_port,
-        host_port: 41_234,
-    };
     let proc = ReadyProc {
         pid: 4242,
         handle: "tunnel-1",
         boot_id: None,
     };
-    let ready = store.mark_ready(f.id, "A", ports, proc).unwrap();
+    let ready = store.mark_ready(f.id, "A", box_port, proc).unwrap();
     assert_eq!(ready, Fenced::Applied);
 }
 

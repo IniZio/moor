@@ -11,7 +11,7 @@ use moor_core::seam::rng::Rng;
 use moor_core::secret::Secret;
 use moor_core::{BoxId, BoxName};
 
-use super::{Fenced, Lease, ProxyPorts, ReadyProc, Reserve, BOX_PORT_MAX, BOX_PORT_MIN};
+use super::{Fenced, Lease, ReadyProc, Reserve, BOX_PORT_MAX, BOX_PORT_MIN};
 use crate::store::{Store, StoreError};
 use crate::testing::clock::FakeClock;
 use crate::testing::rng::FakeRng;
@@ -106,7 +106,7 @@ fn reserve_returns_port_in_range_and_stores_nonce_unready() {
     assert_eq!(row.box_port, port);
     assert_eq!(row.nonce.expose(), NONCE);
     assert!(!row.ready);
-    assert_eq!((row.host_port, row.pid, row.handle), (None, None, None));
+    assert_eq!((row.pid, row.handle), (None, None));
 }
 
 #[test]
@@ -146,7 +146,7 @@ fn rereserve_keeps_port_and_replaces_nonce() {
     assert_eq!(row.box_port, first);
     assert_eq!(row.nonce.expose(), b"other");
     assert!(!row.ready);
-    assert_eq!((row.host_port, row.pid, row.handle), (None, None, None));
+    assert_eq!((row.pid, row.handle), (None, None));
     assert_eq!((row.lease_owner, row.lease_heartbeat), (None, None));
 }
 
@@ -290,20 +290,16 @@ fn claim_lease_without_a_row_is_not_found() {
 }
 
 #[test]
-fn mark_ready_records_ports_and_emits_one_event_without_nonce() {
+fn mark_ready_records_the_box_port_and_emits_one_event_without_nonce() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _, id) = reserved(dir.path());
     let box_port = store.proxy(id).unwrap().unwrap().box_port;
-    let ports = ProxyPorts {
-        box_port,
-        host_port: 41_234,
-    };
     store.claim_lease(id, "A", LEASE).unwrap();
     let outcome = store
         .mark_ready(
             id,
             "A",
-            ports,
+            box_port,
             ReadyProc {
                 pid: 4242,
                 handle: "tunnel-1",
@@ -314,7 +310,6 @@ fn mark_ready_records_ports_and_emits_one_event_without_nonce() {
     assert_eq!(outcome, Fenced::Applied);
     let row = store.proxy(id).unwrap().unwrap();
     assert!(row.ready);
-    assert_eq!(row.host_port, Some(41_234));
     assert_eq!(row.pid, Some(4242));
     assert_eq!(row.handle.as_deref(), Some("tunnel-1"));
     assert_eq!(row.boot_id.as_deref(), Some("boot-1"));
@@ -327,7 +322,6 @@ fn assert_started_payload(store: &Store, id: BoxId, box_port: u16) {
     assert_eq!(events.len(), 1);
     let payload = events.first().unwrap();
     assert_eq!(payload["box_port"], box_port);
-    assert_eq!(payload["host_port"], 41_234);
     assert_eq!(payload["pid"], 4242);
     assert_eq!(payload["handle"], "tunnel-1");
     assert_no_nonce(payload);
@@ -374,20 +368,15 @@ fn stale_owner_mark_ready_loses_lease_and_keeps_new_owners_row() {
     let dir = tempfile::tempdir().unwrap();
     let (store, clock, id) = reserved(dir.path());
     let box_port = taken_over(&store, &clock, id);
-    let b = ProxyPorts {
-        box_port,
-        host_port: 41_000,
-    };
-    let a = ProxyPorts {
-        box_port,
-        host_port: 42_000,
-    };
-    let applied = store.mark_ready(id, "B", b, proc(111, "tunnel-b")).unwrap();
+    let applied = store
+        .mark_ready(id, "B", box_port, proc(111, "tunnel-b"))
+        .unwrap();
     assert_eq!(applied, Fenced::Applied);
-    let lost = store.mark_ready(id, "A", a, proc(222, "tunnel-a")).unwrap();
+    let lost = store
+        .mark_ready(id, "A", box_port, proc(222, "tunnel-a"))
+        .unwrap();
     assert_eq!(lost, Fenced::LostLease);
     let row = store.proxy(id).unwrap().unwrap();
-    assert_eq!(row.host_port, Some(41_000));
     assert_eq!(row.pid, Some(111));
     assert_eq!(row.handle.as_deref(), Some("tunnel-b"));
     assert_eq!(events_of(&store, id, "proxy_started").len(), 1);

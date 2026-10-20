@@ -195,7 +195,7 @@ fn guard_refusals(rig: &Rig) -> Vec<(String, String)> {
 fn nono_port_refused(host: &str) {
     let rig = rig();
     let live = rig.live.as_ref().unwrap();
-    let outcome = hairpin_to(live.port(), host, live.nono_port(), &[valid()]);
+    let outcome = hairpin_to(rig.box_port, host, live.nono_port(), &[valid()]);
     assert_blocked(&rig, outcome);
     let events = guard_refusals(&rig);
     assert!(
@@ -215,12 +215,12 @@ fn every_listener_refused(host: &str) {
     let svc = service();
     let targets = [
         live.graphql_addr().unwrap().port(),
-        live.port(),
+        rig.box_port,
         live.nono_port(),
         svc.port,
     ];
     for port in targets {
-        let (code, inner) = hairpin_to(live.port(), host, port, &[valid()]);
+        let (code, inner) = hairpin_to(rig.box_port, host, port, &[valid()]);
         assert!(
             rig.seen().is_empty(),
             "{host}:{port}: upstream saw {:?}",
@@ -299,9 +299,9 @@ fn wrong_or_missing_box_credential_gets_407_and_no_events() {
         Vec::new(),
     ];
     for auth in wrong {
-        let (code, inner) = hairpin(live.port(), live.nono_port(), &auth);
+        let (code, inner) = hairpin(rig.box_port, live.nono_port(), &auth);
         assert_eq!((code, inner.as_str()), (407, ""));
-        let (code, _) = hairpin(live.port(), 443, &auth);
+        let (code, _) = hairpin(rig.box_port, 443, &auth);
         assert_eq!(code, 407);
     }
     assert!(rig.seen().is_empty());
@@ -316,7 +316,7 @@ fn wrong_or_missing_box_credential_gets_407_and_no_events() {
 fn refused_hairpin_is_audited_as_a_destination_guard_refusal_without_secrets() {
     let rig = rig();
     let live = rig.live.as_ref().unwrap();
-    let outcome = hairpin(live.port(), live.nono_port(), &[valid()]);
+    let outcome = hairpin(rig.box_port, live.nono_port(), &[valid()]);
     assert_blocked(&rig, outcome);
     let mut events = Vec::new();
     for _ in 0..100 {

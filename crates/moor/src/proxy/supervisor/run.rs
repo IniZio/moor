@@ -16,7 +16,7 @@ use super::listen::{listen, Live};
 use super::park::{parked_tunnel, starts_parked};
 use super::{Deps, Sink, LEASE};
 use crate::proxy::detached::read_spec;
-use crate::store::{BoxRow, Fenced, Lease, ProxyPorts, ReadyProc};
+use crate::store::{BoxRow, Fenced, Lease, ReadyProc};
 
 /// Why the supervisor stops.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,11 +29,13 @@ pub(super) enum Stop {
     LostLease,
     /// The tunnel into the Box exited.
     TunnelDead,
+    /// The front socket could not be bound again.
+    FrontLost,
     /// A store error made it give up.
     Failed,
 }
 
-/// A proxy that is up: lease held, proxy listening, tunnel open, row ready.
+/// A proxy that is up: lease held, front listening, tunnel open, row ready.
 pub(super) struct Running<'d> {
     /// Collaborators.
     pub(super) deps: &'d Deps<'d>,
@@ -157,7 +159,7 @@ fn asleep(row: &BoxRow) -> bool {
 /// Opens the first tunnel into the Box, reporting a failure.
 fn open_tunnel(
     deps: &Deps<'_>,
-    (handle, box_port, host_port, worktree): (&BoxHandle, u16, u16, &Path),
+    (handle, box_port, socket, worktree): (&BoxHandle, u16, &Path, &Path),
     (box_id, owner): (BoxId, &str),
 ) -> Option<Box<dyn TunnelHandle>> {
     // A Box that never had a tunnel has no stale listener to clear. A failed read counts as "had one".
@@ -173,7 +175,7 @@ fn open_tunnel(
         deps,
         (box_id, owner),
         handle,
-        (box_port, host_port),
+        (box_port, socket),
         worktree,
         fresh,
     ) {
@@ -220,7 +222,7 @@ pub(super) fn begin<'d>(deps: &'d Deps<'d>, box_id: BoxId) -> Result<Running<'d>
     let tunnel = if parked {
         parked_tunnel()
     } else {
-        let ends = (&handle, box_port, live.port(), worktree.as_path());
+        let ends = (&handle, box_port, live.socket(), worktree.as_path());
         let Some(tunnel) = open_tunnel(deps, ends, (box_id, &owner)) else {
             live.stop();
             give_up(deps, box_id, &owner);
@@ -228,11 +230,7 @@ pub(super) fn begin<'d>(deps: &'d Deps<'d>, box_id: BoxId) -> Result<Running<'d>
         };
         tunnel
     };
-    let ports = ProxyPorts {
-        box_port,
-        host_port: live.port(),
-    };
-    if let Err(code) = mark(deps, box_id, &owner, ports, &handle) {
+    if let Err(code) = mark(deps, box_id, &owner, box_port, &handle) {
         drop(tunnel);
         live.stop();
         return Err(code);
@@ -279,14 +277,14 @@ fn mark(
     deps: &Deps<'_>,
     box_id: BoxId,
     owner: &str,
-    ports: ProxyPorts,
+    box_port: u16,
     handle: &BoxHandle,
 ) -> Result<(), u8> {
     renew(deps, box_id, owner)?;
     match deps.store.mark_ready(
         box_id,
         owner,
-        ports,
+        box_port,
         ReadyProc {
             pid: std::process::id(),
             handle: handle.as_str(),
@@ -325,7 +323,7 @@ impl Running<'_> {
         }
     }
 
-    /// Heartbeats and checks the Box and tunnel; `None` means keep running.
+    /// Heartbeats and checks the Box, the front socket and the tunnel; `None` means keep running.
     pub(super) fn tick(&self) -> Option<Stop> {
         if let stop @ Some(_) = self.beat() {
             return stop;
@@ -343,6 +341,13 @@ impl Running<'_> {
             }
         }
         self.follow_request();
+        if let Err(err) = self.live.rebind() {
+            say(
+                &self.deps.stderr,
+                format_args!("cannot bind the proxy front again: {err}"),
+            );
+            return Some(Stop::FrontLost);
+        }
         if self.parked.get() || self.tunnel.borrow().alive() {
             return None;
         }
@@ -385,9 +390,9 @@ impl Running<'_> {
         &self.owner
     }
 
-    /// The port of the CONNECT-only front the Box reaches.
+    /// The socket of the CONNECT-only front the Box reaches.
     #[cfg(test)]
-    pub(super) const fn host_port(&self) -> u16 {
-        self.live.port()
+    pub(super) fn socket(&self) -> &Path {
+        self.live.socket()
     }
 }

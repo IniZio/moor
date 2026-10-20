@@ -38,7 +38,7 @@ pub(super) fn clear_argv(box_port: u16) -> Vec<String> {
 /// How often the renewal thread checks whether a heartbeat is due.
 const POLL: Duration = Duration::from_millis(20);
 
-/// Opens a tunnel serving `host_port` on `box_port` in the Box.
+/// Opens a tunnel serving the front `socket` on `box_port` in the Box.
 ///
 /// The lease `owner` holds on `box_id` is renewed every [`TICK`] while this runs: the port clear
 /// alone can outlast the lease, and a lapsed lease lets a concurrent `moor run` take the row over.
@@ -50,7 +50,7 @@ pub(super) fn open(
     deps: &Deps<'_>,
     (box_id, owner): (BoxId, &str),
     handle: &BoxHandle,
-    (box_port, host_port): (u16, u16),
+    (box_port, socket): (u16, &Path),
     worktree: &Path,
     fresh: bool,
 ) -> Result<Box<dyn TunnelHandle>, DriverError> {
@@ -59,7 +59,7 @@ pub(super) fn open(
             clear(deps, handle, box_port, worktree);
         }
         deps.driver
-            .reverse_tunnel(handle, box_port, host_port, worktree)
+            .reverse_tunnel(handle, box_port, socket, worktree)
     })
 }
 

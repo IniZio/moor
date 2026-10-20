@@ -1,8 +1,9 @@
 //! `serve` end to end on loopback: a client goes through the nono proxy to a fake HTTPS upstream.
 
 use std::collections::BTreeMap;
-use std::net::{Ipv4Addr, SocketAddr, TcpStream};
-use std::path::Path;
+use std::net::{Ipv4Addr, SocketAddr};
+use std::os::unix::net::UnixStream;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -23,6 +24,7 @@ use crate::proxy::detached::write_spec;
 use crate::proxy::nono::tests::upstream::{self, Upstream};
 use crate::proxy::supervisor::{serve, Deps, Sink, LEASE};
 use crate::store::Store;
+use crate::testing::bridge::bridge;
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
 use crate::testing::forge::FakeForge;
@@ -205,6 +207,14 @@ fn assert_audited(store: &Store, id: BoxId, dir: &Path) {
     });
 }
 
+/// Waits for the proxy row to be ready, then returns the socket the tunnel was opened to.
+fn tunnel_socket(store: &Store, driver: &FakeDriver, id: BoxId) -> PathBuf {
+    wait_for("the proxy row to be ready", || {
+        store.proxy(id).unwrap().filter(|r| r.ready)
+    });
+    driver.tunnels().first().unwrap().socket.clone()
+}
+
 #[test]
 fn serve_injects_the_credential_audits_requests_and_stops() {
     let dir = tempfile::tempdir().unwrap();
@@ -239,6 +249,8 @@ fn serve_injects_the_credential_audits_requests_and_stops() {
         upstream_dial: None,
         guard_exempt: vec![SocketAddr::from((Ipv4Addr::LOCALHOST, up.port))],
         state_dir: dir.path(),
+        sockets: &dir.path().join("s"),
+        owner: rustix::process::getuid().as_raw(),
         boot_id: None,
         stop: Arc::clone(&stop),
         stderr: err,
@@ -247,10 +259,8 @@ fn serve_injects_the_credential_audits_requests_and_stops() {
     let code = std::thread::scope(|s| {
         let server = s.spawn(|| serve(&deps, id));
         let _guard = StopOnDrop(Arc::clone(&stop));
-        let port = wait_for("the proxy row to be ready", || {
-            let row = store.proxy(id).unwrap()?;
-            row.ready.then_some(row.host_port).flatten()
-        });
+        let socket = tunnel_socket(&store, &driver, id);
+        let port = bridge(&socket);
         let ca = crate::proxy::nono::ca::load_or_create(dir.path(), id).unwrap();
         let client = upstream::client(port, NONCE, ca.cert_pem());
         assert_injected(&client, &up);
@@ -263,8 +273,7 @@ fn serve_injects_the_credential_audits_requests_and_stops() {
 
         stop.store(true, Ordering::Release);
         let code = server.join().unwrap();
-        let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
-        assert!(TcpStream::connect_timeout(&addr, Duration::from_secs(2)).is_err());
+        assert!(UnixStream::connect(&socket).is_err());
         code
     });
     assert_eq!(code, 0);

@@ -2,7 +2,7 @@
 //!
 //! It claims the lease on the Box's proxy row, starts the nono proxy, opens the reverse
 //! tunnel into the machine and marks the row ready. It then heartbeats until the Box closes, the
-//! lease is lost, the tunnel dies or a signal arrives.
+//! lease is lost, the tunnel or the front socket is lost for good, or a signal arrives.
 
 mod bind;
 mod listen;
@@ -58,6 +58,10 @@ pub(crate) struct Deps<'a> {
     pub(crate) guard_exempt: Vec<std::net::SocketAddr>,
     /// Directory holding the proxy logs, CA and spec.
     pub(crate) state_dir: &'a Path,
+    /// moor's private socket directory, where the front listens.
+    pub(crate) sockets: &'a Path,
+    /// The uid that must own `sockets`: the uid moor runs as.
+    pub(crate) owner: u32,
     /// Host boot id recorded in the row at readiness; `None` where the host has none.
     pub(crate) boot_id: Option<String>,
     /// Set when a signal asks the supervisor to stop.

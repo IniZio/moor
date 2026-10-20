@@ -2,13 +2,17 @@
 
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::os::unix::fs::{FileTypeExt, PermissionsExt};
+use std::os::unix::net::UnixStream;
+use std::path::Path;
 use std::sync::mpsc::{self, Receiver};
 use std::thread;
 use std::time::Duration;
 
-use moor_core::Secret;
+use moor_core::{BoxId, Secret};
+use tempfile::TempDir;
 
-use super::Front;
+use super::{Front, FrontSocket};
 
 const NONCE: &str = "box-nonce-123";
 const INTERNAL: &str = "internal-token-456";
@@ -113,28 +117,47 @@ fn serve_fake(conn: &mut TcpStream, answer: Answer, tx: &mpsc::Sender<Vec<u8>>) 
     }
 }
 
-fn start(target: SocketAddr) -> Front {
-    Front::start(
+/// The uid this test runs as.
+fn uid() -> u32 {
+    rustix::process::getuid().as_raw()
+}
+
+/// The front socket of Box 1 in `dir`'s private socket directory `s`, which `owner` must own.
+fn socket_in(dir: &TempDir, owner: u32) -> FrontSocket {
+    FrontSocket::new(
+        &dir.path().join("s"),
+        owner,
+        Path::new("/state"),
+        BoxId::new(1),
+    )
+}
+
+/// A front for `target`; the temp dir holds its socket and must outlive it.
+fn start(target: SocketAddr) -> (TempDir, Front) {
+    let dir = tempfile::tempdir().unwrap();
+    let front = Front::start(
         target,
+        socket_in(&dir, uid()),
         Secret::new(NONCE.as_bytes().to_vec()),
         Secret::new(INTERNAL.as_bytes().to_vec()),
     )
-    .unwrap()
+    .unwrap();
+    (dir, front)
 }
 
-fn dial(front: &Front) -> TcpStream {
-    let s = TcpStream::connect(("127.0.0.1", front.port())).unwrap();
+fn dial(front: &Front) -> UnixStream {
+    let s = UnixStream::connect(front.path()).unwrap();
     s.set_read_timeout(Some(WAIT)).unwrap();
     s
 }
 
-fn read_exact_len(s: &mut TcpStream, len: usize) -> Vec<u8> {
+fn read_exact_len(s: &mut UnixStream, len: usize) -> Vec<u8> {
     let mut out = vec![0_u8; len];
     s.read_exact(&mut out).unwrap();
     out
 }
 
-fn read_all(s: &mut TcpStream) -> String {
+fn read_all(s: &mut UnixStream) -> String {
     let mut out = Vec::new();
     let _ = s.read_to_end(&mut out);
     String::from_utf8_lossy(&out).into_owned()
@@ -143,7 +166,7 @@ fn read_all(s: &mut TcpStream) -> String {
 /// Sends `request`, expects the 403 JSON refusal and no traffic to nono.
 fn assert_refused(request: &[u8]) {
     let nono = fake(Answer::Echo);
-    let front = start(nono.addr);
+    let (_dir, front) = start(nono.addr);
     let mut c = dial(&front);
     let _ = c.write_all(request);
     let reply = read_all(&mut c);
@@ -159,7 +182,7 @@ fn assert_refused(request: &[u8]) {
 #[test]
 fn connect_head_is_forwarded_with_internal_token_and_tunnel_echoes() {
     let nono = fake(Answer::Echo);
-    let front = start(nono.addr);
+    let (_dir, front) = start(nono.addr);
     let mut c = dial(&front);
     let mut wire = connect_head().into_bytes();
     wire.extend_from_slice(b"early");
@@ -180,7 +203,7 @@ fn connect_head_is_forwarded_with_internal_token_and_tunnel_echoes() {
 #[test]
 fn refused_connect_closes_and_drops_later_client_bytes() {
     let nono = fake(Answer::Deny);
-    let front = start(nono.addr);
+    let (_dir, front) = start(nono.addr);
     let mut c = dial(&front);
     let mut wire = connect_head().into_bytes();
     wire.extend_from_slice(b"GET /smuggled HTTP/1.1\r\n\r\n");
@@ -228,7 +251,7 @@ fn absolute_form_without_credential_is_rejected() {
 #[test]
 fn plain_get_becomes_connect_then_origin_form_request() {
     let nono = fake(Answer::Echo);
-    let front = start(nono.addr);
+    let (_dir, front) = start(nono.addr);
     let mut c = dial(&front);
     let basic = basic();
     let req = format!(
@@ -252,7 +275,7 @@ fn plain_get_becomes_connect_then_origin_form_request() {
 #[test]
 fn plain_post_body_and_default_host_arrive_intact() {
     let nono = fake(Answer::Echo);
-    let front = start(nono.addr);
+    let (_dir, front) = start(nono.addr);
     let mut c = dial(&front);
     let basic = basic();
     let req = format!(
@@ -276,7 +299,7 @@ fn plain_post_body_and_default_host_arrive_intact() {
 #[test]
 fn connection_header_cannot_drop_host_or_content_length() {
     let nono = fake(Answer::Echo);
-    let front = start(nono.addr);
+    let (_dir, front) = start(nono.addr);
     let mut c = dial(&front);
     let basic = basic();
     let req = format!(
@@ -295,7 +318,7 @@ fn connection_header_cannot_drop_host_or_content_length() {
 #[test]
 fn refused_plain_request_is_relayed_and_nothing_enters_the_tunnel() {
     let nono = fake(Answer::Deny);
-    let front = start(nono.addr);
+    let (_dir, front) = start(nono.addr);
     let mut c = dial(&front);
     let basic = basic();
     let req = format!(
@@ -348,19 +371,20 @@ fn obs_fold_head_is_refused() {
 }
 
 #[test]
-fn stop_returns_promptly_and_port_refuses() {
+fn stop_returns_promptly_and_removes_the_socket() {
     let nono = fake(Answer::Echo);
-    let front = start(nono.addr);
-    let port = front.port();
-    assert!(format!("{front:?}").contains(&port.to_string()));
+    let (_dir, front) = start(nono.addr);
+    let path = front.path().to_path_buf();
+    assert!(format!("{front:?}").contains(path.to_str().unwrap()));
     front.stop();
-    assert!(TcpStream::connect(("127.0.0.1", port)).is_err());
+    assert!(!path.exists());
+    assert!(UnixStream::connect(&path).is_err());
 }
 
 /// Sends `request`, expects the 407 reply and no traffic to nono.
 fn assert_unauthorized(request: &str) {
     let nono = fake(Answer::Echo);
-    let front = start(nono.addr);
+    let (_dir, front) = start(nono.addr);
     let mut c = dial(&front);
     let _ = c.write_all(request.as_bytes());
     let reply = read_all(&mut c);
@@ -384,7 +408,7 @@ fn connect_with(headers: &str) -> String {
 #[test]
 fn basic_credential_is_replaced_and_other_headers_keep_order() {
     let nono = fake(Answer::Echo);
-    let front = start(nono.addr);
+    let (_dir, front) = start(nono.addr);
     let mut c = dial(&front);
     let basic = basic();
     let req = connect_with(&format!(
@@ -403,7 +427,7 @@ fn basic_credential_is_replaced_and_other_headers_keep_order() {
 #[test]
 fn bearer_credential_is_replaced() {
     let nono = fake(Answer::Echo);
-    let front = start(nono.addr);
+    let (_dir, front) = start(nono.addr);
     let mut c = dial(&front);
     let req = connect_with(&format!(
         "Proxy-Authorization: Bearer {NONCE}\r\nHost: h\r\n"
@@ -475,4 +499,34 @@ fn non_connect_with_valid_credential_is_refused() {
         format!("GET api.github.com:443 HTTP/1.1\r\nProxy-Authorization: Basic {basic}\r\n\r\n")
             .as_bytes(),
     );
+}
+
+#[test]
+fn a_file_left_at_the_socket_path_is_replaced() {
+    let nono = fake(Answer::Echo);
+    let dir = tempfile::tempdir().unwrap();
+    let socket = socket_in(&dir, uid());
+    std::fs::create_dir(dir.path().join("s")).unwrap();
+    std::fs::set_permissions(dir.path().join("s"), std::fs::Permissions::from_mode(0o700)).unwrap();
+    std::fs::write(socket.path(), b"stale").unwrap();
+
+    let front = Front::start(
+        nono.addr,
+        socket.clone(),
+        Secret::new(NONCE.as_bytes().to_vec()),
+        Secret::new(INTERNAL.as_bytes().to_vec()),
+    )
+    .unwrap();
+
+    assert!(std::fs::symlink_metadata(socket.path())
+        .unwrap()
+        .file_type()
+        .is_socket());
+    let mut c = dial(&front);
+    c.write_all(connect_head().as_bytes()).unwrap();
+    assert_eq!(
+        nono.seen.recv_timeout(WAIT).unwrap(),
+        FORWARDED_HEAD.as_bytes()
+    );
+    front.stop();
 }

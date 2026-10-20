@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use super::boxwork::{fx_woken, put_to_sleep};
 use super::{req, row, run, Fx};
-use crate::store::{ProxyPorts, ReadyProc, TunnelAck};
+use crate::store::{ReadyProc, TunnelAck};
 use crate::testing::rng::FakeRng;
 use moor_core::domain::box_state::BoxLifecycle;
 
@@ -20,16 +20,12 @@ fn live_proxy(f: &Fx) {
     );
     store.claim_lease(f.id, "owner", lease).unwrap();
     let box_port = store.proxy(f.id).unwrap().unwrap().box_port;
-    let ports = ProxyPorts {
-        box_port,
-        host_port: 41_000,
-    };
     let proc = ReadyProc {
         pid: 1,
         handle: "tunnel-1",
         boot_id: None,
     };
-    let _ = store.mark_ready(f.id, "owner", ports, proc).unwrap();
+    let _ = store.mark_ready(f.id, "owner", box_port, proc).unwrap();
 }
 
 #[test]

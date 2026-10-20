@@ -11,7 +11,7 @@ use moor_core::{BoxId, BoxName};
 
 use super::{park_tunnel, restore_tunnel, LEASE};
 use crate::cx::Cx;
-use crate::store::{ProxyPorts, ReadyProc, TunnelAck, TunnelWant};
+use crate::store::{ReadyProc, TunnelAck, TunnelWant};
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
@@ -68,16 +68,12 @@ fn live() -> Fx {
     );
     drop(store.claim_lease(f.id, "sup", LEASE).unwrap());
     let box_port = store.proxy(f.id).unwrap().unwrap().box_port;
-    let ports = ProxyPorts {
-        box_port,
-        host_port: 41_234,
-    };
     let proc = ReadyProc {
         pid: 1,
         handle: "tunnel-1",
         boot_id: None,
     };
-    let _ = store.mark_ready(f.id, "sup", ports, proc).unwrap();
+    let _ = store.mark_ready(f.id, "sup", box_port, proc).unwrap();
     f
 }
 

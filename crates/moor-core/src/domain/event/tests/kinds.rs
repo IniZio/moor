@@ -107,12 +107,11 @@ fn is_asserted_matches_list() {
 fn proxy_started_payload_has_no_nonce() {
     let e = Event::ProxyStarted {
         box_port: 1,
-        host_port: 2,
         pid: 3,
         handle: s("h"),
     };
     let payload = e.payload();
     let mut keys: Vec<_> = payload.as_object().unwrap().keys().cloned().collect();
     keys.sort_unstable();
-    assert_eq!(keys, ["box_port", "handle", "host_port", "pid"]);
+    assert_eq!(keys, ["box_port", "handle", "pid"]);
 }

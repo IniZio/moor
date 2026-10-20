@@ -41,7 +41,7 @@ mod turns;
 mod version;
 
 pub(crate) use agent::SessionRow;
-pub(crate) use proxy::{Fenced, Lease, ProxyPorts, ProxyRow, ReadyProc, Reserve};
+pub(crate) use proxy::{Fenced, Lease, ProxyRow, ReadyProc, Reserve};
 pub(crate) use proxy::{TunnelAck, TunnelRequest, TunnelWant};
 pub(crate) use runs::{NewRun, RunOutcome, RunRow};
 pub(crate) use slack::{SlackPrompt, SlackThread};

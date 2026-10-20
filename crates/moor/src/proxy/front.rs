@@ -7,6 +7,9 @@
 //! turns an absolute-form `http://` request into one (see `plain`), and
 //! refuses every other request before nono sees a byte of it.
 //!
+//! It listens on a Unix socket that only moor's user can open (see `socket`), and the Box
+//! reaches it only through its reverse tunnel.
+//!
 //! The Box authenticates to this listener with its own nonce. The listener
 //! then swaps that credential for an internal token that only the supervisor
 //! and nono know, so a request the Box loops back into nono's own port cannot
@@ -16,16 +19,21 @@
 
 use std::fmt;
 use std::io::{self, Read, Write};
-use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::thread::{self, JoinHandle};
+use std::net::{Shutdown, SocketAddr, TcpStream};
+use std::os::unix::net::UnixStream;
+use std::path::Path;
+use std::sync::{Arc, Mutex, PoisonError};
+use std::thread;
 use std::time::Duration;
 
 use moor_core::Secret;
 
+pub(crate) use socket::FrontSocket;
+use socket::{Handler, Listening};
+
 mod auth;
 mod plain;
+mod socket;
 
 /// Largest request or response head accepted.
 const MAX_HEAD: usize = 8 * 1024;
@@ -54,83 +62,77 @@ struct Creds {
     internal: Secret,
 }
 
-/// Listener on 127.0.0.1 that passes only CONNECT requests to `target` (nono).
+/// Listener that passes only CONNECT requests to `target` (nono).
 pub(crate) struct Front {
-    /// Port the listener is bound to.
-    port: u16,
-    /// Set to ask the acceptor to exit.
-    stop: Arc<AtomicBool>,
-    /// Acceptor thread.
-    acceptor: JoinHandle<()>,
+    /// Where it listens.
+    socket: FrontSocket,
+    /// Serves each accepted connection.
+    handler: Handler,
+    /// The bound socket, replaced when the file must be bound again.
+    listening: Mutex<Listening>,
 }
 
 impl fmt::Debug for Front {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Front")
-            .field("port", &self.port)
+            .field("path", &self.socket.path())
             .finish_non_exhaustive()
     }
 }
 
 impl Front {
-    /// Binds 127.0.0.1 on an ephemeral port and starts accepting. `box_nonce`
+    /// Binds `socket`, replacing a stale file, and starts accepting. `box_nonce`
     /// is the credential the Box presents; `internal` is the session token
     /// nono checks, never shown to the Box.
     pub(crate) fn start(
         target: SocketAddr,
+        socket: FrontSocket,
         box_nonce: Secret,
         internal: Secret,
-    ) -> io::Result<Self> {
+    ) -> Result<Self, String> {
         let creds = Arc::new(Creds {
             box_nonce,
             internal,
         });
-        let listener = TcpListener::bind(("127.0.0.1", 0))?;
-        let port = listener.local_addr()?.port();
-        let stop = Arc::new(AtomicBool::new(false));
-        let flag = Arc::clone(&stop);
-        let acceptor = thread::Builder::new()
-            .name("moor-front".to_owned())
-            .spawn(move || accept_loop(&listener, &flag, target, &creds))?;
+        let handler: Handler = Arc::new(move |client| serve(client, target, &creds));
+        let listening = socket.listen(true, &handler)?;
         Ok(Self {
-            port,
-            stop,
-            acceptor,
+            socket,
+            handler,
+            listening: Mutex::new(listening),
         })
     }
 
-    /// Port the listener is bound to.
-    pub(crate) const fn port(&self) -> u16 {
-        self.port
+    /// The socket path.
+    pub(crate) fn path(&self) -> &Path {
+        self.socket.path()
     }
 
-    /// Stops accepting and joins the acceptor. Open connections end on their
-    /// socket timeouts or when a peer closes.
-    pub(crate) fn stop(self) {
-        self.stop.store(true, Ordering::SeqCst);
-        let _ = TcpStream::connect_timeout(
-            &SocketAddr::from(([127, 0, 0, 1], self.port)),
-            DRAIN_TIMEOUT,
+    /// Binds the socket again when its file is gone; a tunnel reaches the new socket on its
+    /// next connection. `Err` says why it could not.
+    pub(crate) fn rebind(&self) -> Result<(), String> {
+        if !self.socket.gone() {
+            return Ok(());
+        }
+        let fresh = self.socket.listen(false, &self.handler)?;
+        let old = std::mem::replace(
+            &mut *self
+                .listening
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner),
+            fresh,
         );
-        let _ = self.acceptor.join();
+        old.halt();
+        Ok(())
     }
-}
 
-/// Accepts connections until `stop` is set, one thread per connection.
-fn accept_loop(listener: &TcpListener, stop: &AtomicBool, target: SocketAddr, creds: &Arc<Creds>) {
-    for incoming in listener.incoming() {
-        if stop.load(Ordering::SeqCst) {
-            return;
-        }
-        match incoming {
-            Ok(client) => {
-                let creds = Arc::clone(creds);
-                let _ = thread::Builder::new()
-                    .name("moor-front-conn".to_owned())
-                    .spawn(move || serve(client, target, &creds));
-            }
-            Err(_) => thread::sleep(Duration::from_millis(50)),
-        }
+    /// Stops accepting and removes the socket file while it is still this front's.
+    pub(crate) fn stop(self) {
+        let listening = self
+            .listening
+            .into_inner()
+            .unwrap_or_else(PoisonError::into_inner);
+        self.socket.close(listening);
     }
 }
 
@@ -166,7 +168,7 @@ fn read_head(src: &mut impl Read) -> Option<Head> {
 }
 
 /// Handles one client connection.
-fn serve(mut client: TcpStream, target: SocketAddr, creds: &Creds) {
+fn serve(mut client: UnixStream, target: SocketAddr, creds: &Creds) {
     let _ = client.set_read_timeout(Some(REQUEST_TIMEOUT));
     let _ = client.set_write_timeout(Some(TARGET_TIMEOUT));
     let Some(head) = read_head(&mut client) else {
@@ -186,7 +188,7 @@ fn serve(mut client: TcpStream, target: SocketAddr, creds: &Creds) {
 
 /// Handles an absolute-form `http://` request as a CONNECT to nono; every
 /// other non-CONNECT request is refused.
-fn serve_plain(client: TcpStream, target: SocketAddr, creds: &Creds, head: &Head) {
+fn serve_plain(client: UnixStream, target: SocketAddr, creds: &Creds, head: &Head) {
     let Some(plain) = plain::parse(&head.bytes) else {
         return refuse(client);
     };
@@ -220,7 +222,7 @@ fn open_upstream(target: SocketAddr, head: &[u8]) -> Option<TcpStream> {
 /// Relays nono's answer, then splices the tunnel when nono accepted it.
 /// Client bytes sent after the head stay buffered until nono answers 2xx, so
 /// a refused CONNECT never leaves nono a second request on the connection.
-fn relay(mut client: TcpStream, mut upstream: TcpStream, entry: &Entry, client_rest: &[u8]) {
+fn relay(mut client: UnixStream, mut upstream: TcpStream, entry: &Entry, client_rest: &[u8]) {
     let Some(answer) = read_head(&mut upstream) else {
         return refuse(client);
     };
@@ -244,30 +246,30 @@ fn relay(mut client: TcpStream, mut upstream: TcpStream, entry: &Entry, client_r
     splice(client, upstream);
 }
 
-/// Copies both directions until each side ends or idles out.
-fn splice(client: TcpStream, upstream: TcpStream) {
+/// Copies both directions until each side ends or idles out, closing the write half of each
+/// receiver when its sender ends.
+fn splice(mut client: UnixStream, mut upstream: TcpStream) {
     let _ = client.set_read_timeout(Some(TUNNEL_IDLE));
     let _ = upstream.set_read_timeout(Some(TUNNEL_IDLE));
-    let (Ok(client_rx), Ok(upstream_tx)) = (client.try_clone(), upstream.try_clone()) else {
+    let (Ok(mut client_rx), Ok(mut upstream_tx)) = (client.try_clone(), upstream.try_clone())
+    else {
         return;
     };
     let uplink = thread::Builder::new()
         .name("moor-front-up".to_owned())
-        .spawn(move || pump(client_rx, upstream_tx));
-    pump(upstream, client);
+        .spawn(move || {
+            let _ = io::copy(&mut client_rx, &mut upstream_tx);
+            let _ = upstream_tx.shutdown(Shutdown::Write);
+        });
+    let _ = io::copy(&mut upstream, &mut client);
+    let _ = client.shutdown(Shutdown::Write);
     if let Ok(handle) = uplink {
         let _ = handle.join();
     }
 }
 
-/// Copies `from` to `to`, then closes the write half of `to`.
-fn pump(mut from: TcpStream, mut to: TcpStream) {
-    let _ = io::copy(&mut from, &mut to);
-    let _ = to.shutdown(Shutdown::Write);
-}
-
 /// Answers 403 and closes so the client reads the reply before the close.
-fn refuse(mut client: TcpStream) {
+fn refuse(mut client: UnixStream) {
     let reply = format!(
         "HTTP/1.1 403 Forbidden\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{REFUSAL_BODY}",
         REFUSAL_BODY.len()
@@ -276,7 +278,7 @@ fn refuse(mut client: TcpStream) {
 }
 
 /// Writes `reply`, closes the write half and drains what the client still sends.
-fn finish_refusal(client: &mut TcpStream, reply: &str) {
+fn finish_refusal(client: &mut UnixStream, reply: &str) {
     let _ = client.write_all(reply.as_bytes());
     let _ = client.shutdown(Shutdown::Write);
     let _ = client.set_read_timeout(Some(DRAIN_TIMEOUT));
@@ -284,7 +286,7 @@ fn finish_refusal(client: &mut TcpStream, reply: &str) {
 }
 
 /// Answers 407 and closes the same way a refusal does.
-fn deny_auth(mut client: TcpStream) {
+fn deny_auth(mut client: UnixStream) {
     let reply = format!(
         "HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm=\"moor\"\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{AUTH_BODY}",
         AUTH_BODY.len()

@@ -135,7 +135,6 @@ fn all_events() -> Vec<Event> {
         },
         Event::ProxyStarted {
             box_port: 1,
-            host_port: 2,
             pid: 3,
             handle: s("h"),
         },
