@@ -9,3 +9,4 @@ pub(crate) mod github;
 pub(crate) mod herdr;
 pub(crate) mod proc;
 pub(crate) mod rng;
+pub(crate) mod sockets;

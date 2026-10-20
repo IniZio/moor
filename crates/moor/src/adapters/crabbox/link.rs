@@ -7,12 +7,11 @@
 //! driver reuses them without a new lookup. The agent's pane keeps its own connection, so
 //! ending a master never ends the agent.
 
-use std::fmt::Write as _;
 use std::fs::{self, DirBuilder, OpenOptions};
-use std::io::{ErrorKind, Write as _};
+use std::io::Write as _;
 use std::os::unix::ffi::OsStrExt;
-use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt};
-use std::path::{Path, PathBuf};
+use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+use std::path::PathBuf;
 use std::time::Duration;
 
 use moor_core::name::BoxHandle;
@@ -21,10 +20,10 @@ use moor_core::seam::driver::DriverError;
 use moor_core::seam::proc::{Deadline, ProcError, ProcOutput, ProcSpec, Tool};
 use moor_core::Warning;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 
 use super::errors::{transport_loss, EXIT_SSH};
 use super::Crabbox;
+use crate::adapters::sockets::{private_dir, short_hash};
 
 /// Seconds a master stays up after its last call: long enough to bridge probe ticks and
 /// back-to-back commands, short enough that a stopped moor leaves no connection open for long.
@@ -34,13 +33,6 @@ const PERSIST_SECS: u32 = 120;
 const TARGET_TTL_MS: i64 = 10 * 60 * 1000;
 /// Time allowed for a request to a master; it goes over the local socket only.
 const CONTROL_DEADLINE: Duration = Duration::from_secs(5);
-
-/// Where moor's control sockets live: `/tmp/moor-<uid>`. ssh first binds the socket path plus
-/// a 17-byte suffix, and macOS allows 103 bytes, so a socket under a deep state dir would fail
-/// every call; this path stays short wherever the state dir is.
-pub(crate) fn socket_dir() -> PathBuf {
-    PathBuf::from(format!("/tmp/moor-{}", rustix::process::getuid().as_raw()))
-}
 
 /// Where the shared connections of all Boxes live.
 pub(super) struct Dirs {
@@ -110,46 +102,6 @@ impl Crabbox {
             socket: dirs.sockets.join(scoped),
             target: dirs.state.join("ssh").join(format!("{name}.target")),
         })
-    }
-}
-
-/// The first 8 bytes of the SHA-256 of `parts`, each ended by a NUL byte, in hex.
-fn short_hash(parts: &[&[u8]]) -> String {
-    let mut hasher = Sha256::new();
-    for part in parts {
-        hasher.update(part);
-        hasher.update([0]);
-    }
-    hasher
-        .finalize()
-        .iter()
-        .take(8)
-        .fold(String::new(), |mut s, b| {
-            let _ = write!(s, "{b:02x}");
-            s
-        })
-}
-
-/// Creates `dir` for control sockets, or checks the one there: it must be a directory of
-/// `owner` that nobody else can enter, since any process that reaches a socket can use its
-/// master.
-fn private_dir(dir: &Path, owner: u32) -> Result<(), String> {
-    match DirBuilder::new().mode(0o700).create(dir) {
-        Err(e) if e.kind() != ErrorKind::AlreadyExists => {
-            return Err(format!("cannot create {}: {e}", dir.display()));
-        }
-        _ => {}
-    }
-    let meta =
-        fs::symlink_metadata(dir).map_err(|e| format!("cannot read {}: {e}", dir.display()))?;
-    let own = meta.is_dir() && meta.uid() == owner && meta.mode() & 0o777 == 0o700;
-    if own {
-        Ok(())
-    } else {
-        Err(format!(
-            "{} is not a directory that only this user can enter",
-            dir.display()
-        ))
     }
 }
 

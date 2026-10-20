@@ -34,7 +34,6 @@ use moor_core::seam::proc::{Deadline, Proc, ProcOutput, ProcSpec, Tool};
 use moor_core::seam::{clock::Clock, rng::Rng};
 
 use errors::{map_error, Op};
-pub(crate) use link::socket_dir;
 
 /// Time allowed for a warmup.
 const ACQUIRE_DEADLINE: Duration = Duration::from_mins(15);
