@@ -9,7 +9,6 @@ use std::sync::Arc;
 
 use moor_core::config::parse_user;
 use moor_core::seam::proc::Tool;
-use moor_core::seam::proxy_host::ProxyHostError;
 use moor_core::{BoxName, Request, ShowReq, StartReq, SteerReq};
 use serde_json::{json, Value};
 
@@ -166,19 +165,6 @@ fn start_show_steer_frames_and_the_box_never_carry_the_resolved_secret() {
     assert!(!out.contains(SENTINEL), "server frames: {out}");
 
     assert_box_side_clean(&w);
-}
-
-#[test]
-fn a_proxy_failure_log_carrying_the_nonce_does_not_reach_the_frames() {
-    let nonce = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ";
-    let log = format!("boom\nlistening for moor:{nonce}@127.0.0.1\nlast line");
-    let host = FakeProxyHost::new().with_ensure_error(ProxyHostError::Failed(log));
-    let (cx, w) = world(host);
-    let (_, out, frames) = exchange(cx, &[start(), show()]);
-    assert_eq!(frames.len(), 3, "{out}");
-    assert!(w.engine.launches().is_empty(), "launch should have failed");
-    assert!(out.contains("boom"), "failure should be reported: {out}");
-    assert!(!out.contains(nonce), "server frames: {out}");
 }
 
 /// Everything the fake Box, agent engine and surface were handed.

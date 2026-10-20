@@ -15,7 +15,6 @@ use moor_core::{BoxHandle, BoxPath, Warning};
 
 use crate::cx::Cx;
 use crate::ops::common::box_exec::{self, BoxProxy, Site};
-use crate::ops::show::redact_nonce;
 
 /// How many trailing log lines a failure warning carries.
 const LOG_TAIL_LINES: usize = 20;
@@ -35,8 +34,7 @@ pub(crate) enum SetupRun {
     Ok {
         /// Time the script took, in milliseconds.
         ms: u64,
-        /// The last lines of the script's log, tidied and without the Proxy nonce; empty when the
-        /// log was unreadable.
+        /// The last lines of the script's log, tidied; empty when the log was unreadable.
         tail: String,
     },
     /// A line failed; later lines did not run.
@@ -137,7 +135,7 @@ pub(crate) fn run_setup(
     let result = exec_script(cx, &site, cfg, sync, proxy);
     let elapsed = cx.clock().instant().saturating_duration_since(started);
     let ms = u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX);
-    let log = fetch_log(cx, handle, workdir, worktree, None);
+    let log = fetch_log(cx, handle, workdir, worktree);
     let tail = tail_lines(&log).join("\n");
     let (reason, exit) = match result {
         Ok(ExecOutcome::Exited { code: 0 }) => return SetupRun::Ok { ms, tail },
@@ -323,15 +321,8 @@ fn tidy(line: &str) -> String {
     cut
 }
 
-/// Copies the script's log out of the Box and reads it with the Proxy `nonce` redacted; empty when
-/// either step fails.
-fn fetch_log(
-    cx: &Cx,
-    handle: &BoxHandle,
-    workdir: &BoxPath,
-    worktree: &Path,
-    nonce: Option<&[u8]>,
-) -> String {
+/// Copies the script's log out of the Box and reads it; empty when either step fails.
+fn fetch_log(cx: &Cx, handle: &BoxHandle, workdir: &BoxPath, worktree: &Path) -> String {
     let to = worktree.join(".moor").join("setup.log");
     let Ok(from) = BoxPath::under(workdir.as_str(), LOG_REL) else {
         return String::new();
@@ -347,12 +338,7 @@ fn fetch_log(
         discard(&to);
         return String::new();
     }
-    let log = String::from_utf8_lossy(&std::fs::read(&to).unwrap_or_default()).into_owned();
-    let log = redact_nonce(&log, nonce);
-    if std::fs::write(&to, &log).is_err() {
-        discard(&to);
-    }
-    log
+    String::from_utf8_lossy(&std::fs::read(&to).unwrap_or_default()).into_owned()
 }
 
 /// Removes whatever sits at `path`, without following a symlink there.

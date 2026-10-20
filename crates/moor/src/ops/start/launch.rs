@@ -23,7 +23,6 @@ use crate::ops::common::facts::settings;
 use crate::ops::common::provision::{nonce, recorded_workdir, reread};
 use crate::ops::common::resume;
 use crate::ops::common::view::rfc3339;
-use crate::ops::show::redact_nonce;
 use crate::store::lease::{LeaseId, LeaseKind};
 use crate::store::{BoxRow, Store};
 
@@ -231,9 +230,7 @@ fn record_failure(
     id: BoxId,
     e: &EngineError,
 ) -> Result<AgentLaunchView, CommandError> {
-    let mut failure = failure(cx, e);
-    failure.message = redact_nonce(&failure.message, None);
-    failure.tail = failure.tail.map(|t| redact_nonce(&t, None));
+    let failure = failure(cx, e);
     record(store, id, Field::Set(to_json(&failure)?), Some(&failure))?;
     Ok(AgentLaunchView {
         launched: false,

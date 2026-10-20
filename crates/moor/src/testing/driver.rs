@@ -9,7 +9,6 @@ use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use moor_core::box_key::CRED_SWEEP_SCRIPT;
 use moor_core::seam::driver::{
     AcquireReq, Acquired, BoxListing, BoxStep, Driver, DriverCaps, DriverError, ExecOutcome,
     ExecSpec, Released, SleepKind, SleepOutcome, StepDone,
@@ -39,7 +38,6 @@ struct State {
     exec_stdout: VecDeque<String>,
     artifact_index: VecDeque<String>,
     execs: Vec<(BoxHandle, ExecSpec, Deadline)>,
-    sweep: script::Sweeps,
     copies: Vec<CopyCall>,
     files: Vec<(String, String, String)>,
     peeks: Vec<PeekCall>,
@@ -109,7 +107,7 @@ impl FakeDriver {
         self.st().live.retain(|h| h != handle.as_str());
     }
 
-    /// Calls so far, like `acquire`, `release box-1` or `sweep box-1`.
+    /// Calls so far, like `acquire`, `release box-1` or `exec box-1`.
     pub(crate) fn calls(&self) -> Vec<String> {
         self.st().calls.clone()
     }
@@ -209,9 +207,6 @@ impl Driver for FakeDriver {
         spec: &ExecSpec,
         deadline: Deadline,
     ) -> Result<ExecOutcome, DriverError> {
-        if spec.argv == ["sh", "-c", CRED_SWEEP_SCRIPT] {
-            return self.sweep_exec(handle, spec, deadline);
-        }
         let hook = self.st().on_exec.clone();
         if let Some(hook) = hook {
             hook();

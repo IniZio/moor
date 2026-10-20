@@ -19,50 +19,11 @@ use crate::store::Store;
 /// Lines of the pane kept as the tail.
 const PANE_LINES: usize = 40;
 
-/// Stand-in for a proxy nonce in pane text.
-const REDACTED: &str = "<nonce>";
-
-/// Length of a base64url-encoded 32-byte nonce.
-const NONCE_LEN: usize = 43;
-
-/// `text` with the Box's proxy nonce, and any `moor:<43 base64url chars>@` userinfo,
-/// replaced by `<nonce>`. The proxy URL in the agent's environment carries the nonce.
-pub(crate) fn redact_nonce(text: &str, nonce: Option<&[u8]>) -> String {
-    const USER: &str = "moor:";
-    let known = nonce
-        .and_then(|n| std::str::from_utf8(n).ok())
-        .filter(|n| !n.is_empty());
-    let text = known.map_or_else(|| text.to_owned(), |n| text.replace(n, REDACTED));
-    let mut out = String::with_capacity(text.len());
-    let mut rest = text.as_str();
-    while let Some(at) = rest.find(USER) {
-        let (head, tail) = rest.split_at(at + USER.len());
-        out.push_str(head);
-        let seg = tail.as_bytes();
-        let is_nonce = seg.get(NONCE_LEN) == Some(&b'@')
-            && seg
-                .iter()
-                .take(NONCE_LEN)
-                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'));
-        if is_nonce {
-            out.push_str(REDACTED);
-            // The first 43 bytes are ASCII, so the split is on a char boundary.
-            rest = tail.split_at(NONCE_LEN).1;
-        } else {
-            rest = tail;
-        }
-    }
-    out.push_str(rest);
-    out
-}
-
 /// The pane section of a reading: its last lines and liveness; none without an observation.
-/// Proxy URL userinfo is redacted from the tail.
 fn pane_view(reading: &activity::Reading) -> Option<PaneView> {
     let text = reading.pane_text.as_deref()?;
     let skip = text.lines().count().saturating_sub(PANE_LINES);
     let tail = text.lines().skip(skip).collect::<Vec<_>>().join("\n");
-    let tail = redact_nonce(&tail, None);
     Some(PaneView {
         tail,
         status: reading.pane.as_str().to_owned(),

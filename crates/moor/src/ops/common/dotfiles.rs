@@ -16,7 +16,6 @@ use moor_core::{BoxHandle, BoxId, BoxPath};
 
 use crate::cx::Cx;
 use crate::ops::common::box_exec::{self, BoxProxy, Site};
-use crate::ops::show::redact_nonce;
 
 /// Wall-clock allowance for the install step inside the Box.
 pub(crate) const DOTFILES_DEADLINE: Duration = Duration::from_mins(15);
@@ -208,7 +207,7 @@ pub(crate) fn apply(
         Err(e) => e,
     };
     let logged = std::fs::read_to_string(&log)
-        .map(|s| tail(&redact_nonce(&s, None)))
+        .map(|s| tail(&s))
         .unwrap_or_default();
     Err(fail(if logged.is_empty() { reason } else { logged }))
 }
