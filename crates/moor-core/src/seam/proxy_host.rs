@@ -26,11 +26,12 @@ pub struct ProxySpec {
     pub rules: Vec<ResolvedRule>,
 }
 
-/// A running Proxy's address as the Box sees it, with its credential.
+/// A running Proxy's address as the Box sees it.
 pub struct ProxyEndpoint {
     /// The Proxy's port as seen inside the Box.
     pub box_port: u16,
-    /// The per-launch nonce the Box presents; its only credential.
+    /// The per-launch nonce stored with the Proxy. The Box never receives it, and the Proxy
+    /// does not check it.
     pub nonce: Secret,
     /// The public Box CA certificate in PEM form; not secret.
     pub ca_pem: String,
