@@ -8,7 +8,6 @@ use serde::{Deserialize, Serialize};
 use crate::config::proxy::ResolvedRule;
 use crate::name::{BoxHandle, BoxId};
 use crate::seam::forge::ForgeRepo;
-use crate::secret::Secret;
 
 /// What the Proxy host needs to run a Box's Proxy; it holds no secret values.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -30,9 +29,6 @@ pub struct ProxySpec {
 pub struct ProxyEndpoint {
     /// The Proxy's port as seen inside the Box.
     pub box_port: u16,
-    /// The per-launch nonce stored with the Proxy. The Box never receives it, and the Proxy
-    /// does not check it.
-    pub nonce: Secret,
     /// The public Box CA certificate in PEM form; not secret.
     pub ca_pem: String,
 }
@@ -41,7 +37,6 @@ impl fmt::Debug for ProxyEndpoint {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ProxyEndpoint")
             .field("box_port", &self.box_port)
-            .field("nonce", &"<redacted>")
             .field("ca_pem_len", &self.ca_pem.len())
             .finish()
     }

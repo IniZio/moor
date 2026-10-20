@@ -10,7 +10,6 @@ use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, SleepOutcome};
-use moor_core::secret::Secret;
 use moor_core::{BoxId, BoxName, ProviderId};
 
 use super::run;
@@ -134,14 +133,7 @@ fn sleep_calls(f: &Fx) -> usize {
 fn live_proxy(f: &Fx) {
     let store = f.cx.store().unwrap();
     let lease = Duration::from_secs(30);
-    let got = store
-        .reserve(
-            f.id,
-            &Secret::new(b"n".to_vec()),
-            &FakeRng::default(),
-            lease,
-        )
-        .unwrap();
+    let got = store.reserve(f.id, &FakeRng::default(), lease).unwrap();
     assert!(matches!(got, Reserve::Reserved(_)), "{got:?}");
     store.claim_lease(f.id, "A", lease).unwrap();
     let box_port = store.proxy(f.id).unwrap().unwrap().box_port;

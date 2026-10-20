@@ -12,7 +12,7 @@ use moor_core::seam::proxy_host::{
     ProxyEndpoint, ProxyHost, ProxyHostError, ProxySpec, ProxyStatus,
 };
 use moor_core::seam::rng::Rng;
-use moor_core::{BoxId, Secret};
+use moor_core::BoxId;
 
 use crate::proxy::nono::ca::load_or_create;
 use crate::store::{ProxyRow, Reserve, Store, StoreError, STORE_FILE};
@@ -50,14 +50,12 @@ pub(crate) struct DetachedSupervisor {
     proc: Arc<dyn Proc>,
     /// Time source for leases, waits and sleeps.
     clock: Arc<dyn Clock>,
-    /// Source of nonce bytes.
+    /// Source of box port draws.
     rng: Arc<dyn Rng>,
     /// The state directory, when one could be resolved.
     state_dir: Option<PathBuf>,
     /// The state store, opened on first use.
     store: OnceLock<Store>,
-    /// Restart an unready row under its stored nonce instead of drawing a new one.
-    keep_nonce: bool,
     /// Runs before a running supervisor is retired.
     tunnel_check: TunnelCheck,
 }
@@ -77,16 +75,8 @@ impl DetachedSupervisor {
             rng,
             state_dir,
             store: OnceLock::new(),
-            keep_nonce: false,
             tunnel_check,
         }
-    }
-
-    /// Make [`ensure`](ProxyHost::ensure) reuse an existing row's nonce when it restarts the
-    /// supervisor: a Box started before a controller restart still holds that nonce.
-    pub(crate) const fn keeping_nonce(mut self) -> Self {
-        self.keep_nonce = true;
-        self
     }
 
     /// The state store, opened on first call.
@@ -196,7 +186,6 @@ fn spec_failed(e: &io::Error, log: &Path) -> ProxyHostError {
 fn endpoint(row: &ProxyRow, ca_pem: &str) -> ProxyEndpoint {
     ProxyEndpoint {
         box_port: row.box_port,
-        nonce: Secret::new(row.nonce.expose().to_vec()),
         ca_pem: ca_pem.to_owned(),
     }
 }
@@ -205,9 +194,9 @@ impl ProxyHost for DetachedSupervisor {
     /// Make sure the Box's proxy supervisor is running and ready; return its endpoint.
     ///
     /// A ready supervisor with a live lease is reused, unless an older moor started it with a
-    /// TCP front, which refuses a Box that sends no nonce; that one is retired and replaced.
-    /// Otherwise a new nonce is reserved and a supervisor is started, unless one already holds a
-    /// live lease. The nonce never appears in arguments, environment, logs or errors.
+    /// TCP front, which refuses a Box that sends no secret; that one is retired and replaced.
+    /// Otherwise the box port is reserved and a supervisor is started, unless one already holds a
+    /// live lease.
     fn ensure(&self, spec: &ProxySpec) -> Result<ProxyEndpoint, ProxyHostError> {
         let box_id = spec.box_id;
         let Some(state) = self.state_dir.as_deref() else {
@@ -223,7 +212,6 @@ impl ProxyHost for DetachedSupervisor {
         let ca_pem = ca.cert_pem();
         let store = self.store().map_err(|e| store_failed(&e, &log))?;
         let row = store.proxy(box_id).map_err(|e| store_failed(&e, &log))?;
-        let kept = row.as_ref().map(|r| Secret::new(r.nonce.expose().to_vec()));
         if let Some(row) = row.filter(|r| r.ready && self.live(r)) {
             if !row.tcp_front {
                 return Ok(endpoint(&row, ca_pem));
@@ -231,11 +219,8 @@ impl ProxyHost for DetachedSupervisor {
             self.retire(store, box_id).map_err(ProxyHostError::Failed)?;
         }
 
-        let nonce = kept
-            .filter(|_| self.keep_nonce)
-            .unwrap_or_else(|| new_nonce(self.rng.as_ref()));
         let reserved = store
-            .reserve(box_id, &nonce, self.rng.as_ref(), LEASE)
+            .reserve(box_id, self.rng.as_ref(), LEASE)
             .map_err(|e| store_failed(&e, &log))?;
         let pid = match reserved {
             Reserve::Reserved(_) => {
@@ -349,12 +334,6 @@ pub(crate) fn log_path(state_dir: &Path, box_id: BoxId) -> PathBuf {
     state_dir
         .join("proxy")
         .join(format!("{}.log", box_id.get()))
-}
-
-/// A fresh nonce: 32 random bytes as base64url text.
-pub(crate) fn new_nonce(rng: &dyn Rng) -> Secret {
-    let bytes: Vec<u8> = (0..8).flat_map(|_| rng.u32().to_le_bytes()).collect();
-    Secret::new(base64url(&bytes).into_bytes())
 }
 
 /// Encode bytes as base64url without padding.

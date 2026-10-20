@@ -13,7 +13,6 @@ use moor_core::activity::HookKind;
 use moor_core::name::BoxPath;
 use moor_core::seam::agent_profile::{AgentProfile, BoxSetup, Key, LaunchCtx, ProxyAddr};
 use moor_core::seam::engine::LaunchPrompt;
-use moor_core::Secret;
 use serde_json::{json, Value};
 use tempfile::TempDir;
 
@@ -38,7 +37,6 @@ fn proxied(dir: &Path) -> LaunchCtx {
     LaunchCtx {
         proxy: Some(ProxyAddr {
             box_port: 41234,
-            nonce: Secret::new(b"sentinel-7f3a".to_vec()),
             ca_pem: String::new(),
             box_env: Vec::new(),
             forge: false,
@@ -184,30 +182,12 @@ fn env_is_only_the_login_placeholder_behind_a_proxy() {
         vec![("CLAUDE_CODE_OAUTH_TOKEN", b"moor-proxy".as_slice())]
     );
     assert!(env.iter().all(|e| e.name != "ANTHROPIC_BASE_URL"));
-    assert!(!format!(
-        "{:?}",
-        env.iter().map(|e| e.value.expose()).collect::<Vec<_>>()
-    )
-    .contains("sentinel-7f3a"));
 }
 
 #[test]
 fn env_is_empty_without_a_proxy() {
     let t = TempDir::new().unwrap();
     assert!(Claude.env(&ctx(t.path())).is_empty());
-}
-
-#[test]
-fn nonce_stays_out_of_argv_and_debug_output() {
-    let t = TempDir::new().unwrap();
-    let c = proxied(t.path());
-    assert!(!Claude.argv(&c).join(" ").contains("sentinel-7f3a"));
-    assert!(!Claude
-        .resume_argv("s-1", &c)
-        .join(" ")
-        .contains("sentinel-7f3a"));
-    assert!(!format!("{c:?}").contains("sentinel-7f3a"));
-    assert!(!format!("{:?}", Claude.env(&c)).contains("sentinel-7f3a"));
 }
 
 #[test]

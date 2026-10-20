@@ -9,7 +9,6 @@ use moor_core::config::{parse_user, BoxSettings, Flags, UserConfig};
 use moor_core::exec_env::{Purpose, CA_FILE};
 use moor_core::seam::agent_profile::ProxyAddr;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
-use moor_core::secret::Secret;
 use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId};
 
 use super::{forge_routed, prepare, BoxProxy, Site};
@@ -102,7 +101,6 @@ fn boxed_proxy() -> BoxProxy {
         box_id: BoxId::new(1),
         addr: ProxyAddr {
             box_port: 4000,
-            nonce: Secret::new(b"s3cret".to_vec()),
             ca_pem: "CA-PEM".to_owned(),
             box_env: vec![("RULE".to_owned(), "x".to_owned())],
             forge: false,
@@ -132,7 +130,6 @@ fn a_proxy_stages_only_the_ca_and_the_prelude_exports_the_proxy() {
         let path = BoxPath::under(staged.as_str(), f).unwrap();
         r.driver.peek_file(&r.handle, &path, dir.path()).unwrap()
     };
-    assert_eq!(peek("proxy-nonce"), None);
     assert_eq!(peek(CA_FILE).as_deref(), Some("CA-PEM"));
     assert_eq!(
         e.vars(),

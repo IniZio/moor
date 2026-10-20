@@ -49,7 +49,7 @@ pub(super) fn listen(deps: &Deps<'_>, box_id: BoxId, spec: &ProxySpec) -> Result
     let ca_pem = ca::cert_path(deps.state_dir, box_id);
     let cfg = build_config(&NonoSpec {
         rules: &spec.rules,
-        nonce: &internal,
+        token: &internal,
         ca: &ca,
         ca_dir: &ca::ca_dir(deps.state_dir, box_id),
         upstream_ca: deps.upstream_ca.as_deref(),

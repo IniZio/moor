@@ -27,9 +27,9 @@ enum Fate {
 ///
 /// A row is kept only when its pid is alive, leads its own process group, belongs to the
 /// current boot, holds a live lease and runs the socket front: a pid alone may have been reused,
-/// and an older moor's TCP front refuses a Box with no nonce. Any other row of a Box with a ready
-/// machine is retired and restarted from the spec saved at its last `ensure`, keeping its box
-/// port. Rows of Boxes without a usable machine are stopped. A failure for one Box never stops
+/// and an older moor's TCP front refuses a Box that sends no secret. Any other row of a Box with
+/// a ready machine is retired and restarted from the spec saved at its last `ensure`, keeping its
+/// box port. Rows of Boxes without a usable machine are stopped. A failure for one Box never stops
 /// the rest.
 pub(crate) fn reconcile(
     host: &DetachedSupervisor,

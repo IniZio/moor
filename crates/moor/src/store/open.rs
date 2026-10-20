@@ -1,5 +1,5 @@
-//! Filesystem permissions for the store: the db holds the proxy's secret
-//! nonce, so the state dir is 0700 and the db and its WAL files are 0600,
+//! Filesystem permissions for the store: only the controller's user may read
+//! Box state, so the state dir is 0700 and the db and its WAL files are 0600,
 //! also when they already exist with looser modes.
 
 use std::fs::{self, DirBuilder, OpenOptions};

@@ -8,7 +8,6 @@ use std::time::Duration;
 use moor_core::domain::decision::{Decision, NewBox};
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::seam::rng::Rng;
-use moor_core::secret::Secret;
 use moor_core::{BoxId, BoxName};
 
 use super::{Fenced, Lease, ReadyProc, Reserve, BOX_PORT_MAX, BOX_PORT_MIN};
@@ -18,9 +17,6 @@ use crate::testing::rng::FakeRng;
 
 const LEASE: Duration = Duration::from_secs(30);
 const JUST_UNDER: Duration = Duration::from_millis(29_999);
-const NONCE: &[u8] = b"s3cr3t-nonce-value";
-/// Lowercase hex of `NONCE`.
-const NONCE_HEX: &str = "7333637233742d6e6f6e63652d76616c7565";
 
 /// Open a store in a temp dir with a fake clock.
 fn open(dir: &Path) -> (Store, Arc<FakeClock>) {
@@ -36,11 +32,6 @@ fn add(store: &Store, name: &str) -> BoxId {
         repo: "r".into(),
     };
     store.apply(Decision::insert(nt)).unwrap().box_id
-}
-
-/// A secret holding `bytes`.
-fn secret(bytes: &[u8]) -> Secret {
-    Secret::new(bytes.to_vec())
 }
 
 /// Rng replaying a fixed sequence of draws, then repeating the last.
@@ -70,9 +61,7 @@ impl Rng for Scripted {
 fn reserved(dir: &Path) -> (Store, Arc<FakeClock>, BoxId) {
     let (store, clock) = open(dir);
     let id = add(&store, "t");
-    let outcome = store
-        .reserve(id, &secret(NONCE), &FakeRng::default(), LEASE)
-        .unwrap();
+    let outcome = store.reserve(id, &FakeRng::default(), LEASE).unwrap();
     assert!(matches!(outcome, Reserve::Reserved(_)), "{outcome:?}");
     (store, clock, id)
 }
@@ -89,13 +78,11 @@ fn events_of(store: &Store, id: BoxId, kind: &str) -> Vec<serde_json::Value> {
 }
 
 #[test]
-fn reserve_returns_port_in_range_and_stores_nonce_unready() {
+fn reserve_returns_port_in_range_unready() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let id = add(&store, "t");
-    let outcome = store
-        .reserve(id, &secret(NONCE), &FakeRng::default(), LEASE)
-        .unwrap();
+    let outcome = store.reserve(id, &FakeRng::default(), LEASE).unwrap();
     let port = match outcome {
         Reserve::Reserved(port) => port,
         Reserve::Leased { .. } => 0,
@@ -104,7 +91,6 @@ fn reserve_returns_port_in_range_and_stores_nonce_unready() {
     let row = store.proxy(id).unwrap().unwrap();
     assert_eq!(row.box_id, id);
     assert_eq!(row.box_port, port);
-    assert_eq!(row.nonce.expose(), NONCE);
     assert!(!row.ready);
     assert_eq!((row.pid, row.handle), (None, None));
 }
@@ -115,17 +101,15 @@ fn reserve_skips_port_held_by_another_box() {
     let (store, _) = open(dir.path());
     let a = add(&store, "a");
     let b = add(&store, "b");
-    let held = store
-        .reserve(a, &secret(NONCE), &Scripted::new(&[7]), LEASE)
-        .unwrap();
+    let held = store.reserve(a, &Scripted::new(&[7]), LEASE).unwrap();
     assert_eq!(held, Reserve::Reserved(BOX_PORT_MIN + 7));
     let rng = Scripted::new(&[7, 8]);
-    let port = store.reserve(b, &secret(NONCE), &rng, LEASE).unwrap();
+    let port = store.reserve(b, &rng, LEASE).unwrap();
     assert_eq!(port, Reserve::Reserved(BOX_PORT_MIN + 8));
 }
 
 #[test]
-fn rereserve_keeps_port_and_replaces_nonce() {
+fn rereserve_keeps_port_and_resets_the_row() {
     let dir = tempfile::tempdir().unwrap();
     let (store, clock, id) = reserved(dir.path());
     let first = store.proxy(id).unwrap().unwrap().box_port;
@@ -138,13 +122,10 @@ fn rereserve_keeps_port_and_replaces_nonce() {
         )
         .unwrap();
     clock.sleep(LEASE);
-    let again = store
-        .reserve(id, &secret(b"other"), &Scripted::new(&[999]), LEASE)
-        .unwrap();
+    let again = store.reserve(id, &Scripted::new(&[999]), LEASE).unwrap();
     assert_eq!(again, Reserve::Reserved(first));
     let row = store.proxy(id).unwrap().unwrap();
     assert_eq!(row.box_port, first);
-    assert_eq!(row.nonce.expose(), b"other");
     assert!(!row.ready);
     assert_eq!((row.pid, row.handle), (None, None));
     assert_eq!((row.lease_owner, row.lease_heartbeat), (None, None));
@@ -156,12 +137,9 @@ fn rereserve_refuses_while_lease_is_live() {
     let (store, clock, id) = reserved(dir.path());
     assert_eq!(store.claim_lease(id, "A", LEASE).unwrap(), Lease::Claimed);
     clock.sleep(JUST_UNDER);
-    let again = store
-        .reserve(id, &secret(b"other"), &Scripted::new(&[999]), LEASE)
-        .unwrap();
+    let again = store.reserve(id, &Scripted::new(&[999]), LEASE).unwrap();
     assert_eq!(again, Reserve::Leased { owner: "A".into() });
     let row = store.proxy(id).unwrap().unwrap();
-    assert_eq!(row.nonce.expose(), NONCE);
     assert_eq!(row.lease_owner.as_deref(), Some("A"));
 }
 
@@ -172,7 +150,7 @@ fn reserve_on_unknown_box_is_not_found() {
     let id = add(&store, "t");
     let missing = BoxId::new(id.get() + 100);
     let err = store
-        .reserve(missing, &secret(NONCE), &FakeRng::default(), LEASE)
+        .reserve(missing, &FakeRng::default(), LEASE)
         .unwrap_err();
     assert!(
         matches!(err, StoreError::NotFound(t) if t == missing),
@@ -187,16 +165,6 @@ fn remove_proxy_deletes_row_once() {
     assert!(store.remove_proxy(id).unwrap());
     assert!(store.proxy(id).unwrap().is_none());
     assert!(!store.remove_proxy(id).unwrap());
-}
-
-#[test]
-fn proxy_row_debug_redacts_nonce() {
-    let dir = tempfile::tempdir().unwrap();
-    let (store, _, id) = reserved(dir.path());
-    let text = format!("{:?}", store.proxy(id).unwrap().unwrap());
-    assert!(!text.contains("s3cr3t"), "{text}");
-    assert!(!text.contains(NONCE_HEX), "{text}");
-    assert!(text.contains("redacted"), "{text}");
 }
 
 #[test]
@@ -290,7 +258,7 @@ fn claim_lease_without_a_row_is_not_found() {
 }
 
 #[test]
-fn mark_ready_records_the_box_port_and_emits_one_event_without_nonce() {
+fn mark_ready_records_the_box_port_and_emits_one_event() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _, id) = reserved(dir.path());
     let box_port = store.proxy(id).unwrap().unwrap().box_port;
@@ -316,7 +284,7 @@ fn mark_ready_records_the_box_port_and_emits_one_event_without_nonce() {
     assert_started_payload(&store, id, box_port);
 }
 
-/// The one `ProxyStarted` event carries the recorded values and no nonce.
+/// The one `ProxyStarted` event carries the recorded values.
 fn assert_started_payload(store: &Store, id: BoxId, box_port: u16) {
     let events = events_of(store, id, "proxy_started");
     assert_eq!(events.len(), 1);
@@ -324,21 +292,10 @@ fn assert_started_payload(store: &Store, id: BoxId, box_port: u16) {
     assert_eq!(payload["box_port"], box_port);
     assert_eq!(payload["pid"], 4242);
     assert_eq!(payload["handle"], "tunnel-1");
-    assert_no_nonce(payload);
-}
-
-/// The payload has no nonce key and its text holds no nonce bytes.
-fn assert_no_nonce(payload: &serde_json::Value) {
-    let text = payload.to_string();
-    assert!(payload.get("nonce").is_none(), "{text}");
-    assert!(
-        !text.contains("s3cr3t") && !text.contains(NONCE_HEX),
-        "{text}"
-    );
 }
 
 #[test]
-fn tunnel_restarted_appends_event_without_nonce() {
+fn tunnel_restarted_appends_one_event() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _, id) = reserved(dir.path());
     let box_port = store.proxy(id).unwrap().unwrap().box_port;
@@ -352,7 +309,6 @@ fn tunnel_restarted_appends_event_without_nonce() {
     let payload = events.first().unwrap();
     assert_eq!(payload["box_port"], box_port);
     assert_eq!(payload["reason"], "ssh exited");
-    assert_no_nonce(payload);
 }
 
 /// A claims, stalls past the lease, and B takes over; returns the row's box port.

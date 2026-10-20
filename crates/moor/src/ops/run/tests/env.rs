@@ -11,7 +11,7 @@ use moor_core::ErrorKind;
 
 use super::stage::{command_execs, command_results};
 use super::{command, ready, ready_with, req, run};
-use crate::testing::proxy_host::{FakeProxyHost, FAKE_NONCE};
+use crate::testing::proxy_host::FakeProxyHost;
 
 #[test]
 fn run_gets_the_repo_env_and_proxy_variables() {
@@ -27,10 +27,6 @@ fn run_gets_the_repo_env_and_proxy_variables() {
     let script = spec.argv.get(2).unwrap();
     assert_eq!(spec.argv.first().map(String::as_str), Some("sh"));
     assert!(script.contains("export HTTPS_PROXY="), "{script}");
-    assert!(
-        !script.contains(&*String::from_utf8_lossy(FAKE_NONCE)),
-        "{script}"
-    );
     assert_eq!(command(&spec.argv), ["sh", "-c", "echo hi"]);
 }
 

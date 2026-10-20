@@ -89,7 +89,6 @@ pub(crate) fn proxy(
     let ep = cx.proxy_host().ensure(&spec).map_err(|e| e.to_string())?;
     let addr = ProxyAddr {
         box_port: ep.box_port,
-        nonce: ep.nonce,
         ca_pem: ep.ca_pem,
         box_env: exec_env::merged_env(repo_env, rule_env.clone()),
         forge,

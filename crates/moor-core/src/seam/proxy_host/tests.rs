@@ -45,26 +45,13 @@ fn spec_with_rule_round_trips_through_json() {
 }
 
 #[test]
-fn spec_json_holds_no_nonce_or_secret() {
+fn spec_json_holds_no_secret() {
     let text = serde_json::to_string(&spec(true)).unwrap().to_lowercase();
-    assert!(!text.contains("nonce"));
     assert!(!text.contains("secret"));
     let value: serde_json::Value = serde_json::from_str(&text).unwrap();
     for key in value.as_object().unwrap().keys() {
-        assert!(!key.contains("nonce") && !key.contains("secret"));
+        assert!(!key.contains("secret"));
     }
-}
-
-#[test]
-fn endpoint_debug_redacts_nonce() {
-    let ep = ProxyEndpoint {
-        box_port: 4000,
-        nonce: Secret::new(b"hunter2-nonce".to_vec()),
-        ca_pem: String::new(),
-    };
-    let text = format!("{ep:?}");
-    assert!(!text.contains("hunter2-nonce"));
-    assert!(text.contains("<redacted>"));
 }
 
 #[test]

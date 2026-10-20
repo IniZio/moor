@@ -7,14 +7,10 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use moor_core::seam::proxy_host::{
     ProxyEndpoint, ProxyHost, ProxyHostError, ProxySpec, ProxyStatus,
 };
-use moor_core::{BoxId, Secret};
-use zeroize::Zeroizing;
+use moor_core::BoxId;
 
 /// Box port returned by an unscripted `ensure`.
 pub(crate) const FAKE_BOX_PORT: u16 = 40123;
-
-/// Nonce bytes returned by an unscripted `ensure`.
-pub(crate) const FAKE_NONCE: &[u8] = b"fake-proxy-nonce";
 
 /// A recorded `ProxyHost` call.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -26,7 +22,6 @@ pub(crate) enum ProxyHostCall {
 
 struct State {
     box_port: u16,
-    nonce: Zeroizing<Vec<u8>>,
     ensure_error: Option<ProxyHostError>,
     status: Result<ProxyStatus, ProxyHostError>,
     upcoming: VecDeque<ProxyStatus>,
@@ -46,7 +41,6 @@ impl FakeProxyHost {
         Self {
             state: Arc::new(Mutex::new(State {
                 box_port: FAKE_BOX_PORT,
-                nonce: Zeroizing::new(FAKE_NONCE.to_vec()),
                 ensure_error: None,
                 status: Ok(ProxyStatus::Absent),
                 upcoming: VecDeque::new(),
@@ -59,14 +53,6 @@ impl FakeProxyHost {
     fn with_state(self, f: impl FnOnce(&mut State)) -> Self {
         f(&mut self.lock());
         self
-    }
-
-    /// Makes `ensure` return `box_port` and a fresh secret holding `nonce`.
-    pub(crate) fn with_endpoint(self, box_port: u16, nonce: &[u8]) -> Self {
-        self.with_state(|s| {
-            s.box_port = box_port;
-            s.nonce = Zeroizing::new(nonce.to_vec());
-        })
     }
 
     /// Makes `ensure` fail with `error`.
@@ -102,7 +88,6 @@ impl FakeProxyHost {
     }
 }
 
-/// Debug output never includes nonce bytes.
 impl fmt::Debug for FakeProxyHost {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = self.lock();
@@ -122,7 +107,6 @@ impl ProxyHost for FakeProxyHost {
         }
         Ok(ProxyEndpoint {
             box_port: s.box_port,
-            nonce: Secret::new(s.nonce.to_vec()),
             ca_pem: String::new(),
         })
     }

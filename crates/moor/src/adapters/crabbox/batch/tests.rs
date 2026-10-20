@@ -14,7 +14,7 @@ use crate::testing::proc::{Reply, ScriptedProc};
 
 type Results = Vec<Result<StepDone, DriverError>>;
 
-const SECRET: &[u8] = b"s3cret-nonce";
+const SECRET: &[u8] = b"s3cret-value";
 
 fn connect() -> Vec<String> {
     ["ssh", "-t", "-i", "/k/id", "-p", "22", "u@10.0.0.1"]
@@ -106,9 +106,9 @@ fn put_bytes_ride_stdin_and_never_argv() {
     let steps = [put("/w/a", SECRET, 0o600), put("/w/b", b"tail", 0o644)];
     batch(&p, &connect(), &steps);
     let calls = p.calls();
-    assert!(calls.iter().all(|c| c.stdin == b"s3cret-noncetail"));
+    assert!(calls.iter().all(|c| c.stdin == b"s3cret-valuetail"));
     for c in &calls {
-        assert!(c.args.iter().all(|a| !a.contains("s3cret-nonce")), "{c:?}");
+        assert!(c.args.iter().all(|a| !a.contains("s3cret-value")), "{c:?}");
     }
 }
 

@@ -85,8 +85,6 @@ fn no_row_is_a_no_op() {
 fn a_supervisor_that_ignores_the_signal_is_reported_incomplete() {
     let f = fx();
     with_proxy(&f);
-    let row = f.store.proxy(f.id).unwrap().unwrap();
-    let secret = String::from_utf8(row.nonce.expose().to_vec()).unwrap();
 
     let err = f.sup.stop(f.id).unwrap_err();
 
@@ -95,7 +93,6 @@ fn a_supervisor_that_ignores_the_signal_is_reported_incomplete() {
         ProxyHostError::Incomplete("the proxy supervisor did not exit within 3s".into())
     );
     assert!(!f.has_row());
-    assert!(!err.to_string().contains(&secret));
 }
 
 #[test]

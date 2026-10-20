@@ -3,11 +3,10 @@
 use std::sync::Arc;
 
 use moor_core::activity::{PaneRead, PaneStatus};
-use moor_core::{Secret, ShowReq};
+use moor_core::ShowReq;
 
 use super::super::run;
 use super::{engine_cx, pane_only, req, working};
-use crate::proxy::supervisor::LEASE;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 
@@ -50,17 +49,12 @@ fn pane_is_null_without_the_flag_or_a_session() {
 
 const NONCE: &str = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-abcde";
 
-/// Show Box `a` over a pane whose text is `tail`, with a proxy row for `nonce` if asked.
-fn show_tail(tail: &str, nonce: &str, proxy_row: bool) -> String {
+/// Show Box `a` over a pane whose text is `tail`.
+fn show_tail(tail: &str) -> String {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(FakeDriver::new());
     let cx = engine_cx(dir.path(), &driver, &Arc::new(FakeEngine::new()));
-    let id = working(&cx, &driver, "a", Some("s-a"));
-    if proxy_row {
-        let nonce = Secret::new(nonce.as_bytes().to_vec());
-        let reserved = cx.store().unwrap().reserve(id, &nonce, cx.rng(), LEASE);
-        assert!(reserved.is_ok());
-    }
+    working(&cx, &driver, "a", Some("s-a"));
     let mut probes = pane_only(PaneStatus::Working);
     if let PaneRead::Fresh(obs) = &mut probes.pane {
         obs.tail = format!("{tail}\n");
@@ -75,23 +69,9 @@ fn show_tail(tail: &str, nonce: &str, proxy_row: bool) -> String {
 }
 
 #[test]
-fn pane_redacts_the_stored_nonce() {
-    let tail = show_tail(
-        "HTTPS_PROXY=http://moor:short-nonce@127.0.0.1:21717",
-        "short-nonce",
-        true,
-    );
-    assert!(
-        tail.contains("http://moor:<nonce>@127.0.0.1:21717"),
-        "{tail}"
-    );
-    assert!(!tail.contains("short-nonce"));
-}
-
-#[test]
 fn pane_redacts_a_nonce_shaped_userinfo_without_a_proxy_row() {
     let line = format!("HTTPS_PROXY=http://moor:{NONCE}@127.0.0.1:21717");
-    let tail = show_tail(&line, NONCE, false);
+    let tail = show_tail(&line);
     assert!(
         tail.contains("http://moor:<nonce>@127.0.0.1:21717"),
         "{tail}"
@@ -101,14 +81,14 @@ fn pane_redacts_a_nonce_shaped_userinfo_without_a_proxy_row() {
 
 #[test]
 fn pane_leaves_a_non_nonce_userinfo_alone() {
-    let tail = show_tail("http://moor:x@127.0.0.1:21717", NONCE, false);
+    let tail = show_tail("http://moor:x@127.0.0.1:21717");
     assert!(tail.contains("http://moor:x@127.0.0.1:21717"), "{tail}");
 }
 
 #[test]
 fn pane_redacts_every_occurrence_on_a_line() {
     let line = format!("http://moor:{NONCE}@a https://moor:{NONCE}@b");
-    let tail = show_tail(&line, NONCE, false);
+    let tail = show_tail(&line);
     assert_eq!(
         tail.trim_end(),
         "http://moor:<nonce>@a https://moor:<nonce>@b"

@@ -1,5 +1,4 @@
-//! A launch without a missing `gh` costs two Box calls after the connect lookup, and the nonce
-//! stays off argv.
+//! A launch without a missing `gh` costs two Box calls after the connect lookup.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -9,7 +8,7 @@ use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
 use moor_core::seam::engine::{Engine, EngineError, LaunchPrompt, LaunchReq};
 use moor_core::seam::surface::Surface;
-use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId, Secret};
+use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId};
 
 use crate::adapters::box_agent::claude::Claude;
 use crate::adapters::box_agent::gh_release::fake::ready_release;
@@ -20,7 +19,6 @@ use crate::testing::driver::FakeDriver;
 use crate::testing::surface::FakeSurface;
 
 const ENVIRON: &str = "PATH=/usr/bin\0HOME=/home/box\0LANG=C\0";
-const NONCE: &str = "distinct-nonce-7f3a91";
 
 fn exited(codes: &[i32]) -> Vec<Result<ExecOutcome, DriverError>> {
     codes
@@ -69,7 +67,6 @@ fn req(s: &FakeSurface, proxy: bool) -> LaunchReq {
         proxy: proxy.then(|| {
             Arc::new(ProxyAddr {
                 box_port: 4567,
-                nonce: Secret::new(NONCE.as_bytes().to_vec()),
                 ca_pem: "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n".to_owned(),
                 box_env: Vec::new(),
                 forge: false,
@@ -183,33 +180,6 @@ fn the_agent_check_names_the_program_and_the_launch_path() {
         script,
         "export PATH=\"$HOME/.local/bin:$HOME/.bun/bin:$PATH\"; command -v 'claude' >/dev/null 2>&1"
     );
-}
-
-fn leaks(text: &str) -> bool {
-    text.contains(NONCE)
-}
-
-#[test]
-fn the_nonce_never_reaches_the_box() {
-    let run = launch(true, &[0, 0], ready_release());
-    run.out.unwrap();
-    let (d, s) = (&run.d, &run.s);
-    assert!(d.execs().iter().all(|e| !leaks(&format!("{e:?}"))));
-    assert!(d.calls().iter().all(|c| !leaks(c)));
-    assert!(box_calls(d).iter().all(|c| !leaks(c)));
-    assert!(d
-        .batch_connects()
-        .iter()
-        .all(|c| c.iter().all(|a| !leaks(a))));
-    assert!(s.opened().iter().all(|c| !leaks(&format!("{c:?}"))));
-    assert!(s.calls().iter().all(|c| !leaks(c)));
-    let holders: Vec<_> = d
-        .puts()
-        .into_iter()
-        .filter(|p| leaks(&String::from_utf8_lossy(&p.2)))
-        .map(|p| p.1.as_str().to_owned())
-        .collect();
-    assert!(holders.is_empty(), "{holders:?}");
 }
 
 #[test]

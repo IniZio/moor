@@ -232,11 +232,8 @@ fn record_failure(
     e: &EngineError,
 ) -> Result<AgentLaunchView, CommandError> {
     let mut failure = failure(cx, e);
-    // A proxy log tail can quote the proxy URL, whose userinfo is the nonce.
-    let nonce = store.proxy(id).ok().flatten();
-    let nonce = nonce.as_ref().map(|r| r.nonce.expose());
-    failure.message = redact_nonce(&failure.message, nonce);
-    failure.tail = failure.tail.map(|t| redact_nonce(&t, nonce));
+    failure.message = redact_nonce(&failure.message, None);
+    failure.tail = failure.tail.map(|t| redact_nonce(&t, None));
     record(store, id, Field::Set(to_json(&failure)?), Some(&failure))?;
     Ok(AgentLaunchView {
         launched: false,

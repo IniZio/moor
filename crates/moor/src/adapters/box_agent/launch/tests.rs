@@ -8,7 +8,7 @@ use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
 use moor_core::seam::engine::{Engine, EngineError, LaunchPrompt, LaunchReq};
 use moor_core::seam::surface::{Surface, SurfaceError};
-use moor_core::{BoxHandle, BoxId, BoxPath, ProviderId, Secret};
+use moor_core::{BoxHandle, BoxId, BoxPath, ProviderId};
 
 use crate::adapters::box_agent::claude::Claude;
 use crate::adapters::box_agent::gh_release::fake::ready_release;
@@ -316,15 +316,12 @@ fn a_box_without_a_home_fails_before_delivering() {
 fn proxy_addr() -> ProxyAddr {
     ProxyAddr {
         box_port: 4567,
-        nonce: Secret::new(NONCE.to_vec()),
         ca_pem: "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n".to_owned(),
         box_env: Vec::new(),
         forge: false,
         direct: Vec::new(),
     }
 }
-
-const NONCE: &[u8] = b"sentinel-9c2e";
 
 fn req_with_proxy(s: &FakeSurface) -> LaunchReq {
     LaunchReq {
@@ -340,28 +337,8 @@ fn launch_with_proxy() -> (Arc<FakeDriver>, Arc<FakeSurface>) {
     (d, s)
 }
 
-fn has_nonce(text: &str) -> bool {
-    text.contains("sentinel-9c2e")
-}
-
 #[test]
-fn the_nonce_never_reaches_the_box() {
-    let (d, s) = launch_with_proxy();
-    assert!(s.opened().iter().all(|c| !has_nonce(&format!("{c:?}"))));
-    assert!(s.calls().iter().all(|c| !has_nonce(c)));
-    assert!(d.execs().iter().all(|e| !has_nonce(&format!("{e:?}"))));
-    assert!(d.calls().iter().all(|c| !has_nonce(c)));
-    let holders: Vec<_> = d
-        .puts()
-        .into_iter()
-        .filter(|p| has_nonce(&String::from_utf8_lossy(&p.2)))
-        .map(|p| p.1.as_str().to_owned())
-        .collect();
-    assert!(holders.is_empty(), "{holders:?}");
-}
-
-#[test]
-fn a_proxy_launch_stages_the_public_ca_and_no_nonce_file() {
+fn a_proxy_launch_stages_the_public_ca() {
     let (d, _) = launch_with_proxy();
     let staged: Vec<_> = d
         .puts()
@@ -369,9 +346,6 @@ fn a_proxy_launch_stages_the_public_ca_and_no_nonce_file() {
         .filter(|p| p.1.as_str().starts_with(&format!("{CRED}/")))
         .map(|p| (p.1.as_str().to_owned(), p.3))
         .collect();
-    assert!(staged
-        .iter()
-        .all(|(path, _)| !path.ends_with("/proxy-nonce")));
     assert!(staged.contains(&(format!("{CRED}/proxy-ca.pem"), 0o644)));
     assert!(staged.iter().all(|(path, _)| !path.contains("/bin/")));
 }
@@ -380,7 +354,6 @@ fn a_proxy_launch_stages_the_public_ca_and_no_nonce_file() {
 fn a_proxy_launch_keeps_the_cred_dir_for_the_agent_and_exports_the_proxy_env() {
     let (_, s) = launch_with_proxy();
     let script = script_of(&pane_line(&s));
-    assert!(!has_nonce(&script), "{script}");
     assert!(!script.contains(&format!("\nrm -rf '{CRED}'")), "{script}");
     for want in [
         "GIT_CONFIG_COUNT=2",

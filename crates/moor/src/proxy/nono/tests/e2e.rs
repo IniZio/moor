@@ -24,8 +24,8 @@ use crate::testing::clock::FakeClock;
 
 /// The credential every rule fetches.
 const SECRET: &str = "s3cr3t-credential-value-7f3a";
-/// The Box nonce used as proxy password.
-const NONCE: &str = "nonce_AbCdEf-0123456789";
+/// The session token nono checks, sent as the proxy password.
+const TOKEN: &str = "token_AbCdEf-0123456789";
 /// What the client sends before the proxy swaps it out.
 const PLACEHOLDER: &str = "Bearer placeholder-not-real";
 /// Box id whose CA directory the proxy uses.
@@ -59,8 +59,8 @@ struct Rig {
     ca: ca::BoxCa,
     /// Running proxy.
     proxy: Option<NonoProxy>,
-    /// Box nonce.
-    nonce: Secret,
+    /// Session token nono checks.
+    token: Secret,
 }
 
 impl Rig {
@@ -151,7 +151,7 @@ fn source(count: &Arc<AtomicUsize>, fail: &Arc<AtomicBool>, user: Option<&str>) 
 /// Starts a proxy for `rules` over `up`, with the given Box CA and capture.
 fn start_proxy(
     dir: &Path,
-    nonce: &Secret,
+    token: &Secret,
     ca: &ca::BoxCa,
     ups: [&Upstream; 2],
     capture: &Arc<MoorCapture>,
@@ -160,7 +160,7 @@ fn start_proxy(
     let rules = rules(ups[0].port, ups[1].port);
     let cfg = build_config(&NonoSpec {
         rules: &rules,
-        nonce,
+        token,
         ca,
         ca_dir: &ca_dir,
         upstream_ca: Some(&ups[0].ca_path),
@@ -192,8 +192,8 @@ fn rig() -> Rig {
     ]);
     let capture = Arc::new(MoorCapture::new(sources, clock.clone()));
     let ca = ca::load_or_create(&dir.path().join("state"), BOX_ID).unwrap();
-    let nonce = Secret::new(NONCE.as_bytes().to_vec());
-    let proxy = start_proxy(dir.path(), &nonce, &ca, [&up, &up2], &capture);
+    let token = Secret::new(TOKEN.as_bytes().to_vec());
+    let proxy = start_proxy(dir.path(), &token, &ca, [&up, &up2], &capture);
     Rig {
         dir,
         up,
@@ -203,13 +203,13 @@ fn rig() -> Rig {
         clock,
         ca,
         proxy: Some(proxy),
-        nonce,
+        token,
     }
 }
 
 /// A client that goes through the proxy and trusts only `ca_pem`.
 fn client(proxy_port: u16, ca_pem: &str) -> Agent {
-    upstream::client(proxy_port, NONCE, ca_pem)
+    upstream::client(proxy_port, TOKEN, ca_pem)
 }
 
 /// GETs `url` with the placeholder credential; status or error text.
@@ -394,7 +394,7 @@ fn box_ca_is_reused_across_restart_and_key_is_private() {
 
     let proxy = start_proxy(
         rig.dir.path(),
-        &rig.nonce,
+        &rig.token,
         &again,
         [&rig.up, &rig.up2],
         &rig.capture,
@@ -516,7 +516,7 @@ fn secret_bytes_never_appear_in_logs_debug_or_errors() {
     let rules = rules(rig.up.port, rig.up2.port);
     let cfg = build_config(&NonoSpec {
         rules: &rules,
-        nonce: &rig.nonce,
+        token: &rig.token,
         ca: &rig.ca,
         ca_dir: &ca::ca_dir(&rig.state(), BOX_ID),
         upstream_ca: None,
@@ -525,6 +525,6 @@ fn secret_bytes_never_appear_in_logs_debug_or_errors() {
     texts.push(format!("{cfg:?}"));
     for t in &texts {
         assert!(!t.contains(SECRET), "secret leaked: {t}");
-        assert!(!t.contains(NONCE), "nonce leaked: {t}");
+        assert!(!t.contains(TOKEN), "token leaked: {t}");
     }
 }

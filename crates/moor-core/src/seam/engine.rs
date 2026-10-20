@@ -110,9 +110,9 @@ impl LaunchReq {
 }
 
 impl PartialEq for LaunchReq {
-    /// Proxies compare by port and nonce digest, since the nonce itself is not comparable.
+    /// Proxies compare by port.
     fn eq(&self, other: &Self) -> bool {
-        let proxy = |p: &Option<Arc<ProxyAddr>>| p.as_ref().map(|a| (a.box_port, a.nonce.digest()));
+        let proxy = |p: &Option<Arc<ProxyAddr>>| p.as_ref().map(|a| a.box_port);
         self.id == other.id
             && self.handle == other.handle
             && self.workdir == other.workdir

@@ -12,12 +12,7 @@ use moor_core::domain::box_state::BoxLifecycle;
 fn live_proxy(f: &Fx) {
     let store = f.cx.store().unwrap();
     let lease = Duration::from_secs(30);
-    let nonce = moor_core::secret::Secret::new(b"nonce".to_vec());
-    drop(
-        store
-            .reserve(f.id, &nonce, &FakeRng::default(), lease)
-            .unwrap(),
-    );
+    drop(store.reserve(f.id, &FakeRng::default(), lease).unwrap());
     store.claim_lease(f.id, "owner", lease).unwrap();
     let box_port = store.proxy(f.id).unwrap().unwrap().box_port;
     let proc = ReadyProc {

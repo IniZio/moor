@@ -3,7 +3,6 @@
 use moor_core::domain::run::SyncMode;
 use moor_core::seam::agent_profile::ProxyAddr;
 use moor_core::seam::driver::{DriverError, ExecOutcome};
-use moor_core::secret::Secret;
 use moor_core::{BoxId, BoxPath};
 
 use super::{cfg, only, rig, run_setup, run_setup_with};
@@ -45,7 +44,6 @@ fn setup_gets_the_proxy_and_ca_variables_the_agent_gets() {
         box_id: BoxId::new(1),
         addr: ProxyAddr {
             box_port: 4000,
-            nonce: Secret::new(b"s3cret-value".to_vec()),
             ca_pem: "-----BEGIN CERTIFICATE-----\nca\n-----END CERTIFICATE-----\n".to_owned(),
             forge: false,
             box_env: vec![("A".to_owned(), "1".to_owned())],
@@ -111,7 +109,6 @@ fn proxy() -> BoxProxy {
         box_id: BoxId::new(1),
         addr: ProxyAddr {
             box_port: 4000,
-            nonce: Secret::new(b"s3cret-value".to_vec()),
             ca_pem: "-----BEGIN CERTIFICATE-----\nca\n-----END CERTIFICATE-----\n".to_owned(),
             forge: false,
             box_env: Vec::new(),

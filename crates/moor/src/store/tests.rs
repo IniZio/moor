@@ -94,7 +94,7 @@ fn open_creates_wal_file_with_schema_version() {
             r.get(0)
         })
         .unwrap();
-    assert_eq!(v, "4");
+    assert_eq!(v, "5");
     drop(raw);
     let (store, _) = open(dir.path());
     assert!(store.open_boxes().unwrap().is_empty());
@@ -110,7 +110,7 @@ fn schema_version_is_four() {
             r.get(0)
         })
         .unwrap();
-    assert_eq!(v, "4");
+    assert_eq!(v, "5");
 }
 
 #[test]

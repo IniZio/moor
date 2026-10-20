@@ -207,9 +207,8 @@ pub(crate) fn apply(
         Ok(ExecOutcome::Interrupted) => "interrupted".to_owned(),
         Err(e) => e,
     };
-    let nonce = proxy.as_ref().map(|p| p.addr.nonce.expose());
     let logged = std::fs::read_to_string(&log)
-        .map(|s| tail(&redact_nonce(&s, nonce)))
+        .map(|s| tail(&redact_nonce(&s, None)))
         .unwrap_or_default();
     Err(fail(if logged.is_empty() { reason } else { logged }))
 }

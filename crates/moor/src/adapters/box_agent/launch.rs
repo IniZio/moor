@@ -11,7 +11,6 @@ use moor_core::seam::driver::{BoxStep, Driver, ExecOutcome, ExecSpec, StepDone};
 use moor_core::seam::engine::{EngineError, LaunchNotice, LaunchReq, SessionRef};
 use moor_core::seam::proc::{Deadline, Tool};
 use moor_core::seam::surface::{PaneCmd, PaneRef, Surface};
-use moor_core::Secret;
 
 use self::install::StepResult;
 use self::steps::{Plan, Staged};
@@ -67,7 +66,6 @@ pub(super) fn launch(
         workdir: req.workdir.clone(),
         proxy: req.proxy.as_deref().map(|p| ProxyAddr {
             box_port: p.box_port,
-            nonce: Secret::new(p.nonce.expose().to_vec()),
             ca_pem: p.ca_pem.clone(),
             box_env: p.box_env.clone(),
             forge: p.forge,

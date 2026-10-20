@@ -30,8 +30,6 @@ use crate::testing::driver::FakeDriver;
 use crate::testing::forge::FakeForge;
 use crate::testing::rng::FakeRng;
 
-/// The nonce the proxy row is reserved with.
-const NONCE: &str = "nonce_e2e-0123456789";
 /// What the client sends before the proxy swaps it out.
 const PLACEHOLDER: &str = "Bearer placeholder-not-real";
 /// The credential the fake credential source returns.
@@ -106,12 +104,7 @@ fn box_with_machine(store: &Store, driver: &FakeDriver) -> (BoxId, BoxHandle) {
             ..Fields::default()
         });
     store.apply(d).unwrap();
-    let nonce = Secret::new(NONCE.as_bytes().to_vec());
-    drop(
-        store
-            .reserve(id, &nonce, &FakeRng::default(), LEASE)
-            .unwrap(),
-    );
+    drop(store.reserve(id, &FakeRng::default(), LEASE).unwrap());
     (id, got.handle)
 }
 

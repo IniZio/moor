@@ -142,7 +142,7 @@ fn launch(
     })
 }
 
-/// Runs the command; when it may never have started, drops the staged Proxy nonce.
+/// Runs the command; when it may never have started, drops the staged Proxy files.
 fn exec_in_box(
     cx: &Cx,
     row: &BoxRow,

@@ -18,7 +18,7 @@ use crate::proxy::nono::{build_config, ca, NonoProxy, NonoSpec};
 use crate::testing::clock::FakeClock;
 
 const SECRET: &str = "gho_r3al-forge-token-9c1e";
-const NONCE: &str = "nonce_AbCdEf-0123456789";
+const TOKEN: &str = "token_AbCdEf-0123456789";
 const PLACEHOLDER: &str = "token gho_moor-proxy";
 const BOX_ID: BoxId = BoxId::new(7);
 
@@ -65,10 +65,10 @@ fn send(method: &str, path: &str) -> (Vec<Seen>, Vec<String>) {
     );
     let state = dir.path().join("state");
     let ca = ca::load_or_create(&state, BOX_ID).unwrap();
-    let nonce = Secret::new(NONCE.as_bytes().to_vec());
+    let token = Secret::new(TOKEN.as_bytes().to_vec());
     let mut cfg = build_config(&NonoSpec {
         rules: &rules,
-        nonce: &nonce,
+        token: &token,
         ca: &ca,
         ca_dir: &ca::ca_dir(&state, BOX_ID),
         upstream_ca: Some(&up.ca_path),
@@ -77,7 +77,7 @@ fn send(method: &str, path: &str) -> (Vec<Seen>, Vec<String>) {
     cfg.0.upstream_extra_ca_pems = vec![up.ca_path.to_string_lossy().into_owned()];
     let capture = Arc::new(capture);
     let proxy = NonoProxy::start(cfg, Arc::clone(&capture)).unwrap();
-    let agent = upstream::client(proxy.port(), NONCE, ca.cert_pem());
+    let agent = upstream::client(proxy.port(), TOKEN, ca.cert_pem());
     let url = format!("https://localhost:{}{path}", up.port);
     let status = match method {
         "GET" => agent.get(&url).header("Authorization", PLACEHOLDER).call(),
@@ -141,7 +141,7 @@ fn any_other_method_or_path_is_withheld_without_the_placeholder() {
             unreachable!("{seen:?}")
         };
         assert_eq!(only.authorization, None, "{method} {path}: {}", only.head);
-        for leaked in [SECRET, "gho_moor-proxy", NONCE] {
+        for leaked in [SECRET, "gho_moor-proxy", TOKEN] {
             assert!(
                 !only.head.contains(leaked),
                 "{method} {path}: {}",

@@ -12,12 +12,14 @@ use crate::store::ReadyProc;
 use crate::testing::bridge::bridge;
 use crate::testing::proc::ScriptedProc;
 use crate::testing::rng::FakeRng;
+use crate::testing::tcp_front_v4;
 
 /// The older moor's supervisor: alive, leading its group, in this boot.
 const OLD_PID: u32 = 4242;
 const OLD_OWNER: &str = "tcp-front-supervisor";
 
-/// Records a ready row the way a moor build with a TCP front did, holding a live lease.
+/// Records a ready row the way a moor build with a TCP front did, holding a live lease, in the v4
+/// file that build used.
 fn record_tcp_front(w: &World) -> u16 {
     let port = w.row().box_port;
     w.store.claim_lease(w.id, OLD_OWNER, LEASE).unwrap();
@@ -27,10 +29,7 @@ fn record_tcp_front(w: &World) -> u16 {
         boot_id: Some(BOOT),
     };
     let _ = w.store.mark_ready(w.id, OLD_OWNER, port, proc).unwrap();
-    rusqlite::Connection::open(w.dir.path().join("moor.db"))
-        .unwrap()
-        .execute("UPDATE proxy SET host_port = 4000", [])
-        .unwrap();
+    tcp_front_v4(&w.dir.path().join("moor.db"));
     port
 }
 
@@ -62,8 +61,7 @@ fn an_older_moors_tcp_front_is_replaced_and_the_box_port_reaches_the_socket_fron
         Arc::new(FakeRng::default()),
         Some(w.dir.path().to_path_buf()),
         Arc::new(|| Ok(())),
-    )
-    .keeping_nonce();
+    );
 
     let errors = reconcile(&host, proc.as_ref(), w.clock.clone(), w.dir.path());
 
@@ -92,8 +90,7 @@ fn an_older_moors_tcp_front_keeps_running_when_the_tunnel_check_fails() {
         Arc::new(FakeRng::default()),
         Some(w.dir.path().to_path_buf()),
         Arc::new(move || Err(refusal.to_owned())),
-    )
-    .keeping_nonce();
+    );
 
     let errors = reconcile(&host, proc.as_ref(), w.clock.clone(), w.dir.path());
 

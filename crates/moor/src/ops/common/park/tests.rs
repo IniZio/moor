@@ -6,7 +6,6 @@ use std::time::Duration;
 
 use moor_core::domain::decision::{Decision, NewBox};
 use moor_core::seam::clock::{Clock, Ts};
-use moor_core::secret::Secret;
 use moor_core::{BoxId, BoxName};
 
 use super::{park_tunnel, restore_tunnel, LEASE};
@@ -60,12 +59,7 @@ fn fx() -> Fx {
 fn live() -> Fx {
     let f = fx();
     let store = f.cx.store().unwrap();
-    let nonce = Secret::new(b"nonce".to_vec());
-    drop(
-        store
-            .reserve(f.id, &nonce, &FakeRng::default(), LEASE)
-            .unwrap(),
-    );
+    drop(store.reserve(f.id, &FakeRng::default(), LEASE).unwrap());
     drop(store.claim_lease(f.id, "sup", LEASE).unwrap());
     let box_port = store.proxy(f.id).unwrap().unwrap().box_port;
     let proc = ReadyProc {
@@ -99,12 +93,7 @@ fn stale_lease_is_not_asked() {
 fn unready_proxy_is_not_asked() {
     let f = fx();
     let store = f.cx.store().unwrap();
-    let nonce = Secret::new(b"nonce".to_vec());
-    drop(
-        store
-            .reserve(f.id, &nonce, &FakeRng::default(), LEASE)
-            .unwrap(),
-    );
+    drop(store.reserve(f.id, &FakeRng::default(), LEASE).unwrap());
     drop(store.claim_lease(f.id, "sup", LEASE).unwrap());
     park_tunnel(&f.cx, store, f.id).unwrap();
     assert_eq!(store.tunnel_request(f.id).unwrap(), None);

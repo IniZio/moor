@@ -26,8 +26,8 @@ use crate::testing::clock::FakeClock;
 
 /// The credential the route injects.
 const SECRET: &str = "fake-chain-credential-5d1e";
-/// The Box nonce used as proxy password.
-const NONCE: &str = "nonce_AbCdEf-0123456789";
+/// The session token nono checks, sent as the proxy password.
+const TOKEN: &str = "token_AbCdEf-0123456789";
 /// Box id whose CA directory the proxy uses.
 const BOX_ID: BoxId = BoxId::new(9);
 /// The GraphQL body the client posts.
@@ -170,7 +170,7 @@ fn chained_config(ca: &ca::BoxCa, ca_dir: &Path, filter_port: u16) -> ProxyConfi
         strict_filter: true,
         require_auth: true,
         strict_connect_auth: true,
-        session_token: Some(Zeroizing::new(NONCE.to_owned())),
+        session_token: Some(Zeroizing::new(TOKEN.to_owned())),
         routes: vec![route],
         intercept_ca_dir: Some(ca_dir.to_path_buf()),
         preloaded_ca: Some(ca.preloaded()),
@@ -223,7 +223,7 @@ fn intercepted_route_chains_through_external_filter_with_body_visible() {
         )
         .unwrap();
 
-    let client = upstream::client(handle.port, NONCE, ca.cert_pem());
+    let client = upstream::client(handle.port, TOKEN, ca.cert_pem());
     let mut response = client
         .post("https://api.github.com/graphql")
         .header("Authorization", "Bearer placeholder-not-real")

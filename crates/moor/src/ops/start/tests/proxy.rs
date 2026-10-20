@@ -17,7 +17,7 @@ use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::forge::FakeForge;
 use crate::testing::proc::Reply;
-use crate::testing::proxy_host::{FakeProxyHost, ProxyHostCall, FAKE_BOX_PORT, FAKE_NONCE};
+use crate::testing::proxy_host::{FakeProxyHost, ProxyHostCall, FAKE_BOX_PORT};
 
 fn goal_req() -> StartReq {
     StartReq {
@@ -61,7 +61,6 @@ fn the_first_launch_ensures_the_proxy_once_and_hands_the_agent_its_address() {
     let launches = engine.launches();
     let addr = launches.first().unwrap().proxy.as_ref().unwrap();
     assert_eq!(addr.box_port, FAKE_BOX_PORT);
-    assert_eq!(addr.nonce.expose(), FAKE_NONCE);
 }
 
 #[test]
@@ -110,7 +109,6 @@ fn a_relaunch_ensures_the_proxy_again() {
     assert_eq!(ensures, 2);
     let [first, second] = [0, 1].map(|n| launches.get(n).unwrap().proxy.clone().unwrap());
     assert_eq!(first.box_port, second.box_port);
-    assert_eq!(first.nonce.expose(), second.nonce.expose());
 }
 
 #[test]
@@ -160,25 +158,6 @@ fn only_the_last_lines_of_a_long_proxy_failure_are_kept() {
     assert_eq!(tail.lines().last(), Some("line 25"));
 }
 
-#[test]
-fn the_nonce_stays_out_of_every_record_and_the_spec() {
-    let (w, engine, fake) = host_world(FakeProxyHost::new());
-    let v = run(&w.cx, &goal_req()).unwrap();
-    let id = BoxId::new(v.boxed.id);
-    let nonce = String::from_utf8(FAKE_NONCE.to_vec()).unwrap();
-    let mut seen = vec![format!("{:?}", fake.calls())];
-    for call in w.proc.calls() {
-        seen.push(format!("{:?} {:?}", call.args, call.env));
-    }
-    for e in w.cx.store().unwrap().events(id, 1000).unwrap() {
-        seen.push(format!("{} {}", e.kind, e.payload));
-    }
-    seen.push(format!("{:?}", engine.launches()));
-    for text in seen {
-        assert!(!text.contains(&nonce), "{text}");
-    }
-}
-
 fn spec_of(fake: &FakeProxyHost) -> moor_core::seam::proxy_host::ProxySpec {
     fake.calls()
         .into_iter()
@@ -221,8 +200,6 @@ fn the_spec_carries_the_box_repo_and_resolved_rules() {
         env_of(&addr.box_env, "CLAUDE_CODE_OAUTH_TOKEN"),
         Some("moor-proxy")
     );
-    let nonce = String::from_utf8(FAKE_NONCE.to_vec()).unwrap();
-    assert!(!format!("{:?}", addr.box_env).contains(&nonce));
 }
 
 /// Rule names the proxy gets for a Box with a repo, under user config `github.identity`.

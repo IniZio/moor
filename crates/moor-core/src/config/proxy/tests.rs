@@ -135,7 +135,7 @@ fn empty_hosts_rejected() {
 #[test]
 fn unknown_slots_rejected_everywhere() {
     for (frag, path) in [
-        ("inject: {form: 'Bearer {secret}{nonce}'}", "inject.form"),
+        ("inject: {form: 'Bearer {secret}{salt}'}", "inject.form"),
         ("inject: {form: 'x'}", "inject.form"),
         (
             "inject: {form: '{secret}'}, allow: ['GET /{owner}']",

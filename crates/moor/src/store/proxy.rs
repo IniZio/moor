@@ -1,4 +1,4 @@
-//! Proxy rows: the per-box nonce, reserved box port, readiness and the supervisor lease.
+//! Proxy rows: the reserved box port, readiness and the supervisor lease.
 //!
 //! The lease is an owner token plus a heartbeat timestamp. A pid alone is never trusted, because
 //! pids get reused; another claimant may take over only once the heartbeat is older than the lease.
@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use moor_core::seam::clock::Ts;
 use moor_core::seam::rng::Rng;
-use moor_core::{BoxId, Secret};
+use moor_core::BoxId;
 use rusqlite::{params, Connection, OptionalExtension, Row, TransactionBehavior};
 
 use super::{load_box, to_u32, Store, StoreError};
@@ -36,8 +36,6 @@ pub(crate) struct ReadyProc<'a> {
 pub(crate) struct ProxyRow {
     /// Owning box.
     pub(crate) box_id: BoxId,
-    /// Secret the box presents to the proxy.
-    pub(crate) nonce: Secret,
     /// Reserved box port.
     pub(crate) box_port: u16,
     /// Proxy process id; never trusted without the lease.
@@ -53,7 +51,7 @@ pub(crate) struct ProxyRow {
     /// Host boot the supervisor marked the row ready in.
     pub(crate) boot_id: Option<String>,
     /// Whether a moor build from before the socket front marked the row ready. Its supervisor
-    /// listens on host TCP and refuses a Box that sends no nonce.
+    /// listens on host TCP and refuses a Box that sends no secret.
     pub(crate) tcp_front: bool,
 }
 
@@ -61,7 +59,6 @@ impl fmt::Debug for ProxyRow {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ProxyRow")
             .field("box_id", &self.box_id)
-            .field("nonce", &format_args!("<redacted>"))
             .field("box_port", &self.box_port)
             .field("pid", &self.pid)
             .field("handle", &self.handle)
@@ -88,13 +85,12 @@ pub(crate) enum Reserve {
 }
 
 impl Store {
-    /// Reserve a box port for `box_id` and store `nonce`. Keeps the row's port if no other row
+    /// Reserve a box port for `box_id`. Keeps the row's port if no other row
     /// holds it; otherwise draws from `rng`. An existing row is reset to unready with no
     /// pid, handle or lease, unless a lease younger than `lease` is live.
     pub(crate) fn reserve(
         &self,
         box_id: BoxId,
-        nonce: &Secret,
         rng: &dyn Rng,
         lease: Duration,
     ) -> Result<Reserve, StoreError> {
@@ -125,17 +121,17 @@ impl Store {
                 }
             }
             tx.execute(
-                "UPDATE proxy SET nonce = ?, ready = 0, pid = NULL, handle = NULL, \
+                "UPDATE proxy SET ready = 0, pid = NULL, handle = NULL, \
                  lease_owner = NULL, lease_heartbeat = NULL, boot_id = NULL, updated_at = ? WHERE box = ?",
-                params![nonce.expose(), now.as_millis(), box_id.get()],
+                params![now.as_millis(), box_id.get()],
             )?;
             port
         } else {
             let port = free_port(&tx, rng)?;
             tx.execute(
-                    "INSERT INTO proxy (box, nonce, box_port, ready, updated_at) VALUES (?, ?, ?, 0, ?)",
-                    params![box_id.get(), nonce.expose(), port, now.as_millis()],
-                )?;
+                "INSERT INTO proxy (box, box_port, ready, updated_at) VALUES (?, ?, 0, ?)",
+                params![box_id.get(), port, now.as_millis()],
+            )?;
             port
         };
         tx.commit()?;
@@ -147,7 +143,7 @@ impl Store {
     pub(crate) fn proxy(&self, box_id: BoxId) -> Result<Option<ProxyRow>, StoreError> {
         let conn = self.reader()?;
         conn.query_row(
-            "SELECT box, nonce, box_port, pid, handle, ready, lease_owner, lease_heartbeat, boot_id, \
+            "SELECT box, box_port, pid, handle, ready, lease_owner, lease_heartbeat, boot_id, \
              host_port IS NOT NULL \
              FROM proxy WHERE box = ?",
             [box_id.get()],
@@ -162,7 +158,7 @@ impl Store {
     pub(crate) fn proxies(&self) -> Result<Vec<ProxyRow>, StoreError> {
         let conn = self.reader()?;
         let mut stmt = conn.prepare(
-            "SELECT box, nonce, box_port, pid, handle, ready, lease_owner, lease_heartbeat, boot_id, \
+            "SELECT box, box_port, pid, handle, ready, lease_owner, lease_heartbeat, boot_id, \
              host_port IS NOT NULL \
              FROM proxy ORDER BY box",
         )?;
@@ -171,7 +167,7 @@ impl Store {
     }
 
     /// Reset the row of `box_id` to unready with no pid, handle or lease, keeping its
-    /// nonce and box port, so the next reservation restarts it on the same port.
+    /// box port, so the next reservation restarts it on the same port.
     pub(crate) fn expire_proxy(&self, box_id: BoxId) -> Result<bool, StoreError> {
         let now = self.now();
         let conn = self.writer()?;
@@ -200,8 +196,6 @@ impl Store {
 struct RawRow {
     /// Box id column.
     box_id: i64,
-    /// Nonce column.
-    nonce: Vec<u8>,
     /// Box port column.
     box_port: i64,
     /// Pid column.
@@ -224,15 +218,14 @@ struct RawRow {
 fn raw_from_row(r: &Row<'_>) -> rusqlite::Result<RawRow> {
     Ok(RawRow {
         box_id: r.get(0)?,
-        nonce: r.get(1)?,
-        box_port: r.get(2)?,
-        pid: r.get(3)?,
-        handle: r.get(4)?,
-        ready: r.get(5)?,
-        lease_owner: r.get(6)?,
-        lease_heartbeat: r.get(7)?,
-        boot_id: r.get(8)?,
-        tcp_front: r.get(9)?,
+        box_port: r.get(1)?,
+        pid: r.get(2)?,
+        handle: r.get(3)?,
+        ready: r.get(4)?,
+        lease_owner: r.get(5)?,
+        lease_heartbeat: r.get(6)?,
+        boot_id: r.get(7)?,
+        tcp_front: r.get(8)?,
     })
 }
 
@@ -242,7 +235,6 @@ impl TryFrom<RawRow> for ProxyRow {
     fn try_from(r: RawRow) -> Result<Self, StoreError> {
         Ok(Self {
             box_id: BoxId::new(r.box_id),
-            nonce: Secret::new(r.nonce),
             box_port: to_port("box_port", r.box_port)?,
             pid: r.pid.map(|p| to_u32("proxy pid", p)).transpose()?,
             handle: r.handle,

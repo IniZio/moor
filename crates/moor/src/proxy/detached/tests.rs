@@ -13,13 +13,14 @@ use moor_core::domain::decision::{Decision, NewBox};
 use moor_core::seam::clock::{Clock as _, Ts};
 use moor_core::seam::proc::Tool;
 use moor_core::seam::proxy_host::{ProxyHost, ProxyHostError, ProxySpec, ProxyStatus};
-use moor_core::{BoxId, BoxName, Secret};
+use moor_core::{BoxId, BoxName};
 
-use super::{base64url, log_path, new_nonce, tail, DetachedSupervisor, LEASE, TAIL_LINES, WAIT};
+use super::{base64url, log_path, tail, DetachedSupervisor, LEASE, TAIL_LINES, WAIT};
 use crate::store::{Fenced, ReadyProc, Store, STORE_FILE};
 use crate::testing::clock::FakeClock;
 use crate::testing::proc::{DaemonCall, ScriptedProc};
 use crate::testing::rng::FakeRng;
+use crate::testing::tcp_front_v4;
 
 /// An adapter over fakes, with a second store on the same database to seed and inspect rows.
 pub(super) struct Fx {
@@ -119,10 +120,9 @@ impl Fx {
 
     /// Reserve a row and let a supervisor named `sup` hold its lease now.
     pub(super) fn leased_row(&self) {
-        let nonce = new_nonce(self.rng.as_ref());
         let _ = self
             .store
-            .reserve(self.id, &nonce, self.rng.as_ref(), LEASE)
+            .reserve(self.id, self.rng.as_ref(), LEASE)
             .unwrap();
         self.store.claim_lease(self.id, "sup", LEASE).unwrap();
     }
@@ -138,12 +138,6 @@ impl Fx {
     /// Whether the Box still has a proxy row.
     pub(super) fn has_row(&self) -> bool {
         self.store.proxy(self.id).unwrap().is_some()
-    }
-
-    /// The nonce stored on the Box's row, as text.
-    fn nonce_text(&self) -> String {
-        let row = self.store.proxy(self.id).unwrap().unwrap();
-        String::from_utf8(row.nonce.expose().to_vec()).unwrap()
     }
 
     /// Time slept on the shared clock since `from`.
@@ -188,7 +182,6 @@ fn the_first_ensure_spawns_one_supervisor_and_returns_its_address() {
     let row = f.store.proxy(f.id).unwrap().unwrap();
     assert!(row.ready);
     assert_eq!(ep.box_port, row.box_port);
-    assert_eq!(ep.nonce.expose(), row.nonce.expose());
 }
 
 #[test]
@@ -212,7 +205,6 @@ fn a_second_ensure_reuses_the_running_supervisor() {
 
     assert_eq!(f.proc.daemons().len(), 1);
     assert_eq!(first.box_port, second.box_port);
-    assert_eq!(first.nonce.expose(), second.nonce.expose());
 }
 
 #[test]
@@ -220,7 +212,8 @@ fn ensure_replaces_a_tcp_front_an_older_moor_left_running_on_the_same_box_port()
     let f = fx();
     f.leased_row();
     let port = f.store.proxy(f.id).unwrap().unwrap().box_port;
-    f.exec("UPDATE proxy SET ready = 1, host_port = 4000, pid = 77");
+    f.exec("UPDATE proxy SET ready = 1, pid = 77");
+    tcp_front_v4(&f.dir.path().join(STORE_FILE));
 
     let first = f.sup.ensure(&f.spec()).unwrap();
     let second = f.sup.ensure(&f.spec()).unwrap();
@@ -234,7 +227,8 @@ fn ensure_replaces_a_tcp_front_an_older_moor_left_running_on_the_same_box_port()
 fn a_tcp_front_keeps_its_lease_when_the_tunnel_check_fails() {
     let f = fx();
     f.leased_row();
-    f.exec("UPDATE proxy SET ready = 1, host_port = 4000, pid = 77");
+    f.exec("UPDATE proxy SET ready = 1, pid = 77");
+    tcp_front_v4(&f.dir.path().join(STORE_FILE));
     let refusal = "crabbox 0.72.0-moor.9 or a newer -moor build is required";
     let sup = DetachedSupervisor::new(
         f.proc.clone(),
@@ -283,28 +277,6 @@ fn a_supervisor_leased_by_another_process_is_waited_for_not_spawned() {
     assert!(matches!(err, ProxyHostError::Failed(_)));
     assert!(f.proc.daemons().is_empty());
     assert!(f.elapsed(start) >= WAIT);
-}
-
-#[test]
-fn the_nonce_stays_out_of_daemon_arguments_environment_and_log() {
-    let f = fx();
-    f.sup.ensure(&f.spec()).unwrap();
-    let nonce = f.nonce_text();
-    assert!(!nonce.is_empty());
-    let daemons = f.proc.daemons();
-    let d = daemons.first().unwrap();
-    let mut seen = vec![format!("{:?}", d.call.args), format!("{:?}", d.call.env)];
-    for call in f.proc.calls() {
-        seen.push(format!("{:?} {:?}", call.args, call.env));
-    }
-    seen.push(std::fs::read_to_string(&d.log).unwrap_or_default());
-    for text in seen {
-        assert!(!text.contains(&nonce), "{text}");
-    }
-
-    let g = bare();
-    let err = g.sup.ensure(&g.spec()).unwrap_err();
-    assert!(!err.to_string().contains(&g.nonce_text()));
 }
 
 /// The adapter and the supervisor keep separate copies of the lease; they must agree.
@@ -361,29 +333,6 @@ fn base64url_known_vectors() {
 #[test]
 fn base64url_uses_url_alphabet() {
     assert_eq!(base64url(&[0xfb, 0xff]), "-_8");
-}
-
-/// A nonce is 32 bytes of base64url text: 43 characters.
-#[test]
-fn nonce_is_43_url_safe_bytes() {
-    let nonce: Secret = new_nonce(&FakeRng::default());
-    let bytes = nonce.expose();
-    assert_eq!(bytes.len(), 43);
-    assert!(
-        bytes
-            .iter()
-            .all(|b| b.is_ascii_alphanumeric() || *b == b'-' || *b == b'_'),
-        "unexpected byte in nonce"
-    );
-}
-
-/// Successive draws from one source yield different nonces.
-#[test]
-fn nonces_differ_across_draws() {
-    let rng = FakeRng::default();
-    let a = new_nonce(&rng);
-    let b = new_nonce(&rng);
-    assert_ne!(a.expose(), b.expose());
 }
 
 /// The log lives under `<state>/proxy/<id>.log`.

@@ -1,8 +1,7 @@
 //! Per-Box egress proxy and its request log.
 //!
 //! The log is the only file the proxy writes. It records the time, method,
-//! route name and status of each request, and never the nonce, headers or
-//! bodies.
+//! route name and status of each request, and never headers or bodies.
 //!
 //! The nono module embeds nono-proxy as each Box's egress proxy.
 //!

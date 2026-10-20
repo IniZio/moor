@@ -12,8 +12,6 @@ use crate::secret::Secret;
 pub struct ProxyAddr {
     /// The Proxy's port as seen inside the Box.
     pub box_port: u16,
-    /// The per-launch nonce the Box presents; its only credential.
-    pub nonce: Secret,
     /// The public Box CA certificate in PEM form; not secret.
     pub ca_pem: String,
     /// Non-secret environment pairs from the tool rules, already resolved.
@@ -28,7 +26,6 @@ impl fmt::Debug for ProxyAddr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ProxyAddr")
             .field("box_port", &self.box_port)
-            .field("nonce", &"<redacted>")
             .field("box_env", &self.box_env)
             .field("forge", &self.forge)
             .field("direct", &self.direct)
@@ -196,46 +193,16 @@ pub trait AgentProfile: Send + Sync {
 mod tests {
     use super::*;
 
-    const NONCE: &[u8] = b"sentinel-9c2e";
-
-    fn proxy() -> ProxyAddr {
-        ProxyAddr {
-            box_port: 1,
-            nonce: Secret::new(NONCE.to_vec()),
-            ca_pem: String::new(),
-            box_env: Vec::new(),
-            forge: false,
-            direct: Vec::new(),
-        }
-    }
-
-    #[test]
-    fn proxy_addr_debug_hides_nonce() {
-        let text = format!("{:?}", proxy());
-        assert!(text.contains("box_port"));
-        assert!(!text.contains("sentinel-9c2e"));
-    }
+    const SECRET: &[u8] = b"sentinel-9c2e";
 
     #[test]
     fn env_var_debug_hides_value() {
         let var = EnvVar {
             name: "TOKEN".to_owned(),
-            value: Secret::new(NONCE.to_vec()),
+            value: Secret::new(SECRET.to_vec()),
         };
         let text = format!("{var:?}");
         assert!(text.contains("TOKEN"));
         assert!(!text.contains("sentinel-9c2e"));
-    }
-
-    #[test]
-    fn launch_ctx_debug_hides_nonce() {
-        let ctx = LaunchCtx {
-            model: None,
-            workdir: BoxPath::restore("/work").unwrap(),
-            proxy: Some(proxy()),
-            home: BoxPath::restore("/home/u").unwrap(),
-            prompt: LaunchPrompt::Brief,
-        };
-        assert!(!format!("{ctx:?}").contains("sentinel-9c2e"));
     }
 }

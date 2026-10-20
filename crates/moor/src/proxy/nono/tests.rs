@@ -13,7 +13,7 @@ use nono_proxy::config::InjectMode;
 
 use super::*;
 
-const NONCE: &str = "nonce-text-ABC_123-xyz";
+const TOKEN: &str = "token-text-ABC_123-xyz";
 
 fn rule(name: &str, hosts: &[&str], inject: ResolvedInject) -> ResolvedRule {
     ResolvedRule {
@@ -48,10 +48,10 @@ fn cfg_chained(
     let state = tempfile::tempdir().unwrap();
     let ca = ca::load_or_create(state.path(), BoxId::new(3)).unwrap();
     let dir = ca::ca_dir(state.path(), BoxId::new(3));
-    let nonce = Secret::new(NONCE.as_bytes().to_vec());
+    let token = Secret::new(TOKEN.as_bytes().to_vec());
     build_config(&NonoSpec {
         rules,
-        nonce: &nonce,
+        token: &token,
         ca: &ca,
         ca_dir: &dir,
         upstream_ca,
@@ -111,7 +111,7 @@ fn flags_are_hardened() {
     assert!(c.enable_network_audit);
     assert_eq!(c.bind_addr.to_string(), "127.0.0.1");
     assert_eq!(c.bind_port, 0);
-    assert_eq!(c.session_token.as_deref().map(String::as_str), Some(NONCE));
+    assert_eq!(c.session_token.as_deref().map(String::as_str), Some(TOKEN));
     assert!(c.intercept_ca_dir.is_some() && c.preloaded_ca.is_some());
 }
 
@@ -183,22 +183,22 @@ fn upstream_ca_applies_to_every_route() {
 }
 
 #[test]
-fn debug_hides_the_nonce() {
+fn debug_hides_the_token() {
     let cfg = cfg_for(&[rule("a", &["a.test"], bearer())], None);
     let text = format!("{cfg:?}");
-    assert!(!text.contains(NONCE), "{text}");
+    assert!(!text.contains(TOKEN), "{text}");
     assert!(text.contains("allowed_hosts"), "{text}");
 }
 
 #[test]
-fn non_utf8_nonce_is_refused_without_echoing_it() {
+fn non_utf8_token_is_refused_without_echoing_it() {
     let state = tempfile::tempdir().unwrap();
     let ca = ca::load_or_create(state.path(), BoxId::new(3)).unwrap();
     let dir = ca::ca_dir(state.path(), BoxId::new(3));
-    let nonce = Secret::new(vec![0xff, 0xfe, b'k']);
+    let token = Secret::new(vec![0xff, 0xfe, b'k']);
     let cfg = build_config(&NonoSpec {
         rules: &[],
-        nonce: &nonce,
+        token: &token,
         ca: &ca,
         ca_dir: &dir,
         upstream_ca: None,

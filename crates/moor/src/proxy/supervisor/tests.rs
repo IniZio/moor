@@ -13,7 +13,6 @@ use moor_core::seam::clock::{Clock, Ts};
 use moor_core::seam::driver::{AcquireReq, Driver};
 use moor_core::seam::forge::ForgeRepo;
 use moor_core::seam::proxy_host::ProxySpec;
-use moor_core::secret::Secret;
 use moor_core::{BoxId, BoxName, ProviderId};
 
 mod evict;
@@ -36,9 +35,7 @@ use crate::testing::driver::{FakeDriver, TunnelReply};
 use crate::testing::forge::FakeForge;
 use crate::testing::rng::FakeRng;
 
-const NONCE: &[u8] = b"NONCE-abc123";
 const BOOT: &str = "boot-1";
-pub(super) const NONCE_TEXT: &str = "NONCE-abc123";
 const WORKTREE: &str = "/wt";
 pub(super) const FIRST_TUNNEL_PID: u32 = 50_000;
 
@@ -82,12 +79,7 @@ impl World {
         let store = Store::open(&dir.path().join("moor.db"), clock.clone()).unwrap();
         let driver = FakeDriver::new().reverse_tunnels().tunnel_replies(replies);
         let id = working_box(&store, &driver, "demo");
-        let nonce = Secret::new(NONCE.to_vec());
-        drop(
-            store
-                .reserve(id, &nonce, &FakeRng::default(), LEASE)
-                .unwrap(),
-        );
+        drop(store.reserve(id, &FakeRng::default(), LEASE).unwrap());
         let mut spec = ProxySpec {
             box_id: id,
             box_handle: None,
@@ -292,7 +284,7 @@ fn tunnel_failure_releases_the_lease_and_keeps_the_row_unready() {
 }
 
 #[test]
-fn successful_start_marks_ready_and_records_the_box_port_without_the_nonce() {
+fn successful_start_marks_ready_and_records_the_box_port() {
     let w = World::new([]);
     let deps = w.deps();
 
@@ -308,7 +300,7 @@ fn successful_start_marks_ready_and_records_the_box_port_without_the_nonce() {
     assert_eq!(calls.first().unwrap().box_port, row.box_port);
 }
 
-/// Checks the single `proxy_started` event: box port, pid and handle, and no nonce.
+/// Checks the single `proxy_started` event: box port, pid and handle.
 fn assert_started_event(w: &World, row: &ProxyRow) {
     let events = w.started_events();
     assert_eq!(events.len(), 1);
@@ -316,7 +308,6 @@ fn assert_started_event(w: &World, row: &ProxyRow) {
     assert_eq!(p["box_port"], row.box_port);
     assert_eq!(p["pid"], row.pid.unwrap());
     assert_eq!(p["handle"], row.handle.clone().unwrap());
-    assert!(!p.to_string().contains(NONCE_TEXT));
 }
 
 #[test]
@@ -424,33 +415,6 @@ fn failed_stop_releases_the_lease_and_exits_one() {
 }
 
 #[test]
-fn nonce_never_reaches_the_log_or_stderr_on_a_full_run() {
-    let w = World::new([]);
-    let deps = w.deps();
-    let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
-    w.clock.sleep(TICK);
-    assert!(run.tick().is_none());
-    assert_eq!(run.finish(Stop::Signal), 0);
-
-    assert!(!w.stderr().contains(NONCE_TEXT));
-    assert!(!w.log().contains(NONCE_TEXT));
-}
-
-#[test]
-fn nonce_never_reaches_the_log_or_stderr_when_the_tunnel_fails() {
-    let w = World::new([TunnelReply::EarlyExit {
-        code: 1,
-        stderr: "boom".into(),
-    }]);
-    let deps = w.deps();
-
-    assert_eq!(start(&deps, w.id).err(), Some(1));
-
-    assert!(!w.stderr().contains(NONCE_TEXT));
-    assert!(!w.log().contains(NONCE_TEXT));
-}
-
-#[test]
 fn missing_box_is_refused_with_a_stderr_line() {
     let w = World::new([]);
     let deps = w.deps();
@@ -496,12 +460,7 @@ fn box_without_a_box_handle_is_refused_with_a_stderr_line() {
         repo: "r".into(),
     };
     let id = store.apply(Decision::insert(nt)).unwrap().box_id;
-    let nonce = Secret::new(NONCE.to_vec());
-    drop(
-        store
-            .reserve(id, &nonce, &FakeRng::default(), LEASE)
-            .unwrap(),
-    );
+    drop(store.reserve(id, &FakeRng::default(), LEASE).unwrap());
     let mut w = World::new([]);
     w.dir = dir;
     w.store = store;

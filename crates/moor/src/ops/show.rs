@@ -57,23 +57,16 @@ pub(crate) fn redact_nonce(text: &str, nonce: Option<&[u8]>) -> String {
 }
 
 /// The pane section of a reading: its last lines and liveness; none without an observation.
-/// The Box's proxy nonce is redacted from the tail.
-fn pane_view(
-    reading: &activity::Reading,
-    store: &Store,
-    box_id: BoxId,
-) -> Result<Option<PaneView>, CommandError> {
-    let Some(text) = reading.pane_text.as_deref() else {
-        return Ok(None);
-    };
-    let row = store.proxy(box_id)?;
+/// Proxy URL userinfo is redacted from the tail.
+fn pane_view(reading: &activity::Reading) -> Option<PaneView> {
+    let text = reading.pane_text.as_deref()?;
     let skip = text.lines().count().saturating_sub(PANE_LINES);
     let tail = text.lines().skip(skip).collect::<Vec<_>>().join("\n");
-    let tail = redact_nonce(&tail, row.as_ref().map(|r| r.nonce.expose()));
-    Ok(Some(PaneView {
+    let tail = redact_nonce(&tail, None);
+    Some(PaneView {
         tail,
         status: reading.pane.as_str().to_owned(),
-    }))
+    })
 }
 
 /// The Box's open credential limits as views.
@@ -128,7 +121,7 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
         .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no Box {}", name.as_str())))?;
     let in_flight = store.in_flight_run(row.id, &|pid| cx.proc().alive(pid))?;
     let reading = activity::read(cx, store, &row, now)?;
-    let (agent, pane) = (agent_view(&reading), pane_view(&reading, store, row.id)?);
+    let (agent, pane) = (agent_view(&reading), pane_view(&reading));
     let mut detail = box_view_with_run(&row, in_flight.as_ref(), cx.config());
     detail.agent = agent;
     detail.attention = attention(store, row.id)?;
