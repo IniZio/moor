@@ -131,6 +131,9 @@ fn raw_tunnel(
 
 /// Replies with a refusal and ends the connection.
 fn refuse(shared: &Shared, client: &mut Client, method: &str, status: u16, msg: &str) -> Flow {
+    if matches!(status, 401 | 403) {
+        shared.excuse(status);
+    }
     deliver_refusal(client, status, msg);
     shared.refuse(method, SCOPE_CATEGORY);
     Flow::Close
@@ -335,7 +338,7 @@ fn relay(
     };
     match (anonymous, resp.status) {
         (false, 401) => (shared.on_credentialed_401)(head),
-        (true, 401 | 403) => shared.reject_anonymous(resp.status),
+        (true, 401 | 403) => shared.excuse(resp.status),
         _ => {}
     }
     *sent = true;

@@ -120,10 +120,10 @@ impl Withheld {
         }
     }
 
-    /// Notes that the next audited `status` from `host` answered a request
-    /// forwarded without its credential, so it is not a rejected credential.
-    pub(crate) fn anonymous_rejection(&self, host: &str, status: u16) {
-        self.limits.anonymous(host, status);
+    /// Notes that the next audited `status` from `host` says nothing about the
+    /// credential, so it is not a rejected credential.
+    pub(crate) fn excuse(&self, host: &str, status: u16) {
+        self.limits.excuse(host, status);
     }
 
     /// Reports one withheld request once per `(rule, method, shape)`.
@@ -236,7 +236,7 @@ impl EgressSink for BoxSink<'_> {
 /// becomes a credential failure; any other denial becomes a refused egress.
 /// Approval-flow decisions are ignored. A request forwarded without a
 /// credential to a credential host is also reported through `withheld`. An
-/// anonymous answer noted before this drain is matched in it or the next one.
+/// excused answer noted before this drain is matched in it or the next one.
 pub(crate) fn apply(
     events: &[NetworkAuditEvent],
     capture: &MoorCapture,
