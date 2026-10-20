@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::io::Write;
+use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -71,7 +72,12 @@ fn lookup_deadlines(drivers: &BTreeMap<String, DriverConfig>) -> BTreeMap<String
 
 /// Wire real adapters from the environment into a context.
 pub(crate) fn build(env: &Env) -> Result<Cx, CommandError> {
-    let (parts, warning) = parts(env)?;
+    build_with_sockets(env, socket_dir())
+}
+
+/// [`build`], with each Box's ssh control socket in `sockets`.
+fn build_with_sockets(env: &Env, sockets: PathBuf) -> Result<Cx, CommandError> {
+    let (parts, warning) = parts(env, sockets)?;
     let cx = Cx::new(parts).with_repos(env.repos().clone());
     if let Some(w) = warning {
         cx.warn(w);
@@ -104,8 +110,8 @@ pub(crate) fn reconcile_proxies(env: &Env) -> Vec<String> {
 }
 
 /// Real adapters from the environment, not yet assembled into a context, and the warning
-/// when calls to a Box cannot share an ssh connection.
-fn parts(env: &Env) -> Result<(CxParts, Option<Warning>), CommandError> {
+/// when calls to a Box cannot share an ssh connection through control sockets in `sockets`.
+fn parts(env: &Env, sockets: PathBuf) -> Result<(CxParts, Option<Warning>), CommandError> {
     let clock = SystemClock::from_env(env).map_err(|e| CommandError::new(ErrorKind::Usage, e))?;
     let config = load_user(env)?;
     let cwd = std::env::current_dir()
@@ -130,7 +136,7 @@ fn parts(env: &Env) -> Result<(CxParts, Option<Warning>), CommandError> {
         Arc::clone(&rng),
     )
     .with_lookup_deadlines(lookup_deadlines(&config.drivers))
-    .with_state_dir(state_dir.clone(), socket_dir());
+    .with_state_dir(state_dir.clone(), sockets);
     let link_warning = crabbox.link_warning();
     let driver: Arc<dyn Driver> = Arc::new(crabbox);
     let engine = BoxAgent::new(
@@ -188,7 +194,7 @@ pub fn serve_proxy(env: &Env, box_id: BoxId, stderr: impl Write + Send + 'static
 
 /// Builds the proxy's dependencies and serves; `Err` is a setup failure.
 fn run_proxy(env: &Env, box_id: BoxId, sink: &Sink) -> Result<u8, String> {
-    let (parts, _) = parts(env).map_err(|e| e.error.to_string())?;
+    let (parts, _) = parts(env, socket_dir()).map_err(|e| e.error.to_string())?;
     let forge = Arc::clone(&parts.forge);
     let clock = Arc::clone(&parts.clock);
     let proc = Arc::clone(&parts.proc);

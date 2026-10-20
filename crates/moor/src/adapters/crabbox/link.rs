@@ -48,6 +48,8 @@ pub(super) struct Dirs {
     state: PathBuf,
     /// The private directory holding the control sockets.
     sockets: PathBuf,
+    /// The uid that must own `sockets`: the uid moor runs as.
+    owner: u32,
 }
 
 /// Where the shared connection of one Box lives.
@@ -71,14 +73,25 @@ impl Crabbox {
     /// Keeps each Box's shared ssh connection: its saved target under `state_dir`, its socket
     /// in `sockets`. Without a state dir, every call to a Box connects on its own.
     pub(crate) fn with_state_dir(mut self, state_dir: Option<PathBuf>, sockets: PathBuf) -> Self {
-        self.links = state_dir.map(|state| Dirs { state, sockets });
+        let owner = rustix::process::getuid().as_raw();
+        self.links = state_dir.map(|state| Dirs {
+            state,
+            sockets,
+            owner,
+        });
         self
     }
 
-    /// Why calls to a Box cannot share a connection, as a warning; none when they can or
-    /// when moor keeps no state.
+    /// Why calls to a Box cannot share a connection; none when they can or when moor keeps
+    /// no state.
+    fn unshared(&self) -> Option<String> {
+        let dirs = self.links.as_ref()?;
+        private_dir(&dirs.sockets, dirs.owner).err()
+    }
+
+    /// [`Crabbox::unshared`] as a warning.
     pub(crate) fn link_warning(&self) -> Option<Warning> {
-        let reason = private_dir(&self.links.as_ref()?.sockets).err()?;
+        let reason = self.unshared()?;
         Some(Warning {
             code: "ssh_not_shared".to_owned(),
             message: format!("every ssh call to a Box opens its own connection: {reason}"),
@@ -117,9 +130,10 @@ fn short_hash(parts: &[&[u8]]) -> String {
         })
 }
 
-/// Creates `dir` for control sockets, or checks the one there: it must be a directory of this
-/// user that nobody else can enter, since any process that reaches a socket can use its master.
-fn private_dir(dir: &Path) -> Result<(), String> {
+/// Creates `dir` for control sockets, or checks the one there: it must be a directory of
+/// `owner` that nobody else can enter, since any process that reaches a socket can use its
+/// master.
+fn private_dir(dir: &Path, owner: u32) -> Result<(), String> {
     match DirBuilder::new().mode(0o700).create(dir) {
         Err(e) if e.kind() != ErrorKind::AlreadyExists => {
             return Err(format!("cannot create {}: {e}", dir.display()));
@@ -128,9 +142,7 @@ fn private_dir(dir: &Path) -> Result<(), String> {
     }
     let meta =
         fs::symlink_metadata(dir).map_err(|e| format!("cannot read {}: {e}", dir.display()))?;
-    let own = meta.is_dir()
-        && meta.uid() == rustix::process::getuid().as_raw()
-        && meta.mode() & 0o777 == 0o700;
+    let own = meta.is_dir() && meta.uid() == owner && meta.mode() & 0o777 == 0o700;
     if own {
         Ok(())
     } else {
@@ -180,11 +192,6 @@ impl Link {
         }
     }
 
-    /// Makes sure of the private directory ssh binds the socket in; ssh does not create it.
-    fn make_dir(&self) -> Result<(), String> {
-        private_dir(self.socket.parent().unwrap_or(&self.socket))
-    }
-
     /// Options that put a call on this connection, opening it when it is down. They go before
     /// the target words, because ssh keeps the first value it reads for an option.
     fn options(&self) -> Vec<String> {
@@ -212,9 +219,10 @@ impl Link {
 }
 
 /// The ssh arguments for a short call to the Box: the shared-connection options, then
-/// `target`. Without a usable link the call connects on its own.
+/// `target`. Without a usable link the call connects on its own. ssh does not create the
+/// socket dir, so this makes it first.
 pub(super) fn args(cb: &Crabbox, handle: &BoxHandle, target: Vec<String>) -> Vec<String> {
-    match cb.link(handle).filter(|l| l.make_dir().is_ok()) {
+    match cb.link(handle).filter(|_| cb.unshared().is_none()) {
         Some(link) => {
             let mut args = link.options();
             args.extend(target);
