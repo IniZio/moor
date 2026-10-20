@@ -118,8 +118,8 @@ pub(super) fn answers() -> Answers {
         session(2, Some(1), Some("app/1"), 1),
     ]});
     let show = json!({
-        "tasks": [task("app/1", "awake", None), task("app/2", "asleep", Some("ship it?"))],
-        "task": task("app/1", "awake", None),
+        "boxes": [task("app/1", "awake", None), task("app/2", "asleep", Some("ship it?"))],
+        "box": task("app/1", "awake", None),
         "events": [{"id": 1, "kind": "note", "payload": {}, "ts": 5}],
     });
     let repos = json!({"repos": [{"name": "app", "url": "https://example.test/app.git"}]});
@@ -380,11 +380,11 @@ fn repos_are_listed() {
 }
 
 #[test]
-fn box_detail_returns_task_and_events() {
+fn box_detail_returns_box_and_events() {
     let dir = tempfile::tempdir().unwrap();
     let (web, seen) = front(&dir, answers(), &[]);
     let v = body(&get(&web, "/boxes/app/1"));
-    assert_eq!(v["task"]["name"], "app/1");
+    assert_eq!(v["box"]["name"], "app/1");
     assert_eq!(v["events"][0]["kind"], "note");
     assert_eq!(*seen.lock().unwrap(), ["show"]);
 }
@@ -446,7 +446,7 @@ fn a_worker_whose_session_ended_but_whose_box_is_open_stays_in_the_tree() {
     );
     map.insert(
         "show",
-        Response::ok("show", Some(json!({"tasks": [closed, open]}))),
+        Response::ok("show", Some(json!({"boxes": [closed, open]}))),
     );
     let kids = json!({"children": [
         {"session": 4, "box": "app/3", "box_id": 5, "state": "ended"},
@@ -474,7 +474,7 @@ fn a_gone_root_lists_its_ended_workers_whose_box_is_open() {
         "sessions",
         Response::ok("sessions", Some(json!({"sessions": []}))),
     );
-    map.insert("show", Response::ok("show", Some(json!({"tasks": [open]}))));
+    map.insert("show", Response::ok("show", Some(json!({"boxes": [open]}))));
     let kids = json!({"children": [
         {"session": 4, "box": "app/3", "box_id": 5, "state": "ended"},
         {"session": 3, "box": "app/3", "box_id": 6, "state": "ended"},

@@ -46,7 +46,7 @@ pub(crate) fn run(cx: &Cx, req: &BoxReq) -> Result<SleepValue, CommandError> {
     let mut boxed = task_view(&reload()?, cx.config()).driver;
     hide_unsupported_box_sleep(boxed.as_mut(), cx, &mut HashMap::new());
     Ok(SleepValue {
-        task: req.box_name.as_str().to_owned(),
+        box_name: req.box_name.as_str().to_owned(),
         driver: boxed,
         woke: false,
     })

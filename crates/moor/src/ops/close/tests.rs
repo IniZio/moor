@@ -177,7 +177,7 @@ pub(super) fn box_state(f: &Fx) -> BoxState {
 fn clean_close_deletes_the_box_and_closes() {
     let f = fx();
     let v = run(&f.cx, &req(false)).unwrap();
-    assert_eq!(v.task.lifecycle, BoxLifecycle::Closed);
+    assert_eq!(v.boxed.lifecycle, BoxLifecycle::Closed);
     assert!(v.box_deleted && v.workspace_closed && !v.worktree_kept);
     assert_eq!(box_state(&f), BoxState::Deleted);
     assert!(f.driver.calls().iter().any(|c| c.starts_with("release")));
@@ -192,7 +192,7 @@ fn unpushed_work_is_refused_without_force() {
     assert!(is_working(&row(&f)));
     assert!(!f.driver.calls().iter().any(|c| c.starts_with("release")));
     let v = run(&f.cx, &req(true)).unwrap();
-    assert_eq!(v.task.lifecycle, BoxLifecycle::Closed);
+    assert_eq!(v.boxed.lifecycle, BoxLifecycle::Closed);
 }
 
 #[test]
@@ -238,7 +238,7 @@ fn release_error_on_a_failed_box_warns_and_closes() {
         .apply(Decision::new(f.id).box_input(BoxInput::ReleaseErr { cause: "x".into() }))
         .unwrap();
     let v = run(&f.cx, &req(false)).unwrap();
-    assert_eq!(v.task.lifecycle, BoxLifecycle::Closed);
+    assert_eq!(v.boxed.lifecycle, BoxLifecycle::Closed);
     assert!(!v.box_deleted);
     assert_eq!(box_state(&f), BoxState::ReleaseFailed);
     let warnings = f.cx.take_warnings();
@@ -254,7 +254,7 @@ fn missing_workspace_is_tolerated() {
         0,
     );
     let v = run(&f.cx, &req(false)).unwrap();
-    assert_eq!(v.task.lifecycle, BoxLifecycle::Closed);
+    assert_eq!(v.boxed.lifecycle, BoxLifecycle::Closed);
     assert!(v.workspace_closed);
     assert!(f.cx.take_warnings().is_empty());
 }

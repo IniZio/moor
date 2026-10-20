@@ -44,7 +44,7 @@ fn an_agent_that_exits_127_at_launch_is_a_launch_failure() {
         Ok(exited(127, "sh: claude: not found\nmoor: agent exited 127")),
     );
     let v = run(&w.cx, &goal_req("demo")).unwrap();
-    let id = BoxId::new(v.task.id);
+    let id = BoxId::new(v.boxed.id);
     let store = w.cx.store().unwrap();
     assert!(!v.agent.launched);
     assert!(v.agent.session.is_none());
@@ -95,7 +95,7 @@ fn a_dead_agent_shows_as_failed_and_wait_fails() {
         pane: false,
     };
     let shown = crate::ops::show::run(&w.cx, &show).unwrap();
-    let t = shown.tasks.as_ref().unwrap().first().unwrap();
+    let t = shown.boxes.as_ref().unwrap().first().unwrap();
     assert_eq!((t.lifecycle, t.session_state), WORKING);
     assert_eq!(t.agent.as_ref().unwrap().state, "failed");
     let wait = WaitReq {

@@ -186,7 +186,7 @@ fn close_in_the_thread_closes_the_task() {
     let updates = rig.fake.wait_updates(1);
     assert!(updates[0].text.contains("closed"), "{}", updates[0].text);
     let shown = rig.show(TASK);
-    assert_eq!(shown["value"]["task"]["lifecycle"], "closed", "{shown}");
+    assert_eq!(shown["value"]["box"]["lifecycle"], "closed", "{shown}");
     assert_eq!(rig.fake.posts().len(), 1, "{:?}", rig.fake.posts());
 }
 

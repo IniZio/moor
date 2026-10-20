@@ -44,7 +44,7 @@ fn a_broken_tunnel_does_not_block_closing_an_asleep_box() {
     };
     store.ack_tunnel(f.id, &failed).unwrap();
     let v = run(&f.cx, &req(false)).unwrap();
-    assert_eq!(v.task.lifecycle, BoxLifecycle::Closed);
+    assert_eq!(v.boxed.lifecycle, BoxLifecycle::Closed);
     assert_eq!(row(&f).lifecycle, BoxLifecycle::Closed);
     assert!(f.driver.calls().iter().any(|c| c.starts_with("wake")));
     assert!(store.tunnel_request(f.id).unwrap().is_none());

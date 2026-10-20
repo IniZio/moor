@@ -58,7 +58,7 @@ pub(crate) fn run(cx: &Cx, req: &EndSessionReq) -> Result<EndSessionValue, Comma
         return Err(no_session());
     }
     Ok(EndSessionValue {
-        task: name.to_owned(),
+        box_name: name.to_owned(),
         session,
         ordinal,
         box_kept: true,

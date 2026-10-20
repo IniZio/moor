@@ -56,7 +56,7 @@ fn binding_a_host_session_creates_it_with_no_task() {
     let v = bind(&cx, &bind_req("k", s)).unwrap();
     assert!(v.created);
     assert_eq!(v.binding.session, s);
-    assert_eq!(v.binding.task, None);
+    assert_eq!(v.binding.box_name, None);
     assert_eq!(v.binding.owner, "u1");
 }
 

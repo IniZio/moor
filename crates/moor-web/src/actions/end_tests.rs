@@ -120,7 +120,7 @@ fn answer(script: &Script, request: &Request) -> Response {
                 .iter()
                 .map(|(id, name, state)| json!({"id": id, "name": name, "lifecycle": state}))
                 .collect();
-            Response::ok("show", Some(json!({"tasks": tasks})))
+            Response::ok("show", Some(json!({"boxes": tasks})))
         }
         Request::Close(c) if Some(c.box_name.as_str()) == script.refuse_close => {
             refused("close", "has unmerged work")

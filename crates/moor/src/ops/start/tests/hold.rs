@@ -30,7 +30,7 @@ fn a_held_start_launches_without_a_prompt_and_keeps_the_goal() {
     let row =
         w.cx.store()
             .unwrap()
-            .task(moor_core::BoxId::new(v.task.id))
+            .task(moor_core::BoxId::new(v.boxed.id))
             .unwrap()
             .unwrap();
     assert_eq!(row.goal.as_deref(), Some("ship it"));
@@ -78,7 +78,7 @@ fn a_wake_revive_of_a_held_session_resumes_without_a_first_prompt() {
     let mut w = world(FakeDriver::new());
     w.cx = w.cx.with_engine(engine.clone());
     let v = run(&w.cx, &held(Some("ship it"))).unwrap();
-    let id = BoxId::new(v.task.id);
+    let id = BoxId::new(v.boxed.id);
     set_agent_session(&w, id, "agent-1");
     gone(&w);
     revive_after_wake(&w.cx, w.cx.store().unwrap(), id).unwrap();

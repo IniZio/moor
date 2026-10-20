@@ -111,12 +111,12 @@ pub struct AttentionView {
     pub message: String,
 }
 
-/// The shared Task row.
+/// The shared Box row.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-pub struct TaskView {
-    /// Task id.
+pub struct BoxView {
+    /// Box id.
     pub id: i64,
-    /// Task name.
+    /// Box name.
     pub name: String,
     /// Repo path or alias.
     pub repo: String,
@@ -192,9 +192,10 @@ pub struct AgentLaunchView {
 /// `value` of `start`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct StartView {
-    /// The Task row.
-    pub task: TaskView,
-    /// Task already existed.
+    /// The Box row.
+    #[serde(rename = "box")]
+    pub boxed: BoxView,
+    /// Box already existed.
     pub attached: bool,
     /// Task is queued for capacity.
     pub queued: bool,
@@ -212,8 +213,8 @@ pub struct StartView {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub failed_step: Option<String>,
     /// Handle of the Box kept after a failed step.
-    #[serde(rename = "box", skip_serializing_if = "Option::is_none")]
-    pub boxed: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub handle: Option<String>,
 }
 
 /// One event row.
@@ -288,11 +289,12 @@ pub struct ArtifactChunk {
 /// `value` of `show`.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct ShowView {
-    /// Per-Task rows; absent when a single Task is selected.
+    /// Per-Box rows; absent when a single Box is selected.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tasks: Option<Vec<TaskView>>,
-    /// The selected Task.
-    pub task: Option<TaskView>,
+    pub boxes: Option<Vec<BoxView>>,
+    /// The selected Box.
+    #[serde(rename = "box")]
+    pub boxed: Option<BoxView>,
     /// Events, when requested.
     pub events: Option<Vec<EventView>>,
     /// Pane, when requested.
@@ -310,8 +312,9 @@ pub struct ShowView {
 )]
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct CloseView {
-    /// The Task row.
-    pub task: TaskView,
+    /// The Box row.
+    #[serde(rename = "box")]
+    pub boxed: BoxView,
     /// Box was deleted.
     pub box_deleted: bool,
     /// Workspace was closed.

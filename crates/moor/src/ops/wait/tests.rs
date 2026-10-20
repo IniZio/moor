@@ -133,7 +133,7 @@ fn reports_the_in_flight_run_with_its_argv() {
     let r = v.run.unwrap();
     assert!(r.in_flight);
     assert_eq!(r.argv, ["make", "test"]);
-    assert!(v.task.run.is_some());
+    assert!(v.boxed.run.is_some());
 }
 
 #[test]
@@ -149,7 +149,7 @@ fn a_run_whose_process_is_gone_reports_interrupted() {
     assert!(!r.in_flight);
     assert!(r.interrupted);
     assert_eq!(r.argv, ["make", "test"]);
-    assert!(v.task.run.is_none());
+    assert!(v.boxed.run.is_none());
 }
 
 #[test]
@@ -350,7 +350,7 @@ fn the_payload_carries_the_agent() {
     let (cx, _) = agent_cx(dir.path(), hook(HookKind::Blocked));
     add_live(&cx);
     let v = run(&cx, &req(None, None)).unwrap();
-    let a = v.task.agent.expect("an agent view");
+    let a = v.boxed.agent.expect("an agent view");
     assert_eq!(a.state, "needs_input");
     assert_eq!(a.source, "hooks");
     assert_eq!(a.pane, "live");
@@ -363,7 +363,7 @@ fn a_task_without_a_session_has_no_agent_in_the_payload() {
     let (cx, _) = cx(dir.path());
     add(&cx);
     let v = run(&cx, &req(None, None)).unwrap();
-    assert!(v.task.agent.is_none());
+    assert!(v.boxed.agent.is_none());
 }
 
 #[test]
@@ -433,7 +433,7 @@ fn sleep_label_follows_provider_sleep_support() {
         let (cx, _) = cx_with(dir.path(), FakeDriver::new().sleep_kind(kind));
         add_boxed(&cx);
         let v = run(&cx, &req(None, None)).unwrap();
-        assert_eq!(v.task.driver.unwrap().sleep.after.as_deref(), after);
+        assert_eq!(v.boxed.driver.unwrap().sleep.after.as_deref(), after);
     }
 }
 
@@ -522,7 +522,7 @@ fn a_recovered_rate_limit_no_longer_fails_the_wait() {
         .unwrap();
     let v = run(&cx, &req(None, None)).unwrap();
     assert!(!v.timed_out);
-    assert!(v.task.attention.is_empty());
+    assert!(v.boxed.attention.is_empty());
 }
 
 #[test]

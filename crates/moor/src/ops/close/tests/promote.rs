@@ -194,7 +194,7 @@ fn start_req(name: &str) -> StartReq {
 fn queue(w: &World, name: &str) -> BoxId {
     let v = start::run(&w.cx, &start_req(name)).unwrap();
     assert!(v.queued, "{name} should queue");
-    BoxId::new(v.task.id)
+    BoxId::new(v.boxed.id)
 }
 
 /// A waiting task made without consulting any limit.

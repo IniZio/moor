@@ -305,8 +305,8 @@ else
 fi
 if task_exists; then
   info="$(in_pilot mo 60 --json show "$name" 2>/dev/null || true)"
-  provider="$(echo "$info" | jq -r '.value.task.driver.provider // empty' 2>/dev/null || true)"
-  handle="$(echo "$info" | jq -r '.value.task.driver.handle // empty' 2>/dev/null || true)"
+  provider="$(echo "$info" | jq -r '.value.box.driver.provider // empty' 2>/dev/null || true)"
+  handle="$(echo "$info" | jq -r '.value.box.driver.handle // empty' 2>/dev/null || true)"
   box="${handle#*/}"
   [ -n "$provider" ] && [ -n "$box" ] || echo "e2e-box: could not read Box provider/name from moor show"
   step=0

@@ -22,7 +22,7 @@ fn working_without_session() -> (World, BoxId) {
         no_agent: true,
         ..req("demo")
     };
-    let id = BoxId::new(run(&w.cx, &start).unwrap().task.id);
+    let id = BoxId::new(run(&w.cx, &start).unwrap().boxed.id);
     (w, id)
 }
 
@@ -122,7 +122,7 @@ fn a_start_with_settles_running_during_setup_still_launches() {
     let v = run(&w.cx, &start).unwrap();
     assert!(v.agent.launched);
     assert_eq!(engine.launches().len(), 1);
-    let id = BoxId::new(v.task.id);
+    let id = BoxId::new(v.boxed.id);
     assert!(w.cx.store().unwrap().has_session(id).unwrap());
 }
 

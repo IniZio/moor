@@ -89,9 +89,9 @@ fn a_failed_sync_names_the_step_the_tail_and_the_box_in_the_error_value() {
     let err = start(&w).unwrap_err();
     let value = err.value.unwrap();
     assert_eq!(field(&value, "failed_step"), "sync");
-    assert_eq!(field(&value, "box"), "box-1");
+    assert_eq!(field(&value, "handle"), "box-1");
     assert!(value.get("log_tail").is_none());
-    let task = value.get("task").unwrap();
+    let task = value.get("box").unwrap();
     assert_eq!(field(task, "lifecycle"), "setup_failed");
 }
 
@@ -117,7 +117,7 @@ fn a_failed_sync_shows_the_message_and_every_hint_in_text_and_the_fields_in_json
     let json: serde_json::Value =
         serde_json::from_str(&crate::cli::render(&resp, &opts).stdout).unwrap();
     assert_eq!(json.pointer("/value/failed_step"), Some(&"sync".into()));
-    assert_eq!(json.pointer("/value/box"), Some(&"box-1".into()));
+    assert_eq!(json.pointer("/value/handle"), Some(&"box-1".into()));
     assert!(json.pointer("/value/log_tail").is_none());
 }
 

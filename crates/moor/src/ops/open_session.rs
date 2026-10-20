@@ -59,7 +59,7 @@ pub(crate) fn run(cx: &Cx, req: &OpenSessionReq) -> Result<OpenSessionValue, Com
         return Err(CommandError::new(ErrorKind::Failed, message));
     }
     Ok(OpenSessionValue {
-        task: name.to_owned(),
+        box_name: name.to_owned(),
         session: next.id,
         ordinal: next.ordinal,
         pane: store.live_session(id)?.and_then(|s| s.pane),

@@ -124,7 +124,7 @@ fn asleep_task_wakes_its_box() {
     assert_eq!(states(&f), (BoxLifecycle::Asleep, BoxState::Asleep));
     let v = run(&f.cx, &req()).unwrap();
     assert!(v.woke);
-    assert_eq!(v.task, "t");
+    assert_eq!(v.box_name, "t");
     assert_eq!(v.driver.unwrap().state, BoxState::Ready);
     assert!(f.driver.calls().contains(&"wake box-1".to_owned()));
     assert_eq!(wakes(&f), 1);

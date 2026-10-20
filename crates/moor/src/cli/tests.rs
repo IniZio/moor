@@ -123,7 +123,7 @@ fn render_json_version_is_single_line() {
 
 #[test]
 fn render_json_open_session_prints_value_fields() {
-    let v = serde_json::json!({"task": "t1", "session": 9, "ordinal": 3, "pane": "p4"});
+    let v = serde_json::json!({"box": "t1", "session": 9, "ordinal": 3, "pane": "p4"});
     let opts = GlobalOpts {
         json: true,
         ..GlobalOpts::default()
@@ -136,7 +136,7 @@ fn render_json_open_session_prints_value_fields() {
 
 #[test]
 fn render_json_end_session_prints_value_fields() {
-    let v = serde_json::json!({"task": "t1", "session": 7, "ordinal": 2, "box_kept": true});
+    let v = serde_json::json!({"box": "t1", "session": 7, "ordinal": 2, "box_kept": true});
     let opts = GlobalOpts {
         json: true,
         ..GlobalOpts::default()

@@ -137,7 +137,7 @@ fn a_live_session_ends_and_the_box_stays_ready() {
     let sessions = store.box_sessions(f.id).unwrap();
     let first = sessions.first().unwrap();
     assert_eq!(
-        (v.task.as_str(), v.session, v.ordinal, v.box_kept),
+        (v.box_name.as_str(), v.session, v.ordinal, v.box_kept),
         ("t", first.id, first.ordinal, true)
     );
     assert_eq!(first.state, SessionState::Ended);

@@ -135,7 +135,7 @@ fn a_ready_box_opens_the_next_session_seeded_with_the_text() {
     assert_eq!(sessions.len(), 2);
     let next = sessions.get(1).unwrap();
     assert_eq!(
-        (v.task.as_str(), v.session, v.ordinal, v.pane.as_deref()),
+        (v.box_name.as_str(), v.session, v.ordinal, v.pane.as_deref()),
         ("t", next.id, 2, Some("p-1"))
     );
     assert_eq!(next.state, SessionState::Working);

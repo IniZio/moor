@@ -105,7 +105,7 @@ fn start_after_a_failed_setup_in_a_replaced_box_runs_setup_in_the_new_box() {
 /// A started `demo` with a recorded Box whose setup intent belongs to `pid`.
 fn interrupted_setup(pid: u32) -> (World, moor_core::view::StartView) {
     let (w, v) = start_with("setup: [a]\n", FakeDriver::new());
-    let id = BoxId::new(v.task.id);
+    let id = BoxId::new(v.boxed.id);
     let wt = w.cx.store().unwrap().task(id).unwrap().unwrap().worktree;
     let wt = wt.unwrap();
     std::fs::create_dir_all(&wt).unwrap();
@@ -128,7 +128,7 @@ fn start_does_not_re_run_setup_when_the_setup_owner_is_dead() {
     assert!(message.starts_with("setup was interrupted; "));
     assert!(message.ends_with(BY_HAND), "{message}");
     assert!(failed_at_set(&w, &again));
-    let row = w.cx.store().unwrap().task(BoxId::new(again.task.id));
+    let row = w.cx.store().unwrap().task(BoxId::new(again.boxed.id));
     assert_eq!(row.unwrap().unwrap().intent, None);
 }
 
@@ -159,7 +159,7 @@ fn start_leaves_setup_alone_when_the_setup_owner_is_alive() {
     let again = run(&w.cx, &start_req()).unwrap();
     assert!(!again.setup.ran);
     assert_eq!(argvs(&w), [script_argv(&["a"])]);
-    let row = w.cx.store().unwrap().task(BoxId::new(again.task.id));
+    let row = w.cx.store().unwrap().task(BoxId::new(again.boxed.id));
     assert_eq!(
         row.unwrap().unwrap().intent,
         Some(Intent::Setup { pid: 4242 })
@@ -179,8 +179,8 @@ fn start_on_a_setting_up_task_with_a_live_setup_owner_records_no_session() {
     assert!(crashed.is_err());
     w.driver.on_exec(|| {});
     let again = run(&w.cx, &start_req()).unwrap();
-    assert_eq!(again.task.lifecycle, BoxLifecycle::SettingUp);
-    let id = BoxId::new(again.task.id);
+    assert_eq!(again.boxed.lifecycle, BoxLifecycle::SettingUp);
+    let id = BoxId::new(again.boxed.id);
     let store = w.cx.store().unwrap();
     assert!(store.live_session(id).unwrap().is_none());
     assert!(!store.has_session(id).unwrap());

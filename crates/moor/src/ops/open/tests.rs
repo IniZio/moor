@@ -155,7 +155,7 @@ fn asleep_task_is_woken_then_focused() {
     asleep(&f);
     let v = run(&f.cx, &req()).unwrap();
     assert!(v.woke);
-    assert_eq!(v.task, "t");
+    assert_eq!(v.box_name, "t");
     assert_eq!(v.driver.unwrap().state, BoxState::Ready);
     assert_eq!(wakes(&f), 1);
     assert_eq!(focuses(&f), vec!["focus_workspace ws-9".to_owned()]);
@@ -220,12 +220,12 @@ fn task_without_a_workspace_is_refused() {
 }
 
 #[test]
-fn value_serializes_task_box_and_woke() {
+fn value_serializes_box_and_woke() {
     let f = fx();
     let v = run(&f.cx, &req()).unwrap();
     let j = serde_json::to_value(&v).unwrap();
     let obj = j.as_object().unwrap();
-    assert_eq!(obj["task"], "t");
+    assert_eq!(obj["box"], "t");
     assert_eq!(obj["woke"], false);
     assert!(obj.contains_key("driver"));
 }

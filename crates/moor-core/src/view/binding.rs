@@ -12,7 +12,8 @@ pub struct BindingValue {
     /// Id of the bound Session.
     pub session: SessionId,
     /// Box name; None for a host Session.
-    pub task: Option<String>,
+    #[serde(rename = "box")]
+    pub box_name: Option<String>,
     /// Who owns the binding.
     pub owner: String,
 }
@@ -32,21 +33,21 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn host_binding_serializes_null_task() {
+    fn host_binding_serializes_null_box() {
         let value = BoundValue {
             created: true,
             binding: BindingValue {
                 front: "f".into(),
                 key: "k".into(),
                 session: SessionId::new(2),
-                task: None,
+                box_name: None,
                 owner: "o".into(),
             },
         };
         assert_eq!(
             serde_json::to_value(&value).expect("serialize"),
             json!({"created": true, "binding": {
-                "front": "f", "key": "k", "session": 2, "task": null, "owner": "o"}})
+                "front": "f", "key": "k", "session": 2, "box": null, "owner": "o"}})
         );
     }
 }
