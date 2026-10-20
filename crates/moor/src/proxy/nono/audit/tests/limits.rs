@@ -95,6 +95,17 @@ fn a_2xx_with_no_open_limit_records_nothing() {
 }
 
 #[test]
+fn an_allow_with_no_status_leaves_an_open_limit_open() {
+    let failed_body = event(
+        "allow",
+        &json!({"route_id": "claude__0", "method": "POST"}),
+    );
+    let events = [response(429), failed_body, response(429)];
+    let got = run_limits(&LimitSink::default(), &events, &Withheld::default());
+    assert_eq!(got, [limited()]);
+}
+
+#[test]
 fn a_401_records_a_rejection() {
     let got = run_limits(
         &LimitSink::default(),
