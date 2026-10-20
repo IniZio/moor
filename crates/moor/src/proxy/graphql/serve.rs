@@ -278,8 +278,7 @@ fn forward(
         return unavailable(client);
     }
     let mut sent = false;
-    let on_401 = (!anonymous).then_some(&*shared.on_credentialed_401);
-    let flow = relay(conn, client, head, &mut sent, on_401);
+    let flow = relay(shared, conn, client, head, &mut sent, anonymous);
     if flow == Flow::Close {
         *up = None;
     }
@@ -310,13 +309,15 @@ fn send(
     w.flush().map_err(drop)
 }
 
-/// Relays the response, setting `sent` once a byte reached the client.
+/// Relays the response, setting `sent` once a byte reached the client. A
+/// rejection is noted before any byte is relayed.
 fn relay(
+    shared: &Shared,
     conn: &mut BufReader<TlsStream>,
     client: &mut Client,
     head: &Head,
     sent: &mut bool,
-    on_401: Option<&(dyn Fn(&Head) + Send + Sync)>,
+    anonymous: bool,
 ) -> Flow {
     let resp = loop {
         let Ok(resp) = read_response_head(conn) else {
@@ -332,8 +333,10 @@ fn relay(
         }
         break resp;
     };
-    if let (Some(evict), 401) = (on_401, resp.status) {
-        evict(head);
+    match (anonymous, resp.status) {
+        (false, 401) => (shared.on_credentialed_401)(head),
+        (true, 401 | 403) => shared.reject_anonymous(resp.status),
+        _ => {}
     }
     *sent = true;
     let Ok(framing) = response_framing(&resp, &head.method) else {
