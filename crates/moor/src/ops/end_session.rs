@@ -23,7 +23,7 @@ use crate::store::{BoxRow, Store};
 /// could not be closed.
 pub(crate) fn run(cx: &Cx, req: &EndSessionReq) -> Result<EndSessionValue, CommandError> {
     let store = cx.store()?;
-    let name = req.task.as_str();
+    let name = req.box_name.as_str();
     let parsed = BoxName::parse_allow_bare(name)
         .map_err(|e| CommandError::new(ErrorKind::Usage, e.to_string()))?;
     let id = store

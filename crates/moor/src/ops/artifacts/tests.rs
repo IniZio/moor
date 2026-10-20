@@ -55,12 +55,15 @@ fn publish(cx: &Cx, t: BoxId, file: &str, bytes: &[u8]) {
 }
 
 fn list_req(n: &str, all: bool) -> ArtifactsReq {
-    ArtifactsReq { task: name(n), all }
+    ArtifactsReq {
+        box_name: name(n),
+        all,
+    }
 }
 
 fn read_req(n: &str, file: &str, version: Option<u32>, offset: u64, len: u64) -> ArtifactReadReq {
     ArtifactReadReq {
-        task: name(n),
+        box_name: name(n),
         name: file.into(),
         version,
         offset,

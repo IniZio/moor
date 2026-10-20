@@ -17,7 +17,7 @@ fn built(path: &str, body: &Value) -> Result<Request, String> {
 
 fn steer(name: &str, text: Option<&str>, menu: Option<u32>) -> Request {
     Request::Steer(SteerReq {
-        task: task(name),
+        box_name: task(name),
         text: text.map(Into::into),
         menu,
     })
@@ -47,7 +47,7 @@ fn close_sends_a_plain_close() {
     assert_eq!(
         req,
         Ok(Request::Close(CloseReq {
-            task: task("t"),
+            box_name: task("t"),
             force: false,
             trust_moor_yaml: false,
         }))
@@ -60,7 +60,7 @@ fn end_session_builds_end_session_with_the_original_name() {
     assert_eq!(
         req,
         Ok(Request::EndSession(EndSessionReq {
-            task: "app/t".into()
+            box_name: "app/t".into()
         }))
     );
 }

@@ -434,8 +434,8 @@ fn a_pane_closed_by_sleep_is_relaunched_on_wake() {
     f.surface.have_pane("p-1");
     crate::ops::sleep::run(
         &f.cx,
-        &moor_core::TaskReq {
-            task: BoxName::parse_allow_bare("t").unwrap(),
+        &moor_core::BoxReq {
+            box_name: BoxName::parse_allow_bare("t").unwrap(),
         },
     )
     .unwrap();
@@ -453,8 +453,8 @@ fn a_box_that_cannot_sleep_gets_its_agent_back() {
     with_agent(&f);
     f.surface.have_pane("p-1");
     f.surface.push_pane_obs("p-1", Err(SurfaceError::NotFound));
-    let req = moor_core::TaskReq {
-        task: BoxName::parse_allow_bare("t").unwrap(),
+    let req = moor_core::BoxReq {
+        box_name: BoxName::parse_allow_bare("t").unwrap(),
     };
     assert!(crate::ops::sleep::run(&f.cx, &req).is_err());
     assert!(f.surface.calls().contains(&"close_pane p-1".to_owned()));

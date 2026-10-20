@@ -98,7 +98,7 @@ fn fx() -> Fx {
 
 fn req(src: &str, dest: &str) -> CpReq {
     CpReq {
-        task: BoxName::parse_allow_bare("t").unwrap(),
+        box_name: BoxName::parse_allow_bare("t").unwrap(),
         src: src.into(),
         dest: dest.into(),
     }
@@ -188,7 +188,7 @@ fn absolute_destination_is_kept() {
 fn unknown_task_is_refused_without_a_copy() {
     let f = fx();
     let mut r = req("a", "a");
-    r.task = BoxName::parse_allow_bare("nope").unwrap();
+    r.box_name = BoxName::parse_allow_bare("nope").unwrap();
     run(&f.cx, &r).unwrap_err();
     assert!(f.driver.copies().is_empty());
     assert_eq!(copied(&f), 0);

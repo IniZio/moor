@@ -173,7 +173,7 @@ fn start_does_not_revive_a_task_whose_session_ended() {
     assert_eq!(newest_session(&w, id), ended);
 
     let list = ShowReq {
-        task: None,
+        box_name: None,
         events: None,
         agent: false,
         reports: false,
@@ -300,7 +300,7 @@ fn registrations(w: &World) -> Vec<String> {
 
 fn show_task() -> ShowReq {
     ShowReq {
-        task: Some(BoxName::parse_allow_bare("demo").unwrap()),
+        box_name: Some(BoxName::parse_allow_bare("demo").unwrap()),
         events: None,
         agent: false,
         reports: false,

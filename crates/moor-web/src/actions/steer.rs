@@ -59,12 +59,12 @@ pub(crate) fn build(path: &str, body: &[u8]) -> Result<Request, String> {
         "/end-session" => {
             let b: TaskBody = parse(body)?;
             name(&b.task)?;
-            Ok(Request::EndSession(EndSessionReq { task: b.task }))
+            Ok(Request::EndSession(EndSessionReq { box_name: b.task }))
         }
         "/close" => {
             let b: TaskBody = parse(body)?;
             Ok(Request::Close(CloseReq {
-                task: name(&b.task)?,
+                box_name: name(&b.task)?,
                 force: false,
                 trust_moor_yaml: false,
             }))
@@ -76,7 +76,7 @@ pub(crate) fn build(path: &str, body: &[u8]) -> Result<Request, String> {
 /// Builds a steer request from text or a menu option.
 fn steer(task: &str, text: Option<String>, menu: Option<u32>) -> Result<Request, String> {
     Ok(Request::Steer(SteerReq {
-        task: name(task)?,
+        box_name: name(task)?,
         text,
         menu,
     }))

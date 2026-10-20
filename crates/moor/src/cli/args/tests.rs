@@ -5,8 +5,8 @@ use std::path::PathBuf;
 
 use moor_core::request::{EndSessionReq, OpenHostSessionReq, OpenSessionReq};
 use moor_core::{
-    BoxId, BoxName, CloseReq, CpReq, EnvReq, GateReq, RemoveReq, ReportReq, Request, RunReq,
-    ShowReq, StartReq, SteerReq, TaskReq, WaitFor, WaitReq,
+    BoxId, BoxName, BoxReq, CloseReq, CpReq, EnvReq, GateReq, RemoveReq, ReportReq, Request,
+    RunReq, ShowReq, StartReq, SteerReq, WaitFor, WaitReq,
 };
 
 use super::{parse_ignoring_env as parse, Action};
@@ -40,8 +40,8 @@ fn n(s: &str) -> BoxName {
 }
 
 /// Task request helper.
-fn task(t: &str) -> TaskReq {
-    TaskReq { task: n(t) }
+fn task(t: &str) -> BoxReq {
+    BoxReq { box_name: n(t) }
 }
 
 #[test]
@@ -120,7 +120,7 @@ fn run_with_trailing_command() {
     assert_eq!(
         r,
         Request::Run(RunReq {
-            task: n("t1"),
+            box_name: n("t1"),
             no_sync: false,
             sync: false,
             record: None,
@@ -133,7 +133,7 @@ fn run_with_trailing_command() {
     assert_eq!(
         r,
         Request::Run(RunReq {
-            task: n("t1"),
+            box_name: n("t1"),
             no_sync: true,
             sync: false,
             record: Some("r".into()),
@@ -150,7 +150,7 @@ fn run_sync_flag() {
     assert_eq!(
         req(&["run", "t1", "--sync", "--", "make"]),
         Request::Run(RunReq {
-            task: n("t1"),
+            box_name: n("t1"),
             no_sync: false,
             sync: true,
             record: None,
@@ -200,7 +200,7 @@ fn wait_for_and_timeout() {
     assert_eq!(
         req(&["wait", "t1", "--for", "idle", "--timeout", "5"]),
         Request::Wait(WaitReq {
-            task: n("t1"),
+            box_name: n("t1"),
             wait_for: Some(WaitFor::Idle),
             timeout_secs: Some(5),
         })
@@ -208,7 +208,7 @@ fn wait_for_and_timeout() {
     assert_eq!(
         req(&["wait", "t1", "--for", "input"]),
         Request::Wait(WaitReq {
-            task: n("t1"),
+            box_name: n("t1"),
             wait_for: Some(WaitFor::Input),
             timeout_secs: None,
         })
@@ -220,7 +220,9 @@ fn wait_for_and_timeout() {
 fn end_parses_to_end_session() {
     assert_eq!(
         req(&["end", "t1"]),
-        Request::EndSession(EndSessionReq { task: "t1".into() })
+        Request::EndSession(EndSessionReq {
+            box_name: "t1".into()
+        })
     );
     assert!(run(&["end"]).is_err());
 }
@@ -230,7 +232,7 @@ fn session_open_takes_seed_text() {
     assert_eq!(
         req(&["session", "open", "t1", "--seed", "hi"]),
         Request::OpenSession(OpenSessionReq {
-            task: "t1".into(),
+            box_name: "t1".into(),
             seed: "hi".into(),
             parent: None,
         })
@@ -296,7 +298,7 @@ fn session_open_reads_seed_file_verbatim() {
     assert_eq!(
         req(&["session", "open", "t1", "--seed-file", p]),
         Request::OpenSession(OpenSessionReq {
-            task: "t1".into(),
+            box_name: "t1".into(),
             seed: "line one\n  line two\n\n".into(),
             parent: None,
         })
@@ -319,7 +321,7 @@ fn steer_text_or_menu() {
     assert_eq!(
         req(&["steer", "t1", "go on"]),
         Request::Steer(SteerReq {
-            task: n("t1"),
+            box_name: n("t1"),
             text: Some("go on".into()),
             menu: None
         })
@@ -327,7 +329,7 @@ fn steer_text_or_menu() {
     assert_eq!(
         req(&["steer", "t1", "--menu", "2"]),
         Request::Steer(SteerReq {
-            task: n("t1"),
+            box_name: n("t1"),
             text: None,
             menu: Some(2)
         })
@@ -341,7 +343,7 @@ fn report_close_remove_cp() {
     assert_eq!(
         req(&["report", "t1", "--kind", "k", "--title", "T", "--file", "f"]),
         Request::Report(ReportReq {
-            task: n("t1"),
+            box_name: n("t1"),
             kind: "k".into(),
             title: Some("T".into()),
             file: Some("f".into()),
@@ -350,7 +352,7 @@ fn report_close_remove_cp() {
     assert_eq!(
         req(&["close", "t1", "--force"]),
         Request::Close(CloseReq {
-            task: n("t1"),
+            box_name: n("t1"),
             force: true,
             trust_moor_yaml: false
         })
@@ -358,7 +360,7 @@ fn report_close_remove_cp() {
     assert_eq!(
         req(&["close", "demo", "--trust-moor-yaml"]),
         Request::Close(CloseReq {
-            task: n("demo"),
+            box_name: n("demo"),
             force: false,
             trust_moor_yaml: true
         })
@@ -366,7 +368,7 @@ fn report_close_remove_cp() {
     assert_eq!(
         req(&["close", "demo"]),
         Request::Close(CloseReq {
-            task: n("demo"),
+            box_name: n("demo"),
             force: false,
             trust_moor_yaml: false
         })
@@ -374,14 +376,14 @@ fn report_close_remove_cp() {
     assert_eq!(
         req(&["remove", "t1", "--discard"]),
         Request::Remove(RemoveReq {
-            task: n("t1"),
+            box_name: n("t1"),
             discard: true
         })
     );
     assert_eq!(
         req(&["cp", "t1", "a.txt", "BOX:b.txt"]),
         Request::Cp(CpReq {
-            task: n("t1"),
+            box_name: n("t1"),
             src: "a.txt".into(),
             dest: "BOX:b.txt".into()
         })
@@ -391,7 +393,7 @@ fn report_close_remove_cp() {
 #[test]
 fn show_and_list_alias() {
     let want = Request::Show(ShowReq {
-        task: Some(n("t1")),
+        box_name: Some(n("t1")),
         events: Some(3),
         agent: true,
         reports: true,
@@ -406,7 +408,7 @@ fn show_and_list_alias() {
     assert_eq!(
         req(&["show"]),
         Request::Show(ShowReq {
-            task: None,
+            box_name: None,
             events: None,
             agent: false,
             reports: false,
@@ -534,7 +536,7 @@ fn valid_task_name_parses() {
     assert_eq!(
         req(&["show", "a-1"]),
         Request::Show(ShowReq {
-            task: Some(n("a-1")),
+            box_name: Some(n("a-1")),
             events: None,
             agent: false,
             reports: false,

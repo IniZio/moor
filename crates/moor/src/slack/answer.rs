@@ -98,7 +98,7 @@ fn answer(prompt: &SlackPrompt, owner: &str, choice: u32, store: &Store, fx: &mu
         return (fx.reply)(channel, thread, &text);
     }
     let steer = Request::Steer(SteerReq {
-        task: prompt.task.clone(),
+        box_name: prompt.task.clone(),
         text: None,
         menu: Some(choice),
     });

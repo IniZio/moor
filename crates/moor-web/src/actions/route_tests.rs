@@ -111,7 +111,7 @@ fn name(s: &str) -> BoxName {
 
 fn steer(text: Option<&str>, menu: Option<u32>) -> Request {
     Request::Steer(SteerReq {
-        task: name("t"),
+        box_name: name("t"),
         text: text.map(str::to_owned),
         menu,
     })
@@ -133,13 +133,15 @@ fn each_action_makes_one_request_and_returns_the_envelope() {
         (
             "/end-session",
             json!({"task": "t"}),
-            Request::EndSession(EndSessionReq { task: "t".into() }),
+            Request::EndSession(EndSessionReq {
+                box_name: "t".into(),
+            }),
         ),
         (
             "/close",
             json!({"task": "t"}),
             Request::Close(CloseReq {
-                task: name("t"),
+                box_name: name("t"),
                 force: false,
                 trust_moor_yaml: false,
             }),

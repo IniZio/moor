@@ -120,7 +120,7 @@ fn detail(client: &Client, name: &str) -> HttpResponse {
         return HttpResponse::text("400 Bad Request", "bad box name");
     };
     let show = Request::Show(ShowReq {
-        task: Some(task),
+        box_name: Some(task),
         events: Some(BOX_EVENTS),
         agent: true,
         reports: false,
@@ -217,7 +217,7 @@ fn tree(client: &Client, db: &Mutex<Db>) -> HttpResponse {
     let show = sessions
         .and_then(|s| {
             let req = Request::Show(ShowReq {
-                task: None,
+                box_name: None,
                 events: None,
                 agent: true,
                 reports: false,

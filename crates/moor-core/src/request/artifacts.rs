@@ -12,7 +12,8 @@ pub const ARTIFACT_CHUNK: u64 = 512 * 1024;
 #[serde(deny_unknown_fields)]
 pub struct ArtifactsReq {
     /// Box name.
-    pub task: BoxName,
+    #[serde(rename = "box")]
+    pub box_name: BoxName,
     /// List every version; only the latest of each artifact when false.
     #[serde(default)]
     pub all: bool,
@@ -23,7 +24,8 @@ pub struct ArtifactsReq {
 #[serde(deny_unknown_fields)]
 pub struct ArtifactReadReq {
     /// Box name.
-    pub task: BoxName,
+    #[serde(rename = "box")]
+    pub box_name: BoxName,
     /// Artifact name.
     pub name: String,
     /// Version to read; the latest when absent.
@@ -48,12 +50,12 @@ mod tests {
 
     #[test]
     fn artifacts_round_trips() {
-        let wire = json!({"cmd": "artifacts", "task": "repo/alpha", "all": true});
+        let wire = json!({"cmd": "artifacts", "box": "repo/alpha", "all": true});
         let req: Request = serde_json::from_value(wire.clone()).expect("parse");
         assert_eq!(
             req,
             Request::Artifacts(ArtifactsReq {
-                task: task(),
+                box_name: task(),
                 all: true
             })
         );
@@ -63,13 +65,12 @@ mod tests {
 
     #[test]
     fn artifacts_all_defaults_false() {
-        let req: Request =
-            serde_json::from_value(json!({"cmd": "artifacts", "task": "repo/alpha"}))
-                .expect("parse");
+        let req: Request = serde_json::from_value(json!({"cmd": "artifacts", "box": "repo/alpha"}))
+            .expect("parse");
         assert_eq!(
             req,
             Request::Artifacts(ArtifactsReq {
-                task: task(),
+                box_name: task(),
                 all: false
             })
         );
@@ -78,12 +79,12 @@ mod tests {
     #[test]
     fn artifact_read_round_trips() {
         let wire = json!({
-            "cmd": "artifact-read", "task": "repo/alpha", "name": "a.txt",
+            "cmd": "artifact-read", "box": "repo/alpha", "name": "a.txt",
             "version": 2, "offset": 10, "len": 20
         });
         let req: Request = serde_json::from_value(wire.clone()).expect("parse");
         let want = ArtifactReadReq {
-            task: task(),
+            box_name: task(),
             name: "a.txt".into(),
             version: Some(2),
             offset: 10,
@@ -96,10 +97,10 @@ mod tests {
 
     #[test]
     fn artifact_read_defaults_latest_from_start() {
-        let wire = json!({"cmd": "artifact-read", "task": "repo/alpha", "name": "a", "len": 5});
+        let wire = json!({"cmd": "artifact-read", "box": "repo/alpha", "name": "a", "len": 5});
         let req: Request = serde_json::from_value(wire).expect("parse");
         let want = ArtifactReadReq {
-            task: task(),
+            box_name: task(),
             name: "a".into(),
             version: None,
             offset: 0,
@@ -110,10 +111,10 @@ mod tests {
 
     #[test]
     fn unknown_field_is_refused() {
-        let wire = json!({"cmd": "artifacts", "task": "repo/alpha", "x": 1});
+        let wire = json!({"cmd": "artifacts", "box": "repo/alpha", "x": 1});
         assert!(serde_json::from_value::<Request>(wire).is_err());
         let wire =
-            json!({"cmd": "artifact-read", "task": "repo/alpha", "name": "a", "len": 1, "x": 1});
+            json!({"cmd": "artifact-read", "box": "repo/alpha", "name": "a", "len": 1, "x": 1});
         assert!(serde_json::from_value::<Request>(wire).is_err());
     }
 }

@@ -41,7 +41,7 @@ impl From<WaitArgs> for WaitReq {
             WaitForArg::Run => WaitFor::Run,
         });
         Self {
-            task: a.task,
+            box_name: a.task,
             wait_for,
             timeout_secs: a.timeout,
         }

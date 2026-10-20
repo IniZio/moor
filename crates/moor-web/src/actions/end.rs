@@ -118,7 +118,7 @@ fn run(ctx: &StartCtx, h: &JobHandle, key: &str, root: SessionId) -> Result<Valu
 /// Ids of the Boxes still open.
 fn open_boxes(client: &Client) -> Result<HashSet<i64>, JobFailure> {
     let req = Request::Show(ShowReq {
-        task: None,
+        box_name: None,
         events: None,
         agent: false,
         reports: false,
@@ -191,7 +191,7 @@ fn close_all(client: &Client, h: &JobHandle, items: &[Item], open: &HashSet<i64>
                 BoxName::parse_allow_bare(name)
                     .map(|task| {
                         Request::Close(CloseReq {
-                            task,
+                            box_name: task,
                             force: false,
                             trust_moor_yaml: false,
                         })

@@ -1,7 +1,7 @@
 //! Arguments of the Task-scoped verbs that take only a name plus a flag or path.
 
 use clap::Args;
-use moor_core::{BoxName, CloseReq, CpReq, RemoveReq, TaskReq};
+use moor_core::{BoxName, BoxReq, CloseReq, CpReq, RemoveReq};
 
 use super::task_name;
 
@@ -22,7 +22,7 @@ pub(super) struct CloseArgs {
 impl From<CloseArgs> for CloseReq {
     fn from(a: CloseArgs) -> Self {
         Self {
-            task: a.task,
+            box_name: a.task,
             force: a.force,
             trust_moor_yaml: a.trust_moor_yaml,
         }
@@ -43,7 +43,7 @@ pub(super) struct RemoveArgs {
 impl From<RemoveArgs> for RemoveReq {
     fn from(a: RemoveArgs) -> Self {
         Self {
-            task: a.task,
+            box_name: a.task,
             discard: a.discard,
         }
     }
@@ -65,7 +65,7 @@ pub(super) struct CpArgs {
 impl From<CpArgs> for CpReq {
     fn from(a: CpArgs) -> Self {
         Self {
-            task: a.task,
+            box_name: a.task,
             src: a.src,
             dest: a.dest,
         }
@@ -80,8 +80,8 @@ pub(super) struct TaskArg {
     pub(super) task: BoxName,
 }
 
-impl From<TaskArg> for TaskReq {
+impl From<TaskArg> for BoxReq {
     fn from(a: TaskArg) -> Self {
-        Self { task: a.task }
+        Self { box_name: a.task }
     }
 }

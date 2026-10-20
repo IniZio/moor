@@ -43,9 +43,9 @@ pub(crate) fn run(cx: &Cx, req: &RunReq) -> Result<RunValue, CommandError> {
     record::usage(req)?;
     sync::usage(req)?;
     let store = cx.store()?;
-    let name = req.task.as_str();
+    let name = req.box_name.as_str();
     let found = store
-        .latest_task_by_name(&req.task)?
+        .latest_task_by_name(&req.box_name)?
         .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no task {name}")))?;
     dead_provisioning(cx, &found)?;
     let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, found.id, "run", boxlock::WAIT)?;

@@ -115,7 +115,7 @@ fn ready_task(cx: &Cx, driver: &FakeDriver) -> BoxId {
 
 fn req() -> OpenSessionReq {
     OpenSessionReq {
-        task: "t".into(),
+        box_name: "t".into(),
         seed: "pick up here".into(),
         parent: None,
     }
@@ -215,7 +215,7 @@ fn an_unknown_task_is_not_found() {
     let err = run(
         &f.cx,
         &OpenSessionReq {
-            task: "x".into(),
+            box_name: "x".into(),
             seed: String::new(),
             parent: None,
         },
