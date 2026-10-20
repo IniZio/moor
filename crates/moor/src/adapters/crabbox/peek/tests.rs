@@ -127,6 +127,23 @@ fn unreadable_file_is_an_error_not_none() {
 }
 
 #[test]
+fn an_ssh_drop_is_a_lost_connection_not_a_read_failure() {
+    let (p, c) = fixture();
+    scripted(
+        &p,
+        Reply::Fail {
+            code: 255,
+            stdout: String::new(),
+            stderr: "kex_exchange_identification: read: Connection reset by peer\n".to_owned(),
+        },
+    );
+    assert!(matches!(
+        peek(&c, "a.json"),
+        Err(DriverError::Transport { .. })
+    ));
+}
+
+#[test]
 fn hung_read_times_out_within_the_deadline() {
     let (p, c) = fixture();
     scripted(&p, Reply::Timeout);

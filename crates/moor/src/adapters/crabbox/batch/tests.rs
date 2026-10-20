@@ -184,6 +184,21 @@ fn ssh_failure_adds_one_error_for_the_first_unframed_step() {
 }
 
 #[test]
+fn an_ssh_drop_is_a_lost_connection_not_a_step_failure() {
+    let p = scripted(Reply::Fail {
+        code: 255,
+        stdout: String::new(),
+        stderr: "client_loop: send disconnect: Broken pipe\n".to_owned(),
+    });
+    assert_eq!(
+        batch(&p, &connect(), &[put("/w/a", b"1", 0o600)]),
+        [Err(DriverError::Transport {
+            stderr_tail: "client_loop: send disconnect: Broken pipe".to_owned(),
+        })]
+    );
+}
+
+#[test]
 fn ssh_timeout_is_a_timeout() {
     let p = scripted(Reply::Timeout);
     let out = batch(&p, &connect(), &[put("/w/a", b"1", 0o600)]);

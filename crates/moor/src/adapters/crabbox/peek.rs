@@ -12,7 +12,7 @@ use moor_core::name::{BoxHandle, BoxPath};
 use moor_core::seam::driver::DriverError;
 use moor_core::seam::proc::{Deadline, ProcError, ProcSpec, Tool};
 
-use super::errors::{map_error, Op};
+use super::errors::{map_error, transport_loss, Op};
 use super::{split_handle, static_env, target_args, Crabbox};
 
 /// Time allowed for the read.
@@ -41,9 +41,9 @@ pub(super) fn peek_file(
         Err(ProcError::Spawn(_)) => Err(DriverError::Unavailable(
             "ssh could not be started".to_owned(),
         )),
-        Err(_) => Err(DriverError::Failed {
+        Err(e) => Err(transport_loss(&e).unwrap_or_else(|| DriverError::Failed {
             summary: "box file read failed".to_owned(),
-        }),
+        })),
     }
 }
 

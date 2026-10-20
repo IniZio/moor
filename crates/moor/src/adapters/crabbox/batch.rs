@@ -12,6 +12,7 @@ use moor_core::name::{BoxHandle, BoxPath};
 use moor_core::seam::driver::{BoxStep, DriverError, ExecOutcome, StepDone};
 use moor_core::seam::proc::{Deadline, ProcError, ProcSpec, Stdin, Tool};
 
+use super::errors::transport_loss;
 use super::peek::ssh_target;
 use super::Crabbox;
 
@@ -257,7 +258,7 @@ fn ssh_failure(e: &ProcError, step: &BoxStep) -> DriverError {
     match e {
         ProcError::Timeout { after, .. } => DriverError::Timeout(*after),
         ProcError::Spawn(_) => DriverError::Unavailable("ssh could not be started".to_owned()),
-        _ => failed(summary(step)),
+        _ => transport_loss(e).unwrap_or_else(|| failed(summary(step))),
     }
 }
 
