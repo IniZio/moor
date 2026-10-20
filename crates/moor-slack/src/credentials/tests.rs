@@ -6,7 +6,7 @@ use std::path::Path;
 
 use moor_core::secret::Secret;
 
-use super::{config_dir, credential_path, remove, store, AgentKind, SlackUser};
+use super::{config_dir, credential_path, private_dir, remove, store, AgentKind, SlackUser};
 
 const CLAUDE: AgentKind = AgentKind::Claude;
 
@@ -114,4 +114,57 @@ fn each_user_gets_a_private_config_dir_per_agent() {
     assert_eq!(dir, state.path().join("claude/U1"));
     assert_eq!(mode(&dir), 0o700);
     assert_ne!(config_dir(state.path(), CLAUDE, &user("U2")).unwrap(), dir);
+}
+
+/// A directory outside the state dir, mode 0755, for a planted symlink to point at.
+fn elsewhere() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
+    dir
+}
+
+#[test]
+fn a_symlinked_credential_dir_is_refused_and_nothing_goes_through_it() {
+    for link in ["credentials", "credentials/claude"] {
+        let state = tempfile::tempdir().unwrap();
+        let target = elsewhere();
+        std::fs::create_dir(state.path().join("credentials")).unwrap();
+        let link = state.path().join(link);
+        let _ = std::fs::remove_dir(&link);
+        std::os::unix::fs::symlink(target.path(), &link).unwrap();
+        let err = store(state.path(), CLAUDE, &user("U1"), &secret("tok-xyz")).unwrap_err();
+        assert!(err.contains("not a directory that this user owns"), "{err}");
+        assert_eq!(std::fs::read_dir(target.path()).unwrap().count(), 0);
+        assert_eq!(mode(target.path()), 0o755);
+    }
+}
+
+#[test]
+fn a_symlinked_config_dir_is_refused_and_left_alone() {
+    for link in ["claude", "claude/U1"] {
+        let state = tempfile::tempdir().unwrap();
+        let target = elsewhere();
+        std::fs::create_dir(state.path().join("claude")).unwrap();
+        let link = state.path().join(link);
+        let _ = std::fs::remove_dir(&link);
+        std::os::unix::fs::symlink(target.path(), &link).unwrap();
+        let err = config_dir(state.path(), CLAUDE, &user("U1")).unwrap_err();
+        assert!(err.contains("not a directory that this user owns"), "{err}");
+        assert_eq!(std::fs::read_dir(target.path()).unwrap().count(), 0);
+        assert_eq!(mode(target.path()), 0o755);
+    }
+}
+
+#[test]
+fn a_dir_another_user_owns_is_refused_and_left_alone() {
+    let state = tempfile::tempdir().unwrap();
+    let dir = state.path().join("credentials");
+    std::fs::create_dir(&dir).unwrap();
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let me = rustix::process::geteuid().as_raw();
+    let err = private_dir(&dir, me.checked_add(1).unwrap()).unwrap_err();
+    assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied);
+    assert_eq!(mode(&dir), 0o755);
+    private_dir(&dir, me).unwrap();
+    assert_eq!(mode(&dir), 0o700);
 }
