@@ -1,5 +1,7 @@
 //! Which 401 and 403 answers from `api.github.com` count as a rejected credential.
 
+use std::time::Duration;
+
 use super::{query_answered, rig_with, Rig};
 
 /// Kinds and payloads of the Box events recorded after draining `rig`.
@@ -13,6 +15,20 @@ fn drained_events(rig: &Rig) -> Vec<(String, String)> {
         .collect()
 }
 
+/// Drains `rig` until a `kind` event is recorded, then once more for the
+/// audit nono logs after the client already has the answer.
+fn events_after(rig: &Rig, kind: &str) -> Vec<(String, String)> {
+    let mut events = Vec::new();
+    for _ in 0..100 {
+        events = drained_events(rig);
+        if events.iter().any(|(k, _)| k == kind) {
+            return drained_events(rig);
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    unreachable!("no {kind} in {events:?}")
+}
+
 #[test]
 fn anonymous_403_records_no_rejected_credential() {
     let rig = rig_with(Vec::new());
@@ -23,7 +39,7 @@ fn anonymous_403_records_no_rejected_credential() {
         unreachable!("{seen:?}")
     };
     assert!(only.authorization.is_none(), "{only:?}");
-    let events = drained_events(&rig);
+    let events = events_after(&rig, "credential_withheld");
     let kinds: Vec<&str> = events.iter().map(|(k, _)| k.as_str()).collect();
     assert!(kinds.contains(&"credential_withheld"), "{events:?}");
     assert!(!kinds.contains(&"proxy_credential_rejected"), "{events:?}");
@@ -40,7 +56,7 @@ fn credentialed_403_records_a_rejected_credential() {
         unreachable!("{seen:?}")
     };
     assert!(only.authorization.is_some(), "{only:?}");
-    let events = drained_events(&rig);
+    let events = events_after(&rig, "proxy_credential_rejected");
     let rejected: Vec<&str> = events
         .iter()
         .filter(|(k, _)| k == "proxy_credential_rejected")
@@ -67,7 +83,7 @@ fn the_filters_own_403_records_no_rejected_credential() {
     let body = resp.body_mut().read_to_string().unwrap();
     assert!(body.contains("non-canonical path"), "{body}");
     assert!(rig.seen().is_empty(), "{:?}", rig.seen());
-    let events = drained_events(&rig);
+    let events = events_after(&rig, "egress_refused");
     let kinds: Vec<&str> = events.iter().map(|(k, _)| k.as_str()).collect();
     assert!(kinds.contains(&"egress_refused"), "{events:?}");
     assert!(!kinds.contains(&"proxy_credential_rejected"), "{events:?}");
