@@ -178,7 +178,7 @@ fn allowed_mention_records_its_start_with_goal_repo_and_owner() {
 }
 
 #[test]
-fn redelivered_event_records_nothing() {
+fn redelivered_event_does_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let db = db(dir.path());
     recorded_start(&db);
@@ -233,7 +233,7 @@ fn second_mention_while_the_start_is_unconfirmed_says_it_is_still_starting() {
 }
 
 #[test]
-fn disallowed_user_is_refused_without_a_row() {
+fn disallowed_user_is_refused_without_starting() {
     let dir = tempfile::tempdir().unwrap();
     let db = db(dir.path());
     let job = record_one(&db, &mention("Ev1", "U9", "C1", "10.5", None));
@@ -257,7 +257,7 @@ fn disallowed_channel_is_ignored() {
 }
 
 #[test]
-fn first_start_binds_the_row_and_replies() {
+fn allowed_mention_starts_binds_and_replies() {
     let dir = tempfile::tempdir().unwrap();
     let db = db(dir.path());
     let row = recorded_start(&db);
