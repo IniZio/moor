@@ -372,3 +372,34 @@ fn a_failed_lookup_is_not_kept() {
     peek(&c, "a").unwrap();
     assert_eq!(lookups(&p), 2);
 }
+
+fn claim_race() -> Reply {
+    Reply::Fail {
+        code: 2,
+        stdout: String::new(),
+        stderr: "lease cbx_1 claim changed; retry".to_owned(),
+    }
+}
+
+#[test]
+fn a_claim_race_in_the_lookup_is_retried() {
+    let (p, c) = fixture();
+    p.once(Tool::Crabbox, &["ssh"], claim_race());
+    scripted(&p, Reply::Ok("x".to_owned()));
+    assert_eq!(peek(&c, "a").unwrap(), Some("x".to_owned()));
+    assert_eq!(lookups(&p), 2);
+}
+
+#[test]
+fn a_lookup_that_keeps_racing_reports_the_lease_busy_and_is_not_kept() {
+    let (p, c) = fixture();
+    for _ in 0..16 {
+        p.once(Tool::Crabbox, &["ssh"], claim_race());
+    }
+    scripted(&p, Reply::Ok("x".to_owned()));
+    let err = peek(&c, "a").unwrap_err();
+    assert_eq!(err.to_string(), "the Box lease was busy; try again");
+    assert_eq!(lookups(&p), 16);
+    peek(&c, "a").unwrap();
+    assert_eq!(lookups(&p), 17);
+}

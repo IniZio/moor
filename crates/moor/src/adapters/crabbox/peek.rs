@@ -70,9 +70,9 @@ pub(super) fn ssh_target(
             .cwd(host_cwd),
         handle,
     );
+    // Another crabbox call on the same lease can rewrite its claim mid-lookup.
     let line = cb
-        .proc
-        .run(&lookup)
+        .retry_claim_race(|| cb.proc.run(&lookup))
         .map_err(|e| map_error(Op::Target, split_handle(handle).0, &e))?
         .stdout;
     match split_words(&line) {
