@@ -13,8 +13,9 @@ use crate::env::Env;
 
 /// Sends `request` to the controller at `target` and renders its answer.
 ///
-/// Text mode prints progress frames to stderr as they arrive; `--json` keeps
-/// stderr quiet so stdout stays one envelope.
+/// Text mode prints progress frames to stderr and a `run` command's output to stdout as they
+/// arrive. `--json` drops progress and prints the command's output to stderr, so stdout stays
+/// one envelope.
 #[must_use]
 pub fn run(env: &Env, target: &Target, request: Request, opts: &GlobalOpts) -> Output {
     let interactive = matches!(request, Request::Open(_));
@@ -22,13 +23,23 @@ pub fn run(env: &Env, target: &Target, request: Request, opts: &GlobalOpts) -> O
         Request::Open(t) => Request::Connect(t),
         other => other,
     };
-    let result = super::call(env, target, &request, |msg| {
+    let progress = |msg: &str| {
         if !opts.json {
             let mut err = std::io::stderr();
             let _ = writeln!(err, "moor: {msg}");
             let _ = err.flush();
         }
-    });
+    };
+    let output = |data: &[u8]| {
+        let mut sink: Box<dyn Write> = if opts.json {
+            Box::new(std::io::stderr())
+        } else {
+            Box::new(std::io::stdout())
+        };
+        let _ = sink.write_all(data);
+        let _ = sink.flush();
+    };
+    let result = super::call(env, target, &request, progress, output);
     let resp = match result {
         Ok(resp) if interactive => attach(env, resp),
         Ok(resp) => resp,

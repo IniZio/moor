@@ -67,9 +67,13 @@ fn happy_path_collects_progress_in_order() {
         ],
     );
     let mut seen = Vec::new();
-    let resp = call(&Env::default(), &Target::Socket(sock), &show(), |m| {
-        seen.push(m.to_owned());
-    })
+    let resp = call(
+        &Env::default(),
+        &Target::Socket(sock),
+        &show(),
+        |m| seen.push(m.to_owned()),
+        |_| {},
+    )
     .unwrap();
     assert_eq!(seen, ["one", "two"]);
     assert_eq!(resp.cmd, "show");
@@ -84,7 +88,14 @@ fn happy_path_collects_progress_in_order() {
 fn unreachable_socket_maps_to_failed_with_hint() {
     let dir = tempfile::tempdir().unwrap();
     let sock = dir.path().join("missing.sock");
-    let err = call(&Env::default(), &Target::Socket(sock), &show(), |_| {}).unwrap_err();
+    let err = call(
+        &Env::default(),
+        &Target::Socket(sock),
+        &show(),
+        |_| {},
+        |_| {},
+    )
+    .unwrap_err();
     assert!(matches!(err, ClientError::Unreachable { .. }), "{err}");
     let resp = failure_response("show", &err);
     assert_eq!(resp.class, ExitClass::Failed);
@@ -107,7 +118,14 @@ fn error_frame_is_protocol_error() {
             vec![r#"{"frame":"error","id":"1","kind":"malformed","message":"bad"}"#.to_owned()],
         ],
     );
-    let err = call(&Env::default(), &Target::Socket(sock), &show(), |_| {}).unwrap_err();
+    let err = call(
+        &Env::default(),
+        &Target::Socket(sock),
+        &show(),
+        |_| {},
+        |_| {},
+    )
+    .unwrap_err();
     assert!(
         matches!(&err, ClientError::Protocol(m) if m.contains("bad")),
         "{err}"
@@ -123,7 +141,14 @@ fn hello_mismatch_is_protocol_error() {
         &sock,
         vec![vec![r#"{"frame":"hello","protocol":9}"#.to_owned()]],
     );
-    let err = call(&Env::default(), &Target::Socket(sock), &show(), |_| {}).unwrap_err();
+    let err = call(
+        &Env::default(),
+        &Target::Socket(sock),
+        &show(),
+        |_| {},
+        |_| {},
+    )
+    .unwrap_err();
     assert!(matches!(err, ClientError::Protocol(_)), "{err}");
     server.join().unwrap();
 }
@@ -133,7 +158,14 @@ fn eof_before_response_is_protocol_error() {
     let dir = tempfile::tempdir().unwrap();
     let sock = dir.path().join("c.sock");
     let server = serve(&sock, vec![vec![hello()], vec![]]);
-    let err = call(&Env::default(), &Target::Socket(sock), &show(), |_| {}).unwrap_err();
+    let err = call(
+        &Env::default(),
+        &Target::Socket(sock),
+        &show(),
+        |_| {},
+        |_| {},
+    )
+    .unwrap_err();
     assert!(matches!(err, ClientError::Protocol(_)), "{err}");
     server.join().unwrap();
 }
@@ -205,7 +237,14 @@ fn ssh_happy_path_runs_attach_and_collects_progress() {
     );
     let env = fake_ssh(dir.path(), &body);
     let mut seen = Vec::new();
-    let resp = call(&env, &ssh_target(), &show(), |m| seen.push(m.to_owned())).unwrap();
+    let resp = call(
+        &env,
+        &ssh_target(),
+        &show(),
+        |m| seen.push(m.to_owned()),
+        |_| {},
+    )
+    .unwrap();
     assert_eq!(seen, ["one"]);
     assert_eq!(resp.class, ExitClass::Ok);
 }
@@ -214,7 +253,7 @@ fn ssh_happy_path_runs_attach_and_collects_progress() {
 fn ssh_failure_names_host_and_maps_to_failed() {
     let dir = tempfile::tempdir().unwrap();
     let env = fake_ssh(dir.path(), "exit 255");
-    let err = call(&env, &ssh_target(), &show(), |_| {}).unwrap_err();
+    let err = call(&env, &ssh_target(), &show(), |_| {}, |_| {}).unwrap_err();
     assert!(matches!(err, ClientError::Unreachable { .. }), "{err}");
     let resp = failure_response("show", &err);
     assert_eq!(resp.class, ExitClass::Failed);
@@ -231,7 +270,7 @@ fn ssh_failure_names_host_and_maps_to_failed() {
 #[test]
 fn ssh_missing_binary_is_unreachable() {
     let env = Env::from_pairs([("MOOR_SSH_BIN", "/nonexistent/ssh")]);
-    let err = call(&env, &ssh_target(), &show(), |_| {}).unwrap_err();
+    let err = call(&env, &ssh_target(), &show(), |_| {}, |_| {}).unwrap_err();
     assert!(
         matches!(&err, ClientError::Unreachable { .. }) && err.to_string().contains("dev@box"),
         "{err}"
@@ -245,7 +284,7 @@ fn ssh_protocol_mismatch_names_both_versions() {
         dir.path(),
         r#"read l; echo '{"frame":"hello","protocol":9}'"#,
     );
-    let err = call(&env, &ssh_target(), &show(), |_| {}).unwrap_err();
+    let err = call(&env, &ssh_target(), &show(), |_| {}, |_| {}).unwrap_err();
     let msg = err.to_string();
     assert!(
         matches!(err, ClientError::Protocol(_))

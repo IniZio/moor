@@ -29,6 +29,9 @@ mod wait;
 mod wait_events;
 mod wake;
 
+#[cfg(test)]
+pub(crate) use run::tests as run_fixture;
+use run::Sink;
 pub(crate) use start::settle_all;
 
 #[cfg(test)]
@@ -78,6 +81,15 @@ pub(crate) fn read_artifact(
     out: &mut dyn FnMut(&[u8]) -> std::io::Result<()>,
 ) -> Result<serde_json::Value, CommandError> {
     to_value(&artifacts::read(cx, req, out)?)
+}
+
+/// `run`: pass the command's output to `out` as it runs, then the response value.
+pub(crate) fn run_streamed(
+    cx: &Cx,
+    req: &moor_core::RunReq,
+    out: Sink<'_>,
+) -> Result<serde_json::Value, CommandError> {
+    to_value(&run::streamed(cx, req, Some(out))?)
 }
 
 /// The `version` result; needs no context, so it works without config.
