@@ -1,5 +1,5 @@
 //! The one Box environment every exec uses: the same variables for every purpose, only the
-//! deadline and pty differ. The Proxy nonce arrives as a staged file, never as text.
+//! deadline and pty differ.
 
 use std::time::Duration;
 
@@ -9,16 +9,11 @@ use crate::name::DirectHost;
 use crate::seam::driver::BoxStep;
 use crate::seam::forge::ForgeRepo;
 use crate::seam::proc::Deadline;
-use crate::secret::Secret;
 
-/// The staged nonce file name inside the credential directory.
-pub const NONCE_FILE: &str = "proxy-nonce";
 /// The staged public CA certificate file name inside the credential directory.
 pub const CA_FILE: &str = "proxy-ca.pem";
 /// The CA bundle built in the credential directory when the system bundle cannot be edited.
 const BUNDLE_FILE: &str = "ca-bundle.pem";
-/// The shell variable that holds the nonce while the prelude runs; never exported.
-const NONCE_VAR: &str = "moor_nonce";
 /// System CA bundles, first existing one wins.
 const SYSTEM_BUNDLES: &str =
     "/etc/ssl/certs/ca-certificates.crt /etc/pki/tls/certs/ca-bundle.crt /etc/ssl/cert.pem";
@@ -51,12 +46,12 @@ pub enum Purpose {
     Agent,
 }
 
-/// Where the Proxy credentials were staged and which port the Box reaches the Proxy on.
+/// Where the Proxy CA was staged and which port the Box reaches the Proxy on.
 #[derive(Debug, Clone, Copy)]
 pub struct ProxyCtx<'a> {
     /// The Proxy port inside the Box.
     pub box_port: u16,
-    /// The Box directory where [`stage_steps`] put the nonce and the CA.
+    /// The Box directory where [`stage_steps`] put the CA.
     pub cred: &'a BoxPath,
     /// Hosts the Box reaches without the Proxy.
     pub direct: &'a [DirectHost],
@@ -85,8 +80,8 @@ pub struct ExecEnv {
     pub vars: Vec<(String, String)>,
     /// Names to unset before the command runs (the strip names, deduplicated).
     pub unset: Vec<String>,
-    /// Shell lines run before the command; they never contain the nonce. Always starts with
-    /// the image `PATH` line; the Proxy lines follow when there is a Proxy.
+    /// Shell lines run before the command. Always starts with the image `PATH` line; the Proxy
+    /// lines follow when there is a Proxy.
     pub prelude: Vec<String>,
     /// The working directory; none keeps the driver's default directory.
     pub cwd: Option<BoxPath>,
@@ -121,7 +116,7 @@ pub fn build(b: &BoxCtx<'_>, purpose: Purpose) -> Result<ExecEnv, String> {
     if b.proxy.is_some() {
         prelude.extend(git_remote_lines(b.origin));
         prelude.push(format!(
-            "unset {NONCE_VAR} moor_bundle moor_sys moor_mark moor_f {}",
+            "unset moor_bundle moor_sys moor_mark moor_f {}",
             java::JAVA_SHELL_VARS
         ));
         // The agent launch script exports the repo env, these included, just before the agent starts.
@@ -214,36 +209,18 @@ pub fn wrap_argv(env: &ExecEnv, argv: Vec<String>, cleanup: Option<&BoxPath>) ->
     out
 }
 
-/// The steps that stage the Proxy credentials in `cred`.
-///
-/// The nonce goes to `<cred>/proxy-nonce` (mode 0600, raw bytes, no newline) and the public CA
-/// certificate to `<cred>/proxy-ca.pem` (mode 0644), each with the text a failure of that step is
-/// reported under.
+/// The step that stages the public Proxy CA certificate in `cred`, as `<cred>/proxy-ca.pem`
+/// (mode 0644), with the text a failure of it is reported under.
 ///
 /// # Errors
-/// Returns a message when the nonce is empty or a credential path is invalid.
-pub fn stage_steps(
-    cred: &BoxPath,
-    nonce: &Secret,
-    ca_pem: &str,
-) -> Result<[(BoxStep, &'static str); 2], String> {
-    if nonce.expose().is_empty() {
-        return Err("the proxy nonce is empty".to_owned());
-    }
-    let nonce = BoxStep::Put {
-        path: cred_file(cred, NONCE_FILE)?,
-        bytes: nonce.expose().to_vec(),
-        mode: 0o600,
-    };
+/// Returns a message when the credential path is invalid.
+pub fn stage_steps(cred: &BoxPath, ca_pem: &str) -> Result<[(BoxStep, &'static str); 1], String> {
     let ca = BoxStep::Put {
         path: cred_file(cred, CA_FILE)?,
         bytes: ca_pem.as_bytes().to_vec(),
         mode: 0o644,
     };
-    Ok([
-        (nonce, "could not stage the proxy nonce"),
-        (ca, "could not stage the proxy CA"),
-    ])
+    Ok([(ca, "could not stage the proxy CA")])
 }
 
 /// `https://github.com/<owner>/<name>.git` for a GitHub origin (`https://github.com/o/n(.git)`,
@@ -286,13 +263,11 @@ fn cred_file(cred: &BoxPath, rel: &str) -> Result<BoxPath, String> {
     BoxPath::under(cred.as_str(), rel).map_err(|e| e.to_string())
 }
 
-/// Lines that read the staged nonce (removing it), trust the CA and export the Proxy variables.
+/// Lines that trust the CA and export the Proxy variables.
 fn proxy_lines(p: &ProxyCtx<'_>) -> Result<Vec<String>, String> {
-    let file = quote(cred_file(p.cred, NONCE_FILE)?.as_str());
     let ca = quote(cred_file(p.cred, CA_FILE)?.as_str());
     let built = quote(cred_file(p.cred, BUNDLE_FILE)?.as_str());
     let mut lines = vec![
-        format!("{NONCE_VAR}=$(cat {file}) && rm -f {file} && [ -n \"${NONCE_VAR}\" ] || exit 1"),
         "unset GH_TOKEN GITHUB_TOKEN".to_owned(),
         "moor_sys=; for moor_f in ".to_owned()
             + SYSTEM_BUNDLES
@@ -312,10 +287,7 @@ fn proxy_lines(p: &ProxyCtx<'_>) -> Result<Vec<String>, String> {
     }
     lines.push(format!("export NODE_EXTRA_CA_CERTS={ca}"));
     for name in ["HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy"] {
-        lines.push(format!(
-            "export {name}=\"http://moor:${{{NONCE_VAR}}}@127.0.0.1:{}\"",
-            p.box_port
-        ));
+        lines.push(format!("export {name}=\"http://127.0.0.1:{}\"", p.box_port));
     }
     lines.extend(yarn_lines(p.box_port));
     let direct: String = p
@@ -351,7 +323,7 @@ fn image_path_line_for(file: &str) -> String {
 fn yarn_lines(box_port: u16) -> Vec<String> {
     let mut lines: Vec<String> = ["YARN_HTTPS_PROXY", "YARN_HTTP_PROXY"]
         .iter()
-        .map(|name| format!("export {name}=\"http://moor:${{{NONCE_VAR}}}@127.0.0.1:{box_port}\""))
+        .map(|name| format!("export {name}=\"http://127.0.0.1:{box_port}\""))
         .collect();
     lines.extend(
         [

@@ -3,7 +3,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use moor_core::exec_env::{self, BoxCtx, ProxyCtx, Purpose, NONCE_FILE};
+use moor_core::exec_env::{self, BoxCtx, ProxyCtx, Purpose};
 use moor_core::seam::agent_profile::{EnvVar, ProxyAddr};
 use moor_core::seam::driver::BoxStep;
 use moor_core::{BoxPath, Secret};
@@ -103,19 +103,18 @@ fn the_lines_never_contain_the_nonce_and_carry_the_exports() {
     let text = lines.join("\n");
     assert!(!text.contains("sentinel-9c2e"), "{text}");
     for want in [
-        "moor_nonce=$(cat '/home/box/.moor-cred/proxy-nonce') && rm -f '/home/box/.moor-cred/proxy-nonce' && [ -n \"$moor_nonce\" ] || exit 1",
         "unset GH_TOKEN GITHUB_TOKEN",
         "export SSL_CERT_FILE=\"$moor_bundle\"",
         "export CURL_CA_BUNDLE=\"$moor_bundle\"",
         "export REQUESTS_CA_BUNDLE=\"$moor_bundle\"",
         "export GIT_SSL_CAINFO=\"$moor_bundle\"",
         "export NODE_EXTRA_CA_CERTS='/home/box/.moor-cred/proxy-ca.pem'",
-        "export HTTPS_PROXY=\"http://moor:${moor_nonce}@127.0.0.1:4321\"",
-        "export HTTP_PROXY=\"http://moor:${moor_nonce}@127.0.0.1:4321\"",
-        "export https_proxy=\"http://moor:${moor_nonce}@127.0.0.1:4321\"",
-        "export http_proxy=\"http://moor:${moor_nonce}@127.0.0.1:4321\"",
-        "export YARN_HTTPS_PROXY=\"http://moor:${moor_nonce}@127.0.0.1:4321\"",
-        "export YARN_HTTP_PROXY=\"http://moor:${moor_nonce}@127.0.0.1:4321\"",
+        "export HTTPS_PROXY=\"http://127.0.0.1:4321\"",
+        "export HTTP_PROXY=\"http://127.0.0.1:4321\"",
+        "export https_proxy=\"http://127.0.0.1:4321\"",
+        "export http_proxy=\"http://127.0.0.1:4321\"",
+        "export YARN_HTTPS_PROXY=\"http://127.0.0.1:4321\"",
+        "export YARN_HTTP_PROXY=\"http://127.0.0.1:4321\"",
         "export YARN_CACHE_FOLDER=\"$HOME/.cache/yarn\"",
         "export YARN_GLOBAL_FOLDER=\"$HOME/.cache/yarn/berry\"",
         "export npm_config_cache=\"$HOME/.cache/npm\"",
@@ -126,7 +125,7 @@ fn the_lines_never_contain_the_nonce_and_carry_the_exports() {
         "export GIT_CONFIG_VALUE_0='https://github.com/o/n.git'",
         "export GIT_CONFIG_KEY_1=remote.moor.fetch",
         "export GIT_CONFIG_VALUE_1='+refs/heads/*:refs/remotes/moor/*'",
-        "unset moor_nonce moor_bundle moor_sys moor_mark moor_f moor_g moor_p moor_ts moor_jh",
+        "unset moor_bundle moor_sys moor_mark moor_f moor_g moor_p moor_ts moor_jh",
     ] {
         assert!(lines.iter().any(|l| l == want), "missing {want}\n{text}");
     }
@@ -158,13 +157,8 @@ fn rule_and_repo_env_is_left_to_the_launch_script() {
 }
 
 #[test]
-fn an_empty_nonce_or_bad_name_is_refused() {
+fn a_bad_name_or_value_is_refused() {
     let c = cred(Path::new("/c"));
-    let empty = ProxyAddr {
-        nonce: Secret::new(Vec::new()),
-        ..proxy()
-    };
-    assert!(script_lines(&c, &empty, &[], None).is_err());
     let bad = [EnvVar {
         name: "A B".to_owned(),
         value: Secret::new(b"x".to_vec()),
@@ -178,10 +172,8 @@ fn an_empty_nonce_or_bad_name_is_refused() {
 }
 
 #[test]
-fn the_script_runs_and_builds_the_environment_from_the_staged_nonce() {
+fn the_script_runs_and_builds_the_environment() {
     let dir = tempfile::TempDir::new().unwrap();
-    let nonce_file = dir.path().join(NONCE_FILE);
-    std::fs::write(&nonce_file, SENTINEL).unwrap();
     std::fs::write(dir.path().join("proxy-ca.pem"), CA).unwrap();
     let fake = fake_sudo(dir.path());
     let lines = script_lines(
@@ -228,8 +220,7 @@ fn the_script_runs_and_builds_the_environment_from_the_staged_nonce() {
     assert!(std::fs::read_to_string(dir.path().join("ca-bundle.pem"))
         .unwrap()
         .ends_with(CA));
-    assert!(!nonce_file.exists());
-    for gone in ["GH_TOKEN", "GITHUB_TOKEN", "moor_nonce", "moor_bundle"] {
+    for gone in ["GH_TOKEN", "GITHUB_TOKEN", "moor_bundle"] {
         assert!(!env.contains_key(gone), "{gone}");
     }
     for name in ["NO_PROXY", "no_proxy"] {
@@ -241,7 +232,6 @@ fn the_script_runs_and_builds_the_environment_from_the_staged_nonce() {
 /// The result of running the whole launch script in a real `sh` with a controlled PATH.
 struct Launch {
     dir: tempfile::TempDir,
-    script: String,
     env: HashMap<String, String>,
     keytool_log: PathBuf,
 }
@@ -262,7 +252,6 @@ fn which(tool: &str) -> Option<PathBuf> {
 /// host tools only; a fake `keytool` is present only when `with_keytool`.
 fn run_launch(with_keytool: bool) -> Launch {
     let dir = tempfile::TempDir::new().unwrap();
-    std::fs::write(dir.path().join(NONCE_FILE), SENTINEL).unwrap();
     std::fs::write(dir.path().join("proxy-ca.pem"), CA).unwrap();
     let bin = fake_sudo(dir.path());
     for tool in HOST_TOOLS {
@@ -309,25 +298,21 @@ fn run_launch(with_keytool: bool) -> Launch {
     Launch {
         env: parse_env(&out.stdout),
         dir,
-        script,
         keytool_log,
     }
 }
 
 #[test]
-fn java_builds_get_the_proxy_without_the_nonce_in_argv_or_options() {
+fn java_builds_get_the_proxy_and_gradle_holds_no_proxy_login() {
     let l = run_launch(true);
-    let nonce = "sentinel-9c2e";
     let opts = l.env.get("JAVA_TOOL_OPTIONS").expect("JAVA_TOOL_OPTIONS");
     assert!(opts.contains("-Djavax.net.ssl.trustStore="), "{opts}");
     assert!(
         opts.contains(&format!("-Dhttps.proxyPort={PORT}")),
         "{opts}"
     );
-    assert!(!opts.contains(nonce), "{opts}");
     let log = std::fs::read_to_string(&l.keytool_log).unwrap();
-    assert!(!log.is_empty() && !log.contains(nonce), "{log}");
-    assert!(!l.script.contains(nonce));
+    assert!(!log.is_empty(), "{log}");
     assert!(l.env.keys().all(|k| !k.starts_with("moor_")));
     let props = l.dir.path().join("gradle/gradle.properties");
     let mode = std::fs::metadata(&props).unwrap().permissions().mode() & 0o777;
@@ -335,9 +320,12 @@ fn java_builds_get_the_proxy_without_the_nonce_in_argv_or_options() {
     let text = std::fs::read_to_string(&props).unwrap();
     assert!(text.contains("org.gradle.jvmargs=-Xmx2560m"), "{text}");
     assert!(
-        text.contains(&format!("systemProp.https.proxyPassword={nonce}")),
+        text.contains(&format!("systemProp.https.proxyPort={PORT}")),
         "{text}"
     );
+    for login in ["proxyUser", "proxyPassword"] {
+        assert!(!text.contains(login), "{login}\n{text}");
+    }
 }
 
 #[test]
@@ -347,8 +335,7 @@ fn without_keytool_the_java_setup_changes_nothing() {
     let text = std::fs::read_to_string(l.dir.path().join("gradle/gradle.properties")).unwrap();
     assert_eq!(text, "org.gradle.jvmargs=-Xmx2560m\n");
     assert!(!l.dir.path().join("home/.gradle").exists());
-    let proxy_url = format!("http://moor:sentinel-9c2e@127.0.0.1:{PORT}");
-    is(&l.env, "HTTPS_PROXY", &proxy_url);
+    is(&l.env, "HTTPS_PROXY", &format!("http://127.0.0.1:{PORT}"));
     assert_ca_vars(&l.env, l.dir.path(), &l.dir.path().join("ca-bundle.pem"));
 }
 
@@ -396,33 +383,23 @@ fn is(env: &HashMap<String, String>, k: &str, v: &str) {
 }
 
 #[test]
-fn stage_steps_put_the_nonce_and_the_ca_under_the_credential_directory() {
+fn stage_steps_put_only_the_ca_under_the_credential_directory() {
     let c = cred(Path::new("/home/box/.moor-cred"));
-    let [(nonce, nonce_text), (ca, ca_text)] = stage_steps(&c, &proxy()).unwrap();
-    let put = |path: &str, bytes: Vec<u8>, mode| BoxStep::Put {
-        path: BoxPath::restore(path).unwrap(),
-        bytes,
-        mode,
-    };
-    assert_eq!(
-        nonce,
-        put("/home/box/.moor-cred/proxy-nonce", SENTINEL.to_vec(), 0o600)
-    );
-    assert_eq!(nonce_text, "could not stage the proxy nonce");
+    let [(ca, ca_text)] = stage_steps(&c, &proxy()).unwrap();
     assert_eq!(
         ca,
-        put(
-            "/home/box/.moor-cred/proxy-ca.pem",
-            CA.as_bytes().to_vec(),
-            0o644
-        )
+        BoxStep::Put {
+            path: BoxPath::restore("/home/box/.moor-cred/proxy-ca.pem").unwrap(),
+            bytes: CA.as_bytes().to_vec(),
+            mode: 0o644,
+        }
     );
     assert_eq!(ca_text, "could not stage the proxy CA");
 }
 
 /// Asserts the proxy URL reaches the usual and Yarn variables, and Yarn gets no CA setting of its own and a cache under `$HOME/.cache`.
 fn assert_yarn_vars(env: &HashMap<String, String>, dir: &Path) {
-    let proxy_url = format!("http://moor:sentinel-9c2e@127.0.0.1:{PORT}");
+    let proxy_url = format!("http://127.0.0.1:{PORT}");
     for name in ["HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy"] {
         is(env, name, &proxy_url);
     }

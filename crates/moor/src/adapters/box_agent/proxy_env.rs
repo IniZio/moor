@@ -1,4 +1,4 @@
-//! The proxy environment the agent starts with: the nonce arrives as a staged file, never as text.
+//! The proxy environment the agent starts with.
 
 use moor_core::boxscript::quote;
 use moor_core::exec_env::{self, BoxCtx, ExecEnv, ProxyCtx, Purpose};
@@ -15,13 +15,13 @@ fn is_identifier(name: &str) -> bool {
         && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
-/// The steps that stage the nonce and the public CA certificate under the credential directory, each
-/// with the text a failure of that step is reported under.
+/// The step that stages the public CA certificate under the credential directory, with the text
+/// a failure of it is reported under.
 pub(super) fn stage_steps(
     cred: &BoxPath,
     proxy: &ProxyAddr,
-) -> Result<[(BoxStep, &'static str); 2], String> {
-    exec_env::stage_steps(cred, &proxy.nonce, &proxy.ca_pem)
+) -> Result<[(BoxStep, &'static str); 1], String> {
+    exec_env::stage_steps(cred, &proxy.ca_pem)
 }
 
 /// The Box environment the agent starts with, from the builder every exec uses. Without a `proxy` the
@@ -50,16 +50,13 @@ pub(super) fn exec_env(
 }
 
 /// Shell lines run just before the agent starts: the builder's prelude, then the profile's `env`
-/// exports. They must not contain the nonce.
+/// exports.
 pub(super) fn script_lines(
     cred: &BoxPath,
     proxy: &ProxyAddr,
     env: &[EnvVar],
     origin: Option<&str>,
 ) -> Result<Vec<String>, String> {
-    if proxy.nonce.expose().is_empty() {
-        return Err("the proxy nonce is empty".to_owned());
-    }
     let mut lines = exec_env::build(
         &BoxCtx {
             env: &proxy.box_env,

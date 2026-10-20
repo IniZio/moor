@@ -1,6 +1,5 @@
 //! Prelude lines that point Java and Gradle at the Proxy and its CA.
 
-use super::NONCE_VAR;
 use crate::name::DirectHost;
 
 /// Shell variables `java_lines` sets; the prelude unsets them at its end.
@@ -16,9 +15,8 @@ const NON_PROXY: &str = "127.0.0.1|localhost";
 
 /// Lines that give the JVM the Proxy and a trust store holding its CA.
 ///
-/// The JVM prints `JAVA_TOOL_OPTIONS` to stderr, so it carries no credentials; the
-/// nonce goes only into a mode 600 `gradle.properties`, written by shell builtins.
-/// Without `keytool`, or if any step fails, no Java variable is set.
+/// `gradle.properties` is rewritten under `umask 077`, since it may hold the user's own
+/// secrets. Without `keytool`, or if any step fails, no Java variable is set.
 pub(super) fn java_lines(box_port: u16, ca: &str, direct: &[DirectHost]) -> Vec<String> {
     let non_proxy: String = std::iter::once(NON_PROXY.to_owned())
         .chain(direct.iter().map(DirectHost::java))
@@ -39,15 +37,12 @@ pub(super) fn java_lines(box_port: u16, ca: &str, direct: &[DirectHost]) -> Vec<
     ];
     for scheme in ["http", "https"] {
         lines.push(format!(
-            "printf '%s\\n' 'systemProp.{scheme}.proxyHost=127.0.0.1' 'systemProp.{scheme}.proxyPort={box_port}' 'systemProp.{scheme}.proxyUser=moor'"
-        ));
-        lines.push(format!(
-            "printf 'systemProp.{scheme}.proxyPassword=%s\\n' \"${NONCE_VAR}\""
+            "printf '%s\\n' 'systemProp.{scheme}.proxyHost=127.0.0.1' 'systemProp.{scheme}.proxyPort={box_port}'"
         ));
     }
     lines.extend(
         [
-            format!("printf '%s\\n' 'systemProp.http.nonProxyHosts={non_proxy}' 'systemProp.https.nonProxyHosts={non_proxy}' 'systemProp.jdk.http.auth.tunneling.disabledSchemes=' 'systemProp.jdk.http.auth.proxying.disabledSchemes=' \"systemProp.javax.net.ssl.trustStore=$moor_ts\" 'systemProp.javax.net.ssl.trustStorePassword=changeit' 'systemProp.javax.net.ssl.trustStoreType=PKCS12' '{END}'"),
+            format!("printf '%s\\n' 'systemProp.http.nonProxyHosts={non_proxy}' 'systemProp.https.nonProxyHosts={non_proxy}' \"systemProp.javax.net.ssl.trustStore=$moor_ts\" 'systemProp.javax.net.ssl.trustStorePassword=changeit' 'systemProp.javax.net.ssl.trustStoreType=PKCS12' '{END}'"),
             "} >\"$moor_p.$$\" ) &&".to_owned(),
             "mv -f \"$moor_p.$$\" \"$moor_p\"; then".to_owned(),
             format!(

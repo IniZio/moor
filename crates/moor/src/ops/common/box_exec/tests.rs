@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use moor_core::config::proxy::{ResolvedInject, ResolvedRule, FORGE_CREDENTIAL};
 use moor_core::config::{parse_user, BoxSettings, Flags, UserConfig};
-use moor_core::exec_env::{Purpose, CA_FILE, NONCE_FILE};
+use moor_core::exec_env::{Purpose, CA_FILE};
 use moor_core::seam::agent_profile::ProxyAddr;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
 use moor_core::secret::Secret;
@@ -114,7 +114,7 @@ fn boxed_proxy() -> BoxProxy {
 }
 
 #[test]
-fn a_proxy_stages_the_nonce_and_ca_and_the_prelude_exports_the_proxy() {
+fn a_proxy_stages_only_the_ca_and_the_prelude_exports_the_proxy() {
     let dir = tempfile::tempdir().unwrap();
     let r = home_rig(dir.path());
     let p = boxed_proxy();
@@ -132,7 +132,7 @@ fn a_proxy_stages_the_nonce_and_ca_and_the_prelude_exports_the_proxy() {
         let path = BoxPath::under(staged.as_str(), f).unwrap();
         r.driver.peek_file(&r.handle, &path, dir.path()).unwrap()
     };
-    assert_eq!(peek(NONCE_FILE).as_deref(), Some("s3cret"));
+    assert_eq!(peek("proxy-nonce"), None);
     assert_eq!(peek(CA_FILE).as_deref(), Some("CA-PEM"));
     assert_eq!(
         e.vars(),
@@ -142,7 +142,11 @@ fn a_proxy_stages_the_nonce_and_ca_and_the_prelude_exports_the_proxy() {
         ]
     );
     let script = e.argv(vec!["true".to_owned()]).join(" ");
-    assert!(script.contains("HTTPS_PROXY"), "{script}");
+    assert!(
+        script.contains("HTTPS_PROXY=\"http://127.0.0.1:4000\""),
+        "{script}"
+    );
+    assert!(!script.contains("s3cret"), "{script}");
 }
 
 #[test]

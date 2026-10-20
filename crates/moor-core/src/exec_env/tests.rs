@@ -80,16 +80,35 @@ fn every_purpose_shares_vars_prelude_and_cwd() {
 }
 
 #[test]
-fn proxy_prelude_exports_from_the_staged_nonce() {
+fn every_proxy_variable_is_the_box_port_with_no_userinfo() {
     let (cred, wd, e) = (path("/cred"), path("/work"), env());
     let got = build(&ctx(&e, Some(&cred), Some(&wd)), Purpose::Run).unwrap();
+    let names = [
+        "HTTPS_PROXY",
+        "HTTP_PROXY",
+        "https_proxy",
+        "http_proxy",
+        "YARN_HTTPS_PROXY",
+        "YARN_HTTP_PROXY",
+    ];
+    for name in names {
+        let export = format!("export {name}=");
+        let lines: Vec<_> = got
+            .prelude
+            .iter()
+            .filter(|l| l.starts_with(&export))
+            .collect();
+        assert_eq!(
+            lines,
+            [&format!("{export}\"http://127.0.0.1:4321\"")],
+            "{name}"
+        );
+    }
     let text = got.prelude.join("\n");
-    assert!(text.contains("export HTTPS_PROXY=\"http://moor:${moor_nonce}@127.0.0.1:4321\""));
+    assert!(!text.contains('@'), "{text}");
     assert!(text.contains("export SSL_CERT_FILE="));
     assert!(text.contains("export NODE_EXTRA_CA_CERTS='/cred/proxy-ca.pem'"));
-    assert!(text.contains("/cred/proxy-nonce"));
     assert!(text.contains("GIT_CONFIG_VALUE_0='https://github.com/o/n.git'"));
-    assert!(got.prelude.last().unwrap().starts_with("unset moor_nonce"));
     for name in PASS_VARS {
         assert!(text.contains(&format!("export {name}=")), "{name}");
     }
@@ -295,7 +314,7 @@ fn cleanup_removes_the_directory_and_keeps_the_exit_status() {
         let name = format!("moor-exec-env-{}-{code}", std::process::id());
         let dir = std::env::temp_dir().join(name);
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("proxy-nonce"), "x").unwrap();
+        std::fs::write(dir.join("proxy-ca.pem"), "x").unwrap();
         let bp = BoxPath::restore(dir.to_str().unwrap()).unwrap();
         let w = wrap_argv(&bare, strs(&["sh", "-c", cmd]), Some(&bp));
         let (prog, args) = w.split_first().unwrap();
@@ -407,8 +426,8 @@ fn prelude_exports_yarn_after_the_proxy_and_before_no_proxy() {
     let got = build(&ctx(&e, Some(&cred), Some(&wd)), Purpose::Agent).unwrap();
     let at = |needle: &str| got.prelude.iter().position(|l| l.contains(needle)).unwrap();
     let yarn = [
-        "export YARN_HTTPS_PROXY=\"http://moor:${moor_nonce}@127.0.0.1:4321\"",
-        "export YARN_HTTP_PROXY=\"http://moor:${moor_nonce}@127.0.0.1:4321\"",
+        "export YARN_HTTPS_PROXY=\"http://127.0.0.1:4321\"",
+        "export YARN_HTTP_PROXY=\"http://127.0.0.1:4321\"",
         "export YARN_CACHE_FOLDER=\"$HOME/.cache/yarn\"",
         "export YARN_GLOBAL_FOLDER=\"$HOME/.cache/yarn/berry\"",
         "export npm_config_cache=\"$HOME/.cache/npm\"",
@@ -429,18 +448,9 @@ fn prelude_exports_yarn_after_the_proxy_and_before_no_proxy() {
 }
 
 #[test]
-fn stage_steps_put_the_nonce_private_and_the_ca_public() {
+fn stage_steps_put_only_the_public_ca() {
     let cred = path("/cred");
-    let nonce = Secret::new(b"secret-nonce".to_vec());
-    let [(n, nmsg), (c, cmsg)] = stage_steps(&cred, &nonce, "PEM").unwrap();
-    assert_eq!(
-        n,
-        BoxStep::Put {
-            path: path("/cred/proxy-nonce"),
-            bytes: b"secret-nonce".to_vec(),
-            mode: 0o600
-        }
-    );
+    let [(c, cmsg)] = stage_steps(&cred, "PEM").unwrap();
     assert_eq!(
         c,
         BoxStep::Put {
@@ -449,9 +459,7 @@ fn stage_steps_put_the_nonce_private_and_the_ca_public() {
             mode: 0o644
         }
     );
-    assert_eq!(nmsg, "could not stage the proxy nonce");
     assert_eq!(cmsg, "could not stage the proxy CA");
-    assert!(stage_steps(&cred, &Secret::new(Vec::new()), "PEM").is_err());
 }
 
 #[test]

@@ -20,7 +20,7 @@ use crate::ops::common::proxy::{box_env, origin, plan};
 /// Time allowed for one of moor's own short commands on the Box: creating or removing the
 /// staged directory, or sweeping stale credential directories.
 pub(crate) const STEP_DEADLINE: Duration = Duration::from_secs(30);
-/// Time allowed for staging the nonce and the CA.
+/// Time allowed for staging the CA.
 const STAGE_DEADLINE: Duration = Duration::from_secs(60);
 /// Time allowed for reading the Box home: twice the slowest ssh connect seen through the gateway, 9.7 s.
 const HOME_DEADLINE: Duration = Duration::from_secs(20);
@@ -116,15 +116,15 @@ pub(crate) fn strip_env(cx: &Cx, provider: &str) -> Vec<String> {
         .map_or_else(Vec::new, |d| d.strip_env.clone())
 }
 
-/// A Box exec environment from `exec_env` plus the staged nonce directory its argv removes.
+/// A Box exec environment from `exec_env` plus the staged CA directory its argv removes.
 pub(crate) struct BoxExec {
     /// The environment the exec runs with.
     pub(crate) env: ExecEnv,
-    /// The Box directory holding the staged nonce and CA, when there is a Proxy.
+    /// The Box directory holding the staged CA, when there is a Proxy.
     staged: Option<BoxPath>,
 }
 
-/// Builds the environment for `purpose`; with a Proxy it first stages the nonce and CA.
+/// Builds the environment for `purpose`; with a Proxy it first stages the CA.
 ///
 /// The directory is under the Box user's home, outside the synced workdir, so a sync can neither
 /// delete nor upload it. It is created exclusively (mode 0700) before anything is written, so a
@@ -231,9 +231,9 @@ pub(crate) fn retry_lost<T>(
     }
 }
 
-/// Writes the Proxy nonce and CA into `dir` in the Box; a failure removes `dir` and names the step.
+/// Writes the Proxy CA into `dir` in the Box; a failure removes `dir` and names the step.
 fn stage(cx: &Cx, site: &Site<'_>, dir: &BoxPath, addr: &ProxyAddr) -> Result<(), StepError> {
-    let staged = exec_env::stage_steps(dir, &addr.nonce, &addr.ca_pem).map_err(StepError::Other)?;
+    let staged = exec_env::stage_steps(dir, &addr.ca_pem).map_err(StepError::Other)?;
     let (steps, texts): (Vec<_>, Vec<_>) = staged.into_iter().unzip();
     let driver = cx.driver();
     let failed = |text: &str, e: &DriverError| {
