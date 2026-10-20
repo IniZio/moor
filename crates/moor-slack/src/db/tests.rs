@@ -136,6 +136,30 @@ fn refused_file_is_left_as_found() {
 }
 
 #[test]
+fn refused_file_with_an_uncheckpointed_wal_is_left_as_found() {
+    let writer_dir = tempfile::tempdir().unwrap();
+    let writer = rusqlite::Connection::open(writer_dir.path().join("slack.db")).unwrap();
+    writer
+        .execute_batch("PRAGMA journal_mode = WAL; PRAGMA wal_autocheckpoint = 0;")
+        .unwrap();
+    writer
+        .execute_batch("CREATE TABLE old_rows (id INTEGER); PRAGMA user_version = 99;")
+        .unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    for name in ["slack.db", "slack.db-wal"] {
+        std::fs::copy(writer_dir.path().join(name), dir.path().join(name)).unwrap();
+    }
+    drop(writer);
+    let read = |name: &str| std::fs::read(dir.path().join(name)).ok();
+    let (db, wal) = (read("slack.db"), read("slack.db-wal"));
+    assert!(wal.as_ref().is_some_and(|w| !w.is_empty()));
+    let err = Db::open(&dir.path().join("slack.db")).err().unwrap();
+    assert!(err.starts_with("slack.db is schema 99 "), "{err}");
+    assert!(read("slack.db") == db, "slack.db changed");
+    assert!(read("slack.db-wal") == wal, "slack.db-wal changed");
+}
+
+#[test]
 fn threads_opening_a_new_file_at_once_create_the_schema_once() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("slack.db");

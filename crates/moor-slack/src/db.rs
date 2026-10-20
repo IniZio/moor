@@ -5,7 +5,9 @@ use std::time::Duration;
 
 use moor_core::name::{BoxId, BoxName};
 use rusqlite::types::Type;
-use rusqlite::{params, Connection, OptionalExtension, Row, Transaction, TransactionBehavior};
+use rusqlite::{
+    params, Connection, OpenFlags, OptionalExtension, Row, Transaction, TransactionBehavior,
+};
 
 /// How long a writer waits on a locked database.
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
@@ -85,15 +87,24 @@ impl Db {
     /// Returns the `SQLite` error text, or says to start with a fresh `slack.db` when the file
     /// is at another schema version. A refused file is left exactly as it was found.
     pub(crate) fn open(path: &Path) -> Result<Self, String> {
+        let refuse = |found: i64| {
+            format!(
+                "slack.db is schema {found} and this build needs {SCHEMA_VERSION}. \
+                 Start with a fresh slack.db."
+            )
+        };
+        if path.exists() {
+            let (found, tables) = peek(path).map_err(|e| e.to_string())?;
+            if found != SCHEMA_VERSION && (found, tables) != (0, 0) {
+                return Err(refuse(found));
+            }
+        }
         let mut conn = Connection::open(path).map_err(|e| e.to_string())?;
         conn.busy_timeout(BUSY_TIMEOUT).map_err(|e| e.to_string())?;
         create_if_empty(&mut conn).map_err(|e| e.to_string())?;
         let found = version(&conn).map_err(|e| e.to_string())?;
         if found != SCHEMA_VERSION {
-            return Err(format!(
-                "slack.db is schema {found} and this build needs {SCHEMA_VERSION}. \
-                 Start with a fresh slack.db."
-            ));
+            return Err(refuse(found));
         }
         conn.execute_batch("PRAGMA journal_mode = WAL;")
             .map_err(|e| e.to_string())?;
@@ -195,9 +206,18 @@ fn version(conn: &Connection) -> rusqlite::Result<i64> {
     conn.query_row("PRAGMA user_version", [], |r| r.get(0))
 }
 
-/// Creates the schema in a file that has no version and no tables. A file at any version is
-/// only read, so a refused file keeps every byte. The check runs again inside a write
-/// transaction, so two connections that open a new file at once create the schema once.
+/// The file's `user_version` and table count, read through a read-only connection. Closing a
+/// read-write connection checkpoints a leftover `-wal` file into the database, which would
+/// change a file that is then refused.
+fn peek(path: &Path) -> rusqlite::Result<(i64, i64)> {
+    let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+    conn.busy_timeout(BUSY_TIMEOUT)?;
+    let tables = conn.query_row("SELECT count(*) FROM sqlite_master", [], |r| r.get(0))?;
+    Ok((version(&conn)?, tables))
+}
+
+/// Creates the schema in a file that has no version and no tables. The check runs inside a
+/// write transaction, so two connections that open a new file at once create the schema once.
 fn create_if_empty(conn: &mut Connection) -> rusqlite::Result<()> {
     if version(conn)? != 0 {
         return Ok(());
