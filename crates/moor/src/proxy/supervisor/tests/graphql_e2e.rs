@@ -157,7 +157,7 @@ fn serve_one(tcp: TcpStream, config: Arc<ServerConfig>, seen: &Mutex<Vec<Seen>>)
     let tls = r.get_mut();
     let wire = format!(
         "HTTP/1.1 {} \r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{reply}",
-        if authorized { "200" } else { "401" },
+        header("x-reply-status").unwrap_or_else(|| (if authorized { "200" } else { "401" }).to_owned()),
         reply.len()
     );
     if tls
@@ -343,14 +343,21 @@ pub(super) fn rig_with(extra: Vec<ResolvedRule>) -> Rig {
 
 /// POSTs a GraphQL query asking for the id of `owner/name`; status and body.
 fn query(client: &Agent, owner: &str, name: &str) -> (u16, String) {
+    query_answered(client, owner, name, None)
+}
+
+/// Like `query`, with the fake upstream told to answer with `status`.
+fn query_answered(client: &Agent, owner: &str, name: &str, status: Option<u16>) -> (u16, String) {
     let q = format!(r#"query{{repository(owner:"{owner}",name:"{name}"){{id}}}}"#);
     let body = serde_json::json!({ "query": q }).to_string();
-    let mut resp = client
+    let mut request = client
         .post("https://api.github.com/graphql")
         .header("Authorization", "token placeholder-not-real")
-        .header("Content-Type", "application/json")
-        .send(body)
-        .unwrap();
+        .header("Content-Type", "application/json");
+    if let Some(status) = status {
+        request = request.header("x-reply-status", status.to_string());
+    }
+    let mut resp = request.send(body).unwrap();
     let status = resp.status().as_u16();
     (status, resp.body_mut().read_to_string().unwrap())
 }
@@ -558,3 +565,5 @@ fn stop_closes_both_listeners() {
         );
     }
 }
+
+mod rejected;
