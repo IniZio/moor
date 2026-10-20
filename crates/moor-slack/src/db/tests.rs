@@ -136,6 +136,26 @@ fn refused_file_is_left_as_found() {
 }
 
 #[test]
+fn threads_opening_a_new_file_at_once_create_the_schema_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("slack.db");
+    // Holding the write lock lets every thread read an empty file before any can write.
+    let blocker = rusqlite::Connection::open(&path).unwrap();
+    blocker.execute_batch("BEGIN IMMEDIATE;").unwrap();
+    let opens: Vec<_> = (0..4)
+        .map(|_| {
+            let path = path.clone();
+            std::thread::spawn(move || Db::open(&path).map(drop))
+        })
+        .collect();
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    blocker.execute_batch("COMMIT;").unwrap();
+    for open in opens {
+        assert_eq!(open.join().unwrap(), Ok(()));
+    }
+}
+
+#[test]
 fn new_file_gets_the_schema_once_and_opens_again() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("slack.db");
