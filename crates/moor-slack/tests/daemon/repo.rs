@@ -125,6 +125,25 @@ fn a_user_off_the_list_is_refused_and_nothing_is_recorded() {
 }
 
 #[test]
+fn an_add_that_slack_db_cannot_record_gets_no_ack_until_it_can() {
+    let (rig, controller) = Rig::start();
+    script_repos(&controller, &["acme/api"]);
+    let db = rusqlite::Connection::open(rig.path("state-slack/slack.db")).unwrap();
+    db.execute_batch("ALTER TABLE slack_channel_repos RENAME TO hidden")
+        .unwrap();
+    rig.slack
+        .send_slash("env-1", CHANNEL, USER, "repo add acme/api");
+    rig.wait_stderr("Slack sends the envelope again");
+    std::thread::sleep(QUIET);
+    assert!(rig.slack.acks().is_empty(), "{:?}", rig.slack.acks());
+    db.execute_batch("ALTER TABLE hidden RENAME TO slack_channel_repos")
+        .unwrap();
+    let text = run(&rig, "env-1", USER, "repo add acme/api");
+    assert_eq!(text, "Recorded. This channel works on `acme/api`.");
+    assert_eq!(rows(&rig).len(), 1);
+}
+
+#[test]
 fn a_redelivered_add_is_checked_once() {
     let (rig, controller) = Rig::start();
     script_repos(&controller, &[]);
