@@ -14,6 +14,8 @@ use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
 use moor_core::{BoxId, BoxName, ProviderId, Warning};
 use sha2::{Digest, Sha256};
 
+mod stream;
+
 use super::collect;
 use crate::cx::Cx;
 use crate::store::BoxRow;
@@ -128,6 +130,15 @@ fn versions(f: &Fx) -> Vec<(String, i64)> {
 
 fn run(f: &Fx) -> usize {
     collect(&f.cx, f.cx.store().unwrap(), &row(f))
+}
+
+// Driver calls made after `before` calls, so setup's Box acquire is excluded.
+fn collect_calls(f: &Fx, before: usize) -> Vec<String> {
+    f.driver
+        .box_calls()
+        .get(before..)
+        .unwrap_or_default()
+        .to_vec()
 }
 
 #[test]
@@ -261,14 +272,16 @@ fn invalid_names_and_bad_lines_are_skipped() {
 #[test]
 fn the_index_script_checks_the_directory_and_has_a_shasum_fallback() {
     let f = fx();
+    let before = f.driver.box_calls().len();
     run(&f);
+    assert_eq!(collect_calls(&f, before), vec!["batch"]);
     let execs = f.driver.execs();
     assert_eq!(execs.len(), 1);
     let script = &execs[0].1.argv[2];
+    assert!(script.starts_with("cd -- '/work/box-1'"));
     assert!(script.contains(".moor/artifacts"));
     assert!(script.contains("shasum -a 256"));
     assert!(script.contains("-maxdepth 1 -type f"));
-    assert_eq!(execs[0].1.cwd.as_ref().unwrap().as_str(), "/work/box-1");
 }
 
 #[test]

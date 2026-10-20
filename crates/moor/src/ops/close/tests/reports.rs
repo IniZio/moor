@@ -355,12 +355,12 @@ fn recheck_probe_and_report_index_share_one_batch() {
         .iter()
         .filter(|c| *c == "batch")
         .count();
-    assert_eq!(batches, 2, "{:?}", f.driver.box_calls());
+    assert_eq!(batches, 3, "{:?}", f.driver.box_calls());
     let calls = f.driver.box_calls();
     let after_acquire: Vec<&str> = calls.iter().skip(1).map(String::as_str).collect();
     assert_eq!(
         after_acquire,
-        ["batch", "batch", "peek_file", "exec", "release"],
+        ["batch", "batch", "peek_file", "batch", "release"],
         "{calls:?}"
     );
 }

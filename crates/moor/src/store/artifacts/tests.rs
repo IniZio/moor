@@ -224,3 +224,88 @@ fn add_records_event_and_writes_manifest() {
         serde_json::from_str(&fs::read_to_string(manifest).unwrap()).unwrap();
     assert_eq!(doc.get("files").unwrap().as_array().unwrap().len(), 1);
 }
+
+/// Hex SHA-256 of `bytes`.
+fn digest(bytes: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(bytes))
+}
+
+#[test]
+fn staged_file_is_moved_in_as_a_private_version() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(dir.path());
+    let t = add(&store, "a");
+    let root = dir.path().join("artifacts");
+    let staged = dir.path().join("staged.bin");
+    fs::write(&staged, b"hello").unwrap();
+    let row = store
+        .add_artifact_staged(t, "shot.png", &staged, &digest(b"hello"), &root)
+        .unwrap()
+        .unwrap();
+    let file = root.join(t.get().to_string()).join("v1").join("shot.png");
+    assert_eq!(row.version, 1);
+    assert_eq!(row.size, 5);
+    assert_eq!(row.sha256, digest(b"hello"));
+    assert_eq!(Path::new(&row.path), file);
+    assert_eq!(fs::read(&file).unwrap(), b"hello");
+    assert_eq!(mode(&file), 0o600);
+    assert!(!staged.exists());
+    let events = store.events(t, 50).unwrap();
+    let ev = events
+        .iter()
+        .find(|e| e.kind == "artifact_published")
+        .unwrap();
+    assert_eq!(
+        ev.payload,
+        serde_json::json!({
+            "name": "shot.png",
+            "version": 1,
+            "artifact_kind": row.kind,
+            "content_type": row.content_type,
+            "size": 5,
+            "sha256": row.sha256,
+        })
+    );
+    assert!(root
+        .join(t.get().to_string())
+        .join("artifact-manifest.json")
+        .exists());
+}
+
+#[test]
+fn staged_file_with_latest_digest_is_left_in_place() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(dir.path());
+    let t = add(&store, "a");
+    store
+        .add_artifact(t, "a.log", b"same", dir.path())
+        .unwrap()
+        .unwrap();
+    let staged = dir.path().join("staged.bin");
+    fs::write(&staged, b"same").unwrap();
+    let out = store
+        .add_artifact_staged(t, "a.log", &staged, &digest(b"same"), dir.path())
+        .unwrap();
+    assert!(out.is_none());
+    assert_eq!(fs::read(&staged).unwrap(), b"same");
+    assert_eq!(store.artifacts(t).unwrap().len(), 1);
+}
+
+#[test]
+fn staged_symlink_or_missing_path_is_rejected_and_unrecorded() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(dir.path());
+    let t = add(&store, "a");
+    let target = dir.path().join("target");
+    fs::write(&target, b"x").unwrap();
+    let link = dir.path().join("link");
+    symlink(&target, &link).unwrap();
+    let missing = dir.path().join("missing");
+    for staged in [&link, &missing] {
+        store
+            .add_artifact_staged(t, "a.log", staged, &digest(b"x"), dir.path())
+            .unwrap_err();
+    }
+    assert!(store.artifacts(t).unwrap().is_empty());
+    assert_eq!(fs::read(&target).unwrap(), b"x");
+}
