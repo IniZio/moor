@@ -67,7 +67,7 @@ impl Drop for Upstream {
 }
 
 /// Test CA plus a leaf for 127.0.0.1 and localhost, as DER.
-fn make_certs() -> (String, CertificateDer<'static>, PrivateKeyDer<'static>) {
+pub(crate) fn make_certs() -> (String, CertificateDer<'static>, PrivateKeyDer<'static>) {
     let ca_key = KeyPair::generate().unwrap();
     let mut ca_params = CertificateParams::default();
     ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);

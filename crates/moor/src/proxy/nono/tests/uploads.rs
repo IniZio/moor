@@ -23,7 +23,7 @@ const PLACEHOLDER: &str = "token gho_moor-proxy";
 const BOX_ID: BoxId = BoxId::new(7);
 
 /// The resolved default `github-uploads` rule with its host set to `host`.
-fn uploads_rule(host: String) -> ResolvedRule {
+pub(super) fn uploads_rule(host: String) -> ResolvedRule {
     let creds = BTreeMap::from([(
         "CLAUDE_CODE_OAUTH_TOKEN".to_owned(),
         CredentialSource {

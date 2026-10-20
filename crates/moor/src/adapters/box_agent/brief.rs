@@ -49,9 +49,7 @@ pub(super) fn render(b: &BriefInput) -> String {
          `git fetch --unshallow moor`. Push to the branch named in the Goal if it names one, else \
          to `{branch}`. Do not switch branches. Do not add Co-Authored-By trailers to \
          commits.\n\n\
-         You may receive follow-up messages (steers) typed into this session.\n\n\
-         Decide on your own when you reasonably can, and ask a question only when the \
-         choice is the owner's.\n\n"
+         You may receive follow-up messages (steers) typed into this session.\n\n"
     );
     if let Some(n) = b.setup_exit {
         _ = write!(
@@ -130,14 +128,6 @@ mod tests {
         assert!(out.contains("HEAD is detached"));
         assert!(out.contains("Do not add Co-Authored-By trailers"));
         assert!(out.contains("follow-up messages (steers)"));
-    }
-
-    #[test]
-    fn asks_only_when_the_choice_is_the_owners() {
-        let out = render(&input(Some("g"), None));
-        assert!(out.contains(
-            "Decide on your own when you reasonably can, and ask a question only when the choice is the owner's.\n\n"
-        ));
     }
 
     #[test]
