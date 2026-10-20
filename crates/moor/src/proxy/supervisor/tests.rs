@@ -20,6 +20,8 @@ mod evict;
 mod front_e2e;
 mod graphql_e2e;
 mod hairpin_e2e;
+#[cfg(target_os = "linux")]
+mod host_tcp;
 mod nono_e2e;
 mod socket;
 mod upgrade;
