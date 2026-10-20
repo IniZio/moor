@@ -206,7 +206,7 @@ fn relaunch(
     (recreated, cause): (bool, Option<&str>),
     settings: &dyn Fn() -> Result<BoxSettings, CommandError>,
 ) -> Result<AgentLaunchView, CommandError> {
-    let id = old.task;
+    let id = old.box_id;
     let mut row = reread(store, id)?;
     let resume = match &req.goal {
         Some(_) => None,

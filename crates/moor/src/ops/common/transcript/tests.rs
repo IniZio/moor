@@ -49,7 +49,7 @@ fn unregistered(cx: &Cx, dir: &std::path::Path) -> (BoxRow, SessionRow) {
             repo: "r".into(),
         }))
         .unwrap()
-        .task;
+        .box_id;
     let fields = Fields {
         box_provider: Field::Set(ProviderId::new("p")),
         worktree: Field::Set(dir.display().to_string()),
@@ -72,7 +72,7 @@ fn unregistered(cx: &Cx, dir: &std::path::Path) -> (BoxRow, SessionRow) {
     store.apply(d).unwrap();
     store.begin_session(id, "s-1", Some("p-1")).unwrap();
     (
-        store.task(id).unwrap().unwrap(),
+        store.box_row(id).unwrap().unwrap(),
         store.live_session(id).unwrap().unwrap(),
     )
 }
@@ -198,7 +198,7 @@ fn a_session_unregistered_but_known_to_the_task_is_archived() {
         ..Fields::default()
     };
     store.apply(Decision::new(row.id).set(set)).unwrap();
-    let row = store.task(row.id).unwrap().unwrap();
+    let row = store.box_row(row.id).unwrap().unwrap();
     assert!(save(&cx, store, &row, &session, Trigger::Close).is_some());
     assert_eq!(engine.transcripts().len(), 1);
 }

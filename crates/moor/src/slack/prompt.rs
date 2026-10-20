@@ -156,7 +156,7 @@ impl Pending {
         log: &dyn Fn(&str),
     ) {
         for t in threads {
-            let Some(ep) = self.open.get(t.task.as_str()) else {
+            let Some(ep) = self.open.get(t.box_name.as_str()) else {
                 continue;
             };
             match store.slack_prompt_posted(ep.event_id) {
@@ -167,8 +167,8 @@ impl Pending {
                     continue;
                 }
             }
-            let blocks = open_blocks(t.task.as_str(), &t.owner, &ep.question, &ep.options);
-            let fallback = text(t.task.as_str(), &t.owner, &ep.question);
+            let blocks = open_blocks(t.box_name.as_str(), &t.owner, &ep.question, &ep.options);
+            let fallback = text(t.box_name.as_str(), &t.owner, &ep.question);
             let ts = match api.post_blocks(bot, &t.channel, &t.thread_ts, &fallback, &blocks) {
                 Ok(ts) => ts,
                 Err(e) => {
@@ -181,7 +181,7 @@ impl Pending {
                 channel: t.channel.clone(),
                 thread_ts: t.thread_ts.clone(),
                 message_ts: ts,
-                task: t.task.clone(),
+                box_name: t.box_name.clone(),
                 question: ep.question.clone(),
                 options: ep.options.clone(),
                 answer: None,

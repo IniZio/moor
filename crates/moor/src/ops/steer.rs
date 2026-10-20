@@ -34,7 +34,7 @@ pub(crate) fn run(cx: &Cx, req: &SteerReq) -> Result<SteerValue, CommandError> {
     let store = cx.store()?;
     let name = req.box_name.as_str();
     let id = store
-        .open_task_by_name(&req.box_name)?
+        .open_box_by_name(&req.box_name)?
         .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no open task {name}")))?
         .id;
     let no_agent = || {
@@ -48,7 +48,7 @@ pub(crate) fn run(cx: &Cx, req: &SteerReq) -> Result<SteerValue, CommandError> {
     };
     let reload = || {
         store
-            .task(id)?
+            .box_row(id)?
             .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no task {name}")))
     };
     if store.live_session(id)?.is_none() {

@@ -306,7 +306,7 @@ pub(super) fn rig_with(extra: Vec<ResolvedRule>) -> Rig {
         name: BoxName::parse_allow_bare("demo").unwrap(),
         repo: "r".into(),
     };
-    let task = store.apply(Decision::insert(nt)).unwrap().task;
+    let task = store.apply(Decision::insert(nt)).unwrap().box_id;
     let spec = ProxySpec {
         box_id: task,
         box_handle: None,

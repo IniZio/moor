@@ -45,7 +45,7 @@ fn fx_with(driver: FakeDriver) -> Fx {
             repo: "r".into(),
         }))
         .unwrap()
-        .task;
+        .box_id;
     let provider = ProviderId::new("p");
     let fields = Fields {
         box_provider: Field::Set(provider.clone()),
@@ -104,12 +104,17 @@ fn req() -> BoxReq {
 }
 
 fn states(f: &Fx) -> (BoxLifecycle, BoxState) {
-    let row = f.cx.store().unwrap().task(f.id).unwrap().unwrap();
+    let row = f.cx.store().unwrap().box_row(f.id).unwrap().unwrap();
     (row.lifecycle, row.boxed.unwrap().state)
 }
 
 fn session(f: &Fx) -> SessionState {
-    f.cx.store().unwrap().task(f.id).unwrap().unwrap().session
+    f.cx.store()
+        .unwrap()
+        .box_row(f.id)
+        .unwrap()
+        .unwrap()
+        .session
 }
 
 fn wakes(f: &Fx) -> usize {

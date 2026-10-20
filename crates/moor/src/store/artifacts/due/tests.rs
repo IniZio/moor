@@ -22,7 +22,7 @@ fn ready(store: &Store, name: &str) -> BoxId {
         name: BoxName::parse_allow_bare(name).unwrap(),
         repo: "r".into(),
     };
-    let id = store.apply(Decision::insert(nt)).unwrap().task;
+    let id = store.apply(Decision::insert(nt)).unwrap().box_id;
     store
         .writer()
         .unwrap()

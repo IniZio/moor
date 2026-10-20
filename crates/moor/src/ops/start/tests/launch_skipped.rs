@@ -45,7 +45,7 @@ fn a_launch_skipped_because_the_task_is_not_working_is_recorded() {
     let failure = view.reason.unwrap();
     assert_eq!(failure.step, "launch");
     assert!(failure.message.contains("idle"), "{}", failure.message);
-    let row = w.cx.store().unwrap().task(id).unwrap().unwrap();
+    let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert!(is_idle(&row));
     assert!(row.launch_failure.is_some());
 }
@@ -68,6 +68,6 @@ fn a_held_or_agentless_start_that_does_not_launch_stays_silent() {
         let view = launch_with(&w, id, &start);
         assert!(!view.launched && view.reason.is_none());
     }
-    let row = w.cx.store().unwrap().task(id).unwrap().unwrap();
+    let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert!(row.launch_failure.is_none());
 }

@@ -39,7 +39,7 @@ pub(crate) fn reconcile(
         Ok(store) => store,
         Err(e) => return vec![format!("cannot read the proxy state: {e}")],
     };
-    let (rows, tasks) = match (store.proxies(), store.open_tasks()) {
+    let (rows, tasks) = match (store.proxies(), store.open_boxes()) {
         (Ok(rows), Ok(tasks)) => (rows, tasks),
         (Err(e), _) | (_, Err(e)) => return vec![format!("cannot read the proxy state: {e}")],
     };
@@ -51,13 +51,16 @@ pub(crate) fn reconcile(
         let jobs: Vec<_> = rows
             .iter()
             .filter_map(|row| {
-                let state = boxes.iter().find(|(t, _)| *t == row.task).map(|(_, s)| *s);
+                let state = boxes
+                    .iter()
+                    .find(|(t, _)| *t == row.box_id)
+                    .map(|(_, s)| *s);
                 let fate = fate(host, proc, row, state)?;
                 let store = &store;
                 Some(scope.spawn(move || {
-                    settle(host, store, state_dir, row.task, &fate)
+                    settle(host, store, state_dir, row.box_id, &fate)
                         .err()
-                        .map(|e| format!("task {}: {e}", row.task.get()))
+                        .map(|e| format!("task {}: {e}", row.box_id.get()))
                 }))
             })
             .collect();

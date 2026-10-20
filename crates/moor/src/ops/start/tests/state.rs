@@ -28,7 +28,7 @@ fn ready_box_without_a_session_row_counts_as_working() {
     conn.execute("DELETE FROM sessions WHERE box = ?", [id.get()])
         .unwrap();
     drop(conn);
-    let row = store.task(id).unwrap().unwrap();
+    let row = store.box_row(id).unwrap().unwrap();
     assert_eq!(row.lifecycle, BoxLifecycle::Ready);
     assert_eq!(row.session, SessionState::Starting);
     assert!(crate::ops::start::launch::working(&row));

@@ -75,7 +75,7 @@ fn ready_task(cx: &Cx, driver: &FakeDriver) -> BoxId {
             repo: "r".into(),
         }))
         .unwrap()
-        .task;
+        .box_id;
     let provider = ProviderId::new("p");
     let fields = Fields {
         box_provider: Field::Set(provider.clone()),
@@ -157,7 +157,7 @@ fn a_live_session_ends_and_the_box_stays_ready() {
     );
     assert!(f.surface.calls().iter().any(|c| c == "close_pane p-1"));
     assert!(store.live_session(f.id).unwrap().is_none());
-    let row = store.open_task_by_name(&BoxName::parse_allow_bare("t").unwrap());
+    let row = store.open_box_by_name(&BoxName::parse_allow_bare("t").unwrap());
     let row = row.unwrap().unwrap();
     assert_eq!(row.boxed.unwrap().state, BoxState::Ready);
     assert_eq!(row.lifecycle, BoxLifecycle::Ready);
@@ -244,7 +244,7 @@ fn an_asleep_box_wakes_before_the_session_ends() {
         .box_input(BoxInput::Sleep);
     store.apply(d).unwrap();
     run(&f.cx, &req()).unwrap();
-    let row = store.task(f.id).unwrap().unwrap();
+    let row = store.box_row(f.id).unwrap().unwrap();
     assert_ne!(row.lifecycle, BoxLifecycle::Asleep);
     assert_eq!(row.boxed.unwrap().state, BoxState::Ready);
     assert!(f.driver.calls().iter().any(|c| c.starts_with("wake ")));

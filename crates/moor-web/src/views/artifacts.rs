@@ -35,13 +35,7 @@ pub(super) fn list(client: &Client, req: &HttpRequest, name: &str) -> HttpRespon
         Err(resp) => return resp,
     };
     let all = req.query_param("all") == Some("1");
-    match call(
-        client,
-        Request::Artifacts(ArtifactsReq {
-            box_name,
-            all,
-        }),
-    ) {
+    match call(client, Request::Artifacts(ArtifactsReq { box_name, all })) {
         Ok(value) => json_ok(&value),
         Err(resp) => resp,
     }

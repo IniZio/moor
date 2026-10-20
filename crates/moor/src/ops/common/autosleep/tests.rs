@@ -54,7 +54,7 @@ fn working_with(driver: FakeDriver) -> Fx {
             repo: "r".into(),
         }))
         .unwrap()
-        .task;
+        .box_id;
     let provider = ProviderId::new("p");
     let fields = Fields {
         box_provider: Field::Set(provider.clone()),
@@ -120,7 +120,7 @@ fn kinds(f: &Fx) -> Vec<String> {
 
 /// Box lifecycle, Session and Box states now.
 fn states(f: &Fx) -> (BoxLifecycle, SessionState, BoxState) {
-    let row = f.cx.store().unwrap().task(f.id).unwrap().unwrap();
+    let row = f.cx.store().unwrap().box_row(f.id).unwrap().unwrap();
     (row.lifecycle, row.session, row.boxed.unwrap().state)
 }
 
@@ -242,7 +242,7 @@ fn a_run_in_flight_skips_the_sleep() {
     f.cx.store()
         .unwrap()
         .begin_run(NewRun {
-            task: f.id,
+            box_id: f.id,
             argv: vec!["make".into()],
             record: None,
             sha: None,
@@ -269,7 +269,7 @@ fn a_box_that_cannot_sleep_stays_up_and_says_why_once() {
         (BoxLifecycle::Ready, SessionState::Idle, BoxState::Ready)
     );
     assert_eq!(sleep_calls(&f), 1);
-    let row = f.cx.store().unwrap().task(f.id).unwrap().unwrap();
+    let row = f.cx.store().unwrap().box_row(f.id).unwrap().unwrap();
     let shown = task_view(&row, f.cx.config()).driver.unwrap().sleep.reason;
     assert_eq!(shown.as_deref(), Some("provider cannot wake"));
     let stays = kinds(&f).iter().filter(|k| *k == "stays_up").count();
@@ -278,7 +278,7 @@ fn a_box_that_cannot_sleep_stays_up_and_says_why_once() {
 
 /// The stored sleep reason of the Box.
 fn reason(f: &Fx) -> Option<String> {
-    let row = f.cx.store().unwrap().task(f.id).unwrap().unwrap();
+    let row = f.cx.store().unwrap().box_row(f.id).unwrap().unwrap();
     row.boxed.unwrap().sleep_reason
 }
 
@@ -352,7 +352,7 @@ fn an_unknown_provider_stays_up_and_says_why() {
         states(&f),
         (BoxLifecycle::Ready, SessionState::Idle, BoxState::Ready)
     );
-    let row = f.cx.store().unwrap().task(f.id).unwrap().unwrap();
+    let row = f.cx.store().unwrap().box_row(f.id).unwrap().unwrap();
     let shown = task_view(&row, f.cx.config()).driver.unwrap().sleep.reason;
     assert_eq!(shown.as_deref(), Some(reason));
 }

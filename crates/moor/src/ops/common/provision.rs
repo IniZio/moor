@@ -41,7 +41,7 @@ use self::retry::{kept_box_retry, retry_in_box};
 /// The row is gone.
 pub(crate) fn reread(store: &Store, id: BoxId) -> Result<BoxRow, CommandError> {
     store
-        .task(id)?
+        .box_row(id)?
         .ok_or_else(|| CommandError::new(ErrorKind::Internal, "started task vanished"))
 }
 

@@ -9,7 +9,7 @@ use moor_core::BoxId;
 use rusqlite::{params, Transaction};
 
 use super::sql::name_taken;
-use crate::store::{load_task, sessions::live_parent, DriverRow, StoreError};
+use crate::store::{load_box, sessions::live_parent, DriverRow, StoreError};
 
 /// The Box and primary Session states a step leaves behind.
 pub(super) type Parts = (BoxLifecycle, SessionState);
@@ -29,11 +29,7 @@ pub(super) struct Stepped {
 /// Resolve the Box (inserting a new one) and step its lifecycle and primary Session.
 ///
 /// The parts are what the writer stores.
-pub(super) fn step_task(
-    tx: &Transaction<'_>,
-    now: Ts,
-    d: &Decision,
-) -> Result<Stepped, StoreError> {
+pub(super) fn step_box(tx: &Transaction<'_>, now: Ts, d: &Decision) -> Result<Stepped, StoreError> {
     let (l, s) = (d.lifecycle_input.as_ref(), d.session_input.as_ref());
     match &d.target {
         BoxTarget::New(new) => {
@@ -44,7 +40,7 @@ pub(super) fn step_task(
                 BoxLifecycle::initial(&BoxLifecycleInput::Insert)?,
                 SessionState::initial(&SessionInput::Open)?,
             );
-            let id = insert_task(tx, new, parts.0, d.parent_session, now)?;
+            let id = insert_box(tx, new, parts.0, d.parent_session, now)?;
             Ok(Stepped {
                 id,
                 existing: None,
@@ -53,7 +49,7 @@ pub(super) fn step_task(
             })
         }
         BoxTarget::Existing(id) => {
-            let row = load_task(tx, *id)?.ok_or(StoreError::NotFound(*id))?;
+            let row = load_box(tx, *id)?.ok_or(StoreError::NotFound(*id))?;
             let (lifecycle, session) = (row.lifecycle, row.session);
             let parts = if l.is_some() || s.is_some() {
                 let others = read_others(tx, *id)?;
@@ -87,7 +83,7 @@ fn read_others(tx: &Transaction<'_>, id: BoxId) -> Result<Vec<SessionState>, Sto
 }
 
 /// Insert a fresh Box row with its primary Session.
-pub(in crate::store) fn insert_task(
+pub(in crate::store) fn insert_box(
     tx: &Transaction<'_>,
     new: &NewBox,
     lifecycle: BoxLifecycle,

@@ -1,12 +1,12 @@
 //! Tests for Box refs.
 
-use crate::store::tests::{new_task, open};
+use crate::store::tests::{new_box, open};
 
 #[test]
 fn add_ref_is_new_once() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
-    let id = new_task(&store, "acme/1");
+    let id = new_box(&store, "acme/1");
     assert!(store.add_box_ref(id, "pr", "acme/app#7").unwrap());
     assert!(!store.add_box_ref(id, "pr", "acme/app#7").unwrap());
 }
@@ -15,7 +15,7 @@ fn add_ref_is_new_once() {
 fn refs_listed_by_kind_in_insert_order() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
-    let id = new_task(&store, "acme/1");
+    let id = new_box(&store, "acme/1");
     store.add_box_ref(id, "pr", "acme/app#9").unwrap();
     store.add_box_ref(id, "branch", "feat/x").unwrap();
     store.add_box_ref(id, "pr", "acme/app#3").unwrap();
@@ -31,9 +31,9 @@ fn refs_listed_by_kind_in_insert_order() {
 fn boxes_found_by_kind_and_value() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
-    let first = new_task(&store, "acme/1");
-    let second = new_task(&store, "acme/2");
-    let other = new_task(&store, "acme/3");
+    let first = new_box(&store, "acme/1");
+    let second = new_box(&store, "acme/2");
+    let other = new_box(&store, "acme/3");
     store.add_box_ref(second, "pr", "acme/app#7").unwrap();
     store.add_box_ref(first, "pr", "acme/app#7").unwrap();
     store.add_box_ref(other, "branch", "acme/app#7").unwrap();
@@ -49,6 +49,6 @@ fn boxes_found_by_kind_and_value() {
 fn unknown_kind_is_rejected() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
-    let id = new_task(&store, "acme/1");
+    let id = new_box(&store, "acme/1");
     assert!(store.add_box_ref(id, "nope", "x").is_err());
 }

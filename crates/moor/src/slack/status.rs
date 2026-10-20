@@ -182,8 +182,8 @@ impl Planner {
         let mut steps = Vec::new();
         for t in threads {
             let key = (t.channel.clone(), t.thread_ts.clone());
-            let view = views.get(t.task.as_str()).cloned().unwrap_or_default();
-            let text = render(t.task.as_str(), &view);
+            let view = views.get(t.box_name.as_str()).cloned().unwrap_or_default();
+            let text = render(t.box_name.as_str(), &view);
             let sent = self.sent.get(&key);
             if t.status_ts.is_some() && sent.and_then(|s| s.text.as_ref()) == Some(&text) {
                 continue;
@@ -243,10 +243,10 @@ pub(crate) fn follow(env: &Env, api: &Api, bot: &Secret, log: &(dyn Fn(&str) + S
                 for e in &events {
                     cursor = cursor.max(e.row.id);
                     views
-                        .entry(e.task_name.clone())
+                        .entry(e.box_name.clone())
                         .or_default()
                         .fold(&e.row.kind, &e.row.payload);
-                    pending.fold(e.row.id, &e.task_name, &e.row.kind, &e.row.payload);
+                    pending.fold(e.row.id, &e.box_name, &e.row.kind, &e.row.payload);
                 }
                 if events.len() == BATCH {
                     continue;

@@ -24,7 +24,7 @@ fn add(store: &Store, name: &str, repo: &str) -> BoxId {
         name: BoxName::parse_allow_bare(name).unwrap(),
         repo: repo.into(),
     };
-    store.apply(Decision::insert(nt)).unwrap().task
+    store.apply(Decision::insert(nt)).unwrap().box_id
 }
 
 /// Insert a Box whose worktree is `path`, bound or not.

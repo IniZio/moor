@@ -196,7 +196,7 @@ fn an_exited_agent_ends_its_session_after_the_save_and_the_task_reads_idle() {
     assert_eq!(ended["cause"], "exited");
     assert_eq!(ended["exit"], 1);
     assert!(store.live_session(id).unwrap().is_none());
-    let after = store.task(id).unwrap().unwrap();
+    let after = store.box_row(id).unwrap().unwrap();
     assert_eq!(after.lifecycle, BoxLifecycle::Ready);
     assert!(after.session.is_quiet());
 }

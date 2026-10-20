@@ -32,7 +32,7 @@ fn exclude_failure_stops_start_before_any_worktree_exists() {
         .cx
         .store()
         .unwrap()
-        .open_task_by_name(&name)
+        .open_box_by_name(&name)
         .unwrap()
         .is_none());
 }

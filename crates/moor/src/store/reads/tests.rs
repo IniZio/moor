@@ -19,16 +19,16 @@ fn open(dir: &std::path::Path) -> Store {
     Store::open(&dir.join("moor.db"), clock).unwrap()
 }
 
-/// Insert a task by name.
+/// Insert a box by name.
 fn add(store: &Store, name: &str) -> BoxId {
     let nt = NewBox {
         name: BoxName::parse_allow_bare(name).unwrap(),
         repo: "r".into(),
     };
-    store.apply(Decision::insert(nt)).unwrap().task
+    store.apply(Decision::insert(nt)).unwrap().box_id
 }
 
-/// Close a task.
+/// Close a box.
 fn close(store: &Store, id: BoxId) {
     store
         .apply(
@@ -44,22 +44,19 @@ fn name_lookups_distinguish_open_from_latest() {
     let dir = tempfile::tempdir().unwrap();
     let store = open(dir.path());
     let name = BoxName::parse_allow_bare("t").unwrap();
-    assert!(store.open_task_by_name(&name).unwrap().is_none());
-    assert!(store.latest_task_by_name(&name).unwrap().is_none());
+    assert!(store.open_box_by_name(&name).unwrap().is_none());
+    assert!(store.latest_box_by_name(&name).unwrap().is_none());
 
     let first = add(&store, "t");
-    assert_eq!(store.open_task_by_name(&name).unwrap().unwrap().id, first);
+    assert_eq!(store.open_box_by_name(&name).unwrap().unwrap().id, first);
     close(&store, first);
-    assert!(store.open_task_by_name(&name).unwrap().is_none());
-    let latest = store.latest_task_by_name(&name).unwrap().unwrap();
+    assert!(store.open_box_by_name(&name).unwrap().is_none());
+    let latest = store.latest_box_by_name(&name).unwrap().unwrap();
     assert_eq!((latest.id, latest.lifecycle), (first, BoxLifecycle::Closed));
 
     let second = add(&store, "t");
-    assert_eq!(store.open_task_by_name(&name).unwrap().unwrap().id, second);
-    assert_eq!(
-        store.latest_task_by_name(&name).unwrap().unwrap().id,
-        second
-    );
+    assert_eq!(store.open_box_by_name(&name).unwrap().unwrap().id, second);
+    assert_eq!(store.latest_box_by_name(&name).unwrap().unwrap().id, second);
 }
 
 #[test]
@@ -114,14 +111,14 @@ fn acquired() -> BoxInput {
 }
 
 #[test]
-fn waiting_tasks_returns_waiting_for_box_in_id_order() {
+fn waiting_boxes_returns_waiting_for_box_in_id_order() {
     let dir = tempfile::tempdir().unwrap();
     let store = open(dir.path());
     let d = add(&store, "d");
     let b = add(&store, "b");
     add(&store, "c");
     let a = add(&store, "a");
-    assert!(store.waiting_tasks().unwrap().is_empty());
+    assert!(store.waiting_boxes().unwrap().is_empty());
     // An index on (state, name) lets the planner return rows in name order.
     store
         .writer()
@@ -132,7 +129,7 @@ fn waiting_tasks_returns_waiting_for_box_in_id_order() {
         let input = BoxLifecycleInput::AtCapacity { max_boxes: 1 };
         store.apply(Decision::new(id).lifecycle(input)).unwrap();
     }
-    let waiting = store.waiting_tasks().unwrap();
+    let waiting = store.waiting_boxes().unwrap();
     assert_eq!(waiting.iter().map(|t| t.id).collect::<Vec<_>>(), [d, b, a]);
     assert!(waiting
         .iter()

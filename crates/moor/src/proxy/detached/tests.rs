@@ -91,7 +91,7 @@ pub(super) fn bare() -> Fx {
             repo: "r".into(),
         }))
         .unwrap()
-        .task;
+        .box_id;
     let sup = DetachedSupervisor::new(
         proc.clone(),
         clock.clone(),

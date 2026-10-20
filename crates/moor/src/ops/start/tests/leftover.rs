@@ -72,7 +72,7 @@ fn an_explicit_base_is_recorded_and_branched_from_as_its_commit() {
     let stored =
         w.cx.store()
             .unwrap()
-            .task(moor_core::BoxId::new(v.boxed.id))
+            .box_row(moor_core::BoxId::new(v.boxed.id))
             .unwrap()
             .unwrap();
     assert_eq!(stored.base.as_deref(), Some(SHA.trim()));
@@ -91,7 +91,7 @@ fn an_unknown_base_is_refused_without_creating_a_task() {
     let err = run(&w.cx, &request).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Usage);
     assert!(w.surface.calls().is_empty());
-    assert!(w.cx.store().unwrap().open_tasks().unwrap().is_empty());
+    assert!(w.cx.store().unwrap().open_boxes().unwrap().is_empty());
 }
 
 #[test]

@@ -8,7 +8,7 @@ use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::{BoxId, ProviderId};
 
-use crate::store::tests::{new_task, open};
+use crate::store::tests::{new_box, open};
 use crate::store::StoreError;
 use moor_core::seam::clock::Clock;
 
@@ -31,7 +31,7 @@ fn end_current(store: &crate::store::Store, id: BoxId) {
 fn open_session_is_refused_while_the_current_session_is_live() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
-    let id = new_task(&store, "acme/1");
+    let id = new_box(&store, "acme/1");
     for state in ["starting", "working", "idle"] {
         set_current(&store, id, state);
         let err = store.open_session(id).unwrap_err();
@@ -44,7 +44,7 @@ fn open_session_is_refused_while_the_current_session_is_live() {
 fn open_session_is_allowed_after_the_current_session_ended() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
-    let id = new_task(&store, "acme/1");
+    let id = new_box(&store, "acme/1");
     end_current(&store, id);
     assert_eq!(store.open_session(id).unwrap().ordinal, 2);
 }
@@ -53,7 +53,7 @@ fn open_session_is_allowed_after_the_current_session_ended() {
 fn open_session_is_allowed_when_the_box_has_no_session() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
-    let id = new_task(&store, "acme/1");
+    let id = new_box(&store, "acme/1");
     let conn = store.writer().unwrap();
     conn.execute("UPDATE events SET session = NULL WHERE box = ?", [id.get()])
         .unwrap();
@@ -67,7 +67,7 @@ fn open_session_is_allowed_when_the_box_has_no_session() {
 fn new_box_has_one_starting_session() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
-    let id = new_task(&store, "acme/1");
+    let id = new_box(&store, "acme/1");
     let sessions = store.box_sessions(id).unwrap();
     assert_eq!(sessions.len(), 1);
     assert_eq!(sessions[0].ordinal, 1);
@@ -78,7 +78,7 @@ fn new_box_has_one_starting_session() {
 fn open_session_numbers_after_the_last() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
-    let id = new_task(&store, "acme/1");
+    let id = new_box(&store, "acme/1");
     end_current(&store, id);
     let second = store.open_session(id).unwrap();
     end_current(&store, id);
@@ -96,8 +96,8 @@ fn open_session_numbers_after_the_last() {
 fn sessions_stay_with_their_box() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
-    let a = new_task(&store, "acme/1");
-    let b = new_task(&store, "acme/2");
+    let a = new_box(&store, "acme/1");
+    let b = new_box(&store, "acme/2");
     end_current(&store, a);
     store.open_session(a).unwrap();
     assert_eq!(store.box_sessions(a).unwrap().len(), 2);
@@ -141,7 +141,7 @@ fn add_working_session(store: &crate::store::Store, id: BoxId) {
 fn closing_a_box_ends_every_session() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
-    let id = new_task(&store, "acme/1");
+    let id = new_box(&store, "acme/1");
     let admit = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
         .box_input(BoxInput::Requested)
@@ -171,7 +171,7 @@ fn closing_a_box_ends_every_session() {
 fn rejecting_a_box_ends_every_session() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
-    let id = new_task(&store, "acme/1");
+    let id = new_box(&store, "acme/1");
     add_working_session(&store, id);
     let reject = Decision::new(id).lifecycle(BoxLifecycleInput::Rejected {
         reason: "no".into(),
@@ -181,7 +181,7 @@ fn rejecting_a_box_ends_every_session() {
 }
 
 fn ready_box(store: &crate::store::Store) -> BoxId {
-    let id = new_task(store, "acme/1");
+    let id = new_box(store, "acme/1");
     let admit = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
         .box_input(BoxInput::Requested)
@@ -251,12 +251,12 @@ fn end_current_session_twice_changes_nothing_the_second_time() {
     let (store, clock) = open(dir.path());
     let id = ready_box(&store);
     assert!(store.end_current_session(id, "exited", None).unwrap());
-    let before = store.task(id).unwrap().unwrap();
+    let before = store.box_row(id).unwrap().unwrap();
     clock.sleep(std::time::Duration::from_secs(5));
     assert!(!store.end_current_session(id, "again", Some(1)).unwrap());
     assert_eq!(ended_events(&store, id).len(), 1);
     assert_eq!(
-        store.task(id).unwrap().unwrap().updated_at,
+        store.box_row(id).unwrap().unwrap().updated_at,
         before.updated_at
     );
 }
@@ -275,7 +275,7 @@ fn end_current_session_on_unknown_box_errors() {
 fn end_current_session_ends_only_the_latest_ordinal() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
-    let id = new_task(&store, "acme/1");
+    let id = new_box(&store, "acme/1");
     add_working_session(&store, id);
     assert!(store.end_current_session(id, "requested", None).unwrap());
     assert_eq!(session_states(&store, id), ["starting", "ended"]);
@@ -288,7 +288,7 @@ fn ready_box_with_ended_session_reads_idle() {
     let id = ready_box(&store);
     clock.sleep(std::time::Duration::from_secs(5));
     store.end_current_session(id, "exited", None).unwrap();
-    let row = store.task(id).unwrap().unwrap();
+    let row = store.box_row(id).unwrap().unwrap();
     assert_eq!(row.lifecycle, BoxLifecycle::Ready);
     assert!(row.session.is_quiet());
     assert_eq!(row.idle_since.unwrap().as_millis(), 1_005_000);
@@ -305,7 +305,7 @@ fn ready_box_without_a_session_row_reads_starting() {
     conn.execute("DELETE FROM sessions WHERE box = ?", [id.get()])
         .unwrap();
     drop(conn);
-    let row = store.task(id).unwrap().unwrap();
+    let row = store.box_row(id).unwrap().unwrap();
     assert_eq!(row.lifecycle, BoxLifecycle::Ready);
     assert_eq!(row.session, SessionState::Starting);
     assert!(!row.session.is_quiet());
@@ -327,8 +327,8 @@ fn parent_of(store: &crate::store::Store, session: i64) -> Option<i64> {
 fn open_child_session_records_a_box_or_host_parent() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
-    let id = new_task(&store, "acme/1");
-    let other = new_task(&store, "acme/2");
+    let id = new_box(&store, "acme/1");
+    let other = new_box(&store, "acme/2");
     let box_parent = store.box_sessions(other).unwrap()[0].id;
     let host = store.open_host_session("/w", None, None).unwrap();
     end_current(&store, id);
@@ -343,7 +343,7 @@ fn open_child_session_records_a_box_or_host_parent() {
 fn open_session_leaves_the_parent_unset() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
-    let id = new_task(&store, "acme/1");
+    let id = new_box(&store, "acme/1");
     end_current(&store, id);
     let session = store.open_session(id).unwrap();
     assert_eq!(parent_of(&store, session.id), None);
@@ -353,7 +353,7 @@ fn open_session_leaves_the_parent_unset() {
 fn check_parent_accepts_live_box_and_host_sessions() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
-    let id = new_task(&store, "acme/1");
+    let id = new_box(&store, "acme/1");
     store
         .check_parent(store.box_sessions(id).unwrap()[0].id)
         .unwrap();
@@ -383,7 +383,7 @@ fn check_parent_refuses_unknown_and_ended_sessions() {
 fn open_child_session_refuses_an_ended_parent_and_writes_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
-    let id = new_task(&store, "acme/1");
+    let id = new_box(&store, "acme/1");
     end_current(&store, id);
     let host = store.open_host_session("/w", None, None).unwrap();
     store.end_host_session(host).unwrap();

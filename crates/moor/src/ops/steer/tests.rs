@@ -81,7 +81,7 @@ fn ready_task(cx: &Cx, driver: &FakeDriver) -> BoxId {
             repo: "r".into(),
         }))
         .unwrap()
-        .task;
+        .box_id;
     let provider = ProviderId::new("p");
     let fields = Fields {
         box_provider: Field::Set(provider.clone()),
@@ -276,7 +276,7 @@ fn an_asleep_task_wakes_before_the_send() {
         .box_input(BoxInput::Sleep);
     store.apply(d).unwrap();
     run(&f.cx, &text("hi")).unwrap();
-    let row = store.task(f.id).unwrap().unwrap();
+    let row = store.box_row(f.id).unwrap().unwrap();
     assert_ne!(row.lifecycle, BoxLifecycle::Asleep);
     assert_eq!(row.boxed.unwrap().state, BoxState::Ready);
     assert!(f.driver.calls().iter().any(|c| c.starts_with("wake ")));

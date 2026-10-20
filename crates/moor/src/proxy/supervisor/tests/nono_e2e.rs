@@ -70,7 +70,7 @@ fn task_with_box(store: &Store, driver: &FakeDriver) -> (BoxId, BoxHandle) {
         name: BoxName::parse_allow_bare("demo").unwrap(),
         repo: "r".into(),
     };
-    let id = store.apply(Decision::insert(nt)).unwrap().task;
+    let id = store.apply(Decision::insert(nt)).unwrap().box_id;
     let provider = ProviderId::new("p");
     let got = driver
         .acquire(&AcquireReq {

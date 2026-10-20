@@ -18,7 +18,7 @@ const CHANGED: &str = "setup: [a]\nenv:\n  A: \"2\"\n";
 
 /// Leaves `yaml` as the `.moor.yaml` in the worktree of task `id`.
 fn write_worktree_yaml(w: &World, id: BoxId, yaml: &str) {
-    let wt = w.cx.store().unwrap().task(id).unwrap().unwrap().worktree;
+    let wt = w.cx.store().unwrap().box_row(id).unwrap().unwrap().worktree;
     let wt = wt.unwrap();
     std::fs::create_dir_all(&wt).unwrap();
     std::fs::write(Path::new(&wt).join(".moor.yaml"), yaml).unwrap();
@@ -137,7 +137,7 @@ fn idle_with(yaml: &str) -> (World, Arc<FakeEngine>, BoxId) {
 }
 
 fn goal_of(w: &World, id: BoxId) -> Option<String> {
-    w.cx.store().unwrap().task(id).unwrap().unwrap().goal
+    w.cx.store().unwrap().box_row(id).unwrap().unwrap().goal
 }
 
 #[test]

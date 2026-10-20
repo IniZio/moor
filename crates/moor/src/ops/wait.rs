@@ -29,7 +29,7 @@ pub(crate) fn run(cx: &Cx, req: &WaitReq) -> Result<WaitValue, CommandError> {
     let store = cx.store()?;
     let name = req.box_name.as_str();
     let id = store
-        .latest_task_by_name(&req.box_name)?
+        .latest_box_by_name(&req.box_name)?
         .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no task {name}")))?
         .id;
     let want = req.wait_for.unwrap_or(WaitFor::Idle);
@@ -39,7 +39,7 @@ pub(crate) fn run(cx: &Cx, req: &WaitReq) -> Result<WaitValue, CommandError> {
     loop {
         let elapsed = clock.instant().saturating_duration_since(started);
         let row = store
-            .task(id)?
+            .box_row(id)?
             .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no task {name}")))?;
         let reading = activity::read(cx, store, &row, clock.now())?;
         if let Some(failure) = reading

@@ -3,7 +3,7 @@
 use moor_core::seam::clock::Clock;
 use moor_core::BoxName;
 
-use crate::store::tests::{new_task, open};
+use crate::store::tests::{new_box, open};
 use crate::store::{SlackPrompt, SlackThread, Store};
 
 fn name(s: &str) -> BoxName {
@@ -23,8 +23,8 @@ fn event_is_new_once() {
 fn thread_binding_first_wins() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
-    new_task(&store, "first");
-    new_task(&store, "second");
+    new_box(&store, "first");
+    new_box(&store, "second");
     assert_eq!(store.slack_thread("C1", "1.1").unwrap(), None);
     assert!(store
         .bind_slack_thread("C1", "1.1", &name("first"), "U1")
@@ -47,7 +47,7 @@ fn thread_binding_first_wins() {
 fn existing_v1_db_gains_tables() {
     let dir = tempfile::tempdir().unwrap();
     let (store, clock) = open(dir.path());
-    new_task(&store, "t");
+    new_box(&store, "t");
     store
         .writer()
         .unwrap()
@@ -66,8 +66,8 @@ fn existing_v1_db_gains_tables() {
 fn owner_kept_from_first_bind() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
-    new_task(&store, "first");
-    new_task(&store, "second");
+    new_box(&store, "first");
+    new_box(&store, "second");
     assert_eq!(store.slack_thread_owner("C1", "1.1").unwrap(), None);
     store
         .bind_slack_thread("C1", "1.1", &name("first"), "U1")
@@ -85,7 +85,7 @@ fn owner_kept_from_first_bind() {
 fn status_ts_set_and_read() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
-    new_task(&store, "t");
+    new_box(&store, "t");
     store
         .bind_slack_thread("C1", "1.1", &name("t"), "U1")
         .unwrap();
@@ -110,8 +110,8 @@ fn status_ts_set_and_read() {
 fn threads_listed_oldest_first() {
     let dir = tempfile::tempdir().unwrap();
     let (store, clock) = open(dir.path());
-    new_task(&store, "a");
-    new_task(&store, "b");
+    new_box(&store, "a");
+    new_box(&store, "b");
     assert!(store.slack_threads().unwrap().is_empty());
     store
         .bind_slack_thread("C1", "2.2", &name("b"), "U2")
@@ -127,14 +127,14 @@ fn threads_listed_oldest_first() {
             SlackThread {
                 channel: "C1".into(),
                 thread_ts: "2.2".into(),
-                task: name("b"),
+                box_name: name("b"),
                 owner: "U2".into(),
                 status_ts: None,
             },
             SlackThread {
                 channel: "C1".into(),
                 thread_ts: "1.1".into(),
-                task: name("a"),
+                box_name: name("a"),
                 owner: "U1".into(),
                 status_ts: None,
             },
@@ -148,7 +148,7 @@ fn prompt(event_id: i64, thread_ts: &str, message_ts: &str) -> SlackPrompt {
         channel: "C1".into(),
         thread_ts: thread_ts.into(),
         message_ts: message_ts.into(),
-        task: name("t"),
+        box_name: name("t"),
         question: "which?".into(),
         options: vec!["a".into(), "b \"quoted\"".into()],
         answer: None,
@@ -159,7 +159,7 @@ fn prompt(event_id: i64, thread_ts: &str, message_ts: &str) -> SlackPrompt {
 fn prompt_posted_flag() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
-    new_task(&store, "t");
+    new_box(&store, "t");
     assert!(!store.slack_prompt_posted(7).unwrap());
     store.add_slack_prompt(&prompt(7, "1.1", "2.2")).unwrap();
     assert!(store.slack_prompt_posted(7).unwrap());
@@ -170,7 +170,7 @@ fn prompt_posted_flag() {
 fn add_prompt_is_idempotent() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
-    new_task(&store, "t");
+    new_box(&store, "t");
     store.add_slack_prompt(&prompt(7, "1.1", "2.2")).unwrap();
     store.add_slack_prompt(&prompt(7, "1.1", "9.9")).unwrap();
     assert_eq!(
@@ -184,7 +184,7 @@ fn add_prompt_is_idempotent() {
 fn prompt_found_by_message() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
-    new_task(&store, "t");
+    new_box(&store, "t");
     store.add_slack_prompt(&prompt(7, "1.1", "2.2")).unwrap();
     assert_eq!(
         store.slack_prompt_by_message("C1", "2.2").unwrap(),
@@ -198,7 +198,7 @@ fn prompt_found_by_message() {
 fn open_prompt_is_newest_unanswered() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
-    new_task(&store, "t");
+    new_box(&store, "t");
     assert_eq!(store.open_slack_prompt("C1", "1.1").unwrap(), None);
     store.add_slack_prompt(&prompt(5, "1.1", "2.2")).unwrap();
     store.add_slack_prompt(&prompt(9, "1.1", "3.3")).unwrap();
@@ -228,7 +228,7 @@ fn open_prompt_is_newest_unanswered() {
 fn prompt_answered_once() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
-    new_task(&store, "t");
+    new_box(&store, "t");
     store.add_slack_prompt(&prompt(7, "1.1", "2.2")).unwrap();
     assert!(store.answer_slack_prompt(7, "1. a").unwrap());
     assert!(!store.answer_slack_prompt(7, "2. b").unwrap());
@@ -253,7 +253,7 @@ fn primary_session(store: &Store, id: moor_core::BoxId) -> i64 {
 fn binding_row_keys_front_and_conversation() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
-    let id = new_task(&store, "t");
+    let id = new_box(&store, "t");
     store
         .bind_slack_thread("C1", "1.1", &name("t"), "U1")
         .unwrap();
@@ -284,7 +284,7 @@ fn binding_to_unknown_box_fails() {
 fn prompt_row_keys_session() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
-    let id = new_task(&store, "t");
+    let id = new_box(&store, "t");
     store.add_slack_prompt(&prompt(7, "1.1", "2.2")).unwrap();
     let session: i64 = store
         .reader()
@@ -313,7 +313,7 @@ fn host_bound_thread_has_no_box() {
 fn threads_skip_host_bound_and_keep_box_bound() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
-    new_task(&store, "t");
+    new_box(&store, "t");
     bind_host_thread(&store, "1.0");
     store
         .bind_slack_thread("C1", "2.0", &name("t"), "U2")
@@ -321,7 +321,7 @@ fn threads_skip_host_bound_and_keep_box_bound() {
     let threads = store.slack_threads().unwrap();
     let seen: Vec<_> = threads
         .iter()
-        .map(|t| (t.thread_ts.as_str(), &t.task))
+        .map(|t| (t.thread_ts.as_str(), &t.box_name))
         .collect();
     assert_eq!(seen, [("2.0", &name("t"))]);
 }

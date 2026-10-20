@@ -129,7 +129,7 @@ fn a_failed_launch_records_no_session_and_leaves_the_task_working() {
         v.warnings_inline,
         ["agent dispatch failed: pane: no tab; re-run start to retry"]
     );
-    assert!(store.task(id).unwrap().unwrap().launch_failure.is_some());
+    assert!(store.box_row(id).unwrap().unwrap().launch_failure.is_some());
 }
 
 #[test]
@@ -182,7 +182,7 @@ fn starting_again_launches_once_and_clears_the_failure() {
     assert!(again.agent.launched);
     assert!(again.agent.reason.is_none());
     let store = w.cx.store().unwrap();
-    assert!(store.task(id).unwrap().unwrap().launch_failure.is_none());
+    assert!(store.box_row(id).unwrap().unwrap().launch_failure.is_none());
     assert!(store.live_session(id).unwrap().is_some());
     run(&w.cx, &goal_req("demo")).unwrap();
     assert_eq!(engine.launches().len(), 2);
@@ -201,7 +201,7 @@ fn restarting_an_idle_task_with_a_goal_and_no_session_wakes_and_launches_once() 
     store
         .apply(Decision::new(id).session(SessionInput::AgentQuiet))
         .unwrap();
-    assert!(idle(&store.task(id).unwrap().unwrap()));
+    assert!(idle(&store.box_row(id).unwrap().unwrap()));
     let again = run(&w.cx, &req("demo")).unwrap();
     assert_eq!((again.boxed.lifecycle, again.boxed.session_state), WORKING);
     assert!(again.agent.launched);

@@ -21,6 +21,7 @@ use moor_core::{BoxHandle, BoxId, BoxName, ProviderId, RunId};
 use crate::testing::clock::FakeClock;
 
 mod events_after;
+mod open_boxes;
 mod turns;
 
 use super::apply::Applied;
@@ -34,7 +35,7 @@ pub(super) fn open(dir: &Path) -> (Store, Arc<FakeClock>) {
     (store, clock)
 }
 
-/// A new-task decision.
+/// A new-box decision.
 fn insert(name: &str) -> Decision {
     Decision::insert(NewBox {
         name: BoxName::parse_allow_bare(name).unwrap(),
@@ -42,9 +43,9 @@ fn insert(name: &str) -> Decision {
     })
 }
 
-/// Insert a task and return its id.
-pub(super) fn new_task(store: &Store, name: &str) -> BoxId {
-    store.apply(insert(name)).unwrap().task
+/// Insert a box and return its id.
+pub(super) fn new_box(store: &Store, name: &str) -> BoxId {
+    store.apply(insert(name)).unwrap().box_id
 }
 
 /// Fields naming the box provider.
@@ -60,7 +61,7 @@ fn eid(a: &Applied) -> i64 {
     *a.events.first().unwrap()
 }
 
-/// Event kinds of a task in id order.
+/// Event kinds of a box in id order.
 fn kinds(store: &Store, id: BoxId) -> Vec<String> {
     store
         .events(id, 100)
@@ -96,7 +97,7 @@ fn open_creates_wal_file_with_schema_version() {
     assert_eq!(v, "4");
     drop(raw);
     let (store, _) = open(dir.path());
-    assert!(store.open_tasks().unwrap().is_empty());
+    assert!(store.open_boxes().unwrap().is_empty());
 }
 
 #[test]
@@ -116,7 +117,7 @@ fn schema_version_is_four() {
 fn primary_session_row_exists_for_each_box() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
-    let id = new_task(&store, "t");
+    let id = new_box(&store, "t");
     let raw = rusqlite::Connection::open(dir.path().join("state").join("moor.db")).unwrap();
     let n: i64 = raw
         .query_row(
@@ -146,8 +147,8 @@ fn open_rejects_mismatched_schema_version() {
 fn full_lifecycle_rows_and_events() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
-    let id = new_task(&store, "t");
-    let row = store.task(id).unwrap().unwrap();
+    let id = new_box(&store, "t");
+    let row = store.box_row(id).unwrap().unwrap();
     assert_eq!(row.lifecycle, BoxLifecycle::Checking);
 
     let d = Decision::new(id)
@@ -170,7 +171,7 @@ fn full_lifecycle_rows_and_events() {
             handle: handle.clone(),
         });
     store.apply(d).unwrap();
-    let row = store.task(id).unwrap().unwrap();
+    let row = store.box_row(id).unwrap().unwrap();
     assert_eq!(row.lifecycle, BoxLifecycle::Ready);
     assert_eq!(row.session, SessionState::Working);
     let b = row.boxed.unwrap();
@@ -186,7 +187,7 @@ fn full_lifecycle_rows_and_events() {
         });
     let a = store.apply(d).unwrap();
     assert_eq!(a.events.len(), 3);
-    let row = store.task(id).unwrap().unwrap();
+    let row = store.box_row(id).unwrap().unwrap();
     assert_eq!(
         (row.lifecycle, row.boxed.unwrap().state),
         (BoxLifecycle::Closed, BoxState::Deleted)
@@ -205,7 +206,7 @@ fn full_lifecycle_rows_and_events() {
 }
 
 #[test]
-fn new_task_with_illegal_box_input_leaves_nothing() {
+fn new_box_with_illegal_box_input_leaves_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
     let d = insert("t")
@@ -220,10 +221,10 @@ fn new_task_with_illegal_box_input_leaves_nothing() {
 }
 
 #[test]
-fn illegal_task_step_changes_nothing() {
+fn illegal_box_step_changes_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
-    let id = new_task(&store, "t");
+    let id = new_box(&store, "t");
     let before = store.events(id, 100).unwrap().len();
     let set = Fields {
         goal: Field::Set("g".into()),
@@ -238,7 +239,7 @@ fn illegal_task_step_changes_nothing() {
         store.apply(d).unwrap_err(),
         StoreError::Illegal(_)
     ));
-    let row = store.task(id).unwrap().unwrap();
+    let row = store.box_row(id).unwrap().unwrap();
     assert_eq!(
         (row.lifecycle, row.goal, row.boxed),
         (BoxLifecycle::Checking, None, None)
@@ -264,7 +265,7 @@ fn unknown_existing_id_is_not_found() {
 fn readers_are_not_blocked_by_an_open_writer() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
-    let id = new_task(&store, "t");
+    let id = new_box(&store, "t");
     let path = dir.path().join("state").join("moor.db");
     let raw = rusqlite::Connection::open(&path).unwrap();
     raw.execute_batch(
@@ -276,12 +277,12 @@ fn readers_are_not_blocked_by_an_open_writer() {
     )
     .unwrap();
     let start = Instant::now();
-    assert_eq!(store.task(id).unwrap().unwrap().goal, None);
-    assert_eq!(store.open_tasks().unwrap().len(), 1);
+    assert_eq!(store.box_row(id).unwrap().unwrap().goal, None);
+    assert_eq!(store.open_boxes().unwrap().len(), 1);
     assert_eq!(store.events(id, 100).unwrap().len(), 1);
     assert!(start.elapsed() < Duration::from_secs(1));
     raw.execute_batch("COMMIT").unwrap();
-    assert_eq!(store.open_tasks().unwrap().len(), 2);
+    assert_eq!(store.open_boxes().unwrap().len(), 2);
     store
         .apply(
             Decision::new(id)
@@ -292,18 +293,18 @@ fn readers_are_not_blocked_by_an_open_writer() {
 }
 
 #[test]
-fn box_fields_without_a_box_roll_back_the_task_step() {
+fn box_fields_without_a_box_roll_back_the_box_step() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
-    let id = new_task(&store, "t");
-    let before = store.task(id).unwrap().unwrap();
+    let id = new_box(&store, "t");
+    let before = store.box_row(id).unwrap().unwrap();
     assert_eq!(
         (before.lifecycle, before.boxed.is_none()),
         (BoxLifecycle::Checking, true)
     );
     let events_before = kinds(&store, id);
-    // step_task (Checking -> SettingUp) and write_task both succeed; only
-    // write_box fails, so the task UPDATE must be rolled back.
+    // step_box (Checking -> SettingUp) and write_box_row both succeed; only
+    // write_box fails, so the box UPDATE must be rolled back.
     let d = Decision::new(id)
         .lifecycle(BoxLifecycleInput::Admitted)
         .set(Fields {
@@ -312,7 +313,7 @@ fn box_fields_without_a_box_roll_back_the_task_step() {
         });
     let err = store.apply(d).unwrap_err();
     assert!(matches!(err, StoreError::Invalid(_)), "{err:?}");
-    let after = store.task(id).unwrap().unwrap();
+    let after = store.box_row(id).unwrap().unwrap();
     assert_eq!(after, before);
     assert_eq!(after.lifecycle, BoxLifecycle::Checking);
     assert_eq!(kinds(&store, id), events_before);
@@ -327,7 +328,7 @@ fn box_fields_without_a_box_roll_back_the_task_step() {
 fn event_ids_increase_and_ts_follows_clock() {
     let dir = tempfile::tempdir().unwrap();
     let (store, clock) = open(dir.path());
-    let id = new_task(&store, "t");
+    let id = new_box(&store, "t");
     clock.sleep(Duration::from_millis(500));
     let a = store
         .apply(Decision::new(id).event(ExtraEvent::SessionStarted {
@@ -357,7 +358,7 @@ fn event_ids_increase_and_ts_follows_clock() {
 fn setup_failed_at_set_and_clear_round_trip() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
-    let id = new_task(&store, "t");
+    let id = new_box(&store, "t");
     let set = |f| {
         Decision::new(id).set(Fields {
             setup_failed_at: f,
@@ -366,16 +367,16 @@ fn setup_failed_at_set_and_clear_round_trip() {
     };
     store.apply(set(Field::Set(4_242))).unwrap();
     assert_eq!(
-        store.task(id).unwrap().unwrap().setup_failed_at,
+        store.box_row(id).unwrap().unwrap().setup_failed_at,
         Some(Ts::from_millis(4_242))
     );
     store.apply(set(Field::Clear)).unwrap();
-    assert_eq!(store.task(id).unwrap().unwrap().setup_failed_at, None);
+    assert_eq!(store.box_row(id).unwrap().unwrap().setup_failed_at, None);
 }
 
-/// A task with a Ready box, as after provisioning.
-fn task_with_ready_box(store: &Store) -> BoxId {
-    let id = new_task(store, "t");
+/// A box with a Ready box, as after provisioning.
+fn ready_box(store: &Store) -> BoxId {
+    let id = new_box(store, "t");
     store
         .apply(
             Decision::new(id)
@@ -403,9 +404,15 @@ fn task_with_ready_box(store: &Store) -> BoxId {
 fn fresh_box_has_no_sleep_reason() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
-    let id = task_with_ready_box(&store);
+    let id = ready_box(&store);
     assert_eq!(
-        store.task(id).unwrap().unwrap().boxed.unwrap().sleep_reason,
+        store
+            .box_row(id)
+            .unwrap()
+            .unwrap()
+            .boxed
+            .unwrap()
+            .sleep_reason,
         None
     );
 }
@@ -414,15 +421,15 @@ fn fresh_box_has_no_sleep_reason() {
 fn sleep_reason_is_set_without_changing_states() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
-    let id = task_with_ready_box(&store);
-    let before = store.task(id).unwrap().unwrap();
+    let id = ready_box(&store);
+    let before = store.box_row(id).unwrap().unwrap();
     store
         .apply(Decision::new(id).set(Fields {
             box_sleep_reason: Field::Set("no wake".into()),
             ..Fields::default()
         }))
         .unwrap();
-    let after = store.task(id).unwrap().unwrap();
+    let after = store.box_row(id).unwrap().unwrap();
     let b = after.boxed.unwrap();
     assert_eq!(b.sleep_reason.as_deref(), Some("no wake"));
     assert_eq!(
@@ -435,7 +442,7 @@ fn sleep_reason_is_set_without_changing_states() {
 fn sleep_reason_clears_in_the_same_apply_as_a_box_input() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
-    let id = task_with_ready_box(&store);
+    let id = ready_box(&store);
     let reason = |f| {
         Decision::new(id).set(Fields {
             box_sleep_reason: f,
@@ -446,7 +453,7 @@ fn sleep_reason_clears_in_the_same_apply_as_a_box_input() {
     store
         .apply(reason(Field::Clear).box_input(BoxInput::Sleep))
         .unwrap();
-    let b = store.task(id).unwrap().unwrap().boxed.unwrap();
+    let b = store.box_row(id).unwrap().unwrap().boxed.unwrap();
     assert_eq!((b.state, b.sleep_reason), (BoxState::Asleep, None));
 }
 
@@ -454,22 +461,22 @@ fn sleep_reason_clears_in_the_same_apply_as_a_box_input() {
 fn intent_set_clear_and_run_lifecycle() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
-    let id = new_task(&store, "t");
+    let id = new_box(&store, "t");
     store
         .apply(Decision::new(id).intent(IntentChange::Set(Intent::Provisioning { pid: 7 })))
         .unwrap();
     assert_eq!(
-        store.task(id).unwrap().unwrap().intent,
+        store.box_row(id).unwrap().unwrap().intent,
         Some(Intent::Provisioning { pid: 7 })
     );
     store
         .apply(Decision::new(id).intent(IntentChange::Clear))
         .unwrap();
-    assert_eq!(store.task(id).unwrap().unwrap().intent, None);
+    assert_eq!(store.box_row(id).unwrap().unwrap().intent, None);
 
     let run = store
         .begin_run(NewRun {
-            task: id,
+            box_id: id,
             argv: vec!["ls".into()],
             record: None,
             sha: None,
@@ -478,13 +485,13 @@ fn intent_set_clear_and_run_lifecycle() {
         })
         .unwrap();
     assert_eq!(
-        store.task(id).unwrap().unwrap().intent,
+        store.box_row(id).unwrap().unwrap().intent,
         Some(Intent::Running { run, pid: 9 })
     );
     store
         .finish_run(run, RunOutcome::ended(Some(3), false))
         .unwrap();
-    assert_eq!(store.task(id).unwrap().unwrap().intent, None);
+    assert_eq!(store.box_row(id).unwrap().unwrap().intent, None);
     let events = store.events(id, 100).unwrap();
     let ran = events.last().unwrap();
     assert_eq!(ran.kind, "ran");
@@ -502,37 +509,7 @@ fn intent_set_clear_and_run_lifecycle() {
     assert!(matches!(err, StoreError::Invalid(_)), "{err:?}");
 }
 
-#[test]
-fn open_tasks_excludes_closed_and_rejected() {
-    let dir = tempfile::tempdir().unwrap();
-    let (store, _) = open(dir.path());
-    let live = new_task(&store, "a");
-    let closed = new_task(&store, "b");
-    let rejected = new_task(&store, "c");
-    store
-        .apply(
-            Decision::new(closed)
-                .lifecycle(BoxLifecycleInput::Close)
-                .session(SessionInput::End),
-        )
-        .unwrap();
-    store
-        .apply(
-            Decision::new(rejected).lifecycle(BoxLifecycleInput::Rejected {
-                reason: "no".into(),
-            }),
-        )
-        .unwrap();
-    let open_ids: Vec<_> = store
-        .open_tasks()
-        .unwrap()
-        .into_iter()
-        .map(|t| t.id)
-        .collect();
-    assert_eq!(open_ids, vec![live]);
-}
-
-/// Claim the only slot of provider `p` for `id`, or queue the task when it is taken.
+/// Claim the only slot of provider `p` for `id`, or queue the box when it is taken.
 fn claim_last_slot(store: &Store, id: BoxId) -> Option<Applied> {
     let provider = ProviderId::new("p");
     store
@@ -550,10 +527,10 @@ fn claim_last_slot(store: &Store, id: BoxId) -> Option<Applied> {
 }
 
 #[test]
-fn two_tasks_racing_for_the_last_slot_cannot_both_be_admitted() {
+fn two_boxes_racing_for_the_last_slot_cannot_both_be_admitted() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
-    let (a, b) = (new_task(&store, "a"), new_task(&store, "b"));
+    let (a, b) = (new_box(&store, "a"), new_box(&store, "b"));
     // A second store on the same file stands in for a second `moor start` process:
     // only SQLite's write lock, not the in-process writer mutex, can separate the two.
     let rival_store = Store::open(
@@ -585,7 +562,7 @@ fn two_tasks_racing_for_the_last_slot_cannot_both_be_admitted() {
         let second = rival.join().unwrap();
         [first, second]
     });
-    let states = [a, b].map(|id| store.task(id).unwrap().unwrap().lifecycle);
+    let states = [a, b].map(|id| store.box_row(id).unwrap().unwrap().lifecycle);
     assert_eq!(admitted.map(|x| x.is_some()), [true, true]);
     assert_eq!(
         states,

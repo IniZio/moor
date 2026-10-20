@@ -5,13 +5,13 @@ use moor_core::{BoxId, SessionId};
 
 use super::super::reads::NamedEvent;
 use super::super::Store;
-use super::{new_task, open};
+use super::{new_box, open};
 
-/// Two tasks with interleaved session events, plus every event the store holds.
+/// Two boxes with interleaved session events, plus every event the store holds.
 fn seeded_events(dir: &Path) -> (Store, BoxId, Vec<NamedEvent>) {
     let (store, _clock) = open(dir);
-    let a = new_task(&store, "alpha");
-    let b = new_task(&store, "beta");
+    let a = new_box(&store, "alpha");
+    let b = new_box(&store, "beta");
     for (id, session) in [(a, "s1"), (b, "s2"), (a, "s3")] {
         store
             .apply(Decision::new(id).event(ExtraEvent::SessionStarted {
@@ -24,7 +24,7 @@ fn seeded_events(dir: &Path) -> (Store, BoxId, Vec<NamedEvent>) {
 }
 
 #[test]
-fn events_after_is_ordered_and_named_across_tasks() {
+fn events_after_is_ordered_and_named_across_boxes() {
     let dir = tempfile::tempdir().unwrap();
     let (_store, a, all) = seeded_events(dir.path());
     assert!(all.len() >= 5);
@@ -34,7 +34,7 @@ fn events_after_is_ordered_and_named_across_tasks() {
         .all(|(x, y)| x.row.id < y.row.id));
     let names: Vec<_> = all
         .iter()
-        .map(|e| (e.row.task == a, e.task_name.as_str()))
+        .map(|e| (e.row.box_id == a, e.box_name.as_str()))
         .collect();
     assert!(names.contains(&(true, "alpha")));
     assert!(names.contains(&(false, "beta")));
@@ -73,7 +73,7 @@ fn events_after_limit_caps_and_resuming_leaves_no_gap() {
 fn events_after_names_the_session_started_at_or_before_each_event() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
-    let id = new_task(&store, "alpha");
+    let id = new_box(&store, "alpha");
     let raw = rusqlite::Connection::open(dir.path().join("state").join("moor.db")).unwrap();
     raw.execute(
         "INSERT INTO events (box, kind, payload, ts) VALUES (?1, 'early', '{}', 0), (?1, 'late', '{}', 2000000)",
@@ -95,7 +95,7 @@ fn events_after_names_the_session_started_at_or_before_each_event() {
 fn events_after_names_the_old_session_for_its_end_in_a_same_millisecond_relaunch() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
-    let id = new_task(&store, "alpha");
+    let id = new_box(&store, "alpha");
     let old = store.box_sessions(id).unwrap().first().unwrap().id;
     assert!(store.end_current_session(id, "exit", Some(0)).unwrap());
     let new = store.open_session(id).unwrap().id;
@@ -114,7 +114,7 @@ fn events_after_names_the_old_session_for_its_end_in_a_same_millisecond_relaunch
 fn events_after_puts_an_event_at_a_session_start_in_that_session() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
-    let id = new_task(&store, "alpha");
+    let id = new_box(&store, "alpha");
     let raw = rusqlite::Connection::open(dir.path().join("state").join("moor.db")).unwrap();
     let (session, started): (i64, i64) = raw
         .query_row(

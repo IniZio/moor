@@ -53,7 +53,11 @@ fn field<'a>(v: &'a serde_json::Value, key: &str) -> &'a serde_json::Value {
 }
 
 fn row(w: &World) -> crate::store::BoxRow {
-    w.cx.store().unwrap().task(BoxId::new(1)).unwrap().unwrap()
+    w.cx.store()
+        .unwrap()
+        .box_row(BoxId::new(1))
+        .unwrap()
+        .unwrap()
 }
 
 fn box_state(w: &World) -> Option<BoxState> {
@@ -165,7 +169,7 @@ fn a_retry_in_the_kept_box_holds_the_setup_intent_while_it_runs() {
     let (sink, path) = (Arc::clone(&seen), w.dir.path().join("moor.db"));
     w.driver.on_exec(move || {
         let store = Store::open(&path, Arc::new(SystemClock::real())).unwrap();
-        let row = store.task(BoxId::new(1)).unwrap().unwrap();
+        let row = store.box_row(BoxId::new(1)).unwrap().unwrap();
         sink.lock().unwrap().push(row.intent);
     });
     start(&w).unwrap();

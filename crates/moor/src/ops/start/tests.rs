@@ -146,7 +146,7 @@ fn happy_path_makes_a_working_task_with_a_ready_box() {
     assert_eq!(v.boxed.base.as_deref(), Some("abc123"));
     assert_eq!(v.boxed.workspace.as_deref(), Some("ws-1"));
     assert_eq!(v.boxed.branch.as_deref(), Some("demo"));
-    let row = w.cx.store().unwrap().task(BoxId::new(v.boxed.id));
+    let row = w.cx.store().unwrap().box_row(BoxId::new(v.boxed.id));
     let b = row.unwrap().unwrap().boxed.unwrap();
     assert_eq!(b.state, BoxState::Ready);
     assert_eq!(b.handle.unwrap().as_str(), "box-1");
@@ -157,7 +157,7 @@ fn happy_path_makes_a_working_task_with_a_ready_box() {
 fn happy_path_calls_seams_in_order_and_clears_intent() {
     let w = world(FakeDriver::new());
     let v = run(&w.cx, &req("demo")).unwrap();
-    let row = w.cx.store().unwrap().task(BoxId::new(v.boxed.id));
+    let row = w.cx.store().unwrap().box_row(BoxId::new(v.boxed.id));
     assert!(row.unwrap().unwrap().intent.is_none());
     assert_eq!(
         w.surface.calls(),
@@ -182,7 +182,7 @@ fn acquire_failure_keeps_a_failed_task_row() {
     let row =
         w.cx.store()
             .unwrap()
-            .open_task_by_name(&name)
+            .open_box_by_name(&name)
             .unwrap()
             .unwrap();
     assert_eq!(row.lifecycle, BoxLifecycle::SetupFailed);
@@ -209,7 +209,7 @@ fn acquire_failure_with_release_error_keeps_failed_and_original_error() {
         Some(&serde_json::json!("setup_failed"))
     );
     let name = box_name("demo");
-    let row = w.cx.store().unwrap().open_task_by_name(&name).unwrap();
+    let row = w.cx.store().unwrap().open_box_by_name(&name).unwrap();
     let b = row.unwrap().boxed.unwrap();
     assert_eq!(b.state, BoxState::Failed);
     assert_eq!(b.attempted_handle.unwrap().as_str(), "box-1");
@@ -313,7 +313,7 @@ fn start_after_acquire_failure_gets_a_new_box() {
         (again.boxed.lifecycle, again.boxed.session_state),
         state::WORKING
     );
-    let row = w.cx.store().unwrap().task(BoxId::new(again.boxed.id));
+    let row = w.cx.store().unwrap().box_row(BoxId::new(again.boxed.id));
     assert_eq!(row.unwrap().unwrap().boxed.unwrap().state, BoxState::Ready);
     assert_eq!(
         w.driver.calls(),
@@ -336,7 +336,7 @@ fn start_on_a_gone_box_acquires_again_and_keeps_the_task_working() {
         (again.boxed.lifecycle, again.boxed.session_state),
         state::WORKING
     );
-    let b = store.task(id).unwrap().unwrap().boxed.unwrap();
+    let b = store.box_row(id).unwrap().unwrap().boxed.unwrap();
     assert_eq!(b.state, BoxState::Ready);
     assert_ne!(b.handle.unwrap().as_str(), "box-1");
     assert_eq!(
@@ -399,7 +399,7 @@ fn unresolved_credential_rejects_before_any_side_effect() {
         .cx
         .store()
         .unwrap()
-        .open_task_by_name(&name)
+        .open_box_by_name(&name)
         .unwrap()
         .is_none());
 }
@@ -445,7 +445,7 @@ fn refused_start_provisions_when_retried_after_the_lock_is_released() {
         (again.boxed.lifecycle, again.boxed.session_state),
         state::WORKING
     );
-    let row = w.cx.store().unwrap().task(BoxId::new(again.boxed.id));
+    let row = w.cx.store().unwrap().box_row(BoxId::new(again.boxed.id));
     assert_eq!(row.unwrap().unwrap().boxed.unwrap().state, BoxState::Ready);
     assert_eq!(w.driver.calls(), ["acquire", "exec box-1"]);
 }
@@ -475,7 +475,7 @@ fn reprovision_skips_when_another_start_already_gave_the_box_back() {
     store
         .apply(Decision::new(id).box_input(BoxInput::DriverMissing))
         .unwrap();
-    let stale = store.task(id).unwrap().unwrap();
+    let stale = store.box_row(id).unwrap().unwrap();
     run(&w.cx, &req("demo")).unwrap();
     assert_eq!(
         w.driver.calls(),

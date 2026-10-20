@@ -115,7 +115,12 @@ fn req(name: &str) -> StartReq {
 }
 
 fn lifecycle_of(w: &World, id: BoxId) -> BoxLifecycle {
-    w.cx.store().unwrap().task(id).unwrap().unwrap().lifecycle
+    w.cx.store()
+        .unwrap()
+        .box_row(id)
+        .unwrap()
+        .unwrap()
+        .lifecycle
 }
 
 /// Frees the Box of task `id` as if the driver lost it.

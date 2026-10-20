@@ -1,4 +1,4 @@
-//! Proxy rows: the per-task nonce, reserved box port, readiness and the supervisor lease.
+//! Proxy rows: the per-box nonce, reserved box port, readiness and the supervisor lease.
 //!
 //! The lease is an owner token plus a heartbeat timestamp. A pid alone is never trusted, because
 //! pids get reused; another claimant may take over only once the heartbeat is older than the lease.
@@ -11,7 +11,7 @@ use moor_core::seam::rng::Rng;
 use moor_core::{BoxId, Secret};
 use rusqlite::{params, Connection, OptionalExtension, Row, TransactionBehavior};
 
-use super::{load_task, to_u32, Store, StoreError};
+use super::{load_box, to_u32, Store, StoreError};
 
 /// Lowest box port a proxy may be given.
 pub(crate) const BOX_PORT_MIN: u16 = 20000;
@@ -43,8 +43,8 @@ pub(crate) struct ReadyProc<'a> {
 
 /// A stored proxy row.
 pub(crate) struct ProxyRow {
-    /// Owning task.
-    pub(crate) task: BoxId,
+    /// Owning box.
+    pub(crate) box_id: BoxId,
     /// Secret the box presents to the proxy.
     pub(crate) nonce: Secret,
     /// Reserved box port.
@@ -68,7 +68,7 @@ pub(crate) struct ProxyRow {
 impl fmt::Debug for ProxyRow {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ProxyRow")
-            .field("task", &self.task)
+            .field("box_id", &self.box_id)
             .field("nonce", &format_args!("<redacted>"))
             .field("box_port", &self.box_port)
             .field("host_port", &self.host_port)
@@ -96,12 +96,12 @@ pub(crate) enum Reserve {
 }
 
 impl Store {
-    /// Reserve a box port for `task` and store `nonce`. Keeps the row's port if no other row
+    /// Reserve a box port for `box_id` and store `nonce`. Keeps the row's port if no other row
     /// holds it; otherwise draws from `rng`. An existing row is reset to unready with no
     /// host port, pid, handle or lease, unless a lease younger than `lease` is live.
     pub(crate) fn reserve(
         &self,
-        task: BoxId,
+        box_id: BoxId,
         nonce: &Secret,
         rng: &dyn Rng,
         lease: Duration,
@@ -109,19 +109,19 @@ impl Store {
         let now = self.now();
         let mut conn = self.writer()?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        if load_task(&tx, task)?.is_none() {
-            return Err(StoreError::NotFound(task));
+        if load_box(&tx, box_id)?.is_none() {
+            return Err(StoreError::NotFound(box_id));
         }
         let existing: Option<(i64, Option<String>, Option<i64>)> = tx
             .query_row(
                 "SELECT box_port, lease_owner, lease_heartbeat FROM proxy WHERE box = ?",
-                [task.get()],
+                [box_id.get()],
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
             .optional()?;
         let port = if let Some((raw, owner, beat)) = existing {
             let port = to_port("box_port", raw)?;
-            if held_by_other(&tx, task, port)? {
+            if held_by_other(&tx, box_id, port)? {
                 return Err(StoreError::Corrupt(format!(
                     "box_port {port} held by two rows"
                 )));
@@ -135,14 +135,14 @@ impl Store {
             tx.execute(
                 "UPDATE proxy SET nonce = ?, ready = 0, host_port = NULL, pid = NULL, handle = NULL, \
                  lease_owner = NULL, lease_heartbeat = NULL, boot_id = NULL, updated_at = ? WHERE box = ?",
-                params![nonce.expose(), now.as_millis(), task.get()],
+                params![nonce.expose(), now.as_millis(), box_id.get()],
             )?;
             port
         } else {
             let port = free_port(&tx, rng)?;
             tx.execute(
                     "INSERT INTO proxy (box, nonce, box_port, ready, updated_at) VALUES (?, ?, ?, 0, ?)",
-                    params![task.get(), nonce.expose(), port, now.as_millis()],
+                    params![box_id.get(), nonce.expose(), port, now.as_millis()],
                 )?;
             port
         };
@@ -151,13 +151,13 @@ impl Store {
         Ok(Reserve::Reserved(port))
     }
 
-    /// The proxy row of `task`, if any.
-    pub(crate) fn proxy(&self, task: BoxId) -> Result<Option<ProxyRow>, StoreError> {
+    /// The proxy row of `box_id`, if any.
+    pub(crate) fn proxy(&self, box_id: BoxId) -> Result<Option<ProxyRow>, StoreError> {
         let conn = self.reader()?;
         conn.query_row(
             "SELECT box, nonce, box_port, host_port, pid, handle, ready, lease_owner, lease_heartbeat, boot_id \
              FROM proxy WHERE box = ?",
-            [task.get()],
+            [box_id.get()],
             raw_from_row,
         )
         .optional()?
@@ -165,7 +165,7 @@ impl Store {
         .transpose()
     }
 
-    /// Every proxy row, by task ascending.
+    /// Every proxy row, by box ascending.
     pub(crate) fn proxies(&self) -> Result<Vec<ProxyRow>, StoreError> {
         let conn = self.reader()?;
         let mut stmt = conn.prepare(
@@ -176,26 +176,26 @@ impl Store {
         rows.collect()
     }
 
-    /// Reset the row of `task` to unready with no host port, pid, handle or lease, keeping its
+    /// Reset the row of `box_id` to unready with no host port, pid, handle or lease, keeping its
     /// nonce and box port, so the next reservation restarts it on the same port.
-    pub(crate) fn expire_proxy(&self, task: BoxId) -> Result<bool, StoreError> {
+    pub(crate) fn expire_proxy(&self, box_id: BoxId) -> Result<bool, StoreError> {
         let now = self.now();
         let conn = self.writer()?;
         let changed = conn.execute(
             "UPDATE proxy SET ready = 0, host_port = NULL, pid = NULL, handle = NULL, \
              lease_owner = NULL, lease_heartbeat = NULL, boot_id = NULL, updated_at = ? WHERE box = ?",
-            params![now.as_millis(), task.get()],
+            params![now.as_millis(), box_id.get()],
         )?;
         drop(conn);
         Ok(changed > 0)
     }
 
-    /// Delete the proxy row of `task`; returns whether a row was deleted.
-    pub(crate) fn remove_proxy(&self, task: BoxId) -> Result<bool, StoreError> {
+    /// Delete the proxy row of `box_id`; returns whether a row was deleted.
+    pub(crate) fn remove_proxy(&self, box_id: BoxId) -> Result<bool, StoreError> {
         let mut conn = self.writer()?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-        let changed = tx.execute("DELETE FROM proxy WHERE box = ?", [task.get()])?;
-        park::clear(&tx, task)?;
+        let changed = tx.execute("DELETE FROM proxy WHERE box = ?", [box_id.get()])?;
+        park::clear(&tx, box_id)?;
         tx.commit()?;
         drop(conn);
         Ok(changed > 0)
@@ -204,8 +204,8 @@ impl Store {
 
 /// A row as stored, before range checks.
 struct RawRow {
-    /// Task id column.
-    task: i64,
+    /// Box id column.
+    box_id: i64,
     /// Nonce column.
     nonce: Vec<u8>,
     /// Box port column.
@@ -229,7 +229,7 @@ struct RawRow {
 /// Read a proxy row without range checks.
 fn raw_from_row(r: &Row<'_>) -> rusqlite::Result<RawRow> {
     Ok(RawRow {
-        task: r.get(0)?,
+        box_id: r.get(0)?,
         nonce: r.get(1)?,
         box_port: r.get(2)?,
         host_port: r.get(3)?,
@@ -247,7 +247,7 @@ impl TryFrom<RawRow> for ProxyRow {
 
     fn try_from(r: RawRow) -> Result<Self, StoreError> {
         Ok(Self {
-            task: BoxId::new(r.task),
+            box_id: BoxId::new(r.box_id),
             nonce: Secret::new(r.nonce),
             box_port: to_port("box_port", r.box_port)?,
             host_port: r.host_port.map(|p| to_port("host_port", p)).transpose()?,
@@ -266,12 +266,12 @@ fn to_port(what: &str, v: i64) -> Result<u16, StoreError> {
     u16::try_from(v).map_err(|_| StoreError::Corrupt(format!("{what} {v} out of range")))
 }
 
-/// Whether a row other than `task`'s holds `port`.
-fn held_by_other(conn: &Connection, task: BoxId, port: u16) -> Result<bool, StoreError> {
+/// Whether a row other than `box_id`'s holds `port`.
+fn held_by_other(conn: &Connection, box_id: BoxId, port: u16) -> Result<bool, StoreError> {
     Ok(conn
         .query_row(
             "SELECT 1 FROM proxy WHERE box_port = ? AND box <> ?",
-            params![port, task.get()],
+            params![port, box_id.get()],
             |_| Ok(()),
         )
         .optional()?

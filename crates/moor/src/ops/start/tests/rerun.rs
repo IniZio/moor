@@ -247,6 +247,11 @@ fn restart_after_a_failed_setup_that_launches_the_agent_aborts_when_the_sync_fai
         .contains("syncing the checkout into the Box failed"));
     assert_eq!(setup_execs(&w).len(), 1);
     let store = w.cx.store().unwrap();
-    assert!(store.task(id).unwrap().unwrap().setup_failed_at.is_some());
+    assert!(store
+        .box_row(id)
+        .unwrap()
+        .unwrap()
+        .setup_failed_at
+        .is_some());
     assert!(store.live_session(id).unwrap().is_none());
 }

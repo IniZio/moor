@@ -44,7 +44,7 @@ fn fx() -> Fx {
             repo: "r".into(),
         }))
         .unwrap()
-        .task;
+        .box_id;
     let host = DetachedSupervisor::new(
         proc.clone(),
         clock.clone(),

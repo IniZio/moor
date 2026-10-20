@@ -151,7 +151,7 @@ fn insert_holder(cx: &Cx, handle: BoxHandle, worktree: &Path) -> BoxId {
             repo: "/repo".into(),
         }))
         .unwrap()
-        .task;
+        .box_id;
     let fields = Fields {
         box_provider: Field::Set(ProviderId::new(PROVIDER)),
         worktree: Field::Set(worktree.display().to_string()),
@@ -206,7 +206,7 @@ fn waiting_directly(w: &World, name: &str) -> BoxId {
             repo: "/repo".into(),
         }))
         .unwrap()
-        .task;
+        .box_id;
     let d = Decision::new(id).lifecycle(BoxLifecycleInput::AtCapacity { max_boxes: 1 });
     store.apply(d).unwrap();
     id
@@ -222,7 +222,7 @@ fn close_holder(w: &World) -> moor_core::view::CloseView {
 }
 
 fn row_of(w: &World, id: BoxId) -> crate::store::BoxRow {
-    w.cx.store().unwrap().task(id).unwrap().unwrap()
+    w.cx.store().unwrap().box_row(id).unwrap().unwrap()
 }
 
 fn lifecycle_of(w: &World, id: BoxId) -> BoxLifecycle {
@@ -274,7 +274,7 @@ fn promoted_task_goes_through_setting_up_and_gets_a_ready_box() {
     let at = |k: &str| seen.iter().position(|s| s == k);
     assert!(at("waiting_for_box") < at("setting_up"), "{seen:?}");
     assert!(at("setting_up") < at("working"), "{seen:?}");
-    let row = w.cx.store().unwrap().task(id).unwrap().unwrap();
+    let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert!(is_working(&row));
     let b = row.boxed.expect("promoted task has a Box row");
     assert_eq!(b.state, BoxState::Ready);
@@ -446,7 +446,7 @@ fn promoted_task_runs_the_repo_setup_commands_in_its_new_box() {
     let id = queue(&w, "first");
     close_holder(&w);
     assert!(is_working(&row_of(&w, id)));
-    let handle = w.cx.store().unwrap().task(id).unwrap().unwrap();
+    let handle = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
     let handle = handle.boxed.unwrap().handle.expect("promoted Box handle");
     let argvs: Vec<_> = w
         .driver

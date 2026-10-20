@@ -20,13 +20,13 @@ fn open(dir: &Path) -> Store {
     Store::open(&dir.join("moor.db"), clock).unwrap()
 }
 
-/// Insert a task by name.
+/// Insert a box by name.
 fn add(store: &Store, name: &str) -> BoxId {
     let nt = NewBox {
         name: BoxName::parse_allow_bare(name).unwrap(),
         repo: "r".into(),
     };
-    store.apply(Decision::insert(nt)).unwrap().task
+    store.apply(Decision::insert(nt)).unwrap().box_id
 }
 
 #[test]
@@ -118,7 +118,7 @@ fn remove_proxy_removes_both() {
 }
 
 #[test]
-fn tasks_are_isolated() {
+fn boxes_are_isolated() {
     let dir = tempfile::tempdir().unwrap();
     let store = open(dir.path());
     let a = add(&store, "a");

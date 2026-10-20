@@ -155,7 +155,7 @@ pub(super) fn warning_codes(w: &World) -> Vec<String> {
 }
 
 pub(super) fn failed_at_set(w: &World, v: &moor_core::view::StartView) -> bool {
-    let row = w.cx.store().unwrap().task(BoxId::new(v.boxed.id));
+    let row = w.cx.store().unwrap().box_row(BoxId::new(v.boxed.id));
     row.unwrap().unwrap().setup_failed_at.is_some()
 }
 
@@ -195,7 +195,7 @@ fn the_checkout_syncs_in_its_own_exec_and_setup_runs_without_syncing() {
     let wt =
         w.cx.store()
             .unwrap()
-            .task(BoxId::new(v.boxed.id))
+            .box_row(BoxId::new(v.boxed.id))
             .unwrap()
             .unwrap()
             .worktree;
@@ -271,7 +271,7 @@ fn a_failed_setup_copies_its_log_out_of_the_box_into_the_worktree() {
     let wt =
         w.cx.store()
             .unwrap()
-            .task(BoxId::new(v.boxed.id))
+            .box_row(BoxId::new(v.boxed.id))
             .unwrap()
             .unwrap()
             .worktree;
@@ -291,7 +291,7 @@ fn a_failing_setup_marks_the_task_and_a_later_clean_setup_clears_it() {
     let id = BoxId::new(v.boxed.id);
     let store = w.cx.store().unwrap();
     // A re-provision reads `.moor.yaml` from the worktree, not the invocation repo.
-    let wt = store.task(id).unwrap().unwrap().worktree.unwrap();
+    let wt = store.box_row(id).unwrap().unwrap().worktree.unwrap();
     std::fs::create_dir_all(&wt).unwrap();
     std::fs::write(Path::new(&wt).join(".moor.yaml"), "setup: [a]\n").unwrap();
     let gone = Decision::new(id).box_input(BoxInput::DriverMissing);
@@ -354,7 +354,7 @@ fn a_failing_setup_on_a_re_provisioned_working_task_records_the_failing_line() {
     let (w, v) = start_with("setup: [a]\n", driver);
     let id = BoxId::new(v.boxed.id);
     let store = w.cx.store().unwrap();
-    let wt = store.task(id).unwrap().unwrap().worktree.unwrap();
+    let wt = store.box_row(id).unwrap().unwrap().worktree.unwrap();
     std::fs::create_dir_all(&wt).unwrap();
     std::fs::write(Path::new(&wt).join(".moor.yaml"), "setup: [a]\n").unwrap();
     script_base_yaml(&w, Some("setup: [a]\n"));
@@ -382,14 +382,14 @@ fn setup_holds_the_setup_intent_and_clears_it_after() {
     let (sink, path) = (Arc::clone(&seen), w.dir.path().join("moor.db"));
     w.driver.on_exec(move || {
         let store = Store::open(&path, Arc::new(SystemClock::real())).unwrap();
-        let row = store.task(BoxId::new(1)).unwrap().unwrap();
+        let row = store.box_row(BoxId::new(1)).unwrap().unwrap();
         sink.lock().unwrap().push(row.intent);
     });
     let v = run(&w.cx, &start_req()).unwrap();
     let pid = std::process::id();
     // The checkout sync, the credential-directory mkdir and the setup script all run under it.
     assert_eq!(*seen.lock().unwrap(), [Some(Intent::Setup { pid }); 3]);
-    let row = w.cx.store().unwrap().task(BoxId::new(v.boxed.id));
+    let row = w.cx.store().unwrap().box_row(BoxId::new(v.boxed.id));
     assert_eq!(row.unwrap().unwrap().intent, None);
 }
 
@@ -397,7 +397,7 @@ fn setup_holds_the_setup_intent_and_clears_it_after() {
 pub(super) fn failed_setup_with(yaml: &str, driver: FakeDriver) -> (World, BoxId) {
     let (w, v) = start_with("setup: [a]\n", driver);
     let id = BoxId::new(v.boxed.id);
-    let wt = w.cx.store().unwrap().task(id).unwrap().unwrap().worktree;
+    let wt = w.cx.store().unwrap().box_row(id).unwrap().unwrap().worktree;
     let wt = wt.unwrap();
     std::fs::create_dir_all(&wt).unwrap();
     std::fs::write(Path::new(&wt).join(".moor.yaml"), yaml).unwrap();
@@ -491,7 +491,7 @@ fn a_failed_checkout_sync_aborts_the_start_without_launching_the_agent() {
         );
         assert!(engine.launches().is_empty());
         let id = BoxId::new(1);
-        let row = w.cx.store().unwrap().task(id).unwrap().unwrap();
+        let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
         assert_eq!(row.lifecycle, BoxLifecycle::SetupFailed);
         assert!(row.intent.is_none() && row.setup_failed_at.is_some());
         assert!(kinds(&w, id).contains(&"setup_failed".to_owned()));

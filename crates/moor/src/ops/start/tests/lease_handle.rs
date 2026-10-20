@@ -25,7 +25,7 @@ fn state_after_hold(got: &str, key: &str) -> Option<LeaseState> {
             repo: "r".into(),
         }))
         .unwrap()
-        .task;
+        .box_id;
     let planned = BoxHandle::new("planned-1");
     let root = store
         .plan_lease(id, LeaseKind::BoxRoot, planned.as_str())

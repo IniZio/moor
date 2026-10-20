@@ -51,7 +51,7 @@ fn add(cx: &Cx, n: &str) -> BoxId {
         .unwrap()
         .apply(Decision::insert(nt))
         .unwrap()
-        .task
+        .box_id
 }
 
 fn attached(cx: &Cx, id: BoxId) {

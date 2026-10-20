@@ -186,7 +186,7 @@ fn working_task(store: &Store, driver: &FakeDriver) -> BoxId {
         name: BoxName::parse_allow_bare("demo").unwrap(),
         repo: "r".into(),
     };
-    let id = store.apply(Decision::insert(nt)).unwrap().task;
+    let id = store.apply(Decision::insert(nt)).unwrap().box_id;
     let got = driver
         .acquire(&AcquireReq {
             provider: ProviderId::new("p"),
@@ -487,7 +487,7 @@ fn task_without_a_box_handle_is_refused_with_a_stderr_line() {
         name: BoxName::parse_allow_bare("bare").unwrap(),
         repo: "r".into(),
     };
-    let id = store.apply(Decision::insert(nt)).unwrap().task;
+    let id = store.apply(Decision::insert(nt)).unwrap().box_id;
     let nonce = Secret::new(NONCE.to_vec());
     drop(
         store

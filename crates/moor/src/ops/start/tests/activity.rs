@@ -61,7 +61,7 @@ fn started(idle: bool, probes: impl FnOnce(&World) -> Probes) -> (World, BoxId) 
 }
 
 fn row(w: &World, id: BoxId) -> BoxRow {
-    w.cx.store().unwrap().task(id).unwrap().unwrap()
+    w.cx.store().unwrap().box_row(id).unwrap().unwrap()
 }
 
 /// The `idle_since` column of a task.

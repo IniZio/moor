@@ -49,7 +49,7 @@ fn fx_with(driver: FakeDriver, ready: bool) -> Fx {
             repo: "r".into(),
         }))
         .unwrap()
-        .task;
+        .box_id;
     let provider = ProviderId::new("p");
     let d = if ready {
         let fields = Fields {
@@ -322,7 +322,7 @@ fn wake_calls(f: &Fx) -> usize {
 fn box_state(f: &Fx) -> BoxState {
     f.cx.store()
         .unwrap()
-        .task(f.id)
+        .box_row(f.id)
         .unwrap()
         .unwrap()
         .boxed

@@ -102,11 +102,11 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
     let Some(name) = &req.box_name else {
         let mut tasks: Vec<BoxView> = Vec::new();
         let mut sleep_caps = HashMap::new();
-        for mut row in store.open_tasks()? {
+        for mut row in store.open_boxes()? {
             let reading = activity::read(cx, store, &row, now)?;
             activity::settle(cx, store, &row, &reading)?;
             autosleep::run(cx, store, row.id);
-            row = store.task(row.id)?.unwrap_or(row);
+            row = store.box_row(row.id)?.unwrap_or(row);
             let in_flight = store.in_flight_run(row.id, &|pid| cx.proc().alive(pid))?;
             let mut view = task_view_with_run(&row, in_flight.as_ref(), cx.config());
             view.agent = agent_view(&reading);
@@ -123,7 +123,7 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
             artifacts: None,
         });
     };
-    let row = store.latest_task_by_name(name)?.ok_or_else(|| {
+    let row = store.latest_box_by_name(name)?.ok_or_else(|| {
         CommandError::new(ErrorKind::Failed, format!("no task {}", name.as_str()))
     })?;
     let in_flight = store.in_flight_run(row.id, &|pid| cx.proc().alive(pid))?;

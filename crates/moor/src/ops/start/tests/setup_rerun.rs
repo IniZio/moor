@@ -106,7 +106,7 @@ fn start_after_a_failed_setup_in_a_replaced_box_runs_setup_in_the_new_box() {
 fn interrupted_setup(pid: u32) -> (World, moor_core::view::StartView) {
     let (w, v) = start_with("setup: [a]\n", FakeDriver::new());
     let id = BoxId::new(v.boxed.id);
-    let wt = w.cx.store().unwrap().task(id).unwrap().unwrap().worktree;
+    let wt = w.cx.store().unwrap().box_row(id).unwrap().unwrap().worktree;
     let wt = wt.unwrap();
     std::fs::create_dir_all(&wt).unwrap();
     std::fs::write(Path::new(&wt).join(".moor.yaml"), "setup: [b]\n").unwrap();
@@ -128,7 +128,7 @@ fn start_does_not_re_run_setup_when_the_setup_owner_is_dead() {
     assert!(message.starts_with("setup was interrupted; "));
     assert!(message.ends_with(BY_HAND), "{message}");
     assert!(failed_at_set(&w, &again));
-    let row = w.cx.store().unwrap().task(BoxId::new(again.boxed.id));
+    let row = w.cx.store().unwrap().box_row(BoxId::new(again.boxed.id));
     assert_eq!(row.unwrap().unwrap().intent, None);
 }
 
@@ -159,7 +159,7 @@ fn start_leaves_setup_alone_when_the_setup_owner_is_alive() {
     let again = run(&w.cx, &start_req()).unwrap();
     assert!(!again.setup.ran);
     assert_eq!(argvs(&w), [script_argv(&["a"])]);
-    let row = w.cx.store().unwrap().task(BoxId::new(again.boxed.id));
+    let row = w.cx.store().unwrap().box_row(BoxId::new(again.boxed.id));
     assert_eq!(
         row.unwrap().unwrap().intent,
         Some(Intent::Setup { pid: 4242 })
@@ -198,7 +198,7 @@ fn start_does_not_re_run_setup_for_a_setting_up_task_whose_setup_owner_died() {
     }));
     assert!(crashed.is_err());
     let id = BoxId::new(1);
-    let row = w.cx.store().unwrap().task(id).unwrap().unwrap();
+    let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(row.lifecycle, BoxLifecycle::SettingUp);
     assert_eq!(row.boxed.map(|b| b.state), Some(BoxState::Ready));
     assert_eq!(
@@ -214,7 +214,7 @@ fn start_does_not_re_run_setup_for_a_setting_up_task_whose_setup_owner_died() {
     assert!(!again.setup.ran);
     assert_eq!(not_rerun_warning(&w).len(), 1);
     assert!(failed_at_set(&w, &again));
-    let row = w.cx.store().unwrap().task(id).unwrap().unwrap();
+    let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(row.intent, None);
     assert!(working(&row));
 }
