@@ -20,7 +20,6 @@ use crate::testing::driver::FakeDriver;
 use crate::testing::surface::FakeSurface;
 
 const ENVIRON: &str = "PATH=/usr/bin\0HOME=/home/box\0LANG=C\0";
-const CRED: &str = "/home/box/.moor-cred-1-abc123";
 const NONCE: &str = "distinct-nonce-7f3a91";
 
 fn exited(codes: &[i32]) -> Vec<Result<ExecOutcome, DriverError>> {
@@ -191,7 +190,7 @@ fn leaks(text: &str) -> bool {
 }
 
 #[test]
-fn the_nonce_reaches_the_box_only_through_its_staged_file() {
+fn the_nonce_never_reaches_the_box() {
     let run = launch(true, &[0, 0], ready_release());
     run.out.unwrap();
     let (d, s) = (&run.d, &run.s);
@@ -208,9 +207,9 @@ fn the_nonce_reaches_the_box_only_through_its_staged_file() {
         .puts()
         .into_iter()
         .filter(|p| leaks(&String::from_utf8_lossy(&p.2)))
-        .map(|p| (p.1.as_str().to_owned(), p.3))
+        .map(|p| p.1.as_str().to_owned())
         .collect();
-    assert_eq!(holders, [(format!("{CRED}/proxy-nonce"), 0o600)]);
+    assert!(holders.is_empty(), "{holders:?}");
 }
 
 #[test]

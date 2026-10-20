@@ -345,7 +345,7 @@ fn has_nonce(text: &str) -> bool {
 }
 
 #[test]
-fn the_nonce_reaches_the_box_only_through_its_staged_file() {
+fn the_nonce_never_reaches_the_box() {
     let (d, s) = launch_with_proxy();
     assert!(s.opened().iter().all(|c| !has_nonce(&format!("{c:?}"))));
     assert!(s.calls().iter().all(|c| !has_nonce(c)));
@@ -355,13 +355,13 @@ fn the_nonce_reaches_the_box_only_through_its_staged_file() {
         .puts()
         .into_iter()
         .filter(|p| has_nonce(&String::from_utf8_lossy(&p.2)))
-        .map(|p| (p.1.as_str().to_owned(), p.3))
+        .map(|p| p.1.as_str().to_owned())
         .collect();
-    assert_eq!(holders, [(format!("{CRED}/proxy-nonce"), 0o600)]);
+    assert!(holders.is_empty(), "{holders:?}");
 }
 
 #[test]
-fn a_proxy_launch_stages_only_the_nonce_and_the_public_ca() {
+fn a_proxy_launch_stages_the_public_ca_and_no_nonce_file() {
     let (d, _) = launch_with_proxy();
     let staged: Vec<_> = d
         .puts()
@@ -369,7 +369,9 @@ fn a_proxy_launch_stages_only_the_nonce_and_the_public_ca() {
         .filter(|p| p.1.as_str().starts_with(&format!("{CRED}/")))
         .map(|p| (p.1.as_str().to_owned(), p.3))
         .collect();
-    assert!(staged.contains(&(format!("{CRED}/proxy-nonce"), 0o600)));
+    assert!(staged
+        .iter()
+        .all(|(path, _)| !path.ends_with("/proxy-nonce")));
     assert!(staged.contains(&(format!("{CRED}/proxy-ca.pem"), 0o644)));
     assert!(staged.iter().all(|(path, _)| !path.contains("/bin/")));
 }
@@ -395,14 +397,12 @@ fn a_proxy_launch_keeps_the_cred_dir_for_the_agent_and_exports_the_proxy_env() {
 fn the_agent_gets_the_proxy_env_while_the_cred_dir_lives_until_exit() {
     let b = Scratch::new();
     let cred = b.path("home/.moor-cred-t1-x");
-    std::fs::write(cred.join("proxy-nonce"), NONCE).unwrap();
     std::fs::write(cred.join("proxy-ca.pem"), proxy_addr().ca_pem).unwrap();
     b.stub(
         "claude",
         &format!(
             "touch \"$MARKER\"; env > \"$MARKER.env\"; \
-             if [ -d '{c}' ]; then touch \"$MARKER.dir\"; fi; \
-             if [ -e '{c}/proxy-nonce' ]; then touch \"$MARKER.nonce\"; fi",
+             if [ -d '{c}' ]; then touch \"$MARKER.dir\"; fi",
             c = cred.display()
         ),
     );
@@ -415,10 +415,13 @@ fn the_agent_gets_the_proxy_env_while_the_cred_dir_lives_until_exit() {
     assert!(b.spawn(&script).wait().unwrap().success());
     let env = std::fs::read_to_string(b.path("started.env")).unwrap();
     let line = |name: &str| env.lines().find(|l| l.starts_with(name)).unwrap_or("");
-    assert!(line("HTTPS_PROXY=").contains("sentinel-9c2e"), "{env}");
+    assert_eq!(
+        line("HTTPS_PROXY="),
+        "HTTPS_PROXY=http://127.0.0.1:4567",
+        "{env}"
+    );
     assert!(!env.contains("GH_TOKEN"), "{env}");
     assert!(b.path("started.dir").exists());
-    assert!(!b.path("started.nonce").exists());
     assert!(b.cred_gone());
 }
 

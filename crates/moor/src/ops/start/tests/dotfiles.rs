@@ -183,7 +183,6 @@ fn dotfiles_run_after_setup_and_before_the_agent_launches() {
             "exec box-1",
             "connect_argv box-1",
             "put_file box-1",
-            "put_file box-1",
             "exec box-1",
             "copy_out box-1",
             "put_file box-1",
@@ -191,7 +190,6 @@ fn dotfiles_run_after_setup_and_before_the_agent_launches() {
             "peek_file box-1",
             "exec box-1",
             "connect_argv box-1",
-            "put_file box-1",
             "put_file box-1",
             "exec box-1",
             "sweep box-1"

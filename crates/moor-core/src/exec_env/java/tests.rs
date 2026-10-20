@@ -10,7 +10,6 @@ use super::java_lines;
 use crate::config::parse_repo;
 use crate::name::DirectHost;
 
-const NONCE: &str = "n0nc3-s3cr3t";
 const TOOLS: [&str; 10] = [
     "sh", "cat", "mkdir", "mv", "rm", "sed", "readlink", "dirname", "env", "tail",
 ];
@@ -65,7 +64,7 @@ impl Scratch {
     /// [`Self::run`] with `direct` hosts.
     fn run_direct(&self, direct: &[DirectHost], extra: &[(&str, &str)]) -> HashMap<String, String> {
         let lines = java_lines(4321, "'/ca dir/proxy-ca.pem'", direct);
-        let script = format!("moor_nonce={NONCE}\n{}\nenv", lines.join("\n"));
+        let script = format!("{}\nenv", lines.join("\n"));
         let path = self.root.join("launch.sh");
         fs::write(&path, &script).unwrap();
         let syntax = Command::new("sh").arg("-n").arg(&path).output().unwrap();
@@ -114,7 +113,7 @@ fn with_keytool(name: &str) -> Scratch {
 }
 
 #[test]
-fn the_properties_file_is_private_merged_and_holds_the_proxy_login() {
+fn the_properties_file_is_private_merged_and_holds_no_proxy_login() {
     let s = with_keytool("props");
     let gradle = s.home().join(".gradle");
     fs::create_dir_all(&gradle).unwrap();
@@ -135,16 +134,14 @@ fn the_properties_file_is_private_merged_and_holds_the_proxy_login() {
         "org.gradle.daemon=false",
         "systemProp.http.proxyHost=127.0.0.1",
         "systemProp.https.proxyPort=4321",
-        "systemProp.https.proxyUser=moor",
-        &format!("systemProp.http.proxyPassword={NONCE}"),
-        &format!("systemProp.https.proxyPassword={NONCE}"),
         "systemProp.http.nonProxyHosts=127.0.0.1|localhost",
-        "systemProp.jdk.http.auth.tunneling.disabledSchemes=\n",
-        "systemProp.jdk.http.auth.proxying.disabledSchemes=\n",
         "systemProp.javax.net.ssl.trustStorePassword=changeit",
         "systemProp.javax.net.ssl.trustStoreType=PKCS12",
     ] {
         assert!(text.contains(want), "{want}\n{text}");
+    }
+    for login in ["proxyUser", "proxyPassword", "disabledSchemes"] {
+        assert!(!text.contains(login), "{login}\n{text}");
     }
     let ts = gradle.join("moor-proxy-truststore.p12");
     assert!(text.contains(&format!(
@@ -197,27 +194,20 @@ fn running_twice_leaves_one_block_and_no_temp_files() {
     let text = fs::read_to_string(gradle.join("gradle.properties")).unwrap();
     assert_eq!(text.matches("# moor proxy: begin").count(), 1, "{text}");
     assert_eq!(text.matches("# moor proxy: end").count(), 1, "{text}");
-    assert_eq!(text.matches("http.proxyPassword=").count(), 1, "{text}");
+    assert_eq!(text.matches("http.proxyHost=").count(), 1, "{text}");
     assert_eq!(fs::read_dir(&gradle).unwrap().count(), 2);
 }
 
 #[test]
-fn the_nonce_stays_out_of_keytool_arguments_and_java_tool_options() {
+fn keytool_imports_the_proxy_ca_into_the_truststore() {
     let s = with_keytool("secret");
-    let env = s.run(&[("JAVA_TOOL_OPTIONS", "-Dkeep=1")]);
-    let opts = env.get("JAVA_TOOL_OPTIONS").unwrap();
-    assert!(
-        !opts.contains(NONCE) && !opts.contains("proxyPassword"),
-        "{opts}"
-    );
+    s.run(&[]);
     let log = s.log();
-    assert!(!log.contains(NONCE), "{log}");
     assert!(
         log.contains("-importcert") && log.contains("-alias moor-proxy"),
         "{log}"
     );
     assert!(log.contains("-file /ca dir/proxy-ca.pem"), "{log}");
-    assert!(!env.values().any(|v| v.contains(NONCE)), "{env:?}");
 }
 
 #[test]
@@ -268,7 +258,6 @@ fn the_jdk_cacerts_beside_keytool_seed_the_truststore() {
         )),
         "{log}"
     );
-    assert!(!log.contains(NONCE), "{log}");
 }
 
 #[test]
