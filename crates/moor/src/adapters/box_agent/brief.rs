@@ -2,24 +2,24 @@
 
 use std::fmt::Write;
 
-/// What the brief says about one Task.
+/// What the brief says about one Box.
 pub(super) struct BriefInput<'a> {
-    /// The Task name.
-    pub(super) task: &'a str,
+    /// The Box name.
+    pub(super) name: &'a str,
     /// What the agent is asked to do.
     pub(super) goal: Option<&'a str>,
-    /// The Issue text, when the Task came from one.
+    /// The Issue text, when the Box came from one.
     pub(super) issue: Option<&'a str>,
-    /// The Task branch the agent pushes to.
+    /// The Box branch the agent pushes to.
     pub(super) branch: &'a str,
     /// The exit code of a failed setup, if setup failed.
     pub(super) setup_exit: Option<i32>,
 }
 
-/// The brief text for a Task.
+/// The brief text for a Box.
 pub(super) fn render(b: &BriefInput) -> String {
-    let (task, branch) = (b.task, b.branch);
-    let mut out = format!("# Task {task}\n\n");
+    let (name, branch) = (b.name, b.branch);
+    let mut out = format!("# Box {name}\n\n");
     match (b.goal, b.issue) {
         (Some(g), Some(i)) => _ = write!(out, "Goal: {g}\n\nIssue: {i}\n\n"),
         (Some(g), None) => _ = write!(out, "Goal: {g}\n\n"),
@@ -28,18 +28,18 @@ pub(super) fn render(b: &BriefInput) -> String {
     }
     _ = write!(
         out,
-        "You are running inside the Box, in the project working directory. Run builds, \
+        "You are running inside the machine, in the project working directory. Run builds, \
          tests and project tooling directly here.\n\n\
          Report the command's real exit code. Do not pipe its output through `tail` or `head`.\n\n\
          Do not use sudo. The network is open. When HTTPS_PROXY is set, traffic goes through \
-         the preset proxy; do not unset or bypass it. GitHub access works for the Task \
+         the preset proxy; do not unset or bypass it. GitHub access works for this Box's \
          repo through gh and git as configured. Requests outside what the proxy rules allow go \
          out without credentials, so expect 401 or 404; the owner can add a rule. \
          Write only in the working directory and your own tool state. If a tool the \
          project needs is missing, do not try to install it: say which tool is missing and that \
          it belongs in the repo's setup commands, then continue with what is available. \
          Do not guess paths.\n\n\
-         HEAD is detached on the Box. Commit your work with git, following the repo's \
+         HEAD is detached on the machine. Commit your work with git, following the repo's \
          commit-msg hook and conventions. Push with \
          `git push moor HEAD:refs/heads/{branch}` when the repo's push guard \
          allows it, not after each commit. If `git remote get-url moor` fails, commit \
@@ -64,7 +64,7 @@ pub(super) fn render(b: &BriefInput) -> String {
          Kind is a free-form label (e.g. `spec`, `result`). To present a Report, write it as \
          a Markdown file at `.moor/reports/<kind>.md` in your working directory; do not \
          commit it. Writing again with the same kind adds a new version. Name that path in \
-         your final message. A Report never means the Task is finished; keep working \
+         your final message. A Report never means the Box is finished; keep working \
          until the goal is met, and do not stop after reporting.\n\n",
     );
     out.push_str(
@@ -83,7 +83,7 @@ mod tests {
 
     fn input<'a>(goal: Option<&'a str>, issue: Option<&'a str>) -> BriefInput<'a> {
         BriefInput {
-            task: "t1",
+            name: "t1",
             goal,
             issue,
             branch: "moor/t1",
@@ -94,7 +94,7 @@ mod tests {
     #[test]
     fn goal_and_issue() {
         let out = render(&input(Some("fix x"), Some("x is broken")));
-        assert!(out.starts_with("# Task t1\n\n"));
+        assert!(out.starts_with("# Box t1\n\n"));
         assert!(out.contains("Goal: fix x\n\nIssue: x is broken\n\n"));
     }
 

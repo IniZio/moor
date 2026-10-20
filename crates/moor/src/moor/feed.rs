@@ -20,7 +20,7 @@ impl Moor {
         Ok(events.into_iter().map(NamedEvent::into_frame).collect())
     }
 
-    /// Settle every open Task once, as `start` does; returns failure and warning messages to log.
+    /// Settle every open Box once, as `start` does; returns failure and warning messages to log.
     ///
     /// Autosleep runs with it, so an agent idle past its limit sleeps without a client.
     pub(crate) fn settle_open(&self) -> Vec<String> {

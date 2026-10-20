@@ -34,7 +34,7 @@ pub(super) enum Action {
     Request(Request),
     /// `call`: read a JSON request from stdin.
     CallStdin,
-    /// Hidden `proxy serve <task>`: serve the credential proxy for that Task.
+    /// Hidden `proxy serve <box_id>`: serve the credential proxy for that Box.
     ProxyServe(BoxId),
     /// `controller serve --config <file>`: run the controller daemon.
     ControllerServe(PathBuf),
@@ -102,11 +102,11 @@ struct Cli {
 /// Every verb.
 #[derive(Debug, Subcommand)]
 enum Cmd {
-    /// Create or attach a Task.
+    /// Create or attach a Box.
     Start(StartArgs),
-    /// Run a command in the Task's Box.
+    /// Run a command in the Box.
     Run(RunArgs),
-    /// Wait for a Task state.
+    /// Wait for a Box state.
     Wait(WaitArgs),
     /// Wait for events from several Boxes.
     WaitEvents(WaitEventsArgs),
@@ -119,22 +119,22 @@ enum Cmd {
     Session(SessionCmd),
     /// File a Report.
     Report(ReportArgs),
-    /// Show one Task or all open Tasks.
+    /// Show one Box or all open Boxes.
     #[command(visible_alias = "list")]
     Show(ShowArgs),
-    /// Close a Task.
+    /// Close a Box.
     Close(CloseArgs),
-    /// Remove a Task.
+    /// Remove a Box.
     Remove(RemoveArgs),
     /// Copy a file to or from the Box.
     Cp(CpArgs),
-    /// Focus the Task's Workspace.
+    /// Focus the Box's Workspace.
     Open(BoxArg),
     /// Open a shell in the Box.
     Shell(BoxArg),
-    /// Put the Task to sleep.
+    /// Put the Box to sleep.
     Sleep(BoxArg),
-    /// Wake a sleeping Task.
+    /// Wake a sleeping Box.
     Wake(BoxArg),
     /// Check a gate; record one with `moor run --record <name>`.
     #[command(subcommand)]
@@ -222,7 +222,7 @@ struct StartArgs {
     /// Resume the agent's stored session.
     #[arg(long)]
     resume: bool,
-    /// Launch the agent with the Task's .moor.yaml even when it differs from its base commit.
+    /// Launch the agent with the Box's .moor.yaml even when it differs from its base commit.
     #[arg(long)]
     trust_moor_yaml: bool,
     /// Parent Session id; defaults to the `MOOR_SESSION` of the calling agent.
@@ -264,7 +264,7 @@ struct RunArgs {
     /// Record the run under this name.
     #[arg(long, value_name = "NAME")]
     record: Option<String>,
-    /// Run even when the Task's .moor.yaml differs from its base commit.
+    /// Run even when the Box's .moor.yaml differs from its base commit.
     #[arg(long)]
     trust_moor_yaml: bool,
     /// Command and its arguments.

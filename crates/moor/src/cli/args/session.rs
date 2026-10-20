@@ -40,7 +40,7 @@ pub(super) struct EndArgs {
     id: i64,
 }
 
-/// Arguments of `session open`: a Box Session (task + seed) or, with `--host`, a host Session.
+/// Arguments of `session open`: a Box Session (Box + seed) or, with `--host`, a host Session.
 #[derive(Debug, Args)]
 #[command(group(ArgGroup::new("seed_src").args(["seed", "seed_file"])))]
 pub(super) struct OpenArgs {

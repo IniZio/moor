@@ -42,10 +42,10 @@ fn cp_prints_its_confirmation() {
     assert_eq!(out, "copied a to b (3 bytes)\n");
 }
 
-/// Builds a sleep/wake value for task `task` with an optional Box state.
-fn sleep_value(task: &str, state: Option<&str>, woke: bool) -> serde_json::Value {
+/// Builds a sleep/wake value for Box `box_name` with an optional Box state.
+fn sleep_value(box_name: &str, state: Option<&str>, woke: bool) -> serde_json::Value {
     let b = state.map(|s| json!({"state": s, "sleep": {"after": null, "reason": null}}));
-    json!({"box": task, "driver": b, "woke": woke})
+    json!({"box": box_name, "driver": b, "woke": woke})
 }
 
 #[test]

@@ -5,11 +5,11 @@ use moor_core::name::{BoxName, NameError};
 /// Reply for text that is not a well-formed `start` command.
 const USAGE: &str = "Usage: `@moor start <repo> <goal>`";
 
-/// Who may start Tasks and where.
+/// Who may start Boxes and where.
 pub(super) struct Allow<'a> {
     /// Channel ids where mentions are answered.
     pub channels: &'a [String],
-    /// User ids who may start Tasks.
+    /// User ids who may start Boxes.
     pub users: &'a [String],
 }
 
@@ -20,13 +20,13 @@ pub(super) enum Action {
     Ignore,
     /// Post this text in the thread and start nothing.
     Reply(String),
-    /// Start this Task, then bind the thread to it.
+    /// Start this Box, then bind the thread to it.
     Start {
-        /// Task name derived from the thread.
+        /// Box name derived from the thread.
         name: BoxName,
-        /// Repo the Task works on.
+        /// Repo the Box works on.
         repo: String,
-        /// What the Task should do.
+        /// What the Box should do.
         goal: String,
     },
 }
@@ -36,18 +36,18 @@ pub(super) enum Action {
 pub(crate) enum ReplyAction {
     /// Nothing to send; post nothing.
     Ignore,
-    /// Steer the Task with this text.
+    /// Steer the Box with this text.
     Steer(String),
-    /// Close the Task.
+    /// Close the Box.
     Close,
     /// Post this text in the thread and change nothing.
     Refuse(String),
 }
 
-/// Decides what a reply in a bound thread does; only the Task `owner` may steer or close.
+/// Decides what a reply in a bound thread does; only the Box `owner` may steer or close.
 pub(crate) fn reply_action(owner: &str, user: &str, text: &str) -> ReplyAction {
     if user != owner {
-        return ReplyAction::Refuse(format!("Only <@{owner}> can steer this Task."));
+        return ReplyAction::Refuse(format!("Only <@{owner}> can steer this Box."));
     }
     let text = strip_mentions(text).trim();
     if text.is_empty() {
@@ -60,7 +60,7 @@ pub(crate) fn reply_action(owner: &str, user: &str, text: &str) -> ReplyAction {
 }
 
 /// Decides what one app mention does. `thread` is the thread root ts (`thread_ts`, else the
-/// message ts); `bound` is the Task already bound to that thread.
+/// message ts); `bound` is the Box already bound to that thread.
 pub(super) fn decide(
     allow: &Allow<'_>,
     channel: &str,
@@ -74,7 +74,7 @@ pub(super) fn decide(
     }
     if !allow.users.iter().any(|u| u == user) {
         return Action::Reply(format!(
-            "<@{user}> is not allowed to start Tasks here; nothing was started."
+            "<@{user}> is not allowed to start Boxes here; nothing was started."
         ));
     }
     let Some((repo, goal)) = parse_start(strip_mentions(text)) else {
@@ -82,11 +82,11 @@ pub(super) fn decide(
     };
     if let Some(name) = bound {
         return Action::Reply(format!(
-            "This thread already runs Task `{}`; nothing was started.",
+            "This thread already runs Box `{}`; nothing was started.",
             name.as_str()
         ));
     }
-    match task_name(thread) {
+    match box_name(thread) {
         Ok(name) => Action::Start {
             name,
             repo: repo.to_owned(),
@@ -96,22 +96,22 @@ pub(super) fn decide(
     }
 }
 
-/// Task name for a thread root ts: "slack-" + ts with '.' replaced by '-'.
+/// Box name for a thread root ts: "slack-" + ts with '.' replaced by '-'.
 ///
 /// # Errors
-/// Returns the name error when the ts yields an invalid Task name.
-pub(super) fn task_name(thread: &str) -> Result<BoxName, NameError> {
+/// Returns the name error when the ts yields an invalid Box name.
+pub(super) fn box_name(thread: &str) -> Result<BoxName, NameError> {
     BoxName::parse_allow_bare(&format!("slack-{}", thread.replace('.', "-")))
 }
 
 /// Thread reply after a successful start.
 pub(super) fn started(name: &BoxName) -> String {
-    format!("Started Task `{}`.", name.as_str())
+    format!("Started Box `{}`.", name.as_str())
 }
 
 /// Thread reply after a failed start; `message` is the controller's error text.
 pub(super) fn failed(name: &BoxName, message: &str) -> String {
-    format!("Could not start Task `{}`: {message}", name.as_str())
+    format!("Could not start Box `{}`: {message}", name.as_str())
 }
 
 /// Drops leading `<@U...>` / `<@U...|name>` mentions and whitespace.

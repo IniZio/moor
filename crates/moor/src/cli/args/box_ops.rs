@@ -1,4 +1,4 @@
-//! Arguments of the Task-scoped verbs that take only a name plus a flag or path.
+//! Arguments of the Box-scoped verbs that take only a name plus a flag or path.
 
 use clap::Args;
 use moor_core::{BoxName, BoxReq, CloseReq, CpReq, RemoveReq};
@@ -14,7 +14,7 @@ pub(super) struct CloseArgs {
     /// Close despite unsaved work.
     #[arg(long)]
     pub(super) force: bool,
-    /// Run teardown even when the Task's .moor.yaml differs from its base commit.
+    /// Run teardown even when the Box's .moor.yaml differs from its base commit.
     #[arg(long)]
     pub(super) trust_moor_yaml: bool,
 }
@@ -35,7 +35,7 @@ pub(super) struct RemoveArgs {
     /// Box name.
     #[arg(value_parser = box_name)]
     pub(super) name: BoxName,
-    /// Discard the Task's work.
+    /// Discard the Box's work.
     #[arg(long)]
     pub(super) discard: bool,
 }
@@ -72,7 +72,7 @@ impl From<CpArgs> for CpReq {
     }
 }
 
-/// A lone Task argument.
+/// A lone Box argument.
 #[derive(Debug, Args)]
 pub(super) struct BoxArg {
     /// Box name.

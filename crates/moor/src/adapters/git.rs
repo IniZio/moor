@@ -15,10 +15,10 @@ const FETCH_DEADLINE: Deadline = Deadline(Duration::from_secs(20));
 /// Time limit for cloning a repository.
 const CLONE_DEADLINE: Deadline = Deadline(Duration::from_secs(600));
 
-/// The remote moor bases new Tasks on.
+/// The remote moor bases new Boxes on.
 const REMOTE: &str = "origin";
 
-/// Scratch directories kept out of a Task worktree's status.
+/// Scratch directories kept out of a Box worktree's status.
 const SCRATCH_DIRS: [&str; 2] = [".crabbox/", ".moor/"];
 
 /// Why a git query failed.
@@ -41,7 +41,7 @@ pub(crate) struct GitAuthor {
     pub(crate) email: Option<String>,
 }
 
-/// What [`Git::sync_branch`] did to the local Task branch.
+/// What [`Git::sync_branch`] did to the local Box branch.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum BranchSync {
     /// The branch and its worktree moved forward to the remote tip.

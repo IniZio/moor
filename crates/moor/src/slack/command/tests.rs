@@ -36,7 +36,7 @@ fn allowed_start() {
 }
 
 #[test]
-fn thread_root_names_the_task() {
+fn thread_root_names_the_box() {
     let (channels, users) = allow();
     let allow = Allow {
         channels: &channels,
@@ -110,17 +110,17 @@ fn multiline_goal_is_preserved() {
 }
 
 #[test]
-fn task_name_replaces_dot() {
+fn box_name_replaces_dot() {
     assert_eq!(
-        task_name("1730000000.123456").unwrap().as_str(),
+        box_name("1730000000.123456").unwrap().as_str(),
         "slack-1730000000-123456"
     );
 }
 
 #[test]
-fn replies_name_the_task() {
+fn replies_name_the_box() {
     let name = BoxName::parse_allow_bare("slack-1-2").unwrap();
-    assert_eq!(started(&name), "Started Task `slack-1-2`.");
+    assert_eq!(started(&name), "Started Box `slack-1-2`.");
     assert!(failed(&name, "boom").contains("boom"));
 }
 
@@ -136,7 +136,7 @@ fn reply_from_owner_steers() {
 fn reply_from_other_user_is_refused_with_owner_mention() {
     assert_eq!(
         reply_action("U1", "U2", "use tokio"),
-        ReplyAction::Refuse("Only <@U1> can steer this Task.".to_owned())
+        ReplyAction::Refuse("Only <@U1> can steer this Box.".to_owned())
     );
 }
 

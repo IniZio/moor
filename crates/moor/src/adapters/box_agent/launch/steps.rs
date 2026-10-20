@@ -147,7 +147,7 @@ impl Launch<'_> {
             .map_err(|e| fail("hooks", &e))?;
         let preseed = self.profile.preseed(ctx).map_err(|e| fail("preseed", &e))?;
         let brief = render(&BriefInput {
-            task: req.box_name.as_str(),
+            name: req.box_name.as_str(),
             goal: req.goal.as_deref(),
             issue: req.issue.as_deref(),
             branch: &req.branch,

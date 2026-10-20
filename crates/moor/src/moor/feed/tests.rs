@@ -33,7 +33,7 @@ fn engine_cx(dir: &Path, driver: &Arc<FakeDriver>, engine: &Arc<FakeEngine>) -> 
     .with_engine(engine.clone())
 }
 
-/// Adds a Working Task `name` with a live Box and an open session `session`.
+/// Adds a Working Box `name` with a live machine and an open session `session`.
 fn working(cx: &Cx, driver: &FakeDriver, name: &str, session: &str) -> BoxId {
     let nt = NewBox {
         name: BoxName::parse_allow_bare(name).unwrap(),
@@ -93,7 +93,7 @@ fn idle_hook(cx: &Cx) -> Probes {
     }
 }
 
-/// A Working Task whose fake engine reports quiet, with the context that settles it.
+/// A Working Box whose fake engine reports quiet, with the context that settles it.
 fn quiet_agent(dir: &Path) -> Cx {
     let driver = Arc::new(FakeDriver::new().exec_stdout([""]));
     let cx = engine_cx(dir, &driver, &Arc::new(FakeEngine::new()));
