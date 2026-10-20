@@ -9,7 +9,9 @@ mod exec;
 mod parse;
 mod peek;
 mod put;
+mod retry;
 mod sleep;
+mod stream;
 #[cfg(test)]
 mod tests;
 mod tunnel;
@@ -27,10 +29,10 @@ use moor_core::seam::driver::{
     AcquireReq, Acquired, BoxListing, BoxStep, Driver, DriverCaps, DriverError, ExecOutcome,
     ExecSpec, Released, SleepOutcome, StepDone, TunnelHandle,
 };
-use moor_core::seam::proc::{Deadline, Proc, ProcError, ProcOutput, ProcSpec, Tool};
+use moor_core::seam::proc::{Deadline, Proc, ProcOutput, ProcSpec, Tool};
 use moor_core::seam::{clock::Clock, rng::Rng};
 
-use errors::{is_claim_race, map_error, Op};
+use errors::{map_error, Op};
 
 /// Time allowed for a warmup.
 const ACQUIRE_DEADLINE: Duration = Duration::from_mins(15);
@@ -128,23 +130,6 @@ impl Crabbox {
         Self::new(proc, clock, Arc::new(FakeRng::default()))
     }
 
-    /// Runs `call`, trying again while crabbox reports a claim race, for up to `CLAIM_RACE_BUDGET` of waiting.
-    fn retry_claim_race<T>(
-        &self,
-        mut call: impl FnMut() -> Result<T, ProcError>,
-    ) -> Result<T, ProcError> {
-        let mut waited = Duration::ZERO;
-        loop {
-            match call() {
-                Err(e) if waited + CLAIM_RACE_PAUSE <= CLAIM_RACE_BUDGET && is_claim_race(&e) => {
-                    self.clock.sleep(CLAIM_RACE_PAUSE);
-                    waited += CLAIM_RACE_PAUSE;
-                }
-                result => return result,
-            }
-        }
-    }
-
     /// Runs one crabbox call, mapping failure through `op`.
     fn call(
         &self,
@@ -160,11 +145,6 @@ impl Crabbox {
         ProcSpec::new(Tool::Crabbox, Deadline(deadline))
     }
 }
-
-/// Total time a call waits out claim races; a restarting tunnel rewrites the claim every few seconds.
-const CLAIM_RACE_BUDGET: Duration = Duration::from_secs(15);
-/// Pause between retries of a claim race.
-const CLAIM_RACE_PAUSE: Duration = Duration::from_secs(1);
 
 /// Per-Box crabbox slug, `moor-{id}-{nonce}`; the Box name never enters it.
 fn slug(req: &AcquireReq) -> String {
@@ -322,6 +302,19 @@ impl Driver for Crabbox {
     ) -> Result<(), DriverError> {
         self.require_version()?;
         cp::copy_out(self, handle, from, to, host_cwd)
+    }
+
+    fn stream_files(
+        &self,
+        handle: &BoxHandle,
+        dir: &BoxPath,
+        names: &[String],
+        host_cwd: &Path,
+        deadline: Deadline,
+        sink: &mut dyn FnMut(&str, Option<&mut dyn std::io::Read>),
+    ) -> Result<(), DriverError> {
+        self.require_version()?;
+        stream::stream_files(self, handle, dir, names, host_cwd, deadline, sink)
     }
 
     fn peek_file(

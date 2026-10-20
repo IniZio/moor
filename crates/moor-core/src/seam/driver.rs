@@ -268,6 +268,34 @@ pub trait Driver: Send + Sync {
         host_cwd: &Path,
     ) -> Result<(), DriverError>;
 
+    /// Streams the regular files `names` from directory `dir` in the Box in one round trip,
+    /// calling `sink` once per file received, in stream order. `Some(reader)` yields exactly that
+    /// file's bytes and need not be read to the end; `None` means the entry was not a regular file.
+    /// A name never handed to `sink` was not received. `host_cwd` is the worktree the driver
+    /// process runs from.
+    ///
+    /// # Errors
+    /// [`DriverError::Unsupported`] when the provider or the Box cannot stream files; nothing was
+    /// handed to `sink` then, so the caller copies one file at a time. [`DriverError::Timeout`] when
+    /// the stream hangs, and another [`DriverError`] when it breaks; files already handed to `sink`
+    /// stay valid.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "one round trip needs the whole call context"
+    )]
+    fn stream_files(
+        &self,
+        handle: &BoxHandle,
+        dir: &BoxPath,
+        names: &[String],
+        host_cwd: &Path,
+        deadline: Deadline,
+        sink: &mut dyn FnMut(&str, Option<&mut dyn std::io::Read>),
+    ) -> Result<(), DriverError> {
+        let _ = (handle, dir, names, host_cwd, deadline, sink);
+        Err(DriverError::Unsupported("streaming files"))
+    }
+
     /// Reads one file in the Box without queueing behind a running command.
     /// `Ok(None)` means the file does not exist. `host_cwd` is the worktree the
     /// driver process runs from.
