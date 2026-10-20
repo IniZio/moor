@@ -16,9 +16,9 @@ use crate::command::Allow;
 use crate::config::{parse_config, Config};
 use crate::db::{Db, SlackThread};
 use crate::secret_file::read_secret;
-use crate::socket::{self, Inbound, Intake, NotKept};
+use crate::socket::{self, Inbound, Intake, Kept, NotKept};
 use crate::worker::{self, Fx, Job};
-use crate::{dial, Log};
+use crate::{dial, slash, Log};
 
 /// Longest the feed waits for a watch item before it wakes anyway.
 const FEED_TICK: Duration = Duration::from_millis(500);
@@ -152,8 +152,8 @@ fn expand_home(path: &Path, home: Option<&Path>) -> PathBuf {
     }
 }
 
-/// The Socket Mode thread's intake: records each mention in `slack.db`, then queues its job,
-/// all before Slack gets the ack.
+/// The Socket Mode thread's intake: records each mention and command in `slack.db`, then
+/// queues its job, all before Slack gets the ack.
 struct Recorder {
     /// The Socket Mode thread's own `slack.db` connection.
     db: Db,
@@ -170,23 +170,30 @@ struct Recorder {
 }
 
 impl Intake for Recorder {
-    /// Keeps a mention; a click needs nothing kept until prompts take answers.
-    fn take(&self, item: Inbound) -> Result<(), NotKept> {
-        let Inbound::Mention(mention) = item else {
-            return Ok(());
-        };
+    /// Keeps a mention or a command; a click needs nothing kept until prompts take answers.
+    fn take(&self, item: Inbound) -> Result<Kept, NotKept> {
         let allow = Allow {
             channels: &self.channels,
             users: &self.users,
         };
-        match worker::record(&mention, &self.db, &allow, (self.clock)()) {
-            Ok(Some(job)) => self.jobs.send(job).map_err(|_| NotKept::Gone),
-            Ok(None) => Ok(()),
+        let now = (self.clock)();
+        let (ack, job) = match item {
+            Inbound::Mention(mention) => (None, worker::record(&mention, &self.db, &allow, now)),
+            Inbound::Slash(slash) => match slash::record(&slash, &self.db, &allow, now) {
+                Ok((ack, job)) => (Some(ack), Ok(job)),
+                Err(e) => (None, Err(e)),
+            },
+            Inbound::Click(_) => return Ok(Kept::default()),
+        };
+        match job {
+            Ok(Some(job)) => self.jobs.send(job).map_err(|_| NotKept::Gone)?,
+            Ok(None) => {}
             Err(e) => {
-                (self.log)(&format!("slack.db: {e}; Slack sends the mention again"));
-                Err(NotKept::Failed)
+                (self.log)(&format!("slack.db: {e}; Slack sends the envelope again"));
+                return Err(NotKept::Failed);
             }
         }
+        Ok(Kept { ack })
     }
 }
 
@@ -221,9 +228,15 @@ impl Worker {
                 (self.log)(&format!("slack: reply failed: {e}"));
             }
         };
+        let mut say = |channel: &str, text: &str| {
+            if let Err(e) = self.api.post_in_channel(&self.bot_token, channel, text) {
+                (self.log)(&format!("slack: post failed: {e}"));
+            }
+        };
         let mut fx = Fx {
             call: &mut call,
             reply: &mut reply,
+            say: &mut say,
             log: &*self.log,
         };
         worker::serve(jobs, &db, left, &mut fx);

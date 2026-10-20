@@ -16,7 +16,7 @@ use tungstenite::{client, Message, WebSocket};
 use super::api::Api;
 
 mod parse;
-use parse::{parse_click, parse_mention};
+use parse::{parse_click, parse_mention, parse_slash};
 
 /// First wait after a failed or finished connection.
 const MIN_BACKOFF: Duration = Duration::from_secs(1);
@@ -69,6 +69,19 @@ pub(super) struct Click {
     pub choice: u32,
 }
 
+/// A `/moor` slash command.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct Slash {
+    /// Envelope id, used as the dedupe id.
+    pub envelope_id: String,
+    /// Channel the command was run in.
+    pub channel: String,
+    /// User who ran it.
+    pub user: String,
+    /// Everything after the command name.
+    pub text: String,
+}
+
 /// What the socket thread hands to its intake.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum Inbound {
@@ -76,12 +89,21 @@ pub(super) enum Inbound {
     Mention(Mention),
     /// A button press.
     Click(Click),
+    /// A slash command.
+    Slash(Slash),
 }
 
-/// Takes each mention and click before Slack gets the ack for its envelope.
+/// Takes each mention, click and command before Slack gets the ack for its envelope.
 pub(super) trait Intake {
     /// Keeps `item`, or says why its envelope gets no ack.
-    fn take(&self, item: Inbound) -> Result<(), NotKept>;
+    fn take(&self, item: Inbound) -> Result<Kept, NotKept>;
+}
+
+/// What the ack of a kept item carries.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(super) struct Kept {
+    /// The ack's `payload`, such as the text Slack shows the user who ran a command.
+    pub ack: Option<Value>,
 }
 
 /// Why an intake did not keep an item.
@@ -266,21 +288,31 @@ fn handle_envelope(
             parse_mention(&envelope).map(Inbound::Mention),
         ),
         Some("interactive") => (Flow::Continue, parse_click(&envelope).map(Inbound::Click)),
+        Some("slash_commands") => (Flow::Continue, parse_slash(&envelope).map(Inbound::Slash)),
         _ => (Flow::Continue, None),
     };
-    match item.map_or(Ok(()), |item| intake.take(item)) {
-        Ok(()) => ack(ws, &envelope).map(|()| flow),
+    match item.map_or_else(|| Ok(Kept::default()), |item| intake.take(item)) {
+        Ok(kept) => ack(ws, &envelope, kept.ack).map(|()| flow),
         Err(NotKept::Failed) => Ok(flow),
         Err(NotKept::Gone) => Err(SocketError::ReceiverGone),
     }
 }
 
-/// Sends the ack for `envelope` when it carries an envelope id.
-fn ack(ws: &mut WebSocket<Stream>, envelope: &Value) -> Result<(), SocketError> {
+/// Sends the ack for `envelope`, with `payload` when there is one, when it carries an
+/// envelope id.
+fn ack(
+    ws: &mut WebSocket<Stream>,
+    envelope: &Value,
+    payload: Option<Value>,
+) -> Result<(), SocketError> {
     let Some(id) = envelope.get("envelope_id").and_then(Value::as_str) else {
         return Ok(());
     };
-    match ws.send(Message::text(json!({"envelope_id": id}).to_string())) {
+    let frame = payload.map_or_else(
+        || json!({"envelope_id": id}),
+        |payload| json!({"envelope_id": id, "payload": payload}),
+    );
+    match ws.send(Message::text(frame.to_string())) {
         Ok(()) => Ok(()),
         Err(tungstenite::Error::Io(e)) if is_timeout(&e) => Ok(()),
         Err(e) => Err(SocketError::Io(e.to_string())),

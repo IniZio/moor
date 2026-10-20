@@ -141,6 +141,8 @@ struct State {
     requests: Vec<Recorded>,
     /// Envelope ids the controller acknowledged over the socket.
     acks: Vec<String>,
+    /// The `payload` of each ack that carried one, by envelope id.
+    ack_payloads: Vec<(String, Value)>,
     /// Frames waiting for a socket connection to carry them.
     outbox: VecDeque<String>,
     /// Socket connections accepted so far.
@@ -239,6 +241,42 @@ impl FakeSlack {
             },
         });
         self.lock().outbox.push_back(envelope.to_string());
+    }
+
+    /// Queues a `slash_commands` envelope: `user` runs `/moor <text>` in `channel`.
+    pub(crate) fn send_slash(&self, envelope_id: &str, channel: &str, user: &str, text: &str) {
+        let envelope = json!({
+            "type": "slash_commands",
+            "envelope_id": envelope_id,
+            "payload": {
+                "command": "/moor",
+                "text": text,
+                "user_id": user,
+                "channel_id": channel,
+                "trigger_id": format!("trigger-{envelope_id}"),
+            },
+        });
+        self.lock().outbox.push_back(envelope.to_string());
+    }
+
+    /// Waits for the ack of `envelope_id` and returns its payload.
+    pub(crate) fn wait_ack_payload(&self, envelope_id: &str) -> Value {
+        let found = || {
+            let payloads = self.lock().ack_payloads.clone();
+            payloads
+                .into_iter()
+                .find(|(id, _)| id == envelope_id)
+                .map(|(_, payload)| payload)
+        };
+        Self::wait(found).unwrap_or_else(|| panic!("no ack with a payload for {envelope_id}"))
+    }
+
+    /// Messages posted at the top level of a channel with the bot token, in order.
+    pub(crate) fn channel_posts(&self) -> Vec<Post> {
+        self.posts()
+            .into_iter()
+            .filter(|p| p.thread_ts.is_empty())
+            .collect()
     }
 
     fn queue(&self, envelope_id: &str, event_id: &str, event: &Value) {
@@ -407,7 +445,11 @@ fn serve_socket(stream: TcpStream, state: &Mutex<State>) {
             Ok(Message::Text(text)) => {
                 let ack: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
                 if let Some(id) = ack["envelope_id"].as_str() {
-                    state.lock().unwrap().acks.push(id.to_owned());
+                    let mut state = state.lock().unwrap();
+                    state.acks.push(id.to_owned());
+                    if let Some(payload) = ack.get("payload") {
+                        state.ack_payloads.push((id.to_owned(), payload.clone()));
+                    }
                 }
             }
             Ok(Message::Close(_)) => return,

@@ -18,6 +18,7 @@ mod daemon;
 mod db;
 mod dial;
 mod secret_file;
+mod slash;
 mod socket;
 mod worker;
 

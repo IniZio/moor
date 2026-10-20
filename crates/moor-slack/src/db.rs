@@ -1,4 +1,5 @@
-//! The front's own `SQLite` file, `slack.db`: seen envelopes and the Box of each thread.
+//! The front's own `SQLite` file, `slack.db`: seen envelopes, each channel's repos and the Box
+//! of each thread.
 
 use std::path::Path;
 use std::time::Duration;
@@ -14,7 +15,7 @@ const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// The schema version this build writes and reads. A schema change edits [`SCHEMA`] in place
 /// and raises this number; there are no migrations, so a file at any other version is refused.
-const SCHEMA_VERSION: i64 = 2;
+const SCHEMA_VERSION: i64 = 3;
 
 /// The whole schema, created in an empty file.
 const SCHEMA: &str = "
@@ -35,6 +36,16 @@ const SCHEMA: &str = "
         PRIMARY KEY (channel, thread_ts)
     );
     CREATE INDEX slack_threads_box ON slack_threads (box_id);
+    CREATE TABLE slack_channel_repos (
+        channel TEXT NOT NULL,
+        repo TEXT NOT NULL,
+        added_by TEXT NOT NULL,
+        added_at INTEGER NOT NULL,
+        is_default INTEGER NOT NULL DEFAULT 0 CHECK (is_default IN (0, 1)),
+        PRIMARY KEY (channel, repo)
+    );
+    CREATE UNIQUE INDEX slack_channel_repos_one_default
+        ON slack_channel_repos (channel) WHERE is_default = 1;
 ";
 
 /// Columns of a thread row, in the order [`thread_row`] reads them.
@@ -256,6 +267,9 @@ fn thread_row(r: &Row<'_>) -> rusqlite::Result<SlackThread> {
         state,
     })
 }
+
+mod channel_repos;
+pub(crate) use channel_repos::ChannelRepo;
 
 #[cfg(test)]
 mod tests;

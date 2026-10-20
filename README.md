@@ -45,6 +45,27 @@ Global flags: `--json`, `--quiet`, `--state-dir DIR`. State lives in
 `moor.db` inside the state directory, set by `--state-dir`, `MOOR_STATE_DIR`,
 `XDG_STATE_HOME`, or `HOME`.
 
+## Slack front
+
+`moor-slack` is a separate daemon that answers Slack over Socket Mode and
+talks to the controller over its socket. Its Slack app needs an app-level
+token with `connections:write`, and a bot token with `app_mentions:read`,
+`channels:history`, `chat:write` and `commands`. Add a `/moor` slash command
+to the app.
+
+A user on the `users` list runs these in a channel on the `channels` list:
+
+- `/moor repo` lists the channel's repos and marks the default.
+- `/moor repo add OWNER/NAME` adds a repo. If the controller does not know
+  it, the front posts one line in the channel that names the repos it knows.
+- `/moor repo remove OWNER/NAME` removes a repo.
+- `/moor repo default OWNER/NAME` marks one of the channel's repos as the
+  default. The previous default loses its mark.
+
+`moor-slack` keeps its state in `slack.db`. A `slack.db` that another build
+of `moor-slack` wrote at a different schema is refused at startup. Move it
+aside and start again with a fresh one.
+
 ## Box provider
 
 moor runs Boxes through crabbox. The provider is `box.provider` in your user
