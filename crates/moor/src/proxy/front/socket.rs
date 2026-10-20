@@ -110,16 +110,16 @@ impl FrontSocket {
         matches!(fs::symlink_metadata(&self.path), Err(e) if e.kind() == io::ErrorKind::NotFound)
     }
 
-    /// Stops `listening` and removes the socket file if it is still the one that bind
-    /// created, so a supervisor that lost its lease never removes its successor's socket.
-    /// The path is compared while the listener still holds its inode, so a freed inode number
-    /// that a new file reuses cannot match.
+    /// Removes the socket file if it is still the one that bind created, then stops
+    /// `listening`, so a supervisor that lost its lease never removes its successor's socket.
+    /// The file goes before the acceptor is joined, which can take a whole poll, so a successor
+    /// that binds meanwhile keeps its socket. The listener still holds its inode during the
+    /// compare, so a freed inode number that a new file reuses cannot match.
     pub(super) fn close(&self, listening: Listening) {
-        let ours = self.inode().is_ok_and(|now| now == listening.inode);
-        listening.halt();
-        if ours {
+        if self.inode().is_ok_and(|now| now == listening.inode) {
             let _ = fs::remove_file(&self.path);
         }
+        listening.halt();
     }
 
     /// The device and inode number at the path.
