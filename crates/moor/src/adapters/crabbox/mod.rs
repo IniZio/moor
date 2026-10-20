@@ -388,10 +388,10 @@ impl Driver for Crabbox {
         &self,
         handle: &BoxHandle,
         box_port: u16,
-        host_port: u16,
+        socket: &Path,
         host_cwd: &Path,
     ) -> Result<Box<dyn TunnelHandle>, DriverError> {
         self.require_version()?;
-        tunnel::reverse_tunnel(self, handle, box_port, host_port, host_cwd)
+        tunnel::reverse_tunnel(self, handle, box_port, socket, host_cwd)
     }
 }

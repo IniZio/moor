@@ -143,7 +143,6 @@ fn extra_events_round_trip() {
         ExtraEvent::StaysUp { reason: "r".into() },
         ExtraEvent::ProxyStarted {
             box_port: 1080,
-            host_port: 2080,
             pid: 7,
             handle: "h".into(),
         },

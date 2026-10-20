@@ -145,7 +145,7 @@ fn fake_tools(dir: &Path, state: &Path) -> Env {
     let crabbox = dir.join("crabbox");
     script(
         &crabbox,
-        "case \"$1\" in --version) echo 'crabbox 0.72.0-moor.7';; *) echo \"ssh 'u@box'\";; esac",
+        "case \"$1\" in --version) echo 'crabbox 0.72.0-moor.9';; *) echo \"ssh 'u@box'\";; esac",
     );
     let ssh = dir.join("ssh");
     let log = dir.join("ssh.log");

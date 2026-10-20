@@ -187,8 +187,8 @@ impl Driver for FakeDriver {
             .collect())
     }
 
-    fn reverse_tunnel(&self, h: &BoxHandle, bp: u16, hp: u16, cwd: &Path) -> tunnel::Opened {
-        self.tunnel_request(h, bp, hp, cwd)
+    fn reverse_tunnel(&self, h: &BoxHandle, bp: u16, socket: &Path, cwd: &Path) -> tunnel::Opened {
+        self.tunnel_request(h, bp, socket, cwd)
     }
 
     fn workdir(&self, handle: &BoxHandle, worktree: &Path) -> Result<BoxPath, DriverError> {

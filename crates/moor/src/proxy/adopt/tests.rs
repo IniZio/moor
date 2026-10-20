@@ -11,7 +11,7 @@ use moor_core::{BoxId, BoxName, Secret};
 
 use super::reconcile;
 use crate::proxy::detached::{write_spec, DetachedSupervisor, LEASE};
-use crate::store::{ProxyPorts, ReadyProc, Store, STORE_FILE};
+use crate::store::{ReadyProc, Store, STORE_FILE};
 use crate::testing::clock::FakeClock;
 use crate::testing::proc::ScriptedProc;
 use crate::testing::rng::FakeRng;
@@ -72,17 +72,13 @@ fn fx() -> Fx {
         let box_id = BoxId::new(d.call.args.get(2).unwrap().parse().unwrap());
         store.claim_lease(box_id, "new-supervisor", LEASE).unwrap();
         let box_port = store.proxy(box_id).unwrap().unwrap().box_port;
-        let ports = ProxyPorts {
-            box_port,
-            host_port: 41000,
-        };
         let proc = ReadyProc {
             pid: d.pid,
             handle: "h",
             boot_id: Some(BOOT),
         };
         let _ = store
-            .mark_ready(box_id, "new-supervisor", ports, proc)
+            .mark_ready(box_id, "new-supervisor", box_port, proc)
             .unwrap();
     });
     f
@@ -115,16 +111,15 @@ impl Fx {
             .unwrap();
         self.store.claim_lease(self.id, "old", LEASE).unwrap();
         let box_port = self.store.proxy(self.id).unwrap().unwrap().box_port;
-        let ports = ProxyPorts {
-            box_port,
-            host_port: 40000,
-        };
         let proc = ReadyProc {
             pid: PID,
             handle: "old-handle",
             boot_id: Some(boot),
         };
-        let _ = self.store.mark_ready(self.id, "old", ports, proc).unwrap();
+        let _ = self
+            .store
+            .mark_ready(self.id, "old", box_port, proc)
+            .unwrap();
         box_port
     }
 

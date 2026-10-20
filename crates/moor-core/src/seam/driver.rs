@@ -347,9 +347,9 @@ pub trait Driver: Send + Sync {
     fn connect_argv(&self, handle: &BoxHandle, host_cwd: &Path)
         -> Result<Vec<String>, DriverError>;
 
-    /// Exposes host loopback `host_port` inside the Box on loopback `box_port`
-    /// until the returned handle drops. `host_cwd` is the worktree the driver
-    /// process runs from.
+    /// Exposes the host Unix socket `socket` inside the Box on loopback `box_port` until the
+    /// returned handle drops. It opens `socket` per Box connection, so it reaches a listener
+    /// bound again at the same path. `host_cwd` is the worktree the driver process runs from.
     ///
     /// # Errors
     /// Returns [`DriverError::Unsupported`] when the provider has no reverse
@@ -359,7 +359,7 @@ pub trait Driver: Send + Sync {
         &self,
         handle: &BoxHandle,
         box_port: u16,
-        host_port: u16,
+        socket: &Path,
         host_cwd: &Path,
     ) -> Result<Box<dyn TunnelHandle>, DriverError>;
 

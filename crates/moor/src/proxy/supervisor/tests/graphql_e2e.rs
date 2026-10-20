@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
+use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -26,6 +27,7 @@ use crate::proxy::nono::tests::upstream;
 use crate::proxy::supervisor::listen::{listen, Live};
 use crate::proxy::supervisor::{Deps, Sink};
 use crate::store::Store;
+use crate::testing::bridge::bridge;
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
 use crate::testing::forge::FakeForge;
@@ -238,6 +240,10 @@ pub(super) struct Rig {
     pub(super) live: Option<Live>,
     /// Port of the GraphQL filter.
     filter_port: u16,
+    /// The port the Box uses: a bridge to the front socket, as the reverse tunnel gives it.
+    pub(super) box_port: u16,
+    /// The private socket directory the front listens in.
+    sockets: PathBuf,
     /// PEM of the Box CA the client trusts.
     pub(super) ca_pem: String,
     /// How many times the credential source ran.
@@ -265,6 +271,8 @@ impl Rig {
             upstream_dial: Some(self.up.addr),
             guard_exempt: Vec::new(),
             state_dir: self.dir.path(),
+            sockets: &self.sockets,
+            owner: rustix::process::getuid().as_raw(),
             boot_id: None,
             stop: Arc::new(AtomicBool::new(false)),
             stderr: err,
@@ -278,7 +286,7 @@ impl Rig {
 
     /// A client that goes through nono as the sandbox does.
     pub(super) fn client(&self) -> Agent {
-        upstream::client(self.live.as_ref().unwrap().port(), NONCE, &self.ca_pem)
+        upstream::client(self.box_port, NONCE, &self.ca_pem)
     }
 
     /// Requests the fake upstream received so far.
@@ -317,6 +325,7 @@ pub(super) fn rig_with(extra: Vec<ResolvedRule>) -> Rig {
         }),
         rules: std::iter::once(github_rule()).chain(extra).collect(),
     };
+    let sockets = dir.path().join("s");
     let mut rig = Rig {
         dir,
         store,
@@ -327,12 +336,15 @@ pub(super) fn rig_with(extra: Vec<ResolvedRule>) -> Rig {
         box_id,
         live: None,
         filter_port: 0,
+        box_port: 0,
+        sockets,
         ca_pem: String::new(),
         fetches: Arc::new(AtomicUsize::new(0)),
     };
     let nonce = Secret::new(NONCE.as_bytes().to_vec());
     let live = listen(&rig.deps(), box_id, &nonce, &spec).unwrap();
     rig.filter_port = live.graphql_addr().unwrap().port();
+    rig.box_port = bridge(live.socket());
     rig.ca_pem = crate::proxy::nono::ca::load_or_create(rig.dir.path(), box_id)
         .unwrap()
         .cert_pem()
@@ -446,8 +458,7 @@ fn raw_call(rig: &Rig, request: &str) -> String {
     use rustls::pki_types::{CertificateDer, ServerName};
     use rustls::{ClientConfig, ClientConnection, RootCertStore};
 
-    let port = rig.live.as_ref().unwrap().port();
-    let mut tcp = TcpStream::connect((Ipv4Addr::LOCALHOST, port)).unwrap();
+    let mut tcp = TcpStream::connect((Ipv4Addr::LOCALHOST, rig.box_port)).unwrap();
     tcp.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
     let auth = crate::proxy::nono::capture::base64(format!("moor:{NONCE}").as_bytes());
     let connect = format!(
@@ -549,14 +560,12 @@ fn unmatched_rest_request_is_forwarded_not_refused() {
 }
 
 #[test]
-fn stop_closes_both_listeners() {
+fn stop_closes_every_listener() {
     let mut rig = rig();
-    let ports = [
-        rig.live.as_ref().unwrap().port(),
-        rig.nono_port(),
-        rig.filter_port,
-    ];
+    let socket = rig.live.as_ref().unwrap().socket().to_path_buf();
+    let ports = [rig.nono_port(), rig.filter_port];
     rig.live.take().unwrap().stop();
+    assert!(UnixStream::connect(&socket).is_err(), "front still accepts");
     for port in ports {
         let addr = SocketAddr::from((Ipv4Addr::LOCALHOST, port));
         assert!(

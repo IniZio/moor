@@ -86,7 +86,6 @@ fn other_events_are_rejected() {
     let before = store.events(id, 100).unwrap().len();
     let e = Event::ProxyStarted {
         box_port: 1,
-        host_port: 2,
         pid: 3,
         handle: "h".into(),
     };

@@ -195,7 +195,8 @@ pub fn serve_proxy(env: &Env, box_id: BoxId, stderr: impl Write + Send + 'static
 
 /// Builds the proxy's dependencies and serves; `Err` is a setup failure.
 fn run_proxy(env: &Env, box_id: BoxId, sink: &Sink) -> Result<u8, String> {
-    let (parts, _) = parts(env, socket_dir()).map_err(|e| e.error.to_string())?;
+    let sockets = socket_dir();
+    let (parts, _) = parts(env, sockets.clone()).map_err(|e| e.error.to_string())?;
     let forge = Arc::clone(&parts.forge);
     let clock = Arc::clone(&parts.clock);
     let proc = Arc::clone(&parts.proc);
@@ -225,6 +226,8 @@ fn run_proxy(env: &Env, box_id: BoxId, sink: &Sink) -> Result<u8, String> {
         upstream_dial: None,
         guard_exempt: Vec::new(),
         state_dir,
+        sockets: &sockets,
+        owner: rustix::process::getuid().as_raw(),
         boot_id: proc.boot_id(),
         stop,
         stderr: Arc::clone(sink),

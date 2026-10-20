@@ -7,7 +7,7 @@ use moor_core::domain::boxes::BoxState;
 use moor_core::seam::surface::SurfaceError;
 
 use super::{fx, row, sleep, wake_and_revive, wake_box_if_asleep, wake_if_asleep, with_agent, Fx};
-use crate::store::{ProxyPorts, ReadyProc, TunnelAck, TunnelWant};
+use crate::store::{ReadyProc, TunnelAck, TunnelWant};
 use crate::testing::rng::FakeRng;
 
 /// Give the Box a live Proxy: a ready row held by a fresh lease.
@@ -22,16 +22,12 @@ fn live_proxy(f: &Fx) {
     );
     store.claim_lease(f.id, "owner", lease).unwrap();
     let box_port = store.proxy(f.id).unwrap().unwrap().box_port;
-    let ports = ProxyPorts {
-        box_port,
-        host_port: 41_000,
-    };
     let proc = ReadyProc {
         pid: 1,
         handle: "tunnel-1",
         boot_id: None,
     };
-    let _ = store.mark_ready(f.id, "owner", ports, proc).unwrap();
+    let _ = store.mark_ready(f.id, "owner", box_port, proc).unwrap();
 }
 
 /// The woken Box is recorded awake.

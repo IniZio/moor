@@ -16,12 +16,10 @@ use moor_core::seam::proxy_host::{ProxyHost, ProxyHostError, ProxySpec, ProxySta
 use moor_core::{BoxId, BoxName, Secret};
 
 use super::{base64url, log_path, new_nonce, tail, DetachedSupervisor, LEASE, TAIL_LINES, WAIT};
-use crate::store::{Fenced, ProxyPorts, ReadyProc, Store, STORE_FILE};
+use crate::store::{Fenced, ReadyProc, Store, STORE_FILE};
 use crate::testing::clock::FakeClock;
 use crate::testing::proc::{DaemonCall, ScriptedProc};
 use crate::testing::rng::FakeRng;
-
-const HOST_PORT: u16 = 41000;
 
 /// An adapter over fakes, with a second store on the same database to seed and inspect rows.
 pub(super) struct Fx {
@@ -51,15 +49,12 @@ pub(super) fn supervise(state: PathBuf) -> impl Fn(&DaemonCall) + Send + Sync + 
         let owner = "fake-supervisor";
         store.claim_lease(box_id, owner, LEASE).unwrap();
         let row = store.proxy(box_id).unwrap().unwrap();
-        let ports = ProxyPorts {
-            box_port: row.box_port,
-            host_port: HOST_PORT,
-        };
+        let box_port = row.box_port;
         let applied = store
             .mark_ready(
                 box_id,
                 owner,
-                ports,
+                box_port,
                 ReadyProc {
                     pid: d.pid,
                     handle: "fake-handle",

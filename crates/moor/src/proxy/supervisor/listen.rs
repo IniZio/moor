@@ -1,6 +1,7 @@
 //! The nono proxy of one supervised Box, with its capture and request log.
 
 use std::net::SocketAddr;
+use std::path::Path;
 use std::sync::Arc;
 
 use moor_core::config::proxy::{ResolvedInject, ResolvedRule};
@@ -11,7 +12,7 @@ use moor_core::{BoxId, Secret};
 use super::run::say;
 use super::Deps;
 use crate::proxy::detached::base64url;
-use crate::proxy::front::Front;
+use crate::proxy::front::{Front, FrontSocket};
 use crate::proxy::graphql::http::Head;
 use crate::proxy::graphql::upstream::Upstream;
 use crate::proxy::graphql::{FilterSpec, GraphqlFilter};
@@ -25,7 +26,7 @@ use crate::proxy::ProxyLog;
 pub(super) struct Live {
     /// The nono proxy. nono also serves origin-form requests directly to upstream, so its port is never exposed.
     proxy: NonoProxy,
-    /// The CONNECT-only listener in front of nono; its port is the only one the Box may reach.
+    /// The CONNECT-only listener in front of nono; its socket is the only one the Box may reach.
     front: Front,
     /// The loopback filter every nono CONNECT chains through; it refuses non-public destinations.
     graphql: Option<GraphqlFilter>,
@@ -79,7 +80,8 @@ pub(super) fn listen(
     };
     let box_nonce = Secret::new(nonce.expose().to_vec());
     let nono_addr = SocketAddr::from(([127, 0, 0, 1], proxy.port()));
-    let front = match Front::start(nono_addr, box_nonce, internal) {
+    let socket = FrontSocket::new(deps.sockets, deps.owner, deps.state_dir, box_id);
+    let front = match Front::start(nono_addr, socket, box_nonce, internal) {
         Ok(front) => front,
         Err(err) => {
             proxy.stop();
@@ -229,9 +231,14 @@ fn stop_filter(filter: Option<GraphqlFilter>) {
 }
 
 impl Live {
-    /// The port of the CONNECT-only front, the only port the Box may reach.
-    pub(super) const fn port(&self) -> u16 {
-        self.front.port()
+    /// The socket of the CONNECT-only front, the only listener the Box may reach.
+    pub(super) fn socket(&self) -> &Path {
+        self.front.path()
+    }
+
+    /// Binds the front socket again when its file is gone.
+    pub(super) fn rebind(&self) -> Result<(), String> {
+        self.front.rebind()
     }
 
     /// The port nono itself listens on, for tests that probe it directly.

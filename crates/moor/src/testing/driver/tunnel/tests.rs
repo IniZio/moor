@@ -21,7 +21,7 @@ fn boxed(fake: &FakeDriver) -> BoxHandle {
 }
 
 fn open(fake: &FakeDriver, h: &BoxHandle) -> Result<Box<dyn TunnelHandle>, DriverError> {
-    fake.reverse_tunnel(h, 8080, 9090, Path::new("/host"))
+    fake.reverse_tunnel(h, 8080, Path::new("/s/px-1"), Path::new("/host"))
 }
 
 fn caps(fake: &FakeDriver) -> bool {
@@ -38,7 +38,7 @@ fn request_fields_are_recorded() {
         [TunnelCall {
             handle: h,
             box_port: 8080,
-            host_port: 9090,
+            socket: PathBuf::from("/s/px-1"),
             host_cwd: PathBuf::from("/host"),
         }]
     );

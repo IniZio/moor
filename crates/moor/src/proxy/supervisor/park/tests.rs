@@ -67,7 +67,7 @@ fn parked_supervisor_still_beats_and_stops_when_the_box_closes() {
 }
 
 #[test]
-fn up_reopens_on_the_same_ports_and_acks() {
+fn up_reopens_to_the_same_port_and_socket_and_acks() {
     let w = World::new([]);
     let deps = w.deps();
     let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
@@ -81,7 +81,7 @@ fn up_reopens_on_the_same_ports_and_acks() {
     assert_eq!(calls.len(), 2);
     let (first, second) = (calls.first().unwrap(), calls.last().unwrap());
     assert_eq!(second.box_port, first.box_port);
-    assert_eq!(second.host_port, first.host_port);
+    assert_eq!(second.socket, first.socket);
     assert_eq!(
         w.store.tunnel_ack(w.id).unwrap(),
         Some(TunnelAck::Up { seq })

@@ -20,11 +20,18 @@ fn open(
     c: &Crabbox,
     handle: &str,
 ) -> Result<Box<dyn moor_core::seam::driver::TunnelHandle>, DriverError> {
-    c.reverse_tunnel(&BoxHandle::new(handle), 8080, 9090, Path::new("/work/tree"))
+    c.reverse_tunnel(
+        &BoxHandle::new(handle),
+        8080,
+        Path::new(SOCKET),
+        Path::new("/work/tree"),
+    )
 }
 
+const SOCKET: &str = "/tmp/moor-1000/px-0123456789abcdef";
+
 fn ready() -> ChildReply {
-    ChildReply::Ready(r#"{"box":8080,"host":9090}"#.to_owned())
+    ChildReply::Ready(format!(r#"{{"box":8080,"socket":"{SOCKET}"}}"#))
 }
 
 #[test]
@@ -43,7 +50,7 @@ fn argv_cwd_and_env_are_recorded() {
             "--id",
             "moor-t7",
             "--reverse",
-            "8080:9090",
+            "8080:/tmp/moor-1000/px-0123456789abcdef",
             "--json"
         ]
     );
@@ -75,7 +82,7 @@ fn ready_line_gives_live_handle_that_kills_on_drop() {
 #[test]
 fn exited_child_is_not_alive() {
     let (_p, c) = fixture(ChildReply::ReadyThenExit {
-        line: r#"{"box":8080,"host":9090}"#.to_owned(),
+        line: format!(r#"{{"box":8080,"socket":"{SOCKET}"}}"#),
         code: 1,
     });
     let t = open(&c, "sprites/moor-t7").unwrap();
@@ -91,14 +98,20 @@ fn pid_probe_does_not_decide_liveness() {
 }
 
 #[test]
-fn port_mismatch_fails_and_kills_child() {
-    let (p, c) = fixture(ChildReply::Ready(r#"{"box":8080,"host":1}"#.to_owned()));
-    let err = open(&c, "sprites/moor-t7").err().unwrap();
-    assert!(matches!(
-        err,
-        DriverError::Failed { ref summary } if summary == "reverse tunnel printed an unexpected ready line"
-    ));
-    assert_eq!(p.dropped().len(), 1);
+fn other_ends_in_the_ready_line_fail_and_kill_the_child() {
+    for line in [
+        format!(r#"{{"box":8081,"socket":"{SOCKET}"}}"#),
+        r#"{"box":8080,"socket":"/tmp/moor-1000/px-other"}"#.to_owned(),
+        r#"{"box":8080,"host":9090}"#.to_owned(),
+    ] {
+        let (p, c) = fixture(ChildReply::Ready(line));
+        let err = open(&c, "sprites/moor-t7").err().unwrap();
+        assert!(matches!(
+            err,
+            DriverError::Failed { ref summary } if summary == "reverse tunnel printed an unexpected ready line"
+        ));
+        assert_eq!(p.dropped().len(), 1);
+    }
 }
 
 #[test]

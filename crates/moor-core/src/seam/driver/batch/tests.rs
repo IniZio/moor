@@ -82,7 +82,7 @@ impl Driver for Scripted {
         &self,
         _: &BoxHandle,
         _: u16,
-        _: u16,
+        _: &Path,
         _: &Path,
     ) -> Result<Box<dyn TunnelHandle>, DriverError> {
         no()

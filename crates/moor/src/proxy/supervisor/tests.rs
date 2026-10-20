@@ -1,6 +1,5 @@
 //! Tests for the per-Box proxy supervisor, run against fakes with no real sleeps.
 
-use std::net::{Ipv4Addr, TcpStream};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -22,6 +21,7 @@ mod front_e2e;
 mod graphql_e2e;
 mod hairpin_e2e;
 mod nono_e2e;
+mod socket;
 
 use super::{serve, start, Deps, Sink, Stop, LEASE, TICK};
 use crate::proxy::detached::{read_spec, write_spec};
@@ -43,6 +43,10 @@ pub(super) const FIRST_TUNNEL_PID: u32 = 50_000;
 pub(super) struct World {
     /// Keeps the state directory alive.
     pub(super) dir: tempfile::TempDir,
+    /// The private socket directory the front listens in.
+    pub(super) sockets: PathBuf,
+    /// The uid the socket directory must belong to.
+    pub(super) owner: u32,
     /// Shared with the store and the supervisor.
     pub(super) clock: Arc<FakeClock>,
     /// Box and proxy storage.
@@ -91,6 +95,8 @@ impl World {
         edit(&mut spec);
         write_spec(dir.path(), &spec).unwrap();
         Self {
+            sockets: dir.path().join("s"),
+            owner: rustix::process::getuid().as_raw(),
             dir,
             clock,
             store,
@@ -132,6 +138,8 @@ impl World {
             guard_exempt: Vec::new(),
             upstream_ca,
             state_dir: self.dir.path(),
+            sockets: &self.sockets,
+            owner: self.owner,
             boot_id: Some(BOOT.to_owned()),
             stop: self.stop.clone(),
             stderr: err,
@@ -281,7 +289,7 @@ fn tunnel_failure_releases_the_lease_and_keeps_the_row_unready() {
 }
 
 #[test]
-fn successful_start_marks_ready_and_records_ports_without_the_nonce() {
+fn successful_start_marks_ready_and_records_the_box_port_without_the_nonce() {
     let w = World::new([]);
     let deps = w.deps();
 
@@ -290,22 +298,19 @@ fn successful_start_marks_ready_and_records_ports_without_the_nonce() {
     let row = w.row();
     assert!(row.ready);
     assert_eq!(row.boot_id.as_deref(), Some(BOOT));
-    assert_eq!(row.host_port, Some(run.host_port()));
     assert_eq!(row.lease_owner.as_deref(), Some(run.owner()));
-    assert_started_event(&w, &row, run.host_port());
+    assert_started_event(&w, &row);
     let calls = w.driver.tunnels();
     assert_eq!(calls.len(), 1);
     assert_eq!(calls.first().unwrap().box_port, row.box_port);
-    assert_eq!(calls.first().unwrap().host_port, run.host_port());
 }
 
-/// Checks the single `proxy_started` event: ports, pid and handle, and no nonce.
-fn assert_started_event(w: &World, row: &ProxyRow, host_port: u16) {
+/// Checks the single `proxy_started` event: box port, pid and handle, and no nonce.
+fn assert_started_event(w: &World, row: &ProxyRow) {
     let events = w.started_events();
     assert_eq!(events.len(), 1);
     let p = events.first().unwrap();
     assert_eq!(p["box_port"], row.box_port);
-    assert_eq!(p["host_port"], host_port);
     assert_eq!(p["pid"], row.pid.unwrap());
     assert_eq!(p["handle"], row.handle.clone().unwrap());
     assert!(!p.to_string().contains(NONCE_TEXT));
@@ -528,29 +533,6 @@ fn missing_spec_is_refused_before_the_lease_is_claimed() {
     assert!(w.stderr().contains("no proxy spec"));
     assert_eq!(w.row().lease_owner, None);
     assert!(w.driver.tunnels().is_empty());
-}
-
-#[test]
-fn lost_lease_stops_the_proxy_from_accepting() {
-    let w = World::new([]);
-    let deps = w.deps();
-    let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
-    let port = run.host_port();
-    assert!(TcpStream::connect((Ipv4Addr::LOCALHOST, port)).is_ok());
-    w.clock.sleep(LEASE);
-    let taken = w.store.claim_lease(w.id, "other-owner", LEASE).unwrap();
-    assert!(matches!(taken, Lease::Claimed));
-    assert!(matches!(run.tick(), Some(Stop::LostLease)));
-    assert_eq!(run.finish(Stop::LostLease), 1);
-
-    let refused = (0..100).any(|_| {
-        let down = TcpStream::connect((Ipv4Addr::LOCALHOST, port)).is_err();
-        if !down {
-            std::thread::sleep(Duration::from_millis(50));
-        }
-        down
-    });
-    assert!(refused, "proxy port {port} still accepts");
 }
 
 #[test]

@@ -245,8 +245,6 @@ pub enum Event {
     ProxyStarted {
         /// Port the Box side connects to.
         box_port: u16,
-        /// Port the Proxy listens on, on the host.
-        host_port: u16,
         /// Process id of the Proxy.
         pid: u32,
         /// Opaque handle that identifies the Proxy process to its runner.

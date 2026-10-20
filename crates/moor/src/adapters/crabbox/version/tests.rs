@@ -38,12 +38,12 @@ fn unreadable_versions_do_not_parse() {
 
 #[test]
 fn compares_across_the_moor_suffix() {
-    assert!(accepted("0.72.0-moor.7"));
-    assert!(accepted("0.72.0-moor.8"));
+    assert!(accepted("0.72.0-moor.9"));
+    assert!(accepted("0.72.0-moor.10"));
     assert!(accepted("crabbox 0.73.0"));
     assert!(accepted("1.0.0"));
-    assert!(!accepted("0.72.0-moor.6"));
-    assert!(!accepted("0.72.0-moor.5"));
+    assert!(!accepted("0.72.0-moor.8"));
+    assert!(!accepted("0.72.0-moor.7"));
     assert!(!accepted("0.72.0"));
     assert!(!accepted("0.71.9-moor.9"));
 }
@@ -54,7 +54,7 @@ fn refusal_names_required_and_found_versions() {
         check("crabbox 0.72.0-moor.6"),
         Err(DriverError::Failed {
             summary:
-                "crabbox 0.72.0-moor.7 or newer is required, found 0.72.0-moor.6; upgrade crabbox"
+                "crabbox 0.72.0-moor.9 or newer is required, found 0.72.0-moor.6; upgrade crabbox"
                     .to_owned()
         })
     );
@@ -65,7 +65,7 @@ fn unreadable_output_is_refused_with_the_text() {
     assert_eq!(
         check("garbage"),
         Err(DriverError::Failed {
-            summary: "crabbox 0.72.0-moor.7 or newer is required, found \"garbage\" (unreadable); upgrade crabbox"
+            summary: "crabbox 0.72.0-moor.9 or newer is required, found \"garbage\" (unreadable); upgrade crabbox"
                 .to_owned()
         })
     );
@@ -84,14 +84,14 @@ fn caps_refuses_an_old_crabbox_before_listing_providers() {
     let (p, c) = unchecked_fixture(Reply::Ok("crabbox 0.72.0-moor.6\n".into()));
     let err = c.caps(&ProviderId::new("sprites")).unwrap_err();
     let text = format!("{err:?}");
-    assert!(text.contains("0.72.0-moor.7") && text.contains("0.72.0-moor.6"));
+    assert!(text.contains("0.72.0-moor.9") && text.contains("0.72.0-moor.6"));
     assert!(text.contains("upgrade"));
     assert_eq!(p.calls().len(), 1);
 }
 
 #[test]
 fn caps_checks_the_version_once() {
-    let (p, c) = unchecked_fixture(Reply::Ok("crabbox 0.72.0-moor.7\n".into()));
+    let (p, c) = unchecked_fixture(Reply::Ok("crabbox 0.72.0-moor.9\n".into()));
     let _ = c.caps(&ProviderId::new("sprites"));
     let _ = c.caps(&ProviderId::new("sprites"));
     let verbs: Vec<_> = p
@@ -162,7 +162,8 @@ fn ops() -> Vec<(&'static str, Op)> {
             c.connect_argv(&handle(), Path::new("/wt")).is_err()
         }),
         ("reverse_tunnel", |c| {
-            c.reverse_tunnel(&handle(), 1, 2, Path::new("/wt")).is_err()
+            c.reverse_tunnel(&handle(), 1, Path::new("/s"), Path::new("/wt"))
+                .is_err()
         }),
         ("sleep", |c| c.sleep(&handle(), None).is_err()),
         ("wake", |c| c.wake(&handle(), None).is_err()),

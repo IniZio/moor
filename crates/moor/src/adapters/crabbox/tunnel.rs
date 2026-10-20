@@ -1,9 +1,10 @@
-//! Exposes a host port inside a Box through `crabbox tunnel --reverse`.
+//! Exposes a host Unix socket inside a Box through `crabbox tunnel --reverse`.
 //!
 //! crabbox keeps running after it reports the tunnel ready, so the call is a
 //! long-lived child; the returned handle owns it and dropping the handle kills it.
 
-use std::path::Path;
+use std::ffi::OsString;
+use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
@@ -26,8 +27,8 @@ const UNEXPECTED_READY: &str = "reverse tunnel printed an unexpected ready line"
 struct Ready {
     /// Port inside the Box.
     r#box: u16,
-    /// Port on the host.
-    host: u16,
+    /// Socket on the host.
+    socket: PathBuf,
 }
 
 /// A running tunnel child.
@@ -55,20 +56,22 @@ impl TunnelHandle for Tunnel {
     }
 }
 
-/// Starts a tunnel that serves host `127.0.0.1:host_port` as Box `127.0.0.1:box_port`.
+/// Starts a tunnel that serves the host Unix socket `socket` as Box `127.0.0.1:box_port`.
 pub(super) fn reverse_tunnel(
     cb: &Crabbox,
     handle: &BoxHandle,
     box_port: u16,
-    host_port: u16,
+    socket: &Path,
     host_cwd: &Path,
 ) -> Result<Box<dyn TunnelHandle>, DriverError> {
+    let mut forward = OsString::from(format!("{box_port}:"));
+    forward.push(socket);
     let spec = static_env(
         Crabbox::spec(TUNNEL_READY_DEADLINE)
             .arg("tunnel")
             .args(target_args(handle))
             .arg("--reverse")
-            .arg(format!("{box_port}:{host_port}"))
+            .arg(forward)
             .arg("--json")
             .cwd(host_cwd),
         handle,
@@ -79,7 +82,7 @@ pub(super) fn reverse_tunnel(
         .map_err(|_| DriverError::Unavailable("crabbox could not be started".to_owned()))?;
     match child.first_line(Deadline(TUNNEL_READY_DEADLINE)) {
         Ok(line) => match serde_json::from_str::<Ready>(&line) {
-            Ok(r) if r.r#box == box_port && r.host == host_port => Ok(Box::new(Tunnel {
+            Ok(r) if r.r#box == box_port && r.socket == socket => Ok(Box::new(Tunnel {
                 child: Mutex::new(child),
             })),
             _ => Err(DriverError::Failed {

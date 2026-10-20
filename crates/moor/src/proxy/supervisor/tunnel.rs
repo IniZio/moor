@@ -39,7 +39,7 @@ impl Running<'_> {
                 self.deps,
                 (self.box_id, &self.owner),
                 &self.handle,
-                (self.box_port, self.live.port()),
+                (self.box_port, self.live.socket()),
                 &self.worktree,
                 false,
             ) {

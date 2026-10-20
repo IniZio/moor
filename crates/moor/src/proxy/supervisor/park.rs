@@ -91,7 +91,7 @@ impl Running<'_> {
         }
     }
 
-    /// Opens one new tunnel on the same ports and answers `seq`.
+    /// Opens one new tunnel to the same port and socket and answers `seq`.
     ///
     /// A `fresh` reopen skips the port clear: a sleep stops the Box, so its wake is a cold boot and
     /// no session from before the park can still hold the port. A Box that stayed up is cleared.
@@ -100,7 +100,7 @@ impl Running<'_> {
             self.deps,
             (self.box_id, &self.owner),
             &self.handle,
-            (self.box_port, self.live.port()),
+            (self.box_port, self.live.socket()),
             &self.worktree,
             fresh,
         );

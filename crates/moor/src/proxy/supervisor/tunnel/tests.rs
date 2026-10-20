@@ -288,12 +288,12 @@ impl Driver for Slow<'_> {
         &self,
         h: &BoxHandle,
         bp: u16,
-        hp: u16,
+        socket: &Path,
         c: &Path,
     ) -> Result<Box<dyn TunnelHandle>, DriverError> {
         self.clock.sleep(self.took);
         (self.after)();
-        self.inner.reverse_tunnel(h, bp, hp, c)
+        self.inner.reverse_tunnel(h, bp, socket, c)
     }
 
     fn sleep(&self, h: &BoxHandle, w: Option<&Path>) -> Result<SleepOutcome, DriverError> {
