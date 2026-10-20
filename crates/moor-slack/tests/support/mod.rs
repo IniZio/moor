@@ -111,9 +111,19 @@ impl Rig {
         RealController::start(self.root.path(), &self.socket())
     }
 
-    /// Spawns the daemon with a clean environment; its stderr goes to a file.
+    /// Spawns the daemon with its state dir in the rig's root.
     pub(crate) fn spawn_daemon(&mut self) {
-        let child = Command::new(env!("CARGO_BIN_EXE_moor-slack"))
+        let state = self.path("state-slack");
+        self.spawn_daemon_with(|daemon| {
+            daemon.arg("--state-dir").arg(state);
+        });
+    }
+
+    /// Spawns the daemon with a clean environment, then the arguments and variables that
+    /// `extra` adds; its stderr goes to a file.
+    pub(crate) fn spawn_daemon_with(&mut self, extra: impl FnOnce(&mut Command)) {
+        let mut daemon = Command::new(env!("CARGO_BIN_EXE_moor-slack"));
+        daemon
             .env_clear()
             .env("PATH", "/usr/bin:/bin")
             .env("HOME", self.path("home"))
@@ -121,14 +131,11 @@ impl Rig {
             .arg(self.socket())
             .arg("--config")
             .arg(self.path("slack.yaml"))
-            .arg("--state-dir")
-            .arg(self.path("state-slack"))
             .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(std::fs::File::create(self.path("slack.err")).unwrap())
-            .spawn()
-            .unwrap();
-        self.daemon = Some(child);
+            .stderr(std::fs::File::create(self.path("slack.err")).unwrap());
+        extra(&mut daemon);
+        self.daemon = Some(daemon.spawn().unwrap());
     }
 
     /// Kills the daemon and waits for it to exit.

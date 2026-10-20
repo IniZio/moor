@@ -15,3 +15,5 @@ mod connect;
 mod smoke;
 #[path = "daemon/start.rs"]
 mod start;
+#[path = "daemon/state.rs"]
+mod state;
