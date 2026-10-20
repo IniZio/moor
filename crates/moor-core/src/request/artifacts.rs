@@ -107,6 +107,12 @@ mod tests {
     }
 
     #[test]
+    fn artifact_read_needs_a_len() {
+        let wire = json!({"cmd": "artifact-read", "box": "repo/alpha", "name": "a"});
+        assert!(serde_json::from_value::<Request>(wire).is_err());
+    }
+
+    #[test]
     fn unknown_field_is_refused() {
         let wire = json!({"cmd": "artifacts", "box": "repo/alpha", "x": 1});
         assert!(serde_json::from_value::<Request>(wire).is_err());
