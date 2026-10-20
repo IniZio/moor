@@ -109,6 +109,18 @@ fn with_fx(
     answer: &mut dyn FnMut(&Request) -> Answer,
     step: impl FnOnce(&mut Fx<'_>),
 ) {
+    with_hooks(seen, answer, &|| {}, &|_| {}, step);
+}
+
+/// Like [`with_fx`], also running `after_post` once each post has landed and sending each
+/// log line to `log`.
+fn with_hooks(
+    seen: &RefCell<Seen>,
+    answer: &mut dyn FnMut(&Request) -> Answer,
+    after_post: &dyn Fn(),
+    log: &dyn Fn(&str),
+    step: impl FnOnce(&mut Fx<'_>),
+) {
     let mut call = |req: Request| {
         let reply = answer(&req);
         seen.borrow_mut().calls.push(req);
@@ -118,11 +130,12 @@ fn with_fx(
         seen.borrow_mut()
             .replies
             .push((c.to_owned(), t.to_owned(), text.to_owned()));
+        after_post();
     };
     let mut fx = Fx {
         call: &mut call,
         reply: &mut reply,
-        log: &|_| {},
+        log,
     };
     step(&mut fx);
 }
@@ -465,3 +478,5 @@ fn a_lost_start_is_asked_about_on_a_timer_and_holds_up_no_other_thread() {
     assert_eq!(threads, ["20.5", "10.5"]);
     assert_eq!(state(&db, "C1", "10.5"), bound_to_7("slack-10-5"));
 }
+
+mod post_first;
