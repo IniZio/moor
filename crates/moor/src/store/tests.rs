@@ -101,19 +101,6 @@ fn open_creates_wal_file_with_schema_version() {
 }
 
 #[test]
-fn schema_version_is_four() {
-    let dir = tempfile::tempdir().unwrap();
-    drop(open(dir.path()));
-    let raw = rusqlite::Connection::open(dir.path().join("state").join("moor.db")).unwrap();
-    let v: String = raw
-        .query_row("SELECT v FROM meta WHERE k = 'schema_version'", [], |r| {
-            r.get(0)
-        })
-        .unwrap();
-    assert_eq!(v, "5");
-}
-
-#[test]
 fn primary_session_row_exists_for_each_box() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _) = open(dir.path());
@@ -130,17 +117,31 @@ fn primary_session_row_exists_for_each_box() {
 }
 
 #[test]
-fn open_rejects_mismatched_schema_version() {
+fn a_state_dir_from_another_schema_version_is_refused_and_kept() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("state").join("moor.db");
-    drop(open(dir.path()));
-    let raw = rusqlite::Connection::open(&path).unwrap();
-    raw.execute("UPDATE meta SET v = '99' WHERE k = 'schema_version'", [])
+    let (store, _) = open(dir.path());
+    new_box(&store, "kept");
+    drop(store);
+    rusqlite::Connection::open(&path)
+        .unwrap()
+        .execute("UPDATE meta SET v = '4' WHERE k = 'schema_version'", [])
         .unwrap();
-    drop(raw);
     let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
-    let err = Store::open(&path, clock).err().unwrap();
-    assert!(matches!(err, StoreError::Schema { .. }), "{err:?}");
+    let err = Store::open(&path, clock).err().unwrap().to_string();
+    assert!(
+        err.contains("use a fresh state dir") && err.contains(&path.display().to_string()),
+        "{err}"
+    );
+    let raw = rusqlite::Connection::open(&path).unwrap();
+    let kept: (String, String) = raw
+        .query_row(
+            "SELECT (SELECT v FROM meta WHERE k = 'schema_version'), (SELECT name FROM boxes)",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(kept, ("4".to_owned(), "kept".to_owned()));
 }
 
 #[test]

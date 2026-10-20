@@ -105,8 +105,7 @@ impl Store {
         Ok(())
     }
 
-    /// Record the box port, pid, handle and host boot id, clear the host port that an older moor's
-    /// TCP front left, mark the proxy ready and append
+    /// Record the box port, pid, handle and host boot id, mark the proxy ready and append
     /// `ProxyStarted` in one transaction, provided `owner` holds the lease.
     pub(crate) fn mark_ready(
         &self,
@@ -119,8 +118,8 @@ impl Store {
         let mut conn = self.writer()?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let changed = tx.execute(
-            "UPDATE proxy SET box_port = ?, host_port = NULL, pid = ?, handle = ?, ready = 1, \
-             boot_id = ?, updated_at = ? \
+            "UPDATE proxy SET box_port = ?, pid = ?, handle = ?, ready = 1, boot_id = ?, \
+             updated_at = ? \
              WHERE box = ? AND lease_owner = ?",
             params![
                 box_port,

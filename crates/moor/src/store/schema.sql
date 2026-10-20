@@ -29,6 +29,6 @@ CREATE TABLE reports(id INTEGER PRIMARY KEY, box INTEGER NOT NULL, session INTEG
   version INTEGER NOT NULL, path TEXT NOT NULL, title TEXT, created_at INTEGER NOT NULL, UNIQUE (box, kind, version));
 CREATE TABLE hook_cache (session INTEGER PRIMARY KEY REFERENCES sessions(id), record TEXT NOT NULL, at INTEGER NOT NULL);
 CREATE TABLE proxy  (box INTEGER PRIMARY KEY REFERENCES boxes(id), box_port INTEGER NOT NULL UNIQUE,
-  host_port INTEGER, pid INTEGER, handle TEXT, ready INTEGER NOT NULL DEFAULT 0, lease_owner TEXT, lease_heartbeat INTEGER,
+  pid INTEGER, handle TEXT, ready INTEGER NOT NULL DEFAULT 0, lease_owner TEXT, lease_heartbeat INTEGER,
   boot_id TEXT, updated_at INTEGER NOT NULL);
 INSERT INTO meta (k, v) VALUES ('schema_version', '5');
