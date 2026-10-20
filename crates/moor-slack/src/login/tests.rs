@@ -135,6 +135,23 @@ fn logout_deletes_only_the_users_credential_for_the_agent() {
 }
 
 #[test]
+fn a_logout_that_cannot_delete_the_file_says_so_and_logs_why() {
+    let state = tempfile::tempdir().unwrap();
+    let path = credential_path(state.path(), CLAUDE, &user("U1"));
+    std::fs::create_dir_all(path.join("blocker")).unwrap();
+    let logged = std::cell::RefCell::new(Vec::new());
+    let log = |line: &str| logged.borrow_mut().push(line.to_owned());
+    let kept = logout(&slash("e1", "U1", "logout"), state.path(), &log);
+    assert_eq!(
+        ack_text(&kept),
+        "Could not delete your token file. The operator's log says why."
+    );
+    let logged = logged.into_inner();
+    assert_eq!(logged.len(), 1);
+    assert!(logged[0].starts_with("logout of U1: "), "{logged:?}");
+}
+
+#[test]
 fn a_submission_queues_one_check_and_keeps_only_its_envelope_id() {
     let dir = tempfile::tempdir().unwrap();
     let db = db(dir.path());
@@ -245,6 +262,25 @@ fn only_a_credential_the_agent_takes_is_stored() {
         text,
         "The coordinator is unavailable: no binary. Nothing was stored."
     );
+}
+
+#[test]
+fn a_token_the_agent_takes_but_the_file_cannot_hold_is_reported_not_linked() {
+    let state = tempfile::tempdir().unwrap();
+    let parent = state.path().join("credentials");
+    std::fs::write(&parent, "a file, not a dir").unwrap();
+    let fake = FakeCheck {
+        accept: "fmt-yes",
+        calls: Cell::new(0),
+    };
+    let text = check(&token_check("fmt-yes"), Ok(&fake), state.path());
+    let want = format!(
+        "Could not store your token: {}: not a directory that this user owns. \
+         Nothing was stored.",
+        parent.display()
+    );
+    assert_eq!(text, want);
+    assert_eq!(fake.calls.get(), 1);
 }
 
 #[test]
