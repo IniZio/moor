@@ -21,14 +21,15 @@ moor::adapters::proc	moor::env
 moor::adapters::clock	moor::env
 moor::adapters::rng	
 moor::adapters::git	moor::adapters::proc
-moor::adapters::crabbox	moor::adapters::proc
+moor::adapters::sockets	
+moor::adapters::crabbox	moor::adapters::proc,moor::adapters::sockets
 moor::adapters::herdr	moor::adapters::proc
 moor::adapters::box_agent	
 moor::adapters::github	moor::adapters::proc
 moor::adapters::creds	moor::adapters::proc,moor::env
 moor::config_load	moor::env,moor::error
 moor::testing	moor::adapters::clock,moor::adapters::git,moor::adapters::creds,moor::cx,moor::env
-moor::proxy	moor::store,moor::adapters::clock,moor::env
+moor::proxy	moor::store,moor::adapters::clock,moor::adapters::sockets,moor::env
 moor::cli	moor::error
 moor::client	moor::cli,moor::config_load,moor::env,moor::error
 moor::controller	moor::Moor,moor::env,moor::slack
