@@ -156,6 +156,7 @@ pub(super) struct Rec {
     in_batch: bool,
     box_calls: Vec<String>,
     connects: Vec<Vec<String>>,
+    deadlines: Vec<Deadline>,
     run_stdout: String,
     run_queue: std::collections::VecDeque<String>,
     box_files: Vec<(String, Option<Vec<u8>>)>,
@@ -212,6 +213,11 @@ impl FakeDriver {
         self.st().rec.connects.clone()
     }
 
+    /// The deadline of every `batch` so far, in call order.
+    pub(crate) fn batch_deadlines(&self) -> Vec<Deadline> {
+        self.st().rec.deadlines.clone()
+    }
+
     /// Runs `steps` in order through the fake's own `peek_file`, `exec` and `put_file`.
     pub(super) fn run_batch(
         &self,
@@ -225,6 +231,7 @@ impl FakeDriver {
             let mut s = self.st();
             s.rec.box_calls.push("batch".to_owned());
             s.rec.connects.push(connect.to_vec());
+            s.rec.deadlines.push(deadline);
             s.rec.in_batch = true;
         }
         let mut out = Vec::new();
