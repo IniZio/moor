@@ -243,6 +243,17 @@ fn the_version_query_selects_that_version() {
 /// Downloads `out.bin`, listed as `size` bytes with hash `listed`, from a controller that
 /// sends `served` and then `envelope`.
 fn download_served(size: usize, listed: String, served: Vec<u8>, envelope: Response) -> Raw {
+    download_served_with(size, listed, served, envelope, "")
+}
+
+/// [`download_served`] with the header lines `extra`, each ending in CRLF.
+fn download_served_with(
+    size: usize,
+    listed: String,
+    served: Vec<u8>,
+    envelope: Response,
+    extra: &str,
+) -> Raw {
     let dir = tempfile::tempdir().unwrap();
     let respond = serving(
         "out.bin",
@@ -252,7 +263,7 @@ fn download_served(size: usize, listed: String, served: Vec<u8>, envelope: Respo
         move |_| (served.clone(), envelope.clone()),
     );
     let (web, _, _) = front_with(&dir, respond, &[]);
-    download(&web, "/boxes/app/1/artifacts/out.bin")
+    fetch_with(&web, "/boxes/app/1/artifacts/out.bin", Some(TOKEN), extra)
 }
 
 fn served_ok(file: &[u8]) -> Response {
@@ -266,6 +277,28 @@ fn a_hash_mismatch_never_delivers_the_whole_file() {
         assert_eq!(resp.header("content-length"), [file.len().to_string()]);
         assert!(resp.body.len() < file.len(), "{} bytes", resp.body.len());
         assert!(file.starts_with(&resp.body));
+    }
+}
+
+#[test]
+fn a_range_over_the_whole_file_with_a_hash_mismatch_never_delivers_it_all() {
+    let file = blob()[..1000].to_vec();
+    let size = file.len();
+    for range in [
+        "bytes=0-".to_owned(),
+        format!("bytes=0-{}", size - 1),
+        format!("bytes=-{size}"),
+    ] {
+        let header = format!("Range: {range}\r\n");
+        let served = served_ok(&file);
+        let resp = download_served_with(size, "0".repeat(64), file.clone(), served, &header);
+        assert!(
+            resp.head.starts_with("HTTP/1.1 206"),
+            "{range}: {}",
+            resp.head
+        );
+        assert!(resp.body.len() < size, "{range}: {} bytes", resp.body.len());
+        assert!(file.starts_with(&resp.body), "{range}: wrong bytes");
     }
 }
 
@@ -421,12 +454,15 @@ fn a_byte_range_is_206_with_exactly_those_bytes() {
     let respond = holding("out.bin", "video/mp4", file.clone(), sha(&file));
     let (web, _, _) = front_with(&dir, respond, &[]);
     let cases = [
-        ("bytes=0-99", 0, 99),
-        ("bytes=65530-131080", 65530, 131_080),
-        ("bytes=1048600-", 1_048_600, size - 1),
-        ("bytes=-100", size - 100, size - 1),
-        ("bytes=1048000-9999999", 1_048_000, size - 1),
-        ("Bytes=7-7", 7, 7),
+        ("bytes=0-99".to_owned(), 0, 99),
+        ("bytes=65530-131080".to_owned(), 65530, 131_080),
+        ("bytes=1048600-".to_owned(), 1_048_600, size - 1),
+        ("bytes=-100".to_owned(), size - 100, size - 1),
+        ("bytes=1048000-9999999".to_owned(), 1_048_000, size - 1),
+        ("Bytes=7-7".to_owned(), 7, 7),
+        (format!("bytes=-{}", size + 10), 0, size - 1),
+        ("bytes=0-99999999999999999999".to_owned(), 0, size - 1),
+        ("bytes=-99999999999999999999".to_owned(), 0, size - 1),
     ];
     for (range, start, end) in cases {
         let header = format!("Range: {range}\r\n");

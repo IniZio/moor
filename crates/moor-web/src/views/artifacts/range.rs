@@ -44,10 +44,11 @@ pub(super) fn wanted(header: Option<&str>, size: u64) -> Wanted {
     }
 }
 
-/// A run of ASCII digits as a number; anything else, a sign included, is `None`.
+/// A run of ASCII digits as a number, saturating at `u64::MAX`; anything else, a sign
+/// included, is `None`.
 fn digits(s: &str) -> Option<u64> {
     if s.is_empty() || !s.bytes().all(|b| b.is_ascii_digit()) {
         return None;
     }
-    s.parse().ok()
+    Some(s.parse().unwrap_or(u64::MAX))
 }
