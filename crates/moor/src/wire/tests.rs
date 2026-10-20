@@ -1,14 +1,20 @@
 //! Tests for the composition root.
 
+use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
+
 use super::*;
+use crate::moor::Moor;
 use crate::testing::clock::FakeClock;
 use crate::testing::proc::{Reply, ScriptedProc};
 use moor_core::activity::PaneStatus;
-use moor_core::name::BoxName;
+use moor_core::name::{BoxHandle, BoxName, BoxPath};
+use moor_core::request::SessionsReq;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::forge::{Forge, ForgeRepo};
 use moor_core::seam::proc::Tool;
 use moor_core::seam::surface::{PaneRef, ResumeReg};
+use moor_core::Request;
 
 fn window(value: Option<&str>) -> Duration {
     let pairs: Vec<(&str, &str)> = value.map(|v| (PROMPT_WINDOW_ENV, v)).into_iter().collect();
@@ -125,4 +131,79 @@ fn the_prompt_window_defaults_to_eight_seconds() {
 fn the_prompt_window_reads_milliseconds_from_the_environment() {
     assert_eq!(window(Some("250")), Duration::from_millis(250));
     assert_eq!(window(Some(" 0 ")), Duration::ZERO);
+}
+
+/// Writes the sh script `body` to `path` as an executable.
+fn script(path: &Path, body: &str) {
+    std::fs::write(path, format!("#!/bin/sh\n{body}\n")).unwrap();
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+}
+
+/// An environment with its state dir at `state`, whose crabbox names one ssh target and whose
+/// ssh appends its arguments to `<dir>/ssh.log`.
+fn fake_tools(dir: &Path, state: &Path) -> Env {
+    let crabbox = dir.join("crabbox");
+    script(
+        &crabbox,
+        "case \"$1\" in --version) echo 'crabbox 0.72.0-moor.7';; *) echo \"ssh 'u@box'\";; esac",
+    );
+    let ssh = dir.join("ssh");
+    let log = dir.join("ssh.log");
+    script(
+        &ssh,
+        &format!("echo \"$@\" >> '{}'\nprintf x", log.display()),
+    );
+    let root = dir.display().to_string();
+    Env::from_pairs([
+        ("HOME", root.clone()),
+        ("XDG_CONFIG_HOME", root.clone()),
+        ("MOOR_CONFIG", format!("{root}/absent.yaml")),
+        ("MOOR_STATE_DIR", state.display().to_string()),
+        ("MOOR_CRABBOX_BIN", crabbox.display().to_string()),
+        ("MOOR_SSH_BIN", ssh.display().to_string()),
+    ])
+}
+
+#[test]
+fn wired_drivers_share_one_short_control_socket_for_a_deep_state_dir() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path().join("d".repeat(120));
+    std::fs::create_dir(&state).unwrap();
+    let env = fake_tools(dir.path(), &state);
+    let handle = BoxHandle::new("external/moor-1-abc123");
+    let path = BoxPath::under("/work", "f").unwrap();
+    for _ in 0..2 {
+        let cx = build(&env).unwrap();
+        assert_eq!(cx.take_warnings(), []);
+        cx.driver()
+            .peek_file(&handle, &path, Path::new("/"))
+            .unwrap();
+    }
+    let log = std::fs::read_to_string(dir.path().join("ssh.log")).unwrap();
+    let sockets: Vec<&str> = log
+        .lines()
+        .filter_map(|l| {
+            l.split_whitespace()
+                .find_map(|w| w.strip_prefix("ControlPath="))
+        })
+        .collect();
+    let [first, second] = sockets.as_slice() else {
+        return assert_eq!(sockets.len(), 2, "{log}");
+    };
+    let private = format!("/tmp/moor-{}", rustix::process::getuid().as_raw());
+    assert_eq!(Path::new(first).parent(), Some(Path::new(&private)));
+    assert_eq!(first, second, "one socket for every freshly wired driver");
+}
+
+#[test]
+fn a_command_response_says_when_ssh_calls_cannot_share_a_connection() {
+    let dir = tempfile::tempdir().unwrap();
+    let env = fake_tools(dir.path(), &dir.path().join("state"));
+    let sockets = dir.path().join("sockets");
+    std::fs::create_dir(&sockets).unwrap();
+    std::fs::set_permissions(&sockets, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let moor = Moor::from_cx(build_with_sockets(&env, sockets).unwrap());
+    let resp = moor.call(Request::Sessions(SessionsReq { parent: None }));
+    let codes: Vec<&str> = resp.warnings.iter().map(|w| w.code.as_str()).collect();
+    assert_eq!(codes, ["ssh_not_shared"], "{resp:?}");
 }

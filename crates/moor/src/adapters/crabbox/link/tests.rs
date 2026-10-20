@@ -1,6 +1,8 @@
 //! Shared ssh connections, checked against a model of OpenSSH connection sharing.
 
 use std::collections::HashMap;
+use std::fs::Permissions;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -379,24 +381,48 @@ fn two_state_dirs_never_share_a_master() {
     assert_eq!(lab.connects(), 2, "one master per state dir");
 }
 
-#[test]
-fn a_socket_dir_others_can_enter_is_a_warning_and_calls_connect_on_their_own() {
-    use std::os::unix::fs::PermissionsExt;
-
-    let lab = lab();
-    std::fs::create_dir(&lab.sockets).unwrap();
-    std::fs::set_permissions(&lab.sockets, std::fs::Permissions::from_mode(0o755)).unwrap();
-    let warning = lab.driver().link_warning().expect("a warning");
+/// Asserts that `driver` warns about the lab's socket dir and that its calls connect one by one.
+fn assert_unshared(lab: &Lab, driver: &Crabbox) {
+    let warning = driver.link_warning().expect("a warning");
     assert_eq!(warning.code, "ssh_not_shared");
     assert!(
         warning.message.contains(&lab.sockets.display().to_string()),
         "{}",
         warning.message
     );
+    let path = BoxPath::under("/work", ".moor/agent-state.json").unwrap();
     for _ in 0..2 {
-        assert_eq!(lab.probe_tick().unwrap().as_deref(), Some(HOOK));
+        let read = driver.peek_file(&handle(), &path, Path::new("/host/wt"));
+        assert_eq!(read.unwrap().as_deref(), Some(HOOK));
     }
-    assert_eq!(lab.connects(), 2, "no master in a shared directory");
+    assert_eq!(lab.connects(), 2, "one connection per call");
+}
+
+#[test]
+fn a_socket_dir_others_can_enter_is_a_warning_and_calls_connect_on_their_own() {
+    let lab = lab();
+    std::fs::create_dir(&lab.sockets).unwrap();
+    std::fs::set_permissions(&lab.sockets, Permissions::from_mode(0o755)).unwrap();
+    assert_unshared(&lab, &lab.driver());
+}
+
+#[test]
+fn a_socket_dir_of_another_user_is_a_warning_and_calls_connect_on_their_own() {
+    let lab = lab();
+    let mut driver = lab.driver();
+    let dirs = driver.links.as_mut().unwrap();
+    dirs.owner = dirs.owner.checked_add(1).unwrap();
+    assert_unshared(&lab, &driver);
+}
+
+#[test]
+fn a_symlinked_socket_dir_is_a_warning_and_calls_connect_on_their_own() {
+    let lab = lab();
+    let real = lab.sockets.with_file_name("real");
+    std::fs::create_dir(&real).unwrap();
+    std::fs::set_permissions(&real, Permissions::from_mode(0o700)).unwrap();
+    std::os::unix::fs::symlink(&real, &lab.sockets).unwrap();
+    assert_unshared(&lab, &lab.driver());
 }
 
 #[test]
