@@ -79,7 +79,7 @@ impl World {
         let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
         let store = Store::open(&dir.path().join("moor.db"), clock.clone()).unwrap();
         let driver = FakeDriver::new().reverse_tunnels().tunnel_replies(replies);
-        let id = working_box(&store, &driver);
+        let id = working_box(&store, &driver, "demo");
         let nonce = Secret::new(NONCE.to_vec());
         drop(
             store
@@ -189,10 +189,10 @@ pub(super) fn no_creds() -> CredsFn {
     Arc::new(|_: &str| Err("no credential in tests".to_owned()))
 }
 
-/// Insert a Box, give it a live machine from `driver` and a worktree.
-fn working_box(store: &Store, driver: &FakeDriver) -> BoxId {
+/// Insert a Box named `name`, give it a live machine from `driver` and a worktree.
+fn working_box(store: &Store, driver: &FakeDriver, name: &str) -> BoxId {
     let nt = NewBox {
-        name: BoxName::parse_allow_bare("demo").unwrap(),
+        name: BoxName::parse_allow_bare(name).unwrap(),
         repo: "r".into(),
     };
     let id = store.apply(Decision::insert(nt)).unwrap().box_id;
@@ -200,7 +200,7 @@ fn working_box(store: &Store, driver: &FakeDriver) -> BoxId {
         .acquire(&AcquireReq {
             provider: ProviderId::new("p"),
             box_id: id,
-            name: BoxName::parse_allow_bare("demo").unwrap(),
+            name: BoxName::parse_allow_bare(name).unwrap(),
             class: None,
             nonce: "abc123".into(),
             worktree: None,

@@ -354,6 +354,17 @@ fn a_successor_bound_while_a_front_stops_keeps_its_socket() {
     front.stop();
 }
 
+#[test]
+fn each_box_and_each_state_dir_gets_its_own_socket() {
+    let at = |state: &str, id: i64| {
+        let socket = FrontSocket::new(Path::new("/s"), 0, Path::new(state), BoxId::new(id));
+        socket.path().to_path_buf()
+    };
+    assert_eq!(at("/a", 1), at("/a", 1));
+    assert_ne!(at("/a", 1), at("/a", 2));
+    assert_ne!(at("/a", 1), at("/b", 1));
+}
+
 /// A hard link reaches a listener whose path is gone, so it shows the listener closed.
 #[test]
 fn rebind_and_stop_close_the_listener_they_replace() {

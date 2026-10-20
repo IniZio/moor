@@ -8,10 +8,14 @@ use std::os::unix::net::UnixStream;
 use std::time::Duration;
 
 use moor_core::seam::clock::Clock;
+use moor_core::seam::proxy_host::ProxySpec;
+use moor_core::{BoxId, Secret};
 
-use super::{start, Stop, World, LEASE, TICK};
+use super::{start, working_box, Stop, World, LEASE, TICK};
+use crate::proxy::detached::{read_spec, write_spec};
 use crate::store::Lease;
 use crate::testing::bridge::bridge;
+use crate::testing::rng::FakeRng;
 
 /// How the front answers an origin-form request; nono never sees one.
 pub(super) const REFUSAL: &str = "HTTP/1.1 403 Forbidden\r\n";
@@ -198,4 +202,56 @@ fn lost_lease_stops_the_proxy_from_accepting() {
     assert_eq!(run.finish(Stop::LostLease), 1);
 
     assert!(UnixStream::connect(&socket).is_err());
+}
+
+/// Adds a second working Box to `w`, with a reserved proxy row and a saved spec.
+fn second_box(w: &World) -> BoxId {
+    let id = working_box(&w.store, &w.driver, "other");
+    let nonce = Secret::new(b"other-nonce".to_vec());
+    drop(
+        w.store
+            .reserve(id, &nonce, &FakeRng::default(), LEASE)
+            .unwrap(),
+    );
+    let spec = ProxySpec {
+        box_id: id,
+        ..read_spec(w.dir.path(), w.id).unwrap()
+    };
+    write_spec(w.dir.path(), &spec).unwrap();
+    id
+}
+
+/// Starts the supervisors of `a` and then `b`, stops `b`, and expects `a`'s tunnel to still
+/// reach a front.
+fn assert_own_sockets(a: (&World, BoxId), b: (&World, BoxId)) {
+    let (deps_a, deps_b) = (a.0.deps(), b.0.deps());
+    let run_a = start(&deps_a, a.1)
+        .map_err(|c| format!("exit {c}"))
+        .unwrap();
+    let run_b = start(&deps_b, b.1)
+        .map_err(|c| format!("exit {c}"))
+        .unwrap();
+    let (tunnel_a, tunnel_b) = (bridge(run_a.socket()), bridge(run_b.socket()));
+    assert!(ask(tunnel_b).starts_with(REFUSAL));
+
+    assert_eq!(run_b.finish(Stop::Signal), 0);
+
+    assert!(ask(tunnel_b).is_empty());
+    assert!(ask(tunnel_a).starts_with(REFUSAL));
+}
+
+#[test]
+fn two_boxes_of_one_state_dir_each_keep_their_own_socket() {
+    let w = World::new([]);
+    let other = second_box(&w);
+    assert_own_sockets((&w, w.id), (&w, other));
+}
+
+#[test]
+fn one_box_id_in_two_state_dirs_keeps_two_sockets() {
+    let a = World::new([]);
+    let mut b = World::new([]);
+    b.sockets.clone_from(&a.sockets);
+    assert_eq!(a.id, b.id);
+    assert_own_sockets((&a, a.id), (&b, b.id));
 }
