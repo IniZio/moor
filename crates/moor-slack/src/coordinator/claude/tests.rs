@@ -181,7 +181,12 @@ fn a_run_past_its_limit_is_killed_with_its_whole_group() {
         took < Duration::from_secs(5),
         "the run waited {took:?} for the group"
     );
-    let pid = std::fs::read_to_string(&pid_file).unwrap();
+    assert_gone(&pid_file);
+}
+
+/// Waits up to 2 s for the process whose pid is in `pid_file` to be gone or a zombie.
+fn assert_gone(pid_file: &Path) {
+    let pid = std::fs::read_to_string(pid_file).unwrap();
     let stat = PathBuf::from(format!("/proc/{}/stat", pid.trim()));
     for _ in 0..100 {
         let alive = std::fs::read_to_string(&stat).is_ok_and(|s| !s.contains(") Z "));
@@ -191,6 +196,22 @@ fn a_run_past_its_limit_is_killed_with_its_whole_group() {
         std::thread::sleep(Duration::from_millis(20));
     }
     panic!("the grandchild outlived the run");
+}
+
+#[test]
+fn nothing_outlives_a_run_that_ends_on_its_own() {
+    let dir = tempfile::tempdir().unwrap();
+    let pid_file = dir.path().join("grandchild");
+    let mut cmd = Command::new("/bin/sh");
+    let script = format!(
+        "sleep 60 >/dev/null 2>&1 & echo $! > {}; echo done",
+        pid_file.display()
+    );
+    cmd.args(["-c", &script]);
+    let ran = run(cmd, b"", None, Duration::from_secs(30)).unwrap();
+    assert!(!ran.timed_out);
+    assert_eq!(ran.stdout, b"done\n");
+    assert_gone(&pid_file);
 }
 
 #[test]
