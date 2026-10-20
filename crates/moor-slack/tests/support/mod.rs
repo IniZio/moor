@@ -61,17 +61,23 @@ impl Rig {
         };
         secret_file(&rig.path("app.token"), APP_TOKEN);
         secret_file(&rig.path("bot.token"), BOT_TOKEN);
+        rig.write_config(
+            &rig.path("app.token").display().to_string(),
+            &rig.path("bot.token").display().to_string(),
+        );
+        rig
+    }
+
+    /// Writes the config with these token file paths, exactly as given.
+    pub(crate) fn write_config(&self, app_token_file: &str, bot_token_file: &str) {
         std::fs::write(
-            rig.path("slack.yaml"),
+            self.path("slack.yaml"),
             format!(
-                "app_token_file: {}\nbot_token_file: {}\nchannels: [{CHANNEL}]\nusers: [{USER}]\napi_base: {}\n",
-                rig.path("app.token").display(),
-                rig.path("bot.token").display(),
-                rig.slack.api_base(),
+                "app_token_file: {app_token_file}\nbot_token_file: {bot_token_file}\nchannels: [{CHANNEL}]\nusers: [{USER}]\napi_base: {}\n",
+                self.slack.api_base(),
             ),
         )
         .unwrap();
-        rig
     }
 
     /// A scripted controller and the daemon, with the daemon connected to Slack.
