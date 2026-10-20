@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::name::{BoxName, SessionId};
 
 mod artifacts;
-pub use artifacts::{ArtifactReadReq, ArtifactsReq, ARTIFACT_CHUNK};
+pub use artifacts::{ArtifactReadReq, ArtifactsReq};
 mod binding;
 pub use binding::{BindSessionReq, SessionBindingReq};
 mod repos;

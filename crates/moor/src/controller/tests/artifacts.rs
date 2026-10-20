@@ -2,17 +2,16 @@
     clippy::indexing_slicing,
     reason = "test assertions index decoded frames"
 )]
-//! A web-style client over the controller socket: list artifacts, read them in chunks.
-use std::io::{BufRead, BufReader, Write};
+//! A web-style client over the controller socket: list artifacts, stream their raw bytes.
+use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use base64::Engine as _;
-use moor_core::controller::PROTOCOL;
+use moor_core::controller::{BYTES_MAX, PROTOCOL};
 use moor_core::domain::decision::{Decision, NewBox};
 use moor_core::name::BoxName;
-use moor_core::{ArtifactReadReq, ArtifactsReq, Request, ARTIFACT_CHUNK};
+use moor_core::{ArtifactReadReq, ArtifactsReq, Request};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
@@ -24,8 +23,7 @@ use moor_core::seam::clock::Ts;
 
 const BOX_NAME: &str = "web-box";
 const OLD_LEN: usize = 5;
-const CHUNK: usize = 512 * 1024;
-const BIG_LEN: usize = CHUNK * 2 + 100 * 1024;
+const BIG_LEN: usize = 1024 * 1024 + 100;
 
 fn patterned(len: usize) -> Vec<u8> {
     (0..len)
@@ -108,19 +106,31 @@ fn fixture() -> Fixture {
 }
 
 impl Fixture {
-    /// Send one request; return the response envelope and the frame's byte length.
-    fn call(&mut self, request: &Request) -> (Value, usize) {
+    /// Send one request; return the response envelope and the payload of each bytes frame
+    /// that came before it.
+    fn call(&mut self, request: &Request) -> (Value, Vec<Vec<u8>>) {
         self.next += 1;
         let id = format!("r{}", self.next);
         let frame = json!({"frame": "request", "id": id, "request": request});
         writeln!(self.stream.get_mut(), "{frame}").expect("send");
+        let mut frames = Vec::new();
         loop {
             let mut line = String::new();
             self.stream.read_line(&mut line).expect("read");
             let v: Value = serde_json::from_str(&line).expect("json frame");
-            if v["frame"] == "response" {
-                assert_eq!(v["id"], id);
-                return (v["envelope"].clone(), line.len());
+            match v["frame"].as_str() {
+                Some("bytes") => {
+                    assert_eq!(v["id"], id);
+                    let len = usize::try_from(v["len"].as_u64().expect("len")).expect("fits");
+                    let mut payload = vec![0; len];
+                    self.stream.read_exact(&mut payload).expect("payload");
+                    frames.push(payload);
+                }
+                Some("response") => {
+                    assert_eq!(v["id"], id);
+                    return (v["envelope"].clone(), frames);
+                }
+                _ => {}
             }
         }
     }
@@ -140,35 +150,14 @@ impl Fixture {
             .clone()
     }
 
-    fn read(&mut self, name: &str, version: Option<u32>, offset: u64) -> (Value, usize) {
+    fn read(&mut self, name: &str, version: Option<u32>) -> (Value, Vec<Vec<u8>>) {
         self.call(&Request::ArtifactRead(ArtifactReadReq {
             box_name: box_name(),
             name: name.to_owned(),
             version,
-            offset,
-            len: 1024 * 1024,
+            offset: 0,
+            len: u64::MAX,
         }))
-    }
-
-    /// Read a whole artifact chunk by chunk, checking each frame stays small.
-    fn read_all(&mut self, name: &str, version: Option<u32>) -> (Vec<u8>, Value, usize) {
-        let (mut bytes, mut chunks) = (Vec::new(), 0);
-        loop {
-            let (env, frame_len) = self.read(name, version, bytes.len() as u64);
-            assert_eq!(env["class"], "ok", "{env}");
-            assert!(frame_len < 1024 * 1024, "frame of {frame_len} bytes");
-            let chunk = &env["value"];
-            let part = base64::engine::general_purpose::STANDARD
-                .decode(chunk["data_b64"].as_str().expect("data_b64"))
-                .expect("base64");
-            assert!(part.len() <= CHUNK);
-            bytes.extend_from_slice(&part);
-            chunks += 1;
-            if chunk["eof"] == true {
-                return (bytes, chunk.clone(), chunks);
-            }
-            assert!(!part.is_empty(), "no progress before eof");
-        }
     }
 }
 
@@ -195,24 +184,27 @@ fn latest_lists_one_entry_per_name_and_all_lists_every_version() {
 }
 
 #[test]
-fn chunked_read_reassembles_bytes_matching_the_recorded_digest() {
+fn a_read_streams_raw_bytes_frames_matching_the_recorded_digest() {
     let mut f = fixture();
     let listed = entry(&f.list(false), "demo.log", 2)["sha256"].clone();
-    let (bytes, last, chunks) = f.read_all("demo.log", None);
-    assert_eq!(u64::try_from(CHUNK).expect("fits"), ARTIFACT_CHUNK);
-    assert_eq!(chunks, 3);
-    assert_eq!(bytes, f.big);
-    assert_eq!(hex(&bytes), last["sha256"].as_str().expect("sha"));
-    assert_eq!(listed, last["sha256"]);
-    assert_eq!(last["size"], BIG_LEN);
+    let (env, frames) = f.read("demo.log", None);
+    assert_eq!(env["class"], "ok", "{env}");
+    assert!(frames.iter().all(|p| p.len() <= BYTES_MAX));
+    assert_eq!(frames.len(), BIG_LEN.div_ceil(64 * 1024));
+    assert_eq!(frames.concat(), f.big);
+    let whole = json!({"offset": 0, "sent": BIG_LEN, "size": BIG_LEN, "sha256": hex(&f.big),
+                       "eof": true});
+    assert_eq!(env["value"], whole);
+    assert_eq!(listed, whole["sha256"]);
+    assert_eq!(f.list(false).len(), 2, "the connection is still in step");
 }
 
 #[test]
 fn explicit_version_reads_the_old_bytes() {
     let mut f = fixture();
-    let (bytes, last, chunks) = f.read_all("demo.log", Some(1));
-    assert_eq!((bytes.as_slice(), chunks), (b"old-v".as_slice(), 1));
-    assert_eq!(hex(b"old-v"), last["sha256"].as_str().expect("sha"));
+    let (env, frames) = f.read("demo.log", Some(1));
+    assert_eq!(frames.concat(), b"old-v");
+    assert_eq!(env["value"]["sha256"], hex(b"old-v").as_str());
 }
 
 #[test]
@@ -232,8 +224,9 @@ fn missing_box_name_or_version_is_not_found() {
         len: 10,
     }));
     assert_eq!(env["error"]["kind"], "not_found", "{env}");
-    let (env, _) = f.read("nope.log", None, 0);
+    let (env, frames) = f.read("nope.log", None);
     assert_eq!(env["error"]["kind"], "not_found", "{env}");
-    let (env, _) = f.read("demo.log", Some(9), 0);
+    assert!(frames.is_empty());
+    let (env, _) = f.read("demo.log", Some(9));
     assert_eq!(env["error"]["kind"], "not_found", "{env}");
 }

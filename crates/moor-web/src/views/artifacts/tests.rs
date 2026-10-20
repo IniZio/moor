@@ -6,17 +6,21 @@
     reason = "tests assert on fixed fixtures"
 )]
 
-use std::io::{Read, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpStream;
+use std::os::unix::net::UnixListener;
+use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+use moor_core::controller::{parse_frame, write_bytes, ClientFrame, BYTES_MAX, PROTOCOL};
 use moor_core::response::{ErrorKind, Response};
 use serde_json::{json, Value};
 
 use super::super::tests::{
-    answers, body, by_command, chunk, failure, front, front_with, get, record, sha, Responder,
-    Sent, TOKEN,
+    answers, body, by_command, failure, front, front_with, get, read_value, record, sha, web,
+    Responder, Sent, TOKEN,
 };
 use crate::http::Server;
 
@@ -71,7 +75,7 @@ fn download(web: &Server, path: &str) -> Raw {
     fetch(web, path, Some(TOKEN))
 }
 
-/// Bytes that are not valid UTF-8, spanning three 512 KiB reads.
+/// Bytes that are not valid UTF-8, spanning many bytes frames; the last frame holds 100.
 fn blob() -> Vec<u8> {
     let size = 2 * 512 * 1024 + 100;
     (0..size)
@@ -79,25 +83,45 @@ fn blob() -> Vec<u8> {
         .collect()
 }
 
-/// A fake controller holding one file `name`; chunks claim `claimed` as the whole-file hash.
+/// A fake controller holding one file `name`, listed with hash `claimed`.
 fn holding(
     name: &'static str,
     content_type: &'static str,
     file: Vec<u8>,
     claimed: String,
 ) -> Responder {
+    serving(name, content_type, file.clone(), claimed, move |req| {
+        let offset = usize::try_from(req["offset"].as_u64().unwrap()).unwrap();
+        let len = usize::try_from(req["len"].as_u64().unwrap()).unwrap_or(usize::MAX);
+        let end = offset.saturating_add(len).min(file.len());
+        let value = read_value(&file, offset, len);
+        (
+            file[offset..end].to_vec(),
+            Response::ok("artifact-read", Some(value)),
+        )
+    })
+}
+
+/// A fake controller listing one file `name` of `file`'s size with hash `claimed`, whose reads
+/// `read` answers.
+fn serving(
+    name: &'static str,
+    content_type: &'static str,
+    file: Vec<u8>,
+    claimed: String,
+    read: impl Fn(&Value) -> (Vec<u8>, Response) + Send + Sync + 'static,
+) -> Responder {
     Arc::new(move |req| match req["cmd"].as_str() {
         Some("artifacts") => {
-            let list = json!([record(name, content_type, 1, &file)]);
-            Response::ok("artifacts", Some(list))
+            let mut listed = record(name, content_type, 1, &file);
+            listed["sha256"] = json!(claimed);
+            (Vec::new(), Response::ok("artifacts", Some(json!([listed]))))
         }
-        Some("artifact-read") => {
-            let offset = usize::try_from(req["offset"].as_u64().unwrap()).unwrap();
-            let len = usize::try_from(req["len"].as_u64().unwrap()).unwrap();
-            let value = chunk(&file, offset, len.min(512 * 1024), &claimed);
-            Response::ok("artifact-read", Some(value))
-        }
-        other => failure(other.unwrap_or_default(), ErrorKind::Usage),
+        Some("artifact-read") => read(req),
+        other => (
+            Vec::new(),
+            failure(other.unwrap_or_default(), ErrorKind::Usage),
+        ),
     })
 }
 
@@ -142,7 +166,7 @@ fn artifact_list_passes_the_all_flag() {
 }
 
 #[test]
-fn a_binary_artifact_is_reassembled_from_three_reads() {
+fn a_binary_artifact_streams_through_in_one_read() {
     let dir = tempfile::tempdir().unwrap();
     let file = blob();
     let respond = holding(
@@ -154,23 +178,17 @@ fn a_binary_artifact_is_reassembled_from_three_reads() {
     let (web, _, sent) = front_with(&dir, respond, &[]);
     let resp = download(&web, "/boxes/app/1/artifacts/out.bin");
     assert!(resp.ok(), "{}", resp.head);
-    assert_eq!(sha(&resp.body), sha(&file));
+    assert!(resp.body == file, "body differs from the stored file");
+    assert_eq!(resp.header("content-length"), [file.len().to_string()]);
     assert_eq!(resp.header("content-type"), ["application/octet-stream"]);
     assert_eq!(
         resp.header("content-disposition"),
         ["attachment; filename=\"out.bin\""]
     );
     assert_hardened(&resp);
-    let reads = reads(&sent);
-    assert_eq!(reads.len(), 3, "{reads:?}");
-    assert_eq!(reads[0]["box"], "app/1");
-    assert_eq!(reads[0]["name"], "out.bin");
-    assert_eq!(reads[0]["len"], 512 * 1024);
-    let offsets: Vec<u64> = reads
-        .iter()
-        .map(|r| r["offset"].as_u64().unwrap_or(0))
-        .collect();
-    assert_eq!(offsets, [0, 512 * 1024, 1024 * 1024]);
+    let whole = json!({"cmd": "artifact-read", "box": "app/1", "name": "out.bin",
+                       "version": 1, "offset": 0, "len": file.len()});
+    assert_eq!(reads(&sent), [whole]);
 }
 
 #[test]
@@ -217,20 +235,121 @@ fn the_version_query_selects_that_version() {
     );
 }
 
-#[test]
-fn a_hash_mismatch_is_502_without_the_bytes() {
+/// Downloads `out.bin`, listed as `size` bytes with hash `listed`, from a controller that
+/// sends `served` and then `envelope`.
+fn download_served(size: usize, listed: String, served: Vec<u8>, envelope: Response) -> Raw {
     let dir = tempfile::tempdir().unwrap();
-    let file = blob();
-    let respond = holding(
+    let respond = serving(
         "out.bin",
         "application/octet-stream",
-        file.clone(),
-        "0".repeat(64),
+        vec![0; size],
+        listed,
+        move |_| (served.clone(), envelope.clone()),
     );
     let (web, _, _) = front_with(&dir, respond, &[]);
-    let resp = download(&web, "/boxes/app/1/artifacts/out.bin");
+    download(&web, "/boxes/app/1/artifacts/out.bin")
+}
+
+fn served_ok(file: &[u8]) -> Response {
+    Response::ok("artifact-read", Some(read_value(file, 0, file.len())))
+}
+
+#[test]
+fn a_hash_mismatch_never_delivers_the_whole_file() {
+    for file in [blob()[..1000].to_vec(), blob()] {
+        let resp = download_served(file.len(), "0".repeat(64), file.clone(), served_ok(&file));
+        assert_eq!(resp.header("content-length"), [file.len().to_string()]);
+        assert!(resp.body.len() < file.len(), "{} bytes", resp.body.len());
+        assert!(file.starts_with(&resp.body));
+    }
+}
+
+#[test]
+fn a_controller_failure_after_the_bytes_never_delivers_the_whole_file() {
+    let file = blob();
+    let failed = failure("artifact-read", ErrorKind::Failed);
+    let resp = download_served(file.len(), sha(&file), file.clone(), failed);
+    assert!(resp.ok(), "{}", resp.head);
+    assert!(resp.body.len() < file.len(), "{} bytes", resp.body.len());
+}
+
+#[test]
+fn a_file_shorter_than_its_record_is_502() {
+    let resp = download_served(1000, sha(b""), Vec::new(), served_ok(b""));
     assert!(resp.status().starts_with("HTTP/1.1 502"), "{}", resp.head);
-    assert!(!resp.body.windows(64).any(|w| w == &file[..64]));
+}
+
+/// A controller that lists `big.bin` of `size` bytes and streams it to any reader, counting
+/// the bytes it has handed to the socket.
+fn streaming_controller(sock: &Path, size: u64) -> Arc<AtomicU64> {
+    let listener = UnixListener::bind(sock).unwrap();
+    let written = Arc::new(AtomicU64::new(0));
+    let count = Arc::clone(&written);
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let mut reader = BufReader::new(stream.unwrap());
+            let mut line = String::new();
+            reader.read_line(&mut line).unwrap();
+            let mut out = reader.get_ref().try_clone().unwrap();
+            writeln!(out, r#"{{"frame":"hello","protocol":{PROTOCOL}}}"#).unwrap();
+            line.clear();
+            reader.read_line(&mut line).unwrap();
+            let Ok(ClientFrame::Request { id, request }) = parse_frame(line.trim_end()) else {
+                continue;
+            };
+            let value = if request.cmd() == "artifacts" {
+                json!([{"name": "big.bin", "version": 1, "kind": "file",
+                        "content_type": "application/octet-stream", "size": size,
+                        "sha256": "0".repeat(64), "created_at": "2026-01-01T00:00:00Z"}])
+            } else {
+                let piece = vec![7u8; BYTES_MAX];
+                let mut left = size;
+                while left > 0 {
+                    let n = usize::try_from(left.min(BYTES_MAX as u64)).unwrap();
+                    if write_bytes(&mut out, &id, &piece[..n]).is_err() {
+                        break;
+                    }
+                    count.fetch_add(n as u64, Ordering::SeqCst);
+                    left -= n as u64;
+                }
+                Value::Null
+            };
+            let envelope = Response::ok(request.cmd(), Some(value));
+            let frame = json!({"frame": "response", "id": id, "envelope": envelope});
+            let _ = writeln!(out, "{frame}");
+        }
+    });
+    written
+}
+
+#[test]
+fn a_download_holds_a_bounded_number_of_bytes_while_the_browser_waits() {
+    const LIMIT: u64 = 16 * 1024 * 1024;
+    let dir = tempfile::tempdir().unwrap();
+    let sock = dir.path().join("c.sock");
+    let written = streaming_controller(&sock, 4 * LIMIT);
+    let web = web(&dir, &sock, &[]);
+    let mut browser = TcpStream::connect(web.addr()).unwrap();
+    write!(
+        browser,
+        "GET /boxes/app/1/artifacts/big.bin HTTP/1.1\r\nHost: x\r\n\
+         Authorization: Bearer {TOKEN}\r\n\r\n"
+    )
+    .unwrap();
+    let mut last = u64::MAX;
+    for _ in 0..100 {
+        std::thread::sleep(Duration::from_millis(200));
+        let now = written.load(Ordering::SeqCst);
+        if now == last {
+            break;
+        }
+        last = now;
+    }
+    assert!(last > 0, "the controller sent nothing");
+    assert!(
+        last <= LIMIT,
+        "{last} bytes left the controller with none read"
+    );
 }
 
 #[test]

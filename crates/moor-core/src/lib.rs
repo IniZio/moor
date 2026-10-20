@@ -25,7 +25,6 @@ pub use name::{
 pub use request::{
     ArtifactReadReq, ArtifactsReq, BoxReq, CloseReq, CpReq, EnvReq, GateReq, RemoveReq, ReportReq,
     Request, RunReq, ShowReq, StartReq, SteerReq, WaitEventsReq, WaitFor, WaitMode, WaitReq,
-    ARTIFACT_CHUNK,
 };
 pub use response::{ErrorKind, ErrorView, ExitClass, Response, Warning, SCHEMA};
 pub use secret::{Digest, Secret};

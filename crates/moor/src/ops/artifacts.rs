@@ -1,14 +1,13 @@
 //! `artifacts` and `artifact-read`: serve published files from the store without waking the Box.
 
 use std::fs::{self, File};
-use std::io::{Read, Seek, SeekFrom};
+use std::io::{self, Read, Seek, SeekFrom};
 use std::path::Path;
 
-use base64::engine::general_purpose::STANDARD;
-use base64::Engine;
 use moor_core::artifact::valid_name;
-use moor_core::request::{ArtifactReadReq, ArtifactsReq, ARTIFACT_CHUNK};
-use moor_core::view::{ArtifactChunk, ArtifactView};
+use moor_core::controller::BYTES_MAX;
+use moor_core::request::{ArtifactReadReq, ArtifactsReq};
+use moor_core::view::{ArtifactReadView, ArtifactView};
 use moor_core::{BoxName, ErrorKind};
 
 use crate::cx::Cx;
@@ -45,12 +44,17 @@ pub(crate) fn artifact_view(row: &ArtifactRow) -> ArtifactView {
     }
 }
 
-/// Read one chunk of an Artifact version, at most [`ARTIFACT_CHUNK`] bytes.
+/// Stream a byte range of an Artifact version to `out`, one piece of at most [`BYTES_MAX`]
+/// bytes at a time, reading the next piece only after `out` took the last one.
 ///
 /// # Errors
 /// [`CommandError`] when the name is invalid, the Artifact is unknown or missing on disk, the
-/// offset is past the end, or the stored path is a symlink.
-pub(crate) fn read(cx: &Cx, req: &ArtifactReadReq) -> Result<ArtifactChunk, CommandError> {
+/// offset is past the end, the stored path is a symlink, a read fails, or `out` fails.
+pub(crate) fn read(
+    cx: &Cx,
+    req: &ArtifactReadReq,
+    out: &mut dyn FnMut(&[u8]) -> io::Result<()>,
+) -> Result<ArtifactReadView, CommandError> {
     if !valid_name(&req.name) {
         return Err(CommandError::new(
             ErrorKind::Usage,
@@ -96,47 +100,75 @@ pub(crate) fn read(cx: &Cx, req: &ArtifactReadReq) -> Result<ArtifactChunk, Comm
         Ok(_) => return Err(refused()),
         Err(e) => return Err(io_error(row, &e)),
     }
-    let (data, eof) = chunk(&file, req).map_err(|e| match e {
-        Chunk::Past => CommandError::new(
-            ErrorKind::Usage,
-            format!("offset {} is past the end of {}", req.offset, row.name),
-        ),
-        Chunk::Io(e) => io_error(row, &e),
-    })?;
-    Ok(ArtifactChunk {
-        data_b64: STANDARD.encode(data),
+    let (sent, eof) = stream(&file, req, out).map_err(|e| e.into_error(row, req.offset))?;
+    Ok(ArtifactReadView {
+        offset: req.offset,
+        sent,
         size: row.size,
         sha256: row.sha256.clone(),
         eof,
     })
 }
 
-/// Why a chunk could not be read.
-enum Chunk {
+/// Why a range could not be streamed.
+enum Stream {
     /// The offset lies past the end of the file.
     Past,
     /// The file could not be opened or read.
-    Io(std::io::Error),
+    Io(io::Error),
+    /// The receiver refused a piece.
+    Out(io::Error),
 }
 
-/// Read up to the clamped length at the offset; also whether that reaches the end.
-fn chunk(file: &Path, req: &ArtifactReadReq) -> Result<(Vec<u8>, bool), Chunk> {
-    let mut f = File::open(file).map_err(Chunk::Io)?;
-    let size = f.metadata().map_err(Chunk::Io)?.len();
-    if req.offset > size {
-        return Err(Chunk::Past);
+impl Stream {
+    /// The command error for `row` read from `offset`; it never carries file contents.
+    fn into_error(self, row: &ArtifactRow, offset: u64) -> CommandError {
+        match self {
+            Self::Past => CommandError::new(
+                ErrorKind::Usage,
+                format!("offset {offset} is past the end of {}", row.name),
+            ),
+            Self::Io(e) => io_error(row, &e),
+            Self::Out(e) => CommandError::new(
+                ErrorKind::Failed,
+                format!("stopped sending artifact {}: {}", row.name, e.kind()),
+            ),
+        }
     }
-    f.seek(SeekFrom::Start(req.offset)).map_err(Chunk::Io)?;
-    let want = req.len.min(ARTIFACT_CHUNK).min(size - req.offset);
-    let mut data = Vec::new();
-    f.take(want).read_to_end(&mut data).map_err(Chunk::Io)?;
-    let end = req.offset + data.len() as u64;
-    Ok((data, end >= size))
+}
+
+/// Send up to the clamped length from the offset; returns bytes sent and whether that reaches
+/// the end.
+fn stream(
+    file: &Path,
+    req: &ArtifactReadReq,
+    out: &mut dyn FnMut(&[u8]) -> io::Result<()>,
+) -> Result<(u64, bool), Stream> {
+    let mut f = File::open(file).map_err(Stream::Io)?;
+    let size = f.metadata().map_err(Stream::Io)?.len();
+    if req.offset > size {
+        return Err(Stream::Past);
+    }
+    f.seek(SeekFrom::Start(req.offset)).map_err(Stream::Io)?;
+    let mut f = f.take(req.len.min(size - req.offset));
+    let mut buf = vec![0; BYTES_MAX];
+    let mut sent = 0_u64;
+    loop {
+        let n = match f.read(&mut buf) {
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+            n => n.map_err(Stream::Io)?,
+        };
+        let Some(piece) = buf.get(..n).filter(|p| !p.is_empty()) else {
+            return Ok((sent, req.offset + sent >= size));
+        };
+        out(piece).map_err(Stream::Out)?;
+        sent += n as u64;
+    }
 }
 
 /// Map a file error to a command error that names the Artifact, never its contents.
-fn io_error(row: &ArtifactRow, e: &std::io::Error) -> CommandError {
-    if e.kind() == std::io::ErrorKind::NotFound {
+fn io_error(row: &ArtifactRow, e: &io::Error) -> CommandError {
+    if e.kind() == io::ErrorKind::NotFound {
         return CommandError::new(
             ErrorKind::NotFound,
             format!("artifact {} v{} is missing on disk", row.name, row.version),

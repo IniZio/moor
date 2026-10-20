@@ -273,11 +273,13 @@ pub struct ArtifactView {
     pub created_at: String,
 }
 
-/// `value` of `artifact-read`: one byte range of an artifact.
+/// `value` of `artifact-read`, sent after the bytes frames of one byte range.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct ArtifactChunk {
-    /// Base64 of the bytes read.
-    pub data_b64: String,
+pub struct ArtifactReadView {
+    /// Byte offset the range starts at.
+    pub offset: u64,
+    /// Bytes sent in frames.
+    pub sent: u64,
     /// Size of the whole file in bytes.
     pub size: u64,
     /// SHA-256 of the whole file, hex.

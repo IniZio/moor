@@ -263,8 +263,8 @@ fn event_frame_golden_without_box_or_session() {
 }
 
 #[test]
-fn protocol_is_four_and_old_hello_still_parses() {
-    assert_eq!(PROTOCOL, 6);
+fn protocol_is_seven_and_old_hello_still_parses() {
+    assert_eq!(PROTOCOL, 7);
     let got = parse_frame(r#"{"frame":"hello","protocol":1}"#);
     assert_eq!(got, Ok(ClientFrame::Hello { protocol: 1 }));
 }
@@ -338,6 +338,10 @@ fn server_frames_round_trip_through_parse_server_frame() {
             payload: serde_json::json!({}),
             ts: 124,
         },
+        ServerFrame::Bytes {
+            id: "1".into(),
+            len: BYTES_MAX,
+        },
     ];
     for frame in frames {
         let parsed = parse_server_frame(&frame.to_line()).expect("parses");
@@ -356,6 +360,48 @@ fn progress_shape() {
         line,
         "{\"frame\":\"progress\",\"id\":\"4\",\"message\":\"step\"}\n"
     );
+}
+
+/// Splits a written stream into its bytes frames: (id, payload) per frame.
+fn bytes_frames(mut wire: &[u8]) -> Vec<(String, Vec<u8>)> {
+    let mut frames = Vec::new();
+    while let Some(end) = wire.iter().position(|b| *b == b'\n') {
+        let (line, rest) = wire.split_at(end + 1);
+        let line = std::str::from_utf8(line).unwrap_or_else(|e| panic!("{e}"));
+        let Ok(ServerFrame::Bytes { id, len }) = parse_server_frame(line.trim_end()) else {
+            panic!("not a bytes frame: {line}");
+        };
+        let (payload, rest) = rest.split_at(len);
+        frames.push((id, payload.to_vec()));
+        wire = rest;
+    }
+    assert!(wire.is_empty(), "{} trailing bytes", wire.len());
+    frames
+}
+
+#[test]
+fn bytes_frame_is_a_json_line_then_raw_bytes() {
+    let mut wire = Vec::new();
+    write_bytes(&mut wire, "3", b"\n\xff\x00").unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(
+        wire,
+        b"{\"frame\":\"bytes\",\"id\":\"3\",\"len\":3}\n\n\xff\x00"
+    );
+}
+
+#[test]
+fn write_bytes_never_puts_more_than_the_cap_in_one_frame() {
+    let data: Vec<u8> = (0..=2 * BYTES_MAX)
+        .map(|i| u8::try_from(i % 251).unwrap_or_default())
+        .collect();
+    let mut wire = Vec::new();
+    write_bytes(&mut wire, "7", &data).unwrap_or_else(|e| panic!("{e}"));
+    let frames = bytes_frames(&wire);
+    let lens: Vec<usize> = frames.iter().map(|(_, p)| p.len()).collect();
+    assert_eq!(lens, [64 * 1024, 64 * 1024, 1]);
+    assert!(frames.iter().all(|(id, _)| id == "7"));
+    let joined: Vec<u8> = frames.into_iter().flat_map(|(_, p)| p).collect();
+    assert_eq!(joined, data);
 }
 
 #[test]

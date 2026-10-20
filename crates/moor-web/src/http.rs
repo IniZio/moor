@@ -9,6 +9,8 @@ use std::time::Duration;
 
 use crate::auth::{self, Credentials, CsrfHeaders, Via};
 
+mod download;
+pub use download::{Download, Fill};
 mod limits;
 pub use limits::Limits;
 
@@ -18,6 +20,7 @@ mod parse;
 #[cfg(test)]
 mod tests;
 
+use download::send_download;
 use parse::read_request;
 pub use parse::HttpRequest;
 #[cfg(test)]
@@ -94,6 +97,19 @@ pub enum Reply {
     Full(HttpResponse),
     /// An event stream; the closure writes the body.
     Stream(StreamBody),
+    /// A body streamed from elsewhere, such as an artifact read from the controller.
+    Download(Download),
+}
+
+impl Reply {
+    /// The extra headers of a reply whose head the handler controls.
+    const fn headers_mut(&mut self) -> Option<&mut Vec<(&'static str, String)>> {
+        match self {
+            Self::Full(resp) => Some(&mut resp.headers),
+            Self::Download(d) => Some(&mut d.headers),
+            Self::Stream(_) => None,
+        }
+    }
 }
 
 impl From<HttpResponse> for Reply {
@@ -213,6 +229,10 @@ fn serve(mut stream: TcpStream, token: &str, handler: &Handler, lim: Limits) -> 
             begin_stream(&mut stream)?;
             return body(&mut stream);
         }
+        Reply::Download(download) => match send_download(&mut stream, download)? {
+            Some(failed) => failed,
+            None => return Ok(()),
+        },
     };
     let extra: Vec<(&str, &str)> = reply
         .headers
@@ -246,9 +266,8 @@ fn answer(req: &HttpRequest, token: &str, handler: &Handler) -> Reply {
     match req.method.as_str() {
         "GET" => {
             let mut reply = handler(req);
-            if let (Reply::Full(resp), Via::Query) = (&mut reply, via) {
-                resp.headers
-                    .push(("Set-Cookie", auth::cookie_header(token)));
+            if let (Some(headers), Via::Query) = (reply.headers_mut(), via) {
+                headers.push(("Set-Cookie", auth::cookie_header(token)));
             }
             reply
         }
@@ -288,10 +307,25 @@ fn respond(
     body: impl AsRef<[u8]>,
 ) -> io::Result<()> {
     let body = body.as_ref();
+    write_head(out, status, content_type, body.len() as u64, extra)?;
+    out.write_all(body)?;
+    out.flush()
+}
+
+/// Writes a response head announcing a body of `len` bytes.
+///
+/// # Errors
+/// Fails when the write fails.
+fn write_head(
+    out: &mut impl Write,
+    status: &str,
+    content_type: &str,
+    len: u64,
+    extra: &[(&str, &str)],
+) -> io::Result<()> {
     let mut head = format!(
-        "HTTP/1.1 {status}\r\nContent-Type: {}\r\nContent-Length: {}\r\n{COMMON_HEADERS}",
+        "HTTP/1.1 {status}\r\nContent-Type: {}\r\nContent-Length: {len}\r\n{COMMON_HEADERS}",
         no_breaks(content_type),
-        body.len()
     );
     for (k, v) in extra {
         head.push_str(&no_breaks(k));
@@ -300,9 +334,7 @@ fn respond(
         head.push_str("\r\n");
     }
     head.push_str("\r\n");
-    out.write_all(head.as_bytes())?;
-    out.write_all(body)?;
-    out.flush()
+    out.write_all(head.as_bytes())
 }
 
 /// Drops CR and LF so a header field cannot start a new header or end the head.

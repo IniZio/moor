@@ -3,9 +3,9 @@
 use std::io::{BufRead, Write};
 
 use moor_core::controller::{
-    parse_frame, ClientFrame, FrameErrorKind, ServerFrame, WatchFilter, PROTOCOL,
+    parse_frame, write_bytes, ClientFrame, FrameErrorKind, ServerFrame, WatchFilter, PROTOCOL,
 };
-use moor_core::{Request, Response};
+use moor_core::{ArtifactReadReq, Request, Response};
 
 use super::progress::{respond_with_progress, INTERVAL};
 use super::watch;
@@ -19,7 +19,12 @@ pub(crate) fn handle(reader: impl BufRead, writer: impl Write, env: &Env) {
     serve(
         reader,
         writer,
-        |id, request, emit| respond_with_progress(env, id, request, INTERVAL, emit),
+        |id, request, out| match request {
+            Request::ArtifactRead(req) => read_artifact(env, id, &req, out),
+            request => {
+                respond_with_progress(env, id, request, INTERVAL, &mut |frame| send(out, &frame))
+            }
+        },
         |writer, since, filter, follow| {
             let ask = watch::Ask {
                 since,
@@ -32,11 +37,12 @@ pub(crate) fn handle(reader: impl BufRead, writer: impl Write, env: &Env) {
 }
 
 /// [`handle`] with the engine behind `answer` and the event stream behind `watch`,
-/// so tests can serve over fakes.
+/// so tests can serve over fakes. `answer` may write frames for the request before its
+/// response.
 fn serve<W: Write>(
     reader: impl BufRead,
     mut writer: W,
-    answer: impl Fn(&str, Request, &mut dyn FnMut(ServerFrame) -> bool) -> Response,
+    answer: impl Fn(&str, Request, &mut dyn Write) -> Response,
     watch: impl Fn(&mut W, i64, &WatchFilter, bool),
 ) {
     let mut handshaken = false;
@@ -76,16 +82,26 @@ fn serve<W: Write>(
                 kind: FrameErrorKind::HelloRequired,
             },
             Ok(ClientFrame::Request { id, request }) => {
-                let emit = &mut |frame: ServerFrame| {
-                    writer.write_all(frame.to_line().as_bytes()).is_ok() && writer.flush().is_ok()
-                };
-                let envelope = answer(&id, *request, emit);
+                let envelope = answer(&id, *request, &mut writer);
                 ServerFrame::Response { id, envelope }
             }
         };
-        if writer.write_all(reply.to_line().as_bytes()).is_err() || writer.flush().is_err() {
+        if !send(&mut writer, &reply) {
             return;
         }
+    }
+}
+
+/// Write one frame line and flush; false once the client is gone.
+fn send(writer: &mut (impl Write + ?Sized), frame: &ServerFrame) -> bool {
+    writer.write_all(frame.to_line().as_bytes()).is_ok() && writer.flush().is_ok()
+}
+
+/// Stream an Artifact's bytes as bytes frames for request `id`, then answer.
+fn read_artifact(env: &Env, id: &str, req: &ArtifactReadReq, out: &mut dyn Write) -> Response {
+    match Moor::from_env(env) {
+        Ok(moor) => moor.read_artifact(req, &mut |data| write_bytes(out, id, data)),
+        Err(e) => e.into_response("artifact-read", vec![]),
     }
 }
 
