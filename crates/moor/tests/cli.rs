@@ -11,6 +11,8 @@
 mod controller;
 #[path = "cli/events.rs"]
 mod events;
+#[path = "cli/run_output.rs"]
+mod run_output;
 #[path = "cli/slack.rs"]
 mod slack;
 #[path = "cli/slack_fake.rs"]

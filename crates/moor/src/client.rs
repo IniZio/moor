@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
-use moor_core::controller::{parse_server_frame, ClientFrame, ServerFrame, PROTOCOL};
+use moor_core::controller::{parse_server_frame, ClientFrame, ServerFrame, BYTES_MAX, PROTOCOL};
 use moor_core::seam::proc::Tool;
 use moor_core::{ErrorKind, Request, Response};
 
@@ -104,7 +104,8 @@ pub fn configured_target(env: &Env) -> Option<Target> {
     Some(Target::Socket(env.expand_home(&path)))
 }
 
-/// Run `request` on the controller at `target`, passing progress messages to `on_progress`.
+/// Run `request` on the controller at `target`, passing progress messages to `on_progress` and
+/// the raw bytes of each bytes frame, such as a `run` command's output, to `on_output`.
 ///
 /// # Errors
 /// [`ClientError::Unreachable`] when the transport cannot be opened (or, over ssh, dies before
@@ -114,9 +115,10 @@ pub fn call(
     target: &Target,
     request: &Request,
     on_progress: impl FnMut(&str),
+    on_output: impl FnMut(&[u8]),
 ) -> Result<Response, ClientError> {
     with_transport(env, target, |reader, mut writer| {
-        session(reader, &mut writer, request, on_progress)
+        session(reader, &mut writer, request, on_progress, on_output)
     })
 }
 
@@ -217,12 +219,15 @@ fn handshake(reader: &mut impl BufRead, writer: &mut impl Write) -> Result<(), S
     }
 }
 
-/// The hello, request and progress exchange over an open transport.
+/// The hello, request, progress and bytes exchange over an open transport.
+///
+/// Holds one bytes frame at a time.
 fn session(
     mut reader: impl BufRead,
     writer: &mut impl Write,
     request: &Request,
     mut on_progress: impl FnMut(&str),
+    mut on_output: impl FnMut(&[u8]),
 ) -> Result<Response, SessionError> {
     handshake(&mut reader, writer)?;
 
@@ -234,11 +239,25 @@ fn session(
         },
     )
     .map_err(ClientError::Protocol)?;
+    let mut buf = Vec::new();
     loop {
         match next_frame(&mut reader)? {
             ServerFrame::Progress { id, message } if id == REQUEST_ID => on_progress(&message),
+            ServerFrame::Bytes { id, len } if id == REQUEST_ID => {
+                if len > BYTES_MAX {
+                    return Err(ClientError::Protocol(format!(
+                        "bytes frame of {len} exceeds {BYTES_MAX}"
+                    ))
+                    .into());
+                }
+                buf.resize(len, 0);
+                reader
+                    .read_exact(&mut buf)
+                    .map_err(|e| ClientError::Protocol(format!("read from controller: {e}")))?;
+                on_output(&buf);
+            }
             ServerFrame::Response { id, envelope } if id == REQUEST_ID => return Ok(envelope),
-            other => return Err(unexpected(&other, "progress or response").into()),
+            other => return Err(unexpected(&other, "progress, bytes or response").into()),
         }
     }
 }

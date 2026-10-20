@@ -27,9 +27,12 @@ use crate::ops::common::provisioning::dead_provisioning;
 use crate::ops::common::wake::wake_and_revive;
 use crate::store::{BoxRow, NewRun, RunOutcome, Store, StoreError};
 
+mod follow;
 mod ready;
 mod record;
 mod sync;
+
+pub(super) use follow::Sink;
 
 /// Run `run`.
 ///
@@ -37,6 +40,18 @@ mod sync;
 /// [`CommandError`] when the command could not start: unknown Box, no usable machine, a busy machine,
 /// a `.moor.yaml` that differs from the base commit without trust, or a failure of the driver or the store before the command ran.
 pub(crate) fn run(cx: &Cx, req: &RunReq) -> Result<RunValue, CommandError> {
+    streamed(cx, req, None)
+}
+
+/// [`run`], passing the command's output to `sink` as it reaches the run log.
+///
+/// # Errors
+/// As [`run`].
+pub(crate) fn streamed(
+    cx: &Cx,
+    req: &RunReq,
+    sink: Option<Sink<'_>>,
+) -> Result<RunValue, CommandError> {
     if req.argv.is_empty() {
         return Err(CommandError::new(ErrorKind::Usage, "no command to run"));
     }
@@ -52,11 +67,17 @@ pub(crate) fn run(cx: &Cx, req: &RunReq) -> Result<RunValue, CommandError> {
     let row = store
         .box_row(found.id)?
         .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no Box {name}")))?;
-    locked(cx, store, req, &row)
+    locked(cx, store, req, &row, sink)
 }
 
 /// The part of `run` that needs the Box lock, on the row read after taking it.
-fn locked(cx: &Cx, store: &Store, req: &RunReq, row: &BoxRow) -> Result<RunValue, CommandError> {
+fn locked(
+    cx: &Cx,
+    store: &Store,
+    req: &RunReq,
+    row: &BoxRow,
+    sink: Option<Sink<'_>>,
+) -> Result<RunValue, CommandError> {
     dead_provisioning(cx, row)?;
     let gone = row
         .boxed
@@ -72,7 +93,7 @@ fn locked(cx: &Cx, store: &Store, req: &RunReq, row: &BoxRow) -> Result<RunValue
         row
     };
     let target = ready::target(store, row)?;
-    launch(cx, store, req, row, &target)
+    launch(cx, store, req, row, &target, sink)
 }
 
 /// Records the run, executes the command in the Box and records how it ended.
@@ -82,6 +103,7 @@ fn launch(
     req: &RunReq,
     row: &BoxRow,
     target: &ready::Target,
+    sink: Option<Sink<'_>>,
 ) -> Result<RunValue, CommandError> {
     let repo = moor_yaml::guard(cx, row, req.trust_moor_yaml)?;
     let cfg = resolved(cx, repo.as_ref(), &Flags::default());
@@ -117,7 +139,10 @@ fn launch(
         host_cwd: Some(target.worktree.clone()),
         class: Some(cfg.size.value.as_str().to_owned()),
     };
-    let outcome = match cx.driver().exec(&target.handle, &spec, exec.deadline()) {
+    let outcome = follow::during(spec.output.as_ref(), sink, || {
+        cx.driver().exec(&target.handle, &spec, exec.deadline())
+    });
+    let outcome = match outcome {
         Ok(outcome) => outcome,
         Err(e) => {
             let message = e.to_string();
@@ -248,4 +273,4 @@ const fn sync_name(sync: SyncMode) -> &'static str {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

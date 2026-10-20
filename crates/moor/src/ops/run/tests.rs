@@ -30,15 +30,15 @@ mod transport;
 
 pub(in crate::ops::run) const SHA: &str = "0123456789abcdef0123456789abcdef01234567";
 
-pub(in crate::ops::run) struct Fx {
-    pub(in crate::ops::run) dir: tempfile::TempDir,
-    pub(in crate::ops::run) cx: Cx,
-    pub(in crate::ops::run) driver: Arc<FakeDriver>,
+pub(crate) struct Fx {
+    pub(crate) dir: tempfile::TempDir,
+    pub(crate) cx: Cx,
+    pub(crate) driver: Arc<FakeDriver>,
     pub(in crate::ops::run) proc: Arc<ScriptedProc>,
     pub(in crate::ops::run) id: BoxId,
 }
 
-pub(in crate::ops::run) fn req(argv: &[&str]) -> RunReq {
+pub(crate) fn req(argv: &[&str]) -> RunReq {
     RunReq {
         box_name: BoxName::parse_allow_bare("t").unwrap(),
         no_sync: false,
@@ -106,7 +106,7 @@ pub(in crate::ops::run) fn ready() -> Fx {
 }
 
 /// A Ready Box `t` with a machine from `driver`.
-pub(in crate::ops::run) fn ready_with(driver: FakeDriver) -> Fx {
+pub(crate) fn ready_with(driver: FakeDriver) -> Fx {
     let f = bare_with(driver);
     let store = f.cx.store().unwrap();
     let provider = ProviderId::new("p");
@@ -405,7 +405,7 @@ fn provisioning_that_died_while_waiting_for_the_lock_is_refused() {
     f.proc.dead(4242);
     f.cx.clock().sleep(Duration::from_secs(121));
     let row = store.box_row(f.id).unwrap().unwrap();
-    let e = locked(&f.cx, store, &req(&["true"]), &row).unwrap_err();
+    let e = locked(&f.cx, store, &req(&["true"]), &row, None).unwrap_err();
     assert_eq!(e.kind, ErrorKind::Failed);
     assert_eq!(e.error.to_string(), "provisioning dead; run moor close t");
     assert!(f.driver.calls().iter().all(|c| !c.starts_with("exec")));
@@ -589,7 +589,7 @@ fn run_started_losing_a_race_is_ignored() {
     store
         .apply(Decision::new(f.id).session(SessionInput::AgentBusy))
         .unwrap();
-    let v = locked(&f.cx, store, &req(&["true"]), &stale).unwrap();
+    let v = locked(&f.cx, store, &req(&["true"]), &stale, None).unwrap();
     assert!(v.ran);
     assert_eq!(state(&f), (BoxLifecycle::Ready, SessionState::Working));
 }

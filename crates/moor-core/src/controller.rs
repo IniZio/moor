@@ -11,7 +11,7 @@ use crate::request::Request;
 use crate::response::Response;
 
 /// Protocol revision a client announces in its hello frame.
-pub const PROTOCOL: u32 = 7;
+pub const PROTOCOL: u32 = 8;
 
 /// Most raw bytes one bytes frame carries; a reader refuses a larger `len`.
 pub const BYTES_MAX: usize = 64 * 1024;
@@ -104,6 +104,9 @@ pub enum ServerFrame {
         message: String,
     },
     /// Raw bytes for a request still running; exactly `len` bytes follow the line.
+    ///
+    /// `artifact-read` sends the Artifact's content this way, and `run` sends the command's
+    /// output as it reaches the run log.
     Bytes {
         /// Id of the request the bytes belong to.
         id: String,

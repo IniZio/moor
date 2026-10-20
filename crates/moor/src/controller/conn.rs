@@ -5,9 +5,9 @@ use std::io::{BufRead, Write};
 use moor_core::controller::{
     parse_frame, write_bytes, ClientFrame, FrameErrorKind, ServerFrame, WatchFilter, PROTOCOL,
 };
-use moor_core::{ArtifactReadReq, Request, Response};
+use moor_core::{ArtifactReadReq, Request, Response, RunReq};
 
-use super::progress::{respond_with_progress, INTERVAL};
+use super::progress::{respond_with_progress, Sink, INTERVAL};
 use super::watch;
 use crate::env::Env;
 use crate::Moor;
@@ -21,9 +21,7 @@ pub(crate) fn handle(reader: impl BufRead, writer: impl Write, env: &Env) {
         writer,
         |id, request, out| match request {
             Request::ArtifactRead(req) => read_artifact(env, id, &req, out),
-            request => {
-                respond_with_progress(env, id, request, INTERVAL, &mut |frame| send(out, &frame))
-            }
+            request => respond_with_progress(env, id, request, INTERVAL, out),
         },
         |writer, since, filter, follow| {
             let ask = watch::Ask {
@@ -39,7 +37,7 @@ pub(crate) fn handle(reader: impl BufRead, writer: impl Write, env: &Env) {
 /// [`handle`] with the engine behind `answer` and the event stream behind `watch`,
 /// so tests can serve over fakes. `answer` may write frames for the request before its
 /// response.
-fn serve<W: Write>(
+pub(super) fn serve<W: Write>(
     reader: impl BufRead,
     mut writer: W,
     answer: impl Fn(&str, Request, &mut dyn Write) -> Response,
@@ -93,7 +91,7 @@ fn serve<W: Write>(
 }
 
 /// Write one frame line and flush; false once the client is gone.
-fn send(writer: &mut (impl Write + ?Sized), frame: &ServerFrame) -> bool {
+pub(super) fn send(writer: &mut (impl Write + ?Sized), frame: &ServerFrame) -> bool {
     writer.write_all(frame.to_line().as_bytes()).is_ok() && writer.flush().is_ok()
 }
 
@@ -117,6 +115,14 @@ pub(crate) fn respond(env: &Env, request: Request) -> Response {
     match Moor::from_env(env) {
         Ok(moor) => moor.call(request),
         Err(e) => e.into_response(cmd, vec![]),
+    }
+}
+
+/// Run `run` against a fresh engine, passing the command's output to `out` as it runs.
+pub(crate) fn respond_run(env: &Env, req: &RunReq, out: Sink<'_>) -> Response {
+    match Moor::from_env(env) {
+        Ok(moor) => moor.run_streamed(req, out),
+        Err(e) => e.into_response("run", vec![]),
     }
 }
 
