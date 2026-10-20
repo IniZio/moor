@@ -4,6 +4,7 @@
 //! rule until a 2xx shows the rule's upstream answering again.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::mem;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use moor_core::domain::event::Event;
@@ -16,9 +17,41 @@ use super::{bare_host, rule, EgressSink};
 pub(crate) struct Limits {
     /// Open statuses by rule; a rule seeded from the store appears once it is first seen.
     open: Mutex<BTreeMap<String, BTreeSet<u16>>>,
-    /// 401s and 403s, by lower-case host and status, that went to requests
-    /// forwarded without the credential nono injected, and not yet audited.
-    anonymous: Mutex<BTreeMap<(String, u16), usize>>,
+    /// 401s and 403s that went to requests forwarded without the credential
+    /// nono injected, and not yet audited.
+    anonymous: Mutex<Notes>,
+}
+
+/// Counts of noted answers by lower-case host and status.
+type Noted = BTreeMap<(String, u16), usize>;
+
+/// Noted answers by how many drains have ended since they were noted.
+#[derive(Default)]
+struct Notes {
+    /// Noted since the last drain ended.
+    fresh: Noted,
+    /// Noted before the last drain ended; dropped when the next one ends, so
+    /// an answer nono never audits cannot hide a later rejection.
+    aged: Noted,
+}
+
+impl Notes {
+    /// Consumes one note for `key`, the oldest first.
+    fn take(&mut self, key: &(String, u16)) -> bool {
+        take_one(&mut self.aged, key) || take_one(&mut self.fresh, key)
+    }
+}
+
+/// Consumes one count of `key` from `noted`.
+fn take_one(noted: &mut Noted, key: &(String, u16)) -> bool {
+    let Some(count) = noted.get_mut(key) else {
+        return false;
+    };
+    *count -= 1;
+    if *count == 0 {
+        noted.remove(key);
+    }
+    true
 }
 
 impl Limits {
@@ -27,6 +60,7 @@ impl Limits {
     pub(super) fn anonymous(&self, host: &str, status: u16) {
         *self
             .lock_anonymous()
+            .fresh
             .entry((host.to_ascii_lowercase(), status))
             .or_default() += 1;
     }
@@ -34,19 +68,18 @@ impl Limits {
     /// Consumes one noted anonymous answer matching `event`, if any.
     fn take_anonymous(&self, event: &NetworkAuditEvent, status: u16) -> bool {
         let key = (bare_host(&event.target).to_ascii_lowercase(), status);
-        let mut anonymous = self.lock_anonymous();
-        let Some(count) = anonymous.get_mut(&key) else {
-            return false;
-        };
-        *count -= 1;
-        if *count == 0 {
-            anonymous.remove(&key);
-        }
-        true
+        self.lock_anonymous().take(&key)
+    }
+
+    /// Ends a drain: drops the notes no audit consumed within one further
+    /// drain, and ages the rest.
+    pub(super) fn end_drain(&self) {
+        let mut notes = self.lock_anonymous();
+        notes.aged = mem::take(&mut notes.fresh);
     }
 
     /// Locks the noted anonymous answers, recovering from poisoning.
-    fn lock_anonymous(&self) -> MutexGuard<'_, BTreeMap<(String, u16), usize>> {
+    fn lock_anonymous(&self) -> MutexGuard<'_, Notes> {
         self.anonymous
             .lock()
             .unwrap_or_else(PoisonError::into_inner)

@@ -144,6 +144,32 @@ fn a_429_then_a_401_record_both() {
     );
 }
 
+/// The rejection event for `claude` with `status`.
+fn rejected(status: u16) -> Event {
+    Event::ProxyCredentialRejected {
+        rule: "claude".to_owned(),
+        status,
+    }
+}
+
+#[test]
+fn an_anonymous_note_no_audit_consumes_stops_hiding_rejections_after_one_more_drain() {
+    let (sink, watch) = (LimitSink::default(), Withheld::default());
+    watch.anonymous_rejection("api.example.com", 403);
+    assert!(run_limits(&sink, &[], &watch).is_empty());
+    assert!(run_limits(&sink, &[], &watch).is_empty());
+    assert_eq!(run_limits(&sink, &[response(403)], &watch), [rejected(403)]);
+}
+
+#[test]
+fn an_anonymous_note_hides_its_audit_in_the_next_drain() {
+    let (sink, watch) = (LimitSink::default(), Withheld::default());
+    watch.anonymous_rejection("api.example.com", 403);
+    assert!(run_limits(&sink, &[], &watch).is_empty());
+    assert!(run_limits(&sink, &[response(403)], &watch).is_empty());
+    assert_eq!(run_limits(&sink, &[response(403)], &watch), [rejected(403)]);
+}
+
 #[test]
 fn an_open_limit_from_the_store_suppresses_a_repeat_and_still_recovers() {
     let sink = LimitSink {

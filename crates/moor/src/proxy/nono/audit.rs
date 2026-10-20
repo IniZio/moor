@@ -235,7 +235,8 @@ impl EgressSink for BoxSink<'_> {
 /// rule's cached credential unless the request was a passthrough. A denial caused by an unavailable credential
 /// becomes a credential failure; any other denial becomes a refused egress.
 /// Approval-flow decisions are ignored. A request forwarded without a
-/// credential to a credential host is also reported through `withheld`.
+/// credential to a credential host is also reported through `withheld`. An
+/// anonymous answer noted before this drain is matched in it or the next one.
 pub(crate) fn apply(
     events: &[NetworkAuditEvent],
     capture: &MoorCapture,
@@ -253,6 +254,7 @@ pub(crate) fn apply(
             _ => {}
         }
     }
+    withheld.limits.end_drain();
 }
 
 /// The rule behind an event's route, if any.
