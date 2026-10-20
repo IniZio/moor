@@ -32,16 +32,27 @@ fn slack_db_defaults_to_xdg_state_home_else_home() {
 }
 
 #[test]
-fn slack_db_written_by_a_newer_build_stops_startup() {
-    let mut rig = Rig::new();
-    let state = rig.path("state-slack");
-    std::fs::create_dir(&state).unwrap();
-    let db = rusqlite::Connection::open(state.join("slack.db")).unwrap();
-    db.pragma_update(None, "user_version", 99).unwrap();
-    drop(db);
-    rig.spawn_daemon();
-    let status = rig.wait_exit(Duration::from_secs(5));
-    assert!(status.is_some_and(|s| !s.success()), "{status:?}");
-    let stderr = rig.stderr();
-    assert!(stderr.contains("slack.db schema 99 is newer"), "{stderr}");
+fn slack_db_at_another_schema_stops_startup_and_is_kept() {
+    for version in [1, 99] {
+        let mut rig = Rig::new();
+        let state = rig.path("state-slack");
+        std::fs::create_dir(&state).unwrap();
+        let db = rusqlite::Connection::open(state.join("slack.db")).unwrap();
+        db.execute_batch("CREATE TABLE old_rows (id INTEGER);")
+            .unwrap();
+        db.pragma_update(None, "user_version", version).unwrap();
+        drop(db);
+        let before = std::fs::read(state.join("slack.db")).unwrap();
+        rig.spawn_daemon();
+        let status = rig.wait_exit(Duration::from_secs(5));
+        assert!(status.is_some_and(|s| !s.success()), "{status:?}");
+        let stderr = rig.stderr();
+        let refusal = format!("slack.db is schema {version} and this build needs ");
+        assert!(stderr.contains(&refusal), "{stderr}");
+        assert!(
+            stderr.contains(". Start with a fresh slack.db."),
+            "{stderr}"
+        );
+        assert_eq!(std::fs::read(state.join("slack.db")).unwrap(), before);
+    }
 }
