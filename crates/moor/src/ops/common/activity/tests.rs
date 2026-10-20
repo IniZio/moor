@@ -110,6 +110,7 @@ fn rec(kind: HookKind) -> HookRecord {
         kind,
         session_id: None,
         message: None,
+        options: Vec::new(),
         at: Ts::from_millis(NOW.as_millis() - 1000),
     }
 }

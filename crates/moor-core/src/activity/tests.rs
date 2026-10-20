@@ -24,6 +24,7 @@ fn rec(kind: HookKind) -> HookRecord {
         kind,
         session_id: None,
         message: None,
+        options: Vec::new(),
         at: ts(1),
     }
 }
@@ -32,6 +33,7 @@ fn rec(kind: HookKind) -> HookRecord {
 fn said(text: &str) -> HookRecord {
     HookRecord {
         message: Some(text.to_owned()),
+        options: Vec::new(),
         ..rec(HookKind::Blocked)
     }
 }
@@ -85,6 +87,7 @@ fn cached(kind: HookKind, secs_ago: i64) -> HookCache {
     HookCache {
         record: rec(kind),
         at: ts(secs_ago),
+        reported: false,
     }
 }
 
@@ -115,6 +118,7 @@ impl Case {
         self.cache = Some(HookCache {
             record,
             at: ts(secs_ago),
+            reported: false,
         });
         self
     }

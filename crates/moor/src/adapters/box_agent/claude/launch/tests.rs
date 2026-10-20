@@ -19,6 +19,7 @@ use tempfile::TempDir;
 
 use super::super::Claude;
 
+mod ask;
 mod bypass;
 mod prompt;
 
@@ -104,7 +105,7 @@ fn on_host_path(tool: &str) -> Option<String> {
 /// A `PATH` of symlinks to the shell tools the steps use, plus only the wanted interpreter.
 /// `None`, after saying why, when the host lacks a needed tool.
 fn forced_path(interp: Interp, bin: &Path) -> Option<String> {
-    let wanted = ["head", "timeout", "date", "mv", "rm", "mkdir", "cp"]
+    let wanted = ["head", "timeout", "date", "mv", "rm", "mkdir", "cp", "grep"]
         .into_iter()
         .chain(interp.tool());
     for tool in wanted {

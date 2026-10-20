@@ -119,6 +119,8 @@ pub struct HookRecord {
     pub session_id: Option<String>,
     /// The text the agent attached, such as the question it waits on.
     pub message: Option<String>,
+    /// The choices the agent offered with its question, in order; empty when it named none.
+    pub options: Vec<String>,
     /// When the agent wrote it.
     pub at: Ts,
 }
@@ -130,6 +132,8 @@ pub struct HookCache {
     pub record: HookRecord,
     /// When it was read.
     pub at: Ts,
+    /// Whether a `needs_input` event already reported this record.
+    pub reported: bool,
 }
 
 /// The multiplexer's view of a pane.
@@ -260,7 +264,11 @@ fn from_record(rec: &HookRecord, source: Source, young: bool, pane: &PaneRead) -
                     .map(str::trim)
                     .find(|m| !m.is_empty())
                     .map(str::to_owned),
-                options: menu_options(tail),
+                options: if rec.options.is_empty() {
+                    menu_options(tail)
+                } else {
+                    rec.options.clone()
+                },
             },
             source,
         )),

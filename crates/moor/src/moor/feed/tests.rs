@@ -82,6 +82,7 @@ fn idle_hook(cx: &Cx) -> Probes {
             kind: HookKind::Idle,
             session_id: None,
             message: None,
+            options: Vec::new(),
             at: Ts::from_millis(cx.clock().now().as_millis() - 1000),
         }),
         pane: PaneRead::Fresh(PaneObs {

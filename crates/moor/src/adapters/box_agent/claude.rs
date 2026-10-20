@@ -28,15 +28,33 @@ impl AgentProfile for Claude {
             _ => return None,
         };
         let secs = value.get("ts")?.as_i64().filter(|s| *s >= 0)?;
-        let message = if kind == HookKind::Blocked {
-            text("message").map(str::to_owned)
-        } else {
-            None
-        };
+        let blocked = kind == HookKind::Blocked;
+        // A question tool's record carries its questions; the first is the one on screen.
+        let asked = value
+            .get("questions")
+            .and_then(Value::as_array)
+            .and_then(|q| q.first())
+            .filter(|_| blocked);
+        let question = asked.and_then(|q| q.get("question")).and_then(Value::as_str);
+        let message = blocked
+            .then(|| question.or_else(|| text("message")))
+            .flatten()
+            .map(str::to_owned);
+        let options = asked
+            .and_then(|q| q.get("options"))
+            .and_then(Value::as_array)
+            .map(|opts| {
+                opts.iter()
+                    .filter_map(|o| o.get("label").and_then(Value::as_str))
+                    .map(str::to_owned)
+                    .collect()
+            })
+            .unwrap_or_default();
         Some(HookRecord {
             kind,
             session_id: text("session_id").map(str::to_owned),
             message,
+            options,
             at: Ts::from_millis(secs.checked_mul(1000)?),
         })
     }
