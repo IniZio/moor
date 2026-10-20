@@ -1,4 +1,4 @@
-//! Proxy host that runs each Task's supervisor as a detached `moor proxy serve` process.
+//! Proxy host that runs each Box's supervisor as a detached `moor proxy serve` process.
 
 use std::fs;
 use std::io;
@@ -134,10 +134,10 @@ impl DetachedSupervisor {
     }
 
     /// Poll until the row is gone; false when it outlasts [`STOP_WAIT`].
-    fn wait_gone(&self, store: &Store, task: BoxId) -> bool {
+    fn wait_gone(&self, store: &Store, box_id: BoxId) -> bool {
         let start = self.clock.instant();
         loop {
-            if !matches!(store.proxy(task), Ok(Some(_))) {
+            if !matches!(store.proxy(box_id), Ok(Some(_))) {
                 return true;
             }
             if self.clock.instant().saturating_duration_since(start) >= STOP_WAIT {
@@ -183,13 +183,13 @@ fn endpoint(row: &ProxyRow, ca_pem: &str) -> ProxyEndpoint {
 }
 
 impl ProxyHost for DetachedSupervisor {
-    /// Make sure the Task's proxy supervisor is running and ready; return its endpoint.
+    /// Make sure the Box's proxy supervisor is running and ready; return its endpoint.
     ///
     /// A ready supervisor with a live lease is reused. Otherwise a new nonce is reserved and a
     /// supervisor is started, unless one already holds a live lease. The nonce never appears in
     /// arguments, environment, logs or errors.
     fn ensure(&self, spec: &ProxySpec) -> Result<ProxyEndpoint, ProxyHostError> {
-        let task = spec.box_id;
+        let box_id = spec.box_id;
         let Some(state) = self.state_dir.as_deref() else {
             return Err(fail(
                 "the state directory is not usable: no state directory: set MOOR_STATE_DIR, \
@@ -197,12 +197,12 @@ impl ProxyHost for DetachedSupervisor {
                 Path::new(""),
             ));
         };
-        let log = log_path(state, task);
+        let log = log_path(state, box_id);
         write_spec(state, spec).map_err(|e| spec_failed(&e, &log))?;
-        let ca = load_or_create(state, task).map_err(|e| spec_failed(&e, &log))?;
+        let ca = load_or_create(state, box_id).map_err(|e| spec_failed(&e, &log))?;
         let ca_pem = ca.cert_pem();
         let store = self.store().map_err(|e| store_failed(&e, &log))?;
-        let row = store.proxy(task).map_err(|e| store_failed(&e, &log))?;
+        let row = store.proxy(box_id).map_err(|e| store_failed(&e, &log))?;
         let kept = row.as_ref().map(|r| Secret::new(r.nonce.expose().to_vec()));
         if let Some(row) = row.filter(|r| r.ready && self.live(r)) {
             return Ok(endpoint(&row, ca_pem));
@@ -212,12 +212,12 @@ impl ProxyHost for DetachedSupervisor {
             .filter(|_| self.keep_nonce)
             .unwrap_or_else(|| new_nonce(self.rng.as_ref()));
         let reserved = store
-            .reserve(task, &nonce, self.rng.as_ref(), LEASE)
+            .reserve(box_id, &nonce, self.rng.as_ref(), LEASE)
             .map_err(|e| store_failed(&e, &log))?;
         let pid = match reserved {
             Reserve::Reserved(_) => {
                 let spec = ProcSpec::new(Tool::MoorSelf, Deadline(WAIT))
-                    .args(["proxy", "serve", &task.get().to_string()])
+                    .args(["proxy", "serve", &box_id.get().to_string()])
                     // The controller may run on a state dir its own config chose.
                     .env("MOOR_STATE_DIR", state.to_string_lossy());
                 let pid = self.proc.spawn_daemon(&spec, &log).map_err(|e| {
@@ -230,7 +230,7 @@ impl ProxyHost for DetachedSupervisor {
 
         let start = self.clock.instant();
         loop {
-            let row = store.proxy(task).map_err(|e| store_failed(&e, &log))?;
+            let row = store.proxy(box_id).map_err(|e| store_failed(&e, &log))?;
             if let Some(row) = &row {
                 let lease = self.live(row);
                 if row.ready && lease {
@@ -250,13 +250,13 @@ impl ProxyHost for DetachedSupervisor {
         }
     }
 
-    /// Classify the Task's proxy row without starting or changing anything.
-    fn status(&self, task: BoxId) -> Result<ProxyStatus, ProxyHostError> {
+    /// Classify the Box's proxy row without starting or changing anything.
+    fn status(&self, box_id: BoxId) -> Result<ProxyStatus, ProxyHostError> {
         let failed = |e: &StoreError| {
             ProxyHostError::Failed(format!("the proxy state could not be used: {e}"))
         };
         let store = self.store().map_err(|e| failed(&e))?;
-        let Some(row) = store.proxy(task).map_err(|e| failed(&e))? else {
+        let Some(row) = store.proxy(box_id).map_err(|e| failed(&e))? else {
             return Ok(ProxyStatus::Absent);
         };
         let live = self.live(&row);
@@ -269,25 +269,25 @@ impl ProxyHost for DetachedSupervisor {
         })
     }
 
-    /// Stop the Task's proxy supervisor, then remove its row and CA directory.
+    /// Stop the Box's proxy supervisor, then remove its row and CA directory.
     ///
     /// SIGTERM goes to the supervisor's process group only while its lease is live and the row
     /// was written in the current host boot, because a pid alone may have been reused. The row is
     /// removed whether or not the supervisor exited in time; a supervisor that outlasts the wait
     /// is reported as incomplete and keeps its CA directory. With no row only the CA directory is removed.
-    fn stop(&self, task: BoxId) -> Result<(), ProxyHostError> {
+    fn stop(&self, box_id: BoxId) -> Result<(), ProxyHostError> {
         let incomplete = |reason: String| Err(ProxyHostError::Incomplete(reason));
         let store = match self.store() {
             Ok(store) => store,
             Err(e) => return incomplete(format!("the proxy state could not be read: {e}")),
         };
-        let row = match store.proxy(task) {
+        let row = match store.proxy(box_id) {
             Ok(Some(row)) => row,
             Ok(None) => {
                 // A retried stop finds no row after an earlier one timed out past removing it;
                 // with no row there is no lease, so no live supervisor holds the directory.
                 if let Some(state) = self.state_dir.as_deref() {
-                    if let Err(e) = super::nono::ca::remove(state, task) {
+                    if let Err(e) = super::nono::ca::remove(state, box_id) {
                         return incomplete(format!("the proxy CA could not be removed: {e}"));
                     }
                 }
@@ -301,16 +301,16 @@ impl ProxyHost for DetachedSupervisor {
             .pid
             .filter(|p| *p > 1 && self.live(&row) && self.same_boot(&row));
         let exited = pid.is_none_or(|p| match self.signal_group(p) {
-            Sent::Delivered => self.wait_gone(store, task),
+            Sent::Delivered => self.wait_gone(store, box_id),
             Sent::Gone => true,
             Sent::Failed => false,
         });
-        if let Err(e) = store.remove_proxy(task) {
+        if let Err(e) = store.remove_proxy(box_id) {
             return incomplete(format!("the proxy row could not be removed: {e}"));
         }
         if exited {
             if let Some(state) = self.state_dir.as_deref() {
-                if let Err(e) = super::nono::ca::remove(state, task) {
+                if let Err(e) = super::nono::ca::remove(state, box_id) {
                     return incomplete(format!("the proxy CA could not be removed: {e}"));
                 }
             }
@@ -321,9 +321,11 @@ impl ProxyHost for DetachedSupervisor {
     }
 }
 
-/// Where the Task's proxy supervisor writes its log.
-pub(crate) fn log_path(state_dir: &Path, task: BoxId) -> PathBuf {
-    state_dir.join("proxy").join(format!("{}.log", task.get()))
+/// Where the Box's proxy supervisor writes its log.
+pub(crate) fn log_path(state_dir: &Path, box_id: BoxId) -> PathBuf {
+    state_dir
+        .join("proxy")
+        .join(format!("{}.log", box_id.get()))
 }
 
 /// A fresh nonce: 32 random bytes as base64url text.

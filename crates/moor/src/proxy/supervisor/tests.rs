@@ -1,4 +1,4 @@
-//! Tests for the per-task proxy supervisor, run against fakes with no real sleeps.
+//! Tests for the per-Box proxy supervisor, run against fakes with no real sleeps.
 
 use std::net::{Ipv4Addr, TcpStream};
 use std::path::PathBuf;
@@ -45,7 +45,7 @@ pub(super) struct World {
     pub(super) dir: tempfile::TempDir,
     /// Shared with the store and the supervisor.
     pub(super) clock: Arc<FakeClock>,
-    /// Task and proxy storage.
+    /// Box and proxy storage.
     pub(super) store: Store,
     /// Fake box driver with reverse tunnels enabled.
     pub(super) driver: FakeDriver,
@@ -55,17 +55,17 @@ pub(super) struct World {
     pub(super) stop: Arc<AtomicBool>,
     /// Bytes the supervisor wrote to stderr.
     pub(super) err: Arc<Mutex<Vec<u8>>>,
-    /// The task under test.
+    /// The Box under test.
     pub(super) id: BoxId,
 }
 
 impl World {
-    /// A working task with a live box, a worktree and a reserved proxy row.
+    /// A working Box with a live machine, a worktree and a reserved proxy row.
     pub(super) fn new(replies: impl IntoIterator<Item = TunnelReply>) -> Self {
         Self::with_spec(replies, |_| {})
     }
 
-    /// Like [`World::new`], with `edit` applied to the spec written for the task.
+    /// Like [`World::new`], with `edit` applied to the spec written for the Box.
     pub(super) fn with_spec(
         replies: impl IntoIterator<Item = TunnelReply>,
         edit: impl FnOnce(&mut ProxySpec),
@@ -74,7 +74,7 @@ impl World {
         let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
         let store = Store::open(&dir.path().join("moor.db"), clock.clone()).unwrap();
         let driver = FakeDriver::new().reverse_tunnels().tunnel_replies(replies);
-        let id = working_task(&store, &driver);
+        let id = working_box(&store, &driver);
         let nonce = Secret::new(NONCE.to_vec());
         drop(
             store
@@ -148,8 +148,8 @@ impl World {
         String::from_utf8_lossy(&self.err.lock().unwrap()).into_owned()
     }
 
-    /// Mark the task closed and its box released.
-    pub(super) fn close_task(&self) {
+    /// Mark the Box closed and its machine released.
+    pub(super) fn close_box(&self) {
         let d = Decision::new(self.id)
             .lifecycle(BoxLifecycleInput::Close)
             .session(SessionInput::End)
@@ -167,7 +167,7 @@ impl World {
         std::fs::read_to_string(path).unwrap_or_default()
     }
 
-    /// Proxy events recorded for the task.
+    /// Proxy events recorded for the Box.
     pub(super) fn started_events(&self) -> Vec<serde_json::Value> {
         let events = self.store.events(self.id, 50).unwrap();
         let started = events.into_iter().filter(|e| e.kind == "proxy_started");
@@ -180,8 +180,8 @@ pub(super) fn no_creds() -> CredsFn {
     Arc::new(|_: &str| Err("no credential in tests".to_owned()))
 }
 
-/// Insert a task, give it a live box from `driver` and a worktree.
-fn working_task(store: &Store, driver: &FakeDriver) -> BoxId {
+/// Insert a Box, give it a live machine from `driver` and a worktree.
+fn working_box(store: &Store, driver: &FakeDriver) -> BoxId {
     let nt = NewBox {
         name: BoxName::parse_allow_bare("demo").unwrap(),
         repo: "r".into(),
@@ -312,12 +312,12 @@ fn assert_started_event(w: &World, row: &ProxyRow, host_port: u16) {
 }
 
 #[test]
-fn closed_task_stops_the_supervisor_and_removes_the_row() {
+fn closed_box_stops_the_supervisor_and_removes_the_row() {
     let w = World::new([]);
     let deps = w.deps();
     let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
 
-    w.close_task();
+    w.close_box();
     let stop = run.tick();
 
     assert!(matches!(stop, Some(Stop::Closed)));
@@ -443,7 +443,7 @@ fn nonce_never_reaches_the_log_or_stderr_when_the_tunnel_fails() {
 }
 
 #[test]
-fn missing_task_is_refused_with_a_stderr_line() {
+fn missing_box_is_refused_with_a_stderr_line() {
     let w = World::new([]);
     let deps = w.deps();
     let missing = BoxId::new(9_999);
@@ -455,9 +455,9 @@ fn missing_task_is_refused_with_a_stderr_line() {
 }
 
 #[test]
-fn closed_task_is_refused_with_a_stderr_line() {
+fn closed_box_is_refused_with_a_stderr_line() {
     let w = World::new([]);
-    w.close_task();
+    w.close_box();
     let deps = w.deps();
 
     assert_eq!(start(&deps, w.id).err(), Some(1));
@@ -479,7 +479,7 @@ fn missing_proxy_row_is_refused_with_a_stderr_line() {
 }
 
 #[test]
-fn task_without_a_box_handle_is_refused_with_a_stderr_line() {
+fn box_without_a_box_handle_is_refused_with_a_stderr_line() {
     let dir = tempfile::tempdir().unwrap();
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
     let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
@@ -561,7 +561,7 @@ fn closed_removes_the_ca_and_spec() {
     let dir = ca_dir(w.dir.path(), w.id);
     assert!(dir.exists());
 
-    w.close_task();
+    w.close_box();
     assert!(matches!(run.tick(), Some(Stop::Closed)));
     assert_eq!(run.finish(Stop::Closed), 0);
 

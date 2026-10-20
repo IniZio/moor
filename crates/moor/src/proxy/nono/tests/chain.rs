@@ -1,5 +1,5 @@
 //! nono chains an intercepted, credential-injected route through an external
-//! proxy on loopback, and a filter there that terminates TLS with the Task CA
+//! proxy on loopback, and a filter there that terminates TLS with the Box CA
 //! sees the whole request, body included.
 
 use std::collections::BTreeMap;
@@ -26,10 +26,10 @@ use crate::testing::clock::FakeClock;
 
 /// The credential the route injects.
 const SECRET: &str = "fake-chain-credential-5d1e";
-/// The Task Nonce used as proxy password.
+/// The Box nonce used as proxy password.
 const NONCE: &str = "nonce_AbCdEf-0123456789";
-/// Task id whose CA directory the proxy uses.
-const TASK: BoxId = BoxId::new(9);
+/// Box id whose CA directory the proxy uses.
+const BOX_ID: BoxId = BoxId::new(9);
 /// The GraphQL body the client posts.
 const BODY: &str =
     r#"{"query":"mutation { addStar(input:{starrableId:\"X\"}) { clientMutationId } }"}"#;
@@ -47,7 +47,7 @@ struct Captured {
     body: Vec<u8>,
 }
 
-/// A fake filter: CONNECT, then TLS under the Task CA, then one request.
+/// A fake filter: CONNECT, then TLS under the Box CA, then one request.
 struct Filter {
     /// Loopback port it listens on.
     port: u16,
@@ -99,8 +99,8 @@ fn serve(mut tcp: TcpStream, ca: &ca::BoxCa, seen: &Mutex<Captured>) {
     tcp.write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
         .unwrap();
     let key = ca.preloaded().key_der;
-    let task_ca = Arc::new(EphemeralCa::from_existing(&key, ca.cert_pem()).unwrap());
-    let config = build_server_config(Arc::new(CertCache::new(task_ca)), false).unwrap();
+    let box_ca = Arc::new(EphemeralCa::from_existing(&key, ca.cert_pem()).unwrap());
+    let config = build_server_config(Arc::new(CertCache::new(box_ca)), false).unwrap();
     let mut tls = StreamOwned::new(ServerConnection::new(config).unwrap(), tcp);
     let head = read_head(&mut tls);
     let len: usize = header(&head, "content-length")
@@ -203,9 +203,9 @@ fn capture() -> Arc<MoorCapture> {
 fn intercepted_route_chains_through_external_filter_with_body_visible() {
     let dir = TempDir::new().unwrap();
     let state = dir.path().join("state");
-    let ca = ca::load_or_create(&state, TASK).unwrap();
-    let ca_dir = ca::ca_dir(&state, TASK);
-    let filter = start_filter(ca::load_or_create(&state, TASK).unwrap());
+    let ca = ca::load_or_create(&state, BOX_ID).unwrap();
+    let ca_dir = ca::ca_dir(&state, BOX_ID);
+    let filter = start_filter(ca::load_or_create(&state, BOX_ID).unwrap());
     let cfg = chained_config(&ca, &ca_dir, filter.port);
 
     let runtime = tokio::runtime::Builder::new_multi_thread()

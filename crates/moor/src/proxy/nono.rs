@@ -24,7 +24,7 @@ use nono_proxy::config::{EndpointRule, ExternalProxyConfig, InjectMode, RouteCon
 use nono_proxy::ProxyConfig;
 use zeroize::Zeroizing;
 
-/// Inputs for one Task's proxy.
+/// Inputs for one Box's proxy.
 pub(crate) struct NonoSpec<'a> {
     /// Resolved tool rules; one route per (rule, host).
     pub(crate) rules: &'a [ResolvedRule],
@@ -32,7 +32,7 @@ pub(crate) struct NonoSpec<'a> {
     /// sees it: the front listener checks the Box's own nonce and swaps it
     /// for this one.
     pub(crate) nonce: &'a Secret,
-    /// The Task's interception CA.
+    /// The Box's interception CA.
     pub(crate) ca: &'a ca::BoxCa,
     /// Directory nono writes its CA bundle into (0700, exists).
     pub(crate) ca_dir: &'a Path,
@@ -51,7 +51,7 @@ pub(crate) struct Chain<'a> {
     pub(crate) proxy: SocketAddr,
     /// Hostname (no port) whose TLS the filter terminates.
     pub(crate) host: &'a str,
-    /// Task CA certificate PEM that signs the filter's leaf for `host`.
+    /// Box CA certificate PEM that signs the filter's leaf for `host`.
     pub(crate) ca_pem: &'a Path,
 }
 
@@ -130,7 +130,7 @@ fn route_for(spec: &NonoSpec<'_>, rule: &ResolvedRule, index: usize, host: &str)
     route
 }
 
-/// Builds the nono config for one Task.
+/// Builds the nono config for one Box.
 ///
 /// A nonce that is not UTF-8 leaves the session token unset; `start` refuses
 /// such a config.
@@ -193,7 +193,7 @@ const SHUTDOWN_GRACE: Duration = Duration::from_millis(500);
 
 /// Running proxy: owns a 2-worker runtime and the nono handle.
 pub(crate) struct NonoProxy {
-    /// Runtime driving the proxy's tasks.
+    /// Runtime driving the proxy's futures.
     runtime: tokio::runtime::Runtime,
     /// nono's handle (port, shutdown, audit buffer).
     handle: nono_proxy::ProxyHandle,

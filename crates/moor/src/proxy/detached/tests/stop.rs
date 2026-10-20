@@ -1,4 +1,4 @@
-//! Stopping a Task's proxy supervisor through the adapter.
+//! Stopping a Box's proxy supervisor through the adapter.
 
 use std::time::Duration;
 

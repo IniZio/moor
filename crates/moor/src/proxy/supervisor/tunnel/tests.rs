@@ -19,7 +19,7 @@ use crate::store::{Lease, Store};
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::{FakeDriver, TunnelReply};
 
-/// Events of one kind recorded for the task.
+/// Events of one kind recorded for the Box.
 fn events_of(w: &World, kind: &str) -> usize {
     let events = w.store.events(w.id, 50).unwrap();
     events.iter().filter(|e| e.kind == kind).count()
@@ -96,8 +96,8 @@ struct Rival {
     inner: Arc<FakeClock>,
     /// Database the rival opens.
     db: PathBuf,
-    /// The contested task.
-    task: BoxId,
+    /// The contested Box.
+    box_id: BoxId,
     /// Set once the rival wins the lease.
     won: Arc<AtomicBool>,
 }
@@ -115,7 +115,7 @@ impl Clock for Rival {
         self.inner.sleep(d);
         let store = Store::open(&self.db, self.inner.clone()).unwrap();
         if matches!(
-            store.claim_lease(self.task, "rival", LEASE).unwrap(),
+            store.claim_lease(self.box_id, "rival", LEASE).unwrap(),
             Lease::Claimed
         ) {
             self.won.store(true, Ordering::SeqCst);
@@ -135,7 +135,7 @@ fn heartbeat_continues_through_the_backoff() {
     let clock = Arc::new(Rival {
         inner: w.clock.clone(),
         db: w.dir.path().join("moor.db"),
-        task: w.id,
+        box_id: w.id,
         won: won.clone(),
     });
     let deps = w.deps_with(clock);

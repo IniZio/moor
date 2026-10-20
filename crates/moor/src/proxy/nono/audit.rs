@@ -1,4 +1,4 @@
-//! Drains nono's network audit into per-Task proxy log lines and Task events.
+//! Drains nono's network audit into per-Box proxy log lines and Box events.
 //!
 //! Only the method, the rule name (or host), the status and the denial category leave this module.
 //! Headers and bodies in the audit are never read. The path is read only to
@@ -42,10 +42,10 @@ pub(crate) trait EgressSink {
     fn limit(&self, _event: &Event) {}
 }
 
-/// Distinct withheld requests reported per Task before reporting stops.
+/// Distinct withheld requests reported per Box before reporting stops.
 const MAX_WITHHELD: usize = 256;
 
-/// What has been reported for one Task.
+/// What has been reported for one Box.
 #[derive(Default)]
 struct Reported {
     /// `(rule, method, shape)` already reported.
@@ -59,11 +59,11 @@ struct Reported {
 pub(crate) struct Withheld {
     /// Rule name by lower-case bare host.
     hosts: BTreeMap<String, String>,
-    /// The Task repo the shapes are templated against.
+    /// The Box repo the shapes are templated against.
     repo: Option<ForgeRepo>,
-    /// What has been reported for this Task.
+    /// What has been reported for this Box.
     seen: Mutex<Reported>,
-    /// Rate limits and rejections reported for this Task.
+    /// Rate limits and rejections reported for this Box.
     limits: Limits,
 }
 
@@ -165,7 +165,7 @@ pub(crate) struct BoxSink<'a> {
     /// Store receiving the Box's events.
     pub(crate) store: &'a Store,
     /// The Box the proxy serves.
-    pub(crate) task: BoxId,
+    pub(crate) box_id: BoxId,
 }
 
 impl EgressSink for BoxSink<'_> {
@@ -189,14 +189,14 @@ impl EgressSink for BoxSink<'_> {
             category: category.map(str::to_owned),
         };
         // Draining must not fail; a lost event is not worth stopping the proxy.
-        let _ = self.store.record_proxy_event(self.task, &event);
+        let _ = self.store.record_proxy_event(self.box_id, &event);
     }
 
     fn credential_failed(&self, rule: &str) {
         let event = Event::ProxyCredentialFailed {
             rule: rule.to_owned(),
         };
-        let _ = self.store.record_proxy_event(self.task, &event);
+        let _ = self.store.record_proxy_event(self.box_id, &event);
     }
 
     fn withheld(&self, host: &str, rule: &str, method: &str, shape: Option<&str>) {
@@ -206,7 +206,7 @@ impl EgressSink for BoxSink<'_> {
             method: method.to_owned(),
             shape: shape.map(str::to_owned),
         };
-        let _ = self.store.record_proxy_event(self.task, &event);
+        let _ = self.store.record_proxy_event(self.box_id, &event);
     }
 
     fn withheld_overflow(&self) {
@@ -214,12 +214,12 @@ impl EgressSink for BoxSink<'_> {
     }
 
     fn open_limit(&self, rule: &str) -> Option<u16> {
-        let limits = self.store.open_limits(self.task).ok()?;
+        let limits = self.store.open_limits(self.box_id).ok()?;
         limits.iter().find(|l| l.rule == rule).map(|l| l.status)
     }
 
     fn limit(&self, event: &Event) {
-        let _ = self.store.record_proxy_event(self.task, event);
+        let _ = self.store.record_proxy_event(self.box_id, event);
     }
 }
 

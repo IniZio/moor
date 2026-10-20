@@ -74,7 +74,7 @@ impl Running<'_> {
         match self
             .deps
             .store
-            .tunnel_restarted(self.task, &self.owner, self.box_port, REASON)
+            .tunnel_restarted(self.box_id, &self.owner, self.box_port, REASON)
         {
             Ok(Fenced::Applied) => None,
             Ok(Fenced::LostLease) => Some(Stop::LostLease),
