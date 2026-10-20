@@ -2040,6 +2040,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "moor-slack"
+version = "0.2.0"
+dependencies = [
+ "clap",
+ "moor-client",
+ "moor-core",
+ "rustls",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror",
+ "tungstenite",
+ "ureq",
+ "webpki-roots",
+]
+
+[[package]]
 name = "moor-web"
 version = "0.2.0"
 dependencies = [
