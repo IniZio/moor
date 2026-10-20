@@ -88,7 +88,7 @@ drivers:
 The external provider for agent37 VMs is
 [crabbox-agent37](https://github.com/IniZio/crabbox-agent37). Its README lists
 the crabbox user config it needs, including `external.capabilities.pauseResume:
-true`. moor needs crabbox 0.72.0-moor.7 or newer, and asks you to upgrade
+true`. moor needs crabbox 0.72.0-moor.9 or newer, and asks you to upgrade
 if yours is older.
 
 With `pauseResume` on, moor sleeps an idle Box after `box.sleep_after`
@@ -105,6 +105,26 @@ setup lines, the setup script checks for these tools first. If one is missing,
 it prints a warning naming it, in the terminal and in `.moor/setup.log`, and
 carries on. Setup does not fail because of it. A repo with no setup lines
 runs no setup script, so nothing is checked.
+
+The image's sshd must not set `GatewayPorts yes`. With `yes`, the Box's
+Proxy port listens on the Box's network, and other machines on that network
+can use the Box's Proxy. The default, `no`, keeps the port on the Box's
+loopback.
+
+### How a Box reaches its Proxy
+
+The Box reaches its Proxy through a reverse tunnel. The tunnel listens on
+`127.0.0.1:<port>` inside the Box and carries each connection to a Unix
+socket in `/tmp/moor-<uid>` on the host. Only your user can open that socket.
+The Proxy checks no credential from the Box, so the Box holds no Proxy
+secret.
+
+This does not hold for a Box that shares the host's network. crabbox
+`local-container` with `network: host` is one. Its default, `bridge`, is not.
+On such a Box, the Proxy port is on the host's loopback. Any process on the host, including
+other users' processes and other Boxes, can send requests through that Box's
+Proxy and get the credentials it injects. moor does not refuse such a Box.
+Keep `bridge` unless you trust everything that runs on the host.
 
 ## Direct hosts
 
