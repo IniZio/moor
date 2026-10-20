@@ -83,3 +83,48 @@ fn store_open_leaves_everything_private() {
         assert_eq!(mode(&dir.join(name)), 0o600, "{name}");
     }
 }
+
+/// The mode of `dir`, then each entry's name, mode and a hash of its bytes.
+fn snapshot(dir: &Path) -> (u32, Vec<(String, u32, u64)>) {
+    let mut entries: Vec<_> = fs::read_dir(dir)
+        .unwrap()
+        .map(|e| {
+            let path = e.unwrap().path();
+            let name = path.file_name().unwrap().to_string_lossy().into_owned();
+            let mut hasher = std::hash::DefaultHasher::new();
+            std::hash::Hash::hash(&fs::read(&path).unwrap(), &mut hasher);
+            (name, mode(&path), std::hash::Hasher::finish(&hasher))
+        })
+        .collect();
+    entries.sort();
+    (mode(dir), entries)
+}
+
+#[test]
+fn store_open_leaves_a_db_at_another_schema_version_as_it_found_it() {
+    for journal in ["DELETE", "WAL"] {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("state");
+        fs::create_dir(&dir).unwrap();
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o755)).unwrap();
+        let db = dir.join("moor.db");
+        rusqlite::Connection::open(&db)
+            .unwrap()
+            .execute_batch(&format!(
+                "PRAGMA journal_mode = {journal};
+                 CREATE TABLE meta (k TEXT PRIMARY KEY, v TEXT NOT NULL);
+                 INSERT INTO meta (k, v) VALUES ('schema_version', '4');"
+            ))
+            .unwrap();
+        fs::set_permissions(&db, fs::Permissions::from_mode(0o644)).unwrap();
+        let before = snapshot(&dir);
+        let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000_000)));
+        let opened = super::super::Store::open(&db, clock);
+        assert!(
+            matches!(opened, Err(super::super::StoreError::Schema { .. })),
+            "{journal}: {:?}",
+            opened.err()
+        );
+        assert_eq!(snapshot(&dir), before, "{journal}");
+    }
+}
