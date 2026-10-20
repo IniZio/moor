@@ -1,13 +1,9 @@
 //! The tail of a passing setup's output, which `moor start` shows.
 
 use moor_core::domain::run::SyncMode;
-use moor_core::seam::agent_profile::ProxyAddr;
 use moor_core::seam::driver::DriverError;
-use moor_core::secret::Secret;
-use moor_core::{BoxId, BoxPath};
 
-use super::{cfg, exits, only, rig, run_setup, run_setup_with, SetupRun};
-use crate::ops::common::box_exec::BoxProxy;
+use super::{cfg, exits, only, rig, run_setup, SetupRun};
 use crate::testing::driver::FakeDriver;
 
 fn tail_of(run: &SetupRun) -> Vec<String> {
@@ -56,42 +52,21 @@ fn a_log_that_cannot_be_copied_leaves_the_tail_empty() {
 }
 
 #[test]
-fn the_tail_drops_control_characters_and_keeps_the_proxy_nonce_out() {
+fn the_tail_drops_control_characters() {
     let d = tempfile::tempdir().unwrap();
-    let environ = BoxPath::restore("/proc/self/environ").unwrap();
-    let log = "\u{1b}[32mgreen\u{1b}[0m\nHTTPS_PROXY=http://moor:s3cret-value@127.0.0.1:4000\n";
     let r = rig(
         d.path(),
-        FakeDriver::new()
-            .peek_text("box-1", &environ, "HOME=/home/box\0")
-            .copy_text(log),
+        FakeDriver::new().copy_text("\u{1b}[32mgreen\u{1b}[0m\n"),
     );
-    let proxy = BoxProxy {
-        box_id: BoxId::new(1),
-        addr: ProxyAddr {
-            box_port: 4000,
-            nonce: Secret::new(b"s3cret-value".to_vec()),
-            ca_pem: "-----BEGIN CERTIFICATE-----\nca\n-----END CERTIFICATE-----\n".to_owned(),
-            forge: false,
-            box_env: Vec::new(),
-            direct: Vec::new(),
-        },
-        origin: None,
-        rule_env: Vec::new(),
-    };
-    let got = run_setup_with(
+    let got = run_setup(
         &r.cx,
         &r.handle,
-        "p",
         &r.workdir,
         d.path(),
         &cfg(&["a"], &[]),
         SyncMode::Full,
-        Some(&proxy),
     );
-    let tail = tail_of(&got);
-    assert_eq!(tail.first().map(String::as_str), Some("green"));
-    assert!(!tail.join("\n").contains("s3cret-value"), "{tail:?}");
+    assert_eq!(tail_of(&got).first().map(String::as_str), Some("green"));
 }
 
 #[test]
@@ -141,43 +116,4 @@ fn a_failed_copy_leaves_no_partial_log_on_the_host() {
         SyncMode::Full,
     );
     assert!(std::fs::symlink_metadata(d.path().join(".moor/setup.log")).is_err());
-}
-
-#[test]
-fn the_host_copy_of_the_log_and_the_failure_tail_hide_the_proxy_nonce() {
-    let d = tempfile::tempdir().unwrap();
-    let log = "moor setup: $ a\nHTTPS_PROXY=http://moor:s3cret-value@127.0.0.1:4000\n";
-    let r = rig(
-        d.path(),
-        FakeDriver::new().exec_results(exits(&[1])).copy_text(log),
-    );
-    let proxy = BoxProxy {
-        box_id: BoxId::new(1),
-        addr: ProxyAddr {
-            box_port: 4000,
-            nonce: Secret::new(b"s3cret-value".to_vec()),
-            ca_pem: "-----BEGIN CERTIFICATE-----\nca\n-----END CERTIFICATE-----\n".to_owned(),
-            forge: false,
-            box_env: Vec::new(),
-            direct: Vec::new(),
-        },
-        origin: None,
-        rule_env: Vec::new(),
-    };
-    run_setup_with(
-        &r.cx,
-        &r.handle,
-        "p",
-        &r.workdir,
-        d.path(),
-        &cfg(&["a"], &[]),
-        SyncMode::Full,
-        Some(&proxy),
-    );
-    let host = std::fs::read_to_string(d.path().join(".moor/setup.log")).unwrap();
-    assert!(host.contains("<nonce>"), "{host}");
-    assert!(!host.contains("s3cret-value"), "{host}");
-    let w = only(r.cx.take_warnings());
-    assert!(w.message.contains("<nonce>"), "{}", w.message);
-    assert!(!w.message.contains("s3cret-value"), "{}", w.message);
 }

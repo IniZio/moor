@@ -22,9 +22,8 @@ fn launch_errors_display() {
     assert_eq!(EngineError::NoSession.to_string(), "no agent session");
 }
 
-#[test]
-fn dir_names_come_from_the_box_id() {
-    let req = LaunchReq {
+fn req() -> LaunchReq {
+    LaunchReq {
         id: BoxId::new(7),
         handle: BoxHandle::new("box-1"),
         workdir: BoxPath::under("/work", "box-1").unwrap(),
@@ -42,11 +41,35 @@ fn dir_names_come_from_the_box_id() {
         origin: None,
         strip_env: Vec::new(),
         prompt: LaunchPrompt::Brief,
-    };
-    let (cred, tmp) = req.dir_names();
+    }
+}
+
+#[test]
+fn dir_names_come_from_the_box_id() {
+    let (cred, tmp) = req().dir_names();
     assert_eq!(
         (cred.as_str(), tmp.as_str()),
         (".moor-cred-7-abc", ".moor-tmp-7-abc")
     );
     assert!(!cred.contains('/') && !tmp.contains('/'));
+}
+
+fn proxied(box_port: u16, ca_pem: &str) -> LaunchReq {
+    LaunchReq {
+        proxy: Some(Arc::new(ProxyAddr {
+            box_port,
+            ca_pem: ca_pem.to_owned(),
+            box_env: Vec::new(),
+            forge: false,
+            direct: Vec::new(),
+        })),
+        ..req()
+    }
+}
+
+#[test]
+fn launches_with_proxies_are_equal_exactly_when_the_box_ports_are() {
+    assert_eq!(proxied(4000, "a"), proxied(4000, "b"));
+    assert_ne!(proxied(4000, "a"), proxied(4001, "a"));
+    assert_ne!(proxied(4000, "a"), req());
 }

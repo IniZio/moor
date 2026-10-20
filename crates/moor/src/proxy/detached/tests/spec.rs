@@ -91,14 +91,3 @@ fn the_endpoint_carries_one_stable_ca_certificate() {
     assert!(first.ca_pem.starts_with("-----BEGIN CERTIFICATE-----"));
     assert_eq!(first.ca_pem, second.ca_pem);
 }
-
-#[test]
-fn the_spec_file_holds_no_nonce() {
-    let f = fx();
-
-    let ep = f.sup.ensure(&f.spec()).unwrap();
-
-    let text = std::fs::read_to_string(spec_path(f.dir.path(), f.id)).unwrap();
-    let nonce = String::from_utf8(ep.nonce.expose().to_vec()).unwrap();
-    assert!(!text.contains(&nonce));
-}

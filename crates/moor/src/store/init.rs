@@ -29,8 +29,13 @@ const REBUILD_SESSIONS: &str = "
     ALTER TABLE new_sessions RENAME TO sessions;
     CREATE INDEX sessions_parent ON sessions(parent_session);";
 
-/// Upgrade a v2 or v3 file in place. Foreign keys are off while the table
-/// is swapped and checked before commit.
+/// Drop the proxy column for the Box's secret. Every lease and host port stays: a supervisor that
+/// an older moor started on host TCP keeps serving its Box until `ensure` or startup retires it,
+/// which happens only once crabbox passes its version check.
+const DROP_PROXY_SECRET: &str = "ALTER TABLE proxy DROP COLUMN nonce;";
+
+/// Upgrade a v2, v3 or v4 file in place. Foreign keys are off while the
+/// tables change and checked before commit.
 fn migrate(conn: &mut Connection, found: &str) -> Result<(), StoreError> {
     let fk: bool = conn.query_row("PRAGMA foreign_keys", [], |r| r.get(0))?;
     conn.execute_batch("PRAGMA foreign_keys = OFF")?;
@@ -59,11 +64,14 @@ fn rebuild(conn: &mut Connection, found: &str) -> Result<(), StoreError> {
     if found == "2" {
         migrate_v2(&tx)?;
     }
-    tx.execute_batch(REBUILD_SESSIONS)?;
+    if found != "4" {
+        tx.execute_batch(REBUILD_SESSIONS)?;
+    }
+    tx.execute_batch(DROP_PROXY_SECRET)?;
     let broken = tx.prepare("PRAGMA foreign_key_check")?.exists([])?;
     if broken {
         return Err(StoreError::Corrupt(
-            "foreign key check failed while upgrading the sessions table".to_owned(),
+            "foreign key check failed while upgrading the store".to_owned(),
         ));
     }
     tx.execute(
@@ -94,7 +102,7 @@ fn stored_version(conn: &Connection) -> Result<Option<String>, StoreError> {
 /// Create the schema when `meta` is absent, else check the version.
 pub(super) fn init_schema(conn: &mut Connection) -> Result<(), StoreError> {
     let found = stored_version(conn)?;
-    if let Some(old @ ("2" | "3")) = found.as_deref() {
+    if let Some(old @ ("2" | "3" | "4")) = found.as_deref() {
         return migrate(conn, old);
     }
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;

@@ -113,7 +113,7 @@ pub(crate) fn reconcile_proxies(env: &Env) -> Vec<String> {
         Some(state_dir.clone()),
         Arc::new(crabbox),
     );
-    adopt::reconcile(&host.keeping_nonce(), proc.as_ref(), clock, &state_dir)
+    adopt::reconcile(&host, proc.as_ref(), clock, &state_dir)
 }
 
 /// The detached Proxy host over `state_dir`, which checks `crabbox` before it retires a running

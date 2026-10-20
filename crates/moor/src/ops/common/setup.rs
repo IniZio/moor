@@ -137,8 +137,7 @@ pub(crate) fn run_setup(
     let result = exec_script(cx, &site, cfg, sync, proxy);
     let elapsed = cx.clock().instant().saturating_duration_since(started);
     let ms = u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX);
-    let nonce = proxy.map(|p| p.addr.nonce.expose());
-    let log = fetch_log(cx, handle, workdir, worktree, nonce);
+    let log = fetch_log(cx, handle, workdir, worktree, None);
     let tail = tail_lines(&log).join("\n");
     let (reason, exit) = match result {
         Ok(ExecOutcome::Exited { code: 0 }) => return SetupRun::Ok { ms, tail },

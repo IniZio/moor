@@ -3,9 +3,10 @@ use std::collections::BTreeMap;
 use rusqlite::{types::Value, Connection};
 
 use super::init_schema;
-use crate::store::{lease, slack, StoreError};
+use crate::store::{artifacts, lease, slack, StoreError};
 
 const V3_SQL: &str = include_str!("v3.sql");
+const V4_SQL: &str = include_str!("v4.sql");
 
 fn version(conn: &Connection) -> String {
     conn.query_row("SELECT v FROM meta WHERE k = 'schema_version'", [], |r| {
@@ -59,7 +60,7 @@ fn fresh_store_links_launches_to_sessions() {
         )
         .unwrap();
     assert_eq!(fk, "sessions");
-    assert_eq!(version(&conn), "4");
+    assert_eq!(version(&conn), "5");
 }
 
 #[test]
@@ -73,7 +74,7 @@ fn previous_store_migrates_and_keeps_rows() {
     )
     .unwrap();
     init_schema(&mut conn).unwrap();
-    assert_eq!(version(&conn), "4");
+    assert_eq!(version(&conn), "5");
     let (box_name, sref, session): (String, String, Option<i64>) = conn
         .query_row(
             "SELECT b.name, l.session_ref, l.session FROM launches l JOIN boxes b ON b.id = l.box",
@@ -209,7 +210,7 @@ fn migrated_v3() -> (Connection, Vec<String>) {
 #[test]
 fn v3_migration_keeps_sessions_and_referencing_rows() {
     let (conn, before) = migrated_v3();
-    assert_eq!(version(&conn), "4");
+    assert_eq!(version(&conn), "5");
     assert_eq!(before.len(), 3);
     assert_eq!(sessions_dump(&conn), before);
     for (table, rows) in [
@@ -343,6 +344,11 @@ fn migrated_v3_store_matches_a_fresh_schema() {
 }
 
 #[test]
+fn migrated_v4_store_matches_a_fresh_schema() {
+    assert_eq!(migrated_shape(v4_store()), shape(&fresh_store()));
+}
+
+#[test]
 fn migrated_v2_store_matches_a_fresh_schema() {
     assert_eq!(migrated_shape(previous_store()), shape(&fresh_store()));
 }
@@ -381,7 +387,7 @@ fn rebuild_is_a_no_op_when_another_process_already_upgraded() {
     super::rebuild(&mut conn, "3").unwrap();
     assert_eq!(shape(&conn), before_shape);
     assert_eq!(table_counts(&conn), before_counts);
-    assert_eq!(version(&conn), "4");
+    assert_eq!(version(&conn), "5");
 }
 
 const V2_ROWS: &str = "
@@ -401,7 +407,7 @@ fn v2_migration_keeps_every_referencing_table() {
     conn.execute_batch("PRAGMA foreign_keys = ON").unwrap();
     conn.execute_batch(V2_ROWS).unwrap();
     init_schema(&mut conn).unwrap();
-    assert_eq!(version(&conn), "4");
+    assert_eq!(version(&conn), "5");
     for table in [
         "launches",
         "events",
@@ -418,5 +424,58 @@ fn v2_migration_keeps_every_referencing_table() {
     assert_eq!(
         count(&conn, "SELECT count(*) FROM pragma_foreign_key_check"),
         0
+    );
+}
+
+fn v4_store() -> Connection {
+    let conn = Connection::open_in_memory().unwrap();
+    conn.execute_batch(V4_SQL).unwrap();
+    conn.execute_batch(slack::SLACK_SQL).unwrap();
+    conn.execute_batch(lease::LEASE_SQL).unwrap();
+    conn.execute_batch(artifacts::ARTIFACTS_SQL).unwrap();
+    conn
+}
+
+/// Two live Proxies: box 1 behind a socket front, box 2 behind an older moor's TCP front, which
+/// recorded its host port.
+const V4_PROXIES: &str = "
+    INSERT INTO boxes (id, name, repo, state, created_at, updated_at) VALUES (1, 'a', 'r', 'ready', 1, 1);
+    INSERT INTO boxes (id, name, repo, state, created_at, updated_at) VALUES (2, 'b', 'r', 'ready', 1, 1);
+    INSERT INTO proxy (box, nonce, box_port, host_port, pid, handle, ready, lease_owner, lease_heartbeat,
+      boot_id, updated_at) VALUES (1, x'01', 20001, NULL, 11, 'h1', 1, 'socket', 5, 'boot', 5);
+    INSERT INTO proxy (box, nonce, box_port, host_port, pid, handle, ready, lease_owner, lease_heartbeat,
+      boot_id, updated_at) VALUES (2, x'02', 20002, 4000, 12, 'h2', 1, 'tcp', 5, 'boot', 5);";
+
+#[test]
+fn v4_migration_drops_the_secret_and_keeps_every_lease_and_host_port() {
+    let mut conn = v4_store();
+    conn.execute_batch(V4_PROXIES).unwrap();
+    init_schema(&mut conn).unwrap();
+    assert_eq!(version(&conn), "5");
+    assert_eq!(
+        count(
+            &conn,
+            "SELECT count(*) FROM pragma_table_info('proxy') WHERE name = 'nonce'"
+        ),
+        0
+    );
+    let dump = rows(
+        &conn,
+        "SELECT box || '|' || box_port || '|' || ifnull(host_port, '-') || '|' || ready || '|' || ifnull(pid, '-') \
+         || '|' || ifnull(handle, '-') || '|' || ifnull(lease_owner, '-') || '|' || ifnull(lease_heartbeat, '-') \
+         || '|' || ifnull(boot_id, '-') FROM proxy",
+    );
+    assert_eq!(
+        dump,
+        [
+            format!(
+                "{:?}",
+                [Value::Text("1|20001|-|1|11|h1|socket|5|boot".into())]
+            ),
+            format!(
+                "{:?}",
+                [Value::Text("2|20002|4000|1|12|h2|tcp|5|boot".into())]
+            ),
+        ]
     );
 }

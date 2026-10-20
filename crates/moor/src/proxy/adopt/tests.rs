@@ -7,7 +7,7 @@ use std::time::Duration;
 use moor_core::domain::decision::{Decision, NewBox};
 use moor_core::seam::clock::{Clock as _, Ts};
 use moor_core::seam::proxy_host::{ProxyHost as _, ProxySpec, ProxyStatus};
-use moor_core::{BoxId, BoxName, Secret};
+use moor_core::{BoxId, BoxName};
 
 use super::reconcile;
 use crate::proxy::detached::{write_spec, DetachedSupervisor, LEASE};
@@ -18,8 +18,6 @@ use crate::testing::rng::FakeRng;
 
 const PID: u32 = 4242;
 const BOOT: &str = "boot-a";
-/// The nonce the Box was started with; it differs from any nonce the host would draw.
-const BOX_NONCE: &[u8] = b"nonce-held-by-the-box";
 
 struct Fx {
     dir: tempfile::TempDir,
@@ -51,8 +49,7 @@ fn fx() -> Fx {
         rng,
         Some(dir.path().to_path_buf()),
         Arc::new(|| Ok(())),
-    )
-    .keeping_nonce();
+    );
     let f = Fx {
         dir,
         proc,
@@ -105,10 +102,9 @@ impl Fx {
 
     /// Records a ready Proxy held by a supervisor with `PID` written in `boot`.
     fn record(&self, boot: &str) -> u16 {
-        let nonce = Secret::new(BOX_NONCE.to_vec());
         let _ = self
             .store
-            .reserve(self.id, &nonce, &FakeRng::default(), LEASE)
+            .reserve(self.id, &FakeRng::default(), LEASE)
             .unwrap();
         self.store.claim_lease(self.id, "old", LEASE).unwrap();
         let box_port = self.store.proxy(self.id).unwrap().unwrap().box_port;
@@ -166,7 +162,6 @@ fn a_dead_pid_is_restarted_on_the_same_box_port() {
     assert_eq!(row.box_port, port);
     assert!(row.ready);
     assert_ne!(row.pid, Some(PID));
-    assert_eq!(row.nonce.expose(), BOX_NONCE);
 }
 
 #[test]
@@ -180,7 +175,6 @@ fn a_row_from_another_boot_is_restarted_without_a_signal() {
     assert!(f.proc.signals().is_empty());
     assert_eq!(f.row().box_port, port);
     assert_eq!(f.row().boot_id.as_deref(), Some(BOOT));
-    assert_eq!(f.row().nonce.expose(), BOX_NONCE);
 }
 
 #[test]
@@ -207,7 +201,6 @@ fn a_stale_lease_is_restarted_on_the_same_box_port() {
 
     assert_eq!(f.proc.daemons().len(), 1);
     assert_eq!(f.row().box_port, port);
-    assert_eq!(f.row().nonce.expose(), BOX_NONCE);
     assert_eq!(
         f.host.status(f.id).unwrap(),
         ProxyStatus::Ready { box_port: port }
@@ -241,23 +234,4 @@ fn a_missing_spec_is_reported_and_leaves_the_row_stale() {
     assert!(f.proc.daemons().is_empty());
     assert_eq!(f.row().box_port, port);
     assert_eq!(f.host.status(f.id).unwrap(), ProxyStatus::Stale);
-}
-
-#[test]
-fn an_ordinary_ensure_on_a_stale_row_draws_a_new_nonce() {
-    let f = fx();
-    let port = f.record(BOOT);
-    f.clock.sleep(LEASE + Duration::from_secs(1));
-    let host = DetachedSupervisor::new(
-        f.proc.clone(),
-        f.clock.clone(),
-        Arc::new(FakeRng::default()),
-        Some(f.dir.path().to_path_buf()),
-        Arc::new(|| Ok(())),
-    );
-
-    let endpoint = host.ensure(&f.spec()).unwrap();
-
-    assert_ne!(endpoint.nonce.expose(), BOX_NONCE);
-    assert_eq!(endpoint.box_port, port);
 }

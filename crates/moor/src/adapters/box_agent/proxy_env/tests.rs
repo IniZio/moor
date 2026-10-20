@@ -10,14 +10,12 @@ use moor_core::{BoxPath, Secret};
 
 use super::{script_lines, stage_steps};
 
-const SENTINEL: &[u8] = b"sentinel-9c2e";
 const PORT: u16 = 4321;
 const CA: &str = "-----BEGIN CERTIFICATE-----\nQUJDREVGRw==\n-----END CERTIFICATE-----\n";
 
 fn proxy() -> ProxyAddr {
     ProxyAddr {
         box_port: PORT,
-        nonce: Secret::new(SENTINEL.to_vec()),
         ca_pem: CA.to_owned(),
         box_env: Vec::new(),
         forge: false,
@@ -98,10 +96,9 @@ fn lines_for(origin: Option<&str>) -> Vec<String> {
 }
 
 #[test]
-fn the_lines_never_contain_the_nonce_and_carry_the_exports() {
+fn the_lines_carry_the_exports() {
     let lines = lines_for(Some("git@github.com:o/n.git"));
     let text = lines.join("\n");
-    assert!(!text.contains("sentinel-9c2e"), "{text}");
     for want in [
         "unset GH_TOKEN GITHUB_TOKEN",
         "export SSL_CERT_FILE=\"$moor_bundle\"",

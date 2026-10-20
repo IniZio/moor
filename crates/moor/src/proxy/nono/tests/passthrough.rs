@@ -14,7 +14,7 @@ use crate::proxy::nono::{build_config, ca, NonoProxy, NonoSpec};
 use crate::testing::clock::FakeClock;
 
 const SECRET: &str = "s3cr3t-credential-value-7f3a";
-const NONCE: &str = "nonce_AbCdEf-0123456789";
+const TOKEN: &str = "token_AbCdEf-0123456789";
 const BOX_ID: BoxId = BoxId::new(7);
 
 /// Sends `GET <path>` with the Box placeholder; returns the status and what the upstream saw.
@@ -47,10 +47,10 @@ fn fetch(path: &str) -> (Result<u16, String>, Vec<upstream::Seen>) {
     ));
     let state = dir.path().join("state");
     let ca = ca::load_or_create(&state, BOX_ID).unwrap();
-    let nonce = Secret::new(NONCE.as_bytes().to_vec());
+    let token = Secret::new(TOKEN.as_bytes().to_vec());
     let mut cfg = build_config(&NonoSpec {
         rules: &rules,
-        nonce: &nonce,
+        token: &token,
         ca: &ca,
         ca_dir: &ca::ca_dir(&state, BOX_ID),
         upstream_ca: Some(&up.ca_path),
@@ -59,7 +59,7 @@ fn fetch(path: &str) -> (Result<u16, String>, Vec<upstream::Seen>) {
     // Stands in for the chained filter's Box CA, trusted for every upstream.
     cfg.0.upstream_extra_ca_pems = vec![up.ca_path.to_string_lossy().into_owned()];
     let proxy = NonoProxy::start(cfg, capture).unwrap();
-    let agent = upstream::client(proxy.port(), NONCE, ca.cert_pem());
+    let agent = upstream::client(proxy.port(), TOKEN, ca.cert_pem());
     let status = agent
         .get(&format!("https://localhost:{}{path}", up.port))
         .header("Authorization", "Bearer moor-proxy")
@@ -87,7 +87,7 @@ fn unmatched_request_reaches_upstream_without_any_credential() {
         unreachable!("{seen:?}")
     };
     assert_eq!(only.authorization, None, "{}", only.head);
-    for leaked in [SECRET, NONCE, "moor-proxy"] {
+    for leaked in [SECRET, TOKEN, "moor-proxy"] {
         assert!(!only.head.contains(leaked), "{leaked} in {}", only.head);
     }
 }

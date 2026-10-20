@@ -102,9 +102,9 @@ fn is_asserted_matches_list() {
     assert_eq!(n, 20);
 }
 
-/// The Proxy nonce is a secret; the payload carries exactly these keys.
+/// The payload carries exactly these keys.
 #[test]
-fn proxy_started_payload_has_no_nonce() {
+fn proxy_started_payload_has_exactly_its_keys() {
     let e = Event::ProxyStarted {
         box_port: 1,
         pid: 3,

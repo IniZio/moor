@@ -200,10 +200,10 @@ fn spawn(config: Arc<ServerConfig>, ca_path: PathBuf, ca_pem: String) -> Upstrea
     }
 }
 
-/// A client that goes through the proxy on `proxy_port` as `moor:<nonce>` and trusts only `ca_pem`.
-pub(crate) fn client(proxy_port: u16, nonce: &str, ca_pem: &str) -> Agent {
+/// A client that goes through the proxy on `proxy_port` as `moor:<token>` and trusts only `ca_pem`.
+pub(crate) fn client(proxy_port: u16, token: &str, ca_pem: &str) -> Agent {
     agent(
-        &format!("http://moor:{nonce}@127.0.0.1:{proxy_port}"),
+        &format!("http://moor:{token}@127.0.0.1:{proxy_port}"),
         ca_pem,
     )
 }

@@ -22,7 +22,7 @@ use crate::proxy::nono::capture::{MoorCapture, RuleSource};
 use crate::proxy::nono::{build_config, ca, NonoProxy, NonoSpec};
 use crate::testing::clock::FakeClock;
 
-const NONCE: &str = "nonce_AbCdEf-0123456789";
+const TOKEN: &str = "token_AbCdEf-0123456789";
 const MIB: u64 = 1 << 20;
 const PATH: &str = "/user-attachments/assets?name=a.mp4&content_type=video%2Fmp4&repository_id=1";
 
@@ -125,7 +125,7 @@ fn agent(proxy_port: u16, ca_pem: &str) -> Agent {
         .root_certs(RootCerts::Specific(Arc::new(vec![cert])))
         .unversioned_rustls_crypto_provider(Arc::new(rustls::crypto::ring::default_provider()))
         .build();
-    let proxy = Proxy::new(&format!("http://moor:{NONCE}@127.0.0.1:{proxy_port}")).unwrap();
+    let proxy = Proxy::new(&format!("http://moor:{TOKEN}@127.0.0.1:{proxy_port}")).unwrap();
     Agent::new_with_config(
         Agent::config_builder()
             .proxy(Some(proxy))
@@ -174,10 +174,10 @@ fn upload(total: u64, gate: u64) -> (u64, Option<u16>, u64) {
     ));
     let state = dir.path().join("state");
     let ca = ca::load_or_create(&state, BoxId::new(7)).unwrap();
-    let nonce = Secret::new(NONCE.as_bytes().to_vec());
+    let token = Secret::new(TOKEN.as_bytes().to_vec());
     let mut cfg = build_config(&NonoSpec {
         rules: &rules,
-        nonce: &nonce,
+        token: &token,
         ca: &ca,
         ca_dir: &ca::ca_dir(&state, BoxId::new(7)),
         upstream_ca: Some(&up.ca_path),

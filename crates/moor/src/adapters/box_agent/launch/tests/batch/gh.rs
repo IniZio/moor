@@ -21,7 +21,6 @@ fn forge_req(s: &FakeSurface, forge: bool) -> LaunchReq {
     let addr = base.proxy.as_deref().expect("a proxy");
     let addr = ProxyAddr {
         box_port: addr.box_port,
-        nonce: moor_core::Secret::new(addr.nonce.expose().to_vec()),
         ca_pem: addr.ca_pem.clone(),
         box_env: Vec::new(),
         forge,

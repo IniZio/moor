@@ -29,9 +29,8 @@ pub(crate) struct NonoSpec<'a> {
     /// Resolved tool rules; one route per (rule, host).
     pub(crate) rules: &'a [ResolvedRule],
     /// The internal session token nono checks, base64url text. The Box never
-    /// sees it: the front listener checks the Box's own nonce and swaps it
-    /// for this one.
-    pub(crate) nonce: &'a Secret,
+    /// sees it: the front listener adds it to each request it forwards.
+    pub(crate) token: &'a Secret,
     /// The Box's interception CA.
     pub(crate) ca: &'a ca::BoxCa,
     /// Directory nono writes its CA bundle into (0700, exists).
@@ -132,7 +131,7 @@ fn route_for(spec: &NonoSpec<'_>, rule: &ResolvedRule, index: usize, host: &str)
 
 /// Builds the nono config for one Box.
 ///
-/// A nonce that is not UTF-8 leaves the session token unset; `start` refuses
+/// A token that is not UTF-8 leaves the session token unset; `start` refuses
 /// such a config.
 pub(crate) fn build_config(spec: &NonoSpec<'_>) -> NonoConfig {
     let mut routes = Vec::new();
@@ -165,7 +164,7 @@ pub(crate) fn build_config(spec: &NonoSpec<'_>) -> NonoConfig {
         strict_filter: true,
         require_auth: true,
         strict_connect_auth: true,
-        session_token: std::str::from_utf8(spec.nonce.expose())
+        session_token: std::str::from_utf8(spec.token.expose())
             .ok()
             .map(|t| Zeroizing::new(t.to_owned())),
         routes,

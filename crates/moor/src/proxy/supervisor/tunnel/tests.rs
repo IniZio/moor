@@ -11,10 +11,9 @@ use moor_core::seam::driver::{
     Released, SleepOutcome, TunnelHandle,
 };
 use moor_core::seam::proc::Deadline;
-use moor_core::secret::Secret;
 use moor_core::{BoxHandle, BoxId, BoxPath, ProviderId};
 
-use super::super::tests::{unrestartable, World, FIRST_TUNNEL_PID, NONCE_TEXT};
+use super::super::tests::{unrestartable, World, FIRST_TUNNEL_PID};
 use super::super::{start, Stop, LEASE, TICK};
 use crate::store::{Lease, Reserve, Store};
 use crate::testing::clock::FakeClock;
@@ -66,7 +65,6 @@ fn five_failed_restarts_exit_one_keep_the_row_and_release_the_lease() {
     assert_eq!(w.row().lease_owner, None);
     assert_eq!(events_of(&w, "tunnel_restarted"), 0);
     assert!(w.stderr().contains("did not restart after 5 attempts"));
-    assert!(!w.stderr().contains(NONCE_TEXT));
 }
 
 #[test]
@@ -344,8 +342,7 @@ fn outlasting_step(w: &World) -> (impl Fn() + Send + Sync, Arc<Mutex<Option<Rese
             std::thread::sleep(Duration::from_millis(60));
         }
         let rival = Store::open(&path, clock.clone()).unwrap();
-        let nonce = Secret::new(b"rival-nonce".to_vec());
-        let got = rival.reserve(id, &nonce, &FakeRng::default(), LEASE);
+        let got = rival.reserve(id, &FakeRng::default(), LEASE);
         *out.lock().unwrap() = Some(got.unwrap());
     };
     (step, seen)

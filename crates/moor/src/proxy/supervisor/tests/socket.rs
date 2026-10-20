@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use moor_core::seam::clock::Clock;
 use moor_core::seam::proxy_host::ProxySpec;
-use moor_core::{BoxId, Secret};
+use moor_core::BoxId;
 
 use super::{start, working_box, Stop, World, LEASE, TICK};
 use crate::proxy::detached::{read_spec, write_spec};
@@ -207,12 +207,7 @@ fn lost_lease_stops_the_proxy_from_accepting() {
 /// Adds a second working Box to `w`, with a reserved proxy row and a saved spec.
 fn second_box(w: &World) -> BoxId {
     let id = working_box(&w.store, &w.driver, "other");
-    let nonce = Secret::new(b"other-nonce".to_vec());
-    drop(
-        w.store
-            .reserve(id, &nonce, &FakeRng::default(), LEASE)
-            .unwrap(),
-    );
+    drop(w.store.reserve(id, &FakeRng::default(), LEASE).unwrap());
     let spec = ProxySpec {
         box_id: id,
         ..read_spec(w.dir.path(), w.id).unwrap()

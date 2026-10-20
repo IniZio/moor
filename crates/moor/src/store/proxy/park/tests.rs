@@ -5,7 +5,6 @@ use std::sync::Arc;
 
 use moor_core::domain::decision::{Decision, NewBox};
 use moor_core::seam::clock::Ts;
-use moor_core::secret::Secret;
 use moor_core::{BoxId, BoxName};
 
 use super::super::Reserve;
@@ -101,12 +100,7 @@ fn remove_proxy_removes_both() {
     let t = add(&store, "a");
     let rng = FakeRng::default();
     let outcome = store
-        .reserve(
-            t,
-            &Secret::new(b"n".to_vec()),
-            &rng,
-            std::time::Duration::from_secs(30),
-        )
+        .reserve(t, &rng, std::time::Duration::from_secs(30))
         .unwrap();
     assert!(matches!(outcome, Reserve::Reserved(_)), "{outcome:?}");
     store.request_tunnel(t, TunnelWant::Parked).unwrap();
