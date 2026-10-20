@@ -1,5 +1,5 @@
-//! Startup: the daemon reaches Slack and the controller in any start order, and refuses
-//! token files that others can read.
+//! Startup: the daemon reaches Slack and the controller in any start order, reads token
+//! files under a leading `~` from home, and refuses token files that others can read.
 
 use std::os::unix::fs::PermissionsExt as _;
 use std::time::Duration;
@@ -7,7 +7,7 @@ use std::time::Duration;
 use moor_core::controller::PROTOCOL;
 
 use super::support::controller::BACKLOG_END;
-use super::support::slack_fake::APP_TOKEN;
+use super::support::slack_fake::{APP_TOKEN, BOT_TOKEN};
 use super::support::{Rig, TS, USER};
 
 #[test]
@@ -74,19 +74,44 @@ fn protocol_mismatch_is_logged_once() {
     assert_eq!(lines, 1, "{stderr}");
 }
 
-#[test]
-fn slack_token_file_must_be_owner_only() {
+/// Makes `file` readable by everyone, spawns the daemon and checks that it refuses to start,
+/// names `label` and the mode it wants, and keeps `token` off stderr.
+fn refuses_shared_token_file(file: &str, label: &str, token: &str) {
     let mut rig = Rig::new();
-    std::fs::set_permissions(
-        rig.path("app.token"),
-        std::fs::Permissions::from_mode(0o644),
-    )
-    .unwrap();
+    std::fs::set_permissions(rig.path(file), std::fs::Permissions::from_mode(0o644)).unwrap();
     rig.spawn_daemon();
     let status = rig.wait_exit(Duration::from_secs(5));
     assert!(status.is_some_and(|s| !s.success()), "{status:?}");
     let stderr = rig.stderr();
-    assert!(stderr.contains("slack app token file"), "{stderr}");
+    assert!(stderr.contains(label), "{stderr}");
     assert!(stderr.contains("0600"), "{stderr}");
-    assert!(!stderr.contains(APP_TOKEN), "{stderr}");
+    assert!(!stderr.contains(token), "{stderr}");
+}
+
+#[test]
+fn slack_token_file_must_be_owner_only() {
+    refuses_shared_token_file("app.token", "slack app token file", APP_TOKEN);
+}
+
+#[test]
+fn slack_bot_token_file_must_be_owner_only() {
+    refuses_shared_token_file("bot.token", "slack bot token file", BOT_TOKEN);
+}
+
+#[test]
+fn token_paths_starting_with_a_tilde_are_read_from_home() {
+    let mut rig = Rig::new();
+    std::fs::create_dir(rig.path("home")).unwrap();
+    for file in ["app.token", "bot.token"] {
+        std::fs::rename(rig.path(file), rig.path("home").join(file)).unwrap();
+    }
+    rig.write_config("~/app.token", "~/bot.token");
+    rig.spawn_daemon();
+    rig.slack.wait_connected();
+    assert!(rig
+        .slack
+        .requests()
+        .iter()
+        .filter(|r| r.path == "/apps.connections.open")
+        .all(|r| r.auth == format!("Bearer {APP_TOKEN}")));
 }
