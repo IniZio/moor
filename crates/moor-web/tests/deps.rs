@@ -1,4 +1,4 @@
-//! Guards the dependency rule: the web front and its socket client never link the `moor` crate.
+//! Guards the dependency rule: the fronts and their socket client never link the `moor` crate.
 
 #![allow(
     clippy::unwrap_used,
@@ -13,10 +13,10 @@ use std::process::Command;
 
 use serde_json::{json, Value};
 
-const RULE: &str = "moor-web and moor-client must never depend on the moor crate";
+const RULE: &str = "moor-web, moor-slack and moor-client must never depend on the moor crate";
 
 /// Packages that talk to the controller over its socket and so must not link `moor`.
-const SOCKET_CRATES: [&str; 2] = ["moor-web", "moor-client"];
+const SOCKET_CRATES: [&str; 3] = ["moor-web", "moor-slack", "moor-client"];
 
 /// Walks the resolved graph from the package named `root_name`, over every
 /// dependency kind. Returns the package names from root to `moor` if reachable.

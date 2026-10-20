@@ -3,6 +3,7 @@ members = [
   "crates/moor",
   "crates/moor-client",
   "crates/moor-core",
+  "crates/moor-slack",
   "crates/moor-web",
   "tools/layering",
   "tools/e2e-budget",
