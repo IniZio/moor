@@ -7,6 +7,7 @@ use serde_json::{json, Value};
 use super::{judge, NodeId, RepoRef, Verdict};
 
 mod extra;
+mod gh_pr_edit_attach;
 mod gh_repo;
 
 fn repo() -> RepoRef {
