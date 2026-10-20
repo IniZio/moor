@@ -118,13 +118,24 @@ fn is_old_database(db: &Path) -> Result<bool, StoreError> {
     Ok(version.as_deref() == Some(OLD_VERSION))
 }
 
-/// Fails when a controller other than this process holds the lock file
+/// Fails when a controller other than this process holds a controller lock
 /// beside `db`.
+///
+/// Controllers built before the state-dir lock hold only the lock of the
+/// default socket, so that file is checked too.
 fn refuse_if_controller_runs(db: &Path) -> Result<(), StoreError> {
     let Some(dir) = db.parent() else {
         return Ok(());
     };
-    let mut file = match File::open(dir.join("controller.sock.lock")) {
+    for name in [crate::env::CONTROLLER_LOCK, "controller.sock.lock"] {
+        refuse_if_held(&dir.join(name))?;
+    }
+    Ok(())
+}
+
+/// Fails when a process other than this one holds the flock on `path`.
+fn refuse_if_held(path: &Path) -> Result<(), StoreError> {
+    let mut file = match File::open(path) {
         Ok(f) => f,
         Err(e) if e.kind() == ErrorKind::NotFound => return Ok(()),
         Err(e) => return Err(e.into()),

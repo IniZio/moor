@@ -108,7 +108,7 @@ fn current_version_is_left_alone() {
 }
 
 #[test]
-fn running_controller_refuses_and_keeps_database() {
+fn controller_built_before_the_state_lock_refuses_and_keeps_database() {
     let dir = tempfile::tempdir().unwrap();
     let db = make_db(dir.path(), "1");
     let mut lock = File::options()
@@ -192,7 +192,7 @@ fn busy_reader_refuses_and_keeps_database_readable() {
 fn stale_controller_lock_does_not_block_retire() {
     let dir = tempfile::tempdir().unwrap();
     let db = make_db(dir.path(), "1");
-    std::fs::write(dir.path().join("controller.sock.lock"), "999999\nsock").unwrap();
+    std::fs::write(dir.path().join(crate::env::CONTROLLER_LOCK), "999999\nsock").unwrap();
     let bak = retire(&db).unwrap().unwrap();
     assert!(has_table(&bak, "boxes"));
 }
