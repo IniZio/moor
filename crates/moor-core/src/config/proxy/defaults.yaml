@@ -54,6 +54,7 @@ github-uploads:
   # The allow path cannot name the repo (the proxy strips query strings), so
   # a Box with no repo gets no upload rule.
   requires_repo: true
+  requires_you: true
   inject:
     header: Authorization
     form: "token {secret}"

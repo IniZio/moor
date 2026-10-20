@@ -79,6 +79,13 @@ impl Identity {
             Self::Auto => "auto",
         }
     }
+
+    /// Whether the forge credential is the person's own token. `auto` resolves
+    /// to `you` while no GitHub App can be set up.
+    #[must_use]
+    pub const fn is_you(self) -> bool {
+        matches!(self, Self::You | Self::Auto)
+    }
 }
 
 /// `box:` section.

@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use super::template::{check_slots, fill_repo, REPO_SLOTS};
 use super::{parse_rules, ProxyConfig, ToolRule, DEFAULT_HEADER};
-use crate::config::{ConfigError, CredentialSource};
+use crate::config::{ConfigError, CredentialSource, Identity};
 
 /// The embedded default rules.
 const DEFAULTS: &str = include_str!("defaults.yaml");
@@ -112,7 +112,8 @@ pub(super) fn validate_allow(allow: &[String], at: &str) -> Result<(), ConfigErr
 /// Defaults overlaid with the user's rules, filled for `repo` (owner, name).
 ///
 /// A user rule named like a default extends it: see `ToolRule::over`. Rules that use
-/// `{repo}` are left out when there is no repo. Rules come out sorted by name.
+/// `{repo}` are left out when there is no repo, and `requires_you` rules unless
+/// `identity` is the person's own. Rules come out sorted by name.
 ///
 /// # Errors
 /// Returns [`ConfigError`] when the repo owner or name has characters outside
@@ -123,6 +124,7 @@ pub fn resolve_rules(
     user: &ProxyConfig,
     credentials: &BTreeMap<String, CredentialSource>,
     repo: Option<(&str, &str)>,
+    identity: Identity,
 ) -> Result<Vec<ResolvedRule>, ConfigError> {
     if let Some((owner, name)) = repo {
         check_repo_part("owner", owner)?;
@@ -132,7 +134,7 @@ pub fn resolve_rules(
     let defaults = default_rules();
     let mut out = Vec::new();
     for (name, rule) in merged {
-        if rule.needs_repo() && repo.is_none() {
+        if (rule.needs_repo() && repo.is_none()) || (rule.requires_you && !identity.is_you()) {
             continue;
         }
         if defaults.contains_key(&name) {

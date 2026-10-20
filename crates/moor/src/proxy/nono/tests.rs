@@ -302,9 +302,13 @@ fn github_uploads_route_admits_only_the_asset_post() {
         ..Default::default()
     };
     let creds = std::collections::BTreeMap::from([("CLAUDE_CODE_OAUTH_TOKEN".to_owned(), src)]);
-    let rules =
-        moor_core::config::proxy::resolve_rules(&ProxyConfig::default(), &creds, Some(("o", "w")))
-            .unwrap();
+    let rules = moor_core::config::proxy::resolve_rules(
+        &ProxyConfig::default(),
+        &creds,
+        Some(("o", "w")),
+        moor_core::config::Identity::You,
+    )
+    .unwrap();
     let cfg = cfg_for(&rules, None);
     let route = cfg
         .inner()
