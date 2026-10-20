@@ -2,22 +2,24 @@
 //!
 //! moor's short ssh calls to one Box (file reads and writes, step batches, file streams) ride
 //! on one OpenSSH control master, so a Box probed every few seconds pays for one connect, not
-//! one per probe. The master's socket and the target words it was opened with live under
-//! moor's state dir, so every moor process and every freshly wired driver reuses them without
-//! a new lookup. The agent's pane keeps its own connection, so ending a master never ends the
-//! agent.
+//! one per probe. The target words a master was opened with live under moor's state dir and
+//! its socket in a short private directory, so every moor process and every freshly wired
+//! driver reuses them without a new lookup. The agent's pane keeps its own connection, so
+//! ending a master never ends the agent.
 
 use std::fmt::Write as _;
 use std::fs::{self, DirBuilder, OpenOptions};
-use std::io::Write as _;
-use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
-use std::path::PathBuf;
+use std::io::{ErrorKind, Write as _};
+use std::os::unix::ffi::OsStrExt;
+use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt};
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use moor_core::name::BoxHandle;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::DriverError;
 use moor_core::seam::proc::{Deadline, ProcError, ProcOutput, ProcSpec, Tool};
+use moor_core::Warning;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -32,11 +34,21 @@ const PERSIST_SECS: u32 = 120;
 const TARGET_TTL_MS: i64 = 10 * 60 * 1000;
 /// Time allowed for a request to a master; it goes over the local socket only.
 const CONTROL_DEADLINE: Duration = Duration::from_secs(5);
-/// Longest socket path ssh can bind on every host: macOS allows 103 bytes, and ssh first
-/// binds the path plus a 17-byte random suffix. A longer path makes every ssh call fail.
-const MAX_SOCKET_PATH: usize = 86;
-/// Characters ssh reads as tokens, quotes or comments in an option value.
-const UNSAFE_IN_PATH: &str = "%\"'\\#";
+
+/// Where moor's control sockets live: `/tmp/moor-<uid>`. ssh first binds the socket path plus
+/// a 17-byte suffix, and macOS allows 103 bytes, so a socket under a deep state dir would fail
+/// every call; this path stays short wherever the state dir is.
+pub(crate) fn socket_dir() -> PathBuf {
+    PathBuf::from(format!("/tmp/moor-{}", rustix::process::getuid().as_raw()))
+}
+
+/// Where the shared connections of all Boxes live.
+pub(super) struct Dirs {
+    /// The state dir; it scopes socket names, so two state dirs never share a master.
+    state: PathBuf,
+    /// The private directory holding the control sockets.
+    sockets: PathBuf,
+}
 
 /// Where the shared connection of one Box lives.
 pub(super) struct Link {
@@ -56,30 +68,76 @@ struct Saved {
 }
 
 impl Crabbox {
-    /// Keeps each Box's shared ssh connection under `state_dir`; without one, every call to a
-    /// Box connects on its own.
-    pub(crate) fn with_state_dir(mut self, state_dir: Option<PathBuf>) -> Self {
-        self.link_dir = state_dir.map(|d| d.join("ssh"));
+    /// Keeps each Box's shared ssh connection: its saved target under `state_dir`, its socket
+    /// in `sockets`. Without a state dir, every call to a Box connects on its own.
+    pub(crate) fn with_state_dir(mut self, state_dir: Option<PathBuf>, sockets: PathBuf) -> Self {
+        self.links = state_dir.map(|state| Dirs { state, sockets });
         self
     }
 
-    /// The shared connection of the Box behind `handle`; none without a state dir, or when ssh
-    /// cannot use the socket path.
+    /// Why calls to a Box cannot share a connection, as a warning; none when they can or
+    /// when moor keeps no state.
+    pub(crate) fn link_warning(&self) -> Option<Warning> {
+        let reason = private_dir(&self.links.as_ref()?.sockets).err()?;
+        Some(Warning {
+            code: "ssh_not_shared".to_owned(),
+            message: format!("every ssh call to a Box opens its own connection: {reason}"),
+        })
+    }
+
+    /// The shared connection of the Box behind `handle`; none without a state dir.
     pub(super) fn link(&self, handle: &BoxHandle) -> Option<Link> {
-        let dir = self.link_dir.as_ref()?;
-        let digest = Sha256::digest(handle.as_str().as_bytes());
-        let name = digest.iter().take(8).fold(String::new(), |mut s, b| {
+        let dirs = self.links.as_ref()?;
+        let name = short_hash(&[handle.as_str().as_bytes()]);
+        let scoped = short_hash(&[
+            dirs.state.as_os_str().as_bytes(),
+            handle.as_str().as_bytes(),
+        ]);
+        Some(Link {
+            socket: dirs.sockets.join(scoped),
+            target: dirs.state.join("ssh").join(format!("{name}.target")),
+        })
+    }
+}
+
+/// The first 8 bytes of the SHA-256 of `parts`, each ended by a NUL byte, in hex.
+fn short_hash(parts: &[&[u8]]) -> String {
+    let mut hasher = Sha256::new();
+    for part in parts {
+        hasher.update(part);
+        hasher.update([0]);
+    }
+    hasher
+        .finalize()
+        .iter()
+        .take(8)
+        .fold(String::new(), |mut s, b| {
             let _ = write!(s, "{b:02x}");
             s
-        });
-        let socket = dir.join(&name);
-        let text = socket.to_str()?;
-        let usable = text.len() <= MAX_SOCKET_PATH
-            && !text.contains(|c: char| c.is_whitespace() || UNSAFE_IN_PATH.contains(c));
-        usable.then(|| Link {
-            target: dir.join(format!("{name}.target")),
-            socket,
         })
+}
+
+/// Creates `dir` for control sockets, or checks the one there: it must be a directory of this
+/// user that nobody else can enter, since any process that reaches a socket can use its master.
+fn private_dir(dir: &Path) -> Result<(), String> {
+    match DirBuilder::new().mode(0o700).create(dir) {
+        Err(e) if e.kind() != ErrorKind::AlreadyExists => {
+            return Err(format!("cannot create {}: {e}", dir.display()));
+        }
+        _ => {}
+    }
+    let meta =
+        fs::symlink_metadata(dir).map_err(|e| format!("cannot read {}: {e}", dir.display()))?;
+    let own = meta.is_dir()
+        && meta.uid() == rustix::process::getuid().as_raw()
+        && meta.mode() & 0o777 == 0o700;
+    if own {
+        Ok(())
+    } else {
+        Err(format!(
+            "{} is not a directory that only this user can enter",
+            dir.display()
+        ))
     }
 }
 
@@ -102,8 +160,11 @@ impl Link {
         let tmp = self
             .target
             .with_extension(format!("{}.tmp", std::process::id()));
-        let written = self
-            .make_dir()
+        let dir = self.target.parent().unwrap_or(&self.target);
+        let written = DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(dir)
             .and_then(|()| {
                 OpenOptions::new()
                     .write(true)
@@ -119,10 +180,9 @@ impl Link {
         }
     }
 
-    /// Creates the private directory ssh binds the socket in; ssh does not create it.
-    fn make_dir(&self) -> std::io::Result<()> {
-        let dir = self.socket.parent().unwrap_or(&self.socket);
-        DirBuilder::new().recursive(true).mode(0o700).create(dir)
+    /// Makes sure of the private directory ssh binds the socket in; ssh does not create it.
+    fn make_dir(&self) -> Result<(), String> {
+        private_dir(self.socket.parent().unwrap_or(&self.socket))
     }
 
     /// Options that put a call on this connection, opening it when it is down. They go before

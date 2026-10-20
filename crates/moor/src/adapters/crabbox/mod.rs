@@ -34,6 +34,7 @@ use moor_core::seam::proc::{Deadline, Proc, ProcOutput, ProcSpec, Tool};
 use moor_core::seam::{clock::Clock, rng::Rng};
 
 use errors::{map_error, Op};
+pub(crate) use link::socket_dir;
 
 /// Time allowed for a warmup.
 const ACQUIRE_DEADLINE: Duration = Duration::from_mins(15);
@@ -65,7 +66,7 @@ pub(crate) struct Crabbox {
     /// Resolved ssh words per (lease handle, host cwd), kept for this driver's lifetime.
     targets: Mutex<HashMap<(String, PathBuf), Vec<String>>>,
     /// Where each Box's shared ssh connection lives; none when moor keeps no state.
-    link_dir: Option<PathBuf>,
+    links: Option<link::Dirs>,
 }
 
 impl Crabbox {
@@ -78,7 +79,7 @@ impl Crabbox {
             version_ok: OnceLock::new(),
             lookup_deadlines: BTreeMap::new(),
             targets: Mutex::new(HashMap::new()),
-            link_dir: None,
+            links: None,
         }
     }
 

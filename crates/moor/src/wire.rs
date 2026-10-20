@@ -15,13 +15,13 @@ use moor_core::seam::driver::Driver;
 use moor_core::seam::proc::Proc;
 use moor_core::seam::rng::Rng;
 use moor_core::seam::surface::Surface;
-use moor_core::ErrorKind;
+use moor_core::{ErrorKind, Warning};
 
 use crate::adapters::box_agent::claude::Claude;
 use crate::adapters::box_agent::gh_release::{GhRelease, UreqFetch};
 use crate::adapters::box_agent::BoxAgent;
 use crate::adapters::clock::SystemClock;
-use crate::adapters::crabbox::Crabbox;
+use crate::adapters::crabbox::{socket_dir, Crabbox};
 use crate::adapters::creds::Creds;
 use crate::adapters::git::Git;
 use crate::adapters::github::GitHub;
@@ -71,7 +71,12 @@ fn lookup_deadlines(drivers: &BTreeMap<String, DriverConfig>) -> BTreeMap<String
 
 /// Wire real adapters from the environment into a context.
 pub(crate) fn build(env: &Env) -> Result<Cx, CommandError> {
-    Ok(Cx::new(parts(env)?).with_repos(env.repos().clone()))
+    let (parts, warning) = parts(env)?;
+    let cx = Cx::new(parts).with_repos(env.repos().clone());
+    if let Some(w) = warning {
+        cx.warn(w);
+    }
+    Ok(cx)
 }
 
 /// Settles the Proxy supervisors recorded in the state store; one line per failure.
@@ -98,8 +103,9 @@ pub(crate) fn reconcile_proxies(env: &Env) -> Vec<String> {
     adopt::reconcile(&host, proc.as_ref(), clock, &state_dir)
 }
 
-/// Real adapters from the environment, not yet assembled into a context.
-fn parts(env: &Env) -> Result<CxParts, CommandError> {
+/// Real adapters from the environment, not yet assembled into a context, and the warning
+/// when calls to a Box cannot share an ssh connection.
+fn parts(env: &Env) -> Result<(CxParts, Option<Warning>), CommandError> {
     let clock = SystemClock::from_env(env).map_err(|e| CommandError::new(ErrorKind::Usage, e))?;
     let config = load_user(env)?;
     let cwd = std::env::current_dir()
@@ -118,15 +124,15 @@ fn parts(env: &Env) -> Result<CxParts, CommandError> {
     ));
     let rng: Arc<dyn Rng> = Arc::new(SystemRng);
     let state_dir = env.state_dir();
-    let driver: Arc<dyn Driver> = Arc::new(
-        Crabbox::new(
-            Arc::clone(&proc),
-            Arc::clone(&clock) as Arc<dyn Clock>,
-            Arc::clone(&rng),
-        )
-        .with_lookup_deadlines(lookup_deadlines(&config.drivers))
-        .with_state_dir(state_dir.clone()),
-    );
+    let crabbox = Crabbox::new(
+        Arc::clone(&proc),
+        Arc::clone(&clock) as Arc<dyn Clock>,
+        Arc::clone(&rng),
+    )
+    .with_lookup_deadlines(lookup_deadlines(&config.drivers))
+    .with_state_dir(state_dir.clone(), socket_dir());
+    let link_warning = crabbox.link_warning();
+    let driver: Arc<dyn Driver> = Arc::new(crabbox);
     let engine = BoxAgent::new(
         Arc::clone(&driver),
         Arc::clone(&surface),
@@ -143,7 +149,7 @@ fn parts(env: &Env) -> Result<CxParts, CommandError> {
         Arc::clone(&rng),
         state_dir.clone(),
     ));
-    Ok(CxParts {
+    let parts = CxParts {
         state_dir,
         clock,
         rng,
@@ -158,7 +164,8 @@ fn parts(env: &Env) -> Result<CxParts, CommandError> {
         creds: Creds::new(env.clone(), proc),
         cwd,
         prompt_window: prompt_window(env),
-    })
+    };
+    Ok((parts, link_warning))
 }
 
 /// Run the credential proxy for `box_id` until a stop signal; returns the exit code.
@@ -181,7 +188,7 @@ pub fn serve_proxy(env: &Env, box_id: BoxId, stderr: impl Write + Send + 'static
 
 /// Builds the proxy's dependencies and serves; `Err` is a setup failure.
 fn run_proxy(env: &Env, box_id: BoxId, sink: &Sink) -> Result<u8, String> {
-    let parts = parts(env).map_err(|e| e.error.to_string())?;
+    let (parts, _) = parts(env).map_err(|e| e.error.to_string())?;
     let forge = Arc::clone(&parts.forge);
     let clock = Arc::clone(&parts.clock);
     let proc = Arc::clone(&parts.proc);
