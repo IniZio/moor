@@ -35,7 +35,9 @@ impl AgentProfile for Claude {
             .and_then(Value::as_array)
             .and_then(|q| q.first())
             .filter(|_| blocked);
-        let question = asked.and_then(|q| q.get("question")).and_then(Value::as_str);
+        let question = asked
+            .and_then(|q| q.get("question"))
+            .and_then(Value::as_str);
         let message = blocked
             .then(|| question.or_else(|| text("message")))
             .flatten()

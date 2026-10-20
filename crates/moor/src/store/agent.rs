@@ -193,7 +193,10 @@ impl Store {
             Ok(HookCache {
                 record: record_from_json(&value)?,
                 at: Ts::from_millis(at),
-                reported: value.get("reported").and_then(Value::as_bool).unwrap_or(false),
+                reported: value
+                    .get("reported")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
             })
         })
         .transpose()
@@ -252,7 +255,12 @@ fn record_from_json(v: &Value) -> Result<HookRecord, StoreError> {
             .map(str::to_owned),
         options: v["options"]
             .as_array()
-            .map(|o| o.iter().filter_map(Value::as_str).map(str::to_owned).collect())
+            .map(|o| {
+                o.iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_owned)
+                    .collect()
+            })
             .unwrap_or_default(),
         at: Ts::from_millis(v["at"].as_i64().ok_or_else(|| bad("missing at"))?),
     })
