@@ -112,3 +112,26 @@ fn the_agent_script_sends_direct_hosts_around_the_proxy() {
         "{script}"
     );
 }
+
+#[test]
+fn a_ca_that_cannot_be_written_stops_the_launch_before_the_agent_with_the_ca_message() {
+    let b = Scratch::new();
+    b.stub("sudo", "exit 1");
+    std::fs::write(b.path("home/.moor-proxy"), "a file, not a directory").unwrap();
+    let script = format!(
+        "exec 2>\"$MARKER.err\"\n{}",
+        b.script_with("true", &b.proxy_lines())
+    );
+    assert!(!b.spawn(&script).wait().unwrap().success());
+    assert!(!b.agent_started());
+    assert!(b.cred_gone());
+    let err = std::fs::read_to_string(b.path("started.err")).unwrap();
+    let ca = b.path("home/.moor-proxy/ca.pem");
+    assert!(
+        err.contains(&format!(
+            "moor: the Proxy CA could not be written to {}",
+            ca.display()
+        )),
+        "{err}"
+    );
+}

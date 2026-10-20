@@ -15,6 +15,9 @@ const PROXY_DIR: &str = "$HOME/.moor-proxy";
 const CA_FILE: &str = "ca.pem";
 /// The CA bundle built in [`PROXY_DIR`] when the system bundle cannot be edited.
 const BUNDLE_FILE: &str = "ca-bundle.pem";
+/// The start of the line, after `moor: ` and before the path, that the prelude prints to stderr
+/// when it stops the exec because the CA or the bundle could not be written.
+pub const CA_WRITE_FAILED: &str = "the Proxy CA could not be written to";
 /// System CA bundles, first existing one wins.
 const SYSTEM_BUNDLES: &str =
     "/etc/ssl/certs/ca-certificates.crt /etc/pki/tls/certs/ca-bundle.crt /etc/ssl/cert.pem";
@@ -232,39 +235,52 @@ fn is_identifier(name: &str) -> bool {
         && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
-/// Shell that runs `write` into the temp file `file.$$` and moves it, mode 0644, over `file` when
-/// the two differ; the temp file never outlives the line, and the line fails when `file` could not
-/// be written.
+/// Shell that leaves the output of `write` in `file`, mode 0644, and fails when it cannot.
 ///
-/// The rename is atomic, so an exec running at the same time reads either the old or the new file.
+/// A `file` that is a symlink or not a regular file is refused. A `file` that already holds the
+/// output is left alone, so it needs no free disk. Otherwise the output goes to the temp file
+/// `file.$$`, which never outlives the line, and is renamed over `file`. The rename is atomic, so
+/// an exec running at the same time reads either the old or the new file.
 fn write_if_changed(write: &str, file: &str) -> String {
-    let tmp = format!("\"{file}.$$\"");
+    let (file, tmp) = (format!("\"{file}\""), format!("\"{file}.$$\""));
     format!(
-        "{{ if {write} >{tmp} && chmod 644 {tmp} && {{ cmp -s {tmp} \"{file}\" || mv -f {tmp} \"{file}\"; }}; then rm -f {tmp}; else rm -f {tmp}; false; fi; }}"
+        "{{ if [ -L {file} ] || {{ [ -e {file} ] && [ ! -f {file} ]; }}; then false; elif {write} | cmp -s - {file}; then :; elif {write} >{tmp} && chmod 644 {tmp} && mv -f {tmp} {file}; then :; else rm -f {tmp}; false; fi; }}"
     )
 }
 
-/// Lines that write the CA, trust it and export the Proxy variables. When the CA cannot be
-/// written, the exec stops before the command with a message naming the CA path.
+/// `line`, or else the message naming `file` on stderr and the end of the exec.
+fn or_stop(line: &str, file: &str) -> String {
+    format!("{line} || {{ echo \"moor: {CA_WRITE_FAILED} {file}\" >&2; exit 1; }}")
+}
+
+/// Lines that write the CA, trust it and export the Proxy variables. When the CA or the bundle
+/// cannot be written, the exec stops before the command with a message naming the file.
 fn proxy_lines(p: &ProxyCtx<'_>) -> Vec<String> {
     let ca_file = format!("{PROXY_DIR}/{CA_FILE}");
     let ca = format!("\"{ca_file}\"");
-    let built = format!("\"{PROXY_DIR}/{BUNDLE_FILE}\"");
+    let built_file = format!("{PROXY_DIR}/{BUNDLE_FILE}");
     let mut lines = vec![
         "unset GH_TOKEN GITHUB_TOKEN".to_owned(),
-        format!(
-            "mkdir -p \"{PROXY_DIR}\" && {} || {{ echo \"moor: the Proxy CA could not be written to {ca_file}\" >&2; exit 1; }}",
-            write_if_changed(&format!("printf '%s' {}", quote(p.ca_pem)), &ca_file)
+        or_stop(
+            &format!(
+                "moor_ca={}; mkdir -p \"{PROXY_DIR}\" && {}",
+                quote(p.ca_pem),
+                write_if_changed("printf '%s' \"$moor_ca\"", &ca_file)
+            ),
+            &ca_file,
         ),
         "moor_sys=; for moor_f in ".to_owned()
             + SYSTEM_BUNDLES
             + "; do [ -f \"$moor_f\" ] && { moor_sys=$moor_f; break; }; done",
         format!("moor_mark=$(sed -n 2p {ca})"),
         format!(
-            "if [ -n \"$moor_sys\" ] && sudo -n true 2>/dev/null && {{ grep -qF \"$moor_mark\" \"$moor_sys\" || sudo -n tee -a \"$moor_sys\" <{ca} >/dev/null; }}; then moor_bundle=$moor_sys; else moor_bundle={built}; {}; fi",
-            write_if_changed(
-                &format!("{{ if [ -n \"$moor_sys\" ]; then cat \"$moor_sys\"; fi; cat {ca}; }}"),
-                "$moor_bundle"
+            "if [ -n \"$moor_sys\" ] && sudo -n true 2>/dev/null && {{ grep -qF \"$moor_mark\" \"$moor_sys\" || sudo -n tee -a \"$moor_sys\" <{ca} >/dev/null; }}; then moor_bundle=$moor_sys; else moor_bundle=\"{built_file}\"; {}; fi",
+            or_stop(
+                &write_if_changed(
+                    &format!("{{ if [ -n \"$moor_sys\" ]; then cat \"$moor_sys\"; fi; cat {ca}; }}"),
+                    "$moor_bundle"
+                ),
+                &built_file,
             )
         ),
     ];

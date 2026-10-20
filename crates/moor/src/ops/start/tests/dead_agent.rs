@@ -71,6 +71,20 @@ fn an_agent_that_exits_127_at_launch_is_a_launch_failure() {
 }
 
 #[test]
+fn a_launch_stopped_by_an_unwritable_proxy_ca_fails_with_the_ca_message() {
+    let w = launching();
+    let ca = "the Proxy CA could not be written to /home/u/.moor-proxy/ca.pem";
+    w.surface.push_pane_obs(
+        "p-1",
+        Ok(exited(1, &format!("moor: {ca}\nmoor: agent exited 1"))),
+    );
+    let v = run(&w.cx, &goal_req("demo")).unwrap();
+    assert!(!v.agent.launched);
+    let f = v.agent.reason.unwrap();
+    assert_eq!((f.step.as_str(), f.message.as_str()), ("launch", ca));
+}
+
+#[test]
 fn any_other_exit_code_is_named_in_the_failure() {
     let w = launching();
     w.surface.push_pane_obs("p-1", Ok(exited(2, "")));

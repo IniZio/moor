@@ -161,8 +161,7 @@ pub(crate) fn run_setup(
     }
 }
 
-/// Builds the setup environment and runs the script once; the staged credentials are removed when
-/// the exec does not run to an exit.
+/// Builds the setup environment and runs the script once.
 fn exec_script(
     cx: &Cx,
     site: &Site<'_>,
