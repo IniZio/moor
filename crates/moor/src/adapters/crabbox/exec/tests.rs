@@ -461,3 +461,24 @@ fn gate_brackets_stderr_and_keeps_stdout_and_exit_code() {
     assert_eq!(String::from_utf8(out.stdout).unwrap(), "out\n");
     assert_eq!(out.status.code(), Some(3));
 }
+
+const SSH_DROP: &str = "Connection to 10.0.0.7 closed by remote host.\nremote command exited 255\n";
+
+#[test]
+fn ssh_transport_loss_is_not_the_command_exit() {
+    let (out, _) = run_with(&spec(SyncMode::None), fail(255, SSH_DROP));
+    let err = out.unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "moor lost the ssh connection to the Box: Connection to 10.0.0.7 closed by remote host."
+    );
+}
+
+#[test]
+fn a_command_that_exits_255_without_ssh_text_keeps_its_exit() {
+    let (out, _) = run_with(
+        &spec(SyncMode::None),
+        fail(255, "no such table\nremote command exited 255\n"),
+    );
+    assert_eq!(out, Ok(ExecOutcome::Exited { code: 255 }));
+}
