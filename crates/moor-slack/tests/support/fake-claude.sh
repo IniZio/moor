@@ -23,6 +23,9 @@ case "$token" in
   "")
     echo '{"type":"result","subtype":"success","is_error":true,"result":"Not logged in · Please run /login"}'
     ;;
+  *-crash-*)
+    echo "crashed reading $token" >&2
+    ;;
   *-echo-*)
     echo "{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":true,\"result\":\"Bad token $token\"}"
     ;;
