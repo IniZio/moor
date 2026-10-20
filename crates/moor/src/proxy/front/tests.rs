@@ -14,40 +14,13 @@ use tempfile::TempDir;
 
 use super::{Front, FrontSocket};
 
-const NONCE: &str = "box-nonce-123";
 const INTERNAL: &str = "internal-token-456";
 const FORWARDED_HEAD: &str = "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\nProxy-Authorization: Bearer internal-token-456\r\n\r\n";
 const WAIT: Duration = Duration::from_secs(5);
 
-/// Standard base64 of `data`, with padding.
-fn base64(data: &[u8]) -> String {
-    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::new();
-    for chunk in data.chunks(3) {
-        let n = chunk
-            .iter()
-            .enumerate()
-            .fold(0u32, |acc, (i, b)| acc | (u32::from(*b) << (16 - 8 * i)));
-        for i in 0..4 {
-            if i <= chunk.len() {
-                let idx = usize::try_from(n >> (18 - 6 * i) & 63).unwrap();
-                out.push(char::from(ALPHABET.get(idx).copied().unwrap()));
-            } else {
-                out.push('=');
-            }
-        }
-    }
-    out
-}
-
-/// The `moor:<nonce>` Basic credential, base64-encoded.
-fn basic() -> String {
-    base64(format!("moor:{NONCE}").as_bytes())
-}
-
+/// A CONNECT as the Box sends it: no proxy credential.
 fn connect_head() -> String {
-    let basic = basic();
-    format!("CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\nProxy-Authorization: Basic {basic}\r\n\r\n")
+    "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\n\r\n".to_owned()
 }
 
 /// Fake nono: accepts connections, sends each received byte batch on a channel.
@@ -138,7 +111,6 @@ fn start(target: SocketAddr) -> (TempDir, Front) {
     let front = Front::start(
         target,
         socket_in(&dir, uid()),
-        Secret::new(NONCE.as_bytes().to_vec()),
         Secret::new(INTERNAL.as_bytes().to_vec()),
     )
     .unwrap();
@@ -221,31 +193,17 @@ fn refused_connect_closes_and_drops_later_client_bytes() {
 
 #[test]
 fn origin_form_reverse_request_is_refused() {
-    let basic = basic();
     assert_refused(
-        format!("POST /github-api__0/graphql HTTP/1.1\r\nHost: 127.0.0.1\r\nProxy-Authorization: Basic {basic}\r\nAuthorization: Bearer x\r\nContent-Length: 0\r\n\r\n").as_bytes(),
+        b"POST /github-api__0/graphql HTTP/1.1\r\nHost: 127.0.0.1\r\nAuthorization: Bearer x\r\nContent-Length: 0\r\n\r\n",
     );
 }
 
 #[test]
 fn origin_form_and_https_absolute_requests_are_refused() {
-    let basic = basic();
-    let auth = format!("Proxy-Authorization: Basic {basic}\r\n");
-    assert_refused(format!("GET /x HTTP/1.1\r\nHost: x\r\n{auth}\r\n").as_bytes());
-    assert_refused(
-        format!("GET https://example.com/ HTTP/1.1\r\nHost: x\r\n{auth}\r\n").as_bytes(),
-    );
-    assert_refused(
-        format!("GET http://u:p@example.com/ HTTP/1.1\r\nHost: x\r\n{auth}\r\n").as_bytes(),
-    );
-    assert_refused(
-        format!("GET http://example.com/#f HTTP/1.1\r\nHost: x\r\n{auth}\r\n").as_bytes(),
-    );
-}
-
-#[test]
-fn absolute_form_without_credential_is_rejected() {
-    assert_unauthorized("GET http://example.com/ HTTP/1.1\r\nHost: example.com\r\n\r\n");
+    assert_refused(b"GET /x HTTP/1.1\r\nHost: x\r\n\r\n");
+    assert_refused(b"GET https://example.com/ HTTP/1.1\r\nHost: x\r\n\r\n");
+    assert_refused(b"GET http://u:p@example.com/ HTTP/1.1\r\nHost: x\r\n\r\n");
+    assert_refused(b"GET http://example.com/#f HTTP/1.1\r\nHost: x\r\n\r\n");
 }
 
 #[test]
@@ -253,10 +211,7 @@ fn plain_get_becomes_connect_then_origin_form_request() {
     let nono = fake(Answer::Echo);
     let (_dir, front) = start(nono.addr);
     let mut c = dial(&front);
-    let basic = basic();
-    let req = format!(
-        "GET http://example.com/x?a=1 HTTP/1.1\r\nHost: example.com\r\nProxy-Authorization: Basic {basic}\r\nProxy-Connection: keep-alive\r\nConnection: keep-alive, X-Hop\r\nX-Hop: 1\r\nAccept: */*\r\n\r\n"
-    );
+    let req = "GET http://example.com/x?a=1 HTTP/1.1\r\nHost: example.com\r\nProxy-Authorization: Basic bW9vcjp4\r\nProxy-Connection: keep-alive\r\nConnection: keep-alive, X-Hop\r\nX-Hop: 1\r\nAccept: */*\r\n\r\n";
     c.write_all(req.as_bytes()).unwrap();
     let connect = String::from_utf8(nono.seen.recv_timeout(WAIT).unwrap()).unwrap();
     assert_eq!(
@@ -277,10 +232,7 @@ fn plain_post_body_and_default_host_arrive_intact() {
     let nono = fake(Answer::Echo);
     let (_dir, front) = start(nono.addr);
     let mut c = dial(&front);
-    let basic = basic();
-    let req = format!(
-        "POST http://example.com:8080 HTTP/1.1\r\nProxy-Authorization: Basic {basic}\r\nContent-Length: 4\r\n\r\nbody"
-    );
+    let req = "POST http://example.com:8080 HTTP/1.1\r\nContent-Length: 4\r\n\r\nbody";
     c.write_all(req.as_bytes()).unwrap();
     let connect = String::from_utf8(nono.seen.recv_timeout(WAIT).unwrap()).unwrap();
     assert!(
@@ -301,10 +253,7 @@ fn connection_header_cannot_drop_host_or_content_length() {
     let nono = fake(Answer::Echo);
     let (_dir, front) = start(nono.addr);
     let mut c = dial(&front);
-    let basic = basic();
-    let req = format!(
-        "POST http://example.com/ HTTP/1.1\r\nHost: example.com\r\nProxy-Authorization: Basic {basic}\r\nConnection: host, content-length\r\nContent-Length: 4\r\n\r\nbody"
-    );
+    let req = "POST http://example.com/ HTTP/1.1\r\nHost: example.com\r\nConnection: host, content-length\r\nContent-Length: 4\r\n\r\nbody";
     c.write_all(req.as_bytes()).unwrap();
     let _connect = nono.seen.recv_timeout(WAIT).unwrap();
     let head = String::from_utf8(nono.seen.recv_timeout(WAIT).unwrap()).unwrap();
@@ -320,10 +269,7 @@ fn refused_plain_request_is_relayed_and_nothing_enters_the_tunnel() {
     let nono = fake(Answer::Deny);
     let (_dir, front) = start(nono.addr);
     let mut c = dial(&front);
-    let basic = basic();
-    let req = format!(
-        "POST http://example.com/ HTTP/1.1\r\nProxy-Authorization: Basic {basic}\r\nContent-Length: 4\r\n\r\nbody"
-    );
+    let req = "POST http://example.com/ HTTP/1.1\r\nContent-Length: 4\r\n\r\nbody";
     c.write_all(req.as_bytes()).unwrap();
     let reply = read_all(&mut c);
     assert!(reply.starts_with("HTTP/1.1 407 "), "{reply}");
@@ -381,124 +327,54 @@ fn stop_returns_promptly_and_removes_the_socket() {
     assert!(UnixStream::connect(&path).is_err());
 }
 
-/// Sends `request`, expects the 407 reply and no traffic to nono.
-fn assert_unauthorized(request: &str) {
-    let nono = fake(Answer::Echo);
-    let (_dir, front) = start(nono.addr);
-    let mut c = dial(&front);
-    let _ = c.write_all(request.as_bytes());
-    let reply = read_all(&mut c);
-    assert!(
-        reply.starts_with("HTTP/1.1 407 Proxy Authentication Required\r\n"),
-        "{reply}"
-    );
-    assert!(reply.contains("Proxy-Authenticate: Basic realm=\"moor\"\r\n"));
-    assert!(reply.contains("Content-Type: application/json\r\n"));
-    assert!(reply.contains("Connection: close\r\n"));
-    assert!(reply.ends_with(r#"{"message":"moor: proxy authentication required"}"#));
-    thread::sleep(Duration::from_millis(200));
-    assert!(nono.seen.try_recv().is_err(), "nono received bytes");
-    front.stop();
-}
-
 fn connect_with(headers: &str) -> String {
     format!("CONNECT example.com:443 HTTP/1.1\r\n{headers}\r\n")
 }
 
 #[test]
-fn basic_credential_is_replaced_and_other_headers_keep_order() {
+fn every_proxy_credential_from_the_box_is_replaced_by_the_internal_token() {
     let nono = fake(Answer::Echo);
     let (_dir, front) = start(nono.addr);
-    let mut c = dial(&front);
-    let basic = basic();
-    let req = connect_with(&format!(
-        "Host: example.com:443\r\nproxy-authorization: Basic {basic}\r\nUser-Agent: t\r\nX-Last:  v \r\n"
-    ));
-    c.write_all(req.as_bytes()).unwrap();
-    let seen = String::from_utf8(nono.seen.recv_timeout(WAIT).unwrap()).unwrap();
-    assert_eq!(
-        seen,
-        "CONNECT example.com:443 HTTP/1.1\r\nHost: example.com:443\r\nUser-Agent: t\r\nX-Last:  v \r\nProxy-Authorization: Bearer internal-token-456\r\n\r\n"
-    );
-    assert!(!seen.contains(NONCE) && !seen.contains(&basic));
+    for sent in [
+        "",
+        "Proxy-Authorization: Basic bW9vcjp4\r\n",
+        "proxy-authorization: Bearer made-up\r\n",
+        "Proxy-Authorization: Bearer internal-token-456\r\n",
+        "Proxy-Authorization: Basic *\r\nProxy-Authorization: Bearer two\r\n",
+    ] {
+        let mut c = dial(&front);
+        let req = connect_with(&format!(
+            "Host: h\r\n{sent}User-Agent: t\r\nX-Last:  v \r\n"
+        ));
+        c.write_all(req.as_bytes()).unwrap();
+        let seen = String::from_utf8(nono.seen.recv_timeout(WAIT).unwrap()).unwrap();
+        assert_eq!(
+            seen,
+            "CONNECT example.com:443 HTTP/1.1\r\nHost: h\r\nUser-Agent: t\r\nX-Last:  v \r\nProxy-Authorization: Bearer internal-token-456\r\n\r\n",
+            "sent {sent:?}"
+        );
+    }
     front.stop();
 }
 
 #[test]
-fn bearer_credential_is_replaced() {
+fn plain_request_without_a_credential_reaches_nono_with_the_internal_token() {
     let nono = fake(Answer::Echo);
     let (_dir, front) = start(nono.addr);
     let mut c = dial(&front);
-    let req = connect_with(&format!(
-        "Proxy-Authorization: Bearer {NONCE}\r\nHost: h\r\n"
-    ));
-    c.write_all(req.as_bytes()).unwrap();
-    let seen = String::from_utf8(nono.seen.recv_timeout(WAIT).unwrap()).unwrap();
+    c.write_all(b"GET http://example.com/ HTTP/1.1\r\nHost: example.com\r\n\r\n")
+        .unwrap();
+    let connect = String::from_utf8(nono.seen.recv_timeout(WAIT).unwrap()).unwrap();
     assert_eq!(
-        seen,
-        "CONNECT example.com:443 HTTP/1.1\r\nHost: h\r\nProxy-Authorization: Bearer internal-token-456\r\n\r\n"
+        connect,
+        "CONNECT example.com:80 HTTP/1.1\r\nHost: example.com:80\r\nProxy-Authorization: Bearer internal-token-456\r\n\r\n"
     );
     front.stop();
 }
 
 #[test]
-fn wrong_basic_password_is_rejected() {
-    // moor:box-nonce-124
-    assert_unauthorized(&connect_with(
-        "Proxy-Authorization: Basic bW9vcjpib3gtbm9uY2UtMTI0\r\n",
-    ));
-}
-
-#[test]
-fn wrong_bearer_is_rejected() {
-    assert_unauthorized(&connect_with("Proxy-Authorization: Bearer nope\r\n"));
-    assert_unauthorized(&connect_with(&format!(
-        "Proxy-Authorization: Bearer {NONCE}x\r\n"
-    )));
-}
-
-#[test]
-fn internal_token_from_the_box_is_rejected() {
-    assert_unauthorized(&connect_with(&format!(
-        "Proxy-Authorization: Bearer {INTERNAL}\r\n"
-    )));
-}
-
-#[test]
-fn missing_credential_is_rejected() {
-    assert_unauthorized(&connect_with("Host: example.com:443\r\n"));
-}
-
-#[test]
-fn two_credentials_are_rejected() {
-    let basic = basic();
-    assert_unauthorized(&connect_with(&format!(
-        "Proxy-Authorization: Basic {basic}\r\nProxy-Authorization: Bearer {NONCE}\r\n"
-    )));
-}
-
-#[test]
-fn malformed_base64_is_rejected() {
-    assert_unauthorized(&connect_with(
-        "Proxy-Authorization: Basic bW9vcjpib3gtbm9uY2UtMTI*\r\n",
-    ));
-    assert_unauthorized(&connect_with(
-        "Proxy-Authorization: Basic bW9vcjpib3gtbm9uY2UtMTI\r\n",
-    ));
-    assert_unauthorized(&connect_with(&format!(
-        "Proxy-Authorization: Basic ={}\r\n",
-        basic().chars().skip(1).collect::<String>()
-    )));
-    assert_unauthorized(&connect_with("Proxy-Authorization: Basic\r\n"));
-}
-
-#[test]
-fn non_connect_with_valid_credential_is_refused() {
-    let basic = basic();
-    assert_refused(
-        format!("GET api.github.com:443 HTTP/1.1\r\nProxy-Authorization: Basic {basic}\r\n\r\n")
-            .as_bytes(),
-    );
+fn non_connect_authority_target_is_refused() {
+    assert_refused(b"GET api.github.com:443 HTTP/1.1\r\nHost: x\r\n\r\n");
 }
 
 #[test]
@@ -513,7 +389,6 @@ fn a_file_left_at_the_socket_path_is_replaced() {
     let front = Front::start(
         nono.addr,
         socket.clone(),
-        Secret::new(NONCE.as_bytes().to_vec()),
         Secret::new(INTERNAL.as_bytes().to_vec()),
     )
     .unwrap();

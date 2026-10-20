@@ -39,12 +39,7 @@ pub(super) struct Live {
 }
 
 /// Loads the Box CA, opens the log and starts the filter and the proxy; the caller still holds the lease on failure.
-pub(super) fn listen(
-    deps: &Deps<'_>,
-    box_id: BoxId,
-    nonce: &Secret,
-    spec: &ProxySpec,
-) -> Result<Live, String> {
+pub(super) fn listen(deps: &Deps<'_>, box_id: BoxId, spec: &ProxySpec) -> Result<Live, String> {
     let ca = ca::load_or_create(deps.state_dir, box_id)
         .map_err(|err| format!("cannot load the proxy CA: {err}"))?;
     let withheld = Withheld::new(&spec.rules, spec.box_repo.clone());
@@ -78,10 +73,9 @@ pub(super) fn listen(
             return Err(format!("cannot start the proxy: {err}"));
         }
     };
-    let box_nonce = Secret::new(nonce.expose().to_vec());
     let nono_addr = SocketAddr::from(([127, 0, 0, 1], proxy.port()));
     let socket = FrontSocket::new(deps.sockets, deps.owner, deps.state_dir, box_id);
-    let front = match Front::start(nono_addr, socket, box_nonce, internal) {
+    let front = match Front::start(nono_addr, socket, internal) {
         Ok(front) => front,
         Err(err) => {
             proxy.stop();
@@ -117,7 +111,7 @@ fn new_capture(deps: &Deps<'_>, spec: &ProxySpec) -> Arc<MoorCapture> {
 }
 
 /// A fresh token nono authenticates with: 32 random bytes as base64url text.
-/// It is never the Box nonce, so a request looped back into nono's own port cannot authenticate.
+/// The Box never sees it, so a request looped back into nono's own port cannot authenticate.
 fn internal_token() -> Result<Secret, String> {
     let mut bytes = [0_u8; 32];
     getrandom::fill(&mut bytes).map_err(|err| format!("cannot generate the proxy token: {err}"))?;

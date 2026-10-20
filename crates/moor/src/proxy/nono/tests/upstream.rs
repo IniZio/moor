@@ -202,13 +202,27 @@ fn spawn(config: Arc<ServerConfig>, ca_path: PathBuf, ca_pem: String) -> Upstrea
 
 /// A client that goes through the proxy on `proxy_port` as `moor:<nonce>` and trusts only `ca_pem`.
 pub(crate) fn client(proxy_port: u16, nonce: &str, ca_pem: &str) -> Agent {
+    agent(
+        &format!("http://moor:{nonce}@127.0.0.1:{proxy_port}"),
+        ca_pem,
+    )
+}
+
+/// A client that goes through the Box port `port` as a Box does, with no proxy credential, and
+/// trusts only `ca_pem`.
+pub(crate) fn box_client(port: u16, ca_pem: &str) -> Agent {
+    agent(&format!("http://127.0.0.1:{port}"), ca_pem)
+}
+
+/// A client that goes through the proxy at `proxy_url` and trusts only `ca_pem`.
+fn agent(proxy_url: &str, ca_pem: &str) -> Agent {
     let cert = Certificate::from_pem(ca_pem.as_bytes()).unwrap().to_owned();
     let tls = TlsConfig::builder()
         .provider(TlsProvider::Rustls)
         .root_certs(RootCerts::Specific(Arc::new(vec![cert])))
         .unversioned_rustls_crypto_provider(Arc::new(rustls::crypto::ring::default_provider()))
         .build();
-    let proxy = Proxy::new(&format!("http://moor:{nonce}@127.0.0.1:{proxy_port}")).unwrap();
+    let proxy = Proxy::new(proxy_url).unwrap();
     let config = Agent::config_builder()
         .proxy(Some(proxy))
         .tls_config(tls)

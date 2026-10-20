@@ -30,7 +30,7 @@ use crate::testing::driver::FakeDriver;
 use crate::testing::forge::FakeForge;
 use crate::testing::rng::FakeRng;
 
-/// The Box nonce the client uses as proxy password.
+/// The nonce the proxy row is reserved with.
 const NONCE: &str = "nonce_e2e-0123456789";
 /// What the client sends before the proxy swaps it out.
 const PLACEHOLDER: &str = "Bearer placeholder-not-real";
@@ -262,13 +262,10 @@ fn serve_injects_the_credential_audits_requests_and_stops() {
         let socket = tunnel_socket(&store, &driver, id);
         let port = bridge(&socket);
         let ca = crate::proxy::nono::ca::load_or_create(dir.path(), id).unwrap();
-        let client = upstream::client(port, NONCE, ca.cert_pem());
+        let client = upstream::box_client(port, ca.cert_pem());
         assert_injected(&client, &up);
         assert_refused(&client, &up);
         assert_audited(&store, id, dir.path());
-        let anon = upstream::client(port, "wrong-nonce", ca.cert_pem());
-        let bad = get(&anon, &format!("https://localhost:{}/ok", up.port));
-        assert!(bad.is_err() || bad == Ok(407), "got {bad:?}");
         assert_eq!(up.seen().len(), 1);
 
         stop.store(true, Ordering::Release);

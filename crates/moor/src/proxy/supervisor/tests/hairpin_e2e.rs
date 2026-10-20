@@ -7,12 +7,10 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use super::graphql_e2e::{rig_with, Rig, NONCE, SECRET};
+use super::graphql_e2e::{rig_with, Rig, SECRET};
 
-/// `base64("moor:" + NONCE)`, the `Proxy-Authorization` credential of a sandbox client.
-const BASIC: &str = "bW9vcjpub25jZV9ncWwtMDEyMzQ1Njc4OQ==";
-/// `base64("moor:wrong-nonce-0000")`.
-const WRONG_BASIC: &str = "bW9vcjp3cm9uZy1ub25jZS0wMDAw";
+/// An `Authorization` value a Box makes up for a request inside the tunnel.
+const MADE_UP: &str = "Authorization: Bearer box-made-up-token";
 /// Loopback spellings a Box can name in a `CONNECT` authority, IPv6 bracketed.
 const LOOPBACK_TARGETS: [&str; 3] = ["127.0.0.1", "[::1]", "localhost"];
 /// A GraphQL query for a repository that is not the Box's.
@@ -23,11 +21,6 @@ const IO: Duration = Duration::from_secs(5);
 /// Starts the supervisor listener.
 fn rig() -> Rig {
     rig_with(Vec::new())
-}
-
-/// The `Proxy-Authorization` header line of a valid sandbox client.
-fn valid() -> String {
-    format!("Proxy-Authorization: Basic {BASIC}")
 }
 
 /// Reads until the peer closes, a timeout, or `stop` holds for the bytes so far.
@@ -99,8 +92,7 @@ fn hairpin_to(front: u16, host: &str, port: u16, auth: &[String]) -> (u16, Strin
     let reply = read_until(&mut tcp, |t| t.contains("\r\n\r\n"));
     let code = status(&reply);
     let inner = if (200..300).contains(&code) {
-        let bearer = vec![format!("Authorization: Bearer {NONCE}")];
-        let _ = tcp.write_all(graphql_post(&bearer).as_bytes());
+        let _ = tcp.write_all(graphql_post(&[MADE_UP.to_owned()]).as_bytes());
         read_until(&mut tcp, |_| false)
     } else {
         String::new()
@@ -155,10 +147,10 @@ fn payloads(rig: &Rig) -> Vec<(String, String)> {
         .collect()
 }
 
-/// Nothing recorded may carry the Box nonce or the real credential.
+/// Nothing recorded may carry a credential.
 fn assert_no_leak(events: &[(String, String)]) {
     for (kind, payload) in events {
-        for leak in [NONCE, SECRET, "Bearer ", "Basic "] {
+        for leak in [SECRET, "box-made-up-token", "Bearer ", "Basic "] {
             assert!(
                 !payload.contains(leak),
                 "{leak} leaked into {kind}: {payload}"
@@ -195,7 +187,7 @@ fn guard_refusals(rig: &Rig) -> Vec<(String, String)> {
 fn nono_port_refused(host: &str) {
     let rig = rig();
     let live = rig.live.as_ref().unwrap();
-    let outcome = hairpin_to(rig.box_port, host, live.nono_port(), &[valid()]);
+    let outcome = hairpin_to(rig.box_port, host, live.nono_port(), &[]);
     assert_blocked(&rig, outcome);
     let events = guard_refusals(&rig);
     assert!(
@@ -220,7 +212,7 @@ fn every_listener_refused(host: &str) {
         svc.port,
     ];
     for port in targets {
-        let (code, inner) = hairpin_to(rig.box_port, host, port, &[valid()]);
+        let (code, inner) = hairpin_to(rig.box_port, host, port, &[]);
         assert!(
             rig.seen().is_empty(),
             "{host}:{port}: upstream saw {:?}",
@@ -265,14 +257,15 @@ fn connect_to_every_loopback_listener_is_refused() {
 }
 
 #[test]
-fn the_box_nonce_is_not_accepted_by_nono_directly() {
+fn what_the_box_can_send_is_not_accepted_by_nono_directly() {
     let rig = rig();
     let variants = [
-        vec![format!("Authorization: Bearer {NONCE}")],
-        vec![format!("Proxy-Authorization: Basic {BASIC}")],
+        Vec::new(),
+        vec![MADE_UP.to_owned()],
+        vec!["Proxy-Authorization: Basic bW9vcjp4".to_owned()],
         vec![
-            format!("Authorization: Bearer {NONCE}"),
-            format!("Proxy-Authorization: Bearer {NONCE}"),
+            MADE_UP.to_owned(),
+            "Proxy-Authorization: Bearer box-made-up-token".to_owned(),
         ],
     ];
     for extra in variants {
@@ -290,33 +283,10 @@ fn the_box_nonce_is_not_accepted_by_nono_directly() {
 }
 
 #[test]
-fn wrong_or_missing_box_credential_gets_407_and_no_events() {
-    let rig = rig();
-    let live = rig.live.as_ref().unwrap();
-    let wrong = [
-        vec![format!("Proxy-Authorization: Basic {WRONG_BASIC}")],
-        vec!["Proxy-Authorization: Bearer wrong-nonce-0000".to_owned()],
-        Vec::new(),
-    ];
-    for auth in wrong {
-        let (code, inner) = hairpin(rig.box_port, live.nono_port(), &auth);
-        assert_eq!((code, inner.as_str()), (407, ""));
-        let (code, _) = hairpin(rig.box_port, 443, &auth);
-        assert_eq!(code, 407);
-    }
-    assert!(rig.seen().is_empty());
-    let events = payloads(&rig);
-    let kinds: Vec<&str> = events.iter().map(|(k, _)| k.as_str()).collect();
-    assert_eq!(kinds, ["started"], "unexpected events: {events:?}");
-    assert_no_leak(&events);
-    rig.live.unwrap().stop();
-}
-
-#[test]
 fn refused_hairpin_is_audited_as_a_destination_guard_refusal_without_secrets() {
     let rig = rig();
     let live = rig.live.as_ref().unwrap();
-    let outcome = hairpin(rig.box_port, live.nono_port(), &[valid()]);
+    let outcome = hairpin(rig.box_port, live.nono_port(), &[]);
     assert_blocked(&rig, outcome);
     let mut events = Vec::new();
     for _ in 0..100 {

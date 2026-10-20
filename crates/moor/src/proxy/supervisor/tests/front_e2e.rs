@@ -1,7 +1,5 @@
 //! The front listener passes `CONNECT` and absolute-form `http://` requests, the latter as a `CONNECT`.
 //! Origin-form requests never reach nono or any upstream, and a plain request never carries a credential.
-//!
-//! The `CONNECT` path through the front is covered by `graphql_e2e`, whose client goes through the front port.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -11,11 +9,9 @@ use std::time::Duration;
 
 use moor_core::config::proxy::{EndpointRule, ResolvedInject, ResolvedRule};
 
-use super::graphql_e2e::{rig_with, Rig, NONCE, SECRET};
+use super::graphql_e2e::{rig_with, Rig, SECRET};
 use crate::proxy::nono::tests::upstream::{self, Upstream};
 
-/// `base64("moor:" + NONCE)`, the `Proxy-Authorization` credential of a sandbox client.
-const BASIC: &str = "bW9vcjpub25jZV9ncWwtMDEyMzQ1Njc4OQ==";
 /// The body the front refuses an origin-form or `https://` request with.
 const REFUSAL: &str = r#"{"message":"moor: only CONNECT or http:// requests are allowed"}"#;
 /// A GraphQL query for a repository that is not the Box's.
@@ -118,27 +114,28 @@ fn request(method: &str, target: &str, host: &str, extra: &[String], body: &str)
     out
 }
 
-/// The credential header variants a sandbox client can present.
+/// The credential header variants a sandbox client can send.
 fn credentials() -> Vec<Vec<String>> {
+    let (proxy, auth) = (
+        "Proxy-Authorization: Basic bW9vcjp4",
+        "Authorization: Bearer x",
+    );
     vec![
-        vec![format!("Proxy-Authorization: Basic {BASIC}")],
-        vec![format!("Authorization: Bearer {NONCE}")],
-        vec![
-            format!("Proxy-Authorization: Basic {BASIC}"),
-            format!("Authorization: Bearer {NONCE}"),
-        ],
+        Vec::new(),
+        vec![proxy.to_owned()],
+        vec![auth.to_owned()],
+        vec![proxy.to_owned(), auth.to_owned()],
     ]
 }
 
 impl Front {
-    /// Sends `raw` to the front port and expects the refusal.
+    /// Sends `raw` into the Box port and expects the refusal.
     fn refused(&self, raw: &str) {
         let port = self.rig.box_port;
         let reply = send(port, raw);
         assert_eq!(reply.status, 403, "unexpected answer: {}", reply.body);
         assert_eq!(reply.body, REFUSAL);
         assert!(!reply.body.contains(SECRET));
-        assert!(!reply.body.contains(NONCE));
     }
 
     /// Nothing was dialled upstream and nothing reached nono.
@@ -213,33 +210,14 @@ fn origin_form_git_route_is_refused_before_nono() {
 }
 
 #[test]
-fn absolute_form_without_proxy_credential_is_rejected_before_nono() {
-    let f = front();
-    let nono = f.rig.live.as_ref().unwrap().nono_port();
-    let nono_url = format!("http://127.0.0.1:{nono}/github-api__0/graphql");
-    let host = format!("127.0.0.1:{nono}");
-    let port = f.rig.box_port;
-    for extra in credentials()
-        .into_iter()
-        .filter(|e| e.iter().all(|h| h.starts_with("Authorization")))
-    {
-        let reply = send(port, &request("GET", &nono_url, &host, &extra, ""));
-        assert_eq!(reply.status, 407, "{}", reply.body);
-    }
-    f.assert_untouched();
-    f.stop();
-}
-
-#[test]
 fn plain_request_to_the_nono_port_is_refused_by_the_guard() {
     let f = front();
     let nono = f.rig.live.as_ref().unwrap().nono_port();
     let port = f.rig.box_port;
-    let extra = [format!("Proxy-Authorization: Basic {BASIC}")];
     let target = format!("http://127.0.0.1:{nono}/github-api__0/graphql");
     let reply = send(
         port,
-        &request("GET", &target, &format!("127.0.0.1:{nono}"), &extra, ""),
+        &request("GET", &target, &format!("127.0.0.1:{nono}"), &[], ""),
     );
     assert_eq!(reply.status, 502, "{}", reply.body);
     assert!(f.rig.seen().is_empty(), "api.github.com was reached");
@@ -250,9 +228,8 @@ fn plain_request_to_the_nono_port_is_refused_by_the_guard() {
 fn plain_request_to_a_brokered_host_carries_no_credential() {
     let f = front();
     let port = f.rig.box_port;
-    let extra = [format!("Proxy-Authorization: Basic {BASIC}")];
     let target = format!("http://localhost:{}/v1/messages", f.claude.port);
-    let reply = send(port, &request("POST", &target, "localhost", &extra, "{}"));
+    let reply = send(port, &request("POST", &target, "localhost", &[], "{}"));
     assert!(!(200..300).contains(&reply.status), "{}", reply.body);
     for seen in f.claude.seen().iter().chain(f.git.seen().iter()) {
         assert!(seen.authorization.is_none(), "credential leaked: {seen:?}");

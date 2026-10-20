@@ -33,8 +33,6 @@ use crate::testing::driver::FakeDriver;
 use crate::testing::forge::FakeForge;
 use crate::testing::rng::FakeRng;
 
-/// The Box nonce the client uses as proxy password.
-pub(super) const NONCE: &str = "nonce_gql-0123456789";
 /// The credential the fake credential source returns.
 pub(super) const SECRET: &str = "gh-fake-token-77";
 /// What the fake upstream answers to a GraphQL request.
@@ -286,7 +284,7 @@ impl Rig {
 
     /// A client that goes through nono as the sandbox does.
     pub(super) fn client(&self) -> Agent {
-        upstream::client(self.box_port, NONCE, &self.ca_pem)
+        upstream::box_client(self.box_port, &self.ca_pem)
     }
 
     /// Requests the fake upstream received so far.
@@ -341,8 +339,7 @@ pub(super) fn rig_with(extra: Vec<ResolvedRule>) -> Rig {
         ca_pem: String::new(),
         fetches: Arc::new(AtomicUsize::new(0)),
     };
-    let nonce = Secret::new(NONCE.as_bytes().to_vec());
-    let live = listen(&rig.deps(), box_id, &nonce, &spec).unwrap();
+    let live = listen(&rig.deps(), box_id, &spec).unwrap();
     rig.filter_port = live.graphql_addr().unwrap().port();
     rig.box_port = bridge(live.socket());
     rig.ca_pem = crate::proxy::nono::ca::load_or_create(rig.dir.path(), box_id)
@@ -460,12 +457,8 @@ fn raw_call(rig: &Rig, request: &str) -> String {
 
     let mut tcp = TcpStream::connect((Ipv4Addr::LOCALHOST, rig.box_port)).unwrap();
     tcp.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
-    let auth = crate::proxy::nono::capture::base64(format!("moor:{NONCE}").as_bytes());
-    let connect = format!(
-        "CONNECT api.github.com:443 HTTP/1.1\r\nHost: api.github.com:443\r\n\
-         Proxy-Authorization: Basic {auth}\r\n\r\n"
-    );
-    tcp.write_all(connect.as_bytes()).unwrap();
+    tcp.write_all(b"CONNECT api.github.com:443 HTTP/1.1\r\nHost: api.github.com:443\r\n\r\n")
+        .unwrap();
     let read_head = |r: &mut dyn Read| {
         let (mut head, mut byte) = (Vec::new(), [0u8; 1]);
         while !head.ends_with(b"\r\n\r\n") && r.read(&mut byte).is_ok_and(|n| n == 1) {
