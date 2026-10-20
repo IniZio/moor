@@ -206,6 +206,44 @@ impl Stack {
         self.http("GET", path, "", "")
     }
 
+    /// Authenticated GET with the header lines `extra`; passes each piece of the body to
+    /// `on_body` with its offset as it arrives, and returns the response head.
+    pub fn stream(&self, path: &str, extra: &str, mut on_body: impl FnMut(u64, &[u8])) -> String {
+        let request = format!(
+            "GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nAuthorization: Bearer {}\r\n{extra}\
+             Connection: close\r\n\r\n",
+            self.port, self.token
+        );
+        let mut stream = TcpStream::connect(("127.0.0.1", self.port)).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
+        stream.write_all(request.as_bytes()).unwrap();
+        let mut reader = BufReader::with_capacity(64 * 1024, stream);
+        let mut head = String::new();
+        while reader.read_line(&mut head).unwrap() > 2 {}
+        let mut buf = vec![0; 64 * 1024];
+        let mut offset = 0;
+        loop {
+            let n = reader.read(&mut buf).unwrap();
+            if n == 0 {
+                return head;
+            }
+            on_body(offset, &buf[..n]);
+            offset += n as u64;
+        }
+    }
+
+    /// Process ids of the controller and the web daemon.
+    pub fn pids(&self) -> (u32, u32) {
+        (self.controller.id(), self.web.id())
+    }
+
+    /// The controller's state directory.
+    pub fn state_dir(&self) -> PathBuf {
+        self.root.path().join("state")
+    }
+
     /// Authenticated JSON POST with the CSRF header and a same-origin `Origin`.
     pub fn post(&self, path: &str, body: &Value) -> (u16, String) {
         let extra = format!(

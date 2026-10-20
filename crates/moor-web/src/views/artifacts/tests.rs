@@ -51,13 +51,18 @@ impl Raw {
 }
 
 fn fetch(web: &Server, path: &str, token: Option<&str>) -> Raw {
+    fetch_with(web, path, token, "")
+}
+
+/// A GET with the header lines `extra`, each ending in CRLF.
+fn fetch_with(web: &Server, path: &str, token: Option<&str>, extra: &str) -> Raw {
     let addr = web.addr();
     let mut s = TcpStream::connect(addr).unwrap();
     s.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
     let auth = token.map_or_else(String::new, |t| format!("Authorization: Bearer {t}\r\n"));
     write!(
         s,
-        "GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\n{auth}X-Moor-Csrf: 1\r\n\
+        "GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\n{auth}{extra}X-Moor-Csrf: 1\r\n\
          Content-Length: 0\r\n\r\n",
         addr.port()
     )
@@ -406,4 +411,92 @@ fn artifact_routes_need_the_token() {
         }
     }
     assert!(seen.lock().unwrap().is_empty());
+}
+
+#[test]
+fn a_byte_range_is_206_with_exactly_those_bytes() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = blob();
+    let size = file.len();
+    let respond = holding("out.bin", "video/mp4", file.clone(), sha(&file));
+    let (web, _, _) = front_with(&dir, respond, &[]);
+    let cases = [
+        ("bytes=0-99", 0, 99),
+        ("bytes=65530-131080", 65530, 131_080),
+        ("bytes=1048600-", 1_048_600, size - 1),
+        ("bytes=-100", size - 100, size - 1),
+        ("bytes=1048000-9999999", 1_048_000, size - 1),
+        ("Bytes=7-7", 7, 7),
+    ];
+    for (range, start, end) in cases {
+        let header = format!("Range: {range}\r\n");
+        let resp = fetch_with(&web, "/boxes/app/1/artifacts/out.bin", Some(TOKEN), &header);
+        assert!(
+            resp.head.starts_with("HTTP/1.1 206"),
+            "{range}: {}",
+            resp.head
+        );
+        let content_range = format!("bytes {start}-{end}/{size}");
+        assert_eq!(resp.header("content-range"), [content_range], "{range}");
+        assert_eq!(
+            resp.header("content-length"),
+            [(end - start + 1).to_string()]
+        );
+        assert!(resp.body == file[start..=end], "{range}: wrong bytes");
+    }
+}
+
+#[test]
+fn a_range_reads_only_its_bytes_from_the_controller() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = blob();
+    let respond = holding("out.bin", "video/mp4", file.clone(), sha(&file));
+    let (web, _, sent) = front_with(&dir, respond, &[]);
+    let header = "Range: bytes=65530-131080\r\n";
+    fetch_with(&web, "/boxes/app/1/artifacts/out.bin", Some(TOKEN), header);
+    let part = json!({"cmd": "artifact-read", "box": "app/1", "name": "out.bin",
+                      "version": 1, "offset": 65530, "len": 65551});
+    assert_eq!(reads(&sent), [part]);
+}
+
+#[test]
+fn a_range_outside_the_file_or_malformed_is_416() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = blob();
+    let size = file.len();
+    let respond = holding("out.bin", "video/mp4", file.clone(), sha(&file));
+    let (web, _, sent) = front_with(&dir, respond, &[]);
+    for range in [
+        format!("bytes={size}-"),
+        format!("bytes={size}-{}", size + 10),
+        "bytes=-0".to_owned(),
+        "bytes=5-2".to_owned(),
+        "bytes=abc".to_owned(),
+        "bytes=+1-2".to_owned(),
+    ] {
+        let header = format!("Range: {range}\r\n");
+        let resp = fetch_with(&web, "/boxes/app/1/artifacts/out.bin", Some(TOKEN), &header);
+        assert!(
+            resp.head.starts_with("HTTP/1.1 416"),
+            "{range}: {}",
+            resp.head
+        );
+        assert_eq!(resp.header("content-range"), [format!("bytes */{size}")]);
+    }
+    assert!(reads(&sent).is_empty());
+}
+
+#[test]
+fn another_unit_or_several_ranges_get_the_whole_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = blob();
+    let respond = holding("out.bin", "video/mp4", file.clone(), sha(&file));
+    let (web, _, _) = front_with(&dir, respond, &[]);
+    for range in ["items=0-5", "bytes=0-1,5-6"] {
+        let header = format!("Range: {range}\r\n");
+        let resp = fetch_with(&web, "/boxes/app/1/artifacts/out.bin", Some(TOKEN), &header);
+        assert!(resp.ok(), "{range}: {}", resp.head);
+        assert_eq!(resp.header("accept-ranges"), ["bytes"]);
+        assert!(resp.body == file, "{range}: not the whole file");
+    }
 }
