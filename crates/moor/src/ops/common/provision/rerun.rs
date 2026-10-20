@@ -22,10 +22,10 @@ use crate::ops::common::setup;
 use crate::ops::common::view::rfc3339;
 use crate::store::{BoxRow, Store};
 
-/// Decides whether a start syncs the host checkout into the Task's existing Box.
+/// Decides whether a start syncs the host checkout into the existing Box.
 ///
 /// A sync resets the Box checkout to the host's: HEAD, branches and remote-tracking refs move
-/// even when every commit is pushed. A Task that has had an agent session is therefore synced
+/// even when every commit is pushed. A Box that has had an agent session is therefore synced
 /// only when the Box holds no work that exists nowhere else, or has no git checkout at all
 /// (an earlier sync failed); otherwise the sync is skipped with a warning. While an agent session
 /// is live no sync is made at all: the agent may be writing files in the checkout.

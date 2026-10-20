@@ -1,4 +1,4 @@
-//! Stopping a task's live agent: close its pane, end its session.
+//! Stopping a Box's live agent: close its pane, end its session.
 
 use moor_core::domain::decision::{Decision, ExtraEvent};
 use moor_core::seam::surface::{PaneRef, SurfaceError};
@@ -27,7 +27,7 @@ pub(crate) fn stop_agent(
             Err(e) => {
                 return Err(CommandError::new(
                     ErrorKind::Failed,
-                    format!("could not close the agent pane: {e}; the task stays open"),
+                    format!("could not close the agent pane: {e}; the Box stays open"),
                 )
                 .with_hint("try `moor close` again, or close the pane by hand"));
             }

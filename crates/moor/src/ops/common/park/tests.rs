@@ -1,4 +1,4 @@
-//! Tests for parking and restoring the Task's Proxy tunnel.
+//! Tests for parking and restoring the Box's Proxy tunnel.
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -18,7 +18,7 @@ use crate::testing::proc::ScriptedProc;
 use crate::testing::rng::FakeRng;
 use crate::testing::surface::FakeSurface;
 
-/// A context over a fresh store, the clock it runs on and one task without a proxy row.
+/// A context over a fresh store, the clock it runs on and one Box without a proxy row.
 struct Fx {
     _dir: tempfile::TempDir,
     cx: Cx,
@@ -26,7 +26,7 @@ struct Fx {
     id: BoxId,
 }
 
-/// A fixture whose task has no proxy row.
+/// A fixture whose Box has no proxy row.
 fn fx() -> Fx {
     let dir = tempfile::tempdir().unwrap();
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));

@@ -187,7 +187,7 @@ fn a_session_without_a_registered_agent_session_is_skipped_without_asking_the_en
 }
 
 #[test]
-fn a_session_unregistered_but_known_to_the_task_is_archived() {
+fn a_session_unregistered_but_known_to_the_box_is_archived() {
     let engine = Arc::new(FakeEngine::new().transcript_text("abc"));
     let (dir, cx) = fx(FakeEngine::new());
     let cx = cx.with_engine(engine.clone());

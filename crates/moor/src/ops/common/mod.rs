@@ -1,4 +1,4 @@
-//! Helpers shared by the task ops.
+//! Helpers shared by the Box ops.
 
 pub(crate) mod activity;
 pub(crate) mod agent_stop;

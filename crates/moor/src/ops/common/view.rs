@@ -31,7 +31,7 @@ pub(crate) fn rfc3339(ts: Ts) -> String {
         .unwrap_or_else(|| ms.to_string())
 }
 
-/// Map a reading to the agent view; none when the Task has no agent.
+/// Map a reading to the agent view; none when the Box has no agent.
 pub(crate) fn agent_view(reading: &Reading) -> Option<AgentView> {
     if let Some(failure) = &reading.launch_failure {
         return Some(AgentView {
@@ -76,7 +76,7 @@ fn box_handle(b: &DriverRow) -> Option<String> {
 }
 
 /// Map a Box row to its view.
-fn box_view(b: &DriverRow, config: &UserConfig) -> DriverView {
+fn driver_view(b: &DriverRow, config: &UserConfig) -> DriverView {
     DriverView {
         state: b.state,
         provider: b.provider.as_str().to_owned(),
@@ -100,15 +100,15 @@ fn run_view(r: &RunRow) -> RunView {
     }
 }
 
-/// Map a Task row to the shared Task view; `agent` and `run` stay empty.
-pub(crate) fn task_view(row: &BoxRow, config: &UserConfig) -> BoxView {
-    task_view_with_run(row, None, config)
+/// Map a Box row to the shared view; `agent` and `run` stay empty.
+pub(crate) fn box_view(row: &BoxRow, config: &UserConfig) -> BoxView {
+    box_view_with_run(row, None, config)
 }
 
-/// Map a Task row to the shared Task view, showing `run` when one is in flight.
+/// Map a Box row to the shared view, showing `run` when one is in flight.
 ///
 /// `agent` stays empty.
-pub(crate) fn task_view_with_run(
+pub(crate) fn box_view_with_run(
     row: &BoxRow,
     run: Option<&RunRow>,
     config: &UserConfig,
@@ -126,7 +126,7 @@ pub(crate) fn task_view_with_run(
         branch: row.branch.clone(),
         worktree: row.worktree.clone(),
         workspace: row.workspace_id.clone(),
-        driver: row.boxed.as_ref().map(|b| box_view(b, config)),
+        driver: row.boxed.as_ref().map(|b| driver_view(b, config)),
         agent: None,
         run: run.map(run_view),
         updated_at: rfc3339(row.updated_at),

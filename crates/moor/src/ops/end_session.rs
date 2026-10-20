@@ -82,7 +82,7 @@ fn reword(e: CommandError, name: &str) -> CommandError {
     let text = e
         .error
         .to_string()
-        .replace("the task stays open", "the Session stays live");
+        .replace("the Box stays open", "the Session stays live");
     CommandError::new(e.kind, text).with_hint(format!(
         "try `moor end {name}` again, or close the pane by hand"
     ))

@@ -11,7 +11,7 @@ use crate::error::CommandError;
 use crate::ops::common::capacity;
 use crate::ops::common::facts::settings;
 use crate::ops::common::provision::Provisioned;
-use crate::ops::common::view::{hide_unsupported_sleep, task_view};
+use crate::ops::common::view::{box_view, hide_unsupported_sleep};
 use crate::store::BoxRow;
 
 /// Puts the launch outcome in the view, naming a failure in a warning too.
@@ -52,7 +52,7 @@ pub(super) fn queued_view(cx: &Cx, row: &BoxRow, attached: bool, provider: &str)
 
 /// The response for `row`; nothing past the Box runs yet.
 pub(super) fn view(cx: &Cx, row: &BoxRow, attached: bool) -> StartView {
-    let mut task = task_view(row, cx.config());
+    let mut task = box_view(row, cx.config());
     hide_unsupported_sleep(&mut task, cx);
     StartView {
         boxed: task,

@@ -27,7 +27,7 @@ pub(crate) struct BoxLock {
 }
 
 impl BoxLock {
-    /// Take `<state>/locks/<task>.box.lock`, polling until `wait` has passed on `clock`.
+    /// Take `<state>/locks/<id>.box.lock`, polling until `wait` has passed on `clock`.
     ///
     /// # Errors
     /// `Refused("box busy: <holder-op> in progress")` when still held after `wait`;
@@ -35,12 +35,12 @@ impl BoxLock {
     pub(crate) fn acquire(
         clock: &dyn Clock,
         state: &Path,
-        task: BoxId,
+        box_id: BoxId,
         op: &str,
         wait: Duration,
     ) -> Result<Self, CommandError> {
         let dir = state.join("locks");
-        let path = dir.join(format!("{}.box.lock", task.get()));
+        let path = dir.join(format!("{}.box.lock", box_id.get()));
         let failed = |e: std::io::Error| {
             CommandError::new(
                 ErrorKind::Failed,

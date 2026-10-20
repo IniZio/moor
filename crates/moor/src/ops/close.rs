@@ -17,13 +17,13 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::agent_stop;
 use crate::ops::common::artifacts;
-use crate::ops::common::autosleep::task_dir;
+use crate::ops::common::autosleep::box_dir;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::boxwork::{self, probe, BoxWork, BOXWORK_DEADLINE};
 use crate::ops::common::promote::promote_waiting;
 use crate::ops::common::reports;
 use crate::ops::common::transcript::{self, Saved};
-use crate::ops::common::view::task_view;
+use crate::ops::common::view::box_view;
 use crate::ops::common::wake::wake_box_if_asleep;
 use crate::store::{BoxRow, DriverRow, Store};
 
@@ -84,7 +84,7 @@ pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
             .collect()
     });
     Ok(CloseView {
-        boxed: task_view(&closed, cx.config()),
+        boxed: box_view(&closed, cx.config()),
         box_deleted,
         workspace_closed,
         agent_stopped,
@@ -288,7 +288,7 @@ fn release(cx: &Cx, store: &Store, row: &BoxRow) -> Result<bool, CommandError> {
     let Some(handle) = held(b) else {
         return Ok(false);
     };
-    let (result, cause) = match cx.driver().release(handle, Some(task_dir(row))) {
+    let (result, cause) = match cx.driver().release(handle, Some(box_dir(row))) {
         Ok(Released::Deleted | Released::AlreadyGone) => (ReleaseResult::Deleted, None),
         Err(e) => (ReleaseResult::Failed, Some(e)),
     };

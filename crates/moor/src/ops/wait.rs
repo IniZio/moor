@@ -11,7 +11,7 @@ use moor_core::{ErrorKind, WaitFor, WaitReq};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::view::{agent_view, hide_unsupported_sleep, task_view_with_run};
+use crate::ops::common::view::{agent_view, box_view_with_run, hide_unsupported_sleep};
 use crate::ops::common::{activity, reconcile};
 use crate::store::{BoxRow, RunRow};
 
@@ -71,7 +71,7 @@ pub(crate) fn run(cx: &Cx, req: &WaitReq) -> Result<WaitValue, CommandError> {
             Some(r) => Some(r.clone()),
             None => store.last_run(id)?,
         };
-        let mut task = task_view_with_run(&row, in_flight.as_ref(), cx.config());
+        let mut task = box_view_with_run(&row, in_flight.as_ref(), cx.config());
         task.agent = agent_view(&reading);
         hide_unsupported_sleep(&mut task, cx);
         return Ok(WaitValue {
@@ -92,7 +92,7 @@ fn failed(
     text: impl Into<String>,
     attention: Vec<AttentionView>,
 ) -> Result<CommandError, CommandError> {
-    let mut task = task_view_with_run(row, None, cx.config());
+    let mut task = box_view_with_run(row, None, cx.config());
     task.agent = agent_view(reading);
     task.attention = attention;
     hide_unsupported_sleep(&mut task, cx);

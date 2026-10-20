@@ -7,7 +7,7 @@ use moor_core::domain::decision::{Decision, ExtraEvent};
 use moor_core::BoxId;
 
 use super::exit::exited_probes;
-use super::{cx, hook, row, run_once, settle, task, SESSION};
+use super::{cx, hook, row, run_once, settle, working_box, SESSION};
 use crate::cx::Cx;
 use crate::store::EventRow;
 use crate::testing::engine::FakeEngine;
@@ -16,7 +16,7 @@ fn fx(probes: Probes) -> (tempfile::TempDir, Cx, BoxId) {
     let dir = tempfile::tempdir().unwrap();
     let engine = Arc::new(FakeEngine::new().probes(SESSION, probes));
     let (cx, _) = cx(dir.path(), &engine);
-    let id = task(&cx, true);
+    let id = working_box(&cx, true);
     (dir, cx, id)
 }
 

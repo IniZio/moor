@@ -1,4 +1,4 @@
-//! The Box exec environment of the ops: the Task's Proxy and the staged credentials for one exec.
+//! The Box exec environment of the ops: the Proxy and the staged credentials for one exec.
 
 use std::path::Path;
 use std::time::Duration;
@@ -22,10 +22,10 @@ const CLEANUP_DEADLINE: Duration = Duration::from_secs(30);
 /// Time allowed for staging the nonce and the CA.
 const STAGE_DEADLINE: Duration = Duration::from_secs(60);
 
-/// The Task's running Proxy, as a Box exec needs it.
+/// The Box's running Proxy, as a Box exec needs it.
 pub(crate) struct BoxProxy {
-    /// The Task the Proxy serves; names the staged directory.
-    pub(crate) task: BoxId,
+    /// The Box the Proxy serves; names the staged directory.
+    pub(crate) box_id: BoxId,
     /// The Proxy's address and credentials inside the Box.
     pub(crate) addr: ProxyAddr,
     /// The git origin URL of the worktree, when it has one.
@@ -42,17 +42,17 @@ pub(crate) struct Site<'a> {
     pub(crate) provider: &'a str,
     /// The directory commands run in; `None` keeps the driver's default.
     pub(crate) workdir: Option<&'a BoxPath>,
-    /// The host worktree of the Task.
+    /// The host worktree of the Box.
     pub(crate) worktree: &'a Path,
 }
 
-/// Starts or reuses the Task's Proxy for `cfg`'s egress.
+/// Starts or reuses the Box's Proxy for `cfg`'s egress.
 ///
 /// # Errors
 /// Returns a message when the plan cannot be made or the Proxy cannot start.
 pub(crate) fn proxy(
     cx: &Cx,
-    task: BoxId,
+    box_id: BoxId,
     handle: Option<BoxHandle>,
     worktree: &Path,
     cfg: &BoxSettings,
@@ -61,7 +61,7 @@ pub(crate) fn proxy(
     let plan = plan(cx, origin.as_deref())?;
     let repo_env: Vec<(String, String)> = cfg.env.clone().into_iter().collect();
     let spec = ProxySpec {
-        box_id: task,
+        box_id,
         box_handle: handle,
         host_cwd: worktree.to_path_buf(),
         box_repo: plan.repo,
@@ -78,14 +78,14 @@ pub(crate) fn proxy(
         forge,
     };
     Ok(BoxProxy {
-        task,
+        box_id,
         addr,
         origin,
         rule_env,
     })
 }
 
-/// Whether a rule sends GitHub through the Proxy with the Task's forge token.
+/// Whether a rule sends GitHub through the Proxy with the Box's forge token.
 fn forge_routed(rules: &[ResolvedRule]) -> bool {
     rules.iter().any(|r| r.credential == FORGE_CREDENTIAL)
 }
@@ -136,7 +136,7 @@ pub(crate) fn prepare(
     };
     let dir = BoxPath::under(
         box_home(cx, site)?.as_str(),
-        &BoxKey::new(p.task).cred_dir(&format!("{:08x}{:08x}", cx.rng().u32(), cx.rng().u32())),
+        &BoxKey::new(p.box_id).cred_dir(&format!("{:08x}{:08x}", cx.rng().u32(), cx.rng().u32())),
     )
     .map_err(|e| e.to_string())?;
     create(cx, site, &dir)?;

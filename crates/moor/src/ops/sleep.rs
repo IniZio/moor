@@ -13,9 +13,9 @@ use moor_core::{BoxReq, ErrorKind};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::autosleep::{refuse, sleep_handle, sleep_parked, task_dir};
+use crate::ops::common::autosleep::{box_dir, refuse, sleep_handle, sleep_parked};
 use crate::ops::common::boxlock::{self, BoxLock};
-use crate::ops::common::view::{hide_unsupported_box_sleep, task_view};
+use crate::ops::common::view::{box_view, hide_unsupported_box_sleep};
 use crate::store::BoxRow;
 
 /// Run `sleep`.
@@ -43,7 +43,7 @@ pub(crate) fn run(cx: &Cx, req: &BoxReq) -> Result<SleepValue, CommandError> {
     if row.lifecycle != BoxLifecycle::Asleep {
         sleep_box(cx, &row)?;
     }
-    let mut boxed = task_view(&reload()?, cx.config()).driver;
+    let mut boxed = box_view(&reload()?, cx.config()).driver;
     hide_unsupported_box_sleep(boxed.as_mut(), cx, &mut HashMap::new());
     Ok(SleepValue {
         box_name: req.box_name.as_str().to_owned(),
@@ -59,7 +59,7 @@ fn sleep_box(cx: &Cx, row: &BoxRow) -> Result<(), CommandError> {
         return Err(refuse(format!("the Box is {}", row.lifecycle.as_str())));
     }
     let handle = sleep_handle(cx, row)?;
-    match sleep_parked(cx, store, row.id, &handle, task_dir(row))? {
+    match sleep_parked(cx, store, row.id, &handle, box_dir(row))? {
         SleepOutcome::Slept | SleepOutcome::Native => {
             let fields = Fields {
                 box_sleep_reason: Field::Clear,

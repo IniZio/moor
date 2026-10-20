@@ -1,4 +1,4 @@
-//! Facts every task op needs, built once per command.
+//! Facts every Box op needs, built once per command.
 
 use std::path::Path;
 

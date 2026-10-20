@@ -10,8 +10,8 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::artifacts::artifact_view;
 use crate::ops::common::view::{
-    agent_view, event_view, hide_unsupported_sleep, hide_unsupported_sleep_cached,
-    task_view_with_run,
+    agent_view, box_view_with_run, event_view, hide_unsupported_sleep,
+    hide_unsupported_sleep_cached,
 };
 use crate::ops::common::{activity, autosleep, reconcile};
 use crate::store::Store;
@@ -108,7 +108,7 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
             autosleep::run(cx, store, row.id);
             row = store.box_row(row.id)?.unwrap_or(row);
             let in_flight = store.in_flight_run(row.id, &|pid| cx.proc().alive(pid))?;
-            let mut view = task_view_with_run(&row, in_flight.as_ref(), cx.config());
+            let mut view = box_view_with_run(&row, in_flight.as_ref(), cx.config());
             view.agent = agent_view(&reading);
             view.attention = attention(store, row.id)?;
             hide_unsupported_sleep_cached(&mut view, cx, &mut sleep_caps);
@@ -129,7 +129,7 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
     let in_flight = store.in_flight_run(row.id, &|pid| cx.proc().alive(pid))?;
     let reading = activity::read(cx, store, &row, now)?;
     let (agent, pane) = (agent_view(&reading), pane_view(&reading, store, row.id)?);
-    let mut detail = task_view_with_run(&row, in_flight.as_ref(), cx.config());
+    let mut detail = box_view_with_run(&row, in_flight.as_ref(), cx.config());
     detail.agent = agent;
     detail.attention = attention(store, row.id)?;
     hide_unsupported_sleep(&mut detail, cx);

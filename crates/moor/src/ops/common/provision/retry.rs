@@ -13,7 +13,7 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::store::{BoxRow, Store};
 
-/// The kept Box's handle and workdir, when the Task failed setup on a Box that is still ready.
+/// The kept Box's handle and workdir, when the Box failed setup on a machine that is still ready.
 fn kept_box(row: &BoxRow) -> Option<(&BoxHandle, BoxPath)> {
     let boxed = row.boxed.as_ref().filter(|b| b.state == BoxState::Ready)?;
     if row.lifecycle != BoxLifecycle::SetupFailed {
@@ -23,7 +23,7 @@ fn kept_box(row: &BoxRow) -> Option<(&BoxHandle, BoxPath)> {
     Some((boxed.handle.as_ref()?, workdir))
 }
 
-/// Whether the Task failed setup on a Box that is still ready, so its steps run again in it.
+/// Whether the Box failed setup on a machine that is still ready, so its steps run again in it.
 pub(super) fn kept_box_retry(row: &BoxRow) -> bool {
     kept_box(row).is_some()
 }

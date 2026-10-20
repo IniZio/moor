@@ -11,9 +11,9 @@ fn by_provider(
     rows: Vec<(moor_core::BoxId, crate::store::DriverRow)>,
 ) -> Vec<(ProviderId, Vec<BoxFact>)> {
     let mut groups: Vec<(ProviderId, Vec<BoxFact>)> = Vec::new();
-    for (task, b) in rows {
+    for (box_id, b) in rows {
         let fact = BoxFact {
-            box_id: task,
+            box_id,
             state: b.state,
             handle: b.handle,
         };

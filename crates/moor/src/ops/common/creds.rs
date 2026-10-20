@@ -46,7 +46,7 @@ pub(crate) fn checked(cx: &Cx, s: &BoxSettings, worktree: &Path) -> Checked {
     Checked { credentials, mcp }
 }
 
-/// Credential and MCP items that do not resolve, limited to what this Task uses
+/// Credential and MCP items that do not resolve, limited to what this Box uses
 /// (credentials with `used == true`, every user MCP server, every repo `.mcp.json` server).
 /// Empty means the preflight passes.
 pub(crate) fn unresolved(cx: &Cx, s: &BoxSettings, worktree: &Path) -> Vec<EnvItem> {

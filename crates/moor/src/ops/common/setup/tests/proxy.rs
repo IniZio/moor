@@ -42,7 +42,7 @@ fn setup_gets_the_proxy_and_ca_variables_the_agent_gets() {
         FakeDriver::new().peek_text("box-1", &environ, "HOME=/home/box\0"),
     );
     let proxy = BoxProxy {
-        task: BoxId::new(1),
+        box_id: BoxId::new(1),
         addr: ProxyAddr {
             box_port: 4000,
             nonce: Secret::new(b"s3cret-value".to_vec()),
@@ -107,7 +107,7 @@ fn without_a_proxy_setup_gets_reserved_and_credential_like_repo_env() {
 
 fn proxy() -> BoxProxy {
     BoxProxy {
-        task: BoxId::new(1),
+        box_id: BoxId::new(1),
         addr: ProxyAddr {
             box_port: 4000,
             nonce: Secret::new(b"s3cret-value".to_vec()),
