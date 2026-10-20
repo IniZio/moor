@@ -1,6 +1,6 @@
 //! Artifact versions kept per Box; contents live as files, rows hold the path.
 
-use std::fs::{self, DirBuilder, Permissions};
+use std::fs::{self, DirBuilder, File, Permissions};
 use std::io;
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
 use std::path::{Path, PathBuf};
@@ -185,6 +185,31 @@ impl Store {
     pub(crate) fn latest_artifacts(&self, box_id: BoxId) -> Result<Vec<ArtifactRow>, StoreError> {
         let conn = self.reader()?;
         latest_in(&conn, box_id)
+    }
+
+    /// Opens the stored file of `version` of `name` for streaming; None when that version is
+    /// not stored. Refuses a path that is not a regular file.
+    pub(crate) fn open_artifact(
+        &self,
+        box_id: BoxId,
+        name: &str,
+        version: i64,
+    ) -> Result<Option<File>, StoreError> {
+        let path: Option<String> = self
+            .reader()?
+            .query_row(
+                "SELECT path FROM artifacts WHERE box = ? AND name = ? AND version = ?",
+                params![box_id.get(), name, version],
+                |r| r.get(0),
+            )
+            .optional()?;
+        let Some(path) = path else { return Ok(None) };
+        if !fs::symlink_metadata(&path)?.file_type().is_file() {
+            return Err(StoreError::Io(io::Error::other(format!(
+                "{path} is not a regular file"
+            ))));
+        }
+        Ok(Some(File::open(&path)?))
     }
 }
 

@@ -309,3 +309,32 @@ fn staged_symlink_or_missing_path_is_rejected_and_unrecorded() {
     assert!(store.artifacts(t).unwrap().is_empty());
     assert_eq!(fs::read(&target).unwrap(), b"x");
 }
+
+#[test]
+fn open_artifact_reads_one_version_and_refuses_a_symlink() {
+    use std::io::Read;
+
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(dir.path());
+    let t = add(&store, "a");
+    let root = dir.path().join("artifacts");
+    let first = store
+        .add_artifact(t, "r.txt", b"one", &root)
+        .unwrap()
+        .unwrap();
+    store
+        .add_artifact(t, "r.txt", b"two", &root)
+        .unwrap()
+        .unwrap();
+    let mut text = String::new();
+    let mut file = store.open_artifact(t, "r.txt", 1).unwrap().unwrap();
+    file.read_to_string(&mut text).unwrap();
+    assert_eq!(text, "one");
+    assert!(store.open_artifact(t, "r.txt", 3).unwrap().is_none());
+    assert!(store.open_artifact(t, "other.txt", 1).unwrap().is_none());
+    let elsewhere = dir.path().join("elsewhere");
+    fs::write(&elsewhere, b"not an artifact").unwrap();
+    fs::remove_file(&first.path).unwrap();
+    symlink(&elsewhere, &first.path).unwrap();
+    assert!(store.open_artifact(t, "r.txt", 1).is_err());
+}

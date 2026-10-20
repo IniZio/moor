@@ -314,3 +314,5 @@ fn rejects_a_base_url_without_http_scheme() {
         Err(ApiError::Transport(_))
     ));
 }
+
+mod upload;
