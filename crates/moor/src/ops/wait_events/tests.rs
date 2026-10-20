@@ -264,6 +264,45 @@ fn the_op_settles_a_finished_steered_turn() {
 }
 
 #[test]
+fn the_op_settles_a_steered_turn_on_a_box_whose_setup_failed() {
+    let dir = tempfile::tempdir().unwrap();
+    let probes = Probes {
+        hook: HookRead::Fresh(HookRecord {
+            kind: HookKind::Idle,
+            session_id: None,
+            message: None,
+            at: Ts::from_millis(i64::MAX / 2),
+        }),
+        pane: PaneRead::Fresh(PaneObs {
+            status: PaneStatus::Unknown,
+            tail: String::new(),
+            prompt: None,
+            exit_marker: None,
+        }),
+    };
+    let engine = Arc::new(FakeEngine::new().probes(SESSION, probes));
+    let cx = cx_with(dir.path(), &engine);
+    let id = ready(&cx, "alpha");
+    cx.store()
+        .unwrap()
+        .begin_session(id, SESSION, None)
+        .unwrap();
+    cx.store()
+        .unwrap()
+        .apply(Decision::new(id).set(Fields {
+            setup_failed_at: Field::Set(1),
+            ..Fields::default()
+        }))
+        .unwrap();
+    steered(&cx, id);
+    let mut r = req(&["alpha"], WaitMode::Any);
+    r.kinds = Some(vec!["turn_done".to_owned()]);
+    let v = run(&cx, &r).unwrap();
+    assert!(!v.timed_out);
+    assert_eq!(v.events.len(), 1);
+}
+
+#[test]
 fn a_box_that_cannot_settle_warns_once_over_many_polls() {
     let dir = tempfile::tempdir().unwrap();
     let cx = cx(dir.path());

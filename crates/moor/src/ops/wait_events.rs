@@ -123,7 +123,7 @@ fn resolve<'a>(
     Ok(watched)
 }
 
-/// Settle one watched Box when it is ready and its setup has not failed; a failure warns once per Box.
+/// Settle one watched Box when it is ready; a failure warns once per Box.
 fn settle(
     cx: &Cx,
     store: &Store,
@@ -134,7 +134,7 @@ fn settle(
         return Ok(());
     };
     let ready = row.boxed.as_ref().map(|b| b.state) == Some(BoxState::Ready);
-    if !ready || row.setup_failed_at.is_some() {
+    if !ready {
         return Ok(());
     }
     let settled = activity::read(cx, store, &row, cx.clock().now())
