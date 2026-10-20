@@ -1,4 +1,4 @@
-//! Minimum crabbox version: moor relies on flags older builds lack.
+//! Minimum crabbox version: moor relies on flags that only the IniZio/crabbox `-moor` builds have.
 
 use moor_core::seam::driver::DriverError;
 
@@ -11,8 +11,8 @@ pub(super) struct Version {
     minor: u64,
     /// Patch number.
     patch: u64,
-    /// Build number after `-moor.`; zero when the release has no such suffix.
-    moor: u64,
+    /// Build number after `-moor.`; `None` for an upstream release.
+    moor: Option<u64>,
 }
 
 /// Oldest crabbox moor works with.
@@ -20,7 +20,7 @@ pub(super) const REQUIRED: Version = Version {
     major: 0,
     minor: 72,
     patch: 0,
-    moor: 9,
+    moor: Some(9),
 };
 
 impl Version {
@@ -40,10 +40,7 @@ impl Version {
         if parts.next().is_some() {
             return None;
         }
-        let moor = match build {
-            Some(n) => n.parse().ok()?,
-            None => 0,
-        };
+        let moor = build.map(str::parse).transpose().ok()?;
         Some(Self {
             major,
             minor,
@@ -56,23 +53,25 @@ impl Version {
 impl std::fmt::Display for Version {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}.{}.{}", self.major, self.minor, self.patch)?;
-        if self.moor > 0 {
-            write!(f, "-moor.{}", self.moor)?;
+        if let Some(n) = self.moor {
+            write!(f, "-moor.{n}")?;
         }
         Ok(())
     }
 }
 
-/// Accepts `--version` output that names a release at least [`REQUIRED`].
+/// Accepts `--version` output that names a `-moor` build at least [`REQUIRED`]. An upstream
+/// release lacks the flags whatever its number.
 pub(super) fn check(output: &str) -> Result<(), DriverError> {
     let found = output.trim();
     match Version::parse(output) {
-        Some(v) if v >= REQUIRED => Ok(()),
+        Some(v) if v.moor.is_some() && v >= REQUIRED => Ok(()),
         parsed => {
             let found = parsed.map_or_else(|| format!("{found:?} (unreadable)"), |v| v.to_string());
             Err(DriverError::Failed {
                 summary: format!(
-                    "crabbox {REQUIRED} or newer is required, found {found}; upgrade crabbox"
+                    "crabbox {REQUIRED} or a newer -moor build of IniZio/crabbox is required, \
+                     found {found}; install it"
                 ),
             })
         }
