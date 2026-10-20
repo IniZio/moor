@@ -25,11 +25,8 @@ use crate::testing::surface::FakeSurface;
 mod env;
 mod moor_yaml;
 mod setup_parity;
-pub(in crate::ops::run) mod stage;
 mod sync;
 mod transport;
-
-use stage::{command_execs, command_results};
 
 pub(in crate::ops::run) const SHA: &str = "0123456789abcdef0123456789abcdef01234567";
 
@@ -169,13 +166,13 @@ pub(in crate::ops::run) fn ran_events(f: &Fx) -> usize {
 
 #[test]
 fn inherited_output_is_streamed_to_moor() {
-    let f = ready_with(command_results([Ok(ExecOutcome::Exited { code: 3 })]));
+    let f = ready_with(FakeDriver::new().exec_results([Ok(ExecOutcome::Exited { code: 3 })]));
     let mut r = req(&["make", "test"]);
     r.inherit_output = true;
     let v = run(&f.cx, &r).unwrap();
     assert_eq!(v.exit, Some(3));
     assert!(v.ran && !v.interrupted);
-    let (_, spec, _) = command_execs(&f).remove(0);
+    let (_, spec, _) = f.driver.execs().remove(0);
     assert_eq!(spec.output, Some(Output::Inherit));
     assert_eq!(command(&spec.argv), ["sh", "-c", "'make' 'test'"]);
 }
@@ -185,7 +182,7 @@ fn plain_run_launches_through_sh_and_stores_the_users_argv() {
     let (f, multi) = (ready(), req(&["echo", "a b"]));
     run(&f.cx, &req(&["echo one; echo TWO"])).unwrap();
     run(&f.cx, &multi).unwrap();
-    let launched = |i| command(&command_execs(&f).remove(i).1.argv).to_vec();
+    let launched = |i| command(&f.driver.execs().remove(i).1.argv).to_vec();
     assert_eq!(launched(0), ["sh", "-c", "echo one; echo TWO"]);
     assert_eq!(launched(1), ["sh", "-c", &command_line(&multi.argv)]);
     let stored = f.cx.store().unwrap().last_run(f.id).unwrap().unwrap().argv;
@@ -203,7 +200,7 @@ fn json_output_goes_to_a_run_log_under_the_state_dir() {
     let want = f.dir.path().join("runs").join(format!("{}.log", id.get()));
     assert_eq!(v.log, want.display().to_string());
     assert!(want.parent().unwrap().is_dir());
-    let (handle, spec, _) = command_execs(&f).remove(0);
+    let (handle, spec, _) = f.driver.execs().remove(0);
     assert_eq!(handle.as_str(), "box-1");
     assert_eq!(spec.output, Some(Output::Log(want)));
     assert_eq!(v.exit, Some(0));
@@ -220,7 +217,7 @@ fn sync_class_and_directories_come_from_the_box() {
     r.no_sync = true;
     let v = run(&f.cx, &r).unwrap();
     assert_eq!(v.sync, SyncMode::None);
-    let (_, spec, _) = command_execs(&f).remove(0);
+    let (_, spec, _) = f.driver.execs().remove(0);
     assert_eq!(spec.sync, SyncMode::None);
     assert_eq!(spec.host_cwd.as_deref(), Some(f.dir.path()));
     assert_eq!(spec.cwd.unwrap().as_str(), "/work/cbx_1/repo");
@@ -258,7 +255,7 @@ fn unknown_box_is_refused() {
 fn stored_workdir_with_dot_dot_is_the_command_cwd() {
     let f = ready_with(FakeDriver::new().work_root("/p/bin/../box/work"));
     run(&f.cx, &req(&["true"])).unwrap();
-    let (_, spec, _) = command_execs(&f).remove(0);
+    let (_, spec, _) = f.driver.execs().remove(0);
     assert_eq!(spec.cwd.unwrap().as_str(), "/p/bin/../box/work/cbx_1/repo");
 }
 
@@ -342,7 +339,7 @@ fn asleep_box_is_woken_before_the_command_runs() {
     let v = run(&f.cx, &req(&["true"])).unwrap();
     assert!(v.ran);
     assert_eq!(wake_calls(&f), 1);
-    assert_eq!(command_execs(&f).len(), 1);
+    assert_eq!(f.driver.execs().len(), 1);
     assert_eq!(box_state(&f), BoxState::Ready);
     assert!(kinds(&f).contains(&"woke".to_owned()));
 }
@@ -451,7 +448,7 @@ fn run_is_recorded_in_flight_while_the_command_runs() {
 
 #[test]
 fn interrupted_command_is_recorded_without_an_exit() {
-    let f = ready_with(command_results([Ok(ExecOutcome::Interrupted)]));
+    let f = ready_with(FakeDriver::new().exec_results([Ok(ExecOutcome::Interrupted)]));
     let v = run(&f.cx, &req(&["sleep", "9"])).unwrap();
     assert!(v.interrupted && v.ran);
     assert_eq!(v.exit, None);
@@ -463,7 +460,7 @@ fn interrupted_command_is_recorded_without_an_exit() {
 
 #[test]
 fn driver_failure_finishes_the_run_and_returns_the_error() {
-    let f = ready_with(command_results([Err(DriverError::Failed {
+    let f = ready_with(FakeDriver::new().exec_results([Err(DriverError::Failed {
         summary: "sync failed".into(),
     })]));
     let e = run(&f.cx, &req(&["true"])).unwrap_err();
@@ -477,7 +474,7 @@ fn driver_failure_finishes_the_run_and_returns_the_error() {
 
 #[test]
 fn driver_failure_is_kept_on_the_ran_event() {
-    let f = ready_with(command_results([Err(DriverError::Failed {
+    let f = ready_with(FakeDriver::new().exec_results([Err(DriverError::Failed {
         summary: "the Box lease was busy; try again".into(),
     })]));
     run(&f.cx, &req(&["true"])).unwrap_err();

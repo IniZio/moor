@@ -5,10 +5,9 @@ use std::process::Command;
 
 use moor_core::exec_env::{self, BoxCtx, ProxyCtx, Purpose};
 use moor_core::seam::agent_profile::{EnvVar, ProxyAddr};
-use moor_core::seam::driver::BoxStep;
 use moor_core::{BoxPath, Secret};
 
-use super::{script_lines, stage_steps};
+use super::script_lines;
 
 const PORT: u16 = 4321;
 const CA: &str = "-----BEGIN CERTIFICATE-----\nQUJDREVGRw==\n-----END CERTIFICATE-----\n";
@@ -30,30 +29,25 @@ fn placeholder_env() -> Vec<EnvVar> {
     }]
 }
 
-fn cred(dir: &Path) -> BoxPath {
-    BoxPath::restore(dir.to_str().unwrap()).unwrap()
-}
-
 fn workdir() -> BoxPath {
     BoxPath::restore("/work").unwrap()
 }
 
 #[test]
 fn the_agent_gets_the_same_box_environment_as_run() {
-    let c = cred(Path::new("/home/box/.moor-cred"));
     let w = workdir();
     let mut p = proxy();
     p.box_env = vec![("QUOTED".to_owned(), "it's".to_owned())];
     let strip = ["PLATFORM_TOKEN".to_owned(), "PLATFORM_TOKEN".to_owned()];
     let origin = Some("git@github.com:o/n.git");
-    let agent = super::exec_env(&c, Some(&p), &strip, origin, &w).unwrap();
+    let agent = super::exec_env(Some(&p), &strip, origin, &w).unwrap();
     let run = exec_env::build(
         &BoxCtx {
             env: &p.box_env,
             strip: &strip,
             proxy: Some(ProxyCtx {
                 box_port: PORT,
-                cred: &c,
+                ca_pem: &p.ca_pem,
                 direct: &[],
             }),
             origin,
@@ -67,14 +61,14 @@ fn the_agent_gets_the_same_box_environment_as_run() {
     assert_eq!(agent.unset, ["PLATFORM_TOKEN"]);
     assert_eq!(agent.unset, run.unset);
     assert_eq!(agent.cwd, run.cwd);
-    assert_eq!(script_lines(&c, &p, &[], origin).unwrap(), run.prelude);
+    assert_eq!(script_lines(&p, &[], origin).unwrap(), run.prelude);
 }
 
 #[test]
 fn without_a_proxy_the_environment_only_strips_names() {
     let w = workdir();
     let strip = ["PLATFORM_TOKEN".to_owned()];
-    let exec = super::exec_env(&w, None, &strip, None, &w).unwrap();
+    let exec = super::exec_env(None, &strip, None, &w).unwrap();
     assert_eq!(exec.unset, strip);
     assert!(exec.vars.is_empty());
     assert!(exec.prelude.iter().all(|l| !l.contains("PROXY")));
@@ -86,13 +80,7 @@ fn lines_for(origin: Option<&str>) -> Vec<String> {
         ("GH_TOKEN".to_owned(), "gho_moor-proxy".to_owned()),
         ("QUOTED".to_owned(), "it's".to_owned()),
     ];
-    script_lines(
-        &cred(Path::new("/home/box/.moor-cred")),
-        &p,
-        &placeholder_env(),
-        origin,
-    )
-    .unwrap()
+    script_lines(&p, &placeholder_env(), origin).unwrap()
 }
 
 #[test]
@@ -105,7 +93,7 @@ fn the_lines_carry_the_exports() {
         "export CURL_CA_BUNDLE=\"$moor_bundle\"",
         "export REQUESTS_CA_BUNDLE=\"$moor_bundle\"",
         "export GIT_SSL_CAINFO=\"$moor_bundle\"",
-        "export NODE_EXTRA_CA_CERTS='/home/box/.moor-cred/proxy-ca.pem'",
+        "export NODE_EXTRA_CA_CERTS=\"$HOME/.moor-proxy/ca.pem\"",
         "export HTTPS_PROXY=\"http://127.0.0.1:4321\"",
         "export HTTP_PROXY=\"http://127.0.0.1:4321\"",
         "export https_proxy=\"http://127.0.0.1:4321\"",
@@ -155,31 +143,25 @@ fn rule_and_repo_env_is_left_to_the_launch_script() {
 
 #[test]
 fn a_bad_name_or_value_is_refused() {
-    let c = cred(Path::new("/c"));
     let bad = [EnvVar {
         name: "A B".to_owned(),
         value: Secret::new(b"x".to_vec()),
     }];
-    assert!(script_lines(&c, &proxy(), &bad, None).is_err());
+    assert!(script_lines(&proxy(), &bad, None).is_err());
     let binary = [EnvVar {
         name: "A".to_owned(),
         value: Secret::new(vec![0xff]),
     }];
-    assert!(script_lines(&c, &proxy(), &binary, None).is_err());
+    assert!(script_lines(&proxy(), &binary, None).is_err());
 }
 
 #[test]
 fn the_script_runs_and_builds_the_environment() {
     let dir = tempfile::TempDir::new().unwrap();
-    std::fs::write(dir.path().join("proxy-ca.pem"), CA).unwrap();
+    let home = dir.path().join("home");
+    std::fs::create_dir(&home).unwrap();
     let fake = fake_sudo(dir.path());
-    let lines = script_lines(
-        &cred(dir.path()),
-        &proxy(),
-        &placeholder_env(),
-        Some("https://github.com/o/n"),
-    )
-    .unwrap();
+    let lines = script_lines(&proxy(), &placeholder_env(), Some("https://github.com/o/n")).unwrap();
     let script = format!("{}\nenv", lines.join("\n"));
     let script_path = dir.path().join("launch.sh");
     std::fs::write(&script_path, &script).unwrap();
@@ -197,6 +179,7 @@ fn the_script_runs_and_builds_the_environment() {
     let out = Command::new("sh")
         .arg(&script_path)
         .env("PATH", path)
+        .env("HOME", &home)
         .env("GH_TOKEN", "real-gh")
         .env("GITHUB_TOKEN", "real-github")
         .env("f", "keep")
@@ -208,15 +191,21 @@ fn the_script_runs_and_builds_the_environment() {
         String::from_utf8_lossy(&out.stderr)
     );
     let env = parse_env(&out.stdout);
-    assert_yarn_vars(&env, dir.path());
-    assert_ca_vars(&env, dir.path(), &dir.path().join("ca-bundle.pem"));
+    assert_yarn_vars(&env, &home);
+    assert_ca_vars(&env, &home);
     is(&env, "CLAUDE_CODE_OAUTH_TOKEN", "moor-proxy");
     is(&env, "GIT_CONFIG_VALUE_0", "https://github.com/o/n.git");
     is(&env, "NODE_USE_ENV_PROXY", "1");
     is(&env, "f", "keep");
-    assert!(std::fs::read_to_string(dir.path().join("ca-bundle.pem"))
-        .unwrap()
-        .ends_with(CA));
+    assert!(
+        std::fs::read_to_string(home.join(".moor-proxy/ca-bundle.pem"))
+            .unwrap()
+            .ends_with(CA)
+    );
+    assert_eq!(
+        std::fs::read_to_string(home.join(".moor-proxy/ca.pem")).unwrap(),
+        CA
+    );
     for gone in ["GH_TOKEN", "GITHUB_TOKEN", "moor_bundle"] {
         assert!(!env.contains_key(gone), "{gone}");
     }
@@ -234,9 +223,9 @@ struct Launch {
 }
 
 /// Host tools the launch script may call, linked into the test PATH so a host JDK never leaks in.
-const HOST_TOOLS: [&str; 24] = [
+const HOST_TOOLS: [&str; 25] = [
     "sh", "cat", "rm", "mkdir", "chmod", "grep", "sed", "awk", "mv", "cp", "mktemp", "cut", "tr",
-    "head", "tail", "env", "id", "dirname", "basename", "touch", "ls", "sort", "ln", "wc",
+    "head", "tail", "env", "id", "dirname", "basename", "touch", "ls", "sort", "ln", "wc", "cmp",
 ];
 
 fn which(tool: &str) -> Option<PathBuf> {
@@ -249,7 +238,6 @@ fn which(tool: &str) -> Option<PathBuf> {
 /// host tools only; a fake `keytool` is present only when `with_keytool`.
 fn run_launch(with_keytool: bool) -> Launch {
     let dir = tempfile::TempDir::new().unwrap();
-    std::fs::write(dir.path().join("proxy-ca.pem"), CA).unwrap();
     let bin = fake_sudo(dir.path());
     for tool in HOST_TOOLS {
         if let Some(src) = which(tool) {
@@ -275,7 +263,7 @@ fn run_launch(with_keytool: bool) -> Launch {
         "org.gradle.jvmargs=-Xmx2560m\n",
     )
     .unwrap();
-    let lines = script_lines(&cred(dir.path()), &proxy(), &placeholder_env(), None).unwrap();
+    let lines = script_lines(&proxy(), &placeholder_env(), None).unwrap();
     let script = format!("{}\nenv", lines.join("\n"));
     let script_path = dir.path().join("launch.sh");
     std::fs::write(&script_path, &script).unwrap();
@@ -333,7 +321,7 @@ fn without_keytool_the_java_setup_changes_nothing() {
     assert_eq!(text, "org.gradle.jvmargs=-Xmx2560m\n");
     assert!(!l.dir.path().join("home/.gradle").exists());
     is(&l.env, "HTTPS_PROXY", &format!("http://127.0.0.1:{PORT}"));
-    assert_ca_vars(&l.env, l.dir.path(), &l.dir.path().join("ca-bundle.pem"));
+    assert_ca_vars(&l.env, &l.dir.path().join("home"));
 }
 
 /// A directory holding a `sudo` that always refuses.
@@ -356,8 +344,9 @@ fn parse_env(stdout: &[u8]) -> HashMap<String, String> {
         .collect()
 }
 
-/// Asserts every CA bundle variable points at the built bundle and Node at the proxy CA.
-fn assert_ca_vars(env: &HashMap<String, String>, dir: &Path, bundle: &Path) {
+/// Asserts every CA bundle variable points at the bundle built under `home` and Node at the proxy CA.
+fn assert_ca_vars(env: &HashMap<String, String>, home: &Path) {
+    let bundle = home.join(".moor-proxy/ca-bundle.pem");
     let bundle_str = bundle.to_str().unwrap();
     for name in [
         "SSL_CERT_FILE",
@@ -370,7 +359,7 @@ fn assert_ca_vars(env: &HashMap<String, String>, dir: &Path, bundle: &Path) {
     is(
         env,
         "NODE_EXTRA_CA_CERTS",
-        dir.join("proxy-ca.pem").to_str().unwrap(),
+        home.join(".moor-proxy/ca.pem").to_str().unwrap(),
     );
 }
 
@@ -379,23 +368,8 @@ fn is(env: &HashMap<String, String>, k: &str, v: &str) {
     assert_eq!(env.get(k).map(String::as_str), Some(v), "{k}");
 }
 
-#[test]
-fn stage_steps_put_only_the_ca_under_the_credential_directory() {
-    let c = cred(Path::new("/home/box/.moor-cred"));
-    let [(ca, ca_text)] = stage_steps(&c, &proxy()).unwrap();
-    assert_eq!(
-        ca,
-        BoxStep::Put {
-            path: BoxPath::restore("/home/box/.moor-cred/proxy-ca.pem").unwrap(),
-            bytes: CA.as_bytes().to_vec(),
-            mode: 0o644,
-        }
-    );
-    assert_eq!(ca_text, "could not stage the proxy CA");
-}
-
 /// Asserts the proxy URL reaches the usual and Yarn variables, and Yarn gets no CA setting of its own and a cache under `$HOME/.cache`.
-fn assert_yarn_vars(env: &HashMap<String, String>, dir: &Path) {
+fn assert_yarn_vars(env: &HashMap<String, String>, home: &Path) {
     let proxy_url = format!("http://127.0.0.1:{PORT}");
     for name in ["HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy"] {
         is(env, name, &proxy_url);
@@ -409,9 +383,9 @@ fn assert_yarn_vars(env: &HashMap<String, String>, dir: &Path) {
     is(
         env,
         "NODE_EXTRA_CA_CERTS",
-        dir.join("proxy-ca.pem").to_str().unwrap(),
+        home.join(".moor-proxy/ca.pem").to_str().unwrap(),
     );
-    let home = std::env::var("HOME").unwrap();
+    let home = home.display();
     is(env, "YARN_CACHE_FOLDER", &format!("{home}/.cache/yarn"));
     is(
         env,

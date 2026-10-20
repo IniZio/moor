@@ -7,16 +7,13 @@ use moor_core::boxscript::quote;
 use moor_core::config::{DotfilesConfig, UserConfig};
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::run::SyncMode;
-use moor_core::seam::driver::{DriverError, ExecOutcome};
+use moor_core::seam::driver::ExecOutcome;
 use moor_core::seam::proc::{Deadline, Tool};
 use moor_core::seam::proxy_host::ProxyHostError;
 use moor_core::view::{DotfilesView, StartView};
 use moor_core::{BoxId, StartReq};
 
-use super::setup::{
-    scripted, unwrapped,
-    Step::{Cmd, Sync},
-};
+use super::setup::unwrapped;
 use super::state::WORKING;
 use super::{req, world_with, World};
 use crate::ops::start::run;
@@ -85,17 +82,9 @@ fn dotfiles_execs(w: &World) -> Vec<(Vec<String>, Deadline, SyncMode)> {
     w.driver
         .execs()
         .into_iter()
-        .filter(|e| {
-            let mkdir = e.1.argv.first().map(String::as_str) == Some("mkdir");
-            e.1.sync == SyncMode::None && e.1.cwd.is_none() && !mkdir
-        })
+        .filter(|e| e.1.sync == SyncMode::None && e.1.cwd.is_none())
         .map(|e| (unwrapped(e.1.argv), e.2, e.1.sync))
         .collect()
-}
-
-/// Whether an upload is the exec-env staging of the Proxy CA, not a dotfiles archive.
-fn is_staged(path: &str) -> bool {
-    path.contains("/.moor-cred-")
 }
 
 fn started(w: &World) -> StartView {
@@ -105,9 +94,7 @@ fn started(w: &World) -> StartView {
 /// The one upload: the scripted tar bytes in a per-run random directory, owner-only.
 /// Returns the archive path.
 fn assert_archive_put(w: &World) -> String {
-    let puts: Vec<_> = (w.driver.puts().into_iter())
-        .filter(|p| !is_staged(p.1.as_str()))
-        .collect();
+    let puts = w.driver.puts();
     assert_eq!(puts.len(), 1);
     let (handle, path, bytes, mode, _) = puts.first().unwrap();
     assert_eq!(handle.as_str(), "box-1");
@@ -129,7 +116,7 @@ fn assert_archive_put(w: &World) -> String {
 fn assert_dotfiles_exec(w: &World, archive: &str) {
     let want = ["sh", "-c", &script(archive, DEFAULT_INSTALL)].map(str::to_owned);
     let execs = w.driver.execs();
-    assert_eq!(execs.len(), 5);
+    assert_eq!(execs.len(), 3);
     let (_, spec, deadline) = execs.last().unwrap();
     assert!(spec
         .argv
@@ -178,18 +165,8 @@ fn dotfiles_run_after_setup_and_before_the_agent_launches() {
         [
             "acquire",
             "exec box-1",
-            "connect_argv box-1",
-            "peek_file box-1",
-            "exec box-1",
-            "connect_argv box-1",
-            "put_file box-1",
             "exec box-1",
             "copy_out box-1",
-            "put_file box-1",
-            "connect_argv box-1",
-            "peek_file box-1",
-            "exec box-1",
-            "connect_argv box-1",
             "put_file box-1",
             "exec box-1"
         ]
@@ -231,11 +208,7 @@ fn log_writer(w: &World) {
 /// A started `demo` whose dotfiles exec failed (setup passes first).
 fn failed_start() -> (World, Arc<FakeEngine>, tempfile::TempDir, tempfile::TempDir) {
     let src = tempfile::tempdir().unwrap();
-    let driver = FakeDriver::new().exec_results(scripted([
-        Sync(Ok(exit(0))),
-        Cmd(Ok(exit(0))),
-        Cmd(Ok(exit(1))),
-    ]));
+    let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(0)), Ok(exit(1))]);
     let (w, engine, repo) = dotfiles_world("setup: [a]\n", Some(src.path()), None, driver);
     log_writer(&w);
     (w, engine, repo, src)
@@ -287,24 +260,20 @@ fn without_dotfiles_config_nothing_is_packed_uploaded_or_run() {
     let v = started(&w);
     assert_eq!(v.dotfiles, DotfilesView::default());
     assert!(w.proc.calls().iter().all(|c| c.tool != Tool::Sh));
-    assert!(w.driver.puts().iter().all(|p| is_staged(p.1.as_str())));
+    assert!(w.driver.puts().is_empty());
     assert!(dotfiles_execs(&w).is_empty());
 }
 
 #[test]
 fn dotfiles_still_run_when_a_setup_line_fails() {
     let src = tempfile::tempdir().unwrap();
-    let driver = FakeDriver::new().exec_results(scripted([
-        Sync(Ok(exit(0))),
-        Cmd(Ok(exit(1))),
-        Cmd(Ok(exit(0))),
-    ]));
+    let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(1)), Ok(exit(0))]);
     let (w, engine, _repo) = dotfiles_world("setup: [a]\n", Some(src.path()), None, driver);
     let v = started(&w);
     assert_eq!((v.boxed.lifecycle, v.boxed.session_state), WORKING);
     assert!(v.setup.ran && !v.setup.ok);
     assert!(v.dotfiles.ran && v.dotfiles.ok);
-    assert_eq!(w.driver.execs().len(), 5);
+    assert_eq!(w.driver.execs().len(), 3);
     assert_eq!(dotfiles_execs(&w).len(), 1);
     let (_, spec, _) = w.driver.execs().pop().unwrap();
     assert_eq!(spec.sync, SyncMode::None);
@@ -325,11 +294,7 @@ fn the_host_log_and_its_directory_are_owner_only() {
 #[test]
 fn a_failed_setup_line_still_fails_setup_when_the_dotfiles_fail_too() {
     let src = tempfile::tempdir().unwrap();
-    let driver = FakeDriver::new().exec_results(scripted([
-        Sync(Ok(exit(0))),
-        Cmd(Ok(exit(1))),
-        Cmd(Ok(exit(1))),
-    ]));
+    let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(1)), Ok(exit(1))]);
     let (w, engine, _repo) = dotfiles_world("setup: [make-it]\n", Some(src.path()), None, driver);
     log_writer(&w);
     let v = run(&w.cx, &goal_req()).unwrap();
@@ -392,28 +357,4 @@ fn dotfiles_fail_when_the_proxy_cannot_start() {
     assert!(dotfiles_execs(&w).is_empty());
     assert!(w.proc.calls().iter().all(|c| c.tool != Tool::Sh));
     assert!(engine.launches().is_empty());
-}
-
-/// The argv of the last Box exec after a start whose dotfiles exec ended as `out`.
-fn last_argv_after(out: Result<ExecOutcome, DriverError>) -> Vec<String> {
-    let src = tempfile::tempdir().unwrap();
-    let driver = FakeDriver::new().exec_results(scripted([Sync(Ok(exit(0))), Cmd(out)]));
-    let (w, _, _repo) = dotfiles_world("env: {A: a}\n", Some(src.path()), None, driver);
-    let v = run(&w.cx, &goal_req()).unwrap();
-    assert!(v.dotfiles.ran && !v.dotfiles.ok);
-    w.driver.execs().pop().unwrap().1.argv
-}
-
-#[test]
-fn a_dotfiles_exec_that_errors_or_is_interrupted_removes_the_staged_credentials() {
-    let timeout = DriverError::Timeout(Duration::from_mins(15));
-    for out in [Ok(ExecOutcome::Interrupted), Err(timeout)] {
-        let last = last_argv_after(out);
-        let dir = last.get(2).cloned().unwrap_or_default();
-        assert_eq!(
-            last.get(..2),
-            Some(&["rm".to_owned(), "-rf".to_owned()][..])
-        );
-        assert!(dir.contains(".moor-cred-"), "{last:?}");
-    }
 }

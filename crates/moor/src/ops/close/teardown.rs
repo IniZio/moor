@@ -73,9 +73,6 @@ pub(super) fn teardown(
         class: Some(cfg.size.value.as_str().to_owned()),
     };
     let result = cx.driver().exec(handle, &spec, exec.deadline());
-    if matches!(result, Err(_) | Ok(ExecOutcome::Interrupted)) {
-        exec.cleanup(cx, &site);
-    }
     let reason = match result {
         Ok(ExecOutcome::Exited { code: 0 }) => return Ok(()),
         Ok(ExecOutcome::Exited { code }) => format!("exit {code}"),

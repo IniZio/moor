@@ -113,7 +113,7 @@ fn private_log(log: &Path) -> std::io::Result<()> {
     fs::set_permissions(log, Permissions::from_mode(0o600))
 }
 
-/// Runs the install `script` in the Box with the env and Proxy credentials setup gets, logging to
+/// Runs the install `script` in the Box with the env and Proxy setup gets, logging to
 /// `log`. The error is why it could not run to an exit.
 fn install(
     cx: &Cx,
@@ -134,13 +134,9 @@ fn install(
         host_cwd: Some(site.worktree.to_path_buf()),
         class: Some(cfg.size.value.as_str().to_owned()),
     };
-    let out = cx
-        .driver()
-        .exec(site.handle, &exec, Deadline(DOTFILES_DEADLINE));
-    if matches!(out, Err(_) | Ok(ExecOutcome::Interrupted)) {
-        env.cleanup(cx, site);
-    }
-    out.map_err(|e| e.to_string())
+    cx.driver()
+        .exec(site.handle, &exec, Deadline(DOTFILES_DEADLINE))
+        .map_err(|e| e.to_string())
 }
 
 /// Packs the configured dotfiles on the host, uploads them, and runs the install script in

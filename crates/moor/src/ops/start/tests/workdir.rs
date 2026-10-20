@@ -91,9 +91,7 @@ fn every_box_exec_runs_from_the_box_worktree() {
 fn start_in_a_replaced_box_runs_setup_in_a_workdir_whose_root_holds_a_parent_component() {
     let driver = FakeDriver::new().work_root("/w/bin/../box").exec_results([
         Ok(exit(0)),
-        Ok(exit(0)),
         Ok(exit(1)),
-        Ok(exit(0)),
         Ok(exit(0)),
     ]);
     let (w, id) = failed_setup_with("setup: [a]\n", driver);

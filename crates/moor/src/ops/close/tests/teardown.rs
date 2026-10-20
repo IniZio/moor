@@ -22,13 +22,8 @@ pub(super) const YAML: &str =
     "teardown: ['echo bye', 'rm -rf cache']\nenv: {K: v}\nbox: {size: large}\n";
 
 /// The Box user's HOME, which a Proxy-backed teardown stages its credentials under.
-pub(super) fn with_home(driver: FakeDriver) -> FakeDriver {
-    let environ = BoxPath::restore("/proc/self/environ").unwrap();
-    driver.peek_text("box-1", &environ, "PATH=/bin\0HOME=/home/box\0")
-}
-
 fn fx_yaml(driver: FakeDriver, yaml: &str) -> Fx {
-    let f = fx_with(with_home(driver), FakeSurface::new("/s"), 0);
+    let f = fx_with(driver, FakeSurface::new("/s"), 0);
     fs::write(f.dir.path().join(".moor.yaml"), yaml).unwrap();
     base_has(&f, yaml);
     f
@@ -133,10 +128,9 @@ fn teardown_driver_error_warns_and_still_releases() {
 }
 
 #[test]
-fn interrupted_teardown_removes_the_staged_credential_dir() {
+fn an_interrupted_teardown_warns_and_the_box_is_still_deleted() {
     let f = fx_yaml(
         FakeDriver::new().exec_results([
-            Ok(ExecOutcome::Exited { code: 0 }),
             Ok(ExecOutcome::Exited { code: 0 }),
             Ok(ExecOutcome::Exited { code: 0 }),
             Ok(ExecOutcome::Exited { code: 0 }),
@@ -147,17 +141,10 @@ fn interrupted_teardown_removes_the_staged_credential_dir() {
     );
     let v = run(&f.cx, &req(false)).unwrap();
     assert!(v.box_deleted);
-    let execs = f.driver.execs();
     assert_eq!(
-        execs.len(),
-        7,
-        "probe, recheck, collection, artifacts, mkdir, teardown, rm"
-    );
-    let argv = &execs.last().unwrap().1.argv;
-    assert!(
-        matches!(argv.as_slice(), [rm, f, dir] if rm == "rm" && f == "-rf"
-            && dir.starts_with("/home/box/.moor-cred-")),
-        "{argv:?}"
+        f.driver.execs().len(),
+        5,
+        "probe, recheck, collection, artifacts, teardown"
     );
     assert!(f
         .cx
@@ -268,8 +255,7 @@ fn fx_woken_yaml(yaml: &str) -> Fx {
     let worktree = dir.path().join("repo");
     fs::create_dir(&worktree).unwrap();
     let path = BoxPath::under("/work/cbx_1/repo", ".moor/boxwork").unwrap();
-    let driver =
-        Arc::new(with_home(FakeDriver::new()).peek_text("box-1", &path, "ahead=0 dirty=0"));
+    let driver = Arc::new(FakeDriver::new().peek_text("box-1", &path, "ahead=0 dirty=0"));
     let surface = Arc::new(FakeSurface::new("/s"));
     let proc = proc(0);
     let cx = Cx::fake(

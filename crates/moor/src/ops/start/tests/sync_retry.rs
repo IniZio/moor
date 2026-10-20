@@ -8,8 +8,7 @@ use moor_core::domain::decision::Intent;
 use moor_core::{BoxId, ErrorKind, StartReq};
 
 use super::moor_yaml::script_base_yaml;
-use super::setup::Step::{Cmd, Sync};
-use super::setup::{exit, kinds, scripted, setup_execs, start_req, Step};
+use super::setup::{exit, kinds, setup_execs, start_req};
 use super::state::working;
 use super::{hold, world_at, World};
 use crate::adapters::clock::SystemClock;
@@ -18,14 +17,17 @@ use crate::store::Store;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use moor_core::domain::box_state::BoxLifecycle;
+use moor_core::seam::driver::{DriverError, ExecOutcome};
 
 const YAML: &str = "setup: [a]\n";
 
 /// A world over a repo with `setup: [a]`, whose first execs give `results`.
-fn world_with_setup(results: impl IntoIterator<Item = Step>) -> (World, Arc<FakeEngine>) {
+fn world_with_setup(
+    results: impl IntoIterator<Item = Result<ExecOutcome, DriverError>>,
+) -> (World, Arc<FakeEngine>) {
     let repo = tempfile::tempdir().unwrap();
     std::fs::write(repo.path().join(".moor.yaml"), YAML).unwrap();
-    let driver = FakeDriver::new().exec_results(scripted(results));
+    let driver = FakeDriver::new().exec_results(results);
     let mut w = world_at(driver, repo.path());
     let engine = Arc::new(FakeEngine::new());
     w.cx = w.cx.with_engine(engine.clone());
@@ -66,7 +68,7 @@ fn box_state(w: &World) -> Option<BoxState> {
 
 #[test]
 fn a_failed_sync_keeps_the_box_and_says_how_to_debug_retry_and_close_it() {
-    let (w, engine) = world_with_setup([Sync(Ok(exit(1)))]);
+    let (w, engine) = world_with_setup([Ok(exit(1))]);
     let err = start(&w).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Failed);
     assert!(err
@@ -89,7 +91,7 @@ fn a_failed_sync_keeps_the_box_and_says_how_to_debug_retry_and_close_it() {
 
 #[test]
 fn a_failed_sync_names_the_step_the_tail_and_the_box_in_the_error_value() {
-    let (w, _) = world_with_setup([Sync(Ok(exit(1)))]);
+    let (w, _) = world_with_setup([Ok(exit(1))]);
     let err = start(&w).unwrap_err();
     let value = err.value.unwrap();
     assert_eq!(field(&value, "failed_step"), "sync");
@@ -101,7 +103,7 @@ fn a_failed_sync_names_the_step_the_tail_and_the_box_in_the_error_value() {
 
 #[test]
 fn a_failed_sync_shows_the_message_and_every_hint_in_text_and_the_fields_in_json() {
-    let (w, _) = world_with_setup([Sync(Ok(exit(1)))]);
+    let (w, _) = world_with_setup([Ok(exit(1))]);
     let err = start(&w).unwrap_err();
     let resp = err.into_response("start", Vec::new());
     let shown = crate::cli::render(&resp, &crate::cli::GlobalOpts::default());
@@ -127,7 +129,7 @@ fn a_failed_sync_shows_the_message_and_every_hint_in_text_and_the_fields_in_json
 
 #[test]
 fn start_after_a_failed_sync_retries_in_the_same_box_and_launches() {
-    let (w, engine) = world_with_setup([Sync(Ok(exit(1))), Sync(Ok(exit(0))), Cmd(Ok(exit(0)))]);
+    let (w, engine) = world_with_setup([Ok(exit(1)), Ok(exit(0)), Ok(exit(0))]);
     start(&w).unwrap_err();
     checked_out(&w);
     let again = start(&w).unwrap();
@@ -145,7 +147,7 @@ fn start_after_a_failed_sync_retries_in_the_same_box_and_launches() {
 
 #[test]
 fn a_retry_that_fails_to_sync_again_keeps_the_box_and_stays_setup_failed() {
-    let (w, engine) = world_with_setup([Sync(Ok(exit(1))), Sync(Ok(exit(2)))]);
+    let (w, engine) = world_with_setup([Ok(exit(1)), Ok(exit(2))]);
     start(&w).unwrap_err();
     let err = start(&w).unwrap_err();
     assert!(err.error.to_string().contains("exit 2"), "{err:?}");
@@ -162,7 +164,7 @@ fn a_retry_that_fails_to_sync_again_keeps_the_box_and_stays_setup_failed() {
 
 #[test]
 fn a_retry_in_the_kept_box_holds_the_setup_intent_while_it_runs() {
-    let (w, _) = world_with_setup([Sync(Ok(exit(1)))]);
+    let (w, _) = world_with_setup([Ok(exit(1))]);
     start(&w).unwrap_err();
     checked_out(&w);
     let seen = Arc::new(Mutex::new(Vec::new()));
@@ -183,7 +185,7 @@ fn a_retry_in_the_kept_box_holds_the_setup_intent_while_it_runs() {
 
 #[test]
 fn a_retry_in_the_kept_box_is_refused_while_another_op_holds_the_lock() {
-    let (w, _) = world_with_setup([Sync(Ok(exit(1)))]);
+    let (w, _) = world_with_setup([Ok(exit(1))]);
     start(&w).unwrap_err();
     let execs = w.driver.execs().len();
     let _held = hold(&w, "close");

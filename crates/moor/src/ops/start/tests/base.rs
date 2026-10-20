@@ -5,7 +5,7 @@ use moor_core::seam::surface::Surface;
 use moor_core::BoxName;
 
 use super::moor_yaml::script_base_yaml;
-use super::setup::{execs, is_setup_line, setup_execs};
+use super::setup::{is_setup_line, setup_execs};
 use super::{req, world, world_at};
 use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
@@ -178,7 +178,7 @@ fn an_unreadable_base_copy_fails_the_start_before_any_box_work() {
             .contains("cannot read .moor.yaml at base commit"),
         "{err:?}"
     );
-    assert!(execs(&w).is_empty());
+    assert!(w.driver.execs().is_empty());
 }
 
 #[test]

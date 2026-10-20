@@ -207,7 +207,7 @@ impl Launch<'_> {
     pub(super) fn exec_env(&self) -> Result<ExecEnv, Failure> {
         let (req, ctx) = (self.req, self.ctx);
         let (strip, origin) = (&req.strip_env, req.origin.as_deref());
-        proxy_env::exec_env(self.cred, ctx.proxy.as_ref(), strip, origin, &ctx.workdir)
+        proxy_env::exec_env(ctx.proxy.as_ref(), strip, origin, &ctx.workdir)
             .map_err(|e| fail("script", &e))
     }
 
@@ -217,7 +217,7 @@ impl Launch<'_> {
             return Ok(Vec::new());
         };
         let env = self.profile.env(self.ctx);
-        proxy_env::script_lines(self.cred, addr, &env, self.req.origin.as_deref())
+        proxy_env::script_lines(addr, &env, self.req.origin.as_deref())
             .map_err(|e| fail("script", &e))
     }
 
@@ -286,10 +286,9 @@ fn script(
 const AGENT_PATH_LINE: &str = "export PATH=\"$HOME/.local/bin:$HOME/.bun/bin:$PATH\"";
 
 /// The script the Box runs under `sh`; the credential directory goes once the brief is
-/// installed, and at exit or on a hangup, interrupt or terminate before then. With
-/// `proxy` lines the directory stays until the agent exits, since the CA bundle and the CA
-/// certificate live in it. The `strip_env` names and crabbox's own names are unset before anything
-/// else runs, and the `env` exports run just before the agent.
+/// installed, and at exit or on a hangup, interrupt or terminate before then. The `strip_env`
+/// names and crabbox's own names are unset before anything else runs, and the `env` exports run
+/// just before the agent.
 fn script_stripping(
     (cred, tmp): (&BoxPath, &BoxPath),
     ctx: &LaunchCtx,
@@ -334,9 +333,7 @@ fn script_stripping(
         lines.insert(at, line);
         at += 1;
     }
-    if proxy.is_empty() {
-        lines.insert(at + 1, remove);
-    }
+    lines.insert(at + 1, remove);
     lines.extend(proxy.iter().cloned());
     lines.extend(env.iter().cloned());
     lines.push(format!("cd {} && {}", quote(workdir), command_line(&agent)));

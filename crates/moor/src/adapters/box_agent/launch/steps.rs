@@ -9,7 +9,6 @@ use moor_core::seam::proc::{Deadline, Tool};
 
 use super::super::brief::{render, BriefInput};
 use super::super::gh_release::sha256_hex;
-use super::super::proxy_env;
 use super::gh;
 use super::install::{parse_platform, StepResult};
 use super::{fail, Failure, Launch, Platform, AGENT_PATH_LINE, INSTALL_DEADLINE};
@@ -27,8 +26,6 @@ pub(super) enum Tag {
     Brief,
     /// A hook or preseed file.
     Hooks,
-    /// A proxy file, with the text a failure is reported under.
-    Proxy(&'static str),
 }
 
 impl Tag {
@@ -39,10 +36,6 @@ impl Tag {
             Self::GhCheck | Self::GhPut => fail("gh", e),
             Self::Brief => fail("brief", e),
             Self::Hooks => fail("hooks", e),
-            Self::Proxy(text) => Failure {
-                step: "proxy",
-                message: format!("{text}: {}", e.to_string()),
-            },
         }
     }
 }
@@ -170,12 +163,6 @@ impl Launch<'_> {
                 mode: file.mode,
             };
             plan.push(Tag::Hooks, put);
-        }
-        if let Some(addr) = &ctx.proxy {
-            let staged = proxy_env::stage_steps(cred, addr).map_err(|e| fail("proxy", &e))?;
-            for (step, text) in staged {
-                plan.push(Tag::Proxy(text), step);
-            }
         }
         Ok(Staged { hooks, preseed })
     }

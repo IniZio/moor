@@ -3,7 +3,6 @@
 use moor_core::boxscript::quote;
 use moor_core::exec_env::{self, BoxCtx, ExecEnv, ProxyCtx, Purpose};
 use moor_core::seam::agent_profile::{EnvVar, ProxyAddr};
-use moor_core::seam::driver::BoxStep;
 use moor_core::BoxPath;
 
 /// True when `name` is a shell identifier.
@@ -15,19 +14,9 @@ fn is_identifier(name: &str) -> bool {
         && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
-/// The step that stages the public CA certificate under the credential directory, with the text
-/// a failure of it is reported under.
-pub(super) fn stage_steps(
-    cred: &BoxPath,
-    proxy: &ProxyAddr,
-) -> Result<[(BoxStep, &'static str); 1], String> {
-    exec_env::stage_steps(cred, &proxy.ca_pem)
-}
-
 /// The Box environment the agent starts with, from the builder every exec uses. Without a `proxy` the
 /// environment holds only the names to strip.
 pub(super) fn exec_env(
-    cred: &BoxPath,
     proxy: Option<&ProxyAddr>,
     strip: &[String],
     origin: Option<&str>,
@@ -39,7 +28,7 @@ pub(super) fn exec_env(
             strip,
             proxy: proxy.map(|p| ProxyCtx {
                 box_port: p.box_port,
-                cred,
+                ca_pem: &p.ca_pem,
                 direct: &p.direct,
             }),
             origin,
@@ -52,7 +41,6 @@ pub(super) fn exec_env(
 /// Shell lines run just before the agent starts: the builder's prelude, then the profile's `env`
 /// exports.
 pub(super) fn script_lines(
-    cred: &BoxPath,
     proxy: &ProxyAddr,
     env: &[EnvVar],
     origin: Option<&str>,
@@ -63,7 +51,7 @@ pub(super) fn script_lines(
             strip: &[],
             proxy: Some(ProxyCtx {
                 box_port: proxy.box_port,
-                cred,
+                ca_pem: &proxy.ca_pem,
                 direct: &proxy.direct,
             }),
             origin,
