@@ -95,7 +95,11 @@ fn send(method: &str, path: &str) -> (Vec<Seen>, Vec<String>) {
     let (withheld, sink) = (Withheld::new(&rules, None), Recorder::default());
     for _ in 0..100 {
         audit::apply(&proxy.drain_audit(), &capture, &withheld, &sink);
-        if !sink.calls().is_empty() {
+        if sink
+            .calls()
+            .iter()
+            .any(|c| !c.starts_with("allowed(CONNECT,"))
+        {
             break;
         }
         std::thread::sleep(Duration::from_millis(50));
