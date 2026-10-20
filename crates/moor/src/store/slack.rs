@@ -1,6 +1,6 @@
 //! Slack event dedup and the binding of a Slack thread to a Box's primary Session.
 
-use moor_core::BoxName;
+use moor_core::{BoxId, BoxName};
 use rusqlite::{params, OptionalExtension};
 
 use super::bindings::insert_binding;
@@ -16,7 +16,9 @@ pub(crate) struct SlackThread {
     pub(crate) channel: String,
     /// Timestamp of the thread's root message.
     pub(crate) thread_ts: String,
-    /// The Box whose Session the thread drives.
+    /// Id of the Box whose Session the thread drives.
+    pub(crate) box_id: BoxId,
+    /// Name of that Box.
     pub(crate) box_name: BoxName,
     /// Slack user id of the Box owner.
     pub(crate) owner: String,
@@ -167,11 +169,14 @@ impl Store {
     pub(crate) fn slack_threads(&self) -> Result<Vec<SlackThread>, StoreError> {
         let mut threads = Vec::new();
         for b in self.bindings(FRONT)? {
-            let Some(box_name) = b.box_name else { continue };
+            let (Some(box_id), Some(box_name)) = (b.box_id, b.box_name) else {
+                continue;
+            };
             let (channel, thread_ts) = split_conv_key(&b.key)?;
             threads.push(SlackThread {
                 channel,
                 thread_ts,
+                box_id,
                 box_name,
                 owner: b.owner,
                 status_ts: b.status_ts,
@@ -223,6 +228,39 @@ impl Store {
             )
             .optional()?
             .is_some())
+    }
+
+    /// True once this artifact version of the Box was shown in its thread.
+    pub(crate) fn slack_artifact_posted(
+        &self,
+        id: BoxId,
+        name: &str,
+        version: i64,
+    ) -> Result<bool, StoreError> {
+        Ok(self
+            .reader()?
+            .query_row(
+                "SELECT 1 FROM slack_artifacts WHERE box = ? AND name = ? AND version = ?",
+                params![id.get(), name, version],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some())
+    }
+
+    /// Records an artifact version as shown in its thread; repeating it is a no-op.
+    pub(crate) fn mark_slack_artifact_posted(
+        &self,
+        id: BoxId,
+        name: &str,
+        version: i64,
+    ) -> Result<(), StoreError> {
+        let now = self.now();
+        self.writer()?.execute(
+            "INSERT OR IGNORE INTO slack_artifacts (box, name, version, posted_at) VALUES (?, ?, ?, ?)",
+            params![id.get(), name, version, now.as_millis()],
+        )?;
+        Ok(())
     }
 
     /// Records a posted prompt; ignored when the event already has one.

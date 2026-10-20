@@ -10,6 +10,7 @@ use moor_core::secret::Secret;
 use serde_json::Value;
 
 use super::api::Api;
+use super::artifacts::Artifacts;
 use super::prompt::Pending;
 use crate::adapters::clock::SystemClock;
 use crate::env::Env;
@@ -233,38 +234,76 @@ pub(crate) fn follow(env: &Env, api: &Api, bot: &Secret, log: &(dyn Fn(&str) + S
             }
         }
     };
-    let mut views: HashMap<String, View> = HashMap::new();
-    let mut pending = Pending::default();
-    let mut planner = Planner::default();
-    let mut cursor = 0;
+    let mut feed = Feed::default();
     loop {
-        match store.events_after(cursor, BATCH) {
-            Ok(events) => {
-                for e in &events {
-                    cursor = cursor.max(e.row.id);
-                    views
-                        .entry(e.box_name.clone())
-                        .or_default()
-                        .fold(&e.row.kind, &e.row.payload);
-                    pending.fold(e.row.id, &e.box_name, &e.row.kind, &e.row.payload);
-                }
-                if events.len() == BATCH {
-                    continue;
-                }
-            }
-            Err(e) => log(&format!("slack status: {e}")),
-        }
+        feed.poll(&store, api, bot, &*clock, log);
+        clock.sleep(POLL_EVERY);
+    }
+}
+
+/// What the follower folded from the event feed, and what it has sent.
+///
+/// The follower starts from the first event in every process, so after a restart it folds
+/// the whole history again; the store records what was already posted.
+#[derive(Default)]
+pub(super) struct Feed {
+    /// Status by Box name.
+    views: HashMap<String, View>,
+    /// Waiting episodes that need a prompt.
+    pending: Pending,
+    /// Status send history.
+    planner: Planner,
+    /// Artifact versions not yet shown.
+    artifacts: Artifacts,
+    /// Id of the last event folded.
+    cursor: i64,
+}
+
+impl Feed {
+    /// Folds every new event, then sends due status edits, prompts and artifact versions.
+    pub(super) fn poll(
+        &mut self,
+        store: &Store,
+        api: &Api,
+        bot: &Secret,
+        clock: &dyn Clock,
+        log: &dyn Fn(&str),
+    ) {
+        self.read(store, log);
         match store.slack_threads() {
             Ok(threads) => {
-                for step in planner.plan(&threads, &views, clock.instant()) {
-                    let ok = send(&store, api, bot, &step, log);
-                    planner.record(&step, clock.instant(), ok);
+                for step in self.planner.plan(&threads, &self.views, clock.instant()) {
+                    let ok = send(store, api, bot, &step, log);
+                    self.planner.record(&step, clock.instant(), ok);
                 }
-                pending.post_due(&store, api, bot, &threads, log);
+                self.pending.post_due(store, api, bot, &threads, log);
+                self.artifacts.post_due(store, api, bot, &threads, log);
             }
             Err(e) => log(&format!("slack status: {e}")),
         }
-        clock.sleep(POLL_EVERY);
+    }
+
+    /// Folds the events after the cursor, a batch at a time.
+    fn read(&mut self, store: &Store, log: &dyn Fn(&str)) {
+        loop {
+            let events = match store.events_after(self.cursor, BATCH) {
+                Ok(events) => events,
+                Err(e) => return log(&format!("slack status: {e}")),
+            };
+            for e in &events {
+                self.cursor = self.cursor.max(e.row.id);
+                let (kind, payload) = (&e.row.kind, &e.row.payload);
+                self.views
+                    .entry(e.box_name.clone())
+                    .or_default()
+                    .fold(kind, payload);
+                self.pending.fold(e.row.id, &e.box_name, kind, payload);
+                self.artifacts.fold(e.row.box_id, kind, payload);
+            }
+            if events.len() < BATCH {
+                return;
+            }
+        }
     }
 }
 

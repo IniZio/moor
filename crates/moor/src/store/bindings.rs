@@ -1,6 +1,6 @@
 //! Bindings of a front conversation to a Session, host or Box.
 
-use moor_core::BoxName;
+use moor_core::{BoxId, BoxName};
 use rusqlite::{params, OptionalExtension, TransactionBehavior};
 
 use super::{parsed, Store, StoreError};
@@ -14,6 +14,8 @@ pub(crate) struct Binding {
     pub(crate) key: String,
     /// Id of the bound Session.
     pub(crate) session: i64,
+    /// Id of the Session's Box; `None` for a host Session.
+    pub(crate) box_id: Option<BoxId>,
     /// Name of the Session's Box; `None` for a host Session.
     pub(crate) box_name: Option<BoxName>,
     /// The front's id of the user who started the conversation.
@@ -23,14 +25,22 @@ pub(crate) struct Binding {
 }
 
 /// Columns read for a [`Binding`], in [`BindingRow`] order.
-const COLS: &str = "g.front, g.conv_key, g.session, b.name, g.owner, g.status_ts";
+const COLS: &str = "g.front, g.conv_key, g.session, b.id, b.name, g.owner, g.status_ts";
 
 /// Joins a binding to its Session and, for a Box Session, the Box.
 const FROM: &str =
     "bindings g JOIN sessions s ON s.id = g.session LEFT JOIN boxes b ON b.id = s.box";
 
-/// Raw binding row: the Box name is still unparsed text.
-type BindingRow = (String, String, i64, Option<String>, String, Option<String>);
+/// Raw binding row: the Box id and name are still unparsed.
+type BindingRow = (
+    String,
+    String,
+    i64,
+    Option<i64>,
+    Option<String>,
+    String,
+    Option<String>,
+);
 
 /// Reads one raw binding row.
 fn row_of(r: &rusqlite::Row<'_>) -> rusqlite::Result<BindingRow> {
@@ -41,16 +51,18 @@ fn row_of(r: &rusqlite::Row<'_>) -> rusqlite::Result<BindingRow> {
         r.get(3)?,
         r.get(4)?,
         r.get(5)?,
+        r.get(6)?,
     ))
 }
 
 /// Parses a raw binding row into a [`Binding`].
 fn binding_of(row: BindingRow) -> Result<Binding, StoreError> {
-    let (front, key, session, box_name, owner, status_ts) = row;
+    let (front, key, session, box_id, box_name, owner, status_ts) = row;
     Ok(Binding {
         front,
         key,
         session,
+        box_id: box_id.map(BoxId::new),
         box_name: box_name
             .map(|n| parsed("binding box name", &n, BoxName::parse_allow_bare))
             .transpose()?,

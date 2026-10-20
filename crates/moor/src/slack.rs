@@ -2,13 +2,6 @@
 
 mod answer;
 mod api;
-#[cfg_attr(
-    not(test),
-    allow(
-        dead_code,
-        reason = "the event feed posts artifact versions in a later change"
-    )
-)]
 mod artifacts;
 mod command;
 mod prompt;

@@ -1,7 +1,10 @@
-//! Artifact versions in Slack threads: the file itself, or one text line when it cannot go up.
+//! Artifact versions in Slack threads: each version once, as the file itself, or as one text
+//! line when it cannot go up.
 
 use moor_core::secret::Secret;
 use moor_core::BoxId;
+use serde::Deserialize;
+use serde_json::Value;
 
 use super::api::{Api, ApiError, Upload};
 use super::status::escape;
@@ -9,6 +12,96 @@ use crate::store::{SlackThread, Store};
 
 /// Slack's error code when the bot token lacks the `files:write` scope.
 const MISSING_SCOPE: &str = "missing_scope";
+
+/// The fields of an `artifact_published` payload this module reads.
+#[derive(Deserialize)]
+struct Payload {
+    /// File name.
+    name: String,
+    /// Version number.
+    version: i64,
+    /// Size in bytes.
+    size: u64,
+}
+
+/// Artifact versions not yet shown in their thread, folded from the event feed.
+#[derive(Default)]
+pub(super) struct Artifacts {
+    /// Versions in event order.
+    queue: Vec<Published>,
+}
+
+/// What showing one queued version came to.
+enum Outcome {
+    /// Shown now or before; drop it.
+    Done,
+    /// Nothing reached the thread; try again on the next poll.
+    Retry,
+}
+
+impl Artifacts {
+    /// Queues an `artifact_published` event of Box `box_id`; other kinds are ignored.
+    pub(super) fn fold(&mut self, box_id: BoxId, kind: &str, payload: &Value) {
+        if kind != "artifact_published" {
+            return;
+        }
+        if let Ok(p) = Payload::deserialize(payload) {
+            self.queue.push(Published {
+                box_id,
+                name: p.name,
+                version: p.version,
+                size: p.size,
+            });
+        }
+    }
+
+    /// Shows each queued version whose Box has a thread, unless the store recorded it as shown.
+    /// Versions of Boxes without a thread stay queued, as do those Slack could not take.
+    pub(super) fn post_due(
+        &mut self,
+        store: &Store,
+        api: &Api,
+        bot: &Secret,
+        threads: &[SlackThread],
+        log: &dyn Fn(&str),
+    ) {
+        self.queue.retain(|v| {
+            threads
+                .iter()
+                .find(|t| t.box_id == v.box_id)
+                .is_none_or(|thread| {
+                    matches!(post_once(store, api, bot, thread, v, log), Outcome::Retry)
+                })
+        });
+    }
+}
+
+/// Shows `v` in `thread` unless the store recorded it, then records it.
+fn post_once(
+    store: &Store,
+    api: &Api,
+    bot: &Secret,
+    thread: &SlackThread,
+    v: &Published,
+    log: &dyn Fn(&str),
+) -> Outcome {
+    match store.slack_artifact_posted(v.box_id, &v.name, v.version) {
+        Ok(false) => {}
+        Ok(true) => return Outcome::Done,
+        Err(e) => {
+            log(&format!("slack artifact: {e}"));
+            return Outcome::Retry;
+        }
+    }
+    if let Err(e) = show(store, api, bot, thread, v) {
+        log(&format!("slack artifact: {e}"));
+        return Outcome::Retry;
+    }
+    if let Err(e) = store.mark_slack_artifact_posted(v.box_id, &v.name, v.version) {
+        log(&format!("slack artifact: {e}"));
+    }
+    Outcome::Done
+}
 
 /// One published artifact version.
 #[derive(Debug, Clone, PartialEq, Eq)]

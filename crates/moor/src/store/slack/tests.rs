@@ -47,11 +47,11 @@ fn thread_binding_first_wins() {
 fn existing_v1_db_gains_tables() {
     let dir = tempfile::tempdir().unwrap();
     let (store, clock) = open(dir.path());
-    new_box(&store, "t");
+    let id = new_box(&store, "t");
     store
         .writer()
         .unwrap()
-        .execute_batch("DROP TABLE slack_events; DROP TABLE bindings;")
+        .execute_batch("DROP TABLE slack_events; DROP TABLE bindings; DROP TABLE slack_artifacts;")
         .unwrap();
     drop(store);
     let path = dir.path().join("state").join("moor.db");
@@ -60,6 +60,22 @@ fn existing_v1_db_gains_tables() {
     assert!(store
         .bind_slack_thread("C1", "1.1", &name("t"), "U1")
         .unwrap());
+    store.mark_slack_artifact_posted(id, "a.txt", 1).unwrap();
+    assert!(store.slack_artifact_posted(id, "a.txt", 1).unwrap());
+}
+
+#[test]
+fn artifact_posts_are_recorded_per_box_name_and_version() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = open(dir.path());
+    let a = new_box(&store, "a");
+    let b = new_box(&store, "b");
+    store.mark_slack_artifact_posted(a, "r.txt", 1).unwrap();
+    store.mark_slack_artifact_posted(a, "r.txt", 1).unwrap();
+    assert!(store.slack_artifact_posted(a, "r.txt", 1).unwrap());
+    assert!(!store.slack_artifact_posted(a, "r.txt", 2).unwrap());
+    assert!(!store.slack_artifact_posted(a, "s.txt", 1).unwrap());
+    assert!(!store.slack_artifact_posted(b, "r.txt", 1).unwrap());
 }
 
 #[test]
@@ -110,8 +126,8 @@ fn status_ts_set_and_read() {
 fn threads_listed_oldest_first() {
     let dir = tempfile::tempdir().unwrap();
     let (store, clock) = open(dir.path());
-    new_box(&store, "a");
-    new_box(&store, "b");
+    let a = new_box(&store, "a");
+    let b = new_box(&store, "b");
     assert!(store.slack_threads().unwrap().is_empty());
     store
         .bind_slack_thread("C1", "2.2", &name("b"), "U2")
@@ -127,6 +143,7 @@ fn threads_listed_oldest_first() {
             SlackThread {
                 channel: "C1".into(),
                 thread_ts: "2.2".into(),
+                box_id: b,
                 box_name: name("b"),
                 owner: "U2".into(),
                 status_ts: None,
@@ -134,6 +151,7 @@ fn threads_listed_oldest_first() {
             SlackThread {
                 channel: "C1".into(),
                 thread_ts: "1.1".into(),
+                box_id: a,
                 box_name: name("a"),
                 owner: "U1".into(),
                 status_ts: None,

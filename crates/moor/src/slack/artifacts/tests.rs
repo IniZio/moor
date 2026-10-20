@@ -11,12 +11,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::decision::{Decision, NewBox};
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, BoxName};
 use serde_json::{json, Value};
 
 use super::*;
+use crate::slack::status::Feed;
 use crate::testing::clock::FakeClock;
 
 /// A token whose text must never reach a thread.
@@ -175,16 +177,26 @@ impl Fake {
 
 /// A store in `dir` with one open Box named `t1`.
 fn store_with_box(dir: &Path) -> (Store, BoxId) {
+    let store = open_store(dir);
+    let id = add_box(&store, "t1");
+    (store, id)
+}
+
+/// Opens the store in `dir`, as a controller process does on start.
+fn open_store(dir: &Path) -> Store {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000_000)));
-    let store = Store::open(&dir.join("moor.db"), clock).unwrap();
-    let id = store
+    Store::open(&dir.join("moor.db"), clock).unwrap()
+}
+
+/// Inserts an open Box named `name`.
+fn add_box(store: &Store, name: &str) -> BoxId {
+    store
         .apply(Decision::insert(NewBox {
-            name: BoxName::parse_allow_bare("t1").unwrap(),
+            name: BoxName::parse_allow_bare(name).unwrap(),
             repo: "r".into(),
         }))
         .unwrap()
-        .box_id;
-    (store, id)
+        .box_id
 }
 
 /// Where the tests keep artifact files.
@@ -211,6 +223,7 @@ fn thread() -> SlackThread {
     SlackThread {
         channel: "C1".into(),
         thread_ts: "10.5".into(),
+        box_id: BoxId::new(1),
         box_name: BoxName::parse_allow_bare("t1").unwrap(),
         owner: "U1".into(),
         status_ts: None,
@@ -326,4 +339,106 @@ fn size_text_matches_the_web_view() {
     for (n, want) in cases {
         assert_eq!(size_text(n), want, "{n} bytes");
     }
+}
+
+/// Binds thread `thread_ts` of `C1` to the open Box named `name`.
+fn bind(store: &Store, thread_ts: &str, name: &str) {
+    let name = BoxName::parse_allow_bare(name).unwrap();
+    store
+        .bind_slack_thread("C1", thread_ts, &name, "U1")
+        .unwrap();
+}
+
+/// Runs one follower poll of `feed` against `fake`.
+fn poll(fake: &Fake, store: &Store, feed: &mut Feed) {
+    let bot = Secret::new(TOKEN.as_bytes().to_vec());
+    let clock = FakeClock::new(Ts::from_millis(2_000_000));
+    let log = |m: &str| assert!(!m.contains(TOKEN), "token leaked: {m}");
+    feed.poll(store, &fake.api(), &bot, &clock, &log);
+}
+
+/// Texts the fake saw that name `file`, failed attempts included.
+fn texts_naming(fake: &Fake, file: &str) -> Vec<String> {
+    let texts = fake.texts().into_iter();
+    texts.filter(|t| t.contains(file)).collect()
+}
+
+#[test]
+fn each_version_of_a_bound_box_is_posted_once_to_its_thread() {
+    let (dir, f) = (tempfile::tempdir().unwrap(), fake());
+    let (st, t1) = store_with_box(dir.path());
+    let t2 = add_box(&st, "t2");
+    bind(&st, "10.5", "t1");
+    publish(&st, dir.path(), t1, "report.txt", b"one");
+    publish(&st, dir.path(), t1, "report.txt", b"two");
+    publish(&st, dir.path(), t2, "other.txt", b"unbound");
+    let mut feed = Feed::default();
+    poll(&f, &st, &mut feed);
+    poll(&f, &st, &mut feed);
+    assert_eq!(f.bodies("/upload/"), [b"one".to_vec(), b"two".to_vec()]);
+    bind(&st, "20.5", "t2");
+    poll(&f, &st, &mut feed);
+    poll(&f, &st, &mut feed);
+    let uploads = f.bodies("/upload/");
+    assert_eq!(
+        uploads,
+        [b"one".to_vec(), b"two".to_vec(), b"unbound".to_vec()]
+    );
+    let done = f.bodies("completeUploadExternal");
+    let thread_of = |b: &Vec<u8>| serde_json::from_slice::<Value>(b).unwrap()["thread_ts"].clone();
+    let threads: Vec<Value> = done.iter().map(thread_of).collect();
+    assert_eq!(threads, [json!("10.5"), json!("10.5"), json!("20.5")]);
+}
+
+#[test]
+fn restart_replays_the_feed_without_posting_a_version_again() {
+    let (dir, f) = (tempfile::tempdir().unwrap(), fake());
+    let (st, id) = store_with_box(dir.path());
+    bind(&st, "10.5", "t1");
+    publish(&st, dir.path(), id, "report.txt", b"one");
+    publish(&st, dir.path(), id, "shot.png", b"png");
+    poll(&f, &st, &mut Feed::default());
+    drop(st);
+    let st = open_store(dir.path());
+    let mut feed = Feed::default();
+    poll(&f, &st, &mut feed);
+    poll(&f, &st, &mut feed);
+    assert_eq!(f.bodies("/upload/"), [b"one".to_vec(), b"png".to_vec()]);
+    publish(&st, dir.path(), id, "report.txt", b"two");
+    poll(&f, &st, &mut feed);
+    let uploads = f.bodies("/upload/");
+    assert_eq!(uploads, [b"one".to_vec(), b"png".to_vec(), b"two".to_vec()]);
+    assert_eq!(f.bodies("completeUploadExternal").len(), 3);
+}
+
+#[test]
+fn a_reused_box_name_does_not_get_another_box_artifacts() {
+    let (dir, f) = (tempfile::tempdir().unwrap(), fake());
+    let (st, old) = store_with_box(dir.path());
+    bind(&st, "10.5", "t1");
+    let close = Decision::new(old).lifecycle(BoxLifecycleInput::Close);
+    st.apply(close).unwrap();
+    let new = add_box(&st, "t1");
+    publish(&st, dir.path(), new, "report.txt", b"new box");
+    poll(&f, &st, &mut Feed::default());
+    assert!(f.bodies("/upload/").is_empty());
+    assert!(texts_naming(&f, "report.txt").is_empty());
+}
+
+#[test]
+fn a_version_nothing_reached_the_thread_for_is_retried() {
+    let (dir, f) = (tempfile::tempdir().unwrap(), fake());
+    f.scope_missing.store(true, Ordering::SeqCst);
+    f.post_down.store(true, Ordering::SeqCst);
+    let (st, id) = store_with_box(dir.path());
+    bind(&st, "10.5", "t1");
+    publish(&st, dir.path(), id, "report.txt", b"hello");
+    let mut feed = Feed::default();
+    poll(&f, &st, &mut feed);
+    assert!(!st.slack_artifact_posted(id, "report.txt", 1).unwrap());
+    f.post_down.store(false, Ordering::SeqCst);
+    poll(&f, &st, &mut feed);
+    poll(&f, &st, &mut feed);
+    assert_eq!(texts_naming(&f, "report.txt"), ["report.txt (5 B)"; 2]);
+    assert!(st.slack_artifact_posted(id, "report.txt", 1).unwrap());
 }
