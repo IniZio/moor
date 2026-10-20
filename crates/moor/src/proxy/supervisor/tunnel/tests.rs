@@ -327,11 +327,9 @@ fn slow_restart_attempt_renews_the_lease_after_it_returns() {
     assert_eq!(w.row().lease_owner.as_deref(), Some(run.owner()));
 }
 
-#[test]
-fn slow_port_clear_keeps_the_lease_against_a_concurrent_reserve() {
-    let w = World::new([]);
-    let deps = w.deps();
-    let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
+/// A step that runs 45 s on the fake clock and then has a rival reserve the row; the rival's
+/// outcome lands in the returned slot.
+fn outlasting_step(w: &World) -> (impl Fn() + Send + Sync, Arc<Mutex<Option<Reserve>>>) {
     let seen = Arc::new(Mutex::new(None));
     let (path, clock, id, out) = (
         w.dir.path().join("moor.db"),
@@ -339,8 +337,8 @@ fn slow_port_clear_keeps_the_lease_against_a_concurrent_reserve() {
         w.id,
         seen.clone(),
     );
-    // The clear runs 45 s; real pauses let the renewal thread keep pace with the fake clock.
-    w.driver.on_exec(move || {
+    // Real pauses let the renewal thread keep pace with the fake clock.
+    let step = move || {
         for _ in 0..22 {
             clock.sleep(TICK);
             std::thread::sleep(Duration::from_millis(60));
@@ -349,7 +347,17 @@ fn slow_port_clear_keeps_the_lease_against_a_concurrent_reserve() {
         let nonce = Secret::new(b"rival-nonce".to_vec());
         let got = rival.reserve(id, &nonce, &FakeRng::default(), LEASE);
         *out.lock().unwrap() = Some(got.unwrap());
-    });
+    };
+    (step, seen)
+}
+
+#[test]
+fn slow_port_clear_keeps_the_lease_against_a_concurrent_reserve() {
+    let w = World::new([]);
+    let deps = w.deps();
+    let run = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
+    let (outlast, seen) = outlasting_step(&w);
+    w.driver.on_exec(outlast);
 
     w.driver.end_tunnel(FIRST_TUNNEL_PID);
     let stop = run.tick();
@@ -357,4 +365,24 @@ fn slow_port_clear_keeps_the_lease_against_a_concurrent_reserve() {
     let got = seen.lock().unwrap().take();
     assert!(matches!(got, Some(Reserve::Leased { .. })), "{got:?}");
     assert!(stop.is_none());
+}
+
+#[test]
+fn slow_tunnel_open_keeps_the_lease_against_a_concurrent_reserve() {
+    let w = World::new([]);
+    let (outlast, seen) = outlasting_step(&w);
+    let slow = Slow {
+        inner: &w.driver,
+        clock: w.clock.clone(),
+        took: Duration::ZERO,
+        after: Box::new(outlast),
+    };
+    let mut deps = w.deps();
+    deps.driver = &slow;
+    let started = start(&deps, w.id);
+
+    let got = seen.lock().unwrap().take();
+    assert!(matches!(got, Some(Reserve::Leased { .. })), "{got:?}");
+    let run = started.map_err(|c| format!("exit {c}")).unwrap();
+    assert_eq!(w.row().lease_owner.as_deref(), Some(run.owner()));
 }
