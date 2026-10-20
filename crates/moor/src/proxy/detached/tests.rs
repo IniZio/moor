@@ -215,6 +215,21 @@ fn a_second_ensure_reuses_the_running_supervisor() {
 }
 
 #[test]
+fn ensure_replaces_a_tcp_front_an_older_moor_left_running_on_the_same_box_port() {
+    let f = fx();
+    f.leased_row();
+    let port = f.store.proxy(f.id).unwrap().unwrap().box_port;
+    f.exec("UPDATE proxy SET ready = 1, host_port = 4000, pid = 77");
+
+    let first = f.sup.ensure(&f.spec()).unwrap();
+    let second = f.sup.ensure(&f.spec()).unwrap();
+
+    assert_eq!(f.proc.daemons().len(), 1);
+    assert_eq!((first.box_port, second.box_port), (port, port));
+    assert!(!f.store.heartbeat(f.id, "sup").unwrap());
+}
+
+#[test]
 fn a_supervisor_that_never_gets_ready_fails_with_the_log_tail() {
     let f = bare();
     hang_after_logging(&f, 25);
@@ -293,7 +308,7 @@ fn status_is_starting_for_a_live_unready_row() {
 fn status_is_ready_with_the_box_port_for_a_live_ready_row() {
     let f = fx();
     f.leased_row();
-    f.exec("UPDATE proxy SET ready = 1, host_port = 4000");
+    f.exec("UPDATE proxy SET ready = 1");
     let port = f.store.proxy(f.id).unwrap().unwrap().box_port;
     assert_eq!(
         f.sup.status(f.id).unwrap(),
@@ -305,7 +320,7 @@ fn status_is_ready_with_the_box_port_for_a_live_ready_row() {
 fn status_is_stale_after_the_lease_expires() {
     let f = fx();
     f.leased_row();
-    f.exec("UPDATE proxy SET ready = 1, host_port = 4000");
+    f.exec("UPDATE proxy SET ready = 1");
     f.clock.sleep(LEASE + Duration::from_secs(1));
     assert_eq!(f.sup.status(f.id).unwrap(), ProxyStatus::Stale);
 }

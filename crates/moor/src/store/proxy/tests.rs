@@ -133,7 +133,7 @@ fn rereserve_keeps_port_and_replaces_nonce() {
     rusqlite::Connection::open(dir.path().join("moor.db"))
         .unwrap()
         .execute(
-            "UPDATE proxy SET ready = 1, host_port = 4000, pid = 77, handle = 'h' WHERE box = ?",
+            "UPDATE proxy SET ready = 1, pid = 77, handle = 'h' WHERE box = ?",
             [id.get()],
         )
         .unwrap();

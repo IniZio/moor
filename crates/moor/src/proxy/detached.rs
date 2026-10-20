@@ -173,6 +173,13 @@ fn spec_failed(e: &io::Error, log: &Path) -> ProxyHostError {
     fail(&format!("the proxy files could not be written: {e}"), log)
 }
 
+/// Takes the lease from a supervisor that an older moor started with a TCP front, which refuses a
+/// Box that sends no nonce. It exits at its next heartbeat, and the row keeps its box port, so a
+/// running Box reaches the supervisor started in its place.
+fn retire_tcp_front(store: &Store, box_id: BoxId) -> Result<bool, StoreError> {
+    store.expire_proxy(box_id)
+}
+
 /// The endpoint a ready row describes.
 fn endpoint(row: &ProxyRow, ca_pem: &str) -> ProxyEndpoint {
     ProxyEndpoint {
@@ -185,7 +192,8 @@ fn endpoint(row: &ProxyRow, ca_pem: &str) -> ProxyEndpoint {
 impl ProxyHost for DetachedSupervisor {
     /// Make sure the Box's proxy supervisor is running and ready; return its endpoint.
     ///
-    /// A ready supervisor with a live lease is reused. Otherwise a new nonce is reserved and a
+    /// A ready supervisor with a live lease is reused, unless an older moor started it with a
+    /// TCP front; that one loses its lease and is replaced. Otherwise a new nonce is reserved and a
     /// supervisor is started, unless one already holds a live lease. The nonce never appears in
     /// arguments, environment, logs or errors.
     fn ensure(&self, spec: &ProxySpec) -> Result<ProxyEndpoint, ProxyHostError> {
@@ -205,7 +213,10 @@ impl ProxyHost for DetachedSupervisor {
         let row = store.proxy(box_id).map_err(|e| store_failed(&e, &log))?;
         let kept = row.as_ref().map(|r| Secret::new(r.nonce.expose().to_vec()));
         if let Some(row) = row.filter(|r| r.ready && self.live(r)) {
-            return Ok(endpoint(&row, ca_pem));
+            if !row.tcp_front {
+                return Ok(endpoint(&row, ca_pem));
+            }
+            retire_tcp_front(store, box_id).map_err(|e| store_failed(&e, &log))?;
         }
 
         let nonce = kept
