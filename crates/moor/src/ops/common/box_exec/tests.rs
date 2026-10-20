@@ -460,3 +460,76 @@ fn a_lost_connection_while_staging_retries_under_a_fresh_name() {
     assert_ne!(first, second);
     assert_eq!(e.staged.unwrap().as_str(), second);
 }
+
+fn timed_out(secs: u64) -> DriverError {
+    DriverError::Timeout(std::time::Duration::from_secs(secs))
+}
+
+#[test]
+fn a_timeout_during_mkdir_retries_under_a_fresh_name() {
+    let dir = tempfile::tempdir().unwrap();
+    let driver =
+        home_driver().exec_results([Err(timed_out(30)), Ok(ExecOutcome::Exited { code: 0 })]);
+    let r = rig_driver(dir.path(), crate::testing::cx::fake_config(), driver);
+    let p = boxed_proxy();
+    let e = run_prepare(&r, dir.path(), Some(&p)).unwrap();
+    let [first, second]: [Vec<String>; 2] = argvs(&r).try_into().unwrap();
+    let (first, second) = (mkdir_path(&first).unwrap(), mkdir_path(&second).unwrap());
+    assert_ne!(first, second);
+    assert_eq!(e.staged.unwrap().as_str(), second);
+    let warned: Vec<String> = r.cx.take_warnings().into_iter().map(|w| w.code).collect();
+    assert_eq!(warned, ["box_ssh_retry"]);
+}
+
+#[test]
+fn a_timeout_while_finding_the_box_home_is_retried() {
+    let dir = tempfile::tempdir().unwrap();
+    let driver = home_driver().fail_peek(timed_out(5));
+    let r = rig_driver(dir.path(), crate::testing::cx::fake_config(), driver);
+    let p = boxed_proxy();
+    let e = run_prepare(&r, dir.path(), Some(&p)).unwrap();
+    assert!(e.staged.unwrap().as_str().starts_with("/home/box/"));
+    assert_eq!(r.cx.take_warnings().len(), 1);
+}
+
+#[test]
+fn a_timeout_while_staging_retries_under_a_fresh_name() {
+    let dir = tempfile::tempdir().unwrap();
+    let driver = home_driver().fail_put(timed_out(60));
+    let r = rig_driver(dir.path(), crate::testing::cx::fake_config(), driver);
+    let p = boxed_proxy();
+    let e = run_prepare(&r, dir.path(), Some(&p)).unwrap();
+    let [first, rm, second]: [Vec<String>; 3] = argvs(&r).try_into().unwrap();
+    let (first, second) = (mkdir_path(&first).unwrap(), mkdir_path(&second).unwrap());
+    assert_eq!(rm, ["rm", "-rf", first]);
+    assert_ne!(first, second);
+    assert_eq!(e.staged.unwrap().as_str(), second);
+}
+
+#[test]
+fn a_timeout_that_persists_fails_after_two_retries() {
+    let dir = tempfile::tempdir().unwrap();
+    let driver =
+        home_driver().exec_results([Err(timed_out(30)), Err(timed_out(30)), Err(timed_out(30))]);
+    let r = rig_driver(dir.path(), crate::testing::cx::fake_config(), driver);
+    let p = boxed_proxy();
+    let err = run_prepare(&r, dir.path(), Some(&p)).err().unwrap();
+    assert!(err.contains("timed out after 30s"), "{err}");
+    assert_eq!(argvs(&r).len(), 3);
+}
+
+#[test]
+fn the_box_home_lookup_outlasts_a_slow_gateway_connect() {
+    let dir = tempfile::tempdir().unwrap();
+    let r = home_rig(dir.path());
+    let p = boxed_proxy();
+    run_prepare(&r, dir.path(), Some(&p)).unwrap();
+    let calls = r.driver.box_calls();
+    assert!(!calls.iter().any(|c| c == "peek_file"), "{calls:?}");
+    let first = r.driver.batch_deadlines().first().copied();
+    // One ssh connect through the gateway was measured at 9.7 s.
+    assert!(
+        first.is_some_and(|d| d.0 >= std::time::Duration::from_secs(10)),
+        "{first:?}"
+    );
+}

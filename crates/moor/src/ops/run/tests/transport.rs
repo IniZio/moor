@@ -21,3 +21,12 @@ fn a_lost_connection_during_the_command_is_not_retried() {
         Some("moor lost the ssh connection to the Box: Connection reset by peer")
     );
 }
+
+#[test]
+fn a_timeout_during_the_command_is_not_retried() {
+    let f = ready_with(command_results([Err(DriverError::Timeout(
+        std::time::Duration::from_secs(30),
+    ))]));
+    run(&f.cx, &req(&["true"])).unwrap_err();
+    assert_eq!(command_execs(&f).len(), 1);
+}
