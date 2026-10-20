@@ -108,7 +108,7 @@ pub(crate) fn sleep_parked(
         return Err(e);
     }
     if let Ok(Some(row)) = store.box_row(id) {
-        cred_sweep::sweep(cx, &row);
+        cred_sweep::sweep_once(cx, &row);
     }
     let slept = cx.driver().sleep(handle, Some(worktree));
     if !matches!(slept, Ok(SleepOutcome::Slept | SleepOutcome::Native)) {

@@ -17,8 +17,9 @@ use moor_core::{BoxHandle, BoxId, BoxPath, Warning};
 use crate::cx::Cx;
 use crate::ops::common::proxy::{box_env, origin, plan};
 
-/// Time allowed for removing the staged directory.
-const CLEANUP_DEADLINE: Duration = Duration::from_secs(30);
+/// Time allowed for one of moor's own short commands on the Box: creating or removing the
+/// staged directory, or sweeping stale credential directories.
+pub(crate) const STEP_DEADLINE: Duration = Duration::from_secs(30);
 /// Time allowed for staging the nonce and the CA.
 const STAGE_DEADLINE: Duration = Duration::from_secs(60);
 /// Time allowed for reading the Box home: twice the slowest ssh connect seen through the gateway, 9.7 s.
@@ -184,8 +185,8 @@ pub(crate) fn prepare(
     }
 }
 
-/// Why a step before the user's command failed.
-enum StepError {
+/// Why one of moor's own commands on the Box failed.
+pub(crate) enum StepError {
     /// The ssh connection dropped or the step ran out of time; the step can be tried again.
     Lost(String),
     /// Any other failure.
@@ -194,7 +195,7 @@ enum StepError {
 
 impl StepError {
     /// `message` for the driver error `e`, kept retryable when `e` is a lost connection or a timeout.
-    const fn from_driver(e: &DriverError, message: String) -> Self {
+    pub(crate) const fn from_driver(e: &DriverError, message: String) -> Self {
         if matches!(e, DriverError::Transport { .. } | DriverError::Timeout(_)) {
             Self::Lost(message)
         } else {
@@ -206,9 +207,13 @@ impl StepError {
 /// Runs `step`, again up to `LOST_RETRIES` times while the ssh connection drops or times out,
 /// warning each time.
 ///
-/// Only moor's own steps before the user's command go through here, since each is safe to repeat.
-/// That command may have run when the connection dropped, so it is never repeated.
-fn retry_lost<T>(cx: &Cx, mut step: impl FnMut() -> Result<T, StepError>) -> Result<T, String> {
+/// Only moor's own commands that are safe to repeat go through here: the steps before the
+/// user's command, and the credential sweep. The user's command may have run when the
+/// connection dropped, so it is never repeated.
+pub(crate) fn retry_lost<T>(
+    cx: &Cx,
+    mut step: impl FnMut() -> Result<T, StepError>,
+) -> Result<T, String> {
     let mut retries = 0;
     loop {
         match step() {
@@ -330,7 +335,7 @@ fn create(cx: &Cx, site: &Site<'_>, dir: &BoxPath) -> Result<(), StepError> {
     };
     match cx
         .driver()
-        .exec(site.handle, &spec, Deadline(CLEANUP_DEADLINE))
+        .exec(site.handle, &spec, Deadline(STEP_DEADLINE))
     {
         Ok(ExecOutcome::Exited { code: 0 }) => Ok(()),
         Ok(ExecOutcome::Exited { code }) => Err(StepError::Other(format!(
@@ -361,7 +366,7 @@ fn remove(cx: &Cx, site: &Site<'_>, dir: &BoxPath) {
     };
     let _ = cx
         .driver()
-        .exec(site.handle, &spec, Deadline(CLEANUP_DEADLINE));
+        .exec(site.handle, &spec, Deadline(STEP_DEADLINE));
 }
 
 #[cfg(test)]

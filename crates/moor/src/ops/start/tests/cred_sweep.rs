@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 
 use moor_core::StartReq;
 
@@ -23,4 +24,18 @@ fn a_start_sweeps_stale_credential_dirs_before_launching() {
     assert!(script.contains(".moor-cred-"));
     assert!(w.driver.calls().iter().any(|c| c.starts_with("sweep ")));
     assert_eq!(engine.launches().len(), 1);
+}
+
+#[test]
+fn a_start_through_a_slow_gateway_still_finishes_the_sweep() {
+    let driver = FakeDriver::new().sweep_takes(Duration::from_secs(28));
+    let mut w = world(driver);
+    w.cx = w.cx.with_engine(Arc::new(FakeEngine::new()));
+    let goal = StartReq {
+        goal: Some("ship it".into()),
+        ..req("demo")
+    };
+    run(&w.cx, &goal).unwrap();
+    assert_eq!(w.driver.finished_sweeps(), 1);
+    assert_eq!(w.driver.sweeps().len(), 1, "no retry needed");
 }

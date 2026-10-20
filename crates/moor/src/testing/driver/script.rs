@@ -2,6 +2,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use moor_core::domain::run::SyncMode;
 use moor_core::seam::driver::{
@@ -37,16 +38,40 @@ pub(super) fn layout(
     })
 }
 
+/// Credential sweeps: the scripted outcome and the record.
+#[derive(Default)]
+pub(super) struct Sweeps {
+    /// Every sweep: handle, spec and deadline.
+    calls: Vec<(BoxHandle, ExecSpec, Deadline)>,
+    /// Every sweep fails with this.
+    fail: Option<DriverError>,
+    /// How long a sweep takes on the Box.
+    takes: Duration,
+    /// Sweeps that ran to their end.
+    finished: usize,
+}
+
 impl FakeDriver {
     /// Makes every credential sweep fail with `e`.
     pub(crate) fn fail_sweep(self, e: DriverError) -> Self {
-        self.st().fail_sweep = Some(e);
+        self.st().sweep.fail = Some(e);
+        self
+    }
+
+    /// Makes every credential sweep take `took` on the Box; one with a shorter deadline times out.
+    pub(crate) fn sweep_takes(self, took: Duration) -> Self {
+        self.st().sweep.takes = took;
         self
     }
 
     /// Every credential sweep so far; kept out of [`FakeDriver::execs`].
     pub(crate) fn sweeps(&self) -> Vec<(BoxHandle, ExecSpec, Deadline)> {
-        self.st().sweeps.clone()
+        self.st().sweep.calls.clone()
+    }
+
+    /// How many credential sweeps ran to their end.
+    pub(crate) fn finished_sweeps(&self) -> usize {
+        self.st().sweep.finished
     }
 
     pub(super) fn sweep_exec(
@@ -57,10 +82,15 @@ impl FakeDriver {
     ) -> Result<ExecOutcome, DriverError> {
         let mut s = self.st();
         s.note(format!("sweep {}", handle.as_str()));
-        s.sweeps.push((handle.clone(), spec.clone(), deadline));
-        s.fail_sweep
-            .clone()
-            .map_or(Ok(ExecOutcome::Exited { code: 0 }), Err)
+        s.sweep.calls.push((handle.clone(), spec.clone(), deadline));
+        if let Some(e) = s.sweep.fail.clone() {
+            return Err(e);
+        }
+        if deadline.0 < s.sweep.takes {
+            return Err(DriverError::Timeout(deadline.0));
+        }
+        s.sweep.finished += 1;
+        Ok(ExecOutcome::Exited { code: 0 })
     }
 
     /// Makes `peek_file` of `path` in the Box `handle` return `text`.

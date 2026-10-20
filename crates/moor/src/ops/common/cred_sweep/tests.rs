@@ -13,7 +13,7 @@ use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
 use moor_core::{BoxName, ProviderId};
 
-use super::sweep;
+use super::{sweep, sweep_once};
 use crate::cx::Cx;
 use crate::store::BoxRow;
 use crate::testing::driver::FakeDriver;
@@ -123,11 +123,30 @@ fn row_without_a_box_gets_no_exec() {
 }
 
 #[test]
-fn timed_out_exec_is_ignored() {
-    let driver = FakeDriver::new().fail_sweep(DriverError::Timeout(Duration::from_secs(15)));
+fn a_timed_out_sweep_is_tried_twice_more_with_a_warning_each() {
+    let driver = FakeDriver::new().fail_sweep(DriverError::Timeout(Duration::from_secs(30)));
+    let f = fixture(driver, true);
+    sweep(&f.cx, &f.row);
+    assert_eq!(f.driver.sweeps().len(), 3);
+    let codes: Vec<_> = f.cx.take_warnings().into_iter().map(|w| w.code).collect();
+    assert_eq!(codes, ["box_ssh_retry", "box_ssh_retry"]);
+}
+
+#[test]
+fn a_sweep_that_fails_otherwise_is_not_retried() {
+    let driver = FakeDriver::new().fail_sweep(DriverError::NotFound);
     let f = fixture(driver, true);
     sweep(&f.cx, &f.row);
     assert_eq!(f.driver.sweeps().len(), 1);
+}
+
+#[test]
+fn a_sweep_before_a_sleep_is_tried_once() {
+    let driver = FakeDriver::new().fail_sweep(DriverError::Timeout(Duration::from_secs(30)));
+    let f = fixture(driver, true);
+    sweep_once(&f.cx, &f.row);
+    assert_eq!(f.driver.sweeps().len(), 1);
+    assert_eq!(f.cx.take_warnings(), []);
 }
 
 #[cfg(target_os = "linux")]
