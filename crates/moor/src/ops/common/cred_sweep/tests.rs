@@ -11,9 +11,10 @@ use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
+use moor_core::seam::proc::Deadline;
 use moor_core::{BoxName, ProviderId};
 
-use super::{sweep, sweep_once};
+use super::sweep;
 use crate::cx::Cx;
 use crate::store::BoxRow;
 use crate::testing::driver::FakeDriver;
@@ -90,9 +91,16 @@ fn fixture(driver: FakeDriver, ready: bool) -> Fx {
 }
 
 #[test]
-fn ready_box_gets_one_sweep_exec() {
+fn a_ready_box_is_swept_in_one_batch_over_its_ssh_connection() {
     let f = fixture(FakeDriver::new(), true);
+    let before = f.driver.box_calls().len();
     sweep(&f.cx, &f.row);
+    let calls = f.driver.box_calls();
+    assert_eq!(calls.get(before..), Some(&["batch".to_owned()][..]));
+    assert_eq!(
+        f.driver.batch_deadlines(),
+        [Deadline(Duration::from_secs(30))]
+    );
     let sweeps = f.driver.sweeps();
     assert_eq!(sweeps.len(), 1);
     assert!(f.driver.execs().is_empty());
@@ -123,13 +131,16 @@ fn row_without_a_box_gets_no_exec() {
 }
 
 #[test]
-fn a_timed_out_sweep_is_tried_twice_more_with_a_warning_each() {
+fn a_timed_out_sweep_is_tried_twice_more_and_warns_after_the_last_try() {
     let driver = FakeDriver::new().fail_sweep(DriverError::Timeout(Duration::from_secs(30)));
     let f = fixture(driver, true);
     sweep(&f.cx, &f.row);
     assert_eq!(f.driver.sweeps().len(), 3);
     let codes: Vec<_> = f.cx.take_warnings().into_iter().map(|w| w.code).collect();
-    assert_eq!(codes, ["box_ssh_retry", "box_ssh_retry"]);
+    assert_eq!(
+        codes,
+        ["box_ssh_retry", "box_ssh_retry", "cred_sweep_failed"]
+    );
 }
 
 #[test]
@@ -138,14 +149,14 @@ fn a_sweep_that_fails_otherwise_is_not_retried() {
     let f = fixture(driver, true);
     sweep(&f.cx, &f.row);
     assert_eq!(f.driver.sweeps().len(), 1);
+    let codes: Vec<_> = f.cx.take_warnings().into_iter().map(|w| w.code).collect();
+    assert_eq!(codes, ["cred_sweep_failed"]);
 }
 
 #[test]
-fn a_sweep_before_a_sleep_is_tried_once() {
-    let driver = FakeDriver::new().fail_sweep(DriverError::Timeout(Duration::from_secs(30)));
-    let f = fixture(driver, true);
-    sweep_once(&f.cx, &f.row);
-    assert_eq!(f.driver.sweeps().len(), 1);
+fn a_sweep_that_finishes_warns_nothing() {
+    let f = fixture(FakeDriver::new(), true);
+    sweep(&f.cx, &f.row);
     assert_eq!(f.cx.take_warnings(), []);
 }
 
