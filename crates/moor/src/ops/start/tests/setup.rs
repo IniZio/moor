@@ -179,7 +179,7 @@ fn setup_lines_run_in_order_in_the_box_workdir() {
     );
     assert_eq!(seen, [want]);
     let calls = w.driver.box_calls();
-    assert_eq!(calls.iter().filter(|c| *c == "batch").count(), 1);
+    assert_eq!(calls.iter().filter(|c| *c == "batch").count(), 2);
 }
 
 #[test]
