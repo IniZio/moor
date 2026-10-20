@@ -106,6 +106,29 @@ it prints a warning naming it, in the terminal and in `.moor/setup.log`, and
 carries on. Setup does not fail because of it. A repo with no setup lines
 runs no setup script, so nothing is checked.
 
+## Direct hosts
+
+`proxy.direct` lists hosts the Box reaches without the moor Proxy, such as
+public package mirrors. It is allowed in `.moor.yaml` and in your user config.
+moor uses the user's entries, then any repo entries not already listed.
+
+```yaml
+proxy:
+  direct: [dl.google.com, repo.maven.apache.org, .gradle.org, pub.dev]
+```
+
+An entry is a host name, or `.domain` for every name under the domain. moor
+adds the entries to `NO_PROXY` and `no_proxy` as written. In the Java and
+Gradle `nonProxyHosts` it writes, `.domain` becomes `*.domain`. The loopback
+entries moor always sets stay first.
+
+A credential rule's host can never go direct. moor refuses an entry that
+covers one, naming the entry and the host. An entry covers its own name and
+every name under it, in either form, because curl and Go read a bare
+`NO_PROXY` name that way. So `.github.com` and `anthropic.com` are refused, as
+is `api.github.com`. A repo's `proxy:` section holds only `direct`, so a repo
+cannot add or change a rule.
+
 ## JSON envelope
 
 `--json` prints one envelope on stdout:
