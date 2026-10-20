@@ -72,10 +72,20 @@ pub(super) fn render(b: &BriefInput) -> String {
          `.moor/artifacts/` in your working directory, using a plain file name with its \
          extension. Do not commit it. Writing a file again with the same name adds a new \
          version. It is collected when you finish your turn. Name the files you published \
-         in your final message.\n",
+         in your final message.\n\n",
     );
+    out.push_str(ATTACH);
     out
 }
+
+/// How to show artifacts on a pull request; the limits are gh's own.
+const ATTACH: &str = "To show a published file on a pull request, attach it with gh: \
+    `gh pr create --attach .moor/artifacts/<name>` or \
+    `gh pr edit <number> --attach .moor/artifacts/<name>`. Write \
+    `![<name>](.moor/artifacts/<name>)` in the body where it should appear. gh replaces \
+    it with the uploaded URL. gh attaches png, jpg, jpeg, gif, webp, svg, mp4, mov and \
+    webm files: images up to 10 MB, videos up to 100 MB on paid plans, at most 50 \
+    files. An upload cannot be deleted.\n";
 
 #[cfg(test)]
 mod tests {
@@ -126,6 +136,16 @@ mod tests {
         assert!(out.contains("may be shallow"));
         assert!(out.contains("git fetch --deepen=50 moor"));
         assert!(out.contains("git fetch --unshallow moor"));
+    }
+
+    #[test]
+    fn says_how_to_attach_artifacts_to_a_pull_request_right_after_publishing() {
+        let attach = "To show a published file on a pull request, attach it with gh: `gh pr create --attach .moor/artifacts/<name>` or `gh pr edit <number> --attach .moor/artifacts/<name>`. Write `![<name>](.moor/artifacts/<name>)` in the body where it should appear. gh replaces it with the uploaded URL. gh attaches png, jpg, jpeg, gif, webp, svg, mp4, mov and webm files: images up to 10 MB, videos up to 100 MB on paid plans, at most 50 files. An upload cannot be deleted.\n";
+        let out = render(&input(Some("g"), None));
+        assert!(
+            out.contains(&format!("in your final message.\n\n{attach}")),
+            "{out}"
+        );
     }
 
     #[test]
