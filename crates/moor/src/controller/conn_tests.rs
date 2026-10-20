@@ -114,7 +114,10 @@ fn wrong_protocol_is_rejected_then_session_recovers() {
     assert_eq!(frames[0]["frame"], "error");
     assert_eq!(frames[0]["kind"], "unsupported-protocol");
     let message = frames[0]["message"].as_str().expect("message");
-    assert!(message.contains("99") && message.contains('2'), "{message}");
+    assert!(
+        message.contains("99") && message.contains(&PROTOCOL.to_string()),
+        "{message}"
+    );
     assert_eq!(frames[1]["frame"], "hello");
     assert_eq!(frames[2]["frame"], "response");
 }
@@ -141,14 +144,10 @@ fn request_after_rejected_hello_still_needs_hello() {
 #[test]
 fn malformed_frames_keep_the_connection_open() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let input = concat!(
-        "{not json\n",
-        "\n",
-        "{\"frame\":\"hello\",\"protocol\":2,\"extra\":true}\n",
-        "{\"frame\":\"hello\",\"protocol\":2}\n",
-        "{\"frame\":\"request\",\"id\":\"r1\",\"request\":{\"cmd\":\"version\"}}\n",
+    let input = format!(
+        "{{not json\n\n{{\"frame\":\"hello\",\"protocol\":{PROTOCOL},\"extra\":true}}\n{{\"frame\":\"hello\",\"protocol\":{PROTOCOL}}}\n{{\"frame\":\"request\",\"id\":\"r1\",\"request\":{{\"cmd\":\"version\"}}}}\n"
     );
-    let frames = run_raw(&env(&dir), input);
+    let frames = run_raw(&env(&dir), &input);
     assert_eq!(frames.len(), 4);
     assert_eq!(frames[0]["kind"], "malformed");
     assert_eq!(frames[1]["kind"], "malformed");

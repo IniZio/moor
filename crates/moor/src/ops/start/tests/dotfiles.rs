@@ -12,6 +12,7 @@ use moor_core::seam::proc::{Deadline, Tool};
 use moor_core::view::{DotfilesView, StartView};
 use moor_core::{BoxId, StartReq};
 
+use super::state::WORKING;
 use super::{req, world_with, World};
 use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
@@ -150,7 +151,7 @@ fn dotfiles_run_after_setup_and_before_the_agent_launches() {
     let (w, engine, _repo) =
         dotfiles_world("setup: [a]\n", Some(src.path()), None, FakeDriver::new());
     let v = started(&w);
-    assert_eq!(v.task.state.as_str(), "working");
+    assert_eq!((v.task.lifecycle, v.task.session_state), WORKING);
     assert!(v.agent.launched);
     assert_eq!(engine.launches().len(), 1);
 
@@ -236,7 +237,7 @@ fn assert_warned_with_tail(w: &World) {
 fn a_failing_install_does_not_stop_start_and_warns_with_the_log_tail() {
     let (w, engine, _repo, _src) = failed_start();
     let v = run(&w.cx, &goal_req()).unwrap();
-    assert_eq!(v.task.state.as_str(), "working");
+    assert_eq!((v.task.lifecycle, v.task.session_state), WORKING);
     assert!(v.dotfiles.ran && !v.dotfiles.ok);
     assert_eq!(engine.launches().len(), 1);
 
@@ -271,7 +272,7 @@ fn dotfiles_still_run_when_a_setup_line_fails() {
         FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(0)), Ok(exit(1)), Ok(exit(0))]);
     let (w, engine, _repo) = dotfiles_world("setup: [a]\n", Some(src.path()), None, driver);
     let v = started(&w);
-    assert_eq!(v.task.state.as_str(), "working");
+    assert_eq!((v.task.lifecycle, v.task.session_state), WORKING);
     assert!(v.setup.ran && !v.setup.ok);
     assert!(v.dotfiles.ran && v.dotfiles.ok);
     assert_eq!(w.driver.execs().len(), 4);

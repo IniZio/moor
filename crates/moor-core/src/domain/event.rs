@@ -2,7 +2,7 @@
 
 use serde::Serialize;
 
-use crate::domain::task::{SetupOutcome, TaskInput, TaskState};
+use crate::domain::box_state::BoxLifecycle;
 pub use crate::domain::turn::TurnOutcome;
 use crate::name::RunId;
 
@@ -33,7 +33,7 @@ pub const ASSERTED_KINDS: [&str; 20] = [
 /// One recorded fact about a task, serialized with its `kind` tag.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum Event<F = TaskState> {
+pub enum Event {
     /// The task row was created.
     Started,
     /// Admission refused the task.
@@ -49,7 +49,7 @@ pub enum Event<F = TaskState> {
     /// Box setup began.
     SettingUp {
         /// The state the task left.
-        from: F,
+        from: BoxLifecycle,
     },
     /// The agent is working.
     Working,
@@ -86,7 +86,7 @@ pub enum Event<F = TaskState> {
     /// The task closed.
     Closed {
         /// The state the task left.
-        from: F,
+        from: BoxLifecycle,
     },
     /// A box was requested.
     BoxRequested,
@@ -330,55 +330,6 @@ pub enum Event<F = TaskState> {
         /// Lowercase hex SHA-256 of the contents.
         sha256: String,
     },
-}
-
-/// The events a task step produces.
-///
-/// `from` is `None` for the initial insert; `Closed` then reports `to` as its origin.
-#[must_use]
-pub fn task_events(from: Option<TaskState>, to: TaskState, input: &TaskInput) -> Vec<Event> {
-    let origin = from.unwrap_or(to);
-    match input {
-        TaskInput::Insert => vec![Event::Started],
-        TaskInput::Rejected { reason } => vec![Event::Rejected {
-            reason: reason.clone(),
-        }],
-        TaskInput::AtCapacity { max_boxes } => vec![Event::WaitingForBox {
-            max_boxes: *max_boxes,
-        }],
-        TaskInput::Admitted | TaskInput::Promoted | TaskInput::Retry => {
-            vec![Event::SettingUp { from: origin }]
-        }
-        TaskInput::BoxReady { setup } => match setup {
-            SetupOutcome::Ok => vec![Event::Working],
-            SetupOutcome::Failed { line } => {
-                vec![Event::Working, Event::SetupFailed { line: line.clone() }]
-            }
-        },
-        TaskInput::AcquireFailed { cause } => vec![Event::SetupFailed {
-            line: cause.clone(),
-        }],
-        TaskInput::DotfilesFailed { error } | TaskInput::SyncFailed { error } => {
-            vec![Event::SetupFailed {
-                line: error.clone(),
-            }]
-        }
-        TaskInput::CredFailed { which, error } => vec![
-            Event::CredentialFailed {
-                which: which.clone(),
-                error: error.clone(),
-            },
-            Event::SetupFailed {
-                line: error.clone(),
-            },
-        ],
-        TaskInput::AgentQuiet => vec![Event::Idled],
-        TaskInput::AgentBusy | TaskInput::RunStarted => vec![Event::Busy],
-        TaskInput::SleepDue => vec![Event::Asleep { auto: true }],
-        TaskInput::SleepCmd => vec![Event::Asleep { auto: false }],
-        TaskInput::Wake => vec![Event::Woke],
-        TaskInput::Close => vec![Event::Closed { from: origin }],
-    }
 }
 
 pub use boxes::box_events;

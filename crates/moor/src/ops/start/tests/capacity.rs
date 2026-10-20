@@ -12,6 +12,7 @@ use moor_core::seam::proc::Tool;
 use moor_core::{BoxId, BoxName, ProviderId, StartReq};
 use serde_json::json;
 
+use super::state::WORKING;
 use crate::cx::Cx;
 use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
@@ -150,7 +151,7 @@ fn start_queues_when_box_limit_reached() {
     let (w, _) = with_live_box(box_limit(1));
     let v = run(&w.cx, &req("waiter")).unwrap();
     assert!(v.queued);
-    assert_eq!(v.task.state.as_str(), "waiting_for_box");
+    assert_eq!(v.task.lifecycle, BoxLifecycle::WaitingForBox);
     assert_eq!(
         lifecycle_of(&w, BoxId::new(v.task.id)),
         BoxLifecycle::WaitingForBox
@@ -161,7 +162,7 @@ fn start_queues_when_box_limit_reached() {
 fn queued_start_records_no_session() {
     let (w, _) = with_live_box(box_limit(1));
     let v = run(&w.cx, &req("waiter")).unwrap();
-    assert_eq!(v.task.state.as_str(), "waiting_for_box");
+    assert_eq!(v.task.lifecycle, BoxLifecycle::WaitingForBox);
     let id = BoxId::new(v.task.id);
     let store = w.cx.store().unwrap();
     assert!(store.live_session(id).unwrap().is_none());
@@ -224,7 +225,7 @@ fn start_again_while_still_full_keeps_waiting() {
     run(&w.cx, &req("waiter")).unwrap();
     let again = run(&w.cx, &req("waiter")).unwrap();
     assert!(again.queued);
-    assert_eq!(again.task.state.as_str(), "waiting_for_box");
+    assert_eq!(again.task.lifecycle, BoxLifecycle::WaitingForBox);
     assert_eq!(w.driver.calls(), ["acquire", "exec box-1", "sweep box-1"]);
 }
 
@@ -287,7 +288,7 @@ fn start_acquires_without_any_limit() {
     let (w, _) = with_live_box(UserConfig::default());
     let v = run(&w.cx, &req("second")).unwrap();
     assert!(!v.queued);
-    assert_eq!(v.task.state.as_str(), "working");
+    assert_eq!((v.task.lifecycle, v.task.session_state), WORKING);
     assert_eq!(
         w.driver.calls(),
         [
@@ -325,7 +326,7 @@ fn limit_ignores_live_boxes_of_another_provider() {
     move_box_to(&w, holder, "other-provider");
     let v = run(&w.cx, &req("second")).unwrap();
     assert!(!v.queued);
-    assert_eq!(v.task.state.as_str(), "working");
+    assert_eq!((v.task.lifecycle, v.task.session_state), WORKING);
     assert_eq!(
         w.driver.calls(),
         [
@@ -371,7 +372,7 @@ fn driver_limit_overrides_the_box_limit() {
     let (w, _) = with_live_box(config);
     let v = run(&w.cx, &req("second")).unwrap();
     assert!(!v.queued);
-    assert_eq!(v.task.state.as_str(), "working");
+    assert_eq!((v.task.lifecycle, v.task.session_state), WORKING);
     assert_eq!(
         w.driver.calls(),
         [
@@ -406,6 +407,6 @@ fn asleep_box_still_counts_toward_the_limit() {
         .unwrap();
     let v = run(&w.cx, &req("waiter")).unwrap();
     assert!(v.queued);
-    assert_eq!(v.task.state.as_str(), "waiting_for_box");
+    assert_eq!(v.task.lifecycle, BoxLifecycle::WaitingForBox);
     assert_eq!(w.driver.calls(), ["acquire", "exec box-1", "sweep box-1"]);
 }

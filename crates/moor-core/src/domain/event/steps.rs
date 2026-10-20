@@ -1,9 +1,8 @@
 //! Events derived from the separate Box lifecycle and Session inputs.
 
 use super::Event;
-use crate::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
+use crate::domain::box_state::{BoxLifecycle, BoxLifecycleInput, SetupOutcome};
 use crate::domain::session_state::SessionInput;
-use crate::domain::task::SetupOutcome;
 
 /// The events a Box lifecycle step produces. A decision with a lifecycle input takes its
 /// events from here only; [`session_events`] applies only when there is no lifecycle input.
@@ -12,7 +11,7 @@ pub fn lifecycle_events(
     from: Option<BoxLifecycle>,
     to: BoxLifecycle,
     input: &BoxLifecycleInput,
-) -> Vec<Event<BoxLifecycle>> {
+) -> Vec<Event> {
     let origin = from.unwrap_or(to);
     match input {
         BoxLifecycleInput::Insert => vec![Event::Started],
@@ -56,7 +55,7 @@ pub fn lifecycle_events(
 
 /// The events a Session step produces, when the decision has no lifecycle input.
 #[must_use]
-pub fn session_events(input: &SessionInput) -> Vec<Event<BoxLifecycle>> {
+pub fn session_events(input: &SessionInput) -> Vec<Event> {
     match input {
         SessionInput::Open | SessionInput::End => vec![],
         SessionInput::Started => vec![Event::Working],

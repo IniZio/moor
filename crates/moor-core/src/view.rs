@@ -8,8 +8,9 @@ pub mod session;
 pub mod sleep;
 pub mod steer;
 
+use crate::domain::box_state::BoxLifecycle;
 use crate::domain::boxes::BoxState;
-use crate::domain::task::TaskState;
+use crate::domain::session_state::SessionState;
 
 /// Why the agent could not be launched.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -123,9 +124,11 @@ pub struct TaskView {
     pub issue: Option<String>,
     /// Goal text.
     pub goal: Option<String>,
-    /// Task state.
-    pub state: TaskState,
-    /// Why the Task is in this state.
+    /// Box lifecycle state.
+    pub lifecycle: BoxLifecycle,
+    /// Agent session state.
+    pub session_state: SessionState,
+    /// Why the Box is in this state.
     pub state_reason: Option<String>,
     /// Base ref.
     pub base: Option<String>,

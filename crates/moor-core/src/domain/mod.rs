@@ -1,4 +1,4 @@
-//! Pure domain model: task and box state machines, events and store decisions.
+//! Pure domain model: Box and Session state machines, events and store decisions.
 
 pub mod box_state;
 pub mod box_steps;
@@ -7,7 +7,6 @@ pub mod decision;
 pub mod event;
 pub mod run;
 pub mod session_state;
-pub mod task;
 pub mod turn;
 
 /// A state machine input that is not legal from the current state.

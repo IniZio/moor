@@ -1,11 +1,11 @@
 //! Tests for opening and listing Sessions of a Box.
 #![allow(clippy::indexing_slicing, reason = "test assertions")]
 
+use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::domain::session_state::{SessionInput, SessionState};
-use moor_core::domain::task::SetupOutcome;
 use moor_core::{BoxId, ProviderId};
 
 use crate::store::tests::{new_task, open};
@@ -292,6 +292,23 @@ fn ready_box_with_ended_session_reads_idle() {
     assert_eq!(row.lifecycle, BoxLifecycle::Ready);
     assert!(row.session.is_quiet());
     assert_eq!(row.idle_since.unwrap().as_millis(), 1_005_000);
+}
+
+#[test]
+fn ready_box_without_a_session_row_reads_starting() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _clock) = open(dir.path());
+    let id = ready_box(&store);
+    let conn = store.writer().unwrap();
+    conn.execute("UPDATE events SET session = NULL WHERE box = ?", [id.get()])
+        .unwrap();
+    conn.execute("DELETE FROM sessions WHERE box = ?", [id.get()])
+        .unwrap();
+    drop(conn);
+    let row = store.task(id).unwrap().unwrap();
+    assert_eq!(row.lifecycle, BoxLifecycle::Ready);
+    assert_eq!(row.session, SessionState::Starting);
+    assert!(!row.session.is_quiet());
 }
 
 fn parent_of(store: &crate::store::Store, session: i64) -> Option<i64> {

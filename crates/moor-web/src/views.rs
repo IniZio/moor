@@ -203,7 +203,8 @@ impl Source<'_> {
             "repo": field(t, "repo"),
             "repo_url": url,
             "branch": field(t, "branch"),
-            "state": field(t, "state"),
+            "lifecycle": field(t, "lifecycle"),
+            "session_state": field(t, "session_state"),
             "goal": field(t, "goal"),
             "box_state": t.get("box").map_or(Value::Null, |b| field(b, "state")),
         })
@@ -241,7 +242,7 @@ fn tree(client: &Client, db: &Mutex<Db>) -> HttpResponse {
 
 /// Whether a task view is for a Box that is still open.
 fn is_open(task: &Value) -> bool {
-    !matches!(text(task, "state"), Some("closed" | "rejected"))
+    !matches!(text(task, "lifecycle"), Some("closed" | "rejected"))
 }
 
 /// Ended child Sessions of open requests whose Box is still open and has no live Session.

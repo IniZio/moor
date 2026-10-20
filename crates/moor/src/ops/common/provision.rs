@@ -4,12 +4,12 @@ use std::path::{Path, PathBuf};
 
 use moor_core::config::{Flags, TaskSettings};
 
+use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, Intent, IntentChange};
 use moor_core::domain::run::SyncMode;
 use moor_core::domain::session_state::SessionInput;
-use moor_core::domain::task::SetupOutcome;
 use moor_core::seam::driver::{AcquireReq, Acquired, DriverError, Released};
 use moor_core::seam::rng::Rng;
 use moor_core::{BoxHandle, BoxId, BoxPath, ErrorKind, ProviderId, Warning};

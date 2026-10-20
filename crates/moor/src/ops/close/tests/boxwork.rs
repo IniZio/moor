@@ -143,7 +143,7 @@ fn close_refuses_a_box_with_only_uncommitted_changes() {
 fn close_proceeds_when_the_box_probe_is_clean() {
     let f = fx_probe(Some("ahead=0 dirty=0"));
     let v = run(&f.cx, &req(false)).unwrap();
-    assert_eq!(v.task.state.as_str(), "closed");
+    assert_eq!(v.task.lifecycle, BoxLifecycle::Closed);
     assert_eq!(box_state(&f), BoxState::Deleted);
     assert_eq!(probes(&f), 2, "the probe ran before and after the stop");
 }
@@ -177,7 +177,7 @@ fn close_wakes_a_sleeping_box_and_proceeds_when_it_is_clean() {
     let f = fx_woken("ahead=0 dirty=0");
     put_to_sleep(&f);
     let v = run(&f.cx, &req(false)).unwrap();
-    assert_eq!(v.task.state.as_str(), "closed");
+    assert_eq!(v.task.lifecycle, BoxLifecycle::Closed);
     assert_eq!(count(&f, "wake"), 1);
     assert_eq!(probes(&f), 2);
 }
@@ -201,7 +201,7 @@ fn close_proceeds_when_the_driver_no_longer_has_the_box_on_probe() {
     let h = row(&f).boxed.unwrap().handle.unwrap();
     f.driver.forget(&h);
     let v = run(&f.cx, &req(false)).unwrap();
-    assert_eq!(v.task.state.as_str(), "closed");
+    assert_eq!(v.task.lifecycle, BoxLifecycle::Closed);
 }
 
 #[test]
@@ -210,14 +210,14 @@ fn close_proceeds_when_the_driver_no_longer_has_the_box_on_wake() {
     let f = fx_box(driver, surface(), 0, Some("ahead=0 dirty=0"));
     put_to_sleep(&f);
     let v = run(&f.cx, &req(false)).unwrap();
-    assert_eq!(v.task.state.as_str(), "closed");
+    assert_eq!(v.task.lifecycle, BoxLifecycle::Closed);
 }
 
 #[test]
 fn force_closes_a_box_with_unsaved_work_without_probing() {
     let f = fx_probe(Some("ahead=4 dirty=1"));
     let v = run(&f.cx, &req(true)).unwrap();
-    assert_eq!(v.task.state.as_str(), "closed");
+    assert_eq!(v.task.lifecycle, BoxLifecycle::Closed);
     assert_eq!(probes(&f), 0);
     assert_eq!(count(&f, "wake"), 0);
 }
@@ -227,7 +227,7 @@ fn force_closes_a_sleeping_box_without_waking_or_probing_it() {
     let f = fx_probe(Some("ahead=4 dirty=1"));
     put_to_sleep(&f);
     let v = run(&f.cx, &req(true)).unwrap();
-    assert_eq!(v.task.state.as_str(), "closed");
+    assert_eq!(v.task.lifecycle, BoxLifecycle::Closed);
     assert_eq!(count(&f, "exec"), 0);
     assert_eq!(count(&f, "wake"), 0);
 }
@@ -241,7 +241,7 @@ fn close_skips_the_probe_for_a_box_the_driver_no_longer_has() {
         .unwrap();
     assert_eq!(box_state(&f), BoxState::Gone);
     let v = run(&f.cx, &req(false)).unwrap();
-    assert_eq!(v.task.state.as_str(), "closed");
+    assert_eq!(v.task.lifecycle, BoxLifecycle::Closed);
     assert_eq!(count(&f, "exec"), 0);
 }
 
@@ -292,7 +292,7 @@ fn close_skips_the_probe_for_a_box_that_never_got_a_handle() {
         },
     )
     .unwrap();
-    assert_eq!(v.task.state.as_str(), "closed");
+    assert_eq!(v.task.lifecycle, BoxLifecycle::Closed);
     assert_eq!(count(&f, "exec"), 0);
 }
 

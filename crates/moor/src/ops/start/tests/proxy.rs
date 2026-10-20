@@ -9,6 +9,7 @@ use moor_core::seam::proxy_host::ProxyHostError;
 use moor_core::{BoxHandle, BoxId, StartReq};
 
 use super::relaunch::{gone, session};
+use super::state::WORKING;
 use super::{req, world, World};
 use crate::ops::common::proxy::TAIL_LINES;
 use crate::ops::start::run;
@@ -119,7 +120,7 @@ fn a_proxy_that_cannot_be_ensured_fails_the_launch_at_the_proxy_step() {
     let v = run(&w.cx, &goal_req()).unwrap();
     let id = BoxId::new(v.task.id);
     assert!(!v.agent.launched);
-    assert_eq!(v.task.state.as_str(), "working");
+    assert_eq!((v.task.lifecycle, v.task.session_state), WORKING);
     assert!(engine.launches().is_empty());
     let (step, message, tail) = failure_step(&w, id);
     assert_eq!(step, "proxy");

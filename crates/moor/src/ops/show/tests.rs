@@ -8,11 +8,11 @@ use moor_core::activity::{
     AgentState, HookKind, HookRead, HookRecord, PaneObs, PaneRead, PaneStatus, Probes, Source,
     STARTUP_GRACE,
 };
+use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
 use moor_core::domain::session_state::{SessionInput, SessionState};
-use moor_core::domain::task::SetupOutcome;
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, SleepKind};
 use moor_core::seam::proc::Tool;
@@ -411,7 +411,7 @@ fn list_settles_a_quiet_agent_to_idle() {
     let row = cx.store().unwrap().task(id).unwrap().unwrap();
     assert_eq!(parts(&row), IDLE);
     assert!(idle_since(cx.store().unwrap(), id).is_some());
-    assert_eq!(first(&v).state.as_str(), "idle");
+    assert_eq!((first(&v).lifecycle, first(&v).session_state), IDLE);
 }
 
 #[test]
@@ -537,10 +537,11 @@ fn a_task_freshly_started_is_not_idled_by_the_next_list() {
         },
     )
     .unwrap();
-    assert_eq!(started.task.state.as_str(), "working");
+    let s = &started.task;
+    assert_eq!((s.lifecycle, s.session_state), WORKING);
     let v = run(&cx, &req(None, None)).unwrap();
     let t = first(&v);
-    assert_eq!(t.state.as_str(), "working");
+    assert_eq!((t.lifecycle, t.session_state), WORKING);
     assert!(t.agent.is_some());
     let id = BoxId::new(started.task.id);
     assert!(cx.store().unwrap().live_session(id).unwrap().is_some());
@@ -571,7 +572,7 @@ fn list_sleeps_a_task_idle_past_the_threshold() {
     let v = run(&cx, &req(None, None)).unwrap();
     let row = cx.store().unwrap().task(id).unwrap().unwrap();
     assert_eq!(row.lifecycle, BoxLifecycle::Asleep);
-    assert_eq!(first(&v).state.as_str(), "asleep");
+    assert_eq!(first(&v).lifecycle, BoxLifecycle::Asleep);
     assert_eq!(first(&v).r#box.as_ref().unwrap().state, BoxState::Asleep);
 }
 

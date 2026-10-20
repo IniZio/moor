@@ -88,13 +88,14 @@ fn structured_text(cmd: &str, value: &Value) -> Option<String> {
     }
 }
 
-/// `(name (#id), state)` for a task row, or `None` when name, id or state is missing.
+/// `(name (#id), lifecycle/session_state)` for a Box, or `None` when a part is missing.
 fn task_head(value: &Value) -> Option<(String, String)> {
     let task = value.get("task")?;
     let name = task.get("name")?.as_str()?;
     let id = task.get("id")?.as_i64()?;
-    let state = task.get("state")?.as_str()?;
-    Some((format!("{name} (#{id})"), state.to_owned()))
+    let lifecycle = task.get("lifecycle")?.as_str()?;
+    let session = task.get("session_state")?.as_str()?;
+    Some((format!("{name} (#{id})"), format!("{lifecycle}/{session}")))
 }
 
 /// Writes `started from the queue: a, b` when the `promoted` names are non-empty.

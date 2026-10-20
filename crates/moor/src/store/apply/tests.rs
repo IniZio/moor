@@ -74,7 +74,7 @@ fn ready(store: &crate::store::Store) -> moor_core::BoxId {
         .apply(
             Decision::new(id)
                 .lifecycle(BoxLifecycleInput::Ready {
-                    setup: moor_core::domain::task::SetupOutcome::Ok,
+                    setup: moor_core::domain::box_state::SetupOutcome::Ok,
                 })
                 .session(SessionInput::Started),
         )

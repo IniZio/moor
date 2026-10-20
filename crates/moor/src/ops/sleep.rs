@@ -5,7 +5,6 @@
 use std::collections::HashMap;
 
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
-use moor_core::domain::box_steps::summary;
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::seam::driver::SleepOutcome;
@@ -54,10 +53,7 @@ pub(crate) fn run(cx: &Cx, req: &TaskReq) -> Result<SleepValue, CommandError> {
 fn sleep_box(cx: &Cx, row: &TaskRow) -> Result<(), CommandError> {
     let store = cx.store()?;
     if row.lifecycle != BoxLifecycle::Ready {
-        return Err(refuse(format!(
-            "the task is {}",
-            summary(row.lifecycle, row.session).as_str()
-        )));
+        return Err(refuse(format!("the Box is {}", row.lifecycle.as_str())));
     }
     let handle = sleep_handle(cx, row)?;
     match sleep_parked(cx, store, row.id, &handle, task_dir(row))? {

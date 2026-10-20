@@ -237,10 +237,10 @@ impl Decision {
     /// ```compile_fail
     /// use moor_core::domain::decision::Decision;
     /// use moor_core::domain::event::Event;
-    /// use moor_core::domain::task::TaskState;
+    /// use moor_core::domain::box_state::BoxLifecycle;
     /// use moor_core::name::BoxId;
     ///
-    /// let _ = Decision::new(BoxId::new(1)).event(Event::Closed { from: TaskState::Idle });
+    /// let _ = Decision::new(BoxId::new(1)).event(Event::Closed { from: BoxLifecycle::Ready });
     /// ```
     #[must_use]
     pub fn event(mut self, e: ExtraEvent) -> Self {

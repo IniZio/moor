@@ -39,7 +39,7 @@ fn all_events() -> Vec<Event> {
         Event::Rejected { reason: s("r") },
         Event::WaitingForBox { max_boxes: 2 },
         Event::SettingUp {
-            from: TaskState::Checking,
+            from: BoxLifecycle::Checking,
         },
         Event::Working,
         Event::SetupFailed { line: s("l") },
@@ -52,7 +52,7 @@ fn all_events() -> Vec<Event> {
         Event::Asleep { auto: true },
         Event::Woke,
         Event::Closed {
-            from: TaskState::Idle,
+            from: BoxLifecycle::Ready,
         },
         Event::BoxRequested,
         Event::BoxReady,
@@ -279,134 +279,6 @@ fn asserted_kinds_are_real_unique_kinds() {
 }
 
 #[test]
-fn task_events_table() {
-    use TaskState as T;
-    let ev = |from, to, input: TaskInput| task_events(from, to, &input);
-    assert_eq!(
-        ev(None, T::Checking, TaskInput::Insert),
-        vec![Event::Started]
-    );
-    assert_eq!(
-        ev(
-            Some(T::Checking),
-            T::Rejected,
-            TaskInput::Rejected { reason: s("no") }
-        ),
-        vec![Event::Rejected { reason: s("no") }]
-    );
-    assert_eq!(
-        ev(
-            Some(T::Checking),
-            T::WaitingForBox,
-            TaskInput::AtCapacity { max_boxes: 3 }
-        ),
-        vec![Event::WaitingForBox { max_boxes: 3 }]
-    );
-    for (from, input) in [
-        (T::Checking, TaskInput::Admitted),
-        (T::WaitingForBox, TaskInput::Promoted),
-        (T::SetupFailed, TaskInput::Retry),
-    ] {
-        assert_eq!(
-            ev(Some(from), T::SettingUp, input),
-            vec![Event::SettingUp { from }]
-        );
-    }
-    let ready = |setup| TaskInput::BoxReady { setup };
-    assert_eq!(
-        ev(Some(T::SettingUp), T::Working, ready(SetupOutcome::Ok)),
-        vec![Event::Working]
-    );
-    assert_eq!(
-        ev(
-            Some(T::SettingUp),
-            T::Working,
-            ready(SetupOutcome::Failed { line: s("boom") })
-        ),
-        vec![Event::Working, Event::SetupFailed { line: s("boom") }]
-    );
-    task_events_table_failures();
-}
-
-#[test]
-fn task_events_table_failures() {
-    use TaskState as T;
-    let ev = |from, to, input: TaskInput| task_events(from, to, &input);
-    assert_eq!(
-        ev(
-            Some(T::SettingUp),
-            T::SetupFailed,
-            TaskInput::AcquireFailed { cause: s("c") }
-        ),
-        vec![Event::SetupFailed { line: s("c") }]
-    );
-    assert_eq!(
-        ev(
-            Some(T::SettingUp),
-            T::SetupFailed,
-            TaskInput::DotfilesFailed { error: s("d") }
-        ),
-        vec![Event::SetupFailed { line: s("d") }]
-    );
-    assert_eq!(
-        ev(
-            Some(T::SettingUp),
-            T::SetupFailed,
-            TaskInput::CredFailed {
-                which: s("w"),
-                error: s("e")
-            }
-        ),
-        vec![
-            Event::CredentialFailed {
-                which: s("w"),
-                error: s("e")
-            },
-            Event::SetupFailed { line: s("e") }
-        ]
-    );
-    task_events_table_activity();
-}
-
-#[test]
-fn task_events_table_activity() {
-    use TaskState as T;
-    let ev = |from, to, input: TaskInput| task_events(from, to, &input);
-    assert_eq!(
-        ev(Some(T::Working), T::Idle, TaskInput::AgentQuiet),
-        vec![Event::Idled]
-    );
-    assert_eq!(
-        ev(Some(T::Idle), T::Working, TaskInput::AgentBusy),
-        vec![Event::Busy]
-    );
-    assert_eq!(
-        ev(Some(T::Idle), T::Working, TaskInput::RunStarted),
-        vec![Event::Busy]
-    );
-    assert_eq!(
-        ev(Some(T::Idle), T::Asleep, TaskInput::SleepDue),
-        vec![Event::Asleep { auto: true }]
-    );
-    assert_eq!(
-        ev(Some(T::Idle), T::Asleep, TaskInput::SleepCmd),
-        vec![Event::Asleep { auto: false }]
-    );
-    assert_eq!(
-        ev(Some(T::Asleep), T::Working, TaskInput::Wake),
-        vec![Event::Woke]
-    );
-    assert_eq!(
-        ev(Some(T::Idle), T::Closed, TaskInput::Close),
-        vec![Event::Closed { from: T::Idle }]
-    );
-    assert_eq!(
-        ev(None, T::Closed, TaskInput::Close),
-        vec![Event::Closed { from: T::Closed }]
-    );
-}
-
-#[test]
 fn box_events_table() {
     use BoxState as B;
     let ev = |from, to, input: BoxInput| box_events(from, to, &input, None);
@@ -498,7 +370,7 @@ fn box_failure_events_carry_handle() {
 /// `SessionEnded` names itself and carries the documented payload.
 #[test]
 fn session_ended_kind_and_payload() {
-    let e: Event = Event::SessionEnded {
+    let e = Event::SessionEnded {
         session: 3,
         cause: s("exited"),
         exit: None,
@@ -522,7 +394,7 @@ fn turn_done_kind_and_payload() {
         (TurnOutcome::NeedsInput, "needs_input"),
         (TurnOutcome::Exited, "exited"),
     ] {
-        let e: Event = Event::TurnDone { steer: 7, outcome };
+        let e = Event::TurnDone { steer: 7, outcome };
         assert_eq!(e.kind(), "turn_done");
         assert_eq!(e.payload(), serde_json::json!({"steer":7,"outcome":name}));
     }
@@ -531,7 +403,7 @@ fn turn_done_kind_and_payload() {
 /// `ArtifactPublished` carries its artifact kind as `artifact_kind`, since `kind` is the tag.
 #[test]
 fn artifact_published_kind_and_payload() {
-    let e: Event = Event::ArtifactPublished {
+    let e = Event::ArtifactPublished {
         name: s("shot.png"),
         version: 2,
         artifact_kind: s("screenshot"),
