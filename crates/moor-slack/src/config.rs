@@ -20,6 +20,17 @@ pub struct Config {
     /// Slack Web API base URL without a trailing `/`; `https://` or loopback `http://` only.
     #[serde(default = "default_api_base")]
     pub api_base: String,
+    /// The coordinator agent; without it the front checks no Claude token.
+    #[serde(default)]
+    pub coordinator: Option<Coordinator>,
+}
+
+/// The `coordinator` section.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Coordinator {
+    /// Absolute path of the `claude` binary, Claude Code 2.1.304 or newer.
+    pub binary: PathBuf,
 }
 
 /// The public Slack Web API.
@@ -68,6 +79,13 @@ fn validate(cfg: &Config) -> Result<(), (&'static str, &'static str)> {
     }
     if base.ends_with('/') {
         return Err(("api_base", "must not end with /"));
+    }
+    if cfg
+        .coordinator
+        .as_ref()
+        .is_some_and(|c| !c.binary.is_absolute())
+    {
+        return Err(("coordinator.binary", "must be an absolute path"));
     }
     Ok(())
 }

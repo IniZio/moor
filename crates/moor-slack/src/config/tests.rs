@@ -62,3 +62,20 @@ fn slack_unknown_key_is_rejected() {
     let e = err(&slack_with("bogus: 1\n"));
     assert!(e.to_string().contains("bogus"), "{e}");
 }
+
+#[test]
+fn coordinator_binary_is_optional_and_must_be_absolute() {
+    let s = parse_config("s.yaml", &slack_with("")).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(s.coordinator, None);
+    let text = slack_with("coordinator:\n  binary: /opt/claude/bin/claude\n");
+    let s = parse_config("s.yaml", &text).unwrap_or_else(|e| panic!("{e}"));
+    let binary = s.coordinator.map(|c| c.binary);
+    assert_eq!(
+        binary,
+        Some(std::path::PathBuf::from("/opt/claude/bin/claude"))
+    );
+    let e = err(&slack_with("coordinator:\n  binary: claude\n"));
+    assert_eq!(e.path, "coordinator.binary");
+    let e = err(&slack_with("coordinator:\n  binary: /c\n  model: opus\n"));
+    assert!(e.to_string().contains("model"), "{e}");
+}

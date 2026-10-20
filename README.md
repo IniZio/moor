@@ -62,6 +62,17 @@ A user on the `users` list runs these in a channel on the `channels` list:
 - `/moor repo default OWNER/NAME` marks one of the channel's repos as the
   default. The previous default loses its mark.
 
+Put Claude Code 2.1.304 or newer on the controller host and name it in the
+front's config:
+
+```yaml
+coordinator:
+  binary: /absolute/path/to/claude
+```
+
+At start the front runs `claude --version` and logs it. A missing binary or
+an older version leaves the coordinator unavailable.
+
 `moor-slack` keeps its state in `slack.db`. A `slack.db` that another build
 of `moor-slack` wrote at a different schema is refused at startup. Move it
 aside and start again with a fresh one.

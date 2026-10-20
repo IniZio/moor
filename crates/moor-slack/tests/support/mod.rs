@@ -12,9 +12,11 @@ pub(crate) mod controller;
 mod real;
 pub(crate) mod slack_fake;
 
+use std::io::Write as _;
 use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use moor_core::controller::PROTOCOL;
@@ -33,6 +35,35 @@ pub(crate) const TS: &str = "1730000000.000100";
 pub(crate) const BOX_NAME: &str = "slack-1730000000-000100";
 /// Pause that lets a wrongly emitted second reply arrive before the test counts replies.
 pub(crate) const QUIET: Duration = Duration::from_millis(600);
+
+/// The fake `claude`: it records what it got next to the path it runs as, and answers by
+/// the token it read on fd 3.
+const FAKE_CLAUDE: &str = include_str!("fake-claude.sh");
+
+/// The fake `claude`, written once for this test binary. A file written while another test
+/// thread forks can fail to exec with "Text file busy" until that fork execs, so the first
+/// run is retried, and each rig links to this one file.
+fn shared_fake_claude() -> &'static Path {
+    static PATH: OnceLock<PathBuf> = OnceLock::new();
+    PATH.get_or_init(|| {
+        let path = Path::new(env!("CARGO_TARGET_TMPDIR"))
+            .join(format!("fake-claude-{}", std::process::id()));
+        std::fs::write(&path, FAKE_CLAUDE).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        for _ in 0..200 {
+            match Command::new(&path).arg("--version").output() {
+                Err(e) if e.raw_os_error() == Some(26) => {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                other => {
+                    other.unwrap();
+                    break;
+                }
+            }
+        }
+        path
+    })
+}
 
 /// A private root with token files, a config and a fake Slack; the daemon runs once spawned.
 pub(crate) struct Rig {
@@ -80,6 +111,29 @@ impl Rig {
             ),
         )
         .unwrap();
+    }
+
+    /// Names `binary` as `coordinator.binary` in the config.
+    pub(crate) fn set_coordinator(&self, binary: &Path) {
+        let mut config = std::fs::OpenOptions::new()
+            .append(true)
+            .open(self.path("slack.yaml"))
+            .unwrap();
+        writeln!(config, "coordinator:\n  binary: {}", binary.display()).unwrap();
+    }
+
+    /// Links the fake `claude` into `claude-bin/`, where it keeps one `run-<n>` dir of
+    /// records per run, and names it in the config. It prints `version` for `--version`
+    /// when given.
+    pub(crate) fn use_fake_claude(&self, version: Option<&str>) -> PathBuf {
+        let dir = self.path("claude-bin");
+        std::fs::create_dir(&dir).unwrap();
+        std::os::unix::fs::symlink(shared_fake_claude(), dir.join("claude")).unwrap();
+        if let Some(version) = version {
+            std::fs::write(dir.join("version"), version).unwrap();
+        }
+        self.set_coordinator(&dir.join("claude"));
+        dir
     }
 
     /// A scripted controller and the daemon, with the daemon connected to Slack.
