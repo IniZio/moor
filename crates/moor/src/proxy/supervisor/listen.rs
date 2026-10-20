@@ -260,12 +260,17 @@ impl Live {
             store: deps.store,
             box_id,
         };
-        apply(
-            &self.proxy.drain_audit(),
-            &self.capture,
-            &self.withheld,
-            &sink,
-        );
+        // The filter notes a rejection before nono sees the answer, so every
+        // rejection in this audit batch is noted once the filter is drained after it.
+        let audit = self.proxy.drain_audit();
+        for status in self
+            .graphql
+            .iter()
+            .flat_map(GraphqlFilter::drain_anonymous_rejections)
+        {
+            self.withheld.anonymous_rejection(GITHUB_API_HOST, status);
+        }
+        apply(&audit, &self.capture, &self.withheld, &sink);
         let sink: &dyn EgressSink = &sink;
         for method in self.graphql.iter().flat_map(GraphqlFilter::drain_withheld) {
             self.withheld

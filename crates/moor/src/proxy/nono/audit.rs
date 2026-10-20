@@ -120,6 +120,12 @@ impl Withheld {
         }
     }
 
+    /// Notes that the next audited `status` from `host` answered a request
+    /// forwarded without its credential, so it is not a rejected credential.
+    pub(crate) fn anonymous_rejection(&self, host: &str, status: u16) {
+        self.limits.anonymous(host, status);
+    }
+
     /// Reports one withheld request once per `(rule, method, shape)`.
     fn record(&self, host: &str, rule: &str, method: &str, path: &str, sink: &dyn EgressSink) {
         if method.is_empty() || !method.bytes().all(|b| b.is_ascii_uppercase()) {

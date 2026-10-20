@@ -104,6 +104,9 @@ pub(super) struct Shared {
     pub(super) on_credentialed_401: Box<dyn Fn(&http::Head) + Send + Sync>,
     /// Methods of requests forwarded without credential, not yet drained.
     withheld: Mutex<VecDeque<String>>,
+    /// 401 and 403 statuses upstream gave requests forwarded without
+    /// credential, not yet drained.
+    anonymous_rejections: Mutex<VecDeque<u16>>,
     /// The real upstream.
     pub(super) upstream: Upstream,
     /// Vets destinations other than the judged host.
@@ -145,6 +148,22 @@ impl Shared {
             q.pop_front();
         }
         q.push_back(method.to_owned());
+    }
+
+    /// Notes a 401 or 403 answer to a request forwarded without its credential.
+    pub(super) fn reject_anonymous(&self, status: u16) {
+        let mut q = self.lock_anonymous_rejections();
+        if q.len() >= MAX_REFUSALS {
+            q.pop_front();
+        }
+        q.push_back(status);
+    }
+
+    /// Locks the anonymous rejection buffer, recovering from poisoning.
+    fn lock_anonymous_rejections(&self) -> MutexGuard<'_, VecDeque<u16>> {
+        self.anonymous_rejections
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Locks the withheld buffer, recovering from poisoning.
@@ -191,6 +210,7 @@ impl GraphqlFilter {
             credential_headers: spec.credential_headers,
             on_credentialed_401: spec.on_credentialed_401,
             withheld: Mutex::new(VecDeque::new()),
+            anonymous_rejections: Mutex::new(VecDeque::new()),
             upstream: spec.upstream,
             guard: spec.guard,
             tls,
@@ -223,6 +243,12 @@ impl GraphqlFilter {
     /// Takes the methods of requests forwarded without credential since the last call.
     pub(crate) fn drain_withheld(&self) -> Vec<String> {
         self.shared.lock_withheld().drain(..).collect()
+    }
+
+    /// Takes the 401 and 403 statuses of requests forwarded without credential
+    /// since the last call; each is noted before the answer reaches nono.
+    pub(crate) fn drain_anonymous_rejections(&self) -> Vec<u16> {
+        self.shared.lock_anonymous_rejections().drain(..).collect()
     }
 
     /// Stops accepting and joins the acceptor; open connections end on their
