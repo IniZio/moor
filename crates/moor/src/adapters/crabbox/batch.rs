@@ -12,9 +12,8 @@ use moor_core::name::{BoxHandle, BoxPath};
 use moor_core::seam::driver::{BoxStep, DriverError, ExecOutcome, StepDone};
 use moor_core::seam::proc::{Deadline, ProcError, ProcSpec, Stdin, Tool};
 
-use super::errors::transport_loss;
 use super::peek::ssh_target;
-use super::Crabbox;
+use super::{link, Crabbox};
 
 /// Runs `steps` in order over one ssh process; see `Driver::batch` for the result shape.
 /// `connect` is the argv from `connect_argv`; without a leading `ssh` the target is looked up
@@ -35,10 +34,10 @@ pub(super) fn run(
         Err(e) => return vec![Err(e)],
     };
     let spec = ProcSpec::new(Tool::Ssh, deadline)
-        .args(words)
+        .args(link::args(cb, handle, words))
         .arg(format!("sh -c {}", quote(&script(steps))))
         .stdin(Stdin::Bytes(stdin_bytes(steps)));
-    let (stdout, failure) = match cb.proc.run(&spec) {
+    let (stdout, failure) = match link::run(cb, handle, &spec) {
         Ok(out) => (out.stdout, None),
         Err(e) => (String::new(), Some(e)),
     };
@@ -258,7 +257,7 @@ fn ssh_failure(e: &ProcError, step: &BoxStep) -> DriverError {
     match e {
         ProcError::Timeout { after, .. } => DriverError::Timeout(*after),
         ProcError::Spawn(_) => DriverError::Unavailable("ssh could not be started".to_owned()),
-        _ => transport_loss(e).unwrap_or_else(|| failed(summary(step))),
+        _ => link::lost(e).unwrap_or_else(|| failed(summary(step))),
     }
 }
 

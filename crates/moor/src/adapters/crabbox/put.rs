@@ -11,7 +11,7 @@ use moor_core::seam::driver::DriverError;
 use moor_core::seam::proc::{Deadline, ProcError, ProcSpec, Stdin, Tool};
 
 use super::peek::ssh_target;
-use super::Crabbox;
+use super::{link, Crabbox};
 
 /// Time allowed for the write.
 const WRITE_DEADLINE: Duration = Duration::from_secs(30);
@@ -26,7 +26,7 @@ pub(super) fn put_file(
     mode: u32,
     host_cwd: &Path,
 ) -> Result<(), DriverError> {
-    let words = ssh_target(cb, handle, host_cwd)?;
+    let words = link::args(cb, handle, ssh_target(cb, handle, host_cwd)?);
     let file = path.as_str();
     let dir = match file.rsplit_once('/') {
         Some((d, _)) if !d.is_empty() => d,
@@ -40,7 +40,7 @@ pub(super) fn put_file(
         .args(words)
         .arg(remote)
         .stdin(Stdin::Bytes(bytes.to_vec()));
-    match cb.proc.run(&write) {
+    match link::run(cb, handle, &write) {
         Ok(_) => Ok(()),
         Err(ProcError::Timeout { after, .. }) => Err(DriverError::Timeout(after)),
         Err(ProcError::Spawn(_)) => Err(DriverError::Unavailable(

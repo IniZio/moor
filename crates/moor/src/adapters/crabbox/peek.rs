@@ -12,8 +12,8 @@ use moor_core::name::{BoxHandle, BoxPath};
 use moor_core::seam::driver::DriverError;
 use moor_core::seam::proc::{Deadline, ProcError, ProcSpec, Tool};
 
-use super::errors::{map_error, transport_loss, Op};
-use super::{split_handle, static_env, target_args, Crabbox};
+use super::errors::{map_error, Op};
+use super::{link, split_handle, static_env, target_args, Crabbox};
 
 /// Time allowed for the read.
 const READ_DEADLINE: Duration = Duration::from_secs(5);
@@ -28,20 +28,20 @@ pub(super) fn peek_file(
     path: &BoxPath,
     host_cwd: &Path,
 ) -> Result<Option<String>, DriverError> {
-    let words = ssh_target(cb, handle, host_cwd)?;
+    let words = link::args(cb, handle, ssh_target(cb, handle, host_cwd)?);
     let p = quote(path.as_str());
     let remote = format!("test -e {p} || exit {MISSING}; cat -- {p}");
     let read = ProcSpec::new(Tool::Ssh, Deadline(READ_DEADLINE))
         .args(words)
         .arg(remote);
-    match cb.proc.run(&read) {
+    match link::run(cb, handle, &read) {
         Ok(out) => Ok(Some(out.stdout)),
         Err(ProcError::NonZero { code: MISSING, .. }) => Ok(None),
         Err(ProcError::Timeout { after, .. }) => Err(DriverError::Timeout(after)),
         Err(ProcError::Spawn(_)) => Err(DriverError::Unavailable(
             "ssh could not be started".to_owned(),
         )),
-        Err(e) => Err(transport_loss(&e).unwrap_or_else(|| DriverError::Failed {
+        Err(e) => Err(link::lost(&e).unwrap_or_else(|| DriverError::Failed {
             summary: "box file read failed".to_owned(),
         })),
     }
@@ -55,10 +55,17 @@ pub(super) fn ssh_target(
     host_cwd: &Path,
 ) -> Result<Vec<String>, DriverError> {
     // `crabbox ssh` touches the lease, so a lookup also resets crabbox's idle timer;
-    // lookups within one command are reused, and idle Boxes are slept by moor's
-    // `sleep_after`, not by that timer.
+    // lookups are reused within one command and, for a while, through the Box's link, and
+    // idle Boxes are slept by moor's `sleep_after`, not by that timer.
     let key = (handle.as_str().to_owned(), host_cwd.to_path_buf());
     if let Some(words) = cb.targets.lock().ok().and_then(|m| m.get(&key).cloned()) {
+        return Ok(words);
+    }
+    let shared = cb.link(handle);
+    if let Some(words) = shared.as_ref().and_then(|l| l.saved(cb.clock.now())) {
+        if let Ok(mut map) = cb.targets.lock() {
+            map.insert(key, words.clone());
+        }
         return Ok(words);
     }
     // Secret-token providers need --show-secret, not yet passed.
@@ -80,6 +87,9 @@ pub(super) fn ssh_target(
             let words: Vec<String> = words.into_iter().skip(1).collect();
             if let Ok(mut map) = cb.targets.lock() {
                 map.insert(key, words.clone());
+            }
+            if let Some(shared) = shared {
+                shared.save(&words, cb.clock.now());
             }
             Ok(words)
         }
