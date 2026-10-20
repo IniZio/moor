@@ -1,5 +1,6 @@
 //! A scripted controller on a Unix socket. It answers the hello, serves each watch with an
-//! empty backlog caught up to [`BACKLOG_END`], answers each request from a per-command script, and records what it is sent.
+//! empty backlog caught up to [`BACKLOG_END`], answers each request from a per-command script
+//! or a Box table, and records what it is sent.
 
 use std::collections::{HashMap, VecDeque};
 use std::io::{BufRead, BufReader, Write};
@@ -12,6 +13,7 @@ use std::time::Duration;
 use moor_core::controller::{parse_frame, ClientFrame, FrameErrorKind, ServerFrame};
 use moor_core::request::Request;
 use moor_core::response::{ErrorKind, ErrorView, Response};
+use serde_json::json;
 
 /// Cursor every backlog watch is caught up to; a live watch must resume from it.
 pub(crate) const BACKLOG_END: i64 = 41;
@@ -26,6 +28,8 @@ pub(crate) enum Scripted {
     Reply(Response),
     /// Close the connection without answering.
     Hangup,
+    /// Keep the connection open and never answer.
+    Hold,
 }
 
 /// Everything clients sent, in arrival order.
@@ -49,6 +53,8 @@ struct Inner {
     scripts: HashMap<String, VecDeque<Scripted>>,
     /// Answer every watch with a store error, as a controller that cannot read its events does.
     fail_watches: bool,
+    /// Names of the Boxes `start` made, in order, once the Box table is on.
+    boxes: Option<Vec<String>>,
 }
 
 /// A running scripted controller; it serves until the test process exits.
@@ -66,6 +72,7 @@ impl FakeController {
             seen: Seen::default(),
             scripts: HashMap::new(),
             fail_watches: false,
+            boxes: None,
         }));
         let shared = Arc::clone(&inner);
         thread::spawn(move || {
@@ -89,6 +96,18 @@ impl FakeController {
     /// Answers every later watch with a store error.
     pub(crate) fn fail_watches(&self) {
         self.lock().fail_watches = true;
+    }
+
+    /// Answers unscripted `start` and `show` requests from a table of Boxes, as the real
+    /// controller does: `start` makes the named Box or attaches to it, and `show` names it
+    /// or answers `no Box <name>`.
+    pub(crate) fn keep_boxes(&self) {
+        self.lock().boxes.get_or_insert_with(Vec::new);
+    }
+
+    /// Names of the Boxes `start` made, in order.
+    pub(crate) fn boxes(&self) -> Vec<String> {
+        self.lock().boxes.clone().unwrap_or_default()
     }
 
     /// Reads what clients sent so far.
@@ -200,19 +219,45 @@ fn answer(line: &str, inner: &mut Inner) -> Next {
         }
         ClientFrame::Request { id, request } => {
             let cmd = command(&request);
-            inner.seen.requests.push(*request);
-            match inner.scripts.get_mut(&cmd).and_then(VecDeque::pop_front) {
+            let next = match inner.scripts.get_mut(&cmd).and_then(VecDeque::pop_front) {
                 Some(Scripted::Reply(envelope)) => {
                     Next::Send(ServerFrame::Response { id, envelope })
                 }
                 Some(Scripted::Hangup) => Next::Close,
+                Some(Scripted::Hold) => Next::Wait,
                 None => Next::Send(ServerFrame::Response {
                     id,
-                    envelope: failed(&cmd, &format!("no script for {cmd}")),
+                    envelope: inner
+                        .boxes
+                        .as_mut()
+                        .and_then(|boxes| from_table(&request, boxes))
+                        .unwrap_or_else(|| failed(&cmd, &format!("no script for {cmd}"))),
                 }),
-            }
+            };
+            inner.seen.requests.push(*request);
+            next
         }
     }
+}
+
+/// The Box table's answer to a `start` or `show`; `None` for any other request.
+fn from_table(request: &Request, boxes: &mut Vec<String>) -> Option<Response> {
+    let (cmd, name) = match request {
+        Request::Start(start) => ("start", start.name.as_str()),
+        Request::Show(show) => ("show", show.box_name.as_ref()?.as_str()),
+        _ => return None,
+    };
+    let found = boxes.iter().position(|b| b == name);
+    let index = match (cmd, found) {
+        (_, Some(index)) => index,
+        ("start", None) => {
+            boxes.push(name.to_owned());
+            boxes.len() - 1
+        }
+        _ => return Some(failed(cmd, &format!("no Box {name}"))),
+    };
+    let value = json!({"box": {"id": index + 1, "name": name, "branch": format!("moor/{name}")}});
+    Some(Response::ok(cmd, Some(value)))
 }
 
 /// The wire command name of `request`, such as `start`.

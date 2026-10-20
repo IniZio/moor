@@ -5,7 +5,8 @@
 use std::cell::RefCell;
 use std::io::{Read, Write};
 use std::net::TcpListener;
-use std::sync::mpsc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
@@ -14,8 +15,16 @@ use serde_json::json;
 use tungstenite::Message;
 
 use super::Click;
-use super::{next_delay, parse_mention, run, session, Inbound, Mention, SocketError};
+use super::{
+    next_delay, parse_mention, run, session, Inbound, Intake, Mention, NotKept, SocketError,
+};
 use crate::api::Api;
+
+impl Intake for mpsc::Sender<Inbound> {
+    fn take(&self, item: Inbound) -> Result<(), NotKept> {
+        self.send(item).map_err(|_| NotKept::Gone)
+    }
+}
 
 /// Serves one WebSocket client with `script`, returning every text frame it sent back.
 fn fake_slack<F>(script: F) -> (String, JoinHandle<Vec<String>>)
@@ -319,4 +328,58 @@ fn malformed_clicks_are_acked_but_not_forwarded() {
         assert_eq!(acks, vec![r#"{"envelope_id":"env-c"}"#]);
         assert!(got.is_empty());
     }
+}
+
+/// An intake that fails to keep every item.
+struct Failing;
+
+impl Intake for Failing {
+    fn take(&self, _item: Inbound) -> Result<(), NotKept> {
+        Err(NotKept::Failed)
+    }
+}
+
+#[test]
+fn an_item_the_intake_did_not_keep_gets_no_ack() {
+    let mention = json!({"type":"app_mention","user":"U1","text":"t","ts":"1.1","channel":"C1"});
+    let (url, server) = fake_slack(move |ws| {
+        send(ws, &events_api("env-1", "Ev1", &mention));
+        send(
+            ws,
+            &json!({"type":"events_api","envelope_id":"env-2","payload":{}}),
+        );
+        ws.close(None).expect("close");
+    });
+    session(&url, &Failing).expect("session ends cleanly");
+    let acks = server.join().expect("server");
+    assert_eq!(acks, vec![r#"{"envelope_id":"env-2"}"#]);
+}
+
+/// An intake that keeps each item only after a pause, then sets its flag.
+struct Slow(Arc<AtomicBool>);
+
+impl Intake for Slow {
+    fn take(&self, _item: Inbound) -> Result<(), NotKept> {
+        std::thread::sleep(Duration::from_millis(300));
+        self.0.store(true, Ordering::SeqCst);
+        Ok(())
+    }
+}
+
+#[test]
+fn the_ack_is_sent_after_the_intake_keeps_the_item() {
+    let kept = Arc::new(AtomicBool::new(false));
+    let seen = Arc::clone(&kept);
+    let mention = json!({"type":"app_mention","user":"U1","text":"t","ts":"1.1","channel":"C1"});
+    let (url, server) = fake_slack(move |ws| {
+        send(ws, &events_api("env-1", "Ev1", &mention));
+        assert!(ws.read().expect("ack").is_text());
+        assert!(
+            seen.load(Ordering::SeqCst),
+            "the ack came before the item was kept"
+        );
+        ws.close(None).expect("close");
+    });
+    session(&url, &Slow(kept)).expect("session ends cleanly");
+    server.join().expect("server");
 }

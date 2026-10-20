@@ -14,10 +14,10 @@ use moor_core::secret::Secret;
 use crate::api::Api;
 use crate::command::Allow;
 use crate::config::{parse_config, Config};
-use crate::db::Db;
+use crate::db::{Db, SlackThread};
 use crate::secret_file::read_secret;
-use crate::socket::{self, Inbound};
-use crate::worker::{self, Fx};
+use crate::socket::{self, Inbound, Intake, NotKept};
+use crate::worker::{self, Fx, Job};
 use crate::{dial, Log};
 
 /// Longest the feed waits for a watch item before it wakes anyway.
@@ -48,8 +48,12 @@ struct Loaded {
     app_token: Secret,
     /// Bot token for posting replies.
     bot_token: Secret,
-    /// Path of `slack.db`, opened and migrated once to check it.
+    /// `slack.db`, opened and migrated; the Socket Mode thread records mentions in it.
+    db: Db,
+    /// Path of `slack.db`, which the worker opens again on its own thread.
     db_path: PathBuf,
+    /// Rows an earlier run left `starting`, read before any new mention is recorded.
+    left: Vec<SlackThread>,
 }
 
 /// Runs the daemon until its Socket Mode thread ends.
@@ -64,27 +68,34 @@ pub fn run(settings: &Settings, log: Log) -> Result<(), String> {
         api,
         app_token,
         bot_token,
+        db,
         db_path,
+        left,
     } = load(settings)?;
     let client = Client::new(&settings.socket);
-    let (inbound_tx, inbound_rx) = mpsc::channel();
+    let (jobs_tx, jobs_rx) = mpsc::channel();
     let (feed_tx, feed_rx) = mpsc::channel();
     let (wake_tx, wake_rx) = mpsc::channel();
+    let recorder = Recorder {
+        db,
+        channels: cfg.channels,
+        users: cfg.users,
+        jobs: jobs_tx,
+        log: Arc::clone(&log),
+        clock: settings.clock,
+    };
     let socket_api = Arc::clone(&api);
     let socket = thread::spawn(move || {
-        socket::run(&socket_api, &app_token, &inbound_tx, &thread::sleep);
+        socket::run(&socket_api, &app_token, &recorder, &thread::sleep);
     });
     let worker = Worker {
         db_path,
         api,
         bot_token,
         client: client.clone(),
-        channels: cfg.channels,
-        users: cfg.users,
         log: Arc::clone(&log),
-        clock: settings.clock,
     };
-    thread::spawn(move || worker.run(&inbound_rx));
+    thread::spawn(move || worker.run(&jobs_rx, left));
     thread::spawn(move || dial::read_events(&client, &feed_tx, &*log, &thread::sleep));
     thread::spawn(move || feed(&feed_rx, &wake_tx));
     thread::spawn(move || post(&wake_rx));
@@ -94,7 +105,7 @@ pub fn run(settings: &Settings, log: Log) -> Result<(), String> {
     Err("the worker stopped taking mentions".to_owned())
 }
 
-/// Reads the config and both token files, so a bad file stops startup.
+/// Reads the config and both token files, and opens `slack.db`, so a bad file stops startup.
 fn load(settings: &Settings) -> Result<Loaded, String> {
     let path = &settings.config;
     let text =
@@ -109,13 +120,16 @@ fn load(settings: &Settings) -> Result<Loaded, String> {
         .create(dir)
         .map_err(|e| format!("create {}: {e}", dir.display()))?;
     let db_path = dir.join("slack.db");
-    Db::open(&db_path).map_err(|e| format!("open slack.db: {e}"))?;
+    let db = Db::open(&db_path).map_err(|e| format!("open slack.db: {e}"))?;
+    let left = db.starting().map_err(|e| format!("read slack.db: {e}"))?;
     Ok(Loaded {
         cfg,
         api: Arc::new(api),
         app_token,
         bot_token,
+        db,
         db_path,
+        left,
     })
 }
 
@@ -138,7 +152,45 @@ fn expand_home(path: &Path, home: Option<&Path>) -> PathBuf {
     }
 }
 
-/// The worker thread's state: where `slack.db` lives, Slack, the controller and the allow-list.
+/// The Socket Mode thread's intake: records each mention in `slack.db`, then queues its job,
+/// all before Slack gets the ack.
+struct Recorder {
+    /// The Socket Mode thread's own `slack.db` connection.
+    db: Db,
+    /// Channel ids where mentions are answered.
+    channels: Vec<String>,
+    /// User ids who may start Boxes.
+    users: Vec<String>,
+    /// The worker's queue.
+    jobs: Sender<Job>,
+    /// Daemon log.
+    log: Log,
+    /// The current time in unix seconds.
+    clock: fn() -> i64,
+}
+
+impl Intake for Recorder {
+    /// Keeps a mention; a click needs nothing kept until prompts take answers.
+    fn take(&self, item: Inbound) -> Result<(), NotKept> {
+        let Inbound::Mention(mention) = item else {
+            return Ok(());
+        };
+        let allow = Allow {
+            channels: &self.channels,
+            users: &self.users,
+        };
+        match worker::record(&mention, &self.db, &allow, (self.clock)()) {
+            Ok(Some(job)) => self.jobs.send(job).map_err(|_| NotKept::Gone),
+            Ok(None) => Ok(()),
+            Err(e) => {
+                (self.log)(&format!("slack.db: {e}; Slack sends the mention again"));
+                Err(NotKept::Failed)
+            }
+        }
+    }
+}
+
+/// The worker thread's state: where `slack.db` lives, Slack and the controller.
 struct Worker {
     /// Path of `slack.db`; the worker opens its own connection.
     db_path: PathBuf,
@@ -148,26 +200,17 @@ struct Worker {
     bot_token: Secret,
     /// Controller socket client; each request opens its own connection.
     client: Client,
-    /// Channel ids where mentions are answered.
-    channels: Vec<String>,
-    /// User ids who may start Boxes.
-    users: Vec<String>,
     /// Daemon log.
     log: Log,
-    /// The current time in unix seconds.
-    clock: fn() -> i64,
 }
 
 impl Worker {
-    /// Settles rows left in `starting`, then takes queued mentions one at a time.
-    fn run(&self, inbound: &Receiver<Inbound>) {
+    /// Settles the rows `left` by an earlier run, runs the queued jobs and retries unsure
+    /// starts until the queue closes.
+    fn run(&self, jobs: &Receiver<Job>, left: Vec<SlackThread>) {
         let db = match Db::open(&self.db_path) {
             Ok(db) => db,
             Err(e) => return (self.log)(&format!("open slack.db: {e}")),
-        };
-        let allow = Allow {
-            channels: &self.channels,
-            users: &self.users,
         };
         let mut call = |req| self.client.request(req, |_| {});
         let mut reply = |channel: &str, thread: &str, text: &str| {
@@ -182,15 +225,8 @@ impl Worker {
             call: &mut call,
             reply: &mut reply,
             log: &*self.log,
-            wait: &thread::sleep,
-            now: self.clock,
         };
-        worker::resume(&db, &mut fx);
-        for item in inbound {
-            if let Inbound::Mention(mention) = item {
-                worker::handle(&mention, &db, &allow, &mut fx);
-            }
-        }
+        worker::serve(jobs, &db, left, &mut fx);
     }
 }
 

@@ -1,8 +1,8 @@
-//! The Socket Mode WebSocket loop: acknowledges envelopes and forwards app mentions and button clicks.
+//! The Socket Mode WebSocket loop: hands app mentions and button clicks to an intake, then
+//! acknowledges their envelopes.
 
 use std::io::{self, Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
-use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -69,13 +69,28 @@ pub(super) struct Click {
     pub choice: u32,
 }
 
-/// What the socket thread forwards to the worker.
+/// What the socket thread hands to its intake.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum Inbound {
     /// An app mention or thread reply.
     Mention(Mention),
     /// A button press.
     Click(Click),
+}
+
+/// Takes each mention and click before Slack gets the ack for its envelope.
+pub(super) trait Intake {
+    /// Keeps `item`, or says why its envelope gets no ack.
+    fn take(&self, item: Inbound) -> Result<(), NotKept>;
+}
+
+/// Why an intake did not keep an item.
+#[derive(Debug)]
+pub(super) enum NotKept {
+    /// Nothing takes items any more, so the session ends.
+    Gone,
+    /// Keeping it failed; Slack sends an envelope that got no ack again.
+    Failed,
 }
 
 /// Why a Socket Mode session ended abnormally; never carries the URL or a token.
@@ -153,23 +168,18 @@ enum Flow {
 
 /// Reads envelopes from one connection until Slack disconnects or the socket closes.
 #[cfg(test)]
-pub(super) fn session(url: &str, mentions: &Sender<Inbound>) -> Result<(), SocketError> {
-    session_tracked(url, mentions, &mut false)
+pub(super) fn session(url: &str, intake: &dyn Intake) -> Result<(), SocketError> {
+    session_tracked(url, intake, &mut false)
 }
 
-/// Runs forever, reconnecting with backoff; returns when `mentions` has no receiver.
-pub(super) fn run(
-    api: &Api,
-    app_token: &Secret,
-    mentions: &Sender<Inbound>,
-    sleep: &dyn Fn(Duration),
-) {
+/// Runs forever, reconnecting with backoff; returns when `intake` is gone.
+pub(super) fn run(api: &Api, app_token: &Secret, intake: &dyn Intake, sleep: &dyn Fn(Duration)) {
     let mut delay = MIN_BACKOFF;
     loop {
         if let Ok(url) = api.open_connection(app_token) {
             let mut healthy = false;
             if matches!(
-                session_tracked(&url, mentions, &mut healthy),
+                session_tracked(&url, intake, &mut healthy),
                 Err(SocketError::ReceiverGone)
             ) {
                 return;
@@ -189,18 +199,14 @@ fn next_delay(delay: Duration) -> Duration {
 }
 
 /// Reads envelopes from one connection, setting `healthy` once Slack's hello arrives.
-fn session_tracked(
-    url: &str,
-    mentions: &Sender<Inbound>,
-    healthy: &mut bool,
-) -> Result<(), SocketError> {
+fn session_tracked(url: &str, intake: &dyn Intake, healthy: &mut bool) -> Result<(), SocketError> {
     let mut ws = connect(url)?;
     let mut silent_ticks = 0_u32;
     loop {
         match ws.read() {
             Ok(Message::Text(text)) => {
                 silent_ticks = 0;
-                match handle_envelope(&text, &mut ws, mentions)? {
+                match handle_envelope(&text, &mut ws, intake)? {
                     Flow::Continue => {}
                     Flow::Hello => *healthy = true,
                     Flow::Disconnect => return Ok(()),
@@ -242,38 +248,43 @@ fn flush(ws: &mut WebSocket<Stream>) -> Result<(), SocketError> {
     }
 }
 
-/// Acknowledges one JSON envelope, then forwards it if it is a mention or click.
+/// Hands a mention or click in one JSON envelope to `intake`, then acknowledges the envelope.
+/// An item the intake could not keep gets no ack, so Slack sends it again.
 fn handle_envelope(
     text: &str,
     ws: &mut WebSocket<Stream>,
-    mentions: &Sender<Inbound>,
+    intake: &dyn Intake,
 ) -> Result<Flow, SocketError> {
     let Ok(envelope) = serde_json::from_str::<Value>(text) else {
         return Ok(Flow::Continue);
     };
-    if let Some(id) = envelope.get("envelope_id").and_then(Value::as_str) {
-        let ack = json!({"envelope_id": id}).to_string();
-        match ws.send(Message::text(ack)) {
-            Ok(()) => {}
-            Err(tungstenite::Error::Io(e)) if is_timeout(&e) => {}
-            Err(e) => return Err(SocketError::Io(e.to_string())),
-        }
-    }
-    match envelope.get("type").and_then(Value::as_str) {
-        Some("hello") => Ok(Flow::Hello),
-        Some("disconnect") => Ok(Flow::Disconnect),
-        Some("events_api") => forward(mentions, parse_mention(&envelope).map(Inbound::Mention)),
-        Some("interactive") => forward(mentions, parse_click(&envelope).map(Inbound::Click)),
-        _ => Ok(Flow::Continue),
+    let (flow, item) = match envelope.get("type").and_then(Value::as_str) {
+        Some("hello") => (Flow::Hello, None),
+        Some("disconnect") => (Flow::Disconnect, None),
+        Some("events_api") => (
+            Flow::Continue,
+            parse_mention(&envelope).map(Inbound::Mention),
+        ),
+        Some("interactive") => (Flow::Continue, parse_click(&envelope).map(Inbound::Click)),
+        _ => (Flow::Continue, None),
+    };
+    match item.map_or(Ok(()), |item| intake.take(item)) {
+        Ok(()) => ack(ws, &envelope).map(|()| flow),
+        Err(NotKept::Failed) => Ok(flow),
+        Err(NotKept::Gone) => Err(SocketError::ReceiverGone),
     }
 }
 
-/// Sends `item` to the worker when present.
-fn forward(tx: &Sender<Inbound>, item: Option<Inbound>) -> Result<Flow, SocketError> {
-    if let Some(item) = item {
-        tx.send(item).map_err(|_| SocketError::ReceiverGone)?;
+/// Sends the ack for `envelope` when it carries an envelope id.
+fn ack(ws: &mut WebSocket<Stream>, envelope: &Value) -> Result<(), SocketError> {
+    let Some(id) = envelope.get("envelope_id").and_then(Value::as_str) else {
+        return Ok(());
+    };
+    match ws.send(Message::text(json!({"envelope_id": id}).to_string())) {
+        Ok(()) => Ok(()),
+        Err(tungstenite::Error::Io(e)) if is_timeout(&e) => Ok(()),
+        Err(e) => Err(SocketError::Io(e.to_string())),
     }
-    Ok(Flow::Continue)
 }
 
 /// Opens the transport and completes the WebSocket handshake.
