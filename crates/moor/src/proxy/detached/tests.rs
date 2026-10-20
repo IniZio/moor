@@ -20,7 +20,6 @@ use crate::store::{Fenced, ReadyProc, Store, STORE_FILE};
 use crate::testing::clock::FakeClock;
 use crate::testing::proc::{DaemonCall, ScriptedProc};
 use crate::testing::rng::FakeRng;
-use crate::testing::tcp_front_v4;
 
 /// An adapter over fakes, with a second store on the same database to seed and inspect rows.
 pub(super) struct Fx {
@@ -93,7 +92,6 @@ pub(super) fn bare() -> Fx {
         clock.clone(),
         rng.clone(),
         Some(dir.path().to_path_buf()),
-        Arc::new(|| Ok(())),
     );
     Fx {
         dir,
@@ -205,44 +203,6 @@ fn a_second_ensure_reuses_the_running_supervisor() {
 
     assert_eq!(f.proc.daemons().len(), 1);
     assert_eq!(first.box_port, second.box_port);
-}
-
-#[test]
-fn ensure_replaces_a_tcp_front_an_older_moor_left_running_on_the_same_box_port() {
-    let f = fx();
-    f.leased_row();
-    let port = f.store.proxy(f.id).unwrap().unwrap().box_port;
-    f.exec("UPDATE proxy SET ready = 1, pid = 77");
-    tcp_front_v4(&f.dir.path().join(STORE_FILE));
-
-    let first = f.sup.ensure(&f.spec()).unwrap();
-    let second = f.sup.ensure(&f.spec()).unwrap();
-
-    assert_eq!(f.proc.daemons().len(), 1);
-    assert_eq!((first.box_port, second.box_port), (port, port));
-    assert!(!f.store.heartbeat(f.id, "sup").unwrap());
-}
-
-#[test]
-fn a_tcp_front_keeps_its_lease_when_the_tunnel_check_fails() {
-    let f = fx();
-    f.leased_row();
-    f.exec("UPDATE proxy SET ready = 1, pid = 77");
-    tcp_front_v4(&f.dir.path().join(STORE_FILE));
-    let refusal = "crabbox 0.72.0-moor.9 or a newer -moor build is required";
-    let sup = DetachedSupervisor::new(
-        f.proc.clone(),
-        f.clock.clone(),
-        f.rng.clone(),
-        Some(f.dir.path().to_path_buf()),
-        Arc::new(move || Err(refusal.to_owned())),
-    );
-
-    let err = sup.ensure(&f.spec()).unwrap_err();
-
-    assert_eq!(err, ProxyHostError::Failed(refusal.to_owned()));
-    assert!(f.store.heartbeat(f.id, "sup").unwrap());
-    assert!(f.proc.daemons().is_empty());
 }
 
 #[test]

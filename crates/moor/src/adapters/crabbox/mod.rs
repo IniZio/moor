@@ -108,7 +108,7 @@ impl Crabbox {
     }
 
     /// Refuses a crabbox older than moor supports; asks once and remembers a pass.
-    pub(crate) fn require_version(&self) -> Result<(), DriverError> {
+    fn require_version(&self) -> Result<(), DriverError> {
         if self.version_ok.get().is_some() {
             return Ok(());
         }

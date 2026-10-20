@@ -50,9 +50,6 @@ pub(crate) struct ProxyRow {
     pub(crate) lease_heartbeat: Option<Ts>,
     /// Host boot the supervisor marked the row ready in.
     pub(crate) boot_id: Option<String>,
-    /// Whether a moor build from before the socket front marked the row ready. Its supervisor
-    /// listens on host TCP and refuses a Box that sends no secret.
-    pub(crate) tcp_front: bool,
 }
 
 impl fmt::Debug for ProxyRow {
@@ -66,7 +63,6 @@ impl fmt::Debug for ProxyRow {
             .field("lease_owner", &self.lease_owner)
             .field("lease_heartbeat", &self.lease_heartbeat)
             .field("boot_id", &self.boot_id)
-            .field("tcp_front", &self.tcp_front)
             .finish()
     }
 }
@@ -143,8 +139,7 @@ impl Store {
     pub(crate) fn proxy(&self, box_id: BoxId) -> Result<Option<ProxyRow>, StoreError> {
         let conn = self.reader()?;
         conn.query_row(
-            "SELECT box, box_port, pid, handle, ready, lease_owner, lease_heartbeat, boot_id, \
-             host_port IS NOT NULL \
+            "SELECT box, box_port, pid, handle, ready, lease_owner, lease_heartbeat, boot_id \
              FROM proxy WHERE box = ?",
             [box_id.get()],
             raw_from_row,
@@ -158,8 +153,7 @@ impl Store {
     pub(crate) fn proxies(&self) -> Result<Vec<ProxyRow>, StoreError> {
         let conn = self.reader()?;
         let mut stmt = conn.prepare(
-            "SELECT box, box_port, pid, handle, ready, lease_owner, lease_heartbeat, boot_id, \
-             host_port IS NOT NULL \
+            "SELECT box, box_port, pid, handle, ready, lease_owner, lease_heartbeat, boot_id \
              FROM proxy ORDER BY box",
         )?;
         let rows = stmt.query_and_then([], |r| ProxyRow::try_from(raw_from_row(r)?))?;
@@ -210,8 +204,6 @@ struct RawRow {
     lease_heartbeat: Option<i64>,
     /// Boot id column.
     boot_id: Option<String>,
-    /// Whether the host port column is set.
-    tcp_front: bool,
 }
 
 /// Read a proxy row without range checks.
@@ -225,7 +217,6 @@ fn raw_from_row(r: &Row<'_>) -> rusqlite::Result<RawRow> {
         lease_owner: r.get(5)?,
         lease_heartbeat: r.get(6)?,
         boot_id: r.get(7)?,
-        tcp_front: r.get(8)?,
     })
 }
 
@@ -242,7 +233,6 @@ impl TryFrom<RawRow> for ProxyRow {
             lease_owner: r.lease_owner,
             lease_heartbeat: r.lease_heartbeat.map(Ts::from_millis),
             boot_id: r.boot_id,
-            tcp_front: r.tcp_front,
         })
     }
 }

@@ -40,10 +40,6 @@ const STOP_WAIT: Duration = Duration::from_secs(3);
 /// The base64url alphabet, without padding.
 const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
-/// Fails with a message for the user when a new supervisor could not open its tunnel, such as
-/// when crabbox is older than the build moor requires.
-pub(crate) type TunnelCheck = Arc<dyn Fn() -> Result<(), String> + Send + Sync>;
-
 /// Runs and stops proxy supervisors as detached processes, tracked in the state store.
 pub(crate) struct DetachedSupervisor {
     /// Spawns, probes and signals the supervisor process.
@@ -56,8 +52,6 @@ pub(crate) struct DetachedSupervisor {
     state_dir: Option<PathBuf>,
     /// The state store, opened on first use.
     store: OnceLock<Store>,
-    /// Runs before a running supervisor is retired.
-    tunnel_check: TunnelCheck,
 }
 
 impl DetachedSupervisor {
@@ -67,7 +61,6 @@ impl DetachedSupervisor {
         clock: Arc<dyn Clock>,
         rng: Arc<dyn Rng>,
         state_dir: Option<PathBuf>,
-        tunnel_check: TunnelCheck,
     ) -> Self {
         Self {
             proc,
@@ -75,7 +68,6 @@ impl DetachedSupervisor {
             rng,
             state_dir,
             store: OnceLock::new(),
-            tunnel_check,
         }
     }
 
@@ -120,17 +112,6 @@ impl DetachedSupervisor {
         self.proc
             .boot_id()
             .is_none_or(|now| row.boot_id.as_deref() == Some(now.as_str()))
-    }
-
-    /// Takes the lease from the Box's supervisor, which exits at its next heartbeat; the row keeps
-    /// its box port, so a running Box reaches the supervisor started in its place. When the
-    /// tunnel check fails, the lease stays and the running supervisor keeps serving the Box.
-    pub(crate) fn retire(&self, store: &Store, box_id: BoxId) -> Result<(), String> {
-        (self.tunnel_check)()?;
-        store
-            .expire_proxy(box_id)
-            .map(drop)
-            .map_err(|e| format!("the proxy state could not be used: {e}"))
     }
 
     /// Send SIGTERM to the process group led by `pid`.
@@ -193,10 +174,8 @@ fn endpoint(row: &ProxyRow, ca_pem: &str) -> ProxyEndpoint {
 impl ProxyHost for DetachedSupervisor {
     /// Make sure the Box's proxy supervisor is running and ready; return its endpoint.
     ///
-    /// A ready supervisor with a live lease is reused, unless an older moor started it with a
-    /// TCP front, which refuses a Box that sends no secret; that one is retired and replaced.
-    /// Otherwise the box port is reserved and a supervisor is started, unless one already holds a
-    /// live lease.
+    /// A ready supervisor with a live lease is reused. Otherwise the box port is reserved and a
+    /// supervisor is started, unless one already holds a live lease.
     fn ensure(&self, spec: &ProxySpec) -> Result<ProxyEndpoint, ProxyHostError> {
         let box_id = spec.box_id;
         let Some(state) = self.state_dir.as_deref() else {
@@ -213,10 +192,7 @@ impl ProxyHost for DetachedSupervisor {
         let store = self.store().map_err(|e| store_failed(&e, &log))?;
         let row = store.proxy(box_id).map_err(|e| store_failed(&e, &log))?;
         if let Some(row) = row.filter(|r| r.ready && self.live(r)) {
-            if !row.tcp_front {
-                return Ok(endpoint(&row, ca_pem));
-            }
-            self.retire(store, box_id).map_err(ProxyHostError::Failed)?;
+            return Ok(endpoint(&row, ca_pem));
         }
 
         let reserved = store

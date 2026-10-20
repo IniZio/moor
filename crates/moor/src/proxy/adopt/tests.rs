@@ -48,7 +48,6 @@ fn fx() -> Fx {
         clock.clone(),
         rng,
         Some(dir.path().to_path_buf()),
-        Arc::new(|| Ok(())),
     );
     let f = Fx {
         dir,
