@@ -124,3 +124,12 @@ fn a_wake_after_the_agent_exited_opens_a_new_session() {
     crate::ops::start::revive_after_wake(&w.cx, w.cx.store().unwrap(), id).unwrap();
     check_second_session(&w, &engine, id);
 }
+
+#[test]
+fn a_new_session_after_wake_makes_no_box_call() {
+    let (w, engine, id) = exited_agent();
+    let before = w.driver.calls();
+    crate::ops::start::revive_after_wake(&w.cx, w.cx.store().unwrap(), id).unwrap();
+    check_second_session(&w, &engine, id);
+    assert_eq!(w.driver.calls(), before);
+}

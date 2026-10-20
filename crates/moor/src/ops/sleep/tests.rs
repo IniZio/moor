@@ -516,3 +516,15 @@ fn sleep_with_the_pane_already_gone_still_sleeps() {
     run(&f.cx, &req()).unwrap();
     assert_eq!(states(&f), (BoxLifecycle::Asleep, BoxState::Asleep));
 }
+
+#[test]
+fn sleep_makes_no_box_call_but_the_sleep() {
+    let f = idle();
+    let before = f.driver.calls();
+    run(&f.cx, &req()).unwrap();
+    let calls = f.driver.calls();
+    assert_eq!(
+        calls.get(before.len()..),
+        Some(&["sleep box-1".to_owned()][..])
+    );
+}
