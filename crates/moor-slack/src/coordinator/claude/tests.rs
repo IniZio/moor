@@ -167,6 +167,18 @@ fn a_reason_that_repeats_the_token_hides_it() {
 }
 
 #[test]
+fn a_reason_with_no_result_that_repeats_the_token_hides_it() {
+    let bin = tempfile::tempdir().unwrap();
+    let cfg = tempfile::tempdir().unwrap();
+    let got = claude(bin.path()).check(
+        cfg.path(),
+        &Secret::new(b"sk-ant-oat01-crash-s3cr3t".to_vec()),
+    );
+    let want = "crashed reading [token]";
+    assert_eq!(got, Err(CheckError::Unavailable(want.to_owned())));
+}
+
+#[test]
 fn a_run_past_its_limit_is_killed_with_its_whole_group() {
     let dir = tempfile::tempdir().unwrap();
     let pid_file = dir.path().join("grandchild");
