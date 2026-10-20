@@ -20,10 +20,13 @@ const ASK_MATCHER: &str = "AskUserQuestion|ExitPlanMode";
 
 /// Writes `agent-state.json` beside itself: `hook.sh STATE EVENT`, hook JSON on stdin.
 /// The read is capped in size and time, so a closed or silent stdin never stalls the agent.
+/// A question tool's record keeps its questions, and no Notification replaces it: Claude Code
+/// follows the question with a generic permission notice that names nothing it asked.
 const HOOK_SCRIPT: &str = r#"#!/bin/sh
 d=${0%/*}
 in=
 if command -v timeout >/dev/null 2>&1; then in=$(timeout 2 head -c 65536 2>/dev/null); fi
+if [ "$2" = Notification ] && grep -q '"event": *"PreToolUse"' "$d/agent-state.json" 2>/dev/null; then exit 0; fi
 t="$d/agent-state.json.tmp.$$"
 if command -v python3 >/dev/null 2>&1; then
   MOOR_HOOK_IN=$in python3 -c '
@@ -38,6 +41,9 @@ o = {"state": sys.argv[1], "event": sys.argv[2], "ts": int(time.time())}
 for k in ("session_id", "message", "notification_type"):
     if isinstance(d.get(k), str):
         o[k] = d[k]
+ti = d.get("tool_input")
+if isinstance(ti, dict) and isinstance(ti.get("questions"), list):
+    o["questions"] = ti["questions"]
 print(json.dumps(o))' "$1" "$2"
 elif command -v node >/dev/null 2>&1; then
   MOOR_HOOK_IN=$in node -e '
@@ -48,6 +54,8 @@ const o = { state: process.argv[1], event: process.argv[2], ts: Math.floor(Date.
 for (const k of ["session_id", "message", "notification_type"]) {
   if (typeof d[k] === "string") o[k] = d[k];
 }
+const ti = d.tool_input;
+if (ti && typeof ti === "object" && Array.isArray(ti.questions)) o.questions = ti.questions;
 console.log(JSON.stringify(o));' "$1" "$2"
 else
   printf '{"state":"%s","event":"%s","ts":%s}\n' "$1" "$2" "$(date +%s)"

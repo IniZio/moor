@@ -280,6 +280,7 @@ fn hook(kind: HookKind) -> Probes {
             kind,
             session_id: None,
             message,
+            options: Vec::new(),
             at: Ts::from_millis(0),
         }),
         pane: PaneRead::Fresh(PaneObs {

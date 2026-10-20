@@ -2,12 +2,18 @@
 
 use std::sync::Arc;
 
-use moor_core::activity::{Activity, AgentState, Source};
+use moor_core::activity::{
+    Activity, AgentState, HookKind, HookRead, HookRecord, PaneObs, PaneRead, PaneStatus, Probes,
+    Source,
+};
+use moor_core::domain::decision::Decision;
+use moor_core::domain::session_state::SessionInput;
 use moor_core::BoxId;
 
-use super::{cx, row, working_box};
+use super::{cx, rec, row, working_box, NOW, SESSION};
 use crate::cx::Cx;
-use crate::ops::common::activity::{settle, PaneLiveness, Reading};
+use crate::ops::common::activity::{read, settle, PaneLiveness, Reading};
+use crate::store::{NewRun, RunOutcome};
 use crate::testing::engine::FakeEngine;
 
 fn reading(state: AgentState) -> Reading {
@@ -82,4 +88,85 @@ fn a_different_question_without_a_resume_is_a_new_event() {
     pass(&cx, id, &asking("Proceed?"));
     pass(&cx, id, &asking("Delete it?"));
     assert_eq!(asked(&cx, id), 2);
+}
+
+/// A probe whose hook reports the agent waiting on a menu question.
+fn hook_asking() -> Probes {
+    hook_probe(HookRecord {
+        message: Some("Reuse PR #32?".to_owned()),
+        options: vec!["Reuse".to_owned(), "Open new".to_owned()],
+        ..rec(HookKind::Blocked)
+    })
+}
+
+fn hook_probe(record: HookRecord) -> Probes {
+    Probes {
+        hook: HookRead::Fresh(record),
+        pane: PaneRead::Fresh(PaneObs {
+            status: PaneStatus::Unknown,
+            tail: String::new(),
+            prompt: None,
+            exit_marker: None,
+        }),
+    }
+}
+
+fn tick(cx: &Cx, id: BoxId) {
+    let store = cx.store().unwrap();
+    let r = read(cx, store, &row(cx, id), NOW).unwrap();
+    settle(cx, store, &row(cx, id), &r).unwrap();
+}
+
+#[test]
+fn a_run_while_the_agent_waits_keeps_one_episode() {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = Arc::new(FakeEngine::new().probes(SESSION, hook_asking()));
+    let (cx, _) = cx(dir.path(), &engine);
+    let id = working_box(&cx, true);
+    let store = cx.store().unwrap();
+    tick(&cx, id);
+    for _ in 0..3 {
+        let new = NewRun {
+            box_id: id,
+            argv: vec!["make".into()],
+            record: None,
+            sha: None,
+            sync: "none".into(),
+            pid: 4242,
+        };
+        let run = store.begin_run(new).unwrap();
+        store
+            .apply(Decision::new(id).session(SessionInput::RunStarted))
+            .unwrap();
+        tick(&cx, id);
+        let out = RunOutcome {
+            exit: Some(0),
+            interrupted: false,
+            error: None,
+        };
+        store.finish_run(run, out).unwrap();
+        tick(&cx, id);
+    }
+    let all = kinds(&cx, id);
+    assert_eq!(all.iter().filter(|k| *k == "busy").count(), 3, "{all:?}");
+    assert_eq!(asked(&cx, id), 1, "{all:?}");
+}
+
+#[test]
+fn the_same_question_asked_again_after_work_is_a_new_episode() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut again = hook_asking();
+    if let HookRead::Fresh(r) = &mut again.hook {
+        r.at = NOW;
+    }
+    let engine = FakeEngine::new()
+        .then_probes(SESSION, hook_asking())
+        .then_probes(SESSION, hook_probe(rec(HookKind::Busy)))
+        .probes(SESSION, again);
+    let (cx, _) = cx(dir.path(), &Arc::new(engine));
+    let id = working_box(&cx, true);
+    for _ in 0..4 {
+        tick(&cx, id);
+    }
+    assert_eq!(asked(&cx, id), 2, "{:?}", kinds(&cx, id));
 }

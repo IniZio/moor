@@ -239,6 +239,7 @@ fn the_op_settles_a_finished_steered_turn() {
             kind: HookKind::Idle,
             session_id: None,
             message: None,
+            options: Vec::new(),
             at: Ts::from_millis(i64::MAX / 2),
         }),
         pane: PaneRead::Fresh(PaneObs {
@@ -271,6 +272,7 @@ fn the_op_settles_a_steered_turn_on_a_box_whose_setup_failed() {
             kind: HookKind::Idle,
             session_id: None,
             message: None,
+            options: Vec::new(),
             at: Ts::from_millis(i64::MAX / 2),
         }),
         pane: PaneRead::Fresh(PaneObs {

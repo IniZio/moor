@@ -196,6 +196,7 @@ fn hook_cache_round_trips_every_kind_and_keeps_the_latest() {
             kind,
             session_id: (i % 2 == 0).then(|| "sess".to_owned()),
             message: (i == 3).then(|| "ok?".to_owned()),
+            options: Vec::new(),
             at: Ts::from_millis(500 + i64::try_from(i).unwrap()),
         };
         store.put_hook(id, &record).unwrap();
@@ -333,6 +334,7 @@ fn hook_follows_the_current_session() {
         kind,
         session_id: None,
         message: None,
+        options: Vec::new(),
         at: Ts::from_millis(5),
     };
     store.put_hook(id, &record(HookKind::Busy)).unwrap();

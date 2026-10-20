@@ -145,6 +145,8 @@ impl Store {
     }
 
     /// Cache `record` as the latest hook report of `box_id`, stamped with the read time.
+    ///
+    /// A record equal to the cached one keeps its reported mark.
     pub(crate) fn put_hook(&self, box_id: BoxId, record: &HookRecord) -> Result<(), StoreError> {
         let now = self.now();
         let json = serde_json::to_string(&record_json(record))?;
@@ -152,8 +154,24 @@ impl Store {
         conn.execute(
             "INSERT INTO hook_cache (session, record, at) \
              VALUES ((SELECT id FROM sessions WHERE box = ?1 ORDER BY ordinal DESC LIMIT 1), ?2, ?3) \
-             ON CONFLICT(session) DO UPDATE SET record = ?2, at = ?3",
+             ON CONFLICT(session) DO UPDATE SET at = ?3, record = CASE \
+             WHEN json_remove(hook_cache.record, '$.reported') = json(?2) THEN hook_cache.record \
+             ELSE ?2 END",
             params![box_id.get(), json, now.as_millis()],
+        )?;
+        drop(conn);
+        Ok(())
+    }
+
+    /// Mark the cached hook report of `box_id` written at `at` as reported by a `needs_input`
+    /// event; a newer report left in its place stays unmarked.
+    pub(crate) fn mark_hook_reported(&self, box_id: BoxId, at: Ts) -> Result<(), StoreError> {
+        let conn = self.writer()?;
+        conn.execute(
+            "UPDATE hook_cache SET record = json_set(record, '$.reported', json('true')) \
+             WHERE session = (SELECT id FROM sessions WHERE box = ?1 ORDER BY ordinal DESC LIMIT 1) \
+             AND json_extract(record, '$.at') = ?2",
+            params![box_id.get(), at.as_millis()],
         )?;
         drop(conn);
         Ok(())
@@ -171,9 +189,11 @@ impl Store {
             )
             .optional()?;
         row.map(|(json, at)| {
+            let value: Value = serde_json::from_str(&json)?;
             Ok(HookCache {
-                record: record_from_json(&serde_json::from_str(&json)?)?,
+                record: record_from_json(&value)?,
                 at: Ts::from_millis(at),
+                reported: value.get("reported").and_then(Value::as_bool).unwrap_or(false),
             })
         })
         .transpose()
@@ -207,6 +227,7 @@ fn record_json(rec: &HookRecord) -> Value {
     json!({
         "kind": kind,
         "message": rec.message,
+        "options": rec.options,
         "session_id": rec.session_id,
         "at": rec.at.as_millis(),
     })
@@ -229,6 +250,10 @@ fn record_from_json(v: &Value) -> Result<HookRecord, StoreError> {
             .as_str()
             .or_else(|| v["waiting_for"].as_str())
             .map(str::to_owned),
+        options: v["options"]
+            .as_array()
+            .map(|o| o.iter().filter_map(Value::as_str).map(str::to_owned).collect())
+            .unwrap_or_default(),
         at: Ts::from_millis(v["at"].as_i64().ok_or_else(|| bad("missing at"))?),
     })
 }
