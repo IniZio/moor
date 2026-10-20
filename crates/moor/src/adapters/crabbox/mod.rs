@@ -6,6 +6,7 @@ mod connect;
 mod cp;
 mod errors;
 mod exec;
+mod link;
 mod parse;
 mod peek;
 mod put;
@@ -63,6 +64,8 @@ pub(crate) struct Crabbox {
     lookup_deadlines: BTreeMap<String, Duration>,
     /// Resolved ssh words per (lease handle, host cwd), kept for this driver's lifetime.
     targets: Mutex<HashMap<(String, PathBuf), Vec<String>>>,
+    /// Where each Box's shared ssh connection lives; none when moor keeps no state.
+    link_dir: Option<PathBuf>,
 }
 
 impl Crabbox {
@@ -75,14 +78,17 @@ impl Crabbox {
             version_ok: OnceLock::new(),
             lookup_deadlines: BTreeMap::new(),
             targets: Mutex::new(HashMap::new()),
+            link_dir: None,
         }
     }
 
-    /// Forgets every cached ssh target of `handle`; its address may change.
+    /// Forgets every cached ssh target of `handle` and ends its shared connection; its
+    /// address may change.
     pub(super) fn forget_targets(&self, handle: &BoxHandle) {
         if let Ok(mut map) = self.targets.lock() {
             map.retain(|(h, _), _| h != handle.as_str());
         }
+        link::close(self, handle);
     }
 
     /// Sets per-provider ssh lookup deadlines that override the built-in ones.

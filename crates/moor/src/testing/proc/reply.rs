@@ -27,7 +27,10 @@ impl ScriptedProc {
         let hit = taken.as_ref().or_else(|| at.and_then(|i| rules.get(i)));
         let reply = hit.map(|r| r.reply.clone());
         drop(rules);
-        Ok(reply)
+        Ok(match reply {
+            Some(Reply::Computed(f)) => Some(f(args)),
+            other => other,
+        })
     }
 
     /// The error for a call no rule matched.
@@ -72,7 +75,7 @@ impl ScriptedProc {
                 tool: spec.tool,
                 after: spec.deadline.0,
             }),
-            None => Err(Self::unscripted(spec, args)),
+            Some(Reply::Computed(_)) | None => Err(Self::unscripted(spec, args)),
         }
     }
 
@@ -112,7 +115,7 @@ impl ScriptedProc {
                     after: spec.deadline.0,
                 }),
             ),
-            None => (
+            Some(Reply::Computed(_)) | None => (
                 Box::new(std::io::empty()),
                 Err(Self::unscripted(spec, &args)),
             ),

@@ -39,7 +39,12 @@ pub(crate) enum Reply {
     Signalled(i32),
     /// moor was interrupted.
     Interrupted,
+    /// The reply this function gives for the call's arguments; not for `run_secret`.
+    Computed(ReplyFn),
 }
+
+/// Picks a reply from a call's arguments.
+pub(crate) type ReplyFn = Arc<dyn Fn(&[String]) -> Reply + Send + Sync>;
 
 /// A canned outcome for a long-lived child started with `spawn_child`.
 #[derive(Clone)]
@@ -248,7 +253,8 @@ impl Proc for ScriptedProc {
                     Reply::Fail { .. }
                     | Reply::Timeout
                     | Reply::Signalled(_)
-                    | Reply::Interrupted => None,
+                    | Reply::Interrupted
+                    | Reply::Computed(_) => None,
                 })
         });
         bytes
