@@ -2046,6 +2046,7 @@ dependencies = [
  "clap",
  "moor-client",
  "moor-core",
+ "rusqlite",
  "rustls",
  "serde",
  "serde_json",
