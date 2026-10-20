@@ -1,5 +1,6 @@
 //! The start path: the socket thread records each mention in `slack.db` before Slack gets
 //! its ack, and the worker turns each recorded start into a Box over the controller socket.
+//! The worker also checks each repo a user adds to a channel.
 
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::time::Instant;
@@ -13,6 +14,7 @@ use serde_json::Value;
 use crate::command::{decide, failed, started, Action, Allow};
 use crate::db::{Db, SlackThread, ThreadState};
 use crate::dial::Backoff;
+use crate::slash::check_repo;
 use crate::socket::Mention;
 
 /// The worker's effects, so tests can script the controller and record what Slack sees.
@@ -21,6 +23,8 @@ pub(crate) struct Fx<'a> {
     pub(crate) call: &'a mut dyn FnMut(Request) -> Result<Response, ClientError>,
     /// Posts `(channel, thread, text)` in a thread.
     pub(crate) reply: &'a mut dyn FnMut(&str, &str, &str),
+    /// Posts `(channel, text)` at the top level of a channel.
+    pub(crate) say: &'a mut dyn FnMut(&str, &str),
     /// Writes one diagnostic line.
     pub(crate) log: &'a dyn Fn(&str),
 }
@@ -39,6 +43,13 @@ pub(crate) enum Job {
     },
     /// Send the first `start` for this row, already `starting` in `slack.db`.
     Start(SlackThread),
+    /// Warn in `channel` when the controller does not know `repo`, which a user just added.
+    CheckRepo {
+        /// Channel id the repo was added to.
+        channel: String,
+        /// The repo as the user typed it.
+        repo: String,
+    },
 }
 
 /// Records one mention in a single transaction: its event id and, for an allowed start, the
@@ -111,6 +122,7 @@ pub(crate) fn serve(jobs: &Receiver<Job>, db: &Db, left: Vec<SlackThread>, fx: &
                     unsure.add(row);
                 }
             }
+            Ok(Job::CheckRepo { channel, repo }) => check_repo(fx, &channel, &repo),
             Err(RecvTimeoutError::Timeout) => {}
             Err(RecvTimeoutError::Disconnected) => return,
         }

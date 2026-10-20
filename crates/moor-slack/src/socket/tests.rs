@@ -14,15 +14,17 @@ use moor_core::secret::Secret;
 use serde_json::json;
 use tungstenite::Message;
 
-use super::Click;
 use super::{
-    next_delay, parse_mention, run, session, Inbound, Intake, Mention, NotKept, SocketError,
+    next_delay, parse_mention, run, session, Inbound, Intake, Kept, Mention, NotKept, SocketError,
 };
+use super::{Click, Slash};
 use crate::api::Api;
 
 impl Intake for mpsc::Sender<Inbound> {
-    fn take(&self, item: Inbound) -> Result<(), NotKept> {
-        self.send(item).map_err(|_| NotKept::Gone)
+    fn take(&self, item: Inbound) -> Result<Kept, NotKept> {
+        self.send(item)
+            .map(|()| Kept::default())
+            .map_err(|_| NotKept::Gone)
     }
 }
 
@@ -334,7 +336,7 @@ fn malformed_clicks_are_acked_but_not_forwarded() {
 struct Failing;
 
 impl Intake for Failing {
-    fn take(&self, _item: Inbound) -> Result<(), NotKept> {
+    fn take(&self, _item: Inbound) -> Result<Kept, NotKept> {
         Err(NotKept::Failed)
     }
 }
@@ -359,10 +361,10 @@ fn an_item_the_intake_did_not_keep_gets_no_ack() {
 struct Slow(Arc<AtomicBool>);
 
 impl Intake for Slow {
-    fn take(&self, _item: Inbound) -> Result<(), NotKept> {
+    fn take(&self, _item: Inbound) -> Result<Kept, NotKept> {
         std::thread::sleep(Duration::from_millis(300));
         self.0.store(true, Ordering::SeqCst);
-        Ok(())
+        Ok(Kept::default())
     }
 }
 
@@ -382,4 +384,39 @@ fn the_ack_is_sent_after_the_intake_keeps_the_item() {
     });
     session(&url, &Slow(kept)).expect("session ends cleanly");
     server.join().expect("server");
+}
+
+/// An intake that keeps each item in a list and answers its ack with fixed text.
+struct Answering(RefCell<Vec<Inbound>>);
+
+impl Intake for Answering {
+    fn take(&self, item: Inbound) -> Result<Kept, NotKept> {
+        self.0.borrow_mut().push(item);
+        Ok(Kept {
+            ack: Some(json!({"text": "Recorded."})),
+        })
+    }
+}
+
+#[test]
+fn a_slash_command_is_forwarded_and_its_ack_carries_the_intake_payload() {
+    let command = json!({"type":"slash_commands","envelope_id":"env-s","payload":{"command":"/moor","text":"repo add acme/api","user_id":"U1","channel_id":"C1","trigger_id":"t1"}});
+    let (url, server) = fake_slack(move |ws| {
+        send(ws, &command);
+        ws.close(None).expect("close");
+    });
+    let intake = Answering(RefCell::default());
+    session(&url, &intake).expect("session ends cleanly");
+    let acks = server.join().expect("server");
+    assert_eq!(
+        acks,
+        vec![r#"{"envelope_id":"env-s","payload":{"text":"Recorded."}}"#]
+    );
+    let want = Inbound::Slash(Slash {
+        envelope_id: "env-s".into(),
+        channel: "C1".into(),
+        user: "U1".into(),
+        text: "repo add acme/api".into(),
+    });
+    assert_eq!(intake.0.into_inner(), vec![want]);
 }

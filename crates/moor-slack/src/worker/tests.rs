@@ -132,9 +132,15 @@ fn with_hooks(
             .push((c.to_owned(), t.to_owned(), text.to_owned()));
         after_post();
     };
+    let mut say = |c: &str, text: &str| {
+        seen.borrow_mut()
+            .replies
+            .push((c.to_owned(), String::new(), text.to_owned()));
+    };
     let mut fx = Fx {
         call: &mut call,
         reply: &mut reply,
+        say: &mut say,
         log,
     };
     step(&mut fx);

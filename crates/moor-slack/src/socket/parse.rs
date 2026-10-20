@@ -2,7 +2,19 @@
 
 use serde_json::Value;
 
-use super::{Click, Mention};
+use super::{Click, Mention, Slash};
+
+/// The command inside a `slash_commands` envelope, if it is a well-formed one.
+pub(super) fn parse_slash(envelope: &Value) -> Option<Slash> {
+    let payload = envelope.get("payload")?;
+    let text = |value: Option<&Value>| value?.as_str().map(str::to_owned);
+    Some(Slash {
+        envelope_id: text(envelope.get("envelope_id"))?,
+        channel: text(payload.get("channel_id"))?,
+        user: text(payload.get("user_id"))?,
+        text: text(payload.get("text")).unwrap_or_default(),
+    })
+}
 
 /// The button press inside an `interactive` `block_actions` envelope, if it is a well-formed one.
 pub(super) fn parse_click(envelope: &Value) -> Option<Click> {
