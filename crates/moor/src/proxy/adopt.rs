@@ -26,7 +26,8 @@ enum Fate {
 /// Walks every recorded Proxy and settles it; returns one line per failure.
 ///
 /// A row is kept only when its pid is alive, leads its own process group, belongs to the
-/// current boot and holds a live lease: a pid alone may have been reused. Any other row of a
+/// current boot, holds a live lease and runs the socket front: a pid alone may have been reused,
+/// and an older moor's TCP front refuses a Box with no nonce. Any other row of a
 /// A Box with a ready machine is restarted from the spec saved at its last `ensure`, keeping its box port.
 /// Rows of Boxes without a usable machine are stopped. A failure for one Box never stops the rest.
 pub(crate) fn reconcile(
@@ -88,7 +89,8 @@ fn fate(
             .pid
             .is_some_and(|p| p > 1 && proc.alive(p) && proc.group_leader(p))
         && host.same_boot(row)
-        && host.live(row);
+        && host.live(row)
+        && !row.tcp_front;
     Some(if ours { Fate::Keep } else { Fate::Restart })
 }
 

@@ -22,6 +22,7 @@ mod graphql_e2e;
 mod hairpin_e2e;
 mod nono_e2e;
 mod socket;
+mod upgrade;
 
 use super::{serve, start, Deps, Sink, Stop, LEASE, TICK};
 use crate::proxy::detached::{read_spec, write_spec};

@@ -23,7 +23,7 @@ fn with_proxy(f: &Fx) {
 fn proxy_row(f: &Fx) {
     f.leased_row();
     f.exec(&format!(
-        "UPDATE proxy SET ready = 1, host_port = 4000, pid = {PID}, boot_id = '{BOOT}'"
+        "UPDATE proxy SET ready = 1, pid = {PID}, boot_id = '{BOOT}'"
     ));
 }
 
