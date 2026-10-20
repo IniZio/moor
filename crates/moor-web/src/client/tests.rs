@@ -373,3 +373,82 @@ fn shutdown_handle_unblocks_a_quiet_watch() {
     closer.join().unwrap();
     server.join().unwrap();
 }
+
+/// Accepts one connection, answers hello, reads the request, then writes `reply` raw and
+/// hangs up.
+fn answer_raw(socket: &Path, reply: Vec<u8>) -> JoinHandle<()> {
+    let listener = UnixListener::bind(socket).unwrap();
+    std::thread::spawn(move || {
+        let (stream, _) = listener.accept().unwrap();
+        let mut reader = BufReader::new(stream.try_clone().unwrap());
+        let mut writer = stream;
+        let mut line = String::new();
+        reader.read_line(&mut line).unwrap();
+        writeln!(writer, "{}", hello()).unwrap();
+        reader.read_line(&mut line).unwrap();
+        let _ = writer.write_all(&reply);
+    })
+}
+
+fn bytes_frame(payload: &[u8]) -> Vec<u8> {
+    let mut frame = format!(r#"{{"frame":"bytes","id":"1","len":{}}}"#, payload.len()).into_bytes();
+    frame.push(b'\n');
+    frame.extend_from_slice(payload);
+    frame
+}
+
+fn response_line() -> Vec<u8> {
+    format!(
+        "{{\"frame\":\"response\",\"id\":\"1\",\"envelope\":{}}}\n",
+        ok_envelope()
+    )
+    .into_bytes()
+}
+
+#[test]
+fn read_passes_each_bytes_frame_in_order_then_returns_the_response() {
+    let dir = tempfile::tempdir().unwrap();
+    let sock = dir.path().join("c.sock");
+    let reply = [bytes_frame(b"ab"), bytes_frame(b"\n\xff"), response_line()].concat();
+    let server = answer_raw(&sock, reply);
+    let mut got = Vec::new();
+    let resp = Client::new(&sock)
+        .read(show(), |data| {
+            got.push(data.to_vec());
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(resp, Response::ok("show", None));
+    assert_eq!(got, [b"ab".to_vec(), b"\n\xff".to_vec()]);
+    server.join().unwrap();
+}
+
+#[test]
+fn a_bytes_frame_over_the_cap_is_a_protocol_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let sock = dir.path().join("c.sock");
+    let reply = [bytes_frame(&vec![1; BYTES_MAX + 1]), response_line()].concat();
+    let server = answer_raw(&sock, reply);
+    let mut calls = 0;
+    let err = Client::new(&sock)
+        .read(show(), |_| {
+            calls += 1;
+            Ok(())
+        })
+        .unwrap_err();
+    assert!(matches!(err, ClientError::Protocol(_)), "{err}");
+    assert_eq!(calls, 0);
+    server.join().unwrap();
+}
+
+#[test]
+fn a_bytes_frame_cut_short_is_an_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let sock = dir.path().join("c.sock");
+    let mut reply = bytes_frame(b"0123456789");
+    reply.truncate(reply.len() - 7);
+    let server = answer_raw(&sock, reply);
+    let err = Client::new(&sock).read(show(), |_| Ok(())).unwrap_err();
+    assert!(matches!(err, ClientError::Io(_)), "{err}");
+    server.join().unwrap();
+}

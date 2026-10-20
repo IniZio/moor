@@ -6,7 +6,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use moor_core::request::{ReposReq, Request, SessionsReq, ShowReq, ShowSessionReq};
-use moor_core::response::{ErrorKind, ExitClass};
+use moor_core::response::{ErrorKind, ExitClass, Response};
 use moor_core::BoxName;
 use serde_json::{json, Map, Value};
 
@@ -33,7 +33,7 @@ pub fn handler(client: Client, db: Arc<Mutex<Db>>, fallback: Handler) -> Handler
             "/tree" => tree(&client, &db),
             "/repos" => repos(&client),
             path => match path.strip_prefix("/boxes/") {
-                Some(rest) => route_box(&client, req, rest),
+                Some(rest) => return route_box(&client, req, rest),
                 None => return fallback(req),
             },
         };
@@ -43,16 +43,16 @@ pub fn handler(client: Client, db: Arc<Mutex<Db>>, fallback: Handler) -> Handler
 
 /// Routes `/boxes/{name}`, `/boxes/{name}/artifacts` and `/boxes/{name}/artifacts/{file}`;
 /// a Box name may itself contain a slash.
-fn route_box(client: &Client, req: &HttpRequest, rest: &str) -> HttpResponse {
+fn route_box(client: &Client, req: &HttpRequest, rest: &str) -> Reply {
     if let Some(name) = rest.strip_suffix("/artifacts") {
-        return artifacts::list(client, req, name);
+        return artifacts::list(client, req, name).into();
     }
     if let Some((head, file)) = rest.rsplit_once('/') {
         if let Some(name) = head.strip_suffix("/artifacts") {
             return artifacts::read(client, req, name, file);
         }
     }
-    detail(client, rest)
+    detail(client, rest).into()
 }
 
 /// A `200 OK` JSON response.
@@ -70,6 +70,11 @@ fn call(client: &Client, request: Request) -> Result<Value, HttpResponse> {
     let envelope = client
         .request(request, |_| {})
         .map_err(|e| HttpResponse::text("502 Bad Gateway", e.to_string()))?;
+    envelope_value(envelope)
+}
+
+/// The value of an ok envelope, or the `404` or `502` to answer with.
+fn envelope_value(envelope: Response) -> Result<Value, HttpResponse> {
     if envelope.class == ExitClass::Ok {
         return Ok(envelope.value.unwrap_or(Value::Null));
     }

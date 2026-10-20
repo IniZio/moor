@@ -5,9 +5,9 @@ use crate::env::Env;
 use crate::error::CommandError;
 use crate::ops;
 use crate::wire;
-use moor_core::{Request, Response};
+use moor_core::{ArtifactReadReq, Request, Response};
 
-/// Wired application; `call` is its only operation.
+/// Wired application: `call` answers a request, `read_artifact` also streams bytes.
 pub struct Moor {
     /// Per-process context handed to every op.
     cx: Cx,
@@ -46,6 +46,20 @@ impl Moor {
     pub fn call(&self, req: Request) -> Response {
         let cmd = req.cmd();
         match ops::dispatch(&self.cx, req) {
+            Ok(value) => Response::ok(cmd, Some(value)).with_warnings(self.cx.take_warnings()),
+            Err(e) => e.into_response(cmd, self.cx.take_warnings()),
+        }
+    }
+
+    /// Run `artifact-read`, passing the Artifact's bytes to `out` piece by piece, then answer
+    /// with what was sent.
+    pub fn read_artifact(
+        &self,
+        req: &ArtifactReadReq,
+        out: &mut dyn FnMut(&[u8]) -> std::io::Result<()>,
+    ) -> Response {
+        let cmd = "artifact-read";
+        match ops::read_artifact(&self.cx, req, out) {
             Ok(value) => Response::ok(cmd, Some(value)).with_warnings(self.cx.take_warnings()),
             Err(e) => e.into_response(cmd, self.cx.take_warnings()),
         }

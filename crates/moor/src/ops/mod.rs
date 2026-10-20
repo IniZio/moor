@@ -42,7 +42,10 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         Request::Show(r) => to_value(&show::run(cx, &r)?),
         Request::ShowSession(r) => to_value(&show_session::run(cx, &r)?),
         Request::Artifacts(r) => to_value(&artifacts::list(cx, &r)?),
-        Request::ArtifactRead(r) => to_value(&artifacts::read(cx, &r)?),
+        Request::ArtifactRead(_) => Err(CommandError::new(
+            ErrorKind::Usage,
+            "artifact-read sends raw bytes, so only the controller socket serves it",
+        )),
         Request::Repos(r) => to_value(&repos::run(cx, &r)),
         Request::Sessions(r) => to_value(&sessions::run(cx, &r)?),
         Request::Close(r) => to_value(&close::run(cx, &r)?),
@@ -66,6 +69,15 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         Request::SessionBinding(r) => to_value(&binding::lookup(cx, &r)?),
         other => Err(CommandError::not_implemented(other.cmd())),
     }
+}
+
+/// `artifact-read`: stream the Artifact's bytes to `out`, then the response value.
+pub(crate) fn read_artifact(
+    cx: &Cx,
+    req: &moor_core::ArtifactReadReq,
+    out: &mut dyn FnMut(&[u8]) -> std::io::Result<()>,
+) -> Result<serde_json::Value, CommandError> {
+    to_value(&artifacts::read(cx, req, out)?)
 }
 
 /// The `version` result; needs no context, so it works without config.

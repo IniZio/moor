@@ -1,4 +1,8 @@
 //! Wire frames for the controller socket: newline-delimited JSON, one frame per line.
+//!
+//! A bytes frame is the one exception: its JSON line is followed by `len` raw bytes.
+
+use std::io::{self, Write};
 
 use serde::{Deserialize, Serialize};
 
@@ -7,7 +11,10 @@ use crate::request::Request;
 use crate::response::Response;
 
 /// Protocol revision a client announces in its hello frame.
-pub const PROTOCOL: u32 = 6;
+pub const PROTOCOL: u32 = 7;
+
+/// Most raw bytes one bytes frame carries; a reader refuses a larger `len`.
+pub const BYTES_MAX: usize = 64 * 1024;
 
 /// A frame sent by a client.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -95,6 +102,13 @@ pub enum ServerFrame {
         id: String,
         /// Human-readable progress text.
         message: String,
+    },
+    /// Raw bytes for a request still running; exactly `len` bytes follow the line.
+    Bytes {
+        /// Id of the request the bytes belong to.
+        id: String,
+        /// Number of raw bytes after the line, at most [`BYTES_MAX`].
+        len: usize,
     },
     /// Result of one request.
     Response {
@@ -220,6 +234,22 @@ impl ServerFrame {
             },
         )
     }
+}
+
+/// Writes `data` for request `id` as bytes frames of at most [`BYTES_MAX`] bytes each.
+///
+/// # Errors
+/// Returns the write error; the frame stream is then broken and the connection must close.
+pub fn write_bytes(out: &mut dyn Write, id: &str, data: &[u8]) -> io::Result<()> {
+    for part in data.chunks(BYTES_MAX) {
+        let head = ServerFrame::Bytes {
+            id: id.to_owned(),
+            len: part.len(),
+        };
+        out.write_all(head.to_line().as_bytes())?;
+        out.write_all(part)?;
+    }
+    out.flush()
 }
 
 /// Minimal error frame used when serialisation fails.

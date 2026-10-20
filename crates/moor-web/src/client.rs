@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use moor_core::controller::{
-    parse_server_frame, ClientFrame, FrameErrorKind, ServerFrame, WatchFilter, PROTOCOL,
+    parse_server_frame, ClientFrame, FrameErrorKind, ServerFrame, WatchFilter, BYTES_MAX, PROTOCOL,
 };
 use moor_core::request::Request;
 use moor_core::response::Response;
@@ -167,6 +167,38 @@ impl Client {
                 ServerFrame::Progress { id, message } if id == REQUEST_ID => on_progress(&message),
                 ServerFrame::Response { id, envelope } if id == REQUEST_ID => return Ok(envelope),
                 other => return Err(unexpected(other, "progress or response")),
+            }
+        }
+    }
+
+    /// Runs one request whose answer streams raw bytes, passing each bytes frame to `on_bytes`
+    /// in order. Holds one frame at a time.
+    ///
+    /// # Errors
+    /// Returns [`ClientError`] when the exchange fails, a frame claims more than [`BYTES_MAX`]
+    /// bytes, or `on_bytes` fails.
+    pub fn read(
+        &self,
+        request: Request,
+        mut on_bytes: impl FnMut(&[u8]) -> io::Result<()>,
+    ) -> Result<Response, ClientError> {
+        let mut conn = self.open()?;
+        conn.send(&ClientFrame::Request {
+            id: REQUEST_ID.to_owned(),
+            request: Box::new(request),
+        })?;
+        let mut buf = vec![0; BYTES_MAX];
+        loop {
+            match conn.next_frame()? {
+                ServerFrame::Bytes { id, len } if id == REQUEST_ID => {
+                    let data = buf.get_mut(..len).ok_or_else(|| {
+                        ClientError::Protocol(format!("bytes frame of {len} exceeds {BYTES_MAX}"))
+                    })?;
+                    conn.reader.read_exact(data)?;
+                    on_bytes(data)?;
+                }
+                ServerFrame::Response { id, envelope } if id == REQUEST_ID => return Ok(envelope),
+                other => return Err(unexpected(other, "bytes or response")),
             }
         }
     }

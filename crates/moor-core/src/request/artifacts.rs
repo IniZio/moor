@@ -4,9 +4,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::name::BoxName;
 
-/// Largest `len` an artifact read returns; the moor-web client frame limit is 1 MiB.
-pub const ARTIFACT_CHUNK: u64 = 512 * 1024;
-
 /// Arguments of `artifacts`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -19,7 +16,7 @@ pub struct ArtifactsReq {
     pub all: bool,
 }
 
-/// Arguments of `artifact-read`.
+/// Arguments of `artifact-read`; the bytes arrive as raw bytes frames before the response.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ArtifactReadReq {
@@ -34,7 +31,7 @@ pub struct ArtifactReadReq {
     /// Byte offset to start at.
     #[serde(default)]
     pub offset: u64,
-    /// Bytes wanted; at most `ARTIFACT_CHUNK` are returned.
+    /// Bytes wanted; fewer arrive when the file ends first.
     pub len: u64,
 }
 

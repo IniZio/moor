@@ -14,9 +14,9 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use moor_core::controller::{parse_frame, ClientFrame, PROTOCOL};
+use moor_core::controller::{parse_frame, write_bytes, ClientFrame, PROTOCOL};
 use moor_core::name::SessionId;
-use moor_core::response::{ErrorKind, ErrorView, Response};
+use moor_core::response::{ErrorKind, ErrorView, ExitClass, Response};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
@@ -33,20 +33,26 @@ pub(super) type Seen = Arc<Mutex<Vec<String>>>;
 /// Answers by command name.
 pub(super) type Answers = Arc<HashMap<&'static str, Response>>;
 
-/// Answers a request, given as its wire JSON.
-pub(super) type Responder = Arc<dyn Fn(&Value) -> Response + Send + Sync>;
+/// Answers a request, given as its wire JSON, with raw bytes to send as bytes frames first.
+pub(super) type Responder = Arc<dyn Fn(&Value) -> (Vec<u8>, Response) + Send + Sync>;
+
+/// The file every `by_command` artifact read returns.
+const NOTE: &[u8] = b"hello";
 
 /// Requests the fake controller received, as wire JSON, in order.
 pub(super) type Sent = Arc<Mutex<Vec<Value>>>;
 
 /// The same answer for every request of a command; an unknown command is a usage error.
+/// A successful artifact read streams [`NOTE`].
 pub(super) fn by_command(answers: Answers) -> Responder {
     Arc::new(move |req| {
         let cmd = req["cmd"].as_str().unwrap_or_default();
-        answers
+        let envelope = answers
             .get(cmd)
             .cloned()
-            .unwrap_or_else(|| failure(cmd, ErrorKind::Usage))
+            .unwrap_or_else(|| failure(cmd, ErrorKind::Usage));
+        let ok_read = cmd == "artifact-read" && envelope.class == ExitClass::Ok;
+        (if ok_read { NOTE.to_vec() } else { Vec::new() }, envelope)
     })
 }
 
@@ -79,10 +85,13 @@ fn converse(seen: &Seen, sent: &Sent, respond: &Responder, stream: UnixStream) {
         };
         seen.lock().unwrap().push(request.cmd().to_owned());
         let wire = serde_json::to_value(&*request).unwrap();
-        let envelope = respond(&wire);
+        let (bytes, envelope) = respond(&wire);
         sent.lock().unwrap().push(wire);
+        if write_bytes(&mut writer, &id, &bytes).is_err() {
+            return;
+        }
         let frame = json!({"frame": "response", "id": id, "envelope": envelope});
-        writeln!(writer, "{frame}").unwrap();
+        let _ = writeln!(writer, "{frame}");
     }
 }
 
@@ -123,7 +132,6 @@ pub(super) fn answers() -> Answers {
         "events": [{"id": 1, "kind": "note", "payload": {}, "ts": 5}],
     });
     let repos = json!({"repos": [{"name": "app", "url": "https://example.test/app.git"}]});
-    let note = b"hello";
     Arc::new(HashMap::from([
         ("sessions", Response::ok("sessions", Some(sessions))),
         ("show", Response::ok("show", Some(show))),
@@ -132,12 +140,12 @@ pub(super) fn answers() -> Answers {
             "artifacts",
             Response::ok(
                 "artifacts",
-                Some(json!([record("note.txt", "text/plain", 1, note)])),
+                Some(json!([record("note.txt", "text/plain", 1, NOTE)])),
             ),
         ),
         (
             "artifact-read",
-            Response::ok("artifact-read", Some(chunk(note, 0, 512, &sha(note)))),
+            Response::ok("artifact-read", Some(read_value(NOTE, 0, NOTE.len()))),
         ),
     ]))
 }
@@ -151,32 +159,11 @@ pub(super) fn record(name: &str, content_type: &str, version: u32, bytes: &[u8])
            "size": bytes.len(), "sha256": sha(bytes), "created_at": "2026-01-01T00:00:00Z"})
 }
 
-fn b64(bytes: &[u8]) -> String {
-    const DIGITS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::new();
-    for group in bytes.chunks(3) {
-        let mut n = 0u32;
-        for i in 0..3 {
-            n = (n << 8) | u32::from(group.get(i).copied().unwrap_or(0));
-        }
-        for i in 0..4 {
-            if i <= group.len() {
-                let six = usize::try_from((n >> (18 - 6 * i)) & 63).unwrap();
-                out.push(char::from(DIGITS[six]));
-            } else {
-                out.push('=');
-            }
-        }
-    }
-    out
-}
-
-/// The `artifact-read` value for `len` bytes of `file` from `offset`, claiming hash `claimed`.
-pub(super) fn chunk(file: &[u8], offset: usize, len: usize, claimed: &str) -> Value {
-    let start = offset.min(file.len());
-    let end = (start + len).min(file.len());
-    json!({"data_b64": b64(&file[start..end]), "size": file.len(), "sha256": claimed,
-           "eof": end == file.len()})
+/// The `artifact-read` value after sending `len` bytes of `file` from `offset`.
+pub(super) fn read_value(file: &[u8], offset: usize, len: usize) -> Value {
+    let end = (offset + len).min(file.len());
+    json!({"offset": offset, "sent": end.saturating_sub(offset), "size": file.len(),
+           "sha256": sha(file), "eof": end == file.len()})
 }
 
 fn row(key: &str, session: i64, ended: Option<i64>) -> RequestRow {
@@ -211,12 +198,17 @@ pub(super) fn front_with(
 ) -> (Server, Seen, Sent) {
     let sock = dir.path().join("c.sock");
     let (seen, sent) = serve_with(&sock, respond);
+    (web(dir, &sock, rows), seen, sent)
+}
+
+/// Starts the front over the controller socket `sock`.
+pub(super) fn web(dir: &tempfile::TempDir, sock: &Path, rows: &[RequestRow]) -> Server {
     let db = Db::open(&dir.path().join("web.db")).unwrap();
     for r in rows {
         db.insert_request(r).unwrap();
     }
     let handler = handler(Client::new(sock), Arc::new(Mutex::new(db)), fallback());
-    (start(0, TOKEN.to_owned(), handler).unwrap(), seen, sent)
+    start(0, TOKEN.to_owned(), handler).unwrap()
 }
 
 pub(super) fn get(web: &Server, path: &str) -> String {
