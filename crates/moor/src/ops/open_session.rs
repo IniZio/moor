@@ -10,7 +10,7 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::host_session::refuse_invalid;
-use crate::ops::start::begin_seeded;
+use crate::ops::start::{begin_seeded, watch_launch};
 use crate::store::{BoxRow, Store};
 
 /// Run `open-session`.
@@ -36,20 +36,27 @@ pub(crate) fn run(cx: &Cx, req: &OpenSessionReq) -> Result<OpenSessionValue, Com
             .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no Box {name}")))
     };
     check(store, &reload()?, name)?;
-    let _held = BoxLock::acquire(
-        cx.clock(),
-        cx.state_dir()?,
-        id,
-        "open-session",
-        boxlock::WAIT,
-    )?;
-    let row = reload()?;
-    check(store, &row, name)?;
-    let next = store.open_child_session(id, req.parent.map(SessionId::get))?;
-    store.start_session(next.id)?;
-    let view = begin_seeded(cx, store, &row, req.seed.clone())?;
+    let (next, view) = {
+        let _held = BoxLock::acquire(
+            cx.clock(),
+            cx.state_dir()?,
+            id,
+            "open-session",
+            boxlock::WAIT,
+        )?;
+        let row = reload()?;
+        check(store, &row, name)?;
+        let next = store.open_child_session(id, req.parent.map(SessionId::get))?;
+        store.start_session(next.id)?;
+        let view = begin_seeded(cx, store, &row, req.seed.clone())?;
+        if !view.launched {
+            store.end_current_session(id, "launch_failed", None)?;
+        }
+        (next, view)
+    };
+    // As in `start`, the new pane is watched with the Box lock free.
+    let view = watch_launch(cx, store, id, view);
     if !view.launched {
-        store.end_current_session(id, "launch_failed", None)?;
         let message = view.reason.map_or_else(
             || format!("could not launch an agent in Box {name}"),
             |f| format!("{}: {}", f.step, f.message),

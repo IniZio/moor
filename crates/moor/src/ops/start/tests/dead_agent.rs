@@ -12,6 +12,9 @@ use crate::testing::engine::FakeEngine;
 
 const NOT_FOUND: &str = "the agent exited 127: its command was not found on the Box";
 
+/// The prelude's message when it cannot write the Proxy CA.
+pub(super) const CA: &str = "the Proxy CA could not be written to /home/u/.moor-proxy/ca.pem";
+
 fn goal_req(name: &str) -> StartReq {
     StartReq {
         goal: Some("ship it".into()),
@@ -27,6 +30,17 @@ fn exited(code: i32, tail: &str) -> PaneObs {
         prompt: None,
         exit_marker: Some(code),
     }
+}
+
+/// A pane observation of a launch script the prelude stopped because the Proxy CA could not be written.
+pub(super) fn ca_stopped() -> PaneObs {
+    exited(1, &format!("moor: {CA}\nmoor: agent exited 1"))
+}
+
+/// The message of the launch failure recorded on Box `id`.
+pub(super) fn recorded_failure(w: &World, id: BoxId) -> Option<String> {
+    let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
+    row.launch_failure.map(|f| f.message)
 }
 
 fn launching() -> World {
@@ -73,15 +87,27 @@ fn an_agent_that_exits_127_at_launch_is_a_launch_failure() {
 #[test]
 fn a_launch_stopped_by_an_unwritable_proxy_ca_fails_with_the_ca_message() {
     let w = launching();
-    let ca = "the Proxy CA could not be written to /home/u/.moor-proxy/ca.pem";
-    w.surface.push_pane_obs(
-        "p-1",
-        Ok(exited(1, &format!("moor: {ca}\nmoor: agent exited 1"))),
-    );
+    w.surface.push_pane_obs("p-1", Ok(ca_stopped()));
     let v = run(&w.cx, &goal_req("demo")).unwrap();
     assert!(!v.agent.launched);
     let f = v.agent.reason.unwrap();
-    assert_eq!((f.step.as_str(), f.message.as_str()), ("launch", ca));
+    assert_eq!((f.step.as_str(), f.message.as_str()), ("launch", CA));
+    assert_eq!(
+        recorded_failure(&w, BoxId::new(v.boxed.id)).as_deref(),
+        Some(CA)
+    );
+}
+
+#[test]
+fn a_relaunch_stopped_by_an_unwritable_proxy_ca_fails_with_the_ca_message() {
+    let (w, _engine, id) = started();
+    gone(&w);
+    w.surface.push_pane_obs("p-2", Ok(ca_stopped()));
+    let v = run(&w.cx, &req("demo")).unwrap();
+    assert!(!v.agent.launched);
+    assert_eq!(v.agent.reason.unwrap().message, CA);
+    assert_eq!(recorded_failure(&w, id).as_deref(), Some(CA));
+    assert!(w.cx.store().unwrap().live_session(id).unwrap().is_none());
 }
 
 #[test]

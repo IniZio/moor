@@ -3,6 +3,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use moor_core::activity::{PaneObs, PaneStatus};
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
@@ -425,6 +426,53 @@ fn plain_wake_leaves_a_gone_agent_alone() {
     let store = f.cx.store().unwrap();
     assert!(wake_box_if_asleep(&f.cx, store, &row(&f)).unwrap());
     assert!(f.engine.launches().is_empty());
+}
+
+const CA: &str = "the Proxy CA could not be written to /home/u/.moor-proxy/ca.pem";
+
+/// A pane observation of a launch script the prelude stopped because the Proxy CA could not be written.
+fn ca_stopped() -> PaneObs {
+    PaneObs {
+        status: PaneStatus::Unknown,
+        tail: format!("moor: {CA}\nmoor: agent exited 1"),
+        prompt: None,
+        exit_marker: Some(1),
+    }
+}
+
+/// The message of the launch failure recorded on the Box.
+fn recorded_failure(f: &Fx) -> Option<String> {
+    row(f).launch_failure.map(|l| l.message)
+}
+
+#[test]
+fn a_wake_relaunch_stopped_by_an_unwritable_proxy_ca_records_the_ca_message() {
+    let f = fx();
+    with_agent(&f);
+    sleep(&f);
+    f.surface.push_pane_obs("p-1", Err(SurfaceError::NotFound));
+    f.surface.push_pane_obs("p-2", Ok(ca_stopped()));
+    let store = f.cx.store().unwrap();
+    assert!(wake_and_revive(&f.cx, store, &row(&f)).unwrap());
+    assert_eq!(f.engine.launches().len(), 1);
+    assert_eq!(recorded_failure(&f).as_deref(), Some(CA));
+    assert!(store.live_session(f.id).unwrap().is_none());
+}
+
+#[test]
+fn a_relaunch_after_a_failed_sleep_stopped_by_an_unwritable_proxy_ca_records_the_ca_message() {
+    let f = fx_with(FakeDriver::new().sleep_outcome(SleepOutcome::CannotSleep("no".into())));
+    with_agent(&f);
+    f.surface.have_pane("p-1");
+    f.surface.push_pane_obs("p-1", Err(SurfaceError::NotFound));
+    f.surface.push_pane_obs("p-2", Ok(ca_stopped()));
+    let req = moor_core::BoxReq {
+        box_name: BoxName::parse_allow_bare("t").unwrap(),
+    };
+    let refused = crate::ops::sleep::run(&f.cx, &req).unwrap_err();
+    assert_eq!(refused.kind, ErrorKind::Refused);
+    assert_eq!(f.engine.launches().len(), 1);
+    assert_eq!(recorded_failure(&f).as_deref(), Some(CA));
 }
 
 #[test]

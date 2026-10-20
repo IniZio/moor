@@ -28,7 +28,7 @@ const PROMPT_READ: Duration = Duration::from_secs(5);
 ///
 /// An exit marker in the pane ends the live session and records the failure like any other
 /// launch failure; the returned view is the failed launch. Otherwise `agent` comes back as is.
-pub(super) fn run(cx: &Cx, store: &Store, id: BoxId, agent: AgentLaunchView) -> AgentLaunchView {
+pub(crate) fn run(cx: &Cx, store: &Store, id: BoxId, agent: AgentLaunchView) -> AgentLaunchView {
     if !agent.launched {
         return agent;
     }
