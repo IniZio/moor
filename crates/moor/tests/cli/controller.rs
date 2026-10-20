@@ -193,6 +193,106 @@ fn second_instance_names_the_first() {
     );
 }
 
+/// Exit code of `child`, or `None` after killing it when it runs past five seconds.
+fn exit_within_five_seconds(child: &mut Child) -> Option<i32> {
+    for _ in 0..500 {
+        if let Some(status) = child.try_wait().unwrap() {
+            return status.code();
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+    None
+}
+
+#[test]
+fn second_controller_on_another_socket_refuses_to_start() {
+    let sandbox = Sandbox::new();
+    let first = Controller::start(&sandbox);
+    let config = sandbox.root.join("d.yaml");
+    std::fs::write(
+        &config,
+        format!(
+            "socket: {}\nstate_dir: {}\n",
+            sandbox.root.join("d.sock").display(),
+            sandbox.root.join("state").display()
+        ),
+    )
+    .unwrap();
+    let mut second = sandbox
+        .command()
+        .args(["controller", "serve", "--config"])
+        .arg(&config)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let code = exit_within_five_seconds(&mut second);
+    let mut stderr = String::new();
+    std::io::Read::read_to_string(&mut second.stderr.take().unwrap(), &mut stderr).unwrap();
+    assert_eq!(
+        code,
+        Some(1),
+        "second controller on the same state dir: {stderr}"
+    );
+    assert!(stderr.contains(&first.child.id().to_string()), "{stderr}");
+    assert!(
+        stderr.contains(&sandbox.socket.display().to_string()),
+        "{stderr}"
+    );
+}
+
+/// The `schema_version` recorded in `db`, or `None` while it cannot be read.
+fn schema_version(db: &Path) -> Option<String> {
+    rusqlite::Connection::open_with_flags(db, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .ok()?
+        .query_row("SELECT v FROM meta WHERE k = 'schema_version'", [], |r| {
+            r.get(0)
+        })
+        .ok()
+}
+
+#[test]
+fn upgrade_guard_sees_a_controller_on_a_custom_socket() {
+    let sandbox = Sandbox::new();
+    let mut config = std::fs::read_to_string(&sandbox.config).unwrap();
+    config.push_str("settle_every_secs: 3600\n");
+    std::fs::write(&sandbox.config, config).unwrap();
+    let controller = Controller::start(&sandbox);
+    let state = sandbox.root.join("state");
+    let db = state.join("moor.db");
+    // The controller opens its store once at startup; swap in an old one after that.
+    for _ in 0..500 {
+        if schema_version(&db).is_some() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let old = state.join("old.db");
+    rusqlite::Connection::open(&old)
+        .unwrap()
+        .execute_batch(
+            "CREATE TABLE meta (k TEXT PRIMARY KEY, v TEXT NOT NULL);
+             INSERT INTO meta (k, v) VALUES ('schema_version', '1');",
+        )
+        .unwrap();
+    std::fs::rename(&old, &db).unwrap();
+    let out = sandbox.command().arg("list").output().unwrap();
+    let stderr = String::from_utf8(out.stderr).unwrap();
+    assert_ne!(
+        out.status.code(),
+        Some(0),
+        "old store retired under a running controller"
+    );
+    assert!(
+        stderr.contains(&format!("controller (pid {})", controller.child.id())),
+        "{stderr}"
+    );
+    assert_eq!(schema_version(&db).as_deref(), Some("1"));
+}
+
 #[test]
 fn socket_is_owner_only() {
     let sandbox = Sandbox::new();
