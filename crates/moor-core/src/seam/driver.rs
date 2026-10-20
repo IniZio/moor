@@ -159,6 +159,11 @@ pub enum DriverError {
         /// Last lines the tunnel process wrote to stderr.
         stderr_tail: String,
     },
+    /// The ssh connection to the Box dropped, so whether the remote command ran is unknown.
+    Transport {
+        /// Last lines crabbox or ssh wrote to stderr, as one line.
+        stderr_tail: String,
+    },
     /// Any other failure, summarised by the adapter.
     Failed {
         /// Moor-worded summary.
@@ -180,6 +185,12 @@ impl fmt::Display for DriverError {
                 failure,
                 stderr_tail,
             } => fmt_tunnel(f, *failure, stderr_tail),
+            Self::Transport { stderr_tail } if stderr_tail.is_empty() => {
+                f.write_str("moor lost the ssh connection to the Box")
+            }
+            Self::Transport { stderr_tail } => {
+                write!(f, "moor lost the ssh connection to the Box: {stderr_tail}")
+            }
             Self::Failed { summary } => f.write_str(summary),
         }
     }

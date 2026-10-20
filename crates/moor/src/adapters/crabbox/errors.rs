@@ -113,6 +113,8 @@ fn classify_text(code: i32, text: &str) -> Option<DriverError> {
 ///
 /// crabbox prints `remote command exited <code>` on its own line. The line must
 /// end with exactly the process's exit code, so `17` never matches `1`.
+///
+/// A transport loss is not a remote exit, though crabbox prints ssh's 255 as one.
 pub(super) fn remote_exit(e: &ProcError) -> Option<i32> {
     let ProcError::NonZero {
         code, stderr_tail, ..
@@ -120,11 +122,49 @@ pub(super) fn remote_exit(e: &ProcError) -> Option<i32> {
     else {
         return None;
     };
+    if transport_loss(e).is_some() {
+        return None;
+    }
     let line = format!("remote command exited {code}");
     stderr_tail
         .lines()
         .any(|l| l.trim_end().ends_with(&line))
         .then_some(*code)
+}
+
+/// Exit code ssh uses for its own failures; crabbox reports it as the remote command's exit.
+const EXIT_SSH: i32 = 255;
+/// Lowercase words ssh prints when the connection to the Box drops or never comes up.
+const SSH_LOST: &[&str] = &[
+    "closed by remote host",
+    "connection reset",
+    "broken pipe",
+    "kex_exchange_identification",
+    "connection timed out",
+];
+
+/// The transport error when `e` is ssh losing the connection to the Box.
+///
+/// A command that exits 255 without ssh's words on stderr is the command's own exit. crabbox's
+/// `remote command exited 255` line is left out of the tail, since no exit is known.
+pub(super) fn transport_loss(e: &ProcError) -> Option<DriverError> {
+    let ProcError::NonZero {
+        code: EXIT_SSH,
+        stderr_tail,
+        ..
+    } = e
+    else {
+        return None;
+    };
+    let exit_line = format!("remote command exited {EXIT_SSH}");
+    let ssh_text = stderr_tail
+        .lines()
+        .filter(|l| !l.trim_end().ends_with(&exit_line))
+        .collect::<Vec<_>>()
+        .join("\n");
+    has_any(&ssh_text.to_lowercase(), SSH_LOST).then(|| DriverError::Transport {
+        stderr_tail: one_line(&ssh_text),
+    })
 }
 
 /// Whether `e` is crabbox giving up because another call rewrote the lease claim.
@@ -146,7 +186,7 @@ pub(super) fn is_claim_race(e: &ProcError) -> bool {
 /// Longest stderr tail, in characters, appended to a summary.
 const TAIL_MAX: usize = 300;
 
-/// The end of `stderr` as one line: trimmed non-empty lines joined by `; `, cut from the front to `TAIL_MAX`.
+/// The stderr tail appended to a summary of `op`, or nothing.
 ///
 /// An exec shows its tail only when crabbox itself failed; once the remote command ran, its output is not crabbox's to repeat.
 fn stderr_suffix(op: Op, stderr: &str, remote_ran: bool) -> String {
@@ -158,6 +198,16 @@ fn stderr_suffix(op: Op, stderr: &str, remote_ran: bool) -> String {
     if !shown {
         return String::new();
     }
+    let line = one_line(stderr);
+    if line.is_empty() {
+        String::new()
+    } else {
+        format!(": {line}")
+    }
+}
+
+/// The end of `stderr` as one line: trimmed non-empty lines joined by `; `, cut from the front to `TAIL_MAX`.
+fn one_line(stderr: &str) -> String {
     let lines: Vec<&str> = stderr
         .lines()
         .map(str::trim)
@@ -165,18 +215,18 @@ fn stderr_suffix(op: Op, stderr: &str, remote_ran: bool) -> String {
         .collect();
     let joined = lines.join("; ");
     let count = joined.chars().count();
-    if count == 0 {
-        return String::new();
-    }
     if count <= TAIL_MAX {
-        return format!(": {joined}");
+        return joined;
     }
     let tail: String = joined.chars().skip(count - (TAIL_MAX - 1)).collect();
-    format!(": …{}", tail.trim_start())
+    format!("…{}", tail.trim_start())
 }
 
 /// Maps a failed run of `op` (on `provider`, when known) to the one error shape callers see.
 pub(super) fn map_error(op: Op, provider: Option<&str>, e: &ProcError) -> DriverError {
+    if let Some(lost) = transport_loss(e) {
+        return lost;
+    }
     let what = op.phrase();
     match e {
         ProcError::Spawn(_) => DriverError::Unavailable("crabbox could not be started".to_owned()),

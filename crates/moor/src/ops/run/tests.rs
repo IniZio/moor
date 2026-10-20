@@ -27,6 +27,7 @@ mod moor_yaml;
 mod setup_parity;
 pub(in crate::ops::run) mod stage;
 mod sync;
+mod transport;
 
 use stage::{command_execs, command_results};
 
