@@ -299,5 +299,8 @@ impl Sha {
     }
 }
 
+mod direct_host;
+pub use direct_host::DirectHost;
+
 #[cfg(test)]
 mod tests;

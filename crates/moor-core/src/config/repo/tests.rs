@@ -215,3 +215,58 @@ fn changed_keys_lists_env_and_box_in_file_order() {
     let b = ok("env:\n  A: c\nbox:\n  size: large\n");
     assert_eq!(a.changed_keys(&b), ["env", "box"]);
 }
+
+#[test]
+fn proxy_direct_lists_hosts_and_suffixes() {
+    let cfg = ok("proxy: {direct: [dl.google.com, .Gradle.org]}");
+    let forms: Vec<String> = cfg
+        .proxy
+        .direct
+        .iter()
+        .map(crate::name::DirectHost::no_proxy)
+        .collect();
+    assert_eq!(forms, ["dl.google.com", ".gradle.org"]);
+}
+
+#[test]
+fn proxy_direct_refuses_a_host_a_credential_rule_serves() {
+    for (entry, host) in [
+        ("api.github.com", "api.github.com"),
+        ("uploads.github.com", "uploads.github.com"),
+        ("api.anthropic.com", "api.anthropic.com"),
+        (".github.com", "api.github.com"),
+        ("anthropic.com", "api.anthropic.com"),
+    ] {
+        rejects(
+            &format!("proxy: {{direct: [pub.dev, {entry}]}}"),
+            "proxy.direct[1]",
+            &format!("covers {host},"),
+        );
+    }
+}
+
+#[test]
+fn proxy_direct_refuses_wildcards_ips_and_schemes() {
+    for entry in [
+        "'*.gradle.org'",
+        "10.0.0.1",
+        "https://pub.dev",
+        "localhost",
+        "''",
+    ] {
+        rejects(
+            &format!("proxy: {{direct: [{entry}]}}"),
+            "proxy.direct[0]",
+            "direct host must be a host name or .domain",
+        );
+    }
+}
+
+#[test]
+fn a_repo_cannot_add_a_proxy_rule() {
+    rejects(
+        "proxy: {rules: {x: {hosts: [x.example], credential: forge}}}",
+        "proxy.rules",
+        "unknown field",
+    );
+}
