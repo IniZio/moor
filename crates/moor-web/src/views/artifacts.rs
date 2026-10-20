@@ -84,7 +84,8 @@ struct Relay {
     want: u64,
     /// Bytes received so far.
     got: u64,
-    /// Running digest of a whole file and the sha256 its record names; a byte range has none.
+    /// Running digest of a whole file and the sha256 its record names; a range that covers
+    /// less than the whole file has none.
     check: Option<(Sha256, String)>,
     /// The body's last byte, once it has arrived.
     last: Option<u8>,
@@ -212,7 +213,9 @@ fn download(
         Wanted::Whole => ("200 OK", 0, size, Some(record.sha256)),
         Wanted::Part { start, end } => {
             headers.push(("Content-Range", format!("bytes {start}-{end}/{size}")));
-            ("206 Partial Content", start, end - start + 1, None)
+            let whole = start == 0 && end + 1 == size;
+            let sha256 = whole.then_some(record.sha256);
+            ("206 Partial Content", start, end - start + 1, sha256)
         }
         Wanted::Unsatisfiable => {
             let mut resp = HttpResponse::text("416 Range Not Satisfiable", "bad range");
