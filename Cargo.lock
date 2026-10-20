@@ -2082,7 +2082,7 @@ dependencies = [
 [[package]]
 name = "nono"
 version = "0.80.0"
-source = "git+https://github.com/IniZio/nono?rev=7c7012b0ba25310644072a2133d9cab699e7a9e4#7c7012b0ba25310644072a2133d9cab699e7a9e4"
+source = "git+https://github.com/IniZio/nono?rev=d3c7bdff4c8e50b6595f036446ffd6bfe38a8d5d#d3c7bdff4c8e50b6595f036446ffd6bfe38a8d5d"
 dependencies = [
  "der 0.8.2",
  "getrandom 0.4.3",
@@ -2110,7 +2110,7 @@ dependencies = [
 [[package]]
 name = "nono-proxy"
 version = "0.80.0"
-source = "git+https://github.com/IniZio/nono?rev=7c7012b0ba25310644072a2133d9cab699e7a9e4#7c7012b0ba25310644072a2133d9cab699e7a9e4"
+source = "git+https://github.com/IniZio/nono?rev=d3c7bdff4c8e50b6595f036446ffd6bfe38a8d5d#d3c7bdff4c8e50b6595f036446ffd6bfe38a8d5d"
 dependencies = [
  "aws-config",
  "aws-credential-types",
