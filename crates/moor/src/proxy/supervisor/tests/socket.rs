@@ -14,10 +14,10 @@ use crate::store::Lease;
 use crate::testing::bridge::bridge;
 
 /// How the front answers an origin-form request; nono never sees one.
-const REFUSAL: &str = "HTTP/1.1 403 Forbidden\r\n";
+pub(super) const REFUSAL: &str = "HTTP/1.1 403 Forbidden\r\n";
 
 /// Sends an origin-form request into the Box port `port` and returns the reply.
-fn ask(port: u16) -> String {
+pub(super) fn ask(port: u16) -> String {
     let mut tcp = TcpStream::connect((Ipv4Addr::LOCALHOST, port)).unwrap();
     tcp.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
     let _ = tcp.write_all(b"GET /x HTTP/1.1\r\nHost: x\r\n\r\n");
@@ -148,6 +148,40 @@ fn a_supervisor_that_lost_its_lease_leaves_its_successors_socket() {
     assert_eq!(old.finish(Stop::LostLease), 1);
 
     assert!(ask(bridge(&socket)).starts_with(REFUSAL));
+}
+
+#[test]
+fn a_supervisor_that_cannot_claim_the_lease_leaves_the_running_socket() {
+    let w = World::new([]);
+    let deps = w.deps();
+    let running = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
+    let socket = running.socket();
+    let bound = fs::symlink_metadata(socket).unwrap().ino();
+
+    assert_eq!(start(&deps, w.id).err(), Some(0));
+
+    assert_eq!(fs::symlink_metadata(socket).unwrap().ino(), bound);
+    assert!(ask(bridge(socket)).starts_with(REFUSAL));
+}
+
+#[test]
+fn a_supervisor_that_lost_its_lease_does_not_bind_a_removed_socket_again() {
+    let w = World::new([]);
+    let deps = w.deps();
+    let old = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
+    w.clock.sleep(LEASE);
+    let new = start(&deps, w.id).map_err(|c| format!("exit {c}")).unwrap();
+    let socket = new.socket().to_path_buf();
+    let tunnel = bridge(&socket);
+    fs::remove_file(&socket).unwrap();
+
+    assert_eq!(old.tick(), Some(Stop::LostLease));
+
+    assert!(ask(tunnel).is_empty());
+    assert_eq!(old.finish(Stop::LostLease), 1);
+    w.clock.sleep(TICK);
+    assert!(new.tick().is_none());
+    assert!(ask(tunnel).starts_with(REFUSAL));
 }
 
 #[test]
