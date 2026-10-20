@@ -17,9 +17,9 @@ use super::{bare_host, rule, EgressSink};
 pub(crate) struct Limits {
     /// Open statuses by rule; a rule seeded from the store appears once it is first seen.
     open: Mutex<BTreeMap<String, BTreeSet<u16>>>,
-    /// 401s and 403s that went to requests forwarded without the credential
-    /// nono injected, and not yet audited.
-    anonymous: Mutex<Notes>,
+    /// 401s and 403s that say nothing about the credential nono injected, and
+    /// not yet audited.
+    excused: Mutex<Notes>,
 }
 
 /// Counts of noted answers by lower-case host and status.
@@ -55,34 +55,32 @@ fn take_one(noted: &mut Noted, key: &(String, u16)) -> bool {
 }
 
 impl Limits {
-    /// Notes that the next audited `status` from `host` answered a request
-    /// that was forwarded without its credential.
-    pub(super) fn anonymous(&self, host: &str, status: u16) {
+    /// Notes that the next audited `status` from `host` says nothing about the
+    /// credential.
+    pub(super) fn excuse(&self, host: &str, status: u16) {
         *self
-            .lock_anonymous()
+            .lock_excused()
             .fresh
             .entry((host.to_ascii_lowercase(), status))
             .or_default() += 1;
     }
 
-    /// Consumes one noted anonymous answer matching `event`, if any.
-    fn take_anonymous(&self, event: &NetworkAuditEvent, status: u16) -> bool {
+    /// Consumes one excused answer matching `event`, if any.
+    fn take_excused(&self, event: &NetworkAuditEvent, status: u16) -> bool {
         let key = (bare_host(&event.target).to_ascii_lowercase(), status);
-        self.lock_anonymous().take(&key)
+        self.lock_excused().take(&key)
     }
 
     /// Ends a drain: drops the notes no audit consumed within one further
     /// drain, and ages the rest.
     pub(super) fn end_drain(&self) {
-        let mut notes = self.lock_anonymous();
+        let mut notes = self.lock_excused();
         notes.aged = mem::take(&mut notes.fresh);
     }
 
-    /// Locks the noted anonymous answers, recovering from poisoning.
-    fn lock_anonymous(&self) -> MutexGuard<'_, Notes> {
-        self.anonymous
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
+    /// Locks the excused answers, recovering from poisoning.
+    fn lock_excused(&self) -> MutexGuard<'_, Notes> {
+        self.excused.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Reports to `sink` the limit change `event` shows, if any.
@@ -92,7 +90,7 @@ impl Limits {
         };
         let rejected = matches!(status, 401 | 403)
             && event.managed_credential_active != Some(false)
-            && !self.take_anonymous(event, status);
+            && !self.take_excused(event, status);
         if status != 429 && !rejected && !(200..300).contains(&status) {
             return;
         }

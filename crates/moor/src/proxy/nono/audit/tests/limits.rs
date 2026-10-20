@@ -155,7 +155,7 @@ fn rejected(status: u16) -> Event {
 #[test]
 fn an_anonymous_note_no_audit_consumes_stops_hiding_rejections_after_one_more_drain() {
     let (sink, watch) = (LimitSink::default(), Withheld::default());
-    watch.anonymous_rejection("api.example.com", 403);
+    watch.excuse("api.example.com", 403);
     assert!(run_limits(&sink, &[], &watch).is_empty());
     assert!(run_limits(&sink, &[], &watch).is_empty());
     assert_eq!(run_limits(&sink, &[response(403)], &watch), [rejected(403)]);
@@ -164,7 +164,7 @@ fn an_anonymous_note_no_audit_consumes_stops_hiding_rejections_after_one_more_dr
 #[test]
 fn an_anonymous_note_hides_its_audit_in_the_next_drain() {
     let (sink, watch) = (LimitSink::default(), Withheld::default());
-    watch.anonymous_rejection("api.example.com", 403);
+    watch.excuse("api.example.com", 403);
     assert!(run_limits(&sink, &[], &watch).is_empty());
     assert!(run_limits(&sink, &[response(403)], &watch).is_empty());
     assert_eq!(run_limits(&sink, &[response(403)], &watch), [rejected(403)]);

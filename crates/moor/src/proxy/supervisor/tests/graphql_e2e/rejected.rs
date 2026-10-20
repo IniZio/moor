@@ -52,3 +52,24 @@ fn credentialed_403_records_a_rejected_credential() {
     assert!(one.contains("403") && one.contains("github-api"), "{one}");
     rig.live.unwrap().stop();
 }
+
+#[test]
+fn the_filters_own_403_records_no_rejected_credential() {
+    let rig = rig_with(Vec::new());
+    let mut resp = rig
+        .client()
+        .post("https://api.github.com/graphql?x=1")
+        .header("Authorization", "token placeholder-not-real")
+        .header("Content-Type", "application/json")
+        .send(r#"{"query":"query{viewer{login}}"}"#)
+        .unwrap();
+    assert_eq!(resp.status().as_u16(), 403);
+    let body = resp.body_mut().read_to_string().unwrap();
+    assert!(body.contains("non-canonical path"), "{body}");
+    assert!(rig.seen().is_empty(), "{:?}", rig.seen());
+    let events = drained_events(&rig);
+    let kinds: Vec<&str> = events.iter().map(|(k, _)| k.as_str()).collect();
+    assert!(kinds.contains(&"egress_refused"), "{events:?}");
+    assert!(!kinds.contains(&"proxy_credential_rejected"), "{events:?}");
+    rig.live.unwrap().stop();
+}

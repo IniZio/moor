@@ -104,9 +104,9 @@ pub(super) struct Shared {
     pub(super) on_credentialed_401: Box<dyn Fn(&http::Head) + Send + Sync>,
     /// Methods of requests forwarded without credential, not yet drained.
     withheld: Mutex<VecDeque<String>>,
-    /// 401 and 403 statuses upstream gave requests forwarded without
-    /// credential, not yet drained.
-    anonymous_rejections: Mutex<VecDeque<u16>>,
+    /// 401 and 403 statuses that say nothing about the credential, not yet
+    /// drained: upstream answers to requests forwarded without it, and refusals.
+    excused: Mutex<VecDeque<u16>>,
     /// The real upstream.
     pub(super) upstream: Upstream,
     /// Vets destinations other than the judged host.
@@ -150,20 +150,18 @@ impl Shared {
         q.push_back(method.to_owned());
     }
 
-    /// Notes a 401 or 403 answer to a request forwarded without its credential.
-    pub(super) fn reject_anonymous(&self, status: u16) {
-        let mut q = self.lock_anonymous_rejections();
+    /// Notes a 401 or 403 answer that says nothing about the credential.
+    pub(super) fn excuse(&self, status: u16) {
+        let mut q = self.lock_excused();
         if q.len() >= MAX_REFUSALS {
             q.pop_front();
         }
         q.push_back(status);
     }
 
-    /// Locks the anonymous rejection buffer, recovering from poisoning.
-    fn lock_anonymous_rejections(&self) -> MutexGuard<'_, VecDeque<u16>> {
-        self.anonymous_rejections
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
+    /// Locks the excused buffer, recovering from poisoning.
+    fn lock_excused(&self) -> MutexGuard<'_, VecDeque<u16>> {
+        self.excused.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     /// Locks the withheld buffer, recovering from poisoning.
@@ -210,7 +208,7 @@ impl GraphqlFilter {
             credential_headers: spec.credential_headers,
             on_credentialed_401: spec.on_credentialed_401,
             withheld: Mutex::new(VecDeque::new()),
-            anonymous_rejections: Mutex::new(VecDeque::new()),
+            excused: Mutex::new(VecDeque::new()),
             upstream: spec.upstream,
             guard: spec.guard,
             tls,
@@ -245,10 +243,10 @@ impl GraphqlFilter {
         self.shared.lock_withheld().drain(..).collect()
     }
 
-    /// Takes the 401 and 403 statuses of requests forwarded without credential
-    /// since the last call; each is noted before the answer reaches nono.
-    pub(crate) fn drain_anonymous_rejections(&self) -> Vec<u16> {
-        self.shared.lock_anonymous_rejections().drain(..).collect()
+    /// Takes the 401 and 403 statuses noted by [`Shared::excuse`] since the last
+    /// call; each is noted before the answer reaches nono.
+    pub(crate) fn drain_excused(&self) -> Vec<u16> {
+        self.shared.lock_excused().drain(..).collect()
     }
 
     /// Stops accepting and joins the acceptor; open connections end on their
