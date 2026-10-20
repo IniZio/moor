@@ -3,6 +3,7 @@
 use std::fmt;
 
 use crate::activity::HookRecord;
+use crate::name::DirectHost;
 use crate::name::{BoxPath, NameError};
 use crate::seam::engine::LaunchPrompt;
 use crate::secret::Secret;
@@ -19,6 +20,8 @@ pub struct ProxyAddr {
     pub box_env: Vec<(String, String)>,
     /// Whether a forge rule routes GitHub through the Proxy, so the agent gets `gh`.
     pub forge: bool,
+    /// Hosts the Box reaches without the Proxy.
+    pub direct: Vec<DirectHost>,
 }
 
 impl fmt::Debug for ProxyAddr {
@@ -28,6 +31,7 @@ impl fmt::Debug for ProxyAddr {
             .field("nonce", &"<redacted>")
             .field("box_env", &self.box_env)
             .field("forge", &self.forge)
+            .field("direct", &self.direct)
             .finish_non_exhaustive()
     }
 }
@@ -201,6 +205,7 @@ mod tests {
             ca_pem: String::new(),
             box_env: Vec::new(),
             forge: false,
+            direct: Vec::new(),
         }
     }
 

@@ -74,6 +74,7 @@ fn req(s: &FakeSurface, proxy: bool) -> LaunchReq {
                 ca_pem: "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n".to_owned(),
                 box_env: Vec::new(),
                 forge: false,
+                direct: Vec::new(),
             })
         }),
         origin: proxy.then(|| "git@github.com:o/n.git".to_owned()),

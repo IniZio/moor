@@ -25,6 +25,7 @@ fn forge_req(s: &FakeSurface, forge: bool) -> LaunchReq {
         ca_pem: addr.ca_pem.clone(),
         box_env: Vec::new(),
         forge,
+        direct: Vec::new(),
     };
     LaunchReq {
         proxy: Some(Arc::new(addr)),

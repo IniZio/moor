@@ -42,6 +42,7 @@ fn proxied(dir: &Path) -> LaunchCtx {
             ca_pem: String::new(),
             box_env: Vec::new(),
             forge: false,
+            direct: Vec::new(),
         }),
         ..ctx(dir)
     }

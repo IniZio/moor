@@ -90,3 +90,25 @@ fn a_repo_env_value_cannot_replace_the_root_signal() {
     let root = script.rfind("export IS_SANDBOX=1").expect(&script);
     assert!(root < script.rfind("'claude'").expect(&script), "{script}");
 }
+
+#[test]
+fn the_agent_script_sends_direct_hosts_around_the_proxy() {
+    let (d, s) = (driver(FakeDriver::new()), surface(FakeSurface::new("/r")));
+    let user = moor_core::config::parse_user("u.yaml", "proxy: {direct: [dl.google.com]}").unwrap();
+    let addr = ProxyAddr {
+        direct: user.proxy.direct,
+        ..proxy_addr()
+    };
+    let req = LaunchReq {
+        proxy: Some(Arc::new(addr)),
+        ..req_with_proxy(&s)
+    };
+    agent(&d, &s).launch(&req).unwrap();
+    let script = script_of(&pane_line(&s));
+    assert!(
+        script.contains(
+            "export NO_PROXY=\"127.0.0.1,localhost,::1,dl.google.com${NO_PROXY:+,$NO_PROXY}\""
+        ),
+        "{script}"
+    );
+}

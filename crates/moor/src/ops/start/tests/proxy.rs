@@ -420,3 +420,51 @@ fn the_agent_launch_env_drops_reserved_and_credential_names_but_keeps_the_rest()
     assert_eq!(env_of(&env, "NODE_OPTIONS"), None);
     assert_eq!(env_of(&env, "STRIPE_TEST_KEY"), None);
 }
+
+/// The fake user config with the `proxy:` section of `yaml`.
+fn config_with_proxy(yaml: &str) -> moor_core::config::UserConfig {
+    let mut config = crate::testing::cx::fake_config();
+    config.proxy = moor_core::config::parse_user("u.yaml", yaml).unwrap().proxy;
+    config
+}
+
+#[test]
+fn user_direct_hosts_reach_the_agent_proxy_address() {
+    let config = config_with_proxy("proxy: {direct: [dl.google.com, .gradle.org]}");
+    let engine = Arc::new(FakeEngine::new());
+    let mut w = super::world_with(FakeDriver::new(), std::path::Path::new("/repo"), config);
+    w.cx =
+        w.cx.with_engine(engine.clone())
+            .with_proxy_host(Arc::new(FakeProxyHost::new()));
+    run(&w.cx, &goal_req()).unwrap();
+    let launches = engine.launches();
+    let addr = launches.first().unwrap().proxy.as_ref().unwrap();
+    let direct: Vec<String> = addr
+        .direct
+        .iter()
+        .map(moor_core::DirectHost::no_proxy)
+        .collect();
+    assert_eq!(direct, ["dl.google.com", ".gradle.org"]);
+}
+
+#[test]
+fn a_repo_direct_host_that_a_user_rule_serves_fails_the_proxy_step() {
+    let repo = tempfile::tempdir().unwrap();
+    std::fs::write(
+        repo.path().join(".moor.yaml"),
+        "proxy: {direct: [pub.dev, .gitlab.com]}\n",
+    )
+    .unwrap();
+    let config = config_with_proxy(
+        "proxy: {rules: {gitlab: {hosts: [gitlab.com], credential: forge, inject: {form: 'Bearer {secret}'}}}}",
+    );
+    let mut w = super::world_with(FakeDriver::new(), repo.path(), config);
+    w.cx = w.cx.with_proxy_host(Arc::new(FakeProxyHost::new()));
+    let v = run(&w.cx, &goal_req()).unwrap();
+    let (step, message, _) = failure_step(&w, BoxId::new(v.boxed.id));
+    assert_eq!(step, "proxy");
+    assert!(
+        message.contains("proxy.direct[1]: .gitlab.com covers gitlab.com,"),
+        "{message}"
+    );
+}
