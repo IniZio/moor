@@ -14,9 +14,6 @@ use crate::db::{Db, SlackThread, ThreadState};
 use crate::dial::Backoff;
 use crate::socket::Mention;
 
-/// How moor-client words a hello that the controller answered with another protocol or frame.
-const HELLO_REFUSED: [&str; 2] = ["controller speaks protocol", "expected hello frame"];
-
 /// The worker's effects, so tests can script the controller and record what Slack sees.
 pub(crate) struct Fx<'a> {
     /// Sends one request to the controller.
@@ -250,14 +247,10 @@ fn error_text(reply: Response) -> String {
 }
 
 /// True when the request may have reached the controller, or the controller may answer
-/// later, so the worker must ask before it acts again. Only an error frame or a refused
-/// hello proves the request never ran.
-fn lost(e: &ClientError) -> bool {
-    match e {
-        ClientError::Connect { .. } | ClientError::Io(_) | ClientError::Timeout => true,
-        ClientError::Protocol(message) => !HELLO_REFUSED.iter().any(|p| message.starts_with(p)),
-        ClientError::Frame { .. } => false,
-    }
+/// later, so the worker must ask before it acts again. Only an error frame proves the
+/// request never ran; the controller also refuses a hello with one.
+const fn lost(e: &ClientError) -> bool {
+    !matches!(e, ClientError::Frame { .. })
 }
 
 /// Binds the row to the Box the controller named and says so in the thread.
