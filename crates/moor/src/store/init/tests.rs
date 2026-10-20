@@ -49,6 +49,23 @@ fn an_older_or_newer_version_is_refused_and_left_as_it_is() {
 }
 
 #[test]
+fn the_proxy_table_keeps_no_nonce_or_host_port() {
+    let conn = fresh_store();
+    let mut stmt = conn
+        .prepare("SELECT name FROM pragma_table_info('proxy')")
+        .unwrap();
+    let columns: Vec<String> = stmt
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert!(columns.contains(&"box_port".to_owned()), "{columns:?}");
+    for gone in ["nonce", "host_port"] {
+        assert!(!columns.contains(&gone.to_owned()), "{columns:?}");
+    }
+}
+
+#[test]
 fn a_box_may_have_several_live_sessions() {
     let conn = fresh_store();
     conn.execute_batch(
