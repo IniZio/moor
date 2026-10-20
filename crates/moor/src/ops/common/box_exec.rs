@@ -9,7 +9,7 @@ use moor_core::config::BoxSettings;
 use moor_core::domain::run::SyncMode;
 use moor_core::exec_env::{self, BoxCtx, ExecEnv, ProxyCtx, Purpose, RUN_DEADLINE};
 use moor_core::seam::agent_profile::ProxyAddr;
-use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
+use moor_core::seam::driver::{BoxStep, DriverError, ExecOutcome, ExecSpec, StepDone};
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::proxy_host::ProxySpec;
 use moor_core::{BoxHandle, BoxId, BoxPath, Warning};
@@ -21,7 +21,9 @@ use crate::ops::common::proxy::{box_env, origin, plan};
 const CLEANUP_DEADLINE: Duration = Duration::from_secs(30);
 /// Time allowed for staging the nonce and the CA.
 const STAGE_DEADLINE: Duration = Duration::from_secs(60);
-/// Retries of a step before the user's command after the ssh connection drops.
+/// Time allowed for reading the Box home: twice the slowest ssh connect seen through the gateway, 9.7 s.
+const HOME_DEADLINE: Duration = Duration::from_secs(20);
+/// Retries of a step before the user's command after the ssh connection drops or times out.
 const LOST_RETRIES: u32 = 2;
 /// Pause before such a retry.
 const LOST_PAUSE: Duration = Duration::from_secs(2);
@@ -172,16 +174,16 @@ pub(crate) fn prepare(
 
 /// Why a step before the user's command failed.
 enum StepError {
-    /// The ssh connection dropped; the step can be tried again.
+    /// The ssh connection dropped or the step ran out of time; the step can be tried again.
     Lost(String),
     /// Any other failure.
     Other(String),
 }
 
 impl StepError {
-    /// `message` for the driver error `e`, kept retryable when `e` is a lost connection.
+    /// `message` for the driver error `e`, kept retryable when `e` is a lost connection or a timeout.
     const fn from_driver(e: &DriverError, message: String) -> Self {
-        if matches!(e, DriverError::Transport { .. }) {
+        if matches!(e, DriverError::Transport { .. } | DriverError::Timeout(_)) {
             Self::Lost(message)
         } else {
             Self::Other(message)
@@ -189,10 +191,11 @@ impl StepError {
     }
 }
 
-/// Runs `step`, again up to `LOST_RETRIES` times while the ssh connection drops, warning each time.
+/// Runs `step`, again up to `LOST_RETRIES` times while the ssh connection drops or times out,
+/// warning each time.
 ///
-/// Only moor's own steps before the user's command go through here: that command may have run
-/// when the connection dropped, so it is never repeated.
+/// Only moor's own steps before the user's command go through here, since each is safe to repeat.
+/// That command may have run when the connection dropped, so it is never repeated.
 fn retry_lost<T>(cx: &Cx, mut step: impl FnMut() -> Result<T, StepError>) -> Result<T, String> {
     let mut retries = 0;
     loop {
@@ -272,12 +275,23 @@ impl BoxExec {
 /// The Box user's home, read from the environment of a process on the Box.
 fn box_home(cx: &Cx, site: &Site<'_>) -> Result<BoxPath, StepError> {
     let other = |m: &str| StepError::Other(m.to_owned());
+    let failed =
+        |e: &DriverError| StepError::from_driver(e, format!("could not find the Box home: {e}"));
     let environ = BoxPath::restore("/proc/self/environ").map_err(|e| other(&e.to_string()))?;
-    let text = cx
-        .driver()
-        .peek_file(site.handle, &environ, site.worktree)
-        .map_err(|e| StepError::from_driver(&e, format!("could not find the Box home: {e}")))?
-        .ok_or_else(|| other("the Box has no process environment"))?;
+    let driver = cx.driver();
+    let connect = driver
+        .connect_argv(site.handle, site.worktree)
+        .map_err(|e| failed(&e))?;
+    let steps = [BoxStep::Peek(environ)];
+    let deadline = Deadline(HOME_DEADLINE);
+    let text = match driver
+        .batch(site.handle, &connect, &steps, site.worktree, deadline)
+        .pop()
+    {
+        Some(Ok(StepDone::Peeked(Some(text)))) => text,
+        Some(Err(e)) => return Err(failed(&e)),
+        _ => return Err(other("the Box has no process environment")),
+    };
     let home = text
         .split('\0')
         .find_map(|kv| kv.strip_prefix("HOME="))

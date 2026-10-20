@@ -325,19 +325,6 @@ fn a_path_that_already_exists_is_refused_and_left_alone() {
 }
 
 #[test]
-fn a_timed_out_mkdir_says_so_instead_of_claiming_the_path_exists() {
-    let dir = tempfile::tempdir().unwrap();
-    let timeout = DriverError::Timeout(std::time::Duration::from_secs(30));
-    let want = timeout.to_string();
-    let driver = home_driver().exec_results([Err(timeout)]);
-    let r = rig_driver(dir.path(), crate::testing::cx::fake_config(), driver);
-    let p = boxed_proxy();
-    let err = run_prepare(&r, dir.path(), Some(&p)).err().unwrap();
-    assert!(err.contains(&want), "{err}");
-    assert!(!err.contains("already exists"), "{err}");
-}
-
-#[test]
 fn a_staging_failure_removes_the_directory_and_returns_the_error() {
     let dir = tempfile::tempdir().unwrap();
     let driver = home_driver().fail_put(DriverError::Unavailable("down".into()));
@@ -515,6 +502,7 @@ fn a_timeout_that_persists_fails_after_two_retries() {
     let p = boxed_proxy();
     let err = run_prepare(&r, dir.path(), Some(&p)).err().unwrap();
     assert!(err.contains("timed out after 30s"), "{err}");
+    assert!(!err.contains("already exists"), "{err}");
     assert_eq!(argvs(&r).len(), 3);
 }
 
