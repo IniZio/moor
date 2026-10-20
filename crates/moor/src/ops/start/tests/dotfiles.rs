@@ -23,7 +23,7 @@ use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::proc::Reply;
-use crate::testing::proxy_host::FakeProxyHost;
+use crate::testing::proxy_host::{FakeProxyHost, FAKE_NONCE};
 
 const TAR_SCRIPT: &str = "exec tar -C \"$1\" -czhf - .";
 
@@ -395,6 +395,39 @@ fn dotfiles_fail_when_the_proxy_cannot_start() {
     assert!(dotfiles_execs(&w).is_empty());
     assert!(w.proc.calls().iter().all(|c| c.tool != Tool::Sh));
     assert!(engine.launches().is_empty());
+}
+
+#[test]
+fn a_failed_install_that_prints_the_proxy_url_reports_it_without_the_nonce() {
+    let nonce = String::from_utf8(FAKE_NONCE.to_vec()).unwrap();
+    let src = tempfile::tempdir().unwrap();
+    let driver = FakeDriver::new().exec_results(scripted([Sync(Ok(exit(0))), Cmd(Ok(exit(1)))]));
+    let (w, _, _repo) = dotfiles_world("env: {A: a}\n", Some(src.path()), None, driver);
+    let log = w.dir.path().join("dotfiles/1.log");
+    let printed = format!("HTTPS_PROXY=http://moor:{nonce}@127.0.0.1:3128\n");
+    let path = log.clone();
+    w.driver.on_exec(move || {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, &printed).unwrap();
+    });
+    let v = run(&w.cx, &goal_req()).unwrap();
+    assert!(v.dotfiles.ran && !v.dotfiles.ok);
+    assert!(std::fs::read_to_string(&log).unwrap().contains(&nonce));
+
+    let warnings = w.cx.take_warnings();
+    let msg = &warnings
+        .iter()
+        .find(|x| x.code == "dotfiles_failed")
+        .unwrap()
+        .message;
+    assert!(msg.contains("HTTPS_PROXY=http://moor:<nonce>@"), "{msg}");
+    let events = w.cx.store().unwrap().events(BoxId::new(1), 50).unwrap();
+    let failed = events.iter().find(|e| e.kind == "setup_failed").unwrap();
+    let line = failed.payload.get("line").and_then(|l| l.as_str()).unwrap();
+    assert!(line.contains("moor:<nonce>@"), "{line}");
+    for text in [msg.as_str(), line] {
+        assert!(!text.contains(&nonce), "{text}");
+    }
 }
 
 /// The argv of the last Box exec after a start whose dotfiles exec ended as `out`.
