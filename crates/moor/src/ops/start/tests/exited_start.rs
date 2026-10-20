@@ -22,7 +22,7 @@ fn exited() -> Probes {
     }
 }
 
-/// A Task whose agent started, exited and was settled, so its Session 1 is Ended.
+/// A Box whose agent started, exited and was settled, so its Session 1 is Ended.
 fn exited_agent() -> (World, Arc<FakeEngine>, BoxId) {
     let named = |n: &str| {
         let mut s = session(&format!("p-{n}"));
@@ -85,8 +85,8 @@ fn check_second_session(w: &World, engine: &FakeEngine, id: BoxId) {
             .unwrap()
             .id;
     assert_eq!(launches.last().copied().flatten(), Some(second));
-    let task = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
-    assert!(working(&task));
+    let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
+    assert!(working(&row));
 }
 
 #[test]

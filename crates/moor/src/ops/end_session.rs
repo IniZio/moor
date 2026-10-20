@@ -19,7 +19,7 @@ use crate::store::{BoxRow, Store};
 /// Run `end-session`.
 ///
 /// # Errors
-/// [`CommandError`] when the Task is unknown, the Box has no live Session, or the agent pane
+/// [`CommandError`] when the Box is unknown, the Box has no live Session, or the agent pane
 /// could not be closed.
 pub(crate) fn run(cx: &Cx, req: &EndSessionReq) -> Result<EndSessionValue, CommandError> {
     let store = cx.store()?;
@@ -28,14 +28,14 @@ pub(crate) fn run(cx: &Cx, req: &EndSessionReq) -> Result<EndSessionValue, Comma
         .map_err(|e| CommandError::new(ErrorKind::Usage, e.to_string()))?;
     let id = store
         .open_box_by_name(&parsed)?
-        .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no open task {name}")))?
+        .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no open Box {name}")))?
         .id;
     let no_session =
         || CommandError::new(ErrorKind::Refused, format!("no live Session in Box {name}"));
     let reload = || {
         store
             .box_row(id)?
-            .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no task {name}")))
+            .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no Box {name}")))
     };
     let _held = BoxLock::acquire(
         cx.clock(),
@@ -88,7 +88,7 @@ fn reword(e: CommandError, name: &str) -> CommandError {
     ))
 }
 
-/// Whether the Task or its Box is asleep.
+/// Whether the Box or its machine is asleep.
 fn asleep(row: &BoxRow) -> bool {
     row.lifecycle == BoxLifecycle::Asleep
         || row

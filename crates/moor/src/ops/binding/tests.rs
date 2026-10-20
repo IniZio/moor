@@ -49,7 +49,7 @@ fn find_req(key: &str) -> SessionBindingReq {
 }
 
 #[test]
-fn binding_a_host_session_creates_it_with_no_task() {
+fn binding_a_host_session_creates_it_with_no_box() {
     let dir = tempfile::tempdir().unwrap();
     let cx = cx(dir.path());
     let s = host_session(&cx);

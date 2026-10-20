@@ -47,7 +47,7 @@ fn refused_by_probe(f: &Fx) -> Vec<String> {
 }
 
 #[test]
-fn task_with_an_agent_session_is_not_synced() {
+fn box_with_an_agent_session_is_not_synced() {
     let f = ready();
     with_session(&f);
     let v = run(&f.cx, &req(&[USER_CMD])).unwrap();
@@ -57,7 +57,7 @@ fn task_with_an_agent_session_is_not_synced() {
 }
 
 #[test]
-fn task_without_an_agent_session_is_synced() {
+fn box_without_an_agent_session_is_synced() {
     let f = ready();
     let v = run(&f.cx, &req(&[USER_CMD])).unwrap();
     assert_eq!(v.sync, SyncMode::Full);

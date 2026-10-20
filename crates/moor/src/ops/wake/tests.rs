@@ -26,7 +26,7 @@ struct Fx {
     id: BoxId,
 }
 
-/// Task `t` with a live Box, working.
+/// Box `t` with a live machine, working.
 fn fx_with(driver: FakeDriver) -> Fx {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(driver);
@@ -85,7 +85,7 @@ fn fx() -> Fx {
     fx_with(FakeDriver::new())
 }
 
-/// The fixture put to sleep: Task Asleep and Box Asleep.
+/// The fixture put to sleep: Box Asleep and machine Asleep.
 fn asleep(f: &Fx) {
     let store = f.cx.store().unwrap();
     store
@@ -123,7 +123,7 @@ fn wakes(f: &Fx) -> usize {
 }
 
 #[test]
-fn asleep_task_wakes_its_box() {
+fn asleep_box_wakes_its_box() {
     let f = fx();
     asleep(&f);
     assert_eq!(states(&f), (BoxLifecycle::Asleep, BoxState::Asleep));
@@ -138,7 +138,7 @@ fn asleep_task_wakes_its_box() {
 }
 
 #[test]
-fn task_that_is_not_asleep_is_left_alone() {
+fn box_that_is_not_asleep_is_left_alone() {
     let f = fx();
     let v = run(&f.cx, &req()).unwrap();
     assert!(!v.woke);
@@ -157,7 +157,7 @@ fn second_wake_does_nothing() {
 }
 
 #[test]
-fn failed_resume_leaves_task_and_box_asleep() {
+fn failed_resume_leaves_box_and_box_asleep() {
     let f = fx_with(FakeDriver::new().fail_wake(DriverError::Quota("q".into())));
     asleep(&f);
     run(&f.cx, &req()).unwrap_err();
@@ -177,7 +177,7 @@ fn gone_box_is_refused_without_a_resume() {
 }
 
 #[test]
-fn unknown_task_is_failed() {
+fn unknown_box_is_failed() {
     let f = fx();
     let r = BoxReq {
         box_name: BoxName::parse_allow_bare("nope").unwrap(),

@@ -28,7 +28,7 @@ pub(super) fn usage(req: &RunReq) -> Result<(), CommandError> {
 /// Picks the sync mode for a run.
 ///
 /// `--no-sync` never syncs. `--sync` syncs only a Box with no unsaved work. With neither flag, a
-/// Task that has had an agent session is not synced, since the agent's work lives in the Box.
+/// Box that has had an agent session is not synced, since the agent's work lives in the machine.
 ///
 /// # Errors
 /// [`CommandError`] of kind `Usage` for conflicting flags, `Refused` when `--sync` would discard
@@ -51,7 +51,7 @@ pub(super) fn choose(
         });
     }
     let work = row.boxed.as_ref().map_or_else(
-        || BoxWork::Unknown("the task has no box".to_owned()),
+        || BoxWork::Unknown("the Box has no machine".to_owned()),
         |boxed| boxwork::probe(cx, row, boxed),
     );
     match work {

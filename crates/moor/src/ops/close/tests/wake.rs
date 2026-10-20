@@ -8,7 +8,7 @@ use crate::store::{ProxyPorts, ReadyProc, TunnelAck};
 use crate::testing::rng::FakeRng;
 use moor_core::domain::box_state::BoxLifecycle;
 
-/// Give the Task a live Proxy: a ready row held by a fresh lease.
+/// Give the Box a live Proxy: a ready row held by a fresh lease.
 fn live_proxy(f: &Fx) {
     let store = f.cx.store().unwrap();
     let lease = Duration::from_secs(30);

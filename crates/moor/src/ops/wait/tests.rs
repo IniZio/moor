@@ -48,7 +48,7 @@ fn cx_with(dir: &Path, driver: FakeDriver) -> (Cx, Arc<ScriptedProc>) {
     (cx, proc)
 }
 
-/// Insert task `demo`.
+/// Insert Box `demo`.
 fn add(cx: &Cx) -> BoxId {
     let nt = NewBox {
         name: BoxName::parse_allow_bare("demo").unwrap(),
@@ -179,12 +179,12 @@ fn run_waits_only_for_the_run() {
 }
 
 #[test]
-fn unknown_task_fails_like_show() {
+fn unknown_box_fails_like_show() {
     let dir = tempfile::tempdir().unwrap();
     let (cx, _) = cx(dir.path());
     let err = run(&cx, &req(None, None)).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Failed);
-    assert_eq!(err.error.to_string(), "no task demo");
+    assert_eq!(err.error.to_string(), "no Box demo");
 }
 
 #[test]
@@ -224,7 +224,7 @@ fn agent_cx(dir: &Path, probes: Probes) -> (Cx, Arc<FakeEngine>) {
     (cx.with_engine(engine.clone()), engine)
 }
 
-/// Insert task `demo` with a Box the driver lists as live and a live agent session.
+/// Insert Box `demo` with a machine the driver lists as live and a live agent session.
 fn add_live(cx: &Cx) -> BoxId {
     let id = add_boxed(cx);
     cx.store()
@@ -234,7 +234,7 @@ fn add_live(cx: &Cx) -> BoxId {
     id
 }
 
-/// Insert task `demo` with a Box the driver lists as live and no agent session.
+/// Insert Box `demo` with a machine the driver lists as live and no agent session.
 fn add_boxed(cx: &Cx) -> BoxId {
     let id = add(cx);
     let got = cx
@@ -358,7 +358,7 @@ fn the_payload_carries_the_agent() {
 }
 
 #[test]
-fn a_task_without_a_session_has_no_agent_in_the_payload() {
+fn a_box_without_a_session_has_no_agent_in_the_payload() {
     let dir = tempfile::tempdir().unwrap();
     let (cx, _) = cx(dir.path());
     add(&cx);
@@ -367,7 +367,7 @@ fn a_task_without_a_session_has_no_agent_in_the_payload() {
 }
 
 #[test]
-fn waiting_leaves_the_task_row_alone() {
+fn waiting_leaves_the_box_row_alone() {
     let dir = tempfile::tempdir().unwrap();
     let (cx, _) = agent_cx(dir.path(), hook(HookKind::Idle));
     let id = add_live(&cx);
@@ -468,7 +468,7 @@ fn launch_failure_sleep_label_follows_provider_sleep_support() {
     }
 }
 
-/// Record an `agent_rate_limited` event for the `claude` rule on `task`.
+/// Record an `agent_rate_limited` event for the `claude` rule on `Box`.
 fn rate_limit(cx: &Cx, box_id: BoxId) {
     cx.store()
         .unwrap()

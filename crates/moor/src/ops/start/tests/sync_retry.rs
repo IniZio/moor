@@ -32,7 +32,7 @@ fn world_with_setup(results: impl IntoIterator<Item = Step>) -> (World, Arc<Fake
     (w, engine)
 }
 
-/// Puts the repo's `.moor.yaml` into the Task's worktree, as a checked-out repo has it.
+/// Puts the repo's `.moor.yaml` into the Box's worktree, as a checked-out repo has it.
 fn checked_out(w: &World) {
     let wt = row(w).worktree.unwrap();
     std::fs::create_dir_all(&wt).unwrap();
@@ -95,8 +95,8 @@ fn a_failed_sync_names_the_step_the_tail_and_the_box_in_the_error_value() {
     assert_eq!(field(&value, "failed_step"), "sync");
     assert_eq!(field(&value, "handle"), "box-1");
     assert!(value.get("log_tail").is_none());
-    let task = value.get("box").unwrap();
-    assert_eq!(field(task, "lifecycle"), "setup_failed");
+    let boxed = value.get("box").unwrap();
+    assert_eq!(field(boxed, "lifecycle"), "setup_failed");
 }
 
 #[test]

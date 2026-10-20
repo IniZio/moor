@@ -1,4 +1,4 @@
-//! `wake`: resume a Task's asleep Box.
+//! `wake`: resume an asleep Box.
 //!
 //! Holds the Box lock while the Box resumes.
 

@@ -28,8 +28,8 @@ fn cx(dir: &Path) -> Cx {
     )
 }
 
-/// Insert a task by name.
-fn task(cx: &Cx, name: &str) -> BoxId {
+/// Insert a Box by name.
+fn new_box(cx: &Cx, name: &str) -> BoxId {
     let nt = NewBox {
         name: BoxName::parse_allow_bare(name).unwrap(),
         repo: "r".into(),
@@ -85,7 +85,7 @@ fn err(cx: &Cx, r: &GateReq) -> CommandError {
 fn passing_run_is_ok_with_the_verdict() {
     let dir = tempfile::tempdir().unwrap();
     let cx = cx(dir.path());
-    let t = task(&cx, "a");
+    let t = new_box(&cx, "a");
     record(&cx, t, "test", SHA, "make test", 0);
     let v = serde_json::to_value(run(&cx, &req("ABCDEF12", None)).unwrap()).unwrap();
     assert_eq!(field(&v, "ok"), true);
@@ -100,7 +100,7 @@ fn passing_run_is_ok_with_the_verdict() {
 fn works_without_a_git_checkout() {
     let dir = tempfile::tempdir().unwrap();
     let cx = cx(dir.path());
-    let t = task(&cx, "a");
+    let t = new_box(&cx, "a");
     record(&cx, t, "test", SHA, "make test", 0);
     assert!(run(&cx, &req(SHA, None)).is_ok());
 }
@@ -109,7 +109,7 @@ fn works_without_a_git_checkout() {
 fn failing_run_is_failed_and_keeps_the_verdict() {
     let dir = tempfile::tempdir().unwrap();
     let cx = cx(dir.path());
-    let t = task(&cx, "a");
+    let t = new_box(&cx, "a");
     record(&cx, t, "test", SHA, "make test", 2);
     let e = err(&cx, &req(SHA, None));
     assert_eq!(e.kind, ErrorKind::Failed);
@@ -123,7 +123,7 @@ fn failing_run_is_failed_and_keeps_the_verdict() {
 fn known_commit_without_the_gate_is_failed_with_the_verdict() {
     let dir = tempfile::tempdir().unwrap();
     let cx = cx(dir.path());
-    let t = task(&cx, "a");
+    let t = new_box(&cx, "a");
     record(&cx, t, "lint", SHA, "make lint", 0);
     let e = err(&cx, &req(SHA, None));
     assert_eq!(e.kind, ErrorKind::Failed);
@@ -144,7 +144,7 @@ fn malformed_sha_is_usage() {
 fn unknown_short_prefix_is_usage() {
     let dir = tempfile::tempdir().unwrap();
     let cx = cx(dir.path());
-    let t = task(&cx, "a");
+    let t = new_box(&cx, "a");
     record(&cx, t, "test", SHA, "make test", 0);
     assert_eq!(err(&cx, &req("ffff", None)).kind, ErrorKind::Usage);
 }
@@ -153,7 +153,7 @@ fn unknown_short_prefix_is_usage() {
 fn ambiguous_prefix_is_usage() {
     let dir = tempfile::tempdir().unwrap();
     let cx = cx(dir.path());
-    let t = task(&cx, "a");
+    let t = new_box(&cx, "a");
     record(&cx, t, "test", SHA, "make test", 0);
     record(&cx, t, "test", OTHER, "make test", 0);
     assert_eq!(err(&cx, &req("abcdef", None)).kind, ErrorKind::Usage);
@@ -171,7 +171,7 @@ fn unknown_long_prefix_is_failed() {
 fn command_filter_matches_exact_text() {
     let dir = tempfile::tempdir().unwrap();
     let cx = cx(dir.path());
-    let t = task(&cx, "a");
+    let t = new_box(&cx, "a");
     record(&cx, t, "test", SHA, "make test", 0);
     record(&cx, t, "test", SHA, "make lint", 1);
     let v = run(&cx, &req(SHA, Some("make test"))).unwrap();

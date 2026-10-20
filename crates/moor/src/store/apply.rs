@@ -242,7 +242,7 @@ fn write_box(
             return Ok(());
         }
         return Err(StoreError::Invalid(
-            "box fields set but the box has no driver box".into(),
+            "Box fields set but the Box has no machine".into(),
         ));
     };
     if let Some(input) = &d.box_input {

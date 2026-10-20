@@ -28,7 +28,7 @@ struct Fx {
     id: BoxId,
 }
 
-/// Task `t` with a ready Box whose first Session ended, or is still live when `live`.
+/// Box `t` with a ready machine whose first Session ended, or is still live when `live`.
 fn fx(engine: FakeEngine, live: bool) -> Fx {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(FakeDriver::new());
@@ -48,7 +48,7 @@ fn fx(engine: FakeEngine, live: bool) -> Fx {
         proc,
     )
     .with_engine(engine.clone());
-    let id = ready_task(&cx, &driver);
+    let id = ready_box(&cx, &driver);
     let store = cx.store().unwrap();
     store.begin_session(id, "s-1", Some("p-0")).unwrap();
     if !live {
@@ -63,8 +63,8 @@ fn fx(engine: FakeEngine, live: bool) -> Fx {
     }
 }
 
-/// Task `t` with a ready Box.
-fn ready_task(cx: &Cx, driver: &FakeDriver) -> BoxId {
+/// Box `t` with a ready machine.
+fn ready_box(cx: &Cx, driver: &FakeDriver) -> BoxId {
     let store = cx.store().unwrap();
     let name = BoxName::parse_allow_bare("t").unwrap();
     let id = store
@@ -210,7 +210,7 @@ fn a_failed_launch_records_the_failure_and_ends_the_new_session() {
 }
 
 #[test]
-fn an_unknown_task_is_not_found() {
+fn an_unknown_box_is_not_found() {
     let f = fx(FakeEngine::new(), false);
     let err = run(
         &f.cx,

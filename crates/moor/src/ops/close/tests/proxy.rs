@@ -1,4 +1,4 @@
-//! Closing a task asks the proxy host to stop its proxy; a failure only warns.
+//! Closing a Box asks the proxy host to stop its proxy; a failure only warns.
 
 use std::sync::Arc;
 
@@ -16,7 +16,7 @@ fn with_host(fake: &FakeProxyHost) -> Fx {
 }
 
 #[test]
-fn close_stops_the_task_proxy_once_without_a_warning() {
+fn close_stops_the_box_proxy_once_without_a_warning() {
     let fake = FakeProxyHost::new();
     let f = with_host(&fake);
 
@@ -45,6 +45,6 @@ fn an_incomplete_stop_only_warns() {
     assert_eq!(stops.len(), 1);
     assert_eq!(
         stops.first().unwrap().message,
-        "the proxy supervisor did not exit within 3s; the task is closed anyway"
+        "the proxy supervisor did not exit within 3s; the Box is closed anyway"
     );
 }

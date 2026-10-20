@@ -1,4 +1,4 @@
-//! Creates the Task's worktree, replacing a safe one left by an earlier Task of the same name.
+//! Creates the Box's worktree, replacing a safe one left by an earlier Box of the same name.
 
 use std::path::Path;
 
@@ -9,7 +9,7 @@ use super::Facts;
 use crate::cx::Cx;
 use crate::error::CommandError;
 
-/// Creates the worktree; a leftover on the Task's branch is removed first when it holds no
+/// Creates the worktree; a leftover on the Box's branch is removed first when it holds no
 /// unpushed or uncommitted work, and refused otherwise.
 pub(super) fn create_worktree(
     cx: &Cx,
@@ -69,11 +69,11 @@ fn clear(cx: &Cx, path: &Path, base: Option<&str>) -> Result<(), CommandError> {
         return Err(CommandError::new(
             ErrorKind::Failed,
             format!(
-                "the worktree {} was left by an earlier Task of this name and is kept: {why}",
+                "the worktree {} was left by an earlier Box of this name and is kept: {why}",
                 path.display()
             ),
         )
-        .with_hint("push or remove that worktree, or pick another Task name"));
+        .with_hint("push or remove that worktree, or pick another Box name"));
     }
     match cx.surface().remove_worktree(path) {
         Ok(()) | Err(SurfaceError::NotFound) => Ok(()),

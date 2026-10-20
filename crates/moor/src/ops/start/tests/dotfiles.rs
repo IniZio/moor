@@ -197,7 +197,7 @@ fn a_configured_install_script_with_a_space_is_quoted_and_guarded() {
     assert_eq!(argvs, [want]);
 }
 
-/// Writes a 25-line host log for the dotfiles exec of task 1 on each exec.
+/// Writes a 25-line host log for the dotfiles exec of Box 1 on each exec.
 fn log_writer(w: &World) {
     let log = w.dir.path().join("dotfiles/1.log");
     w.driver.on_exec(move || {

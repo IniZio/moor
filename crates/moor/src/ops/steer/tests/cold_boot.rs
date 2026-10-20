@@ -1,4 +1,4 @@
-//! `steer` on a task whose Box cold-boots on wake and loses the agent process.
+//! `steer` on a Box whose machine cold-boots on wake and loses the agent process.
 
 use std::path::PathBuf;
 
@@ -21,7 +21,7 @@ fn relaunched(pane: &str, id: &str) -> SessionRef {
     }
 }
 
-/// A sleeping task with a stored agent session, whose relaunch opens pane `p-2`.
+/// A sleeping Box with a stored agent session, whose relaunch opens pane `p-2`.
 fn asleep() -> Fx {
     let engine = FakeEngine::new().launch_result(Ok(relaunched("p-2", "agent-2")));
     let f = fx_with(engine, true);

@@ -34,7 +34,7 @@ struct Fx {
     id: BoxId,
 }
 
-/// Task `t` with a live Box, so the Task is Working.
+/// Box `t` with a live machine, so the Box is Working.
 fn fx_with(driver: FakeDriver) -> Fx {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(driver);
@@ -96,7 +96,7 @@ fn fx() -> Fx {
     fx_with(FakeDriver::new())
 }
 
-/// A fixture whose Task is Idle.
+/// A fixture whose Box is Idle.
 fn idle() -> Fx {
     idle_with(FakeDriver::new())
 }
@@ -114,13 +114,13 @@ fn req() -> BoxReq {
     }
 }
 
-/// Kinds of the events recorded for the task.
+/// Kinds of the events recorded for the Box.
 fn kinds(f: &Fx) -> Vec<String> {
     let rows = f.cx.store().unwrap().events(f.id, 100).unwrap();
     rows.into_iter().map(|e| e.kind).collect()
 }
 
-/// Task and Box states now.
+/// Box and machine states now.
 fn states(f: &Fx) -> (BoxLifecycle, BoxState) {
     let row = f.cx.store().unwrap().box_row(f.id).unwrap().unwrap();
     (row.lifecycle, row.boxed.unwrap().state)
@@ -149,7 +149,7 @@ fn sleep_calls(f: &Fx) -> usize {
         .count()
 }
 
-/// Make the Task's Proxy supervisor look live: ready, leased and just beating.
+/// Make the Box's Proxy supervisor look live: ready, leased and just beating.
 fn live_proxy(f: &Fx) {
     let store = f.cx.store().unwrap();
     let lease = Duration::from_secs(30);
@@ -177,7 +177,7 @@ fn live_proxy(f: &Fx) {
     assert_eq!(ready, Fenced::Applied);
 }
 
-/// The stored tunnel request for the Task.
+/// The stored tunnel request for the Box.
 fn tunnel_request(f: &Fx) -> Option<TunnelRequest> {
     f.cx.store().unwrap().tunnel_request(f.id).unwrap()
 }
@@ -198,7 +198,7 @@ fn begin_run(f: &Fx) {
 }
 
 #[test]
-fn sleeps_an_idle_task() {
+fn sleeps_an_idle_box() {
     let f = idle();
     let v = run(&f.cx, &req()).unwrap();
     assert_eq!(states(&f), (BoxLifecycle::Asleep, BoxState::Asleep));
@@ -212,7 +212,7 @@ fn sleeps_an_idle_task() {
 }
 
 #[test]
-fn sleeps_a_working_task_without_a_run() {
+fn sleeps_a_working_box_without_a_run() {
     let f = fx();
     assert_eq!(states(&f).0, BoxLifecycle::Ready);
     assert_eq!(session(&f), SessionState::Working);
@@ -290,7 +290,7 @@ fn a_later_successful_sleep_clears_the_reason() {
 }
 
 #[test]
-fn unknown_task_fails() {
+fn unknown_box_fails() {
     let f = fx();
     let other = BoxReq {
         box_name: BoxName::parse_allow_bare("nope").unwrap(),
@@ -298,7 +298,7 @@ fn unknown_task_fails() {
     let err = run(&f.cx, &other).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Failed);
     assert!(
-        err.error.to_string().contains("no open task nope"),
+        err.error.to_string().contains("no open Box nope"),
         "{}",
         err.error
     );
@@ -322,7 +322,7 @@ fn refuses_when_the_box_lock_is_held() {
 }
 
 #[test]
-fn an_asleep_task_is_left_alone() {
+fn an_asleep_box_is_left_alone() {
     let f = idle();
     run(&f.cx, &req()).unwrap();
     let v = run(&f.cx, &req()).unwrap();
@@ -331,7 +331,7 @@ fn an_asleep_task_is_left_alone() {
     assert_eq!(states(&f), (BoxLifecycle::Asleep, BoxState::Asleep));
 }
 
-/// A Task and Box seeded through `Requested`: Task `SettingUp`, Box Starting.
+/// A Box and machine seeded through `Requested`: Box `SettingUp`, machine Starting.
 fn starting() -> Fx {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(FakeDriver::new());
@@ -386,7 +386,7 @@ fn assert_refused_untouched(f: &Fx) {
 }
 
 #[test]
-fn refuses_a_task_that_is_still_setting_up() {
+fn refuses_a_box_that_is_still_setting_up() {
     let f = starting();
     let d = Decision::new(f.id).box_input(BoxInput::Acquired {
         handle: moor_core::name::BoxHandle::new("box-1"),
@@ -397,7 +397,7 @@ fn refuses_a_task_that_is_still_setting_up() {
 }
 
 #[test]
-fn refuses_a_working_task_whose_box_is_starting() {
+fn refuses_a_working_box_whose_box_is_starting() {
     let f = starting();
     let d = Decision::new(f.id)
         .lifecycle(BoxLifecycleInput::Ready {
@@ -412,7 +412,7 @@ fn refuses_a_working_task_whose_box_is_starting() {
 }
 
 #[test]
-fn refuses_a_working_task_whose_box_failed() {
+fn refuses_a_working_box_whose_box_failed() {
     let f = starting();
     let d = Decision::new(f.id)
         .lifecycle(BoxLifecycleInput::Ready {
@@ -431,7 +431,7 @@ fn refuses_a_working_task_whose_box_failed() {
 }
 
 #[test]
-fn refuses_an_idle_task_whose_ready_box_has_no_handle() {
+fn refuses_an_idle_box_whose_ready_box_has_no_handle() {
     let f = idle();
     let d = Decision::new(f.id).set(Fields {
         box_handle: Field::Clear,
@@ -489,7 +489,7 @@ fn a_box_that_cannot_sleep_gets_its_tunnel_back() {
     assert_eq!((r.want, r.seq), (TunnelWant::UpAwake, 2));
 }
 
-/// Give the Task a live agent session in pane `p-1`.
+/// Give the Box a live agent session in pane `p-1`.
 fn with_agent_pane(f: &Fx) {
     f.surface.have_pane("p-1");
     f.cx.store()

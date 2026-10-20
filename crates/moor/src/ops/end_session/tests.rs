@@ -28,7 +28,7 @@ struct Fx {
     id: BoxId,
 }
 
-/// Task `t` with a ready Box and, when `session`, a live launch in pane `p-1` that registered an
+/// Box `t` with a ready machine and, when `session`, a live launch in pane `p-1` that registered an
 /// agent session.
 fn fx_with(session: bool) -> Fx {
     let dir = tempfile::tempdir().unwrap();
@@ -49,7 +49,7 @@ fn fx_with(session: bool) -> Fx {
         proc,
     )
     .with_engine(engine);
-    let id = ready_task(&cx, &driver);
+    let id = ready_box(&cx, &driver);
     if session {
         let store = cx.store().unwrap();
         let launch = store.begin_session(id, "s-1", Some("p-1")).unwrap();
@@ -65,8 +65,8 @@ fn fx_with(session: bool) -> Fx {
     }
 }
 
-/// Task `t` with a ready Box.
-fn ready_task(cx: &Cx, driver: &FakeDriver) -> BoxId {
+/// Box `t` with a ready machine.
+fn ready_box(cx: &Cx, driver: &FakeDriver) -> BoxId {
     let store = cx.store().unwrap();
     let name = BoxName::parse_allow_bare("t").unwrap();
     let id = store
@@ -220,7 +220,7 @@ fn the_transcript_is_saved_with_the_end_trigger() {
 }
 
 #[test]
-fn an_unknown_task_is_not_found() {
+fn an_unknown_box_is_not_found() {
     let f = fx_with(true);
     let err = run(
         &f.cx,
@@ -230,7 +230,7 @@ fn an_unknown_task_is_not_found() {
     )
     .unwrap_err();
     assert_eq!(err.kind, ErrorKind::Failed);
-    assert!(err.error.to_string().contains("no open task x"));
+    assert!(err.error.to_string().contains("no open Box x"));
 }
 
 #[test]

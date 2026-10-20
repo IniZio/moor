@@ -28,7 +28,7 @@ struct Fx {
     id: BoxId,
 }
 
-/// Task `t` with a live Box, working, placed in workspace `ws-9`.
+/// Box `t` with a live machine, working, placed in workspace `ws-9`.
 fn fx_with(driver: FakeDriver) -> Fx {
     fx_placed(driver, Some("ws-9"))
 }
@@ -98,7 +98,7 @@ fn fx() -> Fx {
     fx_with(FakeDriver::new())
 }
 
-/// The fixture put to sleep: Task Asleep and Box Asleep.
+/// The fixture put to sleep: Box Asleep and machine Asleep.
 fn asleep(f: &Fx) {
     let store = f.cx.store().unwrap();
     store
@@ -144,7 +144,7 @@ fn focuses(f: &Fx) -> Vec<String> {
 }
 
 #[test]
-fn awake_task_focuses_its_workspace() {
+fn awake_box_focuses_its_workspace() {
     let f = fx();
     let v = run(&f.cx, &req()).unwrap();
     assert!(!v.woke);
@@ -155,7 +155,7 @@ fn awake_task_focuses_its_workspace() {
 }
 
 #[test]
-fn asleep_task_is_woken_then_focused() {
+fn asleep_box_is_woken_then_focused() {
     let f = fx();
     asleep(&f);
     let v = run(&f.cx, &req()).unwrap();
@@ -179,7 +179,7 @@ fn second_open_focuses_again_without_waking() {
 }
 
 #[test]
-fn unknown_task_is_failed_and_not_focused() {
+fn unknown_box_is_failed_and_not_focused() {
     let f = fx();
     let r = BoxReq {
         box_name: BoxName::parse_allow_bare("nope").unwrap(),
@@ -217,7 +217,7 @@ fn gone_box_is_refused_without_a_resume_or_focus() {
 }
 
 #[test]
-fn task_without_a_workspace_is_refused() {
+fn box_without_a_workspace_is_refused() {
     let f = fx_placed(FakeDriver::new(), None);
     let err = run(&f.cx, &req()).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Refused);
@@ -291,7 +291,7 @@ fn connect_without_a_workspace_is_refused() {
 }
 
 #[test]
-fn connect_unknown_task_is_failed() {
+fn connect_unknown_box_is_failed() {
     let f = fx();
     let r = BoxReq {
         box_name: BoxName::parse_allow_bare("nope").unwrap(),

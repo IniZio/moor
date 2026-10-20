@@ -1,4 +1,4 @@
-//! Builds the response a start returns, from the Task row and the launch outcome.
+//! Builds the response a start returns, from the Box row and the launch outcome.
 
 use std::path::Path;
 
@@ -52,10 +52,10 @@ pub(super) fn queued_view(cx: &Cx, row: &BoxRow, attached: bool, provider: &str)
 
 /// The response for `row`; nothing past the Box runs yet.
 pub(super) fn view(cx: &Cx, row: &BoxRow, attached: bool) -> StartView {
-    let mut task = box_view(row, cx.config());
-    hide_unsupported_sleep(&mut task, cx);
+    let mut view = box_view(row, cx.config());
+    hide_unsupported_sleep(&mut view, cx);
     StartView {
-        boxed: task,
+        boxed: view,
         attached,
         queued: row.lifecycle == BoxLifecycle::WaitingForBox,
         promoted: Vec::new(),
