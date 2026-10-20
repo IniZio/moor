@@ -14,15 +14,19 @@ mod detached;
 pub(crate) use detached::DaemonCall;
 use detached::{call_of, Daemons};
 mod once;
+mod reply;
 mod signal;
 use signal::Signals;
 
 /// A canned reply.
+#[derive(Clone)]
 pub(crate) enum Reply {
     /// Exit 0 with this stdout.
     Ok(String),
     /// Exit 0 with these raw stdout bytes; `run` decodes them lossily.
     Bytes(Vec<u8>),
+    /// Exit 0 with stdout produced lazily by this reader, never held whole by `run_reading`.
+    Reader(fn() -> Box<dyn std::io::Read + Send>),
     /// Non-zero exit.
     Fail {
         code: i32,
@@ -219,53 +223,6 @@ impl ScriptedProc {
         }
         args
     }
-
-    fn reply_for(&self, spec: &ProcSpec, args: &[String]) -> Result<ProcOutput, ProcError> {
-        let mut rules = self.rules.lock().map_err(|_| poisoned())?;
-        let at = rules
-            .iter()
-            .position(|r| r.tool == spec.tool && args.starts_with(&r.prefix));
-        let taken = at
-            .filter(|i| rules.get(*i).is_some_and(|r| r.once))
-            .map(|i| rules.remove(i));
-        let hit = taken.as_ref().or_else(|| at.and_then(|i| rules.get(i)));
-        let out = match hit.map(|r| &r.reply) {
-            Some(Reply::Ok(out)) => Ok(ProcOutput {
-                code: 0,
-                stdout: out.clone(),
-                stderr: String::new(),
-                truncated: false,
-            }),
-            Some(Reply::Bytes(b)) => Ok(ProcOutput {
-                code: 0,
-                stdout: String::from_utf8_lossy(b).into_owned(),
-                stderr: String::new(),
-                truncated: false,
-            }),
-            Some(Reply::Fail {
-                code,
-                stdout,
-                stderr,
-            }) => Err(ProcError::NonZero {
-                code: *code,
-                stdout: stdout.clone(),
-                stderr_tail: stderr.clone(),
-            }),
-            Some(Reply::Signalled(sig)) => Err(ProcError::Signalled(*sig)),
-            Some(Reply::Interrupted) => Err(ProcError::Interrupted),
-            Some(Reply::Timeout) => Err(ProcError::Timeout {
-                tool: spec.tool,
-                after: spec.deadline.0,
-            }),
-            None => Err(ProcError::NonZero {
-                code: 127,
-                stdout: String::new(),
-                stderr_tail: format!("unscripted: {} {}", spec.tool.program(), args.join(" ")),
-            }),
-        };
-        drop(rules);
-        out
-    }
 }
 
 fn poisoned() -> ProcError {
@@ -287,6 +244,7 @@ impl Proc for ScriptedProc {
                 .and_then(|r| match &r.reply {
                     Reply::Bytes(b) => Some(b.clone()),
                     Reply::Ok(s) => Some(s.clone().into_bytes()),
+                    Reply::Reader(open) => Some(reply::drain(*open)),
                     Reply::Fail { .. }
                     | Reply::Timeout
                     | Reply::Signalled(_)
@@ -323,6 +281,14 @@ impl Proc for ScriptedProc {
             }),
             Err(e) => Err(e),
         }
+    }
+
+    fn run_reading(
+        &self,
+        spec: &ProcSpec,
+        read: &mut dyn FnMut(&mut dyn std::io::Read),
+    ) -> Result<(), ProcError> {
+        self.reading(spec, read)
     }
 
     fn spawn_detached(&self, spec: &ProcSpec) -> Result<(), ProcError> {

@@ -316,6 +316,14 @@ impl Proc for SystemProc {
         self.trace.timed(spec, || self.secret(spec))
     }
 
+    fn run_reading(
+        &self,
+        spec: &ProcSpec,
+        read: &mut dyn FnMut(&mut dyn Read),
+    ) -> Result<(), ProcError> {
+        self.trace.timed(spec, || self.reading(spec, read))
+    }
+
     fn run_streamed(&self, spec: &ProcSpec, out: &Output) -> Result<(), ProcError> {
         self.trace.timed(spec, || self.stream_forwarding(spec, out))
     }
@@ -361,6 +369,7 @@ mod child;
 mod detached;
 mod env;
 mod grace;
+mod reading;
 mod signal;
 mod stdin;
 mod stream;
