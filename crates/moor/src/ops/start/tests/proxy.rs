@@ -225,6 +225,46 @@ fn the_spec_carries_the_box_repo_and_resolved_rules() {
     assert!(!format!("{:?}", addr.box_env).contains(&nonce));
 }
 
+/// Rule names the proxy gets for a Box with a repo, under user config `github.identity`.
+fn rule_names_for_identity(identity: &str) -> Vec<String> {
+    let config = moor_core::config::parse_user(
+        "test",
+        &format!(
+            "credentials:\n  CLAUDE_CODE_OAUTH_TOKEN: {{cmd: [echo, token]}}\ngithub:\n  identity: {identity}\n"
+        ),
+    )
+    .unwrap();
+    let fake = FakeProxyHost::new();
+    let mut w = super::world_with(FakeDriver::new(), std::path::Path::new("/repo"), config);
+    w.cx =
+        w.cx.with_engine(Arc::new(FakeEngine::new()))
+            .with_proxy_host(Arc::new(fake.clone()))
+            .with_forge(Arc::new(
+                FakeForge::new().with_repo("git@github.com:o/r.git", ForgeRepo::new("o", "r")),
+            ));
+    w.proc.on(
+        Tool::Git,
+        &["remote", "get-url", "origin"],
+        Reply::Ok("git@github.com:o/r.git\n".into()),
+    );
+    run(&w.cx, &goal_req()).unwrap();
+    spec_of(&fake).rules.into_iter().map(|r| r.name).collect()
+}
+
+#[test]
+fn only_the_persons_own_identity_gets_the_upload_rule() {
+    for identity in ["you", "auto"] {
+        let names = rule_names_for_identity(identity);
+        assert!(
+            names.iter().any(|n| n == "github-uploads"),
+            "{identity}: {names:?}"
+        );
+    }
+    let names = rule_names_for_identity("bot");
+    assert!(!names.iter().any(|n| n == "github-uploads"), "{names:?}");
+    assert!(names.iter().any(|n| n == "github-api"), "{names:?}");
+}
+
 #[test]
 fn without_an_origin_only_the_rules_that_need_no_repo_remain() {
     let (w, engine, fake) = host_world(FakeProxyHost::new());

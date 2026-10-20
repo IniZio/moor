@@ -65,6 +65,7 @@ pub(crate) fn plan(cx: &Cx, origin: Option<&str>) -> Result<ProxyPlan, String> {
         &cfg.proxy,
         &cfg.credentials,
         repo.as_ref().map(|r| (r.owner.as_str(), r.name.as_str())),
+        cfg.github.identity,
     )
     .map_err(|e| e.to_string())?;
     Ok(ProxyPlan { repo, rules })

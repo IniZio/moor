@@ -102,6 +102,8 @@ pub struct ToolRule {
     /// Drop the rule for a Box with no repo even when no allow entry or Box
     /// variable uses `{repo}`.
     pub requires_repo: bool,
+    /// Drop the rule unless the forge credential is the person's own token.
+    pub requires_you: bool,
 }
 
 impl ToolRule {
@@ -157,6 +159,7 @@ impl ToolRule {
             allow,
             box_env,
             requires_repo: default.requires_repo,
+            requires_you: default.requires_you,
         }
     }
 

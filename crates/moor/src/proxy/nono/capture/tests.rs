@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use moor_core::config::proxy::ProxyConfig;
 use moor_core::config::proxy::{default_rules, resolve_rules, ResolvedInject, ResolvedRule};
-use moor_core::config::CredentialSource;
+use moor_core::config::{CredentialSource, Identity};
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::seam::forge::{Forge, ForgeError, ForgeRepo};
 use moor_core::Secret;
@@ -251,7 +251,13 @@ fn default_rules_map_to_expected_keys() {
         CredentialSource::default(),
     )]);
     assert!(!default_rules().is_empty());
-    let rules = resolve_rules(&ProxyConfig::default(), &creds, Some(("acme", "widgets"))).unwrap();
+    let rules = resolve_rules(
+        &ProxyConfig::default(),
+        &creds,
+        Some(("acme", "widgets")),
+        Identity::You,
+    )
+    .unwrap();
     let forge: Arc<dyn Forge> = Arc::new(FakeForge::new());
     let sources = sources_for(&rules, no_creds(), forge, Some(repo()));
     let keys: Vec<&str> = sources.values().map(|s| s.config_key.as_str()).collect();
