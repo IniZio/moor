@@ -38,6 +38,7 @@ use crate::proxy::adopt;
 use crate::proxy::detached::DetachedSupervisor;
 use crate::proxy::nono::capture::CredsFn;
 use crate::proxy::{serve, Deps, Sink};
+use crate::store::{Store, STORE_FILE};
 
 /// Host variables herdr needs to find its socket and terminal.
 const HERDR_PASSTHROUGH: [&str; 5] = [
@@ -84,6 +85,16 @@ fn build_with_sockets(env: &Env, sockets: PathBuf) -> Result<Cx, CommandError> {
         cx.warn(w);
     }
     Ok(cx)
+}
+
+/// Opens the state store once, so a store that every command would refuse fails here.
+pub(crate) fn open_store(env: &Env) -> Result<(), CommandError> {
+    let Some(state_dir) = env.state_dir() else {
+        return Ok(());
+    };
+    let clock = SystemClock::from_env(env).map_err(|e| CommandError::new(ErrorKind::Usage, e))?;
+    Store::open(&state_dir.join(STORE_FILE), Arc::new(clock))?;
+    Ok(())
 }
 
 /// Settles the Proxy supervisors recorded in the state store; one line per failure.

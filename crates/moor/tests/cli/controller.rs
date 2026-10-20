@@ -270,9 +270,8 @@ fn schema_version(db: &Path) -> Option<String> {
         .ok()
 }
 
-#[test]
-fn a_state_dir_from_another_schema_version_is_refused_and_kept() {
-    let sandbox = Sandbox::new();
+/// A state dir holding a version 4 db; returns the db path.
+fn version_4_state(sandbox: &Sandbox) -> PathBuf {
     let state = sandbox.root.join("state");
     std::fs::create_dir_all(&state).unwrap();
     let db = state.join("moor.db");
@@ -283,11 +282,50 @@ fn a_state_dir_from_another_schema_version_is_refused_and_kept() {
              INSERT INTO meta (k, v) VALUES ('schema_version', '4');",
         )
         .unwrap();
+    db
+}
+
+#[test]
+fn a_state_dir_from_another_schema_version_is_refused_and_kept() {
+    let sandbox = Sandbox::new();
+    let db = version_4_state(&sandbox);
     let out = sandbox.command().arg("list").output().unwrap();
     let stderr = String::from_utf8(out.stderr).unwrap();
-    assert_ne!(out.status.code(), Some(0), "{stderr}");
+    assert_eq!(out.status.code(), Some(3), "a refusal exits 3: {stderr}");
     assert!(stderr.contains("use a fresh state dir"), "{stderr}");
     assert_eq!(schema_version(&db).as_deref(), Some("4"));
+}
+
+#[test]
+fn serve_on_a_state_dir_from_another_schema_version_exits_at_startup() {
+    let sandbox = Sandbox::new();
+    let db = version_4_state(&sandbox);
+    let before = std::fs::read(&db).unwrap();
+    let mut child = sandbox
+        .serve()
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    // 500 polls of 10ms bound the wait at about five seconds.
+    let status = (0..500)
+        .find_map(|_| {
+            let done = child.try_wait().unwrap();
+            if done.is_none() {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            done
+        })
+        .unwrap_or_else(|| {
+            let _ = child.kill();
+            panic!("controller kept running on a version 4 state dir");
+        });
+    let stderr = std::io::read_to_string(child.stderr.take().unwrap()).unwrap();
+    assert_eq!(status.code(), Some(3), "{stderr}");
+    assert!(stderr.contains("use a fresh state dir"), "{stderr}");
+    assert!(!sandbox.socket.exists(), "the socket was left behind");
+    assert_eq!(std::fs::read(&db).unwrap(), before);
 }
 
 #[test]
