@@ -13,7 +13,8 @@ use super::graphql_e2e::{rig_with, Rig, SECRET};
 use crate::proxy::nono::tests::upstream::{self, Upstream};
 
 /// The body the front refuses an origin-form or `https://` request with.
-const REFUSAL: &str = r#"{"message":"moor: only CONNECT or http:// requests are allowed"}"#;
+pub(super) const REFUSAL: &str =
+    r#"{"message":"moor: only CONNECT or http:// requests are allowed"}"#;
 /// A GraphQL query for a repository that is not the Box's.
 const OTHER_REPO: &str = r#"{"query":"query{repository(owner:\"victim\",name:\"secrets\"){id}}"}"#;
 
