@@ -47,6 +47,10 @@ const EXIT_GRACE: Duration = Duration::from_secs(5);
 /// Most bytes kept from one output stream; the rest is read and dropped.
 const MAX_OUTPUT: usize = 1 << 20;
 
+/// What the login modal asks for.
+pub(crate) const LOGIN_PROMPT: &str =
+    "Paste the token that `claude setup-token` printed on your machine.";
+
 /// What every token `claude setup-token` prints starts with.
 const TOKEN_PREFIX: &str = "sk-ant-";
 

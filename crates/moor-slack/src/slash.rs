@@ -1,6 +1,8 @@
 //! The `/moor` slash command. `/moor repo` lists and changes the repos a channel works on,
 //! recorded before the ack; the worker then warns in the channel about a repo the
-//! controller does not know.
+//! controller does not know. `/moor login` and `/moor logout` go to [`crate::login`].
+
+use std::path::Path;
 
 use moor_core::config::{find_repo, RepoEntry, RepoTable};
 use moor_core::request::{ReposReq, Request};
@@ -10,13 +12,15 @@ use serde_json::{json, Value};
 
 use crate::command::Allow;
 use crate::db::{ChannelRepo, Db};
-use crate::socket::Slash;
+use crate::login;
+use crate::socket::{Kept, Slash};
 use crate::worker::{Fx, Job};
 
 /// Reply for text that is not a well-formed `/moor` command.
 const USAGE: &str = "Usage: `/moor repo` lists this channel's repos. \
     `/moor repo add <owner/name>`, `/moor repo remove <owner/name>` and \
-    `/moor repo default <owner/name>` change them.";
+    `/moor repo default <owner/name>` change them. \
+    `/moor login` links your Claude token and `/moor logout` unlinks it.";
 
 /// Longest repo name taken.
 const MAX_REPO: usize = 200;
@@ -34,9 +38,34 @@ enum RepoCmd<'a> {
     Default(&'a str),
 }
 
-/// Records one command in a single transaction with its envelope id. Returns the ack's
-/// payload and, for a repo newly added by a first delivery, the worker's repo check.
+/// Handles one `/moor` command before its ack. Returns what the ack carries and the
+/// worker's job, if any.
 pub(crate) fn record(
+    slash: &Slash,
+    db: &Db,
+    allow: &Allow<'_>,
+    state_dir: &Path,
+    now: i64,
+    log: &dyn Fn(&str),
+) -> rusqlite::Result<(Kept, Option<Job>)> {
+    let verb = slash.text.split_whitespace().next().unwrap_or_default();
+    if verb.eq_ignore_ascii_case("login") {
+        return login::login(slash, db, allow.users, now).map(|kept| (kept, None));
+    }
+    if verb.eq_ignore_ascii_case("logout") {
+        return Ok((login::logout(slash, state_dir, log), None));
+    }
+    let (ack, job) = record_repo(slash, db, allow, now)?;
+    let kept = Kept {
+        ack: Some(ack),
+        then: None,
+    };
+    Ok((kept, job))
+}
+
+/// Records one `/moor repo` command in a single transaction with its envelope id. Returns
+/// the ack's payload and, for a repo newly added by a first delivery, the repo check.
+fn record_repo(
     slash: &Slash,
     db: &Db,
     allow: &Allow<'_>,

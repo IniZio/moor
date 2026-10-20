@@ -1,0 +1,82 @@
+//! What the intake gets beyond mentions and clicks: commands and modals, and what its
+//! acks carry.
+
+use std::fmt;
+
+use moor_core::secret::Secret;
+use serde_json::Value;
+
+use crate::credentials::AgentKind;
+
+/// A `/moor` slash command.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Slash {
+    /// Envelope id, used as the dedupe id.
+    pub envelope_id: String,
+    /// Channel the command was run in.
+    pub channel: String,
+    /// User who ran it.
+    pub user: String,
+    /// Everything after the command name.
+    pub text: String,
+    /// Lets the front open a modal for this user within 3 s of the command.
+    pub trigger_id: Option<String>,
+}
+
+/// A submitted login modal. The token is a [`Secret`] from the moment it is parsed.
+pub(crate) struct TokenSubmission {
+    /// Envelope id, used as the dedupe id.
+    pub envelope_id: String,
+    /// User who submitted the modal.
+    pub user: String,
+    /// The modal's view id, which the front updates with the check's outcome.
+    pub view_id: String,
+    /// The agent the modal was opened for, as its `private_metadata` names it.
+    pub agent: String,
+    /// The pasted token, trimmed.
+    pub token: Secret,
+}
+
+impl fmt::Debug for TokenSubmission {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TokenSubmission")
+            .field("envelope_id", &self.envelope_id)
+            .field("user", &self.user)
+            .field("view_id", &self.view_id)
+            .field("agent", &self.agent)
+            .finish_non_exhaustive()
+    }
+}
+
+impl PartialEq for TokenSubmission {
+    fn eq(&self, other: &Self) -> bool {
+        self.envelope_id == other.envelope_id
+            && self.user == other.user
+            && self.view_id == other.view_id
+            && self.agent == other.agent
+            && self.token.digest() == other.token.digest()
+    }
+}
+
+impl Eq for TokenSubmission {}
+
+/// What the ack of a kept item carries, and what follows it.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct Kept {
+    /// The ack's `payload`, such as the text Slack shows the user who ran a command.
+    pub ack: Option<Value>,
+    /// What the socket thread does right after the ack.
+    pub then: Option<AfterAck>,
+}
+
+/// Work the socket thread does right after an ack, because it cannot wait for the worker.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum AfterAck {
+    /// Open the login modal with this trigger, which Slack honours for 3 s.
+    OpenLogin {
+        /// The command's trigger id.
+        trigger_id: String,
+        /// The agent whose credential the modal asks for.
+        agent: AgentKind,
+    },
+}

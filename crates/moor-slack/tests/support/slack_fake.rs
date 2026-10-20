@@ -259,6 +259,51 @@ impl FakeSlack {
         self.lock().outbox.push_back(envelope.to_string());
     }
 
+    /// Queues an `interactive` envelope: `user` submits the login modal `view`, as opened,
+    /// with `token` in its input.
+    pub(crate) fn send_submission(&self, envelope_id: &str, user: &str, view: &Value, token: &str) {
+        let envelope = json!({
+            "type": "interactive",
+            "envelope_id": envelope_id,
+            "payload": {
+                "type": "view_submission",
+                "user": {"id": user},
+                "view": {
+                    "id": "V1",
+                    "callback_id": view["callback_id"],
+                    "private_metadata": view["private_metadata"],
+                    "state": {"values": {"token": {"token": {
+                        "type": "plain_text_input",
+                        "value": token,
+                    }}}},
+                },
+            },
+        });
+        self.lock().outbox.push_back(envelope.to_string());
+    }
+
+    /// The bodies of the `method` calls, such as `views.open`, made with the bot token.
+    pub(crate) fn views(&self, method: &str) -> Vec<Value> {
+        let path = format!("/{method}");
+        self.requests()
+            .into_iter()
+            .filter(|r| r.path == path && r.auth == format!("Bearer {BOT_TOKEN}"))
+            .map(|r| r.body)
+            .collect()
+    }
+
+    /// Waits up to `limit` until `method` was called `n` times; returns the bodies.
+    pub(crate) fn wait_views(&self, method: &str, n: usize, limit: Duration) -> Vec<Value> {
+        for _ in 0..(limit.as_millis() / POLL.as_millis()) {
+            let views = self.views(method);
+            if views.len() >= n {
+                return views;
+            }
+            thread::sleep(POLL);
+        }
+        panic!("expected {n} {method} calls, saw {:?}", self.views(method));
+    }
+
     /// Waits for the ack of `envelope_id` and returns its payload.
     pub(crate) fn wait_ack_payload(&self, envelope_id: &str) -> Value {
         let found = || {
@@ -483,6 +528,9 @@ fn serve_http(mut stream: TcpStream, state: &Mutex<State>, ws_port: u16) {
         }
         "/chat.postEphemeral" if auth == format!("Bearer {BOT_TOKEN}") => {
             json!({"ok": true, "message_ts": message_ts(guard.posted)})
+        }
+        "/views.open" | "/views.update" if auth == format!("Bearer {BOT_TOKEN}") => {
+            json!({"ok": true, "view": {"id": "V1"}})
         }
         _ => json!({"ok": false, "error": "invalid_auth"}),
     };

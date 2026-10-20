@@ -15,9 +15,11 @@ use crate::api::Api;
 use crate::command::Allow;
 use crate::config::{parse_config, Config};
 use crate::coordinator::claude::{Claude, HostEnv};
+use crate::credentials::CredentialCheck;
 use crate::db::{Db, SlackThread};
+use crate::login::{self, TokenCheck};
 use crate::secret_file::read_secret;
-use crate::socket::{self, Inbound, Intake, Kept, NotKept};
+use crate::socket::{self, AfterAck, Inbound, Intake, Kept, NotKept};
 use crate::worker::{self, Fx, Job};
 use crate::{dial, slash, Log};
 
@@ -49,8 +51,8 @@ struct Loaded {
     api: Arc<Api>,
     /// App-level token for Socket Mode.
     app_token: Secret,
-    /// Bot token for posting replies.
-    bot_token: Secret,
+    /// Bot token for posting replies and opening modals.
+    bot_token: Arc<Secret>,
     /// The checked Claude Code binary, or why the coordinator cannot run.
     coordinator: Result<Claude, String>,
     /// `slack.db`, opened at this build's schema; the Socket Mode thread records mentions in it.
@@ -90,6 +92,9 @@ pub fn run(settings: &Settings, log: Log) -> Result<(), String> {
         db,
         channels: cfg.channels,
         users: cfg.users,
+        state_dir: settings.state_dir.clone(),
+        api: Arc::clone(&api),
+        bot_token: Arc::clone(&bot_token),
         jobs: jobs_tx,
         log: Arc::clone(&log),
         clock: settings.clock,
@@ -100,8 +105,10 @@ pub fn run(settings: &Settings, log: Log) -> Result<(), String> {
     });
     let worker = Worker {
         db_path,
+        state_dir: settings.state_dir.clone(),
         api,
         bot_token,
+        coordinator,
         client: client.clone(),
         log: Arc::clone(&log),
     };
@@ -145,7 +152,7 @@ fn load(settings: &Settings) -> Result<Loaded, String> {
         cfg,
         api: Arc::new(api),
         app_token,
-        bot_token,
+        bot_token: Arc::new(bot_token),
         coordinator,
         db,
         db_path,
@@ -181,6 +188,12 @@ struct Recorder {
     channels: Vec<String>,
     /// User ids who may start Boxes.
     users: Vec<String>,
+    /// The front's state dir, which holds the token files.
+    state_dir: PathBuf,
+    /// Web API client, for the login modal.
+    api: Arc<Api>,
+    /// Bot token for opening the login modal.
+    bot_token: Arc<Secret>,
     /// The worker's queue.
     jobs: Sender<Job>,
     /// Daemon log.
@@ -190,30 +203,57 @@ struct Recorder {
 }
 
 impl Intake for Recorder {
-    /// Keeps a mention or a command; a click needs nothing kept until prompts take answers.
+    /// Keeps a mention, a command or a login submission; a click needs nothing kept until
+    /// prompts take answers.
     fn take(&self, item: Inbound) -> Result<Kept, NotKept> {
         let allow = Allow {
             channels: &self.channels,
             users: &self.users,
         };
         let now = (self.clock)();
-        let (ack, job) = match item {
-            Inbound::Mention(mention) => (None, worker::record(&mention, &self.db, &allow, now)),
-            Inbound::Slash(slash) => match slash::record(&slash, &self.db, &allow, now) {
-                Ok((ack, job)) => (Some(ack), Ok(job)),
-                Err(e) => (None, Err(e)),
-            },
+        let kept = match item {
+            Inbound::Mention(mention) => {
+                worker::record(&mention, &self.db, &allow, now).map(|job| (Kept::default(), job))
+            }
+            Inbound::Slash(slash) => {
+                let state = &self.state_dir;
+                slash::record(&slash, &self.db, &allow, state, now, &*self.log)
+            }
+            Inbound::Submission(sub) => {
+                login::submission(sub, &self.db, &self.users, now).map(|(ack, job)| {
+                    (
+                        Kept {
+                            ack: Some(ack),
+                            then: None,
+                        },
+                        job,
+                    )
+                })
+            }
             Inbound::Click(_) => return Ok(Kept::default()),
         };
-        match job {
-            Ok(Some(job)) => self.jobs.send(job).map_err(|_| NotKept::Gone)?,
-            Ok(None) => {}
+        match kept {
+            Ok((kept, Some(job))) => self
+                .jobs
+                .send(job)
+                .map(|()| kept)
+                .map_err(|_| NotKept::Gone),
+            Ok((kept, None)) => Ok(kept),
             Err(e) => {
                 (self.log)(&format!("slack.db: {e}; Slack sends the envelope again"));
-                return Err(NotKept::Failed);
+                Err(NotKept::Failed)
             }
         }
-        Ok(Kept { ack })
+    }
+
+    /// Opens the login modal on the Socket Mode thread, because its trigger expires 3 s
+    /// after the command and the worker may be busy with a Box start.
+    fn after_ack(&self, then: AfterAck) {
+        let AfterAck::OpenLogin { trigger_id, agent } = then;
+        let form = login::form(agent);
+        if let Err(e) = self.api.open_view(&self.bot_token, &trigger_id, &form) {
+            (self.log)(&format!("slack: login modal failed: {e}"));
+        }
     }
 }
 
@@ -221,10 +261,14 @@ impl Intake for Recorder {
 struct Worker {
     /// Path of `slack.db`; the worker opens its own connection.
     db_path: PathBuf,
+    /// The front's state dir, which holds the token files.
+    state_dir: PathBuf,
     /// Web API client.
     api: Arc<Api>,
     /// Bot token for posting replies.
-    bot_token: Secret,
+    bot_token: Arc<Secret>,
+    /// The checked Claude Code binary, or why the coordinator cannot run.
+    coordinator: Result<Claude, String>,
     /// Controller socket client; each request opens its own connection.
     client: Client,
     /// Daemon log.
@@ -253,10 +297,23 @@ impl Worker {
                 (self.log)(&format!("slack: post failed: {e}"));
             }
         };
+        let mut check_token = |check: TokenCheck| {
+            let checker = self.coordinator.as_ref();
+            let checker = checker
+                .map(|c| c as &dyn CredentialCheck)
+                .map_err(String::as_str);
+            let text = login::check(&check, checker, &self.state_dir);
+            (self.log)(&format!("login of {}: {text}", check.user.as_str()));
+            let view = login::notice(&text);
+            if let Err(e) = self.api.update_view(&self.bot_token, &check.view_id, &view) {
+                (self.log)(&format!("slack: login modal update failed: {e}"));
+            }
+        };
         let mut fx = Fx {
             call: &mut call,
             reply: &mut reply,
             say: &mut say,
+            check_token: &mut check_token,
             log: &*self.log,
         };
         worker::serve(jobs, &db, left, &mut fx);

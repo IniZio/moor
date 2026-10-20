@@ -17,8 +17,9 @@ use tungstenite::Message;
 use super::{
     next_delay, parse_mention, run, session, Inbound, Intake, Kept, Mention, NotKept, SocketError,
 };
-use super::{Click, Slash};
+use super::{AfterAck, Click, Slash, TokenSubmission};
 use crate::api::Api;
+use crate::credentials::AgentKind;
 
 impl Intake for mpsc::Sender<Inbound> {
     fn take(&self, item: Inbound) -> Result<Kept, NotKept> {
@@ -394,6 +395,7 @@ impl Intake for Answering {
         self.0.borrow_mut().push(item);
         Ok(Kept {
             ack: Some(json!({"text": "Recorded."})),
+            then: None,
         })
     }
 }
@@ -417,6 +419,76 @@ fn a_slash_command_is_forwarded_and_its_ack_carries_the_intake_payload() {
         channel: "C1".into(),
         user: "U1".into(),
         text: "repo add acme/api".into(),
+        trigger_id: Some("t1".into()),
     });
     assert_eq!(intake.0.into_inner(), vec![want]);
+}
+
+/// A `view_submission` envelope of the modal `callback` with `token` in its input.
+fn submission(callback: &str, token: &str) -> serde_json::Value {
+    json!({"type":"interactive","envelope_id":"env-v","payload":{"type":"view_submission","user":{"id":"U1"},"view":{"id":"V1","callback_id":callback,"private_metadata":"claude","state":{"values":{"token":{"token":{"type":"plain_text_input","value":token}}}}}}})
+}
+
+#[test]
+fn a_login_submission_is_forwarded_with_its_token_trimmed() {
+    let (acks, got) = forwarded(submission("moor_login", "  tok-123\n"));
+    assert_eq!(acks, vec![r#"{"envelope_id":"env-v"}"#]);
+    let want = Inbound::Submission(TokenSubmission {
+        envelope_id: "env-v".into(),
+        user: "U1".into(),
+        view_id: "V1".into(),
+        agent: "claude".into(),
+        token: Secret::new(b"tok-123".to_vec()),
+    });
+    assert_eq!(got, vec![want]);
+    let (_, got) = forwarded(submission("other_modal", "tok-123"));
+    assert!(got.is_empty());
+}
+
+/// An intake that asks for the login modal after each ack and records each request.
+struct Opening(Arc<AtomicBool>, RefCell<Vec<AfterAck>>);
+
+impl Intake for Opening {
+    fn take(&self, _item: Inbound) -> Result<Kept, NotKept> {
+        let then = AfterAck::OpenLogin {
+            trigger_id: "t1".into(),
+            agent: AgentKind::Claude,
+        };
+        Ok(Kept {
+            ack: None,
+            then: Some(then),
+        })
+    }
+
+    /// Waits for the server to read the ack; an ack still unsent would never arrive.
+    fn after_ack(&self, then: AfterAck) {
+        let acked = (0..100).any(|_| {
+            std::thread::sleep(Duration::from_millis(20));
+            self.0.load(Ordering::SeqCst)
+        });
+        assert!(acked, "the modal opened before the ack was sent");
+        self.1.borrow_mut().push(then);
+    }
+}
+
+#[test]
+fn the_login_modal_opens_after_the_ack() {
+    let acked = Arc::new(AtomicBool::new(false));
+    let seen = Arc::clone(&acked);
+    let command = json!({"type":"slash_commands","envelope_id":"env-s","payload":{"text":"login","user_id":"U1","channel_id":"C1","trigger_id":"t1"}});
+    let (url, server) = fake_slack(move |ws| {
+        send(ws, &command);
+        assert!(ws.read().expect("ack").is_text());
+        seen.store(true, Ordering::SeqCst);
+        std::thread::sleep(Duration::from_millis(300));
+        ws.close(None).expect("close");
+    });
+    let intake = Opening(acked, RefCell::default());
+    session(&url, &intake).expect("session ends cleanly");
+    server.join().expect("server");
+    let want = AfterAck::OpenLogin {
+        trigger_id: "t1".into(),
+        agent: AgentKind::Claude,
+    };
+    assert_eq!(intake.1.into_inner(), vec![want]);
 }

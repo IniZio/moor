@@ -32,6 +32,20 @@ impl AgentKind {
         }
     }
 
+    /// The agent's name in a sentence, such as `Claude`.
+    pub(crate) const fn label(self) -> &'static str {
+        match self {
+            Self::Claude => "Claude",
+        }
+    }
+
+    /// What the login modal asks this agent's user to paste.
+    pub(crate) const fn login_prompt(self) -> &'static str {
+        match self {
+            Self::Claude => crate::coordinator::claude::LOGIN_PROMPT,
+        }
+    }
+
     /// The agent called `name`.
     pub(crate) fn parse(name: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|kind| kind.name() == name)

@@ -146,6 +146,28 @@ impl Api {
             .map(|_| ())
     }
 
+    /// Opens the modal `view` for the user whose action carried `trigger_id`.
+    pub(super) fn open_view(
+        &self,
+        bot_token: &Secret,
+        trigger_id: &str,
+        view: &Value,
+    ) -> Result<(), ApiError> {
+        let body = json!({"trigger_id": trigger_id, "view": view});
+        self.call(bot_token, "views.open", &body).map(|_| ())
+    }
+
+    /// Replaces the open modal `view_id` with `view`.
+    pub(super) fn update_view(
+        &self,
+        bot_token: &Secret,
+        view_id: &str,
+        view: &Value,
+    ) -> Result<(), ApiError> {
+        let body = json!({"view_id": view_id, "view": view});
+        self.call(bot_token, "views.update", &body).map(|_| ())
+    }
+
     /// Sends the JSON `body` to Web API `method` with the bot token.
     fn call(&self, bot_token: &Secret, method: &str, body: &Value) -> Result<Value, ApiError> {
         let url = format!("{}/{method}", self.base);
