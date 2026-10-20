@@ -12,6 +12,7 @@ use sha2::{Digest, Sha256};
 use super::{call, envelope_value, field, items, json_ok, text};
 use crate::client::Client;
 use crate::http::{Download, Fill, HttpRequest, HttpResponse, Reply};
+use range::Wanted;
 
 /// Content type used when the record's value is not a safe header value.
 const FALLBACK_TYPE: &str = "application/octet-stream";
@@ -76,31 +77,31 @@ fn find_record(value: &Value, file: &str, v: Option<u32>) -> Option<Record> {
         .max_by_key(|r| r.version)
 }
 
-/// Passes bytes straight to the body but holds back the file's last byte until the whole
-/// file has checked out against its record, so a bad file never arrives complete.
+/// Passes bytes straight to the body but holds back the last byte until the whole body has
+/// checked out, so a bad file never arrives complete.
 struct Relay {
-    /// Bytes the record says the file holds.
+    /// Bytes the body holds.
     want: u64,
     /// Bytes received so far.
     got: u64,
-    /// Running digest of the bytes received.
-    digest: Sha256,
-    /// The file's last byte, once it has arrived.
+    /// Running digest of a whole file and the sha256 its record names; a byte range has none.
+    check: Option<(Sha256, String)>,
+    /// The body's last byte, once it has arrived.
     last: Option<u8>,
 }
 
 impl Relay {
-    /// A relay for a file of `want` bytes.
-    fn new(want: u64) -> Self {
+    /// A relay for a body of `want` bytes, checked against `sha256` when given.
+    fn new(want: u64, sha256: Option<String>) -> Self {
         Self {
             want,
             got: 0,
-            digest: Sha256::new(),
+            check: sha256.map(|sha| (Sha256::new(), sha)),
             last: None,
         }
     }
 
-    /// Takes one frame and passes it to `out`, short of the file's last byte.
+    /// Takes one frame and passes it to `out`, short of the body's last byte.
     fn push(
         &mut self,
         data: &[u8],
@@ -110,7 +111,9 @@ impl Relay {
         if self.got > self.want {
             return Err(io::Error::other("more bytes than the artifact holds"));
         }
-        self.digest.update(data);
+        if let Some((digest, _)) = &mut self.check {
+            digest.update(data);
+        }
         match data.split_last() {
             Some((&last, rest)) if self.got == self.want => {
                 self.last = Some(last);
@@ -120,31 +123,29 @@ impl Relay {
         }
     }
 
-    /// Passes on the last byte if size and digest match `sha256`.
-    fn finish(
-        self,
-        sha256: &str,
-        out: &mut dyn FnMut(&[u8]) -> io::Result<()>,
-    ) -> Result<(), HttpResponse> {
+    /// Passes on the last byte if the size, and the digest when checked, match.
+    fn finish(self, out: &mut dyn FnMut(&[u8]) -> io::Result<()>) -> Result<(), HttpResponse> {
         if self.got != self.want {
             return Err(bad_gateway("artifact size mismatch"));
         }
-        if !format!("{:x}", self.digest.finalize()).eq_ignore_ascii_case(sha256) {
-            return Err(bad_gateway("artifact checksum mismatch"));
+        if let Some((digest, sha256)) = self.check {
+            if !format!("{:x}", digest.finalize()).eq_ignore_ascii_case(&sha256) {
+                return Err(bad_gateway("artifact checksum mismatch"));
+            }
         }
         out(self.last.as_slice()).map_err(|e| bad_gateway(e.to_string()))
     }
 }
 
-/// Streams `read` from the controller into the body, checked against `record`.
-fn fill(client: Client, read: ArtifactReadReq, record: Record) -> Fill {
+/// Streams `read` from the controller into the body, checked against `sha256` when given.
+fn fill(client: Client, read: ArtifactReadReq, sha256: Option<String>) -> Fill {
     Box::new(move |out| {
-        let mut relay = Relay::new(record.size);
+        let mut relay = Relay::new(read.len, sha256);
         let envelope = client
             .read(Request::ArtifactRead(read), |data| relay.push(data, out))
             .map_err(|e| bad_gateway(e.to_string()))?;
         envelope_value(envelope)?;
-        relay.finish(&record.sha256, out)
+        relay.finish(out)
     })
 }
 
@@ -154,6 +155,7 @@ fn file_headers(content_type: &str, file: &str) -> Vec<(&'static str, String)> {
         ("X-Content-Type-Options", "nosniff".to_owned()),
         ("Content-Security-Policy", "sandbox".to_owned()),
         ("Cache-Control", "no-store".to_owned()),
+        ("Accept-Ranges", "bytes".to_owned()),
     ];
     if !(content_type.starts_with("image/") || content_type.starts_with("video/")) {
         headers.push((
@@ -164,7 +166,8 @@ fn file_headers(content_type: &str, file: &str) -> Vec<(&'static str, String)> {
     headers
 }
 
-/// `GET /boxes/{name}/artifacts/{file}` with optional `?v=N`.
+/// `GET /boxes/{name}/artifacts/{file}` with optional `?v=N` and an optional single
+/// `Range: bytes=` header.
 pub(super) fn read(client: &Client, req: &HttpRequest, name: &str, file: &str) -> Reply {
     match download(client, req, name, file) {
         Ok(d) => Reply::Download(d),
@@ -203,21 +206,37 @@ fn download(
     } else {
         record.content_type.clone()
     };
+    let mut headers = file_headers(&content_type, file);
+    let size = record.size;
+    let (status, offset, len, sha256) = match range::wanted(req.header("range"), size) {
+        Wanted::Whole => ("200 OK", 0, size, Some(record.sha256)),
+        Wanted::Part { start, end } => {
+            headers.push(("Content-Range", format!("bytes {start}-{end}/{size}")));
+            ("206 Partial Content", start, end - start + 1, None)
+        }
+        Wanted::Unsatisfiable => {
+            let mut resp = HttpResponse::text("416 Range Not Satisfiable", "bad range");
+            resp.headers
+                .push(("Content-Range", format!("bytes */{size}")));
+            return Err(resp);
+        }
+    };
     let read = ArtifactReadReq {
         box_name,
         name: file.to_owned(),
         version: Some(record.version),
-        offset: 0,
-        len: record.size,
+        offset,
+        len,
     };
     Ok(Download {
-        status: "200 OK",
-        headers: file_headers(&content_type, file),
+        status,
+        headers,
         content_type,
-        len: record.size,
-        fill: fill(client.clone(), read, record),
+        len,
+        fill: fill(client.clone(), read, sha256),
     })
 }
 
+mod range;
 #[cfg(test)]
 mod tests;

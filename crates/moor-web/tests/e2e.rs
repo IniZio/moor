@@ -10,7 +10,11 @@
 
 mod support;
 
+use std::fs::{self, File};
+use std::io::Write;
+
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use support::Stack;
 
 /// Parses a JSON reply body.
@@ -170,4 +174,138 @@ fn unknown_repo_fails_before_any_root_is_opened() {
     );
 
     assert!(root_for(&stack, &key).is_none(), "root exists\n{diag}");
+}
+
+/// Size of the large artifact.
+const BIG: u64 = 500 * 1024 * 1024;
+
+/// Length of the repeating test pattern; not a multiple of a bytes frame.
+const PERIOD: usize = 1024 * 1024 + 13;
+
+/// Most a process may grow while it moves the large artifact, in KiB.
+const GROWTH_KIB: u64 = 16 * 1024;
+
+/// The pattern the large artifact repeats.
+fn pattern() -> Vec<u8> {
+    (0..PERIOD)
+        .map(|i| u8::try_from(i % 251).unwrap())
+        .collect()
+}
+
+/// Whether `piece`, found at `offset` of the large artifact, holds the pattern's bytes.
+fn in_pattern(block: &[u8], offset: u64, piece: &[u8]) -> bool {
+    let start = usize::try_from(offset % PERIOD as u64).unwrap();
+    let first = (PERIOD - start).min(piece.len());
+    piece[..first] == block[start..start + first] && piece[first..] == block[..piece.len() - first]
+}
+
+/// Stores `big.bin` of `size` pattern bytes for a Box named `big` the way a collect leaves it:
+/// a row in the controller's database and the file under its state directory.
+fn publish_pattern(stack: &Stack, block: &[u8], size: u64) {
+    stack.controller(json!({"cmd": "sessions"}));
+    let state = stack.state_dir();
+    let db = rusqlite::Connection::open(state.join("moor.db")).unwrap();
+    db.execute(
+        "INSERT INTO boxes (name, repo, state, created_at, updated_at) \
+         VALUES ('big', 'demo', 'ready', 0, 0)",
+        [],
+    )
+    .unwrap();
+    let id = db.last_insert_rowid();
+    let dir = state.join("artifacts").join(id.to_string()).join("v1");
+    fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("big.bin");
+    let mut file = File::create(&path).unwrap();
+    let mut digest = Sha256::new();
+    let mut left = size;
+    while left > 0 {
+        let n = usize::try_from(left.min(PERIOD as u64)).unwrap();
+        file.write_all(&block[..n]).unwrap();
+        digest.update(&block[..n]);
+        left -= n as u64;
+    }
+    db.execute(
+        "INSERT INTO artifacts (box, name, version, kind, content_type, size, sha256, path, \
+         created_at) VALUES (?1, 'big.bin', 1, 'file', 'application/octet-stream', ?2, ?3, ?4, 0)",
+        rusqlite::params![
+            id,
+            i64::try_from(size).unwrap(),
+            format!("{:x}", digest.finalize()),
+            path.to_str().unwrap()
+        ],
+    )
+    .unwrap();
+}
+
+/// The value of `key` in `/proc/<pid>/status`, in KiB.
+fn status_kib(pid: u32, key: &str) -> u64 {
+    let status = fs::read_to_string(format!("/proc/{pid}/status")).unwrap();
+    status
+        .lines()
+        .find_map(|l| l.strip_prefix(key)?.strip_prefix(':'))
+        .and_then(|v| v.trim().trim_end_matches("kB").trim().parse().ok())
+        .unwrap_or_else(|| panic!("no {key} for pid {pid}"))
+}
+
+#[test]
+#[allow(clippy::print_stderr, reason = "the RSS samples are the test's record")]
+fn a_500_mib_artifact_streams_through_in_bounded_memory() {
+    let stack = Stack::start();
+    let block = pattern();
+    publish_pattern(&stack, &block, BIG);
+    let path = "/boxes/big/artifacts/big.bin";
+    let (controller, web) = stack.pids();
+    let before = [controller, web].map(|pid| {
+        fs::write(format!("/proc/{pid}/clear_refs"), "5").unwrap();
+        status_kib(pid, "VmRSS")
+    });
+    let mut got = 0;
+    let head = stack.stream(path, "", |offset, piece| {
+        assert!(in_pattern(&block, offset, piece), "wrong bytes at {offset}");
+        got += piece.len() as u64;
+    });
+    let peak = [controller, web].map(|pid| status_kib(pid, "VmHWM"));
+    assert!(
+        head.starts_with("HTTP/1.1 200"),
+        "{head}\n{}",
+        stack.diagnostics()
+    );
+    assert_eq!(got, BIG, "{}", stack.diagnostics());
+    for (who, (b, p)) in ["controller", "moor-web"]
+        .iter()
+        .zip(before.iter().zip(peak))
+    {
+        eprintln!(
+            "{who}: rss before {b} KiB, peak during {p} KiB, growth {} KiB",
+            p - b
+        );
+        assert!(p - b <= GROWTH_KIB, "{who} grew {} KiB", p - b);
+    }
+}
+
+#[test]
+fn ranges_of_a_real_artifact_are_206_or_416() {
+    const SIZE: u64 = 3 * 1024 * 1024 + 7;
+    let stack = Stack::start();
+    let block = pattern();
+    publish_pattern(&stack, &block, SIZE);
+    let path = "/boxes/big/artifacts/big.bin";
+    let mut tail = Vec::new();
+    let head = stack.stream(path, "Range: bytes=-1000\r\n", |_, piece| {
+        tail.extend_from_slice(piece);
+    });
+    assert!(
+        head.starts_with("HTTP/1.1 206"),
+        "{head}\n{}",
+        stack.diagnostics()
+    );
+    let range = format!("Content-Range: bytes {}-{}/{SIZE}", SIZE - 1000, SIZE - 1);
+    assert!(head.contains(&range), "{head}");
+    assert!(in_pattern(&block, SIZE - 1000, &tail) && tail.len() == 1000);
+    let head = stack.stream(path, &format!("Range: bytes={SIZE}-\r\n"), |_, _| {});
+    assert!(head.starts_with("HTTP/1.1 416"), "{head}");
+    assert!(
+        head.contains(&format!("Content-Range: bytes */{SIZE}")),
+        "{head}"
+    );
 }
