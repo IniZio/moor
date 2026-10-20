@@ -46,7 +46,9 @@ impl Sandbox {
 
     fn command(&self) -> Command {
         let mut cmd = Command::new(env!("CARGO_BIN_EXE_moor"));
-        cmd.env_clear()
+        // Outside any git checkout, so `start` never fetches a live origin.
+        cmd.current_dir(&self.root)
+            .env_clear()
             .env("PATH", "/usr/bin:/bin")
             .env("HOME", self.root.join("home"))
             .env("MOOR_STATE_DIR", self.root.join("state"));
@@ -141,6 +143,10 @@ impl Client {
     /// Sends one raw line and returns the next frame.
     fn send(&mut self, line: &str) -> Value {
         writeln!(self.writer, "{line}").unwrap();
+        self.next_frame()
+    }
+
+    fn next_frame(&mut self) -> Value {
         let mut reply = String::new();
         self.reader.read_line(&mut reply).unwrap();
         serde_json::from_str(&reply).unwrap()
@@ -151,9 +157,19 @@ impl Client {
         assert_eq!(reply, json!({"frame": "hello", "protocol": PROTOCOL}));
     }
 
+    /// Sends one request and returns its envelope, skipping the progress frames
+    /// a long verb may send first.
     fn request(&mut self, id: &str, request: &str) -> Value {
         let frame = format!(r#"{{"frame":"request","id":"{id}","request":{request}}}"#);
-        let reply = self.send(&frame);
+        let mut reply = self.send(&frame);
+        // One progress frame per five seconds; 12 bound the wait at about a minute.
+        for _ in 0..12 {
+            if field(&reply, "frame") != "progress" {
+                break;
+            }
+            assert_eq!(field(&reply, "id"), id, "{reply}");
+            reply = self.next_frame();
+        }
         assert_eq!(field(&reply, "frame"), "response", "{reply}");
         assert_eq!(field(&reply, "id"), id);
         field(&reply, "envelope").clone()
@@ -263,13 +279,7 @@ fn upgrade_guard_sees_a_controller_on_a_custom_socket() {
     let controller = Controller::start(&sandbox);
     let state = sandbox.root.join("state");
     let db = state.join("moor.db");
-    // The controller opens its store once at startup; swap in an old one after that.
-    for _ in 0..500 {
-        if schema_version(&db).is_some() {
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(10));
-    }
+    Client::connect(&sandbox.socket).hello();
     let old = state.join("old.db");
     rusqlite::Connection::open(&old)
         .unwrap()
