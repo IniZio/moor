@@ -20,6 +20,7 @@ use std::thread;
 use std::time::Duration;
 
 use moor_core::config::{parse_controller, parse_repo, MoorYamlSource, RepoTable, SlackConfig};
+use moor_core::ErrorKind;
 
 use crate::env::{Env, CONTROLLER_LOCK};
 use crate::slack::Slack;
@@ -30,6 +31,9 @@ type Sink = Arc<Mutex<dyn Write + Send>>;
 
 /// Exit code for an unusable config file.
 const USAGE: u8 = 2;
+
+/// Exit code for a state dir at another schema version, as for a refused CLI command.
+const REFUSED: u8 = 3;
 
 /// Serves the controller until killed; returns the process exit code.
 ///
@@ -106,6 +110,14 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
         None => state_socket(&env)
             .ok_or_else(|| failed("no state directory: set state_dir or MOOR_STATE_DIR".into()))?,
     };
+    Moor::open_store(&env).map_err(|e| Stop {
+        code: match e.kind {
+            ErrorKind::Refused => REFUSED,
+            ErrorKind::Usage => USAGE,
+            _ => 1,
+        },
+        message: e.error.to_string(),
+    })?;
     let state_lock = env
         .state_dir()
         .map(|dir| take_lock(&dir.join(CONTROLLER_LOCK), &socket))
