@@ -119,7 +119,7 @@ fn a_proxy_runs_no_box_step_and_the_prelude_writes_the_ca_and_exports_the_proxy(
         "{script}"
     );
     assert!(
-        script.contains("printf '%s' 'CA-PEM' >\"$HOME/.moor-proxy/ca.pem.$$\""),
+        script.contains("moor_ca='CA-PEM'; mkdir -p \"$HOME/.moor-proxy\""),
         "{script}"
     );
 }

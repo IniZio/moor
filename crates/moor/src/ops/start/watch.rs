@@ -3,6 +3,7 @@
 use std::time::Duration;
 
 use moor_core::domain::decision::{Decision, ExtraEvent, Field};
+use moor_core::exec_env::CA_WRITE_FAILED;
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::{PaneRef, SurfaceError};
 use moor_core::view::{AgentLaunchView, LaunchFailure};
@@ -49,12 +50,20 @@ pub(super) fn run(cx: &Cx, store: &Store, id: BoxId, agent: AgentLaunchView) -> 
     }
 }
 
-/// The failure for an agent that exited with `code` right after launch.
+/// The failure for an agent that exited with `code` right after launch. A launch the prelude
+/// stopped because the Proxy CA could not be written carries the prelude's message.
 fn exited(cx: &Cx, code: i32, tail: &str) -> LaunchFailure {
-    let message = if code == 127 {
-        "the agent exited 127: its command was not found on the Box".to_owned()
-    } else {
-        format!("the agent exited {code} right after launch")
+    let ca = tail.lines().rev().find_map(|l| {
+        l.trim()
+            .strip_prefix("moor: ")
+            .filter(|m| m.starts_with(CA_WRITE_FAILED))
+    });
+    let message = match ca {
+        Some(m) => m.to_owned(),
+        None if code == 127 => {
+            "the agent exited 127: its command was not found on the Box".to_owned()
+        }
+        None => format!("the agent exited {code} right after launch"),
     };
     let tail = last_lines(tail, TAIL_LINES);
     LaunchFailure {

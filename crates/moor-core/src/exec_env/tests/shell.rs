@@ -26,11 +26,16 @@ impl TempHome {
     /// The prelude lines that write the CA and build the bundle, run under `sh` with this `HOME`
     /// and a `sudo` that always fails; the child prints the bundle path the exports use.
     fn spawn(&self) -> std::process::Child {
-        let got = build(&ctx(&[], Some(PEM), None), Purpose::Run).unwrap();
+        self.spawn_ca(PEM)
+    }
+
+    /// [`Self::spawn`] with `pem` as the CA.
+    fn spawn_ca(&self, pem: &str) -> std::process::Child {
+        let got = build(&ctx(&[], Some(pem), None), Purpose::Run).unwrap();
         let from = got
             .prelude
             .iter()
-            .position(|l| l.starts_with("mkdir -p \"$HOME/.moor-proxy\""))
+            .position(|l| l.starts_with("moor_ca="))
             .unwrap();
         let to = got
             .prelude
@@ -178,4 +183,153 @@ fn a_writable_home_runs_the_command_after_the_prelude() {
     assert!(out.status.success(), "{out:?}");
     assert_eq!(String::from_utf8_lossy(&out.stdout), "the command ran\n");
     assert_eq!(home.read("ca.pem"), PEM);
+}
+
+/// The exit status, stdout and stderr of a wrapped `echo` run with `home`.
+fn echo_in(home: &TempHome) -> (Option<i32>, String, String) {
+    let out = home.exec(vec!["echo".to_owned(), "the command ran".to_owned()]);
+    (
+        out.status.code(),
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
+}
+
+/// Asserts that the exec stopped before the command, naming `name` in the proxy directory.
+fn assert_stopped_naming(home: &TempHome, name: &str) {
+    let (code, stdout, stderr) = echo_in(home);
+    assert_eq!(code, Some(1), "{stdout}{stderr}");
+    assert!(!stdout.contains("the command ran"), "{stdout}");
+    let file = home.proxy_dir().join(name);
+    let message = format!("the Proxy CA could not be written to {}", file.display());
+    assert!(stderr.contains(&message), "{stderr}");
+}
+
+#[test]
+fn a_directory_or_symlink_at_the_ca_or_bundle_stops_the_exec_and_is_left_alone() {
+    for name in ["ca.pem", "ca-bundle.pem"] {
+        for plant in ["dir", "link to file", "link to dir"] {
+            let home = TempHome::new();
+            std::fs::create_dir_all(home.proxy_dir()).unwrap();
+            let outside = home.0.join("outside");
+            let at = home.proxy_dir().join(name);
+            match plant {
+                "dir" => std::fs::create_dir(&at).unwrap(),
+                "link to file" => {
+                    std::fs::write(&outside, "outside").unwrap();
+                    std::os::unix::fs::symlink(&outside, &at).unwrap();
+                }
+                _ => {
+                    std::fs::create_dir(&outside).unwrap();
+                    std::os::unix::fs::symlink(&outside, &at).unwrap();
+                }
+            }
+            assert_stopped_naming(&home, name);
+            let kept = std::fs::symlink_metadata(&at).unwrap().file_type();
+            assert_eq!(kept.is_dir(), plant == "dir", "{name} {plant}");
+            assert_eq!(kept.is_symlink(), plant != "dir", "{name} {plant}");
+            if plant == "link to file" {
+                assert_eq!(std::fs::read_to_string(&outside).unwrap(), "outside");
+            }
+            if plant == "link to dir" {
+                assert_eq!(std::fs::read_dir(&outside).unwrap().count(), 0);
+            }
+        }
+    }
+}
+
+#[test]
+fn a_bundle_that_cannot_be_written_stops_the_exec_before_the_command() {
+    let home = TempHome::new();
+    home.run();
+    std::fs::remove_file(home.proxy_dir().join("ca-bundle.pem")).unwrap();
+    std::fs::set_permissions(
+        home.proxy_dir(),
+        std::os::unix::fs::PermissionsExt::from_mode(0o555),
+    )
+    .unwrap();
+    assert_stopped_naming(&home, "ca-bundle.pem");
+}
+
+#[test]
+fn an_unchanged_ca_and_bundle_are_kept_without_writing_a_temp_file() {
+    let home = TempHome::new();
+    home.run();
+    std::fs::set_permissions(
+        home.proxy_dir(),
+        std::os::unix::fs::PermissionsExt::from_mode(0o555),
+    )
+    .unwrap();
+    let (code, stdout, stderr) = echo_in(&home);
+    assert_eq!(code, Some(0), "{stdout}{stderr}");
+    assert_eq!(stdout, "the command ran\n");
+}
+
+#[test]
+fn a_reader_never_sees_a_partial_ca_while_preludes_alternate_two_cas() {
+    let pem = |c: char| {
+        format!(
+            "-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n",
+            c.to_string().repeat(40_000)
+        )
+    };
+    let (a, b) = (pem('A'), pem('B'));
+    let home = TempHome::new();
+    assert!(home.spawn_ca(&a).wait().unwrap().success());
+    let ca = home.proxy_dir().join("ca.pem");
+    let stop = std::sync::atomic::AtomicBool::new(false);
+    let (reads, partial) = std::thread::scope(|s| {
+        let reader = s.spawn(|| {
+            let (mut reads, mut partial) = (0, 0);
+            while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                let got = std::fs::read_to_string(&ca).unwrap();
+                reads += 1;
+                if got != a && got != b {
+                    partial += 1;
+                }
+            }
+            (reads, partial)
+        });
+        let writers: Vec<_> = (0..6)
+            .map(|i| {
+                let pem = if i % 2 == 0 { &a } else { &b };
+                let home = &home;
+                s.spawn(move || {
+                    for _ in 0..15 {
+                        assert!(home.spawn_ca(pem).wait().unwrap().success());
+                    }
+                })
+            })
+            .collect();
+        for w in writers {
+            w.join().unwrap();
+        }
+        stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        reader.join().unwrap()
+    });
+    assert!(reads > 0);
+    assert_eq!(partial, 0, "{partial} of {reads} reads saw a partial CA");
+    assert_eq!(home.names(), ["ca-bundle.pem", "ca.pem"]);
+}
+
+#[test]
+fn keytool_imports_the_ca_the_prelude_just_wrote() {
+    let home = TempHome::new();
+    let keytool = home.0.join("bin/keytool");
+    std::fs::write(
+        &keytool,
+        "#!/bin/sh\nwhile [ $# -gt 0 ]; do\n  case \"$1\" in\n    -file) cat \"$2\" > \"$HOME/imported.pem\";;\n    -keystore|-destkeystore) : >> \"$2\";;\n  esac\n  shift\ndone\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(
+        &keytool,
+        std::os::unix::fs::PermissionsExt::from_mode(0o755),
+    )
+    .unwrap();
+    let (code, stdout, stderr) = echo_in(&home);
+    assert_eq!(code, Some(0), "{stdout}{stderr}");
+    assert_eq!(
+        std::fs::read_to_string(home.0.join("imported.pem")).unwrap(),
+        PEM
+    );
 }
