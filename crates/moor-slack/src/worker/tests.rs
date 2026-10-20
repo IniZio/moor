@@ -40,15 +40,20 @@ fn mention(event_id: &str, user: &str, channel: &str, ts: &str, thread: Option<&
     }
 }
 
-/// Records `m` for user `U1` in channel `C1`.
-fn record_one(db: &Db, m: &Mention) -> Option<Job> {
+/// Records `m` with user `U1` and channel `C1` allowed.
+fn try_record(db: &Db, m: &Mention) -> rusqlite::Result<Option<Job>> {
     let channels = vec!["C1".to_owned()];
     let users = vec!["U1".to_owned()];
     let allow = Allow {
         channels: &channels,
         users: &users,
     };
-    record(m, db, &allow, 1_000).unwrap()
+    record(m, db, &allow, 1_000)
+}
+
+/// Records `m` with user `U1` and channel `C1` allowed; the write must succeed.
+fn record_one(db: &Db, m: &Mention) -> Option<Job> {
+    try_record(db, m).unwrap()
 }
 
 /// Records the standard mention in thread `10.5` and returns its `starting` row.
@@ -179,6 +184,23 @@ fn redelivered_event_records_nothing() {
     recorded_start(&db);
     let again = record_one(&db, &mention("Ev1", "U1", "C1", "10.5", None));
     assert_eq!(again, None);
+}
+
+#[test]
+fn failed_record_keeps_nothing_so_the_resent_mention_starts() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = db(dir.path());
+    let other = rusqlite::Connection::open(dir.path().join("slack.db")).unwrap();
+    other
+        .execute_batch(
+            "CREATE TRIGGER no_rows BEFORE INSERT ON slack_threads \
+             BEGIN SELECT RAISE(ABORT, 'disk full'); END;",
+        )
+        .unwrap();
+    let m = mention("Ev1", "U1", "C1", "10.5", None);
+    assert!(try_record(&db, &m).is_err());
+    other.execute_batch("DROP TRIGGER no_rows;").unwrap();
+    assert!(matches!(try_record(&db, &m), Ok(Some(Job::Start(_)))));
 }
 
 #[test]
