@@ -250,3 +250,44 @@ fn pump(reader: &mut dyn Read, mut out: Option<&mut File>) -> io::Result<(u64, S
     }
     Ok((total, format!("{:x}", hasher.finalize())))
 }
+
+#[cfg(test)]
+mod tests {
+    use std::io::{self, Read};
+
+    use super::{pump, CHUNK};
+
+    /// Serves `left` bytes and records the largest buffer it was asked to fill.
+    struct Probe {
+        left: u64,
+        widest: usize,
+    }
+
+    impl Read for Probe {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            self.widest = self.widest.max(buf.len());
+            let n = buf
+                .len()
+                .min(usize::try_from(self.left).unwrap_or(usize::MAX));
+            buf.iter_mut().take(n).for_each(|b| *b = b'x');
+            self.left -= n as u64;
+            Ok(n)
+        }
+    }
+
+    #[test]
+    fn pump_reads_a_large_source_through_one_fixed_buffer() {
+        let big = 50 * 1024 * 1024;
+        let mut probe = Probe {
+            left: big,
+            widest: 0,
+        };
+        let (total, _) = pump(&mut probe, None).unwrap();
+        assert_eq!(total, big);
+        assert!(
+            probe.widest <= CHUNK,
+            "asked for {} bytes at once",
+            probe.widest
+        );
+    }
+}
