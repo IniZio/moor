@@ -24,6 +24,7 @@ struct Fx {
     _dir: tempfile::TempDir,
     cx: Cx,
     engine: Arc<FakeEngine>,
+    driver: Arc<FakeDriver>,
     id: BoxId,
 }
 
@@ -57,6 +58,7 @@ fn fx(engine: FakeEngine, live: bool) -> Fx {
         _dir: dir,
         cx,
         engine,
+        driver,
         id,
     }
 }
@@ -147,6 +149,15 @@ fn a_ready_box_opens_the_next_session_seeded_with_the_text() {
         store.live_session(f.id).unwrap().unwrap().pane.as_deref(),
         Some("p-1")
     );
+}
+
+#[test]
+fn an_open_makes_no_box_call() {
+    let f = fx(FakeEngine::new(), false);
+    let before = f.driver.calls();
+    run(&f.cx, &req()).unwrap();
+    assert_eq!(f.engine.launches().len(), 1);
+    assert_eq!(f.driver.calls(), before);
 }
 
 #[test]

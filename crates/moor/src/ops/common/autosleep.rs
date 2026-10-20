@@ -93,7 +93,7 @@ fn try_sleep(cx: &Cx, store: &Store, id: BoxId) -> Result<(), CommandError> {
 /// The agent's ssh session would otherwise outlive the Box until its keepalive gave up. A wake
 /// finds the pane gone and relaunches the agent. A Box that stays awake gets its tunnel back
 /// and its agent relaunched. Both are best effort: the sleep result is what the caller needs
-/// to see. Stale credential directories are swept first, because a sleeping Box keeps its disk.
+/// to see.
 pub(crate) fn sleep_parked(
     cx: &Cx,
     store: &Store,

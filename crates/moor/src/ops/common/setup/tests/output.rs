@@ -37,6 +37,25 @@ fn a_passing_setup_returns_the_tail_of_its_log() {
 }
 
 #[test]
+fn the_host_copy_of_the_setup_log_equals_the_box_log() {
+    let d = tempfile::tempdir().unwrap();
+    let log = b"moor setup: $ a\n\x1b[31mred\x1b[0m token=abc \xff\n".to_vec();
+    let r = rig(d.path(), FakeDriver::new().copy_text(&log));
+    run_setup(
+        &r.cx,
+        &r.handle,
+        &r.workdir,
+        d.path(),
+        &cfg(&["a"], &[]),
+        SyncMode::Full,
+    );
+    assert_eq!(
+        std::fs::read(d.path().join(".moor/setup.log")).unwrap(),
+        log
+    );
+}
+
+#[test]
 fn a_log_that_cannot_be_copied_leaves_the_tail_empty() {
     let d = tempfile::tempdir().unwrap();
     let r = rig(d.path(), FakeDriver::new());

@@ -167,3 +167,14 @@ fn the_relaunch_goes_ahead_when_the_tunnel_never_settles() {
     assert_eq!(engine.launches().len(), 2);
     assert_eq!(elapsed_ms(&w, before), 60_000);
 }
+
+#[test]
+fn a_relaunch_after_wake_makes_no_box_call() {
+    let (w, engine, id) = started();
+    set_agent_session(&w, id, "agent-1");
+    gone(&w);
+    let before = w.driver.calls();
+    revive(&w, id);
+    assert_eq!(engine.launches().len(), 2);
+    assert_eq!(w.driver.calls(), before);
+}
