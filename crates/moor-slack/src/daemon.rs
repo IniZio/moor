@@ -48,7 +48,7 @@ struct Loaded {
     app_token: Secret,
     /// Bot token for posting replies.
     bot_token: Secret,
-    /// `slack.db`, opened and migrated; the Socket Mode thread records mentions in it.
+    /// `slack.db`, opened at this build's schema; the Socket Mode thread records mentions in it.
     db: Db,
     /// Path of `slack.db`, which the worker opens again on its own thread.
     db_path: PathBuf,

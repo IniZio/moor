@@ -1,10 +1,12 @@
 //! Tests for `slack.db`: event dedupe and the thread rows.
 
+use std::path::Path;
+
 use moor_core::name::{BoxId, BoxName};
 
-use super::{Db, SlackThread, ThreadState};
+use super::{Db, SlackThread, ThreadState, SCHEMA_VERSION};
 
-fn open(dir: &std::path::Path) -> Db {
+fn open(dir: &Path) -> Db {
     Db::open(&dir.join("slack.db")).unwrap()
 }
 
@@ -87,12 +89,58 @@ fn starting_rows_are_listed_oldest_first_and_forgotten() {
     assert!(db.thread("C1", "3.3").unwrap().is_some());
 }
 
+/// Writes a `slack.db` at `version` with one table, as an older or newer build would leave it.
+fn write_at_version(path: &Path, version: i64) {
+    let conn = rusqlite::Connection::open(path).unwrap();
+    conn.execute_batch("CREATE TABLE old_rows (id INTEGER);")
+        .unwrap();
+    conn.pragma_update(None, "user_version", version).unwrap();
+}
+
+/// Every file in `dir` with its bytes.
+fn snapshot(dir: &Path) -> Vec<(String, Vec<u8>)> {
+    let mut files: Vec<_> = std::fs::read_dir(dir)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .map(|p| {
+            let name = p.file_name().unwrap().to_string_lossy().into_owned();
+            (name, std::fs::read(&p).unwrap())
+        })
+        .collect();
+    files.sort();
+    files
+}
+
 #[test]
 fn newer_schema_is_refused() {
+    for found in [1, SCHEMA_VERSION - 1, SCHEMA_VERSION + 1] {
+        let dir = tempfile::tempdir().unwrap();
+        write_at_version(&dir.path().join("slack.db"), found);
+        let err = Db::open(&dir.path().join("slack.db")).err().unwrap();
+        let want = format!(
+            "slack.db is schema {found} and this build needs {SCHEMA_VERSION}. Start with a fresh slack.db."
+        );
+        assert_eq!(err, want);
+    }
+}
+
+#[test]
+fn refused_file_is_left_as_found() {
+    for version in [0, 1, 99] {
+        let dir = tempfile::tempdir().unwrap();
+        write_at_version(&dir.path().join("slack.db"), version);
+        let before = snapshot(dir.path());
+        assert!(Db::open(&dir.path().join("slack.db")).is_err());
+        assert_eq!(snapshot(dir.path()), before, "version {version}");
+    }
+}
+
+#[test]
+fn new_file_gets_the_schema_once_and_opens_again() {
     let dir = tempfile::tempdir().unwrap();
-    let db = open(dir.path());
-    db.conn.pragma_update(None, "user_version", 99).unwrap();
-    drop(db);
-    let err = Db::open(&dir.path().join("slack.db")).err().unwrap();
-    assert!(err.contains("newer"), "{err}");
+    let path = dir.path().join("slack.db");
+    let first = Db::open(&path).unwrap();
+    let second = Db::open(&path).unwrap();
+    assert!(first.event_once("Ev1", 1).unwrap());
+    assert!(!second.event_once("Ev1", 2).unwrap());
 }

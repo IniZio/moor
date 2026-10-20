@@ -10,8 +10,12 @@ use rusqlite::{params, Connection, OptionalExtension, Row, Transaction, Transact
 /// How long a writer waits on a locked database.
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Ordered, additive migrations; entry `n` moves `user_version` from `n` to `n + 1`.
-const MIGRATIONS: &[&str] = &["
+/// The schema version this build writes and reads. A schema change edits [`SCHEMA`] in place
+/// and raises this number; there are no migrations, so a file at any other version is refused.
+const SCHEMA_VERSION: i64 = 2;
+
+/// The whole schema, created in an empty file.
+const SCHEMA: &str = "
     CREATE TABLE slack_events (event_id TEXT PRIMARY KEY, seen_at INTEGER NOT NULL);
     CREATE TABLE slack_threads (
         channel TEXT NOT NULL,
@@ -29,7 +33,7 @@ const MIGRATIONS: &[&str] = &["
         PRIMARY KEY (channel, thread_ts)
     );
     CREATE INDEX slack_threads_box ON slack_threads (box_id);
-"];
+";
 
 /// Columns of a thread row, in the order [`thread_row`] reads them.
 const THREAD_COLUMNS: &str =
@@ -75,22 +79,24 @@ pub(crate) struct Db {
 }
 
 impl Db {
-    /// Opens (creating if needed) the database at `path` and applies missing migrations.
+    /// Opens the database at `path`, creating the schema when the file is new or empty.
     ///
     /// # Errors
-    /// Returns the `SQLite` error text, or says so when the file was written by a newer build.
+    /// Returns the `SQLite` error text, or says to start with a fresh `slack.db` when the file
+    /// is at another schema version. A refused file is left exactly as it was found.
     pub(crate) fn open(path: &Path) -> Result<Self, String> {
         let mut conn = Connection::open(path).map_err(|e| e.to_string())?;
-        migrate(&mut conn).map_err(|e| e.to_string())?;
-        let known = i64::try_from(MIGRATIONS.len()).unwrap_or(i64::MAX);
-        let found: i64 = conn
-            .query_row("PRAGMA user_version", [], |r| r.get(0))
-            .map_err(|e| e.to_string())?;
-        if found > known {
+        conn.busy_timeout(BUSY_TIMEOUT).map_err(|e| e.to_string())?;
+        create_if_empty(&mut conn).map_err(|e| e.to_string())?;
+        let found = version(&conn).map_err(|e| e.to_string())?;
+        if found != SCHEMA_VERSION {
             return Err(format!(
-                "slack.db schema {found} is newer than this build knows ({known})"
+                "slack.db is schema {found} and this build needs {SCHEMA_VERSION}. \
+                 Start with a fresh slack.db."
             ));
         }
+        conn.execute_batch("PRAGMA journal_mode = WAL;")
+            .map_err(|e| e.to_string())?;
         Ok(Self { conn })
     }
 
@@ -184,16 +190,23 @@ impl Db {
     }
 }
 
-/// Applies the migrations not yet recorded in `user_version`, in one write transaction so
-/// two connections that open at once cannot both apply them.
-fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
-    conn.busy_timeout(BUSY_TIMEOUT)?;
-    conn.execute_batch("PRAGMA journal_mode = WAL;")?;
+/// The file's `user_version`.
+fn version(conn: &Connection) -> rusqlite::Result<i64> {
+    conn.query_row("PRAGMA user_version", [], |r| r.get(0))
+}
+
+/// Creates the schema in a file that has no version and no tables. A file at any version is
+/// only read, so a refused file keeps every byte. The check runs again inside a write
+/// transaction, so two connections that open a new file at once create the schema once.
+fn create_if_empty(conn: &mut Connection) -> rusqlite::Result<()> {
+    if version(conn)? != 0 {
+        return Ok(());
+    }
     let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
-    let found: i64 = tx.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-    for (version, sql) in (1_i64..).zip(MIGRATIONS).skip_while(|(v, _)| *v <= found) {
-        tx.execute_batch(sql)?;
-        tx.pragma_update(None, "user_version", version)?;
+    let tables: i64 = tx.query_row("SELECT count(*) FROM sqlite_master", [], |r| r.get(0))?;
+    if version(&tx)? == 0 && tables == 0 {
+        tx.execute_batch(SCHEMA)?;
+        tx.pragma_update(None, "user_version", SCHEMA_VERSION)?;
     }
     tx.commit()
 }
