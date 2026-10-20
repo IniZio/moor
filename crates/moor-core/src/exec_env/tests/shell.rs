@@ -23,8 +23,8 @@ impl TempHome {
         self.0.join(".moor-proxy")
     }
 
-    /// The prelude lines that write the CA and build the bundle, run under `sh` with this `HOME`
-    /// and a `sudo` that always fails; the child prints the bundle path the exports use.
+    /// The prelude lines that write the CA and build the bundle, run under `sh` with this `HOME`,
+    /// umask 077 and a `sudo` that always fails; the child prints the bundle path the exports use.
     fn spawn(&self) -> std::process::Child {
         self.spawn_ca(PEM)
     }
@@ -42,7 +42,7 @@ impl TempHome {
             .iter()
             .position(|l| l.starts_with("if [ -n \"$moor_sys\" ]"))
             .unwrap();
-        let mut script = got.prelude.get(from..=to).unwrap().join("\n");
+        let mut script = "umask 077\n".to_owned() + &got.prelude.get(from..=to).unwrap().join("\n");
         script.push_str("\nprintf '%s' \"$moor_bundle\"");
         let path = format!(
             "{}:{}",
@@ -95,6 +95,14 @@ impl TempHome {
         std::fs::read_to_string(self.proxy_dir().join(name)).unwrap()
     }
 
+    fn mode(&self, name: &str) -> u32 {
+        std::os::unix::fs::PermissionsExt::mode(
+            &std::fs::metadata(self.proxy_dir().join(name))
+                .unwrap()
+                .permissions(),
+        ) & 0o777
+    }
+
     fn inode(&self, name: &str) -> u64 {
         std::os::unix::fs::MetadataExt::ino(
             &std::fs::metadata(self.proxy_dir().join(name)).unwrap(),
@@ -121,6 +129,19 @@ fn the_prelude_writes_the_ca_and_bundle_under_home_with_no_temp_file_left() {
     assert_eq!(home.names(), ["ca-bundle.pem", "ca.pem"]);
     assert_eq!(home.read("ca.pem"), PEM);
     assert!(home.read("ca-bundle.pem").ends_with(PEM));
+}
+
+#[test]
+fn the_ca_and_bundle_are_readable_by_all_under_a_private_umask() {
+    let home = TempHome::new();
+    home.run();
+    assert_eq!(
+        (home.mode("ca.pem"), home.mode("ca-bundle.pem")),
+        (0o644, 0o644)
+    );
+    std::fs::write(home.proxy_dir().join("ca.pem"), "stale").unwrap();
+    home.run();
+    assert_eq!(home.mode("ca.pem"), 0o644);
 }
 
 #[test]
@@ -252,6 +273,16 @@ fn a_bundle_that_cannot_be_written_stops_the_exec_before_the_command() {
 }
 
 #[test]
+fn a_bundle_write_that_fails_part_way_stops_the_exec_and_leaves_no_temp_file() {
+    let home = TempHome::new();
+    let cat = home.0.join("bin/cat");
+    std::fs::write(&cat, "#!/bin/sh\nprintf partial\nexit 1\n").unwrap();
+    std::fs::set_permissions(&cat, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    assert_stopped_naming(&home, "ca-bundle.pem");
+    assert_eq!(home.names(), ["ca.pem"]);
+}
+
+#[test]
 fn an_unchanged_ca_and_bundle_are_kept_without_writing_a_temp_file() {
     let home = TempHome::new();
     home.run();
@@ -301,11 +332,15 @@ fn a_reader_never_sees_a_partial_ca_while_preludes_alternate_two_cas() {
                 })
             })
             .collect();
+        // The reader stops before any writer's panic is raised, so a failed write ends the test.
+        let mut all_wrote = true;
         for w in writers {
-            w.join().unwrap();
+            all_wrote &= w.join().is_ok();
         }
         stop.store(true, std::sync::atomic::Ordering::Relaxed);
-        reader.join().unwrap()
+        let read = reader.join().unwrap();
+        assert!(all_wrote, "a prelude failed to write the CA");
+        read
     });
     assert!(reads > 0);
     assert_eq!(partial, 0, "{partial} of {reads} reads saw a partial CA");
