@@ -7,6 +7,9 @@ use std::sync::Arc;
 
 use moor_core::config::RepoTable;
 
+/// File name, inside the state directory, of the lock that a running controller holds.
+pub(crate) const CONTROLLER_LOCK: &str = "controller.lock";
+
 /// Snapshot of environment variables.
 #[derive(Clone, Default)]
 pub struct Env {

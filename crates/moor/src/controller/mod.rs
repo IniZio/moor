@@ -21,7 +21,7 @@ use std::time::Duration;
 
 use moor_core::config::{parse_controller, parse_repo, MoorYamlSource, RepoTable, SlackConfig};
 
-use crate::env::Env;
+use crate::env::{Env, CONTROLLER_LOCK};
 use crate::slack::Slack;
 use crate::Moor;
 
@@ -75,6 +75,8 @@ struct Running {
     listener: UnixListener,
     /// Holds the single-instance flock until the process exits.
     _lock: File,
+    /// Holds the one-controller-per-state-dir flock until the process exits.
+    _state_lock: Option<File>,
     /// Slack app, started once the controller is serving.
     slack: Option<Slack>,
     /// Environment shared by every connection.
@@ -104,7 +106,13 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
         None => state_socket(&env)
             .ok_or_else(|| failed("no state directory: set state_dir or MOOR_STATE_DIR".into()))?,
     };
-    let lock = take_lock(&socket)?;
+    let state_lock = env
+        .state_dir()
+        .map(|dir| take_lock(&dir.join(CONTROLLER_LOCK), &socket))
+        .transpose()?;
+    let mut socket_lock = socket.as_os_str().to_owned();
+    socket_lock.push(".lock");
+    let lock = take_lock(Path::new(&socket_lock), &socket)?;
     let listener = bind(&socket).map_err(|e| Stop {
         code: 1,
         message: format!("cannot bind {}: {e}", socket.display()),
@@ -118,6 +126,7 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
         socket,
         listener,
         _lock: lock,
+        _state_lock: state_lock,
         slack,
         env: Arc::new(env),
         settle_every: cfg.settle_every(),
@@ -166,11 +175,11 @@ pub(crate) fn state_socket(env: &Env) -> Option<PathBuf> {
     env.state_dir().map(|dir| dir.join("controller.sock"))
 }
 
-/// Takes `<socket>.lock` and records our pid and socket in it.
-fn take_lock(socket: &Path) -> Result<File, Stop> {
-    let mut path = socket.as_os_str().to_owned();
-    path.push(".lock");
-    let path = PathBuf::from(path);
+/// Takes the flock on `path` and records our pid and socket in it.
+///
+/// A holder on our own socket exits 0, since the controller asked for is
+/// already serving; a holder on another socket is a refusal.
+fn take_lock(path: &Path, socket: &Path) -> Result<File, Stop> {
     let failed = |e: std::io::Error| Stop {
         code: 1,
         message: format!("cannot lock {}: {e}", path.display()),
@@ -183,7 +192,7 @@ fn take_lock(socket: &Path) -> Result<File, Stop> {
         .truncate(false)
         .write(true)
         .read(true)
-        .open(&path)
+        .open(path)
         .map_err(failed)?;
     match file.try_lock() {
         Ok(()) => {
@@ -193,14 +202,14 @@ fn take_lock(socket: &Path) -> Result<File, Stop> {
             Ok(file)
         }
         Err(TryLockError::WouldBlock) => {
-            let held = fs::read_to_string(&path).unwrap_or_default();
+            let held = fs::read_to_string(path).unwrap_or_default();
             let mut lines = held.lines();
             let pid = lines.next().unwrap_or("?");
             let on = lines
                 .next()
                 .map_or_else(|| socket.display().to_string(), str::to_owned);
             Err(Stop {
-                code: 0,
+                code: u8::from(Path::new(&on) != socket),
                 message: format!("already running (pid {pid}) on {on}"),
             })
         }
