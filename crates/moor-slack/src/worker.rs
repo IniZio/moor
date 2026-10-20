@@ -208,14 +208,8 @@ enum Shown {
 /// Returns whether the row is settled.
 fn settle(db: &Db, fx: &mut Fx<'_>, row: &SlackThread, attempt: Attempt) -> bool {
     match ask(fx, row, attempt) {
-        Outcome::Bound(box_id, branch) => {
-            bind(db, fx, row, box_id, branch.as_deref());
-            true
-        }
-        Outcome::Refused(message) => {
-            refuse(db, fx, row, &message);
-            true
-        }
+        Outcome::Bound(box_id, branch) => bind(db, fx, row, box_id, branch.as_deref()),
+        Outcome::Refused(message) => refuse(db, fx, row, &message),
         Outcome::Unsure(why) => {
             let name = row.box_name.as_str();
             (fx.log)(&format!("start of {name}: {why}; asking again"));
@@ -338,24 +332,30 @@ const fn lost(e: &ClientError) -> bool {
     !matches!(e, ClientError::Frame { .. })
 }
 
-/// Binds the row to the Box the controller named and says so in the thread.
-fn bind(db: &Db, fx: &mut Fx<'_>, row: &SlackThread, box_id: BoxId, branch: Option<&str>) {
-    if let Err(e) = db.bind(&row.channel, &row.thread_ts, box_id, branch) {
-        (fx.log)(&format!("slack.db: {e}"));
-    }
+/// Says in the thread that the Box started, then binds the row to it. Posting first means a
+/// crash in between posts again on restart instead of losing the reply. Returns whether the
+/// row is bound; a row left `starting` is asked about again.
+fn bind(db: &Db, fx: &mut Fx<'_>, row: &SlackThread, box_id: BoxId, branch: Option<&str>) -> bool {
     (fx.reply)(&row.channel, &row.thread_ts, &started(&row.box_name));
+    written(fx, db.bind(&row.channel, &row.thread_ts, box_id, branch))
 }
 
-/// Deletes the row of a start the controller refused and posts why.
-fn refuse(db: &Db, fx: &mut Fx<'_>, row: &SlackThread, message: &str) {
-    if let Err(e) = db.forget_starting(&row.channel, &row.thread_ts) {
-        (fx.log)(&format!("slack.db: {e}"));
-    }
+/// Posts why the controller refused the start, then deletes the row, posting first for the
+/// same reason as [`bind`]. Returns whether the row is gone.
+fn refuse(db: &Db, fx: &mut Fx<'_>, row: &SlackThread, message: &str) -> bool {
     (fx.reply)(
         &row.channel,
         &row.thread_ts,
         &failed(&row.box_name, message),
     );
+    written(fx, db.forget_starting(&row.channel, &row.thread_ts))
+}
+
+/// Whether a `slack.db` write succeeded, logging the error when it did not.
+fn written(fx: &Fx<'_>, write: rusqlite::Result<()>) -> bool {
+    write
+        .inspect_err(|e| (fx.log)(&format!("slack.db: {e}; asking again")))
+        .is_ok()
 }
 
 #[cfg(test)]
