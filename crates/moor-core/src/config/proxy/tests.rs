@@ -509,3 +509,19 @@ fn github_api_allows_run_reads_and_nothing_else_under_actions() {
         assert!(!github_api_allows(m, &p), "{m} {p}");
     }
 }
+
+#[test]
+fn user_direct_refuses_a_host_the_users_own_rule_serves() {
+    let e = err(&format!("{GOOD}  direct: [pub.dev, .gitlab.com]\n"));
+    assert_eq!(e.path, "proxy.direct[1]", "{e}");
+    assert!(
+        e.to_string().contains(".gitlab.com covers gitlab.com,"),
+        "{e}"
+    );
+}
+
+#[test]
+fn user_direct_keeps_hosts_no_rule_serves() {
+    let cfg = user(&format!("{GOOD}  direct: [pub.dev, .gradle.org]\n"));
+    assert_eq!(cfg.proxy.direct.len(), 2);
+}
