@@ -327,6 +327,32 @@ fn stop_returns_promptly_and_removes_the_socket() {
     assert!(UnixStream::connect(&path).is_err());
 }
 
+/// A hard link reaches a listener whose path is gone, so it shows the listener closed.
+#[test]
+fn rebind_and_stop_close_the_listener_they_replace() {
+    let nono = fake(Answer::Echo);
+    let (dir, front) = start(nono.addr);
+    let path = front.path().to_path_buf();
+    let first = dir.path().join("first");
+    std::fs::hard_link(&path, &first).unwrap();
+    std::fs::remove_file(&path).unwrap();
+
+    front.rebind().unwrap();
+
+    assert!(
+        UnixStream::connect(&first).is_err(),
+        "replaced listener accepts"
+    );
+    let second = dir.path().join("second");
+    std::fs::hard_link(&path, &second).unwrap();
+    assert!(UnixStream::connect(&second).is_ok());
+    front.stop();
+    assert!(
+        UnixStream::connect(&second).is_err(),
+        "stopped listener accepts"
+    );
+}
+
 fn connect_with(headers: &str) -> String {
     format!("CONNECT example.com:443 HTTP/1.1\r\n{headers}\r\n")
 }
