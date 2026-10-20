@@ -10,7 +10,7 @@ use crate::cx::Cx;
 use crate::ops::common::boxlock::BoxLock;
 use crate::ops::start::{run, settle_all};
 use crate::ops::{show, wait_events};
-use crate::store::TaskRow;
+use crate::store::BoxRow;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 
@@ -26,7 +26,7 @@ fn working_without_session() -> (World, BoxId) {
     (w, id)
 }
 
-fn row(w: &World, id: BoxId) -> TaskRow {
+fn row(w: &World, id: BoxId) -> BoxRow {
     w.cx.store().unwrap().task(id).unwrap().unwrap()
 }
 

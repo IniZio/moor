@@ -12,7 +12,7 @@ use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::cred_sweep;
 use crate::ops::host_session::refuse_invalid;
 use crate::ops::start::begin_seeded;
-use crate::store::{Store, TaskRow};
+use crate::store::{BoxRow, Store};
 
 /// Run `open-session`.
 ///
@@ -67,7 +67,7 @@ pub(crate) fn run(cx: &Cx, req: &OpenSessionReq) -> Result<OpenSessionValue, Com
 }
 
 /// Refuses a Box that is not Ready or whose current Session has not ended.
-fn check(store: &Store, row: &TaskRow, name: &str) -> Result<(), CommandError> {
+fn check(store: &Store, row: &BoxRow, name: &str) -> Result<(), CommandError> {
     if !row
         .boxed
         .as_ref()

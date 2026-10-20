@@ -20,7 +20,7 @@ use crate::ops::common::boxwork::{self, BoxWork};
 use crate::ops::common::facts::resolved;
 use crate::ops::common::setup;
 use crate::ops::common::view::rfc3339;
-use crate::store::{Store, TaskRow};
+use crate::store::{BoxRow, Store};
 
 /// Decides whether a start syncs the host checkout into the Task's existing Box.
 ///
@@ -32,7 +32,7 @@ use crate::store::{Store, TaskRow};
 pub(super) fn rerun_sync(
     cx: &Cx,
     store: &Store,
-    row: &TaskRow,
+    row: &BoxRow,
     gates: &ResyncGates,
 ) -> Result<SyncMode, CommandError> {
     if (gates.agent_live)()? {
@@ -85,7 +85,7 @@ pub(crate) struct ResyncGates<'a> {
 pub(super) fn resync(
     cx: &Cx,
     store: &Store,
-    row: &TaskRow,
+    row: &BoxRow,
     trusted: bool,
     gates: &ResyncGates,
 ) -> Result<(), CommandError> {
@@ -125,7 +125,7 @@ pub(super) fn resync(
 pub(super) fn note_setup_not_rerun(
     cx: &Cx,
     store: &Store,
-    row: &TaskRow,
+    row: &BoxRow,
 ) -> Result<(), CommandError> {
     if row.boxed.as_ref().map(|b| b.state) != Some(BoxState::Ready) {
         return Ok(());
@@ -151,7 +151,7 @@ pub(super) fn note_setup_not_rerun(
 }
 
 /// Records a dead setup as failed, as a failed setup run would, without running anything.
-fn record_interrupted(cx: &Cx, store: &Store, row: &TaskRow) -> Result<(), CommandError> {
+fn record_interrupted(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), CommandError> {
     let line = "setup was interrupted".to_owned();
     let mut done = Decision::new(row.id);
     if row.lifecycle == BoxLifecycle::SettingUp {

@@ -8,14 +8,14 @@ use moor_core::box_key::CRED_SWEEP_SCRIPT;
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::boxes::BoxInput;
-use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
+use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
 use moor_core::{BoxName, ProviderId};
 
 use super::sweep;
 use crate::cx::Cx;
-use crate::store::TaskRow;
+use crate::store::BoxRow;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
 use crate::testing::surface::FakeSurface;
@@ -24,7 +24,7 @@ struct Fx {
     _dir: tempfile::TempDir,
     cx: Cx,
     driver: Arc<FakeDriver>,
-    row: TaskRow,
+    row: BoxRow,
 }
 
 /// A Task with a Box that has a handle; Ready when `ready`.
@@ -41,7 +41,7 @@ fn fixture(driver: FakeDriver, ready: bool) -> Fx {
     let store = cx.store().unwrap();
     let name = BoxName::parse_allow_bare("t").unwrap();
     let id = store
-        .apply(Decision::insert(NewTask {
+        .apply(Decision::insert(NewBox {
             name: name.clone(),
             repo: "r".into(),
         }))

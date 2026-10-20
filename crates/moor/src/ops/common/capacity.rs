@@ -6,7 +6,7 @@ use moor_core::config::UserConfig;
 use moor_core::decide::capacity::{admit, Admission, CapacityFacts, HeldBox};
 use moor_core::ProviderId;
 
-use crate::store::TaskRow;
+use crate::store::BoxRow;
 
 /// The configured Box limit and the config key it came from.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,7 +35,7 @@ pub(crate) fn limit(config: &UserConfig, provider: &str) -> Option<Limit> {
 pub(crate) fn full(
     config: &UserConfig,
     provider: &ProviderId,
-    holders: Vec<TaskRow>,
+    holders: Vec<BoxRow>,
 ) -> Option<Limit> {
     let limit = limit(config, provider.as_str())?;
     let boxes = holders

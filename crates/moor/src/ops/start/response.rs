@@ -12,7 +12,7 @@ use crate::ops::common::capacity;
 use crate::ops::common::facts::settings;
 use crate::ops::common::provision::Provisioned;
 use crate::ops::common::view::{hide_unsupported_sleep, task_view};
-use crate::store::TaskRow;
+use crate::store::BoxRow;
 
 /// Puts the launch outcome in the view, naming a failure in a warning too.
 pub(super) fn set_agent(v: &mut StartView, agent: AgentLaunchView) {
@@ -25,7 +25,7 @@ pub(super) fn set_agent(v: &mut StartView, agent: AgentLaunchView) {
 /// [`queued_view`] for a row whose provider is not at hand; resolved only when it is queued.
 pub(super) fn with_provider(
     cx: &Cx,
-    row: &TaskRow,
+    row: &BoxRow,
     attached: bool,
 ) -> Result<StartView, CommandError> {
     if row.lifecycle != BoxLifecycle::WaitingForBox {
@@ -37,7 +37,7 @@ pub(super) fn with_provider(
 }
 
 /// The response for `row`, with the limit that queued it named in a warning.
-pub(super) fn queued_view(cx: &Cx, row: &TaskRow, attached: bool, provider: &str) -> StartView {
+pub(super) fn queued_view(cx: &Cx, row: &BoxRow, attached: bool, provider: &str) -> StartView {
     let mut v = view(cx, row, attached);
     if v.queued {
         if let Some(lim) = capacity::limit(cx.config(), provider) {
@@ -51,7 +51,7 @@ pub(super) fn queued_view(cx: &Cx, row: &TaskRow, attached: bool, provider: &str
 }
 
 /// The response for `row`; nothing past the Box runs yet.
-pub(super) fn view(cx: &Cx, row: &TaskRow, attached: bool) -> StartView {
+pub(super) fn view(cx: &Cx, row: &BoxRow, attached: bool) -> StartView {
     let mut task = task_view(row, cx.config());
     hide_unsupported_sleep(&mut task, cx);
     StartView {
@@ -74,6 +74,6 @@ pub(super) fn set_provisioned(v: &mut StartView, p: &Provisioned) {
     v.dotfiles = p.dotfiles.view();
     if p.setup.failed() {
         v.failed_step = Some("setup".to_owned());
-        v.boxed = v.task.r#box.as_ref().and_then(|b| b.handle.clone());
+        v.boxed = v.task.driver.as_ref().and_then(|b| b.handle.clone());
     }
 }

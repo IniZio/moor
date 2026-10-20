@@ -4,7 +4,7 @@ use std::sync::Arc;
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
-use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
+use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
 use moor_core::seam::proc::Tool;
@@ -118,7 +118,7 @@ pub(super) fn fx_box(
 fn admit(cx: &Cx, driver: &FakeDriver, dir: &Path) -> BoxId {
     let store = cx.store().unwrap();
     let id = store
-        .apply(Decision::insert(NewTask {
+        .apply(Decision::insert(NewBox {
             name: BoxName::parse_allow_bare("t").unwrap(),
             repo: "r".into(),
         }))
@@ -161,11 +161,11 @@ pub(super) fn fx() -> Fx {
     fx_with(FakeDriver::new(), FakeSurface::new(PathBuf::from("/s")), 0)
 }
 
-pub(super) fn row(f: &Fx) -> crate::store::TaskRow {
+pub(super) fn row(f: &Fx) -> crate::store::BoxRow {
     f.cx.store().unwrap().task(f.id).unwrap().unwrap()
 }
 
-pub(super) fn is_working(r: &crate::store::TaskRow) -> bool {
+pub(super) fn is_working(r: &crate::store::BoxRow) -> bool {
     r.lifecycle == BoxLifecycle::Ready && !r.session.is_quiet()
 }
 

@@ -6,7 +6,7 @@ use moor_core::ErrorKind;
 
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::store::{Store, TaskRow};
+use crate::store::{BoxRow, Store};
 
 /// Closes the live agent pane and ends its session, with the digest of its saved transcript;
 /// a pane already gone is fine.
@@ -15,7 +15,7 @@ use crate::store::{Store, TaskRow};
 pub(crate) fn stop_agent(
     cx: &Cx,
     store: &Store,
-    row: &TaskRow,
+    row: &BoxRow,
     digest: Option<&str>,
 ) -> Result<bool, CommandError> {
     let Some(session) = store.live_session(row.id)? else {

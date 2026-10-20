@@ -24,7 +24,7 @@ use crate::ops::common::facts::settings;
 use crate::ops::common::provision::reread;
 use crate::ops::common::resume;
 use crate::ops::common::transcript;
-use crate::store::{SessionRow, Store, TaskRow};
+use crate::store::{BoxRow, SessionRow, Store};
 
 /// Time allowed for reading a pane to see whether it ended.
 const PANE_DEADLINE: Duration = Duration::from_secs(5);
@@ -107,7 +107,7 @@ pub(super) fn will_launch(
     cx: &Cx,
     store: &Store,
     req: &StartReq,
-    row: &TaskRow,
+    row: &BoxRow,
 ) -> Result<bool, CommandError> {
     if req.no_agent {
         return Ok(false);
@@ -122,14 +122,14 @@ pub(super) fn will_launch(
 }
 
 /// Whether an agent session of `row` exists and has not ended.
-pub(super) fn agent_live(cx: &Cx, store: &Store, row: &TaskRow) -> Result<bool, CommandError> {
+pub(super) fn agent_live(cx: &Cx, store: &Store, row: &BoxRow) -> Result<bool, CommandError> {
     Ok(store
         .live_session(row.id)?
         .is_some_and(|s| ended(cx, &s).is_none()))
 }
 
 /// Whether `req` resumes the stored agent session of `row`.
-fn resumes(req: &StartReq, row: &TaskRow) -> bool {
+fn resumes(req: &StartReq, row: &BoxRow) -> bool {
     req.resume
         && req.goal.is_none()
         && row
@@ -142,7 +142,7 @@ fn resumes(req: &StartReq, row: &TaskRow) -> bool {
 ///
 /// # Errors
 /// [`ErrorKind::Refused`] when `req` resumes without a goal and `row` holds no session id.
-pub(super) fn check_resume(req: &StartReq, row: &TaskRow) -> Result<(), CommandError> {
+pub(super) fn check_resume(req: &StartReq, row: &BoxRow) -> Result<(), CommandError> {
     let stored = row
         .agent_session_id
         .as_deref()
@@ -160,7 +160,7 @@ pub(super) fn nothing_to_resume() -> CommandError {
 
 /// Handles a start that finds the agent live: warns of a goal it cannot take, and with
 /// `--resume` registers the session with the multiplexer again.
-fn on_live(cx: &Cx, store: &Store, req: &StartReq, row: &TaskRow, session: &SessionRow) {
+fn on_live(cx: &Cx, store: &Store, req: &StartReq, row: &BoxRow, session: &SessionRow) {
     warn_goal_ignored(cx, req, &row.name);
     let (true, Some(pane)) = (req.resume, session.pane.as_deref()) else {
         return;
@@ -331,7 +331,7 @@ pub(super) fn sweep_creds(cx: &Cx, store: &Store, id: BoxId) {
 }
 
 /// Whether `row` holds a goal or an agent session to start again.
-fn revivable(row: &TaskRow) -> bool {
+fn revivable(row: &BoxRow) -> bool {
     row.goal.is_some()
         || row
             .agent_session_id

@@ -25,7 +25,7 @@ use crate::ops::common::facts::resolved;
 use crate::ops::common::provision::moor_yaml;
 use crate::ops::common::provisioning::dead_provisioning;
 use crate::ops::common::wake::wake_and_revive;
-use crate::store::{NewRun, RunOutcome, Store, StoreError, TaskRow};
+use crate::store::{BoxRow, NewRun, RunOutcome, Store, StoreError};
 
 mod ready;
 mod record;
@@ -56,7 +56,7 @@ pub(crate) fn run(cx: &Cx, req: &RunReq) -> Result<RunValue, CommandError> {
 }
 
 /// The part of `run` that needs the Box lock, on the row read after taking it.
-fn locked(cx: &Cx, store: &Store, req: &RunReq, row: &TaskRow) -> Result<RunValue, CommandError> {
+fn locked(cx: &Cx, store: &Store, req: &RunReq, row: &BoxRow) -> Result<RunValue, CommandError> {
     dead_provisioning(cx, row)?;
     let gone = row
         .boxed
@@ -80,7 +80,7 @@ fn launch(
     cx: &Cx,
     store: &Store,
     req: &RunReq,
-    row: &TaskRow,
+    row: &BoxRow,
     target: &ready::Target,
 ) -> Result<RunValue, CommandError> {
     let repo = moor_yaml::guard(cx, row, req.trust_moor_yaml)?;
@@ -145,7 +145,7 @@ fn launch(
 /// Runs the command; when it may never have started, drops the staged Proxy nonce.
 fn exec_in_box(
     cx: &Cx,
-    row: &TaskRow,
+    row: &BoxRow,
     target: &ready::Target,
     exec: &BoxExec,
     spec: &ExecSpec,
@@ -158,7 +158,7 @@ fn exec_in_box(
 }
 
 /// Where in the Box the Task's commands run.
-fn site<'a>(row: &'a TaskRow, target: &'a ready::Target) -> Site<'a> {
+fn site<'a>(row: &'a BoxRow, target: &'a ready::Target) -> Site<'a> {
     Site {
         handle: &target.handle,
         provider: row.boxed.as_ref().map_or("", |b| b.provider.as_str()),
@@ -170,7 +170,7 @@ fn site<'a>(row: &'a TaskRow, target: &'a ready::Target) -> Site<'a> {
 /// The environment every Box exec gets; without the Proxy the command still runs, and warns.
 fn box_env(
     cx: &Cx,
-    row: &TaskRow,
+    row: &BoxRow,
     target: &ready::Target,
     cfg: &TaskSettings,
 ) -> Result<BoxExec, CommandError> {
@@ -193,7 +193,7 @@ fn box_env(
 }
 
 /// An Idle Task becomes Working for the run; a row that changed since it was read is left as is.
-fn mark_working(store: &Store, row: &TaskRow) -> Result<(), CommandError> {
+fn mark_working(store: &Store, row: &BoxRow) -> Result<(), CommandError> {
     if !(row.lifecycle == BoxLifecycle::Ready && row.session.is_quiet()) {
         return Ok(());
     }

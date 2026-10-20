@@ -12,7 +12,7 @@ use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{
-    Decision, ExtraEvent, Field, Fields, Intent, IntentChange, NewTask,
+    Decision, ExtraEvent, Field, Fields, Intent, IntentChange, NewBox,
 };
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::seam::clock::{Clock, Ts};
@@ -36,7 +36,7 @@ pub(super) fn open(dir: &Path) -> (Store, Arc<FakeClock>) {
 
 /// A new-task decision.
 fn insert(name: &str) -> Decision {
-    Decision::insert(NewTask {
+    Decision::insert(NewBox {
         name: BoxName::parse_allow_bare(name).unwrap(),
         repo: "r".into(),
     })

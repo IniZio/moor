@@ -19,10 +19,7 @@ pub mod seam;
 pub mod secret;
 pub mod view;
 
-pub use name::{
-    BoxHandle, BoxId, BoxName, BoxPath, NameError, ProviderId, RunId, SessionId, Sha, TaskId,
-    TaskName,
-};
+pub use name::{BoxHandle, BoxId, BoxName, BoxPath, NameError, ProviderId, RunId, SessionId, Sha};
 pub use request::{
     ArtifactReadReq, ArtifactsReq, CloseReq, CpReq, EnvReq, GateReq, RemoveReq, ReportReq, Request,
     RunReq, ShowReq, StartReq, SteerReq, TaskReq, WaitEventsReq, WaitFor, WaitMode, WaitReq,

@@ -3,7 +3,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use moor_core::domain::decision::{Decision, NewTask};
+use moor_core::domain::decision::{Decision, NewBox};
 use moor_core::{BoxId, BoxName, ErrorKind, GateReq, Sha};
 
 use super::run;
@@ -30,7 +30,7 @@ fn cx(dir: &Path) -> Cx {
 
 /// Insert a task by name.
 fn task(cx: &Cx, name: &str) -> BoxId {
-    let nt = NewTask {
+    let nt = NewBox {
         name: BoxName::parse_allow_bare(name).unwrap(),
         repo: "r".into(),
     };

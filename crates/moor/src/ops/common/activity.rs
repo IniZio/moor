@@ -23,7 +23,7 @@ use crate::ops::common::boxlock::BoxLock;
 use crate::ops::common::provision::recorded_workdir;
 use crate::ops::common::resume;
 use crate::ops::common::transcript;
-use crate::store::{Store, StoreError, TaskRow};
+use crate::store::{BoxRow, Store, StoreError};
 
 /// Allowance for the pane observation in one probe.
 ///
@@ -139,12 +139,7 @@ impl Reading {
 ///
 /// # Errors
 /// A store failure other than an undecodable cache row.
-pub(crate) fn read(
-    cx: &Cx,
-    store: &Store,
-    row: &TaskRow,
-    now: Ts,
-) -> Result<Reading, CommandError> {
+pub(crate) fn read(cx: &Cx, store: &Store, row: &BoxRow, now: Ts) -> Result<Reading, CommandError> {
     let in_flight = store
         .in_flight_run(row.id, &|pid| cx.proc().alive(pid))?
         .is_some();
@@ -207,11 +202,7 @@ pub(crate) fn read(
 }
 
 /// Keep the agent's own session id on the Task; written only when it changed.
-fn note_agent_session(
-    store: &Store,
-    row: &TaskRow,
-    seen: Option<&str>,
-) -> Result<(), CommandError> {
+fn note_agent_session(store: &Store, row: &BoxRow, seen: Option<&str>) -> Result<(), CommandError> {
     let Some(id) = seen.filter(|id| row.agent_session_id.as_deref() != Some(id)) else {
         return Ok(());
     };
@@ -240,7 +231,7 @@ fn note_agent_session(
 pub(crate) fn settle(
     cx: &Cx,
     store: &Store,
-    row: &TaskRow,
+    row: &BoxRow,
     reading: &Reading,
 ) -> Result<(), CommandError> {
     turn::note_turn_done(store, row, reading)?;
@@ -280,7 +271,7 @@ pub(crate) fn settle(
 fn end_exited_session(
     cx: &Cx,
     store: &Store,
-    row: &TaskRow,
+    row: &BoxRow,
     reading: &Reading,
     probed: i64,
 ) -> Result<(), CommandError> {
@@ -309,7 +300,7 @@ fn end_exited_session(
 /// A waiting episode ends when the Task turns busy or working again, so the event is skipped
 /// while the latest of those markers is a `needs_input` with the same question and options.
 /// It is written before any state step so a refused step cannot lose it.
-fn note_needs_input(store: &Store, row: &TaskRow, reading: &Reading) -> Result<(), CommandError> {
+fn note_needs_input(store: &Store, row: &BoxRow, reading: &Reading) -> Result<(), CommandError> {
     let Some(AgentState::NeedsInput { question, options }) =
         reading.activity.as_ref().map(|a| &a.state)
     else {
@@ -335,7 +326,7 @@ fn note_needs_input(store: &Store, row: &TaskRow, reading: &Reading) -> Result<(
 fn register_session(
     cx: &Cx,
     store: &Store,
-    row: &TaskRow,
+    row: &BoxRow,
     reading: &Reading,
 ) -> Result<(), CommandError> {
     if reading.pane != PaneLiveness::Live
@@ -362,7 +353,7 @@ fn register_session(
 
 /// The session as the Engine needs it; none when the Box cannot be reached.
 ///
-pub(crate) fn session_ref(row: &TaskRow, id: String, pane: Option<String>) -> Option<SessionRef> {
+pub(crate) fn session_ref(row: &BoxRow, id: String, pane: Option<String>) -> Option<SessionRef> {
     let b = row.boxed.as_ref()?;
     Some(SessionRef {
         id,

@@ -15,7 +15,7 @@ use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId};
 
 use super::{probe, BoxWork};
 use crate::cx::Cx;
-use crate::store::{BoxRow, TaskRow};
+use crate::store::{BoxRow, DriverRow};
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::{Reply, ScriptedProc};
 use crate::testing::surface::FakeSurface;
@@ -30,8 +30,8 @@ struct Rig {
     cx: Cx,
     driver: Arc<FakeDriver>,
     proc: Arc<ScriptedProc>,
-    task: TaskRow,
-    boxed: BoxRow,
+    task: BoxRow,
+    boxed: DriverRow,
 }
 
 fn result_path() -> BoxPath {
@@ -74,8 +74,8 @@ fn rig(dir: &Path, driver: FakeDriver) -> Rig {
     r
 }
 
-fn rows(dir: &Path, handle: BoxHandle) -> (TaskRow, BoxRow) {
-    let boxed = BoxRow {
+fn rows(dir: &Path, handle: BoxHandle) -> (BoxRow, DriverRow) {
+    let boxed = DriverRow {
         provider: ProviderId::new("p"),
         handle: Some(handle),
         state: BoxState::Ready,
@@ -85,7 +85,7 @@ fn rows(dir: &Path, handle: BoxHandle) -> (TaskRow, BoxRow) {
         sleep_reason: None,
         updated_at: Ts::from_millis(0),
     };
-    let task = TaskRow {
+    let task = BoxRow {
         id: BoxId::new(1),
         name: BoxName::parse_allow_bare("demo").unwrap(),
         repo: dir.display().to_string(),

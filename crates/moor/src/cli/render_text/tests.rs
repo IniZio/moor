@@ -45,7 +45,7 @@ fn cp_prints_its_confirmation() {
 /// Builds a sleep/wake value for task `task` with an optional Box state.
 fn sleep_value(task: &str, state: Option<&str>, woke: bool) -> serde_json::Value {
     let b = state.map(|s| json!({"state": s, "sleep": {"after": null, "reason": null}}));
-    json!({"task": task, "box": b, "woke": woke})
+    json!({"task": task, "driver": b, "woke": woke})
 }
 
 #[test]
@@ -268,7 +268,7 @@ fn end_host_session_prints_id_and_workdir() {
 /// A Box named `name` in `lifecycle`, with an optional Box state.
 fn lifecycle_task(name: &str, lifecycle: &str, box_state: Option<&str>) -> serde_json::Value {
     let b = box_state.map(|s| json!({"state": s, "provider": "local"}));
-    json!({"id": 7, "name": name, "lifecycle": lifecycle, "session_state": "idle", "box": b})
+    json!({"id": 7, "name": name, "lifecycle": lifecycle, "session_state": "idle", "driver": b})
 }
 
 #[test]

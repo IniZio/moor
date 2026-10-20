@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use moor_core::config::proxy::{ResolvedInject, ResolvedRule};
-use moor_core::domain::decision::{Decision, NewTask};
+use moor_core::domain::decision::{Decision, NewBox};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::forge::ForgeRepo;
 use moor_core::{BoxId, BoxName, Secret};
@@ -293,7 +293,7 @@ fn approval_decisions_are_ignored() {
 fn task_sink_parts(dir: &Path) -> (Store, ProxyLog, BoxId) {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
     let store = Store::open(&dir.join("moor.db"), clock.clone()).unwrap();
-    let new = NewTask {
+    let new = NewBox {
         name: BoxName::parse_allow_bare("t").unwrap(),
         repo: "r".into(),
     };

@@ -9,7 +9,7 @@ fn task(name: &str, with_box: bool) -> Value {
     json!({
         "id": 1, "name": name, "repo": "/r", "lifecycle": "ready", "session_state": "idle",
         "branch": "moor/x", "worktree": "/w/x",
-        "box": if with_box { json!({
+        "driver": if with_box { json!({
             "state": "running", "provider": "local", "workdir": "/work",
             "egress": "none", "sleep": {}
         }) } else { Value::Null },

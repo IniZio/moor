@@ -7,7 +7,7 @@ use moor_core::Warning;
 
 use crate::adapters::git::BranchSync;
 use crate::cx::Cx;
-use crate::store::TaskRow;
+use crate::store::BoxRow;
 
 /// Brings the kept worktree and its local Task branch up to the remote tip, so they show the
 /// work the agent pushed from the Box.
@@ -15,7 +15,7 @@ use crate::store::TaskRow;
 /// Only a fast-forward moves anything; every other outcome leaves the checkout alone and warns.
 ///
 /// Returns false when the sync was skipped with a warning.
-pub(super) fn sync_branch(cx: &Cx, row: &TaskRow) -> bool {
+pub(super) fn sync_branch(cx: &Cx, row: &BoxRow) -> bool {
     let (Some(wt), Some(branch)) = (row.worktree.as_deref(), row.branch.as_deref()) else {
         return true;
     };
@@ -49,7 +49,7 @@ pub(super) fn sync_branch(cx: &Cx, row: &TaskRow) -> bool {
 /// Removes the worktree moor created when its work is safe; otherwise keeps it and says why.
 ///
 /// Returns whether the worktree is gone.
-pub(super) fn remove_worktree(cx: &Cx, row: &TaskRow, synced: bool) -> bool {
+pub(super) fn remove_worktree(cx: &Cx, row: &BoxRow, synced: bool) -> bool {
     let Some(wt) = row.worktree.as_deref().filter(|_| !row.bound) else {
         return false;
     };

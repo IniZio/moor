@@ -12,7 +12,7 @@ use moor_core::{BoxHandle, BoxPath, Warning};
 
 use super::provision::recorded_workdir;
 use crate::cx::Cx;
-use crate::store::{BoxRow, Store, TaskRow};
+use crate::store::{BoxRow, DriverRow, Store};
 
 /// Wall-clock allowance for the index script.
 pub(crate) const INDEX_DEADLINE: Duration = Duration::from_secs(60);
@@ -78,7 +78,7 @@ pub(crate) fn parse_index(text: &str) -> (Vec<Entry>, usize) {
 }
 
 /// The Ready Box with a handle that Reports are collected from.
-pub(super) fn target(row: &TaskRow) -> Option<(&BoxRow, &BoxHandle)> {
+pub(super) fn target(row: &BoxRow) -> Option<(&DriverRow, &BoxHandle)> {
     row.boxed
         .as_ref()
         .filter(|b| b.state == BoxState::Ready)
@@ -86,7 +86,7 @@ pub(super) fn target(row: &TaskRow) -> Option<(&BoxRow, &BoxHandle)> {
 }
 
 /// The host directory the driver runs from.
-pub(super) fn host_of(row: &TaskRow) -> &Path {
+pub(super) fn host_of(row: &BoxRow) -> &Path {
     Path::new(row.worktree.as_deref().unwrap_or(&row.repo))
 }
 
@@ -100,7 +100,7 @@ pub(crate) struct IndexPlan {
 
 /// Plans the index steps, or `None` when nothing is collected from this Box or the workdir is
 /// unknown; [`collect_from`] then collects, and warns, exactly as [`collect`] does.
-pub(crate) fn index_plan(cx: &Cx, row: &TaskRow) -> Option<IndexPlan> {
+pub(crate) fn index_plan(cx: &Cx, row: &BoxRow) -> Option<IndexPlan> {
     let (b, handle) = target(row)?;
     let workdir = match b.workdir.as_deref().and_then(recorded_workdir) {
         Some(w) => w,
@@ -119,7 +119,7 @@ pub(crate) fn index_plan(cx: &Cx, row: &TaskRow) -> Option<IndexPlan> {
 ///
 /// A failure only warns, so the close outcome never changes. Report contents never appear in
 /// a warning.
-pub(crate) fn collect(cx: &Cx, store: &Store, row: &TaskRow) -> usize {
+pub(crate) fn collect(cx: &Cx, store: &Store, row: &BoxRow) -> usize {
     let Some((b, handle)) = target(row) else {
         return 0;
     };
@@ -135,7 +135,7 @@ pub(crate) fn collect(cx: &Cx, store: &Store, row: &TaskRow) -> usize {
 pub(crate) fn collect_from(
     cx: &Cx,
     store: &Store,
-    row: &TaskRow,
+    row: &BoxRow,
     plan: &IndexPlan,
     done: &mut dyn Iterator<Item = Result<StepDone, DriverError>>,
 ) -> usize {
@@ -156,7 +156,7 @@ pub(crate) fn collect_from(
 fn run(
     cx: &Cx,
     store: &Store,
-    row: &TaskRow,
+    row: &BoxRow,
     recorded: Option<&str>,
     handle: &BoxHandle,
     stored: &mut usize,
@@ -220,7 +220,7 @@ fn indexed(
 fn read_reports(
     cx: &Cx,
     store: &Store,
-    row: &TaskRow,
+    row: &BoxRow,
     (handle, workdir): (&BoxHandle, &BoxPath),
     index: Option<String>,
     stored: &mut usize,

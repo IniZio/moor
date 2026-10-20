@@ -3,7 +3,7 @@ use std::sync::Arc;
 use moor_core::activity::{Activity, AgentState, Source};
 use moor_core::config::{parse_user, UserConfig};
 use moor_core::domain::boxes::{BoxInput, BoxState};
-use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
+use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxHandle, BoxId, BoxName, ProviderId, RunId};
 
@@ -33,7 +33,7 @@ fn task_view_maps_row_without_box() {
     let dir = tempfile::tempdir().unwrap();
     let clock = Arc::new(FakeClock::new(Ts::from_millis(86_400_000)));
     let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
-    let nt = NewTask {
+    let nt = NewBox {
         name: BoxName::parse_allow_bare("t").unwrap(),
         repo: "r".into(),
     };
@@ -49,7 +49,7 @@ fn task_view_maps_row_without_box() {
         (id.get(), "t", "r")
     );
     assert_eq!(v.goal.as_deref(), Some("g"));
-    assert!(v.r#box.is_none() && v.agent.is_none() && v.run.is_none());
+    assert!(v.driver.is_none() && v.agent.is_none() && v.run.is_none());
     assert_eq!(v.updated_at, "1970-01-02T00:00:00Z");
     let events = store.events(id, 10).unwrap();
     let ev = event_view(events.first().unwrap());
@@ -62,7 +62,7 @@ fn task_view_maps_box() {
     let dir = tempfile::tempdir().unwrap();
     let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
     let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
-    let nt = NewTask {
+    let nt = NewBox {
         name: BoxName::parse_allow_bare("t").unwrap(),
         repo: "r".into(),
     };
@@ -80,7 +80,7 @@ fn task_view_maps_box() {
         }))
         .unwrap();
     let b = task_view(&store.task(id).unwrap().unwrap(), &UserConfig::default())
-        .r#box
+        .driver
         .unwrap();
     assert_eq!(
         (b.state, b.provider.as_str(), b.handle.as_deref()),
@@ -94,7 +94,7 @@ fn box_view_maps_sleep_reason() {
     let dir = tempfile::tempdir().unwrap();
     let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
     let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
-    let nt = NewTask {
+    let nt = NewBox {
         name: BoxName::parse_allow_bare("t").unwrap(),
         repo: "r".into(),
     };
@@ -107,7 +107,7 @@ fn box_view_maps_sleep_reason() {
         .apply(Decision::new(id).set(fields).box_input(BoxInput::Requested))
         .unwrap();
     let b = task_view(&store.task(id).unwrap().unwrap(), &UserConfig::default())
-        .r#box
+        .driver
         .unwrap();
     assert_eq!(
         (b.sleep.after.as_deref(), b.sleep.reason),
@@ -119,7 +119,7 @@ fn box_view_maps_sleep_reason() {
     };
     store.apply(Decision::new(id).set(fields)).unwrap();
     let b = task_view(&store.task(id).unwrap().unwrap(), &UserConfig::default())
-        .r#box
+        .driver
         .unwrap();
     assert_eq!(b.sleep.after.as_deref(), Some("30m"));
     assert_eq!(b.sleep.reason.as_deref(), Some("provider cannot wake"));
@@ -130,7 +130,7 @@ fn box_view_shows_configured_sleep_after() {
     let dir = tempfile::tempdir().unwrap();
     let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
     let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
-    let nt = NewTask {
+    let nt = NewBox {
         name: BoxName::parse_allow_bare("t").unwrap(),
         repo: "r".into(),
     };
@@ -144,7 +144,7 @@ fn box_view_shows_configured_sleep_after() {
         .unwrap();
     let config: UserConfig = parse_user("u.yaml", "box: {sleep_after: 45m}").unwrap();
     let b = task_view(&store.task(id).unwrap().unwrap(), &config)
-        .r#box
+        .driver
         .unwrap();
     assert_eq!(b.sleep.after.as_deref(), Some("45m"));
 }
@@ -154,7 +154,7 @@ fn task_view_with_run_fills_run() {
     let dir = tempfile::tempdir().unwrap();
     let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
     let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
-    let nt = NewTask {
+    let nt = NewBox {
         name: BoxName::parse_allow_bare("t").unwrap(),
         repo: "r".into(),
     };

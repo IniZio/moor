@@ -13,7 +13,7 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::view::{agent_view, hide_unsupported_sleep, task_view_with_run};
 use crate::ops::common::{activity, reconcile};
-use crate::store::{RunRow, TaskRow};
+use crate::store::{BoxRow, RunRow};
 
 /// Longest pause between polls.
 const POLL: Duration = Duration::from_millis(250);
@@ -88,7 +88,7 @@ pub(crate) fn run(cx: &Cx, req: &WaitReq) -> Result<WaitValue, CommandError> {
 /// A `Failed` error carrying the Task as it stands, with `attention` filled in.
 fn failed(
     cx: &Cx,
-    row: &TaskRow,
+    row: &BoxRow,
     reading: &activity::Reading,
     text: impl Into<String>,
     attention: Vec<AttentionView>,

@@ -8,7 +8,7 @@ use moor_core::boxscript::command_line;
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
-use moor_core::domain::decision::{Decision, Field, Fields, Intent, IntentChange, NewTask};
+use moor_core::domain::decision::{Decision, Field, Fields, Intent, IntentChange, NewBox};
 use moor_core::domain::run::SyncMode;
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
@@ -84,7 +84,7 @@ fn bare_with(driver: FakeDriver) -> Fx {
     let id = cx
         .store()
         .unwrap()
-        .apply(Decision::insert(NewTask {
+        .apply(Decision::insert(NewBox {
             name: BoxName::parse_allow_bare("t").unwrap(),
             repo: "r".into(),
         }))

@@ -1,6 +1,6 @@
 //! Tests for per-repo Box name allocation.
 
-use moor_core::domain::decision::{Decision, NewTask};
+use moor_core::domain::decision::{Decision, NewBox};
 use moor_core::BoxName;
 use rusqlite::TransactionBehavior;
 
@@ -59,7 +59,7 @@ fn hand_picked_name_is_skipped() {
     let dir = tempfile::tempdir().unwrap();
     let (store, _clock) = open(dir.path());
     store
-        .apply(Decision::insert(NewTask {
+        .apply(Decision::insert(NewBox {
             name: BoxName::parse("acme/1").unwrap(),
             repo: "acme".into(),
         }))

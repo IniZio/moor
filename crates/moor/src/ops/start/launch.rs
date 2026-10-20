@@ -25,7 +25,7 @@ use crate::ops::common::resume;
 use crate::ops::common::view::rfc3339;
 use crate::ops::show::redact_nonce;
 use crate::store::lease::{LeaseId, LeaseKind};
-use crate::store::{Store, TaskRow};
+use crate::store::{BoxRow, Store};
 
 /// Lines of a failure's output kept as its tail.
 pub(super) const TAIL_LINES: usize = 10;
@@ -72,7 +72,7 @@ pub(super) fn run(
 fn not_working(
     cx: &Cx,
     store: &Store,
-    row: &TaskRow,
+    row: &BoxRow,
     hold: bool,
 ) -> Result<AgentLaunchView, CommandError> {
     let ready = row
@@ -100,7 +100,7 @@ fn not_working(
 pub(crate) fn begin_seeded(
     cx: &Cx,
     store: &Store,
-    row: &TaskRow,
+    row: &BoxRow,
     seed: String,
 ) -> Result<AgentLaunchView, CommandError> {
     let mut working = row.clone();
@@ -122,7 +122,7 @@ pub(crate) fn begin_seeded(
 pub(super) fn begin(
     cx: &Cx,
     store: &Store,
-    row: &TaskRow,
+    row: &BoxRow,
     launch: &LaunchReq,
     cfg: &TaskSettings,
 ) -> Result<AgentLaunchView, CommandError> {
@@ -193,7 +193,7 @@ fn plan_dirs(
 fn record_session(
     cx: &Cx,
     store: &Store,
-    row: &TaskRow,
+    row: &BoxRow,
     launch: &LaunchReq,
     session: SessionRef,
 ) -> Result<AgentLaunchView, CommandError> {
@@ -246,12 +246,12 @@ fn record_failure(
 }
 
 /// Whether `row` is Ready and its session still has work to do.
-pub(super) fn working(row: &TaskRow) -> bool {
+pub(super) fn working(row: &BoxRow) -> bool {
     row.lifecycle == BoxLifecycle::Ready && !row.session.is_quiet()
 }
 
 /// What the Engine needs to launch `row`'s agent; none unless the Task is Working with a ready Box.
-pub(super) fn launch_req(cx: &Cx, row: &TaskRow, setup_exit: Option<i32>) -> Option<LaunchReq> {
+pub(super) fn launch_req(cx: &Cx, row: &BoxRow, setup_exit: Option<i32>) -> Option<LaunchReq> {
     let b = row.boxed.as_ref().filter(|b| b.state == BoxState::Ready)?;
     if !working(row) {
         return None;

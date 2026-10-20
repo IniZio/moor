@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::boxes::BoxInput;
-use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
+use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::{box_state::BoxLifecycleInput, session_state::SessionInput};
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::seam::driver::{AcquireReq, Driver};
@@ -182,7 +182,7 @@ pub(super) fn no_creds() -> CredsFn {
 
 /// Insert a task, give it a live box from `driver` and a worktree.
 fn working_task(store: &Store, driver: &FakeDriver) -> BoxId {
-    let nt = NewTask {
+    let nt = NewBox {
         name: BoxName::parse_allow_bare("demo").unwrap(),
         repo: "r".into(),
     };
@@ -483,7 +483,7 @@ fn task_without_a_box_handle_is_refused_with_a_stderr_line() {
     let dir = tempfile::tempdir().unwrap();
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
     let store = Store::open(&dir.path().join("moor.db"), clock).unwrap();
-    let nt = NewTask {
+    let nt = NewBox {
         name: BoxName::parse_allow_bare("bare").unwrap(),
         repo: "r".into(),
     };

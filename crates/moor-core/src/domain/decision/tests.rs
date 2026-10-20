@@ -1,6 +1,6 @@
 //! Tests for the decision builder and intents.
 
-use super::{Decision, ExtraEvent, Field, Fields, Intent, IntentChange, NewTask, TaskTarget};
+use super::{BoxTarget, Decision, ExtraEvent, Field, Fields, Intent, IntentChange, NewBox};
 use crate::domain::box_state::BoxLifecycle;
 use crate::domain::box_state::BoxLifecycleInput;
 use crate::domain::event::Event;
@@ -11,7 +11,7 @@ use crate::name::{BoxId, BoxName, RunId};
 #[test]
 fn new_is_empty() {
     let d = Decision::new(BoxId::new(3));
-    assert_eq!(d.task, TaskTarget::Existing(BoxId::new(3)));
+    assert_eq!(d.target, BoxTarget::Existing(BoxId::new(3)));
     assert!(d.lifecycle_input.is_none() && d.session_input.is_none() && d.box_input.is_none());
     assert_eq!(d.set, Fields::default());
     assert_eq!(d.intent, IntentChange::Keep);
@@ -21,12 +21,12 @@ fn new_is_empty() {
 /// `insert` carries the Insert input.
 #[test]
 fn insert_sets_input() {
-    let new = NewTask {
+    let new = NewBox {
         name: BoxName::parse_allow_bare("a").unwrap(),
         repo: "r".into(),
     };
     let d = Decision::insert(new.clone());
-    assert_eq!(d.task, TaskTarget::New(new));
+    assert_eq!(d.target, BoxTarget::New(new));
     assert_eq!(d.lifecycle_input, Some(BoxLifecycleInput::Insert));
     assert_eq!(d.session_input, None);
 }

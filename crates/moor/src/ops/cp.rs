@@ -16,7 +16,7 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::wake::wake_and_revive;
-use crate::store::TaskRow;
+use crate::store::BoxRow;
 
 /// Run `cp`.
 pub(crate) fn run(cx: &Cx, req: &CpReq) -> Result<CpValue, CommandError> {
@@ -72,7 +72,7 @@ pub(crate) fn run(cx: &Cx, req: &CpReq) -> Result<CpValue, CommandError> {
 }
 
 /// The handle of the Task's ready Box, or a refusal.
-fn usable_handle(row: &TaskRow) -> Result<BoxHandle, CommandError> {
+fn usable_handle(row: &BoxRow) -> Result<BoxHandle, CommandError> {
     let refuse = |why: &str| CommandError::new(ErrorKind::Refused, why.to_owned());
     if row.lifecycle == BoxLifecycle::WaitingForBox {
         return Err(refuse("the task is waiting for a Box"));

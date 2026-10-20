@@ -7,7 +7,7 @@ use std::time::Duration;
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
-use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
+use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
 use moor_core::seam::surface::SurfaceError;
@@ -51,7 +51,7 @@ fn fx_surfaced(driver: FakeDriver, surface: FakeSurface, workspace: Option<&str>
     let store = cx.store().unwrap();
     let name = BoxName::parse_allow_bare("t").unwrap();
     let id = store
-        .apply(Decision::insert(NewTask {
+        .apply(Decision::insert(NewBox {
             name: name.clone(),
             repo: "r".into(),
         }))
@@ -156,7 +156,7 @@ fn asleep_task_is_woken_then_focused() {
     let v = run(&f.cx, &req()).unwrap();
     assert!(v.woke);
     assert_eq!(v.task, "t");
-    assert_eq!(v.r#box.unwrap().state, BoxState::Ready);
+    assert_eq!(v.driver.unwrap().state, BoxState::Ready);
     assert_eq!(wakes(&f), 1);
     assert_eq!(focuses(&f), vec!["focus_workspace ws-9".to_owned()]);
     assert_eq!(states(&f), (BoxLifecycle::Ready, BoxState::Ready));
@@ -227,7 +227,7 @@ fn value_serializes_task_box_and_woke() {
     let obj = j.as_object().unwrap();
     assert_eq!(obj["task"], "t");
     assert_eq!(obj["woke"], false);
-    assert!(obj.contains_key("box"));
+    assert!(obj.contains_key("driver"));
 }
 
 #[test]

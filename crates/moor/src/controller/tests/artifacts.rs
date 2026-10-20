@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 
 use base64::Engine as _;
 use moor_core::controller::PROTOCOL;
-use moor_core::domain::decision::{Decision, NewTask};
+use moor_core::domain::decision::{Decision, NewBox};
 use moor_core::name::BoxName;
 use moor_core::{ArtifactReadReq, ArtifactsReq, Request, ARTIFACT_CHUNK};
 use serde_json::{json, Value};
@@ -61,7 +61,7 @@ fn seed(dir: &Path) -> Vec<u8> {
     let store = Store::open(&dir.join("moor.db"), clock).expect("store");
     let name = BoxName::parse_allow_bare(TASK).expect("name");
     let id = store
-        .apply(Decision::insert(NewTask {
+        .apply(Decision::insert(NewBox {
             name,
             repo: "r".into(),
         }))

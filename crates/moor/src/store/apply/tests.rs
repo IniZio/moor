@@ -1,7 +1,7 @@
 //! Tests for the writer: name collisions on insert.
 
 use moor_core::domain::box_state::BoxLifecycleInput;
-use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
+use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::BoxName;
 
@@ -10,7 +10,7 @@ use crate::store::StoreError;
 
 /// A new-task decision.
 fn insert(name: &str) -> Decision {
-    Decision::insert(NewTask {
+    Decision::insert(NewBox {
         name: BoxName::parse_allow_bare(name).unwrap(),
         repo: "r".into(),
     })

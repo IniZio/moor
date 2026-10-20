@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use moor_core::domain::decision::{Decision, NewTask};
+use moor_core::domain::decision::{Decision, NewBox};
 use moor_core::domain::event::Event;
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, BoxName};
@@ -15,7 +15,7 @@ use crate::testing::clock::FakeClock;
 fn setup(dir: &std::path::Path) -> (Store, BoxId) {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
     let store = Store::open(&dir.join("moor.db"), clock).unwrap();
-    let nt = NewTask {
+    let nt = NewBox {
         name: BoxName::parse_allow_bare("t").unwrap(),
         repo: "r".into(),
     };

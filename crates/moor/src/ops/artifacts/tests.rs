@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
-use moor_core::domain::decision::{Decision, NewTask};
+use moor_core::domain::decision::{Decision, NewBox};
 use moor_core::request::{ArtifactReadReq, ArtifactsReq, ARTIFACT_CHUNK};
 use moor_core::{BoxId, BoxName, ErrorKind, Request};
 use serde_json::json;
@@ -35,7 +35,7 @@ fn name(s: &str) -> BoxName {
 }
 
 fn task(cx: &Cx, n: &str) -> BoxId {
-    let nt = NewTask {
+    let nt = NewBox {
         name: name(n),
         repo: "r".into(),
     };

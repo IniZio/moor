@@ -11,7 +11,7 @@ use moor_core::activity::{
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
-use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
+use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, SleepKind};
@@ -26,7 +26,7 @@ mod pane;
 use super::run;
 use crate::cx::Cx;
 use crate::ops::common::activity::{self, Reading};
-use crate::store::{NewRun, Store, TaskRow};
+use crate::store::{BoxRow, NewRun, Store};
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::proc::{Reply, ScriptedProc};
@@ -35,7 +35,7 @@ use crate::testing::surface::FakeSurface;
 type Parts = (BoxLifecycle, SessionState);
 const WORKING: Parts = (BoxLifecycle::Ready, SessionState::Working);
 const IDLE: Parts = (BoxLifecycle::Ready, SessionState::Idle);
-fn parts(row: &TaskRow) -> Parts {
+fn parts(row: &BoxRow) -> Parts {
     (row.lifecycle, row.session)
 }
 
@@ -64,7 +64,7 @@ fn req(task: Option<&str>, events: Option<u32>) -> ShowReq {
 
 /// Insert a task by name.
 fn add(cx: &Cx, name: &str) -> BoxId {
-    let nt = NewTask {
+    let nt = NewBox {
         name: BoxName::parse_allow_bare(name).unwrap(),
         repo: "r".into(),
     };
@@ -113,7 +113,7 @@ fn first(v: &moor_core::view::ShowView) -> &moor_core::view::TaskView {
 /// Box state of the only task, as the view reports it.
 fn box_state(cx: &Cx) -> BoxState {
     let v = run(cx, &req(None, None)).unwrap();
-    first(&v).r#box.as_ref().unwrap().state
+    first(&v).driver.as_ref().unwrap().state
 }
 
 #[test]
@@ -142,10 +142,10 @@ fn sleep_label_follows_provider_sleep_support() {
         let id = add(&cx, "a");
         ready_box(&cx, &driver, id);
         let v = run(&cx, &req(Some("a"), None)).unwrap();
-        let shown = v.task.unwrap().r#box.unwrap().sleep.after;
+        let shown = v.task.unwrap().driver.unwrap().sleep.after;
         assert_eq!(shown.as_deref(), after);
         let v = run(&cx, &req(None, None)).unwrap();
-        let listed = first(&v).r#box.as_ref().unwrap().sleep.after.clone();
+        let listed = first(&v).driver.as_ref().unwrap().sleep.after.clone();
         assert_eq!(listed.as_deref(), after);
     }
 }
@@ -573,7 +573,7 @@ fn list_sleeps_a_task_idle_past_the_threshold() {
     let row = cx.store().unwrap().task(id).unwrap().unwrap();
     assert_eq!(row.lifecycle, BoxLifecycle::Asleep);
     assert_eq!(first(&v).lifecycle, BoxLifecycle::Asleep);
-    assert_eq!(first(&v).r#box.as_ref().unwrap().state, BoxState::Asleep);
+    assert_eq!(first(&v).driver.as_ref().unwrap().state, BoxState::Asleep);
 }
 
 #[test]

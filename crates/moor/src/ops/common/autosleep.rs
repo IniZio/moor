@@ -21,7 +21,7 @@ use crate::ops::common::boxlock::BoxLock;
 use crate::ops::common::cred_sweep;
 use crate::ops::common::park::{park_tunnel, restore_tunnel};
 use crate::ops::start::revive_after_wake;
-use crate::store::{Store, StoreError, TaskRow};
+use crate::store::{BoxRow, Store, StoreError};
 
 /// Sleep the Box of task `id` when its Task has been Idle for `box.sleep_after`.
 ///
@@ -38,7 +38,7 @@ pub(crate) fn run(cx: &Cx, store: &Store, id: BoxId) {
 }
 
 /// Whether `row` has been Idle long enough to sleep.
-fn due(cx: &Cx, row: &TaskRow) -> bool {
+fn due(cx: &Cx, row: &BoxRow) -> bool {
     let facts = SleepFacts {
         lifecycle: row.lifecycle,
         session: row.session,
@@ -141,7 +141,7 @@ fn close_agent_pane(cx: &Cx, store: &Store, id: BoxId) -> Result<(), CommandErro
 }
 
 /// The directory crabbox runs from for the Task: its worktree, else its repo.
-pub(crate) fn task_dir(row: &TaskRow) -> &Path {
+pub(crate) fn task_dir(row: &BoxRow) -> &Path {
     Path::new(row.worktree.as_deref().unwrap_or(&row.repo))
 }
 
@@ -151,7 +151,7 @@ pub(crate) fn refuse(why: String) -> CommandError {
 }
 
 /// The handle of the Task's ready Box when no run is in flight, or a refusal.
-pub(crate) fn sleep_handle(cx: &Cx, row: &TaskRow) -> Result<BoxHandle, CommandError> {
+pub(crate) fn sleep_handle(cx: &Cx, row: &BoxRow) -> Result<BoxHandle, CommandError> {
     let b = row
         .boxed
         .as_ref()

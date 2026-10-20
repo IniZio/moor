@@ -7,7 +7,7 @@ use std::time::Duration;
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
-use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
+use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, SleepKind, SleepOutcome};
 use moor_core::seam::surface::SurfaceError;
@@ -49,7 +49,7 @@ fn fx_with(driver: FakeDriver) -> Fx {
     let store = cx.store().unwrap();
     let name = BoxName::parse_allow_bare("t").unwrap();
     let id = store
-        .apply(Decision::insert(NewTask {
+        .apply(Decision::insert(NewBox {
             name: name.clone(),
             repo: "r".into(),
         }))
@@ -202,7 +202,7 @@ fn sleeps_an_idle_task() {
     assert!(k.contains(&"box_asleep".to_owned()), "{k:?}");
     assert_eq!(v.task, "t");
     assert!(!v.woke);
-    assert_eq!(v.r#box.unwrap().state, BoxState::Asleep);
+    assert_eq!(v.driver.unwrap().state, BoxState::Asleep);
     assert_eq!(sleep_calls(&f), 1);
 }
 
@@ -254,7 +254,7 @@ fn cannot_sleep_refuses_and_stores_the_reason() {
     assert_eq!(session(&f), SessionState::Idle);
     assert_eq!(reason(&f).as_deref(), Some("provider cannot wake"));
     let row = f.cx.store().unwrap().task(f.id).unwrap().unwrap();
-    let shown = task_view(&row, f.cx.config()).r#box.unwrap().sleep.reason;
+    let shown = task_view(&row, f.cx.config()).driver.unwrap().sleep.reason;
     assert_eq!(shown.as_deref(), Some("provider cannot wake"));
     assert!(!kinds(&f).contains(&"asleep".to_owned()));
 }
@@ -340,7 +340,7 @@ fn starting() -> Fx {
     );
     let store = cx.store().unwrap();
     let id = store
-        .apply(Decision::insert(NewTask {
+        .apply(Decision::insert(NewBox {
             name: BoxName::parse_allow_bare("t").unwrap(),
             repo: "r".into(),
         }))
@@ -443,7 +443,7 @@ fn sleep_label_follows_provider_sleep_support() {
     for (kind, after) in [(SleepKind::None, None), (SleepKind::Suspend, Some("30m"))] {
         let f = idle_with(FakeDriver::new().sleep_kind(kind));
         let v = run(&f.cx, &req()).unwrap();
-        assert_eq!(v.r#box.unwrap().sleep.after.as_deref(), after);
+        assert_eq!(v.driver.unwrap().sleep.after.as_deref(), after);
     }
 }
 

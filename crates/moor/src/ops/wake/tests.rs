@@ -7,7 +7,7 @@ use std::time::Duration;
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
-use moor_core::domain::decision::{Decision, Field, Fields, NewTask};
+use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, SleepKind};
 use moor_core::{BoxId, BoxName, ErrorKind, ProviderId, TaskReq};
@@ -40,7 +40,7 @@ fn fx_with(driver: FakeDriver) -> Fx {
     let store = cx.store().unwrap();
     let name = BoxName::parse_allow_bare("t").unwrap();
     let id = store
-        .apply(Decision::insert(NewTask {
+        .apply(Decision::insert(NewBox {
             name: name.clone(),
             repo: "r".into(),
         }))
@@ -125,7 +125,7 @@ fn asleep_task_wakes_its_box() {
     let v = run(&f.cx, &req()).unwrap();
     assert!(v.woke);
     assert_eq!(v.task, "t");
-    assert_eq!(v.r#box.unwrap().state, BoxState::Ready);
+    assert_eq!(v.driver.unwrap().state, BoxState::Ready);
     assert!(f.driver.calls().contains(&"wake box-1".to_owned()));
     assert_eq!(wakes(&f), 1);
     assert_eq!(states(&f), (BoxLifecycle::Ready, BoxState::Ready));
@@ -206,6 +206,6 @@ fn sleep_label_follows_provider_sleep_support() {
         let f = fx_with(FakeDriver::new().sleep_kind(kind));
         asleep(&f);
         let v = run(&f.cx, &req()).unwrap();
-        assert_eq!(v.r#box.unwrap().sleep.after.as_deref(), after);
+        assert_eq!(v.driver.unwrap().sleep.after.as_deref(), after);
     }
 }

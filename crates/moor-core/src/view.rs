@@ -79,7 +79,7 @@ pub struct BoxSleepView {
 
 /// A Task's Box.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
-pub struct BoxView {
+pub struct DriverView {
     /// Box lifecycle state.
     pub state: BoxState,
     /// Provider id.
@@ -139,7 +139,7 @@ pub struct TaskView {
     /// Workspace id.
     pub workspace: Option<String>,
     /// The Box, when one exists.
-    pub r#box: Option<BoxView>,
+    pub driver: Option<DriverView>,
     /// Agent activity.
     pub agent: Option<AgentView>,
     /// In-flight run.
