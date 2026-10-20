@@ -61,6 +61,7 @@ fn an_older_moors_tcp_front_is_replaced_and_the_box_port_reaches_the_socket_fron
         w.clock.clone(),
         Arc::new(FakeRng::default()),
         Some(w.dir.path().to_path_buf()),
+        Arc::new(|| Ok(())),
     )
     .keeping_nonce();
 
@@ -76,4 +77,27 @@ fn an_older_moors_tcp_front_is_replaced_and_the_box_port_reaches_the_socket_fron
     for supervisor in supervisors.lock().unwrap().drain(..) {
         assert_eq!(supervisor.join().unwrap(), 0);
     }
+}
+
+#[test]
+fn an_older_moors_tcp_front_keeps_running_when_the_tunnel_check_fails() {
+    let w = World::new([]);
+    let _ = record_tcp_front(&w);
+    let proc = Arc::new(ScriptedProc::new());
+    proc.with_boot_id(BOOT);
+    let refusal = "crabbox 0.72.0-moor.9 or a newer -moor build is required";
+    let host = DetachedSupervisor::new(
+        proc.clone(),
+        w.clock.clone(),
+        Arc::new(FakeRng::default()),
+        Some(w.dir.path().to_path_buf()),
+        Arc::new(move || Err(refusal.to_owned())),
+    )
+    .keeping_nonce();
+
+    let errors = reconcile(&host, proc.as_ref(), w.clock.clone(), w.dir.path());
+
+    assert_eq!(errors, [format!("Box {}: {refusal}", w.id.get())]);
+    assert!(w.store.heartbeat(w.id, OLD_OWNER).unwrap());
+    assert!(proc.daemons().is_empty());
 }

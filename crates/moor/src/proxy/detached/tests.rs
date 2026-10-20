@@ -92,6 +92,7 @@ pub(super) fn bare() -> Fx {
         clock.clone(),
         rng.clone(),
         Some(dir.path().to_path_buf()),
+        Arc::new(|| Ok(())),
     );
     Fx {
         dir,
@@ -227,6 +228,27 @@ fn ensure_replaces_a_tcp_front_an_older_moor_left_running_on_the_same_box_port()
     assert_eq!(f.proc.daemons().len(), 1);
     assert_eq!((first.box_port, second.box_port), (port, port));
     assert!(!f.store.heartbeat(f.id, "sup").unwrap());
+}
+
+#[test]
+fn a_tcp_front_keeps_its_lease_when_the_tunnel_check_fails() {
+    let f = fx();
+    f.leased_row();
+    f.exec("UPDATE proxy SET ready = 1, host_port = 4000, pid = 77");
+    let refusal = "crabbox 0.72.0-moor.9 or a newer -moor build is required";
+    let sup = DetachedSupervisor::new(
+        f.proc.clone(),
+        f.clock.clone(),
+        f.rng.clone(),
+        Some(f.dir.path().to_path_buf()),
+        Arc::new(move || Err(refusal.to_owned())),
+    );
+
+    let err = sup.ensure(&f.spec()).unwrap_err();
+
+    assert_eq!(err, ProxyHostError::Failed(refusal.to_owned()));
+    assert!(f.store.heartbeat(f.id, "sup").unwrap());
+    assert!(f.proc.daemons().is_empty());
 }
 
 #[test]

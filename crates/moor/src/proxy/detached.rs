@@ -40,6 +40,10 @@ const STOP_WAIT: Duration = Duration::from_secs(3);
 /// The base64url alphabet, without padding.
 const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
+/// Fails with a message for the user when a new supervisor could not open its tunnel, such as
+/// when crabbox is older than the build moor requires.
+pub(crate) type TunnelCheck = Arc<dyn Fn() -> Result<(), String> + Send + Sync>;
+
 /// Runs and stops proxy supervisors as detached processes, tracked in the state store.
 pub(crate) struct DetachedSupervisor {
     /// Spawns, probes and signals the supervisor process.
@@ -54,6 +58,8 @@ pub(crate) struct DetachedSupervisor {
     store: OnceLock<Store>,
     /// Restart an unready row under its stored nonce instead of drawing a new one.
     keep_nonce: bool,
+    /// Runs before a running supervisor is retired.
+    tunnel_check: TunnelCheck,
 }
 
 impl DetachedSupervisor {
@@ -63,6 +69,7 @@ impl DetachedSupervisor {
         clock: Arc<dyn Clock>,
         rng: Arc<dyn Rng>,
         state_dir: Option<PathBuf>,
+        tunnel_check: TunnelCheck,
     ) -> Self {
         Self {
             proc,
@@ -71,6 +78,7 @@ impl DetachedSupervisor {
             state_dir,
             store: OnceLock::new(),
             keep_nonce: false,
+            tunnel_check,
         }
     }
 
@@ -124,6 +132,17 @@ impl DetachedSupervisor {
             .is_none_or(|now| row.boot_id.as_deref() == Some(now.as_str()))
     }
 
+    /// Takes the lease from the Box's supervisor, which exits at its next heartbeat; the row keeps
+    /// its box port, so a running Box reaches the supervisor started in its place. When the
+    /// tunnel check fails, the lease stays and the running supervisor keeps serving the Box.
+    pub(crate) fn retire(&self, store: &Store, box_id: BoxId) -> Result<(), String> {
+        (self.tunnel_check)()?;
+        store
+            .expire_proxy(box_id)
+            .map(drop)
+            .map_err(|e| format!("the proxy state could not be used: {e}"))
+    }
+
     /// Send SIGTERM to the process group led by `pid`.
     fn signal_group(&self, pid: u32) -> Sent {
         match self.proc.signal_group(pid, Signal::Term) {
@@ -173,13 +192,6 @@ fn spec_failed(e: &io::Error, log: &Path) -> ProxyHostError {
     fail(&format!("the proxy files could not be written: {e}"), log)
 }
 
-/// Takes the lease from a supervisor that an older moor started with a TCP front, which refuses a
-/// Box that sends no nonce. It exits at its next heartbeat, and the row keeps its box port, so a
-/// running Box reaches the supervisor started in its place.
-fn retire_tcp_front(store: &Store, box_id: BoxId) -> Result<bool, StoreError> {
-    store.expire_proxy(box_id)
-}
-
 /// The endpoint a ready row describes.
 fn endpoint(row: &ProxyRow, ca_pem: &str) -> ProxyEndpoint {
     ProxyEndpoint {
@@ -193,9 +205,9 @@ impl ProxyHost for DetachedSupervisor {
     /// Make sure the Box's proxy supervisor is running and ready; return its endpoint.
     ///
     /// A ready supervisor with a live lease is reused, unless an older moor started it with a
-    /// TCP front; that one loses its lease and is replaced. Otherwise a new nonce is reserved and a
-    /// supervisor is started, unless one already holds a live lease. The nonce never appears in
-    /// arguments, environment, logs or errors.
+    /// TCP front, which refuses a Box that sends no nonce; that one is retired and replaced.
+    /// Otherwise a new nonce is reserved and a supervisor is started, unless one already holds a
+    /// live lease. The nonce never appears in arguments, environment, logs or errors.
     fn ensure(&self, spec: &ProxySpec) -> Result<ProxyEndpoint, ProxyHostError> {
         let box_id = spec.box_id;
         let Some(state) = self.state_dir.as_deref() else {
@@ -216,7 +228,7 @@ impl ProxyHost for DetachedSupervisor {
             if !row.tcp_front {
                 return Ok(endpoint(&row, ca_pem));
             }
-            retire_tcp_front(store, box_id).map_err(|e| store_failed(&e, &log))?;
+            self.retire(store, box_id).map_err(ProxyHostError::Failed)?;
         }
 
         let nonce = kept

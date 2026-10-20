@@ -207,3 +207,18 @@ fn a_command_response_says_when_ssh_calls_cannot_share_a_connection() {
     let codes: Vec<&str> = resp.warnings.iter().map(|w| w.code.as_str()).collect();
     assert_eq!(codes, ["ssh_not_shared"], "{resp:?}");
 }
+
+#[test]
+fn the_tunnel_check_passes_crabbox_moor_9_and_refuses_an_older_build() {
+    let check = |version: &str| {
+        let proc = Arc::new(ScriptedProc::new());
+        proc.on(Tool::Crabbox, &["--version"], Reply::Ok(version.to_owned()));
+        tunnel_check(Arc::new(Crabbox::fake_unchecked(proc)))()
+    };
+    assert_eq!(check("crabbox 0.72.0-moor.9\n"), Ok(()));
+    let err = check("crabbox 0.72.0-moor.8\n").unwrap_err();
+    assert!(
+        err.contains("0.72.0-moor.9") && err.contains("found 0.72.0-moor.8"),
+        "{err}"
+    );
+}
