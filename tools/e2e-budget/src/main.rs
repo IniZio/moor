@@ -86,10 +86,10 @@ fn open_db(args: &Args) -> Result<Connection, String> {
     Ok(conn)
 }
 
-/// Fetches events of the newest task called `name` with id above `after`.
+/// Fetches events of the newest Box called `name` with id above `after`.
 fn fetch_events(conn: &Connection, name: &str, after: i64) -> Result<Vec<Event>, String> {
-    let sql = "SELECT id, kind, ts FROM events WHERE id > ?2 AND task = \
-               (SELECT id FROM tasks WHERE name = ?1 ORDER BY id DESC LIMIT 1) ORDER BY id";
+    let sql = "SELECT id, kind, ts FROM events WHERE id > ?2 AND box = \
+               (SELECT id FROM boxes WHERE name = ?1 ORDER BY id DESC LIMIT 1) ORDER BY id";
     let mut stmt = conn.prepare(sql).map_err(|e| e.to_string())?;
     let rows = stmt
         .query_map((name, after), |r| {
@@ -103,7 +103,7 @@ fn fetch_events(conn: &Connection, name: &str, after: i64) -> Result<Vec<Event>,
     rows.collect::<Result<_, _>>().map_err(|e| e.to_string())
 }
 
-/// `events`: prints a task's events as JSON lines.
+/// `events`: prints a Box's events as JSON lines.
 fn cmd_events(args: &Args) -> Result<bool, String> {
     let after = if args.0.contains_key("after-id") {
         args.int("after-id")?
@@ -111,7 +111,7 @@ fn cmd_events(args: &Args) -> Result<bool, String> {
         0
     };
     let conn = open_db(args)?;
-    for event in fetch_events(&conn, args.req("task")?, after)? {
+    for event in fetch_events(&conn, args.req("box")?, after)? {
         println!(
             "{}",
             serde_json::to_string(&event).map_err(|e| e.to_string())?
@@ -120,10 +120,10 @@ fn cmd_events(args: &Args) -> Result<bool, String> {
     Ok(true)
 }
 
-/// `last-id`: prints the highest event id of a task, or 0.
+/// `last-id`: prints the highest event id of a Box, or 0.
 fn cmd_last_id(args: &Args) -> Result<bool, String> {
     let conn = open_db(args)?;
-    let events = fetch_events(&conn, args.req("task")?, 0)?;
+    let events = fetch_events(&conn, args.req("box")?, 0)?;
     println!("{}", events.last().map_or(0, |e| e.id));
     Ok(true)
 }
@@ -136,7 +136,7 @@ fn emit(phases: &[Phase]) -> bool {
     e2e_budget::verdict(phases)
 }
 
-/// `start`: phases of a task start.
+/// `start`: phases of a Box start.
 fn cmd_start(args: &Args) -> Result<bool, String> {
     let d = StartBudgets::default();
     let b = StartBudgets {
@@ -183,7 +183,7 @@ fn cmd_report(args: &Args) -> Result<bool, String> {
     Ok(true)
 }
 
-/// `event-ts`: prints the unix ms of a task's newest event of one kind (above `--after-id`); exit 1 when none.
+/// `event-ts`: prints the unix ms of a Box's newest event of one kind (above `--after-id`); exit 1 when none.
 fn cmd_event_ts(args: &Args) -> Result<bool, String> {
     let after = if args.0.contains_key("after-id") {
         args.int("after-id")?
@@ -192,7 +192,7 @@ fn cmd_event_ts(args: &Args) -> Result<bool, String> {
     };
     let kind = args.req("kind")?;
     let conn = open_db(args)?;
-    let events = fetch_events(&conn, args.req("task")?, after)?;
+    let events = fetch_events(&conn, args.req("box")?, after)?;
     let ts = events
         .iter()
         .rev()
@@ -204,14 +204,14 @@ fn cmd_event_ts(args: &Args) -> Result<bool, String> {
     Ok(ts.is_some())
 }
 
-/// `model-request`: exit 0 when the task's proxy log has a successful model POST at or after `--after-ms`.
+/// `model-request`: exit 0 when the Box's proxy log has a successful model POST at or after `--after-ms`.
 /// On failure, a `429` POST after `--after-ms` prints its reason.
 fn cmd_model_request(args: &Args) -> Result<bool, String> {
     let conn = open_db(args)?;
     let id: i64 = conn
         .query_row(
-            "SELECT id FROM tasks WHERE name = ? ORDER BY id DESC LIMIT 1",
-            [args.req("task")?],
+            "SELECT id FROM boxes WHERE name = ? ORDER BY id DESC LIMIT 1",
+            [args.req("box")?],
             |r| r.get(0),
         )
         .map_err(|e| e.to_string())?;
@@ -231,16 +231,24 @@ fn cmd_model_request(args: &Args) -> Result<bool, String> {
     Ok(false)
 }
 
-/// `agent-session`: exit 0 when the newest agent session row's registered id or the task's own id is set.
+/// Reads the newest launch's registered id and the newest session's own id of the newest Box called `name`.
+fn agent_session_ids(
+    conn: &Connection,
+    name: &str,
+) -> Result<(Option<String>, Option<String>), String> {
+    let sql = "SELECT (SELECT registered_agent_session FROM launches WHERE box = b.id \
+               ORDER BY id DESC LIMIT 1), \
+               (SELECT agent_session_id FROM sessions WHERE box = b.id ORDER BY id DESC LIMIT 1) \
+               FROM boxes b WHERE b.name = ? ORDER BY b.id DESC LIMIT 1";
+    conn.query_row(sql, [name], |r| Ok((r.get(0)?, r.get(1)?)))
+        .map_err(|e| e.to_string())
+}
+
+/// `agent-session`: exit 0 when the newest launch's registered id or the Box's own id is set.
 /// The id is never printed.
 fn cmd_agent_session(args: &Args) -> Result<bool, String> {
     let conn = open_db(args)?;
-    let sql = "SELECT (SELECT registered_agent_session FROM sessions WHERE task = t.id \
-               ORDER BY id DESC LIMIT 1), t.agent_session_id \
-               FROM tasks t WHERE t.name = ? ORDER BY t.id DESC LIMIT 1";
-    let row: (Option<String>, Option<String>) = conn
-        .query_row(sql, [args.req("task")?], |r| Ok((r.get(0)?, r.get(1)?)))
-        .map_err(|e| e.to_string())?;
+    let row = agent_session_ids(&conn, args.req("box")?)?;
     Ok(agent_session_set(row.0.as_deref(), row.1.as_deref()))
 }
 
@@ -287,3 +295,6 @@ fn main() -> ExitCode {
         }
     }
 }
+
+#[cfg(test)]
+mod schema_tests;

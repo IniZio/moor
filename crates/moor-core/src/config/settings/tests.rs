@@ -1,4 +1,4 @@
-//! Precedence and credential planning for `TaskSettings::resolve`.
+//! Precedence and credential planning for `BoxSettings::resolve`.
 #![allow(clippy::panic, clippy::indexing_slicing, reason = "test assertions")]
 
 use super::*;
@@ -12,9 +12,9 @@ fn repo(t: &str) -> RepoConfig {
     parse_repo("r.yaml", t).unwrap_or_else(|e| panic!("{t}: {e}"))
 }
 
-fn resolve(u: &str, r: Option<&str>, flags: &Flags) -> TaskSettings {
+fn resolve(u: &str, r: Option<&str>, flags: &Flags) -> BoxSettings {
     let rc = r.map(repo);
-    TaskSettings::resolve(&user(u), rc.as_ref(), flags)
+    BoxSettings::resolve(&user(u), rc.as_ref(), flags)
 }
 
 fn flag_model(m: &str) -> Flags {

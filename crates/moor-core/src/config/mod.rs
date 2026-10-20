@@ -19,7 +19,7 @@ pub use user::{
     SurfaceConfig, ToolsConfig, UserConfig, DEFAULT_SLEEP_AFTER, DEFAULT_YOU_TOKEN_CMD,
 };
 
-pub use settings::{CredPlan, Flags, Layer, Sourced, TaskSettings};
+pub use settings::{BoxSettings, CredPlan, Flags, Layer, Sourced};
 
 use std::fmt;
 

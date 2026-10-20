@@ -1,7 +1,7 @@
 //! Starts the agent again for a Working Task whose pane is gone or has exited.
 
 use moor_core::activity::PaneStatus;
-use moor_core::config::{Flags, TaskSettings};
+use moor_core::config::{BoxSettings, Flags};
 use moor_core::decide::transcript::Trigger;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields};
@@ -64,7 +64,7 @@ pub(super) fn run(
     req: &StartReq,
     id: BoxId,
     (setup_exit, recreated): (Option<i32>, bool),
-    settings: &dyn Fn() -> Result<TaskSettings, CommandError>,
+    settings: &dyn Fn() -> Result<BoxSettings, CommandError>,
 ) -> Result<AgentLaunchView, CommandError> {
     let row = reread(store, id)?;
     if req.no_agent || !launch::working(&row) {
@@ -204,7 +204,7 @@ fn relaunch(
     req: &StartReq,
     (old, end): (&SessionRow, &Ended),
     (recreated, cause): (bool, Option<&str>),
-    settings: &dyn Fn() -> Result<TaskSettings, CommandError>,
+    settings: &dyn Fn() -> Result<BoxSettings, CommandError>,
 ) -> Result<AgentLaunchView, CommandError> {
     let id = old.task;
     let mut row = reread(store, id)?;

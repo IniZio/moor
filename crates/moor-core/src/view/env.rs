@@ -7,7 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::{Layer, TaskSettings};
+use crate::config::{BoxSettings, Layer};
 
 /// Kind of an environment item.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -187,7 +187,7 @@ impl EnvView {
     #[must_use]
     pub fn new(
         repo: String,
-        settings: &TaskSettings,
+        settings: &BoxSettings,
         github: EnvGithub,
         items: Vec<EnvItem>,
     ) -> Self {

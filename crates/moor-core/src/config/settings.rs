@@ -87,7 +87,7 @@ pub struct CredPlan {
 
 /// Everything a command needs from config, resolved once.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TaskSettings {
+pub struct BoxSettings {
     /// Agent model: flag > user.
     pub model: Option<Sourced<String>>,
     /// Box provider: user > default; never the repo.
@@ -149,7 +149,7 @@ fn plan_credentials(uc: &UserConfig, repo: &RepoConfig) -> Vec<CredPlan> {
         .collect()
 }
 
-impl TaskSettings {
+impl BoxSettings {
     /// Resolves settings for one command. `repo` is `None` outside a repo.
     #[must_use]
     pub fn resolve(user: &UserConfig, repo: Option<&RepoConfig>, flags: &Flags) -> Self {

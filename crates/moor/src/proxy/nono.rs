@@ -33,7 +33,7 @@ pub(crate) struct NonoSpec<'a> {
     /// for this one.
     pub(crate) nonce: &'a Secret,
     /// The Task's interception CA.
-    pub(crate) ca: &'a ca::TaskCa,
+    pub(crate) ca: &'a ca::BoxCa,
     /// Directory nono writes its CA bundle into (0700, exists).
     pub(crate) ca_dir: &'a Path,
     /// Extra upstream root PEM for every route; `None` in production.

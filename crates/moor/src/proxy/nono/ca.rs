@@ -22,22 +22,22 @@ const CERT_FILE: &str = "ca.pem";
 /// How long a generated CA certificate is valid.
 const VALIDITY: Duration = Duration::from_hours(90 * 24);
 
-/// The Task's interception CA. The key never leaves the host and is never
+/// The Box's interception CA. The key never leaves the host and is never
 /// shown by `Debug`.
-pub(crate) struct TaskCa {
+pub(crate) struct BoxCa {
     /// PKCS#8 DER private key, zeroized on drop.
     key_der: Zeroizing<Vec<u8>>,
     /// PEM certificate (public).
     cert_pem: String,
 }
 
-impl std::fmt::Debug for TaskCa {
+impl std::fmt::Debug for BoxCa {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("TaskCa(..)")
+        f.write_str("BoxCa(..)")
     }
 }
 
-impl TaskCa {
+impl BoxCa {
     /// The PEM certificate the Box trusts.
     pub(crate) fn cert_pem(&self) -> &str {
         &self.cert_pem
@@ -74,7 +74,7 @@ pub(crate) fn cert_path(state_dir: &Path, task: BoxId) -> PathBuf {
 ///
 /// A half-present or unparsable CA is an error naming the file: the Box
 /// trusts the old certificate, so a silent replacement would break it.
-pub(crate) fn load_or_create(state_dir: &Path, task: BoxId) -> std::io::Result<TaskCa> {
+pub(crate) fn load_or_create(state_dir: &Path, task: BoxId) -> std::io::Result<BoxCa> {
     let dir = ca_dir(state_dir, task);
     DirBuilder::new().recursive(true).mode(0o700).create(&dir)?;
     std::fs::set_permissions(&dir, Permissions::from_mode(0o700))?;
@@ -113,20 +113,20 @@ fn invalid(path: &Path) -> Error {
 }
 
 /// Generates a CA and writes cert and key atomically, key first.
-fn create(dir: &Path, key_path: &Path, cert_path: &Path, task: BoxId) -> std::io::Result<TaskCa> {
+fn create(dir: &Path, key_path: &Path, cert_path: &Path, task: BoxId) -> std::io::Result<BoxCa> {
     let cn = format!("moor task {}", task.get());
     let ca = EphemeralCa::generate_with_cn(&cn, VALIDITY)
         .map_err(|_| Error::other("proxy CA generation failed"))?;
     write_private(dir, key_path, ca.key_pem().as_bytes())?;
     write_private(dir, cert_path, ca.cert_pem().as_bytes())?;
-    Ok(TaskCa {
+    Ok(BoxCa {
         key_der: Zeroizing::new(ca.key_der().to_vec()),
         cert_pem: ca.cert_pem().to_owned(),
     })
 }
 
 /// Reads both files and checks that the key matches the certificate.
-fn load(key_path: &Path, cert_path: &Path) -> std::io::Result<TaskCa> {
+fn load(key_path: &Path, cert_path: &Path) -> std::io::Result<BoxCa> {
     let key_pem = Zeroizing::new(std::fs::read_to_string(key_path).map_err(|_| invalid(key_path))?);
     let cert_pem = std::fs::read_to_string(cert_path).map_err(|_| invalid(cert_path))?;
     let combined = Zeroizing::new(format!("{}\n{cert_pem}", key_pem.as_str()));
@@ -135,7 +135,7 @@ fn load(key_path: &Path, cert_path: &Path) -> std::io::Result<TaskCa> {
     EphemeralCa::from_existing(&key_der, &cert_pem).map_err(|_| invalid(key_path))?;
     std::fs::set_permissions(key_path, Permissions::from_mode(0o600))?;
     std::fs::set_permissions(cert_path, Permissions::from_mode(0o600))?;
-    Ok(TaskCa { key_der, cert_pem })
+    Ok(BoxCa { key_der, cert_pem })
 }
 
 /// Writes `bytes` to `path` via a 0600 temp file and a rename, so the file

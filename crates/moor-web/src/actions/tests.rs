@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 
 use super::steer::{build, PATHS};
 
-fn task(name: &str) -> BoxName {
+fn parsed(name: &str) -> BoxName {
     BoxName::parse_allow_bare(name).unwrap()
 }
 
@@ -17,7 +17,7 @@ fn built(path: &str, body: &Value) -> Result<Request, String> {
 
 fn steer(name: &str, text: Option<&str>, menu: Option<u32>) -> Request {
     Request::Steer(SteerReq {
-        box_name: task(name),
+        box_name: parsed(name),
         text: text.map(Into::into),
         menu,
     })
@@ -25,29 +25,29 @@ fn steer(name: &str, text: Option<&str>, menu: Option<u32>) -> Request {
 
 #[test]
 fn steer_sends_text() {
-    let req = built("/steer", &json!({"task": "t", "text": "hello"}));
+    let req = built("/steer", &json!({"box": "t", "text": "hello"}));
     assert_eq!(req, Ok(steer("t", Some("hello"), None)));
 }
 
 #[test]
 fn answer_by_option_sends_the_menu_number() {
-    let req = built("/answer", &json!({"task": "t", "option": 2}));
+    let req = built("/answer", &json!({"box": "t", "option": 2}));
     assert_eq!(req, Ok(steer("t", None, Some(2))));
 }
 
 #[test]
 fn answer_by_text_sends_text() {
-    let req = built("/answer", &json!({"task": "t", "text": "yes"}));
+    let req = built("/answer", &json!({"box": "t", "text": "yes"}));
     assert_eq!(req, Ok(steer("t", Some("yes"), None)));
 }
 
 #[test]
 fn close_sends_a_plain_close() {
-    let req = built("/close", &json!({"task": "t"}));
+    let req = built("/close", &json!({"box": "t"}));
     assert_eq!(
         req,
         Ok(Request::Close(CloseReq {
-            box_name: task("t"),
+            box_name: parsed("t"),
             force: false,
             trust_moor_yaml: false,
         }))
@@ -56,7 +56,7 @@ fn close_sends_a_plain_close() {
 
 #[test]
 fn end_session_builds_end_session_with_the_original_name() {
-    let req = built("/end-session", &json!({"task": "app/t"}));
+    let req = built("/end-session", &json!({"box": "app/t"}));
     assert_eq!(
         req,
         Ok(Request::EndSession(EndSessionReq {
@@ -67,25 +67,25 @@ fn end_session_builds_end_session_with_the_original_name() {
 
 #[test]
 fn end_session_rejects_a_bad_name() {
-    assert!(built("/end-session", &json!({"task": "Not A Name"})).is_err());
+    assert!(built("/end-session", &json!({"box": "Not A Name"})).is_err());
 }
 
 #[test]
 fn malformed_bodies_are_errors() {
     let bad = [
         ("/close", "{not json".to_string()),
-        ("/close", json!({"task": "t", "extra": 1}).to_string()),
-        ("/close", json!({"task": "Not A Name"}).to_string()),
-        ("/steer", json!({"task": "t"}).to_string()),
+        ("/close", json!({"box": "t", "extra": 1}).to_string()),
+        ("/close", json!({"box": "Not A Name"}).to_string()),
+        ("/steer", json!({"box": "t"}).to_string()),
         (
             "/steer",
-            json!({"task": "Not A Name", "text": "x"}).to_string(),
+            json!({"box": "Not A Name", "text": "x"}).to_string(),
         ),
         (
             "/answer",
-            json!({"task": "t", "option": 1, "text": "x"}).to_string(),
+            json!({"box": "t", "option": 1, "text": "x"}).to_string(),
         ),
-        ("/answer", json!({"task": "t"}).to_string()),
+        ("/answer", json!({"box": "t"}).to_string()),
         ("/end-session", "{not json".to_string()),
     ];
     for (path, b) in &bad {
@@ -101,27 +101,27 @@ fn bad_json_says_so() {
 
 #[test]
 fn option_zero_is_rejected() {
-    let err = built("/answer", &json!({"task": "t", "option": 0})).unwrap_err();
+    let err = built("/answer", &json!({"box": "t", "option": 0})).unwrap_err();
     assert_eq!(err, "option is 1-based");
 }
 
 #[test]
 fn both_or_neither_of_option_and_text_is_rejected() {
-    let both = built("/answer", &json!({"task": "t", "option": 1, "text": "x"}));
-    let neither = built("/answer", &json!({"task": "t"}));
+    let both = built("/answer", &json!({"box": "t", "option": 1, "text": "x"}));
+    let neither = built("/answer", &json!({"box": "t"}));
     assert_eq!(both, Err("give exactly one of option or text".into()));
     assert_eq!(neither, Err("give exactly one of option or text".into()));
 }
 
 #[test]
 fn unknown_field_is_rejected() {
-    let err = built("/steer", &json!({"task": "t", "text": "x", "force": true})).unwrap_err();
+    let err = built("/steer", &json!({"box": "t", "text": "x", "force": true})).unwrap_err();
     assert!(err.starts_with("bad json: "), "{err}");
 }
 
 #[test]
 fn unknown_path_is_rejected() {
-    let err = built("/start", &json!({"task": "t"})).unwrap_err();
+    let err = built("/start", &json!({"box": "t"})).unwrap_err();
     assert_eq!(err, "unknown action");
 }
 
@@ -129,9 +129,9 @@ fn unknown_path_is_rejected() {
 fn every_listed_path_builds_with_a_valid_body() {
     for path in PATHS {
         let body = match *path {
-            "/steer" => json!({"task": "t", "text": "x"}),
-            "/answer" => json!({"task": "t", "option": 1}),
-            _ => json!({"task": "t"}),
+            "/steer" => json!({"box": "t", "text": "x"}),
+            "/answer" => json!({"box": "t", "option": 1}),
+            _ => json!({"box": "t"}),
         };
         assert!(built(path, &body).is_ok(), "{path}");
     }

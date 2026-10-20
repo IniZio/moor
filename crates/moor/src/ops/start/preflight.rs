@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use moor_core::config::TaskSettings;
+use moor_core::config::BoxSettings;
 use moor_core::domain::event::CheckedCred;
 use moor_core::{ErrorKind, StartReq};
 
@@ -12,7 +12,7 @@ use crate::ops::common::creds::unresolved;
 use crate::store::BoxRow;
 
 /// Why the Task must be rejected, naming each unresolved item; `None` when all resolve.
-pub(super) fn rejection(cx: &Cx, settings: &TaskSettings, worktree: &Path) -> Option<String> {
+pub(super) fn rejection(cx: &Cx, settings: &BoxSettings, worktree: &Path) -> Option<String> {
     let failing = unresolved(cx, settings, worktree);
     if failing.is_empty() {
         return None;
@@ -29,7 +29,7 @@ pub(super) fn rejection(cx: &Cx, settings: &TaskSettings, worktree: &Path) -> Op
 }
 
 /// The credentials the Task uses, all resolved; names and layers only.
-pub(super) fn checked(settings: &TaskSettings) -> Vec<CheckedCred> {
+pub(super) fn checked(settings: &BoxSettings) -> Vec<CheckedCred> {
     settings
         .used_credentials()
         .map(|c| CheckedCred {

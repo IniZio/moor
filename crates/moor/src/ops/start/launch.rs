@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use moor_core::activity::PaneStatus;
 use moor_core::box_key::BoxKey;
-use moor_core::config::{Flags, TaskSettings};
+use moor_core::config::{BoxSettings, Flags};
 
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
@@ -45,7 +45,7 @@ pub(super) fn run(
     req: &StartReq,
     id: BoxId,
     setup_exit: Option<i32>,
-    settings: &dyn Fn() -> Result<TaskSettings, CommandError>,
+    settings: &dyn Fn() -> Result<BoxSettings, CommandError>,
 ) -> Result<AgentLaunchView, CommandError> {
     let row = reread(store, id)?;
     let resume = row
@@ -124,7 +124,7 @@ pub(super) fn begin(
     store: &Store,
     row: &BoxRow,
     launch: &LaunchReq,
-    cfg: &TaskSettings,
+    cfg: &BoxSettings,
 ) -> Result<AgentLaunchView, CommandError> {
     let id = row.id;
     let handle = row.boxed.as_ref().and_then(|b| b.handle.clone());

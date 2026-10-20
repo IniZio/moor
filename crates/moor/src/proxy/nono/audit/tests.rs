@@ -14,7 +14,7 @@ use nono::undo::NetworkAuditEvent;
 use nono_proxy::capture::{CredentialCaptureBackend as _, CredentialCaptureRequest};
 use serde_json::{json, Value};
 
-use super::{apply, EgressSink, TaskSink, Withheld};
+use super::{apply, BoxSink, EgressSink, Withheld};
 use crate::proxy::nono::capture::{MoorCapture, RuleSource};
 use crate::proxy::ProxyLog;
 use crate::store::Store;
@@ -290,7 +290,7 @@ fn approval_decisions_are_ignored() {
 }
 
 /// A store with one task and a proxy log, both in `dir`.
-fn task_sink_parts(dir: &Path) -> (Store, ProxyLog, BoxId) {
+fn box_sink_parts(dir: &Path) -> (Store, ProxyLog, BoxId) {
     let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000)));
     let store = Store::open(&dir.join("moor.db"), clock.clone()).unwrap();
     let new = NewBox {
@@ -305,8 +305,8 @@ fn task_sink_parts(dir: &Path) -> (Store, ProxyLog, BoxId) {
 #[test]
 fn task_sink_writes_events_and_a_path_free_log() {
     let dir = tempfile::tempdir().unwrap();
-    let (store, log, task) = task_sink_parts(dir.path());
-    let sink = TaskSink {
+    let (store, log, task) = box_sink_parts(dir.path());
+    let sink = BoxSink {
         log: &log,
         store: &store,
         task,
@@ -364,8 +364,8 @@ fn task_sink_writes_events_and_a_path_free_log() {
 #[test]
 fn task_sink_records_method_and_category_without_the_path() {
     let dir = tempfile::tempdir().unwrap();
-    let (store, log, task) = task_sink_parts(dir.path());
-    let sink = TaskSink {
+    let (store, log, task) = box_sink_parts(dir.path());
+    let sink = BoxSink {
         log: &log,
         store: &store,
         task,
@@ -405,9 +405,9 @@ fn task_sink_records_method_and_category_without_the_path() {
 #[test]
 fn task_sink_swallows_store_errors() {
     let dir = tempfile::tempdir().unwrap();
-    let (store, log, task) = task_sink_parts(dir.path());
+    let (store, log, task) = box_sink_parts(dir.path());
     let missing = BoxId::new(task.get() + 100);
-    let sink = TaskSink {
+    let sink = BoxSink {
         log: &log,
         store: &store,
         task: missing,
@@ -497,8 +497,8 @@ fn non_credential_hosts_and_injected_requests_are_not_withheld() {
 #[test]
 fn withheld_event_and_log_never_hold_the_raw_path() {
     let dir = tempfile::tempdir().unwrap();
-    let (store, log, task) = task_sink_parts(dir.path());
-    let sink = TaskSink {
+    let (store, log, task) = box_sink_parts(dir.path());
+    let sink = BoxSink {
         log: &log,
         store: &store,
         task,

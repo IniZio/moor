@@ -15,7 +15,7 @@ use tempfile::TempDir;
 use ureq::Agent;
 
 use super::upstream::{self, Upstream};
-use crate::proxy::nono::audit::{self, EgressSink, TaskSink, Withheld};
+use crate::proxy::nono::audit::{self, BoxSink, EgressSink, Withheld};
 use crate::proxy::nono::capture::{MoorCapture, RuleSource, CACHE_TTL};
 use crate::proxy::nono::{build_config, ca, NonoProxy, NonoSpec};
 use crate::proxy::ProxyLog;
@@ -56,7 +56,7 @@ struct Rig {
     /// Source of time for the capture.
     clock: Arc<FakeClock>,
     /// The Task CA.
-    ca: ca::TaskCa,
+    ca: ca::BoxCa,
     /// Running proxy.
     proxy: Option<NonoProxy>,
     /// Task Nonce.
@@ -152,7 +152,7 @@ fn source(count: &Arc<AtomicUsize>, fail: &Arc<AtomicBool>, user: Option<&str>) 
 fn start_proxy(
     dir: &Path,
     nonce: &Secret,
-    ca: &ca::TaskCa,
+    ca: &ca::BoxCa,
     ups: [&Upstream; 2],
     capture: &Arc<MoorCapture>,
 ) -> NonoProxy {
@@ -358,7 +358,7 @@ fn unlisted_host_is_refused_and_reaches_the_sinks() {
     );
 
     let (store, task, log) = rig.store();
-    let task_sink = TaskSink {
+    let task_sink = BoxSink {
         log: &log,
         store: &store,
         task,
@@ -457,7 +457,7 @@ fn fetch_failure_is_reported_and_never_reaches_upstream() {
     );
 
     let (store, task, log) = rig.store();
-    let task_sink = TaskSink {
+    let task_sink = BoxSink {
         log: &log,
         store: &store,
         task,
@@ -480,7 +480,7 @@ fn secret_bytes_never_appear_in_logs_debug_or_errors() {
     let rig = rig();
     let agent = rig.client();
     let (store, task, log) = rig.store();
-    let sink = TaskSink {
+    let sink = BoxSink {
         log: &log,
         store: &store,
         task,

@@ -3,7 +3,7 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use moor_core::config::{parse_user, Flags, TaskSettings};
+use moor_core::config::{parse_user, BoxSettings, Flags};
 use moor_core::seam::proc::Tool;
 
 use super::{checked, unresolved};
@@ -24,9 +24,9 @@ fn cx(dir: &Path, proc: &Arc<ScriptedProc>) -> Cx {
 }
 
 /// Settings resolved from user config `yaml` alone.
-fn settings(yaml: &str) -> TaskSettings {
+fn settings(yaml: &str) -> BoxSettings {
     let user = parse_user("u.yaml", yaml).expect("user config");
-    TaskSettings::resolve(&user, None, &Flags::default())
+    BoxSettings::resolve(&user, None, &Flags::default())
 }
 
 /// How many `sh` calls the proc has seen.

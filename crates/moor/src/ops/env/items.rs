@@ -2,14 +2,14 @@
 
 use std::path::Path;
 
-use moor_core::config::{DotfilesConfig, Identity, Layer, TaskSettings};
+use moor_core::config::{BoxSettings, DotfilesConfig, Identity, Layer};
 use moor_core::view::env::{EnvGithub, EnvItem, EnvKind, EnvMint, EnvResolved};
 
 use crate::cx::Cx;
 use crate::ops::common::creds::{checked, plain, Checked};
 
 /// All items in display order.
-pub(crate) fn assemble(cx: &Cx, s: &TaskSettings, worktree: &Path) -> Vec<EnvItem> {
+pub(crate) fn assemble(cx: &Cx, s: &BoxSettings, worktree: &Path) -> Vec<EnvItem> {
     let mut items = Vec::new();
     if let Ok(author) = cx.git().author(worktree) {
         for (name, val) in [("user.name", author.name), ("user.email", author.email)] {
@@ -65,7 +65,7 @@ fn dotfiles_item(cx: &Cx, d: &DotfilesConfig) -> EnvItem {
 }
 
 /// GitHub block. No App store exists yet, so no App is ever set up.
-pub(crate) fn github(s: &TaskSettings) -> EnvGithub {
+pub(crate) fn github(s: &BoxSettings) -> EnvGithub {
     let (mode, token_source) = match s.identity {
         Identity::Bot => ("bot", "GitHub App installation token"),
         Identity::You => ("app-you", "GitHub App user token (repo-scoped)"),

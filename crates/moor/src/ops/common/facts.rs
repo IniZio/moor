@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use moor_core::config::{Flags, RepoConfig, TaskSettings};
+use moor_core::config::{BoxSettings, Flags, RepoConfig};
 use moor_core::seam::driver::DriverCaps;
 use moor_core::ProviderId;
 
@@ -18,20 +18,20 @@ pub(crate) fn settings(
     cx: &Cx,
     worktree: &Path,
     flags: &Flags,
-) -> Result<TaskSettings, CommandError> {
+) -> Result<BoxSettings, CommandError> {
     Ok(resolved(cx, cx.repo_config(worktree)?.as_ref(), flags))
 }
 
 /// Settings for one command from an already-read repo config, user config from Cx, and flags.
-pub(crate) fn resolved(cx: &Cx, repo: Option<&RepoConfig>, flags: &Flags) -> TaskSettings {
-    TaskSettings::resolve(cx.config(), repo, flags)
+pub(crate) fn resolved(cx: &Cx, repo: Option<&RepoConfig>, flags: &Flags) -> BoxSettings {
+    BoxSettings::resolve(cx.config(), repo, flags)
 }
 
 /// The capabilities of the settings' provider.
 ///
 /// # Errors
 /// The driver cannot report the provider's capabilities.
-pub(crate) fn provider_caps(cx: &Cx, cfg: &TaskSettings) -> Result<DriverCaps, CommandError> {
+pub(crate) fn provider_caps(cx: &Cx, cfg: &BoxSettings) -> Result<DriverCaps, CommandError> {
     let provider = ProviderId::new(cfg.provider.value.clone());
     Ok(cx.driver().caps(&provider)?)
 }
@@ -43,7 +43,7 @@ pub(crate) fn provider_caps(cx: &Cx, cfg: &TaskSettings) -> Result<DriverCaps, C
 /// # Errors
 /// The provider's `caps` lack `reverse_tunnel`.
 pub(crate) fn require_reverse_tunnel(
-    cfg: &TaskSettings,
+    cfg: &BoxSettings,
     caps: DriverCaps,
 ) -> Result<DriverCaps, CommandError> {
     let provider = &cfg.provider.value;

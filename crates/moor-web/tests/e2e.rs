@@ -36,7 +36,7 @@ const DEMO_REPO: &str = "repos:\n  demo:\n    url: /nonexistent/moor-e2e/demo.gi
 fn create_request(stack: &Stack) -> String {
     let (status, body) = stack.post(
         "/requests",
-        &json!({"repo": "demo", "task": "t1", "goal": "g"}),
+        &json!({"repo": "demo", "name": "t1", "goal": "g"}),
     );
     assert_eq!(
         status,
@@ -73,7 +73,7 @@ fn check_open_root(stack: &Stack, key: &str) -> i64 {
     let diag = stack.diagnostics();
     let root = root_for(stack, key).unwrap_or_else(|| panic!("no root for key\n{diag}"));
     let id = root["session"].as_i64().expect("root session id");
-    assert_eq!(root["box"], Value::Null, "root has a Box: {root}");
+    assert_eq!(root["name"], Value::Null, "root has a Box: {root}");
     assert_eq!(root["request"]["repo"], "demo");
     assert_eq!(root["request"]["ended_at"], Value::Null);
     assert_ne!(root["state"], "gone", "root: {root}");
@@ -119,7 +119,7 @@ fn end_request(stack: &Stack, key: &str, id: i64) {
 
     let (status, body) = stack.post(
         &format!("/requests/{key}/workers"),
-        &json!({"task": "t2", "goal": "g"}),
+        &json!({"name": "t2", "goal": "g"}),
     );
     assert_eq!(status, 409, "workers after end: {body}\n{diag}");
 }
@@ -141,7 +141,7 @@ fn unknown_repo_fails_before_any_root_is_opened() {
     let stack = Stack::start();
     let (status, body) = stack.post(
         "/requests",
-        &json!({"repo": "demo", "task": "t1", "goal": "g"}),
+        &json!({"repo": "demo", "name": "t1", "goal": "g"}),
     );
     assert_eq!(status, 202, "POST /requests: {body}");
     let accepted = parse(&body);

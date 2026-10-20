@@ -126,8 +126,8 @@ fn open_boxes(client: &Client) -> Result<HashSet<i64>, JobFailure> {
         pane: false,
     });
     let value = call(client, req).map_err(|m| fail("list-boxes", m))?;
-    let tasks = value.get("boxes").and_then(Value::as_array);
-    Ok(tasks
+    let box_views = value.get("boxes").and_then(Value::as_array);
+    Ok(box_views
         .into_iter()
         .flatten()
         .filter(|t| {
@@ -189,9 +189,9 @@ fn close_all(client: &Client, h: &JobHandle, items: &[Item], open: &HashSet<i64>
             Some(name) => {
                 h.progress(&format!("closing {name}"));
                 BoxName::parse_allow_bare(name)
-                    .map(|task| {
+                    .map(|box_name| {
                         Request::Close(CloseReq {
-                            box_name: task,
+                            box_name,
                             force: false,
                             trust_moor_yaml: false,
                         })
