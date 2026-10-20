@@ -7,6 +7,7 @@ use moor_core::seam::proxy_host::ProxyStatus;
 use moor_core::seam::surface::SurfaceError;
 use moor_core::BoxId;
 
+use super::dead_agent::{ca_stopped, recorded_failure, CA};
 use super::relaunch::{gone, obs, set_agent_session, started};
 use super::World;
 use crate::ops::start::revive_after_wake;
@@ -125,7 +126,9 @@ fn the_relaunch_waits_for_the_tunnel_to_come_up() {
     gone(&w);
     let host =
         FakeProxyHost::new().with_status_script([ProxyStatus::Starting, ProxyStatus::Starting, UP]);
-    w.cx = w.cx.with_proxy_host(Arc::new(host.clone()));
+    w.cx =
+        w.cx.with_proxy_host(Arc::new(host.clone()))
+            .with_prompt_window(Duration::ZERO);
     let before = w.cx.clock().now().as_millis();
     revive(&w, id);
     assert_eq!(engine.launches().len(), 2);
@@ -139,7 +142,9 @@ fn the_relaunch_waits_out_a_recent_tunnel_restart() {
     set_agent_session(&w, id, "agent-1");
     gone(&w);
     let host = FakeProxyHost::new().with_status(UP);
-    w.cx = w.cx.with_proxy_host(Arc::new(host));
+    w.cx =
+        w.cx.with_proxy_host(Arc::new(host))
+            .with_prompt_window(Duration::ZERO);
     let restart = ExtraEvent::TunnelRestarted {
         box_port: 40123,
         reason: "tunnel exited".into(),
@@ -161,7 +166,9 @@ fn the_relaunch_goes_ahead_when_the_tunnel_never_settles() {
     set_agent_session(&w, id, "agent-1");
     gone(&w);
     let host = FakeProxyHost::new().with_status(ProxyStatus::Starting);
-    w.cx = w.cx.with_proxy_host(Arc::new(host));
+    w.cx =
+        w.cx.with_proxy_host(Arc::new(host))
+            .with_prompt_window(Duration::ZERO);
     let before = w.cx.clock().now().as_millis();
     revive(&w, id);
     assert_eq!(engine.launches().len(), 2);
@@ -177,4 +184,16 @@ fn a_relaunch_after_wake_makes_no_box_call() {
     revive(&w, id);
     assert_eq!(engine.launches().len(), 2);
     assert_eq!(w.driver.calls(), before);
+}
+
+#[test]
+fn a_relaunch_after_wake_stopped_by_an_unwritable_proxy_ca_records_the_ca_message() {
+    let (w, engine, id) = started();
+    set_agent_session(&w, id, "agent-1");
+    gone(&w);
+    w.surface.push_pane_obs("p-2", Ok(ca_stopped()));
+    revive(&w, id);
+    assert_eq!(engine.launches().len(), 2);
+    assert_eq!(recorded_failure(&w, id).as_deref(), Some(CA));
+    assert!(w.cx.store().unwrap().live_session(id).unwrap().is_none());
 }

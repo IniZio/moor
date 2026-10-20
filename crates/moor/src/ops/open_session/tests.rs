@@ -3,6 +3,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use moor_core::activity::{PaneObs, PaneStatus};
 use moor_core::domain::box_state::BoxLifecycleInput;
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::boxes::BoxInput;
@@ -25,6 +26,7 @@ struct Fx {
     cx: Cx,
     engine: Arc<FakeEngine>,
     driver: Arc<FakeDriver>,
+    surface: Arc<FakeSurface>,
     id: BoxId,
 }
 
@@ -44,7 +46,7 @@ fn fx(engine: FakeEngine, live: bool) -> Fx {
         dir.path(),
         Path::new("/home/me/proj"),
         driver.clone(),
-        surface,
+        surface.clone(),
         proc,
     )
     .with_engine(engine.clone());
@@ -59,6 +61,7 @@ fn fx(engine: FakeEngine, live: bool) -> Fx {
         cx,
         engine,
         driver,
+        surface,
         id,
     }
 }
@@ -158,6 +161,26 @@ fn an_open_makes_no_box_call() {
     run(&f.cx, &req()).unwrap();
     assert_eq!(f.engine.launches().len(), 1);
     assert_eq!(f.driver.calls(), before);
+}
+
+#[test]
+fn an_agent_stopped_by_an_unwritable_proxy_ca_fails_the_open_with_the_ca_message() {
+    let f = fx(FakeEngine::new(), false);
+    let ca = "the Proxy CA could not be written to /home/u/.moor-proxy/ca.pem";
+    let obs = PaneObs {
+        status: PaneStatus::Unknown,
+        tail: format!("moor: {ca}\nmoor: agent exited 1"),
+        prompt: None,
+        exit_marker: Some(1),
+    };
+    f.surface.push_pane_obs("p-1", Ok(obs));
+    let err = run(&f.cx, &req()).unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Failed);
+    assert_eq!(err.error.to_string(), format!("launch: {ca}"));
+    let store = f.cx.store().unwrap();
+    assert!(store.live_session(f.id).unwrap().is_none());
+    let row = store.box_row(f.id).unwrap().unwrap();
+    assert_eq!(row.launch_failure.map(|l| l.message).as_deref(), Some(ca));
 }
 
 #[test]

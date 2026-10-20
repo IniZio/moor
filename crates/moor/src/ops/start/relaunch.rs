@@ -16,6 +16,7 @@ use std::time::Duration;
 
 use super::launch;
 use super::reopen;
+use super::watch;
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
@@ -264,6 +265,8 @@ fn relaunch(
 ///
 /// The caller holds the Box lock. A live agent, or a Box with no live session or not Working, is
 /// left alone. The stored agent session is resumed; a Box with neither one nor a goal stays as is.
+/// The new pane is watched as `start` watches it, so an agent that dies at launch, such as one
+/// stopped because the Proxy CA could not be written, is recorded as a launch failure.
 ///
 /// # Errors
 /// A store failure, or settings that cannot be resolved.
@@ -303,18 +306,18 @@ pub(crate) fn revive_after_wake(cx: &Cx, store: &Store, id: BoxId) -> Result<(),
         let at = row.worktree.as_deref().unwrap_or(&row.repo);
         settings(cx, Path::new(at), &Flags::default())
     };
-    let Some((old, end)) = &ended_pane else {
-        launch::run(cx, store, &req, id, None, &settings)?;
-        return Ok(());
+    let view = match &ended_pane {
+        None => launch::run(cx, store, &req, id, None, &settings)?,
+        Some((old, end)) => relaunch(
+            cx,
+            store,
+            &req,
+            (old, end),
+            (false, Some("wake")),
+            &settings,
+        )?,
     };
-    relaunch(
-        cx,
-        store,
-        &req,
-        (old, end),
-        (false, Some("wake")),
-        &settings,
-    )?;
+    watch::run(cx, store, id, view);
     Ok(())
 }
 

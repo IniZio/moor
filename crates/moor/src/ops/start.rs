@@ -43,6 +43,7 @@ use response::{queued_view, set_agent, set_provisioned, view, with_provider};
 
 pub(crate) use launch::begin_seeded;
 pub(crate) use relaunch::revive_after_wake;
+pub(crate) use watch::run as watch_launch;
 
 /// What `start` learns before it changes anything.
 struct Facts {
