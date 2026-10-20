@@ -3,6 +3,7 @@
 mod chain;
 mod e2e;
 mod passthrough;
+mod streaming;
 mod uploads;
 pub(crate) mod upstream;
 
