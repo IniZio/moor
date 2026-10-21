@@ -1,7 +1,8 @@
 //! Spots a credential rule's account being rate limited or rejected, and recovering.
 //!
 //! Only the rule name and the status are read. Each status is reported once per
-//! rule until a 2xx shows the rule's upstream answering again.
+//! rule until a 2xx on a request that carried the rule's credential shows the
+//! upstream answering again.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::mem;
@@ -88,10 +89,14 @@ impl Limits {
         let (Some(rule), Some(status)) = (rule(event), event.status) else {
             return;
         };
-        let rejected = matches!(status, 401 | 403)
-            && event.managed_credential_active != Some(false)
-            && !self.take_excused(event, status);
-        if status != 429 && !rejected && !(200..300).contains(&status) {
+        let credentialed = event.managed_credential_active != Some(false);
+        let counts = match status {
+            429 => true,
+            401 | 403 => credentialed && !self.take_excused(event, status),
+            200..=299 => credentialed,
+            _ => false,
+        };
+        if !counts {
             return;
         }
         let mut open = self.open.lock().unwrap_or_else(PoisonError::into_inner);
