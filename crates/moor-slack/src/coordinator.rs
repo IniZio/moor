@@ -6,7 +6,9 @@ use std::process::Command;
 
 use crate::credentials::{AgentKind, CredentialCheck};
 
+pub(crate) mod brief;
 pub(crate) mod claude;
+pub(crate) mod context;
 mod process;
 pub(crate) mod turn;
 

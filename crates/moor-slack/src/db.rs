@@ -1,5 +1,5 @@
 //! The front's own `SQLite` file, `slack.db`: seen envelopes, each channel's repos, each
-//! thread with the Boxes it asked for and what its starter wrote.
+//! thread with the Boxes it asked for, what its starter wrote and its coordinator turns.
 
 use std::path::Path;
 use std::time::Duration;
@@ -13,7 +13,7 @@ const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// The schema version this build writes and reads. A schema change edits [`SCHEMA`] in place
 /// and raises this number; there are no migrations, so a file at any other version is refused.
-const SCHEMA_VERSION: i64 = 5;
+const SCHEMA_VERSION: i64 = 6;
 
 /// The whole schema, created in an empty file.
 const SCHEMA: &str = "
@@ -24,6 +24,9 @@ const SCHEMA: &str = "
         repo TEXT NOT NULL,
         owner TEXT NOT NULL,
         created_at INTEGER NOT NULL,
+        workdir TEXT,
+        root_session INTEGER,
+        last_turn_at INTEGER,
         PRIMARY KEY (channel, thread_ts)
     );
     CREATE TABLE slack_boxes (
@@ -55,6 +58,23 @@ const SCHEMA: &str = "
         done_at INTEGER
     );
     CREATE INDEX slack_inbox_thread ON slack_inbox (channel, thread_ts, id);
+    CREATE TABLE slack_turns (
+        id INTEGER PRIMARY KEY,
+        channel TEXT NOT NULL,
+        thread_ts TEXT NOT NULL,
+        paid_by TEXT NOT NULL,
+        started_at INTEGER NOT NULL,
+        pid INTEGER,
+        placeholder_ts TEXT,
+        ended_at INTEGER,
+        end TEXT CHECK (end IN
+            ('replied', 'failed', 'killed', 'unsafe', 'lost', 'no_token', 'token_refused')),
+        reply_text TEXT,
+        posted_at INTEGER,
+        context_bytes INTEGER,
+        cost_usd REAL
+    );
+    CREATE INDEX slack_turns_thread ON slack_turns (channel, thread_ts, id);
     CREATE TABLE slack_channel_repos (
         channel TEXT NOT NULL,
         repo TEXT NOT NULL,
@@ -215,6 +235,17 @@ pub(crate) use channel_repos::ChannelRepo;
 
 mod inbox;
 pub(crate) use inbox::{InboxItem, ItemKind};
+
+#[allow(
+    dead_code,
+    reason = "the scheduler that runs coordinator turns comes in the next change"
+)]
+mod turns;
+#[allow(
+    unused_imports,
+    reason = "the scheduler that runs coordinator turns comes in the next change"
+)]
+pub(crate) use turns::{End, TurnRow};
 
 #[cfg(test)]
 mod tests;
