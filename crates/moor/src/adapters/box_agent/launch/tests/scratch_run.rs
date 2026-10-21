@@ -22,10 +22,8 @@ impl Scratch {
     }
 
     pub(super) fn stub(&self, name: &str, body: &str) {
-        use std::os::unix::fs::PermissionsExt;
         let p = self.path(&format!("bin/{name}"));
-        std::fs::write(&p, format!("#!/bin/sh\n{body}\n")).unwrap();
-        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        moor_testkit::write_executable(&p, format!("#!/bin/sh\n{body}\n")).unwrap();
     }
 
     pub(super) fn script(&self, hook_step: &str) -> String {

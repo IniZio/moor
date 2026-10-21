@@ -5,7 +5,6 @@
     reason = "tests time real elapsed durations"
 )]
 
-use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
@@ -17,8 +16,7 @@ use crate::env::Env;
 
 fn script(dir: &Path, name: &str, body: &str) -> String {
     let path = dir.join(name);
-    std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    moor_testkit::write_executable(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
     path.to_string_lossy().into_owned()
 }
 

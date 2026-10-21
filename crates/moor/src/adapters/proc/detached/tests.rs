@@ -13,8 +13,7 @@ use crate::env::Env;
 
 fn script(dir: &Path, body: &str) -> String {
     let path = dir.join("git");
-    std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    moor_testkit::write_executable(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
     path.to_string_lossy().into_owned()
 }
 

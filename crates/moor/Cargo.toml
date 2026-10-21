@@ -49,6 +49,7 @@ tokio = { version = "1", default-features = false, features = [
 
 [dev-dependencies]
 tempfile = "3"
+moor-testkit = { path = "../moor-testkit" }
 rcgen = { version = "0.14", default-features = false, features = [
   "pem",
   "ring",

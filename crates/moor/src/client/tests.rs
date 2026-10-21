@@ -181,10 +181,8 @@ fn unloadable_config_yields_none() {
 
 /// Writes an executable fake ssh that runs `body` and returns an Env pointing at it.
 fn fake_ssh(dir: &Path, body: &str) -> Env {
-    use std::os::unix::fs::PermissionsExt;
     let bin = dir.join("ssh");
-    std::fs::write(&bin, format!("#!/bin/sh\n{body}\n")).unwrap();
-    std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
+    moor_testkit::write_executable(&bin, format!("#!/bin/sh\n{body}\n")).unwrap();
     Env::from_pairs([("MOOR_SSH_BIN", bin.to_str().unwrap())])
 }
 

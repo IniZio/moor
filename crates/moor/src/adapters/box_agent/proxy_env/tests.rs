@@ -251,8 +251,7 @@ fn run_launch(with_keytool: bool) -> Launch {
             "#!/bin/sh\necho \"$@\" >> '{}'\nwhile [ $# -gt 0 ]; do\n  case \"$1\" in -keystore|-destkeystore) : > \"$2\";; esac\n  shift\ndone\n",
             keytool_log.display()
         );
-        std::fs::write(&keytool, body).unwrap();
-        std::fs::set_permissions(&keytool, std::fs::Permissions::from_mode(0o755)).unwrap();
+        moor_testkit::write_executable(&keytool, body).unwrap();
     }
     let home = dir.path().join("home");
     let gradle = dir.path().join("gradle");
@@ -329,8 +328,7 @@ fn fake_sudo(dir: &Path) -> PathBuf {
     let fake = dir.join("fakebin");
     std::fs::create_dir(&fake).unwrap();
     let sudo = fake.join("sudo");
-    std::fs::write(&sudo, "#!/bin/sh\nexit 1\n").unwrap();
-    std::fs::set_permissions(&sudo, std::fs::Permissions::from_mode(0o755)).unwrap();
+    moor_testkit::write_executable(&sudo, "#!/bin/sh\nexit 1\n").unwrap();
     fake
 }
 

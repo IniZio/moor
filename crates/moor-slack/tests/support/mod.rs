@@ -40,27 +40,13 @@ pub(crate) const QUIET: Duration = Duration::from_millis(600);
 /// the token it read on fd 3.
 const FAKE_CLAUDE: &str = include_str!("fake-claude.sh");
 
-/// The fake `claude`, written once for this test binary. A file written while another test
-/// thread forks can fail to exec with "Text file busy" until that fork execs, so the first
-/// run is retried, and each rig links to this one file.
+/// The fake `claude`, written once for this test binary; each rig links to this one file.
 fn shared_fake_claude() -> &'static Path {
     static PATH: OnceLock<PathBuf> = OnceLock::new();
     PATH.get_or_init(|| {
         let path = Path::new(env!("CARGO_TARGET_TMPDIR"))
             .join(format!("fake-claude-{}", std::process::id()));
-        std::fs::write(&path, FAKE_CLAUDE).unwrap();
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
-        for _ in 0..200 {
-            match Command::new(&path).arg("--version").output() {
-                Err(e) if e.raw_os_error() == Some(26) => {
-                    std::thread::sleep(Duration::from_millis(10));
-                }
-                other => {
-                    other.unwrap();
-                    break;
-                }
-            }
-        }
+        moor_testkit::write_executable(&path, FAKE_CLAUDE).unwrap();
         path
     })
 }

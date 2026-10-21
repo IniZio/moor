@@ -135,8 +135,7 @@ fn the_prompt_window_reads_milliseconds_from_the_environment() {
 
 /// Writes the sh script `body` to `path` as an executable.
 fn script(path: &Path, body: &str) {
-    std::fs::write(path, format!("#!/bin/sh\n{body}\n")).unwrap();
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    moor_testkit::write_executable(path, format!("#!/bin/sh\n{body}\n")).unwrap();
 }
 
 /// An environment with its state dir at `state`, whose crabbox names one ssh target and whose

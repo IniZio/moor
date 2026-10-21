@@ -13,9 +13,7 @@ impl TempHome {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("bin")).unwrap();
         let sudo = dir.join("bin/sudo");
-        std::fs::write(&sudo, "#!/bin/sh\nexit 1\n").unwrap();
-        std::fs::set_permissions(&sudo, std::os::unix::fs::PermissionsExt::from_mode(0o755))
-            .unwrap();
+        moor_testkit::write_executable(&sudo, "#!/bin/sh\nexit 1\n").unwrap();
         Self(dir)
     }
 
@@ -276,8 +274,7 @@ fn a_bundle_that_cannot_be_written_stops_the_exec_before_the_command() {
 fn a_bundle_write_that_fails_part_way_stops_the_exec_and_leaves_no_temp_file() {
     let home = TempHome::new();
     let cat = home.0.join("bin/cat");
-    std::fs::write(&cat, "#!/bin/sh\nprintf partial\nexit 1\n").unwrap();
-    std::fs::set_permissions(&cat, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    moor_testkit::write_executable(&cat, "#!/bin/sh\nprintf partial\nexit 1\n").unwrap();
     assert_stopped_naming(&home, "ca-bundle.pem");
     assert_eq!(home.names(), ["ca.pem"]);
 }
@@ -351,14 +348,9 @@ fn a_reader_never_sees_a_partial_ca_while_preludes_alternate_two_cas() {
 fn keytool_imports_the_ca_the_prelude_just_wrote() {
     let home = TempHome::new();
     let keytool = home.0.join("bin/keytool");
-    std::fs::write(
+    moor_testkit::write_executable(
         &keytool,
         "#!/bin/sh\nwhile [ $# -gt 0 ]; do\n  case \"$1\" in\n    -file) cat \"$2\" > \"$HOME/imported.pem\";;\n    -keystore|-destkeystore) : >> \"$2\";;\n  esac\n  shift\ndone\n",
-    )
-    .unwrap();
-    std::fs::set_permissions(
-        &keytool,
-        std::os::unix::fs::PermissionsExt::from_mode(0o755),
     )
     .unwrap();
     let (code, stdout, stderr) = echo_in(&home);
