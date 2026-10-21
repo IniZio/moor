@@ -21,8 +21,10 @@ pub(super) fn number<T: TryFrom<i64>>(name: &str, args: &Value, key: &str) -> Re
 }
 
 /// `answer_box`: the requester gate, then the prompt must be this Box's, open, and offer
-/// `choice`. Then the journal row, `steer` with the choice, and the prompt recorded as
-/// answered by the Box's requester.
+/// `choice`. In the same transaction, the prompt is recorded as answered by the Box's
+/// requester and the journal row is written, so the Box moving on cannot close the prompt
+/// while the answer is in flight. Then `steer` with the choice; a steer the Box does not take
+/// opens the prompt again.
 pub(super) fn answer(
     scope: &mut Scope<'_>,
     box_name: &str,
@@ -38,32 +40,43 @@ pub(super) fn answer(
         return Ok(refusal);
     }
     let name = target.boxed.box_name.as_str().to_owned();
-    let prompt = scope.db.prompt(id)?.filter(|p| p.box_name.as_str() == name);
-    let prompt = match refused(prompt, &name, id, choice) {
-        Ok(prompt) => prompt,
+    let db = scope.db;
+    let by = &target.action.requested_by;
+    let claimed = db.atomically(|| {
+        let prompt = db.prompt(id)?.filter(|p| p.box_name.as_str() == name);
+        let prompt = match refused(prompt, &name, id, choice) {
+            Ok(prompt) => prompt,
+            Err(refusal) => return Ok(Err(refusal)),
+        };
+        let label = answer_label(&prompt.options, choice);
+        db.answer_prompt(id, &label, by)?;
+        let seq = db.begin_action(target.turn.id, &target.action, (scope.clock)())?;
+        Ok(Ok((label, seq)))
+    })?;
+    let (label, seq) = match claimed {
+        Ok(claimed) => claimed,
         Err(refusal) => return Ok(refusal),
     };
-    let db = scope.db;
-    let seq = db.begin_action(target.turn.id, &target.action, (scope.clock)())?;
     let request = Request::Steer(SteerReq {
         target: target.boxed.box_name.clone().into(),
         text: None,
         menu: Some(choice),
     });
-    let label = answer_label(&prompt.options, choice);
     let (outcome, reply) = match (scope.call)(request) {
         Ok(r) if r.class == ExitClass::Ok => {
-            db.answer_prompt(id, &label, &target.action.requested_by)?;
+            db.answer_sent(id)?;
             let said = format!("answered prompt {id} of Box `{name}` with {label}");
             let reply = Reply::done(format!("Answered prompt {id} with {label}."));
             (said, reply)
         }
         Ok(r) => {
+            db.reopen_prompt(id)?;
             let why = error_text(r);
             let reply = Reply::refused(format!("Not answered: {why}"));
             (format!("the controller refused: {why}"), reply)
         }
         Err(e) => {
+            db.reopen_prompt(id)?;
             let said = format!("the controller did not answer: {e}");
             let reply = Reply::refused(format!("Maybe not answered: {said}"));
             (said, reply)
