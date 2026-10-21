@@ -5,6 +5,8 @@ mod read;
 #[cfg(test)]
 mod tests;
 
+use std::time::Duration;
+
 use moor_core::seam::forge::{Forge, ForgeError, ForgeRepo, RepoAt};
 use moor_core::Secret;
 
@@ -12,6 +14,8 @@ use moor_core::Secret;
 pub(crate) struct GitHub {
     /// GraphQL endpoint reads are posted to.
     api: String,
+    /// How long one read may take.
+    timeout: Duration,
 }
 
 impl GitHub {
@@ -19,13 +23,17 @@ impl GitHub {
     pub(crate) fn new() -> Self {
         Self {
             api: read::API.to_owned(),
+            timeout: read::TIMEOUT,
         }
     }
 
     /// GitHub with reads posted to `api`.
     #[cfg(test)]
     fn at(api: impl Into<String>) -> Self {
-        Self { api: api.into() }
+        Self {
+            api: api.into(),
+            timeout: read::TIMEOUT,
+        }
     }
 }
 
@@ -41,6 +49,6 @@ impl Forge for GitHub {
         branch: &str,
         token: &Secret,
     ) -> Result<RepoAt, ForgeError> {
-        read::read(&self.api, repo, base, branch, token)
+        read::read(&self.api, self.timeout, repo, base, branch, token)
     }
 }

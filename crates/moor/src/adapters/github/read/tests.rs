@@ -10,7 +10,7 @@ use serde_json::{json, Value};
 
 use crate::adapters::github::GitHub;
 
-const TOKEN: &str = "ghp_fakeTokenForTests0123456789";
+const TOKEN: &str = "ghp_Zq8xW3vK9mR2pL7nT4yB6cJ1dF5hG0sQ";
 const DEFAULT_SHA: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const TAGGED_SHA: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const BRANCH_SHA: &str = "cccccccccccccccccccccccccccccccccccccccc";
@@ -71,6 +71,30 @@ fn token() -> Secret {
 
 fn read_via(api: &FakeApi, base: Option<&str>, branch: &str) -> Result<RepoAt, ForgeError> {
     GitHub::at(&api.url).read(&ForgeRepo::new("o", "n"), base, branch, &token())
+}
+
+fn assert_no_token_fragment(shown: &str) {
+    for w in TOKEN.as_bytes().windows(4) {
+        let w = std::str::from_utf8(w).unwrap();
+        assert!(!shown.contains(w), "token fragment {w} leaked into {shown}");
+    }
+}
+
+/// Answers for repo `o/n` with no config files, as the account `viewer`.
+fn viewer_reply(viewer: Value, permission: &str) -> impl FnOnce(&Value) -> (u16, String) + Send {
+    let permission = permission.to_owned();
+    move |_| {
+        let at = commit(DEFAULT_SHA, &[]);
+        ok(&json!({"data": {
+            "viewer": viewer,
+            "repository": {"viewerPermission": permission, "branch": null, "defaultBranchRef": {"target": at}},
+        }}))
+    }
+}
+
+fn errors_reply(kinds: &[Value]) -> impl FnOnce(&Value) -> (u16, String) + Send {
+    let errors: Vec<Value> = kinds.iter().map(|k| json!({"type": k})).collect();
+    move |_| ok(&json!({"data": null, "errors": errors}))
 }
 
 fn blob(text: &str) -> Value {
@@ -269,6 +293,10 @@ fn hostile_answers() -> Vec<Answer> {
                 "errors": [{"type": format!("RATE_LIMITED {echo}"), "message": echo}],
             }))
         }),
+        Box::new(|_| {
+            let kind = format!("RATE_LIMITED {TOKEN} Bearer");
+            ok(&json!({"data": null, "errors": [{"type": kind}]}))
+        }),
         Box::new(|_| (200, format!("not json {TOKEN}"))),
         Box::new(|_| ok(&json!({"data": {"viewer": TOKEN, "repository": null}}))),
     ]
@@ -282,7 +310,7 @@ fn token_is_sent_only_in_the_authorization_header_and_never_in_errors() {
             Ok(at) => format!("{at:?}"),
             Err(e) => format!("{e} {e:?}"),
         };
-        assert!(!shown.contains(TOKEN), "token leaked into {shown}");
+        assert_no_token_fragment(&shown);
         let request = api.request();
         assert_eq!(request.matches(TOKEN).count(), 1, "{request}");
         let line = request.lines().find(|l| l.contains(TOKEN)).unwrap();
@@ -291,31 +319,6 @@ fn token_is_sent_only_in_the_authorization_header_and_never_in_errors() {
             format!("authorization: bearer {}", TOKEN.to_ascii_lowercase())
         );
     }
-}
-
-#[test]
-fn unreachable_api_error_does_not_carry_the_token() {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let url = format!("http://{}/graphql", listener.local_addr().unwrap());
-    drop(listener);
-    let err = GitHub::at(url)
-        .read(&ForgeRepo::new("o", "n"), None, "moor/t", &token())
-        .unwrap_err();
-    assert!(matches!(err, ForgeError::Unavailable(_)), "{err:?}");
-    assert!(!format!("{err} {err:?}").contains(TOKEN));
-}
-
-#[test]
-fn token_with_a_line_break_is_rejected_unsent() {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let url = format!("http://{}/graphql", listener.local_addr().unwrap());
-    listener.set_nonblocking(true).unwrap();
-    let token = Secret::new(format!("{TOKEN}\r\nX-Injected: 1").into_bytes());
-    let err = GitHub::at(url)
-        .read(&ForgeRepo::new("o", "n"), None, "moor/t", &token)
-        .unwrap_err();
-    assert_eq!(err, ForgeError::Rejected);
-    assert!(listener.accept().is_err(), "no request was sent");
 }
 
 #[test]
@@ -330,3 +333,144 @@ fn other_graphql_errors_are_unavailable() {
         ))
     );
 }
+
+fn graphql_errors(names: &str) -> Result<RepoAt, ForgeError> {
+    Err(ForgeError::Unavailable(format!(
+        "GitHub GraphQL errors: {names}"
+    )))
+}
+
+#[test]
+fn allow_listed_error_types_are_named() {
+    for kind in [
+        "FORBIDDEN",
+        "RATE_LIMITED",
+        "INSUFFICIENT_SCOPES",
+        "SERVICE_UNAVAILABLE",
+        "INTERNAL",
+        "MAX_NODE_LIMIT_EXCEEDED",
+    ] {
+        let api = FakeApi::start(errors_reply(&[json!(kind)]));
+        assert_eq!(read_via(&api, None, "moor/t"), graphql_errors(kind));
+    }
+}
+
+#[test]
+fn other_error_types_are_unknown_and_carry_no_server_bytes() {
+    for kind in [
+        json!(format!("RATE_LIMITED {TOKEN} Bearer")),
+        json!("A".repeat(2 * 1024 * 1024)),
+        json!("rate_limited"),
+        json!("FORBIDDEN "),
+        Value::Null,
+    ] {
+        let api = FakeApi::start(errors_reply(&[kind]));
+        assert_eq!(read_via(&api, None, "moor/t"), graphql_errors("UNKNOWN"));
+    }
+}
+
+#[test]
+fn error_types_are_deduplicated_and_at_most_three() {
+    let kinds = ["FORBIDDEN", "FORBIDDEN", "INTERNAL", "X", "RATE_LIMITED"].map(|k| json!(k));
+    let api = FakeApi::start(errors_reply(&kinds));
+    assert_eq!(
+        read_via(&api, None, "moor/t"),
+        graphql_errors("FORBIDDEN, INTERNAL, UNKNOWN")
+    );
+}
+
+#[test]
+fn not_found_mixed_with_another_error_is_unavailable() {
+    let api = FakeApi::start(errors_reply(&[json!("NOT_FOUND"), json!("FORBIDDEN")]));
+    assert_eq!(
+        read_via(&api, None, "moor/t"),
+        graphql_errors("NOT_FOUND, FORBIDDEN")
+    );
+    let api = FakeApi::start(|v| {
+        let mut reply: Value = serde_json::from_str(&github(v, "WRITE").1).unwrap();
+        reply["errors"] = json!([{"type": "NOT_FOUND"}, {"type": "INTERNAL"}]);
+        ok(&reply)
+    });
+    assert_eq!(
+        read_via(&api, None, "moor/t"),
+        graphql_errors("NOT_FOUND, INTERNAL")
+    );
+}
+
+#[test]
+fn only_write_maintain_and_admin_can_push() {
+    for (permission, can_push) in [
+        ("ADMIN", true),
+        ("MAINTAIN", true),
+        ("WRITE", true),
+        ("TRIAGE", false),
+        ("READ", false),
+    ] {
+        let api = FakeApi::start(move |v| github(v, permission));
+        let at = read_via(&api, None, "moor/t").unwrap();
+        assert_eq!(at.can_push, can_push, "{permission}");
+    }
+}
+
+#[test]
+fn binary_blob_with_text_is_unreadable() {
+    let api = FakeApi::start(moor_yaml_reply(json!({"object": {
+        "__typename": "Blob", "byteSize": 3, "isBinary": true, "text": "abc",
+    }})));
+    assert_eq!(
+        read_via(&api, None, "moor/t"),
+        Err(ForgeError::Unreadable(".moor.yaml"))
+    );
+}
+
+fn author_of(login: &str, name: &Value) -> Result<GitAuthor, ForgeError> {
+    let viewer = json!({"login": login, "databaseId": 42, "name": name});
+    let api = FakeApi::start(viewer_reply(viewer, "WRITE"));
+    read_via(&api, None, "moor/t").map(|at| at.author)
+}
+
+#[test]
+fn login_must_be_shaped_like_a_github_login() {
+    let unexpected = Err(ForgeError::Unavailable(
+        "GitHub sent a reply of an unexpected shape".to_owned(),
+    ));
+    for login in [
+        String::new(),
+        "a".repeat(40),
+        "a.b".to_owned(),
+        "a_b".to_owned(),
+        "a b".to_owned(),
+        "\u{e9}".to_owned(),
+        "a@evil".to_owned(),
+    ] {
+        assert_eq!(author_of(&login, &Value::Null), unexpected, "{login:?}");
+    }
+    for login in ["a".repeat(39), "Octo-Cat-1".to_owned()] {
+        let author = author_of(&login, &Value::Null).unwrap();
+        assert_eq!(author.name, login);
+        assert_eq!(author.email, format!("42+{login}@users.noreply.github.com"));
+    }
+}
+
+#[test]
+fn unusable_profile_name_falls_back_to_the_login() {
+    for name in [
+        "   ".to_owned(),
+        "\u{3000}".to_owned(),
+        "x".repeat(256),
+        "Octo\nCat".to_owned(),
+        "Octo\u{7f}".to_owned(),
+        "Octo\u{85}Cat".to_owned(),
+        "\u{1b}[31mOcto".to_owned(),
+    ] {
+        assert_eq!(
+            author_of("octo", &json!(name)).unwrap().name,
+            "octo",
+            "{name:?}"
+        );
+    }
+    let longest = "\u{e9}".repeat(127) + "x";
+    assert_eq!(author_of("octo", &json!(longest)).unwrap().name, longest);
+}
+
+mod transport;
