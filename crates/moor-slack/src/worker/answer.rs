@@ -1,7 +1,7 @@
 //! Answering a needs-input prompt without the coordinator: a button on the prompt, or a bare
 //! number in the thread while exactly one prompt is open. Only the person who asked for the
 //! prompt's Box may answer. The Socket Mode thread records the click or message and queues
-//! the answer; the worker sends it to the Box and records it, and the feed then shows it.
+//! the answer; the worker records it, sends it to the Box, and the feed then shows it.
 
 use moor_core::request::{Request, SteerReq};
 use moor_core::response::ExitClass;
@@ -66,16 +66,28 @@ pub(crate) fn digit(db: &Db, mention: &Mention, thread_ts: &str) -> rusqlite::Re
     }))
 }
 
-/// Sends `choice` to the Box of prompt `id` while the prompt is still open, then records it
-/// as answered by `by`. A refusal or a failure is posted in the thread.
+/// Records `choice` as the answer of prompt `id` by `by` while the prompt is still open and
+/// offers it, then sends it to the Box. Recording first means the Box moving on while the
+/// answer is in flight cannot close the prompt; a Box that does not take it opens the prompt
+/// again. A refusal or a failure is posted in the thread.
 pub(super) fn answer(db: &Db, fx: &mut Fx<'_>, id: i64, choice: u32, by: &str) {
-    let prompt = match db.prompt(id) {
-        Ok(Some(prompt)) => prompt,
+    let claimed = db.atomically(|| {
+        let Some(prompt) = db.prompt(id)? else {
+            return Ok(None);
+        };
+        let take = prompt.state == PromptState::Open && offered(&prompt.options, choice);
+        if take {
+            db.answer_prompt(id, &answer_label(&prompt.options, choice), by)?;
+        }
+        Ok(Some((prompt, take)))
+    });
+    let (prompt, take) = match claimed {
+        Ok(Some(claimed)) => claimed,
         Ok(None) => return,
         Err(e) => return (fx.log)(&format!("slack.db: {e}")),
     };
     let said = match &prompt.state {
-        PromptState::Open if offered(&prompt.options, choice) => send(db, fx, &prompt, choice, by),
+        PromptState::Open if take => send(db, fx, &prompt, choice),
         PromptState::Open => Some(format!(
             "Pick an option from 1 to {}.",
             prompt.options.len()
@@ -88,35 +100,32 @@ pub(super) fn answer(db: &Db, fx: &mut Fx<'_>, id: i64, choice: u32, by: &str) {
     }
 }
 
-/// Steers `choice` to the Box of `prompt` and records the answer; returns the line to post
-/// when the Box did not take it.
-fn send(db: &Db, fx: &mut Fx<'_>, prompt: &Prompt, choice: u32, by: &str) -> Option<String> {
+/// Steers `choice` to the Box of `prompt`, whose answer is recorded, and marks it sent; when
+/// the Box did not take it, opens the prompt again and returns the line to post.
+fn send(db: &Db, fx: &mut Fx<'_>, prompt: &Prompt, choice: u32) -> Option<String> {
     let steer = Request::Steer(SteerReq {
         target: prompt.box_name.clone().into(),
         text: None,
         menu: Some(choice),
     });
     let name = prompt.box_name.as_str();
-    match (fx.call)(steer) {
-        Ok(reply) if reply.class == ExitClass::Ok => {}
+    let (settled, said) = match (fx.call)(steer) {
+        Ok(reply) if reply.class == ExitClass::Ok => (db.answer_sent(prompt.id), None),
         Ok(reply) => {
-            return Some(format!(
-                "Box `{name}` refused the answer: {}",
-                escape(&error_text(reply))
-            ))
+            let why = escape(&error_text(reply));
+            let said = format!("Box `{name}` refused the answer: {why}");
+            (db.reopen_prompt(prompt.id), Some(said))
         }
         Err(e) => {
-            return Some(format!(
-                "The answer may not have reached Box `{name}`: {}",
-                escape(&e.to_string())
-            ))
+            let why = escape(&e.to_string());
+            let said = format!("The answer may not have reached Box `{name}`: {why}");
+            (db.reopen_prompt(prompt.id), Some(said))
         }
-    }
-    let label = answer_label(&prompt.options, choice);
-    if let Err(e) = db.answer_prompt(prompt.id, &label, by) {
+    };
+    if let Err(e) = settled {
         (fx.log)(&format!("slack.db: {e}"));
     }
-    None
+    said
 }
 
 /// The line for a prompt that already has an answer.

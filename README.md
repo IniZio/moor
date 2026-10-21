@@ -150,7 +150,8 @@ past the 25th are listed by number instead. Only the person who asked for the
 Box can answer it. A button sends its option to the Box. A reply that is only
 a number does the same, but only while the thread has exactly one open
 question. Otherwise the number goes to the coordinator like any other
-message. An answered question shows who answered and loses its buttons. A
+message. An answered question shows who answered and loses its buttons once
+its Box takes the answer. If the Box refuses it, the question stays open. A
 question stops being open once its Box moves on, and a click on it then says
 what the Box is doing now. A question Slack refuses for what it is (bad
 blocks, too long, or a channel the bot cannot post in) is logged and dropped,

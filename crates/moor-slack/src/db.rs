@@ -111,6 +111,7 @@ const SCHEMA: &str = "
         answer TEXT,
         answered_by TEXT CHECK ((answer IS NULL) = (answered_by IS NULL)),
         closed_reason TEXT CHECK (answer IS NULL OR closed_reason IS NULL),
+        answer_sent INTEGER NOT NULL DEFAULT 0 CHECK (answer_sent = 0 OR answer IS NOT NULL),
         shown_at INTEGER,
         created_at INTEGER NOT NULL,
         UNIQUE (box_name, event_id)
