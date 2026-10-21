@@ -12,16 +12,12 @@ use moor_core::request::Request;
 use super::{
     bound_to_7, cmds, db, named, recorded_start, refused, state, with_fx, with_hooks, Answer, Seen,
 };
-use crate::db::{Db, SlackThread, ThreadState};
+use crate::db::{BoxState, Db, SlackBox};
 use crate::worker::{serve, settle, Attempt, Job};
 
 /// Makes the first attempt at `row` with a worker that crashes right after its post lands,
 /// before it writes `slack.db`.
-fn crash_after_post(
-    db: &Db,
-    row: &SlackThread,
-    answer: &mut dyn FnMut(&Request) -> Answer,
-) -> Seen {
+fn crash_after_post(db: &Db, row: &SlackBox, answer: &mut dyn FnMut(&Request) -> Answer) -> Seen {
     let seen = RefCell::default();
     let crashed = std::panic::catch_unwind(AssertUnwindSafe(|| {
         with_hooks(
@@ -92,13 +88,13 @@ fn serve_with_failing_write(
     dir: &std::path::Path,
     trigger: &str,
     answer: &mut dyn FnMut(&Request) -> Answer,
-) -> (Db, Seen, Option<ThreadState>) {
+) -> (Db, Seen, Option<BoxState>) {
     let db = db(dir);
     let row = recorded_start(&db);
     let other = rusqlite::Connection::open(dir.join("slack.db")).unwrap();
     other
         .execute_batch(&format!(
-            "CREATE TRIGGER fail {trigger} ON slack_threads \
+            "CREATE TRIGGER fail {trigger} ON slack_boxes \
              BEGIN SELECT RAISE(ABORT, 'disk full'); END;"
         ))
         .unwrap();
@@ -133,7 +129,7 @@ fn failed_bind_leaves_the_row_starting_and_the_next_retry_binds_it() {
             Request::Show(s) => named("show", s.box_name.as_ref().unwrap().as_str()),
             _ => refused("other", "unexpected"),
         });
-    assert_eq!(at_failure, Some(ThreadState::Starting));
+    assert_eq!(at_failure, Some(BoxState::Starting));
     assert_eq!(
         cmds(&seen),
         [
@@ -153,7 +149,7 @@ fn failed_delete_leaves_the_row_starting_and_the_next_retry_deletes_it() {
             Request::Start(_) => refused("start", "unknown repo"),
             _ => refused("show", "no Box slack-10-5"),
         });
-    assert_eq!(at_failure, Some(ThreadState::Starting));
+    assert_eq!(at_failure, Some(BoxState::Starting));
     assert_eq!(
         cmds(&seen),
         [

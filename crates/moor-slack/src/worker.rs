@@ -13,7 +13,7 @@ use moor_core::response::{ExitClass, Response};
 use serde_json::Value;
 
 use crate::command::{decide, failed, started, Action, Allow};
-use crate::db::{Db, SlackThread, ThreadState};
+use crate::db::{BoxState, Db, SlackBox, SlackThread};
 use crate::dial::Backoff;
 use crate::login::TokenCheck;
 use crate::slash::check_repo;
@@ -45,8 +45,8 @@ pub(crate) enum Job {
         /// What to post.
         text: String,
     },
-    /// Send the first `start` for this row, already `starting` in `slack.db`.
-    Start(SlackThread),
+    /// Send the first `start` for this Box, already `starting` in `slack.db`.
+    Start(SlackBox),
     /// Warn in `channel` when the controller does not know `repo`, which a user just added.
     CheckRepo {
         /// Channel id the repo was added to.
@@ -59,8 +59,8 @@ pub(crate) enum Job {
 }
 
 /// Records one mention in a single transaction: its event id and, for an allowed start, the
-/// thread's `starting` row with the goal, repo and owner. Returns what the worker does next,
-/// or nothing for a redelivered event.
+/// thread with its repo and owner and the thread's `starting` Box with the goal and the person
+/// who asked. Returns what the worker does next, or nothing for a redelivered event.
 pub(crate) fn record(
     mention: &Mention,
     db: &Db,
@@ -73,14 +73,14 @@ pub(crate) fn record(
         }
         let channel = mention.channel.as_str();
         let thread = mention.thread_ts.as_deref().unwrap_or(&mention.ts);
-        let existing = db.thread(channel, thread)?;
+        let existing = db.thread_boxes(channel, thread)?;
         let action = decide(
             allow,
             channel,
             &mention.user,
             &mention.text,
             thread,
-            existing.as_ref(),
+            existing.last(),
         );
         Ok(match action {
             Action::Ignore => None,
@@ -90,14 +90,21 @@ pub(crate) fn record(
                 text,
             }),
             Action::Start { name, repo, goal } => {
-                let row = SlackThread {
+                let opened = SlackThread {
                     channel: channel.to_owned(),
                     thread_ts: thread.to_owned(),
-                    box_name: name,
                     repo,
-                    goal,
                     owner: mention.user.clone(),
-                    state: ThreadState::Starting,
+                };
+                db.insert_thread(&opened, now)?;
+                let row = SlackBox {
+                    channel: opened.channel,
+                    thread_ts: opened.thread_ts,
+                    box_name: name,
+                    repo: opened.repo,
+                    goal,
+                    requested_by: opened.owner,
+                    state: BoxState::Starting,
                 };
                 db.insert_starting(&row, now)?;
                 Some(Job::Start(row))
@@ -110,7 +117,7 @@ pub(crate) fn record(
 /// start the controller cannot confirm never holds up another thread. `left` holds the rows
 /// an earlier run left `starting`, read before any mention was recorded, so no job names
 /// them; they are asked about first.
-pub(crate) fn serve(jobs: &Receiver<Job>, db: &Db, left: Vec<SlackThread>, fx: &mut Fx<'_>) {
+pub(crate) fn serve(jobs: &Receiver<Job>, db: &Db, left: Vec<SlackBox>, fx: &mut Fx<'_>) {
     let mut unsure = Unsure::new(left);
     loop {
         if unsure.due.is_some_and(|due| due <= now()) {
@@ -156,7 +163,7 @@ fn now() -> Instant {
 /// Starts the controller has not confirmed, asked about again together on one timer.
 struct Unsure {
     /// The rows, oldest first.
-    rows: Vec<SlackThread>,
+    rows: Vec<SlackBox>,
     /// Wait after a round that leaves rows unsure; it grows until a round settles them all.
     backoff: Backoff,
     /// When the next round runs; `None` while no row is unsure.
@@ -165,7 +172,7 @@ struct Unsure {
 
 impl Unsure {
     /// Rows an earlier run left `starting`, due at once.
-    fn new(rows: Vec<SlackThread>) -> Self {
+    fn new(rows: Vec<SlackBox>) -> Self {
         let due = (!rows.is_empty()).then(now);
         Self {
             rows,
@@ -175,7 +182,7 @@ impl Unsure {
     }
 
     /// Adds a row whose first start was not confirmed.
-    fn add(&mut self, row: SlackThread) {
+    fn add(&mut self, row: SlackBox) {
         self.rows.push(row);
         if self.due.is_none() {
             self.due = Some(now() + self.backoff.next());
@@ -225,7 +232,7 @@ enum Shown {
 
 /// Tries once to settle `row`: binds or deletes it, or logs why it stays `starting`.
 /// Returns whether the row is settled.
-fn settle(db: &Db, fx: &mut Fx<'_>, row: &SlackThread, attempt: Attempt) -> bool {
+fn settle(db: &Db, fx: &mut Fx<'_>, row: &SlackBox, attempt: Attempt) -> bool {
     match ask(fx, row, attempt) {
         Outcome::Bound(box_id, branch) => bind(db, fx, row, box_id, branch.as_deref()),
         Outcome::Refused(message) => refuse(db, fx, row, &message),
@@ -239,7 +246,7 @@ fn settle(db: &Db, fx: &mut Fx<'_>, row: &SlackThread, attempt: Attempt) -> bool
 
 /// Sends at most one `show` and one `start` for `row`, so each attempt ends within the
 /// client's timeouts.
-fn ask(fx: &mut Fx<'_>, row: &SlackThread, attempt: Attempt) -> Outcome {
+fn ask(fx: &mut Fx<'_>, row: &SlackBox, attempt: Attempt) -> Outcome {
     if matches!(attempt, Attempt::Again) {
         match (fx.call)(show_request(row)).map(|reply| shown(reply, &row.box_name)) {
             Ok(Shown::Absent) => {}
@@ -255,7 +262,7 @@ fn ask(fx: &mut Fx<'_>, row: &SlackThread, attempt: Attempt) -> Outcome {
 }
 
 /// The `start` request for `row`.
-fn start_request(row: &SlackThread) -> Request {
+fn start_request(row: &SlackBox) -> Request {
     Request::Start(StartReq {
         name: row.box_name.clone(),
         goal: Some(row.goal.clone()),
@@ -273,7 +280,7 @@ fn start_request(row: &SlackThread) -> Request {
 }
 
 /// The `show` request for `row`'s Box.
-fn show_request(row: &SlackThread) -> Request {
+fn show_request(row: &SlackBox) -> Request {
     Request::Show(ShowReq {
         box_name: Some(row.box_name.clone()),
         events: None,
@@ -354,20 +361,20 @@ const fn lost(e: &ClientError) -> bool {
 /// Says in the thread that the Box started, then binds the row to it. Posting first means a
 /// crash in between posts again on restart instead of losing the reply. Returns whether the
 /// row is bound; a row left `starting` is asked about again.
-fn bind(db: &Db, fx: &mut Fx<'_>, row: &SlackThread, box_id: BoxId, branch: Option<&str>) -> bool {
+fn bind(db: &Db, fx: &mut Fx<'_>, row: &SlackBox, box_id: BoxId, branch: Option<&str>) -> bool {
     (fx.reply)(&row.channel, &row.thread_ts, &started(&row.box_name));
-    written(fx, db.bind(&row.channel, &row.thread_ts, box_id, branch))
+    written(fx, db.bind(&row.box_name, box_id, branch))
 }
 
 /// Posts why the controller refused the start, then deletes the row, posting first for the
 /// same reason as [`bind`]. Returns whether the row is gone.
-fn refuse(db: &Db, fx: &mut Fx<'_>, row: &SlackThread, message: &str) -> bool {
+fn refuse(db: &Db, fx: &mut Fx<'_>, row: &SlackBox, message: &str) -> bool {
     (fx.reply)(
         &row.channel,
         &row.thread_ts,
         &failed(&row.box_name, message),
     );
-    written(fx, db.forget_starting(&row.channel, &row.thread_ts))
+    written(fx, db.forget_starting(&row.box_name))
 }
 
 /// Whether a `slack.db` write succeeded, logging the error when it did not.

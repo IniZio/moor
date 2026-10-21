@@ -1,0 +1,160 @@
+//! The Boxes each thread asked for, one row per Box, each tied to the Slack user who asked.
+
+use moor_core::name::{BoxId, BoxName};
+use rusqlite::types::Type;
+use rusqlite::{params, OptionalExtension, Row};
+
+use super::Db;
+
+/// Columns of a Box row and its thread's repo, in the order [`box_row`] reads them.
+const BOX_COLUMNS: &str = "b.channel, b.thread_ts, b.box_name, t.repo, b.goal, b.requested_by, \
+     b.state, b.box_id, b.branch FROM slack_boxes b \
+     JOIN slack_threads t ON t.channel = b.channel AND t.thread_ts = b.thread_ts";
+
+/// Where a Box stands.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum BoxState {
+    /// The start was sent or is about to be; no reply has bound it yet.
+    Starting,
+    /// The controller named this Box.
+    Bound {
+        /// The Box's id.
+        box_id: BoxId,
+        /// The Box's branch, when the reply named one.
+        branch: Option<String>,
+    },
+}
+
+/// A Box a thread asked for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct SlackBox {
+    /// Channel id of the thread.
+    pub(crate) channel: String,
+    /// Timestamp of the thread's root message.
+    pub(crate) thread_ts: String,
+    /// Name of the Box.
+    pub(crate) box_name: BoxName,
+    /// Repo the Box works on, which is its thread's.
+    pub(crate) repo: String,
+    /// What the Box should do.
+    pub(crate) goal: String,
+    /// Slack user id of the person who asked for the Box.
+    pub(crate) requested_by: String,
+    /// Where the Box stands.
+    pub(crate) state: BoxState,
+}
+
+impl Db {
+    /// The Boxes of a thread, in the order the thread asked for them.
+    pub(crate) fn thread_boxes(
+        &self,
+        channel: &str,
+        thread_ts: &str,
+    ) -> rusqlite::Result<Vec<SlackBox>> {
+        let sql =
+            format!("SELECT {BOX_COLUMNS} WHERE b.channel = ?1 AND b.thread_ts = ?2 ORDER BY b.n");
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map(params![channel, thread_ts], box_row)?;
+        rows.collect()
+    }
+
+    /// Boxes still in `starting`, oldest first.
+    pub(crate) fn starting(&self) -> rusqlite::Result<Vec<SlackBox>> {
+        let sql = format!(
+            "SELECT {BOX_COLUMNS} WHERE b.state = 'starting' \
+             ORDER BY b.created_at, b.channel, b.thread_ts, b.n"
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map([], box_row)?;
+        rows.collect()
+    }
+
+    /// Records `boxed` in `starting` at `now`, numbered after its thread's other Boxes. Its
+    /// thread must have a row; a name already taken is an error.
+    pub(crate) fn insert_starting(&self, boxed: &SlackBox, now: i64) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "INSERT INTO slack_boxes \
+             (box_name, channel, thread_ts, n, goal, requested_by, state, created_at) \
+             SELECT ?1, ?2, ?3, coalesce(max(n), 0) + 1, ?4, ?5, 'starting', ?6 \
+             FROM slack_boxes WHERE channel = ?2 AND thread_ts = ?3",
+            params![
+                boxed.box_name.as_str(),
+                boxed.channel,
+                boxed.thread_ts,
+                boxed.goal,
+                boxed.requested_by,
+                now
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Binds a `starting` Box to the id the controller gave it.
+    pub(crate) fn bind(
+        &self,
+        name: &BoxName,
+        box_id: BoxId,
+        branch: Option<&str>,
+    ) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "UPDATE slack_boxes SET state = 'bound', box_id = ?2, branch = ?3 \
+             WHERE box_name = ?1 AND state = 'starting'",
+            params![name.as_str(), box_id.get(), branch],
+        )?;
+        Ok(())
+    }
+
+    /// Deletes a Box still in `starting`, and its thread once the thread has no Box left, so
+    /// the thread can start again.
+    pub(crate) fn forget_starting(&self, name: &BoxName) -> rusqlite::Result<()> {
+        self.atomically(|| {
+            let thread = self
+                .conn
+                .query_row(
+                    "DELETE FROM slack_boxes WHERE box_name = ?1 AND state = 'starting' \
+                     RETURNING channel, thread_ts",
+                    params![name.as_str()],
+                    |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
+                )
+                .optional()?;
+            if let Some((channel, thread_ts)) = thread {
+                self.conn.execute(
+                    "DELETE FROM slack_threads WHERE channel = ?1 AND thread_ts = ?2 \
+                     AND NOT EXISTS (SELECT 1 FROM slack_boxes \
+                                     WHERE channel = ?1 AND thread_ts = ?2)",
+                    params![channel, thread_ts],
+                )?;
+            }
+            Ok(())
+        })
+    }
+}
+
+/// Reads one Box row selected with [`BOX_COLUMNS`].
+fn box_row(r: &Row<'_>) -> rusqlite::Result<SlackBox> {
+    let bad = |col: usize, why: String| {
+        rusqlite::Error::FromSqlConversionFailure(col, Type::Text, why.into())
+    };
+    let state: String = r.get(6)?;
+    let state = match (state.as_str(), r.get::<_, Option<i64>>(7)?) {
+        ("starting", _) => BoxState::Starting,
+        ("bound", Some(id)) => BoxState::Bound {
+            box_id: BoxId::new(id),
+            branch: r.get(8)?,
+        },
+        (other, _) => return Err(bad(6, format!("Box state `{other}`"))),
+    };
+    let name: String = r.get(2)?;
+    Ok(SlackBox {
+        channel: r.get(0)?,
+        thread_ts: r.get(1)?,
+        box_name: BoxName::parse_allow_bare(&name).map_err(|e| bad(2, e.to_string()))?,
+        repo: r.get(3)?,
+        goal: r.get(4)?,
+        requested_by: r.get(5)?,
+        state,
+    })
+}
+
+#[cfg(test)]
+mod tests;

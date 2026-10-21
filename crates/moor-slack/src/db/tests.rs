@@ -1,25 +1,44 @@
-//! Tests for `slack.db`: event dedupe and the thread rows.
+//! Tests for `slack.db`: event dedupe, the schema version, and threads with their Boxes.
 
 use std::path::Path;
 
 use moor_core::name::{BoxId, BoxName};
 
-use super::{Db, SlackThread, ThreadState, SCHEMA_VERSION};
+use super::{BoxState, Db, SlackBox, SlackThread, SCHEMA_VERSION};
 
 fn open(dir: &Path) -> Db {
     Db::open(&dir.join("slack.db")).unwrap()
 }
 
-fn starting(thread_ts: &str, name: &str, owner: &str) -> SlackThread {
-    SlackThread {
+fn starting(thread_ts: &str, name: &str, owner: &str) -> SlackBox {
+    SlackBox {
         channel: "C1".into(),
         thread_ts: thread_ts.into(),
         box_name: BoxName::parse_allow_bare(name).unwrap(),
         repo: "api".into(),
         goal: "fix it".into(),
-        owner: owner.into(),
-        state: ThreadState::Starting,
+        requested_by: owner.into(),
+        state: BoxState::Starting,
     }
+}
+
+/// Records the thread of `boxed`, started by its requester, then `boxed` itself.
+fn open_with(db: &Db, boxed: &SlackBox, now: i64) -> rusqlite::Result<()> {
+    let thread = SlackThread {
+        channel: boxed.channel.clone(),
+        thread_ts: boxed.thread_ts.clone(),
+        repo: boxed.repo.clone(),
+        owner: boxed.requested_by.clone(),
+    };
+    db.atomically(|| {
+        db.insert_thread(&thread, now)?;
+        db.insert_starting(boxed, now)
+    })
+}
+
+/// The Box of thread `thread_ts` in channel `C1`, if it has one.
+fn box_of(db: &Db, thread_ts: &str) -> Option<SlackBox> {
+    db.thread_boxes("C1", thread_ts).unwrap().pop()
 }
 
 #[test]
@@ -37,28 +56,27 @@ fn event_is_new_once() {
 fn thread_binding_first_wins() {
     let dir = tempfile::tempdir().unwrap();
     let db = open(dir.path());
-    assert_eq!(db.thread("C1", "1.1").unwrap(), None);
+    assert_eq!(box_of(&db, "1.1"), None);
     let first = starting("1.1", "first", "U1");
-    db.insert_starting(&first, 1).unwrap();
-    assert!(db
-        .insert_starting(&starting("1.1", "second", "U2"), 2)
-        .is_err());
-    assert_eq!(db.thread("C1", "1.1").unwrap(), Some(first));
-    assert_eq!(db.thread("C1", "2.2").unwrap(), None);
+    open_with(&db, &first, 1).unwrap();
+    assert!(open_with(&db, &starting("1.1", "second", "U2"), 2).is_err());
+    assert_eq!(db.thread_boxes("C1", "1.1").unwrap(), [first]);
+    assert_eq!(db.thread("C1", "1.1").unwrap().unwrap().owner, "U1");
+    assert_eq!(box_of(&db, "2.2"), None);
 }
 
 #[test]
 fn owner_kept_from_first_bind() {
     let dir = tempfile::tempdir().unwrap();
     let db = open(dir.path());
-    db.insert_starting(&starting("1.1", "first", "U1"), 1)
+    let first = starting("1.1", "first", "U1");
+    open_with(&db, &first, 1).unwrap();
+    db.bind(&first.box_name, BoxId::new(7), Some("moor/first"))
         .unwrap();
-    db.bind("C1", "1.1", BoxId::new(7), Some("moor/first"))
-        .unwrap();
-    db.bind("C1", "1.1", BoxId::new(8), None).unwrap();
-    let row = db.thread("C1", "1.1").unwrap().unwrap();
-    assert_eq!(row.owner, "U1");
-    let want = ThreadState::Bound {
+    db.bind(&first.box_name, BoxId::new(8), None).unwrap();
+    let row = box_of(&db, "1.1").unwrap();
+    assert_eq!(row.requested_by, "U1");
+    let want = BoxState::Bound {
         box_id: BoxId::new(7),
         branch: Some("moor/first".into()),
     };
@@ -69,11 +87,16 @@ fn owner_kept_from_first_bind() {
 fn starting_rows_are_listed_oldest_first_and_forgotten() {
     let dir = tempfile::tempdir().unwrap();
     let db = open(dir.path());
-    db.insert_starting(&starting("2.2", "b", "U1"), 5).unwrap();
-    db.insert_starting(&starting("1.1", "a", "U1"), 9).unwrap();
-    db.insert_starting(&starting("3.3", "c", "U1"), 1).unwrap();
-    db.bind("C1", "3.3", BoxId::new(3), None).unwrap();
-    db.forget_starting("C1", "3.3").unwrap();
+    let (b, a, c) = (
+        starting("2.2", "b", "U1"),
+        starting("1.1", "a", "U1"),
+        starting("3.3", "c", "U1"),
+    );
+    open_with(&db, &b, 5).unwrap();
+    open_with(&db, &a, 9).unwrap();
+    open_with(&db, &c, 1).unwrap();
+    db.bind(&c.box_name, BoxId::new(3), None).unwrap();
+    db.forget_starting(&c.box_name).unwrap();
     let names: Vec<String> = db
         .starting()
         .unwrap()
@@ -81,12 +104,13 @@ fn starting_rows_are_listed_oldest_first_and_forgotten() {
         .map(|t| t.box_name.as_str().to_owned())
         .collect();
     assert_eq!(names, ["b", "a"]);
-    db.forget_starting("C1", "2.2").unwrap();
+    db.forget_starting(&b.box_name).unwrap();
+    assert_eq!(box_of(&db, "2.2"), None);
     assert_eq!(db.thread("C1", "2.2").unwrap(), None);
     drop(db);
     let db = open(dir.path());
     assert_eq!(db.starting().unwrap().len(), 1);
-    assert!(db.thread("C1", "3.3").unwrap().is_some());
+    assert!(box_of(&db, "3.3").is_some());
 }
 
 /// Writes a `slack.db` at `version` with one table, as an older or newer build would leave it.
@@ -122,6 +146,21 @@ fn newer_schema_is_refused() {
         );
         assert_eq!(err, want);
     }
+}
+
+#[test]
+fn slack_db_that_keeps_the_box_in_the_thread_row_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("slack.db");
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE slack_threads (channel TEXT, thread_ts TEXT, state TEXT, box_id INTEGER, \
+         box_name TEXT, repo TEXT, goal TEXT, owner TEXT); PRAGMA user_version = 3;",
+    )
+    .unwrap();
+    drop(conn);
+    let err = Db::open(&path).err().unwrap();
+    assert!(err.starts_with("slack.db is schema 3 "), "{err}");
 }
 
 #[test]

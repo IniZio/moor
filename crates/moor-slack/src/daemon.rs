@@ -16,7 +16,7 @@ use crate::command::Allow;
 use crate::config::{parse_config, Config};
 use crate::coordinator::claude::{Claude, HostEnv};
 use crate::credentials::CredentialCheck;
-use crate::db::{Db, SlackThread};
+use crate::db::{Db, SlackBox};
 use crate::login::{self, TokenCheck};
 use crate::secret_file::read_secret;
 use crate::socket::{self, AfterAck, Inbound, Intake, Kept, NotKept};
@@ -59,8 +59,8 @@ struct Loaded {
     db: Db,
     /// Path of `slack.db`, which the worker opens again on its own thread.
     db_path: PathBuf,
-    /// Rows an earlier run left `starting`, read before any new mention is recorded.
-    left: Vec<SlackThread>,
+    /// Boxes an earlier run left `starting`, read before any new mention is recorded.
+    left: Vec<SlackBox>,
 }
 
 /// Runs the daemon until its Socket Mode thread ends.
@@ -278,7 +278,7 @@ struct Worker {
 impl Worker {
     /// Settles the rows `left` by an earlier run, runs the queued jobs and retries unsure
     /// starts until the queue closes.
-    fn run(&self, jobs: &Receiver<Job>, left: Vec<SlackThread>) {
+    fn run(&self, jobs: &Receiver<Job>, left: Vec<SlackBox>) {
         let db = match Db::open(&self.db_path) {
             Ok(db) => db,
             Err(e) => return (self.log)(&format!("open slack.db: {e}")),
