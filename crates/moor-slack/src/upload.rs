@@ -67,7 +67,7 @@ fn upload(
         .upload_url(thread.bot, &v.name, v.size)
         .map_err(refused)?;
     let read = Request::ArtifactRead(ArtifactReadReq {
-        box_name: box_name.clone(),
+        target: box_name.clone().into(),
         name: v.name.clone(),
         version: Some(v.version),
         offset: 0,
