@@ -73,8 +73,12 @@ impl McpServer {
     }
 }
 
-/// Validates the `mcp_servers` map; each `${NAME}` names a secret of the Box's user.
-pub(super) fn validate_mcp(servers: &BTreeMap<String, McpServer>) -> Result<(), ConfigError> {
+/// Validates the `mcp_servers` map; each `${NAME}` names a secret of the Box's user that no
+/// Proxy rule in `injected` injects.
+pub(super) fn validate_mcp(
+    servers: &BTreeMap<String, McpServer>,
+    injected: &BTreeMap<String, String>,
+) -> Result<(), ConfigError> {
     for (name, s) in servers {
         let at = format!("mcp_servers.{name}");
         check::credential_name(name).map_err(|why| ConfigError::new(at.clone(), why))?;
@@ -92,9 +96,12 @@ pub(super) fn validate_mcp(servers: &BTreeMap<String, McpServer>) -> Result<(), 
         }
         for (key, text) in s.texts() {
             for r in credential_refs(text) {
-                SecretName::parse(r).map_err(|why| {
-                    ConfigError::new(format!("{at}.{key}"), format!("${{{r}}}: {why}"))
-                })?;
+                SecretName::parse(r)
+                    .map(|_| ())
+                    .and_then(|()| check::not_injected(r, injected))
+                    .map_err(|why| {
+                        ConfigError::new(format!("{at}.{key}"), format!("${{{r}}}: {why}"))
+                    })?;
             }
         }
     }

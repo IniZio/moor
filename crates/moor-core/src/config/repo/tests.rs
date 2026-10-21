@@ -256,3 +256,17 @@ fn a_repo_cannot_add_a_proxy_rule() {
         "unknown field",
     );
 }
+
+#[test]
+fn box_credentials_may_not_name_a_secret_a_default_rule_injects() {
+    rejects(
+        "box_credentials: [npm, claude]",
+        "box_credentials[1]",
+        "the Proxy's claude rule injects",
+    );
+    rejects(
+        "box_credentials: [github]",
+        "box_credentials[0]",
+        "the Proxy's github-api rule injects",
+    );
+}

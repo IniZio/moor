@@ -66,14 +66,17 @@ fn names(list: &[&str]) -> Vec<String> {
 
 #[test]
 fn box_credentials_ok() {
-    assert_eq!(box_credentials(&names(&["a", "b-1"])), Ok(()));
-    assert_eq!(box_credentials(&[]), Ok(()));
+    assert_eq!(
+        box_credentials(&names(&["a", "b-1"]), &BTreeMap::new()),
+        Ok(())
+    );
+    assert_eq!(box_credentials(&[], &BTreeMap::new()), Ok(()));
 }
 
 #[test]
 fn box_credentials_bad_name() {
     assert_eq!(
-        box_credentials(&names(&["a", "NPM_TOKEN"])),
+        box_credentials(&names(&["a", "NPM_TOKEN"]), &BTreeMap::new()),
         Err((1, SecretName::parse("NPM_TOKEN").unwrap_err()))
     );
 }
@@ -81,7 +84,7 @@ fn box_credentials_bad_name() {
 #[test]
 fn box_credentials_duplicate() {
     assert_eq!(
-        box_credentials(&names(&["a", "a"])),
+        box_credentials(&names(&["a", "a"]), &BTreeMap::new()),
         Err((1, r#"box credential "a" is listed twice"#.to_owned()))
     );
 }
