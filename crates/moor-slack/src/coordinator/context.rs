@@ -63,6 +63,8 @@ pub(crate) struct Parts<'a> {
     pub(crate) earlier: &'a [Said],
     /// What this turn takes, in Slack order.
     pub(crate) new: &'a [Said],
+    /// For a turn that runs again one a restart cut off, the actions the cut turn took.
+    pub(crate) rerun: Option<&'a [Action]>,
 }
 
 /// The context text, at most `budget` bytes unless the parts that always go in pass it on
@@ -89,7 +91,22 @@ pub(crate) fn render(parts: &Parts<'_>, budget: usize) -> String {
         head.push_str(line);
         head.push('\n');
     }
-    let mut tail = String::from("\n## New\n");
+    let mut tail = String::new();
+    if let Some(done) = parts.rerun {
+        tail.push_str(
+            "\n## Your last turn\nYour last turn stopped when the front restarted. \
+             It already did these things:\n",
+        );
+        if done.is_empty() {
+            tail.push_str("Nothing recorded.\n");
+        }
+        for action in done {
+            tail.push_str(&action_line(action));
+            tail.push('\n');
+        }
+        tail.push_str("Do not repeat an action listed above.\n");
+    }
+    tail.push_str("\n## New\n");
     for said in parts.new {
         tail.push_str(&said_line(said));
         tail.push('\n');

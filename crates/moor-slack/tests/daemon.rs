@@ -19,6 +19,8 @@ mod inbox;
 mod login;
 #[path = "daemon/repo.rs"]
 mod repo;
+#[path = "daemon/restart.rs"]
+mod restart;
 #[path = "daemon/smoke.rs"]
 mod smoke;
 #[path = "daemon/start.rs"]

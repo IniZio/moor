@@ -13,6 +13,9 @@ const CUT_MARKER: &str = "… (cut)";
 /// The line for a turn that loaded more than the front gave it.
 pub(super) const UNSAFE: &str = "The coordinator did not start safely.";
 
+/// The line for a turn a restart cut off that does not run again.
+pub(super) const RESTARTED: &str = "Stopped: the front restarted. Send your message again.";
+
 /// The line for a turn killed at its limit.
 pub(super) const KILLED: &str = "Stopped after 10 minutes.";
 

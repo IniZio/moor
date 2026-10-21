@@ -45,6 +45,7 @@ fn a_long_thread_keeps_its_first_request_and_journal_and_drops_old_messages() {
         boxes: &boxes,
         earlier: &earlier,
         new: &new,
+        rerun: None,
     };
     let text = render(&parts, 2048);
     assert!(text.len() <= 2048, "{} bytes", text.len());
@@ -83,6 +84,7 @@ fn the_parts_that_always_go_in_stay_when_they_pass_the_budget() {
         boxes: &[],
         earlier: &earlier,
         new: &new,
+        rerun: None,
     };
     let text = render(&parts, 1024);
     let first_shown = format!("{} [the rest is not shown]\n", "y".repeat(8 * 1024));
@@ -108,10 +110,46 @@ fn a_short_thread_shows_everything_with_no_count() {
         boxes: &[],
         earlier: &earlier,
         new: &new,
+        rerun: None,
     };
     let text = render(&parts, 32 * 1024);
     let want = "## First request\n(not recorded)\n\n## Actions this thread took\nNone.\n\n\
                 ## Boxes now\nNone.\n\n## Earlier in the thread\n[<@U1>] first ask\n\
                 [you] on it\n\n## New\n[<@U1>] thanks\n";
     assert_eq!(text, want);
+}
+
+#[test]
+fn a_rerun_states_what_the_cut_turn_did_before_the_new_items() {
+    let new = [person("start it")];
+    let done = [action()];
+    let parts = Parts {
+        first_request: Some("start it"),
+        actions: &done,
+        boxes: &[],
+        earlier: &[],
+        new: &new,
+        rerun: Some(&done),
+    };
+    let text = render(&parts, 32 * 1024);
+    let at = text
+        .find(
+            "## Your last turn\nYour last turn stopped when the front restarted. \
+                        It already did these things:\nTurn 3, <@U1> asked. start_box",
+        )
+        .unwrap();
+    let tail = text.get(at..).unwrap();
+    assert!(
+        tail.contains("Do not repeat an action listed above.\n\n## New\n[<@U1>] start it\n"),
+        "{text}"
+    );
+    let empty = Parts {
+        rerun: Some(&[]),
+        ..parts
+    };
+    let text = render(&empty, 32 * 1024);
+    assert!(
+        text.contains("It already did these things:\nNothing recorded.\nDo not repeat"),
+        "{text}"
+    );
 }
