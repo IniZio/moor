@@ -116,3 +116,31 @@ fn an_acked_message_survives_a_crash_and_its_redelivery_is_queued_once() {
     rig.slack.wait_acks(3);
     assert_eq!(inbox(&rig), [message("use tokio", "Ev2")]);
 }
+
+#[test]
+fn a_message_that_fails_to_record_is_not_acked_and_its_redelivery_is_queued_once() {
+    let (rig, _controller) = started_thread();
+    let db = rusqlite::Connection::open(rig.path("state-slack/slack.db")).unwrap();
+    db.execute_batch(
+        "CREATE TRIGGER no_items BEFORE INSERT ON slack_inbox \
+         BEGIN SELECT RAISE(ABORT, 'disk full'); END;",
+    )
+    .unwrap();
+    reply(&rig, 2, USER, "use tokio");
+    std::thread::sleep(QUIET);
+    assert!(
+        !rig.slack.acks().iter().any(|id| id == "env-2"),
+        "acked before it was recorded: {:?}",
+        rig.slack.acks()
+    );
+    assert_eq!(inbox(&rig), []);
+    db.execute_batch("DROP TRIGGER no_items;").unwrap();
+    let acked = rig.slack.acks().len();
+    reply(&rig, 2, USER, "use tokio");
+    rig.slack.wait_acks(acked + 1);
+    assert!(rig.slack.acks().iter().any(|id| id == "env-2"));
+    assert_eq!(inbox(&rig), [message("use tokio", "Ev2")]);
+    reply(&rig, 2, USER, "use tokio");
+    rig.slack.wait_acks(acked + 2);
+    assert_eq!(inbox(&rig), [message("use tokio", "Ev2")]);
+}

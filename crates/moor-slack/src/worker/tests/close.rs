@@ -3,6 +3,8 @@
 #![allow(clippy::panic, reason = "test code")]
 
 use std::cell::RefCell;
+use std::panic::AssertUnwindSafe;
+use std::sync::mpsc;
 
 use moor_core::name::BoxId;
 use moor_core::request::Request;
@@ -11,11 +13,11 @@ use serde_json::json;
 
 use super::{
     cmds, db, record_one, recorded_start, refused, refused_hello, state, try_record, with_fx,
-    Answer, Seen,
+    with_hooks, Answer, Seen,
 };
 use crate::db::{BoxState, Db, InboxItem, ItemKind, SlackBox};
 use crate::socket::Mention;
-use crate::worker::{settle, Attempt, Job};
+use crate::worker::{serve, settle, Attempt, Job};
 
 /// A plain reply in thread `10.5` of channel `C1`.
 fn reply(event_id: &str, user: &str, text: &str) -> Mention {
@@ -220,4 +222,78 @@ fn a_start_command_in_a_kept_thread_is_not_queued() {
     m.reply = false;
     assert!(matches!(record_one(&db, &m), Some(Job::Reply { .. })));
     assert_eq!(db.inbox("C1", "10.5").unwrap(), []);
+}
+
+/// `done_at` of every `close` item in the `slack.db` under `dir`, read on its own connection.
+fn close_done_at(dir: &std::path::Path) -> Vec<Option<i64>> {
+    let conn = rusqlite::Connection::open(dir.join("slack.db")).unwrap();
+    let mut stmt = conn
+        .prepare("SELECT done_at FROM slack_inbox WHERE kind = 'close' ORDER BY id")
+        .unwrap();
+    let rows = stmt.query_map([], |r| r.get(0)).unwrap();
+    rows.map(Result::unwrap).collect()
+}
+
+#[test]
+fn a_settled_close_marks_its_item_done_whether_the_box_closed_or_not() {
+    for (answer, text) in [
+        (Ok(Response::ok("close", None)), "Closed Box"),
+        (refused("close", "unpushed work"), "Could not close Box"),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let db = db(dir.path());
+        bound_thread(&db);
+        let row = recorded_close(&db);
+        assert_eq!(close_done_at(dir.path()), [None], "queued, not yet done");
+        let mut answer = Some(answer);
+        let seen = attempt(&db, &row, Attempt::First, &mut |_| answer.take().unwrap());
+        assert!(texts(&seen)[0].starts_with(text), "{:?}", texts(&seen));
+        let done = close_done_at(dir.path());
+        assert!(
+            matches!(done[..], [Some(_)]),
+            "close item not done: {done:?}"
+        );
+    }
+}
+
+#[test]
+fn a_crash_after_the_closed_post_leaves_the_close_to_settle_and_post_again_on_restart() {
+    let dir = tempfile::tempdir().unwrap();
+    let first = db(dir.path());
+    bound_thread(&first);
+    let row = recorded_close(&first);
+    let seen = RefCell::default();
+    let crashed = std::panic::catch_unwind(AssertUnwindSafe(|| {
+        with_hooks(
+            &seen,
+            &mut |_| Ok(Response::ok("close", None)),
+            &|| panic!("crash after the post"),
+            &|_| {},
+            |fx| {
+                settle(&first, fx, &row, Attempt::First);
+            },
+        );
+    }));
+    assert!(crashed.is_err(), "the worker never posted");
+    let before = seen.into_inner();
+    assert_eq!(texts(&before), ["Closed Box `slack-10-5`."]);
+    drop(first);
+    let db = db(dir.path());
+    assert_eq!(
+        state(&db, "C1", "10.5"),
+        closing(),
+        "the write ran before the post"
+    );
+    assert_eq!(close_done_at(dir.path()), [None]);
+    let left = db.closing().unwrap();
+    let seen = RefCell::default();
+    let (_, jobs) = mpsc::channel();
+    let mut answer = |req: &Request| match req {
+        Request::Show(_) => shown("closed"),
+        _ => refused("close", "Box is already closed"),
+    };
+    with_fx(&seen, &mut answer, |fx| serve(&jobs, &db, left, fx));
+    let after = seen.into_inner();
+    assert_eq!(after.replies, before.replies);
+    assert!(matches!(close_done_at(dir.path())[..], [Some(_)]));
 }
