@@ -35,6 +35,7 @@ mod lease_dirs;
 mod lease_handle;
 mod leftover;
 mod moor_yaml;
+mod others;
 mod parent;
 mod provider_caps;
 mod proxy;
