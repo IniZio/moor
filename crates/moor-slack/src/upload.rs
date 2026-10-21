@@ -10,6 +10,7 @@ use moor_core::BoxName;
 use sha2::{Digest, Sha256};
 
 use crate::api::{Api, ApiError, UploadUrl};
+use crate::escape::escape;
 
 /// Slack's error code when the bot token lacks the `files:write` scope.
 const MISSING_SCOPE: &str = "missing_scope";
@@ -176,13 +177,6 @@ impl Read for Checked {
         self.failed = Some(why);
         Err(err)
     }
-}
-
-/// Escapes the characters Slack reads as markup.
-fn escape(text: &str) -> String {
-    text.replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
 }
 
 /// A size as moor-web shows it: bytes below 1 KB, else KB, MB or GB, with one decimal below 10.

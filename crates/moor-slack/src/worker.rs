@@ -12,12 +12,11 @@ use moor_core::request::{Request, ShowReq, StartReq};
 use moor_core::response::{ExitClass, Response};
 use serde_json::Value;
 
-use crate::command::{decide, failed, is_start, started, Action, Allow};
-use crate::db::{BoxState, Db, SlackBox, SlackThread};
+use crate::command::{failed, started};
+use crate::db::{BoxState, Db, SlackBox};
 use crate::dial::Backoff;
 use crate::login::TokenCheck;
 use crate::slash::check_repo;
-use crate::socket::Mention;
 
 /// The worker's effects, so tests can script the controller and record what Slack sees.
 pub(crate) struct Fx<'a> {
@@ -58,58 +57,6 @@ pub(crate) enum Job {
     },
     /// Check a pasted Claude token and store it when Claude takes it.
     CheckToken(TokenCheck),
-}
-
-/// Records one mention or thread message in a single transaction: its event id and, for an
-/// allowed start, what [`intake::open`] writes. A message in a thread the front keeps is
-/// recorded as [`intake::in_thread`] says, unless it is a start command. Returns what the
-/// worker does next, or nothing for a redelivered event.
-pub(crate) fn record(
-    mention: &Mention,
-    db: &Db,
-    allow: &Allow<'_>,
-    now: i64,
-) -> rusqlite::Result<Option<Job>> {
-    db.atomically(|| {
-        let channel = mention.channel.as_str();
-        if !db.event_once(&mention.event_id, now)? || !allow.channels.iter().any(|c| c == channel) {
-            return Ok(None);
-        }
-        let thread = mention.thread_ts.as_deref().unwrap_or(&mention.ts);
-        match db.thread(channel, thread)? {
-            Some(kept) if mention.reply || !is_start(&mention.text) => {
-                return intake::in_thread(db, mention, &kept, now);
-            }
-            None if mention.reply => return Ok(None),
-            _ => {}
-        }
-        let existing = db.thread_boxes(channel, thread)?;
-        let action = decide(
-            allow,
-            channel,
-            &mention.user,
-            &mention.text,
-            thread,
-            existing.last(),
-        );
-        Ok(match action {
-            Action::Ignore => None,
-            Action::Reply(text) => Some(Job::Reply {
-                channel: channel.to_owned(),
-                thread: thread.to_owned(),
-                text,
-            }),
-            Action::Start { name, repo, goal } => {
-                let opened = SlackThread {
-                    channel: channel.to_owned(),
-                    thread_ts: thread.to_owned(),
-                    repo,
-                    owner: mention.user.clone(),
-                };
-                Some(Job::Start(intake::open(db, opened, name, goal, now)?))
-            }
-        })
-    })
 }
 
 /// Runs each job as it arrives and asks again about unsure starts and closes on a backoff
@@ -395,6 +342,7 @@ fn written(fx: &Fx<'_>, write: rusqlite::Result<()>) -> bool {
 
 mod close;
 mod intake;
+pub(crate) use intake::record;
 
 #[cfg(test)]
 mod tests;

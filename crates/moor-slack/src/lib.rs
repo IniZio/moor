@@ -10,19 +10,17 @@ use std::sync::Arc;
 mod api;
 mod command;
 pub mod config;
-#[allow(
-    dead_code,
-    reason = "the scheduler that runs coordinator turns comes in the next change"
-)]
 mod coordinator;
 mod credentials;
 mod daemon;
 mod db;
 mod dial;
+mod escape;
 mod login;
 mod secret_file;
 mod slash;
 mod socket;
+mod turns;
 #[expect(dead_code, reason = "the poster that uploads each version comes next")]
 mod upload;
 mod worker;
