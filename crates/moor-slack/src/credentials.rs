@@ -134,6 +134,50 @@ pub(crate) fn store(
     })
 }
 
+/// Reads `user`'s credential for `agent`; `None` when the user linked none. The directories
+/// and the file must be this user's own: no symlink, no other owner, and no group or other
+/// bit on the file. Anything else is an error, so a planted file is never read.
+pub(crate) fn load(
+    state_dir: &Path,
+    agent: AgentKind,
+    user: &SlackUser,
+) -> Result<Option<Secret>, String> {
+    let path = credential_path(state_dir, agent, user);
+    let shown = |p: &Path, e: &dyn std::fmt::Display| format!("{}: {e}", p.display());
+    let owner = daemon_uid();
+    for dir in [state_dir.join("credentials"), agent_dir(state_dir, agent)] {
+        match owned(&dir, owner, true) {
+            Ok(true) => {}
+            Ok(false) => return Ok(None),
+            Err(e) => return Err(shown(&dir, &e)),
+        }
+    }
+    match owned(&path, owner, false) {
+        Ok(true) => {}
+        Ok(false) => return Ok(None),
+        Err(e) => return Err(shown(&path, &e)),
+    }
+    let bytes = fs::read(&path).map_err(|e| shown(&path, &e))?;
+    let text = String::from_utf8_lossy(&bytes);
+    Ok(Some(Secret::new(text.trim().as_bytes().to_vec())))
+}
+
+/// Whether `path` is there; an error when it is a symlink, the wrong kind, not owned by
+/// `owner`, or, for a file, open to group or others.
+fn owned(path: &Path, owner: u32, dir: bool) -> io::Result<bool> {
+    let meta = match fs::symlink_metadata(path) {
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(false),
+        other => other?,
+    };
+    let kind_ok = if dir { meta.is_dir() } else { meta.is_file() };
+    let shared = !dir && meta.mode() & 0o077 != 0;
+    if kind_ok && !shared && meta.uid() == owner {
+        return Ok(true);
+    }
+    let why = "not a private file or directory that this user owns";
+    Err(io::Error::new(io::ErrorKind::PermissionDenied, why))
+}
+
 /// Deletes `user`'s credential for `agent`; a user with no file is already unlinked.
 pub(crate) fn remove(state_dir: &Path, agent: AgentKind, user: &SlackUser) -> Result<(), String> {
     let path = credential_path(state_dir, agent, user);
@@ -155,13 +199,13 @@ pub(crate) fn config_dir(
 }
 
 /// The user id the daemon runs as.
-fn daemon_uid() -> u32 {
+pub(crate) fn daemon_uid() -> u32 {
     rustix::process::geteuid().as_raw()
 }
 
 /// Creates `dir` mode 0700, or checks the one there, then leaves it mode 0700. A symlink, a
 /// file, or a directory that `owner` does not own is refused and left as it is.
-fn private_dir(dir: &Path, owner: u32) -> io::Result<()> {
+pub(crate) fn private_dir(dir: &Path, owner: u32) -> io::Result<()> {
     match DirBuilder::new().mode(0o700).create(dir) {
         Err(e) if e.kind() != io::ErrorKind::AlreadyExists => return Err(e),
         _ => {}

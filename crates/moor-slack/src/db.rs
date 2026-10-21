@@ -236,15 +236,7 @@ pub(crate) use channel_repos::ChannelRepo;
 mod inbox;
 pub(crate) use inbox::{InboxItem, ItemKind};
 
-#[allow(
-    dead_code,
-    reason = "the scheduler that runs coordinator turns comes in the next change"
-)]
 mod turns;
-#[allow(
-    unused_imports,
-    reason = "the scheduler that runs coordinator turns comes in the next change"
-)]
 pub(crate) use turns::{End, TurnRow};
 
 #[cfg(test)]

@@ -13,7 +13,7 @@ mod real;
 pub(crate) mod slack_fake;
 
 use std::io::Write as _;
-use std::os::unix::fs::PermissionsExt as _;
+use std::os::unix::fs::{DirBuilderExt as _, PermissionsExt as _};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::OnceLock;
@@ -120,6 +120,32 @@ impl Rig {
         }
         self.set_coordinator(&dir.join("claude"));
         dir
+    }
+
+    /// Writes `token` as `user`'s linked Claude token in the daemon's state dir, as
+    /// `/moor login` stores it.
+    pub(crate) fn link_token(&self, user: &str, token: &str) {
+        let dir = self.path("state-slack/credentials/claude");
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(&dir)
+            .unwrap();
+        secret_file(&dir.join(user), token);
+    }
+
+    /// A scripted controller and a daemon whose coordinator is the fake `claude`, with
+    /// `user`'s token linked when given, connected to Slack.
+    pub(crate) fn start_coordinated(token: Option<&str>) -> (Self, FakeController, PathBuf) {
+        let mut rig = Self::new();
+        let bin = rig.use_fake_claude(None);
+        if let Some(token) = token {
+            rig.link_token(USER, token);
+        }
+        let controller = rig.serve(PROTOCOL);
+        rig.spawn_daemon();
+        rig.slack.wait_connected();
+        (rig, controller, bin)
     }
 
     /// A scripted controller and the daemon, with the daemon connected to Slack.

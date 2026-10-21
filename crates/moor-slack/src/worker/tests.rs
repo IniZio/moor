@@ -48,7 +48,7 @@ fn try_record(db: &Db, m: &Mention) -> rusqlite::Result<Option<Job>> {
         channels: &channels,
         users: &users,
     };
-    record(m, db, &allow, 1_000)
+    record(m, db, &allow, false, 1_000)
 }
 
 /// Records `m` with user `U1` and channel `C1` allowed; the write must succeed.

@@ -48,7 +48,9 @@ Global flags: `--json`, `--quiet`, `--state-dir DIR`. State lives in
 talks to the controller over its socket. Its Slack app needs an app-level
 token with `connections:write`, and a bot token with `app_mentions:read`,
 `channels:history`, `chat:write` and `commands`. Add a `/moor` slash command
-to the app.
+to the app. Subscribe the app to the `app_mention` and `message.channels`
+bot events. Without `message.channels` the front never sees a reply in a
+thread.
 
 A user on the `users` list runs these in a channel on the `channels` list:
 
@@ -65,10 +67,30 @@ front's config:
 ```yaml
 coordinator:
   binary: /absolute/path/to/claude
+  agent: claude     # the default, and for now the only agent
+  model: sonnet     # the default
+  context_kib: 32   # the default
 ```
 
 At start the front runs `claude --version` and logs it. A missing binary or
 an older version leaves the coordinator unavailable.
+
+With a `coordinator` section, a mention at the top level of a channel on the
+`channels` list that is not a start command opens a thread with a
+coordinator agent. Each message from the thread's starter becomes one turn:
+the front posts a placeholder, runs one `claude -p` process with the
+starter's own token, and edits the placeholder into the reply. Messages that
+arrive during a turn go into the next turn together. Each turn rebuilds its
+context from `slack.db`, within `context_kib`: the first request, the
+thread's Boxes, as many earlier messages and replies as fit, and the new
+messages. A turn has no built-in tools, a cleared environment and its own
+config dir per Slack user. It runs in `threads/<channel>-<thread ts>` under
+the state directory, and refuses to start when that directory or one of its
+ancestors holds a `CLAUDE.md`. A turn that runs past 10 minutes is killed.
+Up to 4 turns run at once.
+
+Only the thread's starter talks to the coordinator. Anyone else who writes
+in the thread gets one line that says only the starter can direct it.
 
 Each person links their own Claude token. Turn on Interactivity in the Slack
 app config. Socket Mode needs no request URL. A user on the `users` list

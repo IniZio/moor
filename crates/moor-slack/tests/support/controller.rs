@@ -55,6 +55,8 @@ struct Inner {
     fail_watches: bool,
     /// Names of the Boxes `start` made, in order, once the Box table is on.
     boxes: Option<Vec<String>>,
+    /// Workdir of each host Session `open-host-session` opened; its id is its index plus 100.
+    hosts: Vec<String>,
 }
 
 /// A running scripted controller; it serves until the test process exits.
@@ -73,6 +75,7 @@ impl FakeController {
             scripts: HashMap::new(),
             fail_watches: false,
             boxes: None,
+            hosts: Vec::new(),
         }));
         let shared = Arc::clone(&inner);
         thread::spawn(move || {
@@ -227,10 +230,11 @@ fn answer(line: &str, inner: &mut Inner) -> Next {
                 Some(Scripted::Hold) => Next::Wait,
                 None => Next::Send(ServerFrame::Response {
                     id,
-                    envelope: inner
-                        .boxes
-                        .as_mut()
-                        .and_then(|boxes| from_table(&request, boxes))
+                    envelope: host_session(&request, &mut inner.hosts)
+                        .or_else(|| {
+                            let boxes = inner.boxes.as_mut()?;
+                            from_table(&request, boxes)
+                        })
                         .unwrap_or_else(|| failed(&cmd, &format!("no script for {cmd}"))),
                 }),
             };
@@ -258,6 +262,28 @@ fn from_table(request: &Request, boxes: &mut Vec<String>) -> Option<Response> {
     };
     let value = json!({"box": {"id": index + 1, "name": name, "branch": format!("moor/{name}")}});
     Some(Response::ok(cmd, Some(value)))
+}
+
+/// The answer to `sessions` or `open-host-session` from the host Sessions opened so far, as
+/// the real controller gives it; `None` for any other request.
+fn host_session(request: &Request, hosts: &mut Vec<String>) -> Option<Response> {
+    let id = |index: usize| i64::try_from(index).unwrap() + 100;
+    match request {
+        Request::Sessions(_) => {
+            let rows: Vec<_> = hosts
+                .iter()
+                .enumerate()
+                .map(|(i, workdir)| json!({"session": id(i), "box": null, "workdir": workdir, "state": "working"}))
+                .collect();
+            Some(Response::ok("sessions", Some(json!({"sessions": rows}))))
+        }
+        Request::OpenHostSession(open) => {
+            hosts.push(open.workdir.clone());
+            let value = json!({"session": id(hosts.len() - 1), "workdir": open.workdir, "state": "working"});
+            Some(Response::ok("open-host-session", Some(value)))
+        }
+        _ => None,
+    }
 }
 
 /// The wire command name of `request`, such as `start`.
