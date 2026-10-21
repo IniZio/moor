@@ -1,8 +1,8 @@
 //! The start and close paths: a Box row in `starting` or `closing` in `slack.db` is a start or
 //! close the front owes, which the coordinator's tool server writes from its own process. The
 //! worker reads those rows every [`POLL`] and turns each into a started or closed Box over the
-//! controller socket. The worker also posts replies, checks each repo a user adds to a channel,
-//! and checks each Claude token a user pastes.
+//! controller socket. The worker also posts replies, sends the answers people give to prompts,
+//! checks each repo a user adds to a channel, and checks each Claude token a user pastes.
 
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant};
@@ -30,33 +30,12 @@ pub(crate) struct Fx<'a> {
     pub(crate) reply: &'a mut dyn FnMut(&str, &str, &str),
     /// Posts `(channel, text)` at the top level of a channel.
     pub(crate) say: &'a mut dyn FnMut(&str, &str),
+    /// Shows `(channel, user, thread, text)` to that user only, in the thread.
+    pub(crate) ephemeral: &'a mut dyn FnMut(&str, &str, &str, &str),
     /// Checks a pasted Claude token, stores it when Claude takes it, and updates the modal.
     pub(crate) check_token: &'a mut dyn FnMut(TokenCheck),
     /// Writes one diagnostic line.
     pub(crate) log: &'a dyn Fn(&str),
-}
-
-/// What the worker does for one recorded mention or command.
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) enum Job {
-    /// Post `text` in a thread.
-    Reply {
-        /// Channel id of the thread.
-        channel: String,
-        /// Timestamp of the thread's root message.
-        thread: String,
-        /// What to post.
-        text: String,
-    },
-    /// Warn in `channel` when the controller does not know `repo`, which a user just added.
-    CheckRepo {
-        /// Channel id the repo was added to.
-        channel: String,
-        /// The repo as the user typed it.
-        repo: String,
-    },
-    /// Check a pasted Claude token and store it when Claude takes it.
-    CheckToken(TokenCheck),
 }
 
 /// Runs each job as it arrives, sends the first start or close of each new `starting` or
@@ -85,6 +64,13 @@ pub(crate) fn serve(jobs: &Receiver<Job>, db: &Db, left: Vec<SlackBox>, fx: &mut
             }) => (fx.reply)(&channel, &thread, &text),
             Ok(Job::CheckRepo { channel, repo }) => check_repo(fx, &channel, &repo),
             Ok(Job::CheckToken(check)) => (fx.check_token)(check),
+            Ok(Job::Ephemeral {
+                channel,
+                user,
+                thread,
+                text,
+            }) => (fx.ephemeral)(&channel, &user, &thread, &text),
+            Ok(Job::Answer { prompt, choice, by }) => answer::answer(db, fx, prompt, choice, &by),
             Err(RecvTimeoutError::Timeout) => {}
             Err(RecvTimeoutError::Disconnected) => return,
         }
@@ -368,6 +354,12 @@ fn written(fx: &Fx<'_>, write: rusqlite::Result<()>) -> bool {
         .inspect_err(|e| (fx.log)(&format!("slack.db: {e}; asking again")))
         .is_ok()
 }
+
+mod answer;
+pub(crate) use answer::click;
+
+mod job;
+pub(crate) use job::Job;
 
 mod close;
 mod intake;

@@ -145,12 +145,17 @@ also waits as a notice for the thread's next turn. A Box event never starts a
 turn.
 
 When a Box's agent waits on a question, the front posts the question in the
-thread with one button per option, addressed to the person who asked for the
-Box. Slack takes at most 25 buttons, so options past the 25th are listed by
-number instead. A question stops being open once its Box moves on. A
-question Slack refuses for what it is (bad blocks, too long, or a channel the
-bot cannot post in) is logged and dropped, and the other Boxes are served as
-before. Any other failure to post it is retried.
+thread with one button per option. Slack takes at most 25 buttons, so options
+past the 25th are listed by number instead. Only the person who asked for the
+Box can answer it. A button sends its option to the Box. A reply that is only
+a number does the same, but only while the thread has exactly one open
+question. Otherwise the number goes to the coordinator like any other
+message. An answered question shows who answered and loses its buttons. A
+question stops being open once its Box moves on, and a click on it then says
+what the Box is doing now. A question Slack refuses for what it is (bad
+blocks, too long, or a channel the bot cannot post in) is logged and dropped,
+and the other Boxes are served as before. Any other failure to post it is
+retried.
 
 Only the thread's starter talks to the coordinator. Anyone else who writes
 in the thread gets one line that says only the starter can direct it.

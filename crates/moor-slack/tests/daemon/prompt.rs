@@ -1,14 +1,18 @@
 //! Needs-input prompts: a Box that waits on a question gets one message with a button per
-//! option in its thread, and a refold posts it once.
+//! option in its thread. Its requester answers with a button, or with a bare number while
+//! the thread has exactly one open prompt; anything else reaches the coordinator.
 
 #![allow(clippy::indexing_slicing, reason = "test code")]
 
 use std::time::Duration;
 
+use moor_core::request::Request;
+use moor_core::response::Response;
 use serde_json::{json, Value};
 
-use super::support::controller::FakeController;
-use super::support::slack_fake::Post;
+use super::inbox::{reply, OTHER};
+use super::support::controller::{FakeController, Scripted};
+use super::support::slack_fake::{Click, Post};
 use super::support::{Rig, BOX_NAME, CHANNEL, QUIET, TS, USER};
 
 /// The id the scripted controller gives the first Box it starts.
@@ -74,6 +78,49 @@ fn asked() -> (Rig, FakeController, std::path::PathBuf, Post) {
     (rig, controller, bin, prompt)
 }
 
+/// Presses button `choice` on `prompt` as `user`, with an envelope id derived from `n`.
+fn click(rig: &Rig, n: u32, user: &str, prompt: &Post, choice: u32) {
+    rig.slack.send_click(&Click {
+        envelope_id: &format!("env-click-{n}"),
+        channel: CHANNEL,
+        user,
+        message_ts: &prompt.ts,
+        thread_ts: TS,
+        value: &choice.to_string(),
+        action_id: &format!("answer_{choice}"),
+    });
+}
+
+/// The Box and menu choice of each `steer` the controller got that picks an option.
+fn menus(controller: &FakeController) -> Vec<(String, u32)> {
+    controller.seen(|seen| {
+        seen.requests
+            .iter()
+            .filter_map(|r| match r {
+                Request::Steer(s) => Some((s.target.to_string(), s.menu?)),
+                _ => None,
+            })
+            .collect()
+    })
+}
+
+/// Answers the next `steer` as the controller does when the agent took it.
+fn steer_ok(controller: &FakeController) {
+    let ok = Response::ok("steer", Some(json!({})));
+    controller.script("steer", Scripted::Reply(ok));
+}
+
+/// The text of every inbox message, in the order they were recorded.
+fn messages(rig: &Rig) -> Vec<String> {
+    let db = rusqlite::Connection::open(rig.path("state-slack/slack.db")).unwrap();
+    db.busy_timeout(Duration::from_secs(5)).unwrap();
+    let mut stmt = db
+        .prepare("SELECT text FROM slack_inbox WHERE kind = 'message' ORDER BY id")
+        .unwrap();
+    let rows = stmt.query_map([], |r| r.get(0)).unwrap();
+    rows.collect::<Result<_, _>>().unwrap()
+}
+
 #[test]
 fn a_needs_input_event_posts_one_prompt_with_buttons_for_the_requester() {
     let (rig, controller, _bin, prompt) = asked();
@@ -128,6 +175,161 @@ fn a_refold_after_a_dropped_watch_or_a_restart_posts_no_second_prompt() {
         "{:?}",
         rig.slack.posts()
     );
+}
+
+#[test]
+fn a_requester_click_on_a_live_prompt_steers_its_choice_and_shows_the_answer() {
+    let (rig, controller, _bin, prompt) = asked();
+    steer_ok(&controller);
+    click(&rig, 1, USER, &prompt, 2);
+    let (_, updates) = rig.slack.wait_until("the answered prompt", |_, updates| {
+        updates.iter().any(|u| u.ts == prompt.ts)
+    });
+    assert_eq!(menus(&controller), [(BOX_NAME.to_owned(), 2)]);
+    let edit = updates.iter().find(|u| u.ts == prompt.ts).unwrap();
+    assert!(buttons(&edit.blocks).is_empty(), "{:?}", edit.blocks);
+    assert_eq!(
+        edit.blocks[1]["elements"][0]["text"],
+        format!("Answered by <@{USER}>: 2. No")
+    );
+    assert!(rig.slack.ephemerals().is_empty());
+}
+
+#[test]
+fn a_click_from_anyone_but_the_requester_gets_an_ephemeral_refusal_and_steers_nothing() {
+    let (rig, controller, _bin, prompt) = asked();
+    click(&rig, 1, OTHER, &prompt, 1);
+    let ephemerals = rig.slack.wait_ephemerals(1);
+    assert_eq!(ephemerals[0].user, OTHER);
+    assert_eq!(
+        (
+            ephemerals[0].channel.as_str(),
+            ephemerals[0].thread_ts.as_str()
+        ),
+        (CHANNEL, TS)
+    );
+    assert_eq!(
+        ephemerals[0].text,
+        format!("Only <@{USER}> can answer this prompt.")
+    );
+    std::thread::sleep(QUIET);
+    assert!(menus(&controller).is_empty());
+    assert!(rig.slack.updates().iter().all(|u| u.ts != prompt.ts));
+}
+
+#[test]
+fn a_click_after_the_box_moved_on_is_refused_with_its_state() {
+    let (rig, controller, _bin, prompt) = asked();
+    controller.emit(BOX_ID, BOX_NAME, "working", json!({}));
+    std::thread::sleep(QUIET);
+    click(&rig, 1, USER, &prompt, 1);
+    rig.wait_post(&format!(
+        "This prompt is no longer open: {BOX_NAME} is now working."
+    ));
+    assert!(menus(&controller).is_empty());
+}
+
+#[test]
+fn a_second_click_on_an_answered_prompt_is_refused_and_steers_once() {
+    let (rig, controller, _bin, prompt) = asked();
+    steer_ok(&controller);
+    click(&rig, 1, USER, &prompt, 1);
+    rig.slack.wait_until("the answered prompt", |_, updates| {
+        updates.iter().any(|u| u.ts == prompt.ts)
+    });
+    click(&rig, 2, USER, &prompt, 2);
+    let ephemerals = rig.slack.wait_ephemerals(1);
+    assert_eq!(
+        ephemerals[0].text,
+        "This prompt was already answered: 1. Yes."
+    );
+    assert_eq!(menus(&controller), [(BOX_NAME.to_owned(), 1)]);
+}
+
+#[test]
+fn a_refused_answer_is_posted_and_the_prompt_stays_open() {
+    let (rig, controller, _bin, prompt) = asked();
+    controller.script(
+        "steer",
+        Scripted::Reply(super::support::controller::refused(
+            "steer",
+            "Box is not waiting <!channel>",
+        )),
+    );
+    click(&rig, 1, USER, &prompt, 1);
+    rig.wait_post(&format!(
+        "Box `{BOX_NAME}` refused the answer: Box is not waiting &lt;!channel&gt;"
+    ));
+    steer_ok(&controller);
+    click(&rig, 2, USER, &prompt, 2);
+    rig.slack.wait_until("the answered prompt", |_, updates| {
+        updates.iter().any(|u| u.ts == prompt.ts)
+    });
+    assert_eq!(
+        menus(&controller),
+        [(BOX_NAME.to_owned(), 1), (BOX_NAME.to_owned(), 2)]
+    );
+}
+
+#[test]
+fn a_digit_from_the_requester_answers_the_one_open_prompt() {
+    let (rig, controller, _bin, prompt) = asked();
+    steer_ok(&controller);
+    rig.mention(2, USER, "<@UBOT> 2", "1730000100.000002", Some(TS));
+    rig.slack.wait_until("the answered prompt", |_, updates| {
+        updates.iter().any(|u| u.ts == prompt.ts)
+    });
+    assert_eq!(menus(&controller), [(BOX_NAME.to_owned(), 2)]);
+    assert_eq!(messages(&rig), ["fix the thing"], "the digit is not queued");
+}
+
+#[test]
+fn a_digit_with_no_open_prompt_reaches_the_coordinator_as_text() {
+    let (rig, controller, _bin) = Rig::start_boxes();
+    rig.open_thread_with_a_box();
+    reply(&rig, 2, USER, "2");
+    rig.slack.wait_acks(2);
+    assert_eq!(messages(&rig), ["fix the thing", "2"]);
+    assert!(menus(&controller).is_empty());
+}
+
+#[test]
+fn a_digit_from_anyone_but_the_requester_answers_nothing() {
+    let (rig, controller, _bin, _prompt) = asked();
+    reply(&rig, 2, OTHER, "1");
+    rig.wait_post(&format!("Only <@{USER}> can direct this thread."));
+    std::thread::sleep(QUIET);
+    assert!(menus(&controller).is_empty());
+    assert_eq!(messages(&rig), ["fix the thing"]);
+}
+
+#[test]
+fn a_digit_with_two_open_prompts_reaches_the_coordinator_as_text() {
+    let (mut rig, controller, bin) = Rig::start_boxes();
+    std::fs::OpenOptions::new()
+        .append(true)
+        .open(rig.path("slack.yaml"))
+        .and_then(|mut f| std::io::Write::write_all(&mut f, b"  max_open_boxes: 2\n"))
+        .unwrap();
+    rig.kill_daemon();
+    rig.spawn_daemon();
+    let goal = |g: &str| ("start_box", json!({ "goal": g }));
+    Rig::tool_calls(
+        &bin,
+        Some(0),
+        &[goal("fix the thing"), goal("and the other")],
+    );
+    rig.open_thread_with_a_box();
+    let second = format!("{}2", BOX_NAME.strip_suffix('1').unwrap());
+    rig.wait_box_state(&second, "bound");
+    controller.emit(BOX_ID, BOX_NAME, "needs_input", asks());
+    controller.emit(BOX_ID + 1, &second, "needs_input", asks());
+    wait_prompts(&rig, 2);
+    reply(&rig, 2, USER, "1");
+    rig.slack.wait_acks(2);
+    assert_eq!(messages(&rig), ["fix the thing", "1"]);
+    std::thread::sleep(QUIET);
+    assert!(menus(&controller).is_empty());
 }
 
 #[test]

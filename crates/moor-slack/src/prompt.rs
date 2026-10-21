@@ -121,5 +121,19 @@ pub(crate) fn answered_blocks(
     ])
 }
 
+/// The answer label for choice `n`: `"<n>. <option>"`, or just `"<n>"` when out of range.
+pub(crate) fn answer_label(options: &[String], n: u32) -> String {
+    usize::try_from(n)
+        .ok()
+        .and_then(|n| n.checked_sub(1))
+        .and_then(|i| options.get(i))
+        .map_or_else(|| n.to_string(), |option| format!("{n}. {option}"))
+}
+
+/// Whether `n` names one of `options`.
+pub(crate) fn offered(options: &[String], n: u32) -> bool {
+    usize::try_from(n).is_ok_and(|n| (1..=options.len()).contains(&n))
+}
+
 #[cfg(test)]
 mod tests;

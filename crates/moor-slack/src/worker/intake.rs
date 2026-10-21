@@ -2,6 +2,7 @@
 //! opens a coordinator thread with its text as the first message, and the starter's later
 //! messages wait in the thread's inbox.
 
+use super::answer::digit;
 use super::Job;
 use crate::command::{not_allowed, reply_action, strip_mentions, Allow, ReplyAction};
 use crate::db::{Db, InboxItem, ItemKind, SlackThread};
@@ -68,14 +69,18 @@ pub(super) fn open_coordinated(
     db.queue(&item, now)
 }
 
-/// Records `mention`, a message in `thread`, inside the caller's transaction. Returns what the
-/// worker does next.
+/// Records `mention`, a message in `thread`, inside the caller's transaction: an answer to the
+/// thread's one open prompt, or a message for the coordinator. Returns what the worker does
+/// next.
 pub(super) fn in_thread(
     db: &Db,
     mention: &Mention,
     thread: &SlackThread,
     now: i64,
 ) -> rusqlite::Result<Option<Job>> {
+    if let Some(answer) = digit(db, mention, &thread.thread_ts)? {
+        return Ok(Some(answer));
+    }
     let say = |text: String| Job::Reply {
         channel: thread.channel.clone(),
         thread: thread.thread_ts.clone(),

@@ -107,6 +107,13 @@ pub(crate) fn closed(name: &BoxName) -> String {
     format!("Box `{}` closed.", name.as_str())
 }
 
+/// The positive number a message consists of, ignoring user mentions.
+pub(crate) fn bare_number(text: &str) -> Option<u32> {
+    let mut words = text.split_whitespace().filter(|w| !w.starts_with("<@"));
+    let n = words.next()?.parse::<u32>().ok()?;
+    (words.next().is_none() && n > 0).then_some(n)
+}
+
 /// Drops leading `<@U...>` / `<@U...|name>` mentions and whitespace.
 pub(crate) fn strip_mentions(text: &str) -> &str {
     let mut rest = text.trim_start();
