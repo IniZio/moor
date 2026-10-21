@@ -7,6 +7,9 @@ targets = [
 
 [advisories]
 yanked = "deny"
+ignore = [
+  { id = "RUSTSEC-2026-0374", reason = "basic-toml is unmaintained; only age's i18n-embed-fl proc-macro reads its own i18n.toml with it at build time" },
+]
 
 [licenses]
 allow = [

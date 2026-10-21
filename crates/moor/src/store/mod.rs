@@ -37,6 +37,8 @@ mod sessions;
 #[cfg(test)]
 mod tests;
 mod turns;
+#[cfg_attr(not(test), expect(dead_code, reason = "the user requests use it next"))]
+mod users;
 
 pub(crate) use agent::SessionRow;
 pub(crate) use proxy::{Fenced, Lease, ProxyRow, ReadyProc, Reserve};
@@ -44,7 +46,7 @@ pub(crate) use proxy::{TunnelAck, TunnelRequest, TunnelWant};
 pub(crate) use runs::{NewRun, RunOutcome, RunRow};
 
 /// Schema version this build reads and writes.
-pub(crate) const SCHEMA_VERSION: &str = "5";
+pub(crate) const SCHEMA_VERSION: &str = "6";
 /// Full schema, applied once when the file has no `meta` table.
 const SCHEMA_SQL: &str = include_str!("schema.sql");
 /// How long a connection waits on a lock before `SQLITE_BUSY`.
@@ -108,6 +110,9 @@ pub(crate) enum StoreError {
     /// The writer mutex was poisoned.
     #[error("store writer poisoned")]
     Poisoned,
+    /// A user secret did not seal or open.
+    #[error(transparent)]
+    Vault(#[from] crate::vault::VaultError),
 }
 
 /// Box row joined to a box.

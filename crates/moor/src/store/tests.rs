@@ -94,7 +94,7 @@ fn open_creates_wal_file_with_schema_version() {
             r.get(0)
         })
         .unwrap();
-    assert_eq!(v, "5");
+    assert_eq!(v, "6");
     drop(raw);
     let (store, _) = open(dir.path());
     assert!(store.open_boxes().unwrap().is_empty());

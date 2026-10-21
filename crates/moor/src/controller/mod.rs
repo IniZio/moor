@@ -22,6 +22,7 @@ use moor_core::config::{parse_controller, parse_repo, MoorYamlSource, RepoTable}
 use moor_core::ErrorKind;
 
 use crate::env::{Env, CONTROLLER_LOCK};
+use crate::vault::{Vault, VAULT_KEY};
 use crate::Moor;
 
 /// Shared destination for diagnostics.
@@ -109,6 +110,7 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
         },
         message: e.error.to_string(),
     })?;
+    open_vault(&env, config)?;
     let state_lock = env
         .state_dir()
         .map(|dir| take_lock(&dir.join(CONTROLLER_LOCK), &socket))
@@ -151,6 +153,27 @@ fn resolve_repos(env: &Env, config: &Path, mut repos: RepoTable) -> Result<RepoT
         *p = path.to_string_lossy().into_owned();
     }
     Ok(repos)
+}
+
+/// Loads the vault key beside `config`, creating it on first start. A key inside the state
+/// dir is refused, so a copy of the state dir never carries the key that opens it.
+fn open_vault(env: &Env, config: &Path) -> Result<Vault, Stop> {
+    let refused = |message: String| Stop {
+        code: REFUSED,
+        message,
+    };
+    let dir = config.parent().filter(|d| !d.as_os_str().is_empty());
+    let dir = fs::canonicalize(dir.unwrap_or_else(|| Path::new(".")))
+        .map_err(|e| refused(format!("cannot resolve the config dir: {e}")))?;
+    let key = dir.join(VAULT_KEY);
+    let state = env.state_dir().and_then(|s| fs::canonicalize(s).ok());
+    if state.is_some_and(|s| dir.starts_with(s)) {
+        return Err(refused(format!(
+            "vault key {} is inside the state dir; keep the controller config outside it",
+            key.display()
+        )));
+    }
+    Vault::load_or_create(&key).map_err(|e| refused(e.to_string()))
 }
 
 /// The socket path used when no explicit one is configured.

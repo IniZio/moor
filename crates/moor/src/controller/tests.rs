@@ -11,7 +11,7 @@ use crate::env::Env;
 
 fn env(dir: &Path) -> Env {
     Env::from_pairs([
-        ("MOOR_STATE_DIR", dir.to_str().expect("utf8")),
+        ("MOOR_STATE_DIR", dir.join("state").to_str().expect("utf8")),
         ("MOOR_CONFIG", "/nonexistent/moor.yaml"),
     ])
 }
@@ -46,7 +46,10 @@ fn socket_is_owner_only() {
     let tmp = tempfile::tempdir().expect("tmp");
     let cfg = config(tmp.path(), "");
     let running = start(&env(tmp.path()), &cfg).expect("start");
-    assert_eq!(running.socket, tmp.path().join("controller.sock"));
+    assert_eq!(
+        running.socket,
+        tmp.path().join("state").join("controller.sock")
+    );
     let mode = std::fs::metadata(&running.socket)
         .expect("meta")
         .permissions()
@@ -139,3 +142,48 @@ fn relative_repo_moor_yaml_resolves_against_config_dir() {
 
 mod artifacts;
 mod run_output;
+
+#[test]
+fn first_start_creates_the_vault_key_beside_the_config() {
+    let tmp = tempfile::tempdir().expect("tmp");
+    let cfg = config(tmp.path(), "");
+    drop(start(&env(tmp.path()), &cfg).expect("start"));
+    let key = tmp.path().join("vault.key");
+    let mode = std::fs::metadata(&key)
+        .expect("vault.key")
+        .permissions()
+        .mode();
+    assert_eq!(mode & 0o777, 0o600);
+    assert!(!tmp.path().join("state").join("vault.key").exists());
+}
+
+#[test]
+fn a_vault_key_that_is_not_owner_only_stops_the_start() {
+    let tmp = tempfile::tempdir().expect("tmp");
+    let cfg = config(tmp.path(), "");
+    let key = tmp.path().join("vault.key");
+    std::fs::write(&key, "x\n").expect("key");
+    std::fs::set_permissions(&key, std::fs::Permissions::from_mode(0o644)).expect("chmod");
+    let out = Buf::default();
+    let code = serve(&env(tmp.path()), &cfg, out.clone());
+    assert_eq!(code, 3);
+    assert!(out.text().contains("it must be 0600"), "{}", out.text());
+    assert_eq!(std::fs::read_to_string(&key).expect("kept"), "x\n");
+}
+
+#[test]
+fn a_config_inside_the_state_dir_is_refused_for_the_vault_key() {
+    let tmp = tempfile::tempdir().expect("tmp");
+    let state = tmp.path().join("state");
+    std::fs::create_dir(&state).expect("state");
+    let cfg = config(&state, "");
+    let out = Buf::default();
+    let code = serve(&env(tmp.path()), &cfg, out.clone());
+    assert_eq!(code, 3);
+    assert!(
+        out.text().contains("inside the state dir"),
+        "{}",
+        out.text()
+    );
+    assert!(!state.join("vault.key").exists());
+}
