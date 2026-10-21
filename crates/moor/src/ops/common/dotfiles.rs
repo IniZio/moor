@@ -7,7 +7,6 @@ use std::time::Duration;
 
 use moor_core::boxscript::quote;
 use moor_core::config::BoxSettings;
-use moor_core::domain::run::SyncMode;
 use moor_core::exec_env::Purpose;
 use moor_core::seam::driver::{ExecOutcome, ExecSpec};
 use moor_core::seam::proc::{Deadline, Output, ProcSpec, Tool};
@@ -129,7 +128,6 @@ fn install(
         argv: env.argv(vec!["sh".to_owned(), "-c".to_owned(), script]),
         env: env.vars(),
         cwd: None,
-        sync: SyncMode::None,
         output: Some(Output::Log(log.to_path_buf())),
         host_cwd: Some(site.worktree.to_path_buf()),
         class: Some(cfg.size.value.as_str().to_owned()),

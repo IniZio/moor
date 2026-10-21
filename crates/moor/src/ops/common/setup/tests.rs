@@ -7,7 +7,6 @@ use std::time::Duration;
 use moor_core::boxscript::setup::setup_script;
 use moor_core::config::{BoxSettings, Flags, UserConfig};
 use moor_core::domain::box_state::SetupOutcome;
-use moor_core::domain::run::SyncMode;
 use moor_core::exec_env::SETUP_LINE_DEADLINE;
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome};
@@ -15,7 +14,7 @@ use moor_core::seam::proc::Deadline;
 use moor_core::view::SetupView;
 use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId};
 
-use super::{run_setup as run_setup_with, sync_checkout, SetupRun};
+use super::{run_setup as run_setup_with, SetupRun};
 use crate::cx::Cx;
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
@@ -83,9 +82,8 @@ fn run_setup(
     workdir: &BoxPath,
     worktree: &Path,
     cfg: &BoxSettings,
-    sync: SyncMode,
 ) -> SetupRun {
-    run_setup_with(cx, handle, "p", workdir, worktree, cfg, sync, None)
+    run_setup_with(cx, handle, "p", workdir, worktree, cfg, None)
 }
 
 fn exits(codes: &[i32]) -> Vec<Result<ExecOutcome, DriverError>> {
@@ -110,7 +108,6 @@ fn all_lines_passing_is_ok() {
         &r.workdir,
         d.path(),
         &cfg(&["a", "b"], &[]),
-        SyncMode::Full,
     );
     assert_eq!(
         got,
@@ -127,7 +124,7 @@ fn lines_run_as_one_generated_script_under_sh() {
     let d = tempfile::tempdir().unwrap();
     let r = rig(d.path(), FakeDriver::new());
     let c = cfg(&["one", "two", "three"], &[]);
-    run_setup(&r.cx, &r.handle, &r.workdir, d.path(), &c, SyncMode::Full);
+    run_setup(&r.cx, &r.handle, &r.workdir, d.path(), &c);
     let (h, spec, _) = only(r.driver.execs());
     assert_eq!(h, r.handle);
     // The wrapper puts the Box's image PATH on the exec first; the script is the last argument.
@@ -149,7 +146,6 @@ fn the_script_gets_one_line_allowance_per_line() {
         &r.workdir,
         d.path(),
         &cfg(&["a", "b", "c"], &[]),
-        SyncMode::Full,
     );
     let (_, _, dl) = only(r.driver.execs());
     assert_eq!(dl, Deadline(SETUP_LINE_DEADLINE * 3));
@@ -169,7 +165,6 @@ fn failing_line_comes_from_the_log_and_warns() {
         &r.workdir,
         d.path(),
         &cfg(&["a", "bad", "c"], &[]),
-        SyncMode::Full,
     );
     assert_eq!(
         got,
@@ -208,7 +203,6 @@ fn the_last_announced_line_fails() {
         &r.workdir,
         d.path(),
         &cfg(&["a", "b", "c"], &[]),
-        SyncMode::Full,
     );
     assert_eq!(
         got,
@@ -234,7 +228,6 @@ fn a_failed_copy_falls_back_to_the_first_line() {
         &r.workdir,
         d.path(),
         &cfg(&["a", "b"], &[]),
-        SyncMode::Full,
     );
     assert_eq!(
         got,
@@ -260,7 +253,6 @@ fn driver_timeout_fails_the_line() {
         &r.workdir,
         d.path(),
         &cfg(&["slow", "next"], &[]),
-        SyncMode::Full,
     );
     assert_eq!(
         got,
@@ -281,55 +273,6 @@ fn driver_timeout_fails_the_line() {
 }
 
 #[test]
-fn sync_checkout_is_one_synced_exec_that_runs_nothing() {
-    let d = tempfile::tempdir().unwrap();
-    let r = rig(d.path(), FakeDriver::new());
-    let got = sync_checkout(
-        r.cx.driver(),
-        &r.handle,
-        &r.workdir,
-        d.path(),
-        &cfg(&["a"], &[]),
-        None,
-    );
-    assert_eq!(got, Ok(()));
-    let (_, spec, dl) = only(r.driver.execs());
-    assert_eq!(spec.sync, SyncMode::Full);
-    assert_eq!(spec.argv, ["git", "rev-parse", "--git-dir"]);
-    assert_eq!(dl, Deadline(SETUP_LINE_DEADLINE));
-}
-
-#[test]
-fn sync_checkout_failures_name_the_sync() {
-    let failures = [
-        (Ok(ExecOutcome::Exited { code: 3 }), "exit 3; the sync failed or left no git checkout (with submodules, push HEAD to origin first)"),
-        (Ok(ExecOutcome::Interrupted), "interrupted"),
-        (Err(DriverError::Timeout(SETUP_LINE_DEADLINE)), "timed out"),
-        (
-            Err(DriverError::Failed {
-                summary: "box command failed on provider ssh (exit 6): local Git seed rev-list failed".to_owned(),
-            }),
-            "(exit 6): local Git seed rev-list failed",
-        ),
-    ];
-    for (result, reason) in failures {
-        let d = tempfile::tempdir().unwrap();
-        let r = rig(d.path(), FakeDriver::new().exec_results([result]));
-        let got = sync_checkout(
-            r.cx.driver(),
-            &r.handle,
-            &r.workdir,
-            d.path(),
-            &cfg(&[], &[]),
-            None,
-        );
-        let msg = got.unwrap_err();
-        assert!(msg.starts_with("syncing the checkout into the Box failed: "));
-        assert!(msg.contains(reason), "{msg}");
-    }
-}
-
-#[test]
 fn empty_setup_is_skipped_without_exec() {
     let d = tempfile::tempdir().unwrap();
     let r = rig(d.path(), FakeDriver::new());
@@ -339,7 +282,6 @@ fn empty_setup_is_skipped_without_exec() {
         &r.workdir,
         d.path(),
         &cfg(&[], &[("A", "1")]),
-        SyncMode::Full,
     );
     assert_eq!(got, SetupRun::Skipped);
     assert!(r.driver.execs().is_empty());
@@ -428,9 +370,8 @@ fn exec_is_synced_from_the_worktree_at_the_resolved_size() {
     let d = tempfile::tempdir().unwrap();
     let r = rig(d.path(), FakeDriver::new());
     let c = cfg(&["a"], &[]);
-    run_setup(&r.cx, &r.handle, &r.workdir, d.path(), &c, SyncMode::Full);
+    run_setup(&r.cx, &r.handle, &r.workdir, d.path(), &c);
     let (_, spec, _) = only(r.driver.execs());
-    assert_eq!(spec.sync, SyncMode::Full);
     assert!(spec.output.is_none());
     assert_eq!(spec.class.as_deref(), Some(c.size.value.as_str()));
 }
@@ -448,7 +389,6 @@ fn interrupted_line_fails_and_stops_the_run() {
         &r.workdir,
         d.path(),
         &cfg(&["a", "b"], &[]),
-        SyncMode::Full,
     );
     assert_eq!(
         got,
@@ -480,14 +420,7 @@ fn duration_is_measured_with_the_clock_on_success_and_failure() {
         );
         r.driver
             .on_exec(move || clock.sleep(Duration::from_millis(1500)));
-        let got = run_setup(
-            &r.cx,
-            &r.handle,
-            &r.workdir,
-            d.path(),
-            &cfg(&["a"], &[]),
-            SyncMode::Full,
-        );
+        let got = run_setup(&r.cx, &r.handle, &r.workdir, d.path(), &cfg(&["a"], &[]));
         assert_eq!(got.ms(), Some(1500));
         assert_eq!(got.failed(), !ok);
         assert_eq!(got.view().ms, Some(1500));

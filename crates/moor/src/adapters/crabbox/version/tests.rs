@@ -1,7 +1,6 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use moor_core::domain::run::SyncMode;
 use moor_core::name::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecSpec};
 use moor_core::seam::proc::{Deadline, Tool};
@@ -138,7 +137,6 @@ fn ops() -> Vec<(&'static str, Op)> {
                 argv: vec!["true".to_owned()],
                 env: Vec::new(),
                 cwd: None,
-                sync: SyncMode::None,
                 output: None,
                 host_cwd: None,
                 class: None,

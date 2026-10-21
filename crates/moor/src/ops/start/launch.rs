@@ -144,7 +144,6 @@ pub(super) fn begin(
     );
     let mut launch = launch.clone();
     launch.proxy = Some(Arc::new(proxy.addr));
-    launch.origin = proxy.origin;
     let launch = &launch;
     let leases = match plan_dirs(cx, store, id, launch)? {
         Ok(leases) => leases,
@@ -266,7 +265,6 @@ pub(super) fn launch_req(cx: &Cx, row: &BoxRow, setup_exit: Option<i32>) -> Opti
         model: None,
         nonce: nonce(cx.rng()),
         proxy: None,
-        origin: None,
         strip_env,
         prompt: LaunchPrompt::Brief,
     })

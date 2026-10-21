@@ -6,7 +6,6 @@ use std::time::Duration;
 use moor_core::boxscript::quote;
 use moor_core::config::{DotfilesConfig, UserConfig};
 use moor_core::domain::boxes::BoxState;
-use moor_core::domain::run::SyncMode;
 use moor_core::seam::driver::ExecOutcome;
 use moor_core::seam::proc::{Deadline, Tool};
 use moor_core::seam::proxy_host::ProxyHostError;
@@ -78,12 +77,12 @@ fn dotfiles_world(
 }
 
 /// Execs that were the dotfiles step.
-fn dotfiles_execs(w: &World) -> Vec<(Vec<String>, Deadline, SyncMode)> {
+fn dotfiles_execs(w: &World) -> Vec<(Vec<String>, Deadline)> {
     w.driver
         .execs()
         .into_iter()
-        .filter(|e| e.1.sync == SyncMode::None && e.1.cwd.is_none())
-        .map(|e| (unwrapped(e.1.argv), e.2, e.1.sync))
+        .filter(|e| e.1.cwd.is_none())
+        .map(|e| (unwrapped(e.1.argv), e.2))
         .collect()
 }
 
@@ -112,18 +111,17 @@ fn assert_archive_put(w: &World) -> String {
     path.as_str().to_owned()
 }
 
-/// The last exec (after the checkout sync and setup) is the dotfiles script.
+/// The last exec (after setup) is the dotfiles script.
 fn assert_dotfiles_exec(w: &World, archive: &str) {
     let want = ["sh", "-c", &script(archive, DEFAULT_INSTALL)].map(str::to_owned);
     let execs = w.driver.execs();
-    assert_eq!(execs.len(), 3);
+    assert_eq!(execs.len(), 2);
     let (_, spec, deadline) = execs.last().unwrap();
     assert!(spec
         .argv
         .get(2)
         .is_some_and(|p| p.contains("export HTTPS_PROXY=")));
     assert_eq!(unwrapped(spec.argv.clone()), want);
-    assert_eq!(spec.sync, SyncMode::None);
     assert_eq!(spec.cwd, None);
     assert!(spec.env.contains(&(
         "CLAUDE_CODE_OAUTH_TOKEN".to_owned(),
@@ -164,7 +162,6 @@ fn dotfiles_run_after_setup_and_before_the_agent_launches() {
         calls,
         [
             "acquire",
-            "exec box-1",
             "exec box-1",
             "copy_out box-1",
             "put_file box-1",
@@ -208,7 +205,7 @@ fn log_writer(w: &World) {
 /// A started `demo` whose dotfiles exec failed (setup passes first).
 fn failed_start() -> (World, Arc<FakeEngine>, tempfile::TempDir, tempfile::TempDir) {
     let src = tempfile::tempdir().unwrap();
-    let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(0)), Ok(exit(1))]);
+    let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(1))]);
     let (w, engine, repo) = dotfiles_world("setup: [a]\n", Some(src.path()), None, driver);
     log_writer(&w);
     (w, engine, repo, src)
@@ -265,16 +262,14 @@ fn without_dotfiles_config_nothing_is_packed_uploaded_or_run() {
 #[test]
 fn dotfiles_still_run_when_a_setup_line_fails() {
     let src = tempfile::tempdir().unwrap();
-    let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(1)), Ok(exit(0))]);
+    let driver = FakeDriver::new().exec_results([Ok(exit(1)), Ok(exit(0))]);
     let (w, engine, _repo) = dotfiles_world("setup: [a]\n", Some(src.path()), None, driver);
     let v = started(&w);
     assert_eq!((v.boxed.lifecycle, v.boxed.session_state), WORKING);
     assert!(v.setup.ran && !v.setup.ok);
     assert!(v.dotfiles.ran && v.dotfiles.ok);
-    assert_eq!(w.driver.execs().len(), 3);
+    assert_eq!(w.driver.execs().len(), 2);
     assert_eq!(dotfiles_execs(&w).len(), 1);
-    let (_, spec, _) = w.driver.execs().pop().unwrap();
-    assert_eq!(spec.sync, SyncMode::None);
     assert_eq!(engine.launches().len(), 1);
 }
 
@@ -292,7 +287,7 @@ fn the_host_log_and_its_directory_are_owner_only() {
 #[test]
 fn a_failed_setup_line_still_fails_setup_when_the_dotfiles_fail_too() {
     let src = tempfile::tempdir().unwrap();
-    let driver = FakeDriver::new().exec_results([Ok(exit(0)), Ok(exit(1)), Ok(exit(1))]);
+    let driver = FakeDriver::new().exec_results([Ok(exit(1)), Ok(exit(1))]);
     let (w, engine, _repo) = dotfiles_world("setup: [make-it]\n", Some(src.path()), None, driver);
     log_writer(&w);
     let v = run(&w.cx, &goal_req()).unwrap();

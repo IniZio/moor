@@ -20,6 +20,13 @@ impl ForgeRepo {
             name: name.into(),
         }
     }
+
+    /// `https://github.com/OWNER/NAME.git`, the URL a Box clones and pushes; the Proxy's
+    /// `github-git` rule allows this `.git` path.
+    #[must_use]
+    pub fn clone_url(&self) -> String {
+        format!("https://github.com/{}/{}.git", self.owner, self.name)
+    }
 }
 
 impl fmt::Display for ForgeRepo {
@@ -43,6 +50,14 @@ mod tests {
         assert_eq!(
             ForgeRepo::new("acme", "widgets").to_string(),
             "acme/widgets"
+        );
+    }
+
+    #[test]
+    fn clone_url_is_the_plain_https_git_url() {
+        assert_eq!(
+            ForgeRepo::new("acme", "widgets").clone_url(),
+            "https://github.com/acme/widgets.git"
         );
     }
 

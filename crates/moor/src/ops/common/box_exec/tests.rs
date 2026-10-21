@@ -89,7 +89,6 @@ fn boxed_proxy() -> BoxProxy {
             forge: false,
             direct: Vec::new(),
         },
-        origin: None,
         rule_env: vec![("RULE".to_owned(), "x".to_owned())],
     }
 }

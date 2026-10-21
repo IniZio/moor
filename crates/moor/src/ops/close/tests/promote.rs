@@ -295,9 +295,8 @@ fn promoted_box_goes_through_setting_up_and_gets_a_ready_box() {
             format!("peek_file {HOLDER_BOX}"),
             format!("exec {HOLDER_BOX}"),
             format!("release {HOLDER_BOX}"),
+            // The promoted Box has no repo origin, setup or author, so it runs no exec.
             "acquire".into(),
-            // The promoted Box has no setup, so its one exec is the checkout sync.
-            "exec box-2".into(),
         ]
     );
 }

@@ -3,7 +3,6 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use moor_core::domain::run::SyncMode;
 use moor_core::seam::driver::{
     BoxStep, Driver, DriverError, ExecOutcome, ExecSpec, SleepOutcome, StepDone,
 };
@@ -243,7 +242,6 @@ impl FakeDriver {
                     argv: vec!["sh".to_owned(), "-c".to_owned(), script.clone()],
                     env: vec![],
                     cwd: None,
-                    sync: SyncMode::None,
                     output: None,
                     host_cwd: Some(host_cwd.to_path_buf()),
                     class: None,

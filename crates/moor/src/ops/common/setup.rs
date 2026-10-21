@@ -6,10 +6,8 @@ use std::path::Path;
 use moor_core::boxscript::setup::setup_script;
 use moor_core::config::BoxSettings;
 use moor_core::domain::box_state::SetupOutcome;
-use moor_core::domain::run::SyncMode;
-use moor_core::exec_env::{Purpose, SETUP_LINE_DEADLINE};
-use moor_core::seam::driver::{Driver, DriverError, ExecOutcome, ExecSpec};
-use moor_core::seam::proc::{Deadline, Output};
+use moor_core::exec_env::Purpose;
+use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
 use moor_core::view::SetupView;
 use moor_core::{BoxHandle, BoxPath, Warning};
 
@@ -102,15 +100,14 @@ impl SetupRun {
     }
 }
 
-/// Runs the setup lines as one script in `workdir` after syncing the worktree as `sync` says,
-/// stopping at the first failure.
+/// Runs the setup lines as one script in `workdir`, stopping at the first failure.
 ///
-/// Sync is one-way, so the script's log is copied back from the Box; its tail and, after a
-/// failure, the failing line come from there. The script gets the environment the agent gets in
+/// The script's log is copied back from the Box; its tail and, after a failure, the failing line
+/// come from there. The script gets the environment the agent gets in
 /// the Box, including the Proxy variables when `proxy` is set.
 #[allow(
     clippy::too_many_arguments,
-    reason = "the Box, its provider and workdir, worktree, settings, sync mode and Proxy"
+    reason = "the Box, its provider and workdir, worktree, settings and Proxy"
 )]
 pub(crate) fn run_setup(
     cx: &Cx,
@@ -119,7 +116,6 @@ pub(crate) fn run_setup(
     workdir: &BoxPath,
     worktree: &Path,
     cfg: &BoxSettings,
-    sync: SyncMode,
     proxy: Option<&BoxProxy>,
 ) -> SetupRun {
     if cfg.setup.is_empty() {
@@ -132,7 +128,7 @@ pub(crate) fn run_setup(
         worktree,
     };
     let started = cx.clock().instant();
-    let result = exec_script(cx, &site, cfg, sync, proxy);
+    let result = exec_script(cx, &site, cfg, proxy);
     let elapsed = cx.clock().instant().saturating_duration_since(started);
     let ms = u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX);
     let log = fetch_log(cx, handle, workdir, worktree);
@@ -166,7 +162,6 @@ fn exec_script(
     cx: &Cx,
     site: &Site<'_>,
     cfg: &BoxSettings,
-    sync: SyncMode,
     proxy: Option<&BoxProxy>,
 ) -> Result<ExecOutcome, Failure> {
     let purpose = Purpose::Setup {
@@ -181,7 +176,6 @@ fn exec_script(
         ]),
         env: exec.vars(),
         cwd: exec.cwd(),
-        sync,
         output: None,
         host_cwd: Some(site.worktree.to_path_buf()),
         class: Some(cfg.size.value.as_str().to_owned()),
@@ -216,61 +210,6 @@ enum Failure {
     Prepare(String),
     /// The Box exec failed.
     Exec(DriverError),
-}
-
-/// A shell prefix the sync exec runs before its check, and the host file its output goes to.
-/// With an empty prefix the check runs alone, still logged.
-pub(crate) struct Prelude<'a> {
-    /// Shell that must not exit, so the check still decides the exit code.
-    pub(crate) script: &'a str,
-    /// Host file that receives the exec's output.
-    pub(crate) log: &'a Path,
-}
-
-/// Syncs the worktree into the Box with an exec that only runs `prelude` and checks the workdir is a
-/// git checkout, so a failure here is the sync failing or leaving no checkout, and never a setup line.
-///
-/// # Errors
-/// The reason, worded for the user, when the sync did not finish.
-pub(crate) fn sync_checkout(
-    driver: &dyn Driver,
-    handle: &BoxHandle,
-    workdir: &BoxPath,
-    worktree: &Path,
-    cfg: &BoxSettings,
-    prelude: Option<&Prelude<'_>>,
-) -> Result<(), String> {
-    let check = ["git", "rev-parse", "--git-dir"]
-        .map(str::to_owned)
-        .to_vec();
-    let argv = match prelude {
-        Some(p) if !p.script.is_empty() => {
-            let script = format!("{}exec git rev-parse --git-dir", p.script);
-            vec!["sh".to_owned(), "-c".to_owned(), script]
-        }
-        _ => check,
-    };
-    let spec = ExecSpec {
-        argv,
-        env: Vec::new(),
-        cwd: Some(workdir.clone()),
-        sync: SyncMode::Full,
-        output: prelude.map(|p| Output::Log(p.log.to_path_buf())),
-        host_cwd: Some(worktree.to_path_buf()),
-        class: Some(cfg.size.value.as_str().to_owned()),
-    };
-    let reason = match driver.exec(handle, &spec, Deadline(SETUP_LINE_DEADLINE)) {
-        Ok(ExecOutcome::Exited { code: 0 }) => return Ok(()),
-        Ok(ExecOutcome::Exited { code }) => format!(
-            "exit {code}; the sync failed or left no git checkout (with submodules, \
-             push HEAD to origin first)"
-        ),
-        Ok(ExecOutcome::Interrupted) => "interrupted".to_owned(),
-        Err(e) => e.to_string(),
-    };
-    Err(format!(
-        "syncing the checkout into the Box failed: {reason}"
-    ))
 }
 
 /// The warning text: the failing line, where the full log lives in the Box, and its tail.

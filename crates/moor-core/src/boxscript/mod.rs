@@ -1,6 +1,7 @@
 //! Shell script text run on a Box. Pure: builds text, never runs it.
 
 pub mod boxwork;
+pub mod clone;
 pub mod record;
 pub mod setup;
 pub mod teardown;

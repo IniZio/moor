@@ -65,6 +65,19 @@ The state directory holds `moor.db`. It is the first of `--state-dir`,
 | `--trust-moor-yaml` | Start the agent even when the Box's `.moor.yaml` differs from its base commit. |
 | `--parent ID` | The parent Session. The default is `$MOOR_SESSION`. |
 
+The Box clones its repo itself, through its Proxy, from
+`https://github.com/OWNER/NAME.git`, the GitHub repo the host checkout's
+`origin` names. The clone is partial (`--filter=blob:none`): it has the full
+history and fetches file contents when a command first needs them. The Box
+branch starts from the base commit, which must already be on GitHub. When the
+branch already exists on GitHub, the Box continues from it. A checkout whose
+`origin` is not a github.com repo starts with an empty workdir. Submodules and
+Git LFS objects from other private repos are not supported, because the Proxy
+places the user's token only for the Box's own repo.
+
+Work leaves the Box when the agent runs `git push origin HEAD:refs/heads/BRANCH`.
+To get it into your own checkout, run `git fetch origin BRANCH` there.
+
 ### `moor show` flags
 
 | Flag | Effect |
@@ -80,8 +93,8 @@ The state directory holds `moor.db`. It is the first of `--state-dir`,
 The command runs under bash when the Box has bash, else under sh. One `CMD`
 argument is shell text, so `moor run NAME -- 'make lint | tee log'` works.
 
-`moor run` runs the command in the Box checkout as it is. moor copies the host
-worktree into a Box only when it provisions the Box's machine.
+`moor run` runs the command in the Box checkout as it is. moor never copies
+the host worktree into a Box.
 
 | Flag | Effect |
 | --- | --- |
@@ -108,7 +121,7 @@ worktree into a Box only when it provisions the Box's machine.
 
 | Flag | Effect |
 | --- | --- |
-| `--force` | Close even when the Box has unsaved work. You lose that work. |
+| `--force` | Close even when the Box has unsaved work: commits that are on no branch on GitHub, or uncommitted files. You lose that work. Without it, `moor close` refuses and says how to push the work with `moor run NAME -- git push origin HEAD:refs/heads/BRANCH`. |
 | `--trust-moor-yaml` | Run the teardown from the worktree's `.moor.yaml` when it differs from the base commit. Without this flag, the teardown uses the base commit's copy and prints a warning. |
 
 `moor close` removes the worktree that moor created only when the worktree's

@@ -7,7 +7,6 @@ use std::path::PathBuf;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::Decision;
-use moor_core::domain::run::SyncMode;
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::{DriverError, ExecOutcome};
 use moor_core::BoxPath;
@@ -84,14 +83,12 @@ fn exec_at(f: &Fx) -> Vec<usize> {
         .collect()
 }
 
-/// Unsynced execs that write the report index.
+/// Execs that write the report index.
 fn collect_execs(f: &Fx) -> usize {
     f.driver
         .execs()
         .iter()
-        .filter(|(_, spec, _)| {
-            spec.sync == SyncMode::None && spec.argv.iter().any(|a| a.contains("reports.index"))
-        })
+        .filter(|(_, spec, _)| spec.argv.iter().any(|a| a.contains("reports.index")))
         .count()
 }
 
@@ -243,10 +240,8 @@ fn collection_runs_before_teardown_and_release() {
     );
     let (collect, teardown) = (execs.get(2).unwrap(), execs.get(4).unwrap());
     let specs = f.driver.execs();
-    let (c, t) = (&specs.get(2).unwrap().1, &specs.get(4).unwrap().1);
-    assert_eq!(c.sync, SyncMode::None);
+    let c = &specs.get(2).unwrap().1;
     assert!(c.argv.iter().any(|a| a.contains("reports.index")));
-    assert_eq!(t.sync, SyncMode::None);
     let last_peek = calls
         .iter()
         .rposition(|c| c.starts_with("peek_file"))

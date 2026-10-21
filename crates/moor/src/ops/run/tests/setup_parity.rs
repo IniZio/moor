@@ -4,7 +4,6 @@ use moor_core::boxscript::record::HEAD_FILE;
 use moor_core::boxscript::shell_argv;
 use moor_core::config::Flags;
 use moor_core::domain::decision::{Decision, Field, Fields};
-use moor_core::domain::run::SyncMode;
 use moor_core::seam::driver::ExecSpec;
 use moor_core::{BoxHandle, BoxPath};
 
@@ -46,15 +45,13 @@ fn setup_spec(f: &Fx) -> ExecSpec {
     let before = f.driver.execs().len();
     let proxy = box_exec::proxy(&f.cx, f.id, Some(handle.clone()), f.dir.path(), &cfg).ok();
     let provider = boxed.provider.as_str();
-    let (worktree, sync) = (f.dir.path(), SyncMode::Full);
     run_setup(
         &f.cx,
         &handle,
         provider,
         &workdir,
-        worktree,
+        f.dir.path(),
         &cfg,
-        sync,
         proxy.as_ref(),
     );
     f.driver.execs().remove(before).1

@@ -187,7 +187,7 @@ fn all_events() -> Vec<Event> {
             host: s("h"),
             rule: None,
         },
-        Event::Synced { ms: 7 },
+        Event::Cloned { ms: 7 },
     ]
 }
 
@@ -253,7 +253,7 @@ const fn event_index(e: &Event) -> usize {
         Event::TurnDone { .. } => 46,
         Event::ArtifactPublished { .. } => 47,
         Event::EgressAborted { .. } => 48,
-        Event::Synced { .. } => 49,
+        Event::Cloned { .. } => 49,
     }
 }
 

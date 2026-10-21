@@ -66,7 +66,6 @@ fn req(s: &FakeSurface) -> LaunchReq {
         model: Some("haiku".to_owned()),
         nonce: "abc123".to_owned(),
         proxy: None,
-        origin: None,
         strip_env: Vec::new(),
         prompt: LaunchPrompt::Brief,
     }
@@ -326,7 +325,6 @@ fn proxy_addr() -> ProxyAddr {
 fn req_with_proxy(s: &FakeSurface) -> LaunchReq {
     LaunchReq {
         proxy: Some(Arc::new(proxy_addr())),
-        origin: Some("git@github.com:o/n.git".to_owned()),
         ..req(s)
     }
 }
@@ -354,9 +352,8 @@ fn a_proxy_launch_removes_the_cred_dir_after_the_brief_and_exports_the_proxy_env
     let (_, s) = launch_with_proxy();
     let script = script_of(&pane_line(&s));
     assert!(script.contains(&format!("\nrm -rf '{CRED}'\n")), "{script}");
+    assert!(!script.contains("GIT_CONFIG"), "{script}");
     for want in [
-        "GIT_CONFIG_COUNT=2",
-        "remote.moor.url",
         "HTTPS_PROXY",
         "SSL_CERT_FILE",
         "unset GH_TOKEN GITHUB_TOKEN",

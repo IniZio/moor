@@ -5,7 +5,6 @@ use std::path::Path;
 use moor_core::boxscript::teardown::teardown_script;
 use moor_core::config::{BoxSettings, Flags};
 use moor_core::domain::boxes::BoxState;
-use moor_core::domain::run::SyncMode;
 use moor_core::exec_env::Purpose;
 use moor_core::seam::driver::{ExecOutcome, ExecSpec};
 use moor_core::{BoxHandle, ErrorKind, Warning};
@@ -18,7 +17,7 @@ use crate::ops::common::facts::resolved;
 use crate::ops::common::provision::{moor_yaml::for_teardown, recorded_workdir};
 use crate::store::BoxRow;
 
-/// Runs the repo `teardown:` lines as one synced script in a ready Box.
+/// Runs the repo `teardown:` lines as one script in a ready Box.
 ///
 /// Nothing runs without lines or a live Box; a failure only warns, except a Proxy that will not
 /// start, which fails the close unless `force` is set, when it warns like the rest. A worktree `.moor.yaml` that
@@ -67,7 +66,6 @@ pub(super) fn teardown(
         argv: exec.argv(script.to_vec()),
         env: exec.vars(),
         cwd: exec.cwd(),
-        sync: SyncMode::None,
         output: None,
         host_cwd: row.worktree.as_ref().map(Into::into),
         class: Some(cfg.size.value.as_str().to_owned()),

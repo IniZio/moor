@@ -1,11 +1,8 @@
 //! Runs one command in a Box through `crabbox run`.
 
-use moor_core::domain::run::SyncMode;
 use moor_core::name::BoxHandle;
 use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
-use std::time::Duration;
-
-use moor_core::seam::proc::{Deadline, ProcError, ProcSpec, StderrGate, Tool};
+use moor_core::seam::proc::{Deadline, ProcError, StderrGate};
 
 use super::errors::{map_error, remote_exit, Op};
 use super::{size_of, split_handle, static_env, target_args, Crabbox};
@@ -21,44 +18,10 @@ const CD_THEN_EXEC: &str = r#"cd "$1" && shift && exec "$@""#;
 pub(super) const STDERR_GATE: &str =
     r#"b=$1 e=$2; shift 2; printf '%s\n' "$b" >&2; "$@"; c=$?; printf '%s\n' "$e" >&2; exit $c"#;
 
-/// Git metadata source for the sync seed.
-///
-/// Crabbox's offline `local` seed rejects any tree with a submodule gitlink
-/// (`prepare complete local Git seed snapshot: gitlink`), initialised or not,
-/// in the index or in HEAD, and its rev-list fails on a shallow clone. Such
-/// trees use `origin`, which skips gitlink entries and needs no full history.
-/// A probe that fails counts as a negative, and an exec that does not sync
-/// skips every probe.
-fn seed_source(cb: &Crabbox, spec: &ExecSpec) -> &'static str {
-    let (SyncMode::Full, Some(dir)) = (spec.sync, &spec.host_cwd) else {
-        return "local";
-    };
-    let probe = |args: &[&str], hit: &dyn Fn(&str) -> bool| {
-        let probe = ProcSpec::new(Tool::Git, Deadline(GITLINK_PROBE_TIMEOUT))
-            .args(args)
-            .cwd(dir);
-        matches!(cb.proc.run(&probe), Ok(out) if hit(&out.stdout))
-    };
-    let has_gitlink = |s: &str| s.lines().any(|l| l.starts_with("160000 "));
-    if probe(&["ls-files", "-s"], &has_gitlink)
-        || probe(&["ls-tree", "-r", "HEAD"], &has_gitlink)
-        || probe(&["rev-parse", "--is-shallow-repository"], &|s| {
-            s.trim() == "true"
-        })
-    {
-        "origin"
-    } else {
-        "local"
-    }
-}
-
-/// Deadline for listing the host trees.
-const GITLINK_PROBE_TIMEOUT: Duration = Duration::from_secs(30);
-
 /// Runs `spec` in the Box behind `handle`.
 ///
-/// The worktree is synced only for `SyncMode::Full`, seeded from the local
-/// git state; crabbox's own hydrate step never runs. With an `output` the
+/// crabbox never syncs the host checkout into the Box and its own hydrate
+/// step never runs; the Box clones its repo itself. With an `output` the
 /// child streams there instead of being captured.
 ///
 /// Env travels in the child's environment and is named by `--allow-env`, so
@@ -77,10 +40,7 @@ pub(super) fn run(
         .arg("run")
         .args(target_args(handle))
         .arg("--no-hydrate")
-        .env("CRABBOX_SYNC_GIT_SEED_SOURCE", seed_source(cb, spec));
-    if spec.sync == SyncMode::None {
-        proc = proc.arg("--no-sync");
-    }
+        .arg("--no-sync");
     if let Some(class) = spec.class.as_deref() {
         proc = proc.args(["--class", size_of(Some(class))?]);
     }

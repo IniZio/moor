@@ -5,7 +5,6 @@ use std::time::Duration;
 use moor_core::boxscript::setup::setup_script;
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::{Decision, Intent};
-use moor_core::domain::run::SyncMode;
 use moor_core::exec_env::SETUP_LINE_DEADLINE;
 use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
 use moor_core::seam::proc::{Deadline, Tool};
@@ -14,11 +13,11 @@ use moor_core::{BoxHandle, BoxId, ErrorKind, StartReq};
 
 use super::moor_yaml::script_base_yaml;
 use super::state::WORKING;
-use super::{req, world_at, World};
+use super::{on_github, req, world_at, World};
 use crate::adapters::clock::SystemClock;
 use crate::ops::start::run;
 use crate::store::Store;
-use crate::testing::driver::FakeDriver;
+use crate::testing::driver::{is_clone_exec, FakeDriver};
 use crate::testing::engine::FakeEngine;
 use crate::testing::proc::Reply;
 use crate::testing::proxy_host::FakeProxyHost;
@@ -34,7 +33,7 @@ pub(super) fn exit(code: i32) -> ExecOutcome {
 pub(super) fn start_with(yaml: &str, driver: FakeDriver) -> (World, moor_core::view::StartView) {
     let repo = tempfile::tempdir().unwrap();
     std::fs::write(repo.path().join(".moor.yaml"), yaml).unwrap();
-    let w = world_at(driver, repo.path());
+    let w = on_github(world_at(driver, repo.path()));
     script_base_yaml(&w, Some(yaml));
     let v = run(&w.cx, &start_req()).unwrap();
     (w, v)
@@ -48,7 +47,7 @@ pub(super) fn start_as(
 ) -> (World, moor_core::view::StartView) {
     let repo = tempfile::tempdir().unwrap();
     std::fs::write(repo.path().join(".moor.yaml"), yaml).unwrap();
-    let w = world_at(driver, repo.path());
+    let w = on_github(world_at(driver, repo.path()));
     let ok = |v: &str| Reply::Ok(format!("{v}\n"));
     w.proc
         .on(Tool::Git, &["config", "--get", "user.name"], ok(author.0));
@@ -58,10 +57,10 @@ pub(super) fn start_as(
     (w, v)
 }
 
-/// Every exec except the checkout sync.
+/// Every exec except the clone.
 pub(super) fn setup_execs(w: &World) -> Vec<(BoxHandle, ExecSpec, Deadline)> {
     (w.driver.execs().into_iter())
-        .filter(|e| e.1.sync != SyncMode::Full)
+        .filter(|e| !is_clone_exec(&e.1))
         .collect()
 }
 
@@ -73,7 +72,7 @@ pub(super) fn unwrapped(argv: Vec<String>) -> Vec<String> {
     }
 }
 
-/// The argv of every exec except the checkout sync, wrapper peeled.
+/// The argv of every exec except the clone, wrapper peeled.
 pub(super) fn argvs(w: &World) -> Vec<Vec<String>> {
     setup_execs(w)
         .into_iter()
@@ -81,11 +80,11 @@ pub(super) fn argvs(w: &World) -> Vec<Vec<String>> {
         .collect()
 }
 
-/// Whether `argv` is the batched script that sets the Box's git identity.
+/// Whether `argv` is the clone exec's script that sets the Box's git identity.
 pub(super) fn is_identity(argv: &[String]) -> bool {
     argv.first().map(String::as_str) == Some("sh")
         && argv
-            .get(2)
+            .last()
             .is_some_and(|s| s.contains("git config --global"))
 }
 
@@ -150,7 +149,7 @@ fn setup_runs_under_one_allowance_per_line() {
 }
 
 #[test]
-fn the_checkout_syncs_in_its_own_exec_and_setup_runs_without_syncing() {
+fn the_repo_clones_in_its_own_exec_before_setup() {
     let (w, v) = start_with("setup: [a, b]\nbox: {size: large}\n", FakeDriver::new());
     let wt =
         w.cx.store()
@@ -160,14 +159,17 @@ fn the_checkout_syncs_in_its_own_exec_and_setup_runs_without_syncing() {
             .unwrap()
             .worktree;
     let mut execs = w.driver.execs();
-    assert_eq!(execs.len(), 2, "a sync exec and one setup exec");
+    assert_eq!(execs.len(), 2, "a clone exec and one setup exec");
     let (_, setup, _) = execs.remove(1);
-    let (_, sync, _) = execs.remove(0);
-    assert_eq!(sync.argv, ["git", "rev-parse", "--git-dir"]);
-    assert_eq!(sync.sync, SyncMode::Full);
-    assert_eq!(sync.host_cwd, wt.clone().map(Into::into));
-    assert_eq!(sync.class.as_deref(), Some("large"));
-    assert_eq!(setup.sync, SyncMode::None);
+    let (_, clone, _) = execs.remove(0);
+    assert!(is_clone_exec(&clone));
+    assert!(
+        clone.argv.last().unwrap().contains("git clone"),
+        "{:?}",
+        clone.argv
+    );
+    assert_eq!(clone.host_cwd, wt.clone().map(Into::into));
+    assert_eq!(clone.class.as_deref(), Some("large"));
     assert_eq!(setup.host_cwd, wt.map(Into::into));
     assert_eq!(setup.class.as_deref(), Some("large"));
 }
@@ -303,9 +305,9 @@ fn no_setup_lines_means_setup_did_not_run() {
     assert!(!v.setup.ran);
     let execs = w.driver.execs();
     assert_eq!(execs.len(), 1);
-    assert_eq!(
-        execs.first().expect("one exec").1.argv,
-        ["git", "rev-parse", "--git-dir"]
+    assert!(
+        is_clone_exec(&execs.first().expect("one exec").1),
+        "{execs:?}"
     );
     assert_eq!((v.boxed.lifecycle, v.boxed.session_state), WORKING);
 }
@@ -365,7 +367,7 @@ fn a_failing_setup_on_a_re_provisioned_working_box_records_the_failing_line() {
 fn setup_holds_the_setup_intent_and_clears_it_after() {
     let repo = tempfile::tempdir().unwrap();
     std::fs::write(repo.path().join(".moor.yaml"), "setup: [a]\n").unwrap();
-    let w = world_at(FakeDriver::new(), repo.path());
+    let w = on_github(world_at(FakeDriver::new(), repo.path()));
     let seen = Arc::new(Mutex::new(Vec::new()));
     let (sink, path) = (Arc::clone(&seen), w.dir.path().join("moor.db"));
     w.driver.on_exec(move || {
@@ -375,7 +377,7 @@ fn setup_holds_the_setup_intent_and_clears_it_after() {
     });
     let v = run(&w.cx, &start_req()).unwrap();
     let pid = std::process::id();
-    // The checkout sync and the setup script both run under it.
+    // The clone and the setup script both run under it.
     assert_eq!(*seen.lock().unwrap(), [Some(Intent::Setup { pid }); 2]);
     let row = w.cx.store().unwrap().box_row(BoxId::new(v.boxed.id));
     assert_eq!(row.unwrap().unwrap().intent, None);
@@ -451,7 +453,10 @@ fn start_recording_launches(
 ) {
     let repo = tempfile::tempdir().unwrap();
     std::fs::write(repo.path().join(".moor.yaml"), yaml).unwrap();
-    let mut w = world_at(FakeDriver::new().exec_results(results), repo.path());
+    let mut w = on_github(world_at(
+        FakeDriver::new().exec_results(results),
+        repo.path(),
+    ));
     let engine = Arc::new(FakeEngine::new());
     w.cx = w.cx.with_engine(engine.clone());
     let with_goal = StartReq {
@@ -463,14 +468,14 @@ fn start_recording_launches(
 }
 
 #[test]
-fn a_failed_checkout_sync_aborts_the_start_without_launching_the_agent() {
+fn a_failed_clone_aborts_the_start_without_launching_the_agent() {
     for yaml in ["env: {A: a}\n", "setup: [a, b]\n"] {
         let (w, engine, got) = start_recording_launches(yaml, [Ok(exit(1)), Ok(exit(0))]);
         let err = got.unwrap_err();
         assert_eq!(err.kind, ErrorKind::Failed);
         let msg = err.error.to_string();
         assert!(
-            msg.contains("syncing the checkout into the Box failed"),
+            msg.contains("cloning the repo into the Box failed"),
             "{msg}"
         );
         assert!(engine.launches().is_empty());
@@ -479,24 +484,23 @@ fn a_failed_checkout_sync_aborts_the_start_without_launching_the_agent() {
         assert_eq!(row.lifecycle, BoxLifecycle::SetupFailed);
         assert!(row.intent.is_none() && row.setup_failed_at.is_some());
         assert!(kinds(&w, id).contains(&"setup_failed".to_owned()));
-        let argvs: Vec<_> = w.driver.execs().into_iter().map(|e| e.1.argv).collect();
-        assert_eq!(
-            argvs,
-            [vec![
-                "git".to_owned(),
-                "rev-parse".to_owned(),
-                "--git-dir".to_owned()
-            ]]
-        );
+        let execs = w.driver.execs();
+        assert_eq!(execs.len(), 1, "only the clone ran");
+        assert!(execs.first().is_some_and(|e| is_clone_exec(&e.1)));
     }
 }
 
 #[test]
-fn a_failing_setup_command_after_a_good_sync_still_launches_the_agent() {
+fn a_failing_setup_command_after_a_good_clone_still_launches_the_agent() {
     let (w, engine, got) = start_recording_launches("setup: [a]\n", [Ok(exit(0)), Ok(exit(1))]);
     let v = got.unwrap();
     assert!(v.setup.ran && !v.setup.ok);
     assert_eq!(engine.launches().len(), 1);
-    let syncs: Vec<_> = w.driver.execs().into_iter().map(|e| e.1.sync).collect();
-    assert_eq!(syncs, [SyncMode::Full, SyncMode::None]);
+    let clones: Vec<_> = w
+        .driver
+        .execs()
+        .iter()
+        .map(|e| is_clone_exec(&e.1))
+        .collect();
+    assert_eq!(clones, [true, false]);
 }

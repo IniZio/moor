@@ -8,7 +8,6 @@ use std::path::Path;
 use std::sync::mpsc;
 use std::time::Duration;
 
-use moor_core::domain::run::SyncMode;
 use moor_core::seam::driver::{DriverError, ExecSpec, TunnelHandle};
 use moor_core::seam::proc::Deadline;
 use moor_core::{BoxHandle, BoxId};
@@ -92,7 +91,6 @@ fn clear(deps: &Deps<'_>, handle: &BoxHandle, box_port: u16, worktree: &Path) {
         argv: clear_argv(box_port),
         env: Vec::new(),
         cwd: None,
-        sync: SyncMode::None,
         output: None,
         host_cwd: Some(worktree.to_path_buf()),
         class: None,

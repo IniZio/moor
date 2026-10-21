@@ -3,7 +3,6 @@
 use std::fmt;
 use std::path::Path;
 
-use crate::domain::run::SyncMode;
 use crate::name::{BoxHandle, BoxPath};
 use crate::seam::proc::Deadline;
 
@@ -82,7 +81,6 @@ pub fn run_each<D: Driver + ?Sized>(
                     argv: vec!["sh".into(), "-c".into(), script.clone()],
                     env: vec![],
                     cwd: None,
-                    sync: SyncMode::None,
                     output: None,
                     host_cwd: Some(host_cwd.to_path_buf()),
                     class: None,

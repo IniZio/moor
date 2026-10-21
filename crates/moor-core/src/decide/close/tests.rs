@@ -47,7 +47,8 @@ fn box_with_unsaved_work_is_refused_with_recovery_commands() {
     for want in [
         "2 unpushed commit(s)",
         "3 uncommitted file(s)",
-        "not on the host",
+        "not pushed",
+        "`moor run fix-bug -- git push origin HEAD:refs/heads/moor/fix-bug`",
         "`moor run fix-bug -- git bundle create .moor/rescue.bundle HEAD --not --remotes`",
         "`moor cp fix-bug .moor/rescue.bundle .`",
         "`git fetch ./rescue.bundle HEAD:moor/fix-bug`",
@@ -305,7 +306,7 @@ fn box_with_only_uncommitted_changes_is_not_offered_a_bundle() {
     let text = close_gate(&f, false).expect_err("refused").to_string();
     for want in [
         "3 uncommitted file(s)",
-        "`git push moor HEAD:refs/heads/moor/fix-bug`",
+        "`moor run fix-bug -- git push origin HEAD:refs/heads/moor/fix-bug`",
         "`moor run fix-bug -- git status`",
         "`moor close fix-bug --force`",
     ] {

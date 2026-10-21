@@ -4,7 +4,6 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use moor_core::domain::run::SyncMode;
 use moor_core::name::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId};
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError, ExecOutcome, ExecSpec, Released};
 use moor_core::seam::proc::{Deadline, Output, Proc, ProcError, ProcOutput, ProcSpec, Tool};
@@ -401,7 +400,6 @@ fn exec_spec(argv: &[&str]) -> ExecSpec {
         argv: argv.iter().map(|a| (*a).to_owned()).collect(),
         env: Vec::new(),
         cwd: None,
-        sync: SyncMode::None,
         output: None,
         host_cwd: None,
         class: None,
