@@ -187,3 +187,49 @@ fn an_open_limit_from_the_store_suppresses_a_repeat_and_still_recovers() {
     let got = run_limits(&sink, &[response(429), response(200)], &Withheld::default());
     assert_eq!(got, [recovered()]);
 }
+
+/// A response with `status` on rule `claude` that nono did or did not inject a credential into.
+fn answered(status: u16, credential_active: bool) -> NetworkAuditEvent {
+    event(
+        "allow",
+        &json!({
+            "route_id": "claude__0",
+            "method": "POST",
+            "status": status,
+            "managed_credential_active": credential_active,
+        }),
+    )
+}
+
+#[test]
+fn an_anonymous_2xx_does_not_recover_a_rejected_credential() {
+    let sink = LimitSink::default();
+    let events = [answered(403, true), answered(200, false)];
+    assert_eq!(
+        run_limits(&sink, &events, &Withheld::default()),
+        [rejected(403)]
+    );
+}
+
+#[test]
+fn a_credentialed_2xx_recovers_after_an_anonymous_2xx() {
+    let sink = LimitSink::default();
+    let events = [
+        answered(403, true),
+        answered(200, false),
+        answered(200, true),
+    ];
+    assert_eq!(
+        run_limits(&sink, &events, &Withheld::default()),
+        [rejected(403), recovered()]
+    );
+}
+
+#[test]
+fn a_2xx_with_unknown_credential_state_recovers() {
+    let events = [answered(403, true), response(200)];
+    assert_eq!(
+        run_limits(&LimitSink::default(), &events, &Withheld::default()),
+        [rejected(403), recovered()]
+    );
+}
