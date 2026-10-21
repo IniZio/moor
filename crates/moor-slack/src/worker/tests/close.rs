@@ -16,6 +16,7 @@ use super::{
     cmds, db, record_one, recorded_start, refused, refused_hello, state, try_record, with_fx,
     with_hooks, Answer, Seen,
 };
+use crate::command::BoxEvent;
 use crate::db::{BoxState, Db, InboxItem, ItemKind, SlackBox};
 use crate::socket::Mention;
 use crate::worker::{serve, settle, Attempt};
@@ -250,6 +251,8 @@ fn a_settled_close_leaves_the_box_gone_or_bound_again() {
         let after = state(&db, "C1", "10.5").unwrap();
         assert_eq!(matches!(after, BoxState::Gone { .. }), gone, "{after:?}");
         assert_eq!(matches!(after, BoxState::Bound { .. }), !gone, "{after:?}");
+        let noticed = db.has_notice(&row, BoxEvent::Closed, None).unwrap();
+        assert_eq!(noticed, gone, "only a closed Box queues the closed notice");
     }
 }
 

@@ -6,6 +6,7 @@ use moor_core::response::{ExitClass, Response};
 use serde_json::Value;
 
 use super::{error_text, lost, show_request, written, Attempt, Fx};
+use crate::command::BoxEvent;
 use crate::db::{Db, SlackBox};
 
 /// The controller's refusal of a close for a Box that is already closed.
@@ -34,7 +35,16 @@ pub(super) fn settle_close(db: &Db, fx: &mut Fx<'_>, row: &SlackBox, attempt: At
         }
     };
     (fx.reply)(&row.channel, &row.thread_ts, &text);
-    written(fx, db.settle_close(&row.box_name, gone))
+    written(
+        fx,
+        db.atomically(|| {
+            db.settle_close(&row.box_name, gone)?;
+            if gone {
+                db.notice(row, BoxEvent::Closed, None)?;
+            }
+            Ok(())
+        }),
+    )
 }
 
 /// Sends at most one `show` and one `close` for `row`. After a lost attempt `show` goes

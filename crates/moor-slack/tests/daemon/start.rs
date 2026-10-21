@@ -13,7 +13,7 @@ use serde_json::json;
 
 use super::support::controller::{FakeController, Scripted};
 use super::support::slack_fake::{Mention, APP_TOKEN, BOT_TOKEN};
-use super::support::{Rig, BOX_NAME, CHANNEL, MCP, QUIET, REPO, TS, USER};
+use super::support::{started_line, Rig, BOX_NAME, CHANNEL, MCP, QUIET, REPO, TS, USER};
 
 /// Ts of a second thread.
 const TS2: &str = "1730000005.000200";
@@ -97,12 +97,9 @@ fn every_turn_starts(bin: &Path) {
 fn allowed_mention_starts_a_box_and_replies_in_the_thread() {
     let (rig, controller, _bin) = Rig::start_boxes();
     rig.mention(1, USER, "<@UBOT> fix the thing", TS, None);
-    rig.wait_post(&format!("Started Box `{BOX_NAME}`."));
+    rig.wait_post(&started_line(BOX_NAME));
     assert_eq!(rig.slack.wait_acks(1), ["env-1"]);
-    assert_eq!(
-        start_lines(&rig),
-        [(TS.to_owned(), format!("Started Box `{BOX_NAME}`."))]
-    );
+    assert_eq!(start_lines(&rig), [(TS.to_owned(), started_line(BOX_NAME))]);
     assert_eq!(
         starts(&controller),
         [first_start()],
@@ -133,7 +130,7 @@ fn redelivered_event_is_handled_once() {
         thread_ts: None,
     });
     assert_eq!(rig.slack.wait_acks(2), ["env-1", "env-1-retry"]);
-    rig.wait_post(&format!("Started Box `{BOX_NAME}`."));
+    rig.wait_post(&started_line(BOX_NAME));
     std::thread::sleep(QUIET);
     assert_eq!(start_lines(&rig).len(), 1, "{:?}", rig.slack.posts());
     assert_eq!(starts(&controller).len(), 1);
@@ -180,7 +177,7 @@ fn with_the_limit_at_2_a_second_start_works_and_a_third_is_refused() {
     let results = Rig::tool_results(&bin, 0);
     let errors: Vec<bool> = results.iter().map(|r| r.1).collect();
     assert_eq!(errors, [false, false, true], "{results:?}");
-    rig.wait_post("Started Box `slack-1730000000-000100-2`.");
+    rig.wait_post(&started_line("slack-1730000000-000100-2"));
     let mut names: Vec<_> = starts(&controller).into_iter().map(|s| s.0).collect();
     names.sort();
     assert_eq!(names, [BOX_NAME, "slack-1730000000-000100-2"]);
@@ -204,7 +201,7 @@ fn tokens_never_reach_stderr() {
     controller.script("start", Scripted::Hangup);
     controller.script("show", names_box("show", BOX_NAME));
     rig.mention(1, USER, "<@UBOT> fix the thing", TS, None);
-    rig.wait_post(&format!("Started Box `{BOX_NAME}`."));
+    rig.wait_post(&started_line(BOX_NAME));
     let stderr = rig.stderr();
     assert!(
         stderr.contains(BOX_NAME),
@@ -221,7 +218,7 @@ fn start_lost_mid_request_is_found_with_show() {
     controller.script("start", Scripted::Hangup);
     controller.script("show", names_box("show", BOX_NAME));
     rig.mention(1, USER, "<@UBOT> fix the thing", TS, None);
-    rig.wait_post(&format!("Started Box `{BOX_NAME}`."));
+    rig.wait_post(&started_line(BOX_NAME));
     assert_eq!(
         starts_and_shows(&controller),
         [true, false],
@@ -261,7 +258,7 @@ fn starting_row_left_by_a_stopped_daemon_is_settled_at_startup() {
     rig.kill_daemon();
     controller.script("show", names_box("show", BOX_NAME));
     rig.spawn_daemon();
-    rig.wait_post(&format!("Started Box `{BOX_NAME}`."));
+    rig.wait_post(&started_line(BOX_NAME));
     assert_eq!(
         starts_and_shows(&controller),
         [true, false],
@@ -279,7 +276,7 @@ fn start_sent_again_after_a_restart_carries_the_stored_goal() {
     });
     rig.kill_daemon();
     rig.spawn_daemon();
-    rig.wait_post(&format!("Started Box `{BOX_NAME}`."));
+    rig.wait_post(&started_line(BOX_NAME));
     assert_eq!(starts(&controller), [first_start(), first_start()]);
     assert_eq!(controller.boxes(), [BOX_NAME]);
 }
@@ -297,7 +294,7 @@ fn mention_acked_while_the_worker_waits_survives_a_crash() {
     rig.slack.wait_acks(2);
     rig.kill_daemon();
     rig.spawn_daemon();
-    rig.wait_post(&format!("Started Box `{BOX2}`."));
+    rig.wait_post(&started_line(BOX2));
     std::thread::sleep(QUIET);
     let second: Vec<_> = starts(&controller)
         .into_iter()
@@ -320,8 +317,8 @@ fn starts_lost_with_their_connection_run_once_the_controller_answers() {
     controller.script("start", Scripted::Hangup);
     rig.mention(1, USER, "<@UBOT> fix the thing", TS, None);
     rig.mention(2, USER, "<@UBOT> fix the other thing", TS2, None);
-    rig.wait_post(&format!("Started Box `{BOX_NAME}`."));
-    rig.wait_post(&format!("Started Box `{BOX2}`."));
+    rig.wait_post(&started_line(BOX_NAME));
+    rig.wait_post(&started_line(BOX2));
     let mut boxes = controller.boxes();
     boxes.sort();
     assert_eq!(boxes, [BOX_NAME, BOX2], "one Box per thread");
@@ -339,7 +336,7 @@ fn a_thread_the_controller_cannot_answer_holds_up_no_other_thread() {
     rig.mention(1, USER, "<@UBOT> fix the thing", TS, None);
     rig.wait_stderr(&format!("start of {BOX_NAME}"));
     rig.mention(2, USER, "<@UBOT> fix the other thing", TS2, None);
-    rig.wait_post(&format!("Started Box `{BOX_NAME}`."));
+    rig.wait_post(&started_line(BOX_NAME));
     let threads: Vec<_> = start_lines(&rig).into_iter().map(|(t, _)| t).collect();
     assert_eq!(threads, [TS2, TS], "the second thread is not held up");
 }
@@ -350,7 +347,7 @@ fn a_rerun_after_a_killed_start_box_refuses_a_second_start_and_names_the_box() {
     every_turn_starts(&bin);
     std::fs::write(bin.join("hang-after-tools"), "").unwrap();
     rig.mention(1, USER, "<@UBOT> fix the thing", TS, None);
-    rig.wait_post(&format!("Started Box `{BOX_NAME}`."));
+    rig.wait_post(&started_line(BOX_NAME));
     rig.kill_daemon();
     std::fs::remove_file(bin.join("hang-after-tools")).unwrap();
     rig.spawn_daemon();

@@ -1,16 +1,19 @@
 //! The feed: each Box keeps one status message in its thread, edited in place as the
-//! controller's events arrive by Box id. A refold after a dropped watch or a restart posts
-//! no message twice and edits none to the text it already shows.
+//! controller's events arrive by Box id, and a finished turn or a close posts a fixed line
+//! and queues a notice that waits for the starter's next message. A refold after a dropped
+//! watch or a restart writes nothing twice.
 
 #![allow(clippy::indexing_slicing, reason = "test code")]
 
 use std::time::Duration;
 
+use moor_core::response::Response;
 use serde_json::json;
 
-use super::support::controller::FakeController;
+use super::inbox::reply;
+use super::support::controller::{FakeController, Scripted};
 use super::support::slack_fake::{Post, Update};
-use super::support::{Rig, BOX_NAME, QUIET};
+use super::support::{Rig, BOX_NAME, QUIET, USER};
 
 /// The id the scripted controller gives the first Box it starts.
 const BOX_ID: i64 = 1;
@@ -20,6 +23,11 @@ const PAST_WINDOW: Duration = Duration::from_millis(2600);
 /// The status message text of the first Box in state `state`.
 fn status(state: &str) -> String {
     format!("*{BOX_NAME}*: {state}")
+}
+
+/// The line the front posts when the first Box's agent finishes its turn.
+fn finished_line() -> String {
+    format!("Box `{BOX_NAME}` finished its turn.")
 }
 
 /// Posts of the first Box's status message.
@@ -71,6 +79,17 @@ fn wait_recorded(rig: &Rig, ts: &str, text: &str) {
     assert_eq!(recorded(), want);
 }
 
+/// The texts of the thread's notices, in the order they were queued.
+fn notices(rig: &Rig) -> Vec<String> {
+    let db = rusqlite::Connection::open(rig.path("state-slack/slack.db")).unwrap();
+    db.busy_timeout(Duration::from_secs(5)).unwrap();
+    let mut stmt = db
+        .prepare("SELECT text FROM slack_inbox WHERE kind = 'notice' ORDER BY id")
+        .unwrap();
+    let rows = stmt.query_map([], |r| r.get(0)).unwrap();
+    rows.collect::<Result<_, _>>().unwrap()
+}
+
 /// How many watches the controller has served so far.
 fn watches(controller: &FakeController) -> usize {
     controller.seen(|seen| seen.watches.len())
@@ -99,25 +118,38 @@ fn each_box_keeps_one_status_message_edited_in_place_and_never_posted_twice() {
 }
 
 #[test]
-fn a_refold_after_a_dropped_watch_or_a_restart_posts_and_edits_nothing() {
+fn a_refold_after_a_dropped_watch_or_a_restart_writes_no_second_line_status_or_notice() {
     let (mut rig, controller, _bin, post) = thread_with_status();
     controller.emit(BOX_ID, BOX_NAME, "working", json!({}));
     controller.emit(BOX_ID, BOX_NAME, "idled", json!({}));
+    rig.wait_post(&finished_line());
     wait_status(&rig, &post.ts, &status("idle"));
     std::thread::sleep(QUIET);
-    let before = (rig.slack.posts().len(), rig.slack.updates().len());
+    let before = (
+        rig.slack.posts().len(),
+        rig.slack.updates().len(),
+        notices(&rig),
+    );
 
     let n = watches(&controller);
     controller.drop_watches();
     wait_refolded(&controller, n);
-    let after = (rig.slack.posts().len(), rig.slack.updates().len());
+    let after = (
+        rig.slack.posts().len(),
+        rig.slack.updates().len(),
+        notices(&rig),
+    );
     assert_eq!(after, before, "a reconnect replays every event");
 
     let n = watches(&controller);
     rig.kill_daemon();
     rig.spawn_daemon();
     wait_refolded(&controller, n);
-    let after = (rig.slack.posts().len(), rig.slack.updates().len());
+    let after = (
+        rig.slack.posts().len(),
+        rig.slack.updates().len(),
+        notices(&rig),
+    );
     assert_eq!(after, before, "a restart replays every event");
 }
 
@@ -171,19 +203,74 @@ fn a_status_edit_slack_refuses_is_sent_again_after_the_window() {
 fn events_reach_a_box_by_its_id_and_its_name_is_only_for_display() {
     let (rig, controller, _bin, post) = thread_with_status();
     controller.emit(BOX_ID + 1, BOX_NAME, "working", json!({}));
+    controller.emit(BOX_ID + 1, BOX_NAME, "idled", json!({}));
     std::thread::sleep(PAST_WINDOW);
     let updates = rig.slack.updates();
     assert!(
         updates.iter().all(|u| u.ts != post.ts),
         "another Box's events change nothing: {updates:?}"
     );
+    let posts = rig.slack.posts();
+    assert!(posts.iter().all(|p| p.text != finished_line()), "{posts:?}");
     controller.emit(BOX_ID, "another-name", "needs_input", json!({}));
     wait_status(&rig, &post.ts, &status("needs input"));
 }
 
 #[test]
-fn a_box_closed_elsewhere_gets_its_final_status() {
+fn a_box_closed_elsewhere_gets_its_final_status_a_closed_line_and_a_notice() {
     let (rig, controller, _bin, post) = thread_with_status();
     controller.emit(BOX_ID, BOX_NAME, "closed", json!({"from": "idle"}));
+    rig.wait_post(&format!("Box `{BOX_NAME}` closed."));
     wait_status(&rig, &post.ts, &status("closed"));
+    let last = notices(&rig).pop();
+    assert_eq!(last, Some(format!("[moor] Box `{BOX_NAME}` closed.")));
+}
+
+#[test]
+fn a_finished_turn_posts_a_line_and_a_notice_that_waits_for_the_starters_next_message() {
+    let (rig, controller, bin, _post) = thread_with_status();
+    controller.emit(BOX_ID, BOX_NAME, "idled", json!({}));
+    rig.wait_post(&finished_line());
+    std::thread::sleep(QUIET);
+    assert!(!bin.join("run-1").exists(), "a notice starts no turn");
+    assert_eq!(
+        notices(&rig),
+        [
+            format!("[moor] Box `{BOX_NAME}` started."),
+            format!("[moor] Box `{BOX_NAME}` finished its turn."),
+        ]
+    );
+    reply(&rig, 2, USER, "what now");
+    rig.slack.wait_updates(2);
+    let stdin = std::fs::read_to_string(bin.join("run-1/stdin")).unwrap();
+    let new = format!(
+        "## New\n[moor] Box `{BOX_NAME}` started.\n[moor] Box `{BOX_NAME}` finished its turn.\n\
+         [<@{USER}>] what now\n"
+    );
+    assert!(stdin.ends_with(&new), "{stdin}");
+}
+
+#[test]
+fn a_close_box_posts_one_closed_line_and_one_notice() {
+    let (rig, controller, bin, post) = thread_with_status();
+    Rig::tool_calls(&bin, None, &[("close_box", json!({"box": BOX_NAME}))]);
+    controller.script("close", Scripted::Reply(Response::ok("close", None)));
+    reply(&rig, 2, USER, "close it");
+    rig.wait_post(&format!("Closed Box `{BOX_NAME}`."));
+    rig.wait_box_state(BOX_NAME, "gone");
+    controller.emit(BOX_ID, BOX_NAME, "closed", json!({"from": "idle"}));
+    wait_status(&rig, &post.ts, &status("closed"));
+    std::thread::sleep(QUIET);
+    let posts = rig.slack.posts();
+    let line = format!("Box `{BOX_NAME}` closed.");
+    let closed: Vec<_> = posts.iter().filter(|p| p.text == line).collect();
+    assert!(
+        closed.is_empty(),
+        "the close path already said it: {closed:?}"
+    );
+    let close_notices = notices(&rig)
+        .into_iter()
+        .filter(|n| n.ends_with("closed."))
+        .count();
+    assert_eq!(close_notices, 1);
 }

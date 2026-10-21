@@ -13,7 +13,7 @@ use moor_core::request::{Request, ShowReq, StartReq};
 use moor_core::response::{ExitClass, Response};
 use serde_json::Value;
 
-use crate::command::{failed, started};
+use crate::command::{failed, started, BoxEvent};
 use crate::db::{BoxState, Db, SlackBox};
 use crate::dial::Backoff;
 use crate::login::TokenCheck;
@@ -329,23 +329,37 @@ const fn lost(e: &ClientError) -> bool {
     !matches!(e, ClientError::Frame { .. })
 }
 
-/// Says in the thread that the Box started, then binds the row to it. Posting first means a
-/// crash in between posts again on restart instead of losing the reply. Returns whether the
-/// row is bound; a row left `starting` is asked about again.
+/// Says in the thread that the Box started, then binds the row to it and queues the notice in
+/// one transaction. Posting first means a crash in between posts again on restart instead of
+/// losing the reply. Returns whether the row is bound; a row left `starting` is asked about
+/// again.
 fn bind(db: &Db, fx: &mut Fx<'_>, row: &SlackBox, box_id: BoxId, branch: Option<&str>) -> bool {
-    (fx.reply)(&row.channel, &row.thread_ts, &started(&row.box_name));
-    written(fx, db.bind(&row.box_name, box_id, branch))
+    let line = started(&row.box_name, branch);
+    (fx.reply)(&row.channel, &row.thread_ts, &line);
+    written(
+        fx,
+        db.atomically(|| {
+            db.bind(&row.box_name, box_id, branch)?;
+            db.notice(row, BoxEvent::Started, None).map(drop)
+        }),
+    )
 }
 
-/// Posts why the controller refused the start, then deletes the row, posting first for the
-/// same reason as [`bind`]. Returns whether the row is gone.
+/// Posts why the controller refused the start, then deletes the row and queues the notice,
+/// posting first for the same reason as [`bind`]. Returns whether the row is gone.
 fn refuse(db: &Db, fx: &mut Fx<'_>, row: &SlackBox, message: &str) -> bool {
     (fx.reply)(
         &row.channel,
         &row.thread_ts,
         &failed(&row.box_name, message),
     );
-    written(fx, db.forget_starting(&row.box_name))
+    written(
+        fx,
+        db.atomically(|| {
+            db.forget_starting(&row.box_name)?;
+            db.notice(row, BoxEvent::NotStarted, None).map(drop)
+        }),
+    )
 }
 
 /// Whether a `slack.db` write succeeded, logging the error when it did not.

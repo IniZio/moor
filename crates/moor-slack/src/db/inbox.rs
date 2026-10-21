@@ -3,7 +3,8 @@
 
 use rusqlite::params;
 
-use super::Db;
+use super::{Db, SlackBox};
+use crate::command::BoxEvent;
 
 /// What an inbox item is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -57,6 +58,43 @@ impl Db {
         Ok(())
     }
 
+    /// Queues the notice of `event` on `boxed` for the next turn of its thread, once per
+    /// Box, event and `cursor`; the cursor tells apart events that repeat, such as each
+    /// finished turn. Returns whether this call wrote it.
+    pub(crate) fn notice(
+        &self,
+        boxed: &SlackBox,
+        event: BoxEvent,
+        cursor: Option<i64>,
+    ) -> rusqlite::Result<bool> {
+        let added = self.conn.execute(
+            "INSERT OR IGNORE INTO slack_inbox \
+             (channel, thread_ts, kind, text, source, created_at) \
+             VALUES (?1, ?2, 'notice', ?3, ?4, unixepoch())",
+            params![
+                boxed.channel,
+                boxed.thread_ts,
+                event.notice(&boxed.box_name),
+                notice_source(boxed, event, cursor)
+            ],
+        )?;
+        Ok(added == 1)
+    }
+
+    /// Whether the notice of `event` on `boxed` at `cursor` was queued.
+    pub(crate) fn has_notice(
+        &self,
+        boxed: &SlackBox,
+        event: BoxEvent,
+        cursor: Option<i64>,
+    ) -> rusqlite::Result<bool> {
+        self.conn.query_row(
+            "SELECT EXISTS (SELECT 1 FROM slack_inbox WHERE source = ?1)",
+            params![notice_source(boxed, event, cursor)],
+            |r| r.get(0),
+        )
+    }
+
     /// The items of a thread, in the order they were recorded.
     #[cfg(test)]
     pub(crate) fn inbox(&self, channel: &str, thread_ts: &str) -> rusqlite::Result<Vec<InboxItem>> {
@@ -76,4 +114,15 @@ impl Db {
         })?;
         rows.collect()
     }
+}
+
+/// The `source` of the notice of `event` on `boxed` at `cursor`. A Box name is never reused,
+/// so the source names one event of one Box.
+fn notice_source(boxed: &SlackBox, event: BoxEvent, cursor: Option<i64>) -> String {
+    let name = boxed.box_name.as_str();
+    let key = event.key();
+    cursor.map_or_else(
+        || format!("box:{name}:{key}"),
+        |c| format!("box:{name}:{key}:{c}"),
+    )
 }

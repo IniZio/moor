@@ -40,6 +40,11 @@ pub(crate) const REPO: &str = "demo";
 /// Pause that lets a wrongly emitted second reply arrive before the test counts replies.
 pub(crate) const QUIET: Duration = Duration::from_millis(600);
 
+/// The line the front posts once the scripted controller started Box `name` on its branch.
+pub(crate) fn started_line(name: &str) -> String {
+    format!("Started Box `{name}` on branch `moor/{name}`.")
+}
+
 /// The fake `claude`: it records what it got next to the path it runs as, and answers by
 /// the token it read on fd 3.
 const FAKE_CLAUDE: &str = include_str!("fake-claude.sh");
@@ -250,7 +255,7 @@ impl Rig {
     /// Opens thread [`TS`] with a mention and waits until its first Box is bound.
     pub(crate) fn open_thread_with_a_box(&self) {
         self.mention(1, USER, "<@UBOT> fix the thing", TS, None);
-        self.wait_post(&format!("Started Box `{BOX_NAME}`."));
+        self.wait_post(&started_line(BOX_NAME));
         self.wait_box_state(BOX_NAME, "bound");
     }
 

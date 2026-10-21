@@ -1,11 +1,15 @@
-//! Tests for thread message decisions and the front's start lines.
+//! Tests for thread message decisions and the front's fixed lines and notices.
 
 use super::*;
 
 #[test]
 fn replies_name_the_box() {
     let name = BoxName::parse_allow_bare("slack-1-2").unwrap();
-    assert_eq!(started(&name), "Started Box `slack-1-2`.");
+    assert_eq!(started(&name, None), "Started Box `slack-1-2`.");
+    assert_eq!(
+        started(&name, Some("moor/x")),
+        "Started Box `slack-1-2` on branch `moor/x`."
+    );
     assert!(failed(&name, "boom").contains("boom"));
 }
 
@@ -56,4 +60,27 @@ fn reply_close_from_other_user_is_refused() {
         reply_action("U1", "U2", "close"),
         ReplyAction::Refuse(_)
     ));
+}
+
+#[test]
+fn notices_are_fixed_templates_marked_as_the_fronts() {
+    let name = BoxName::parse_allow_bare("slack-1-2").unwrap();
+    let notices: Vec<String> = [
+        BoxEvent::Started,
+        BoxEvent::NotStarted,
+        BoxEvent::Finished,
+        BoxEvent::Closed,
+    ]
+    .iter()
+    .map(|e| e.notice(&name))
+    .collect();
+    assert_eq!(
+        notices,
+        [
+            "[moor] Box `slack-1-2` started.",
+            "[moor] Box `slack-1-2` could not start.",
+            "[moor] Box `slack-1-2` finished its turn.",
+            "[moor] Box `slack-1-2` closed.",
+        ]
+    );
 }

@@ -159,7 +159,9 @@ fn a_reply_reading_close_reaches_the_coordinator_as_text_and_closes_nothing() {
     rig.slack.wait_updates(2);
     let stdin = std::fs::read_to_string(bin.join("run-1/stdin")).unwrap();
     assert!(
-        stdin.ends_with(&format!("## New\n[<@{USER}>] close\n")),
+        stdin.ends_with(&format!(
+            "## New\n[moor] Box `{BOX_NAME}` started.\n[<@{USER}>] close\n"
+        )),
         "{stdin}"
     );
     std::thread::sleep(QUIET);
