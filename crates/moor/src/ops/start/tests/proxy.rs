@@ -98,7 +98,7 @@ fn a_relaunch_ensures_the_proxy_again() {
             .with_proxy_host(Arc::new(fake.clone()));
     run(&w.cx, &goal_req()).unwrap();
     gone(&w);
-    run(&w.cx, &req("demo")).unwrap();
+    run(&w.cx, &goal_req()).unwrap();
     let launches = engine.launches();
     assert_eq!(launches.len(), 2);
     let ensures = fake

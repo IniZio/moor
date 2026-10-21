@@ -103,7 +103,7 @@ fn a_relaunch_stopped_by_an_unwritable_proxy_ca_fails_with_the_ca_message() {
     let (w, _engine, id) = started();
     gone(&w);
     w.surface.push_pane_obs("p-2", Ok(ca_stopped()));
-    let v = run(&w.cx, &req("demo")).unwrap();
+    let v = run(&w.cx, &goal_req("demo")).unwrap();
     assert!(!v.agent.launched);
     assert_eq!(v.agent.reason.unwrap().message, CA);
     assert_eq!(recorded_failure(&w, id).as_deref(), Some(CA));
@@ -156,7 +156,7 @@ fn a_relaunched_agent_that_exits_127_is_a_launch_failure() {
     let (w, _engine, id) = started();
     gone(&w);
     w.surface.push_pane_obs("p-2", Ok(exited(127, "")));
-    let v = run(&w.cx, &req("demo")).unwrap();
+    let v = run(&w.cx, &goal_req("demo")).unwrap();
     let store = w.cx.store().unwrap();
     assert!(!v.agent.launched);
     assert_eq!(v.agent.reason.unwrap().message, NOT_FOUND);

@@ -33,10 +33,18 @@ fn gone_with(yaml: &str) -> (World, Arc<FakeEngine>, BoxId) {
     (w, engine, id)
 }
 
+/// A start that asks for the agent again with its goal.
+fn again() -> StartReq {
+    StartReq {
+        goal: Some("ship it".into()),
+        ..req("demo")
+    }
+}
+
 fn trusted() -> StartReq {
     StartReq {
         trust_moor_yaml: true,
-        ..req("demo")
+        ..again()
     }
 }
 
@@ -50,7 +58,7 @@ fn trusted_warnings(w: &World) -> usize {
 #[test]
 fn a_changed_moor_yaml_refuses_a_relaunch_and_launches_no_agent() {
     let (w, engine, _) = gone_with(CHANGED);
-    let err = run(&w.cx, &req("demo")).unwrap_err();
+    let err = run(&w.cx, &again()).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Refused);
     assert!(err.error.to_string().contains("env"), "{}", err.error);
     assert!(err.hints.iter().any(|h| h.contains("--trust-moor-yaml")));
@@ -71,7 +79,7 @@ fn a_changed_moor_yaml_relaunches_when_trusted_and_warns_once() {
 fn an_unchanged_moor_yaml_relaunches_without_a_warning() {
     let (w, engine, _) = gone_with(BASE);
     drop(w.cx.take_warnings());
-    let v = run(&w.cx, &req("demo")).unwrap();
+    let v = run(&w.cx, &again()).unwrap();
     assert!(v.agent.launched);
     assert_eq!(engine.launches().len(), 2);
     assert_eq!(trusted_warnings(&w), 0);
