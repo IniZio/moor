@@ -15,6 +15,7 @@ names=(
   check_bound check_unbound same_path WORKTREE_OPERATOR_ONLY insert_unnamed repo_seq
   open_boxes_by_repo open_box_by_path
   ResyncGates rerun_sync sync_name resync_skipped resync_failed no_sync
+  will_launch agent_live
 )
 args=()
 for n in "${names[@]}"; do args+=(-e "$n"); done
@@ -25,6 +26,17 @@ hits=$(grep -rnF "${args[@]}" \
 if [ -n "$hits" ]; then
   echo "removed-names: removed names found"
   echo "$hits"
+  exit 1
+fi
+
+texts=()
+for t in crates docs README.md; do [ -e "$t" ] && texts+=("$t"); done
+flag_hits=$(grep -rnIF -e '--no-sync' -e '--sync' \
+  --exclude-dir=target --exclude-dir=crabbox \
+  "${texts[@]}" || true)
+if [ -n "$flag_hits" ]; then
+  echo "removed-names: removed run flags found"
+  echo "$flag_hits"
   exit 1
 fi
 

@@ -119,7 +119,7 @@ fn close_refuses_a_box_with_an_unpushed_commit_when_the_host_worktree_is_clean()
     assert!(t.contains("not on the host"), "{t}");
     assert!(t.contains("1 unpushed commit"), "{t}");
     for cmd in [
-        "moor run t --no-sync -- git bundle create .moor/rescue.bundle HEAD --not --remotes",
+        "moor run t -- git bundle create .moor/rescue.bundle HEAD --not --remotes",
         "moor cp t .moor/rescue.bundle .",
         "git fetch ./rescue.bundle HEAD:",
         "moor close t --force",

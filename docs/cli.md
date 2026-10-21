@@ -76,7 +76,7 @@ worktree into a Box only when it provisions the Box's machine.
 
 | Flag | Effect |
 | --- | --- |
-| `--record NAME` | Record the run as the gate `NAME`, for `moor gate check`. moor reads the Box checkout's HEAD first and records the run under it. It refuses a Box checkout with uncommitted changes. |
+| `--record NAME` | Record the run as the gate `NAME`, for `moor gate check`. moor reads the Box checkout's HEAD first and records the run under it. It refuses a Box checkout with uncommitted changes. If the command moves HEAD or leaves changes that are not ignored, the run fails with "the Box HEAD moved during the record run". |
 | `--trust-moor-yaml` | Run even when the Box's `.moor.yaml` differs from its base commit. |
 
 ### `moor wait` flags
@@ -144,7 +144,7 @@ controller.
 | --- | --- |
 | `moor version` | Prints the version, the git commit, and the envelope schema version. |
 | `moor env [REPO]` | Previews the settings and credentials a Box in `REPO` would get. The default is the current repo. Only the operator may run it. |
-| `moor gate check SHA NAME` | Exits 0 when a run recorded with `moor run --record NAME` passed on commit `SHA`, and 1 when none did. `--command TEXT` counts only runs of exactly that command text. It reads only the runs of Boxes that you may act on. |
+| `moor gate check SHA NAME` | Exits 0 when a run recorded with `moor run --record NAME` passed on commit `SHA`, and 1 when none did. `--command TEXT` counts only runs of exactly that command text. It reads only the runs of Boxes that you may act on. It does not check that `SHA` exists on origin. |
 | `moor events` | Prints stored events as JSON lines. Takes `--since ID`, `--box NAME`, `--kind KIND`, and `--follow`. |
 | `moor call` | Reads one JSON request from stdin and runs it. The output is always a JSON envelope. |
 | `moor controller serve --config FILE` | Runs the controller. See [the controller config](config.md#controller-config). |

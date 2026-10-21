@@ -88,11 +88,11 @@ pub enum Refusal {
             format!(
                 "commit it in the Box and, if the Box has the moor remote, run \
                  `git push moor HEAD:refs/heads/{branch}` there \
-                 (inspect it first with `moor run {name} --no-sync -- git status`)"
+                 (inspect it first with `moor run {name} -- git status`)"
             )
         } else {
             format!(
-                "run `moor run {name} --no-sync -- git bundle create .moor/rescue.bundle HEAD --not --remotes`, \
+                "run `moor run {name} -- git bundle create .moor/rescue.bundle HEAD --not --remotes`, \
                  then `moor cp {name} .moor/rescue.bundle .`, \
                  then `git fetch ./rescue.bundle HEAD:{branch}`; or push from the Box"
             )

@@ -1,11 +1,11 @@
-//! The extra steps of `run --record`: read the Box HEAD, refuse a dirty Box checkout, and wrap
-//! the command so the Box runs it from a clean checkout of HEAD.
+//! The extra steps of `run --record`: read the Box HEAD, refuse a dirty Box checkout, wrap the
+//! command so the Box runs it from a clean checkout of HEAD, and tell whether the checkout moved.
 
 use std::time::Duration;
 
 use moor_core::boxscript::command_line;
 use moor_core::boxscript::quote;
-use moor_core::boxscript::record::{head_script, parse_head, record_script, HEAD_FILE};
+use moor_core::boxscript::record::{head_script, parse_head, record_script, HEAD_FILE, MOVED_FILE};
 use moor_core::seam::driver::{BoxStep, ExecOutcome, StepDone};
 use moor_core::seam::proc::Deadline;
 use moor_core::{BoxPath, ErrorKind, Sha};
@@ -31,13 +31,7 @@ pub(super) fn checkout(cx: &Cx, target: &Target) -> Result<Sha, CommandError> {
             format!("cannot read the Box HEAD: {why}"),
         )
     };
-    let workdir = match &target.workdir {
-        Some(w) => w.clone(),
-        None => cx
-            .driver()
-            .workdir(&target.handle, &target.worktree)
-            .map_err(|e| failed(e.to_string()))?,
-    };
+    let workdir = workdir(cx, target).map_err(failed)?;
     let path = BoxPath::under(workdir.as_str(), HEAD_FILE).map_err(|e| failed(e.to_string()))?;
     let script = format!(
         "cd {} || exit 1\n{}",
@@ -73,13 +67,39 @@ pub(super) fn checkout(cx: &Cx, target: &Target) -> Result<Sha, CommandError> {
     Sha::parse(&head).map_err(|e| failed(e.to_string()))
 }
 
-/// The argv a record run executes: the repo setup lines, then the command, in one script.
-pub(super) fn wrap(setup: &[String], argv: &[String]) -> Vec<String> {
+/// The argv a record run executes: the repo setup lines, then the command, in one script that
+/// fails the run when the checkout is not a clean `head` afterwards.
+pub(super) fn wrap(setup: &[String], argv: &[String], head: &Sha) -> Vec<String> {
     vec![
         "sh".to_owned(),
         "-c".to_owned(),
-        record_script(setup, &command_line(argv)),
+        record_script(setup, &command_line(argv), head.as_str()),
     ]
+}
+
+/// True when the record script left its moved-checkout file; a read failure counts as not moved,
+/// since the script already failed the run.
+pub(super) fn moved(cx: &Cx, target: &Target) -> bool {
+    workdir(cx, target)
+        .and_then(|w| BoxPath::under(w.as_str(), MOVED_FILE).map_err(|e| e.to_string()))
+        .and_then(|path| {
+            cx.driver()
+                .peek_file(&target.handle, &path, &target.worktree)
+                .map_err(|e| e.to_string())
+        })
+        .is_ok_and(|text| text.is_some())
+}
+
+/// The Box workdir, as stored or else as the driver names it.
+fn workdir(cx: &Cx, target: &Target) -> Result<BoxPath, String> {
+    target.workdir.as_ref().map_or_else(
+        || {
+            cx.driver()
+                .workdir(&target.handle, &target.worktree)
+                .map_err(|e| e.to_string())
+        },
+        |w| Ok(w.clone()),
+    )
 }
 
 #[cfg(test)]
