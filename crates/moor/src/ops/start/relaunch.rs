@@ -301,6 +301,7 @@ pub(crate) fn revive_after_wake(cx: &Cx, store: &Store, id: BoxId) -> Result<(),
         repo: None,
         hold: false,
         parent: None,
+        identity: None,
     };
     let settings = || {
         let at = row.worktree.as_deref().unwrap_or(&row.repo);

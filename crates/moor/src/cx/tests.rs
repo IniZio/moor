@@ -54,7 +54,13 @@ fn warn_once_keeps_first_warning_per_code() {
 #[test]
 fn store_opens_lazily_at_moor_db() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let cx = cx(dir.path());
+    let cx = Cx::fake_bare(
+        dir.path(),
+        Path::new("/w"),
+        Arc::new(FakeDriver::new()),
+        Arc::new(FakeSurface::new("/s")),
+        Arc::new(ScriptedProc::new()),
+    );
     assert!(!dir.path().join("moor.db").exists());
     assert!(cx.store().is_ok());
     assert!(dir.path().join("moor.db").exists());

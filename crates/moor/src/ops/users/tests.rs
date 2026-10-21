@@ -47,18 +47,18 @@ pub(super) fn id(s: &str) -> Identity {
 #[test]
 fn whoami_names_the_identity_before_and_after_it_has_a_user() {
     let f = fixture();
-    let me = id("local:1000");
+    let me = id("local:2000");
     let before = run(&f.cx, &f.vault, &me, &UserCmd::Whoami).unwrap();
     assert_eq!(
         before,
-        json!({"identity": "local:1000", "user": null, "identities": []})
+        json!({"identity": "local:2000", "user": null, "identities": []})
     );
     let store = f.cx.store().unwrap();
     let (user, _) = store.enroll(&me).unwrap();
     let after = run(&f.cx, &f.vault, &me, &UserCmd::Whoami).unwrap();
     assert_eq!(
         after,
-        json!({"identity": "local:1000", "user": user.get(), "identities": ["local:1000"]})
+        json!({"identity": "local:2000", "user": user.get(), "identities": ["local:2000"]})
     );
 }
 
@@ -83,7 +83,7 @@ fn secret_set(name: &str, value: &str) -> UserCmd {
 #[test]
 fn enroll_is_idempotent_and_a_user_is_needed_for_secrets() {
     let f = fixture();
-    let me = id("local:1000");
+    let me = id("local:2000");
     let err = run(&f.cx, &f.vault, &me, &secret_set("claude", "v")).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Refused);
     assert!(err.error.to_string().contains("has no user"), "{err:?}");
@@ -99,7 +99,7 @@ fn enroll_is_idempotent_and_a_user_is_needed_for_secrets() {
 #[test]
 fn secrets_set_list_and_delete_by_name_only() {
     let f = fixture();
-    let me = id("local:1000");
+    let me = id("local:2000");
     run(&f.cx, &f.vault, &me, &UserCmd::Enroll).unwrap();
     let set = run(&f.cx, &f.vault, &me, &secret_set("claude", "tok-1")).unwrap();
     assert_eq!(set, json!({"name": "claude", "changed": true}));
@@ -119,7 +119,7 @@ fn secrets_set_list_and_delete_by_name_only() {
 #[test]
 fn a_link_code_links_another_identity_once() {
     let f = fixture();
-    let me = id("local:1000");
+    let me = id("local:2000");
     let user = run(&f.cx, &f.vault, &me, &UserCmd::Enroll).unwrap()["user"].clone();
     let minted = run(&f.cx, &f.vault, &me, &UserCmd::LinkCode).unwrap();
     assert_eq!(minted["expires_in_secs"], 600);
@@ -131,13 +131,13 @@ fn a_link_code_links_another_identity_once() {
     let reused = run(&f.cx, &f.vault, &id("web:alice"), &redeem).unwrap_err();
     assert_eq!(reused.kind, ErrorKind::Refused);
     let who = run(&f.cx, &f.vault, &id("slack:T1:U1"), &UserCmd::Whoami).unwrap();
-    assert_eq!(who["identities"], json!(["local:1000", "slack:T1:U1"]));
+    assert_eq!(who["identities"], json!(["local:2000", "slack:T1:U1"]));
 }
 
 #[test]
 fn minted_link_codes_are_random_16_digit_hex() {
     let f = fixture();
-    let me = id("local:1000");
+    let me = id("local:2000");
     run(&f.cx, &f.vault, &me, &UserCmd::Enroll).unwrap();
     let codes: Vec<String> = (0..2)
         .map(|_| {

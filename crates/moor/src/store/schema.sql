@@ -1,6 +1,7 @@
 CREATE TABLE meta   (k TEXT PRIMARY KEY, v TEXT NOT NULL);
 CREATE TABLE boxes  (
-  id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, repo TEXT NOT NULL, issue TEXT, goal TEXT, base TEXT,
+  id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, repo TEXT NOT NULL, user INTEGER REFERENCES users(id),
+  issue TEXT, goal TEXT, base TEXT,
   branch TEXT, worktree TEXT, bound INTEGER NOT NULL DEFAULT 0,
   state TEXT NOT NULL, state_reason TEXT,
   intent_kind TEXT, intent_pid INTEGER, intent_run INTEGER, intent_at INTEGER, setup_failed_at INTEGER,
@@ -13,6 +14,7 @@ CREATE TABLE repo_seq (repo TEXT PRIMARY KEY, next INTEGER NOT NULL);
 CREATE TABLE sessions (id INTEGER PRIMARY KEY, box INTEGER REFERENCES boxes(id), ordinal INTEGER NOT NULL,
   agent TEXT, model TEXT, agent_session_id TEXT, workspace_id TEXT, pane TEXT, state TEXT NOT NULL,
   started_at INTEGER NOT NULL, ended_at INTEGER, parent_session INTEGER REFERENCES sessions(id), workdir TEXT,
+  user INTEGER REFERENCES users(id),
   CHECK (box IS NOT NULL OR workdir IS NOT NULL), UNIQUE (box, ordinal));
 CREATE INDEX sessions_parent ON sessions(parent_session);
 CREATE TABLE launches (id INTEGER PRIMARY KEY, box INTEGER NOT NULL REFERENCES boxes(id), session_ref TEXT NOT NULL, pane TEXT,
@@ -39,4 +41,4 @@ CREATE TABLE link_codes (code TEXT PRIMARY KEY, user INTEGER NOT NULL REFERENCES
   expires_at INTEGER NOT NULL);
 CREATE TABLE user_secrets (user INTEGER NOT NULL REFERENCES users(id), name TEXT NOT NULL, value BLOB NOT NULL,
   updated_at INTEGER NOT NULL, PRIMARY KEY (user, name));
-INSERT INTO meta (k, v) VALUES ('schema_version', '6');
+INSERT INTO meta (k, v) VALUES ('schema_version', '7');

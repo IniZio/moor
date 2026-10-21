@@ -77,6 +77,7 @@ fn start_with_all_flags() {
             trust_moor_yaml: false,
             repo: None,
             parent: None,
+            identity: None,
         })
     );
 }

@@ -80,7 +80,10 @@ pub(crate) fn build(env: &Env) -> Result<Cx, CommandError> {
 /// [`build`], with each Box's ssh control socket in `sockets`.
 fn build_with_sockets(env: &Env, sockets: PathBuf) -> Result<Cx, CommandError> {
     let (parts, warning) = parts(env, sockets)?;
-    let cx = Cx::new(parts).with_repos(env.repos().clone());
+    let mut cx = Cx::new(parts).with_repos(env.repos().clone());
+    if let Some(key) = env.vault_key() {
+        cx = cx.with_vault_key(key.to_path_buf());
+    }
     if let Some(w) = warning {
         cx.warn(w);
     }

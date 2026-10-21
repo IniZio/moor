@@ -173,8 +173,8 @@ fn json_no_subcommand_is_usage() {
 }
 
 #[test]
-fn json_start_is_failed() {
-    envelope(&["--json", "start", "foo"], None, 1, "failed");
+fn json_start_outside_a_controller_is_usage() {
+    envelope(&["--json", "start", "foo"], None, 2, "usage");
 }
 
 #[test]

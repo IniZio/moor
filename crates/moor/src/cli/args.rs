@@ -247,6 +247,7 @@ impl From<StartArgs> for StartReq {
             resume: a.resume,
             trust_moor_yaml: a.trust_moor_yaml,
             parent: a.parent.map(SessionId::new),
+            identity: None,
         }
     }
 }

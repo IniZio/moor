@@ -9,6 +9,7 @@ use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::Intent;
 use moor_core::domain::session_state::SessionState;
 use moor_core::seam::clock::{Clock, Ts};
+use moor_core::user::UserId;
 use moor_core::view::LaunchFailure;
 use moor_core::{BoxHandle, BoxId, BoxName, ProviderId, RunId};
 use rusqlite::{Connection, OpenFlags, Row};
@@ -45,7 +46,7 @@ pub(crate) use proxy::{TunnelAck, TunnelRequest, TunnelWant};
 pub(crate) use runs::{NewRun, RunOutcome, RunRow};
 
 /// Schema version this build reads and writes.
-pub(crate) const SCHEMA_VERSION: &str = "6";
+pub(crate) const SCHEMA_VERSION: &str = "7";
 /// Full schema, applied once when the file has no `meta` table.
 const SCHEMA_SQL: &str = include_str!("schema.sql");
 /// How long a connection waits on a lock before `SQLITE_BUSY`.
@@ -55,7 +56,7 @@ const BOX_SELECT: &str = "SELECT b.id, b.name, b.repo, b.issue, b.goal, b.base, 
     s.workspace_id, s.agent_session_id, b.state, b.state_reason, b.intent_kind, b.intent_pid, b.intent_run, \
     b.intent_at, b.setup_failed_at, b.created_at, b.updated_at, b.provider, b.handle, b.driver_state, \
     b.attempted_handle, b.workdir, b.egress, b.sleep_reason, b.driver_updated_at, b.idle_since, b.launch_failure, \
-    s.state FROM boxes b LEFT JOIN sessions s ON s.box = b.id \
+    s.state, b.user FROM boxes b LEFT JOIN sessions s ON s.box = b.id \
     AND s.ordinal = (SELECT MAX(ordinal) FROM sessions WHERE box = b.id)";
 
 /// Store failure.
@@ -144,6 +145,8 @@ pub(crate) struct BoxRow {
     pub(crate) name: BoxName,
     /// Repo the box works on.
     pub(crate) repo: String,
+    /// The user the Box acts for; every Box `start` makes has one.
+    pub(crate) user: Option<UserId>,
     /// Issue reference.
     pub(crate) issue: Option<String>,
     /// Goal text.
@@ -358,6 +361,7 @@ fn box_from_row(row: &Row<'_>) -> Result<BoxRow, StoreError> {
         id: BoxId::new(row.get(0)?),
         name: parsed("box name", &name, BoxName::parse_allow_bare)?,
         repo: row.get(2)?,
+        user: row.get::<_, Option<i64>>(31)?.map(UserId::new),
         issue: row.get(3)?,
         goal: row.get(4)?,
         base: row.get(5)?,

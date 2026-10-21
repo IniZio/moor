@@ -27,6 +27,7 @@ fn with_args() -> Vec<Request> {
             trust_moor_yaml: false,
             repo: None,
             parent: None,
+            identity: None,
         }),
         Request::Run(RunReq {
             box_name: n("a"),
@@ -452,6 +453,7 @@ fn parent_is_omitted_when_none() {
         trust_moor_yaml: false,
         repo: None,
         parent: None,
+        identity: None,
     };
     assert!(!serde_json::to_string(&start)
         .expect("ser")

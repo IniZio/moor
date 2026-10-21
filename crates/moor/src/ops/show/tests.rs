@@ -522,20 +522,7 @@ fn a_box_freshly_started_is_not_idled_by_the_next_list() {
     let cx = start_cx(dir.path(), &driver);
     let started = crate::ops::start::run(
         &cx,
-        &StartReq {
-            name: BoxName::parse_allow_bare("demo").unwrap(),
-            goal: Some("ship it".into()),
-            issue: None,
-            worktree: None,
-            base: None,
-            model: None,
-            no_agent: false,
-            hold: false,
-            resume: false,
-            trust_moor_yaml: false,
-            repo: None,
-            parent: None,
-        },
+        &serde_json::from_str::<StartReq>(r#"{"name": "demo", "goal": "ship it"}"#).unwrap(),
     )
     .unwrap();
     let s = &started.boxed;

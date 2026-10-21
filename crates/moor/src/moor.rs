@@ -54,6 +54,14 @@ impl Moor {
         }
     }
 
+    /// This engine acting as `who`, an identity its socket already checked.
+    #[must_use]
+    pub(crate) fn acting_as(self, who: Identity) -> Self {
+        Self {
+            cx: self.cx.with_requester(who),
+        }
+    }
+
     /// Run one request to an envelope; never panics, never prints.
     pub fn call(&self, req: Request) -> Response {
         let cmd = req.cmd();

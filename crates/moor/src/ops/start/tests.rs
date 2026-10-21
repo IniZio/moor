@@ -41,6 +41,7 @@ mod proxy;
 mod relaunch;
 mod relaunch_sessions;
 mod relaunch_yaml;
+mod requester;
 mod rerun;
 mod revive;
 mod session;
@@ -135,6 +136,7 @@ fn req(name: &str) -> StartReq {
         trust_moor_yaml: false,
         repo: None,
         parent: None,
+        identity: None,
     }
 }
 
