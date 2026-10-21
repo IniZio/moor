@@ -37,6 +37,15 @@ fn a_bad_value_names_what_is_wrong() {
 }
 
 #[test]
+fn an_id_must_be_positive() {
+    for bad in [-1, 0] {
+        let err = parse(json!({"id": bad})).expect_err("non-positive id");
+        assert!(err.contains("positive"), "{err}");
+    }
+    assert_eq!(parse(json!({"id": 1})), Ok(BoxTarget::Id(BoxId::new(1))));
+}
+
+#[test]
 fn a_request_takes_either_form_in_its_box_field() {
     let by_id: Request =
         serde_json::from_value(json!({"cmd": "steer", "box": {"id": 3}, "text": "hi"}))
