@@ -13,6 +13,7 @@ pub fn event_frame(event: &EventRecord) -> String {
     let frame = ServerFrame::Event {
         cursor: event.cursor,
         r#box: event.box_name.clone(),
+        box_id: event.box_id,
         session: event.session,
         kind: event.kind.clone(),
         payload: event.payload.clone(),

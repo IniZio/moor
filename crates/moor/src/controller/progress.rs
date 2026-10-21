@@ -35,7 +35,10 @@ pub(crate) fn respond_with_progress(
         Request::Run(req) => report_while(cmd, id, interval, out, |sink| {
             conn::respond_run(env, &req, sink)
         }),
-        request @ (Request::Start(_) | Request::Wait(_) | Request::WaitEvents(_)) => {
+        request @ (Request::Start(_)
+        | Request::Wait(_)
+        | Request::WaitEvents(_)
+        | Request::Close(_)) => {
             report_while(cmd, id, interval, out, |_| conn::respond(env, request))
         }
         request => conn::respond(env, request),

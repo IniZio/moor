@@ -104,6 +104,50 @@ fn quiet_agent(dir: &Path) -> Cx {
 }
 
 #[test]
+fn each_event_frame_carries_its_box_id_when_names_repeat() {
+    let dir = tempfile::tempdir().unwrap();
+    let driver = Arc::new(FakeDriver::new());
+    let cx = engine_cx(dir.path(), &driver, &Arc::new(FakeEngine::new()));
+    let old = working(&cx, &driver, "alpha", "s1");
+    let close = Decision::new(old)
+        .lifecycle(BoxLifecycleInput::Close)
+        .session(SessionInput::End);
+    cx.store().unwrap().apply(close).unwrap();
+    let newer = working(&cx, &driver, "alpha", "s2");
+    let store = cx.store().unwrap();
+    let mut want: Vec<(i64, BoxId)> = [old, newer]
+        .iter()
+        .flat_map(|id| {
+            store
+                .events(*id, 100)
+                .unwrap()
+                .into_iter()
+                .map(|e| (e.id, *id))
+        })
+        .collect();
+    want.sort_unstable();
+    let got: Vec<(i64, BoxId)> = Moor::from_cx(cx)
+        .events_after(0, 100)
+        .unwrap()
+        .into_iter()
+        .map(|f| match f {
+            ServerFrame::Event {
+                cursor,
+                r#box,
+                box_id,
+                ..
+            } => {
+                assert_eq!(r#box.as_deref(), Some("alpha"));
+                (cursor, box_id.unwrap())
+            }
+            other => unreachable!("not an event: {other:?}"),
+        })
+        .collect();
+    assert_eq!(got, want);
+    assert!(want.iter().any(|(_, id)| *id == old) && want.iter().any(|(_, id)| *id == newer));
+}
+
+#[test]
 fn events_after_maps_rows_to_frames_strictly_after_the_cursor() {
     let dir = tempfile::tempdir().unwrap();
     let driver = Arc::new(FakeDriver::new());
