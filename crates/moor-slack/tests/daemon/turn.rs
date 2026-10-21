@@ -13,7 +13,7 @@ use super::inbox::reply;
 use super::support::{Rig, CHANNEL, TS, USER};
 
 /// A token the fake answers "OK" for.
-const GOOD: &str = "sk-ant-oat01-good-4c1d";
+pub(super) const GOOD: &str = "sk-ant-oat01-good-4c1d";
 
 /// `file` of the fake's `n`th run in `bin`.
 fn recorded(bin: &Path, n: u32, file: &str) -> String {
@@ -63,7 +63,7 @@ fn turn_rows(rig: &Rig) -> Vec<TurnRow> {
 }
 
 /// Opens a coordinator thread at [`TS`] with `text` and waits for the placeholder's edit.
-fn ask(rig: &Rig, text: &str) -> String {
+pub(super) fn ask(rig: &Rig, text: &str) -> String {
     rig.mention(1, USER, &format!("<@UBOT> {text}"), TS, None);
     let posts = rig.slack.wait_posts(1);
     assert_eq!(
@@ -76,7 +76,7 @@ fn ask(rig: &Rig, text: &str) -> String {
 }
 
 /// The thread's workdir in the rig's state dir.
-fn workdir(rig: &Rig) -> std::path::PathBuf {
+pub(super) fn workdir(rig: &Rig) -> std::path::PathBuf {
     let state = std::fs::canonicalize(rig.path("state-slack")).unwrap();
     state.join("threads").join(format!("{CHANNEL}-{TS}"))
 }

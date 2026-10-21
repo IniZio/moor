@@ -30,6 +30,9 @@ pub(crate) enum Scripted {
     Hangup,
     /// Keep the connection open and never answer.
     Hold,
+    /// Act on the request as an unscripted one, then never answer, as a controller whose
+    /// reply the front never read.
+    Lost,
 }
 
 /// Everything clients sent, in arrival order.
@@ -55,8 +58,9 @@ struct Inner {
     fail_watches: bool,
     /// Names of the Boxes `start` made, in order, once the Box table is on.
     boxes: Option<Vec<String>>,
-    /// Workdir of each host Session `open-host-session` opened; its id is its index plus 100.
-    hosts: Vec<String>,
+    /// Workdir of each host Session `open-host-session` opened, and whether it has ended;
+    /// its id is its index plus 100.
+    hosts: Vec<(String, bool)>,
 }
 
 /// A running scripted controller; it serves until the test process exits.
@@ -111,6 +115,15 @@ impl FakeController {
     /// Names of the Boxes `start` made, in order.
     pub(crate) fn boxes(&self) -> Vec<String> {
         self.lock().boxes.clone().unwrap_or_default()
+    }
+
+    /// Each host Session opened so far, by id, with its workdir and whether it has ended.
+    pub(crate) fn hosts(&self) -> Vec<(i64, String, bool)> {
+        let hosts = self.lock().hosts.clone();
+        (100..)
+            .zip(hosts)
+            .map(|(id, (w, ended))| (id, w, ended))
+            .collect()
     }
 
     /// Reads what clients sent so far.
@@ -228,20 +241,29 @@ fn answer(line: &str, inner: &mut Inner) -> Next {
                 }
                 Some(Scripted::Hangup) => Next::Close,
                 Some(Scripted::Hold) => Next::Wait,
+                Some(Scripted::Lost) => {
+                    unscripted(&request, inner);
+                    Next::Wait
+                }
                 None => Next::Send(ServerFrame::Response {
                     id,
-                    envelope: host_session(&request, &mut inner.hosts)
-                        .or_else(|| {
-                            let boxes = inner.boxes.as_mut()?;
-                            from_table(&request, boxes)
-                        })
-                        .unwrap_or_else(|| failed(&cmd, &format!("no script for {cmd}"))),
+                    envelope: unscripted(&request, inner),
                 }),
             };
             inner.seen.requests.push(*request);
             next
         }
     }
+}
+
+/// The answer to a request no script covers: from the host Sessions, then the Box table.
+fn unscripted(request: &Request, inner: &mut Inner) -> Response {
+    host_session(request, &mut inner.hosts)
+        .or_else(|| from_table(request, inner.boxes.as_mut()?))
+        .unwrap_or_else(|| {
+            let cmd = command(request);
+            failed(&cmd, &format!("no script for {cmd}"))
+        })
 }
 
 /// The Box table's answer to a `start` or `show`; `None` for any other request.
@@ -264,26 +286,57 @@ fn from_table(request: &Request, boxes: &mut Vec<String>) -> Option<Response> {
     Some(Response::ok(cmd, Some(value)))
 }
 
-/// The answer to `sessions` or `open-host-session` from the host Sessions opened so far, as
-/// the real controller gives it; `None` for any other request.
-fn host_session(request: &Request, hosts: &mut Vec<String>) -> Option<Response> {
+/// The answer to `sessions`, `open-host-session` or `end-host-session` from the host
+/// Sessions opened so far, as the real controller gives it; `None` for any other request.
+fn host_session(request: &Request, hosts: &mut Vec<(String, bool)>) -> Option<Response> {
     let id = |index: usize| i64::try_from(index).unwrap() + 100;
     match request {
         Request::Sessions(_) => {
             let rows: Vec<_> = hosts
                 .iter()
                 .enumerate()
-                .map(|(i, workdir)| json!({"session": id(i), "box": null, "workdir": workdir, "state": "working"}))
+                .filter(|(_, (_, ended))| !ended)
+                .map(|(i, (workdir, _))| json!({"session": id(i), "box": null, "workdir": workdir, "state": "working"}))
                 .collect();
             Some(Response::ok("sessions", Some(json!({"sessions": rows}))))
         }
         Request::OpenHostSession(open) => {
-            hosts.push(open.workdir.clone());
+            hosts.push((open.workdir.clone(), false));
             let value = json!({"session": id(hosts.len() - 1), "workdir": open.workdir, "state": "working"});
             Some(Response::ok("open-host-session", Some(value)))
         }
+        Request::EndHostSession(end) => {
+            let session = end.session.get();
+            let index = usize::try_from(session - 100).ok();
+            let Some((workdir, ended)) = index.and_then(|i| hosts.get_mut(i)) else {
+                return Some(refused(
+                    "end-host-session",
+                    &format!("no host Session {session}"),
+                ));
+            };
+            if *ended {
+                let message = format!("host Session {session} has ended");
+                return Some(refused("end-host-session", &message));
+            }
+            *ended = true;
+            let value = json!({"session": session, "workdir": workdir, "state": "ended"});
+            Some(Response::ok("end-host-session", Some(value)))
+        }
         _ => None,
     }
+}
+
+/// A refused envelope for `cmd` carrying `message`.
+fn refused(cmd: &str, message: &str) -> Response {
+    Response::err(
+        cmd,
+        ErrorView {
+            kind: ErrorKind::Refused,
+            message: message.to_owned(),
+            hints: Vec::new(),
+            context: Vec::new(),
+        },
+    )
 }
 
 /// The wire command name of `request`, such as `start`.

@@ -168,6 +168,7 @@ fn load(settings: &Settings, log: &Log) -> Result<Loaded, String> {
         socket,
         program,
         max_open_boxes: c.max_open_boxes,
+        idle_secs: i64::from(c.idle_minutes) * 60,
         log: Arc::clone(log),
         clock: settings.clock,
     };

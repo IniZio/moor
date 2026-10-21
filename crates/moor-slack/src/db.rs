@@ -242,6 +242,8 @@ pub(crate) use boxes::{BoxState, SlackBox};
 mod channel_repos;
 pub(crate) use channel_repos::ChannelRepo;
 
+mod host;
+
 mod inbox;
 pub(crate) use inbox::{InboxItem, ItemKind};
 
