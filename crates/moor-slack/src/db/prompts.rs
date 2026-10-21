@@ -142,16 +142,17 @@ impl Db {
         )
     }
 
-    /// The answered prompts of Box `name` whose message does not show the answer yet.
+    /// The answered prompts of Box `name` whose Box took the answer and whose message does not
+    /// show it yet.
     pub(crate) fn unshown_answers(&self, name: &BoxName) -> rusqlite::Result<Vec<Prompt>> {
         self.prompts(
-            "p.box_name = ?1 AND p.answer IS NOT NULL AND p.shown_at IS NULL",
+            "p.box_name = ?1 AND p.answer_sent = 1 AND p.shown_at IS NULL",
             params![name.as_str()],
         )
     }
 
-    /// Records that `by` answered open prompt `id` with `label`; false when it was no longer
-    /// open.
+    /// Records that `by` answered open prompt `id` with `label`, before the answer is sent to
+    /// the Box, so the Box moving on cannot close it first; false when it was no longer open.
     pub(crate) fn answer_prompt(&self, id: i64, label: &str, by: &str) -> rusqlite::Result<bool> {
         let changed = self.conn.execute(
             "UPDATE slack_prompts SET answer = ?2, answered_by = ?3 \
@@ -159,6 +160,27 @@ impl Db {
             params![id, label, by],
         )?;
         Ok(changed == 1)
+    }
+
+    /// Records that the Box of prompt `id` took its answer, so the feed shows it.
+    pub(crate) fn answer_sent(&self, id: i64) -> rusqlite::Result<()> {
+        self.conn
+            .execute(
+                "UPDATE slack_prompts SET answer_sent = 1 WHERE id = ?1 AND answer IS NOT NULL",
+                [id],
+            )
+            .map(drop)
+    }
+
+    /// Opens prompt `id` again after its Box did not take the answer recorded for it.
+    pub(crate) fn reopen_prompt(&self, id: i64) -> rusqlite::Result<()> {
+        self.conn
+            .execute(
+                "UPDATE slack_prompts SET answer = NULL, answered_by = NULL \
+                 WHERE id = ?1 AND answer_sent = 0",
+                [id],
+            )
+            .map(drop)
     }
 
     /// Closes open prompt `id` because its Box is now `reason`.

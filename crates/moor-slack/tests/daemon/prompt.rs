@@ -196,6 +196,21 @@ fn a_requester_click_on_a_live_prompt_steers_its_choice_and_shows_the_answer() {
 }
 
 #[test]
+fn an_answered_prompt_is_edited_once() {
+    let (rig, controller, _bin, prompt) = asked();
+    steer_ok(&controller);
+    click(&rig, 1, USER, &prompt, 1);
+    rig.slack.wait_until("the answered prompt", |_, updates| {
+        updates.iter().any(|u| u.ts == prompt.ts)
+    });
+    controller.emit(BOX_ID, BOX_NAME, "working", json!({}));
+    std::thread::sleep(QUIET);
+    let edits = rig.slack.updates();
+    let edits = edits.iter().filter(|u| u.ts == prompt.ts).count();
+    assert_eq!(edits, 1, "{:?}", rig.slack.updates());
+}
+
+#[test]
 fn a_click_from_anyone_but_the_requester_gets_an_ephemeral_refusal_and_steers_nothing() {
     let (rig, controller, _bin, prompt) = asked();
     click(&rig, 1, OTHER, &prompt, 1);

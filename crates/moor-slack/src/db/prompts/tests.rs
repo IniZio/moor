@@ -121,13 +121,18 @@ fn a_prompt_is_answered_once_and_a_closed_one_not_at_all() {
 }
 
 #[test]
-fn an_answer_waits_to_be_shown_until_its_message_is_edited() {
+fn an_answer_is_shown_once_its_box_took_it_until_its_message_is_edited() {
     let dir = tempfile::tempdir().unwrap();
     let db = with_box(dir.path(), &["slack-1-1"]);
     let name = BoxName::parse_allow_bare("slack-1-1").unwrap();
     post(&db, "slack-1-1", 5);
     let id = db.prompt_by_message("C1", "m5").unwrap().unwrap().id;
     db.answer_prompt(id, "1. a", "U1").unwrap();
+    assert!(
+        db.unshown_answers(&name).unwrap().is_empty(),
+        "not sent yet"
+    );
+    db.answer_sent(id).unwrap();
     assert_eq!(db.unshown_answers(&name).unwrap().len(), 1);
     db.mark_answer_shown(id, 2).unwrap();
     assert!(db.unshown_answers(&name).unwrap().is_empty());
@@ -142,4 +147,23 @@ fn open_prompts_cover_every_box_of_the_thread() {
     let open = db.open_prompts("C1", "1.0").unwrap();
     let names: Vec<_> = open.iter().map(|p| p.box_name.as_str()).collect();
     assert_eq!(names, ["slack-1-1", "slack-1-2"]);
+}
+
+#[test]
+fn a_recorded_answer_survives_a_close_and_reopens_only_while_unsent() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = with_box(dir.path(), &["slack-1-1"]);
+    post(&db, "slack-1-1", 5);
+    post(&db, "slack-1-1", 6);
+    let id = |m: &str| db.prompt_by_message("C1", m).unwrap().unwrap().id;
+    let state = |m: &str| db.prompt_by_message("C1", m).unwrap().unwrap().state;
+    db.answer_prompt(id("m5"), "1. a", "U1").unwrap();
+    db.close_prompt(id("m5"), "working").unwrap();
+    assert!(matches!(state("m5"), PromptState::Answered { .. }));
+    db.reopen_prompt(id("m5")).unwrap();
+    assert_eq!(state("m5"), PromptState::Open);
+    db.answer_prompt(id("m6"), "2. b", "U1").unwrap();
+    db.answer_sent(id("m6")).unwrap();
+    db.reopen_prompt(id("m6")).unwrap();
+    assert!(matches!(state("m6"), PromptState::Answered { .. }));
 }
