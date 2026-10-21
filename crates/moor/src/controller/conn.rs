@@ -1,27 +1,55 @@
 //! One controller connection: reads client frames and answers each in order.
 
 use std::io::{BufRead, Write};
+use std::sync::Arc;
 
 use moor_core::controller::{
     parse_frame, write_bytes, ClientFrame, FrameErrorKind, ServerFrame, WatchFilter, PROTOCOL,
 };
+use moor_core::request::UserCmd;
+use moor_core::user::{Caller, Identity};
 use moor_core::{ArtifactReadReq, Request, Response, RunReq};
 
 use super::progress::{respond_with_progress, Sink, INTERVAL};
 use super::watch;
 use crate::env::Env;
+use crate::vault::Vault;
 use crate::Moor;
+
+/// Whom one connection speaks for, and the vault key its user requests use.
+pub(crate) struct Peer {
+    /// Whom the connection speaks for, or why that is unknown.
+    pub(crate) caller: Result<Caller, String>,
+    /// The vault key.
+    pub(crate) vault: Arc<Vault>,
+}
+
+#[cfg(test)]
+impl Peer {
+    /// The controller socket's peer uid 1000, with a vault key in `dir`.
+    pub(crate) fn local_in(dir: &std::path::Path) -> Self {
+        std::fs::create_dir_all(dir).expect("vault dir");
+        let vault = Vault::load_or_create(&dir.join("vault.key")).expect("vault");
+        Self {
+            caller: Ok(Caller::Local(1000)),
+            vault: Arc::new(vault),
+        }
+    }
+}
 
 /// Serve frames from `reader` until EOF or an I/O error on either side.
 ///
 /// Frame-level problems get an error frame and leave the connection open.
-pub(crate) fn handle(reader: impl BufRead, writer: impl Write, env: &Env) {
+pub(crate) fn handle(reader: impl BufRead, writer: impl Write, env: &Env, peer: &Peer) {
     serve(
         reader,
         writer,
         |id, request, out| match request {
             Request::ArtifactRead(req) => read_artifact(env, id, &req, out),
-            request => respond_with_progress(env, id, request, INTERVAL, out),
+            request => match request.into_user() {
+                Ok((asserted, cmd)) => answer_user(env, peer, asserted.as_ref(), &cmd),
+                Err(request) => respond_with_progress(env, id, *request, INTERVAL, out),
+            },
         },
         |writer, since, filter, follow| {
             let ask = watch::Ask {
@@ -100,6 +128,14 @@ fn read_artifact(env: &Env, id: &str, req: &ArtifactReadReq, out: &mut dyn Write
     match Moor::from_env(env) {
         Ok(moor) => moor.read_artifact(req, &mut |data| write_bytes(out, id, data)),
         Err(e) => e.into_response("artifact-read", vec![]),
+    }
+}
+
+/// Run a user request as the identity this connection may assert.
+fn answer_user(env: &Env, peer: &Peer, asserted: Option<&Identity>, cmd: &UserCmd) -> Response {
+    match Moor::from_env(env) {
+        Ok(moor) => moor.call_user(&peer.caller, asserted, &peer.vault, cmd),
+        Err(e) => e.into_response(cmd.cmd(), vec![]),
     }
 }
 

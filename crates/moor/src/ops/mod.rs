@@ -24,6 +24,7 @@ mod show_session;
 mod sleep;
 mod start;
 mod steer;
+pub(crate) mod users;
 mod version;
 mod wait;
 mod wait_events;
@@ -48,6 +49,10 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         Request::ArtifactRead(_) => Err(CommandError::new(
             ErrorKind::Usage,
             "artifact-read sends raw bytes, so only the controller socket serves it",
+        )),
+        Request::Whoami(_) => Err(CommandError::new(
+            ErrorKind::Usage,
+            "user requests act as the caller of a socket, so only the controller socket serves them",
         )),
         Request::Repos(r) => to_value(&repos::run(cx, &r)),
         Request::Sessions(r) => to_value(&sessions::run(cx, &r)?),

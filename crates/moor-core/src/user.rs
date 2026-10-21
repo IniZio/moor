@@ -115,6 +115,40 @@ impl fmt::Display for Identity {
     }
 }
 
+/// Whom a controller connection speaks for.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Caller {
+    /// The controller's own socket, with the peer's uid.
+    Local(u32),
+    /// A front's socket, bound to that front's namespace.
+    Front(String),
+}
+
+impl Caller {
+    /// The identity a request on this connection acts as. The controller's own socket acts as
+    /// `local:<uid>` and may assert only that; a front socket must assert an identity in its
+    /// own namespace.
+    ///
+    /// # Errors
+    /// The refusal for an identity this connection may not assert.
+    pub fn resolve(&self, asserted: Option<&Identity>) -> Result<Identity, String> {
+        match (self, asserted) {
+            (Self::Local(uid), None) => Ok(Identity::local(*uid)),
+            (Self::Local(uid), Some(id)) if *id == Identity::local(*uid) => Ok(id.clone()),
+            (Self::Local(uid), Some(id)) => Err(format!(
+                "the controller socket speaks only for {LOCAL}:{uid}, not {id}"
+            )),
+            (Self::Front(ns), Some(id)) if id.namespace() == ns => Ok(id.clone()),
+            (Self::Front(ns), Some(id)) => Err(format!(
+                "the {ns} front socket may assert only {ns}: identities, not {id}"
+            )),
+            (Self::Front(ns), None) => {
+                Err(format!("the {ns} front socket must assert an identity"))
+            }
+        }
+    }
+}
+
 /// The name of one of a user's secrets: `[a-z][a-z0-9_-]*`, at most 64 bytes.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]

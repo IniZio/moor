@@ -270,7 +270,8 @@ fn watch_before_hello_is_refused_and_the_connection_keeps_serving() {
     .join("\n")
         + "\n";
     let mut out = Vec::new();
-    handle(Cursor::new(input.into_bytes()), &mut out, &env(&dir));
+    let peer = crate::controller::conn::Peer::local_in(dir.path());
+    handle(Cursor::new(input.into_bytes()), &mut out, &env(&dir), &peer);
     let got: Vec<Value> = String::from_utf8(out)
         .expect("utf8")
         .lines()

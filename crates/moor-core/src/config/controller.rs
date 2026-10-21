@@ -6,6 +6,7 @@ use std::time::Duration;
 use serde::Deserialize;
 
 use super::{parse_repo, parse_strict, ConfigError};
+use crate::user::valid_front_namespace;
 
 /// The `moor controller serve` config. Build it with [`parse_controller`].
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
@@ -35,7 +36,18 @@ pub struct ControllerConfig {
     slack: Option<Option<serde_json::Value>>,
     /// Repos the controller may clone on its own host, keyed by name.
     pub repos: RepoTable,
+    /// Fronts that each get a socket bound to their namespace, keyed by that namespace.
+    #[allow(
+        clippy::zero_sized_map_values,
+        reason = "`fronts: {slack: {}}` is the config shape; entries gain settings later"
+    )]
+    pub fronts: BTreeMap<String, FrontEntry>,
 }
+
+/// One front's entry under `fronts:`; it has no settings yet.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FrontEntry {}
 
 /// Wraps whatever follows the key in `Some`, so a null value stays distinguishable from a missing key.
 #[allow(
@@ -201,6 +213,13 @@ pub fn parse_controller(file: &str, text: &str) -> Result<ControllerConfig, Conf
         .in_file(file));
     }
     validate_repos(file, &cfg.repos)?;
+    if let Some(bad) = cfg.fronts.keys().find(|ns| !valid_front_namespace(ns)) {
+        return Err(ConfigError::new(
+            format!("fronts.{bad}"),
+            "namespace must match [a-z][a-z0-9-]* and not be `local`",
+        )
+        .in_file(file));
+    }
     Ok(cfg)
 }
 

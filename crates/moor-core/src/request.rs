@@ -14,6 +14,8 @@ mod session;
 mod target;
 pub use session::{EndSessionReq, OpenSessionReq, SessionsReq, ShowSessionReq};
 pub use target::BoxTarget;
+mod user;
+pub use user::{AsReq, UserCmd};
 mod wait;
 pub use wait::{WaitEventsReq, WaitFor, WaitMode, WaitReq};
 
@@ -73,6 +75,8 @@ pub enum Request {
     Artifacts(ArtifactsReq),
     /// Read a byte range of one artifact.
     ArtifactRead(ArtifactReadReq),
+    /// Show the caller's user and its linked identities.
+    Whoami(AsReq),
     /// Print version information.
     Version {},
 }
@@ -108,6 +112,7 @@ impl Request {
             Self::Repos(_) => "repos",
             Self::Artifacts(_) => "artifacts",
             Self::ArtifactRead(_) => "artifact-read",
+            Self::Whoami(_) => "whoami",
             Self::Version {} => "version",
         }
     }
