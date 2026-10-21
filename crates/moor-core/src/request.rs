@@ -16,7 +16,9 @@ mod target;
 pub use session::{EndSessionReq, OpenSessionReq, SessionsReq, ShowSessionReq};
 pub use target::BoxTarget;
 mod user;
-pub use user::{AsReq, LinkRedeemReq, SecretDeleteReq, SecretSetReq, SecretValue, UserCmd};
+pub use user::{
+    AsReq, LinkRedeemReq, SecretDeleteReq, SecretSetReq, SecretValue, StartNeedsReq, UserCmd,
+};
 mod wait;
 pub use wait::{WaitEventsReq, WaitFor, WaitMode, WaitReq};
 
@@ -26,6 +28,8 @@ pub use wait::{WaitEventsReq, WaitFor, WaitMode, WaitReq};
 pub enum Request {
     /// Create a box.
     Start(StartReq),
+    /// The secrets a start would need from the caller's user, and which it lacks.
+    StartNeeds(StartNeedsReq),
     /// Run a command in a box.
     Run(RunReq),
     /// Wait for a box condition.
@@ -100,6 +104,7 @@ impl Request {
     pub const fn cmd(&self) -> &'static str {
         match self {
             Self::Start(_) => "start",
+            Self::StartNeeds(_) => "start-needs",
             Self::Run(_) => "run",
             Self::Wait(_) => "wait",
             Self::WaitEvents(_) => "wait-events",

@@ -143,16 +143,18 @@ fn answer_user(env: &Env, peer: &Peer, asserted: Option<&Identity>, cmd: &UserCm
     }
 }
 
-/// The identity a `start` acts as: the one it asserts, checked against this connection's
-/// socket. Other requests act as no one.
+/// The identity a `start` or `start-needs` acts as: the one it asserts, checked against this
+/// connection's socket. Other requests act as no one.
 fn requester(peer: &Peer, request: &Request) -> Result<Option<Identity>, CommandError> {
-    let Request::Start(req) = request else {
-        return Ok(None);
+    let asserted = match request {
+        Request::Start(req) => req.identity.as_ref(),
+        Request::StartNeeds(req) => req.identity.as_ref(),
+        _ => return Ok(None),
     };
     peer.caller
         .as_ref()
         .map_err(Clone::clone)
-        .and_then(|caller| caller.resolve(req.identity.as_ref()))
+        .and_then(|caller| caller.resolve(asserted))
         .map(Some)
         .map_err(|why| CommandError::new(ErrorKind::Refused, why))
 }

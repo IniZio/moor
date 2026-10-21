@@ -156,12 +156,25 @@ fn a_start_acts_only_as_an_identity_its_socket_may_assert() {
         "may assert only slack:",
     );
     refused(&ask(&slack, &start(None)), "must assert an identity");
-    refused(
-        &ask(&slack, &start(Some("slack:T1:U1"))),
-        "log in first: slack:T1:U1 has no moor user",
-    );
-    refused(
-        &ask(&served.main, &start(None)),
-        &format!("log in first: {} has no moor user", me()),
-    );
+    for (socket, identity) in [(&slack, Some("slack:T1:U1")), (&served.main, None)] {
+        let got = ask(socket, &start(identity));
+        refused(&got, "log in first: moor user enroll");
+        let who = identity.map_or_else(me, str::to_owned);
+        assert_eq!(got["value"]["identity"], who, "{got}");
+    }
+}
+
+#[test]
+fn start_needs_answers_for_the_identity_a_front_asserts() {
+    let served = Served::start();
+    let slack = served.front("slack");
+    let ask_needs =
+        |identity: &str| ask(&slack, &json!({"cmd": "start-needs", "identity": identity}));
+    let got = ask_needs("slack:T1:U1");
+    assert_eq!(got["class"], "ok", "{got}");
+    assert_eq!(got["value"]["identity"], "slack:T1:U1", "{got}");
+    assert_eq!(got["value"]["user"], json!(null), "{got}");
+    assert_eq!(got["value"]["missing"], got["value"]["needs"], "{got}");
+    assert_eq!(got["value"]["needs"][0], "claude", "{got}");
+    refused(&ask_needs("web:alice"), "may assert only slack:");
 }

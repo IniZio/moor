@@ -31,7 +31,7 @@ The state directory holds `moor.db`. It is the first of `--state-dir`,
 
 | Command | What it does |
 | --- | --- |
-| `moor start NAME` | Creates a Box with its worktree, herdr workspace, and machine, or attaches to the open Box of that name. The agent starts when you give `--goal` or `--resume`. The Box acts for the moor user of whoever started it, so `start` runs only through a controller, and refuses an open Box of another user. |
+| `moor start NAME` | Creates a Box with its worktree, herdr workspace, and machine, or attaches to the open Box of that name. The agent starts when you give `--goal` or `--resume`. The Box acts for the moor user of whoever started it, so `start` runs only through a controller, and refuses an open Box of another user. It also refuses when the user lacks a secret the Box needs, naming every missing one. See [Secrets a Box uses](config.md#secrets-a-box-uses). |
 | `moor show [NAME]` | Shows all open Boxes, or one Box in detail. `list` is an alias. |
 | `moor run NAME -- CMD...` | Runs a command on the Box's machine. |
 | `moor wait NAME` | Waits until the Box reaches a state. |

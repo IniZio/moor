@@ -7,14 +7,8 @@ use serde_json::json;
 
 use super::support::{Rig, BOX_NAME, MCP, TS, USER};
 
-/// The refusal the controller gives a start from its own socket's peer, who has no moor user.
-fn unknown() -> String {
-    use std::os::unix::fs::MetadataExt as _;
-    let uid = std::fs::metadata("/proc/self")
-        .expect("stat /proc/self")
-        .uid();
-    format!("log in first: local:{uid} has no moor user")
-}
+/// The refusal the controller gives for any repo when none are configured.
+const UNKNOWN: &str = "repo nosuch is not known to the controller; no repos are configured";
 
 /// A daemon on a real controller whose channel's default repo is `nosuch`.
 fn rig_on_a_real_controller() -> (Rig, super::support::RealController) {
@@ -37,7 +31,7 @@ fn rig_on_a_real_controller() -> (Rig, super::support::RealController) {
 fn real_controller_refusal_is_posted_in_the_thread() {
     let (rig, _controller) = rig_on_a_real_controller();
     rig.mention(1, USER, "<@UBOT> fix the thing", TS, None);
-    rig.wait_post(&format!("Could not start Box `{BOX_NAME}`: {}", unknown()));
+    rig.wait_post(&format!("Could not start Box `{BOX_NAME}`: {UNKNOWN}"));
 }
 
 /// The controller stops after the first thread's start and a new one takes its socket; the
@@ -46,13 +40,12 @@ fn real_controller_refusal_is_posted_in_the_thread() {
 fn real_controller_restart_is_survived() {
     let (rig, first) = rig_on_a_real_controller();
     rig.mention(1, USER, "<@UBOT> fix the thing", TS, None);
-    rig.wait_post(&format!("Could not start Box `{BOX_NAME}`: {}", unknown()));
+    rig.wait_post(&format!("Could not start Box `{BOX_NAME}`: {UNKNOWN}"));
     drop(first);
     let _second = rig.real_controller();
     let ts = "1730000009.000300";
     rig.mention(2, USER, "<@UBOT> fix the thing", ts, None);
     rig.wait_post(&format!(
-        "Could not start Box `slack-1730000009-000300-1`: {}",
-        unknown()
+        "Could not start Box `slack-1730000009-000300-1`: {UNKNOWN}"
     ));
 }
