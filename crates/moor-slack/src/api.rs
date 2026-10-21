@@ -34,9 +34,10 @@ pub(super) enum ApiError {
     /// Slack answered `ok: false` with this `error` code.
     #[error("slack rejected the call: {0}")]
     Slack(String),
-    /// Slack answered HTTP 429; the caller should back off.
+    /// Slack answered HTTP 429; the caller should back off, for as long as Slack asked when
+    /// it said.
     #[error("slack rate limited the call")]
-    RateLimited,
+    RateLimited(Option<Duration>),
 }
 
 /// A Slack Web API client rooted at one base URL.
@@ -305,7 +306,12 @@ fn read_reply(
     let mut response = response.map_err(|e| ApiError::Transport(e.to_string()))?;
     let status = response.status();
     if status.as_u16() == 429 {
-        return Err(ApiError::RateLimited);
+        let after = response.headers().get("retry-after");
+        let secs = after.and_then(|v| v.to_str().ok()?.trim().parse().ok());
+        return Err(ApiError::RateLimited(secs.map(Duration::from_secs)));
+    }
+    if status.is_server_error() {
+        return Err(ApiError::Transport(format!("HTTP {status}")));
     }
     let body = response
         .body_mut()

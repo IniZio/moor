@@ -11,7 +11,7 @@ use std::time::Duration;
 use moor_client::Client;
 use moor_core::secret::Secret;
 
-use crate::api::Api;
+use crate::api::{Api, ApiError};
 use crate::coordinator::brief::BRIEF;
 use crate::coordinator::context::{self, Parts, Said};
 use crate::coordinator::turn::{self, Ended, Turn, LIMITS};
@@ -31,6 +31,19 @@ const TICK: Duration = Duration::from_millis(500);
 
 /// What the placeholder says while a turn runs.
 const PLACEHOLDER: &str = "…";
+
+/// Waits before each new try of a line Slack did not take for a reason it may get over.
+const BACKOFF: [Duration; 3] = [
+    Duration::from_millis(500),
+    Duration::from_secs(1),
+    Duration::from_secs(2),
+];
+
+/// Longest wait between tries, whatever `Retry-After` asks.
+const MAX_WAIT: Duration = Duration::from_secs(30);
+
+/// Slack's answers that the placeholder cannot be edited; the line is posted new instead.
+const EDIT_REFUSED: [&str; 2] = ["message_not_found", "cant_update_message"];
 
 /// Everything a turn needs, shared by the scheduler and the turns it runs.
 pub(crate) struct Turns {
@@ -115,24 +128,44 @@ impl Turns {
             closing.cost,
         );
         self.written(stored);
-        self.post(row, placeholder.as_deref(), &closing.line);
-        self.written(db.mark_posted(row.id, (self.clock)()));
+        if self.post(row, placeholder.as_deref(), &closing.line) {
+            self.written(db.mark_posted(row.id, (self.clock)()));
+        }
     }
 
-    /// Edits the placeholder into `line`, or posts `line` when there is no placeholder.
-    fn post(&self, row: &TurnRow, placeholder: Option<&str>, line: &str) {
+    /// Edits the placeholder into `line`, or posts `line` when there is no placeholder or Slack
+    /// says it cannot be edited. A failure Slack may get over is tried again after a wait.
+    /// True once the line landed.
+    fn post(&self, row: &TurnRow, placeholder: Option<&str>, line: &str) -> bool {
         let token = &self.bot_token;
-        let sent = placeholder.map_or_else(
-            || {
-                let posted = self
-                    .api
-                    .post_message(token, &row.channel, &row.thread_ts, line);
-                posted.map(drop)
-            },
-            |ts| self.api.update_message(token, &row.channel, ts, line),
-        );
-        if let Err(e) = sent {
-            (self.log)(&format!("slack: turn reply failed: {e}"));
+        let (mut target, mut waits) = (placeholder, BACKOFF.into_iter());
+        loop {
+            let sent = target.map_or_else(
+                || {
+                    let posted = self
+                        .api
+                        .post_message(token, &row.channel, &row.thread_ts, line);
+                    posted.map(drop)
+                },
+                |ts| self.api.update_message(token, &row.channel, ts, line),
+            );
+            let Err(error) = sent else {
+                return true;
+            };
+            (self.log)(&format!("slack: turn reply failed: {error}"));
+            let wait = match &error {
+                ApiError::Slack(code) if target.is_some() && EDIT_REFUSED.contains(&&**code) => {
+                    target = None;
+                    continue;
+                }
+                ApiError::Slack(_) => None,
+                ApiError::RateLimited(asked) => waits.next().map(|w| asked.unwrap_or(w)),
+                ApiError::Transport(_) => waits.next(),
+            };
+            let Some(wait) = wait else {
+                return false;
+            };
+            thread::sleep(wait.min(MAX_WAIT));
         }
     }
 
