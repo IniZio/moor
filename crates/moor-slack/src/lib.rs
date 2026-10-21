@@ -18,6 +18,7 @@ mod dial;
 mod escape;
 mod feed;
 mod login;
+mod prompt;
 mod secret_file;
 mod slash;
 mod socket;

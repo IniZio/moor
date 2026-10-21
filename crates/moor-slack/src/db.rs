@@ -1,6 +1,6 @@
 //! The front's own `SQLite` file, `slack.db`: seen envelopes, each channel's repos, each
-//! thread with the Boxes it asked for, what its starter wrote, its coordinator turns and what
-//! those turns did to its Boxes.
+//! thread with the Boxes it asked for, what its starter wrote, its coordinator turns, what
+//! those turns did to its Boxes and the questions its Boxes asked.
 
 use std::path::Path;
 use std::time::Duration;
@@ -14,7 +14,7 @@ const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// The schema version this build writes and reads. A schema change edits [`SCHEMA`] in place
 /// and raises this number; there are no migrations, so a file at any other version is refused.
-const SCHEMA_VERSION: i64 = 10;
+const SCHEMA_VERSION: i64 = 11;
 
 /// The whole schema, created in an empty file.
 const SCHEMA: &str = "
@@ -101,6 +101,20 @@ const SCHEMA: &str = "
     );
     CREATE UNIQUE INDEX slack_channel_repos_one_default
         ON slack_channel_repos (channel) WHERE is_default = 1;
+    CREATE TABLE slack_prompts (
+        id INTEGER PRIMARY KEY,
+        box_name TEXT NOT NULL,
+        event_id INTEGER NOT NULL,
+        message_ts TEXT NOT NULL,
+        question TEXT NOT NULL,
+        options TEXT NOT NULL,
+        answer TEXT,
+        answered_by TEXT CHECK ((answer IS NULL) = (answered_by IS NULL)),
+        closed_reason TEXT CHECK (answer IS NULL OR closed_reason IS NULL),
+        shown_at INTEGER,
+        created_at INTEGER NOT NULL,
+        UNIQUE (box_name, event_id)
+    );
 ";
 
 /// A Slack thread the front answers in.
@@ -246,6 +260,9 @@ mod host;
 
 mod inbox;
 pub(crate) use inbox::{InboxItem, ItemKind};
+
+mod prompts;
+pub(crate) use prompts::{Posted, Prompt, PromptState};
 
 mod turns;
 pub(crate) use turns::{End, OpenTurn, TurnRow};

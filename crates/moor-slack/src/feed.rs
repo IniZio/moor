@@ -1,7 +1,8 @@
-//! The feed: folds the controller's events by Box id and keeps each Box's status message and
-//! its fixed lines in the Box's thread. A new watch connection replays every event, so the
-//! feed folds afresh and acts only once the backlog is caught up. Every side effect is
-//! guarded by a `slack.db` row, so a refold after a reconnect or a restart repeats none.
+//! The feed: folds the controller's events by Box id and keeps each Box's status message,
+//! its fixed lines and its needs-input prompts in the Box's thread. A new watch connection
+//! replays every event, so the feed folds afresh and acts only once the backlog is caught up.
+//! Every side effect is guarded by a `slack.db` row, so a refold after a reconnect or a
+//! restart repeats none.
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -34,6 +35,8 @@ struct Fold {
     finished: HashMap<BoxId, Vec<i64>>,
     /// Boxes that closed and whose closed line is not yet known to be posted.
     closed: HashSet<BoxId>,
+    /// The question each Box waits on.
+    asked: HashMap<BoxId, prompts::Asked>,
     /// Whether this connection's backlog is folded.
     caught_up: bool,
 }
@@ -53,6 +56,7 @@ impl Fold {
             .entry(id)
             .or_default()
             .fold(&event.kind, &event.payload);
+        prompts::fold(self, id, &event.kind, event.cursor, &event.payload);
         match event.kind.as_str() {
             "idled" => self.finished.entry(id).or_default().push(event.cursor),
             "closed" => drop(self.closed.insert(id)),
@@ -71,6 +75,8 @@ pub(crate) struct Feed {
     pub(crate) bot_token: Arc<Secret>,
     /// Daemon log.
     pub(crate) log: Log,
+    /// The current time in unix seconds.
+    pub(crate) clock: fn() -> i64,
 }
 
 impl Feed {
@@ -101,8 +107,9 @@ impl Feed {
         }
     }
 
-    /// Sends the status messages that are due, then the lines not yet posted. A line that
-    /// fails holds back every line for [`UPDATE_EVERY`].
+    /// Sends the status messages that are due, closes the prompts whose Box moved on, then
+    /// sends the lines and prompts not yet posted. A line or prompt that fails holds back
+    /// every line and prompt for [`UPDATE_EVERY`].
     fn act(&self, db: &Db, fold: &mut Fold, planner: &mut Planner, lines_due: &mut Instant) {
         let boxes = match db.fed_boxes() {
             Ok(boxes) => boxes,
@@ -113,11 +120,14 @@ impl Feed {
             self.send_status(db, &step);
             planner.record(&step, at);
         }
+        for fed in &boxes {
+            self.close_moved_on(db, fold, &fed.boxed);
+        }
         if at < *lines_due {
             return;
         }
         for fed in &boxes {
-            if !self.lines(db, fold, &fed.boxed) {
+            if !self.lines(db, fold, &fed.boxed) || !self.prompts(db, fold, &fed.boxed) {
                 *lines_due = at + UPDATE_EVERY;
                 return;
             }
@@ -220,6 +230,7 @@ fn now() -> Instant {
     Instant::now()
 }
 
+mod prompts;
 mod status;
 
 #[cfg(test)]

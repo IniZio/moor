@@ -23,6 +23,8 @@ mod inbox;
 mod login;
 #[path = "daemon/mcp.rs"]
 mod mcp;
+#[path = "daemon/prompt.rs"]
+mod prompt;
 #[path = "daemon/repo.rs"]
 mod repo;
 #[path = "daemon/restart.rs"]

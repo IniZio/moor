@@ -144,6 +144,10 @@ cannot start, when its agent finishes a turn, and when it closes. Each event
 also waits as a notice for the thread's next turn. A Box event never starts a
 turn.
 
+When a Box's agent waits on a question, the front posts the question in the
+thread with one button per option, addressed to the person who asked for the
+Box. A question stops being open once its Box moves on.
+
 Only the thread's starter talks to the coordinator. Anyone else who writes
 in the thread gets one line that says only the starter can direct it.
 
