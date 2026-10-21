@@ -119,6 +119,25 @@ fn a_resume_start_after_the_agent_exited_opens_a_new_session() {
 }
 
 #[test]
+fn a_plain_start_after_the_agent_exited_launches_nothing_once_settled() {
+    let (w, engine, id) = exited_agent();
+    let v = run(&w.cx, &req("demo")).unwrap();
+    assert!(!v.agent.launched);
+    assert_eq!(engine.launches().len(), 1);
+    assert!(w.cx.store().unwrap().live_session(id).unwrap().is_none());
+}
+
+#[test]
+fn a_plain_start_after_the_agent_exited_launches_nothing_before_settling() {
+    let (w, engine, _) = super::relaunch::started();
+    w.surface
+        .push_pane_obs("p-1", Ok(super::relaunch::obs(Some(3))));
+    let v = run(&w.cx, &req("demo")).unwrap();
+    assert!(!v.agent.launched);
+    assert_eq!(engine.launches().len(), 1);
+}
+
+#[test]
 fn a_wake_after_the_agent_exited_opens_a_new_session() {
     let (w, engine, id) = exited_agent();
     crate::ops::start::revive_after_wake(&w.cx, w.cx.store().unwrap(), id).unwrap();

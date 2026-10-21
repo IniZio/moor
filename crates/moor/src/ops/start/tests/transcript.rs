@@ -4,7 +4,7 @@ use std::sync::Arc;
 use moor_core::domain::boxes::BoxInput;
 use moor_core::domain::decision::Decision;
 use moor_core::seam::engine::EngineError;
-use moor_core::BoxId;
+use moor_core::{BoxId, StartReq};
 
 use super::relaunch::{gone, session, set_agent_session, started};
 use super::{req, World};
@@ -32,6 +32,15 @@ fn first_digest(w: &World, id: BoxId) -> Option<String> {
             |r| r.get(0),
         )
         .unwrap()
+}
+
+/// A start of `demo` that resumes the stored agent session, or else gives the goal again.
+fn asked(resume: bool) -> StartReq {
+    StartReq {
+        goal: (!resume).then(|| "ship it".to_owned()),
+        resume,
+        ..req("demo")
+    }
 }
 
 /// A started world whose engine serves `transcript`; the old session is still live in the hook.
@@ -63,7 +72,7 @@ fn relaunch_saves_the_transcript_before_ending_the_old_session() {
         seen.store(open == 1, Ordering::SeqCst);
     });
     gone(&w);
-    let v = run(&w.cx, &req("demo")).unwrap();
+    let v = run(&w.cx, &asked(false)).unwrap();
     assert!(v.agent.launched);
     assert!(live_at_save.load(Ordering::SeqCst));
     assert_eq!(engine.transcripts().len(), 1);
@@ -77,7 +86,7 @@ fn a_failed_save_records_the_failure_and_the_relaunch_goes_on() {
         FakeEngine::new().fail_transcript(EngineError::Transcript("copy: boom".into())),
     );
     gone(&w);
-    let v = run(&w.cx, &req("demo")).unwrap();
+    let v = run(&w.cx, &asked(false)).unwrap();
     assert!(v.agent.launched);
     assert_eq!(engine.launches().len(), 1);
     assert_eq!(kinds(&w, id), ["transcript_failed"]);
@@ -89,7 +98,7 @@ fn a_resuming_relaunch_skips_the_save_and_makes_no_box_call() {
     let (w, engine, id) = with_transcript(FakeEngine::new().transcript_text("abc"));
     set_agent_session(&w, id, "agent-1");
     gone(&w);
-    let v = run(&w.cx, &req("demo")).unwrap();
+    let v = run(&w.cx, &asked(true)).unwrap();
     assert!(v.agent.launched);
     assert!(engine.transcripts().is_empty());
     assert_eq!(kinds(&w, id), ["transcript_skipped"]);
@@ -125,7 +134,7 @@ fn a_resuming_relaunch_on_a_recreated_box_still_saves() {
     let lost = Decision::new(id).box_input(BoxInput::DriverMissing);
     w.cx.store().unwrap().apply(lost).unwrap();
     gone(&w);
-    let v = run(&w.cx, &req("demo")).unwrap();
+    let v = run(&w.cx, &asked(true)).unwrap();
     assert!(v.agent.launched);
     assert_eq!(engine.transcripts().len(), 1);
     assert_eq!(kinds(&w, id), ["transcript_saved"]);

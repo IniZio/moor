@@ -46,7 +46,28 @@ enum Ended {
     Exited(i32),
 }
 
-/// Launches, or relaunches, the agent of an attached Box.
+/// Launches, or relaunches, the agent of an attached Box when `req` gives a goal or `--resume`.
+///
+/// Without either nothing launches, whether or not the agent's pane has ended, so a start
+/// never runs the stored goal again on its own.
+///
+/// # Errors
+/// As [`launch_asked`].
+pub(super) fn run(
+    cx: &Cx,
+    store: &Store,
+    req: &StartReq,
+    id: BoxId,
+    setup: (Option<i32>, bool),
+    settings: &dyn Fn() -> Result<BoxSettings, CommandError>,
+) -> Result<AgentLaunchView, CommandError> {
+    if !asks_for_agent(req) {
+        return Ok(AgentLaunchView::default());
+    }
+    launch_asked(cx, store, req, id, setup, settings)
+}
+
+/// Launches the agent of an attached Box, or relaunches it once its pane has ended.
 ///
 /// The Box lock is held from the live-session check through the launch, so two starts cannot both
 /// launch; it is released on return, before anything waits on the agent.
@@ -58,7 +79,7 @@ enum Ended {
 /// `setup_exit` is the setup exit of a Box just provisioned, and whether that Box replaced a lost one.
 ///
 /// `settings` is evaluated once, before anything changes, and holds the config the launch uses.
-pub(super) fn run(
+fn launch_asked(
     cx: &Cx,
     store: &Store,
     req: &StartReq,
@@ -67,28 +88,18 @@ pub(super) fn run(
     settings: &dyn Fn() -> Result<BoxSettings, CommandError>,
 ) -> Result<AgentLaunchView, CommandError> {
     let row = reread(store, id)?;
-    if req.no_agent || !launch::working(&row) {
+    if !launch::working(&row) {
         return launch::run(cx, store, req, id, setup_exit, settings);
     }
-    match store.live_session(id)? {
-        Some(s) if ended(cx, &s).is_none() => {
-            on_live(cx, store, req, &row, &s);
-            return Ok(AgentLaunchView::default());
-        }
-        None if row.goal.is_none() && req.goal.is_none() && !req.resume => {
-            return Ok(AgentLaunchView::default());
-        }
-        _ => {}
+    if let Some(s) = store.live_session(id)?.filter(|s| ended(cx, s).is_none()) {
+        on_live(cx, store, req, &row, &s);
+        return Ok(AgentLaunchView::default());
     }
     let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "start", boxlock::WAIT)?;
     let Some(old) = store.live_session(id)? else {
-        if req.goal.is_some() || row.goal.is_some() || resumes(req, &row) {
-            let cfg = settings()?;
-            store_goal(store, req, id)?;
-            return launch::run(cx, store, req, id, setup_exit, &|| Ok(cfg.clone()));
-        }
+        let cfg = settings()?;
         store_goal(store, req, id)?;
-        return launch::run(cx, store, req, id, setup_exit, settings);
+        return launch::run(cx, store, req, id, setup_exit, &|| Ok(cfg.clone()));
     };
     let Some(end) = ended(cx, &old) else {
         on_live(cx, store, req, &row, &old);
@@ -97,14 +108,9 @@ pub(super) fn run(
     relaunch(cx, store, req, (&old, &end), (recreated, None), settings)
 }
 
-/// Whether `req` resumes the stored agent session of `row`.
-fn resumes(req: &StartReq, row: &BoxRow) -> bool {
-    req.resume
-        && req.goal.is_none()
-        && row
-            .agent_session_id
-            .as_deref()
-            .is_some_and(|s| !s.is_empty())
+/// Whether a start of an open Box asks for its agent: a goal or `--resume`, without `--no-agent`.
+const fn asks_for_agent(req: &StartReq) -> bool {
+    !req.no_agent && (req.goal.is_some() || req.resume)
 }
 
 /// Refuses `--resume` for a Box with no stored agent session.

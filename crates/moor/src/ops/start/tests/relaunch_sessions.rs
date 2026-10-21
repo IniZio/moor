@@ -32,7 +32,11 @@ fn a_first_launch_uses_the_only_session() {
 fn a_relaunch_ends_the_session_and_opens_the_next() {
     let (w, _engine, id) = started();
     w.surface.push_pane_obs("p-1", Ok(obs(Some(3))));
-    run(&w.cx, &req("demo")).unwrap();
+    let again = moor_core::StartReq {
+        goal: Some("ship it".into()),
+        ..req("demo")
+    };
+    run(&w.cx, &again).unwrap();
     assert_eq!(
         sessions(&w, id),
         [(1, "ended".to_owned(), 1), (2, "working".to_owned(), 1)]

@@ -106,10 +106,13 @@ fn warning_codes(w: &World) -> Vec<String> {
 }
 
 #[test]
-fn a_gone_pane_relaunches_with_the_newest_goal() {
+fn a_gone_pane_relaunches_only_with_a_goal() {
     let (w, engine, id) = started();
     gone(&w);
-    let v = run(&w.cx, &req("demo")).unwrap();
+    assert!(!run(&w.cx, &req("demo")).unwrap().agent.launched);
+    assert_eq!(engine.launches().len(), 1);
+    gone(&w);
+    let v = run(&w.cx, &goal_req("ship it")).unwrap();
     assert!(v.agent.launched);
     let second = relaunch_of(&engine);
     assert_eq!(second.goal.as_deref(), Some("ship it"));
@@ -146,7 +149,7 @@ fn a_relaunch_records_the_given_parent_session() {
 fn an_exited_pane_relaunches_and_the_old_session_keeps_its_exit() {
     let (w, engine, id) = started();
     w.surface.push_pane_obs("p-1", Ok(obs(Some(3))));
-    run(&w.cx, &req("demo")).unwrap();
+    run(&w.cx, &goal_req("ship it")).unwrap();
     assert_eq!(engine.launches().len(), 2);
     assert_eq!(live_pane(&w, id).as_deref(), Some("p-2"));
     assert_eq!(exit_of_first_session(&w, id), Some(3));
@@ -175,21 +178,19 @@ fn a_stored_agent_session_relaunches_with_resume() {
     let (w, engine, id) = started();
     gone(&w);
     set_agent_session(&w, id, "agent-1");
-    run(&w.cx, &req("demo")).unwrap();
+    run(&w.cx, &resume_req()).unwrap();
     let second = relaunch_of(&engine);
     assert_eq!(second.resume.as_deref(), Some("agent-1"));
     assert_eq!(live_pane(&w, id).as_deref(), Some("p-2"));
 }
 
 #[test]
-fn an_empty_stored_agent_session_uses_the_brief() {
+fn a_stored_agent_session_alone_does_not_relaunch() {
     let (w, engine, id) = started();
     gone(&w);
-    set_agent_session(&w, id, "");
-    run(&w.cx, &req("demo")).unwrap();
-    let second = relaunch_of(&engine);
-    assert_eq!(second.resume, None);
-    assert_eq!(second.goal.as_deref(), Some("ship it"));
+    set_agent_session(&w, id, "agent-1");
+    assert!(!run(&w.cx, &req("demo")).unwrap().agent.launched);
+    assert_eq!(engine.launches().len(), 1);
 }
 
 #[test]
@@ -256,7 +257,7 @@ fn a_failed_relaunch_records_no_relaunched_event_and_sets_the_failure() {
     w.cx = w.cx.with_engine(engine);
     let id = BoxId::new(run(&w.cx, &goal_req("ship it")).unwrap().boxed.id);
     gone(&w);
-    let v = run(&w.cx, &req("demo")).unwrap();
+    let v = run(&w.cx, &goal_req("ship it")).unwrap();
     assert!(!v.agent.launched);
     let store = w.cx.store().unwrap();
     assert!(store.box_row(id).unwrap().unwrap().launch_failure.is_some());
@@ -286,11 +287,11 @@ fn a_gone_pane_start_is_refused_while_another_op_holds_the_lock() {
     let (w, engine, _id) = started();
     gone(&w);
     let held = super::hold(&w, "close");
-    let err = run(&w.cx, &req("demo")).unwrap_err();
+    let err = run(&w.cx, &goal_req("ship it")).unwrap_err();
     assert_eq!(err.error.to_string(), "box busy: close in progress");
     assert_eq!(engine.launches().len(), 1);
     drop(held);
-    assert!(run(&w.cx, &req("demo")).unwrap().agent.launched);
+    assert!(run(&w.cx, &goal_req("ship it")).unwrap().agent.launched);
 }
 
 #[test]
@@ -313,7 +314,7 @@ fn a_relaunch_watches_its_new_pane_for_a_first_run_prompt() {
             ..obs(None)
         }),
     );
-    let v = run(&w.cx, &req("demo")).unwrap();
+    let v = run(&w.cx, &goal_req("ship it")).unwrap();
     assert!(v.agent.launched);
     let events = w.cx.store().unwrap().events(id, 50).unwrap();
     let blocked = events
@@ -499,7 +500,7 @@ fn a_relaunch_that_resumes_registers_the_new_pane() {
     set_agent_session(&w, id, "agent-1");
     w.surface.have_pane("p-2");
     gone(&w);
-    run(&w.cx, &req("demo")).unwrap();
+    run(&w.cx, &resume_req()).unwrap();
     assert_eq!(registrations(&w), ["register_resume p-2 claude agent-1"]);
 }
 

@@ -202,7 +202,7 @@ fn restarting_an_idle_box_with_a_goal_and_no_session_wakes_and_launches_once() {
         .apply(Decision::new(id).session(SessionInput::AgentQuiet))
         .unwrap();
     assert!(idle(&store.box_row(id).unwrap().unwrap()));
-    let again = run(&w.cx, &req("demo")).unwrap();
+    let again = run(&w.cx, &goal_req("demo")).unwrap();
     assert_eq!((again.boxed.lifecycle, again.boxed.session_state), WORKING);
     assert!(again.agent.launched);
     assert_eq!(engine.launches().len(), 2);
@@ -236,7 +236,7 @@ fn rerunning_after_a_failed_launch_launches_once_and_stays_working() {
     let w = with_engine(&engine);
     let first = run(&w.cx, &goal_req("demo")).unwrap();
     let id = BoxId::new(first.boxed.id);
-    let again = run(&w.cx, &req("demo")).unwrap();
+    let again = run(&w.cx, &goal_req("demo")).unwrap();
     assert_eq!((again.boxed.lifecycle, again.boxed.session_state), WORKING);
     assert!(again.agent.launched);
     assert_eq!(engine.launches().len(), 2);

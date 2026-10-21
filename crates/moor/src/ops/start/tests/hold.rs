@@ -49,7 +49,7 @@ fn a_start_without_hold_launches_with_the_brief() {
 fn a_held_relaunch_launches_without_a_prompt() {
     let (w, engine, _id) = started();
     gone(&w);
-    run(&w.cx, &held(None)).unwrap();
+    run(&w.cx, &held(Some("ship it"))).unwrap();
     let all = engine.launches();
     assert_eq!(all.len(), 2);
     let second = all.get(1).unwrap();
@@ -61,7 +61,11 @@ fn a_held_relaunch_launches_without_a_prompt() {
 fn a_relaunch_without_hold_uses_the_brief() {
     let (w, engine, _id) = started();
     gone(&w);
-    run(&w.cx, &req("demo")).unwrap();
+    let again = StartReq {
+        hold: false,
+        ..held(Some("ship it"))
+    };
+    run(&w.cx, &again).unwrap();
     assert_eq!(
         engine.launches().get(1).unwrap().prompt,
         LaunchPrompt::Brief
