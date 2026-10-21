@@ -5,6 +5,9 @@ use rusqlite::{params, OptionalExtension, TransactionBehavior};
 
 use super::{parsed, Store, StoreError};
 
+/// DDL for the bindings table; idempotent, so it runs on every open.
+pub(super) const BINDINGS_SQL: &str = include_str!("bindings.sql");
+
 /// A front conversation bound to a Session.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Binding {
@@ -60,7 +63,7 @@ fn binding_of(row: BindingRow) -> Result<Binding, StoreError> {
 }
 
 /// Insert the binding unless (front, key) is already bound; true when this call created it.
-pub(super) fn insert_binding(
+fn insert_binding(
     conn: &rusqlite::Connection,
     front: &str,
     key: &str,
@@ -121,18 +124,6 @@ impl Store {
             .optional()?
             .map(binding_of)
             .transpose()
-    }
-
-    /// All bindings of `front`, oldest first.
-    pub(crate) fn bindings(&self, front: &str) -> Result<Vec<Binding>, StoreError> {
-        let reader = self.reader()?;
-        let mut stmt = reader.prepare(&format!(
-            "SELECT {COLS} FROM {FROM} WHERE g.front = ? ORDER BY g.created_at, g.rowid"
-        ))?;
-        let rows = stmt
-            .query_map(params![front], row_of)?
-            .collect::<Result<Vec<_>, _>>()?;
-        rows.into_iter().map(binding_of).collect()
     }
 }
 

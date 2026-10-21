@@ -89,32 +89,3 @@ fn ended_session_is_refused() {
     assert!(matches!(err, StoreError::Invalid(_)), "{err:?}");
     assert!(store.binding("cli", "k1").unwrap().is_none());
 }
-
-#[test]
-fn bindings_list_host_and_box_oldest_first() {
-    let dir = tempfile::tempdir().unwrap();
-    let (store, _) = open(dir.path());
-    let host = store.open_host_session("/w", None, None).unwrap();
-    let id = new_box(&store, "acme/1");
-    let boxed = box_session(&store, id);
-    store.bind_session("cli", "a", host, "U1").unwrap();
-    store.bind_session("cli", "b", boxed, "U2").unwrap();
-    let all = store.bindings("cli").unwrap();
-    let keys: Vec<&str> = all.iter().map(|b| b.key.as_str()).collect();
-    assert_eq!(keys, ["a", "b"]);
-    assert_eq!(all[0].box_name, None);
-    assert!(all[1].box_name.is_some());
-}
-
-#[test]
-fn bindings_only_include_the_asked_front() {
-    let dir = tempfile::tempdir().unwrap();
-    let (store, _) = open(dir.path());
-    let session = store.open_host_session("/w", None, None).unwrap();
-    store.bind_session("cli", "a", session, "U1").unwrap();
-    store.bind_session("web", "b", session, "U1").unwrap();
-    let cli = store.bindings("cli").unwrap();
-    assert_eq!(cli.len(), 1);
-    assert_eq!(cli[0].key, "a");
-    assert!(store.bindings("none").unwrap().is_empty());
-}

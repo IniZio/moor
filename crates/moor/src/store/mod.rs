@@ -34,7 +34,6 @@ mod reports;
 mod runs;
 mod seq;
 mod sessions;
-mod slack;
 #[cfg(test)]
 mod tests;
 mod turns;
@@ -43,7 +42,6 @@ pub(crate) use agent::SessionRow;
 pub(crate) use proxy::{Fenced, Lease, ProxyRow, ReadyProc, Reserve};
 pub(crate) use proxy::{TunnelAck, TunnelRequest, TunnelWant};
 pub(crate) use runs::{NewRun, RunOutcome, RunRow};
-pub(crate) use slack::{SlackPrompt, SlackThread};
 
 /// Schema version this build reads and writes.
 pub(crate) const SCHEMA_VERSION: &str = "5";
