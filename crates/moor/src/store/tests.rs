@@ -94,7 +94,7 @@ fn open_creates_wal_file_with_schema_version() {
             r.get(0)
         })
         .unwrap();
-    assert_eq!(v, "9");
+    assert_eq!(v, "10");
     drop(raw);
     let (store, _) = open(dir.path());
     assert!(store.open_boxes().unwrap().is_empty());
@@ -142,6 +142,20 @@ fn a_state_dir_from_another_schema_version_is_refused_and_kept() {
         )
         .unwrap();
     assert_eq!(kept, ("4".to_owned(), "kept".to_owned()));
+}
+
+#[test]
+fn a_state_dir_from_before_the_cloned_event_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("state").join("moor.db");
+    drop(open(dir.path()));
+    rusqlite::Connection::open(&path)
+        .unwrap()
+        .execute("UPDATE meta SET v = '9' WHERE k = 'schema_version'", [])
+        .unwrap();
+    let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
+    let err = Store::open(&path, clock).err().unwrap().to_string();
+    assert!(err.contains("use a fresh state dir"), "{err}");
 }
 
 #[test]

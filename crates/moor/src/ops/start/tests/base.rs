@@ -59,9 +59,12 @@ fn a_failed_fetch_falls_back_to_the_local_branch_with_a_warning() {
     assert_eq!(w.surface.bases(), [None]);
     assert_eq!(v.boxed.base.as_deref(), Some("abc123"));
     let warnings = w.cx.take_warnings();
+    let warning = warnings.iter().find(|x| x.code == "fetch_failed");
+    let message = &warning.expect("a fetch_failed warning").message;
     assert!(
-        warnings.iter().any(|x| x.code == "fetch_failed"),
-        "{warnings:?}"
+        message.contains("could not resolve host")
+            && message.contains("the Box starts from local HEAD abc123"),
+        "{message}"
     );
 }
 

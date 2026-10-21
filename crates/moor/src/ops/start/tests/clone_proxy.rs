@@ -85,7 +85,7 @@ fn the_proxy_is_ready_before_the_clone_exec_and_its_env_is_on_it() {
     let clone = spec.argv.last().unwrap();
     assert!(
         clone.contains(
-            "git clone -q --filter=blob:none --no-checkout 'https://github.com/o/n.git' ."
+            "git clone -q --filter=blob:none --no-checkout -- 'https://github.com/o/n.git' ."
         ),
         "{clone}"
     );
@@ -96,7 +96,7 @@ fn the_proxy_is_ready_before_the_clone_exec_and_its_env_is_on_it() {
             .unwrap()
             .unwrap();
     let branch = row.branch.unwrap();
-    assert!(clone.contains(&format!("-B '{branch}'")), "{clone}");
+    assert!(clone.contains(&format!("-b '{branch}'")), "{clone}");
     let kinds = super::setup::kinds(&w, BoxId::new(1));
     assert!(kinds.contains(&"cloned".to_owned()), "{kinds:?}");
 }
@@ -112,6 +112,26 @@ fn a_box_with_no_github_repo_starts_no_proxy_and_runs_no_clone() {
     assert!(w.driver.execs().is_empty(), "{:?}", w.driver.execs());
     let kinds = super::setup::kinds(&w, BoxId::new(1));
     assert!(!kinds.contains(&"cloned".to_owned()), "{kinds:?}");
+}
+
+#[test]
+fn the_no_clone_warning_for_another_host_never_quotes_its_origin() {
+    const ORIGIN: &str = "https://deploy:hunter2@git.example.com/o/n.git";
+    let repo = tempfile::tempdir().unwrap();
+    let mut w = world_at(FakeDriver::new(), repo.path());
+    w.proc.on(
+        Tool::Git,
+        &["remote", "get-url", "origin"],
+        Reply::Ok(format!("{ORIGIN}\n")),
+    );
+    w.cx = w.cx.with_proxy_host(Arc::new(FakeProxyHost::new()));
+    run(&w.cx, &start_req()).unwrap();
+    let warnings = w.cx.take_warnings();
+    let warning = warnings.iter().find(|x| x.code == "no_clone");
+    let message = &warning.expect("a no_clone warning").message;
+    for part in ["hunter2", "deploy", "git.example.com"] {
+        assert!(!message.contains(part), "{message}");
+    }
 }
 
 #[test]
