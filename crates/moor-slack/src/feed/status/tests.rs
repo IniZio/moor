@@ -91,6 +91,36 @@ fn question_cannot_ping() {
 }
 
 #[test]
+fn a_question_is_cut_after_300_characters() {
+    let render_question = |q: &str| {
+        let v = folded(&[("needs_input", json!({ "question": q }))]);
+        render("t", &v, "", None)
+    };
+    let fits = "é".repeat(300);
+    assert_eq!(render_question(&fits), format!("*t*: needs input: {fits}"));
+    let long = "é".repeat(301);
+    assert_eq!(
+        render_question(&long),
+        format!("*t*: needs input: {fits}...")
+    );
+}
+
+#[test]
+fn the_reason_the_setup_line_and_the_branch_cannot_ping() {
+    let raw = "<!channel> & <@U1>";
+    let shown = "&lt;!channel&gt; &amp; &lt;@U1&gt;";
+    for (kind, key, head) in [
+        ("rejected", "reason", "rejected"),
+        ("setup_failed", "line", "setup failed"),
+    ] {
+        let v = folded(&[(kind, json!({ key: raw }))]);
+        assert_eq!(render("t", &v, "", None), format!("*t*: {head}: {shown}"));
+    }
+    let text = render("t", &View::default(), "acme/app", Some(raw));
+    assert!(text.ends_with(&format!("|{shown}>")), "{text}");
+}
+
+#[test]
 fn the_status_links_pull_requests_from_its_branch_only_for_an_owner_and_name_repo() {
     let v = View::default();
     let text = render("fix-bug", &v, "acme/app", Some("moor/fix bug"));
