@@ -75,7 +75,7 @@ pub struct CredPlan {
     pub name: String,
     /// `Repo` if the repo's `box_credentials` names it, else `User`.
     pub layer: Layer,
-    /// Named by a repo or user `box_credentials` entry, so it is delivered into the Box.
+    /// Named by a repo or user `box_credentials` entry, not only by an MCP ref.
     pub boxed: bool,
 }
 
