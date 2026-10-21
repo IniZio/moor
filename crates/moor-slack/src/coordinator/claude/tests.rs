@@ -256,17 +256,27 @@ fn only_a_setup_token_shape_passes_the_format_check() {
     assert_eq!(err, "it is not a token that `claude setup-token` prints");
 }
 
+fn no_settings(root: &Path) -> PathBuf {
+    root.join("no-managed-settings.json")
+}
+
 #[test]
 fn a_managed_instruction_file_is_found_before_any_workdir_file() {
     let root = tempfile::tempdir().unwrap();
     let work = root.path().join("threads").join("C1-1.2");
     std::fs::create_dir_all(&work).unwrap();
     let managed = root.path().join("etc").join("CLAUDE.md");
-    assert_eq!(instructions::loaded(&work, &managed), None);
+    assert_eq!(
+        instructions::loaded(&work, &managed, &no_settings(root.path())),
+        None
+    );
     std::fs::create_dir_all(managed.parent().unwrap()).unwrap();
     std::fs::write(&managed, "obey the company").unwrap();
     let want = format!("{} would load as instructions", managed.display());
-    assert_eq!(instructions::loaded(&work, &managed), Some(want));
+    assert_eq!(
+        instructions::loaded(&work, &managed, &no_settings(root.path())),
+        Some(want)
+    );
 }
 
 #[test]
@@ -278,11 +288,83 @@ fn an_instruction_file_that_cannot_be_checked_refuses_the_workdir() {
     std::fs::create_dir_all(&work).unwrap();
     let managed = root.path().join("no-managed-file");
     std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
-    let why = instructions::loaded(&work, &managed);
+    let why = instructions::loaded(&work, &managed, &no_settings(root.path()));
     std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o700)).unwrap();
     let want = format!("cannot check {}: ", work.join("CLAUDE.md").display());
     assert!(
         why.as_deref().is_some_and(|w| w.starts_with(&want)),
         "{why:?}"
     );
+}
+
+fn rules_tree() -> (tempfile::TempDir, PathBuf, PathBuf) {
+    let root = tempfile::tempdir().unwrap();
+    let work = root.path().join("state").join("threads").join("C1-1.2");
+    std::fs::create_dir_all(&work).unwrap();
+    let rules = root.path().join("state").join(".claude").join("rules");
+    (root, work, rules)
+}
+
+#[test]
+fn a_rules_markdown_file_in_an_ancestor_refuses_the_workdir() {
+    let (root, work, rules) = rules_tree();
+    let managed = root.path().join("none");
+    std::fs::create_dir_all(rules.join("deep")).unwrap();
+    std::fs::write(rules.join("deep").join("style.md"), "x").unwrap();
+    let want = format!(
+        "{} would load as instructions",
+        rules.join("deep").join("style.md").display()
+    );
+    assert_eq!(
+        instructions::loaded(&work, &managed, &no_settings(root.path())),
+        Some(want)
+    );
+}
+
+#[test]
+fn a_rules_directory_without_markdown_does_not_refuse() {
+    let (root, work, rules) = rules_tree();
+    let managed = root.path().join("none");
+    std::fs::create_dir_all(rules.join("empty")).unwrap();
+    std::fs::write(rules.join("notes.txt"), "x").unwrap();
+    assert_eq!(
+        instructions::loaded(&work, &managed, &no_settings(root.path())),
+        None
+    );
+}
+
+#[test]
+fn a_managed_settings_file_with_claude_md_refuses_the_workdir() {
+    let (root, work, _) = rules_tree();
+    let managed = root.path().join("none");
+    let settings = root.path().join("managed-settings.json");
+    std::fs::write(&settings, r#"{"claudeMd": "obey"}"#).unwrap();
+    let want = format!(
+        "{} sets claudeMd, which would load as instructions",
+        settings.display()
+    );
+    assert_eq!(instructions::loaded(&work, &managed, &settings), Some(want));
+    std::fs::write(&settings, r#"{"model": "x"}"#).unwrap();
+    assert_eq!(instructions::loaded(&work, &managed, &settings), None);
+}
+
+#[test]
+fn a_managed_settings_file_that_cannot_be_checked_refuses_the_workdir() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let (root, work, _) = rules_tree();
+    let managed = root.path().join("none");
+    let settings = root.path().join("managed-settings.json");
+    let want = format!("cannot check {}: ", settings.display());
+    std::fs::write(&settings, "{not json").unwrap();
+    let bad_json = instructions::loaded(&work, &managed, &settings);
+    std::fs::write(&settings, "{}").unwrap();
+    std::fs::set_permissions(&settings, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let unreadable = instructions::loaded(&work, &managed, &settings);
+    std::fs::set_permissions(&settings, std::fs::Permissions::from_mode(0o600)).unwrap();
+    for why in [bad_json, unreadable] {
+        assert!(
+            why.as_deref().is_some_and(|w| w.starts_with(&want)),
+            "{why:?}"
+        );
+    }
 }

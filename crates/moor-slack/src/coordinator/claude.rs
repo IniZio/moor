@@ -168,7 +168,11 @@ impl Agent for Claude {
     }
 
     fn unsafe_workdir(&self, workdir: &Path) -> Option<String> {
-        instructions::loaded(workdir, Path::new(instructions::MANAGED))
+        instructions::loaded(
+            workdir,
+            Path::new(instructions::MANAGED),
+            Path::new(instructions::MANAGED_SETTINGS),
+        )
     }
 }
 
