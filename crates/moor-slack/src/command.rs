@@ -1,4 +1,4 @@
-//! Parses app mentions and decides what each one does.
+//! Parses app mentions and thread messages and decides what each one does.
 
 use moor_core::name::{BoxName, NameError};
 
@@ -33,23 +33,23 @@ pub(super) enum Action {
     },
 }
 
-/// What a plain thread reply in a bound thread should cause.
+/// What a message in a thread the front keeps should cause.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum ReplyAction {
     /// Nothing to send; post nothing.
     Ignore,
-    /// Steer the Box with this text.
-    Steer(String),
-    /// Close the Box.
+    /// Queue this text for the thread's coordinator.
+    Queue(String),
+    /// Close the thread's open Box.
     Close,
     /// Post this text in the thread and change nothing.
     Refuse(String),
 }
 
-/// Decides what a reply in a bound thread does; only the Box `owner` may steer or close.
-pub(crate) fn reply_action(owner: &str, user: &str, text: &str) -> ReplyAction {
-    if user != owner {
-        return ReplyAction::Refuse(format!("Only <@{owner}> can steer this Box."));
+/// Decides what a message in a kept thread does; only the thread's `starter` may direct it.
+pub(crate) fn reply_action(starter: &str, user: &str, text: &str) -> ReplyAction {
+    if user != starter {
+        return ReplyAction::Refuse(format!("Only <@{starter}> can direct this thread."));
     }
     let text = strip_mentions(text).trim();
     if text.is_empty() {
@@ -57,8 +57,44 @@ pub(crate) fn reply_action(owner: &str, user: &str, text: &str) -> ReplyAction {
     } else if text.eq_ignore_ascii_case("close") {
         ReplyAction::Close
     } else {
-        ReplyAction::Steer(text.to_owned())
+        ReplyAction::Queue(text.to_owned())
     }
+}
+
+/// The Box a `close` from `user` closes: the thread's one open Box, when `user` asked for it
+/// and it is bound. Otherwise the line that says why nothing closes.
+pub(crate) fn close_target<'a>(boxes: &'a [SlackBox], user: &str) -> Result<&'a SlackBox, String> {
+    let open: Vec<_> = boxes
+        .iter()
+        .filter(|b| !matches!(b.state, BoxState::Gone { .. }))
+        .collect();
+    let target = match open.as_slice() {
+        [] => return Err("This thread has no open Box.".to_owned()),
+        [one] => *one,
+        many => {
+            return Err(format!(
+                "This thread has {} open Boxes. Ask the coordinator which to close.",
+                many.len()
+            ))
+        }
+    };
+    let name = target.box_name.as_str();
+    if target.requested_by != user {
+        let by = &target.requested_by;
+        return Err(format!("Only <@{by}> can close Box `{name}`."));
+    }
+    match target.state {
+        BoxState::Starting => Err(format!(
+            "Box `{name}` is still starting. Send close again once it has started."
+        )),
+        BoxState::Closing { .. } => Err(format!("Box `{name}` is already closing.")),
+        BoxState::Bound { .. } | BoxState::Gone { .. } => Ok(target),
+    }
+}
+
+/// True when `text` is a well-formed `start` command.
+pub(crate) fn is_start(text: &str) -> bool {
+    parse_start(strip_mentions(text)).is_some()
 }
 
 /// Decides what one app mention does. `thread` is the thread root ts (`thread_ts`, else the
@@ -88,8 +124,11 @@ pub(super) fn decide(
             BoxState::Starting => {
                 format!("Box `{name}` is still starting; nothing new was started.")
             }
-            BoxState::Bound { .. } => {
+            BoxState::Bound { .. } | BoxState::Closing { .. } => {
                 format!("This thread already runs Box `{name}`; nothing was started.")
+            }
+            BoxState::Gone { .. } => {
+                format!("Box `{name}` of this thread is closed; nothing was started.")
             }
         });
     }

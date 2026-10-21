@@ -9,8 +9,12 @@
 
 mod support;
 
+#[path = "daemon/close.rs"]
+mod close;
 #[path = "daemon/connect.rs"]
 mod connect;
+#[path = "daemon/inbox.rs"]
+mod inbox;
 #[path = "daemon/login.rs"]
 mod login;
 #[path = "daemon/repo.rs"]

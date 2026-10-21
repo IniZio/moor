@@ -8,10 +8,6 @@ use std::sync::Arc;
     reason = "edits, blocks and ephemeral posts come with status messages and prompts"
 )]
 mod api;
-#[expect(
-    dead_code,
-    reason = "thread replies are parsed once the worker steers and closes Boxes"
-)]
 mod command;
 pub mod config;
 mod coordinator;
