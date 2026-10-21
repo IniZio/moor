@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
+use rustix::process::{kill_process_group, Pid, Signal};
 use serde_json::json;
 
 use super::support::{Rig, CHANNEL, QUIET, TS, USER};
@@ -144,9 +145,9 @@ fn a_recorded_pid_with_another_start_time_is_left_alone() {
     std::thread::sleep(QUIET);
     let alive =
         std::fs::read_to_string(format!("/proc/{pid}/stat")).is_ok_and(|s| !s.contains(") Z "));
-    let _ = Command::new("kill")
-        .args(["-KILL", &format!("-{pid}")])
-        .status();
+    if let Some(group) = i32::try_from(pid).ok().and_then(Pid::from_raw) {
+        let _ = kill_process_group(group, Signal::KILL);
+    }
     assert!(alive, "the restart killed a process by its pid alone");
 }
 
