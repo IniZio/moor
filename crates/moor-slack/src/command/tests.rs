@@ -14,11 +14,15 @@ fn replies_name_the_box() {
 }
 
 #[test]
-fn a_branch_or_error_from_the_controller_cannot_ping_or_break_the_code_span() {
+fn a_branch_or_error_from_the_controller_cannot_ping_and_a_backticked_branch_is_posted_plain() {
     let name = BoxName::parse_allow_bare("slack-1-2").unwrap();
     assert_eq!(
+        started(&name, Some("moor/<!channel> & y")),
+        "Started Box `slack-1-2` on branch `moor/&lt;!channel&gt; &amp; y`."
+    );
+    assert_eq!(
         started(&name, Some("moor/<!channel>`x` & y")),
-        "Started Box `slack-1-2` on branch `moor/&lt;!channel&gt;ˋxˋ &amp; y`."
+        "Started Box `slack-1-2` on branch moor/&lt;!channel&gt;`x` &amp; y."
     );
     assert_eq!(
         failed(&name, "<!here> no `repo` & <@U1>"),
