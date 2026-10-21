@@ -3,11 +3,11 @@
 use std::time::Duration;
 
 use moor_core::seam::clock::{Clock as _, Ts};
-use moor_core::user::{Identity, SecretName};
+use moor_core::user::{Identity, SecretName, UserId};
 use moor_core::Secret;
 
 use crate::store::tests::open;
-use crate::store::StoreError;
+use crate::store::{Store, StoreError};
 use crate::vault::{Vault, VaultError};
 
 fn id(s: &str) -> Identity {
@@ -137,6 +137,69 @@ fn user_secrets_are_stored_sealed_and_opened_on_every_read() {
         .user_secret(&vault, user, &name("claude"))
         .unwrap()
         .is_none());
+}
+
+fn put(store: &Store, vault: &Vault, user: UserId, key: &str, value: &str) {
+    let sealed = vault
+        .seal(user, &name(key), &Secret::new(value.into()))
+        .unwrap();
+    store.set_user_secret(user, &name(key), &sealed).unwrap();
+}
+
+#[test]
+fn listing_secret_names_shows_only_the_users_own() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = open(dir.path());
+    let vault = Vault::load_or_create(&dir.path().join("vault.key")).unwrap();
+    let (alice, _) = store.enroll(&id("local:1000")).unwrap();
+    let (bob, _) = store.enroll(&id("web:bob")).unwrap();
+    put(&store, &vault, alice, "github", "a-github");
+    put(&store, &vault, bob, "claude", "b-claude");
+    put(&store, &vault, bob, "openai", "b-openai");
+    assert_eq!(
+        store.user_secret_names(alice).unwrap(),
+        vec![name("github")]
+    );
+    assert_eq!(
+        store.user_secret_names(bob).unwrap(),
+        vec![name("claude"), name("openai")]
+    );
+}
+
+#[test]
+fn deleting_a_secret_leaves_another_users_same_name() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = open(dir.path());
+    let vault = Vault::load_or_create(&dir.path().join("vault.key")).unwrap();
+    let (alice, _) = store.enroll(&id("local:1000")).unwrap();
+    let (bob, _) = store.enroll(&id("web:bob")).unwrap();
+    put(&store, &vault, alice, "github", "a-github");
+    put(&store, &vault, bob, "github", "b-github");
+    let deleted = store.delete_user_secret(alice, &name("github")).unwrap();
+    let kept = store.user_secret(&vault, bob, &name("github")).unwrap();
+    assert_eq!(
+        kept.map(|s| s.expose().to_vec()),
+        Some(b"b-github".to_vec())
+    );
+    assert!(deleted);
+    assert!(store
+        .user_secret(&vault, alice, &name("github"))
+        .unwrap()
+        .is_none());
+}
+
+#[test]
+fn each_secret_name_opens_to_its_own_value() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = open(dir.path());
+    let vault = Vault::load_or_create(&dir.path().join("vault.key")).unwrap();
+    let (alice, _) = store.enroll(&id("local:1000")).unwrap();
+    put(&store, &vault, alice, "claude", "a-claude");
+    put(&store, &vault, alice, "github", "a-github");
+    for (key, value) in [("claude", "a-claude"), ("github", "a-github")] {
+        let got = store.user_secret(&vault, alice, &name(key)).unwrap();
+        assert_eq!(got.unwrap().expose(), value.as_bytes(), "{key}");
+    }
 }
 
 #[test]
