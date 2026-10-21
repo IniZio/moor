@@ -5,9 +5,11 @@ if [ "$1" = "--version" ]; then
   exit 0
 fi
 n=0
-while [ -e "$dir/run-$n" ]; do n=$((n + 1)); done
+until mkdir "$dir/run-$n" 2>/dev/null; do
+  [ -d "$dir/run-$n" ] || exit 1
+  n=$((n + 1))
+done
 out="$dir/run-$n"
-mkdir "$out"
 echo $$ > "$out/pid"
 for arg in "$@"; do printf '%s\n' "$arg"; done > "$out/argv"
 tr '\0' '\n' < /proc/$$/environ > "$out/env"
