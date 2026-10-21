@@ -57,7 +57,7 @@ fn prompt_of(db: &Db, row: &SlackBox, event_id: i64) -> Prompt {
     let posted = Posted {
         box_name: &row.box_name,
         event_id,
-        message_ts: &format!("9.{event_id}"),
+        message_ts: Some(&format!("9.{event_id}")),
         question: "Which db?",
         options: &["pg".to_owned(), "sqlite".to_owned()],
     };

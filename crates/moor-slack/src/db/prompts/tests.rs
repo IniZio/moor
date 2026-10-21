@@ -39,7 +39,7 @@ fn post(db: &Db, name: &str, event_id: i64) {
     let posted = Posted {
         box_name: &box_name,
         event_id,
-        message_ts: &format!("m{event_id}"),
+        message_ts: Some(&format!("m{event_id}")),
         question: "Which?",
         options: &["a".to_owned(), "b".to_owned()],
     };
@@ -59,8 +59,8 @@ fn a_prompt_is_recorded_once_per_box_and_event() {
     assert_eq!(open.len(), 1);
     let found = &open[0];
     assert_eq!(
-        (found.channel.as_str(), found.message_ts.as_str()),
-        ("C1", "m5")
+        (found.channel.as_str(), found.message_ts.as_deref()),
+        ("C1", Some("m5"))
     );
     assert_eq!(found.requested_by, "U1");
     assert_eq!(found.options, vec!["a".to_owned(), "b".to_owned()]);

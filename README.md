@@ -146,7 +146,10 @@ turn.
 
 When a Box's agent waits on a question, the front posts the question in the
 thread with one button per option, addressed to the person who asked for the
-Box. A question stops being open once its Box moves on.
+Box. Slack takes at most 25 buttons, so options past the 25th are listed by
+number instead. A question stops being open once its Box moves on. A
+question Slack refuses to post is logged and dropped, and the other Boxes
+are served as before.
 
 Only the thread's starter talks to the coordinator. Anyone else who writes
 in the thread gets one line that says only the starter can direct it.

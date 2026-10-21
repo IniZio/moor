@@ -8,6 +8,7 @@ use serde_json::Value;
 
 use super::status::{State, View};
 use super::{Feed, Fold};
+use crate::api::ApiError;
 use crate::db::{BoxState, Db, Posted, Prompt, PromptState, SlackBox};
 use crate::prompt::{answered_blocks, open_blocks, text};
 
@@ -141,21 +142,29 @@ impl Feed {
     }
 
     /// Posts the prompt for `asked` in the thread of `boxed`, then records it. A crash in
-    /// between posts it again on the next refold.
+    /// between posts it again on the next refold. A prompt Slack refuses is logged and
+    /// recorded closed, since posting it again would fail the same way.
     fn post(&self, db: &Db, boxed: &SlackBox, asked: &Asked) -> Result<(), String> {
         let name = boxed.box_name.as_str();
         let by = &boxed.requested_by;
         let blocks = open_blocks(name, by, &asked.question, &asked.options);
         let fallback = text(name, by, &asked.question);
         let (channel, thread) = (&boxed.channel, &boxed.thread_ts);
-        let ts = self
+        let ts = match self
             .api
             .post_blocks(&self.bot_token, channel, thread, &fallback, &blocks)
-            .map_err(|e| format!("slack: prompt post failed: {e}"))?;
+        {
+            Ok(ts) => Some(ts),
+            Err(e @ ApiError::Slack(_)) => {
+                (self.log)(&format!("slack: prompt of {name} not posted: {e}"));
+                None
+            }
+            Err(e) => return Err(format!("slack: prompt post failed: {e}")),
+        };
         let posted = Posted {
             box_name: &boxed.box_name,
             event_id: asked.cursor,
-            message_ts: &ts,
+            message_ts: ts.as_deref(),
             question: &asked.question,
             options: &asked.options,
         };
@@ -166,7 +175,8 @@ impl Feed {
     /// Edits the message of the answered `prompt` to show who answered and how, without
     /// buttons, then records that it does.
     fn show_answer(&self, db: &Db, prompt: &Prompt) -> Result<(), String> {
-        let PromptState::Answered { label, by } = &prompt.state else {
+        let (PromptState::Answered { label, by }, Some(ts)) = (&prompt.state, &prompt.message_ts)
+        else {
             return Ok(());
         };
         let name = prompt.box_name.as_str();
@@ -174,13 +184,7 @@ impl Feed {
         let blocks = answered_blocks(name, requester, &prompt.question, label, by);
         let fallback = text(name, requester, &prompt.question);
         self.api
-            .update_blocks(
-                &self.bot_token,
-                &prompt.channel,
-                &prompt.message_ts,
-                &fallback,
-                &blocks,
-            )
+            .update_blocks(&self.bot_token, &prompt.channel, ts, &fallback, &blocks)
             .map_err(|e| format!("slack: prompt edit failed: {e}"))?;
         db.mark_answer_shown(prompt.id, (self.clock)())
             .map_err(|e| format!("slack.db: {e}"))
