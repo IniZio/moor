@@ -306,7 +306,8 @@ impl Turns {
             .collect();
         let rows = db.thread_boxes(&row.channel, &row.thread_ts)?;
         let mut call = |request| self.client.request(request, |_| {});
-        let boxes = box_lines(&rows, &mut call);
+        let prompts = db.open_prompts(&row.channel, &row.thread_ts)?;
+        let boxes = box_lines(&rows, &prompts, &mut call);
         let actions = db.thread_actions(&row.channel, &row.thread_ts)?;
         let rerun = row.rerun_of.map(|lost| db.turn_actions(lost)).transpose()?;
         let parts = Parts {

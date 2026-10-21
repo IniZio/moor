@@ -9,7 +9,7 @@ use moor_core::response::{ExitClass, Response};
 use serde_json::Value;
 
 use super::context::{action_line, Action};
-use crate::db::{BoxState, Db, OpenTurn, SlackBox};
+use crate::db::{BoxState, Db, OpenTurn, Prompt, SlackBox};
 
 /// One tool call, parsed from its name and arguments.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,6 +34,15 @@ pub(crate) enum Call {
     CloseBox {
         /// The Box's name as given.
         box_name: String,
+    },
+    /// `answer_box`.
+    AnswerBox {
+        /// The Box's name as given.
+        box_name: String,
+        /// The id of the prompt to answer.
+        prompt: i64,
+        /// The option to pick, numbered from 1.
+        choice: u32,
     },
 }
 
@@ -60,6 +69,11 @@ impl Call {
             }),
             "close_box" => Ok(Self::CloseBox {
                 box_name: text("box")?,
+            }),
+            "answer_box" => Ok(Self::AnswerBox {
+                box_name: text("box")?,
+                prompt: number(name, args, "prompt")?,
+                choice: number(name, args, "choice")?,
             }),
             other => Err(format!("There is no tool `{other}`.")),
         }
@@ -119,6 +133,11 @@ pub(crate) fn run(scope: &mut Scope<'_>, call: &Call) -> Reply {
         Call::StartBox { goal, repo } => start(scope, goal, repo.as_deref()),
         Call::SteerBox { box_name, text } => steer(scope, box_name, text),
         Call::CloseBox { box_name } => close(scope, box_name),
+        Call::AnswerBox {
+            box_name,
+            prompt,
+            choice,
+        } => answer(scope, box_name, *prompt, *choice),
     };
     ran.unwrap_or_else(|e| Reply::refused(format!("The front could not read slack.db: {e}")))
 }
@@ -129,12 +148,19 @@ fn list(scope: &mut Scope<'_>) -> rusqlite::Result<Reply> {
     if boxes.is_empty() {
         return Ok(Reply::done("This thread has no Box."));
     }
-    Ok(Reply::done(box_lines(&boxes, scope.call).join("\n")))
+    let prompts = scope.db.open_prompts(scope.channel, scope.thread_ts)?;
+    Ok(Reply::done(
+        box_lines(&boxes, &prompts, scope.call).join("\n"),
+    ))
 }
 
-/// One line per Box: its name, repo, requester and state, with the controller's view of a
-/// Box that runs.
-pub(crate) fn box_lines(boxes: &[SlackBox], call: Controller<'_>) -> Vec<String> {
+/// One entry per Box: its name, repo, requester and state, with the controller's view of a
+/// Box that runs, then each of its `prompts` that is open.
+pub(crate) fn box_lines(
+    boxes: &[SlackBox],
+    prompts: &[Prompt],
+    call: Controller<'_>,
+) -> Vec<String> {
     boxes
         .iter()
         .map(|b| {
@@ -144,14 +170,38 @@ pub(crate) fn box_lines(boxes: &[SlackBox], call: Controller<'_>) -> Vec<String>
                 BoxState::Closing { .. } => "closing".to_owned(),
                 BoxState::Gone { .. } => "closed".to_owned(),
             };
-            format!(
+            let mut entry = format!(
                 "- Box `{}` on {}, asked for by <@{}>: {state}",
                 b.box_name.as_str(),
                 b.repo,
                 b.requested_by
-            )
+            );
+            for p in prompts.iter().filter(|p| p.box_name == b.box_name) {
+                entry.push_str(&prompt_lines(p));
+            }
+            entry
         })
         .collect()
+}
+
+/// The open prompt `p` under its Box's line: its id, then its question and options in a Box
+/// quote, each line of which starts with `> `.
+fn prompt_lines(p: &Prompt) -> String {
+    let mut quoted = String::new();
+    let mut quote = |text: &str| {
+        for line in text.lines() {
+            quoted.push_str("\n  > ");
+            quoted.push_str(line);
+        }
+    };
+    quote(&p.question);
+    for (i, option) in p.options.iter().enumerate() {
+        quote(&format!("{}. {option}", i + 1));
+    }
+    format!(
+        "\n  Open prompt {}, answered with answer_box. In a Box quote:{quoted}",
+        p.id
+    )
 }
 
 /// A running Box's state as `show` reports it.
@@ -333,6 +383,9 @@ fn error_text(reply: Response) -> String {
 
 mod spec;
 pub(crate) use spec::{names, SPECS};
+
+mod answer;
+use answer::{answer, number};
 
 mod start;
 use start::start;

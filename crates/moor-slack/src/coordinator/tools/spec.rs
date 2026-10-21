@@ -13,11 +13,11 @@ pub(crate) struct Spec {
 }
 
 /// Every tool the coordinator gets.
-pub(crate) const SPECS: [Spec; 4] = [
+pub(crate) const SPECS: [Spec; 5] = [
     Spec {
         name: "list_boxes",
         description: "List this thread's Boxes: name, repo, requester and state as the \
-                      controller reports it now.",
+                      controller reports it now, and each open prompt with its id.",
         input: || json!({"type": "object", "properties": {}, "additionalProperties": false}),
     },
     Spec {
@@ -65,6 +65,24 @@ pub(crate) const SPECS: [Spec; 4] = [
                     "box": {"type": "string", "description": "The Box's name, as list_boxes shows it."}
                 },
                 "required": ["box"],
+                "additionalProperties": false
+            })
+        },
+    },
+    Spec {
+        name: "answer_box",
+        description: "Pick an option of a question one of this thread's Boxes asked, by the \
+                      prompt's id from list_boxes. Works only while the prompt is open, and only \
+                      when the person who asked for the Box wrote in this turn.",
+        input: || {
+            json!({
+                "type": "object",
+                "properties": {
+                    "box": {"type": "string", "description": "The Box's name, as list_boxes shows it."},
+                    "prompt": {"type": "integer", "description": "The open prompt's id, as list_boxes shows it."},
+                    "choice": {"type": "integer", "description": "The number of the option to pick, from 1."}
+                },
+                "required": ["box", "prompt", "choice"],
                 "additionalProperties": false
             })
         },
