@@ -14,6 +14,19 @@ fn replies_name_the_box() {
 }
 
 #[test]
+fn a_branch_or_error_from_the_controller_cannot_ping_or_break_the_code_span() {
+    let name = BoxName::parse_allow_bare("slack-1-2").unwrap();
+    assert_eq!(
+        started(&name, Some("moor/<!channel>`x` & y")),
+        "Started Box `slack-1-2` on branch `moor/&lt;!channel&gt;ˋxˋ &amp; y`."
+    );
+    assert_eq!(
+        failed(&name, "<!here> no `repo` & <@U1>"),
+        "Could not start Box `slack-1-2`: &lt;!here&gt; no `repo` &amp; &lt;@U1&gt;"
+    );
+}
+
+#[test]
 fn reply_from_the_starter_is_queued_without_its_mentions() {
     assert_eq!(
         reply_action("U1", "U1", " <@UBOT> use tokio "),

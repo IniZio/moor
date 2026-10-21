@@ -3,6 +3,8 @@
 
 use moor_core::name::BoxName;
 
+use crate::escape::{code, escape};
+
 /// Who may use the front and where.
 pub(super) struct Allow<'a> {
     /// Channel ids where mentions are answered.
@@ -45,13 +47,17 @@ pub(super) fn started(name: &BoxName, branch: Option<&str>) -> String {
     let name = name.as_str();
     branch.map_or_else(
         || format!("Started Box `{name}`."),
-        |b| format!("Started Box `{name}` on branch `{b}`."),
+        |b| format!("Started Box `{name}` on branch `{}`.", code(b)),
     )
 }
 
 /// Thread reply after a failed start; `message` is the controller's error text.
 pub(super) fn failed(name: &BoxName, message: &str) -> String {
-    format!("Could not start Box `{}`: {message}", name.as_str())
+    format!(
+        "Could not start Box `{}`: {}",
+        name.as_str(),
+        escape(message)
+    )
 }
 
 /// A Box event the front queues as a notice for the next turn of the Box's thread.
