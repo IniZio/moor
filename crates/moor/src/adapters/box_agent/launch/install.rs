@@ -11,10 +11,11 @@ pub(super) type StepResult = Result<StepDone, DriverError>;
 /// The step that writes `uname -s -m` under the credential directory `dir` in the Box user's home
 /// and prints it back; the home is not known yet, so the script reads it from `$HOME`. It exits
 /// before creating anything when the Box has no readable process environment or no `$HOME`, the
-/// cases where the launch fails at its home step and never cleans up.
+/// cases where the launch fails at its home step and never cleans up. The directory and the file
+/// are owner-only, as every other launch path makes them.
 pub(super) fn platform_step(dir: &str) -> BoxStep {
     BoxStep::Run(format!(
-        "[ -r /proc/self/environ ] && [ -n \"$HOME\" ] || exit 1; \
+        "[ -r /proc/self/environ ] && [ -n \"$HOME\" ] || exit 1; umask 077; \
          c=\"$HOME\"/{}; mkdir -p \"$c\" && uname -s -m > \"$c/uname\" && cat \"$c/uname\"",
         quote(dir)
     ))
@@ -63,3 +64,6 @@ pub(super) fn parse_platform(result: Option<StepResult>) -> Result<(String, Stri
 fn unreadable() -> Failure {
     fail("gh", &"could not read the Box platform")
 }
+
+#[cfg(test)]
+mod tests;
