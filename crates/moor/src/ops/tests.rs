@@ -1,4 +1,4 @@
-use moor_core::{ErrorKind, RemoveReq, Request};
+use moor_core::Request;
 
 use std::sync::Arc;
 
@@ -33,16 +33,4 @@ fn version_reports_build_info() {
         v.get("commit").and_then(serde_json::Value::as_str),
         Some(env!("MOOR_COMMIT"))
     );
-}
-
-#[test]
-fn other_ops_are_not_implemented() {
-    let cx = cx();
-    let req = Request::Remove(RemoveReq {
-        box_name: moor_core::name::BoxName::parse_allow_bare("t").unwrap(),
-        discard: false,
-    });
-    let err = dispatch(&cx, req).expect_err("not implemented");
-    assert_eq!(err.kind, ErrorKind::Internal);
-    assert!(err.error.to_string().contains("`moor remove`"));
 }

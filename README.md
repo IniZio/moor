@@ -35,9 +35,6 @@ These commands work today:
   layered agent environment.
 - `moor call` runs a JSON request read from stdin.
 
-`report`, `remove`, `shell`, `github setup`, `github login` and `proxy check`
-parse but return the error "`moor <cmd>` is not implemented yet".
-
 The Slack bot token needs the `chat:write` scope for posting and updating
 messages and ephemeral replies.
 

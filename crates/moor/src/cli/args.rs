@@ -6,14 +6,12 @@ use std::path::PathBuf;
 use clap::{Args, Parser, Subcommand};
 use moor_core::controller::WatchFilter;
 use moor_core::request::{EndSessionReq, ShowSessionReq};
-use moor_core::{
-    BoxId, BoxName, ReportReq, Request, RunReq, SessionId, ShowReq, StartReq, SteerReq,
-};
+use moor_core::{BoxId, BoxName, Request, RunReq, SessionId, ShowReq, StartReq, SteerReq};
 
 use super::args_admin::{AdminCmd, GateCmd};
 use super::args_probe::Flags;
 use super::GlobalOpts;
-use box_ops::{BoxArg, CloseArgs, CpArgs, RemoveArgs};
+use box_ops::{BoxArg, CloseArgs, CpArgs};
 use events::EventsArgs;
 use session::SessionCmd;
 use wait::WaitArgs;
@@ -117,21 +115,15 @@ enum Cmd {
     /// Agent Session verbs.
     #[command(subcommand)]
     Session(SessionCmd),
-    /// File a Report.
-    Report(ReportArgs),
     /// Show one Box or all open Boxes.
     #[command(visible_alias = "list")]
     Show(ShowArgs),
     /// Close a Box.
     Close(CloseArgs),
-    /// Remove a Box.
-    Remove(RemoveArgs),
     /// Copy a file to or from the Box.
     Cp(CpArgs),
     /// Focus the Box's Workspace.
     Open(BoxArg),
-    /// Open a shell in the Box.
-    Shell(BoxArg),
     /// Put the Box to sleep.
     Sleep(BoxArg),
     /// Wake a sleeping Box.
@@ -159,7 +151,6 @@ impl Cmd {
                 box_name: a.name.as_str().to_string(),
             })),
             Self::Session(c) => Action::Request(c.into()),
-            Self::Report(a) => Action::Request(Request::Report(a.into())),
             Self::Show(ShowArgs {
                 session: Some(session),
                 ..
@@ -168,10 +159,8 @@ impl Cmd {
             })),
             Self::Show(a) => Action::Request(Request::Show(a.into())),
             Self::Close(a) => Action::Request(Request::Close(a.into())),
-            Self::Remove(a) => Action::Request(Request::Remove(a.into())),
             Self::Cp(a) => Action::Request(Request::Cp(a.into())),
             Self::Open(a) => Action::Request(Request::Open(a.into())),
-            Self::Shell(a) => Action::Request(Request::Shell(a.into())),
             Self::Sleep(a) => Action::Request(Request::Sleep(a.into())),
             Self::Wake(a) => Action::Request(Request::Wake(a.into())),
             Self::Gate(g) => Action::Request(Request::Gate(g.into())),
@@ -306,34 +295,6 @@ impl From<SteerArgs> for SteerReq {
             target: a.name.into(),
             text: a.text,
             menu: a.menu,
-        }
-    }
-}
-
-/// Arguments of `report`.
-#[derive(Debug, Args)]
-struct ReportArgs {
-    /// Box name.
-    #[arg(value_parser = box_name)]
-    name: BoxName,
-    /// Report kind.
-    #[arg(long)]
-    kind: String,
-    /// Report title.
-    #[arg(long)]
-    title: Option<String>,
-    /// Read the body from this file instead of stdin.
-    #[arg(long)]
-    file: Option<String>,
-}
-
-impl From<ReportArgs> for ReportReq {
-    fn from(a: ReportArgs) -> Self {
-        Self {
-            box_name: a.name,
-            kind: a.kind,
-            title: a.title,
-            file: a.file,
         }
     }
 }

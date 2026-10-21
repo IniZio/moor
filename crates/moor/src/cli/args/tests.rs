@@ -5,8 +5,8 @@ use std::path::PathBuf;
 
 use moor_core::request::{EndSessionReq, OpenHostSessionReq, OpenSessionReq};
 use moor_core::{
-    BoxId, BoxName, BoxReq, CloseReq, CpReq, EnvReq, GateReq, RemoveReq, ReportReq, Request,
-    RunReq, ShowReq, StartReq, SteerReq, WaitFor, WaitReq,
+    BoxId, BoxName, BoxReq, CloseReq, CpReq, EnvReq, GateReq, Request, RunReq, ShowReq, StartReq,
+    SteerReq, WaitFor, WaitReq,
 };
 
 use super::{parse_ignoring_env as parse, Action};
@@ -339,16 +339,7 @@ fn steer_text_or_menu() {
 }
 
 #[test]
-fn report_close_remove_cp() {
-    assert_eq!(
-        req(&["report", "t1", "--kind", "k", "--title", "T", "--file", "f"]),
-        Request::Report(ReportReq {
-            box_name: n("t1"),
-            kind: "k".into(),
-            title: Some("T".into()),
-            file: Some("f".into()),
-        })
-    );
+fn close_cp() {
     assert_eq!(
         req(&["close", "t1", "--force"]),
         Request::Close(CloseReq {
@@ -371,13 +362,6 @@ fn report_close_remove_cp() {
             target: n("demo").into(),
             force: false,
             trust_moor_yaml: false
-        })
-    );
-    assert_eq!(
-        req(&["remove", "t1", "--discard"]),
-        Request::Remove(RemoveReq {
-            box_name: n("t1"),
-            discard: true
         })
     );
     assert_eq!(
@@ -421,7 +405,6 @@ fn show_and_list_alias() {
 #[test]
 fn box_verbs() {
     assert_eq!(req(&["open", "t1"]), Request::Open(box_req("t1")));
-    assert_eq!(req(&["shell", "t1"]), Request::Shell(box_req("t1")));
     assert_eq!(req(&["sleep", "t1"]), Request::Sleep(box_req("t1")));
     assert_eq!(req(&["wake", "t1"]), Request::Wake(box_req("t1")));
 }
@@ -457,9 +440,6 @@ fn admin_verbs() {
             repo: Some("web-app".into())
         })
     );
-    assert_eq!(req(&["github", "setup"]), Request::GithubSetup {});
-    assert_eq!(req(&["github", "login"]), Request::GithubLogin {});
-    assert_eq!(req(&["proxy", "check"]), Request::ProxyCheck {});
     assert_eq!(req(&["version"]), Request::Version {});
 }
 

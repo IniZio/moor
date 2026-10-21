@@ -106,6 +106,31 @@ fn parse_call_good_and_bad() {
 }
 
 #[test]
+fn parse_call_refuses_removed_commands_as_unknown() {
+    for cmd in [
+        "report",
+        "remove",
+        "shell",
+        "github-setup",
+        "github-login",
+        "proxy-check",
+    ] {
+        let o = parse_call(&format!(r#"{{"cmd":"{cmd}"}}"#)).expect_err(cmd);
+        let v: serde_json::Value = serde_json::from_str(&o.stdout).expect("json");
+        assert_eq!(v.get("class"), Some(&serde_json::json!("usage")), "{cmd}");
+        let message = v
+            .pointer("/error/message")
+            .and_then(serde_json::Value::as_str)
+            .expect("message");
+        assert!(
+            message.contains(&format!("unknown variant `{cmd}`")),
+            "{message}"
+        );
+        assert_eq!(o.code, 2, "{cmd}");
+    }
+}
+
+#[test]
 fn render_json_version_is_single_line() {
     let resp = Response::ok(
         "version",

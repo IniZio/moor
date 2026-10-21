@@ -70,7 +70,6 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         Request::EndHostSession(r) => to_value(&host_session::end(cx, &r)?),
         Request::BindSession(r) => to_value(&binding::bind(cx, &r)?),
         Request::SessionBinding(r) => to_value(&binding::lookup(cx, &r)?),
-        other => Err(CommandError::not_implemented(other.cmd())),
     }
 }
 

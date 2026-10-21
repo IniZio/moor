@@ -23,9 +23,8 @@ pub use name::{
     BoxHandle, BoxId, BoxName, BoxPath, DirectHost, NameError, ProviderId, RunId, SessionId, Sha,
 };
 pub use request::{
-    ArtifactReadReq, ArtifactsReq, BoxReq, BoxTarget, CloseReq, CpReq, EnvReq, GateReq, RemoveReq,
-    ReportReq, Request, RunReq, ShowReq, StartReq, SteerReq, WaitEventsReq, WaitFor, WaitMode,
-    WaitReq,
+    ArtifactReadReq, ArtifactsReq, BoxReq, BoxTarget, CloseReq, CpReq, EnvReq, GateReq, Request,
+    RunReq, ShowReq, StartReq, SteerReq, WaitEventsReq, WaitFor, WaitMode, WaitReq,
 };
 pub use response::{ErrorKind, ErrorView, ExitClass, Response, Warning, SCHEMA};
 pub use secret::{Digest, Secret};

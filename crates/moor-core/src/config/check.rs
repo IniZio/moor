@@ -53,11 +53,7 @@ pub fn not_reserved_env(s: &str) -> Result<(), String> {
 /// Returns the canonical message for `GH_TOKEN`.
 pub fn not_gh_token(s: &str) -> Result<(), String> {
     if s == "GH_TOKEN" {
-        Err(
-            "GH_TOKEN is not supported: moor mints GitHub tokens from your GitHub App; \
-             run `moor github setup` then `moor github login`"
-                .to_owned(),
-        )
+        Err("GH_TOKEN is not supported: moor mints GitHub tokens from your GitHub App".to_owned())
     } else {
         Ok(())
     }
