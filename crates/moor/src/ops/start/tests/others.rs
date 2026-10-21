@@ -28,7 +28,7 @@ fn a_start_hides_the_settle_warning_of_a_box_its_caller_may_not_see() {
     let bad = BoxId::new(run(&w.cx, &req("bad")).unwrap().boxed.id);
     let raw = rusqlite::Connection::open(w.cx.state_dir().unwrap().join("moor.db")).unwrap();
     raw.execute(
-        "INSERT INTO runs (box, argv, sync, pid, started_at) VALUES (?, 'not json', 'none', 1, 1)",
+        "INSERT INTO runs (box, argv, pid, started_at) VALUES (?, 'not json', 1, 1)",
         [bad.get()],
     )
     .unwrap();

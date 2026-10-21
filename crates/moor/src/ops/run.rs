@@ -2,7 +2,7 @@
 //!
 //! The Box lock is held from the run row's creation to its completion.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use moor_core::boxscript::command_line;
 use moor_core::config::{BoxSettings, Flags};
@@ -30,7 +30,6 @@ use crate::store::{BoxRow, NewRun, RunOutcome, Store, StoreError};
 mod follow;
 mod ready;
 mod record;
-mod sync;
 
 pub(super) use follow::Sink;
 
@@ -55,8 +54,6 @@ pub(crate) fn streamed(
     if req.argv.is_empty() {
         return Err(CommandError::new(ErrorKind::Usage, "no command to run"));
     }
-    record::usage(req)?;
-    sync::usage(req)?;
     let store = cx.store()?;
     let name = req.box_name.as_str();
     let found = store
@@ -107,14 +104,12 @@ fn launch(
 ) -> Result<RunValue, CommandError> {
     let repo = moor_yaml::guard(cx, row, req.trust_moor_yaml)?;
     let cfg = resolved(cx, repo.as_ref(), &Flags::default());
-    let sync = sync::choose(cx, store, req, row)?;
-    let (sha, argv) = plan(cx, req, &target.worktree, &cfg.setup)?;
+    let (sha, argv) = plan(cx, req, target, &cfg.setup)?;
     let id = store.begin_run(NewRun {
         box_id: row.id,
         argv: req.argv.clone(),
         record: req.record.clone(),
         sha: sha.clone(),
-        sync: sync_name(sync).to_owned(),
         pid: std::process::id(),
     })?;
     if let Err(e) = mark_working(store, row) {
@@ -134,7 +129,7 @@ fn launch(
         argv: exec.argv(argv),
         env: exec.vars(),
         cwd: exec.cwd(),
-        sync,
+        sync: SyncMode::None,
         output: Some(output),
         host_cwd: Some(target.worktree.clone()),
         class: Some(cfg.size.value.as_str().to_owned()),
@@ -161,7 +156,6 @@ fn launch(
         exit,
         interrupted,
         sha: sha.map(|s| s.as_str().to_owned()),
-        sync,
         record: req.record.clone(),
         log,
     })
@@ -214,28 +208,23 @@ fn mark_working(store: &Store, row: &BoxRow) -> Result<(), CommandError> {
 
 /// The sha the run is stored under and the argv the Box executes.
 ///
-/// A record run is checked first and runs the wrapped script; any other run
-/// runs as shell text and takes HEAD when it can be read.
+/// A record run reads the Box HEAD first and runs the wrapped script; any other run runs as
+/// shell text and is stored under no sha.
 fn plan(
     cx: &Cx,
     req: &RunReq,
-    worktree: &Path,
+    target: &ready::Target,
     setup: &[String],
 ) -> Result<(Option<Sha>, Vec<String>), CommandError> {
     if req.record.is_some() {
-        let sha = record::checkout(cx, worktree)?;
+        let sha = record::checkout(cx, target)?;
         return Ok((Some(sha), record::wrap(setup, &req.argv)));
     }
-    let sha = cx
-        .git()
-        .head(worktree)
-        .ok()
-        .and_then(|s| Sha::parse(&s).ok());
     let script = match req.argv.as_slice() {
         [text] => text.clone(),
         argv => command_line(argv),
     };
-    Ok((sha, vec!["sh".into(), "-c".into(), script]))
+    Ok((None, vec!["sh".into(), "-c".into(), script]))
 }
 
 /// Where the command's output goes, and the log path to report (empty when inherited).
@@ -262,14 +251,6 @@ fn finish(store: &Store, id: RunId, error: Option<String>) {
         ..RunOutcome::ended(None, false)
     };
     store.finish_run(id, out).ok();
-}
-
-/// The sync mode as the run row stores it.
-const fn sync_name(sync: SyncMode) -> &'static str {
-    match sync {
-        SyncMode::Full => "full",
-        SyncMode::None => "none",
-    }
 }
 
 #[cfg(test)]

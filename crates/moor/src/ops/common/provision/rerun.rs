@@ -1,123 +1,18 @@
-//! What a start does in a Box that already exists: sync the worktree into it, and warn about a
-//! setup that failed or was interrupted, which is never re-run.
+//! What a start does in a Box that already exists: warn about a setup that failed or was
+//! interrupted, which is never re-run.
 
-use moor_core::config::Flags;
 use moor_core::decide::intent::setup_dead;
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, IntentChange};
-use moor_core::domain::run::SyncMode;
 use moor_core::domain::session_state::SessionInput;
 use moor_core::Warning;
-use std::path::Path;
 
-use super::outcome::sync_failed;
-use super::{moor_yaml, recorded_workdir};
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::boxwork::{self, BoxWork};
-use crate::ops::common::facts::resolved;
-use crate::ops::common::setup;
 use crate::ops::common::view::rfc3339;
 use crate::store::{BoxRow, Store};
-
-/// Decides whether a start syncs the host checkout into the existing Box.
-///
-/// A sync resets the Box checkout to the host's: HEAD, branches and remote-tracking refs move
-/// even when every commit is pushed. A Box that has had an agent session is therefore synced
-/// only when the Box holds no work that exists nowhere else, or has no git checkout at all
-/// (an earlier sync failed); otherwise the sync is skipped with a warning. While an agent session
-/// is live no sync is made at all: the agent may be writing files in the checkout.
-pub(super) fn rerun_sync(
-    cx: &Cx,
-    store: &Store,
-    row: &BoxRow,
-    gates: &ResyncGates,
-) -> Result<SyncMode, CommandError> {
-    if (gates.agent_live)()? {
-        cx.warn(Warning {
-            code: "resync_skipped".to_owned(),
-            message: "did not sync the checkout into the Box: an agent session is still running"
-                .to_owned(),
-        });
-        return Ok(SyncMode::None);
-    }
-    if !store.has_session(row.id)? {
-        return Ok(SyncMode::Full);
-    }
-    let Some(boxed) = row.boxed.as_ref() else {
-        return Ok(SyncMode::None);
-    };
-    let why = match boxwork::probe(cx, row, boxed) {
-        BoxWork::Clean | BoxWork::NoCheckout => return Ok(SyncMode::Full),
-        BoxWork::Unsaved { ahead, dirty } => {
-            format!("the Box has {ahead} commits the host lacks and {dirty} changed paths")
-        }
-        BoxWork::Gone => "the Box is gone".to_owned(),
-        BoxWork::Unknown(reason) => {
-            format!("cannot tell whether the Box has unsaved work: {reason}")
-        }
-    };
-    cx.warn(Warning {
-        code: "resync_skipped".to_owned(),
-        message: format!("did not sync the checkout into the Box: {why}"),
-    });
-    Ok(SyncMode::None)
-}
-
-/// What a caller knows that decides a re-sync of the checkout.
-pub(crate) struct ResyncGates<'a> {
-    /// Whether the caller is about to launch the agent; asked only if the re-sync fails.
-    pub launching: &'a dyn Fn() -> Result<bool, CommandError>,
-    /// Whether an agent session is still running.
-    pub agent_live: &'a dyn Fn() -> Result<bool, CommandError>,
-}
-
-/// Syncs the host checkout into a ready Box.
-///
-/// A failed sync ends the start like a fresh
-/// one's when the agent is about to launch; otherwise it is a warning and the start goes on, so
-/// the user can retry.
-///
-/// # Errors
-/// The sync failed while launching, or the repo config could not be read.
-pub(super) fn resync(
-    cx: &Cx,
-    store: &Store,
-    row: &BoxRow,
-    trusted: bool,
-    gates: &ResyncGates,
-) -> Result<(), CommandError> {
-    let Some(boxed) = row.boxed.as_ref().filter(|b| b.state == BoxState::Ready) else {
-        return Ok(());
-    };
-    let (Some(handle), Some(workdir)) = (
-        boxed.handle.as_ref(),
-        boxed.workdir.as_deref().and_then(recorded_workdir),
-    ) else {
-        return Ok(());
-    };
-    if rerun_sync(cx, store, row, gates)? != SyncMode::Full {
-        return Ok(());
-    }
-    let repo = moor_yaml::for_teardown(cx, row, trusted)?;
-    let cfg = resolved(cx, repo.as_ref(), &Flags::default());
-    let worktree = Path::new(row.worktree.as_deref().unwrap_or(&row.repo));
-    let Err(reason) = setup::sync_checkout(cx.driver(), handle, &workdir, worktree, &cfg, None)
-    else {
-        return Ok(());
-    };
-    if (gates.launching)()? {
-        let advance = row.lifecycle == BoxLifecycle::SettingUp;
-        return Err(sync_failed(cx, store, row.id, advance, handle, reason));
-    }
-    cx.warn(Warning {
-        code: "resync_failed".to_owned(),
-        message: format!("{reason}; run `moor start` again"),
-    });
-    Ok(())
-}
 
 /// Warns that `moor start` does not re-run a setup that failed or was interrupted in a ready Box.
 ///

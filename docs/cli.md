@@ -71,14 +71,12 @@ The state directory holds `moor.db`. It is the first of `--state-dir`,
 
 ### `moor run` flags
 
-With neither sync flag, `moor run` copies the host worktree to the Box first,
-until an agent Session has run on the Box. After that it does not sync.
+`moor run` runs the command in the Box checkout as it is. moor copies the host
+worktree into a Box only when it provisions the Box's machine.
 
 | Flag | Effect |
 | --- | --- |
-| `--sync` | Sync first, but only if the Box has no unsaved work. If it has unsaved work, or moor cannot tell, the command exits 125 and does not run. |
-| `--no-sync` | Never sync. You cannot give both `--sync` and `--no-sync`. |
-| `--record NAME` | Record the run as the gate `NAME`, for `moor gate check`. |
+| `--record NAME` | Record the run as the gate `NAME`, for `moor gate check`. moor reads the Box checkout's HEAD first and records the run under it. It refuses a Box checkout with uncommitted changes. |
 | `--trust-moor-yaml` | Run even when the Box's `.moor.yaml` differs from its base commit. |
 
 ### `moor wait` flags

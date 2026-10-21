@@ -210,12 +210,6 @@ pub struct RunReq {
     /// Box name.
     #[serde(rename = "box")]
     pub box_name: BoxName,
-    /// Skip syncing before the run.
-    #[serde(default)]
-    pub no_sync: bool,
-    /// Sync before the run, but only when the Box holds no unsaved work.
-    #[serde(default)]
-    pub sync: bool,
     /// Record the run under this name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub record: Option<String>,

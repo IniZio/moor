@@ -51,7 +51,6 @@ fn record(cx: &Cx, box_id: BoxId, name: &str, sha: &str, command: &str, exit: i3
             argv: command.split(' ').map(str::to_owned).collect(),
             record: Some(name.to_owned()),
             sha: Some(Sha::parse(sha).unwrap()),
-            sync: "tree".into(),
             pid: 1,
         })
         .unwrap();

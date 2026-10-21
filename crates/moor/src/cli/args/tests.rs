@@ -119,21 +119,17 @@ fn run_with_trailing_command() {
         r,
         Request::Run(RunReq {
             box_name: n("t1"),
-            no_sync: false,
-            sync: false,
             record: None,
             argv: vec!["ls".into(), "-la".into()],
             trust_moor_yaml: false,
             inherit_output: false,
         })
     );
-    let r = req(&["run", "t1", "--no-sync", "--record", "r", "--", "make"]);
+    let r = req(&["run", "t1", "--record", "r", "--", "make"]);
     assert_eq!(
         r,
         Request::Run(RunReq {
             box_name: n("t1"),
-            no_sync: true,
-            sync: false,
             record: Some("r".into()),
             argv: vec!["make".into()],
             trust_moor_yaml: false,
@@ -141,22 +137,6 @@ fn run_with_trailing_command() {
         })
     );
     assert!(run(&["run", "t1"]).is_err());
-}
-
-#[test]
-fn run_sync_flag() {
-    assert_eq!(
-        req(&["run", "t1", "--sync", "--", "make"]),
-        Request::Run(RunReq {
-            box_name: n("t1"),
-            no_sync: false,
-            sync: true,
-            record: None,
-            argv: vec!["make".into()],
-            trust_moor_yaml: false,
-            inherit_output: false,
-        })
-    );
 }
 
 #[test]
@@ -178,14 +158,8 @@ fn run_trust_moor_yaml_flag() {
 }
 
 #[test]
-fn run_sync_conflicts_with_no_sync() {
-    let e = run(&["run", "t1", "--sync", "--no-sync", "--", "make"]).unwrap_err();
-    assert_eq!(e.kind(), clap::error::ErrorKind::ArgumentConflict);
-}
-
-#[test]
-fn run_sync_conflict_exit_code() {
-    let argv = ["moor", "run", "t1", "--sync", "--no-sync", "--", "make"].map(OsString::from);
+fn run_usage_error_exit_code() {
+    let argv = ["moor", "run", "t1", "--record"].map(OsString::from);
     let crate::cli::Parsed::Done(o) = crate::cli::parse(argv.to_vec()) else {
         unreachable!("expected Done")
     };

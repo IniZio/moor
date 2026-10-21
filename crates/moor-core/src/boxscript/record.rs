@@ -1,6 +1,10 @@
 //! Script for a recorded run: reset the Box checkout to fresh-checkout state, run setup, run the command.
 
+use super::boxwork::{ignored_status_pattern, is_full_sha};
 use super::quote;
+
+/// Box-relative path of the file [`head_script`] writes.
+pub const HEAD_FILE: &str = ".moor/record-head";
 
 /// Refuse to run outside a git work tree.
 const GIT_GUARD: &str = "git rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo 'moor: --record needs a git checkout on the Box' >&2; exit 1; }\n";
@@ -145,6 +149,40 @@ pub fn record_script(setup: &[String], command: &str) -> String {
         PROMOTE,
     ]
     .concat()
+}
+
+/// Script run with `sh -c` in the Box workdir before a record run: writes `head=SHA dirty=N` to
+/// [`HEAD_FILE`], where `N` counts changed or untracked paths as the boxwork probe does.
+#[must_use]
+pub fn head_script() -> String {
+    let ignored = quote(&ignored_status_pattern());
+    format!(
+        r#"export GIT_NO_LAZY_FETCH=1
+mkdir -p .moor || exit 1
+rm -f {HEAD_FILE}
+head=$(git rev-parse --verify HEAD) || exit 1
+st=$(git status --porcelain --no-renames) || exit 1
+if [ -z "$st" ]; then
+  dirty=0
+else
+  dirty=$(printf '%s\n' "$st" | grep -vcE {ignored} || true)
+fi
+printf 'head=%s dirty=%s\n' "$head" "$((dirty + 0))" > {HEAD_FILE} || exit 1
+"#
+    )
+}
+
+/// The HEAD sha and the dirty count from the text [`head_script`] wrote; `None` unless its
+/// first line is exactly `head=SHA dirty=N` with a full sha.
+#[must_use]
+pub fn parse_head(text: &str) -> Option<(String, u32)> {
+    let mut parts = text.lines().next()?.split_whitespace();
+    let head = parts.next()?.strip_prefix("head=")?;
+    let dirty = parts.next()?.strip_prefix("dirty=")?;
+    if parts.next().is_some() || !is_full_sha(head) || !dirty.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    Some((head.to_owned(), dirty.parse().ok()?))
 }
 
 #[cfg(test)]

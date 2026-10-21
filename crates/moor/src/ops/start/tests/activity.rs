@@ -261,7 +261,7 @@ fn a_box_that_cannot_be_settled_warns_and_the_others_still_settle() {
     w.cx = w.cx.with_engine(engine);
     let raw = rusqlite::Connection::open(w.cx.state_dir().unwrap().join("moor.db")).unwrap();
     raw.execute(
-        "INSERT INTO runs (box, argv, sync, pid, started_at) VALUES (?, 'not json', 'none', 1, 1)",
+        "INSERT INTO runs (box, argv, pid, started_at) VALUES (?, 'not json', 1, 1)",
         [bad.get()],
     )
     .unwrap();

@@ -1,12 +1,13 @@
 //! A manual `moor run <Box> -- '<setup line>'` runs like setup: same env, same workdir.
 
+use moor_core::boxscript::record::HEAD_FILE;
 use moor_core::config::Flags;
 use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::domain::run::SyncMode;
 use moor_core::seam::driver::ExecSpec;
-use moor_core::BoxHandle;
+use moor_core::{BoxHandle, BoxPath};
 
-use super::{command, ready, req, Fx};
+use super::{command, ready, req, Fx, SHA};
 use crate::ops::common::box_exec;
 use crate::ops::common::facts::resolved;
 use crate::ops::common::provision::moor_yaml;
@@ -83,15 +84,13 @@ fn run_of_a_setup_line_has_the_env_and_cwd_setup_has() {
 #[test]
 fn recorded_run_has_the_repo_env_too() {
     let f = with_env_yaml();
-    f.proc.on(
-        moor_core::seam::proc::Tool::Git,
-        &["status"],
-        crate::testing::proc::Reply::Ok(String::new()),
-    );
+    let head = BoxPath::under("/work/cbx_1/repo", HEAD_FILE).unwrap();
+    let clean = format!("head={SHA} dirty=0\n");
+    f.driver.set_peek_text("box-1", &head, &clean);
     let mut r = req(&["true"]);
     r.record = Some("ci".into());
     run(&f.cx, &r).unwrap();
-    let (_, spec, _) = f.driver.execs().remove(0);
+    let (_, spec, _) = f.driver.execs().remove(1);
     assert_eq!(repo_vars(&spec), [("A", "1"), ("B", "2")]);
 }
 

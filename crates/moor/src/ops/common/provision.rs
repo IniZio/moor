@@ -29,8 +29,7 @@ pub(crate) use self::lease::hold_root;
 use self::lease::hold_workdir;
 use self::outcome::dotfiles_warned;
 pub(crate) use self::outcome::Provisioned;
-pub(crate) use self::rerun::ResyncGates;
-use self::rerun::{note_setup_not_rerun, resync};
+use self::rerun::note_setup_not_rerun;
 use self::retry::{kept_box_retry, retry_in_box};
 use self::sync::{sync_with_proxy, SetupProxy};
 
@@ -76,15 +75,14 @@ impl Entry {
 /// refused as busy.
 ///
 /// A `.moor.yaml` that differs from the base commit is refused unless `trusted`, before any
-/// setup or Box work starts. `gates` decide a re-sync of the checkout into a ready Box. A ready
-/// Box never has its setup run again; a failed or interrupted setup is only warned about.
+/// setup or Box work starts. Nothing is copied into a ready Box, and its setup never runs again;
+/// a failed or interrupted setup is only warned about.
 pub(crate) fn reprovision(
     cx: &Cx,
     store: &Store,
     row: &BoxRow,
     op: &str,
     trusted: bool,
-    gates: &ResyncGates,
 ) -> Result<Option<Provisioned>, CommandError> {
     let ready = row.boxed.as_ref().map(|b| b.state) == Some(BoxState::Ready);
     if entry_for(row).is_none() && !kept_box_retry(row) && !ready {
@@ -101,10 +99,6 @@ pub(crate) fn reprovision(
     let Some(entry) = entry else {
         if ready {
             note_setup_not_rerun(cx, store, &row)?;
-            let row = reread(store, row.id)?;
-            if row.intent.is_none() {
-                resync(cx, store, &row, trusted, gates)?;
-            }
         }
         return Ok(None);
     };

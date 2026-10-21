@@ -70,7 +70,6 @@ fn begin(cx: &Cx, box_id: BoxId) {
             argv: vec!["make".into(), "test".into()],
             record: None,
             sha: None,
-            sync: "none".into(),
             pid: PID,
         })
         .unwrap();

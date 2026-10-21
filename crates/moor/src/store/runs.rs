@@ -21,8 +21,6 @@ pub(crate) struct NewRun {
     pub(crate) record: Option<String>,
     /// Commit the run covers.
     pub(crate) sha: Option<Sha>,
-    /// Sync mode used.
-    pub(crate) sync: String,
     /// Process id of the runner.
     pub(crate) pid: u32,
 }
@@ -109,7 +107,6 @@ impl Store {
             argv,
             record,
             sha,
-            sync,
             pid,
         } = r;
         let now = self.now();
@@ -120,14 +117,13 @@ impl Store {
         }
         let argv = serde_json::to_string(&argv)?;
         tx.execute(
-            "INSERT INTO runs (box, argv, record, sha, sync, pid, started_at) \
-             VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO runs (box, argv, record, sha, pid, started_at) \
+             VALUES (?, ?, ?, ?, ?, ?)",
             params![
                 box_id.get(),
                 argv,
                 record,
                 sha.as_ref().map(|s| s.as_str().to_owned()),
-                sync,
                 pid,
                 now.as_millis()
             ],

@@ -254,12 +254,6 @@ struct RunArgs {
     /// Box name.
     #[arg(value_parser = box_name)]
     name: BoxName,
-    /// Skip the pre-run sync.
-    #[arg(long)]
-    no_sync: bool,
-    /// Sync before the run, after checking the Box holds no unsaved work.
-    #[arg(long, conflicts_with = "no_sync")]
-    sync: bool,
     /// Record the run under this name.
     #[arg(long, value_name = "NAME")]
     record: Option<String>,
@@ -275,8 +269,6 @@ impl From<RunArgs> for RunReq {
     fn from(a: RunArgs) -> Self {
         Self {
             box_name: a.name,
-            no_sync: a.no_sync,
-            sync: a.sync,
             record: a.record,
             argv: a.cmd,
             trust_moor_yaml: a.trust_moor_yaml,

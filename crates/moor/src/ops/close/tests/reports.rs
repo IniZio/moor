@@ -246,7 +246,7 @@ fn collection_runs_before_teardown_and_release() {
     let (c, t) = (&specs.get(2).unwrap().1, &specs.get(4).unwrap().1);
     assert_eq!(c.sync, SyncMode::None);
     assert!(c.argv.iter().any(|a| a.contains("reports.index")));
-    assert_eq!(t.sync, SyncMode::Full);
+    assert_eq!(t.sync, SyncMode::None);
     let last_peek = calls
         .iter()
         .rposition(|c| c.starts_with("peek_file"))

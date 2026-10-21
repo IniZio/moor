@@ -241,13 +241,13 @@ fn restart_of_a_closed_name_creates_a_new_box() {
 }
 
 #[test]
-fn open_name_attaches_with_only_a_checkout_sync() {
+fn open_name_attaches_without_touching_the_box() {
     let w = world(FakeDriver::new());
     let first = run(&w.cx, &req("demo")).unwrap();
     let again = run(&w.cx, &req("demo")).unwrap();
     assert!(again.attached);
     assert_eq!(again.boxed.id, first.boxed.id);
-    assert_eq!(w.driver.calls(), ["acquire", "exec box-1", "exec box-1"]);
+    assert_eq!(w.driver.calls(), ["acquire", "exec box-1"]);
     assert_eq!(w.surface.calls().len(), 2);
 }
 
@@ -437,18 +437,8 @@ fn reprovision_skips_when_another_start_already_gave_the_box_back() {
         w.driver.calls(),
         ["acquire", "exec box-1", "acquire", "exec box-2"]
     );
-    let run = crate::ops::common::provision::reprovision(
-        &w.cx,
-        store,
-        &stale,
-        "start",
-        false,
-        &crate::ops::common::provision::ResyncGates {
-            launching: &|| Ok(true),
-            agent_live: &|| Ok(false),
-        },
-    )
-    .unwrap();
+    let run =
+        crate::ops::common::provision::reprovision(&w.cx, store, &stale, "start", false).unwrap();
     assert!(run.is_none());
     assert_eq!(
         w.driver.calls(),

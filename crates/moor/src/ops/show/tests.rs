@@ -230,7 +230,6 @@ fn box_shows_its_in_flight_run() {
             argv: vec!["make".into(), "test".into()],
             record: None,
             sha: None,
-            sync: "none".into(),
             pid: 4242,
         })
         .unwrap();

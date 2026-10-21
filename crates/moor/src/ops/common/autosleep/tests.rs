@@ -232,7 +232,6 @@ fn a_run_in_flight_skips_the_sleep() {
             argv: vec!["make".into()],
             record: None,
             sha: None,
-            sync: "none".into(),
             pid: 4242,
         })
         .unwrap();

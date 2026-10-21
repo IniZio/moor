@@ -33,7 +33,7 @@ const CACHE_DIRS: [&str; 4] = [
 ];
 
 /// Extended regex for status lines whose path does not count: `.moor/` and the cache dirs.
-fn ignored_status_pattern() -> String {
+pub(super) fn ignored_status_pattern() -> String {
     let dirs = CACHE_DIRS.map(|d| d.replace('.', "\\.")).join("|");
     format!(r#"^.. "?(\.moor/|(.*/)?({dirs})/)"#)
 }

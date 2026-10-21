@@ -14,6 +14,7 @@ names=(
   not_gh_token proxied_claude_var
   check_bound check_unbound same_path WORKTREE_OPERATOR_ONLY insert_unnamed repo_seq
   open_boxes_by_repo open_box_by_path
+  ResyncGates rerun_sync sync_name resync_skipped resync_failed no_sync
 )
 args=()
 for n in "${names[@]}"; do args+=(-e "$n"); done

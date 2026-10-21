@@ -1,6 +1,5 @@
 //! Typed `value` payloads for `run`, `wait` and `cp`.
 
-use crate::domain::run::SyncMode;
 use crate::name::RunId;
 use crate::request::WaitFor;
 use crate::view::BoxView;
@@ -20,10 +19,8 @@ pub struct RunValue {
     pub exit: Option<i32>,
     /// Whether the run was interrupted.
     pub interrupted: bool,
-    /// Sha the run executed against; null when git could not read it.
+    /// Sha a record run executed against; null for any other run.
     pub sha: Option<String>,
-    /// Sync mode used.
-    pub sync: SyncMode,
     /// Record text, when one was captured.
     pub record: Option<String>,
     /// Log file path.
