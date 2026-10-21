@@ -278,7 +278,7 @@ The external provider for agent37 VMs is
 [crabbox-agent37](https://github.com/IniZio/crabbox-agent37). Its README lists
 the crabbox user config it needs, including `external.capabilities.pauseResume:
 true`. moor needs the [IniZio/crabbox](https://github.com/IniZio/crabbox)
-build 0.72.0-moor.9 or a newer `-moor` build. It refuses an older build and
+build 0.79.1-moor.1 or a newer `-moor` build. It refuses an older build and
 any upstream crabbox release, because only the `-moor` builds have the flags
 moor uses.
 

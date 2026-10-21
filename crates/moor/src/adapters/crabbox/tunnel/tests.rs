@@ -180,7 +180,7 @@ fn timed(p: &Arc<ScriptedProc>) -> (Crabbox, Arc<FakeClock>) {
     p.on(
         Tool::Crabbox,
         &["--version"],
-        Reply::Ok("crabbox 0.72.0-moor.9\n".into()),
+        Reply::Ok("crabbox 0.79.1-moor.1\n".into()),
     );
     let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
     let c = Crabbox::new(p.clone(), clock.clone(), Arc::new(FakeRng::default()));

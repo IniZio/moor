@@ -2,7 +2,7 @@
 //!
 //! crabbox never prints JSON errors: the message is free text on stderr and
 //! the exit code is coarse. Raw text is read for classification; only the
-//! generic acquire and release failures carry a short stderr tail.
+//! generic acquire, release and provider lookup failures carry a short stderr tail.
 
 use moor_core::seam::driver::{DriverError, TunnelFailure};
 use moor_core::seam::proc::ProcError;
@@ -199,7 +199,7 @@ const TAIL_MAX: usize = 300;
 /// An exec shows its tail only when crabbox itself failed; once the remote command ran, its output is not crabbox's to repeat.
 fn stderr_suffix(op: Op, stderr: &str, remote_ran: bool) -> String {
     let shown = match op {
-        Op::Acquire | Op::Release => true,
+        Op::Acquire | Op::Release | Op::Caps => true,
         Op::Exec => !remote_ran,
         _ => false,
     };
