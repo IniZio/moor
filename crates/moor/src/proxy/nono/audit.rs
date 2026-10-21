@@ -295,19 +295,14 @@ fn allow(event: &NetworkAuditEvent, sink: &dyn EgressSink) {
 
 /// Handles a denied event.
 fn deny(event: &NetworkAuditEvent, sink: &dyn EgressSink) {
-    let failed = event.denial_category
-        == Some(NetworkAuditDenialCategory::ManagedCredentialUnavailable)
-        || matches!(
-            event.credential_capture_action.as_deref(),
-            Some("denied" | "failed")
-        );
-    if failed {
-        let name = event
-            .credential_capture_name
-            .as_deref()
-            .or_else(|| rule(event));
-        if let Some(name) = name {
-            sink.credential_failed(name);
+    // A failed capture is bookkeeping: nono then denies the request it served, and that
+    // denial is the one record of the failure.
+    if event.credential_capture_action.is_some() {
+        return;
+    }
+    if event.denial_category == Some(NetworkAuditDenialCategory::ManagedCredentialUnavailable) {
+        if let Some(rule) = rule(event) {
+            sink.credential_failed(rule);
             return;
         }
     }

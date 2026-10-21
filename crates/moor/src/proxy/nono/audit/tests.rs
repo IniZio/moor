@@ -164,13 +164,34 @@ fn credential_failure_falls_back_to_the_route_rule() {
     assert_eq!(run(&[e]), ["failed gh"]);
 }
 
+/// The two denials nono emits for one request whose credential capture fails: the capture's,
+/// then the request's.
+fn failed_capture_pair() -> [NetworkAuditEvent; 2] {
+    let category = "managed_credential_unavailable";
+    [
+        event(
+            "deny",
+            &json!({
+                "route_id": "gh__0",
+                "denial_category": category,
+                "credential_capture_action": "failed",
+                "credential_capture_name": "gh",
+            }),
+        ),
+        event(
+            "deny",
+            &json!({"route_id": "gh__0", "denial_category": category}),
+        ),
+    ]
+}
+
 #[test]
-fn denied_capture_action_is_a_credential_failure() {
-    let e = event(
-        "deny",
-        &json!({"credential_capture_action": "denied", "credential_capture_name": "gh"}),
-    );
-    assert_eq!(run(&[e]), ["failed gh"]);
+fn one_request_whose_capture_fails_is_one_credential_failure() {
+    assert_eq!(run(&failed_capture_pair()), ["failed gh"]);
+    let [capture, request] = failed_capture_pair();
+    let mut split = run(&[capture]);
+    split.extend(run(&[request]));
+    assert_eq!(split, ["failed gh"], "the pair split across two drains");
 }
 
 #[test]
