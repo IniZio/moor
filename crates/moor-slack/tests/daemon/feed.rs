@@ -122,6 +122,52 @@ fn a_refold_after_a_dropped_watch_or_a_restart_posts_and_edits_nothing() {
 }
 
 #[test]
+fn a_backlog_read_in_parts_after_a_dropped_watch_is_acted_on_only_once_caught_up() {
+    let (rig, controller, _bin, post) = thread_with_status();
+    controller.emit(BOX_ID, BOX_NAME, "working", json!({}));
+    controller.emit(BOX_ID, BOX_NAME, "idled", json!({}));
+    wait_status(&rig, &post.ts, &status("idle"));
+    std::thread::sleep(PAST_WINDOW);
+    let before = rig.slack.updates().len();
+
+    controller.split_backlogs(1, QUIET);
+    let n = watches(&controller);
+    controller.drop_watches();
+    wait_refolded(&controller, n);
+    let updates = rig.slack.updates();
+    assert_eq!(
+        updates.len(),
+        before,
+        "edited midway through a replay: {updates:?}"
+    );
+}
+
+/// Waits until every coordinator turn's line is posted, so a later `chat.update` is the feed's.
+fn wait_turns_posted(rig: &Rig) {
+    let db = rusqlite::Connection::open(rig.path("state-slack/slack.db")).unwrap();
+    db.busy_timeout(Duration::from_secs(5)).unwrap();
+    let sql = "SELECT COUNT(*) FROM slack_turns WHERE posted_at IS NULL";
+    rig.slack.wait_until("every turn posted", |_, _| {
+        db.query_row(sql, [], |r| r.get::<_, i64>(0)).unwrap() == 0
+    });
+}
+
+#[test]
+fn a_status_edit_slack_refuses_is_sent_again_after_the_window() {
+    let (rig, controller, _bin, post) = thread_with_status();
+    wait_turns_posted(&rig);
+    let refused = json!({"ok": false, "error": "internal_error"});
+    rig.slack.answer_updates(&[(200, refused)]);
+    controller.emit(BOX_ID, BOX_NAME, "working", json!({}));
+    let want = status("working");
+    rig.slack.wait_until("the edit sent again", |_, updates| {
+        let tries = updates.iter().filter(|u| u.ts == post.ts && u.text == want);
+        tries.count() == 2
+    });
+    wait_recorded(&rig, &post.ts, &want);
+}
+
+#[test]
 fn events_reach_a_box_by_its_id_and_its_name_is_only_for_display() {
     let (rig, controller, _bin, post) = thread_with_status();
     controller.emit(BOX_ID + 1, BOX_NAME, "working", json!({}));

@@ -69,6 +69,8 @@ struct Inner {
     events: Vec<ServerFrame>,
     /// The connection of each live watch.
     live: Vec<UnixStream>,
+    /// How many events a backlog sends before it pauses, and for how long, once set.
+    split: Option<(usize, Duration)>,
 }
 
 /// A running scripted controller; it serves until the test process exits.
@@ -90,6 +92,7 @@ impl FakeController {
             hosts: Vec::new(),
             events: Vec::new(),
             live: Vec::new(),
+            split: None,
         }));
         let shared = Arc::clone(&inner);
         thread::spawn(move || {
@@ -163,6 +166,12 @@ impl FakeController {
             .retain_mut(|stream| stream.write_all(line.as_bytes()).is_ok());
     }
 
+    /// Sends each later backlog in two writes `pause` apart: its first `events` events, then
+    /// the rest and the caught-up frame, so the front reads it in more than one batch.
+    pub(crate) fn split_backlogs(&self, events: usize, pause: Duration) {
+        self.lock().split = Some((events, pause));
+    }
+
     /// Ends every live watch, as a controller restart does; the front dials again and gets
     /// every event again.
     pub(crate) fn drop_watches(&self) {
@@ -216,7 +225,16 @@ fn serve(stream: UnixStream, inner: &Mutex<Inner>) {
         line.clear();
         let frame = match next {
             Next::Send(frame) => frame,
-            Next::Backlog(since) => return send_backlog(&mut writer, &guard, since),
+            Next::Backlog(since) => {
+                let (parts, pause) = backlog(&guard, since);
+                drop(guard);
+                let [first, rest] = parts;
+                if writer.write_all(first.as_bytes()).is_ok() {
+                    thread::sleep(pause);
+                    let _ = writer.write_all(rest.as_bytes());
+                }
+                return;
+            }
             Next::Follow(since) => {
                 follow(&mut writer, &mut guard, since);
                 continue;
@@ -310,11 +328,15 @@ fn answer(line: &str, inner: &mut Inner) -> Next {
     }
 }
 
-/// Sends the events after `since` and the caught-up frame on a backlog watch.
-fn send_backlog(writer: &mut UnixStream, inner: &Inner, since: i64) {
+/// A backlog watch's events after `since` and its caught-up frame, in the two parts it is
+/// written in, with the pause between them.
+fn backlog(inner: &Inner, since: i64) -> ([String; 2], Duration) {
     let cursor = BACKLOG_END + i64::try_from(inner.events.len()).unwrap();
-    let out = events_after(inner, since) + &ServerFrame::CaughtUp { cursor }.to_line();
-    let _ = writer.write_all(out.as_bytes());
+    let mut lines: Vec<String> = events(inner, since).map(ServerFrame::to_line).collect();
+    lines.push(ServerFrame::CaughtUp { cursor }.to_line());
+    let (at, pause) = inner.split.unwrap_or((0, Duration::ZERO));
+    let rest = lines.split_off(at.min(lines.len()));
+    ([lines.concat(), rest.concat()], pause)
 }
 
 /// Sends the events after `since` on a live watch and keeps it for later events.
@@ -327,14 +349,17 @@ fn follow(writer: &mut UnixStream, inner: &mut Inner, since: i64) {
     }
 }
 
-/// The frames of every event after `since`, one per line.
-fn events_after(inner: &Inner, since: i64) -> String {
+/// Every event after `since`, oldest first.
+fn events(inner: &Inner, since: i64) -> impl Iterator<Item = &ServerFrame> {
     inner
         .events
         .iter()
-        .filter(|frame| matches!(frame, ServerFrame::Event { cursor, .. } if *cursor > since))
-        .map(ServerFrame::to_line)
-        .collect()
+        .filter(move |frame| matches!(frame, ServerFrame::Event { cursor, .. } if *cursor > since))
+}
+
+/// The frames of every event after `since`, one per line.
+fn events_after(inner: &Inner, since: i64) -> String {
+    events(inner, since).map(ServerFrame::to_line).collect()
 }
 
 /// The answer to a request no script covers: from the host Sessions, then the Box table.
