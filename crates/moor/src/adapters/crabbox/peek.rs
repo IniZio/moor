@@ -41,9 +41,11 @@ pub(super) fn peek_file(
         Err(ProcError::Spawn(_)) => Err(DriverError::Unavailable(
             "ssh could not be started".to_owned(),
         )),
-        Err(e) => Err(link::lost(&e).unwrap_or_else(|| DriverError::Failed {
-            summary: "box file read failed".to_owned(),
-        })),
+        Err(e) => Err(
+            link::lost(cb, handle, &e).unwrap_or_else(|| DriverError::Failed {
+                summary: "box file read failed".to_owned(),
+            }),
+        ),
     }
 }
 

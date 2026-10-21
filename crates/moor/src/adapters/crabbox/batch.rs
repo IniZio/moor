@@ -43,9 +43,10 @@ pub(super) fn run(
     };
     let mut results = parse(stdout.as_bytes(), steps);
     if let Some(step) = steps.get(results.len()).filter(|_| !stopped(&results)) {
-        results.push(Err(
-            failure.map_or_else(|| failed(summary(step)), |e| ssh_failure(&e, step))
-        ));
+        results.push(Err(failure.map_or_else(
+            || failed(summary(step)),
+            |e| ssh_failure(cb, handle, &e, step),
+        )));
     }
     results
 }
@@ -253,11 +254,11 @@ const fn summary(step: &BoxStep) -> &'static str {
 }
 
 /// The error for the first step that got no frame because ssh failed.
-fn ssh_failure(e: &ProcError, step: &BoxStep) -> DriverError {
+fn ssh_failure(cb: &Crabbox, handle: &BoxHandle, e: &ProcError, step: &BoxStep) -> DriverError {
     match e {
         ProcError::Timeout { after, .. } => DriverError::Timeout(*after),
         ProcError::Spawn(_) => DriverError::Unavailable("ssh could not be started".to_owned()),
-        _ => link::lost(e).unwrap_or_else(|| failed(summary(step))),
+        _ => link::lost(cb, handle, e).unwrap_or_else(|| failed(summary(step))),
     }
 }
 

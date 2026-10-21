@@ -8,7 +8,7 @@
 //! ending a master never ends the agent.
 
 use std::fs::{self, DirBuilder, OpenOptions};
-use std::io::Write as _;
+use std::io::{Read as _, Seek as _, SeekFrom, Write as _};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
 use std::path::PathBuf;
@@ -21,7 +21,7 @@ use moor_core::seam::proc::{Deadline, ProcError, ProcOutput, ProcSpec, Tool};
 use moor_core::Warning;
 use serde::{Deserialize, Serialize};
 
-use super::errors::{transport_loss, EXIT_SSH};
+use super::errors::{one_line, transport_loss, EXIT_SSH};
 use super::Crabbox;
 use crate::adapters::sockets::{private_dir, short_hash};
 
@@ -33,6 +33,10 @@ const PERSIST_SECS: u32 = 120;
 const TARGET_TTL_MS: i64 = 10 * 60 * 1000;
 /// Time allowed for a request to a master; it goes over the local socket only.
 const CONTROL_DEADLINE: Duration = Duration::from_secs(5);
+/// Bytes of a master's log that go into an error message.
+const LOG_TAIL: u64 = 300;
+/// Size past which a master's log is emptied before the next call.
+const LOG_MAX: u64 = 16 * 1024;
 
 /// Where the shared connections of all Boxes live.
 pub(super) struct Dirs {
@@ -50,6 +54,8 @@ pub(super) struct Link {
     socket: PathBuf,
     /// The saved target, as JSON.
     target: PathBuf,
+    /// Where the master writes its errors: ssh sends a persisted master's stderr to /dev/null.
+    log: PathBuf,
 }
 
 /// The target words the master connects with, and when they were looked up.
@@ -99,6 +105,7 @@ impl Crabbox {
             handle.as_str().as_bytes(),
         ]);
         Some(Link {
+            log: dirs.sockets.join(format!("{scoped}.log")),
             socket: dirs.sockets.join(scoped),
             target: dirs.state.join("ssh").join(format!("{name}.target")),
         })
@@ -154,7 +161,39 @@ impl Link {
             format!("ControlPersist={PERSIST_SECS}"),
             "-o".to_owned(),
             format!("ControlPath={}", self.socket.display()),
+            "-E".to_owned(),
+            self.log.display().to_string(),
+            "-o".to_owned(),
+            "LogLevel=ERROR".to_owned(),
         ]
+    }
+
+    /// Empties the log when the next call opens a master, or when the log has grown past
+    /// [`LOG_MAX`], and makes sure only this user can read it. A failure only costs the tail.
+    fn prepare_log(&self) {
+        let grown = fs::metadata(&self.log).is_ok_and(|m| m.len() > LOG_MAX);
+        if self.socket.exists() && !grown {
+            return;
+        }
+        let _ = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(&self.log)
+            .and_then(|f| f.set_permissions(std::os::unix::fs::PermissionsExt::from_mode(0o600)));
+    }
+
+    /// The last bytes the master logged, as one line; empty when it logged nothing.
+    fn log_tail(&self) -> String {
+        let read = fs::File::open(&self.log).and_then(|mut f| {
+            let len = f.metadata()?.len();
+            f.seek(SeekFrom::Start(len.saturating_sub(LOG_TAIL)))?;
+            let mut bytes = Vec::new();
+            f.read_to_end(&mut bytes)?;
+            Ok(bytes)
+        });
+        one_line(&String::from_utf8_lossy(&read.unwrap_or_default()))
     }
 
     /// Sends `request` (`exit` or `stop`) to the master; false when no master answered.
@@ -176,6 +215,7 @@ impl Link {
 pub(super) fn args(cb: &Crabbox, handle: &BoxHandle, target: Vec<String>) -> Vec<String> {
     match cb.link(handle).filter(|_| cb.unshared().is_none()) {
         Some(link) => {
+            link.prepare_log();
             let mut args = link.options();
             args.extend(target);
             args
@@ -216,15 +256,16 @@ pub(super) fn failed(cb: &Crabbox, handle: &BoxHandle, e: &ProcError) {
 
 /// The lost connection behind a failed short call, when that is what failed. A call whose
 /// shared master lost the network exits 255 and prints nothing, since only the master saw
-/// why; moor's short calls never exit 255 themselves.
-pub(super) fn lost(e: &ProcError) -> Option<DriverError> {
+/// why; moor's short calls never exit 255 themselves. The error then carries what the
+/// master logged.
+pub(super) fn lost(cb: &Crabbox, handle: &BoxHandle, e: &ProcError) -> Option<DriverError> {
     match e {
         ProcError::NonZero {
             code: EXIT_SSH,
             stderr_tail,
             ..
         } if stderr_tail.trim().is_empty() => Some(DriverError::Transport {
-            stderr_tail: String::new(),
+            stderr_tail: cb.link(handle).map(|l| l.log_tail()).unwrap_or_default(),
         }),
         _ => transport_loss(e),
     }
@@ -237,6 +278,7 @@ pub(super) fn close(cb: &Crabbox, handle: &BoxHandle) {
         if !link.control(cb, "exit") {
             let _ = fs::remove_file(&link.socket);
         }
+        let _ = fs::remove_file(&link.log);
         link.forget();
     }
 }
