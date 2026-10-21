@@ -129,3 +129,50 @@ fn a_refold_after_a_dropped_watch_or_a_restart_posts_no_second_prompt() {
         rig.slack.posts()
     );
 }
+
+#[test]
+fn a_prompt_slack_refuses_is_dropped_and_the_other_box_still_gets_its_lines() {
+    let (mut rig, controller, bin) = Rig::start_boxes();
+    std::fs::OpenOptions::new()
+        .append(true)
+        .open(rig.path("slack.yaml"))
+        .and_then(|mut f| std::io::Write::write_all(&mut f, b"  max_open_boxes: 2\n"))
+        .unwrap();
+    rig.kill_daemon();
+    rig.spawn_daemon();
+    let goal = |g: &str| ("start_box", json!({ "goal": g }));
+    Rig::tool_calls(
+        &bin,
+        Some(0),
+        &[goal("fix the thing"), goal("and the other")],
+    );
+    rig.open_thread_with_a_box();
+    let second = format!("{}2", BOX_NAME.strip_suffix('1').unwrap());
+    rig.wait_box_state(&second, "bound");
+    rig.slack.refuse_block_posts(usize::MAX);
+    controller.emit(BOX_ID, BOX_NAME, "needs_input", asks());
+    rig.slack
+        .wait_until("the refused prompt", |posts, _| !prompts(posts).is_empty());
+    controller.emit(BOX_ID + 1, &second, "idled", json!({}));
+    rig.wait_post(&format!("Box `{second}` finished its turn."));
+    std::thread::sleep(QUIET);
+    assert_eq!(
+        prompts(&rig.slack.posts()).len(),
+        1,
+        "a refused prompt is not retried"
+    );
+    let db = rusqlite::Connection::open(rig.path("state-slack/slack.db")).unwrap();
+    let closed: Option<String> = db
+        .query_row("SELECT closed_reason FROM slack_prompts", [], |r| r.get(0))
+        .unwrap();
+    assert!(closed.is_some(), "the refused prompt is recorded closed");
+    rig.slack.refuse_block_posts(0);
+    controller.emit(
+        BOX_ID,
+        BOX_NAME,
+        "needs_input",
+        json!({"question": "Again?"}),
+    );
+    let posted = wait_prompts(&rig, 2);
+    assert!(posted[1].text.contains("Again?"), "{}", posted[1].text);
+}

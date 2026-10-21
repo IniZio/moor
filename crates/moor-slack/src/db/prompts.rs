@@ -13,6 +13,9 @@ const PROMPT_COLUMNS: &str = "p.id, p.event_id, p.box_name, b.channel, b.thread_
      b.requested_by, p.message_ts, p.question, p.options, p.answer, p.answered_by, \
      p.closed_reason FROM slack_prompts p JOIN slack_boxes b ON b.box_name = p.box_name";
 
+/// Why a prompt Slack refused to post is closed.
+const REFUSED: &str = "not posted (Slack refused the message)";
+
 /// Where a prompt stands.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum PromptState {
@@ -44,8 +47,8 @@ pub(crate) struct Prompt {
     pub(crate) thread_ts: String,
     /// Slack user id of the person who asked for the Box; only they may answer.
     pub(crate) requested_by: String,
-    /// Ts of the prompt message.
-    pub(crate) message_ts: String,
+    /// Ts of the prompt message, `None` when Slack refused to post it.
+    pub(crate) message_ts: Option<String>,
     /// The question, empty when the Box gave none.
     pub(crate) question: String,
     /// The options offered, numbered from 1.
@@ -60,8 +63,8 @@ pub(crate) struct Posted<'a> {
     pub(crate) box_name: &'a BoxName,
     /// Cursor of the `needs_input` event.
     pub(crate) event_id: i64,
-    /// Ts of the message.
-    pub(crate) message_ts: &'a str,
+    /// Ts of the message, `None` when Slack refused it; such a prompt is recorded closed.
+    pub(crate) message_ts: Option<&'a str>,
     /// The question.
     pub(crate) question: &'a str,
     /// The options offered.
@@ -78,21 +81,23 @@ impl Db {
         )
     }
 
-    /// Records the prompt message `posted` at `now`, once per Box and event.
+    /// Records the prompt message `posted` at `now`, once per Box and event. A prompt Slack
+    /// refused is recorded closed, so it is not posted again.
     pub(crate) fn insert_prompt(&self, posted: &Posted<'_>, now: i64) -> rusqlite::Result<()> {
         let options = serde_json::to_string(posted.options)
             .map_err(|e| rusqlite::Error::ToSqlConversionFailure(e.into()))?;
         self.conn.execute(
             "INSERT OR IGNORE INTO slack_prompts \
-             (box_name, event_id, message_ts, question, options, created_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+             (box_name, event_id, message_ts, question, options, created_at, closed_reason) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, CASE WHEN ?3 IS NULL THEN ?7 END)",
             params![
                 posted.box_name.as_str(),
                 posted.event_id,
                 posted.message_ts,
                 posted.question,
                 options,
-                now
+                now,
+                REFUSED
             ],
         )?;
         Ok(())

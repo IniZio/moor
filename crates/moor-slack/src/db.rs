@@ -105,7 +105,7 @@ const SCHEMA: &str = "
         id INTEGER PRIMARY KEY,
         box_name TEXT NOT NULL,
         event_id INTEGER NOT NULL,
-        message_ts TEXT NOT NULL,
+        message_ts TEXT CHECK (message_ts IS NOT NULL OR closed_reason IS NOT NULL),
         question TEXT NOT NULL,
         options TEXT NOT NULL,
         answer TEXT,
