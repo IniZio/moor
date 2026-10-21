@@ -121,7 +121,8 @@ or Claude token. A turn whose first output line lists any other tool or tool
 server is killed. The tools act only on the thread's own Boxes:
 
 - `list_boxes` shows each Box with its repo, who asked for it, and its state
-  as the controller reports it.
+  as the controller reports it, with each question it waits on and that
+  prompt's id.
 - `start_box` starts a Box with a goal, on a repo of the channel, or on the
   channel's default when none is named. Only the thread's starter can ask
   for one, and a thread has at most `max_open_boxes` open Boxes. Each Box is
@@ -130,6 +131,9 @@ server is killed. The tools act only on the thread's own Boxes:
 - `steer_box` sends text to a Box's agent.
 - `close_box` closes a Box without force. The thread is told when it has
   closed, or why the controller refused.
+- `answer_box` picks an option of a Box's open question by its prompt id. It
+  refuses a question that is no longer open and an option the question does
+  not offer.
 
 A tool that changes a Box works only in a turn that holds a message from
 the person who asked for that Box. Each such call is recorded in `slack.db`

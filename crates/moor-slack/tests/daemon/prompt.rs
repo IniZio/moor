@@ -497,3 +497,21 @@ fn an_unsent_answer_closes_at_startup_once_the_box_moved_on() {
     ));
     assert_eq!(menus(&controller), [(BOX_NAME.to_owned(), 1)]);
 }
+
+#[test]
+fn the_coordinator_answers_a_prompt_by_its_id_and_the_message_shows_it() {
+    let (rig, controller, bin, prompt) = asked();
+    let pick = json!({"box": BOX_NAME, "prompt": 1, "choice": 2});
+    Rig::tool_calls(&bin, None, &[("answer_box", pick)]);
+    steer_ok(&controller);
+    reply(&rig, 2, USER, "go with no");
+    let (_, updates) = rig.slack.wait_until("the answered prompt", |_, updates| {
+        updates.iter().any(|u| u.ts == prompt.ts)
+    });
+    assert_eq!(menus(&controller), [(BOX_NAME.to_owned(), 2)]);
+    let edit = updates.iter().find(|u| u.ts == prompt.ts).unwrap();
+    assert_eq!(
+        edit.blocks[1]["elements"][0]["text"],
+        format!("Answered by <@{USER}>: 2. No")
+    );
+}
