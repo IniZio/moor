@@ -42,9 +42,8 @@ pub(super) fn bind_fronts(
 }
 
 /// Whom a connection on the controller socket speaks for, from the peer's uid: the operator
-/// when it is the controller's own uid.
-pub(super) fn local_caller(stream: &UnixStream) -> Result<Caller, String> {
-    let own = rustix::process::geteuid().as_raw();
+/// when it is `own`, the controller's own uid.
+pub(super) fn local_caller(stream: &UnixStream, own: u32) -> Result<Caller, String> {
     peer_uid(stream)
         .map(|uid| {
             if uid == own {
@@ -66,4 +65,22 @@ fn peer_uid(stream: &UnixStream) -> io::Result<u32> {
 #[cfg(not(target_os = "linux"))]
 fn peer_uid(_stream: &UnixStream) -> io::Result<u32> {
     Err(io::ErrorKind::Unsupported.into())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::os::unix::net::UnixStream;
+
+    use moor_core::user::Caller;
+
+    use super::local_caller;
+
+    #[test]
+    fn a_peer_with_another_uid_is_not_the_operator() {
+        let (stream, _other) = UnixStream::pair().expect("socket pair");
+        let me = rustix::process::geteuid().as_raw();
+        let controller = me.wrapping_add(1);
+        assert_eq!(local_caller(&stream, controller), Ok(Caller::Local(me)));
+        assert_eq!(local_caller(&stream, me), Ok(Caller::Operator(me)));
+    }
 }

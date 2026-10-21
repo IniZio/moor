@@ -20,7 +20,7 @@ use moor_core::user::{Identity, SecretName, UserId};
 use moor_core::{BoxHandle, BoxId, BoxName, ProviderId};
 use ureq::Agent;
 
-use crate::proxy::detached::write_spec;
+use crate::proxy::detached::{read_spec, write_spec};
 use crate::proxy::nono::ca::ca_dir;
 use crate::proxy::nono::capture::SecretsFn;
 use crate::proxy::nono::tests::upstream::{self, Upstream};
@@ -331,4 +331,30 @@ fn each_users_box_injects_only_that_users_secret_and_a_deleted_one_fails_next() 
     );
     let said = err.lock().unwrap().clone();
     assert_nowhere(&t, said);
+}
+
+#[test]
+fn a_proxy_with_a_missing_vault_key_refuses_to_start_and_creates_none() {
+    let t = two();
+    let missing = t.dir.path().join("no-such.key");
+    let spec = ProxySpec {
+        vault_key: missing.clone(),
+        ..read_spec(t.dir.path(), t.ann.1).unwrap()
+    };
+    write_spec(t.dir.path(), &spec).unwrap();
+    let sockets = t.dir.path().join("s");
+    let stop = Arc::new(AtomicBool::new(false));
+    let err = Arc::new(Mutex::new(Vec::new()));
+    let deps = t.deps(&sockets, &stop, Arc::clone(&err) as Sink);
+    let watchdog = Arc::clone(&stop);
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_secs(5));
+        watchdog.store(true, Ordering::Release);
+    });
+    assert_ne!(
+        serve(&deps, t.ann.1),
+        0,
+        "the Proxy started without its vault key"
+    );
+    assert!(!missing.exists(), "the Proxy created a vault key");
 }

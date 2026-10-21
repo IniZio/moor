@@ -21,6 +21,7 @@ mod artifacts;
 mod attention;
 mod events;
 mod pane;
+mod pins;
 mod target;
 
 use super::run;
