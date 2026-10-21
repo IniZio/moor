@@ -51,8 +51,8 @@ pub(super) fn settings_at_base(
 /// An explicit base is resolved to its commit, so a branch that moves later cannot change the Box's base.
 ///
 /// Without an explicit base the remote default branch is fetched first and its commit is the
-/// base, so the Box branch tracks nothing. A failed fetch warns and leaves the local branch as the
-/// base.
+/// base, so the Box branch tracks nothing. A failed fetch warns and leaves the local HEAD commit
+/// as the base.
 pub(super) fn resolve(
     cx: &Cx,
     req: &StartReq,
@@ -65,17 +65,22 @@ pub(super) fn resolve(
             .map_err(|e| CommandError::new(ErrorKind::Usage, format!("unknown base {b}: {e}")))?;
         return Ok((sha.clone(), Some(sha)));
     }
-    match cx.git().fetch_default(repo) {
-        Ok(Some((_, sha))) => return Ok((sha.clone(), Some(sha))),
-        Ok(None) => {}
-        Err(e) => cx.warn(Warning {
-            code: "fetch_failed".to_owned(),
-            message: format!("could not fetch the default branch, using the local one: {e}"),
-        }),
+    let fetched = cx.git().fetch_default(repo);
+    if let Ok(Some((_, sha))) = fetched {
+        return Ok((sha.clone(), Some(sha)));
     }
     let head = cx
         .git()
         .head(repo)
         .map_err(|e| CommandError::new(ErrorKind::Failed, e))?;
+    if let Err(e) = fetched {
+        cx.warn(Warning {
+            code: "fetch_failed".to_owned(),
+            message: format!(
+                "could not fetch the default branch ({e}); the Box starts from local HEAD {head}, \
+                 which must be on the remote"
+            ),
+        });
+    }
     Ok((head, None))
 }

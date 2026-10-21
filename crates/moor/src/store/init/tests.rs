@@ -33,7 +33,7 @@ fn fresh_store_links_launches_to_sessions() {
         )
         .unwrap();
     assert_eq!(fk, "sessions");
-    assert_eq!(version(&conn), "9");
+    assert_eq!(version(&conn), "10");
 }
 
 #[test]

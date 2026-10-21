@@ -1,7 +1,7 @@
 //! The clone script runs under `sh` with real git against a local bare repo reached by `file://`.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Output};
 
 use super::{clone_script, Checkout, CloneStep};
 
@@ -108,19 +108,31 @@ impl Remote {
     /// Runs the clone script for `base` in the Box workdir and returns its exit code.
     fn run(&self, base: &str) -> i32 {
         let url = self.url();
-        let script = clone_script(&Checkout {
+        let out = self.run_with(&Checkout {
             url: &url,
             base,
             branch: BRANCH,
         });
-        let out = Command::new("sh")
-            .args(["-c", &script])
+        out.status.code().unwrap_or(-1)
+    }
+
+    /// Runs the clone script for `c` in the Box workdir.
+    fn run_with(&self, c: &Checkout<'_>) -> Output {
+        Command::new("sh")
+            .args(["-c", &clone_script(c)])
             .current_dir(self.path("box"))
             .env("HOME", self.dir.path())
             .env("GIT_CONFIG_NOSYSTEM", "1")
             .output()
-            .unwrap();
-        out.status.code().unwrap_or(-1)
+            .unwrap()
+    }
+
+    /// Commits a change to `a.txt` in the Box on whatever branch it is on.
+    fn commit_in_box(&self) -> String {
+        let b = self.path("box");
+        std::fs::write(b.join("a.txt"), "agent\n").unwrap();
+        self.git(&b, &["commit", "-q", "-am", "agent"]);
+        self.git(&b, &["rev-parse", "HEAD"])
     }
 
     /// What a rerun must leave alone.
@@ -148,15 +160,8 @@ struct State {
     exclude: String,
 }
 
-fn git_available() -> bool {
-    Command::new("git").arg("--version").output().is_ok()
-}
-
 #[test]
 fn the_first_run_is_a_partial_clone_on_the_box_branch_at_the_base() {
-    if !git_available() {
-        return;
-    }
     let r = Remote::new("first");
     assert_eq!(r.run(&r.base), 0);
     let b = r.path("box");
@@ -172,9 +177,6 @@ fn the_first_run_is_a_partial_clone_on_the_box_branch_at_the_base() {
 
 #[test]
 fn a_second_run_changes_nothing() {
-    if !git_available() {
-        return;
-    }
     let r = Remote::new("twice");
     assert_eq!(r.run(&r.base), 0);
     let b = r.path("box");
@@ -188,9 +190,6 @@ fn a_second_run_changes_nothing() {
 
 #[test]
 fn a_branch_on_the_remote_is_checked_out_instead_of_the_base() {
-    if !git_available() {
-        return;
-    }
     let r = Remote::new("branch");
     let tip = r.push_branch();
     assert_ne!(tip, r.base);
@@ -203,9 +202,6 @@ fn a_branch_on_the_remote_is_checked_out_instead_of_the_base() {
 
 #[test]
 fn a_clone_stopped_before_its_checkout_carries_on() {
-    if !git_available() {
-        return;
-    }
     let r = Remote::new("resume");
     let b = r.path("box");
     r.git(&b, &["clone", "-q", "--no-checkout", &r.url(), "."]);
@@ -215,10 +211,99 @@ fn a_clone_stopped_before_its_checkout_carries_on() {
 }
 
 #[test]
-fn a_base_that_is_not_on_the_remote_stops_at_the_base_step() {
-    if !git_available() {
-        return;
+fn a_rerun_after_head_left_the_box_branch_keeps_its_commits() {
+    let r = Remote::new("kept");
+    assert_eq!(r.run(&r.base), 0);
+    let b = r.path("box");
+    let agent = r.commit_in_box();
+    r.git(&b, &["checkout", "-q", "-b", "elsewhere", &r.base]);
+    assert_eq!(r.run(&r.base), 0);
+    assert_eq!(r.git(&b, &["symbolic-ref", "--short", "HEAD"]), BRANCH);
+    assert_eq!(r.git(&b, &["rev-parse", "HEAD"]), agent);
+}
+
+#[test]
+fn a_base_the_clone_lacks_is_fetched_from_the_remote() {
+    let r = Remote::new("fetch");
+    let b = r.path("box");
+    r.git(&b, &["clone", "-q", "--no-checkout", &r.url(), "."]);
+    let seed = r.path("seed");
+    std::fs::write(seed.join("a.txt"), "later\n").unwrap();
+    r.git(&seed, &["commit", "-q", "-am", "later"]);
+    r.git(
+        &seed,
+        &["push", "-q", "../remote.git", "HEAD:refs/heads/main"],
+    );
+    let later = r.git(&seed, &["rev-parse", "HEAD"]);
+    assert_eq!(r.run(&later), 0);
+    assert_eq!(r.git(&b, &["rev-parse", "HEAD"]), later);
+}
+
+#[test]
+fn a_branch_git_cannot_check_out_stops_at_the_checkout_step_with_its_reason() {
+    let r = Remote::new("badbranch");
+    let url = r.url();
+    let c = Checkout {
+        url: &url,
+        base: &r.base,
+        branch: "a..b",
+    };
+    let out = r.run_with(&c);
+    let step = out.status.code().and_then(CloneStep::of_exit);
+    assert_eq!(step, Some(CloneStep::Checkout), "{out:?}");
+    assert_eq!(
+        CloneStep::Checkout.reason(&c),
+        "could not check out branch a..b"
+    );
+}
+
+#[test]
+fn an_option_like_url_base_or_branch_is_refused_before_git_runs() {
+    let r = Remote::new("dash");
+    let url = r.url();
+    let pwn = r.path("pwned");
+    let upload = format!("--upload-pack=touch {}", pwn.display());
+    let cases = [
+        (
+            upload.as_str(),
+            r.base.as_str(),
+            BRANCH,
+            CloneStep::Clone,
+            "repo URL",
+        ),
+        (
+            url.as_str(),
+            upload.as_str(),
+            BRANCH,
+            CloneStep::Base,
+            "base",
+        ),
+        (
+            url.as_str(),
+            r.base.as_str(),
+            "-x",
+            CloneStep::Checkout,
+            "branch",
+        ),
+    ];
+    for (url, base, branch, step, what) in cases {
+        let out = r.run_with(&Checkout { url, base, branch });
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert_eq!(
+            out.status.code().and_then(CloneStep::of_exit),
+            Some(step),
+            "{out:?}"
+        );
+        assert!(
+            stderr.contains(&format!("the {what} starts with -")),
+            "{stderr}"
+        );
+        assert!(!pwn.exists(), "git ran {upload}");
     }
+}
+
+#[test]
+fn a_base_that_is_not_on_the_remote_stops_at_the_base_step() {
     let r = Remote::new("nobase");
     let missing = "0123456789abcdef0123456789abcdef01234567";
     let code = r.run(missing);
@@ -231,23 +316,20 @@ fn a_base_that_is_not_on_the_remote_stops_at_the_base_step() {
 
 #[test]
 fn an_unreachable_url_stops_at_the_clone_step() {
-    let script = clone_script(&Checkout {
-        url: "file:///nonexistent/moor-clone-test.git",
-        base: "0123456789abcdef0123456789abcdef01234567",
+    let r = Remote::new("unreachable");
+    let url = format!("file://{}", r.path("missing.git").display());
+    let out = r.run_with(&Checkout {
+        url: &url,
+        base: &r.base,
         branch: BRANCH,
     });
-    let dir = Scratch::new("unreachable");
-    let out = Command::new("sh")
-        .args(["-c", &script])
-        .current_dir(dir.path())
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .output()
-        .unwrap();
+    let stderr = String::from_utf8_lossy(&out.stderr);
     assert_eq!(
         out.status.code().and_then(CloneStep::of_exit),
         Some(CloneStep::Clone),
         "{out:?}"
     );
+    assert!(stderr.contains("missing.git"), "{stderr}");
 }
 
 #[test]

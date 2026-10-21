@@ -70,7 +70,10 @@ The Box clones its repo itself, through its Proxy, from
 `origin` names. The clone is partial (`--filter=blob:none`): it has the full
 history and fetches file contents when a command first needs them. The Box
 branch starts from the base commit, which must already be on GitHub. When the
-branch already exists on GitHub, the Box continues from it. A checkout whose
+branch already exists on GitHub, the Box continues from it. A retried setup
+keeps the Box branch where it is, so commits made in the Box are never reset.
+Without `--base`, when the default branch cannot be fetched, the base is the
+host checkout's HEAD, which must be on GitHub too. A checkout whose
 `origin` is not a github.com repo starts with an empty workdir. Submodules and
 Git LFS objects from other private repos are not supported, because the Proxy
 places the user's token only for the Box's own repo.

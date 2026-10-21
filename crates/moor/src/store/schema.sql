@@ -40,4 +40,4 @@ CREATE TABLE link_codes (code TEXT PRIMARY KEY, user INTEGER NOT NULL REFERENCES
   expires_at INTEGER NOT NULL);
 CREATE TABLE user_secrets (user INTEGER NOT NULL REFERENCES users(id), name TEXT NOT NULL, value BLOB NOT NULL,
   updated_at INTEGER NOT NULL, PRIMARY KEY (user, name));
-INSERT INTO meta (k, v) VALUES ('schema_version', '9');
+INSERT INTO meta (k, v) VALUES ('schema_version', '10');
