@@ -145,3 +145,22 @@ fn fresh_store() -> Connection {
     init_schema(&mut conn, Path::new("moor.db")).unwrap();
     conn
 }
+
+#[test]
+fn fresh_store_has_no_front_message_column_or_slack_tables() {
+    let conn = fresh_store();
+    let columns: Vec<String> = conn
+        .prepare("SELECT name FROM pragma_table_info('bindings')")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert!(columns.iter().any(|c| c == "owner"), "{columns:?}");
+    assert!(!columns.iter().any(|c| c == "status_ts"), "{columns:?}");
+    let slack = count(
+        &conn,
+        "SELECT COUNT(*) FROM sqlite_master WHERE name LIKE 'slack%'",
+    );
+    assert_eq!(slack, 0);
+}
