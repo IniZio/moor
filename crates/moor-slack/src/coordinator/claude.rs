@@ -1,11 +1,8 @@
 //! Everything that knows Claude Code: the version gate, the argv and cleared environment of a
 //! turn, the token on a pipe at fd 3, the `stream-json` events of its output, and the
-//! instruction files it would load from a workdir's ancestors.
+//! instruction files it would load.
 
-use std::io::{
-    self,
-    ErrorKind::{NotADirectory, NotFound},
-};
+use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
@@ -40,9 +37,6 @@ const CHECK_LIMIT: Duration = Duration::from_secs(60);
 
 /// Longest `--version` runs before its process group is killed.
 const VERSION_LIMIT: Duration = Duration::from_secs(30);
-
-/// Files Claude Code loads as instructions from its working directory and every ancestor.
-const INSTRUCTION_FILES: [&str; 3] = ["CLAUDE.md", "CLAUDE.local.md", ".claude/CLAUDE.md"];
 
 /// What the login modal asks for.
 pub(crate) const LOGIN_PROMPT: &str =
@@ -174,16 +168,7 @@ impl Agent for Claude {
     }
 
     fn unsafe_workdir(&self, workdir: &Path) -> Option<String> {
-        workdir.ancestors().find_map(|dir| {
-            INSTRUCTION_FILES.iter().find_map(|name| {
-                let path = dir.join(name);
-                match std::fs::symlink_metadata(&path) {
-                    Ok(_) => Some(format!("{} would load as instructions", path.display())),
-                    Err(e) if matches!(e.kind(), NotFound | NotADirectory) => None,
-                    Err(e) => Some(format!("cannot check {}: {e}", path.display())),
-                }
-            })
-        })
+        instructions::loaded(workdir, Path::new(instructions::MANAGED))
     }
 }
 
@@ -392,6 +377,8 @@ fn run(cmd: Command, input: &[u8], token: Option<&Secret>, limit: Duration) -> i
         timed_out,
     })
 }
+
+mod instructions;
 
 #[cfg(test)]
 pub(crate) mod tests;

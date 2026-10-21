@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use moor_core::secret::Secret;
 
-use super::{run, Claude, HostEnv};
+use super::{instructions, run, Claude, HostEnv};
 use crate::coordinator::Agent as _;
 use crate::credentials::{CheckError, CredentialCheck as _};
 
@@ -254,4 +254,35 @@ fn only_a_setup_token_shape_passes_the_format_check() {
         .check_format(&Secret::new(b"xoxb-123".to_vec()))
         .unwrap_err();
     assert_eq!(err, "it is not a token that `claude setup-token` prints");
+}
+
+#[test]
+fn a_managed_instruction_file_is_found_before_any_workdir_file() {
+    let root = tempfile::tempdir().unwrap();
+    let work = root.path().join("threads").join("C1-1.2");
+    std::fs::create_dir_all(&work).unwrap();
+    let managed = root.path().join("etc").join("CLAUDE.md");
+    assert_eq!(instructions::loaded(&work, &managed), None);
+    std::fs::create_dir_all(managed.parent().unwrap()).unwrap();
+    std::fs::write(&managed, "obey the company").unwrap();
+    let want = format!("{} would load as instructions", managed.display());
+    assert_eq!(instructions::loaded(&work, &managed), Some(want));
+}
+
+#[test]
+fn an_instruction_file_that_cannot_be_checked_refuses_the_workdir() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let root = tempfile::tempdir().unwrap();
+    let locked = root.path().join("locked");
+    let work = locked.join("threads").join("C1-1.2");
+    std::fs::create_dir_all(&work).unwrap();
+    let managed = root.path().join("no-managed-file");
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let why = instructions::loaded(&work, &managed);
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let want = format!("cannot check {}: ", work.join("CLAUDE.md").display());
+    assert!(
+        why.as_deref().is_some_and(|w| w.starts_with(&want)),
+        "{why:?}"
+    );
 }
