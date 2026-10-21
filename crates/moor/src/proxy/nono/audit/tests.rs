@@ -14,7 +14,7 @@ use nono::undo::NetworkAuditEvent;
 use nono_proxy::capture::{CredentialCaptureBackend as _, CredentialCaptureRequest};
 use serde_json::{json, Value};
 
-use super::{apply, BoxSink, EgressSink, Withheld};
+use super::{apply, BoxSink, EgressSink, Refusal, Withheld};
 use crate::proxy::nono::capture::{MoorCapture, RuleSource};
 use crate::proxy::ProxyLog;
 use crate::store::Store;
@@ -39,13 +39,8 @@ impl EgressSink for Recorder {
             .push(format!("allowed {method} {route} {status}"));
     }
 
-    fn refused(
-        &self,
-        host: &str,
-        rule: Option<&str>,
-        method: Option<&str>,
-        category: Option<&str>,
-    ) {
+    fn refused(&self, r: &Refusal<'_>) {
+        let (host, rule, method, category) = (r.host, r.rule, r.method, r.category);
         self.0
             .lock()
             .unwrap()
@@ -415,7 +410,10 @@ fn box_sink_swallows_store_errors() {
         store: &store,
         box_id: missing,
     };
-    sink.refused("h.test", None, None, None);
+    sink.refused(&Refusal {
+        host: "h.test",
+        ..Refusal::default()
+    });
     sink.credential_failed("gh");
 }
 

@@ -15,7 +15,7 @@ use tempfile::TempDir;
 use ureq::Agent;
 
 use super::upstream::{self, Upstream};
-use crate::proxy::nono::audit::{self, BoxSink, EgressSink, Withheld};
+use crate::proxy::nono::audit::{self, BoxSink, EgressSink, Refusal, Withheld};
 use crate::proxy::nono::capture::{MoorCapture, RuleSource, CACHE_TTL};
 use crate::proxy::nono::{build_config, ca, NonoProxy, NonoSpec};
 use crate::proxy::ProxyLog;
@@ -42,17 +42,17 @@ struct Fetches {
 }
 
 /// Everything one test needs.
-struct Rig {
+pub(super) struct Rig {
     /// Owns every file.
     dir: TempDir,
     /// The fake upstream behind the header rule.
-    up: Upstream,
+    pub(super) up: Upstream,
     /// The fake upstream behind the basic-auth rule.
     up2: Upstream,
     /// Fetch counters.
     fetches: Fetches,
     /// The capture backend handed to nono.
-    capture: Arc<MoorCapture>,
+    pub(super) capture: Arc<MoorCapture>,
     /// Source of time for the capture.
     clock: Arc<FakeClock>,
     /// The Box CA.
@@ -70,7 +70,7 @@ impl Rig {
     }
 
     /// The running proxy.
-    fn proxy(&self) -> &NonoProxy {
+    pub(super) fn proxy(&self) -> &NonoProxy {
         self.proxy.as_ref().unwrap()
     }
 
@@ -85,7 +85,7 @@ impl Rig {
     }
 
     /// A store with one Box, and a proxy log for it.
-    fn store(&self) -> (Store, BoxId, ProxyLog) {
+    pub(super) fn store(&self) -> (Store, BoxId, ProxyLog) {
         let store = Store::open(&self.state().join("moor.db"), self.clock.clone()).unwrap();
         let box_id = store
             .apply(Decision::insert(NewBox {
@@ -170,7 +170,7 @@ fn start_proxy(
 }
 
 /// Builds a rig with both rules and a running proxy.
-fn rig() -> Rig {
+pub(super) fn rig() -> Rig {
     let dir = TempDir::new().unwrap();
     let up = upstream::start(dir.path());
     let up2 = up.twin();
@@ -249,8 +249,8 @@ impl EgressSink for Recorder {
         self.push(format!("allowed({method}, {route}, {status})"));
     }
 
-    fn refused(&self, host: &str, rule: Option<&str>, _: Option<&str>, _: Option<&str>) {
-        self.push(format!("refused({host}, {rule:?})"));
+    fn refused(&self, r: &Refusal<'_>) {
+        self.push(format!("refused({}, {:?})", r.host, r.rule));
     }
 
     fn credential_failed(&self, rule: &str) {

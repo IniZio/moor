@@ -267,6 +267,10 @@ pub enum Event {
         method: Option<String>,
         /// Why the Proxy refused the connection, as the Proxy names it.
         category: Option<String>,
+        /// What ended an intercepted TLS handshake: `client_closed`,
+        /// `unknown_ca_alert`, `other_alert:<name>`, `timeout` or `other`.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
     },
     /// The Proxy forwarded a request to a credential host without the credential.
     CredentialWithheld {
