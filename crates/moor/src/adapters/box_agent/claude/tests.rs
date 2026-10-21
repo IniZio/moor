@@ -278,8 +278,7 @@ fn transcript_script_fails_when_the_archive_is_empty() {
         std::fs::create_dir_all(d).unwrap();
     }
     let tar = bin.join("tar");
-    std::fs::write(&tar, "#!/bin/sh\n: > \"$2\"\n").unwrap();
-    std::fs::set_permissions(&tar, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    moor_testkit::write_executable(&tar, "#!/bin/sh\n: > \"$2\"\n").unwrap();
     let d = project_dir(&home, &work);
     std::fs::create_dir_all(&d).unwrap();
     std::fs::write(d.join("a.jsonl"), "{}").unwrap();

@@ -13,6 +13,9 @@ sha2 = "0.10"
 thiserror = "2"
 zeroize = "1"
 
+[dev-dependencies]
+moor-testkit = { path = "../moor-testkit" }
+
 [lints.rust]
 unsafe_code = "forbid"
 missing_docs = "deny"

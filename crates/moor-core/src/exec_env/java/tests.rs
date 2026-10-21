@@ -52,8 +52,7 @@ impl Scratch {
             self.root.join("keytool.log").display()
         );
         fs::create_dir_all(at.parent().unwrap()).unwrap();
-        fs::write(at, script).unwrap();
-        fs::set_permissions(at, fs::Permissions::from_mode(0o755)).unwrap();
+        moor_testkit::write_executable(at, script).unwrap();
     }
 
     /// Run the lines, then `env`; returns the resulting environment.
@@ -264,8 +263,7 @@ fn the_jdk_cacerts_beside_keytool_seed_the_truststore() {
 fn a_failing_keytool_sets_nothing_and_does_not_stop_the_prelude() {
     let s = Scratch::new("fail");
     let at = s.root.join("bin/keytool");
-    fs::write(&at, "#!/bin/sh\nexit 1\n").unwrap();
-    fs::set_permissions(&at, fs::Permissions::from_mode(0o755)).unwrap();
+    moor_testkit::write_executable(&at, "#!/bin/sh\nexit 1\n").unwrap();
     let env = s.run(&[]);
     assert!(!env.contains_key("JAVA_TOOL_OPTIONS"));
     assert!(!s.home().join(".gradle/gradle.properties").exists());

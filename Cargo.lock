@@ -2005,6 +2005,7 @@ dependencies = [
  "flate2",
  "getrandom 0.4.3",
  "moor-core",
+ "moor-testkit",
  "nono",
  "nono-proxy",
  "rcgen",
@@ -2040,6 +2041,7 @@ dependencies = [
 name = "moor-core"
 version = "0.2.0"
 dependencies = [
+ "moor-testkit",
  "serde",
  "serde-saphyr",
  "serde_json",
@@ -2057,6 +2059,7 @@ dependencies = [
  "command-fds",
  "moor-client",
  "moor-core",
+ "moor-testkit",
  "rusqlite",
  "rustix",
  "rustls",
@@ -2067,6 +2070,13 @@ dependencies = [
  "tungstenite",
  "ureq",
  "webpki-roots",
+]
+
+[[package]]
+name = "moor-testkit"
+version = "0.2.0"
+dependencies = [
+ "tempfile",
 ]
 
 [[package]]

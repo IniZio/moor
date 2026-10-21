@@ -1,7 +1,6 @@
 //! Tests for the Claude Code runner against a fake `claude` script that records what it got.
 #![allow(clippy::panic, reason = "test assertions")]
 
-use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;
@@ -15,27 +14,13 @@ use crate::credentials::{CheckError, CredentialCheck as _};
 /// The fake agent the daemon tests use too.
 const FAKE: &str = include_str!("../../../tests/support/fake-claude.sh");
 
-/// The fake, written once for this test binary. A file written while another test thread
-/// forks can fail to exec with "Text file busy" until that fork execs, so the first run is
-/// retried, and each test links to this one file.
+/// The fake, written once for this test binary; each test links to this one file.
 fn shared_fake() -> &'static Path {
     static FAKE_PATH: OnceLock<PathBuf> = OnceLock::new();
     FAKE_PATH.get_or_init(|| {
         let dir = tempfile::tempdir().unwrap().keep();
         let path = dir.join("fake-claude");
-        std::fs::write(&path, FAKE).unwrap();
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
-        for _ in 0..200 {
-            match Command::new(&path).arg("--version").output() {
-                Err(e) if e.raw_os_error() == Some(26) => {
-                    std::thread::sleep(Duration::from_millis(10));
-                }
-                other => {
-                    other.unwrap();
-                    break;
-                }
-            }
-        }
+        moor_testkit::write_executable(&path, FAKE).unwrap();
         path
     })
 }

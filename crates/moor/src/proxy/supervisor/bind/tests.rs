@@ -1,6 +1,5 @@
 //! Tests for freeing the Box port before the tunnel binds it.
 
-use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::time::Duration;
@@ -31,8 +30,7 @@ fn fake_ss(bin: &Path, users: &str) {
         log = bin.join("ss.args").display(),
     );
     let path = bin.join("ss");
-    std::fs::write(&path, script).unwrap();
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    moor_testkit::write_executable(&path, script).unwrap();
 }
 
 fn run_clear(bin: &Path, port: u16) {

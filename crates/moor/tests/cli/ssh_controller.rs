@@ -1,6 +1,5 @@
 //! `controller: {ssh: <dest>}` drives a real controller through a fake `ssh`.
 
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -12,8 +11,7 @@ use super::via_controller::Daemon;
 /// Writes an executable script at `dir/ssh`.
 fn fake_ssh(dir: &Path, body: &str) -> PathBuf {
     let path = dir.join("ssh");
-    std::fs::write(&path, format!("#!/bin/sh\n{body}")).unwrap();
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    moor_testkit::write_executable(&path, format!("#!/bin/sh\n{body}")).unwrap();
     path
 }
 
