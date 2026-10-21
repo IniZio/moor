@@ -21,9 +21,13 @@ impl Cx {
         &self.repos
     }
 
-    /// Cache checkout of the known repo `name`: `<state_dir>/repos/<name>`.
+    /// Cache checkout of the known repo `name`: `<state_dir>/repos/<name>`, with the `/` of
+    /// `owner/name` written as `+`.
     pub(crate) fn repo_cache(&self, name: &str) -> Result<PathBuf, CommandError> {
-        Ok(self.state_dir()?.join("repos").join(name))
+        Ok(self
+            .state_dir()?
+            .join("repos")
+            .join(moor_core::name::repo_key_dir(name)))
     }
 
     /// Label and text of the `.moor.yaml` the controller supplies for `main_checkout`.

@@ -99,6 +99,24 @@ fn an_empty_cache_is_cloned_and_the_box_uses_the_cache_path() {
 }
 
 #[test]
+fn an_owner_name_repo_is_cloned_into_one_dir_under_the_state_root() {
+    let w = known(table(&[
+        ("acme", entry("u/acme", None)),
+        ("acme/app", entry(URL, None)),
+    ]));
+    let v = run(&w.cx, &repo_req("acme/app")).unwrap();
+    let dest = w.dir.path().join("repos").join("acme+app");
+    assert_eq!(dest.parent(), Some(w.dir.path().join("repos").as_path()));
+    let into: Vec<_> = cloned(&w)
+        .into_iter()
+        .filter_map(|a| a.last().cloned())
+        .collect();
+    assert_eq!(into, [dest.display().to_string()]);
+    assert_eq!(v.boxed.repo, dest.display().to_string());
+    assert!(dest.with_file_name("acme+app.lock").exists());
+}
+
+#[test]
 fn a_cache_with_a_checkout_is_not_cloned_again() {
     let w = known(table(&[("app", entry(URL, None))]));
     std::fs::create_dir_all(cache(&w, "app").join(".git")).unwrap();

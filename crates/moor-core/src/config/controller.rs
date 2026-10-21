@@ -116,8 +116,11 @@ fn validate_repos(file: &str, repos: &RepoTable) -> Result<(), ConfigError> {
     for (name, entry) in repos {
         let at = |leaf: &str| format!("repos.{name}{leaf}");
         let fail = |leaf: &str, why: &str| Err(ConfigError::new(at(leaf), why).in_file(file));
-        if !crate::name::valid_repo_name(name) {
-            return fail("", "name must match [A-Za-z0-9][A-Za-z0-9._-]*");
+        if !crate::name::valid_repo_key(name) {
+            return fail(
+                "",
+                "name must be NAME or OWNER/NAME, each part matching [A-Za-z0-9][A-Za-z0-9._-]*",
+            );
         }
         if entry.url.trim().is_empty() {
             return fail(".url", "must not be empty");

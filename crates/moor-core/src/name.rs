@@ -27,6 +27,24 @@ pub fn valid_repo_name(name: &str) -> bool {
         && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
 }
 
+/// A controller repo key: a repo name, or `owner/name` with each side a repo name.
+#[must_use]
+pub fn valid_repo_key(key: &str) -> bool {
+    match key.split_once('/') {
+        Some((owner, name)) => valid_repo_name(owner) && valid_repo_name(name),
+        None => valid_repo_name(key),
+    }
+}
+
+/// The one directory name that holds a valid repo key's checkout.
+///
+/// `owner/name` becomes `owner+name`. No repo name contains `+`, so two keys never share a
+/// directory, and a plain key cannot be the parent of an `owner/name` one.
+#[must_use]
+pub fn repo_key_dir(key: &str) -> String {
+    key.replace('/', "+")
+}
+
 /// A Box name: `<repo>/<label>`, or a bare segment from older stores.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct BoxName(String);

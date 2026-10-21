@@ -184,6 +184,21 @@ fn repos_block_parses_path_and_inline() {
 }
 
 #[test]
+fn an_owner_name_repo_key_is_accepted() {
+    let cfg = parse_controller("c.yaml", "repos:\n  IniZio/moor:\n    url: u\n")
+        .unwrap_or_else(|e| panic!("{e}"));
+    assert!(cfg.repos.contains_key("IniZio/moor"));
+}
+
+#[test]
+fn a_repo_key_with_path_syntax_is_rejected() {
+    for key in ["a/b/c", "/x", "x/", "../x", "a/..", "a//b", "a+b"] {
+        let e = err(&format!("repos:\n  '{key}':\n    url: u\n"));
+        assert!(e.to_string().contains("OWNER/NAME"), "{key}: {e}");
+    }
+}
+
+#[test]
 fn repo_entry_unknown_key_names_path() {
     let e = err("repos:\n  app:\n    url: u\n    bogus: 1\n");
     assert!(e.to_string().contains("bogus"), "{e}");
