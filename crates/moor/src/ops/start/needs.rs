@@ -75,7 +75,7 @@ pub(super) fn require(cx: &Cx, repo: Option<&str>) -> Result<UserId, CommandErro
 fn needs(cx: &Cx, repo: Option<&str>) -> Result<Vec<SecretName>, CommandError> {
     let origin = match repo {
         Some(key) => Some(known_repo::find(cx, key)?.1.url.clone()),
-        None => origin(cx, cx.cwd()),
+        None => cx.dir().and_then(|dir| origin(cx, dir)),
     };
     let rules = plan(cx, origin.as_deref())
         .map_err(|e| CommandError::new(ErrorKind::Failed, e))?

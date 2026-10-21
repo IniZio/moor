@@ -13,6 +13,13 @@ use crate::store::{BoxRow, Store};
 /// that names and ids cannot be probed.
 pub(crate) const NOT_YOURS: &str = "not your Box";
 
+/// The refusal for a `cp` from anyone but the operator: it writes on the controller host.
+pub(crate) const CP_OPERATOR_ONLY: &str = "cp to the host is operator-only";
+
+/// The refusal for an `in` from anyone but the operator: it names a directory on the
+/// controller host.
+pub(crate) const IN_OPERATOR_ONLY: &str = "in names a host directory, which is operator-only";
+
 /// Whose Boxes `caller` may see, asserting `asserted`. Only the controller socket's own uid
 /// is the operator; a front socket is a user at most, whatever it asserts.
 ///
@@ -39,8 +46,8 @@ pub(crate) fn viewer(
 /// request may see.
 ///
 /// # Errors
-/// [`NOT_YOURS`] for a Box the caller may not act on or that does not exist, the refusal for
-/// an identity the caller may not assert, or a store failure.
+/// [`NOT_YOURS`] for a Box the caller may not act on or that does not exist, the refusal for a
+/// request that touches the host and an identity the caller may not assert, or a store failure.
 pub(crate) fn authorize(
     cx: &Cx,
     caller: &Result<Caller, String>,
@@ -61,8 +68,21 @@ pub(crate) fn authorize(
                 return Err(CommandError::new(ErrorKind::Refused, NOT_YOURS));
             }
         }
+        if let Some(why) = host_only(request) {
+            return Err(CommandError::new(ErrorKind::Refused, why));
+        }
     }
     Ok(Grant { viewer, pins })
+}
+
+/// Why only the operator may send `request`, when it writes or reads a path on the controller
+/// host.
+const fn host_only(request: &Request) -> Option<&'static str> {
+    match request {
+        Request::Cp(_) => Some(CP_OPERATOR_ONLY),
+        Request::In(_) => Some(IN_OPERATOR_ONLY),
+        _ => None,
+    }
 }
 
 /// Whether the context's viewer may see Box `id`; a Box that does not exist counts as no.

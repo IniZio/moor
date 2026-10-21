@@ -13,7 +13,7 @@ use std::sync::{Arc, Mutex};
 use moor_core::controller::PROTOCOL;
 use serde_json::{json, Value};
 
-use super::{config, env, Buf};
+use super::{config, env_with, Buf};
 use crate::controller::{start, Sink};
 
 /// A running controller with a `slack` front, and where its sockets and stderr are.
@@ -29,9 +29,13 @@ pub(super) struct Served {
 impl Served {
     /// Starts a controller with the `slack` and `web` fronts.
     pub(super) fn start() -> Self {
-        let dir = tempfile::tempdir().expect("tmp");
+        Self::start_in(tempfile::tempdir().expect("tmp"), &[])
+    }
+
+    /// [`Self::start`] with its config and state in `dir`, and the variables `extra` set.
+    pub(super) fn start_in(dir: tempfile::TempDir, extra: &[(&str, &str)]) -> Self {
         let cfg = config(dir.path(), "fronts:\n  slack: {}\n  web: {}\n");
-        let running = start(&env(dir.path()), &cfg).expect("start");
+        let running = start(&env_with(dir.path(), extra), &cfg).expect("start");
         let main = running.socket.clone();
         let log = Buf::default();
         let sink: Sink = Arc::new(Mutex::new(log.clone()));

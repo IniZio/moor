@@ -70,7 +70,7 @@ fn store_opens_lazily_at_moor_db() {
 #[test]
 fn accessors_return_injected_values() {
     let cx = cx(Path::new("/nonexistent"));
-    assert_eq!(cx.cwd(), Path::new("/w"));
+    assert_eq!(cx.dir(), Some(Path::new("/w")));
     assert_eq!(cx.config().herdr_session(), "moor");
 }
 

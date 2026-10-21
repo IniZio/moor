@@ -7,15 +7,16 @@ use moor_core::{EnvReq, ErrorKind};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::facts;
+use crate::ops::common::host_path::{absolute, caller_dir};
 
 pub(crate) mod items;
 
 /// Run `env`.
 pub(crate) fn run(cx: &Cx, req: &EnvReq) -> Result<EnvView, CommandError> {
-    let dir = req
-        .repo
-        .as_deref()
-        .map_or_else(|| cx.cwd().to_path_buf(), |r| cx.cwd().join(r));
+    let dir = match req.repo.as_deref() {
+        Some(repo) => absolute("repo", repo)?,
+        None => caller_dir(cx)?.to_path_buf(),
+    };
     let top = cx
         .git()
         .toplevel(&dir)

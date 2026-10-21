@@ -66,6 +66,10 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
             ErrorKind::Usage,
             "as acts as an identity a socket checks, so only the controller socket serves it",
         )),
+        Request::In(_) => Err(CommandError::new(
+            ErrorKind::Usage,
+            "in names the caller's directory, so its receiver unwraps it before it runs",
+        )),
         Request::Repos(r) => to_value(&repos::run(cx, &r)),
         Request::Sessions(r) => to_value(&sessions::run(cx, &r)?),
         Request::Close(r) => to_value(&close::run(cx, &r)?),

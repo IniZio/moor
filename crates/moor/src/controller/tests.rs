@@ -10,10 +10,17 @@ use super::{serve, start};
 use crate::env::Env;
 
 fn env(dir: &Path) -> Env {
-    Env::from_pairs([
-        ("MOOR_STATE_DIR", dir.join("state").to_str().expect("utf8")),
+    env_with(dir, &[])
+}
+
+/// [`env`] plus the variables `extra`.
+fn env_with(dir: &Path, extra: &[(&str, &str)]) -> Env {
+    let state = dir.join("state");
+    let base = [
+        ("MOOR_STATE_DIR", state.to_str().expect("utf8")),
         ("MOOR_CONFIG", "/nonexistent/moor.yaml"),
-    ])
+    ];
+    Env::from_pairs(base.iter().chain(extra).copied())
 }
 
 fn config(dir: &Path, text: &str) -> std::path::PathBuf {
@@ -143,6 +150,7 @@ fn relative_repo_moor_yaml_resolves_against_config_dir() {
 mod artifacts;
 mod authz;
 mod fronts;
+mod host_paths;
 mod run_output;
 mod users;
 

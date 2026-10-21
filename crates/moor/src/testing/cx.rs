@@ -104,9 +104,9 @@ impl Cx {
             proc: Arc::clone(&proc),
             config,
             env: Env::default(),
-            cwd: cwd.to_path_buf(),
             prompt_window: Duration::from_secs(8),
         })
+        .with_dir(Some(cwd.to_path_buf()))
     }
 }
 

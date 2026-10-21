@@ -15,6 +15,7 @@ use moor_core::{CpReq, ErrorKind};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::boxlock::{self, BoxLock};
+use crate::ops::common::host_path::absolute;
 use crate::ops::common::wake::wake_and_revive;
 use crate::store::BoxRow;
 
@@ -26,6 +27,7 @@ pub(crate) fn run(cx: &Cx, req: &CpReq) -> Result<CpValue, CommandError> {
             "the source path is empty",
         ));
     }
+    let to = absolute("the destination", &req.dest)?;
     let store = cx.store()?;
     let id = store
         .open_box_by_name(&req.box_name)?
@@ -52,7 +54,6 @@ pub(crate) fn run(cx: &Cx, req: &CpReq) -> Result<CpValue, CommandError> {
     let handle = usable_handle(&row)?;
     let worktree = Path::new(row.worktree.as_deref().unwrap_or(&row.repo));
     let from = source(cx, &handle, worktree, &req.src)?;
-    let to = cx.cwd().join(&req.dest);
     let copied = cx.driver().copy_out(&handle, &from, &to, worktree);
     let event = ExtraEvent::Copied {
         from: from.as_str().to_owned(),

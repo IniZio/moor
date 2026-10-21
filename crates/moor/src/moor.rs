@@ -62,6 +62,14 @@ impl Moor {
         }
     }
 
+    /// This engine running a request on the caller's directory `dir`, as an `in` request names.
+    #[must_use]
+    pub fn in_dir(self, dir: Option<std::path::PathBuf>) -> Self {
+        Self {
+            cx: self.cx.with_dir(dir),
+        }
+    }
+
     /// This engine seeing only the Boxes `viewer` may see.
     #[must_use]
     pub(crate) fn viewing_as(self, viewer: Viewer) -> Self {

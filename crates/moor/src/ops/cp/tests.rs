@@ -96,11 +96,12 @@ fn fx() -> Fx {
     fx_with(FakeDriver::new(), true)
 }
 
+/// The `cp` request a CLI in [`CWD`] sends: `dest` made absolute against it.
 fn req(src: &str, dest: &str) -> CpReq {
     CpReq {
         box_name: BoxName::parse_allow_bare("t").unwrap(),
         src: src.into(),
-        dest: dest.into(),
+        dest: Path::new(CWD).join(dest).display().to_string(),
     }
 }
 
@@ -157,12 +158,20 @@ fn source_climbing_out_of_the_workdir_is_usage() {
 }
 
 #[test]
-fn relative_destination_is_absolute_from_the_callers_cwd() {
+fn a_relative_destination_is_usage_without_a_copy() {
     let f = fx();
-    run(&f.cx, &req("a", "sub/a.txt")).unwrap();
-    let (_, _, to, host_cwd) = first_copy(&f);
-    assert_eq!(to, Path::new(CWD).join("sub/a.txt"));
-    assert_eq!(host_cwd, Path::new(WORKTREE));
+    let relative = CpReq {
+        dest: "sub/a.txt".into(),
+        ..req("a", "a")
+    };
+    let err = run(&f.cx, &relative).unwrap_err();
+    assert_eq!(err.kind, ErrorKind::Usage);
+    assert!(
+        err.error.to_string().contains("not an absolute path"),
+        "{err:?}"
+    );
+    assert!(f.driver.copies().is_empty());
+    assert_eq!(copied(&f), 0);
 }
 
 #[test]

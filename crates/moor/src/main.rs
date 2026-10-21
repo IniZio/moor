@@ -110,6 +110,12 @@ fn run(env: Env, inv: Invocation) -> Output {
         Some(dir) => env.with_state_dir(dir),
         None => env,
     };
+    // The client's own directory; an unreadable one leaves relative paths for the controller
+    // to refuse.
+    let request = match std::env::current_dir() {
+        Ok(cwd) => cli::in_cwd(request, &cwd),
+        Err(_) => request,
+    };
     if let Some(target) = moor::client::configured_target(&env) {
         return moor::client::remote::run(&env, &target, request, &opts);
     }
@@ -123,9 +129,11 @@ fn render_call(env: &Env, request: Request, opts: &GlobalOpts) -> Output {
     let resp = if matches!(request, Request::Version {}) {
         Moor::version()
     } else {
-        match Moor::from_env(env) {
-            Ok(moor) => moor.call(request),
-            Err(e) => e.into_response(cmd, vec![]),
+        match (Moor::from_env(env), request.split_dir()) {
+            (Ok(moor), Ok((dir, request))) => moor.in_dir(dir).call(request),
+            (Err(e), _) => e.into_response(cmd, vec![]),
+            (_, Err(why)) => moor::error::CommandError::new(moor::moor_core::ErrorKind::Usage, why)
+                .into_response(cmd, vec![]),
         }
     };
     cli::render(&resp, opts)
