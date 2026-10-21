@@ -61,28 +61,30 @@ A user on the `users` list runs these in a channel on the `channels` list:
 - `/moor repo default OWNER/NAME` marks one of the channel's repos as the
   default. The previous default loses its mark.
 
-Put Claude Code 2.1.304 or newer on the controller host and name it in the
-front's config:
+Put Claude Code 2.1.304 or newer on the controller host. The front's config
+can name it:
 
 ```yaml
 coordinator:
-  binary: /absolute/path/to/claude
+  binary: /absolute/path/to/claude # the default: `claude` found on PATH
   agent: claude     # the default, and for now the only agent
   model: sonnet     # the default
   context_kib: 32   # the default
   max_open_boxes: 1 # the default: most Boxes a thread has open at once
 ```
 
-Every key has a default but `binary`. A config with no `coordinator` section
-gets every default and no binary. At start the front runs `claude --version`
-and logs it. A missing binary or an older version leaves the coordinator
-unavailable, and then no thread can start a Box.
+Every key has a default. A config with no `coordinator` section runs the
+`claude` it finds on the front's `PATH`. At start the front runs the
+configured binary's `--version` and logs it. A binary it cannot find or an
+older version leaves the coordinator unavailable. Then each thread gets one
+line that says why, and no thread can start a Box.
 
 A mention at the top level of a channel on the `channels` list opens a
-thread with a coordinator agent. There is no start command: the coordinator
-starts Boxes when the starter asks for work. Each message from the thread's starter becomes one turn:
-the front posts a placeholder, runs one `claude -p` process with the
-starter's own token, and edits the placeholder into the reply. Messages that
+thread with a coordinator agent, even a mention with no other text. There is
+no start command: the coordinator starts Boxes when the starter asks for
+work. Each message from the thread's starter becomes one turn: the front
+posts a placeholder, runs one `claude -p` process with the starter's own
+token, and edits the placeholder into the reply. Messages that
 arrive during a turn go into the next turn together. Each turn rebuilds its
 context from `slack.db`, within `context_kib`: the first request, what
 earlier turns did to Boxes, the thread's Boxes, as many earlier messages and
