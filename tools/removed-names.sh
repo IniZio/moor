@@ -10,6 +10,8 @@ names=(
   proxy_gate MOOR_PROXY_UPSTREAM MOOR_GH_API MOOR_GH_REPO MOOR_PUSH_URL
   PROXY_SERVED gh_shim model_route ModelRoute ANTHROPIC_BASE_URL insteadOf
   RouteRow RouteTable WebConfig web_feed start_web
+  CredentialSource GithubConfig GithubApp you_token_cmd DEFAULT_YOU_TOKEN_CMD pass_env
+  not_gh_token proxied_claude_var
 )
 args=()
 for n in "${names[@]}"; do args+=(-e "$n"); done
