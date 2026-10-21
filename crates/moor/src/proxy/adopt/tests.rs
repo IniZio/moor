@@ -236,3 +236,19 @@ fn a_missing_spec_is_reported_and_leaves_the_row_stale() {
     assert_eq!(f.row().box_port, port);
     assert_eq!(f.host.status(f.id).unwrap(), ProxyStatus::Stale);
 }
+
+#[test]
+fn a_restarted_proxy_keeps_acting_as_the_user_its_spec_names() {
+    let f = fx();
+    let mut spec = f.spec();
+    spec.user = moor_core::user::UserId::new(7);
+    write_spec(f.dir.path(), &spec).unwrap();
+    f.record(BOOT);
+    f.proc.dead(PID);
+
+    assert_eq!(f.settle(), Vec::<String>::new());
+
+    assert_eq!(f.proc.daemons().len(), 1);
+    let again = crate::proxy::detached::read_spec(f.dir.path(), f.id).unwrap();
+    assert_eq!(again, spec);
+}

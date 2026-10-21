@@ -42,12 +42,7 @@ fn handshake_event(client: impl FnOnce(TcpStream)) -> (String, serde_json::Value
     };
     let mut found = None;
     for _ in 0..100 {
-        audit::apply(
-            &rig.proxy().drain_audit(),
-            &rig.capture,
-            &Withheld::default(),
-            &sink,
-        );
+        audit::apply(&rig.proxy().drain_audit(), &Withheld::default(), &sink);
         let events = store.events(box_id, 100).unwrap();
         found = events
             .into_iter()

@@ -15,7 +15,6 @@ use moor_core::seam::forge::ForgeRepo;
 use moor_core::seam::proxy_host::ProxySpec;
 use moor_core::{BoxId, BoxName, ProviderId};
 
-mod evict;
 mod front_e2e;
 mod graphql_e2e;
 mod hairpin_e2e;
@@ -23,15 +22,15 @@ mod hairpin_e2e;
 mod host_tcp;
 mod nono_e2e;
 mod socket;
+mod users_e2e;
 
 use super::{serve, start, Deps, Sink, Stop, LEASE, TICK};
 use crate::proxy::detached::{read_spec, write_spec};
 use crate::proxy::nono::ca::ca_dir;
-use crate::proxy::nono::capture::CredsFn;
+use crate::proxy::nono::capture::SecretsFn;
 use crate::store::{Lease, ProxyRow, Store};
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::{FakeDriver, TunnelReply};
-use crate::testing::forge::FakeForge;
 use crate::testing::rng::FakeRng;
 
 const BOOT: &str = "boot-1";
@@ -86,7 +85,7 @@ impl World {
             box_repo: Some(ForgeRepo::new("o", "n")),
             rules: Vec::new(),
             user: moor_core::user::UserId::new(1),
-            vault_key: PathBuf::from("/config/vault.key"),
+            vault_key: crate::testing::cx::test_vault_key(dir.path()),
         };
         edit(&mut spec);
         write_spec(dir.path(), &spec).unwrap();
@@ -111,25 +110,23 @@ impl World {
 
     /// Dependencies using `clock` instead of the plain fake clock.
     pub(super) fn deps_with(&self, clock: Arc<dyn Clock>) -> Deps<'_> {
-        self.deps_full(clock, no_creds(), None)
+        self.deps_full(clock, no_secrets(), None)
     }
 
     /// Dependencies with the given credential lookup and extra upstream root PEM.
     pub(super) fn deps_full(
         &self,
         clock: Arc<dyn Clock>,
-        creds: CredsFn,
+        secrets: SecretsFn,
         upstream_ca: Option<PathBuf>,
     ) -> Deps<'_> {
-        let forge = FakeForge::new().with_token(ForgeRepo::new("o", "n"), b"gh-token");
         let err: Sink = self.err.clone();
         Deps {
             store: &self.store,
             driver: &self.driver,
-            forge: Arc::new(forge),
             clock,
             rng: &self.rng,
-            creds,
+            secrets,
             upstream_dial: None,
             guard_exempt: Vec::new(),
             upstream_ca,
@@ -179,9 +176,9 @@ impl World {
     }
 }
 
-/// A credential lookup that has no credentials.
-pub(super) fn no_creds() -> CredsFn {
-    Arc::new(|_: &str| Err("no credential in tests".to_owned()))
+/// A secret lookup for a user who has no secrets.
+pub(super) fn no_secrets() -> SecretsFn {
+    Arc::new(|_, _, _| Ok(None))
 }
 
 /// Insert a Box named `name`, give it a live machine from `driver` and a worktree.

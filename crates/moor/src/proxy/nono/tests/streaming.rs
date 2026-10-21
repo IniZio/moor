@@ -9,7 +9,6 @@ use std::sync::mpsc;
 use std::sync::Arc;
 use std::time::Duration;
 
-use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, Secret};
 use rustls::{ServerConfig, ServerConnection, StreamOwned};
 use tempfile::TempDir;
@@ -20,7 +19,6 @@ use super::uploads::uploads_rule;
 use super::upstream::make_certs;
 use crate::proxy::nono::capture::{MoorCapture, RuleSource};
 use crate::proxy::nono::{build_config, ca, NonoProxy, NonoSpec};
-use crate::testing::clock::FakeClock;
 
 const TOKEN: &str = "token_AbCdEf-0123456789";
 const MIB: u64 = 1 << 20;
@@ -167,11 +165,10 @@ fn upload(total: u64, gate: u64) -> (u64, Option<u16>, u64) {
         fetch: Arc::new(|| Ok(Secret::new(b"gho_real".to_vec()))),
         basic_user: None,
     };
-    let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000_000)));
-    let capture = Arc::new(MoorCapture::new(
-        BTreeMap::from([("github-uploads".to_owned(), source)]),
-        clock,
-    ));
+    let capture = Arc::new(MoorCapture::new(BTreeMap::from([(
+        "github-uploads".to_owned(),
+        source,
+    )])));
     let state = dir.path().join("state");
     let ca = ca::load_or_create(&state, BoxId::new(7)).unwrap();
     let token = Secret::new(TOKEN.as_bytes().to_vec());

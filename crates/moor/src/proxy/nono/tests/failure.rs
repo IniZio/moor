@@ -20,13 +20,13 @@ fn an_upstream_refusing_the_connection_is_recorded_as_a_connect_failure() {
     };
     let watch = Withheld::default();
     for _ in 0..100 {
-        audit::apply(&rig.proxy().drain_audit(), &rig.capture, &watch, &sink);
+        audit::apply(&rig.proxy().drain_audit(), &watch, &sink);
         if kinds(&store, box_id).iter().any(|k| k == "egress_refused") {
             break;
         }
         std::thread::sleep(Duration::from_millis(50));
     }
-    audit::apply(&rig.proxy().drain_audit(), &rig.capture, &watch, &sink);
+    audit::apply(&rig.proxy().drain_audit(), &watch, &sink);
 
     let events = store.events(box_id, 100).unwrap();
     let refused: Vec<_> = events

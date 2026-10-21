@@ -30,7 +30,6 @@ use crate::store::Store;
 use crate::testing::bridge::bridge;
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
-use crate::testing::forge::FakeForge;
 use crate::testing::rng::FakeRng;
 
 /// The credential the fake credential source returns.
@@ -208,7 +207,7 @@ pub(super) fn github_rule() -> ResolvedRule {
     ResolvedRule {
         name: "github-api".to_owned(),
         hosts: vec!["api.github.com".to_owned()],
-        credential: "GH_TOKEN".to_owned(),
+        credential: "github".to_owned(),
         inject: ResolvedInject::Header {
             header: "Authorization".to_owned(),
             form: "token {secret}".to_owned(),
@@ -255,14 +254,13 @@ impl Rig {
         Deps {
             store: &self.store,
             driver: &self.driver,
-            forge: Arc::new(FakeForge::new()),
             clock: self.clock.clone(),
             rng: &self.rng,
-            creds: {
+            secrets: {
                 let fetches = Arc::clone(&self.fetches);
-                Arc::new(move |_: &str| {
+                Arc::new(move |_, _, _| {
                     fetches.fetch_add(1, Ordering::SeqCst);
-                    Ok(Secret::new(SECRET.as_bytes().to_vec()))
+                    Ok(Some(Secret::new(SECRET.as_bytes().to_vec())))
                 })
             },
             upstream_ca: Some(self.up.ca_path.clone()),
@@ -323,7 +321,7 @@ pub(super) fn rig_with(extra: Vec<ResolvedRule>) -> Rig {
         }),
         rules: std::iter::once(github_rule()).chain(extra).collect(),
         user: moor_core::user::UserId::new(1),
-        vault_key: "/config/vault.key".into(),
+        vault_key: crate::testing::cx::test_vault_key(dir.path()),
     };
     let sockets = dir.path().join("s");
     let mut rig = Rig {
@@ -412,96 +410,6 @@ fn other_repo_query_reaches_github_without_any_credential() {
         .into_iter()
         .any(|e| e.kind == "egress_refused");
     assert!(!refused, "out-of-scope forwarding is not a refusal");
-    rig.live.unwrap().stop();
-}
-
-#[test]
-fn anonymous_401_does_not_evict_the_cached_credential() {
-    let rig = rig();
-    let (status, _) = query(&rig.client(), "victim", "secrets");
-    assert_eq!(status, 401);
-    let (status, _) = query(&rig.client(), "victim", "other");
-    assert_eq!(status, 401);
-    rig.live.as_ref().unwrap().drain(&rig.deps(), rig.box_id);
-    let withheld: Vec<String> = rig
-        .store
-        .events(rig.box_id, 100)
-        .unwrap()
-        .into_iter()
-        .filter(|e| e.kind == "credential_withheld")
-        .map(|e| e.payload.to_string())
-        .collect();
-    let [one] = withheld.as_slice() else {
-        unreachable!("one deduplicated event expected: {withheld:?}")
-    };
-    for want in ["api.github.com", "github-api", "POST", "/graphql"] {
-        assert!(one.contains(want), "{want} missing from {one}");
-    }
-    for leak in ["victim", "secrets", "other", "repository("] {
-        assert!(!one.contains(leak), "{leak} leaked into {one}");
-    }
-    let (status, body) = query(&rig.client(), "o", "r");
-    assert_eq!((status, body.as_str()), (200, GRAPHQL_REPLY));
-    assert_eq!(
-        rig.fetches.load(Ordering::SeqCst),
-        1,
-        "credential refetched"
-    );
-    rig.live.unwrap().stop();
-}
-
-/// Sends `request` through the front and nono as the Box would, bytes
-/// untouched, and returns the response head.
-fn raw_call(rig: &Rig, request: &str) -> String {
-    use rustls::pki_types::pem::PemObject;
-    use rustls::pki_types::{CertificateDer, ServerName};
-    use rustls::{ClientConfig, ClientConnection, RootCertStore};
-
-    let mut tcp = TcpStream::connect((Ipv4Addr::LOCALHOST, rig.box_port)).unwrap();
-    tcp.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
-    tcp.write_all(b"CONNECT api.github.com:443 HTTP/1.1\r\nHost: api.github.com:443\r\n\r\n")
-        .unwrap();
-    let read_head = |r: &mut dyn Read| {
-        let (mut head, mut byte) = (Vec::new(), [0u8; 1]);
-        while !head.ends_with(b"\r\n\r\n") && r.read(&mut byte).is_ok_and(|n| n == 1) {
-            head.push(byte[0]);
-        }
-        String::from_utf8_lossy(&head).into_owned()
-    };
-    assert!(read_head(&mut tcp).starts_with("HTTP/1.1 200"));
-    let mut roots = RootCertStore::empty();
-    roots
-        .add(CertificateDer::from_pem_slice(rig.ca_pem.as_bytes()).unwrap())
-        .unwrap();
-    let config =
-        ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))
-            .with_safe_default_protocol_versions()
-            .unwrap()
-            .with_root_certificates(roots)
-            .with_no_client_auth();
-    let name = ServerName::try_from("api.github.com").unwrap();
-    let conn = ClientConnection::new(Arc::new(config), name).unwrap();
-    let mut tls = StreamOwned::new(conn, tcp);
-    tls.write_all(request.as_bytes()).unwrap();
-    read_head(&mut tls)
-}
-
-#[test]
-fn forged_authorization_line_does_not_make_the_credential_refetch() {
-    let rig = rig();
-    let (status, _) = query(&rig.client(), "o", "r");
-    assert_eq!(status, 200);
-    let forged = "GET /repos/cli/cli HTTP/1.1\r\nHost: api.github.com\r\n\
-                  Authorization : x\r\nConnection: close\r\n\r\n";
-    let head = raw_call(&rig, forged);
-    assert!(head.starts_with("HTTP/1.1 401"), "{head}");
-    let (status, _) = query(&rig.client(), "o", "r");
-    assert_eq!(status, 200);
-    assert_eq!(
-        rig.fetches.load(Ordering::SeqCst),
-        1,
-        "credential refetched"
-    );
     rig.live.unwrap().stop();
 }
 

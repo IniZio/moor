@@ -363,7 +363,7 @@ impl UserConfig {
         if let Some(d) = &self.dotfiles {
             d.validate()?;
         }
-        self.proxy.validate(&self.credentials)?;
+        self.proxy.validate()?;
         self.controller.validate()?;
         check::box_credentials(&self.box_credentials)
             .map_err(|(i, m)| ConfigError::new(format!("box_credentials[{i}]"), m))

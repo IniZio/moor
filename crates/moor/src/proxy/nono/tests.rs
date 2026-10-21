@@ -207,12 +207,7 @@ fn non_utf8_token_is_refused_without_echoing_it() {
         chain: None,
     });
     assert!(cfg.inner().session_token.is_none());
-    let capture = Arc::new(capture::MoorCapture::new(
-        std::collections::BTreeMap::new(),
-        Arc::new(crate::testing::clock::FakeClock::new(
-            moor_core::seam::clock::Ts::from_millis(0),
-        )),
-    ));
+    let capture = Arc::new(capture::MoorCapture::new(std::collections::BTreeMap::new()));
     let err = NonoProxy::start(cfg, capture).unwrap_err();
     assert_eq!(err.to_string(), "proxy start: session token is not utf-8");
 }
@@ -301,14 +296,8 @@ fn github_uploads_route_admits_only_the_asset_post() {
     use moor_core::config::proxy::ProxyConfig;
     use nono_proxy::config::CompiledEndpointRules;
 
-    let src = moor_core::config::CredentialSource {
-        env: Some("X".into()),
-        ..Default::default()
-    };
-    let creds = std::collections::BTreeMap::from([("CLAUDE_CODE_OAUTH_TOKEN".to_owned(), src)]);
     let rules = moor_core::config::proxy::resolve_rules(
         &ProxyConfig::default(),
-        &creds,
         Some(("o", "w")),
         moor_core::config::Identity::You,
     )

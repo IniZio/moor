@@ -161,10 +161,6 @@ impl Store {
 
     /// `user`'s secret `name`, decrypted with `vault` on every call; nothing is cached, so a
     /// deleted secret is gone for the next caller.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "the Proxy reads credentials through it next")
-    )]
     pub(crate) fn user_secret(
         &self,
         vault: &Vault,

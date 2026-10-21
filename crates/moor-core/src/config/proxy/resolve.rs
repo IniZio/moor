@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use super::template::{check_slots, fill_repo, REPO_SLOTS};
 use super::{parse_rules, ProxyConfig, ToolRule, DEFAULT_HEADER};
-use crate::config::{ConfigError, CredentialSource, Identity};
+use crate::config::{ConfigError, Identity};
 
 /// The embedded default rules.
 const DEFAULTS: &str = include_str!("defaults.yaml");
@@ -44,7 +44,7 @@ pub struct ResolvedRule {
     pub name: String,
     /// Lower-cased exact domains.
     pub hosts: Vec<String>,
-    /// `credentials:` entry name, or `forge`.
+    /// The name of the Box user's secret the rule injects.
     pub credential: String,
     /// Credential injection.
     pub inject: ResolvedInject,
@@ -117,12 +117,9 @@ pub(super) fn validate_allow(allow: &[String], at: &str) -> Result<(), ConfigErr
 ///
 /// # Errors
 /// Returns [`ConfigError`] when the repo owner or name has characters outside
-/// `[A-Za-z0-9._-]` (or is empty, `.` or `..`), when a rule that is used names a credential missing
-/// from `credentials` (default rules are checked here, user rules on load), or
-/// is otherwise invalid.
+/// `[A-Za-z0-9._-]` (or is empty, `.` or `..`), or a rule is invalid.
 pub fn resolve_rules(
     user: &ProxyConfig,
-    credentials: &BTreeMap<String, CredentialSource>,
     repo: Option<(&str, &str)>,
     identity: Identity,
 ) -> Result<Vec<ResolvedRule>, ConfigError> {
@@ -131,16 +128,10 @@ pub fn resolve_rules(
         check_repo_part("name", name)?;
     }
     let merged = user.merged_rules();
-    let defaults = default_rules();
     let mut out = Vec::new();
     for (name, rule) in merged {
         if (rule.needs_repo() && repo.is_none()) || (rule.requires_you && !identity.is_you()) {
             continue;
-        }
-        if defaults.contains_key(&name) {
-            rule.check_default_credential(&name, credentials)?;
-        } else {
-            rule.check_credential(&format!("proxy.rules.{name}"), credentials)?;
         }
         out.push(resolve_one(name, &rule, repo)?);
     }

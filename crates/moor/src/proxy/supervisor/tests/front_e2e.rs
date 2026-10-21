@@ -33,7 +33,7 @@ fn rule(name: &str, port: u16, form: &str) -> ResolvedRule {
     ResolvedRule {
         name: name.to_owned(),
         hosts: vec![format!("localhost:{port}")],
-        credential: "TOOL_TOKEN".to_owned(),
+        credential: "tool-token".to_owned(),
         inject: ResolvedInject::Header {
             header: "authorization".to_owned(),
             form: form.to_owned(),

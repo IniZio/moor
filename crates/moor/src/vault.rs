@@ -50,6 +50,12 @@ impl Vault {
         load_or_create_as(path, rustix::process::geteuid().as_raw())
     }
 
+    /// Loads the key at `path` with the checks of [`Vault::load_or_create`], but never creates
+    /// one: a missing key is refused too.
+    pub(crate) fn load(path: &Path) -> Result<Self, VaultError> {
+        load_as(path, rustix::process::geteuid().as_raw())
+    }
+
     /// Encrypts `plain` to this key, bound to `user`'s secret `name`.
     pub(crate) fn seal(
         &self,
@@ -101,6 +107,15 @@ pub(super) fn load_or_create_as(path: &Path, owner: u32) -> Result<Vault, VaultE
         Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {}
         Err(e) => return Err(refused(format!("cannot create it: {e}"))),
     }
+    load_as(path, owner)
+}
+
+/// Loads an existing key at `path` that `owner` owns, refusing an unsafe one.
+pub(super) fn load_as(path: &Path, owner: u32) -> Result<Vault, VaultError> {
+    let refused = |why: String| VaultError::Key {
+        path: path.to_path_buf(),
+        why,
+    };
     let meta = fs::symlink_metadata(path).map_err(|e| refused(e.to_string()))?;
     if !meta.is_file() {
         return Err(refused("is not a regular file".into()));

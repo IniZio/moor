@@ -40,8 +40,7 @@ fn response(status: u16) -> NetworkAuditEvent {
 
 /// Applies `events` in one drain and returns what the sink recorded.
 fn run_limits(sink: &LimitSink, events: &[NetworkAuditEvent], watch: &Withheld) -> Vec<Event> {
-    let (capture, _) = counting_capture();
-    apply(events, &capture, watch, sink);
+    apply(events, watch, sink);
     sink.events.lock().unwrap().clone()
 }
 

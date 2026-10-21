@@ -43,8 +43,8 @@ one source.
 | `env` | variable name | A host environment variable that holds the value. |
 | `pass_env` | list of variable names | Extra host variables that `cmd` may read. Only with `cmd`. |
 
-The default `claude` Proxy rule needs `credentials.CLAUDE_CODE_OAUTH_TOKEN`.
-A Box cannot start without it.
+The Proxy no longer reads these sources. A Box's Proxy injects the secrets
+of the Box's user. See [Secrets a Box uses](#secrets-a-box-uses).
 
 ### `box_credentials`
 
@@ -78,7 +78,7 @@ rule adds to that default.
 | Key | Type | Meaning |
 | --- | --- | --- |
 | `hosts` | list of host names | The exact hosts the rule serves. |
-| `credential` | string | A `credentials` name, or `forge` for the GitHub token. |
+| `credential` | string | The name of the Box user's secret the rule injects, matching `[a-z][a-z0-9_-]*`. |
 | `inject.header` | string | The header that carries the credential. The default is `Authorization`. |
 | `inject.form` | string | The header value. `{secret}` stands for the credential. |
 | `inject.basic_user` | string | The HTTP Basic auth user. moor sends the credential as the password. A rule takes `form` or `basic_user`, not both. |
@@ -87,9 +87,10 @@ rule adds to that default.
 | `requires_repo` | boolean | If true, moor drops the rule for a Box with no repo. |
 | `requires_you` | boolean | If true, moor drops the rule unless the GitHub token is your own. |
 
-The default rules are `claude` for `api.anthropic.com`, and `github-api`,
-`github-git`, and `github-uploads` for `api.github.com`, `github.com`, and
-`uploads.github.com`. They are in
+The default rules are `claude` for `api.anthropic.com`, which injects the
+`claude` secret, and `github-api`, `github-git`, and `github-uploads` for
+`api.github.com`, `github.com`, and `uploads.github.com`, which inject the
+`github` secret. They are in
 [defaults.yaml](../crates/moor-core/src/config/proxy/defaults.yaml). A user
 rule that extends a default cannot set `hosts` or `credential`. Its `allow`
 entries come after the default's, and its `box_env` values win.
@@ -184,6 +185,18 @@ identities with `moor user link-code`. A request on a front
 socket must assert an identity in that front's namespace. On the controller
 socket, the controller reads the peer's uid from the kernel and acts as `local:<uid>`. It
 refuses any other identity.
+
+## Secrets a Box uses
+
+Each Proxy rule names the secret it injects. A Box's Proxy injects the
+secrets of the Box's user only. The Proxy reads each secret from the vault on
+every request and keeps no copy, so a changed secret counts from the next
+request. After `moor user secret rm`, the next request that needs the secret
+fails, and the Box records `proxy_credential_failed`.
+
+`spec.json`, the file the controller writes for each Proxy, names the user and
+the path of `vault.key`. It never holds a secret or the key itself. The Proxy
+loads the key with the same checks as the controller and never creates one.
 
 ## Vault key
 

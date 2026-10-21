@@ -2,20 +2,17 @@
 
 use std::collections::BTreeMap;
 use std::path::Path;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use moor_core::config::proxy::{ResolvedInject, ResolvedRule};
 use moor_core::domain::decision::{Decision, NewBox};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::forge::ForgeRepo;
-use moor_core::{BoxId, BoxName, Secret};
+use moor_core::{BoxId, BoxName};
 use nono::undo::NetworkAuditEvent;
-use nono_proxy::capture::{CredentialCaptureBackend as _, CredentialCaptureRequest};
 use serde_json::{json, Value};
 
 use super::{apply, BoxSink, EgressSink, Refusal, Withheld};
-use crate::proxy::nono::capture::{MoorCapture, RuleSource};
 use crate::proxy::ProxyLog;
 use crate::store::Store;
 use crate::testing::clock::FakeClock;
@@ -84,42 +81,10 @@ fn event(decision: &str, extra: &Value) -> NetworkAuditEvent {
     serde_json::from_value(base).unwrap()
 }
 
-/// A capture whose single rule `gh` counts its fetches.
-fn counting_capture() -> (MoorCapture, Arc<AtomicUsize>) {
-    let count = Arc::new(AtomicUsize::new(0));
-    let seen = count.clone();
-    let source = RuleSource {
-        config_key: "credentials.GH".into(),
-        fetch: Arc::new(move || {
-            seen.fetch_add(1, Ordering::SeqCst);
-            Ok(Secret::new(b"tok".to_vec()))
-        }),
-        basic_user: None,
-    };
-    let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
-    let sources = BTreeMap::from([("gh".to_owned(), source)]);
-    (MoorCapture::new(sources, clock), count)
-}
-
-/// Asks the capture for rule `gh`'s credential.
-fn fetch(capture: &MoorCapture) {
-    let request = CredentialCaptureRequest {
-        credential_name: "gh".into(),
-        route_id: "gh__0".into(),
-        request_host: "api.example.com".into(),
-        request_path: "/".into(),
-        request_method: "GET".into(),
-        session_id: "s".into(),
-        cache_scope: "s".into(),
-    };
-    assert!(capture.capture(request).is_ok());
-}
-
-/// Applies `events` with a fresh capture and returns the sink's calls.
+/// Applies `events` and returns the sink's calls.
 fn run(events: &[NetworkAuditEvent]) -> Vec<String> {
-    let (capture, _) = counting_capture();
     let sink = Recorder::default();
-    apply(events, &capture, &Withheld::default(), &sink);
+    apply(events, &Withheld::default(), &sink);
     sink.calls()
 }
 
@@ -138,74 +103,6 @@ fn allow_without_route_or_method_uses_host_and_dash() {
         run(&[event("allow", &json!({}))]),
         ["allowed - api.example.com 0"]
     );
-}
-
-#[test]
-fn allow_401_evicts_the_cached_credential() {
-    let (capture, count) = counting_capture();
-    fetch(&capture);
-    fetch(&capture);
-    assert_eq!(count.load(Ordering::SeqCst), 1);
-    let e = event(
-        "allow",
-        &json!({"route_id": "gh__0", "method": "GET", "status": 401}),
-    );
-    let sink = Recorder::default();
-    apply(&[e], &capture, &Withheld::default(), &sink);
-    fetch(&capture);
-    assert_eq!(count.load(Ordering::SeqCst), 2);
-    assert_eq!(sink.calls(), ["allowed GET gh 401"]);
-}
-
-#[test]
-fn passthrough_401_does_not_evict_the_cached_credential() {
-    let (capture, count) = counting_capture();
-    fetch(&capture);
-    let e = event(
-        "allow",
-        &json!({
-            "route_id": "gh__0",
-            "method": "GET",
-            "status": 401,
-            "managed_credential_active": false,
-        }),
-    );
-    apply(&[e], &capture, &Withheld::default(), &Recorder::default());
-    fetch(&capture);
-    assert_eq!(count.load(Ordering::SeqCst), 1);
-
-    let injected = event(
-        "allow",
-        &json!({
-            "route_id": "gh__0",
-            "method": "GET",
-            "status": 401,
-            "managed_credential_active": true,
-        }),
-    );
-    apply(
-        &[injected],
-        &capture,
-        &Withheld::default(),
-        &Recorder::default(),
-    );
-    fetch(&capture);
-    assert_eq!(count.load(Ordering::SeqCst), 2);
-}
-
-#[test]
-fn allow_401_without_a_rule_evicts_nothing() {
-    let (capture, count) = counting_capture();
-    fetch(&capture);
-    let sink = Recorder::default();
-    apply(
-        &[event("allow", &json!({"status": 401}))],
-        &capture,
-        &Withheld::default(),
-        &sink,
-    );
-    fetch(&capture);
-    assert_eq!(count.load(Ordering::SeqCst), 1);
 }
 
 #[test]
@@ -308,7 +205,6 @@ fn box_sink_writes_events_and_a_path_free_log() {
         store: &store,
         box_id,
     };
-    let (capture, _) = counting_capture();
     let events = [
         event(
             "allow",
@@ -331,7 +227,7 @@ fn box_sink_writes_events_and_a_path_free_log() {
             }),
         ),
     ];
-    apply(&events, &capture, &Withheld::default(), &sink);
+    apply(&events, &Withheld::default(), &sink);
 
     let rows = store.events(box_id, 100).unwrap();
     let of = |kind: &str| {
@@ -370,7 +266,6 @@ fn box_sink_records_method_and_category_without_the_path() {
         store: &store,
         box_id,
     };
-    let (capture, _) = counting_capture();
     let denied = event(
         "deny",
         &json!({
@@ -382,7 +277,6 @@ fn box_sink_records_method_and_category_without_the_path() {
     );
     apply(
         &[denied, event("deny", &json!({"target": "bare.test"}))],
-        &capture,
         &Withheld::default(),
         &sink,
     );
@@ -449,10 +343,9 @@ fn passthrough(host: &str, method: &str, path: &str) -> NetworkAuditEvent {
 
 /// Applies `events` against the `gh` rule and returns the sink's calls.
 fn run_withheld(events: &[NetworkAuditEvent]) -> Vec<String> {
-    let (capture, _) = counting_capture();
     let watch = Withheld::new(&[gh_rule()], Some(ForgeRepo::new("acme", "widgets")));
     let sink = Recorder::default();
-    apply(events, &capture, &watch, &sink);
+    apply(events, &watch, &sink);
     sink.calls()
         .into_iter()
         .filter(|c| c.starts_with("withheld"))
@@ -506,7 +399,6 @@ fn withheld_event_and_log_never_hold_the_raw_path() {
         store: &store,
         box_id,
     };
-    let (capture, _) = counting_capture();
     let watch = Withheld::new(&[gh_rule()], Some(ForgeRepo::new("acme", "widgets")));
     apply(
         &[passthrough(
@@ -514,7 +406,6 @@ fn withheld_event_and_log_never_hold_the_raw_path() {
             "GET",
             "/repos/other/thing/issues/42?token=hunter2",
         )],
-        &capture,
         &watch,
         &sink,
     );
@@ -552,10 +443,9 @@ fn withheld_reports_stop_at_the_cap_with_one_overflow_line() {
     let events: Vec<_> = (0..300)
         .map(|i| passthrough("api.github.com", "GET", &format!("/user/thing{i}")))
         .collect();
-    let (capture, _) = counting_capture();
     let watch = Withheld::new(&[gh_rule()], Some(ForgeRepo::new("acme", "widgets")));
     let sink = Recorder::default();
-    apply(&events, &capture, &watch, &sink);
+    apply(&events, &watch, &sink);
     let calls = sink.calls();
     let reported = calls.iter().filter(|c| c.starts_with("withheld ")).count();
     let overflow = calls.iter().filter(|c| *c == "overflow").count();
@@ -595,6 +485,5 @@ fn withheld_matches_the_host_ignoring_case_and_port() {
     assert_eq!(got, [r#"withheld API.GitHub.com gh GET Some("GET /user")"#]);
 }
 
-mod filtered;
 mod handshake;
 mod limits;

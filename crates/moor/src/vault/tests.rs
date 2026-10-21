@@ -131,3 +131,16 @@ fn a_directory_or_garbage_in_place_of_the_key_is_refused() {
     assert!(err.contains("not an age X25519 identity"), "{err}");
     assert!(!err.contains("not a key"), "{err}");
 }
+
+#[test]
+fn the_proxy_load_refuses_a_missing_or_open_key_and_creates_none() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("vault.key");
+    assert!(Vault::load(&path).is_err());
+    assert!(!path.exists(), "a missing key was created");
+    key_with_mode(&path, 0o644);
+    let err = Vault::load(&path).err().expect("an open key is refused");
+    assert!(err.to_string().contains("0600"), "{err}");
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+    assert!(Vault::load(&path).is_ok());
+}

@@ -27,7 +27,6 @@ use crate::store::Store;
 use crate::testing::bridge::bridge;
 use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
-use crate::testing::forge::FakeForge;
 use crate::testing::rng::FakeRng;
 
 /// What the client sends before the proxy swaps it out.
@@ -113,7 +112,7 @@ fn rule(port: u16) -> ResolvedRule {
     ResolvedRule {
         name: "tool".to_owned(),
         hosts: vec![format!("localhost:{port}")],
-        credential: "TOOL_TOKEN".to_owned(),
+        credential: "tool-token".to_owned(),
         inject: ResolvedInject::Header {
             header: "authorization".to_owned(),
             form: "Bearer {secret}".to_owned(),
@@ -223,7 +222,7 @@ fn serve_injects_the_credential_audits_requests_and_stops() {
         box_repo: None,
         rules: vec![rule(up.port)],
         user: moor_core::user::UserId::new(1),
-        vault_key: "/config/vault.key".into(),
+        vault_key: crate::testing::cx::test_vault_key(dir.path()),
     };
     write_spec(dir.path(), &spec).unwrap();
 
@@ -233,12 +232,11 @@ fn serve_injects_the_credential_audits_requests_and_stops() {
     let deps = Deps {
         store: &store,
         driver: &driver,
-        forge: Arc::new(FakeForge::new()),
         clock,
         rng: &rng,
-        creds: Arc::new(|name: &str| {
-            assert_eq!(name, "TOOL_TOKEN");
-            Ok(Secret::new(SECRET.as_bytes().to_vec()))
+        secrets: Arc::new(|_, _, name| {
+            assert_eq!(name.as_str(), "tool-token");
+            Ok(Some(Secret::new(SECRET.as_bytes().to_vec())))
         }),
         upstream_ca: Some(up.ca_path.clone()),
         upstream_dial: None,

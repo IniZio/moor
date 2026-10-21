@@ -1,28 +1,24 @@
-//! Capture backend behaviour: caching, eviction, error text.
+//! Capture backend behaviour: a fresh read per request, error text that names only the secret.
 
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
-use moor_core::config::proxy::ProxyConfig;
-use moor_core::config::proxy::{default_rules, resolve_rules, ResolvedInject, ResolvedRule};
-use moor_core::config::{CredentialSource, Identity};
-use moor_core::seam::clock::{Clock, Ts};
-use moor_core::seam::forge::{Forge, ForgeError, ForgeRepo};
+use moor_core::config::proxy::{ResolvedInject, ResolvedRule};
+use moor_core::seam::clock::Ts;
+use moor_core::user::{Identity, UserId};
 use moor_core::Secret;
 use nono_proxy::capture::{
     CredentialCaptureBackend, CredentialCaptureMaterial, CredentialCaptureRequest,
 };
 
-use super::{sources_for, CredsFn, FetchFn, MoorCapture, RuleSource, CACHE_TTL};
+use super::{sources_for, FetchFn, MoorCapture, RuleSource, SecretsFn};
+use crate::store::{Store, STORE_FILE};
 use crate::testing::clock::FakeClock;
-use crate::testing::forge::FakeForge;
+use crate::testing::cx::put_secret;
+use crate::vault::Vault;
 
 const SECRET: &str = "s3cr3t-value";
-
-fn clock() -> Arc<FakeClock> {
-    Arc::new(FakeClock::new(Ts::from_millis(0)))
-}
 
 fn request(rule: &str) -> CredentialCaptureRequest {
     CredentialCaptureRequest {
@@ -51,99 +47,58 @@ fn counting(values: Vec<Result<&'static str, &'static str>>) -> (FetchFn, Arc<At
     (fetch, calls)
 }
 
-fn capture_with(fetch: FetchFn, basic_user: Option<&str>, clock: &Arc<FakeClock>) -> MoorCapture {
+fn capture_with(fetch: FetchFn, basic_user: Option<&str>) -> MoorCapture {
     let source = RuleSource {
-        config_key: "credentials.K".to_owned(),
+        config_key: "secret k".to_owned(),
         fetch,
         basic_user: basic_user.map(str::to_owned),
     };
-    let clock: Arc<dyn Clock> = Arc::clone(clock) as Arc<dyn Clock>;
-    MoorCapture::new(BTreeMap::from([("r".to_owned(), source)]), clock)
+    MoorCapture::new(BTreeMap::from([("r".to_owned(), source)]))
 }
 
-fn secret_of(cap: &MoorCapture, rule: &str) -> Result<(String, String), String> {
+fn secret_of(cap: &MoorCapture, rule: &str) -> Result<String, String> {
     cap.capture(request(rule))
         .map(|r| match r.material {
-            CredentialCaptureMaterial::Secret(s) => (s.to_string(), r.metadata.cache_action),
-            CredentialCaptureMaterial::Headers(_) => (String::new(), String::new()),
+            CredentialCaptureMaterial::Secret(s) => s.to_string(),
+            CredentialCaptureMaterial::Headers(_) => String::new(),
         })
         .map_err(|e| e.reason)
 }
 
 #[test]
-fn hit_within_ttl_fetches_once() {
-    let (fetch, calls) = counting(vec![Ok(SECRET)]);
-    let clock = clock();
-    let cap = capture_with(fetch, None, &clock);
-    assert_eq!(
-        secret_of(&cap, "r"),
-        Ok((SECRET.to_owned(), "miss".to_owned()))
-    );
-    clock.sleep(CACHE_TTL / 2);
-    assert_eq!(
-        secret_of(&cap, "r"),
-        Ok((SECRET.to_owned(), "hit".to_owned()))
-    );
-    assert_eq!(calls.load(Ordering::SeqCst), 1);
-}
-
-#[test]
-fn refetches_after_ttl() {
-    let (fetch, calls) = counting(vec![Ok(SECRET)]);
-    let clock = clock();
-    let cap = capture_with(fetch, None, &clock);
-    secret_of(&cap, "r").unwrap();
-    clock.sleep(CACHE_TTL);
-    secret_of(&cap, "r").unwrap();
+fn every_request_reads_the_source_again() {
+    let (fetch, calls) = counting(vec![Ok("one"), Ok("two")]);
+    let cap = capture_with(fetch, None);
+    assert_eq!(secret_of(&cap, "r").as_deref(), Ok("one"));
+    assert_eq!(secret_of(&cap, "r").as_deref(), Ok("two"));
     assert_eq!(calls.load(Ordering::SeqCst), 2);
 }
 
 #[test]
-fn evict_forces_refetch() {
-    let (fetch, calls) = counting(vec![Ok(SECRET)]);
-    let cap = capture_with(fetch, None, &clock());
-    secret_of(&cap, "r").unwrap();
-    cap.evict("r");
-    secret_of(&cap, "r").unwrap();
-    assert_eq!(calls.load(Ordering::SeqCst), 2);
-}
-
-#[test]
-fn failure_is_not_cached() {
-    let (fetch, calls) = counting(vec![Err("boom"), Ok(SECRET)]);
-    let cap = capture_with(fetch, None, &clock());
-    assert_eq!(
-        secret_of(&cap, "r"),
-        Err("credentials.K unavailable".to_owned())
-    );
-    assert!(secret_of(&cap, "r").is_ok());
-    assert_eq!(calls.load(Ordering::SeqCst), 2);
+fn a_failed_read_names_only_the_secret() {
+    let (fetch, _) = counting(vec![Err(SECRET)]);
+    let cap = capture_with(fetch, None);
+    assert_eq!(secret_of(&cap, "r"), Err("secret k unavailable".to_owned()));
 }
 
 #[test]
 fn blank_secret_is_rejected() {
     let (fetch, _) = counting(vec![Ok("  \n")]);
-    let cap = capture_with(fetch, None, &clock());
-    assert_eq!(
-        secret_of(&cap, "r"),
-        Err("credentials.K unavailable".to_owned())
-    );
+    let cap = capture_with(fetch, None);
+    assert_eq!(secret_of(&cap, "r"), Err("secret k unavailable".to_owned()));
 }
 
 #[test]
 fn non_utf8_secret_names_the_key() {
     let fetch: FetchFn = Arc::new(|| Ok(Secret::new(vec![0xff, 0xfe, b'a'])));
-    let cap = capture_with(fetch, None, &clock());
-    assert_eq!(
-        secret_of(&cap, "r"),
-        Err("credentials.K unavailable".to_owned())
-    );
+    let cap = capture_with(fetch, None);
+    assert_eq!(secret_of(&cap, "r"), Err("secret k unavailable".to_owned()));
 }
 
 #[test]
 fn unknown_rule_errors() {
     let (fetch, _) = counting(vec![Ok(SECRET)]);
-    let cap = capture_with(fetch, None, &clock());
+    let cap = capture_with(fetch, None);
     assert_eq!(
         secret_of(&cap, "nope"),
         Err("unknown proxy rule nope".to_owned())
@@ -151,205 +106,121 @@ fn unknown_rule_errors() {
 }
 
 #[test]
-fn basic_user_prefixes_secret_on_miss_and_hit() {
+fn basic_user_prefixes_the_secret() {
     let (fetch, _) = counting(vec![Ok(SECRET)]);
-    let cap = capture_with(fetch, Some("x-access-token"), &clock());
-    let want = format!("x-access-token:{SECRET}");
-    assert_eq!(secret_of(&cap, "r").unwrap().0, want);
-    assert_eq!(secret_of(&cap, "r").unwrap().0, want);
-}
-
-#[test]
-fn debug_has_rule_names_and_flags_only() {
-    let (fetch, _) = counting(vec![Ok(SECRET)]);
-    let cap = capture_with(fetch, None, &clock());
-    assert!(format!("{cap:?}").contains("(\"r\", false)"));
-    secret_of(&cap, "r").unwrap();
-    let shown = format!("{cap:?}");
-    assert!(shown.contains("(\"r\", true)"));
-    assert!(!shown.contains(SECRET));
-}
-
-fn repo() -> ForgeRepo {
-    ForgeRepo::new("acme", "widgets")
-}
-
-fn rule(name: &str, credential: &str, inject: ResolvedInject) -> ResolvedRule {
-    ResolvedRule {
-        name: name.to_owned(),
-        hosts: vec!["example.com".to_owned()],
-        credential: credential.to_owned(),
-        inject,
-        endpoint_rules: Vec::new(),
-        box_env: BTreeMap::new(),
-    }
-}
-
-fn no_creds() -> CredsFn {
-    Arc::new(|name| Ok(Secret::new(format!("cred-{name}").into_bytes())))
-}
-
-#[test]
-fn forge_rule_uses_repo_token_with_basic_user() {
-    let forge: Arc<dyn Forge> = Arc::new(FakeForge::new().with_token(repo(), SECRET.as_bytes()));
-    let rules = [rule(
-        "git",
-        "forge",
-        ResolvedInject::BasicAuth {
-            user: "x-access-token".to_owned(),
-        },
-    )];
-    let sources = sources_for(&rules, no_creds(), forge, Some(repo()));
-    let cap = MoorCapture::new(sources, clock());
+    let cap = capture_with(fetch, Some("x-access-token"));
     assert_eq!(
-        secret_of(&cap, "git").unwrap().0,
+        secret_of(&cap, "r").unwrap(),
         format!("x-access-token:{SECRET}")
     );
 }
 
 #[test]
-fn forge_rule_without_repo_names_forge_key() {
-    let forge: Arc<dyn Forge> = Arc::new(FakeForge::new());
-    let rules = [rule(
-        "git",
-        "forge",
-        ResolvedInject::BasicAuth {
-            user: "u".to_owned(),
+fn debug_has_rule_names_only() {
+    let (fetch, _) = counting(vec![Ok(SECRET)]);
+    let cap = capture_with(fetch, None);
+    secret_of(&cap, "r").unwrap();
+    let shown = format!("{cap:?}");
+    assert!(shown.contains("\"r\""), "{shown}");
+    assert!(!shown.contains(SECRET));
+}
+
+fn rule(name: &str, credential: &str) -> ResolvedRule {
+    ResolvedRule {
+        name: name.to_owned(),
+        hosts: vec!["example.com".to_owned()],
+        credential: credential.to_owned(),
+        inject: ResolvedInject::Header {
+            header: "Authorization".to_owned(),
+            form: "Bearer {secret}".to_owned(),
         },
-    )];
-    let cap = MoorCapture::new(sources_for(&rules, no_creds(), forge, None), clock());
-    assert_eq!(
-        secret_of(&cap, "git"),
-        Err("github.you_token_cmd unavailable".to_owned())
-    );
-}
-
-#[test]
-fn forge_error_text_does_not_leak() {
-    let forge: Arc<dyn Forge> =
-        Arc::new(FakeForge::new().with_token_error(repo(), ForgeError::Failed(SECRET.to_owned())));
-    let rules = [rule(
-        "git",
-        "forge",
-        ResolvedInject::BasicAuth {
-            user: "u".to_owned(),
-        },
-    )];
-    let cap = MoorCapture::new(
-        sources_for(&rules, no_creds(), forge, Some(repo())),
-        clock(),
-    );
-    let err = secret_of(&cap, "git").unwrap_err();
-    assert!(!err.contains(SECRET));
-    assert!(err.contains("github.you_token_cmd"));
-}
-
-#[test]
-fn default_rules_map_to_expected_keys() {
-    let creds = BTreeMap::from([(
-        "CLAUDE_CODE_OAUTH_TOKEN".to_owned(),
-        CredentialSource::default(),
-    )]);
-    assert!(!default_rules().is_empty());
-    let rules = resolve_rules(
-        &ProxyConfig::default(),
-        &creds,
-        Some(("acme", "widgets")),
-        Identity::You,
-    )
-    .unwrap();
-    let forge: Arc<dyn Forge> = Arc::new(FakeForge::new());
-    let sources = sources_for(&rules, no_creds(), forge, Some(repo()));
-    let keys: Vec<&str> = sources.values().map(|s| s.config_key.as_str()).collect();
-    assert!(keys.contains(&"credentials.CLAUDE_CODE_OAUTH_TOKEN"));
-    assert!(keys.contains(&"github.you_token_cmd"));
-    assert!(sources.values().any(|s| s.basic_user.is_some()));
-    assert_eq!(sources.len(), rules.len());
-}
-
-fn header_inject(form: &str) -> ResolvedInject {
-    ResolvedInject::Header {
-        header: "authorization".to_owned(),
-        form: form.to_owned(),
+        endpoint_rules: Vec::new(),
+        box_env: BTreeMap::new(),
     }
 }
 
-/// Fetches count after a cached credential met `presented` on a 401.
-fn fetches_after(inject: ResolvedInject, user: Option<&str>, presented: &str) -> usize {
-    let (fetch, calls) = counting(vec![Ok(SECRET)]);
-    let mut cap = capture_with(fetch, user, &clock());
-    cap.defer_evictions([("r".to_owned(), inject)]);
-    secret_of(&cap, "r").unwrap();
-    cap.evict_if_current("r", presented);
-    secret_of(&cap, "r").unwrap();
-    calls.load(Ordering::SeqCst)
+/// A real store and vault under a temp dir, with two enrolled users.
+struct Vaulted {
+    _dir: tempfile::TempDir,
+    store: Arc<Store>,
+    vault: Arc<Vault>,
+    ann: UserId,
+    bob: UserId,
 }
 
-#[test]
-fn evict_if_current_ignores_a_value_nono_did_not_inject() {
-    for bogus in [
-        "token bogus",
-        "token",
-        "",
-        "Token s3cr3t-value",
-        "token s3cr3t-valuex",
-    ] {
-        assert_eq!(
-            fetches_after(header_inject("token {secret}"), None, bogus),
-            1,
-            "{bogus}"
-        );
+fn vaulted() -> Vaulted {
+    let dir = tempfile::tempdir().unwrap();
+    let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
+    let store = Store::open(&dir.path().join(STORE_FILE), clock).unwrap();
+    let vault = Vault::load_or_create(&dir.path().join("vault.key")).unwrap();
+    let ann = store
+        .enroll(&Identity::parse("local:1").unwrap())
+        .unwrap()
+        .0;
+    let bob = store
+        .enroll(&Identity::parse("local:2").unwrap())
+        .unwrap()
+        .0;
+    Vaulted {
+        _dir: dir,
+        store: Arc::new(store),
+        vault: Arc::new(vault),
+        ann,
+        bob,
+    }
+}
+
+impl Vaulted {
+    fn secrets(&self) -> SecretsFn {
+        let store = Arc::clone(&self.store);
+        Arc::new(move |vault, user, name| {
+            store
+                .user_secret(vault, user, name)
+                .map_err(|e| e.to_string())
+        })
+    }
+
+    fn capture_for(&self, user: UserId) -> MoorCapture {
+        let rules = [rule("claude", "claude")];
+        MoorCapture::new(sources_for(&rules, &self.secrets(), &self.vault, user))
     }
 }
 
 #[test]
-fn evict_if_current_evicts_on_the_injected_header_form() {
+fn each_user_gets_only_their_own_secret() {
+    let v = vaulted();
+    put_secret(&v.store, &v.vault, v.ann, "claude", "ann-token");
+    put_secret(&v.store, &v.vault, v.bob, "claude", "bob-token");
     assert_eq!(
-        fetches_after(header_inject("token {secret}"), None, "token s3cr3t-value"),
-        2
+        secret_of(&v.capture_for(v.ann), "claude").unwrap(),
+        "ann-token"
     );
     assert_eq!(
-        fetches_after(
-            header_inject("Bearer {secret}"),
-            None,
-            "Bearer s3cr3t-value"
-        ),
-        2
+        secret_of(&v.capture_for(v.bob), "claude").unwrap(),
+        "bob-token"
     );
 }
 
 #[test]
-fn evict_if_current_evicts_on_the_basic_auth_value() {
-    let basic = ResolvedInject::BasicAuth {
-        user: "u".to_owned(),
-    };
+fn a_deleted_secret_fails_the_next_request() {
+    let v = vaulted();
+    put_secret(&v.store, &v.vault, v.ann, "claude", "ann-token");
+    let cap = v.capture_for(v.ann);
+    assert_eq!(secret_of(&cap, "claude").unwrap(), "ann-token");
+    let name = moor_core::user::SecretName::parse("claude").unwrap();
+    v.store.delete_user_secret(v.ann, &name).unwrap();
     assert_eq!(
-        fetches_after(basic.clone(), Some("u"), "Basic dTpzM2NyM3QtdmFsdWU="),
-        2
+        secret_of(&cap, "claude"),
+        Err("secret claude unavailable".to_owned())
     );
-    assert_eq!(fetches_after(basic.clone(), Some("u"), "Basic bogus"), 1);
-    assert_eq!(fetches_after(basic, Some("u"), "token s3cr3t-value"), 1);
 }
 
 #[test]
-fn evict_if_current_ignores_rules_the_filter_does_not_own() {
-    let (fetch, calls) = counting(vec![Ok(SECRET)]);
-    let cap = capture_with(fetch, None, &clock());
-    secret_of(&cap, "r").unwrap();
-    cap.evict_if_current("r", "token s3cr3t-value");
-    secret_of(&cap, "r").unwrap();
-    assert_eq!(calls.load(Ordering::SeqCst), 1);
-}
-
-#[test]
-fn base64_matches_known_vectors() {
-    for (raw, want) in [
-        ("", ""),
-        ("M", "TQ=="),
-        ("Ma", "TWE="),
-        ("Man", "TWFu"),
-        ("u:", "dTo="),
-    ] {
-        assert_eq!(super::base64(raw.as_bytes()), want);
-    }
+fn a_changed_secret_counts_from_the_next_request() {
+    let v = vaulted();
+    put_secret(&v.store, &v.vault, v.ann, "claude", "old");
+    let cap = v.capture_for(v.ann);
+    assert_eq!(secret_of(&cap, "claude").unwrap(), "old");
+    put_secret(&v.store, &v.vault, v.ann, "claude", "new");
+    assert_eq!(secret_of(&cap, "claude").unwrap(), "new");
 }
