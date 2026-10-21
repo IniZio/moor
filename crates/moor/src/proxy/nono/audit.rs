@@ -27,6 +27,8 @@ pub(crate) trait EgressSink {
     /// Records a refused egress attempt to `host`, with the rule, request
     /// method and denial category when known.
     fn refused(&self, refusal: &Refusal<'_>);
+    /// Records that a client hung up on an intercepted handshake to `host` without an alert.
+    fn aborted(&self, host: &str, rule: Option<&str>);
     /// Records that the credential for `rule` could not be obtained.
     fn credential_failed(&self, rule: &str);
     /// Records a request to a credential host that was forwarded without
@@ -208,6 +210,14 @@ impl EgressSink for BoxSink<'_> {
         let _ = self.store.record_proxy_event(self.box_id, &event);
     }
 
+    fn aborted(&self, host: &str, rule: Option<&str>) {
+        let event = Event::EgressAborted {
+            host: host.to_owned(),
+            rule: rule.map(str::to_owned),
+        };
+        let _ = self.store.record_proxy_event(self.box_id, &event);
+    }
+
     fn credential_failed(&self, rule: &str) {
         let event = Event::ProxyCredentialFailed {
             rule: rule.to_owned(),
@@ -243,7 +253,8 @@ impl EgressSink for BoxSink<'_> {
 ///
 /// An allowed request becomes a log line, and an upstream 401 also evicts the
 /// rule's cached credential unless the request was a passthrough. A denial caused by an unavailable credential
-/// becomes a credential failure; any other denial becomes a refused egress.
+/// becomes a credential failure, and an intercepted handshake the client hung up on without an
+/// alert becomes an aborted egress; any other denial becomes a refused egress.
 /// Approval-flow decisions are ignored. A request forwarded without a
 /// credential to a credential host is also reported through `withheld`. An
 /// excused answer noted before this drain is matched in it or the next one.
@@ -316,6 +327,10 @@ fn deny(event: &NetworkAuditEvent, sink: &dyn EgressSink) {
     let reason = (event.denial_category
         == Some(NetworkAuditDenialCategory::InterceptHandshakeFailed))
     .then(|| handshake::reason(event.reason.as_deref().unwrap_or_default()));
+    if reason.as_deref() == Some(handshake::CLIENT_CLOSED) {
+        sink.aborted(&event.target, rule(event));
+        return;
+    }
     sink.refused(&Refusal {
         host: &event.target,
         rule: rule(event),

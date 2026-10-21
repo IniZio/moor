@@ -183,6 +183,10 @@ fn all_events() -> Vec<Event> {
             size: 12,
             sha256: s("ab"),
         },
+        Event::EgressAborted {
+            host: s("h"),
+            rule: None,
+        },
     ]
 }
 
@@ -247,6 +251,7 @@ const fn event_index(e: &Event) -> usize {
         Event::ProxyCredentialRecovered { .. } => 45,
         Event::TurnDone { .. } => 46,
         Event::ArtifactPublished { .. } => 47,
+        Event::EgressAborted { .. } => 48,
     }
 }
 
@@ -254,7 +259,7 @@ const fn event_index(e: &Event) -> usize {
 #[test]
 fn event_samples_cover_every_variant_with_unique_kinds() {
     let all = all_events();
-    assert_eq!(all.len(), 48);
+    assert_eq!(all.len(), 49);
     for (pos, e) in all.iter().enumerate() {
         assert_eq!(event_index(e), pos, "{e:?}");
     }

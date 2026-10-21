@@ -9,7 +9,7 @@ use crate::store::apply::insert_event;
 use crate::store::{load_box, Store, StoreError};
 
 impl Store {
-    /// Append an `EgressRefused`, `CredentialWithheld`, `ProxyCredentialFailed`,
+    /// Append an `EgressRefused`, `EgressAborted`, `CredentialWithheld`, `ProxyCredentialFailed`,
     /// `AgentRateLimited`, `ProxyCredentialRejected` or `ProxyCredentialRecovered` event for `box_id`.
     ///
     /// Any other event kind is rejected, and so is a box that does not exist.
@@ -21,6 +21,7 @@ impl Store {
         if !matches!(
             event,
             Event::EgressRefused { .. }
+                | Event::EgressAborted { .. }
                 | Event::CredentialWithheld { .. }
                 | Event::ProxyCredentialFailed { .. }
                 | Event::AgentRateLimited { .. }
