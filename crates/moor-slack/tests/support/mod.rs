@@ -112,6 +112,15 @@ impl Rig {
         writeln!(config, "coordinator:\n  binary: {}", binary.display()).unwrap();
     }
 
+    /// Sets `coordinator.idle_minutes`; call it after the coordinator section is written.
+    pub(crate) fn set_idle_minutes(&self, minutes: u32) {
+        let mut config = std::fs::OpenOptions::new()
+            .append(true)
+            .open(self.path("slack.yaml"))
+            .unwrap();
+        writeln!(config, "  idle_minutes: {minutes}").unwrap();
+    }
+
     /// Links the fake `claude` into `claude-bin/`, where it keeps one `run-<n>` dir of
     /// records per run, and names it in the config. It prints `version` for `--version`
     /// when given.

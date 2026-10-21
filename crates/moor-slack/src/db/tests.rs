@@ -4,7 +4,7 @@ use std::path::Path;
 
 use moor_core::name::{BoxId, BoxName};
 
-use super::{BoxState, Db, SlackBox, SlackThread, SCHEMA_VERSION};
+use super::{BoxState, Db, InboxItem, ItemKind, SlackBox, SlackThread, SCHEMA_VERSION};
 
 fn open(dir: &Path) -> Db {
     Db::open(&dir.join("slack.db")).unwrap()
@@ -240,4 +240,71 @@ fn slack_db_without_an_inbox_is_refused() {
     drop(conn);
     let err = Db::open(&path).err().unwrap();
     assert!(err.starts_with("slack.db is schema 4 "), "{err}");
+}
+
+/// Opens thread `thread_ts` at time 0 with host Session `session` recorded.
+fn live_thread(db: &Db, thread_ts: &str, session: i64) {
+    let thread = SlackThread {
+        channel: "C1".into(),
+        thread_ts: thread_ts.into(),
+        owner: "U1".into(),
+    };
+    db.insert_thread(&thread, 0).unwrap();
+    db.set_root_session("C1", thread_ts, "/w", session).unwrap();
+}
+
+/// Queues a message from `U1` in thread `thread_ts`.
+fn message(db: &Db, thread_ts: &str, source: &str) {
+    let item = InboxItem {
+        channel: "C1".into(),
+        thread_ts: thread_ts.into(),
+        kind: ItemKind::Message,
+        author: "U1".into(),
+        text: "hi".into(),
+        source: source.into(),
+    };
+    db.queue(&item, 0).unwrap();
+}
+
+#[test]
+fn a_thread_is_quiet_only_with_no_turn_waiting_message_or_starting_box_since_the_cutoff() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = open(dir.path());
+    let threads = [
+        ("1.0", 100),
+        ("2.0", 101),
+        ("3.0", 102),
+        ("4.0", 103),
+        ("5.0", 104),
+    ];
+    for (ts, session) in threads {
+        live_thread(&db, ts, session);
+    }
+    message(&db, "2.0", "e2");
+    message(&db, "3.0", "e3");
+    let turn = db.take_turn(5).unwrap().unwrap();
+    assert_eq!(turn.thread_ts, "2.0");
+    db.store_reply(turn.id, super::End::Replied, "OK", None, None)
+        .unwrap();
+    db.mark_posted(turn.id, 50).unwrap();
+    let open = db.take_turn(60).unwrap().unwrap();
+    assert_eq!(open.thread_ts, "3.0");
+    db.insert_starting(&starting("4.0", "slack-4-1", "U1"), 0)
+        .unwrap();
+    message(&db, "5.0", "e5");
+    let quiet = |cutoff| db.quiet_threads(cutoff).unwrap();
+    assert_eq!(quiet(40), [("C1".to_owned(), "1.0".to_owned(), 100)]);
+    let after = [
+        ("C1".to_owned(), "1.0".to_owned(), 100),
+        ("C1".to_owned(), "2.0".to_owned(), 101),
+    ];
+    assert_eq!(quiet(50), after, "a turn that ended at the cutoff is quiet");
+    db.clear_root_session("C1", "1.0", 99).unwrap();
+    assert_eq!(
+        quiet(50).len(),
+        2,
+        "another Session id leaves the record alone"
+    );
+    db.clear_root_session("C1", "1.0", 100).unwrap();
+    assert_eq!(quiet(50), [("C1".to_owned(), "2.0".to_owned(), 101)]);
 }

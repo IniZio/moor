@@ -255,39 +255,6 @@ impl Db {
         })
     }
 
-    /// The thread's live host Session, as last recorded.
-    pub(crate) fn root_session(
-        &self,
-        channel: &str,
-        thread_ts: &str,
-    ) -> rusqlite::Result<Option<i64>> {
-        self.conn
-            .query_row(
-                "SELECT root_session FROM slack_threads WHERE channel = ?1 AND thread_ts = ?2",
-                params![channel, thread_ts],
-                |r| r.get(0),
-            )
-            .optional()
-            .map(Option::flatten)
-    }
-
-    /// Records the thread's workdir and its live host Session.
-    pub(crate) fn set_root_session(
-        &self,
-        channel: &str,
-        thread_ts: &str,
-        workdir: &str,
-        session: i64,
-    ) -> rusqlite::Result<()> {
-        self.conn
-            .execute(
-                "UPDATE slack_threads SET workdir = ?3, root_session = ?4 \
-                 WHERE channel = ?1 AND thread_ts = ?2",
-                params![channel, thread_ts, workdir, session],
-            )
-            .map(drop)
-    }
-
     /// The thread's turn with no end, with the authors of the messages it holds; `None` when
     /// no turn runs.
     pub(crate) fn open_turn(

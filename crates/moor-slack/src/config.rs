@@ -45,6 +45,9 @@ pub struct Coordinator {
     /// Most Boxes a thread has open at once.
     #[serde(default = "default_max_open_boxes")]
     pub max_open_boxes: u32,
+    /// Quiet minutes after which a thread's host Session ends.
+    #[serde(default = "default_idle_minutes")]
+    pub idle_minutes: u32,
 }
 
 impl Default for Coordinator {
@@ -55,6 +58,7 @@ impl Default for Coordinator {
             model: default_model(),
             context_kib: default_context_kib(),
             max_open_boxes: default_max_open_boxes(),
+            idle_minutes: default_idle_minutes(),
         }
     }
 }
@@ -81,6 +85,11 @@ const fn default_context_kib() -> u32 {
 /// The open-Box limit of a thread unless the config names one.
 const fn default_max_open_boxes() -> u32 {
     1
+}
+
+/// The quiet minutes before a thread's host Session ends unless the config names them.
+const fn default_idle_minutes() -> u32 {
+    30
 }
 
 /// The public Slack Web API.
@@ -142,6 +151,9 @@ fn validate(cfg: &Config) -> Result<(), (&'static str, &'static str)> {
     }
     if c.max_open_boxes == 0 {
         return Err(("coordinator.max_open_boxes", "must be at least 1"));
+    }
+    if c.idle_minutes == 0 {
+        return Err(("coordinator.idle_minutes", "must be at least 1"));
     }
     Ok(())
 }

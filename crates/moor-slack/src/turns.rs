@@ -22,6 +22,7 @@ use crate::db::{Db, End, TurnRow};
 use crate::Log;
 
 mod host;
+mod idle;
 mod lines;
 mod restart;
 
@@ -30,6 +31,9 @@ const MAX_TURNS: usize = 4;
 
 /// Longest the scheduler sleeps before it looks for waiting messages again.
 const TICK: Duration = Duration::from_millis(500);
+
+/// Seconds between the scheduler's sweeps for quiet threads.
+const SWEEP_SECS: i64 = 60;
 
 /// What the placeholder says while a turn runs.
 const PLACEHOLDER: &str = "…";
@@ -71,6 +75,8 @@ pub(crate) struct Turns {
     pub(crate) program: PathBuf,
     /// Most Boxes a thread has open at once.
     pub(crate) max_open_boxes: u32,
+    /// Seconds a thread stays quiet before its host Session ends.
+    pub(crate) idle_secs: i64,
     /// Daemon log.
     pub(crate) log: Log,
     /// The current time in unix seconds.
@@ -79,7 +85,8 @@ pub(crate) struct Turns {
 
 impl Turns {
     /// Runs the scheduler: takes waiting turns while fewer than [`MAX_TURNS`] run, each on its
-    /// own thread, and looks again when one ends or every [`TICK`].
+    /// own thread, and looks again when one ends or every [`TICK`]. It ends quiet threads'
+    /// host Sessions at start and every [`SWEEP_SECS`].
     pub(crate) fn run(self: Arc<Self>) {
         let db = match Db::open(&self.db_path) {
             Ok(db) => db,
@@ -88,7 +95,12 @@ impl Turns {
         let mut reruns = self.recover(&db);
         let (done_tx, done_rx) = mpsc::channel();
         let mut running = 0_usize;
+        let mut next_sweep = i64::MIN;
         loop {
+            if (self.clock)() >= next_sweep {
+                self.sweep(&db);
+                next_sweep = (self.clock)() + SWEEP_SECS;
+            }
             while running < MAX_TURNS {
                 let next = reruns
                     .pop()

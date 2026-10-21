@@ -71,6 +71,7 @@ coordinator:
   model: sonnet     # the default
   context_kib: 32   # the default
   max_open_boxes: 1 # the default: most Boxes a thread has open at once
+  idle_minutes: 30  # the default: quiet minutes before a thread's host Session ends
 ```
 
 Every key has a default. A config with no `coordinator` section runs the
@@ -93,6 +94,16 @@ cleared environment and its own config dir per Slack user. It runs in
 `threads/<channel>-<thread ts>` under the state directory, and refuses to
 start when that directory or one of its ancestors holds a `CLAUDE.md`. A turn
 that runs past 10 minutes is killed. Up to 4 turns run at once.
+
+Each thread has a host Session on the controller while it is active. Once a
+minute the front ends the host Session of each thread that has had no turn
+and no waiting message for `idle_minutes`. A thread stays open while one of
+its Boxes is starting or closing, while its agent works or waits on a
+question, or while the controller cannot say how the Box stands. Ending the
+host Session never touches a Box. The starter's next message opens a new
+host Session in the same workdir, and the coordinator answers from the
+rebuilt context. After a crash, the front finds the live host Session it
+opened by that workdir and opens no second one.
 
 The coordinator's only tools come from the front. For each turn Claude Code
 starts `moor-slack mcp`, named by its absolute path in the thread's
