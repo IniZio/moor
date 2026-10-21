@@ -17,7 +17,7 @@ use tempfile::TempDir;
 
 use super::super::{SystemProc, ToolPaths};
 use super::Signals;
-use crate::env::Env;
+use crate::env::{Cancel, Env};
 
 fn sh_proc() -> SystemProc {
     let env = Env::from_pairs([("MOOR_SH_BIN".to_owned(), "/bin/sh".to_owned())]);
@@ -192,6 +192,27 @@ fn child_ignoring_term_is_killed_after_grace() {
             flag.store(true, Ordering::Relaxed);
         });
         sh_proc().stream(&sh(&body, 30), &Output::Inherit, &flag)
+    });
+    assert!(matches!(r, Err(ProcError::Interrupted)), "{r:?}");
+    assert!(t.elapsed() < Duration::from_secs(5), "{:?}", t.elapsed());
+}
+
+#[test]
+fn a_cancelled_request_stops_its_streamed_child() {
+    let dir = TempDir::new().unwrap();
+    let ready = dir.path().join("ready");
+    let body = format!("touch {}\nsleep 30", ready.display());
+    let cancel = Cancel::default();
+    let env = Env::from_pairs([("MOOR_SH_BIN".to_owned(), "/bin/sh".to_owned())])
+        .with_cancel(cancel.clone());
+    let proc = SystemProc::new(&env, &ToolPaths::default());
+    let t = Instant::now();
+    let r = std::thread::scope(|s| {
+        s.spawn(|| {
+            wait_for(&ready);
+            cancel.cancel();
+        });
+        proc.run_streamed(&sh(&body, 30), &Output::Inherit)
     });
     assert!(matches!(r, Err(ProcError::Interrupted)), "{r:?}");
     assert!(t.elapsed() < Duration::from_secs(5), "{:?}", t.elapsed());

@@ -14,6 +14,7 @@ use signal_hook::consts::{SIGINT, SIGTERM};
 
 use super::grace::{terminate_with, Abort};
 use super::{failure, feed, gone, stdin_for, SystemProc, DRAIN_GRACE, POLL, TAIL};
+use crate::env::Cancel;
 
 /// Process-wide interrupt state, installed once and never unregistered.
 struct Signals {
@@ -225,9 +226,9 @@ fn tee(mut src: impl Read, mut sink: impl Write, tail: &Mutex<Vec<u8>>, mut gate
 }
 
 impl SystemProc {
-    /// Runs with output streamed, treating SIGINT and SIGTERM sent to moor as
-    /// an interrupt for the duration of the child; outside it they keep their
-    /// default action.
+    /// Runs with output streamed, treating SIGINT and SIGTERM sent to moor, or a cancel of
+    /// the request, as an interrupt for the duration of the child; outside it the signals
+    /// keep their default action.
     pub(super) fn stream_forwarding(&self, spec: &ProcSpec, out: &Output) -> Result<(), ProcError> {
         let sig = SIGNALS
             .get_or_init(|| Signals::install().ok())
@@ -286,7 +287,8 @@ impl SystemProc {
             exited.send(Event::Exited).ok();
         });
         let done = Done(Arc::new(AtomicBool::new(false)));
-        watch(Arc::clone(interrupted), Arc::clone(&done.0), etx);
+        let stops = (Arc::clone(interrupted), self.cancel.clone());
+        watch(stops, Arc::clone(&done.0), etx);
         match erx.recv_timeout(limit) {
             Ok(Event::Exited) => {
                 let st = rx
@@ -337,11 +339,15 @@ enum Event {
     Interrupted,
 }
 
-/// Reports [`Event::Interrupted`] once `flag` is set, until `done`.
-fn watch(flag: Arc<AtomicBool>, done: Arc<AtomicBool>, tx: mpsc::Sender<Event>) {
+/// Reports [`Event::Interrupted`] once moor is interrupted or the request is cancelled, until `done`.
+fn watch(
+    (flag, cancel): (Arc<AtomicBool>, Cancel),
+    done: Arc<AtomicBool>,
+    tx: mpsc::Sender<Event>,
+) {
     thread::spawn(move || {
         while !done.load(Ordering::SeqCst) {
-            if flag.load(Ordering::SeqCst) {
+            if flag.load(Ordering::SeqCst) || cancel.is_cancelled() {
                 tx.send(Event::Interrupted).ok();
                 return;
             }

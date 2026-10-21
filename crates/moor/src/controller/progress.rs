@@ -10,7 +10,8 @@ use moor_core::controller::{write_bytes, ServerFrame};
 use moor_core::{Request, Response};
 
 use super::conn::{self, Acting};
-use crate::env::Env;
+use super::hangup::Hangup;
+use crate::env::{Cancel, Env};
 
 /// Takes a running request's output piece by piece; an error means nobody reads it any more.
 pub(super) type Sink<'a> = &'a mut (dyn FnMut(&[u8]) -> io::Result<()> + Send);
@@ -23,9 +24,16 @@ pub(crate) const INTERVAL: Duration = Duration::from_secs(5);
 const PENDING: usize = 4;
 
 /// Answer `request` acting as `acting`, writing its frames to `out` while a long verb runs.
+///
+/// A `run` is cancelled once `hangup` sees its client go away.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the request, whom it acts as, and the connection it answers on"
+)]
 pub(crate) fn respond_with_progress(
     env: &Env,
     acting: Acting,
+    hangup: Option<&Hangup>,
     id: &str,
     request: Request,
     interval: Duration,
@@ -33,9 +41,19 @@ pub(crate) fn respond_with_progress(
 ) -> Response {
     let cmd = request.cmd();
     match request {
-        Request::Run(req) => report_while(cmd, id, interval, out, |sink| {
-            conn::respond_run(env, acting.grant, &req, sink)
-        }),
+        Request::Run(req) => {
+            let cancel = Cancel::default();
+            let env = env.clone().with_cancel(cancel.clone());
+            let run = || {
+                report_while(cmd, id, interval, out, |sink| {
+                    conn::respond_run(&env, acting.grant, &req, sink)
+                })
+            };
+            match hangup {
+                Some(h) => h.cancels(&cancel, run),
+                None => run(),
+            }
+        }
         request @ (Request::Start(_)
         | Request::Wait(_)
         | Request::WaitEvents(_)

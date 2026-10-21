@@ -152,6 +152,7 @@ mod authz;
 mod fronts;
 mod host_paths;
 mod operator_only;
+mod run_cancel;
 mod run_output;
 mod users;
 

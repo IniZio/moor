@@ -106,6 +106,55 @@ fn json_run_prints_output_to_stderr_and_one_envelope_to_stdout() {
     let _ = std::fs::remove_dir_all(root);
 }
 
+#[test]
+fn an_interrupted_run_asks_the_controller_to_stop_and_exits_130() {
+    let (root, socket) = socket();
+    let listener = UnixListener::bind(&socket).unwrap();
+    let (asked, request) = mpsc::channel();
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut reader = BufReader::new(stream.try_clone().unwrap());
+        let mut line = String::new();
+        reader.read_line(&mut line).unwrap();
+        let hello = ServerFrame::Hello { protocol: PROTOCOL };
+        stream.write_all(hello.to_line().as_bytes()).unwrap();
+        line.clear();
+        reader.read_line(&mut line).unwrap();
+        let id = serde_json::from_str::<Value>(&line).unwrap()["id"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        asked.send(()).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
+        line.clear();
+        let stopped = matches!(reader.read_line(&mut line), Ok(0));
+        let value = json!({
+            "ran": true, "run": 1, "exit": null, "interrupted": stopped,
+            "sync": "full", "log": "/state/runs/1.log",
+        });
+        let envelope = Response::ok("run", Some(value));
+        let answer = ServerFrame::Response { id, envelope };
+        stream.write_all(answer.to_line().as_bytes()).unwrap();
+        stopped
+    });
+    let mut child = moor(&socket, &["run", "foo", "--", "sleep", "600"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    request
+        .recv_timeout(Duration::from_secs(10))
+        .expect("the run reached the controller");
+    let pid = rustix::process::Pid::from_raw(i32::try_from(child.id()).unwrap()).unwrap();
+    rustix::process::kill_process(pid, rustix::process::Signal::INT).unwrap();
+    let status = child.wait().unwrap();
+    assert!(server.join().unwrap(), "the client shut its sending side");
+    assert_eq!(status.code(), Some(130), "{status:?}");
+    let _ = std::fs::remove_dir_all(root);
+}
+
 /// Output large enough that a client holding it would show in its peak memory.
 const BIG: usize = 64 * 1024 * 1024;
 
