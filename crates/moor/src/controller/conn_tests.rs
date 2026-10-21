@@ -6,7 +6,7 @@ use std::io::Cursor;
 
 use serde_json::{json, Value};
 
-use super::{handle, respond, serve};
+use super::{handle, operator, respond, serve};
 use crate::env::Env;
 use crate::Moor;
 use moor_core::controller::{WatchFilter, PROTOCOL};
@@ -82,7 +82,7 @@ fn envelopes_match_moor_call() {
     for (i, req) in requests.iter().enumerate() {
         let id = format!("r{i}");
         let frames = run(&env, &[hello(), request(&id, req)]);
-        let expected = serde_json::to_value(respond(&env, None, req.clone())).expect("value");
+        let expected = serde_json::to_value(respond(&env, operator(), req.clone())).expect("value");
         assert_eq!(frames[1]["id"], id.as_str());
         assert_eq!(frames[1]["envelope"], expected, "{req:?}");
     }

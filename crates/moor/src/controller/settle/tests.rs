@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::activity::{HookKind, HookRead, HookRecord, PaneObs, PaneRead, PaneStatus, Probes};
+use moor_core::controller::WatchFilter;
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::BoxInput;
@@ -14,6 +15,7 @@ use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::{AcquireReq, Driver, ExecOutcome};
+use moor_core::user::Viewer;
 use moor_core::{BoxId, BoxName, ProviderId, ShowReq};
 use sha2::{Digest, Sha256};
 
@@ -193,8 +195,10 @@ fn stream_delivers_idle_without_any_show() {
         &mut StopAtIdled(Vec::new(), Arc::clone(&seen)),
         &env,
         Ask {
+            since: 0,
+            filter: WatchFilter::default(),
             follow: true,
-            ..Ask::default()
+            viewer: Viewer::Operator,
         },
         limits,
     );

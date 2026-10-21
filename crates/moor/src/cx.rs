@@ -14,7 +14,7 @@ use moor_core::seam::proc::Proc;
 use moor_core::seam::proxy_host::ProxyHost;
 use moor_core::seam::rng::Rng;
 use moor_core::seam::surface::Surface;
-use moor_core::user::Identity;
+use moor_core::user::{Identity, Viewer};
 use moor_core::{ErrorKind, Warning};
 
 use crate::adapters::git::Git;
@@ -63,6 +63,8 @@ pub(crate) struct Cx {
     vault_key: Option<PathBuf>,
     /// The identity a socket request acts as, already checked against its socket.
     requester: Option<Identity>,
+    /// Whose Boxes this request may see; the operator outside a controller socket.
+    viewer: Viewer,
 }
 
 /// Everything a context is built from.
@@ -120,6 +122,7 @@ impl Cx {
             repos: Arc::new(RepoTable::new()),
             vault_key: None,
             requester: None,
+            viewer: Viewer::Operator,
         }
     }
 

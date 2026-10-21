@@ -4,6 +4,7 @@ use std::thread::{self, sleep};
 use std::time::Duration;
 
 use super::{report_while, respond_with_progress};
+use crate::controller::conn::operator;
 use crate::env::Env;
 use moor_core::controller::{parse_server_frame, ServerFrame};
 use moor_core::{BoxName, CloseReq, Request, Response, ShowReq};
@@ -132,7 +133,7 @@ fn close_reports_progress_and_show_does_not() {
     let target = BoxName::parse("r/gone").unwrap();
     let progress = |request: Request| {
         let mut wire = Vec::new();
-        respond_with_progress(&env, None, "r9", request, Duration::ZERO, &mut wire);
+        respond_with_progress(&env, operator(), "r9", request, Duration::ZERO, &mut wire);
         frames(&wire)
             .iter()
             .filter(|(f, _)| matches!(f, ServerFrame::Progress { id, .. } if id == "r9"))

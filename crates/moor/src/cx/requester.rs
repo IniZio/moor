@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use moor_core::user::{Identity, UserId};
+use moor_core::user::{Identity, UserId, Viewer};
 use moor_core::ErrorKind;
 
 use super::Cx;
@@ -19,6 +19,17 @@ impl Cx {
     pub(crate) fn with_requester(mut self, identity: Identity) -> Self {
         self.requester = Some(identity);
         self
+    }
+
+    /// This context seeing only the Boxes `viewer` may see.
+    pub(crate) const fn with_viewer(mut self, viewer: Viewer) -> Self {
+        self.viewer = viewer;
+        self
+    }
+
+    /// Whose Boxes this request may see.
+    pub(crate) const fn viewer(&self) -> Viewer {
+        self.viewer
     }
 
     /// The controller's vault key file.

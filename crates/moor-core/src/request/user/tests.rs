@@ -103,3 +103,49 @@ fn the_value_crosses_the_wire_only_inside_secret_set() {
     };
     assert_eq!(value.secret().expose(), CANARY.as_bytes());
 }
+
+#[test]
+fn as_carries_the_identity_a_front_asserts_for_another_request() {
+    let wire = json!({
+        "cmd": "as",
+        "identity": "slack:T1:U1",
+        "request": {"cmd": "steer", "box": "b", "text": "hi"},
+    });
+    let req: Request = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(req.cmd(), "as");
+    assert_eq!(serde_json::to_value(&req).unwrap(), wire);
+    let (who, inner) = req.split_identity().unwrap();
+    assert_eq!(who, Some(Identity::parse("slack:T1:U1").unwrap()));
+    assert_eq!(inner.cmd(), "steer");
+}
+
+#[test]
+fn a_request_outside_as_asserts_its_own_identity_field() {
+    let own: Request =
+        serde_json::from_value(json!({"cmd": "whoami", "identity": "web:a"})).unwrap();
+    assert_eq!(
+        own.split_identity().unwrap().0,
+        Some(Identity::parse("web:a").unwrap())
+    );
+    let none: Request = serde_json::from_value(json!({"cmd": "show"})).unwrap();
+    assert_eq!(none.split_identity().unwrap().0, None);
+}
+
+#[test]
+fn as_refuses_a_second_identity_or_another_as_inside() {
+    let same = json!({"cmd": "as", "identity": "web:a", "request": {"cmd": "whoami", "identity": "web:a"}});
+    let same: Request = serde_json::from_value(same).unwrap();
+    assert_eq!(
+        same.split_identity().unwrap().0,
+        Some(Identity::parse("web:a").unwrap())
+    );
+    let other = json!({"cmd": "as", "identity": "web:a", "request": {"cmd": "whoami", "identity": "web:b"}});
+    let other: Request = serde_json::from_value(other).unwrap();
+    let err = other.split_identity().unwrap_err();
+    assert!(err.contains("asserts web:b inside as web:a"), "{err}");
+    let nested = json!({"cmd": "as", "identity": "web:a",
+        "request": {"cmd": "as", "identity": "web:a", "request": {"cmd": "show"}}});
+    let nested: Request = serde_json::from_value(nested).unwrap();
+    let err = nested.split_identity().unwrap_err();
+    assert!(err.contains("cannot wrap another as"), "{err}");
+}

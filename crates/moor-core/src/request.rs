@@ -9,6 +9,8 @@ mod artifacts;
 pub use artifacts::{ArtifactReadReq, ArtifactsReq};
 mod binding;
 pub use binding::{BindSessionReq, SessionBindingReq};
+mod names;
+pub use names::Named;
 mod repos;
 pub use repos::ReposReq;
 mod session;
@@ -17,7 +19,8 @@ pub use session::{EndSessionReq, OpenSessionReq, SessionsReq, ShowSessionReq};
 pub use target::BoxTarget;
 mod user;
 pub use user::{
-    AsReq, LinkRedeemReq, SecretDeleteReq, SecretSetReq, SecretValue, StartNeedsReq, UserCmd,
+    ActAsReq, AsReq, LinkRedeemReq, SecretDeleteReq, SecretSetReq, SecretValue, StartNeedsReq,
+    UserCmd,
 };
 mod wait;
 pub use wait::{WaitEventsReq, WaitFor, WaitMode, WaitReq};
@@ -94,6 +97,8 @@ pub enum Request {
     LinkCode(AsReq),
     /// Link the caller's identity to the user that minted a code.
     LinkRedeem(LinkRedeemReq),
+    /// Run another request as an identity a front asserts.
+    As(ActAsReq),
     /// Print version information.
     Version {},
 }
@@ -137,6 +142,7 @@ impl Request {
             Self::SecretNames(_) => "secret-names",
             Self::LinkCode(_) => "link-code",
             Self::LinkRedeem(_) => "link-redeem",
+            Self::As(_) => "as",
             Self::Version {} => "version",
         }
     }

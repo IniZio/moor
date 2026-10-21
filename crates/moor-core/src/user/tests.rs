@@ -1,6 +1,6 @@
 //! Tests for identities, front namespaces and secret names.
 
-use super::{valid_front_namespace, Caller, Identity, SecretName};
+use super::{valid_front_namespace, Caller, Identity, SecretName, UserId, Viewer};
 
 #[test]
 fn an_identity_splits_at_the_first_colon_only() {
@@ -54,18 +54,34 @@ fn secret_names_are_lower_words() {
 
 #[test]
 fn the_local_socket_speaks_only_for_its_peer_uid() {
-    let local = Caller::Local(1000);
-    assert_eq!(local.resolve(None).unwrap(), Identity::local(1000));
-    assert_eq!(
-        local.resolve(Some(&Identity::local(1000))).unwrap(),
-        Identity::local(1000)
-    );
-    for other in ["local:0", "slack:T1:U1"] {
-        let err = local
-            .resolve(Some(&Identity::parse(other).unwrap()))
-            .unwrap_err();
-        assert!(err.contains("speaks only for local:1000"), "{err}");
+    for local in [Caller::Local(1000), Caller::Operator(1000)] {
+        assert_eq!(local.resolve(None).unwrap(), Identity::local(1000));
+        assert_eq!(
+            local.resolve(Some(&Identity::local(1000))).unwrap(),
+            Identity::local(1000)
+        );
+        for other in ["local:0", "slack:T1:U1"] {
+            let err = local
+                .resolve(Some(&Identity::parse(other).unwrap()))
+                .unwrap_err();
+            assert!(err.contains("speaks only for local:1000"), "{err}");
+        }
     }
+}
+
+#[test]
+fn a_box_is_its_own_users_and_the_operators_alone() {
+    let (alice, bob) = (UserId::new(1), UserId::new(2));
+    assert!(Viewer::User(alice).may_act_on(Some(alice)));
+    assert!(!Viewer::User(alice).may_act_on(Some(bob)));
+    assert!(
+        !Viewer::User(alice).may_act_on(None),
+        "no user: the operator's"
+    );
+    assert!(!Viewer::Nobody.may_act_on(Some(alice)));
+    assert!(!Viewer::Nobody.may_act_on(None));
+    assert!(Viewer::Operator.may_act_on(Some(bob)));
+    assert!(Viewer::Operator.may_act_on(None));
 }
 
 #[test]

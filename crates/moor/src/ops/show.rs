@@ -58,6 +58,9 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
         let mut boxes: Vec<BoxView> = Vec::new();
         let mut sleep_caps = HashMap::new();
         for mut row in store.open_boxes()? {
+            if !cx.viewer().may_act_on(row.user) {
+                continue;
+            }
             let reading = activity::read(cx, store, &row, now)?;
             activity::settle(cx, store, &row, &reading)?;
             autosleep::run(cx, store, row.id);
