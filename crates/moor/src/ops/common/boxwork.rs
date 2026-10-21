@@ -1,6 +1,5 @@
 //! Finds out whether a Box holds work that exists nowhere else.
 
-use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use moor_core::boxscript::boxwork::{
@@ -64,8 +63,6 @@ pub(crate) struct ProbePlan {
     pub(crate) steps: Vec<BoxStep>,
     /// The Box the steps run in.
     handle: BoxHandle,
-    /// The host checkout the steps run from.
-    worktree: PathBuf,
 }
 
 /// Runs the probe script in the Box and reads its result back.
@@ -77,20 +74,15 @@ pub(crate) fn probe(cx: &Cx, row: &BoxRow, boxed: &DriverRow) -> BoxWork {
         Ok(plan) => plan,
         Err(work) => return work,
     };
-    let done = cx.driver().batch(
-        &plan.handle,
-        &[],
-        &plan.steps,
-        &plan.worktree,
-        Deadline(BOXWORK_DEADLINE),
-    );
+    let done = cx
+        .driver()
+        .batch(&plan.handle, &[], &plan.steps, Deadline(BOXWORK_DEADLINE));
     read(&plan, &mut done.into_iter())
 }
 
 /// Builds the probe for the Box of `boxed`; the `Err` is the answer when no probe can be sent.
 pub(crate) fn plan(cx: &Cx, row: &BoxRow, boxed: &DriverRow) -> Result<ProbePlan, BoxWork> {
     let handle = boxed.handle.as_ref().ok_or("the box has no handle")?;
-    let worktree = Path::new(row.worktree.as_deref().ok_or("the Box has no worktree")?);
     // Commits on a remote-tracking ref count as saved too; the clone fetched every branch.
     let saved: Vec<&str> = row
         .base
@@ -103,7 +95,7 @@ pub(crate) fn plan(cx: &Cx, row: &BoxRow, boxed: &DriverRow) -> Result<ProbePlan
         Some(w) => w,
         None => cx
             .driver()
-            .workdir(handle, worktree)
+            .workdir(handle)
             .map_err(|e| driver_fail("cannot find the box workdir", &e))?,
     };
     let path = BoxPath::under(workdir.as_str(), BOXWORK_FILE)
@@ -113,7 +105,6 @@ pub(crate) fn plan(cx: &Cx, row: &BoxRow, boxed: &DriverRow) -> Result<ProbePlan
     Ok(ProbePlan {
         steps: vec![BoxStep::Run(script), BoxStep::Peek(path)],
         handle: handle.clone(),
-        worktree: worktree.to_path_buf(),
     })
 }
 

@@ -314,7 +314,6 @@ pub(super) fn rig_with(extra: Vec<ResolvedRule>) -> Rig {
     let spec = ProxySpec {
         box_id,
         box_handle: None,
-        host_cwd: "/wt".into(),
         box_repo: Some(ForgeRepo {
             owner: "o".to_owned(),
             name: "r".to_owned(),

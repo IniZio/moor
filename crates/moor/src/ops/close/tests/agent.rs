@@ -23,7 +23,6 @@ fn open_pane(f: &Fx) -> String {
     let cmd = PaneCmd {
         label: "agent".into(),
         argv: vec!["sh".into()],
-        cwd: None,
         env: Vec::new(),
     };
     let wt = f

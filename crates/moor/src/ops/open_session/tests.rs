@@ -93,7 +93,6 @@ fn ready_box(cx: &Cx, driver: &FakeDriver) -> BoxId {
             name,
             class: None,
             nonce: "n".to_owned(),
-            worktree: None,
         })
         .unwrap();
     let d = Decision::new(id)

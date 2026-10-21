@@ -40,7 +40,6 @@ pub(crate) struct TunnelCall {
     pub(crate) handle: BoxHandle,
     pub(crate) box_port: u16,
     pub(crate) socket: PathBuf,
-    pub(crate) host_cwd: PathBuf,
 }
 
 #[derive(Default)]
@@ -145,7 +144,6 @@ impl FakeDriver {
         handle: &BoxHandle,
         box_port: u16,
         socket: &Path,
-        host_cwd: &Path,
     ) -> Opened {
         let mut s = self.st();
         s.calls.push(format!("reverse_tunnel {}", handle.as_str()));
@@ -153,7 +151,6 @@ impl FakeDriver {
             handle: handle.clone(),
             box_port,
             socket: socket.to_path_buf(),
-            host_cwd: host_cwd.to_path_buf(),
         });
         if !s.live.iter().any(|h| h == handle.as_str()) {
             return Err(DriverError::NotFound);

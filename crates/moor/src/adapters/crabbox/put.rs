@@ -2,7 +2,6 @@
 //!
 //! The content goes down ssh's stdin, so it never appears in an argument list.
 
-use std::path::Path;
 use std::time::Duration;
 
 use moor_core::boxscript::quote;
@@ -21,14 +20,12 @@ const LOST_RETRIES: u32 = 2;
 const LOST_PAUSE: Duration = Duration::from_secs(1);
 
 /// Writes `bytes` to `path` in the Box behind `handle` and sets `mode`.
-/// The target lookup runs in `host_cwd`, so the lease claim matches that repo.
 pub(super) fn put_file(
     cb: &Crabbox,
     handle: &BoxHandle,
     path: &BoxPath,
     bytes: &[u8],
     mode: u32,
-    host_cwd: &Path,
 ) -> Result<(), DriverError> {
     let file = path.as_str();
     let dir = match file.rsplit_once('/') {
@@ -42,7 +39,7 @@ pub(super) fn put_file(
     let remote = format!("umask 077 && mkdir -p {dir} && cat > {file} && chmod {mode:o} {file}");
     let mut retries = 0;
     loop {
-        let words = link::args(cb, handle, ssh_target(cb, handle, host_cwd)?);
+        let words = link::args(cb, handle, ssh_target(cb, handle)?);
         let write = ProcSpec::new(Tool::Ssh, Deadline(WRITE_DEADLINE))
             .args(words)
             .arg(remote.clone())

@@ -5,8 +5,6 @@
 //! record per step; Put bytes go down ssh's stdin, so they never appear in an
 //! argument list.
 
-use std::path::Path;
-
 use moor_core::boxscript::quote;
 use moor_core::name::{BoxHandle, BoxPath};
 use moor_core::seam::driver::{BoxStep, DriverError, ExecOutcome, StepDone};
@@ -16,20 +14,18 @@ use super::peek::ssh_target;
 use super::{link, Crabbox};
 
 /// Runs `steps` in order over one ssh process; see `Driver::batch` for the result shape.
-/// `connect` is the argv from `connect_argv`; without a leading `ssh` the target is looked up
-/// in `host_cwd`.
+/// `connect` is the argv from `connect_argv`; without a leading `ssh` the target is looked up.
 pub(super) fn run(
     cb: &Crabbox,
     handle: &BoxHandle,
     connect: &[String],
     steps: &[BoxStep],
-    host_cwd: &Path,
     deadline: Deadline,
 ) -> Vec<Result<StepDone, DriverError>> {
     if steps.is_empty() {
         return Vec::new();
     }
-    let words = match target_words(cb, handle, connect, host_cwd) {
+    let words = match target_words(cb, handle, connect) {
         Ok(w) => w,
         Err(e) => return vec![Err(e)],
     };
@@ -56,14 +52,13 @@ fn target_words(
     cb: &Crabbox,
     handle: &BoxHandle,
     connect: &[String],
-    host_cwd: &Path,
 ) -> Result<Vec<String>, DriverError> {
     match connect.split_first() {
         Some((first, rest)) if first == "ssh" => {
             let rest = rest.strip_prefix(&["-t".to_owned()]).unwrap_or(rest);
             Ok(rest.to_vec())
         }
-        _ => ssh_target(cb, handle, host_cwd),
+        _ => ssh_target(cb, handle),
     }
 }
 

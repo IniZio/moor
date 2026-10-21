@@ -50,15 +50,13 @@ pub(super) fn open(
     (box_id, owner): (BoxId, &str),
     handle: &BoxHandle,
     (box_port, socket): (u16, &Path),
-    worktree: &Path,
     fresh: bool,
 ) -> Result<Box<dyn TunnelHandle>, DriverError> {
     renewing(deps, box_id, owner, || {
         if !fresh {
-            clear(deps, handle, box_port, worktree);
+            clear(deps, handle, box_port);
         }
-        deps.driver
-            .reverse_tunnel(handle, box_port, socket, worktree)
+        deps.driver.reverse_tunnel(handle, box_port, socket)
     })
 }
 
@@ -86,13 +84,12 @@ fn renewing<T>(deps: &Deps<'_>, box_id: BoxId, owner: &str, work: impl FnOnce() 
 }
 
 /// Ends any `sshd-session` holding `box_port` in the Box, reporting the outcome.
-fn clear(deps: &Deps<'_>, handle: &BoxHandle, box_port: u16, worktree: &Path) {
+fn clear(deps: &Deps<'_>, handle: &BoxHandle, box_port: u16) {
     let spec = ExecSpec {
         argv: clear_argv(box_port),
         env: Vec::new(),
         cwd: None,
         output: None,
-        host_cwd: Some(worktree.to_path_buf()),
         class: None,
     };
     let outcome = match deps.driver.exec(handle, &spec, Deadline(CLEAR_DEADLINE)) {

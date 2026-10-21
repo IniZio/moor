@@ -1,4 +1,3 @@
-use std::path::Path;
 use std::sync::Arc;
 
 use moor_core::name::BoxHandle;
@@ -11,7 +10,7 @@ use crate::testing::proc::{Reply, ScriptedProc};
 const SSH_LINE: &str = "ssh -i '/k/id' -p '22' 'u@10.0.0.1'\n";
 
 fn connect(p: &Arc<ScriptedProc>) -> Result<Vec<String>, DriverError> {
-    Crabbox::fake(p.clone()).connect_argv(&BoxHandle::new("p/box"), Path::new("/host/cwd"))
+    Crabbox::fake(p.clone()).connect_argv(&BoxHandle::new("p/box"))
 }
 
 #[test]

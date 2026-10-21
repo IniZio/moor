@@ -101,7 +101,6 @@ impl Running<'_> {
             (self.box_id, &self.owner),
             &self.handle,
             (self.box_port, self.live.socket()),
-            &self.worktree,
             fresh,
         );
         // A failed open leaves the dead stand-in, so the restart path takes over.

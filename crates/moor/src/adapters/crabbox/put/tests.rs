@@ -1,4 +1,3 @@
-use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -18,7 +17,6 @@ fn put(p: &Arc<ScriptedProc>, path: &str) -> Result<(), DriverError> {
         &BoxPath::restore(path).unwrap(),
         SECRET,
         0o600,
-        Path::new("/host/cwd"),
     )
 }
 
@@ -179,14 +177,14 @@ fn slept_during_put(p: &Arc<ScriptedProc>) -> (Result<(), DriverError>, Duration
     use crate::testing::{clock::FakeClock, rng::FakeRng};
     use moor_core::seam::clock::{Clock as _, Ts};
     let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
-    let driver = Crabbox::new(p.clone(), clock.clone(), Arc::new(FakeRng::default()));
+    let driver =
+        Crabbox::new(p.clone(), clock.clone(), Arc::new(FakeRng::default())).with_scratch_leases();
     driver.version_ok.set(()).unwrap();
     let put = driver.put_file(
         &BoxHandle::new("p/box"),
         &BoxPath::restore("/h/f").unwrap(),
         SECRET,
         0o600,
-        Path::new("/host/cwd"),
     );
     let slept = Duration::from_millis(clock.now().as_millis().try_into().unwrap());
     (put, slept)

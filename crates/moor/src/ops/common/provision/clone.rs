@@ -173,7 +173,6 @@ fn clone(
         handle: target.handle,
         provider: &cfg.provider.value,
         workdir: Some(target.workdir),
-        worktree: target.worktree,
     };
     let proxy = proxy.as_ref().ok().and_then(Option::as_ref);
     let exec = box_exec::prepare(cx, &site, proxy, cfg, Purpose::Clone)?;
@@ -184,7 +183,6 @@ fn clone(
         env: exec.vars(),
         cwd: exec.cwd(),
         output: log.clone().map(Output::Log),
-        host_cwd: Some(target.worktree.to_path_buf()),
         class: Some(cfg.size.value.as_str().to_owned()),
     };
     let clock = cx.clock();

@@ -70,7 +70,6 @@ fn working_with(driver: FakeDriver) -> Fx {
             name,
             class: None,
             nonce: "n".to_owned(),
-            worktree: None,
         })
         .unwrap();
     let d = Decision::new(id)

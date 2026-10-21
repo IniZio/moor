@@ -211,7 +211,6 @@ impl Engine for FakeEngine {
                 id: String::new(),
                 handle: req.handle.clone(),
                 workdir: req.workdir.clone(),
-                worktree: req.worktree.clone(),
                 pane: Some(PaneRef::new("p-1")),
                 warnings: Vec::new(),
             })

@@ -1,4 +1,3 @@
-use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -22,7 +21,6 @@ fn peek(c: &Crabbox, rel: &str) -> Result<Option<String>, DriverError> {
     c.peek_file(
         &BoxHandle::new("p/box"),
         &BoxPath::under("/work", rel).unwrap(),
-        Path::new("/host/cwd"),
     )
 }
 
@@ -227,22 +225,10 @@ fn static_provider_target_lookup_carries_box_env() {
     c.peek_file(
         &BoxHandle::new("ssh/b1"),
         &BoxPath::under("/work", "a").unwrap(),
-        Path::new("/host/cwd"),
     )
     .unwrap();
     let env = call_of(&p, Tool::Crabbox).env;
     assert!(env.contains(&("CRABBOX_STATIC_ID".to_owned(), "b1".to_owned())));
-}
-
-#[test]
-fn target_lookup_runs_in_host_cwd() {
-    let (p, c) = fixture();
-    scripted(&p, Reply::Ok("x".to_owned()));
-    peek(&c, "a.json").unwrap();
-    assert_eq!(
-        call_of(&p, Tool::Crabbox).cwd.as_deref(),
-        Some(Path::new("/host/cwd"))
-    );
 }
 
 /// Delays `crabbox` calls by `latency`: past their deadline they time out.
@@ -289,7 +275,6 @@ fn peek_slow(handle: &str) -> Result<Option<String>, DriverError> {
     Crabbox::fake(Arc::new(slow)).peek_file(
         &BoxHandle::new(handle),
         &BoxPath::under("/work", "a").unwrap(),
-        Path::new("/host/cwd"),
     )
 }
 
@@ -317,7 +302,6 @@ fn peek_of(c: &Crabbox, handle: &str) -> Result<Option<String>, DriverError> {
     c.peek_file(
         &BoxHandle::new(handle),
         &BoxPath::under("/work", "a").unwrap(),
-        Path::new("/host/cwd"),
     )
 }
 
@@ -327,9 +311,7 @@ fn one_driver_looks_a_lease_up_once() {
     scripted(&p, Reply::Ok("x".to_owned()));
     peek(&c, "a").unwrap();
     peek(&c, "b").unwrap();
-    let argv = c
-        .connect_argv(&BoxHandle::new("p/box"), Path::new("/host/cwd"))
-        .unwrap();
+    let argv = c.connect_argv(&BoxHandle::new("p/box")).unwrap();
     assert_eq!(argv.first().map(String::as_str), Some("ssh"));
     assert_eq!(lookups(&p), 1);
 }
@@ -340,7 +322,7 @@ fn release_makes_the_next_lookup_resolve_again() {
     scripted(&p, Reply::Ok("x".to_owned()));
     p.on(Tool::Crabbox, &["stop"], Reply::Ok(String::new()));
     peek(&c, "a").unwrap();
-    c.release(&BoxHandle::new("p/box"), None).unwrap();
+    c.release(&BoxHandle::new("p/box")).unwrap();
     peek(&c, "a").unwrap();
     assert_eq!(lookups(&p), 2);
 }
@@ -356,7 +338,7 @@ fn wake_makes_the_next_lookup_resolve_again() {
         Reply::Ok(r#"[{"id":"p","sleep":"suspend","wake":true}]"#.to_owned()),
     );
     peek(&c, "a").unwrap();
-    let _ = c.wake(&BoxHandle::new("p/box"), None);
+    let _ = c.wake(&BoxHandle::new("p/box"));
     peek(&c, "a").unwrap();
     assert_eq!(lookups(&p), 2);
 }

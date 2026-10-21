@@ -188,8 +188,7 @@ impl Launch<'_> {
             steps.extend_from_slice(rest);
             tags.extend_from_slice(rest_tags);
             let deadline = Deadline(INSTALL_DEADLINE);
-            let results =
-                (self.driver).batch(&req.handle, connect, &steps, &req.worktree, deadline);
+            let results = (self.driver).batch(&req.handle, connect, &steps, deadline);
             let ran = results.len();
             for (result, &tag) in results.into_iter().zip(&tags) {
                 match tag {

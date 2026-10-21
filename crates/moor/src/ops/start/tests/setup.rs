@@ -134,7 +134,7 @@ fn setup_lines_run_in_order_in_the_box_workdir() {
     let want = (
         "box-1".to_owned(),
         script_argv(&["a", "b"]),
-        Some("/work/cbx_1/demo".to_owned()),
+        Some("/work/cbx_1/repo".to_owned()),
     );
     assert_eq!(seen, [want]);
     let calls = w.driver.box_calls();
@@ -150,14 +150,7 @@ fn setup_runs_under_one_allowance_per_line() {
 
 #[test]
 fn the_repo_clones_in_its_own_exec_before_setup() {
-    let (w, v) = start_with("setup: [a, b]\nbox: {size: large}\n", FakeDriver::new());
-    let wt =
-        w.cx.store()
-            .unwrap()
-            .box_row(BoxId::new(v.boxed.id))
-            .unwrap()
-            .unwrap()
-            .worktree;
+    let (w, _) = start_with("setup: [a, b]\nbox: {size: large}\n", FakeDriver::new());
     let mut execs = w.driver.execs();
     assert_eq!(execs.len(), 2, "a clone exec and one setup exec");
     let (_, setup, _) = execs.remove(1);
@@ -168,9 +161,7 @@ fn the_repo_clones_in_its_own_exec_before_setup() {
         "{:?}",
         clone.argv
     );
-    assert_eq!(clone.host_cwd, wt.clone().map(Into::into));
     assert_eq!(clone.class.as_deref(), Some("large"));
-    assert_eq!(setup.host_cwd, wt.map(Into::into));
     assert_eq!(setup.class.as_deref(), Some("large"));
 }
 
@@ -273,10 +264,9 @@ fn a_failed_setup_copies_its_log_out_of_the_box_into_the_worktree() {
             .unwrap()
             .worktree;
     let wt = std::path::PathBuf::from(wt.unwrap());
-    let (_, from, to, host_cwd) = w.driver.copies().remove(0);
-    assert_eq!(from.as_str(), "/work/cbx_1/demo/.moor/setup.log");
+    let (_, from, to) = w.driver.copies().remove(0);
+    assert_eq!(from.as_str(), "/work/cbx_1/repo/.moor/setup.log");
     assert_eq!(to, wt.join(".moor/setup.log"));
-    assert_eq!(host_cwd, wt);
 }
 
 #[test]

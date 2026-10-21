@@ -75,7 +75,6 @@ fn fx_surfaced(driver: FakeDriver, surface: FakeSurface, workspace: Option<&str>
             name,
             class: None,
             nonce: "n".to_owned(),
-            worktree: None,
         })
         .unwrap();
     let d = Decision::new(id)

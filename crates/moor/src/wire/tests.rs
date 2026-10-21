@@ -153,9 +153,7 @@ fn wired_drivers_share_one_short_control_socket_for_a_deep_state_dir() {
     for _ in 0..2 {
         let cx = build(&env).unwrap();
         assert_eq!(cx.take_warnings(), []);
-        cx.driver()
-            .peek_file(&handle, &path, Path::new("/"))
-            .unwrap();
+        cx.driver().peek_file(&handle, &path).unwrap();
     }
     let log = std::fs::read_to_string(dir.path().join("ssh.log")).unwrap();
     let sockets: Vec<&str> = log

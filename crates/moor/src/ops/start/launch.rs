@@ -1,6 +1,6 @@
 //! Launches the agent of a Working Box and records how that ended.
 
-use std::path::PathBuf;
+use std::path::Path;
 use std::sync::Arc;
 
 use moor_core::activity::PaneStatus;
@@ -109,7 +109,7 @@ pub(crate) fn begin_seeded(
         return Ok(AgentLaunchView::default());
     };
     let at = row.worktree.as_deref().unwrap_or(&row.repo);
-    let cfg = settings(cx, std::path::Path::new(at), &Flags::default())?;
+    let cfg = settings(cx, Path::new(at), &Flags::default())?;
     launch.model = cfg.model.clone().map(|m| m.value);
     launch.prompt = LaunchPrompt::Text(seed);
     begin(cx, store, &working, &launch, &cfg)
@@ -127,7 +127,8 @@ pub(super) fn begin(
 ) -> Result<AgentLaunchView, CommandError> {
     let id = row.id;
     let handle = row.boxed.as_ref().and_then(|b| b.handle.clone());
-    let mut proxy = match box_exec::proxy(cx, id, handle, &launch.worktree, cfg) {
+    let origin_at = row.worktree.as_deref().unwrap_or(&row.repo);
+    let mut proxy = match box_exec::proxy(cx, id, handle, Path::new(origin_at), cfg) {
         Ok(p) => p,
         Err(message) => {
             let e = EngineError::Failed {
@@ -254,7 +255,6 @@ pub(super) fn launch_req(cx: &Cx, row: &BoxRow, setup_exit: Option<i32>) -> Opti
         id: row.id,
         handle: b.handle.clone()?,
         workdir: recorded_workdir(b.workdir.as_deref()?)?,
-        worktree: PathBuf::from(row.worktree.as_deref()?),
         workspace: WorkspaceRef::new(row.workspace_id.as_deref()?),
         box_name: row.name.clone(),
         branch: row.branch.clone().unwrap_or_default(),

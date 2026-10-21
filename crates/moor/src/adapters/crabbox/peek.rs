@@ -4,7 +4,6 @@
 //! issued through it would wait for a running command. `crabbox ssh` only
 //! prints the ssh command line for the Box, so the read goes straight to ssh.
 
-use std::path::Path;
 use std::time::Duration;
 
 use moor_core::boxscript::quote;
@@ -13,7 +12,7 @@ use moor_core::seam::driver::DriverError;
 use moor_core::seam::proc::{Deadline, ProcError, ProcSpec, Tool};
 
 use super::errors::{map_error, Op};
-use super::{link, split_handle, static_env, target_args, Crabbox};
+use super::{link, split_handle, target_args, Crabbox};
 
 /// Time allowed for the read.
 const READ_DEADLINE: Duration = Duration::from_secs(5);
@@ -21,14 +20,12 @@ const READ_DEADLINE: Duration = Duration::from_secs(5);
 const MISSING: i32 = 44;
 
 /// Reads `path` in the Box behind `handle`; `None` when the file is absent.
-/// The target lookup runs in `host_cwd`, so the lease claim matches that repo.
 pub(super) fn peek_file(
     cb: &Crabbox,
     handle: &BoxHandle,
     path: &BoxPath,
-    host_cwd: &Path,
 ) -> Result<Option<String>, DriverError> {
-    let words = link::args(cb, handle, ssh_target(cb, handle, host_cwd)?);
+    let words = link::args(cb, handle, ssh_target(cb, handle)?);
     let p = quote(path.as_str());
     let remote = format!("test -e {p} || exit {MISSING}; cat -- {p}");
     let read = ProcSpec::new(Tool::Ssh, Deadline(READ_DEADLINE))
@@ -50,16 +47,11 @@ pub(super) fn peek_file(
 }
 
 /// The ssh arguments that reach the Box behind `handle`, without the leading `ssh`.
-/// The lookup runs in `host_cwd`, so the lease claim matches that repo.
-pub(super) fn ssh_target(
-    cb: &Crabbox,
-    handle: &BoxHandle,
-    host_cwd: &Path,
-) -> Result<Vec<String>, DriverError> {
+pub(super) fn ssh_target(cb: &Crabbox, handle: &BoxHandle) -> Result<Vec<String>, DriverError> {
     // `crabbox ssh` touches the lease, so a lookup also resets crabbox's idle timer;
     // lookups are reused within one command and, for a while, through the Box's link, and
     // idle Boxes are slept by moor's `sleep_after`, not by that timer.
-    let key = (handle.as_str().to_owned(), host_cwd.to_path_buf());
+    let key = handle.as_str().to_owned();
     if let Some(words) = cb.targets.lock().ok().and_then(|m| m.get(&key).cloned()) {
         return Ok(words);
     }
@@ -72,13 +64,12 @@ pub(super) fn ssh_target(
     }
     // Secret-token providers need --show-secret, not yet passed.
     let (provider, _) = split_handle(handle);
-    let lookup = static_env(
+    let lookup = cb.at_lease(
         Crabbox::spec(cb.lookup_deadline(provider.unwrap_or_default()))
             .arg("ssh")
-            .args(target_args(handle))
-            .cwd(host_cwd),
+            .args(target_args(handle)),
         handle,
-    );
+    )?;
     // Another crabbox call on the same lease can rewrite its claim mid-lookup.
     let line = cb
         .retry_claim_race(|| cb.proc.run(&lookup))

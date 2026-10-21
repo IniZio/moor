@@ -4,7 +4,6 @@ fn spec(full: bool) -> ProxySpec {
     ProxySpec {
         box_id: BoxId::new(7),
         box_handle: full.then(|| BoxHandle::new("box-1")),
-        host_cwd: PathBuf::from("/work/tree"),
         box_repo: full.then(|| ForgeRepo {
             owner: "acme".into(),
             name: "widget".into(),

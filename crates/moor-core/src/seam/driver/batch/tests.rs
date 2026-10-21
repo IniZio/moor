@@ -1,5 +1,6 @@
 #![allow(clippy::indexing_slicing, reason = "test assertions")]
 
+use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
@@ -29,13 +30,13 @@ impl Driver for Scripted {
     fn planned_handle(&self, _: &AcquireReq) -> BoxHandle {
         BoxHandle::new("h")
     }
-    fn release(&self, _: &BoxHandle, _: Option<&Path>) -> Result<Released, DriverError> {
+    fn release(&self, _: &BoxHandle) -> Result<Released, DriverError> {
         no()
     }
     fn list(&self, _: &ProviderId) -> Result<Vec<BoxListing>, DriverError> {
         no()
     }
-    fn workdir(&self, _: &BoxHandle, _: &Path) -> Result<BoxPath, DriverError> {
+    fn workdir(&self, _: &BoxHandle) -> Result<BoxPath, DriverError> {
         no()
     }
     fn exec(
@@ -50,32 +51,20 @@ impl Driver for Scripted {
             code: self.exec_codes[i],
         })
     }
-    fn copy_out(&self, _: &BoxHandle, _: &BoxPath, _: &Path, _: &Path) -> Result<(), DriverError> {
+    fn copy_out(&self, _: &BoxHandle, _: &BoxPath, _: &Path) -> Result<(), DriverError> {
         no()
     }
-    fn peek_file(
-        &self,
-        _: &BoxHandle,
-        _: &BoxPath,
-        _: &Path,
-    ) -> Result<Option<String>, DriverError> {
+    fn peek_file(&self, _: &BoxHandle, _: &BoxPath) -> Result<Option<String>, DriverError> {
         if self.peek_fails {
             Err(DriverError::NotFound)
         } else {
             Ok(None)
         }
     }
-    fn put_file(
-        &self,
-        _: &BoxHandle,
-        _: &BoxPath,
-        _: &[u8],
-        _: u32,
-        _: &Path,
-    ) -> Result<(), DriverError> {
+    fn put_file(&self, _: &BoxHandle, _: &BoxPath, _: &[u8], _: u32) -> Result<(), DriverError> {
         Ok(())
     }
-    fn connect_argv(&self, _: &BoxHandle, _: &Path) -> Result<Vec<String>, DriverError> {
+    fn connect_argv(&self, _: &BoxHandle) -> Result<Vec<String>, DriverError> {
         no()
     }
     fn reverse_tunnel(
@@ -83,14 +72,13 @@ impl Driver for Scripted {
         _: &BoxHandle,
         _: u16,
         _: &Path,
-        _: &Path,
     ) -> Result<Box<dyn TunnelHandle>, DriverError> {
         no()
     }
-    fn sleep(&self, _: &BoxHandle, _: Option<&Path>) -> Result<SleepOutcome, DriverError> {
+    fn sleep(&self, _: &BoxHandle) -> Result<SleepOutcome, DriverError> {
         no()
     }
-    fn wake(&self, _: &BoxHandle, _: Option<&Path>) -> Result<(), DriverError> {
+    fn wake(&self, _: &BoxHandle) -> Result<(), DriverError> {
         no()
     }
 }
@@ -104,7 +92,6 @@ fn run(d: &Scripted, steps: &[BoxStep]) -> Vec<Result<StepDone, DriverError>> {
         d,
         &BoxHandle::new("h"),
         steps,
-        Path::new("/"),
         Deadline(Duration::from_secs(1)),
     )
 }

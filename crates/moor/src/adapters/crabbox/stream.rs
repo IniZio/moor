@@ -9,7 +9,6 @@
 
 use std::collections::HashSet;
 use std::io::Read;
-use std::path::Path;
 
 use moor_core::boxscript::quote;
 use moor_core::name::{BoxHandle, BoxPath};
@@ -25,23 +24,18 @@ pub(super) const NO_TAR: i32 = 45;
 
 /// Streams the files `names` in `dir` of the Box behind `handle`, calling `sink` once per file.
 /// `None` is passed for an entry that is not a regular file.
-#[allow(
-    clippy::too_many_arguments,
-    reason = "mirrors the Driver method it implements"
-)]
 pub(super) fn stream_files(
     cb: &Crabbox,
     handle: &BoxHandle,
     dir: &BoxPath,
     names: &[String],
-    host_cwd: &Path,
     deadline: Deadline,
     sink: &mut dyn FnMut(&str, Option<&mut dyn Read>),
 ) -> Result<(), DriverError> {
     if names.is_empty() {
         return Ok(());
     }
-    let words = link::args(cb, handle, ssh_target(cb, handle, host_cwd)?);
+    let words = link::args(cb, handle, ssh_target(cb, handle)?);
     let quoted: Vec<String> = names.iter().map(|n| quote(n)).collect();
     let remote = format!(
         "command -v tar >/dev/null 2>&1 || exit {NO_TAR}; cd -- {} || exit 1; exec tar -cf - -- {}",

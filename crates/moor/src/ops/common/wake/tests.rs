@@ -46,7 +46,6 @@ fn session(pane: &str) -> SessionRef {
         id: String::new(),
         handle: BoxHandle::new("box-1"),
         workdir: BoxPath::under("/work", "box-1").unwrap(),
-        worktree: PathBuf::from("/home/me/wt/t"),
         pane: Some(PaneRef::new(pane)),
         warnings: Vec::new(),
     }
@@ -59,7 +58,6 @@ fn acquire_req(provider: ProviderId, box_id: BoxId, name: BoxName) -> AcquireReq
         name,
         class: None,
         nonce: "n".to_owned(),
-        worktree: Some(PathBuf::from("/home/me/wt/t")),
     }
 }
 
@@ -290,7 +288,7 @@ fn waking_a_box_with_a_stored_workdir_does_not_probe() {
     assert!(wake_if_asleep(&f.cx, store, &row(&f)).unwrap());
     assert_eq!(f.driver.box_calls(), ["acquire", "wake"]);
     assert_eq!(workdir_calls(&f), 0);
-    assert_eq!(stored_workdir(&f).as_deref(), Some("/work/cbx_1/t"));
+    assert_eq!(stored_workdir(&f).as_deref(), Some("/work/cbx_1/repo"));
 }
 
 fn clear_workdir(f: &Fx) {
@@ -313,7 +311,7 @@ fn waking_a_box_without_a_stored_workdir_probes_once_and_stores_it() {
     let store = f.cx.store().unwrap();
     assert!(wake_if_asleep(&f.cx, store, &row(&f)).unwrap());
     assert_eq!(f.driver.box_calls(), ["acquire", "wake", "workdir"]);
-    assert_eq!(stored_workdir(&f).as_deref(), Some("/moved/cbx_1/t"));
+    assert_eq!(stored_workdir(&f).as_deref(), Some("/moved/cbx_1/repo"));
 }
 
 #[test]

@@ -46,7 +46,7 @@ fn observed(
 fn setup_and_identity_run_in_the_probed_workdir_not_one_built_from_the_handle() {
     let (w, v) = start(FakeDriver::new());
     let (stored, setup, identity) = observed(&w, &v);
-    let want = "/work/cbx_1/demo";
+    let want = "/work/cbx_1/repo";
     assert_eq!(stored, want);
     assert!(!setup.is_empty());
     assert!(setup.iter().all(|c| c.as_deref() == Some(want)));
@@ -64,27 +64,8 @@ fn setup_and_identity_run_in_the_probed_workdir_not_one_built_from_the_handle() 
 fn a_custom_work_root_is_the_root_of_the_probed_workdir() {
     let (w, v) = start(FakeDriver::new().work_root("/w"));
     let (stored, setup, _) = observed(&w, &v);
-    assert_eq!(stored, "/w/cbx_1/demo");
-    assert!(setup.iter().all(|c| c.as_deref() == Some("/w/cbx_1/demo")));
-}
-
-#[test]
-fn every_box_exec_runs_from_the_box_worktree() {
-    // crabbox derives its claim root from the host cwd, so a stray cwd gets the lease refused.
-    let (w, v) = start(FakeDriver::new());
-    let row = w.cx.store().unwrap().box_row(BoxId::new(v.boxed.id));
-    let worktree = std::path::PathBuf::from(row.unwrap().unwrap().worktree.unwrap());
-    let execs = w.driver.execs();
-    assert!(execs.iter().any(|(_, s, _)| is_identity(&s.argv)));
-    assert!(execs.iter().any(|(_, s, _)| is_setup_line(&s.argv)));
-    for (_, spec, _) in &execs {
-        assert_eq!(
-            spec.host_cwd.as_deref(),
-            Some(worktree.as_path()),
-            "{:?}",
-            spec.argv
-        );
-    }
+    assert_eq!(stored, "/w/cbx_1/repo");
+    assert!(setup.iter().all(|c| c.as_deref() == Some("/w/cbx_1/repo")));
 }
 
 #[test]
@@ -107,10 +88,10 @@ fn start_in_a_replaced_box_runs_setup_in_a_workdir_whose_root_holds_a_parent_com
         .last()
         .and_then(|e| e.1.cwd.as_ref())
         .map(|p| p.as_str().to_owned());
-    assert_eq!(cwd.as_deref(), Some("/w/bin/../box/cbx_2/demo"));
+    assert_eq!(cwd.as_deref(), Some("/w/bin/../box/cbx_2/repo"));
     let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(
         row.boxed.unwrap().workdir.as_deref(),
-        Some("/w/bin/../box/cbx_2/demo")
+        Some("/w/bin/../box/cbx_2/repo")
     );
 }

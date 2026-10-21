@@ -52,7 +52,6 @@ pub(super) fn teardown(
         handle,
         provider: b.provider.as_str(),
         workdir: workdir.as_ref(),
-        worktree,
     };
     let exec = match box_exec::prepare(cx, &site, Some(&proxy), &cfg, Purpose::Teardown) {
         Ok(exec) => exec,
@@ -67,7 +66,6 @@ pub(super) fn teardown(
         env: exec.vars(),
         cwd: exec.cwd(),
         output: None,
-        host_cwd: row.worktree.as_ref().map(Into::into),
         class: Some(cfg.size.value.as_str().to_owned()),
     };
     let result = cx.driver().exec(handle, &spec, exec.deadline());

@@ -1,6 +1,5 @@
 //! The per-Box proxy is ensured through the proxy host before every agent launch.
 
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use moor_core::seam::forge::ForgeRepo;
@@ -47,12 +46,10 @@ fn the_first_launch_ensures_the_proxy_once_and_hands_the_agent_its_address() {
     let (w, engine, fake) = host_world(FakeProxyHost::new());
     let v = run(&w.cx, &goal_req()).unwrap();
     let id = BoxId::new(v.boxed.id);
-    let row = w.cx.store().unwrap().box_row(id).unwrap().unwrap();
     assert_eq!(fake.calls().len(), 1);
     let spec = spec_of(&fake);
     assert_eq!(spec.box_id, id);
     assert_eq!(spec.box_handle, Some(BoxHandle::new("box-1")));
-    assert_eq!(spec.host_cwd, PathBuf::from(row.worktree.unwrap()));
     let launches = engine.launches();
     let addr = launches.first().unwrap().proxy.as_ref().unwrap();
     assert_eq!(addr.box_port, FAKE_BOX_PORT);

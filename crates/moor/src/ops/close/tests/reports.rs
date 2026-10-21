@@ -96,7 +96,7 @@ fn peeked(f: &Fx) -> Vec<String> {
     f.driver
         .peeks()
         .into_iter()
-        .map(|(_, p, _)| p.as_str().to_owned())
+        .map(|(_, p)| p.as_str().to_owned())
         .collect()
 }
 

@@ -17,8 +17,6 @@ pub struct ProxySpec {
     pub box_id: BoxId,
     /// The Box, or `None` when it has none.
     pub box_handle: Option<BoxHandle>,
-    /// The Box's worktree on the host.
-    pub host_cwd: PathBuf,
     /// The forge repo the Box works on, when known.
     pub box_repo: Option<ForgeRepo>,
     /// The resolved tool rules the Proxy enforces.

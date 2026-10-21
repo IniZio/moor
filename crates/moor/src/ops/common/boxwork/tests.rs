@@ -53,7 +53,6 @@ fn rig(dir: &Path, driver: FakeDriver) -> Rig {
             name: BoxName::parse_allow_bare("demo").unwrap(),
             class: None,
             nonce: "n".to_owned(),
-            worktree: None,
         })
         .unwrap();
     let (row, boxed) = rows(dir, got.handle);
@@ -140,7 +139,7 @@ fn clean_box_is_clean_and_the_probe_is_shaped_right() {
     assert_eq!(peeks.len(), 1);
     assert!(peeks
         .iter()
-        .all(|(_, path, _)| path.as_str().ends_with(".moor/boxwork")));
+        .all(|(_, path)| path.as_str().ends_with(".moor/boxwork")));
 }
 
 #[test]
@@ -219,12 +218,11 @@ fn missing_handle_is_unknown() {
 }
 
 #[test]
-fn missing_worktree_is_unknown() {
+fn a_box_without_a_host_worktree_is_still_probed() {
     let d = tempfile::tempdir().unwrap();
     let mut r = with_result(d.path(), "ahead=0 dirty=0");
     r.row.worktree = None;
-    assert!(is_unknown(&run(&r)));
-    assert!(r.driver.execs().is_empty());
+    assert_eq!(run(&r), BoxWork::Clean);
 }
 
 #[test]

@@ -18,7 +18,6 @@ fn spec() -> ExecSpec {
         env: Vec::new(),
         cwd: None,
         output: None,
-        host_cwd: None,
         class: None,
     }
 }
@@ -59,7 +58,6 @@ fn class_of(call: &Call) -> Option<&str> {
 fn every_exec_skips_the_sync_and_the_hydrate_and_names_no_seed() {
     let mut streamed = spec();
     streamed.output = Some(Output::Log(PathBuf::from("/tmp/log")));
-    streamed.host_cwd = Some(PathBuf::from("/work/tree"));
     for s in [spec(), streamed] {
         let (_, call) = run_with(&s, ok());
         assert!(has(&call, "--no-sync"), "{:?}", call.args);
@@ -86,14 +84,6 @@ fn class_maps_to_crabbox_class() {
 fn no_class_flag_without_a_class() {
     let (_, call) = run_with(&spec(), ok());
     assert!(!has(&call, "--class"));
-}
-
-#[test]
-fn host_cwd_is_the_proc_cwd() {
-    let mut s = spec();
-    s.host_cwd = Some(PathBuf::from("/work/tree"));
-    let (_, call) = run_with(&s, ok());
-    assert_eq!(call.cwd, Some(PathBuf::from("/work/tree")));
 }
 
 fn streamed(reply: impl Fn() -> Reply) -> Vec<Result<ExecOutcome, DriverError>> {
@@ -207,7 +197,8 @@ fn claim_race_is_retried_until_the_call_succeeds() {
         &["--version"],
         Reply::Ok("crabbox 0.79.1-moor.1\n".into()),
     );
-    let c = Crabbox::new(p.clone(), clock.clone(), Arc::new(FakeRng::default()));
+    let c =
+        Crabbox::new(p.clone(), clock.clone(), Arc::new(FakeRng::default())).with_scratch_leases();
     assert_eq!(exec_once(&c), Ok(ExecOutcome::Exited { code: 0 }));
     assert_eq!(run_calls(&p), 2);
     assert_eq!(clock.now(), Ts::from_millis(1000));
@@ -226,7 +217,8 @@ fn claim_race_is_retried_through_a_long_tunnel_restart() {
         &["--version"],
         Reply::Ok("crabbox 0.79.1-moor.1\n".into()),
     );
-    let c = Crabbox::new(p.clone(), clock.clone(), Arc::new(FakeRng::default()));
+    let c =
+        Crabbox::new(p.clone(), clock.clone(), Arc::new(FakeRng::default())).with_scratch_leases();
     assert_eq!(exec_once(&c), Ok(ExecOutcome::Exited { code: 0 }));
     assert_eq!(run_calls(&p), 13);
     assert_eq!(clock.now(), Ts::from_millis(12_000));
@@ -242,7 +234,8 @@ fn claim_race_gives_up_after_the_budget() {
         &["--version"],
         Reply::Ok("crabbox 0.79.1-moor.1\n".into()),
     );
-    let c = Crabbox::new(p.clone(), clock.clone(), Arc::new(FakeRng::default()));
+    let c =
+        Crabbox::new(p.clone(), clock.clone(), Arc::new(FakeRng::default())).with_scratch_leases();
     let err = exec_once(&c).unwrap_err();
     assert_eq!(run_calls(&p), 16);
     assert_eq!(clock.now(), Ts::from_millis(15_000));

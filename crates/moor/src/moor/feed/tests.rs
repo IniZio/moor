@@ -48,7 +48,6 @@ fn working(cx: &Cx, driver: &FakeDriver, name: &str, session: &str) -> BoxId {
             name: BoxName::parse_allow_bare(name).unwrap(),
             class: None,
             nonce: "abc123".into(),
-            worktree: None,
         })
         .unwrap();
     let d = Decision::new(id)

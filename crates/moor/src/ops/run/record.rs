@@ -39,13 +39,9 @@ pub(super) fn checkout(cx: &Cx, target: &Target) -> Result<Sha, CommandError> {
         head_script()
     );
     let steps = [BoxStep::Run(script), BoxStep::Peek(path)];
-    let done = cx.driver().batch(
-        &target.handle,
-        &[],
-        &steps,
-        &target.worktree,
-        Deadline(HEAD_DEADLINE),
-    );
+    let done = cx
+        .driver()
+        .batch(&target.handle, &[], &steps, Deadline(HEAD_DEADLINE));
     let text = match done.as_slice() {
         [Ok(StepDone::Ran {
             outcome: ExecOutcome::Exited { code: 0 },
@@ -84,7 +80,7 @@ pub(super) fn moved(cx: &Cx, target: &Target) -> bool {
         .and_then(|w| BoxPath::under(w.as_str(), MOVED_FILE).map_err(|e| e.to_string()))
         .and_then(|path| {
             cx.driver()
-                .peek_file(&target.handle, &path, &target.worktree)
+                .peek_file(&target.handle, &path)
                 .map_err(|e| e.to_string())
         })
         .is_ok_and(|text| text.is_some())
@@ -95,7 +91,7 @@ fn workdir(cx: &Cx, target: &Target) -> Result<BoxPath, String> {
     target.workdir.as_ref().map_or_else(
         || {
             cx.driver()
-                .workdir(&target.handle, &target.worktree)
+                .workdir(&target.handle)
                 .map_err(|e| e.to_string())
         },
         |w| Ok(w.clone()),

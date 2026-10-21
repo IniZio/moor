@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use moor_core::activity::{PaneObs, PaneStatus};
@@ -27,7 +26,6 @@ pub(super) fn session(pane: &str) -> SessionRef {
         id: String::new(),
         handle: BoxHandle::new("box-1"),
         workdir: BoxPath::under("/work", "box-1").unwrap(),
-        worktree: PathBuf::from("/wt"),
         pane: Some(PaneRef::new(pane)),
         warnings: Vec::new(),
     }

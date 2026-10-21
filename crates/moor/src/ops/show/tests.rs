@@ -86,7 +86,6 @@ fn ready_box(cx: &Cx, driver: &FakeDriver, id: BoxId) -> moor_core::BoxHandle {
             name: BoxName::parse_allow_bare("demo").unwrap(),
             class: None,
             nonce: "abc123".into(),
-            worktree: None,
         })
         .unwrap();
     let fields = Fields {
@@ -264,7 +263,6 @@ fn working(cx: &Cx, driver: &FakeDriver, name: &str, session: Option<&str>) -> B
             name: BoxName::parse_allow_bare(name).unwrap(),
             class: None,
             nonce: "abc123".into(),
-            worktree: None,
         })
         .unwrap();
     let store = cx.store().unwrap();

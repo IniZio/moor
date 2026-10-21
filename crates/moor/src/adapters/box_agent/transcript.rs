@@ -118,20 +118,14 @@ pub(super) fn save(
         profile.transcript_script(ARCHIVE)
     );
     let connect = driver
-        .connect_argv(&s.handle, &s.worktree)
+        .connect_argv(&s.handle)
         .map_err(|e| fail("archive", e.to_string()))?;
     let steps = [
         BoxStep::Run(script),
         BoxStep::Run(stream_script(s.workdir.as_str(), STREAM_CAP)),
     ];
     let mut done = driver
-        .batch(
-            &s.handle,
-            &connect,
-            &steps,
-            &s.worktree,
-            Deadline(ARCHIVE_DEADLINE),
-        )
+        .batch(&s.handle, &connect, &steps, Deadline(ARCHIVE_DEADLINE))
         .into_iter();
     match done.next() {
         Some(Ok(StepDone::Ran {
@@ -160,7 +154,7 @@ pub(super) fn save(
     let from =
         BoxPath::under(s.workdir.as_str(), ARCHIVE).map_err(|e| fail("copy", e.to_string()))?;
     driver
-        .copy_out(&s.handle, &from, dest, &s.worktree)
+        .copy_out(&s.handle, &from, dest)
         .map_err(|e| fail("copy", e.to_string()))
 }
 

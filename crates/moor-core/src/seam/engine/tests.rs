@@ -27,7 +27,6 @@ fn req() -> LaunchReq {
         id: BoxId::new(7),
         handle: BoxHandle::new("box-1"),
         workdir: BoxPath::under("/work", "box-1").unwrap(),
-        worktree: PathBuf::from("/wt"),
         workspace: WorkspaceRef::new("ws-1"),
         box_name: BoxName::parse_allow_bare("web/fix-bug").unwrap(),
         branch: String::new(),

@@ -1,6 +1,6 @@
 //! Engine seam: the agent session running in a Box.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 
 use crate::activity::Probes;
@@ -20,8 +20,6 @@ pub struct SessionRef {
     pub handle: BoxHandle,
     /// The Box workdir; the hook file lives under it.
     pub workdir: BoxPath,
-    /// Host worktree; passed as the host cwd to Driver calls.
-    pub worktree: PathBuf,
     /// The agent's pane, if one exists.
     pub pane: Option<PaneRef>,
     /// Non-fatal notices from the launch, for the caller to report; empty otherwise.
@@ -58,8 +56,6 @@ pub struct LaunchReq {
     pub handle: BoxHandle,
     /// The Box workdir the agent runs in.
     pub workdir: BoxPath,
-    /// Host worktree; passed as the host cwd to Driver calls and the pane.
-    pub worktree: PathBuf,
     /// The Workspace that gets the agent's tab.
     pub workspace: WorkspaceRef,
     /// The Box the agent works on.
@@ -114,7 +110,6 @@ impl PartialEq for LaunchReq {
         self.id == other.id
             && self.handle == other.handle
             && self.workdir == other.workdir
-            && self.worktree == other.worktree
             && self.workspace == other.workspace
             && self.box_name == other.box_name
             && self.branch == other.branch

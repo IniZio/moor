@@ -4,7 +4,7 @@
 //! and wake. A reverse tunnel is a long-lived child that the caller owns and drops to stop.
 
 use std::fmt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Duration;
 
 use crate::name::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId};
@@ -54,8 +54,6 @@ pub struct AcquireReq {
     pub class: Option<String>,
     /// Random suffix that keeps the Box name unique.
     pub nonce: String,
-    /// Host directory to run the warmup in.
-    pub worktree: Option<PathBuf>,
 }
 
 /// A Box the Driver has handed over.
@@ -98,8 +96,6 @@ pub struct ExecSpec {
     pub cwd: Option<BoxPath>,
     /// Where to stream output; captured when unset.
     pub output: Option<Output>,
-    /// Host directory (the Box worktree) the driver process runs from.
-    pub host_cwd: Option<PathBuf>,
     /// Box size (`small`, `medium`, `large`, `xlarge`); none is passed when unset.
     pub class: Option<String>,
 }
@@ -229,13 +225,18 @@ pub trait Driver: Send + Sync {
     /// still name the half-made Box for release.
     fn planned_handle(&self, req: &AcquireReq) -> BoxHandle;
 
-    /// Releases a Box; an already-gone Box is not an error. `worktree` is the Box's
-    /// worktree, the directory the Driver runs from so the lease matches the same repo.
+    /// Releases a Box; an already-gone Box is not an error.
     ///
     /// # Errors
     /// Returns a [`DriverError`] when the release fails.
-    fn release(&self, handle: &BoxHandle, worktree: Option<&Path>)
-        -> Result<Released, DriverError>;
+    fn release(&self, handle: &BoxHandle) -> Result<Released, DriverError>;
+
+    /// How a person releases the Box by hand after [`Driver::release`] failed, worded for
+    /// people; none when the Driver has nothing to add.
+    fn manual_release(&self, handle: &BoxHandle) -> Option<String> {
+        let _ = handle;
+        None
+    }
 
     /// Lists the Boxes the Driver knows under one provider. Each listing's
     /// handle equals the handle `acquire` returned for that Box.
@@ -244,13 +245,12 @@ pub trait Driver: Send + Sync {
     /// Returns a [`DriverError`] when the provider cannot be queried.
     fn list(&self, provider: &ProviderId) -> Result<Vec<BoxListing>, DriverError>;
 
-    /// Returns the Box's working directory. `worktree` is the host worktree
-    /// the driver process runs from; the Box workdir depends on it.
+    /// Returns the Box's working directory.
     ///
     /// # Errors
     /// Returns [`DriverError::NotFound`] when the Box is gone, and
     /// [`DriverError::Failed`] when the provider cannot answer the lookup.
-    fn workdir(&self, handle: &BoxHandle, worktree: &Path) -> Result<BoxPath, DriverError>;
+    fn workdir(&self, handle: &BoxHandle) -> Result<BoxPath, DriverError>;
 
     /// Runs one command in the Box and reports its exit code.
     ///
@@ -263,64 +263,44 @@ pub trait Driver: Send + Sync {
         deadline: Deadline,
     ) -> Result<ExecOutcome, DriverError>;
 
-    /// Copies a file or directory out of the Box to the host. Never syncs the
-    /// worktree. `host_cwd` is the worktree the driver process runs from.
+    /// Copies a file or directory out of the Box to the host.
     ///
     /// # Errors
     /// Returns a [`DriverError`] when the copy fails.
-    fn copy_out(
-        &self,
-        handle: &BoxHandle,
-        from: &BoxPath,
-        to: &Path,
-        host_cwd: &Path,
-    ) -> Result<(), DriverError>;
+    fn copy_out(&self, handle: &BoxHandle, from: &BoxPath, to: &Path) -> Result<(), DriverError>;
 
     /// Streams the regular files `names` from directory `dir` in the Box in one round trip,
     /// calling `sink` once per file received, in stream order. `Some(reader)` yields exactly that
     /// file's bytes and need not be read to the end; `None` means the entry was not a regular file.
-    /// A name never handed to `sink` was not received. `host_cwd` is the worktree the driver
-    /// process runs from.
+    /// A name never handed to `sink` was not received.
     ///
     /// # Errors
     /// [`DriverError::Unsupported`] when the provider or the Box cannot stream files; nothing was
     /// handed to `sink` then, so the caller copies one file at a time. [`DriverError::Timeout`] when
     /// the stream hangs, and another [`DriverError`] when it breaks; files already handed to `sink`
     /// stay valid.
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "one round trip needs the whole call context"
-    )]
     fn stream_files(
         &self,
         handle: &BoxHandle,
         dir: &BoxPath,
         names: &[String],
-        host_cwd: &Path,
         deadline: Deadline,
         sink: &mut dyn FnMut(&str, Option<&mut dyn std::io::Read>),
     ) -> Result<(), DriverError> {
-        let _ = (handle, dir, names, host_cwd, deadline, sink);
+        let _ = (handle, dir, names, deadline, sink);
         Err(DriverError::Unsupported("streaming files"))
     }
 
     /// Reads one file in the Box without queueing behind a running command.
-    /// `Ok(None)` means the file does not exist. `host_cwd` is the worktree the
-    /// driver process runs from.
+    /// `Ok(None)` means the file does not exist.
     ///
     /// # Errors
     /// Returns [`DriverError::Timeout`] when the read hangs, and another
     /// [`DriverError`] when the Box cannot be reached or the file cannot be read.
-    fn peek_file(
-        &self,
-        handle: &BoxHandle,
-        path: &BoxPath,
-        host_cwd: &Path,
-    ) -> Result<Option<String>, DriverError>;
+    fn peek_file(&self, handle: &BoxHandle, path: &BoxPath) -> Result<Option<String>, DriverError>;
 
     /// Writes `bytes` to `path` in the Box, creating missing parent directories,
     /// and leaves the file at `mode`. The content travels on stdin, never in argv.
-    /// `host_cwd` is the worktree the driver process runs from.
     ///
     /// # Errors
     /// Returns [`DriverError::NotFound`] when the Box is gone,
@@ -332,21 +312,19 @@ pub trait Driver: Send + Sync {
         path: &BoxPath,
         bytes: &[u8],
         mode: u32,
-        host_cwd: &Path,
     ) -> Result<(), DriverError>;
 
     /// The `ssh -t <target>` argv that opens a terminal on the Box, for a pane to run.
-    /// Takes no lease lock. `host_cwd` is the worktree the driver process runs from.
+    /// Takes no lease lock.
     ///
     /// # Errors
     /// Returns [`DriverError::NotFound`] when the Box is gone, and another
     /// [`DriverError`] when the target cannot be looked up.
-    fn connect_argv(&self, handle: &BoxHandle, host_cwd: &Path)
-        -> Result<Vec<String>, DriverError>;
+    fn connect_argv(&self, handle: &BoxHandle) -> Result<Vec<String>, DriverError>;
 
     /// Exposes the host Unix socket `socket` inside the Box on loopback `box_port` until the
     /// returned handle drops. It opens `socket` per Box connection, so it reaches a listener
-    /// bound again at the same path. `host_cwd` is the worktree the driver process runs from.
+    /// bound again at the same path.
     ///
     /// # Errors
     /// Returns [`DriverError::Unsupported`] when the provider has no reverse
@@ -357,7 +335,6 @@ pub trait Driver: Send + Sync {
         handle: &BoxHandle,
         box_port: u16,
         socket: &Path,
-        host_cwd: &Path,
     ) -> Result<Box<dyn TunnelHandle>, DriverError>;
 
     /// Runs `steps` in order in one round trip where the provider can. `connect` is what
@@ -369,28 +346,23 @@ pub trait Driver: Send + Sync {
         handle: &BoxHandle,
         connect: &[String],
         steps: &[BoxStep],
-        host_cwd: &Path,
         deadline: Deadline,
     ) -> Vec<Result<StepDone, DriverError>> {
         let _ = connect;
-        run_each(self, handle, steps, host_cwd, deadline)
+        run_each(self, handle, steps, deadline)
     }
 
-    /// Puts the Box to sleep when its provider lets the Driver do so, running from `worktree`.
+    /// Puts the Box to sleep when its provider lets the Driver do so.
     ///
     /// # Errors
     /// Returns a [`DriverError`] when the provider cannot be asked or the suspend fails.
-    fn sleep(
-        &self,
-        handle: &BoxHandle,
-        worktree: Option<&Path>,
-    ) -> Result<SleepOutcome, DriverError>;
+    fn sleep(&self, handle: &BoxHandle) -> Result<SleepOutcome, DriverError>;
 
-    /// Wakes a sleeping Box, running from `worktree`.
+    /// Wakes a sleeping Box.
     ///
     /// # Errors
     /// Returns a [`DriverError`] when the resume fails.
-    fn wake(&self, handle: &BoxHandle, worktree: Option<&Path>) -> Result<(), DriverError>;
+    fn wake(&self, handle: &BoxHandle) -> Result<(), DriverError>;
 }
 
 #[cfg(test)]

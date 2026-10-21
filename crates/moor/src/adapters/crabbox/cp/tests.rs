@@ -21,7 +21,6 @@ fn run(c: &Crabbox) -> Result<(), DriverError> {
         &BoxHandle::new("p/box"),
         &BoxPath::under("/work", "out/a.txt").unwrap(),
         Path::new("/host/a.txt"),
-        Path::new("/host/cwd"),
     )
 }
 
@@ -46,17 +45,6 @@ fn argv_names_box_and_both_paths() {
             ]
             .map(String::from)[..]
         )
-    );
-}
-
-#[test]
-fn runs_in_host_cwd() {
-    let (p, c) = fixture();
-    p.on(Tool::Crabbox, &["cp"], Reply::Ok(String::new()));
-    run(&c).unwrap();
-    assert_eq!(
-        p.calls().first().and_then(|c| c.cwd.as_deref()),
-        Some(Path::new("/host/cwd"))
     );
 }
 

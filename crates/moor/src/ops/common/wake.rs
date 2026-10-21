@@ -13,7 +13,6 @@ use moor_core::{BoxReq, ErrorKind};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::autosleep::box_dir;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::park::restore_tunnel;
 use crate::ops::common::provision::recorded_workdir;
@@ -93,13 +92,12 @@ fn wake(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Woke, CommandError> {
             let handle = b.handle.as_ref().ok_or_else(|| {
                 CommandError::new(ErrorKind::Refused, "the Box has not been acquired")
             })?;
-            cx.driver().wake(handle, Some(box_dir(row)))?;
+            cx.driver().wake(handle)?;
             if b.workdir
                 .as_deref()
                 .is_none_or(|w| recorded_workdir(w).is_none())
             {
-                let worktree = box_dir(row);
-                workdir = Some(cx.driver().workdir(handle, worktree)?);
+                workdir = Some(cx.driver().workdir(handle)?);
             }
         }
     }

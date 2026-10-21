@@ -62,13 +62,13 @@ struct State {
     sleep_kind: Option<SleepKind>,
 }
 
-/// One `copy_out` call: handle, source, destination and host cwd.
-type CopyCall = (BoxHandle, BoxPath, PathBuf, PathBuf);
+/// One `copy_out` call: handle, source and destination.
+type CopyCall = (BoxHandle, BoxPath, PathBuf);
 
 /// Runs inside every `exec`, before its result is served.
 type ExecHook = dyn Fn() + Send + Sync;
 
-/// Scripted Driver: boxes `box-1`, `box-2`, ... with workdir `/work/cbx_N/<repo>`
+/// Scripted Driver: boxes `box-1`, `box-2`, ... with workdir `/work/cbx_N/repo`
 /// unless [`FakeDriver::work_root`] says otherwise; the lease id differs from
 /// the handle so a path rebuilt from the handle is caught.
 #[derive(Default)]
@@ -122,7 +122,7 @@ impl FakeDriver {
         self.st().execs.clone()
     }
 
-    /// Every `copy_out` so far: handle, source, destination, host cwd.
+    /// Every `copy_out` so far: handle, source and destination.
     pub(crate) fn copies(&self) -> Vec<CopyCall> {
         self.st().copies.clone()
     }
@@ -143,7 +143,7 @@ impl Driver for FakeDriver {
         let id = format!("box-{}", s.next);
         s.live.push(id.clone());
         s.providers.push((id.clone(), req.provider.clone()));
-        let workdir = layout(s.work_root.as_deref(), &id, req.worktree.as_deref())?;
+        let workdir = layout(s.work_root.as_deref(), &id)?;
         Ok(Acquired {
             handle: BoxHandle::new(id),
             workdir,
@@ -154,7 +154,11 @@ impl Driver for FakeDriver {
         BoxHandle::new(format!("box-{}", self.st().next + 1))
     }
 
-    fn release(&self, handle: &BoxHandle, _: Option<&Path>) -> Result<Released, DriverError> {
+    fn manual_release(&self, handle: &BoxHandle) -> Option<String> {
+        Some(format!("stop it from /leases/{}", handle.as_str()))
+    }
+
+    fn release(&self, handle: &BoxHandle) -> Result<Released, DriverError> {
         let mut s = self.st();
         s.note(format!("release {}", handle.as_str()));
         if let Some(e) = s
@@ -190,11 +194,11 @@ impl Driver for FakeDriver {
             .collect())
     }
 
-    fn reverse_tunnel(&self, h: &BoxHandle, bp: u16, socket: &Path, cwd: &Path) -> tunnel::Opened {
-        self.tunnel_request(h, bp, socket, cwd)
+    fn reverse_tunnel(&self, h: &BoxHandle, bp: u16, socket: &Path) -> tunnel::Opened {
+        self.tunnel_request(h, bp, socket)
     }
 
-    fn workdir(&self, handle: &BoxHandle, worktree: &Path) -> Result<BoxPath, DriverError> {
+    fn workdir(&self, handle: &BoxHandle) -> Result<BoxPath, DriverError> {
         let mut s = self.st();
         s.note(format!("workdir {}", handle.as_str()));
         if let Some(e) = s.fail_workdir.take() {
@@ -203,7 +207,7 @@ impl Driver for FakeDriver {
         if !s.live.iter().any(|h| h == handle.as_str()) {
             return Err(DriverError::NotFound);
         }
-        layout(s.work_root.as_deref(), handle.as_str(), Some(worktree))
+        layout(s.work_root.as_deref(), handle.as_str())
     }
 
     fn exec(
@@ -237,21 +241,11 @@ impl Driver for FakeDriver {
         out
     }
 
-    fn copy_out(
-        &self,
-        handle: &BoxHandle,
-        from: &BoxPath,
-        to: &Path,
-        host_cwd: &Path,
-    ) -> Result<(), DriverError> {
+    fn copy_out(&self, handle: &BoxHandle, from: &BoxPath, to: &Path) -> Result<(), DriverError> {
         let mut s = self.st();
         s.note(format!("copy_out {}", handle.as_str()));
-        s.copies.push((
-            handle.clone(),
-            from.clone(),
-            to.to_path_buf(),
-            host_cwd.to_path_buf(),
-        ));
+        s.copies
+            .push((handle.clone(), from.clone(), to.to_path_buf()));
         if !s.live.iter().any(|h| h == handle.as_str()) {
             return Err(DriverError::NotFound);
         }
@@ -269,16 +263,10 @@ impl Driver for FakeDriver {
             .map_or(Ok(()), |bytes| write_bytes(to, bytes))
     }
 
-    fn peek_file(
-        &self,
-        handle: &BoxHandle,
-        path: &BoxPath,
-        host_cwd: &Path,
-    ) -> Result<Option<String>, DriverError> {
+    fn peek_file(&self, handle: &BoxHandle, path: &BoxPath) -> Result<Option<String>, DriverError> {
         let mut s = self.st();
         s.note(format!("peek_file {}", handle.as_str()));
-        s.peeks
-            .push((handle.clone(), path.clone(), host_cwd.to_path_buf()));
+        s.peeks.push((handle.clone(), path.clone()));
         if !s.live.iter().any(|h| h == handle.as_str()) {
             return Err(DriverError::NotFound);
         }
@@ -297,17 +285,11 @@ impl Driver for FakeDriver {
         path: &BoxPath,
         bytes: &[u8],
         mode: u32,
-        host_cwd: &Path,
     ) -> Result<(), DriverError> {
         let mut s = self.st();
         s.note(format!("put_file {}", handle.as_str()));
-        s.puts.push((
-            handle.clone(),
-            path.clone(),
-            bytes.to_vec(),
-            mode,
-            host_cwd.to_path_buf(),
-        ));
+        s.puts
+            .push((handle.clone(), path.clone(), bytes.to_vec(), mode));
         if !s.live.iter().any(|h| h == handle.as_str()) {
             return Err(DriverError::NotFound);
         }
@@ -323,11 +305,7 @@ impl Driver for FakeDriver {
         Ok(())
     }
 
-    fn connect_argv(
-        &self,
-        handle: &BoxHandle,
-        _host_cwd: &Path,
-    ) -> Result<Vec<String>, DriverError> {
+    fn connect_argv(&self, handle: &BoxHandle) -> Result<Vec<String>, DriverError> {
         let mut s = self.st();
         s.note(format!("connect_argv {}", handle.as_str()));
         if !s.live.iter().any(|h| h == handle.as_str()) {
@@ -344,10 +322,9 @@ impl Driver for FakeDriver {
         handle: &BoxHandle,
         connect: &[String],
         steps: &[BoxStep],
-        host_cwd: &Path,
         deadline: Deadline,
     ) -> Vec<Result<StepDone, DriverError>> {
-        self.run_batch(handle, connect, steps, host_cwd, deadline)
+        self.run_batch(handle, connect, steps, deadline)
     }
 
     fn stream_files(
@@ -355,14 +332,13 @@ impl Driver for FakeDriver {
         handle: &BoxHandle,
         dir: &BoxPath,
         names: &[String],
-        _: &Path,
         _: Deadline,
         sink: &mut dyn FnMut(&str, Option<&mut dyn std::io::Read>),
     ) -> Result<(), DriverError> {
         self.run_stream(handle, dir, names, sink)
     }
 
-    fn sleep(&self, handle: &BoxHandle, _: Option<&Path>) -> Result<SleepOutcome, DriverError> {
+    fn sleep(&self, handle: &BoxHandle) -> Result<SleepOutcome, DriverError> {
         let mut s = self.st();
         s.note(format!("sleep {}", handle.as_str()));
         if !s.live.iter().any(|h| h == handle.as_str()) {
@@ -374,7 +350,7 @@ impl Driver for FakeDriver {
         Ok(s.sleep_outcome.clone().unwrap_or(SleepOutcome::Slept))
     }
 
-    fn wake(&self, handle: &BoxHandle, _: Option<&Path>) -> Result<(), DriverError> {
+    fn wake(&self, handle: &BoxHandle) -> Result<(), DriverError> {
         let mut s = self.st();
         s.note(format!("wake {}", handle.as_str()));
         if !s.live.iter().any(|h| h == handle.as_str()) {

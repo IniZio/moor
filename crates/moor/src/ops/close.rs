@@ -17,7 +17,6 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::agent_stop;
 use crate::ops::common::artifacts;
-use crate::ops::common::autosleep::box_dir;
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::boxwork::{self, probe, BoxWork, BOXWORK_DEADLINE};
 use crate::ops::common::promote::promote_waiting;
@@ -183,13 +182,9 @@ fn recheck_and_collect(cx: &Cx, store: &Store, row: &BoxRow) -> Result<(), Comma
         (Err(work), _, _) => work,
         (Ok(plan), Some(handle), Some(index)) => {
             let steps = [plan.steps.as_slice(), index.steps.as_slice()].concat();
-            let host = Path::new(row.worktree.as_deref().unwrap_or(&row.repo));
             // The probe and the index script each get their own allowance.
             let deadline = Deadline(BOXWORK_DEADLINE + reports::INDEX_DEADLINE);
-            done = cx
-                .driver()
-                .batch(handle, &[], &steps, host, deadline)
-                .into_iter();
+            done = cx.driver().batch(handle, &[], &steps, deadline).into_iter();
             boxwork::read(&plan, &mut done)
         }
         (Ok(_), _, _) => boxwork::probe(cx, row, b),
@@ -279,7 +274,7 @@ fn release(cx: &Cx, store: &Store, row: &BoxRow) -> Result<bool, CommandError> {
     let Some(handle) = held(b) else {
         return Ok(false);
     };
-    let (result, cause) = match cx.driver().release(handle, Some(box_dir(row))) {
+    let (result, cause) = match cx.driver().release(handle) {
         Ok(Released::Deleted | Released::AlreadyGone) => (ReleaseResult::Deleted, None),
         Err(e) => (ReleaseResult::Failed, Some(e)),
     };
@@ -295,9 +290,13 @@ fn release(cx: &Cx, store: &Store, row: &BoxRow) -> Result<bool, CommandError> {
             || "the Box could not be released".to_owned(),
             |e| e.to_string(),
         );
+        let by_hand = cx.driver().manual_release(handle).map_or_else(
+            || "release the Box by hand".to_owned(),
+            |how| format!("release the Box by hand: {how}"),
+        );
         return Err(
             CommandError::new(ErrorKind::Failed, format!("{why}; the Box stays open"))
-                .with_hint("try `moor close` again, or release the Box by hand"),
+                .with_hint(format!("try `moor close` again, or {by_hand}")),
         );
     }
     Ok(result == ReleaseResult::Deleted)

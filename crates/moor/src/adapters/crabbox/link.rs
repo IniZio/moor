@@ -72,6 +72,7 @@ impl Crabbox {
     /// in `sockets`. Without a state dir, every call to a Box connects on its own.
     pub(crate) fn with_state_dir(mut self, state_dir: Option<PathBuf>, sockets: PathBuf) -> Self {
         let owner = rustix::process::getuid().as_raw();
+        self.leases = state_dir.as_ref().map(|state| state.join("leases"));
         self.links = state_dir.map(|state| Dirs {
             state,
             sockets,

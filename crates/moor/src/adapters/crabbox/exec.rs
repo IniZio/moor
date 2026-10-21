@@ -5,7 +5,7 @@ use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
 use moor_core::seam::proc::{Deadline, ProcError, StderrGate};
 
 use super::errors::{map_error, remote_exit, Op};
-use super::{size_of, split_handle, static_env, target_args, Crabbox};
+use super::{size_of, split_handle, target_args, Crabbox};
 
 /// Shell wrapper that enters the directory in `$1`, then runs the rest.
 const CD_THEN_EXEC: &str = r#"cd "$1" && shift && exec "$@""#;
@@ -44,13 +44,10 @@ pub(super) fn run(
     if let Some(class) = spec.class.as_deref() {
         proc = proc.args(["--class", size_of(Some(class))?]);
     }
-    if let Some(dir) = &spec.host_cwd {
-        proc = proc.cwd(dir);
-    }
     for (k, v) in &spec.env {
         proc = proc.args(["--allow-env", k]).env(k, v);
     }
-    proc = static_env(proc, handle).arg("--");
+    proc = cb.at_lease(proc, handle)?.arg("--");
     if spec.output.is_some() {
         let token = format!("gate-{:08x}{:08x}", cb.rng.u32(), cb.rng.u32());
         let (begin, end) = (format!("{token}-begin"), format!("{token}-end"));

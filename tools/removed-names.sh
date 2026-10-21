@@ -18,6 +18,7 @@ names=(
   will_launch agent_live
   SyncMode sync_checkout sync_with_proxy sync_failed seed_source CRABBOX_SYNC_GIT_SEED_SOURCE
   push_url git_remote_lines MOOR_FETCH remote.moor
+  host_cwd host_of 'box_dir(row' 'box_dir(&row'
 )
 args=()
 for n in "${names[@]}"; do args+=(-e "$n"); done

@@ -129,7 +129,6 @@ fn install(
         env: env.vars(),
         cwd: None,
         output: Some(Output::Log(log.to_path_buf())),
-        host_cwd: Some(site.worktree.to_path_buf()),
         class: Some(cfg.size.value.as_str().to_owned()),
     };
     cx.driver()
@@ -149,7 +148,6 @@ pub(crate) fn apply(
     cx: &Cx,
     handle: &BoxHandle,
     id: BoxId,
-    host_cwd: &Path,
     cfg: &BoxSettings,
     proxy: &Result<Option<BoxProxy>, String>,
 ) -> Result<DotfilesRun, DotfilesFailed> {
@@ -175,7 +173,7 @@ pub(crate) fn apply(
     let archive = BoxPath::under(&stage, "dotfiles.tgz")
         .map_err(|e| fail(format!("could not upload dotfiles: {e}")))?;
     cx.driver()
-        .put_file(handle, &archive, &bytes, 0o600, host_cwd)
+        .put_file(handle, &archive, &bytes, 0o600)
         .map_err(|e| fail(format!("could not upload dotfiles: {e}")))?;
     let log = cx
         .state_dir()
@@ -188,7 +186,6 @@ pub(crate) fn apply(
         handle,
         provider: &cfg.provider.value,
         workdir: None,
-        worktree: host_cwd,
     };
     let reason = match install(cx, &site, cfg, proxy.as_ref(), script, &log) {
         Ok(ExecOutcome::Exited { code: 0 }) => {

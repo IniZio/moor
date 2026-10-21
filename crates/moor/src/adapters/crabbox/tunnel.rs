@@ -13,7 +13,7 @@ use moor_core::seam::driver::{DriverError, TunnelFailure, TunnelHandle};
 use moor_core::seam::proc::{ChildHandle, Deadline, FirstLineError, ProcSpec};
 use serde::Deserialize;
 
-use super::{static_env, target_args, Crabbox};
+use super::{target_args, Crabbox};
 
 /// Time allowed for the tunnel to report ready. crabbox gives up on its own after
 /// 15 s with a message on stderr; this is longer so that message normally wins.
@@ -62,20 +62,18 @@ pub(super) fn reverse_tunnel(
     handle: &BoxHandle,
     box_port: u16,
     socket: &Path,
-    host_cwd: &Path,
 ) -> Result<Box<dyn TunnelHandle>, DriverError> {
     let mut forward = OsString::from(format!("{box_port}:"));
     forward.push(socket);
-    let spec = static_env(
+    let spec = cb.at_lease(
         Crabbox::spec(TUNNEL_READY_DEADLINE)
             .arg("tunnel")
             .args(target_args(handle))
             .arg("--reverse")
             .arg(forward)
-            .arg("--json")
-            .cwd(host_cwd),
+            .arg("--json"),
         handle,
-    );
+    )?;
     cb.retry_claim_race(|| open(cb, &spec, box_port, socket))
 }
 

@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -25,7 +25,6 @@ fn live(driver: FakeDriver) -> Arc<FakeDriver> {
         name: BoxName::parse_allow_bare("t1").unwrap(),
         class: None,
         nonce: "n0".to_owned(),
-        worktree: None,
     })
     .unwrap();
     d
@@ -36,7 +35,6 @@ fn session() -> SessionRef {
         id: "s1".to_owned(),
         handle: BoxHandle::new("box-1"),
         workdir: BoxPath::under("/work", "box-1").unwrap(),
-        worktree: PathBuf::from("/host/wt"),
         pane: None,
         warnings: Vec::new(),
     }
@@ -66,7 +64,6 @@ fn archives_in_the_workdir_then_streams_the_archive_over_the_batch() {
     assert!(script.starts_with("cd '/work/box-1' && "), "{script}");
     assert!(script.contains(".claude/projects"));
     assert!(script.contains(".moor/transcripts.tgz"));
-    assert_eq!(spec.host_cwd, Some(PathBuf::from("/host/wt")));
     assert_eq!(std::fs::read(&dest).unwrap(), b"abc");
     assert!(d.copies().is_empty());
 }
@@ -81,8 +78,7 @@ fn an_archive_over_the_cap_is_copied_out_instead() {
         [(
             BoxHandle::new("box-1"),
             BoxPath::under("/work/box-1", ".moor/transcripts.tgz").unwrap(),
-            dest,
-            PathBuf::from("/host/wt")
+            dest
         )]
     );
 }
