@@ -251,6 +251,77 @@ fn a_finished_turn_posts_a_line_and_a_notice_that_waits_for_the_starters_next_me
 }
 
 #[test]
+fn each_finished_turn_of_one_box_posts_its_own_line_and_notice() {
+    let (rig, controller, _bin, _post) = thread_with_status();
+    controller.emit(BOX_ID, BOX_NAME, "idled", json!({}));
+    controller.emit(BOX_ID, BOX_NAME, "working", json!({}));
+    controller.emit(BOX_ID, BOX_NAME, "idled", json!({}));
+    rig.slack.wait_until("two finished lines", |posts, _| {
+        posts.iter().filter(|p| p.text == finished_line()).count() == 2
+    });
+    std::thread::sleep(QUIET);
+    let finished = format!("[moor] Box `{BOX_NAME}` finished its turn.");
+    let queued = notices(&rig).into_iter().filter(|n| *n == finished).count();
+    assert_eq!(queued, 2);
+}
+
+#[test]
+fn a_refold_after_a_turn_used_the_notices_posts_no_second_line() {
+    let (rig, controller, _bin, _post) = thread_with_status();
+    controller.emit(BOX_ID, BOX_NAME, "idled", json!({}));
+    rig.wait_post(&finished_line());
+    reply(&rig, 2, USER, "what now");
+    rig.slack.wait_updates(2);
+    wait_turns_posted(&rig);
+
+    let n = watches(&controller);
+    controller.drop_watches();
+    wait_refolded(&controller, n);
+    let posts = rig.slack.posts();
+    let lines = posts.iter().filter(|p| p.text == finished_line()).count();
+    assert_eq!(lines, 1, "{posts:?}");
+}
+
+#[test]
+fn two_bound_boxes_in_one_thread_each_keep_their_own_status_and_lines() {
+    let (mut rig, controller, bin) = Rig::start_boxes();
+    std::fs::OpenOptions::new()
+        .append(true)
+        .open(rig.path("slack.yaml"))
+        .and_then(|mut f| std::io::Write::write_all(&mut f, b"  max_open_boxes: 2\n"))
+        .unwrap();
+    rig.kill_daemon();
+    rig.spawn_daemon();
+    let goal = |g: &str| ("start_box", json!({ "goal": g }));
+    Rig::tool_calls(
+        &bin,
+        Some(0),
+        &[goal("fix the thing"), goal("and the other")],
+    );
+    rig.open_thread_with_a_box();
+    let second = format!("{}2", BOX_NAME.strip_suffix('1').unwrap());
+    rig.wait_box_state(&second, "bound");
+    let status_of = |name: &str, posts: &[Post]| {
+        let head = format!("*{name}*: ");
+        posts.iter().find(|p| p.text.starts_with(&head)).cloned()
+    };
+    let (posts, _) = rig.slack.wait_until("two status messages", |posts, _| {
+        status_of(BOX_NAME, posts).is_some() && status_of(&second, posts).is_some()
+    });
+    let first_ts = status_of(BOX_NAME, &posts).unwrap().ts;
+    let second_ts = status_of(&second, &posts).unwrap().ts;
+
+    controller.emit(BOX_ID + 1, &second, "idled", json!({}));
+    controller.emit(BOX_ID, BOX_NAME, "working", json!({}));
+    rig.wait_post(&format!("Box `{second}` finished its turn."));
+    wait_status(&rig, &second_ts, &format!("*{second}*: idle"));
+    wait_status(&rig, &first_ts, &status("working"));
+    std::thread::sleep(QUIET);
+    let posts = rig.slack.posts();
+    assert!(posts.iter().all(|p| p.text != finished_line()), "{posts:?}");
+}
+
+#[test]
 fn a_close_box_posts_one_closed_line_and_one_notice() {
     let (rig, controller, bin, post) = thread_with_status();
     Rig::tool_calls(&bin, None, &[("close_box", json!({"box": BOX_NAME}))]);
