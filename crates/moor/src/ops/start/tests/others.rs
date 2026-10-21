@@ -1,13 +1,9 @@
-//! What a start does near another user's Boxes: it binds none of their worktrees and its
-//! reply names none of them.
+//! What a start does near another user's Boxes: its reply names none of them.
 
-use std::path::Path;
-
-use moor_core::seam::surface::Surface;
 use moor_core::user::{Identity, UserId, Viewer};
-use moor_core::{BoxId, ErrorKind, StartReq};
+use moor_core::BoxId;
 
-use super::{box_name, req, world, World};
+use super::{req, world};
 use crate::cx::Cx;
 use crate::ops::start::run;
 use crate::testing::cx::put_secret;
@@ -24,35 +20,6 @@ fn second_user(cx: Cx) -> (Cx, UserId) {
         put_secret(store, &vault, user, name, &format!("{name}-of-2000"));
     }
     (cx.with_requester(other), user)
-}
-
-#[test]
-fn a_worktree_an_open_box_works_in_cannot_be_bound_by_another_start() {
-    let mut w: World = world(FakeDriver::new());
-    let made = w
-        .surface
-        .create_worktree(Path::new("/repo"), &box_name("pre"), None)
-        .unwrap();
-    let path = made.path.display().to_string();
-    let bound = |name: &str| StartReq {
-        worktree: Some(path.clone()),
-        ..req(name)
-    };
-    run(&w.cx, &bound("box-a")).expect("the first start binds the worktree");
-    let refused = |cx: &Cx| {
-        let e = run(cx, &bound("box-b")).expect_err("a second Box binds the worktree");
-        assert_eq!(e.kind, ErrorKind::Refused, "{e:?}");
-        let want = format!("{path} is the worktree of an open Box");
-        assert_eq!(e.error.to_string(), want);
-    };
-    refused(&w.cx);
-    w.cx = second_user(w.cx).0;
-    refused(&w.cx);
-    let store = w.cx.store().unwrap();
-    assert!(store
-        .open_box_by_name(&box_name("box-b"))
-        .unwrap()
-        .is_none());
 }
 
 #[test]

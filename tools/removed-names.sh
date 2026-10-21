@@ -12,6 +12,8 @@ names=(
   RouteRow RouteTable WebConfig web_feed start_web
   CredentialSource GithubConfig GithubApp you_token_cmd DEFAULT_YOU_TOKEN_CMD pass_env
   not_gh_token proxied_claude_var
+  check_bound check_unbound same_path WORKTREE_OPERATOR_ONLY insert_unnamed repo_seq
+  open_boxes_by_repo open_box_by_path
 )
 args=()
 for n in "${names[@]}"; do args+=(-e "$n"); done

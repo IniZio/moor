@@ -8,19 +8,6 @@ fn start_excludes_scratch_dirs_from_the_repo() {
 }
 
 #[test]
-fn start_excludes_scratch_dirs_when_a_worktree_is_bound() {
-    let w = world(FakeDriver::new());
-    let made = w
-        .surface
-        .create_worktree(Path::new("/repo"), &box_name("pre"), None)
-        .unwrap();
-    let mut r = req("demo");
-    r.worktree = Some(made.path.display().to_string());
-    run(&w.cx, &r).unwrap();
-    assert_exclude_call(&w, &made.path);
-}
-
-#[test]
 fn exclude_failure_stops_start_before_any_worktree_exists() {
     let w = world(FakeDriver::new());
     break_exclude(&w);

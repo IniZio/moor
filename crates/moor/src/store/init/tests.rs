@@ -33,12 +33,12 @@ fn fresh_store_links_launches_to_sessions() {
         )
         .unwrap();
     assert_eq!(fk, "sessions");
-    assert_eq!(version(&conn), "7");
+    assert_eq!(version(&conn), "8");
 }
 
 #[test]
 fn an_older_or_newer_version_is_refused_and_left_as_it_is() {
-    for found in ["5", "99"] {
+    for found in ["5", "7", "99"] {
         let mut conn = fresh_store();
         conn.execute("UPDATE meta SET v = ?1 WHERE k = 'schema_version'", [found])
             .unwrap();

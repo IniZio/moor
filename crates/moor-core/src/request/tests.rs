@@ -18,7 +18,6 @@ fn with_args() -> Vec<Request> {
             name: n("a"),
             goal: Some("g".into()),
             issue: None,
-            worktree: None,
             base: None,
             model: None,
             no_agent: true,
@@ -159,6 +158,13 @@ fn unknown_field_rejected() {
     assert!(r.is_err());
     let r = serde_json::from_str::<Request>(r#"{"cmd":"nope"}"#);
     assert!(r.is_err());
+}
+
+#[test]
+fn a_start_naming_a_worktree_is_an_unknown_field() {
+    let r = serde_json::from_str::<Request>(r#"{"cmd":"start","name":"a","worktree":"/w"}"#);
+    let err = r.expect_err("worktree is not a start field").to_string();
+    assert!(err.contains("unknown field `worktree`"), "{err}");
 }
 
 #[test]
@@ -444,7 +450,6 @@ fn parent_is_omitted_when_none() {
         name: n("x"),
         goal: None,
         issue: None,
-        worktree: None,
         base: None,
         model: None,
         no_agent: false,

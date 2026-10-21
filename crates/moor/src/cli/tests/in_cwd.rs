@@ -19,11 +19,11 @@ fn sent(args: &[&str]) -> Value {
 }
 
 #[test]
-fn a_start_with_no_repo_runs_in_the_callers_dir_with_an_absolute_worktree() {
+fn a_start_with_no_repo_runs_in_the_callers_dir() {
     assert_eq!(
-        sent(&["start", "demo", "--worktree", "../wt"]),
+        sent(&["start", "demo"]),
         json!({"cmd": "in", "dir": CWD, "request":
-            {"cmd": "start", "name": "demo", "worktree": "/home/me/b/../wt",
+            {"cmd": "start", "name": "demo",
              "no_agent": false, "hold": false, "resume": false, "trust_moor_yaml": false}}),
     );
 }

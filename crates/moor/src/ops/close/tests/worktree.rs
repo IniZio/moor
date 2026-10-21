@@ -2,10 +2,9 @@
 
 use std::sync::Arc;
 
-use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::seam::proc::Tool;
 
-use super::{admit, fx_with, req, row, run, Fx, HEAD};
+use super::{admit, fx_with, req, run, Fx, HEAD};
 use crate::cx::Cx;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::{Reply, ScriptedProc};
@@ -120,23 +119,6 @@ fn a_forced_close_keeps_the_worktree_when_the_dirty_check_fails() {
     let v = run(&f.cx, &req(true)).unwrap();
     assert!(removed(&f).is_empty() && v.worktree_kept);
     assert!(warning_codes(&f).contains(&"worktree_kept".to_owned()));
-}
-
-#[test]
-fn a_bound_worktree_is_never_removed() {
-    let f = fx_with(FakeDriver::new(), FakeSurface::new("/s"), 0);
-    let fields = Fields {
-        bound: Field::Set(true),
-        ..Fields::default()
-    };
-    f.cx.store()
-        .unwrap()
-        .apply(Decision::new(f.id).set(fields))
-        .unwrap();
-    assert!(row(&f).bound);
-    let v = run(&f.cx, &req(false)).unwrap();
-    assert!(removed(&f).is_empty() && v.worktree_kept);
-    assert!(f.dir.path().is_dir());
 }
 
 #[test]

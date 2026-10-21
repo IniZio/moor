@@ -50,7 +50,6 @@ The state directory holds `moor.db`. It is the first of `--state-dir`,
 | --- | --- |
 | `--goal TEXT` | The agent's first prompt. |
 | `--issue REF` | An issue reference for the Box. |
-| `--worktree PATH` | Use this existing linked worktree instead of creating one. Only the operator may give it, and not for a worktree that an open Box works in. |
 | `--base REF` | The ref the Box branch starts from. |
 | `--repo NAME\|URL` | A repo from the controller config, cloned on the controller host, instead of the current directory. |
 | `--model MODEL` | The agent model. |
@@ -107,8 +106,7 @@ until an agent Session has run on the Box. After that it does not sync.
 
 `moor close` removes the worktree that moor created only when the worktree's
 branch is synced from the remote and the worktree has no unpushed or
-uncommitted work. Otherwise moor keeps the worktree and prints a warning. A worktree that you gave with
-`--worktree` is always kept.
+uncommitted work. Otherwise moor keeps the worktree and prints a warning.
 
 ### `moor cp` paths
 

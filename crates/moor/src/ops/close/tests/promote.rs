@@ -179,7 +179,6 @@ fn start_req(name: &str) -> StartReq {
         name: BoxName::parse_allow_bare(name).unwrap(),
         goal: None,
         issue: None,
-        worktree: None,
         base: None,
         model: None,
         no_agent: false,

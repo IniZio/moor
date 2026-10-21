@@ -108,7 +108,6 @@ fn start() -> Request {
         name: BoxName::parse_allow_bare("demo").expect("name"),
         goal: Some("ship it".into()),
         issue: None,
-        worktree: None,
         base: None,
         model: None,
         no_agent: false,

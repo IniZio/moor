@@ -224,7 +224,6 @@ fn start_request(row: &SlackBox) -> Request {
         name: row.box_name.clone(),
         goal: Some(row.goal.clone()),
         issue: None,
-        worktree: None,
         base: None,
         model: None,
         no_agent: false,

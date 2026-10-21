@@ -178,8 +178,7 @@ A front acts for one of its people by wrapping a request in `as`:
 ```
 
 The controller never reads its own working directory. The CLI makes a
-relative `--worktree`, `cp` destination or `env` repo absolute before it sends
-the request. It wraps a `start`, `start-needs` or `env` that names no repo in
+relative `cp` destination or `env` repo absolute before it sends the request. It wraps a `start`, `start-needs` or `env` that names no repo in
 `in`, with its own directory:
 
 ```json
@@ -211,8 +210,6 @@ frame asserts no identity, so a watch on a front socket carries no events.
 Some requests read or change the controller host, so only the operator may
 send them:
 
-- `start --worktree`, which binds a host checkout. No other `start` may bind
-  a worktree that an open Box works in, not even the operator's.
 - `env` and `repos`.
 - Host Sessions. Anyone else gets `not your Box` for a host Session, as for a
   Session that does not exist, and a list leaves host Sessions out.

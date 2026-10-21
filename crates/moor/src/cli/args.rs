@@ -203,9 +203,6 @@ struct StartArgs {
     /// Issue reference.
     #[arg(long)]
     issue: Option<String>,
-    /// Worktree path.
-    #[arg(long)]
-    worktree: Option<String>,
     /// Base ref.
     #[arg(long)]
     base: Option<String>,
@@ -238,7 +235,6 @@ impl From<StartArgs> for StartReq {
             name: a.name,
             goal: a.goal,
             issue: a.issue,
-            worktree: a.worktree,
             base: a.base,
             repo: a.repo,
             model: a.model,

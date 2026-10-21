@@ -134,18 +134,6 @@ fn a_default_branch_is_fetched_and_its_sha_is_the_base() {
 }
 
 #[test]
-fn repo_together_with_worktree_is_a_usage_error() {
-    let w = known(table(&[("app", entry(URL, None))]));
-    let r = StartReq {
-        worktree: Some("/some/worktree".into()),
-        ..repo_req("app")
-    };
-    let err = run(&w.cx, &r).unwrap_err();
-    assert_eq!(err.kind, ErrorKind::Usage);
-    assert!(cloned(&w).is_empty());
-}
-
-#[test]
 fn a_repo_is_found_by_url() {
     let w = known(table(&[("app", entry(URL, None))]));
     let v = run(&w.cx, &repo_req("https://example.com/acme/app")).unwrap();

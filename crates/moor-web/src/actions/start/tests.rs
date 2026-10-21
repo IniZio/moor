@@ -217,7 +217,6 @@ fn start_req(box_name: &str, goal: Option<&str>, repo: &str, parent: i64) -> Req
         name: name(box_name),
         goal: goal.map(str::to_owned),
         issue: None,
-        worktree: None,
         base: None,
         model: None,
         no_agent: false,

@@ -177,7 +177,6 @@ impl Store {
     }
 }
 
-mod boxes;
 mod refs;
 
 #[cfg(test)]

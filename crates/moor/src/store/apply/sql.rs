@@ -24,11 +24,6 @@ pub(super) fn text(f: &Field<String>) -> Option<Value> {
     field_value(f, |s| Value::Text(s.clone()))
 }
 
-/// Bool field to column value.
-pub(super) fn flag(f: &Field<bool>) -> Option<Value> {
-    field_value(f, |b| Value::Integer(i64::from(*b)))
-}
-
 /// Run `UPDATE table SET .. WHERE cond` with static table, column and
 /// condition text; `args` bind the `?` placeholders in `cond`.
 pub(in crate::store) fn update(

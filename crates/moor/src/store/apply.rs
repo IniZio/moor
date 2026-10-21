@@ -14,8 +14,7 @@ mod sql;
 mod steps;
 
 pub(super) use self::sql::update;
-use self::sql::{field_value, flag, text, Sets};
-pub(super) use self::steps::insert_box;
+use self::sql::{field_value, text, Sets};
 use self::steps::{step_box, Parts};
 use super::reads::live_holders_in;
 use super::{BoxRow, DriverRow, Store, StoreError};
@@ -276,7 +275,6 @@ fn box_field_sets(s: &Fields) -> Sets {
         ("base", text(&s.base)),
         ("branch", text(&s.branch)),
         ("worktree", text(&s.worktree)),
-        ("bound", flag(&s.bound)),
         ("state_reason", text(&s.state_reason)),
         (
             "setup_failed_at",
