@@ -1,9 +1,12 @@
-//! Startup: where the daemon keeps `slack.db`, and a `slack.db` it cannot use.
+//! Startup: where the daemon keeps `slack.db`, a `slack.db` it cannot use, and the
+//! coordinator binary it finds.
 
 use std::path::Path;
 use std::time::Duration;
 
-use super::support::Rig;
+use moor_core::controller::PROTOCOL;
+
+use super::support::{Rig, TS, USER};
 
 /// Polls until `path` exists; fails the test after ten seconds.
 fn wait_for_file(path: &Path) {
@@ -79,9 +82,40 @@ fn a_claude_code_older_than_2_1_304_leaves_the_coordinator_unavailable() {
     );
 }
 
+/// Spawns the daemon, whose config names no `coordinator.binary`, with `PATH` set to
+/// `search`, and opens thread [`TS`] with a mention; returns the placeholder's edit.
+fn ask_with_path(rig: &mut Rig, search: &str) -> String {
+    rig.link_token(USER, "sk-ant-oat01-good-4c1d");
+    let _controller = rig.serve(PROTOCOL);
+    let state = rig.path("state-slack");
+    rig.spawn_daemon_with(|daemon| {
+        daemon.arg("--state-dir").arg(state).env("PATH", search);
+    });
+    rig.slack.wait_connected();
+    rig.mention(1, USER, "<@UBOT> hello", TS, None);
+    rig.slack.wait_updates(1).remove(0).text
+}
+
 #[test]
-fn no_coordinator_in_the_config_leaves_it_unavailable() {
+fn with_no_coordinator_binary_the_claude_on_path_coordinates() {
     let mut rig = Rig::new();
-    rig.spawn_daemon();
-    rig.wait_stderr("coordinator unavailable: the config names no coordinator.binary");
+    let bin = rig.link_fake_claude();
+    let search = format!("{}:/usr/bin:/bin", bin.display());
+    assert_eq!(ask_with_path(&mut rig, &search), "OK");
+    rig.wait_stderr("coordinator: Claude Code 2.1.304");
+    assert!(
+        bin.join("run-0").is_dir(),
+        "the turn ran the claude on PATH"
+    );
+}
+
+#[test]
+fn with_no_coordinator_binary_and_no_claude_on_path_each_thread_names_the_setting() {
+    let mut rig = Rig::new();
+    let empty = rig.path("empty-bin");
+    std::fs::create_dir(&empty).unwrap();
+    let line = ask_with_path(&mut rig, &empty.display().to_string());
+    let why = "found no claude on PATH; name its absolute path in coordinator.binary";
+    assert_eq!(line, format!("The coordinator is unavailable: {why}."));
+    rig.wait_stderr(&format!("coordinator unavailable: {why}"));
 }

@@ -116,13 +116,20 @@ impl Rig {
     /// records per run, and names it in the config. It prints `version` for `--version`
     /// when given.
     pub(crate) fn use_fake_claude(&self, version: Option<&str>) -> PathBuf {
-        let dir = self.path("claude-bin");
-        std::fs::create_dir(&dir).unwrap();
-        std::os::unix::fs::symlink(shared_fake_claude(), dir.join("claude")).unwrap();
+        let dir = self.link_fake_claude();
         if let Some(version) = version {
             std::fs::write(dir.join("version"), version).unwrap();
         }
         self.set_coordinator(&dir.join("claude"));
+        dir
+    }
+
+    /// Links the fake `claude` into `claude-bin/` and returns that dir; the config does not
+    /// name it.
+    pub(crate) fn link_fake_claude(&self) -> PathBuf {
+        let dir = self.path("claude-bin");
+        std::fs::create_dir(&dir).unwrap();
+        std::os::unix::fs::symlink(shared_fake_claude(), dir.join("claude")).unwrap();
         dir
     }
 
