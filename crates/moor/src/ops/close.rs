@@ -159,12 +159,25 @@ fn box_check(
     let Some(b) = row.boxed.as_ref().filter(|b| b.state == BoxState::Ready) else {
         return Ok(BoxCheck::Skipped);
     };
+    if unlisted(cx, b) {
+        return Ok(BoxCheck::Skipped);
+    }
     Ok(match probe(cx, row, b) {
         BoxWork::Clean => BoxCheck::Clean,
         BoxWork::Unsaved { ahead, dirty } => BoxCheck::Unsaved { ahead, dirty },
         BoxWork::Gone => BoxCheck::Skipped,
         BoxWork::Unknown(why) => BoxCheck::Unknown(why),
         BoxWork::NoCheckout => BoxCheck::Unknown("the Box has no git checkout".into()),
+    })
+}
+
+/// Whether the driver's listing lacks the Box of `b`, which then holds nothing to save; the probe
+/// would need the host HEAD first. A listing that fails or is unsupported says nothing.
+fn unlisted(cx: &Cx, b: &DriverRow) -> bool {
+    b.handle.as_ref().is_some_and(|handle| {
+        cx.driver()
+            .list(&b.provider)
+            .is_ok_and(|listed| listed.iter().all(|l| &l.handle != handle))
     })
 }
 
