@@ -16,7 +16,9 @@ use super::{admit, box_state, fx_box, proc, req, row, run, Fx};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::testing::driver::FakeDriver;
+use crate::testing::proc::{Reply, ScriptedProc};
 use crate::testing::surface::FakeSurface;
+use moor_core::seam::proc::Tool;
 
 fn surface() -> FakeSurface {
     FakeSurface::new("/s")
@@ -202,6 +204,32 @@ fn close_proceeds_when_the_driver_no_longer_has_the_box_on_probe() {
     f.driver.forget(&h);
     let v = run(&f.cx, &req(false)).unwrap();
     assert_eq!(v.boxed.lifecycle, BoxLifecycle::Closed);
+}
+
+#[test]
+fn close_of_a_box_the_driver_no_longer_lists_never_reads_the_host_head() {
+    let mut f = fx_probe(Some("ahead=1 dirty=1"));
+    let headless = ScriptedProc::new();
+    headless.on(Tool::Git, &["rev-list"], Reply::Ok("0\n".to_owned()));
+    headless.on(Tool::Git, &["status"], Reply::Ok(String::new()));
+    let headless = Arc::new(headless);
+    f.cx = Cx::fake(
+        f.dir.path(),
+        f.dir.path(),
+        f.driver.clone(),
+        f.surface.clone(),
+        headless.clone(),
+    );
+    let h = row(&f).boxed.unwrap().handle.unwrap();
+    f.driver.forget(&h);
+    let v = run(&f.cx, &req(false)).unwrap();
+    assert_eq!(v.boxed.lifecycle, BoxLifecycle::Closed);
+    let head = headless
+        .calls()
+        .into_iter()
+        .filter(|c| c.args == ["rev-parse", "HEAD"])
+        .count();
+    assert_eq!(head, 0);
 }
 
 #[test]
