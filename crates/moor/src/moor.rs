@@ -6,7 +6,7 @@ use crate::error::CommandError;
 use crate::ops;
 use crate::vault::Vault;
 use crate::wire;
-use moor_core::request::UserCmd;
+use moor_core::request::{Grant, UserCmd};
 use moor_core::user::{Caller, Identity, Viewer};
 use moor_core::{ArtifactReadReq, BoxId, ErrorKind, Request, Response, RunReq};
 
@@ -70,8 +70,16 @@ impl Moor {
         }
     }
 
+    /// This engine doing only what `grant` lets its request do.
+    #[must_use]
+    pub(crate) fn granted(self, grant: Grant) -> Self {
+        Self {
+            cx: self.cx.with_grant(grant),
+        }
+    }
+
     /// Refuses `request` unless `caller`, asserting `asserted`, may act on every Box it names;
-    /// returns whose Boxes the request may see.
+    /// returns what the request may see.
     ///
     /// # Errors
     /// The refusal or store failure the request answers with instead.
@@ -80,7 +88,7 @@ impl Moor {
         caller: &Result<Caller, String>,
         asserted: Option<&Identity>,
         request: &Request,
-    ) -> Result<Viewer, CommandError> {
+    ) -> Result<Grant, CommandError> {
         ops::authz::authorize(&self.cx, caller, asserted, request)
     }
 

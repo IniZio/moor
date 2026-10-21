@@ -6,7 +6,7 @@ use std::sync::Arc;
 use moor_core::controller::{
     parse_frame, write_bytes, ClientFrame, FrameErrorKind, ServerFrame, WatchFilter, PROTOCOL,
 };
-use moor_core::request::UserCmd;
+use moor_core::request::{Grant, UserCmd};
 use moor_core::user::{Caller, Identity, Viewer};
 use moor_core::{ArtifactReadReq, ErrorKind, Request, Response, RunReq};
 
@@ -78,18 +78,18 @@ fn answer(
     if matches!(request, Request::Version {}) {
         return Moor::version();
     }
-    let viewer =
+    let grant =
         match Moor::from_env(env).and_then(|m| m.authorize(&peer.caller, asserted, &request)) {
-            Ok(viewer) => viewer,
+            Ok(grant) => grant,
             Err(e) => return e.into_response(cmd, vec![]),
         };
     match request {
-        Request::ArtifactRead(req) => read_artifact(env, id, &req, out),
+        Request::ArtifactRead(req) => read_artifact(env, grant, id, &req, out),
         request => match request.into_user() {
             Ok((_, cmd)) => answer_user(env, peer, asserted, &cmd),
             Err(request) => match requester(peer, asserted, &request) {
                 Ok(who) => {
-                    let acting = Acting { who, viewer };
+                    let acting = Acting { who, grant };
                     respond_with_progress(env, acting, id, *request, INTERVAL, out)
                 }
                 Err(e) => e.into_response(request.cmd(), vec![]),
@@ -160,9 +160,17 @@ pub(super) fn send(writer: &mut (impl Write + ?Sized), frame: &ServerFrame) -> b
 }
 
 /// Stream an Artifact's bytes as bytes frames for request `id`, then answer.
-fn read_artifact(env: &Env, id: &str, req: &ArtifactReadReq, out: &mut dyn Write) -> Response {
+fn read_artifact(
+    env: &Env,
+    grant: Grant,
+    id: &str,
+    req: &ArtifactReadReq,
+    out: &mut dyn Write,
+) -> Response {
     match Moor::from_env(env) {
-        Ok(moor) => moor.read_artifact(req, &mut |data| write_bytes(out, id, data)),
+        Ok(moor) => moor
+            .granted(grant)
+            .read_artifact(req, &mut |data| write_bytes(out, id, data)),
         Err(e) => e.into_response("artifact-read", vec![]),
     }
 }
@@ -193,12 +201,12 @@ fn requester(
         .map_err(|why| CommandError::new(ErrorKind::Refused, why))
 }
 
-/// Whom one request acts as, and whose Boxes it may see.
+/// Whom one request acts as, and what it may see.
 pub(crate) struct Acting {
     /// The identity a `start` acts as; none for other requests.
     pub(crate) who: Option<Identity>,
-    /// Whose Boxes the request may see.
-    pub(crate) viewer: Viewer,
+    /// What the request may see.
+    pub(crate) grant: Grant,
 }
 
 /// The operator acting as no one, as the tests' controller socket does.
@@ -206,7 +214,7 @@ pub(crate) struct Acting {
 pub(crate) const fn operator() -> Acting {
     Acting {
         who: None,
-        viewer: Viewer::Operator,
+        grant: Grant::operator(),
     }
 }
 
@@ -221,7 +229,7 @@ pub(crate) fn respond(env: &Env, acting: Acting, request: Request) -> Response {
     }
     match Moor::from_env(env) {
         Ok(moor) => {
-            let moor = moor.viewing_as(acting.viewer);
+            let moor = moor.granted(acting.grant);
             match acting.who {
                 Some(who) => moor.acting_as(who).call(request),
                 None => moor.call(request),
@@ -232,9 +240,9 @@ pub(crate) fn respond(env: &Env, acting: Acting, request: Request) -> Response {
 }
 
 /// Run `run` against a fresh engine, passing the command's output to `out` as it runs.
-pub(crate) fn respond_run(env: &Env, req: &RunReq, out: Sink<'_>) -> Response {
+pub(crate) fn respond_run(env: &Env, grant: Grant, req: &RunReq, out: Sink<'_>) -> Response {
     match Moor::from_env(env) {
-        Ok(moor) => moor.run_streamed(req, out),
+        Ok(moor) => moor.granted(grant).run_streamed(req, out),
         Err(e) => e.into_response("run", vec![]),
     }
 }

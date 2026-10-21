@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::config::{RepoConfig, RepoTable, UserConfig};
+use moor_core::request::Pins;
 use moor_core::seam::clock::Clock;
 use moor_core::seam::driver::Driver;
 use moor_core::seam::engine::Engine;
@@ -65,6 +66,8 @@ pub(crate) struct Cx {
     requester: Option<Identity>,
     /// Whose Boxes this request may see; the operator outside a controller socket.
     viewer: Viewer,
+    /// The Box each name meant when the controller let this request name it.
+    pins: Pins,
 }
 
 /// Everything a context is built from.
@@ -123,6 +126,7 @@ impl Cx {
             vault_key: None,
             requester: None,
             viewer: Viewer::Operator,
+            pins: Pins::new(),
         }
     }
 
@@ -142,7 +146,8 @@ impl Cx {
             return Ok(s);
         }
         let dir = self.state_dir()?;
-        let store = Store::open(&dir.join(STORE_FILE), Arc::clone(&self.clock))?;
+        let store =
+            Store::open(&dir.join(STORE_FILE), Arc::clone(&self.clock))?.pinned(self.pins.clone());
         Ok(self.store.get_or_init(|| store))
     }
 

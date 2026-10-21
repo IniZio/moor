@@ -1,7 +1,9 @@
 //! The user a request acts for, and the vault key its Box's Proxy reads that user's secrets with.
 
+use std::cell::OnceCell;
 use std::path::{Path, PathBuf};
 
+use moor_core::request::Grant;
 use moor_core::user::{Identity, UserId, Viewer};
 use moor_core::ErrorKind;
 
@@ -25,6 +27,16 @@ impl Cx {
     pub(crate) const fn with_viewer(mut self, viewer: Viewer) -> Self {
         self.viewer = viewer;
         self
+    }
+
+    /// This context with each name meaning only the Box the controller checked it against.
+    pub(crate) fn with_grant(self, grant: Grant) -> Self {
+        let mut cx = self.with_viewer(grant.viewer);
+        if let Some(store) = cx.store.take() {
+            cx.store = OnceCell::from(store.pinned(grant.pins.clone()));
+        }
+        cx.pins = grant.pins;
+        cx
     }
 
     /// Whose Boxes this request may see.

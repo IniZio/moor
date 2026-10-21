@@ -3,6 +3,7 @@
 use moor_core::controller::ServerFrame;
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
+use moor_core::request::Pins;
 use moor_core::seam::clock::Ts;
 use moor_core::{BoxId, BoxName, ProviderId, SessionId};
 use rusqlite::{Connection, OptionalExtension};
@@ -98,8 +99,29 @@ impl Store {
         Ok(max.unwrap_or(0))
     }
 
+    /// Boxes that are neither closed nor rejected, by id ascending.
+    pub(crate) fn open_boxes(&self) -> Result<Vec<BoxRow>, StoreError> {
+        let conn = self.reader()?;
+        let sql = format!("{BOX_SELECT} WHERE b.state NOT IN ('closed', 'rejected') ORDER BY b.id");
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_and_then([], box_from_row)?;
+        rows.collect()
+    }
+
+    /// This store with each name in `pins` meaning only its pinned Box.
+    #[must_use]
+    pub(crate) fn pinned(mut self, pins: Pins) -> Self {
+        self.pins = pins;
+        self
+    }
+
     /// The live (neither closed nor rejected) box with this name.
     pub(crate) fn open_box_by_name(&self, name: &BoxName) -> Result<Option<BoxRow>, StoreError> {
+        if let Some(&id) = self.pins.get(name) {
+            let open =
+                |r: &BoxRow| !matches!(r.lifecycle, BoxLifecycle::Closed | BoxLifecycle::Rejected);
+            return Ok(self.box_row(id)?.filter(open));
+        }
         let tail = "WHERE b.name = ?1 AND b.state NOT IN ('closed', 'rejected') ORDER BY b.id DESC LIMIT 1";
         let rows = query_boxes(&self.reader()?, tail, [name.as_str()])?;
         Ok(rows.into_iter().next())
@@ -107,6 +129,9 @@ impl Store {
 
     /// The newest box with this name, open or closed.
     pub(crate) fn latest_box_by_name(&self, name: &BoxName) -> Result<Option<BoxRow>, StoreError> {
+        if let Some(&id) = self.pins.get(name) {
+            return self.box_row(id);
+        }
         let tail = "WHERE b.name = ?1 ORDER BY b.id DESC LIMIT 1";
         let rows = query_boxes(&self.reader()?, tail, [name.as_str()])?;
         Ok(rows.into_iter().next())

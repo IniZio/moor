@@ -421,3 +421,32 @@ fn a_watch_carries_only_the_events_of_boxes_its_viewer_may_see() {
         [A_BOX, B_BOX, NO_USER_BOX, OPERATOR_BOX]
     );
 }
+
+#[test]
+fn a_binding_to_another_users_box_reads_as_no_binding() {
+    let world = World::new();
+    let slack = world.slack();
+    let bind = json!({"cmd": "bind-session", "front": "slack", "key": "k1",
+        "session": world.b_session, "owner": "o"});
+    assert_eq!(ask(&slack, &acting(B, &bind))["class"], "ok");
+    let lookup = |key: &str| json!({"cmd": "session-binding", "front": "slack", "key": key});
+    let foreign = ask(&slack, &acting(A, &lookup("k1")));
+    assert_eq!(foreign, ask(&slack, &acting(A, &lookup("k2"))));
+    assert_eq!(foreign["value"], Value::Null, "{foreign}");
+    let mine = ask(&slack, &acting(B, &lookup("k1")));
+    assert_eq!(mine["value"]["session"], world.b_session, "{mine}");
+    let a_session = world.store.box_sessions(BoxId::new(1)).expect("sessions")[0].id;
+    let squat = json!({"cmd": "bind-session", "front": "slack", "key": "k1",
+        "session": a_session, "owner": "o"});
+    not_yours(&ask(&slack, &acting(A, &squat)));
+}
+
+#[test]
+fn an_identity_the_socket_may_not_assert_is_refused_even_for_a_list() {
+    let world = World::new();
+    let list = json!({"cmd": "show"});
+    refused(
+        &ask(&world.slack(), &acting("web:alice", &list)),
+        "may assert only slack:",
+    );
+}

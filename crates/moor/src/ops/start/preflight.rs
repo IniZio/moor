@@ -10,6 +10,7 @@ use moor_core::{ErrorKind, StartReq};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
+use crate::ops::authz;
 use crate::ops::common::creds::unresolved;
 use crate::store::BoxRow;
 
@@ -58,10 +59,7 @@ pub(super) fn check_owner(row: &BoxRow, user: UserId) -> Result<(), CommandError
     if row.user == Some(user) {
         return Ok(());
     }
-    Err(CommandError::new(
-        ErrorKind::Refused,
-        format!("Box {} acts for another user", row.name.as_str()),
-    ))
+    Err(CommandError::new(ErrorKind::Refused, authz::NOT_YOURS))
 }
 
 /// Refuses a `--worktree` that differs from the open Box's worktree.

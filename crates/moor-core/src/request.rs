@@ -10,7 +10,7 @@ pub use artifacts::{ArtifactReadReq, ArtifactsReq};
 mod binding;
 pub use binding::{BindSessionReq, SessionBindingReq};
 mod names;
-pub use names::Named;
+pub use names::{Grant, Named, Pins};
 mod repos;
 pub use repos::ReposReq;
 mod session;
