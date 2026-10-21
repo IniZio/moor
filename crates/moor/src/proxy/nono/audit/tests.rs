@@ -594,4 +594,5 @@ fn withheld_matches_the_host_ignoring_case_and_port() {
 }
 
 mod filtered;
+mod handshake;
 mod limits;

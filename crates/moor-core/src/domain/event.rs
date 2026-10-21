@@ -268,7 +268,7 @@ pub enum Event {
         /// Why the Proxy refused the connection, as the Proxy names it.
         category: Option<String>,
         /// What ended an intercepted TLS handshake: `client_closed`,
-        /// `unknown_ca_alert`, `other_alert:<name>`, `timeout` or `other`.
+        /// `unknown_ca_alert`, `other_alert:<name>` or `other`.
         #[serde(skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
     },
