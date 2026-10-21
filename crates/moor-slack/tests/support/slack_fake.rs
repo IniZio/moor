@@ -155,8 +155,9 @@ struct State {
     posted: usize,
     /// HTTP status and body of the next `chat.update` answers, before the fake takes edits.
     update_answers: VecDeque<(u16, Value)>,
-    /// How many of the next `chat.postMessage` calls with blocks Slack refuses.
-    refused_block_posts: usize,
+    /// How many of the next `chat.postMessage` calls with blocks Slack refuses, and the
+    /// error code it refuses them with.
+    refused_block_posts: (usize, &'static str),
 }
 
 /// The fake Slack: a Web API on one port and a Socket Mode endpoint on another.
@@ -202,10 +203,10 @@ impl FakeSlack {
         self.lock().update_answers.extend(answers.iter().cloned());
     }
 
-    /// Refuses the next `n` `chat.postMessage` calls that carry blocks with `invalid_blocks`,
-    /// in place of any count set before.
-    pub(crate) fn refuse_block_posts(&self, n: usize) {
-        self.lock().refused_block_posts = n;
+    /// Refuses the next `n` `chat.postMessage` calls that carry blocks with error `code`, in
+    /// place of any count set before.
+    pub(crate) fn refuse_block_posts(&self, n: usize, code: &'static str) {
+        self.lock().refused_block_posts = (n, code);
     }
 
     /// Queues an `events_api` envelope carrying `mention`.
@@ -543,10 +544,10 @@ fn serve_http(mut stream: TcpStream, state: &Mutex<State>, ws_port: u16) {
         "/chat.postMessage"
             if auth == format!("Bearer {BOT_TOKEN}")
                 && !body["blocks"].is_null()
-                && guard.refused_block_posts > 0 =>
+                && guard.refused_block_posts.0 > 0 =>
         {
-            guard.refused_block_posts -= 1;
-            json!({"ok": false, "error": "invalid_blocks"})
+            guard.refused_block_posts.0 -= 1;
+            json!({"ok": false, "error": guard.refused_block_posts.1})
         }
         "/chat.postMessage" if auth == format!("Bearer {BOT_TOKEN}") => {
             guard.posted += 1;
