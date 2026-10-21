@@ -70,8 +70,7 @@ pub struct StartNeedsReq {
     /// The identity asserted; the controller socket's own peer when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub identity: Option<Identity>,
-    /// Repo known to the controller, by name or url, as `start` takes it; the invocation
-    /// directory's repo when absent.
+    /// Repo known to the controller, by name or url, as `start` takes it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repo: Option<String>,
 }

@@ -21,6 +21,7 @@ use super::common::activity;
 use super::common::autosleep;
 use super::common::boxlock::{self, BoxLock};
 use super::common::facts::{provider_caps, require_reverse_tunnel, resolved, settings};
+use super::common::host_path::{absolute, caller_dir};
 use super::common::provision::{
     moor_yaml, provision, reprovision, reread, Entry, Provisioned, ResyncGates,
 };
@@ -194,7 +195,7 @@ fn attach(
     user: UserId,
 ) -> Result<StartView, CommandError> {
     preflight::check_owner(row, user)?;
-    preflight::check_bound(cx, req, row)?;
+    preflight::check_bound(req, row)?;
     relaunch::check_resume(req, row)?;
     dead_provisioning(cx, row)?;
     if let Err(e) = cx
@@ -279,9 +280,9 @@ pub(crate) fn settle_all(cx: &Cx, store: &Store) -> Result<(), CommandError> {
     Ok(())
 }
 
-/// An absolute form of `path`, relative to the invocation directory.
-fn resolve(cx: &Cx, path: &str) -> PathBuf {
-    cx.cwd().join(path)
+/// The `--worktree` path, which must be absolute.
+fn worktree_path(path: &str) -> Result<PathBuf, CommandError> {
+    absolute("the worktree", path)
 }
 
 /// The repo root, the bound worktree and the effective request; refuses bad input before any change.
@@ -291,8 +292,8 @@ fn locate(cx: &Cx, req: &StartReq) -> Result<(PathBuf, Option<PathBuf>, StartReq
         return Ok((repo, None, eff));
     }
     let git = |e: crate::adapters::git::GitError| CommandError::new(ErrorKind::Failed, e);
-    let repo = cx.git().toplevel(cx.cwd()).map_err(git)?;
-    let bound = req.worktree.as_deref().map(|w| resolve(cx, w));
+    let repo = cx.git().toplevel(caller_dir(cx)?).map_err(git)?;
+    let bound = req.worktree.as_deref().map(worktree_path).transpose()?;
     if let Some(wt) = &bound {
         let same = |a: &Path, b: &Path| {
             a == b || matches!((a.canonicalize(), b.canonicalize()), (Ok(x), Ok(y)) if x == y)

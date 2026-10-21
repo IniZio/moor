@@ -63,11 +63,11 @@ pub(super) fn check_owner(row: &BoxRow, user: UserId) -> Result<(), CommandError
 }
 
 /// Refuses a `--worktree` that differs from the open Box's worktree.
-pub(super) fn check_bound(cx: &Cx, req: &StartReq, row: &BoxRow) -> Result<(), CommandError> {
+pub(super) fn check_bound(req: &StartReq, row: &BoxRow) -> Result<(), CommandError> {
     let (Some(want), Some(have)) = (&req.worktree, &row.worktree) else {
         return Ok(());
     };
-    let want = super::resolve(cx, want);
+    let want = super::worktree_path(want)?;
     let same = want == Path::new(have)
         || matches!((want.canonicalize(), Path::new(have).canonicalize()),
             (Ok(a), Ok(b)) if a == b);

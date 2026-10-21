@@ -185,7 +185,7 @@ fn naming(kind: &str, name: &str, session: i64) -> Names {
         }
         "start-needs" | "session-binding" | "gate" | "env" | "repos" | "whoami" | "enroll"
         | "secret-set" | "secret-delete" | "secret-names" | "link-code" | "link-redeem" | "as"
-        | "version" => return Names::Nothing,
+        | "in" | "version" => return Names::Nothing,
         _ => return Names::Unknown,
     })
 }

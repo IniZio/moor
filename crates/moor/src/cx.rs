@@ -52,8 +52,8 @@ pub(crate) struct Cx {
     config: UserConfig,
     /// Host environment snapshot.
     env: Env,
-    /// Invocation directory.
-    cwd: PathBuf,
+    /// The caller's directory, as its `in` request names it; `None` for a request without one.
+    dir: Option<PathBuf>,
     /// How long a fresh agent pane is watched for first-run prompts.
     prompt_window: Duration,
     /// State store, opened on first use.
@@ -96,8 +96,6 @@ pub(crate) struct CxParts {
     pub config: UserConfig,
     /// Host environment snapshot.
     pub env: Env,
-    /// Invocation directory.
-    pub cwd: PathBuf,
     /// How long a fresh agent pane is watched for first-run prompts.
     pub prompt_window: Duration,
 }
@@ -119,7 +117,7 @@ impl Cx {
             git: p.git,
             config: p.config,
             env: p.env,
-            cwd: p.cwd,
+            dir: None,
             prompt_window: p.prompt_window,
             store: OnceCell::new(),
             repos: Arc::new(RepoTable::new()),
@@ -250,9 +248,16 @@ impl Cx {
         load_repo(&main, &main)?.map_or_else(|| self.overlay_config(&main), |c| Ok(Some(c)))
     }
 
-    /// Invocation directory.
-    pub(crate) fn cwd(&self) -> &Path {
-        &self.cwd
+    /// The caller's directory, as its `in` request names it.
+    pub(crate) fn dir(&self) -> Option<&Path> {
+        self.dir.as_deref()
+    }
+
+    /// This context for a request on the caller's directory `dir`.
+    #[must_use]
+    pub(crate) fn with_dir(mut self, dir: Option<PathBuf>) -> Self {
+        self.dir = dir;
+        self
     }
 
     /// Time source for this run.

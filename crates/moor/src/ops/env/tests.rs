@@ -57,9 +57,9 @@ fn cx_full(top: &Path, config: UserConfig, proc: ScriptedProc, driver: FakeDrive
         proxy_host: Arc::new(FakeProxyHost::new()),
         config,
         env: Env::default(),
-        cwd: top.to_path_buf(),
         prompt_window: std::time::Duration::from_secs(8),
     })
+    .with_dir(Some(top.to_path_buf()))
 }
 
 /// Context with default user config.

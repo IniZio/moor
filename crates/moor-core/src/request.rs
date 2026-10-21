@@ -9,6 +9,8 @@ mod artifacts;
 pub use artifacts::{ArtifactReadReq, ArtifactsReq};
 mod binding;
 pub use binding::{BindSessionReq, SessionBindingReq};
+mod dir;
+pub use dir::InReq;
 mod names;
 pub use names::{Grant, Named, Pins};
 mod repos;
@@ -99,6 +101,8 @@ pub enum Request {
     LinkRedeem(LinkRedeemReq),
     /// Run another request as an identity a front asserts.
     As(ActAsReq),
+    /// Run another request on the caller's directory.
+    In(InReq),
     /// Print version information.
     Version {},
 }
@@ -143,6 +147,7 @@ impl Request {
             Self::LinkCode(_) => "link-code",
             Self::LinkRedeem(_) => "link-redeem",
             Self::As(_) => "as",
+            Self::In(_) => "in",
             Self::Version {} => "version",
         }
     }
@@ -164,7 +169,7 @@ pub struct StartReq {
     /// Issue reference.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub issue: Option<String>,
-    /// Worktree path.
+    /// Worktree path, absolute.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub worktree: Option<String>,
     /// Base revision.
@@ -185,7 +190,8 @@ pub struct StartReq {
     /// Launch the agent with the Box's `.moor.yaml` even when it differs from its base commit.
     #[serde(default)]
     pub trust_moor_yaml: bool,
-    /// Repo known to the controller, by name or url; resolved on the controller host instead of the invocation directory.
+    /// Repo known to the controller, by name or url; when absent, the repo of the directory an
+    /// `in` request names, and no repo without one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repo: Option<String>,
     /// Parent Session of the Session this request opens.
@@ -335,7 +341,7 @@ pub struct CpReq {
     pub box_name: BoxName,
     /// Source path.
     pub src: String,
-    /// Destination path.
+    /// Destination path on the host, absolute.
     pub dest: String,
 }
 
@@ -365,7 +371,7 @@ pub struct GateReq {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct EnvReq {
-    /// Repository whose layer to show.
+    /// Repository whose layer to show, by absolute path.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub repo: Option<String>,
 }

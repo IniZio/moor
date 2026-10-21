@@ -127,8 +127,6 @@ pub(crate) fn reconcile_proxies(env: &Env) -> Vec<String> {
 fn parts(env: &Env, sockets: PathBuf) -> Result<(CxParts, Option<Warning>), CommandError> {
     let clock = SystemClock::from_env(env).map_err(|e| CommandError::new(ErrorKind::Usage, e))?;
     let config = load_user(env)?;
-    let cwd = std::env::current_dir()
-        .map_err(|e| CommandError::new(ErrorKind::Failed, format!("current directory: {e}")))?;
     let proc: Arc<dyn Proc> = Arc::new(SystemProc::new(env, &tool_paths(&config)));
     let extra_env = HERDR_PASSTHROUGH
         .iter()
@@ -181,7 +179,6 @@ fn parts(env: &Env, sockets: PathBuf) -> Result<(CxParts, Option<Warning>), Comm
         git: Git::new(Arc::clone(&proc)),
         config,
         env: env.clone(),
-        cwd,
         prompt_window: prompt_window(env),
     };
     Ok((parts, link_warning))

@@ -18,6 +18,11 @@ pub(crate) struct Daemon {
 
 impl Daemon {
     pub(crate) fn start() -> Self {
+        Self::start_with(|_| {})
+    }
+
+    /// [`Self::start`], after `configure` adjusts the daemon's command.
+    pub(crate) fn start_with(configure: impl FnOnce(&mut Command)) -> Self {
         let root = fresh_dir("via");
         // Kept short: Unix socket paths are limited to about 104 bytes.
         let socket = root.join("c.sock");
@@ -31,8 +36,8 @@ impl Daemon {
             ),
         )
         .unwrap();
-        let child = Command::new(env!("CARGO_BIN_EXE_moor"))
-            .env_clear()
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_moor"));
+        cmd.env_clear()
             .env("PATH", "/usr/bin:/bin")
             .env("HOME", root.join("home"))
             .env("MOOR_STATE_DIR", root.join("state"))
@@ -40,9 +45,9 @@ impl Daemon {
             .arg(&config)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .unwrap();
+            .stderr(Stdio::null());
+        configure(&mut cmd);
+        let child = cmd.spawn().unwrap();
         let this = Self {
             root,
             socket,

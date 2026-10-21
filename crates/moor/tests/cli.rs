@@ -7,6 +7,8 @@
     reason = "test code"
 )]
 
+#[path = "cli/client_cwd.rs"]
+mod client_cwd;
 #[path = "cli/controller.rs"]
 mod controller;
 #[path = "cli/events.rs"]

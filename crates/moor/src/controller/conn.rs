@@ -1,6 +1,7 @@
 //! One controller connection: reads client frames and answers each in order.
 
 use std::io::{BufRead, Write};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use moor_core::controller::{
@@ -83,13 +84,17 @@ fn answer(
             Ok(grant) => grant,
             Err(e) => return e.into_response(cmd, vec![]),
         };
+    let (dir, request) = match request.split_dir() {
+        Ok(split) => split,
+        Err(why) => return CommandError::new(ErrorKind::Usage, why).into_response(cmd, vec![]),
+    };
     match request {
         Request::ArtifactRead(req) => read_artifact(env, grant, id, &req, out),
         request => match request.into_user() {
             Ok((_, cmd)) => answer_user(env, peer, asserted, &cmd),
             Err(request) => match requester(peer, asserted, &request) {
                 Ok(who) => {
-                    let acting = Acting { who, grant };
+                    let acting = Acting { who, grant, dir };
                     respond_with_progress(env, acting, id, *request, INTERVAL, out)
                 }
                 Err(e) => e.into_response(request.cmd(), vec![]),
@@ -207,6 +212,8 @@ pub(crate) struct Acting {
     pub(crate) who: Option<Identity>,
     /// What the request may see.
     pub(crate) grant: Grant,
+    /// The caller's directory, as its `in` request names it.
+    pub(crate) dir: Option<PathBuf>,
 }
 
 /// The operator acting as no one, as the tests' controller socket does.
@@ -215,6 +222,7 @@ pub(crate) const fn operator() -> Acting {
     Acting {
         who: None,
         grant: Grant::operator(),
+        dir: None,
     }
 }
 
@@ -229,7 +237,7 @@ pub(crate) fn respond(env: &Env, acting: Acting, request: Request) -> Response {
     }
     match Moor::from_env(env) {
         Ok(moor) => {
-            let moor = moor.granted(acting.grant);
+            let moor = moor.granted(acting.grant).in_dir(acting.dir);
             match acting.who {
                 Some(who) => moor.acting_as(who).call(request),
                 None => moor.call(request),
