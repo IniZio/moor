@@ -25,7 +25,7 @@ struct Rig {
 }
 
 fn rig(dir: &Path) -> Rig {
-    rig_with(dir, crate::testing::cx::fake_config())
+    rig_with(dir, UserConfig::default())
 }
 
 fn rig_with(dir: &Path, config: UserConfig) -> Rig {

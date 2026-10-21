@@ -71,7 +71,7 @@ fn world(driver: FakeDriver) -> World {
 
 /// Builds a world over the repo at `repo`.
 fn world_at(driver: FakeDriver, repo: &Path) -> World {
-    world_with(driver, repo, crate::testing::cx::fake_config())
+    world_with(driver, repo, UserConfig::default())
 }
 
 /// Builds a world over the repo at `repo` with user config `config`.
@@ -375,13 +375,18 @@ fn unresolved_credential_rejects_before_any_side_effect() {
     let repo = tempfile::tempdir().unwrap();
     std::fs::write(
         repo.path().join(".moor.yaml"),
-        "box_credentials: [MISSING]\n",
+        "box_credentials: [missing]\n",
     )
     .unwrap();
     let w = world_at(FakeDriver::new(), repo.path());
     let err = run(&w.cx, &req("demo")).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Failed);
-    assert!(err.error.to_string().contains("MISSING"), "{err:?}");
+    assert!(
+        err.error
+            .to_string()
+            .contains("moor user secret set missing"),
+        "{err:?}"
+    );
     assert_eq!(
         err.value.as_ref().unwrap().pointer("/box/lifecycle"),
         Some(&serde_json::json!("rejected"))

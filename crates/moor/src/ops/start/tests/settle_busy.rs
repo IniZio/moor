@@ -110,7 +110,7 @@ fn a_start_with_settles_running_during_setup_still_launches() {
             driver.clone(),
             surface.clone(),
             proc.clone(),
-            crate::testing::cx::fake_config(),
+            moor_core::config::UserConfig::default(),
         );
         other.clock().sleep(Duration::from_secs(60));
         settle_all(&other, other.store().unwrap()).unwrap();

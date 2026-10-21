@@ -183,17 +183,10 @@ fn the_spec_carries_the_box_repo_and_resolved_rules() {
     );
 }
 
-/// Rule names the proxy gets for a Box with a repo, under user config `github.identity`.
-fn rule_names_for_identity(identity: &str) -> Vec<String> {
-    let config = moor_core::config::parse_user(
-        "test",
-        &format!(
-            "credentials:\n  CLAUDE_CODE_OAUTH_TOKEN: {{cmd: [echo, token]}}\ngithub:\n  identity: {identity}\n"
-        ),
-    )
-    .unwrap();
+/// Rule names the proxy gets for a Box whose origin is a GitHub repo.
+fn rule_names_with_a_repo() -> Vec<String> {
     let fake = FakeProxyHost::new();
-    let mut w = super::world_with(FakeDriver::new(), std::path::Path::new("/repo"), config);
+    let mut w = super::world(FakeDriver::new());
     w.cx =
         w.cx.with_engine(Arc::new(FakeEngine::new()))
             .with_proxy_host(Arc::new(fake.clone()))
@@ -210,17 +203,11 @@ fn rule_names_for_identity(identity: &str) -> Vec<String> {
 }
 
 #[test]
-fn only_the_persons_own_identity_gets_the_upload_rule() {
-    for identity in ["you", "auto"] {
-        let names = rule_names_for_identity(identity);
-        assert!(
-            names.iter().any(|n| n == "github-uploads"),
-            "{identity}: {names:?}"
-        );
+fn a_box_with_a_repo_always_gets_the_upload_rule() {
+    let names = rule_names_with_a_repo();
+    for want in ["claude", "github-api", "github-git", "github-uploads"] {
+        assert!(names.iter().any(|n| n == want), "{want}: {names:?}");
     }
-    let names = rule_names_for_identity("bot");
-    assert!(!names.iter().any(|n| n == "github-uploads"), "{names:?}");
-    assert!(names.iter().any(|n| n == "github-api"), "{names:?}");
 }
 
 #[test]
@@ -249,7 +236,7 @@ fn repo_env_launch(yaml: &str) -> (World, Vec<(String, String)>) {
     let mut w = super::world_with(
         FakeDriver::new(),
         repo.path(),
-        crate::testing::cx::fake_config(),
+        moor_core::config::UserConfig::default(),
     );
     w.cx = w.cx.with_engine(engine.clone()).with_forge(Arc::new(
         FakeForge::new().with_repo("git@github.com:o/r.git", ForgeRepo::new("o", "r")),
@@ -313,7 +300,7 @@ fn repo_env_reaches_the_agent_and_credential_looking_names_are_dropped() {
     let mut w = super::world_with(
         FakeDriver::new(),
         repo.path(),
-        crate::testing::cx::fake_config(),
+        moor_core::config::UserConfig::default(),
     );
     w.cx = w.cx.with_engine(engine.clone());
     run(&w.cx, &goal_req()).unwrap();
@@ -338,7 +325,7 @@ fn setup_env_launch(yaml: &str) -> (World, Vec<(String, String)>) {
     let mut w = super::world_with(
         FakeDriver::new(),
         repo.path(),
-        crate::testing::cx::fake_config(),
+        moor_core::config::UserConfig::default(),
     );
     w.cx = w.cx.with_engine(engine.clone());
     super::moor_yaml::script_base_yaml(&w, Some(yaml));
@@ -381,7 +368,7 @@ fn the_agent_launch_env_drops_reserved_and_credential_names_but_keeps_the_rest()
 
 /// The fake user config with the `proxy:` section of `yaml`.
 fn config_with_proxy(yaml: &str) -> moor_core::config::UserConfig {
-    let mut config = crate::testing::cx::fake_config();
+    let mut config = moor_core::config::UserConfig::default();
     config.proxy = moor_core::config::parse_user("u.yaml", yaml).unwrap().proxy;
     config
 }

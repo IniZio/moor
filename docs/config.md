@@ -31,27 +31,11 @@ file means every key takes its default.
 | `lookup_timeout_secs` | integer, at least 1 | 5, or 20 for `external` | How long moor waits for crabbox to look up a Box's ssh target. |
 | `strip_env` | list of variable names | empty | Variables that the provider puts in the Box, which moor removes from every command it runs there. |
 
-### `credentials`
-
-`credentials.<NAME>` says where moor reads the credential `NAME`. Give exactly
-one source.
-
-| Key | Type | Meaning |
-| --- | --- | --- |
-| `cmd` | list of strings | A command whose output is the value. |
-| `file` | path | A file that holds the value. |
-| `env` | variable name | A host environment variable that holds the value. |
-| `pass_env` | list of variable names | Extra host variables that `cmd` may read. Only with `cmd`. |
-
-The Proxy no longer reads these sources. A Box's Proxy injects the secrets
-of the Box's user. See [Secrets a Box uses](#secrets-a-box-uses).
-
 ### `box_credentials`
 
-A list of credential names whose values moor puts in the Box as environment
-variables. A `.moor.yaml` can list names too. The values always come from
-`credentials`. moor refuses `GH_TOKEN`, `CLAUDE_CODE_OAUTH_TOKEN`, and any
-name that starts with `ANTHROPIC_`, because the Proxy serves those.
+A list of secret names the Box uses. A `.moor.yaml` can list names too. Each
+name is a secret of the Box's user and matches `[a-z][a-z0-9_-]*`. A `start`
+whose user lacks one of them is rejected.
 
 ### `mcp_servers`
 
@@ -68,7 +52,7 @@ name that starts with `ANTHROPIC_`, because the Proxy serves those.
 | `headers` | map | Request headers. |
 
 `args`, `env` values, `url`, and `headers` values can hold `${NAME}`, which
-moor replaces with the credential `NAME`.
+names the Box user's secret `NAME`.
 
 ### `proxy`
 
@@ -85,7 +69,6 @@ rule adds to that default.
 | `allow` | list | `*` for any request, or `METHODS /path` entries such as `GET\|POST /repos/{repo}/pulls`. In a path, `*` matches one segment and `**` matches any number. |
 | `box_env` | map | Environment variables for the Box. Values can use `{repo}`. |
 | `requires_repo` | boolean | If true, moor drops the rule for a Box with no repo. |
-| `requires_you` | boolean | If true, moor drops the rule unless the GitHub token is your own. |
 
 The default rules are `claude` for `api.anthropic.com`, which injects the
 `claude` secret, and `github-api`, `github-git`, and `github-uploads` for
@@ -98,16 +81,11 @@ entries come after the default's, and its `box_env` values win.
 `proxy.direct` lists hosts that the Box reaches without the Proxy. See
 [Direct hosts](providers.md#direct-hosts).
 
-### `github`
+### Removed keys
 
-| Key | Type | Default | Meaning |
-| --- | --- | --- | --- |
-| `github.identity` | `you`, `bot`, or `auto` | `auto` | Which GitHub identity acts. `auto` acts as `you`. |
-| `github.you_token_cmd` | list of strings | `[gh, auth, token]` | The command that prints your GitHub token. |
-| `github.pass_env` | list of variable names | empty | Host variables passed to `you_token_cmd`. |
-| `github.app.id` | integer | none | The GitHub App id. |
-| `github.app.key_path` | path | none | The App's private key file. |
-| `github.app.install` | map | empty | Installation settings for the App. |
+moor refuses a user config that has a `credentials` or `github` key. Each
+moor user stores their own secrets with `moor user secret set NAME`, and the
+`github-uploads` rule applies to every Box with a repo.
 
 ### Other keys
 
@@ -133,7 +111,7 @@ A repo's `.moor.yaml` configures its Boxes.
 | `env` | map | Plain environment variables for the Box. `PATH` is reserved. moor does not pass names that look like credentials, or names that moor sets, to the agent. |
 | `compose.project_prefix` | string | A prefix for compose project names. |
 | `box.size` | `small`, `medium`, `large`, or `xlarge` | The Box size. It wins over the user's `box.size`. |
-| `box_credentials` | list of names | Credentials from the user's `credentials` to put in the Box. |
+| `box_credentials` | list of names | Secrets of the Box's user that the Box uses. |
 | `proxy.direct` | list of host names | Hosts that the Box reaches without the Proxy. A repo cannot add or change a Proxy rule. |
 
 If a Box's `.moor.yaml` differs from the copy in its base commit, moor refuses

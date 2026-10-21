@@ -40,38 +40,6 @@ fn reserved_env() {
 }
 
 #[test]
-fn gh_token() {
-    assert_eq!(not_gh_token("GH_TOKEN_X"), Ok(()));
-    assert_eq!(not_gh_token("gh_token"), Ok(()));
-    assert_eq!(
-        not_gh_token("GH_TOKEN"),
-        Err("GH_TOKEN is not supported: moor mints GitHub tokens from your GitHub App".to_owned())
-    );
-}
-
-#[test]
-fn proxied_claude_vars() {
-    for s in [
-        "CLAUDE_CODE_OAUTH_TOKEN",
-        "ANTHROPIC_API_KEY",
-        "ANTHROPIC_AUTH_TOKEN",
-    ] {
-        assert!(proxied_claude_var(s), "{s:?}");
-    }
-    for s in ["CLAUDE_X", "MY_ANTHROPIC_KEY", "GH_TOKEN"] {
-        assert!(!proxied_claude_var(s), "{s:?}");
-        assert_eq!(not_proxied_claude_var(s), Ok(()), "{s:?}");
-    }
-    assert_eq!(
-        not_proxied_claude_var("ANTHROPIC_API_KEY"),
-        Err(
-            "ANTHROPIC_API_KEY is not supported: the moor proxy supplies Claude credentials"
-                .to_owned()
-        )
-    );
-}
-
-#[test]
 fn host_entries() {
     for s in ["Example.COM", "*.example.org", " a-b.io "] {
         assert_eq!(host_entry(s), Ok(()), "{s:?}");
@@ -105,30 +73,9 @@ fn box_credentials_ok() {
 #[test]
 fn box_credentials_bad_name() {
     assert_eq!(
-        box_credentials(&names(&["a", "b c"])),
-        Err((1, credential_name("b c").unwrap_err()))
+        box_credentials(&names(&["a", "NPM_TOKEN"])),
+        Err((1, SecretName::parse("NPM_TOKEN").unwrap_err()))
     );
-}
-
-#[test]
-fn box_credentials_rejects_gh_token() {
-    assert_eq!(
-        box_credentials(&names(&["GH_TOKEN"])),
-        Err((0, not_gh_token("GH_TOKEN").unwrap_err()))
-    );
-}
-
-#[test]
-fn box_credentials_rejects_proxied_claude() {
-    for s in ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"] {
-        assert_eq!(
-            box_credentials(&names(&["ok", s])),
-            Err((
-                1,
-                format!("{s} is not supported: the moor proxy supplies Claude credentials")
-            ))
-        );
-    }
 }
 
 #[test]

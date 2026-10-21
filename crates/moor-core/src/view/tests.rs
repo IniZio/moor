@@ -228,24 +228,6 @@ fn close_view_keys_match_wire_shape() {
     );
 }
 
-fn env_github() -> super::env::EnvGithub {
-    use super::env::*;
-    EnvGithub {
-        identity: "auto".into(),
-        app_id: None,
-        login: "logged_out".into(),
-        mint: EnvMint {
-            status: "ok".into(),
-            error: None,
-            reason: None,
-        },
-        resolved: EnvResolved {
-            app_installed: "n/a".into(),
-            ..EnvResolved::default()
-        },
-    }
-}
-
 fn env_item(kind: super::env::EnvKind, name: &str, detail: &str) -> super::env::EnvItem {
     super::env::EnvItem {
         kind,
@@ -288,7 +270,6 @@ fn env_view() -> super::env::EnvView {
             "box: {provider: docker, size: medium}",
             Some("box: {size: large}"),
         ),
-        env_github(),
         env_items(),
     )
 }
@@ -315,14 +296,8 @@ fn env_view_json_shape() {
     let j = serde_json::to_value(env_view()).unwrap();
     let mut keys: Vec<_> = j.as_object().unwrap().keys().cloned().collect();
     keys.sort();
-    assert_eq!(
-        keys,
-        ["agent", "credentials", "github", "provider", "repo", "rows"]
-    );
+    assert_eq!(keys, ["agent", "credentials", "provider", "repo", "rows"]);
     assert_eq!(j.pointer("/agent/model"), Some(&Value::Null));
-    assert_eq!(j.pointer("/github/app_id"), Some(&Value::Null));
-    assert_eq!(j.pointer("/github/resolved/mode"), Some(&Value::Null));
-    assert_eq!(j.pointer("/github/mint"), Some(&json!({"status": "ok"})));
 }
 
 #[test]
@@ -341,7 +316,7 @@ fn env_view_rows_credentials_json() {
 
 #[test]
 fn env_view_missing_facts_default() {
-    let bare = super::env::EnvView::new("/r".into(), &settings("", None), env_github(), vec![]);
+    let bare = super::env::EnvView::new("/r".into(), &settings("", None), vec![]);
     let j = serde_json::to_value(bare).unwrap();
     assert_eq!(j.pointer("/agent/model"), Some(&Value::Null));
     assert_eq!(j.pointer("/provider/size_source"), Some(&json!("default")));

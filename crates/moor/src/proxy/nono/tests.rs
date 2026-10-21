@@ -296,12 +296,8 @@ fn github_uploads_route_admits_only_the_asset_post() {
     use moor_core::config::proxy::ProxyConfig;
     use nono_proxy::config::CompiledEndpointRules;
 
-    let rules = moor_core::config::proxy::resolve_rules(
-        &ProxyConfig::default(),
-        Some(("o", "w")),
-        moor_core::config::Identity::You,
-    )
-    .unwrap();
+    let rules =
+        moor_core::config::proxy::resolve_rules(&ProxyConfig::default(), Some(("o", "w"))).unwrap();
     let cfg = cfg_for(&rules, None);
     let route = cfg
         .inner()

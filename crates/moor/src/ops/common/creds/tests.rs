@@ -1,27 +1,11 @@
-//! Tests for the memoised credential checks.
+//! Tests for credential rows, which resolve against the secrets a user holds.
 
-use std::path::Path;
-use std::sync::Arc;
+use std::collections::BTreeSet;
 
 use moor_core::config::{parse_user, BoxSettings, Flags};
-use moor_core::seam::proc::Tool;
+use moor_core::user::SecretName;
 
 use super::{checked, unresolved};
-use crate::cx::Cx;
-use crate::testing::driver::FakeDriver;
-use crate::testing::proc::{Reply, ScriptedProc};
-use crate::testing::surface::FakeSurface;
-
-/// Context over `proc`, rooted at `dir`.
-fn cx(dir: &Path, proc: &Arc<ScriptedProc>) -> Cx {
-    Cx::fake(
-        dir,
-        dir,
-        Arc::new(FakeDriver::new()),
-        Arc::new(FakeSurface::new(dir)),
-        Arc::clone(proc) as Arc<_>,
-    )
-}
 
 /// Settings resolved from user config `yaml` alone.
 fn settings(yaml: &str) -> BoxSettings {
@@ -29,66 +13,39 @@ fn settings(yaml: &str) -> BoxSettings {
     BoxSettings::resolve(&user, None, &Flags::default())
 }
 
-/// How many `sh` calls the proc has seen.
-fn sh_calls(proc: &ScriptedProc) -> usize {
-    proc.calls().iter().filter(|c| c.tool == Tool::Sh).count()
+/// The secret names `names`, as a user holds them.
+fn held(names: &[&str]) -> BTreeSet<SecretName> {
+    names
+        .iter()
+        .map(|n| SecretName::parse(n).unwrap())
+        .collect()
 }
 
 const SHARED: &str = "
-credentials:
-  A: {cmd: [echo, same]}
-  B: {cmd: [echo, same]}
+box_credentials: [a, b]
 mcp_servers:
-  m: {url: 'https://x/${A}'}
+  m: {url: 'https://x/${a}'}
 ";
 
 #[test]
-fn shared_source_is_checked_once() {
+fn rows_resolve_only_for_secrets_the_user_holds() {
     let d = tempfile::tempdir().unwrap();
-    let proc = Arc::new(ScriptedProc::new());
-    proc.on(Tool::Sh, &[], Reply::Ok("v".to_owned()));
-    let out = checked(&cx(d.path(), &proc), &settings(SHARED), d.path());
-    assert_eq!(sh_calls(&proc), 1);
-    assert_eq!(out.credentials.len(), 2);
-    assert!(out.credentials.iter().all(|i| i.resolves == Some(true)));
-    assert_eq!(out.mcp.len(), 1);
-}
-
-#[test]
-fn unused_credential_is_not_run() {
-    let d = tempfile::tempdir().unwrap();
-    let proc = Arc::new(ScriptedProc::new());
-    proc.on(Tool::Sh, &[], Reply::Ok("v".to_owned()));
-    let yaml = "
-credentials:
-  A: {cmd: [echo, used]}
-  B: {cmd: [echo, unused]}
-mcp_servers:
-  m: {url: 'https://x/${A}'}
-";
-    let failing = unresolved(&cx(d.path(), &proc), &settings(yaml), d.path());
-    assert!(failing.is_empty());
-    let calls = proc.calls();
-    assert_eq!(sh_calls(&proc), 1);
-    assert!(calls.iter().all(|c| !c.args.iter().any(|a| a == "unused")));
-}
-
-#[test]
-fn failing_source_is_reported_once_per_row() {
-    let d = tempfile::tempdir().unwrap();
-    let proc = Arc::new(ScriptedProc::new());
-    proc.on(
-        Tool::Sh,
-        &[],
-        Reply::Fail {
-            code: 1,
-            stdout: String::new(),
-            stderr: "boom".to_owned(),
-        },
-    );
-    let failing = unresolved(&cx(d.path(), &proc), &settings(SHARED), d.path());
-    assert_eq!(sh_calls(&proc), 1);
+    let failing = unresolved(&settings(SHARED), d.path(), &held(&["b"]));
     let names: Vec<&str> = failing.iter().map(|i| i.name.as_str()).collect();
-    assert_eq!(names, ["A", "m"]);
-    assert!(failing.iter().all(|i| i.error.is_some()));
+    assert_eq!(names, ["a", "m"]);
+    let a = failing.first().unwrap();
+    assert_eq!(
+        a.error.as_deref(),
+        Some("log in first: moor user secret set a")
+    );
+    assert!(unresolved(&settings(SHARED), d.path(), &held(&["a", "b"])).is_empty());
+}
+
+#[test]
+fn env_rows_leave_resolution_open() {
+    let d = tempfile::tempdir().unwrap();
+    let out = checked(&settings(SHARED), d.path());
+    assert_eq!(out.credentials.len(), 2);
+    assert!(out.credentials.iter().all(|i| i.resolves.is_none()));
+    assert!(out.mcp.iter().all(|i| i.resolves.is_none()));
 }

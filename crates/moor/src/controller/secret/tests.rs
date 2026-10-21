@@ -14,26 +14,23 @@ use serde_json::{json, Value};
 
 use super::serve;
 use crate::cx::Cx;
+use crate::testing::cx::{put_secret, REQUESTER_USER};
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::proc::{Reply, ScriptedProc};
 use crate::testing::proxy_host::FakeProxyHost;
 use crate::testing::surface::FakeSurface;
+use crate::vault::Vault;
 use crate::Moor;
 
-/// What the configured credential command prints.
+/// The value of the requester's secret the Box uses.
 const SENTINEL: &str = "sk-sentinel-7f3a91c2d4e85b60";
 
-/// A credential the Box is given, so `start` must resolve it.
-const CONFIG: &str = "credentials:
-  CLAUDE_CODE_OAUTH_TOKEN: {cmd: [echo, token]}
-  MY_API_KEY: {cmd: [secret-tool, lookup, api]}
-box_credentials: [MY_API_KEY]
-";
+/// A secret the Box is given, so `start` must find it in the requester's vault.
+const CONFIG: &str = "box_credentials: [my-api-key]\n";
 struct World {
     driver: Arc<FakeDriver>,
     engine: Arc<FakeEngine>,
-    proc: Arc<ScriptedProc>,
     surface: Arc<FakeSurface>,
     _dir: tempfile::TempDir,
 }
@@ -56,7 +53,6 @@ fn world(host: FakeProxyHost) -> (Cx, World) {
         &["rev-parse", "--git-path", "info/exclude"],
         format!("{}/exclude\n", dir.path().display()),
     );
-    proc.on(Tool::Sh, &["-c"], Reply::Ok(format!("{SENTINEL}\n")));
     let driver = Arc::new(FakeDriver::new());
     let surface = Arc::new(FakeSurface::new(dir.path()));
     let engine = Arc::new(FakeEngine::new());
@@ -73,7 +69,6 @@ fn world(host: FakeProxyHost) -> (Cx, World) {
     let world = World {
         driver,
         engine,
-        proc,
         surface,
         _dir: dir,
     };
@@ -148,20 +143,20 @@ fn steer() -> Request {
 #[test]
 fn start_show_steer_frames_and_the_box_never_carry_the_resolved_secret() {
     let (cx, w) = world(FakeProxyHost::new());
+    let vault = Vault::load(cx.vault_key().unwrap()).unwrap();
+    put_secret(
+        cx.store().unwrap(),
+        &vault,
+        REQUESTER_USER,
+        "my-api-key",
+        SENTINEL,
+    );
     let (input, out, frames) = exchange(cx, &[start(), show(), steer()]);
     assert_eq!(frames.len(), 4, "{out}");
     for f in &frames[1..] {
         assert_eq!(f["frame"], "response", "{out}");
         assert!(f["envelope"]["error"].is_null(), "{out}");
     }
-    // The controller did resolve the credential, so the absence below is not vacuous.
-    assert!(
-        w.proc
-            .calls()
-            .iter()
-            .any(|c| c.args.iter().any(|a| a == "moor-cred")),
-        "credential command never ran"
-    );
     assert!(!input.contains(SENTINEL), "client frames: {input}");
     assert!(!out.contains(SENTINEL), "server frames: {out}");
 

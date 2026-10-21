@@ -66,12 +66,12 @@ teardown: ['true']
 env: {FOO: bar}
 compose: {project_prefix: pp}
 box: {size: large}
-box_credentials: [NPM_TOKEN, other-1]
+box_credentials: [npm-token, other-1]
 ");
     assert_eq!(c.box_.size, Some(BoxSize::Large));
     assert_eq!(c.compose.project_prefix.as_deref(), Some("pp"));
     assert_eq!(c.env["FOO"], "bar");
-    assert_eq!(c.box_credentials, ["NPM_TOKEN", "other-1"]);
+    assert_eq!(c.box_credentials, ["npm-token", "other-1"]);
 }
 
 #[test]
@@ -169,29 +169,15 @@ fn box_credentials_rejections() {
         "bad name",
     );
     rejects(
-        "box_credentials: [NPM_TOKEN, NPM_TOKEN]",
+        "box_credentials: [npm-token, npm-token]",
         "box_credentials[1]",
         "twice",
     );
-    rejects(
-        "box_credentials: [GH_TOKEN]",
-        "box_credentials[0]",
-        "GH_TOKEN",
-    );
-    rejects(
-        "box_credentials: [A, GH_TOKEN]",
-        "box_credentials[1]",
-        "GH_TOKEN",
-    );
-}
-
-#[test]
-fn box_credentials_proxied_claude_names() {
-    for name in ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"] {
+    for name in ["GH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN"] {
         rejects(
-            &format!("box_credentials: [{name}]"),
-            "box_credentials[0]",
-            "moor proxy",
+            &format!("box_credentials: [a, {name}]"),
+            "box_credentials[1]",
+            "secret name",
         );
     }
 }

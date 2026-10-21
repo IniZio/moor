@@ -97,71 +97,31 @@ fn size_decision_58() {
 }
 
 #[test]
-fn credentials_union_and_used() {
+fn credentials_are_the_box_credentials_and_mcp_refs() {
     let s = resolve(
-        "credentials: {UNRELATED: {env: A}, USED: {env: B}, TOK: {env: C}}\n\
-         mcp_servers: {m: {url: 'http://h/${TOK}'}}\n\
-         box_credentials: [USED]",
-        Some("box_credentials: [BOXC]"),
+        "mcp_servers: {m: {url: 'http://h/${tok}'}}\nbox_credentials: [used]",
+        Some("box_credentials: [boxc]"),
         &Flags::default(),
     );
     let got: Vec<_> = s
         .credentials
         .iter()
-        .map(|c| {
-            (
-                c.name.as_str(),
-                c.layer,
-                c.used,
-                c.boxed,
-                c.source.is_some(),
-            )
-        })
+        .map(|c| (c.name.as_str(), c.layer, c.boxed))
         .collect();
     assert_eq!(
         got,
         [
-            ("BOXC", Layer::Repo, true, true, false),
-            ("TOK", Layer::User, true, false, true),
-            ("UNRELATED", Layer::User, false, false, true),
-            ("USED", Layer::User, true, true, true),
+            ("boxc", Layer::Repo, true),
+            ("tok", Layer::User, false),
+            ("used", Layer::User, true),
         ]
     );
-    let used: Vec<_> = s.used_credentials().map(|c| c.name.as_str()).collect();
-    assert_eq!(used, ["BOXC", "TOK", "USED"]);
-}
-
-#[test]
-fn boxed_from_repo_and_user() {
-    let s = resolve(
-        "credentials: {NPM: {env: N}, GEM: {env: G}}",
-        Some("box_credentials: [NPM]"),
-        &Flags::default(),
-    );
-    let boxed: Vec<_> = s
-        .credentials
-        .iter()
-        .map(|c| (c.name.as_str(), c.boxed))
-        .collect();
-    assert_eq!(boxed, [("GEM", false), ("NPM", true)]);
-    assert_eq!(s.box_credentials, ["NPM"]);
-    let s = resolve(
-        "credentials: {GEM: {env: G}}\nbox_credentials: [GEM]",
-        None,
-        &Flags::default(),
-    );
-    assert!(s.credentials[0].boxed && s.credentials[0].used);
-    assert!(s.box_credentials.is_empty());
+    assert_eq!(s.box_credentials, ["boxc"]);
 }
 
 #[test]
 fn repo_fields_and_user_fields_pass_through() {
-    let s = resolve(
-        "github: {identity: bot}",
-        Some("setup: [a]\nenv: {K: v}"),
-        &Flags::default(),
-    );
-    assert_eq!(s.identity, Identity::Bot);
+    let s = resolve("", Some("setup: [a]\nenv: {K: v}"), &Flags::default());
     assert_eq!(s.setup, ["a"]);
     assert_eq!(s.env["K"], "v");
 }

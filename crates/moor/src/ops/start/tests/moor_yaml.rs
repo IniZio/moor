@@ -248,7 +248,7 @@ fn overlay_world(driver: FakeDriver, repo_file: Option<&str>) -> World {
         driver.clone(),
         surface.clone(),
         proc.clone(),
-        crate::testing::cx::fake_config(),
+        moor_core::config::UserConfig::default(),
     )
     .with_repos(table);
     World {

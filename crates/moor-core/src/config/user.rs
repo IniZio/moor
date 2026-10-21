@@ -4,7 +4,6 @@
 
 mod controller;
 mod creds;
-mod github;
 
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
@@ -16,8 +15,7 @@ use serde::Deserialize;
 use super::proxy::ProxyConfig;
 use super::{check, parse_strict, ConfigError};
 pub use controller::ControllerClientConfig;
-pub use creds::{CredentialSource, McpServer};
-pub use github::DEFAULT_YOU_TOKEN_CMD;
+pub use creds::McpServer;
 
 /// herdr session used when `surface.herdr.session` is unset.
 const DEFAULT_HERDR_SESSION: &str = "moor";
@@ -53,38 +51,6 @@ impl BoxSize {
             Self::Large => "large",
             Self::Xlarge => "xlarge",
         }
-    }
-}
-
-/// Which GitHub identity acts.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Identity {
-    /// The person's own token.
-    You,
-    /// The GitHub App.
-    Bot,
-    /// Pick by availability.
-    #[default]
-    Auto,
-}
-
-impl Identity {
-    /// The lowercase name.
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::You => "you",
-            Self::Bot => "bot",
-            Self::Auto => "auto",
-        }
-    }
-
-    /// Whether the forge credential is the person's own token. `auto` resolves
-    /// to `you` while no GitHub App can be set up.
-    #[must_use]
-    pub const fn is_you(self) -> bool {
-        matches!(self, Self::You | Self::Auto)
     }
 }
 
@@ -180,43 +146,6 @@ impl DriverConfig {
     }
 }
 
-/// `github:` section.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
-#[serde(deny_unknown_fields, default)]
-pub struct GithubConfig {
-    /// Which identity acts.
-    pub identity: Identity,
-    /// The GitHub App moor mints tokens from.
-    pub app: Option<GithubApp>,
-    /// Host command (argv) that prints a GitHub token; `gh auth token` when unset.
-    pub you_token_cmd: Option<Vec<String>>,
-    /// Environment variable names passed through to the token command.
-    pub pass_env: Vec<String>,
-}
-
-/// `github.app:` section.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct GithubApp {
-    /// GitHub App id.
-    pub id: u64,
-    /// Private key file: absolute or `~/…`.
-    pub key_path: PathBuf,
-    /// Installation settings.
-    #[serde(default)]
-    pub install: BTreeMap<String, serde_json::Value>,
-}
-
-impl GithubApp {
-    /// `key_path` is not blank.
-    fn validate(&self) -> Result<(), ConfigError> {
-        if self.key_path.as_os_str().is_empty() {
-            return Err(ConfigError::new("github.app.key_path", "must not be empty"));
-        }
-        Ok(())
-    }
-}
-
 /// `agent:` section.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields, default)]
@@ -301,8 +230,14 @@ pub struct ToolsConfig {
 pub struct UserConfig {
     /// Per-provider limits.
     pub drivers: BTreeMap<String, DriverConfig>,
-    /// Named credential sources.
-    pub credentials: BTreeMap<String, CredentialSource>,
+    /// Removed key, kept only so a stale config gets a pointed error; `None` in any config
+    /// that validates.
+    #[serde(default, deserialize_with = "super::controller::present_key")]
+    #[allow(
+        clippy::option_option,
+        reason = "outer Some means the key was present, even when null"
+    )]
+    pub credentials: Option<Option<serde_json::Value>>,
     /// MCP servers.
     pub mcp_servers: BTreeMap<String, McpServer>,
     /// Box settings.
@@ -310,8 +245,14 @@ pub struct UserConfig {
     pub box_: BoxConfig,
     /// Dotfiles source.
     pub dotfiles: Option<DotfilesConfig>,
-    /// GitHub settings.
-    pub github: GithubConfig,
+    /// Removed key, kept only so a stale config gets a pointed error; `None` in any config
+    /// that validates.
+    #[serde(default, deserialize_with = "super::controller::present_key")]
+    #[allow(
+        clippy::option_option,
+        reason = "outer Some means the key was present, even when null"
+    )]
+    pub github: Option<Option<serde_json::Value>>,
     /// Agent settings.
     pub agent: AgentConfig,
     /// Surface settings.
@@ -350,16 +291,22 @@ impl UserConfig {
     /// # Errors
     /// Returns the first invalid value found.
     pub fn validate(&self) -> Result<(), ConfigError> {
-        if let Some(app) = &self.github.app {
-            app.validate()?;
+        for (key, set) in [
+            ("credentials", self.credentials.is_some()),
+            ("github", self.github.is_some()),
+        ] {
+            if set {
+                return Err(ConfigError::new(
+                    key,
+                    "was removed; each moor user stores their own secrets with `moor user secret set NAME`",
+                ));
+            }
         }
-        self.github.validate()?;
         self.box_.validate()?;
         for (name, d) in &self.drivers {
             d.validate(name)?;
         }
-        creds::validate_credentials(&self.credentials)?;
-        creds::validate_mcp(&self.mcp_servers, &self.credentials)?;
+        creds::validate_mcp(&self.mcp_servers)?;
         if let Some(d) = &self.dotfiles {
             d.validate()?;
         }

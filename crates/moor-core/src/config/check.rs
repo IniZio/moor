@@ -3,6 +3,8 @@
 //! Each validator returns the one canonical message on failure; callers wrap it
 //! in a `ConfigError` and do not reword it.
 
+use crate::user::SecretName;
+
 /// `[A-Za-z0-9_-]+`.
 ///
 /// # Errors
@@ -42,18 +44,6 @@ pub fn env_name(s: &str) -> Result<(), String> {
 pub fn not_reserved_env(s: &str) -> Result<(), String> {
     if s == "PATH" {
         Err(format!("name {s:?} is reserved"))
-    } else {
-        Ok(())
-    }
-}
-
-/// Box `gh` goes through the host proxy; `GH_TOKEN` may not be a credential.
-///
-/// # Errors
-/// Returns the canonical message for `GH_TOKEN`.
-pub fn not_gh_token(s: &str) -> Result<(), String> {
-    if s == "GH_TOKEN" {
-        Err("GH_TOKEN is not supported: moor mints GitHub tokens from your GitHub App".to_owned())
     } else {
         Ok(())
     }
@@ -117,39 +107,15 @@ pub fn agent_env_reserved(s: &str) -> bool {
         || s.starts_with("CLAUDE_")
 }
 
-/// Claude variables a box agent gets through the host proxy, not credentials.
-#[must_use]
-pub fn proxied_claude_var(s: &str) -> bool {
-    s == "CLAUDE_CODE_OAUTH_TOKEN" || s.starts_with("ANTHROPIC_")
-}
-
-/// Rejects the variables [`proxied_claude_var`] matches.
-///
-/// # Errors
-/// Returns the canonical message for a proxied Claude variable.
-pub fn not_proxied_claude_var(s: &str) -> Result<(), String> {
-    if proxied_claude_var(s) {
-        Err(format!(
-            "{s} is not supported: the moor proxy supplies Claude credentials"
-        ))
-    } else {
-        Ok(())
-    }
-}
-
 /// Validates a box credential name list in order.
 ///
-/// Each name must pass [`credential_name`], [`not_gh_token`] and
-/// [`not_proxied_claude_var`], and may appear only once.
+/// Each name is the name of a secret of the Box's user, and may appear only once.
 ///
 /// # Errors
 /// Returns the index of the first failing name and its canonical message.
 pub fn box_credentials(names: &[String]) -> Result<(), (usize, String)> {
     for (i, name) in names.iter().enumerate() {
-        credential_name(name)
-            .and_then(|()| not_gh_token(name))
-            .and_then(|()| not_proxied_claude_var(name))
-            .map_err(|msg| (i, msg))?;
+        SecretName::parse(name).map_err(|msg| (i, msg))?;
         if names.iter().take(i).any(|n| n == name) {
             return Err((i, format!("box credential {name:?} is listed twice")));
         }

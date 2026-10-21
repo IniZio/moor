@@ -23,7 +23,6 @@ use crate::adapters::box_agent::gh_release::{GhRelease, UreqFetch};
 use crate::adapters::box_agent::BoxAgent;
 use crate::adapters::clock::SystemClock;
 use crate::adapters::crabbox::Crabbox;
-use crate::adapters::creds::Creds;
 use crate::adapters::git::Git;
 use crate::adapters::github::GitHub;
 use crate::adapters::herdr::Herdr;
@@ -181,7 +180,7 @@ fn parts(env: &Env, sockets: PathBuf) -> Result<(CxParts, Option<Warning>), Comm
         proxy_host,
         git: Git::new(Arc::clone(&proc)),
         config,
-        creds: Creds::new(env.clone(), proc),
+        env: env.clone(),
         cwd,
         prompt_window: prompt_window(env),
     };
