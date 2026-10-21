@@ -15,7 +15,7 @@ use moor_core::seam::proc::Proc;
 use moor_core::seam::proxy_host::ProxyHost;
 use moor_core::seam::rng::Rng;
 use moor_core::seam::surface::Surface;
-use moor_core::user::{Identity, Viewer};
+use moor_core::user::{Identity, UserId, Viewer};
 use moor_core::{ErrorKind, Warning};
 
 use crate::adapters::git::Git;
@@ -288,6 +288,18 @@ impl Cx {
         if !warnings.iter().any(|x| x.code == w.code) {
             warnings.push(w);
         }
+    }
+
+    /// Runs `f` for a Box that acts for `owner`, keeping the warnings it records only when the
+    /// caller may see that Box, so a reply never names a Box hidden from its caller.
+    pub(crate) fn for_box<T>(&self, owner: Option<UserId>, f: impl FnOnce() -> T) -> T {
+        if self.viewer.may_act_on(owner) {
+            return f();
+        }
+        let before = self.warnings.borrow().len();
+        let out = f();
+        self.warnings.borrow_mut().truncate(before);
+        out
     }
 
     /// Drain recorded warnings.

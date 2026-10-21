@@ -88,6 +88,7 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     if req.resume {
         return Err(relaunch::nothing_to_resume());
     }
+    preflight::check_unbound(store, bound.as_deref())?;
     let facts = gather(cx, req, repo, bound)?;
     let flags = Flags {
         model: req.model.clone(),
@@ -262,22 +263,24 @@ fn wake_idle(store: &Store, id: BoxId) -> Result<(), CommandError> {
 /// Runs before the start, which may then leave the Box it starts in another state.
 pub(crate) fn settle_all(cx: &Cx, store: &Store) -> Result<(), CommandError> {
     for row in &store.open_boxes()? {
-        let ready = row.boxed.as_ref().map(|b| b.state) == Some(BoxState::Ready);
-        if !ready {
-            continue;
+        if row.boxed.as_ref().map(|b| b.state) == Some(BoxState::Ready) {
+            cx.for_box(row.user, || settle_one(cx, store, row));
         }
-        let settled = activity::read(cx, store, row, cx.clock().now())
-            .and_then(|reading| activity::settle(cx, store, row, &reading));
-        if let Err(e) = settled {
-            cx.warn(Warning {
-                code: "settle_failed".to_owned(),
-                message: format!("could not settle Box {}: {}", row.id.get(), e.error),
-            });
-            continue;
-        }
-        autosleep::run(cx, store, row.id);
     }
     Ok(())
+}
+
+/// Moves one open Box with a ready machine between Working and Idle, then lets it auto-sleep.
+fn settle_one(cx: &Cx, store: &Store, row: &BoxRow) {
+    let settled = activity::read(cx, store, row, cx.clock().now())
+        .and_then(|reading| activity::settle(cx, store, row, &reading));
+    match settled {
+        Ok(()) => autosleep::run(cx, store, row.id),
+        Err(e) => cx.warn(Warning {
+            code: "settle_failed".to_owned(),
+            message: format!("could not settle Box {}: {}", row.id.get(), e.error),
+        }),
+    }
 }
 
 /// The `--worktree` path, which must be absolute.
@@ -295,10 +298,7 @@ fn locate(cx: &Cx, req: &StartReq) -> Result<(PathBuf, Option<PathBuf>, StartReq
     let repo = cx.git().toplevel(caller_dir(cx)?).map_err(git)?;
     let bound = req.worktree.as_deref().map(worktree_path).transpose()?;
     if let Some(wt) = &bound {
-        let same = |a: &Path, b: &Path| {
-            a == b || matches!((a.canonicalize(), b.canonicalize()), (Ok(x), Ok(y)) if x == y)
-        };
-        if same(wt, &repo) {
+        if preflight::same_path(wt, &repo) {
             return Err(CommandError::new(
                 ErrorKind::Usage,
                 format!("{} is the main worktree, not a linked one", wt.display()),

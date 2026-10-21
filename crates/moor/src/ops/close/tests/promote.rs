@@ -14,6 +14,7 @@ use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
 use moor_core::seam::proc::Tool;
+use moor_core::user::{Identity, UserId, Viewer};
 use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, CloseReq, ProviderId, ShowReq, StartReq};
 
 use crate::cx::Cx;
@@ -466,4 +467,40 @@ fn promoted_box_runs_the_repo_setup_commands_in_its_new_box() {
         .filter(|a| a.last().is_some_and(|l| l.contains(&script)))
         .count();
     assert_eq!(ran, 1, "{argvs:?}");
+}
+
+/// The user of local uid 2000, who owns none of the world's Boxes.
+fn bystander(w: &World) -> UserId {
+    w.cx.store()
+        .unwrap()
+        .enroll(&Identity::local(2000))
+        .unwrap()
+        .0
+}
+
+#[test]
+fn a_close_names_only_the_promoted_boxes_its_caller_may_see() {
+    let mut w = world(limit(1), FakeDriver::new());
+    let first = queue(&w, "first");
+    let user = bystander(&w);
+    w.cx = w.cx.with_viewer(Viewer::User(user));
+    let v = close_holder(&w);
+    assert!(v.promoted.is_empty(), "{:?}", v.promoted);
+    assert_ne!(lifecycle_of(&w, first), BoxLifecycle::WaitingForBox);
+}
+
+#[test]
+fn a_close_hides_the_promote_warning_of_a_box_its_caller_may_not_see() {
+    let mut w = world(limit(1), FakeDriver::new());
+    let id = queue(&w, "first");
+    let _held =
+        BoxLock::acquire(w.cx.clock(), w.cx.state_dir().unwrap(), id, "start", WAIT).unwrap();
+    let user = bystander(&w);
+    w.cx = w.cx.with_viewer(Viewer::User(user));
+    close_holder(&w);
+    let warnings = w.cx.take_warnings();
+    assert!(
+        !warnings.iter().any(|x| x.message.contains("first")),
+        "{warnings:?}"
+    );
 }

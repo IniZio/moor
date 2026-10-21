@@ -7,6 +7,7 @@ use std::time::Duration;
 use moor_core::config::{BoxSettings, Flags};
 use moor_core::decide::capacity::promote_order;
 use moor_core::domain::box_state::BoxLifecycle;
+use moor_core::user::UserId;
 use moor_core::{BoxId, BoxName, ProviderId, Warning};
 
 use crate::cx::Cx;
@@ -52,17 +53,19 @@ fn promote_into(
     let Some(lim) = capacity::limit(cx.config(), provider.as_str()) else {
         return Ok(());
     };
-    let mut cfgs: HashMap<BoxId, (BoxName, BoxSettings)> = HashMap::new();
+    let mut cfgs: HashMap<BoxId, (BoxName, Option<UserId>, BoxSettings)> = HashMap::new();
     for row in store.waiting_boxes()? {
         let at = row.worktree.as_deref().unwrap_or(&row.repo);
         match settings(cx, Path::new(at), &Flags::default()) {
             Ok(cfg) if cfg.provider.value == provider.as_str() => {
-                cfgs.insert(row.id, (row.name.clone(), cfg));
+                cfgs.insert(row.id, (row.name.clone(), row.user, cfg));
             }
             Ok(_) => {}
-            Err(e) => cx.warn(Warning {
-                code: "promote_skipped".to_owned(),
-                message: format!("cannot promote {}: {}", row.name.as_str(), e.error),
+            Err(e) => cx.for_box(row.user, || {
+                cx.warn(Warning {
+                    code: "promote_skipped".to_owned(),
+                    message: format!("cannot promote {}: {}", row.name.as_str(), e.error),
+                });
             }),
         }
     }
@@ -77,10 +80,10 @@ fn promote_into(
     let ids: Vec<BoxId> = cfgs.keys().copied().collect();
     let free = u32::try_from(free).unwrap_or(u32::MAX);
     for id in promote_order(&ids, free) {
-        let Some((name, cfg)) = cfgs.get(&id) else {
+        let Some((name, owner, cfg)) = cfgs.get(&id) else {
             continue;
         };
-        if let Some(name) = promote_one(cx, store, id, name, op, cfg)? {
+        if let Some(name) = cx.for_box(*owner, || promote_one(cx, store, id, name, op, cfg))? {
             promoted.push(name);
         }
     }
