@@ -1,7 +1,6 @@
 //! Typed `value` payload for `env`.
 //!
-//! Carries `rows`, `provider` and `credentials`, plus `repo`, `agent`
-//! and `github`, which reports the GitHub identity and token resolution.
+//! Carries `rows`, `provider` and `credentials`, plus `repo` and `agent`.
 //! Layers are [`crate::config::Layer`]; `agent` and `provider` come straight from
 //! the resolved box settings.
 
@@ -71,47 +70,6 @@ pub struct EnvAgent {
     pub model: Option<String>,
 }
 
-/// Result of a trial token mint.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct EnvMint {
-    /// `ok`, `failed` or `skipped`.
-    pub status: String,
-    /// Failure message.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
-    /// Why the check was skipped.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reason: Option<String>,
-}
-
-/// Which GitHub identity a Box agent will use. Every key serializes.
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
-pub struct EnvResolved {
-    /// Resolved identity mode.
-    pub mode: Option<String>,
-    /// `yes`, `no`, `unknown` or `n/a`.
-    pub app_installed: String,
-    /// Where the token comes from.
-    pub token_source: Option<String>,
-    /// Resolution error.
-    pub error: Option<String>,
-}
-
-/// GitHub identity state.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct EnvGithub {
-    /// Configured identity: `you`, `bot` or `auto`.
-    pub identity: String,
-    /// App id; serializes as null when no App is set up.
-    pub app_id: Option<String>,
-    /// Login state.
-    pub login: String,
-    /// Trial mint outcome.
-    pub mint: EnvMint,
-    /// Resolved identity.
-    pub resolved: EnvResolved,
-}
-
 /// Whether a row value is shown as-is or is a reference to a secret.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -172,8 +130,6 @@ pub struct EnvView {
     pub repo: String,
     /// Agent settings.
     pub agent: EnvAgent,
-    /// GitHub identity state.
-    pub github: EnvGithub,
     /// Layered rows in display order.
     pub rows: Vec<EnvRow>,
     /// Provider and size.
@@ -185,12 +141,7 @@ pub struct EnvView {
 impl EnvView {
     /// Build every projection from the resolved settings and the flat item list.
     #[must_use]
-    pub fn new(
-        repo: String,
-        settings: &BoxSettings,
-        github: EnvGithub,
-        items: Vec<EnvItem>,
-    ) -> Self {
+    pub fn new(repo: String, settings: &BoxSettings, items: Vec<EnvItem>) -> Self {
         let agent = EnvAgent {
             model: settings.model.as_ref().map(|m| m.value.clone()),
         };
@@ -229,7 +180,6 @@ impl EnvView {
         Self {
             repo,
             agent,
-            github,
             rows,
             provider,
             credentials,

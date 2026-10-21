@@ -54,7 +54,7 @@ pub struct FrontEntry {}
     clippy::option_option,
     reason = "outer Some means the key was present, even when null"
 )]
-fn present_key<'de, D>(d: D) -> Result<Option<Option<serde_json::Value>>, D::Error>
+pub(super) fn present_key<'de, D>(d: D) -> Result<Option<Option<serde_json::Value>>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {

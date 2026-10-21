@@ -6,10 +6,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::{
-    BoxSize, CredentialSource, DotfilesConfig, Identity, McpServer, RepoConfig, ToolsConfig,
-    UserConfig,
-};
+use super::{BoxSize, DotfilesConfig, McpServer, RepoConfig, ToolsConfig, UserConfig};
 use crate::name::DirectHost;
 
 /// Provider when the user config names none.
@@ -71,17 +68,13 @@ pub struct Flags {
     pub model: Option<String>,
 }
 
-/// One credential the box may need, with how and where it is defined.
+/// One secret of the Box's user that the Box uses, and where it is named.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CredPlan {
-    /// Credential name.
+    /// Secret name.
     pub name: String,
-    /// How to read the value, from the user layer; `None` if only the repo names it.
-    pub source: Option<CredentialSource>,
-    /// `User` if the user config defines it, else `Repo`.
+    /// `Repo` if the repo's `box_credentials` names it, else `User`.
     pub layer: Layer,
-    /// Named by a repo or user `box_credentials` entry, or a `${NAME}` ref in a user MCP server.
-    pub used: bool,
     /// Named by a repo or user `box_credentials` entry, so it is delivered into the Box.
     pub boxed: bool,
 }
@@ -95,9 +88,7 @@ pub struct BoxSettings {
     pub provider: Sourced<String>,
     /// Box size: repo > user > default `small`.
     pub size: Sourced<BoxSize>,
-    /// GitHub identity mode.
-    pub identity: Identity,
-    /// Sorted union of user credential names, box credential names and MCP refs.
+    /// Sorted union of box credential names and MCP refs.
     pub credentials: Vec<CredPlan>,
     /// Repo box credential names, in repo order.
     pub box_credentials: Vec<String>,
@@ -119,7 +110,7 @@ pub struct BoxSettings {
     pub direct: Vec<DirectHost>,
 }
 
-/// Builds the sorted credential plan from user, repo and MCP refs.
+/// Builds the sorted credential plan from box credentials and MCP refs.
 fn plan_credentials(uc: &UserConfig, repo: &RepoConfig) -> Vec<CredPlan> {
     let boxed: BTreeSet<&str> = repo
         .box_credentials
@@ -127,27 +118,20 @@ fn plan_credentials(uc: &UserConfig, repo: &RepoConfig) -> Vec<CredPlan> {
         .chain(&uc.box_credentials)
         .map(String::as_str)
         .collect();
-    let mut used = boxed.clone();
+    let mut names = boxed.clone();
     for server in uc.mcp_servers.values() {
-        used.extend(server.refs());
+        names.extend(server.refs());
     }
-    let mut names: BTreeSet<&str> = used.clone();
-    names.extend(uc.credentials.keys().map(String::as_str));
     names
         .into_iter()
-        .map(|name| {
-            let source = uc.credentials.get(name).cloned();
-            CredPlan {
-                name: name.to_string(),
-                layer: if source.is_some() {
-                    Layer::User
-                } else {
-                    Layer::Repo
-                },
-                source,
-                used: used.contains(name),
-                boxed: boxed.contains(name),
-            }
+        .map(|name| CredPlan {
+            name: name.to_owned(),
+            layer: if repo.box_credentials.iter().any(|n| n == name) {
+                Layer::Repo
+            } else {
+                Layer::User
+            },
+            boxed: boxed.contains(name),
         })
         .collect()
 }
@@ -189,7 +173,6 @@ impl BoxSettings {
             model,
             provider,
             size,
-            identity: user.github.identity,
             credentials: plan_credentials(user, r),
             box_credentials: r.box_credentials.clone(),
             mcp: user.mcp_servers.clone(),
@@ -201,11 +184,6 @@ impl BoxSettings {
             tool_paths: user.tools.clone(),
             direct: direct_hosts(user, r),
         }
-    }
-
-    /// Credentials the box needs, in name order.
-    pub fn used_credentials(&self) -> impl Iterator<Item = &CredPlan> {
-        self.credentials.iter().filter(|c| c.used)
     }
 }
 

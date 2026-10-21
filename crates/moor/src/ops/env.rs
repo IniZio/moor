@@ -24,7 +24,6 @@ pub(crate) fn run(cx: &Cx, req: &EnvReq) -> Result<EnvView, CommandError> {
     Ok(EnvView::new(
         top.display().to_string(),
         &settings,
-        items::github(&settings),
         items::assemble(cx, &settings, &top),
     ))
 }

@@ -60,11 +60,9 @@ pub(crate) fn agent_env(cx: &Cx, settings: &BoxSettings) -> Vec<(String, String)
 /// The message of a rule that does not resolve.
 pub(crate) fn plan(cx: &Cx, origin: Option<&str>) -> Result<ProxyPlan, String> {
     let repo = origin.and_then(|o| cx.forge().repo_of(o));
-    let cfg = cx.config();
     let rules = resolve_rules(
-        &cfg.proxy,
+        &cx.config().proxy,
         repo.as_ref().map(|r| (r.owner.as_str(), r.name.as_str())),
-        cfg.github.identity,
     )
     .map_err(|e| e.to_string())?;
     Ok(ProxyPlan { repo, rules })

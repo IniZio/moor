@@ -17,9 +17,9 @@ use moor_core::seam::surface::Surface;
 use moor_core::user::Identity;
 use moor_core::{ErrorKind, Warning};
 
-use crate::adapters::creds::Creds;
 use crate::adapters::git::Git;
 use crate::config_load::load_repo;
+use crate::env::Env;
 use crate::error::CommandError;
 use crate::store::{Store, STORE_FILE};
 
@@ -49,8 +49,8 @@ pub(crate) struct Cx {
     git: Git,
     /// User configuration.
     config: UserConfig,
-    /// Credential reader.
-    creds: Creds,
+    /// Host environment snapshot.
+    env: Env,
     /// Invocation directory.
     cwd: PathBuf,
     /// How long a fresh agent pane is watched for first-run prompts.
@@ -89,8 +89,8 @@ pub(crate) struct CxParts {
     pub git: Git,
     /// User configuration.
     pub config: UserConfig,
-    /// Credential reader.
-    pub creds: Creds,
+    /// Host environment snapshot.
+    pub env: Env,
     /// Invocation directory.
     pub cwd: PathBuf,
     /// How long a fresh agent pane is watched for first-run prompts.
@@ -113,7 +113,7 @@ impl Cx {
             proxy_host: p.proxy_host,
             git: p.git,
             config: p.config,
-            creds: p.creds,
+            env: p.env,
             cwd: p.cwd,
             prompt_window: p.prompt_window,
             store: OnceCell::new(),
@@ -216,9 +216,9 @@ impl Cx {
         &self.config
     }
 
-    /// Credential reader.
-    pub(crate) const fn creds(&self) -> &Creds {
-        &self.creds
+    /// Host environment snapshot.
+    pub(crate) const fn env(&self) -> &Env {
+        &self.env
     }
 
     /// Repo config for `worktree`: its own `.moor.yaml`, else the main checkout's.

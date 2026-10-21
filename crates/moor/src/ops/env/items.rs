@@ -2,8 +2,8 @@
 
 use std::path::Path;
 
-use moor_core::config::{BoxSettings, DotfilesConfig, Identity, Layer};
-use moor_core::view::env::{EnvGithub, EnvItem, EnvKind, EnvMint, EnvResolved};
+use moor_core::config::{BoxSettings, DotfilesConfig, Layer};
+use moor_core::view::env::{EnvItem, EnvKind};
 
 use crate::cx::Cx;
 use crate::ops::common::creds::{checked, plain, Checked};
@@ -21,7 +21,7 @@ pub(crate) fn assemble(cx: &Cx, s: &BoxSettings, worktree: &Path) -> Vec<EnvItem
             }
         }
     }
-    let Checked { credentials, mcp } = checked(cx, s, worktree);
+    let Checked { credentials, mcp } = checked(s, worktree);
     items.extend(credentials);
     items.extend(s.setup.iter().map(|t| plain(EnvKind::Setup, t, t)));
     items.extend(mcp);
@@ -51,7 +51,7 @@ fn dotfiles_item(cx: &Cx, d: &DotfilesConfig) -> EnvItem {
         || "install: install.sh if present".to_owned(),
         |s| format!("install: {s}"),
     );
-    let ok = cx.creds().env().expand_home(&d.path).is_dir();
+    let ok = cx.env().expand_home(&d.path).is_dir();
     EnvItem {
         source: Layer::User,
         resolves: Some(ok),
@@ -61,35 +61,5 @@ fn dotfiles_item(cx: &Cx, d: &DotfilesConfig) -> EnvItem {
             "path",
             &format!("{}; {install}", d.path.display()),
         )
-    }
-}
-
-/// GitHub block. No App store exists yet, so no App is ever set up.
-pub(crate) fn github(s: &BoxSettings) -> EnvGithub {
-    let (mode, token_source) = match s.identity {
-        Identity::Bot => ("bot", "GitHub App installation token"),
-        Identity::You => ("app-you", "GitHub App user token (repo-scoped)"),
-        Identity::Auto => ("gh-you", "gh CLI (gh auth token)"),
-    };
-    EnvGithub {
-        identity: s.identity.as_str().to_owned(),
-        app_id: None,
-        login: if s.identity == Identity::Bot {
-            "n/a"
-        } else {
-            "logged_out"
-        }
-        .to_owned(),
-        mint: EnvMint {
-            status: "skipped".to_owned(),
-            error: None,
-            reason: Some("GitHub App not set up".to_owned()),
-        },
-        resolved: EnvResolved {
-            mode: Some(mode.to_owned()),
-            app_installed: "n/a".to_owned(),
-            token_source: Some(token_source.to_owned()),
-            error: None,
-        },
     }
 }

@@ -298,7 +298,7 @@ fn host_session_line(value: &Value) -> Option<String> {
     Some(format!("host Session {id} working in {workdir}\n"))
 }
 
-/// Text form of the `env` view: agent, github, token lines, then one line per item.
+/// Text form of the `env` view: the agent line, then one line per item.
 fn env_text(view: &EnvView) -> String {
     let mut out = String::from("agent:");
     let _ = writeln!(
@@ -306,51 +306,6 @@ fn env_text(view: &EnvView) -> String {
         " model={}",
         view.agent.model.as_deref().unwrap_or("default")
     );
-    let gh = &view.github;
-    let _ = writeln!(
-        out,
-        "github: identity {}, app {}, {}",
-        gh.identity,
-        gh.app_id.as_deref().unwrap_or("none"),
-        gh.login
-    );
-    let res = &gh.resolved;
-    match (&res.mode, &res.token_source) {
-        (Some(mode), Some(src)) => {
-            let _ = writeln!(
-                out,
-                "github identity: {mode}, app installed {}, token from {src}",
-                res.app_installed
-            );
-        }
-        _ => {
-            let _ = writeln!(
-                out,
-                "github identity: unknown: {}",
-                res.error.as_deref().unwrap_or("unresolved")
-            );
-        }
-    }
-    let mint = &gh.mint;
-    match mint.status.as_str() {
-        "failed" => {
-            let _ = writeln!(
-                out,
-                "github token: failed: {}",
-                mint.error.as_deref().unwrap_or("")
-            );
-        }
-        "skipped" => {
-            let _ = writeln!(
-                out,
-                "github token: skipped: {}",
-                mint.reason.as_deref().unwrap_or("")
-            );
-        }
-        other => {
-            let _ = writeln!(out, "github token: {other}");
-        }
-    }
     for row in &view.rows {
         let _ = writeln!(out, "{}", row_line(row, view.check_of(row)));
     }

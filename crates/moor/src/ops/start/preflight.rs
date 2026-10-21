@@ -1,5 +1,6 @@
 //! The credential preflight of `start`: runs before any side effect.
 
+use std::collections::BTreeSet;
 use std::path::Path;
 
 use moor_core::config::BoxSettings;
@@ -12,11 +13,21 @@ use crate::error::CommandError;
 use crate::ops::common::creds::unresolved;
 use crate::store::BoxRow;
 
-/// Why the Box must be rejected, naming each unresolved item; `None` when all resolve.
-pub(super) fn rejection(cx: &Cx, settings: &BoxSettings, worktree: &Path) -> Option<String> {
-    let failing = unresolved(cx, settings, worktree);
+/// Why the Box must be rejected for `user`, naming each unresolved item; `None` when all
+/// resolve.
+///
+/// # Errors
+/// The store's failure to list the user's secrets.
+pub(super) fn rejection(
+    cx: &Cx,
+    settings: &BoxSettings,
+    worktree: &Path,
+    user: UserId,
+) -> Result<Option<String>, CommandError> {
+    let have: BTreeSet<_> = cx.store()?.user_secret_names(user)?.into_iter().collect();
+    let failing = unresolved(settings, worktree, &have);
     if failing.is_empty() {
-        return None;
+        return Ok(None);
     }
     let lines: Vec<String> = failing
         .iter()
@@ -26,13 +37,14 @@ pub(super) fn rejection(cx: &Cx, settings: &BoxSettings, worktree: &Path) -> Opt
                 .map_or_else(|| item.name.clone(), |e| format!("{}: {e}", item.name))
         })
         .collect();
-    Some(format!("unresolved: {}", lines.join("; ")))
+    Ok(Some(format!("unresolved: {}", lines.join("; "))))
 }
 
 /// The credentials the Box uses, all resolved; names and layers only.
 pub(super) fn checked(settings: &BoxSettings) -> Vec<CheckedCred> {
     settings
-        .used_credentials()
+        .credentials
+        .iter()
         .map(|c| CheckedCred {
             name: c.name.clone(),
             source: c.layer.as_str().to_owned(),

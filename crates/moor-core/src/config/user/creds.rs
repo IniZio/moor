@@ -1,71 +1,11 @@
-//! User `credentials:` and `mcp_servers:` sections.
+//! User `mcp_servers:` section.
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
 
 use serde::Deserialize;
 
 use crate::config::{check, ConfigError};
-
-/// Where a credential value comes from: exactly one of `cmd`, `file`, `env`.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
-#[serde(deny_unknown_fields, default)]
-pub struct CredentialSource {
-    /// Argv of a command printing the value.
-    pub cmd: Option<Vec<String>>,
-    /// File holding the value.
-    pub file: Option<PathBuf>,
-    /// Host environment variable holding the value.
-    pub env: Option<String>,
-    /// Host variables a `cmd` may read, on top of the process allow-list.
-    pub pass_env: Vec<String>,
-}
-
-impl CredentialSource {
-    /// Exactly one non-blank source is given.
-    fn validate(&self) -> Result<(), &'static str> {
-        let given: Vec<bool> = [
-            self.cmd
-                .as_ref()
-                .map(|v| v.first().is_none_or(|p| p.trim().is_empty())),
-            self.file
-                .as_ref()
-                .map(|p| p.to_string_lossy().trim().is_empty()),
-            self.env.as_deref().map(|s| s.trim().is_empty()),
-        ]
-        .into_iter()
-        .flatten()
-        .collect();
-        match given.as_slice() {
-            [] => Err("needs exactly one of cmd, file, env"),
-            [false] => Ok(()),
-            [true] => Err("source must not be blank"),
-            _ => Err("needs exactly one of cmd, file, env, got several"),
-        }
-    }
-}
-
-impl CredentialSource {
-    /// `pass_env` rides on a `cmd`, holds valid names, and lists none twice.
-    fn validate_pass_env(&self, at: &str) -> Result<(), ConfigError> {
-        if self.pass_env.is_empty() {
-            return Ok(());
-        }
-        let at = format!("{at}.pass_env");
-        if self.cmd.is_none() {
-            return Err(ConfigError::new(at, "is only allowed with cmd"));
-        }
-        let mut seen = std::collections::BTreeSet::new();
-        for (i, name) in self.pass_env.iter().enumerate() {
-            let here = format!("{at}[{i}]");
-            check::env_name(name).map_err(|why| ConfigError::new(here.clone(), why))?;
-            if !seen.insert(name) {
-                return Err(ConfigError::new(here, "listed twice"));
-            }
-        }
-        Ok(())
-    }
-}
+use crate::user::SecretName;
 
 /// An MCP server: exactly one of `command` (stdio) or `url`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
@@ -76,13 +16,13 @@ pub struct McpServer {
     pub kind: Option<String>,
     /// Program to run.
     pub command: Option<String>,
-    /// Program arguments; may hold `${CREDENTIAL}` refs.
+    /// Program arguments; may hold `${SECRET}` refs.
     pub args: Vec<String>,
-    /// Program environment; values may hold `${CREDENTIAL}` refs.
+    /// Program environment; values may hold `${SECRET}` refs.
     pub env: BTreeMap<String, String>,
-    /// Server URL; may hold `${CREDENTIAL}` refs.
+    /// Server URL; may hold `${SECRET}` refs.
     pub url: Option<String>,
-    /// Request headers; values may hold `${CREDENTIAL}` refs.
+    /// Request headers; values may hold `${SECRET}` refs.
     pub headers: BTreeMap<String, String>,
 }
 
@@ -133,26 +73,8 @@ impl McpServer {
     }
 }
 
-/// Validates the `credentials` map.
-pub(super) fn validate_credentials(
-    creds: &BTreeMap<String, CredentialSource>,
-) -> Result<(), ConfigError> {
-    for (name, src) in creds {
-        let at = format!("credentials.{name}");
-        check::not_gh_token(name).map_err(|why| ConfigError::new(at.clone(), why))?;
-        check::credential_name(name).map_err(|why| ConfigError::new(at.clone(), why))?;
-        src.validate()
-            .map_err(|why| ConfigError::new(at.clone(), why))?;
-        src.validate_pass_env(&at)?;
-    }
-    Ok(())
-}
-
-/// Validates the `mcp_servers` map against `creds`.
-pub(super) fn validate_mcp(
-    servers: &BTreeMap<String, McpServer>,
-    creds: &BTreeMap<String, CredentialSource>,
-) -> Result<(), ConfigError> {
+/// Validates the `mcp_servers` map; each `${NAME}` names a secret of the Box's user.
+pub(super) fn validate_mcp(servers: &BTreeMap<String, McpServer>) -> Result<(), ConfigError> {
     for (name, s) in servers {
         let at = format!("mcp_servers.{name}");
         check::credential_name(name).map_err(|why| ConfigError::new(at.clone(), why))?;
@@ -170,12 +92,9 @@ pub(super) fn validate_mcp(
         }
         for (key, text) in s.texts() {
             for r in credential_refs(text) {
-                if !creds.contains_key(r) {
-                    return Err(ConfigError::new(
-                        format!("{at}.{key}"),
-                        format!("${{{r}}} is not an entry of credentials"),
-                    ));
-                }
+                SecretName::parse(r).map_err(|why| {
+                    ConfigError::new(format!("{at}.{key}"), format!("${{{r}}}: {why}"))
+                })?;
             }
         }
     }

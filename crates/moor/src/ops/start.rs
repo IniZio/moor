@@ -97,9 +97,8 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     };
     let caps = provider_caps(cx, &cfg)?;
     require_reverse_tunnel(&cfg, caps)?;
-    if let Some(reason) =
-        preflight::rejection(cx, &cfg, facts.bound.as_deref().unwrap_or(&facts.repo))
-    {
+    let worktree = facts.bound.as_deref().unwrap_or(&facts.repo);
+    if let Some(reason) = preflight::rejection(cx, &cfg, worktree, user)? {
         return reject(cx, store, (req, user), &facts, &reason);
     }
     let placed = match place(cx, req, &facts) {

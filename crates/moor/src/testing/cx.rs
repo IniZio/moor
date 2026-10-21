@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use moor_core::config::{parse_user, UserConfig};
+use moor_core::config::UserConfig;
 use moor_core::domain::decision::{Decision, NewBox};
 use moor_core::seam::clock::Ts;
 use moor_core::seam::driver::Driver;
@@ -14,7 +14,6 @@ use moor_core::user::{Identity, SecretName, UserId};
 use moor_core::BoxName;
 use moor_core::Secret;
 
-use crate::adapters::creds::Creds;
 use crate::adapters::git::Git;
 use crate::cx::{Cx, CxParts};
 use crate::env::Env;
@@ -26,15 +25,6 @@ use crate::testing::proxy_host::FakeProxyHost;
 use crate::testing::rng::FakeRng;
 use crate::vault::Vault;
 
-/// User config of the test context: only the credential the default Claude rule names.
-pub(crate) fn fake_config() -> UserConfig {
-    parse_user(
-        "test",
-        "credentials:\n  CLAUDE_CODE_OAUTH_TOKEN: {cmd: [echo, token]}\n",
-    )
-    .unwrap()
-}
-
 impl Cx {
     /// Test context: fake clock, a fake engine, one default credential, git over `proc`.
     pub(crate) fn fake(
@@ -44,7 +34,7 @@ impl Cx {
         surface: Arc<dyn Surface>,
         proc: Arc<dyn Proc>,
     ) -> Self {
-        Self::fake_with(state_dir, cwd, driver, surface, proc, fake_config())
+        Self::fake_with(state_dir, cwd, driver, surface, proc, UserConfig::default())
     }
 
     /// Test context like [`Cx::fake`] with user config `config`.
@@ -88,7 +78,7 @@ impl Cx {
             state_dir,
             cwd,
             (driver, surface, proc),
-            fake_config(),
+            UserConfig::default(),
             clock,
         )
     }
@@ -113,7 +103,7 @@ impl Cx {
             git: Git::new(Arc::clone(&proc)),
             proc: Arc::clone(&proc),
             config,
-            creds: Creds::new(Env::default(), proc),
+            env: Env::default(),
             cwd: cwd.to_path_buf(),
             prompt_window: Duration::from_secs(8),
         })

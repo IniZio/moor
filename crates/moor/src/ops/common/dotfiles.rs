@@ -163,7 +163,7 @@ pub(crate) fn apply(
         .as_ref()
         .map_err(|e| fail(format!("the Proxy could not start: {e}")))?;
     let started = cx.clock().instant();
-    let src = cx.creds().env().expand_home(&d.path);
+    let src = cx.env().expand_home(&d.path);
     let spec = ProcSpec::new(Tool::Sh, Deadline(TAR_DEADLINE))
         .args(["-c", "exec tar -C \"$1\" -czhf - .", "sh"])
         .arg(src);

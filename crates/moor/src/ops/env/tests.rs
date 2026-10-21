@@ -10,7 +10,6 @@ use moor_core::view::env::{EnvKind, EnvView};
 use moor_core::{EnvReq, ErrorKind};
 
 use super::run;
-use crate::adapters::creds::Creds;
 use crate::adapters::git::Git;
 use crate::cx::{Cx, CxParts};
 use crate::env::Env;
@@ -57,7 +56,7 @@ fn cx_full(top: &Path, config: UserConfig, proc: ScriptedProc, driver: FakeDrive
         proc: Arc::clone(&proc),
         proxy_host: Arc::new(FakeProxyHost::new()),
         config,
-        creds: Creds::new(Env::default(), proc),
+        env: Env::default(),
         cwd: top.to_path_buf(),
         prompt_window: std::time::Duration::from_secs(8),
     })
@@ -111,14 +110,15 @@ fn item_order_is_fixed() {
 }
 
 #[test]
-fn repo_only_credential_does_not_resolve_but_env_succeeds() {
-    let (_d, _cx, v) = env_with("box_credentials: [TOKEN]\n");
-    let cred = v
-        .credentials
+fn a_repo_credential_is_listed_and_left_for_start_to_check() {
+    let (_d, _cx, v) = env_with("box_credentials: [token]\n");
+    let row = v
+        .rows
         .iter()
-        .find(|c| c.which == "TOKEN")
-        .expect("TOKEN is reported");
-    assert!(!cred.ok);
+        .find(|r| r.name == "token")
+        .expect("token row");
+    assert_eq!(row.note, "secret of the Box's user");
+    assert!(v.credentials.iter().all(|c| c.which != "token"));
     assert!(v.rows.iter().any(|r| r.name == "size"));
 }
 
@@ -212,14 +212,4 @@ fn missing_git_identity_adds_no_rows() {
     let cx = cx_proc(d.path(), UserConfig::default(), proc);
     let v = run(&cx, &EnvReq { repo: None }).unwrap();
     assert!(identity(&v).is_empty());
-}
-
-#[test]
-fn github_block_without_app() {
-    let (_d, _cx, v) = env_with("");
-    assert_eq!(v.github.identity, "auto");
-    assert!(v.github.app_id.is_none());
-    assert_eq!(v.github.login, "logged_out");
-    assert_eq!(v.github.mint.status, "skipped");
-    assert_eq!(v.github.resolved.mode.as_deref(), Some("gh-you"));
 }

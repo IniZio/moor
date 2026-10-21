@@ -64,7 +64,7 @@ fn dotfiles_world(
             path: d.to_path_buf(),
             install: install.map(str::to_owned),
         }),
-        ..crate::testing::cx::fake_config()
+        ..UserConfig::default()
     };
     let mut w = world_with(driver, repo.path(), config);
     w.proc.on(

@@ -22,7 +22,6 @@ use crate::ops::common::boxlock::{BoxLock, WAIT};
 use crate::ops::common::promote::PROMOTE_WAIT;
 use crate::ops::show;
 use crate::ops::start;
-use crate::testing::cx::fake_config;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::{Reply, ScriptedProc};
 use crate::testing::surface::FakeSurface;
@@ -447,11 +446,7 @@ fn promoted_box_runs_the_repo_setup_commands_in_its_new_box() {
     // Setup runs through the Proxy, which stages its credentials under the Box user's HOME.
     let environ = BoxPath::restore("/proc/self/environ").unwrap();
     let driver = FakeDriver::new().peek_text("box-2", &environ, "HOME=/home/box\0");
-    let config = UserConfig {
-        credentials: fake_config().credentials,
-        ..limit(1)
-    };
-    let w = world_at(config, driver, repo.path());
+    let w = world_at(limit(1), driver, repo.path());
     let id = queue(&w, "first");
     close_holder(&w);
     assert!(is_working(&row_of(&w, id)));

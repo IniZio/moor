@@ -35,7 +35,7 @@ fn fx() -> Fx {
         Arc::new(FakeDriver::new()),
         Arc::new(FakeSurface::new(PathBuf::from("/s"))),
         Arc::new(ScriptedProc::new()),
-        crate::testing::cx::fake_config(),
+        moor_core::config::UserConfig::default(),
         clock.clone(),
     );
     let id = cx

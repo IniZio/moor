@@ -5,7 +5,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::config::proxy::{resolve_rules, ProxyConfig, ResolvedRule};
-use moor_core::config::Identity;
 use moor_core::{BoxId, Secret};
 use tempfile::TempDir;
 
@@ -22,7 +21,7 @@ const BOX_ID: BoxId = BoxId::new(7);
 
 /// The resolved default `github-uploads` rule with its host set to `host`.
 pub(super) fn uploads_rule(host: String) -> ResolvedRule {
-    let rules = resolve_rules(&ProxyConfig::default(), Some(("o", "r")), Identity::You).unwrap();
+    let rules = resolve_rules(&ProxyConfig::default(), Some(("o", "r"))).unwrap();
     let mut rule = rules
         .into_iter()
         .find(|r| r.name == "github-uploads")

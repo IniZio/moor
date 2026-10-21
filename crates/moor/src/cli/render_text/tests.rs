@@ -2,8 +2,7 @@
 
 use moor_core::config::Layer;
 use moor_core::view::env::{
-    EnvAgent, EnvCredential, EnvGithub, EnvKind, EnvMint, EnvProvider, EnvResolved, EnvRow,
-    EnvView, ValueKind,
+    EnvAgent, EnvCredential, EnvKind, EnvProvider, EnvRow, EnvView, ValueKind,
 };
 use moor_core::view::LaunchFailure;
 use moor_core::{ErrorKind, ErrorView, Response, Warning};
@@ -133,26 +132,9 @@ fn check(name: &str, ok: bool, reason: Option<&str>) -> EnvCredential {
 
 /// Builds an env response from `rows` and `credentials`.
 fn env_view(rows: Vec<EnvRow>, credentials: Vec<EnvCredential>) -> Response {
-    let github = EnvGithub {
-        identity: "auto".into(),
-        app_id: None,
-        login: "logged_out".into(),
-        mint: EnvMint {
-            status: "skipped".into(),
-            error: None,
-            reason: Some("GitHub App not set up".into()),
-        },
-        resolved: EnvResolved {
-            mode: None,
-            app_installed: "n/a".into(),
-            token_source: None,
-            error: Some("no app".into()),
-        },
-    };
     let view = EnvView {
         repo: "/r".into(),
         agent: EnvAgent { model: None },
-        github,
         rows,
         provider: EnvProvider {
             name: "local".into(),
@@ -184,8 +166,6 @@ fn env_text_starts_with_agent_and_marks_credentials() {
     let bad = lines.iter().find(|l| l.contains("BAD")).unwrap();
     assert!(bad.contains('\u{2717}') && !bad.contains('\u{2713}'));
     assert!(bad.ends_with("(missing)"));
-    assert!(out.contains("github token: skipped: GitHub App not set up"));
-    assert!(out.contains("github identity: unknown: no app"));
     assert!(lines
         .last()
         .unwrap()
