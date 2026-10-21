@@ -3,11 +3,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use moor_core::name::BoxHandle;
+use moor_core::seam::clock::{Clock, Ts};
 use moor_core::seam::driver::{Driver, DriverError, TunnelFailure};
 use moor_core::seam::proc::Tool;
 
 use crate::adapters::crabbox::Crabbox;
-use crate::testing::proc::{ChildReply, ScriptedProc};
+use crate::testing::clock::FakeClock;
+use crate::testing::proc::{ChildReply, Reply, ScriptedProc};
+use crate::testing::rng::FakeRng;
 
 fn fixture(reply: ChildReply) -> (Arc<ScriptedProc>, Crabbox) {
     let p = Arc::new(ScriptedProc::new());
@@ -161,4 +164,84 @@ fn unspawnable_crabbox_is_unavailable() {
     let c = Crabbox::fake(p);
     let err = open(&c, "sprites/moor-t7").err().unwrap();
     assert!(matches!(err, DriverError::Unavailable(_)));
+}
+
+const RACE: &str = "lease cbx_1 claim changed; retry";
+
+fn race() -> ChildReply {
+    ChildReply::Exit {
+        code: 2,
+        stderr: RACE.to_owned(),
+    }
+}
+
+/// A crabbox over `p` whose clock the test reads.
+fn timed(p: &Arc<ScriptedProc>) -> (Crabbox, Arc<FakeClock>) {
+    p.on(
+        Tool::Crabbox,
+        &["--version"],
+        Reply::Ok("crabbox 0.72.0-moor.9\n".into()),
+    );
+    let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
+    let c = Crabbox::new(p.clone(), clock.clone(), Arc::new(FakeRng::default()));
+    (c, clock)
+}
+
+fn tunnel_calls(p: &ScriptedProc) -> usize {
+    p.calls()
+        .iter()
+        .filter(|c| c.args.first().is_some_and(|a| a == "tunnel"))
+        .count()
+}
+
+#[test]
+fn a_tunnel_that_loses_the_claim_race_to_a_run_is_opened_again() {
+    let p = Arc::new(ScriptedProc::new());
+    p.once_child(Tool::Crabbox, &["tunnel"], race());
+    p.on_child(Tool::Crabbox, &["tunnel"], ready());
+    let (c, clock) = timed(&p);
+    let t = open(&c, "sprites/moor-t7").unwrap();
+    assert!(t.alive());
+    assert_eq!(tunnel_calls(&p), 2);
+    assert_eq!(clock.now(), Ts::from_millis(1000));
+}
+
+#[test]
+fn a_tunnel_that_keeps_losing_the_claim_race_gives_up_with_the_race() {
+    let p = Arc::new(ScriptedProc::new());
+    p.on_child(Tool::Crabbox, &["tunnel"], race());
+    let (c, clock) = timed(&p);
+    let err = open(&c, "sprites/moor-t7").err().unwrap();
+    assert!(matches!(
+        err,
+        DriverError::Tunnel {
+            failure: TunnelFailure::Exited { code: Some(2), signal: None },
+            ref stderr_tail,
+        } if stderr_tail == RACE
+    ));
+    assert_eq!(tunnel_calls(&p), 16);
+    assert_eq!(clock.now(), Ts::from_millis(15_000));
+}
+
+#[test]
+fn other_tunnel_failures_are_not_retried() {
+    for reply in [
+        ChildReply::Exit {
+            code: 2,
+            stderr: "unknown flag --reverse".to_owned(),
+        },
+        ChildReply::Exit {
+            code: 1,
+            stderr: RACE.to_owned(),
+        },
+        ChildReply::Hang,
+        ChildReply::Ready("not json".to_owned()),
+    ] {
+        let p = Arc::new(ScriptedProc::new());
+        p.on_child(Tool::Crabbox, &["tunnel"], reply);
+        let (c, clock) = timed(&p);
+        open(&c, "sprites/moor-t7").err().unwrap();
+        assert_eq!(tunnel_calls(&p), 1);
+        assert_eq!(clock.now(), Ts::from_millis(0));
+    }
 }

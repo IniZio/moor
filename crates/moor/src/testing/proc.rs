@@ -83,6 +83,8 @@ struct ChildRule {
     tool: Tool,
     prefix: Vec<String>,
     reply: ChildReply,
+    /// Answers one spawn only.
+    once: bool,
 }
 
 /// First fake pid handed out by `spawn_child`.
@@ -197,6 +199,31 @@ impl ScriptedProc {
 
     /// Script the child started by `spawn_child` for calls matching `prefix`.
     pub(crate) fn on_child(&self, tool: Tool, prefix: &[&str], reply: ChildReply) -> &Self {
+        self.push_child_rule(tool, prefix, reply, false)
+    }
+
+    /// Like [`Self::on_child`], but answers one spawn only; later spawns fall to the next rule.
+    pub(crate) fn once_child(&self, tool: Tool, prefix: &[&str], reply: ChildReply) -> &Self {
+        self.push_child_rule(tool, prefix, reply, true)
+    }
+
+    /// The reply of the first child rule matching `tool` and `args`, removing a one-shot rule.
+    fn child_reply(&self, tool: Tool, args: &[String]) -> Option<ChildReply> {
+        let mut rules = self
+            .child_rules
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let i = rules
+            .iter()
+            .position(|r| r.tool == tool && args.starts_with(&r.prefix))?;
+        if rules.get(i)?.once {
+            Some(rules.remove(i).reply)
+        } else {
+            rules.get(i).map(|r| r.reply.clone())
+        }
+    }
+
+    fn push_child_rule(&self, tool: Tool, prefix: &[&str], reply: ChildReply, once: bool) -> &Self {
         let prefix = prefix.iter().map(|s| (*s).to_owned()).collect();
         self.child_rules
             .lock()
@@ -205,6 +232,7 @@ impl ScriptedProc {
                 tool,
                 prefix,
                 reply,
+                once,
             });
         self
     }
@@ -311,19 +339,12 @@ impl Proc for ScriptedProc {
 
     fn spawn_child(&self, spec: &ProcSpec) -> Result<Box<dyn ChildHandle>, ProcError> {
         let args = self.record(spec);
-        let reply = self
-            .child_rules
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .iter()
-            .find(|r| r.tool == spec.tool && args.starts_with(&r.prefix))
-            .map(|r| r.reply.clone())
-            .ok_or_else(|| {
-                ProcError::Spawn(std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    format!("unscripted: {} {}", spec.tool.program(), args.join(" ")),
-                ))
-            })?;
+        let reply = self.child_reply(spec.tool, &args).ok_or_else(|| {
+            ProcError::Spawn(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("unscripted: {} {}", spec.tool.program(), args.join(" ")),
+            ))
+        })?;
         Ok(Box::new(FakeChild {
             pid: self.next_pid.fetch_add(1, Ordering::Relaxed),
             tool: spec.tool,
