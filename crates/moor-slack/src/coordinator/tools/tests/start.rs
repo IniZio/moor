@@ -5,7 +5,7 @@
 use std::path::Path;
 
 use moor_client::ClientError;
-use moor_core::name::BoxName;
+use moor_core::name::{BoxId, BoxName};
 use moor_core::request::Request;
 use moor_core::response::Response;
 
@@ -37,13 +37,24 @@ fn fresh_thread(dir: &Path, default: Option<&str>) -> Db {
 /// Runs `call` in thread `1.0` with a limit of `max` open Boxes; nothing reaches the
 /// controller.
 fn start_with(db: &Db, call: &Call, max: u32) -> Reply {
-    let mut send =
-        |r: Request| -> Result<Response, ClientError> { panic!("start_box sends nothing: {r:?}") };
+    run_with(db, call, max, &mut |r| {
+        panic!("start_box sends nothing: {r:?}")
+    })
+}
+
+/// Runs `call` in thread `1.0` with a limit of `max` open Boxes and `send` answering the
+/// controller.
+fn run_with(
+    db: &Db,
+    call: &Call,
+    max: u32,
+    send: &mut dyn FnMut(Request) -> Result<Response, ClientError>,
+) -> Reply {
     let mut scope = Scope {
         db,
         channel: "C1",
         thread_ts: "1.0",
-        call: &mut send,
+        call: send,
         clock: || 50,
         max_open_boxes: max,
     };
@@ -99,6 +110,44 @@ fn start_box_takes_a_named_channel_repo_and_refuses_any_other_or_a_missing_defau
     let named = start_with(&db, &start("g", Some("acme/api")), 1);
     assert!(!named.is_error, "{named:?}");
     assert_eq!(db.thread_boxes("C1", "1.0").unwrap()[0].repo, "acme/api");
+}
+
+#[test]
+fn a_repo_outside_the_channels_repos_is_refused_even_with_a_default() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = fresh_thread(dir.path(), Some("acme/web"));
+    turn_of(&db, "U1", "Ev1");
+    let reply = start_with(&db, &start("g", Some("evil/repo")), 1);
+    let want = "This channel has no repo evil/repo. This channel's repos: acme/api, acme/web.";
+    assert_eq!(reply, Reply::refused(want));
+    assert_eq!(db.thread_boxes("C1", "1.0").unwrap(), []);
+}
+
+#[test]
+fn box_numbers_count_only_starts_so_a_steer_between_two_starts_takes_none() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = fresh_thread(dir.path(), Some("acme/api"));
+    turn_of(&db, "U1", "Ev1");
+    assert!(!start_with(&db, &start("one", None), 2).is_error);
+    let first = BoxName::parse_allow_bare("slack-1-0-1").unwrap();
+    db.bind(&first, BoxId::new(1), Some("moor/b")).unwrap();
+    let steer = Call::SteerBox {
+        box_name: first.as_str().into(),
+        text: "use tokio".into(),
+    };
+    let steered = run_with(&db, &steer, 2, &mut |r| Ok(Response::ok(r.cmd(), None)));
+    assert!(!steered.is_error, "{steered:?}");
+    assert!(!start_with(&db, &start("two", None), 2).is_error);
+    let journal = db.thread_actions("C1", "1.0").unwrap();
+    let tools: Vec<_> = journal.iter().map(|a| a.tool.as_str()).collect();
+    assert_eq!(tools, ["start_box", "steer_box", "start_box"]);
+    let names: Vec<_> = db
+        .thread_boxes("C1", "1.0")
+        .unwrap()
+        .iter()
+        .map(|b| b.box_name.as_str().to_owned())
+        .collect();
+    assert_eq!(names, ["slack-1-0-1", "slack-1-0-2"]);
 }
 
 #[test]

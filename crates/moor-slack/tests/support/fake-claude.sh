@@ -60,7 +60,16 @@ case "$token" in
     calls="$dir/calls-$n"
     [ -f "$calls" ] || calls="$dir/calls"
     hello='{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"fake","version":"0"}}}'
-    printf '%s\n%s\n' "$hello" '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | "$cmd" "$@" > "$out/mcp-list" 2> "$out/mcp-err"
+    mkfifo "$out/server-in"
+    "$cmd" "$@" < "$out/server-in" > "$out/mcp-list" 2> "$out/mcp-err" &
+    server=$!
+    exec 4> "$out/server-in"
+    printf '%s\n%s\n' "$hello" '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' >&4
+    i=0
+    until grep -q '"id":1,' "$out/mcp-list" || [ $i -ge 500 ]; do sleep 0.02; i=$((i + 1)); done
+    tr '\0' '\n' < /proc/$server/environ > "$out/server-env"
+    exec 4>&-
+    wait $server
     tools=$(grep '"id":1,' "$out/mcp-list" | grep -o '"name":"[a-z_]*"' | sed 's/"name":"\(.*\)"/"mcp__moor__\1"/' | paste -sd, -)
     echo "{\"type\":\"system\",\"subtype\":\"init\",\"tools\":[$tools],\"mcp_servers\":[{\"name\":\"moor\",\"status\":\"connected\"}],\"skills\":[],\"slash_commands\":[],\"plugins\":[]}"
     sleep 0.3
