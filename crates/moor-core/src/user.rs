@@ -118,9 +118,12 @@ impl fmt::Display for Identity {
 /// Whom a controller connection speaks for.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Caller {
-    /// The controller's own socket, with the peer's uid.
+    /// The controller's own socket, from a peer with the controller's own uid: the local
+    /// operator.
+    Operator(u32),
+    /// The controller's own socket, from a peer with another uid.
     Local(u32),
-    /// A front's socket, bound to that front's namespace.
+    /// A front's socket, bound to that front's namespace. Never the operator.
     Front(String),
 }
 
@@ -133,9 +136,11 @@ impl Caller {
     /// The refusal for an identity this connection may not assert.
     pub fn resolve(&self, asserted: Option<&Identity>) -> Result<Identity, String> {
         match (self, asserted) {
-            (Self::Local(uid), None) => Ok(Identity::local(*uid)),
-            (Self::Local(uid), Some(id)) if *id == Identity::local(*uid) => Ok(id.clone()),
-            (Self::Local(uid), Some(id)) => Err(format!(
+            (Self::Operator(uid) | Self::Local(uid), None) => Ok(Identity::local(*uid)),
+            (Self::Operator(uid) | Self::Local(uid), Some(id)) if *id == Identity::local(*uid) => {
+                Ok(id.clone())
+            }
+            (Self::Operator(uid) | Self::Local(uid), Some(id)) => Err(format!(
                 "the controller socket speaks only for {LOCAL}:{uid}, not {id}"
             )),
             (Self::Front(ns), Some(id)) if id.namespace() == ns => Ok(id.clone()),
@@ -145,6 +150,30 @@ impl Caller {
             (Self::Front(ns), None) => {
                 Err(format!("the {ns} front socket must assert an identity"))
             }
+        }
+    }
+}
+
+/// Whose Boxes a caller may act on and see.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Viewer {
+    /// The local operator: every Box.
+    Operator,
+    /// One user: the Boxes that act for it.
+    User(UserId),
+    /// An identity no user holds: no Box.
+    Nobody,
+}
+
+impl Viewer {
+    /// Whether this viewer may act on a Box that acts for `owner`. A Box with no user is the
+    /// operator's alone.
+    #[must_use]
+    pub fn may_act_on(self, owner: Option<UserId>) -> bool {
+        match self {
+            Self::Operator => true,
+            Self::User(user) => owner == Some(user),
+            Self::Nobody => false,
         }
     }
 }

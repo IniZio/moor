@@ -13,6 +13,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use moor_core::user::Viewer;
 use serde_json::{json, Value};
 
 use super::{run, stream, Ask, Limits, Shared};
@@ -45,6 +46,7 @@ fn ask(since: i64, filter: WatchFilter, follow: bool) -> Ask {
         since,
         filter,
         follow,
+        viewer: Viewer::Operator,
     }
 }
 

@@ -41,10 +41,18 @@ pub(super) fn bind_fronts(
         .collect()
 }
 
-/// Whom a connection on the controller socket speaks for, from the peer's uid.
+/// Whom a connection on the controller socket speaks for, from the peer's uid: the operator
+/// when it is the controller's own uid.
 pub(super) fn local_caller(stream: &UnixStream) -> Result<Caller, String> {
+    let own = rustix::process::geteuid().as_raw();
     peer_uid(stream)
-        .map(Caller::Local)
+        .map(|uid| {
+            if uid == own {
+                Caller::Operator(uid)
+            } else {
+                Caller::Local(uid)
+            }
+        })
         .map_err(|e| format!("cannot read the peer's uid: {e}"))
 }
 

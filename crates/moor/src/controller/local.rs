@@ -3,6 +3,7 @@
 use std::io::{self, Write};
 
 use moor_core::controller::{parse_server_frame, ServerFrame, WatchFilter};
+use moor_core::user::Viewer;
 
 use super::watch;
 use crate::env::Env;
@@ -23,6 +24,7 @@ pub fn watch_local(
         since,
         filter: filter.clone(),
         follow,
+        viewer: Viewer::Operator,
     };
     watch::stream(&mut sink, env, ask, watch::Limits::default());
     sink.failure.map_or(Ok(()), Err)

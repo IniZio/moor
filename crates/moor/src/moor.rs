@@ -7,8 +7,8 @@ use crate::ops;
 use crate::vault::Vault;
 use crate::wire;
 use moor_core::request::UserCmd;
-use moor_core::user::{Caller, Identity};
-use moor_core::{ArtifactReadReq, ErrorKind, Request, Response, RunReq};
+use moor_core::user::{Caller, Identity, Viewer};
+use moor_core::{ArtifactReadReq, BoxId, ErrorKind, Request, Response, RunReq};
 
 /// Wired application: `call` answers a request; `read_artifact` and `run_streamed` also stream
 /// bytes.
@@ -60,6 +60,43 @@ impl Moor {
         Self {
             cx: self.cx.with_requester(who),
         }
+    }
+
+    /// This engine seeing only the Boxes `viewer` may see.
+    #[must_use]
+    pub(crate) fn viewing_as(self, viewer: Viewer) -> Self {
+        Self {
+            cx: self.cx.with_viewer(viewer),
+        }
+    }
+
+    /// Refuses `request` unless `caller`, asserting `asserted`, may act on every Box it names;
+    /// returns whose Boxes the request may see.
+    ///
+    /// # Errors
+    /// The refusal or store failure the request answers with instead.
+    pub(crate) fn authorize(
+        &self,
+        caller: &Result<Caller, String>,
+        asserted: Option<&Identity>,
+        request: &Request,
+    ) -> Result<Viewer, CommandError> {
+        ops::authz::authorize(&self.cx, caller, asserted, request)
+    }
+
+    /// Whose Boxes `caller` may see when it asserts no identity, as a watch does; no Box when
+    /// that cannot be told.
+    pub(crate) fn watcher(&self, caller: &Result<Caller, String>) -> Viewer {
+        ops::authz::viewer(&self.cx, caller, None).unwrap_or(Viewer::Nobody)
+    }
+
+    /// Whether this engine's viewer may see Box `id`.
+    ///
+    /// # Errors
+    /// The store failure, as text.
+    pub(crate) fn may_see(&self, id: BoxId) -> Result<bool, String> {
+        let store = self.cx.store().map_err(|e| e.error.to_string())?;
+        ops::authz::may_see(&self.cx, store, id).map_err(|e| e.error.to_string())
     }
 
     /// Run one request to an envelope; never panics, never prints.

@@ -7,10 +7,9 @@ use std::thread;
 use std::time::Duration;
 
 use moor_core::controller::{write_bytes, ServerFrame};
-use moor_core::user::Identity;
 use moor_core::{Request, Response};
 
-use super::conn;
+use super::conn::{self, Acting};
 use crate::env::Env;
 
 /// Takes a running request's output piece by piece; an error means nobody reads it any more.
@@ -23,10 +22,10 @@ pub(crate) const INTERVAL: Duration = Duration::from_secs(5);
 /// many, so the controller never buffers more of the output than this.
 const PENDING: usize = 4;
 
-/// Answer `request` acting as `who`, writing its frames to `out` while a long verb runs.
+/// Answer `request` acting as `acting`, writing its frames to `out` while a long verb runs.
 pub(crate) fn respond_with_progress(
     env: &Env,
-    who: Option<Identity>,
+    acting: Acting,
     id: &str,
     request: Request,
     interval: Duration,
@@ -40,10 +39,10 @@ pub(crate) fn respond_with_progress(
         request @ (Request::Start(_)
         | Request::Wait(_)
         | Request::WaitEvents(_)
-        | Request::Close(_)) => {
-            report_while(cmd, id, interval, out, |_| conn::respond(env, who, request))
-        }
-        request => conn::respond(env, who, request),
+        | Request::Close(_)) => report_while(cmd, id, interval, out, |_| {
+            conn::respond(env, acting, request)
+        }),
+        request => conn::respond(env, acting, request),
     }
 }
 

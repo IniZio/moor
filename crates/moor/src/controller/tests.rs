@@ -141,6 +141,7 @@ fn relative_repo_moor_yaml_resolves_against_config_dir() {
 }
 
 mod artifacts;
+mod authz;
 mod fronts;
 mod run_output;
 mod users;

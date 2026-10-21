@@ -6,6 +6,7 @@ use moor_core::{ErrorKind, SessionId};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
+use crate::ops::authz;
 
 /// Run `show-session`. Read-only: no reconcile and no Box lock, so it works for host and Box Sessions.
 ///
@@ -17,16 +18,20 @@ pub(crate) fn run(cx: &Cx, req: &ShowSessionReq) -> Result<SessionView, CommandE
     let row = store
         .session_row(id)?
         .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no Session {id}")))?;
-    let children = store
-        .session_children(id)?
-        .into_iter()
-        .map(|c| SessionChildView {
+    let mut children = Vec::new();
+    for c in store.session_children(id)? {
+        if let Some(id) = c.box_id {
+            if !authz::may_see(cx, store, id)? {
+                continue;
+            }
+        }
+        children.push(SessionChildView {
             session: SessionId::new(c.id),
             box_name: c.box_name.map(|t| t.as_str().to_owned()),
             box_id: c.box_id,
             state: c.state.as_str().to_owned(),
-        })
-        .collect();
+        });
+    }
     Ok(SessionView {
         session: SessionId::new(row.id),
         box_name: row.box_name.map(|t| t.as_str().to_owned()),

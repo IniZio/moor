@@ -7,7 +7,7 @@ use moor_core::controller::{
     parse_frame, write_bytes, ClientFrame, FrameErrorKind, ServerFrame, WatchFilter, PROTOCOL,
 };
 use moor_core::request::UserCmd;
-use moor_core::user::{Caller, Identity};
+use moor_core::user::{Caller, Identity, Viewer};
 use moor_core::{ArtifactReadReq, ErrorKind, Request, Response, RunReq};
 
 use super::progress::{respond_with_progress, Sink, INTERVAL};
@@ -27,12 +27,12 @@ pub(crate) struct Peer {
 
 #[cfg(test)]
 impl Peer {
-    /// The controller socket's peer uid 1000, with a vault key in `dir`.
+    /// The operator at uid 1000 on the controller socket, with a vault key in `dir`.
     pub(crate) fn local_in(dir: &std::path::Path) -> Self {
         std::fs::create_dir_all(dir).expect("vault dir");
         let vault = Vault::load_or_create(&dir.join("vault.key")).expect("vault");
         Self {
-            caller: Ok(Caller::Local(1000)),
+            caller: Ok(Caller::Operator(1000)),
             vault: Arc::new(vault),
         }
     }
@@ -45,25 +45,57 @@ pub(crate) fn handle(reader: impl BufRead, writer: impl Write, env: &Env, peer: 
     serve(
         reader,
         writer,
-        |id, request, out| match request {
-            Request::ArtifactRead(req) => read_artifact(env, id, &req, out),
-            request => match request.into_user() {
-                Ok((asserted, cmd)) => answer_user(env, peer, asserted.as_ref(), &cmd),
-                Err(request) => match requester(peer, &request) {
-                    Ok(who) => respond_with_progress(env, who, id, *request, INTERVAL, out),
-                    Err(e) => e.into_response(request.cmd(), vec![]),
-                },
-            },
+        |id, request, out| {
+            let cmd = request.cmd();
+            match request.split_identity() {
+                Ok((asserted, request)) => answer(env, peer, id, asserted.as_ref(), request, out),
+                Err(why) => CommandError::new(ErrorKind::Refused, why).into_response(cmd, vec![]),
+            }
         },
         |writer, since, filter, follow| {
             let ask = watch::Ask {
                 since,
                 filter: filter.clone(),
                 follow,
+                viewer: Moor::from_env(env).map_or(Viewer::Nobody, |m| m.watcher(&peer.caller)),
             };
             watch::stream(writer, env, ask, watch::Limits::default());
         },
     );
+}
+
+/// Answer one request that asserts `asserted`, once [`Moor::authorize`] lets its caller act
+/// on every Box it names.
+fn answer(
+    env: &Env,
+    peer: &Peer,
+    id: &str,
+    asserted: Option<&Identity>,
+    request: Request,
+    out: &mut dyn Write,
+) -> Response {
+    let cmd = request.cmd();
+    if matches!(request, Request::Version {}) {
+        return Moor::version();
+    }
+    let viewer =
+        match Moor::from_env(env).and_then(|m| m.authorize(&peer.caller, asserted, &request)) {
+            Ok(viewer) => viewer,
+            Err(e) => return e.into_response(cmd, vec![]),
+        };
+    match request {
+        Request::ArtifactRead(req) => read_artifact(env, id, &req, out),
+        request => match request.into_user() {
+            Ok((_, cmd)) => answer_user(env, peer, asserted, &cmd),
+            Err(request) => match requester(peer, asserted, &request) {
+                Ok(who) => {
+                    let acting = Acting { who, viewer };
+                    respond_with_progress(env, acting, id, *request, INTERVAL, out)
+                }
+                Err(e) => e.into_response(request.cmd(), vec![]),
+            },
+        },
+    }
 }
 
 /// [`handle`] with the engine behind `answer` and the event stream behind `watch`,
@@ -143,14 +175,16 @@ fn answer_user(env: &Env, peer: &Peer, asserted: Option<&Identity>, cmd: &UserCm
     }
 }
 
-/// The identity a `start` or `start-needs` acts as: the one it asserts, checked against this
+/// The identity a `start` or `start-needs` acts as: the one asserted, checked against this
 /// connection's socket. Other requests act as no one.
-fn requester(peer: &Peer, request: &Request) -> Result<Option<Identity>, CommandError> {
-    let asserted = match request {
-        Request::Start(req) => req.identity.as_ref(),
-        Request::StartNeeds(req) => req.identity.as_ref(),
-        _ => return Ok(None),
-    };
+fn requester(
+    peer: &Peer,
+    asserted: Option<&Identity>,
+    request: &Request,
+) -> Result<Option<Identity>, CommandError> {
+    if !matches!(request, Request::Start(_) | Request::StartNeeds(_)) {
+        return Ok(None);
+    }
     peer.caller
         .as_ref()
         .map_err(Clone::clone)
@@ -159,20 +193,40 @@ fn requester(peer: &Peer, request: &Request) -> Result<Option<Identity>, Command
         .map_err(|why| CommandError::new(ErrorKind::Refused, why))
 }
 
-/// Run `request` against a fresh engine acting as `who`, as `moor call` does.
+/// Whom one request acts as, and whose Boxes it may see.
+pub(crate) struct Acting {
+    /// The identity a `start` acts as; none for other requests.
+    pub(crate) who: Option<Identity>,
+    /// Whose Boxes the request may see.
+    pub(crate) viewer: Viewer,
+}
+
+/// The operator acting as no one, as the tests' controller socket does.
+#[cfg(test)]
+pub(crate) const fn operator() -> Acting {
+    Acting {
+        who: None,
+        viewer: Viewer::Operator,
+    }
+}
+
+/// Run `request` against a fresh engine acting as `acting`, as `moor call` does.
 ///
 /// `moor call` forces JSON output, so the run-output inheritance the CLI applies
 /// to other invocations is a no-op there and is not applied here.
-pub(crate) fn respond(env: &Env, who: Option<Identity>, request: Request) -> Response {
+pub(crate) fn respond(env: &Env, acting: Acting, request: Request) -> Response {
     let cmd = request.cmd();
     if matches!(request, Request::Version {}) {
         return Moor::version();
     }
     match Moor::from_env(env) {
-        Ok(moor) => match who {
-            Some(who) => moor.acting_as(who).call(request),
-            None => moor.call(request),
-        },
+        Ok(moor) => {
+            let moor = moor.viewing_as(acting.viewer);
+            match acting.who {
+                Some(who) => moor.acting_as(who).call(request),
+                None => moor.call(request),
+            }
+        }
         Err(e) => e.into_response(cmd, vec![]),
     }
 }

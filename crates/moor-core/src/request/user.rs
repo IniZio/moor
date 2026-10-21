@@ -5,7 +5,7 @@ use std::fmt;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use super::Request;
+use super::{Request, StartReq};
 use crate::secret::Secret;
 use crate::user::{Identity, SecretName};
 
@@ -51,6 +51,16 @@ pub struct LinkRedeemReq {
     pub identity: Option<Identity>,
     /// The code `link-code` minted.
     pub code: String,
+}
+
+/// Arguments of `as`: another request, acting as the identity a front asserts for it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ActAsReq {
+    /// The identity asserted, checked against the socket the request arrived on.
+    pub identity: Identity,
+    /// The request to run as that identity.
+    pub request: Box<Request>,
 }
 
 /// Arguments of `start-needs`.
@@ -187,6 +197,45 @@ impl Request {
             Self::LinkRedeem(r) => (r.identity, UserCmd::LinkRedeem { code: r.code }),
             other => return Err(Box::new(other)),
         })
+    }
+
+    /// Splits off the identity this request asserts: an `as` request's, else the request's
+    /// own `identity` field.
+    ///
+    /// # Errors
+    /// The refusal for an `as` around another `as`, or around a request that asserts a
+    /// different identity of its own.
+    pub fn split_identity(self) -> Result<(Option<Identity>, Self), String> {
+        let Self::As(acting) = self else {
+            return Ok((self.own_identity().cloned(), self));
+        };
+        let inner = *acting.request;
+        if matches!(inner, Self::As(_)) {
+            return Err("an as request cannot wrap another as request".to_owned());
+        }
+        match inner.own_identity() {
+            Some(own) if *own != acting.identity => Err(format!(
+                "the request asserts {own} inside as {}",
+                acting.identity
+            )),
+            _ => Ok((Some(acting.identity), inner)),
+        }
+    }
+
+    /// The identity this request's own field asserts.
+    const fn own_identity(&self) -> Option<&Identity> {
+        match self {
+            Self::Start(StartReq { identity, .. })
+            | Self::StartNeeds(StartNeedsReq { identity, .. })
+            | Self::Whoami(AsReq { identity })
+            | Self::Enroll(AsReq { identity })
+            | Self::SecretNames(AsReq { identity })
+            | Self::LinkCode(AsReq { identity })
+            | Self::SecretSet(SecretSetReq { identity, .. })
+            | Self::SecretDelete(SecretDeleteReq { identity, .. })
+            | Self::LinkRedeem(LinkRedeemReq { identity, .. }) => identity.as_ref(),
+            _ => None,
+        }
     }
 }
 

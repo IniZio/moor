@@ -1,5 +1,6 @@
 //! `watch` streaming: replays stored events after a cursor, then follows new ones.
 
+use std::collections::HashMap;
 use std::io::Write;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::mpsc::{sync_channel, SyncSender, TrySendError};
@@ -8,6 +9,8 @@ use std::thread;
 use std::time::Duration;
 
 use moor_core::controller::{FrameErrorKind, ServerFrame, WatchFilter};
+use moor_core::user::Viewer;
+use moor_core::BoxId;
 
 use crate::env::Env;
 use crate::Moor;
@@ -72,7 +75,7 @@ impl Drop for CloseOnDrop {
 }
 
 /// What a client asked to watch.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub(crate) struct Ask {
     /// Only events with a cursor above this.
     pub(crate) since: i64,
@@ -80,6 +83,8 @@ pub(crate) struct Ask {
     pub(crate) filter: WatchFilter,
     /// Keep streaming new events after catching up.
     pub(crate) follow: bool,
+    /// Whose Boxes' events the stream carries.
+    pub(crate) viewer: Viewer,
 }
 
 /// Stream every stored event with a cursor above `since` that `filter` matches to `writer`, then follow new ones.
@@ -143,16 +148,16 @@ fn send(writer: &mut impl Write, frame: &ServerFrame) -> std::io::Result<()> {
 fn poll(env: &Env, ask: &Ask, limits: Limits, tx: &SyncSender<ServerFrame>, shared: &Shared) {
     // `Moor` is not `Send`, so it is built here rather than handed to the thread.
     let moor = match Moor::from_env(env) {
-        Ok(moor) => moor,
+        Ok(moor) => moor.viewing_as(ask.viewer),
         Err(e) => return shared.fail(e.error.to_string()),
     };
-    let Ask {
-        since,
-        filter,
-        follow,
-    } = ask;
-    let follow = *follow;
-    let mut cursor = *since;
+    let mut passes = Passes {
+        moor: &moor,
+        ask,
+        seen: HashMap::new(),
+    };
+    let follow = ask.follow;
+    let mut cursor = ask.since;
     shared.scanned.store(cursor, Ordering::Release);
     while !shared.closed.load(Ordering::Acquire) {
         let batch = match moor.events_after(cursor, limits.batch) {
@@ -173,12 +178,14 @@ fn poll(env: &Env, ask: &Ask, limits: Limits, tx: &SyncSender<ServerFrame>, shar
                 ServerFrame::Event { cursor, .. } => *cursor,
                 _ => cursor,
             };
-            if let ServerFrame::Event { r#box, kind, .. } = &frame {
-                if !filter.matches(r#box.as_deref(), kind) {
+            match passes.check(&frame) {
+                Ok(true) => {}
+                Ok(false) => {
                     cursor = id;
                     shared.scanned.store(cursor, Ordering::Release);
                     continue;
                 }
+                Err(reason) => return shared.fail(reason),
             }
             match tx.try_send(frame) {
                 Ok(()) => {
@@ -196,6 +203,44 @@ fn poll(env: &Env, ask: &Ask, limits: Limits, tx: &SyncSender<ServerFrame>, shar
             shared.caught_up.store(true, Ordering::Release);
             return;
         }
+    }
+}
+
+/// Which stored events one stream sends: those its filter matches, of Boxes its viewer may
+/// see. An event with no Box is the operator's alone.
+struct Passes<'a> {
+    /// The engine seeing as the stream's viewer.
+    moor: &'a Moor,
+    /// What the client asked for.
+    ask: &'a Ask,
+    /// Whether the viewer may see each Box met so far; a Box's user never changes.
+    seen: HashMap<BoxId, bool>,
+}
+
+impl Passes<'_> {
+    /// Whether `frame` goes to the client.
+    fn check(&mut self, frame: &ServerFrame) -> Result<bool, String> {
+        let ServerFrame::Event {
+            r#box,
+            box_id,
+            kind,
+            ..
+        } = frame
+        else {
+            return Ok(true);
+        };
+        if !self.ask.filter.matches(r#box.as_deref(), kind) {
+            return Ok(false);
+        }
+        let Some(id) = *box_id else {
+            return Ok(self.ask.viewer.may_act_on(None));
+        };
+        if let Some(&visible) = self.seen.get(&id) {
+            return Ok(visible);
+        }
+        let visible = self.moor.may_see(id)?;
+        self.seen.insert(id, visible);
+        Ok(visible)
     }
 }
 

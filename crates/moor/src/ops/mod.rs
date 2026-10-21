@@ -6,6 +6,7 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 
 mod artifacts;
+pub(crate) mod authz;
 mod binding;
 mod close;
 pub(crate) mod common;
@@ -60,6 +61,10 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
         | Request::LinkRedeem(_) => Err(CommandError::new(
             ErrorKind::Usage,
             "user requests act as the caller of a socket, so only the controller socket serves them",
+        )),
+        Request::As(_) => Err(CommandError::new(
+            ErrorKind::Usage,
+            "as acts as an identity a socket checks, so only the controller socket serves it",
         )),
         Request::Repos(r) => to_value(&repos::run(cx, &r)),
         Request::Sessions(r) => to_value(&sessions::run(cx, &r)?),

@@ -6,6 +6,7 @@ use moor_core::{ErrorKind, SessionId};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
+use crate::ops::authz;
 
 /// Run `sessions`. Pure store reads: no reconcile, no Box lock, no driver or surface call.
 ///
@@ -27,9 +28,14 @@ pub(crate) fn run(cx: &Cx, req: &SessionsReq) -> Result<SessionsValue, CommandEr
                 .collect()
         }
     };
-    let sessions = rows
-        .into_iter()
-        .map(|r| SessionListItem {
+    let mut sessions = Vec::new();
+    for r in rows {
+        if let Some(id) = r.box_id {
+            if !authz::may_see(cx, store, id)? {
+                continue;
+            }
+        }
+        sessions.push(SessionListItem {
             session: SessionId::new(r.id),
             box_name: r.box_name.map(|t| t.as_str().to_owned()),
             box_id: r.box_id,
@@ -37,8 +43,8 @@ pub(crate) fn run(cx: &Cx, req: &SessionsReq) -> Result<SessionsValue, CommandEr
             state: r.state.as_str().to_owned(),
             workdir: r.workdir,
             ordinal: r.ordinal,
-        })
-        .collect();
+        });
+    }
     Ok(SessionsValue { sessions })
 }
 
