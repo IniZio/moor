@@ -8,6 +8,7 @@ use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
 use moor_core::domain::decision::Intent;
 use moor_core::domain::session_state::SessionState;
+use moor_core::request::Pins;
 use moor_core::seam::clock::{Clock, Ts};
 use moor_core::user::UserId;
 use moor_core::view::LaunchFailure;
@@ -210,6 +211,9 @@ pub(crate) struct Store {
     writer: Mutex<Connection>,
     /// Time source for every timestamp.
     clock: Arc<dyn Clock>,
+    /// The Box each name meant when the controller let the request name it. A name lookup
+    /// returns that Box only, so a Box of the same name made later is never acted on.
+    pins: Pins,
 }
 
 impl Store {
@@ -230,21 +234,13 @@ impl Store {
             path: path.to_path_buf(),
             writer: Mutex::new(conn),
             clock,
+            pins: Pins::new(),
         })
     }
 
     /// One box by id.
     pub(crate) fn box_row(&self, id: BoxId) -> Result<Option<BoxRow>, StoreError> {
         load_box(&self.reader()?, id)
-    }
-
-    /// Boxes that are neither closed nor rejected, by id ascending.
-    pub(crate) fn open_boxes(&self) -> Result<Vec<BoxRow>, StoreError> {
-        let conn = self.reader()?;
-        let sql = format!("{BOX_SELECT} WHERE b.state NOT IN ('closed', 'rejected') ORDER BY b.id");
-        let mut stmt = conn.prepare(&sql)?;
-        let rows = stmt.query_and_then([], box_from_row)?;
-        rows.collect()
     }
 
     /// The last `last` events of a box, ascending by id.

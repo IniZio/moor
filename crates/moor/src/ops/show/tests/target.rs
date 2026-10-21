@@ -70,3 +70,22 @@ fn an_unknown_id_is_no_box() {
         (ErrorKind::Failed, "no Box id 99".to_owned())
     );
 }
+
+#[test]
+fn a_name_the_controller_pinned_keeps_meaning_the_box_it_checked() {
+    let dir = tempfile::tempdir().unwrap();
+    let driver = Arc::new(FakeDriver::new());
+    let setup = cx(dir.path(), &driver);
+    let old = add(&setup, "a");
+    close(&setup, old);
+    let grant = moor_core::request::Grant {
+        viewer: moor_core::user::Viewer::Operator,
+        pins: [(BoxName::parse_allow_bare("a").unwrap(), old)].into(),
+    };
+    let pinned = cx(dir.path(), &driver).with_grant(grant);
+    add(&setup, "a");
+    assert_eq!(
+        shown(&pinned, named("a")),
+        (old.get(), BoxLifecycle::Closed)
+    );
+}

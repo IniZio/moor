@@ -7,6 +7,7 @@ use moor_core::{ErrorKind, SessionId};
 use super::host_session::refuse_invalid;
 use crate::cx::Cx;
 use crate::error::CommandError;
+use crate::ops::authz;
 use crate::store::Binding;
 
 #[cfg(test)]
@@ -32,6 +33,9 @@ pub(crate) fn bind(cx: &Cx, req: &BindSessionReq) -> Result<BoundValue, CommandE
             "binding missing right after it was bound",
         )
     })?;
+    if !visible(cx, &binding)? {
+        return Err(CommandError::new(ErrorKind::Refused, authz::NOT_YOURS));
+    }
     Ok(BoundValue {
         created,
         binding: value(binding),
@@ -47,7 +51,20 @@ pub(crate) fn lookup(
     req: &SessionBindingReq,
 ) -> Result<Option<BindingValue>, CommandError> {
     check(&req.front, &req.key)?;
-    Ok(cx.store()?.binding(&req.front, &req.key)?.map(value))
+    match cx.store()?.binding(&req.front, &req.key)? {
+        Some(binding) if visible(cx, &binding)? => Ok(Some(value(binding))),
+        _ => Ok(None),
+    }
+}
+
+/// Whether the context's viewer may see the Box of the Session `binding` names; a host
+/// Session has no Box.
+fn visible(cx: &Cx, binding: &Binding) -> Result<bool, CommandError> {
+    let store = cx.store()?;
+    store
+        .session_row(binding.session)?
+        .and_then(|s| s.box_id)
+        .map_or(Ok(true), |id| authz::may_see(cx, store, id))
 }
 
 /// The wire view of a store binding.

@@ -146,10 +146,7 @@ fn starting_another_users_open_box_is_refused() {
     let w = acting_as(w, "local:2000");
     let err = run(&w.cx, &req("demo")).unwrap_err();
     assert_eq!(err.kind, ErrorKind::Refused);
-    assert!(
-        err.error.to_string().contains("acts for another user"),
-        "{err:?}"
-    );
+    assert!(err.error.to_string() == "not your Box", "{err:?}");
 }
 
 /// `w` whose worktree's origin is a GitHub repo, so the GitHub rules apply.

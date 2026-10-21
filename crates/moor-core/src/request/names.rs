@@ -1,8 +1,11 @@
 //! The Boxes and Sessions a request names, which the controller lets a caller name only when
 //! it may act on them.
 
+use std::collections::BTreeMap;
+
 use super::{BoxTarget, Request};
-use crate::name::{BoxName, SessionId};
+use crate::name::{BoxId, BoxName, SessionId};
+use crate::user::Viewer;
 
 /// One Box or Session a request names.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -14,6 +17,30 @@ pub enum Named {
     Attach(BoxName),
     /// A Session, which names its Box when it has one.
     Session(SessionId),
+}
+
+/// Box names, each pinned to the Box it meant when the controller let a request name it.
+pub type Pins = BTreeMap<BoxName, BoxId>;
+
+/// What the controller lets one request do: see the Boxes of `viewer`, with each Box name
+/// the request gave meaning only the Box it was checked against.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Grant {
+    /// Whose Boxes the request may see.
+    pub viewer: Viewer,
+    /// The Box each checked name meant.
+    pub pins: Pins,
+}
+
+impl Grant {
+    /// The local operator's grant: every Box, no name pinned.
+    #[must_use]
+    pub const fn operator() -> Self {
+        Self {
+            viewer: Viewer::Operator,
+            pins: BTreeMap::new(),
+        }
+    }
 }
 
 impl Request {

@@ -34,7 +34,7 @@ pub(crate) fn respond_with_progress(
     let cmd = request.cmd();
     match request {
         Request::Run(req) => report_while(cmd, id, interval, out, |sink| {
-            conn::respond_run(env, &req, sink)
+            conn::respond_run(env, acting.grant, &req, sink)
         }),
         request @ (Request::Start(_)
         | Request::Wait(_)

@@ -79,12 +79,14 @@ pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
     }
     let provider = row.boxed.as_ref().map(|b| b.provider.clone());
     let closed = store.box_row(row.id)?.unwrap_or(row);
-    let promoted = provider.map_or_else(Vec::new, |p| {
-        promote_waiting(cx, store, &p, "close")
-            .iter()
-            .map(|n| n.as_str().to_owned())
-            .collect()
-    });
+    let mut promoted = Vec::new();
+    for name in provider.map_or_else(Vec::new, |p| promote_waiting(cx, store, &p, "close")) {
+        if let Some(row) = store.open_box_by_name(&name)? {
+            if cx.viewer().may_act_on(row.user) {
+                promoted.push(name.as_str().to_owned());
+            }
+        }
+    }
     Ok(CloseView {
         boxed: box_view(&closed, cx.config()),
         box_deleted,
