@@ -7,5 +7,11 @@ pub(crate) fn escape(text: &str) -> String {
         .replace('>', "&gt;")
 }
 
+/// Escapes `text` for a code span: markup as [`escape`] does, and each backtick, which would
+/// end the span early, as the look-alike `ˋ`.
+pub(crate) fn code(text: &str) -> String {
+    escape(text).replace('`', "ˋ")
+}
+
 #[cfg(test)]
 mod tests;
