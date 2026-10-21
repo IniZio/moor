@@ -3,7 +3,7 @@
 #![allow(clippy::indexing_slicing, reason = "test code")]
 
 use std::collections::VecDeque;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
@@ -11,6 +11,10 @@ use std::time::Duration;
 
 use serde_json::{json, Value};
 use tungstenite::Message;
+
+use request::read_request;
+
+mod request;
 
 /// App-level token the fake accepts for opening a connection.
 pub(crate) const APP_TOKEN: &str = "xapp-test";
@@ -149,6 +153,8 @@ struct State {
     connections: usize,
     /// Messages posted so far, used to hand out unique ts values.
     posted: usize,
+    /// HTTP status and body of the next `chat.update` answers, before the fake takes edits.
+    update_answers: VecDeque<(u16, Value)>,
 }
 
 /// The fake Slack: a Web API on one port and a Socket Mode endpoint on another.
@@ -186,6 +192,12 @@ impl FakeSlack {
     /// The `api_base` to put in the controller config.
     pub(crate) fn api_base(&self) -> String {
         format!("http://127.0.0.1:{}", self.http_port)
+    }
+
+    /// Answers the next `chat.update` calls with `answers`, each an HTTP status and a JSON
+    /// body; a 429 asks for one second's wait. Later calls succeed.
+    pub(crate) fn answer_updates(&self, answers: &[(u16, Value)]) {
+        self.lock().update_answers.extend(answers.iter().cloned());
     }
 
     /// Queues an `events_api` envelope carrying `mention`.
@@ -515,6 +527,7 @@ fn serve_http(mut stream: TcpStream, state: &Mutex<State>, ws_port: u16) {
         return;
     };
     let mut guard = state.lock().unwrap();
+    let mut status = 200;
     let reply = match path.as_str() {
         "/apps.connections.open" if auth == format!("Bearer {APP_TOKEN}") => {
             json!({"ok": true, "url": format!("ws://127.0.0.1:{ws_port}/")})
@@ -524,7 +537,10 @@ fn serve_http(mut stream: TcpStream, state: &Mutex<State>, ws_port: u16) {
             json!({"ok": true, "ts": message_ts(guard.posted)})
         }
         "/chat.update" if auth == format!("Bearer {BOT_TOKEN}") => {
-            json!({"ok": true, "channel": body["channel"], "ts": body["ts"]})
+            let ok = json!({"ok": true, "channel": body["channel"], "ts": body["ts"]});
+            let (code, reply) = guard.update_answers.pop_front().unwrap_or((200, ok));
+            status = code;
+            reply
         }
         "/chat.postEphemeral" if auth == format!("Bearer {BOT_TOKEN}") => {
             json!({"ok": true, "message_ts": message_ts(guard.posted)})
@@ -543,7 +559,7 @@ fn serve_http(mut stream: TcpStream, state: &Mutex<State>, ws_port: u16) {
     drop(guard);
     let text = reply.to_string();
     let response = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{text}",
+        "HTTP/1.1 {status} X\r\nRetry-After: 1\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{text}",
         text.len()
     );
     let _ = stream.write_all(response.as_bytes());
@@ -552,44 +568,4 @@ fn serve_http(mut stream: TcpStream, state: &Mutex<State>, ws_port: u16) {
 /// The ts the fake gives the `n`th posted message.
 fn message_ts(n: usize) -> String {
     format!("9000000000.{n:06}")
-}
-
-/// Reads the request line, headers and body; returns path, authorization and JSON body.
-fn read_request(stream: &mut TcpStream) -> Option<(String, String, Value)> {
-    stream.set_read_timeout(Some(DEADLINE)).ok()?;
-    let mut buf = Vec::new();
-    let mut chunk = [0_u8; 1024];
-    let head_end = loop {
-        if let Some(at) = find(&buf, b"\r\n\r\n") {
-            break at;
-        }
-        let n = stream.read(&mut chunk).ok().filter(|n| *n > 0)?;
-        buf.extend_from_slice(&chunk[..n]);
-    };
-    let head = String::from_utf8_lossy(&buf[..head_end]).into_owned();
-    let mut lines = head.split("\r\n");
-    let path = lines.next()?.split(' ').nth(1)?.to_owned();
-    let header = |name: &str| {
-        lines
-            .clone()
-            .filter_map(|l| l.split_once(':'))
-            .find(|(k, _)| k.eq_ignore_ascii_case(name))
-            .map(|(_, v)| v.trim().to_owned())
-    };
-    let auth = header("authorization").unwrap_or_default();
-    let length: usize = header("content-length")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(0);
-    let mut body = buf[head_end + 4..].to_vec();
-    while body.len() < length {
-        let n = stream.read(&mut chunk).ok().filter(|n| *n > 0)?;
-        body.extend_from_slice(&chunk[..n]);
-    }
-    let body = serde_json::from_slice(&body).unwrap_or(Value::Null);
-    Some((path, auth, body))
-}
-
-/// Index of the first occurrence of `needle` in `hay`.
-fn find(hay: &[u8], needle: &[u8]) -> Option<usize> {
-    hay.windows(needle.len()).position(|w| w == needle)
 }

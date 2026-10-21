@@ -7,6 +7,7 @@
 use std::path::Path;
 
 use moor_core::request::Request;
+use serde_json::json;
 
 use super::inbox::reply;
 use super::support::{Rig, CHANNEL, TS, USER};
@@ -210,6 +211,76 @@ fn an_instruction_file_above_the_workdir_stops_the_turn_before_it_runs() {
     assert_eq!(ask(&rig, "hello"), "The coordinator did not start safely.");
     assert!(!bin.join("run-0").exists(), "the agent ran");
     rig.wait_stderr("CLAUDE.md would load as instructions");
+}
+
+#[test]
+fn a_token_echoed_in_a_failed_turn_never_reaches_the_thread() {
+    let token = "sk-ant-oat01-echo-77";
+    let (rig, _controller, _bin) = Rig::start_coordinated(Some(token));
+    let line = ask(&rig, "hello");
+    assert_eq!(line, "The coordinator stopped: Bad token [token].");
+    assert_eq!(turns(&rig)[0].2, line);
+}
+
+/// How the first turn ended, once its line is marked posted; fails after ten seconds.
+fn posted_end(rig: &Rig) -> String {
+    let db = rusqlite::Connection::open(rig.path("state-slack/slack.db")).unwrap();
+    let sql = "SELECT end FROM slack_turns WHERE posted_at IS NOT NULL";
+    for _ in 0..500 {
+        if let Ok(end) = db.query_row(sql, [], |r| r.get(0)) {
+            return end;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    panic!("the turn's line was never marked posted");
+}
+
+/// How many `chat.update` calls Slack took.
+fn landed_updates(rig: &Rig) -> usize {
+    let requests = rig.slack.requests();
+    let took = |r: &&super::support::slack_fake::Recorded| {
+        r.path == "/chat.update" && r.reply["ok"] == true
+    };
+    requests.iter().filter(took).count()
+}
+
+#[test]
+fn a_reply_slack_could_not_take_is_tried_again_and_lands_once() {
+    let (rig, _controller, _bin) = Rig::start_coordinated(Some(GOOD));
+    let failed = json!({"ok": false, "error": "internal_error"});
+    let limited = json!({"ok": false, "error": "ratelimited"});
+    rig.slack.answer_updates(&[(500, failed), (429, limited)]);
+    rig.mention(1, USER, "<@UBOT> hello", TS, None);
+    assert_eq!(posted_end(&rig), "replied");
+    let tries: Vec<String> = rig.slack.updates().into_iter().map(|u| u.text).collect();
+    assert_eq!(tries, ["OK", "OK", "OK"]);
+    assert_eq!(landed_updates(&rig), 1);
+    assert_eq!(
+        rig.slack.posts().len(),
+        1,
+        "only the placeholder was posted"
+    );
+}
+
+#[test]
+fn a_placeholder_slack_cannot_find_gets_the_reply_as_a_new_message() {
+    let (rig, _controller, _bin) = Rig::start_coordinated(Some(GOOD));
+    let gone = json!({"ok": false, "error": "message_not_found"});
+    rig.slack.answer_updates(&[(200, gone)]);
+    rig.mention(1, USER, "<@UBOT> hello", TS, None);
+    assert_eq!(posted_end(&rig), "replied");
+    let posts: Vec<(String, String)> = rig
+        .slack
+        .posts()
+        .into_iter()
+        .map(|p| (p.thread_ts, p.text))
+        .collect();
+    let want = [
+        (TS.to_owned(), "…".to_owned()),
+        (TS.to_owned(), "OK".to_owned()),
+    ];
+    assert_eq!(posts, want);
+    assert_eq!(landed_updates(&rig), 0);
 }
 
 /// Each turn once `n` turns have their line marked posted; fails after three minutes.

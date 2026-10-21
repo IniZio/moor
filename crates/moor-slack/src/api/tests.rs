@@ -278,7 +278,7 @@ fn http_429_maps_to_rate_limited() {
         .update_message(&Secret::new(TOKEN.as_bytes().to_vec()), "C1", "1.2", "x")
         .expect_err("limited");
     handle.join().expect("server");
-    assert!(matches!(err, ApiError::RateLimited), "{err:?}");
+    assert!(matches!(err, ApiError::RateLimited(None)), "{err:?}");
     assert!(err.to_string().contains("rate limited"));
 }
 
@@ -301,7 +301,7 @@ fn errors_never_contain_the_token() {
         refused,
         refused_update,
         ApiError::Slack("invalid_auth".into()),
-        ApiError::RateLimited,
+        ApiError::RateLimited(None),
     ] {
         assert!(!format!("{err} {err:?}").contains(TOKEN));
     }

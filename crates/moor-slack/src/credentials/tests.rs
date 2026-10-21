@@ -6,7 +6,7 @@ use std::path::Path;
 
 use moor_core::secret::Secret;
 
-use super::{config_dir, credential_path, private_dir, remove, store, AgentKind, SlackUser};
+use super::{config_dir, credential_path, load, private_dir, remove, store, AgentKind, SlackUser};
 
 const CLAUDE: AgentKind = AgentKind::Claude;
 
@@ -167,4 +167,34 @@ fn a_dir_another_user_owns_is_refused_and_left_alone() {
     assert_eq!(mode(&dir), 0o755);
     private_dir(&dir, me).unwrap();
     assert_eq!(mode(&dir), 0o700);
+}
+
+#[test]
+fn a_stored_credential_loads_back() {
+    let state = tempfile::tempdir().unwrap();
+    store(state.path(), CLAUDE, &user("U1"), &secret("tok")).unwrap();
+    let loaded = load(state.path(), CLAUDE, &user("U1")).unwrap().unwrap();
+    assert_eq!(loaded.expose(), b"tok");
+    assert!(load(state.path(), CLAUDE, &user("U2")).unwrap().is_none());
+}
+
+#[test]
+fn a_symlinked_credential_file_is_refused() {
+    let state = tempfile::tempdir().unwrap();
+    store(state.path(), CLAUDE, &user("U1"), &secret("tok")).unwrap();
+    let target = credential_path(state.path(), CLAUDE, &user("U1"));
+    let link = credential_path(state.path(), CLAUDE, &user("U2"));
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+    let err = load(state.path(), CLAUDE, &user("U2")).err().unwrap();
+    assert!(err.starts_with(&link.display().to_string()), "{err}");
+}
+
+#[test]
+fn a_credential_file_open_to_group_or_others_is_refused() {
+    let state = tempfile::tempdir().unwrap();
+    store(state.path(), CLAUDE, &user("U1"), &secret("tok")).unwrap();
+    let path = credential_path(state.path(), CLAUDE, &user("U1"));
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+    let err = load(state.path(), CLAUDE, &user("U1")).err().unwrap();
+    assert!(err.starts_with(&path.display().to_string()), "{err}");
 }
