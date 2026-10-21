@@ -320,6 +320,15 @@ fn each_users_box_injects_only_that_users_secret_and_a_deleted_one_fails_next() 
             assert_eq!(server.join().unwrap(), 0);
         }
     });
+    let failures = t.store.events(t.ann.1, 100).unwrap();
+    let failures = failures
+        .iter()
+        .filter(|e| e.kind == "proxy_credential_failed");
+    assert_eq!(
+        failures.count(),
+        1,
+        "one failed request records one credential failure"
+    );
     let said = err.lock().unwrap().clone();
     assert_nowhere(&t, said);
 }
