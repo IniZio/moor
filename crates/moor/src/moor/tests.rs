@@ -2,17 +2,19 @@ use super::Moor;
 use crate::env::Env;
 use moor_core::{CloseReq, ExitClass, Request};
 
-fn moor() -> Moor {
+/// An engine on a fresh state dir, which lives as long as the returned guard.
+fn moor() -> (tempfile::TempDir, Moor) {
+    let dir = tempfile::tempdir().expect("tmp");
     let env = Env::from_pairs([
-        ("MOOR_STATE_DIR", "/tmp/x"),
+        ("MOOR_STATE_DIR", dir.path().to_str().expect("utf8")),
         ("MOOR_CONFIG", "/nonexistent/moor.yaml"),
     ]);
-    Moor::from_env(&env).expect("from_env")
+    (dir, Moor::from_env(&env).expect("from_env"))
 }
 
 #[test]
 fn version_is_ok_with_expected_keys() {
-    let resp = moor().call(Request::Version {});
+    let resp = moor().1.call(Request::Version {});
     assert_eq!(resp.class, ExitClass::Ok);
     assert_eq!(resp.cmd, "version");
     let value = resp.value.expect("value");
@@ -31,7 +33,8 @@ fn unimplemented_command_fails_with_its_cmd() {
         force: false,
         trust_moor_yaml: false,
     });
-    let resp = moor().call(req);
+    let (_dir, moor) = moor();
+    let resp = moor.call(req);
     assert_eq!(resp.class, ExitClass::Failed);
     assert_eq!(resp.cmd, "close");
     assert!(resp.error.is_some());
