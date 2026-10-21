@@ -9,9 +9,7 @@ use moor_core::seam::proc::{ProcError, ProcSpec};
 use zeroize::Zeroizing;
 
 use super::grace::terminate;
-use super::{
-    drain, failure, feed, gone, spawn_retrying, stdin_for, take, SystemProc, Waited, DRAIN_GRACE,
-};
+use super::{drain, failure, feed, gone, stdin_for, take, SystemProc, Waited, DRAIN_GRACE};
 
 /// What the watchdog reports once the child is reaped.
 type Reaped = Result<ExitStatus, ProcError>;
@@ -29,7 +27,7 @@ impl SystemProc {
         cmd.stdin(stdin)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        let mut child = spawn_retrying(&mut cmd).map_err(ProcError::Spawn)?;
+        let mut child = cmd.spawn().map_err(ProcError::Spawn)?;
         let (w, o, e) = (child.stdin.take(), child.stdout.take(), child.stderr.take());
         let payload = payload.map(|b| Zeroizing::new(b.to_vec()));
         thread::spawn(move || feed(w, payload.as_ref().map(|p| p.as_slice())));

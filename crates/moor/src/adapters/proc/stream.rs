@@ -13,7 +13,7 @@ use moor_core::seam::proc::{Output, ProcError, ProcSpec, StderrGate};
 use signal_hook::consts::{SIGINT, SIGTERM};
 
 use super::grace::{terminate_with, Abort};
-use super::{failure, feed, gone, spawn_retrying, stdin_for, SystemProc, DRAIN_GRACE, POLL, TAIL};
+use super::{failure, feed, gone, stdin_for, SystemProc, DRAIN_GRACE, POLL, TAIL};
 
 /// Process-wide interrupt state, installed once and never unregistered.
 struct Signals {
@@ -260,7 +260,7 @@ impl SystemProc {
         let (stdout, err_sink) = sinks(out, Box::new(notice.clone())).map_err(ProcError::Spawn)?;
         let mut cmd = self.command(spec);
         cmd.stdin(stdin).stdout(stdout).stderr(Stdio::piped());
-        let mut child = spawn_retrying(&mut cmd).map_err(ProcError::Spawn)?;
+        let mut child = cmd.spawn().map_err(ProcError::Spawn)?;
         drop(cmd);
         let w = child.stdin.take();
         let err_pipe = child.stderr.take();

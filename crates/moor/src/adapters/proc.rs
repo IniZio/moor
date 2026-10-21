@@ -4,7 +4,7 @@ use std::ffi::OsString;
 use std::io::{self, Read, Write};
 use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, ExitStatus, Stdio};
+use std::process::{Command, ExitStatus, Stdio};
 use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -26,8 +26,6 @@ use trace::Trace;
 
 /// Poll interval while waiting for a child.
 const POLL: Duration = Duration::from_millis(10);
-/// Spawn attempts when the program file is briefly busy (`ETXTBSY`).
-const SPAWN_TRIES: u32 = 8;
 /// Bytes of stderr kept in `NonZero`.
 const TAIL: usize = 2048;
 /// Longest extra wait for pipe readers after the child exits (an escaped
@@ -121,21 +119,6 @@ impl SystemProc {
             cmd.current_dir(cwd);
         }
         cmd
-    }
-}
-
-/// Spawns, retrying with short backoff while the executable is busy: another
-/// thread may hold a write fd to it across its own fork.
-fn spawn_retrying(cmd: &mut Command) -> io::Result<Child> {
-    let mut tries = 1;
-    loop {
-        match cmd.spawn() {
-            Err(e) if e.kind() == io::ErrorKind::ExecutableFileBusy && tries < SPAWN_TRIES => {
-                thread::sleep(POLL * tries);
-                tries += 1;
-            }
-            r => return r,
-        }
     }
 }
 
@@ -258,7 +241,7 @@ impl SystemProc {
         cmd.stdin(stdin)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        let mut child = spawn_retrying(&mut cmd).map_err(ProcError::Spawn)?;
+        let mut child = cmd.spawn().map_err(ProcError::Spawn)?;
         let (w, o, e) = (child.stdin.take(), child.stdout.take(), child.stderr.take());
         let limit = spec.deadline.0;
         let payload = payload.map(|b| Zeroizing::new(b.to_vec()));
@@ -332,7 +315,7 @@ impl Proc for SystemProc {
         cmd.stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null());
-        let mut child = spawn_retrying(&mut cmd).map_err(ProcError::Spawn)?;
+        let mut child = cmd.spawn().map_err(ProcError::Spawn)?;
         thread::spawn(move || drop(child.wait()));
         self.trace.started(spec);
         Ok(())
