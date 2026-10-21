@@ -306,3 +306,43 @@ fn non_run_requests_are_untouched() {
     let after = inherit_run_output(request(&["env"]), &GlobalOpts::default());
     assert_eq!(format!("{before:?}"), format!("{after:?}"));
 }
+
+/// The request a successful parse of `a` runs.
+fn parsed_request(a: &[&str]) -> Request {
+    let Parsed::Request(inv) = parse(argv(a)) else {
+        unreachable!("expected a request for {a:?}")
+    };
+    inv.request
+}
+
+#[test]
+fn user_verbs_assert_no_identity_so_the_socket_supplies_local() {
+    for (args, cmd) in [
+        (&["whoami"][..], "whoami"),
+        (&["user", "enroll"][..], "enroll"),
+        (&["user", "secret", "rm", "claude"][..], "secret-delete"),
+        (&["user", "secret", "ls"][..], "secret-names"),
+        (&["user", "link-code"][..], "link-code"),
+        (&["user", "link", "c0de"][..], "link-redeem"),
+    ] {
+        let req = parsed_request(args);
+        assert_eq!(req.cmd(), cmd);
+        let (asserted, _) = req.into_user().expect("a user request");
+        assert_eq!(asserted, None, "{args:?}");
+    }
+}
+
+#[test]
+fn secret_set_takes_only_a_name_and_reads_the_value_from_stdin() {
+    let Parsed::SecretSetStdin { name, .. } = parse(argv(&["user", "secret", "set", "claude"]))
+    else {
+        unreachable!("expected SecretSetStdin")
+    };
+    let o = done(&["--json", "user", "secret", "set", "claude", "the-value"]);
+    assert_eq!(o.code, 2, "{}", o.stdout);
+    let req = super::secret_set(name, b"tok\r\n\n".to_vec());
+    let Ok((None, moor_core::request::UserCmd::SecretSet { value, .. })) = req.into_user() else {
+        unreachable!("expected secret-set")
+    };
+    assert_eq!(value.secret().expose(), b"tok");
+}

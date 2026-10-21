@@ -143,6 +143,7 @@ fn relative_repo_moor_yaml_resolves_against_config_dir() {
 mod artifacts;
 mod fronts;
 mod run_output;
+mod users;
 
 #[test]
 fn first_start_creates_the_vault_key_beside_the_config() {

@@ -37,7 +37,6 @@ mod sessions;
 #[cfg(test)]
 mod tests;
 mod turns;
-#[cfg_attr(not(test), expect(dead_code, reason = "the user requests use it next"))]
 mod users;
 
 pub(crate) use agent::SessionRow;

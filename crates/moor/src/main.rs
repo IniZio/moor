@@ -19,6 +19,16 @@ fn main() -> ExitCode {
         Parsed::Done(out) => out,
         Parsed::Request(inv) => run(env, inv),
         Parsed::CallStdin(opts) => run_call(env, opts),
+        Parsed::SecretSetStdin { opts, name } => {
+            let mut value = Vec::new();
+            if let Err(e) = std::io::stdin().read_to_end(&mut value) {
+                let resp = moor::error::CommandError::new(moor::moor_core::ErrorKind::Failed, e)
+                    .into_response("secret-set", vec![]);
+                return emit(&cli::render(&resp, &opts));
+            }
+            let request = cli::secret_set(name, value);
+            run(env, Invocation { opts, request })
+        }
         Parsed::ProxyServe { opts, box_id } => {
             let env = match &opts.state_dir {
                 Some(dir) => env.with_state_dir(dir),

@@ -87,6 +87,13 @@ pub enum Parsed {
         /// Keep streaming.
         follow: bool,
     },
+    /// Read a secret value from stdin and store it as this name with `secret-set`.
+    SecretSetStdin {
+        /// Global options.
+        opts: GlobalOpts,
+        /// The secret's name.
+        name: moor_core::user::SecretName,
+    },
     /// Nothing to run; print this.
     Done(Output),
 }
@@ -101,6 +108,7 @@ pub fn parse(args: Vec<OsString>) -> Parsed {
         Ok((opts, Action::ProxyServe(box_id))) => Parsed::ProxyServe { opts, box_id },
         Ok((opts, Action::ControllerServe(config))) => Parsed::ControllerServe { opts, config },
         Ok((opts, Action::ControllerAttach(socket))) => Parsed::ControllerAttach { opts, socket },
+        Ok((opts, Action::SecretSetStdin(name))) => Parsed::SecretSetStdin { opts, name },
         Ok((
             opts,
             Action::Events {
@@ -132,6 +140,19 @@ pub fn parse_call(stdin: &str) -> Result<Request, Output> {
             ..GlobalOpts::default()
         };
         render(&Response::err("call", view), &opts)
+    })
+}
+
+/// The `secret-set` request for `name` with `stdin` as its value, less trailing line breaks.
+#[must_use]
+pub fn secret_set(name: moor_core::user::SecretName, mut stdin: Vec<u8>) -> Request {
+    while stdin.last().is_some_and(|b| matches!(b, b'\n' | b'\r')) {
+        stdin.pop();
+    }
+    Request::SecretSet(moor_core::request::SecretSetReq {
+        identity: None,
+        name,
+        value: moor_core::request::SecretValue::new(stdin),
     })
 }
 

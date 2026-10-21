@@ -39,6 +39,57 @@ Global flags: `--json`, `--quiet`, `--state-dir DIR`. State lives in
 `moor.db` inside the state directory, set by `--state-dir`, `MOOR_STATE_DIR`,
 `XDG_STATE_HOME`, or `HOME`.
 
+## Users and the vault
+
+A moor user owns secrets, such as a Claude or GitHub token. An identity names
+a person on one front, as `<namespace>:<rest>`. The controller reads only the
+namespace, the part before the first `:`. A user can link several identities,
+for example `local:1000` on the host and a Slack identity.
+
+The controller config lists the fronts that get their own socket:
+
+```yaml
+fronts:
+  slack: {}
+```
+
+For each entry the controller listens on `<state>/fronts/<namespace>.sock`,
+mode 0600 in a 0700 directory. A request on that socket may assert only
+identities in that namespace. The controller socket reads the peer's uid from
+the kernel and acts as `local:<uid>`. It refuses any other identity. A
+namespace matches `[a-z][a-z0-9-]*`, and `local` is reserved for the
+controller socket.
+
+These dev commands act as `local:<uid>` through a running controller:
+
+- `moor user enroll` creates your user, or shows the one you have.
+- `moor user secret set NAME` reads the value from stdin and stores it.
+  `moor user secret rm NAME` deletes it. `moor user secret ls` lists the names.
+- `moor user link-code` mints a code that another identity redeems with
+  `link-redeem` within 10 minutes, once. `moor user link CODE` redeems a code
+  for your own identity.
+- `moor whoami` shows your identity, its user, and the user's linked identities.
+
+### The vault key
+
+`moor.db` stores each secret encrypted with
+[age](https://age-encryption.org) to one X25519 key. The key is `vault.key`
+in the controller config's directory. The controller creates it with mode
+0600 on its first start. The controller refuses to start, and leaves the
+file as it is, when `vault.key` is a symlink, is not a regular file, belongs
+to another user, or is open to group or others. It also refuses a config
+inside the state dir, so the key never sits next to `moor.db`. The key is
+never written to the state dir, a log, or an event.
+
+Back up `moor.db` and `vault.key`, and keep the two copies apart. Either one
+alone gives no secret back. If you lose `vault.key`, every stored secret is
+lost, and each user sets them again.
+
+The encryption protects secrets in a copy of `moor.db`, such as a backup, a
+disk image, or a file sent with a bug report. It does not protect them from
+a process that runs as the controller's user, because that process can read
+`vault.key` too.
+
 ## Slack front
 
 `moor-slack` is a separate daemon that answers Slack over Socket Mode and

@@ -15,6 +15,8 @@ mod events;
 mod run_output;
 #[path = "cli/ssh_controller.rs"]
 mod ssh_controller;
+#[path = "cli/user.rs"]
+mod user;
 #[path = "cli/via_controller.rs"]
 mod via_controller;
 

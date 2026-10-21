@@ -22,6 +22,8 @@ pub(super) struct Served {
     pub(super) dir: tempfile::TempDir,
     /// The controller socket.
     pub(super) main: PathBuf,
+    /// Everything the controller logged.
+    pub(super) log: Buf,
 }
 
 impl Served {
@@ -31,9 +33,10 @@ impl Served {
         let cfg = config(dir.path(), "fronts:\n  slack: {}\n  web: {}\n");
         let running = start(&env(dir.path()), &cfg).expect("start");
         let main = running.socket.clone();
-        let sink: Sink = Arc::new(Mutex::new(Buf::default()));
+        let log = Buf::default();
+        let sink: Sink = Arc::new(Mutex::new(log.clone()));
         std::thread::spawn(move || running.accept_loop(&sink));
-        Self { dir, main }
+        Self { dir, main, log }
     }
 
     /// The socket of front `ns`.

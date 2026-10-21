@@ -50,7 +50,13 @@ pub(crate) fn dispatch(cx: &Cx, req: Request) -> Result<serde_json::Value, Comma
             ErrorKind::Usage,
             "artifact-read sends raw bytes, so only the controller socket serves it",
         )),
-        Request::Whoami(_) => Err(CommandError::new(
+        Request::Whoami(_)
+        | Request::Enroll(_)
+        | Request::SecretSet(_)
+        | Request::SecretDelete(_)
+        | Request::SecretNames(_)
+        | Request::LinkCode(_)
+        | Request::LinkRedeem(_) => Err(CommandError::new(
             ErrorKind::Usage,
             "user requests act as the caller of a socket, so only the controller socket serves them",
         )),
