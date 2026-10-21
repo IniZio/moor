@@ -4,8 +4,11 @@ use crate::cx::Cx;
 use crate::env::Env;
 use crate::error::CommandError;
 use crate::ops;
+use crate::vault::Vault;
 use crate::wire;
-use moor_core::{ArtifactReadReq, Request, Response, RunReq};
+use moor_core::request::UserCmd;
+use moor_core::user::{Caller, Identity};
+use moor_core::{ArtifactReadReq, ErrorKind, Request, Response, RunReq};
 
 /// Wired application: `call` answers a request; `read_artifact` and `run_streamed` also stream
 /// bytes.
@@ -57,6 +60,27 @@ impl Moor {
         match ops::dispatch(&self.cx, req) {
             Ok(value) => Response::ok(cmd, Some(value)).with_warnings(self.cx.take_warnings()),
             Err(e) => e.into_response(cmd, self.cx.take_warnings()),
+        }
+    }
+
+    /// Run a user request as the identity `caller` may assert, `asserted` or its own; any
+    /// other identity is refused.
+    pub(crate) fn call_user(
+        &self,
+        caller: &Result<Caller, String>,
+        asserted: Option<&Identity>,
+        vault: &Vault,
+        cmd: &UserCmd,
+    ) -> Response {
+        let name = cmd.cmd();
+        let who = caller
+            .as_ref()
+            .map_err(Clone::clone)
+            .and_then(|caller| caller.resolve(asserted))
+            .map_err(|why| CommandError::new(ErrorKind::Refused, why));
+        match who.and_then(|who| ops::users::run(&self.cx, vault, &who, cmd)) {
+            Ok(value) => Response::ok(name, Some(value)).with_warnings(self.cx.take_warnings()),
+            Err(e) => e.into_response(name, self.cx.take_warnings()),
         }
     }
 

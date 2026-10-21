@@ -3,6 +3,7 @@
 pub mod attach;
 mod conn;
 mod local;
+mod peer;
 mod progress;
 mod settle;
 mod watch;
@@ -71,6 +72,10 @@ struct Running {
     socket: PathBuf,
     /// Listening socket.
     listener: UnixListener,
+    /// Each front's socket, by namespace.
+    fronts: Vec<(String, UnixListener)>,
+    /// The vault key, for the user requests.
+    vault: Arc<Vault>,
     /// Holds the single-instance flock until the process exits.
     _lock: File,
     /// Holds the one-controller-per-state-dir flock until the process exits.
@@ -110,7 +115,7 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
         },
         message: e.error.to_string(),
     })?;
-    open_vault(&env, config)?;
+    let vault = Arc::new(open_vault(&env, config)?);
     let state_lock = env
         .state_dir()
         .map(|dir| take_lock(&dir.join(CONTROLLER_LOCK), &socket))
@@ -122,9 +127,12 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
         code: 1,
         message: format!("cannot bind {}: {e}", socket.display()),
     })?;
+    let fronts = peer::bind_fronts(&env, &cfg.fronts.keys().collect::<Vec<_>>())?;
     Ok(Running {
         socket,
         listener,
+        fronts,
+        vault,
         _lock: lock,
         _state_lock: state_lock,
         env: Arc::new(env),
@@ -247,9 +255,45 @@ fn bind(socket: &Path) -> std::io::Result<UnixListener> {
 }
 
 impl Running {
-    /// Serves each connection on its own thread; never returns.
+    /// Serves each connection on its own thread, each front socket on its own accept thread;
+    /// never returns.
     fn accept_loop(&self, sink: &Sink) {
-        for stream in self.listener.incoming() {
+        for (ns, listener) in &self.fronts {
+            let Ok(listener) = listener.try_clone() else {
+                log(sink, &format!("front {ns}: cannot share its socket"));
+                continue;
+            };
+            let this = self.serving(Some(ns.clone()));
+            let sink = Arc::clone(sink);
+            thread::spawn(move || this.accept(&listener, &sink));
+        }
+        self.serving(None).accept(&self.listener, sink);
+    }
+
+    /// What one listener's connections share; `front` names the front whose socket it is.
+    fn serving(&self, front: Option<String>) -> Serving {
+        Serving {
+            env: Arc::clone(&self.env),
+            vault: Arc::clone(&self.vault),
+            front,
+        }
+    }
+}
+
+/// What every connection on one listener shares.
+struct Serving {
+    /// Environment shared by every connection.
+    env: Arc<Env>,
+    /// The vault key.
+    vault: Arc<Vault>,
+    /// The front whose socket this is; none for the controller socket.
+    front: Option<String>,
+}
+
+impl Serving {
+    /// Serves each connection on `listener` on its own thread; never returns.
+    fn accept(&self, listener: &UnixListener, sink: &Sink) {
+        for stream in listener.incoming() {
             let stream = match stream {
                 Ok(s) => s,
                 Err(e) => {
@@ -257,10 +301,17 @@ impl Running {
                     continue;
                 }
             };
+            let peer = conn::Peer {
+                caller: self.front.clone().map_or_else(
+                    || peer::local_caller(&stream),
+                    |ns| Ok(moor_core::user::Caller::Front(ns)),
+                ),
+                vault: Arc::clone(&self.vault),
+            };
             let env = Arc::clone(&self.env);
             let sink = Arc::clone(sink);
             thread::spawn(move || match stream.try_clone() {
-                Ok(read) => conn::handle(BufReader::new(read), stream, &env),
+                Ok(read) => conn::handle(BufReader::new(read), stream, &env, &peer),
                 Err(e) => log(&sink, &format!("connection setup failed: {e}")),
             });
         }

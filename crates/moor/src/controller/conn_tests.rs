@@ -33,7 +33,8 @@ fn run(env: &Env, lines: &[Value]) -> Vec<Value> {
 
 fn run_raw(env: &Env, input: &str) -> Vec<Value> {
     let mut out = Vec::new();
-    handle(Cursor::new(input.as_bytes().to_vec()), &mut out, env);
+    let peer = super::Peer::local_in(&env.state_dir().expect("state dir"));
+    handle(Cursor::new(input.as_bytes().to_vec()), &mut out, env, &peer);
     String::from_utf8(out)
         .expect("utf8")
         .lines()

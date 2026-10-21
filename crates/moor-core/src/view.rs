@@ -7,6 +7,7 @@ pub mod run;
 pub mod session;
 pub mod sleep;
 pub mod steer;
+pub mod user;
 
 use crate::domain::box_state::BoxLifecycle;
 use crate::domain::boxes::BoxState;

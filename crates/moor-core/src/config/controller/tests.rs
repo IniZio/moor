@@ -217,3 +217,22 @@ fn find_repo_by_name_and_url() {
     assert!(find_repo(&r, "nope").is_none());
     assert!(find_repo(&r, "https://example.com/o/other").is_none());
 }
+
+#[test]
+fn fronts_parse_by_namespace() {
+    let c = parse_controller("c.yaml", "fronts:\n  slack: {}\n  web-2: {}\n")
+        .unwrap_or_else(|e| panic!("{e}"));
+    let names: Vec<&str> = c.fronts.keys().map(String::as_str).collect();
+    assert_eq!(names, ["slack", "web-2"]);
+}
+
+#[test]
+fn a_reserved_or_malformed_front_namespace_is_refused() {
+    for ns in ["local", "Slack", "2x", "a_b"] {
+        let e = err(&format!("fronts:\n  {ns}: {{}}\n"));
+        assert_eq!(e.path, format!("fronts.{ns}"), "{e}");
+        assert!(e.to_string().contains("not be `local`"), "{e}");
+    }
+    let e = err("fronts:\n  slack: {bogus: 1}\n");
+    assert!(e.to_string().contains("bogus"), "{e}");
+}
