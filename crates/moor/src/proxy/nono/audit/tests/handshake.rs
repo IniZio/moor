@@ -95,3 +95,50 @@ fn a_handshake_the_client_hangs_up_on_is_aborted_and_an_alert_is_refused() {
     assert!(!text.contains("eof.test"), "{text}");
     assert!(text.contains("- claude 403"), "{text}");
 }
+
+#[test]
+fn another_alert_or_an_unknown_ending_is_still_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, log, box_id) = box_sink_parts(dir.path());
+    let sink = BoxSink {
+        log: &log,
+        store: &store,
+        box_id,
+    };
+    let (capture, _) = counting_capture();
+    let failed = |host: &str, reason: &str| {
+        event(
+            "deny",
+            &json!({"denial_category": "intercept_handshake_failed", "target": host, "reason": reason}),
+        )
+    };
+    let events = [
+        failed(
+            "alert.test",
+            "tls handshake failed: received fatal alert: BadCertificate",
+        ),
+        failed("other.test", "tls handshake failed: something new"),
+    ];
+    apply(&events, &capture, &Withheld::default(), &sink);
+
+    let rows: Vec<_> = store
+        .events(box_id, 100)
+        .unwrap()
+        .into_iter()
+        .filter(|r| r.kind.starts_with("egress_"))
+        .map(|r| {
+            let field = |k: &str| r.payload.get(k).cloned().unwrap_or_default();
+            (r.kind.clone(), field("host"), field("reason"))
+        })
+        .collect();
+    assert_eq!(rows.len(), 2, "{rows:?}");
+    for (host, reason) in [
+        ("alert.test", "other_alert:BadCertificate"),
+        ("other.test", "other"),
+    ] {
+        assert!(
+            rows.contains(&("egress_refused".to_owned(), json!(host), json!(reason))),
+            "{rows:?}"
+        );
+    }
+}
