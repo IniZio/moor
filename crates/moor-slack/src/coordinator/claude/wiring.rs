@@ -1,6 +1,6 @@
 //! What a Claude Code turn is started with beyond its argv: the binary found on `PATH` when
-//! the config names none, the cleared environment, and the `mcp.json` that names the front's
-//! tool server.
+//! the config names none, the working directory, the cleared environment, and the `mcp.json`
+//! that names the front's tool server.
 
 use std::ffi::OsStr;
 use std::fs::OpenOptions;
@@ -16,6 +16,10 @@ use crate::coordinator::ToolServer;
 
 /// The file in a turn's workdir that names the front's tool server.
 pub(super) const MCP_CONFIG: &str = "mcp.json";
+
+/// The working directory of every turn and of the token check, so that no `CLAUDE.md` above
+/// the state dir, such as `~/.claude/CLAUDE.md`, is a project file of the turn.
+pub(super) const CWD: &str = "/";
 
 /// `PATH` in a turn's cleared environment.
 const PATH: &str = "/usr/local/bin:/usr/bin:/bin";
@@ -60,9 +64,13 @@ pub(super) fn write_mcp_config(path: &Path, server: &ToolServer<'_>) -> io::Resu
     file.write_all(b"\n")
 }
 
-/// Clears `cmd`'s environment down to `HOME`, `PATH`, `USER` and `LANG`.
+/// Clears `cmd`'s environment down to `HOME`, `PATH`, `USER` and `LANG`, and turns off every
+/// `CLAUDE.md` Claude Code would otherwise find.
 pub(super) fn clear_env(cmd: &mut Command, host: &HostEnv) {
-    cmd.env_clear().env("PATH", PATH).env("LANG", "C.UTF-8");
+    cmd.env_clear()
+        .env("PATH", PATH)
+        .env("LANG", "C.UTF-8")
+        .env("CLAUDE_CODE_DISABLE_CLAUDE_MDS", "1");
     if let Some(home) = &host.home {
         cmd.env("HOME", home);
     }

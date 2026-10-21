@@ -224,7 +224,7 @@ impl Turns {
             Ok(dirs) => dirs,
             Err(e) => return Closing::of(End::Failed, lines::unavailable(&e)),
         };
-        if let Some(why) = agent.unsafe_workdir(&workdir) {
+        if let Some(why) = agent.unsafe_cwd() {
             (self.log)(&format!("turn {}: {why}", row.id));
             return Closing::of(End::Unsafe, lines::UNSAFE.to_owned());
         }

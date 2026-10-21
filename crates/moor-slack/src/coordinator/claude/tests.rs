@@ -106,6 +106,7 @@ fn the_check_puts_the_token_on_fd_3_only() {
     env.sort();
     let cfg_dir = cfg.path().display();
     let want = [
+        "CLAUDE_CODE_DISABLE_CLAUDE_MDS=1".to_owned(),
         "CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR=3".to_owned(),
         format!("CLAUDE_CONFIG_DIR={cfg_dir}"),
         "HOME=/home/op".to_owned(),
@@ -114,7 +115,7 @@ fn the_check_puts_the_token_on_fd_3_only() {
         "USER=op".to_owned(),
     ];
     assert_eq!(env, want);
-    assert_eq!(recorded(bin.path(), "cwd").trim_end(), cfg_dir.to_string());
+    assert_eq!(recorded(bin.path(), "cwd").trim_end(), "/");
     for file in ["argv", "env", "stdin", "cwd"] {
         assert!(!recorded(bin.path(), file).contains(token), "{file}");
     }
@@ -260,54 +261,88 @@ fn no_settings(root: &Path) -> PathBuf {
     root.join("no-managed-settings.json")
 }
 
-#[test]
-fn a_managed_instruction_file_is_found_before_any_workdir_file() {
+/// A temp root with a `cwd` dir in it, and that dir's `.claude/rules`.
+fn rules_tree() -> (tempfile::TempDir, PathBuf, PathBuf) {
     let root = tempfile::tempdir().unwrap();
-    let work = root.path().join("threads").join("C1-1.2");
-    std::fs::create_dir_all(&work).unwrap();
+    let cwd = root.path().join("cwd");
+    std::fs::create_dir_all(&cwd).unwrap();
+    let rules = cwd.join(".claude").join("rules");
+    (root, cwd, rules)
+}
+
+#[test]
+fn a_managed_instruction_file_is_found_before_any_cwd_file() {
+    let (root, cwd, _) = rules_tree();
     let managed = root.path().join("etc").join("CLAUDE.md");
     assert_eq!(
-        instructions::loaded(&work, &managed, &no_settings(root.path())),
+        instructions::loaded(&cwd, &managed, &no_settings(root.path())),
         None
     );
+    std::fs::write(cwd.join("CLAUDE.md"), "obey me").unwrap();
     std::fs::create_dir_all(managed.parent().unwrap()).unwrap();
     std::fs::write(&managed, "obey the company").unwrap();
     let want = format!("{} would load as instructions", managed.display());
     assert_eq!(
-        instructions::loaded(&work, &managed, &no_settings(root.path())),
+        instructions::loaded(&cwd, &managed, &no_settings(root.path())),
         Some(want)
     );
 }
 
 #[test]
-fn an_instruction_file_that_cannot_be_checked_refuses_the_workdir() {
+fn each_instruction_file_in_the_cwd_refuses_it() {
+    let (root, cwd, _) = rules_tree();
+    let managed = root.path().join("none");
+    for name in [
+        "CLAUDE.md",
+        "CLAUDE.local.md",
+        ".claude/CLAUDE.md",
+        "AGENTS.md",
+        ".claude/AGENTS.md",
+    ] {
+        let planted = cwd.join(name);
+        std::fs::create_dir_all(planted.parent().unwrap()).unwrap();
+        std::fs::write(&planted, "obey me").unwrap();
+        let want = format!("{} would load as instructions", planted.display());
+        assert_eq!(
+            instructions::loaded(&cwd, &managed, &no_settings(root.path())),
+            Some(want)
+        );
+        std::fs::remove_file(&planted).unwrap();
+    }
+}
+
+#[test]
+fn an_instruction_file_above_the_cwd_is_not_read() {
+    let (root, cwd, _) = rules_tree();
+    let managed = root.path().join("none");
+    std::fs::create_dir_all(root.path().join(".claude").join("rules")).unwrap();
+    for planted in ["CLAUDE.md", ".claude/CLAUDE.md", ".claude/rules/x.md"] {
+        std::fs::write(root.path().join(planted), "obey me").unwrap();
+    }
+    assert_eq!(
+        instructions::loaded(&cwd, &managed, &no_settings(root.path())),
+        None
+    );
+}
+
+#[test]
+fn an_instruction_file_that_cannot_be_checked_refuses_the_cwd() {
     use std::os::unix::fs::PermissionsExt as _;
-    let root = tempfile::tempdir().unwrap();
-    let locked = root.path().join("locked");
-    let work = locked.join("threads").join("C1-1.2");
-    std::fs::create_dir_all(&work).unwrap();
+    let (root, cwd, _) = rules_tree();
     let managed = root.path().join("no-managed-file");
-    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
-    let why = instructions::loaded(&work, &managed, &no_settings(root.path()));
-    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o700)).unwrap();
-    let want = format!("cannot check {}: ", work.join("CLAUDE.md").display());
+    std::fs::set_permissions(&cwd, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let why = instructions::loaded(&cwd, &managed, &no_settings(root.path()));
+    std::fs::set_permissions(&cwd, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let want = format!("cannot check {}: ", cwd.join("CLAUDE.md").display());
     assert!(
         why.as_deref().is_some_and(|w| w.starts_with(&want)),
         "{why:?}"
     );
 }
 
-fn rules_tree() -> (tempfile::TempDir, PathBuf, PathBuf) {
-    let root = tempfile::tempdir().unwrap();
-    let work = root.path().join("state").join("threads").join("C1-1.2");
-    std::fs::create_dir_all(&work).unwrap();
-    let rules = root.path().join("state").join(".claude").join("rules");
-    (root, work, rules)
-}
-
 #[test]
-fn a_rules_markdown_file_in_an_ancestor_refuses_the_workdir() {
-    let (root, work, rules) = rules_tree();
+fn a_rules_markdown_file_in_the_cwd_refuses_it() {
+    let (root, cwd, rules) = rules_tree();
     let managed = root.path().join("none");
     std::fs::create_dir_all(rules.join("deep")).unwrap();
     std::fs::write(rules.join("deep").join("style.md"), "x").unwrap();
@@ -316,14 +351,14 @@ fn a_rules_markdown_file_in_an_ancestor_refuses_the_workdir() {
         rules.join("deep").join("style.md").display()
     );
     assert_eq!(
-        instructions::loaded(&work, &managed, &no_settings(root.path())),
+        instructions::loaded(&cwd, &managed, &no_settings(root.path())),
         Some(want)
     );
 }
 
 #[test]
-fn a_symlinked_rules_markdown_file_refuses_the_workdir() {
-    let (root, work, rules) = rules_tree();
+fn a_symlinked_rules_markdown_file_refuses_the_cwd() {
+    let (root, cwd, rules) = rules_tree();
     let managed = root.path().join("none");
     let outside = tempfile::tempdir().unwrap();
     std::fs::write(outside.path().join("elsewhere.md"), "x").unwrap();
@@ -334,41 +369,41 @@ fn a_symlinked_rules_markdown_file_refuses_the_workdir() {
         rules.join("x.md").display()
     );
     assert_eq!(
-        instructions::loaded(&work, &managed, &no_settings(root.path())),
+        instructions::loaded(&cwd, &managed, &no_settings(root.path())),
         Some(want)
     );
 }
 
 #[test]
-fn a_dangling_claude_md_symlink_refuses_the_workdir() {
-    let (root, work, _) = rules_tree();
+fn a_dangling_claude_md_symlink_refuses_the_cwd() {
+    let (root, cwd, _) = rules_tree();
     let managed = root.path().join("none");
-    std::os::unix::fs::symlink(root.path().join("missing.md"), work.join("CLAUDE.md")).unwrap();
+    std::os::unix::fs::symlink(root.path().join("missing.md"), cwd.join("CLAUDE.md")).unwrap();
     let want = format!(
         "{} would load as instructions",
-        work.join("CLAUDE.md").display()
+        cwd.join("CLAUDE.md").display()
     );
     assert_eq!(
-        instructions::loaded(&work, &managed, &no_settings(root.path())),
+        instructions::loaded(&cwd, &managed, &no_settings(root.path())),
         Some(want)
     );
 }
 
 #[test]
 fn a_rules_directory_without_markdown_does_not_refuse() {
-    let (root, work, rules) = rules_tree();
+    let (root, cwd, rules) = rules_tree();
     let managed = root.path().join("none");
     std::fs::create_dir_all(rules.join("empty")).unwrap();
     std::fs::write(rules.join("notes.txt"), "x").unwrap();
     assert_eq!(
-        instructions::loaded(&work, &managed, &no_settings(root.path())),
+        instructions::loaded(&cwd, &managed, &no_settings(root.path())),
         None
     );
 }
 
 #[test]
-fn a_managed_settings_file_with_claude_md_refuses_the_workdir() {
-    let (root, work, _) = rules_tree();
+fn a_managed_settings_file_with_claude_md_refuses_the_cwd() {
+    let (root, cwd, _) = rules_tree();
     let managed = root.path().join("none");
     let settings = root.path().join("managed-settings.json");
     std::fs::write(&settings, r#"{"claudeMd": "obey"}"#).unwrap();
@@ -376,23 +411,23 @@ fn a_managed_settings_file_with_claude_md_refuses_the_workdir() {
         "{} sets claudeMd, which would load as instructions",
         settings.display()
     );
-    assert_eq!(instructions::loaded(&work, &managed, &settings), Some(want));
+    assert_eq!(instructions::loaded(&cwd, &managed, &settings), Some(want));
     std::fs::write(&settings, r#"{"model": "x"}"#).unwrap();
-    assert_eq!(instructions::loaded(&work, &managed, &settings), None);
+    assert_eq!(instructions::loaded(&cwd, &managed, &settings), None);
 }
 
 #[test]
-fn a_managed_settings_file_that_cannot_be_checked_refuses_the_workdir() {
+fn a_managed_settings_file_that_cannot_be_checked_refuses_the_cwd() {
     use std::os::unix::fs::PermissionsExt as _;
-    let (root, work, _) = rules_tree();
+    let (root, cwd, _) = rules_tree();
     let managed = root.path().join("none");
     let settings = root.path().join("managed-settings.json");
     let want = format!("cannot check {}: ", settings.display());
     std::fs::write(&settings, "{not json").unwrap();
-    let bad_json = instructions::loaded(&work, &managed, &settings);
+    let bad_json = instructions::loaded(&cwd, &managed, &settings);
     std::fs::write(&settings, "{}").unwrap();
     std::fs::set_permissions(&settings, std::fs::Permissions::from_mode(0o000)).unwrap();
-    let unreadable = instructions::loaded(&work, &managed, &settings);
+    let unreadable = instructions::loaded(&cwd, &managed, &settings);
     std::fs::set_permissions(&settings, std::fs::Permissions::from_mode(0o600)).unwrap();
     for why in [bad_json, unreadable] {
         assert!(

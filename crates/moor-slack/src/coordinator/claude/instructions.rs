@@ -1,5 +1,6 @@
-//! The instruction sources Claude Code loads on its own: the machine's managed file and
-//! managed settings, and the files and rules in its working directory and every ancestor.
+//! The instruction sources a turn would still load: the machine's managed file and managed
+//! settings, and the files and rules in its working directory. The turn runs in `/` with
+//! `CLAUDE_CODE_DISABLE_CLAUDE_MDS=1`, so no other directory is read.
 
 use std::io::ErrorKind::{NotADirectory, NotFound};
 use std::path::Path;
@@ -7,8 +8,8 @@ use std::path::Path;
 /// The managed instruction file Claude Code loads on Linux for every user on the machine.
 pub(super) const MANAGED: &str = "/etc/claude-code/CLAUDE.md";
 
-/// Files Claude Code loads as instructions from its working directory and every ancestor. It
-/// reads the two `AGENTS.md` names when it finds no `CLAUDE.md` file, which is the default.
+/// Files Claude Code loads as instructions from its working directory. It reads the two
+/// `AGENTS.md` names when it finds no `CLAUDE.md` file, which is the default.
 const FILES: [&str; 5] = [
     "CLAUDE.md",
     "CLAUDE.local.md",
@@ -21,22 +22,15 @@ const FILES: [&str; 5] = [
 /// instructions.
 pub(super) const MANAGED_SETTINGS: &str = "/etc/claude-code/managed-settings.json";
 
-/// The first instruction source a turn in `workdir` would load, or the first one that cannot be
+/// The first instruction source a turn in `cwd` would load, or the first one that cannot be
 /// checked; `None` when there is none. `managed` is the machine's managed instruction file and
-/// `settings` its managed settings file. A `.claude/rules/` directory in the workdir or an
-/// ancestor counts when it holds any `.md` file, however deep and scoped or not.
-pub(super) fn loaded(workdir: &Path, managed: &Path, settings: &Path) -> Option<String> {
-    let ancestors = workdir.ancestors().flat_map(|dir| {
-        let files = FILES.iter().map(move |name| dir.join(name));
-        files
-            .map(|path| file(&path))
-            .chain(std::iter::once_with(move || {
-                rules(&dir.join(".claude/rules"))
-            }))
-    });
+/// `settings` its managed settings file. A `.claude/rules/` directory in `cwd` counts when it
+/// holds any `.md` file, however deep and scoped or not.
+pub(super) fn loaded(cwd: &Path, managed: &Path, settings: &Path) -> Option<String> {
     std::iter::once(file(managed))
         .chain(std::iter::once_with(|| claude_md_setting(settings)))
-        .chain(ancestors)
+        .chain(FILES.iter().map(|name| file(&cwd.join(name))))
+        .chain(std::iter::once_with(|| rules(&cwd.join(".claude/rules"))))
         .find_map(|found| found)
 }
 
