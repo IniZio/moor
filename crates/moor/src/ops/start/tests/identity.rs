@@ -54,7 +54,7 @@ fn without_an_author_the_sync_exec_only_checks_the_checkout() {
         sync.argv,
         ["git", "rev-parse", "--git-dir"].map(str::to_owned)
     );
-    assert!(sync.output.is_none());
+    assert!(sync.output.is_some());
 }
 
 #[test]

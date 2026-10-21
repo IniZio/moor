@@ -219,6 +219,7 @@ enum Failure {
 }
 
 /// A shell prefix the sync exec runs before its check, and the host file its output goes to.
+/// With an empty prefix the check runs alone, still logged.
 pub(crate) struct Prelude<'a> {
     /// Shell that must not exit, so the check still decides the exit code.
     pub(crate) script: &'a str,
@@ -242,10 +243,13 @@ pub(crate) fn sync_checkout(
     let check = ["git", "rev-parse", "--git-dir"]
         .map(str::to_owned)
         .to_vec();
-    let argv = prelude.map_or(check, |p| {
-        let script = format!("{}exec git rev-parse --git-dir", p.script);
-        vec!["sh".to_owned(), "-c".to_owned(), script]
-    });
+    let argv = match prelude {
+        Some(p) if !p.script.is_empty() => {
+            let script = format!("{}exec git rev-parse --git-dir", p.script);
+            vec!["sh".to_owned(), "-c".to_owned(), script]
+        }
+        _ => check,
+    };
     let spec = ExecSpec {
         argv,
         env: Vec::new(),

@@ -82,6 +82,25 @@ fn a_failed_sync_ends_the_start_with_its_error_and_stops_the_proxy_it_started() 
 }
 
 #[test]
+fn an_interrupted_sync_with_no_author_stops_the_proxy_it_started() {
+    let host = FakeProxyHost::new();
+    let (w, _repo) = world([Ok(ExecOutcome::Interrupted)], &host);
+    let err = run(&w.cx, &start_req()).unwrap_err();
+    assert!(
+        err.error
+            .to_string()
+            .starts_with("syncing the checkout into the Box failed: interrupted"),
+        "{err:?}"
+    );
+    let (_, sync, _) = w.driver.execs().into_iter().next().unwrap();
+    assert!(
+        sync.output.is_some(),
+        "a captured exec dies with moor on SIGINT"
+    );
+    assert_eq!(ensured_stopped(&host), (true, true));
+}
+
+#[test]
 fn a_failed_sync_leaves_a_proxy_that_was_already_up() {
     let host = FakeProxyHost::new().with_status(ProxyStatus::Ready { box_port: 1 });
     let (w, _repo) = world([Ok(exit(1))], &host);
