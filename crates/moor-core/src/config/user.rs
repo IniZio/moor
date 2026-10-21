@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use serde::Deserialize;
 
-use super::proxy::ProxyConfig;
+use super::proxy::{injected, ProxyConfig};
 use super::{check, parse_strict, ConfigError};
 pub use controller::ControllerClientConfig;
 pub use creds::McpServer;
@@ -306,13 +306,14 @@ impl UserConfig {
         for (name, d) in &self.drivers {
             d.validate(name)?;
         }
-        creds::validate_mcp(&self.mcp_servers)?;
+        let injected = injected(&self.proxy.merged_rules());
+        creds::validate_mcp(&self.mcp_servers, &injected)?;
         if let Some(d) = &self.dotfiles {
             d.validate()?;
         }
         self.proxy.validate()?;
         self.controller.validate()?;
-        check::box_credentials(&self.box_credentials)
+        check::box_credentials(&self.box_credentials, &injected)
             .map_err(|(i, m)| ConfigError::new(format!("box_credentials[{i}]"), m))
     }
 }

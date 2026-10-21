@@ -305,7 +305,11 @@ fn reports_rejection_names_the_key() {
 #[test]
 fn box_credentials_duplicate_matches_helper() {
     let e = err("box_credentials: [a, a]");
-    let want = check::box_credentials(&["a".into(), "a".into()]).expect_err("duplicate");
+    let want = check::box_credentials(
+        &["a".into(), "a".into()],
+        &std::collections::BTreeMap::new(),
+    )
+    .expect_err("duplicate");
     assert_eq!(
         (e.path.as_str(), e.reason.as_str()),
         ("box_credentials[1]", want.1.as_str())
@@ -382,4 +386,49 @@ fn removed_credential_and_github_keys_point_at_the_user_secrets() {
             assert!(e.reason.contains("moor user secret set"), "{doc}: {e}");
         }
     }
+}
+
+#[test]
+fn box_credentials_and_mcp_refs_may_not_name_a_secret_a_proxy_rule_injects() {
+    let npm =
+        "proxy: {rules: {npm: {hosts: [a.com], credential: npm-token, inject: {basic_user: u}}}}\n";
+    let cases = [
+        (
+            "box_credentials: [a, claude]".to_owned(),
+            "box_credentials[1]",
+            "claude",
+        ),
+        (
+            "box_credentials: [github]".to_owned(),
+            "box_credentials[0]",
+            "github-api",
+        ),
+        (
+            format!("{npm}box_credentials: [npm-token]"),
+            "box_credentials[0]",
+            "npm",
+        ),
+        (
+            "mcp_servers: {m: {command: x, args: ['${github}']}}".to_owned(),
+            "mcp_servers.m.args[0]",
+            "github-api",
+        ),
+        (
+            "mcp_servers: {m: {url: 'http://h/${claude}'}}".to_owned(),
+            "mcp_servers.m.url",
+            "claude",
+        ),
+        (
+            format!("{npm}mcp_servers: {{m: {{command: x, env: {{K: '${{npm-token}}'}}}}}}"),
+            "mcp_servers.m.env.K",
+            "npm",
+        ),
+    ];
+    for (doc, path, rule) in &cases {
+        let e = err(doc);
+        assert_eq!(e.path, *path, "{doc}: {e}");
+        let want = format!("the Proxy's {rule} rule injects");
+        assert!(e.reason.contains(&want), "{doc}: {e}");
+    }
+    ok("box_credentials: [npm-token]\nmcp_servers: {m: {command: x, args: ['${npm-token}']}}");
 }

@@ -455,3 +455,21 @@ fn user_direct_keeps_hosts_no_rule_serves() {
     let cfg = user(&format!("{GOOD}  direct: [pub.dev, .gradle.org]\n"));
     assert_eq!(cfg.proxy.direct.len(), 2);
 }
+
+#[test]
+fn each_default_rule_injects_its_own_secret() {
+    let rules = resolve_rules(&ProxyConfig::default(), Some(repo())).expect("resolves");
+    let got: Vec<(&str, &str)> = rules
+        .iter()
+        .map(|r| (r.name.as_str(), r.credential.as_str()))
+        .collect();
+    assert_eq!(
+        got,
+        [
+            ("claude", "claude"),
+            ("github-api", "github"),
+            ("github-git", "github"),
+            ("github-uploads", "github"),
+        ]
+    );
+}

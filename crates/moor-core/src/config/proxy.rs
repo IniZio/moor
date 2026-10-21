@@ -230,6 +230,16 @@ pub struct RepoProxy {
     pub direct: Vec<DirectHost>,
 }
 
+/// Each secret a rule in `rules` injects, mapped to the first rule that injects it.
+pub(super) fn injected(rules: &BTreeMap<String, ToolRule>) -> BTreeMap<String, String> {
+    let mut out = BTreeMap::new();
+    for (name, rule) in rules {
+        out.entry(rule.credential.clone())
+            .or_insert_with(|| name.clone());
+    }
+    out
+}
+
 impl ProxyConfig {
     /// The default rules with each user rule laid over its same-named default.
     pub(super) fn merged_rules(&self) -> BTreeMap<String, ToolRule> {

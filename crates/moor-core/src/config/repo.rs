@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use serde::Deserialize;
 
-use super::proxy::{check_direct, default_rules, RepoProxy};
+use super::proxy::{check_direct, default_rules, injected, RepoProxy};
 use super::{check, parse_strict, BoxSize, ConfigError};
 
 /// `compose:` section.
@@ -98,9 +98,10 @@ impl RepoConfig {
         )
     }
 
-    /// Checks each `box_credentials` name and rejects duplicates.
+    /// Checks each `box_credentials` name against the default rules, which alone a repo
+    /// config knows, and rejects duplicates.
     fn validate_box_credentials(&self) -> Result<(), ConfigError> {
-        check::box_credentials(&self.box_credentials)
+        check::box_credentials(&self.box_credentials, &injected(&default_rules()))
             .map_err(|(i, m)| ConfigError::new(format!("box_credentials[{i}]"), m))
     }
 }

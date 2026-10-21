@@ -3,6 +3,8 @@
 //! Each validator returns the one canonical message on failure; callers wrap it
 //! in a `ConfigError` and do not reword it.
 
+use std::collections::BTreeMap;
+
 use crate::user::SecretName;
 
 /// `[A-Za-z0-9_-]+`.
@@ -107,15 +109,35 @@ pub fn agent_env_reserved(s: &str) -> bool {
         || s.starts_with("CLAUDE_")
 }
 
+/// Refuses secret `name` when a Proxy rule injects it; `injected` maps each injected secret to
+/// the rule that injects it.
+///
+/// # Errors
+/// Returns the canonical message naming the rule.
+pub fn not_injected(name: &str, injected: &BTreeMap<String, String>) -> Result<(), String> {
+    injected.get(name).map_or(Ok(()), |rule| {
+        Err(format!(
+            "{name} is the secret the Proxy's {rule} rule injects, so a Box may not name it"
+        ))
+    })
+}
+
 /// Validates a box credential name list in order.
 ///
-/// Each name is the name of a secret of the Box's user, and may appear only once.
+/// Each name is the name of a secret of the Box's user that no Proxy rule in `injected`
+/// injects, and may appear only once.
 ///
 /// # Errors
 /// Returns the index of the first failing name and its canonical message.
-pub fn box_credentials(names: &[String]) -> Result<(), (usize, String)> {
+pub fn box_credentials(
+    names: &[String],
+    injected: &BTreeMap<String, String>,
+) -> Result<(), (usize, String)> {
     for (i, name) in names.iter().enumerate() {
-        SecretName::parse(name).map_err(|msg| (i, msg))?;
+        SecretName::parse(name)
+            .map(|_| ())
+            .and_then(|()| not_injected(name, injected))
+            .map_err(|msg| (i, msg))?;
         if names.iter().take(i).any(|n| n == name) {
             return Err((i, format!("box credential {name:?} is listed twice")));
         }
