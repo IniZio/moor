@@ -84,6 +84,7 @@ fn mcp() -> Result<(), String> {
         state_dir: given.state_dir,
         socket: given.socket,
         thread: given.thread,
+        clock: unix_now,
     })
 }
 

@@ -81,13 +81,13 @@ coordinator agent. Each message from the thread's starter becomes one turn:
 the front posts a placeholder, runs one `claude -p` process with the
 starter's own token, and edits the placeholder into the reply. Messages that
 arrive during a turn go into the next turn together. Each turn rebuilds its
-context from `slack.db`, within `context_kib`: the first request, the
-thread's Boxes, as many earlier messages and replies as fit, and the new
-messages. A turn has no built-in tools, a cleared environment and its own
-config dir per Slack user. It runs in `threads/<channel>-<thread ts>` under
-the state directory, and refuses to start when that directory or one of its
-ancestors holds a `CLAUDE.md`. A turn that runs past 10 minutes is killed.
-Up to 4 turns run at once.
+context from `slack.db`, within `context_kib`: the first request, what
+earlier turns did to Boxes, the thread's Boxes, as many earlier messages and
+replies as fit, and the new messages. A turn has no built-in tools, a
+cleared environment and its own config dir per Slack user. It runs in
+`threads/<channel>-<thread ts>` under the state directory, and refuses to
+start when that directory or one of its ancestors holds a `CLAUDE.md`. A turn
+that runs past 10 minutes is killed. Up to 4 turns run at once.
 
 The coordinator's only tools come from the front. For each turn Claude Code
 starts `moor-slack mcp`, named by its absolute path in the thread's
@@ -98,6 +98,12 @@ server is killed. The tools act only on the thread's own Boxes:
 
 - `list_boxes` shows each Box with its repo, who asked for it, and its state
   as the controller reports it.
+- `steer_box` sends text to a Box's agent.
+
+A tool that changes a Box works only in a turn that holds a message from
+the person who asked for that Box. Each such call is recorded in `slack.db`
+before it acts, and later turns see what it did. A turn that the front
+reruns after a restart cannot repeat what the cut-off turn did.
 
 Only the thread's starter talks to the coordinator. Anyone else who writes
 in the thread gets one line that says only the starter can direct it.

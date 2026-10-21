@@ -45,7 +45,9 @@ pub(crate) struct Action {
     pub(crate) requested_by: String,
     /// The tool, such as `start_box`.
     pub(crate) tool: String,
-    /// The arguments as text.
+    /// The Box it acted on.
+    pub(crate) box_name: String,
+    /// The arguments beyond the Box, as text; empty when there are none.
     pub(crate) args: String,
     /// What came of it; `None` when the call may or may not have run.
     pub(crate) outcome: Option<String>,
@@ -157,16 +159,21 @@ fn said_line(said: &Said) -> String {
 }
 
 /// One journal row as plain facts.
-fn action_line(action: &Action) -> String {
+pub(crate) fn action_line(action: &Action) -> String {
     let args = cut(
         &action.args,
         ARGS_MAX,
         "(shortened here; the Box got the full text)",
     );
     let outcome = action.outcome.as_deref().unwrap_or("result unknown");
+    let args = if args.is_empty() {
+        String::new()
+    } else {
+        format!(": {args}")
+    };
     format!(
-        "Turn {}, <@{}> asked. {} {args}. Result: {outcome}.",
-        action.turn, action.requested_by, action.tool
+        "Turn {}, <@{}> asked. {} Box `{}`{args}. Result: {outcome}.",
+        action.turn, action.requested_by, action.tool, action.box_name
     )
 }
 

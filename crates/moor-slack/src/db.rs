@@ -1,5 +1,6 @@
 //! The front's own `SQLite` file, `slack.db`: seen envelopes, each channel's repos, each
-//! thread with the Boxes it asked for, what its starter wrote and its coordinator turns.
+//! thread with the Boxes it asked for, what its starter wrote, its coordinator turns and what
+//! those turns did to its Boxes.
 
 use std::path::Path;
 use std::time::Duration;
@@ -13,7 +14,7 @@ const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// The schema version this build writes and reads. A schema change edits [`SCHEMA`] in place
 /// and raises this number; there are no migrations, so a file at any other version is refused.
-const SCHEMA_VERSION: i64 = 7;
+const SCHEMA_VERSION: i64 = 8;
 
 /// The whole schema, created in an empty file.
 const SCHEMA: &str = "
@@ -77,6 +78,18 @@ const SCHEMA: &str = "
         cost_usd REAL
     );
     CREATE INDEX slack_turns_thread ON slack_turns (channel, thread_ts, id);
+    CREATE TABLE slack_actions (
+        turn_id INTEGER NOT NULL,
+        seq INTEGER NOT NULL,
+        tool TEXT NOT NULL,
+        box_name TEXT NOT NULL,
+        requested_by TEXT NOT NULL,
+        args TEXT NOT NULL,
+        outcome TEXT,
+        created_at INTEGER NOT NULL,
+        done_at INTEGER,
+        PRIMARY KEY (turn_id, seq)
+    );
     CREATE TABLE slack_channel_repos (
         channel TEXT NOT NULL,
         repo TEXT NOT NULL,
@@ -229,6 +242,8 @@ fn create_if_empty(conn: &mut Connection) -> rusqlite::Result<()> {
     tx.commit()
 }
 
+mod actions;
+
 mod boxes;
 pub(crate) use boxes::{BoxState, SlackBox};
 
@@ -239,7 +254,7 @@ mod inbox;
 pub(crate) use inbox::{InboxItem, ItemKind};
 
 mod turns;
-pub(crate) use turns::{End, TurnRow};
+pub(crate) use turns::{End, OpenTurn, TurnRow};
 
 #[cfg(test)]
 mod tests;

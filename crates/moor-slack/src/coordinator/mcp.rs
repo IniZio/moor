@@ -41,6 +41,8 @@ pub struct ToolSettings {
     pub socket: PathBuf,
     /// The thread, as `<channel>/<thread ts>`.
     pub thread: String,
+    /// The current time in unix seconds.
+    pub clock: fn() -> i64,
 }
 
 /// Makes sure no descriptor above 2 that the process inherited still reaches what it was
@@ -130,6 +132,7 @@ pub fn serve_tools(settings: &ToolSettings) -> Result<(), String> {
         channel,
         thread_ts,
         call: &mut call,
+        clock: settings.clock,
     };
     let mut run = |call: &Call| tools::run(&mut scope, call);
     serve(&mut io::stdin().lock(), &mut io::stdout().lock(), &mut run)

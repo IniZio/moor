@@ -85,7 +85,7 @@ fn the_tool_server_answers_mcp_over_stdin_and_stdout() {
         .iter()
         .map(|t| t["name"].as_str().unwrap().to_owned())
         .collect();
-    assert_eq!(names, ["list_boxes"]);
+    assert_eq!(names, ["list_boxes", "steer_box"]);
     drop(stdin);
     assert!(
         child.wait().unwrap().success(),
@@ -103,6 +103,14 @@ fn the_tool_server_answers_tool_calls_from_slack_db_and_the_controller() {
     let text = answer["result"]["content"][0]["text"].as_str().unwrap();
     let want = format!("- Box `{BOX_NAME}` on demo, asked for by <@{USER}>: lifecycle unknown");
     assert!(text.starts_with(&want), "{text}");
+    let call = json!({"jsonrpc": "2.0", "id": 4, "method": "tools/call",
+        "params": {"name": "steer_box", "arguments": {"box": BOX_NAME, "text": "go on"}}});
+    let answer = send(&mut stdin, &mut stdout, &call).unwrap();
+    assert_eq!(answer["result"]["isError"], true);
+    assert_eq!(
+        answer["result"]["content"][0]["text"],
+        "No turn of this thread is running."
+    );
 }
 
 #[test]
@@ -170,4 +178,43 @@ fn a_turn_starts_the_tool_server_named_in_its_mcp_json_and_lists_the_threads_box
         args, want,
         "the server's argv names paths and the thread, no secret"
     );
+}
+
+#[test]
+fn a_steer_in_the_requesters_turn_reaches_the_box_and_the_next_turn_reads_it_as_done() {
+    let (rig, controller, bin) = Rig::start_coordinated(Some("sk-ant-oat01-mcp-57ee4"));
+    controller.keep_boxes();
+    controller.script(
+        "steer",
+        super::support::controller::Scripted::Reply(moor_core::response::Response::ok(
+            "steer", None,
+        )),
+    );
+    let steer = json!({"box": BOX_NAME, "text": "use tokio"});
+    Rig::tool_calls(&bin, Some(0), &[("steer_box", steer)]);
+    rig.mention(1, USER, "<@UBOT> start demo fix the thing", TS, None);
+    rig.wait_box_state(BOX_NAME, "bound");
+    super::inbox::reply(&rig, 2, USER, "tell it to use tokio");
+    rig.slack.wait_updates(1);
+    let sent = format!("Sent to Box `{BOX_NAME}`.");
+    assert_eq!(Rig::tool_results(&bin, 0), [(sent, false)]);
+    let steered = controller.seen(|seen| {
+        let steer = |r: &moor_core::request::Request| match r {
+            moor_core::request::Request::Steer(s) => Some((s.target.to_string(), s.text.clone())),
+            _ => None,
+        };
+        seen.requests.iter().filter_map(steer).collect::<Vec<_>>()
+    });
+    assert_eq!(
+        steered,
+        [(BOX_NAME.to_owned(), Some("use tokio".to_owned()))]
+    );
+    super::inbox::reply(&rig, 3, USER, "did it?");
+    rig.slack.wait_updates(2);
+    let stdin = std::fs::read_to_string(bin.join("run-1/stdin")).unwrap();
+    let journal = format!(
+        "## Actions this thread took\nTurn 1, <@{USER}> asked. steer_box Box `{BOX_NAME}`: \
+         use tokio. Result: sent to Box `{BOX_NAME}`.\n"
+    );
+    assert!(stdin.contains(&journal), "{stdin}");
 }

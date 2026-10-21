@@ -69,6 +69,17 @@ pub(crate) struct Unended {
     pub(crate) process: Option<(u32, i64)>,
 }
 
+/// The turn a thread runs now, as its tools see it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct OpenTurn {
+    /// The turn's id.
+    pub(crate) id: i64,
+    /// The turn a restart cut off that this turn runs again.
+    pub(crate) rerun_of: Option<i64>,
+    /// Slack user ids of the people whose messages the turn holds, each once.
+    pub(crate) authors: Vec<String>,
+}
+
 /// The columns [`turn_row`] reads.
 const TURN_COLUMNS: &str = "u.id, u.channel, u.thread_ts, u.paid_by, u.placeholder_ts, u.rerun_of";
 
@@ -275,6 +286,39 @@ impl Db {
                 params![channel, thread_ts, workdir, session],
             )
             .map(drop)
+    }
+
+    /// The thread's turn with no end, with the authors of the messages it holds; `None` when
+    /// no turn runs.
+    pub(crate) fn open_turn(
+        &self,
+        channel: &str,
+        thread_ts: &str,
+    ) -> rusqlite::Result<Option<OpenTurn>> {
+        let turn = self
+            .conn
+            .query_row(
+                "SELECT id, rerun_of FROM slack_turns WHERE channel = ?1 AND thread_ts = ?2 \
+                 AND ended_at IS NULL ORDER BY id DESC LIMIT 1",
+                params![channel, thread_ts],
+                |r| Ok((r.get::<_, i64>(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        let Some((id, rerun_of)) = turn else {
+            return Ok(None);
+        };
+        let mut stmt = self.conn.prepare(
+            "SELECT DISTINCT author FROM slack_inbox WHERE turn_id = ?1 AND kind = 'message' \
+             ORDER BY author",
+        )?;
+        let authors = stmt
+            .query_map(params![id], |r| r.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        Ok(Some(OpenTurn {
+            id,
+            rerun_of,
+            authors,
+        }))
     }
 
     /// The id and text of the message that opened the thread, when it was recorded.
