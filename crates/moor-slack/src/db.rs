@@ -13,7 +13,7 @@ const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// The schema version this build writes and reads. A schema change edits [`SCHEMA`] in place
 /// and raises this number; there are no migrations, so a file at any other version is refused.
-const SCHEMA_VERSION: i64 = 6;
+const SCHEMA_VERSION: i64 = 7;
 
 /// The whole schema, created in an empty file.
 const SCHEMA: &str = "
@@ -63,6 +63,7 @@ const SCHEMA: &str = "
         channel TEXT NOT NULL,
         thread_ts TEXT NOT NULL,
         paid_by TEXT NOT NULL,
+        rerun_of INTEGER,
         started_at INTEGER NOT NULL,
         pid INTEGER,
         placeholder_ts TEXT,

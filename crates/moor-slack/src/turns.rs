@@ -22,6 +22,7 @@ use crate::Log;
 
 mod host;
 mod lines;
+mod restart;
 
 /// Most turns that run at once.
 const MAX_TURNS: usize = 4;
@@ -77,11 +78,15 @@ impl Turns {
             Ok(db) => db,
             Err(e) => return (self.log)(&format!("turns: open slack.db: {e}")),
         };
+        let mut reruns = self.recover(&db);
         let (done_tx, done_rx) = mpsc::channel();
         let mut running = 0_usize;
         loop {
             while running < MAX_TURNS {
-                match db.take_turn((self.clock)()) {
+                let next = reruns
+                    .pop()
+                    .map_or_else(|| db.take_turn((self.clock)()), |r| Ok(Some(r)));
+                match next {
                     Ok(Some(row)) => {
                         running += 1;
                         let (me, done) = (Arc::clone(&self), done_tx.clone());
@@ -110,15 +115,16 @@ impl Turns {
             Ok(db) => db,
             Err(e) => return (self.log)(&format!("turn {}: open slack.db: {e}", row.id)),
         };
-        let posted =
-            self.api
-                .post_message(&self.bot_token, &row.channel, &row.thread_ts, PLACEHOLDER);
-        let placeholder = posted
-            .inspect_err(|e| (self.log)(&format!("slack: placeholder failed: {e}")))
-            .ok();
-        if let Some(ts) = &placeholder {
-            self.written(db.set_placeholder(row.id, ts));
-        }
+        let placeholder = row.placeholder.clone().or_else(|| {
+            let posted =
+                self.api
+                    .post_message(&self.bot_token, &row.channel, &row.thread_ts, PLACEHOLDER);
+            let ts = posted
+                .inspect_err(|e| (self.log)(&format!("slack: placeholder failed: {e}")))
+                .ok()?;
+            self.written(db.set_placeholder(row.id, &ts));
+            Some(ts)
+        });
         let closing = self.outcome(&db, row);
         let stored = db.store_reply(
             row.id,
@@ -136,7 +142,7 @@ impl Turns {
     /// Edits the placeholder into `line`, or posts `line` when there is no placeholder or Slack
     /// says it cannot be edited. A failure Slack may get over is tried again after a wait.
     /// True once the line landed.
-    fn post(&self, row: &TurnRow, placeholder: Option<&str>, line: &str) -> bool {
+    pub(super) fn post(&self, row: &TurnRow, placeholder: Option<&str>, line: &str) -> bool {
         let token = &self.bot_token;
         let (mut target, mut waits) = (placeholder, BACKOFF.into_iter());
         loop {
@@ -170,7 +176,7 @@ impl Turns {
     }
 
     /// Logs a failed `slack.db` write.
-    fn written(&self, write: rusqlite::Result<()>) {
+    pub(super) fn written(&self, write: rusqlite::Result<()>) {
         if let Err(e) = write {
             (self.log)(&format!("turns: slack.db: {e}"));
         }
@@ -299,6 +305,7 @@ impl Turns {
             boxes: &boxes,
             earlier: &earlier,
             new: &new,
+            rerun: row.rerun_of.map(|_| &[][..]),
         };
         Ok(context::render(&parts, self.budget))
     }

@@ -21,6 +21,8 @@ pub(crate) enum End {
     NoToken,
     /// The provider refused the starter's credential.
     TokenRefused,
+    /// The front restarted while the turn ran.
+    Lost,
 }
 
 impl End {
@@ -33,6 +35,7 @@ impl End {
             Self::Unsafe => "unsafe",
             Self::NoToken => "no_token",
             Self::TokenRefused => "token_refused",
+            Self::Lost => "lost",
         }
     }
 }
@@ -48,6 +51,34 @@ pub(crate) struct TurnRow {
     pub(crate) thread_ts: String,
     /// Slack user id of the thread's starter, who pays for the turn.
     pub(crate) owner: String,
+    /// The placeholder message `ts`, when one was posted.
+    pub(crate) placeholder: Option<String>,
+    /// The turn a restart cut off that this turn runs again.
+    pub(crate) rerun_of: Option<i64>,
+}
+
+/// A turn the front left without an end when it stopped.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Unended {
+    /// The turn.
+    pub(crate) row: TurnRow,
+    /// When it started, in unix seconds.
+    pub(crate) started_at: i64,
+}
+
+/// The columns [`turn_row`] reads.
+const TURN_COLUMNS: &str = "u.id, u.channel, u.thread_ts, u.paid_by, u.placeholder_ts, u.rerun_of";
+
+/// A [`TurnRow`] from [`TURN_COLUMNS`].
+fn turn_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<TurnRow> {
+    Ok(TurnRow {
+        id: r.get(0)?,
+        channel: r.get(1)?,
+        thread_ts: r.get(2)?,
+        owner: r.get(3)?,
+        placeholder: r.get(4)?,
+        rerun_of: r.get(5)?,
+    })
 }
 
 impl Db {
@@ -88,6 +119,8 @@ impl Db {
                 channel,
                 thread_ts,
                 owner,
+                placeholder: None,
+                rerun_of: None,
             }))
         })
     }
@@ -141,6 +174,67 @@ impl Db {
                 params![id, now],
             )?;
             Ok(())
+        })
+    }
+
+    /// Turns whose line was stored and not yet marked posted, with that line.
+    pub(crate) fn unposted(&self) -> rusqlite::Result<Vec<(TurnRow, String)>> {
+        let sql = format!(
+            "SELECT {TURN_COLUMNS}, u.reply_text FROM slack_turns u WHERE u.reply_text IS NOT NULL \
+             AND u.posted_at IS NULL ORDER BY u.id"
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map([], |r| Ok((turn_row(r)?, r.get(6)?)))?;
+        rows.collect()
+    }
+
+    /// Turns with no end and no stored line.
+    pub(crate) fn unended(&self) -> rusqlite::Result<Vec<Unended>> {
+        let sql = format!(
+            "SELECT {TURN_COLUMNS}, u.started_at FROM slack_turns u WHERE u.ended_at IS NULL \
+             AND u.reply_text IS NULL ORDER BY u.id"
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map([], |r| {
+            Ok(Unended {
+                row: turn_row(r)?,
+                started_at: r.get(6)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    /// Marks turn `lost` lost at `now` and records a turn that runs it again, with its items
+    /// and its placeholder. Returns the new turn.
+    pub(crate) fn rerun(&self, lost: &TurnRow, now: i64) -> rusqlite::Result<TurnRow> {
+        self.atomically(|| {
+            self.conn.execute(
+                "UPDATE slack_turns SET end = 'lost', ended_at = ?2 WHERE id = ?1",
+                params![lost.id, now],
+            )?;
+            self.conn.execute(
+                "INSERT INTO slack_turns \
+                 (channel, thread_ts, paid_by, rerun_of, started_at, placeholder_ts) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![
+                    lost.channel,
+                    lost.thread_ts,
+                    lost.owner,
+                    lost.id,
+                    now,
+                    lost.placeholder
+                ],
+            )?;
+            let id = self.conn.last_insert_rowid();
+            self.conn.execute(
+                "UPDATE slack_inbox SET turn_id = ?2 WHERE turn_id = ?1",
+                params![lost.id, id],
+            )?;
+            Ok(TurnRow {
+                id,
+                rerun_of: Some(lost.id),
+                ..lost.clone()
+            })
         })
     }
 
