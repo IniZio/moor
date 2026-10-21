@@ -10,7 +10,7 @@ use std::thread;
 
 use moor_core::seam::proc::{ProcError, ProcSpec, Tool};
 
-use super::{spawn_retrying, SystemProc};
+use super::SystemProc;
 
 /// Mode of a created log directory: owner only.
 const DIR_MODE: u32 = 0o700;
@@ -39,7 +39,7 @@ impl SystemProc {
         cmd.stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::from(file));
-        let mut child = spawn_retrying(&mut cmd).map_err(ProcError::Spawn)?;
+        let mut child = cmd.spawn().map_err(ProcError::Spawn)?;
         let pid = child.id();
         thread::spawn(move || drop(child.wait()));
         Ok(pid)

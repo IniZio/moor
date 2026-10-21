@@ -14,10 +14,7 @@ use rustix::io::Errno;
 use rustix::process::{waitid, Signal, WaitId, WaitIdOptions};
 use zeroize::Zeroizing;
 
-use super::{
-    feed, gone, signal_group, spawn_retrying, stdin_for, to_pid, SystemProc, DRAIN_GRACE, GRACE,
-    TAIL,
-};
+use super::{feed, gone, signal_group, stdin_for, to_pid, SystemProc, DRAIN_GRACE, GRACE, TAIL};
 
 /// What the stdout reader found first: a full line, or the end of output.
 type FirstRead = io::Result<Option<String>>;
@@ -55,7 +52,7 @@ impl SystemProc {
         cmd.stdin(stdin)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        let mut child = spawn_retrying(&mut cmd).map_err(ProcError::Spawn)?;
+        let mut child = cmd.spawn().map_err(ProcError::Spawn)?;
         let (w, o, e) = (child.stdin.take(), child.stdout.take(), child.stderr.take());
         let payload = payload.map(|b| Zeroizing::new(b.to_vec()));
         thread::spawn(move || feed(w, payload.as_ref().map(|p| p.as_slice())));
