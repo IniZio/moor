@@ -35,7 +35,9 @@ file means every key takes its default.
 
 A list of secret names that a `start` checks. A `.moor.yaml` can list names
 too. Each name is a secret of the Box's user and matches `[a-z][a-z0-9_-]*`. A
-`start` whose user lacks one of them is rejected.
+`start` whose user lacks one of them is rejected. A name may not be a secret
+that a Proxy rule injects, such as `claude` or `github`. A `.moor.yaml` is
+checked against the default rules only.
 
 moor does not put these secrets into the Box. A secret reaches a Box's requests
 only through a Proxy rule whose `credential` names it.
@@ -55,7 +57,8 @@ only through a Proxy rule whose `credential` names it.
 | `headers` | map | Request headers. |
 
 `args`, `env` values, `url`, and `headers` values can hold `${NAME}`, which
-names the Box user's secret `NAME`.
+names the Box user's secret `NAME`. `NAME` may not be a secret that a Proxy
+rule injects.
 
 ### `proxy`
 
@@ -162,8 +165,9 @@ not `local`.
 
 A moor user owns secrets, such as a Claude or GitHub token. An identity names
 a person on one front, as `<namespace>:<rest>`, and a user can link several
-identities with `moor user link-code`. A request on a front
-socket must assert an identity in that front's namespace. On the controller
+identities with `moor user link-code`. Every request on a front socket except
+`version` must assert an identity in that front's namespace. Any other request
+gets `must assert an identity`. On the controller
 socket, the controller reads the peer's uid from the kernel and acts as `local:<uid>`. It
 refuses any other identity.
 
@@ -197,10 +201,21 @@ operator, whatever identity it asserts. A Box with no user is the operator's
 alone.
 
 Anyone else gets `not your Box`. A Box that does not exist gets the same reply,
-so names and ids cannot be probed. A list, such as `moor show` with no Box or
-`sessions`, shows only the caller's Boxes. A watch carries only the events of
-those Boxes. A watch frame asserts no identity, so a watch on a front socket
-carries no events.
+so Box ids cannot be probed. Box names are global, so a `start` can tell a name
+that an open Box uses from a free one. A list, such as `moor show` with no Box
+or `sessions`, shows only the caller's Boxes. `gate` reads only the recorded
+runs of those Boxes. A warning in a reply never names a Box that the caller
+may not see. A watch carries only the events of the caller's Boxes. A watch
+frame asserts no identity, so a watch on a front socket carries no events.
+
+Some requests read or change the controller host, so only the operator may
+send them:
+
+- `start --worktree`, which binds a host checkout. No other `start` may bind
+  a worktree that an open Box works in, not even the operator's.
+- `env` and `repos`.
+- Host Sessions. Anyone else gets `not your Box` for a host Session, as for a
+  Session that does not exist, and a list leaves host Sessions out.
 
 ## Secrets a Box uses
 

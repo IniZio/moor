@@ -50,7 +50,7 @@ The state directory holds `moor.db`. It is the first of `--state-dir`,
 | --- | --- |
 | `--goal TEXT` | The agent's first prompt. |
 | `--issue REF` | An issue reference for the Box. |
-| `--worktree PATH` | Use this existing linked worktree instead of creating one. |
+| `--worktree PATH` | Use this existing linked worktree instead of creating one. Only the operator may give it, and not for a worktree that an open Box works in. |
 | `--base REF` | The ref the Box branch starts from. |
 | `--repo NAME\|URL` | A repo from the controller config, cloned on the controller host, instead of the current directory. |
 | `--model MODEL` | The agent model. |
@@ -121,7 +121,7 @@ current directory.
 | Command | What it does |
 | --- | --- |
 | `moor session open NAME --seed TEXT` | Starts a new agent Session on an open Box. `--seed-file PATH` reads the first prompt from a file. |
-| `moor session open --host --workdir DIR` | Opens a host Session in `DIR`, with no Box. `--agent NAME` and `--agent-session-id ID` set its agent. |
+| `moor session open --host --workdir DIR` | Opens a host Session in `DIR`, with no Box. `--agent NAME` and `--agent-session-id ID` set its agent. Host Sessions are the operator's only. |
 | `moor session set ID` | Changes the `--agent` or `--agent-session-id` recorded on a host Session. |
 | `moor session end ID` | Ends a host Session. |
 
@@ -147,8 +147,8 @@ controller.
 | Command | What it does |
 | --- | --- |
 | `moor version` | Prints the version, the git commit, and the envelope schema version. |
-| `moor env [REPO]` | Previews the settings and credentials a Box in `REPO` would get. The default is the current repo. |
-| `moor gate check SHA NAME` | Exits 0 when a run recorded with `moor run --record NAME` passed on commit `SHA`, and 1 when none did. `--command TEXT` counts only runs of exactly that command text. |
+| `moor env [REPO]` | Previews the settings and credentials a Box in `REPO` would get. The default is the current repo. Only the operator may run it. |
+| `moor gate check SHA NAME` | Exits 0 when a run recorded with `moor run --record NAME` passed on commit `SHA`, and 1 when none did. `--command TEXT` counts only runs of exactly that command text. It reads only the runs of Boxes that you may act on. |
 | `moor events` | Prints stored events as JSON lines. Takes `--since ID`, `--box NAME`, `--kind KIND`, and `--follow`. |
 | `moor call` | Reads one JSON request from stdin and runs it. The output is always a JSON envelope. |
 | `moor controller serve --config FILE` | Runs the controller. See [the controller config](config.md#controller-config). |
