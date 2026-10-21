@@ -85,6 +85,19 @@ fn upload(
         return Err(NotUploaded::Failed(why));
     }
     sent.map_err(refused)?;
+    match body.stream.read(&mut [0; 1]) {
+        Ok(0) => {}
+        Ok(_) => {
+            return Err(NotUploaded::Failed(
+                "the stored copy is longer than its listed size".to_owned(),
+            ))
+        }
+        Err(e) => {
+            return Err(NotUploaded::Failed(format!(
+                "cannot read the stored copy: {e}"
+            )))
+        }
+    }
     let reply = body.stream.finish().map_err(|e| unreadable(&e))?;
     if let Some(e) = reply.error {
         return Err(NotUploaded::Failed(format!(

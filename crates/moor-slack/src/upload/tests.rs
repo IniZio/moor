@@ -47,6 +47,8 @@ struct Fake {
     scope_missing: AtomicBool,
     /// While set, `chat.postMessage` answers `ok: false`.
     post_down: AtomicBool,
+    /// When set, the upload URL `files.getUploadURLExternal` hands out.
+    upload_to: Mutex<Option<String>>,
 }
 
 /// Reads one request, keeping at most [`KEEP`] body bytes.
@@ -97,7 +99,12 @@ fn reply(fake: &Fake, host: &str, path: &str) -> (&'static str, String) {
                 json!({"ok": false, "error": "missing_scope"}).to_string(),
             );
         }
-        let url = format!("{host}/upload/F1");
+        let url = fake
+            .upload_to
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap_or_else(|| format!("{host}/upload/F1"));
         let reply = json!({"ok": true, "upload_url": url, "file_id": "F1"});
         return ("200 OK", reply.to_string());
     }
@@ -126,6 +133,7 @@ fn fake() -> Arc<Fake> {
         upload_down: AtomicBool::default(),
         scope_missing: AtomicBool::default(),
         post_down: AtomicBool::default(),
+        upload_to: Mutex::default(),
     });
     let served = Arc::clone(&fake);
     std::thread::spawn(move || {
@@ -396,6 +404,55 @@ fn a_short_stored_copy_never_shares_the_file() {
         f.texts(),
         ["report.txt could not be uploaded: the stored copy is shorter than its listed size"]
     );
+}
+
+/// Asserts that a stored copy longer than the listed 5 bytes is never shared.
+fn longer_copy_is_refused(stored: Stored) {
+    let (dir, f) = (tempfile::tempdir().unwrap(), fake());
+    let sock = dir.path().join("c.sock");
+    let ctl = controller(&sock, vec![stored]);
+    post(&f.base, &sock, &listed("report.txt", 5, sha(b"abcde"))).unwrap();
+    ctl.join().unwrap();
+    assert!(f.hits("completeuploadexternal").is_empty());
+    assert_eq!(
+        f.texts(),
+        ["report.txt could not be uploaded: the stored copy is longer than its listed size"]
+    );
+}
+
+#[test]
+fn a_longer_stored_copy_in_the_last_frame_never_shares_the_file() {
+    longer_copy_is_refused(Stored::of(b"abcdefgh"));
+}
+
+#[test]
+fn a_longer_stored_copy_in_later_frames_never_shares_the_file() {
+    longer_copy_is_refused(Stored {
+        frame: 5,
+        ..Stored::of(b"abcdefghij")
+    });
+}
+
+#[test]
+fn the_upload_url_never_reaches_an_error_or_the_thread() {
+    const MARKER: &str = "capability-marker-7f3a";
+    let gone = TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}/upload/{MARKER}", gone.local_addr().unwrap());
+    drop(gone);
+    let (dir, f) = (tempfile::tempdir().unwrap(), fake());
+    *f.upload_to.lock().unwrap() = Some(url);
+    let sock = dir.path().join("c.sock");
+    let ctl = controller(&sock, vec![Stored::of(b"hello")]);
+    post(&f.base, &sock, &listed("report.txt", 5, sha(b"hello"))).unwrap();
+    ctl.join().unwrap();
+    let texts = f.texts();
+    assert_eq!(texts.len(), 1, "{texts:?}");
+    assert!(
+        texts[0].starts_with("report.txt could not be uploaded: "),
+        "{texts:?}"
+    );
+    assert!(!texts[0].contains(MARKER), "{texts:?}");
+    assert!(f.hits("completeuploadexternal").is_empty());
 }
 
 #[test]
