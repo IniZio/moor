@@ -275,7 +275,7 @@ cannot add or change a rule.
 }
 ```
 
-`class` is one of `ok`, `failed`, `usage`, `refused`. On failure `value` is
+`class` is one of `ok`, `failed`, `usage` or `refused`. On failure `value` is
 `null` and `error` is `{ "kind", "message", "hints", "context" }`.
 
 ## Layout
