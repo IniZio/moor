@@ -6,15 +6,18 @@ use std::sync::Arc;
 
 use moor_core::config::proxy::{ResolvedInject, ResolvedRule, GITHUB_SECRET};
 use moor_core::config::{parse_user, BoxSettings, Flags, UserConfig};
+use moor_core::domain::decision::{Decision, NewBox};
 use moor_core::exec_env::Purpose;
 use moor_core::seam::agent_profile::ProxyAddr;
 use moor_core::seam::driver::{AcquireReq, Driver};
+use moor_core::user::{Identity, UserId};
 use moor_core::{BoxHandle, BoxId, BoxName, BoxPath, ProviderId};
 
 use super::{forge_routed, prepare, BoxProxy, Site};
 use crate::cx::Cx;
 use crate::testing::driver::FakeDriver;
 use crate::testing::proc::ScriptedProc;
+use crate::testing::proxy_host::{FakeProxyHost, ProxyHostCall};
 use crate::testing::surface::FakeSurface;
 
 struct Rig {
@@ -249,4 +252,33 @@ fn a_forge_rule_marks_the_proxy_as_forge_routed() {
 fn rules_without_a_forge_credential_do_not() {
     assert!(!forge_routed(&[rule_with("other")]));
     assert!(!forge_routed(&[]));
+}
+
+#[test]
+fn ensure_plans_the_proxy_for_the_user_of_the_box() {
+    let dir = tempfile::tempdir().unwrap();
+    let fake = FakeProxyHost::new();
+    let mut r = rig(dir.path());
+    r.cx = r.cx.with_proxy_host(Arc::new(fake.clone()));
+    let store = r.cx.store().unwrap();
+    let (second, _) = store.enroll(&Identity::local(2000)).unwrap();
+    assert_ne!(second.get(), 1, "the Box's user is not the first user");
+    let new = NewBox {
+        name: BoxName::parse_allow_bare("second-users-box").unwrap(),
+        repo: "r".into(),
+    };
+    let id = store
+        .apply(Decision::insert(new).requester(second))
+        .unwrap()
+        .box_id;
+    super::proxy(&r.cx, id, Some(BoxHandle::new("h")), dir.path(), &cfg()).unwrap();
+    let users: Vec<UserId> = fake
+        .calls()
+        .into_iter()
+        .filter_map(|c| match c {
+            ProxyHostCall::Ensure(spec) => Some(spec.user),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(users, [second]);
 }

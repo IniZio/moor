@@ -306,7 +306,7 @@ impl Serving {
             };
             let peer = conn::Peer {
                 caller: self.front.clone().map_or_else(
-                    || peer::local_caller(&stream),
+                    || peer::local_caller(&stream, rustix::process::geteuid().as_raw()),
                     |ns| Ok(moor_core::user::Caller::Front(ns)),
                 ),
                 vault: Arc::clone(&self.vault),
