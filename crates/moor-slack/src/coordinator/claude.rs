@@ -2,6 +2,7 @@
 //! turn, the token on a pipe at fd 3, the `mcp.json` that names the front's tool server, the
 //! `stream-json` events of its output, and the instruction files it would load.
 
+use std::ffi::OsStr;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -79,6 +80,18 @@ struct Ran {
 }
 
 impl Claude {
+    /// Probes `binary`, or without one the first `claude` in `search`, the daemon's `PATH`.
+    pub(crate) fn locate(
+        binary: Option<&Path>,
+        search: Option<&OsStr>,
+        host: HostEnv,
+    ) -> Result<Self, String> {
+        match binary {
+            Some(binary) => Self::probe(binary, host),
+            None => Self::probe(&on_path(search)?, host),
+        }
+    }
+
     /// Runs `binary --version` with a cleared environment; keeps the binary when it is
     /// 2.1.304 or newer.
     pub(crate) fn probe(binary: &Path, host: HostEnv) -> Result<Self, String> {
@@ -381,7 +394,7 @@ fn run(cmd: Command, input: &[u8], token: Option<&Secret>, limit: Duration) -> i
 mod instructions;
 
 mod wiring;
-use wiring::{clear_env, write_mcp_config, MCP_CONFIG};
+use wiring::{clear_env, on_path, write_mcp_config, MCP_CONFIG};
 
 #[cfg(test)]
 pub(crate) mod tests;

@@ -33,7 +33,7 @@ pub struct Coordinator {
     #[serde(default)]
     pub agent: CoordinatorAgent,
     /// Absolute path of the agent's binary; for `claude`, Claude Code 2.1.304 or newer.
-    /// Without it the coordinator is unavailable and no Box can start.
+    /// Without it the agent looks for its own binary on `PATH`.
     #[serde(default)]
     pub binary: Option<PathBuf>,
     /// The model each turn runs on.

@@ -113,6 +113,7 @@ fn main() -> ExitCode {
             state_dir,
             home: std::env::var_os("HOME").map(PathBuf::from),
             user: std::env::var("USER").ok(),
+            path: std::env::var_os("PATH"),
             clock: unix_now,
         };
         moor_slack::run(&settings, log)

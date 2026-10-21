@@ -1,5 +1,6 @@
 //! The daemon: loads the config and tokens, then runs the front's five threads.
 
+use std::ffi::OsString;
 use std::fs::DirBuilder;
 use std::os::unix::fs::DirBuilderExt as _;
 use std::path::{Path, PathBuf};
@@ -41,6 +42,9 @@ pub struct Settings {
     pub home: Option<PathBuf>,
     /// `USER` for the coordinator.
     pub user: Option<String>,
+    /// The daemon's `PATH`, where the coordinator agent looks for its binary when the config
+    /// names none.
+    pub path: Option<OsString>,
     /// The current time in unix seconds.
     pub clock: fn() -> i64,
 }
@@ -187,14 +191,11 @@ fn probe(cfg: &Config, settings: &Settings, log: &Log) -> Result<Arc<dyn Agent>,
         user: settings.user.clone(),
     };
     let c = &cfg.coordinator;
-    let coordinator: Result<Arc<dyn Agent>, String> = c.binary.as_ref().map_or_else(
-        || Err("the config names no coordinator.binary".to_owned()),
-        |binary| match c.agent {
-            CoordinatorAgent::Claude => {
-                Claude::probe(binary, host).map(|a| Arc::new(a) as Arc<dyn Agent>)
-            }
-        },
-    );
+    let binary = c.binary.as_deref();
+    let coordinator: Result<Arc<dyn Agent>, String> = match c.agent {
+        CoordinatorAgent::Claude => Claude::locate(binary, settings.path.as_deref(), host)
+            .map(|a| Arc::new(a) as Arc<dyn Agent>),
+    };
     match &coordinator {
         Ok(agent) => log(&format!(
             "coordinator: {} {}",
