@@ -164,6 +164,27 @@ socket must assert an identity in that front's namespace. On the controller
 socket, the controller reads the peer's uid from the kernel and acts as `local:<uid>`. It
 refuses any other identity.
 
+A front acts for one of its people by wrapping a request in `as`:
+
+```json
+{"cmd": "as", "identity": "slack:T1:U1", "request": {"cmd": "steer", "box": "demo", "text": "go"}}
+```
+
+### Who may act on a Box
+
+A Box acts for the user who started it. Only that user and the local operator
+may act on the Box, for example to run, steer, show, close, sleep or wake it,
+copy files into it, or read its artifacts. The local operator is a peer on the
+controller socket with the controller's own uid. A front socket is never the
+operator, whatever identity it asserts. A Box with no user is the operator's
+alone.
+
+Anyone else gets `not your Box`. A Box that does not exist gets the same reply,
+so names and ids cannot be probed. A list, such as `moor show` with no Box or
+`sessions`, shows only the caller's Boxes. A watch carries only the events of
+those Boxes. A watch frame asserts no identity, so a watch on a front socket
+carries no events.
+
 ## Secrets a Box uses
 
 Each Proxy rule names the secret it injects. A Box's Proxy injects the
