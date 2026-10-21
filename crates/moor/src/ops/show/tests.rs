@@ -8,8 +8,7 @@ use moor_core::activity::{
     AgentState, HookKind, HookRead, HookRecord, PaneObs, PaneRead, PaneStatus, Probes, Source,
     STARTUP_GRACE,
 };
-use moor_core::domain::box_state::SetupOutcome;
-use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
+use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput, SetupOutcome};
 use moor_core::domain::boxes::{BoxInput, BoxState};
 use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
 use moor_core::domain::session_state::{SessionInput, SessionState};
@@ -22,6 +21,7 @@ mod artifacts;
 mod attention;
 mod events;
 mod pane;
+mod target;
 
 use super::run;
 use crate::cx::Cx;
@@ -53,7 +53,7 @@ fn cx(dir: &Path, driver: &Arc<FakeDriver>) -> Cx {
 /// Request showing everything.
 fn req(box_name: Option<&str>, events: Option<u32>) -> ShowReq {
     ShowReq {
-        box_name: box_name.map(|t| BoxName::parse_allow_bare(t).unwrap()),
+        target: box_name.map(|t| BoxName::parse_allow_bare(t).unwrap().into()),
         events,
         agent: false,
         reports: false,

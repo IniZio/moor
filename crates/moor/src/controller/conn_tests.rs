@@ -43,7 +43,7 @@ fn run_raw(env: &Env, input: &str) -> Vec<Value> {
 
 fn show(box_name: Option<BoxName>) -> Request {
     Request::Show(ShowReq {
-        box_name,
+        target: box_name.map(Into::into),
         events: None,
         agent: false,
         reports: false,

@@ -10,7 +10,7 @@ use super::*;
 
 fn show() -> Request {
     Request::Show(ShowReq {
-        box_name: None,
+        target: None,
         events: None,
         agent: false,
         reports: false,
@@ -139,7 +139,7 @@ fn hello_mismatch_is_protocol_error() {
     let sock = dir.path().join("c.sock");
     let server = serve(
         &sock,
-        vec![vec![r#"{"frame":"hello","protocol":9}"#.to_owned()]],
+        vec![vec![r#"{"frame":"hello","protocol":99}"#.to_owned()]],
     );
     let err = call(
         &Env::default(),
@@ -278,15 +278,16 @@ fn ssh_missing_binary_is_unreachable() {
 #[test]
 fn ssh_protocol_mismatch_names_both_versions() {
     let dir = tempfile::tempdir().unwrap();
+    let theirs = PROTOCOL + 1;
     let env = fake_ssh(
         dir.path(),
-        r#"read l; echo '{"frame":"hello","protocol":9}'"#,
+        &format!(r#"read l; echo '{{"frame":"hello","protocol":{theirs}}}'"#),
     );
     let err = call(&env, &ssh_target(), &show(), |_| {}, |_| {}).unwrap_err();
     let msg = err.to_string();
     assert!(
         matches!(err, ClientError::Protocol(_))
-            && msg.contains('9')
+            && msg.contains(&theirs.to_string())
             && msg.contains(&PROTOCOL.to_string()),
         "{msg}"
     );

@@ -154,7 +154,7 @@ fn working() -> Probes {
 
 fn text(t: &str) -> SteerReq {
     SteerReq {
-        box_name: BoxName::parse_allow_bare("t").unwrap(),
+        target: BoxName::parse_allow_bare("t").unwrap().into(),
         text: Some(t.to_owned()),
         menu: None,
     }
@@ -162,7 +162,7 @@ fn text(t: &str) -> SteerReq {
 
 fn menu(n: u32) -> SteerReq {
     SteerReq {
-        box_name: BoxName::parse_allow_bare("t").unwrap(),
+        target: BoxName::parse_allow_bare("t").unwrap().into(),
         text: None,
         menu: Some(n),
     }
@@ -195,7 +195,7 @@ fn steered_id(f: &Fx) -> i64 {
 fn an_unknown_box_is_refused() {
     let f = fx();
     let req = SteerReq {
-        box_name: BoxName::parse_allow_bare("other").unwrap(),
+        target: BoxName::parse_allow_bare("other").unwrap().into(),
         ..text("hi")
     };
     let err = run(&f.cx, &req).unwrap_err();
@@ -547,3 +547,4 @@ fn an_exited_agent_has_its_transcript_saved_before_the_session_ends() {
 }
 
 mod cold_boot;
+mod target;

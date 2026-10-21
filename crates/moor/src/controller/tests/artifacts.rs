@@ -137,7 +137,7 @@ impl Fixture {
 
     fn list(&mut self, all: bool) -> Vec<Value> {
         let (env, _) = self.call(&Request::Artifacts(ArtifactsReq {
-            box_name: box_name(),
+            target: box_name().into(),
             all,
         }));
         assert_eq!(env["class"], "ok", "{env}");
@@ -152,7 +152,7 @@ impl Fixture {
 
     fn read(&mut self, name: &str, version: Option<u32>) -> (Value, Vec<Vec<u8>>) {
         self.call(&Request::ArtifactRead(ArtifactReadReq {
-            box_name: box_name(),
+            target: box_name().into(),
             name: name.to_owned(),
             version,
             offset: 0,
@@ -212,12 +212,12 @@ fn missing_box_name_or_version_is_not_found() {
     let mut f = fixture();
     let ghost = BoxName::parse_allow_bare("ghost").expect("name");
     let (env, _) = f.call(&Request::Artifacts(ArtifactsReq {
-        box_name: ghost.clone(),
+        target: ghost.clone().into(),
         all: false,
     }));
     assert_eq!(env["error"]["kind"], "not_found", "{env}");
     let (env, _) = f.call(&Request::ArtifactRead(ArtifactReadReq {
-        box_name: ghost,
+        target: ghost.into(),
         name: "demo.log".to_owned(),
         version: None,
         offset: 0,

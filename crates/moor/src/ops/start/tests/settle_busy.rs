@@ -67,7 +67,7 @@ fn show_leaves_a_box_while_an_op_holds_its_box() {
     let (w, id) = working_without_session();
     let _held = busy(&w, id);
     let list = ShowReq {
-        box_name: None,
+        target: None,
         events: None,
         agent: false,
         reports: false,

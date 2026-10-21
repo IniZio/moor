@@ -17,7 +17,7 @@ fn built(path: &str, body: &Value) -> Result<Request, String> {
 
 fn steer(name: &str, text: Option<&str>, menu: Option<u32>) -> Request {
     Request::Steer(SteerReq {
-        box_name: parsed(name),
+        target: parsed(name).into(),
         text: text.map(Into::into),
         menu,
     })
@@ -47,7 +47,7 @@ fn close_sends_a_plain_close() {
     assert_eq!(
         req,
         Ok(Request::Close(CloseReq {
-            box_name: parsed("t"),
+            target: parsed("t").into(),
             force: false,
             trust_moor_yaml: false,
         }))

@@ -21,6 +21,7 @@ pub(crate) mod reconcile;
 pub(crate) mod reports;
 pub(crate) mod resume;
 pub(crate) mod setup;
+pub(crate) mod target;
 pub(crate) mod transcript;
 pub(crate) mod view;
 pub(crate) mod wake;

@@ -18,6 +18,7 @@ use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::common::activity::{self, session_ref};
 use crate::ops::common::boxlock::{self, BoxLock};
+use crate::ops::common::target::{self, Rule};
 use crate::ops::common::transcript;
 use crate::ops::common::wake::wake_and_revive;
 use crate::store::{BoxRow, SessionRow, Store};
@@ -32,11 +33,10 @@ const STEER_DEADLINE: Duration = Duration::from_secs(30);
 /// does not fit what the agent shows, or the send failed.
 pub(crate) fn run(cx: &Cx, req: &SteerReq) -> Result<SteerValue, CommandError> {
     let store = cx.store()?;
-    let name = req.box_name.as_str();
-    let id = store
-        .open_box_by_name(&req.box_name)?
-        .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no open Box {name}")))?
-        .id;
+    let found = target::resolve(store, &req.target, Rule::Open)?.ok_or_else(|| {
+        CommandError::new(ErrorKind::Failed, format!("no open Box {}", req.target))
+    })?;
+    let (id, name) = (found.id, found.name.as_str());
     let no_agent = || {
         CommandError::new(
             ErrorKind::Refused,
@@ -63,7 +63,7 @@ pub(crate) fn run(cx: &Cx, req: &SteerReq) -> Result<SteerValue, CommandError> {
     let sref = session_ref(&row, session.session_ref.clone(), session.pane.clone())
         .ok_or_else(no_agent)?;
     let before = state_of(cx, store, &row)?;
-    let steer = choose(req, before.as_ref())?;
+    let steer = choose(req, name, before.as_ref())?;
     let sent = match &steer {
         Steer::Text(t) => t.clone(),
         Steer::Menu(n) => n.to_string(),
@@ -214,8 +214,11 @@ fn menu_answered(cx: &Cx, store: &Store, row: &BoxRow) -> Result<bool, CommandEr
 /// What to send for `req` given what the agent shows.
 ///
 /// A blocked agent takes a menu choice only: `--menu N`, or a lone digit as the text.
-fn choose(req: &SteerReq, state: Option<&AgentState>) -> Result<Steer, CommandError> {
-    let box_name = req.box_name.as_str();
+fn choose(
+    req: &SteerReq,
+    box_name: &str,
+    state: Option<&AgentState>,
+) -> Result<Steer, CommandError> {
     let waiting = match state {
         Some(AgentState::NeedsInput { question, .. }) => Some(question),
         _ => None,

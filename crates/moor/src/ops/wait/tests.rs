@@ -201,7 +201,7 @@ fn never_takes_the_box_lock() {
     )
     .unwrap();
     let show = ShowReq {
-        box_name: Some(BoxName::parse_allow_bare("demo").unwrap()),
+        target: Some(BoxName::parse_allow_bare("demo").unwrap().into()),
         events: None,
         agent: false,
         reports: false,

@@ -9,6 +9,7 @@ use moor_core::{BoxId, ErrorKind, ShowReq};
 use crate::cx::Cx;
 use crate::error::CommandError;
 use crate::ops::artifacts::artifact_view;
+use crate::ops::common::target::{self, Rule};
 use crate::ops::common::view::{
     agent_view, box_view_with_run, event_view, hide_unsupported_sleep,
     hide_unsupported_sleep_cached,
@@ -53,7 +54,7 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
     reconcile::run(cx);
     let store = cx.store()?;
     let now = cx.clock().now();
-    let Some(name) = &req.box_name else {
+    let Some(target) = &req.target else {
         let mut boxes: Vec<BoxView> = Vec::new();
         let mut sleep_caps = HashMap::new();
         for mut row in store.open_boxes()? {
@@ -77,9 +78,8 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
             artifacts: None,
         });
     };
-    let row = store
-        .latest_box_by_name(name)?
-        .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no Box {}", name.as_str())))?;
+    let row = target::resolve(store, target, Rule::Latest)?
+        .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no Box {target}")))?;
     let in_flight = store.in_flight_run(row.id, &|pid| cx.proc().alive(pid))?;
     let reading = activity::read(cx, store, &row, now)?;
     let (agent, pane) = (agent_view(&reading), pane_view(&reading));

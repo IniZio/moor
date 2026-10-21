@@ -69,7 +69,7 @@ pub(crate) fn build(path: &str, body: &[u8]) -> Result<Request, String> {
         "/close" => {
             let b: BoxBody = parse(body)?;
             Ok(Request::Close(CloseReq {
-                box_name: name(&b.box_name)?,
+                target: name(&b.box_name)?.into(),
                 force: false,
                 trust_moor_yaml: false,
             }))
@@ -81,7 +81,7 @@ pub(crate) fn build(path: &str, body: &[u8]) -> Result<Request, String> {
 /// Builds a steer request from text or a menu option.
 fn steer(box_name: &str, text: Option<String>, menu: Option<u32>) -> Result<Request, String> {
     Ok(Request::Steer(SteerReq {
-        box_name: name(box_name)?,
+        target: name(box_name)?.into(),
         text,
         menu,
     }))

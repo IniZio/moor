@@ -321,7 +321,7 @@ fn steer_text_or_menu() {
     assert_eq!(
         req(&["steer", "t1", "go on"]),
         Request::Steer(SteerReq {
-            box_name: n("t1"),
+            target: n("t1").into(),
             text: Some("go on".into()),
             menu: None
         })
@@ -329,7 +329,7 @@ fn steer_text_or_menu() {
     assert_eq!(
         req(&["steer", "t1", "--menu", "2"]),
         Request::Steer(SteerReq {
-            box_name: n("t1"),
+            target: n("t1").into(),
             text: None,
             menu: Some(2)
         })
@@ -352,7 +352,7 @@ fn report_close_remove_cp() {
     assert_eq!(
         req(&["close", "t1", "--force"]),
         Request::Close(CloseReq {
-            box_name: n("t1"),
+            target: n("t1").into(),
             force: true,
             trust_moor_yaml: false
         })
@@ -360,7 +360,7 @@ fn report_close_remove_cp() {
     assert_eq!(
         req(&["close", "demo", "--trust-moor-yaml"]),
         Request::Close(CloseReq {
-            box_name: n("demo"),
+            target: n("demo").into(),
             force: false,
             trust_moor_yaml: true
         })
@@ -368,7 +368,7 @@ fn report_close_remove_cp() {
     assert_eq!(
         req(&["close", "demo"]),
         Request::Close(CloseReq {
-            box_name: n("demo"),
+            target: n("demo").into(),
             force: false,
             trust_moor_yaml: false
         })
@@ -393,7 +393,7 @@ fn report_close_remove_cp() {
 #[test]
 fn show_and_list_alias() {
     let want = Request::Show(ShowReq {
-        box_name: Some(n("t1")),
+        target: Some(n("t1").into()),
         events: Some(3),
         agent: true,
         reports: true,
@@ -408,7 +408,7 @@ fn show_and_list_alias() {
     assert_eq!(
         req(&["show"]),
         Request::Show(ShowReq {
-            box_name: None,
+            target: None,
             events: None,
             agent: false,
             reports: false,
@@ -536,7 +536,7 @@ fn valid_box_name_parses() {
     assert_eq!(
         req(&["show", "a-1"]),
         Request::Show(ShowReq {
-            box_name: Some(n("a-1")),
+            target: Some(n("a-1").into()),
             events: None,
             agent: false,
             reports: false,

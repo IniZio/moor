@@ -11,7 +11,9 @@ pub use binding::{BindSessionReq, SessionBindingReq};
 mod repos;
 pub use repos::ReposReq;
 mod session;
+mod target;
 pub use session::{EndSessionReq, OpenSessionReq, SessionsReq, ShowSessionReq};
+pub use target::BoxTarget;
 mod wait;
 pub use wait::{WaitEventsReq, WaitFor, WaitMode, WaitReq};
 
@@ -210,9 +212,9 @@ pub struct RunReq {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SteerReq {
-    /// Box name.
+    /// The Box: by name, the newest open Box of that name.
     #[serde(rename = "box")]
-    pub box_name: BoxName,
+    pub target: BoxTarget,
     /// Text to send.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
@@ -285,10 +287,10 @@ pub struct ReportReq {
     reason = "JSON wire shape is a public contract"
 )]
 pub struct ShowReq {
-    /// Box name; all boxes when absent.
+    /// The Box, in any state: by name, the newest Box of that name; all open Boxes when absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(rename = "box")]
-    pub box_name: Option<BoxName>,
+    pub target: Option<BoxTarget>,
     /// Number of events to include.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub events: Option<u32>,
@@ -310,9 +312,9 @@ pub struct ShowReq {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CloseReq {
-    /// Box name.
+    /// The Box: by name, the newest open Box of that name, else the newest closed one.
     #[serde(rename = "box")]
-    pub box_name: BoxName,
+    pub target: BoxTarget,
     /// Close despite unfinished work.
     #[serde(default)]
     pub force: bool,

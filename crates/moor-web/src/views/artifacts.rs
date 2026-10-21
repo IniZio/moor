@@ -35,7 +35,13 @@ pub(super) fn list(client: &Client, req: &HttpRequest, name: &str) -> HttpRespon
         Err(resp) => return resp,
     };
     let all = req.query_param("all") == Some("1");
-    match call(client, Request::Artifacts(ArtifactsReq { box_name, all })) {
+    match call(
+        client,
+        Request::Artifacts(ArtifactsReq {
+            target: box_name.into(),
+            all,
+        }),
+    ) {
         Ok(value) => json_ok(&value),
         Err(resp) => resp,
     }
@@ -195,7 +201,7 @@ fn download(
     let listed = call(
         client,
         Request::Artifacts(ArtifactsReq {
-            box_name: box_name.clone(),
+            target: box_name.clone().into(),
             all: true,
         }),
     )?;
@@ -225,7 +231,7 @@ fn download(
         }
     };
     let read = ArtifactReadReq {
-        box_name,
+        target: box_name.into(),
         name: file.to_owned(),
         version: Some(record.version),
         offset,

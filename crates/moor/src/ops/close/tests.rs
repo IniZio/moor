@@ -24,6 +24,7 @@ mod branch;
 mod promote;
 mod proxy;
 mod reports;
+mod target;
 mod teardown;
 mod transcript;
 mod wake;
@@ -44,7 +45,7 @@ pub(super) struct Fx {
 
 pub(super) fn req(force: bool) -> CloseReq {
     CloseReq {
-        box_name: BoxName::parse_allow_bare("t").unwrap(),
+        target: BoxName::parse_allow_bare("t").unwrap().into(),
         force,
         trust_moor_yaml: false,
     }

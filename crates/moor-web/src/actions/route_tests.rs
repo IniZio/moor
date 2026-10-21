@@ -111,7 +111,7 @@ fn name(s: &str) -> BoxName {
 
 fn steer(text: Option<&str>, menu: Option<u32>) -> Request {
     Request::Steer(SteerReq {
-        box_name: name("t"),
+        target: name("t").into(),
         text: text.map(str::to_owned),
         menu,
     })
@@ -141,7 +141,7 @@ fn each_action_makes_one_request_and_returns_the_envelope() {
             "/close",
             json!({"box": "t"}),
             Request::Close(CloseReq {
-                box_name: name("t"),
+                target: name("t").into(),
                 force: false,
                 trust_moor_yaml: false,
             }),

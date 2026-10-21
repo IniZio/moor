@@ -11,7 +11,7 @@ use moor_core::seam::driver::{DriverError, Released};
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::{SurfaceError, WorkspaceRef};
 use moor_core::view::CloseView;
-use moor_core::{BoxHandle, BoxName, CloseReq, ErrorKind, Warning};
+use moor_core::{BoxHandle, CloseReq, ErrorKind, Warning};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -22,6 +22,7 @@ use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::boxwork::{self, probe, BoxWork, BOXWORK_DEADLINE};
 use crate::ops::common::promote::promote_waiting;
 use crate::ops::common::reports;
+use crate::ops::common::target::{self, Rule};
 use crate::ops::common::transcript::{self, Saved};
 use crate::ops::common::view::box_view;
 use crate::ops::common::wake::wake_box_if_asleep;
@@ -37,7 +38,8 @@ use crate::store::{BoxRow, DriverRow, Store};
 /// seconds and a closed Box cannot get a new proxy row. Waiting Boxes are then promoted.
 pub(crate) fn run(cx: &Cx, req: &CloseReq) -> Result<CloseView, CommandError> {
     let store = cx.store()?;
-    let first = find(store, &req.box_name)?;
+    let first = target::resolve(store, &req.target, Rule::OpenElseLatest)?
+        .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no Box {}", req.target)))?;
     let lock = BoxLock::acquire(
         cx.clock(),
         cx.state_dir()?,
@@ -100,16 +102,6 @@ fn save_transcript(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Option<Saved>
         return Ok(None);
     };
     Ok(transcript::save(cx, store, row, &session, Trigger::Close))
-}
-
-/// The open Box by name, else the newest closed one (the gate refuses it).
-fn find(store: &Store, name: &BoxName) -> Result<BoxRow, CommandError> {
-    if let Some(row) = store.open_box_by_name(name)? {
-        return Ok(row);
-    }
-    store.latest_box_by_name(name)?.ok_or_else(|| {
-        CommandError::new(ErrorKind::Failed, format!("no Box named {}", name.as_str()))
-    })
 }
 
 /// The Driver handle to release: the acquired one, else one a failed acquire left.

@@ -265,7 +265,7 @@ fn owner_reply_steers_the_box() {
     let Some(Request::Steer(req)) = seen.calls.first() else {
         unreachable!("expected steer, got {:?}", seen.calls);
     };
-    assert_eq!(req.box_name.as_str(), "slack-10-5");
+    assert_eq!(req.target.to_string(), "slack-10-5");
     assert_eq!(req.text.as_deref(), Some("try the other test"));
     assert_eq!(req.menu, None);
     assert!(seen.replies.is_empty());
@@ -322,14 +322,14 @@ fn owner_close_closes_without_force() {
     run(&store, &reply_to("Ev2", "U1", "C1", "close"), None, &seen);
     let seen = seen.into_inner();
     let Some(Request::Close(CloseReq {
-        box_name,
+        target,
         force,
         trust_moor_yaml,
     })) = seen.calls.first()
     else {
         unreachable!("expected close, got {:?}", seen.calls);
     };
-    assert_eq!(box_name.as_str(), "slack-10-5");
+    assert_eq!(target.to_string(), "slack-10-5");
     assert!(!force && !trust_moor_yaml);
 }
 

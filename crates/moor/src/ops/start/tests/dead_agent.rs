@@ -127,7 +127,7 @@ fn a_dead_agent_shows_as_failed_and_wait_fails() {
     w.surface.push_pane_obs("p-1", Ok(exited(127, "")));
     run(&w.cx, &goal_req("demo")).unwrap();
     let show = ShowReq {
-        box_name: None,
+        target: None,
         events: None,
         agent: true,
         reports: false,

@@ -138,7 +138,7 @@ fn a_launch_failure_shows_as_failed_and_is_not_idled_by_the_next_list() {
     let w = with_engine(&engine);
     run(&w.cx, &goal_req("demo")).unwrap();
     let req = ShowReq {
-        box_name: None,
+        target: None,
         events: None,
         agent: true,
         reports: false,
