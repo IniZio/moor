@@ -40,8 +40,9 @@ impl Db {
     }
 
     /// Threads with a live host Session that have been quiet since `cutoff`: no turn ended
-    /// after it, no message or notice waiting or taken by a turn that has not ended, and no
-    /// Box starting or closing. Each comes with its host Session.
+    /// after it, no message waiting or taken by a turn that has not ended, and no Box starting
+    /// or closing. A notice waits for the starter's next message, so it keeps nothing open.
+    /// Each comes with its host Session.
     pub(crate) fn quiet_threads(
         &self,
         cutoff: i64,
@@ -51,7 +52,7 @@ impl Db {
              WHERE t.root_session IS NOT NULL \
              AND coalesce(t.last_turn_at, t.created_at) <= ?1 \
              AND NOT EXISTS (SELECT 1 FROM slack_inbox i WHERE i.channel = t.channel \
-                 AND i.thread_ts = t.thread_ts AND i.done_at IS NULL) \
+                 AND i.thread_ts = t.thread_ts AND i.kind = 'message' AND i.done_at IS NULL) \
              AND NOT EXISTS (SELECT 1 FROM slack_boxes b WHERE b.channel = t.channel \
                  AND b.thread_ts = t.thread_ts AND b.state IN ('starting', 'closing')) \
              ORDER BY t.channel, t.thread_ts",

@@ -135,7 +135,10 @@ reruns after a restart cannot repeat what the cut-off turn did.
 Each Box has one status message in its thread. The front edits it in place
 as the controller reports the Box's state, at most once every 2 seconds.
 When the repo reads `OWNER/NAME`, the message links to the pull requests
-from the Box's branch.
+from the Box's branch. The front also posts one line when a Box starts or
+cannot start, when its agent finishes a turn, and when it closes. Each event
+also waits as a notice for the thread's next turn. A Box event never starts a
+turn.
 
 Only the thread's starter talks to the coordinator. Anyone else who writes
 in the thread gets one line that says only the starter can direct it.

@@ -21,7 +21,7 @@ use moor_core::response::{ErrorKind, ErrorView, Response};
 use serde_json::json;
 
 use super::{record, serve, settle, Attempt, Fx, Job};
-use crate::command::Allow;
+use crate::command::{Allow, BoxEvent};
 use moor_core::name::{BoxName, SessionId};
 
 use crate::db::{BoxState, Db, SlackBox};
@@ -291,9 +291,10 @@ fn allowed_mention_starts_binds_and_replies() {
         [(
             "C1".into(),
             "10.5".into(),
-            "Started Box `slack-10-5-1`.".into()
+            "Started Box `slack-10-5-1` on branch `moor/slack-10-5-1`.".into()
         )]
     );
+    assert!(db.has_notice(&row, BoxEvent::Started, None).unwrap());
 }
 
 #[test]
@@ -308,6 +309,7 @@ fn failed_start_replies_and_binds_nothing() {
     assert_eq!(seen.replies.len(), 1);
     assert!(seen.replies[0].2.contains("unknown repo"));
     assert_eq!(state(&db, "C1", "10.5"), None);
+    assert!(db.has_notice(&row, BoxEvent::NotStarted, None).unwrap());
 }
 
 #[test]
