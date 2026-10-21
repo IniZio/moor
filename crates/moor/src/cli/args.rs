@@ -14,6 +14,7 @@ use super::GlobalOpts;
 use box_ops::{BoxArg, CloseArgs, CpArgs};
 use events::EventsArgs;
 use session::SessionCmd;
+use user::UserCli;
 use wait::WaitArgs;
 use wait_events::WaitEventsArgs;
 
@@ -22,6 +23,7 @@ mod events;
 mod session;
 #[cfg(test)]
 mod tests;
+mod user;
 mod wait;
 mod wait_events;
 
@@ -38,6 +40,8 @@ pub(super) enum Action {
     ControllerServe(PathBuf),
     /// `controller attach [--socket <path>]`: bridge stdio to the controller socket.
     ControllerAttach(Option<PathBuf>),
+    /// `user secret set <name>`: read the value from stdin and store it.
+    SecretSetStdin(moor_core::user::SecretName),
     /// `events`: print the event stream as JSON lines.
     Events {
         /// Only events after this id.
@@ -133,6 +137,11 @@ enum Cmd {
     Gate(GateCmd),
     /// Print stored events as JSON lines; --follow keeps streaming (dev tool).
     Events(EventsArgs),
+    /// Your moor user, its secrets and its link codes (dev tool).
+    #[command(subcommand)]
+    User(UserCli),
+    /// Show your identity, its user and that user's linked identities.
+    Whoami,
     /// Admin verbs.
     #[command(flatten)]
     Admin(AdminCmd),
@@ -172,6 +181,10 @@ impl Cmd {
                     follow,
                 }
             }
+            Self::User(u) => u.into_action(),
+            Self::Whoami => Action::Request(Request::Whoami(moor_core::request::AsReq {
+                identity: None,
+            })),
             Self::Admin(a) => a.into_action(),
         }
     }

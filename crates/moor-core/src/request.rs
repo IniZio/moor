@@ -15,7 +15,7 @@ mod target;
 pub use session::{EndSessionReq, OpenSessionReq, SessionsReq, ShowSessionReq};
 pub use target::BoxTarget;
 mod user;
-pub use user::{AsReq, UserCmd};
+pub use user::{AsReq, LinkRedeemReq, SecretDeleteReq, SecretSetReq, SecretValue, UserCmd};
 mod wait;
 pub use wait::{WaitEventsReq, WaitFor, WaitMode, WaitReq};
 
@@ -77,6 +77,18 @@ pub enum Request {
     ArtifactRead(ArtifactReadReq),
     /// Show the caller's user and its linked identities.
     Whoami(AsReq),
+    /// Create a user for the caller's identity, or return the one it has.
+    Enroll(AsReq),
+    /// Store a secret for the caller's user, sealed with the vault key.
+    SecretSet(SecretSetReq),
+    /// Delete one of the caller's user's secrets.
+    SecretDelete(SecretDeleteReq),
+    /// List the names of the caller's user's secrets.
+    SecretNames(AsReq),
+    /// Mint a one-time code that links another identity to the caller's user.
+    LinkCode(AsReq),
+    /// Link the caller's identity to the user that minted a code.
+    LinkRedeem(LinkRedeemReq),
     /// Print version information.
     Version {},
 }
@@ -113,6 +125,12 @@ impl Request {
             Self::Artifacts(_) => "artifacts",
             Self::ArtifactRead(_) => "artifact-read",
             Self::Whoami(_) => "whoami",
+            Self::Enroll(_) => "enroll",
+            Self::SecretSet(_) => "secret-set",
+            Self::SecretDelete(_) => "secret-delete",
+            Self::SecretNames(_) => "secret-names",
+            Self::LinkCode(_) => "link-code",
+            Self::LinkRedeem(_) => "link-redeem",
             Self::Version {} => "version",
         }
     }

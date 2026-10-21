@@ -76,7 +76,8 @@ pub(crate) fn end(cx: &Cx, req: &EndHostSessionReq) -> Result<HostSessionValue, 
     Ok(value(SessionId::new(row.id), row.workdir, row.state))
 }
 
-/// A Session the store rejects as not a live host Session is a refusal.
+/// A request the store rejects as invalid, such as for a Session that is not a live host
+/// Session, is a refusal.
 pub(super) fn refuse_invalid(e: StoreError) -> CommandError {
     match e {
         StoreError::Invalid(_) => CommandError::new(ErrorKind::Refused, e),

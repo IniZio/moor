@@ -4,7 +4,7 @@ moor_core::secret
 moor_core::name	
 moor_core::user	
 moor_core::box_key	moor_core::name
-moor_core::request	moor_core::name,moor_core::user
+moor_core::request	moor_core::name,moor_core::secret,moor_core::user
 moor_core::response	moor_core::name
 moor_core::domain	moor_core::name,moor_core::secret
 moor_core::activity	moor_core::seam::clock
