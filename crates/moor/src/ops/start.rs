@@ -255,7 +255,7 @@ pub(crate) fn settle_all(cx: &Cx, store: &Store) -> Result<(), CommandError> {
 
 /// Moves one open Box with a ready machine between Working and Idle, then lets it auto-sleep.
 fn settle_one(cx: &Cx, store: &Store, row: &BoxRow) {
-    let settled = activity::read(cx, store, row, cx.clock().now())
+    let settled = activity::read(cx, store, row, cx.clock().now(), activity::PROBE_DEADLINE)
         .and_then(|reading| activity::settle(cx, store, row, &reading));
     match settled {
         Ok(()) => autosleep::run(cx, store, row.id),

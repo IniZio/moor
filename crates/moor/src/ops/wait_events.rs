@@ -137,7 +137,7 @@ fn settle(
     if !ready {
         return Ok(());
     }
-    let settled = activity::read(cx, store, &row, cx.clock().now())
+    let settled = activity::read(cx, store, &row, cx.clock().now(), activity::PROBE_DEADLINE)
         .and_then(|reading| activity::settle(cx, store, &row, &reading));
     if let Err(e) = settled {
         if warned.insert(id) {
