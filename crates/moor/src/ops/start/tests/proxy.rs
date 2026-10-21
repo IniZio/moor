@@ -374,8 +374,8 @@ fn config_with_proxy(yaml: &str) -> moor_core::config::UserConfig {
 }
 
 #[test]
-fn user_direct_hosts_reach_the_agent_proxy_address() {
-    let config = config_with_proxy("proxy: {direct: [dl.google.com, .gradle.org]}");
+fn builtin_then_user_direct_hosts_reach_the_agent_proxy_address() {
+    let config = config_with_proxy("proxy: {direct: [pub.dev, .gradle.org]}");
     let engine = Arc::new(FakeEngine::new());
     let mut w = super::world_with(FakeDriver::new(), std::path::Path::new("/repo"), config);
     w.cx =
@@ -389,7 +389,9 @@ fn user_direct_hosts_reach_the_agent_proxy_address() {
         .iter()
         .map(moor_core::DirectHost::no_proxy)
         .collect();
-    assert_eq!(direct, ["dl.google.com", ".gradle.org"]);
+    let mut want = moor_core::config::proxy::BUILTIN_DIRECT.to_vec();
+    want.push("pub.dev");
+    assert_eq!(direct, want);
 }
 
 #[test]
@@ -408,8 +410,11 @@ fn a_repo_direct_host_that_a_user_rule_serves_fails_the_proxy_step() {
     let v = run(&w.cx, &goal_req()).unwrap();
     let (step, message, _) = failure_step(&w, BoxId::new(v.boxed.id));
     assert_eq!(step, "proxy");
+    let at = moor_core::config::proxy::BUILTIN_DIRECT.len() + 1;
     assert!(
-        message.contains("proxy.direct[1]: .gitlab.com covers gitlab.com,"),
+        message.contains(&format!(
+            "proxy.direct[{at}]: .gitlab.com covers gitlab.com,"
+        )),
         "{message}"
     );
 }

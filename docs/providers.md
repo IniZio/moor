@@ -97,14 +97,38 @@ the `bridge` network unless you trust everything that runs on the host.
 
 ## Direct hosts
 
-`proxy.direct` lists hosts that the Box reaches without the Proxy, such as
-public package mirrors. Both `.moor.yaml` and your user config can set it.
-moor uses your entries first, then each repo entry that is not already
-listed.
+The Proxy adds about a second to each new connection, so by default the Box
+reaches these public package registries without it:
+
+- npm and Yarn: `registry.npmjs.org`, `registry.yarnpkg.com`
+- PyPI: `pypi.org`, `files.pythonhosted.org`
+- crates.io: `crates.io`, `static.crates.io`, `index.crates.io`
+- Maven Central: `repo.maven.apache.org`, `repo1.maven.org`
+- Gradle: `.gradle.org`
+- Go: `proxy.golang.org`, `sum.golang.org`
+- RubyGems: `rubygems.org`
+- Debian and Ubuntu: `deb.debian.org`, `security.debian.org`,
+  `archive.ubuntu.com`, `security.ubuntu.com`
+- Google: `dl.google.com`
+
+Hosts that commonly carry a credential, such as `ghcr.io`, `github.com`, and
+`gitlab.com`, are not on the list. If one of your credential rules serves a
+host on the list, moor leaves that entry out and the host stays on the
+Proxy. To turn the whole list off, set this in your user config. A
+`.moor.yaml` cannot set it.
 
 ```yaml
 proxy:
-  direct: [dl.google.com, repo.maven.apache.org, .gradle.org, pub.dev]
+  default_direct: false
+```
+
+`proxy.direct` adds more hosts. Both `.moor.yaml` and your user config can
+set it. moor uses the built-in list first, then your entries, then the
+repo's, and lists each host once.
+
+```yaml
+proxy:
+  direct: [pub.dev, .dart.dev]
 ```
 
 An entry is a host name, or `.domain` for every name under the domain. moor

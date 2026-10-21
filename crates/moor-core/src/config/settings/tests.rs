@@ -140,17 +140,135 @@ fn layer_names() {
     }
 }
 
+/// The `NO_PROXY` forms of the effective direct list for user `u` and repo `r`.
+fn direct(u: &str, r: Option<&str>) -> Vec<String> {
+    resolve(u, r, &Flags::default())
+        .direct
+        .iter()
+        .map(crate::name::DirectHost::no_proxy)
+        .collect()
+}
+
+const BUILTIN: [&str; 18] = [
+    "registry.npmjs.org",
+    "registry.yarnpkg.com",
+    "pypi.org",
+    "files.pythonhosted.org",
+    "crates.io",
+    "static.crates.io",
+    "index.crates.io",
+    "repo.maven.apache.org",
+    "repo1.maven.org",
+    ".gradle.org",
+    "proxy.golang.org",
+    "sum.golang.org",
+    "rubygems.org",
+    "deb.debian.org",
+    "security.debian.org",
+    "archive.ubuntu.com",
+    "security.ubuntu.com",
+    "dl.google.com",
+];
+
+/// A user rule that sends registry.npmjs.org through the Proxy with a credential.
+const NPM_RULE: &str =
+    "rules: {npm: {hosts: [registry.npmjs.org], credential: forge, inject: {form: 'Bearer {secret}'}}}";
+
 #[test]
-fn direct_hosts_are_the_users_then_the_repos_new_ones() {
-    let s = resolve(
-        "proxy: {direct: [pub.dev, dl.google.com]}",
-        Some("proxy: {direct: [.gradle.org, pub.dev]}"),
-        &Flags::default(),
+fn with_no_config_the_direct_list_is_the_builtin_registries() {
+    assert_eq!(direct("", None), BUILTIN);
+}
+
+#[test]
+fn direct_hosts_are_builtin_then_user_then_repo_each_once() {
+    let got = direct(
+        "proxy: {direct: [pub.dev, pypi.org, .gradle.org]}",
+        Some("proxy: {direct: [cdn.example.org, pub.dev, dl.google.com]}"),
     );
+    let mut want = BUILTIN.to_vec();
+    want.extend(["pub.dev", "cdn.example.org"]);
+    assert_eq!(got, want);
+}
+
+#[test]
+fn a_builtin_host_a_user_rule_serves_is_dropped_and_stays_proxied() {
+    let doc = format!("proxy: {{{NPM_RULE}}}");
+    let s = resolve(&doc, None, &Flags::default());
     let forms: Vec<String> = s
         .direct
         .iter()
         .map(crate::name::DirectHost::no_proxy)
         .collect();
-    assert_eq!(forms, ["pub.dev", "dl.google.com", ".gradle.org"]);
+    let want: Vec<&str> = BUILTIN
+        .into_iter()
+        .filter(|h| *h != "registry.npmjs.org")
+        .collect();
+    assert_eq!(forms, want);
+    let rules = user(&doc).proxy.merged_rules();
+    let hosts: Vec<&str> = rules
+        .values()
+        .flat_map(|r| r.hosts.iter().map(String::as_str))
+        .collect();
+    assert!(hosts.contains(&"registry.npmjs.org"), "{hosts:?}");
+    assert!(
+        super::super::proxy::check_direct(&s.direct, "proxy.direct", &hosts).is_ok(),
+        "the proxy step accepts the effective list"
+    );
+}
+
+#[test]
+fn a_builtin_rule_host_under_a_suffix_entry_drops_the_whole_entry() {
+    let got = direct(
+        "proxy: {rules: {gp: {hosts: [plugins.gradle.org], credential: forge, inject: {form: '{secret}'}}}}",
+        None,
+    );
+    assert!(!got.iter().any(|h| h == ".gradle.org"), "{got:?}");
+    assert_eq!(got.len(), BUILTIN.len() - 1, "{got:?}");
+}
+
+#[test]
+fn an_explicit_user_entry_a_rule_serves_is_still_refused() {
+    let doc = format!("proxy: {{direct: [registry.npmjs.org], {NPM_RULE}}}");
+    let e = parse_user("u.yaml", &doc).expect_err("a rule host listed direct");
+    assert_eq!(e.path, "proxy.direct[0]", "{e}");
+    assert!(e.to_string().contains("covers registry.npmjs.org"), "{e}");
+}
+
+#[test]
+fn an_explicit_repo_entry_a_rule_serves_stays_listed_for_the_proxy_step_to_refuse() {
+    let doc = format!("proxy: {{{NPM_RULE}}}");
+    let s = resolve(
+        &doc,
+        Some("proxy: {direct: [pub.dev, registry.npmjs.org]}"),
+        &Flags::default(),
+    );
+    let i = s
+        .direct
+        .iter()
+        .position(|h| h.no_proxy() == "registry.npmjs.org")
+        .unwrap_or_else(|| panic!("repo entry kept: {:?}", s.direct));
+    let e = super::super::proxy::check_direct(&s.direct, "proxy.direct", &["registry.npmjs.org"])
+        .expect_err("the proxy step refuses it");
+    assert_eq!(e.path, format!("proxy.direct[{i}]"), "{e}");
+}
+
+#[test]
+fn default_direct_false_in_user_config_leaves_only_user_and_repo_entries() {
+    let got = direct(
+        "proxy: {default_direct: false, direct: [pub.dev]}",
+        Some("proxy: {direct: [dl.google.com]}"),
+    );
+    assert_eq!(got, ["pub.dev", "dl.google.com"]);
+    assert_eq!(
+        direct("proxy: {default_direct: false}", None),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn default_direct_in_moor_yaml_is_refused() {
+    let e = parse_repo("r.yaml", "proxy: {default_direct: false}")
+        .expect_err("a repo cannot turn off the built-in list");
+    assert_eq!(e.path, "proxy.default_direct", "{e}");
+    assert!(e.to_string().contains("unknown field"), "{e}");
 }

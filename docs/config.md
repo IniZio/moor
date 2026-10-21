@@ -84,8 +84,15 @@ The default rules are `claude` for `api.anthropic.com`, which injects the
 rule that extends a default cannot set `hosts` or `credential`. Its `allow`
 entries come after the default's, and its `box_env` values win.
 
-`proxy.direct` lists hosts that the Box reaches without the Proxy. See
-[Direct hosts](providers.md#direct-hosts).
+| Key | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `proxy.direct` | list of host names | empty | More hosts that the Box reaches without the Proxy. |
+| `proxy.default_direct` | boolean | `true` | If false, moor does not add its built-in list of public package registries to the direct hosts. Only the user config can set it. |
+
+The built-in list holds the npm, Yarn, PyPI, crates.io, Maven Central, Gradle,
+Go, RubyGems, Debian, Ubuntu, and `dl.google.com` hosts. moor leaves out an
+entry that one of your credential rules serves. See
+[Direct hosts](providers.md#direct-hosts) for the full list.
 
 ### Removed keys
 
@@ -118,7 +125,7 @@ A repo's `.moor.yaml` configures its Boxes.
 | `compose.project_prefix` | string | A prefix for compose project names. |
 | `box.size` | `small`, `medium`, `large`, or `xlarge` | The Box size. It wins over the user's `box.size`. |
 | `box_credentials` | list of names | Secrets that the Box's user must hold for a `start`. moor does not put them into the Box. |
-| `proxy.direct` | list of host names | Hosts that the Box reaches without the Proxy. A repo cannot add or change a Proxy rule. |
+| `proxy.direct` | list of host names | More hosts that the Box reaches without the Proxy. A repo cannot add or change a Proxy rule, and cannot turn off the built-in list. |
 
 If a Box's `.moor.yaml` differs from the copy in its base commit, moor refuses
 to run setup again, start the agent, or run `moor run`. Review the change, then

@@ -106,7 +106,7 @@ pub struct BoxSettings {
     pub compose_prefix: Option<String>,
     /// User tool path overrides.
     pub tool_paths: ToolsConfig,
-    /// Hosts the Box reaches without the Proxy: the user's, then the repo's not already listed.
+    /// Hosts the Box reaches without the Proxy: the built-in ones, the user's, then the repo's.
     pub direct: Vec<DirectHost>,
 }
 
@@ -136,12 +136,18 @@ fn plan_credentials(uc: &UserConfig, repo: &RepoConfig) -> Vec<CredPlan> {
         .collect()
 }
 
-/// The user's `proxy.direct` entries, then the repo's not already listed.
+/// The built-in direct hosts, then the user's `proxy.direct`, then the repo's, each listed once.
 fn direct_hosts(user: &UserConfig, repo: &RepoConfig) -> Vec<DirectHost> {
-    let mut out = user.proxy.direct.clone();
-    for host in &repo.proxy.direct {
-        if !out.contains(host) {
-            out.push(host.clone());
+    let mut out: Vec<DirectHost> = Vec::new();
+    let entries = user
+        .proxy
+        .builtin_direct()
+        .into_iter()
+        .chain(user.proxy.direct.iter().cloned())
+        .chain(repo.proxy.direct.iter().cloned());
+    for host in entries {
+        if !out.contains(&host) {
+            out.push(host);
         }
     }
     out

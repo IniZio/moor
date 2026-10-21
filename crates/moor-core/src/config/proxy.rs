@@ -14,7 +14,8 @@ use serde::Deserialize;
 use super::{check, parse_strict, ConfigError};
 use crate::name::DirectHost;
 use crate::user::SecretName;
-pub use direct::check_direct;
+use direct::builtin_direct;
+pub use direct::{check_direct, BUILTIN_DIRECT};
 pub use resolve::{default_rules, resolve_rules, EndpointRule, ResolvedInject, ResolvedRule};
 pub use shape::request_shape;
 use template::{check_slots, FORM_SLOTS, REPO_SLOTS};
@@ -213,13 +214,33 @@ impl ToolRule {
 }
 
 /// The `proxy:` section.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct ProxyConfig {
     /// Rules by name; a rule named like a default extends it.
     pub rules: BTreeMap<String, ToolRule>,
     /// Hosts the Box reaches without the Proxy.
     pub direct: Vec<DirectHost>,
+    /// Whether the built-in direct hosts apply; only the user config has this key.
+    pub default_direct: bool,
+}
+
+impl Default for ProxyConfig {
+    fn default() -> Self {
+        Self {
+            rules: BTreeMap::new(),
+            direct: Vec::new(),
+            default_direct: true,
+        }
+    }
+}
+
+/// Every host that one of `rules` serves.
+fn hosts_of(rules: &BTreeMap<String, ToolRule>) -> Vec<&str> {
+    rules
+        .values()
+        .flat_map(|r| r.hosts.iter().map(String::as_str))
+        .collect()
 }
 
 /// The `proxy:` section of a repo config: only `direct`, so a repo cannot add or widen a rule.
@@ -268,14 +289,15 @@ impl ProxyConfig {
             }
             rule.validate(&at)?;
         }
-        check_direct(
-            &self.direct,
-            "proxy.direct",
-            &served
-                .values()
-                .flat_map(|r| r.hosts.iter().map(String::as_str))
-                .collect::<Vec<_>>(),
-        )
+        check_direct(&self.direct, "proxy.direct", &hosts_of(&served))
+    }
+
+    /// The built-in direct hosts that cover no host a rule serves; none when `default_direct` is off.
+    pub(super) fn builtin_direct(&self) -> Vec<DirectHost> {
+        if !self.default_direct {
+            return Vec::new();
+        }
+        builtin_direct(&hosts_of(&self.merged_rules()))
     }
 }
 
