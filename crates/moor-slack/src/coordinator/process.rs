@@ -146,8 +146,9 @@ fn wait_up_to(child: &mut Child, limit: Duration) {
     }
 }
 
-/// Sends each line of `stream` to `tx` until [`MAX_OUTPUT`] bytes were sent, then reads the
-/// rest and drops it, so the child never blocks on a full pipe.
+/// Sends each line of `stream`, cut to its first [`MAX_OUTPUT`] bytes, to `tx` until
+/// [`MAX_OUTPUT`] bytes were sent, then reads the rest and drops it, so the child never blocks
+/// on a full pipe and a line with no end never grows past the cap.
 fn read_lines(stream: Option<impl Read>, tx: &mpsc::Sender<String>) {
     let Some(stream) = stream else {
         return;
@@ -155,13 +156,27 @@ fn read_lines(stream: Option<impl Read>, tx: &mpsc::Sender<String>) {
     let mut reader = BufReader::new(stream);
     let mut sent = 0_usize;
     let mut line = Vec::new();
-    while reader.read_until(b'\n', &mut line).is_ok_and(|n| n > 0) {
+    let mut deliver = |line: &mut Vec<u8>| {
         if sent < MAX_OUTPUT {
             sent += line.len();
-            let text = String::from_utf8_lossy(&line);
+            let text = String::from_utf8_lossy(line);
             let _ = tx.send(text.trim_end_matches(['\n', '\r']).to_owned());
         }
         line.clear();
+    };
+    while let Some(buf) = reader.fill_buf().ok().filter(|b| !b.is_empty()) {
+        let end = buf.iter().position(|b| *b == b'\n');
+        let (chunk, _) = buf.split_at(end.map_or(buf.len(), |at| at + 1));
+        let room = MAX_OUTPUT.saturating_sub(line.len());
+        line.extend(chunk.iter().take(room));
+        let used = chunk.len();
+        reader.consume(used);
+        if end.is_some() {
+            deliver(&mut line);
+        }
+    }
+    if !line.is_empty() {
+        deliver(&mut line);
     }
 }
 
@@ -181,3 +196,6 @@ fn read_capped(stream: Option<impl Read>) -> Vec<u8> {
     }
     kept
 }
+
+#[cfg(test)]
+mod tests;

@@ -86,7 +86,8 @@ pub(crate) fn run(
 }
 
 /// Reads the turn's output: the first line must report what the agent loaded, then the
-/// answer ends the turn.
+/// answer ends the turn. An error may come first, since an agent that cannot start reports
+/// nothing it loaded; a reply may not.
 fn watch(agent: &dyn Agent, lines: &Lines, limits: Limits, log: &dyn Fn(&str)) -> (Seen, Left) {
     let started = now();
     let start_by = started + limits.start.min(limits.turn);
@@ -104,6 +105,9 @@ fn watch(agent: &dyn Agent, lines: &Lines, limits: Limits, log: &dyn Fn(&str)) -
                         loaded.plugins.join(", ")
                     ));
                 }
+            }
+            Event::Answer(Answer::Reply { .. }) => {
+                return unsafe_turn("a reply came before the load report".into())
             }
             Event::Answer(answer) => return (Seen::Ended(Ended::Answered(answer)), Left::Ended),
             Event::Other => {

@@ -37,6 +37,9 @@ case "$token" in
     init
     echo '{"type":"result","subtype":"success","is_error":false,"result":"<!channel> deploy & <@U9> done"}'
     ;;
+  *-bare-*)
+    echo '{"type":"result","subtype":"success","is_error":false,"result":"no init"}'
+    ;;
   "")
     echo '{"type":"result","subtype":"success","is_error":true,"result":"Not logged in · Please run /login"}'
     ;;

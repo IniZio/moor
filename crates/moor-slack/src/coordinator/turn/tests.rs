@@ -142,6 +142,15 @@ fn a_401_is_a_refused_credential_and_no_login_is_an_unread_pipe() {
 }
 
 #[test]
+fn a_reply_with_no_load_report_before_it_is_unsafe() {
+    let dirs = Dirs::new();
+    let (ended, pid) = dirs.turn("sk-ant-oat01-bare-1", LIMITS);
+    let why = "a reply came before the load report".to_owned();
+    assert_eq!(ended, Ended::Unsafe(why));
+    assert_gone(pid);
+}
+
+#[test]
 fn an_instruction_file_in_the_workdir_or_an_ancestor_is_unsafe() {
     let bin = tempfile::tempdir().unwrap();
     let claude = claude(bin.path());
