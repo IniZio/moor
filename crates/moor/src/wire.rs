@@ -180,7 +180,7 @@ fn parts(env: &Env, sockets: PathBuf) -> Result<(CxParts, Option<Warning>), Comm
         surface,
         engine: Arc::new(engine),
         proc: Arc::clone(&proc),
-        forge: Arc::new(GitHub),
+        forge: Arc::new(GitHub::new()),
         proxy_host,
         git: Git::new(Arc::clone(&proc)),
         config,
