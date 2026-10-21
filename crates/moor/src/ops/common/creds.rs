@@ -65,10 +65,11 @@ fn missing(name: &str, have: &BTreeSet<SecretName>) -> Option<String> {
     (!held).then(|| format!("log in first: moor user secret set {name}"))
 }
 
-/// How a credential reaches the agent; the agent always runs in the Box.
+/// What moor does with a credential: it puts none into the Box, and checks a `box_credentials`
+/// name only.
 const fn delivery_label(c: &CredPlan) -> &'static str {
     if c.boxed {
-        "stdin/file"
+        "name checked only"
     } else {
         "host only"
     }

@@ -49,3 +49,17 @@ fn env_rows_leave_resolution_open() {
     assert!(out.credentials.iter().all(|i| i.resolves.is_none()));
     assert!(out.mcp.iter().all(|i| i.resolves.is_none()));
 }
+
+#[test]
+fn a_box_credential_row_says_only_its_name_is_checked() {
+    let d = tempfile::tempdir().unwrap();
+    let out = checked(&settings(SHARED), d.path());
+    for row in &out.credentials {
+        assert_eq!(
+            row.delivery.as_deref(),
+            Some("name checked only"),
+            "{}",
+            row.name
+        );
+    }
+}
