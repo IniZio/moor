@@ -152,6 +152,16 @@ impl Db {
             .map(drop)
     }
 
+    /// Marks a `bound` Box `gone`, once the controller says it has no such Box.
+    pub(crate) fn mark_gone(&self, name: &BoxName) -> rusqlite::Result<()> {
+        self.conn
+            .execute(
+                "UPDATE slack_boxes SET state = 'gone' WHERE box_name = ?1 AND state = 'bound'",
+                params![name.as_str()],
+            )
+            .map(drop)
+    }
+
     /// Deletes a Box still in `starting`, so its thread can ask for it again. The thread stays.
     pub(crate) fn forget_starting(&self, name: &BoxName) -> rusqlite::Result<()> {
         self.conn

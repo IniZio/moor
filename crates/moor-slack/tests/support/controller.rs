@@ -126,6 +126,12 @@ impl FakeController {
             .collect()
     }
 
+    /// Ends host Session `session` from outside the front, as moor-web does.
+    pub(crate) fn end_host(&self, session: i64) {
+        let index = usize::try_from(session - 100).unwrap();
+        self.lock().hosts[index].1 = true;
+    }
+
     /// Reads what clients sent so far.
     pub(crate) fn seen<T>(&self, read: impl FnOnce(&Seen) -> T) -> T {
         read(&self.lock().seen)
@@ -286,7 +292,7 @@ fn from_table(request: &Request, boxes: &mut Vec<String>) -> Option<Response> {
     Some(Response::ok(cmd, Some(value)))
 }
 
-/// The answer to `sessions`, `open-host-session` or `end-host-session` from the host
+/// The answer to `sessions` or an `open-`, `update-` or `end-host-session` from the host
 /// Sessions opened so far, as the real controller gives it; `None` for any other request.
 fn host_session(request: &Request, hosts: &mut Vec<(String, bool)>) -> Option<Response> {
     let id = |index: usize| i64::try_from(index).unwrap() + 100;
@@ -305,19 +311,21 @@ fn host_session(request: &Request, hosts: &mut Vec<(String, bool)>) -> Option<Re
             let value = json!({"session": id(hosts.len() - 1), "workdir": open.workdir, "state": "working"});
             Some(Response::ok("open-host-session", Some(value)))
         }
+        Request::UpdateHostSession(update) => {
+            let session = update.session.get();
+            let (workdir, _) = match live_host(hosts, session) {
+                Ok(host) => host,
+                Err(message) => return Some(refused("update-host-session", &message)),
+            };
+            let value = json!({"session": session, "workdir": workdir, "state": "working"});
+            Some(Response::ok("update-host-session", Some(value)))
+        }
         Request::EndHostSession(end) => {
             let session = end.session.get();
-            let index = usize::try_from(session - 100).ok();
-            let Some((workdir, ended)) = index.and_then(|i| hosts.get_mut(i)) else {
-                return Some(refused(
-                    "end-host-session",
-                    &format!("no host Session {session}"),
-                ));
+            let (workdir, ended) = match live_host(hosts, session) {
+                Ok(host) => host,
+                Err(message) => return Some(refused("end-host-session", &message)),
             };
-            if *ended {
-                let message = format!("host Session {session} has ended");
-                return Some(refused("end-host-session", &message));
-            }
             *ended = true;
             let value = json!({"session": session, "workdir": workdir, "state": "ended"});
             Some(Response::ok("end-host-session", Some(value)))
@@ -326,8 +334,20 @@ fn host_session(request: &Request, hosts: &mut Vec<(String, bool)>) -> Option<Re
     }
 }
 
+/// The live host Session `session`, or the real controller's refusal text.
+fn live_host(hosts: &mut [(String, bool)], session: i64) -> Result<&mut (String, bool), String> {
+    let index = usize::try_from(session - 100).ok();
+    let host = index
+        .and_then(|i| hosts.get_mut(i))
+        .ok_or_else(|| format!("no host Session {session}"))?;
+    if host.1 {
+        return Err(format!("host Session {session} has ended"));
+    }
+    Ok(host)
+}
+
 /// A refused envelope for `cmd` carrying `message`.
-fn refused(cmd: &str, message: &str) -> Response {
+pub(crate) fn refused(cmd: &str, message: &str) -> Response {
     Response::err(
         cmd,
         ErrorView {

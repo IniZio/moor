@@ -99,11 +99,15 @@ Each thread has a host Session on the controller while it is active. Once a
 minute the front ends the host Session of each thread that has had no turn
 and no waiting message for `idle_minutes`. A thread stays open while one of
 its Boxes is starting or closing, while its agent works or waits on a
-question, or while the controller cannot say how the Box stands. Ending the
-host Session never touches a Box. The starter's next message opens a new
-host Session in the same workdir, and the coordinator answers from the
-rebuilt context. After a crash, the front finds the live host Session it
-opened by that workdir and opens no second one.
+question, or while the controller cannot say how the Box stands. A Box the
+controller has no record of counts as closed. Ending the host Session never
+touches a Box. The starter's next message opens a new host Session in the
+same workdir, and the coordinator answers from the rebuilt context. Before
+each turn the controller confirms the host Session is live. When it was
+ended elsewhere, for example from moor-web, the front opens a new one once.
+After a crash, a turn that runs again adopts the live host Session that has
+its thread's workdir. When the turn does not run again, the front ends that
+host Session at start.
 
 The coordinator's only tools come from the front. For each turn Claude Code
 starts `moor-slack mcp`, named by its absolute path in the thread's

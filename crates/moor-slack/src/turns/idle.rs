@@ -23,29 +23,38 @@ impl Turns {
             Err(e) => return (self.log)(&format!("idle: slack.db: {e}")),
         };
         for (channel, thread_ts, session) in quiet {
-            let thread = format!("{channel}/{thread_ts}");
             if let Some(why) = self.busy_box(db, &channel, &thread_ts) {
-                (self.log)(&format!("idle: thread {thread} stays open: {why}"));
+                (self.log)(&format!(
+                    "idle: thread {channel}/{thread_ts} stays open: {why}"
+                ));
                 continue;
             }
-            let end = Request::EndHostSession(EndHostSessionReq {
-                session: SessionId::new(session),
-            });
-            match self.client.request(end, |_| {}) {
-                Ok(reply) if ended(&reply) => {
-                    self.written(db.clear_root_session(&channel, &thread_ts, session));
-                    (self.log)(&format!(
-                        "idle: thread {thread} ended host Session {session}"
-                    ));
-                }
-                Ok(reply) => (self.log)(&format!("idle: thread {thread}: {}", text(&reply))),
-                Err(e) => (self.log)(&format!("idle: thread {thread}: {e}")),
+            self.end_host(db, &channel, &thread_ts, session);
+        }
+    }
+
+    /// Ends host Session `session` of the thread and forgets it once the controller says it
+    /// has ended. Any other answer leaves the record for a later try.
+    pub(super) fn end_host(&self, db: &Db, channel: &str, thread_ts: &str, session: i64) {
+        let thread = format!("{channel}/{thread_ts}");
+        let end = Request::EndHostSession(EndHostSessionReq {
+            session: SessionId::new(session),
+        });
+        match self.client.request(end, |_| {}) {
+            Ok(reply) if ended(&reply) => {
+                self.written(db.clear_root_session(channel, thread_ts, session));
+                (self.log)(&format!(
+                    "host: thread {thread} ended host Session {session}"
+                ));
             }
+            Ok(reply) => (self.log)(&format!("host: thread {thread}: {}", text(&reply))),
+            Err(e) => (self.log)(&format!("host: thread {thread}: {e}")),
         }
     }
 
     /// Why a running Box of the thread keeps it open: its agent is busy, or `show` did not
-    /// say. `None` when no running Box is busy.
+    /// say. `None` when no running Box is busy. A Box the controller has no record of is
+    /// marked gone and keeps nothing open.
     fn busy_box(&self, db: &Db, channel: &str, thread_ts: &str) -> Option<String> {
         let boxes = match db.thread_boxes(channel, thread_ts) {
             Ok(boxes) => boxes,
@@ -66,6 +75,11 @@ impl Turns {
                 });
                 let reply = match self.client.request(show, |_| {}) {
                     Ok(reply) if reply.class == ExitClass::Ok => reply,
+                    Ok(reply) if text(&reply) == format!("no Box {name}") => {
+                        self.written(db.mark_gone(&b.box_name));
+                        (self.log)(&format!("idle: Box {name} is gone"));
+                        return None;
+                    }
                     Ok(reply) => return Some(format!("show {name}: {}", text(&reply))),
                     Err(e) => return Some(format!("show {name}: {e}")),
                 };

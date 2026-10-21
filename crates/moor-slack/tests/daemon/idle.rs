@@ -1,8 +1,10 @@
 //! Quiet threads: the front ends a thread's host Session once the thread has been quiet for
 //! `coordinator.idle_minutes` and none of its Boxes is busy, and the next message opens a new
 //! one in the same workdir. A crash between a host Session request and its record in
-//! `slack.db` leaves one live host Session for the thread. Each test backdates the thread's
-//! last turn and restarts the front, whose scheduler sweeps once at start.
+//! `slack.db` leaves one live host Session for the thread, which a rerun adopts and a turn that
+//! does not run again ends. A host Session ended outside the front is replaced before a turn.
+//! The sweep tests backdate the thread's last turn and restart the front, whose scheduler
+//! sweeps once at start.
 
 #![allow(clippy::indexing_slicing, reason = "test code")]
 
@@ -13,7 +15,7 @@ use moor_core::request::Request;
 use serde_json::json;
 
 use super::inbox::reply;
-use super::support::controller::{failed, FakeController, Scripted};
+use super::support::controller::{failed, refused, FakeController, Scripted};
 use super::support::{Rig, BOX_NAME, CHANNEL, TS, USER};
 use super::turn::{ask, workdir, GOOD};
 
@@ -212,6 +214,15 @@ fn a_failed_show_keeps_the_thread_open_and_changes_nothing() {
 }
 
 #[test]
+fn a_box_the_controller_has_no_record_of_is_marked_gone_and_does_not_keep_the_thread_open() {
+    let answer = Scripted::Reply(failed("show", &format!("no Box {BOX_NAME}")));
+    let (rig, controller) = quiet_thread_with_a_box(answer);
+    rig.wait_box_state(BOX_NAME, "gone");
+    wait_root_session(&rig, None);
+    assert_eq!(ends(&controller), [100]);
+}
+
+#[test]
 fn a_box_waiting_on_a_question_keeps_the_thread_open() {
     let (rig, controller) = quiet_thread_with_a_box(shown("needs_input"));
     let thread = format!("{CHANNEL}/{TS}");
@@ -243,6 +254,86 @@ fn a_host_session_opened_before_a_crash_is_adopted_by_its_workdir() {
     assert_eq!(controller.hosts(), [(100, dir.clone(), false)]);
     assert_eq!(opens(&controller), [dir], "no second host Session");
     wait_root_session(&rig, Some(100));
+    assert_eq!(ends(&controller), [] as [i64; 0], "the rerun keeps it");
+}
+
+#[test]
+fn a_host_session_left_by_a_turn_that_does_not_run_again_is_ended_at_start() {
+    let (mut rig, controller, bin) = Rig::start_coordinated(Some(GOOD));
+    controller.script("open-host-session", Scripted::Lost);
+    rig.mention(1, USER, "<@UBOT> hello there", TS, None);
+    controller.wait_until("open-host-session", |s| {
+        s.requests.iter().any(|r| r.cmd() == "open-host-session")
+    });
+    rig.kill_daemon();
+    db(&rig)
+        .execute("UPDATE slack_turns SET started_at = started_at - 3601", [])
+        .unwrap();
+    rig.spawn_daemon();
+    rig.slack.wait_connected();
+    let stopped = "Stopped: the front restarted. Send your message again.";
+    assert_eq!(rig.slack.wait_updates(1)[0].text, stopped);
+    controller.wait_until("end-host-session", |s| {
+        s.requests.iter().any(|r| r.cmd() == "end-host-session")
+    });
+    let dir = workdir(&rig).display().to_string();
+    assert_eq!(controller.hosts(), [(100, dir, true)]);
+    assert_eq!(ends(&controller), [100]);
+    assert_eq!(root_session(&rig), None);
+    assert!(!bin.join("run-0").exists(), "the old turn never ran");
+}
+
+/// The Session of each `update-host-session` the controller was sent.
+fn touches(controller: &FakeController) -> Vec<i64> {
+    controller.seen(|seen| {
+        let touch = |r: &Request| match r {
+            Request::UpdateHostSession(update) => Some(update.session.get()),
+            _ => None,
+        };
+        seen.requests.iter().filter_map(touch).collect()
+    })
+}
+
+#[test]
+fn a_host_session_ended_outside_the_front_is_replaced_in_the_same_workdir_before_the_turn() {
+    let (rig, controller, bin) = Rig::start_coordinated(Some(GOOD));
+    ask(&rig, "hello there");
+    wait_posted(&rig, 1);
+    controller.end_host(100);
+    reply(&rig, 2, USER, "and now?");
+    assert_eq!(rig.slack.wait_updates(2)[1].text, "OK");
+    let dir = workdir(&rig).display().to_string();
+    let want = [(100, dir.clone(), true), (101, dir, false)];
+    assert_eq!(controller.hosts(), want);
+    assert_eq!(touches(&controller), [100, 100, 101]);
+    assert_eq!(root_session(&rig), Some(101));
+    assert!(bin.join("run-1").exists(), "the turn ran");
+}
+
+#[test]
+fn a_host_session_refused_again_after_the_reopen_ends_the_turn_with_its_refusal() {
+    let (rig, controller, bin) = Rig::start_coordinated(Some(GOOD));
+    ask(&rig, "hello there");
+    wait_posted(&rig, 1);
+    controller.end_host(100);
+    for id in [100, 101] {
+        let message = format!("host Session {id} has ended");
+        let answer = Scripted::Reply(refused("update-host-session", &message));
+        controller.script("update-host-session", answer);
+    }
+    reply(&rig, 2, USER, "and now?");
+    let line = "The coordinator is unavailable: the controller did not open a host Session: \
+                host Session 101 has ended.";
+    assert_eq!(rig.slack.wait_updates(2)[1].text, line);
+    let dir = workdir(&rig).display().to_string();
+    assert_eq!(
+        opens(&controller),
+        [dir.clone(), dir],
+        "one reopen, no more"
+    );
+    assert_eq!(touches(&controller), [100, 100, 101]);
+    assert_eq!(root_session(&rig), None);
+    assert!(!bin.join("run-1").exists(), "the turn did not run");
 }
 
 #[test]
