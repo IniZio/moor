@@ -10,8 +10,6 @@ use super::Db;
 pub(crate) enum ItemKind {
     /// A message for the coordinator.
     Message,
-    /// A `close`, which the front handles itself.
-    Close,
 }
 
 impl ItemKind {
@@ -19,7 +17,6 @@ impl ItemKind {
     const fn as_str(self) -> &'static str {
         match self {
             Self::Message => "message",
-            Self::Close => "close",
         }
     }
 }
@@ -64,22 +61,17 @@ impl Db {
     #[cfg(test)]
     pub(crate) fn inbox(&self, channel: &str, thread_ts: &str) -> rusqlite::Result<Vec<InboxItem>> {
         let mut stmt = self.conn.prepare(
-            "SELECT channel, thread_ts, kind, author, text, source FROM slack_inbox \
+            "SELECT channel, thread_ts, author, text, source FROM slack_inbox \
              WHERE channel = ?1 AND thread_ts = ?2 ORDER BY id",
         )?;
         let rows = stmt.query_map(params![channel, thread_ts], |r| {
-            let kind: String = r.get(2)?;
             Ok(InboxItem {
                 channel: r.get(0)?,
                 thread_ts: r.get(1)?,
-                kind: if kind == "close" {
-                    ItemKind::Close
-                } else {
-                    ItemKind::Message
-                },
-                author: r.get(3)?,
-                text: r.get(4)?,
-                source: r.get(5)?,
+                kind: ItemKind::Message,
+                author: r.get(2)?,
+                text: r.get(3)?,
+                source: r.get(4)?,
             })
         })?;
         rows.collect()

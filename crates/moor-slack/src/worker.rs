@@ -1,10 +1,12 @@
-//! The start and close paths: the socket thread records each mention and thread message in
-//! `slack.db` before Slack gets its ack, and the worker turns each recorded start into a Box
-//! and each recorded close into a closed Box over the controller socket. The worker also checks
-//! each repo a user adds to a channel, and each Claude token a user pastes.
+//! The start and close paths: the socket thread records each mention in `slack.db` before
+//! Slack gets its ack, and the worker turns each recorded start into a Box over the controller
+//! socket. A Box row in `closing` is a close the front owes, which the coordinator's tool
+//! server writes from its own process; the worker reads those rows every [`POLL`] and closes
+//! each Box. The worker also checks each repo a user adds to a channel, and each Claude token
+//! a user pastes.
 
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use moor_client::ClientError;
 use moor_core::name::{BoxId, BoxName};
@@ -17,6 +19,9 @@ use crate::db::{BoxState, Db, SlackBox};
 use crate::dial::Backoff;
 use crate::login::TokenCheck;
 use crate::slash::check_repo;
+
+/// How often the worker reads `slack.db` for Boxes to close.
+const POLL: Duration = Duration::from_millis(500);
 
 /// The worker's effects, so tests can script the controller and record what Slack sees.
 pub(crate) struct Fx<'a> {
@@ -46,8 +51,6 @@ pub(crate) enum Job {
     },
     /// Send the first `start` for this Box, already `starting` in `slack.db`.
     Start(SlackBox),
-    /// Send the first `close` for this Box, already `closing` in `slack.db`.
-    Close(SlackBox),
     /// Warn in `channel` when the controller does not know `repo`, which a user just added.
     CheckRepo {
         /// Channel id the repo was added to.
@@ -59,24 +62,31 @@ pub(crate) enum Job {
     CheckToken(TokenCheck),
 }
 
-/// Runs each job as it arrives and asks again about unsure starts and closes on a backoff
-/// timer, so one the controller cannot confirm never holds up another thread. `left` holds
-/// the rows an earlier run left `starting` or `closing`, read before any mention was
-/// recorded, so no job names them; they are asked about first.
+/// Runs each job as it arrives, sends the first close of each new `closing` row every
+/// [`POLL`], and asks again about unsure starts and closes on a backoff timer, so one the
+/// controller cannot confirm never holds up another thread. `left` holds the rows an earlier
+/// run left `starting` or `closing`, read before this run sent anything; they are asked about
+/// first.
 pub(crate) fn serve(jobs: &Receiver<Job>, db: &Db, left: Vec<SlackBox>, fx: &mut Fx<'_>) {
     let mut unsure = Unsure::new(left);
+    let mut poll = now();
     loop {
         if unsure.due.is_some_and(|due| due <= now()) {
             unsure.retry(db, fx);
             continue;
         }
-        match next_job(jobs, unsure.due) {
+        if poll <= now() {
+            unsure.take_new(db, fx);
+            poll = now() + POLL;
+        }
+        let wake = unsure.due.map_or(poll, |due| due.min(poll));
+        match jobs.recv_timeout(wake.saturating_duration_since(now())) {
             Ok(Job::Reply {
                 channel,
                 thread,
                 text,
             }) => (fx.reply)(&channel, &thread, &text),
-            Ok(Job::Start(row) | Job::Close(row)) => {
+            Ok(Job::Start(row)) => {
                 if !settle(db, fx, &row, Attempt::First) {
                     unsure.add(row);
                 }
@@ -87,14 +97,6 @@ pub(crate) fn serve(jobs: &Receiver<Job>, db: &Db, left: Vec<SlackBox>, fx: &mut
             Err(RecvTimeoutError::Disconnected) => return,
         }
     }
-}
-
-/// The next job, waiting no later than `due` when it is set.
-fn next_job(jobs: &Receiver<Job>, due: Option<Instant>) -> Result<Job, RecvTimeoutError> {
-    due.map_or_else(
-        || jobs.recv().map_err(|_| RecvTimeoutError::Disconnected),
-        |due| jobs.recv_timeout(due.saturating_duration_since(now())),
-    )
 }
 
 /// The current instant; `recv_timeout` waits on real time, so retry deadlines do too.
@@ -124,6 +126,23 @@ impl Unsure {
             rows,
             backoff: Backoff::new(),
             due,
+        }
+    }
+
+    /// Sends the first close of each `closing` row that is not already unsure. Only this
+    /// worker sends closes, so such a row has had none sent yet.
+    fn take_new(&mut self, db: &Db, fx: &mut Fx<'_>) {
+        let rows = match db.closing() {
+            Ok(rows) => rows,
+            Err(e) => return (fx.log)(&format!("slack.db: {e}; reading again")),
+        };
+        for row in rows {
+            if self.rows.iter().any(|r| r.box_name == row.box_name) {
+                continue;
+            }
+            if !settle(db, fx, &row, Attempt::First) {
+                self.add(row);
+            }
         }
     }
 

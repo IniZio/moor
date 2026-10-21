@@ -1,5 +1,6 @@
-//! Messages in a kept thread: what the starter's messages and `close` record before the
-//! ack, and how the worker settles a close, including after a lost controller connection.
+//! Messages in a kept thread and the close path: a starter's message, `close` included, is
+//! queued for the coordinator, and the worker settles a Box that `close_box` marked
+//! `closing`, including after a lost controller connection.
 #![allow(clippy::panic, reason = "test code")]
 
 use std::cell::RefCell;
@@ -38,12 +39,13 @@ fn bound_thread(db: &Db) {
     db.bind(&row.box_name, BoxId::new(7), None).unwrap();
 }
 
-/// What `close` from `U1` records, which must be a close job.
+/// Marks the thread's bound Box `closing`, as `close_box` does, and returns its row.
 fn recorded_close(db: &Db) -> SlackBox {
-    match record_one(db, &reply("Ev2", "U1", "close")) {
-        Some(Job::Close(row)) => row,
-        other => panic!("no close: {other:?}"),
-    }
+    let row = db.thread_boxes("C1", "10.5").unwrap().remove(0);
+    db.mark_closing(&row.box_name).unwrap();
+    let row = db.thread_boxes("C1", "10.5").unwrap().remove(0);
+    assert_eq!(Some(row.state.clone()), closing());
+    row
 }
 
 /// An inbox item of thread `10.5`.
@@ -119,35 +121,22 @@ fn a_failed_record_queues_nothing_so_the_resent_message_is_queued() {
 }
 
 #[test]
-fn close_from_the_starter_marks_the_box_closing_with_its_item() {
+fn a_close_reply_is_queued_for_the_coordinator_as_text() {
     let dir = tempfile::tempdir().unwrap();
     let db = db(dir.path());
     bound_thread(&db);
-    let row = recorded_close(&db);
-    assert_eq!(Some(row.state), closing());
-    assert_eq!(state(&db, "C1", "10.5"), closing());
-    let want = item(ItemKind::Close, "U1", "close", "Ev2");
+    assert_eq!(record_one(&db, &reply("Ev2", "U1", "close")), None);
+    let want = item(ItemKind::Message, "U1", "close", "Ev2");
     assert_eq!(db.inbox("C1", "10.5").unwrap(), [want]);
-}
-
-#[test]
-fn close_of_a_box_still_starting_or_closing_changes_nothing() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = db(dir.path());
-    recorded_start(&db);
-    let Some(Job::Reply { text, .. }) = record_one(&db, &reply("Ev5", "U1", "close")) else {
-        panic!("no reply");
+    let bound = BoxState::Bound {
+        box_id: BoxId::new(7),
+        branch: None,
     };
-    assert!(text.contains("is still starting"), "{text}");
-    assert_eq!(state(&db, "C1", "10.5"), Some(BoxState::Starting));
-    let started = db.thread_boxes("C1", "10.5").unwrap().remove(0);
-    db.bind(&started.box_name, BoxId::new(7), None).unwrap();
-    recorded_close(&db);
-    let Some(Job::Reply { text, .. }) = record_one(&db, &reply("Ev3", "U1", "close")) else {
-        panic!("no reply");
-    };
-    assert!(text.contains("is already closing"), "{text}");
-    assert_eq!(db.inbox("C1", "10.5").unwrap().len(), 1);
+    assert_eq!(
+        state(&db, "C1", "10.5"),
+        Some(bound),
+        "the front closes nothing"
+    );
 }
 
 #[test]
@@ -227,35 +216,26 @@ fn a_start_command_in_a_kept_thread_is_not_queued() {
     assert_eq!(db.inbox("C1", "10.5").unwrap(), []);
 }
 
-/// `done_at` of every `close` item in the `slack.db` under `dir`, read on its own connection.
-fn close_done_at(dir: &std::path::Path) -> Vec<Option<i64>> {
-    let conn = rusqlite::Connection::open(dir.join("slack.db")).unwrap();
-    let mut stmt = conn
-        .prepare("SELECT done_at FROM slack_inbox WHERE kind = 'close' ORDER BY id")
-        .unwrap();
-    let rows = stmt.query_map([], |r| r.get(0)).unwrap();
-    rows.map(Result::unwrap).collect()
-}
-
 #[test]
-fn a_settled_close_marks_its_item_done_whether_the_box_closed_or_not() {
-    for (answer, text) in [
-        (Ok(Response::ok("close", None)), "Closed Box"),
-        (refused("close", "unpushed work"), "Could not close Box"),
+fn a_settled_close_leaves_the_box_gone_or_bound_again() {
+    for (answer, text, gone) in [
+        (Ok(Response::ok("close", None)), "Closed Box", true),
+        (
+            refused("close", "unpushed work"),
+            "Could not close Box",
+            false,
+        ),
     ] {
         let dir = tempfile::tempdir().unwrap();
         let db = db(dir.path());
         bound_thread(&db);
         let row = recorded_close(&db);
-        assert_eq!(close_done_at(dir.path()), [None], "queued, not yet done");
         let mut answer = Some(answer);
         let seen = attempt(&db, &row, Attempt::First, &mut |_| answer.take().unwrap());
         assert!(texts(&seen)[0].starts_with(text), "{:?}", texts(&seen));
-        let done = close_done_at(dir.path());
-        assert!(
-            matches!(done[..], [Some(_)]),
-            "close item not done: {done:?}"
-        );
+        let after = state(&db, "C1", "10.5").unwrap();
+        assert_eq!(matches!(after, BoxState::Gone { .. }), gone, "{after:?}");
+        assert_eq!(matches!(after, BoxState::Bound { .. }), !gone, "{after:?}");
     }
 }
 
@@ -287,7 +267,6 @@ fn a_crash_after_the_closed_post_leaves_the_close_to_settle_and_post_again_on_re
         closing(),
         "the write ran before the post"
     );
-    assert_eq!(close_done_at(dir.path()), [None]);
     let left = db.closing().unwrap();
     let seen = RefCell::default();
     let (_, jobs) = mpsc::channel();
@@ -298,5 +277,4 @@ fn a_crash_after_the_closed_post_leaves_the_close_to_settle_and_post_again_on_re
     with_fx(&seen, &mut answer, |fx| serve(&jobs, &db, left, fx));
     let after = seen.into_inner();
     assert_eq!(after.replies, before.replies);
-    assert!(matches!(close_done_at(dir.path())[..], [Some(_)]));
 }
