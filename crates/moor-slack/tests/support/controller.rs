@@ -1,9 +1,11 @@
-//! A scripted controller on a Unix socket. It answers the hello, serves each watch with an
-//! empty backlog caught up to [`BACKLOG_END`], answers each request from a per-command script
-//! or a Box table, and records what it is sent.
+//! A scripted controller on a Unix socket. It answers the hello, serves each watch with the
+//! events the test emitted, caught up to [`BACKLOG_END`] or the last event, sends each later
+//! event to every live watch, answers each request from a per-command script or a Box table,
+//! and records what it is sent.
 
 use std::collections::{HashMap, VecDeque};
 use std::io::{BufRead, BufReader, Write};
+use std::net::Shutdown;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -11,11 +13,13 @@ use std::thread;
 use std::time::Duration;
 
 use moor_core::controller::{parse_frame, ClientFrame, FrameErrorKind, ServerFrame};
+use moor_core::name::BoxId;
 use moor_core::request::Request;
 use moor_core::response::{ErrorKind, ErrorView, Response};
-use serde_json::json;
+use serde_json::{json, Value};
 
-/// Cursor every backlog watch is caught up to; a live watch must resume from it.
+/// Cursor a backlog watch is caught up to while no event was emitted; a live watch must
+/// resume from it.
 pub(crate) const BACKLOG_END: i64 = 41;
 /// Longest a wait polls before the test fails.
 const DEADLINE: Duration = Duration::from_secs(10);
@@ -61,6 +65,10 @@ struct Inner {
     /// Workdir of each host Session `open-host-session` opened, and whether it has ended;
     /// its id is its index plus 100.
     hosts: Vec<(String, bool)>,
+    /// Every event emitted so far, oldest first; cursors follow [`BACKLOG_END`].
+    events: Vec<ServerFrame>,
+    /// The connection of each live watch.
+    live: Vec<UnixStream>,
 }
 
 /// A running scripted controller; it serves until the test process exits.
@@ -80,6 +88,8 @@ impl FakeController {
             fail_watches: false,
             boxes: None,
             hosts: Vec::new(),
+            events: Vec::new(),
+            live: Vec::new(),
         }));
         let shared = Arc::clone(&inner);
         thread::spawn(move || {
@@ -132,6 +142,35 @@ impl FakeController {
         self.lock().hosts[index].1 = true;
     }
 
+    /// Stores an event of `kind` for Box `box_id` named `name`, and sends it to every live
+    /// watch.
+    pub(crate) fn emit(&self, box_id: i64, name: &str, kind: &str, payload: Value) {
+        let mut inner = self.lock();
+        let cursor = BACKLOG_END + 1 + i64::try_from(inner.events.len()).unwrap();
+        let event = ServerFrame::Event {
+            cursor,
+            r#box: Some(name.to_owned()),
+            box_id: Some(BoxId::new(box_id)),
+            session: None,
+            kind: kind.to_owned(),
+            payload,
+            ts: 1_730_000_000 + cursor,
+        };
+        let line = event.to_line();
+        inner.events.push(event);
+        inner
+            .live
+            .retain_mut(|stream| stream.write_all(line.as_bytes()).is_ok());
+    }
+
+    /// Ends every live watch, as a controller restart does; the front dials again and gets
+    /// every event again.
+    pub(crate) fn drop_watches(&self) {
+        for stream in self.lock().live.drain(..) {
+            let _ = stream.shutdown(Shutdown::Both);
+        }
+    }
+
     /// Reads what clients sent so far.
     pub(crate) fn seen<T>(&self, read: impl FnOnce(&Seen) -> T) -> T {
         read(&self.lock().seen)
@@ -172,13 +211,20 @@ fn serve(stream: UnixStream, inner: &Mutex<Inner>) {
     let mut writer = stream;
     let mut line = String::new();
     while reader.read_line(&mut line).unwrap_or(0) > 0 {
-        let next = answer(line.trim_end(), &mut inner.lock().unwrap());
+        let mut guard = inner.lock().unwrap();
+        let next = answer(line.trim_end(), &mut guard);
         line.clear();
         let frame = match next {
             Next::Send(frame) => frame,
+            Next::Backlog(since) => return send_backlog(&mut writer, &guard, since),
+            Next::Follow(since) => {
+                follow(&mut writer, &mut guard, since);
+                continue;
+            }
             Next::Wait => continue,
             Next::Close => return,
         };
+        drop(guard);
         if writer.write_all(frame.to_line().as_bytes()).is_err() {
             return;
         }
@@ -195,7 +241,11 @@ fn serve(stream: UnixStream, inner: &Mutex<Inner>) {
 enum Next {
     /// Send this frame; a caught-up or error frame then closes the connection.
     Send(ServerFrame),
-    /// Send nothing and keep the connection, as a live watch does.
+    /// Send every event after this cursor, then the caught-up frame, then close.
+    Backlog(i64),
+    /// Send every event after this cursor, then keep the connection for later events.
+    Follow(i64),
+    /// Send nothing and keep the connection.
     Wait,
     /// Close the connection.
     Close,
@@ -232,11 +282,9 @@ fn answer(line: &str, inner: &mut Inner) -> Next {
                     message: "cannot read the event store".to_owned(),
                 })
             } else if follow {
-                Next::Wait
+                Next::Follow(since)
             } else {
-                Next::Send(ServerFrame::CaughtUp {
-                    cursor: BACKLOG_END,
-                })
+                Next::Backlog(since)
             }
         }
         ClientFrame::Request { id, request } => {
@@ -260,6 +308,33 @@ fn answer(line: &str, inner: &mut Inner) -> Next {
             next
         }
     }
+}
+
+/// Sends the events after `since` and the caught-up frame on a backlog watch.
+fn send_backlog(writer: &mut UnixStream, inner: &Inner, since: i64) {
+    let cursor = BACKLOG_END + i64::try_from(inner.events.len()).unwrap();
+    let out = events_after(inner, since) + &ServerFrame::CaughtUp { cursor }.to_line();
+    let _ = writer.write_all(out.as_bytes());
+}
+
+/// Sends the events after `since` on a live watch and keeps it for later events.
+fn follow(writer: &mut UnixStream, inner: &mut Inner, since: i64) {
+    if writer
+        .write_all(events_after(inner, since).as_bytes())
+        .is_ok()
+    {
+        inner.live.push(writer.try_clone().unwrap());
+    }
+}
+
+/// The frames of every event after `since`, one per line.
+fn events_after(inner: &Inner, since: i64) -> String {
+    inner
+        .events
+        .iter()
+        .filter(|frame| matches!(frame, ServerFrame::Event { cursor, .. } if *cursor > since))
+        .map(ServerFrame::to_line)
+        .collect()
 }
 
 /// The answer to a request no script covers: from the host Sessions, then the Box table.

@@ -8,7 +8,7 @@ use super::Db;
 
 /// Columns of a Box row, in the order [`box_row`] reads them.
 const BOX_COLUMNS: &str = "b.channel, b.thread_ts, b.box_name, b.repo, b.goal, b.requested_by, \
-     b.state, b.box_id, b.branch, b.parent FROM slack_boxes b";
+     b.state, b.box_id, b.branch, b.parent, b.status_ts, b.status_text FROM slack_boxes b";
 
 /// Where a Box stands.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -59,7 +59,46 @@ pub(crate) struct SlackBox {
     pub(crate) state: BoxState,
 }
 
+/// A Box the controller named, with its status message.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct FedBox {
+    /// The Box.
+    pub(crate) boxed: SlackBox,
+    /// Ts of its status message, once posted.
+    pub(crate) status_ts: Option<String>,
+    /// Text its status message shows.
+    pub(crate) status_text: Option<String>,
+}
+
 impl Db {
+    /// Every Box the controller named, with its status message, in the order they were
+    /// asked for.
+    pub(crate) fn fed_boxes(&self) -> rusqlite::Result<Vec<FedBox>> {
+        let sql = format!(
+            "SELECT {BOX_COLUMNS} WHERE b.box_id IS NOT NULL \
+             ORDER BY b.created_at, b.channel, b.thread_ts, b.n"
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map([], |r| {
+            Ok(FedBox {
+                boxed: box_row(r)?,
+                status_ts: r.get(10)?,
+                status_text: r.get(11)?,
+            })
+        })?;
+        rows.collect()
+    }
+
+    /// Records that Box `name`'s status message `ts` shows `text`.
+    pub(crate) fn set_status(&self, name: &str, ts: &str, text: &str) -> rusqlite::Result<()> {
+        self.conn
+            .execute(
+                "UPDATE slack_boxes SET status_ts = ?2, status_text = ?3 WHERE box_name = ?1",
+                params![name, ts, text],
+            )
+            .map(drop)
+    }
+
     /// The Boxes of a thread, in the order the thread asked for them.
     pub(crate) fn thread_boxes(
         &self,

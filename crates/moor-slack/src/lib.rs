@@ -16,6 +16,7 @@ mod daemon;
 mod db;
 mod dial;
 mod escape;
+mod feed;
 mod login;
 mod secret_file;
 mod slash;

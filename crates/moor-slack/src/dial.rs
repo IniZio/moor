@@ -30,6 +30,15 @@ impl Backoff {
     }
 }
 
+/// What the watch reader forwards to the feed.
+#[derive(Debug)]
+pub(crate) enum Watched {
+    /// A new connection starts its backlog from the first event, so the feed folds afresh.
+    Connected,
+    /// One item of the stream.
+    Item(WatchItem),
+}
+
 /// Why one watch connection ended early.
 enum Ended {
     /// The controller could not be reached or broke the stream.
@@ -72,7 +81,7 @@ impl Dialer {
 /// another protocol shows one line per cause, not one per attempt.
 pub(crate) fn read_events(
     client: &Client,
-    feed: &Sender<WatchItem>,
+    feed: &Sender<Watched>,
     log: &dyn Fn(&str),
     sleep: &dyn Fn(Duration),
 ) {
@@ -94,14 +103,16 @@ pub(crate) fn read_events(
     }
 }
 
-/// Forwards the backlog, then follows live events from the cursor its caught-up frame names.
+/// Tells the feed a connection starts, forwards the backlog, then follows live events from the cursor its caught-up frame names.
 /// A backlog that closes without a caught-up frame ends the connection.
 fn forward(
     client: &Client,
     backlog: Watch,
-    feed: &Sender<WatchItem>,
+    feed: &Sender<Watched>,
     dialer: &mut Dialer,
 ) -> Result<(), Ended> {
+    let send = |item| feed.send(item).map_err(|_| Ended::FeedGone);
+    send(Watched::Connected)?;
     let mut caught_up = None;
     for item in backlog {
         let item = item.map_err(Ended::Failed)?;
@@ -109,7 +120,7 @@ fn forward(
             caught_up = Some(cursor);
             dialer.healthy();
         }
-        feed.send(item).map_err(|_| Ended::FeedGone)?;
+        send(Watched::Item(item))?;
     }
     let Some(cursor) = caught_up else {
         return Ok(());
@@ -118,8 +129,7 @@ fn forward(
         .watch(cursor, WatchFilter::default(), true)
         .map_err(Ended::Failed)?;
     for item in live {
-        feed.send(item.map_err(Ended::Failed)?)
-            .map_err(|_| Ended::FeedGone)?;
+        send(Watched::Item(item.map_err(Ended::Failed)?))?;
     }
     Ok(())
 }
