@@ -1,13 +1,13 @@
 //! What the front does with turns an earlier run left behind, before it takes new ones: it
 //! kills their processes, posts each stored line not yet posted, and runs a cut-off turn once
-//! more when it is recent, or says it stopped.
+//! more when it is recent, or says it stopped and ends its thread's host Session.
 
 use std::fs;
 use std::os::unix::fs::MetadataExt as _;
 
 use rustix::process::{getpgid, kill_process_group, Pid, Signal};
 
-use super::{lines, Turns};
+use super::{host, lines, workdir_path, Turns};
 use crate::credentials::daemon_uid;
 use crate::db::{Db, End, TurnRow};
 
@@ -49,8 +49,27 @@ impl Turns {
             if self.post(row, row.placeholder.as_deref(), line) {
                 self.written(db.mark_posted(row.id, now));
             }
+            self.end_left(db, row);
         }
         reruns
+    }
+
+    /// Ends each live host Session whose workdir is that of `row`'s thread, whose turn does
+    /// not run again. A rerun adopts its thread's Session instead.
+    fn end_left(&self, db: &Db, row: &TurnRow) {
+        let live = workdir_path(&self.state_dir, row)
+            .and_then(|dir| host::live_with(&self.client, &dir.display().to_string()));
+        match live {
+            Ok(live) => {
+                for session in live {
+                    self.end_host(db, &row.channel, &row.thread_ts, session);
+                }
+            }
+            Err(e) => (self.log)(&format!(
+                "host: thread {}/{}: {e}",
+                row.channel, row.thread_ts
+            )),
+        }
     }
 }
 
