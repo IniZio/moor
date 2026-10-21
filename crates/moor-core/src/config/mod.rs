@@ -9,7 +9,6 @@ mod user;
 
 pub use controller::{
     find_repo, parse_controller, ControllerConfig, MoorYamlSource, RepoEntry, RepoTable,
-    SlackConfig,
 };
 pub use repo::{parse_repo, RepoBox, RepoCompose, RepoConfig};
 

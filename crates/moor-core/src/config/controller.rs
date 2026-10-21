@@ -1,7 +1,6 @@
 //! The controller process config file: strict parse plus validation, no IO.
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
 use std::time::Duration;
 
 use serde::Deserialize;
@@ -27,8 +26,13 @@ pub struct ControllerConfig {
         reason = "outer Some means the key was present, even when null"
     )]
     web: Option<Option<serde_json::Value>>,
-    /// Slack Socket Mode app; None means it is not started.
-    pub slack: Option<SlackConfig>,
+    /// Removed key, kept only so a stale config gets a pointed error.
+    #[serde(default, deserialize_with = "present_key")]
+    #[allow(
+        clippy::option_option,
+        reason = "outer Some means the key was present, even when null"
+    )]
+    slack: Option<Option<serde_json::Value>>,
     /// Repos the controller may clone on its own host, keyed by name.
     pub repos: RepoTable,
 }
@@ -156,66 +160,6 @@ fn validate_repos(file: &str, repos: &RepoTable) -> Result<(), ConfigError> {
     Ok(())
 }
 
-/// Slack Socket Mode app settings.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct SlackConfig {
-    /// File holding the app-level token (`xapp-`); the file must be mode 0600.
-    pub app_token_file: PathBuf,
-    /// File holding the bot token (`xoxb-`).
-    pub bot_token_file: PathBuf,
-    /// Channel ids that may start Boxes, such as `C0123ABC`; must not be empty.
-    pub channels: Vec<String>,
-    /// User ids that may start Boxes, such as `U0123ABC`; must not be empty.
-    pub users: Vec<String>,
-    /// Slack Web API base URL without a trailing `/`; `https://` or loopback `http://` only.
-    #[serde(default = "default_slack_api_base")]
-    pub api_base: String,
-}
-
-/// The public Slack Web API.
-fn default_slack_api_base() -> String {
-    "https://slack.com/api".to_owned()
-}
-
-/// Checks the `slack:` section; the error path names the key.
-fn validate_slack(file: &str, slack: &SlackConfig) -> Result<(), ConfigError> {
-    let bad = |path: &str, reason: &str| Err(ConfigError::new(path, reason).in_file(file));
-    for (key, path) in [
-        ("slack.app_token_file", &slack.app_token_file),
-        ("slack.bot_token_file", &slack.bot_token_file),
-    ] {
-        if path.as_os_str().is_empty() {
-            return bad(key, "must not be empty");
-        }
-    }
-    for (key, ids) in [
-        ("slack.channels", &slack.channels),
-        ("slack.users", &slack.users),
-    ] {
-        if ids.is_empty() {
-            return bad(key, "must list at least one id");
-        }
-        if ids.iter().any(|id| id.trim().is_empty()) {
-            return bad(key, "ids must not be empty");
-        }
-    }
-    let base = slack.api_base.as_str();
-    let scheme_ok = base.starts_with("https://")
-        || base.starts_with("http://127.0.0.1:")
-        || base.starts_with("http://localhost:");
-    if !scheme_ok {
-        return bad(
-            "slack.api_base",
-            "must start with https:// (or http://127.0.0.1: / http://localhost:)",
-        );
-    }
-    if base.ends_with('/') {
-        return bad("slack.api_base", "must not end with /");
-    }
-    Ok(())
-}
-
 /// Seconds between settle passes when the config does not say.
 const DEFAULT_SETTLE_SECS: u64 = 5;
 
@@ -249,8 +193,12 @@ pub fn parse_controller(file: &str, text: &str) -> Result<ControllerConfig, Conf
         )
         .in_file(file));
     }
-    if let Some(slack) = &cfg.slack {
-        validate_slack(file, slack)?;
+    if cfg.slack.is_some() {
+        return Err(ConfigError::new(
+            "slack",
+            "was removed from the controller config; delete it, the separate moor-slack daemon is the Slack front",
+        )
+        .in_file(file));
     }
     validate_repos(file, &cfg.repos)?;
     Ok(cfg)

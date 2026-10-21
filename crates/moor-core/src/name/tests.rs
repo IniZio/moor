@@ -119,7 +119,7 @@ fn parse_rejects_malformed() {
 #[test]
 fn parse_allow_bare_accepts_bare_and_strict() {
     assert!(BoxName::parse_allow_bare("fix-bug").is_ok());
-    assert!(BoxName::parse_allow_bare("slack-1700000000-000100").is_ok());
+    assert!(BoxName::parse_allow_bare("thread-1700000000-000100").is_ok());
     assert!(BoxName::parse_allow_bare("moor/7").is_ok());
     assert!(BoxName::parse_allow_bare("a/b/c").is_err());
     assert!(BoxName::parse_allow_bare("a/").is_err());

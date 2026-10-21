@@ -88,67 +88,21 @@ fn removed_web_key_points_to_moor_web() {
     }
 }
 
-const SLACK: &str = "slack:
-  app_token_file: /x/app
-  bot_token_file: /x/bot
-  channels: [C0123ABC]
-  users: [U0123ABC, U9]
-";
-
-fn slack_with(extra: &str) -> String {
-    format!("{SLACK}{extra}")
-}
-
 #[test]
-fn slack_section_parses_with_default_api_base() {
-    let c = parse_controller("c.yaml", &slack_with("")).unwrap_or_else(|e| panic!("{e}"));
-    let s = c.slack.unwrap_or_else(|| panic!("slack missing"));
-    assert_eq!(s.app_token_file, std::path::PathBuf::from("/x/app"));
-    assert_eq!(s.bot_token_file, std::path::PathBuf::from("/x/bot"));
-    assert_eq!(s.channels, ["C0123ABC"]);
-    assert_eq!(s.users, ["U0123ABC", "U9"]);
-    assert_eq!(s.api_base, "https://slack.com/api");
-    let c = parse_controller("c.yaml", &slack_with("  api_base: http://127.0.0.1:9000\n"))
-        .unwrap_or_else(|e| panic!("{e}"));
-    assert_eq!(
-        c.slack.map(|s| s.api_base).as_deref(),
-        Some("http://127.0.0.1:9000")
-    );
-}
-
-#[test]
-fn slack_absent_is_none() {
-    let c = parse_controller("c.yaml", "socket: /a\n").unwrap_or_else(|e| panic!("{e}"));
-    assert_eq!(c.slack, None);
-}
-
-#[test]
-fn slack_empty_channels_or_users_are_rejected() {
-    let e = err(&SLACK.replace("[C0123ABC]", "[]"));
-    assert_eq!(e.path, "slack.channels");
-    let e = err(&SLACK.replace("[U0123ABC, U9]", "[]"));
-    assert_eq!(e.path, "slack.users");
-    let e = err(&SLACK.replace("[U0123ABC, U9]", "[\"\"]"));
-    assert_eq!(e.path, "slack.users");
-}
-
-#[test]
-fn slack_api_base_must_be_https_or_loopback_without_trailing_slash() {
-    for base in [
-        "http://slack.com/api",
-        "http://example.com:80",
-        "ftp://x",
-        "https://slack.com/api/",
+fn removed_slack_key_says_to_delete_it() {
+    for text in [
+        "slack: {app_token_file: /x/app, bot_token_file: /x/bot, channels: [C1], users: [U1]}\n",
+        "slack: ~\n",
+        "slack:\n",
+        "slack: null\n",
     ] {
-        let e = err(&slack_with(&format!("  api_base: {base}\n")));
-        assert_eq!(e.path, "slack.api_base", "{base}");
+        let e = err(text);
+        assert_eq!(e.path, "slack", "{text}");
+        let line = e.to_string();
+        assert!(line.contains("delete it"), "{text}: {line}");
+        assert!(line.contains("moor-slack"), "{text}: {line}");
+        assert!(!line.contains('\n'), "{text}: {line}");
     }
-}
-
-#[test]
-fn slack_unknown_key_is_rejected() {
-    let e = err(&slack_with("  bogus: 1\n"));
-    assert!(e.to_string().contains("bogus"), "{e}");
 }
 
 const REPOS: &str = "repos:

@@ -56,7 +56,7 @@ impl BoxName {
     /// chars of `[a-z0-9-]`, not starting with `-`).
     ///
     /// Bare names are accepted only until the store's next schema, because the
-    /// current store and Slack's `slack-<ts>` names still produce them. A string
+    /// current store and a front's thread-derived names still produce them. A string
     /// containing `/` must pass the strict rule; it is never retried as bare.
     ///
     /// # Errors
