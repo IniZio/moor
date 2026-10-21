@@ -149,7 +149,7 @@ fn a_prompt_slack_refuses_is_dropped_and_the_other_box_still_gets_its_lines() {
     rig.open_thread_with_a_box();
     let second = format!("{}2", BOX_NAME.strip_suffix('1').unwrap());
     rig.wait_box_state(&second, "bound");
-    rig.slack.refuse_block_posts(usize::MAX);
+    rig.slack.refuse_block_posts(usize::MAX, "invalid_blocks");
     controller.emit(BOX_ID, BOX_NAME, "needs_input", asks());
     rig.slack
         .wait_until("the refused prompt", |posts, _| !prompts(posts).is_empty());
@@ -166,7 +166,7 @@ fn a_prompt_slack_refuses_is_dropped_and_the_other_box_still_gets_its_lines() {
         .query_row("SELECT closed_reason FROM slack_prompts", [], |r| r.get(0))
         .unwrap();
     assert!(closed.is_some(), "the refused prompt is recorded closed");
-    rig.slack.refuse_block_posts(0);
+    rig.slack.refuse_block_posts(0, "invalid_blocks");
     controller.emit(
         BOX_ID,
         BOX_NAME,
@@ -175,4 +175,28 @@ fn a_prompt_slack_refuses_is_dropped_and_the_other_box_still_gets_its_lines() {
     );
     let posted = wait_prompts(&rig, 2);
     assert!(posted[1].text.contains("Again?"), "{}", posted[1].text);
+}
+
+#[test]
+fn a_prompt_slack_fails_to_take_for_a_passing_reason_is_posted_on_a_retry() {
+    let (rig, controller, _bin) = Rig::start_boxes();
+    rig.open_thread_with_a_box();
+    rig.slack.refuse_block_posts(1, "internal_error");
+    controller.emit(BOX_ID, BOX_NAME, "needs_input", asks());
+    let (posts, _) = rig
+        .slack
+        .wait_until("the retried prompt", |posts, _| prompts(posts).len() >= 2);
+    wait_recorded(&rig, 1);
+    let posts = prompts(&posts);
+    assert!(posts[1].text.contains("Proceed?"), "{}", posts[1].text);
+    let db = rusqlite::Connection::open(rig.path("state-slack/slack.db")).unwrap();
+    let (ts, closed): (Option<String>, Option<String>) = db
+        .query_row(
+            "SELECT message_ts, closed_reason FROM slack_prompts",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert!(ts.is_some(), "the retried prompt is recorded posted");
+    assert_eq!(closed, None, "the retried prompt stays open");
 }

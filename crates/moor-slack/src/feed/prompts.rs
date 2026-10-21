@@ -12,6 +12,24 @@ use crate::api::ApiError;
 use crate::db::{BoxState, Db, Posted, Prompt, PromptState, SlackBox};
 use crate::prompt::{answered_blocks, open_blocks, text};
 
+/// The `ok: false` codes with which Slack refuses a message for what it is, so a retry of
+/// that message fails the same way.
+const PERMANENT: &[&str] = &[
+    "invalid_blocks",
+    "invalid_blocks_format",
+    "msg_too_long",
+    "too_many_attachments",
+    "channel_not_found",
+    "not_in_channel",
+    "is_archived",
+    "invalid_arguments",
+];
+
+/// Whether `e` is a refusal in [`PERMANENT`].
+fn permanent(e: &ApiError) -> bool {
+    matches!(e, ApiError::Slack(code) if PERMANENT.contains(&code.as_str()))
+}
+
 /// The question a Box waits on.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct Asked {
@@ -142,8 +160,9 @@ impl Feed {
     }
 
     /// Posts the prompt for `asked` in the thread of `boxed`, then records it. A crash in
-    /// between posts it again on the next refold. A prompt Slack refuses is logged and
-    /// recorded closed, since posting it again would fail the same way.
+    /// between posts it again on the next refold. A prompt Slack refuses with a
+    /// [`PERMANENT`] code is logged and recorded closed, since posting it again would fail
+    /// the same way; any other refusal is retried like a transport error.
     fn post(&self, db: &Db, boxed: &SlackBox, asked: &Asked) -> Result<(), String> {
         let name = boxed.box_name.as_str();
         let by = &boxed.requested_by;
@@ -155,7 +174,7 @@ impl Feed {
             .post_blocks(&self.bot_token, channel, thread, &fallback, &blocks)
         {
             Ok(ts) => Some(ts),
-            Err(e @ ApiError::Slack(_)) => {
+            Err(e @ ApiError::Slack(_)) if permanent(&e) => {
                 (self.log)(&format!("slack: prompt of {name} not posted: {e}"));
                 None
             }
