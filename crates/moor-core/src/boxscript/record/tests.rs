@@ -110,7 +110,6 @@ impl Sandbox {
 
     /// One passing run that creates `dir`, then a second run; true when `dir` survived it.
     fn kept_after_pass(&self, lock: &str, dir: &str) -> bool {
-        self.ignore(&format!("/{dir}/\n"));
         self.write(lock, "{}\n");
         self.commit();
         let first = self.run(&[], &format!("mkdir -p '{dir}' && touch '{dir}/f'"));
@@ -161,7 +160,6 @@ fn command_exit_code_is_returned() {
 #[test]
 fn node_dirs_and_tool_caches_are_kept_on_matching_key() {
     let sb = Sandbox::new("node", true);
-    sb.ignore("node_modules/\n.next/\n.turbo/\n.nx/\n");
     sb.write("package-lock.json", "{}\n");
     sb.write(".nvmrc", "20\n");
     sb.commit();
@@ -249,7 +247,6 @@ fn setup_change_invalidates_the_key() {
 
 /// Tracked lockfile that must not keep anything; the command still runs.
 fn keeps_nothing(sb: &Sandbox, dir: &str) -> Out {
-    sb.ignore(&format!("/{dir}/\n"));
     sb.commit();
     let make = format!("mkdir -p '{dir}' && touch '{dir}/f'");
     assert_eq!(sb.run(&[], &make).code, 0);
@@ -317,7 +314,6 @@ fn bin_without_hash_tools(sb: &Sandbox) -> PathBuf {
 #[test]
 fn missing_hash_tool_keeps_nothing_and_warns() {
     let sb = Sandbox::new("nohash", true);
-    sb.ignore("node_modules/\n");
     sb.write("package-lock.json", "{}\n");
     sb.commit();
     let bin = bin_without_hash_tools(&sb);
@@ -352,7 +348,6 @@ fn failing_command_leaves_the_key_unpromoted() {
 #[test]
 fn passing_command_promotes_the_key() {
     let sb = Sandbox::new("pass", true);
-    sb.ignore("node_modules/\n");
     sb.write("package-lock.json", "{}\n");
     sb.commit();
     assert_eq!(
@@ -416,10 +411,10 @@ fn and_list_failure_still_stops_setup() {
 #[test]
 fn exit_zero_in_a_step_does_not_skip_later_steps() {
     let sb = setup_sandbox("exitzero");
-    let out = sb.run(&["exit 0", "touch .moor/second"], "touch .moor/ran");
+    let out = sb.run(&["exit 0", "touch second"], "touch ran");
     assert_eq!(out.code, 0, "{}", out.stderr);
-    assert!(sb.exists(".moor/second"));
-    assert!(sb.exists(".moor/ran"));
+    assert!(sb.exists("second"));
+    assert!(sb.exists("ran"));
 }
 
 #[test]
@@ -547,10 +542,26 @@ fn a_commit_during_the_record_run_fails_it_as_moved() {
 }
 
 #[test]
-fn a_file_left_by_the_record_run_fails_it_as_moved() {
-    let sb = probe_sandbox("m-dirty");
-    let head = sb.head();
-    assert_moved(&sb, "touch left.txt", &head);
+fn an_untracked_file_left_by_the_record_run_passes_at_the_probed_sha() {
+    let sb = probe_sandbox("m-new");
+    assert_eq!(probed_dirty(&sb), 0);
+    let probed = Sha::parse(&parse_head(&sb.read(HEAD_FILE)).unwrap().0).unwrap();
+    let out = sb.run_at(&[], "mkdir -p cov && touch left.txt cov/out", &probed);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert!(!sb.exists(MOVED_FILE));
+    assert_eq!(sb.head().as_str(), probed.as_str());
+}
+
+#[test]
+fn a_tracked_change_by_the_record_run_fails_it_as_moved() {
+    for (name, cmd) in [
+        ("m-edit", "echo x > kept.txt"),
+        ("m-rm", "rm gone.txt"),
+        ("m-stage", "echo x > kept.txt && git add kept.txt"),
+    ] {
+        let sb = probe_sandbox(name);
+        assert_moved(&sb, cmd, &sb.head());
+    }
 }
 
 #[test]
@@ -563,14 +574,17 @@ fn a_head_other_than_the_probed_one_fails_the_run_as_moved() {
 fn a_moved_run_keeps_the_command_failure_code() {
     let sb = probe_sandbox("m-code");
     let head = sb.head();
-    assert_eq!(assert_moved(&sb, "touch left.txt; exit 4", &head).code, 4);
+    assert_eq!(
+        assert_moved(&sb, "echo x > kept.txt; exit 4", &head).code,
+        4
+    );
 }
 
 #[test]
 fn a_clean_run_after_a_moved_one_clears_the_moved_file() {
     let sb = probe_sandbox("m-clear");
     let head = sb.head();
-    assert_moved(&sb, "touch left.txt", &head);
+    assert_moved(&sb, "true", &Sha::parse(ZERO).unwrap());
     let out = sb.run_at(&[], "true", &head);
     assert_eq!(out.code, 0, "{}", out.stderr);
     assert!(!sb.exists(MOVED_FILE));

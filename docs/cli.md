@@ -76,7 +76,7 @@ worktree into a Box only when it provisions the Box's machine.
 
 | Flag | Effect |
 | --- | --- |
-| `--record NAME` | Record the run as the gate `NAME`, for `moor gate check`. moor reads the Box checkout's HEAD first and records the run under it. It refuses a Box checkout with uncommitted changes. If the command moves HEAD or leaves changes that are not ignored, the run fails with "the Box HEAD moved during the record run". |
+| `--record NAME` | Record the run as the gate `NAME`, for `moor gate check`. moor reads the Box checkout's HEAD first and records the run under it. It refuses a Box checkout with uncommitted changes. If the command moves HEAD or changes a tracked file, the run fails with "the Box HEAD moved during the record run". New untracked files do not fail it. |
 | `--trust-moor-yaml` | Run even when the Box's `.moor.yaml` differs from its base commit. |
 
 ### `moor wait` flags
