@@ -536,3 +536,36 @@ fn an_oversized_log_is_emptied_before_the_next_call() {
     lab.probe_tick().unwrap();
     assert_eq!(std::fs::metadata(&log).unwrap().len(), 0);
 }
+
+fn silent_loss() -> moor_core::seam::proc::ProcError {
+    moor_core::seam::proc::ProcError::NonZero {
+        code: 255,
+        stdout: String::new(),
+        stderr_tail: String::new(),
+    }
+}
+
+#[test]
+fn a_lost_connection_in_an_unshared_dir_does_not_read_its_log() {
+    let lab = lab();
+    std::fs::create_dir(&lab.sockets).unwrap();
+    std::fs::set_permissions(&lab.sockets, Permissions::from_mode(0o755)).unwrap();
+    let driver = lab.driver();
+    let log = driver.link(&handle()).unwrap().log;
+    std::fs::write(&log, "PLANTED-MARKER").unwrap();
+    let err = super::lost(&driver, &handle(), &silent_loss()).unwrap();
+    assert!(!err.to_string().contains("PLANTED-MARKER"), "{err}");
+}
+
+#[test]
+fn a_symlinked_log_is_not_read() {
+    let lab = lab();
+    lab.probe_tick().unwrap();
+    let secret = lab.sockets.with_file_name("secret");
+    std::fs::write(&secret, "SECRET-MARKER").unwrap();
+    let log = lab.log();
+    std::fs::remove_file(&log).unwrap();
+    std::os::unix::fs::symlink(&secret, &log).unwrap();
+    let err = super::lost(&lab.driver(), &handle(), &silent_loss()).unwrap();
+    assert!(!err.to_string().contains("SECRET-MARKER"), "{err}");
+}

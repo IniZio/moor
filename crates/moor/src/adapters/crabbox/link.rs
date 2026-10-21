@@ -184,15 +184,20 @@ impl Link {
             .and_then(|f| f.set_permissions(std::os::unix::fs::PermissionsExt::from_mode(0o600)));
     }
 
-    /// The last bytes the master logged, as one line; empty when it logged nothing.
+    /// The last bytes the master logged, as one line; empty when it logged nothing or the log is
+    /// a symlink, which only someone else could have planted.
     fn log_tail(&self) -> String {
-        let read = fs::File::open(&self.log).and_then(|mut f| {
-            let len = f.metadata()?.len();
-            f.seek(SeekFrom::Start(len.saturating_sub(LOG_TAIL)))?;
-            let mut bytes = Vec::new();
-            f.read_to_end(&mut bytes)?;
-            Ok(bytes)
-        });
+        let read = OpenOptions::new()
+            .read(true)
+            .custom_flags(rustix::fs::OFlags::NOFOLLOW.bits().cast_signed())
+            .open(&self.log)
+            .and_then(|mut f| {
+                let len = f.metadata()?.len();
+                f.seek(SeekFrom::Start(len.saturating_sub(LOG_TAIL)))?;
+                let mut bytes = Vec::new();
+                f.read_to_end(&mut bytes)?;
+                Ok(bytes)
+            });
         one_line(&String::from_utf8_lossy(&read.unwrap_or_default()))
     }
 
@@ -257,7 +262,7 @@ pub(super) fn failed(cb: &Crabbox, handle: &BoxHandle, e: &ProcError) {
 /// The lost connection behind a failed short call, when that is what failed. A call whose
 /// shared master lost the network exits 255 and prints nothing, since only the master saw
 /// why; moor's short calls never exit 255 themselves. The error then carries what the
-/// master logged.
+/// master logged, unless the sockets dir is not private: then the log may be someone else's.
 pub(super) fn lost(cb: &Crabbox, handle: &BoxHandle, e: &ProcError) -> Option<DriverError> {
     match e {
         ProcError::NonZero {
@@ -265,7 +270,11 @@ pub(super) fn lost(cb: &Crabbox, handle: &BoxHandle, e: &ProcError) -> Option<Dr
             stderr_tail,
             ..
         } if stderr_tail.trim().is_empty() => Some(DriverError::Transport {
-            stderr_tail: cb.link(handle).map(|l| l.log_tail()).unwrap_or_default(),
+            stderr_tail: cb
+                .link(handle)
+                .filter(|_| cb.unshared().is_none())
+                .map(|l| l.log_tail())
+                .unwrap_or_default(),
         }),
         _ => transport_loss(e),
     }
