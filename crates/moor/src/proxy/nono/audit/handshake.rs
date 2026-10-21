@@ -9,8 +9,7 @@ const ALERT: &str = "received fatal alert: ";
 
 /// The value recorded for a handshake that ended with `reason`.
 ///
-/// One of `client_closed`, `unknown_ca_alert`, `other_alert:<name>`,
-/// `timeout` or `other`.
+/// One of `client_closed`, `unknown_ca_alert`, `other_alert:<name>` or `other`.
 pub(super) fn reason(reason: &str) -> String {
     if let Some(at) = reason.find(ALERT) {
         let name: String = reason
@@ -36,8 +35,6 @@ pub(super) fn reason(reason: &str) -> String {
         "close_notify",
     ]) {
         "client_closed".to_owned()
-    } else if has(&["timed out", "deadline has elapsed"]) {
-        "timeout".to_owned()
     } else {
         "other".to_owned()
     }
@@ -64,13 +61,25 @@ mod tests {
                 "other_alert:BadCertificate",
             ),
             ("tls handshake failed: received fatal alert: ", "other"),
-            ("tls handshake failed: deadline has elapsed", "timeout"),
+            (
+                "tls handshake failed: Connection timed out (os error 110)",
+                "other",
+            ),
             ("tls handshake failed: something new", "other"),
             ("", "other"),
         ];
         for (text, want) in cases {
             assert_eq!(reason(text), want, "{text}");
         }
+    }
+
+    #[test]
+    fn an_alert_name_is_capped_at_32_characters() {
+        let long = "A".repeat(40);
+        assert_eq!(
+            reason(&format!("received fatal alert: {long}")),
+            format!("other_alert:{}", "A".repeat(32))
+        );
     }
 
     #[test]
