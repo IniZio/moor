@@ -21,7 +21,7 @@ use serde_json::json;
 
 use super::{record, serve, settle, Attempt, Fx, Job};
 use crate::command::Allow;
-use crate::db::{Db, SlackThread, ThreadState};
+use crate::db::{BoxState, Db, SlackBox};
 use crate::socket::Mention;
 
 fn db(dir: &std::path::Path) -> Db {
@@ -57,7 +57,7 @@ fn record_one(db: &Db, m: &Mention) -> Option<Job> {
 }
 
 /// Records the standard mention in thread `10.5` and returns its `starting` row.
-fn recorded_start(db: &Db) -> SlackThread {
+fn recorded_start(db: &Db) -> SlackBox {
     match record_one(db, &mention("Ev1", "U1", "C1", "10.5", None)) {
         Some(Job::Start(row)) => row,
         other => panic!("no start: {other:?}"),
@@ -151,7 +151,7 @@ fn with_hooks(
 /// Makes one `attempt` at `row`, answering each request with `answer`.
 fn attempt_with(
     db: &Db,
-    row: &SlackThread,
+    row: &SlackBox,
     attempt: Attempt,
     answer: &mut dyn FnMut(&Request) -> Answer,
 ) -> Seen {
@@ -174,12 +174,13 @@ fn cmds(seen: &Seen) -> Vec<(&'static str, String)> {
         .collect()
 }
 
-fn state(db: &Db, channel: &str, thread: &str) -> Option<ThreadState> {
-    db.thread(channel, thread).unwrap().map(|t| t.state)
+fn state(db: &Db, channel: &str, thread: &str) -> Option<BoxState> {
+    let boxes = db.thread_boxes(channel, thread).unwrap();
+    boxes.last().map(|b| b.state.clone())
 }
 
-fn bound_to_7(name: &str) -> Option<ThreadState> {
-    Some(ThreadState::Bound {
+fn bound_to_7(name: &str) -> Option<BoxState> {
+    Some(BoxState::Bound {
         box_id: BoxId::new(7),
         branch: Some(format!("moor/{name}")),
     })
@@ -190,12 +191,17 @@ fn allowed_mention_records_its_start_with_goal_repo_and_owner() {
     let dir = tempfile::tempdir().unwrap();
     let db = db(dir.path());
     let row = recorded_start(&db);
-    assert_eq!(db.thread("C1", "10.5").unwrap().as_ref(), Some(&row));
+    assert_eq!(
+        db.thread_boxes("C1", "10.5").unwrap(),
+        std::slice::from_ref(&row)
+    );
     assert_eq!(row.box_name.as_str(), "slack-10-5");
     assert_eq!(row.repo, "api");
     assert_eq!(row.goal, "fix the flaky test");
-    assert_eq!(row.owner, "U1");
-    assert_eq!(row.state, ThreadState::Starting);
+    assert_eq!(row.requested_by, "U1");
+    assert_eq!(row.state, BoxState::Starting);
+    let thread = db.thread("C1", "10.5").unwrap().unwrap();
+    assert_eq!((thread.repo.as_str(), thread.owner.as_str()), ("api", "U1"));
 }
 
 #[test]
@@ -214,7 +220,7 @@ fn failed_record_keeps_nothing_so_the_resent_mention_starts() {
     let other = rusqlite::Connection::open(dir.path().join("slack.db")).unwrap();
     other
         .execute_batch(
-            "CREATE TRIGGER no_rows BEFORE INSERT ON slack_threads \
+            "CREATE TRIGGER no_rows BEFORE INSERT ON slack_boxes \
              BEGIN SELECT RAISE(ABORT, 'disk full'); END;",
         )
         .unwrap();
@@ -228,8 +234,8 @@ fn failed_record_keeps_nothing_so_the_resent_mention_starts() {
 fn second_mention_in_thread_names_the_bound_box() {
     let dir = tempfile::tempdir().unwrap();
     let db = db(dir.path());
-    recorded_start(&db);
-    db.bind("C1", "10.5", BoxId::new(7), None).unwrap();
+    let row = recorded_start(&db);
+    db.bind(&row.box_name, BoxId::new(7), None).unwrap();
     let again = record_one(&db, &mention("Ev2", "U1", "C1", "11.0", Some("10.5")));
     let Some(Job::Reply { thread, text, .. }) = again else {
         panic!("no reply: {again:?}");
@@ -250,7 +256,7 @@ fn second_mention_while_the_start_is_unconfirmed_says_it_is_still_starting() {
     assert_eq!(thread, "10.5");
     assert!(text.contains("`slack-10-5` is still starting"), "{text}");
     assert!(!text.contains("runs"), "{text}");
-    assert_eq!(db.thread("C1", "10.5").unwrap(), Some(row));
+    assert_eq!(db.thread_boxes("C1", "10.5").unwrap(), [row]);
 }
 
 #[test]
@@ -335,7 +341,7 @@ fn lost_first_start_leaves_the_row_starting() {
     let row = recorded_start(&db);
     let seen = attempt_with(&db, &row, Attempt::First, &mut |_| hung_up());
     assert_eq!(cmds(&seen), [("start", "slack-10-5".into())]);
-    assert_eq!(state(&db, "C1", "10.5"), Some(ThreadState::Starting));
+    assert_eq!(state(&db, "C1", "10.5"), Some(BoxState::Starting));
     assert!(seen.replies.is_empty());
 }
 
@@ -377,7 +383,7 @@ fn refused_hello_after_a_lost_start_leaves_the_row_starting() {
     let row = recorded_start(&db);
     let seen = attempt_with(&db, &row, Attempt::Again, &mut |_| refused_hello());
     assert_eq!(cmds(&seen), [("show", "slack-10-5".into())]);
-    assert_eq!(state(&db, "C1", "10.5"), Some(ThreadState::Starting));
+    assert_eq!(state(&db, "C1", "10.5"), Some(BoxState::Starting));
     assert!(seen.replies.is_empty());
 }
 
@@ -390,7 +396,7 @@ fn show_failure_other_than_no_box_leaves_the_row_starting() {
         refused("show", "store unavailable")
     });
     assert_eq!(cmds(&seen), [("show", "slack-10-5".into())]);
-    assert_eq!(state(&db, "C1", "10.5"), Some(ThreadState::Starting));
+    assert_eq!(state(&db, "C1", "10.5"), Some(BoxState::Starting));
     assert!(seen.replies.is_empty());
 }
 
@@ -404,7 +410,7 @@ fn start_lost_again_leaves_the_row_starting() {
         _ => refused("show", "no Box slack-10-5"),
     });
     assert_eq!(seen.calls.len(), 2, "one show and one start per attempt");
-    assert_eq!(state(&db, "C1", "10.5"), Some(ThreadState::Starting));
+    assert_eq!(state(&db, "C1", "10.5"), Some(BoxState::Starting));
     assert!(seen.replies.is_empty());
 }
 

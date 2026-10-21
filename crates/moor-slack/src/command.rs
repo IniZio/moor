@@ -2,7 +2,7 @@
 
 use moor_core::name::{BoxName, NameError};
 
-use crate::db::{SlackThread, ThreadState};
+use crate::db::{BoxState, SlackBox};
 
 /// Reply for text that is not a well-formed `start` command.
 const USAGE: &str = "Usage: `@moor start <repo> <goal>`";
@@ -62,14 +62,14 @@ pub(crate) fn reply_action(owner: &str, user: &str, text: &str) -> ReplyAction {
 }
 
 /// Decides what one app mention does. `thread` is the thread root ts (`thread_ts`, else the
-/// message ts); `existing` is that thread's row in `slack.db`, if it has one.
+/// message ts); `existing` is that thread's latest Box in `slack.db`, if it has one.
 pub(super) fn decide(
     allow: &Allow<'_>,
     channel: &str,
     user: &str,
     text: &str,
     thread: &str,
-    existing: Option<&SlackThread>,
+    existing: Option<&SlackBox>,
 ) -> Action {
     if !allow.channels.iter().any(|c| c == channel) {
         return Action::Ignore;
@@ -85,10 +85,10 @@ pub(super) fn decide(
     if let Some(row) = existing {
         let name = row.box_name.as_str();
         return Action::Reply(match row.state {
-            ThreadState::Starting => {
+            BoxState::Starting => {
                 format!("Box `{name}` is still starting; nothing new was started.")
             }
-            ThreadState::Bound { .. } => {
+            BoxState::Bound { .. } => {
                 format!("This thread already runs Box `{name}`; nothing was started.")
             }
         });
