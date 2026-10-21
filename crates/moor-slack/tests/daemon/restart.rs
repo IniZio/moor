@@ -240,3 +240,54 @@ fn a_reply_slack_never_took_stays_unposted_and_lands_after_a_restart() {
     assert!(!bin.join("run-1").exists(), "a stored turn ran again");
     assert_eq!(ends(&rig), [(Some("replied".to_owned()), None)]);
 }
+
+/// Slack refusing the next four `chat.update` calls: a recovery post's first try and its three
+/// retries.
+fn refuse_a_post(rig: &Rig) {
+    let failed = json!({"ok": false, "error": "internal_error"});
+    rig.slack.answer_updates(&vec![(500, failed); 4]);
+}
+
+#[test]
+fn a_stored_line_slack_refuses_during_recovery_stays_unposted_and_lands_once_later() {
+    let (mut rig, _, _) = Rig::start_coordinated(Some(GOOD));
+    refuse_a_post(&rig);
+    rig.mention(1, USER, "<@UBOT> hello", TS, None);
+    rig.slack.wait_updates(4);
+    std::thread::sleep(QUIET);
+    assert!(!posted(&rig), "a line Slack never took was marked posted");
+    refuse_a_post(&rig);
+    restart(&mut rig);
+    rig.slack.wait_updates(8);
+    std::thread::sleep(QUIET);
+    assert!(!posted(&rig), "recovery marked a refused line posted");
+    restart(&mut rig);
+    let updates = rig.slack.wait_updates(9);
+    assert_eq!(updates[8].text, "OK");
+    rig.slack
+        .wait_until("the line marked posted", |_, _| posted(&rig));
+    std::thread::sleep(QUIET);
+    assert_eq!(rig.slack.updates().len(), 9, "the line landed twice");
+}
+
+#[test]
+fn a_lost_turns_line_slack_refuses_during_recovery_stays_unposted_and_lands_once_later() {
+    let (mut rig, _, _) = hung_turn();
+    rig.kill_daemon();
+    db(&rig)
+        .execute("UPDATE slack_turns SET started_at = started_at - 3601", [])
+        .unwrap();
+    refuse_a_post(&rig);
+    rig.spawn_daemon();
+    rig.slack.wait_connected();
+    rig.slack.wait_updates(4);
+    std::thread::sleep(QUIET);
+    assert!(!posted(&rig), "recovery marked a refused line posted");
+    restart(&mut rig);
+    let updates = rig.slack.wait_updates(5);
+    assert_eq!(updates[4].text, STOPPED);
+    rig.slack
+        .wait_until("the line marked posted", |_, _| posted(&rig));
+    std::thread::sleep(QUIET);
+    assert_eq!(rig.slack.updates().len(), 5, "the line landed twice");
+}
