@@ -248,10 +248,8 @@ fn a_failing_install_does_not_stop_start_and_warns_with_the_log_tail() {
     let events = w.cx.store().unwrap().events(BoxId::new(1), 50).unwrap();
     let failed = events.iter().find(|e| e.kind == "setup_failed").unwrap();
     let line = failed.payload.get("line").and_then(|l| l.as_str()).unwrap();
-    assert!(
-        line.contains("row-25") && !line.contains("row-05"),
-        "{line}"
-    );
+    assert!(line.starts_with("dotfiles: exit 1\nrow-06\n"), "{line}");
+    assert!(line.ends_with("row-25"), "{line}");
 }
 
 #[test]

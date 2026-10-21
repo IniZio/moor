@@ -38,7 +38,7 @@ pub(crate) enum DotfilesRun {
     },
     /// The install failed; the Box carries on without the dotfiles.
     Failed {
-        /// The last output lines, or the reason when there was no output.
+        /// The reason, then the last output lines when there was output.
         tail: String,
     },
 }
@@ -65,7 +65,7 @@ impl DotfilesRun {
 /// A failed dotfiles step.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DotfilesFailed {
-    /// The last output lines, or the reason when there was no output.
+    /// The reason, then the last output lines when there was output.
     pub(crate) tail: String,
 }
 
@@ -205,7 +205,11 @@ pub(crate) fn apply(
     let logged = std::fs::read_to_string(&log)
         .map(|s| tail(&s))
         .unwrap_or_default();
-    Err(fail(if logged.is_empty() { reason } else { logged }))
+    Err(fail(if logged.is_empty() {
+        reason
+    } else {
+        format!("{reason}\n{logged}")
+    }))
 }
 
 #[cfg(test)]
