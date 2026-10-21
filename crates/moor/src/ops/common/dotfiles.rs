@@ -99,7 +99,7 @@ fn tail(log: &str) -> String {
 }
 
 /// Creates the host log owner-only, in an owner-only directory: install output may hold secrets.
-fn private_log(log: &Path) -> std::io::Result<()> {
+pub(crate) fn private_log(log: &Path) -> std::io::Result<()> {
     if let Some(dir) = log.parent() {
         DirBuilder::new().recursive(true).mode(0o700).create(dir)?;
         fs::set_permissions(dir, Permissions::from_mode(0o700))?;

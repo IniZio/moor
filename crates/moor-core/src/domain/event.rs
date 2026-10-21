@@ -65,6 +65,11 @@ pub enum Event {
         /// Whether every line passed.
         ok: bool,
     },
+    /// The checkout reached the Box.
+    Synced {
+        /// Time the checkout sync, with the git identity set inside it, took in milliseconds.
+        ms: u64,
+    },
     /// A credential could not be delivered.
     CredentialFailed {
         /// Which credential failed.
