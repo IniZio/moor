@@ -35,9 +35,6 @@ These commands work today:
   layered agent environment.
 - `moor call` runs a JSON request read from stdin.
 
-The Slack bot token needs the `chat:write` scope for posting and updating
-messages and ephemeral replies.
-
 Global flags: `--json`, `--quiet`, `--state-dir DIR`. State lives in
 `moor.db` inside the state directory, set by `--state-dir`, `MOOR_STATE_DIR`,
 `XDG_STATE_HOME`, or `HOME`.

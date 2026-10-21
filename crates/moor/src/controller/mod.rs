@@ -4,7 +4,6 @@ pub mod attach;
 mod conn;
 mod local;
 mod progress;
-mod secret_file;
 mod settle;
 mod watch;
 
@@ -19,11 +18,10 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
 use std::time::Duration;
 
-use moor_core::config::{parse_controller, parse_repo, MoorYamlSource, RepoTable, SlackConfig};
+use moor_core::config::{parse_controller, parse_repo, MoorYamlSource, RepoTable};
 use moor_core::ErrorKind;
 
 use crate::env::{Env, CONTROLLER_LOCK};
-use crate::slack::Slack;
 use crate::Moor;
 
 /// Shared destination for diagnostics.
@@ -41,17 +39,12 @@ const REFUSED: u8 = 3;
 pub fn serve(env: &Env, config: &Path, stderr: impl Write + Send + 'static) -> u8 {
     let sink: Sink = Arc::new(Mutex::new(stderr));
     match start(env, config) {
-        Ok(mut running) => {
+        Ok(running) => {
             log(&sink, &format!("listening on {}", running.socket.display()));
             for line in Moor::reconcile_proxies(&running.env) {
                 log(&sink, &format!("proxy: {line}"));
             }
             settle::spawn(&running.env, running.settle_every, &sink);
-            if let Some(slack) = running.slack.take() {
-                let out = Sink::clone(&sink);
-                slack.spawn(&running.env, Arc::new(move |line| log(&out, line)));
-                log(&sink, "slack: socket mode on");
-            }
             running.accept_loop(&sink);
             0
         }
@@ -81,8 +74,6 @@ struct Running {
     _lock: File,
     /// Holds the one-controller-per-state-dir flock until the process exits.
     _state_lock: Option<File>,
-    /// Slack app, started once the controller is serving.
-    slack: Option<Slack>,
     /// Environment shared by every connection.
     env: Arc<Env>,
     /// Time between settle passes.
@@ -129,17 +120,11 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
         code: 1,
         message: format!("cannot bind {}: {e}", socket.display()),
     })?;
-    let slack = cfg
-        .slack
-        .as_ref()
-        .map(|s| load_slack(&env, s))
-        .transpose()?;
     Ok(Running {
         socket,
         listener,
         _lock: lock,
         _state_lock: state_lock,
-        slack,
         env: Arc::new(env),
         settle_every: cfg.settle_every(),
     })
@@ -166,20 +151,6 @@ fn resolve_repos(env: &Env, config: &Path, mut repos: RepoTable) -> Result<RepoT
         *p = path.to_string_lossy().into_owned();
     }
     Ok(repos)
-}
-
-/// Reads both Slack token files and builds the client, so a bad file stops startup.
-fn load_slack(env: &Env, slack: &SlackConfig) -> Result<Slack, Stop> {
-    let stop = |message: String| Stop {
-        code: USAGE,
-        message,
-    };
-    let read = |path: &Path, label: &str| {
-        secret_file::read_secret(&env.expand_home(path), label).map_err(stop)
-    };
-    let app = read(&slack.app_token_file, "slack app token file")?;
-    let bot = read(&slack.bot_token_file, "slack bot token file")?;
-    Slack::new(slack, app, bot).map_err(|e| stop(format!("slack: {e}")))
 }
 
 /// The socket path used when no explicit one is configured.

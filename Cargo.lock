@@ -2021,7 +2021,6 @@ dependencies = [
  "thiserror",
  "time",
  "tokio",
- "tungstenite",
  "ureq",
  "webpki-roots",
  "zeroize",

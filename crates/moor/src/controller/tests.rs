@@ -137,32 +137,5 @@ fn relative_repo_moor_yaml_resolves_against_config_dir() {
     assert_eq!(entry.moor_yaml, Some(MoorYamlSource::Path(want)));
 }
 
-#[test]
-fn slack_token_file_must_be_owner_only() {
-    let tmp = tempfile::tempdir().expect("tmp");
-    let app = tmp.path().join("app");
-    let bot = tmp.path().join("bot");
-    for (path, mode) in [(&app, 0o644), (&bot, 0o600)] {
-        std::fs::write(path, "xtok\n").expect("write token");
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).expect("chmod");
-    }
-    let cfg = config(
-        tmp.path(),
-        &format!(
-            "slack:\n  app_token_file: {}\n  bot_token_file: {}\n  channels: [C1]\n  users: [U1]\n",
-            app.display(),
-            bot.display()
-        ),
-    );
-    let stop = start(&env(tmp.path()), &cfg).err().expect("stop");
-    assert_eq!(stop.code, 2);
-    assert!(
-        stop.message.contains("slack app token file"),
-        "{}",
-        stop.message
-    );
-    assert!(!stop.message.contains("xtok"));
-}
-
 mod artifacts;
 mod run_output;

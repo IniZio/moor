@@ -13,14 +13,6 @@ mod controller;
 mod events;
 #[path = "cli/run_output.rs"]
 mod run_output;
-#[path = "cli/slack.rs"]
-mod slack;
-#[path = "cli/slack_fake.rs"]
-mod slack_fake;
-#[path = "cli/slack_prompt.rs"]
-mod slack_prompt;
-#[path = "cli/slack_steer.rs"]
-mod slack_steer;
 #[path = "cli/ssh_controller.rs"]
 mod ssh_controller;
 #[path = "cli/via_controller.rs"]

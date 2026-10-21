@@ -14,7 +14,6 @@ pub mod error;
 mod moor;
 mod ops;
 mod proxy;
-mod slack;
 mod store;
 #[cfg(test)]
 mod testing;
