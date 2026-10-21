@@ -85,6 +85,8 @@ impl World {
             host_cwd: PathBuf::from(WORKTREE),
             box_repo: Some(ForgeRepo::new("o", "n")),
             rules: Vec::new(),
+            user: moor_core::user::UserId::new(1),
+            vault_key: PathBuf::from("/config/vault.key"),
         };
         edit(&mut spec);
         write_spec(dir.path(), &spec).unwrap();

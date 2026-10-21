@@ -89,6 +89,7 @@ fn rows(dir: &Path, handle: BoxHandle) -> (BoxRow, DriverRow) {
         id: BoxId::new(1),
         name: BoxName::parse_allow_bare("demo").unwrap(),
         repo: dir.display().to_string(),
+        user: None,
         issue: None,
         goal: None,
         base: None,

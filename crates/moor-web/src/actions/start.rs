@@ -270,6 +270,7 @@ fn start(
             trust_moor_yaml: false,
             repo: Some(repo.to_owned()),
             parent: Some(root),
+            identity: None,
         }),
     )
 }

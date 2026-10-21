@@ -14,6 +14,7 @@ use moor_core::seam::proc::Proc;
 use moor_core::seam::proxy_host::ProxyHost;
 use moor_core::seam::rng::Rng;
 use moor_core::seam::surface::Surface;
+use moor_core::user::Identity;
 use moor_core::{ErrorKind, Warning};
 
 use crate::adapters::creds::Creds;
@@ -58,6 +59,10 @@ pub(crate) struct Cx {
     store: OnceCell<Store>,
     /// Repos the controller knows.
     repos: Arc<RepoTable>,
+    /// The controller's vault key file; `None` outside a controller.
+    vault_key: Option<PathBuf>,
+    /// The identity a socket request acts as, already checked against its socket.
+    requester: Option<Identity>,
 }
 
 /// Everything a context is built from.
@@ -113,6 +118,8 @@ impl Cx {
             prompt_window: p.prompt_window,
             store: OnceCell::new(),
             repos: Arc::new(RepoTable::new()),
+            vault_key: None,
+            requester: None,
         }
     }
 
@@ -277,5 +284,6 @@ impl Cx {
 }
 
 mod repos;
+mod requester;
 #[cfg(test)]
 mod tests;

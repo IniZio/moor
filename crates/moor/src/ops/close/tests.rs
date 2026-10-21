@@ -4,7 +4,7 @@ use std::sync::Arc;
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::box_state::{BoxLifecycle, BoxLifecycleInput};
 use moor_core::domain::boxes::{BoxInput, BoxState};
-use moor_core::domain::decision::{Decision, Field, Fields, NewBox};
+use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::driver::{AcquireReq, Driver, DriverError};
 use moor_core::seam::proc::Tool;
@@ -119,10 +119,9 @@ pub(super) fn fx_box(
 fn admit(cx: &Cx, driver: &FakeDriver, dir: &Path) -> BoxId {
     let store = cx.store().unwrap();
     let id = store
-        .apply(Decision::insert(NewBox {
-            name: BoxName::parse_allow_bare("t").unwrap(),
-            repo: "r".into(),
-        }))
+        .apply(crate::testing::cx::new_box(
+            BoxName::parse_allow_bare("t").unwrap(),
+        ))
         .unwrap()
         .box_id;
     let provider = ProviderId::new("p");

@@ -113,6 +113,8 @@ impl Fx {
             host_cwd: PathBuf::from("/work"),
             box_repo: None,
             rules: Vec::new(),
+            user: moor_core::user::UserId::new(1),
+            vault_key: "/config/vault.key".into(),
         }
     }
 

@@ -135,3 +135,33 @@ fn a_front_socket_serves_the_other_requests_too() {
     let got = ask(&served.front("slack"), &json!({"cmd": "version"}));
     assert_eq!(got["class"], "ok", "{got}");
 }
+
+#[test]
+fn a_start_acts_only_as_an_identity_its_socket_may_assert() {
+    let served = Served::start();
+    let start = |identity: Option<&str>| {
+        let mut req = json!({"cmd": "start", "name": "demo"});
+        if let Some(id) = identity {
+            req["identity"] = json!(id);
+        }
+        req
+    };
+    refused(
+        &ask(&served.main, &start(Some("local:4242"))),
+        "speaks only for local:",
+    );
+    let slack = served.front("slack");
+    refused(
+        &ask(&slack, &start(Some("web:alice"))),
+        "may assert only slack:",
+    );
+    refused(&ask(&slack, &start(None)), "must assert an identity");
+    refused(
+        &ask(&slack, &start(Some("slack:T1:U1"))),
+        "log in first: slack:T1:U1 has no moor user",
+    );
+    refused(
+        &ask(&served.main, &start(None)),
+        &format!("log in first: {} has no moor user", me()),
+    );
+}

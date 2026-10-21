@@ -188,6 +188,7 @@ fn start_req(name: &str) -> StartReq {
         trust_moor_yaml: false,
         repo: None,
         parent: None,
+        identity: None,
     }
 }
 

@@ -122,6 +122,7 @@ fn start() -> Request {
         trust_moor_yaml: false,
         repo: None,
         parent: None,
+        identity: None,
     })
 }
 

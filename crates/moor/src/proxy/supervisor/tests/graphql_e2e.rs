@@ -322,6 +322,8 @@ pub(super) fn rig_with(extra: Vec<ResolvedRule>) -> Rig {
             name: "r".to_owned(),
         }),
         rules: std::iter::once(github_rule()).chain(extra).collect(),
+        user: moor_core::user::UserId::new(1),
+        vault_key: "/config/vault.key".into(),
     };
     let sockets = dir.path().join("s");
     let mut rig = Rig {

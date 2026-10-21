@@ -82,7 +82,7 @@ fn envelopes_match_moor_call() {
     for (i, req) in requests.iter().enumerate() {
         let id = format!("r{i}");
         let frames = run(&env, &[hello(), request(&id, req)]);
-        let expected = serde_json::to_value(respond(&env, req.clone())).expect("value");
+        let expected = serde_json::to_value(respond(&env, None, req.clone())).expect("value");
         assert_eq!(frames[1]["id"], id.as_str());
         assert_eq!(frames[1]["envelope"], expected, "{req:?}");
     }

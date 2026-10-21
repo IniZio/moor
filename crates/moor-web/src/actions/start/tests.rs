@@ -226,6 +226,7 @@ fn start_req(box_name: &str, goal: Option<&str>, repo: &str, parent: i64) -> Req
         trust_moor_yaml: false,
         repo: Some(repo.to_owned()),
         parent: Some(SessionId::new(parent)),
+        identity: None,
     })
 }
 

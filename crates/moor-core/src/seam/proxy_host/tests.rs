@@ -10,6 +10,8 @@ fn spec(full: bool) -> ProxySpec {
             name: "widget".into(),
         }),
         rules: Vec::new(),
+        user: crate::user::UserId::new(1),
+        vault_key: "/config/vault.key".into(),
     }
 }
 

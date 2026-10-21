@@ -115,7 +115,8 @@ fn start(env: &Env, config: &Path) -> Result<Running, Stop> {
         },
         message: e.error.to_string(),
     })?;
-    let vault = Arc::new(open_vault(&env, config)?);
+    let (vault, key) = open_vault(&env, config)?;
+    let (vault, env) = (Arc::new(vault), env.with_vault_key(key));
     let state_lock = env
         .state_dir()
         .map(|dir| take_lock(&dir.join(CONTROLLER_LOCK), &socket))
@@ -163,9 +164,10 @@ fn resolve_repos(env: &Env, config: &Path, mut repos: RepoTable) -> Result<RepoT
     Ok(repos)
 }
 
-/// Loads the vault key beside `config`, creating it on first start. A key inside the state
-/// dir is refused, so a copy of the state dir never carries the key that opens it.
-fn open_vault(env: &Env, config: &Path) -> Result<Vault, Stop> {
+/// Loads the vault key beside `config`, creating it on first start, and returns it with its
+/// path. A key inside the state dir is refused, so a copy of the state dir never carries the
+/// key that opens it.
+fn open_vault(env: &Env, config: &Path) -> Result<(Vault, PathBuf), Stop> {
     let refused = |message: String| Stop {
         code: REFUSED,
         message,
@@ -181,7 +183,8 @@ fn open_vault(env: &Env, config: &Path) -> Result<Vault, Stop> {
             key.display()
         )));
     }
-    Vault::load_or_create(&key).map_err(|e| refused(e.to_string()))
+    let vault = Vault::load_or_create(&key).map_err(|e| refused(e.to_string()))?;
+    Ok((vault, key))
 }
 
 /// The socket path used when no explicit one is configured.

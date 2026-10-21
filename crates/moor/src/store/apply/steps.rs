@@ -5,6 +5,7 @@ use moor_core::domain::box_steps;
 use moor_core::domain::decision::{BoxTarget, Decision, NewBox};
 use moor_core::domain::session_state::{SessionInput, SessionState};
 use moor_core::seam::clock::Ts;
+use moor_core::user::UserId;
 use moor_core::BoxId;
 use rusqlite::{params, Transaction};
 
@@ -40,7 +41,7 @@ pub(super) fn step_box(tx: &Transaction<'_>, now: Ts, d: &Decision) -> Result<St
                 BoxLifecycle::initial(&BoxLifecycleInput::Insert)?,
                 SessionState::initial(&SessionInput::Open)?,
             );
-            let id = insert_box(tx, new, parts.0, d.parent_session, now)?;
+            let id = insert_box(tx, new, parts.0, (d.parent_session, d.requester), now)?;
             Ok(Stepped {
                 id,
                 existing: None,
@@ -82,22 +83,24 @@ fn read_others(tx: &Transaction<'_>, id: BoxId) -> Result<Vec<SessionState>, Sto
     .collect()
 }
 
-/// Insert a fresh Box row with its primary Session.
+/// Insert a fresh Box row for `requester` with its primary Session under `parent_session`. A
+/// primary Session with no parent is a root Session and records the requester too.
 pub(in crate::store) fn insert_box(
     tx: &Transaction<'_>,
     new: &NewBox,
     lifecycle: BoxLifecycle,
-    parent_session: Option<i64>,
+    (parent_session, requester): (Option<i64>, Option<UserId>),
     now: Ts,
 ) -> Result<BoxId, StoreError> {
     if let Some(p) = parent_session {
         live_parent(tx, p)?;
     }
     tx.execute(
-        "INSERT INTO boxes (name, repo, state, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO boxes (name, repo, user, state, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
         params![
             new.name.as_str(),
             new.repo,
+            requester.map(UserId::get),
             lifecycle.as_str(),
             now.as_millis(),
             now.as_millis()
@@ -106,8 +109,13 @@ pub(in crate::store) fn insert_box(
     .map_err(|e| name_taken(e, new))?;
     let id = tx.last_insert_rowid();
     tx.execute(
-        "INSERT INTO sessions (box, ordinal, state, started_at, parent_session) VALUES (?, 1, 'starting', ?, ?)",
-        params![id, now.as_millis(), parent_session],
+        "INSERT INTO sessions (box, ordinal, state, started_at, parent_session, user) VALUES (?, 1, 'starting', ?, ?, ?)",
+        params![
+            id,
+            now.as_millis(),
+            parent_session,
+            requester.filter(|_| parent_session.is_none()).map(UserId::get)
+        ],
     )?;
     Ok(BoxId::new(id))
 }

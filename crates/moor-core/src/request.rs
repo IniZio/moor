@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::name::{BoxName, SessionId};
+use crate::user::Identity;
 
 mod artifacts;
 pub use artifacts::{ArtifactReadReq, ArtifactsReq};
@@ -179,6 +180,9 @@ pub struct StartReq {
     /// Parent Session of the Session this request opens.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<SessionId>,
+    /// The identity the Box acts for; the controller socket's own peer when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identity: Option<Identity>,
 }
 
 /// Arguments of `run`.

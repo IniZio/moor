@@ -8,11 +8,12 @@ use moor_core::controller::{
 };
 use moor_core::request::UserCmd;
 use moor_core::user::{Caller, Identity};
-use moor_core::{ArtifactReadReq, Request, Response, RunReq};
+use moor_core::{ArtifactReadReq, ErrorKind, Request, Response, RunReq};
 
 use super::progress::{respond_with_progress, Sink, INTERVAL};
 use super::watch;
 use crate::env::Env;
+use crate::error::CommandError;
 use crate::vault::Vault;
 use crate::Moor;
 
@@ -48,7 +49,10 @@ pub(crate) fn handle(reader: impl BufRead, writer: impl Write, env: &Env, peer: 
             Request::ArtifactRead(req) => read_artifact(env, id, &req, out),
             request => match request.into_user() {
                 Ok((asserted, cmd)) => answer_user(env, peer, asserted.as_ref(), &cmd),
-                Err(request) => respond_with_progress(env, id, *request, INTERVAL, out),
+                Err(request) => match requester(peer, &request) {
+                    Ok(who) => respond_with_progress(env, who, id, *request, INTERVAL, out),
+                    Err(e) => e.into_response(request.cmd(), vec![]),
+                },
             },
         },
         |writer, since, filter, follow| {
@@ -139,17 +143,34 @@ fn answer_user(env: &Env, peer: &Peer, asserted: Option<&Identity>, cmd: &UserCm
     }
 }
 
-/// Run `request` against a fresh engine, as `moor call` does.
+/// The identity a `start` acts as: the one it asserts, checked against this connection's
+/// socket. Other requests act as no one.
+fn requester(peer: &Peer, request: &Request) -> Result<Option<Identity>, CommandError> {
+    let Request::Start(req) = request else {
+        return Ok(None);
+    };
+    peer.caller
+        .as_ref()
+        .map_err(Clone::clone)
+        .and_then(|caller| caller.resolve(req.identity.as_ref()))
+        .map(Some)
+        .map_err(|why| CommandError::new(ErrorKind::Refused, why))
+}
+
+/// Run `request` against a fresh engine acting as `who`, as `moor call` does.
 ///
 /// `moor call` forces JSON output, so the run-output inheritance the CLI applies
 /// to other invocations is a no-op there and is not applied here.
-pub(crate) fn respond(env: &Env, request: Request) -> Response {
+pub(crate) fn respond(env: &Env, who: Option<Identity>, request: Request) -> Response {
     let cmd = request.cmd();
     if matches!(request, Request::Version {}) {
         return Moor::version();
     }
     match Moor::from_env(env) {
-        Ok(moor) => moor.call(request),
+        Ok(moor) => match who {
+            Some(who) => moor.acting_as(who).call(request),
+            None => moor.call(request),
+        },
         Err(e) => e.into_response(cmd, vec![]),
     }
 }

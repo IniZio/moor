@@ -6,6 +6,7 @@ use super::box_state::BoxLifecycleInput;
 use super::boxes::BoxInput;
 use super::session_state::SessionInput;
 use crate::name::{BoxHandle, BoxId, BoxName, ProviderId, RunId};
+use crate::user::UserId;
 
 pub use extra::ExtraEvent;
 
@@ -159,6 +160,8 @@ pub struct Decision {
     pub events: Vec<ExtraEvent>,
     /// Parent Session of the first Session, for a Decision that inserts a box.
     pub parent_session: Option<i64>,
+    /// The user a Box acts for, for a Decision that inserts a box.
+    pub requester: Option<UserId>,
 }
 
 impl Decision {
@@ -185,6 +188,7 @@ impl Decision {
             intent: IntentChange::Keep,
             events: Vec::new(),
             parent_session: None,
+            requester: None,
         }
     }
 
@@ -227,6 +231,13 @@ impl Decision {
     #[must_use]
     pub const fn parent_session(mut self, parent: Option<i64>) -> Self {
         self.parent_session = parent;
+        self
+    }
+
+    /// Sets the user the inserted Box acts for; ignored for an existing box.
+    #[must_use]
+    pub const fn requester(mut self, user: UserId) -> Self {
+        self.requester = Some(user);
         self
     }
 

@@ -8,6 +8,7 @@ use moor_core::exec_env::{self, BoxCtx, ExecEnv, ProxyCtx, Purpose, RUN_DEADLINE
 use moor_core::seam::agent_profile::ProxyAddr;
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::proxy_host::ProxySpec;
+use moor_core::user::UserId;
 use moor_core::{BoxHandle, BoxId, BoxPath};
 
 use crate::cx::Cx;
@@ -35,7 +36,7 @@ pub(crate) struct Site<'a> {
     pub(crate) worktree: &'a Path,
 }
 
-/// Starts or reuses the Box's Proxy for `cfg`'s egress.
+/// Starts or reuses the Box's Proxy for `cfg`'s egress, acting for the user in the Box's row.
 ///
 /// # Errors
 /// Returns a message when the plan cannot be made or the Proxy cannot start.
@@ -46,6 +47,8 @@ pub(crate) fn proxy(
     worktree: &Path,
     cfg: &BoxSettings,
 ) -> Result<BoxProxy, String> {
+    let user = requester(cx, box_id)?;
+    let vault_key = cx.vault_key().map_err(|e| e.error.to_string())?;
     let origin = origin(cx, worktree);
     let plan = plan(cx, origin.as_deref())?;
     let repo_env: Vec<(String, String)> = cfg.env.clone().into_iter().collect();
@@ -55,6 +58,8 @@ pub(crate) fn proxy(
         host_cwd: worktree.to_path_buf(),
         box_repo: plan.repo,
         rules: plan.rules,
+        user,
+        vault_key: vault_key.to_path_buf(),
     };
     check_direct(
         &cfg.direct,
@@ -81,6 +86,17 @@ pub(crate) fn proxy(
         origin,
         rule_env,
     })
+}
+
+/// The user the Box acts for, read from its row.
+fn requester(cx: &Cx, box_id: BoxId) -> Result<UserId, String> {
+    let row = cx
+        .store()
+        .map_err(|e| e.error.to_string())?
+        .box_row(box_id)
+        .map_err(|e| e.to_string())?;
+    row.and_then(|r| r.user)
+        .ok_or_else(|| format!("Box {} acts for no user", box_id.get()))
 }
 
 /// Whether a rule sends GitHub through the Proxy with the Box's forge token.

@@ -233,6 +233,7 @@ fn start_request(row: &SlackBox) -> Request {
         trust_moor_yaml: false,
         repo: Some(row.repo.clone()),
         parent: row.parent,
+        identity: None,
     })
 }
 

@@ -222,6 +222,8 @@ fn serve_injects_the_credential_audits_requests_and_stops() {
         host_cwd: "/wt".into(),
         box_repo: None,
         rules: vec![rule(up.port)],
+        user: moor_core::user::UserId::new(1),
+        vault_key: "/config/vault.key".into(),
     };
     write_spec(dir.path(), &spec).unwrap();
 

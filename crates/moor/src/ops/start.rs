@@ -13,6 +13,7 @@ use moor_core::domain::decision::{Decision, ExtraEvent, Field, Fields, NewBox};
 use moor_core::domain::event::CheckedCred;
 use moor_core::domain::session_state::SessionInput;
 use moor_core::seam::surface::{workspace_label, Worktree};
+use moor_core::user::UserId;
 use moor_core::view::StartView;
 use moor_core::{BoxId, ErrorKind, SessionId, StartReq, Warning};
 
@@ -71,6 +72,7 @@ struct Placed {
 /// [`CommandError`] when a read, a seam call or a store write fails.
 pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     let store = cx.store()?;
+    let user = cx.requester()?;
     let (repo, bound, req) = locate(cx, req)?;
     let req = &req;
     if let Some(parent) = req.parent {
@@ -78,7 +80,7 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     }
     settle_all(cx, store)?;
     if let Some(row) = store.open_box_by_name(&req.name)? {
-        return attach(cx, store, req, &row);
+        return attach(cx, store, req, &row, user);
     }
     if req.resume {
         return Err(relaunch::nothing_to_resume());
@@ -96,15 +98,21 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
     if let Some(reason) =
         preflight::rejection(cx, &cfg, facts.bound.as_deref().unwrap_or(&facts.repo))
     {
-        return reject(cx, store, req, &facts, &reason);
+        return reject(cx, store, (req, user), &facts, &reason);
     }
     let placed = match place(cx, req, &facts) {
         Ok(placed) => placed,
-        Err(e) => return raced(cx, store, req, e),
+        Err(e) => return raced(cx, store, (req, user), e),
     };
-    let id = match insert(store, req, &facts, &placed, preflight::checked(&cfg)) {
+    let id = match insert(
+        store,
+        (req, user),
+        &facts,
+        &placed,
+        preflight::checked(&cfg),
+    ) {
         Ok(id) => id,
-        Err(e) => return raced(cx, store, req, e),
+        Err(e) => return raced(cx, store, (req, user), e),
     };
     let (done, agent) = {
         let _held = BoxLock::acquire(cx.clock(), cx.state_dir()?, id, "start", boxlock::WAIT)?;
@@ -128,7 +136,7 @@ pub(crate) fn run(cx: &Cx, req: &StartReq) -> Result<StartView, CommandError> {
 fn reject(
     cx: &Cx,
     store: &Store,
-    req: &StartReq,
+    (req, user): (&StartReq, UserId),
     facts: &Facts,
     reason: &str,
 ) -> Result<StartView, CommandError> {
@@ -147,7 +155,8 @@ fn reject(
         .apply(
             Decision::insert(new)
                 .set(set)
-                .parent_session(req.parent.map(SessionId::get)),
+                .parent_session(req.parent.map(SessionId::get))
+                .requester(user),
         )?
         .box_id;
     let rejected = BoxLifecycleInput::Rejected {
@@ -164,15 +173,26 @@ fn reject(
 fn raced(
     cx: &Cx,
     store: &Store,
-    req: &StartReq,
+    (req, user): (&StartReq, UserId),
     lost: impl Into<CommandError>,
 ) -> Result<StartView, CommandError> {
     let open = store.open_box_by_name(&req.name)?;
-    open.map_or_else(|| Err(lost.into()), |row| attach(cx, store, req, &row))
+    open.map_or_else(
+        || Err(lost.into()),
+        |row| attach(cx, store, req, &row, user),
+    )
 }
 
-/// Starts over on an open Box whose machine is lost; otherwise only attaches.
-fn attach(cx: &Cx, store: &Store, req: &StartReq, row: &BoxRow) -> Result<StartView, CommandError> {
+/// Starts over on an open Box whose machine is lost; otherwise only attaches. A Box that acts
+/// for another user is refused.
+fn attach(
+    cx: &Cx,
+    store: &Store,
+    req: &StartReq,
+    row: &BoxRow,
+    user: UserId,
+) -> Result<StartView, CommandError> {
+    preflight::check_owner(row, user)?;
     preflight::check_bound(cx, req, row)?;
     relaunch::check_resume(req, row)?;
     dead_provisioning(cx, row)?;
@@ -342,7 +362,7 @@ fn set_some<T>(v: Option<T>) -> Field<T> {
 /// Inserts the Box row with everything known before the machine.
 fn insert(
     store: &Store,
-    req: &StartReq,
+    (req, user): (&StartReq, UserId),
     facts: &Facts,
     placed: &Placed,
     checked: Vec<CheckedCred>,
@@ -364,7 +384,8 @@ fn insert(
     };
     let mut decision = Decision::insert(new)
         .set(set)
-        .parent_session(req.parent.map(SessionId::get));
+        .parent_session(req.parent.map(SessionId::get))
+        .requester(user);
     if !checked.is_empty() {
         decision = decision.event(ExtraEvent::Checked {
             credentials: checked,

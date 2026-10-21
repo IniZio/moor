@@ -4,6 +4,7 @@ use std::path::Path;
 
 use moor_core::config::BoxSettings;
 use moor_core::domain::event::CheckedCred;
+use moor_core::user::UserId;
 use moor_core::{ErrorKind, StartReq};
 
 use crate::cx::Cx;
@@ -38,6 +39,17 @@ pub(super) fn checked(settings: &BoxSettings) -> Vec<CheckedCred> {
             resolves: true,
         })
         .collect()
+}
+
+/// Refuses an open Box that acts for a user other than `user`.
+pub(super) fn check_owner(row: &BoxRow, user: UserId) -> Result<(), CommandError> {
+    if row.user == Some(user) {
+        return Ok(());
+    }
+    Err(CommandError::new(
+        ErrorKind::Refused,
+        format!("Box {} acts for another user", row.name.as_str()),
+    ))
 }
 
 /// Refuses a `--worktree` that differs from the open Box's worktree.

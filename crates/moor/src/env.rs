@@ -17,6 +17,8 @@ pub struct Env {
     vars: BTreeMap<String, String>,
     /// Repos the controller knows, by name.
     repos: Arc<RepoTable>,
+    /// The controller's vault key file, when a controller runs this.
+    vault_key: Option<PathBuf>,
 }
 
 impl Env {
@@ -29,6 +31,7 @@ impl Env {
         Self {
             vars,
             repos: Arc::default(),
+            vault_key: None,
         }
     }
 
@@ -45,6 +48,7 @@ impl Env {
                 .map(|(k, v)| (k.into(), v.into()))
                 .collect(),
             repos: Arc::default(),
+            vault_key: None,
         }
     }
 
@@ -89,6 +93,19 @@ impl Env {
     #[must_use]
     pub fn repos(&self) -> &RepoTable {
         &self.repos
+    }
+
+    /// Set the controller's vault key file.
+    #[must_use]
+    pub fn with_vault_key(mut self, path: PathBuf) -> Self {
+        self.vault_key = Some(path);
+        self
+    }
+
+    /// The controller's vault key file; `None` outside a controller.
+    #[must_use]
+    pub fn vault_key(&self) -> Option<&Path> {
+        self.vault_key.as_deref()
     }
 
     /// Resolved state directory, or `None` when no source is set.

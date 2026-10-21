@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::config::proxy::ResolvedRule;
 use crate::name::{BoxHandle, BoxId};
 use crate::seam::forge::ForgeRepo;
+use crate::user::UserId;
 
 /// What the Proxy host needs to run a Box's Proxy; it holds no secret values.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -23,6 +24,10 @@ pub struct ProxySpec {
     /// The resolved tool rules the Proxy enforces.
     #[serde(default)]
     pub rules: Vec<ResolvedRule>,
+    /// The user whose secrets the Proxy injects.
+    pub user: UserId,
+    /// The vault key file that opens the user's secrets; the key itself never enters the spec.
+    pub vault_key: PathBuf,
 }
 
 /// A running Proxy's address as the Box sees it.

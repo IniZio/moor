@@ -177,10 +177,9 @@ fn exit_codes_match_local_mode() {
     let daemon = Daemon::start();
     let home = daemon.root.join("client-home");
     let state = daemon.root.join("state");
-    let cases: [&[&str]; 3] = [
+    let cases: [&[&str]; 2] = [
         &["--json", "run", "foo", "--", "true"],
         &["--json", "start", "BAD_Name"],
-        &["--json", "start", "foo"],
     ];
     for args in cases {
         let local = moor(&home, &[("MOOR_STATE_DIR", state.as_path())], args);

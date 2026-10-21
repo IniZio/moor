@@ -67,7 +67,25 @@ This guide starts one Box from a git repo on your machine. You need:
    export CLAUDE_CODE_OAUTH_TOKEN='<the token>'
    ```
 
-3. In your repo, preview the settings a Box would get:
+3. Run a controller, and point the CLI at it. A Box acts for the moor user
+   of whoever starts it, so `moor start` runs only through a controller. Keep
+   the controller config outside the state directory, because the controller
+   keeps its vault key beside the config:
+
+   ```sh
+   mkdir -p ~/.config/moor-controller
+   printf 'socket: ~/.local/state/moor/controller.sock\n' > ~/.config/moor-controller/config.yaml
+   moor controller serve --config ~/.config/moor-controller/config.yaml &
+   export MOOR_CONTROLLER=~/.local/state/moor/controller.sock
+   ```
+
+4. Create your moor user. The CLI acts as your `local:<uid>` identity:
+
+   ```sh
+   moor user enroll
+   ```
+
+5. In your repo, preview the settings a Box would get:
 
    ```sh
    cd ~/src/your-repo
@@ -77,7 +95,7 @@ This guide starts one Box from a git repo on your machine. You need:
    Each line names a setting and the layer it came from, such as
    `box provider  [default]  local-container`.
 
-4. Start a Box with a goal for the agent:
+6. Start a Box with a goal for the agent:
 
    ```sh
    moor start fix-typo --goal "Fix the typo in the README"
@@ -86,7 +104,7 @@ This guide starts one Box from a git repo on your machine. You need:
    moor creates the worktree, the herdr workspace, and the machine, and then
    starts the agent.
 
-5. Follow the Box, and close it when the agent is done:
+7. Follow the Box, and close it when the agent is done:
 
    ```sh
    moor show fix-typo
