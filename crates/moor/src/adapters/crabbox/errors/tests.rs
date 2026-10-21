@@ -98,7 +98,7 @@ fn op_names_the_summary() {
     );
     assert_eq!(
         map_error(Op::Caps, None, &e),
-        failed("provider lookup failed (crabbox exit 1)")
+        failed("provider lookup failed (crabbox exit 1): x")
     );
 }
 

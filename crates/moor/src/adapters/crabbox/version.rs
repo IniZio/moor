@@ -18,13 +18,13 @@ pub(super) struct Version {
 /// Oldest crabbox moor works with.
 pub(super) const REQUIRED: Version = Version {
     major: 0,
-    minor: 72,
-    patch: 0,
-    moor: Some(9),
+    minor: 79,
+    patch: 1,
+    moor: Some(1),
 };
 
 impl Version {
-    /// Reads the version from `crabbox --version` output, such as `crabbox 0.72.0-moor.9`.
+    /// Reads the version from `crabbox --version` output, such as `crabbox 0.79.1-moor.1`.
     pub(super) fn parse(output: &str) -> Option<Self> {
         let token = output
             .split_whitespace()

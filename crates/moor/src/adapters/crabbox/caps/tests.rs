@@ -1,7 +1,12 @@
+use std::sync::Arc;
+
 use moor_core::name::ProviderId;
-use moor_core::seam::driver::{DriverCaps, DriverError, SleepKind};
+use moor_core::seam::driver::{Driver, DriverCaps, DriverError, SleepKind};
+use moor_core::seam::proc::Tool;
 
 use super::caps_from;
+use crate::adapters::crabbox::Crabbox;
+use crate::testing::proc::{Reply, ScriptedProc};
 
 fn entry(p: &str, aliases: &[&str], features: &[&str], life: &[&str]) -> serde_json::Value {
     serde_json::json!({
@@ -135,4 +140,66 @@ fn external_without_pause_resume_cannot_sleep() {
             "{id}"
         );
     }
+}
+
+fn driver() -> (Arc<ScriptedProc>, Crabbox) {
+    let p = Arc::new(ScriptedProc::new());
+    let c = Crabbox::fake(p.clone());
+    (p, c)
+}
+
+#[test]
+fn caps_asks_for_the_configured_provider_listing() {
+    let (p, c) = driver();
+    p.on(Tool::Crabbox, &["providers"], Reply::Ok("[]".into()));
+    let _ = c.caps(&ProviderId::new("sprites"));
+    assert_eq!(
+        p.calls().first().unwrap().args,
+        ["providers", "--json", "--configured"]
+    );
+}
+
+#[test]
+fn caps_sees_pause_resume_that_only_the_configured_listing_has() {
+    let (p, c) = driver();
+    let mut configured = EXTERNAL_BASE.to_vec();
+    configured.push("pause-resume");
+    p.on(
+        Tool::Crabbox,
+        &["providers", "--json", "--configured"],
+        Reply::Ok(external_json(&configured, &["cleanup", "pause-resume"])),
+    );
+    p.on(
+        Tool::Crabbox,
+        &["providers", "--json"],
+        Reply::Ok(external_json(&EXTERNAL_BASE, &["cleanup"])),
+    );
+    assert_eq!(
+        c.caps(&ProviderId::new("external")),
+        Ok(want(SleepKind::Suspend, true))
+    );
+}
+
+#[test]
+fn caps_failure_carries_crabbox_message() {
+    let (p, c) = driver();
+    let stderr = "parse config /h/config.yaml: yaml: line 1: did not find expected ']'\n";
+    p.on(
+        Tool::Crabbox,
+        &["providers"],
+        Reply::Fail {
+            code: 2,
+            stdout: String::new(),
+            stderr: stderr.to_owned(),
+        },
+    );
+    assert_eq!(
+        c.caps(&ProviderId::new("external")),
+        Err(DriverError::Failed {
+            summary: format!(
+                "provider lookup failed (crabbox exit 2): {}",
+                stderr.trim_end()
+            ),
+        })
+    );
 }

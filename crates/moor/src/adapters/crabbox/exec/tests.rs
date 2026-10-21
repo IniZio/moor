@@ -322,7 +322,7 @@ fn claim_race_is_retried_until_the_call_succeeds() {
     p.on(
         Tool::Crabbox,
         &["--version"],
-        Reply::Ok("crabbox 0.72.0-moor.9\n".into()),
+        Reply::Ok("crabbox 0.79.1-moor.1\n".into()),
     );
     let c = Crabbox::new(p.clone(), clock.clone(), Arc::new(FakeRng::default()));
     assert_eq!(exec_once(&c), Ok(ExecOutcome::Exited { code: 0 }));
@@ -341,7 +341,7 @@ fn claim_race_is_retried_through_a_long_tunnel_restart() {
     p.on(
         Tool::Crabbox,
         &["--version"],
-        Reply::Ok("crabbox 0.72.0-moor.9\n".into()),
+        Reply::Ok("crabbox 0.79.1-moor.1\n".into()),
     );
     let c = Crabbox::new(p.clone(), clock.clone(), Arc::new(FakeRng::default()));
     assert_eq!(exec_once(&c), Ok(ExecOutcome::Exited { code: 0 }));
@@ -357,7 +357,7 @@ fn claim_race_gives_up_after_the_budget() {
     p.on(
         Tool::Crabbox,
         &["--version"],
-        Reply::Ok("crabbox 0.72.0-moor.9\n".into()),
+        Reply::Ok("crabbox 0.79.1-moor.1\n".into()),
     );
     let c = Crabbox::new(p.clone(), clock.clone(), Arc::new(FakeRng::default()));
     let err = exec_once(&c).unwrap_err();

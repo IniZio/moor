@@ -387,14 +387,6 @@ fn workdir_missing_box_is_not_found() {
 }
 
 #[test]
-fn caps_asks_providers_json() {
-    let (p, c) = fixture();
-    p.on(Tool::Crabbox, &["providers"], Reply::Ok("[]".into()));
-    let _ = c.caps(&ProviderId::new("sprites"));
-    assert_eq!(p.calls().first().unwrap().args, ["providers", "--json"]);
-}
-
-#[test]
 fn list_of_static_provider_is_unsupported() {
     let (p, c) = fixture();
     let err = c.list(&ProviderId::new("ssh")).unwrap_err();

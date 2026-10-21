@@ -211,7 +211,7 @@ fn unreadable(what: &str) -> DriverError {
 impl Driver for Crabbox {
     fn caps(&self, provider: &ProviderId) -> Result<DriverCaps, DriverError> {
         self.require_version()?;
-        let spec = Self::spec(QUICK_DEADLINE).args(["providers", "--json"]);
+        let spec = Self::spec(QUICK_DEADLINE).args(["providers", "--json", "--configured"]);
         let out = self.call(Op::Caps, None, &spec)?;
         caps::caps_from(&out.stdout, provider)
     }

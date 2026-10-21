@@ -1,4 +1,4 @@
-//! Provider facts: derived from the feature tokens in `crabbox providers --json`.
+//! Provider facts: derived from the feature tokens in `crabbox providers --json --configured`.
 
 use moor_core::name::ProviderId;
 use moor_core::seam::driver::{DriverCaps, DriverError, SleepKind};
