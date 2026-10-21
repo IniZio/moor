@@ -3,7 +3,7 @@
 
 use moor_core::request::{Grant, Named, Pins};
 use moor_core::user::{Caller, Identity, Viewer};
-use moor_core::{BoxId, BoxName, BoxTarget, ErrorKind, Request};
+use moor_core::{BoxId, BoxName, BoxTarget, ErrorKind, Request, StartReq};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
@@ -19,6 +19,20 @@ pub(crate) const CP_OPERATOR_ONLY: &str = "cp to the host is operator-only";
 /// The refusal for an `in` from anyone but the operator: it names a directory on the
 /// controller host.
 pub(crate) const IN_OPERATOR_ONLY: &str = "in names a host directory, which is operator-only";
+
+/// The refusal for a `start --worktree` from anyone but the operator: it binds a host checkout.
+pub(crate) const WORKTREE_OPERATOR_ONLY: &str =
+    "--worktree names a host checkout, which is operator-only";
+
+/// The refusal for an `env` from anyone but the operator: it reads host configs.
+pub(crate) const ENV_OPERATOR_ONLY: &str = "env reads the host's configs, which is operator-only";
+
+/// The refusal for a `repos` from anyone but the operator.
+pub(crate) const REPOS_OPERATOR_ONLY: &str = "repos is operator-only";
+
+/// The refusal for an `open-host-session` from anyone but the operator: host Sessions are the
+/// operator's only.
+pub(crate) const HOST_SESSION_OPERATOR_ONLY: &str = "host Sessions are operator-only";
 
 /// Whose Boxes `caller` may see, asserting `asserted`. Only the controller socket's own uid
 /// is the operator; a front socket is a user at most, whatever it asserts.
@@ -54,16 +68,11 @@ pub(crate) fn authorize(
     asserted: Option<&Identity>,
     request: &Request,
 ) -> Result<Grant, CommandError> {
-    let names = request.names();
-    let viewer = match viewer(cx, caller, asserted) {
-        Ok(viewer) => viewer,
-        Err(_) if names.is_empty() && asserted.is_none() => Viewer::Nobody,
-        Err(e) => return Err(e),
-    };
+    let viewer = viewer(cx, caller, asserted)?;
     let mut pins = Pins::new();
     if viewer != Viewer::Operator {
         let store = cx.store()?;
-        for named in &names {
+        for named in &request.names() {
             if !may_name(store, viewer, named, &mut pins)? {
                 return Err(CommandError::new(ErrorKind::Refused, NOT_YOURS));
             }
@@ -75,12 +84,17 @@ pub(crate) fn authorize(
     Ok(Grant { viewer, pins })
 }
 
-/// Why only the operator may send `request`, when it writes or reads a path on the controller
-/// host.
+/// Why only the operator may send `request`, when it touches the controller host.
 const fn host_only(request: &Request) -> Option<&'static str> {
     match request {
         Request::Cp(_) => Some(CP_OPERATOR_ONLY),
         Request::In(_) => Some(IN_OPERATOR_ONLY),
+        Request::Start(StartReq {
+            worktree: Some(_), ..
+        }) => Some(WORKTREE_OPERATOR_ONLY),
+        Request::Env(_) => Some(ENV_OPERATOR_ONLY),
+        Request::Repos(_) => Some(REPOS_OPERATOR_ONLY),
+        Request::OpenHostSession(_) => Some(HOST_SESSION_OPERATOR_ONLY),
         _ => None,
     }
 }
@@ -97,6 +111,21 @@ pub(crate) fn may_see(cx: &Cx, store: &Store, id: BoxId) -> Result<bool, Command
     Ok(store
         .box_row(id)?
         .is_some_and(|row| viewer.may_act_on(row.user)))
+}
+
+/// Whether the context's viewer may see a Session on Box `id`; a host Session has no Box and
+/// is the operator's only.
+///
+/// # Errors
+/// A store failure.
+pub(crate) fn may_see_session(
+    cx: &Cx,
+    store: &Store,
+    id: Option<BoxId>,
+) -> Result<bool, CommandError> {
+    id.map_or(Ok(cx.viewer().may_act_on(None)), |id| {
+        may_see(cx, store, id)
+    })
 }
 
 /// Whether `viewer` may act on what `named` names, pinning each name to the Box it means; a
@@ -120,9 +149,10 @@ fn may_name(
             Some(row) => Some(pin(name, row)),
             None => return Ok(true),
         },
+        // A host Session has no Box, so like a Box with no user it is the operator's only.
         Named::Session(id) => match store.session_row(id.get())?.map(|s| s.box_id) {
             Some(Some(id)) => store.box_row(id)?.map(|row| row.user),
-            Some(None) => return Ok(true),
+            Some(None) => Some(None),
             None => None,
         },
     };

@@ -22,27 +22,27 @@ use crate::controller::watch::{stream, Ask, Limits};
 use crate::store::Store;
 use crate::testing::clock::FakeClock;
 
-const A: &str = "slack:T1:A";
-const B: &str = "slack:T1:B";
+pub(super) const A: &str = "slack:T1:A";
+pub(super) const B: &str = "slack:T1:B";
 const OPERATOR_ON_SLACK: &str = "slack:T1:OP";
-const A_BOX: &str = "a-box";
-const B_BOX: &str = "b-box";
+pub(super) const A_BOX: &str = "a-box";
+pub(super) const B_BOX: &str = "b-box";
 const NO_USER_BOX: &str = "fixture-box";
 const OPERATOR_BOX: &str = "op-box";
 const MISSING: &str = "missing-box";
-const MISSING_SESSION: i64 = 9999;
+pub(super) const MISSING_SESSION: i64 = 9999;
 
 /// A controller with Boxes for users A and B, the operator's user and no user.
-struct World {
-    served: Served,
-    store: Store,
-    b_box: BoxId,
-    b_session: i64,
+pub(super) struct World {
+    pub(super) served: Served,
+    pub(super) store: Store,
+    pub(super) b_box: BoxId,
+    pub(super) b_session: i64,
     no_user_box: BoxId,
 }
 
 impl World {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         let served = Served::start();
         let clock = Arc::new(FakeClock::new(Ts::from_millis(1_000_000)));
         let db = served.dir.path().join("state").join("moor.db");
@@ -76,7 +76,7 @@ impl World {
     }
 
     /// The `slack` front's socket.
-    fn slack(&self) -> std::path::PathBuf {
+    pub(super) fn slack(&self) -> std::path::PathBuf {
         self.served.front("slack")
     }
 }
@@ -99,12 +99,12 @@ fn insert(store: &Store, name: &str, user: Option<UserId>) -> BoxId {
 }
 
 /// `request`, run as `identity`.
-fn acting(identity: &str, request: &Value) -> Value {
+pub(super) fn acting(identity: &str, request: &Value) -> Value {
     json!({"cmd": "as", "identity": identity, "request": request})
 }
 
 /// The response line `socket` sends for `request`, byte for byte.
-fn response_line(socket: &Path, request: &Value) -> String {
+pub(super) fn response_line(socket: &Path, request: &Value) -> String {
     let mut write = UnixStream::connect(socket).expect("connect");
     let hello = json!({"frame": "hello", "protocol": PROTOCOL});
     let frame = json!({"frame": "request", "id": "1", "request": request});
@@ -122,14 +122,14 @@ fn response_line(socket: &Path, request: &Value) -> String {
 }
 
 /// Asserts `envelope` is the one refusal for a Box the caller may not act on.
-fn not_yours(envelope: &Value) {
+pub(super) fn not_yours(envelope: &Value) {
     refused(envelope, "not your Box");
     assert_eq!(envelope["error"]["message"], "not your Box", "{envelope}");
 }
 
 /// Every request kind, read from the variants serde accepts, so a new kind joins this list
 /// without anyone touching it.
-fn every_kind() -> Vec<String> {
+pub(super) fn every_kind() -> Vec<String> {
     let error = serde_json::from_value::<Request>(json!({"cmd": "?"}))
         .expect_err("no such kind")
         .to_string();
@@ -145,7 +145,7 @@ fn every_kind() -> Vec<String> {
 }
 
 /// What a request kind names.
-enum Names {
+pub(super) enum Names {
     /// A request of the kind that names the given Box or Session.
     Box(Value),
     /// The kind names no Box.
@@ -155,7 +155,7 @@ enum Names {
 }
 
 /// A request of `kind` that names Box `name` or Session `session`.
-fn naming(kind: &str, name: &str, session: i64) -> Names {
+pub(super) fn naming(kind: &str, name: &str, session: i64) -> Names {
     let on_box = |extra: Value| {
         let mut req = json!({"cmd": kind, "box": name});
         if let (Some(req), Value::Object(extra)) = (req.as_object_mut(), extra) {
@@ -337,7 +337,7 @@ fn a_list_shows_only_the_callers_boxes_and_the_operator_sees_all() {
     let list = json!({"cmd": "show"});
     assert_eq!(listed(&ask(&slack, &acting(A, &list))), [A_BOX]);
     assert_eq!(listed(&ask(&slack, &acting(B, &list))), [B_BOX]);
-    assert_eq!(listed(&ask(&slack, &list)), Vec::<String>::new());
+    refused(&ask(&slack, &list), "must assert an identity");
     assert_eq!(
         listed(&ask(&world.served.main, &list)),
         [A_BOX, B_BOX, NO_USER_BOX, OPERATOR_BOX]
