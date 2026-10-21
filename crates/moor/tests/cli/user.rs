@@ -79,3 +79,33 @@ fn the_cli_mints_a_link_code_and_refuses_it_for_an_already_linked_identity() {
     let message = linked["error"]["message"].as_str().unwrap();
     assert!(message.contains("already linked"), "{linked}");
 }
+
+/// `user`'s secret `name` as the controller stored it, opened with the vault key beside its
+/// config; the sealed value starts with a `<user> <name>` line the vault checks.
+fn stored_secret(daemon: &Daemon, user: i64, name: &str) -> Vec<u8> {
+    let db = rusqlite::Connection::open(daemon.root.join("state").join("moor.db")).unwrap();
+    let sealed: Vec<u8> = db
+        .query_row(
+            "SELECT value FROM user_secrets WHERE user = ? AND name = ?",
+            rusqlite::params![user, name],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let key = std::fs::read_to_string(daemon.root.join("vault.key")).unwrap();
+    let identity: age::x25519::Identity = key.trim().parse().unwrap();
+    let bound = age::decrypt(&identity, &sealed).unwrap();
+    bound
+        .strip_prefix(format!("{user} {name}\n").as_bytes())
+        .unwrap()
+        .to_vec()
+}
+
+#[test]
+fn the_cli_stores_exactly_the_stdin_value() {
+    let daemon = Daemon::start();
+    let (enrolled, _) = moor(&daemon, &["user", "enroll"], "");
+    let user = enrolled["value"]["user"].as_i64().unwrap();
+    let (set, _) = moor(&daemon, &["user", "secret", "set", "github"], CANARY);
+    assert_eq!(set["value"]["changed"], true, "{set}");
+    assert_eq!(stored_secret(&daemon, user, "github"), CANARY.as_bytes());
+}
