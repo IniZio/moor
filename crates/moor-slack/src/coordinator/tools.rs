@@ -22,7 +22,7 @@ pub(crate) struct Spec {
 }
 
 /// Every tool the coordinator gets.
-pub(crate) const SPECS: [Spec; 2] = [
+pub(crate) const SPECS: [Spec; 3] = [
     Spec {
         name: "list_boxes",
         description: "List this thread's Boxes: name, repo, requester and state as the \
@@ -41,6 +41,22 @@ pub(crate) const SPECS: [Spec; 2] = [
                     "text": {"type": "string", "description": "What to tell the Box's agent."}
                 },
                 "required": ["box", "text"],
+                "additionalProperties": false
+            })
+        },
+    },
+    Spec {
+        name: "close_box",
+        description: "Close one of this thread's Boxes. The thread is told when it has closed, \
+                      or why the controller refused. Works only when the person who asked for \
+                      the Box wrote in this turn.",
+        input: || {
+            json!({
+                "type": "object",
+                "properties": {
+                    "box": {"type": "string", "description": "The Box's name, as list_boxes shows it."}
+                },
+                "required": ["box"],
                 "additionalProperties": false
             })
         },
@@ -64,6 +80,11 @@ pub(crate) enum Call {
         /// What to send.
         text: String,
     },
+    /// `close_box`.
+    CloseBox {
+        /// The Box's name as given.
+        box_name: String,
+    },
 }
 
 impl Call {
@@ -82,6 +103,9 @@ impl Call {
             "steer_box" => Ok(Self::SteerBox {
                 box_name: text("box")?,
                 text: text("text")?,
+            }),
+            "close_box" => Ok(Self::CloseBox {
+                box_name: text("box")?,
             }),
             other => Err(format!("There is no tool `{other}`.")),
         }
@@ -132,11 +156,12 @@ pub(crate) struct Scope<'a> {
     pub(crate) clock: fn() -> i64,
 }
 
-/// Runs `call` in `scope`.
+/// Runs `call` in `thread`.
 pub(crate) fn run(scope: &mut Scope<'_>, call: &Call) -> Reply {
     let ran = match call {
         Call::ListBoxes => list(scope),
         Call::SteerBox { box_name, text } => steer(scope, box_name, text),
+        Call::CloseBox { box_name } => close(scope, box_name),
     };
     ran.unwrap_or_else(|e| Reply::refused(format!("The front could not read slack.db: {e}")))
 }
@@ -240,6 +265,30 @@ fn steer(scope: &mut Scope<'_>, box_name: &str, text: &str) -> rusqlite::Result<
         .db
         .end_action(target.turn.id, seq, &outcome, (scope.clock)())?;
     Ok(reply)
+}
+
+/// `close_box`: the journal row and the Box marked `closing`, in one transaction. The worker
+/// sends the close and posts its result in the thread.
+fn close(scope: &Scope<'_>, box_name: &str) -> rusqlite::Result<Reply> {
+    let target = match changeable(scope, "close_box", box_name, "")? {
+        Ok(target) => target,
+        Err(refusal) => return Ok(refusal),
+    };
+    let name = target.boxed.box_name.as_str();
+    if let Some(refusal) = not_running(&target.boxed, "close") {
+        return Ok(refusal);
+    }
+    let outcome = format!("Box `{name}` is closing");
+    let db = scope.db;
+    let now = (scope.clock)();
+    db.atomically(|| {
+        let seq = db.begin_action(target.turn.id, &target.action, now)?;
+        db.mark_closing(&target.boxed.box_name)?;
+        db.end_action(target.turn.id, seq, &outcome, now)
+    })?;
+    Ok(Reply::done(format!(
+        "{outcome}. The thread will say when it has closed."
+    )))
 }
 
 /// A Box a tool may change in this turn, with the turn and the journal row to write.

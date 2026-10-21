@@ -139,21 +139,14 @@ impl Db {
     }
 
     /// Ends the close of a `closing` Box: `gone` when the controller closed it, else `bound`
-    /// again. The `close` items of its thread are done either way.
+    /// again.
     pub(crate) fn settle_close(&self, name: &BoxName, gone: bool) -> rusqlite::Result<()> {
-        self.atomically(|| {
-            self.conn.execute(
-                "UPDATE slack_inbox SET done_at = unixepoch() \
-                 WHERE kind = 'close' AND done_at IS NULL AND (channel, thread_ts) = \
-                 (SELECT channel, thread_ts FROM slack_boxes WHERE box_name = ?1)",
-                params![name.as_str()],
-            )?;
-            self.conn.execute(
+        self.conn
+            .execute(
                 "UPDATE slack_boxes SET state = ?2 WHERE box_name = ?1 AND state = 'closing'",
                 params![name.as_str(), if gone { "gone" } else { "bound" }],
-            )?;
-            Ok(())
-        })
+            )
+            .map(drop)
     }
 
     /// Deletes a Box still in `starting`, and its thread once the thread has no Box left, so

@@ -40,10 +40,9 @@ fn said(text: &str) -> Said {
 }
 
 #[test]
-fn one_turn_takes_every_waiting_message_and_no_close() {
+fn one_turn_takes_every_waiting_message() {
     let (_dir, db) = thread();
     queue(&db, ItemKind::Message, "one", "Ev1");
-    queue(&db, ItemKind::Close, "close", "Ev2");
     queue(&db, ItemKind::Message, "two", "Ev3");
     let turn = db.take_turn(5).unwrap().unwrap();
     assert_eq!((turn.channel.as_str(), turn.owner.as_str()), ("C1", "U1"));
@@ -67,13 +66,6 @@ fn one_turn_takes_every_waiting_message_and_no_close() {
         .map(|(_, s)| s)
         .collect();
     assert_eq!(items, [said("three")]);
-}
-
-#[test]
-fn a_thread_with_only_a_close_waiting_takes_no_turn() {
-    let (_dir, db) = thread();
-    queue(&db, ItemKind::Close, "close", "Ev1");
-    assert_eq!(db.take_turn(5).unwrap(), None);
 }
 
 #[test]

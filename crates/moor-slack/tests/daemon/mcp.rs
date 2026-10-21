@@ -85,7 +85,7 @@ fn the_tool_server_answers_mcp_over_stdin_and_stdout() {
         .iter()
         .map(|t| t["name"].as_str().unwrap().to_owned())
         .collect();
-    assert_eq!(names, ["list_boxes", "steer_box"]);
+    assert_eq!(names, ["list_boxes", "steer_box", "close_box"]);
     drop(stdin);
     assert!(
         child.wait().unwrap().success(),

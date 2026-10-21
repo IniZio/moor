@@ -40,8 +40,6 @@ pub(crate) enum ReplyAction {
     Ignore,
     /// Queue this text for the thread's coordinator.
     Queue(String),
-    /// Close the thread's open Box.
-    Close,
     /// Post this text in the thread and change nothing.
     Refuse(String),
 }
@@ -54,41 +52,8 @@ pub(crate) fn reply_action(starter: &str, user: &str, text: &str) -> ReplyAction
     let text = strip_mentions(text).trim();
     if text.is_empty() {
         ReplyAction::Ignore
-    } else if text.eq_ignore_ascii_case("close") {
-        ReplyAction::Close
     } else {
         ReplyAction::Queue(text.to_owned())
-    }
-}
-
-/// The Box a `close` from `user` closes: the thread's one open Box, when `user` asked for it
-/// and it is bound. Otherwise the line that says why nothing closes.
-pub(crate) fn close_target<'a>(boxes: &'a [SlackBox], user: &str) -> Result<&'a SlackBox, String> {
-    let open: Vec<_> = boxes
-        .iter()
-        .filter(|b| !matches!(b.state, BoxState::Gone { .. }))
-        .collect();
-    let target = match open.as_slice() {
-        [] => return Err("This thread has no open Box.".to_owned()),
-        [one] => *one,
-        many => {
-            return Err(format!(
-                "This thread has {} open Boxes. Ask the coordinator which to close.",
-                many.len()
-            ))
-        }
-    };
-    let name = target.box_name.as_str();
-    if target.requested_by != user {
-        let by = &target.requested_by;
-        return Err(format!("Only <@{by}> can close Box `{name}`."));
-    }
-    match target.state {
-        BoxState::Starting => Err(format!(
-            "Box `{name}` is still starting. Send close again once it has started."
-        )),
-        BoxState::Closing { .. } => Err(format!("Box `{name}` is already closing.")),
-        BoxState::Bound { .. } | BoxState::Gone { .. } => Ok(target),
     }
 }
 

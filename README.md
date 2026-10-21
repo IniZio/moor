@@ -99,6 +99,8 @@ server is killed. The tools act only on the thread's own Boxes:
 - `list_boxes` shows each Box with its repo, who asked for it, and its state
   as the controller reports it.
 - `steer_box` sends text to a Box's agent.
+- `close_box` closes a Box without force. The thread is told when it has
+  closed, or why the controller refused.
 
 A tool that changes a Box works only in a turn that holds a message from
 the person who asked for that Box. Each such call is recorded in `slack.db`

@@ -122,6 +122,12 @@ fn steer(name: &str, text: &str) -> Call {
     }
 }
 
+fn close(name: &str) -> Call {
+    Call::CloseBox {
+        box_name: name.into(),
+    }
+}
+
 /// The state of Box `name`.
 fn state(db: &Db, name: &str) -> BoxState {
     let boxes = db.thread_boxes("C1", "1.0").unwrap();
@@ -130,7 +136,7 @@ fn state(db: &Db, name: &str) -> BoxState {
 }
 
 #[test]
-fn one_author_cannot_steer_the_other_authors_box() {
+fn one_author_cannot_steer_or_close_the_other_authors_box() {
     let dir = tempfile::tempdir().unwrap();
     let db = two_authors(dir.path());
     turn_of(&db, "U1", "Ev1");
@@ -141,6 +147,7 @@ fn one_author_cannot_steer_the_other_authors_box() {
         refused.text,
         format!("Only <@U2> can change Box `{TWO}`, and <@U2> wrote nothing in this turn.")
     );
+    assert!(controller.run(&db, &close(TWO)).is_error);
     let sent = controller.run(&db, &steer(ONE, "go on"));
     assert_eq!(sent, Reply::done(format!("Sent to Box `{ONE}`.")));
     assert_eq!(controller.steered(), [ONE]);
@@ -173,12 +180,14 @@ fn a_turn_that_holds_only_notices_cannot_change_a_box() {
     )
     .unwrap();
     let controller = Controller::new();
-    let reply = controller.run(&db, &steer(ONE, "go on"));
-    assert!(reply.is_error, "ran: {reply:?}");
-    assert!(
-        reply.text.contains("wrote nothing in this turn"),
-        "{reply:?}"
-    );
+    for call in [steer(ONE, "go on"), close(ONE)] {
+        let reply = controller.run(&db, &call);
+        assert!(reply.is_error, "{call:?} ran: {reply:?}");
+        assert!(
+            reply.text.contains("wrote nothing in this turn"),
+            "{reply:?}"
+        );
+    }
     assert!(controller.sent.borrow().is_empty());
     let listed = controller.run(&db, &Call::ListBoxes);
     assert!(!listed.is_error, "list_boxes still answers: {listed:?}");
@@ -188,7 +197,7 @@ fn a_turn_that_holds_only_notices_cannot_change_a_box() {
 fn no_running_turn_changes_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let db = two_authors(dir.path());
-    let reply = Controller::new().run(&db, &steer(ONE, "go on"));
+    let reply = Controller::new().run(&db, &close(ONE));
     assert_eq!(reply, Reply::refused("No turn of this thread is running."));
 }
 
@@ -257,12 +266,79 @@ fn a_lost_steer_says_it_may_not_have_been_sent() {
 }
 
 #[test]
+fn close_marks_the_box_closing_with_its_journal_row_and_sends_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = two_authors(dir.path());
+    let turn = turn_of(&db, "U1", "Ev1");
+    let controller = Controller::new();
+    let reply = controller.run(&db, &close(ONE));
+    assert_eq!(
+        reply,
+        Reply::done(format!(
+            "Box `{ONE}` is closing. The thread will say when it has closed."
+        ))
+    );
+    assert!(matches!(state(&db, ONE), BoxState::Closing { .. }));
+    assert!(
+        controller.sent.borrow().is_empty(),
+        "the worker sends the close"
+    );
+    let journal = db.turn_actions(turn).unwrap();
+    assert_eq!(journal[0].tool, "close_box");
+    assert_eq!(
+        journal[0].outcome.as_deref(),
+        Some(&*format!("Box `{ONE}` is closing"))
+    );
+}
+
+#[test]
+fn close_of_a_box_still_starting_closing_or_closed_changes_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = Db::open(&dir.path().join("slack.db")).unwrap();
+    let thread = SlackThread {
+        channel: "C1".into(),
+        thread_ts: "1.0".into(),
+        repo: "acme/api".into(),
+        owner: "U1".into(),
+    };
+    db.insert_thread(&thread, 1).unwrap();
+    let starting = SlackBox {
+        channel: "C1".into(),
+        thread_ts: "1.0".into(),
+        box_name: BoxName::parse_allow_bare(ONE).unwrap(),
+        repo: "acme/api".into(),
+        goal: "g".into(),
+        requested_by: "U1".into(),
+        state: BoxState::Starting,
+    };
+    db.insert_starting(&starting, 1).unwrap();
+    turn_of(&db, "U1", "Ev1");
+    let controller = Controller::new();
+    let still = controller.run(&db, &close(ONE));
+    assert_eq!(
+        still,
+        Reply::refused(format!(
+            "Box `{ONE}` is still starting. Try to close it once it has started."
+        ))
+    );
+    db.bind(&starting.box_name, BoxId::new(1), None).unwrap();
+    db.mark_closing(&starting.box_name).unwrap();
+    let closing = controller.run(&db, &close(ONE));
+    assert_eq!(closing, Reply::refused(format!("Box `{ONE}` is closing.")));
+    db.settle_close(&starting.box_name, true).unwrap();
+    let gone = controller.run(&db, &close(ONE));
+    assert_eq!(gone, Reply::refused(format!("Box `{ONE}` is closed.")));
+    assert!(db.thread_actions("C1", "1.0").unwrap().is_empty());
+}
+
+#[test]
 fn a_rerun_refuses_to_repeat_what_its_cut_off_turn_did_and_names_it() {
     let dir = tempfile::tempdir().unwrap();
     let db = two_authors(dir.path());
     turn_of(&db, "U1", "Ev1");
     let controller = Controller::new();
     assert!(!controller.run(&db, &steer(ONE, "use tokio")).is_error);
+    assert!(!controller.run(&db, &close(ONE)).is_error);
     let lost = db.unended().unwrap().remove(0).row;
     db.rerun(&lost, 60).unwrap();
     let again = controller.run(&db, &steer(ONE, "use tokio"));
@@ -275,6 +351,13 @@ fn a_rerun_refuses_to_repeat_what_its_cut_off_turn_did_and_names_it() {
             lost.id
         )
     );
+    let closed = controller.run(&db, &close(ONE));
+    assert!(
+        closed.text.starts_with("Your last turn already did this"),
+        "{closed:?}"
+    );
+    db.settle_close(&BoxName::parse_allow_bare(ONE).unwrap(), false)
+        .unwrap();
     let other = controller.run(&db, &steer(ONE, "and add a test"));
     assert!(!other.is_error, "a new action still runs: {other:?}");
 }
