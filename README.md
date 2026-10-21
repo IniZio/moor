@@ -89,6 +89,16 @@ the state directory, and refuses to start when that directory or one of its
 ancestors holds a `CLAUDE.md`. A turn that runs past 10 minutes is killed.
 Up to 4 turns run at once.
 
+The coordinator's only tools come from the front. For each turn Claude Code
+starts `moor-slack mcp`, named by its absolute path in the thread's
+`mcp.json`, and stops it when the turn ends. The tool server reads the
+thread's rows in `slack.db` and asks the controller. It never sees a Slack
+or Claude token. A turn whose first output line lists any other tool or tool
+server is killed. The tools act only on the thread's own Boxes:
+
+- `list_boxes` shows each Box with its repo, who asked for it, and its state
+  as the controller reports it.
+
 Only the thread's starter talks to the coordinator. Anyone else who writes
 in the thread gets one line that says only the starter can direct it.
 

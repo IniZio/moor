@@ -6,7 +6,7 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use clap::Parser;
-use moor_slack::{Log, Settings};
+use moor_slack::{Log, Settings, ToolSettings};
 
 /// Command line of the daemon.
 #[derive(Parser)]
@@ -26,6 +26,24 @@ struct Args {
     /// or `$HOME/.local/state/moor-slack`.
     #[arg(long, env = "MOOR_SLACK_STATE_DIR")]
     state_dir: Option<PathBuf>,
+}
+
+/// Command line of `moor-slack mcp`, the coordinator's tool server for one turn.
+#[derive(Parser)]
+#[command(name = "moor-slack mcp")]
+struct McpArgs {
+    /// The front's state dir, which holds `slack.db`.
+    #[arg(long)]
+    state_dir: PathBuf,
+    /// Controller socket to dial.
+    #[arg(long)]
+    socket: PathBuf,
+    /// The thread whose Boxes the tools act on, as `<channel>/<thread ts>`.
+    #[arg(long)]
+    thread: String,
+    /// Set when the server runs again after its inherited descriptors were closed.
+    #[arg(long, hide = true)]
+    inherited_closed: bool,
 }
 
 /// The state directory given, or the default under the user's state home.
@@ -57,7 +75,28 @@ fn unix_now() -> i64 {
         .unwrap_or(0)
 }
 
+/// Runs the tool server: closes inherited descriptors first, then serves until stdin ends.
+fn mcp() -> Result<(), String> {
+    let command_line: Vec<_> = std::env::args_os().collect();
+    let given = McpArgs::parse_from(command_line.iter().skip(1));
+    moor_slack::close_inherited(&command_line, given.inherited_closed)?;
+    moor_slack::serve_tools(&ToolSettings {
+        state_dir: given.state_dir,
+        socket: given.socket,
+        thread: given.thread,
+    })
+}
+
 fn main() -> ExitCode {
+    if std::env::args_os().nth(1).is_some_and(|a| a == "mcp") {
+        return match mcp() {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(msg) => {
+                let _ = writeln!(io::stderr(), "moor-slack mcp: {msg}");
+                ExitCode::FAILURE
+            }
+        };
+    }
     let args = Args::parse();
     let log: Log = Arc::new(|line| {
         let _ = writeln!(io::stderr(), "moor-slack: {line}");

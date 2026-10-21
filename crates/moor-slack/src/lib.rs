@@ -25,6 +25,7 @@ mod turns;
 mod upload;
 mod worker;
 
+pub use coordinator::mcp::{close_inherited, serve_tools, ToolSettings};
 pub use daemon::{run, Settings};
 
 /// Diagnostic sink for the daemon's log; each call is one line.

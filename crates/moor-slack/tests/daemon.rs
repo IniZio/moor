@@ -17,6 +17,8 @@ mod connect;
 mod inbox;
 #[path = "daemon/login.rs"]
 mod login;
+#[path = "daemon/mcp.rs"]
+mod mcp;
 #[path = "daemon/repo.rs"]
 mod repo;
 #[path = "daemon/restart.rs"]

@@ -10,7 +10,7 @@ use moor_core::secret::Secret;
 use super::{run, Ended, Limits, Turn, LIMITS};
 use crate::coordinator::claude::tests::install;
 use crate::coordinator::claude::{Claude, HostEnv};
-use crate::coordinator::{Agent as _, Answer, TurnSetup};
+use crate::coordinator::{Agent as _, Answer, ToolServer, TurnSetup};
 
 /// A probed fake in `bin`.
 fn claude(bin: &Path) -> Claude {
@@ -41,12 +41,20 @@ impl Dirs {
     fn turn(&self, token: &str, limits: Limits) -> (Ended, u32) {
         let claude = claude(self.bin.path());
         let token = Secret::new(token.into());
+        let args = ["mcp".to_owned(), "--thread".to_owned(), "C1/1.0".to_owned()];
+        let server = ToolServer {
+            name: "moor",
+            program: Path::new("/opt/moor/moor-slack"),
+            args: &args,
+            tools: &["list_boxes", "close_box"],
+        };
         let turn = Turn {
             setup: TurnSetup {
                 model: "sonnet",
                 config_dir: self.config.path(),
                 workdir: self.work.path(),
                 brief: "Be brief.",
+                tools: &server,
             },
             input: "## New\nhello",
             credential: &token,
@@ -80,9 +88,14 @@ fn a_turn_gets_its_argv_env_stdin_and_the_token_on_fd_3_only() {
     assert_eq!(ended, Ended::Answered(want));
     assert_eq!(dirs.recorded("fd3"), token);
     let argv = dirs.recorded("argv");
-    let want = "-p\n--no-session-persistence\n--model\nsonnet\n--output-format\nstream-json\n\
-                --verbose\n--tools\n\n--setting-sources\n\n--disable-slash-commands\n\
-                --strict-mcp-config\n--permission-prompts\nnone\n--system-prompt\nBe brief.\n";
+    let config = dirs.work.path().join("mcp.json");
+    let want = format!(
+        "-p\n--no-session-persistence\n--model\nsonnet\n--output-format\nstream-json\n\
+         --verbose\n--tools\n\n--setting-sources\n\n--disable-slash-commands\n\
+         --strict-mcp-config\n--permission-prompts\nnone\n--system-prompt\nBe brief.\n\
+         --mcp-config\n{}\n--allowedTools\nmcp__moor\n",
+        config.display()
+    );
     assert_eq!(argv, want);
     assert_eq!(dirs.recorded("stdin"), "## New\nhello");
     let mut env: Vec<String> = dirs.recorded("env").lines().map(str::to_owned).collect();
@@ -104,6 +117,28 @@ fn a_turn_gets_its_argv_env_stdin_and_the_token_on_fd_3_only() {
 }
 
 #[test]
+fn the_turn_names_the_tool_server_in_a_private_mcp_json_with_no_variables() {
+    let dirs = Dirs::new();
+    dirs.turn("sk-ant-oat01-good-51d0", LIMITS);
+    let config = dirs.work.path().join("mcp.json");
+    let written: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+    let want = serde_json::json!({"mcpServers": {"moor": {
+        "type": "stdio",
+        "command": "/opt/moor/moor-slack",
+        "args": ["mcp", "--thread", "C1/1.0"],
+        "env": {},
+    }}});
+    assert_eq!(
+        written, want,
+        "the tool server gets no variables of its own"
+    );
+    let mode =
+        std::os::unix::fs::PermissionsExt::mode(&std::fs::metadata(&config).unwrap().permissions());
+    assert_eq!(mode & 0o777, 0o600);
+}
+
+#[test]
 fn an_init_that_lists_a_tool_kills_the_turn() {
     let dirs = Dirs::new();
     let started = now();
@@ -115,6 +150,28 @@ fn an_init_that_lists_a_tool_kills_the_turn() {
         "the turn ran on"
     );
     assert_gone(pid);
+}
+
+#[test]
+fn an_init_that_lists_only_the_fronts_tool_server_and_its_tools_runs() {
+    let dirs = Dirs::new();
+    let (ended, _) = dirs.turn("sk-ant-oat01-listed-1", LIMITS);
+    assert!(
+        matches!(ended, Ended::Answered(Answer::Reply { .. })),
+        "{ended:?}"
+    );
+}
+
+#[test]
+fn an_init_that_lists_another_tool_server_or_a_tool_the_front_did_not_give_kills_the_turn() {
+    let dirs = Dirs::new();
+    let (ended, _) = dirs.turn("sk-ant-oat01-server-1", LIMITS);
+    let why = "the agent loaded the tool server github".to_owned();
+    assert_eq!(ended, Ended::Unsafe(why));
+    let dirs = Dirs::new();
+    let (ended, _) = dirs.turn("sk-ant-oat01-extra-1", LIMITS);
+    let why = "the agent loaded the tool mcp__moor__steer_box".to_owned();
+    assert_eq!(ended, Ended::Unsafe(why));
 }
 
 #[test]
