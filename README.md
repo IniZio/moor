@@ -90,10 +90,14 @@ arrive during a turn go into the next turn together. Each turn rebuilds its
 context from `slack.db`, within `context_kib`: the first request, what
 earlier turns did to Boxes, the thread's Boxes, as many earlier messages and
 replies as fit, and the new messages. A turn has no built-in tools, a
-cleared environment and its own config dir per Slack user. It runs in
-`threads/<channel>-<thread ts>` under the state directory, and refuses to
-start when that directory or one of its ancestors holds a `CLAUDE.md`. A turn
-that runs past 10 minutes is killed. Up to 4 turns run at once.
+cleared environment and its own config dir per Slack user. It runs in `/`
+with `CLAUDE_CODE_DISABLE_CLAUDE_MDS=1`, so a `CLAUDE.md` above the state
+directory, such as `~/.claude/CLAUDE.md`, never reaches it. A turn refuses to
+start when `/` holds a `CLAUDE.md`, an `AGENTS.md` or a `.claude/rules/` file,
+or when `/etc/claude-code` would load instructions. Each thread's workdir is
+`threads/<channel>-<thread ts>` under the state directory. It holds the
+thread's `mcp.json` and is the workdir of its host Session. A turn that runs
+past 10 minutes is killed. Up to 4 turns run at once.
 
 Each thread has a host Session on the controller while it is active. Once a
 minute the front ends the host Session of each thread that has had no turn
