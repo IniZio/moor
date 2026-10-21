@@ -111,6 +111,21 @@ fn a_message_runs_a_turn_with_the_recorded_argv_env_stdin_and_fd_3() {
 }
 
 #[test]
+fn a_bare_mention_opens_a_thread_and_runs_a_turn_like_any_mention() {
+    let (rig, _controller, bin) = Rig::start_coordinated(Some(GOOD));
+    rig.mention(1, USER, "<@UBOT>", TS, None);
+    let posts = rig.slack.wait_posts(1);
+    assert_eq!(
+        (posts[0].thread_ts.as_str(), posts[0].text.as_str()),
+        (TS, "…")
+    );
+    assert_eq!(rig.slack.wait_updates(1)[0].text, "OK");
+    let stdin = recorded(&bin, 0, "stdin");
+    let want = format!("## New\n[<@{USER}>] \n");
+    assert!(stdin.ends_with(&want), "{stdin}");
+}
+
+#[test]
 fn a_turn_opens_the_threads_host_session_and_records_how_it_ended() {
     let (rig, controller, bin) = Rig::start_coordinated(Some(GOOD));
     ask(&rig, "hello there");

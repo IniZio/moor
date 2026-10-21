@@ -3,7 +3,7 @@
 //! messages wait in the thread's inbox.
 
 use super::Job;
-use crate::command::{not_allowed, reply_action, Allow, ReplyAction};
+use crate::command::{not_allowed, reply_action, strip_mentions, Allow, ReplyAction};
 use crate::db::{Db, InboxItem, ItemKind, SlackThread};
 use crate::socket::Mention;
 
@@ -42,17 +42,15 @@ pub(crate) fn record(
 }
 
 /// Opens a coordinator thread at `thread_ts` for `mention`, a top-level mention, inside the
-/// caller's transaction: the thread row and the mention's text as the thread's first message.
-/// Writes nothing when the text is empty once mentions are stripped.
+/// caller's transaction: the thread row and the mention's text, with mentions stripped, as the
+/// thread's first message. A bare mention opens one too, with an empty first message.
 pub(super) fn open_coordinated(
     db: &Db,
     mention: &Mention,
     thread_ts: &str,
     now: i64,
 ) -> rusqlite::Result<()> {
-    let ReplyAction::Queue(text) = reply_action(&mention.user, &mention.user, &mention.text) else {
-        return Ok(());
-    };
+    let text = strip_mentions(&mention.text).trim().to_owned();
     let thread = SlackThread {
         channel: mention.channel.clone(),
         thread_ts: thread_ts.to_owned(),

@@ -50,7 +50,7 @@ pub(super) fn failed(name: &BoxName, message: &str) -> String {
 }
 
 /// Drops leading `<@U...>` / `<@U...|name>` mentions and whitespace.
-fn strip_mentions(text: &str) -> &str {
+pub(crate) fn strip_mentions(text: &str) -> &str {
     let mut rest = text.trim_start();
     while let Some(after) = rest.strip_prefix("<@") {
         let Some((_, tail)) = after.split_once('>') else {
