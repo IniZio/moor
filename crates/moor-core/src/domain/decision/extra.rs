@@ -64,6 +64,11 @@ pub enum ExtraEvent {
         /// Whether every line passed.
         ok: bool,
     },
+    /// The checkout reached the Box.
+    Synced {
+        /// Time the checkout sync, with the git identity set inside it, took in milliseconds.
+        ms: u64,
+    },
     /// Admission checked credentials.
     Checked {
         /// The credentials that were checked.
@@ -193,6 +198,7 @@ impl From<ExtraEvent> for Event {
             },
             ExtraEvent::SetupFailed { line } => Self::SetupFailed { line },
             ExtraEvent::SetupFinished { ms, ok } => Self::SetupFinished { ms, ok },
+            ExtraEvent::Synced { ms } => Self::Synced { ms },
             ExtraEvent::Checked { credentials } => Self::Checked { credentials },
             ExtraEvent::RunStarted { run } => Self::RunStarted { run },
             ExtraEvent::Attached => Self::Attached,
@@ -280,6 +286,7 @@ impl TryFrom<Event> for ExtraEvent {
             }),
             Event::SetupFailed { line } => Ok(Self::SetupFailed { line }),
             Event::SetupFinished { ms, ok } => Ok(Self::SetupFinished { ms, ok }),
+            Event::Synced { ms } => Ok(Self::Synced { ms }),
             Event::Checked { credentials } => Ok(Self::Checked { credentials }),
             Event::RunStarted { run } => Ok(Self::RunStarted { run }),
             Event::Attached => Ok(Self::Attached),

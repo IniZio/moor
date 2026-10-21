@@ -16,12 +16,10 @@ use moor_core::{BoxHandle, BoxId, BoxPath, ErrorKind, ProviderId};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
-use crate::ops::common::box_exec::{self, BoxProxy};
 use crate::ops::common::boxlock::{self, BoxLock};
 use crate::ops::common::capacity;
 use crate::ops::common::dotfiles::{self, DotfilesRun};
 use crate::ops::common::facts::{provider_caps, require_reverse_tunnel, resolved};
-use crate::ops::common::identity;
 use crate::ops::common::setup;
 use crate::ops::common::view::box_view;
 use crate::store::lease::LeaseKind;
@@ -29,11 +27,12 @@ use crate::store::{BoxRow, Store};
 
 pub(crate) use self::lease::hold_root;
 use self::lease::hold_workdir;
+use self::outcome::dotfiles_warned;
 pub(crate) use self::outcome::Provisioned;
-use self::outcome::{dotfiles_warned, sync_failed};
 pub(crate) use self::rerun::ResyncGates;
 use self::rerun::{note_setup_not_rerun, resync};
 use self::retry::{kept_box_retry, retry_in_box};
+use self::sync::{sync_with_proxy, SetupProxy};
 
 /// Re-reads a Box row that must exist.
 ///
@@ -245,19 +244,6 @@ impl<'a> SetupTarget<'a> {
     }
 }
 
-/// Syncs the checkout into the Box. A failure aborts provisioning.
-fn sync_into_box(
-    cx: &Cx,
-    store: &Store,
-    id: BoxId,
-    advance: bool,
-    target: &SetupTarget<'_>,
-    cfg: &BoxSettings,
-) -> Result<(), CommandError> {
-    setup::sync_checkout(cx, target.handle, target.workdir, target.worktree, cfg)
-        .map_err(|reason| sync_failed(cx, store, id, advance, target.handle, reason))
-}
-
 /// Runs the setup lines through the Proxy; a Proxy that will not start fails the setup.
 fn run_through_proxy(
     cx: &Cx,
@@ -265,7 +251,7 @@ fn run_through_proxy(
     id: BoxId,
     target: &SetupTarget<'_>,
     cfg: &BoxSettings,
-    proxy: &Result<Option<BoxProxy>, String>,
+    proxy: &SetupProxy,
 ) -> setup::SetupRun {
     match proxy {
         Ok(proxy) => setup::run_setup(
@@ -299,13 +285,8 @@ fn run_and_record(
     target: &SetupTarget<'_>,
     cfg: &BoxSettings,
 ) -> Result<Provisioned, CommandError> {
-    identity::set_identity(cx, target.handle, target.worktree);
-    sync_into_box(cx, store, id, advance, target, cfg)?;
-    // The checkout is in the Box by now, or was meant to stay as it is.
-    // One Proxy serves setup and dotfiles; it starts only when one of them has work.
-    let proxy = (!cfg.setup.is_empty() || cfg.dotfiles.is_some())
-        .then(|| box_exec::proxy(cx, id, Some(target.handle.clone()), target.worktree, cfg))
-        .transpose();
+    let (ms, proxy) = sync_with_proxy(cx, store, id, advance, target, cfg)?;
+    store.apply(Decision::new(id).event(ExtraEvent::Synced { ms }))?;
     let run = run_through_proxy(cx, store, id, target, cfg, &proxy);
     let dotfiles = match dotfiles::apply(cx, target.handle, id, target.worktree, cfg, &proxy) {
         Ok(d) => d,
@@ -396,5 +377,6 @@ pub(crate) mod moor_yaml;
 mod outcome;
 mod rerun;
 mod retry;
+mod sync;
 #[cfg(test)]
 mod tests;

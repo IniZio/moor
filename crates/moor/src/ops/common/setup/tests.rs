@@ -284,7 +284,14 @@ fn driver_timeout_fails_the_line() {
 fn sync_checkout_is_one_synced_exec_that_runs_nothing() {
     let d = tempfile::tempdir().unwrap();
     let r = rig(d.path(), FakeDriver::new());
-    let got = sync_checkout(&r.cx, &r.handle, &r.workdir, d.path(), &cfg(&["a"], &[]));
+    let got = sync_checkout(
+        r.cx.driver(),
+        &r.handle,
+        &r.workdir,
+        d.path(),
+        &cfg(&["a"], &[]),
+        None,
+    );
     assert_eq!(got, Ok(()));
     let (_, spec, dl) = only(r.driver.execs());
     assert_eq!(spec.sync, SyncMode::Full);
@@ -308,7 +315,14 @@ fn sync_checkout_failures_name_the_sync() {
     for (result, reason) in failures {
         let d = tempfile::tempdir().unwrap();
         let r = rig(d.path(), FakeDriver::new().exec_results([result]));
-        let got = sync_checkout(&r.cx, &r.handle, &r.workdir, d.path(), &cfg(&[], &[]));
+        let got = sync_checkout(
+            r.cx.driver(),
+            &r.handle,
+            &r.workdir,
+            d.path(),
+            &cfg(&[], &[]),
+            None,
+        );
         let msg = got.unwrap_err();
         assert!(msg.starts_with("syncing the checkout into the Box failed: "));
         assert!(msg.contains(reason), "{msg}");

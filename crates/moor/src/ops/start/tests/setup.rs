@@ -58,15 +58,10 @@ pub(super) fn start_as(
     (w, v)
 }
 
-/// Whether `argv` is the exec that only syncs the checkout into the Box.
-fn is_sync(argv: &[String]) -> bool {
-    argv == ["git", "rev-parse", "--git-dir"]
-}
-
 /// Every exec except the checkout sync.
 pub(super) fn setup_execs(w: &World) -> Vec<(BoxHandle, ExecSpec, Deadline)> {
     (w.driver.execs().into_iter())
-        .filter(|e| !is_sync(&e.1.argv))
+        .filter(|e| e.1.sync != SyncMode::Full)
         .collect()
 }
 
@@ -407,8 +402,8 @@ fn an_unset_author_runs_setup_without_touching_git_config() {
 }
 
 #[test]
-fn a_failing_identity_exec_warns_and_setup_still_runs() {
-    let driver = FakeDriver::new().exec_results([Ok(exit(1))]);
+fn a_failing_identity_key_warns_and_setup_still_runs() {
+    let driver = FakeDriver::new().exec_stdout(["user.name=1\nuser.email=0\n"]);
     let (w, v) = start_as(("Ann Dev", "a@x.io"), "setup: [a]\n", driver);
     assert_eq!((v.boxed.lifecycle, v.boxed.session_state), WORKING);
     assert!(v.setup.ran && v.setup.ok);

@@ -104,7 +104,8 @@ pub(super) fn resync(
     let repo = moor_yaml::for_teardown(cx, row, trusted)?;
     let cfg = resolved(cx, repo.as_ref(), &Flags::default());
     let worktree = Path::new(row.worktree.as_deref().unwrap_or(&row.repo));
-    let Err(reason) = setup::sync_checkout(cx, handle, &workdir, worktree, &cfg) else {
+    let Err(reason) = setup::sync_checkout(cx.driver(), handle, &workdir, worktree, &cfg, None)
+    else {
         return Ok(());
     };
     if (gates.launching)()? {

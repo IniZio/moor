@@ -14,6 +14,7 @@ impl Event {
             Self::Working => "working",
             Self::SetupFailed { .. } => "setup_failed",
             Self::SetupFinished { .. } => "setup_finished",
+            Self::Synced { .. } => "synced",
             Self::CredentialFailed { .. } => "credential_failed",
             Self::Idled => "idled",
             Self::Busy => "busy",

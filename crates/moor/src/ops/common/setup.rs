@@ -8,8 +8,8 @@ use moor_core::config::BoxSettings;
 use moor_core::domain::box_state::SetupOutcome;
 use moor_core::domain::run::SyncMode;
 use moor_core::exec_env::{Purpose, SETUP_LINE_DEADLINE};
-use moor_core::seam::driver::{DriverError, ExecOutcome, ExecSpec};
-use moor_core::seam::proc::Deadline;
+use moor_core::seam::driver::{Driver, DriverError, ExecOutcome, ExecSpec};
+use moor_core::seam::proc::{Deadline, Output};
 use moor_core::view::SetupView;
 use moor_core::{BoxHandle, BoxPath, Warning};
 
@@ -218,33 +218,44 @@ enum Failure {
     Exec(DriverError),
 }
 
-/// Syncs the worktree into the Box with an exec that only checks the workdir is a git checkout, so
-/// a failure here is the sync failing or leaving no checkout, and never a setup line.
+/// A shell prefix the sync exec runs before its check, and the host file its output goes to.
+pub(crate) struct Prelude<'a> {
+    /// Shell that must not exit, so the check still decides the exit code.
+    pub(crate) script: &'a str,
+    /// Host file that receives the exec's output.
+    pub(crate) log: &'a Path,
+}
+
+/// Syncs the worktree into the Box with an exec that only runs `prelude` and checks the workdir is a
+/// git checkout, so a failure here is the sync failing or leaving no checkout, and never a setup line.
 ///
 /// # Errors
 /// The reason, worded for the user, when the sync did not finish.
 pub(crate) fn sync_checkout(
-    cx: &Cx,
+    driver: &dyn Driver,
     handle: &BoxHandle,
     workdir: &BoxPath,
     worktree: &Path,
     cfg: &BoxSettings,
+    prelude: Option<&Prelude<'_>>,
 ) -> Result<(), String> {
+    let check = ["git", "rev-parse", "--git-dir"]
+        .map(str::to_owned)
+        .to_vec();
+    let argv = prelude.map_or(check, |p| {
+        let script = format!("{}exec git rev-parse --git-dir", p.script);
+        vec!["sh".to_owned(), "-c".to_owned(), script]
+    });
     let spec = ExecSpec {
-        argv: ["git", "rev-parse", "--git-dir"]
-            .map(str::to_owned)
-            .to_vec(),
+        argv,
         env: Vec::new(),
         cwd: Some(workdir.clone()),
         sync: SyncMode::Full,
-        output: None,
+        output: prelude.map(|p| Output::Log(p.log.to_path_buf())),
         host_cwd: Some(worktree.to_path_buf()),
         class: Some(cfg.size.value.as_str().to_owned()),
     };
-    let reason = match cx
-        .driver()
-        .exec(handle, &spec, Deadline(SETUP_LINE_DEADLINE))
-    {
+    let reason = match driver.exec(handle, &spec, Deadline(SETUP_LINE_DEADLINE)) {
         Ok(ExecOutcome::Exited { code: 0 }) => return Ok(()),
         Ok(ExecOutcome::Exited { code }) => format!(
             "exit {code}; the sync failed or left no git checkout (with submodules, \

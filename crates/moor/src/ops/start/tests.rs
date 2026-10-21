@@ -48,7 +48,9 @@ mod settle_busy;
 mod setup;
 mod setup_rerun;
 mod state;
+mod sync_proxy;
 mod sync_retry;
+mod sync_timing;
 mod transcript;
 mod workdir;
 

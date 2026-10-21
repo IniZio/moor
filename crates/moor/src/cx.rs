@@ -245,6 +245,13 @@ impl Cx {
         self.clock.as_ref()
     }
 
+    /// This context with `clock` in place of the current one.
+    #[cfg(test)]
+    pub(crate) fn with_clock(mut self, clock: Arc<dyn Clock>) -> Self {
+        self.clock = clock;
+        self
+    }
+
     /// Randomness source for this run.
     pub(crate) fn rng(&self) -> &dyn Rng {
         self.rng.as_ref()
