@@ -50,7 +50,7 @@ fn with_args() -> Vec<Request> {
             timeout_secs: Some(3),
         }),
         Request::Steer(SteerReq {
-            box_name: n("a"),
+            target: n("a").into(),
             text: Some("x".into()),
             menu: None,
         }),
@@ -61,7 +61,7 @@ fn with_args() -> Vec<Request> {
             file: None,
         }),
         Request::Show(ShowReq {
-            box_name: None,
+            target: None,
             events: Some(2),
             agent: false,
             reports: true,
@@ -69,7 +69,7 @@ fn with_args() -> Vec<Request> {
             pane: false,
         }),
         Request::Close(CloseReq {
-            box_name: n("a"),
+            target: n("a").into(),
             force: true,
             trust_moor_yaml: true,
         }),
@@ -132,7 +132,7 @@ fn close_roundtrips_from_json() {
     assert_eq!(
         r,
         Request::Close(CloseReq {
-            box_name: n("a"),
+            target: n("a").into(),
             force: true,
             trust_moor_yaml: false
         })

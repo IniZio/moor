@@ -291,7 +291,7 @@ fn start_request(row: &SlackBox) -> Request {
 /// The `show` request for `row`'s Box.
 fn show_request(row: &SlackBox) -> Request {
     Request::Show(ShowReq {
-        box_name: Some(row.box_name.clone()),
+        target: Some(row.box_name.clone().into()),
         events: None,
         agent: false,
         reports: false,

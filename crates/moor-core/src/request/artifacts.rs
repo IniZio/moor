@@ -2,15 +2,15 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::name::BoxName;
+use super::BoxTarget;
 
 /// Arguments of `artifacts`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ArtifactsReq {
-    /// Box name.
+    /// The Box, in any state: by name, the newest Box of that name.
     #[serde(rename = "box")]
-    pub box_name: BoxName,
+    pub target: BoxTarget,
     /// List every version; only the latest of each artifact when false.
     #[serde(default)]
     pub all: bool,
@@ -20,9 +20,9 @@ pub struct ArtifactsReq {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ArtifactReadReq {
-    /// Box name.
+    /// The Box, in any state: by name, the newest Box of that name.
     #[serde(rename = "box")]
-    pub box_name: BoxName,
+    pub target: BoxTarget,
     /// Artifact name.
     pub name: String,
     /// Version to read; the latest when absent.
@@ -39,6 +39,7 @@ pub struct ArtifactReadReq {
 mod tests {
     use super::super::Request;
     use super::*;
+    use crate::name::BoxName;
     use serde_json::json;
 
     fn box_name() -> BoxName {
@@ -52,7 +53,7 @@ mod tests {
         assert_eq!(
             req,
             Request::Artifacts(ArtifactsReq {
-                box_name: box_name(),
+                target: box_name().into(),
                 all: true
             })
         );
@@ -67,7 +68,7 @@ mod tests {
         assert_eq!(
             req,
             Request::Artifacts(ArtifactsReq {
-                box_name: box_name(),
+                target: box_name().into(),
                 all: false
             })
         );
@@ -81,7 +82,7 @@ mod tests {
         });
         let req: Request = serde_json::from_value(wire.clone()).expect("parse");
         let want = ArtifactReadReq {
-            box_name: box_name(),
+            target: box_name().into(),
             name: "a.txt".into(),
             version: Some(2),
             offset: 10,
@@ -97,7 +98,7 @@ mod tests {
         let wire = json!({"cmd": "artifact-read", "box": "repo/alpha", "name": "a", "len": 5});
         let req: Request = serde_json::from_value(wire).expect("parse");
         let want = ArtifactReadReq {
-            box_name: box_name(),
+            target: box_name().into(),
             name: "a".into(),
             version: None,
             offset: 0,

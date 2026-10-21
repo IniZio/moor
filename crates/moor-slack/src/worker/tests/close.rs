@@ -162,7 +162,10 @@ fn a_close_is_sent_without_force_and_the_box_is_gone() {
     let Some(Request::Close(req)) = seen.calls.first() else {
         panic!("no close: {:?}", seen.calls);
     };
-    assert_eq!((req.box_name.as_str(), req.force), ("slack-10-5", false));
+    assert_eq!(
+        (req.target.to_string(), req.force),
+        ("slack-10-5".to_owned(), false)
+    );
     assert_eq!(texts(&seen), ["Closed Box `slack-10-5`."]);
     let gone = BoxState::Gone {
         box_id: BoxId::new(7),

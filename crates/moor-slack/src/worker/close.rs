@@ -61,7 +61,7 @@ fn look(fx: &mut Fx<'_>, row: &SlackBox) -> Option<Closed> {
 /// Sends one `close` for `row`.
 fn send(fx: &mut Fx<'_>, row: &SlackBox, attempt: Attempt) -> Closed {
     let request = Request::Close(CloseReq {
-        box_name: row.box_name.clone(),
+        target: row.box_name.clone().into(),
         force: false,
         trust_moor_yaml: false,
     });

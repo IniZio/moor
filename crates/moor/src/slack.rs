@@ -267,12 +267,12 @@ fn handle_reply(mention: &Mention, store: &Store, allow: &Allow<'_>, fx: &mut Fx
         ReplyAction::Ignore => return,
         ReplyAction::Refuse(text) => return (fx.reply)(channel, thread, &text),
         ReplyAction::Steer(text) => (fx.call)(Request::Steer(SteerReq {
-            box_name: bx,
+            target: bx.into(),
             text: Some(text),
             menu: None,
         })),
         ReplyAction::Close => (fx.call)(Request::Close(CloseReq {
-            box_name: bx,
+            target: bx.into(),
             force: false,
             trust_moor_yaml: false,
         })),

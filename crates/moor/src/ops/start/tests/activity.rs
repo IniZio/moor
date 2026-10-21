@@ -174,7 +174,7 @@ fn start_does_not_revive_a_box_whose_session_ended() {
     assert_eq!(newest_session(&w, id), ended);
 
     let list = ShowReq {
-        box_name: None,
+        target: None,
         events: None,
         agent: false,
         reports: false,
@@ -302,7 +302,7 @@ fn registrations(w: &World) -> Vec<String> {
 
 fn show_box() -> ShowReq {
     ShowReq {
-        box_name: Some(BoxName::parse_allow_bare("demo").unwrap()),
+        target: Some(BoxName::parse_allow_bare("demo").unwrap().into()),
         events: None,
         agent: false,
         reports: false,

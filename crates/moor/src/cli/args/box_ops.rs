@@ -22,7 +22,7 @@ pub(super) struct CloseArgs {
 impl From<CloseArgs> for CloseReq {
     fn from(a: CloseArgs) -> Self {
         Self {
-            box_name: a.name,
+            target: a.name.into(),
             force: a.force,
             trust_moor_yaml: a.trust_moor_yaml,
         }

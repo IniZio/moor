@@ -8,12 +8,13 @@ use moor_core::artifact::valid_name;
 use moor_core::controller::BYTES_MAX;
 use moor_core::request::{ArtifactReadReq, ArtifactsReq};
 use moor_core::view::{ArtifactReadView, ArtifactView};
-use moor_core::{BoxName, ErrorKind};
+use moor_core::{BoxTarget, ErrorKind};
 
 use crate::cx::Cx;
 use crate::error::CommandError;
+use crate::ops::common::target::{self, Rule};
 use crate::ops::common::view::rfc3339;
-use crate::store::{artifacts::ArtifactRow, Store};
+use crate::store::{artifacts::ArtifactRow, BoxRow, Store};
 
 /// List a Box's Artifacts: the newest version of each name, or every version with `all`.
 /// Read-only: no reconcile and no Box lock.
@@ -22,7 +23,7 @@ use crate::store::{artifacts::ArtifactRow, Store};
 /// [`CommandError`] when the Box is unknown or a store read fails.
 pub(crate) fn list(cx: &Cx, req: &ArtifactsReq) -> Result<Vec<ArtifactView>, CommandError> {
     let store = cx.store()?;
-    let box_id = named_box(store, &req.box_name)?;
+    let box_id = target_box(store, &req.target)?.id;
     let rows = if req.all {
         store.artifacts(box_id)?
     } else {
@@ -62,8 +63,8 @@ pub(crate) fn read(
         ));
     }
     let store = cx.store()?;
-    let name = req.box_name.as_str();
-    let box_id = named_box(store, &req.box_name)?;
+    let found = target_box(store, &req.target)?;
+    let (box_id, name) = (found.id, found.name.as_str());
     let rows = store.artifacts(box_id)?;
     let row = rows
         .iter()
@@ -180,12 +181,10 @@ fn io_error(row: &ArtifactRow, e: &io::Error) -> CommandError {
     )
 }
 
-/// Resolve the newest Box with this name.
-fn named_box(store: &Store, name: &BoxName) -> Result<moor_core::BoxId, CommandError> {
-    store
-        .latest_box_by_name(name)?
-        .map(|t| t.id)
-        .ok_or_else(|| CommandError::new(ErrorKind::NotFound, format!("no Box {}", name.as_str())))
+/// The Box `target` means, in any state.
+fn target_box(store: &Store, target: &BoxTarget) -> Result<BoxRow, CommandError> {
+    target::resolve(store, target, Rule::Latest)?
+        .ok_or_else(|| CommandError::new(ErrorKind::NotFound, format!("no Box {target}")))
 }
 
 #[cfg(test)]

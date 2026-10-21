@@ -56,14 +56,14 @@ fn publish(cx: &Cx, t: BoxId, file: &str, bytes: &[u8]) {
 
 fn list_req(n: &str, all: bool) -> ArtifactsReq {
     ArtifactsReq {
-        box_name: name(n),
+        target: name(n).into(),
         all,
     }
 }
 
 fn read_req(n: &str, file: &str, version: Option<u32>, offset: u64, len: u64) -> ArtifactReadReq {
     ArtifactReadReq {
-        box_name: name(n),
+        target: name(n).into(),
         name: file.into(),
         version,
         offset,
@@ -312,3 +312,5 @@ fn a_symlinked_version_dir_is_refused() {
     let e = pieces(&cx, &read_req("a", "log.txt", None, 0, 99)).unwrap_err();
     assert_eq!(e.kind, ErrorKind::Refused);
 }
+
+mod target;

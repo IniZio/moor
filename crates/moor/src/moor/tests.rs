@@ -25,7 +25,9 @@ fn version_is_ok_with_expected_keys() {
 #[test]
 fn unimplemented_command_fails_with_its_cmd() {
     let req = Request::Close(CloseReq {
-        box_name: moor_core::name::BoxName::parse_allow_bare("t").unwrap(),
+        target: moor_core::name::BoxName::parse_allow_bare("t")
+            .unwrap()
+            .into(),
         force: false,
         trust_moor_yaml: false,
     });

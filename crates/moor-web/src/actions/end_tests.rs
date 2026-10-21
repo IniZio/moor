@@ -122,7 +122,7 @@ fn answer(script: &Script, request: &Request) -> Response {
                 .collect();
             Response::ok("show", Some(json!({"boxes": box_views})))
         }
-        Request::Close(c) if Some(c.box_name.as_str()) == script.refuse_close => {
+        Request::Close(c) if Some(c.target.to_string()).as_deref() == script.refuse_close => {
             refused("close", "has unmerged work")
         }
         Request::EndHostSession(e) if Some(e.session.get()) == script.refuse_end => {
@@ -239,7 +239,7 @@ fn end_request(f: &Front) -> Value {
 
 fn close(box_name: &str) -> Request {
     Request::Close(CloseReq {
-        box_name: BoxName::parse_allow_bare(box_name).unwrap(),
+        target: BoxName::parse_allow_bare(box_name).unwrap().into(),
         force: false,
         trust_moor_yaml: false,
     })

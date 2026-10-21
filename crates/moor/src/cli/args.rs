@@ -303,7 +303,7 @@ struct SteerArgs {
 impl From<SteerArgs> for SteerReq {
     fn from(a: SteerArgs) -> Self {
         Self {
-            box_name: a.name,
+            target: a.name.into(),
             text: a.text,
             menu: a.menu,
         }
@@ -368,7 +368,7 @@ struct ShowArgs {
 impl From<ShowArgs> for ShowReq {
     fn from(a: ShowArgs) -> Self {
         Self {
-            box_name: a.name,
+            target: a.name.map(Into::into),
             events: a.events,
             agent: a.agent,
             reports: a.reports,

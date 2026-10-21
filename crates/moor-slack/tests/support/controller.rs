@@ -243,15 +243,15 @@ fn answer(line: &str, inner: &mut Inner) -> Next {
 /// The Box table's answer to a `start` or `show`; `None` for any other request.
 fn from_table(request: &Request, boxes: &mut Vec<String>) -> Option<Response> {
     let (cmd, name) = match request {
-        Request::Start(start) => ("start", start.name.as_str()),
-        Request::Show(show) => ("show", show.box_name.as_ref()?.as_str()),
+        Request::Start(start) => ("start", start.name.as_str().to_owned()),
+        Request::Show(show) => ("show", show.target.as_ref()?.to_string()),
         _ => return None,
     };
-    let found = boxes.iter().position(|b| b == name);
+    let found = boxes.iter().position(|b| *b == name);
     let index = match (cmd, found) {
         (_, Some(index)) => index,
         ("start", None) => {
-            boxes.push(name.to_owned());
+            boxes.push(name.clone());
             boxes.len() - 1
         }
         _ => return Some(failed(cmd, &format!("no Box {name}"))),

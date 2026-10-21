@@ -127,7 +127,7 @@ fn start() -> Request {
 
 fn show() -> Request {
     Request::Show(ShowReq {
-        box_name: Some(BoxName::parse_allow_bare("demo").expect("name")),
+        target: Some(BoxName::parse_allow_bare("demo").expect("name").into()),
         events: Some(100),
         agent: true,
         reports: true,
@@ -138,7 +138,7 @@ fn show() -> Request {
 
 fn steer() -> Request {
     Request::Steer(SteerReq {
-        box_name: BoxName::parse_allow_bare("demo").expect("name"),
+        target: BoxName::parse_allow_bare("demo").expect("name").into(),
         text: Some("continue".into()),
         menu: None,
     })

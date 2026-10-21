@@ -168,7 +168,7 @@ fn cmds(seen: &Seen) -> Vec<(&'static str, String)> {
         .iter()
         .map(|r| match r {
             Request::Start(s) => ("start", s.name.as_str().to_owned()),
-            Request::Show(s) => ("show", s.box_name.as_ref().unwrap().as_str().to_owned()),
+            Request::Show(s) => ("show", s.target.as_ref().unwrap().to_string()),
             _ => ("other", String::new()),
         })
         .collect()
@@ -472,7 +472,7 @@ fn a_lost_start_is_asked_about_on_a_timer_and_holds_up_no_other_thread() {
                 hung_up()
             }
             Request::Start(s) => named("start", s.name.as_str()),
-            Request::Show(s) => named("show", s.box_name.as_ref().unwrap().as_str()),
+            Request::Show(s) => named("show", &s.target.as_ref().unwrap().to_string()),
             _ => refused("other", "unexpected"),
         },
         |fx| serve(&jobs, &db, Vec::new(), fx),

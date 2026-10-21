@@ -126,7 +126,7 @@ fn failed_bind_leaves_the_row_starting_and_the_next_retry_binds_it() {
     let (db, seen, at_failure) =
         serve_with_failing_write(dir.path(), "BEFORE UPDATE", &mut |req| match req {
             Request::Start(s) => named("start", s.name.as_str()),
-            Request::Show(s) => named("show", s.box_name.as_ref().unwrap().as_str()),
+            Request::Show(s) => named("show", &s.target.as_ref().unwrap().to_string()),
             _ => refused("other", "unexpected"),
         });
     assert_eq!(at_failure, Some(BoxState::Starting));

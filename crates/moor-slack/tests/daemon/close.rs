@@ -29,8 +29,8 @@ fn after_start(controller: &FakeController) -> Vec<(&'static str, String, bool)>
         seen.requests
             .iter()
             .filter_map(|r| match r {
-                Request::Close(c) => Some(("close", c.box_name.as_str().to_owned(), c.force)),
-                Request::Show(s) => Some(("show", s.box_name.as_ref()?.as_str().to_owned(), false)),
+                Request::Close(c) => Some(("close", c.target.to_string(), c.force)),
+                Request::Show(s) => Some(("show", s.target.as_ref()?.to_string(), false)),
                 _ => None,
             })
             .collect()
