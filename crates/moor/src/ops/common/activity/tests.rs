@@ -18,7 +18,7 @@ use moor_core::seam::engine::EngineError;
 use moor_core::seam::surface::PaneRef;
 use moor_core::{BoxHandle, BoxId, BoxName, ProviderId};
 
-use super::{read, settle, PaneLiveness, Reading};
+use super::{read, settle, PaneLiveness, Reading, PROBE_DEADLINE};
 use crate::cx::Cx;
 use crate::store::{BoxRow, NewRun};
 use crate::testing::driver::FakeDriver;
@@ -28,6 +28,27 @@ use crate::testing::surface::FakeSurface;
 
 const NOW: Ts = Ts::from_millis(10_000);
 const SESSION: &str = "sess-1";
+
+impl Reading {
+    /// A reading of the given parts.
+    pub(crate) const fn new(
+        activity: Option<moor_core::activity::Activity>,
+        pane: PaneLiveness,
+        may_quiet: bool,
+        run_in_flight: bool,
+    ) -> Self {
+        Self {
+            activity,
+            pane,
+            may_quiet,
+            run_in_flight,
+            session: None,
+            launch_failure: None,
+            agent_session: None,
+            pane_text: None,
+        }
+    }
+}
 
 fn cx(dir: &Path, engine: &Arc<FakeEngine>) -> (Cx, Arc<ScriptedProc>) {
     let proc = Arc::new(ScriptedProc::new());
@@ -132,7 +153,7 @@ fn state(r: &Reading) -> (AgentState, Source) {
 }
 
 fn run_once(cx: &Cx, id: BoxId) -> Reading {
-    read(cx, cx.store().unwrap(), &row(cx, id), NOW).unwrap()
+    read(cx, cx.store().unwrap(), &row(cx, id), NOW, PROBE_DEADLINE).unwrap()
 }
 
 #[test]
@@ -462,7 +483,14 @@ fn settle_leaves_a_working_box_when_only_the_pane_reports_idle() {
         let id = working_box(&cx, true);
         let grace = i64::try_from(STARTUP_GRACE.as_millis()).unwrap();
         let later = Ts::from_millis(NOW.as_millis() + 2 * grace);
-        let r = read(&cx, cx.store().unwrap(), &row(&cx, id), later).unwrap();
+        let r = read(
+            &cx,
+            cx.store().unwrap(),
+            &row(&cx, id),
+            later,
+            PROBE_DEADLINE,
+        )
+        .unwrap();
         assert_eq!(state(&r), (want, Source::Herdr), "{status:?}");
         assert!(!r.may_quiet, "{status:?}");
         settle(&cx, cx.store().unwrap(), &row(&cx, id), &r).unwrap();

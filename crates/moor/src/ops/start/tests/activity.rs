@@ -13,7 +13,7 @@ use moor_core::{BoxId, BoxName, ShowReq};
 use super::state::WORKING;
 use super::state::{idle, working};
 use super::{req, world, World};
-use crate::ops::common::activity::{read, settle};
+use crate::ops::common::activity::{read, settle, PROBE_DEADLINE};
 use crate::ops::show;
 use crate::ops::start::run;
 use crate::store::BoxRow;
@@ -119,7 +119,14 @@ fn aged_pane_only(pane: PaneStatus) -> (World, BoxId) {
 fn start_on_pane_only(pane: PaneStatus) -> AgentState {
     let (w, id) = aged_pane_only(pane);
     let store = w.cx.store().unwrap();
-    let reading = read(&w.cx, store, &row(&w, id), w.cx.clock().now()).unwrap();
+    let reading = read(
+        &w.cx,
+        store,
+        &row(&w, id),
+        w.cx.clock().now(),
+        PROBE_DEADLINE,
+    )
+    .unwrap();
     let activity = reading.activity.expect("a live session has a reading");
     assert!(matches!(activity.source, Source::Herdr | Source::Pane));
     assert!(!reading.may_quiet);
@@ -388,7 +395,7 @@ fn an_exited_pane_with_a_stored_id_registers_nothing() {
     store.apply(Decision::new(id).set(set)).unwrap();
     w.surface.have_pane("p-9");
     let r = row(&w, id);
-    let reading = read(&w.cx, store, &r, w.cx.clock().now()).unwrap();
+    let reading = read(&w.cx, store, &r, w.cx.clock().now(), PROBE_DEADLINE).unwrap();
     assert_eq!(reading.pane.as_str(), "exited");
     settle(&w.cx, store, &r, &reading).unwrap();
     assert!(registrations(&w).is_empty());

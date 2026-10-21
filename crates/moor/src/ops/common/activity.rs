@@ -25,12 +25,12 @@ use crate::ops::common::resume;
 use crate::ops::common::transcript;
 use crate::store::{BoxRow, Store, StoreError};
 
-/// Allowance for the pane observation in one probe.
+/// Allowance for the hook file read and for the pane observation in one probe.
 ///
 /// The multiplexer can take up to twice its deadline, so the pane read takes up to ten
-/// seconds. The hook file read first looks up the Box (5 s) and then reads the file (5 s),
-/// each with 2.5 s of grace to stop the child, so one probe takes up to about 25 seconds.
-const PROBE_DEADLINE: Duration = Duration::from_secs(5);
+/// seconds. The hook file read first looks up the Box (5 s) and then reads the file within
+/// the allowance, each with 2.5 s of grace to stop the child, so one probe takes up to about 25 seconds.
+pub(crate) const PROBE_DEADLINE: Deadline = Deadline(Duration::from_secs(5));
 
 /// Whether the agent's pane is still there.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -81,26 +81,6 @@ impl Reading {
         self.run_in_flight || self.activity.as_ref().is_some_and(|a| a.state.busy())
     }
 
-    /// A reading of the given parts, for tests.
-    #[cfg(test)]
-    pub(crate) const fn new(
-        activity: Option<Activity>,
-        pane: PaneLiveness,
-        may_quiet: bool,
-        run_in_flight: bool,
-    ) -> Self {
-        Self {
-            activity,
-            pane,
-            may_quiet,
-            run_in_flight,
-            session: None,
-            launch_failure: None,
-            agent_session: None,
-            pane_text: None,
-        }
-    }
-
     /// No agent to read; a run in flight still keeps the Box busy.
     const fn none(run_in_flight: bool) -> Self {
         Self {
@@ -135,11 +115,18 @@ impl Reading {
 /// This is the only caller of `Engine::probe`. A Box with no live session, or whose machine has
 /// no handle or workdir to reach, has no agent and is not probed; a run in flight still makes it busy. A fresh hook report is
 /// cached; a dropped read leaves the cache as it was. A run in flight forces `Working` whatever
-/// the probe says; the reading keeps the probe's source, as no source names a run.
+/// the probe says; the reading keeps the probe's source, as no source names a run. `deadline`
+/// bounds each of the probe's reads; [`PROBE_DEADLINE`] unless the caller has less time.
 ///
 /// # Errors
 /// A store failure other than an undecodable cache row.
-pub(crate) fn read(cx: &Cx, store: &Store, row: &BoxRow, now: Ts) -> Result<Reading, CommandError> {
+pub(crate) fn read(
+    cx: &Cx,
+    store: &Store,
+    row: &BoxRow,
+    now: Ts,
+    deadline: Deadline,
+) -> Result<Reading, CommandError> {
     let in_flight = store
         .in_flight_run(row.id, &|pid| cx.proc().alive(pid))?
         .is_some();
@@ -164,16 +151,13 @@ pub(crate) fn read(cx: &Cx, store: &Store, row: &BoxRow, now: Ts) -> Result<Read
         }
         Err(e) => return Err(e.into()),
     };
-    let probes = cx
-        .engine()
-        .probe(&sref, Deadline(PROBE_DEADLINE))
-        .unwrap_or_else(|e| {
-            warn(cx, format!("could not probe the agent: {e}"));
-            Probes {
-                hook: HookRead::TimedOut,
-                pane: PaneRead::TimedOut,
-            }
-        });
+    let probes = cx.engine().probe(&sref, deadline).unwrap_or_else(|e| {
+        warn(cx, format!("could not probe the agent: {e}"));
+        Probes {
+            hook: HookRead::TimedOut,
+            pane: PaneRead::TimedOut,
+        }
+    });
     let mut agent_session = row.agent_session_id.clone();
     if let HookRead::Fresh(rec) = &probes.hook {
         store.put_hook(row.id, rec)?;

@@ -152,6 +152,15 @@ fn reads_the_hook_file_once_under_the_workdir_with_the_worktree_as_host_cwd() {
 }
 
 #[test]
+fn the_hook_file_read_is_bounded_by_the_probe_deadline() {
+    let d = live_driver(FakeDriver::new().peek_text("box-1", &hook_path(), "busy"));
+    let s = surface_with(Ok(obs()));
+    let short = Deadline(Duration::from_millis(700));
+    agent(&d, &s).probe(&session(Some("p-1")), short).unwrap();
+    assert_eq!(d.batch_deadlines(), [short]);
+}
+
+#[test]
 fn observes_the_pane_once() {
     let d = live_driver(FakeDriver::new());
     let s = surface_with(Ok(obs()));

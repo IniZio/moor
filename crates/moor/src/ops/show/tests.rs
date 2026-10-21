@@ -447,7 +447,7 @@ fn pane_only_reading(status: PaneStatus) -> (Reading, Parts) {
     let store = cx.store().unwrap();
     let row = store.box_row(id).unwrap().unwrap();
     let now = cx.clock().now();
-    let reading = activity::read(&cx, store, &row, now).unwrap();
+    let reading = activity::read(&cx, store, &row, now, activity::PROBE_DEADLINE).unwrap();
     (reading, parts(&row))
 }
 

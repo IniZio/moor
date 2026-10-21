@@ -3,7 +3,7 @@
 use moor_core::activity::{HookRead, PaneRead, Probes};
 use moor_core::name::BoxPath;
 use moor_core::seam::agent_profile::AgentProfile;
-use moor_core::seam::driver::{Driver, DriverError};
+use moor_core::seam::driver::{BoxStep, Driver, DriverError, StepDone};
 use moor_core::seam::engine::{EngineError, SessionRef};
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::{Surface, SurfaceError};
@@ -11,7 +11,8 @@ use moor_core::seam::surface::{Surface, SurfaceError};
 /// Where the agent's hook reports land, relative to the Box workdir.
 pub(super) const HOOK_FILE: &str = ".moor/agent-state.json";
 
-/// Reads the hook file once, then the pane once; the raw reads are returned undecided.
+/// Reads the hook file once, then the pane once, each within `deadline`; the raw reads are
+/// returned undecided.
 pub(super) fn probe(
     driver: &dyn Driver,
     surface: &dyn Surface,
@@ -19,7 +20,7 @@ pub(super) fn probe(
     s: &SessionRef,
     deadline: Deadline,
 ) -> Result<Probes, EngineError> {
-    let hook = read_hook(driver, profile, s)?;
+    let hook = read_hook(driver, profile, s, deadline)?;
     let pane = read_pane(surface, profile, s, deadline);
     Ok(Probes { hook, pane })
 }
@@ -29,18 +30,23 @@ fn read_hook(
     driver: &dyn Driver,
     profile: &dyn AgentProfile,
     s: &SessionRef,
+    deadline: Deadline,
 ) -> Result<HookRead, EngineError> {
     let path = BoxPath::under(s.workdir.as_str(), HOOK_FILE).map_err(|e| {
         EngineError::Box(DriverError::Failed {
             summary: e.to_string(),
         })
     })?;
-    match driver.peek_file(&s.handle, &path, &s.worktree) {
-        Ok(Some(text)) => Ok(profile
+    let read = [BoxStep::Peek(path)];
+    match driver
+        .batch(&s.handle, &[], &read, &s.worktree, deadline)
+        .pop()
+    {
+        Some(Ok(StepDone::Peeked(Some(text)))) => Ok(profile
             .parse_hook(text.as_bytes())
             .map_or(HookRead::Absent, HookRead::Fresh)),
-        Ok(None) => Ok(HookRead::Absent),
-        Err(_) => Ok(HookRead::TimedOut),
+        Some(Ok(StepDone::Peeked(None))) => Ok(HookRead::Absent),
+        _ => Ok(HookRead::TimedOut),
     }
 }
 

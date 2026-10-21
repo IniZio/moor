@@ -5,6 +5,7 @@
 use std::time::Duration;
 
 use moor_core::decide::wait::{wait_verdict, WaitFacts, WaitVerdict};
+use moor_core::seam::proc::Deadline;
 use moor_core::view::run::{WaitRunView, WaitValue};
 use moor_core::view::AttentionView;
 use moor_core::{ErrorKind, WaitFor, WaitReq};
@@ -20,6 +21,9 @@ const POLL: Duration = Duration::from_millis(250);
 
 /// How long `wait` polls when the request sets no timeout.
 const DEFAULT_TIMEOUT: Duration = Duration::from_mins(30);
+
+/// Shortest allowance one agent read gets, even at the timeout, so the last read can still answer.
+const MIN_READ: Duration = Duration::from_secs(1);
 
 /// Run `wait`.
 pub(crate) fn run(cx: &Cx, req: &WaitReq) -> Result<WaitValue, CommandError> {
@@ -37,11 +41,12 @@ pub(crate) fn run(cx: &Cx, req: &WaitReq) -> Result<WaitValue, CommandError> {
         .timeout_secs
         .map_or(DEFAULT_TIMEOUT, Duration::from_secs);
     loop {
-        let elapsed = clock.instant().saturating_duration_since(started);
+        let read_for = allowance(timeout, clock.instant().saturating_duration_since(started));
         let row = store
             .box_row(id)?
             .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no Box {name}")))?;
-        let reading = activity::read(cx, store, &row, clock.now())?;
+        let reading = activity::read(cx, store, &row, clock.now(), read_for)?;
+        let elapsed = clock.instant().saturating_duration_since(started);
         if let Some(failure) = reading
             .launch_failure
             .as_ref()
@@ -82,6 +87,12 @@ pub(crate) fn run(cx: &Cx, req: &WaitReq) -> Result<WaitValue, CommandError> {
             run: shown.as_ref().map(|r| run_view(r, live)),
         });
     }
+}
+
+/// How long one agent read may take once `elapsed` of `timeout` has passed.
+fn allowance(timeout: Duration, elapsed: Duration) -> Deadline {
+    let left = timeout.saturating_sub(elapsed);
+    Deadline(left.clamp(MIN_READ, activity::PROBE_DEADLINE.0))
 }
 
 /// A `Failed` error carrying the Box as it stands, with `attention` filled in.

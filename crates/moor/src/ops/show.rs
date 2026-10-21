@@ -61,7 +61,7 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
             if !cx.viewer().may_act_on(row.user) {
                 continue;
             }
-            let reading = activity::read(cx, store, &row, now)?;
+            let reading = activity::read(cx, store, &row, now, activity::PROBE_DEADLINE)?;
             activity::settle(cx, store, &row, &reading)?;
             autosleep::run(cx, store, row.id);
             row = store.box_row(row.id)?.unwrap_or(row);
@@ -84,7 +84,7 @@ pub(crate) fn run(cx: &Cx, req: &ShowReq) -> Result<ShowView, CommandError> {
     let row = target::resolve(store, target, Rule::Latest)?
         .ok_or_else(|| CommandError::new(ErrorKind::Failed, format!("no Box {target}")))?;
     let in_flight = store.in_flight_run(row.id, &|pid| cx.proc().alive(pid))?;
-    let reading = activity::read(cx, store, &row, now)?;
+    let reading = activity::read(cx, store, &row, now, activity::PROBE_DEADLINE)?;
     let (agent, pane) = (agent_view(&reading), pane_view(&reading));
     let mut detail = box_view_with_run(&row, in_flight.as_ref(), cx.config());
     detail.agent = agent;

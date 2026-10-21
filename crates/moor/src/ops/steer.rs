@@ -126,7 +126,7 @@ fn relaunch(name: &str) -> String {
 
 /// The agent's state now; none when the Box has no agent to read.
 fn state_of(cx: &Cx, store: &Store, row: &BoxRow) -> Result<Option<AgentState>, CommandError> {
-    let reading = activity::read(cx, store, row, cx.clock().now())?;
+    let reading = activity::read(cx, store, row, cx.clock().now(), activity::PROBE_DEADLINE)?;
     Ok(reading.activity.map(|a| a.state))
 }
 

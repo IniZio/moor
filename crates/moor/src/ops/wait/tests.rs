@@ -22,6 +22,7 @@ use super::run;
 use crate::cx::Cx;
 use crate::ops::common::boxlock::BoxLock;
 use crate::store::NewRun;
+use crate::testing::clock::FakeClock;
 use crate::testing::driver::FakeDriver;
 use crate::testing::engine::FakeEngine;
 use crate::testing::proc::ScriptedProc;
@@ -313,6 +314,27 @@ fn a_busy_agent_keeps_idle_waiting_until_timeout() {
         let slept = cx.clock().now().as_millis() - before.as_millis();
         assert!((1000..=3000).contains(&slept), "{name}: slept {slept} ms");
     }
+}
+
+#[test]
+fn a_hanging_agent_read_ends_the_wait_at_its_timeout() {
+    let dir = tempfile::tempdir().unwrap();
+    let clock = Arc::new(FakeClock::new(Ts::from_millis(1000)));
+    let (cx, _) = cx(dir.path());
+    let engine = Arc::new(FakeEngine::new().hangs_on(clock.clone()));
+    let cx = cx.with_clock(clock).with_engine(engine);
+    add_live(&cx);
+    let before = cx.clock().now();
+    let v = run(&cx, &req(None, Some(1))).unwrap();
+    let waited = cx.clock().now().as_millis() - before.as_millis();
+    assert!(v.timed_out);
+    assert!((1000..=2000).contains(&waited), "waited {waited} ms");
+    assert!(v.waited_ms >= 1000, "reported {} ms", v.waited_ms);
+    let agent = v.boxed.agent.expect("an agent view");
+    assert_eq!(
+        (agent.state.as_str(), agent.source.as_str()),
+        ("unknown", "timeout")
+    );
 }
 
 #[test]

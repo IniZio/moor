@@ -12,6 +12,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use moor_core::activity::{HookRead, PaneRead, Probes};
 use moor_core::name::BoxPath;
 use moor_core::seam::agent_profile::{FirstRunPrompt, PromptMatch};
+use moor_core::seam::clock::Clock;
 use moor_core::seam::engine::{Engine, EngineError, LaunchReq, SessionRef, Steer, SteerOutcome};
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::surface::PaneRef;
@@ -35,6 +36,7 @@ struct State {
     later_texts: VecDeque<String>,
     fail_transcript: Option<EngineError>,
     on_transcript: Option<Arc<dyn Fn() + Send + Sync>>,
+    hang: Option<Arc<dyn Clock>>,
 }
 
 /// Scripted Engine: probes are served per session id and counted.
@@ -51,6 +53,12 @@ impl FakeEngine {
 
     fn st(&self) -> MutexGuard<'_, State> {
         self.state.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// Every probe hangs until its deadline passes on `clock`, then reads nothing.
+    pub(crate) fn hangs_on(self, clock: Arc<dyn Clock>) -> Self {
+        self.st().hang = Some(clock);
+        self
     }
 
     /// Launches create their directories under `home`; unset, the launch creates none.
@@ -160,10 +168,18 @@ impl FakeEngine {
 }
 
 impl Engine for FakeEngine {
-    fn probe(&self, s: &SessionRef, _deadline: Deadline) -> Result<Probes, EngineError> {
+    fn probe(&self, s: &SessionRef, deadline: Deadline) -> Result<Probes, EngineError> {
         let mut st = self.st();
         *st.counts.entry(s.id.clone()).or_default() += 1;
         st.panes.insert(s.id.clone(), s.pane.clone());
+        if let Some(clock) = st.hang.clone() {
+            drop(st);
+            clock.sleep(deadline.0);
+            return Ok(Probes {
+                hook: HookRead::TimedOut,
+                pane: PaneRead::TimedOut,
+            });
+        }
         if let Some(e) = st.fail_probe.remove(&s.id) {
             return Err(e);
         }

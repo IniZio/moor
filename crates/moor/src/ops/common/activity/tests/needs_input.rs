@@ -12,7 +12,7 @@ use moor_core::BoxId;
 
 use super::{cx, rec, row, working_box, NOW, SESSION};
 use crate::cx::Cx;
-use crate::ops::common::activity::{read, settle, PaneLiveness, Reading};
+use crate::ops::common::activity::{read, settle, PaneLiveness, Reading, PROBE_DEADLINE};
 use crate::store::{NewRun, RunOutcome};
 use crate::testing::engine::FakeEngine;
 
@@ -113,7 +113,7 @@ fn hook_probe(record: HookRecord) -> Probes {
 
 fn tick(cx: &Cx, id: BoxId) {
     let store = cx.store().unwrap();
-    let r = read(cx, store, &row(cx, id), NOW).unwrap();
+    let r = read(cx, store, &row(cx, id), NOW, PROBE_DEADLINE).unwrap();
     settle(cx, store, &row(cx, id), &r).unwrap();
 }
 
