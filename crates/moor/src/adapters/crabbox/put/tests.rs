@@ -173,3 +173,45 @@ fn a_failure_that_is_not_a_lost_connection_is_not_retried() {
     assert!(matches!(err, DriverError::Failed { .. }), "{err:?}");
     assert_eq!(ssh_calls(&p), 1);
 }
+
+/// Runs a put on a driver whose clock the caller keeps, and returns the time it slept.
+fn slept_during_put(p: &Arc<ScriptedProc>) -> (Result<(), DriverError>, Duration) {
+    use crate::testing::{clock::FakeClock, rng::FakeRng};
+    use moor_core::seam::clock::{Clock as _, Ts};
+    let clock = Arc::new(FakeClock::new(Ts::from_millis(0)));
+    let driver = Crabbox::new(p.clone(), clock.clone(), Arc::new(FakeRng::default()));
+    driver.version_ok.set(()).unwrap();
+    let put = driver.put_file(
+        &BoxHandle::new("p/box"),
+        &BoxPath::restore("/h/f").unwrap(),
+        SECRET,
+        0o600,
+        Path::new("/host/cwd"),
+    );
+    let slept = Duration::from_millis(clock.now().as_millis().try_into().unwrap());
+    (put, slept)
+}
+
+#[test]
+fn each_retry_waits_one_second() {
+    let p = lost_then(vec![lost(), lost(), Reply::Ok(String::new())]);
+    let (put, slept) = slept_during_put(&p);
+    put.unwrap();
+    assert_eq!(slept, Duration::from_secs(2), "two retries, 1 s each");
+}
+
+#[test]
+fn a_put_that_needs_no_retry_does_not_wait() {
+    let p = lost_then(vec![Reply::Ok(String::new())]);
+    let (put, slept) = slept_during_put(&p);
+    put.unwrap();
+    assert_eq!(slept, Duration::ZERO);
+}
+
+#[test]
+fn a_put_that_gives_up_waits_only_between_tries() {
+    let p = lost_then(vec![lost(), lost(), lost()]);
+    let (put, slept) = slept_during_put(&p);
+    assert!(put.is_err());
+    assert_eq!(slept, Duration::from_secs(2), "no pause after the last try");
+}
