@@ -20,7 +20,24 @@ const FILE_CAP: u64 = 64 * 1024;
 const REPLY_CAP: u64 = 8 * 1024 * 1024;
 
 /// How long the whole request may take.
-const TIMEOUT: Duration = Duration::from_secs(30);
+pub(super) const TIMEOUT: Duration = Duration::from_secs(30);
+
+/// GraphQL error types an error may name; any other is `UNKNOWN`, so no server text gets through.
+const ERROR_TYPES: [&str; 7] = [
+    "NOT_FOUND",
+    "FORBIDDEN",
+    "RATE_LIMITED",
+    "INSUFFICIENT_SCOPES",
+    "SERVICE_UNAVAILABLE",
+    "INTERNAL",
+    "MAX_NODE_LIMIT_EXCEEDED",
+];
+
+/// Most distinct error types an error names.
+const ERROR_TYPES_SHOWN: usize = 3;
+
+/// Longest profile name used as the commit author name, in bytes.
+const NAME_CAP: usize = 255;
 
 /// Asks for the viewer, the repo's permission, the Box branch tip and the files at one commit.
 const QUERY: &str = r#"query($owner: String!, $name: String!, $branch: String!, $base: String!, $hasBase: Boolean!) {
@@ -47,6 +64,7 @@ fragment entry on TreeEntry { object { __typename ... on Blob { byteSize isBinar
 /// Reads `repo` from the GraphQL endpoint `api` as the account of `token`.
 pub(super) fn read(
     api: &str,
+    timeout: Duration,
     repo: &ForgeRepo,
     base: Option<&str>,
     branch: &str,
@@ -63,12 +81,10 @@ pub(super) fn read(
             "hasBase": base.is_some(),
         },
     });
-    let (status, reply) = post(api, &auth, &body.to_string())?;
+    let (status, reply) = post(api, timeout, &auth, &body.to_string())?;
     match status {
         200 => {
-            let reply = serde_json::from_slice(&reply).map_err(|_| {
-                ForgeError::Unavailable("GitHub sent a reply of an unexpected shape".to_owned())
-            })?;
+            let reply = serde_json::from_slice(&reply).map_err(|_| unexpected_shape())?;
             parse(reply, base)
         }
         401 => Err(ForgeError::Rejected),
@@ -90,7 +106,12 @@ fn bearer(token: &Secret) -> Result<Zeroizing<String>, ForgeError> {
 
 /// Posts `body` to `api` directly, without redirects or an env proxy, and returns the status and
 /// body.
-fn post(api: &str, auth: &str, body: &str) -> Result<(u16, Vec<u8>), ForgeError> {
+fn post(
+    api: &str,
+    timeout: Duration,
+    auth: &str,
+    body: &str,
+) -> Result<(u16, Vec<u8>), ForgeError> {
     let tls = TlsConfig::builder()
         .provider(TlsProvider::Rustls)
         .root_certs(RootCerts::PlatformVerifier)
@@ -98,7 +119,7 @@ fn post(api: &str, auth: &str, body: &str) -> Result<(u16, Vec<u8>), ForgeError>
         .build();
     let config = Agent::config_builder()
         .tls_config(tls)
-        .timeout_global(Some(TIMEOUT))
+        .timeout_global(Some(timeout))
         .http_status_as_error(false)
         .max_redirects(0)
         .proxy(None)
@@ -116,7 +137,8 @@ fn post(api: &str, auth: &str, body: &str) -> Result<(u16, Vec<u8>), ForgeError>
     let bytes = response
         .body_mut()
         .with_config()
-        .limit(REPLY_CAP)
+        // ureq refuses a body that reaches its limit, not only one that passes it.
+        .limit(REPLY_CAP + 1)
         .read_to_vec()
         .map_err(unavailable)?;
     Ok((status, bytes))
@@ -258,7 +280,7 @@ fn parse(reply: Reply, base: Option<&str>) -> Result<RepoAt, ForgeError> {
             mcp_json: text(commit.mcp_json, ".mcp.json")?,
             claude_settings: text(commit.claude_settings, ".claude/settings.json")?,
         },
-        author: author(viewer),
+        author: author(viewer)?,
         can_push: matches!(
             repo.viewer_permission.as_deref(),
             Some("ADMIN" | "MAINTAIN" | "WRITE")
@@ -266,22 +288,27 @@ fn parse(reply: Reply, base: Option<&str>) -> Result<RepoAt, ForgeError> {
     })
 }
 
-/// Names the GraphQL error types, keeping only `A-Z` and `_` from each.
+/// Names the first few distinct GraphQL error types, each from [`ERROR_TYPES`] or `UNKNOWN`.
 fn unavailable_errors(errors: &[GqlError]) -> ForgeError {
-    let kinds: Vec<String> = errors
-        .iter()
-        .map(|e| {
-            e.kind.as_deref().map_or_else(
-                || "UNKNOWN".to_owned(),
-                |k| {
-                    k.chars()
-                        .filter(|c| c.is_ascii_uppercase() || *c == '_')
-                        .collect()
-                },
-            )
-        })
-        .collect();
+    let mut kinds: Vec<&str> = Vec::new();
+    for e in errors {
+        let kind = ERROR_TYPES
+            .into_iter()
+            .find(|t| e.kind.as_deref() == Some(*t))
+            .unwrap_or("UNKNOWN");
+        if !kinds.contains(&kind) {
+            kinds.push(kind);
+        }
+        if kinds.len() == ERROR_TYPES_SHOWN {
+            break;
+        }
+    }
     ForgeError::Unavailable(format!("GitHub GraphQL errors: {}", kinds.join(", ")))
+}
+
+/// The error for a reply that does not fit the query's shape.
+fn unexpected_shape() -> ForgeError {
+    ForgeError::Unavailable("GitHub sent a reply of an unexpected shape".to_owned())
 }
 
 /// The commit itself, or the commit an annotated tag points at.
@@ -315,17 +342,23 @@ fn text(entry: Option<Entry>, path: &'static str) -> Result<Option<String>, Forg
     }
 }
 
-/// The account's profile name, else its login, with its GitHub noreply address.
-fn author(viewer: Viewer) -> GitAuthor {
-    let email = format!(
-        "{}+{}@users.noreply.github.com",
-        viewer.database_id, viewer.login
-    );
+/// The account's profile name, else its login, with its GitHub noreply address; a login not
+/// shaped like GitHub's is refused.
+fn author(viewer: Viewer) -> Result<GitAuthor, ForgeError> {
+    let login = &viewer.login;
+    if !(1..=39).contains(&login.len())
+        || !login
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-')
+    {
+        return Err(unexpected_shape());
+    }
+    let email = format!("{}+{login}@users.noreply.github.com", viewer.database_id);
     let name = viewer
         .name
-        .filter(|n| !n.trim().is_empty())
+        .filter(|n| !n.trim().is_empty() && n.len() <= NAME_CAP && !n.chars().any(char::is_control))
         .unwrap_or(viewer.login);
-    GitAuthor { name, email }
+    Ok(GitAuthor { name, email })
 }
 
 #[cfg(test)]
