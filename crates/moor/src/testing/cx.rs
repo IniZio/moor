@@ -134,7 +134,7 @@ pub(crate) fn requester() -> Identity {
     Identity::local(1000)
 }
 
-/// `cx` acting as [`requester`], enrolled in its store, with a vault key path beside the state
+/// `cx` acting as [`requester`], enrolled in its store, with a vault key path in the state
 /// dir. Nothing reads the key, since the test Proxy host is a fake.
 fn with_requester(cx: Cx, state_dir: &Path) -> Cx {
     if let Ok(store) = cx.store() {
@@ -143,5 +143,5 @@ fn with_requester(cx: Cx, state_dir: &Path) -> Cx {
             .expect("enroll the test requester");
     }
     cx.with_requester(requester())
-        .with_vault_key(state_dir.with_extension("vault.key"))
+        .with_vault_key(state_dir.join("vault.key"))
 }
