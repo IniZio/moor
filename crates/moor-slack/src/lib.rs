@@ -10,6 +10,10 @@ use std::sync::Arc;
 mod api;
 mod command;
 pub mod config;
+#[allow(
+    dead_code,
+    reason = "the scheduler that runs coordinator turns comes in the next change"
+)]
 mod coordinator;
 mod credentials;
 mod daemon;

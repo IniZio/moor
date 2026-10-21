@@ -9,6 +9,7 @@ use std::time::Duration;
 use moor_core::secret::Secret;
 
 use super::{run, Claude, HostEnv};
+use crate::coordinator::Agent as _;
 use crate::credentials::{CheckError, CredentialCheck as _};
 
 /// The fake agent the daemon tests use too.

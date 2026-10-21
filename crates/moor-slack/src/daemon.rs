@@ -13,8 +13,9 @@ use moor_core::secret::Secret;
 
 use crate::api::Api;
 use crate::command::Allow;
-use crate::config::{parse_config, Config};
+use crate::config::{parse_config, Config, CoordinatorAgent};
 use crate::coordinator::claude::{Claude, HostEnv};
+use crate::coordinator::Agent;
 use crate::credentials::CredentialCheck;
 use crate::db::{Db, SlackBox};
 use crate::login::{self, TokenCheck};
@@ -53,8 +54,8 @@ struct Loaded {
     app_token: Secret,
     /// Bot token for posting replies and opening modals.
     bot_token: Arc<Secret>,
-    /// The checked Claude Code binary, or why the coordinator cannot run.
-    coordinator: Result<Claude, String>,
+    /// The checked coordinator agent, or why it cannot run.
+    coordinator: Result<Arc<dyn Agent>, String>,
     /// `slack.db`, opened at this build's schema; the Socket Mode thread records mentions in it.
     db: Db,
     /// Path of `slack.db`, which the worker opens again on its own thread.
@@ -80,11 +81,7 @@ pub fn run(settings: &Settings, log: Log) -> Result<(), String> {
         db,
         db_path,
         left,
-    } = load(settings)?;
-    match &coordinator {
-        Ok(claude) => log(&format!("coordinator: Claude Code {}", claude.version())),
-        Err(why) => log(&format!("coordinator unavailable: {why}")),
-    }
+    } = load(settings, &log)?;
     let client = Client::new(&settings.socket);
     let (jobs_tx, jobs_rx) = mpsc::channel();
     let (feed_tx, feed_rx) = mpsc::channel();
@@ -125,7 +122,7 @@ pub fn run(settings: &Settings, log: Log) -> Result<(), String> {
 
 /// Reads the config and both token files, and opens `slack.db`, so a bad file stops startup.
 /// A missing or old Claude Code does not stop it; the coordinator is then unavailable.
-fn load(settings: &Settings) -> Result<Loaded, String> {
+fn load(settings: &Settings, log: &Log) -> Result<Loaded, String> {
     let path = &settings.config;
     let text =
         std::fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
@@ -143,14 +140,7 @@ fn load(settings: &Settings) -> Result<Loaded, String> {
     let read = |e: rusqlite::Error| format!("read slack.db: {e}");
     let mut left = db.starting().map_err(read)?;
     left.extend(db.closing().map_err(read)?);
-    let host = HostEnv {
-        home: settings.home.clone(),
-        user: settings.user.clone(),
-    };
-    let coordinator = cfg.coordinator.as_ref().map_or_else(
-        || Err("the config has no coordinator.binary".to_owned()),
-        |c| Claude::probe(&c.binary, host),
-    );
+    let coordinator = probe(&cfg, settings, log);
     Ok(Loaded {
         cfg,
         api: Arc::new(api),
@@ -161,6 +151,31 @@ fn load(settings: &Settings) -> Result<Loaded, String> {
         db_path,
         left,
     })
+}
+
+/// The coordinator agent the config names, probed and logged, or why it cannot run.
+fn probe(cfg: &Config, settings: &Settings, log: &Log) -> Result<Arc<dyn Agent>, String> {
+    let host = HostEnv {
+        home: settings.home.clone(),
+        user: settings.user.clone(),
+    };
+    let coordinator: Result<Arc<dyn Agent>, String> = cfg.coordinator.as_ref().map_or_else(
+        || Err("the config has no coordinator.binary".to_owned()),
+        |c| match c.agent {
+            CoordinatorAgent::Claude => {
+                Claude::probe(&c.binary, host).map(|a| Arc::new(a) as Arc<dyn Agent>)
+            }
+        },
+    );
+    match &coordinator {
+        Ok(agent) => log(&format!(
+            "coordinator: {} {}",
+            agent.program(),
+            agent.version()
+        )),
+        Err(why) => log(&format!("coordinator unavailable: {why}")),
+    }
+    coordinator
 }
 
 /// Reads the app and bot tokens; each file must be owner-only and non-empty.
@@ -270,8 +285,8 @@ struct Worker {
     api: Arc<Api>,
     /// Bot token for posting replies.
     bot_token: Arc<Secret>,
-    /// The checked Claude Code binary, or why the coordinator cannot run.
-    coordinator: Result<Claude, String>,
+    /// The checked coordinator agent, or why it cannot run.
+    coordinator: Result<Arc<dyn Agent>, String>,
     /// Controller socket client; each request opens its own connection.
     client: Client,
     /// Daemon log.
@@ -303,7 +318,7 @@ impl Worker {
         let mut check_token = |check: TokenCheck| {
             let checker = self.coordinator.as_ref();
             let checker = checker
-                .map(|c| c as &dyn CredentialCheck)
+                .map(|c| &**c as &dyn CredentialCheck)
                 .map_err(String::as_str);
             let text = login::check(&check, checker, &self.state_dir);
             (self.log)(&format!("login of {}: {text}", check.user.as_str()));

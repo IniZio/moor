@@ -29,8 +29,36 @@ pub struct Config {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Coordinator {
-    /// Absolute path of the `claude` binary, Claude Code 2.1.304 or newer.
+    /// The agent that coordinates each thread; `claude` is the only one.
+    #[serde(default)]
+    pub agent: CoordinatorAgent,
+    /// Absolute path of the agent's binary; for `claude`, Claude Code 2.1.304 or newer.
     pub binary: PathBuf,
+    /// The model each turn runs on.
+    #[serde(default = "default_model")]
+    pub model: String,
+    /// Most KiB of context a turn gets; earlier messages fill what the rest leaves.
+    #[serde(default = "default_context_kib")]
+    pub context_kib: u32,
+}
+
+/// The agents that can coordinate a thread.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CoordinatorAgent {
+    /// Claude Code.
+    #[default]
+    Claude,
+}
+
+/// The model a coordinator turn runs on unless the config names one.
+fn default_model() -> String {
+    "sonnet".to_owned()
+}
+
+/// The context budget in KiB unless the config names one.
+const fn default_context_kib() -> u32 {
+    32
 }
 
 /// The public Slack Web API.
@@ -86,6 +114,14 @@ fn validate(cfg: &Config) -> Result<(), (&'static str, &'static str)> {
         .is_some_and(|c| !c.binary.is_absolute())
     {
         return Err(("coordinator.binary", "must be an absolute path"));
+    }
+    if let Some(c) = &cfg.coordinator {
+        if c.model.trim().is_empty() {
+            return Err(("coordinator.model", "must not be empty"));
+        }
+        if c.context_kib == 0 {
+            return Err(("coordinator.context_kib", "must be at least 1"));
+        }
     }
     Ok(())
 }
