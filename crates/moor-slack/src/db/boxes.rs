@@ -23,6 +23,20 @@ pub(crate) enum BoxState {
         /// The Box's branch, when the reply named one.
         branch: Option<String>,
     },
+    /// Its requester asked to close it; the close is sent or about to be.
+    Closing {
+        /// The Box's id.
+        box_id: BoxId,
+        /// The Box's branch, when the start reply named one.
+        branch: Option<String>,
+    },
+    /// The controller closed it.
+    Gone {
+        /// The Box's id.
+        box_id: BoxId,
+        /// The Box's branch, when the start reply named one.
+        branch: Option<String>,
+    },
 }
 
 /// A Box a thread asked for.
@@ -69,6 +83,17 @@ impl Db {
         rows.collect()
     }
 
+    /// Boxes still in `closing`, oldest first.
+    pub(crate) fn closing(&self) -> rusqlite::Result<Vec<SlackBox>> {
+        let sql = format!(
+            "SELECT {BOX_COLUMNS} WHERE b.state = 'closing' \
+             ORDER BY b.created_at, b.channel, b.thread_ts, b.n"
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map([], box_row)?;
+        rows.collect()
+    }
+
     /// Records `boxed` in `starting` at `now`, numbered after its thread's other Boxes. Its
     /// thread must have a row; a name already taken is an error.
     pub(crate) fn insert_starting(&self, boxed: &SlackBox, now: i64) -> rusqlite::Result<()> {
@@ -104,6 +129,33 @@ impl Db {
         Ok(())
     }
 
+    /// Marks a `bound` Box `closing`.
+    pub(crate) fn mark_closing(&self, name: &BoxName) -> rusqlite::Result<()> {
+        self.conn.execute(
+            "UPDATE slack_boxes SET state = 'closing' WHERE box_name = ?1 AND state = 'bound'",
+            params![name.as_str()],
+        )?;
+        Ok(())
+    }
+
+    /// Ends the close of a `closing` Box: `gone` when the controller closed it, else `bound`
+    /// again. The `close` items of its thread are done either way.
+    pub(crate) fn settle_close(&self, name: &BoxName, gone: bool) -> rusqlite::Result<()> {
+        self.atomically(|| {
+            self.conn.execute(
+                "UPDATE slack_inbox SET done_at = unixepoch() \
+                 WHERE kind = 'close' AND done_at IS NULL AND (channel, thread_ts) = \
+                 (SELECT channel, thread_ts FROM slack_boxes WHERE box_name = ?1)",
+                params![name.as_str()],
+            )?;
+            self.conn.execute(
+                "UPDATE slack_boxes SET state = ?2 WHERE box_name = ?1 AND state = 'closing'",
+                params![name.as_str(), if gone { "gone" } else { "bound" }],
+            )?;
+            Ok(())
+        })
+    }
+
     /// Deletes a Box still in `starting`, and its thread once the thread has no Box left, so
     /// the thread can start again.
     pub(crate) fn forget_starting(&self, name: &BoxName) -> rusqlite::Result<()> {
@@ -136,12 +188,12 @@ fn box_row(r: &Row<'_>) -> rusqlite::Result<SlackBox> {
         rusqlite::Error::FromSqlConversionFailure(col, Type::Text, why.into())
     };
     let state: String = r.get(6)?;
-    let state = match (state.as_str(), r.get::<_, Option<i64>>(7)?) {
+    let (box_id, branch) = (r.get::<_, Option<i64>>(7)?.map(BoxId::new), r.get(8)?);
+    let state = match (state.as_str(), box_id) {
         ("starting", _) => BoxState::Starting,
-        ("bound", Some(id)) => BoxState::Bound {
-            box_id: BoxId::new(id),
-            branch: r.get(8)?,
-        },
+        ("bound", Some(box_id)) => BoxState::Bound { box_id, branch },
+        ("closing", Some(box_id)) => BoxState::Closing { box_id, branch },
+        ("gone", Some(box_id)) => BoxState::Gone { box_id, branch },
         (other, _) => return Err(bad(6, format!("Box state `{other}`"))),
     };
     let name: String = r.get(2)?;

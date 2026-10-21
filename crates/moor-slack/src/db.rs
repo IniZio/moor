@@ -1,17 +1,19 @@
 //! The front's own `SQLite` file, `slack.db`: seen envelopes, each channel's repos, each
-//! thread and the Boxes it asked for.
+//! thread with the Boxes it asked for and what its starter wrote.
 
 use std::path::Path;
 use std::time::Duration;
 
-use rusqlite::{params, Connection, OpenFlags, Transaction, TransactionBehavior};
+use rusqlite::{
+    params, Connection, OpenFlags, OptionalExtension, Transaction, TransactionBehavior,
+};
 
 /// How long a writer waits on a locked database.
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// The schema version this build writes and reads. A schema change edits [`SCHEMA`] in place
 /// and raises this number; there are no migrations, so a file at any other version is refused.
-const SCHEMA_VERSION: i64 = 4;
+const SCHEMA_VERSION: i64 = 5;
 
 /// The whole schema, created in an empty file.
 const SCHEMA: &str = "
@@ -40,6 +42,19 @@ const SCHEMA: &str = "
         UNIQUE (channel, thread_ts, n)
     );
     CREATE INDEX slack_boxes_box ON slack_boxes (box_id);
+    CREATE TABLE slack_inbox (
+        id INTEGER PRIMARY KEY,
+        channel TEXT NOT NULL,
+        thread_ts TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('message', 'notice', 'close')),
+        author TEXT CHECK (kind = 'notice' OR author IS NOT NULL),
+        text TEXT NOT NULL,
+        source TEXT NOT NULL UNIQUE,
+        created_at INTEGER NOT NULL,
+        turn_id INTEGER,
+        done_at INTEGER
+    );
+    CREATE INDEX slack_inbox_thread ON slack_inbox (channel, thread_ts, id);
     CREATE TABLE slack_channel_repos (
         channel TEXT NOT NULL,
         repo TEXT NOT NULL,
@@ -123,13 +138,11 @@ impl Db {
     }
 
     /// The thread row for `(channel, thread_ts)`, if any.
-    #[cfg(test)]
     pub(crate) fn thread(
         &self,
         channel: &str,
         thread_ts: &str,
     ) -> rusqlite::Result<Option<SlackThread>> {
-        use rusqlite::OptionalExtension as _;
         self.conn
             .query_row(
                 "SELECT channel, thread_ts, repo, owner FROM slack_threads \
@@ -199,6 +212,9 @@ pub(crate) use boxes::{BoxState, SlackBox};
 
 mod channel_repos;
 pub(crate) use channel_repos::ChannelRepo;
+
+mod inbox;
+pub(crate) use inbox::{InboxItem, ItemKind};
 
 #[cfg(test)]
 mod tests;

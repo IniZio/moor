@@ -227,3 +227,17 @@ fn new_file_gets_the_schema_once_and_opens_again() {
     assert!(first.event_once("Ev1", 1).unwrap());
     assert!(!second.event_once("Ev1", 2).unwrap());
 }
+
+#[test]
+fn slack_db_without_an_inbox_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("slack.db");
+    let conn = rusqlite::Connection::open(&path).unwrap();
+    conn.execute_batch(
+        "CREATE TABLE slack_boxes (box_name TEXT PRIMARY KEY); PRAGMA user_version = 4;",
+    )
+    .unwrap();
+    drop(conn);
+    let err = Db::open(&path).err().unwrap();
+    assert!(err.starts_with("slack.db is schema 4 "), "{err}");
+}

@@ -59,7 +59,8 @@ struct Loaded {
     db: Db,
     /// Path of `slack.db`, which the worker opens again on its own thread.
     db_path: PathBuf,
-    /// Boxes an earlier run left `starting`, read before any new mention is recorded.
+    /// Boxes an earlier run left `starting` or `closing`, read before any new mention is
+    /// recorded.
     left: Vec<SlackBox>,
 }
 
@@ -139,7 +140,9 @@ fn load(settings: &Settings) -> Result<Loaded, String> {
         .map_err(|e| format!("create {}: {e}", dir.display()))?;
     let db_path = dir.join("slack.db");
     let db = Db::open(&db_path).map_err(|e| format!("open slack.db: {e}"))?;
-    let left = db.starting().map_err(|e| format!("read slack.db: {e}"))?;
+    let read = |e: rusqlite::Error| format!("read slack.db: {e}");
+    let mut left = db.starting().map_err(read)?;
+    left.extend(db.closing().map_err(read)?);
     let host = HostEnv {
         home: settings.home.clone(),
         user: settings.user.clone(),

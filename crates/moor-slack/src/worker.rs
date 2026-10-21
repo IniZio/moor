@@ -1,7 +1,7 @@
-//! The start path: the socket thread records each mention in `slack.db` before Slack gets
-//! its ack, and the worker turns each recorded start into a Box over the controller socket.
-//! The worker also checks each repo a user adds to a channel, and each Claude token a user
-//! pastes.
+//! The start and close paths: the socket thread records each mention and thread message in
+//! `slack.db` before Slack gets its ack, and the worker turns each recorded start into a Box
+//! and each recorded close into a closed Box over the controller socket. The worker also checks
+//! each repo a user adds to a channel, and each Claude token a user pastes.
 
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::time::Instant;
@@ -12,7 +12,7 @@ use moor_core::request::{Request, ShowReq, StartReq};
 use moor_core::response::{ExitClass, Response};
 use serde_json::Value;
 
-use crate::command::{decide, failed, started, Action, Allow};
+use crate::command::{decide, failed, is_start, started, Action, Allow};
 use crate::db::{BoxState, Db, SlackBox, SlackThread};
 use crate::dial::Backoff;
 use crate::login::TokenCheck;
@@ -47,6 +47,8 @@ pub(crate) enum Job {
     },
     /// Send the first `start` for this Box, already `starting` in `slack.db`.
     Start(SlackBox),
+    /// Send the first `close` for this Box, already `closing` in `slack.db`.
+    Close(SlackBox),
     /// Warn in `channel` when the controller does not know `repo`, which a user just added.
     CheckRepo {
         /// Channel id the repo was added to.
@@ -58,9 +60,10 @@ pub(crate) enum Job {
     CheckToken(TokenCheck),
 }
 
-/// Records one mention in a single transaction: its event id and, for an allowed start, the
-/// thread with its repo and owner and the thread's `starting` Box with the goal and the person
-/// who asked. Returns what the worker does next, or nothing for a redelivered event.
+/// Records one mention or thread message in a single transaction: its event id and, for an
+/// allowed start, what [`intake::open`] writes. A message in a thread the front keeps is
+/// recorded as [`intake::in_thread`] says, unless it is a start command. Returns what the
+/// worker does next, or nothing for a redelivered event.
 pub(crate) fn record(
     mention: &Mention,
     db: &Db,
@@ -68,11 +71,18 @@ pub(crate) fn record(
     now: i64,
 ) -> rusqlite::Result<Option<Job>> {
     db.atomically(|| {
-        if !db.event_once(&mention.event_id, now)? || mention.reply {
+        let channel = mention.channel.as_str();
+        if !db.event_once(&mention.event_id, now)? || !allow.channels.iter().any(|c| c == channel) {
             return Ok(None);
         }
-        let channel = mention.channel.as_str();
         let thread = mention.thread_ts.as_deref().unwrap_or(&mention.ts);
+        match db.thread(channel, thread)? {
+            Some(kept) if mention.reply || !is_start(&mention.text) => {
+                return intake::in_thread(db, mention, &kept, now);
+            }
+            None if mention.reply => return Ok(None),
+            _ => {}
+        }
         let existing = db.thread_boxes(channel, thread)?;
         let action = decide(
             allow,
@@ -96,27 +106,16 @@ pub(crate) fn record(
                     repo,
                     owner: mention.user.clone(),
                 };
-                db.insert_thread(&opened, now)?;
-                let row = SlackBox {
-                    channel: opened.channel,
-                    thread_ts: opened.thread_ts,
-                    box_name: name,
-                    repo: opened.repo,
-                    goal,
-                    requested_by: opened.owner,
-                    state: BoxState::Starting,
-                };
-                db.insert_starting(&row, now)?;
-                Some(Job::Start(row))
+                Some(Job::Start(intake::open(db, opened, name, goal, now)?))
             }
         })
     })
 }
 
-/// Runs each job as it arrives and asks again about unsure starts on a backoff timer, so a
-/// start the controller cannot confirm never holds up another thread. `left` holds the rows
-/// an earlier run left `starting`, read before any mention was recorded, so no job names
-/// them; they are asked about first.
+/// Runs each job as it arrives and asks again about unsure starts and closes on a backoff
+/// timer, so one the controller cannot confirm never holds up another thread. `left` holds
+/// the rows an earlier run left `starting` or `closing`, read before any mention was
+/// recorded, so no job names them; they are asked about first.
 pub(crate) fn serve(jobs: &Receiver<Job>, db: &Db, left: Vec<SlackBox>, fx: &mut Fx<'_>) {
     let mut unsure = Unsure::new(left);
     loop {
@@ -130,7 +129,7 @@ pub(crate) fn serve(jobs: &Receiver<Job>, db: &Db, left: Vec<SlackBox>, fx: &mut
                 thread,
                 text,
             }) => (fx.reply)(&channel, &thread, &text),
-            Ok(Job::Start(row)) => {
+            Ok(Job::Start(row) | Job::Close(row)) => {
                 if !settle(db, fx, &row, Attempt::First) {
                     unsure.add(row);
                 }
@@ -160,7 +159,7 @@ fn now() -> Instant {
     Instant::now()
 }
 
-/// Starts the controller has not confirmed, asked about again together on one timer.
+/// Starts and closes the controller has not confirmed, asked about again on one timer.
 struct Unsure {
     /// The rows, oldest first.
     rows: Vec<SlackBox>,
@@ -171,7 +170,7 @@ struct Unsure {
 }
 
 impl Unsure {
-    /// Rows an earlier run left `starting`, due at once.
+    /// Rows an earlier run left `starting` or `closing`, due at once.
     fn new(rows: Vec<SlackBox>) -> Self {
         let due = (!rows.is_empty()).then(now);
         Self {
@@ -181,7 +180,7 @@ impl Unsure {
         }
     }
 
-    /// Adds a row whose first start was not confirmed.
+    /// Adds a row whose first start or close was not confirmed.
     fn add(&mut self, row: SlackBox) {
         self.rows.push(row);
         if self.due.is_none() {
@@ -201,10 +200,10 @@ impl Unsure {
     }
 }
 
-/// Whether a `start` for the row may already have reached the controller.
+/// Whether a `start` or `close` for the row may already have reached the controller.
 #[derive(Clone, Copy)]
 enum Attempt {
-    /// Nothing was sent yet, so an error frame proves the start never ran.
+    /// Nothing was sent yet, so an error frame proves the request never ran.
     First,
     /// A start may have run. `start` attaches only to an open Box, so a blind resend after
     /// the first Box closed would make a second Box with the same name; `show` goes first.
@@ -230,9 +229,19 @@ enum Shown {
     Settled(Outcome),
 }
 
-/// Tries once to settle `row`: binds or deletes it, or logs why it stays `starting`.
-/// Returns whether the row is settled.
+/// Tries once to settle the start or close that `row`'s state says is pending. Returns
+/// whether the row is settled.
 fn settle(db: &Db, fx: &mut Fx<'_>, row: &SlackBox, attempt: Attempt) -> bool {
+    match row.state {
+        BoxState::Starting => settle_start(db, fx, row, attempt),
+        BoxState::Closing { .. } => close::settle_close(db, fx, row, attempt),
+        BoxState::Bound { .. } | BoxState::Gone { .. } => true,
+    }
+}
+
+/// Tries once to settle the start of `row`: binds or deletes it, or logs why it stays
+/// `starting`. Returns whether the row is settled.
+fn settle_start(db: &Db, fx: &mut Fx<'_>, row: &SlackBox, attempt: Attempt) -> bool {
     match ask(fx, row, attempt) {
         Outcome::Bound(box_id, branch) => bind(db, fx, row, box_id, branch.as_deref()),
         Outcome::Refused(message) => refuse(db, fx, row, &message),
@@ -383,6 +392,9 @@ fn written(fx: &Fx<'_>, write: rusqlite::Result<()>) -> bool {
         .inspect_err(|e| (fx.log)(&format!("slack.db: {e}; asking again")))
         .is_ok()
 }
+
+mod close;
+mod intake;
 
 #[cfg(test)]
 mod tests;

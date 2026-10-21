@@ -493,4 +493,5 @@ fn a_lost_start_is_asked_about_on_a_timer_and_holds_up_no_other_thread() {
     assert_eq!(state(&db, "C1", "10.5"), bound_to_7("slack-10-5"));
 }
 
+mod close;
 mod post_first;
