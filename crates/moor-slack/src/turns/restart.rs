@@ -57,6 +57,12 @@ impl Turns {
 /// When process `pid` started, in clock ticks after boot, read from `/proc/<pid>/stat`.
 pub(super) fn start_time(pid: u32) -> Option<i64> {
     let stat = fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    start_time_in(&stat)
+}
+
+/// Field 22 of `/proc/<pid>/stat` text. The command name in field 2 sits in parentheses and may
+/// hold spaces and `)`, so the fields count from the last `)`.
+fn start_time_in(stat: &str) -> Option<i64> {
     let (_, fields) = stat.rsplit_once(')')?;
     fields.split_whitespace().nth(19)?.parse().ok()
 }
@@ -77,5 +83,18 @@ fn kill_stray(pid: u32, started: i64, log: &dyn Fn(&str)) {
             "turns: killed process group {pid} left from a turn"
         ));
         let _ = kill_process_group(group, Signal::KILL);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::start_time_in;
+
+    #[test]
+    fn the_start_time_is_field_22_even_when_the_command_name_holds_a_paren() {
+        let stat = "1234 (a) b) S 1 1234 1234 0 -1 4194560 100 0 0 0 1 2 0 0 20 0 1 0 987654 \
+                    12345678 100 18446744073709551615 1 1 0 0 0 0 0 0 0 0 0 0 17 3 0 0 0 0 0";
+        assert_eq!(start_time_in(stat), Some(987_654));
+        assert_eq!(start_time_in("no parenthesis"), None);
     }
 }
