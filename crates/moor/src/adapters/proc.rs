@@ -17,7 +17,7 @@ use rustix::io::Errno;
 use rustix::process::test_kill_process;
 use zeroize::Zeroizing;
 
-use crate::env::Env;
+use crate::env::{Cancel, Env};
 use env::{resolve, Snapshot};
 use grace::{terminate, GRACE};
 use signal::{is_group_leader, send_group, signal_group, to_pid};
@@ -88,6 +88,8 @@ pub(crate) struct SystemProc {
     programs: Vec<(Tool, OsString)>,
     /// Opt-in per-call crabbox timing.
     trace: Trace,
+    /// The stop flag of the request; a streamed child stops once it is set.
+    cancel: Cancel,
 }
 
 impl SystemProc {
@@ -98,6 +100,7 @@ impl SystemProc {
             env: Snapshot::new(env),
             programs,
             trace: Trace::new(env),
+            cancel: env.cancel().clone(),
         }
     }
 

@@ -16,6 +16,7 @@ use crate::config_load::load_user;
 use crate::env::Env;
 use crate::error::CommandError;
 
+mod interrupt;
 pub mod remote;
 pub mod watch;
 
@@ -107,6 +108,9 @@ pub fn configured_target(env: &Env) -> Option<Target> {
 /// Run `request` on the controller at `target`, passing progress messages to `on_progress` and
 /// the raw bytes of each bytes frame, such as a `run` command's output, to `on_output`.
 ///
+/// While a `run` waits on a controller socket, an interrupt cancels it and its reply still
+/// arrives.
+///
 /// # Errors
 /// [`ClientError::Unreachable`] when the transport cannot be opened (or, over ssh, dies before
 /// the controller's hello reply), [`ClientError::Protocol`] for any other failure.
@@ -117,15 +121,18 @@ pub fn call(
     on_progress: impl FnMut(&str),
     on_output: impl FnMut(&[u8]),
 ) -> Result<Response, ClientError> {
-    with_transport(env, target, |reader, mut writer| {
+    let forward = matches!(request, Request::Run(_));
+    with_transport(env, target, forward, |reader, mut writer| {
         session(reader, &mut writer, request, on_progress, on_output)
     })
 }
 
-/// Open the transport to `target` and run `exchange` over it.
+/// Open the transport to `target` and run `exchange` over it; with `forward`, an interrupt
+/// meanwhile is sent on to the controller.
 fn with_transport<T>(
     env: &Env,
     target: &Target,
+    forward: bool,
     exchange: impl FnOnce(&mut dyn BufRead, &mut dyn Write) -> Result<T, SessionError>,
 ) -> Result<T, ClientError> {
     match target {
@@ -135,6 +142,7 @@ fn with_transport<T>(
                 detail: e.to_string(),
             };
             let stream = UnixStream::connect(socket).map_err(unreachable)?;
+            let _forward = forward.then(|| interrupt::forward(&stream));
             let mut writer = stream
                 .try_clone()
                 .map_err(|e| ClientError::Protocol(format!("clone socket: {e}")))?;

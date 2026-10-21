@@ -11,6 +11,7 @@ use moor_core::request::{Grant, UserCmd};
 use moor_core::user::{Caller, Identity, Viewer};
 use moor_core::{ArtifactReadReq, ErrorKind, Request, Response, RunReq};
 
+use super::hangup::Hangup;
 use super::progress::{respond_with_progress, Sink, INTERVAL};
 use super::watch;
 use crate::env::Env;
@@ -24,6 +25,8 @@ pub(crate) struct Peer {
     pub(crate) caller: Result<Caller, String>,
     /// The vault key.
     pub(crate) vault: Arc<Vault>,
+    /// Tells when the client goes away, which cancels its run; none when it cannot be watched.
+    pub(crate) hangup: Option<Hangup>,
 }
 
 #[cfg(test)]
@@ -35,6 +38,7 @@ impl Peer {
         Self {
             caller: Ok(Caller::Operator(1000)),
             vault: Arc::new(vault),
+            hangup: None,
         }
     }
 }
@@ -95,7 +99,15 @@ fn answer(
             Err(request) => match requester(peer, asserted, &request) {
                 Ok(who) => {
                     let acting = Acting { who, grant, dir };
-                    respond_with_progress(env, acting, id, *request, INTERVAL, out)
+                    respond_with_progress(
+                        env,
+                        acting,
+                        peer.hangup.as_ref(),
+                        id,
+                        *request,
+                        INTERVAL,
+                        out,
+                    )
                 }
                 Err(e) => e.into_response(request.cmd(), vec![]),
             },

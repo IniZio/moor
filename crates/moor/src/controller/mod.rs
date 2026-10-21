@@ -2,6 +2,7 @@
 
 pub mod attach;
 mod conn;
+mod hangup;
 mod local;
 mod peer;
 mod progress;
@@ -310,6 +311,7 @@ impl Serving {
                     |ns| Ok(moor_core::user::Caller::Front(ns)),
                 ),
                 vault: Arc::clone(&self.vault),
+                hangup: hangup::Hangup::of(&stream).ok(),
             };
             let env = Arc::clone(&self.env);
             let sink = Arc::clone(sink);

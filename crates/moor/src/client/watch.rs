@@ -21,7 +21,7 @@ pub fn watch(
     follow: bool,
     out: &mut impl Write,
 ) -> Result<(), ClientError> {
-    with_transport(env, target, |reader, mut writer| {
+    with_transport(env, target, false, |reader, mut writer| {
         watch_session(reader, &mut writer, since, filter, follow, out)
     })
 }

@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use moor_core::config::RepoTable;
@@ -19,6 +20,24 @@ pub struct Env {
     repos: Arc<RepoTable>,
     /// The controller's vault key file, when a controller runs this.
     vault_key: Option<PathBuf>,
+    /// Set when whoever asked for the request is gone; its streamed children then stop.
+    cancel: Cancel,
+}
+
+/// A request's stop flag, shared by everyone who holds a clone.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Cancel(Arc<AtomicBool>);
+
+impl Cancel {
+    /// Asks the request to stop.
+    pub(crate) fn cancel(&self) {
+        self.0.store(true, Ordering::SeqCst);
+    }
+
+    /// Whether the request was asked to stop.
+    pub(crate) fn is_cancelled(&self) -> bool {
+        self.0.load(Ordering::SeqCst)
+    }
 }
 
 impl Env {
@@ -30,8 +49,7 @@ impl Env {
             .collect();
         Self {
             vars,
-            repos: Arc::default(),
-            vault_key: None,
+            ..Self::default()
         }
     }
 
@@ -47,8 +65,7 @@ impl Env {
                 .into_iter()
                 .map(|(k, v)| (k.into(), v.into()))
                 .collect(),
-            repos: Arc::default(),
-            vault_key: None,
+            ..Self::default()
         }
     }
 
@@ -106,6 +123,18 @@ impl Env {
     #[must_use]
     pub fn vault_key(&self) -> Option<&Path> {
         self.vault_key.as_deref()
+    }
+
+    /// This environment for one request that stops when `cancel` is set.
+    #[must_use]
+    pub(crate) fn with_cancel(mut self, cancel: Cancel) -> Self {
+        self.cancel = cancel;
+        self
+    }
+
+    /// The stop flag of the request this environment serves.
+    pub(crate) const fn cancel(&self) -> &Cancel {
+        &self.cancel
     }
 
     /// Resolved state directory, or `None` when no source is set.

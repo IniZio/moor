@@ -16,6 +16,11 @@ of these that is set:
 With none of them set, the command runs in its own process against the local
 state directory.
 
+When the client of a `moor run` goes away, the controller stops the command and
+records the run as interrupted. Ctrl-C does this on purpose: moor asks the
+controller to stop the command, waits for its answer, and exits 130. A second
+Ctrl-C exits at once.
+
 ## Global flags
 
 | Flag | Effect |
