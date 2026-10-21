@@ -2,6 +2,7 @@
 //! the Box's own and offer the choice, the requester gate holds, and a rerun does not answer
 //! the same prompt twice.
 
+use moor_client::ClientError;
 use moor_core::name::BoxName;
 use moor_core::request::Request;
 use moor_core::response::{ErrorKind, ErrorView, Response};
@@ -19,7 +20,7 @@ fn asked(db: &Db, name: &str, event_id: i64, question: &str) -> i64 {
     let posted = Posted {
         box_name: &box_name,
         event_id,
-        message_ts: &ts,
+        message_ts: Some(&ts),
         question,
         options: &["pg".to_owned(), "sqlite".to_owned()],
     };
@@ -150,6 +151,49 @@ fn a_refused_answer_leaves_the_prompt_open() {
         reply,
         Reply::refused("Not answered: the agent is not waiting")
     );
+    assert_eq!(state(&db, id), PromptState::Open);
+}
+
+#[test]
+fn a_box_that_moves_on_before_the_steer_reply_keeps_the_answer() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = two_authors(dir.path());
+    let id = asked(&db, ONE, 5, "Which db?");
+    turn_of(&db, "U1", "Ev1");
+    let feed = Db::open(&dir.path().join("slack.db")).unwrap();
+    let controller = Controller::new();
+    let reply = controller.run_with(&db, &answer(ONE, id, 2), &mut |_| {
+        feed.close_prompt(id, "working").unwrap();
+        Ok(Response::ok("steer", Some(json!({}))))
+    });
+    assert_eq!(
+        reply,
+        Reply::done(format!("Answered prompt {id} with 2. sqlite."))
+    );
+    let answered = PromptState::Answered {
+        label: "2. sqlite".into(),
+        by: "U1".into(),
+    };
+    assert_eq!(state(&db, id), answered);
+    let one = BoxName::parse_allow_bare(ONE).unwrap();
+    assert_eq!(
+        db.unshown_answers(&one).unwrap().len(),
+        1,
+        "shown once sent"
+    );
+}
+
+#[test]
+fn an_answer_the_controller_may_have_lost_leaves_the_prompt_open() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = two_authors(dir.path());
+    let id = asked(&db, ONE, 5, "Which db?");
+    turn_of(&db, "U1", "Ev1");
+    let controller = Controller::new();
+    let reply = controller.run_with(&db, &answer(ONE, id, 1), &mut |_| {
+        Err(ClientError::Io(std::io::ErrorKind::ConnectionReset.into()))
+    });
+    assert!(reply.text.starts_with("Maybe not answered"), "{reply:?}");
     assert_eq!(state(&db, id), PromptState::Open);
 }
 
