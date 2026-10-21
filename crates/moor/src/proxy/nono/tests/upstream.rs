@@ -56,13 +56,20 @@ impl Upstream {
     }
 }
 
-impl Drop for Upstream {
-    fn drop(&mut self) {
+impl Upstream {
+    /// Stops listening, so later connections to `port` are refused.
+    pub(crate) fn close(&mut self) {
         self.stop.store(true, Ordering::SeqCst);
         let _ = TcpStream::connect(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), self.port));
         if let Some(t) = self.thread.take() {
             let _ = t.join();
         }
+    }
+}
+
+impl Drop for Upstream {
+    fn drop(&mut self) {
+        self.close();
     }
 }
 

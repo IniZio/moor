@@ -9,9 +9,17 @@ use std::time::Duration;
 /// Longest wait for one upstream connection attempt.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 /// How long a tunnel may carry no bytes in either direction.
-const IDLE_TIMEOUT: Duration = Duration::from_mins(10);
+pub(super) const IDLE_TIMEOUT: Duration = if cfg!(test) {
+    Duration::from_secs(2)
+} else {
+    Duration::from_mins(10)
+};
 /// Read and write timeout on each socket; idleness is checked on expiry.
-const POLL: Duration = Duration::from_secs(30);
+const POLL: Duration = if cfg!(test) {
+    Duration::from_secs(1)
+} else {
+    Duration::from_secs(30)
+};
 /// Timed-out reads, over both directions, that make a tunnel idle.
 const MAX_QUIET_POLLS: u64 = 2 * IDLE_TIMEOUT.as_secs() / POLL.as_secs();
 /// Size of one copy.

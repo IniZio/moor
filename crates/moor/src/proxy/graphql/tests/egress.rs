@@ -154,3 +154,34 @@ fn refusals_carry_no_payload_bytes() {
     );
     assert_eq!(refusals.first().map(|r| r.host.as_str()), Some("10.0.0.1"));
 }
+
+#[test]
+fn a_silent_upstream_ends_the_tunnel_when_it_goes_idle() {
+    let silent = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+    let addr = silent.local_addr().unwrap();
+    let (held, accepted) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        while let Ok((tcp, _)) = silent.accept() {
+            if held.send(tcp).is_err() {
+                return;
+            }
+        }
+    });
+    let rig = rig_with(fixed(json_reply("200 OK", OK_BODY)), Guard::new(vec![addr]));
+    let (mut tcp, status) =
+        raw_connect(rig.filter.addr(), &format!("localhost:{}", addr.port())).unwrap();
+    assert_eq!(status, 200);
+    let _upstream = accepted.recv_timeout(Duration::from_secs(5)).unwrap();
+    let mut byte = [0u8; 1];
+    match tcp.read(&mut byte) {
+        Ok(n) => assert_eq!(n, 0),
+        Err(e) => assert!(
+            !matches!(
+                e.kind(),
+                io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+            ),
+            "{e}"
+        ),
+    }
+    assert!(rig.refusals(0).is_empty());
+}

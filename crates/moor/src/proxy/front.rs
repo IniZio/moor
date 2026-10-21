@@ -40,7 +40,11 @@ const MAX_READS: usize = 512;
 /// Read timeout while the client sends its request head.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 /// Connect, write and response-head timeout toward nono.
-const TARGET_TIMEOUT: Duration = Duration::from_secs(30);
+const TARGET_TIMEOUT: Duration = if cfg!(test) {
+    Duration::from_millis(300)
+} else {
+    Duration::from_secs(30)
+};
 /// Idle timeout per direction once the tunnel is established.
 const TUNNEL_IDLE: Duration = Duration::from_secs(600);
 /// Time spent draining a refused client so it reads the 403.
