@@ -14,10 +14,11 @@ use moor_core::secret::Secret;
 use crate::api::{Api, ApiError};
 use crate::coordinator::brief::BRIEF;
 use crate::coordinator::context::{self, Parts, Said};
+use crate::coordinator::tools::{self, box_lines};
 use crate::coordinator::turn::{self, Ended, Turn, LIMITS};
-use crate::coordinator::{Agent, Answer, TurnSetup};
+use crate::coordinator::{Agent, Answer, ToolServer, TurnSetup};
 use crate::credentials::{self, daemon_uid, private_dir, SlackUser};
-use crate::db::{BoxState, Db, End, TurnRow};
+use crate::db::{Db, End, TurnRow};
 use crate::Log;
 
 mod host;
@@ -64,6 +65,10 @@ pub(crate) struct Turns {
     pub(crate) bot_token: Arc<Secret>,
     /// Controller socket client.
     pub(crate) client: Client,
+    /// Absolute path of the controller socket, for the tool server.
+    pub(crate) socket: PathBuf,
+    /// Absolute path of this binary, which the agent starts as the tool server.
+    pub(crate) program: PathBuf,
     /// Daemon log.
     pub(crate) log: Log,
     /// The current time in unix seconds.
@@ -220,12 +225,19 @@ impl Turns {
                 return Closing::of(End::Failed, lines::unavailable(&format!("slack.db: {e}")))
             }
         };
+        let server = ToolServer {
+            name: "moor",
+            program: &self.program,
+            args: &self.tool_args(row),
+            tools: &tools::names(),
+        };
         let turn = Turn {
             setup: TurnSetup {
                 model: &self.model,
                 config_dir: &config_dir,
                 workdir: &workdir,
                 brief: BRIEF,
+                tools: &server,
             },
             input: &input,
             credential: &credential,
@@ -278,27 +290,9 @@ impl Turns {
             .into_iter()
             .map(|(_, said)| said)
             .collect();
-        let boxes: Vec<String> = db
-            .thread_boxes(&row.channel, &row.thread_ts)?
-            .iter()
-            .map(|b| {
-                let state = match &b.state {
-                    BoxState::Starting => "starting".to_owned(),
-                    BoxState::Bound {
-                        branch: Some(branch),
-                        ..
-                    } => format!("running on branch {branch}"),
-                    BoxState::Bound { branch: None, .. } => "running".to_owned(),
-                    BoxState::Closing { .. } => "closing".to_owned(),
-                    BoxState::Gone { .. } => "closed".to_owned(),
-                };
-                format!(
-                    "- Box `{}`, asked for by <@{}>: {state}",
-                    b.box_name.as_str(),
-                    b.requested_by
-                )
-            })
-            .collect();
+        let rows = db.thread_boxes(&row.channel, &row.thread_ts)?;
+        let mut call = |request| self.client.request(request, |_| {});
+        let boxes = box_lines(&rows, &mut call);
         let parts = Parts {
             first_request: first.as_ref().map(|(_, text)| text.as_str()),
             actions: &[],
@@ -308,6 +302,23 @@ impl Turns {
             rerun: row.rerun_of.map(|_| &[][..]),
         };
         Ok(context::render(&parts, self.budget))
+    }
+}
+
+impl Turns {
+    /// The tool server's arguments for the thread of `row`; they name no secret.
+    fn tool_args(&self, row: &TurnRow) -> Vec<String> {
+        let state_dir =
+            std::path::absolute(&self.state_dir).unwrap_or_else(|_| self.state_dir.clone());
+        vec![
+            "mcp".to_owned(),
+            "--state-dir".to_owned(),
+            state_dir.display().to_string(),
+            "--socket".to_owned(),
+            self.socket.display().to_string(),
+            "--thread".to_owned(),
+            format!("{}/{}", row.channel, row.thread_ts),
+        ]
     }
 }
 

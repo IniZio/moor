@@ -9,8 +9,23 @@ use crate::credentials::{AgentKind, CredentialCheck};
 pub(crate) mod brief;
 pub(crate) mod claude;
 pub(crate) mod context;
+pub(crate) mod mcp;
 mod process;
+pub(crate) mod tools;
 pub(crate) mod turn;
+
+/// The front's tool server for one turn: the program the agent starts as a child for the
+/// turn, and the tools it serves.
+pub(crate) struct ToolServer<'a> {
+    /// The name the agent knows the server by.
+    pub(crate) name: &'a str,
+    /// Absolute path of the program.
+    pub(crate) program: &'a Path,
+    /// Its arguments, which name no secret.
+    pub(crate) args: &'a [String],
+    /// The tools it serves.
+    pub(crate) tools: &'a [&'a str],
+}
 
 /// What one turn's command needs from the front.
 pub(crate) struct TurnSetup<'a> {
@@ -22,6 +37,8 @@ pub(crate) struct TurnSetup<'a> {
     pub(crate) workdir: &'a Path,
     /// The standing instructions of every turn.
     pub(crate) brief: &'a str,
+    /// The only tool server the agent may load.
+    pub(crate) tools: &'a ToolServer<'a>,
 }
 
 /// What the agent loaded, as its first output line reports it.
@@ -81,8 +98,13 @@ pub(crate) trait Agent: CredentialCheck + Send + Sync {
     /// The version the binary reported.
     fn version(&self) -> &str;
 
-    /// The command of one turn, with its environment cleared and set. Input goes on stdin.
-    fn turn_command(&self, setup: &TurnSetup<'_>) -> Command;
+    /// The command of one turn, with its environment cleared and set, wired to the setup's
+    /// tool server and to no other. Writes what the agent needs for that into the workdir.
+    /// Input goes on stdin.
+    fn turn_command(&self, setup: &TurnSetup<'_>) -> Result<Command, String>;
+
+    /// How the agent's load report names `tool` of tool server `server`.
+    fn tool_name(&self, server: &str, tool: &str) -> String;
 
     /// The descriptor the turn reads its credential on, from a pipe.
     fn credential_fd(&self) -> i32;

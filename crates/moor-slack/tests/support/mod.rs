@@ -122,6 +122,72 @@ impl Rig {
         dir
     }
 
+    /// Makes run `run` of the fake `claude` in `bin`, or every run when `None`, call these
+    /// tools of the front's tool server, in order, each as `(name, arguments)`.
+    pub(crate) fn tool_calls(bin: &Path, run: Option<u32>, calls: &[(&str, serde_json::Value)]) {
+        let mut lines = String::new();
+        for (i, (name, args)) in calls.iter().enumerate() {
+            let call = serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": i + 2,
+                "method": "tools/call",
+                "params": {"name": name, "arguments": args},
+            });
+            lines.push_str(&call.to_string());
+            lines.push('\n');
+        }
+        let file = run.map_or_else(|| "calls".to_owned(), |n| format!("calls-{n}"));
+        std::fs::write(bin.join(file), lines).unwrap();
+    }
+
+    /// The tool results run `run` of the fake `claude` in `bin` got, in call order, as
+    /// `(text, is_error)`.
+    pub(crate) fn tool_results(bin: &Path, run: u32) -> Vec<(String, bool)> {
+        let out = std::fs::read_to_string(bin.join(format!("run-{run}")).join("mcp")).unwrap();
+        out.lines()
+            .map(|l| serde_json::from_str::<serde_json::Value>(l).unwrap())
+            .filter(|v| v["id"].as_u64().is_some_and(|id| id >= 2))
+            .map(|v| {
+                let result = &v["result"];
+                let text = result["content"][0]["text"].as_str().unwrap_or_default();
+                (
+                    text.to_owned(),
+                    result["isError"].as_bool().unwrap_or(false),
+                )
+            })
+            .collect()
+    }
+
+    /// Polls Slack until some post in the thread reads `text`; fails after ten seconds.
+    pub(crate) fn wait_post(&self, text: &str) {
+        for _ in 0..500 {
+            if self.slack.posts().iter().any(|p| p.text == text) {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        panic!("no post reads {text:?}: {:?}", self.slack.posts());
+    }
+
+    /// Polls `slack.db` until Box `name` is in `state`; fails after ten seconds.
+    pub(crate) fn wait_box_state(&self, name: &str, state: &str) {
+        let db = rusqlite::Connection::open(self.path("state-slack/slack.db")).unwrap();
+        for _ in 0..500 {
+            let found: Option<String> = db
+                .query_row(
+                    "SELECT state FROM slack_boxes WHERE box_name = ?1",
+                    [name],
+                    |r| r.get(0),
+                )
+                .ok();
+            if found.as_deref() == Some(state) {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        panic!("Box {name} never reached {state}");
+    }
+
     /// Writes `token` as `user`'s linked Claude token in the daemon's state dir, as
     /// `/moor login` stores it.
     pub(crate) fn link_token(&self, user: &str, token: &str) {

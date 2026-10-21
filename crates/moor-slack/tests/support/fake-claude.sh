@@ -34,6 +34,44 @@ case "$token" in
     : > "$out/waiting"
     sleep 60
     ;;
+  *-listed-*)
+    echo '{"type":"system","subtype":"init","tools":["mcp__moor__list_boxes"],"mcp_servers":[{"name":"moor","status":"connected"}],"skills":[],"slash_commands":[],"plugins":[]}'
+    echo '{"type":"result","subtype":"success","is_error":false,"result":"OK"}'
+    ;;
+  *-server-*)
+    echo '{"type":"system","subtype":"init","tools":[],"mcp_servers":[{"name":"github","status":"connected"}],"skills":[],"slash_commands":[],"plugins":[]}'
+    sleep 30
+    ;;
+  *-extra-*)
+    init '"mcp__moor__list_boxes","mcp__moor__steer_box"'
+    sleep 30
+    ;;
+  *-mcp-*)
+    cfg=""
+    prev=""
+    for arg in "$@"; do
+      if [ "$prev" = "--mcp-config" ]; then cfg=$arg; fi
+      prev=$arg
+    done
+    cmd=$(sed -n 's/^ *"command": "\(.*\)",$/\1/p' "$cfg")
+    sed -n '/"args": \[/,/\]/p' "$cfg" | sed '1d;$d' | sed 's/^ *"\(.*\)",\{0,1\}$/\1/' > "$out/server-args"
+    set --
+    while IFS= read -r a; do set -- "$@" "$a"; done < "$out/server-args"
+    calls="$dir/calls-$n"
+    [ -f "$calls" ] || calls="$dir/calls"
+    hello='{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"fake","version":"0"}}}'
+    printf '%s\n%s\n' "$hello" '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | "$cmd" "$@" > "$out/mcp-list" 2> "$out/mcp-err"
+    tools=$(grep '"id":1,' "$out/mcp-list" | grep -o '"name":"[a-z_]*"' | sed 's/"name":"\(.*\)"/"mcp__moor__\1"/' | paste -sd, -)
+    echo "{\"type\":\"system\",\"subtype\":\"init\",\"tools\":[$tools],\"mcp_servers\":[{\"name\":\"moor\",\"status\":\"connected\"}],\"skills\":[],\"slash_commands\":[],\"plugins\":[]}"
+    sleep 0.3
+    {
+      echo "$hello"
+      echo '{"jsonrpc":"2.0","method":"notifications/initialized"}'
+      if [ -f "$calls" ]; then cat "$calls"; fi
+    } | "$cmd" "$@" > "$out/mcp" 2>> "$out/mcp-err"
+    if [ -f "$dir/hang-after-tools" ]; then sleep 60; fi
+    echo '{"type":"result","subtype":"success","is_error":false,"result":"OK"}'
+    ;;
   *-channel-*)
     init
     echo '{"type":"result","subtype":"success","is_error":false,"result":"<!channel> deploy & <@U9> done"}'

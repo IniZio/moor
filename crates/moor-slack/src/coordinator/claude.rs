@@ -1,6 +1,6 @@
 //! Everything that knows Claude Code: the version gate, the argv and cleared environment of a
-//! turn, the token on a pipe at fd 3, the `stream-json` events of its output, and the
-//! instruction files it would load.
+//! turn, the token on a pipe at fd 3, the `mcp.json` that names the front's tool server, the
+//! `stream-json` events of its output, and the instruction files it would load.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -22,9 +22,6 @@ const TOKEN_FD_VAR: &str = "CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR";
 
 /// The token pipe's descriptor in the child.
 const TOKEN_FD: i32 = 3;
-
-/// `PATH` in a turn's cleared environment.
-const PATH: &str = "/usr/local/bin:/usr/bin:/bin";
 
 /// Model of the token check, the cheapest one that answers.
 const CHECK_MODEL: &str = "haiku";
@@ -144,11 +141,21 @@ impl Agent for Claude {
         &self.version
     }
 
-    fn turn_command(&self, setup: &TurnSetup<'_>) -> Command {
+    fn turn_command(&self, setup: &TurnSetup<'_>) -> Result<Command, String> {
+        let config = setup.workdir.join(MCP_CONFIG);
+        write_mcp_config(&config, setup.tools)
+            .map_err(|e| format!("write {}: {e}", config.display()))?;
         let mut cmd = self.turn(setup.model, setup.config_dir);
         cmd.args(["--system-prompt", setup.brief])
+            .arg("--mcp-config")
+            .arg(&config)
+            .args(["--allowedTools", &format!("mcp__{}", setup.tools.name)])
             .current_dir(setup.workdir);
-        cmd
+        Ok(cmd)
+    }
+
+    fn tool_name(&self, server: &str, tool: &str) -> String {
+        format!("mcp__{server}__{tool}")
     }
 
     fn credential_fd(&self) -> i32 {
@@ -281,17 +288,6 @@ impl CredentialCheck for Claude {
     }
 }
 
-/// Clears `cmd`'s environment down to `HOME`, `PATH`, `USER` and `LANG`.
-fn clear_env(cmd: &mut Command, host: &HostEnv) {
-    cmd.env_clear().env("PATH", PATH).env("LANG", "C.UTF-8");
-    if let Some(home) = &host.home {
-        cmd.env("HOME", home);
-    }
-    if let Some(user) = &host.user {
-        cmd.env("USER", user);
-    }
-}
-
 /// `major.minor.patch`, when `text` is one.
 fn parse_version(text: &str) -> Option<[u32; 3]> {
     let mut parts = text.split('.').map(str::parse::<u32>);
@@ -383,6 +379,9 @@ fn run(cmd: Command, input: &[u8], token: Option<&Secret>, limit: Duration) -> i
 }
 
 mod instructions;
+
+mod wiring;
+use wiring::{clear_env, write_mcp_config, MCP_CONFIG};
 
 #[cfg(test)]
 pub(crate) mod tests;

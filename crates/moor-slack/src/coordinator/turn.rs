@@ -67,11 +67,23 @@ pub(crate) fn run(
         secret: turn.credential,
         fd: agent.credential_fd(),
     };
-    let cmd = agent.turn_command(&turn.setup);
+    let cmd = match agent.turn_command(&turn.setup) {
+        Ok(cmd) => cmd,
+        Err(why) => return Ended::Answered(Answer::Unavailable(why)),
+    };
+    let server = turn.setup.tools;
+    let allowed = Allowed {
+        server: server.name,
+        tools: server
+            .tools
+            .iter()
+            .map(|tool| agent.tool_name(server.name, tool))
+            .collect(),
+    };
     let limits = turn.limits;
     let ran = supervise(cmd, turn.input.as_bytes(), Some(credential), |lines| {
         spawned(lines.pid);
-        watch(agent, lines, limits, log)
+        watch(agent, lines, &allowed, limits, log)
     });
     match ran {
         Ok((Seen::Ended(ended), _)) => ended,
@@ -85,10 +97,25 @@ pub(crate) fn run(
     }
 }
 
+/// What the front gives the coordinator: one tool server and its tools, named as the agent
+/// reports them.
+struct Allowed<'a> {
+    /// The tool server's name.
+    server: &'a str,
+    /// Its tools.
+    tools: Vec<String>,
+}
+
 /// Reads the turn's output: the first line must report what the agent loaded, then the
 /// answer ends the turn. An error may come first, since an agent that cannot start reports
 /// nothing it loaded; a reply may not.
-fn watch(agent: &dyn Agent, lines: &Lines, limits: Limits, log: &dyn Fn(&str)) -> (Seen, Left) {
+fn watch(
+    agent: &dyn Agent,
+    lines: &Lines,
+    allowed: &Allowed<'_>,
+    limits: Limits,
+    log: &dyn Fn(&str),
+) -> (Seen, Left) {
     let started = now();
     let start_by = started + limits.start.min(limits.turn);
     let end_by = started + limits.turn;
@@ -96,7 +123,7 @@ fn watch(agent: &dyn Agent, lines: &Lines, limits: Limits, log: &dyn Fn(&str)) -
     match lines.next(start_by) {
         Next::Line(line) => match agent.event(&line) {
             Event::Loaded(loaded) => {
-                if let Some(why) = refused(&loaded) {
+                if let Some(why) = refused(&loaded, allowed) {
                     return unsafe_turn(why);
                 }
                 if !loaded.plugins.is_empty() {
@@ -134,17 +161,18 @@ fn watch(agent: &dyn Agent, lines: &Lines, limits: Limits, log: &dyn Fn(&str)) -
     }
 }
 
-/// Why a turn that loaded `loaded` must not run: any tool, tool server, skill or slash
-/// command, since the front gives the coordinator none.
-fn refused(loaded: &Loaded) -> Option<String> {
-    [
-        ("tool", &loaded.tools),
-        ("tool server", &loaded.servers),
-        ("skill", &loaded.skills),
-        ("slash command", &loaded.commands),
-    ]
-    .into_iter()
-    .find_map(|(what, names)| {
+/// Why a turn that loaded `loaded` must not run: a tool or tool server beyond `allowed`, or
+/// any skill or slash command, since the front gives the coordinator none.
+fn refused(loaded: &Loaded, allowed: &Allowed<'_>) -> Option<String> {
+    let tools = loaded.tools.iter().filter(|t| !allowed.tools.contains(t));
+    let servers = loaded.servers.iter().filter(|s| *s != allowed.server);
+    let extra = [
+        ("tool", tools.collect::<Vec<_>>()),
+        ("tool server", servers.collect()),
+        ("skill", loaded.skills.iter().collect()),
+        ("slash command", loaded.commands.iter().collect()),
+    ];
+    extra.into_iter().find_map(|(what, names)| {
         names
             .first()
             .map(|name| format!("the agent loaded the {what} {name}"))

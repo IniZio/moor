@@ -151,6 +151,9 @@ fn load(settings: &Settings, log: &Log) -> Result<Loaded, String> {
     let coordinator = probe(&cfg, settings, log);
     let api = Arc::new(api);
     let bot_token = Arc::new(bot_token);
+    let program = std::env::current_exe().map_err(|e| format!("find this binary: {e}"))?;
+    let socket = std::path::absolute(&settings.socket)
+        .map_err(|e| format!("{}: {e}", settings.socket.display()))?;
     let turns = cfg.coordinator.as_ref().map(|c| Turns {
         db_path: db_path.clone(),
         state_dir: settings.state_dir.clone(),
@@ -160,6 +163,8 @@ fn load(settings: &Settings, log: &Log) -> Result<Loaded, String> {
         api: Arc::clone(&api),
         bot_token: Arc::clone(&bot_token),
         client: Client::new(&settings.socket),
+        socket,
+        program,
         log: Arc::clone(log),
         clock: settings.clock,
     });
