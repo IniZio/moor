@@ -48,7 +48,7 @@ fn box_with_unsaved_work_is_refused_with_recovery_commands() {
         "2 unpushed commit(s)",
         "3 uncommitted file(s)",
         "not on the host",
-        "`moor run fix-bug --no-sync -- git bundle create .moor/rescue.bundle HEAD --not --remotes`",
+        "`moor run fix-bug -- git bundle create .moor/rescue.bundle HEAD --not --remotes`",
         "`moor cp fix-bug .moor/rescue.bundle .`",
         "`git fetch ./rescue.bundle HEAD:moor/fix-bug`",
         "`moor close fix-bug --force`",
@@ -306,7 +306,7 @@ fn box_with_only_uncommitted_changes_is_not_offered_a_bundle() {
     for want in [
         "3 uncommitted file(s)",
         "`git push moor HEAD:refs/heads/moor/fix-bug`",
-        "`moor run fix-bug --no-sync -- git status`",
+        "`moor run fix-bug -- git status`",
         "`moor close fix-bug --force`",
     ] {
         assert!(text.contains(want), "{want}: {text}");

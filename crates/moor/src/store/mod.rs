@@ -322,7 +322,7 @@ fn intent_from(
     }
 }
 
-/// Map the joined box columns (offset 20..=27) to a `DriverRow`, if the box exists.
+/// Map the joined box columns (offset 19..=26) to a `DriverRow`, if the box exists.
 fn driver_from_row(row: &Row<'_>) -> Result<Option<DriverRow>, StoreError> {
     let Some(provider) = row.get::<_, Option<String>>(19)? else {
         return Ok(None);

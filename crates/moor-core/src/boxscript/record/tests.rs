@@ -4,7 +4,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use super::record_script;
+use super::{head_script, parse_head, record_script, HEAD_FILE, HEAD_MOVED, MOVED_FILE};
+use crate::Sha;
+
+const ZERO: &str = "0000000000000000000000000000000000000000";
+
+fn strings(v: &[&str]) -> Vec<String> {
+    v.iter().map(|s| (*s).to_owned()).collect()
+}
 
 struct Out {
     code: i32,
@@ -47,7 +54,7 @@ impl Sandbox {
 
     fn commit(&self) {
         self.git(&["add", "-A"]);
-        self.git(&["commit", "-q", "-m", "x"]);
+        self.git(&["commit", "-q", "--allow-empty", "-m", "x"]);
     }
 
     fn exists(&self, rel: &str) -> bool {
@@ -58,16 +65,39 @@ impl Sandbox {
         fs::read_to_string(self.root.join(rel)).unwrap_or_default()
     }
 
+    fn ignore(&self, lines: &str) {
+        self.write(".gitignore", lines);
+    }
+
+    /// The checkout's HEAD, or an all-zero sha when it has none.
+    fn head(&self) -> Sha {
+        let o = Command::new("git")
+            .args(["rev-parse", "--verify", "HEAD"])
+            .current_dir(&self.root)
+            .output()
+            .unwrap();
+        let text = String::from_utf8_lossy(&o.stdout).trim().to_owned();
+        Sha::parse(if o.status.success() { &text } else { ZERO }).unwrap()
+    }
+
     fn run(&self, setup: &[&str], cmd: &str) -> Out {
-        self.run_in(setup, cmd, None)
+        self.run_at(setup, cmd, &self.head())
+    }
+
+    fn run_at(&self, setup: &[&str], cmd: &str, head: &Sha) -> Out {
+        self.script(&record_script(&strings(setup), cmd, head.as_str()), None)
     }
 
     fn run_in(&self, setup: &[&str], cmd: &str, path: Option<&Path>) -> Out {
-        let setup: Vec<String> = setup.iter().map(|s| (*s).to_owned()).collect();
+        self.script(
+            &record_script(&strings(setup), cmd, self.head().as_str()),
+            path,
+        )
+    }
+
+    fn script(&self, text: &str, path: Option<&Path>) -> Out {
         let mut c = Command::new("/bin/sh");
-        c.arg("-c")
-            .arg(record_script(&setup, cmd))
-            .current_dir(&self.root);
+        c.arg("-c").arg(text).current_dir(&self.root);
         if let Some(p) = path {
             c.env("PATH", p);
         }
@@ -80,6 +110,7 @@ impl Sandbox {
 
     /// One passing run that creates `dir`, then a second run; true when `dir` survived it.
     fn kept_after_pass(&self, lock: &str, dir: &str) -> bool {
+        self.ignore(&format!("/{dir}/\n"));
         self.write(lock, "{}\n");
         self.commit();
         let first = self.run(&[], &format!("mkdir -p '{dir}' && touch '{dir}/f'"));
@@ -130,6 +161,7 @@ fn command_exit_code_is_returned() {
 #[test]
 fn node_dirs_and_tool_caches_are_kept_on_matching_key() {
     let sb = Sandbox::new("node", true);
+    sb.ignore("node_modules/\n.next/\n.turbo/\n.nx/\n");
     sb.write("package-lock.json", "{}\n");
     sb.write(".nvmrc", "20\n");
     sb.commit();
@@ -179,6 +211,7 @@ fn nested_lockfile_keeps_its_own_dir() {
 /// Passing run, then `change`, then a second run; true when `node_modules` survived.
 fn survives_change(name: &str, setup2: &[&str], change: impl Fn(&Sandbox)) -> bool {
     let sb = Sandbox::new(name, true);
+    sb.ignore("node_modules/\n");
     sb.write("package-lock.json", "{}\n");
     sb.write(".nvmrc", "20\n");
     sb.commit();
@@ -188,6 +221,7 @@ fn survives_change(name: &str, setup2: &[&str], change: impl Fn(&Sandbox)) -> bo
         0
     );
     change(&sb);
+    sb.commit();
     assert_eq!(sb.run(setup2, "true").code, 0);
     sb.exists("node_modules/f")
 }
@@ -215,6 +249,7 @@ fn setup_change_invalidates_the_key() {
 
 /// Tracked lockfile that must not keep anything; the command still runs.
 fn keeps_nothing(sb: &Sandbox, dir: &str) -> Out {
+    sb.ignore(&format!("/{dir}/\n"));
     sb.commit();
     let make = format!("mkdir -p '{dir}' && touch '{dir}/f'");
     assert_eq!(sb.run(&[], &make).code, 0);
@@ -269,7 +304,7 @@ fn bin_without_hash_tools(sb: &Sandbox) -> PathBuf {
     fs::create_dir_all(&bin).unwrap();
     let tools = [
         "sh", "bash", "git", "find", "rm", "mkdir", "cat", "wc", "tr", "sed", "dirname", "uname",
-        "id", "mv", "touch", "true", "sudo",
+        "id", "mv", "touch", "true", "sudo", "grep",
     ];
     for t in tools {
         if let Some(src) = find_on_path(t) {
@@ -282,6 +317,7 @@ fn bin_without_hash_tools(sb: &Sandbox) -> PathBuf {
 #[test]
 fn missing_hash_tool_keeps_nothing_and_warns() {
     let sb = Sandbox::new("nohash", true);
+    sb.ignore("node_modules/\n");
     sb.write("package-lock.json", "{}\n");
     sb.commit();
     let bin = bin_without_hash_tools(&sb);
@@ -316,6 +352,7 @@ fn failing_command_leaves_the_key_unpromoted() {
 #[test]
 fn passing_command_promotes_the_key() {
     let sb = Sandbox::new("pass", true);
+    sb.ignore("node_modules/\n");
     sb.write("package-lock.json", "{}\n");
     sb.commit();
     assert_eq!(
@@ -379,10 +416,10 @@ fn and_list_failure_still_stops_setup() {
 #[test]
 fn exit_zero_in_a_step_does_not_skip_later_steps() {
     let sb = setup_sandbox("exitzero");
-    let out = sb.run(&["exit 0", "touch second"], "touch ran");
-    assert_eq!(out.code, 0);
-    assert!(sb.exists("second"));
-    assert!(sb.exists("ran"));
+    let out = sb.run(&["exit 0", "touch .moor/second"], "touch .moor/ran");
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert!(sb.exists(".moor/second"));
+    assert!(sb.exists(".moor/ran"));
 }
 
 #[test]
@@ -400,4 +437,150 @@ fn step_with_unbalanced_parens_cannot_break_out() {
     assert_ne!(out.code, 0);
     assert!(!sb.exists("escaped"));
     assert!(!sb.exists("ran"));
+}
+
+/// A committed checkout with `kept.txt` and `gone.txt` tracked and `*.log` ignored.
+fn probe_sandbox(name: &str) -> Sandbox {
+    let sb = Sandbox::new(name, true);
+    sb.ignore("*.log\n");
+    sb.write("kept.txt", "k");
+    sb.write("gone.txt", "g");
+    sb.commit();
+    sb
+}
+
+/// The head probe's exit code and the `(head, dirty)` it wrote.
+fn probe(sb: &Sandbox) -> (i32, Option<(String, u32)>) {
+    let out = sb.script(&head_script(), None);
+    (out.code, parse_head(&sb.read(HEAD_FILE)))
+}
+
+fn probed_dirty(sb: &Sandbox) -> u32 {
+    let (code, got) = probe(sb);
+    assert_eq!(code, 0);
+    let (head, dirty) = got.expect("the probe wrote a head line");
+    assert_eq!(head, sb.head().as_str());
+    dirty
+}
+
+#[test]
+fn head_probe_counts_a_clean_checkout_as_clean() {
+    assert_eq!(probed_dirty(&probe_sandbox("p-clean")), 0);
+}
+
+#[test]
+fn head_probe_counts_a_modified_file() {
+    let sb = probe_sandbox("p-mod");
+    sb.write("kept.txt", "changed");
+    assert_eq!(probed_dirty(&sb), 1);
+}
+
+#[test]
+fn head_probe_counts_an_untracked_file() {
+    let sb = probe_sandbox("p-new");
+    sb.write("new.txt", "n");
+    assert_eq!(probed_dirty(&sb), 1);
+}
+
+#[test]
+fn head_probe_skips_an_ignored_file() {
+    let sb = probe_sandbox("p-ign");
+    sb.write("build.log", "l");
+    assert_eq!(probed_dirty(&sb), 0);
+}
+
+#[test]
+fn head_probe_counts_a_staged_delete() {
+    let sb = probe_sandbox("p-del");
+    sb.git(&["rm", "-q", "gone.txt"]);
+    assert_eq!(probed_dirty(&sb), 1);
+}
+
+#[test]
+fn head_probe_counts_a_file_name_with_a_space() {
+    let sb = probe_sandbox("p-space");
+    sb.write("a b.txt", "s");
+    assert_eq!(probed_dirty(&sb), 1);
+}
+
+#[test]
+fn head_probe_fails_and_writes_nothing_without_a_commit() {
+    let sb = Sandbox::new("p-empty", true);
+    let (code, got) = probe(&sb);
+    assert_ne!(code, 0);
+    assert_eq!(got, None);
+}
+
+#[test]
+fn parse_head_takes_only_an_exact_head_line() {
+    let sha = "a".repeat(40);
+    assert_eq!(
+        parse_head(&format!("head={sha} dirty=3\n")),
+        Some((sha.clone(), 3))
+    );
+    for bad in [
+        String::new(),
+        format!("head={} dirty=0", "a".repeat(39)),
+        format!("head={sha} dirty=-1"),
+        format!("head={sha} dirty="),
+        format!("head={sha} dirty=0 extra"),
+        format!("dirty=0 head={sha}"),
+    ] {
+        assert_eq!(parse_head(&bad), None, "{bad:?}");
+    }
+}
+
+/// Runs `cmd` as a record run of the committed HEAD; asserts it failed as moved.
+fn assert_moved(sb: &Sandbox, cmd: &str, head: &Sha) -> Out {
+    let out = sb.run_at(&[], cmd, head);
+    assert_ne!(out.code, 0, "{}", out.stderr);
+    assert!(out.stderr.contains(HEAD_MOVED), "{}", out.stderr);
+    assert!(sb.exists(MOVED_FILE));
+    out
+}
+
+#[test]
+fn a_commit_during_the_record_run_fails_it_as_moved() {
+    let sb = probe_sandbox("m-commit");
+    let head = sb.head();
+    assert_moved(&sb, "echo x > kept.txt && git commit -qam y", &head);
+}
+
+#[test]
+fn a_file_left_by_the_record_run_fails_it_as_moved() {
+    let sb = probe_sandbox("m-dirty");
+    let head = sb.head();
+    assert_moved(&sb, "touch left.txt", &head);
+}
+
+#[test]
+fn a_head_other_than_the_probed_one_fails_the_run_as_moved() {
+    let sb = probe_sandbox("m-other");
+    assert_moved(&sb, "true", &Sha::parse(ZERO).unwrap());
+}
+
+#[test]
+fn a_moved_run_keeps_the_command_failure_code() {
+    let sb = probe_sandbox("m-code");
+    let head = sb.head();
+    assert_eq!(assert_moved(&sb, "touch left.txt; exit 4", &head).code, 4);
+}
+
+#[test]
+fn a_clean_run_after_a_moved_one_clears_the_moved_file() {
+    let sb = probe_sandbox("m-clear");
+    let head = sb.head();
+    assert_moved(&sb, "touch left.txt", &head);
+    let out = sb.run_at(&[], "true", &head);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert!(!sb.exists(MOVED_FILE));
+}
+
+#[test]
+fn ignored_output_of_the_record_run_does_not_fail_it() {
+    let sb = probe_sandbox("m-ign");
+    let head = sb.head();
+    let out = sb.run_at(&[], "touch out.log .moor/x", &head);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    assert!(!sb.exists(MOVED_FILE));
 }

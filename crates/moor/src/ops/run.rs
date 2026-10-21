@@ -5,6 +5,7 @@
 use std::path::PathBuf;
 
 use moor_core::boxscript::command_line;
+use moor_core::boxscript::record::HEAD_MOVED;
 use moor_core::config::{BoxSettings, Flags};
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
@@ -149,7 +150,8 @@ fn launch(
         ExecOutcome::Exited { code } => (Some(code), false),
         ExecOutcome::Interrupted => (None, true),
     };
-    store.finish_run(id, RunOutcome::ended(exit, interrupted))?;
+    let moved = sha.is_some() && exit.is_some_and(|c| c != 0) && record::moved(cx, target);
+    store.finish_run(id, ended(exit, interrupted, moved))?;
     Ok(RunValue {
         ran: true,
         run: Some(id),
@@ -218,7 +220,8 @@ fn plan(
 ) -> Result<(Option<Sha>, Vec<String>), CommandError> {
     if req.record.is_some() {
         let sha = record::checkout(cx, target)?;
-        return Ok((Some(sha), record::wrap(setup, &req.argv)));
+        let argv = record::wrap(setup, &req.argv, &sha);
+        return Ok((Some(sha), argv));
     }
     let script = match req.argv.as_slice() {
         [text] => text.clone(),
@@ -242,6 +245,14 @@ fn output(cx: &Cx, req: &RunReq, id: RunId) -> Result<(Output, String), CommandE
     let path: PathBuf = dir.join(format!("{}.log", id.get()));
     let shown = path.display().to_string();
     Ok((Output::Log(path), shown))
+}
+
+/// How a run whose command reported back ended; a record run whose checkout moved carries why.
+fn ended(exit: Option<i32>, interrupted: bool, moved: bool) -> RunOutcome {
+    RunOutcome {
+        error: moved.then(|| HEAD_MOVED.to_owned()),
+        ..RunOutcome::ended(exit, interrupted)
+    }
 }
 
 /// Ends a run whose command never reported an exit; a store failure leaves it for healing.

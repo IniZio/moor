@@ -1,10 +1,17 @@
-//! Script for a recorded run: reset the Box checkout to fresh-checkout state, run setup, run the command.
+//! Script for a recorded run: reset the Box checkout to fresh-checkout state, run setup, run the
+//! command, then check the checkout is still a clean HEAD at the recorded sha.
 
 use super::boxwork::{ignored_status_pattern, is_full_sha};
 use super::quote;
 
 /// Box-relative path of the file [`head_script`] writes.
 pub const HEAD_FILE: &str = ".moor/record-head";
+
+/// Box-relative path of the file [`record_script`] writes when the checkout moved.
+pub const MOVED_FILE: &str = ".moor/record-moved";
+
+/// Why a record run whose checkout moved is stored as failed.
+pub const HEAD_MOVED: &str = "the Box HEAD moved during the record run";
 
 /// Refuse to run outside a git work tree.
 const GIT_GUARD: &str = "git rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo 'moor: --record needs a git checkout on the Box' >&2; exit 1; }\n";
@@ -112,8 +119,15 @@ set --
 const RUN_PREP: &str = r#"if command -v bash >/dev/null 2>&1; then bash -ec "$__moor_prep"; else sh -ec "$__moor_prep"; fi || { __moor_rc=$?; echo "moor: --record fresh-state prep failed (exit $__moor_rc)" >&2; exit $__moor_rc; }
 "#;
 
-/// Promote the pending cache stamps only when the command passed.
+/// After the command: a HEAD other than `$__moor_sha` or a dirty tree fails the run and leaves
+/// [`MOVED_FILE`]; otherwise promote the pending cache stamps when the command passed.
 const PROMOTE: &str = r#"__moor_rc=$?
+if ! __moor_state || [ "$__moor_head" != "$__moor_sha" ] || [ "$__moor_dirty" -ne 0 ]; then
+  echo 'moor: the Box HEAD moved during the record run' >&2
+  : > .moor/record-moved
+  [ "$__moor_rc" -ne 0 ] || __moor_rc=1
+  exit "$__moor_rc"
+fi
 if [ "$__moor_rc" -eq 0 ]; then
   for __moor_n in .moor/cache/*.next; do
     [ -e "$__moor_n" ] || continue
@@ -126,8 +140,10 @@ exit "$__moor_rc"
 /// POSIX sh text: fresh-checkout prep, `setup` steps (each its own `sh -c`,
 /// first failure stops), then `command` (shell text); exits with the command's
 /// status.
+///
+/// A checkout that is not a clean `head` afterwards exits non-zero and writes [`MOVED_FILE`].
 #[must_use]
-pub fn record_script(setup: &[String], command: &str) -> String {
+pub fn record_script(setup: &[String], command: &str, head: &str) -> String {
     let steps: String = setup
         .iter()
         .flat_map(|s| ["sh -c ", &quote(s), " || exit $?\n"].map(str::to_owned))
@@ -142,6 +158,8 @@ pub fn record_script(setup: &[String], command: &str) -> String {
     .concat();
     [
         GIT_GUARD,
+        &format!("rm -f {MOVED_FILE}\n__moor_sha={}\n", quote(head)),
+        &state_fn(),
         &format!("__moor_prep={}\n", quote(&prep)),
         RUN_PREP,
         "unset __moor_prep\n",
@@ -155,19 +173,30 @@ pub fn record_script(setup: &[String], command: &str) -> String {
 /// [`HEAD_FILE`], where `N` counts changed or untracked paths as the boxwork probe does.
 #[must_use]
 pub fn head_script() -> String {
+    format!(
+        r#"{}mkdir -p .moor || exit 1
+rm -f {HEAD_FILE}
+__moor_state || exit 1
+printf 'head=%s dirty=%s\n' "$__moor_head" "$__moor_dirty" > {HEAD_FILE} || exit 1
+"#,
+        state_fn()
+    )
+}
+
+/// Defines `__moor_state`, which sets `__moor_head` and `__moor_dirty` and fails on any git
+/// or count failure, so an unreadable checkout never counts as clean.
+fn state_fn() -> String {
     let ignored = quote(&ignored_status_pattern());
     format!(
-        r#"export GIT_NO_LAZY_FETCH=1
-mkdir -p .moor || exit 1
-rm -f {HEAD_FILE}
-head=$(git rev-parse --verify HEAD) || exit 1
-st=$(git status --porcelain --no-renames) || exit 1
-if [ -z "$st" ]; then
-  dirty=0
-else
-  dirty=$(printf '%s\n' "$st" | grep -vcE {ignored} || true)
-fi
-printf 'head=%s dirty=%s\n' "$head" "$((dirty + 0))" > {HEAD_FILE} || exit 1
+        r#"__moor_state() {{
+  __moor_head=$(GIT_NO_LAZY_FETCH=1 git rev-parse --verify HEAD) || return 1
+  __moor_st=$(GIT_NO_LAZY_FETCH=1 git status --porcelain --no-renames) || return 1
+  __moor_dirty=0
+  if [ -n "$__moor_st" ]; then
+    __moor_dirty=$(printf '%s\n' "$__moor_st" | grep -vcE {ignored})
+    case "$__moor_dirty" in ''|*[!0-9]*) return 1 ;; esac
+  fi
+}}
 "#
     )
 }
