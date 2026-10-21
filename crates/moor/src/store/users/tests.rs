@@ -8,7 +8,7 @@ use moor_core::Secret;
 
 use crate::store::tests::open;
 use crate::store::StoreError;
-use crate::vault::Vault;
+use crate::vault::{Vault, VaultError};
 
 fn id(s: &str) -> Identity {
     Identity::parse(s).unwrap()
@@ -111,7 +111,9 @@ fn user_secrets_are_stored_sealed_and_opened_on_every_read() {
     let (user, _) = store.enroll(&id("local:1000")).unwrap();
     let (other, _) = store.enroll(&id("web:bob")).unwrap();
     let value = "sk-plaintext-canary-7f3e";
-    let sealed = vault.seal(&Secret::new(value.into())).unwrap();
+    let sealed = vault
+        .seal(user, &name("claude"), &Secret::new(value.into()))
+        .unwrap();
     store
         .set_user_secret(user, &name("claude"), &sealed)
         .unwrap();
@@ -144,11 +146,52 @@ fn setting_a_secret_again_replaces_it() {
     let vault = Vault::load_or_create(&dir.path().join("vault.key")).unwrap();
     let (user, _) = store.enroll(&id("local:1000")).unwrap();
     for value in ["one", "two"] {
-        let sealed = vault.seal(&Secret::new(value.into())).unwrap();
+        let sealed = vault
+            .seal(user, &name("github"), &Secret::new(value.into()))
+            .unwrap();
         store
             .set_user_secret(user, &name("github"), &sealed)
             .unwrap();
     }
     let got = store.user_secret(&vault, user, &name("github")).unwrap();
     assert_eq!(got.unwrap().expose(), b"two");
+}
+
+#[test]
+fn a_sealed_value_copied_into_another_row_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let (store, _) = open(dir.path());
+    let vault = Vault::load_or_create(&dir.path().join("vault.key")).unwrap();
+    let (alice, _) = store.enroll(&id("local:1000")).unwrap();
+    let (bob, _) = store.enroll(&id("web:bob")).unwrap();
+    for (user, key) in [(alice, "claude"), (bob, "claude"), (alice, "github")] {
+        let value = Secret::new(format!("{}-{key}", user.get()).into_bytes());
+        let sealed = vault.seal(user, &name(key), &value).unwrap();
+        store.set_user_secret(user, &name(key), &sealed).unwrap();
+    }
+    let db = rusqlite::Connection::open(dir.path().join("state").join("moor.db")).unwrap();
+    let copied = db
+        .execute(
+            "UPDATE user_secrets SET value = \
+             (SELECT value FROM user_secrets WHERE user = ?1 AND name = 'claude') \
+             WHERE (user = ?2 AND name = 'claude') OR (user = ?1 AND name = 'github')",
+            [alice.get(), bob.get()],
+        )
+        .unwrap();
+    assert_eq!(copied, 2);
+    for (user, key) in [(bob, "claude"), (alice, "github")] {
+        let err = store
+            .user_secret(&vault, user, &name(key))
+            .err()
+            .expect("refused");
+        assert!(
+            matches!(&err, StoreError::Vault(VaultError::Open(why)) if why.contains("another user or name")),
+            "{err:?}"
+        );
+    }
+    let own = store.user_secret(&vault, alice, &name("claude")).unwrap();
+    assert_eq!(
+        own.unwrap().expose(),
+        format!("{}-claude", alice.get()).as_bytes()
+    );
 }

@@ -9,6 +9,7 @@ use std::str::FromStr as _;
 
 use age::secrecy::ExposeSecret as _;
 use age::x25519::{Identity, Recipient};
+use moor_core::user::{SecretName, UserId};
 use moor_core::Secret;
 
 /// File name of the vault key in the controller config's directory.
@@ -49,17 +50,44 @@ impl Vault {
         load_or_create_as(path, rustix::process::geteuid().as_raw())
     }
 
-    /// Encrypts `plain` to this key.
-    pub(crate) fn seal(&self, plain: &Secret) -> Result<Vec<u8>, VaultError> {
-        age::encrypt(&self.recipient, plain.expose()).map_err(|e| VaultError::Seal(e.to_string()))
+    /// Encrypts `plain` to this key, bound to `user`'s secret `name`.
+    pub(crate) fn seal(
+        &self,
+        user: UserId,
+        name: &SecretName,
+        plain: &Secret,
+    ) -> Result<Vec<u8>, VaultError> {
+        let head = row_head(user, name);
+        let mut bound = Vec::with_capacity(head.len() + plain.expose().len());
+        bound.extend_from_slice(&head);
+        bound.extend_from_slice(plain.expose());
+        let bound = Secret::new(bound);
+        age::encrypt(&self.recipient, bound.expose()).map_err(|e| VaultError::Seal(e.to_string()))
     }
 
-    /// Decrypts a value that [`Vault::seal`] made.
-    pub(crate) fn open(&self, sealed: &[u8]) -> Result<Secret, VaultError> {
-        age::decrypt(&self.identity, sealed)
+    /// Decrypts a value that [`Vault::seal`] bound to `user`'s secret `name`. A value sealed
+    /// for another user or name is refused.
+    pub(crate) fn open(
+        &self,
+        user: UserId,
+        name: &SecretName,
+        sealed: &[u8],
+    ) -> Result<Secret, VaultError> {
+        let bound = age::decrypt(&self.identity, sealed)
             .map(Secret::new)
-            .map_err(|e| VaultError::Open(e.to_string()))
+            .map_err(|e| VaultError::Open(e.to_string()))?;
+        bound
+            .expose()
+            .strip_prefix(row_head(user, name).as_slice())
+            .map(|value| Secret::new(value.to_vec()))
+            .ok_or_else(|| VaultError::Open("it was sealed for another user or name".into()))
     }
+}
+
+/// The header sealed in front of a value: `<user id> <name>\n`. A name holds no space or
+/// line break, so no row's header is a prefix of another's.
+fn row_head(user: UserId, name: &SecretName) -> Vec<u8> {
+    format!("{} {}\n", user.get(), name.as_str()).into_bytes()
 }
 
 /// [`Vault::load_or_create`] with the uid that must own the file.

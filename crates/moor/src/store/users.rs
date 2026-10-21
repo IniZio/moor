@@ -179,7 +179,7 @@ impl Store {
                 |r| r.get(0),
             )
             .optional()?;
-        Ok(sealed.map(|s| vault.open(&s)).transpose()?)
+        Ok(sealed.map(|s| vault.open(user, name, &s)).transpose()?)
     }
 }
 

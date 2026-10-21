@@ -3,6 +3,7 @@
 use std::fs;
 use std::os::unix::fs::{symlink, MetadataExt as _, PermissionsExt as _};
 
+use moor_core::user::{SecretName, UserId};
 use moor_core::Secret;
 
 use super::{load_or_create_as, Vault, VaultError};
@@ -18,9 +19,20 @@ fn a_missing_key_is_created_owner_only_and_reused() {
     let path = dir.path().join("vault.key");
     let first = Vault::load_or_create(&path).unwrap();
     assert_eq!(fs::metadata(&path).unwrap().mode() & 0o777, 0o600);
-    let sealed = first.seal(&Secret::new(b"tok".to_vec())).unwrap();
+    let sealed = first
+        .seal(USER, &claude(), &Secret::new(b"tok".to_vec()))
+        .unwrap();
     let again = Vault::load_or_create(&path).unwrap();
-    assert_eq!(again.open(&sealed).unwrap().expose(), b"tok");
+    assert_eq!(
+        again.open(USER, &claude(), &sealed).unwrap().expose(),
+        b"tok"
+    );
+}
+
+const USER: UserId = UserId::new(1);
+
+fn claude() -> SecretName {
+    SecretName::parse("claude").unwrap()
 }
 
 #[test]
@@ -29,10 +41,33 @@ fn a_sealed_value_holds_no_plaintext_and_needs_its_own_key() {
     let vault = Vault::load_or_create(&dir.path().join("a.key")).unwrap();
     let other = Vault::load_or_create(&dir.path().join("b.key")).unwrap();
     let sealed = vault
-        .seal(&Secret::new(b"plain-value-123".to_vec()))
+        .seal(USER, &claude(), &Secret::new(b"plain-value-123".to_vec()))
         .unwrap();
     assert!(!sealed.windows(15).any(|w| w == b"plain-value-123"));
-    assert!(matches!(other.open(&sealed), Err(VaultError::Open(_))));
+    assert!(matches!(
+        other.open(USER, &claude(), &sealed),
+        Err(VaultError::Open(_))
+    ));
+}
+
+#[test]
+fn a_value_opens_only_for_the_user_and_name_it_was_sealed_for() {
+    let dir = tempfile::tempdir().unwrap();
+    let vault = Vault::load_or_create(&dir.path().join("vault.key")).unwrap();
+    let sealed = vault
+        .seal(USER, &claude(), &Secret::new(b"tok".to_vec()))
+        .unwrap();
+    let github = SecretName::parse("github").unwrap();
+    let claude2 = SecretName::parse("claude2").unwrap();
+    for (user, name) in [
+        (UserId::new(2), claude()),
+        (UserId::new(11), claude()),
+        (USER, github),
+        (USER, claude2),
+    ] {
+        let err = vault.open(user, &name, &sealed).err().expect("refused");
+        assert!(err.to_string().contains("another user or name"), "{err}");
+    }
 }
 
 /// The refusal for an existing `vault.key` that `setup` prepared, with `owner` as the owner.
