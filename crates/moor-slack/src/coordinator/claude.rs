@@ -1,21 +1,21 @@
 //! Everything that knows Claude Code: the version gate, the argv and cleared environment of a
-//! turn, the token on a pipe at fd 3, and the `result` event of `stream-json` output.
+//! turn, the token on a pipe at fd 3, the `stream-json` events of its output, and the
+//! instruction files it would load from a workdir's ancestors.
 
-use std::io::{self, PipeWriter, Read, Write as _};
-use std::os::fd::OwnedFd;
-use std::os::unix::process::CommandExt as _;
+use std::io::{
+    self,
+    ErrorKind::{NotADirectory, NotFound},
+};
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
-use std::sync::mpsc::{self, RecvTimeoutError};
-use std::thread;
+use std::process::Command;
 use std::time::Duration;
 
-use command_fds::{CommandFdExt as _, FdMapping};
 use moor_core::secret::Secret;
-
-use crate::credentials::{CheckError, CredentialCheck};
-use rustix::process::{kill_process_group, Pid, Signal};
 use serde_json::Value;
+
+use super::process::{now, supervise, Credential, Left, Next};
+use super::{Agent, Answer, Event, Loaded, TurnSetup};
+use crate::credentials::{AgentKind, CheckError, CredentialCheck};
 
 /// Oldest Claude Code that reads its token from the descriptor [`TOKEN_FD_VAR`] names.
 const MIN_VERSION: [u32; 3] = [2, 1, 304];
@@ -41,11 +41,8 @@ const CHECK_LIMIT: Duration = Duration::from_secs(60);
 /// Longest `--version` runs before its process group is killed.
 const VERSION_LIMIT: Duration = Duration::from_secs(30);
 
-/// How long a process that closed its output may take to exit before its group is killed.
-const EXIT_GRACE: Duration = Duration::from_secs(5);
-
-/// Most bytes kept from one output stream; the rest is read and dropped.
-const MAX_OUTPUT: usize = 1 << 20;
+/// Files Claude Code loads as instructions from its working directory and every ancestor.
+const INSTRUCTION_FILES: [&str; 3] = ["CLAUDE.md", "CLAUDE.local.md", ".claude/CLAUDE.md"];
 
 /// What the login modal asks for.
 pub(crate) const LOGIN_PROMPT: &str =
@@ -82,9 +79,9 @@ pub(crate) struct Claude {
 
 /// What one process run left behind.
 struct Ran {
-    /// Standard output, up to [`MAX_OUTPUT`] bytes.
+    /// Standard output, up to 1 MiB.
     stdout: Vec<u8>,
-    /// Standard error, up to [`MAX_OUTPUT`] bytes.
+    /// Standard error, up to 1 MiB.
     stderr: Vec<u8>,
     /// True when the run hit its limit and its group was killed.
     timed_out: bool,
@@ -112,11 +109,6 @@ impl Claude {
         }
     }
 
-    /// The version the binary printed.
-    pub(crate) fn version(&self) -> &str {
-        &self.version
-    }
-
     /// The command of one turn on `model`, with the cleared environment, `config_dir` as
     /// Claude Code's config dir, and the descriptor number of the token pipe.
     fn turn(&self, model: &str, config_dir: &Path) -> Command {
@@ -142,6 +134,105 @@ impl Claude {
         cmd.env("CLAUDE_CONFIG_DIR", config_dir)
             .env(TOKEN_FD_VAR, TOKEN_FD.to_string());
         cmd
+    }
+}
+
+impl Agent for Claude {
+    fn kind(&self) -> AgentKind {
+        AgentKind::Claude
+    }
+
+    fn program(&self) -> &'static str {
+        "Claude Code"
+    }
+
+    fn version(&self) -> &str {
+        &self.version
+    }
+
+    fn turn_command(&self, setup: &TurnSetup<'_>) -> Command {
+        let mut cmd = self.turn(setup.model, setup.config_dir);
+        cmd.args(["--system-prompt", setup.brief])
+            .current_dir(setup.workdir);
+        cmd
+    }
+
+    fn credential_fd(&self) -> i32 {
+        TOKEN_FD
+    }
+
+    fn event(&self, line: &str) -> Event {
+        let Ok(event) = serde_json::from_str::<Value>(line) else {
+            return Event::Other;
+        };
+        let field = |key: &str| event.get(key).and_then(Value::as_str);
+        match (field("type"), field("subtype")) {
+            (Some("system"), Some("init")) => Event::Loaded(loaded(&event)),
+            (Some("result"), _) => Event::Answer(self.answer(&event)),
+            _ => Event::Other,
+        }
+    }
+
+    fn unsafe_workdir(&self, workdir: &Path) -> Option<String> {
+        workdir.ancestors().find_map(|dir| {
+            INSTRUCTION_FILES.iter().find_map(|name| {
+                let path = dir.join(name);
+                match std::fs::symlink_metadata(&path) {
+                    Ok(_) => Some(format!("{} would load as instructions", path.display())),
+                    Err(e) if matches!(e.kind(), NotFound | NotADirectory) => None,
+                    Err(e) => Some(format!("cannot check {}: {e}", path.display())),
+                }
+            })
+        })
+    }
+}
+
+impl Claude {
+    /// What a `result` event says about the turn.
+    fn answer(&self, event: &Value) -> Answer {
+        let result = parse_result(event);
+        if !result.is_error {
+            let cost_usd = event.get("total_cost_usd").and_then(Value::as_f64);
+            return Answer::Reply {
+                text: result.text,
+                cost_usd,
+            };
+        }
+        if result.api_error_status == Some(401) {
+            return Answer::Refused;
+        }
+        if result.text.contains("Not logged in") {
+            let version = &self.version;
+            return Answer::Unavailable(format!(
+                "Claude Code {version} did not read the token pipe"
+            ));
+        }
+        let status = result.api_error_status.map(|s| format!("API error {s}"));
+        let line = first_line(&result.text).or(status);
+        Answer::Failed(line.unwrap_or_else(|| "an error with no text".to_owned()))
+    }
+}
+
+/// What a `system/init` event lists. A server or plugin is an object with a `name`.
+fn loaded(event: &Value) -> Loaded {
+    let names = |key: &str| -> Vec<String> {
+        let items = event.get(key).and_then(Value::as_array);
+        items
+            .into_iter()
+            .flatten()
+            .filter_map(|item| {
+                item.as_str()
+                    .or_else(|| item.get("name").and_then(Value::as_str))
+                    .map(str::to_owned)
+            })
+            .collect()
+    };
+    Loaded {
+        tools: names("tools"),
+        servers: names("mcp_servers"),
+        skills: names("skills"),
+        commands: names("slash_commands"),
+        plugins: names("plugins"),
     }
 }
 
@@ -241,7 +332,12 @@ fn result_event(stdout: &[u8]) -> Option<ResultEvent> {
         .rev()
         .filter_map(|line| serde_json::from_str::<Value>(line).ok())
         .find(|event| event.get("type").and_then(Value::as_str) == Some("result"))?;
-    Some(ResultEvent {
+    Some(parse_result(&event))
+}
+
+/// The fields of one `result` event.
+fn parse_result(event: &Value) -> ResultEvent {
+    ResultEvent {
         is_error: event.get("is_error").and_then(Value::as_bool) != Some(false),
         text: event
             .get("result")
@@ -249,7 +345,7 @@ fn result_event(stdout: &[u8]) -> Option<ResultEvent> {
             .unwrap_or_default()
             .to_owned(),
         api_error_status: event.get("api_error_status").and_then(Value::as_u64),
-    })
+    }
 }
 
 /// The first non-empty line of `text`, trimmed.
@@ -269,90 +365,32 @@ fn redact(text: &str, token: &Secret) -> String {
     text.chars().take(MAX_REASON).collect()
 }
 
-/// Runs `cmd` in its own process group with `input` on stdin and `token`, when given, on a
-/// pipe at [`TOKEN_FD`], and collects its output. Both are written after the spawn, so
-/// `limit` covers a child that never reads them; at `limit` the whole group is killed. Any
-/// process the group still holds after the leader exits is killed too, so nothing outlives
-/// the run.
-fn run(mut cmd: Command, input: &[u8], token: Option<&Secret>, limit: Duration) -> io::Result<Ran> {
-    cmd.stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .process_group(0);
-    let token = token
-        .map(|token| token_pipe(&mut cmd).map(|pipe| (pipe, token)))
-        .transpose()?;
-    let mut child = cmd.spawn()?;
-    // Dropping `cmd` closes this process's copy of the pipe's read end, so a write to a child
-    // that is gone fails instead of blocking.
-    drop(cmd);
-    let group = Pid::from_child(&child);
-    thread::scope(|scope| {
-        let stdin = child.stdin.take();
-        scope.spawn(move || stdin.map(|mut stdin| stdin.write_all(input)));
-        if let Some((mut pipe, token)) = token {
-            scope.spawn(move || pipe.write_all(token.expose()));
+/// Runs `cmd` with `input` on stdin and `token`, when given, on a pipe at [`TOKEN_FD`], and
+/// collects its output. At `limit` the whole process group is killed.
+fn run(cmd: Command, input: &[u8], token: Option<&Secret>, limit: Duration) -> io::Result<Ran> {
+    let credential = token.map(|secret| Credential {
+        secret,
+        fd: TOKEN_FD,
+    });
+    let deadline = now() + limit;
+    let ((stdout, timed_out), stderr) = supervise(cmd, input, credential, |lines| {
+        let mut out = Vec::new();
+        loop {
+            match lines.next(deadline) {
+                Next::Line(line) => {
+                    out.extend(line.bytes());
+                    out.push(b'\n');
+                }
+                Next::End => return ((out, false), Left::Ended),
+                Next::Late => return ((out, true), Left::Stopped),
+            }
         }
-        let (done_tx, done) = mpsc::channel();
-        let stdout = child.stdout.take();
-        let out = scope.spawn(move || {
-            let bytes = read_capped(stdout);
-            let _ = done_tx.send(());
-            bytes
-        });
-        let stderr = child.stderr.take();
-        let err = scope.spawn(move || read_capped(stderr));
-        let timed_out = matches!(done.recv_timeout(limit), Err(RecvTimeoutError::Timeout));
-        if !timed_out {
-            wait_up_to(&mut child, EXIT_GRACE);
-        }
-        let _ = kill_process_group(group, Signal::KILL);
-        child.wait()?;
-        Ok(Ran {
-            stdout: out.join().unwrap_or_default(),
-            stderr: err.join().unwrap_or_default(),
-            timed_out,
-        })
+    })?;
+    Ok(Ran {
+        stdout,
+        stderr,
+        timed_out,
     })
-}
-
-/// Maps a new pipe's read end to [`TOKEN_FD`] in `cmd`; returns its write end.
-fn token_pipe(cmd: &mut Command) -> io::Result<PipeWriter> {
-    let (reader, writer) = io::pipe()?;
-    let mapping = FdMapping {
-        parent_fd: OwnedFd::from(reader),
-        child_fd: TOKEN_FD,
-    };
-    cmd.fd_mappings(vec![mapping])
-        .map_err(|_| io::Error::other("token pipe: descriptor in use"))?;
-    Ok(writer)
-}
-
-/// Waits for `child` to exit, at most `limit`; an error from the wait ends it early.
-fn wait_up_to(child: &mut Child, limit: Duration) {
-    let step = Duration::from_millis(20);
-    let mut waited = Duration::ZERO;
-    while matches!(child.try_wait(), Ok(None)) && waited < limit {
-        thread::sleep(step);
-        waited += step;
-    }
-}
-
-/// Reads `stream` to its end and keeps the first [`MAX_OUTPUT`] bytes.
-fn read_capped(stream: Option<impl Read>) -> Vec<u8> {
-    let Some(mut stream) = stream else {
-        return Vec::new();
-    };
-    let mut kept = Vec::new();
-    let mut chunk = [0_u8; 8192];
-    while let Ok(n) = stream.read(&mut chunk) {
-        let Some(read) = chunk.get(..n).filter(|r| !r.is_empty()) else {
-            break;
-        };
-        let room = MAX_OUTPUT.saturating_sub(kept.len());
-        kept.extend(read.iter().take(room));
-    }
-    kept
 }
 
 #[cfg(test)]

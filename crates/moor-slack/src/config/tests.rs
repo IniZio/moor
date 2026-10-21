@@ -1,7 +1,7 @@
 //! Front config parse tables.
 #![allow(clippy::panic, reason = "test assertions")]
 
-use super::parse_config;
+use super::{parse_config, CoordinatorAgent};
 use moor_core::config::ConfigError;
 
 const SLACK: &str = "app_token_file: /x/app
@@ -76,6 +76,33 @@ fn coordinator_binary_is_optional_and_must_be_absolute() {
     );
     let e = err(&slack_with("coordinator:\n  binary: claude\n"));
     assert_eq!(e.path, "coordinator.binary");
-    let e = err(&slack_with("coordinator:\n  binary: /c\n  model: opus\n"));
-    assert!(e.to_string().contains("model"), "{e}");
+    let e = err(&slack_with("coordinator:\n  binary: /c\n  budget: 1\n"));
+    assert!(e.to_string().contains("budget"), "{e}");
+}
+
+#[test]
+fn coordinator_defaults_to_claude_on_sonnet_with_32_kib() {
+    let text = slack_with("coordinator:\n  binary: /c\n");
+    let c = parse_config("s.yaml", &text).unwrap().coordinator.unwrap();
+    assert_eq!(c.agent, CoordinatorAgent::Claude);
+    assert_eq!((c.model.as_str(), c.context_kib), ("sonnet", 32));
+    let text = slack_with(
+        "coordinator:\n  agent: claude\n  binary: /c\n  model: opus\n  context_kib: 8\n",
+    );
+    let c = parse_config("s.yaml", &text).unwrap().coordinator.unwrap();
+    assert_eq!((c.model.as_str(), c.context_kib), ("opus", 8));
+}
+
+#[test]
+fn a_coordinator_agent_other_than_claude_is_refused() {
+    for agent in ["codex", "Claude", "\"\""] {
+        let e = err(&slack_with(&format!(
+            "coordinator:\n  agent: {agent}\n  binary: /c\n"
+        )));
+        assert!(e.to_string().contains("agent"), "{agent}: {e}");
+    }
+    let e = err(&slack_with(
+        "coordinator:\n  binary: /c\n  context_kib: 0\n",
+    ));
+    assert_eq!(e.path, "coordinator.context_kib");
 }
