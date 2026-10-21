@@ -77,12 +77,7 @@ fn envelopes_match_moor_call() {
     let dir = tempfile::tempdir().expect("tempdir");
     let env = env(&dir);
     let unknown = BoxName::parse_allow_bare("nope").expect("name");
-    let requests = [
-        Request::Version {},
-        show(None),
-        show(Some(unknown)),
-        Request::ProxyCheck {},
-    ];
+    let requests = [Request::Version {}, show(None), show(Some(unknown))];
     for (i, req) in requests.iter().enumerate() {
         let id = format!("r{i}");
         let frames = run(&env, &[hello(), request(&id, req)]);

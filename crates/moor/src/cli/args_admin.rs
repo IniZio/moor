@@ -1,4 +1,4 @@
-//! clap definitions for the admin verbs: gate, env, github, proxy, controller, call, version.
+//! clap definitions for the admin verbs: gate, env, proxy, controller, call, version.
 
 use std::path::PathBuf;
 
@@ -12,9 +12,6 @@ use super::args::Action;
 pub(super) enum AdminCmd {
     /// Preview the layered agent environment.
     Env(EnvArgs),
-    /// GitHub credential setup.
-    #[command(subcommand)]
-    Github(GithubCmd),
     /// Proxy commands.
     #[command(subcommand)]
     Proxy(ProxyCmd),
@@ -34,20 +31,9 @@ pub(super) struct EnvArgs {
     repo: Option<String>,
 }
 
-/// Subcommands of `github`.
-#[derive(Debug, Subcommand)]
-pub(super) enum GithubCmd {
-    /// Set up GitHub access.
-    Setup,
-    /// Log in to GitHub.
-    Login,
-}
-
 /// Subcommands of `proxy`.
 #[derive(Debug, Subcommand)]
 pub(super) enum ProxyCmd {
-    /// Self-test each proxy route.
-    Check,
     /// Serve the credential proxy.
     #[command(hide = true)]
     Serve(ServeArgs),
@@ -90,9 +76,6 @@ impl AdminCmd {
     pub(super) fn into_action(self) -> Action {
         match self {
             Self::Env(a) => Action::Request(Request::Env(EnvReq { repo: a.repo })),
-            Self::Github(GithubCmd::Setup) => Action::Request(Request::GithubSetup {}),
-            Self::Github(GithubCmd::Login) => Action::Request(Request::GithubLogin {}),
-            Self::Proxy(ProxyCmd::Check) => Action::Request(Request::ProxyCheck {}),
             Self::Proxy(ProxyCmd::Serve(a)) => Action::ProxyServe(BoxId::new(a.box_id)),
             Self::Controller(ControllerCmd::Serve(a)) => Action::ControllerServe(a.config),
             Self::Controller(ControllerCmd::Attach(a)) => Action::ControllerAttach(a.socket),

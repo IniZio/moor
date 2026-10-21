@@ -49,20 +49,14 @@ pub enum Request {
     ShowSession(ShowSessionReq),
     /// List live Sessions, optionally only the children of one.
     Sessions(SessionsReq),
-    /// Publish a report.
-    Report(ReportReq),
     /// Show boxes or one box.
     Show(ShowReq),
     /// Close a box.
     Close(CloseReq),
-    /// Remove a box.
-    Remove(RemoveReq),
     /// Copy a file into a box.
     Cp(CpReq),
     /// Open a box's workspace.
     Open(BoxReq),
-    /// Open a shell in a box.
-    Shell(BoxReq),
     /// Sleep a box.
     Sleep(BoxReq),
     /// Wake a box.
@@ -73,12 +67,6 @@ pub enum Request {
     Gate(GateReq),
     /// Show the layered environment.
     Env(EnvReq),
-    /// Set up GitHub credentials.
-    GithubSetup {},
-    /// Log in to GitHub.
-    GithubLogin {},
-    /// Check the credential proxy.
-    ProxyCheck {},
     /// List the repos the controller knows.
     Repos(ReposReq),
     /// List a box's artifacts.
@@ -108,21 +96,15 @@ impl Request {
             Self::SessionBinding(_) => "session-binding",
             Self::ShowSession(_) => "show-session",
             Self::Sessions(_) => "sessions",
-            Self::Report(_) => "report",
             Self::Show(_) => "show",
             Self::Close(_) => "close",
-            Self::Remove(_) => "remove",
             Self::Cp(_) => "cp",
             Self::Open(_) => "open",
-            Self::Shell(_) => "shell",
             Self::Sleep(_) => "sleep",
             Self::Wake(_) => "wake",
             Self::Connect(_) => "connect",
             Self::Gate(_) => "gate",
             Self::Env(_) => "env",
-            Self::GithubSetup {} => "github-setup",
-            Self::GithubLogin {} => "github-login",
-            Self::ProxyCheck {} => "proxy-check",
             Self::Repos(_) => "repos",
             Self::Artifacts(_) => "artifacts",
             Self::ArtifactRead(_) => "artifact-read",
@@ -262,23 +244,6 @@ pub struct EndHostSessionReq {
     pub session: SessionId,
 }
 
-/// Arguments of `report`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ReportReq {
-    /// Box name.
-    #[serde(rename = "box")]
-    pub box_name: BoxName,
-    /// Report kind.
-    pub kind: String,
-    /// Report title.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
-    /// Report body file.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub file: Option<String>,
-}
-
 /// Arguments of `show`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -321,18 +286,6 @@ pub struct CloseReq {
     /// Run teardown with the worktree's `.moor.yaml` even when it differs from the base commit.
     #[serde(default)]
     pub trust_moor_yaml: bool,
-}
-
-/// Arguments of `remove`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct RemoveReq {
-    /// Box name.
-    #[serde(rename = "box")]
-    pub box_name: BoxName,
-    /// Discard unmerged work.
-    #[serde(default)]
-    pub discard: bool,
 }
 
 /// Arguments of `cp`.

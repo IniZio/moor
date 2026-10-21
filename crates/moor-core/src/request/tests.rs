@@ -54,12 +54,6 @@ fn with_args() -> Vec<Request> {
             text: Some("x".into()),
             menu: None,
         }),
-        Request::Report(ReportReq {
-            box_name: n("a"),
-            kind: "k".into(),
-            title: None,
-            file: None,
-        }),
         Request::Show(ShowReq {
             target: None,
             events: Some(2),
@@ -73,17 +67,12 @@ fn with_args() -> Vec<Request> {
             force: true,
             trust_moor_yaml: true,
         }),
-        Request::Remove(RemoveReq {
-            box_name: n("a"),
-            discard: false,
-        }),
         Request::Cp(CpReq {
             box_name: n("a"),
             src: "s".into(),
             dest: "d".into(),
         }),
         Request::Open(t()),
-        Request::Shell(t()),
         Request::Sleep(t()),
         Request::Wake(t()),
         Request::Connect(t()),
@@ -100,9 +89,6 @@ fn all() -> Vec<Request> {
             command: None,
         }),
         Request::Env(EnvReq { repo: None }),
-        Request::GithubSetup {},
-        Request::GithubLogin {},
-        Request::ProxyCheck {},
         Request::Repos(ReposReq {}),
         Request::Version {},
     ]);
@@ -112,7 +98,7 @@ fn all() -> Vec<Request> {
 #[test]
 fn cmd_equals_serde_tag_and_roundtrips() {
     let reqs = all();
-    assert_eq!(reqs.len(), 23);
+    assert_eq!(reqs.len(), 17);
     for r in reqs {
         let text = serde_json::to_string(&r).unwrap();
         assert!(
@@ -182,12 +168,10 @@ fn unit_variant_accepted() {
 
 #[test]
 fn unit_variants_reject_unknown_fields() {
-    for cmd in ["github-setup", "github-login", "proxy-check", "version"] {
-        let ok = format!(r#"{{"cmd":"{cmd}"}}"#);
-        assert!(serde_json::from_str::<Request>(&ok).is_ok(), "{ok}");
-        let bad = format!(r#"{{"cmd":"{cmd}","bogus":1}}"#);
-        assert!(serde_json::from_str::<Request>(&bad).is_err(), "{bad}");
-    }
+    let ok = r#"{"cmd":"version"}"#;
+    assert!(serde_json::from_str::<Request>(ok).is_ok(), "{ok}");
+    let bad = r#"{"cmd":"version","bogus":1}"#;
+    assert!(serde_json::from_str::<Request>(bad).is_err(), "{bad}");
 }
 
 #[test]

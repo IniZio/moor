@@ -1,7 +1,7 @@
 //! Arguments of the Box-scoped verbs that take only a name plus a flag or path.
 
 use clap::Args;
-use moor_core::{BoxName, BoxReq, CloseReq, CpReq, RemoveReq};
+use moor_core::{BoxName, BoxReq, CloseReq, CpReq};
 
 use super::box_name;
 
@@ -25,26 +25,6 @@ impl From<CloseArgs> for CloseReq {
             target: a.name.into(),
             force: a.force,
             trust_moor_yaml: a.trust_moor_yaml,
-        }
-    }
-}
-
-/// Arguments of `remove`.
-#[derive(Debug, Args)]
-pub(super) struct RemoveArgs {
-    /// Box name.
-    #[arg(value_parser = box_name)]
-    pub(super) name: BoxName,
-    /// Discard the Box's work.
-    #[arg(long)]
-    pub(super) discard: bool,
-}
-
-impl From<RemoveArgs> for RemoveReq {
-    fn from(a: RemoveArgs) -> Self {
-        Self {
-            box_name: a.name,
-            discard: a.discard,
         }
     }
 }

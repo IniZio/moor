@@ -39,15 +39,6 @@ impl CommandError {
         }
     }
 
-    /// Error for a command whose operation has not landed yet.
-    #[must_use]
-    pub fn not_implemented(cmd: &str) -> Self {
-        Self::new(
-            ErrorKind::Internal,
-            format!("`moor {cmd}` is not implemented yet"),
-        )
-    }
-
     /// Append one hint.
     #[must_use]
     pub fn with_hint(mut self, hint: impl Into<String>) -> Self {

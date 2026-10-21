@@ -11,7 +11,7 @@ use crate::request::Request;
 use crate::response::Response;
 
 /// Protocol revision a client announces in its hello frame.
-pub const PROTOCOL: u32 = 10;
+pub const PROTOCOL: u32 = 11;
 
 /// Most raw bytes one bytes frame carries; a reader refuses a larger `len`.
 pub const BYTES_MAX: usize = 64 * 1024;

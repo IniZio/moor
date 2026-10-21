@@ -2,17 +2,6 @@ use super::CommandError;
 use moor_core::{ErrorKind, ExitClass, Warning};
 
 #[test]
-fn not_implemented_is_failed_internal() {
-    let resp = CommandError::not_implemented("close").into_response("close", vec![]);
-    assert_eq!(resp.class, ExitClass::Failed);
-    assert_eq!(resp.cmd, "close");
-    assert!(resp.value.is_none());
-    let err = resp.error.expect("error view");
-    assert_eq!(err.kind, ErrorKind::Internal);
-    assert!(err.message.contains("`moor close`"));
-}
-
-#[test]
 fn kind_maps_to_class_and_hints_and_warnings_survive() {
     let warning = Warning {
         code: "w".into(),

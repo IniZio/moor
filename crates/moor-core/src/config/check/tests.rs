@@ -45,11 +45,7 @@ fn gh_token() {
     assert_eq!(not_gh_token("gh_token"), Ok(()));
     assert_eq!(
         not_gh_token("GH_TOKEN"),
-        Err(
-            "GH_TOKEN is not supported: moor mints GitHub tokens from your GitHub App; \
-              run `moor github setup` then `moor github login`"
-                .to_owned()
-        )
+        Err("GH_TOKEN is not supported: moor mints GitHub tokens from your GitHub App".to_owned())
     );
 }
 
