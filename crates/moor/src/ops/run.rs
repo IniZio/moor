@@ -4,8 +4,8 @@
 
 use std::path::PathBuf;
 
-use moor_core::boxscript::command_line;
 use moor_core::boxscript::record::HEAD_MOVED;
+use moor_core::boxscript::{command_line, shell_argv};
 use moor_core::config::{BoxSettings, Flags};
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::domain::boxes::BoxState;
@@ -227,7 +227,7 @@ fn plan(
         [text] => text.clone(),
         argv => command_line(argv),
     };
-    Ok((None, vec!["sh".into(), "-c".into(), script]))
+    Ok((None, shell_argv(&script)))
 }
 
 /// Where the command's output goes, and the log path to report (empty when inherited).

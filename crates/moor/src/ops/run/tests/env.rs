@@ -3,6 +3,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use moor_core::boxscript::shell_argv;
 use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::seam::proc::Deadline;
 use moor_core::seam::proxy_host::ProxyHostError;
@@ -25,7 +26,7 @@ fn run_gets_the_repo_env_and_proxy_variables() {
     let script = spec.argv.get(2).unwrap();
     assert_eq!(spec.argv.first().map(String::as_str), Some("sh"));
     assert!(script.contains("export HTTPS_PROXY="), "{script}");
-    assert_eq!(command(&spec.argv), ["sh", "-c", "echo hi"]);
+    assert_eq!(command(&spec.argv), shell_argv("echo hi"));
 }
 
 #[test]
@@ -98,5 +99,5 @@ fn a_proxied_run_makes_one_box_call_the_command_exec() {
         .get(2)
         .unwrap()
         .contains("$HOME/.moor-proxy/ca.pem"));
-    assert_eq!(command(&spec.argv), ["sh", "-c", "true"]);
+    assert_eq!(command(&spec.argv), shell_argv("true"));
 }

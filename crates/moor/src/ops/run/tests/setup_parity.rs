@@ -1,6 +1,7 @@
 //! A manual `moor run <Box> -- '<setup line>'` runs like setup: same env, same workdir.
 
 use moor_core::boxscript::record::HEAD_FILE;
+use moor_core::boxscript::shell_argv;
 use moor_core::config::Flags;
 use moor_core::domain::decision::{Decision, Field, Fields};
 use moor_core::domain::run::SyncMode;
@@ -74,7 +75,7 @@ fn run_of_a_setup_line_has_the_env_and_cwd_setup_has() {
     let setup = setup_spec(&f);
     run(&f.cx, &req(&["make deps"])).unwrap();
     let (_, spec, _) = f.driver.execs().remove(1);
-    assert_eq!(command(&spec.argv), ["sh", "-c", "make deps"]);
+    assert_eq!(command(&spec.argv), shell_argv("make deps"));
     assert_eq!(repo_vars(&spec), [("A", "1"), ("B", "2")]);
     assert_eq!(spec.env, setup.env);
     assert_eq!(spec.cwd, setup.cwd);

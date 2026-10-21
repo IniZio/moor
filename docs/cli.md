@@ -76,6 +76,9 @@ The state directory holds `moor.db`. It is the first of `--state-dir`,
 
 ### `moor run` flags
 
+The command runs under bash when the Box has bash, else under sh. One `CMD`
+argument is shell text, so `moor run NAME -- 'make lint | tee log'` works.
+
 `moor run` runs the command in the Box checkout as it is. moor copies the host
 worktree into a Box only when it provisions the Box's machine.
 

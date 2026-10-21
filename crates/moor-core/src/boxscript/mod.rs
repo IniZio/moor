@@ -14,6 +14,18 @@ pub fn quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }
 
+/// Runs its first argument under bash when the Box has bash, else under sh.
+const BASH_OR_SH: &str =
+    "if command -v bash >/dev/null 2>&1; then exec bash -c \"$1\"; fi; exec sh -c \"$1\"";
+
+/// The argv that runs shell text `script` on a Box, under bash when the Box has it, else sh.
+#[must_use]
+pub fn shell_argv(script: &str) -> Vec<String> {
+    ["sh", "-c", BASH_OR_SH, "sh", script]
+        .map(str::to_owned)
+        .to_vec()
+}
+
 /// Shell text that runs `argv` on a Box.
 ///
 /// One element is a shell string and runs as `sh -c '<element>'`. Several elements are each
