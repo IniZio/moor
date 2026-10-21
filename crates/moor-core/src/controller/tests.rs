@@ -183,6 +183,7 @@ fn event_frame_serializes() {
     let frame = ServerFrame::Event {
         cursor: 7,
         r#box: Some("fix-login".to_owned()),
+        box_id: None,
         session: None,
         kind: "idled".to_owned(),
         payload: serde_json::json!({"a": 1}),
@@ -200,6 +201,7 @@ fn event_frame_golden_with_session() {
     let line = ServerFrame::Event {
         cursor: 7,
         r#box: Some("t".into()),
+        box_id: Some(BoxId::new(4)),
         session: Some(SessionId::new(3)),
         kind: "idled".into(),
         payload: serde_json::json!({"a": 1}),
@@ -208,12 +210,13 @@ fn event_frame_golden_with_session() {
     .to_line();
     assert_eq!(
         line,
-        "{\"frame\":\"event\",\"cursor\":7,\"box\":\"t\",\"session\":3,\"kind\":\"idled\",\"payload\":{\"a\":1},\"ts\":5}\n"
+        "{\"frame\":\"event\",\"cursor\":7,\"box\":\"t\",\"box_id\":4,\"session\":3,\"kind\":\"idled\",\"payload\":{\"a\":1},\"ts\":5}\n"
     );
     let parsed = parse_server_frame(&line).expect("parses");
     assert!(matches!(
         parsed,
-        ServerFrame::Event { session: Some(s), .. } if s == SessionId::new(3)
+        ServerFrame::Event { box_id: Some(b), session: Some(s), .. }
+            if b == BoxId::new(4) && s == SessionId::new(3)
     ));
 }
 
@@ -222,6 +225,7 @@ fn event_frame_golden_without_session() {
     let line = ServerFrame::Event {
         cursor: 7,
         r#box: Some("t".into()),
+        box_id: None,
         session: None,
         kind: "idled".into(),
         payload: serde_json::json!({"a": 1}),
@@ -241,6 +245,7 @@ fn event_frame_golden_without_box_or_session() {
     let line = ServerFrame::Event {
         cursor: 7,
         r#box: None,
+        box_id: None,
         session: None,
         kind: "idled".into(),
         payload: serde_json::json!({"a": 1}),
@@ -256,6 +261,7 @@ fn event_frame_golden_without_box_or_session() {
         parsed,
         ServerFrame::Event {
             r#box: None,
+            box_id: None,
             session: None,
             ..
         }
@@ -263,8 +269,8 @@ fn event_frame_golden_without_box_or_session() {
 }
 
 #[test]
-fn protocol_is_nine_and_old_hello_still_parses() {
-    assert_eq!(PROTOCOL, 9);
+fn protocol_is_ten_and_old_hello_still_parses() {
+    assert_eq!(PROTOCOL, 10);
     let got = parse_frame(r#"{"frame":"hello","protocol":1}"#);
     assert_eq!(got, Ok(ClientFrame::Hello { protocol: 1 }));
 }
@@ -325,6 +331,7 @@ fn server_frames_round_trip_through_parse_server_frame() {
         ServerFrame::Event {
             cursor: 7,
             r#box: Some("t".into()),
+            box_id: Some(BoxId::new(4)),
             session: Some(SessionId::new(3)),
             kind: "idled".into(),
             payload: serde_json::json!({"a": 1}),
@@ -333,6 +340,7 @@ fn server_frames_round_trip_through_parse_server_frame() {
         ServerFrame::Event {
             cursor: 8,
             r#box: Some("t".into()),
+            box_id: None,
             session: None,
             kind: "idled".into(),
             payload: serde_json::json!({}),

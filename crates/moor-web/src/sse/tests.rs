@@ -3,7 +3,7 @@
 #![allow(clippy::unwrap_used, reason = "tests fail loudly on bad fixtures")]
 
 use moor_core::controller::{parse_server_frame, ServerFrame};
-use moor_core::SessionId;
+use moor_core::{BoxId, SessionId};
 
 use super::*;
 
@@ -11,6 +11,7 @@ fn record(box_name: Option<&str>, session: Option<SessionId>) -> EventRecord {
     EventRecord {
         cursor: 7,
         box_name: box_name.map(str::to_owned),
+        box_id: box_name.map(|_| BoxId::new(4)),
         session,
         kind: "idled".to_owned(),
         payload: serde_json::json!({"a": 1}),
@@ -28,7 +29,7 @@ fn event_with_box_and_session() {
     let text = event_frame(&event);
     assert_eq!(
         text,
-        "id: 7\ndata: {\"frame\":\"event\",\"cursor\":7,\"box\":\"t\",\"session\":3,\"kind\":\"idled\",\"payload\":{\"a\":1},\"ts\":5}\n\n"
+        "id: 7\ndata: {\"frame\":\"event\",\"cursor\":7,\"box\":\"t\",\"box_id\":4,\"session\":3,\"kind\":\"idled\",\"payload\":{\"a\":1},\"ts\":5}\n\n"
     );
     let parsed = parse_server_frame(data_line(&text)).unwrap();
     assert_eq!(
@@ -36,6 +37,7 @@ fn event_with_box_and_session() {
         ServerFrame::Event {
             cursor: 7,
             r#box: Some("t".to_owned()),
+            box_id: Some(BoxId::new(4)),
             session: Some(SessionId::new(3)),
             kind: "idled".to_owned(),
             payload: event.payload,
@@ -58,6 +60,7 @@ fn event_without_box_or_session() {
         ServerFrame::Event {
             cursor: 7,
             r#box: None,
+            box_id: None,
             session: None,
             ts: 5,
             ..

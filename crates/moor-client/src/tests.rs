@@ -220,7 +220,7 @@ fn watch_yields_events_then_caught_up_then_ends() {
         vec![
             vec![hello()],
             vec![
-                event(1, r#""box":"repo/one","session":7,"#),
+                event(1, r#""box":"repo/one","box_id":4,"session":7,"#),
                 event(2, ""),
                 r#"{"frame":"caught-up","cursor":2}"#.to_owned(),
             ],
@@ -236,6 +236,7 @@ fn watch_yields_events_then_caught_up_then_ends() {
             WatchItem::Event(EventRecord {
                 cursor: 1,
                 box_name: Some("repo/one".to_owned()),
+                box_id: Some(BoxId::new(4)),
                 session: Some(SessionId::new(7)),
                 kind: "box_ready".to_owned(),
                 payload: serde_json::json!({"n": 1}),
@@ -244,6 +245,7 @@ fn watch_yields_events_then_caught_up_then_ends() {
             WatchItem::Event(EventRecord {
                 cursor: 2,
                 box_name: None,
+                box_id: None,
                 session: None,
                 kind: "box_ready".to_owned(),
                 payload: serde_json::json!({"n": 2}),

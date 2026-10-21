@@ -56,6 +56,7 @@ impl NamedEvent {
         ServerFrame::Event {
             cursor: self.row.id,
             r#box: Some(self.box_name),
+            box_id: Some(self.row.box_id),
             session: self.session,
             kind: self.row.kind,
             payload: self.row.payload,

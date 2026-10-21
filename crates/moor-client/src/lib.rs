@@ -11,7 +11,7 @@ use moor_core::controller::{
 };
 use moor_core::request::Request;
 use moor_core::response::Response;
-use moor_core::SessionId;
+use moor_core::{BoxId, SessionId};
 
 pub use stream::ByteStream;
 
@@ -105,6 +105,8 @@ pub struct EventRecord {
     pub cursor: i64,
     /// Box the event belongs to, when it has one.
     pub box_name: Option<String>,
+    /// Id of the Box the event belongs to, when it has one.
+    pub box_id: Option<BoxId>,
     /// Session the event belongs to, when known.
     pub session: Option<SessionId>,
     /// Event kind.
@@ -308,6 +310,7 @@ impl Iterator for Watch {
             ServerFrame::Event {
                 cursor,
                 r#box,
+                box_id,
                 session,
                 kind,
                 payload,
@@ -315,6 +318,7 @@ impl Iterator for Watch {
             } => Some(Ok(WatchItem::Event(EventRecord {
                 cursor,
                 box_name: r#box,
+                box_id,
                 session,
                 kind,
                 payload,

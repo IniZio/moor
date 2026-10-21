@@ -3,9 +3,10 @@ use std::sync::mpsc;
 use std::thread::{self, sleep};
 use std::time::Duration;
 
-use super::report_while;
+use super::{report_while, respond_with_progress};
+use crate::env::Env;
 use moor_core::controller::{parse_server_frame, ServerFrame};
-use moor_core::Response;
+use moor_core::{BoxName, CloseReq, Request, Response, ShowReq};
 
 const TICK: Duration = Duration::from_millis(40);
 
@@ -119,4 +120,37 @@ fn a_gone_client_never_blocks_output() {
         .recv_timeout(Duration::from_secs(10))
         .expect("work blocked on output nobody reads");
     assert_eq!(response.cmd, "start");
+}
+
+#[test]
+fn close_reports_progress_and_show_does_not() {
+    let dir = tempfile::tempdir().unwrap();
+    let env = Env::from_pairs([
+        ("MOOR_STATE_DIR", dir.path().to_str().unwrap()),
+        ("MOOR_CONFIG", "/nonexistent/moor.yaml"),
+    ]);
+    let target = BoxName::parse("r/gone").unwrap();
+    let progress = |request: Request| {
+        let mut wire = Vec::new();
+        respond_with_progress(&env, "r9", request, Duration::ZERO, &mut wire);
+        frames(&wire)
+            .iter()
+            .filter(|(f, _)| matches!(f, ServerFrame::Progress { id, .. } if id == "r9"))
+            .count()
+    };
+    let close = Request::Close(CloseReq {
+        target: target.clone().into(),
+        force: false,
+        trust_moor_yaml: false,
+    });
+    assert!(progress(close) > 0);
+    let show = Request::Show(ShowReq {
+        target: Some(target.into()),
+        events: None,
+        agent: false,
+        reports: false,
+        artifacts: false,
+        pane: false,
+    });
+    assert_eq!(progress(show), 0);
 }

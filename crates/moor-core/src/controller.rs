@@ -6,12 +6,12 @@ use std::io::{self, Write};
 
 use serde::{Deserialize, Serialize};
 
-use crate::name::{BoxName, SessionId};
+use crate::name::{BoxId, BoxName, SessionId};
 use crate::request::Request;
 use crate::response::Response;
 
 /// Protocol revision a client announces in its hello frame.
-pub const PROTOCOL: u32 = 9;
+pub const PROTOCOL: u32 = 10;
 
 /// Most raw bytes one bytes frame carries; a reader refuses a larger `len`.
 pub const BYTES_MAX: usize = 64 * 1024;
@@ -137,6 +137,9 @@ pub enum ServerFrame {
         /// Name of the Box the event belongs to; absent for events without a Box.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         r#box: Option<String>,
+        /// Id of the Box the event belongs to; absent for events without a Box.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        box_id: Option<BoxId>,
         /// Id of the Session the event belongs to, when known.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         session: Option<SessionId>,
