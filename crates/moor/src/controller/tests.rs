@@ -164,10 +164,9 @@ fn a_vault_key_that_is_not_owner_only_stops_the_start() {
     let key = tmp.path().join("vault.key");
     std::fs::write(&key, "x\n").expect("key");
     std::fs::set_permissions(&key, std::fs::Permissions::from_mode(0o644)).expect("chmod");
-    let out = Buf::default();
-    let code = serve(&env(tmp.path()), &cfg, out.clone());
-    assert_eq!(code, 3);
-    assert!(out.text().contains("it must be 0600"), "{}", out.text());
+    let stop = start(&env(tmp.path()), &cfg).err().expect("refused");
+    assert_eq!(stop.code, 3);
+    assert!(stop.message.contains("it must be 0600"), "{}", stop.message);
     assert_eq!(std::fs::read_to_string(&key).expect("kept"), "x\n");
 }
 
@@ -177,13 +176,12 @@ fn a_config_inside_the_state_dir_is_refused_for_the_vault_key() {
     let state = tmp.path().join("state");
     std::fs::create_dir(&state).expect("state");
     let cfg = config(&state, "");
-    let out = Buf::default();
-    let code = serve(&env(tmp.path()), &cfg, out.clone());
-    assert_eq!(code, 3);
+    let stop = start(&env(tmp.path()), &cfg).err().expect("refused");
+    assert_eq!(stop.code, 3);
     assert!(
-        out.text().contains("inside the state dir"),
+        stop.message.contains("inside the state dir"),
         "{}",
-        out.text()
+        stop.message
     );
     assert!(!state.join("vault.key").exists());
 }
