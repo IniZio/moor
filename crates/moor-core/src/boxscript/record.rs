@@ -1,5 +1,5 @@
 //! Script for a recorded run: reset the Box checkout to fresh-checkout state, run setup, run the
-//! command, then check the checkout is still a clean HEAD at the recorded sha.
+//! command, then check the checkout is still at the recorded sha with no tracked file changed.
 
 use super::boxwork::{ignored_status_pattern, is_full_sha};
 use super::quote;
@@ -119,8 +119,8 @@ set --
 const RUN_PREP: &str = r#"if command -v bash >/dev/null 2>&1; then bash -ec "$__moor_prep"; else sh -ec "$__moor_prep"; fi || { __moor_rc=$?; echo "moor: --record fresh-state prep failed (exit $__moor_rc)" >&2; exit $__moor_rc; }
 "#;
 
-/// After the command: a HEAD other than `$__moor_sha` or a dirty tree fails the run and leaves
-/// [`MOVED_FILE`]; otherwise promote the pending cache stamps when the command passed.
+/// After the command: a HEAD other than `$__moor_sha` or a changed tracked file fails the run and
+/// leaves [`MOVED_FILE`]; otherwise promote the pending cache stamps when the command passed.
 const PROMOTE: &str = r#"__moor_rc=$?
 if ! __moor_state || [ "$__moor_head" != "$__moor_sha" ] || [ "$__moor_dirty" -ne 0 ]; then
   echo 'moor: the Box HEAD moved during the record run' >&2
@@ -141,7 +141,8 @@ exit "$__moor_rc"
 /// first failure stops), then `command` (shell text); exits with the command's
 /// status.
 ///
-/// A checkout that is not a clean `head` afterwards exits non-zero and writes [`MOVED_FILE`].
+/// A checkout whose HEAD is not `head` or whose tracked files changed afterwards exits non-zero
+/// and writes [`MOVED_FILE`]; untracked files the command leaves never fail it.
 #[must_use]
 pub fn record_script(setup: &[String], command: &str, head: &str) -> String {
     let steps: String = setup
@@ -159,7 +160,7 @@ pub fn record_script(setup: &[String], command: &str, head: &str) -> String {
     [
         GIT_GUARD,
         &format!("rm -f {MOVED_FILE}\n__moor_sha={}\n", quote(head)),
-        &state_fn(),
+        &state_fn(Untracked::Skip),
         &format!("__moor_prep={}\n", quote(&prep)),
         RUN_PREP,
         "unset __moor_prep\n",
@@ -179,18 +180,31 @@ rm -f {HEAD_FILE}
 __moor_state || exit 1
 printf 'head=%s dirty=%s\n' "$__moor_head" "$__moor_dirty" > {HEAD_FILE} || exit 1
 "#,
-        state_fn()
+        state_fn(Untracked::Count)
     )
+}
+
+/// Whether `__moor_dirty` counts untracked paths.
+#[derive(Clone, Copy)]
+enum Untracked {
+    /// The pre-run probe: an untracked path makes the checkout dirty.
+    Count,
+    /// The post-run check: only HEAD and tracked files matter.
+    Skip,
 }
 
 /// Defines `__moor_state`, which sets `__moor_head` and `__moor_dirty` and fails on any git
 /// or count failure, so an unreadable checkout never counts as clean.
-fn state_fn() -> String {
+fn state_fn(untracked: Untracked) -> String {
     let ignored = quote(&ignored_status_pattern());
+    let mode = match untracked {
+        Untracked::Count => "normal",
+        Untracked::Skip => "no",
+    };
     format!(
         r#"__moor_state() {{
   __moor_head=$(GIT_NO_LAZY_FETCH=1 git rev-parse --verify HEAD) || return 1
-  __moor_st=$(GIT_NO_LAZY_FETCH=1 git status --porcelain --no-renames) || return 1
+  __moor_st=$(GIT_NO_LAZY_FETCH=1 git status --porcelain --no-renames --untracked-files={mode}) || return 1
   __moor_dirty=0
   if [ -n "$__moor_st" ]; then
     __moor_dirty=$(printf '%s\n' "$__moor_st" | grep -vcE {ignored})

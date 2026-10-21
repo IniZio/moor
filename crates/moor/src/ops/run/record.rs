@@ -68,7 +68,7 @@ pub(super) fn checkout(cx: &Cx, target: &Target) -> Result<Sha, CommandError> {
 }
 
 /// The argv a record run executes: the repo setup lines, then the command, in one script that
-/// fails the run when the checkout is not a clean `head` afterwards.
+/// fails the run when HEAD is not `head` or a tracked file changed afterwards.
 pub(super) fn wrap(setup: &[String], argv: &[String], head: &Sha) -> Vec<String> {
     vec![
         "sh".to_owned(),
