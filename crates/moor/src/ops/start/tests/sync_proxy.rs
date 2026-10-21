@@ -1,11 +1,14 @@
 //! The Proxy starts while the checkout syncs, and each failure ends the start as a serial start would.
 
+use std::os::unix::fs::PermissionsExt;
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use moor_core::domain::box_state::BoxLifecycle;
 use moor_core::seam::driver::{DriverError, ExecOutcome};
+use moor_core::seam::proc::Tool;
 use moor_core::seam::proxy_host::{ProxyHostError, ProxyStatus};
 use moor_core::BoxId;
 
@@ -14,6 +17,7 @@ use super::setup::{exit, start_req};
 use super::{world_at, World};
 use crate::ops::start::run;
 use crate::testing::driver::FakeDriver;
+use crate::testing::proc::Reply;
 use crate::testing::proxy_host::{FakeProxyHost, ProxyHostCall};
 
 const YAML: &str = "setup: [a]\n";
@@ -158,4 +162,29 @@ fn a_failed_proxy_stop_after_a_failed_sync_is_a_warning() {
             .any(|x| x.code == "proxy_stop_failed" && x.message.contains("stuck")),
         "{warnings:?}"
     );
+}
+
+#[test]
+fn the_sync_log_is_owner_only_and_removed_when_the_sync_fails() {
+    let host = FakeProxyHost::new();
+    let (w, _repo) = world([Ok(exit(1))], &host);
+    for (key, value) in [("user.name", "Ann Dev"), ("user.email", "a@x.io")] {
+        w.proc.on(
+            Tool::Git,
+            &["config", "--get", key],
+            Reply::Ok(format!("{value}\n")),
+        );
+    }
+    let log = w.dir.path().join("sync").join("1.log");
+    let (modes, path) = (Arc::new(Mutex::new(Vec::new())), log.clone());
+    let seen = Arc::clone(&modes);
+    w.driver.on_exec(move || {
+        let mode = |p: &Path| std::fs::metadata(p).map(|m| m.permissions().mode() & 0o777);
+        if let (Ok(file), Ok(dir)) = (mode(&path), mode(path.parent().unwrap())) {
+            seen.lock().unwrap().push((file, dir));
+        }
+    });
+    run(&w.cx, &start_req()).unwrap_err();
+    assert_eq!(*modes.lock().unwrap(), [(0o600, 0o700)]);
+    assert!(!log.exists());
 }
