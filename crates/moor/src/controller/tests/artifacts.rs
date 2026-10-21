@@ -37,6 +37,7 @@ fn hex(bytes: &[u8]) -> String {
 
 struct Fixture {
     _dir: tempfile::TempDir,
+    _etc: tempfile::TempDir,
     stream: BufReader<UnixStream>,
     big: Vec<u8>,
     next: u32,
@@ -80,7 +81,8 @@ fn seed(dir: &Path) -> Vec<u8> {
 fn fixture() -> Fixture {
     let dir = tempfile::tempdir().expect("tmp");
     let big = seed(dir.path());
-    let cfg = dir.path().join("controller.yaml");
+    let etc = tempfile::tempdir().expect("etc");
+    let cfg = etc.path().join("controller.yaml");
     std::fs::write(&cfg, "").expect("cfg");
     let env = Env::from_pairs([
         ("MOOR_STATE_DIR", dir.path().to_str().expect("utf8")),
@@ -99,6 +101,7 @@ fn fixture() -> Fixture {
     assert!(line.contains("\"hello\""), "{line}");
     Fixture {
         _dir: dir,
+        _etc: etc,
         stream,
         big,
         next: 0,

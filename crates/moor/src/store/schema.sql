@@ -31,4 +31,12 @@ CREATE TABLE hook_cache (session INTEGER PRIMARY KEY REFERENCES sessions(id), re
 CREATE TABLE proxy  (box INTEGER PRIMARY KEY REFERENCES boxes(id), box_port INTEGER NOT NULL UNIQUE,
   pid INTEGER, handle TEXT, ready INTEGER NOT NULL DEFAULT 0, lease_owner TEXT, lease_heartbeat INTEGER,
   boot_id TEXT, updated_at INTEGER NOT NULL);
-INSERT INTO meta (k, v) VALUES ('schema_version', '5');
+CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, created_at INTEGER NOT NULL);
+CREATE TABLE identities (identity TEXT PRIMARY KEY, user INTEGER NOT NULL REFERENCES users(id),
+  linked_at INTEGER NOT NULL);
+CREATE INDEX identities_user ON identities(user);
+CREATE TABLE link_codes (code TEXT PRIMARY KEY, user INTEGER NOT NULL REFERENCES users(id),
+  expires_at INTEGER NOT NULL);
+CREATE TABLE user_secrets (user INTEGER NOT NULL REFERENCES users(id), name TEXT NOT NULL, value BLOB NOT NULL,
+  updated_at INTEGER NOT NULL, PRIMARY KEY (user, name));
+INSERT INTO meta (k, v) VALUES ('schema_version', '6');

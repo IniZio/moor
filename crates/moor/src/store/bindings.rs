@@ -21,35 +21,26 @@ pub(crate) struct Binding {
     pub(crate) box_name: Option<BoxName>,
     /// The front's id of the user who started the conversation.
     pub(crate) owner: String,
-    /// Timestamp of the edited status message, once posted.
-    pub(crate) status_ts: Option<String>,
 }
 
 /// Columns read for a [`Binding`], in [`BindingRow`] order.
-const COLS: &str = "g.front, g.conv_key, g.session, b.name, g.owner, g.status_ts";
+const COLS: &str = "g.front, g.conv_key, g.session, b.name, g.owner";
 
 /// Joins a binding to its Session and, for a Box Session, the Box.
 const FROM: &str =
     "bindings g JOIN sessions s ON s.id = g.session LEFT JOIN boxes b ON b.id = s.box";
 
 /// Raw binding row: the Box name is still unparsed text.
-type BindingRow = (String, String, i64, Option<String>, String, Option<String>);
+type BindingRow = (String, String, i64, Option<String>, String);
 
 /// Reads one raw binding row.
 fn row_of(r: &rusqlite::Row<'_>) -> rusqlite::Result<BindingRow> {
-    Ok((
-        r.get(0)?,
-        r.get(1)?,
-        r.get(2)?,
-        r.get(3)?,
-        r.get(4)?,
-        r.get(5)?,
-    ))
+    Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
 }
 
 /// Parses a raw binding row into a [`Binding`].
 fn binding_of(row: BindingRow) -> Result<Binding, StoreError> {
-    let (front, key, session, box_name, owner, status_ts) = row;
+    let (front, key, session, box_name, owner) = row;
     Ok(Binding {
         front,
         key,
@@ -58,7 +49,6 @@ fn binding_of(row: BindingRow) -> Result<Binding, StoreError> {
             .map(|n| parsed("binding box name", &n, BoxName::parse_allow_bare))
             .transpose()?,
         owner,
-        status_ts,
     })
 }
 

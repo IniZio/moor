@@ -17,6 +17,7 @@ pub mod request;
 pub mod response;
 pub mod seam;
 pub mod secret;
+pub mod user;
 pub mod view;
 
 pub use name::{

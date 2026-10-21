@@ -17,6 +17,8 @@ mod proxy;
 mod store;
 #[cfg(test)]
 mod testing;
+#[cfg_attr(not(test), expect(dead_code, reason = "the user requests use it next"))]
+mod vault;
 mod wire;
 
 pub use crate::moor::Moor;
