@@ -42,6 +42,21 @@ Global flags: `--json`, `--quiet`, `--state-dir DIR`. State lives in
 `moor.db` inside the state directory, set by `--state-dir`, `MOOR_STATE_DIR`,
 `XDG_STATE_HOME`, or `HOME`.
 
+## Controller config
+
+`moor controller serve --config FILE` reads a YAML file. Its `repos:` map
+lists the repos the controller may clone and start Boxes in. A key is `NAME`
+or `OWNER/NAME`, such as `IniZio/moor`. Each part starts with a letter or
+digit and holds only letters, digits, `.`, `_` and `-`. The controller clones
+the repo into `repos/OWNER+NAME` inside its state directory.
+
+```yaml
+repos:
+  IniZio/moor:
+    url: https://github.com/IniZio/moor.git
+    default_branch: main
+```
+
 ## Slack front
 
 `moor-slack` is a separate daemon that answers Slack over Socket Mode and
