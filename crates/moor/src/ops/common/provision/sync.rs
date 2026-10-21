@@ -35,19 +35,25 @@ pub(super) fn sync_with_proxy(
 ) -> Result<(u64, SetupProxy), CommandError> {
     let wants = !cfg.setup.is_empty() || cfg.dotfiles.is_some();
     let was_up = wants && matches!(cx.proxy_host().status(id), Ok(ProxyStatus::Ready { .. }));
-    let identity = Identity::of(cx, target.worktree).and_then(|identity| match sync_log(cx, id) {
-        Ok(log) => Some((identity.script(), log, identity)),
-        Err(e) => {
-            cx.warn(Warning {
-                code: "identity_failed".to_owned(),
-                message: format!("could not set the git identity in the box: {e}"),
-            });
-            None
-        }
+    let identity = Identity::of(cx, target.worktree);
+    let log = sync_log(cx, id)
+        .inspect_err(|e| {
+            if identity.is_some() {
+                cx.warn(Warning {
+                    code: "identity_failed".to_owned(),
+                    message: format!("could not set the git identity in the box: {e}"),
+                });
+            }
+        })
+        .ok();
+    let identity = identity.filter(|_| log.is_some());
+    let script = identity.as_ref().map(Identity::script).unwrap_or_default();
+    // A logged exec streams, and only a streamed exec turns SIGINT into an outcome, so the
+    // Proxy started beside it is still stopped.
+    let prelude = log.as_deref().map(|log| setup::Prelude {
+        script: &script,
+        log,
     });
-    let prelude = identity
-        .as_ref()
-        .map(|(script, log, _)| setup::Prelude { script, log });
     let (driver, clock) = (cx.driver(), cx.clock());
     let (synced, proxy) = std::thread::scope(|scope| {
         let sync = scope.spawn(|| {
@@ -62,15 +68,15 @@ pub(super) fn sync_with_proxy(
         let synced = sync.join().unwrap_or_else(|p| std::panic::resume_unwind(p));
         (synced, proxy)
     });
-    let output = identity.as_ref().map(|(_, log, identity)| {
+    let text = log.as_deref().map(|log| {
         let text = std::fs::read_to_string(log).unwrap_or_default();
         let _ = std::fs::remove_file(log);
-        (identity, text)
+        text
     });
     let reason = match synced {
         Ok(ms) => {
-            if let Some((identity, text)) = output {
-                identity.report(cx, &text);
+            if let (Some(identity), Some(text)) = (&identity, &text) {
+                identity.report(cx, text);
             }
             return Ok((ms, proxy));
         }
