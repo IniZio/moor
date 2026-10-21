@@ -7,10 +7,15 @@ pub(crate) fn escape(text: &str) -> String {
         .replace('>', "&gt;")
 }
 
-/// Escapes `text` for a code span: markup as [`escape`] does, and each backtick, which would
-/// end the span early, as the look-alike `ˋ`.
+/// `text` escaped as [`escape`] does, in a code span unless it holds a backtick. Slack has no
+/// escape for a backtick inside a span, so such text is posted plain and a copy gives it exactly.
 pub(crate) fn code(text: &str) -> String {
-    escape(text).replace('`', "ˋ")
+    let text = escape(text);
+    if text.contains('`') {
+        text
+    } else {
+        format!("`{text}`")
+    }
 }
 
 #[cfg(test)]

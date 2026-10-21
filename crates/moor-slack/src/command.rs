@@ -47,7 +47,7 @@ pub(super) fn started(name: &BoxName, branch: Option<&str>) -> String {
     let name = name.as_str();
     branch.map_or_else(
         || format!("Started Box `{name}`."),
-        |b| format!("Started Box `{name}` on branch `{}`.", code(b)),
+        |b| format!("Started Box `{name}` on branch {}.", code(b)),
     )
 }
 
