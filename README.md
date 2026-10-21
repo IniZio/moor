@@ -70,14 +70,17 @@ coordinator:
   agent: claude     # the default, and for now the only agent
   model: sonnet     # the default
   context_kib: 32   # the default
+  max_open_boxes: 1 # the default: most Boxes a thread has open at once
 ```
 
-At start the front runs `claude --version` and logs it. A missing binary or
-an older version leaves the coordinator unavailable.
+Every key has a default but `binary`. A config with no `coordinator` section
+gets every default and no binary. At start the front runs `claude --version`
+and logs it. A missing binary or an older version leaves the coordinator
+unavailable, and then no thread can start a Box.
 
-With a `coordinator` section, a mention at the top level of a channel on the
-`channels` list that is not a start command opens a thread with a
-coordinator agent. Each message from the thread's starter becomes one turn:
+A mention at the top level of a channel on the `channels` list opens a
+thread with a coordinator agent. There is no start command: the coordinator
+starts Boxes when the starter asks for work. Each message from the thread's starter becomes one turn:
 the front posts a placeholder, runs one `claude -p` process with the
 starter's own token, and edits the placeholder into the reply. Messages that
 arrive during a turn go into the next turn together. Each turn rebuilds its
@@ -98,6 +101,11 @@ server is killed. The tools act only on the thread's own Boxes:
 
 - `list_boxes` shows each Box with its repo, who asked for it, and its state
   as the controller reports it.
+- `start_box` starts a Box with a goal, on a repo of the channel, or on the
+  channel's default when none is named. Only the thread's starter can ask
+  for one, and a thread has at most `max_open_boxes` open Boxes. Each Box is
+  a child Session of the thread's host Session, named
+  `slack-<thread ts>-<n>`.
 - `steer_box` sends text to a Box's agent.
 - `close_box` closes a Box without force. The thread is told when it has
   closed, or why the controller refused.

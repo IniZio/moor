@@ -10,12 +10,12 @@ use super::support::{Rig, CHANNEL, QUIET, TS, USER};
 /// Another person on the workspace.
 pub(super) const OTHER: &str = "U0OTHER";
 
-/// Starts a Box in thread [`TS`] and waits for the line that says it started.
+/// Opens thread [`TS`] with a mention and waits for its turn's line; the config names no
+/// coordinator binary, so the turn says the coordinator is unavailable.
 pub(super) fn started_thread() -> (Rig, FakeController) {
     let (rig, controller) = Rig::start();
-    controller.keep_boxes();
-    rig.mention(1, USER, "<@UBOT> start demo fix the thing", TS, None);
-    rig.slack.wait_posts(1);
+    rig.mention(1, USER, "<@UBOT> fix the thing", TS, None);
+    rig.slack.wait_updates(1);
     (rig, controller)
 }
 
@@ -71,13 +71,12 @@ fn the_starters_messages_are_queued_in_the_order_they_arrive() {
     );
     rig.slack.wait_acks(4);
     let want = [
+        message("fix the thing", "Ev1"),
         message("use tokio", "Ev2"),
         message("and keep the old API", "Ev3"),
         message("also add a test", "Ev4"),
     ];
     assert_eq!(inbox(&rig), want);
-    std::thread::sleep(QUIET);
-    assert_eq!(rig.slack.posts().len(), 1, "a queued message posts nothing");
 }
 
 #[test]
@@ -90,7 +89,7 @@ fn another_persons_message_is_refused_and_not_queued() {
         posts[1].text,
         format!("Only <@{USER}> can direct this thread.")
     );
-    assert_eq!(inbox(&rig), []);
+    assert_eq!(inbox(&rig), [message("fix the thing", "Ev1")]);
 }
 
 #[test]
@@ -99,7 +98,10 @@ fn an_acked_message_survives_a_crash_and_its_redelivery_is_queued_once() {
     reply(&rig, 2, USER, "use tokio");
     rig.slack.wait_acks(2);
     rig.kill_daemon();
-    assert_eq!(inbox(&rig), [message("use tokio", "Ev2")]);
+    assert_eq!(
+        inbox(&rig),
+        [message("fix the thing", "Ev1"), message("use tokio", "Ev2")]
+    );
     rig.spawn_daemon();
     rig.slack.wait_connected();
     rig.slack.send_reply(&Reply {
@@ -114,7 +116,10 @@ fn an_acked_message_survives_a_crash_and_its_redelivery_is_queued_once() {
         bot_id: None,
     });
     rig.slack.wait_acks(3);
-    assert_eq!(inbox(&rig), [message("use tokio", "Ev2")]);
+    assert_eq!(
+        inbox(&rig),
+        [message("fix the thing", "Ev1"), message("use tokio", "Ev2")]
+    );
 }
 
 #[test]
@@ -133,14 +138,20 @@ fn a_message_that_fails_to_record_is_not_acked_and_its_redelivery_is_queued_once
         "acked before it was recorded: {:?}",
         rig.slack.acks()
     );
-    assert_eq!(inbox(&rig), []);
+    assert_eq!(inbox(&rig), [message("fix the thing", "Ev1")]);
     db.execute_batch("DROP TRIGGER no_items;").unwrap();
     let acked = rig.slack.acks().len();
     reply(&rig, 2, USER, "use tokio");
     rig.slack.wait_acks(acked + 1);
     assert!(rig.slack.acks().iter().any(|id| id == "env-2"));
-    assert_eq!(inbox(&rig), [message("use tokio", "Ev2")]);
+    assert_eq!(
+        inbox(&rig),
+        [message("fix the thing", "Ev1"), message("use tokio", "Ev2")]
+    );
     reply(&rig, 2, USER, "use tokio");
     rig.slack.wait_acks(acked + 2);
-    assert_eq!(inbox(&rig), [message("use tokio", "Ev2")]);
+    assert_eq!(
+        inbox(&rig),
+        [message("fix the thing", "Ev1"), message("use tokio", "Ev2")]
+    );
 }

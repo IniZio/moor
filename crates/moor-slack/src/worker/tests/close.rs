@@ -18,7 +18,7 @@ use super::{
 };
 use crate::db::{BoxState, Db, InboxItem, ItemKind, SlackBox};
 use crate::socket::Mention;
-use crate::worker::{serve, settle, Attempt, Job};
+use crate::worker::{serve, settle, Attempt};
 
 /// A plain reply in thread `10.5` of channel `C1`.
 fn reply(event_id: &str, user: &str, text: &str) -> Mention {
@@ -33,7 +33,7 @@ fn reply(event_id: &str, user: &str, text: &str) -> Mention {
     }
 }
 
-/// Thread `10.5` with its Box `slack-10-5` bound to id 7.
+/// Thread `10.5` with its Box `slack-10-5-1` bound to id 7.
 fn bound_thread(db: &Db) {
     let row = recorded_start(db);
     db.bind(&row.box_name, BoxId::new(7), None).unwrap();
@@ -76,7 +76,7 @@ fn attempt(
 
 /// A `show` reply for Box 7 in `lifecycle`.
 fn shown(lifecycle: &str) -> Answer {
-    let value = json!({"box": {"id": 7, "name": "slack-10-5", "lifecycle": lifecycle}});
+    let value = json!({"box": {"id": 7, "name": "slack-10-5-1", "lifecycle": lifecycle}});
     Ok(Response::ok("show", Some(value)))
 }
 
@@ -85,7 +85,7 @@ fn texts(seen: &Seen) -> Vec<&str> {
     seen.replies.iter().map(|r| r.2.as_str()).collect()
 }
 
-/// The Box state `slack-10-5` is closing from.
+/// The Box state `slack-10-5-1` is closing from.
 fn closing() -> Option<BoxState> {
     Some(BoxState::Closing {
         box_id: BoxId::new(7),
@@ -117,7 +117,17 @@ fn a_failed_record_queues_nothing_so_the_resent_message_is_queued() {
     assert!(try_record(&db, &m).is_err());
     other.execute_batch("DROP TRIGGER no_items;").unwrap();
     assert_eq!(try_record(&db, &m).unwrap(), None);
-    assert_eq!(db.inbox("C1", "10.5").unwrap().len(), 1);
+    let texts: Vec<_> = db
+        .inbox("C1", "10.5")
+        .unwrap()
+        .into_iter()
+        .map(|i| i.text)
+        .collect();
+    assert_eq!(
+        texts,
+        ["fix the flaky test", "use tokio"],
+        "the opening message, then this one"
+    );
 }
 
 #[test]
@@ -127,7 +137,7 @@ fn a_close_reply_is_queued_for_the_coordinator_as_text() {
     bound_thread(&db);
     assert_eq!(record_one(&db, &reply("Ev2", "U1", "close")), None);
     let want = item(ItemKind::Message, "U1", "close", "Ev2");
-    assert_eq!(db.inbox("C1", "10.5").unwrap(), [want]);
+    assert_eq!(db.inbox("C1", "10.5").unwrap().last(), Some(&want));
     let bound = BoxState::Bound {
         box_id: BoxId::new(7),
         branch: None,
@@ -153,9 +163,9 @@ fn a_close_is_sent_without_force_and_the_box_is_gone() {
     };
     assert_eq!(
         (req.target.to_string(), req.force),
-        ("slack-10-5".to_owned(), false)
+        ("slack-10-5-1".to_owned(), false)
     );
-    assert_eq!(texts(&seen), ["Closed Box `slack-10-5`."]);
+    assert_eq!(texts(&seen), ["Closed Box `slack-10-5-1`."]);
     let gone = BoxState::Gone {
         box_id: BoxId::new(7),
         branch: None,
@@ -179,15 +189,15 @@ fn a_refused_hello_on_the_first_close_is_posted() {
 
 #[test]
 fn show_finds_the_box_a_lost_close_closed() {
-    for answer in [shown("closed"), refused("show", "no Box slack-10-5")] {
+    for answer in [shown("closed"), refused("show", "no Box slack-10-5-1")] {
         let dir = tempfile::tempdir().unwrap();
         let db = db(dir.path());
         bound_thread(&db);
         let row = recorded_close(&db);
         let mut answer = Some(answer);
         let seen = attempt(&db, &row, Attempt::Again, &mut |_| answer.take().unwrap());
-        assert_eq!(cmds(&seen), [("show", "slack-10-5".into())]);
-        assert_eq!(texts(&seen), ["Closed Box `slack-10-5`."]);
+        assert_eq!(cmds(&seen), [("show", "slack-10-5-1".into())]);
+        assert_eq!(texts(&seen), ["Closed Box `slack-10-5-1`."]);
     }
 }
 
@@ -202,18 +212,22 @@ fn a_box_still_open_after_a_lost_close_is_closed_again() {
         _ => refused("close", "Box is already closed"),
     });
     assert_eq!(seen.calls.len(), 2, "a show, then a close");
-    assert_eq!(texts(&seen), ["Closed Box `slack-10-5`."]);
+    assert_eq!(texts(&seen), ["Closed Box `slack-10-5-1`."]);
 }
 
 #[test]
-fn a_start_command_in_a_kept_thread_is_not_queued() {
+fn a_mention_in_a_kept_thread_is_queued_like_a_reply() {
     let dir = tempfile::tempdir().unwrap();
     let db = db(dir.path());
     bound_thread(&db);
     let mut m = reply("Ev2", "U1", "<@UBOT> start api again");
     m.reply = false;
-    assert!(matches!(record_one(&db, &m), Some(Job::Reply { .. })));
-    assert_eq!(db.inbox("C1", "10.5").unwrap(), []);
+    assert_eq!(record_one(&db, &m), None);
+    let items = db.inbox("C1", "10.5").unwrap();
+    assert_eq!(
+        items.last().map(|i| i.text.as_str()),
+        Some("start api again")
+    );
 }
 
 #[test]
@@ -259,7 +273,7 @@ fn a_crash_after_the_closed_post_leaves_the_close_to_settle_and_post_again_on_re
     }));
     assert!(crashed.is_err(), "the worker never posted");
     let before = seen.into_inner();
-    assert_eq!(texts(&before), ["Closed Box `slack-10-5`."]);
+    assert_eq!(texts(&before), ["Closed Box `slack-10-5-1`."]);
     drop(first);
     let db = db(dir.path());
     assert_eq!(

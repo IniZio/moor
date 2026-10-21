@@ -18,6 +18,7 @@ fn starting(thread_ts: &str, name: &str, owner: &str) -> SlackBox {
         repo: "api".into(),
         goal: "fix it".into(),
         requested_by: owner.into(),
+        parent: None,
         state: BoxState::Starting,
     }
 }
@@ -27,7 +28,6 @@ fn open_with(db: &Db, boxed: &SlackBox, now: i64) -> rusqlite::Result<()> {
     let thread = SlackThread {
         channel: boxed.channel.clone(),
         thread_ts: boxed.thread_ts.clone(),
-        repo: boxed.repo.clone(),
         owner: boxed.requested_by.clone(),
     };
     db.atomically(|| {
@@ -106,7 +106,7 @@ fn starting_rows_are_listed_oldest_first_and_forgotten() {
     assert_eq!(names, ["b", "a"]);
     db.forget_starting(&b.box_name).unwrap();
     assert_eq!(box_of(&db, "2.2"), None);
-    assert_eq!(db.thread("C1", "2.2").unwrap(), None);
+    assert!(db.thread("C1", "2.2").unwrap().is_some());
     drop(db);
     let db = open(dir.path());
     assert_eq!(db.starting().unwrap().len(), 1);

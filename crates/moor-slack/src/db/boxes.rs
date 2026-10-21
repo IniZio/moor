@@ -1,15 +1,14 @@
 //! The Boxes each thread asked for, one row per Box, each tied to the Slack user who asked.
 
-use moor_core::name::{BoxId, BoxName};
+use moor_core::name::{BoxId, BoxName, SessionId};
 use rusqlite::types::Type;
-use rusqlite::{params, OptionalExtension, Row};
+use rusqlite::{params, Row};
 
 use super::Db;
 
-/// Columns of a Box row and its thread's repo, in the order [`box_row`] reads them.
-const BOX_COLUMNS: &str = "b.channel, b.thread_ts, b.box_name, t.repo, b.goal, b.requested_by, \
-     b.state, b.box_id, b.branch FROM slack_boxes b \
-     JOIN slack_threads t ON t.channel = b.channel AND t.thread_ts = b.thread_ts";
+/// Columns of a Box row, in the order [`box_row`] reads them.
+const BOX_COLUMNS: &str = "b.channel, b.thread_ts, b.box_name, b.repo, b.goal, b.requested_by, \
+     b.state, b.box_id, b.branch, b.parent FROM slack_boxes b";
 
 /// Where a Box stands.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,12 +47,14 @@ pub(crate) struct SlackBox {
     pub(crate) thread_ts: String,
     /// Name of the Box.
     pub(crate) box_name: BoxName,
-    /// Repo the Box works on, which is its thread's.
+    /// Repo the Box works on.
     pub(crate) repo: String,
     /// What the Box should do.
     pub(crate) goal: String,
     /// Slack user id of the person who asked for the Box.
     pub(crate) requested_by: String,
+    /// The host Session of the thread when the Box was asked for, which becomes its parent.
+    pub(crate) parent: Option<SessionId>,
     /// Where the Box stands.
     pub(crate) state: BoxState,
 }
@@ -99,15 +100,17 @@ impl Db {
     pub(crate) fn insert_starting(&self, boxed: &SlackBox, now: i64) -> rusqlite::Result<()> {
         self.conn.execute(
             "INSERT INTO slack_boxes \
-             (box_name, channel, thread_ts, n, goal, requested_by, state, created_at) \
-             SELECT ?1, ?2, ?3, coalesce(max(n), 0) + 1, ?4, ?5, 'starting', ?6 \
+             (box_name, channel, thread_ts, n, repo, goal, requested_by, parent, state, created_at) \
+             SELECT ?1, ?2, ?3, coalesce(max(n), 0) + 1, ?4, ?5, ?6, ?7, 'starting', ?8 \
              FROM slack_boxes WHERE channel = ?2 AND thread_ts = ?3",
             params![
                 boxed.box_name.as_str(),
                 boxed.channel,
                 boxed.thread_ts,
+                boxed.repo,
                 boxed.goal,
                 boxed.requested_by,
+                boxed.parent.map(SessionId::get),
                 now
             ],
         )?;
@@ -149,29 +152,14 @@ impl Db {
             .map(drop)
     }
 
-    /// Deletes a Box still in `starting`, and its thread once the thread has no Box left, so
-    /// the thread can start again.
+    /// Deletes a Box still in `starting`, so its thread can ask for it again. The thread stays.
     pub(crate) fn forget_starting(&self, name: &BoxName) -> rusqlite::Result<()> {
-        self.atomically(|| {
-            let thread = self
-                .conn
-                .query_row(
-                    "DELETE FROM slack_boxes WHERE box_name = ?1 AND state = 'starting' \
-                     RETURNING channel, thread_ts",
-                    params![name.as_str()],
-                    |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
-                )
-                .optional()?;
-            if let Some((channel, thread_ts)) = thread {
-                self.conn.execute(
-                    "DELETE FROM slack_threads WHERE channel = ?1 AND thread_ts = ?2 \
-                     AND NOT EXISTS (SELECT 1 FROM slack_boxes \
-                                     WHERE channel = ?1 AND thread_ts = ?2)",
-                    params![channel, thread_ts],
-                )?;
-            }
-            Ok(())
-        })
+        self.conn
+            .execute(
+                "DELETE FROM slack_boxes WHERE box_name = ?1 AND state = 'starting'",
+                params![name.as_str()],
+            )
+            .map(drop)
     }
 }
 
@@ -197,6 +185,7 @@ fn box_row(r: &Row<'_>) -> rusqlite::Result<SlackBox> {
         repo: r.get(3)?,
         goal: r.get(4)?,
         requested_by: r.get(5)?,
+        parent: r.get::<_, Option<i64>>(9)?.map(SessionId::new),
         state,
     })
 }

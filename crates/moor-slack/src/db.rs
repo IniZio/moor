@@ -14,7 +14,7 @@ const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// The schema version this build writes and reads. A schema change edits [`SCHEMA`] in place
 /// and raises this number; there are no migrations, so a file at any other version is refused.
-const SCHEMA_VERSION: i64 = 9;
+const SCHEMA_VERSION: i64 = 10;
 
 /// The whole schema, created in an empty file.
 const SCHEMA: &str = "
@@ -22,7 +22,6 @@ const SCHEMA: &str = "
     CREATE TABLE slack_threads (
         channel TEXT NOT NULL,
         thread_ts TEXT NOT NULL,
-        repo TEXT NOT NULL,
         owner TEXT NOT NULL,
         created_at INTEGER NOT NULL,
         workdir TEXT,
@@ -35,7 +34,9 @@ const SCHEMA: &str = "
         channel TEXT NOT NULL,
         thread_ts TEXT NOT NULL,
         n INTEGER NOT NULL,
+        repo TEXT NOT NULL,
         goal TEXT NOT NULL,
+        parent INTEGER,
         requested_by TEXT NOT NULL,
         state TEXT NOT NULL CHECK (state IN ('starting', 'bound', 'closing', 'gone')),
         box_id INTEGER,
@@ -109,8 +110,6 @@ pub(crate) struct SlackThread {
     pub(crate) channel: String,
     /// Timestamp of the thread's root message.
     pub(crate) thread_ts: String,
-    /// Repo the thread's Boxes work on, copied when the thread opened.
-    pub(crate) repo: String,
     /// Slack user id of the person who started the thread.
     pub(crate) owner: String,
 }
@@ -180,15 +179,14 @@ impl Db {
     ) -> rusqlite::Result<Option<SlackThread>> {
         self.conn
             .query_row(
-                "SELECT channel, thread_ts, repo, owner FROM slack_threads \
+                "SELECT channel, thread_ts, owner FROM slack_threads \
                  WHERE channel = ?1 AND thread_ts = ?2",
                 params![channel, thread_ts],
                 |r| {
                     Ok(SlackThread {
                         channel: r.get(0)?,
                         thread_ts: r.get(1)?,
-                        repo: r.get(2)?,
-                        owner: r.get(3)?,
+                        owner: r.get(2)?,
                     })
                 },
             )
@@ -198,15 +196,9 @@ impl Db {
     /// Records `thread` at `now`; a thread that already has a row is an error.
     pub(crate) fn insert_thread(&self, thread: &SlackThread, now: i64) -> rusqlite::Result<()> {
         self.conn.execute(
-            "INSERT INTO slack_threads (channel, thread_ts, repo, owner, created_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![
-                thread.channel,
-                thread.thread_ts,
-                thread.repo,
-                thread.owner,
-                now
-            ],
+            "INSERT INTO slack_threads (channel, thread_ts, owner, created_at) \
+             VALUES (?1, ?2, ?3, ?4)",
+            params![thread.channel, thread.thread_ts, thread.owner, now],
         )?;
         Ok(())
     }

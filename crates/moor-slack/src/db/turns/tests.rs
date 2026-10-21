@@ -12,7 +12,6 @@ fn thread() -> (tempfile::TempDir, Db) {
     let thread = SlackThread {
         channel: "C1".into(),
         thread_ts: "1.0".into(),
-        repo: String::new(),
         owner: "U1".into(),
     };
     db.insert_thread(&thread, 1).unwrap();

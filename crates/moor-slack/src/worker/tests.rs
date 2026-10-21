@@ -1,5 +1,6 @@
-//! Tests for the start path: what a mention records before its ack, and how the worker
-//! settles a start, including after a lost controller connection.
+//! Tests for the start path: what a top-level mention records before its ack, and how the
+//! worker settles a Box row that `start_box` wrote, including after a lost controller
+//! connection.
 #![allow(
     clippy::panic,
     clippy::indexing_slicing,
@@ -21,6 +22,8 @@ use serde_json::json;
 
 use super::{record, serve, settle, Attempt, Fx, Job};
 use crate::command::Allow;
+use moor_core::name::{BoxName, SessionId};
+
 use crate::db::{BoxState, Db, SlackBox};
 use crate::socket::Mention;
 
@@ -33,7 +36,7 @@ fn mention(event_id: &str, user: &str, channel: &str, ts: &str, thread: Option<&
         event_id: event_id.into(),
         channel: channel.into(),
         user: user.into(),
-        text: "<@UBOT> start api fix the flaky test".into(),
+        text: "<@UBOT> fix the flaky test".into(),
         ts: ts.into(),
         thread_ts: thread.map(str::to_owned),
         reply: false,
@@ -48,7 +51,7 @@ fn try_record(db: &Db, m: &Mention) -> rusqlite::Result<Option<Job>> {
         channels: &channels,
         users: &users,
     };
-    record(m, db, &allow, false, 1_000)
+    record(m, db, &allow, 1_000)
 }
 
 /// Records `m` with user `U1` and channel `C1` allowed; the write must succeed.
@@ -58,10 +61,28 @@ fn record_one(db: &Db, m: &Mention) -> Option<Job> {
 
 /// Records the standard mention in thread `10.5` and returns its `starting` row.
 fn recorded_start(db: &Db) -> SlackBox {
-    match record_one(db, &mention("Ev1", "U1", "C1", "10.5", None)) {
-        Some(Job::Start(row)) => row,
-        other => panic!("no start: {other:?}"),
-    }
+    started(db, "Ev1", "10.5")
+}
+
+/// Records thread `thread`, opened by a mention keyed `event_id`, and the `starting` row that
+/// `start_box` writes for its first Box on repo `api` with host Session 100 as parent.
+/// Returns the row, which the worker finds by reading `slack.db`.
+fn started(db: &Db, event_id: &str, thread: &str) -> SlackBox {
+    let job = record_one(db, &mention(event_id, "U1", "C1", thread, None));
+    assert_eq!(job, None, "a mention opens a thread and starts nothing");
+    let row = SlackBox {
+        channel: "C1".into(),
+        thread_ts: thread.into(),
+        box_name: BoxName::parse_allow_bare(&format!("slack-{}-1", thread.replace('.', "-")))
+            .unwrap(),
+        repo: "api".into(),
+        goal: "fix the flaky test".into(),
+        requested_by: "U1".into(),
+        parent: Some(SessionId::new(100)),
+        state: BoxState::Starting,
+    };
+    db.insert_starting(&row, 1_000).unwrap();
+    row
 }
 
 /// What the effects saw.
@@ -187,24 +208,6 @@ fn bound_to_7(name: &str) -> Option<BoxState> {
 }
 
 #[test]
-fn allowed_mention_records_its_start_with_goal_repo_and_owner() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = db(dir.path());
-    let row = recorded_start(&db);
-    assert_eq!(
-        db.thread_boxes("C1", "10.5").unwrap(),
-        std::slice::from_ref(&row)
-    );
-    assert_eq!(row.box_name.as_str(), "slack-10-5");
-    assert_eq!(row.repo, "api");
-    assert_eq!(row.goal, "fix the flaky test");
-    assert_eq!(row.requested_by, "U1");
-    assert_eq!(row.state, BoxState::Starting);
-    let thread = db.thread("C1", "10.5").unwrap().unwrap();
-    assert_eq!((thread.repo.as_str(), thread.owner.as_str()), ("api", "U1"));
-}
-
-#[test]
 fn redelivered_event_does_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let db = db(dir.path());
@@ -214,49 +217,27 @@ fn redelivered_event_does_nothing() {
 }
 
 #[test]
-fn failed_record_keeps_nothing_so_the_resent_mention_starts() {
+fn failed_record_keeps_nothing_so_the_resent_mention_opens_the_thread() {
     let dir = tempfile::tempdir().unwrap();
     let db = db(dir.path());
     let other = rusqlite::Connection::open(dir.path().join("slack.db")).unwrap();
     other
         .execute_batch(
-            "CREATE TRIGGER no_rows BEFORE INSERT ON slack_boxes \
+            "CREATE TRIGGER no_items BEFORE INSERT ON slack_inbox \
              BEGIN SELECT RAISE(ABORT, 'disk full'); END;",
         )
         .unwrap();
     let m = mention("Ev1", "U1", "C1", "10.5", None);
     assert!(try_record(&db, &m).is_err());
-    other.execute_batch("DROP TRIGGER no_rows;").unwrap();
-    assert!(matches!(try_record(&db, &m), Ok(Some(Job::Start(_)))));
-}
-
-#[test]
-fn second_mention_in_thread_names_the_bound_box() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = db(dir.path());
-    let row = recorded_start(&db);
-    db.bind(&row.box_name, BoxId::new(7), None).unwrap();
-    let again = record_one(&db, &mention("Ev2", "U1", "C1", "11.0", Some("10.5")));
-    let Some(Job::Reply { thread, text, .. }) = again else {
-        panic!("no reply: {again:?}");
-    };
-    assert_eq!(thread, "10.5");
-    assert!(text.contains("already runs Box `slack-10-5`"), "{text}");
-}
-
-#[test]
-fn second_mention_while_the_start_is_unconfirmed_says_it_is_still_starting() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = db(dir.path());
-    let row = recorded_start(&db);
-    let again = record_one(&db, &mention("Ev2", "U1", "C1", "11.0", Some("10.5")));
-    let Some(Job::Reply { thread, text, .. }) = again else {
-        panic!("no reply: {again:?}");
-    };
-    assert_eq!(thread, "10.5");
-    assert!(text.contains("`slack-10-5` is still starting"), "{text}");
-    assert!(!text.contains("runs"), "{text}");
-    assert_eq!(db.thread_boxes("C1", "10.5").unwrap(), [row]);
+    assert_eq!(db.thread("C1", "10.5").unwrap(), None);
+    other.execute_batch("DROP TRIGGER no_items;").unwrap();
+    assert!(matches!(try_record(&db, &m), Ok(None)));
+    let opened = db.thread("C1", "10.5").unwrap().unwrap();
+    assert_eq!(opened.owner, "U1");
+    assert_eq!(
+        db.inbox("C1", "10.5").unwrap()[0].text,
+        "fix the flaky test"
+    );
 }
 
 #[test]
@@ -269,7 +250,7 @@ fn disallowed_user_is_refused_without_starting() {
     };
     assert_eq!(thread, "10.5");
     assert!(text.contains("not allowed"), "{text}");
-    assert_eq!(state(&db, "C1", "10.5"), None);
+    assert_eq!(db.thread("C1", "10.5").unwrap(), None);
 }
 
 #[test]
@@ -296,16 +277,21 @@ fn allowed_mention_starts_binds_and_replies() {
         panic!("no start: {:?}", cmds(&seen));
     };
     assert_eq!(seen.calls.len(), 1);
-    assert_eq!(req.name.as_str(), "slack-10-5");
+    assert_eq!(req.name.as_str(), "slack-10-5-1");
     assert_eq!(req.repo.as_deref(), Some("api"));
     assert_eq!(req.goal.as_deref(), Some("fix the flaky test"));
-    assert_eq!(state(&db, "C1", "10.5"), bound_to_7("slack-10-5"));
+    assert_eq!(
+        req.parent,
+        Some(SessionId::new(100)),
+        "the thread's host Session"
+    );
+    assert_eq!(state(&db, "C1", "10.5"), bound_to_7("slack-10-5-1"));
     assert_eq!(
         seen.replies,
         [(
             "C1".into(),
             "10.5".into(),
-            "Started Box `slack-10-5`.".into()
+            "Started Box `slack-10-5-1`.".into()
         )]
     );
 }
@@ -340,7 +326,7 @@ fn lost_first_start_leaves_the_row_starting() {
     let db = db(dir.path());
     let row = recorded_start(&db);
     let seen = attempt_with(&db, &row, Attempt::First, &mut |_| hung_up());
-    assert_eq!(cmds(&seen), [("start", "slack-10-5".into())]);
+    assert_eq!(cmds(&seen), [("start", "slack-10-5-1".into())]);
     assert_eq!(state(&db, "C1", "10.5"), Some(BoxState::Starting));
     assert!(seen.replies.is_empty());
 }
@@ -351,10 +337,10 @@ fn show_finds_the_box_of_a_lost_start() {
     let db = db(dir.path());
     let row = recorded_start(&db);
     let seen = attempt_with(&db, &row, Attempt::Again, &mut |_| {
-        named("show", "slack-10-5")
+        named("show", "slack-10-5-1")
     });
-    assert_eq!(cmds(&seen), [("show", "slack-10-5".into())]);
-    assert_eq!(state(&db, "C1", "10.5"), bound_to_7("slack-10-5"));
+    assert_eq!(cmds(&seen), [("show", "slack-10-5-1".into())]);
+    assert_eq!(state(&db, "C1", "10.5"), bound_to_7("slack-10-5-1"));
     assert!(seen.replies[0].2.starts_with("Started Box"));
 }
 
@@ -365,14 +351,14 @@ fn absent_box_is_started_again_with_the_goal() {
     let row = recorded_start(&db);
     let seen = attempt_with(&db, &row, Attempt::Again, &mut |req| match req {
         Request::Start(s) => named("start", s.name.as_str()),
-        _ => refused("show", "no Box slack-10-5"),
+        _ => refused("show", "no Box slack-10-5-1"),
     });
     let Some(Request::Start(resent)) = seen.calls.get(1) else {
         panic!("no resend: {:?}", cmds(&seen));
     };
-    assert_eq!(cmds(&seen)[0], ("show", "slack-10-5".into()));
+    assert_eq!(cmds(&seen)[0], ("show", "slack-10-5-1".into()));
     assert_eq!(resent.goal.as_deref(), Some("fix the flaky test"));
-    assert_eq!(state(&db, "C1", "10.5"), bound_to_7("slack-10-5"));
+    assert_eq!(state(&db, "C1", "10.5"), bound_to_7("slack-10-5-1"));
     assert_eq!(seen.replies.len(), 1);
 }
 
@@ -382,7 +368,7 @@ fn refused_hello_after_a_lost_start_leaves_the_row_starting() {
     let db = db(dir.path());
     let row = recorded_start(&db);
     let seen = attempt_with(&db, &row, Attempt::Again, &mut |_| refused_hello());
-    assert_eq!(cmds(&seen), [("show", "slack-10-5".into())]);
+    assert_eq!(cmds(&seen), [("show", "slack-10-5-1".into())]);
     assert_eq!(state(&db, "C1", "10.5"), Some(BoxState::Starting));
     assert!(seen.replies.is_empty());
 }
@@ -395,7 +381,7 @@ fn show_failure_other_than_no_box_leaves_the_row_starting() {
     let seen = attempt_with(&db, &row, Attempt::Again, &mut |_| {
         refused("show", "store unavailable")
     });
-    assert_eq!(cmds(&seen), [("show", "slack-10-5".into())]);
+    assert_eq!(cmds(&seen), [("show", "slack-10-5-1".into())]);
     assert_eq!(state(&db, "C1", "10.5"), Some(BoxState::Starting));
     assert!(seen.replies.is_empty());
 }
@@ -407,7 +393,7 @@ fn start_lost_again_leaves_the_row_starting() {
     let row = recorded_start(&db);
     let seen = attempt_with(&db, &row, Attempt::Again, &mut |req| match req {
         Request::Start(_) => hung_up(),
-        _ => refused("show", "no Box slack-10-5"),
+        _ => refused("show", "no Box slack-10-5-1"),
     });
     assert_eq!(seen.calls.len(), 2, "one show and one start per attempt");
     assert_eq!(state(&db, "C1", "10.5"), Some(BoxState::Starting));
@@ -427,7 +413,7 @@ fn rejected_box_found_by_show_is_a_failed_start() {
     assert_eq!(state(&db, "C1", "10.5"), None);
     assert_eq!(
         seen.replies[0].2,
-        "Could not start Box `slack-10-5`: no credential"
+        "Could not start Box `slack-10-5-1`: no credential"
     );
 }
 
@@ -439,12 +425,12 @@ fn row_left_starting_by_an_earlier_run_is_settled_first() {
     let left = db.starting().unwrap();
     let seen = RefCell::default();
     let (_, jobs) = mpsc::channel();
-    with_fx(&seen, &mut |_| named("show", "slack-10-5"), |fx| {
+    with_fx(&seen, &mut |_| named("show", "slack-10-5-1"), |fx| {
         serve(&jobs, &db, left, fx);
     });
     let seen = seen.into_inner();
-    assert_eq!(cmds(&seen), [("show", "slack-10-5".into())]);
-    assert_eq!(state(&db, "C1", "10.5"), bound_to_7("slack-10-5"));
+    assert_eq!(cmds(&seen), [("show", "slack-10-5-1".into())]);
+    assert_eq!(state(&db, "C1", "10.5"), bound_to_7("slack-10-5-1"));
     assert_eq!(seen.replies[0].1, "10.5");
 }
 
@@ -452,22 +438,19 @@ fn row_left_starting_by_an_earlier_run_is_settled_first() {
 fn a_lost_start_is_asked_about_on_a_timer_and_holds_up_no_other_thread() {
     let dir = tempfile::tempdir().unwrap();
     let db = db(dir.path());
-    let lost = recorded_start(&db);
-    let Some(Job::Start(other)) = record_one(&db, &mention("Ev2", "U1", "C1", "20.5", None)) else {
-        panic!("no second start");
-    };
-    let (tx, jobs) = mpsc::channel();
+    recorded_start(&db);
+    started(&db, "Ev2", "20.5");
+    let (tx, jobs) = mpsc::channel::<Job>();
     let feeder = std::thread::spawn(move || {
-        tx.send(Job::Start(lost)).unwrap();
-        tx.send(Job::Start(other)).unwrap();
         std::thread::sleep(Duration::from_secs(1));
+        drop(tx);
     });
     let seen = RefCell::default();
     let mut first_start = true;
     with_fx(
         &seen,
         &mut |req| match req {
-            Request::Start(s) if s.name.as_str() == "slack-10-5" && first_start => {
+            Request::Start(s) if s.name.as_str() == "slack-10-5-1" && first_start => {
                 first_start = false;
                 hung_up()
             }
@@ -483,14 +466,14 @@ fn a_lost_start_is_asked_about_on_a_timer_and_holds_up_no_other_thread() {
     assert_eq!(
         order,
         [
-            ("start", "slack-10-5".into()),
-            ("start", "slack-20-5".into()),
-            ("show", "slack-10-5".into()),
+            ("start", "slack-10-5-1".into()),
+            ("start", "slack-20-5-1".into()),
+            ("show", "slack-10-5-1".into()),
         ]
     );
     let threads: Vec<_> = seen.replies.iter().map(|r| r.1.as_str()).collect();
     assert_eq!(threads, ["20.5", "10.5"]);
-    assert_eq!(state(&db, "C1", "10.5"), bound_to_7("slack-10-5"));
+    assert_eq!(state(&db, "C1", "10.5"), bound_to_7("slack-10-5-1"));
 }
 
 mod close;

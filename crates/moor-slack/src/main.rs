@@ -41,6 +41,9 @@ struct McpArgs {
     /// The thread whose Boxes the tools act on, as `<channel>/<thread ts>`.
     #[arg(long)]
     thread: String,
+    /// Most Boxes the thread has open at once.
+    #[arg(long, default_value_t = 1)]
+    max_open_boxes: u32,
     /// Set when the server runs again after its inherited descriptors were closed.
     #[arg(long, hide = true)]
     inherited_closed: bool,
@@ -84,6 +87,7 @@ fn mcp() -> Result<(), String> {
         state_dir: given.state_dir,
         socket: given.socket,
         thread: given.thread,
+        max_open_boxes: given.max_open_boxes,
         clock: unix_now,
     })
 }

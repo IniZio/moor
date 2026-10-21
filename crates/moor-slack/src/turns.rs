@@ -69,6 +69,8 @@ pub(crate) struct Turns {
     pub(crate) socket: PathBuf,
     /// Absolute path of this binary, which the agent starts as the tool server.
     pub(crate) program: PathBuf,
+    /// Most Boxes a thread has open at once.
+    pub(crate) max_open_boxes: u32,
     /// Daemon log.
     pub(crate) log: Log,
     /// The current time in unix seconds.
@@ -320,6 +322,8 @@ impl Turns {
             self.socket.display().to_string(),
             "--thread".to_owned(),
             format!("{}/{}", row.channel, row.thread_ts),
+            "--max-open-boxes".to_owned(),
+            self.max_open_boxes.to_string(),
         ]
     }
 }

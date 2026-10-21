@@ -14,6 +14,7 @@ fn asked(name: &str, by: &str) -> SlackBox {
         repo: "acme/api".into(),
         goal: format!("goal of {name}"),
         requested_by: by.into(),
+        parent: None,
         state: BoxState::Starting,
     }
 }
@@ -25,7 +26,6 @@ fn two_boxes(dir: &std::path::Path) -> (Db, SlackBox, SlackBox) {
     let thread = SlackThread {
         channel: "C1".into(),
         thread_ts: "1.1".into(),
-        repo: "acme/api".into(),
         owner: "U1".into(),
     };
     let (one, two) = (asked("one", "U1"), asked("two", "U2"));
@@ -69,5 +69,9 @@ fn forgetting_one_box_keeps_the_thread_and_its_other_box() {
     );
     assert_eq!(db.thread("C1", "1.1").unwrap().unwrap().owner, "U1");
     db.forget_starting(&two.box_name).unwrap();
-    assert_eq!(db.thread("C1", "1.1").unwrap(), None);
+    assert_eq!(db.thread_boxes("C1", "1.1").unwrap(), []);
+    assert!(
+        db.thread("C1", "1.1").unwrap().is_some(),
+        "the thread keeps its turns"
+    );
 }

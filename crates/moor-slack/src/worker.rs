@@ -1,9 +1,8 @@
-//! The start and close paths: the socket thread records each mention in `slack.db` before
-//! Slack gets its ack, and the worker turns each recorded start into a Box over the controller
-//! socket. A Box row in `closing` is a close the front owes, which the coordinator's tool
-//! server writes from its own process; the worker reads those rows every [`POLL`] and closes
-//! each Box. The worker also checks each repo a user adds to a channel, and each Claude token
-//! a user pastes.
+//! The start and close paths: a Box row in `starting` or `closing` in `slack.db` is a start or
+//! close the front owes, which the coordinator's tool server writes from its own process. The
+//! worker reads those rows every [`POLL`] and turns each into a started or closed Box over the
+//! controller socket. The worker also posts replies, checks each repo a user adds to a channel,
+//! and checks each Claude token a user pastes.
 
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::time::{Duration, Instant};
@@ -20,7 +19,7 @@ use crate::dial::Backoff;
 use crate::login::TokenCheck;
 use crate::slash::check_repo;
 
-/// How often the worker reads `slack.db` for Boxes to close.
+/// How often the worker reads `slack.db` for Boxes to start or close.
 const POLL: Duration = Duration::from_millis(500);
 
 /// The worker's effects, so tests can script the controller and record what Slack sees.
@@ -49,8 +48,6 @@ pub(crate) enum Job {
         /// What to post.
         text: String,
     },
-    /// Send the first `start` for this Box, already `starting` in `slack.db`.
-    Start(SlackBox),
     /// Warn in `channel` when the controller does not know `repo`, which a user just added.
     CheckRepo {
         /// Channel id the repo was added to.
@@ -62,11 +59,11 @@ pub(crate) enum Job {
     CheckToken(TokenCheck),
 }
 
-/// Runs each job as it arrives, sends the first close of each new `closing` row every
-/// [`POLL`], and asks again about unsure starts and closes on a backoff timer, so one the
-/// controller cannot confirm never holds up another thread. `left` holds the rows an earlier
-/// run left `starting` or `closing`, read before this run sent anything; they are asked about
-/// first.
+/// Runs each job as it arrives, sends the first start or close of each new `starting` or
+/// `closing` row every [`POLL`], and asks again about unsure starts and closes on a backoff
+/// timer, so one the controller cannot confirm never holds up another thread. `left` holds
+/// the rows an earlier run left `starting` or `closing`, read before this run sent anything;
+/// they are asked about first.
 pub(crate) fn serve(jobs: &Receiver<Job>, db: &Db, left: Vec<SlackBox>, fx: &mut Fx<'_>) {
     let mut unsure = Unsure::new(left);
     let mut poll = now();
@@ -86,11 +83,6 @@ pub(crate) fn serve(jobs: &Receiver<Job>, db: &Db, left: Vec<SlackBox>, fx: &mut
                 thread,
                 text,
             }) => (fx.reply)(&channel, &thread, &text),
-            Ok(Job::Start(row)) => {
-                if !settle(db, fx, &row, Attempt::First) {
-                    unsure.add(row);
-                }
-            }
             Ok(Job::CheckRepo { channel, repo }) => check_repo(fx, &channel, &repo),
             Ok(Job::CheckToken(check)) => (fx.check_token)(check),
             Err(RecvTimeoutError::Timeout) => {}
@@ -129,10 +121,14 @@ impl Unsure {
         }
     }
 
-    /// Sends the first close of each `closing` row that is not already unsure. Only this
-    /// worker sends closes, so such a row has had none sent yet.
+    /// Sends the first start or close of each `starting` or `closing` row that is not already
+    /// unsure. Only this worker sends them, so such a row has had none sent yet.
     fn take_new(&mut self, db: &Db, fx: &mut Fx<'_>) {
-        let rows = match db.closing() {
+        let rows = db.starting().and_then(|mut rows| {
+            rows.extend(db.closing()?);
+            Ok(rows)
+        });
+        let rows = match rows {
             Ok(rows) => rows,
             Err(e) => return (fx.log)(&format!("slack.db: {e}; reading again")),
         };
@@ -250,7 +246,7 @@ fn start_request(row: &SlackBox) -> Request {
         resume: false,
         trust_moor_yaml: false,
         repo: Some(row.repo.clone()),
-        parent: None,
+        parent: row.parent,
     })
 }
 

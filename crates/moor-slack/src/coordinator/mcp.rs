@@ -41,6 +41,8 @@ pub struct ToolSettings {
     pub socket: PathBuf,
     /// The thread, as `<channel>/<thread ts>`.
     pub thread: String,
+    /// Most Boxes the thread has open at once.
+    pub max_open_boxes: u32,
     /// The current time in unix seconds.
     pub clock: fn() -> i64,
 }
@@ -133,6 +135,7 @@ pub fn serve_tools(settings: &ToolSettings) -> Result<(), String> {
         thread_ts,
         call: &mut call,
         clock: settings.clock,
+        max_open_boxes: settings.max_open_boxes,
     };
     let mut run = |call: &Call| tools::run(&mut scope, call);
     serve(&mut io::stdin().lock(), &mut io::stdout().lock(), &mut run)
