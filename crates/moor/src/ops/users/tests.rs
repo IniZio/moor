@@ -133,3 +133,23 @@ fn a_link_code_links_another_identity_once() {
     let who = run(&f.cx, &f.vault, &id("slack:T1:U1"), &UserCmd::Whoami).unwrap();
     assert_eq!(who["identities"], json!(["local:1000", "slack:T1:U1"]));
 }
+
+#[test]
+fn minted_link_codes_are_random_16_digit_hex() {
+    let f = fixture();
+    let me = id("local:1000");
+    run(&f.cx, &f.vault, &me, &UserCmd::Enroll).unwrap();
+    let codes: Vec<String> = (0..2)
+        .map(|_| {
+            let minted = run(&f.cx, &f.vault, &me, &UserCmd::LinkCode).unwrap();
+            minted["code"].as_str().unwrap().to_owned()
+        })
+        .collect();
+    for code in &codes {
+        assert!(
+            code.len() == 16 && code.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')),
+            "{code}"
+        );
+    }
+    assert_ne!(codes[0], codes[1]);
+}
