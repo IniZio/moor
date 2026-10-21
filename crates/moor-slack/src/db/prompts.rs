@@ -183,6 +183,17 @@ impl Db {
             .map(drop)
     }
 
+    /// Opens again every prompt whose answer was recorded but never sent, as an earlier run
+    /// left it. The feed then closes each one whose Box no longer waits on its question.
+    /// Returns how many it opened.
+    pub(crate) fn reopen_unsent(&self) -> rusqlite::Result<usize> {
+        self.conn.execute(
+            "UPDATE slack_prompts SET answer = NULL, answered_by = NULL \
+             WHERE answer IS NOT NULL AND answer_sent = 0",
+            [],
+        )
+    }
+
     /// Closes open prompt `id` because its Box is now `reason`.
     pub(crate) fn close_prompt(&self, id: i64, reason: &str) -> rusqlite::Result<()> {
         self.conn

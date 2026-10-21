@@ -151,6 +151,14 @@ fn load(settings: &Settings, log: &Log) -> Result<Loaded, String> {
     let db_path = dir.join("slack.db");
     let db = Db::open(&db_path).map_err(|e| format!("open slack.db: {e}"))?;
     let read = |e: rusqlite::Error| format!("read slack.db: {e}");
+    let reopened = db
+        .reopen_unsent()
+        .map_err(|e| format!("write slack.db: {e}"))?;
+    if reopened > 0 {
+        log(&format!(
+            "slack: reopened {reopened} prompts whose answer was never sent"
+        ));
+    }
     let mut left = db.starting().map_err(read)?;
     left.extend(db.closing().map_err(read)?);
     let coordinator = probe(&cfg, settings, log);

@@ -417,3 +417,83 @@ fn a_prompt_slack_fails_to_take_for_a_passing_reason_is_posted_on_a_retry() {
     assert!(ts.is_some(), "the retried prompt is recorded posted");
     assert_eq!(closed, None, "the retried prompt stays open");
 }
+
+/// The one prompt's answer, whether it was sent, and why it closed.
+fn prompt_row(rig: &Rig) -> (Option<String>, bool, Option<String>) {
+    let db = rusqlite::Connection::open(rig.path("state-slack/slack.db")).unwrap();
+    db.busy_timeout(Duration::from_secs(5)).unwrap();
+    db.query_row(
+        "SELECT answer, answer_sent, closed_reason FROM slack_prompts",
+        [],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+    )
+    .unwrap()
+}
+
+/// Polls the one prompt's row until `done` holds; fails after ten seconds.
+fn wait_row(rig: &Rig, what: &str, done: impl Fn(&(Option<String>, bool, Option<String>)) -> bool) {
+    for _ in 0..500 {
+        if done(&prompt_row(rig)) {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    panic!("the prompt never got {what}: {:?}", prompt_row(rig));
+}
+
+/// Clicks option 1 of `prompt` while the controller holds the steer, waits until the answer
+/// is recorded and the steer sent, then kills the daemon before the controller replies.
+fn killed_mid_answer(rig: &mut Rig, controller: &FakeController, prompt: &Post) {
+    controller.script("steer", Scripted::Hold);
+    click(rig, 1, USER, prompt, 1);
+    controller.wait_until("the held steer", |seen| {
+        seen.requests.iter().any(|r| matches!(r, Request::Steer(_)))
+    });
+    let row = prompt_row(rig);
+    assert_eq!(row, (Some("1. Yes".to_owned()), false, None));
+    rig.kill_daemon();
+}
+
+/// Starts the daemon again and waits until its feed follows the controller's events.
+fn restart(rig: &mut Rig, controller: &FakeController) {
+    let watches = controller.seen(|seen| seen.watches.len());
+    rig.spawn_daemon();
+    rig.slack.wait_connected();
+    controller.wait_until("a live watch after the restart", |seen| {
+        seen.watches.iter().skip(watches).any(|(_, follow)| *follow)
+    });
+    std::thread::sleep(QUIET);
+}
+
+#[test]
+fn an_unsent_answer_reopens_at_startup_while_the_box_waits_on_that_question() {
+    let (mut rig, controller, _bin, prompt) = asked();
+    killed_mid_answer(&mut rig, &controller, &prompt);
+    restart(&mut rig, &controller);
+    assert_eq!(prompt_row(&rig), (None, false, None), "reopened");
+    steer_ok(&controller);
+    click(&rig, 2, USER, &prompt, 2);
+    rig.slack.wait_until("the answered prompt", |_, updates| {
+        updates.iter().any(|u| u.ts == prompt.ts)
+    });
+    assert_eq!(
+        menus(&controller),
+        [(BOX_NAME.to_owned(), 1), (BOX_NAME.to_owned(), 2)]
+    );
+    assert!(rig.slack.ephemerals().is_empty());
+}
+
+#[test]
+fn an_unsent_answer_closes_at_startup_once_the_box_moved_on() {
+    let (mut rig, controller, _bin, prompt) = asked();
+    killed_mid_answer(&mut rig, &controller, &prompt);
+    controller.emit(BOX_ID, BOX_NAME, "working", json!({}));
+    restart(&mut rig, &controller);
+    wait_row(&rig, "closed", |row| row.2.is_some());
+    assert_eq!(prompt_row(&rig), (None, false, Some("working".to_owned())));
+    click(&rig, 2, USER, &prompt, 2);
+    rig.wait_post(&format!(
+        "This prompt is no longer open: {BOX_NAME} is now working."
+    ));
+    assert_eq!(menus(&controller), [(BOX_NAME.to_owned(), 1)]);
+}
