@@ -66,6 +66,7 @@ const SCHEMA: &str = "
         rerun_of INTEGER,
         started_at INTEGER NOT NULL,
         pid INTEGER,
+        pid_started INTEGER,
         placeholder_ts TEXT,
         ended_at INTEGER,
         end TEXT CHECK (end IN

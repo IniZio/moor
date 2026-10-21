@@ -231,7 +231,7 @@ impl Turns {
             credential: &credential,
             limits: LIMITS,
         };
-        let mut spawned = |pid| self.written(db.set_pid(row.id, pid));
+        let mut spawned = |pid| self.written(db.set_pid(row.id, pid, restart::start_time(pid)));
         let ended = turn::run(&*agent, &turn, &mut spawned, &*self.log);
         let mut closing = self.closing(ended, row, agent.kind().label(), &credential);
         closing.bytes = Some(input.len());

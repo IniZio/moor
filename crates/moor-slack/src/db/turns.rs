@@ -64,6 +64,9 @@ pub(crate) struct Unended {
     pub(crate) row: TurnRow,
     /// When it started, in unix seconds.
     pub(crate) started_at: i64,
+    /// Its process id and that process's start time in clock ticks after boot, when both
+    /// were recorded.
+    pub(crate) process: Option<(u32, i64)>,
 }
 
 /// The columns [`turn_row`] reads.
@@ -131,10 +134,11 @@ impl Db {
         self.conn.execute(sql, params![id, ts]).map(drop)
     }
 
-    /// Records the process id of turn `id`.
-    pub(crate) fn set_pid(&self, id: i64, pid: u32) -> rusqlite::Result<()> {
-        let sql = "UPDATE slack_turns SET pid = ?2 WHERE id = ?1";
-        self.conn.execute(sql, params![id, pid]).map(drop)
+    /// Records the process id of turn `id` and when that process started, in clock ticks
+    /// after boot, when that could be read.
+    pub(crate) fn set_pid(&self, id: i64, pid: u32, started: Option<i64>) -> rusqlite::Result<()> {
+        let sql = "UPDATE slack_turns SET pid = ?2, pid_started = ?3 WHERE id = ?1";
+        self.conn.execute(sql, params![id, pid, started]).map(drop)
     }
 
     /// Stores how turn `id` ended and the line to post, with its context size and reported
@@ -191,7 +195,8 @@ impl Db {
     /// Turns with no end and no stored line.
     pub(crate) fn unended(&self) -> rusqlite::Result<Vec<Unended>> {
         let sql = format!(
-            "SELECT {TURN_COLUMNS}, u.started_at FROM slack_turns u WHERE u.ended_at IS NULL \
+            "SELECT {TURN_COLUMNS}, u.started_at, u.pid, u.pid_started FROM slack_turns u \
+             WHERE u.ended_at IS NULL \
              AND u.reply_text IS NULL ORDER BY u.id"
         );
         let mut stmt = self.conn.prepare(&sql)?;
@@ -199,6 +204,7 @@ impl Db {
             Ok(Unended {
                 row: turn_row(r)?,
                 started_at: r.get(6)?,
+                process: r.get::<_, Option<u32>>(7)?.zip(r.get(8)?),
             })
         })?;
         rows.collect()

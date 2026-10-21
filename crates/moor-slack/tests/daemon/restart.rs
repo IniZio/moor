@@ -3,10 +3,14 @@
 
 #![allow(clippy::indexing_slicing, reason = "test code")]
 
+use std::os::unix::process::CommandExt as _;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::time::Duration;
 
-use super::support::{Rig, QUIET, TS, USER};
+use serde_json::json;
+
+use super::support::{Rig, CHANNEL, QUIET, TS, USER};
 
 /// A token the fake answers "OK" for.
 const GOOD: &str = "sk-ant-oat01-good-4c1d";
@@ -30,19 +34,20 @@ fn ends(rig: &Rig) -> Vec<(Option<String>, Option<i64>)> {
     rows.map(Result::unwrap).collect()
 }
 
-/// The pid of the fake's `n`th run, once it has started.
+/// The pid of the fake's `n`th run, once it has written its load report and waits. A run
+/// cut off before that write would die of the closed pipe, not of the restart.
 fn run_pid(bin: &Path, n: u32) -> u32 {
-    let file = bin.join(format!("run-{n}")).join("pid");
+    let run = bin.join(format!("run-{n}"));
     for _ in 0..500 {
-        if let Some(pid) = std::fs::read_to_string(&file)
+        let pid = std::fs::read_to_string(run.join("pid"))
             .ok()
-            .and_then(|p| p.trim().parse().ok())
-        {
+            .and_then(|p| p.trim().parse().ok());
+        if let Some(pid) = pid.filter(|_| run.join("waiting").exists()) {
             return pid;
         }
         std::thread::sleep(Duration::from_millis(20));
     }
-    panic!("the fake's run {n} never started");
+    panic!("the fake's run {n} never started waiting");
 }
 
 /// True once `pid` is gone or a zombie, waiting up to 2 s.
@@ -101,6 +106,48 @@ fn a_turn_cut_off_by_a_restart_runs_once_more_in_its_placeholder() {
                 (Some("replied".to_owned()), Some(1)),
             ]
     });
+}
+
+/// A process in its own group that runs in the thread's workdir and that the front did not
+/// start, like an operator's shell.
+fn bystander(rig: &Rig) -> std::process::Child {
+    let workdir = rig
+        .path("state-slack/threads")
+        .join(format!("{CHANNEL}-{TS}"));
+    let mut sleep = Command::new("sleep");
+    sleep.arg("60").current_dir(workdir).process_group(0);
+    sleep.spawn().unwrap()
+}
+
+#[test]
+fn a_process_that_only_runs_in_a_thread_workdir_survives_a_restart() {
+    let (mut rig, bin, pid) = hung_turn();
+    let mut shell = bystander(&rig);
+    restart(&mut rig);
+    run_pid(&bin, 1);
+    assert!(gone(pid), "the cut-off turn's process outlived the restart");
+    std::thread::sleep(QUIET);
+    let alive = shell.try_wait().unwrap().is_none();
+    let _ = shell.kill();
+    assert!(alive, "the restart killed a process it did not start");
+}
+
+#[test]
+fn a_recorded_pid_with_another_start_time_is_left_alone() {
+    let (mut rig, bin, pid) = hung_turn();
+    rig.kill_daemon();
+    let reused = "UPDATE slack_turns SET pid_started = pid_started + 1";
+    assert_eq!(db(&rig).execute(reused, []).unwrap(), 1);
+    rig.spawn_daemon();
+    rig.slack.wait_connected();
+    run_pid(&bin, 1);
+    std::thread::sleep(QUIET);
+    let alive =
+        std::fs::read_to_string(format!("/proc/{pid}/stat")).is_ok_and(|s| !s.contains(") Z "));
+    let _ = Command::new("kill")
+        .args(["-KILL", &format!("-{pid}")])
+        .status();
+    assert!(alive, "the restart killed a process by its pid alone");
 }
 
 #[test]
@@ -166,5 +213,29 @@ fn a_line_stored_before_a_restart_is_posted_once_after_it() {
         "the stored line was posted twice"
     );
     assert!(!bin.join("run-1").exists(), "a posted turn ran again");
+    assert_eq!(ends(&rig), [(Some("replied".to_owned()), None)]);
+}
+
+/// Whether the only turn's line is marked posted.
+fn posted(rig: &Rig) -> bool {
+    let sql = "SELECT posted_at IS NOT NULL FROM slack_turns";
+    db(rig).query_row(sql, [], |r| r.get(0)).unwrap()
+}
+
+#[test]
+fn a_reply_slack_never_took_stays_unposted_and_lands_after_a_restart() {
+    let (mut rig, _, bin) = Rig::start_coordinated(Some(GOOD));
+    let failed = json!({"ok": false, "error": "internal_error"});
+    rig.slack.answer_updates(&vec![(500, failed); 4]);
+    rig.mention(1, USER, "<@UBOT> hello", TS, None);
+    rig.slack.wait_updates(4);
+    std::thread::sleep(QUIET);
+    assert!(!posted(&rig), "a line Slack never took was marked posted");
+    restart(&mut rig);
+    let updates = rig.slack.wait_updates(5);
+    assert_eq!(updates[4].text, "OK");
+    rig.slack
+        .wait_until("the line marked posted", |_, _| posted(&rig));
+    assert!(!bin.join("run-1").exists(), "a stored turn ran again");
     assert_eq!(ends(&rig), [(Some("replied".to_owned()), None)]);
 }
